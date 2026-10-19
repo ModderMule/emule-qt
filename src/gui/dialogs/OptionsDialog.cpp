@@ -233,6 +233,7 @@ OptionsDialog::OptionsDialog(IpcClient* ipc, StatisticsPanel* statsPanel,
     connect(m_showSpeedGraphCheck, &QCheckBox::toggled, this, &OptionsDialog::markDirty);
     connect(m_speedGraphTimeSpin, &QSpinBox::valueChanged, this, &OptionsDialog::markDirty);
     connect(m_storeSearchesCheck, &QCheckBox::toggled, this, &OptionsDialog::markDirty);
+    connect(m_showTaskbarProgressCheck, &QCheckBox::toggled, this, &OptionsDialog::markDirty);
     connect(m_disableKnownClientListCheck, &QCheckBox::toggled, this, &OptionsDialog::markDirty);
     connect(m_disableQueueListCheck, &QCheckBox::toggled, this, &OptionsDialog::markDirty);
     connect(m_useAutoCompletionCheck, &QCheckBox::toggled, this, &OptionsDialog::markDirty);
@@ -991,6 +992,14 @@ QWidget* OptionsDialog::createDisplayPage()
 
     m_storeSearchesCheck = new QCheckBox(tr("Remember open searches between restarts"), page);
     layout->addWidget(m_storeSearchesCheck);
+
+    // MFC "Enable Win7 taskbar stuff" (IDC_WIN7TASKBARGOODIES)
+#ifdef Q_OS_MACOS
+    m_showTaskbarProgressCheck = new QCheckBox(tr("Show download progress on the Dock icon"), page);
+#else
+    m_showTaskbarProgressCheck = new QCheckBox(tr("Show download progress on the taskbar button"), page);
+#endif
+    layout->addWidget(m_showTaskbarProgressCheck);
 
     m_useOriginalIconsCheck = new QCheckBox(tr("Use original eMule icons"), page);
     layout->addWidget(m_useOriginalIconsCheck);
@@ -6162,6 +6171,7 @@ void OptionsDialog::loadSettings()
     m_showSpeedGraphCheck->setChecked(thePrefs.showSpeedGraph());
     m_speedGraphTimeSpin->setValue(static_cast<int>(thePrefs.speedGraphTimeRangeMin()));
     m_storeSearchesCheck->setChecked(thePrefs.storeSearches());
+    m_showTaskbarProgressCheck->setChecked(theUiState.showTaskbarProgress());
     m_disableKnownClientListCheck->setChecked(thePrefs.disableKnownClientList());
     m_disableQueueListCheck->setChecked(thePrefs.disableQueueList());
     m_useAutoCompletionCheck->setChecked(thePrefs.useAutoCompletion());
@@ -6360,6 +6370,8 @@ void OptionsDialog::saveSettings()
     thePrefs.setShowSpeedGraph(m_showSpeedGraphCheck->isChecked());
     thePrefs.setSpeedGraphTimeRangeMin(static_cast<uint32_t>(m_speedGraphTimeSpin->value()));
     thePrefs.setStoreSearches(m_storeSearchesCheck->isChecked());
+    if (m_showTaskbarProgressCheck->isChecked() != theUiState.showTaskbarProgress())
+        theUiState.setShowTaskbarProgress(m_showTaskbarProgressCheck->isChecked());
     thePrefs.setDisableKnownClientList(m_disableKnownClientListCheck->isChecked());
     thePrefs.setDisableQueueList(m_disableQueueListCheck->isChecked());
     thePrefs.setUseAutoCompletion(m_useAutoCompletionCheck->isChecked());

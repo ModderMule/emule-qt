@@ -367,17 +367,6 @@ public:
     /// preferences are changed behind our back — i.e. by a statistics reset.
     void rebaseCumulative(const Preferences& prefs);
 
-    // --- Global progress (for taskbar / status) ---
-
-    [[nodiscard]] float globalDone() const { return m_globalDone; }
-    void setGlobalDone(float val) { m_globalDone = val; }
-
-    [[nodiscard]] float globalSize() const { return m_globalSize; }
-    void setGlobalSize(float val) { m_globalSize = val; }
-
-    [[nodiscard]] uint32 overallStatus() const { return m_overallStatus; }
-    void setOverallStatus(uint32 val) { m_overallStatus = val; }
-
 signals:
     /// Emitted after updateConnectionStats() — rates and times updated.
     void statsUpdated();
@@ -450,11 +439,6 @@ private:
     UsenetCounters m_usenetSession;
     IndexerCounters m_indexerSession;
     KadCounters m_kadSession;
-
-    // Global progress
-    float m_globalDone = 0.0f;
-    float m_globalSize = 0.0f;
-    uint32 m_overallStatus = 0;
 
     // Rate history ring buffers
     std::list<RateEntry> m_downRateHistory;

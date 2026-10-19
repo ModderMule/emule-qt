@@ -38,6 +38,7 @@
 #include "utils/PreviewLauncher.h"
 #include "utils/NzbDrop.h"
 #include "utils/StatusBarNotifier.h"
+#include "utils/TaskbarProgress.h"
 
 #include "dialogs/PasteLinksDialog.h"
 #include "dialogs/ToolbarCustomizeDialog.h"
@@ -159,6 +160,11 @@ MainWindow::MainWindow(QWidget* parent)
         m_trayIcon->setContextMenu(m_trayMenu);
 #endif
     }
+
+    // Download progress on the taskbar button / Dock / launcher
+    m_taskbarProgress = std::make_unique<TaskbarProgress>(
+        TaskbarProgress::createPlatformBackend(this));
+    m_taskbarProgress->setEnabled(theUiState.showTaskbarProgress());
 
 #ifdef Q_OS_MAC
     // Ensure Cmd+Q always quits (bypasses minimize-to-tray)
@@ -397,6 +403,8 @@ void MainWindow::showOptionsDialog(int page)
 
     // The daemon reacts to logToDiskCore over IPC; logToDiskGui is ours to act on.
     LogWidget::applyLogFileSettings();
+
+    m_taskbarProgress->setEnabled(theUiState.showTaskbarProgress());
 
     // Re-apply custom font if changed
     if (!thePrefs.logFont().isEmpty()) {
@@ -850,6 +858,17 @@ void MainWindow::startVersionChecks()
     m_versionChecker->startPeriodicChecks();
 }
 
+#ifdef Q_OS_WIN
+bool MainWindow::nativeEvent(const QByteArray& eventType, void* message, qintptr* result)
+{
+    // Taskbar button (re)created: first show, back from the tray, Explorer restart
+    if (m_taskbarProgress && eventType == "windows_generic_MSG"
+        && TaskbarProgress::isTaskbarButtonCreated(message))
+        m_taskbarProgress->reinitialize();
+    return QMainWindow::nativeEvent(eventType, message, result);
+}
+#endif
+
 bool MainWindow::eventFilter(QObject* obj, QEvent* event)
 {
     if (event->type() == QEvent::MouseButtonDblClick) {
@@ -1227,6 +1246,17 @@ void MainWindow::onTrayIconClicked(QSystemTrayIcon::ActivationReason reason)
 #else
     Q_UNUSED(reason)
 #endif
+}
+
+void MainWindow::updateTaskbarProgress(qint64 totalSize, qint64 totalDone,
+                                       qint64 transferring, qint64 errors)
+{
+    m_taskbarProgress->update(computeTaskbarProgress(totalSize, totalDone, transferring, errors));
+}
+
+void MainWindow::clearTaskbarProgress()
+{
+    m_taskbarProgress->clear();
 }
 
 void MainWindow::updateMiniMule(int completedCount, qint64 freeBytes)

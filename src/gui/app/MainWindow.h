@@ -24,6 +24,8 @@
 #include <QMouseEvent>
 #include <QSystemTrayIcon>
 
+#include <memory>
+
 class QAction;
 class QActionGroup;
 class QCborMap;
@@ -54,6 +56,7 @@ class SearchPanel;
 class ServerPanel;
 class SharedFilesPanel;
 class StatisticsPanel;
+class TaskbarProgress;
 class TransferPanel;
 class UsenetPanel;
 
@@ -195,6 +198,13 @@ public:
     /// Update MiniMule popup stats (called from rate polling timer).
     void updateMiniMule(int completedCount, qint64 freeBytes);
 
+    /// Overall download progress on the taskbar button / Dock / launcher (MFC
+    /// UpdateStatusBarProgress). Totals are over the whole download queue.
+    void updateTaskbarProgress(qint64 totalSize, qint64 totalDone,
+                               qint64 transferring, qint64 errors);
+    /// Hide it, e.g. when the core connection is lost.
+    void clearTaskbarProgress();
+
     /// Close and quit — the tray menu's Exit and Cmd+Q. promptOnExit still asks.
     void forceQuit();
 
@@ -232,6 +242,9 @@ protected:
     void dragMoveEvent(QDragMoveEvent* event) override;
     void dropEvent(QDropEvent* event) override;
     bool eventFilter(QObject* obj, QEvent* event) override;
+#ifdef Q_OS_WIN
+    bool nativeEvent(const QByteArray& eventType, void* message, qintptr* result) override;
+#endif
 
 private slots:
     void onToolbarAction(QAction* action);
@@ -385,6 +398,8 @@ private:
     QString m_trayIconPath;
     QColor  m_trayMeterColor;
     QString m_trayToolTip;
+
+    std::unique_ptr<TaskbarProgress> m_taskbarProgress;
 
 #ifdef Q_OS_WIN
     MiniMuleWidget* m_miniMule = nullptr;

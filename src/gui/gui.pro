@@ -19,6 +19,9 @@ LIBS += \
 unix {
     LIBS += -lssl -lcrypto -lz -lminiupnpc -lyaml-cpp -larchive -lmaxminddb
 }
+unix:!macx {
+    QT += dbus
+}
 macx {
     LIBS += -framework IOKit -framework CoreFoundation -framework CoreServices
     ICON = ../../resources/icons/eMule.icns
@@ -53,7 +56,7 @@ win32 {
         -L"$$YAMLCPP_DIR/lib" -lyaml-cpp \
         -L"$$LIBARCHIVE_DIR/lib" -larchive \
         -lmaxminddb \
-        -lws2_32 -liphlpapi
+        -lws2_32 -liphlpapi -lole32 -luuid
 }
 
 RESOURCES += ../../resources/emuleqt.qrc
@@ -133,6 +136,10 @@ SOURCES += \
     utils/ClientIcons.cpp \
     utils/CountryFlags.cpp \
     utils/MetaResultActions.cpp \
+    utils/TaskbarProgress.cpp \
+    utils/TaskbarProgressMac.cpp \
+    utils/TaskbarProgressUnity.cpp \
+    utils/TaskbarProgressWin.cpp \
     dialogs/PasteLinksDialog.cpp \
     dialogs/PasteTextDialog.cpp \
     dialogs/WebLinksDialog.cpp \
@@ -219,6 +226,7 @@ HEADERS += \
     utils/CountryFlags.h \
     utils/InputHistory.h \
     utils/MetaResultActions.h \
+    utils/TaskbarProgress.h \
     utils/UrlPrefField.h \
     dialogs/PasteLinksDialog.h \
     dialogs/PasteTextDialog.h \

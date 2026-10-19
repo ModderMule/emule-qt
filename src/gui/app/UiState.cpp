@@ -94,6 +94,7 @@ void UiState::load(const QString& configDir)
         m_miniMuleAutoClose = root["miniMuleAutoClose"].as<bool>(m_miniMuleAutoClose);
         m_firstStartWizardDone = root["firstStartWizardDone"].as<bool>(m_firstStartWizardDone);
         m_showCountryFlags = root["showCountryFlags"].as<bool>(m_showCountryFlags);
+        m_showTaskbarProgress = root["showTaskbarProgress"].as<bool>(m_showTaskbarProgress);
         m_showDownloadToolbar = root["showDownloadToolbar"].as<bool>(m_showDownloadToolbar);
         m_toolbarButtonStyle = root["toolbarButtonStyle"].as<int>(m_toolbarButtonStyle);
         m_colorScheme = std::clamp(root["colorScheme"].as<int>(m_colorScheme), 0, 2);
@@ -208,6 +209,7 @@ void UiState::save(const QString& configDir)
     out << YAML::Key << "miniMuleAutoClose" << YAML::Value << m_miniMuleAutoClose;
     out << YAML::Key << "firstStartWizardDone" << YAML::Value << m_firstStartWizardDone;
     out << YAML::Key << "showCountryFlags" << YAML::Value << m_showCountryFlags;
+    out << YAML::Key << "showTaskbarProgress" << YAML::Value << m_showTaskbarProgress;
     out << YAML::Key << "showDownloadToolbar" << YAML::Value << m_showDownloadToolbar;
     out << YAML::Key << "toolbarButtonStyle" << YAML::Value << m_toolbarButtonStyle;
     out << YAML::Key << "colorScheme" << YAML::Value << m_colorScheme;

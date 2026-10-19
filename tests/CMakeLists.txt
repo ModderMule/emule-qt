@@ -955,6 +955,16 @@ target_include_directories(tst_TrayMeterIcon PRIVATE
     "${CMAKE_CURRENT_SOURCE_DIR}/stubs")
 target_link_libraries(tst_TrayMeterIcon PRIVATE Qt6::Widgets)
 
+# Taskbar / Dock download progress -- state rules, cache, Dock icon painting.
+# Only the platform-free source; the native backends are not compiled in.
+emule_add_test(tst_TaskbarProgress FOLDER "Gui"
+    SOURCES tst_TaskbarProgress.cpp
+            "${CMAKE_SOURCE_DIR}/src/gui/utils/TaskbarProgress.cpp")
+target_include_directories(tst_TaskbarProgress PRIVATE
+    "${CMAKE_SOURCE_DIR}/src/gui"
+    "${CMAKE_CURRENT_SOURCE_DIR}/stubs")
+target_link_libraries(tst_TaskbarProgress PRIVATE Qt6::Widgets)
+
 # Link codec shared by the Server Info, chat and IRC panes — header-only, so nothing
 # but the test itself is compiled. Widgets is for QTextDocument: one case replays the
 # rich-text parse a QTextBrowser does.

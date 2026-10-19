@@ -287,6 +287,7 @@ struct StatsSnapshot {
     qint64 totalDownSize = 0;
     qint64 totalDownDone = 0;
     qint64 totalDownLeft = 0;
+    qint64 downErrorCount = 0;        ///< files in PS_ERROR (taskbar progress state)
 
     /// Wall clock of the last statistics reset; 0 = never reset.
     qint64 statsLastReset = 0;

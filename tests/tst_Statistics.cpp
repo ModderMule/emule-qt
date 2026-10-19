@@ -41,7 +41,6 @@ private slots:
     void resetDownDatarateOverhead_clears();
     void resetUpDatarateOverhead_clears();
     void globalState_gettersSetters();
-    void globalProgress_gettersSetters();
     void avgDownloadRate_session();
     void avgUploadRate_session();
     void recordRate_appendsHistory();
@@ -81,9 +80,6 @@ void tst_Statistics::construct_default()
     QCOMPARE(stats.uploadTime(), uint32{0});
     QCOMPARE(stats.downloadTime(), uint32{0});
     QCOMPARE(stats.serverDuration(), uint32{0});
-    QCOMPARE(stats.globalDone(), 0.0f);
-    QCOMPARE(stats.globalSize(), 0.0f);
-    QCOMPARE(stats.overallStatus(), uint32{0});
 }
 
 void tst_Statistics::init_loadsFromPrefs()
@@ -377,20 +373,6 @@ void tst_Statistics::globalState_gettersSetters()
 
     stats.setServerConnectTime(11111);
     QCOMPARE(stats.serverConnectTime(), uint64{11111});
-}
-
-void tst_Statistics::globalProgress_gettersSetters()
-{
-    Statistics stats;
-
-    stats.setGlobalDone(50.5f);
-    QCOMPARE(stats.globalDone(), 50.5f);
-
-    stats.setGlobalSize(100.0f);
-    QCOMPARE(stats.globalSize(), 100.0f);
-
-    stats.setOverallStatus(0x01);
-    QCOMPARE(stats.overallStatus(), uint32{0x01});
 }
 
 void tst_Statistics::avgDownloadRate_session()

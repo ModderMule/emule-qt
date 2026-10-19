@@ -902,6 +902,7 @@ int main(int argc, char* argv[])
             mainWindow.setKadStatus(false, false, false);
             mainWindow.setNetworkStats(0, 0);
             mainWindow.updateTransferRates(0.0, 0.0, 0.0, 0.0);
+            mainWindow.clearTaskbarProgress();
         });
 
         // Poll transfer rates for the status bar (1 second interval)
@@ -951,6 +952,15 @@ int main(int argc, char* argv[])
                 const qint64 freeSpace =
                     stats.value(QStringLiteral("freeTempSpace")).toInteger();
                 mainWindow.updateMiniMule(completedDl, freeSpace);
+
+                // Taskbar / Dock progress over the whole download queue
+                auto num = [&](QLatin1StringView k) {
+                    return stats.value(QString(k)).toInteger();
+                };
+                mainWindow.updateTaskbarProgress(num(QLatin1StringView("totalDownSize")),
+                                                 num(QLatin1StringView("totalDownDone")),
+                                                 num(QLatin1StringView("downTransferring")),
+                                                 num(QLatin1StringView("downErrors")));
 
                 // Write online signature file if enabled
                 if (eMule::thePrefs.enableOnlineSignature()) {
