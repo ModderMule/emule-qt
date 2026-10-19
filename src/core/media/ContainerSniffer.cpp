@@ -62,7 +62,12 @@ QString sniffContainer(const QByteArray& head)
     };
 
     if (at(0, {0x30, 0x26, 0xB2, 0x75}))                          return QStringLiteral("ASF");
-    if (at(4, {'f', 't', 'y', 'p'}))                              return QStringLiteral("MP4");
+    // ISO/QuickTime: 'ftyp' first is only a recommendation. A movie may open
+    // with any of these top-level boxes; same list MediaInfo accepts.
+    for (const char* box : {"ftyp", "moov", "mdat", "wide", "free", "skip", "pnot"}) {
+        if (at(4, {quint8(box[0]), quint8(box[1]), quint8(box[2]), quint8(box[3])}))
+            return QStringLiteral("MP4");
+    }
     if (at(0, {'R','I','F','F'}) && at(8, {'A','V','I',' '}))     return QStringLiteral("AVI");
     if (at(0, {'R','I','F','F'}) && at(8, {'W','A','V','E'}))     return QStringLiteral("WAVE");
     if (at(0, {0x1A, 0x45, 0xDF, 0xA3}))                          return QStringLiteral("Matroska");

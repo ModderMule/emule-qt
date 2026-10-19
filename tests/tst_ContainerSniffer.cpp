@@ -46,6 +46,7 @@ private slots:
     void aFileTooShortToCarryItsSignatureDoesNotHaveIt();
     void anUnreadableFileIsUncheckedNotSuspect();
     void mp3IsDeliberatelyNotPromised();
+    void anMp4WithoutFtypFirstStillMatches();
     void theWarningSaysWhichKindOfWrongItIs();
 
 private:
@@ -152,6 +153,19 @@ void tst_ContainerSniffer::mp3IsDeliberatelyNotPromised()
 
     const QString path = write(QStringLiteral("song.mp3"), kJunk, 12);
     QCOMPARE(checkFile(path, QStringLiteral("song.mp3")).verdict, ContainerVerdict::Unchecked);
+}
+
+void tst_ContainerSniffer::anMp4WithoutFtypFirstStillMatches()
+{
+    // Issue #35: a valid .mp4 opening with 'moov' or 'free' was flagged a fake
+    // while the Content tab (MediaInfo) read it fine.
+    for (const char* box : {"moov", "mdat", "wide", "free", "skip", "pnot"}) {
+        QByteArray head("\x00\x00\x00\x08", 4);
+        head += box;
+        head += QByteArray(8, '\0');
+        QCOMPARE(sniffContainer(head), QStringLiteral("MP4"));
+        QCOMPARE(checkHead(head, QStringLiteral("movie.mp4")).verdict, ContainerVerdict::Matches);
+    }
 }
 
 void tst_ContainerSniffer::theWarningSaysWhichKindOfWrongItIs()

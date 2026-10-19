@@ -861,7 +861,8 @@ bool PartFile::getNextRequestedBlock(UpDownClient* sender,
 
     struct PartCandidate {
         uint32 part;
-        uint32 rank; // lower is better
+        uint32 rank;          // lower is better
+        bool preview = false; // ahead of every other part
     };
     std::vector<PartCandidate> candidates;
 
@@ -873,7 +874,9 @@ bool PartFile::getNextRequestedBlock(UpDownClient* sender,
     const bool a4afHeavy = srcCount <= static_cast<int>(m_a4afSrcList.size());
 
     // Preview chunks: first + last — for every file, or for this one in advanced mode
-    // (MFC PartFile.cpp:4680-4682)
+    // (MFC PartFile.cpp:4680-4682). Unlike MFC they come before very rare parts too:
+    // with few sources nearly every part is very rare, so MFC's option did nothing
+    // (issue #34)
     const bool isPreviewEnable =
         (thePrefs.previewPrio() || (m_previewPrio && thePrefs.showExtControls()))
         && fs > 2 * PARTSIZE && isPreviewableFileType();
@@ -933,10 +936,13 @@ bool PartFile::getNextRequestedBlock(UpDownClient* sender,
         }
 
         uint32 rank;
-        if (partSize > 0 && a4afHeavy) {
+        if (critPreview) {
+            rank = ((critRequested && !sameChunk) ? 20000u : 10000u)
+                 + (100u - critCompletion);
+        } else if (partSize > 0 && a4afHeavy) {
             // Too many A4AF sources: finishing started chunks comes first
             rank = freq
-                 + (critPreview ? 0u : 200u)
+                 + 200u   // MFC's preview bonus; moot, preview parts sort first
                  + static_cast<uint32>(!critRequested)
                  + (100u - critCompletion)
                  + static_cast<uint32>(!sameChunk)
@@ -948,9 +954,6 @@ bool PartFile::getNextRequestedBlock(UpDownClient* sender,
                  + (100u - critCompletion)
                  + static_cast<uint32>(!sameChunk)
                  + transferringClientsScore;
-        } else if (critPreview) {
-            rank = ((critRequested && !sameChunk) ? 20000u : 10000u)
-                 + (100u - critCompletion);
         } else if (freq <= rareBound) {
             rank = 25u * freq
                  + (critRequested ? 10101u : 10102u)
@@ -972,12 +975,14 @@ bool PartFile::getNextRequestedBlock(UpDownClient* sender,
                  + static_cast<uint32>(!sameChunk)
                  + bandwidthScore;
         }
-        candidates.push_back({p, rank});
+        candidates.push_back({p, rank, critPreview});
     }
 
     // Random among equal ranks, as MFC's pick from aBest
     std::ranges::shuffle(candidates, rng);
-    std::ranges::stable_sort(candidates, {}, &PartCandidate::rank);
+    std::ranges::stable_sort(candidates, {}, [](const PartCandidate& c) {
+        return std::pair{!c.preview, c.rank};
+    });
 
     for (const auto& cand : candidates) {
         if (blocksFound >= count)

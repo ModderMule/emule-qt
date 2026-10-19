@@ -65,6 +65,7 @@ private slots:
     void chunkSelection_spreadsTies();
     void chunkSelection_rarestFirst();
     void chunkSelection_shortLastPartNotFavoured();
+    void chunkSelection_previewBeatsVeryRare();
     void emptyBlock_alignsToEmBlockSize();
     void endPhase_followsWhatIsLeft();
     void lateDownload_healthyHolderKeepsItsBlock();
@@ -489,6 +490,41 @@ void tst_PartFile::chunkSelection_shortLastPartNotFavoured()
         QVERIFY(pf.getNextRequestedBlock(&client, blocks, count));
         QCOMPARE(blocks[0]->startOffset / PARTSIZE, uint64{0});
     }
+}
+
+void tst_PartFile::chunkSelection_previewBeatsVeryRare()
+{
+    // Issue #34: with few sources every part is very rare; MFC ranked those above
+    // the preview parts, so "preview chunks first" did nothing
+    const bool oldPrio = thePrefs.previewPrio();
+    const auto restore = qScopeGuard([oldPrio] { thePrefs.setPreviewPrio(oldPrio); });
+    thePrefs.setPreviewPrio(true);
+
+    for (int i = 0; i < 20; ++i) {
+        PartFile pf;
+        pf.setFileName(QStringLiteral("movie.avi"));
+        pf.setFileSize(PARTSIZE * 20);
+        uint8 hash[16] = {1};
+        pf.setFileHash(hash);
+        auto& freq = pf.srcPartFrequency();
+        std::ranges::fill(freq, uint16{2});
+        freq[7] = 1;   // rarest
+
+        UpDownClient client;
+        client.setCompleteSource(true);
+        Requested_Block_Struct* blocks[1] = {};
+        int count = 1;
+        QVERIFY(pf.getNextRequestedBlock(&client, blocks, count));
+        const uint64 part = blocks[0]->startOffset / PARTSIZE;
+        QVERIFY2(part == 0 || part == 19, qPrintable(QString::number(part)));
+    }
+
+    // Not a preview type: rarest wins as before
+    QCOMPARE(firstPickedPart(20, [](PartFile& pf) {
+        auto& freq = pf.srcPartFrequency();
+        std::ranges::fill(freq, uint16{2});
+        freq[7] = 1;
+    }), 7u);
 }
 
 void tst_PartFile::emptyBlock_alignsToEmBlockSize()
