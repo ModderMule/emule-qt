@@ -173,6 +173,14 @@ public:
         scheduleSave();
     }
 
+    /// Download progress on the taskbar button / Dock (MFC ShowWin7TaskbarGoodies).
+    [[nodiscard]] bool showTaskbarProgress() const { return m_showTaskbarProgress; }
+    void setShowTaskbarProgress(bool on)
+    {
+        m_showTaskbarProgress = on;
+        scheduleSave();
+    }
+
     /// The command bar beside the download list (MFC ShowDownloadToolbar).
     [[nodiscard]] bool showDownloadToolbar() const { return m_showDownloadToolbar; }
     void setShowDownloadToolbar(bool on)
@@ -326,6 +334,7 @@ private:
     bool m_miniMuleAutoClose = false;
     bool m_firstStartWizardDone = false;
     bool m_showCountryFlags = true;
+    bool m_showTaskbarProgress = true;
     bool m_showDownloadToolbar = true;
     int  m_colorScheme = 0;
     int  m_fontScalePercent = 100;

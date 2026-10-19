@@ -360,6 +360,7 @@ Replace the MFC application framework with Qt Widgets. The GUI connects to the `
 - [x] Port `DialogMinTrayBtn.cpp/h` → not needed; MainWindow closeEvent + QSystemTrayIcon handles minimize-to-tray
 - [x] Port `TrayDialog.cpp/h` → not needed; MainWindow directly manages QSystemTrayIcon
 - [x] Port `TaskbarNotifier.cpp/h` → `QSystemTrayIcon::showMessage()` — implemented in MainWindow
+- [x] Port `CemuleDlg::UpdateStatusBarProgress` (Win7 taskbar progress) → `utils/TaskbarProgress` — Windows ITaskbarList3, Linux Unity LauncherEntry (D-Bus), macOS Dock icon; up/down overlay icon still ToDo
 - [x] Port `ExitBox.cpp/h` → `QMessageBox` (used in 10 files for confirmations/warnings)
 - [x] Port `TrayMenuBtn.cpp/h` → `QMenu` with `QWidgetAction` speed controls (tray context menu in MainWindow)
 - [x] Port `resource.h` → Qt resource system (`.qrc`) — `resources/emuleqt.qrc` with 200+ icons

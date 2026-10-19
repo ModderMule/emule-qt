@@ -289,6 +289,7 @@ private:
     QCheckBox* m_showSpeedGraphCheck = nullptr;
     QSpinBox*  m_speedGraphTimeSpin = nullptr;
     QCheckBox* m_storeSearchesCheck = nullptr;
+    QCheckBox* m_showTaskbarProgressCheck = nullptr;
     QCheckBox* m_disableKnownClientListCheck = nullptr;
     QCheckBox* m_disableQueueListCheck = nullptr;
     QCheckBox* m_useAutoCompletionCheck = nullptr;

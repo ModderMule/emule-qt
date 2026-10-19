@@ -720,7 +720,7 @@ Tiene comentarios</translation>
         <translation type="vanished">%1 Bytes</translation>
     </message>
     <message>
-        <location filename="../src/gui/dialogs/OptionsDialog.cpp" line="+3088"/>
+        <location filename="../src/gui/dialogs/OptionsDialog.cpp" line="+3097"/>
         <source>Test</source>
         <translation>Probar</translation>
     </message>
@@ -4533,19 +4533,19 @@ Por favor elija otro:</translation>
 <context>
     <name>eMule::MainWindow</name>
     <message>
-        <location filename="../src/gui/app/MainWindow.cpp" line="+90"/>
-        <location line="+486"/>
+        <location filename="../src/gui/app/MainWindow.cpp" line="+91"/>
+        <location line="+493"/>
         <source>eMule Qt v%1</source>
         <translation>eMule Qt v%1</translation>
     </message>
     <message>
-        <location line="-377"/>
+        <location line="-379"/>
         <location line="+9"/>
         <source>New Version Available</source>
         <translation>Nueva versión disponible</translation>
     </message>
     <message>
-        <location line="+218"/>
+        <location line="+220"/>
         <source>eD2K: Connected (LowID)</source>
         <translation>eD2K: Conectado (LowID)</translation>
     </message>
@@ -4561,12 +4561,12 @@ Por favor elija otro:</translation>
     </message>
     <message>
         <location line="+8"/>
-        <location line="+1294"/>
+        <location line="+1316"/>
         <source>eD2K: Disconnected</source>
         <translation>eD2K: Desconectado</translation>
     </message>
     <message>
-        <location line="-1237"/>
+        <location line="-1259"/>
         <source>Kad: Connected</source>
         <translation>Kad: Conectado</translation>
     </message>
@@ -4582,17 +4582,17 @@ Por favor elija otro:</translation>
     </message>
     <message>
         <location line="+4"/>
-        <location line="+1229"/>
+        <location line="+1251"/>
         <source>Kad: Disconnected</source>
         <translation>Kad: Desconectado</translation>
     </message>
     <message>
-        <location line="-1220"/>
+        <location line="-1242"/>
         <source>Users: %1 | Files: %2</source>
         <translation>Usuarios: %1 | Archivos: %2</translation>
     </message>
     <message>
-        <location line="+423"/>
+        <location line="+434"/>
         <source>Open Incoming Folder...</source>
         <translation>Abrir carpeta de entrada...</translation>
     </message>
@@ -4632,14 +4632,14 @@ Por favor elija otro:</translation>
         <translation>Características</translation>
     </message>
     <message>
-        <location line="-781"/>
+        <location line="-794"/>
         <location line="+7"/>
-        <location line="+777"/>
+        <location line="+790"/>
         <source>Version Check</source>
         <translation>Comprobar versión</translation>
     </message>
     <message>
-        <location line="-839"/>
+        <location line="-852"/>
         <source>Quit eMule Qt</source>
         <translation>Salir de eMule Qt</translation>
     </message>
@@ -4701,7 +4701,7 @@ Activa al menos una en Opciones → Conexión para conectarte.</translation>
         <translation>eMule versión %1 listo</translation>
     </message>
     <message>
-        <location line="+75"/>
+        <location line="+77"/>
         <source>Blocked: network interface not available</source>
         <translation>Bloqueado: interfaz de red no disponible</translation>
     </message>
@@ -4828,7 +4828,7 @@ Subida: %3 | Bajada: %4</translation>
         <translation>Entrada de registro</translation>
     </message>
     <message>
-        <location line="+115"/>
+        <location line="+126"/>
         <source>eMule Log</source>
         <translation>Registro de eMule</translation>
     </message>
@@ -4912,7 +4912,7 @@ Actívela en Opciones → Interfaz web e inténtelo de nuevo.</translation>
         <translation>Abrir opciones</translation>
     </message>
     <message>
-        <location line="+175"/>
+        <location line="+186"/>
         <source>Main</source>
         <translation>Principal</translation>
     </message>
@@ -6205,36 +6205,36 @@ Download it again?</source>
 <context>
     <name>eMule::OptionsDialog</name>
     <message>
-        <location filename="../src/gui/dialogs/OptionsDialog.cpp" line="-2982"/>
+        <location filename="../src/gui/dialogs/OptionsDialog.cpp" line="-2991"/>
         <source>Options</source>
         <translation>Opciones</translation>
     </message>
     <message>
         <location line="+61"/>
-        <location line="+1952"/>
+        <location line="+1961"/>
         <source>OK</source>
         <translation>Aceptar</translation>
     </message>
     <message>
-        <location line="-1951"/>
-        <location line="+1952"/>
+        <location line="-1960"/>
+        <location line="+1961"/>
         <source>Cancel</source>
         <translation>Cancelar</translation>
     </message>
     <message>
-        <location line="-1951"/>
-        <location line="+5611"/>
+        <location line="-1960"/>
+        <location line="+5620"/>
         <source>Apply</source>
         <translation>Aplicar</translation>
     </message>
     <message>
-        <location line="-5610"/>
+        <location line="-5619"/>
         <source>Help</source>
         <translation>Ayuda</translation>
     </message>
     <message>
-        <location line="+257"/>
-        <location line="+1962"/>
+        <location line="+258"/>
+        <location line="+1970"/>
         <location line="+62"/>
         <location line="+5"/>
         <location line="+9"/>
@@ -6243,7 +6243,7 @@ Download it again?</source>
         <translation>Filtro IP</translation>
     </message>
     <message>
-        <location line="-2048"/>
+        <location line="-2056"/>
         <source>IP filter reloaded: %1 entries.</source>
         <translation>Filtro IP recargado: %1 entradas.</translation>
     </message>
@@ -6274,18 +6274,18 @@ Download it again?</source>
     </message>
     <message>
         <location line="+8"/>
-        <location line="+5537"/>
+        <location line="+5546"/>
         <source>Language</source>
         <translation>Idioma</translation>
     </message>
     <message>
-        <location line="-5534"/>
+        <location line="-5543"/>
         <source>System Default</source>
         <translation>Predeterminado del sistema</translation>
     </message>
     <message>
         <location line="+14"/>
-        <location line="+718"/>
+        <location line="+726"/>
         <location line="+314"/>
         <location line="+450"/>
         <location line="+248"/>
@@ -6293,7 +6293,7 @@ Download it again?</source>
         <translation>Varios</translation>
     </message>
     <message>
-        <location line="-1727"/>
+        <location line="-1735"/>
         <source>Bring to front on link click</source>
         <translation>Traer al frente al hacer clic en enlace</translation>
     </message>
@@ -6379,25 +6379,25 @@ Download it again?</source>
     </message>
     <message>
         <location line="+8"/>
-        <location line="+5473"/>
+        <location line="+5482"/>
         <source>Core</source>
         <translation>Núcleo</translation>
     </message>
     <message>
-        <location line="-5468"/>
+        <location line="-5477"/>
         <source>Address:</source>
         <translation>Dirección:</translation>
     </message>
     <message>
         <location line="+4"/>
-        <location line="+1209"/>
+        <location line="+1217"/>
         <location line="+720"/>
         <location line="+421"/>
         <source>Port:</source>
         <translation>Puerto:</translation>
     </message>
     <message>
-        <location line="-2347"/>
+        <location line="-2355"/>
         <source>authentication token</source>
         <translation>token de autenticación</translation>
     </message>
@@ -6507,7 +6507,7 @@ Are you sure you want to continue?</source>
         <translation>Recordar búsquedas abiertas entre reinicios</translation>
     </message>
     <message>
-        <location line="+3"/>
+        <location line="+11"/>
         <source>Use original eMule icons</source>
         <translation>Usar iconos originales de eMule</translation>
     </message>
@@ -6658,12 +6658,12 @@ Are you sure you want to continue?</source>
     </message>
     <message>
         <location line="+4"/>
-        <location line="+6593"/>
+        <location line="+6596"/>
         <source>Any</source>
         <translation>Cualquiera</translation>
     </message>
     <message>
-        <location line="-6591"/>
+        <location line="-6594"/>
         <source>Use only this network interface, for example a VPN tunnel. Pick one from the list, or type an IP address or a subnet such as 10.64.0.0/10 (the interface holding an address in it). Connections through a proxy are not bound.</source>
         <translation>Usar solo esta interfaz de red, por ejemplo un túnel VPN. Elija una de la lista o escriba una dirección IP o una subred como 10.64.0.0/10 (la interfaz que tenga una dirección en ella). Las conexiones a través de un proxy no se vinculan.</translation>
     </message>
@@ -8128,7 +8128,17 @@ A partir de entonces, todas las conexiones de Usenet pasan por el proxy, por lo 
         <translation>Estricta</translation>
     </message>
     <message>
-        <location line="-2292"/>
+        <location line="-2303"/>
+        <source>Show download progress on the Dock icon</source>
+        <translation>Mostrar el progreso de descarga en el icono del Dock</translation>
+    </message>
+    <message>
+        <location line="+2"/>
+        <source>Show download progress on the taskbar button</source>
+        <translation>Mostrar el progreso de descarga en el botón de la barra de tareas</translation>
+    </message>
+    <message>
+        <location line="+9"/>
         <source>Shows advanced entries in context menus and extra details in lists.</source>
         <translation>Muestra entradas avanzadas en los menús contextuales y detalles adicionales en las listas.</translation>
     </message>
@@ -9125,7 +9135,7 @@ Añadir uno más tarde no obtiene su catálogo antiguo: un indexador nuevo tiene
         <translation>Desactivado</translation>
     </message>
     <message>
-        <location line="+1113"/>
+        <location line="+1116"/>
         <source>Theme</source>
         <translation>Tema</translation>
     </message>
@@ -9169,7 +9179,7 @@ Añadir uno más tarde no obtiene su catálogo antiguo: un indexador nuevo tiene
         <translation type="vanished">Aceptar enlaces eD2K automáticamente solo durante la ejecución</translation>
     </message>
     <message>
-        <location line="-2736"/>
+        <location line="-2739"/>
         <source>Use credit system (reward uploaders)</source>
         <translation>Usar sistema de créditos (recompensar a los que comparten)</translation>
     </message>
@@ -9483,7 +9493,7 @@ Añadir uno más tarde no obtiene su catálogo antiguo: un indexador nuevo tiene
         <translation>Todas</translation>
     </message>
     <message>
-        <location line="+288"/>
+        <location line="+289"/>
         <source>Proxy settings will only apply to new connections.
 Restart eMule for all connections to use the new proxy settings.
 
@@ -9494,7 +9504,7 @@ Reinicie eMule para que todas las conexiones usen la nueva configuración de pro
 Las conexiones a los servidores de noticias cambian de inmediato.</translation>
     </message>
     <message>
-        <location line="+433"/>
+        <location line="+435"/>
         <source>Web Interface</source>
         <translation>Interfaz web</translation>
     </message>
@@ -9569,17 +9579,17 @@ Las conexiones a los servidores de noticias cambian de inmediato.</translation>
         <translation>Restablecer valores predeterminados</translation>
     </message>
     <message>
-        <location line="-4805"/>
+        <location line="-4808"/>
         <location line="+1019"/>
         <location line="+154"/>
         <location line="+1342"/>
         <location line="+316"/>
-        <location line="+1972"/>
+        <location line="+1975"/>
         <source>Remove</source>
         <translation>Eliminar</translation>
     </message>
     <message>
-        <location line="-5978"/>
+        <location line="-5981"/>
         <source>New eMule Qt version detected</source>
         <translation>Se ha detectado una nueva versión de eMule Qt</translation>
     </message>
@@ -9787,7 +9797,7 @@ Ajústelo algo por debajo de su plan. La cifra se mide aquí, por lo que queda u
         <location line="+1019"/>
         <location line="+154"/>
         <location line="+1615"/>
-        <location line="+2010"/>
+        <location line="+2013"/>
         <source>Add</source>
         <translation>Añadir</translation>
     </message>
@@ -9800,7 +9810,7 @@ Ajústelo algo por debajo de su plan. La cifra se mide aquí, por lo que queda u
         <translation type="vanished">Introducir valor:</translation>
     </message>
     <message>
-        <location line="-1973"/>
+        <location line="-1976"/>
         <source>Edit Value</source>
         <translation>Editar valor</translation>
     </message>
@@ -9810,7 +9820,7 @@ Ajústelo algo por debajo de su plan. La cifra se mide aquí, por lo que queda u
         <translation>La página de opciones %1 aún no está implementada.</translation>
     </message>
     <message>
-        <location line="+181"/>
+        <location line="+182"/>
         <source>Proxy</source>
         <translation>Proxy</translation>
     </message>
@@ -9831,7 +9841,7 @@ Reinicie eMule para que todas las conexiones usen la nueva configuración de pro
         <translation>La configuración de conexión al núcleo tendrá efecto después de reiniciar la aplicación.</translation>
     </message>
     <message>
-        <location line="+34"/>
+        <location line="+36"/>
         <source>Icons</source>
         <translation>Iconos</translation>
     </message>

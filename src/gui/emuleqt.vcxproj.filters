@@ -148,6 +148,18 @@
     <ClCompile Include="utils\PanelPoller.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
+    <ClCompile Include="utils\TaskbarProgress.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="utils\TaskbarProgressMac.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="utils\TaskbarProgressUnity.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="utils\TaskbarProgressWin.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
     <ClCompile Include="utils\FileAssociation.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
@@ -355,6 +367,9 @@
       <Filter>Header Files</Filter>
     </ClInclude>
     <ClInclude Include="controls\TrayMeterIcon.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="utils\TaskbarProgress.h">
       <Filter>Header Files</Filter>
     </ClInclude>
     <ClInclude Include="dialogs\FindInListDialog.h">

@@ -499,6 +499,8 @@ StatsSnapshot collectStatsSnapshot()
         for (const auto* f : dq->files()) {
             totalSources += f->sourceCount();
             out.downTransferring += f->transferringSrcCount();
+            if (f->status() == PartFileStatus::Error)
+                ++out.downErrorCount;
 
             ++totalCount;
             const auto size = static_cast<qint64>(f->fileSize());
@@ -879,6 +881,7 @@ QCborMap toCborMap(const StatsSnapshot& s)
     put(QStringLiteral("totalDownSize"), s.totalDownSize);
     put(QStringLiteral("totalDownDone"), s.totalDownDone);
     put(QStringLiteral("totalDownLeft"), s.totalDownLeft);
+    put(QStringLiteral("downErrors"), s.downErrorCount);
 
     // Records
     put(QStringLiteral("statsLastReset"), s.statsLastReset);

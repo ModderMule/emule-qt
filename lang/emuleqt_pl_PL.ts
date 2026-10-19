@@ -565,7 +565,7 @@ Uruchom go z --new-instance lub --config &lt;dir&gt;, aby otworzyć kolejne okno
         <translation>Normalny</translation>
     </message>
     <message>
-        <location filename="../src/gui/dialogs/OptionsDialog.cpp" line="+3088"/>
+        <location filename="../src/gui/dialogs/OptionsDialog.cpp" line="+3097"/>
         <source>Test</source>
         <translation>Test</translation>
     </message>
@@ -4140,13 +4140,13 @@ Wybierz inny:</translation>
 <context>
     <name>eMule::MainWindow</name>
     <message>
-        <location filename="../src/gui/app/MainWindow.cpp" line="+90"/>
-        <location line="+486"/>
+        <location filename="../src/gui/app/MainWindow.cpp" line="+91"/>
+        <location line="+493"/>
         <source>eMule Qt v%1</source>
         <translation>eMule Qt v%1</translation>
     </message>
     <message>
-        <location line="-411"/>
+        <location line="-413"/>
         <source>Quit eMule Qt</source>
         <translation>Zakończ eMule Qt</translation>
     </message>
@@ -4183,12 +4183,12 @@ Używasz wersji %2. Otworzyć stronę eMule Qt?</translation>
     <message>
         <location line="+11"/>
         <location line="+7"/>
-        <location line="+777"/>
+        <location line="+790"/>
         <source>Version Check</source>
         <translation>Sprawdzanie wersji</translation>
     </message>
     <message>
-        <location line="-783"/>
+        <location line="-796"/>
         <source>You are running the latest version of eMule Qt (v%1).</source>
         <translation>Używasz najnowszej wersji eMule Qt (v%1).</translation>
     </message>
@@ -4221,7 +4221,7 @@ Włącz co najmniej jedną w Opcje → Połączenie, aby się połączyć.</tran
         <translation>eMule w wersji %1 gotowy do pracy</translation>
     </message>
     <message>
-        <location line="+63"/>
+        <location line="+65"/>
         <source>eD2K: Connected (LowID)</source>
         <translation>eD2K: Podłączony (niskie ID)</translation>
     </message>
@@ -4242,12 +4242,12 @@ Włącz co najmniej jedną w Opcje → Połączenie, aby się połączyć.</tran
     </message>
     <message>
         <location line="+4"/>
-        <location line="+1294"/>
+        <location line="+1316"/>
         <source>eD2K: Disconnected</source>
         <translation>eD2K: Rozłączony</translation>
     </message>
     <message>
-        <location line="-1287"/>
+        <location line="-1309"/>
         <source>eD2K Server: %1  (%2 Users)</source>
         <translation>Serwer eD2K: %1  (%2 użytkowników)</translation>
     </message>
@@ -4283,12 +4283,12 @@ Włącz co najmniej jedną w Opcje → Połączenie, aby się połączyć.</tran
     </message>
     <message>
         <location line="+4"/>
-        <location line="+1229"/>
+        <location line="+1251"/>
         <source>Kad: Disconnected</source>
         <translation>Kad: Rozłączony</translation>
     </message>
     <message>
-        <location line="-1220"/>
+        <location line="-1242"/>
         <source>Users: %1 | Files: %2</source>
         <translation>Użytkownicy: %1 | Pliki: %2</translation>
     </message>
@@ -4395,7 +4395,7 @@ Wysyłanie: %3 | Pobieranie: %4</translation>
         <translation>Wpis logu</translation>
     </message>
     <message>
-        <location line="+115"/>
+        <location line="+126"/>
         <source>eMule Log</source>
         <translation>Log eMule</translation>
     </message>
@@ -4519,7 +4519,7 @@ Włącz go w Opcje → Interfejs WWW i spróbuj ponownie.</translation>
         <translation>Otwórz opcje</translation>
     </message>
     <message>
-        <location line="+175"/>
+        <location line="+186"/>
         <source>Main</source>
         <translation>Główne</translation>
     </message>
@@ -5810,36 +5810,36 @@ Pobrać ponownie?</translation>
 <context>
     <name>eMule::OptionsDialog</name>
     <message>
-        <location filename="../src/gui/dialogs/OptionsDialog.cpp" line="-2982"/>
+        <location filename="../src/gui/dialogs/OptionsDialog.cpp" line="-2991"/>
         <source>Options</source>
         <translation>Opcje</translation>
     </message>
     <message>
         <location line="+61"/>
-        <location line="+1952"/>
+        <location line="+1961"/>
         <source>OK</source>
         <translation>OK</translation>
     </message>
     <message>
-        <location line="-1951"/>
-        <location line="+1952"/>
+        <location line="-1960"/>
+        <location line="+1961"/>
         <source>Cancel</source>
         <translation>Anuluj</translation>
     </message>
     <message>
-        <location line="-1951"/>
-        <location line="+5611"/>
+        <location line="-1960"/>
+        <location line="+5620"/>
         <source>Apply</source>
         <translation>Zatwierdź</translation>
     </message>
     <message>
-        <location line="-5610"/>
+        <location line="-5619"/>
         <source>Help</source>
         <translation>Pomoc</translation>
     </message>
     <message>
-        <location line="+257"/>
-        <location line="+1962"/>
+        <location line="+258"/>
+        <location line="+1970"/>
         <location line="+62"/>
         <location line="+5"/>
         <location line="+9"/>
@@ -5848,7 +5848,7 @@ Pobrać ponownie?</translation>
         <translation>Filtr IP</translation>
     </message>
     <message>
-        <location line="-2048"/>
+        <location line="-2056"/>
         <source>IP filter reloaded: %1 entries.</source>
         <translation>Przeładowano filtr IP: %1 wpisów.</translation>
     </message>
@@ -5879,18 +5879,18 @@ Pobrać ponownie?</translation>
     </message>
     <message>
         <location line="+8"/>
-        <location line="+5537"/>
+        <location line="+5546"/>
         <source>Language</source>
         <translation>Język</translation>
     </message>
     <message>
-        <location line="-5534"/>
+        <location line="-5543"/>
         <source>System Default</source>
         <translation>Domyślny systemowy</translation>
     </message>
     <message>
         <location line="+14"/>
-        <location line="+718"/>
+        <location line="+726"/>
         <location line="+314"/>
         <location line="+450"/>
         <location line="+248"/>
@@ -5898,7 +5898,7 @@ Pobrać ponownie?</translation>
         <translation>Inne opcje</translation>
     </message>
     <message>
-        <location line="-1727"/>
+        <location line="-1735"/>
         <source>Bring to front on link click</source>
         <translation>Przywróć po kliknięciu na link</translation>
     </message>
@@ -5984,25 +5984,25 @@ Pobrać ponownie?</translation>
     </message>
     <message>
         <location line="+8"/>
-        <location line="+5473"/>
+        <location line="+5482"/>
         <source>Core</source>
         <translation>Rdzeń</translation>
     </message>
     <message>
-        <location line="-5468"/>
+        <location line="-5477"/>
         <source>Address:</source>
         <translation>Adres:</translation>
     </message>
     <message>
         <location line="+4"/>
-        <location line="+1209"/>
+        <location line="+1217"/>
         <location line="+720"/>
         <location line="+421"/>
         <source>Port:</source>
         <translation>Port:</translation>
     </message>
     <message>
-        <location line="-2347"/>
+        <location line="-2355"/>
         <source>authentication token</source>
         <translation>token uwierzytelniający</translation>
     </message>
@@ -6112,7 +6112,17 @@ Czy na pewno chcesz kontynuować?</translation>
         <translation>Pamiętaj otwarte wyszukiwania między uruchomieniami</translation>
     </message>
     <message>
-        <location line="+3"/>
+        <location line="+5"/>
+        <source>Show download progress on the Dock icon</source>
+        <translation>Pokaż postęp pobierania na ikonie w Docku</translation>
+    </message>
+    <message>
+        <location line="+2"/>
+        <source>Show download progress on the taskbar button</source>
+        <translation>Pokaż postęp pobierania na przycisku paska zadań</translation>
+    </message>
+    <message>
+        <location line="+4"/>
         <source>Use original eMule icons</source>
         <translation>Używaj oryginalnych ikon eMule</translation>
     </message>
@@ -6343,12 +6353,12 @@ Czy na pewno chcesz kontynuować?</translation>
     </message>
     <message>
         <location line="+4"/>
-        <location line="+6593"/>
+        <location line="+6596"/>
         <source>Any</source>
         <translation>Dowolny</translation>
     </message>
     <message>
-        <location line="-6591"/>
+        <location line="-6594"/>
         <source>Use only this network interface, for example a VPN tunnel. Pick one from the list, or type an IP address or a subnet such as 10.64.0.0/10 (the interface holding an address in it). Connections through a proxy are not bound.</source>
         <translation>Używaj tylko tego interfejsu sieciowego, np. tunelu VPN. Wybierz go z listy lub wpisz adres IP albo podsieć, np. 10.64.0.0/10 (interfejs posiadający adres z tej podsieci). Połączenia przez proxy nie są wiązane.</translation>
     </message>
@@ -7638,22 +7648,22 @@ Każde połączenie Usenet przechodzi wtedy przez proxy, więc jego prędkość 
         <location line="+1019"/>
         <location line="+154"/>
         <location line="+1615"/>
-        <location line="+2010"/>
+        <location line="+2013"/>
         <source>Add</source>
         <translation>Dodaj</translation>
     </message>
     <message>
-        <location line="-4797"/>
+        <location line="-4800"/>
         <location line="+1019"/>
         <location line="+154"/>
         <location line="+1342"/>
         <location line="+316"/>
-        <location line="+1972"/>
+        <location line="+1975"/>
         <source>Remove</source>
         <translation>Usuń</translation>
     </message>
     <message>
-        <location line="-4782"/>
+        <location line="-4785"/>
         <source>Display name (optional)</source>
         <translation>Nazwa wyświetlana (opcjonalnie)</translation>
     </message>
@@ -9187,7 +9197,7 @@ Dodanie indeksera później nie pobiera jego archiwum: nowy indekser dostaje wł
         <translation>Strona ustawień %1 nie jest jeszcze zaimplementowana.</translation>
     </message>
     <message>
-        <location line="+181"/>
+        <location line="+182"/>
         <source>Proxy</source>
         <translation>Proxy</translation>
     </message>
@@ -9213,7 +9223,7 @@ Połączenia z serwerami news przełączają się natychmiast.</translation>
         <translation>Ustawienia połączenia z rdzeniem zaczną działać po ponownym uruchomieniu aplikacji.</translation>
     </message>
     <message>
-        <location line="+34"/>
+        <location line="+36"/>
         <source>Icons</source>
         <translation>Ikony</translation>
     </message>
