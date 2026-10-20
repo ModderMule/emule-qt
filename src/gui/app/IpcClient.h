@@ -278,6 +278,11 @@ private:
     /// this process that has not got round to reading it.
     [[nodiscard]] bool peerStillTalking() const;
 
+    /// A reply timer ran out on a loopback link that is still open: the core is
+    /// alive but its loop is held by a load stage. A new connection would queue
+    /// behind the same stage, so keep this one. Issues #24, #40.
+    [[nodiscard]] bool waitOnBusyCore(bool handshake);
+
     /// Fetch the daemon's Server Info backlog and replay it through
     /// serverMessageReceived. The daemon outlives the GUI, so without this a GUI
     /// restart shows an empty pane even though the greeting already arrived.
@@ -308,6 +313,7 @@ private:
     bool m_handshaked = false;
     bool m_usenetEnginePaused = false;
     bool m_autoReconnect = false;
+    bool m_waitingOnBusyCore = false;   // this connection outlived a reply timer
     QDeadlineTimer m_restartDeadline;   // expired = no restart pending
     QDeadlineTimer m_startDeadline;     // expired = no launched core awaited
     int64_t m_lastKadId     = 0;

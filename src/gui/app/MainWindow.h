@@ -358,6 +358,7 @@ private:
     // System tray icon for popup notifications
     QSystemTrayIcon* m_trayIcon = nullptr;
     Qt::WindowStates m_stateBeforeMinimize = Qt::WindowNoState;   // maximized/fullscreen only
+    QElapsedTimer m_restoreRequested; ///< restoreWindow() call; stale "minimized" may still arrive
     QSoundEffect* m_notifySound = nullptr;
     QStringList m_lastNotification;   ///< title, text, sound — what was last asked for
     QElapsedTimer m_lastLogNotify;    ///< when notifyLogEntry() last showed one

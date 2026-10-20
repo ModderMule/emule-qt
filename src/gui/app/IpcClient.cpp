@@ -187,6 +187,10 @@ IpcClient::IpcClient(QObject* parent)
 
     m_handshakeTimer.setSingleShot(true);
     connect(&m_handshakeTimer, &QTimer::timeout, this, [this]() {
+        if (waitOnBusyCore(/*handshake=*/true)) {
+            m_handshakeTimer.start(m_handshakeTimeoutMs);
+            return;
+        }
         logWarning(QStringLiteral("IPC handshake timed out — will retry"));
         // A refusal already says more than "no answer" does
         if (m_coreLink != CoreLink::Refused)
@@ -201,6 +205,10 @@ IpcClient::IpcClient(QObject* parent)
         // A busy GUI reads late: the pong may sit behind a backlog of frames. A
         // reconnect then would refetch every list on top of that backlog.
         if (peerStillTalking()) {
+            m_keepaliveTimeoutTimer.start(m_keepaliveTimeoutMs);
+            return;
+        }
+        if (waitOnBusyCore(/*handshake=*/false)) {
             m_keepaliveTimeoutTimer.start(m_keepaliveTimeoutMs);
             return;
         }
@@ -518,6 +526,7 @@ void IpcClient::onSocketConnected()
     // Of the state pushes waiting to be handled only the newest of a kind matters
     m_connection->setCoalesceIncoming(true);
 
+    m_waitingOnBusyCore = false;
     if (m_coreLink != CoreLink::NotResponding && m_coreLink != CoreLink::Refused)
         setCoreLink(CoreLink::Handshaking);
     performHandshake();
@@ -530,6 +539,7 @@ void IpcClient::onMessageReceived(const IpcMessage& msg)
         emit ipcLogMessage(
             QStringLiteral("%1 [seq=%2]").arg(ipcMsgTypeName(msg.type())).arg(msg.seqId()),
             /*outgoing=*/false);
+    m_waitingOnBusyCore = false;   // it answers again: the next timeout is judged afresh
 
     // Check if this is a handshake response
     if (!m_handshaked && msg.type() == IpcMsgType::HandshakeOk) {
@@ -970,6 +980,27 @@ void IpcClient::setCoreLink(CoreLink link)
 bool IpcClient::peerStillTalking() const
 {
     return m_connection && m_connection->isConnected() && m_connection->hasPendingInput();
+}
+
+bool IpcClient::waitOnBusyCore(bool handshake)
+{
+    // Remote: a silent link may be a dead path, and only a reconnect finds out.
+    // Locally a core that is gone resets the socket at once.
+    if (!m_connection || !m_connection->isConnected() || !m_address.isLoopback())
+        return false;
+    // Handshake: a core we launched or restarted (its load stages block the loop
+    // for seconds with a large share). Keepalive: a core that said it is loading.
+    const bool busy = m_waitingOnBusyCore
+                   || (handshake ? daemonStarting() || daemonRestarting()
+                                 : m_coreLink == CoreLink::Loading);
+    if (!busy)
+        return false;
+    if (!m_waitingOnBusyCore) {
+        logInfo(handshake ? QStringLiteral("Core is busy starting up, still waiting for its answer")
+                          : QStringLiteral("Core is busy loading its files, still waiting for its answer"));
+        m_waitingOnBusyCore = true;
+    }
+    return true;
 }
 
 } // namespace eMule

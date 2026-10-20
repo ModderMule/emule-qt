@@ -442,12 +442,14 @@ std::vector<KnownFile*> SharedFileList::filesInDirectory(const QString& dir) con
 std::vector<QString> SharedFileList::browseDirectoryNames()
 {
     resetPseudoDirNames();   // purge stale names
+    // once per request: a large share has thousands of dirs (issue #40)
+    const ShareRules rules = shareRules();
     std::vector<QString> names;
     const auto add = [&](const QStringList& dirs) {
         for (const QString& dir : dirs) {
             if (dir.isEmpty())
                 continue;
-            if (const QString name = pseudoDirName(dir); !name.isEmpty())
+            if (const QString name = pseudoDirName(rules, dir); !name.isEmpty())
                 names.push_back(name);
         }
     };
@@ -458,41 +460,7 @@ std::vector<QString> SharedFileList::browseDirectoryNames()
 
 QString SharedFileList::pseudoDirName(const QString& dir)
 {
-    const ShareRules rules = shareRules();
-    if (!shouldBeShared(rules, dir, {}, false))
-        return {};
-    const QString key = pathKey(dir);
-    for (const QString& named : std::as_const(m_pseudoDirNames))
-        if (pathKey(named) == key)
-            return {};   // not sending the same directory again
-
-    // Last component; a shared parent is kept in front, an unshared one is never named.
-    QString rest = QDir::cleanPath(dir);
-    QString name;
-    for (qsizetype pos; (pos = rest.lastIndexOf(QLatin1Char('/'))) >= 0;) {
-        name.prepend(rest.mid(pos));
-        rest.truncate(pos);
-        if (rest.isEmpty() || !shouldBeShared(rules, rest, {}, false))
-            break;
-    }
-    if (name.size() <= 1)
-        name = rest.isEmpty() ? QStringLiteral("/") : rest;   // a root directory
-    else
-        name.remove(0, 1);
-
-    if (m_pseudoDirNames.contains(name)) {
-        QString unique;
-        for (int i = 2;; ++i) {
-            unique = QStringLiteral("%1_%2").arg(name).arg(i);
-            if (!m_pseudoDirNames.contains(unique))
-                break;
-            if (i > 200)
-                return {};
-        }
-        name = unique;
-    }
-    m_pseudoDirNames.insert(name, dir);
-    return name;
+    return pseudoDirName(shareRules(), dir);
 }
 
 QString SharedFileList::dirNameByPseudo(const QString& pseudoName) const
@@ -2227,6 +2195,48 @@ void SharedFileList::publishDueNotes(time_t tProbe)
     } else {
         m_notesProbeRestUntil = tProbe + kPublishProbeRestSecs;
     }
+}
+
+// ---------------------------------------------------------------------------
+// pseudoDirName (private)
+// ---------------------------------------------------------------------------
+
+QString SharedFileList::pseudoDirName(const ShareRules& rules, const QString& dir)
+{
+    if (!shouldBeShared(rules, dir, {}, false))
+        return {};
+    const QString key = pathKey(dir);
+    if (m_pseudoDirKeys.contains(key))
+        return {};   // not sending the same directory again
+
+    // Last component; a shared parent is kept in front, an unshared one is never named.
+    QString rest = QDir::cleanPath(dir);
+    QString name;
+    for (qsizetype pos; (pos = rest.lastIndexOf(QLatin1Char('/'))) >= 0;) {
+        name.prepend(rest.mid(pos));
+        rest.truncate(pos);
+        if (rest.isEmpty() || !shouldBeShared(rules, rest, {}, false))
+            break;
+    }
+    if (name.size() <= 1)
+        name = rest.isEmpty() ? QStringLiteral("/") : rest;   // a root directory
+    else
+        name.remove(0, 1);
+
+    if (m_pseudoDirNames.contains(name)) {
+        QString unique;
+        for (int i = 2;; ++i) {
+            unique = QStringLiteral("%1_%2").arg(name).arg(i);
+            if (!m_pseudoDirNames.contains(unique))
+                break;
+            if (i > 200)
+                return {};
+        }
+        name = unique;
+    }
+    m_pseudoDirNames.insert(name, dir);
+    m_pseudoDirKeys.insert(key);
+    return name;
 }
 
 } // namespace eMule

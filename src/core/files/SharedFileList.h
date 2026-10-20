@@ -269,7 +269,11 @@ public:
     [[nodiscard]] QString pseudoDirName(const QString& dir);
     /// The directory behind a name; empty when the name was never handed out.
     [[nodiscard]] QString dirNameByPseudo(const QString& pseudoName) const;
-    void resetPseudoDirNames() { m_pseudoDirNames.clear(); }
+    void resetPseudoDirNames()
+    {
+        m_pseudoDirNames.clear();
+        m_pseudoDirKeys.clear();
+    }
     /// Complete files shared one by one, outside every shared directory ("!Other").
     [[nodiscard]] std::vector<KnownFile*> singleSharedFilesForBrowse() const;
     [[nodiscard]] bool hasSingleSharedFiles() const { return !m_singleSharedFiles.isEmpty(); }
@@ -334,6 +338,9 @@ private:
     static std::vector<Tag> offeredTags(KnownFile& file, const Server* srv);
     static std::vector<Tag> offeredTagsFor(KnownFile& file, const Server* srv,
                                            bool forClient, uint32 emuleVersion);
+
+    /// pseudoDirName() with the rules built once per browse, not once per directory
+    [[nodiscard]] QString pseudoDirName(const ShareRules& rules, const QString& dir);
 
     /// Whether @p kw should be published now; takes over a stored due time first.
     [[nodiscard]] bool keywordIsDue(PublishKeyword& kw, time_t now);
@@ -453,6 +460,8 @@ private:
 
     /// Pseudo name -> directory, as last sent to a browsing client. Main thread only.
     QHash<QString, QString> m_pseudoDirNames;
+    /// pathKey() of every directory in m_pseudoDirNames, for an O(1) "named already"
+    QSet<QString> m_pseudoDirKeys;
 
     PublishKeywordList m_keywords;
     KadPublishStore m_publishStore;        // keyword due times across restarts

@@ -77,6 +77,7 @@ private slots:
     void trimWhileScrolledUpKeepsTopLine();
     void trimWithAutoScrollOffKeepsTopLine();
     void lateInsertAboveKeepsTopLine();
+    void streamAtLineCap();
 };
 
 void tst_LogTextView::followsWhenAtBottom()
@@ -357,6 +358,50 @@ void tst_LogTextView::imageResourceSurvivesARebuild()
         const QImage shown = view.document()->resource(QTextDocument::ImageResource, url)
                                  .value<QImage>();
         QCOMPARE(shown.size(), QSize(104, 48));
+    }
+}
+
+void tst_LogTextView::streamAtLineCap()
+{
+    // Kad pane: every append trims the oldest line once the cap is reached, so
+    // the document height may not change at all (issue #40)
+    constexpr int kLimit = 5000;
+    for (int mode = 0; mode < 4; ++mode) {
+        LogTextView view;
+        view.resize(400, 200);
+        view.show();
+        QVERIFY(QTest::qWaitForWindowExposed(&view));
+        int next = 0;
+        auto addTrim = [&] {
+            view.append(QStringLiteral("<span>Kad line %1 %2</span>")
+                            .arg(next).arg(QString(next % 7 * 9, QLatin1Char('x'))));
+            ++next;
+            if (const int excess = view.document()->blockCount() - kLimit; excess > 0)
+                trimOldest(view, excess);
+        };
+        for (int i = 0; i < kLimit + 50; ++i) {
+            addTrim();
+            if (i % 97 == 0)
+                QCoreApplication::processEvents();
+        }
+        QTest::qWait(50);
+        QVERIFY(atBottom(view));
+
+        QScrollBar* bar = view.verticalScrollBar();
+        if (mode >= 2)
+            bar->setValue(bar->maximum() / 2);   // scrolled up
+        if (mode == 1 || mode == 3)
+            view.setAutoScroll(false);
+        const QString top = topLine(view);
+        for (int i = 0; i < 30; ++i) {
+            addTrim();
+            QTest::qWait(5);
+        }
+        QTest::qWait(50);
+        if (mode == 0)
+            QVERIFY(atBottom(view));
+        else
+            QCOMPARE(topLine(view), top);
     }
 }
 

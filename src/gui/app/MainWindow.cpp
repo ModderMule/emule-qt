@@ -806,6 +806,7 @@ void MainWindow::restoreWindow()
     // stale pixels of another app (issue #24). Map it iconic first, then de-iconify.
     if (!isVisible() && QGuiApplication::platformName() == QLatin1String("xcb"))
         show();
+    m_restoreRequested.start();
     setWindowState(state);
     show();
     raise();
@@ -830,6 +831,7 @@ void MainWindow::changeEvent(QEvent* event)
         return;
     if (!isMinimized()) {
         m_stateBeforeMinimize = Qt::WindowNoState;
+        m_restoreRequested.invalidate();   // restore done
         return;
     }
     // Some platforms drop the maximized bit while minimized; keep it for the restore
@@ -837,8 +839,16 @@ void MainWindow::changeEvent(QEvent* event)
     if (!before.testFlag(Qt::WindowMinimized))
         m_stateBeforeMinimize = before & (Qt::WindowMaximized | Qt::WindowFullScreen);
     if (m_trayIcon && thePrefs.minimizeToTray()) {
+        // X11: restoreWindow() maps the window iconic first, and the WM's WM_STATE
+        // for that arrives after the de-iconify request — a stale "minimized" that
+        // hid the window again mid-animation (issue #40). Hold off until the WM
+        // has had time to answer the restore.
+        constexpr qint64 kRestoreGraceMs = 2000;
+        const qint64 wait = m_restoreRequested.isValid()
+            ? std::max<qint64>(0, kRestoreGraceMs - m_restoreRequested.elapsed())
+            : 0;
         // Re-checked: a restore may already have happened by the time this runs
-        QTimer::singleShot(0, this, [this] {
+        QTimer::singleShot(wait, this, [this] {
             if (isMinimized())
                 hide();
         });

@@ -209,6 +209,8 @@ private slots:
     void link_reportsARefusedHandshake();
     void link_reportsALaunchedCoreAsStarting();
     void link_takesTheCorePidFromTheHandshake();
+    void link_launchedCoreBusyLoadingIsWaitedForOnOneConnection();
+    void keepalive_loadingCoreIsWaitedFor();
 
     // Requests held while the core loads
     void deferred_identicalReadsCollapseToTheNewest();
@@ -642,6 +644,73 @@ void tst_IpcBusyStates::link_reportsALaunchedCoreAsStarting()
     QTRY_VERIFY_WITH_TIMEOUT(client.connectAttempts() >= 3, 15'000);
     QCOMPARE(client.coreLink(), Link::Starting);
     QVERIFY(!client.isConnected());
+}
+
+void tst_IpcBusyStates::link_launchedCoreBusyLoadingIsWaitedForOnOneConnection()
+{
+    // Issues #24/#40: a core we launched accepts, then a load stage holds its loop
+    // past the handshake timeout. Reconnecting showed "not responding (attempt N)"
+    // and queued the new connection behind the same stage.
+    MockCore core;
+    QVERIFY(core.listen());
+    core.answerHandshake = false;
+
+    IpcClient client;
+    client.setTimeouts(150, 30'000, 10'000);
+    client.expectDaemonStart();
+    QList<Link> seen;
+    connect(&client, &IpcClient::coreLinkChanged, this, [&] {
+        if (seen.isEmpty() || seen.last() != client.coreLink())
+            seen.append(client.coreLink());
+    });
+    client.connectToDaemon(QHostAddress(QHostAddress::LocalHost), core.port());
+
+    QTRY_COMPARE_WITH_TIMEOUT(client.coreLink(), Link::Handshaking, 3000);
+    QTest::qWait(700);   // several handshake timeouts
+    QCOMPARE(core.connections, 1);
+    QCOMPARE(client.coreLink(), Link::Handshaking);
+
+    // The stage ends: the first handshake is answered on the first connection
+    core.answerHandshake = true;
+    const IpcMessage hello = core.last(IpcMsgType::Handshake);
+    IpcMessage ok(IpcMsgType::HandshakeOk, hello.seqId());
+    ok.append(QStringLiteral("1.0"));
+    ok.append(QStringLiteral("mock core"));
+    ok.append(QStringLiteral("session-1"));
+    ok.append(false);
+    ok.append(QString());
+    core.push(ok);
+    QTRY_VERIFY_WITH_TIMEOUT(client.isConnected(), 3000);
+    QCOMPARE(core.connections, 1);
+    QVERIFY(!seen.contains(Link::NotResponding));
+}
+
+void tst_IpcBusyStates::keepalive_loadingCoreIsWaitedFor()
+{
+    MockCore core;
+    QVERIFY(core.listen());
+    core.loading = true;
+    core.loadStage = QStringLiteral("shared-files");
+
+    IpcClient client;
+    client.setTimeouts(2000, 200, 100);   // ping every 200 ms, 100 ms for the pong
+    client.connectToDaemon(QHostAddress(QHostAddress::LocalHost), core.port());
+    QTRY_VERIFY_WITH_TIMEOUT(client.isConnected(), 3000);
+    QSignalSpy lostSpy(&client, &IpcClient::disconnected);
+
+    // A load stage holds the core's loop: no pong, no push
+    core.answerPing = false;
+    QTest::qWait(1000);
+    QCOMPARE(lostSpy.count(), 0);
+    QCOMPARE(client.coreLink(), Link::Loading);
+
+    // Loaded: from now on a silent core is dropped as before
+    IpcMessage done(IpcMsgType::PushCoreLoading, 0);
+    done.append(false);
+    done.append(QString());
+    core.push(done);
+    QTRY_COMPARE_WITH_TIMEOUT(client.coreLink(), Link::Ready, 3000);
+    QTRY_COMPARE_WITH_TIMEOUT(lostSpy.count(), 1, 2000);
 }
 
 // ---------------------------------------------------------------------------
