@@ -134,8 +134,11 @@ existing IPv6-capable eMule fork, so that the two implementations agree on the w
 | 1 | `0x00000002` | uTP NAT traversal (not implemented here; **do not reuse**) |
 | 2 | `0x00000004` | `MODMISC_IPV6` — supports the IPv6 extension |
 | 3 | `0x00000008` | serving-buddy pull (not implemented here; **do not reuse**) |
-| 4 | `0x00000010` | QUIC NAT traversal (not implemented here; **do not reuse**) |
-| 5 | `0x00000020` | `MODMISC_EXTXS_SKIPTAGS` — my ExtSX reader skips unknown tags (§3.3.6) |
+| 4 | `0x00000010` | QUIC NAT traversal (planned here, see the note on `0x1000` below; not set until it works; **do not reuse**) |
+| 5 | `0x00000020` | `MODMISC_EXTXS_SKIPTAGS` — my ExtSX reader skips unknown tags (§3.3.6). This meaning only; new features take new bits |
+
+Bits 6–9 are left unclaimed for the implementation that defined bits 1, 3 and 4. Bit 10 (`0x00000400`) is
+HTTP Cache (`http-cache-spec.md`).
 
 **`ST_IPV6_STATUS` (`0xAB`), UINT8 — the server's verdict on the client's advertised IPv6:**
 
@@ -180,10 +183,15 @@ The server probes the family the session arrived on, so a v6-connected session g
 > Lugdunum callback for LowID-to-LowID transfers. It is IPv4-only and unrelated to this extension:
 > the notice carries a 4-byte address, and an IPv6-reachable peer is dialled directly anyway.
 > The callback only yields a UDP endpoint, so those transfers run the unchanged eMule
-> stream over a small reliable-UDP layer framed as `OP_UDPRESERVEDPROT2` (`0xB2`) sub-opcode
-> `0x10`, not over uTP. Two opcode values overlap with this spec and are told apart by direction:
+> stream over the QUIC NAT-T dialect other clients already deploy: `OP_UDPRESERVEDPROT2` (`0xB2`)
+> frame type `0x01` for QUIC, `0x02`/`0x03` for the capability exchange, ALPN
+> `ed2k-ai-natt-quic-v1`, and `CT_MOD_MISCOPTIONS` bit 4. No uTP. The same transport serves the
+> LowID hole punch of servers that set `OP_IDCHANGE` flag `0x20000`. An earlier plan for an own
+> reliable-UDP layer on `0xB2` frame type `0x10` is dropped; do not expect `0x10` from eMuleQt.
+> Agreed with another implementation in https://github.com/ModderMule/emule-qt/issues/39.
+> Two opcode values overlap with this spec and are told apart by direction:
 > Lugdunum's `0xA6` request is client→server while `OP_GLOBFOUNDSOURCES_IPV6` (`0xA6`) is
-> server→client. Design notes: `docs/protocol/lugdunum-nat-callback.local.md`.
+> server→client.
 >
 > Nothing is lost: no server gated on the bit. The capability signal is the `CT_MOD_IP_V6` login
 > tag, or the session having arrived over IPv6 (§4.1).
