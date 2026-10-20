@@ -156,7 +156,9 @@ MainWindow::MainWindow(QWidget* parent)
                 this, &MainWindow::onOptionsClicked);
         connect(m_trayMenu, &TrayMenuManager::exitRequested,
                 this, &MainWindow::forceQuit);
-#ifdef Q_OS_MAC
+#ifndef Q_OS_WIN
+        // Linux: StatusNotifierItem hosts (XFCE, KDE, GNOME ext.) show the menu over
+        // DBusMenu and may never send ContextMenu() for a popup of our own (issue #38)
         m_trayIcon->setContextMenu(m_trayMenu);
 #endif
     }
@@ -172,6 +174,12 @@ MainWindow::MainWindow(QWidget* parent)
     quitAction->setMenuRole(QAction::QuitRole);
     connect(quitAction, &QAction::triggered, this, &MainWindow::forceQuit);
     menuBar()->addAction(quitAction);
+#elif !defined(Q_OS_WIN)
+    // Linux/BSD desktops: Ctrl+Q quits (issue #41). Windows keeps Alt+F4 only, like MFC
+    auto* quitAction = new QAction(this);
+    quitAction->setShortcut(QKeySequence::Quit);
+    connect(quitAction, &QAction::triggered, this, &MainWindow::forceQuit);
+    addAction(quitAction);
 #endif
 
     // Clipboard monitoring — prompt user when ed2k file links are copied (MFC SearchClipboard)
@@ -1195,7 +1203,7 @@ void MainWindow::onSubmitBugReport()
 void MainWindow::onTrayIconClicked(QSystemTrayIcon::ActivationReason reason)
 {
     if (reason == QSystemTrayIcon::Context) {
-        if (m_trayMenu) {
+        if (m_trayMenu && !m_trayIcon->contextMenu()) {
             m_trayMenu->updateState(m_ed2kConnected, m_kadRunning,
                                     m_ipc && m_ipc->isConnected());
             m_trayMenu->popup(QCursor::pos());
@@ -1243,6 +1251,11 @@ void MainWindow::onTrayIconClicked(QSystemTrayIcon::ActivationReason reason)
             m_miniMule->showNearTray();
         }
     }
+#elif defined(Q_OS_LINUX)
+    // StatusNotifierItem never reports DoubleClick, only Activate -> Trigger, so a
+    // single click restores (issue #38). XEmbed sends Trigger before DoubleClick.
+    if (reason == QSystemTrayIcon::Trigger)
+        restoreWindow();
 #else
     Q_UNUSED(reason)
 #endif

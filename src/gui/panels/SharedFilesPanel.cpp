@@ -590,10 +590,18 @@ void SharedFilesPanel::onFileContextMenu(const QPoint& pos)
         act->setEnabled(hasSel);
     }
 
-    // eD2K Links — one link per selected file, as MFC's MP_GETED2KLINK does
+    // MFC shows one of the two, picked by the hidden ShowCopyEd2kLinkCmd INI key
+    // (SharedFilesCtrl.cpp:1332-1335); both here (issue #42)
+    {
+        auto* act = m_contextMenu->addAction(menuIcon("eD2kLink.ico"), tr("Copy eD2K Links"), this,
+                                             [this, hashes]() { copyEd2kLinks(hashes); });
+        act->setEnabled(hasSel);
+    }
     {
         auto* act = m_contextMenu->addAction(menuIcon("eD2kLink.ico"), tr("eD2K Links..."), this,
-                                             [this, hashes]() { copyEd2kLinks(hashes); });
+                                             [this, hashes]() {
+            fetchAndShowSharedFileDetails(hashes, FileDetailDialog::Ed2kLink);
+        });
         act->setEnabled(hasSel);
     }
 
@@ -2432,6 +2440,9 @@ void SharedFilesPanel::showSharedDirMenu(QTreeWidgetItem* item, const QPoint& gl
     })->setEnabled(connected && state.comment);
     menu.addAction(menuIcon("eD2kLink.ico"), tr("Copy eD2K Links"), this, [this, hashes] {
         copyEd2kLinks(hashes);
+    })->setEnabled(connected && state.link);
+    menu.addAction(menuIcon("eD2kLink.ico"), tr("eD2K Links..."), this, [this, hashes] {
+        fetchAndShowSharedFileDetails(hashes, FileDetailDialog::Ed2kLink);
     })->setEnabled(connected && state.link);
 
     menu.addSeparator();

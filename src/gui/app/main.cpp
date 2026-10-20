@@ -286,7 +286,8 @@ int main(int argc, char* argv[])
     eMule::installLogFileMessageHandler();
 
 #ifdef Q_OS_LINUX
-    QApplication::setApplicationName(QStringLiteral("GUI"));
+    // Shown as the tray item's name (StatusNotifierItem Id/Title, issue #38)
+    QApplication::setApplicationName(QStringLiteral("eMuleQt"));
 #else
     QApplication::setApplicationName(QStringLiteral("eMule Qt"));
 #endif

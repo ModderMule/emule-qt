@@ -569,10 +569,18 @@ void TransferPanel::onDownloadContextMenu(const QPoint& pos)
 
     m_downloadMenu->addSeparator();
 
-    // -- 6. eD2K Links / Paste eD2K Links --
+    // -- 6. Copy eD2K Links / eD2K Links... / Paste eD2K Links --
+    // MFC shows one of the first two, picked by the hidden ShowCopyEd2kLinkCmd INI key
+    // (DownloadListCtrl.cpp:1935-1938); both here (issue #42)
+    {
+        auto* act = m_downloadMenu->addAction(menuIcon("eD2kLink.ico"), tr("Copy eD2K Links"), this, [this, allHashes]() {
+            copyEd2kLinks(allHashes);
+        });
+        act->setEnabled(hasSel);
+    }
     {
         auto* act = m_downloadMenu->addAction(menuIcon("eD2kLink.ico"), tr("eD2K Links..."), this, [this, allHashes]() {
-            copyEd2kLinks(allHashes);
+            fetchAndShowFileDetails(allHashes, FileDetailDialog::Ed2kLink);
         });
         act->setEnabled(hasSel);
     }
@@ -1156,7 +1164,10 @@ QToolBar* TransferPanel::createActionToolbar()
 
     auto* actEd2kLinks = toolbar->addAction(
         QIcon(QStringLiteral(":/icons/eD2kLink.ico")), tr("eD2K Links"),
-        this, [this]() { copyEd2kLinks(saveDownloadSelectionMulti()); });
+        this, [this]() {
+            // Opens the link page, as MFC's toolbar MP_SHOWED2KLINK (DownloadListCtrl.cpp:2617)
+            fetchAndShowFileDetails(saveDownloadSelectionMulti(), FileDetailDialog::Ed2kLink);
+        });
     m_selectionActions.append(actEd2kLinks);
 
     toolbar->addSeparator();
@@ -1923,6 +1934,11 @@ void TransferPanel::showComments(const QString& hash)
 void TransferPanel::fetchAndShowFileDetails(const QStringList& hashes,
                                              FileDetailDialog::Tab tab)
 {
+    // One file gets the full sheet: link options, walker, comment posting
+    if (hashes.size() == 1) {
+        fetchAndShowFileDetails(hashes.constFirst(), tab);
+        return;
+    }
     if (!m_ipc || !m_ipc->isConnected() || hashes.isEmpty())
         return;
 

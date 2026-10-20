@@ -4,7 +4,7 @@
 <context>
     <name>ContainerSniffer</name>
     <message>
-        <location filename="../src/core/media/ContainerSniffer.cpp" line="+175"/>
+        <location filename="../src/core/media/ContainerSniffer.cpp" line="+180"/>
         <source>Named .%1 but matches no media container we recognise — very likely a fake.</source>
         <translation>檔名為 .%1，但與我們能辨識的任何媒體容器都不符 — 極可能是假檔案。</translation>
     </message>
@@ -393,7 +393,7 @@ Enable Web Interface or REST API under Options → Web Interface.</source>
 <context>
     <name>QObject</name>
     <message>
-        <location filename="../src/gui/app/main.cpp" line="+396"/>
+        <location filename="../src/gui/app/main.cpp" line="+397"/>
         <source>eMule Qt</source>
         <translation>eMule Qt</translation>
     </message>
@@ -740,7 +740,7 @@ Has comments</source>
     <name>Units</name>
     <message>
         <location filename="../src/core/utils/StringUtils.cpp" line="+72"/>
-        <location filename="../src/core/webserver/WebServer.cpp" line="+4028"/>
+        <location filename="../src/core/webserver/WebServer.cpp" line="+4062"/>
         <source>Bytes</source>
         <translation>Bytes</translation>
     </message>
@@ -1275,13 +1275,13 @@ M	壓縮資料尚未完全下載
     <name>eMule::BugReportDialog</name>
     <message>
         <location filename="../src/gui/dialogs/BugReportDialog.cpp" line="+55"/>
-        <location line="+133"/>
+        <location line="+139"/>
         <location line="+128"/>
         <source>Submit Bug Report</source>
         <translation>提交錯誤報告</translation>
     </message>
     <message>
-        <location line="-256"/>
+        <location line="-262"/>
         <source>Report Details</source>
         <translation>報告詳細資料</translation>
     </message>
@@ -1337,7 +1337,7 @@ M	壓縮資料尚未完全下載
         <translation>詳細描述問題...</translation>
     </message>
     <message>
-        <location line="+5"/>
+        <location line="+7"/>
         <source>Attachments</source>
         <translation>附件</translation>
     </message>
@@ -1347,13 +1347,13 @@ M	壓縮資料尚未完全下載
         <translation>螢幕擷圖：</translation>
     </message>
     <message>
-        <location line="+8"/>
+        <location line="+11"/>
         <source>Add...</source>
         <translation>加入...</translation>
     </message>
     <message>
         <location line="+1"/>
-        <location line="+13"/>
+        <location line="+14"/>
         <source>Remove</source>
         <translation>移除</translation>
     </message>
@@ -4117,17 +4117,17 @@ Please choose another:</source>
     <name>eMule::MainWindow</name>
     <message>
         <location filename="../src/gui/app/MainWindow.cpp" line="+91"/>
-        <location line="+493"/>
+        <location line="+501"/>
         <source>eMule Qt v%1</source>
         <translation>eMule Qt v%1</translation>
     </message>
     <message>
-        <location line="-413"/>
+        <location line="-419"/>
         <source>Quit eMule Qt</source>
         <translation>結束 eMule Qt</translation>
     </message>
     <message>
-        <location line="+34"/>
+        <location line="+40"/>
         <location line="+9"/>
         <source>New Version Available</source>
         <translation>有新版本可用</translation>
@@ -4218,12 +4218,12 @@ Enable at least one under Options → Connection to connect.</source>
     </message>
     <message>
         <location line="+4"/>
-        <location line="+1316"/>
+        <location line="+1321"/>
         <source>eD2K: Disconnected</source>
         <translation>eD2K：已中斷連線</translation>
     </message>
     <message>
-        <location line="-1309"/>
+        <location line="-1314"/>
         <source>eD2K Server: %1  (%2 Users)</source>
         <translation>eD2K 伺服器：%1  (%2 位使用者)</translation>
     </message>
@@ -4259,12 +4259,12 @@ Enable at least one under Options → Connection to connect.</source>
     </message>
     <message>
         <location line="+4"/>
-        <location line="+1251"/>
+        <location line="+1256"/>
         <source>Kad: Disconnected</source>
         <translation>Kad：已中斷連線</translation>
     </message>
     <message>
-        <location line="-1242"/>
+        <location line="-1247"/>
         <source>Users: %1 | Files: %2</source>
         <translation>使用者：%1 | 檔案：%2</translation>
     </message>
@@ -4495,7 +4495,7 @@ Enable it under Options → Web Interface, then try again.</source>
         <translation>開啟選項</translation>
     </message>
     <message>
-        <location line="+186"/>
+        <location line="+191"/>
         <source>Main</source>
         <translation>主選單</translation>
     </message>
@@ -10689,13 +10689,13 @@ ED2K 切細值：	%2
     <message>
         <location filename="../src/gui/panels/SharedFilesPanel.cpp" line="+177"/>
         <location line="+16"/>
-        <location line="+490"/>
+        <location line="+498"/>
         <location line="+630"/>
         <source>Shared Files (0)</source>
         <translation>已分享檔案 (0)</translation>
     </message>
     <message>
-        <location line="-1007"/>
+        <location line="-1015"/>
         <source>All</source>
         <translation>全部</translation>
     </message>
@@ -10706,71 +10706,71 @@ ED2K 切細值：	%2
     </message>
     <message>
         <location line="+13"/>
-        <location line="+1462"/>
+        <location line="+1470"/>
         <location line="+515"/>
         <source>Open Folder</source>
         <translation>開啟資料夾</translation>
     </message>
     <message>
-        <location line="-1965"/>
+        <location line="-1973"/>
         <source>Rename...</source>
         <translation>重新命名...</translation>
     </message>
     <message>
         <location line="+8"/>
-        <location line="+1961"/>
+        <location line="+1969"/>
         <source>Delete From Disk</source>
         <translation>從磁碟刪除</translation>
     </message>
     <message>
-        <location line="-1946"/>
+        <location line="-1954"/>
         <source>Unshare</source>
         <translation>取消分享</translation>
     </message>
     <message>
         <location line="+11"/>
-        <location line="+1941"/>
+        <location line="+1949"/>
         <source>Priority (Upload)</source>
         <translation>優先權（上傳）</translation>
     </message>
     <message>
-        <location line="-1926"/>
-        <location line="+1943"/>
+        <location line="-1934"/>
+        <location line="+1951"/>
         <source>Very Low</source>
         <translation>非常低</translation>
     </message>
     <message>
-        <location line="-1942"/>
-        <location line="+1943"/>
+        <location line="-1950"/>
+        <location line="+1951"/>
         <source>Low</source>
         <translation>低</translation>
     </message>
     <message>
-        <location line="-1942"/>
-        <location line="+1943"/>
+        <location line="-1950"/>
+        <location line="+1951"/>
         <source>Normal</source>
         <translation>普通</translation>
     </message>
     <message>
-        <location line="-1942"/>
-        <location line="+1943"/>
+        <location line="-1950"/>
+        <location line="+1951"/>
         <source>High</source>
         <translation>高</translation>
     </message>
     <message>
-        <location line="-1942"/>
-        <location line="+1943"/>
+        <location line="-1950"/>
+        <location line="+1951"/>
         <source>Release</source>
         <translation>發佈</translation>
     </message>
     <message>
-        <location line="-1941"/>
-        <location line="+1942"/>
+        <location line="-1949"/>
+        <location line="+1950"/>
         <source>Auto</source>
         <translation>自動</translation>
     </message>
     <message>
-        <location line="-1928"/>
+        <location line="-1936"/>
         <source>Collection</source>
         <translation>收藏集</translation>
     </message>
@@ -10807,23 +10807,24 @@ ED2K 切細值：	%2
     </message>
     <message>
         <location line="+19"/>
-        <location line="+1848"/>
+        <location line="+1856"/>
         <source>Details...</source>
         <translation>詳細資料...</translation>
     </message>
     <message>
-        <location line="-1841"/>
-        <location line="+1844"/>
+        <location line="-1849"/>
+        <location line="+1852"/>
         <source>Comments...</source>
         <translation>評論...</translation>
     </message>
     <message>
-        <location line="-1835"/>
+        <location line="-1837"/>
+        <location line="+1843"/>
         <source>eD2K Links...</source>
         <translation>eD2K 連結...</translation>
     </message>
     <message>
-        <location line="+9"/>
+        <location line="-1832"/>
         <source>Add To IRC Clipboard</source>
         <translation>加入到 IRC 剪貼簿</translation>
     </message>
@@ -11078,23 +11079,24 @@ The files will remain on disk.</source>
     </message>
     <message>
         <location line="+12"/>
-        <location line="+526"/>
+        <location line="+529"/>
         <source>Unshare Directory</source>
         <translation>取消分享目錄</translation>
     </message>
     <message>
-        <location line="-517"/>
-        <location line="+526"/>
+        <location line="-520"/>
+        <location line="+529"/>
         <source>Unshare with Subdirectories</source>
         <translation>連同子目錄一起取消分享</translation>
     </message>
     <message>
-        <location line="-430"/>
+        <location line="-433"/>
         <source>Open File not available — web server is not running or stream token not received.</source>
         <translation>無法開啟檔案 — Web 伺服器未執行或未收到串流權杖。</translation>
     </message>
     <message>
-        <location line="+415"/>
+        <location line="-1430"/>
+        <location line="+1845"/>
         <source>Copy eD2K Links</source>
         <translation>複製 eD2K 連結</translation>
     </message>
@@ -13258,89 +13260,89 @@ Clicking &apos;Restore Stats&apos; again will reload your current statistics.</s
     </message>
     <message>
         <location line="+29"/>
-        <location line="+1931"/>
+        <location line="+1947"/>
         <location line="+165"/>
         <source>Low</source>
         <translation>低</translation>
     </message>
     <message>
-        <location line="-2095"/>
-        <location line="+1930"/>
+        <location line="-2111"/>
+        <location line="+1946"/>
         <location line="+166"/>
         <source>Normal</source>
         <translation>普通</translation>
     </message>
     <message>
-        <location line="-2095"/>
-        <location line="+1929"/>
+        <location line="-2111"/>
+        <location line="+1945"/>
         <location line="+167"/>
         <source>High</source>
         <translation>高</translation>
     </message>
     <message>
-        <location line="-2092"/>
-        <location line="+2096"/>
+        <location line="-2108"/>
+        <location line="+2112"/>
         <source>Very Low</source>
         <translation>非常低</translation>
     </message>
     <message>
-        <location line="-2094"/>
-        <location line="+2096"/>
+        <location line="-2110"/>
+        <location line="+2112"/>
         <source>Very High</source>
         <translation>非常高</translation>
     </message>
     <message>
-        <location line="-2094"/>
-        <location line="+2097"/>
+        <location line="-2110"/>
+        <location line="+2113"/>
         <source>Auto</source>
         <translation>自動</translation>
     </message>
     <message>
-        <location line="-2086"/>
-        <location line="+687"/>
-        <location line="+1237"/>
+        <location line="-2102"/>
+        <location line="+695"/>
+        <location line="+1245"/>
         <source>Pause</source>
         <translation>暫停</translation>
     </message>
     <message>
-        <location line="-1915"/>
-        <location line="+684"/>
-        <location line="+1233"/>
+        <location line="-1931"/>
+        <location line="+692"/>
+        <location line="+1241"/>
         <source>Stop</source>
         <translation>停止</translation>
     </message>
     <message>
-        <location line="-1908"/>
-        <location line="+681"/>
-        <location line="+1229"/>
+        <location line="-1924"/>
+        <location line="+689"/>
+        <location line="+1237"/>
         <source>Resume</source>
         <translation>繼續</translation>
     </message>
     <message>
-        <location line="-1897"/>
-        <location line="+674"/>
-        <location line="+1225"/>
+        <location line="-1913"/>
+        <location line="+682"/>
+        <location line="+1233"/>
         <location line="+4"/>
         <source>Cancel</source>
         <translation>取消</translation>
     </message>
     <message>
-        <location line="-1887"/>
-        <location line="+665"/>
-        <location line="+551"/>
+        <location line="-1903"/>
+        <location line="+673"/>
+        <location line="+554"/>
         <source>Open File</source>
         <translation>開啟檔案</translation>
     </message>
     <message>
-        <location line="-1207"/>
+        <location line="-1218"/>
         <location line="+2"/>
-        <location line="+668"/>
-        <location line="+586"/>
+        <location line="+676"/>
+        <location line="+589"/>
         <source>Preview</source>
         <translation>預覽</translation>
     </message>
     <message>
-        <location line="-1248"/>
+        <location line="-1259"/>
         <source>Preview with</source>
         <translation>預覽方式</translation>
     </message>
@@ -13356,13 +13358,13 @@ Clicking &apos;Restore Stats&apos; again will reload your current statistics.</s
     </message>
     <message>
         <location line="+9"/>
-        <location line="+2027"/>
+        <location line="+2043"/>
         <location line="+99"/>
         <source>Details...</source>
         <translation>詳細資料...</translation>
     </message>
     <message>
-        <location line="-2117"/>
+        <location line="-2133"/>
         <source>Comments...</source>
         <translation>評論...</translation>
     </message>
@@ -13373,20 +13375,20 @@ Clicking &apos;Restore Stats&apos; again will reload your current statistics.</s
     </message>
     <message>
         <location line="+0"/>
-        <location line="+1282"/>
+        <location line="+1293"/>
         <location line="+1"/>
         <location line="+10"/>
         <source>Import parts to file...</source>
         <translation>將部分匯入檔案...</translation>
     </message>
     <message>
-        <location line="-1277"/>
-        <location line="+633"/>
+        <location line="-1288"/>
+        <location line="+644"/>
         <source>Clear Completed</source>
         <translation>清除已完成</translation>
     </message>
     <message>
-        <location line="-625"/>
+        <location line="-636"/>
         <source>Source Handling</source>
         <translation>來源處理</translation>
     </message>
@@ -13397,12 +13399,17 @@ Clicking &apos;Restore Stats&apos; again will reload your current statistics.</s
     </message>
     <message>
         <location line="+3"/>
-        <location line="+1205"/>
+        <location line="+1216"/>
         <source>Source Limit...</source>
         <translation>來源限制...</translation>
     </message>
     <message>
-        <location line="-1195"/>
+        <location line="-1204"/>
+        <source>Copy eD2K Links</source>
+        <translation>複製 eD2K 連結</translation>
+    </message>
+    <message>
+        <location line="+6"/>
         <source>eD2K Links...</source>
         <translation>eD2K 連結...</translation>
     </message>
@@ -13413,13 +13420,13 @@ Clicking &apos;Restore Stats&apos; again will reload your current statistics.</s
     </message>
     <message>
         <location line="+16"/>
-        <location line="+2020"/>
+        <location line="+2028"/>
         <location line="+72"/>
         <source>Find...</source>
         <translation>尋找...</translation>
     </message>
     <message>
-        <location line="-2084"/>
+        <location line="-2092"/>
         <source>Search Related Files</source>
         <translation>搜尋相關檔案</translation>
     </message>
@@ -13430,23 +13437,23 @@ Clicking &apos;Restore Stats&apos; again will reload your current statistics.</s
     </message>
     <message>
         <location line="+11"/>
-        <location line="+542"/>
+        <location line="+545"/>
         <source>Assign To Category</source>
         <translation>指定到類別</translation>
     </message>
     <message>
-        <location line="-537"/>
+        <location line="-540"/>
         <source>New...</source>
         <translation>新增...</translation>
     </message>
     <message>
         <location line="+4"/>
-        <location line="+540"/>
+        <location line="+543"/>
         <source>(Unassign)</source>
         <translation>（取消指定）</translation>
     </message>
     <message>
-        <location line="-522"/>
+        <location line="-525"/>
         <source>Show Toolbar</source>
         <translation>顯示工具列</translation>
     </message>
@@ -13467,12 +13474,12 @@ Clicking &apos;Restore Stats&apos; again will reload your current statistics.</s
     </message>
     <message>
         <location line="+11"/>
-        <location line="+1226"/>
+        <location line="+1234"/>
         <source>Priority</source>
         <translation>優先權</translation>
     </message>
     <message>
-        <location line="-1189"/>
+        <location line="-1197"/>
         <source>Open Folder</source>
         <translation>開啟資料夾</translation>
     </message>
@@ -13492,7 +13499,7 @@ Clicking &apos;Restore Stats&apos; again will reload your current statistics.</s
         <translation>eD2K 連結</translation>
     </message>
     <message>
-        <location line="+32"/>
+        <location line="+35"/>
         <source>Search Related</source>
         <translation>搜尋相關</translation>
     </message>
@@ -13545,7 +13552,7 @@ Clicking &apos;Restore Stats&apos; again will reload your current statistics.</s
         <translation>無法開啟檔案 — Web 伺服器未執行或未收到串流權杖。</translation>
     </message>
     <message>
-        <location line="+373"/>
+        <location line="+378"/>
         <source>Uploading</source>
         <translation>上傳中</translation>
     </message>
@@ -14454,14 +14461,14 @@ A password is set for this release.</source>
 <context>
     <name>eMule::WebServer</name>
     <message>
-        <location filename="../src/core/webserver/WebServer.cpp" line="-3363"/>
-        <location line="+3252"/>
+        <location filename="../src/core/webserver/WebServer.cpp" line="-3396"/>
+        <location line="+3285"/>
         <location line="+49"/>
         <source>Session expired — log in again</source>
         <translation>工作階段已過期 — 請重新登入</translation>
     </message>
     <message>
-        <location line="-3297"/>
+        <location line="-3330"/>
         <source>Guests cannot add downloads</source>
         <translation>訪客無法加入下載</translation>
     </message>
@@ -14594,12 +14601,29 @@ A password is set for this release.</source>
         <translation>未儲存任何內容：某個值缺少或超出範圍。</translation>
     </message>
     <message>
-        <location line="+22"/>
+        <location line="+17"/>
+        <source>Not saved: %1</source>
+        <translation>未儲存：%1</translation>
+    </message>
+    <message>
+        <location line="+5"/>
+        <source>Saved. Now listening on TCP %1, UDP %2.</source>
+        <translation>已儲存。現在監聽 TCP %1、UDP %2。</translation>
+    </message>
+    <message>
+        <location line="+4"/>
+        <location line="+29"/>
         <source>Saved. The new ports are used after a restart.</source>
         <translation>已儲存。新的連接埠將在重新啟動後生效。</translation>
     </message>
     <message>
-        <location line="+0"/>
+        <location line="-25"/>
+        <source>Saved, but a new port is in use. Still listening on TCP %1, UDP %2.</source>
+        <translation>已儲存，但新連接埠已被佔用。仍在監聽 TCP %1、UDP %2。</translation>
+    </message>
+    <message>
+        <location line="+4"/>
+        <location line="+21"/>
         <source>Saved.</source>
         <translation>已儲存。</translation>
     </message>

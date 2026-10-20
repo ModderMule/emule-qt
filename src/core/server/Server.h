@@ -40,7 +40,7 @@ namespace SrvTcpFlag {
     inline constexpr uint32 LargeFiles      = 0x00000100;
     inline constexpr uint32 TcpObfuscation  = 0x00000400;
     inline constexpr uint32 Ipv6            = 0x00004000;   // server speaks the IPv6 extension
-    inline constexpr uint32 NatRendezvous   = 0x00008000;   // PR_NAT rendezvous (parsed, unused — S6 out of scope)
+    inline constexpr uint32 NatRendezvous   = 0x00040000;   // eNode-go PR_NAT rendezvous (parsed, unused); 0x8000 = ed2k-server OP_IPV6_UPDATE
 }
 
 namespace SrvUdpFlag {

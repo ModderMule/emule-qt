@@ -4,7 +4,7 @@
 <context>
     <name>ContainerSniffer</name>
     <message>
-        <location filename="../src/core/media/ContainerSniffer.cpp" line="+175"/>
+        <location filename="../src/core/media/ContainerSniffer.cpp" line="+180"/>
         <source>Named .%1 but matches no media container we recognise — very likely a fake.</source>
         <translation type="unfinished"></translation>
     </message>
@@ -557,7 +557,7 @@ Has comments</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../src/gui/app/main.cpp" line="+396"/>
+        <location filename="../src/gui/app/main.cpp" line="+397"/>
         <source>eMule Qt</source>
         <translation type="unfinished"></translation>
     </message>
@@ -725,7 +725,7 @@ Download it again?</source>
     <name>Units</name>
     <message>
         <location filename="../src/core/utils/StringUtils.cpp" line="+72"/>
-        <location filename="../src/core/webserver/WebServer.cpp" line="+4028"/>
+        <location filename="../src/core/webserver/WebServer.cpp" line="+4062"/>
         <source>Bytes</source>
         <translation type="unfinished"></translation>
     </message>
@@ -1249,13 +1249,13 @@ M	compressed data not completely downloaded yet
     <name>eMule::BugReportDialog</name>
     <message>
         <location filename="../src/gui/dialogs/BugReportDialog.cpp" line="+55"/>
-        <location line="+133"/>
+        <location line="+139"/>
         <location line="+128"/>
         <source>Submit Bug Report</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location line="-256"/>
+        <location line="-262"/>
         <source>Report Details</source>
         <translation type="unfinished"></translation>
     </message>
@@ -1311,7 +1311,7 @@ M	compressed data not completely downloaded yet
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location line="+5"/>
+        <location line="+7"/>
         <source>Attachments</source>
         <translation type="unfinished"></translation>
     </message>
@@ -1321,13 +1321,13 @@ M	compressed data not completely downloaded yet
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location line="+8"/>
+        <location line="+11"/>
         <source>Add...</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
         <location line="+1"/>
-        <location line="+13"/>
+        <location line="+14"/>
         <source>Remove</source>
         <translation type="unfinished"></translation>
     </message>
@@ -4076,7 +4076,7 @@ Please choose another:</source>
     <name>eMule::MainWindow</name>
     <message>
         <location filename="../src/gui/app/MainWindow.cpp" line="+91"/>
-        <location line="+493"/>
+        <location line="+501"/>
         <source>eMule Qt v%1</source>
         <translation type="unfinished"></translation>
     </message>
@@ -4103,12 +4103,12 @@ Please choose another:</source>
     </message>
     <message>
         <location line="+8"/>
-        <location line="+1316"/>
+        <location line="+1321"/>
         <source>eD2K: Disconnected</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location line="-1259"/>
+        <location line="-1264"/>
         <source>Kad: Connected</source>
         <translation type="unfinished"></translation>
     </message>
@@ -4124,12 +4124,12 @@ Please choose another:</source>
     </message>
     <message>
         <location line="+4"/>
-        <location line="+1251"/>
+        <location line="+1256"/>
         <source>Kad: Disconnected</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location line="-1242"/>
+        <location line="-1247"/>
         <source>Users: %1 | Files: %2</source>
         <translation type="unfinished"></translation>
     </message>
@@ -4181,12 +4181,12 @@ Please choose another:</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location line="-852"/>
+        <location line="-858"/>
         <source>Quit eMule Qt</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location line="+35"/>
+        <location line="+41"/>
         <source>eMule Qt %1 has been released.</source>
         <translation type="unfinished"></translation>
     </message>
@@ -4445,7 +4445,7 @@ Enable it under Options → Web Interface, then try again.</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location line="+186"/>
+        <location line="+191"/>
         <source>Main</source>
         <translation type="unfinished"></translation>
     </message>
@@ -10588,36 +10588,37 @@ Folder:	%13</source>
     <message>
         <location filename="../src/gui/panels/SharedFilesPanel.cpp" line="+177"/>
         <location line="+16"/>
-        <location line="+490"/>
+        <location line="+498"/>
         <location line="+630"/>
         <source>Shared Files (0)</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location line="-912"/>
+        <location line="-920"/>
         <source>Open File</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
         <location line="+13"/>
-        <location line="+1462"/>
+        <location line="+1470"/>
         <location line="+515"/>
         <source>Open Folder</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location line="-1965"/>
+        <location line="-1973"/>
         <source>Rename...</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location line="+2007"/>
+        <location line="+170"/>
+        <location line="+1845"/>
         <source>Copy eD2K Links</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location line="-1999"/>
-        <location line="+1961"/>
+        <location line="-2007"/>
+        <location line="+1969"/>
         <source>Delete From Disk</source>
         <translation type="unfinished"></translation>
     </message>
@@ -10632,12 +10633,12 @@ Folder:	%13</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location line="-954"/>
+        <location line="-962"/>
         <source>Unshare</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location line="+987"/>
+        <location line="+995"/>
         <source>Unshare File</source>
         <translation type="unfinished"></translation>
     </message>
@@ -10649,48 +10650,48 @@ The file will remain on disk.</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location line="-1124"/>
+        <location line="-1132"/>
         <source>All</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
         <location line="+154"/>
-        <location line="+1941"/>
+        <location line="+1949"/>
         <source>Priority (Upload)</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location line="-1926"/>
-        <location line="+1943"/>
+        <location line="-1934"/>
+        <location line="+1951"/>
         <source>Very Low</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location line="-1942"/>
-        <location line="+1943"/>
+        <location line="-1950"/>
+        <location line="+1951"/>
         <source>Low</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location line="-1942"/>
-        <location line="+1943"/>
+        <location line="-1950"/>
+        <location line="+1951"/>
         <source>Normal</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location line="-1942"/>
-        <location line="+1943"/>
+        <location line="-1950"/>
+        <location line="+1951"/>
         <source>High</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location line="-1940"/>
-        <location line="+1942"/>
+        <location line="-1948"/>
+        <location line="+1950"/>
         <source>Auto</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location line="-1928"/>
+        <location line="-1936"/>
         <source>Collection</source>
         <translation type="unfinished"></translation>
     </message>
@@ -10727,23 +10728,24 @@ The file will remain on disk.</source>
     </message>
     <message>
         <location line="+19"/>
-        <location line="+1848"/>
+        <location line="+1856"/>
         <source>Details...</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location line="-1841"/>
-        <location line="+1844"/>
+        <location line="-1849"/>
+        <location line="+1852"/>
         <source>Comments...</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location line="-1835"/>
+        <location line="-1837"/>
+        <location line="+1843"/>
         <source>eD2K Links...</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location line="+9"/>
+        <location line="-1832"/>
         <source>Add To IRC Clipboard</source>
         <translation type="unfinished"></translation>
     </message>
@@ -10863,18 +10865,18 @@ The file will remain on disk.</source>
     </message>
     <message>
         <location line="+12"/>
-        <location line="+526"/>
+        <location line="+529"/>
         <source>Unshare Directory</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location line="-517"/>
-        <location line="+526"/>
+        <location line="-520"/>
+        <location line="+529"/>
         <source>Unshare with Subdirectories</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location line="-430"/>
+        <location line="-433"/>
         <source>Open File not available — web server is not running or stream token not received.</source>
         <translation type="unfinished"></translation>
     </message>
@@ -10894,8 +10896,8 @@ The file will remain on disk.</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location line="-629"/>
-        <location line="+1943"/>
+        <location line="-637"/>
+        <location line="+1951"/>
         <source>Release</source>
         <translation type="unfinished"></translation>
     </message>
@@ -13146,7 +13148,7 @@ Clicking &apos;Restore Stats&apos; again will reload your current statistics.</s
 <context>
     <name>eMule::TransferPanel</name>
     <message>
-        <location filename="../src/gui/panels/TransferPanel.cpp" line="+728"/>
+        <location filename="../src/gui/panels/TransferPanel.cpp" line="+736"/>
         <source>Downloads</source>
         <translation></translation>
     </message>
@@ -13156,80 +13158,80 @@ Clicking &apos;Restore Stats&apos; again will reload your current statistics.</s
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location line="-645"/>
-        <location line="+687"/>
-        <location line="+1237"/>
+        <location line="-653"/>
+        <location line="+695"/>
+        <location line="+1245"/>
         <source>Pause</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location line="-1974"/>
+        <location line="-1990"/>
         <source>Priority (Download)</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
         <location line="+29"/>
-        <location line="+1931"/>
+        <location line="+1947"/>
         <location line="+165"/>
         <source>Low</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location line="-2095"/>
-        <location line="+1930"/>
+        <location line="-2111"/>
+        <location line="+1946"/>
         <location line="+166"/>
         <source>Normal</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location line="-2095"/>
-        <location line="+1929"/>
+        <location line="-2111"/>
+        <location line="+1945"/>
         <location line="+167"/>
         <source>High</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location line="-2092"/>
-        <location line="+2096"/>
+        <location line="-2108"/>
+        <location line="+2112"/>
         <source>Very Low</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location line="-2094"/>
-        <location line="+2096"/>
+        <location line="-2110"/>
+        <location line="+2112"/>
         <source>Very High</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location line="-2094"/>
-        <location line="+2097"/>
+        <location line="-2110"/>
+        <location line="+2113"/>
         <source>Auto</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location line="-2077"/>
-        <location line="+684"/>
-        <location line="+1233"/>
+        <location line="-2093"/>
+        <location line="+692"/>
+        <location line="+1241"/>
         <source>Stop</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location line="-1908"/>
-        <location line="+681"/>
-        <location line="+1229"/>
+        <location line="-1924"/>
+        <location line="+689"/>
+        <location line="+1237"/>
         <source>Resume</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location line="-1897"/>
-        <location line="+674"/>
-        <location line="+1225"/>
+        <location line="-1913"/>
+        <location line="+682"/>
+        <location line="+1233"/>
         <location line="+4"/>
         <source>Cancel</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location line="-1870"/>
+        <location line="-1886"/>
         <source>Preview with</source>
         <translation type="unfinished"></translation>
     </message>
@@ -13250,14 +13252,14 @@ Clicking &apos;Restore Stats&apos; again will reload your current statistics.</s
     </message>
     <message>
         <location line="+0"/>
-        <location line="+1282"/>
+        <location line="+1293"/>
         <location line="+1"/>
         <location line="+10"/>
         <source>Import parts to file...</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location line="-1269"/>
+        <location line="-1280"/>
         <source>Source Handling</source>
         <translation type="unfinished"></translation>
     </message>
@@ -13268,12 +13270,17 @@ Clicking &apos;Restore Stats&apos; again will reload your current statistics.</s
     </message>
     <message>
         <location line="+3"/>
-        <location line="+1205"/>
+        <location line="+1216"/>
         <source>Source Limit...</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location line="-1140"/>
+        <location line="-1204"/>
+        <source>Copy eD2K Links</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <location line="+61"/>
         <source>New...</source>
         <translation type="unfinished"></translation>
     </message>
@@ -13288,7 +13295,7 @@ Clicking &apos;Restore Stats&apos; again will reload your current statistics.</s
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location line="+642"/>
+        <location line="+645"/>
         <source>Failed to execute: %1 %2</source>
         <translation type="unfinished"></translation>
     </message>
@@ -13319,7 +13326,7 @@ Clicking &apos;Restore Stats&apos; again will reload your current statistics.</s
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location line="+542"/>
+        <location line="+547"/>
         <source>Download In Alphabetical Order</source>
         <translation type="unfinished"></translation>
     </message>
@@ -13375,40 +13382,40 @@ Clicking &apos;Restore Stats&apos; again will reload your current statistics.</s
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location line="-2473"/>
-        <location line="+665"/>
-        <location line="+551"/>
+        <location line="-2489"/>
+        <location line="+673"/>
+        <location line="+554"/>
         <source>Open File</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location line="-1207"/>
+        <location line="-1218"/>
         <location line="+2"/>
-        <location line="+668"/>
-        <location line="+586"/>
+        <location line="+676"/>
+        <location line="+589"/>
         <source>Preview</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location line="-1217"/>
-        <location line="+2027"/>
+        <location line="-1228"/>
+        <location line="+2043"/>
         <location line="+99"/>
         <source>Details...</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location line="-2117"/>
+        <location line="-2133"/>
         <source>Comments...</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
         <location line="+37"/>
-        <location line="+633"/>
+        <location line="+644"/>
         <source>Clear Completed</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location line="-611"/>
+        <location line="-614"/>
         <source>eD2K Links...</source>
         <translation type="unfinished"></translation>
     </message>
@@ -13419,13 +13426,13 @@ Clicking &apos;Restore Stats&apos; again will reload your current statistics.</s
     </message>
     <message>
         <location line="+16"/>
-        <location line="+2020"/>
+        <location line="+2028"/>
         <location line="+72"/>
         <source>Find...</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location line="-2084"/>
+        <location line="-2092"/>
         <source>Search Related Files</source>
         <translation type="unfinished"></translation>
     </message>
@@ -13436,12 +13443,12 @@ Clicking &apos;Restore Stats&apos; again will reload your current statistics.</s
     </message>
     <message>
         <location line="+11"/>
-        <location line="+542"/>
+        <location line="+545"/>
         <source>Assign To Category</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location line="+1083"/>
+        <location line="+1088"/>
         <source>Uploading</source>
         <translation type="unfinished"></translation>
     </message>
@@ -13461,19 +13468,19 @@ Clicking &apos;Restore Stats&apos; again will reload your current statistics.</s
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location line="-1159"/>
-        <location line="+1226"/>
+        <location line="-1167"/>
+        <location line="+1234"/>
         <source>Priority</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location line="-1686"/>
-        <location line="+540"/>
+        <location line="-1694"/>
+        <location line="+543"/>
         <source>(Unassign)</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location line="-43"/>
+        <location line="-46"/>
         <source>Open Folder</source>
         <translation type="unfinished"></translation>
     </message>
@@ -13493,7 +13500,7 @@ Clicking &apos;Restore Stats&apos; again will reload your current statistics.</s
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location line="+32"/>
+        <location line="+35"/>
         <source>Search Related</source>
         <translation type="unfinished"></translation>
     </message>
@@ -13503,7 +13510,7 @@ Clicking &apos;Restore Stats&apos; again will reload your current statistics.</s
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location line="+1074"/>
+        <location line="+1079"/>
         <location line="+7"/>
         <source>Downloads (%1)</source>
         <translation type="unfinished"></translation>
@@ -13542,7 +13549,7 @@ Clicking &apos;Restore Stats&apos; again will reload your current statistics.</s
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location line="-556"/>
+        <location line="-561"/>
         <location line="+23"/>
         <source>Preview not available — web server is not running or stream token not received.</source>
         <translation type="unfinished"></translation>
@@ -13553,7 +13560,7 @@ Clicking &apos;Restore Stats&apos; again will reload your current statistics.</s
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location line="+390"/>
+        <location line="+395"/>
         <source>Downloading (%1)</source>
         <translation type="unfinished"></translation>
     </message>
@@ -14396,14 +14403,14 @@ A password is set for this release.</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../src/core/webserver/WebServer.cpp" line="-3363"/>
-        <location line="+3252"/>
+        <location filename="../src/core/webserver/WebServer.cpp" line="-3396"/>
+        <location line="+3285"/>
         <location line="+49"/>
         <source>Session expired — log in again</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location line="-3297"/>
+        <location line="-3330"/>
         <source>Guests cannot add downloads</source>
         <translation type="unfinished"></translation>
     </message>
@@ -14526,12 +14533,29 @@ A password is set for this release.</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location line="+22"/>
+        <location line="+17"/>
+        <source>Not saved: %1</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <location line="+5"/>
+        <source>Saved. Now listening on TCP %1, UDP %2.</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <location line="+4"/>
+        <location line="+29"/>
         <source>Saved. The new ports are used after a restart.</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location line="+0"/>
+        <location line="-25"/>
+        <source>Saved, but a new port is in use. Still listening on TCP %1, UDP %2.</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <location line="+4"/>
+        <location line="+21"/>
         <source>Saved.</source>
         <translation type="unfinished"></translation>
     </message>
@@ -15205,7 +15229,7 @@ Whichever network is idle lends its share to the other.</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../src/core/webserver/WebServer.cpp" line="-1181"/>
+        <location filename="../src/core/webserver/WebServer.cpp" line="-1214"/>
         <location filename="../src/core/webserver/WebTemplateStrings.h" line="+1"/>
         <source>Name</source>
         <translation type="unfinished"></translation>
@@ -15607,7 +15631,7 @@ Whichever network is idle lends its share to the other.</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../src/core/webserver/WebServer.cpp" line="+1178"/>
+        <location filename="../src/core/webserver/WebServer.cpp" line="+1211"/>
         <location filename="../src/core/webserver/WebTemplateStrings.h" line="+1"/>
         <source>Uploads</source>
         <translation type="unfinished"></translation>

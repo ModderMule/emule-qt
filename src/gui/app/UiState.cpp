@@ -10,6 +10,7 @@
 #include <QFile>
 #include <QFileInfo>
 #include <QSaveFile>
+#include <QCoreApplication>
 #include <QSettings>
 
 #include <yaml-cpp/yaml.h>
@@ -568,7 +569,12 @@ void UiState::importLegacySettings()
 {
     // Default-constructed QSettings = the platform store, keyed by org/app name.
     // Reading a store that does not exist creates nothing.
+#ifdef Q_OS_LINUX
+    // Linux app name was "GUI" up to v0.6.22
+    QSettings legacy(QCoreApplication::organizationName(), QStringLiteral("GUI"));
+#else
     QSettings legacy;
+#endif
     legacy.setFallbacksEnabled(false);   // macOS would add global system keys
     const QStringList keys = legacy.allKeys();
     if (keys.isEmpty())
