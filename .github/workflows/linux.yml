@@ -23,7 +23,10 @@ env:
 
 jobs:
   build:
-    runs-on: ubuntu-latest
+    # Pinned, not ubuntu-latest: the glibc of the build host is the floor of the
+    # tarball. v0.6.23 came from a 26.04 runner and needed glibc 2.43 (issue #44).
+    # Raise it only together with GLIBC_MAX below.
+    runs-on: ubuntu-24.04
 
     steps:
       - name: Checkout
@@ -90,6 +93,8 @@ jobs:
           path: data/config
 
       - name: Bundle
+        env:
+          GLIBC_MAX: "2.39"   # Ubuntu 24.04, Linux Mint 22, Debian 13
         run: scripts/bundle-linux.sh deploy-qt build
 
       # The bundle script checks that the files are there; this checks that the

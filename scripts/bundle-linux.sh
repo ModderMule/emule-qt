@@ -410,6 +410,35 @@ if [ "$UNBUNDLED" -ne 0 ]; then
 fi
 echo "  All direct dependencies bundled or base system libs."
 
+# -- Audit glibc floor (only with GLIBC_MAX set, e.g. GLIBC_MAX=2.39) ---------
+# The newest GLIBC_x.y any shipped ELF needs is the oldest distro it runs on.
+# Bundled libs (glib, lame, ...) come from the build host, so check them too.
+# v0.6.23 was built on a newer runner and needed 2.43 (issue #44).
+
+if [ -n "${GLIBC_MAX:-}" ]; then
+    echo ""
+    echo "=== Auditing glibc floor (max $GLIBC_MAX) ==="
+    TOO_NEW=0
+    while IFS= read -r -d '' elf; do
+        head -c 4 "$elf" | grep -q $'\x7fELF' || continue
+        # Version needs (.gnu.version_r) only, not what a lib defines itself
+        need=$(readelf -V --wide "$elf" 2>/dev/null \
+            | awk '/\.gnu\.version_r/ { r = 1; next } /^Version/ { r = 0 }
+                   r { for (i = 1; i <= NF; i++) if ($i ~ /^GLIBC_[0-9.]+$/) print substr($i, 7) }' \
+            | sort -V | tail -1)
+        [ -n "$need" ] || continue
+        if [ "$(printf '%s\n%s\n' "$need" "$GLIBC_MAX" | sort -V | tail -1)" != "$GLIBC_MAX" ]; then
+            echo "  ${elf#"$STAGE_DIR"/} needs GLIBC_$need" >&2
+            TOO_NEW=1
+        fi
+    done < <(find "$STAGE_DIR" -type f \( -name '*.bin' -o -name '*.so*' \) -print0)
+    if [ "$TOO_NEW" -ne 0 ]; then
+        echo "Error: bundle needs a newer glibc than $GLIBC_MAX (build on an older runner)." >&2
+        exit 1
+    fi
+    echo "  All ELF files run on glibc $GLIBC_MAX."
+fi
+
 # -- Check the package is complete --------------------------------------------
 # A file that fails to reach the tarball is otherwise found by a user.
 
