@@ -167,7 +167,8 @@ The server probes the family the session arrived on, so a v6-connected session g
 | Mask | Meaning |
 | --- | --- |
 | `0x00004000` | Server speaks the IPv6 extension (TCP and UDP respectively) |
-| `0x00008000` | `NatRendezvous` — defined, never tested by this implementation |
+| `0x00008000` | Taken by another server: it accepts an in-session IPv6 update opcode. Not read here |
+| `0x00040000` | `NatRendezvous` — defined, never tested by this implementation (was `0x8000` before 2026-10-20) |
 
 > **`SRVCAP_IPV6` (`0x1000`) is withdrawn — do not set it.** Lugdunum eserver reads login bit
 > `0x1000` as support for its NAT callback (UDP `0xA6`/`0xA7`, TCP `0x37`) and advertises the same
@@ -1129,7 +1130,7 @@ This "S3b" tag-block source exchange was deliberately deferred on the client sid
 sentinel of §4.4 carries the same sources from the same servers with no new opcode and no new
 negotiation, and a second ingest path would have to be kept in step with the first.
 
-Also out of scope and deliberately inert: NAT rendezvous / `PR_NAT` (the `0x00008000` server flag
+Also out of scope and deliberately inert: NAT rendezvous / `PR_NAT` (the `0x00040000` server flag
 is never tested and a NAT-port tag is skipped as an unknown tag), and µTP.
 
 ---
@@ -1153,7 +1154,7 @@ Stated plainly so that another implementer does not spend time diagnosing them a
    server implements.
 4. **A source known only by IPv6 gets UDP reasks only if it advertised a UDP port.** Neither the
    server sentinel record nor the ExtSX record carries one; a Kad publish and a completed hello do.
-5. **`ST_NAT_PORT` and the `0x8000` rendezvous flag are skipped by type, not parsed.** `PR_NAT`
+5. **`ST_NAT_PORT` and the `0x40000` rendezvous flag are skipped by type, not parsed.** `PR_NAT`
    and µTP are out of scope.
 6. **An IPv6 change is announced over TCP only.** `OP_CHANGE_CLIENT_IP` (§3.2) reaches connected
    peers; a peer that holds us in its upload queue with no open socket keeps the stale address until
