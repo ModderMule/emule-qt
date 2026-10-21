@@ -4,7 +4,10 @@
 #include "TestHelpers.h"
 #include "files/KnownFile.h"
 #include "files/KnownFileList.h"
+#include "protocol/Tag.h"
 #include "utils/FileDate.h"
+#include "utils/Opcodes.h"
+#include "utils/SafeFile.h"
 #include "prefs/Preferences.h"
 
 #include <QFile>
@@ -44,7 +47,8 @@ private slots:
     void process_autoSave();
     void clear_deletesAll();
     void sameFileDate_rules();
-    void findKnownFile_toleratesAShiftedDateOnlyOnALocalTimeVolume();
+    void findKnownFile_toleratesAShiftedDate();
+    void load_dropsMorphXTSpreadbarTags();
 };
 
 void tst_KnownFileList::construct_default()
@@ -583,7 +587,11 @@ void tst_KnownFileList::sameFileDate_rules()
     const time_t t = 1700000000;
     QVERIFY(sameFileDate(t, t, false));
     QVERIFY(!sameFileDate(t, t + 1, false));
-    QVERIFY(!sameFileDate(t, t + 3600, false));
+    // MorphXT stored NTFS dates shifted by the DST bias (issue #46)
+    QVERIFY(sameFileDate(t, t + 3600, false));
+    QVERIFY(sameFileDate(t, t - 3600, false));
+    QVERIFY(!sameFileDate(t, t + 3601, false));
+    QVERIFY(!sameFileDate(t, t + 7200, false));
 
     QVERIFY(sameFileDate(t, t + 2, true));
     QVERIFY(sameFileDate(t, t - 3600, true));
@@ -593,7 +601,7 @@ void tst_KnownFileList::sameFileDate_rules()
     QVERIFY(!sameFileDate(t, t + 7200, true));
 }
 
-void tst_KnownFileList::findKnownFile_toleratesAShiftedDateOnlyOnALocalTimeVolume()
+void tst_KnownFileList::findKnownFile_toleratesAShiftedDate()
 {
     KnownFileList list;
     const auto add = [&list](uint8 hashByte, time_t date) {
@@ -609,14 +617,42 @@ void tst_KnownFileList::findKnownFile_toleratesAShiftedDateOnlyOnALocalTimeVolum
     };
     KnownFile* const summer = add(0x41, 1700000000);
 
-    QCOMPARE(list.findKnownFile(QStringLiteral("video.avi"), 1700003600, 12345), nullptr);
-    QCOMPARE(list.findKnownFile(QStringLiteral("video.avi"), 1700003600, 12345, true), summer);
+    QCOMPARE(list.findKnownFile(QStringLiteral("video.avi"), 1700003600, 12345), summer);
+    QCOMPARE(list.findKnownFile(QStringLiteral("video.avi"), 1700003601, 12345), nullptr);
+    QCOMPARE(list.findKnownFile(QStringLiteral("video.avi"), 1700003601, 12345, true), summer);
     QCOMPARE(list.findKnownFile(QStringLiteral("video.avi"), 1700001800, 12345, true), nullptr);
 
     // An exact record wins over a shifted one, whatever the order they are met in.
     KnownFile* const exact = add(0x42, 1700003600);
     QCOMPARE(list.findKnownFile(QStringLiteral("video.avi"), 1700003600, 12345, true), exact);
     QCOMPARE(list.findKnownFile(QStringLiteral("video.avi"), 1700000000, 12345, true), summer);
+}
+
+// A MorphXT known.met record: spreadbar tags are dropped, other unknown tags kept.
+void tst_KnownFileList::load_dropsMorphXTSpreadbarTags()
+{
+    SafeMemFile mem;
+    mem.writeUInt32(1700000000);            // date
+    uint8 hash[16];
+    std::memset(hash, 0x5A, 16);
+    mem.writeHash16(hash);
+    mem.writeUInt16(0);                      // single part: no part hashes
+    mem.writeUInt32(7);                      // tag count
+    Tag(FT_FILENAME, QStringLiteral("video.avi")).writeTagToFile(mem, UTF8Mode::OptBOM);
+    Tag(FT_FILESIZE, uint32{12345}).writeTagToFile(mem);
+    Tag(QByteArray("Spreadbar"), uint32{1}).writeTagToFile(mem);
+    Tag(QByteArray("\x70" "0"), uint32{0}).writeTagToFile(mem);
+    Tag(QByteArray("\x71" "0"), uint32{9000}).writeTagToFile(mem);
+    Tag(QByteArray("\x72" "12"), uint32{3}).writeTagToFile(mem);
+    Tag(QByteArray("ZZUL_POWERSHARE"), uint32{1}).writeTagToFile(mem);
+    mem.seek(0, 0);
+
+    KnownFile file;
+    QVERIFY(file.loadFromFile(mem));
+    QCOMPARE(file.fileName(), QStringLiteral("video.avi"));
+    QCOMPARE(static_cast<uint64>(file.fileSize()), uint64{12345});
+    QCOMPARE(file.tags().size(), size_t{1});
+    QCOMPARE(file.tags().front().name(), QByteArray("ZZUL_POWERSHARE"));
 }
 
 #include "tst_KnownFileList.moc"

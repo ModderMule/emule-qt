@@ -18,6 +18,7 @@ public:
     ops::Status setCategories(const QJsonArray& categories) override;
     PrefApplyReport applyPreferences(const PrefChanges& changes) override;
     void requestShutdown() override;
+    void requestRestart() override;
 
 private:
     IpcServer* m_ipcServer;   ///< not owned; tells the GUIs what changed

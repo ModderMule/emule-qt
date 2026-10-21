@@ -40,7 +40,7 @@ Every call does.
 - **Strict input:** an unknown query parameter or body field is a `400`, as is a value of the
   wrong type or out of range. Nothing is ignored silently.
 - **Lists:** `{items, total, offset, limit}`; `?limit=` 1–1000 (default 100), `?offset=`.
-- **Destructive calls** (cancel a download, remove a Usenet release or a category, shut down)
+- **Destructive calls** (cancel a download, remove a Usenet release or a category, shut down, restart)
   need `"confirm": true` in the body, or `?confirm=true` on `DELETE`.
 - **Version:** every response carries `X-Contract-Version`; `GET /capabilities` lists the
   features and every operation id.
@@ -90,8 +90,11 @@ cannot be read or set here; the web server's own switches are shown but read-onl
 `tcpPort`/`udpPort` are the ports listening at that moment, `0` for a closed socket. Sending
 `bindAddress` in the same patch reopens every socket on the new interface and the new ports at
 once, connected or not; UDP switched on/off then applies too, unless the daemon started with it off.
-The web server's own port is not touched. There is no restart route: `POST /api/v1/app/shutdown`
-and let a supervisor (Docker, systemd) start it again.
+The web server's own port is not touched. `POST /api/v1/app/restart` (body `{"confirm":true}`)
+applies a `restartRequired` change: the daemon saves state, exits and starts again with the same
+arguments, the same as the GUI's Restart Now. On Linux and macOS it stays the same process (same
+PID, fine as a container's PID 1); attached GUIs wait for it and reconnect. The API is gone for a
+few seconds; poll `GET /api/v1/app` until it answers. `POST /api/v1/app/shutdown` only stops it.
 
 `bindAddress` needs no restart. The reply says in `network` what the change did:
 

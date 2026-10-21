@@ -84,4 +84,10 @@ void DaemonApiBackend::requestShutdown()
     QTimer::singleShot(250, QCoreApplication::instance(), &QCoreApplication::quit);
 }
 
+void DaemonApiBackend::requestRestart()
+{
+    // Let the reply out first; the GUIs hear of it from DaemonApp
+    QTimer::singleShot(250, QCoreApplication::instance(), &DaemonApp::requestRestart);
+}
+
 } // namespace eMule

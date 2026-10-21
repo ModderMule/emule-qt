@@ -75,8 +75,8 @@ public:
     /// of whole parts hashed before the boundary fix). Folds that record's statistics
     /// into @p fresh and deletes it; call before safeAddKFile(fresh).
     bool dropSupersededRecord(KnownFile* fresh);
-    /// @p localTimeVolume: the file lies on FAT/exFAT, where a date may be off by a
-    /// rounding step or a DST hour (sameFileDate()). An exact match still wins.
+    /// A date one DST hour off matches too; on FAT/exFAT (@p localTimeVolume) also a
+    /// rounding step (sameFileDate()). An exact match still wins.
     KnownFile* findKnownFile(const QString& filename, time_t date, uint64 size,
                              bool localTimeVolume = false) const;
     KnownFile* findKnownFileByID(const uint8* hash) const;

@@ -360,14 +360,15 @@ void tst_PartFileSharing::changedPartFileIsRehashedAndLosesTheBadPart()
         // Separately, and after the close: closing flushes the write, and that flush
         // stamps the modification time again — setting it on the still-open handle
         // would simply be overwritten.
+        // Two hours: exactly one is a DST shift, not a change (sameFileDate()).
         QFile part(partPath);
         QVERIFY(part.open(QIODevice::ReadWrite));
-        QVERIFY(part.setFileTime(QDateTime::currentDateTime().addSecs(-3600),
+        QVERIFY(part.setFileTime(QDateTime::currentDateTime().addSecs(-7200),
                                  QFileDevice::FileModificationTime));
         part.close();
     }
     QCOMPARE(QFileInfo(partPath).lastModified().toSecsSinceEpoch(),
-             QDateTime::currentDateTime().addSecs(-3600).toSecsSinceEpoch());
+             QDateTime::currentDateTime().addSecs(-7200).toSecsSinceEpoch());
 
     auto reloaded = std::make_unique<PartFile>();
     QCOMPARE(reloaded->loadPartFile(m_tempDir, metName), PartFileLoadResult::LoadSuccess);

@@ -232,7 +232,8 @@ void WebServer::buildApiTable()
     {
         Operation op = make("app.shutdown", Method::Post, "/api/v1/app/shutdown", "App",
                             "Stop the daemon",
-                            "Saves state and exits. Transfers stop; nothing restarts it.");
+                            "Saves state and exits. Transfers stop; nothing restarts it. Use "
+                            "/api/v1/app/restart to come back.");
         op.flags = Destructive | NoMcpWrite;
         op.handler = [this](const Call&) {
             if (!m_apiBackend)
@@ -240,6 +241,24 @@ void WebServer::buildApiTable()
             logInfo(QStringLiteral("Shutdown requested over the REST API"));
             m_apiBackend->requestShutdown();
             return ok(QJsonObject{{s("shuttingDown"), true}});
+        };
+        add(op);
+    }
+    {
+        Operation op = make("app.restart", Method::Post, "/api/v1/app/restart", "App",
+                            "Restart the daemon",
+                            "Saves state, exits and starts again with the same arguments, as the "
+                            "GUI's Restart Now does. Applies settings that answered "
+                            "restartRequired, such as listen ports. The API is gone for the few "
+                            "seconds the restart takes: poll /api/v1/app until it "
+                            "answers.");
+        op.flags = Destructive | NoMcpWrite;
+        op.handler = [this](const Call&) {
+            if (!m_apiBackend)
+                return unavailable("Restart");
+            logInfo(QStringLiteral("Restart requested over the REST API"));
+            m_apiBackend->requestRestart();
+            return ok(QJsonObject{{s("restarting"), true}});
         };
         add(op);
     }

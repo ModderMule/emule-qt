@@ -737,6 +737,9 @@ enum class IpcMsgType : int {
     /// [loading: bool, stage: string] — the core started or finished reading its
     /// files. While loading, list requests are held and answered once it is over.
     PushCoreLoading      = 440,
+    /// [] — the core is about to restart itself (REST API or another GUI asked).
+    /// The connection drops; wait for it to come back instead of launching one.
+    PushCoreRestarting   = 441,
     PushLogMessage       = 450,  ///< [logId, category, severity: QtMsgType, message, timestamp: unix s]
     /// [entries: array of [logId, category, severity, message, timestamp]] — every
     /// line of one relay flush in a single frame, same entry shape as SyncLogs.

@@ -35,6 +35,24 @@
 
 namespace eMule {
 
+namespace {
+
+/// MorphXT spreadbar tags in known.met: "Spreadbar" per-file switch, and
+/// 0x70/0x71/0x72 + decimal index (start/end/count), three per range.
+bool isMorphSpreadbarTag(const Tag& tag)
+{
+    const QByteArray& name = tag.name();
+    if (name.size() < 2)
+        return false;
+    if (name == "Spreadbar")
+        return true;
+    if (name[0] != '\x70' && name[0] != '\x71' && name[0] != '\x72')
+        return false;
+    return std::ranges::all_of(name.sliced(1), [](char c) { return c >= '0' && c <= '9'; });
+}
+
+} // namespace
+
 // ---------------------------------------------------------------------------
 // Construction
 // ---------------------------------------------------------------------------
@@ -241,6 +259,9 @@ bool KnownFile::loadTagsFromFile(FileDataIO& file)
                 deserializeKadNotes(tag.blobValue());
             break;
         default:
+            // Dropped, or every save would carry MorphXT's spreadbars on (issue #46)
+            if (tag.nameId() == 0 && isMorphSpreadbarTag(tag))
+                break;
             addTagUnique(std::move(tag));
             break;
         }

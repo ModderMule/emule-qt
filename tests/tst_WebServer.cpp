@@ -154,6 +154,7 @@ public:
                                         {QStringLiteral("title"), QString()}}};
     QStringList calls;
     bool shutdownRequested = false;
+    bool restartRequested = false;
 
     [[nodiscard]] QList<LogRecord> logs(qint64 sinceId) const override
     {
@@ -209,6 +210,7 @@ public:
     }
 
     void requestShutdown() override { shutdownRequested = true; }
+    void requestRestart() override { restartRequested = true; }
 };
 
 /// Records what the web server asked for. Categories 0-2 exist.
@@ -3786,6 +3788,15 @@ void tst_WebServer::api_destructiveCallsNeedConfirm()
                          QByteArrayLiteral("{\"confirm\":true}")).statusCode, 200);
     QVERIFY(m_apiBackend.shutdownRequested);
     m_apiBackend.shutdownRequested = false;
+
+    QCOMPARE(sendRequest("POST", QStringLiteral("/api/v1/app/restart")).statusCode, 400);
+    QVERIFY(!m_apiBackend.restartRequested);
+    const Response restart = sendRequest("POST", QStringLiteral("/api/v1/app/restart"),
+                                         QByteArrayLiteral("{\"confirm\":true}"));
+    QCOMPARE(restart.statusCode, 200);
+    QVERIFY(m_apiBackend.restartRequested);
+    QVERIFY(!m_apiBackend.shutdownRequested);
+    m_apiBackend.restartRequested = false;
 }
 
 void tst_WebServer::api_downloadsAddEditAndClear()

@@ -1078,9 +1078,15 @@ void tst_SharedFileList::reload_aShiftedDateOnALocalTimeVolumeIsNotAChangedFile(
     QCOMPARE(file->utcFileDate(), hashedDate + 3600);
     QVERIFY2(knownFiles.isDirty(), "the adopted date has to reach known.met");
 
-    // Anywhere else an hour's difference is a changed file, as before.
+    // Off NTFS-style volumes too an exact hour is the same file (issue #46), any
+    // other shift is a changed file.
     setLocalTimeVolumeProbe([](const QString&) { return false; });
-    QVERIFY(shiftBy(3600));
+    QVERIFY(shiftBy(-3600));
+    shared.reload();
+    QTest::qWait(200);
+    QCOMPARE(removed.count(), 0);
+    QCOMPARE(file->utcFileDate(), hashedDate);
+    QVERIFY(shiftBy(1800));
     shared.reload();
     QTRY_VERIFY_WITH_TIMEOUT(removed.count() == 1, 10000);
 }

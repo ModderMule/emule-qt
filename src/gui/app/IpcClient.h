@@ -309,6 +309,8 @@ private:
 
     /// Answer every pending request with a failure, one event-loop turn later.
     void failPendingRequests();
+    /// The core restarts itself: a dropped link is expected, not a lost core.
+    void expectRestart();
 
     std::unique_ptr<Ipc::IpcConnection> m_connection;
     QTcpSocket* m_socket = nullptr;  // Owned by IpcConnection after handoff

@@ -63,9 +63,11 @@ bool sameFileDate(time_t stored, time_t onDisk, bool localTimeVolume)
 {
     if (stored == onDisk)
         return true;
-    if (!localTimeVolume)
-        return false;
     const long long diff = std::llabs(static_cast<long long>(stored) - static_cast<long long>(onDisk));
+    // Exactly one hour on any volume: MorphXT and older eMule stored NTFS dates
+    // shifted by the DST bias (AdjustNTFSDaylightFileTime on by default, issue #46).
+    if (!localTimeVolume)
+        return diff == kDstSecs;
     return diff <= kRoundingSecs || std::llabs(diff - kDstSecs) <= kRoundingSecs;
 }
 

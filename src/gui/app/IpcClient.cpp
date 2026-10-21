@@ -118,6 +118,7 @@ static QString ipcMsgTypeName(Ipc::IpcMsgType type)
     case T::PushLogMessage:       return QStringLiteral("PushLogMessage");
     case T::PushLogBatch:         return QStringLiteral("PushLogBatch");
     case T::PushCoreLoading:      return QStringLiteral("PushCoreLoading");
+    case T::PushCoreRestarting:   return QStringLiteral("PushCoreRestarting");
     case T::PushSharedFileUpdate: return QStringLiteral("PushSharedFileUpdate");
     case T::PushSharedFileRemoved: return QStringLiteral("PushSharedFileRemoved");
     case T::PushUploadUpdate:     return QStringLiteral("PushUploadUpdate");
@@ -343,9 +344,7 @@ void IpcClient::sendRestart()
 {
     if (!isConnected())
         return;
-    // Time for a graceful stop (saving part files) plus the start
-    constexpr int kRestartGraceMs = 60'000;
-    m_restartDeadline = QDeadlineTimer(kRestartGraceMs);
+    expectRestart();
     IpcMessage msg(IpcMsgType::Shutdown);
     msg.append(true);
     sendRequest(std::move(msg));
@@ -717,6 +716,9 @@ void IpcClient::dispatchPushEvent(const IpcMessage& msg)
                 setCoreLink(link);
         }
         break;
+    case IpcMsgType::PushCoreRestarting:
+        expectRestart();
+        break;
     case IpcMsgType::PushLogBatch:
         replayLogEntries(msg.fieldArray(0));
         break;
@@ -1022,6 +1024,13 @@ bool IpcClient::waitOnBusyCore(bool handshake)
         m_waitingOnBusyCore = true;
     }
     return true;
+}
+
+void IpcClient::expectRestart()
+{
+    // Time for a graceful stop (saving part files) plus the start
+    constexpr int kRestartGraceMs = 60'000;
+    m_restartDeadline = QDeadlineTimer(kRestartGraceMs);
 }
 
 } // namespace eMule

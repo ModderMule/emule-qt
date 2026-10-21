@@ -4,7 +4,7 @@
 /// @brief What the REST API needs from the daemon and core cannot reach itself.
 ///
 /// The log ring, the category store (it renumbers Usenet and feed entries too),
-/// the preference setters and shutdown all live in the daemon. Same seam as
+/// the preference setters, shutdown and restart all live in the daemon. Same seam as
 /// UsenetWebBackend: core declares it, DaemonApp installs the implementation.
 
 #include "app/CoreOps.h"
@@ -54,6 +54,8 @@ public:
 
     /// Quits the daemon once the reply is out.
     virtual void requestShutdown() = 0;
+    /// Quits once the reply is out, then starts again with the same arguments.
+    virtual void requestRestart() = 0;
 };
 
 } // namespace eMule

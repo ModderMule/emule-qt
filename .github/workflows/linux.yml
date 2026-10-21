@@ -130,6 +130,8 @@ jobs:
       # The bundle script checks that the files are there; this checks that the
       # shipped bridge starts from the unpacked tarball with its bundled libs.
       - name: Smoke-test the bundled MCP bridge
+        # container default shell is sh (dash): no pipefail
+        shell: bash
         run: |
           set -euo pipefail
           mkdir -p "$RUNNER_TEMP/verify"

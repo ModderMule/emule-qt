@@ -8,6 +8,8 @@
 /// and a date read from the cache can differ from the one read after a remount.
 /// Neither is a changed file, and neither is worth a rehash (MFC has
 /// AdjustNTFSDaylightFileTime for the same reason, srchybrid/OtherFunctions.cpp:2823).
+/// That MFC switch, on by default in MorphXT and eMule before 0.50b, stored NTFS
+/// dates an hour off while DST was active, so an exact hour counts on every volume.
 
 #include <QString>
 
@@ -22,8 +24,8 @@ namespace eMule {
 /// Tests: answer isLocalTimeVolume() from here instead of the disk. Empty restores it.
 void setLocalTimeVolumeProbe(std::function<bool(const QString&)> probe);
 
-/// Same file date? Exact everywhere; on a local-time volume a rounding step
-/// or one DST hour apart counts as the same too.
+/// Same file date? Exact or exactly one DST hour apart everywhere; on a
+/// local-time volume a rounding step either side of those counts too.
 [[nodiscard]] bool sameFileDate(time_t stored, time_t onDisk, bool localTimeVolume);
 
 } // namespace eMule

@@ -87,6 +87,9 @@ DaemonApp::~DaemonApp()
 void DaemonApp::requestRestart()
 {
     s_restartRequested = true;
+    // Every GUI waits for the new core rather than launching its own
+    if (s_instance && s_instance->m_ipcServer)
+        s_instance->m_ipcServer->broadcast(IpcMessage(IpcMsgType::PushCoreRestarting, 0));
     // Queued: the caller's reply frame is flushed before teardown
     QMetaObject::invokeMethod(QCoreApplication::instance(), &QCoreApplication::quit,
                               Qt::QueuedConnection);
