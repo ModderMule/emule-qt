@@ -25,7 +25,9 @@
 #include "panels/SharedFilesPanel.h"
 #include "panels/StatisticsPanel.h"
 #include "panels/TransferPanel.h"
+#ifdef EMULE_HAVE_BITTORRENT
 #include "panels/TorrentPanel.h"
+#endif
 #include "panels/UsenetPanel.h"
 
 #include "IpcMessage.h"
@@ -38,7 +40,9 @@
 #include "utils/IpcFeedback.h"
 #include "utils/PreviewLauncher.h"
 #include "utils/NzbDrop.h"
+#ifdef EMULE_HAVE_BITTORRENT
 #include "utils/TorrentLinks.h"
+#endif
 #include "utils/StatusBarNotifier.h"
 #include "utils/TaskbarProgress.h"
 
@@ -101,6 +105,7 @@ MainWindow::MainWindow(QWidget* parent)
             if (self)
                 self->handleOtherEd2kLinks(links, parent);
         });
+#ifdef EMULE_HAVE_BITTORRENT
     // BitTorrent magnets pasted among eD2K links go to the Torrents tab
     Ed2kLinkImporter::setTorrentLinkHandler(
         [self = QPointer<MainWindow>(this)](const QStringList& magnets, QWidget*) {
@@ -109,6 +114,15 @@ MainWindow::MainWindow(QWidget* parent)
             self->switchToTab(TabTorrents);
             self->m_torrentPanel->addMagnets(magnets);
         });
+    // .torrent files fetched for search rows, likewise
+    Ed2kLinkImporter::setTorrentFileHandler(
+        [self = QPointer<MainWindow>(this)](const QString& name, const QByteArray& data, QWidget*) {
+            if (!self || !self->m_torrentPanel)
+                return;
+            self->switchToTab(TabTorrents);
+            self->m_torrentPanel->addTorrentData(name, data);
+        });
+#endif
 
     setupPages();
     rebuildToolbar();
@@ -269,7 +283,8 @@ MainWindow::~MainWindow()
 
 void MainWindow::switchToTab(Tab tab)
 {
-    if (tab < 0 || tab >= TabCount)
+    // TabTorrents has no page without BitTorrent
+    if (tab < 0 || tab >= m_pages->count())
         return;
     m_pages->setCurrentIndex(tab);
 
@@ -285,7 +300,7 @@ void MainWindow::switchToTab(Tab tab)
 void MainWindow::onToolbarAction(QAction* action)
 {
     const int idx = action->data().toInt();
-    if (idx >= 0 && idx < TabCount)
+    if (idx >= 0 && idx < m_pages->count())
         m_pages->setCurrentIndex(idx);
 }
 
@@ -653,27 +668,27 @@ void MainWindow::showNotification(const QString& title, const QString& message,
 
 void MainWindow::dragEnterEvent(QDragEnterEvent* event)
 {
-    if (gui::nzbDropCandidates(event->mimeData()).isEmpty()
-        && gui::torrentDropFiles(event->mimeData()).isEmpty())
+    if (!isOurDrop(event->mimeData()))
         return;
     event->acceptProposedAction();
 }
 
 void MainWindow::dragMoveEvent(QDragMoveEvent* event)
 {
-    if (gui::nzbDropCandidates(event->mimeData()).isEmpty()
-        && gui::torrentDropFiles(event->mimeData()).isEmpty())
+    if (!isOurDrop(event->mimeData()))
         return;
     event->acceptProposedAction();
 }
 
 void MainWindow::dropEvent(QDropEvent* event)
 {
+#ifdef EMULE_HAVE_BITTORRENT
     if (m_torrentPanel && m_torrentPanel->acceptTorrentDrop(event->mimeData())) {
         switchToTab(TabTorrents);
         event->acceptProposedAction();
         return;
     }
+#endif
     if (m_usenetPanel == nullptr)
         return;
     if (!m_usenetPanel->acceptNzbDrop(event->mimeData()))
@@ -1031,8 +1046,10 @@ void MainWindow::buildToolsMenu()
     // is safe.
     if (m_usenetPanel)
         m_toolsMenu->addAction(m_usenetPanel->addNzbUrlAction());
+#ifdef EMULE_HAVE_BITTORRENT
     if (m_torrentPanel)
         m_toolsMenu->addAction(m_torrentPanel->addMagnetAction());
+#endif
 
     m_toolsMenu->addSeparator();
 
@@ -1644,9 +1661,13 @@ void MainWindow::onToolbarContextMenu(const QPoint& pos)
         const QList<int>& savedOrder = theUiState.toolbarButtonOrder();
         const QList<int>& orderInts = savedOrder.isEmpty() ? kDefaultToolbarOrder : savedOrder;
 
+        // Ids this build lacks (Torrents without BitTorrent) would list as "Unknown"
         QList<ToolbarButtonId> currentOrder;
-        for (int id : orderInts)
-            currentOrder.append(static_cast<ToolbarButtonId>(id));
+        for (int id : orderInts) {
+            const auto button = static_cast<ToolbarButtonId>(id);
+            if (button == ToolbarButtonId::Separator || findButtonDef(button))
+                currentOrder.append(button);
+        }
 
         ToolbarCustomizeDialog dlg(currentOrder, this);
         connect(&dlg, &ToolbarCustomizeDialog::orderChanged,
@@ -1920,7 +1941,8 @@ void MainWindow::setupPages()
     connect(m_usenetPanel->addNzbUrlAction(), &QAction::triggered, this,
             [this] { switchToTab(TabUsenet); });
 
-    // Tab 9: Torrents
+#ifdef EMULE_HAVE_BITTORRENT
+    // Tab 9: Torrents. Last page, so leaving it out renumbers nothing.
     m_torrentPanel = new TorrentPanel(this);
     addPage(m_torrentPanel);
     connect(m_torrentPanel, &TorrentPanel::optionsRequested, this,
@@ -1928,6 +1950,7 @@ void MainWindow::setupPages()
     // Same reasoning as the Usenet URL action above
     connect(m_torrentPanel->addMagnetAction(), &QAction::triggered, this,
             [this] { switchToTab(TabTorrents); });
+#endif
 }
 
 
@@ -2272,6 +2295,17 @@ void MainWindow::setStatusRole(QLabel* label, int role)
     label->setStyleSheet(role < 0
         ? QString{}
         : QStringLiteral("color: %1;").arg(roleColorName(static_cast<TextRole>(role))));
+}
+
+bool MainWindow::isOurDrop(const QMimeData* mime)
+{
+    if (!gui::nzbDropCandidates(mime).isEmpty())
+        return true;
+#ifdef EMULE_HAVE_BITTORRENT
+    return !gui::torrentDropFiles(mime).isEmpty();
+#else
+    return false;
+#endif
 }
 
 } // namespace eMule

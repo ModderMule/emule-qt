@@ -17,7 +17,7 @@
 <context>
     <name>Ed2kLinkImporter</name>
     <message>
-        <location filename="../src/gui/utils/Ed2kLinkImporter.cpp" line="+210"/>
+        <location filename="../src/gui/utils/Ed2kLinkImporter.cpp" line="+211"/>
         <source>already shared</source>
         <translation>déjà partagé</translation>
     </message>
@@ -52,7 +52,7 @@
         <translation>Vous avez précédemment annulé le téléchargement de &quot;%1&quot;.</translation>
     </message>
     <message numerus="yes">
-        <location line="+140"/>
+        <location line="+171"/>
         <source>%n further HTTP Cache link(s) ignored — apply one at a time.</source>
         <translation>
             <numerusform>%n lien Cache HTTP supplémentaire ignoré — appliquez-les un par un.</numerusform>
@@ -397,7 +397,7 @@ Activez l&apos;interface web ou l&apos;API REST dans Options → Interface web.<
 <context>
     <name>QObject</name>
     <message>
-        <location filename="../src/gui/utils/Ed2kLinkImporter.cpp" line="-343"/>
+        <location filename="../src/gui/utils/Ed2kLinkImporter.cpp" line="-374"/>
         <location line="+20"/>
         <source>eD2K Link</source>
         <translation>Lien eD2K</translation>
@@ -421,7 +421,7 @@ Activez l&apos;interface web ou l&apos;API REST dans Options → Interface web.<
 %1</translation>
     </message>
     <message>
-        <location filename="../src/gui/app/main.cpp" line="+398"/>
+        <location filename="../src/gui/app/main.cpp" line="+400"/>
         <source>eMule Qt</source>
         <translation>eMule Qt</translation>
     </message>
@@ -435,7 +435,7 @@ Start it with --new-instance or --config &lt;dir&gt; to open another window.</so
 Lancez-le avec --new-instance ou --config &lt;dossier&gt; pour ouvrir une autre fenêtre.</translation>
     </message>
     <message>
-        <location line="+467"/>
+        <location line="+469"/>
         <source>Download Added</source>
         <translation>Téléchargement ajouté</translation>
     </message>
@@ -720,7 +720,7 @@ Contient des commentaires</translation>
         <translation type="vanished">%1 octets</translation>
     </message>
     <message>
-        <location filename="../src/gui/dialogs/OptionsDialog.cpp" line="+3112"/>
+        <location filename="../src/gui/dialogs/OptionsDialog.cpp" line="+3117"/>
         <source>Test</source>
         <translation>Test</translation>
     </message>
@@ -4661,19 +4661,19 @@ Veuillez en choisir un autre :</translation>
 <context>
     <name>eMule::MainWindow</name>
     <message>
-        <location filename="../src/gui/app/MainWindow.cpp" line="+93"/>
-        <location line="+509"/>
+        <location filename="../src/gui/app/MainWindow.cpp" line="+97"/>
+        <location line="+520"/>
         <source>eMule Qt v%1</source>
         <translation>eMule Qt v%1</translation>
     </message>
     <message>
-        <location line="-379"/>
+        <location line="-380"/>
         <location line="+9"/>
         <source>New Version Available</source>
         <translation>Nouvelle version disponible</translation>
     </message>
     <message>
-        <location line="+220"/>
+        <location line="+221"/>
         <source>eD2K: Connected (LowID)</source>
         <translation>eD2K : Connecté (LowID)</translation>
     </message>
@@ -4689,12 +4689,12 @@ Veuillez en choisir un autre :</translation>
     </message>
     <message>
         <location line="+8"/>
-        <location line="+1340"/>
+        <location line="+1346"/>
         <source>eD2K: Disconnected</source>
         <translation>eD2K : Déconnecté</translation>
     </message>
     <message>
-        <location line="-1283"/>
+        <location line="-1289"/>
         <source>Kad: Connected</source>
         <translation>Kad : Connecté</translation>
     </message>
@@ -4710,12 +4710,12 @@ Veuillez en choisir un autre :</translation>
     </message>
     <message>
         <location line="+4"/>
-        <location line="+1275"/>
+        <location line="+1281"/>
         <source>Kad: Disconnected</source>
         <translation>Kad : Déconnecté</translation>
     </message>
     <message>
-        <location line="-1266"/>
+        <location line="-1272"/>
         <source>Users: %1 | Files: %2</source>
         <translation>Utilisateurs : %1 | Fichiers : %2</translation>
     </message>
@@ -4745,7 +4745,7 @@ Veuillez en choisir un autre :</translation>
         <translation>Coller les liens eD2K...</translation>
     </message>
     <message>
-        <location line="+28"/>
+        <location line="+30"/>
         <source>Links</source>
         <translation>Liens</translation>
     </message>
@@ -4760,14 +4760,14 @@ Veuillez en choisir un autre :</translation>
         <translation>Fonctionnalités</translation>
     </message>
     <message>
-        <location line="-813"/>
+        <location line="-816"/>
         <location line="+7"/>
-        <location line="+809"/>
+        <location line="+812"/>
         <source>Version Check</source>
         <translation>Vérification de version</translation>
     </message>
     <message>
-        <location line="-877"/>
+        <location line="-880"/>
         <source>Quit eMule Qt</source>
         <translation>Quitter eMule Qt</translation>
     </message>
@@ -4810,7 +4810,7 @@ Vous utilisez %2. Ouvrir le site web d&apos;eMule Qt ?</translation>
 %1</translation>
     </message>
     <message>
-        <location line="+66"/>
+        <location line="+67"/>
         <source>Cannot Connect</source>
         <translation>Connexion impossible</translation>
     </message>
@@ -4966,7 +4966,7 @@ Up: %3 | Down: %4</source>
         <translation>Ouvrir le dossier des téléchargements dans le navigateur</translation>
     </message>
     <message>
-        <location line="+36"/>
+        <location line="+38"/>
         <source>Open WebUI</source>
         <translation>Ouvrir l&apos;interface web</translation>
     </message>
@@ -5121,7 +5121,7 @@ Activez-la dans Options → Interface web, puis réessayez.</translation>
         <translation>Personnaliser la barre d&apos;outils...</translation>
     </message>
     <message>
-        <location line="+29"/>
+        <location line="+33"/>
         <source>Disconnect</source>
         <translation>Déconnecter</translation>
     </message>
@@ -5162,7 +5162,7 @@ Activez-la dans Options → Interface web, puis réessayez.</translation>
         <translation>Nouveau message — double-cliquez pour le lire</translation>
     </message>
     <message>
-        <location line="+312"/>
+        <location line="+314"/>
         <source>eD2K Link</source>
         <translation>Lien eD2K</translation>
     </message>
@@ -5299,12 +5299,12 @@ Activez-la dans Options → Interface web, puis réessayez.</translation>
         <translation>Usenet</translation>
     </message>
     <message>
-        <location line="+1"/>
+        <location line="+3"/>
         <source>Torrents</source>
         <translation>Torrents</translation>
     </message>
     <message>
-        <location line="+1"/>
+        <location line="+2"/>
         <source>Downloads Folder</source>
         <translation>Dossier des téléchargements</translation>
     </message>
@@ -5737,7 +5737,7 @@ Activez-la dans Options → Interface web, puis réessayez.</translation>
 <context>
     <name>eMule::MetaResultActions</name>
     <message>
-        <location filename="../src/gui/utils/MetaResultActions.cpp" line="+62"/>
+        <location filename="../src/gui/utils/MetaResultActions.cpp" line="+63"/>
         <source>NZB files (*.nzb)</source>
         <translation>Fichiers NZB (*.nzb)</translation>
     </message>
@@ -5780,7 +5780,7 @@ Activez-la dans Options → Interface web, puis réessayez.</translation>
         </translation>
     </message>
     <message>
-        <location line="+39"/>
+        <location line="+59"/>
         <source>Queued &quot;%1&quot; for Usenet download.</source>
         <translation>« %1 » ajouté à la file de téléchargement Usenet.</translation>
     </message>
@@ -5804,12 +5804,13 @@ Le télécharger à nouveau ?</translation>
         <translation>Impossible de mettre « %1 » en file d&apos;attente : %2</translation>
     </message>
     <message>
-        <location line="+25"/>
+        <location line="+37"/>
+        <location line="+59"/>
         <source>Could not download &quot;%1&quot;: %2</source>
         <translation>Impossible de télécharger « %1 » : %2</translation>
     </message>
     <message>
-        <location line="+22"/>
+        <location line="-39"/>
         <source>Could not write %1: %2</source>
         <translation>Impossible d&apos;écrire %1 : %2</translation>
     </message>
@@ -5819,17 +5820,22 @@ Le télécharger à nouveau ?</translation>
         <translation>%1 enregistré</translation>
     </message>
     <message>
-        <location line="+24"/>
+        <location line="+7"/>
         <source>Could not fetch the links of &quot;%1&quot;: %2</source>
         <translation>Impossible de récupérer les liens de « %1 » : %2</translation>
     </message>
     <message>
-        <location line="+6"/>
+        <location line="+5"/>
         <source>&quot;%1&quot; holds no links.</source>
         <translation>« %1 » ne contient aucun lien.</translation>
     </message>
     <message>
-        <location line="+57"/>
+        <location line="+32"/>
+        <source>Could not add &quot;%1&quot;: the torrent is empty.</source>
+        <translation>Impossible d&apos;ajouter « %1 » : le torrent est vide.</translation>
+    </message>
+    <message>
+        <location line="+45"/>
         <source>Search</source>
         <translation>Recherche</translation>
     </message>
@@ -6338,36 +6344,36 @@ Le télécharger à nouveau ?</translation>
 <context>
     <name>eMule::OptionsDialog</name>
     <message>
-        <location filename="../src/gui/dialogs/OptionsDialog.cpp" line="-3006"/>
+        <location filename="../src/gui/dialogs/OptionsDialog.cpp" line="-3011"/>
         <source>Options</source>
         <translation>Options</translation>
     </message>
     <message>
         <location line="+61"/>
-        <location line="+1976"/>
+        <location line="+1981"/>
         <source>OK</source>
         <translation>OK</translation>
     </message>
     <message>
-        <location line="-1975"/>
-        <location line="+1976"/>
+        <location line="-1980"/>
+        <location line="+1981"/>
         <source>Cancel</source>
         <translation>Annuler</translation>
     </message>
     <message>
-        <location line="-1975"/>
-        <location line="+5764"/>
+        <location line="-1980"/>
+        <location line="+5771"/>
         <source>Apply</source>
         <translation>Appliquer</translation>
     </message>
     <message>
-        <location line="-5763"/>
+        <location line="-5770"/>
         <source>Help</source>
         <translation>Aide</translation>
     </message>
     <message>
         <location line="+259"/>
-        <location line="+1984"/>
+        <location line="+1989"/>
         <location line="+62"/>
         <location line="+5"/>
         <location line="+9"/>
@@ -6376,7 +6382,7 @@ Le télécharger à nouveau ?</translation>
         <translation>Filtre IP</translation>
     </message>
     <message>
-        <location line="-2070"/>
+        <location line="-2075"/>
         <source>IP filter reloaded: %1 entries.</source>
         <translation>Filtre IP rechargé : %1 entrées.</translation>
     </message>
@@ -6401,18 +6407,18 @@ Le télécharger à nouveau ?</translation>
         <translation>Usenet</translation>
     </message>
     <message>
-        <location line="+76"/>
+        <location line="+81"/>
         <source>User Name</source>
         <translation>Nom d&apos;utilisateur</translation>
     </message>
     <message>
         <location line="+8"/>
-        <location line="+5682"/>
+        <location line="+5684"/>
         <source>Language</source>
         <translation>Langue</translation>
     </message>
     <message>
-        <location line="-5679"/>
+        <location line="-5681"/>
         <source>System Default</source>
         <translation>Par défaut du système</translation>
     </message>
@@ -6512,12 +6518,12 @@ Le télécharger à nouveau ?</translation>
     </message>
     <message>
         <location line="+8"/>
-        <location line="+5618"/>
+        <location line="+5620"/>
         <source>Core</source>
         <translation>Noyau</translation>
     </message>
     <message>
-        <location line="-5613"/>
+        <location line="-5615"/>
         <source>Address:</source>
         <translation>Adresse :</translation>
     </message>
@@ -6691,15 +6697,15 @@ Voulez-vous vraiment continuer ?</translation>
         <location line="+295"/>
         <location line="+1016"/>
         <location line="+152"/>
-        <location line="+879"/>
-        <location line="+297"/>
+        <location line="+880"/>
+        <location line="+298"/>
         <location line="+277"/>
         <location line="+29"/>
         <source>Enabled</source>
         <translation>Activé</translation>
     </message>
     <message>
-        <location line="-4764"/>
+        <location line="-4766"/>
         <source>Reset</source>
         <translation>Réinitialiser</translation>
     </message>
@@ -6716,24 +6722,24 @@ Voulez-vous vraiment continuer ?</translation>
     <message>
         <location line="+3"/>
         <location line="+6"/>
-        <location line="+4146"/>
-        <location line="+344"/>
+        <location line="+4147"/>
+        <location line="+345"/>
         <source> KB/s</source>
         <translation> Ko/s</translation>
     </message>
     <message>
-        <location line="-4493"/>
+        <location line="-4495"/>
         <source>Upload</source>
         <translation>Envoi</translation>
     </message>
     <message>
         <location line="+9"/>
-        <location line="+4134"/>
+        <location line="+4135"/>
         <source>Limits</source>
         <translation>Limites</translation>
     </message>
     <message>
-        <location line="-4131"/>
+        <location line="-4132"/>
         <source>Download limit</source>
         <translation>Limite de téléchargement</translation>
     </message>
@@ -6794,12 +6800,12 @@ Voulez-vous vraiment continuer ?</translation>
     </message>
     <message>
         <location line="+4"/>
-        <location line="+6785"/>
+        <location line="+6791"/>
         <source>Any</source>
         <translation>Tous</translation>
     </message>
     <message>
-        <location line="-6783"/>
+        <location line="-6789"/>
         <source>Use only this network interface, for example a VPN tunnel. Pick one from the list, or type an IP address or a subnet such as 10.64.0.0/10 (the interface holding an address in it). Connections through a proxy are not bound.</source>
         <translation>Utiliser uniquement cette interface réseau, par exemple un tunnel VPN. Choisissez-en une dans la liste, ou saisissez une adresse IP ou un sous-réseau tel que 10.64.0.0/10 (l&apos;interface qui y possède une adresse). Les connexions passant par un proxy ne sont pas liées.</translation>
     </message>
@@ -7796,12 +7802,12 @@ Chaque connexion Usenet transite alors par le proxy : sa vitesse limite donc le 
     </message>
     <message>
         <location line="+209"/>
-        <location line="+3161"/>
+        <location line="+3162"/>
         <source>Connection</source>
         <translation>Connexion</translation>
     </message>
     <message>
-        <location line="-3145"/>
+        <location line="-3146"/>
         <source>Security:</source>
         <translation>Sécurité :</translation>
     </message>
@@ -8173,12 +8179,12 @@ Chaque connexion Usenet transite alors par le proxy : sa vitesse limite donc le 
     </message>
     <message>
         <location line="+8"/>
-        <location line="+2036"/>
+        <location line="+2037"/>
         <source>Encryption:</source>
         <translation>Chiffrement :</translation>
     </message>
     <message>
-        <location line="-2033"/>
+        <location line="-2034"/>
         <source>None (119)</source>
         <translation>Aucun (119)</translation>
     </message>
@@ -8266,12 +8272,12 @@ Chaque connexion Usenet transite alors par le proxy : sa vitesse limite donc le 
         <translation>Stricte</translation>
     </message>
     <message>
-        <location line="-2612"/>
+        <location line="-2616"/>
         <source>BitTorrent</source>
         <translation>BitTorrent</translation>
     </message>
     <message>
-        <location line="+302"/>
+        <location line="+306"/>
         <source>Show download progress on the Dock icon</source>
         <translation>Afficher la progression des téléchargements sur l&apos;icône du Dock</translation>
     </message>
@@ -8397,13 +8403,13 @@ Chaque connexion Usenet transite alors par le proxy : sa vitesse limite donc le 
     </message>
     <message>
         <location line="+1"/>
-        <location line="+1987"/>
+        <location line="+1988"/>
         <location line="+9"/>
         <source>No limit</source>
         <translation>Sans limite</translation>
     </message>
     <message>
-        <location line="-1988"/>
+        <location line="-1989"/>
         <source>Allowance size:</source>
         <translation>Taille du quota :</translation>
     </message>
@@ -8572,12 +8578,12 @@ Il ne peut pas se trouver dans vos dossiers temporaire, d&apos;arrivée ou de co
     </message>
     <message>
         <location line="+5"/>
-        <location line="+1863"/>
+        <location line="+1864"/>
         <source>Browse…</source>
         <translation>Parcourir…</translation>
     </message>
     <message>
-        <location line="-1853"/>
+        <location line="-1854"/>
         <source>Desktop</source>
         <translation>Bureau</translation>
     </message>
@@ -9261,7 +9267,7 @@ En ajouter un plus tard ne récupère pas son catalogue antérieur : un nouvel i
         <translation>Contact de l&apos;indexeur…</translation>
     </message>
     <message>
-        <location line="+72"/>
+        <location line="+73"/>
         <source>Enable BitTorrent</source>
         <translation>Activer BitTorrent</translation>
     </message>
@@ -9376,7 +9382,7 @@ En ajouter un plus tard ne récupère pas son catalogue antérieur : un nouvel i
         <translation>Dossier de téléchargement BitTorrent</translation>
     </message>
     <message>
-        <location line="+18"/>
+        <location line="+19"/>
         <source>Warning: Do not change these settings unless you know what you are doing. Otherwise you can easily make things worse for yourself. eMule will run fine without adjusting any of these settings.</source>
         <translation>Attention : Ne modifiez pas ces paramètres si vous ne savez pas ce que vous faites. Sinon, vous pourriez facilement aggraver les choses. eMule fonctionnera très bien sans modifier aucun de ces paramètres.</translation>
     </message>
@@ -9401,8 +9407,8 @@ En ajouter un plus tard ne récupère pas son catalogue antérieur : un nouvel i
         <translation>Intervalle de rafraîchissement de connexion serveur [min.] :</translation>
     </message>
     <message>
-        <location line="-149"/>
-        <location line="+152"/>
+        <location line="-150"/>
+        <location line="+153"/>
         <source>Disabled</source>
         <translation>Désactivé</translation>
     </message>
@@ -9427,7 +9433,7 @@ En ajouter un plus tard ne récupère pas son catalogue antérieur : un nouvel i
         <translation>Le changement de taille de police prendra effet après le redémarrage de l&apos;application.</translation>
     </message>
     <message>
-        <location line="+1037"/>
+        <location line="+1039"/>
         <source>specialdlp loaded, DLP v%1</source>
         <translation>specialdlp chargé, DLP v%1</translation>
     </message>
@@ -9437,7 +9443,7 @@ En ajouter un plus tard ne récupère pas son catalogue antérieur : un nouvel i
         <translation>Bibliothèque specialdlp introuvable, les vérifications sont inactives</translation>
     </message>
     <message>
-        <location line="+645"/>
+        <location line="+647"/>
         <source>Automatic</source>
         <translation>Automatique</translation>
     </message>
@@ -9451,7 +9457,7 @@ En ajouter un plus tard ne récupère pas son catalogue antérieur : un nouvel i
         <translation type="vanished">Accepter automatiquement les liens eD2K uniquement pendant l&apos;exécution</translation>
     </message>
     <message>
-        <location line="-2792"/>
+        <location line="-2796"/>
         <source>Use credit system (reward uploaders)</source>
         <translation>Utiliser le système de crédits (récompenser les envoyeurs)</translation>
     </message>
@@ -9475,12 +9481,12 @@ En ajouter un plus tard ne récupère pas son catalogue antérieur : un nouvel i
         <translation>Filtrer les IPs LAN des serveurs et clients</translation>
     </message>
     <message>
-        <location line="-4446"/>
+        <location line="-4448"/>
         <source>Show more controls (advanced mode controls)</source>
         <translation>Afficher plus de contrôles (mode avancé)</translation>
     </message>
     <message>
-        <location line="+4449"/>
+        <location line="+4451"/>
         <source>Disable A4AF checks to save CPU</source>
         <translation>Désactiver les vérifications A4AF pour économiser le CPU</translation>
     </message>
@@ -9776,7 +9782,7 @@ Redémarrez eMule pour que toutes les connexions utilisent les nouveaux paramèt
 Les connexions aux serveurs de news basculent immédiatement.</translation>
     </message>
     <message>
-        <location line="+465"/>
+        <location line="+467"/>
         <source>Web Interface</source>
         <translation>Interface web</translation>
     </message>
@@ -9796,7 +9802,7 @@ Les connexions aux serveurs de news basculent immédiatement.</translation>
         <translation>Impossible de mettre à jour l&apos;association des fichiers .nzb : %1</translation>
     </message>
     <message>
-        <location line="+622"/>
+        <location line="+624"/>
         <source>Port forwarding: %1</source>
         <translation>Redirection de ports : %1</translation>
     </message>
@@ -9851,17 +9857,17 @@ Les connexions aux serveurs de news basculent immédiatement.</translation>
         <translation>Rétablir les valeurs par défaut</translation>
     </message>
     <message>
-        <location line="-4990"/>
+        <location line="-4996"/>
         <location line="+1019"/>
         <location line="+154"/>
-        <location line="+1471"/>
+        <location line="+1473"/>
         <location line="+316"/>
-        <location line="+2028"/>
+        <location line="+2032"/>
         <source>Remove</source>
         <translation>Supprimer</translation>
     </message>
     <message>
-        <location line="-6163"/>
+        <location line="-6169"/>
         <source>New eMule Qt version detected</source>
         <translation>Nouvelle version d&apos;eMule Qt détectée</translation>
     </message>
@@ -9871,7 +9877,7 @@ Les connexions aux serveurs de news basculent immédiatement.</translation>
         <translation>Mettre à jour depuis une URL : (format filter.dat ou PeerGuardian, .gz/.zip acceptés)</translation>
     </message>
     <message>
-        <location line="+3113"/>
+        <location line="+3115"/>
         <source>Write eMule core logs to disk</source>
         <translation>Écrire les journaux du noyau eMule sur le disque</translation>
     </message>
@@ -9931,14 +9937,14 @@ Les connexions aux serveurs de news basculent immédiatement.</translation>
         <translation>Bail demandé :</translation>
     </message>
     <message>
-        <location line="-2353"/>
+        <location line="-2355"/>
         <location line="+913"/>
-        <location line="+1444"/>
+        <location line="+1446"/>
         <source> s</source>
         <translation> s</translation>
     </message>
     <message>
-        <location line="-2399"/>
+        <location line="-2401"/>
         <source>Decimal GB, because that is what an invoice says — the 1024-based GB used elsewhere in eMule would put a 1000 GB plan 7% over.
 
 Set it slightly under your plan. The figure is measured here, so it reads a few percent below your provider&apos;s, and articles already in flight when the limit is reached still finish.</source>
@@ -9947,7 +9953,7 @@ Set it slightly under your plan. The figure is measured here, so it reads a few 
 Réglez-le légèrement en dessous de votre forfait. Le volume est mesuré ici, il est donc inférieur de quelques pour cent à celui de votre fournisseur, et les articles déjà en cours de transfert lorsque la limite est atteinte se terminent quand même.</translation>
     </message>
     <message>
-        <location line="+2093"/>
+        <location line="+2095"/>
         <source>Max. firewalled Kad nodes served as buddy:</source>
         <translation>Max. nœuds Kad derrière pare-feu servis comme buddy :</translation>
     </message>
@@ -10065,11 +10071,11 @@ Réglez-le légèrement en dessous de votre forfait. Le volume est mesuré ici, 
         <translation>Nouveau planning</translation>
     </message>
     <message>
-        <location line="-2738"/>
+        <location line="-2740"/>
         <location line="+1019"/>
         <location line="+154"/>
-        <location line="+1744"/>
-        <location line="+2066"/>
+        <location line="+1746"/>
+        <location line="+2070"/>
         <source>Add</source>
         <translation>Ajouter</translation>
     </message>
@@ -10082,7 +10088,7 @@ Réglez-le légèrement en dessous de votre forfait. Le volume est mesuré ici, 
         <translation type="vanished">Entrer une valeur :</translation>
     </message>
     <message>
-        <location line="-2029"/>
+        <location line="-2033"/>
         <source>Edit Value</source>
         <translation>Modifier la valeur</translation>
     </message>
@@ -10374,15 +10380,15 @@ Les mots-clés utilisés dans les expressions de recherche Kad doivent avoir une
 <context>
     <name>eMule::SearchPanel</name>
     <message>
-        <location filename="../src/gui/panels/SearchPanel.cpp" line="+308"/>
-        <location line="+982"/>
+        <location filename="../src/gui/panels/SearchPanel.cpp" line="+309"/>
+        <location line="+984"/>
         <location line="+13"/>
-        <location line="+514"/>
+        <location line="+521"/>
         <source>Download</source>
         <translation>Téléchargement</translation>
     </message>
     <message>
-        <location line="-1489"/>
+        <location line="-1498"/>
         <source>Close All Searches</source>
         <translation>Fermer toutes les recherches</translation>
     </message>
@@ -10731,7 +10737,7 @@ Les mots-clés utilisés dans les expressions de recherche Kad doivent avoir une
         <translation>Copier le &amp;nom</translation>
     </message>
     <message>
-        <location line="+83"/>
+        <location line="+85"/>
         <source>%1 (%2)</source>
         <translation>%1 (%2)</translation>
     </message>
@@ -10746,12 +10752,12 @@ Les mots-clés utilisés dans les expressions de recherche Kad doivent avoir une
         <translation>Télécharger le fichier NZB...</translation>
     </message>
     <message>
-        <location line="+8"/>
+        <location line="+10"/>
         <source>Download Torrent</source>
         <translation>Télécharger le torrent</translation>
     </message>
     <message>
-        <location line="+8"/>
+        <location line="+9"/>
         <source>Copy Magnet Link</source>
         <translation>Copier le lien magnet</translation>
     </message>
@@ -10798,7 +10804,7 @@ Les mots-clés utilisés dans les expressions de recherche Kad doivent avoir une
     <message>
         <location line="+65"/>
         <location line="+7"/>
-        <location line="+968"/>
+        <location line="+972"/>
         <location line="+43"/>
         <source>Preview</source>
         <translation>Aperçu</translation>
@@ -10833,14 +10839,19 @@ Les mots-clés utilisés dans les expressions de recherche Kad doivent avoir une
         <translation>Tous</translation>
     </message>
     <message>
-        <location line="-1434"/>
+        <location line="-1438"/>
         <location line="+15"/>
         <location line="+10"/>
         <source>Mark as Spam</source>
         <translation>Marquer comme spam</translation>
     </message>
     <message>
-        <location line="+12"/>
+        <location line="-136"/>
+        <source>Save Torrent File...</source>
+        <translation>Enregistrer le fichier torrent...</translation>
+    </message>
+    <message>
+        <location line="+148"/>
         <source>Remove</source>
         <translation>Supprimer</translation>
     </message>
@@ -10870,7 +10881,7 @@ Les mots-clés utilisés dans les expressions de recherche Kad doivent avoir une
         <translation>Services web</translation>
     </message>
     <message>
-        <location line="+973"/>
+        <location line="+977"/>
         <source>Preview not available — web server is not running or stream token not received.</source>
         <translation>Aperçu indisponible — le serveur web n&apos;est pas en cours d&apos;exécution ou aucun jeton de flux n&apos;a été reçu.</translation>
     </message>
@@ -14780,13 +14791,15 @@ Cliquer de nouveau sur « Restaurer les statistiques » rechargera vos statistiq
     <message>
         <location line="+14"/>
         <location line="+6"/>
-        <location line="+17"/>
+        <location line="+12"/>
+        <location line="+13"/>
         <source>Add Torrent</source>
         <translation>Ajouter un torrent</translation>
     </message>
     <message>
-        <location line="-23"/>
-        <location line="+23"/>
+        <location line="-31"/>
+        <location line="+18"/>
+        <location line="+13"/>
         <location line="+15"/>
         <location line="+11"/>
         <location line="+388"/>
@@ -14794,12 +14807,12 @@ Cliquer de nouveau sur « Restaurer les statistiques » rechargera vos statistiq
         <translation>Non connecté au noyau eMule.</translation>
     </message>
     <message>
-        <location line="-430"/>
+        <location line="-438"/>
         <source>Cannot read %1.</source>
         <translation>Impossible de lire %1.</translation>
     </message>
     <message>
-        <location line="+31"/>
+        <location line="+39"/>
         <source>Add Magnet Links</source>
         <translation>Ajouter des liens magnet</translation>
     </message>

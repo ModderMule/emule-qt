@@ -5,8 +5,10 @@
 ///
 /// Usenet "Download" queues the NZB daemon-side (DownloadMetaResult); "Download
 /// NZB File", "Download Torrent" and "Download Container" fetch the metafile and
-/// save it here; a web row's links open in WebLinksDialog; a magnet-only torrent
-/// has nothing to fetch, so its magnet goes to the clipboard. Any fetch may answer
+/// save it here; a web row's links open in WebLinksDialog. A torrent's Download
+/// fetches the .torrent for the Torrents tab, a magnet-only one hands its magnet
+/// there; built without BitTorrent the .torrent is saved and the magnet copied,
+/// for another client. Any fetch may answer
 /// AuthRequired / AccountInactive: one MetaAccountDialog per server opens, and
 /// every request that hit it is retried once it accepts.
 
@@ -58,14 +60,27 @@ public:
     /// Magnet-only torrents: their magnets to the clipboard, one a line.
     static void copyMagnets(const QList<Row>& rows);
 
+    /// Magnet-only torrents' Download: to the Torrents tab, else copyMagnets.
+    void handOverMagnets(const QList<Row>& rows);
+
+    /// Torrents with a .torrent: fetch each for the Torrents tab (its magnet when
+    /// the fetch fails), else saveMetaFiles.
+    void addTorrents(quint32 searchID, const QList<Row>& rows);
+
     /// Account status / log out for a server (server list).
     void manageAccount(const QString& serverAddr, const QString& serverName);
 
 private:
     void sendDownload(quint32 searchID, const Row& row, int category, bool force,
                       QPointer<SearchResultsModel> model);
+    /// FetchMetaFile for @p row, login detour included. @p onData gets the reply's
+    /// map; a failure warns with @p failText (%1 name, %2 reason) unless @p onFail
+    /// handles it.
+    void fetchMeta(quint32 searchID, const Row& row, const QString& failText,
+                   std::function<void(const QCborMap& data)> onData, std::function<bool()> onFail = {});
     void fetchAndSave(quint32 searchID, const Row& row, const QString& path, bool pathIsDir);
     void fetchAndShowLinks(quint32 searchID, const Row& row);
+    void fetchAndAddTorrent(quint32 searchID, const Row& row);
 
     /// Handle an auth failure: open (or reuse) the server's dialog, retry on accept.
     /// Returns false when @p meta is no auth problem.

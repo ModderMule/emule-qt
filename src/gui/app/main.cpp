@@ -64,7 +64,9 @@ static void unixSignalHandler(int)
 #include "panels/SharedFilesPanel.h"
 #include "panels/StatisticsPanel.h"
 #include "panels/TransferPanel.h"
+#ifdef EMULE_HAVE_BITTORRENT
 #include "panels/TorrentPanel.h"
+#endif
 #include "panels/UsenetPanel.h"
 #include "prefs/Preferences.h"
 #include "utils/BundleEnvironment.h"
@@ -575,7 +577,9 @@ int main(int argc, char* argv[])
         mainWindow.ircPanel()->setIpcClient(&ipcClient);
         mainWindow.statisticsPanel()->setIpcClient(&ipcClient);
         mainWindow.usenetPanel()->setIpcClient(&ipcClient);
+#ifdef EMULE_HAVE_BITTORRENT
         mainWindow.torrentPanel()->setIpcClient(&ipcClient);
+#endif
 
         // Wire daemon log messages to the LogWidget
         // PushLogMessage format: [logId(0), category(1), severity(2), message(3), timestamp(4)]

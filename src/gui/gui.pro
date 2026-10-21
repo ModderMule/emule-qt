@@ -143,12 +143,6 @@ SOURCES += \
     dialogs/PasteLinksDialog.cpp \
     dialogs/PasteTextDialog.cpp \
     utils/TorrentLinks.cpp \
-    utils/TorrentAdd.cpp \
-    controls/TorrentListModel.cpp \
-    controls/TorrentProgressDelegate.cpp \
-    dialogs/AddTorrentDialog.cpp \
-    dialogs/TorrentDetailsDialog.cpp \
-    panels/TorrentPanel.cpp \
     dialogs/WebLinksDialog.cpp \
     dialogs/PeerPreviewDialog.cpp \
     dialogs/SearchDetailDialog.cpp \
@@ -238,12 +232,6 @@ HEADERS += \
     dialogs/PasteLinksDialog.h \
     dialogs/PasteTextDialog.h \
     utils/TorrentLinks.h \
-    utils/TorrentAdd.h \
-    controls/TorrentListModel.h \
-    controls/TorrentProgressDelegate.h \
-    dialogs/AddTorrentDialog.h \
-    dialogs/TorrentDetailsDialog.h \
-    panels/TorrentPanel.h \
     dialogs/WebLinksDialog.h \
     dialogs/PeerPreviewDialog.h \
     dialogs/SearchDetailDialog.h \
@@ -257,3 +245,22 @@ HEADERS += \
     panels/SharedFilesPanel.h \
     panels/StatisticsPanel.h \
     panels/TransferPanel.h
+
+# BitTorrent: off by default, as in CMake (EMULE_BITTORRENT). `qmake CONFIG+=emule_bittorrent`
+emule_bittorrent {
+    DEFINES += EMULE_HAVE_BITTORRENT=1
+    SOURCES += \
+        utils/TorrentAdd.cpp \
+        controls/TorrentListModel.cpp \
+        controls/TorrentProgressDelegate.cpp \
+        dialogs/AddTorrentDialog.cpp \
+        dialogs/TorrentDetailsDialog.cpp \
+        panels/TorrentPanel.cpp
+    HEADERS += \
+        utils/TorrentAdd.h \
+        controls/TorrentListModel.h \
+        controls/TorrentProgressDelegate.h \
+        dialogs/AddTorrentDialog.h \
+        dialogs/TorrentDetailsDialog.h \
+        panels/TorrentPanel.h
+}

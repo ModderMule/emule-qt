@@ -55,7 +55,10 @@ inline constexpr ToolbarButtonDef kAllButtons[] = {
     {ToolbarButtonId::IRC,         QT_TRANSLATE_NOOP("eMule::MainWindow", "IRC"),           "IRC.ico",        QStyle::SP_DialogApplyButton,        6},
     {ToolbarButtonId::Statistics,  QT_TRANSLATE_NOOP("eMule::MainWindow", "Statistics"),     "Statistics.ico", QStyle::SP_DialogHelpButton,         7},
     {ToolbarButtonId::Usenet,      QT_TRANSLATE_NOOP("eMule::MainWindow", "Usenet"),        "Usenet.ico",     QStyle::SP_DriveNetIcon,             8},
+#ifdef EMULE_HAVE_BITTORRENT
+    // Without it findButtonDef() misses 19: a saved order keeping it just skips it
     {ToolbarButtonId::Torrents,    QT_TRANSLATE_NOOP("eMule::MainWindow", "Torrents"),      "Torrent.ico",    QStyle::SP_DriveNetIcon,             9},
+#endif
     {ToolbarButtonId::DownloadsFolder, QT_TRANSLATE_NOOP("eMule::MainWindow", "Downloads Folder"), "DownloadsFolder.ico",
                                                     QStyle::SP_DirOpenIcon,             -1},
     {ToolbarButtonId::Options,     QT_TRANSLATE_NOOP("eMule::MainWindow", "Options"),       "Preferences.ico",QStyle::SP_FileDialogDetailedView,  -1},
@@ -71,7 +74,11 @@ inline constexpr ToolbarButtonDef kAllButtons[] = {
 /// only through Customize Toolbar. That is deliberate — the alternative re-adds a
 /// button the user deliberately removed, on every restart.
 inline const QList<int> kDefaultToolbarOrder = {
+#ifdef EMULE_HAVE_BITTORRENT
     0, 1, 10, 11, 12, 13, 14, 15, 16, 18, 19, 17, 1, 23, 20, 21, 22
+#else
+    0, 1, 10, 11, 12, 13, 14, 15, 16, 18, 17, 1, 23, 20, 21, 22
+#endif
 };
 
 [[nodiscard]] inline const ToolbarButtonDef* findButtonDef(ToolbarButtonId id)

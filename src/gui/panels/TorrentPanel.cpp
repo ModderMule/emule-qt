@@ -127,13 +127,21 @@ void TorrentPanel::addTorrentFiles(const QStringList& paths)
             continue;
         }
         // The bytes travel: the daemon may be on another machine
-        gui::sendTorrentAdd(m_ipc, this, QFileInfo(path).fileName(),
-                            gui::torrentFileRequest(file.readAll(), {}, false),
-                            [this](bool added) {
-                                if (added)
-                                    m_poller->refreshNow();
-                            });
+        addTorrentData(QFileInfo(path).fileName(), file.readAll());
     }
+}
+
+void TorrentPanel::addTorrentData(const QString& name, const QByteArray& data)
+{
+    if (!m_ipc || !m_ipc->isConnected()) {
+        QMessageBox::warning(this, tr("Add Torrent"), tr("Not connected to the eMule core."));
+        return;
+    }
+    gui::sendTorrentAdd(m_ipc, this, name, gui::torrentFileRequest(data, {}, false),
+                        [this](bool added) {
+                            if (added)
+                                m_poller->refreshNow();
+                        });
 }
 
 void TorrentPanel::addMagnets(const QStringList& magnets)

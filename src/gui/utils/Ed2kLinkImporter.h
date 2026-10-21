@@ -16,6 +16,7 @@
 #include "IpcMessage.h"
 #include "search/SearchFile.h"
 
+#include <QByteArray>
 #include <QCoreApplication>
 #include <QString>
 #include <QStringList>
@@ -83,9 +84,19 @@ public:
     static void setOtherLinkHandler(OtherLinkHandler handler);
 
     /// Who takes BitTorrent magnets found in pasted text — the Torrents tab. Manual
-    /// imports only, like OtherLinkHandler.
+    /// imports only, like OtherLinkHandler. Unset (no BitTorrent build), they count as invalid.
     using TorrentLinkHandler = std::function<void(const QStringList& magnets, QWidget* parent)>;
     static void setTorrentLinkHandler(TorrentLinkHandler handler);
+    /// Hand @p magnets to the torrent handler directly (search rows). False when unset.
+    static bool sendTorrentLinks(const QStringList& magnets, QWidget* parent);
+
+    /// Who takes a fetched .torrent (search rows) — the Torrents tab. Unset without BitTorrent.
+    using TorrentFileHandler = std::function<void(const QString& name, const QByteArray& data, QWidget* parent)>;
+    static void setTorrentFileHandler(TorrentFileHandler handler);
+    /// Whether a .torrent has somewhere to go.
+    [[nodiscard]] static bool hasTorrentFileHandler();
+    /// Hand @p data (a .torrent called @p name) over. False when unset.
+    static bool sendTorrentFile(const QString& name, const QByteArray& data, QWidget* parent);
 
     /// The non-download links in @p text.
     [[nodiscard]] static OtherLinks otherLinksIn(const QString& text);

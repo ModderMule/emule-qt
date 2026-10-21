@@ -31,6 +31,7 @@ class QActionGroup;
 class QCborMap;
 class QLabel;
 class QMenu;
+class QMimeData;
 class QSoundEffect;
 class QStackedWidget;
 class QTimer;
@@ -114,7 +115,7 @@ public:
         // setupPages() adds pages positionally, so a new page anywhere but the
         // end silently renumbers both.
         TabUsenet,
-        TabTorrents,
+        TabTorrents,    // no page without EMULE_HAVE_BITTORRENT; kept so ids stay put
         TabCount
     };
 
@@ -146,6 +147,7 @@ public:
     [[nodiscard]] IrcPanel* ircPanel() const { return m_ircPanel; }
     [[nodiscard]] StatisticsPanel* statisticsPanel() const { return m_statsPanel; }
     [[nodiscard]] UsenetPanel* usenetPanel() const { return m_usenetPanel; }
+    /// nullptr in a build without EMULE_HAVE_BITTORRENT: no Torrents tab
     [[nodiscard]] TorrentPanel* torrentPanel() const { return m_torrentPanel; }
 
     /// Hand the daemon's stream token to everything that builds a URL from it.
@@ -303,6 +305,9 @@ private:
     /// Colours a status bar label by TextRole (-1: default text); kept so a theme
     /// switch can recolour it.
     static void setStatusRole(QLabel* label, int role);
+
+    /// A drop the window takes: .nzb, or .torrent when built with BitTorrent.
+    [[nodiscard]] static bool isOurDrop(const QMimeData* mime);
 
     /// Version, connection state and both rates, as MFC's tray tooltip carries.
     void updateTrayToolTip();

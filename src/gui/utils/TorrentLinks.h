@@ -17,6 +17,14 @@ class QMimeData;
 
 namespace eMule::gui {
 
+/// The GUI has a Torrents tab (EMULE_BITTORRENT build flag). Off, the classifiers
+/// below still work: a BT magnet is then reported, not sent anywhere.
+#ifdef EMULE_HAVE_BITTORRENT
+inline constexpr bool kBitTorrentBuilt = true;
+#else
+inline constexpr bool kBitTorrentBuilt = false;
+#endif
+
 /// True for a magnet that BitTorrent should take: xt=urn:btih:/urn:btmh: and no
 /// eD2K hash (xt=urn:ed2k:, urn:ed2khash:, or an ed2k:// xs/as source).
 [[nodiscard]] bool isBitTorrentMagnet(const QString& link);

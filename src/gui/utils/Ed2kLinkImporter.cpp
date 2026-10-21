@@ -47,6 +47,7 @@ struct ParsedLink {
 /// @p configs and unparseable candidates into @p invalid.
 Ed2kLinkImporter::OtherLinkHandler s_otherLinkHandler;
 Ed2kLinkImporter::TorrentLinkHandler s_torrentLinkHandler;
+Ed2kLinkImporter::TorrentFileHandler s_torrentFileHandler;
 
 /// Files @p link under its kind; false when it is none of the non-download kinds.
 bool collectOther(const ED2KLink& link, Ed2kLinkImporter::OtherLinks& others)
@@ -293,6 +294,32 @@ void Ed2kLinkImporter::setTorrentLinkHandler(TorrentLinkHandler handler)
     s_torrentLinkHandler = std::move(handler);
 }
 
+bool Ed2kLinkImporter::sendTorrentLinks(const QStringList& magnets, QWidget* parent)
+{
+    if (!s_torrentLinkHandler || magnets.isEmpty())
+        return false;
+    s_torrentLinkHandler(magnets, parent);
+    return true;
+}
+
+void Ed2kLinkImporter::setTorrentFileHandler(TorrentFileHandler handler)
+{
+    s_torrentFileHandler = std::move(handler);
+}
+
+bool Ed2kLinkImporter::hasTorrentFileHandler()
+{
+    return bool(s_torrentFileHandler);
+}
+
+bool Ed2kLinkImporter::sendTorrentFile(const QString& name, const QByteArray& data, QWidget* parent)
+{
+    if (!s_torrentFileHandler || data.isEmpty())
+        return false;
+    s_torrentFileHandler(name, data, parent);
+    return true;
+}
+
 Ed2kLinkImporter::OtherLinks Ed2kLinkImporter::otherLinksIn(const QString& text)
 {
     OtherLinks others;
@@ -340,12 +367,17 @@ void Ed2kLinkImporter::importLinks(const QString& text, IpcClient* ipc, QWidget*
     QStringList torrents;
     std::vector<ParsedLink> links = parseLines(text, result.invalid, configs, others, torrents);
 
-    // BitTorrent magnets in the same paste: to the Torrents tab, manual only
-    if (!torrents.isEmpty() && source == Source::Manual && s_torrentLinkHandler) {
-        result.torrentLinks = static_cast<int>(torrents.size());
-        if (beforePrompt)
-            beforePrompt();
-        s_torrentLinkHandler(torrents, parent);
+    // BitTorrent magnets in the same paste: to the Torrents tab, manual only.
+    // No handler = built without BitTorrent: say so rather than drop them.
+    if (!torrents.isEmpty() && source == Source::Manual) {
+        if (s_torrentLinkHandler) {
+            result.torrentLinks = static_cast<int>(torrents.size());
+            if (beforePrompt)
+                beforePrompt();
+            s_torrentLinkHandler(torrents, parent);
+        } else {
+            result.invalid << torrents;
+        }
     }
 
     // Lists, searches and servers: only when a person asked (MFC acts on every such

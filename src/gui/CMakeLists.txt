@@ -24,6 +24,25 @@ file(GLOB_RECURSE GFX_SOURCES      CONFIGURE_DEPENDS "graphics/*.cpp" "graphics/
 # Module 26: GUI utilities
 file(GLOB_RECURSE GUI_UTIL_SOURCES  CONFIGURE_DEPENDS "utils/*.cpp"    "utils/*.h")
 
+# BitTorrent off: no Torrents tab, so its panel, model and dialogs stay out.
+# TorrentLinks stays: the link classifiers still need to tell a BT magnet apart.
+if(NOT EMULE_BITTORRENT)
+    set(_emule_bt_gui_files
+        "panels/TorrentPanel"
+        "controls/TorrentListModel"
+        "controls/TorrentProgressDelegate"
+        "dialogs/AddTorrentDialog"
+        "dialogs/TorrentDetailsDialog"
+        "utils/TorrentAdd")
+    foreach(_f IN LISTS _emule_bt_gui_files)
+        foreach(_list PANEL_SOURCES CONTROL_SOURCES DIALOG_SOURCES GUI_UTIL_SOURCES)
+            list(REMOVE_ITEM ${_list}
+                "${CMAKE_CURRENT_SOURCE_DIR}/${_f}.cpp"
+                "${CMAKE_CURRENT_SOURCE_DIR}/${_f}.h")
+        endforeach()
+    endforeach()
+endif()
+
 # -- Qt resources -----------------------------------------------------------
 
 set(RESOURCES
@@ -47,6 +66,11 @@ target_include_directories(emuleqt
     PRIVATE
         "${CMAKE_CURRENT_SOURCE_DIR}"
 )
+
+# Same switch as the daemon's eMule::Bt; the GUI never links it
+if(EMULE_BITTORRENT)
+    target_compile_definitions(emuleqt PRIVATE EMULE_HAVE_BITTORRENT=1)
+endif()
 
 target_link_libraries(emuleqt
     PRIVATE

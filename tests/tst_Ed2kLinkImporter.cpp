@@ -43,6 +43,8 @@ private slots:
 
     void otherLinksGoToTheHandlerForManualImportsOnly();
     void bitTorrentMagnetsGoToTheTorrentHandler();
+    void searchRowMagnetsGoToTheTorrentHandler();
+    void searchRowTorrentFilesGoToTheTorrentHandler();
 
     void linkKindsIn_data();
     void linkKindsIn();
@@ -366,6 +368,57 @@ void TestEd2kLinkImporter::bitTorrentMagnetsGoToTheTorrentHandler()
     QVERIFY(seen.isEmpty());
     QCOMPARE(result.torrentLinks, 0);
     QVERIFY(result.invalid.isEmpty());
+
+    // no handler (built without BitTorrent): a manual paste reports them invalid
+    Ed2kLinkImporter::setTorrentLinkHandler({});
+    result = {};
+    Ed2kLinkImporter::importLinks(bt, nullptr, nullptr, Ed2kLinkImporter::Source::Manual,
+                                  Ed2kLinkImporter::Prompt::Silent, keep);
+    QCOMPARE(result.torrentLinks, 0);
+    QCOMPARE(result.invalid, QStringList{bt});
+}
+
+// magnet-only search rows: sendTorrentLinks reuses the paste handler, false without one
+void TestEd2kLinkImporter::searchRowMagnetsGoToTheTorrentHandler()
+{
+    const QStringList magnets{QStringLiteral(
+        "magnet:?xt=urn:btih:0123456789abcdef0123456789abcdef01234567&dn=Ubuntu")};
+
+    Ed2kLinkImporter::setTorrentLinkHandler({});
+    QVERIFY(!Ed2kLinkImporter::sendTorrentLinks(magnets, nullptr));   // caller copies instead
+
+    QStringList seen;
+    Ed2kLinkImporter::setTorrentLinkHandler(
+        [&seen](const QStringList& m, QWidget*) { seen += m; });
+    const auto reset = qScopeGuard([] { Ed2kLinkImporter::setTorrentLinkHandler({}); });
+    QVERIFY(!Ed2kLinkImporter::sendTorrentLinks({}, nullptr));         // nothing to hand over
+    QVERIFY(seen.isEmpty());
+    QVERIFY(Ed2kLinkImporter::sendTorrentLinks(magnets, nullptr));
+    QCOMPARE(seen, magnets);
+}
+
+void TestEd2kLinkImporter::searchRowTorrentFilesGoToTheTorrentHandler()
+{
+    const QByteArray data("d4:infod4:name6:Ubuntuee");
+
+    Ed2kLinkImporter::setTorrentFileHandler({});
+    QVERIFY(!Ed2kLinkImporter::hasTorrentFileHandler());              // caller saves instead
+    QVERIFY(!Ed2kLinkImporter::sendTorrentFile(QStringLiteral("u.torrent"), data, nullptr));
+
+    QString seenName;
+    QByteArray seenData;
+    Ed2kLinkImporter::setTorrentFileHandler(
+        [&](const QString& name, const QByteArray& bytes, QWidget*) {
+            seenName = name;
+            seenData = bytes;
+        });
+    const auto reset = qScopeGuard([] { Ed2kLinkImporter::setTorrentFileHandler({}); });
+    QVERIFY(Ed2kLinkImporter::hasTorrentFileHandler());
+    QVERIFY(!Ed2kLinkImporter::sendTorrentFile(QStringLiteral("u.torrent"), {}, nullptr));   // empty
+    QVERIFY(seenName.isEmpty());
+    QVERIFY(Ed2kLinkImporter::sendTorrentFile(QStringLiteral("u.torrent"), data, nullptr));
+    QCOMPARE(seenName, QStringLiteral("u.torrent"));
+    QCOMPARE(seenData, data);
 }
 
 void TestEd2kLinkImporter::linkKindsIn_data()

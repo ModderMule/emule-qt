@@ -10,6 +10,11 @@
 
 find_package(Qt6 REQUIRED COMPONENTS Test)
 
+# Tests compile GUI sources directly: same BitTorrent switch as emuleqt
+if(EMULE_BITTORRENT)
+    add_compile_definitions(EMULE_HAVE_BITTORRENT=1)
+endif()
+
 # All tests are independent executables — safe to run in parallel:
 #   ctest --parallel    (or set CTEST_PARALLEL_LEVEL env var)
 
@@ -522,17 +527,20 @@ target_include_directories(tst_UsenetQueueModel PRIVATE
 target_link_libraries(tst_UsenetQueueModel PRIVATE
     eMule::Core eMule::Ipc Qt6::Widgets)
 
-# The Torrents tab's row model and piece-map colours, off hand-built CBOR rows.
-emule_add_test(tst_TorrentListModel FOLDER "Gui"
-    SOURCES tst_TorrentListModel.cpp
-            "${CMAKE_SOURCE_DIR}/src/gui/controls/TorrentListModel.cpp"
-            "${CMAKE_SOURCE_DIR}/src/gui/controls/TorrentProgressDelegate.cpp"
-            "${CMAKE_SOURCE_DIR}/src/gui/controls/BarShader.cpp")
-target_include_directories(tst_TorrentListModel PRIVATE
-    "${CMAKE_SOURCE_DIR}/src/gui"
-    "${CMAKE_CURRENT_SOURCE_DIR}/stubs")
-target_link_libraries(tst_TorrentListModel PRIVATE
-    eMule::Core eMule::Ipc Qt6::Widgets)
+# Torrents tab sources only build with BitTorrent
+if(EMULE_BITTORRENT)
+    # The Torrents tab's row model and piece-map colours, off hand-built CBOR rows.
+    emule_add_test(tst_TorrentListModel FOLDER "Gui"
+        SOURCES tst_TorrentListModel.cpp
+                "${CMAKE_SOURCE_DIR}/src/gui/controls/TorrentListModel.cpp"
+                "${CMAKE_SOURCE_DIR}/src/gui/controls/TorrentProgressDelegate.cpp"
+                "${CMAKE_SOURCE_DIR}/src/gui/controls/BarShader.cpp")
+    target_include_directories(tst_TorrentListModel PRIVATE
+        "${CMAKE_SOURCE_DIR}/src/gui"
+        "${CMAKE_CURRENT_SOURCE_DIR}/stubs")
+    target_link_libraries(tst_TorrentListModel PRIVATE
+        eMule::Core eMule::Ipc Qt6::Widgets)
+endif()
 
 # Magnet routing (BitTorrent vs eD2K) and .torrent drops. Pure string work.
 emule_add_test(tst_TorrentLinks FOLDER "Gui"

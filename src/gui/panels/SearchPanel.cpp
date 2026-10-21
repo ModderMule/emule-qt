@@ -23,6 +23,7 @@
 #include "utils/MetaResultActions.h"
 #include "utils/PreviewLauncher.h"
 #include "utils/StatusBarNotifier.h"
+#include "utils/TorrentLinks.h"
 #include "dialogs/PeerPreviewDialog.h"
 #include "utils/ViewNavigation.h"
 #include "utils/WebServices.h"
@@ -1272,9 +1273,11 @@ void SearchPanel::onResultContextMenu(const QPoint& pos)
         anyContainer |= result->isContainer();
         anyMagnet |= !result->isMeta() || !result->magnet.isEmpty();
         // eD2K rows: not already in the transfer list. Usenet rows: the daemon asks.
-        // Web, container and magnet-only rows always have something to do.
+        // Web, container and magnet-only rows always have something to do, and
+        // torrents too when there is a Torrents tab to take them.
         if (result->isUsenet() || result->isWeb() || result->isContainer()
             || (result->isMagnetOnly() && !result->magnet.isEmpty())
+            || (gui::kBitTorrentBuilt && result->isTorrent() && !result->isMagnetOnly())
             || (!result->isMeta() && (!m_downloadModel || !m_downloadModel->findByHash(result->hash))))
             anyDownloadable = true;
         if (singleSel) {
@@ -1317,27 +1320,30 @@ void SearchPanel::onResultContextMenu(const QPoint& pos)
     }
     const bool onlyOne = int(anyEd2k) + int(anyUsenet) + int(anyTorrent) + int(anyMagnetOnly) + int(anyWeb)
                        + int(anyContainer) == 1;
-    // eNode torrent rows: the .torrent — the default for them until BitTorrent lands
+    // eNode torrent rows. With BitTorrent, Download adds them to the Torrents tab
+    // and this saves the .torrent for another client; without, saving is the default.
     if (anyTorrent) {
-        auto* torrentAction = m_contextMenu->addAction(QIcon(QStringLiteral(":/icons/Torrent.ico")),
-                                                       tr("Download Torrent"));
+        auto* torrentAction = m_contextMenu->addAction(
+            QIcon(QStringLiteral(":/icons/Torrent.ico")),
+            gui::kBitTorrentBuilt ? tr("Save Torrent File...") : tr("Download Torrent"));
         connect(torrentAction, &QAction::triggered, this, [this] { saveMetaFiles(1); });
-        if (onlyOne)
+        if (onlyOne && !gui::kBitTorrentBuilt)
             defaultAction = torrentAction;
     }
-    // a magnet-only torrent has no .torrent: its magnet is what there is
+    // a magnet-only torrent has no .torrent: its magnet is what there is. With
+    // BitTorrent, Download hands it to the Torrents tab; without, copying is the default.
     if (anyMagnetOnly) {
-        auto* magnetAction = m_contextMenu->addAction(QIcon(QStringLiteral(":/icons/Torrent.ico")),
-                                                      tr("Copy Magnet Link"));
-        connect(magnetAction, &QAction::triggered, this, [this] {
+        auto* copyAction = m_contextMenu->addAction(QIcon(QStringLiteral(":/icons/Torrent.ico")),
+                                                    tr("Copy Magnet Link"));
+        connect(copyAction, &QAction::triggered, this, [this] {
             QList<MetaResultActions::Row> rows;
             for (const auto& idx : m_resultView->selectionModel()->selectedRows())
                 if (const auto* r = refAt(idx).row; r && r->isMagnetOnly())
                     rows.append(metaRow(*r));
             MetaResultActions::copyMagnets(rows);
         });
-        if (onlyOne)
-            defaultAction = magnetAction;
+        if (onlyOne && !gui::kBitTorrentBuilt)
+            defaultAction = copyAction;
     }
     // eNode web rows: the links the page offered
     if (anyWeb) {
@@ -1740,15 +1746,15 @@ void SearchPanel::downloadResults(const QModelIndexList& proxyRows, int category
     if (category < 0)
         category = m_categoryTabs->count() > 1 ? std::max(m_categoryTabs->currentIndex(), 0) : 0;
 
-    // eNode rows leave here: Usenet goes to the Usenet queue, a torrent is saved
-    // as a .torrent until BitTorrent downloads exist (a magnet-only one has none:
-    // its magnet goes to the clipboard), a web row shows its links, a link
-    // container is saved
+    // eNode rows leave here: Usenet goes to the Usenet queue, a torrent to the
+    // Torrents tab (built without BitTorrent: its .torrent is saved, a magnet-only
+    // one's magnet copied), a web row shows its links, a link container is saved
     QModelIndexList ed2kRows;
     if (!tab->isIndexer() && tab->model) {
         QList<MetaResultActions::Row> usenet;
         QList<MetaResultActions::Row> metafiles;
         QList<MetaResultActions::Row> magnets;
+        QList<MetaResultActions::Row> torrents;
         QList<MetaResultActions::Row> web;
         for (const auto& idx : proxyRows) {
             const auto* r = refAt(idx).row;
@@ -1758,6 +1764,8 @@ void SearchPanel::downloadResults(const QModelIndexList& proxyRows, int category
                 usenet.append(metaRow(*r));
             else if (r->isMagnetOnly())
                 magnets.append(metaRow(*r));
+            else if (gui::kBitTorrentBuilt && r->isTorrent())
+                torrents.append(metaRow(*r));
             else if (r->isWeb())
                 web.append(metaRow(*r));
             else
@@ -1768,7 +1776,9 @@ void SearchPanel::downloadResults(const QModelIndexList& proxyRows, int category
         if (!metafiles.isEmpty())
             metaActions()->saveMetaFiles(tab->searchID, metafiles);
         if (!magnets.isEmpty())
-            MetaResultActions::copyMagnets(magnets);
+            metaActions()->handOverMagnets(magnets);
+        if (!torrents.isEmpty())
+            metaActions()->addTorrents(tab->searchID, torrents);
         if (!web.isEmpty())
             metaActions()->showWebLinks(tab->searchID, web);
         if (ed2kRows.isEmpty())

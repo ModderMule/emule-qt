@@ -12,6 +12,7 @@
 #include "dialogs/MetaAccountDialog.h"
 #include "dialogs/WebLinksDialog.h"
 #include "enodemeta/LinkContainer.h"
+#include "utils/Ed2kLinkImporter.h"
 #include "utils/NzbAdd.h"
 #include "utils/StatusBarNotifier.h"
 
@@ -133,6 +134,26 @@ void MetaResultActions::copyMagnets(const QList<Row>& rows)
     StatusBarNotifier::post(tr("Copied %n magnet link(s) to the clipboard.", nullptr, int(links.size())));
 }
 
+void MetaResultActions::handOverMagnets(const QList<Row>& rows)
+{
+    QStringList links;
+    for (const Row& row : rows)
+        if (!row.magnet.isEmpty())
+            links << row.magnet;
+    if (!Ed2kLinkImporter::sendTorrentLinks(links, m_parent))
+        copyMagnets(rows);
+}
+
+void MetaResultActions::addTorrents(quint32 searchID, const QList<Row>& rows)
+{
+    if (!Ed2kLinkImporter::hasTorrentFileHandler()) {
+        saveMetaFiles(searchID, rows);
+        return;
+    }
+    for (const Row& row : rows)
+        fetchAndAddTorrent(searchID, row);
+}
+
 void MetaResultActions::manageAccount(const QString& serverAddr, const QString& serverName)
 {
     if (auto dlg = m_dialogs.value(serverAddr)) {
@@ -202,7 +223,9 @@ void MetaResultActions::sendDownload(quint32 searchID, const Row& row, int categ
     });
 }
 
-void MetaResultActions::fetchAndSave(quint32 searchID, const Row& row, const QString& path, bool pathIsDir)
+void MetaResultActions::fetchMeta(quint32 searchID, const Row& row, const QString& failText,
+                                  std::function<void(const QCborMap& data)> onData,
+                                  std::function<bool()> onFail)
 {
     if (!m_ipc || !m_ipc->isConnected())
         return;
@@ -213,20 +236,28 @@ void MetaResultActions::fetchAndSave(quint32 searchID, const Row& row, const QSt
     msg.append(row.ref);
 
     QPointer<MetaResultActions> self(this);
-    m_ipc->sendRequest(std::move(msg), [self, searchID, row, path, pathIsDir](const IpcMessage& resp) {
+    m_ipc->sendRequest(std::move(msg), [self, searchID, row, failText, onData, onFail](const IpcMessage& resp) {
         if (!self || !resp.isValid())
             return;
         if (!resp.fieldBool(0)) {
-            const auto retry = [self, searchID, row, path, pathIsDir] {
+            const auto retry = [self, searchID, row, failText, onData, onFail] {
                 if (self)
-                    self->fetchAndSave(searchID, row, path, pathIsDir);
+                    self->fetchMeta(searchID, row, failText, onData, onFail);
             };
-            if (!self->handleAuth(resp.fieldMap(2), retry))
-                self->warn(tr("Could not download \"%1\": %2").arg(row.name, resp.fieldString(1)));
+            if (!self->handleAuth(resp.fieldMap(2), retry) && !(onFail && onFail()))
+                self->warn(failText.arg(row.name, resp.fieldString(1)));
             return;
         }
+        onData(resp.fieldMap(1));
+    });
+}
 
-        const QCborMap data = resp.fieldMap(1);
+void MetaResultActions::fetchAndSave(quint32 searchID, const Row& row, const QString& path, bool pathIsDir)
+{
+    QPointer<MetaResultActions> self(this);
+    fetchMeta(searchID, row, tr("Could not download \"%1\": %2"), [self, row, path, pathIsDir](const QCborMap& data) {
+        if (!self)
+            return;
         const QByteArray content = data.value(QStringLiteral("content")).toByteArray();
         QString target = path;
         const QString served = data.value(QStringLiteral("fileName")).toString();
@@ -253,28 +284,10 @@ void MetaResultActions::fetchAndSave(quint32 searchID, const Row& row, const QSt
 
 void MetaResultActions::fetchAndShowLinks(quint32 searchID, const Row& row)
 {
-    if (!m_ipc || !m_ipc->isConnected())
-        return;
-
-    IpcMessage msg(IpcMsgType::FetchMetaFile);
-    msg.append(static_cast<qint64>(searchID));
-    msg.append(row.hash);
-    msg.append(row.ref);
-
     QPointer<MetaResultActions> self(this);
-    m_ipc->sendRequest(std::move(msg), [self, searchID, row](const IpcMessage& resp) {
-        if (!self || !resp.isValid())
+    fetchMeta(searchID, row, tr("Could not fetch the links of \"%1\": %2"), [self, row](const QCborMap& data) {
+        if (!self)
             return;
-        if (!resp.fieldBool(0)) {
-            const auto retry = [self, searchID, row] {
-                if (self)
-                    self->fetchAndShowLinks(searchID, row);
-            };
-            if (!self->handleAuth(resp.fieldMap(2), retry))
-                self->warn(tr("Could not fetch the links of \"%1\": %2").arg(row.name, resp.fieldString(1)));
-            return;
-        }
-        const QCborMap data = resp.fieldMap(1);
         const QCborMap links = data.value(QStringLiteral("links")).toMap();
         if (links.value(QStringLiteral("links")).toArray().isEmpty()) {
             self->warn(tr("\"%1\" holds no links.").arg(row.name));
@@ -291,6 +304,26 @@ void MetaResultActions::fetchAndShowLinks(quint32 searchID, const Row& row)
             dlg->show();
         });
     });
+}
+
+void MetaResultActions::fetchAndAddTorrent(quint32 searchID, const Row& row)
+{
+    QPointer<MetaResultActions> self(this);
+    // the .torrent is gone or refused: the row's magnet still names it
+    const auto viaMagnet = [self, row] {
+        return self && !row.magnet.isEmpty()
+            && Ed2kLinkImporter::sendTorrentLinks({row.magnet}, self->m_parent);
+    };
+    fetchMeta(searchID, row, tr("Could not download \"%1\": %2"), [self, row](const QCborMap& data) {
+        if (!self)
+            return;
+        const QByteArray content = data.value(QStringLiteral("content")).toByteArray();
+        QString name = data.value(QStringLiteral("fileName")).toString();
+        if (name.isEmpty() || name.contains(u'/') || name.contains(u'\\'))
+            name = safeName(row.name, row);
+        if (!Ed2kLinkImporter::sendTorrentFile(name, content, self->m_parent))
+            self->warn(tr("Could not add \"%1\": the torrent is empty.").arg(row.name));
+    }, viaMagnet);
 }
 
 bool MetaResultActions::handleAuth(const QCborMap& meta, std::function<void()> retry)

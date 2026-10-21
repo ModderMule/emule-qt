@@ -42,6 +42,9 @@ public:
     /// The bytes travel, not the path.
     void addTorrentFiles(const QStringList& paths);
 
+    /// Add one .torrent's bytes without asking (a search row). @p name for messages.
+    void addTorrentData(const QString& name, const QByteArray& data);
+
     /// Add BitTorrent magnets without asking (a clicked or pasted link).
     void addMagnets(const QStringList& magnets);
 

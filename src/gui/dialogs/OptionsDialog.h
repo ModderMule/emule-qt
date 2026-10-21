@@ -83,7 +83,7 @@ public:
         PageIndexers,
         PageFeeds,
         PageExtended,
-        PageBitTorrent,
+        PageBitTorrent,     // last: no page without EMULE_HAVE_BITTORRENT
         PageCount
     };
 
@@ -141,7 +141,11 @@ private:
     QWidget* createIndexersPage();
     QWidget* createFeedsPage();
     QWidget* createExtendedPage();
+#ifdef EMULE_HAVE_BITTORRENT
     QWidget* createBitTorrentPage();
+#endif
+    /// @p page was built: PageBitTorrent only with EMULE_HAVE_BITTORRENT
+    [[nodiscard]] bool hasPage(int page) const;
     QWidget* createPlaceholderPage(const QString& title);
 
     /// Enable/disable the Web Interface controls from the two independent

@@ -192,7 +192,7 @@ OptionsDialog::OptionsDialog(IpcClient* ipc, StatisticsPanel* statsPanel,
     // index from an older build must not silently land on some other page).
     const int storedPage = theUiState.optionsLastPage();
     const int lastPage =
-        (storedPage >= 0 && storedPage < PageCount) ? storedPage : int{PageGeneral};
+        hasPage(storedPage) ? storedPage : int{PageGeneral};
     m_sidebar->setCurrentItemId(lastPage);
     onPageChanged(lastPage);
 
@@ -484,7 +484,7 @@ OptionsDialog::~OptionsDialog() = default;
 
 void OptionsDialog::selectPage(int page)
 {
-    if (page >= 0 && page < PageCount)
+    if (hasPage(page))
         m_sidebar->setCurrentItemId(page);
 }
 
@@ -493,7 +493,7 @@ void OptionsDialog::done(int result)
     // Remember the page and size across every close path — OK, Cancel, Esc and the
     // window close button all route through QDialog::done().
     const int page = m_sidebar->currentItemId();
-    if (page >= 0 && page < PageCount)
+    if (hasPage(page))
         theUiState.setOptionsLastPage(page);
     if (!isMaximized() && !isFullScreen())
         theUiState.setOptionsDialogSize(size());
@@ -507,7 +507,7 @@ void OptionsDialog::done(int result)
 
 void OptionsDialog::onPageChanged(int page)
 {
-    if (page < 0 || page >= PageCount)
+    if (!hasPage(page))
         return;
 
     m_pages->setCurrentIndex(page);
@@ -701,7 +701,9 @@ void OptionsDialog::setupSidebar()
     fill(tr("General options"),  kGeneralPages);
     fill(tr("Advanced options"), kAdvancedPages);
     fill(tr("Usenet"),           kUsenetPages);
+#ifdef EMULE_HAVE_BITTORRENT
     fill(tr("BitTorrent"),       kBitTorrentPages);
+#endif
 }
 
 // ---------------------------------------------------------------------------
@@ -757,7 +759,10 @@ void OptionsDialog::setupPages()
     // Extended keeps its own scroll area: the red warning and the two sliders are
     // deliberately outside it, and a wrapper here would scroll them away.
     addPage(PageExtended,      createExtendedPage(), PageScroll::Self);
+#ifdef EMULE_HAVE_BITTORRENT
+    // Last page: leaving it out shifts no other index
     addPage(PageBitTorrent,    createBitTorrentPage());
+#endif
 }
 
 void OptionsDialog::setupButtons()
@@ -5248,6 +5253,7 @@ void OptionsDialog::revealTestResult(QLabel* result)
 // BitTorrent page
 // ---------------------------------------------------------------------------
 
+#ifdef EMULE_HAVE_BITTORRENT
 QWidget* OptionsDialog::createBitTorrentPage()
 {
     auto* page = new QWidget(this);
@@ -5372,6 +5378,7 @@ QWidget* OptionsDialog::createBitTorrentPage()
 
     return page;
 }
+#endif
 
 QWidget* OptionsDialog::createExtendedPage()
 {
@@ -6859,6 +6866,7 @@ void OptionsDialog::saveSettings()
         req.append(QStringLiteral("indexerCapsRefreshDays"));
         req.append(static_cast<qint64>(m_indexerCapsRefreshSpin->value()));
 
+#ifdef EMULE_HAVE_BITTORRENT
         // BitTorrent page
         req.append(QStringLiteral("btEnabled"));
         req.append(m_btEnabledCheck->isChecked());
@@ -6886,6 +6894,7 @@ void OptionsDialog::saveSettings()
         req.append(static_cast<qint64>(qRound(m_btSeedRatioSpin->value() * 100.0)));
         req.append(QStringLiteral("btSeedTimeLimitMinutes"));
         req.append(static_cast<qint64>(m_btSeedTimeSpin->value()));
+#endif
 
         // Web Interface page
         req.append(QStringLiteral("webServerEnabled"));
@@ -7660,6 +7669,7 @@ void OptionsDialog::fillDaemonSettings(const QCborMap& prefs)
     m_indexerCapsRefreshSpin->setValue(
         static_cast<int>(prefs.value(QStringLiteral("indexerCapsRefreshDays")).toInteger(7)));
 
+#ifdef EMULE_HAVE_BITTORRENT
     // BitTorrent page. Defaults stand in for an older daemon without the keys.
     m_btEnabledCheck->setChecked(prefs.value(QStringLiteral("btEnabled")).toBool(false));
     m_btPortSpin->setValue(int(prefs.value(QStringLiteral("btListenPort"))
@@ -7680,6 +7690,7 @@ void OptionsDialog::fillDaemonSettings(const QCborMap& prefs)
         double(prefs.value(QStringLiteral("btSeedRatioPercent")).toInteger(100)) / 100.0);
     m_btSeedTimeSpin->setValue(
         int(prefs.value(QStringLiteral("btSeedTimeLimitMinutes")).toInteger(0)));
+#endif
 
     // Web Interface page
     m_webEnabledCheck->setChecked(prefs.value(QStringLiteral("webServerEnabled")).toBool());
@@ -8243,6 +8254,13 @@ void OptionsDialog::updateSlotRateLabel()
     } else {
         m_slotCountLabel->clear();
     }
+}
+
+bool OptionsDialog::hasPage(int page) const
+{
+    // The stack, not PageCount: a stored or --options index may name a page this
+    // build leaves out
+    return page >= 0 && page < m_pages->count();
 }
 
 } // namespace eMule

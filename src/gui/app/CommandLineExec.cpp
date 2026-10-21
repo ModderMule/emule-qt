@@ -69,7 +69,9 @@ void CommandLineExec::parse(QApplication& app)
             {QStringLiteral("irc"),        MainWindow::TabIRC},
             {QStringLiteral("statistics"), MainWindow::TabStatistics},
             {QStringLiteral("usenet"),     MainWindow::TabUsenet},
+#ifdef EMULE_HAVE_BITTORRENT
             {QStringLiteral("torrents"),   MainWindow::TabTorrents},
+#endif
         };
         m_activeTab = static_cast<MainWindow::Tab>(tabArg.toInt());
         for (const auto& [name, value] : tabNames) {
@@ -114,7 +116,9 @@ void CommandLineExec::parse(QApplication& app)
             {QStringLiteral("indexers"),     OptionsDialog::PageIndexers},
             {QStringLiteral("feeds"),        OptionsDialog::PageFeeds},
             {QStringLiteral("extended"),     OptionsDialog::PageExtended},
+#ifdef EMULE_HAVE_BITTORRENT
             {QStringLiteral("bittorrent"),   OptionsDialog::PageBitTorrent},
+#endif
         };
         m_optionsPage = optArg.toInt(); // fallback: numeric index
         for (const auto& [name, value] : pageNames) {
@@ -215,7 +219,8 @@ void CommandLineExec::openArguments(const QStringList& args, ExternalLinkHandler
             continue;
         }
 
-        // Every BitTorrent magnet; the handler routes it to the Torrents tab
+        // Every BitTorrent magnet; the handler routes it to the Torrents tab (or,
+        // built without BitTorrent, reports it invalid)
         if (gui::isBitTorrentMagnet(arg)) {
             linkHandler.open(arg);
             continue;
@@ -227,8 +232,8 @@ void CommandLineExec::openArguments(const QStringList& args, ExternalLinkHandler
         if (path.startsWith(QStringLiteral("file:"), Qt::CaseInsensitive))
             path = QUrl(path).toLocalFile();
 
-        if (!path.endsWith(QStringLiteral(".nzb"), Qt::CaseInsensitive)
-            && !gui::isTorrentFilePath(path))
+        const bool isTorrent = gui::kBitTorrentBuilt && gui::isTorrentFilePath(path);
+        if (!path.endsWith(QStringLiteral(".nzb"), Qt::CaseInsensitive) && !isTorrent)
             continue;
         if (!QFileInfo(path).isFile())
             continue;

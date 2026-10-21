@@ -41,7 +41,8 @@ namespace SrvTcpFlag {
     inline constexpr uint32 TcpObfuscation  = 0x00000400;
     inline constexpr uint32 LugdunumNat     = 0x00001000;   // Lugdunum NAT callback (needs 24-byte OP_IDCHANGE too)
     inline constexpr uint32 Ipv6            = 0x00004000;   // server speaks the IPv6 extension
-    // 0x8000 = ed2k-server OP_IPV6_UPDATE, 0x10000 = eNode-go meta search
+    // 0x8000 = ed2k-server OP_IPV6_UPDATE, 0x10000 = eNode-go meta search,
+    // 0x80000 = enodemeta FlagServerSearch (reserved, never sent)
     inline constexpr uint32 LowIdHolePunch  = 0x00020000;   // ed2k-server LowID hole punch (0x60-0x62, 0x9F)
     inline constexpr uint32 NatRendezvous   = 0x00040000;   // eNode-go PR_NAT rendezvous (UDP 0xF1)
 }

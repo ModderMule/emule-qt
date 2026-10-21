@@ -61,6 +61,13 @@ namespace {
 /// got a scroll area at all, not to police layout by a few pixels.
 constexpr int kPageBudget = 460;
 
+/// Pages this build has: the last one, BitTorrent, only with EMULE_HAVE_BITTORRENT
+#ifdef EMULE_HAVE_BITTORRENT
+constexpr int kBuiltPages = int(OptionsDialog::PageCount);
+#else
+constexpr int kBuiltPages = int(OptionsDialog::PageBitTorrent);
+#endif
+
 /// The window has to open on a laptop. 700 is the designed default in OptionsDialog's
 /// constructor; a minimum above it means the default could not be honoured, which is
 /// precisely the failure this file was written for.
@@ -137,7 +144,7 @@ void TestOptionsDialogSizing::everyPageStaysUnderBudget()
     OptionsDialog dlg(nullptr, nullptr);
     QStackedWidget* stack = stackOf(dlg);
     QVERIFY(stack);
-    QCOMPARE(stack->count(), int(OptionsDialog::PageCount));
+    QCOMPARE(stack->count(), kBuiltPages);
 
     for (int page = 0; page < stack->count(); ++page) {
         const int minimum = stack->widget(page)->minimumSizeHint().height();
@@ -170,7 +177,7 @@ void TestOptionsDialogSizing::selectPageLandsOnTheMatchingStackIndex()
     QStackedWidget* stack = stackOf(dlg);
     QVERIFY(stack);
 
-    for (int page = 0; page < int(OptionsDialog::PageCount); ++page) {
+    for (int page = 0; page < kBuiltPages; ++page) {
         dlg.selectPage(page);
         QCOMPARE(stack->currentIndex(), page);
     }
@@ -184,10 +191,10 @@ void TestOptionsDialogSizing::everyPageAppearsOnceInTheSidebar()
     OptionsDialog dlg(nullptr, nullptr);
     auto* sidebar = dlg.findChild<AccordionSidebar*>();
     QVERIFY(sidebar);
-    QCOMPARE(sidebar->itemCount(), int(OptionsDialog::PageCount));
+    QCOMPARE(sidebar->itemCount(), kBuiltPages);
 
     QSet<int> seen;
-    for (int page = 0; page < int(OptionsDialog::PageCount); ++page) {
+    for (int page = 0; page < kBuiltPages; ++page) {
         QVERIFY2(sidebar->setCurrentItemId(page), pageName(page));
         QCOMPARE(sidebar->currentItemId(), page);
         QVERIFY2(!seen.contains(page), pageName(page));
