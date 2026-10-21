@@ -84,7 +84,7 @@ private:
 
     QCommandLineOption m_tabOption{
         QStringLiteral("tab"),
-        QStringLiteral("Switch to tab on startup (kad, servers, transfers, search, shared, messages, irc, statistics, usenet)."),
+        QStringLiteral("Switch to tab on startup (kad, servers, transfers, search, shared, messages, irc, statistics, usenet, torrents)."),
         QStringLiteral("name")};
 
     QCommandLineOption m_subtabOption{

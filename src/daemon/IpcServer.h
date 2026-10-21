@@ -72,6 +72,9 @@ signals:
     /// Forwarded from any client's IpcClientHandler::usenetConfigChanged.
     void usenetConfigChanged();
 
+    /// Forwarded from any client's IpcClientHandler::btConfigChanged.
+    void btConfigChanged();
+
     /// Forwarded from any client's IpcClientHandler::standbyConfigChanged.
     void standbyConfigChanged();
 

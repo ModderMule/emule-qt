@@ -78,6 +78,9 @@ struct ServerConnectConfig {
     // -- Smart LowID --
     bool smartLowIdCheck = true;  ///< Try another server on LowID assignment.
     bool preferIPv6OnLowID = false; ///< Redial a dual-stack server over IPv6 when IPv4 gave a LowID.
+
+    // -- NAT traversal --
+    bool natTraversal = true;     ///< LowID<->LowID rendezvous (login tag/bit).
 };
 
 // ---------------------------------------------------------------------------
@@ -203,6 +206,9 @@ signals:
     /// control markers the reference consumes. Emitted once per line — the pane
     /// renders HTML, so a multi-line payload cannot be delivered as one string.
     void serverMessageReceived(eMule::ServerMsgType type, const QString& text);
+
+    /// NAT rendezvous notice from the live session (0x37, 0x61, 0x62).
+    void natServerPacket(uint8 opcode, const QByteArray& payload);
 
     /// Forwarded: search results received from connected server.
     void searchResultReceived(const uint8* data, uint32 size, bool moreResults);

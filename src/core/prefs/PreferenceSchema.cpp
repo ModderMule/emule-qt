@@ -97,6 +97,7 @@ using Kind = PrefSpec::Kind;
 
     // --- Servers ---
     t << flag("safeServerConnect", "Try one server at a time instead of several in parallel.");
+    t << flag("natTraversal", "Let two Low ID clients find each other through a server or Kad buddy.");
     t << flag("autoConnectStaticOnly", "Connect automatically to static servers only.");
     t << flag("useServerPriorities", "Prefer servers with a higher priority when connecting.");
     t << flag("addServersFromServer", "Add servers announced by the connected server.");
@@ -163,6 +164,24 @@ using Kind = PrefSpec::Kind;
     t << flag("usenetAutoAddPaused", "Add automatically grabbed releases paused.");
     t << number("usenetDownloadSharePercent", 1, 99, "%", "Share of the download limit Usenet may "
                 "use while eD2K is downloading too.");
+
+    // --- BitTorrent ---
+    t << flag("btEnabled", "Enable the BitTorrent engine.");
+    t << number("btListenPort", 1, 65535, "", "TCP and UDP port for BitTorrent peers.");
+    t << text("btDownloadDir", 4096, "Folder torrents are saved to. Empty = the incoming folder.");
+    t << number("btMaxDownloadKb", 0, kMaxU32, "KiB/s", "BitTorrent download limit. 0 = unlimited.");
+    t << number("btMaxUploadKb", 0, kMaxU32, "KiB/s", "BitTorrent upload limit. 0 = unlimited.");
+    t << flag("btDht", "Find BitTorrent peers through the DHT.");
+    t << flag("btLsd", "Find BitTorrent peers on the local network (local service discovery).");
+    t << flag("btPex", "Exchange BitTorrent peers with connected peers (PEX).");
+    t << number("btEncryption", 0, 2, "", "BitTorrent encryption: 0 = enabled (preferred), "
+                "1 = forced, 2 = disabled.");
+    t << number("btMaxActiveDownloads", 1, 100, "", "Torrents downloading at the same time.");
+    t << number("btMaxActiveSeeds", 0, 100, "", "Torrents seeding at the same time.");
+    t << number("btSeedRatioPercent", 0, Preferences::kMaxBtSeedRatioPercent, "%", "Stop seeding "
+                "at this share ratio, in percent (100 = 1.0). 0 = no limit.");
+    t << number("btSeedTimeLimitMinutes", 0, Preferences::kMaxBtSeedTimeLimitMinutes, "min",
+                "Stop seeding after this many minutes. 0 = no limit.");
 
     // --- Logging ---
     t << flag("verbose", "Write verbose (debug) log lines.");

@@ -44,6 +44,15 @@ public:
     /// Jump to the last line and keep following.
     void scrollToBottom();
 
+    /// Drop the oldest lines down to @p maxBlocks; returns how many went. A view
+    /// that is not following keeps the line at its top and everything below it,
+    /// up to kHeldCapFactor x @p maxBlocks — trimming that line would leave the
+    /// view on the oldest line, where each trim slides the text up (issue #40).
+    int trimTo(int maxBlocks);
+
+    /// Ceiling for trimTo() while the view holds its position.
+    static constexpr int kHeldCapFactor = 4;
+
     /// Put the view back at @p value and stop following. For panes that rebuild
     /// their whole content: the position is re-applied as the layout catches up.
     void restoreScrollValue(int value);

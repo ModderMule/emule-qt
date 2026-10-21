@@ -563,11 +563,13 @@ void KnownFile::setPublishedED2K(bool val)
     noteChanged();
 }
 
-void KnownFile::setLastPublishTimeKadSrc(time_t t, uint32 buddyIP)
+void KnownFile::setLastPublishTimeKadSrc(time_t t, uint32 buddyIP, uint16 buddyPort)
 {
-    const bool changed = m_lastPublishTimeKadSrc != t || m_lastBuddyIP != buddyIP;
+    const bool changed = m_lastPublishTimeKadSrc != t || m_lastBuddyIP != buddyIP
+                         || m_lastBuddyPort != buddyPort;
     m_lastPublishTimeKadSrc = t;
     m_lastBuddyIP = buddyIP;
+    m_lastBuddyPort = buddyPort;
     if (changed)
         noteChanged();   // the list's "Shared eD2K|Kad" cell follows it
 }
@@ -590,7 +592,8 @@ bool KnownFile::isSharedInKad() const
         return false;
     auto* clientList = kad::Kademlia::getClientList();
     auto* buddy = clientList ? clientList->getBuddy() : nullptr;
-    const bool buddyMatches = buddy && m_lastBuddyIP == buddy->userAddress().toNetworkUint32();
+    const bool buddyMatches = buddy && m_lastBuddyIP == buddy->userAddress().toNetworkUint32()
+                              && m_lastBuddyPort == buddy->udpPort();
     const bool udpOpen = kad->isRunning() && kad::UDPFirewallTester::isOpenAndVerified();
     // Published without a buddy (m_lastBuddyIP 0) over the IPv6 route
     const bool ipv6Route = !buddy && m_lastBuddyIP == 0 && theApp.shouldAdvertisePublicIPv6();
@@ -896,6 +899,7 @@ bool KnownFile::publishSrc()
 {
     time_t tNow = std::time(nullptr);
     uint32 buddyIP = 0;
+    uint16 buddyPort = 0;
 
     // No direct route in: publish only with a buddy. MFC KnownFile.cpp:1561-1584.
     if (kad::Kademlia::instance() && theApp.isFirewalled()
@@ -906,11 +910,14 @@ bool KnownFile::publishSrc()
         if (!buddy && !theApp.shouldAdvertisePublicIPv6())
             return false;
 
-        if (buddy)
+        if (buddy) {
             buddyIP = buddy->userAddress().toNetworkUint32();
-        // New buddy: the published record names the old one, republish now
-        if (buddy && buddyIP != m_lastBuddyIP) {
-            setLastPublishTimeKadSrc(tNow + KADEMLIAREPUBLISHTIMES, buddyIP);
+            buddyPort = buddy->udpPort();
+        }
+        // New buddy: the published record names the old one, republish now. Not MFC: the
+        // port counts too — a new buddy behind the same (CGNAT) IP has another UDP port.
+        if (buddy && (buddyIP != m_lastBuddyIP || buddyPort != m_lastBuddyPort)) {
+            setLastPublishTimeKadSrc(tNow + KADEMLIAREPUBLISHTIMES, buddyIP, buddyPort);
             return true;
         }
     }
@@ -918,7 +925,7 @@ bool KnownFile::publishSrc()
     if (tNow < m_lastPublishTimeKadSrc)
         return false;
 
-    setLastPublishTimeKadSrc(tNow + KADEMLIAREPUBLISHTIMES, buddyIP);
+    setLastPublishTimeKadSrc(tNow + KADEMLIAREPUBLISHTIMES, buddyIP, buddyPort);
     return true;
 }
 

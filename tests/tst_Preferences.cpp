@@ -4,6 +4,7 @@
 #include "TestHelpers.h"
 
 #include "app/AppConfig.h"
+#include "prefs/PreferenceSchema.h"
 #include "prefs/Preferences.h"
 #include "net/EMSocket.h"
 #include "net/EncryptedStreamSocket.h"
@@ -237,6 +238,163 @@ private slots:
         Preferences mirror;
         mirror.updateFromCbor(loaded.toIpcMap());
         QCOMPARE(mirror.uploadSlotTargetRate(), uint32{40});
+    }
+
+    // -- BitTorrent -----------------------------------------------------------
+
+    void bittorrent_defaults()
+    {
+        Preferences prefs;
+        QCOMPARE(prefs.btEnabled(), false);
+        QCOMPARE(prefs.btListenPort(), uint16{6881});
+        QCOMPARE(prefs.btDownloadDir(), QString());
+        QCOMPARE(prefs.btMaxDownloadKb(), uint32{0});
+        QCOMPARE(prefs.btMaxUploadKb(), uint32{0});
+        QCOMPARE(prefs.btDht(), true);
+        QCOMPARE(prefs.btLsd(), true);
+        QCOMPARE(prefs.btPex(), true);
+        QCOMPARE(prefs.btEncryption(), 0);
+        QCOMPARE(prefs.btMaxActiveDownloads(), 3);
+        QCOMPARE(prefs.btMaxActiveSeeds(), 5);
+        QCOMPARE(prefs.btSeedRatioPercent(), 100);
+        QCOMPARE(prefs.btSeedTimeLimitMinutes(), 0);
+    }
+
+    // Every key through YAML and the IPC map, non-default values throughout
+    void bittorrent_roundTrip()
+    {
+        TempDir tmp;
+        const auto file = tmp.filePath(QStringLiteral("bt.yaml"));
+        {
+            Preferences prefs;
+            prefs.setBtEnabled(true);
+            prefs.setBtListenPort(51413);
+            prefs.setBtDownloadDir(QStringLiteral("/tmp/torrents"));
+            prefs.setBtMaxDownloadKb(2048);
+            prefs.setBtMaxUploadKb(256);
+            prefs.setBtDht(false);
+            prefs.setBtLsd(false);
+            prefs.setBtPex(false);
+            prefs.setBtEncryption(1);
+            prefs.setBtMaxActiveDownloads(7);
+            prefs.setBtMaxActiveSeeds(0);
+            prefs.setBtSeedRatioPercent(250);
+            prefs.setBtSeedTimeLimitMinutes(1440);
+            QVERIFY(prefs.saveTo(file));
+        }
+        QFile f(file);
+        QVERIFY(f.open(QIODevice::ReadOnly));
+        QVERIFY(f.readAll().contains("bittorrent:"));
+        f.close();
+
+        Preferences loaded;
+        QVERIFY(loaded.load(file));
+        const auto check = [](const Preferences& p) {
+            QCOMPARE(p.btEnabled(), true);
+            QCOMPARE(p.btListenPort(), uint16{51413});
+            QCOMPARE(p.btDownloadDir(), QStringLiteral("/tmp/torrents"));
+            QCOMPARE(p.btMaxDownloadKb(), uint32{2048});
+            QCOMPARE(p.btMaxUploadKb(), uint32{256});
+            QCOMPARE(p.btDht(), false);
+            QCOMPARE(p.btLsd(), false);
+            QCOMPARE(p.btPex(), false);
+            QCOMPARE(p.btEncryption(), 1);
+            QCOMPARE(p.btMaxActiveDownloads(), 7);
+            QCOMPARE(p.btMaxActiveSeeds(), 0);
+            QCOMPARE(p.btSeedRatioPercent(), 250);
+            QCOMPARE(p.btSeedTimeLimitMinutes(), 1440);
+        };
+        check(loaded);
+        if (QTest::currentTestFailed())
+            return;
+
+        const QCborMap map = loaded.toIpcMap();
+        QCOMPARE(map.value(QStringLiteral("btListenPort")).toInteger(), 51413);
+        QCOMPARE(map.value(QStringLiteral("btSeedRatioPercent")).toInteger(), 250);
+        Preferences mirror;
+        mirror.updateFromCbor(map);
+        check(mirror);
+        if (QTest::currentTestFailed())
+            return;
+
+        // An older daemon's map has no bt keys: the GUI keeps the defaults
+        Preferences gui;
+        gui.updateFromCbor(QCborMap{});
+        QCOMPARE(gui.btListenPort(), uint16{6881});
+        QCOMPARE(gui.btDht(), true);
+        QCOMPARE(gui.btMaxActiveDownloads(), 3);
+        QCOMPARE(gui.btSeedRatioPercent(), 100);
+    }
+
+    void bittorrent_clamps()
+    {
+        Preferences prefs;
+        prefs.setBtListenPort(0);
+        QCOMPARE(prefs.btListenPort(), uint16{6881});
+        prefs.setBtEncryption(9);
+        QCOMPARE(prefs.btEncryption(), 2);
+        prefs.setBtMaxActiveDownloads(0);
+        QCOMPARE(prefs.btMaxActiveDownloads(), 1);
+        prefs.setBtMaxActiveSeeds(500);
+        QCOMPARE(prefs.btMaxActiveSeeds(), 100);
+        prefs.setBtSeedRatioPercent(-5);
+        QCOMPARE(prefs.btSeedRatioPercent(), 0);
+        prefs.setBtSeedTimeLimitMinutes(10'000'000);
+        QCOMPARE(prefs.btSeedTimeLimitMinutes(), Preferences::kMaxBtSeedTimeLimitMinutes);
+
+        // Hand-edited file out of range
+        TempDir tmp;
+        const auto file = tmp.filePath(QStringLiteral("bt_bad.yaml"));
+        QFile seed(file);
+        QVERIFY(seed.open(QIODevice::WriteOnly));
+        seed.write("bittorrent:\n  listenPort: 70000\n  encryption: -1\n"
+                   "  maxActiveDownloads: 1000\n  maxActiveSeeds: -3\n"
+                   "  seedRatioPercent: 99999\n  seedTimeLimitMinutes: -1\n"
+                   "  maxDownloadKb: -10\n");
+        seed.close();
+        Preferences loaded;
+        loaded.load(file);
+        QCOMPARE(loaded.btListenPort(), uint16{6881});
+        QCOMPARE(loaded.btEncryption(), 0);
+        QCOMPARE(loaded.btMaxActiveDownloads(), 100);
+        QCOMPARE(loaded.btMaxActiveSeeds(), 0);
+        QCOMPARE(loaded.btSeedRatioPercent(), Preferences::kMaxBtSeedRatioPercent);
+        QCOMPARE(loaded.btSeedTimeLimitMinutes(), 0);
+        QCOMPARE(loaded.btMaxDownloadKb(), uint32{0});
+    }
+
+    // Schema holds REST/IPC writes to the documented ranges
+    void bittorrent_schema()
+    {
+        const QStringList keys{
+            QStringLiteral("btEnabled"), QStringLiteral("btListenPort"),
+            QStringLiteral("btDownloadDir"), QStringLiteral("btMaxDownloadKb"),
+            QStringLiteral("btMaxUploadKb"), QStringLiteral("btDht"), QStringLiteral("btLsd"),
+            QStringLiteral("btPex"), QStringLiteral("btEncryption"),
+            QStringLiteral("btMaxActiveDownloads"), QStringLiteral("btMaxActiveSeeds"),
+            QStringLiteral("btSeedRatioPercent"), QStringLiteral("btSeedTimeLimitMinutes")};
+        const QCborMap map = Preferences{}.toIpcMap();
+        for (const QString& key : keys) {
+            const PrefSpec* spec = findPreferenceSpec(key);
+            QVERIFY2(spec, qPrintable(key));
+            QVERIFY2(spec->writable, qPrintable(key));
+            QVERIFY2(map.contains(key), qPrintable(key));
+            QVERIFY2(preferenceProblem(*spec, map.value(key)).isEmpty(), qPrintable(key));
+        }
+
+        const auto problem = [](const char* key, const QCborValue& v) {
+            return preferenceProblem(*findPreferenceSpec(QString::fromLatin1(key)), v);
+        };
+        QVERIFY(!problem("btListenPort", 0).isEmpty());
+        QVERIFY(!problem("btListenPort", 65536).isEmpty());
+        QVERIFY(problem("btListenPort", 6881).isEmpty());
+        QVERIFY(!problem("btEncryption", 3).isEmpty());
+        QVERIFY(!problem("btMaxActiveDownloads", 0).isEmpty());
+        QVERIFY(problem("btMaxActiveSeeds", 0).isEmpty());
+        QVERIFY(!problem("btSeedRatioPercent", 10001).isEmpty());
+        QVERIFY(!problem("btSeedTimeLimitMinutes", 525601).isEmpty());
+        QVERIFY(!problem("btDht", 1).isEmpty());   // must be a bool
+        QVERIFY(!problem("btDownloadDir", true).isEmpty());
     }
 
     // 0 = never disable a server; no Options value, but valid in the file

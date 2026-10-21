@@ -23,6 +23,11 @@ target_link_libraries(emulecored
         eMule::CommonSettings
 )
 
+# BitTorrent: optional; BtBridge answers 503 without it
+if(TARGET eMule::Bt)
+    target_link_libraries(emulecored PRIVATE eMule::Bt)
+endif()
+
 # WinShutdownHandler: the hidden window that hears about logoff and shutdown
 if(WIN32)
     target_link_libraries(emulecored PRIVATE user32)

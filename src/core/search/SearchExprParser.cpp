@@ -6,6 +6,7 @@
 /// replacing the original Bison/Yacc + Flex implementation.
 
 #include "search/SearchExprParser.h"
+#include "kademlia/KadMiscUtils.h"
 #include "utils/OtherFunctions.h"
 #include "protocol/ED2KLink.h"
 #include "protocol/Tag.h"
@@ -15,8 +16,10 @@
 #include "utils/SafeFile.h"
 
 #include <QByteArray>
+#include <QCoreApplication>
 #include <QString>
 
+#include <algorithm>
 #include <cstring>
 #include <memory>
 
@@ -24,6 +27,8 @@
 namespace eMule {
 
 namespace {
+
+constexpr qsizetype kMaxSearchOperators = 10;
 
 // ---------------------------------------------------------------------------
 // Token types — internal to the parser
@@ -115,7 +120,18 @@ public:
         }
 
         if (m_current.type != TokenType::Eof && m_errors.isEmpty())
-            addError(QStringLiteral("Unexpected input after search expression"));
+            addError(QCoreApplication::translate("eMule::SearchExprParser", "Failed to parse search expression"));
+
+        // More than 10 operators: MFC IDS_SEARCH_TOOCOMPLEX (SearchResultsWnd.cpp:768).
+        // 10 is what the user may type; the filters add up to 12 more.
+        if (m_errors.isEmpty()) {
+            const auto ops = std::ranges::count_if(result.expr.m_expr, [](const SearchAttr& a) {
+                return a.m_str == kSearchOpTokenAnd || a.m_str == kSearchOpTokenOr
+                    || a.m_str == kSearchOpTokenNot;
+            });
+            if (ops > kMaxSearchOperators)
+                addError(QCoreApplication::translate("eMule::SearchExprParser", "Expression too complex"));
+        }
 
         result.errors = m_errors;
         return result;
@@ -193,13 +209,13 @@ private:
         while (m_pos < m_end && *m_pos != '"') {
             char c = *m_pos;
             if (c == '\n') {
-                addError(QStringLiteral("Unterminated string"));
+                addError(QCoreApplication::translate("eMule::SearchExprParser", "Unterminated string"));
                 return {TokenType::Error, {}, 0};
             }
             if (c == '\\') {
                 ++m_pos;
                 if (m_pos >= m_end) {
-                    addError(QStringLiteral("Unterminated escape sequence"));
+                    addError(QCoreApplication::translate("eMule::SearchExprParser", "Unterminated string"));
                     return {TokenType::Error, {}, 0};
                 }
                 c = *m_pos;
@@ -245,8 +261,12 @@ private:
             }
         }
 
-        if (m_pos < m_end && *m_pos == '"')
-            ++m_pos; // skip closing quote
+        // No closing quote: an error, as in MFC Scanner.l
+        if (m_pos >= m_end) {
+            addError(QCoreApplication::translate("eMule::SearchExprParser", "Unterminated string"));
+            return {TokenType::Error, {}, 0};
+        }
+        ++m_pos; // skip closing quote
 
         // Skip empty strings and empty quoted strings (matching original behavior)
         if (str.isEmpty())
@@ -292,7 +312,7 @@ private:
 
         int len = static_cast<int>(m_pos - start);
         if (len == 0) {
-            addError(QStringLiteral("Invalid attribute: @"));
+            addError(QCoreApplication::translate("eMule::SearchExprParser", "Unknown search attribute '%1'").arg(u'@'));
             return {TokenType::Error, {}, 0};
         }
 
@@ -310,8 +330,8 @@ private:
         if (prefixMatch(start, len, "album", 3))       return {TokenType::AtAlbum, {}, 0};
         if (prefixMatch(start, len, "artist", 3))      return {TokenType::AtArtist, {}, 0};
 
-        addError(QStringLiteral("Unknown attribute: @%1")
-                     .arg(QString::fromUtf8(start, len)));
+        addError(QCoreApplication::translate("eMule::SearchExprParser", "Unknown search attribute '%1'")
+                     .arg(u'@' + QString::fromUtf8(start, len)));
         return {TokenType::Error, {}, 0};
     }
 
@@ -334,7 +354,7 @@ private:
         QString linkStr = QString::fromUtf8(start, static_cast<int>(m_pos - start));
         auto link = parseED2KLink(linkStr);
         if (!link || !std::holds_alternative<ED2KFileLink>(*link)) {
-            addError(QStringLiteral("Invalid ED2K file link"));
+            addError(QCoreApplication::translate("eMule::SearchExprParser", "Invalid eD2K file link"));
             return {TokenType::Error, {}, 0};
         }
 
@@ -375,7 +395,6 @@ private:
     {
         skipSpaces();
         if (m_pos >= m_end || !std::isdigit(static_cast<unsigned char>(*m_pos))) {
-            addError(QStringLiteral("Expected number after @size operator"));
             return false;
         }
 
@@ -404,7 +423,6 @@ private:
     {
         skipSpaces();
         if (m_pos >= m_end || !std::isdigit(static_cast<unsigned char>(*m_pos))) {
-            addError(QStringLiteral("Expected number"));
             return false;
         }
 
@@ -430,7 +448,6 @@ private:
     {
         skipSpaces();
         if (m_pos >= m_end) {
-            addError(QStringLiteral("Expected number or time value after @length operator"));
             return false;
         }
 
@@ -480,7 +497,6 @@ private:
 
         // Regular number with optional s/m/h suffix
         if (!std::isdigit(static_cast<unsigned char>(*m_pos))) {
-            addError(QStringLiteral("Expected number or time value after @length operator"));
             return false;
         }
 
@@ -511,7 +527,6 @@ private:
 
         int len = static_cast<int>(m_pos - start);
         if (len == 0) {
-            addError(QStringLiteral("Expected type value after @type="));
             return false;
         }
 
@@ -531,11 +546,8 @@ private:
         else if (prefixMatch(start, len, "iso", 3)
                  || prefixMatch(start, len, "cd", 2))
             result = QByteArray(ED2KFTSTR_CDIMAGE);
-        else {
-            addError(QStringLiteral("Invalid @type value: %1")
-                         .arg(QString::fromUtf8(start, len)));
+        else
             return false;
-        }
 
         return true;
     }
@@ -559,7 +571,6 @@ private:
 
         int len = static_cast<int>(m_pos - start);
         if (len == 0) {
-            addError(QStringLiteral("Expected value after attribute operator"));
             return false;
         }
 
@@ -570,6 +581,14 @@ private:
     void advance() { m_current = scanToken(); }
 
     void addError(const QString& msg) { m_errors.append(msg); }
+
+    /// MFC IDS_SEARCH_ATTRERR. Only the first error is shown, so a more
+    /// specific one already in the list wins.
+    void addAttrError(const QString& attrName)
+    {
+        if (m_errors.isEmpty())
+            addError(QCoreApplication::translate("eMule::SearchExprParser", "Syntax error in '%1' search attribute").arg(attrName));
+    }
 
     // -----------------------------------------------------------------------
     // Parser — recursive descent
@@ -618,7 +637,7 @@ private:
             if (explicitAnd) {
                 advance();
                 if (!canStartPrimary()) {
-                    addError(QStringLiteral("Missing expression after AND"));
+                    addError(QCoreApplication::translate("eMule::SearchExprParser", "Missing right side for AND operator"));
                     return result;
                 }
             } else if (!canStartPrimary()) {
@@ -647,7 +666,7 @@ private:
         while (m_current.type == TokenType::Or) {
             advance();
             if (!canStartPrimary()) {
-                addError(QStringLiteral("Missing expression after OR"));
+                addError(QCoreApplication::translate("eMule::SearchExprParser", "Missing right side for OR operator"));
                 return result;
             }
             SearchExpr right = parseNotExpr();
@@ -672,7 +691,7 @@ private:
         while (m_current.type == TokenType::Not) {
             advance();
             if (!canStartPrimary()) {
-                addError(QStringLiteral("Missing expression after NOT"));
+                addError(QCoreApplication::translate("eMule::SearchExprParser", "Missing right side for NOT operator"));
                 return result;
             }
             SearchExpr right = parsePrimary();
@@ -693,11 +712,15 @@ private:
     {
         if (m_current.type == TokenType::LParen) {
             advance();
+            if (m_current.type == TokenType::RParen || m_current.type == TokenType::Eof) {
+                addError(QCoreApplication::translate("eMule::SearchExprParser", "Missing expression for '(' ')'"));
+                return {};
+            }
             SearchExpr result = parseAndExpr();
             if (!m_errors.isEmpty()) return result;
 
             if (m_current.type != TokenType::RParen) {
-                addError(QStringLiteral("Missing closing parenthesis"));
+                addError(QCoreApplication::translate("eMule::SearchExprParser", "Missing closing ')'"));
                 return result;
             }
             advance();
@@ -737,12 +760,15 @@ private:
         case TokenType::AtType: {
             advance(); // past @type
             if (m_current.type != TokenType::OpEq) {
-                addError(QStringLiteral("Expected = after @type"));
+                addAttrError(QStringLiteral("@type"));
                 return {};
             }
             // m_pos is now past the = sign
             QByteArray typeVal;
-            if (!scanTypeValue(typeVal)) return {};
+            if (!scanTypeValue(typeVal)) {
+                addAttrError(QStringLiteral("@type"));
+                return {};
+            }
             m_current = scanToken();
             return SearchExpr(SearchAttr(FT_FILETYPE, typeVal));
         }
@@ -755,8 +781,24 @@ private:
         case TokenType::AtAlbum:  return parseStringAttr(FT_MEDIA_ALBUM, QStringLiteral("@album"));
         case TokenType::AtArtist: return parseStringAttr(FT_MEDIA_ARTIST, QStringLiteral("@artist"));
 
+        case TokenType::Error:
+            return {};   // scanner already said why
+
+        case TokenType::Not:
+            // "-1080p" alone: NOT removes matches, it needs a term to remove them from
+            addError(QCoreApplication::translate("eMule::SearchExprParser", "Missing left side for NOT operator"));
+            return {};
+
+        case TokenType::And:
+            addError(QCoreApplication::translate("eMule::SearchExprParser", "Missing left side for AND operator"));
+            return {};
+
+        case TokenType::Or:
+            addError(QCoreApplication::translate("eMule::SearchExprParser", "Missing left side for OR operator"));
+            return {};
+
         default:
-            addError(QStringLiteral("Expected search term or attribute"));
+            addError(QCoreApplication::translate("eMule::SearchExprParser", "Failed to parse search expression"));
             return {};
         }
     }
@@ -767,14 +809,17 @@ private:
         advance(); // past attribute token
         uint32 op = 0;
         if (!readComparisonOp(op)) {
-            addError(QStringLiteral("Expected comparison operator after %1").arg(attrName));
+            addAttrError(attrName);
             return {};
         }
         // m_pos is past the operator (advance was already called by scanToken for the op)
 
         uint64 num = 0;
         bool ok = isSizeContext ? scanSizeNumber(num) : scanPlainNumber(num);
-        if (!ok) return {};
+        if (!ok) {
+            addAttrError(attrName);
+            return {};
+        }
 
         m_current = scanToken();
         return SearchExpr(SearchAttr(tag, op, num));
@@ -786,12 +831,15 @@ private:
         advance(); // past @length
         uint32 op = 0;
         if (!readComparisonOp(op)) {
-            addError(QStringLiteral("Expected comparison operator after @length"));
+            addAttrError(QStringLiteral("@length"));
             return {};
         }
 
         uint64 num = 0;
-        if (!scanLengthNumber(num)) return {};
+        if (!scanLengthNumber(num)) {
+            addAttrError(QStringLiteral("@length"));
+            return {};
+        }
 
         m_current = scanToken();
         return SearchExpr(SearchAttr(FT_MEDIA_LENGTH, op, num));
@@ -802,13 +850,16 @@ private:
     {
         advance(); // past attribute token
         if (m_current.type != TokenType::OpEq) {
-            addError(QStringLiteral("Expected = after %1").arg(attrName));
+            addAttrError(attrName);
             return {};
         }
         // m_pos is past the = sign
 
         QByteArray strVal;
-        if (!scanStringValue(strVal)) return {};
+        if (!scanStringValue(strVal)) {
+            addAttrError(attrName);
+            return {};
+        }
 
         m_current = scanToken();
         return SearchExpr(SearchAttr(tag, strVal));
@@ -847,6 +898,44 @@ namespace {
         || a.m_str == QByteArray(kSearchOpTokenNot);
 }
 
+/// Walk one prefix-notation subtree from @p i. @p required: every match must
+/// hold this subtree. Filename terms land in @p required or @p optional.
+void collectFilenameTerms(const std::vector<SearchAttr>& expr, size_t& i, bool required,
+                          QStringList& requiredTerms, QStringList& optionalTerms)
+{
+    if (i >= expr.size())
+        return;
+    const SearchAttr& a = expr[i++];
+    if (a.m_str == QByteArray(kSearchOpTokenAnd)) {
+        collectFilenameTerms(expr, i, required, requiredTerms, optionalTerms);
+        collectFilenameTerms(expr, i, required, requiredTerms, optionalTerms);
+    } else if (a.m_str == QByteArray(kSearchOpTokenOr)) {
+        collectFilenameTerms(expr, i, false, requiredTerms, optionalTerms);
+        collectFilenameTerms(expr, i, false, requiredTerms, optionalTerms);
+    } else if (a.m_str == QByteArray(kSearchOpTokenNot)) {
+        collectFilenameTerms(expr, i, required, requiredTerms, optionalTerms);
+        collectFilenameTerms(expr, i, false, requiredTerms, optionalTerms);
+    } else if (a.m_tag == FT_FILENAME) {
+        (required ? requiredTerms : optionalTerms).append(QString::fromUtf8(a.m_str));
+    }
+}
+
+struct FilenameTerms {
+    QStringList required;
+    QStringList optional;
+};
+
+[[nodiscard]] FilenameTerms filenameTerms(const QString& expression)
+{
+    FilenameTerms terms;
+    const ParseResult parsed = parseSearchExpression(expression);
+    if (!parsed.success())
+        return terms;
+    size_t i = 0;
+    collectFilenameTerms(parsed.expr.m_expr, i, true, terms.required, terms.optional);
+    return terms;
+}
+
 /// Append @p attr to @p expr, AND-combining it with whatever is already there.
 /// The expression is in prefix notation, so the operator goes at the front —
 /// mirrors MFC's AddAndAttr (SearchResultsWnd.cpp:1150-1162).
@@ -861,6 +950,43 @@ void addAndAttr(SearchExpr& expr, const SearchAttr& attr)
 }
 
 } // anonymous namespace
+
+QString kadKeywordSource(const QString& expression)
+{
+    return filenameTerms(expression).required.join(u' ');
+}
+
+bool kadKeywordOnlyInOr(const QString& expression)
+{
+    const FilenameTerms terms = filenameTerms(expression);
+    return terms.required.isEmpty() && !terms.optional.isEmpty();
+}
+
+QString searchExpressionError(const QString& expression, SearchType type)
+{
+    if (const ParseResult parsed = parseSearchExpression(expression); !parsed.success())
+        return parsed.errors.constFirst();
+    // MFC IDS_SEARCH_BADOPERATORCOMBINATION (SearchResultsWnd.cpp:774-780)
+    if (type == SearchType::Kademlia && kadKeywordOnlyInOr(expression))
+        return QCoreApplication::translate("eMule::SearchExprParser",
+            "You cannot use the first keyword with an OR operator when searching on Kad!\n\n"
+            "For example \"Keyword1 OR Keyword2\" is not possible. Try \"Keyword1 AND "
+            "(Keyword2 OR Keyword3)\" or do multiple searches instead.");
+    if (type == SearchType::Kademlia) {
+        std::vector<QString> words;
+        kad::getWords(kad::kadTagStrToLower(kadKeywordSource(expression)), words);
+        if (words.empty())
+            return kadKeywordTooShortError();
+    }
+    return {};
+}
+
+QString kadKeywordTooShortError()
+{
+    return QCoreApplication::translate("eMule::SearchExprParser",
+        "Keyword too short.\n\nThe keyword(s) used in a Kad search expression must have a "
+        "minimum length of 3 characters.");
+}
 
 QByteArray buildSearchTermsPayload(const SearchParams& params, const QString& kadKeyword,
                                    bool supports64Bit, bool* uses64Bit)

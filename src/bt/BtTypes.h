@@ -1,0 +1,158 @@
+#pragma once
+
+/// @file BtTypes.h
+/// @brief What eMule::Bt hands out: plain Qt values, no libtorrent type (research doc §4).
+
+#include <QByteArray>
+#include <QList>
+#include <QString>
+
+namespace eMule::bt {
+
+/// The session's settings, resolved by the daemon from Preferences.
+struct BtSettings {
+    quint16 listenPort = 6881;
+    /// where new torrents are saved; never empty
+    QString downloadDir;
+    /// <config>/BT: session.dat and resume/
+    QString stateDir;
+    /// 0 = unlimited
+    quint32 maxDownloadKb = 0;
+    quint32 maxUploadKb = 0;
+    bool dht = true;
+    bool lsd = true;
+    /// applied when the session starts
+    bool pex = true;
+    /// 0 enabled (prefer), 1 forced, 2 disabled
+    int encryption = 0;
+    int maxActiveDownloads = 3;
+    int maxActiveSeeds = 5;
+    /// stop seeding at this ratio, percent; 0 = no limit
+    int seedRatioPercent = 100;
+    /// stop seeding after this long; 0 = no limit
+    int seedTimeLimitMinutes = 0;
+    /// "eMuleQt/0.6.26", and its numbers for the peer ID
+    QString userAgent;
+    int versionMajor = 0;
+    int versionMinor = 0;
+    int versionRevision = 0;
+};
+
+/// State of a torrent as the GUI shows it. Values are IPC: append only.
+enum class BtState : quint8 {
+    Queued = 0,
+    CheckingFiles = 1,
+    DownloadingMetadata = 2,
+    Downloading = 3,
+    Finished = 4,
+    Seeding = 5,
+    CheckingResume = 6,
+    Paused = 7,
+    Error = 8,
+    Moving = 9,
+};
+
+struct BtTorrentRow {
+    /// "bt:v1:<40 hex>" or "bt:v2:<64 hex>", upper case (BtIds)
+    QString id;
+    QString name;
+    QString savePath;
+    BtState state = BtState::Queued;
+    /// wanted bytes and those done
+    qint64 size = 0;
+    qint64 done = 0;
+    /// 0..1
+    double progress = 0;
+    qint64 rateDown = 0;
+    qint64 rateUp = 0;
+    int peers = 0;
+    int seeds = 0;
+    /// from the trackers' scrape: -1 = unknown
+    int peersTotal = -1;
+    int seedsTotal = -1;
+    qint64 downloaded = 0;
+    qint64 uploaded = 0;
+    /// bytes of pieces that failed their hash, and were fetched again
+    qint64 failedBytes = 0;
+    QString error;
+    /// lower-case hex; empty when the torrent has none of that version
+    QString hashV1;
+    QString hashV2;
+    bool paused = false;
+    bool hasMetadata = false;
+    bool isPrivate = false;
+    qint64 addedAt = 0;      ///< Unix seconds
+    qint64 completedAt = 0;  ///< Unix seconds, 0 = not yet
+    qint64 seedingSeconds = 0;
+    int queuePosition = -1;
+    /// part map: up to 256 buckets, each 0..255 = share of its pieces done
+    QByteArray pieceMap;
+    int pieces = 0;
+    int pieceLength = 0;
+    int numFiles = 0;
+    /// seconds left, -1 = unknown
+    qint64 eta = -1;
+};
+
+struct BtFileRow {
+    int index = 0;
+    /// relative to the save path, '/' separated
+    QString path;
+    qint64 size = 0;
+    qint64 done = 0;
+    /// libtorrent priority 0 (skip) .. 7 (top)
+    int priority = 4;
+    bool pad = false;
+};
+
+struct BtPeerRow {
+    QString address;  ///< "ip:port"
+    QString client;
+    double progress = 0;
+    qint64 rateDown = 0;
+    qint64 rateUp = 0;
+    qint64 downloaded = 0;
+    qint64 uploaded = 0;
+    bool seed = false;
+    bool encrypted = false;
+    bool utp = false;
+    /// "tracker", "dht", "pex", "lsd", "resume", "incoming"
+    QString source;
+};
+
+struct BtTrackerRow {
+    QString url;
+    int tier = 0;
+    bool working = false;
+    QString message;
+    int seeds = -1;
+    int peers = -1;
+};
+
+/// Outcome of an add. Values are IPC: append only.
+enum class BtAddOutcome : quint8 {
+    Added = 0,
+    Duplicate = 1,
+    Invalid = 2,
+    NotRunning = 3,
+    Failed = 4,
+};
+
+struct BtAddResult {
+    BtAddOutcome outcome = BtAddOutcome::Failed;
+    QString id;
+    /// English, for the log; the GUI maps the outcome
+    QString message;
+};
+
+struct BtStatus {
+    bool running = false;
+    quint16 listenPort = 0;
+    bool listening = false;
+    int dhtNodes = 0;
+    int torrents = 0;
+    qint64 rateDown = 0;
+    qint64 rateUp = 0;
+};
+
+} // namespace eMule::bt

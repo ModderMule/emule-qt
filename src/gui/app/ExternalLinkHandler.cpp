@@ -1,5 +1,6 @@
 #include "pch.h"
 #include <QFileInfo>
+#include "panels/TorrentPanel.h"
 #include "panels/UsenetPanel.h"
 #include "app/ExternalLinkHandler.h"
 
@@ -9,6 +10,7 @@
 #include "prefs/Preferences.h"
 #include "utils/Ed2kLinkImporter.h"
 #include "utils/Log.h"
+#include "utils/TorrentLinks.h"
 
 #include <QDesktopServices>
 #include <QEvent>
@@ -93,7 +95,8 @@ bool ExternalLinkHandler::eventFilter(QObject* watched, QEvent* event)
         // file(), never url() — an ed2k link comes back empty through url(), and
         // this code path has been bitten by that before.
         const QString path = static_cast<QFileOpenEvent*>(event)->file();
-        if (path.endsWith(QStringLiteral(".nzb"), Qt::CaseInsensitive)
+        if ((path.endsWith(QStringLiteral(".nzb"), Qt::CaseInsensitive)
+             || gui::isTorrentFilePath(path))
             && QFileInfo(path).isFile()) {
             // Off the Apple Event's call stack, then through the same queue a link
             // uses. Acting here directly dropped the file when this arrived during
@@ -131,6 +134,21 @@ void ExternalLinkHandler::openNow(const QString& link)
         return;
     }
 
+    // A BitTorrent magnet (btih/btmh, no eD2K hash) goes to the Torrents tab;
+    // eD2K magnets, hybrid ones included, stay with the importer below.
+    if (gui::isBitTorrentMagnet(link)) {
+        TorrentPanel* panel = m_mainWindow ? m_mainWindow->torrentPanel() : nullptr;
+        if (!panel) {
+            logError(QStringLiteral("No Torrents panel to add a magnet link to"));
+            return;
+        }
+        m_mainWindow->switchToTab(MainWindow::TabTorrents);
+        if (thePrefs.bringToFrontOnLinkClick())
+            m_mainWindow->restoreWindow();
+        panel->addMagnets({link});
+        return;
+    }
+
     // Manual: the user clicked or typed this link, so a completed or cancelled file is a
     // genuine re-download request and is left alone.
     MainWindow* window = m_mainWindow;
@@ -151,6 +169,17 @@ void ExternalLinkHandler::openNow(const QString& link)
 
 void ExternalLinkHandler::openFileNow(const QString& path)
 {
+    if (gui::isTorrentFilePath(path)) {
+        TorrentPanel* torrents = m_mainWindow ? m_mainWindow->torrentPanel() : nullptr;
+        if (!torrents) {
+            logError(QStringLiteral("No Torrents panel to add %1 to").arg(path));
+            return;
+        }
+        m_mainWindow->switchToTab(MainWindow::TabTorrents);
+        torrents->addTorrentFiles({path});
+        return;
+    }
+
     UsenetPanel* panel = m_mainWindow ? m_mainWindow->usenetPanel() : nullptr;
     if (!panel) {
         logError(QStringLiteral("No Usenet panel to add %1 to").arg(path));

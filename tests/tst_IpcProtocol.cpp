@@ -157,6 +157,23 @@ void tst_IpcProtocol::msgTypeEnum_values()
     // older daemon, which is exactly the failure an enum makes invisible.
     QCOMPARE(static_cast<int>(IpcMsgType::GetUsenetQueue), 723);
     QCOMPARE(static_cast<int>(IpcMsgType::ListUsenetArchiveEntries), 729);
+    // The BitTorrent block (800-899) and its pushes (950-999).
+    QCOMPARE(static_cast<int>(IpcMsgType::GetTorrents), 800);
+    QCOMPARE(static_cast<int>(IpcMsgType::AddTorrentFile), 801);
+    QCOMPARE(static_cast<int>(IpcMsgType::AddMagnet), 802);
+    QCOMPARE(static_cast<int>(IpcMsgType::RemoveTorrent), 803);
+    QCOMPARE(static_cast<int>(IpcMsgType::PauseTorrent), 804);
+    QCOMPARE(static_cast<int>(IpcMsgType::ResumeTorrent), 805);
+    QCOMPARE(static_cast<int>(IpcMsgType::GetTorrentDetails), 806);
+    QCOMPARE(static_cast<int>(IpcMsgType::SetTorrentFilePriorities), 807);
+    QCOMPARE(static_cast<int>(IpcMsgType::RecheckTorrent), 808);
+    QCOMPARE(static_cast<int>(IpcMsgType::ReannounceTorrent), 809);
+    QCOMPARE(static_cast<int>(IpcMsgType::GetBtStatus), 818);
+    QCOMPARE(static_cast<int>(IpcMsgType::PushTorrentAdded), 950);
+    QCOMPARE(static_cast<int>(IpcMsgType::PushTorrentUpdate), 951);
+    QCOMPARE(static_cast<int>(IpcMsgType::PushTorrentRemoved), 952);
+    QCOMPARE(static_cast<int>(IpcMsgType::PushBtStatus), 953);
+    QCOMPARE(static_cast<int>(IpcMsgType::PushTorrentFinished), 954);
 }
 
 QTEST_GUILESS_MAIN(tst_IpcProtocol)

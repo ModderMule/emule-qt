@@ -168,6 +168,22 @@ static QString ipcMsgTypeName(Ipc::IpcMsgType type)
     case T::SetUsenetPaused:      return QStringLiteral("SetUsenetPaused");
     case T::InspectNzb:           return QStringLiteral("InspectNzb");
     case T::ClearUsenetCompleted: return QStringLiteral("ClearUsenetCompleted");
+    case T::GetTorrents:          return QStringLiteral("GetTorrents");
+    case T::AddTorrentFile:       return QStringLiteral("AddTorrentFile");
+    case T::AddMagnet:            return QStringLiteral("AddMagnet");
+    case T::RemoveTorrent:        return QStringLiteral("RemoveTorrent");
+    case T::PauseTorrent:         return QStringLiteral("PauseTorrent");
+    case T::ResumeTorrent:        return QStringLiteral("ResumeTorrent");
+    case T::GetTorrentDetails:    return QStringLiteral("GetTorrentDetails");
+    case T::SetTorrentFilePriorities: return QStringLiteral("SetTorrentFilePriorities");
+    case T::RecheckTorrent:       return QStringLiteral("RecheckTorrent");
+    case T::ReannounceTorrent:    return QStringLiteral("ReannounceTorrent");
+    case T::GetBtStatus:          return QStringLiteral("GetBtStatus");
+    case T::PushTorrentAdded:     return QStringLiteral("PushTorrentAdded");
+    case T::PushTorrentUpdate:    return QStringLiteral("PushTorrentUpdate");
+    case T::PushTorrentRemoved:   return QStringLiteral("PushTorrentRemoved");
+    case T::PushBtStatus:         return QStringLiteral("PushBtStatus");
+    case T::PushTorrentFinished:  return QStringLiteral("PushTorrentFinished");
     default:
         return QStringLiteral("Unknown(%1)").arg(static_cast<int>(type));
     }
@@ -735,6 +751,11 @@ void IpcClient::dispatchPushEvent(const IpcMessage& msg)
     case IpcMsgType::PushUsenetEngineState:
         setUsenetEnginePaused(msg.fieldMap(0).value(QStringLiteral("paused")).toBool());
         break;
+    case IpcMsgType::PushTorrentAdded:     emit torrentAdded(msg); break;
+    case IpcMsgType::PushTorrentUpdate:    emit torrentUpdated(msg); break;
+    case IpcMsgType::PushTorrentRemoved:   emit torrentRemoved(msg); break;
+    case IpcMsgType::PushTorrentFinished:  emit torrentFinished(msg); break;
+    case IpcMsgType::PushBtStatus:         emit btStatusChanged(msg); break;
     case IpcMsgType::PushSharedFileUpdate: emit sharedFileUpdated(msg); break;
     case IpcMsgType::PushSharedFileRemoved: emit sharedFileRemoved(msg); break;
     case IpcMsgType::PushUploadUpdate:     emit uploadUpdated(msg); break;

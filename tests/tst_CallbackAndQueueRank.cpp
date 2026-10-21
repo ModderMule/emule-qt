@@ -6,6 +6,7 @@
 /// Uses real TCP (with and without encryption) and real UDP packets on
 /// localhost.  Simulates 3+ nodes per test where appropriate.
 
+#include "NatTestEnv.h"
 #include "TestFixtures.h"
 #include "TestHelpers.h"
 
@@ -431,6 +432,8 @@ private slots:
     void swapToAnotherFile_swapsSourceAndTracksA4AF();
     // LowID callback completion — inbound socket attaches to the waiting source
     void lowIdCallback_attachesInboundSocketToWaitingSource();
+    void natRendezvous_startsWhenBothFirewalled();
+    void natRendezvous_followsFailedIPv6Dial();
     // Kad buddy callback, whole chain: source result -> request to the buddy -> dial back
     void kadCallback_requestReachesBuddyAndDialBackAttaches();
     void incomingHello_unknownPeer_staysSeparateClient();
@@ -872,7 +875,7 @@ void tst_CallbackAndQueueRank::kadCallbackRelay_relaysToBuddy()
     // (set here: the hello answer that arrived meanwhile carries no Kad version)
     buddyClient->setKadVersion(KADEMLIA_VERSION);
     buddyClient->processBuddyPing();                       // too early after connecting
-    buddyClient->setNextBuddyPingPongTime(getTickCount() - MIN2MS(3));
+    buddyClient->setLastIncomingBuddyPingTime(getTickCount() - MIN2MS(3));
     buddyClient->processBuddyPing();
     QTRY_VERIFY_WITH_TIMEOUT(buddyServer.socket()->receivedBuddyPong(), 5000);
 
@@ -2248,6 +2251,84 @@ void tst_CallbackAndQueueRank::udpReask_abortsAboveThirtyPercentOfFourSends()
     m_downloadQueue->removeSource(client);
     m_clientList->removeClient(client);
     m_downloadQueue->removeFile(partFile);
+}
+
+// ===========================================================================
+// NAT rendezvous — both sides firewalled: tryToConnect asks the server to
+// introduce us instead of giving up (net/natt)
+// ===========================================================================
+
+void tst_CallbackAndQueueRank::natRendezvous_startsWhenBothFirewalled()
+{
+    natt::test::HubFixture f;
+    auto* client = new UpDownClient(4662, 77, htonl(0x5DB8D822), 4661, nullptr, false);
+    uint8 hash[16];
+    std::memset(hash, 0x31, 16);
+    client->setUserHash(hash);
+    QVERIFY(client->hasLowID());
+    f.env->logIn(client->serverAddress(), client->serverPort(), SrvTcpFlag::LowIdHolePunch);
+    m_clientList->addClient(client);
+    QVERIFY(theApp.isFirewalled());
+
+    // without the hub: no route
+    QVERIFY(!client->tryToConnect());
+    QCOMPARE(client->connectingState(), ConnectingState::None);
+
+    theApp.natRendezvous = f.hub.get();
+    const auto restore = qScopeGuard([] { theApp.natRendezvous = nullptr; });
+    QVERIFY(client->tryToConnect());
+    QCOMPARE(client->connectingState(), ConnectingState::NatRendezvous);
+    QCOMPARE(f.env->tcp.size(), size_t{1});
+    QCOMPARE(f.env->tcp[0].opcode, uint8{OP_LOWID_HOLEPUNCH_REQUEST});
+    QCOMPARE(peekUInt32(f.env->tcp[0].payload.constData()), 77u);
+    QVERIFY(f.hub->attempts().front()->client == client);
+
+    m_clientList->removeClient(client);
+    delete client;
+}
+
+// A LowID source published an IPv6 that turned out firewalled: the failed v6 dial
+// must not kill the source but fall back to its LowID route.
+void tst_CallbackAndQueueRank::natRendezvous_followsFailedIPv6Dial()
+{
+    natt::test::HubFixture f;
+    auto* partFile = new PartFile();
+    partFile->setFileName(QStringLiteral("v6fallback.bin"));
+    partFile->setFileSize(EMFileSize(1024 * 1024));
+    partFile->setFileHash(m_fileHash.data());
+    QVERIFY(partFile->createPartFile(m_tmpDir->filePath(QStringLiteral("temp"))));
+
+    auto* client = new UpDownClient(4662, 77, htonl(0x5DB8D822), 4661, nullptr, false);
+    uint8 hash[16];
+    std::memset(hash, 0x32, 16);
+    client->setUserHash(hash);
+    client->setReqFile(partFile);
+    const Address v6 = Address::fromString(QStringLiteral("2001:db8::5"));
+    client->setUserIPv6(v6);
+    client->setOpenIPv6(true);
+    client->setConnectAddress(v6);
+    client->setDownloadState(DownloadState::Connecting);
+    client->setConnectingState(ConnectingState::DirectTCP);
+    f.env->logIn(client->serverAddress(), client->serverPort(), SrvTcpFlag::LowIdHolePunch);
+    m_clientList->addClient(client);
+    theApp.natRendezvous = f.hub.get();
+    const auto restore = qScopeGuard([] { theApp.natRendezvous = nullptr; });
+
+    client->disconnected(QStringLiteral("Connection refused"));
+    QVERIFY(!client->openIPv6());
+    QVERIFY(client->connectAddress().isNull());
+    QCOMPARE(client->reqFile(), partFile);
+    QTRY_COMPARE(client->connectingState(), ConnectingState::NatRendezvous);
+    QCOMPARE(f.env->tcp.size(), size_t{1});
+
+    // a second failed v6 dial cannot happen: the route is gone
+    client->disconnected(QStringLiteral("timeout"));
+    QVERIFY(client->connectAddress().isNull());
+
+    m_clientList->removeClient(client);
+    client->setReqFile(nullptr);
+    delete partFile;
+    delete client;
 }
 
 QTEST_MAIN(tst_CallbackAndQueueRank)

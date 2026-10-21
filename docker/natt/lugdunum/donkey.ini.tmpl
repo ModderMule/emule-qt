@@ -1,0 +1,31 @@
+; donkey.ini for the NAT rendezvous rig, rendered by natnet.py.
+; eserver splits every line containing an equals sign on it, even after a semicolon,
+; so no comment here may contain one.
+
+[server]
+name=natnet-lugdunum
+desc=eMuleQt NAT rendezvous rig
+thisIP=__THIS_IP__
+port=__PORT__
+public=false
+
+; a few logins per IP otherwise blacklist the rig addresses for an hour
+blacktime=1
+
+; required under qemu user mode, which segfaults on epoll and on more than one TCP worker
+noepoll=true
+tcpthreads=1
+udpsearchers=1
+
+; every rig client is a LowID, and the default cap is 20 percent of the users
+maxClients=200
+max_clients_per_ip=64
+LOWIDenable=1
+LOWIDpercent=100
+
+; the protocol trace goes to stdout, read it with docker logs
+verbose=1
+console=1
+bverbose=1
+
+zlib_enable=true

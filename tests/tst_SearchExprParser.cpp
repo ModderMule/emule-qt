@@ -37,6 +37,10 @@ private slots:
     // --- Dash prefix NOT ---
     void dash_not();
     void dash_not_with_keyword_before();
+    void dash_not_chained();
+    void dash_inside_keyword_is_part_of_it();
+    void dash_not_quoted_phrase();
+    void guideExamples_parse();
 
     // --- Parentheses ---
     void simple_parens();
@@ -106,6 +110,16 @@ private slots:
     void error_missing_size_operator();
     void error_invalid_type_value();
     void error_missing_string_value();
+    void error_leading_dash();
+    void error_unterminated_quote();
+    void error_empty_parens();
+    void error_too_complex();
+
+    // --- Kad keyword source ---
+    void kadKeywordSource_skipsNotSide();
+    void kadKeywordSource_skipsAttributes();
+    void kadKeywordSource_skipsOrBranches();
+    void searchExpressionError_kadKeywordTooShort();
 
     // --- Global-search packet opcode selection (buildGlobalSearchPacket) ---
     void globalSearch_legacyReq_whenNoFlags();
@@ -301,6 +315,54 @@ void tst_SearchExprParser::dash_not_with_keyword_before()
     verifyOp(r.expr, 2, kSearchOpTokenNot);
     verifyAttr(r.expr, 3, "b");
     verifyAttr(r.expr, 4, "c");
+}
+
+void tst_SearchExprParser::dash_not_chained()
+{
+    // "movie -1080p -720p" → NOT(NOT(movie, 1080p), 720p): NOT is left-associative
+    auto r = parseSearchExpression(QStringLiteral("movie -1080p -720p"));
+    QVERIFY(r.success());
+    QCOMPARE(r.expr.m_expr.size(), std::size_t{5});
+    verifyOp(r.expr, 0, kSearchOpTokenNot);
+    verifyOp(r.expr, 1, kSearchOpTokenNot);
+    verifyAttr(r.expr, 2, "movie");
+    verifyAttr(r.expr, 3, "1080p");
+    verifyAttr(r.expr, 4, "720p");
+}
+
+void tst_SearchExprParser::dash_inside_keyword_is_part_of_it()
+{
+    // Only a leading '-' is NOT (MFC Scanner.l REJECTs it); "spider-man" stays whole
+    auto r = parseSearchExpression(QStringLiteral("spider-man"));
+    QVERIFY(r.success());
+    QCOMPARE(r.expr.m_expr.size(), std::size_t{1});
+    verifyAttr(r.expr, 0, "spider-man");
+}
+
+void tst_SearchExprParser::dash_not_quoted_phrase()
+{
+    auto r = parseSearchExpression(QStringLiteral("movie -\"director cut\""));
+    QVERIFY(r.success());
+    QCOMPARE(r.expr.m_expr.size(), std::size_t{3});
+    verifyOp(r.expr, 0, kSearchOpTokenNot);
+    verifyAttr(r.expr, 1, "movie");
+    verifyAttr(r.expr, 2, "director cut");
+}
+
+void tst_SearchExprParser::guideExamples_parse()
+{
+    // Every example in docs/search-syntax.md
+    for (const char* e : {"matrix reloaded", "matrix AND reloaded", "matrix OR reloaded",
+                          "matrix -1080p", "matrix NOT 1080p", "\"matrix reloaded\"",
+                          "matrix (dvdrip OR bdrip)", "matrix -1080p -720p -cam",
+                          "matrix -\"director cut\"", "matrix -1080p @size>700 @type=video",
+                          "\"pink floyd\" @type=audio @bitrate>=256",
+                          "linux iso @size>=4G @sources>10", "matrix -@ext=avi",
+                          "@length>1:30:00 @codec=h264 @artist=\"pink floyd\" @ava>3",
+                          "matrix (reloaded OR revolutions)"}) {
+        const auto r = parseSearchExpression(QString::fromUtf8(e));
+        QVERIFY2(r.success(), e);
+    }
 }
 
 // -----------------------------------------------------------------------
@@ -767,14 +829,14 @@ void tst_SearchExprParser::error_unclosed_paren()
 {
     auto r = parseSearchExpression(QStringLiteral("(a OR b"));
     QVERIFY(!r.success());
-    QVERIFY(r.errors[0].contains(QStringLiteral("parenthesis"), Qt::CaseInsensitive));
+    QCOMPARE(r.errors[0], QStringLiteral("Missing closing ')'"));
 }
 
 void tst_SearchExprParser::error_unknown_attribute()
 {
     auto r = parseSearchExpression(QStringLiteral("@unknown=test"));
     QVERIFY(!r.success());
-    QVERIFY(r.errors[0].contains(QStringLiteral("Unknown attribute")));
+    QCOMPARE(r.errors[0], QStringLiteral("Unknown search attribute '@unknown'"));
 }
 
 void tst_SearchExprParser::error_missing_after_and()
@@ -799,6 +861,90 @@ void tst_SearchExprParser::error_missing_string_value()
 {
     auto r = parseSearchExpression(QStringLiteral("@ext="));
     QVERIFY(!r.success());
+    QCOMPARE(r.errors[0], QStringLiteral("Syntax error in '@ext' search attribute"));
+}
+
+void tst_SearchExprParser::error_leading_dash()
+{
+    // NOT is binary in MFC Parser.y: there must be something to exclude from
+    auto r = parseSearchExpression(QStringLiteral("-1080p movie"));
+    QVERIFY(!r.success());
+    QCOMPARE(r.errors[0], QStringLiteral("Missing left side for NOT operator"));
+
+    r = parseSearchExpression(QStringLiteral("movie -"));
+    QVERIFY(!r.success());
+    QCOMPARE(r.errors[0], QStringLiteral("Missing right side for NOT operator"));
+}
+
+void tst_SearchExprParser::error_unterminated_quote()
+{
+    // MFC Scanner.l: EOF before the closing quote is IDS_SEARCH_UNTERMSTRING
+    auto r = parseSearchExpression(QStringLiteral("\"the matrix"));
+    QVERIFY(!r.success());
+    QCOMPARE(r.errors[0], QStringLiteral("Unterminated string"));
+}
+
+void tst_SearchExprParser::error_empty_parens()
+{
+    auto r = parseSearchExpression(QStringLiteral("a ()"));
+    QVERIFY(!r.success());
+    QCOMPARE(r.errors[0], QStringLiteral("Missing expression for '(' ')'"));
+}
+
+void tst_SearchExprParser::error_too_complex()
+{
+    // 11 words = 10 implicit ANDs: the most MFC accepts (SearchResultsWnd.cpp:768)
+    auto r = parseSearchExpression(QStringLiteral("a b c d e f g h i j k"));
+    QVERIFY(r.success());
+
+    r = parseSearchExpression(QStringLiteral("a b c d e f g h i j k l"));
+    QVERIFY(!r.success());
+    QCOMPARE(r.errors[0], QStringLiteral("Expression too complex"));
+}
+
+// -----------------------------------------------------------------------
+// Kad keyword source — the words a Kad target may be picked from
+// -----------------------------------------------------------------------
+
+void tst_SearchExprParser::kadKeywordSource_skipsNotSide()
+{
+    // A word after '-' must never be the Kad target: every file filed under it
+    // fails the expression, so the search would come back empty.
+    QCOMPARE(kadKeywordSource(QStringLiteral("movie -1080p")), QStringLiteral("movie"));
+    QCOMPARE(kadKeywordSource(QStringLiteral("movie trailer -1080p -720p")),
+             QStringLiteral("movie trailer"));
+    QCOMPARE(kadKeywordSource(QStringLiteral("movie NOT (1080p OR 720p)")), QStringLiteral("movie"));
+    QVERIFY(!kadKeywordOnlyInOr(QStringLiteral("movie -1080p")));
+}
+
+void tst_SearchExprParser::kadKeywordSource_skipsAttributes()
+{
+    // The raw text would offer "size" as the first word
+    QCOMPARE(kadKeywordSource(QStringLiteral("@size>100 movie")), QStringLiteral("movie"));
+    QCOMPARE(kadKeywordSource(QStringLiteral("@type=video")), QString());
+    QVERIFY(!kadKeywordOnlyInOr(QStringLiteral("@type=video")));
+}
+
+void tst_SearchExprParser::searchExpressionError_kadKeywordTooShort()
+{
+    QCOMPARE(searchExpressionError(QStringLiteral("ab cd"), SearchType::Kademlia),
+             kadKeywordTooShortError());
+    // An excluded word does not count as the keyword
+    QCOMPARE(searchExpressionError(QStringLiteral("ab -matrix"), SearchType::Kademlia),
+             kadKeywordTooShortError());
+    QCOMPARE(searchExpressionError(QStringLiteral("@type=video"), SearchType::Kademlia),
+             kadKeywordTooShortError());
+    QVERIFY(searchExpressionError(QStringLiteral("matrix -ab"), SearchType::Kademlia).isEmpty());
+    // Servers have no keyword length rule
+    QVERIFY(searchExpressionError(QStringLiteral("ab cd"), SearchType::Ed2kServer).isEmpty());
+}
+
+void tst_SearchExprParser::kadKeywordSource_skipsOrBranches()
+{
+    QCOMPARE(kadKeywordSource(QStringLiteral("(desktop OR server) ubuntu")), QStringLiteral("ubuntu"));
+    QCOMPARE(kadKeywordSource(QStringLiteral("desktop OR server")), QString());
+    QVERIFY(kadKeywordOnlyInOr(QStringLiteral("desktop OR server")));
+    QCOMPARE(kadKeywordSource(QStringLiteral("-x")), QString());   // does not parse
 }
 
 // ---------------------------------------------------------------------------

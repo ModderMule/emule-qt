@@ -6,6 +6,7 @@
 #include "client/ClientList.h"
 #include "app/AppContext.h"
 #include "client/UpDownClient.h"
+#include "kademlia/KadLog.h"
 #include "net/ListenSocket.h"
 #include "prefs/Preferences.h"
 #include "stats/Statistics.h"
@@ -40,6 +41,7 @@ ClientReqSocket::ClientReqSocket(UpDownClient* client, QObject* parent)
 {
     m_elapsedTimer.start();
     m_timeoutTimer = static_cast<uint32>(m_elapsedTimer.elapsed());
+    m_lastReceivedTimer = m_timeoutTimer;
 
     connect(this, &QAbstractSocket::connected, this, &ClientReqSocket::onSocketConnected);
     connect(this, &QAbstractSocket::disconnected, this, &ClientReqSocket::onSocketDisconnected);
@@ -129,6 +131,14 @@ bool ClientReqSocket::checkTimeOut()
         // UpDownClient::setDownloadState(). A branch here as well would stack a second
         // extension on top of that one.
         if (m_client->kadState() == KadState::ConnectedBuddy) {
+            // Not MFC: a ping-capable buddy must also be heard from. Kad v0 peers do not
+            // answer pings, so they keep the plain idle rule.
+            if (m_client->kadVersion() > 0 && msSinceLastReceived() > kBuddySilenceLimitMs) {
+                kad::logKad(QStringLiteral("Kad: buddy %1 silent for %2 s, dropping")
+                                .arg(m_client->kadBuddyInfo())
+                                .arg(msSinceLastReceived() / 1000));
+                return true;
+            }
             timeout += MIN2MS(15);
         } else if (m_client->isUploadingToPeer()
                    && m_client->getUpStartTimeDelay() < 4 * CONNECTION_TIMEOUT) {
@@ -141,6 +151,16 @@ bool ClientReqSocket::checkTimeOut()
     }
 
     return elapsed > timeout;
+}
+
+uint32 ClientReqSocket::msSinceLastReceived() const
+{
+    return static_cast<uint32>(m_elapsedTimer.elapsed()) - m_lastReceivedTimer;
+}
+
+void ClientReqSocket::setLastReceivedAgo(uint32 ms)
+{
+    m_lastReceivedTimer = static_cast<uint32>(m_elapsedTimer.elapsed()) - ms;   // wraps on purpose
 }
 
 void ClientReqSocket::safeDelete()
@@ -185,6 +205,7 @@ bool ClientReqSocket::packetReceived(Packet* packet)
                      .arg(packet->size)
                      .arg(peerAddress().toString()).arg(peerPort()));
     resetTimeOutTimer();
+    m_lastReceivedTimer = m_timeoutTimer;
 
     // The size that crossed the wire, read before unPackPacket() rewrites packet->size.
     // MFC keeps the same value as uRawSize (ListenSocket.cpp:1790) for one reason: overhead
@@ -559,6 +580,7 @@ void ClientReqSocket::emitSocketConnected()
 {
     setPeerSocketState(PeerSocketState::Complete);
     resetTimeOutTimer();
+    m_lastReceivedTimer = m_timeoutTimer;   // a fresh link starts with a clean liveness record
     emit socketConnected();
 }
 

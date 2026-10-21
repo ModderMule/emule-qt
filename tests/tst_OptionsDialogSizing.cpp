@@ -71,7 +71,7 @@ const char* pageName(int page)
     static const char* names[] = {
         "General", "Display", "Connection", "Proxy", "Server", "Directories", "Files",
         "Notifications", "Statistics", "IRC", "Messages", "Security", "Scheduler",
-        "WebInterface", "Usenet", "Indexers", "Feeds", "Extended"};
+        "WebInterface", "Usenet", "Indexers", "Feeds", "Extended", "BitTorrent"};
     return (page >= 0 && page < int(std::size(names))) ? names[page] : "?";
 }
 

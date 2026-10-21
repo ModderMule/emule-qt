@@ -1,9 +1,11 @@
 /// @file tst_ClientUDPSocket.cpp
 /// @brief Tests for ClientUDPSocket — client-to-client UDP.
 
+#include "NatTestEnv.h"
 #include "TestHelpers.h"
 #include "app/AppContext.h"
 #include "net/ClientUDPSocket.h"
+#include "net/EncryptedDatagramSocket.h"
 #include "net/Packet.h"
 #include "stats/Statistics.h"
 #include "utils/ByteOrder.h"
@@ -36,6 +38,8 @@ private slots:
     void reaskPackets_areFileRequestOverhead();
     void throwingHandler_doesNotEscapeReceiveLoop();
     void kadDatagram_fromNativeIPv6IsDropped();
+    void natRendezvous_handoffAndPunchReachTheHub();
+    void natRendezvous_rawAndServerKeyedSends();
 };
 
 // ---------------------------------------------------------------------------
@@ -329,6 +333,83 @@ void tst_ClientUDPSocket::kadDatagram_fromNativeIPv6IsDropped()
     QCOMPARE(kadSpy.count(), 1);
     const auto sender = kadSpy.first().at(3).value<Endpoint>();
     QVERIFY(sender.address().isIPv4());
+}
+
+// ---------------------------------------------------------------------------
+// NAT rendezvous: 0xB2 0x11 handoff frames and OP_HOLEPUNCH go to the hub
+// ---------------------------------------------------------------------------
+
+void tst_ClientUDPSocket::natRendezvous_handoffAndPunchReachTheHub()
+{
+    natt::test::HubFixture f;
+    theApp.natRendezvous = f.hub.get();
+    const auto restore = qScopeGuard([] { theApp.natRendezvous = nullptr; });
+
+    ClientUDPSocket sock;
+    QVERIFY(sock.create());
+    QUdpSocket peer;
+    QVERIFY(peer.bind(QHostAddress::LocalHost, 0));
+    const Address loop = Address::fromString(QStringLiteral("127.0.0.1"));
+
+    natt::PeerInfo info;
+    info.hash.fill(0x21);
+    info.hashKnown = true;
+    natt::Attempt* a = f.hub->acceptNotice(natt::PathKind::Ed2kServer, info,
+                                           Endpoint(loop, peer.localPort()), 0);
+    QVERIFY(a);
+
+    QByteArray dgram;
+    dgram.append(char(OP_UDPRESERVEDPROT2));
+    dgram.append(char(OP_NATT_FRAME_IPV6HANDOFF));
+    dgram.append(natt::test::handoff(info.hash, 9, 5555));
+    peer.writeDatagram(dgram, QHostAddress::LocalHost, sock.connectedPort());
+    QTRY_VERIFY(a->peerHandoffSeen || a->finished);
+    QCOMPARE(a->peerTcpPort, uint16{5555});
+
+    // a punch from another port of the same host moves the endpoint
+    natt::test::HubFixture g;
+    theApp.natRendezvous = g.hub.get();
+    natt::Attempt* b = g.hub->acceptNotice(natt::PathKind::Ed2kServer, info, Endpoint(loop, 1), 0);
+    QVERIFY(b);
+    QByteArray punch;
+    punch.append(char(OP_EMULEPROT));
+    punch.append(char(OP_HOLEPUNCH));
+    peer.writeDatagram(punch, QHostAddress::LocalHost, sock.connectedPort());
+    QTRY_COMPARE(b->peerUdp, Endpoint(loop, peer.localPort()));
+}
+
+void tst_ClientUDPSocket::natRendezvous_rawAndServerKeyedSends()
+{
+    ClientUDPSocket sock;
+    QVERIFY(sock.create());
+    QUdpSocket peer;
+    QVERIFY(peer.bind(QHostAddress::LocalHost, 0));
+    const Endpoint to(Address::fromString(QStringLiteral("127.0.0.1")), peer.localPort());
+
+    // PR_NAT frames leave exactly as built
+    const QByteArray frame = QByteArray::fromHex("f1050000000e4142434445");
+    QVERIFY(sock.sendRawDatagram(frame, to));
+    sock.sendControlData(100000, 0);
+    QTRY_VERIFY(peer.hasPendingDatagrams());
+    QCOMPARE(peer.receiveDatagram().data(), frame);
+
+    // server-keyed: obfuscated, so never starting with the plain protocol byte
+    auto packet = std::make_unique<Packet>(OP_NAT_CALLBACKREQUEST, 8, OP_EDONKEYPROT);
+    QVERIFY(sock.sendServerPacket(std::move(packet), to, 0x11223344));
+    sock.sendControlData(100000, 0);
+    QTRY_VERIFY(peer.hasPendingDatagrams());
+    const QByteArray enc = peer.receiveDatagram().data();
+    QCOMPARE(enc.size(), 2 + 8 + EncryptedDatagramSocket::encryptOverheadSize(false));
+    QVERIFY(uint8(enc[0]) != OP_EDONKEYPROT);
+
+    // key 0: plain
+    QVERIFY(sock.sendServerPacket(std::make_unique<Packet>(OP_SERVER_NATT_KEEPALIVE, 16, OP_EDONKEYPROT), to, 0));
+    sock.sendControlData(100000, 0);
+    QTRY_VERIFY(peer.hasPendingDatagrams());
+    const QByteArray plain = peer.receiveDatagram().data();
+    QCOMPARE(plain.size(), 18);
+    QCOMPARE(uint8(plain[0]), uint8{OP_EDONKEYPROT});
+    QCOMPARE(uint8(plain[1]), uint8{OP_SERVER_NATT_KEEPALIVE});
 }
 
 QTEST_MAIN(tst_ClientUDPSocket)

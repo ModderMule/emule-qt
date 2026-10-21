@@ -20,6 +20,7 @@
 #include "httpcache/HttpCacheManager.h"
 #include "ipfilter/IPFilter.h"
 #include "net/Packet.h"
+#include "net/natt/NatRendezvous.h"
 #include "prefs/Preferences.h"
 #include "protocol/Tag.h"
 #include "stats/Statistics.h"
@@ -2844,7 +2845,9 @@ uint32 PartFile::process(uint32 reduceDownload, uint32 counter)
         // churn than they save. Kept until either side's ID changes, and only thinned out
         // when we are near the source cap.
         if (ds == DownloadState::LowToLowIP) {
-            if (client->hasLowID() && !theApp.canDoCallback(client)) {
+            // A NAT rendezvous also reaches it, unless one failed this session (net/natt).
+            const bool natReachable = theApp.natRendezvous && theApp.natRendezvous->canStart(*client);
+            if (client->hasLowID() && !theApp.canDoCallback(client) && !natReachable) {
                 if (curTick >= m_lastPurgeTime + SEC2MS(30)
                     && sourceCount() >= static_cast<int>(maxSources()) * 4 / 5)
                 {
@@ -4011,8 +4014,17 @@ void PartFile::addClientSources(SafeMemFile& data, uint8 clientSXVersion, bool i
         // If we're firewalled too, neither side can accept the other's connection,
         // so a low-ID source is dead weight — unless it has a reachable public IPv6,
         // which we can connect to directly.
-        if (isLowID(userIdHybrid) && theApp.isFirewalled() && userIPv6.isNull())
-            continue;
+        if (isLowID(userIdHybrid) && theApp.isFirewalled() && userIPv6.isNull()) {
+            // ...or a NAT rendezvous on the same server can introduce us (net/natt).
+            natt::PeerInfo peer;
+            peer.clientID = userIdHybrid;
+            peer.serverAddress = Address::fromNetworkOrder(serverIP);
+            peer.serverPort = serverPort;
+            peer.hash = userHash;
+            peer.hashKnown = std::ranges::any_of(userHash, [](uint8 b) { return b != 0; });
+            if (!natt::NatRendezvous::keepLowIdSource(peer))
+                continue;
+        }
 
         // Reject an IPv6 we can't use before it can rescue an unusable v4 below.
         if (!userIPv6.isNull()) {

@@ -156,6 +156,9 @@ signals:
     /// endpoint. We connect back to it over IPv6 (no crypt trailer in this variant).
     void callbackRequestedIPv6(const eMule::Endpoint& requester);
 
+    /// NAT rendezvous notice (OP_NAT_CALLBACKREQUESTED, OP_LOWID_HOLEPUNCH_INFO/FAIL).
+    void natPacketReceived(uint8 opcode, const QByteArray& payload);
+
     /// Server sent reject.
     void rejectReceived();
 

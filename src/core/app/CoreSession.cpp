@@ -36,6 +36,8 @@
 #include "net/ListenSocket.h"
 #include "net/LocalIPv6.h"
 #include "net/UDPSocket.h"
+#include "net/natt/AppNatEnv.h"
+#include "net/natt/NatRendezvous.h"
 #include "net/Packet.h"
 #include "prefs/Preferences.h"
 #include "stats/StatsHistory.h"
@@ -446,6 +448,8 @@ void CoreSession::onTimer()
         }
         if (theApp.clientList)
             theApp.clientList->process();
+        if (theApp.natRendezvous)
+            theApp.natRendezvous->process();
         if (theApp.serverConnect) {
             theApp.serverConnect->checkForTimeout();
             theApp.serverConnect->keepConnectionAlive();
@@ -630,11 +634,20 @@ void CoreSession::initServerConnect()
     cfg.listenPort            = thePrefs.port();
     cfg.smartLowIdCheck       = thePrefs.smartLowIdCheck();
     cfg.preferIPv6OnLowID     = thePrefs.serverPreferIPv6();
+    cfg.natTraversal          = thePrefs.natTraversal();
     cfg.bindAddress           = BindAddress::ipv4Literal();
     cfg.emuleVersionTag       = (static_cast<uint32>(SEND_EMULE_VERSION_MJR) << 17)
                               | (static_cast<uint32>(SEND_EMULE_VERSION_MIN) << 10)
                               | (static_cast<uint32>(SEND_EMULE_VERSION_UPD) <<  7);
     m_serverConnect->setConfig(cfg);
+
+    // 3a. LowID<->LowID rendezvous; server notices reach it through ServerConnect.
+    m_natRendezvous = std::make_unique<natt::NatRendezvous>(std::make_unique<natt::AppNatEnv>());
+    theApp.natRendezvous = m_natRendezvous.get();
+    connect(m_serverConnect.get(), &ServerConnect::natServerPacket, m_natRendezvous.get(),
+            [hub = m_natRendezvous.get()](uint8 opcode, const QByteArray& payload) {
+                hub->handleServerTcp(opcode, payload);
+            });
 
     // 4. Wire SharedFileList and DownloadQueue to ServerConnect
     if (theApp.sharedFileList)
@@ -806,6 +819,9 @@ void CoreSession::shutdownServerConnect()
         theApp.sharedFileList->setServerConnect(nullptr);
 
     // Clear theApp pointers before destroying
+    if (theApp.natRendezvous == m_natRendezvous.get())
+        theApp.natRendezvous = nullptr;
+    m_natRendezvous.reset();
     if (m_serverConnect && theApp.serverConnect == m_serverConnect.get())
         theApp.serverConnect = nullptr;
     if (m_serverList && theApp.serverList == m_serverList.get())
@@ -1175,6 +1191,9 @@ void CoreSession::initClientUDP()
             }
             std::memcpy(out + headerLen, data + kBuddyIdLen, tailLen);
             buddy->sendPacket(std::move(packet));
+            // An OP_RENDEZVOUS envelope also gets the endpoint hint and a punch.
+            if (theApp.natRendezvous)
+                theApp.natRendezvous->handleBuddyRelay(senderEP, data, size, *buddy);
         });
 
     // Direct callback: remote firewalled client asks us to connect back via UDP.

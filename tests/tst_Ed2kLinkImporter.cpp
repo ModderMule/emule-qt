@@ -42,6 +42,7 @@ private slots:
     void malformedConfigLinkIsRedacted();
 
     void otherLinksGoToTheHandlerForManualImportsOnly();
+    void bitTorrentMagnetsGoToTheTorrentHandler();
 
     void linkKindsIn_data();
     void linkKindsIn();
@@ -329,6 +330,41 @@ void TestEd2kLinkImporter::otherLinksGoToTheHandlerForManualImportsOnly()
                                   Ed2kLinkImporter::Prompt::Ask, keep);
     QCOMPARE(calls, 1);
     QCOMPARE(result.otherLinks, 0);
+    QVERIFY(result.invalid.isEmpty());
+}
+
+void TestEd2kLinkImporter::bitTorrentMagnetsGoToTheTorrentHandler()
+{
+    // a paste mixing an eD2K magnet, a BitTorrent magnet and a hybrid one
+    const QString bt = QStringLiteral(
+        "magnet:?xt=urn:btih:0123456789abcdef0123456789abcdef01234567&dn=Ubuntu");
+    const QString hybrid = QStringLiteral(
+        "magnet:?xt=urn:btih:0123456789abcdef0123456789abcdef01234567"
+        "&xt=urn:ed2k:31D6CFE0D16AE931B73C59D7E0C089C0&dn=a.iso&xl=10");
+    const QString text = QStringLiteral(
+        "magnet:?xt=urn:ed2k:31D6CFE0D16AE931B73C59D7E0C089C0&dn=b.iso&xl=10\n")
+        + bt + QLatin1Char('\n') + hybrid;
+
+    QStringList seen;
+    Ed2kLinkImporter::setTorrentLinkHandler(
+        [&seen](const QStringList& magnets, QWidget*) { seen += magnets; });
+    const auto reset = qScopeGuard([] { Ed2kLinkImporter::setTorrentLinkHandler({}); });
+
+    Ed2kLinkImporter::Result result;
+    const auto keep = [&result](const Ed2kLinkImporter::Result& r) { result = r; };
+    Ed2kLinkImporter::importLinks(text, nullptr, nullptr, Ed2kLinkImporter::Source::Manual,
+                                  Ed2kLinkImporter::Prompt::Silent, keep);
+    QCOMPARE(seen, QStringList{bt});   // the hybrid one stays eD2K
+    QCOMPARE(result.torrentLinks, 1);
+    QVERIFY2(result.invalid.isEmpty(), qPrintable(result.invalid.join(u' ')));
+
+    // the clipboard watcher neither hands them over nor calls them invalid
+    seen.clear();
+    result = {};
+    Ed2kLinkImporter::importLinks(bt, nullptr, nullptr, Ed2kLinkImporter::Source::Automatic,
+                                  Ed2kLinkImporter::Prompt::Ask, keep);
+    QVERIFY(seen.isEmpty());
+    QCOMPARE(result.torrentLinks, 0);
     QVERIFY(result.invalid.isEmpty());
 }
 

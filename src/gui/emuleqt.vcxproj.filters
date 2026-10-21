@@ -172,6 +172,27 @@
     <ClCompile Include="utils\NzbDrop.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
+    <ClCompile Include="utils\TorrentLinks.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="utils\TorrentAdd.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="controls\TorrentListModel.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="controls\TorrentProgressDelegate.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="dialogs\AddTorrentDialog.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="dialogs\TorrentDetailsDialog.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="panels\TorrentPanel.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
     <ClCompile Include="panels\IrcPanel.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
@@ -468,6 +489,12 @@
     <ClInclude Include="utils\NzbDrop.h">
       <Filter>Header Files</Filter>
     </ClInclude>
+    <ClInclude Include="utils\TorrentLinks.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="utils\TorrentAdd.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
     <QtMoc Include="utils\PanelPoller.h">
       <Filter>Header Files</Filter>
     </QtMoc>
@@ -601,6 +628,21 @@
       <Filter>Header Files</Filter>
     </QtMoc>
     <QtMoc Include="dialogs\PasteTextDialog.h">
+      <Filter>Header Files</Filter>
+    </QtMoc>
+    <QtMoc Include="controls\TorrentListModel.h">
+      <Filter>Header Files</Filter>
+    </QtMoc>
+    <QtMoc Include="controls\TorrentProgressDelegate.h">
+      <Filter>Header Files</Filter>
+    </QtMoc>
+    <QtMoc Include="dialogs\AddTorrentDialog.h">
+      <Filter>Header Files</Filter>
+    </QtMoc>
+    <QtMoc Include="dialogs\TorrentDetailsDialog.h">
+      <Filter>Header Files</Filter>
+    </QtMoc>
+    <QtMoc Include="panels\TorrentPanel.h">
       <Filter>Header Files</Filter>
     </QtMoc>
     <QtMoc Include="dialogs\WebLinksDialog.h">

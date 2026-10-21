@@ -5,6 +5,7 @@
   "dependencies": [
     "libarchive",
     "libmaxminddb",
+    "libtorrent",
     "miniupnpc",
     "openssl",
     "par2-turbo",

@@ -269,6 +269,7 @@ OptionsDialog::OptionsDialog(IpcClient* ipc, StatisticsPanel* statsPanel,
     connect(m_addServersFromServerCheck, &QCheckBox::toggled, this, &OptionsDialog::markDirty);
     connect(m_addServersFromClientsCheck, &QCheckBox::toggled, this, &OptionsDialog::markDirty);
     connect(m_safeServerConnectCheck, &QCheckBox::toggled, this, &OptionsDialog::markDirty);
+    connect(m_natTraversalCheck, &QCheckBox::toggled, this, &OptionsDialog::markDirty);
     connect(m_autoConnectStaticOnlyCheck, &QCheckBox::toggled, this, &OptionsDialog::markDirty);
     connect(m_useServerPrioritiesCheck, &QCheckBox::toggled, this, &OptionsDialog::markDirty);
     connect(m_useUserSortedServerListCheck, &QCheckBox::toggled, this, &OptionsDialog::markDirty);
@@ -659,6 +660,9 @@ void OptionsDialog::setupSidebar()
         {PageIndexers,      "Indexers",              QStyle::SP_FileDialogContentsView, "UsenetSearch.ico"},
         {PageFeeds,         "Feeds",                 QStyle::SP_BrowserReload,          "SearchEdit.ico"},
     };
+    static constexpr PageDef kBitTorrentPages[] = {
+        {PageBitTorrent,    "BitTorrent",            QStyle::SP_DriveNetIcon,           "Torrent.ico"},
+    };
 
     // A page added to the enum and to setupPages() but forgotten here would simply be
     // unreachable, with nothing to say so. The count catches a missing entry, the bit set
@@ -670,9 +674,11 @@ void OptionsDialog::setupSidebar()
         return mask;
     };
     static_assert(std::size(kGeneralPages) + std::size(kAdvancedPages)
-                          + std::size(kUsenetPages) == std::size_t(PageCount),
+                          + std::size(kUsenetPages) + std::size(kBitTorrentPages)
+                      == std::size_t(PageCount),
                   "every Page must appear in a sidebar group");
-    static_assert((idMask(kGeneralPages) | idMask(kAdvancedPages) | idMask(kUsenetPages))
+    static_assert((idMask(kGeneralPages) | idMask(kAdvancedPages) | idMask(kUsenetPages)
+                   | idMask(kBitTorrentPages))
                       == (1u << unsigned(PageCount)) - 1u,
                   "every Page must appear in exactly one sidebar group");
 
@@ -695,6 +701,7 @@ void OptionsDialog::setupSidebar()
     fill(tr("General options"),  kGeneralPages);
     fill(tr("Advanced options"), kAdvancedPages);
     fill(tr("Usenet"),           kUsenetPages);
+    fill(tr("BitTorrent"),       kBitTorrentPages);
 }
 
 // ---------------------------------------------------------------------------
@@ -750,6 +757,7 @@ void OptionsDialog::setupPages()
     // Extended keeps its own scroll area: the red warning and the two sliders are
     // deliberately outside it, and a wrapper here would scroll them away.
     addPage(PageExtended,      createExtendedPage(), PageScroll::Self);
+    addPage(PageBitTorrent,    createBitTorrentPage());
 }
 
 void OptionsDialog::setupButtons()
@@ -1534,6 +1542,13 @@ QWidget* OptionsDialog::createServerPage()
     // "Safe Connect"
     m_safeServerConnectCheck = new QCheckBox(tr("Safe Connect"), miscGroup);
     miscLayout->addWidget(m_safeServerConnectCheck);
+
+    // LowID<->LowID rendezvous (not in MFC)
+    m_natTraversalCheck = new QCheckBox(tr("Connect Low ID to Low ID through server or Kad buddy (NAT traversal)"), miscGroup);
+    m_natTraversalCheck->setToolTip(
+        tr("Lets two Low ID clients find each other's address through a server that supports it "
+           "or a Kad buddy, then connect over IPv6"));
+    miscLayout->addWidget(m_natTraversalCheck);
 
     // "Autoconnect to servers in static list only"
     m_autoConnectStaticOnlyCheck = new QCheckBox(tr("Autoconnect to servers in static list only"), miscGroup);
@@ -5229,6 +5244,135 @@ void OptionsDialog::revealTestResult(QLabel* result)
     }
 }
 
+// ---------------------------------------------------------------------------
+// BitTorrent page
+// ---------------------------------------------------------------------------
+
+QWidget* OptionsDialog::createBitTorrentPage()
+{
+    auto* page = new QWidget(this);
+    auto* mainLayout = new QVBoxLayout(page);
+    mainLayout->setContentsMargins(4, 4, 4, 4);
+
+    m_btEnabledCheck = new QCheckBox(tr("Enable BitTorrent"), page);
+    m_btEnabledCheck->setToolTip(
+        tr("Starts the BitTorrent engine with the daemon. Off, no torrent is "
+           "downloaded or seeded."));
+    mainLayout->addWidget(m_btEnabledCheck);
+
+    // -- Connection ---------------------------------------------------------
+    auto* connGroup = new QGroupBox(tr("Connection"), page);
+    auto* connForm = new QFormLayout(connGroup);
+
+    m_btPortSpin = new QSpinBox(connGroup);
+    m_btPortSpin->setRange(1, 65535);
+    m_btPortSpin->setValue(Preferences::kDefaultBtListenPort);
+    m_btPortSpin->setToolTip(tr("Used for both TCP and UDP. Must differ from the eD2K ports."));
+    connForm->addRow(tr("Listen port (TCP/UDP):"), m_btPortSpin);
+
+    m_btEncryptionCombo = new QComboBox(connGroup);
+    // Order matches the btEncryption value
+    m_btEncryptionCombo->addItem(tr("Enabled"));
+    m_btEncryptionCombo->addItem(tr("Forced"));
+    m_btEncryptionCombo->addItem(tr("Disabled"));
+    m_btEncryptionCombo->setToolTip(
+        tr("Enabled prefers encrypted peers and still accepts plain ones. Forced "
+           "refuses unencrypted peers, which leaves fewer to download from."));
+    connForm->addRow(tr("Encryption:"), m_btEncryptionCombo);
+
+    m_btDhtCheck = new QCheckBox(tr("Find peers through the DHT"), connGroup);
+    connForm->addRow(m_btDhtCheck);
+    m_btLsdCheck = new QCheckBox(tr("Find peers on the local network (LSD)"), connGroup);
+    connForm->addRow(m_btLsdCheck);
+    m_btPexCheck = new QCheckBox(tr("Exchange peers with other clients (PEX)"), connGroup);
+    connForm->addRow(m_btPexCheck);
+
+    mainLayout->addWidget(connGroup);
+
+    // -- Limits -------------------------------------------------------------
+    auto* limitsGroup = new QGroupBox(tr("Limits"), page);
+    auto* limitsForm = new QFormLayout(limitsGroup);
+
+    const auto rateSpin = [limitsGroup] {
+        auto* spin = new QSpinBox(limitsGroup);
+        spin->setRange(0, 1000000);
+        spin->setSuffix(tr(" KB/s"));
+        spin->setSpecialValueText(tr("Unlimited"));
+        fitSpecialValue(spin);
+        return spin;
+    };
+    m_btMaxDownSpin = rateSpin();
+    limitsForm->addRow(tr("Download:"), m_btMaxDownSpin);
+    m_btMaxUpSpin = rateSpin();
+    limitsForm->addRow(tr("Upload:"), m_btMaxUpSpin);
+
+    m_btMaxActiveDownSpin = new QSpinBox(limitsGroup);
+    m_btMaxActiveDownSpin->setRange(1, 100);
+    limitsForm->addRow(tr("Active downloads:"), m_btMaxActiveDownSpin);
+
+    m_btMaxActiveSeedSpin = new QSpinBox(limitsGroup);
+    m_btMaxActiveSeedSpin->setRange(0, 100);
+    limitsForm->addRow(tr("Active seeds:"), m_btMaxActiveSeedSpin);
+
+    mainLayout->addWidget(limitsGroup);
+
+    // -- Seeding ------------------------------------------------------------
+    auto* seedGroup = new QGroupBox(tr("Seeding"), page);
+    auto* seedForm = new QFormLayout(seedGroup);
+
+    m_btSeedRatioSpin = new QDoubleSpinBox(seedGroup);
+    m_btSeedRatioSpin->setRange(0.0, Preferences::kMaxBtSeedRatioPercent / 100.0);
+    m_btSeedRatioSpin->setDecimals(2);
+    m_btSeedRatioSpin->setSingleStep(0.1);
+    m_btSeedRatioSpin->setSpecialValueText(tr("No limit"));
+    fitSpecialValue(m_btSeedRatioSpin);
+    m_btSeedRatioSpin->setToolTip(
+        tr("Stop seeding a torrent once it has uploaded this many times its size."));
+    seedForm->addRow(tr("Stop at share ratio:"), m_btSeedRatioSpin);
+
+    m_btSeedTimeSpin = new QSpinBox(seedGroup);
+    m_btSeedTimeSpin->setRange(0, Preferences::kMaxBtSeedTimeLimitMinutes);
+    m_btSeedTimeSpin->setSuffix(tr(" min"));
+    m_btSeedTimeSpin->setSpecialValueText(tr("No limit"));
+    fitSpecialValue(m_btSeedTimeSpin);
+    seedForm->addRow(tr("Stop after seeding for:"), m_btSeedTimeSpin);
+
+    mainLayout->addWidget(seedGroup);
+
+    // -- Folder -------------------------------------------------------------
+    auto* dirGroup = new QGroupBox(tr("Download folder"), page);
+    auto* dirRow = new QHBoxLayout(dirGroup);
+    m_btDownloadDirEdit = new QLineEdit(dirGroup);
+    m_btDownloadDirEdit->setPlaceholderText(tr("Incoming folder"));
+    m_btDownloadDirEdit->setToolTip(tr("Leave empty to save torrents to the incoming folder."));
+    dirRow->addWidget(m_btDownloadDirEdit, 1);
+    m_btDownloadDirBrowse = new QPushButton(tr("Browse…"), dirGroup);
+    dirRow->addWidget(m_btDownloadDirBrowse);
+    mainLayout->addWidget(dirGroup);
+
+    mainLayout->addStretch();
+
+    // -- Wiring -------------------------------------------------------------
+    for (QCheckBox* box : {m_btEnabledCheck, m_btDhtCheck, m_btLsdCheck, m_btPexCheck})
+        connect(box, &QCheckBox::toggled, this, &OptionsDialog::markDirty);
+    for (QSpinBox* box : {m_btPortSpin, m_btMaxDownSpin, m_btMaxUpSpin,
+                          m_btMaxActiveDownSpin, m_btMaxActiveSeedSpin, m_btSeedTimeSpin})
+        connect(box, &QSpinBox::valueChanged, this, &OptionsDialog::markDirty);
+    connect(m_btSeedRatioSpin, &QDoubleSpinBox::valueChanged, this, &OptionsDialog::markDirty);
+    connect(m_btEncryptionCombo, &QComboBox::currentIndexChanged, this, &OptionsDialog::markDirty);
+    connect(m_btDownloadDirEdit, &QLineEdit::textEdited, this, &OptionsDialog::markDirty);
+    connect(m_btDownloadDirBrowse, &QPushButton::clicked, this, [this] {
+        const QString dir = QFileDialog::getExistingDirectory(
+            this, tr("BitTorrent download folder"), m_btDownloadDirEdit->text());
+        if (dir.isEmpty())
+            return;
+        m_btDownloadDirEdit->setText(dir);
+        markDirty();
+    });
+
+    return page;
+}
+
 QWidget* OptionsDialog::createExtendedPage()
 {
     auto* page = new QWidget(this);
@@ -6505,6 +6649,8 @@ void OptionsDialog::saveSettings()
         // Server page
         req.append(QStringLiteral("safeServerConnect"));
         req.append(m_safeServerConnectCheck->isChecked());
+        req.append(QStringLiteral("natTraversal"));
+        req.append(m_natTraversalCheck->isChecked());
         req.append(QStringLiteral("autoConnectStaticOnly"));
         req.append(m_autoConnectStaticOnlyCheck->isChecked());
         req.append(QStringLiteral("useServerPriorities"));
@@ -6712,6 +6858,34 @@ void OptionsDialog::saveSettings()
         req.append(static_cast<qint64>(m_indexerTimeoutSpin->value()));
         req.append(QStringLiteral("indexerCapsRefreshDays"));
         req.append(static_cast<qint64>(m_indexerCapsRefreshSpin->value()));
+
+        // BitTorrent page
+        req.append(QStringLiteral("btEnabled"));
+        req.append(m_btEnabledCheck->isChecked());
+        req.append(QStringLiteral("btListenPort"));
+        req.append(static_cast<qint64>(m_btPortSpin->value()));
+        req.append(QStringLiteral("btDownloadDir"));
+        req.append(m_btDownloadDirEdit->text().trimmed());
+        req.append(QStringLiteral("btMaxDownloadKb"));
+        req.append(static_cast<qint64>(m_btMaxDownSpin->value()));
+        req.append(QStringLiteral("btMaxUploadKb"));
+        req.append(static_cast<qint64>(m_btMaxUpSpin->value()));
+        req.append(QStringLiteral("btDht"));
+        req.append(m_btDhtCheck->isChecked());
+        req.append(QStringLiteral("btLsd"));
+        req.append(m_btLsdCheck->isChecked());
+        req.append(QStringLiteral("btPex"));
+        req.append(m_btPexCheck->isChecked());
+        req.append(QStringLiteral("btEncryption"));
+        req.append(static_cast<qint64>(m_btEncryptionCombo->currentIndex()));
+        req.append(QStringLiteral("btMaxActiveDownloads"));
+        req.append(static_cast<qint64>(m_btMaxActiveDownSpin->value()));
+        req.append(QStringLiteral("btMaxActiveSeeds"));
+        req.append(static_cast<qint64>(m_btMaxActiveSeedSpin->value()));
+        req.append(QStringLiteral("btSeedRatioPercent"));
+        req.append(static_cast<qint64>(qRound(m_btSeedRatioSpin->value() * 100.0)));
+        req.append(QStringLiteral("btSeedTimeLimitMinutes"));
+        req.append(static_cast<qint64>(m_btSeedTimeSpin->value()));
 
         // Web Interface page
         req.append(QStringLiteral("webServerEnabled"));
@@ -7045,6 +7219,7 @@ void OptionsDialog::saveSettings()
 
         // Server page fallback
         thePrefs.setSafeServerConnect(m_safeServerConnectCheck->isChecked());
+        thePrefs.setNatTraversal(m_natTraversalCheck->isChecked());
         thePrefs.setAutoConnectStaticOnly(m_autoConnectStaticOnlyCheck->isChecked());
         thePrefs.setUseServerPriorities(m_useServerPrioritiesCheck->isChecked());
         thePrefs.setAddServersFromServer(m_addServersFromServerCheck->isChecked());
@@ -7297,6 +7472,7 @@ void OptionsDialog::fillDaemonSettings(const QCborMap& prefs)
 
     // Server page
     m_safeServerConnectCheck->setChecked(prefs.value(QStringLiteral("safeServerConnect")).toBool());
+    m_natTraversalCheck->setChecked(prefs.value(QStringLiteral("natTraversal")).toBool(true));
     m_autoConnectStaticOnlyCheck->setChecked(prefs.value(QStringLiteral("autoConnectStaticOnly")).toBool());
     m_useServerPrioritiesCheck->setChecked(prefs.value(QStringLiteral("useServerPriorities")).toBool());
     m_addServersFromServerCheck->setChecked(prefs.value(QStringLiteral("addServersFromServer")).toBool());
@@ -7483,6 +7659,27 @@ void OptionsDialog::fillDaemonSettings(const QCborMap& prefs)
         static_cast<int>(prefs.value(QStringLiteral("indexerTimeoutSeconds")).toInteger(30)));
     m_indexerCapsRefreshSpin->setValue(
         static_cast<int>(prefs.value(QStringLiteral("indexerCapsRefreshDays")).toInteger(7)));
+
+    // BitTorrent page. Defaults stand in for an older daemon without the keys.
+    m_btEnabledCheck->setChecked(prefs.value(QStringLiteral("btEnabled")).toBool(false));
+    m_btPortSpin->setValue(int(prefs.value(QStringLiteral("btListenPort"))
+                                   .toInteger(Preferences::kDefaultBtListenPort)));
+    m_btDownloadDirEdit->setText(prefs.value(QStringLiteral("btDownloadDir")).toString());
+    m_btMaxDownSpin->setValue(int(prefs.value(QStringLiteral("btMaxDownloadKb")).toInteger(0)));
+    m_btMaxUpSpin->setValue(int(prefs.value(QStringLiteral("btMaxUploadKb")).toInteger(0)));
+    m_btDhtCheck->setChecked(prefs.value(QStringLiteral("btDht")).toBool(true));
+    m_btLsdCheck->setChecked(prefs.value(QStringLiteral("btLsd")).toBool(true));
+    m_btPexCheck->setChecked(prefs.value(QStringLiteral("btPex")).toBool(true));
+    m_btEncryptionCombo->setCurrentIndex(
+        std::clamp(int(prefs.value(QStringLiteral("btEncryption")).toInteger(0)), 0, 2));
+    m_btMaxActiveDownSpin->setValue(
+        int(prefs.value(QStringLiteral("btMaxActiveDownloads")).toInteger(3)));
+    m_btMaxActiveSeedSpin->setValue(
+        int(prefs.value(QStringLiteral("btMaxActiveSeeds")).toInteger(5)));
+    m_btSeedRatioSpin->setValue(
+        double(prefs.value(QStringLiteral("btSeedRatioPercent")).toInteger(100)) / 100.0);
+    m_btSeedTimeSpin->setValue(
+        int(prefs.value(QStringLiteral("btSeedTimeLimitMinutes")).toInteger(0)));
 
     // Web Interface page
     m_webEnabledCheck->setChecked(prefs.value(QStringLiteral("webServerEnabled")).toBool());

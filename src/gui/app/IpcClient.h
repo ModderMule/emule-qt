@@ -241,6 +241,17 @@ signals:
     /// The engine-wide pause changed; see usenetEnginePaused().
     void usenetEnginePausedChanged(bool paused);
 
+    /// [row] — a torrent was added; same row shape as GetTorrents.
+    void torrentAdded(const Ipc::IpcMessage& msg);
+    /// [row] — a torrent changed (coalesced per id by the daemon).
+    void torrentUpdated(const Ipc::IpcMessage& msg);
+    /// [id] — the torrent is gone.
+    void torrentRemoved(const Ipc::IpcMessage& msg);
+    /// [id] — every wanted byte is there. Never coalesced.
+    void torrentFinished(const Ipc::IpcMessage& msg);
+    /// [status map] — the BitTorrent engine started, stopped or changed its port.
+    void btStatusChanged(const Ipc::IpcMessage& msg);
+
     /// [searchId, rows] — a batch of indexer results, as each indexer answers.
     void indexerResultsReceived(const Ipc::IpcMessage& msg);
     /// [searchId, done, total] — how many indexers have answered.

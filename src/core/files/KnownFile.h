@@ -153,7 +153,7 @@ public:
     void noteChanged();
 
     [[nodiscard]] time_t lastPublishTimeKadSrc() const { return m_lastPublishTimeKadSrc; }
-    void setLastPublishTimeKadSrc(time_t t, uint32 buddyIP = 0);
+    void setLastPublishTimeKadSrc(time_t t, uint32 buddyIP = 0, uint16 buddyPort = 0);
 
     /// Is the file published as a Kad source right now — MFC
     /// CSharedFilesCtrl::IsSharedInKad (srchybrid/SharedFilesCtrl.cpp:1479-1487).
@@ -170,6 +170,8 @@ public:
     void setLastPublishTimeKadNotes(time_t t) { m_lastPublishTimeKadNotes = t; }
 
     [[nodiscard]] uint32 lastBuddyIP() const { return m_lastBuddyIP; }
+    /// Buddy UDP port of the last source publish; FT_SERVERPORT carries it.
+    [[nodiscard]] uint16 lastBuddyPort() const { return m_lastBuddyPort; }
 
     // Cached results of a Kad "notes" search (the only Kad lookup that returns a
     // filename for a given file hash). Keyed by the note publisher's source ID so
@@ -387,6 +389,7 @@ private:
 
     uint32 m_kadFileSearchID = 0;
     uint32 m_lastBuddyIP = 0;
+    uint16 m_lastBuddyPort = 0;
     uint32 m_metaDataVer = 0;
     uint32 m_mediaExtractVer = 0;
 

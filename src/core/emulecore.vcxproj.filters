@@ -513,6 +513,27 @@
     <ClCompile Include="protocol\Tag.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
+    <ClCompile Include="net\natt\AppNatEnv.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="net\natt\Ed2kServerHolePunchPath.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="net\natt\EnodeNatPath.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="net\natt\KadBuddyNatPath.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="net\natt\LugdunumNatPath.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="net\natt\NatPath.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="net\natt\NatRendezvous.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
     <ClCompile Include="net\UDPSocket.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
@@ -569,6 +590,30 @@
     </ClCompile>
   </ItemGroup>
   <ItemGroup>
+    <ClInclude Include="net\natt\AppNatEnv.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="net\natt\Ed2kServerHolePunchPath.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="net\natt\EnodeNatPath.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="net\natt\KadBuddyNatPath.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="net\natt\LugdunumNatPath.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="net\natt\NatEnv.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="net\natt\NatPath.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="net\natt\NatTypes.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
     <ClInclude Include="crypto\AICHData.h">
       <Filter>Header Files</Filter>
     </ClInclude>
@@ -1157,6 +1202,9 @@
     <ClInclude Include="utils\Types.h">
       <Filter>Header Files</Filter>
     </ClInclude>
+    <QtMoc Include="net\natt\NatRendezvous.h">
+      <Filter>Header Files</Filter>
+    </QtMoc>
     <QtMoc Include="net\UDPSocket.h">
       <Filter>Header Files</Filter>
     </QtMoc>

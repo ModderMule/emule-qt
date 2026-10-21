@@ -80,6 +80,8 @@ SOURCES += \
     tst_CorruptionBlackBox.cpp \
     tst_DeadSourceList.cpp \
     tst_DownloadQueue.cpp \
+    tst_NatRendezvous.cpp \
+    tst_NatRendezvousPaths.cpp \
     tst_ED2KLink.cpp \
     tst_EMSocket.cpp \
     tst_EncryptedDatagram.cpp \

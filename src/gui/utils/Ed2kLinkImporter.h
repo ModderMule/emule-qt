@@ -57,6 +57,9 @@ public:
         int httpCacheConfigs = 0;
         /// serverlist / nodeslist / search / server links handed to the handler.
         int otherLinks = 0;
+        /// BitTorrent magnets (btih/btmh, no eD2K hash) handed to the torrent
+        /// handler — or silently dropped by an automatic import. Never invalid.
+        int torrentLinks = 0;
     };
 
     /// The link kinds that start no download (MFC CemuleDlg::ProcessED2KLink,
@@ -78,6 +81,11 @@ public:
     /// clipboard watcher never updates a server list or starts a search by itself.
     using OtherLinkHandler = std::function<void(const OtherLinks&, QWidget* parent)>;
     static void setOtherLinkHandler(OtherLinkHandler handler);
+
+    /// Who takes BitTorrent magnets found in pasted text — the Torrents tab. Manual
+    /// imports only, like OtherLinkHandler.
+    using TorrentLinkHandler = std::function<void(const QStringList& magnets, QWidget* parent)>;
+    static void setTorrentLinkHandler(TorrentLinkHandler handler);
 
     /// The non-download links in @p text.
     [[nodiscard]] static OtherLinks otherLinksIn(const QString& text);

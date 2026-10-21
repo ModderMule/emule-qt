@@ -130,6 +130,8 @@ emule_add_test(tst_ListenSocket          FOLDER "Net")
 emule_add_test(tst_HttpClientReqSocket   FOLDER "Net")
 emule_add_test(tst_HttpFileDownload      FOLDER "Net")
 emule_add_test(tst_ClientUDPSocket       FOLDER "Net")
+emule_add_test(tst_NatRendezvous         FOLDER "Net")
+emule_add_test(tst_NatRendezvousPaths    FOLDER "Net")
 emule_add_test(tst_TcpConnect            FOLDER "Net")
 set_tests_properties(tst_TcpConnect PROPERTIES TIMEOUT 30)
 
@@ -343,6 +345,14 @@ elseif(LINUX)
     target_link_libraries(tst_PowerManager PRIVATE Qt6::DBus)
 endif()
 
+# BitTorrent module (libtorrent)
+if(EMULE_BITTORRENT)
+    emule_add_test(tst_BtSmoke      FOLDER "BitTorrent" LIBRARIES eMule::Bt)
+    # two sessions on loopback: no network, so no "live" label
+    emule_add_test(tst_BtLocalSwarm FOLDER "BitTorrent" LIBRARIES eMule::Bt)
+    set_tests_properties(tst_BtLocalSwarm PROPERTIES TIMEOUT 240)
+endif()
+
 # Usenet (NNTP) module
 emule_add_test(tst_UsenetSmoke FOLDER "Usenet" LIBRARIES eMule::Usenet)
 emule_add_test(tst_NntpSocket  FOLDER "Usenet" LIBRARIES eMule::Usenet)
@@ -430,6 +440,7 @@ target_link_libraries(tst_WebServicesData PRIVATE Qt6::Widgets)
 emule_add_test(tst_Ed2kLinkImporter FOLDER "Ipc"
     SOURCES tst_Ed2kLinkImporter.cpp
             "${CMAKE_SOURCE_DIR}/src/gui/utils/Ed2kLinkImporter.cpp"
+            "${CMAKE_SOURCE_DIR}/src/gui/utils/TorrentLinks.cpp"
             "${CMAKE_SOURCE_DIR}/src/gui/utils/HttpCacheLinkImporter.cpp"
             "${CMAKE_SOURCE_DIR}/src/gui/utils/StatusBarNotifier.cpp"
             "${CMAKE_SOURCE_DIR}/src/gui/app/IpcClient.cpp")
@@ -510,6 +521,27 @@ target_include_directories(tst_UsenetQueueModel PRIVATE
     "${CMAKE_CURRENT_SOURCE_DIR}/stubs")
 target_link_libraries(tst_UsenetQueueModel PRIVATE
     eMule::Core eMule::Ipc Qt6::Widgets)
+
+# The Torrents tab's row model and piece-map colours, off hand-built CBOR rows.
+emule_add_test(tst_TorrentListModel FOLDER "Gui"
+    SOURCES tst_TorrentListModel.cpp
+            "${CMAKE_SOURCE_DIR}/src/gui/controls/TorrentListModel.cpp"
+            "${CMAKE_SOURCE_DIR}/src/gui/controls/TorrentProgressDelegate.cpp"
+            "${CMAKE_SOURCE_DIR}/src/gui/controls/BarShader.cpp")
+target_include_directories(tst_TorrentListModel PRIVATE
+    "${CMAKE_SOURCE_DIR}/src/gui"
+    "${CMAKE_CURRENT_SOURCE_DIR}/stubs")
+target_link_libraries(tst_TorrentListModel PRIVATE
+    eMule::Core eMule::Ipc Qt6::Widgets)
+
+# Magnet routing (BitTorrent vs eD2K) and .torrent drops. Pure string work.
+emule_add_test(tst_TorrentLinks FOLDER "Gui"
+    SOURCES tst_TorrentLinks.cpp
+            "${CMAKE_SOURCE_DIR}/src/gui/utils/TorrentLinks.cpp")
+target_include_directories(tst_TorrentLinks PRIVATE
+    "${CMAKE_SOURCE_DIR}/src/gui"
+    "${CMAKE_CURRENT_SOURCE_DIR}/stubs")
+target_link_libraries(tst_TorrentLinks PRIVATE Qt6::Widgets)
 
 # The category tab's filter proxy. Pure model plumbing -- no daemon, no panel,
 # no widgets beyond QAbstractItemModel -- which is the whole reason the proxy was

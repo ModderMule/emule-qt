@@ -14,6 +14,8 @@
 #include "server/Server.h"
 #include "net/ServerSocket.h"
 #include "net/Packet.h"
+#include "protocol/Tag.h"
+#include "utils/SafeFile.h"
 #include "utils/Opcodes.h"
 #include "utils/OtherFunctions.h"
 
@@ -149,6 +151,8 @@ private slots:
     // Connect to specific server
     void connectToServer_setsConnecting();
     void connectToServer_single_loginAndConnect();
+    void login_natTraversalTagAndBit_data();
+    void login_natTraversalTagAndBit();
     void connectToServer_switchAbortsAttempt();
 
     // Connect to any server
@@ -371,6 +375,78 @@ void tst_ServerConnect::connectToServer_single_loginAndConnect()
 
     // Verify current server is set
     QVERIFY(conn.currentServer() != nullptr);
+
+    conn.disconnect();
+    serverSide->close();
+}
+
+// ---------------------------------------------------------------------------
+// NAT rendezvous login: CT_EMULE_UDPPORTS opts in to ed2k-server's hole punch;
+// the Lugdunum bit 0x1000 only while we hold a public IPv6 (the handoff path).
+// ---------------------------------------------------------------------------
+
+void tst_ServerConnect::login_natTraversalTagAndBit_data()
+{
+    QTest::addColumn<bool>("enabled");
+    QTest::addColumn<bool>("withIPv6");
+    QTest::newRow("off")                 << false << true;
+    QTest::newRow("on, host IPv6 state") << true  << false;
+    QTest::newRow("on, public IPv6")     << true  << true;
+}
+
+void tst_ServerConnect::login_natTraversalTagAndBit()
+{
+    QFETCH(bool, enabled);
+    QFETCH(bool, withIPv6);
+
+    theApp.setListeningPorts(4662, 4672);
+    if (withIPv6)
+        theApp.setPublicIPv6Override(Address::fromString(QStringLiteral("2a00:1450:4001:800::1")));
+    const auto restore = qScopeGuard([] {
+        theApp.clearListeningPorts();
+        theApp.setPublicIPv6Override(Address());
+    });
+    // The bit follows the IPv6 handoff's precondition; a dual-stack host has it anyway.
+    const bool expectUdpPorts = enabled;
+    const bool expectNatBit = enabled && theApp.hasConfidentPublicIPv6();
+    if (withIPv6)
+        QVERIFY(theApp.hasConfidentPublicIPv6());
+
+    QTcpServer tcpServer;
+    QVERIFY(tcpServer.listen(QHostAddress::LocalHost, 0));
+    Server srv = makeLoopbackServer(tcpServer.serverPort());
+    ServerList list;
+    ServerConnect conn(list);
+    ServerConnectConfig cfg = makeTestConfig();
+    cfg.natTraversal = enabled;
+    conn.setConfig(cfg);
+    conn.connectToServer(&srv, false, true);
+    QVERIFY(tcpServer.waitForNewConnection(5000));
+    auto* serverSide = tcpServer.nextPendingConnection();
+    QVERIFY(serverSide);
+
+    // <prot 1><len 4><opcode 1><hash 16><id 4><port 2><tag count 4><tags>
+    QByteArray bytes;
+    QTRY_VERIFY_WITH_TIMEOUT((bytes += serverSide->readAll(),
+                              bytes.size() >= 6 && bytes.size() >= 5 + int(peekUInt32(bytes.constData() + 1))),
+                             5000);
+    QCOMPARE(uint8(bytes[5]), uint8{OP_LOGINREQUEST});
+    SafeMemFile data(reinterpret_cast<const uint8*>(bytes.constData()) + 6 + 22,
+                     static_cast<qint64>(bytes.size() - 6 - 22));
+    const uint32 tagCount = data.readUInt32();
+    bool sawUdpPorts = false;
+    uint32 flags = 0;
+    for (uint32 i = 0; i < tagCount; ++i) {
+        Tag tag(data, false);
+        if (tag.nameId() == CT_EMULE_UDPPORTS) {
+            sawUdpPorts = true;
+            QCOMPARE(tag.intValue() & 0xFFFFu, 4672u);
+        } else if (tag.nameId() == CT_SERVER_FLAGS) {
+            flags = tag.intValue();
+        }
+    }
+    QCOMPARE(sawUdpPorts, expectUdpPorts);
+    QCOMPARE((flags & SRVCAP_NATTRAVERSAL) != 0, expectNatBit);
 
     conn.disconnect();
     serverSide->close();

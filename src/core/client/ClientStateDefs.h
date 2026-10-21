@@ -128,7 +128,8 @@ enum class ConnectingState : uint8 {
     DirectCallback,
     KadCallback,
     ServerCallback,
-    Preconditions
+    Preconditions,
+    NatRendezvous       // LowID<->LowID: waiting for the NAT rendezvous (net/natt)
 };
 
 enum class IdentState : uint8 {

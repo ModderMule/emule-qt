@@ -17,7 +17,7 @@
 <context>
     <name>Ed2kLinkImporter</name>
     <message>
-        <location filename="../src/gui/utils/Ed2kLinkImporter.cpp" line="+203"/>
+        <location filename="../src/gui/utils/Ed2kLinkImporter.cpp" line="+210"/>
         <source>already shared</source>
         <translation>al gedeeld</translation>
     </message>
@@ -52,7 +52,7 @@
         <translation>U heeft de download van &quot;%1&quot; eerder geannuleerd.</translation>
     </message>
     <message numerus="yes">
-        <location line="+126"/>
+        <location line="+140"/>
         <source>%n further HTTP Cache link(s) ignored — apply one at a time.</source>
         <translation>
             <numerusform>%n extra HTTP-cacheverwijzing genegeerd — pas ze één voor één toe.</numerusform>
@@ -397,7 +397,7 @@ Schakel de webinterface of REST API in onder Opties → Webinterface.</translati
 <context>
     <name>QObject</name>
     <message>
-        <location filename="../src/gui/app/main.cpp" line="+397"/>
+        <location filename="../src/gui/app/main.cpp" line="+398"/>
         <source>eMule Qt</source>
         <translation>eMule Qt</translation>
     </message>
@@ -411,7 +411,7 @@ Start it with --new-instance or --config &lt;dir&gt; to open another window.</so
 Start het met --new-instance of --config &lt;dir&gt; om een ander venster te openen.</translation>
     </message>
     <message>
-        <location line="+466"/>
+        <location line="+467"/>
         <source>Download Added</source>
         <translation>Download toegevoegd</translation>
     </message>
@@ -560,7 +560,7 @@ Start het met --new-instance of --config &lt;dir&gt; om een ander venster te ope
         <translation>Normaal</translation>
     </message>
     <message>
-        <location filename="../src/gui/dialogs/OptionsDialog.cpp" line="+3097"/>
+        <location filename="../src/gui/dialogs/OptionsDialog.cpp" line="+3112"/>
         <source>Test</source>
         <translation>Testen</translation>
     </message>
@@ -590,7 +590,7 @@ Start het met --new-instance of --config &lt;dir&gt; om een ander venster te ope
         <translation>Kad-overhead (pakketten): 0 Bytes (0)</translation>
     </message>
     <message>
-        <location filename="../src/gui/utils/Ed2kLinkImporter.cpp" line="-329"/>
+        <location filename="../src/gui/utils/Ed2kLinkImporter.cpp" line="-343"/>
         <location line="+20"/>
         <source>eD2K Link</source>
         <translation>eD2K-verwijzing</translation>
@@ -636,6 +636,7 @@ Start het met --new-instance of --config &lt;dir&gt; om een ander venster te ope
     </message>
     <message>
         <location filename="../src/gui/utils/NzbAdd.cpp" line="+25"/>
+        <location filename="../src/gui/utils/TorrentAdd.cpp" line="+37"/>
         <source>Could not add &quot;%1&quot;.</source>
         <translation>Kon &quot;%1&quot; niet toevoegen.</translation>
     </message>
@@ -693,6 +694,49 @@ Waardering:	%1</translation>
 Has comments</source>
         <translation>
 Heeft commentaren</translation>
+    </message>
+    <message>
+        <location filename="../src/gui/utils/TorrentAdd.cpp" line="-13"/>
+        <source>Torrent &quot;%1&quot; added.</source>
+        <translation>Torrent &quot;%1&quot; toegevoegd.</translation>
+    </message>
+    <message>
+        <location line="+2"/>
+        <source>&quot;%1&quot; is already in the torrent list.</source>
+        <translation>&quot;%1&quot; staat al in de torrentlijst.</translation>
+    </message>
+    <message>
+        <location line="+3"/>
+        <source>&quot;%1&quot; is not a valid torrent or magnet link.</source>
+        <translation>&quot;%1&quot; is geen geldige torrent of magnet-link.</translation>
+    </message>
+    <message>
+        <location line="+1"/>
+        <source>&quot;%1&quot; is not a valid torrent or magnet link.
+
+%2</source>
+        <translation>&quot;%1&quot; is geen geldige torrent of magnet-link.
+
+%2</translation>
+    </message>
+    <message>
+        <location line="+3"/>
+        <source>BitTorrent is off — enable it in Options to add &quot;%1&quot;.</source>
+        <translation>BitTorrent staat uit — schakel het in bij Opties om &quot;%1&quot; toe te voegen.</translation>
+    </message>
+    <message>
+        <location line="+5"/>
+        <source>Could not add &quot;%1&quot;.
+
+%2</source>
+        <translation>Kan &quot;%1&quot; niet toevoegen.
+
+%2</translation>
+    </message>
+    <message>
+        <location line="+73"/>
+        <source>Add Torrent</source>
+        <translation>Torrent toevoegen</translation>
     </message>
 </context>
 <context>
@@ -1129,6 +1173,90 @@ Er is al een vriend met hetzelfde IP-adres en dezelfde poort.</translation>
         <location line="+6"/>
         <source>Add</source>
         <translation>Toevoegen</translation>
+    </message>
+</context>
+<context>
+    <name>eMule::AddTorrentDialog</name>
+    <message>
+        <location filename="../src/gui/dialogs/AddTorrentDialog.cpp" line="+29"/>
+        <source>Add Magnet Links</source>
+        <translation>Magnet-links toevoegen</translation>
+    </message>
+    <message>
+        <location line="+1"/>
+        <source>Add Torrent Files</source>
+        <translation>Torrentbestanden toevoegen</translation>
+    </message>
+    <message>
+        <location line="+2"/>
+        <source>Magnet links:</source>
+        <translation>Magnet-links:</translation>
+    </message>
+    <message>
+        <location line="+1"/>
+        <source>Torrent files:</source>
+        <translation>Torrentbestanden:</translation>
+    </message>
+    <message>
+        <location line="+2"/>
+        <source>Paste one or more magnet:?xt=urn:btih:… links here, one per line...</source>
+        <translation>Plak hier een of meer magnet:?xt=urn:btih:…-links, één per regel...</translation>
+    </message>
+    <message>
+        <location line="+2"/>
+        <source>Download</source>
+        <translation>Downloaden</translation>
+    </message>
+    <message>
+        <location line="+3"/>
+        <source>Save to:</source>
+        <translation>Opslaan in:</translation>
+    </message>
+    <message>
+        <location line="+30"/>
+        <source>Not Connected</source>
+        <translation>Niet verbonden</translation>
+    </message>
+    <message>
+        <location line="+0"/>
+        <source>Not connected to the eMule core.</source>
+        <translation>Niet verbonden met de eMule-core.</translation>
+    </message>
+    <message>
+        <location line="+19"/>
+        <source>These lines are not BitTorrent magnet links:
+
+%1</source>
+        <translation>Deze regels zijn geen BitTorrent-magnet-links:
+
+%1</translation>
+    </message>
+    <message>
+        <location line="+17"/>
+        <source>Cannot read:
+
+%1</source>
+        <translation>Kan niet lezen:
+
+%1</translation>
+    </message>
+    <message>
+        <location line="+8"/>
+        <source>Please add at most %1 torrents at a time.</source>
+        <translation>Voeg maximaal %1 torrents tegelijk toe.</translation>
+    </message>
+    <message numerus="yes">
+        <location line="+39"/>
+        <source>Added %n torrent(s).</source>
+        <translation>
+            <numerusform>%n torrent toegevoegd.</numerusform>
+            <numerusform>%n torrents toegevoegd.</numerusform>
+        </translation>
+    </message>
+    <message>
+        <location line="+14"/>
+        <source>Could not reach the eMule core.</source>
+        <translation>Kon de eMule-core niet bereiken.</translation>
     </message>
 </context>
 <context>
@@ -1650,7 +1778,7 @@ M	gecomprimeerde gegevens nog niet volledig gedownload
         <translation>Alle bestanden evalueren</translation>
     </message>
     <message>
-        <location line="+23"/>
+        <location line="+24"/>
         <source>Negate Filter</source>
         <translation>Filter omkeren</translation>
     </message>
@@ -4076,7 +4204,7 @@ Kies een andere:</translation>
 <context>
     <name>eMule::LogTextView</name>
     <message>
-        <location filename="../src/gui/controls/LogTextView.cpp" line="+59"/>
+        <location filename="../src/gui/controls/LogTextView.cpp" line="+81"/>
         <source>Autoscroll</source>
         <translation>Automatisch scrollen</translation>
     </message>
@@ -4120,7 +4248,7 @@ Kies een andere:</translation>
         <translation>IPC</translation>
     </message>
     <message>
-        <location line="+373"/>
+        <location line="+355"/>
         <source>Click here to check if a new version is available</source>
         <translation>Klik hier om te controleren of er een nieuwe versie beschikbaar is</translation>
     </message>
@@ -4128,8 +4256,8 @@ Kies een andere:</translation>
 <context>
     <name>eMule::MainWindow</name>
     <message>
-        <location filename="../src/gui/app/MainWindow.cpp" line="+91"/>
-        <location line="+501"/>
+        <location filename="../src/gui/app/MainWindow.cpp" line="+93"/>
+        <location line="+509"/>
         <source>eMule Qt v%1</source>
         <translation>eMule Qt v%1</translation>
     </message>
@@ -4171,12 +4299,12 @@ U gebruikt %2. De website van eMule Qt openen?</translation>
     <message>
         <location line="+11"/>
         <location line="+7"/>
-        <location line="+790"/>
+        <location line="+809"/>
         <source>Version Check</source>
         <translation>Versiecontrole</translation>
     </message>
     <message>
-        <location line="-796"/>
+        <location line="-815"/>
         <source>You are running the latest version of eMule Qt (v%1).</source>
         <translation>U gebruikt de nieuwste versie van eMule Qt (v%1).</translation>
     </message>
@@ -4230,12 +4358,12 @@ Schakel er minstens één in onder Opties → Verbinding om te verbinden.</trans
     </message>
     <message>
         <location line="+4"/>
-        <location line="+1321"/>
+        <location line="+1340"/>
         <source>eD2K: Disconnected</source>
         <translation>eD2K: verbinding verbroken</translation>
     </message>
     <message>
-        <location line="-1314"/>
+        <location line="-1333"/>
         <source>eD2K Server: %1  (%2 Users)</source>
         <translation>eD2K-server: %1  (%2 gebruikers)</translation>
     </message>
@@ -4271,12 +4399,12 @@ Schakel er minstens één in onder Opties → Verbinding om te verbinden.</trans
     </message>
     <message>
         <location line="+4"/>
-        <location line="+1256"/>
+        <location line="+1275"/>
         <source>Kad: Disconnected</source>
         <translation>Kad: verbinding verbroken</translation>
     </message>
     <message>
-        <location line="-1247"/>
+        <location line="-1266"/>
         <source>Users: %1 | Files: %2</source>
         <translation>Gebruikers: %1 | Bestanden: %2</translation>
     </message>
@@ -4318,7 +4446,7 @@ Up: %3 | Down: %4</source>
 Up: %3 | Down: %4</translation>
     </message>
     <message>
-        <location line="+73"/>
+        <location line="+80"/>
         <source>Confirm Exit</source>
         <translation>Afsluiten bevestigen</translation>
     </message>
@@ -4383,7 +4511,7 @@ Up: %3 | Down: %4</translation>
         <translation>Logregel</translation>
     </message>
     <message>
-        <location line="+126"/>
+        <location line="+136"/>
         <source>eMule Log</source>
         <translation>eMule-log</translation>
     </message>
@@ -4418,7 +4546,7 @@ Up: %3 | Down: %4</translation>
         <translation>eD2K-verwijzingen plakken...</translation>
     </message>
     <message>
-        <location line="+14"/>
+        <location line="+16"/>
         <source>Open WebUI</source>
         <translation>WebUI openen</translation>
     </message>
@@ -4629,7 +4757,7 @@ Schakel hem in onder Opties → Webinterface en probeer het opnieuw.</translatio
         <translation>Nieuw bericht — dubbelklik om te lezen</translation>
     </message>
     <message>
-        <location line="+303"/>
+        <location line="+312"/>
         <source>eD2K Link</source>
         <translation>eD2K-verwijzing</translation>
     </message>
@@ -4766,7 +4894,12 @@ Schakel hem in onder Opties → Webinterface en probeer het opnieuw.</translatio
         <translation>Usenet</translation>
     </message>
     <message>
-        <location line="+2"/>
+        <location line="+1"/>
+        <source>Torrents</source>
+        <translation>Torrents</translation>
+    </message>
+    <message>
+        <location line="+1"/>
         <source>Downloads Folder</source>
         <translation>Downloadmap</translation>
     </message>
@@ -5796,36 +5929,36 @@ Opnieuw downloaden?</translation>
 <context>
     <name>eMule::OptionsDialog</name>
     <message>
-        <location filename="../src/gui/dialogs/OptionsDialog.cpp" line="-2991"/>
+        <location filename="../src/gui/dialogs/OptionsDialog.cpp" line="-3006"/>
         <source>Options</source>
         <translation>Opties</translation>
     </message>
     <message>
         <location line="+61"/>
-        <location line="+1961"/>
+        <location line="+1976"/>
         <source>OK</source>
         <translation>OK</translation>
     </message>
     <message>
-        <location line="-1960"/>
-        <location line="+1961"/>
+        <location line="-1975"/>
+        <location line="+1976"/>
         <source>Cancel</source>
         <translation>Annuleren</translation>
     </message>
     <message>
-        <location line="-1960"/>
-        <location line="+5620"/>
+        <location line="-1975"/>
+        <location line="+5764"/>
         <source>Apply</source>
         <translation>Toepassen</translation>
     </message>
     <message>
-        <location line="-5619"/>
+        <location line="-5763"/>
         <source>Help</source>
         <translation>Help</translation>
     </message>
     <message>
-        <location line="+258"/>
-        <location line="+1970"/>
+        <location line="+259"/>
+        <location line="+1984"/>
         <location line="+62"/>
         <location line="+5"/>
         <location line="+9"/>
@@ -5834,7 +5967,7 @@ Opnieuw downloaden?</translation>
         <translation>IP-filter</translation>
     </message>
     <message>
-        <location line="-2056"/>
+        <location line="-2070"/>
         <source>IP filter reloaded: %1 entries.</source>
         <translation>IP-filter opnieuw geladen: %1 regels.</translation>
     </message>
@@ -5844,7 +5977,7 @@ Opnieuw downloaden?</translation>
         <translation>Opties -&gt; %1 -&gt; %2</translation>
     </message>
     <message>
-        <location line="+177"/>
+        <location line="+182"/>
         <source>General options</source>
         <translation>Algemene opties</translation>
     </message>
@@ -5859,32 +5992,37 @@ Opnieuw downloaden?</translation>
         <translation>Usenet</translation>
     </message>
     <message>
-        <location line="+74"/>
+        <location line="+1"/>
+        <source>BitTorrent</source>
+        <translation>BitTorrent</translation>
+    </message>
+    <message>
+        <location line="+75"/>
         <source>User Name</source>
         <translation>Gebruikersnaam</translation>
     </message>
     <message>
         <location line="+8"/>
-        <location line="+5546"/>
+        <location line="+5682"/>
         <source>Language</source>
         <translation>Taal</translation>
     </message>
     <message>
-        <location line="-5543"/>
+        <location line="-5679"/>
         <source>System Default</source>
         <translation>Systeemstandaard</translation>
     </message>
     <message>
         <location line="+14"/>
         <location line="+726"/>
-        <location line="+314"/>
+        <location line="+321"/>
         <location line="+450"/>
         <location line="+248"/>
         <source>Miscellaneous</source>
         <translation>Diversen</translation>
     </message>
     <message>
-        <location line="-1735"/>
+        <location line="-1742"/>
         <source>Bring to front on link click</source>
         <translation>Naar voren brengen bij klik op verwijzing</translation>
     </message>
@@ -5970,25 +6108,25 @@ Opnieuw downloaden?</translation>
     </message>
     <message>
         <location line="+8"/>
-        <location line="+5482"/>
+        <location line="+5618"/>
         <source>Core</source>
         <translation>Kern</translation>
     </message>
     <message>
-        <location line="-5477"/>
+        <location line="-5613"/>
         <source>Address:</source>
         <translation>Adres:</translation>
     </message>
     <message>
         <location line="+4"/>
-        <location line="+1217"/>
+        <location line="+1224"/>
         <location line="+720"/>
         <location line="+421"/>
         <source>Port:</source>
         <translation>Poort:</translation>
     </message>
     <message>
-        <location line="-2355"/>
+        <location line="-2362"/>
         <source>authentication token</source>
         <translation>authenticatietoken</translation>
     </message>
@@ -6234,19 +6372,20 @@ Weet u zeker dat u wilt doorgaan?</translation>
     </message>
     <message>
         <location line="+2"/>
-        <location line="+1686"/>
+        <location line="+1693"/>
         <location line="+128"/>
         <location line="+295"/>
         <location line="+1016"/>
         <location line="+152"/>
-        <location line="+1047"/>
+        <location line="+879"/>
+        <location line="+297"/>
         <location line="+277"/>
         <location line="+29"/>
         <source>Enabled</source>
         <translation>Ingeschakeld</translation>
     </message>
     <message>
-        <location line="-4628"/>
+        <location line="-4764"/>
         <source>Reset</source>
         <translation>Herstellen</translation>
     </message>
@@ -6263,22 +6402,24 @@ Weet u zeker dat u wilt doorgaan?</translation>
     <message>
         <location line="+3"/>
         <location line="+6"/>
-        <location line="+4354"/>
+        <location line="+4146"/>
+        <location line="+344"/>
         <source> KB/s</source>
         <translation> KB/s</translation>
     </message>
     <message>
-        <location line="-4357"/>
+        <location line="-4493"/>
         <source>Upload</source>
         <translation>Upload</translation>
     </message>
     <message>
         <location line="+9"/>
+        <location line="+4134"/>
         <source>Limits</source>
         <translation>Limieten</translation>
     </message>
     <message>
-        <location line="+3"/>
+        <location line="-4131"/>
         <source>Download limit</source>
         <translation>Downloadlimiet</translation>
     </message>
@@ -6339,12 +6480,12 @@ Weet u zeker dat u wilt doorgaan?</translation>
     </message>
     <message>
         <location line="+4"/>
-        <location line="+6596"/>
+        <location line="+6785"/>
         <source>Any</source>
         <translation>Alle</translation>
     </message>
     <message>
-        <location line="-6594"/>
+        <location line="-6783"/>
         <source>Use only this network interface, for example a VPN tunnel. Pick one from the list, or type an IP address or a subnet such as 10.64.0.0/10 (the interface holding an address in it). Connections through a proxy are not bound.</source>
         <translation>Alleen deze netwerkinterface gebruiken, bijvoorbeeld een VPN-tunnel. Kies er een uit de lijst, of typ een IP-adres of een subnet zoals 10.64.0.0/10 (de interface met een adres daarbinnen). Verbindingen via een proxy worden niet gebonden.</translation>
     </message>
@@ -6430,12 +6571,12 @@ Weet u zeker dat u wilt doorgaan?</translation>
     </message>
     <message>
         <location line="+62"/>
-        <location line="+1409"/>
+        <location line="+1416"/>
         <source>General</source>
         <translation>Algemeen</translation>
     </message>
     <message>
-        <location line="-1406"/>
+        <location line="-1413"/>
         <source>Enable proxy</source>
         <translation>Proxy activeren</translation>
     </message>
@@ -6500,26 +6641,26 @@ Elke Usenet-verbinding loopt dan via de proxy, dus de snelheid ervan begrenst de
     </message>
     <message>
         <location line="+9"/>
-        <location line="+687"/>
+        <location line="+694"/>
         <source>Authentication</source>
         <translation>Identificatie</translation>
     </message>
     <message>
-        <location line="-684"/>
+        <location line="-691"/>
         <source>Enable authentication</source>
         <translation>Identificatie activeren</translation>
     </message>
     <message>
         <location line="+7"/>
-        <location line="+1785"/>
+        <location line="+1792"/>
         <location line="+1019"/>
         <location line="+152"/>
         <source>Name:</source>
         <translation>Naam:</translation>
     </message>
     <message>
-        <location line="-2952"/>
-        <location line="+688"/>
+        <location line="-2959"/>
+        <location line="+695"/>
         <location line="+778"/>
         <location line="+19"/>
         <location line="+324"/>
@@ -6527,7 +6668,7 @@ Elke Usenet-verbinding loopt dan via de proxy, dus de snelheid ervan begrenst de
         <translation>Wachtwoord:</translation>
     </message>
     <message>
-        <location line="-1775"/>
+        <location line="-1782"/>
         <source>Update</source>
         <translation>Bijwerken</translation>
     </message>
@@ -6593,6 +6734,16 @@ Elke Usenet-verbinding loopt dan via de proxy, dus de snelheid ervan begrenst de
     </message>
     <message>
         <location line="+4"/>
+        <source>Connect Low ID to Low ID through server or Kad buddy (NAT traversal)</source>
+        <translation>Low ID met Low ID verbinden via server of Kad-buddy (NAT-traversal)</translation>
+    </message>
+    <message>
+        <location line="+2"/>
+        <source>Lets two Low ID clients find each other&apos;s address through a server that supports it or a Kad buddy, then connect over IPv6</source>
+        <translation>Laat twee Low ID-clients elkaars adres vinden via een server die dit ondersteunt of een Kad-buddy, en daarna verbinden via IPv6</translation>
+    </message>
+    <message>
+        <location line="+5"/>
         <source>Autoconnect to servers in static list only</source>
         <translation>Alleen automatisch verbinden met servers in statische lijst</translation>
     </message>
@@ -6889,11 +7040,12 @@ Elke Usenet-verbinding loopt dan via de proxy, dus de snelheid ervan begrenst de
     </message>
     <message>
         <location line="+3"/>
+        <location line="+3161"/>
         <source>Connection</source>
         <translation>Verbinding</translation>
     </message>
     <message>
-        <location line="+5"/>
+        <location line="-3156"/>
         <source>Server:</source>
         <translation>Server:</translation>
     </message>
@@ -7633,23 +7785,23 @@ Elke Usenet-verbinding loopt dan via de proxy, dus de snelheid ervan begrenst de
         <location line="+19"/>
         <location line="+1019"/>
         <location line="+154"/>
-        <location line="+1615"/>
-        <location line="+2013"/>
+        <location line="+1744"/>
+        <location line="+2066"/>
         <source>Add</source>
         <translation>Toevoegen</translation>
     </message>
     <message>
-        <location line="-4800"/>
+        <location line="-4982"/>
         <location line="+1019"/>
         <location line="+154"/>
-        <location line="+1342"/>
+        <location line="+1471"/>
         <location line="+316"/>
-        <location line="+1975"/>
+        <location line="+2028"/>
         <source>Remove</source>
         <translation>Verwijderen</translation>
     </message>
     <message>
-        <location line="-4785"/>
+        <location line="-4967"/>
         <source>Display name (optional)</source>
         <translation>Weergavenaam (optioneel)</translation>
     </message>
@@ -7660,11 +7812,12 @@ Elke Usenet-verbinding loopt dan via de proxy, dus de snelheid ervan begrenst de
     </message>
     <message>
         <location line="+8"/>
+        <location line="+2036"/>
         <source>Encryption:</source>
         <translation>Versleuteling:</translation>
     </message>
     <message>
-        <location line="+3"/>
+        <location line="-2033"/>
         <source>None (119)</source>
         <translation>Geen (119)</translation>
     </message>
@@ -7787,11 +7940,13 @@ Elke Usenet-verbinding loopt dan via de proxy, dus de snelheid ervan begrenst de
     </message>
     <message>
         <location line="+1"/>
+        <location line="+1987"/>
+        <location line="+9"/>
         <source>No limit</source>
         <translation>Geen limiet</translation>
     </message>
     <message>
-        <location line="+3"/>
+        <location line="-1993"/>
         <source>Decimal GB, because that is what an invoice says — the 1024-based GB used elsewhere in eMule would put a 1000 GB plan 7% over.
 
 Set it slightly under your plan. The figure is measured here, so it reads a few percent below your provider&apos;s, and articles already in flight when the limit is reached still finish.</source>
@@ -7847,12 +8002,12 @@ Stel het iets lager in dan uw abonnement. De hoeveelheid wordt hier gemeten en v
     <message>
         <location line="+3"/>
         <location line="+913"/>
-        <location line="+1315"/>
+        <location line="+1444"/>
         <source> s</source>
         <translation> s</translation>
     </message>
     <message>
-        <location line="-2227"/>
+        <location line="-2356"/>
         <source>Never back off</source>
         <translation>Nooit uitstellen</translation>
     </message>
@@ -7976,11 +8131,12 @@ De map mag niet in uw tijdelijke, inkomende of configuratiemap liggen: daar schr
     </message>
     <message>
         <location line="+5"/>
+        <location line="+1863"/>
         <source>Browse…</source>
         <translation>Bladeren…</translation>
     </message>
     <message>
-        <location line="+10"/>
+        <location line="-1853"/>
         <source>Desktop</source>
         <translation>Bureaublad</translation>
     </message>
@@ -8664,7 +8820,122 @@ Een later toegevoegde indexer haalt zijn oudere aanbod niet op: een nieuwe index
         <translation>Contact maken met de indexer…</translation>
     </message>
     <message>
-        <location line="+70"/>
+        <location line="+72"/>
+        <source>Enable BitTorrent</source>
+        <translation>BitTorrent inschakelen</translation>
+    </message>
+    <message>
+        <location line="+2"/>
+        <source>Starts the BitTorrent engine with the daemon. Off, no torrent is downloaded or seeded.</source>
+        <translation>Start de BitTorrent-engine samen met de daemon. Uitgeschakeld wordt er geen torrent gedownload of geseed.</translation>
+    </message>
+    <message>
+        <location line="+11"/>
+        <source>Used for both TCP and UDP. Must differ from the eD2K ports.</source>
+        <translation>Gebruikt voor zowel TCP als UDP. Moet verschillen van de eD2K-poorten.</translation>
+    </message>
+    <message>
+        <location line="+1"/>
+        <source>Listen port (TCP/UDP):</source>
+        <translation>Luisterpoort (TCP/UDP):</translation>
+    </message>
+    <message>
+        <location line="+5"/>
+        <source>Forced</source>
+        <translation>Afgedwongen</translation>
+    </message>
+    <message>
+        <location line="+3"/>
+        <source>Enabled prefers encrypted peers and still accepts plain ones. Forced refuses unencrypted peers, which leaves fewer to download from.</source>
+        <translation>Ingeschakeld geeft voorkeur aan versleutelde peers en accepteert ook onversleutelde. Afgedwongen weigert onversleutelde peers, waardoor er minder overblijven om van te downloaden.</translation>
+    </message>
+    <message>
+        <location line="+4"/>
+        <source>Find peers through the DHT</source>
+        <translation>Peers zoeken via de DHT</translation>
+    </message>
+    <message>
+        <location line="+2"/>
+        <source>Find peers on the local network (LSD)</source>
+        <translation>Peers zoeken op het lokale netwerk (LSD)</translation>
+    </message>
+    <message>
+        <location line="+2"/>
+        <source>Exchange peers with other clients (PEX)</source>
+        <translation>Peers uitwisselen met andere clients (PEX)</translation>
+    </message>
+    <message>
+        <location line="+13"/>
+        <source>Unlimited</source>
+        <translation>Onbeperkt</translation>
+    </message>
+    <message>
+        <location line="+5"/>
+        <source>Download:</source>
+        <translation>Download:</translation>
+    </message>
+    <message>
+        <location line="+2"/>
+        <source>Upload:</source>
+        <translation>Upload:</translation>
+    </message>
+    <message>
+        <location line="+4"/>
+        <source>Active downloads:</source>
+        <translation>Actieve downloads:</translation>
+    </message>
+    <message>
+        <location line="+4"/>
+        <source>Active seeds:</source>
+        <translation>Actieve seeds:</translation>
+    </message>
+    <message>
+        <location line="+5"/>
+        <source>Seeding</source>
+        <translation>Seeden</translation>
+    </message>
+    <message>
+        <location line="+10"/>
+        <source>Stop seeding a torrent once it has uploaded this many times its size.</source>
+        <translation>Stop met seeden van een torrent zodra deze zo vaak zijn grootte heeft geüpload.</translation>
+    </message>
+    <message>
+        <location line="+1"/>
+        <source>Stop at share ratio:</source>
+        <translation>Stoppen bij ratio:</translation>
+    </message>
+    <message>
+        <location line="+4"/>
+        <source> min</source>
+        <translation> min</translation>
+    </message>
+    <message>
+        <location line="+3"/>
+        <source>Stop after seeding for:</source>
+        <translation>Stoppen na seeden gedurende:</translation>
+    </message>
+    <message>
+        <location line="+5"/>
+        <source>Download folder</source>
+        <translation>Downloadmap</translation>
+    </message>
+    <message>
+        <location line="+3"/>
+        <source>Incoming folder</source>
+        <translation>Map met binnenkomende bestanden</translation>
+    </message>
+    <message>
+        <location line="+1"/>
+        <source>Leave empty to save torrents to the incoming folder.</source>
+        <translation>Leeg laten om torrents op te slaan in de map met binnenkomende bestanden.</translation>
+    </message>
+    <message>
+        <location line="+19"/>
+        <source>BitTorrent download folder</source>
+        <translation>BitTorrent-downloadmap</translation>
+    </message>
+    <message>
+        <location line="+18"/>
         <source>Warning: Do not change these settings unless you know what you are doing. Otherwise you can easily make things worse for yourself. eMule will run fine without adjusting any of these settings.</source>
         <translation>Waarschuwing: wijzig deze instellingen niet tenzij u weet wat u doet. Anders kunt u het zichzelf gemakkelijk moeilijker maken. eMule werkt prima zonder iets aan deze instellingen te veranderen.</translation>
     </message>
@@ -8689,7 +8960,8 @@ Een later toegevoegde indexer haalt zijn oudere aanbod niet op: een nieuwe index
         <translation>Verversingsinterval serververbinding [min.]:</translation>
     </message>
     <message>
-        <location line="+3"/>
+        <location line="-149"/>
+        <location line="+152"/>
         <source>Disabled</source>
         <translation>Uitgeschakeld</translation>
     </message>
@@ -9239,7 +9511,7 @@ Verbindingen met nieuwsservers schakelen direct om.</translation>
         <translation>De wijziging van de lettergrootte wordt van kracht na een herstart van het programma.</translation>
     </message>
     <message>
-        <location line="+328"/>
+        <location line="+358"/>
         <source>Web Interface</source>
         <translation>Webinterface</translation>
     </message>
@@ -9249,7 +9521,7 @@ Verbindingen met nieuwsservers schakelen direct om.</translation>
         <translation>„%1” is geen IP-adres. Het luisteradres is niet gewijzigd.</translation>
     </message>
     <message>
-        <location line="+481"/>
+        <location line="+482"/>
         <source>File types</source>
         <translation>Bestandstypen</translation>
     </message>
@@ -9259,7 +9531,7 @@ Verbindingen met nieuwsservers schakelen direct om.</translation>
         <translation>De .nzb-bestandskoppeling kon niet worden bijgewerkt: %1</translation>
     </message>
     <message>
-        <location line="+194"/>
+        <location line="+195"/>
         <source>specialdlp loaded, DLP v%1</source>
         <translation>specialdlp geladen, DLP v%1</translation>
     </message>
@@ -9269,7 +9541,7 @@ Verbindingen met nieuwsservers schakelen direct om.</translation>
         <translation>specialdlp-bibliotheek niet gevonden, controles zijn inactief</translation>
     </message>
     <message>
-        <location line="+405"/>
+        <location line="+426"/>
         <source>Port forwarding: %1</source>
         <translation>Poortdoorverwijzing: %1</translation>
     </message>
@@ -9384,7 +9656,7 @@ Verbindingen met nieuwsservers schakelen direct om.</translation>
 <context>
     <name>eMule::PasteTextDialog</name>
     <message>
-        <location filename="../src/gui/dialogs/PasteTextDialog.cpp" line="+42"/>
+        <location filename="../src/gui/dialogs/PasteTextDialog.cpp" line="+44"/>
         <source>optional</source>
         <translation>optioneel</translation>
     </message>
@@ -9400,16 +9672,32 @@ Verbindingen met nieuwsservers schakelen direct om.</translation>
     </message>
     <message>
         <location line="+7"/>
+        <location line="+25"/>
         <source>Start paused</source>
         <translation>Gepauzeerd starten</translation>
     </message>
     <message>
-        <location line="+18"/>
+        <location line="-14"/>
+        <source>default download folder</source>
+        <translation>standaard downloadmap</translation>
+    </message>
+    <message>
+        <location line="+2"/>
+        <source>Browse…</source>
+        <translation>Bladeren…</translation>
+    </message>
+    <message>
+        <location line="+2"/>
+        <source>Save to</source>
+        <translation>Opslaan in</translation>
+    </message>
+    <message>
+        <location line="+25"/>
         <source>Cancel</source>
         <translation>Annuleren</translation>
     </message>
     <message>
-        <location line="+78"/>
+        <location line="+91"/>
         <source>Working…</source>
         <translation>Bezig…</translation>
     </message>
@@ -9468,22 +9756,117 @@ Verbindingen met nieuwsservers schakelen direct om.</translation>
     </message>
 </context>
 <context>
+    <name>eMule::SearchExprParser</name>
+    <message>
+        <location filename="../src/core/search/SearchExprParser.cpp" line="+123"/>
+        <location line="+678"/>
+        <source>Failed to parse search expression</source>
+        <translation>Fout bij het verwerken van de zoekuitdrukking</translation>
+    </message>
+    <message>
+        <location line="-668"/>
+        <source>Expression too complex</source>
+        <translation>Uitdrukking is te complex</translation>
+    </message>
+    <message>
+        <location line="+79"/>
+        <location line="+6"/>
+        <location line="+48"/>
+        <source>Unterminated string</source>
+        <translation>Niet-afgesloten tekenreeks</translation>
+    </message>
+    <message>
+        <location line="+49"/>
+        <location line="+18"/>
+        <source>Unknown search attribute &apos;%1&apos;</source>
+        <translation>Onbekend zoekattribuut &apos;%1&apos;</translation>
+    </message>
+    <message>
+        <location line="+24"/>
+        <source>Invalid eD2K file link</source>
+        <translation>Ongeldige eD2K-bestandsverwijzing</translation>
+    </message>
+    <message>
+        <location line="+233"/>
+        <source>Syntax error in &apos;%1&apos; search attribute</source>
+        <translation>Syntaxisfout in zoekattribuut &apos;%1&apos;</translation>
+    </message>
+    <message>
+        <location line="+50"/>
+        <source>Missing right side for AND operator</source>
+        <translation>Missend rechtergedeelte voor AND-operator</translation>
+    </message>
+    <message>
+        <location line="+29"/>
+        <source>Missing right side for OR operator</source>
+        <translation>Missend rechtergedeelte voor OR-operator</translation>
+    </message>
+    <message>
+        <location line="+25"/>
+        <source>Missing right side for NOT operator</source>
+        <translation>Missend rechtergedeelte voor NOT-operator</translation>
+    </message>
+    <message>
+        <location line="+22"/>
+        <source>Missing expression for &apos;(&apos; &apos;)&apos;</source>
+        <translation>Missende uitdrukking voor &apos;(&apos; &apos;)&apos;</translation>
+    </message>
+    <message>
+        <location line="+7"/>
+        <source>Missing closing &apos;)&apos;</source>
+        <translation>Missende afsluitende &apos;)&apos;</translation>
+    </message>
+    <message>
+        <location line="+66"/>
+        <source>Missing left side for NOT operator</source>
+        <translation>Missend linkergedeelte voor NOT-operator</translation>
+    </message>
+    <message>
+        <location line="+4"/>
+        <source>Missing left side for AND operator</source>
+        <translation>Missend linkergedeelte voor AND-operator</translation>
+    </message>
+    <message>
+        <location line="+4"/>
+        <source>Missing left side for OR operator</source>
+        <translation>Missend linkergedeelte voor OR-operator</translation>
+    </message>
+    <message>
+        <location line="+174"/>
+        <source>You cannot use the first keyword with an OR operator when searching on Kad!
+
+For example &quot;Keyword1 OR Keyword2&quot; is not possible. Try &quot;Keyword1 AND (Keyword2 OR Keyword3)&quot; or do multiple searches instead.</source>
+        <translation>U kunt bij zoekopdrachten voor Kad niet in het eerste sleutelwoord een OR-operator gebruiken!
+
+Bijvoorbeeld: &quot;Sleutelwoord1 OR Sleutelwoord2&quot; is niet mogelijk. Probeer &quot;Sleutelwoord1 AND (Sleutelwoord2 OR Sleutelwoord3)&quot; of voer meerdere zoekopdrachten uit.</translation>
+    </message>
+    <message>
+        <location line="+15"/>
+        <source>Keyword too short.
+
+The keyword(s) used in a Kad search expression must have a minimum length of 3 characters.</source>
+        <translation>Zoekwoord is te kort.
+
+Zoekwoord(en) in Kad-zoekuitdrukkingen moeten minimaal 3 tekens lang zijn.</translation>
+    </message>
+</context>
+<context>
     <name>eMule::SearchPanel</name>
     <message>
-        <location filename="../src/gui/panels/SearchPanel.cpp" line="+204"/>
+        <location filename="../src/gui/panels/SearchPanel.cpp" line="+205"/>
         <source>Related</source>
         <translation>Gerelateerd</translation>
     </message>
     <message>
         <location line="+103"/>
-        <location line="+972"/>
+        <location line="+982"/>
         <location line="+13"/>
         <location line="+514"/>
         <source>Download</source>
         <translation>Downloaden</translation>
     </message>
     <message>
-        <location line="-1479"/>
+        <location line="-1489"/>
         <source>Close All Searches</source>
         <translation>Alle zoekopdrachten sluiten</translation>
     </message>
@@ -9699,13 +10082,14 @@ Verbindingen met nieuwsservers schakelen direct om.</translation>
     </message>
     <message>
         <location line="+34"/>
-        <location line="+23"/>
+        <location line="+33"/>
         <location line="+204"/>
         <source>Not connected to daemon — search cannot be started.</source>
         <translation>Niet verbonden met daemon — zoeken kan niet worden gestart.</translation>
     </message>
     <message>
-        <location line="-171"/>
+        <location line="-224"/>
+        <location line="+53"/>
         <source>Search</source>
         <translation>Zoeken</translation>
     </message>
@@ -13270,6 +13654,515 @@ Opnieuw klikken op &apos;Statistieken herstellen&apos; herlaadt uw huidige stati
         <location line="+1"/>
         <source>Move Down</source>
         <translation>Omlaag</translation>
+    </message>
+</context>
+<context>
+    <name>eMule::TorrentDetailsDialog</name>
+    <message>
+        <location filename="../src/gui/dialogs/TorrentDetailsDialog.cpp" line="+68"/>
+        <source>Skip</source>
+        <translation>Overslaan</translation>
+    </message>
+    <message>
+        <location line="+2"/>
+        <source>Low</source>
+        <translation>Laag</translation>
+    </message>
+    <message>
+        <location line="+2"/>
+        <source>Normal</source>
+        <translation>Normaal</translation>
+    </message>
+    <message>
+        <location line="+2"/>
+        <source>High</source>
+        <translation>Hoog</translation>
+    </message>
+    <message>
+        <location line="+1"/>
+        <source>Maximum</source>
+        <translation>Maximaal</translation>
+    </message>
+    <message>
+        <location line="+10"/>
+        <source>Torrent Details</source>
+        <translation>Torrentdetails</translation>
+    </message>
+    <message>
+        <location line="+46"/>
+        <source>File</source>
+        <translation>Bestand</translation>
+    </message>
+    <message>
+        <location line="+0"/>
+        <source>Size</source>
+        <translation>Grootte</translation>
+    </message>
+    <message>
+        <location line="+0"/>
+        <source>Completed</source>
+        <translation>Voltooid</translation>
+    </message>
+    <message>
+        <location line="+0"/>
+        <location line="+13"/>
+        <source>Progress</source>
+        <translation>Voortgang</translation>
+    </message>
+    <message>
+        <location line="-13"/>
+        <location line="+65"/>
+        <source>Priority</source>
+        <translation>Prioriteit</translation>
+    </message>
+    <message>
+        <location line="-56"/>
+        <source>Files</source>
+        <translation>Bestanden</translation>
+    </message>
+    <message>
+        <location line="+4"/>
+        <source>Address</source>
+        <translation>Adres</translation>
+    </message>
+    <message>
+        <location line="+0"/>
+        <source>Client</source>
+        <translation>Cliënt</translation>
+    </message>
+    <message>
+        <location line="+0"/>
+        <source>Down Speed</source>
+        <translation>Downloadsnelheid</translation>
+    </message>
+    <message>
+        <location line="+1"/>
+        <source>Up Speed</source>
+        <translation>Uploadsnelheid</translation>
+    </message>
+    <message>
+        <location line="+0"/>
+        <source>Downloaded</source>
+        <translation>Gedownload</translation>
+    </message>
+    <message>
+        <location line="+0"/>
+        <source>Uploaded</source>
+        <translation>Geüpload</translation>
+    </message>
+    <message>
+        <location line="+0"/>
+        <source>Flags</source>
+        <translation>Vlaggen</translation>
+    </message>
+    <message>
+        <location line="+1"/>
+        <source>Source</source>
+        <translation>Bron</translation>
+    </message>
+    <message>
+        <location line="+6"/>
+        <location line="+4"/>
+        <source>Peers</source>
+        <translation>Peers</translation>
+    </message>
+    <message>
+        <location line="+0"/>
+        <source>URL</source>
+        <translation>URL</translation>
+    </message>
+    <message>
+        <location line="+0"/>
+        <source>Tier</source>
+        <translation>Niveau</translation>
+    </message>
+    <message>
+        <location line="+0"/>
+        <source>Status</source>
+        <translation>Status</translation>
+    </message>
+    <message>
+        <location line="+0"/>
+        <source>Seeds</source>
+        <translation>Seeds</translation>
+    </message>
+    <message>
+        <location line="+5"/>
+        <source>Trackers</source>
+        <translation>Trackers</translation>
+    </message>
+    <message>
+        <location line="+20"/>
+        <source>This torrent is no longer in the list.</source>
+        <translation>Deze torrent staat niet meer in de lijst.</translation>
+    </message>
+    <message>
+        <location line="+1"/>
+        <source>BitTorrent is not running.</source>
+        <translation>BitTorrent draait niet.</translation>
+    </message>
+    <message>
+        <location line="+23"/>
+        <source>Download</source>
+        <translation>Downloaden</translation>
+    </message>
+    <message>
+        <location line="+2"/>
+        <source>Do Not Download</source>
+        <translation>Niet downloaden</translation>
+    </message>
+    <message>
+        <location line="+26"/>
+        <source>Could not change the file priorities.</source>
+        <translation>Kan de bestandsprioriteiten niet wijzigen.</translation>
+    </message>
+    <message>
+        <location line="+51"/>
+        <source>Files (%1)</source>
+        <translation>Bestanden (%1)</translation>
+    </message>
+    <message>
+        <location line="+17"/>
+        <source>Seed</source>
+        <translation>Seed</translation>
+    </message>
+    <message>
+        <location line="+2"/>
+        <source>Enc</source>
+        <translation>Versl.</translation>
+    </message>
+    <message>
+        <location line="+14"/>
+        <source>Peers (%1)</source>
+        <translation>Peers (%1)</translation>
+    </message>
+    <message>
+        <location line="+14"/>
+        <source>Working</source>
+        <translation>Werkt</translation>
+    </message>
+    <message>
+        <location line="+1"/>
+        <source>Not working</source>
+        <translation>Werkt niet</translation>
+    </message>
+    <message>
+        <location line="+10"/>
+        <source>Trackers (%1)</source>
+        <translation>Trackers (%1)</translation>
+    </message>
+</context>
+<context>
+    <name>eMule::TorrentListModel</name>
+    <message>
+        <location filename="../src/gui/controls/TorrentListModel.cpp" line="+52"/>
+        <source>Queued</source>
+        <translation>In de wachtrij</translation>
+    </message>
+    <message>
+        <location line="+1"/>
+        <source>Checking files</source>
+        <translation>Bestanden controleren</translation>
+    </message>
+    <message>
+        <location line="+1"/>
+        <source>Getting metadata</source>
+        <translation>Metadata ophalen</translation>
+    </message>
+    <message>
+        <location line="+1"/>
+        <source>Downloading</source>
+        <translation>Downloaden</translation>
+    </message>
+    <message>
+        <location line="+1"/>
+        <location line="+160"/>
+        <source>Completed</source>
+        <translation>Voltooid</translation>
+    </message>
+    <message>
+        <location line="-159"/>
+        <source>Seeding</source>
+        <translation>Seeden</translation>
+    </message>
+    <message>
+        <location line="+1"/>
+        <source>Checking resume data</source>
+        <translation>Hervattingsgegevens controleren</translation>
+    </message>
+    <message>
+        <location line="+1"/>
+        <source>Paused</source>
+        <translation>Gepauzeerd</translation>
+    </message>
+    <message>
+        <location line="+1"/>
+        <source>Error</source>
+        <translation>Fout</translation>
+    </message>
+    <message>
+        <location line="+1"/>
+        <source>Moving</source>
+        <translation>Verplaatsen</translation>
+    </message>
+    <message>
+        <location line="+2"/>
+        <source>Unknown</source>
+        <translation>Onbekend</translation>
+    </message>
+    <message>
+        <location line="+129"/>
+        <source>Private torrent (no DHT, PEX or LSD)</source>
+        <translation>Privétorrent (geen DHT, PEX of LSD)</translation>
+    </message>
+    <message>
+        <location line="+6"/>
+        <source>%1% — %2 of %3 pieces</source>
+        <translation>%1% — %2 van %3 stukken</translation>
+    </message>
+    <message>
+        <location line="+16"/>
+        <source>Name</source>
+        <translation>Naam</translation>
+    </message>
+    <message>
+        <location line="+1"/>
+        <source>Size</source>
+        <translation>Grootte</translation>
+    </message>
+    <message>
+        <location line="+2"/>
+        <source>Progress</source>
+        <translation>Voortgang</translation>
+    </message>
+    <message>
+        <location line="+1"/>
+        <source>Status</source>
+        <translation>Status</translation>
+    </message>
+    <message>
+        <location line="+1"/>
+        <source>Down Speed</source>
+        <translation>Downloadsnelheid</translation>
+    </message>
+    <message>
+        <location line="+1"/>
+        <source>Up Speed</source>
+        <translation>Uploadsnelheid</translation>
+    </message>
+    <message>
+        <location line="+1"/>
+        <source>Seeds</source>
+        <translation>Seeds</translation>
+    </message>
+    <message>
+        <location line="+1"/>
+        <source>Peers</source>
+        <translation>Peers</translation>
+    </message>
+    <message>
+        <location line="+1"/>
+        <source>Ratio</source>
+        <translation>Ratio</translation>
+    </message>
+    <message>
+        <location line="+1"/>
+        <source>Remaining Time</source>
+        <translation>Resterende tijd</translation>
+    </message>
+    <message>
+        <location line="+1"/>
+        <source>Added</source>
+        <translation>Toegevoegd</translation>
+    </message>
+    <message>
+        <location line="+163"/>
+        <source>%1 (#%2)</source>
+        <translation>%1 (#%2)</translation>
+    </message>
+</context>
+<context>
+    <name>eMule::TorrentPanel</name>
+    <message>
+        <location filename="../src/gui/panels/TorrentPanel.cpp" line="+105"/>
+        <source>Torrent download completed: %1</source>
+        <translation>Torrentdownload voltooid: %1</translation>
+    </message>
+    <message>
+        <location line="+14"/>
+        <location line="+6"/>
+        <location line="+17"/>
+        <source>Add Torrent</source>
+        <translation>Torrent toevoegen</translation>
+    </message>
+    <message>
+        <location line="-23"/>
+        <location line="+23"/>
+        <location line="+15"/>
+        <location line="+11"/>
+        <location line="+388"/>
+        <source>Not connected to the eMule core.</source>
+        <translation>Niet verbonden met de eMule-core.</translation>
+    </message>
+    <message>
+        <location line="-430"/>
+        <source>Cannot read %1.</source>
+        <translation>%1 kan niet worden gelezen.</translation>
+    </message>
+    <message>
+        <location line="+31"/>
+        <source>Add Magnet Links</source>
+        <translation>Magnet-links toevoegen</translation>
+    </message>
+    <message>
+        <location line="+11"/>
+        <location line="+4"/>
+        <source>Add Torrent Files</source>
+        <translation>Torrentbestanden toevoegen</translation>
+    </message>
+    <message>
+        <location line="+1"/>
+        <source>Torrent files (*.torrent);;All files (*)</source>
+        <translation>Torrentbestanden (*.torrent);;Alle bestanden (*)</translation>
+    </message>
+    <message>
+        <location line="+53"/>
+        <source>Add Torrent…</source>
+        <translation>Torrent toevoegen…</translation>
+    </message>
+    <message>
+        <location line="+2"/>
+        <source>Add Magnet Link…</source>
+        <translation>Magnet-link toevoegen…</translation>
+    </message>
+    <message>
+        <location line="+3"/>
+        <source>Pause</source>
+        <translation>Pauzeren</translation>
+    </message>
+    <message>
+        <location line="+2"/>
+        <source>Resume</source>
+        <translation>Hervatten</translation>
+    </message>
+    <message>
+        <location line="+2"/>
+        <source>Remove…</source>
+        <translation>Verwijderen…</translation>
+    </message>
+    <message>
+        <location line="+3"/>
+        <source>Details…</source>
+        <translation>Details…</translation>
+    </message>
+    <message>
+        <location line="+7"/>
+        <source>Force Recheck</source>
+        <translation>Opnieuw controleren forceren</translation>
+    </message>
+    <message>
+        <location line="+3"/>
+        <source>Force Reannounce</source>
+        <translation>Opnieuw aankondigen forceren</translation>
+    </message>
+    <message>
+        <location line="+3"/>
+        <source>Open Folder</source>
+        <translation>Map openen</translation>
+    </message>
+    <message>
+        <location line="+2"/>
+        <source>Copy Magnet Link</source>
+        <translation>Magnet-link kopiëren</translation>
+    </message>
+    <message>
+        <location line="+63"/>
+        <source>BitTorrent Options…</source>
+        <translation>BitTorrent-opties…</translation>
+    </message>
+    <message>
+        <location line="+108"/>
+        <source>BitTorrent: %1</source>
+        <translation>BitTorrent: %1</translation>
+    </message>
+    <message>
+        <location line="+13"/>
+        <source>Remove Torrents</source>
+        <translation>Torrents verwijderen</translation>
+    </message>
+    <message>
+        <location line="+2"/>
+        <source>Remove &quot;%1&quot; from the list?</source>
+        <translation>&quot;%1&quot; uit de lijst verwijderen?</translation>
+    </message>
+    <message numerus="yes">
+        <location line="+1"/>
+        <source>Remove %n torrent(s) from the list?</source>
+        <translation>
+            <numerusform>%n torrent uit de lijst verwijderen?</numerusform>
+            <numerusform>%n torrents uit de lijst verwijderen?</numerusform>
+        </translation>
+    </message>
+    <message>
+        <location line="+3"/>
+        <source>Also delete the downloaded files</source>
+        <translation>Ook de gedownloade bestanden verwijderen</translation>
+    </message>
+    <message>
+        <location line="+23"/>
+        <source>Saved on the core&apos;s machine: %1</source>
+        <translation>Opgeslagen op de machine van de core: %1</translation>
+    </message>
+    <message>
+        <location line="+21"/>
+        <source>No magnet link: v2-only torrents have no v1 info hash.</source>
+        <translation>Geen magnet-link: torrents met alleen v2 hebben geen v1-infohash.</translation>
+    </message>
+    <message numerus="yes">
+        <location line="+4"/>
+        <source>Copied %n magnet link(s).</source>
+        <translation>
+            <numerusform>%n magnet-link gekopieerd.</numerusform>
+            <numerusform>%n magnet-links gekopieerd.</numerusform>
+        </translation>
+    </message>
+    <message>
+        <location line="+67"/>
+        <source>Asking the core for the BitTorrent state…</source>
+        <translation>BitTorrent-status opvragen bij de core…</translation>
+    </message>
+    <message>
+        <location line="+2"/>
+        <source>This eMule core was built without BitTorrent support.</source>
+        <translation>Deze eMule-core is gebouwd zonder BitTorrent-ondersteuning.</translation>
+    </message>
+    <message>
+        <location line="+3"/>
+        <source>BitTorrent is off — enable it in Options.</source>
+        <translation>BitTorrent staat uit — schakel het in bij Opties.</translation>
+    </message>
+    <message numerus="yes">
+        <location line="+20"/>
+        <source>%n torrent(s), %1 active — Down: %2, Up: %3 — DHT: %4 nodes — Port %5 %6</source>
+        <translation>
+            <numerusform>%n torrent, %1 actief — In: %2, Uit: %3 — DHT: %4 nodes — Poort %5 %6</numerusform>
+            <numerusform>%n torrents, %1 actief — In: %2, Uit: %3 — DHT: %4 nodes — Poort %5 %6</numerusform>
+        </translation>
+    </message>
+    <message>
+        <location line="+6"/>
+        <source>(listening)</source>
+        <translation>(luistert)</translation>
+    </message>
+    <message>
+        <location line="+0"/>
+        <source>(not listening)</source>
+        <translation>(luistert niet)</translation>
+    </message>
+    <message>
+        <location line="+2"/>
+        <source>No torrents. Use &quot;Add Torrent…&quot; or &quot;Add Magnet Link…&quot; to start one.</source>
+        <translation>Geen torrents. Gebruik &quot;Torrent toevoegen…&quot; of &quot;Magnet-link toevoegen…&quot; om er een te starten.</translation>
     </message>
 </context>
 <context>

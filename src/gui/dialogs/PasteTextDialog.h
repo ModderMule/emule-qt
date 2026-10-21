@@ -58,6 +58,13 @@ public:
         /// With queueCategories: only the category box, without priority and
         /// "Start paused" — an eD2K paste has a category and nothing else to choose.
         bool categoryOnly = false;
+
+        /// Label for an optional "save to" folder row, empty for none. The
+        /// torrent dialogs want it; empty text there means the daemon's default.
+        QString savePathLabel;
+
+        /// A lone "Start paused" box, for a dialog without the queue row.
+        bool pausedOption = false;
     };
 
 protected:
@@ -80,6 +87,13 @@ protected:
 
     /// Whether to queue the release without starting it.
     [[nodiscard]] bool queuePaused() const;
+
+    /// The save-to row, trimmed; empty when there is no row or nothing typed.
+    [[nodiscard]] QString savePath() const;
+
+    /// Show the save-to row's Browse… button. Only for a local core: a remote
+    /// core's folders are not this machine's.
+    void setSavePathBrowsable(bool browsable);
 
     /// One entry per line, trimmed, blanks dropped.
     [[nodiscard]] QStringList lines() const;
@@ -109,6 +123,8 @@ private:
     QComboBox* m_category = nullptr;
     QComboBox* m_priority = nullptr;
     QCheckBox* m_paused = nullptr;
+    QLineEdit* m_savePath = nullptr;     ///< null unless Chrome::savePathLabel was set
+    QPushButton* m_savePathBrowse = nullptr;
     QPushButton* m_acceptBtn = nullptr;
     QHBoxLayout* m_buttonRow = nullptr;
     QString m_acceptText;

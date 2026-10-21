@@ -12,6 +12,7 @@
 #include "panels/TransferPanel.h"
 #include "utils/CommandLine.h"
 #include "utils/Log.h"
+#include "utils/TorrentLinks.h"
 
 #include <QApplication>
 #include <QDir>
@@ -68,6 +69,7 @@ void CommandLineExec::parse(QApplication& app)
             {QStringLiteral("irc"),        MainWindow::TabIRC},
             {QStringLiteral("statistics"), MainWindow::TabStatistics},
             {QStringLiteral("usenet"),     MainWindow::TabUsenet},
+            {QStringLiteral("torrents"),   MainWindow::TabTorrents},
         };
         m_activeTab = static_cast<MainWindow::Tab>(tabArg.toInt());
         for (const auto& [name, value] : tabNames) {
@@ -112,6 +114,7 @@ void CommandLineExec::parse(QApplication& app)
             {QStringLiteral("indexers"),     OptionsDialog::PageIndexers},
             {QStringLiteral("feeds"),        OptionsDialog::PageFeeds},
             {QStringLiteral("extended"),     OptionsDialog::PageExtended},
+            {QStringLiteral("bittorrent"),   OptionsDialog::PageBitTorrent},
         };
         m_optionsPage = optArg.toInt(); // fallback: numeric index
         for (const auto& [name, value] : pageNames) {
@@ -212,18 +215,25 @@ void CommandLineExec::openArguments(const QStringList& args, ExternalLinkHandler
             continue;
         }
 
+        // Every BitTorrent magnet; the handler routes it to the Torrents tab
+        if (gui::isBitTorrentMagnet(arg)) {
+            linkHandler.open(arg);
+            continue;
+        }
+
         // A desktop launcher runs `Exec=... %U`, so the same argument arrives as
         // a file:// URL from one caller and a plain path from another.
         QString path = arg;
         if (path.startsWith(QStringLiteral("file:"), Qt::CaseInsensitive))
             path = QUrl(path).toLocalFile();
 
-        if (!path.endsWith(QStringLiteral(".nzb"), Qt::CaseInsensitive))
+        if (!path.endsWith(QStringLiteral(".nzb"), Qt::CaseInsensitive)
+            && !gui::isTorrentFilePath(path))
             continue;
         if (!QFileInfo(path).isFile())
             continue;
 
-        // Every .nzb, not just the first: opening a selection of them is an
+        // Every .nzb / .torrent, not just the first: opening a selection of them is an
         // ordinary thing to do from a file manager.
         linkHandler.openFile(path);
     }

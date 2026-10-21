@@ -65,12 +65,15 @@ ApiBackend::PrefApplyReport DaemonApiBackend::applyPreferences(const PrefChanges
         m_ipcServer->notifyCategoriesChanged();
     // Queued: the web server answering this request may be the thing that restarts.
     QTimer::singleShot(0, m_ipcServer, [server = m_ipcServer, standby = outcome.standbyChanged,
-                                        usenet = outcome.usenetChanged] {
+                                        usenet = outcome.usenetChanged,
+                                        bt = outcome.btChanged] {
         emit server->webServerConfigChanged();
         if (standby)
             emit server->standbyConfigChanged();
         if (usenet)
             emit server->usenetConfigChanged();
+        if (bt)
+            emit server->btConfigChanged();
     });
     return report;
 }

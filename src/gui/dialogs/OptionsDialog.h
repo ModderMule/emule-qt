@@ -83,6 +83,7 @@ public:
         PageIndexers,
         PageFeeds,
         PageExtended,
+        PageBitTorrent,
         PageCount
     };
 
@@ -140,6 +141,7 @@ private:
     QWidget* createIndexersPage();
     QWidget* createFeedsPage();
     QWidget* createExtendedPage();
+    QWidget* createBitTorrentPage();
     QWidget* createPlaceholderPage(const QString& title);
 
     /// Enable/disable the Web Interface controls from the two independent
@@ -359,6 +361,7 @@ private:
     QCheckBox* m_smartLowIdCheck = nullptr;
     QCheckBox* m_serverPreferIPv6Check = nullptr;
     QCheckBox* m_safeServerConnectCheck = nullptr;
+    QCheckBox* m_natTraversalCheck = nullptr;
     QCheckBox* m_autoConnectStaticOnlyCheck = nullptr;
     QCheckBox* m_useServerPrioritiesCheck = nullptr;
     QCheckBox* m_useUserSortedServerListCheck = nullptr;
@@ -493,6 +496,22 @@ private:
     QLabel*       m_usenetUsageLabel = nullptr;
     QPushButton*  m_usenetUsageEditBtn = nullptr;
     QLabel*       m_usenetTestResult = nullptr;
+
+    // -- BitTorrent page ----------------------------------------------------
+    QCheckBox*      m_btEnabledCheck = nullptr;
+    QSpinBox*       m_btPortSpin = nullptr;
+    QLineEdit*      m_btDownloadDirEdit = nullptr;
+    QPushButton*    m_btDownloadDirBrowse = nullptr;
+    QSpinBox*       m_btMaxDownSpin = nullptr;
+    QSpinBox*       m_btMaxUpSpin = nullptr;
+    QCheckBox*      m_btDhtCheck = nullptr;
+    QCheckBox*      m_btLsdCheck = nullptr;
+    QCheckBox*      m_btPexCheck = nullptr;
+    QComboBox*      m_btEncryptionCombo = nullptr;
+    QSpinBox*       m_btMaxActiveDownSpin = nullptr;
+    QSpinBox*       m_btMaxActiveSeedSpin = nullptr;
+    QDoubleSpinBox* m_btSeedRatioSpin = nullptr;
+    QSpinBox*       m_btSeedTimeSpin = nullptr;
 
     /// Working copy of the server list. `password` is only set on an entry the
     /// user actually retyped; every other entry is sent without the field so the

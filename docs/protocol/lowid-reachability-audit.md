@@ -18,6 +18,11 @@ A LowID peer has no reachable TCP port. It can only be reached by asking it to c
 
 Everything else is a direct TCP dial, which a LowID peer cannot accept.
 
+Added 2026-10-21: when *we* are firewalled too, none of the three works (the peer would have to
+reach us). A fourth route then applies: a **NAT rendezvous**, where a server or the peer's Kad
+buddy tells both sides each other's UDP endpoint and they connect over IPv6 after a punch
+(`natt-rendezvous.md`, `ConnectingState::NatRendezvous`).
+
 ## Where the invariant is enforced
 
 `UpDownClient::connect()` is the **only** thing in the codebase that creates an outbound

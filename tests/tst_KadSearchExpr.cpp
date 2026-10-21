@@ -38,6 +38,7 @@ private slots:
     void andTerms_matchAllWordsPresent();
     void andTerms_rejectMissingWord();
     void notTerm_rejectsExcludedWord();
+    void dashTerm_rejectsExcludedWord();
     void orTerm_matchesEitherBranch();
     void sizeFilter_rejectsUndersizedEntry();
     void typeFilter_matchesMetaTag();
@@ -53,7 +54,8 @@ private:
 
 std::unique_ptr<SearchTerm> tst_KadSearchExpr::roundTrip(const SearchParams& params)
 {
-    const QString keyword = kadSearchKeyword(params.expression);
+    // Same keyword pick as SearchStarter: first word every match must hold
+    const QString keyword = kadSearchKeyword(kadKeywordSource(params.expression));
     const QByteArray blob = buildSearchTermsPayload(params, keyword);
     if (blob.isEmpty())
         return nullptr;
@@ -139,6 +141,21 @@ void tst_KadSearchExpr::notTerm_rejectsExcludedWord()
 
     QVERIFY(matches(term.get(), QStringLiteral("ubuntu-desktop-final.iso"), 1000));
     QVERIFY(!matches(term.get(), QStringLiteral("ubuntu-desktop-beta.iso"), 1000));
+}
+
+void tst_KadSearchExpr::dashTerm_rejectsExcludedWord()
+{
+    // GitHub issue #45: "-1080p" leaves out every name holding it
+    SearchParams params;
+    params.expression = QStringLiteral("movie -1080p");
+    params.type = eMule::SearchType::Kademlia;
+    QCOMPARE(kadSearchKeyword(kadKeywordSource(params.expression)), QStringLiteral("movie"));
+
+    auto term = roundTrip(params);
+    QVERIFY(term != nullptr);
+
+    QVERIFY(matches(term.get(), QStringLiteral("Movie.720p.mkv"), 1000));
+    QVERIFY(!matches(term.get(), QStringLiteral("Movie.1080p.mkv"), 1000));
 }
 
 void tst_KadSearchExpr::orTerm_matchesEitherBranch()

@@ -58,13 +58,14 @@ public:
 
     /// Act on @p link, or queue it when the window or the daemon is not ready yet.
     ///
-    /// Handles the panes' "emuleqt:versioncheck" sentinel, eD2K and magnet links, and
+    /// Handles the panes' "emuleqt:versioncheck" sentinel, eD2K and magnet links
+    /// (BitTorrent magnets go to the Torrents tab), and
     /// hands anything else to the desktop's browser.
     void open(const QString& link);
 
-    /// Queue @p path, a .nzb file, for the Usenet panel — waiting for the daemon the
-    /// same way a link does, and unconditionally, since there is no version of adding
-    /// a .nzb that does not go through it.
+    /// Queue @p path, a .nzb (Usenet panel) or .torrent (Torrents panel) file —
+    /// waiting for the daemon the same way a link does, and unconditionally, since
+    /// there is no version of adding either that does not go through it.
     ///
     /// Both routes in land early on a cold start: a Finder double-click arrives during
     /// the splash screen, with no main window yet, and a command-line argument is read

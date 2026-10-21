@@ -82,7 +82,8 @@ void PublishKeywordList::addKeywords(KnownFile* file)
         // is MFC's absolute "long ago", not a delay (SharedFileList.cpp:220-227).
         if ((*it)->addRef(file) && (*it)->nextPublishTime() > MIN2S(30))
             (*it)->setNextPublishTime(MIN2S(30));
-        if (!std::ranges::contains(registered, lower))
+        // find, not ranges::contains: GCC 12 (Ubuntu 22.04 build) lacks it
+        if (std::ranges::find(registered, lower) == registered.end())
             registered.push_back(lower);
     }
 

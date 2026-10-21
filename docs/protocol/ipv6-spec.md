@@ -179,11 +179,11 @@ The server probes the family the session arrived on, so a v6-connected session g
 > `OP_IDCHANGE` and callback notices. NeoLoader uses `0x1000` the same way and `0x2000` for IPv6.
 > eMuleQt reserves `0x1000` as `SRVCAP_NATTRAVERSAL` for that feature and leaves `0x2000` unused.
 >
-> **Planned use of `0x1000` (not implemented, not sent yet).** eMuleQt will set the bit to use the
-> Lugdunum callback for LowID-to-LowID transfers. It is IPv4-only and unrelated to this extension:
-> the notice carries a 4-byte address, and an IPv6-reachable peer is dialled directly anyway.
-> The callback only yields a UDP endpoint, so those transfers run the unchanged eMule
-> stream over the QUIC NAT-T dialect other clients already deploy: `OP_UDPRESERVEDPROT2` (`0xB2`)
+> **Use of `0x1000`.** eMuleQt sets the bit for the Lugdunum callback (LowID-to-LowID) while it
+> holds a public IPv6; the signalling is in `natt-rendezvous.md`. It is IPv4-only and unrelated to
+> this extension: the notice carries a 4-byte address. Over the punched UDP path the two peers swap
+> IPv6 addresses (`0xB2` frame type `0x11`) and connect with plain TCP over IPv6. Pairs without
+> IPv6 will run the unchanged eMule stream over the QUIC NAT-T dialect other clients already deploy: `OP_UDPRESERVEDPROT2` (`0xB2`)
 > frame type `0x01` for QUIC, `0x02`/`0x03` for the capability exchange, ALPN
 > `ed2k-ai-natt-quic-v1`, and `CT_MOD_MISCOPTIONS` bit 4. No uTP. The same transport serves the
 > LowID hole punch of servers that set `OP_IDCHANGE` flag `0x20000`. An earlier plan for an own

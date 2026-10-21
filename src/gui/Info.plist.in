@@ -48,6 +48,23 @@
 			<key>LSHandlerRank</key>
 			<string>Alternate</string>
 		</dict>
+		<dict>
+			<key>CFBundleTypeName</key>
+			<string>BitTorrent File</string>
+			<key>CFBundleTypeExtensions</key>
+			<array>
+				<string>torrent</string>
+			</array>
+			<key>CFBundleTypeMIMETypes</key>
+			<array>
+				<string>application/x-bittorrent</string>
+			</array>
+			<key>CFBundleTypeRole</key>
+			<string>Viewer</string>
+			<!-- Alternate, as for NZB: a dedicated torrent client keeps priority. -->
+			<key>LSHandlerRank</key>
+			<string>Alternate</string>
+		</dict>
 	</array>
 	<key>CFBundleURLTypes</key>
 	<array>
@@ -57,6 +74,16 @@
 			<key>CFBundleURLSchemes</key>
 			<array>
 				<string>ed2k</string>
+			</array>
+		</dict>
+		<dict>
+			<!-- eD2K magnets (urn:ed2k) still go to Transfers; BitTorrent ones
+			     (urn:btih/btmh) to Torrents — see utils/TorrentLinks.h. -->
+			<key>CFBundleURLName</key>
+			<string>Magnet Link</string>
+			<key>CFBundleURLSchemes</key>
+			<array>
+				<string>magnet</string>
 			</array>
 		</dict>
 	</array>

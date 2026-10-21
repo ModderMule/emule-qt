@@ -9,6 +9,7 @@
 #include "utils/Log.h"
 #include "utils/OtherFunctions.h"
 #include "utils/StatusBarNotifier.h"
+#include "utils/TorrentLinks.h"
 
 #include <QApplication>
 #include <QCborArray>
@@ -45,6 +46,7 @@ struct ParsedLink {
 /// Split link text into file links, collecting HTTP Cache configuration links into
 /// @p configs and unparseable candidates into @p invalid.
 Ed2kLinkImporter::OtherLinkHandler s_otherLinkHandler;
+Ed2kLinkImporter::TorrentLinkHandler s_torrentLinkHandler;
 
 /// Files @p link under its kind; false when it is none of the non-download kinds.
 bool collectOther(const ED2KLink& link, Ed2kLinkImporter::OtherLinks& others)
@@ -64,11 +66,16 @@ bool collectOther(const ED2KLink& link, Ed2kLinkImporter::OtherLinks& others)
 
 std::vector<ParsedLink> parseLines(const QString& text, QStringList& invalid,
                                    std::vector<ED2KHttpCacheLink>& configs,
-                                   Ed2kLinkImporter::OtherLinks& others)
+                                   Ed2kLinkImporter::OtherLinks& others, QStringList& torrents)
 {
     std::vector<ParsedLink> links;
 
     for (const QString& candidate : Ed2kLinkImporter::splitLinks(text)) {
+        // A BitTorrent magnet is not an eD2K link, but not an invalid line either
+        if (gui::isBitTorrentMagnet(candidate)) {
+            torrents << candidate;
+            continue;
+        }
         auto parsed = parseED2KLink(candidate);
 
         if (const auto* cfg = parsed ? std::get_if<ED2KHttpCacheLink>(&*parsed) : nullptr) {
@@ -281,6 +288,11 @@ void Ed2kLinkImporter::setOtherLinkHandler(OtherLinkHandler handler)
     s_otherLinkHandler = std::move(handler);
 }
 
+void Ed2kLinkImporter::setTorrentLinkHandler(TorrentLinkHandler handler)
+{
+    s_torrentLinkHandler = std::move(handler);
+}
+
 Ed2kLinkImporter::OtherLinks Ed2kLinkImporter::otherLinksIn(const QString& text)
 {
     OtherLinks others;
@@ -325,7 +337,16 @@ void Ed2kLinkImporter::importLinks(const QString& text, IpcClient* ipc, QWidget*
     Result result;
     std::vector<ED2KHttpCacheLink> configs;
     OtherLinks others;
-    std::vector<ParsedLink> links = parseLines(text, result.invalid, configs, others);
+    QStringList torrents;
+    std::vector<ParsedLink> links = parseLines(text, result.invalid, configs, others, torrents);
+
+    // BitTorrent magnets in the same paste: to the Torrents tab, manual only
+    if (!torrents.isEmpty() && source == Source::Manual && s_torrentLinkHandler) {
+        result.torrentLinks = static_cast<int>(torrents.size());
+        if (beforePrompt)
+            beforePrompt();
+        s_torrentLinkHandler(torrents, parent);
+    }
 
     // Lists, searches and servers: only when a person asked (MFC acts on every such
     // link it is handed; the clipboard watcher here hands over file links only).

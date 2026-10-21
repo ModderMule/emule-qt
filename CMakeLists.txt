@@ -433,6 +433,67 @@ if(EMULE_SPECIALDLP)
 endif()
 
 # ---------------------------------------------------------------------------
+# libtorrent-rasterbar — BitTorrent engine of src/bt (docs/BitTorrentModule-Research.local.md)
+#
+# An installed one first (vcpkg, Homebrew, distro), else a static build of v2.1.1.
+# Link the exported target only: it carries TORRENT_ABI_VERSION, which must be the
+# same in the library and in every unit that includes its headers.
+# ---------------------------------------------------------------------------
+# OFF until the module ships: libtorrent needs Boost, which CI does not install yet
+option(EMULE_BITTORRENT "Build the BitTorrent module (libtorrent-rasterbar)" OFF)
+if(EMULE_BITTORRENT)
+    # 2.1: pread_disk_io, torrent_info::layout() (src/bt/session/BtJoinDiskIo.cpp)
+    find_package(LibtorrentRasterbar 2.1 CONFIG QUIET)
+    if(LibtorrentRasterbar_FOUND)
+        message(STATUS "libtorrent-rasterbar ${LibtorrentRasterbar_VERSION}: installed")
+    else()
+        message(STATUS "libtorrent-rasterbar: FetchContent v2.1.1 (static)")
+        # BUILD_SHARED_LIBS is global: off for libtorrent only
+        set(_emule_saved_shared ${BUILD_SHARED_LIBS})
+        set(BUILD_SHARED_LIBS OFF CACHE BOOL "" FORCE)
+        set(build_tests OFF CACHE BOOL "" FORCE)
+        set(build_examples OFF CACHE BOOL "" FORCE)
+        set(build_tools OFF CACHE BOOL "" FORCE)
+        set(python-bindings OFF CACHE BOOL "" FORCE)
+        # WebTorrent needs the libdatachannel submodule; not used
+        set(webtorrent OFF CACHE BOOL "" FORCE)
+        # TORRENT_ABI_VERSION=100: no deprecated API
+        set(deprecated-functions OFF CACHE BOOL "" FORCE)
+        FetchContent_Declare(libtorrent
+            GIT_REPOSITORY https://github.com/arvidn/libtorrent.git
+            GIT_TAG        v2.1.1
+            GIT_SHALLOW    TRUE
+            # try_signal is in the library's source list; the other submodules are not needed
+            GIT_SUBMODULES deps/try_signal
+        )
+        FetchContent_MakeAvailable(libtorrent)
+        set(BUILD_SHARED_LIBS ${_emule_saved_shared} CACHE BOOL "" FORCE)
+        if(TARGET torrent-rasterbar AND NOT TARGET LibtorrentRasterbar::torrent-rasterbar)
+            add_library(LibtorrentRasterbar::torrent-rasterbar ALIAS torrent-rasterbar)
+        endif()
+    endif()
+
+    # libtorrent and Boost headers are not ours to warn about
+    foreach(_lt_target LibtorrentRasterbar::torrent-rasterbar torrent-rasterbar)
+        if(TARGET ${_lt_target})
+            get_target_property(_lt_real ${_lt_target} ALIASED_TARGET)
+            if(NOT _lt_real)
+                set(_lt_real ${_lt_target})
+            endif()
+            get_target_property(_lt_includes ${_lt_real} INTERFACE_INCLUDE_DIRECTORIES)
+            if(_lt_includes)
+                set_target_properties(${_lt_real} PROPERTIES INTERFACE_SYSTEM_INCLUDE_DIRECTORIES "${_lt_includes}")
+            endif()
+            break()
+        endif()
+    endforeach()
+    if(NOT TARGET LibtorrentRasterbar::torrent-rasterbar)
+        message(WARNING "libtorrent-rasterbar not available: BitTorrent module off")
+        set(EMULE_BITTORRENT OFF CACHE BOOL "" FORCE)
+    endif()
+endif()
+
+# ---------------------------------------------------------------------------
 # Subdirectories
 # ---------------------------------------------------------------------------
 add_subdirectory(src)

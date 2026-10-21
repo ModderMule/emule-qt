@@ -10,6 +10,7 @@
 #include "IpcServer.h"
 #include "MetaSearchService.h"
 #include "PowerManager.h"
+#include "BtBridge.h"
 #include "UsenetBridge.h"
 
 #include "IpcMessage.h"
@@ -27,6 +28,10 @@
 #include "transfer/DownloadQueue.h"
 #include "transfer/UploadQueue.h"
 #include "UsenetSession.h"
+#ifdef EMULE_HAVE_BITTORRENT
+#include "BtSession.h"
+#include "BtTypes.h"
+#endif
 #include "IndexerFeedList.h"
 #include "IndexerSearch.h"
 #include "IndexerSearchList.h"
@@ -212,6 +217,8 @@ bool DaemonApp::start()
             this, &DaemonApp::applyUsenetServers);
     connect(m_ipcServer.get(), &IpcServer::indexerConfigChanged,
             this, &DaemonApp::applyIndexerConfig);
+    connect(m_ipcServer.get(), &IpcServer::btConfigChanged,
+            this, &DaemonApp::applyBtConfig);
 
     // The web server starts in onCoreLoaded(): a REST client must not read
     // half-loaded lists or add a download whose part file is still unread.
@@ -239,6 +246,17 @@ bool DaemonApp::start()
     }
     if (thePrefs.usenetEnabled())
         m_usenetSession->start();
+
+    // BitTorrent. Like Usenet: always constructed, btEnabled() gates the start.
+    // ToDo: map btListenPort() with the app's PortMapper (research doc §7.5); libtorrent's
+    //       UPnP/NAT-PMP are off (BtSettingsMap)
+#ifdef EMULE_HAVE_BITTORRENT
+    m_btSession = std::make_unique<bt::BtSession>();
+    BtBridge::setSession(m_btSession.get());
+    connectBtPushes();
+    if (thePrefs.btEnabled())
+        m_btSession->start(BtBridge::settingsFromPrefs());
+#endif
 
     // Indexer search. No enable switch: an account list that is empty is the off
     // state, and there is nothing running to gate — a search only ever happens
@@ -312,6 +330,14 @@ void DaemonApp::stop()
     if (m_usenetSession)
         m_usenetSession->stop();
     m_usenetSession.reset();
+
+    // saves resume data and the DHT state; before IPC and core go away
+    BtBridge::setSession(nullptr);
+#ifdef EMULE_HAVE_BITTORRENT
+    if (m_btSession)
+        m_btSession->stop();
+    m_btSession.reset();
+#endif
 
     // stopWorkers() delivers its last results after the flush at the top, and
     // they are counted in core; bank them too. main() saves once more after this.
@@ -505,6 +531,66 @@ void DaemonApp::connectUsenetPushes()
         msg.append(QCborMap{{QStringLiteral("paused"), paused}});
         m_ipcServer->broadcast(msg);
     });
+}
+
+void DaemonApp::connectBtPushes()
+{
+#ifdef EMULE_HAVE_BITTORRENT
+    if (!m_btSession || !m_ipcServer)
+        return;
+
+    auto* coalescer = new Ipc::PushCoalescer(this);
+    connect(coalescer, &Ipc::PushCoalescer::ready, this, [this](const IpcMessage& msg) {
+        m_ipcServer->broadcast(msg);
+    });
+
+    // A row per second per torrent: coalesced on the id
+    connect(m_btSession.get(), &bt::BtSession::torrentChanged, this, [coalescer](const QString& id) {
+        coalescer->post(IpcMsgType::PushTorrentUpdate, [id] {
+            IpcMessage msg(IpcMsgType::PushTorrentUpdate, 0);
+            msg.append(BtBridge::rowToCbor(id));
+            return msg;
+        }, kUsenetPushWindowMs, static_cast<quint32>(qHash(id)));
+    });
+
+    // Transitions: uncoalesced (see connectUsenetPushes)
+    connect(m_btSession.get(), &bt::BtSession::torrentAdded, this, [this](const QString& id) {
+        IpcMessage msg(IpcMsgType::PushTorrentAdded, 0);
+        msg.append(BtBridge::rowToCbor(id));
+        m_ipcServer->broadcast(msg);
+    });
+    connect(m_btSession.get(), &bt::BtSession::torrentRemoved, this, [this](const QString& id) {
+        IpcMessage msg(IpcMsgType::PushTorrentRemoved, 0);
+        msg.append(id);
+        m_ipcServer->broadcast(msg);
+    });
+    connect(m_btSession.get(), &bt::BtSession::torrentFinished, this, [this](const QString& id) {
+        IpcMessage msg(IpcMsgType::PushTorrentFinished, 0);
+        msg.append(id);
+        m_ipcServer->broadcast(msg);
+    });
+    connect(m_btSession.get(), &bt::BtSession::statusChanged, this, [this] {
+        IpcMessage msg(IpcMsgType::PushBtStatus, 0);
+        msg.append(BtBridge::statusToCbor());
+        m_ipcServer->broadcast(msg);
+    });
+#endif
+}
+
+void DaemonApp::applyBtConfig()
+{
+#ifdef EMULE_HAVE_BITTORRENT
+    if (!m_btSession)
+        return;
+    const bt::BtSettings settings = BtBridge::settingsFromPrefs();
+    const bool enabled = thePrefs.btEnabled();
+    if (enabled && !m_btSession->isRunning())
+        m_btSession->start(settings);
+    else if (!enabled && m_btSession->isRunning())
+        m_btSession->stop();
+    else if (enabled)
+        m_btSession->applySettings(settings);
+#endif
 }
 
 void DaemonApp::applyUsenetServers()

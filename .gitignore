@@ -147,3 +147,6 @@ data/nzb
 
 # Nested repos, not needed by CI yet
 libs/
+
+# NAT rendezvous rig: local server paths
+docker/natt/natnet.env

@@ -216,6 +216,13 @@
     <ClCompile Include="utils\NzbAdd.cpp" />
     <ClCompile Include="utils\MetaResultActions.cpp" />
     <ClCompile Include="utils\NzbDrop.cpp" />
+    <ClCompile Include="utils\TorrentLinks.cpp" />
+    <ClCompile Include="utils\TorrentAdd.cpp" />
+    <ClCompile Include="controls\TorrentListModel.cpp" />
+    <ClCompile Include="controls\TorrentProgressDelegate.cpp" />
+    <ClCompile Include="dialogs\AddTorrentDialog.cpp" />
+    <ClCompile Include="dialogs\TorrentDetailsDialog.cpp" />
+    <ClCompile Include="panels\TorrentPanel.cpp" />
     <ClCompile Include="utils\PriorityText.cpp" />
     <ClCompile Include="utils\Smileys.cpp" />
     <ClCompile Include="utils\ColumnTooltip.cpp" />
@@ -343,6 +350,8 @@
     <ClInclude Include="utils\NzbAdd.h" />
     <QtMoc Include="utils\MetaResultActions.h" />
     <ClInclude Include="utils\NzbDrop.h" />
+    <ClInclude Include="utils\TorrentLinks.h" />
+    <ClInclude Include="utils\TorrentAdd.h" />
     <ClInclude Include="utils\PriorityText.h" />
     <ClInclude Include="utils\ClientStateText.h" />
     <ClInclude Include="utils\CompleteSourcesText.h" />
@@ -433,6 +442,11 @@
     <QtMoc Include="dialogs\MetaAccountDialog.h" />
     <QtMoc Include="dialogs\PasteLinksDialog.h" />
     <QtMoc Include="dialogs\PasteTextDialog.h" />
+    <QtMoc Include="controls\TorrentListModel.h" />
+    <QtMoc Include="controls\TorrentProgressDelegate.h" />
+    <QtMoc Include="dialogs\AddTorrentDialog.h" />
+    <QtMoc Include="dialogs\TorrentDetailsDialog.h" />
+    <QtMoc Include="panels\TorrentPanel.h" />
     <QtMoc Include="dialogs\WebLinksDialog.h" />
     <QtMoc Include="dialogs\PeerPreviewDialog.h" />
     <QtMoc Include="dialogs\ToolbarCustomizeDialog.h" />

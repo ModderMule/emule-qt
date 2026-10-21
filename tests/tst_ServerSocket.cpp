@@ -45,6 +45,8 @@ private slots:
     void failure_namesPhaseAndReason();
     void socketError_reportsOnceThroughBothEntryPoints_data();
     void socketError_reportsOnceThroughBothEntryPoints();
+    void natRendezvous_idChangeLengthAndNotices();
+    void natRendezvous_serverIdentNatPort();
 };
 
 /// Helper: write raw ED2K packet bytes to a socket.
@@ -275,6 +277,90 @@ void tst_ServerSocket::processIdChangeExtendedRejectsLowIDReport()
     // Dropped, not forwarded: the field is supposed to report a routable address,
     // and a LowID would be stored as our public IP and stamped onto UDP keys.
     QCOMPARE(loginSpy.first().at(2).toUInt(), uint32{0});
+
+    serverSide->close();
+    clientSocket.close();
+}
+
+// ---------------------------------------------------------------------------
+// NAT rendezvous: Lugdunum's 24-byte OP_IDCHANGE is recorded, and the server
+// notices 0x37 / 0x61 / 0x62 are handed on untouched.
+// ---------------------------------------------------------------------------
+
+void tst_ServerSocket::natRendezvous_idChangeLengthAndNotices()
+{
+    QTcpServer server;
+    QVERIFY(server.listen(QHostAddress::LocalHost, 0));
+
+    ServerSocket clientSocket;
+    QSignalSpy loginSpy(&clientSocket, &ServerSocket::loginReceived);
+    QSignalSpy natSpy(&clientSocket, &ServerSocket::natPacketReceived);
+
+    Server srv(htonl(0x7F000001), server.serverPort());
+    clientSocket.connectTo(srv);
+    QVERIFY(server.waitForNewConnection(5000));
+    auto* serverSide = server.nextPendingConnection();
+    QVERIFY(serverSide != nullptr);
+    QVERIFY(clientSocket.waitForConnected(5000));
+
+    char payload[24] = {};
+    const uint32 clientID = 0x00000043;    // odd LowID, as eserver gives with the NAT bit
+    const uint32 tcpFlags = 0x17F9;
+    std::memcpy(payload, &clientID, 4);
+    std::memcpy(payload + 4, &tcpFlags, 4);
+    writeRawPacket(serverSide, OP_EDONKEYPROT, OP_IDCHANGE, payload, 24);
+    QTRY_COMPARE_WITH_TIMEOUT(loginSpy.count(), 1, 3000);
+    QVERIFY(clientSocket.currentServer());
+    QCOMPARE(clientSocket.currentServer()->idChangeLength(), 24u);
+    QVERIFY(clientSocket.currentServer()->supportsLugdunumNat());
+
+    const char notice[11] = {8, 8, 4, 4, 0x10, 0x27, 7, 0, 0, 0, 1};
+    writeRawPacket(serverSide, OP_EDONKEYPROT, OP_NAT_CALLBACKREQUESTED, notice, 11);
+    const char info[29] = {};
+    writeRawPacket(serverSide, OP_EDONKEYPROT, OP_LOWID_HOLEPUNCH_INFO, info, 29);
+    const char fail[5] = {7, 0, 0, 0, 1};
+    writeRawPacket(serverSide, OP_EDONKEYPROT, OP_LOWID_HOLEPUNCH_FAIL, fail, 5);
+
+    QTRY_COMPARE_WITH_TIMEOUT(natSpy.count(), 3, 3000);
+    QCOMPARE(natSpy.at(0).at(0).value<uint8>(), uint8{OP_NAT_CALLBACKREQUESTED});
+    QCOMPARE(natSpy.at(0).at(1).toByteArray(), QByteArray(notice, 11));
+    QCOMPARE(natSpy.at(1).at(0).value<uint8>(), uint8{OP_LOWID_HOLEPUNCH_INFO});
+    QCOMPARE(natSpy.at(1).at(1).toByteArray().size(), 29);
+    QCOMPARE(natSpy.at(2).at(0).value<uint8>(), uint8{OP_LOWID_HOLEPUNCH_FAIL});
+    QCOMPARE(clientSocket.connectionState(), ServerConnState::Connected);
+
+    serverSide->close();
+    clientSocket.close();
+}
+
+void tst_ServerSocket::natRendezvous_serverIdentNatPort()
+{
+    QTcpServer server;
+    QVERIFY(server.listen(QHostAddress::LocalHost, 0));
+
+    ServerSocket clientSocket;
+    QSignalSpy identSpy(&clientSocket, &ServerSocket::serverIdentReceived);
+    Server srv(htonl(0x7F000001), server.serverPort());
+    clientSocket.connectTo(srv);
+    QVERIFY(server.waitForNewConnection(5000));
+    auto* serverSide = server.nextPendingConnection();
+    QVERIFY(serverSide != nullptr);
+    QVERIFY(clientSocket.waitForConnected(5000));
+
+    SafeMemFile data;
+    const uint8 hash[16] = {};
+    data.writeHash16(hash);
+    data.writeUInt32(htonl(0x0A010203));
+    data.writeUInt16(4661);
+    data.writeUInt32(1);
+    Tag(static_cast<uint8>(ST_NAT_PORT), uint32{2010}).writeTagToFile(data);
+    const QByteArray payload = data.takeBuffer();
+    writeRawPacket(serverSide, OP_EDONKEYPROT, OP_SERVERIDENT, payload.constData(),
+                   static_cast<uint32>(payload.size()));
+
+    QTRY_COMPARE_WITH_TIMEOUT(identSpy.count(), 1, 3000);
+    QVERIFY(clientSocket.currentServer());
+    QCOMPARE(clientSocket.currentServer()->natPort(), uint16{2010});
 
     serverSide->close();
     clientSocket.close();

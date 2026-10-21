@@ -41,6 +41,7 @@ class SeenFileIndex;
 class ClientCensus;
 class DlpLoader;
 namespace kad { class KadNodeCensus; }
+namespace natt { class NatRendezvous; }
 class ServerConnect;
 class ServerList;
 class SharedFileList;
@@ -256,6 +257,7 @@ private:
     std::unique_ptr<GlobalSearchScheduler> m_globalSearch;
     std::unique_ptr<ServerList> m_serverList;
     std::unique_ptr<ServerConnect> m_serverConnect;
+    std::unique_ptr<natt::NatRendezvous> m_natRendezvous;
     std::unique_ptr<UDPSocket> m_serverUDP;
     std::unique_ptr<LastCommonRouteFinder> m_lastCommonRouteFinder;
     uint32 m_lastUSSMaxUpload = UINT32_MAX;   ///< last limit handed to it; a rise restarts its ramp

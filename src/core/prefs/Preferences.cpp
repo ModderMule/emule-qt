@@ -33,6 +33,7 @@
 #include <algorithm>
 #include <atomic>
 #include <cstring>
+#include <limits>
 
 #include <yaml-cpp/yaml.h>
 
@@ -137,6 +138,7 @@ struct Preferences::Data {
     bool skipFirewalledChecksInLanMode = false;
 
     // Server connection
+    bool natTraversal = true;           // LowID<->LowID rendezvous (net/natt)
     bool safeServerConnect = true;      // Limit to 1 concurrent connection attempt. MFC off; deliberate, 2026-10: servers blacklist an IP that logs in too often
     bool autoConnectStaticOnly = false; // Only connect to static servers
     bool useServerPriorities = true;    // Sort servers by priority before connecting
@@ -652,6 +654,21 @@ struct Preferences::Data {
     int indexerTimeoutSeconds = 30;
     int indexerCapsRefreshDays = 7;
 
+    // -- BitTorrent -----------------------------------------------------------
+    bool btEnabled = false;
+    uint16 btListenPort = Preferences::kDefaultBtListenPort;
+    QString btDownloadDir;             // empty = incomingDir
+    uint32 btMaxDownloadKb = 0;        // 0 = unlimited
+    uint32 btMaxUploadKb = 0;
+    bool btDht = true;
+    bool btLsd = true;
+    bool btPex = true;
+    int btEncryption = 0;              // 0 enabled, 1 forced, 2 disabled
+    int btMaxActiveDownloads = 3;
+    int btMaxActiveSeeds = 5;
+    int btSeedRatioPercent = 100;      // 0 = no limit
+    int btSeedTimeLimitMinutes = 0;    // 0 = no limit
+
     /// Runtime only — never loaded, never saved. -1 means "no split active", so
     /// maxDownloadForEd2k() falls back to the raw ceiling. Persisting it would
     /// let a crash mid-download leave the user throttled to a stale share with
@@ -742,6 +759,8 @@ void Preferences::setSkipFirewalledChecksInLanMode(bool val) { set(&Data::skipFi
 // ---------------------------------------------------------------------------
 
 bool Preferences::safeServerConnect() const { return get(&Data::safeServerConnect); }
+bool Preferences::natTraversal() const { return get(&Data::natTraversal); }
+void Preferences::setNatTraversal(bool val) { set(&Data::natTraversal, val); }
 
 void Preferences::setSafeServerConnect(bool val) { set(&Data::safeServerConnect, val); }
 
@@ -2081,6 +2100,62 @@ void Preferences::setIndexerCapsRefreshDays(int val)
     set(&Data::indexerCapsRefreshDays, std::clamp(val, 1, 365));
 }
 
+// -- BitTorrent ---------------------------------------------------------------
+
+bool Preferences::btEnabled() const { return get(&Data::btEnabled); }
+void Preferences::setBtEnabled(bool val) { set(&Data::btEnabled, val); }
+
+uint16 Preferences::btListenPort() const { return get(&Data::btListenPort); }
+void Preferences::setBtListenPort(uint16 val)
+{
+    set(&Data::btListenPort, val == 0 ? kDefaultBtListenPort : val);
+}
+
+QString Preferences::btDownloadDir() const { return get(&Data::btDownloadDir); }
+void Preferences::setBtDownloadDir(const QString& val) { set(&Data::btDownloadDir, val.trimmed()); }
+
+uint32 Preferences::btMaxDownloadKb() const { return get(&Data::btMaxDownloadKb); }
+void Preferences::setBtMaxDownloadKb(uint32 val) { set(&Data::btMaxDownloadKb, val); }
+
+uint32 Preferences::btMaxUploadKb() const { return get(&Data::btMaxUploadKb); }
+void Preferences::setBtMaxUploadKb(uint32 val) { set(&Data::btMaxUploadKb, val); }
+
+bool Preferences::btDht() const { return get(&Data::btDht); }
+void Preferences::setBtDht(bool val) { set(&Data::btDht, val); }
+
+bool Preferences::btLsd() const { return get(&Data::btLsd); }
+void Preferences::setBtLsd(bool val) { set(&Data::btLsd, val); }
+
+bool Preferences::btPex() const { return get(&Data::btPex); }
+void Preferences::setBtPex(bool val) { set(&Data::btPex, val); }
+
+int Preferences::btEncryption() const { return get(&Data::btEncryption); }
+void Preferences::setBtEncryption(int val) { set(&Data::btEncryption, std::clamp(val, 0, 2)); }
+
+int Preferences::btMaxActiveDownloads() const { return get(&Data::btMaxActiveDownloads); }
+void Preferences::setBtMaxActiveDownloads(int val)
+{
+    set(&Data::btMaxActiveDownloads, std::clamp(val, 1, 100));
+}
+
+int Preferences::btMaxActiveSeeds() const { return get(&Data::btMaxActiveSeeds); }
+void Preferences::setBtMaxActiveSeeds(int val)
+{
+    set(&Data::btMaxActiveSeeds, std::clamp(val, 0, 100));
+}
+
+int Preferences::btSeedRatioPercent() const { return get(&Data::btSeedRatioPercent); }
+void Preferences::setBtSeedRatioPercent(int val)
+{
+    set(&Data::btSeedRatioPercent, std::clamp(val, 0, kMaxBtSeedRatioPercent));
+}
+
+int Preferences::btSeedTimeLimitMinutes() const { return get(&Data::btSeedTimeLimitMinutes); }
+void Preferences::setBtSeedTimeLimitMinutes(int val)
+{
+    set(&Data::btSeedTimeLimitMinutes, std::clamp(val, 0, kMaxBtSeedTimeLimitMinutes));
+}
+
 uint32 Preferences::maxDownloadForEd2k() const
 {
     const qint64 budget = get(&Data::ed2kDownloadBudget);
@@ -3007,6 +3082,7 @@ QCborMap Preferences::toIpcMap() const
 
     // Server
     prefs.insert(QStringLiteral("safeServerConnect"), safeServerConnect());
+    prefs.insert(QStringLiteral("natTraversal"), natTraversal());
     prefs.insert(QStringLiteral("autoConnectStaticOnly"), autoConnectStaticOnly());
     prefs.insert(QStringLiteral("useServerPriorities"), useServerPriorities());
     prefs.insert(QStringLiteral("addServersFromServer"), addServersFromServer());
@@ -3126,6 +3202,23 @@ QCborMap Preferences::toIpcMap() const
                  static_cast<qint64>(indexerTimeoutSeconds()));
     prefs.insert(QStringLiteral("indexerCapsRefreshDays"),
                  static_cast<qint64>(indexerCapsRefreshDays()));
+
+    // BitTorrent
+    prefs.insert(QStringLiteral("btEnabled"), btEnabled());
+    prefs.insert(QStringLiteral("btListenPort"), static_cast<qint64>(btListenPort()));
+    prefs.insert(QStringLiteral("btDownloadDir"), btDownloadDir());
+    prefs.insert(QStringLiteral("btMaxDownloadKb"), static_cast<qint64>(btMaxDownloadKb()));
+    prefs.insert(QStringLiteral("btMaxUploadKb"), static_cast<qint64>(btMaxUploadKb()));
+    prefs.insert(QStringLiteral("btDht"), btDht());
+    prefs.insert(QStringLiteral("btLsd"), btLsd());
+    prefs.insert(QStringLiteral("btPex"), btPex());
+    prefs.insert(QStringLiteral("btEncryption"), static_cast<qint64>(btEncryption()));
+    prefs.insert(QStringLiteral("btMaxActiveDownloads"),
+                 static_cast<qint64>(btMaxActiveDownloads()));
+    prefs.insert(QStringLiteral("btMaxActiveSeeds"), static_cast<qint64>(btMaxActiveSeeds()));
+    prefs.insert(QStringLiteral("btSeedRatioPercent"), static_cast<qint64>(btSeedRatioPercent()));
+    prefs.insert(QStringLiteral("btSeedTimeLimitMinutes"),
+                 static_cast<qint64>(btSeedTimeLimitMinutes()));
 
     // Statistics
     prefs.insert(QStringLiteral("statsAverageMinutes"), static_cast<qint64>(statsAverageMinutes()));
@@ -3253,6 +3346,7 @@ void Preferences::updateFromCbor(const QCborMap& p)
 
     // Server
     m_data->safeServerConnect       = p.value(QStringLiteral("safeServerConnect")).toBool();
+    m_data->natTraversal            = p.value(QStringLiteral("natTraversal")).toBool(true);
     m_data->autoConnectStaticOnly   = p.value(QStringLiteral("autoConnectStaticOnly")).toBool();
     m_data->useServerPriorities     = p.value(QStringLiteral("useServerPriorities")).toBool();
     m_data->addServersFromServer    = p.value(QStringLiteral("addServersFromServer")).toBool();
@@ -3341,6 +3435,30 @@ void Preferences::updateFromCbor(const QCborMap& p)
     m_data->usenetEnabled             = p.value(QStringLiteral("usenetEnabled")).toBool();
     m_data->usenetRetryIntervalSeconds =
         int(p.value(QStringLiteral("usenetRetryIntervalSeconds")).toInteger(60));
+
+    // BitTorrent. Defaults for a key an older daemon does not send.
+    {
+        constexpr qint64 kMaxU32 = std::numeric_limits<uint32>::max();
+        const auto num = [&p](const char* key, qint64 def, qint64 lo, qint64 hi) {
+            return std::clamp(p.value(QLatin1StringView(key)).toInteger(def), lo, hi);
+        };
+        m_data->btEnabled     = p.value(QStringLiteral("btEnabled")).toBool(false);
+        m_data->btListenPort  = static_cast<uint16>(
+            num("btListenPort", kDefaultBtListenPort, 1, 65535));
+        m_data->btDownloadDir = p.value(QStringLiteral("btDownloadDir")).toString();
+        m_data->btMaxDownloadKb = static_cast<uint32>(num("btMaxDownloadKb", 0, 0, kMaxU32));
+        m_data->btMaxUploadKb   = static_cast<uint32>(num("btMaxUploadKb", 0, 0, kMaxU32));
+        m_data->btDht = p.value(QStringLiteral("btDht")).toBool(true);
+        m_data->btLsd = p.value(QStringLiteral("btLsd")).toBool(true);
+        m_data->btPex = p.value(QStringLiteral("btPex")).toBool(true);
+        m_data->btEncryption = int(num("btEncryption", 0, 0, 2));
+        m_data->btMaxActiveDownloads = int(num("btMaxActiveDownloads", 3, 1, 100));
+        m_data->btMaxActiveSeeds = int(num("btMaxActiveSeeds", 5, 0, 100));
+        m_data->btSeedRatioPercent =
+            int(num("btSeedRatioPercent", 100, 0, kMaxBtSeedRatioPercent));
+        m_data->btSeedTimeLimitMinutes =
+            int(num("btSeedTimeLimitMinutes", 0, 0, kMaxBtSeedTimeLimitMinutes));
+    }
 
     // Statistics
     m_data->statsAverageMinutes   = static_cast<uint32>(p.value(QStringLiteral("statsAverageMinutes")).toInteger());
@@ -3659,6 +3777,7 @@ bool Preferences::load(const QString& filePath)
         // Server connection
         if (auto s = root["serverConnection"]) {
             m_data->safeServerConnect = s["safeServerConnect"].as<bool>(m_data->safeServerConnect);
+            m_data->natTraversal = s["natTraversal"].as<bool>(m_data->natTraversal);
             m_data->autoConnectStaticOnly = s["autoConnectStaticOnly"].as<bool>(m_data->autoConnectStaticOnly);
             m_data->useServerPriorities = s["useServerPriorities"].as<bool>(m_data->useServerPriorities);
             m_data->addServersFromServer = s["addServersFromServer"].as<bool>(m_data->addServersFromServer);
@@ -4422,6 +4541,34 @@ bool Preferences::load(const QString& filePath)
         // API keys are encrypted under notifyEmailEncKey, which is only read
         // there. A top-level block rather than a key under `usenet`, because the
         // client is shared with BitTorrent.
+        if (auto bt = root["bittorrent"]) {
+            m_data->btEnabled = bt["enabled"].as<bool>(m_data->btEnabled);
+            const int port = bt["listenPort"].as<int>(m_data->btListenPort);
+            m_data->btListenPort = (port >= 1 && port <= 65535)
+                                       ? static_cast<uint16>(port) : kDefaultBtListenPort;
+            m_data->btDownloadDir = QString::fromStdString(
+                bt["downloadDir"].as<std::string>(m_data->btDownloadDir.toStdString())).trimmed();
+            m_data->btMaxDownloadKb = static_cast<uint32>(std::max<long long>(
+                0, bt["maxDownloadKb"].as<long long>(m_data->btMaxDownloadKb)));
+            m_data->btMaxUploadKb = static_cast<uint32>(std::max<long long>(
+                0, bt["maxUploadKb"].as<long long>(m_data->btMaxUploadKb)));
+            m_data->btDht = bt["dht"].as<bool>(m_data->btDht);
+            m_data->btLsd = bt["lsd"].as<bool>(m_data->btLsd);
+            m_data->btPex = bt["pex"].as<bool>(m_data->btPex);
+            m_data->btEncryption = std::clamp(
+                bt["encryption"].as<int>(m_data->btEncryption), 0, 2);
+            m_data->btMaxActiveDownloads = std::clamp(
+                bt["maxActiveDownloads"].as<int>(m_data->btMaxActiveDownloads), 1, 100);
+            m_data->btMaxActiveSeeds = std::clamp(
+                bt["maxActiveSeeds"].as<int>(m_data->btMaxActiveSeeds), 0, 100);
+            m_data->btSeedRatioPercent = std::clamp(
+                bt["seedRatioPercent"].as<int>(m_data->btSeedRatioPercent),
+                0, kMaxBtSeedRatioPercent);
+            m_data->btSeedTimeLimitMinutes = std::clamp(
+                bt["seedTimeLimitMinutes"].as<int>(m_data->btSeedTimeLimitMinutes),
+                0, kMaxBtSeedTimeLimitMinutes);
+        }
+
         if (auto ix = root["indexers"]) {
             m_data->indexerResultLimit = std::clamp(
                 ix["resultLimit"].as<int>(m_data->indexerResultLimit), 10, 1000);
@@ -4787,6 +4934,7 @@ bool Preferences::saveImpl(const QString& filePath) const
     // Server connection
     out << YAML::Key << "serverConnection" << YAML::Value << YAML::BeginMap;
     out << YAML::Key << "safeServerConnect" << YAML::Value << m_data->safeServerConnect;
+    out << YAML::Key << "natTraversal" << YAML::Value << m_data->natTraversal;
     out << YAML::Key << "autoConnectStaticOnly" << YAML::Value << m_data->autoConnectStaticOnly;
     out << YAML::Key << "useServerPriorities" << YAML::Value << m_data->useServerPriorities;
     out << YAML::Key << "addServersFromServer" << YAML::Value << m_data->addServersFromServer;
@@ -5457,6 +5605,23 @@ bool Preferences::saveImpl(const QString& filePath) const
         out << YAML::EndMap;
     }
     out << YAML::EndSeq;
+    out << YAML::EndMap;
+
+    out << YAML::Key << "bittorrent" << YAML::Value << YAML::BeginMap;
+    out << YAML::Key << "enabled" << YAML::Value << m_data->btEnabled;
+    out << YAML::Key << "listenPort" << YAML::Value << static_cast<int>(m_data->btListenPort);
+    if (!m_data->btDownloadDir.isEmpty())
+        out << YAML::Key << "downloadDir" << YAML::Value << m_data->btDownloadDir.toStdString();
+    out << YAML::Key << "maxDownloadKb" << YAML::Value << m_data->btMaxDownloadKb;
+    out << YAML::Key << "maxUploadKb" << YAML::Value << m_data->btMaxUploadKb;
+    out << YAML::Key << "dht" << YAML::Value << m_data->btDht;
+    out << YAML::Key << "lsd" << YAML::Value << m_data->btLsd;
+    out << YAML::Key << "pex" << YAML::Value << m_data->btPex;
+    out << YAML::Key << "encryption" << YAML::Value << m_data->btEncryption;
+    out << YAML::Key << "maxActiveDownloads" << YAML::Value << m_data->btMaxActiveDownloads;
+    out << YAML::Key << "maxActiveSeeds" << YAML::Value << m_data->btMaxActiveSeeds;
+    out << YAML::Key << "seedRatioPercent" << YAML::Value << m_data->btSeedRatioPercent;
+    out << YAML::Key << "seedTimeLimitMinutes" << YAML::Value << m_data->btSeedTimeLimitMinutes;
     out << YAML::EndMap;
 
     // Indexers. After `notifications` for the same reason as the two blocks

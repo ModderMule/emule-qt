@@ -25,6 +25,7 @@
 #include "panels/SharedFilesPanel.h"
 #include "panels/StatisticsPanel.h"
 #include "panels/TransferPanel.h"
+#include "panels/TorrentPanel.h"
 #include "panels/UsenetPanel.h"
 
 #include "IpcMessage.h"
@@ -37,6 +38,7 @@
 #include "utils/IpcFeedback.h"
 #include "utils/PreviewLauncher.h"
 #include "utils/NzbDrop.h"
+#include "utils/TorrentLinks.h"
 #include "utils/StatusBarNotifier.h"
 #include "utils/TaskbarProgress.h"
 
@@ -90,7 +92,7 @@ MainWindow::MainWindow(QWidget* parent)
 {
     setWindowTitle(tr("eMule Qt v%1").arg(QApplication::applicationVersion()));
 
-    // A .nzb dropped anywhere on the window is queued, whichever tab is up.
+    // A .nzb or .torrent dropped anywhere on the window is queued, whichever tab is up.
     setAcceptDrops(true);
 
     Ed2kLinkImporter::setOtherLinkHandler(
@@ -98,6 +100,14 @@ MainWindow::MainWindow(QWidget* parent)
                                             QWidget* parent) {
             if (self)
                 self->handleOtherEd2kLinks(links, parent);
+        });
+    // BitTorrent magnets pasted among eD2K links go to the Torrents tab
+    Ed2kLinkImporter::setTorrentLinkHandler(
+        [self = QPointer<MainWindow>(this)](const QStringList& magnets, QWidget*) {
+            if (!self || !self->m_torrentPanel)
+                return;
+            self->switchToTab(TabTorrents);
+            self->m_torrentPanel->addMagnets(magnets);
         });
 
     setupPages();
@@ -643,20 +653,27 @@ void MainWindow::showNotification(const QString& title, const QString& message,
 
 void MainWindow::dragEnterEvent(QDragEnterEvent* event)
 {
-    if (gui::nzbDropCandidates(event->mimeData()).isEmpty())
+    if (gui::nzbDropCandidates(event->mimeData()).isEmpty()
+        && gui::torrentDropFiles(event->mimeData()).isEmpty())
         return;
     event->acceptProposedAction();
 }
 
 void MainWindow::dragMoveEvent(QDragMoveEvent* event)
 {
-    if (gui::nzbDropCandidates(event->mimeData()).isEmpty())
+    if (gui::nzbDropCandidates(event->mimeData()).isEmpty()
+        && gui::torrentDropFiles(event->mimeData()).isEmpty())
         return;
     event->acceptProposedAction();
 }
 
 void MainWindow::dropEvent(QDropEvent* event)
 {
+    if (m_torrentPanel && m_torrentPanel->acceptTorrentDrop(event->mimeData())) {
+        switchToTab(TabTorrents);
+        event->acceptProposedAction();
+        return;
+    }
     if (m_usenetPanel == nullptr)
         return;
     if (!m_usenetPanel->acceptNzbDrop(event->mimeData()))
@@ -1014,6 +1031,8 @@ void MainWindow::buildToolsMenu()
     // is safe.
     if (m_usenetPanel)
         m_toolsMenu->addAction(m_usenetPanel->addNzbUrlAction());
+    if (m_torrentPanel)
+        m_toolsMenu->addAction(m_torrentPanel->addMagnetAction());
 
     m_toolsMenu->addSeparator();
 
@@ -1900,6 +1919,15 @@ void MainWindow::setupPages()
     // connection per opening of the menu.
     connect(m_usenetPanel->addNzbUrlAction(), &QAction::triggered, this,
             [this] { switchToTab(TabUsenet); });
+
+    // Tab 9: Torrents
+    m_torrentPanel = new TorrentPanel(this);
+    addPage(m_torrentPanel);
+    connect(m_torrentPanel, &TorrentPanel::optionsRequested, this,
+            [this] { showOptionsDialog(OptionsDialog::PageBitTorrent); });
+    // Same reasoning as the Usenet URL action above
+    connect(m_torrentPanel->addMagnetAction(), &QAction::triggered, this,
+            [this] { switchToTab(TabTorrents); });
 }
 
 

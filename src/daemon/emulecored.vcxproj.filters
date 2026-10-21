@@ -60,6 +60,9 @@
     <ClCompile Include="MetaSearchService.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
+    <ClCompile Include="BtBridge.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
     <ClCompile Include="UsenetBridge.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
@@ -99,6 +102,9 @@
       <Filter>Header Files</Filter>
     </ClInclude>
     <ClInclude Include="DaemonUsenetWebBackend.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="BtBridge.h">
       <Filter>Header Files</Filter>
     </ClInclude>
     <ClInclude Include="UsenetBridge.h">

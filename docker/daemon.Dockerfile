@@ -7,9 +7,10 @@
 # Builds only the headless daemon (no GUI) in a minimal runtime image.
 #
 # Two rigs run on this image: docker/kad (Kademlia LAN network) and
-# docker/httpcache (HTTP Cache swarm). The Kad entrypoint is baked in below;
-# the HTTP Cache rig bind-mounts its own and overrides `entrypoint:` in its
-# compose file, so a rig's behaviour can be edited without a rebuild.
+# docker/httpcache (HTTP Cache swarm). The Kad entrypoint is baked in below as a
+# fallback; both rigs bind-mount their own and override `entrypoint:` in their
+# compose files, so a rig's behaviour can be edited without a rebuild.
+# iptables lets the Kad rig firewall single nodes at runtime (FIREWALL4/6).
 # ---------------------------------------------------------------------------
 
 # === Stage 1: Build =========================================================
@@ -88,6 +89,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
         iproute2 \
         procps \
         tcpdump \
+        iptables \
     && rm -rf /var/lib/apt/lists/*
 
 # Copy Qt shared libs from builder

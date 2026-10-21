@@ -110,6 +110,9 @@ public:
 
     [[nodiscard]] bool safeServerConnect() const;
     void setSafeServerConnect(bool val);
+    /// LowID<->LowID rendezvous through servers and Kad buddies (net/natt).
+    [[nodiscard]] bool natTraversal() const;
+    void setNatTraversal(bool val);
 
     [[nodiscard]] bool autoConnectStaticOnly() const;
     void setAutoConnectStaticOnly(bool val);
@@ -1136,6 +1139,61 @@ public:
     /// fail a search — a stale cache is used until a fresh one arrives.
     [[nodiscard]] int indexerCapsRefreshDays() const;
     void setIndexerCapsRefreshDays(int val);
+
+    // -- BitTorrent ------------------------------------------------------------
+    //
+    // YAML block `bittorrent:`, IPC keys `bt*`. Consumed by the daemon-only
+    // eMule::Bt module; core just stores them.
+
+    /// Engine auto-starts. Off by default: a second network is opt-in.
+    [[nodiscard]] bool btEnabled() const;
+    void setBtEnabled(bool val);
+
+    /// TCP + UDP listen port.
+    [[nodiscard]] uint16 btListenPort() const;
+    void setBtListenPort(uint16 val);
+
+    /// Where torrents are saved. Empty = incomingDir().
+    [[nodiscard]] QString btDownloadDir() const;
+    void setBtDownloadDir(const QString& val);
+
+    /// KB/s, 0 = unlimited.
+    [[nodiscard]] uint32 btMaxDownloadKb() const;
+    void setBtMaxDownloadKb(uint32 val);
+    [[nodiscard]] uint32 btMaxUploadKb() const;
+    void setBtMaxUploadKb(uint32 val);
+
+    [[nodiscard]] bool btDht() const;
+    void setBtDht(bool val);
+    /// Local service discovery.
+    [[nodiscard]] bool btLsd() const;
+    void setBtLsd(bool val);
+    /// Peer exchange.
+    [[nodiscard]] bool btPex() const;
+    void setBtPex(bool val);
+
+    /// 0 enabled (prefer), 1 forced, 2 disabled.
+    [[nodiscard]] int btEncryption() const;
+    void setBtEncryption(int val);
+
+    /// 1–100.
+    [[nodiscard]] int btMaxActiveDownloads() const;
+    void setBtMaxActiveDownloads(int val);
+    /// 0–100.
+    [[nodiscard]] int btMaxActiveSeeds() const;
+    void setBtMaxActiveSeeds(int val);
+
+    /// Stop seeding at this share ratio, in percent (100 = 1.0). 0 = no limit.
+    [[nodiscard]] int btSeedRatioPercent() const;
+    void setBtSeedRatioPercent(int val);
+
+    /// Stop seeding after this many minutes. 0 = no limit.
+    [[nodiscard]] int btSeedTimeLimitMinutes() const;
+    void setBtSeedTimeLimitMinutes(int val);
+
+    static constexpr uint16 kDefaultBtListenPort = 6881;
+    static constexpr int kMaxBtSeedRatioPercent = 10000;
+    static constexpr int kMaxBtSeedTimeLimitMinutes = 525600;   // one year
 
     /// ED2K's current slice of maxDownload(), in KB/s. Runtime only: it is
     /// recomputed twice a second from the live split and never written to

@@ -240,8 +240,11 @@ bool ServerSocket::processPacket(const uint8* packet, uint32 size, uint8 opcode)
 
         // Apply server TCP flags to our server copy; #14 also wires them through to
         // the persistent list entry via the loginReceived consumer.
-        if (m_curServer)
+        if (m_curServer) {
             m_curServer->setTCPFlags(tcpFlags);
+            // Lugdunum answers 24 bytes when it took our NAT bit (supportsLugdunumNat).
+            m_curServer->setIdChangeLength(size);
+        }
 
         logInfo(QStringLiteral("New client ID is %1").arg(clientID));
 
@@ -345,6 +348,7 @@ bool ServerSocket::processPacket(const uint8* packet, uint32 size, uint8 opcode)
         uint32 metaApiVersion = 0;
         Address serverIPv6;
         bool haveSvrIPv6Tag = false;    // CT_MOD_SVR_IP_V6 seen
+        uint16 natPort = 0;             // ST_NAT_PORT (eNode-go PR_NAT)
 
         // Parse tags
         try {
@@ -365,8 +369,7 @@ bool ServerSocket::processPacket(const uint8* packet, uint32 size, uint8 opcode)
                 else if ((tag.nameId() == CT_MOD_SVR_IP_V6 || tag.nameId() == CT_MOD_IP_V6)
                          && tag.isHash()) {
                     // The server's own public IPv6: over an IPv4 session it joins the
-                    // list entry (one row per dual-stack server). Unknown tags such as
-                    // ST_NAT_PORT are consumed and ignored (S6 out of scope).
+                    // list entry (one row per dual-stack server).
                     // 0xAE: non-spec servers reuse the client tag id; 0xAF wins if both.
                     const bool specTag = tag.nameId() == CT_MOD_SVR_IP_V6;
                     if (specTag || !haveSvrIPv6Tag) {
@@ -394,6 +397,9 @@ bool ServerSocket::processPacket(const uint8* packet, uint32 size, uint8 opcode)
                         theApp.setPublicIPv6Observed(observed, m_sessionAddress.toString());
                     }
                 }
+                else if (tag.nameId() == ST_NAT_PORT && tag.isInt()) {
+                    natPort = static_cast<uint16>(tag.intValue());
+                }
                 else if (tag.nameId() == ST_IPV6_STATUS && tag.isInt()) {
                     // The server's verdict on whether the IPv6 we advertised is reachable.
                     const uint8 status = static_cast<uint8>(tag.intValue());
@@ -413,6 +419,7 @@ bool ServerSocket::processPacket(const uint8* packet, uint32 size, uint8 opcode)
         Address learned;
         if (m_curServer) {
             m_curServer->setServerHash(serverHash);
+            m_curServer->setNatPort(natPort);
             // The ident body has a 4-byte IP field, so a dual-stack server always reports
             // its IPv4 there. It never replaces the address we are connected to (MFC
             // only logs it): over an IPv6 session it is the server's other address.
@@ -512,6 +519,16 @@ bool ServerSocket::processPacket(const uint8* packet, uint32 size, uint8 opcode)
 
     case OP_CALLBACK_FAIL:
         logWarning(QStringLiteral("Server: Callback attempt failed"));
+        break;
+
+    case OP_NAT_CALLBACKREQUESTED:
+    case OP_LOWID_HOLEPUNCH_INFO:
+    case OP_LOWID_HOLEPUNCH_FAIL:
+        // NAT rendezvous notices; parsed by the rendezvous paths (net/natt).
+        logServerVerbose(QStringLiteral("<<< NAT rendezvous opcode 0x%1, size %2")
+                             .arg(opcode, 2, 16, QLatin1Char('0')).arg(size));
+        emit natPacketReceived(opcode, QByteArray(reinterpret_cast<const char*>(packet),
+                                                  static_cast<qsizetype>(size)));
         break;
 
     case OP_REJECT:

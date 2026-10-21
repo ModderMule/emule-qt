@@ -28,6 +28,7 @@ void CommandLineExec::parse(QCoreApplication& app)
     m_parser.addOption(m_portOption);
     m_parser.addOption(m_addLinkOption);
     m_parser.addOption(m_addNzbOption);
+    m_parser.addOption(m_addTorrentOption);
     m_parser.addOption(m_connectOption);
     m_parser.addOption(m_disconnectOption);
     m_parser.addOption(m_connectKadOption);
@@ -42,6 +43,7 @@ bool CommandLineExec::hasCommand() const
 {
     return m_parser.isSet(m_addLinkOption)
         || m_parser.isSet(m_addNzbOption)
+        || m_parser.isSet(m_addTorrentOption)
         || m_parser.isSet(m_connectOption)
         || m_parser.isSet(m_disconnectOption)
         || m_parser.isSet(m_connectKadOption)
@@ -128,6 +130,24 @@ int CommandLineExec::execCommand(QCoreApplication& app)
             msg.append(QCborValue(file.readAll()));
             msg.append(QFileInfo(target).completeBaseName());
         }
+
+    } else if (m_parser.isSet(m_addTorrentOption)) {
+        const QString target = m_parser.value(m_addTorrentOption).trimmed();
+        if (target.startsWith(QStringLiteral("magnet:"), Qt::CaseInsensitive)) {
+            msg = Ipc::IpcMessage(Ipc::IpcMsgType::AddMagnet, 2);
+            msg.append(target);
+        } else {
+            QFile file(target);
+            if (!file.open(QIODevice::ReadOnly)) {
+                std::fprintf(stderr, "Cannot read %s\n", qPrintable(target));
+                return 1;
+            }
+            // contents, not the path: the daemon may be on another machine
+            msg = Ipc::IpcMessage(Ipc::IpcMsgType::AddTorrentFile, 2);
+            msg.append(QCborValue(file.readAll()));
+        }
+        msg.append(QString());  // the download dir of the preferences
+        msg.append(false);      // not paused
 
     } else if (m_parser.isSet(m_connectOption)) {
         msg = Ipc::IpcMessage(Ipc::IpcMsgType::ConnectToServer, 2);

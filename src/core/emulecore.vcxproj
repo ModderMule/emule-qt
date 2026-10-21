@@ -349,6 +349,13 @@
     <ClCompile Include="utils\StringUtils.cpp" />
     <ClCompile Include="protocol\Tag.cpp" />
     <ClCompile Include="net\UDPSocket.cpp" />
+    <ClCompile Include="net\natt\AppNatEnv.cpp" />
+    <ClCompile Include="net\natt\Ed2kServerHolePunchPath.cpp" />
+    <ClCompile Include="net\natt\EnodeNatPath.cpp" />
+    <ClCompile Include="net\natt\KadBuddyNatPath.cpp" />
+    <ClCompile Include="net\natt\LugdunumNatPath.cpp" />
+    <ClCompile Include="net\natt\NatPath.cpp" />
+    <ClCompile Include="net\natt\NatRendezvous.cpp" />
     <ClCompile Include="client\URLClient.cpp" />
     <ClCompile Include="client\UpDownClient.cpp" />
     <ClCompile Include="transfer\UploadBandwidthThrottler.cpp" />
@@ -371,6 +378,14 @@
     <ClCompile Include="webserver\WebTemplateEngine.cpp" />
   </ItemGroup>
   <ItemGroup>
+    <ClInclude Include="net\natt\AppNatEnv.h" />
+    <ClInclude Include="net\natt\Ed2kServerHolePunchPath.h" />
+    <ClInclude Include="net\natt\EnodeNatPath.h" />
+    <ClInclude Include="net\natt\KadBuddyNatPath.h" />
+    <ClInclude Include="net\natt\LugdunumNatPath.h" />
+    <ClInclude Include="net\natt\NatEnv.h" />
+    <ClInclude Include="net\natt\NatPath.h" />
+    <ClInclude Include="net\natt\NatTypes.h" />
     <ClInclude Include="pch.h" />
     <ClInclude Include="crypto\AICHData.h" />
     <ClInclude Include="crypto\AICHHashSet.h" />
@@ -588,6 +603,7 @@
     <ClInclude Include="utils\TimeUtils.h" />
     <ClInclude Include="utils\Types.h" />
     <QtMoc Include="net\UDPSocket.h" />
+    <QtMoc Include="net\natt\NatRendezvous.h" />
     <QtMoc Include="client\URLClient.h" />
     <QtMoc Include="httpcache\HttpCacheClient.h" />
     <QtMoc Include="httpcache\HttpCacheManager.h" />

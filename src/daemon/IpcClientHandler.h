@@ -59,6 +59,7 @@ public:
         PortApplyResult ports = PortApplyResult::Unchanged;
         BindApplyResult network = BindApplyResult::Unchanged;   ///< bindAddress change
         bool usenetChanged = false;   ///< a usenet* value moved: the session re-reads them
+        bool btChanged = false;       ///< a bt* value moved: the BitTorrent engine re-reads them
     };
     static PrefApplyOutcome applyPreferenceChanges(const PrefChanges& changes);
     [[nodiscard]] static QCborArray categoryList();
@@ -82,6 +83,9 @@ signals:
     /// The news-server list changed; the daemon should re-apply it to the
     /// connection pool. Same forwarding route as webServerConfigChanged.
     void usenetConfigChanged();
+
+    /// A bt* preference moved; the BitTorrent engine re-reads them.
+    void btConfigChanged();
 
     /// preventStandby changed; the daemon re-evaluates its sleep hold now.
     void standbyConfigChanged();
@@ -305,6 +309,7 @@ private:
     static bool applyPreferenceA(const QString& key, const QCborValue& val);
     static bool applyPreferenceB(const QString& key, const QCborValue& val);
     static bool applyPreferenceC(const QString& key, const QCborValue& val);
+    static bool applyPreferenceBt(const QString& key, const QCborValue& val);
 
     std::unique_ptr<Ipc::IpcConnection> m_connection;
     bool m_isLocal = true;

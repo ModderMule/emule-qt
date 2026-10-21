@@ -166,6 +166,17 @@
 #define OP_EMULEPROT                0xC5
 #define OP_UDPRESERVEDPROT1         0xA3
 #define OP_UDPRESERVEDPROT2         0xB2
+// Frame types after OP_UDPRESERVEDPROT2 on the client UDP socket. 0x00-0x03 and 0xFF are
+// the compatibility target's (uTP, QUIC, caps, caps ack, key); listed in ed2k-server's README.
+#define OP_NATT_FRAME_UTP           0x00
+#define OP_NATT_FRAME_QUIC          0x01
+#define OP_NATT_FRAME_CAPS          0x02
+#define OP_NATT_FRAME_CAPS_ACK      0x03
+#define OP_NATT_FRAME_IPV6HANDOFF   0x11    // ours: IPv6 TCP handoff after a NAT rendezvous
+#define OP_NATT_FRAME_KEY           0xFF
+// eNode-go NAT rendezvous protocol byte (server UDP, own opcode space, big-endian endpoints).
+// Frame: <PR_NAT 1><size 4 LE = payload+1><opcode 1><payload>.
+#define PR_NAT                      0xF1
 #define OP_MLDONKEYPROT             0x00
 #define MET_HEADER                  0x0E
 #define MET_HEADER_I64TAGS          0x0F
@@ -225,6 +236,14 @@
 #define OP_FOUNDSOURCES_IPV6        0x25    // server -> client: IPv6 tag-block sources reply
 #define OP_CALLBACKREQUESTED_IPV6   0x26    // server -> client: IPv6 LowID callback (16B IPv6 + LE port)
 
+// LowID<->LowID rendezvous, server TCP.
+// Lugdunum eserver: <ip 4><udp port 2><requester id 4><crypt flags 1>[<hash 16> if flags & 0x80]
+#define OP_NAT_CALLBACKREQUESTED    0x37
+// ed2k-server (flag 0x20000). 0x60/0x61 are client<->client opcodes too; different link.
+#define OP_LOWID_HOLEPUNCH_REQUEST  0x60    // client -> server: <target id 4><our udp port 2>
+#define OP_LOWID_HOLEPUNCH_INFO     0x61    // server -> both: <ip 4><tcp 2><udp 2><hash 16><role 1>[<peer id 4>]
+#define OP_LOWID_HOLEPUNCH_FAIL     0x62    // server -> client: <target id 4><reason 1>
+
 // ---------------------------------------------------------------------------
 // Client <-> UDP server opcodes
 // ---------------------------------------------------------------------------
@@ -247,6 +266,23 @@
 #define OP_SERVER_LIST_REQ2         0xA4
 #define OP_GLOBGETSOURCES_IPV6      0xA5    // client -> server, UDP: request IPv6 tag-block sources
 #define OP_GLOBFOUNDSOURCES_IPV6    0xA6    // server -> client, UDP: IPv6 tag-block sources reply
+// Lugdunum NAT callback. 0xA6 is OP_GLOBFOUNDSOURCES_IPV6 in the other direction.
+#define OP_NAT_CALLBACKREQUEST      0xA6    // client -> server, UDP, obfuscated: <target id 4><our id 4>
+#define OP_NAT_CALLBACKREQUESTED_UDP 0xA7   // server -> client, UDP: same payload as TCP 0x37
+// ed2k-server: sent from the client UDP socket so the server learns our mapped port.
+#define OP_SERVER_NATT_KEEPALIVE    0x9F    // client -> server, UDP: <user hash 16>
+
+// eNode-go PR_NAT opcodes (only after a PR_NAT byte).
+#define OP_NAT_SYNC                 0xE1    // s->c <ip4 BE><port BE><hash 16><connAck 4>
+#define OP_NAT_PING                 0xE2    // s->c keepalive ack
+#define OP_NAT_REGISTER_EX          0xE3    // c->s <hash 16><version 1>
+#define OP_NAT_REGISTER             0xE4    // c->s <hash 16>; s->c v4 ack <port BE><ip4 BE>
+#define OP_NAT_FAILED               0xE5    // s->c <reason 1><target hash 16>
+#define OP_NAT_KEEPALIVE            0xE6    // c->s empty
+#define OP_NAT_SYNC_EX              0xE7    // s->c SYNC + <peer version 1>
+#define OP_NAT_SYNC2                0xE9    // c->s <our hash 16><connAck 4><target hash 16>
+#define OP_NAT_REGISTER_IPV6        0xEC    // s->c v6 ack <port BE><ip6 16>
+#define OP_NAT_SYNC_IPV6            0xED    // s->c <ip6 16><port BE><hash 16><connAck 4><peer version 1>
 
 #define INV_SERV_DESC_LEN           0xF0FF
 
@@ -357,6 +393,10 @@
 #define OP_QUEUEFULL                0x93
 #define OP_REASKCALLBACKUDP         0x94
 #define OP_DIRECTCALLBACKREQ        0x95
+// NAT rendezvous over a Kad serving buddy (compatibility target's values, adopted unchanged).
+#define OP_RENDEZVOUS               0xA0    // embedded in OP_REASKCALLBACKUDP after a zero file hash
+#define OP_HOLEPUNCH                0xA1    // empty; opens a NAT mapping
+#define OP_NATT_ENDPOINT_HINT       0xAA    // buddy -> requester: target's public endpoint (56 bytes)
 #define OP_PORTTEST                 0xFE
 
 // ---------------------------------------------------------------------------
@@ -396,6 +436,7 @@
 #define ST_META_API_FP              0x9C    // string "sha256/<base64>" SPKI pin
 #define ST_META_API                 0x9E    // string: Meta API base URL
 #define ST_META_API_VER             0x9F    // uint32: contract version (1)
+#define ST_NAT_PORT                 0x9D    // uint16: eNode-go PR_NAT UDP port, OP_SERVERIDENT only
 
 // ---------------------------------------------------------------------------
 // File tags
@@ -591,6 +632,14 @@
 // would leave it no room to grow. HTTP Cache starts a fresh run at bit 10.
 #define MODMISC_HTTPCACHE           (1u << 10)  // supports HTTP Cache chunk offers
 
+// Connect-option byte (server callback, Kad, OP_DIRECTCALLBACKREQ, OP_RENDEZVOUS).
+#define CONNECT_OPT_CRYPT_SUPPORTED     0x01
+#define CONNECT_OPT_CRYPT_REQUESTED     0x02
+#define CONNECT_OPT_CRYPT_REQUIRED      0x04
+#define CONNECT_OPT_DIRECT_UDP_CALLBACK 0x08
+#define CONNECT_OPT_NATT_ENDPOINT_HINT  0x20    // OP_RENDEZVOUS: buddy may answer with OP_NATT_ENDPOINT_HINT
+// 0x40 QUIC NAT-T and 0x80 uTP NAT-T belong to the compatibility target; not set until we speak QUIC.
+
 // ST_IPV6_STATUS (0xAB, uint8) bitfield — server's verdict on our advertised IPv6 (OP_SERVERIDENT).
 // Unset bits mean "no"; the whole tag is omitted when the server has no verdict to report.
 #define IPV6ST_HAVE                 0x01        // server holds a public IPv6 for this session
@@ -741,7 +790,7 @@
 #define SRVCAP_SUPPORTCRYPT         0x0200
 #define SRVCAP_REQUESTCRYPT         0x0400
 #define SRVCAP_REQUIRECRYPT         0x0800
-#define SRVCAP_NATTRAVERSAL         0x1000    // login bit: Lugdunum NAT callback (UDP 0xA6/0xA7, TCP 0x37); not sent yet
+#define SRVCAP_NATTRAVERSAL         0x1000    // login bit: Lugdunum NAT callback (UDP 0xA6/0xA7, TCP 0x37)
 // 0x2000 is NeoLoader's IPv6 login bit; we signal IPv6 with the CT_MOD_IP_V6 tag instead.
 #define SRVCAP_META_SEARCH          0x10000   // login bit: can act on eNode meta (torrent/Usenet) rows
 

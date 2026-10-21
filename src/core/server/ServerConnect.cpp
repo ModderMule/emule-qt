@@ -13,6 +13,7 @@
 #include "net/LocalIPv6.h"
 #include "net/ServerSocket.h"
 #include "net/UDPSocket.h"
+#include "net/natt/NatRendezvous.h"
 #include "net/Packet.h"
 #include "protocol/Tag.h"
 #include "stats/Statistics.h"
@@ -339,6 +340,13 @@ void ServerConnect::connectToServer(Server* server, bool multiconnect, bool noCr
 
     connect(socket, &ServerSocket::searchResultReceived,
             this,   &ServerConnect::searchResultReceived);
+
+    // NAT rendezvous notices: only from the live session.
+    connect(socket, &ServerSocket::natPacketReceived, this,
+            [this, socket](uint8 opcode, const QByteArray& payload) {
+                if (socket == m_connectedSocket)
+                    emit natServerPacket(opcode, payload);
+            });
 
     connect(socket, &ServerSocket::callbackRequested, this,
             [](uint32 clientIP, uint16 clientPort, const uint8* cryptData, uint32 cryptSize) {
@@ -1105,8 +1113,15 @@ void ServerConnect::sendLoginPacket(ServerSocket* socket)
     const Address publicIPv6 = theApp.publicIPv6();
     const bool sendIPv6Tag = theApp.shouldAdvertisePublicIPv6();
 
-    // Tag count — base 4, plus the CT_MOD_IP_V6 tag when we have a public IPv6.
-    data.writeUInt32(sendIPv6Tag ? 5 : 4);
+    // NAT traversal: CT_EMULE_UDPPORTS opts in to ed2k-server's hole punch (safe on any
+    // server). The Lugdunum bit makes eserver hand us LowID sources, so only set it while
+    // we can use them (IPv6 handoff; later the QUIC transport).
+    const uint16 natUdpPort = m_config.natTraversal ? theApp.advertisedUdpPort() : uint16{0};
+    const bool sendUdpPorts = natUdpPort != 0;
+    const bool lugdunumNat = m_config.natTraversal && natt::NatRendezvous::hasDataPath();
+
+    // Tag count — base 4, plus CT_MOD_IP_V6 and CT_EMULE_UDPPORTS when sent.
+    data.writeUInt32(4u + (sendIPv6Tag ? 1u : 0u) + (sendUdpPorts ? 1u : 0u));
 
     // Tag: CT_NAME — user nick
     // Use old-format tags (writeTagToFile) in the login packet. The server hasn't
@@ -1132,6 +1147,8 @@ void ServerConnect::sendLoginPacket(ServerSocket* socket)
     uint32 srvCaps = SRVCAP_NEWTAGS | SRVCAP_LARGEFILES | SRVCAP_UNICODE | cryptFlags;
     srvCaps |= SRVCAP_ZLIB;
     srvCaps |= SRVCAP_META_SEARCH;   // eNode: we can act on torrent/Usenet rows
+    if (lugdunumNat)
+        srvCaps |= SRVCAP_NATTRAVERSAL;
     Tag tagFlags(static_cast<uint8>(CT_SERVER_FLAGS), srvCaps);
     tagFlags.writeTagToFile(data);
 
@@ -1144,6 +1161,13 @@ void ServerConnect::sendLoginPacket(ServerSocket* socket)
     if (sendIPv6Tag) {
         Tag tagIPv6(static_cast<uint8>(CT_MOD_IP_V6), publicIPv6.ipv6Bytes().data());
         tagIPv6.writeTagToFile(data);
+    }
+
+    // Tag: CT_EMULE_UDPPORTS — (kadPort << 16) | udpPort; Kad shares the client UDP socket.
+    if (sendUdpPorts) {
+        const uint32 kadPort = thePrefs.kadUsable() ? natUdpPort : 0u;
+        Tag tagUdp(static_cast<uint8>(CT_EMULE_UDPPORTS), (kadPort << 16) | natUdpPort);
+        tagUdp.writeTagToFile(data);
     }
 
     auto packet = std::make_unique<Packet>(data);

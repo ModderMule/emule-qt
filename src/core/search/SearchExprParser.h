@@ -61,6 +61,31 @@ struct ParseResult {
                                                  bool keepQuotedStrings = false);
 
 // ---------------------------------------------------------------------------
+// kadKeywordSource — the part of an expression a Kad keyword may come from
+// ---------------------------------------------------------------------------
+
+/// The filename terms of @p expression that every match must contain, in input
+/// order and space-joined: both sides of AND, the left side of NOT. A NOT's right
+/// side and both OR branches are left out — a file indexed under one of those
+/// words may fail the expression, so it cannot be the Kad target. "movie -1080p"
+/// gives "movie", "@size>100 movie" gives "movie", "a OR b" gives nothing.
+/// Empty when the expression does not parse.
+[[nodiscard]] QString kadKeywordSource(const QString& expression);
+
+/// True when @p expression has filename terms, all of them under an OR, so no
+/// word is left to be the Kad keyword (MFC IDS_SEARCH_BADOPERATORCOMBINATION).
+[[nodiscard]] bool kadKeywordOnlyInOr(const QString& expression);
+
+/// Why @p expression cannot be searched on @p type, translated, or empty: the
+/// parser's first error, or for Kad an expression whose words are all under OR
+/// or that has no keyword of 3 bytes or more.
+/// Checked by the GUI before sending (as MFC does) and again by the daemon.
+[[nodiscard]] QString searchExpressionError(const QString& expression, SearchType type);
+
+/// MFC IDS_KAD_SEARCH_KEYWORD_TOO_SHORT, translated.
+[[nodiscard]] QString kadKeywordTooShortError();
+
+// ---------------------------------------------------------------------------
 // buildSearchTermsPayload — full search payload (expression + filters)
 // ---------------------------------------------------------------------------
 

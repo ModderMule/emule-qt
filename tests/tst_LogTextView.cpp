@@ -78,6 +78,7 @@ private slots:
     void trimWithAutoScrollOffKeepsTopLine();
     void lateInsertAboveKeepsTopLine();
     void streamAtLineCap();
+    void heldLineTrimmedAway();
 };
 
 void tst_LogTextView::followsWhenAtBottom()
@@ -376,8 +377,7 @@ void tst_LogTextView::streamAtLineCap()
             view.append(QStringLiteral("<span>Kad line %1 %2</span>")
                             .arg(next).arg(QString(next % 7 * 9, QLatin1Char('x'))));
             ++next;
-            if (const int excess = view.document()->blockCount() - kLimit; excess > 0)
-                trimOldest(view, excess);
+            view.trimTo(kLimit);   // as LogWidget does
         };
         for (int i = 0; i < kLimit + 50; ++i) {
             addTrim();
@@ -403,6 +403,56 @@ void tst_LogTextView::streamAtLineCap()
         else
             QCOMPARE(topLine(view), top);
     }
+}
+
+void tst_LogTextView::heldLineTrimmedAway()
+{
+    // Issue #40 follow-up: Autoscroll off, then more than a full cap of lines
+    // arrives — the held top line is trimmed. The view must not end up riding
+    // the oldest line, where every trim slides the text up like autoscroll.
+    constexpr int kLimit = 500;
+    LogTextView view;
+    view.resize(400, 200);
+    view.show();
+    QVERIFY(QTest::qWaitForWindowExposed(&view));
+    int next = 0;
+    auto addTrim = [&] {
+        view.append(QStringLiteral("<span>Kad line %1</span>").arg(next++));
+        view.trimTo(kLimit);
+    };
+    for (int i = 0; i < kLimit + 50; ++i)
+        addTrim();
+    QTest::qWait(50);
+    view.setAutoScroll(false);
+
+    for (int i = 0; i < kLimit + 100; ++i) {
+        addTrim();
+        if (i % 50 == 0)
+            QCoreApplication::processEvents();
+    }
+    QTest::qWait(50);
+    // Text in view now stays put while more lines stream in
+    const QString top = topLine(view);
+    for (int i = 0; i < 30; ++i) {
+        addTrim();
+        QTest::qWait(5);
+    }
+    QTest::qWait(50);
+    QCOMPARE(topLine(view), top);
+    QVERIFY(view.document()->blockCount() > kLimit);
+
+    // Never past the ceiling
+    for (int i = 0; i < kLimit * LogTextView::kHeldCapFactor; ++i)
+        addTrim();
+    QCOMPARE(view.document()->blockCount(), kLimit * LogTextView::kHeldCapFactor);
+
+    // Back on at the bottom: next line trims to the cap and follows
+    view.scrollToBottom();
+    view.setAutoScroll(true);
+    addTrim();
+    QTest::qWait(50);
+    QCOMPARE(view.document()->blockCount(), kLimit);
+    QVERIFY(atBottom(view));
 }
 
 QTEST_MAIN(tst_LogTextView)

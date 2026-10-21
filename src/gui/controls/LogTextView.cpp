@@ -10,6 +10,7 @@
 #include <QAbstractTextDocumentLayout>
 #include <QScrollBar>
 #include <QTextBlock>
+#include <QTextDocument>
 #include <QTimer>
 
 #include <algorithm>
@@ -41,6 +42,27 @@ void LogTextView::scrollToBottom()
     m_holding = false;
     setBarValue(verticalScrollBar()->maximum());
     captureAnchor();
+}
+
+int LogTextView::trimTo(int maxBlocks)
+{
+    QTextDocument* doc = document();
+    const int count = doc->blockCount();
+    int excess = count - maxBlocks;
+    if (excess <= 0)
+        return 0;
+    if (!(m_autoScroll && m_follow) && m_pendingValue < 0 && m_anchor.document() == doc) {
+        // Held: only lines above the top visible one, unless past the ceiling
+        excess = std::max(std::min(excess, m_anchor.block().blockNumber()),
+                          count - maxBlocks * kHeldCapFactor);
+        if (excess <= 0)
+            return 0;
+    }
+    QTextCursor cursor(doc);
+    cursor.movePosition(QTextCursor::Start);
+    cursor.movePosition(QTextCursor::NextBlock, QTextCursor::KeepAnchor, excess);
+    cursor.removeSelectedText();
+    return excess;
 }
 
 void LogTextView::restoreScrollValue(int value)

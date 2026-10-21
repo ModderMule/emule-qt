@@ -23,36 +23,66 @@ env:
 
 jobs:
   build:
-    # Pinned, not ubuntu-latest: the glibc of the build host is the floor of the
-    # tarball. v0.6.23 came from a 26.04 runner and needed glibc 2.43 (issue #44).
-    # Raise it only together with GLIBC_MAX below.
+    # The glibc of the build host is the floor of the tarball, so build in an
+    # Ubuntu 22.04 container (glibc 2.35). Not the ubuntu-22.04 runner: GitHub is
+    # retiring it. Never ubuntu-latest: v0.6.23 came from a 26.04 runner and
+    # needed glibc 2.43 (issues #43, #44). Change only together with GLIBC_MAX below.
     runs-on: ubuntu-24.04
+    container: ubuntu:22.04
+
+    env:
+      DEBIAN_FRONTEND: noninteractive
+      QT_VERSION: "6.10.3"
+      QT_ROOT_DIR: /opt/Qt/6.10.3/gcc_64
+      # 22.04 default is GCC 11; GCC 12 is the newest in its archive. Code must
+      # stay buildable with it (no std::ranges::contains, std::print, ...).
+      CC: gcc-12
+      CXX: g++-12
 
     steps:
+      # Before checkout: without git it falls back to a tarball, without submodules
+      - name: Install system dependencies
+        run: |
+          apt-get update
+          apt-get install -y --no-install-recommends \
+            ca-certificates curl file git squashfs-tools binutils \
+            gcc-12 g++-12 ninja-build ccache pkg-config \
+            python3 python3-pip python3-venv \
+            protobuf-compiler \
+            libssl-dev zlib1g-dev \
+            libgl1-mesa-dev libegl1-mesa-dev libvulkan-dev \
+            libdbus-1-dev libglib2.0-dev libpulse-dev \
+            libfontconfig1-dev libfreetype6-dev \
+            libxkbcommon-dev libxkbcommon-x11-dev libwayland-dev \
+            libx11-dev libx11-xcb-dev libxext-dev libxrandr-dev libxrender-dev libxfixes-dev libxi-dev \
+            libxcb1-dev libxcb-cursor-dev libxcb-icccm4-dev libxcb-image0-dev libxcb-keysyms1-dev \
+            libxcb-render-util0-dev libxcb-shape0-dev libxcb-xinerama0-dev libxcb-xkb-dev libxcb-randr0-dev
+          # 22.04 ships CMake 3.22; the project needs 3.25+
+          python3 -m venv /opt/tools
+          /opt/tools/bin/pip install --quiet 'cmake~=3.31' aqtinstall
+          echo /opt/tools/bin >> "$GITHUB_PATH"
+          echo "$QT_ROOT_DIR/bin" >> "$GITHUB_PATH"   # qmake for linuxdeploy-plugin-qt
+
       - name: Checkout
         uses: actions/checkout@v5
         with:
           ref: ${{ inputs.ref }}   # empty = the run's own commit
           submodules: true   # external/enodemeta: .proto + test vectors
 
-      - name: Install system dependencies
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y --no-install-recommends \
-            libssl-dev \
-            libgl1-mesa-dev \
-            libdbus-1-dev \
-            libxkbcommon-dev \
-            zlib1g-dev \
-            protobuf-compiler   # protoc for qt_add_protobuf (enodemeta)
-
-      - name: Install Qt 6
-        uses: jurplel/install-qt-action@v4
+      - name: Cache Qt
+        id: qt-cache
+        uses: actions/cache@v4
         with:
-          version: "6.10.3"
-          arch: linux_gcc_64
-          modules: qthttpserver qtwebsockets qtmultimedia qtgrpc   # qtgrpc ships QtProtobuf
-          cache: true
+          path: /opt/Qt
+          key: qt-${{ env.QT_VERSION }}-linux_gcc_64-httpserver-websockets-multimedia-grpc
+
+      # aqt directly (what install-qt-action wraps): no host Python setup in the container
+      - name: Install Qt 6
+        if: steps.qt-cache.outputs.cache-hit != 'true'
+        run: >
+          aqt install-qt linux desktop "$QT_VERSION" linux_gcc_64
+          -m qthttpserver qtwebsockets qtmultimedia qtgrpc
+          -O /opt/Qt
 
       - name: Set up ccache
         uses: hendrikmuhs/ccache-action@v1
@@ -94,7 +124,7 @@ jobs:
 
       - name: Bundle
         env:
-          GLIBC_MAX: "2.39"   # Ubuntu 24.04, Linux Mint 22, Debian 13
+          GLIBC_MAX: "2.35"   # Ubuntu 22.04, Linux Mint 21, Debian 12
         run: scripts/bundle-linux.sh deploy-qt build
 
       # The bundle script checks that the files are there; this checks that the

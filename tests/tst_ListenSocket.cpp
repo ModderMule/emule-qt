@@ -144,6 +144,8 @@ private slots:
 
     // Timeout extensions — MFC srchybrid/ListenSocket.cpp:139-147
     void clientReqSocketTimeout_extendedForBuddy();
+    void clientReqSocketTimeout_silentBuddyDroppedDespiteOwnPings();
+    void clientReqSocketTimeout_legacyBuddyKeepsIdleRule();
     void clientReqSocketTimeout_extendedForUploadingClient();
     void clientReqSocketTimeout_extendedForChattingClient();
     void clientReqSocketTimeout_notExtendedWhileDownloadingFromPeer();
@@ -358,6 +360,36 @@ void tst_ListenSocket::clientReqSocketTimeout_extendedForBuddy()
     QVERIFY2(reqSocket.checkTimeOut(), "a client in no special state gets no extension");
 
     client.setKadState(KadState::ConnectedBuddy);
+    QVERIFY(!reqSocket.checkTimeOut());
+}
+
+// Not MFC: our own 10-min pings reset the idle timer, so they kept a dead buddy forever.
+void tst_ListenSocket::clientReqSocketTimeout_silentBuddyDroppedDespiteOwnPings()
+{
+    UpDownClient client;
+    client.setKadVersion(KADEMLIA_VERSION);
+    client.setKadState(KadState::ConnectedBuddy);
+    ClientReqSocket reqSocket(&client);
+
+    reqSocket.setLastReceivedAgo(ClientReqSocket::kBuddySilenceLimitMs - 60'000);
+    reqSocket.resetTimeOutTimer();   // what each of our sends does
+    QVERIFY2(!reqSocket.checkTimeOut(), "a pong every ~20 min is inside the window");
+
+    reqSocket.setLastReceivedAgo(ClientReqSocket::kBuddySilenceLimitMs + 1000);
+    reqSocket.resetTimeOutTimer();
+    QVERIFY2(reqSocket.checkTimeOut(), "sending alone does not keep a buddy");
+}
+
+// Kad v0 peers do not answer pings: silence is normal, the plain idle rule applies.
+void tst_ListenSocket::clientReqSocketTimeout_legacyBuddyKeepsIdleRule()
+{
+    UpDownClient client;
+    client.setKadVersion(0);
+    client.setKadState(KadState::ConnectedBuddy);
+    ClientReqSocket reqSocket(&client);
+
+    reqSocket.setLastReceivedAgo(ClientReqSocket::kBuddySilenceLimitMs + 1000);
+    reqSocket.resetTimeOutTimer();
     QVERIFY(!reqSocket.checkTimeOut());
 }
 

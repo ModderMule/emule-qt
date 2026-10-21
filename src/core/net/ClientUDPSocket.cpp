@@ -8,6 +8,7 @@
 #include "net/ListenConflict.h"
 #include "net/EncryptedDatagramSocket.h"
 #include "net/IPv6SourcePin.h"
+#include "net/natt/NatRendezvous.h"
 #include "app/AppContext.h"
 #include "client/ClientList.h"
 #include "ipfilter/IPFilter.h"
@@ -139,18 +140,51 @@ bool ClientUDPSocket::sendPacket(std::unique_ptr<Packet> packet, const Endpoint&
             stats->addUpDataOverheadOther(packet->size);
     }
 
-    // Purge expired packets from queue
-    purgeExpiredPackets();
-
     UDPPack pack;
     pack.packet = std::move(packet);
     pack.destination = dest;
-    pack.queueTime = static_cast<uint32>(m_elapsedTimer.elapsed());
     pack.encrypt = encrypt;
     pack.kad = isKad;
     pack.receiverVerifyKey = receiverVerifyKey;
     if (targetHash)
         std::memcpy(pack.targetHash.data(), targetHash, 16);
+    return enqueue(std::move(pack));
+}
+
+bool ClientUDPSocket::sendServerPacket(std::unique_ptr<Packet> packet, const Endpoint& dest,
+                                       uint32 serverKey)
+{
+    if (!packet)
+        return false;
+    if (auto* stats = theApp.statistics)
+        stats->addUpDataOverheadServer(packet->size);
+    UDPPack pack;
+    pack.packet = std::move(packet);
+    pack.destination = dest;
+    pack.serverKey = serverKey;
+    return enqueue(std::move(pack));
+}
+
+bool ClientUDPSocket::sendRawDatagram(const QByteArray& data, const Endpoint& dest)
+{
+    if (data.isEmpty())
+        return false;
+    if (auto* stats = theApp.statistics)
+        stats->addUpDataOverheadServer(static_cast<uint32>(data.size()));
+    auto packet = std::make_unique<Packet>(uint8{0}, static_cast<uint32>(data.size()), OP_EDONKEYPROT);
+    std::memcpy(packet->pBuffer, data.constData(), static_cast<size_t>(data.size()));
+    UDPPack pack;
+    pack.packet = std::move(packet);
+    pack.destination = dest;
+    pack.raw = true;
+    return enqueue(std::move(pack));
+}
+
+bool ClientUDPSocket::enqueue(UDPPack pack)
+{
+    // Purge expired packets from queue
+    purgeExpiredPackets();
+    pack.queueTime = static_cast<uint32>(m_elapsedTimer.elapsed());
 
     {
         std::lock_guard lock(m_sendLock);
@@ -199,6 +233,16 @@ SocketSentBytes ClientUDPSocket::sendControlData(uint32 maxNumberOfBytesToSend, 
             continue;
         }
 
+        if (pack.raw) {
+            PreparedDatagram dg;
+            dg.data = QByteArray(pkt->pBuffer, static_cast<qsizetype>(pkt->size));
+            dg.destination = pack.destination;
+            result.sentBytesControlPackets += pkt->size;
+            m_sendReadyQueue.push_back(std::move(dg));
+            m_controlQueue.pop_front();
+            continue;
+        }
+
         // Build raw UDP packet: 2-byte header + payload
         uint32 rawSize = 2 + pkt->size;
         static constexpr uint32 kMaxEncryptOverhead = 32;
@@ -210,9 +254,17 @@ SocketSentBytes ClientUDPSocket::sendControlData(uint32 maxNumberOfBytesToSend, 
         if (pkt->pBuffer && pkt->size > 0)
             std::memcpy(buf.data() + offset + 2, pkt->pBuffer, pkt->size);
 
+        if (pack.serverKey != 0) {
+            const auto cryptOverhead = static_cast<uint32>(
+                EncryptedDatagramSocket::encryptOverheadSize(false));
+            const uint32 encryptedLen = EncryptedDatagramSocket::encryptSendServer(
+                buf.data() + offset - cryptOverhead, rawSize, pack.serverKey);
+            offset -= encryptedLen - rawSize;
+            rawSize = encryptedLen;
+        }
         // Encrypt if requested. The ED2K key mixes in OUR public IP, in the same
         // family as the destination (v6 key for a v6 peer, v4 key otherwise).
-        if (pack.encrypt) {
+        else if (pack.encrypt) {
             const Address publicIP = pack.destination.address().isIPv6()
                 ? theApp.publicIPv6()
                 : Address::fromNetworkOrder(theApp.publicIP());
@@ -359,6 +411,13 @@ void ClientUDPSocket::processDatagram(const QNetworkDatagram& datagram)
 
     uint8 protoByte = buf[0];
 
+    // NAT rendezvous: a server's 0xA7 notice or a PR_NAT frame arrives on this socket,
+    // because that is where our NAT mapping points. Anything else goes on unchanged.
+    if (protoByte != OP_EMULEPROT && protoByte != OP_KADEMLIAHEADER
+        && protoByte != OP_KADEMLIAPACKEDPROT && theApp.natRendezvous
+        && theApp.natRendezvous->handleServerDatagram(senderEP, buf, bufLen))
+        return;
+
     // logDebug(QStringLiteral("UDP recv %1 bytes from %2:%3 proto=0x%4")
     //     .arg(data.size()).arg(senderAddr.toString()).arg(senderPort)
     //     .arg(protoByte, 2, 16, QLatin1Char('0')));
@@ -396,7 +455,7 @@ void ClientUDPSocket::processDatagram(const QNetworkDatagram& datagram)
         // arrive in the clear. No payload semantics are defined yet — dispatch to
         // a named stub instead of dropping them silently.
         processReservedProtPacket(protoByte, buf + 2, static_cast<uint32>(bufLen - 2),
-                                  buf[1], senderIPv4Host, senderPort);
+                                  buf[1], senderEP, false);
     } else {
         // May be encrypted — use our userHash and kadID for decryption
         auto userHash = thePrefs.userHash();
@@ -419,6 +478,9 @@ void ClientUDPSocket::processDatagram(const QNetworkDatagram& datagram)
             if (innerProto == OP_EMULEPROT) {
                 processPacket(dr.data + 2, static_cast<uint32>(dr.length - 2),
                               opcode, senderEP);
+            } else if (innerProto == OP_UDPRESERVEDPROT1 || innerProto == OP_UDPRESERVEDPROT2) {
+                processReservedProtPacket(innerProto, dr.data + 2, static_cast<uint32>(dr.length - 2),
+                                          opcode, senderEP, true);
             } else if ((innerProto == OP_KADEMLIAHEADER || innerProto == OP_KADEMLIAPACKEDPROT)
                        && !kadCapableSender) {
                 return;
@@ -497,6 +559,12 @@ bool ClientUDPSocket::processPacket(const uint8* packet, uint32 size, uint8 opco
     case OP_PORTTEST:
         if (size == 1 && packet[0] == 0x12)
             emit portTestReceived(senderEP);
+        break;
+
+    case OP_HOLEPUNCH:
+    case OP_NATT_ENDPOINT_HINT:
+        if (theApp.natRendezvous)
+            theApp.natRendezvous->handlePeerPacket(opcode, packet, size, senderEP);
         break;
 
     default:
@@ -581,13 +649,18 @@ QByteArray ClientUDPSocket::decompressKadPayload(const uint8* data, int len)
 // Reserved UDP protocols (0xA3 / 0xB2) — receive-side dispatch stub
 // ---------------------------------------------------------------------------
 
-bool ClientUDPSocket::processReservedProtPacket(uint8 protByte, const uint8* /*packet*/, uint32 size,
-                                                uint8 opcode, uint32 senderIP, uint16 senderPort)
+bool ClientUDPSocket::processReservedProtPacket(uint8 protByte, const uint8* packet, uint32 size,
+                                                uint8 opcode, const Endpoint& senderEP, bool obfuscated)
 {
     if (auto* stats = theApp.statistics)
         stats->addDownDataOverheadOther(size);
 
-    const Endpoint senderEP = Endpoint::fromHostOrder(senderIP, senderPort);
+    // 0xB2: the byte after the header is a frame type (see OP_NATT_FRAME_*).
+    if (protByte == OP_UDPRESERVEDPROT2 && theApp.natRendezvous) {
+        theApp.natRendezvous->handleFrame(opcode, packet, size, senderEP, obfuscated);
+        return true;
+    }
+
     logDebug(QStringLiteral("ClientUDPSocket: reserved UDP prot (0x%1) opcode 0x%2 size %3 "
                             "from %4 — no channel handler registered")
                  .arg(protByte, 2, 16, QLatin1Char('0'))

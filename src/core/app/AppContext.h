@@ -52,6 +52,7 @@ class UploadQueue;
 class ClientCensus;
 class DlpLoader;
 namespace kad { class KadNodeCensus; }
+namespace natt { class NatRendezvous; }
 
 struct AppContext {
     ClientList*      clientList     = nullptr;
@@ -87,6 +88,8 @@ struct AppContext {
     /// Download writes and part hashing off the main thread. Null: PartFile does
     /// both inline (unit tests).
     PartFileWriteThread* partFileWriter = nullptr;
+    /// LowID<->LowID rendezvous (net/natt). Null in most unit tests.
+    natt::NatRendezvous* natRendezvous = nullptr;
 
     /// Set once the core starts tearing down (MFC theApp.IsClosing()).
     bool closing = false;

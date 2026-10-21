@@ -65,7 +65,8 @@ void PasteLinksDialog::onAccepted()
             // A configuration link closes this too: it starts no download, but the
             // dialog has done its job and leaving it open behind the confirmation
             // box reads as though the paste failed.
-            if (result.added > 0 || result.httpCacheConfigs > 0)
+            // BitTorrent magnets went to the Torrents tab: done here too.
+            if (result.added > 0 || result.httpCacheConfigs > 0 || result.torrentLinks > 0)
                 self->accept();
         },
         {}, queueCategory());

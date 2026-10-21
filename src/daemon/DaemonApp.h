@@ -30,6 +30,7 @@ class CoreNotifierBridge;
 class PowerManager;
 
 namespace usenet { class UsenetSession; }
+namespace bt { class BtSession; }
 namespace indexer { class IndexerFeedList; class IndexerSearchList; }
 
 class DaemonApp : public QObject {
@@ -122,6 +123,10 @@ private:
     /// IPC client through IpcServer::usenetConfigChanged.
     void applyUsenetServers();
 
+    /// Re-apply the BitTorrent settings after an Options save, starting or stopping
+    /// the engine. Reached through IpcServer::btConfigChanged.
+    void applyBtConfig();
+
     /// Re-read the indexer account list after an Options save. Reached from any
     /// IPC client through IpcServer::indexerConfigChanged.
     void applyIndexerConfig();
@@ -133,6 +138,10 @@ private:
     /// through the bridge would mean linking eMule::Usenet into a class whose
     /// whole job is core.
     void connectUsenetPushes();
+
+    /// Turn the BitTorrent session's signals into IPC push events. Same reasoning
+    /// as connectUsenetPushes.
+    void connectBtPushes();
 
     /// Turn the search list's signals into IPC push events. Same reasoning as
     /// connectUsenetPushes: the bridge is built on core signals and these are
@@ -160,6 +169,9 @@ private:
     ApiEventFeeder* m_eventFeeder = nullptr;
     std::unique_ptr<WebServer> m_webServer;
     std::unique_ptr<usenet::UsenetSession> m_usenetSession;
+#ifdef EMULE_HAVE_BITTORRENT
+    std::unique_ptr<bt::BtSession> m_btSession;
+#endif
     std::unique_ptr<indexer::IndexerSearchList> m_indexerSearches;
     std::unique_ptr<indexer::IndexerFeedList> m_indexerFeeds;
     std::unique_ptr<PowerManager> m_powerManager;

@@ -35,6 +35,8 @@ struct UDPPack {
     bool kad = false;                       ///< Kademlia packet.
     uint32 receiverVerifyKey = 0;           ///< Kademlia receiver verify key.
     std::array<uint8, 16> targetHash{};     ///< Target client hash or Kad ID.
+    uint32 serverKey = 0;                   ///< != 0: obfuscate with this server UDP key.
+    bool raw = false;                       ///< packet buffer goes out verbatim, no header.
 };
 
 // ---------------------------------------------------------------------------
@@ -91,6 +93,13 @@ public:
     bool sendPacket(std::unique_ptr<Packet> packet, const Endpoint& dest,
                     bool encrypt, const uint8* targetHash, bool isKad,
                     uint32 receiverVerifyKey);
+
+    /// Server-bound datagram from this socket, so the server sees our client UDP mapping
+    /// (NAT rendezvous). @p serverKey != 0 obfuscates it with the server UDP key.
+    bool sendServerPacket(std::unique_ptr<Packet> packet, const Endpoint& dest, uint32 serverKey);
+
+    /// Pre-built bytes sent as they are (eNode-go PR_NAT frames).
+    bool sendRawDatagram(const QByteArray& data, const Endpoint& dest);
 
     /// ThrottledControlSocket: send queued data up to bandwidth limit.
     SocketSentBytes sendControlData(uint32 maxNumberOfBytesToSend, uint32 minFragSize) override;
@@ -154,16 +163,17 @@ private:
                        const Endpoint& sender);
 
     /// Receive-side dispatch stub for the reserved UDP protocol headers
-    /// OP_UDPRESERVEDPROT1 (0xA3) / OP_UDPRESERVEDPROT2 (0xB2). No payload semantics
-    /// defined yet — logs the packet and accounts its overhead instead of dropping
-    /// it silently. @param protByte the reserved header byte that was received.
+    /// OP_UDPRESERVEDPROT1 (0xA3) / OP_UDPRESERVEDPROT2 (0xB2). 0xB2 frames go to the
+    /// NAT rendezvous hub; the rest is logged and booked as overhead.
+    /// @param protByte the reserved header byte that was received.
     bool processReservedProtPacket(uint8 protByte, const uint8* packet, uint32 size,
-                                   uint8 opcode, uint32 senderIP, uint16 senderPort);
+                                   uint8 opcode, const Endpoint& sender, bool obfuscated);
 
     /// The source-reask family: booked as file-request overhead.
     static bool isReaskOpcode(uint8 opcode);
 
     void purgeExpiredPackets();
+    bool enqueue(UDPPack pack);
 
     struct PreparedDatagram {
         QByteArray data;

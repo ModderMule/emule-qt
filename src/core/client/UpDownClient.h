@@ -764,8 +764,10 @@ public:
     [[nodiscard]] bool allowIncomingBuddyPingPong() const;
     [[nodiscard]] bool sendBuddyPingPong() const;
     void setLastBuddyPingPongTime();
-    /// The stamp is the next allowed time. For tests: a new client accepts no ping for 3 min.
+    /// The stamp is the next allowed time of our own ping. For tests.
     void setNextBuddyPingPongTime(uint64 tick) { m_lastBuddyPingPongTime = tick; }
+    /// Tick of the last incoming ping we answered. For tests: a new client accepts none for 3 min.
+    void setLastIncomingBuddyPingTime(uint64 tick) { m_lastIncomingBuddyPing = tick; }
 
     /// A firewalled node we relay for (we are its buddy), as opposed to
     /// ClientList::getBuddy(), the buddy we use ourselves. Cleared with the Kad state.
@@ -1300,7 +1302,8 @@ private:
     uint64 m_lastSourceRequest = 0;
     uint64 m_lastSourceAnswer = 0;
     uint64 m_lastAskedForSources = 0;
-    uint64 m_lastBuddyPingPongTime = 0;
+    uint64 m_lastBuddyPingPongTime = 0;   ///< next time we may ping
+    uint64 m_lastIncomingBuddyPing = 0;   ///< last incoming ping answered; own 3-min limit
     bool m_servedBuddy = false;
     uint64 m_buddyRelayWindowStart = 0;
     uint32 m_buddyRelayCount = 0;

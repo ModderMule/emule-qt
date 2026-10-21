@@ -57,6 +57,7 @@ class ServerPanel;
 class SharedFilesPanel;
 class StatisticsPanel;
 class TaskbarProgress;
+class TorrentPanel;
 class TransferPanel;
 class UsenetPanel;
 
@@ -113,6 +114,7 @@ public:
         // setupPages() adds pages positionally, so a new page anywhere but the
         // end silently renumbers both.
         TabUsenet,
+        TabTorrents,
         TabCount
     };
 
@@ -144,6 +146,7 @@ public:
     [[nodiscard]] IrcPanel* ircPanel() const { return m_ircPanel; }
     [[nodiscard]] StatisticsPanel* statisticsPanel() const { return m_statsPanel; }
     [[nodiscard]] UsenetPanel* usenetPanel() const { return m_usenetPanel; }
+    [[nodiscard]] TorrentPanel* torrentPanel() const { return m_torrentPanel; }
 
     /// Hand the daemon's stream token to everything that builds a URL from it.
     /// One entry point rather than four: the token arrives with every stats
@@ -237,7 +240,8 @@ protected:
     // A .nzb dropped anywhere on the window switches to the Usenet tab and is
     // queued there. Narrow on purpose — nzbDropCandidates() accepts only .nzb
     // files and http(s) .nzb links, so a future ed2k or collection drop is still
-    // free to be handled separately rather than swallowed here.
+    // free to be handled separately rather than swallowed here. A .torrent
+    // drop goes to the Torrents tab the same way.
     void dragEnterEvent(QDragEnterEvent* event) override;
     void dragMoveEvent(QDragMoveEvent* event) override;
     void dropEvent(QDropEvent* event) override;
@@ -331,6 +335,7 @@ private:
     IrcPanel* m_ircPanel = nullptr;
     StatisticsPanel* m_statsPanel = nullptr;
     UsenetPanel* m_usenetPanel = nullptr;
+    TorrentPanel* m_torrentPanel = nullptr;
 
     // Status bar labels
     QLabel* m_statusMsg = nullptr;

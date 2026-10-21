@@ -19,6 +19,7 @@
 #include "net/ClientUDPSocket.h"
 #include "net/ListenSocket.h"
 #include "net/Packet.h"
+#include "net/natt/NatRendezvous.h"
 #include "prefs/Preferences.h"
 #include "stats/Statistics.h"
 #include "transfer/DownloadQueue.h"
@@ -97,7 +98,8 @@ bool UpDownClient::askForDownload()
             // Low-ID to Low-ID: keep the source rather than dropping it, in the hope that
             // one of the two IDs changes. PartFile::process() revives it from this state.
             // MFC srchybrid/DownloadClient.cpp:202-208.
-            if (!theApp.canDoCallback(this)) {
+            if (!theApp.canDoCallback(this)
+                && !(theApp.natRendezvous && theApp.natRendezvous->canStart(*this))) {
                 if (m_downloadState != DownloadState::LowToLowIP)
                     setDownloadState(DownloadState::LowToLowIP);
                 m_reaskPending = true;

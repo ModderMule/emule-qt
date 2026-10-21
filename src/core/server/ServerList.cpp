@@ -1227,6 +1227,21 @@ void ServerList::processDescResponse(const uint8* data, uint32 size, const Endpo
     emit serverUpdated(server);
 }
 
+void ServerList::requestStatPing(const Server& server)
+{
+    Server* srv = findByIPTcp(server.ipAddress(), server.port());
+    if (!srv || srv->cryptPingReplyPending())
+        return;
+    srv->setLastPingedTime(0);
+    // serverStats() starts its walk at m_statServerPos, so the next tick pings it
+    for (size_t i = 0; i < m_servers.size(); ++i) {
+        if (m_servers[i].get() == srv) {
+            m_statServerPos = i;
+            break;
+        }
+    }
+}
+
 // ---------------------------------------------------------------------------
 // Crypto key management
 // ---------------------------------------------------------------------------

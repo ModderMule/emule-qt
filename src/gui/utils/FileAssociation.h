@@ -78,6 +78,9 @@ bool registerNzbFileType(QString& error);
 /// Give it up again. Idempotent.
 bool unregisterNzbFileType(QString& error);
 
+// ToDo: register .torrent (application/x-bittorrent) and the magnet: scheme on
+// Windows/Linux like .nzb above; macOS declares both in Info.plist.in already.
+
 /// The MIME type. NZB has no IANA registration; this is the de-facto one.
 inline constexpr auto kNzbMimeType = "application/x-nzb";
 

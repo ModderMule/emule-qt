@@ -53,6 +53,11 @@ private:
         QStringLiteral("Queue a Usenet download from an .nzb file or an http(s) URL."),
         QStringLiteral("path-or-url")};
 
+    QCommandLineOption m_addTorrentOption{
+        QStringLiteral("add-torrent"),
+        QStringLiteral("Add a BitTorrent download from a .torrent file or a magnet link."),
+        QStringLiteral("path-or-magnet")};
+
     QCommandLineOption m_connectOption{
         {QStringLiteral("c"), QStringLiteral("connect")},
         QStringLiteral("Connect to an eD2K server.")};

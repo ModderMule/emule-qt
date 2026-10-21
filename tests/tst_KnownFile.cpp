@@ -217,6 +217,7 @@ private slots:
     void publishSrc_firewalledNeedsABuddy();
     void publishSrc_firewalledWithIPv6NeedsNoBuddy();
     void publishSrc_newBuddyRepublishes();
+    void publishSrc_newBuddyPortSameIPRepublishes();
     void publishSrc_openNodeNeedsNoBuddy();
     void publishNotes_timing();
     void createHashFromMemory_basic();
@@ -1225,6 +1226,40 @@ void tst_KnownFile::publishSrc_newBuddyRepublishes()
 
     list.setBuddy(nullptr, BuddyStatus::None);
     delete buddy;
+}
+
+// Not MFC: a new buddy behind the same (CGNAT) IP has another UDP port; the published
+// FT_SERVERPORT would point nowhere for up to 5 h.
+void tst_KnownFile::publishSrc_newBuddyPortSameIPRepublishes()
+{
+    eMule::testing::KadFixture kadFixture(eMule::testing::KadMode::Firewalled);
+    kadFixture.kadPrefs().setLastContact();
+    ClientList list;
+    kad::Kademlia::setClientList(&list);
+    const auto restore = qScopeGuard([] { kad::Kademlia::setClientList(nullptr); });
+
+    auto* first = new UpDownClient();
+    first->setUserAddress(Address::fromString(QStringLiteral("78.4.5.6")));
+    first->setUDPPort(4672);
+    list.setBuddy(first, BuddyStatus::Connected);
+    KnownFile kf;
+    QVERIFY(kf.publishSrc());
+    QCOMPARE(kf.lastBuddyPort(), uint16{4672});
+    QVERIFY(!kf.publishSrc());
+
+    list.setBuddy(nullptr, BuddyStatus::None);
+    delete first;
+    auto* second = new UpDownClient();
+    second->setUserAddress(Address::fromString(QStringLiteral("78.4.5.6")));
+    second->setUDPPort(4673);
+    list.setBuddy(second, BuddyStatus::Connected);
+    QVERIFY2(!kf.isSharedInKad(), "the record names the old port");
+    QVERIFY(kf.publishSrc());
+    QCOMPARE(kf.lastBuddyPort(), uint16{4673});
+    QVERIFY(!kf.publishSrc());
+
+    list.setBuddy(nullptr, BuddyStatus::None);
+    delete second;
 }
 
 void tst_KnownFile::publishSrc_openNodeNeedsNoBuddy()

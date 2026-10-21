@@ -1,5 +1,17 @@
 #!/bin/sh
 # entrypoint.sh — generate per-node config and launch emulecored
+#
+# Bind-mounted by kadnet.py, so edits here need no image rebuild. Optional
+# runtime variables (unset = the plain Kad rig):
+#   FIREWALL4=1          refuse unsolicited inbound IPv4 TCP and UDP on our ports
+#                        (a NAT: replies to our own traffic still pass)
+#   FIREWALL6=1          refuse unsolicited inbound IPv6 TCP (a home router's v6 firewall)
+#   PUBLIC_IPV6=addr     network.publicIPv6Override
+#   NAT_TRAVERSAL=0|1    serverConnection.natTraversal (daemon default: on)
+#   LOG_TO_DISK=1        emulecored.log, _Verbose.log and _Kad.log in the config dir
+#   UNLIMITED_BANDWIDTH=1  no upload/download limit
+#   SKIP_LAN_FW_CHECKS=1 skipFirewalledChecksInLanMode (LAN mode: count as open, run no checks;
+#                        such a node still refuses buddy requests, as in MFC)
 set -e
 
 # Same layout as macOS; preferences.yml and the data files share one directory
@@ -14,6 +26,48 @@ IPC_PORT="${IPC_PORT:-4712}"
 IPC_TOKEN="${IPC_TOKEN:-kadnet-test-token}"
 USER_HASH="${USER_HASH:-}"
 
+# Firewall first, before the daemon opens a socket
+if [ "${FIREWALL4:-0}" = "1" ]; then
+    iptables -A INPUT -m conntrack --ctstate ESTABLISHED,RELATED -j ACCEPT
+    iptables -A INPUT -p tcp --dport "$TCP_PORT" -j REJECT --reject-with tcp-reset
+    iptables -A INPUT -p udp --dport "$UDP_PORT" -j DROP
+    echo "[entrypoint] IPv4 firewalled: inbound TCP ${TCP_PORT} / UDP ${UDP_PORT} only as replies"
+fi
+if [ "${FIREWALL6:-0}" = "1" ]; then
+    ip6tables -A INPUT -m conntrack --ctstate ESTABLISHED,RELATED -j ACCEPT
+    ip6tables -A INPUT -p tcp --dport "$TCP_PORT" -j REJECT --reject-with tcp-reset
+    echo "[entrypoint] IPv6 firewalled: inbound TCP ${TCP_PORT} only as replies"
+fi
+
+# Optional preference lines
+[ "${SKIP_LAN_FW_CHECKS:-0}" = "1" ] && SKIP_FW=true || SKIP_FW=false
+NET_EXTRA=""
+[ -n "${PUBLIC_IPV6:-}" ] && NET_EXTRA="  publicIPv6Override: \"${PUBLIC_IPV6}\""
+EXTRA=""
+if [ -n "${NAT_TRAVERSAL:-}" ]; then
+    [ "$NAT_TRAVERSAL" = "1" ] && NT=true || NT=false
+    EXTRA="${EXTRA}
+serverConnection:
+  natTraversal: ${NT}
+"
+fi
+if [ "${LOG_TO_DISK:-0}" = "1" ]; then
+    EXTRA="${EXTRA}
+logging:
+  logToDiskCore: true
+  verbose: true
+  kadVerboseLog: true
+  logUlDlEvents: true
+"
+fi
+if [ "${UNLIMITED_BANDWIDTH:-0}" = "1" ]; then
+    EXTRA="${EXTRA}
+bandwidth:
+  maxUpload: 0
+  maxDownload: 0
+"
+fi
+
 # Generate preferences.yml on first run only (preserve identity on restart)
 if [ ! -f "$CONFIG_DIR/preferences.yml" ]; then
     cat > "$CONFIG_DIR/preferences.yml" <<EOF
@@ -22,7 +76,7 @@ general:
   ${USER_HASH:+userHash: "${USER_HASH}"}
   autoConnect: true
   filterLANIPs: false
-  skipFirewalledChecksInLanMode: false
+  skipFirewalledChecksInLanMode: ${SKIP_FW}
   reconnect: true
 
 network:
@@ -31,6 +85,7 @@ network:
   networkED2K: false
   maxConnections: 200
   maxHalfConnections: 9
+${NET_EXTRA}
 
 kademlia:
   enabled: true
@@ -52,6 +107,7 @@ directories:
   incomingDir: "${HOME}/incoming"
   tempDirs:
     - "${HOME}/temp"
+${EXTRA}
 EOF
     echo "[entrypoint] Generated preferences.yml for ${NODE_NICK}"
 fi

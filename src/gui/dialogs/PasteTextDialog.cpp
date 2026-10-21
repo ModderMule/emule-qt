@@ -7,6 +7,8 @@
 
 #include <QCheckBox>
 #include <QComboBox>
+#include <QDir>
+#include <QFileDialog>
 #include <QLabel>
 #include <QLineEdit>
 #include <QPlainTextEdit>
@@ -70,6 +72,28 @@ PasteTextDialog::PasteTextDialog(const Chrome& chrome, QWidget* parent)
         }
 
         layout->addLayout(queueRow);
+    }
+
+    if (!chrome.savePathLabel.isEmpty()) {
+        auto* pathRow = new QHBoxLayout;
+        pathRow->addWidget(new QLabel(chrome.savePathLabel, this));
+        m_savePath = new QLineEdit(this);
+        m_savePath->setPlaceholderText(tr("default download folder"));
+        pathRow->addWidget(m_savePath, 1);
+        m_savePathBrowse = new QPushButton(tr("Browse…"), this);
+        connect(m_savePathBrowse, &QPushButton::clicked, this, [this] {
+            const QString dir = QFileDialog::getExistingDirectory(this, tr("Save to"),
+                                                                  m_savePath->text());
+            if (!dir.isEmpty())
+                m_savePath->setText(QDir::toNativeSeparators(dir));
+        });
+        pathRow->addWidget(m_savePathBrowse);
+        layout->addLayout(pathRow);
+    }
+
+    if (chrome.pausedOption && !m_paused) {
+        m_paused = new QCheckBox(tr("Start paused"), this);
+        layout->addWidget(m_paused);
     }
 
     auto* btnLayout = new QHBoxLayout;
@@ -137,6 +161,17 @@ bool PasteTextDialog::queuePaused() const
     return m_paused && m_paused->isChecked();
 }
 
+QString PasteTextDialog::savePath() const
+{
+    return m_savePath ? QDir::fromNativeSeparators(m_savePath->text().trimmed()) : QString();
+}
+
+void PasteTextDialog::setSavePathBrowsable(bool browsable)
+{
+    if (m_savePathBrowse)
+        m_savePathBrowse->setVisible(browsable);
+}
+
 QStringList PasteTextDialog::lines() const
 {
     QStringList out;
@@ -159,6 +194,8 @@ void PasteTextDialog::setBusy(bool busy)
     m_edit->setReadOnly(busy || m_readOnlyText);
     if (m_password)
         m_password->setEnabled(!busy);
+    if (m_savePath)
+        m_savePath->setEnabled(!busy);
     m_acceptBtn->setEnabled(!busy
                             && (m_readOnlyText || !m_edit->toPlainText().trimmed().isEmpty()));
     m_acceptBtn->setText(busy ? tr("Working…") : m_acceptText);

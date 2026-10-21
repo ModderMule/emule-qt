@@ -27,6 +27,7 @@
 #include "utils/ViewNavigation.h"
 #include "utils/WebServices.h"
 #include "prefs/Preferences.h"
+#include "search/SearchExprParser.h"
 #include "search/SearchParams.h"
 
 #include "IpcMessage.h"
@@ -563,6 +564,16 @@ void SearchPanel::onStartSearch()
     const SearchRequest req = requestFromUi();
     if (req.expression.isEmpty())
         return;
+
+    // Checked here so the message comes in the GUI's language; the daemon checks too
+    if (const auto method = static_cast<SearchType>(req.method);
+        method == SearchType::Automatic || method == SearchType::Ed2kServer
+        || method == SearchType::Ed2kGlobal || method == SearchType::Kademlia) {
+        if (const QString error = searchExpressionError(req.expression, method); !error.isEmpty()) {
+            AsyncMessageBox::warning(this, tr("Search"), error);
+            return;
+        }
+    }
 
     addToSearchHistory(req.expression);
 

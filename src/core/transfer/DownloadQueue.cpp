@@ -22,6 +22,7 @@
 #include "ipfilter/IPFilter.h"
 #include "net/Packet.h"
 #include "net/PeerVetting.h"
+#include "net/natt/NatRendezvous.h"
 #include "prefs/Preferences.h"
 #include "protocol/ED2KLink.h"
 #include "search/SearchFile.h"
@@ -674,7 +675,18 @@ void DownloadQueue::addKadSourceResult(const kad::Kademlia::KadSourceResult& res
     case 3: {
         // Firewalled with buddy callback (MFC DownloadQueue.cpp:1553-1582). Not MFC:
         // kept while we are firewalled if both ends have an IPv6 to dial directly.
-        if (theApp.isFirewalled() && !(sourceIPv6 && theApp.hasConfidentPublicIPv6())) {
+        natt::PeerInfo natPeer;
+        if (clientHash) {
+            std::memcpy(natPeer.hash.data(), clientHash, 16);
+            natPeer.hashKnown = true;
+        }
+        if (buddyHash && buddyIP != 0 && buddyPort != 0) {
+            std::memcpy(natPeer.buddyID.data(), buddyHash, 16);
+            natPeer.buddyEndpoint = Endpoint(Address::fromNetworkOrder(buddyIP), buddyPort);
+            natPeer.buddyValid = true;
+        }
+        if (theApp.isFirewalled() && !(sourceIPv6 && theApp.hasConfidentPublicIPv6())
+            && !natt::NatRendezvous::keepLowIdSource(natPeer)) {
             logDebug(QStringLiteral("addKadSourceResult: skipping FW source type %1 — we are firewalled")
                          .arg(sourceType));
             return;
@@ -1081,9 +1093,20 @@ void DownloadQueue::addServerSourceClient(PartFile* file, uint32 userId, uint16 
     // marker). userId is ED2K/network order, and a low ID stays low in either
     // byte order, so the raw value tests correctly.
 
-    // Two firewalled clients can never connect, so a low-ID source is dead weight.
-    if (isLowID(userId) && theApp.isFirewalled())
-        return;
+    // Two firewalled clients cannot connect directly, so a low-ID source is dead weight
+    // unless a NAT rendezvous on this server can introduce us (net/natt).
+    if (isLowID(userId) && theApp.isFirewalled()) {
+        natt::PeerInfo peer;
+        peer.clientID = userId;
+        peer.serverAddress = Address::fromNetworkOrder(srvIP);
+        peer.serverPort = srvPort;
+        if (hasHash) {
+            std::memcpy(peer.hash.data(), userHash, 16);
+            peer.hashKnown = true;
+        }
+        if (!natt::NatRendezvous::keepLowIdSource(peer))
+            return;
+    }
 
     if (!isLowID(userId)) {
         if (!isGoodIP(userId))

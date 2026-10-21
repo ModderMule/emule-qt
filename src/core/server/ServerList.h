@@ -178,6 +178,10 @@ public:
     /// UDPSERVSTATREASKTIME. Port of CServerList::ServerStats().
     void serverStats();
 
+    /// Make @p server the next stat-ping target (fresh UDP key and obfuscation ports).
+    /// No-op while a crypt ping to it is still unanswered.
+    void requestStatPing(const Server& server);
+
     /// Periodic tick: persist server.met to `metPath` at most every 17 minutes so
     /// list state (users/files/ping/failedCount/UDP keys) survives a kill/crash,
     /// not just a clean shutdown. Port of CServerList::Process() — ServerList.cpp:849.

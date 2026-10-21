@@ -34,6 +34,7 @@
 #include "net/ClientUDPSocket.h"
 #include "net/ListenSocket.h"
 #include "net/Packet.h"
+#include "net/natt/NatRendezvous.h"
 #include "prefs/Preferences.h"
 #include "protocol/Tag.h"
 #include "search/SearchFile.h"
@@ -56,6 +57,7 @@
 #include <QCborMap>
 #include <QImage>
 #include <QThreadPool>
+#include <QTimer>
 #include <QPointer>
 #include <QImageReader>
 #include <QRandomGenerator>
@@ -222,6 +224,7 @@ void UpDownClient::init()
 
     m_buddyAddress = Address();
     setLastBuddyPingPongTime();   // first ping after 10 min, as MFC BaseClient.cpp:166
+    m_lastIncomingBuddyPing = getTickCount();   // first incoming ping taken after 3 min
     setBuddyID(nullptr);
 
     m_clientSoft = ClientSoftware::Unknown;
@@ -1975,6 +1978,17 @@ bool UpDownClient::tryToConnect(bool ignoreMaxCon, bool noCallbacks)
             return false;
         }
 
+        // Both sides firewalled: no callback can work, as the peer would have to reach us.
+        // A NAT rendezvous (server or Kad buddy introduces the two) can. Not MFC.
+        if (theApp.isFirewalled() && theApp.natRendezvous && theApp.natRendezvous->canStart(*this)) {
+            m_connectingState = ConnectingState::NatRendezvous;
+            if (theApp.natRendezvous->start(*this)) {
+                logDebug(QStringLiteral("tryToConnect: NAT rendezvous for %1").arg(userName()));
+                return true;
+            }
+            m_connectingState = ConnectingState::Preconditions;
+        }
+
         // No route at all — fail once instead of walking all three branches on every retry.
         if (!directUdp && !kadCallback && !serverCallback) {
             logDebug(QStringLiteral("tryToConnect: no callback route available for %1")
@@ -2384,6 +2398,8 @@ void UpDownClient::connectionEstablished()
             auto packet = std::make_unique<Packet>(OP_KAD_FWTCPCHECK_ACK, 0);
             packet->prot = OP_EMULEPROT;
             sendPacket(std::move(packet));
+            kad::logKad(QStringLiteral("Kad: TCP firewall check of %1 connected, ACK sent")
+                            .arg(ipstr(m_connectAddress)));
         }
         break;
     case KadState::QueuedBuddy:   // not MFC: a queued candidate that connected in first
@@ -2550,6 +2566,11 @@ bool UpDownClient::disconnected(const QString& reason, bool fromSocket)
     // A failure at our own proxy is not the peer's (MFC BaseClient.cpp:1185).
     const bool proxyFailed = m_socket && m_socket->proxyConnectFailed();
     const bool connectFailed = m_connectingState != ConnectingState::None && !proxyFailed;
+    // Our direct IPv6 dial to a LowID source never got through: its v6 inbound is firewalled.
+    // Forget the v6 route and reach it the LowID way (callback, NAT rendezvous). Not MFC.
+    const bool v6RouteFailed = connectFailed && m_connectingState == ConnectingState::DirectTCP
+                            && m_connectAddress.isIPv6() && hasLowID() && isEd2kClient()
+                            && m_reqFile && m_downloadState == DownloadState::Connecting;
     m_connectingState = ConnectingState::None;
 
     // The preview we were waiting for is not coming.
@@ -2635,6 +2656,17 @@ bool UpDownClient::disconnected(const QString& reason, bool fromSocket)
             // URL and HTTP Cache sources run their own retry and stay attached.
             if (unanswered || m_downloadState == DownloadState::Connecting)
                 setDownloadState(DownloadState::None);
+        } else if (v6RouteFailed) {
+            logDebug(QStringLiteral("IPv6 dial to LowID source %1 failed, trying its LowID route")
+                         .arg(dbgGetClientInfo()));
+            m_openIPv6 = false;
+            m_connectAddress = Address();
+            setDownloadState(DownloadState::None);
+            // Queued: the socket is still being torn down.
+            QTimer::singleShot(0, this, [this] {
+                if (m_reqFile && m_downloadState == DownloadState::None)
+                    askForDownload();
+            });
         } else if (unanswered || unreachable) {
             sourceDied = unreachable;
             if (theApp.clientList)
@@ -4087,6 +4119,8 @@ void UpDownClient::processKadFwTcpCheckAck()
     }
     if (auto* prefs = kad::Kademlia::getInstancePrefs())
         prefs->incFirewalled();
+    kad::logKad(QStringLiteral("Kad: TCP firewall ACK from %1 counted")
+                    .arg(ipstr(Address::fromNetworkOrder(peerIpNet))));
 }
 
 // ===========================================================================
@@ -4225,6 +4259,15 @@ void UpDownClient::processReaskCallbackTCP(const uint8* data, uint32 size)
     uint8 reqFileHash[16];
     dataIn.readHash16(reqFileHash);
 
+    // A zero file hash means an embedded opcode follows (compatibility target's NAT
+    // rendezvous, OP_RENDEZVOUS). A stock buddy relays it unchanged.
+    if (std::all_of(reqFileHash, reqFileHash + 16, [](uint8 b) { return b == 0; })) {
+        const auto pos = static_cast<uint32>(dataIn.position());
+        if (size > pos && data[pos] == OP_RENDEZVOUS && theApp.natRendezvous)
+            theApp.natRendezvous->handleRendezvousFromBuddy(destEP, data + pos + 1, size - pos - 1);
+        return;
+    }
+
     // Identical to a direct OP_REASKFILEPING from here on, only relayed by our buddy —
     // MFC duplicates the whole block (ListenSocket.cpp:1453-1510 vs
     // ClientUDPSocket.cpp:226-308); we answer both through one path. dataIn is left
@@ -4263,7 +4306,9 @@ void UpDownClient::processBuddyPing()
     kad::logKad(QStringLiteral("Kad: BUDDYPING from %1, sending BUDDYPONG").arg(ipstr(m_connectAddress)));
     auto packet = std::make_unique<Packet>(OP_BUDDYPONG, 0, OP_EMULEPROT);
     sendPacket(std::move(packet));
-    setLastBuddyPingPongTime();
+    // Not MFC: MFC stamps the shared field here, so the peer's next 10-min ping lands before
+    // its 13-min allowance and every second ping goes unanswered. Our own schedule is untouched.
+    m_lastIncomingBuddyPing = getTickCount();
 }
 
 // ===========================================================================
@@ -4289,17 +4334,15 @@ void UpDownClient::processBuddyPong()
 // ===========================================================================
 // Buddy ping/pong scheduling — MFC srchybrid/UpdownClient.h:180-182
 //
-// m_lastBuddyPingPongTime holds the *next allowed* time, not the last one, which is what
-// lets the two sides of the exchange use different windows off a single field: we may ping
-// every 10 minutes, and accept an incoming ping only after 13. Both used to test
-// "now - last > 10 min" against a stamp of when it happened, which made them the same
-// check — so a buddy pinging on the same 10-minute schedule as us would race our own
-// timer instead of being comfortably inside its allowance.
+// m_lastBuddyPingPongTime holds the *next allowed* time of our own ping (every 10 min).
+// Not MFC: incoming pings have their own field and a plain 3-min flood limit. MFC checks
+// "13 min after the last ping or pong" off the shared field, which answers only every second
+// 10-min ping — too close to a 25-min silence limit (ClientReqSocket::kBuddySilenceLimitMs).
 // ===========================================================================
 
 bool UpDownClient::allowIncomingBuddyPingPong() const
 {
-    return getTickCount() >= m_lastBuddyPingPongTime + MIN2MS(3);
+    return getTickCount() >= m_lastIncomingBuddyPing + MIN2MS(3);
 }
 
 // ===========================================================================
@@ -5237,7 +5280,8 @@ void UpDownClient::processAskSharedFiles()
     if (!allowed) {
         // An empty list, not the denial opcode: a client old enough to send this
         // request may not know it (MFC ListenSocket.cpp:672-694).
-        logDebug(QStringLiteral("Denied shared file browse request from %1").arg(userName()));
+        logDebug(QStringLiteral("User %1 (%2) requested your shared files list -> denied")
+                     .arg(statusName()).arg(m_userIDHybrid));
         SafeMemFile empty;
         empty.writeUInt32(0);
         sendPacket(std::make_unique<Packet>(empty, OP_EDONKEYPROT, OP_ASKSHAREDFILESANSWER));
@@ -5246,6 +5290,10 @@ void UpDownClient::processAskSharedFiles()
 
     if (!theApp.sharedFileList)
         return;
+
+    // MFC IDS_REQ_SHAREDFILES, to the status bar too (ListenSocket.cpp:678)
+    logStatusInfo(QStringLiteral("User %1 (%2) requested your shared files list -> accepted")
+                      .arg(statusName()).arg(m_userIDHybrid));
 
     // Collect shared files, skipping large files if peer doesn't support them
     const bool largePeer = supportsLargeFiles();
@@ -5277,13 +5325,17 @@ void UpDownClient::processAskSharedDirs()
     const bool allowed = (access == 2) || (access == 1 && m_friend != nullptr);
 
     if (!allowed) {
-        logDebug(QStringLiteral("Denied shared dirs browse request from %1").arg(userName()));
+        logDebug(QStringLiteral("User %1 (%2) requested your list of shared directories -> denied")
+                     .arg(statusName()).arg(m_userIDHybrid));
         auto packet = std::make_unique<Packet>(OP_ASKSHAREDDENIEDANS, 0);
         packet->prot = OP_EDONKEYPROT;
         sendPacket(std::move(packet));
         return;
     }
 
+    // MFC IDS_SHAREDREQ1 (ListenSocket.cpp:710)
+    logStatusInfo(QStringLiteral("User %1 (%2) requested your list of shared directories -> accepted")
+                      .arg(statusName()).arg(m_userIDHybrid));
     sendSharedDirectories();
 }
 
@@ -5296,8 +5348,16 @@ void UpDownClient::processAskSharedFilesDir(const uint8* data, uint32 size)
     const int access = thePrefs.viewSharedFilesAccess();
     const bool allowed = (access == 2) || (access == 1 && m_friend != nullptr);
 
+    // Read first: both log lines name the directory (MFC ListenSocket.cpp:727-729)
+    QString reqDir;
+    if (data && size > 0) {
+        SafeMemFile io(data, size);
+        reqDir = io.readString(m_unicodeSupport);
+    }
+
     if (!allowed) {
-        logDebug(QStringLiteral("Denied shared files dir request from %1").arg(userName()));
+        logDebug(QStringLiteral("User %1 (%2) requested your list of shared files for directory '%3' -> denied")
+                     .arg(statusName()).arg(m_userIDHybrid).arg(reqDir));
         auto packet = std::make_unique<Packet>(OP_ASKSHAREDDENIEDANS, 0);
         packet->prot = OP_EDONKEYPROT;
         sendPacket(std::move(packet));
@@ -5307,8 +5367,9 @@ void UpDownClient::processAskSharedFilesDir(const uint8* data, uint32 size)
     if (!data || size == 0 || !theApp.sharedFileList)
         return;
 
-    SafeMemFile io(data, size);
-    const QString reqDir = io.readString(m_unicodeSupport);
+    // MFC IDS_SHAREDREQ2 (ListenSocket.cpp:731)
+    logStatusInfo(QStringLiteral("User %1 (%2) requested your list of shared files for directory '%3' -> accepted")
+                      .arg(statusName()).arg(m_userIDHybrid).arg(reqDir));
 
     // The name is one we handed out, or one of the two fixed ones
     // (MFC ListenSocket.cpp:736-763).
@@ -5386,7 +5447,9 @@ void UpDownClient::writeOfferedFile(SafeMemFile& out, KnownFile& file) const
 void UpDownClient::processSharedDirsAnswer(const uint8* data, uint32 size)
 {
     if (m_fileListRequested != 1) {
-        logDebug(QStringLiteral("processSharedDirsAnswer: unrequested response from %1").arg(userName()));
+        // MFC IDS_SHAREDANSW2 (ListenSocket.cpp:812)
+        logStatusInfo(QStringLiteral("User %1 (%2) sent unrequested list of shared directories - ignored")
+                          .arg(statusName()).arg(m_userIDHybrid));
         return;
     }
 
@@ -5406,6 +5469,9 @@ void UpDownClient::processSharedDirsAnswer(const uint8* data, uint32 size)
     m_fileListRequested = static_cast<int>(dirCount);
     for (uint32 i = 0; i < dirCount; ++i) {
         const QString dirName = io.readString(m_unicodeSupport);
+        // MFC IDS_SHAREDANSW (ListenSocket.cpp:798)
+        logStatusInfo(QStringLiteral("User %1 (%2) shares directory '%3'")
+                          .arg(statusName()).arg(m_userIDHybrid).arg(dirName));
 
         SafeMemFile reqData;
         reqData.writeString(dirName, peerStringMode());
@@ -5421,20 +5487,27 @@ void UpDownClient::processSharedDirsAnswer(const uint8* data, uint32 size)
 
 void UpDownClient::processSharedFilesDirAnswer(const uint8* data, uint32 size)
 {
-    if (m_fileListRequested <= 0) {
-        logDebug(QStringLiteral("processSharedFilesDirAnswer: unrequested response from %1").arg(userName()));
-        return;
-    }
-
     if (!data || size < 4)
         return;
 
     SafeMemFile io(data, size);
     const QString dirName = io.readString(m_unicodeSupport);
 
+    // MFC ListenSocket.cpp:824-831: IDS_SHAREDANSW3, IDS_SHAREDINFO1, IDS_SHAREDINFO2
+    if (m_fileListRequested <= 0) {
+        logStatusInfo(QStringLiteral("User %1 (%2) sent unrequested list of shared files for directory '%3' - ignored")
+                          .arg(statusName()).arg(m_userIDHybrid).arg(dirName));
+        return;
+    }
+    logStatusInfo(QStringLiteral("User %1 (%2) sent list of shared files for directory '%3'")
+                      .arg(statusName()).arg(m_userIDHybrid).arg(dirName));
+
     // The rest is the file list; processSharedFileList() counts the answer.
     const auto pos = static_cast<uint32>(io.position());
     processSharedFileList(data + pos, size - pos, dirName, true);
+    if (m_fileListRequested == 0)
+        logStatusInfo(QStringLiteral("User %1 (%2) finished sending lists of shared files")
+                          .arg(statusName()).arg(m_userIDHybrid));
 }
 
 // ===========================================================================

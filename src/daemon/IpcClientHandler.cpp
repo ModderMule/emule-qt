@@ -2,6 +2,7 @@
 /// @brief Per-connection IPC request handler — implementation.
 
 #include "IpcClientHandler.h"
+#include "BtBridge.h"
 #include "UsenetBridge.h"
 #include "CoreNotifierBridge.h"
 #include "SharedFileRows.h"
@@ -315,6 +316,10 @@ void IpcClientHandler::onMessageReceived(const IpcMessage& msg)
                                               QStringLiteral("Core is loading")));
         return;
     }
+
+    // BitTorrent (800-899): BtBridge answers every request of the block
+    if (BtBridge::handleRequest(msg, [this](const IpcMessage& reply) { sendMessage(reply); }))
+        return;
 
     switch (msg.type()) {
     case IpcMsgType::Handshake:            handleHandshake(msg); break;
@@ -1949,6 +1954,8 @@ void IpcClientHandler::handleSetPreferences(const IpcMessage& msg)
         emit categoriesChanged();
     if (outcome.usenetChanged)
         emit usenetConfigChanged();
+    if (outcome.btChanged)
+        emit btConfigChanged();
 
     // Notify web server config changes
     emit webServerConfigChanged();
@@ -2003,7 +2010,8 @@ IpcClientHandler::PrefApplyOutcome IpcClientHandler::applyPreferenceChanges(cons
             }
         }
 
-        if (!applyPreferenceA(key, val) && !applyPreferenceB(key, val))
+        if (!applyPreferenceA(key, val) && !applyPreferenceB(key, val)
+            && !applyPreferenceBt(key, val))
             applyPreferenceC(key, val);
 
         if (key == QStringLiteral("incomingDir")
@@ -2020,6 +2028,10 @@ IpcClientHandler::PrefApplyOutcome IpcClientHandler::applyPreferenceChanges(cons
     for (const auto& [key, val] : changes) {
         if (key.startsWith(QLatin1StringView("usenet")) && before.value(key) != after.value(key))
             outcome.usenetChanged = true;
+        // "bt" + uppercase: the BitTorrent keys only
+        if (key.size() > 2 && key.startsWith(QLatin1StringView("bt")) && key.at(2).isUpper()
+            && before.value(key) != after.value(key))
+            outcome.btChanged = true;
     }
 
     // MFC PPgSecurity::OnApply: a stricter server filter prunes the list at once
@@ -2054,6 +2066,7 @@ IpcClientHandler::PrefApplyOutcome IpcClientHandler::applyPreferenceChanges(cons
         cfg.userNick               = thePrefs.nick();
         cfg.reconnectOnDisconnect  = thePrefs.reconnect();
         cfg.safeServerConnect      = thePrefs.safeServerConnect();
+        cfg.natTraversal           = thePrefs.natTraversal();
         cfg.cryptLayerPreferred    = thePrefs.cryptLayerRequested();
         cfg.cryptLayerRequired     = thePrefs.cryptLayerRequired();
         cfg.cryptLayerEnabled      = thePrefs.cryptLayerSupported();
@@ -3694,6 +3707,8 @@ bool IpcClientHandler::applyPreferenceA(const QString& key, const QCborValue& va
     // Server
     else if (key == QStringLiteral("safeServerConnect"))
         thePrefs.setSafeServerConnect(val.toBool());
+    else if (key == QStringLiteral("natTraversal"))
+        thePrefs.setNatTraversal(val.toBool());
     else if (key == QStringLiteral("autoConnectStaticOnly"))
         thePrefs.setAutoConnectStaticOnly(val.toBool());
     else if (key == QStringLiteral("useServerPriorities"))
@@ -4221,6 +4236,40 @@ bool IpcClientHandler::applyPreferenceC(const QString& key, const QCborValue& va
     else if (key == QStringLiteral("indicateRatings"))
         thePrefs.setIndicateRatings(val.toBool());
 
+    else
+        return false;
+    return true;
+}
+
+bool IpcClientHandler::applyPreferenceBt(const QString& key, const QCborValue& val)
+{
+    // BitTorrent; the engine re-reads them on btConfigChanged
+    if (key == QStringLiteral("btEnabled"))
+        thePrefs.setBtEnabled(val.toBool());
+    else if (key == QStringLiteral("btListenPort"))
+        thePrefs.setBtListenPort(static_cast<uint16>(std::clamp<qint64>(val.toInteger(), 1, 65535)));
+    else if (key == QStringLiteral("btDownloadDir"))
+        thePrefs.setBtDownloadDir(val.toString());
+    else if (key == QStringLiteral("btMaxDownloadKb"))
+        thePrefs.setBtMaxDownloadKb(static_cast<uint32>(std::max<qint64>(0, val.toInteger())));
+    else if (key == QStringLiteral("btMaxUploadKb"))
+        thePrefs.setBtMaxUploadKb(static_cast<uint32>(std::max<qint64>(0, val.toInteger())));
+    else if (key == QStringLiteral("btDht"))
+        thePrefs.setBtDht(val.toBool());
+    else if (key == QStringLiteral("btLsd"))
+        thePrefs.setBtLsd(val.toBool());
+    else if (key == QStringLiteral("btPex"))
+        thePrefs.setBtPex(val.toBool());
+    else if (key == QStringLiteral("btEncryption"))
+        thePrefs.setBtEncryption(int(val.toInteger()));
+    else if (key == QStringLiteral("btMaxActiveDownloads"))
+        thePrefs.setBtMaxActiveDownloads(int(val.toInteger()));
+    else if (key == QStringLiteral("btMaxActiveSeeds"))
+        thePrefs.setBtMaxActiveSeeds(int(val.toInteger()));
+    else if (key == QStringLiteral("btSeedRatioPercent"))
+        thePrefs.setBtSeedRatioPercent(int(val.toInteger()));
+    else if (key == QStringLiteral("btSeedTimeLimitMinutes"))
+        thePrefs.setBtSeedTimeLimitMinutes(int(val.toInteger()));
     else
         return false;
     return true;

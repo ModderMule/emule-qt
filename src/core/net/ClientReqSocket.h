@@ -60,6 +60,17 @@ public:
     /// Check if the socket has timed out.
     [[nodiscard]] bool checkTimeOut();
 
+    /// Not MFC: a buddy that answers pings is dropped after this long with nothing received.
+    /// Our own 10-min pings reset the idle timer, so they cannot prove the far side is alive.
+    /// 25 min fits stock peers, which answer only every second ping (~20 min).
+    static constexpr uint32 kBuddySilenceLimitMs = 25 * 60 * 1000;
+
+    /// Milliseconds since the last packet arrived on this socket.
+    [[nodiscard]] uint32 msSinceLastReceived() const;
+
+    /// Tests: pretend the last packet arrived this long ago.
+    void setLastReceivedAgo(uint32 ms);
+
     /// Mark for safe deferred deletion.
     virtual void safeDelete();
 
@@ -138,6 +149,7 @@ protected:
     PeerSocketState m_socketState = PeerSocketState::Other;
     QPointer<ListenSocket> m_countedBy;   ///< Listener holding this socket's state count.
     uint32 m_timeoutTimer = 0;
+    uint32 m_lastReceivedTimer = 0;   ///< receive only; sends do not touch it
     uint32 m_deleteTimer = 0;
     bool m_deleteThis = false;
     bool m_portTestCon = false;

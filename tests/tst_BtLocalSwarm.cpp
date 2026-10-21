@@ -1,0 +1,276 @@
+/// @file tst_BtLocalSwarm.cpp
+/// @brief Two BtSessions on loopback, one seeding, one leeching: a real transfer with no
+/// network (research doc §5.6). Also the ed3k join door (BtJoinDiskIo): a hook that spoils
+/// a piece makes libtorrent fetch it again, with a verdict at once or later from another
+/// thread; and the resume data of a restart.
+
+#include "BtSession.h"
+#include "session/BtJoinDiskIo.h"
+
+#include <libtorrent/create_torrent.hpp>
+#include <libtorrent/load_torrent.hpp>
+#include <libtorrent/torrent_info.hpp>
+
+#include <QCoreApplication>
+#include <QFile>
+#include <QRandomGenerator>
+#include <QSignalSpy>
+#include <QTemporaryDir>
+#include <QTest>
+
+#include <atomic>
+
+namespace lt = libtorrent;
+using namespace eMule::bt;
+
+namespace {
+
+constexpr int kTimeoutMs = 60'000;
+constexpr qsizetype kPayload = 3 * 1024 * 1024 + 123;
+constexpr int kPieceLength = 256 * 1024;
+
+/// Spoils the first piece it sees, or none; the verdict at once, or later from the test's
+/// thread (the hook of an ed3k join answers from the engine's thread).
+class SpoilHook final : public BtJoinHook {
+public:
+    SpoilHook(bool spoilFirst, bool deferred) : m_spoilFirst(spoilFirst), m_deferred(deferred) {}
+
+    void pieceHashed(lt::piece_index_t, std::function<void(bool)> done) override
+    {
+        const bool spoil = calls.fetch_add(1) == 0 && m_spoilFirst;
+        if (!m_deferred) {
+            done(spoil);
+            return;
+        }
+        QMetaObject::invokeMethod(qApp, [done = std::move(done), spoil] { done(spoil); }, Qt::QueuedConnection);
+    }
+
+    std::atomic<int> calls{0};
+
+private:
+    bool m_spoilFirst;
+    bool m_deferred;
+};
+
+BtSettings settingsIn(const QTemporaryDir& dir, const QString& name)
+{
+    BtSettings s;
+    s.listenPort = 0;
+    s.dht = false;
+    s.lsd = false;
+    s.seedRatioPercent = 0;
+    s.stateDir = dir.filePath(name + QStringLiteral("/BT"));
+    s.downloadDir = dir.filePath(name + QStringLiteral("/Incoming"));
+    s.userAgent = QStringLiteral("eMuleQt-test/0.0.0");
+    return s;
+}
+
+struct Torrent {
+    QByteArray bytes;
+    lt::info_hash_t hashes;
+};
+
+Torrent makeTorrent(const QString& file, const QString& root, lt::create_flags_t flags)
+{
+    lt::create_torrent t(lt::list_files(file.toStdString()), kPieceLength, flags);
+    lt::set_piece_hashes(t, root.toStdString());
+    const std::vector<char> buf = t.generate_buf();
+    Torrent out;
+    out.bytes = QByteArray(buf.data(), static_cast<qsizetype>(buf.size()));
+    out.hashes = lt::load_torrent_buffer(lt::span<char const>(buf.data(), static_cast<std::ptrdiff_t>(buf.size()))).ti->info_hashes();
+    return out;
+}
+
+} // namespace
+
+class tst_BtLocalSwarm : public QObject {
+    Q_OBJECT
+
+private slots:
+    void initTestCase();
+    void seedAndLeech();
+    void joinHookPassesEveryPiece_data();
+    void joinHookPassesEveryPiece();
+    void joinHookSpoilsAPiece_data();
+    void joinHookSpoilsAPiece();
+    void resumeAfterRestart();
+
+private:
+    void runJoin(bool spoil, bool deferred);
+    /// Starts a seeder of a torrent of the payload; its port to `port`.
+    void startSeeder(BtSession& seeder, const Torrent& torrent, quint16& port);
+    static QString magnet(const Torrent& torrent, quint16 port);
+    QByteArray readDownloaded(const BtSession& s, const QString& id) const;
+
+    QTemporaryDir m_dir;
+    QString m_seedDir;
+    QByteArray m_payload;
+    /// v1 and v2
+    Torrent m_hybrid;
+    /// v1 only: the hook sees each piece once (no v2 block hashes asked for)
+    Torrent m_v1;
+    int m_seeders = 0;
+};
+
+void tst_BtLocalSwarm::initTestCase()
+{
+    QVERIFY(m_dir.isValid());
+    m_seedDir = m_dir.filePath(QStringLiteral("seed"));
+    QVERIFY(QDir().mkpath(m_seedDir));
+    m_payload.resize(kPayload);
+    QRandomGenerator rng(42);
+    for (auto& b : m_payload)
+        b = static_cast<char>(rng.generate() & 0xff);
+    const QString file = m_seedDir + QStringLiteral("/payload.bin");
+    QFile f(file);
+    QVERIFY(f.open(QIODevice::WriteOnly));
+    QCOMPARE(f.write(m_payload), kPayload);
+    f.close();
+
+    m_hybrid = makeTorrent(file, m_seedDir, {});
+    QVERIFY(m_hybrid.hashes.has_v1() && m_hybrid.hashes.has_v2());
+    m_v1 = makeTorrent(file, m_seedDir, lt::create_torrent::v1_only);
+    QVERIFY(m_v1.hashes.has_v1() && !m_v1.hashes.has_v2());
+}
+
+void tst_BtLocalSwarm::seedAndLeech()
+{
+    BtSession seeder;
+    quint16 port = 0;
+    startSeeder(seeder, m_hybrid, port);
+    QVERIFY(port != 0);
+
+    BtSession leecher;
+    leecher.start(settingsIn(m_dir, QStringLiteral("leech")));
+    QSignalSpy finished(&leecher, &BtSession::torrentFinished);
+    const BtAddResult added = leecher.addMagnet(magnet(m_hybrid, port));
+    QCOMPARE(added.outcome, BtAddOutcome::Added);
+    QVERIFY(added.id.startsWith(QStringLiteral("bt:v1:")));
+    QCOMPARE(leecher.addMagnet(magnet(m_hybrid, port)).outcome, BtAddOutcome::Duplicate);
+    QTRY_VERIFY_WITH_TIMEOUT(finished.count() > 0, kTimeoutMs);
+    QCOMPARE(finished.first().first().toString(), added.id);
+    QCOMPARE(readDownloaded(leecher, added.id), m_payload);
+    QTRY_VERIFY_WITH_TIMEOUT(leecher.torrent(added.id)->state == BtState::Seeding, 5000);
+    QCOMPARE(leecher.files(added.id).size(), 1);
+    leecher.stop();
+    seeder.stop();
+}
+
+void tst_BtLocalSwarm::joinHookPassesEveryPiece_data()
+{
+    QTest::addColumn<bool>("deferred");
+    QTest::newRow("verdict at once") << false;
+    QTest::newRow("verdict later, another thread") << true;
+}
+
+void tst_BtLocalSwarm::joinHookPassesEveryPiece()
+{
+    // a hook that passes every piece changes nothing: every piece goes through it once
+    QFETCH(bool, deferred);
+    runJoin(false, deferred);
+}
+
+void tst_BtLocalSwarm::joinHookSpoilsAPiece_data()
+{
+    joinHookPassesEveryPiece_data();
+}
+
+void tst_BtLocalSwarm::joinHookSpoilsAPiece()
+{
+    // a spoiled piece fails in libtorrent. Its one local seeder is banned for it, as
+    // libtorrent blames a peer that alone sent a failed piece, so the download stops
+    // there: the test checks the failure, not a second fetch
+    QFETCH(bool, deferred);
+    runJoin(true, deferred);
+}
+
+void tst_BtLocalSwarm::runJoin(bool spoil, bool deferred)
+{
+    BtSession seeder;
+    quint16 port = 0;
+    startSeeder(seeder, m_v1, port);
+    QVERIFY(port != 0);
+
+    BtSession leecher;
+    leecher.start(settingsIn(m_dir, QStringLiteral("join%1%2").arg(spoil ? 1 : 0).arg(deferred ? 1 : 0)));
+    QVERIFY(leecher.diskIo() != nullptr);
+    auto hook = std::make_shared<SpoilHook>(spoil, deferred);
+    leecher.diskIo()->attach(m_v1.hashes, hook);
+    QVERIFY(leecher.diskIo()->attached(m_v1.hashes));
+    QSignalSpy finished(&leecher, &BtSession::torrentFinished);
+    const BtAddResult added = leecher.addMagnet(magnet(m_v1, port));
+    QCOMPARE(added.outcome, BtAddOutcome::Added);
+    const auto state = [&] {
+        const auto row = leecher.torrent(added.id);
+        return QStringLiteral("hook calls %1, state %2, done %3/%4, failed %5")
+            .arg(hook->calls.load())
+            .arg(row ? int(row->state) : -1)
+            .arg(row ? row->done : -1)
+            .arg(row ? row->size : -1)
+            .arg(row ? row->failedBytes : -1);
+    };
+    if (spoil) {
+        QTRY_VERIFY2_WITH_TIMEOUT(leecher.torrent(added.id).has_value() && leecher.torrent(added.id)->failedBytes >= kPieceLength,
+                                  qPrintable(state()), kTimeoutMs);
+        QVERIFY(finished.isEmpty());
+    } else {
+        QTRY_VERIFY2_WITH_TIMEOUT(finished.count() > 0, qPrintable(state()), kTimeoutMs);
+        const int pieces = static_cast<int>((kPayload + kPieceLength - 1) / kPieceLength);
+        QCOMPARE(hook->calls.load(), pieces);
+        QCOMPARE(readDownloaded(leecher, added.id), m_payload);
+        QCOMPARE(leecher.torrent(added.id)->failedBytes, 0);
+    }
+    leecher.diskIo()->detach(m_v1.hashes);
+    QVERIFY(!leecher.diskIo()->attached(m_v1.hashes));
+    // a deferred verdict still queued lands after the session is gone: dropped, no crash
+    leecher.stop();
+    seeder.stop();
+    QTest::qWait(50);
+}
+
+void tst_BtLocalSwarm::resumeAfterRestart()
+{
+    // the leecher of seedAndLeech has resume data now
+    BtSession again;
+    QSignalSpy added(&again, &BtSession::torrentAdded);
+    again.start(settingsIn(m_dir, QStringLiteral("leech")));
+    QTRY_VERIFY_WITH_TIMEOUT(added.count() > 0, 10'000);
+    const QString id = added.first().first().toString();
+    QTRY_VERIFY_WITH_TIMEOUT(again.torrent(id).has_value() && again.torrent(id)->state == BtState::Seeding, 10'000);
+    QVERIFY(again.remove(id, false));
+    QVERIFY(again.torrents().isEmpty());
+    again.stop();
+}
+
+void tst_BtLocalSwarm::startSeeder(BtSession& seeder, const Torrent& torrent, quint16& port)
+{
+    port = 0;
+    // a state dir of its own: one of an earlier test would resume the torrent
+    seeder.start(settingsIn(m_dir, QStringLiteral("seeder%1").arg(++m_seeders)));
+    const BtAddResult r = seeder.addTorrentFile(torrent.bytes, m_seedDir);
+    QCOMPARE(r.outcome, BtAddOutcome::Added);
+    QTRY_VERIFY_WITH_TIMEOUT(seeder.torrent(r.id).has_value() && seeder.torrent(r.id)->state == BtState::Seeding, kTimeoutMs);
+    QTRY_VERIFY_WITH_TIMEOUT(seeder.status().listenPort != 0, 5000);
+    port = seeder.status().listenPort;
+}
+
+QString tst_BtLocalSwarm::magnet(const Torrent& torrent, quint16 port)
+{
+    const auto& v1 = torrent.hashes.v1;
+    const QByteArray hex = QByteArray(reinterpret_cast<const char*>(v1.data()), static_cast<qsizetype>(v1.size())).toHex();
+    return QStringLiteral("magnet:?xt=urn:btih:%1&dn=payload.bin&x.pe=127.0.0.1:%2").arg(QString::fromLatin1(hex)).arg(port);
+}
+
+QByteArray tst_BtLocalSwarm::readDownloaded(const BtSession& s, const QString& id) const
+{
+    const auto row = s.torrent(id);
+    if (!row)
+        return {};
+    QFile f(row->savePath + QStringLiteral("/payload.bin"));
+    if (!f.open(QIODevice::ReadOnly))
+        return {};
+    return f.readAll();
+}
+
+QTEST_GUILESS_MAIN(tst_BtLocalSwarm)
+#include "tst_BtLocalSwarm.moc"

@@ -271,7 +271,8 @@ void CategoryTabBar::addViewFilterMenu(QMenu* menu, int index)
     // The rarer filters are advanced mode only, unless the tab already uses one
     const auto addFilterMode = [&](int mode) {
         static constexpr int kRare[] = {Erroneous, SeenComplete, CDImage, Program, Collection};
-        if (ext || cat.filter == mode || !std::ranges::contains(kRare, mode))
+        // find, not ranges::contains: GCC 12 (Ubuntu 22.04 build) lacks it
+        if (ext || cat.filter == mode || std::ranges::find(kRare, mode) == std::end(kRare))
             addMode(mode);
     };
     filterMenu->addSeparator();

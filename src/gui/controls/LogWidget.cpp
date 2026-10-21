@@ -274,7 +274,7 @@ void LogWidget::routeUsenet(QtMsgType type, const QString& colored,
         appendLog(colored, ts, seqId);
 }
 
-void LogWidget::insertSorted(QTextBrowser* browser, QList<qint64>& seqIds,
+void LogWidget::insertSorted(LogTextView* browser, QList<qint64>& seqIds,
                               qint64 seqId, const QString& html)
 {
     noteAppended(browser);
@@ -308,34 +308,16 @@ void LogWidget::insertSorted(QTextBrowser* browser, QList<qint64>& seqIds,
     cursor.insertHtml(html);
 }
 
-void LogWidget::trimToLimit(QTextBrowser* browser, QList<qint64>& seqIds)
+void LogWidget::trimToLimit(LogTextView* browser, QList<qint64>& seqIds)
 {
-    const int limit = static_cast<int>(thePrefs.maxLogLines());
-    QTextDocument* doc = browser->document();
-    const int excess = doc->blockCount() - limit;
-    if (excess <= 0)
-        return;
-    QTextCursor cursor(doc);
-    cursor.movePosition(QTextCursor::Start);
-    cursor.movePosition(QTextCursor::NextBlock, QTextCursor::KeepAnchor, excess);
-    cursor.removeSelectedText();
-
+    const int removed = browser->trimTo(static_cast<int>(thePrefs.maxLogLines()));
     // Keep seqIds in sync
-    if (excess <= seqIds.size())
-        seqIds.remove(0, excess);
+    seqIds.remove(0, std::min(removed, static_cast<int>(seqIds.size())));
 }
 
-void LogWidget::trimToLimit(QTextBrowser* browser)
+void LogWidget::trimToLimit(LogTextView* browser)
 {
-    const int limit = static_cast<int>(thePrefs.maxLogLines());
-    QTextDocument* doc = browser->document();
-    const int excess = doc->blockCount() - limit;
-    if (excess <= 0)
-        return;
-    QTextCursor cursor(doc);
-    cursor.movePosition(QTextCursor::Start);
-    cursor.movePosition(QTextCursor::NextBlock, QTextCursor::KeepAnchor, excess);
-    cursor.removeSelectedText();
+    browser->trimTo(static_cast<int>(thePrefs.maxLogLines()));
 }
 
 void LogWidget::appendIpcMessage(const QString& msg, bool outgoing)

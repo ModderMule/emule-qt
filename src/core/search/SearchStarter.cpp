@@ -55,23 +55,29 @@ SearchDispatch refusedDispatch(const QString& why)
     return out;
 }
 
-QString keywordTooShort()
+
+// Only words every result must hold can be the Kad target: never a NOT or OR
+// term, never an @attribute.
+kad::KeywordSelection selectKadKeyword(const QString& expression)
 {
-    return QCoreApplication::translate("eMule::IpcClientHandler", "Keyword too short.\n\nThe keyword(s) used in a Kad search "
-                            "expression must have a minimum length of 3 characters.");
+    return kad::SearchManager::selectKeyword(kadKeywordSource(expression));
 }
 
 SearchDispatch dispatchKadSearch(SearchList& list, uint32 searchID, const SearchParams& params)
 {
     SearchDispatch out;
 
+    if (const QString error = searchExpressionError(params.expression, SearchType::Kademlia);
+        !error.isEmpty())
+        return refusedDispatch(error);
+
     // A Kad search is indexed under a single keyword. When the expression's first
     // keyword is already the target of a running search, fall back to the next
     // word long enough to be a keyword. With every keyword taken the search waits
     // for one of them to come free.
-    const kad::KeywordSelection sel = kad::SearchManager::selectKeyword(params.expression);
+    const kad::KeywordSelection sel = selectKadKeyword(params.expression);
     if (sel.status == kad::KeywordStatus::TooShort)
-        return refusedDispatch(keywordTooShort());
+        return refusedDispatch(kadKeywordTooShortError());
     if (sel.status == kad::KeywordStatus::AllActive) {
         out.outcome = SearchDispatch::Outcome::Busy;
         return out;
@@ -130,6 +136,8 @@ SearchDispatch dispatchEd2kSearch(SearchList& list, uint32 searchID, SearchType 
     bool uses64Bit = false;
     const QByteArray payload = buildSearchTermsPayload(params, {}, supports64Bit, &uses64Bit);
     if (payload.isEmpty()) {
+        if (const QString error = searchExpressionError(params.expression, type); !error.isEmpty())
+            return refusedDispatch(error);
         return refusedDispatch(QCoreApplication::translate(
             "eMule::IpcClientHandler", "The search expression contains nothing to search for."));
     }
@@ -237,10 +245,13 @@ SearchQueueBackend defaultSearchQueueBackend(SearchList& list)
         // place would be a wrong answer, which is worse than a refusal.
         if (params.type == SearchType::UsenetIndexer)
             return QCoreApplication::translate("eMule::IpcClientHandler", "Indexer searches use StartIndexerSearch, not StartSearch.");
-        if (params.type == SearchType::Kademlia
-            && kad::SearchManager::selectKeyword(params.expression).status
-                   == kad::KeywordStatus::TooShort)
-            return keywordTooShort();
+        // A typo is reported when the search is asked for, not when it reaches the
+        // front of the queue.
+        if (params.type == SearchType::Automatic || params.type == SearchType::Ed2kServer
+            || params.type == SearchType::Ed2kGlobal || params.type == SearchType::Kademlia) {
+            if (QString error = searchExpressionError(params.expression, params.type); !error.isEmpty())
+                return error;
+        }
         if (isMetaSearchType(params.type)) {
             if (const auto request = buildMetaSearchRequest(params, params.type); !request)
                 return request.error();

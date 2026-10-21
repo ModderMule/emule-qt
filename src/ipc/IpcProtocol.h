@@ -666,6 +666,46 @@ enum class IpcMsgType : int {
     /// [serverAddr] -> [ok, error]. AccountApi.Logout, then forget the token.
     MetaLogout              = 754,
 
+    // -- BitTorrent (800-899) -------------------------------------------------
+    //
+    // The block of research doc §5.1. A torrent is named by its id, minted by the
+    // daemon: "bt:v1:<40 hex>" or "bt:v2:<64 hex>" (src/bt/BtIds.h). Rows are the
+    // CBOR maps of src/daemon/BtBridge.cpp. 503 = the BitTorrent module is not built
+    // or not running.
+
+    /// [] -> [{id, name, savePath, state, size, done, progress, rateDown, rateUp,
+    ///         peers, seeds, peersTotal, seedsTotal, downloaded, uploaded,
+    ///         failedBytes, error,
+    ///         hashV1, hashV2, paused, hasMetadata, private, addedAt, completedAt,
+    ///         seedingSeconds, queuePosition, pieceMap, pieces, pieceLength,
+    ///         numFiles, eta}]
+    GetTorrents             = 800,
+    /// [data: bytes, savePath: string (empty = BT download dir), paused: bool]
+    /// -> {outcome, id, message}; outcome is BtAddOutcome (0 added, 1 duplicate,
+    /// 2 invalid, 3 not running, 4 failed)
+    AddTorrentFile          = 801,
+    /// [uri: string, savePath: string, paused: bool] -> {outcome, id, message}
+    AddMagnet               = 802,
+    /// [id: string, deleteFiles: bool] -> bool
+    RemoveTorrent           = 803,
+    /// [id: string] -> bool
+    PauseTorrent            = 804,
+    /// [id: string] -> bool
+    ResumeTorrent           = 805,
+    /// [id: string] -> {files: [{index, path, size, done, priority, pad}],
+    ///                  peers: [{address, client, progress, rateDown, rateUp,
+    ///                           downloaded, uploaded, seed, encrypted, utp, source}],
+    ///                  trackers: [{url, tier, working, message, seeds, peers}]}
+    GetTorrentDetails       = 806,
+    /// [id: string, priorities: [int 0..7, one per file]] -> bool
+    SetTorrentFilePriorities = 807,
+    /// [id: string] -> bool
+    RecheckTorrent          = 808,
+    /// [id: string] -> bool
+    ReannounceTorrent       = 809,
+    /// [] -> {running, listenPort, listening, dhtNodes, torrents, rateDown, rateUp}
+    GetBtStatus             = 818,
+
     // -- Responses (Core -> GUI) ---------------------------------------------
 
     HandshakeOk          = 300,  ///< [version, motd, sessionToken, loading: bool, loadStage: string]
@@ -762,6 +802,20 @@ enum class IpcMsgType : int {
     /// [{paused: bool}] — the engine-wide pause changed. Uncoalesced: a
     /// transition, and the tray and the toolbar both follow it.
     PushUsenetEngineState  = 913,
+
+    // -- BitTorrent pushes (950-999) -------------------------------------------
+
+    /// [{...one row, same shape as a GetTorrents row...}] — a new torrent.
+    /// Uncoalesced: a transition.
+    PushTorrentAdded       = 950,
+    /// [{...one row...}] — coalesced on the id.
+    PushTorrentUpdate      = 951,
+    /// [id: string] — the torrent is gone; drop the row.
+    PushTorrentRemoved     = 952,
+    /// [{...GetBtStatus...}] — the engine started, stopped or changed its port.
+    PushBtStatus           = 953,
+    /// [id: string] — every wanted byte is there. Uncoalesced.
+    PushTorrentFinished    = 954,
 };
 
 /// What SetCategoryStatus should do to every download in the category.

@@ -117,14 +117,14 @@ private:
     /// Insert a formatted log line into @p browser in sequence-order.
     /// If seqId >= the last entry's seqId, appends (fast path).
     /// Otherwise binary-searches for the correct position.
-    void insertSorted(QTextBrowser* browser, QList<qint64>& seqIds,
+    void insertSorted(LogTextView* browser, QList<qint64>& seqIds,
                       qint64 seqId, const QString& html);
 
     int m_batchDepth = 0;   ///< open beginBatch() calls
 
     /// Remove oldest lines from @p browser if it exceeds the configured limit.
-    void trimToLimit(QTextBrowser* browser, QList<qint64>& seqIds);
-    static void trimToLimit(QTextBrowser* browser);
+    static void trimToLimit(LogTextView* browser, QList<qint64>& seqIds);
+    static void trimToLimit(LogTextView* browser);
 
     /// Write the startup banner (version + version-check link) into the Server
     /// Info pane, as the reference does in CServerWnd::OnInitDialog.

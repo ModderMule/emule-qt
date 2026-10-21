@@ -39,8 +39,11 @@ namespace SrvTcpFlag {
     inline constexpr uint32 TypeTagInteger  = 0x00000080;
     inline constexpr uint32 LargeFiles      = 0x00000100;
     inline constexpr uint32 TcpObfuscation  = 0x00000400;
+    inline constexpr uint32 LugdunumNat     = 0x00001000;   // Lugdunum NAT callback (needs 24-byte OP_IDCHANGE too)
     inline constexpr uint32 Ipv6            = 0x00004000;   // server speaks the IPv6 extension
-    inline constexpr uint32 NatRendezvous   = 0x00040000;   // eNode-go PR_NAT rendezvous (parsed, unused); 0x8000 = ed2k-server OP_IPV6_UPDATE
+    // 0x8000 = ed2k-server OP_IPV6_UPDATE, 0x10000 = eNode-go meta search
+    inline constexpr uint32 LowIdHolePunch  = 0x00020000;   // ed2k-server LowID hole punch (0x60-0x62, 0x9F)
+    inline constexpr uint32 NatRendezvous   = 0x00040000;   // eNode-go PR_NAT rendezvous (UDP 0xF1)
 }
 
 namespace SrvUdpFlag {
@@ -264,6 +267,15 @@ public:
     [[nodiscard]] uint16 obfuscationPortUDP() const     { return m_obfuscationPortUDP; }
     void setObfuscationPortUDP(uint16 p)                { m_obfuscationPortUDP = p; }
 
+    /// eNode-go PR_NAT UDP port from ST_NAT_PORT (runtime only, 0 = not announced).
+    [[nodiscard]] uint16 natPort() const                { return m_natPort; }
+    void setNatPort(uint16 p)                           { m_natPort = p; }
+
+    /// Length of the last OP_IDCHANGE payload (runtime only). Lugdunum sends 24 bytes
+    /// when it took our NAT login bit.
+    [[nodiscard]] uint32 idChangeLength() const         { return m_idChangeLength; }
+    void setIdChangeLength(uint32 len)                  { m_idChangeLength = len; }
+
     /// UDP obfuscation key, but only while our public IP still matches the one
     /// the key was issued for — the key is bound to that IP, so a server will
     /// silently drop packets obfuscated with a stale one. Returns 0 otherwise
@@ -323,6 +335,10 @@ public:
     [[nodiscard]] bool supportsObfuscationTCP() const   { return m_obfuscationPortTCP != 0 && (supportsObfuscationUDP() || supportsGetSourcesObfuscation()); }
     [[nodiscard]] bool supportsIPv6() const             { return (m_tcpFlags & SrvTcpFlag::Ipv6) != 0; }
     [[nodiscard]] bool supportsIPv6UDP() const          { return (m_udpFlags & SrvUdpFlag::Ipv6) != 0; }
+    [[nodiscard]] bool supportsLowIdHolePunch() const   { return (m_tcpFlags & SrvTcpFlag::LowIdHolePunch) != 0; }
+    /// Flag alone is not enough: eserver also sends a 24-byte OP_IDCHANGE.
+    [[nodiscard]] bool supportsLugdunumNat() const      { return (m_tcpFlags & SrvTcpFlag::LugdunumNat) != 0 && m_idChangeLength >= 24; }
+    [[nodiscard]] bool supportsNatRendezvous() const    { return (m_tcpFlags & SrvTcpFlag::NatRendezvous) != 0; }
 
     /// Check if we hold a valid UDP key for the given client IP. The stored IP
     /// must itself be known: a key stamped before we learned our public IP
@@ -386,6 +402,8 @@ private:
     // Crypto
     uint16  m_obfuscationPortTCP = 0;
     uint16  m_obfuscationPortUDP = 0;
+    uint16  m_natPort = 0;
+    uint32  m_idChangeLength = 0;
     uint32  m_serverKeyUDP = 0;
     uint32  m_serverKeyUDPIP = 0;
     bool    m_cryptPingReplyPending = false;

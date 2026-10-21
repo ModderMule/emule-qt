@@ -77,6 +77,7 @@ private slots:
     void setBuddy_lossRearmsTheSearchWhileUdpIsUnverified();
     void infoPackets_neverReplaceAConnectedBuddy();
     void buddyPing_firstDueAfterTenMinutes();
+    void buddyPing_incomingLimitIndependentOfOwnSchedule();
     void incomingBuddy_pendingClaimsAreBounded();
     void callbackPacket_onlyFromBuddyToAVettedTarget();
     void relayBudget_callbackBucketPerRelayIP();
@@ -419,7 +420,7 @@ void tst_ClientList::infoPackets_neverReplaceAConnectedBuddy()
     list.setBuddy(nullptr, BuddyStatus::None);
 }
 
-// MFC BaseClient.cpp:166: a new client pings after 10 min and takes a ping after 13.
+// MFC BaseClient.cpp:166: a new client pings after 10 min. Not MFC: it takes a ping after 3.
 void tst_ClientList::buddyPing_firstDueAfterTenMinutes()
 {
     UpDownClient client;
@@ -427,6 +428,20 @@ void tst_ClientList::buddyPing_firstDueAfterTenMinutes()
     QVERIFY(!client.allowIncomingBuddyPingPong());
     client.setNextBuddyPingPongTime(getTickCount());
     QVERIFY(client.sendBuddyPingPong());
+}
+
+// Not MFC: a ping or pong pushing our schedule no longer blocks the peer's next ping. MFC
+// waits 13 min off the shared stamp, so every second 10-min ping went unanswered.
+void tst_ClientList::buddyPing_incomingLimitIndependentOfOwnSchedule()
+{
+    UpDownClient client;
+    client.setLastIncomingBuddyPingTime(getTickCount() - MIN2MS(3));
+    client.setLastBuddyPingPongTime();   // a pong just arrived
+    QVERIFY(client.allowIncomingBuddyPingPong());
+    QVERIFY(!client.sendBuddyPingPong());
+
+    client.setLastIncomingBuddyPingTime(getTickCount() - MIN2MS(2));
+    QVERIFY2(!client.allowIncomingBuddyPingPong(), "the 3-min flood limit holds");
 }
 
 void tst_ClientList::processKadList_releasesAStaleIncomingBuddy()
