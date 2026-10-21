@@ -67,10 +67,7 @@ target_include_directories(emuleqt
         "${CMAKE_CURRENT_SOURCE_DIR}"
 )
 
-# Same switch as the daemon's eMule::Bt; the GUI never links it
-if(EMULE_BITTORRENT)
-    target_compile_definitions(emuleqt PRIVATE EMULE_HAVE_BITTORRENT=1)
-endif()
+# EMULE_HAVE_BITTORRENT: inherited from the top-level switch; the GUI never links eMule::Bt
 
 target_link_libraries(emuleqt
     PRIVATE

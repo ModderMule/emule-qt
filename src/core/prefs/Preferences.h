@@ -27,6 +27,7 @@
 
 #include <array>
 #include <memory>
+#include <optional>
 
 namespace eMule {
 
@@ -211,6 +212,27 @@ public:
 
     [[nodiscard]] uint32 maxDownload() const;
     void setMaxDownload(uint32 val);
+
+    /// Limits a running schedule puts over the stored ones (MFC CScheduler).
+    /// Getters such as maxUpload() return the scheduled value while one is set;
+    /// setters, save() and toIpcMap() use the stored value, so a schedule never
+    /// leaks into the user's settings. Runtime only.
+    struct ScheduledLimits {
+        std::optional<uint32> maxUpload;
+        std::optional<uint32> maxDownload;
+        std::optional<uint16> maxConnections;
+        std::optional<uint16> maxSourcesPerFile;
+        std::optional<uint16> maxConsPerFive;
+    };
+    [[nodiscard]] ScheduledLimits scheduledLimits() const;
+    void setScheduledLimits(const ScheduledLimits& limits);
+
+    /// Stored limits, without the scheduler layer
+    [[nodiscard]] uint32 configuredMaxUpload() const;
+    [[nodiscard]] uint32 configuredMaxDownload() const;
+    [[nodiscard]] uint16 configuredMaxConnections() const;
+    [[nodiscard]] uint16 configuredMaxSourcesPerFile() const;
+    [[nodiscard]] uint16 configuredMaxConsPerFive() const;
 
     [[nodiscard]] uint32 minUpload() const;
     void setMinUpload(uint32 val);
@@ -1797,6 +1819,9 @@ private:
     // Data layout stays fully encapsulated. Locking lives here in one place.
     template<class T> [[nodiscard]] T get(T Data::*member) const;
     template<class T> void           set(T Data::*member, const T& value);
+    /// Stored field, or its scheduler override when one is set
+    template<class T> [[nodiscard]] T getScheduled(T Data::*member,
+                                                   std::optional<T> ScheduledLimits::*over) const;
 
     /// Visit every field a statistics reset clears — the cumulative counters plus
     /// the six cumulative rate records — as (key, reference) pairs. Reset, backup

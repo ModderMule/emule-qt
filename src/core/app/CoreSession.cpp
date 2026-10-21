@@ -454,8 +454,12 @@ void CoreSession::onTimer()
             theApp.serverConnect->checkForTimeout();
             theApp.serverConnect->keepConnectionAlive();
         }
-        if (theApp.scheduler && thePrefs.schedulerEnabled())
-            theApp.scheduler->check();
+        if (theApp.scheduler) {
+            if (thePrefs.schedulerEnabled())
+                theApp.scheduler->check();
+            else
+                theApp.scheduler->clearOverrides();
+        }
 
         // Server stat ping — one server per UDPSERVERSTATTIME (5s); each server
         // is re-asked at most every UDPSERVSTATREASKTIME (4.5h). This is what
@@ -1543,7 +1547,7 @@ void CoreSession::shutdownSearch()
 }
 
 // ---------------------------------------------------------------------------
-// initScheduler — create Scheduler, load schedules, save originals
+// initScheduler — create Scheduler, load schedules
 // ---------------------------------------------------------------------------
 
 void CoreSession::initScheduler()
@@ -1560,12 +1564,10 @@ void CoreSession::initScheduler()
     int loaded = m_scheduler->loadFromFile(thePrefs.configDir());
     if (loaded > 0)
         logInfo(QStringLiteral("Loaded %1 scheduler entries").arg(loaded));
-
-    m_scheduler->saveOriginals();
 }
 
 // ---------------------------------------------------------------------------
-// shutdownScheduler — restore originals, save, release
+// shutdownScheduler — drop overrides, save, release
 // ---------------------------------------------------------------------------
 
 void CoreSession::shutdownScheduler()
@@ -1573,7 +1575,7 @@ void CoreSession::shutdownScheduler()
     if (!m_scheduler)
         return;
 
-    m_scheduler->restoreOriginals();
+    m_scheduler->clearOverrides();
     m_scheduler->saveToFile(thePrefs.configDir());
     theApp.scheduler = nullptr;
     m_scheduler.reset();

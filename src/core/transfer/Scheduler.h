@@ -84,9 +84,9 @@ public:
     // Runtime — called periodically
     int check(bool forceCheck = false);
 
-    // State management
-    void saveOriginals();
-    void restoreOriginals();
+    // State management. Limits go into the Preferences scheduler layer, so the
+    // stored values stay the user's own and come back when no schedule applies.
+    void clearOverrides();
     void activateSchedule(int index, bool makeDefault = false);
 
     // Component access
@@ -96,13 +96,6 @@ private:
     std::vector<std::unique_ptr<ScheduleEntry>> m_schedules;
     DownloadQueue* m_downloadQueue = nullptr;
     int m_lastCheckedMinute = 60;
-
-    // Original preference values (saved before schedule overrides)
-    uint32 m_originalUpload = 0;
-    uint32 m_originalDownload = 0;
-    uint16 m_originalConnections = 0;
-    uint16 m_originalSources = 0;
-    uint16 m_originalConsPerFive = 0;
 };
 
 } // namespace eMule

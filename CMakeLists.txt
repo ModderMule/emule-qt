@@ -492,6 +492,10 @@ if(EMULE_BITTORRENT)
         set(EMULE_BITTORRENT OFF CACHE BOOL "" FORCE)
     endif()
 endif()
+# The one place EMULE_HAVE_BITTORRENT is set: every target below inherits it
+if(EMULE_BITTORRENT)
+    add_compile_definitions(EMULE_HAVE_BITTORRENT=1)
+endif()
 
 # ---------------------------------------------------------------------------
 # Subdirectories

@@ -10,10 +10,7 @@
 
 find_package(Qt6 REQUIRED COMPONENTS Test)
 
-# Tests compile GUI sources directly: same BitTorrent switch as emuleqt
-if(EMULE_BITTORRENT)
-    add_compile_definitions(EMULE_HAVE_BITTORRENT=1)
-endif()
+# EMULE_HAVE_BITTORRENT: inherited from the top-level EMULE_BITTORRENT switch
 
 # All tests are independent executables — safe to run in parallel:
 #   ctest --parallel    (or set CTEST_PARALLEL_LEVEL env var)

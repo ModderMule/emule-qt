@@ -2056,10 +2056,6 @@ IpcClientHandler::PrefApplyOutcome IpcClientHandler::applyPreferenceChanges(cons
             outcome.ports = rest;
     }
 
-    // Update scheduler baselines so restoreOriginals() doesn't revert these changes
-    if (theApp.scheduler)
-        theApp.scheduler->saveOriginals();
-
     // Propagate config changes to running ServerConnect
     if (theApp.serverConnect) {
         auto cfg = theApp.serverConnect->config();
@@ -2374,7 +2370,7 @@ void IpcClientHandler::handleSaveSchedules(const IpcMessage& msg)
     thePrefs.setSchedulerEnabled(enabled);
 
     if (theApp.scheduler) {
-        theApp.scheduler->restoreOriginals();
+        theApp.scheduler->clearOverrides();
         theApp.scheduler->removeAll();
 
         const QCborArray schedArr = msg.fieldArray(1);
@@ -2397,7 +2393,6 @@ void IpcClientHandler::handleSaveSchedules(const IpcMessage& msg)
         }
 
         theApp.scheduler->saveToFile(thePrefs.configDir());
-        theApp.scheduler->saveOriginals();
 
         if (enabled)
             theApp.scheduler->check(true);

@@ -5,6 +5,7 @@
 #include "transfer/Scheduler.h"
 #include "prefs/Preferences.h"
 
+#include <QDateTime>
 #include <QSettings>
 #include <QTest>
 
@@ -24,7 +25,8 @@ private slots:
     void saveLoad_roundTrip();
     void check_emptySchedules();
     void activateSchedule_setsPrefs();
-    void saveRestoreOriginals();
+    void clearOverrides_restoresStored();
+    void check_windowEnd_restoresLimit();
 };
 
 void tst_Scheduler::construction_empty()
@@ -236,25 +238,22 @@ void tst_Scheduler::activateSchedule_setsPrefs()
     QCOMPARE(thePrefs.maxUpload(), uint32(42));
     QCOMPARE(thePrefs.maxDownload(), uint32(84));
 
+    scheduler.clearOverrides();
+
     // Restore original values
     thePrefs.setMaxUpload(origUpload);
     thePrefs.setMaxDownload(origDownload);
 }
 
-void tst_Scheduler::saveRestoreOriginals()
+void tst_Scheduler::clearOverrides_restoresStored()
 {
     Scheduler scheduler;
 
-    // Set known pref values
-    uint32 origUpload = thePrefs.maxUpload();
-    uint32 origDownload = thePrefs.maxDownload();
-
+    const uint32 origUpload = thePrefs.configuredMaxUpload();
+    const uint32 origDownload = thePrefs.configuredMaxDownload();
     thePrefs.setMaxUpload(100);
     thePrefs.setMaxDownload(200);
 
-    scheduler.saveOriginals();
-
-    // Activate a schedule that overrides
     auto entry = std::make_unique<ScheduleEntry>();
     entry->title = QStringLiteral("Override");
     entry->enabled = true;
@@ -268,14 +267,64 @@ void tst_Scheduler::saveRestoreOriginals()
     QCOMPARE(thePrefs.maxUpload(), uint32(10));
     QCOMPARE(thePrefs.maxDownload(), uint32(20));
 
-    // Restore originals
-    scheduler.restoreOriginals();
+    // Stored values untouched: save() and Options (toIpcMap) see the user's limits
+    QCOMPARE(thePrefs.configuredMaxUpload(), uint32(100));
+    QCOMPARE(thePrefs.configuredMaxDownload(), uint32(200));
+    QCOMPARE(thePrefs.toIpcMap().value(QStringLiteral("maxUpload")).toInteger(), 100);
+
+    scheduler.clearOverrides();
     QCOMPARE(thePrefs.maxUpload(), uint32(100));
     QCOMPARE(thePrefs.maxDownload(), uint32(200));
 
-    // Restore real original values
     thePrefs.setMaxUpload(origUpload);
     thePrefs.setMaxDownload(origDownload);
+}
+
+// Issue #47: the limit came not back when the window ended
+void tst_Scheduler::check_windowEnd_restoresLimit()
+{
+    Scheduler scheduler;
+
+    const uint32 origUpload = thePrefs.configuredMaxUpload();
+    thePrefs.setMaxUpload(500);
+
+    const QDateTime now = QDateTime::currentDateTime();
+    auto entry = std::make_unique<ScheduleEntry>();
+    entry->title = QStringLiteral("Low Speed");
+    entry->enabled = true;
+    entry->startTime = now.addSecs(-3600).toSecsSinceEpoch();
+    entry->endTime = now.addSecs(3600).toSecsSinceEpoch();
+    entry->actions[0] = ScheduleAction::SetUpload;
+    entry->values[0] = QStringLiteral("50");
+    scheduler.addSchedule(std::move(entry));
+
+    scheduler.check(true);
+    QCOMPARE(thePrefs.maxUpload(), uint32(50));
+
+    // Options applied while the schedule runs: sends back the stored value
+    thePrefs.setMaxUpload(static_cast<uint32>(
+        thePrefs.toIpcMap().value(QStringLiteral("maxUpload")).toInteger()));
+    scheduler.check(true);
+    QCOMPARE(thePrefs.maxUpload(), uint32(50));
+    QCOMPARE(thePrefs.configuredMaxUpload(), uint32(500));
+
+    // Window over
+    ScheduleEntry* e = scheduler.schedule(0);
+    e->startTime = now.addSecs(2 * 3600).toSecsSinceEpoch();
+    e->endTime = now.addSecs(3 * 3600).toSecsSinceEpoch();
+    scheduler.check(true);
+    QCOMPARE(thePrefs.maxUpload(), uint32(500));
+
+    // Last entry disabled: nothing may stay behind
+    e->startTime = now.addSecs(-3600).toSecsSinceEpoch();
+    e->endTime = now.addSecs(3600).toSecsSinceEpoch();
+    scheduler.check(true);
+    QCOMPARE(thePrefs.maxUpload(), uint32(50));
+    e->enabled = false;
+    scheduler.check(true);
+    QCOMPARE(thePrefs.maxUpload(), uint32(500));
+
+    thePrefs.setMaxUpload(origUpload);
 }
 
 QTEST_GUILESS_MAIN(tst_Scheduler)

@@ -184,6 +184,9 @@ struct Preferences::Data {
     uint32 maxUpload = kDefaultMaxUpload;
     uint32 maxDownload = kDefaultMaxDownload;
     uint32 minUpload = 1;
+
+    // Scheduler layer on top of the stored limits. Runtime only, never saved.
+    ScheduledLimits scheduled;
     uint32 maxGraphUploadRate = kDefaultMaxGraphUploadRate;
     uint32 maxGraphDownloadRate = kDefaultMaxGraphDownloadRate;
 
@@ -699,6 +702,13 @@ template<class T> void Preferences::set(T Data::*member, const T& value)
     (*m_data).*member = value;
 }
 
+template<class T> T Preferences::getScheduled(T Data::*member,
+                                              std::optional<T> ScheduledLimits::*over) const
+{
+    QReadLocker lock(&m_lock);
+    return (m_data->scheduled.*over).value_or((*m_data).*member);
+}
+
 // ---------------------------------------------------------------------------
 // Global instance
 // ---------------------------------------------------------------------------
@@ -800,7 +810,12 @@ uint16 Preferences::serverUDPPort() const { return get(&Data::serverUDPPort); }
 
 void Preferences::setServerUDPPort(uint16 val) { set(&Data::serverUDPPort, val); }
 
-uint16 Preferences::maxConnections() const { return get(&Data::maxConnections); }
+uint16 Preferences::maxConnections() const
+{
+    return getScheduled(&Data::maxConnections, &ScheduledLimits::maxConnections);
+}
+
+uint16 Preferences::configuredMaxConnections() const { return get(&Data::maxConnections); }
 
 void Preferences::setMaxConnections(uint16 val) { set(&Data::maxConnections, val); }
 
@@ -860,7 +875,12 @@ void Preferences::setServerPreferIPv6(bool val) { set(&Data::serverPreferIPv6, v
 // Getters / setters — Bandwidth
 // ---------------------------------------------------------------------------
 
-uint32 Preferences::maxUpload() const { return get(&Data::maxUpload); }
+uint32 Preferences::maxUpload() const
+{
+    return getScheduled(&Data::maxUpload, &ScheduledLimits::maxUpload);
+}
+
+uint32 Preferences::configuredMaxUpload() const { return get(&Data::maxUpload); }
 
 void Preferences::setMaxUpload(uint32 val) { set(&Data::maxUpload, val); }
 
@@ -870,7 +890,22 @@ uint32 Preferences::maxUploadLimit() const
     return val ? val : UNLIMITED;
 }
 
-uint32 Preferences::maxDownload() const { return get(&Data::maxDownload); }
+uint32 Preferences::maxDownload() const
+{
+    return getScheduled(&Data::maxDownload, &ScheduledLimits::maxDownload);
+}
+
+uint32 Preferences::configuredMaxDownload() const { return get(&Data::maxDownload); }
+
+Preferences::ScheduledLimits Preferences::scheduledLimits() const
+{
+    return get(&Data::scheduled);
+}
+
+void Preferences::setScheduledLimits(const ScheduledLimits& limits)
+{
+    set(&Data::scheduled, limits);
+}
 
 void Preferences::setMaxDownload(uint32 val) { set(&Data::maxDownload, val); }
 
@@ -1175,7 +1210,12 @@ void Preferences::setStartCoreWithConsole(bool val) { set(&Data::startCoreWithCo
 // Getters / setters — Files
 // ---------------------------------------------------------------------------
 
-uint16 Preferences::maxSourcesPerFile() const { return get(&Data::maxSourcesPerFile); }
+uint16 Preferences::maxSourcesPerFile() const
+{
+    return getScheduled(&Data::maxSourcesPerFile, &ScheduledLimits::maxSourcesPerFile);
+}
+
+uint16 Preferences::configuredMaxSourcesPerFile() const { return get(&Data::maxSourcesPerFile); }
 
 void Preferences::setMaxSourcesPerFile(uint16 val) { set(&Data::maxSourcesPerFile, val); }
 
@@ -2596,7 +2636,12 @@ void Preferences::setKadFileNameMaxCount(int val) { set(&Data::kadFileNameMaxCou
 // Getters / setters — Connection
 // ---------------------------------------------------------------------------
 
-uint16 Preferences::maxConsPerFive() const { return get(&Data::maxConsPerFive); }
+uint16 Preferences::maxConsPerFive() const
+{
+    return getScheduled(&Data::maxConsPerFive, &ScheduledLimits::maxConsPerFive);
+}
+
+uint16 Preferences::configuredMaxConsPerFive() const { return get(&Data::maxConsPerFive); }
 
 void Preferences::setMaxConsPerFive(uint16 val) { set(&Data::maxConsPerFive, val); }
 
@@ -3059,17 +3104,18 @@ void Preferences::setNotifyEmailSender(const QString& val) { set(&Data::notifyEm
 
 QCborMap Preferences::toIpcMap() const
 {
+    // Limits go out as stored, not as scheduled: Options sends them back on Apply
     QCborMap prefs;
     prefs.insert(QStringLiteral("nick"), nick());
     prefs.insert(QStringLiteral("port"), port());
     prefs.insert(QStringLiteral("udpPort"), udpPort());
     prefs.insert(QStringLiteral("bindAddress"), bindAddress());
-    prefs.insert(QStringLiteral("maxUpload"), static_cast<qint64>(maxUpload()));
-    prefs.insert(QStringLiteral("maxDownload"), static_cast<qint64>(maxDownload()));
+    prefs.insert(QStringLiteral("maxUpload"), static_cast<qint64>(configuredMaxUpload()));
+    prefs.insert(QStringLiteral("maxDownload"), static_cast<qint64>(configuredMaxDownload()));
     prefs.insert(QStringLiteral("maxGraphDownloadRate"), static_cast<qint64>(maxGraphDownloadRate()));
     prefs.insert(QStringLiteral("maxGraphUploadRate"), static_cast<qint64>(maxGraphUploadRate()));
-    prefs.insert(QStringLiteral("maxConnections"), static_cast<qint64>(maxConnections()));
-    prefs.insert(QStringLiteral("maxSourcesPerFile"), static_cast<qint64>(maxSourcesPerFile()));
+    prefs.insert(QStringLiteral("maxConnections"), static_cast<qint64>(configuredMaxConnections()));
+    prefs.insert(QStringLiteral("maxSourcesPerFile"), static_cast<qint64>(configuredMaxSourcesPerFile()));
     prefs.insert(QStringLiteral("autoConnect"), autoConnect());
     prefs.insert(QStringLiteral("reconnect"), reconnect());
     prefs.insert(QStringLiteral("showOverhead"), showOverhead());
@@ -3229,7 +3275,7 @@ QCborMap Preferences::toIpcMap() const
     prefs.insert(QStringLiteral("statsConnectionsRatio"), static_cast<qint64>(statsConnectionsRatio()));
 
     // Extended (PPgTweaks)
-    prefs.insert(QStringLiteral("maxConsPerFive"), static_cast<qint64>(maxConsPerFive()));
+    prefs.insert(QStringLiteral("maxConsPerFive"), static_cast<qint64>(configuredMaxConsPerFive()));
     prefs.insert(QStringLiteral("maxHalfConnections"), static_cast<qint64>(maxHalfConnections()));
     prefs.insert(QStringLiteral("maxServedBuddies"), static_cast<qint64>(maxServedBuddies()));
     prefs.insert(QStringLiteral("serverKeepAliveTimeout"), static_cast<qint64>(serverKeepAliveTimeout()));

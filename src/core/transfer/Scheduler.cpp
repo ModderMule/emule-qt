@@ -7,6 +7,7 @@
 #include "transfer/Scheduler.h"
 #include "transfer/DownloadQueue.h"
 #include "prefs/Preferences.h"
+#include "utils/Log.h"
 
 #include <QDateTime>
 #include <QSettings>
@@ -157,9 +158,6 @@ void Scheduler::saveToFile(const QString& configDir)
 
 int Scheduler::check(bool forceCheck)
 {
-    if (count() == 0)
-        return -1;
-
     // Only act when at least one schedule entry is enabled
     bool anyEnabled = false;
     for (int i = 0; i < count(); ++i) {
@@ -168,8 +166,10 @@ int Scheduler::check(bool forceCheck)
             break;
         }
     }
-    if (!anyEnabled)
+    if (!anyEnabled) {
+        clearOverrides();
         return -1;
+    }
 
     const QDateTime now = QDateTime::currentDateTime();
     const int currentMinute = now.time().minute();
@@ -178,7 +178,8 @@ int Scheduler::check(bool forceCheck)
         return -1;
 
     m_lastCheckedMinute = currentMinute;
-    restoreOriginals();
+    Preferences::ScheduledLimits before = thePrefs.scheduledLimits();
+    clearOverrides();
 
     for (int i = 0; i < count(); ++i) {
         const ScheduleEntry* entry = schedule(i);
@@ -238,29 +239,25 @@ int Scheduler::check(bool forceCheck)
         activateSchedule(i, entry->endTime == 0);
     }
 
+    const Preferences::ScheduledLimits after = thePrefs.scheduledLimits();
+    if (before.maxUpload != after.maxUpload || before.maxDownload != after.maxDownload) {
+        logInfo(QStringLiteral("Scheduler: upload limit %1, download limit %2")
+                    .arg(after.maxUpload ? QString::number(*after.maxUpload)
+                                         : QStringLiteral("default"),
+                         after.maxDownload ? QString::number(*after.maxDownload)
+                                           : QStringLiteral("default")));
+    }
+
     return -1;
 }
 
 // ===========================================================================
-// saveOriginals / restoreOriginals
+// clearOverrides — MFC CScheduler::RestoreOriginals
 // ===========================================================================
 
-void Scheduler::saveOriginals()
+void Scheduler::clearOverrides()
 {
-    m_originalUpload = thePrefs.maxUpload();
-    m_originalDownload = thePrefs.maxDownload();
-    m_originalConnections = thePrefs.maxConnections();
-    m_originalSources = thePrefs.maxSourcesPerFile();
-    m_originalConsPerFive = thePrefs.maxConsPerFive();
-}
-
-void Scheduler::restoreOriginals()
-{
-    thePrefs.setMaxUpload(m_originalUpload);
-    thePrefs.setMaxDownload(m_originalDownload);
-    thePrefs.setMaxConnections(m_originalConnections);
-    thePrefs.setMaxSourcesPerFile(m_originalSources);
-    thePrefs.setMaxConsPerFive(m_originalConsPerFive);
+    thePrefs.setScheduledLimits({});
 }
 
 // ===========================================================================
@@ -273,6 +270,9 @@ void Scheduler::activateSchedule(int index, bool makeDefault)
     if (!entry)
         return;
 
+    // makeDefault (no end time): MFC also changes the originals, so the value
+    // stays once the schedule is gone. Here: the stored setting.
+    Preferences::ScheduledLimits limits = thePrefs.scheduledLimits();
     for (int ai = 0; ai < 16; ++ai) {
         ScheduleAction action = entry->actions[static_cast<size_t>(ai)];
         if (action == ScheduleAction::None)
@@ -289,27 +289,27 @@ void Scheduler::activateSchedule(int index, bool makeDefault)
 
         switch (action) {
         case ScheduleAction::SetUpload:
-            thePrefs.setMaxUpload(static_cast<uint32>(intVal));
+            limits.maxUpload = static_cast<uint32>(intVal);
             if (makeDefault)
-                m_originalUpload = static_cast<uint32>(intVal);
+                thePrefs.setMaxUpload(static_cast<uint32>(intVal));
             break;
         case ScheduleAction::SetDownload:
-            thePrefs.setMaxDownload(static_cast<uint32>(intVal));
+            limits.maxDownload = static_cast<uint32>(intVal);
             if (makeDefault)
-                m_originalDownload = static_cast<uint32>(intVal);
+                thePrefs.setMaxDownload(static_cast<uint32>(intVal));
             break;
         case ScheduleAction::SetSources:
-            thePrefs.setMaxSourcesPerFile(static_cast<uint16>(intVal));
+            limits.maxSourcesPerFile = static_cast<uint16>(intVal);
             if (makeDefault)
-                m_originalSources = static_cast<uint16>(intVal);
+                thePrefs.setMaxSourcesPerFile(static_cast<uint16>(intVal));
             break;
         case ScheduleAction::SetCon5Sec:
-            thePrefs.setMaxConsPerFive(static_cast<uint16>(intVal));
+            limits.maxConsPerFive = static_cast<uint16>(intVal);
             break;
         case ScheduleAction::SetConnections:
-            thePrefs.setMaxConnections(static_cast<uint16>(intVal));
+            limits.maxConnections = static_cast<uint16>(intVal);
             if (makeDefault)
-                m_originalConnections = static_cast<uint16>(intVal);
+                thePrefs.setMaxConnections(static_cast<uint16>(intVal));
             break;
         case ScheduleAction::CatStop:
             if (m_downloadQueue)
@@ -323,6 +323,7 @@ void Scheduler::activateSchedule(int index, bool makeDefault)
             break;
         }
     }
+    thePrefs.setScheduledLimits(limits);
 }
 
 } // namespace eMule

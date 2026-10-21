@@ -2363,8 +2363,6 @@ void WebServer::webOptionsAction(const QUrlQuery& form)
     m_preferences->setPort(static_cast<uint16>(port));
     m_preferences->setUdpPort(static_cast<uint16>(udpPort));
     m_preferences->save();
-    if (theApp.scheduler)
-        theApp.scheduler->saveOriginals();
     if (m_serverConnect) {
         auto cfg = m_serverConnect->config();
         cfg.userNick = nick;
@@ -2956,8 +2954,8 @@ QString WebServer::buildPreferencesPage(bool isAdmin)
                                             htmlText(std::exchange(m_webPrefsNotice, {})));
     if (m_preferences) {
         vars[QStringLiteral("Nick")] = htmlText(m_preferences->nick());
-        vars[QStringLiteral("MaxUpload")] = QString::number(m_preferences->maxUpload());
-        vars[QStringLiteral("MaxDownload")] = QString::number(m_preferences->maxDownload());
+        vars[QStringLiteral("MaxUpload")] = QString::number(m_preferences->configuredMaxUpload());
+        vars[QStringLiteral("MaxDownload")] = QString::number(m_preferences->configuredMaxDownload());
         vars[QStringLiteral("Port")] = QString::number(m_preferences->port());
         vars[QStringLiteral("UDPPort")] = QString::number(m_preferences->udpPort());
     }

@@ -30,7 +30,5 @@ target_link_libraries(emulebt
         LibtorrentRasterbar::torrent-rasterbar
 )
 
-target_compile_definitions(emulebt PUBLIC EMULE_HAVE_BITTORRENT=1)
-
 set_target_properties(emulebt PROPERTIES FOLDER "Libraries")
 source_group(TREE "${CMAKE_CURRENT_SOURCE_DIR}" FILES ${BT_SOURCES})
