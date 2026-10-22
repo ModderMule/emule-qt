@@ -4895,20 +4895,26 @@ uint16 Preferences::randomPort(const std::function<bool(uint16)>& isFree)
 
 uint16 Preferences::randomTCPPort()
 {
-    return randomPort([](uint16 port) {
-        QTcpServer probe;
-        return !ipv4WildcardHeld(port, QAbstractSocket::TcpSocket)
-            && probe.listen(QHostAddress::Any, port);
-    });
+    return randomPort(&Preferences::tcpPortFree);
 }
 
 uint16 Preferences::randomUDPPort()
 {
-    return randomPort([](uint16 port) {
-        QUdpSocket probe;
-        return !ipv4WildcardHeld(port, QAbstractSocket::UdpSocket)
-            && probe.bind(QHostAddress::Any, port);
-    });
+    return randomPort(&Preferences::udpPortFree);
+}
+
+bool Preferences::tcpPortFree(uint16 port)
+{
+    QTcpServer probe;
+    return !ipv4WildcardHeld(port, QAbstractSocket::TcpSocket)
+        && probe.listen(QHostAddress::Any, port);
+}
+
+bool Preferences::udpPortFree(uint16 port)
+{
+    QUdpSocket probe;
+    return !ipv4WildcardHeld(port, QAbstractSocket::UdpSocket)
+        && probe.bind(QHostAddress::Any, port);
 }
 
 std::array<uint8, 16> Preferences::generateUserHash()

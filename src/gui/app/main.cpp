@@ -122,29 +122,61 @@ bool ipcPortFree(const QString& host, uint16_t port)
     return probe.listen(addr.isNull() ? QHostAddress(QHostAddress::LocalHost) : addr, port);
 }
 
-/// A core of another profile holds our IPC port, as with a new --config that starts
-/// on the default (issue #49): connecting would show that profile. Moves this one
-/// to the next free port and saves it, so the core started with it reads the same.
-void moveOffForeignCore(const QString& configDir)
+/// This profile's core is not running, but another program holds its ports. A new
+/// --config starts on the default IPC port, so connecting would show the other
+/// profile's core (issue #49); a copied profile shares the TCP/UDP ports too. Moves
+/// each taken one to a free port and saves it, so the core started next reads the same.
+/// TCP/UDP only on @p firstStart: later they may be forwarded on the router.
+void claimFreePorts(const QString& configDir, bool firstStart)
 {
+    using eMule::Preferences;
+    if (eMule::AppConfig::coreRunningFor(configDir))
+        return;   // ours holds them
+    bool changed = false;
+
     const QString host = eMule::thePrefs.ipcListenAddress();
-    const uint16_t taken = eMule::thePrefs.ipcPort();
-    if (ipcPortFree(host, taken) || eMule::AppConfig::coreRunningFor(configDir))
-        return;
-    const QList<uint16_t> ownPorts{eMule::thePrefs.port(), eMule::thePrefs.udpPort(),
-                                   eMule::thePrefs.webServerPort()};
-    for (uint32_t port = taken + 1u; port <= 65535u && port <= taken + 100u; ++port) {
-        if (ownPorts.contains(static_cast<uint16_t>(port))
-            || !ipcPortFree(host, static_cast<uint16_t>(port)))
-            continue;
-        eMule::logInfo(QStringLiteral("IPC port %1 belongs to the core of another config, "
-                                      "using %2").arg(taken).arg(port));
-        eMule::thePrefs.setIpcPort(static_cast<uint16_t>(port));
-        eMule::thePrefs.save();
-        return;
+    if (const uint16_t taken = eMule::thePrefs.ipcPort(); !ipcPortFree(host, taken)) {
+        const QList<uint16_t> ownPorts{eMule::thePrefs.port(), eMule::thePrefs.udpPort(),
+                                       eMule::thePrefs.webServerPort()};
+        uint16_t freePort = 0;
+        for (uint32_t port = taken + 1u; port <= 65535u && port <= taken + 100u; ++port) {
+            if (!ownPorts.contains(static_cast<uint16_t>(port))
+                && ipcPortFree(host, static_cast<uint16_t>(port))) {
+                freePort = static_cast<uint16_t>(port);
+                break;
+            }
+        }
+        if (freePort != 0) {
+            eMule::logInfo(QStringLiteral("IPC port %1 is taken by another program, using %2")
+                               .arg(taken).arg(freePort));
+            eMule::thePrefs.setIpcPort(freePort);
+            changed = true;
+        } else {
+            eMule::logWarning(QStringLiteral("IPC port %1 is taken by another program, "
+                                             "and no free port follows it").arg(taken));
+        }
     }
-    eMule::logWarning(QStringLiteral("IPC port %1 belongs to the core of another config, "
-                                     "and no free port follows it").arg(taken));
+
+    if (const uint16_t taken = eMule::thePrefs.port();
+        firstStart && !Preferences::tcpPortFree(taken)) {
+        const uint16_t freePort = Preferences::randomTCPPort();
+        eMule::logWarning(QStringLiteral("TCP port %1 is taken by another program, using %2")
+                              .arg(taken).arg(freePort));
+        eMule::thePrefs.setPort(freePort);
+        changed = true;
+    }
+    // 0 = UDP off
+    if (const uint16_t taken = eMule::thePrefs.udpPort();
+        firstStart && taken != 0 && !Preferences::udpPortFree(taken)) {
+        const uint16_t freePort = Preferences::randomUDPPort();
+        eMule::logWarning(QStringLiteral("UDP port %1 is taken by another program, using %2")
+                              .arg(taken).arg(freePort));
+        eMule::thePrefs.setUdpPort(freePort);
+        changed = true;
+    }
+
+    if (changed)
+        eMule::thePrefs.save();
 }
 
 #if !defined(Q_OS_MACOS) && !defined(Q_OS_WIN)
@@ -465,7 +497,7 @@ int main(int argc, char* argv[])
         const QString earlyPath = resolveDaemonPath();
         const bool ownsCore = !earlyPath.isEmpty() && earlyPath != QStringLiteral("local");
         if (ownsCore)
-            moveOffForeignCore(configDir);
+            claimFreePorts(configDir, !eMule::theUiState.firstStartWizardDone());
         if (ownsCore
             && ipcPortFree(eMule::thePrefs.ipcListenAddress(), eMule::thePrefs.ipcPort())) {
             const bool hold = !cli.screenshotMode() && !eMule::theUiState.firstStartWizardDone();

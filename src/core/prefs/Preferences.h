@@ -1805,6 +1805,10 @@ public:
     /// Generate a random UDP port in [4096, 65095].
     [[nodiscard]] static uint16 randomUDPPort();
 
+    /// Nothing else listens on TCP / UDP @p port, on the wildcard or the IPv4 one.
+    [[nodiscard]] static bool tcpPortFree(uint16 port);
+    [[nodiscard]] static bool udpPortFree(uint16 port);
+
     /// Generate a 16-byte user hash with eMule markers at [5]=14 and [14]=111.
     [[nodiscard]] static std::array<uint8, 16> generateUserHash();
 
