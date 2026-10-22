@@ -10,6 +10,9 @@
 #include <QLabel>
 #include <QVBoxLayout>
 
+#include <algorithm>
+#include <memory>
+
 #include "net/Address.h"
 #include "utils/CountryFlags.h"
 #include "utils/DialogSizing.h"
@@ -37,6 +40,27 @@ double dbl(const QCborMap& m, QLatin1StringView key)
     return m.value(key).toDouble();
 }
 
+struct ValueRow {
+    QString   caption;
+    QLabel*   value = nullptr;   // null for a widget row (country)
+};
+
+/// Every form row of @p page in order, caption plus value label.
+QList<ValueRow> valueRows(const QWidget* page)
+{
+    QList<ValueRow> rows;
+    for (const auto* form : page->findChildren<QFormLayout*>()) {
+        for (int i = 0; i < form->rowCount(); ++i) {
+            const auto* labelItem = form->itemAt(i, QFormLayout::LabelRole);
+            const auto* fieldItem = form->itemAt(i, QFormLayout::FieldRole);
+            const auto* caption = labelItem ? qobject_cast<QLabel*>(labelItem->widget()) : nullptr;
+            rows.append({caption ? caption->text() : QString{},
+                         fieldItem ? qobject_cast<QLabel*>(fieldItem->widget()) : nullptr});
+        }
+    }
+    return rows;
+}
+
 } // anonymous namespace
 
 // ── constructor ────────────────────────────────────────────────────────
@@ -61,11 +85,41 @@ void ClientDetailDialog::setDetails(const QCborMap& d)
     m_content = buildContent(d);
     contentLayout()->addWidget(m_content);
 
+    m_cc = str(d, QLatin1StringView("cc"));
+
     setSubjectKey(str(d, QLatin1StringView("userHash")));
     setWindowTitle(tr("Client Details: %1")
         .arg(str(d, QLatin1StringView("userName"))));
 
     fitToContent();
+}
+
+void ClientDetailDialog::applyDetails(const QCborMap& d)
+{
+    if (!m_content || str(d, QLatin1StringView("userHash")) != subjectKey()
+        || str(d, QLatin1StringView("cc")) != m_cc) {
+        setDetails(d);
+        return;
+    }
+
+    // Build off-screen and copy the texts over when the rows line up
+    const std::unique_ptr<QWidget> fresh(buildContent(d));
+    const QList<ValueRow> now  = valueRows(m_content);
+    const QList<ValueRow> next = valueRows(fresh.get());
+    const bool sameRows = std::ranges::equal(now, next, [](const ValueRow& a, const ValueRow& b) {
+        return a.caption == b.caption && (a.value == nullptr) == (b.value == nullptr);
+    });
+    if (!sameRows) {
+        setDetails(d);
+        return;
+    }
+
+    for (qsizetype i = 0; i < now.size(); ++i) {
+        if (now[i].value && now[i].value->text() != next[i].value->text())
+            now[i].value->setText(next[i].value->text());
+    }
+    setWindowTitle(tr("Client Details: %1")
+        .arg(str(d, QLatin1StringView("userName"))));
 }
 
 // ── private helpers ────────────────────────────────────────────────────
@@ -167,11 +221,12 @@ QWidget* ClientDetailDialog::buildContent(const QCborMap& d)
         addDetailRow(form, tr("Uploaded (this session)"),
                      formatByteSize(static_cast<uint64>(num(d, QLatin1StringView("transferredDown")))));
 
-        // The live rates: ours up is theirs down (IDC_DAVDR / IDC_DAVUR)
+        // Averages over the slot time, ours up is theirs down (MorphXT; MFC shows the
+        // current rate under the same labels, IDC_DAVDR / IDC_DAVUR)
         addDetailRow(form, tr("Average Downloadrate"),
-                     formatByteRate(static_cast<uint64>(num(d, QLatin1StringView("upDatarate")))));
+                     formatByteRate(static_cast<uint64>(num(d, QLatin1StringView("avgUpDatarate")))));
         addDetailRow(form, tr("Average Upload rate"),
-                     formatByteRate(static_cast<uint64>(num(d, QLatin1StringView("datarate")))));
+                     formatByteRate(static_cast<uint64>(num(d, QLatin1StringView("avgDownDatarate")))));
 
         // Credits (IDC_DDOWNTOTAL / IDC_DUPTOTAL)
         addDetailRow(form, tr("Downloaded total"), creditsKnown
@@ -192,9 +247,11 @@ QWidget* ClientDetailDialog::buildContent(const QCborMap& d)
         const QString unknown = QStringLiteral("?");
         const bool creditsKnown = d.value(QLatin1StringView("creditsKnown")).toBool();
 
-        const double scoreRatio = dbl(d, QLatin1StringView("scoreRatio"));
-        addDetailRow(form, tr("DL/UP Modifier"),
-                     creditsKnown ? QString::number(scoreRatio, 'f', 1) : unknown);
+        // Theirs, then in brackets what this peer grants us (MorphXT ownCredits)
+        addDetailRow(form, tr("DL/UP Modifier"), creditsKnown
+            ? QStringLiteral("%1  [%2]").arg(QString::number(dbl(d, QLatin1StringView("scoreRatio")), 'f', 1),
+                                             QString::number(dbl(d, QLatin1StringView("myScoreRatio")), 'f', 1))
+            : unknown);
 
         // MFC formats IDC_DRATING as %.1f from an integer score (ClientDetailDialog.cpp:159),
         // so it always renders one trailing zero. Match it.

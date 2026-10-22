@@ -4032,13 +4032,32 @@ bool IpcClientHandler::applyPreferenceB(const QString& key, const QCborValue& va
     else if (key == QStringLiteral("statsConnectionsRatio"))
         thePrefs.setStatsConnectionsRatio(static_cast<uint32>(val.toInteger()));
     // Directories
-    else if (key == QStringLiteral("incomingDir"))
-        thePrefs.setIncomingDir(val.toString());
+    // The GUI fields are typed in: drop empty ones, create missing folders
+    // (MFC CPPgDirectories::OnApply), a remote GUI can't do that on our disk
+    else if (key == QStringLiteral("incomingDir")) {
+        const QString dir = val.toString().trimmed();
+        if (dir.isEmpty())
+            logWarning(QStringLiteral("Preference not stored: empty incomingDir"));
+        else {
+            if (!QDir().mkpath(dir))
+                logWarning(QStringLiteral("Can't create incoming folder %1").arg(dir));
+            thePrefs.setIncomingDir(dir);
+        }
+    }
     else if (key == QStringLiteral("tempDirs")) {
         QStringList dirs;
-        for (const auto& item : val.toArray())
-            dirs.append(item.toString());
-        thePrefs.setTempDirs(dirs);
+        for (const auto& item : val.toArray()) {
+            const QString dir = item.toString().trimmed();
+            if (dir.isEmpty())
+                continue;
+            if (!QDir().mkpath(dir))
+                logWarning(QStringLiteral("Can't create temp folder %1").arg(dir));
+            dirs.append(dir);
+        }
+        if (dirs.isEmpty())
+            logWarning(QStringLiteral("Preference not stored: empty tempDirs"));
+        else
+            thePrefs.setTempDirs(dirs);
     }
     else if (key == QStringLiteral("sharedDirs")) {
         QStringList dirs;

@@ -1,25 +1,36 @@
 #include "pch.h"
 /// @file TorrentDetailsDialog.cpp
-/// @brief One torrent's files, peers and trackers — implementation.
+/// @brief The torrent inspector: Info, Activity and Options — implementation.
 
 #include "dialogs/TorrentDetailsDialog.h"
 
 #include "app/IpcClient.h"
-#include "controls/AbstractListView.h"
-#include "controls/SortableItems.h"
-#include "utils/DialogSizing.h"
+#include "controls/TorrentListModel.h"
+#include "controls/TorrentPieceGrid.h"
 #include "utils/MenuUtils.h"
 #include "utils/StatusBarNotifier.h"
 #include "utils/StringUtils.h"
+#include "utils/TorrentLinks.h"
 
-#include <QCborArray>
-#include <QDialogButtonBox>
-#include <QHash>
-#include <QSet>
+#include <QApplication>
+#include <QButtonGroup>
+#include <QCheckBox>
+#include <QClipboard>
+#include <QComboBox>
+#include <QDateTime>
+#include <QDoubleSpinBox>
+#include <QFormLayout>
+#include <QGroupBox>
+#include <QHBoxLayout>
 #include <QLabel>
-#include <QMenu>
+#include <QLocale>
+#include <QPlainTextEdit>
+#include <QSpinBox>
+#include <QStyle>
 #include <QTabWidget>
+#include <QTextBrowser>
 #include <QTimer>
+#include <QToolButton>
 #include <QVBoxLayout>
 
 namespace eMule {
@@ -27,319 +38,519 @@ namespace eMule {
 namespace {
 
 constexpr int kPollMs = 2000;
-/// File index on a Files row.
-constexpr int kFileIndexRole = Qt::UserRole + 1;
+/// an Options edit goes out this long after the last change
+constexpr int kSendDelayMs = 600;
+/// Modes of the seed limit combos: BtLimitMode on the wire
+enum LimitMode { ModeGlobal = 0, ModeUnlimited = 1, ModeCustom = 2 };
 
-SortableTreeItem* makeItem(QTreeWidget* tree)
+/// the tab the last dialog was left on, for the next one
+int s_lastTab = TorrentDetailsDialog::TabActivity;
+
+QString na()
 {
-    return new SortableTreeItem(tree);
+    return TorrentDetailsDialog::tr("N/A");
 }
 
-void setCell(QTreeWidgetItem* item, int column, const QString& text, const QVariant& sortKey = {},
-             bool right = false)
+QString dateText(qint64 epoch)
 {
-    item->setText(column, text);
-    if (sortKey.isValid())
-        item->setData(column, SortRole, sortKey);
-    if (right)
-        item->setTextAlignment(column, Qt::AlignRight | Qt::AlignVCenter);
+    if (epoch <= 0)
+        return na();
+    return QLocale().toString(QDateTime::fromSecsSinceEpoch(epoch), QLocale::LongFormat);
 }
 
-QString percentText(double share)
+QString percent(double share)
 {
     return QStringLiteral("%1%").arg(share * 100.0, 0, 'f', 1);
 }
 
-QString rateText(qint64 rate)
+/// "<b>Label:</b>" + a value label, as every detail sheet has it.
+QLabel* addRow(QFormLayout* form, const QString& label)
 {
-    return rate > 0 ? formatByteRate(rate) : QString();
+    auto* value = detailValueLabel({});
+    value->setMinimumWidth(120);
+    form->addRow(QStringLiteral("<b>%1:</b>").arg(label), value);
+    return value;
 }
 
-QString countText(qint64 n)
+QFormLayout* makeForm(QWidget* parent)
 {
-    return n < 0 ? QStringLiteral("?") : QString::number(n);
+    auto* form = new QFormLayout(parent);
+    form->setLabelAlignment(Qt::AlignRight | Qt::AlignTop);
+    form->setFormAlignment(Qt::AlignLeft | Qt::AlignTop);
+    form->setFieldGrowthPolicy(QFormLayout::AllNonFixedFieldsGrow);
+    return form;
+}
+
+void fillLimitCombo(QComboBox* combo)
+{
+    combo->addItem(TorrentDetailsDialog::tr("Use global settings"), ModeGlobal);
+    combo->addItem(TorrentDetailsDialog::tr("Seed regardless"), ModeUnlimited);
+    combo->addItem(TorrentDetailsDialog::tr("Stop seeding at:"), ModeCustom);
+}
+
+void selectMode(QComboBox* combo, int mode)
+{
+    const int at = combo->findData(mode);
+    combo->setCurrentIndex(at >= 0 ? at : 0);
 }
 
 } // namespace
 
-QString torrentFilePriorityName(int priority)
-{
-    if (priority <= 0)
-        return TorrentDetailsDialog::tr("Skip");
-    if (priority <= 2)
-        return TorrentDetailsDialog::tr("Low");
-    if (priority <= 4)
-        return TorrentDetailsDialog::tr("Normal");
-    if (priority <= 6)
-        return TorrentDetailsDialog::tr("High");
-    return TorrentDetailsDialog::tr("Maximum");
-}
-
-TorrentDetailsDialog::TorrentDetailsDialog(IpcClient* ipc, QString torrentId, QString name,
-                                           QWidget* parent)
-    : QDialog(parent)
+TorrentDetailsDialog::TorrentDetailsDialog(IpcClient* ipc, const TorrentListModel* model,
+                                           const QString& torrentId, QWidget* parent)
+    : DetailDialog(parent)
     , m_ipc(ipc)
-    , m_id(std::move(torrentId))
+    , m_model(model)
 {
     setAttribute(Qt::WA_DeleteOnClose);
-    setWindowTitle(tr("Torrent Details"));
     setWindowIcon(QIcon(QStringLiteral(":/icons/Torrent.ico")));
-    buildUi(name);
-    DialogSizing::applySize(this, {}, QSize(760, 480), DialogSizing::Fit::Layout);
+    setDesignedSize(QSize(640, 420), QSize(760, 460));
 
-    m_timer = new QTimer(this);
-    m_timer->setInterval(kPollMs);
-    connect(m_timer, &QTimer::timeout, this, &TorrentDetailsDialog::poll);
-    m_timer->start();
+    // Header: icon, name, "N files, size"
+    auto* header = new QHBoxLayout;
+    m_icon = new QLabel(this);
+    header->addWidget(m_icon, 0, Qt::AlignTop);
+    auto* titles = new QVBoxLayout;
+    titles->setSpacing(0);
+    m_name = new QLabel(this);
+    QFont f = m_name->font();
+    f.setBold(true);
+    f.setPointSizeF(f.pointSizeF() * 1.25);
+    m_name->setFont(f);
+    m_name->setTextInteractionFlags(Qt::TextSelectableByMouse);
+    m_name->setWordWrap(true);
+    titles->addWidget(m_name);
+    m_summary = new QLabel(this);
+    titles->addWidget(m_summary);
+    header->addLayout(titles, 1);
+    contentLayout()->addLayout(header);
+
+    m_note = new QLabel(this);
+    m_note->setWordWrap(true);
+    m_note->hide();
+    contentLayout()->addWidget(m_note);
+
+    m_tabs = new QTabWidget(this);
+    m_tabs->insertTab(TabInfo, buildInfoTab(), menuIcon("FileInfo.ico"), tr("Info"));
+    m_tabs->insertTab(TabActivity, buildActivityTab(), menuIcon("Statistics.ico"), tr("Activity"));
+    m_tabs->insertTab(TabOptions, buildOptionsTab(), menuIcon("Preferences.ico"), tr("Options"));
+    m_tabs->setCurrentIndex(s_lastTab);
+    connect(m_tabs, &QTabWidget::currentChanged, this, [this](int tab) {
+        s_lastTab = tab;
+        setWindowTitle(tr("%1 — Torrent Inspector").arg(m_tabs->tabText(tab)));
+    });
+    setWindowTitle(tr("%1 — Torrent Inspector").arg(m_tabs->tabText(s_lastTab)));
+    contentLayout()->addWidget(m_tabs, 1);
+
+    m_pollTimer = new QTimer(this);
+    m_pollTimer->setInterval(kPollMs);
+    connect(m_pollTimer, &QTimer::timeout, this, [this] {
+        refreshRow();
+        poll();
+    });
+    m_pollTimer->start();
+
+    m_sendTimer = new QTimer(this);
+    m_sendTimer->setSingleShot(true);
+    m_sendTimer->setInterval(kSendDelayMs);
+    connect(m_sendTimer, &QTimer::timeout, this, &TorrentDetailsDialog::sendOptions);
+
+    // The walker landed on another torrent
+    connect(this, &DetailDialog::navigated, this, &TorrentDetailsDialog::setTorrentId);
+
+    setTorrentId(torrentId);
+}
+
+void TorrentDetailsDialog::setTorrentId(const QString& id)
+{
+    if (id.isEmpty())
+        return;
+    if (m_optionsDirty && id != m_id)
+        sendOptions();   // what the user typed belongs to the torrent they typed it for
+    m_id = id;
+    setSubjectKey(id);
+    m_grid->setAvailabilityMap({});
+    m_optionsDirty = false;
+    refreshRow();
     QTimer::singleShot(0, this, &TorrentDetailsDialog::poll);
 }
 
-void TorrentDetailsDialog::applyDetails(const QCborMap& details)
+void TorrentDetailsDialog::setDetails(const QCborMap& details)
 {
-    m_note->clear();
     m_note->hide();
-    applyFiles(details.value(QStringLiteral("files")).toArray());
-    applyPeers(details.value(QStringLiteral("peers")).toArray());
-    applyTrackers(details.value(QStringLiteral("trackers")).toArray());
+    QByteArray avail = details.value(QStringLiteral("availabilityMap")).toByteArray();
+    // libtorrent stops counting once we seed: every piece is here, so it is available
+    if (avail.isEmpty() && m_seedBuckets > 0)
+        avail = QByteArray(m_seedBuckets, char(255));
+    m_grid->setAvailabilityMap(avail);
+    const QCborMap options = details.value(QStringLiteral("options")).toMap();
+    if (!options.isEmpty())
+        applyOptions(options);
+}
+
+void TorrentDetailsDialog::setRow(const TorrentRow& row)
+{
+    const bool folder = row.numFiles > 1;
+    m_icon->setPixmap(style()->standardIcon(folder ? QStyle::SP_DirIcon : QStyle::SP_FileIcon).pixmap(40, 40));
+    m_name->setText(row.name);
+    const qint64 total = row.totalSize > 0 ? row.totalSize : row.size;
+    m_summary->setText(row.hasMetadata
+                           ? tr("%n file(s), %1", nullptr, std::max(1, row.numFiles)).arg(formatByteSize(total))
+                           : tr("Getting metadata…"));
+
+    // Info
+    if (row.hasMetadata && row.pieces > 0)
+        m_size->setText(tr("%1 (%n piece(s) @ %2)", nullptr, row.pieces)
+                            .arg(formatByteSize(total), formatByteSize(row.pieceLength)));
+    else
+        m_size->setText(na());
+    m_location->setText(row.savePath);
+    m_hashV1->setText(row.hashV1.isEmpty() ? na() : row.hashV1);
+    m_hashV2->setText(row.hashV2.isEmpty() ? na() : row.hashV2);
+    m_privacy->setText(row.isPrivate ? tr("Private to this tracker — DHT and PEX disabled")
+                                     : tr("Public torrent"));
+    if (!row.creator.isEmpty() && row.createdAt > 0)
+        m_origin->setText(tr("Created by %1 on %2").arg(row.creator, dateText(row.createdAt)));
+    else if (!row.creator.isEmpty())
+        m_origin->setText(tr("Created by %1").arg(row.creator));
+    else if (row.createdAt > 0)
+        m_origin->setText(tr("Created on %1").arg(dateText(row.createdAt)));
+    else
+        m_origin->setText(na());
+    m_magnet = gui::torrentMagnetLink(row.hashV1, row.name);
+    m_magnetLabel->setText(m_magnet.isEmpty() ? na() : m_magnet);
+    m_copyMagnet->setEnabled(!m_magnet.isEmpty());
+    if (m_comment->toPlainText() != row.comment)
+        m_comment->setPlainText(row.comment);
+
+    // Activity
+    m_state->setText(torrentStateName(row.state));
+    const double haveShare = total > 0 ? double(row.haveBytes) / double(total) : 0.0;
+    const double wantedShare = row.size > 0 ? double(row.done) / double(row.size) : 0.0;
+    m_progress->setText(row.hasMetadata ? tr("%1 (%2 selected)").arg(percent(haveShare), percent(wantedShare))
+                                        : na());
+    m_have->setText(formatByteSize(row.haveBytes));
+    m_availability->setText(row.availability < 0 ? na()
+                                                 : QStringLiteral("%1").arg(row.availability, 0, 'f', 2));
+    m_downloaded->setText(formatByteSize(row.downloaded));
+    m_uploaded->setText(formatByteSize(row.uploaded));
+    m_failed->setText(formatByteSize(row.failedBytes));
+    const double ratio = row.ratio();
+    m_ratio->setText(ratio == -2 ? QStringLiteral("∞") : ratio < 0 ? na() : QString::number(ratio, 'f', 2));
+    if (m_error->toPlainText() != row.error)
+        m_error->setPlainText(row.error);
+    m_grid->setProgressMap(row.isComplete() && row.pieceMap.isEmpty() ? QByteArray(1, char(255))
+                                                                      : row.pieceMap);
+    m_seedBuckets = row.isComplete() ? std::max<int>(1, int(row.pieceMap.size())) : 0;
+
+    m_added->setText(dateText(row.addedAt));
+    m_completed->setText(dateText(row.completedAt));
+    if (row.lastActivity <= 0)
+        m_lastActivity->setText(na());
+    else if (row.rateDown > 0 || row.rateUp > 0)
+        m_lastActivity->setText(tr("Active now"));
+    else
+        m_lastActivity->setText(tr("%1 ago").arg(formatSecondsLongHM(
+            std::max<qint64>(0, QDateTime::currentSecsSinceEpoch() - row.lastActivity))));
+    m_downloadingTime->setText(formatSecondsLongHM(std::max<qint64>(0, row.activeSeconds - row.seedingSeconds)));
+    m_seedingTime->setText(formatSecondsLongHM(row.seedingSeconds));
+    m_remaining->setText(row.isComplete() ? na() : row.eta >= 0 ? formatSecondsLongHM(row.eta) : tr("Unknown"));
+}
+
+QCborMap TorrentDetailsDialog::optionsFromUi() const
+{
+    return QCborMap{
+        {QStringLiteral("downloadLimitKb"), m_limitDown->isChecked() ? m_limitDownKb->value() : 0},
+        {QStringLiteral("uploadLimitKb"), m_limitUp->isChecked() ? m_limitUpKb->value() : 0},
+        {QStringLiteral("maxPeers"), m_maxPeers->value()},
+        {QStringLiteral("ratioMode"), m_ratioMode->currentData().toInt()},
+        {QStringLiteral("ratioPercent"), qRound(m_ratio100->value() * 100.0)},
+        {QStringLiteral("seedTimeMode"), m_seedTimeMode->currentData().toInt()},
+        {QStringLiteral("seedTimeMinutes"), m_seedMinutes->value()},
+    };
 }
 
 // ---------------------------------------------------------------------------
 // Private
 // ---------------------------------------------------------------------------
 
-void TorrentDetailsDialog::buildUi(const QString& name)
+QWidget* TorrentDetailsDialog::buildInfoTab()
 {
-    auto* layout = new QVBoxLayout(this);
+    auto* page = new QWidget(this);
+    auto* layout = new QVBoxLayout(page);
 
-    m_title = new QLabel(name, this);
-    QFont f = m_title->font();
-    f.setBold(true);
-    m_title->setFont(f);
-    m_title->setTextInteractionFlags(Qt::TextSelectableByMouse);
-    layout->addWidget(m_title);
+    auto* details = new QGroupBox(tr("Details"), page);
+    auto* form = makeForm(details);
+    m_size = addRow(form, tr("Size"));
+    m_location = addRow(form, tr("Location"));
+    m_hashV1 = addRow(form, tr("Hash v1"));
+    m_hashV2 = addRow(form, tr("Hash v2"));
+    m_privacy = addRow(form, tr("Privacy"));
+    m_origin = addRow(form, tr("Origin"));
 
-    m_note = new QLabel(this);
-    m_note->setWordWrap(true);
-    m_note->hide();
-    layout->addWidget(m_note);
+    auto* magnetRow = new QHBoxLayout;
+    m_magnetLabel = detailValueLabel({});
+    m_magnetLabel->setMinimumWidth(120);
+    m_magnetLabel->setWordWrap(true);
+    magnetRow->addWidget(m_magnetLabel, 1);
+    m_copyMagnet = new QToolButton(details);
+    m_copyMagnet->setIcon(menuIcon("Copy.ico"));
+    m_copyMagnet->setToolTip(tr("Copy Magnet Link"));
+    m_copyMagnet->setAutoRaise(true);
+    connect(m_copyMagnet, &QToolButton::clicked, this, &TorrentDetailsDialog::copyMagnet);
+    magnetRow->addWidget(m_copyMagnet, 0, Qt::AlignTop);
+    form->addRow(QStringLiteral("<b>%1:</b>").arg(tr("Magnet")), magnetRow);
+    layout->addWidget(details);
 
-    m_tabs = new QTabWidget(this);
+    auto* commentBox = new QGroupBox(tr("Comment"), page);
+    auto* commentLayout = new QVBoxLayout(commentBox);
+    m_comment = new QTextBrowser(commentBox);
+    m_comment->setOpenExternalLinks(true);
+    m_comment->setMinimumHeight(50);
+    commentLayout->addWidget(m_comment);
+    layout->addWidget(commentBox, 1);
+    return page;
+}
 
-    auto* files = new ListTreeWidget(m_tabs);
-    m_files = files;
-    files->setColumnCount(FileColCount);
-    files->setHeaderLabels({tr("File"), tr("Size"), tr("Completed"), tr("Progress"), tr("Priority")});
-    files->setRootIsDecorated(false);
-    files->setAlternatingRowColors(true);
-    files->setSelectionMode(QAbstractItemView::ExtendedSelection);
-    files->setSortingEnabled(true);
-    files->setContextMenuPolicy(Qt::CustomContextMenu);
-    files->bindColumns(QStringLiteral("torrentDetailsFiles"), {320, 90, 90, 80, 80});
-    connect(files, &QWidget::customContextMenuRequested, this,
-            &TorrentDetailsDialog::onFilesContextMenu);
-    m_tabs->insertTab(TabFiles, files, menuIcon("FileInfo.ico"), tr("Files"));
+QWidget* TorrentDetailsDialog::buildActivityTab()
+{
+    auto* page = new QWidget(this);
+    auto* layout = new QHBoxLayout(page);
 
-    auto* peers = new ListTreeWidget(m_tabs);
-    m_peers = peers;
-    peers->setHeaderLabels({tr("Address"), tr("Client"), tr("Progress"), tr("Down Speed"),
-                            tr("Up Speed"), tr("Downloaded"), tr("Uploaded"), tr("Flags"),
-                            tr("Source")});
-    peers->setRootIsDecorated(false);
-    peers->setAlternatingRowColors(true);
-    peers->setSortingEnabled(true);
-    peers->bindColumns(QStringLiteral("torrentDetailsPeers"),
-                       {150, 130, 70, 80, 80, 80, 80, 70, 70});
-    m_tabs->insertTab(TabPeers, peers, menuIcon("ClientsKnown.ico"), tr("Peers"));
+    // Transfer, with the piece grid beside it
+    auto* transfer = new QGroupBox(tr("Transfer"), page);
+    auto* transferLayout = new QHBoxLayout(transfer);
+    auto* form = makeForm(nullptr);
+    m_state = addRow(form, tr("State"));
+    m_progress = addRow(form, tr("Progress"));
+    m_have = addRow(form, tr("Have"));
+    m_availability = addRow(form, tr("Availability"));
+    m_downloaded = addRow(form, tr("Downloaded"));
+    m_uploaded = addRow(form, tr("Uploaded"));
+    m_failed = addRow(form, tr("Failed DL"));
+    m_ratio = addRow(form, tr("Ratio"));
+    m_error = new QPlainTextEdit(transfer);
+    m_error->setReadOnly(true);
+    m_error->setMaximumHeight(70);
+    form->addRow(QStringLiteral("<b>%1:</b>").arg(tr("Error")), m_error);
+    auto* formColumn = new QVBoxLayout;
+    formColumn->addLayout(form);
+    formColumn->addStretch(1);   // rows stay together, as Transmission has them
+    transferLayout->addLayout(formColumn, 1);
 
-    auto* trackers = new ListTreeWidget(m_tabs);
-    m_trackers = trackers;
-    trackers->setHeaderLabels({tr("URL"), tr("Tier"), tr("Status"), tr("Seeds"), tr("Peers")});
-    trackers->setRootIsDecorated(false);
-    trackers->setAlternatingRowColors(true);
-    trackers->setSortingEnabled(true);
-    trackers->bindColumns(QStringLiteral("torrentDetailsTrackers"), {320, 50, 200, 60, 60});
-    m_tabs->insertTab(TabTrackers, trackers, menuIcon("Server.ico"), tr("Trackers"));
+    auto* gridColumn = new QVBoxLayout;
+    m_grid = new TorrentPieceGrid(transfer);
+    m_grid->setFixedSize(180, 180);
+    gridColumn->addWidget(m_grid);
+    auto* toggle = new QHBoxLayout;
+    toggle->setSpacing(0);
+    auto* group = new QButtonGroup(transfer);
+    auto segment = [&](const QString& text, TorrentPieceGrid::Mode mode) {
+        auto* b = new QToolButton(transfer);
+        b->setText(text);
+        b->setCheckable(true);
+        b->setToolButtonStyle(Qt::ToolButtonTextOnly);
+        b->setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Fixed);
+        group->addButton(b);
+        toggle->addWidget(b);
+        connect(b, &QToolButton::toggled, this, [this, mode](bool on) {
+            if (on)
+                m_grid->setMode(mode);
+        });
+        return b;
+    };
+    m_gridProgress = segment(tr("Progress"), TorrentPieceGrid::Mode::Progress);
+    m_gridAvailable = segment(tr("Available"), TorrentPieceGrid::Mode::Available);
+    m_gridProgress->setToolTip(tr("Share of each part that is downloaded"));
+    m_gridAvailable->setToolTip(tr("Peers that have each part; red: nobody connected has it"));
+    m_gridProgress->setChecked(true);
+    gridColumn->addLayout(toggle);
+    gridColumn->addStretch(1);
+    transferLayout->addLayout(gridColumn);
+    layout->addWidget(transfer, 3);
 
-    layout->addWidget(m_tabs, 1);
+    // Dates and times
+    auto* right = new QVBoxLayout;
+    auto* dates = new QGroupBox(tr("Dates"), page);
+    auto* datesForm = makeForm(dates);
+    m_added = addRow(datesForm, tr("Added"));
+    m_completed = addRow(datesForm, tr("Completed"));
+    m_lastActivity = addRow(datesForm, tr("Last Activity"));
+    right->addWidget(dates);
+    auto* elapsed = new QGroupBox(tr("Time Elapsed"), page);
+    auto* elapsedForm = makeForm(elapsed);
+    m_downloadingTime = addRow(elapsedForm, tr("Downloading"));
+    m_seedingTime = addRow(elapsedForm, tr("Seeding"));
+    m_remaining = addRow(elapsedForm, tr("Remaining"));
+    right->addWidget(elapsed);
+    right->addStretch(1);
+    layout->addLayout(right, 2);
+    return page;
+}
 
-    auto* buttons = new QDialogButtonBox(QDialogButtonBox::Close, this);
-    connect(buttons, &QDialogButtonBox::rejected, this, &QDialog::close);
-    layout->addWidget(buttons);
+QWidget* TorrentDetailsDialog::buildOptionsTab()
+{
+    auto* page = new QWidget(this);
+    auto* layout = new QVBoxLayout(page);
+
+    auto* speed = new QGroupBox(tr("Speed"), page);
+    auto* speedForm = makeForm(speed);
+    auto limitRow = [&](const QString& text, QCheckBox*& check, QSpinBox*& spin) {
+        check = new QCheckBox(text, speed);
+        spin = new QSpinBox(speed);
+        spin->setRange(1, 1'000'000);
+        spin->setValue(100);
+        spin->setSuffix(tr(" KiB/s"));
+        speedForm->addRow(check, spin);
+        connect(check, &QCheckBox::toggled, this, &TorrentDetailsDialog::onOptionsEdited);
+        connect(spin, &QSpinBox::valueChanged, this, &TorrentDetailsDialog::onOptionsEdited);
+    };
+    limitRow(tr("Limit download speed:"), m_limitDown, m_limitDownKb);
+    limitRow(tr("Limit upload speed:"), m_limitUp, m_limitUpKb);
+    layout->addWidget(speed);
+
+    auto* seeding = new QGroupBox(tr("Seeding Limits"), page);
+    auto* seedForm = makeForm(seeding);
+    auto* ratioRow = new QHBoxLayout;
+    m_ratioMode = new QComboBox(seeding);
+    fillLimitCombo(m_ratioMode);
+    m_ratio100 = new QDoubleSpinBox(seeding);
+    m_ratio100->setRange(0.01, 1000.0);
+    m_ratio100->setDecimals(2);
+    m_ratio100->setSingleStep(0.1);
+    m_ratio100->setValue(1.0);
+    ratioRow->addWidget(m_ratioMode);
+    ratioRow->addWidget(m_ratio100);
+    ratioRow->addStretch(1);
+    seedForm->addRow(tr("Ratio:"), ratioRow);
+    auto* timeRow = new QHBoxLayout;
+    m_seedTimeMode = new QComboBox(seeding);
+    fillLimitCombo(m_seedTimeMode);
+    m_seedMinutes = new QSpinBox(seeding);
+    m_seedMinutes->setRange(1, 1'000'000);
+    m_seedMinutes->setValue(60);
+    m_seedMinutes->setSuffix(tr(" min"));
+    timeRow->addWidget(m_seedTimeMode);
+    timeRow->addWidget(m_seedMinutes);
+    timeRow->addStretch(1);
+    seedForm->addRow(tr("Seed time:"), timeRow);
+    for (QComboBox* combo : {m_ratioMode, m_seedTimeMode})
+        connect(combo, &QComboBox::currentIndexChanged, this, &TorrentDetailsDialog::onOptionsEdited);
+    connect(m_ratio100, &QDoubleSpinBox::valueChanged, this, &TorrentDetailsDialog::onOptionsEdited);
+    connect(m_seedMinutes, &QSpinBox::valueChanged, this, &TorrentDetailsDialog::onOptionsEdited);
+    layout->addWidget(seeding);
+
+    auto* peers = new QGroupBox(tr("Peer Connections"), page);
+    auto* peerForm = makeForm(peers);
+    m_maxPeers = new QSpinBox(peers);
+    m_maxPeers->setRange(0, 10'000);
+    m_maxPeers->setSpecialValueText(tr("Default"));
+    m_maxPeers->setMinimumWidth(110);
+    peerForm->addRow(tr("Maximum peers:"), m_maxPeers);
+    connect(m_maxPeers, &QSpinBox::valueChanged, this, &TorrentDetailsDialog::onOptionsEdited);
+    layout->addWidget(peers);
+    layout->addStretch(1);
+
+    updateOptionEnables();
+    return page;
 }
 
 void TorrentDetailsDialog::poll()
 {
-    if (!m_ipc || !m_ipc->isConnected() || !isVisible())
+    if (!m_ipc || !m_ipc->isConnected() || !isVisible() || m_id.isEmpty())
         return;
     Ipc::IpcMessage msg(Ipc::IpcMsgType::GetTorrentDetails);
     msg.append(m_id);
-    m_ipc->sendPoll(this, std::move(msg), [this](const Ipc::IpcMessage& resp) {
-        if (!resp.isValid())
+    m_ipc->sendPoll(this, std::move(msg), [this, id = m_id](const Ipc::IpcMessage& resp) {
+        if (!resp.isValid() || id != m_id)
             return;
         if (resp.type() == Ipc::IpcMsgType::Error) {
-            m_note->setText(resp.fieldInt(0) == 404
-                                ? tr("This torrent is no longer in the list.")
-                                : tr("BitTorrent is not running."));
+            m_note->setText(resp.fieldInt(0) == 404 ? tr("This torrent is no longer in the list.")
+                                                    : tr("BitTorrent is not running."));
             m_note->show();
             return;
         }
         if (resp.fieldBool(0))
-            applyDetails(resp.fieldMap(1));
+            setDetails(resp.fieldMap(1));
     });
 }
 
-void TorrentDetailsDialog::onFilesContextMenu(const QPoint& pos)
+void TorrentDetailsDialog::refreshRow()
 {
-    if (m_files->selectedItems().isEmpty())
+    if (!m_model)
         return;
-    QMenu menu(this);
-    auto* prio = menu.addMenu(menuIcon("FilePriority.ico"), tr("Priority"));
-    for (const int level : kPriorityLevels) {
-        const char* icon = level == 0  ? "Cancel.ico"
-                           : level < 4 ? "PriorityLow.ico"
-                           : level > 4 ? "PriorityHigh.ico"
-                                       : "PriorityNormal.ico";
-        prio->addAction(menuIcon(icon), torrentFilePriorityName(level), this,
-                        [this, level] { setSelectedPriority(level); });
-    }
-    menu.addAction(menuIcon("Download.ico"), tr("Download"), this,
-                   [this] { setSelectedPriority(4); });
-    menu.addAction(menuIcon("Cancel.ico"), tr("Do Not Download"), this,
-                   [this] { setSelectedPriority(0); });
-    menu.exec(m_files->viewport()->mapToGlobal(pos));
+    if (const TorrentRow* row = m_model->findById(m_id))
+        setRow(*row);
 }
 
-void TorrentDetailsDialog::setSelectedPriority(int priority)
+void TorrentDetailsDialog::applyOptions(const QCborMap& options)
 {
-    if (!m_ipc || !m_ipc->isConnected() || m_priorities.isEmpty())
+    // never over what the user is typing
+    if (m_optionsDirty || m_tabs->widget(TabOptions)->isAncestorOf(QApplication::focusWidget()))
         return;
-    QList<int> prio = m_priorities;
-    for (const QTreeWidgetItem* item : m_files->selectedItems()) {
-        const int index = item->data(FileName, kFileIndexRole).toInt();
-        if (index >= 0 && index < prio.size())
-            prio[index] = priority;
-    }
-    if (prio == m_priorities)
-        return;
+    m_fillingOptions = true;
+    const int down = int(options.value(QStringLiteral("downloadLimitKb")).toInteger());
+    const int up = int(options.value(QStringLiteral("uploadLimitKb")).toInteger());
+    m_limitDown->setChecked(down > 0);
+    if (down > 0)
+        m_limitDownKb->setValue(down);
+    m_limitUp->setChecked(up > 0);
+    if (up > 0)
+        m_limitUpKb->setValue(up);
+    m_maxPeers->setValue(int(options.value(QStringLiteral("maxPeers")).toInteger()));
+    selectMode(m_ratioMode, int(options.value(QStringLiteral("ratioMode")).toInteger()));
+    // 0 = never set: the spin boxes keep their defaults
+    if (const qint64 ratio = options.value(QStringLiteral("ratioPercent")).toInteger(); ratio > 0)
+        m_ratio100->setValue(static_cast<double>(ratio) / 100.0);
+    selectMode(m_seedTimeMode, int(options.value(QStringLiteral("seedTimeMode")).toInteger()));
+    if (const qint64 minutes = options.value(QStringLiteral("seedTimeMinutes")).toInteger(); minutes > 0)
+        m_seedMinutes->setValue(int(minutes));
+    updateOptionEnables();
+    m_fillingOptions = false;
+}
 
-    QCborArray arr;
-    for (const int p : prio)
-        arr.append(p);
-    Ipc::IpcMessage msg(Ipc::IpcMsgType::SetTorrentFilePriorities);
+void TorrentDetailsDialog::onOptionsEdited()
+{
+    updateOptionEnables();
+    if (m_fillingOptions)
+        return;
+    m_optionsDirty = true;
+    m_sendTimer->start();
+}
+
+void TorrentDetailsDialog::sendOptions()
+{
+    m_sendTimer->stop();
+    if (!m_optionsDirty)
+        return;
+    m_optionsDirty = false;
+    const QCborMap options = optionsFromUi();
+    emit optionsSent(options);
+    if (!m_ipc || !m_ipc->isConnected() || m_id.isEmpty())
+        return;
+    Ipc::IpcMessage msg(Ipc::IpcMsgType::SetTorrentOptions);
     msg.append(m_id);
-    msg.append(arr);
-    m_ipc->sendRequest(std::move(msg), [this](const Ipc::IpcMessage& resp) {
+    msg.append(options);
+    m_ipc->sendRequest(std::move(msg), [](const Ipc::IpcMessage& resp) {
         if (resp.isValid() && !resp.fieldBool(0))
-            StatusBarNotifier::post(tr("Could not change the file priorities."));
-        poll();
+            StatusBarNotifier::post(tr("Could not change the torrent options."));
     });
 }
 
-void TorrentDetailsDialog::applyFiles(const QCborArray& files)
+void TorrentDetailsDialog::updateOptionEnables()
 {
-    // In place by file index, so the selection survives the poll
-    QHash<int, QTreeWidgetItem*> existing;
-    for (int i = 0; i < m_files->topLevelItemCount(); ++i) {
-        auto* item = m_files->topLevelItem(i);
-        existing.insert(item->data(FileName, kFileIndexRole).toInt(), item);
-    }
-
-    int maxIndex = -1;
-    for (const auto& v : files)
-        maxIndex = std::max(maxIndex, int(v.toMap().value(QStringLiteral("index")).toInteger()));
-    m_priorities = QList<int>(maxIndex + 1, 4);
-
-    m_files->setSortingEnabled(false);
-    QSet<int> seen;
-    for (const auto& v : files) {
-        const QCborMap f = v.toMap();
-        const int index = int(f.value(QStringLiteral("index")).toInteger());
-        const int priority = int(f.value(QStringLiteral("priority")).toInteger(4));
-        if (index >= 0 && index < m_priorities.size())
-            m_priorities[index] = priority;
-        if (f.value(QStringLiteral("pad")).toBool())
-            continue;   // alignment padding, not a real file
-
-        seen.insert(index);
-        QTreeWidgetItem* item = existing.value(index);
-        if (!item) {
-            item = makeItem(m_files);
-            item->setData(FileName, kFileIndexRole, index);
-        }
-        const qint64 size = f.value(QStringLiteral("size")).toInteger();
-        const qint64 done = f.value(QStringLiteral("done")).toInteger();
-        const double share = size > 0 ? double(done) / double(size) : 1.0;
-        setCell(item, FileName, f.value(QStringLiteral("path")).toString());
-        setCell(item, FileSize, formatByteSize(size), QVariant::fromValue(size), true);
-        setCell(item, FileDone, formatByteSize(done), QVariant::fromValue(done), true);
-        setCell(item, FileProgress, percentText(share), share, true);
-        setCell(item, FilePriority, torrentFilePriorityName(priority), priority);
-        item->setForeground(FileName, priority == 0 ? QBrush(QColor(0x88, 0x88, 0x88)) : QBrush());
-    }
-    for (auto it = existing.cbegin(); it != existing.cend(); ++it) {
-        if (!seen.contains(it.key()))
-            delete it.value();
-    }
-    m_files->setSortingEnabled(true);
-    m_tabs->setTabText(TabFiles, tr("Files (%1)").arg(m_files->topLevelItemCount()));
+    m_limitDownKb->setEnabled(m_limitDown->isChecked());
+    m_limitUpKb->setEnabled(m_limitUp->isChecked());
+    m_ratio100->setEnabled(m_ratioMode->currentData().toInt() == ModeCustom);
+    m_seedMinutes->setEnabled(m_seedTimeMode->currentData().toInt() == ModeCustom);
 }
 
-void TorrentDetailsDialog::applyPeers(const QCborArray& peers)
+void TorrentDetailsDialog::copyMagnet()
 {
-    m_peers->setSortingEnabled(false);
-    m_peers->clear();
-    for (const auto& v : peers) {
-        const QCborMap p = v.toMap();
-        auto* item = makeItem(m_peers);
-        const double progress = p.value(QStringLiteral("progress")).toDouble();
-        const qint64 down = p.value(QStringLiteral("rateDown")).toInteger();
-        const qint64 up = p.value(QStringLiteral("rateUp")).toInteger();
-        const qint64 downloaded = p.value(QStringLiteral("downloaded")).toInteger();
-        const qint64 uploaded = p.value(QStringLiteral("uploaded")).toInteger();
-        QStringList flags;
-        if (p.value(QStringLiteral("seed")).toBool())
-            flags << tr("Seed");
-        if (p.value(QStringLiteral("encrypted")).toBool())
-            flags << tr("Enc");
-        if (p.value(QStringLiteral("utp")).toBool())
-            flags << QStringLiteral("µTP");
-        setCell(item, 0, p.value(QStringLiteral("address")).toString());
-        setCell(item, 1, p.value(QStringLiteral("client")).toString());
-        setCell(item, 2, percentText(progress), progress, true);
-        setCell(item, 3, rateText(down), QVariant::fromValue(down), true);
-        setCell(item, 4, rateText(up), QVariant::fromValue(up), true);
-        setCell(item, 5, formatByteSize(downloaded), QVariant::fromValue(downloaded), true);
-        setCell(item, 6, formatByteSize(uploaded), QVariant::fromValue(uploaded), true);
-        setCell(item, 7, flags.join(QStringLiteral(", ")));
-        setCell(item, 8, p.value(QStringLiteral("source")).toString());
-    }
-    m_peers->setSortingEnabled(true);
-    m_tabs->setTabText(TabPeers, tr("Peers (%1)").arg(peers.size()));
-}
-
-void TorrentDetailsDialog::applyTrackers(const QCborArray& trackers)
-{
-    m_trackers->setSortingEnabled(false);
-    m_trackers->clear();
-    for (const auto& v : trackers) {
-        const QCborMap t = v.toMap();
-        auto* item = makeItem(m_trackers);
-        const int tier = int(t.value(QStringLiteral("tier")).toInteger());
-        const qint64 seeds = t.value(QStringLiteral("seeds")).toInteger(-1);
-        const qint64 peers = t.value(QStringLiteral("peers")).toInteger(-1);
-        const QString message = t.value(QStringLiteral("message")).toString();
-        QString status = t.value(QStringLiteral("working")).toBool() ? tr("Working")
-                                                                     : tr("Not working");
-        if (!message.isEmpty())
-            status += QStringLiteral(" — ") + message;
-        setCell(item, 0, t.value(QStringLiteral("url")).toString());
-        setCell(item, 1, QString::number(tier), tier, true);
-        setCell(item, 2, status);
-        setCell(item, 3, countText(seeds), QVariant::fromValue(seeds), true);
-        setCell(item, 4, countText(peers), QVariant::fromValue(peers), true);
-    }
-    m_trackers->setSortingEnabled(true);
-    m_tabs->setTabText(TabTrackers, tr("Trackers (%1)").arg(trackers.size()));
+    if (m_magnet.isEmpty())
+        return;
+    QApplication::clipboard()->setText(m_magnet);
+    StatusBarNotifier::post(tr("Copied %n magnet link(s).", nullptr, 1), 3000);
 }
 
 } // namespace eMule

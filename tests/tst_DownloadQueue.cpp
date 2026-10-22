@@ -2880,12 +2880,15 @@ void tst_DownloadQueue::ratioLimitedDownload_followsTheUploadLimit()
     QCOMPARE(limit(0, 20), uint64{0});
     QCOMPARE(limit(0, 0), uint64{0});
 
-    // Below that: 3x under 4, 4x under 10, 5x under 20.
+    // Below that: 3x under 4, 4x up to and incl. 12, 5x under 20.
     QCOMPARE(limit(500, 3), kb(9));
     QCOMPARE(limit(500, 4), kb(16));
     QCOMPARE(limit(500, 9), kb(36));
-    QCOMPARE(limit(500, 10), kb(50));
+    QCOMPARE(limit(500, 10), kb(40));
+    QCOMPARE(limit(500, 12), kb(48));
+    QCOMPARE(limit(500, 13), kb(65));
     QCOMPARE(limit(500, 19), kb(95));
+    QCOMPARE(DownloadQueue::ratioLimitedDownload(kb(500), kb(12) + 1), (kb(12) + 1) * 5);
 
     // Never above what the user set, and "unlimited" down is capped all the same.
     QCOMPARE(limit(10, 9), kb(10));

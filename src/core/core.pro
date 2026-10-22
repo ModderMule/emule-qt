@@ -205,6 +205,7 @@ SOURCES += \
     webserver/OpenApiWriter.cpp \
     webserver/WebServerApi.cpp \
     webserver/WebServerMcp.cpp \
+    webserver/WebServerTorrents.cpp \
     webserver/WebSessionManager.cpp \
     webserver/WebTemplateEngine.cpp
 
@@ -375,6 +376,7 @@ HEADERS += \
     webserver/ApiTypes.h \
     webserver/OpenApiWriter.h \
     webserver/ApiEventHub.h \
+    webserver/TorrentWebBackend.h \
     webserver/UsenetWebBackend.h \
     webserver/WebTemplateStrings.h \
     webserver/WebServer.h \

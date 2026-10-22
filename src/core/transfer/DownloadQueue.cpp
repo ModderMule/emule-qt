@@ -1403,10 +1403,11 @@ bool DownloadQueue::startNextFile(int category)
 uint64 DownloadQueue::ratioLimitedDownload(uint64 maxDownBytes, uint64 maxUpBytes)
 {
     // MFC srchybrid/Preferences.cpp:693-714 ("don't be a Lam3r").
+    // Port change: 4x tier runs up to and incl. 12 KB/s (MFC: below 10).
     if (maxUpBytes == 0 || maxUpBytes >= 20 * 1024)
         return maxDownBytes;
 
-    const uint64 coef = maxUpBytes < 4 * 1024 ? 3 : maxUpBytes < 10 * 1024 ? 4 : 5;
+    const uint64 coef = maxUpBytes < 4 * 1024 ? 3 : maxUpBytes <= 12 * 1024 ? 4 : 5;
     const uint64 cap = coef * maxUpBytes;
     return maxDownBytes == 0 ? cap : std::min(cap, maxDownBytes);
 }

@@ -83,6 +83,9 @@ void UiState::load(const QString& configDir)
         m_ircSplitSizes        = readIntList(root, "ircSplitSizes");
         m_statsSplitSizes      = readIntList(root, "statsSplitSizes");
         m_statsGraphSplitSizes = readIntList(root, "statsGraphSplitSizes");
+        m_torrentSplitSizes    = readIntList(root, "torrentSplitSizes");
+        m_torrentFilter        = root["torrentFilter"].as<int>(m_torrentFilter);
+        m_torrentPaneTab       = root["torrentPaneTab"].as<int>(m_torrentPaneTab);
 
         m_windowWidth      = root["windowWidth"].as<int>(m_windowWidth);
         m_windowHeight     = root["windowHeight"].as<int>(m_windowHeight);
@@ -198,6 +201,9 @@ void UiState::save(const QString& configDir)
     writeIntList(out, "ircSplitSizes",        m_ircSplitSizes);
     writeIntList(out, "statsSplitSizes",      m_statsSplitSizes);
     writeIntList(out, "statsGraphSplitSizes", m_statsGraphSplitSizes);
+    writeIntList(out, "torrentSplitSizes",    m_torrentSplitSizes);
+    out << YAML::Key << "torrentFilter" << YAML::Value << m_torrentFilter;
+    out << YAML::Key << "torrentPaneTab" << YAML::Value << m_torrentPaneTab;
 
     out << YAML::Key << "windowWidth"      << YAML::Value << m_windowWidth;
     out << YAML::Key << "windowHeight"     << YAML::Value << m_windowHeight;
@@ -378,6 +384,11 @@ void UiState::bindIrcSplitter(QSplitter* splitter)
 void UiState::bindStatsSplitter(QSplitter* splitter)
 {
     bindSplitter(splitter, m_statsSplitSizes);
+}
+
+void UiState::bindTorrentSplitter(QSplitter* splitter)
+{
+    bindSplitter(splitter, m_torrentSplitSizes);
 }
 
 void UiState::bindStatsGraphSplitter(QSplitter* splitter)

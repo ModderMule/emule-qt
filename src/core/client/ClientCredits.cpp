@@ -119,30 +119,23 @@ float ClientCredits::scoreRatio(const Address& forIP) const
         break;
     }
 
-    if (downloadedTotal() < 1048576)
-        return 1.0f;
+    return creditRatio(downloadedTotal(), uploadedTotal(), true);
+}
 
-    float result;
-    if (uploadedTotal() != 0)
-        result = static_cast<float>(downloadedTotal() * 2) / static_cast<float>(uploadedTotal());
-    else
-        result = 10.0f;
+float ClientCredits::myScoreRatio(const Address& forIP, bool newFormula) const
+{
+    // An unverified peer keeps no credits for us either; a bad guy still might
+    switch (currentIdentState(forIP)) {
+    case IdentState::IdFailed:
+    case IdentState::IdNeeded:
+        if (m_creditsList && m_creditsList->cryptoAvailable())
+            return 1.0f;
+        break;
+    default:
+        break;
+    }
 
-    // Exponential max based on downloaded data (9.2MB → 3.34, 100MB → 10.0)
-    float result2 = std::sqrt(static_cast<float>(downloadedTotal()) / 1048576.0f + 2.0f);
-
-    // Linear ramp for the first chunk (1MB → 1.01, 9.2MB → 3.34)
-    float result3;
-    if (downloadedTotal() < 9646899)
-        result3 = static_cast<float>(downloadedTotal() - 1048576) / 8598323.0f * 2.34f + 1.0f;
-    else
-        result3 = 10.0f;
-
-    result = std::min(result, std::min(result2, result3));
-
-    if (result < 1.0f)
-        return 1.0f;
-    return std::min(result, 10.0f);
+    return creditRatio(uploadedTotal(), downloadedTotal(), newFormula);
 }
 
 // ---------------------------------------------------------------------------
@@ -809,6 +802,36 @@ ClientCreditsList::EvpKeyPtr ClientCreditsList::loadKeyFile(const QString& keyPa
         return fail(QStringLiteral("Failed to load RSA private key from %1").arg(keyPath));
     }
     return key; // rsa now owned by key
+}
+
+// ---------------------------------------------------------------------------
+// Private
+// ---------------------------------------------------------------------------
+
+float ClientCredits::creditRatio(uint64 received, uint64 sent, bool newFormula)
+{
+    // eMule 0.48+ starts at 1 MiB, older clients at 1,000,000 bytes
+    if (received < (newFormula ? 1048576u : 1000000u))
+        return 1.0f;
+
+    float result = sent != 0
+        ? static_cast<float>(static_cast<double>(received) * 2.0 / static_cast<double>(sent))
+        : 10.0f;
+
+    // Exponential max based on received data (9.2MB → 3.34, 100MB → 10.0)
+    const float result2 = std::sqrt(static_cast<float>(static_cast<double>(received) / 1048576.0) + 2.0f);
+
+    if (newFormula) {
+        // Linear ramp for the first chunk (1MB → 1.01, 9.2MB → 3.34)
+        const float result3 = received < 9646899
+            ? static_cast<float>(received - 1048576) / 8598323.0f * 2.34f + 1.0f
+            : 10.0f;
+        result = std::min(result, std::min(result2, result3));
+    } else {
+        result = std::min(result, result2);
+    }
+
+    return std::clamp(result, 1.0f, 10.0f);
 }
 
 } // namespace eMule

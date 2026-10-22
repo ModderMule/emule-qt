@@ -7,6 +7,7 @@
 #include "utils/Log.h"
 
 #include <libtorrent/alert_types.hpp>
+#include <libtorrent/announce_entry.hpp>
 #include <libtorrent/extensions.hpp>
 #include <libtorrent/extensions/smart_ban.hpp>
 #include <libtorrent/extensions/ut_metadata.hpp>
@@ -21,6 +22,8 @@
 #include <QDir>
 #include <QElapsedTimer>
 #include <QFile>
+#include <QJsonDocument>
+#include <QJsonObject>
 #include <QSaveFile>
 #include <QSet>
 #include <QTimer>
@@ -43,6 +46,8 @@ constexpr qint64 kStopWaitMs = 5000;
 const QString kSessionFile = QStringLiteral("session.dat");
 const QString kResumeDir = QStringLiteral("resume");
 const QString kResumeSuffix = QStringLiteral(".fastresume");
+/// per-torrent seed limits; speeds and peers are in the resume data
+const QString kOptionsFile = QStringLiteral("torrent-options.json");
 
 /// A torrent plugin of libtorrent as a session plugin: the explicit list of extensions.
 struct TorrentPlugin final : lt::plugin {
@@ -90,6 +95,11 @@ QString resumeName(const QString& id)
     return name + kResumeSuffix;
 }
 
+BtLimitMode limitMode(int v)
+{
+    return v == 1 ? BtLimitMode::Unlimited : v == 2 ? BtLimitMode::Custom : BtLimitMode::Global;
+}
+
 QString message(const lt::alert* a)
 {
     return QString::fromStdString(a->message());
@@ -107,6 +117,8 @@ struct BtSession::Impl {
     std::map<QString, BtTorrentRow> rows;
     /// stopped by a seed limit, and resumed by the user since: the limit stays off
     QSet<QString> limitOverride;
+    /// seed limits that differ from the global ones
+    std::map<QString, BtTorrentOptions> seedLimits;
     int ticks = 0;
     int outstandingResume = 0;
     bool listening = false;
@@ -125,6 +137,9 @@ struct BtSession::Impl {
         h.save_resume_data(flags);
         ++outstandingResume;
     }
+    [[nodiscard]] QString optionsPath() const { return QDir(settings.stateDir).filePath(kOptionsFile); }
+    void loadSeedLimits();
+    void saveSeedLimits() const;
     BtAddResult add(BtSession& q, lt::add_torrent_params atp, const QString& savePath, bool paused);
     void enforceSeedLimits(const lt::torrent_status& st, const BtTorrentRow& row);
 };
@@ -175,6 +190,8 @@ void BtSession::start(const BtSettings& settings)
     }
     // libtorrent's thread: only wake ours (research doc §5.2)
     d->ses->set_alert_notify([this] { QMetaObject::invokeMethod(this, &BtSession::drainAlerts, Qt::QueuedConnection); });
+
+    d->loadSeedLimits();
 
     // the torrents of the last run
     const QDir resumeDir(QDir(settings.stateDir).filePath(kResumeDir));
@@ -289,6 +306,8 @@ bool BtSession::remove(const QString& id, bool deleteFiles)
     d->handles.erase(id);
     d->rows.erase(id);
     d->limitOverride.remove(id);
+    if (d->seedLimits.erase(id) > 0)
+        d->saveSeedLimits();
     QFile::remove(d->resumePath(id));
     emit torrentRemoved(id);
     return true;
@@ -349,6 +368,97 @@ bool BtSession::setFilePriorities(const QString& id, const QList<int>& prioritie
     return true;
 }
 
+std::optional<BtTorrentOptions> BtSession::options(const QString& id) const
+{
+    const auto h = d->handle(id);
+    if (!h.is_valid())
+        return std::nullopt;
+    BtTorrentOptions o;
+    if (auto it = d->seedLimits.find(id); it != d->seedLimits.end())
+        o = it->second;
+    o.downloadLimitKb = std::max(0, h.download_limit()) / 1024;
+    o.uploadLimitKb = std::max(0, h.upload_limit()) / 1024;
+    const int peers = h.max_connections();
+    // libtorrent reports "no limit" as (1 << 24) - 1
+    o.maxPeers = peers <= 0 || peers >= (1 << 24) - 1 ? 0 : peers;
+    return o;
+}
+
+bool BtSession::setOptions(const QString& id, const BtTorrentOptions& options)
+{
+    const auto h = d->handle(id);
+    if (!h.is_valid())
+        return false;
+    h.set_download_limit(options.downloadLimitKb > 0 ? options.downloadLimitKb * 1024 : 0);
+    h.set_upload_limit(options.uploadLimitKb > 0 ? options.uploadLimitKb * 1024 : 0);
+    h.set_max_connections(options.maxPeers > 0 ? options.maxPeers : -1);
+
+    BtTorrentOptions limits;
+    limits.ratioMode = options.ratioMode;
+    // 0 = not given: the defaults the GUI offers
+    limits.ratioPercent = options.ratioPercent > 0 ? options.ratioPercent : 100;
+    limits.seedTimeMode = options.seedTimeMode;
+    limits.seedTimeMinutes = options.seedTimeMinutes > 0 ? options.seedTimeMinutes : 60;
+    const bool isDefault = limits.ratioMode == BtLimitMode::Global && limits.seedTimeMode == BtLimitMode::Global;
+    auto it = d->seedLimits.find(id);
+    if (isDefault ? it != d->seedLimits.end() : (it == d->seedLimits.end() || !(it->second == limits))) {
+        if (isDefault)
+            d->seedLimits.erase(it);
+        else
+            d->seedLimits[id] = limits;
+        // a new limit is the user's word: it applies again
+        d->limitOverride.remove(id);
+        d->saveSeedLimits();
+    }
+    d->saveResume(h);
+    return true;
+}
+
+bool BtSession::addTrackers(const QString& id, const QStringList& urls)
+{
+    const auto h = d->handle(id);
+    if (!h.is_valid())
+        return false;
+    const auto current = h.trackers();
+    int tier = 0;
+    QSet<QString> known;
+    for (const auto& a : current) {
+        tier = std::max(tier, static_cast<int>(a.tier));
+        known.insert(QString::fromStdString(a.url));
+    }
+    bool added = false;
+    for (const QString& raw : urls) {
+        const QString url = raw.trimmed();
+        if (url.isEmpty() || known.contains(url))
+            continue;
+        lt::announce_entry e(url.toStdString());
+        e.tier = static_cast<std::uint8_t>(current.empty() ? 0 : tier);
+        h.add_tracker(e);
+        known.insert(url);
+        added = true;
+    }
+    if (added) {
+        h.force_reannounce();
+        d->saveResume(h);
+    }
+    return true;
+}
+
+bool BtSession::removeTrackers(const QString& id, const QStringList& urls)
+{
+    const auto h = d->handle(id);
+    if (!h.is_valid())
+        return false;
+    const QSet<QString> drop(urls.cbegin(), urls.cend());
+    std::vector<lt::announce_entry> keep;
+    for (const auto& a : h.trackers())
+        if (!drop.contains(QString::fromStdString(a.url)))
+            keep.push_back(a);
+    h.replace_trackers(keep);
+    d->saveResume(h);
+    return true;
+}
+
 QList<BtTorrentRow> BtSession::torrents() const
 {
     QList<BtTorrentRow> out;
@@ -382,6 +492,12 @@ QList<BtTrackerRow> BtSession::trackers(const QString& id) const
 {
     const auto h = d->handle(id);
     return h.is_valid() ? BtTorrentView::trackers(h) : QList<BtTrackerRow>{};
+}
+
+QByteArray BtSession::availabilityMap(const QString& id) const
+{
+    const auto h = d->handle(id);
+    return h.is_valid() ? BtTorrentView::availabilityMap(h) : QByteArray{};
 }
 
 BtStatus BtSession::status() const
@@ -511,14 +627,51 @@ BtAddResult BtSession::Impl::add(BtSession& q, lt::add_torrent_params atp, const
     return {BtAddOutcome::Added, id, {}};
 }
 
+void BtSession::Impl::loadSeedLimits()
+{
+    seedLimits.clear();
+    const QJsonObject root = QJsonDocument::fromJson(readAll(optionsPath())).object();
+    for (auto it = root.begin(); it != root.end(); ++it) {
+        const QJsonObject o = it.value().toObject();
+        BtTorrentOptions limits;
+        limits.ratioMode = limitMode(o.value(QStringLiteral("ratioMode")).toInt());
+        limits.ratioPercent = std::max(1, o.value(QStringLiteral("ratioPercent")).toInt(100));
+        limits.seedTimeMode = limitMode(o.value(QStringLiteral("seedTimeMode")).toInt());
+        limits.seedTimeMinutes = std::max(1, o.value(QStringLiteral("seedTimeMinutes")).toInt(60));
+        seedLimits[it.key()] = limits;
+    }
+}
+
+void BtSession::Impl::saveSeedLimits() const
+{
+    QJsonObject root;
+    for (const auto& [id, o] : seedLimits)
+        root.insert(id, QJsonObject{
+                            {QStringLiteral("ratioMode"), static_cast<int>(o.ratioMode)},
+                            {QStringLiteral("ratioPercent"), o.ratioPercent},
+                            {QStringLiteral("seedTimeMode"), static_cast<int>(o.seedTimeMode)},
+                            {QStringLiteral("seedTimeMinutes"), o.seedTimeMinutes},
+                        });
+    const QByteArray json = QJsonDocument(root).toJson(QJsonDocument::Indented);
+    if (!writeAtomic(optionsPath(), std::vector<char>(json.cbegin(), json.cend())))
+        logWarning(QStringLiteral("BitTorrent: could not write %1").arg(kOptionsFile));
+}
+
 void BtSession::Impl::enforceSeedLimits(const lt::torrent_status& st, const BtTorrentRow& row)
 {
     if (!st.is_seeding || row.paused || limitOverride.contains(row.id))
         return;
-    const BtSettings& s = settings;
+    int ratioPercent = settings.seedRatioPercent;
+    int seedMinutes = settings.seedTimeLimitMinutes;
+    if (auto it = seedLimits.find(row.id); it != seedLimits.end()) {
+        if (it->second.ratioMode != BtLimitMode::Global)
+            ratioPercent = it->second.ratioMode == BtLimitMode::Custom ? it->second.ratioPercent : 0;
+        if (it->second.seedTimeMode != BtLimitMode::Global)
+            seedMinutes = it->second.seedTimeMode == BtLimitMode::Custom ? it->second.seedTimeMinutes : 0;
+    }
     const qint64 base = std::max<qint64>({st.all_time_download, st.total_done, 1});
-    const bool ratioReached = s.seedRatioPercent > 0 && st.all_time_upload * 100 >= base * s.seedRatioPercent;
-    const bool timeReached = s.seedTimeLimitMinutes > 0 && st.seeding_duration.count() >= qint64(s.seedTimeLimitMinutes) * 60;
+    const bool ratioReached = ratioPercent > 0 && st.all_time_upload * 100 >= base * ratioPercent;
+    const bool timeReached = seedMinutes > 0 && st.seeding_duration.count() >= qint64(seedMinutes) * 60;
     if (!ratioReached && !timeReached)
         return;
     st.handle.unset_flags(lt::torrent_flags::auto_managed);

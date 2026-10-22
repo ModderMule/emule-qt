@@ -555,7 +555,7 @@ Start it with --new-instance or --config &lt;dir&gt; to open another window.</so
         <translation>普通</translation>
     </message>
     <message>
-        <location filename="../src/gui/dialogs/OptionsDialog.cpp" line="+3117"/>
+        <location filename="../src/gui/dialogs/OptionsDialog.cpp" line="+3122"/>
         <source>Test</source>
         <translation>測試</translation>
     </message>
@@ -784,7 +784,7 @@ Has comments</source>
     <name>Units</name>
     <message>
         <location filename="../src/core/utils/StringUtils.cpp" line="+72"/>
-        <location filename="../src/core/webserver/WebServer.cpp" line="+4062"/>
+        <location filename="../src/core/webserver/WebServer.cpp" line="+4060"/>
         <source>Bytes</source>
         <translation>Bytes</translation>
     </message>
@@ -5920,36 +5920,36 @@ Download it again?</source>
 <context>
     <name>eMule::OptionsDialog</name>
     <message>
-        <location filename="../src/gui/dialogs/OptionsDialog.cpp" line="-3011"/>
+        <location filename="../src/gui/dialogs/OptionsDialog.cpp" line="-3014"/>
         <source>Options</source>
         <translation>選項</translation>
     </message>
     <message>
         <location line="+61"/>
-        <location line="+1981"/>
+        <location line="+1984"/>
         <source>OK</source>
         <translation>確定</translation>
     </message>
     <message>
-        <location line="-1980"/>
-        <location line="+1981"/>
+        <location line="-1983"/>
+        <location line="+1984"/>
         <source>Cancel</source>
         <translation>取消</translation>
     </message>
     <message>
-        <location line="-1980"/>
-        <location line="+5771"/>
+        <location line="-1983"/>
+        <location line="+5774"/>
         <source>Apply</source>
         <translation>套用</translation>
     </message>
     <message>
-        <location line="-5770"/>
+        <location line="-5773"/>
         <source>Help</source>
         <translation>說明</translation>
     </message>
     <message>
         <location line="+259"/>
-        <location line="+1989"/>
+        <location line="+1992"/>
         <location line="+62"/>
         <location line="+5"/>
         <location line="+9"/>
@@ -5958,7 +5958,7 @@ Download it again?</source>
         <translation>IP 過濾器</translation>
     </message>
     <message>
-        <location line="-2075"/>
+        <location line="-2078"/>
         <source>IP filter reloaded: %1 entries.</source>
         <translation>IP 過濾器已重新載入：%1 個項目。</translation>
     </message>
@@ -5968,7 +5968,7 @@ Download it again?</source>
         <translation>選項 -&gt; %1 -&gt; %2</translation>
     </message>
     <message>
-        <location line="+182"/>
+        <location line="+186"/>
         <source>General options</source>
         <translation>一般選項</translation>
     </message>
@@ -5994,26 +5994,26 @@ Download it again?</source>
     </message>
     <message>
         <location line="+8"/>
-        <location line="+5684"/>
+        <location line="+5683"/>
         <source>Language</source>
         <translation>語言</translation>
     </message>
     <message>
-        <location line="-5681"/>
+        <location line="-5680"/>
         <source>System Default</source>
         <translation>系統預設</translation>
     </message>
     <message>
         <location line="+14"/>
         <location line="+726"/>
-        <location line="+321"/>
+        <location line="+320"/>
         <location line="+450"/>
         <location line="+248"/>
         <source>Miscellaneous</source>
         <translation>其他</translation>
     </message>
     <message>
-        <location line="-1742"/>
+        <location line="-1741"/>
         <source>Bring to front on link click</source>
         <translation>點選連結時將視窗移至最前</translation>
     </message>
@@ -6099,25 +6099,25 @@ Download it again?</source>
     </message>
     <message>
         <location line="+8"/>
-        <location line="+5620"/>
+        <location line="+5619"/>
         <source>Core</source>
         <translation>核心</translation>
     </message>
     <message>
-        <location line="-5615"/>
+        <location line="-5614"/>
         <source>Address:</source>
         <translation>位址：</translation>
     </message>
     <message>
         <location line="+4"/>
-        <location line="+1224"/>
+        <location line="+1223"/>
         <location line="+720"/>
         <location line="+421"/>
         <source>Port:</source>
         <translation>連接埠：</translation>
     </message>
     <message>
-        <location line="-2362"/>
+        <location line="-2361"/>
         <source>authentication token</source>
         <translation>驗證權杖</translation>
     </message>
@@ -6363,7 +6363,7 @@ Are you sure you want to continue?</source>
     </message>
     <message>
         <location line="+2"/>
-        <location line="+1693"/>
+        <location line="+1692"/>
         <location line="+128"/>
         <location line="+295"/>
         <location line="+1016"/>
@@ -6376,7 +6376,7 @@ Are you sure you want to continue?</source>
         <translation>已啟用</translation>
     </message>
     <message>
-        <location line="-4766"/>
+        <location line="-4765"/>
         <source>Reset</source>
         <translation>重置</translation>
     </message>
@@ -6393,24 +6393,24 @@ Are you sure you want to continue?</source>
     <message>
         <location line="+3"/>
         <location line="+6"/>
-        <location line="+4147"/>
+        <location line="+4146"/>
         <location line="+345"/>
         <source> KB/s</source>
         <translation> KB/s</translation>
     </message>
     <message>
-        <location line="-4495"/>
+        <location line="-4494"/>
         <source>Upload</source>
         <translation>上傳</translation>
     </message>
     <message>
         <location line="+9"/>
-        <location line="+4135"/>
+        <location line="+4134"/>
         <source>Limits</source>
         <translation>限制</translation>
     </message>
     <message>
-        <location line="-4132"/>
+        <location line="-4131"/>
         <source>Download limit</source>
         <translation>下載限制</translation>
     </message>
@@ -6471,12 +6471,12 @@ Are you sure you want to continue?</source>
     </message>
     <message>
         <location line="+4"/>
-        <location line="+6791"/>
+        <location line="+6790"/>
         <source>Any</source>
         <translation>任何</translation>
     </message>
     <message>
-        <location line="-6789"/>
+        <location line="-6788"/>
         <source>Use only this network interface, for example a VPN tunnel. Pick one from the list, or type an IP address or a subnet such as 10.64.0.0/10 (the interface holding an address in it). Connections through a proxy are not bound.</source>
         <translation>只使用這個網路介面，例如 VPN 通道。可從清單中選擇，或輸入 IP 位址或子網路，例如 10.64.0.0/10（即擁有該範圍內位址的介面）。透過代理的連線不會被綁定。</translation>
     </message>
@@ -6562,12 +6562,12 @@ Are you sure you want to continue?</source>
     </message>
     <message>
         <location line="+62"/>
-        <location line="+1416"/>
+        <location line="+1415"/>
         <source>General</source>
         <translation>一般</translation>
     </message>
     <message>
-        <location line="-1413"/>
+        <location line="-1412"/>
         <source>Enable proxy</source>
         <translation>啟用代理</translation>
     </message>
@@ -6632,26 +6632,26 @@ Every Usenet connection then passes through the proxy, so its speed caps the dow
     </message>
     <message>
         <location line="+9"/>
-        <location line="+694"/>
+        <location line="+693"/>
         <source>Authentication</source>
         <translation>驗證</translation>
     </message>
     <message>
-        <location line="-691"/>
+        <location line="-690"/>
         <source>Enable authentication</source>
         <translation>啟用驗證</translation>
     </message>
     <message>
         <location line="+7"/>
-        <location line="+1792"/>
+        <location line="+1791"/>
         <location line="+1019"/>
         <location line="+152"/>
         <source>Name:</source>
         <translation>名稱：</translation>
     </message>
     <message>
-        <location line="-2959"/>
-        <location line="+695"/>
+        <location line="-2958"/>
+        <location line="+694"/>
         <location line="+778"/>
         <location line="+19"/>
         <location line="+324"/>
@@ -6659,7 +6659,7 @@ Every Usenet connection then passes through the proxy, so its speed caps the dow
         <translation>密碼：</translation>
     </message>
     <message>
-        <location line="-1782"/>
+        <location line="-1781"/>
         <source>Update</source>
         <translation>更新</translation>
     </message>
@@ -6769,7 +6769,7 @@ Every Usenet connection then passes through the proxy, so its speed caps the dow
         <translation>暫存檔案</translation>
     </message>
     <message>
-        <location line="+13"/>
+        <location line="+12"/>
         <source>Select Temporary Directory</source>
         <translation>選擇暫存資料夾</translation>
     </message>
@@ -8951,7 +8951,78 @@ Adding one later does not fetch its back catalogue: a new indexer gets its own f
         <translation>伺服器連線重新整理間隔 [分鐘]：</translation>
     </message>
     <message>
-        <location line="-150"/>
+        <location line="+2844"/>
+        <location line="+52"/>
+        <source>Directories</source>
+        <translation>目錄</translation>
+    </message>
+    <message>
+        <location line="-36"/>
+        <source>Please enter the incoming folder.</source>
+        <translation>請輸入下載完成資料夾。</translation>
+    </message>
+    <message>
+        <location line="+1"/>
+        <source>The incoming folder must be a full path:
+%1</source>
+        <translation>下載完成資料夾必須是完整路徑：
+%1</translation>
+    </message>
+    <message>
+        <location line="+1"/>
+        <source>The incoming folder does not exist:
+%1
+
+Create it?</source>
+        <translation>下載完成資料夾不存在：
+%1
+
+是否建立？</translation>
+    </message>
+    <message>
+        <location line="+1"/>
+        <source>Please enter the temporary folder.</source>
+        <translation>請輸入暫存資料夾。</translation>
+    </message>
+    <message>
+        <location line="+1"/>
+        <source>The temporary folder must be a full path:
+%1</source>
+        <translation>暫存資料夾必須是完整路徑：
+%1</translation>
+    </message>
+    <message>
+        <location line="+1"/>
+        <source>The temporary folder does not exist:
+%1
+
+Create it?</source>
+        <translation>暫存資料夾不存在：
+%1
+
+是否建立？</translation>
+    </message>
+    <message>
+        <location line="+18"/>
+        <source>The temporary folder can&apos;t be the same as the incoming folder.</source>
+        <translation>暫存資料夾不能與下載完成資料夾相同。</translation>
+    </message>
+    <message>
+        <location line="+10"/>
+        <source>This is a file, not a folder:
+%1</source>
+        <translation>這是檔案，不是資料夾：
+%1</translation>
+    </message>
+    <message>
+        <location line="+7"/>
+        <source>Could not create the folder:
+%1</source>
+        <translation>無法建立資料夾：
+%1</translation>
+    </message>
+    <message>
+        <location line="-3050"/>
         <location line="+153"/>
         <source>Disabled</source>
         <translation>已停用</translation>
@@ -13648,140 +13719,419 @@ Clicking &apos;Restore Stats&apos; again will reload your current statistics.</s
 <context>
     <name>eMule::TorrentDetailsDialog</name>
     <message>
-        <location filename="../src/gui/dialogs/TorrentDetailsDialog.cpp" line="+68"/>
         <source>Skip</source>
-        <translation>略過</translation>
+        <translation type="vanished">略過</translation>
     </message>
     <message>
-        <location line="+2"/>
         <source>Low</source>
-        <translation>低</translation>
+        <translation type="vanished">低</translation>
     </message>
     <message>
-        <location line="+2"/>
         <source>Normal</source>
-        <translation>普通</translation>
+        <translation type="vanished">普通</translation>
     </message>
     <message>
-        <location line="+2"/>
         <source>High</source>
-        <translation>高</translation>
+        <translation type="vanished">高</translation>
+    </message>
+    <message>
+        <source>Maximum</source>
+        <translation type="vanished">最高</translation>
+    </message>
+    <message>
+        <source>Torrent Details</source>
+        <translation type="vanished">種子詳細資料</translation>
+    </message>
+    <message>
+        <source>File</source>
+        <translation type="vanished">檔案</translation>
+    </message>
+    <message>
+        <location filename="../src/gui/dialogs/TorrentDetailsDialog.cpp" line="+51"/>
+        <source>N/A</source>
+        <translation>N/A</translation>
+    </message>
+    <message>
+        <location line="+35"/>
+        <source>Use global settings</source>
+        <translation>使用全域設定</translation>
     </message>
     <message>
         <location line="+1"/>
-        <source>Maximum</source>
-        <translation>最高</translation>
+        <source>Seed regardless</source>
+        <translation>無限制做種</translation>
     </message>
     <message>
-        <location line="+10"/>
-        <source>Torrent Details</source>
-        <translation>種子詳細資料</translation>
+        <location line="+1"/>
+        <source>Stop seeding at:</source>
+        <translation>停止做種於：</translation>
     </message>
     <message>
         <location line="+46"/>
-        <source>File</source>
-        <translation>檔案</translation>
+        <source>Info</source>
+        <translation>資訊</translation>
     </message>
     <message>
-        <location line="+0"/>
+        <location line="+1"/>
+        <source>Activity</source>
+        <translation>活動</translation>
+    </message>
+    <message>
+        <location line="+1"/>
+        <source>Options</source>
+        <translation>選項</translation>
+    </message>
+    <message>
+        <location line="+4"/>
+        <location line="+2"/>
+        <source>%1 — Torrent Inspector</source>
+        <translation>%1 — Torrent 檢查器</translation>
+    </message>
+    <message numerus="yes">
+        <location line="+56"/>
+        <source>%n file(s), %1</source>
+        <translation>
+            <numerusform>%n 個檔案，%1</numerusform>
+        </translation>
+    </message>
+    <message>
+        <location line="+1"/>
+        <source>Getting metadata…</source>
+        <translation>正在取得中繼資料…</translation>
+    </message>
+    <message numerus="yes">
+        <location line="+4"/>
+        <source>%1 (%n piece(s) @ %2)</source>
+        <translation>
+            <numerusform>%1（%n 個區塊 @ %2）</numerusform>
+        </translation>
+    </message>
+    <message>
+        <location line="+7"/>
+        <source>Private to this tracker — DHT and PEX disabled</source>
+        <translation>僅限此追蹤器 — 已停用 DHT 和 PEX</translation>
+    </message>
+    <message>
+        <location line="+1"/>
+        <source>Public torrent</source>
+        <translation>公開 Torrent</translation>
+    </message>
+    <message>
+        <location line="+2"/>
+        <source>Created by %1 on %2</source>
+        <translation>由 %1 建立於 %2</translation>
+    </message>
+    <message>
+        <location line="+2"/>
+        <source>Created by %1</source>
+        <translation>由 %1 建立</translation>
+    </message>
+    <message>
+        <location line="+2"/>
+        <source>Created on %1</source>
+        <translation>建立於 %1</translation>
+    </message>
+    <message>
+        <location line="+13"/>
+        <source>%1 (%2 selected)</source>
+        <translation>%1（已選 %2）</translation>
+    </message>
+    <message>
+        <location line="+21"/>
+        <source>Active now</source>
+        <translation>目前活動中</translation>
+    </message>
+    <message>
+        <location line="+2"/>
+        <source>%1 ago</source>
+        <translation>%1 前</translation>
+    </message>
+    <message>
+        <location line="+4"/>
+        <source>Unknown</source>
+        <translation>未知</translation>
+    </message>
+    <message>
+        <location line="+25"/>
+        <source>Details</source>
+        <translation>詳細資料</translation>
+    </message>
+    <message>
+        <location line="+2"/>
         <source>Size</source>
         <translation>大小</translation>
     </message>
     <message>
-        <location line="+0"/>
+        <location line="+1"/>
+        <source>Location</source>
+        <translation>位置</translation>
+    </message>
+    <message>
+        <location line="+1"/>
+        <source>Hash v1</source>
+        <translation>雜湊 v1</translation>
+    </message>
+    <message>
+        <location line="+1"/>
+        <source>Hash v2</source>
+        <translation>雜湊 v2</translation>
+    </message>
+    <message>
+        <location line="+1"/>
+        <source>Privacy</source>
+        <translation>隱私</translation>
+    </message>
+    <message>
+        <location line="+1"/>
+        <source>Origin</source>
+        <translation>來源</translation>
+    </message>
+    <message>
+        <location line="+9"/>
+        <source>Copy Magnet Link</source>
+        <translation>複製磁力連結</translation>
+    </message>
+    <message>
+        <location line="+4"/>
+        <source>Magnet</source>
+        <translation>磁力連結</translation>
+    </message>
+    <message>
+        <location line="+3"/>
+        <source>Comment</source>
+        <translation>評論</translation>
+    </message>
+    <message>
+        <location line="+16"/>
+        <source>Transfer</source>
+        <translation>傳輸</translation>
+    </message>
+    <message>
+        <location line="+3"/>
+        <source>State</source>
+        <translation>狀態</translation>
+    </message>
+    <message>
+        <location line="+2"/>
+        <source>Have</source>
+        <translation>已有</translation>
+    </message>
+    <message>
+        <location line="+1"/>
+        <source>Availability</source>
+        <translation>可用性</translation>
+    </message>
+    <message>
+        <location line="+3"/>
+        <source>Failed DL</source>
+        <translation>下載失敗</translation>
+    </message>
+    <message>
+        <location line="+1"/>
+        <source>Ratio</source>
+        <translation>分享率</translation>
+    </message>
+    <message>
+        <location line="+4"/>
+        <source>Error</source>
+        <translation>錯誤</translation>
+    </message>
+    <message>
+        <location line="+28"/>
+        <source>Available</source>
+        <translation>可用</translation>
+    </message>
+    <message>
+        <location line="+1"/>
+        <source>Share of each part that is downloaded</source>
+        <translation>每個區塊已下載的比例</translation>
+    </message>
+    <message>
+        <location line="+1"/>
+        <source>Peers that have each part; red: nobody connected has it</source>
+        <translation>擁有每個區塊的同儕數；紅色：已連線同儕皆無此區塊</translation>
+    </message>
+    <message>
+        <location line="+9"/>
+        <source>Dates</source>
+        <translation>日期</translation>
+    </message>
+    <message>
+        <location line="+2"/>
+        <source>Added</source>
+        <translation>加入於</translation>
+    </message>
+    <message>
+        <location line="+1"/>
         <source>Completed</source>
         <translation>已完成</translation>
     </message>
     <message>
-        <location line="+0"/>
+        <location line="+1"/>
+        <source>Last Activity</source>
+        <translation>最後活動</translation>
+    </message>
+    <message>
+        <location line="+2"/>
+        <source>Time Elapsed</source>
+        <translation>已用時間</translation>
+    </message>
+    <message>
+        <location line="+2"/>
+        <source>Downloading</source>
+        <translation>下載中</translation>
+    </message>
+    <message>
+        <location line="+1"/>
+        <source>Seeding</source>
+        <translation>做種中</translation>
+    </message>
+    <message>
+        <location line="+1"/>
+        <source>Remaining</source>
+        <translation>剩餘</translation>
+    </message>
+    <message>
+        <location line="+12"/>
+        <source>Speed</source>
+        <translation>速度</translation>
+    </message>
+    <message>
+        <location line="+7"/>
+        <source> KiB/s</source>
+        <translation> KiB/s</translation>
+    </message>
+    <message>
+        <location line="+5"/>
+        <source>Limit download speed:</source>
+        <translation>限制下載速度：</translation>
+    </message>
+    <message>
+        <location line="+1"/>
+        <source>Limit upload speed:</source>
+        <translation>限制上傳速度：</translation>
+    </message>
+    <message>
+        <location line="+3"/>
+        <source>Seeding Limits</source>
+        <translation>做種限制</translation>
+    </message>
+    <message>
         <location line="+13"/>
+        <source>Ratio:</source>
+        <translation>分享率：</translation>
+    </message>
+    <message>
+        <location line="+7"/>
+        <source> min</source>
+        <translation> 分鐘</translation>
+    </message>
+    <message>
+        <location line="+4"/>
+        <source>Seed time:</source>
+        <translation>做種時間：</translation>
+    </message>
+    <message>
+        <location line="+7"/>
+        <source>Peer Connections</source>
+        <translation>同儕連線</translation>
+    </message>
+    <message>
+        <location line="+4"/>
+        <source>Default</source>
+        <translation>預設</translation>
+    </message>
+    <message>
+        <location line="+2"/>
+        <source>Maximum peers:</source>
+        <translation>最大同儕數：</translation>
+    </message>
+    <message>
+        <location line="+87"/>
+        <source>Could not change the torrent options.</source>
+        <translation>無法變更 Torrent 選項。</translation>
+    </message>
+    <message numerus="yes">
+        <location line="+17"/>
+        <source>Copied %n magnet link(s).</source>
+        <translation>
+            <numerusform>已複製 %n 個磁力連結。</numerusform>
+        </translation>
+    </message>
+    <message>
+        <location line="-228"/>
+        <location line="+37"/>
         <source>Progress</source>
         <translation>進度</translation>
     </message>
     <message>
-        <location line="-13"/>
-        <location line="+65"/>
         <source>Priority</source>
-        <translation>優先權</translation>
+        <translation type="vanished">優先權</translation>
     </message>
     <message>
-        <location line="-56"/>
         <source>Files</source>
-        <translation>檔案</translation>
+        <translation type="vanished">檔案</translation>
     </message>
     <message>
-        <location line="+4"/>
         <source>Address</source>
-        <translation>位址</translation>
+        <translation type="vanished">位址</translation>
     </message>
     <message>
-        <location line="+0"/>
         <source>Client</source>
-        <translation>客戶端</translation>
+        <translation type="vanished">客戶端</translation>
     </message>
     <message>
-        <location line="+0"/>
         <source>Down Speed</source>
-        <translation>下載速度</translation>
+        <translation type="vanished">下載速度</translation>
     </message>
     <message>
-        <location line="+1"/>
         <source>Up Speed</source>
-        <translation>上傳速度</translation>
+        <translation type="vanished">上傳速度</translation>
     </message>
     <message>
-        <location line="+0"/>
+        <location line="-34"/>
         <source>Downloaded</source>
         <translation>已下載</translation>
     </message>
     <message>
-        <location line="+0"/>
+        <location line="+1"/>
         <source>Uploaded</source>
         <translation>已上傳</translation>
     </message>
     <message>
-        <location line="+0"/>
         <source>Flags</source>
-        <translation>旗標</translation>
+        <translation type="vanished">旗標</translation>
     </message>
     <message>
-        <location line="+1"/>
         <source>Source</source>
-        <translation>來源</translation>
+        <translation type="vanished">來源</translation>
     </message>
     <message>
-        <location line="+6"/>
-        <location line="+4"/>
         <source>Peers</source>
-        <translation>同儕數</translation>
+        <translation type="vanished">同儕數</translation>
     </message>
     <message>
-        <location line="+0"/>
         <source>URL</source>
-        <translation>URL</translation>
+        <translation type="vanished">URL</translation>
     </message>
     <message>
-        <location line="+0"/>
         <source>Tier</source>
-        <translation>層級</translation>
+        <translation type="vanished">層級</translation>
     </message>
     <message>
-        <location line="+0"/>
         <source>Status</source>
-        <translation>狀態</translation>
+        <translation type="vanished">狀態</translation>
     </message>
     <message>
-        <location line="+0"/>
         <source>Seeds</source>
-        <translation>種子數</translation>
+        <translation type="vanished">種子數</translation>
     </message>
     <message>
-        <location line="+5"/>
         <source>Trackers</source>
-        <translation>追蹤器</translation>
+        <translation type="vanished">追蹤器</translation>
     </message>
     <message>
-        <location line="+20"/>
+        <location line="+139"/>
         <source>This torrent is no longer in the list.</source>
         <translation>此種子已不在清單中。</translation>
     </message>
@@ -13791,54 +14141,77 @@ Clicking &apos;Restore Stats&apos; again will reload your current statistics.</s
         <translation>BitTorrent 未執行。</translation>
     </message>
     <message>
-        <location line="+23"/>
         <source>Download</source>
-        <translation>下載</translation>
+        <translation type="vanished">下載</translation>
     </message>
     <message>
-        <location line="+2"/>
         <source>Do Not Download</source>
-        <translation>不下載</translation>
+        <translation type="vanished">不下載</translation>
     </message>
     <message>
-        <location line="+26"/>
         <source>Could not change the file priorities.</source>
-        <translation>無法變更檔案優先權。</translation>
+        <translation type="vanished">無法變更檔案優先權。</translation>
     </message>
     <message>
-        <location line="+51"/>
         <source>Files (%1)</source>
-        <translation>檔案 (%1)</translation>
+        <translation type="vanished">檔案 (%1)</translation>
     </message>
     <message>
-        <location line="+17"/>
         <source>Seed</source>
-        <translation>做種</translation>
+        <translation type="vanished">做種</translation>
     </message>
     <message>
-        <location line="+2"/>
         <source>Enc</source>
-        <translation>加密</translation>
+        <translation type="vanished">加密</translation>
     </message>
     <message>
-        <location line="+14"/>
         <source>Peers (%1)</source>
-        <translation>同儕 (%1)</translation>
+        <translation type="vanished">同儕 (%1)</translation>
     </message>
     <message>
-        <location line="+14"/>
         <source>Working</source>
-        <translation>正常</translation>
+        <translation type="vanished">正常</translation>
+    </message>
+    <message>
+        <source>Not working</source>
+        <translation type="vanished">無法運作</translation>
+    </message>
+    <message>
+        <source>Trackers (%1)</source>
+        <translation type="vanished">追蹤器 (%1)</translation>
+    </message>
+</context>
+<context>
+    <name>eMule::TorrentFilterProxy</name>
+    <message>
+        <location filename="../src/gui/controls/TorrentFilterProxy.cpp" line="+70"/>
+        <source>All</source>
+        <translation>全部</translation>
     </message>
     <message>
         <location line="+1"/>
-        <source>Not working</source>
-        <translation>無法運作</translation>
+        <source>Downloading</source>
+        <translation>下載中</translation>
     </message>
     <message>
-        <location line="+10"/>
-        <source>Trackers (%1)</source>
-        <translation>追蹤器 (%1)</translation>
+        <location line="+1"/>
+        <source>Seeding</source>
+        <translation>做種中</translation>
+    </message>
+    <message>
+        <location line="+1"/>
+        <source>Paused</source>
+        <translation>已暫停</translation>
+    </message>
+    <message>
+        <location line="+1"/>
+        <source>Active</source>
+        <translation>作用中</translation>
+    </message>
+    <message>
+        <location line="+1"/>
+        <source>Error</source>
+        <translation>錯誤</translation>
     </message>
 </context>
 <context>
@@ -13865,12 +14238,12 @@ Clicking &apos;Restore Stats&apos; again will reload your current statistics.</s
     </message>
     <message>
         <location line="+1"/>
-        <location line="+160"/>
+        <location line="+168"/>
         <source>Completed</source>
         <translation>已完成</translation>
     </message>
     <message>
-        <location line="-159"/>
+        <location line="-167"/>
         <source>Seeding</source>
         <translation>做種中</translation>
     </message>
@@ -13900,7 +14273,7 @@ Clicking &apos;Restore Stats&apos; again will reload your current statistics.</s
         <translation>未知</translation>
     </message>
     <message>
-        <location line="+129"/>
+        <location line="+137"/>
         <source>Private torrent (no DHT, PEX or LSD)</source>
         <translation>私有種子（無 DHT、PEX 或 LSD）</translation>
     </message>
@@ -13971,9 +14344,355 @@ Clicking &apos;Restore Stats&apos; again will reload your current statistics.</s
     </message>
 </context>
 <context>
+    <name>eMule::TorrentListsPane</name>
+    <message>
+        <location filename="../src/gui/controls/TorrentListsPane.cpp" line="+85"/>
+        <source>Tracker</source>
+        <translation>追蹤器</translation>
+    </message>
+    <message>
+        <location line="+2"/>
+        <source>DHT</source>
+        <translation>DHT</translation>
+    </message>
+    <message>
+        <location line="+2"/>
+        <source>PEX</source>
+        <translation>PEX</translation>
+    </message>
+    <message>
+        <location line="+2"/>
+        <source>Local discovery</source>
+        <translation>本機探索</translation>
+    </message>
+    <message>
+        <location line="+2"/>
+        <source>Resume data</source>
+        <translation>繼續資料</translation>
+    </message>
+    <message>
+        <location line="+2"/>
+        <source>Incoming</source>
+        <translation>下載完成資料夾</translation>
+    </message>
+    <message>
+        <location line="+30"/>
+        <source>Skip</source>
+        <translation>略過</translation>
+    </message>
+    <message>
+        <location line="+2"/>
+        <source>Low</source>
+        <translation>低</translation>
+    </message>
+    <message>
+        <location line="+2"/>
+        <source>Normal</source>
+        <translation>普通</translation>
+    </message>
+    <message>
+        <location line="+2"/>
+        <source>High</source>
+        <translation>高</translation>
+    </message>
+    <message>
+        <location line="+1"/>
+        <source>Maximum</source>
+        <translation>最高</translation>
+    </message>
+    <message>
+        <location line="+9"/>
+        <source>Peer is connected over µTP</source>
+        <translation>同儕透過 µTP 連線</translation>
+    </message>
+    <message>
+        <location line="+1"/>
+        <source>Optimistic unchoke</source>
+        <translation>樂觀解除阻塞</translation>
+    </message>
+    <message>
+        <location line="+1"/>
+        <source>Downloading from this peer</source>
+        <translation>正在從此同儕下載</translation>
+    </message>
+    <message>
+        <location line="+1"/>
+        <source>We would download from this peer if they would let us</source>
+        <translation>若對方允許，將從此同儕下載</translation>
+    </message>
+    <message>
+        <location line="+1"/>
+        <source>Uploading to peer</source>
+        <translation>正在上傳給同儕</translation>
+    </message>
+    <message>
+        <location line="+1"/>
+        <source>We would upload to this peer if we unchoked it</source>
+        <translation>若解除阻塞，將上傳給此同儕</translation>
+    </message>
+    <message>
+        <location line="+1"/>
+        <source>Peer has unchoked us, but we&apos;re not interested</source>
+        <translation>同儕已解除阻塞，但我們沒有興趣</translation>
+    </message>
+    <message>
+        <location line="+1"/>
+        <source>We unchoked this peer, but they&apos;re not interested</source>
+        <translation>我們已解除阻塞此同儕，但對方沒有興趣</translation>
+    </message>
+    <message>
+        <location line="+1"/>
+        <location line="+102"/>
+        <location line="+141"/>
+        <source>Encrypted connection</source>
+        <translation>加密連線</translation>
+    </message>
+    <message>
+        <location line="-242"/>
+        <source>Connected through a holepunch</source>
+        <translation>透過打洞連線</translation>
+    </message>
+    <message>
+        <location line="+1"/>
+        <source>Peer was found through DHT</source>
+        <translation>透過 DHT 找到的同儕</translation>
+    </message>
+    <message>
+        <location line="+1"/>
+        <source>Peer was found through Peer Exchange (PEX)</source>
+        <translation>透過同儕交換 (PEX) 找到的同儕</translation>
+    </message>
+    <message>
+        <location line="+1"/>
+        <source>Peer is an incoming connection</source>
+        <translation>同儕為傳入連線</translation>
+    </message>
+    <message>
+        <location line="+40"/>
+        <location line="+95"/>
+        <source>Select a torrent to see its peers, trackers and files.</source>
+        <translation>選取一個 Torrent 以檢視其同儕、追蹤器與檔案。</translation>
+    </message>
+    <message>
+        <location line="-40"/>
+        <source>Up</source>
+        <translation>上傳</translation>
+    </message>
+    <message>
+        <location line="+0"/>
+        <source>Down</source>
+        <translation>下載</translation>
+    </message>
+    <message>
+        <location line="+0"/>
+        <source>%</source>
+        <translation>%</translation>
+    </message>
+    <message>
+        <location line="+0"/>
+        <location line="+53"/>
+        <source>Status</source>
+        <translation>狀態</translation>
+    </message>
+    <message>
+        <location line="-53"/>
+        <source>Address</source>
+        <translation>位址</translation>
+    </message>
+    <message>
+        <location line="+1"/>
+        <source>Client</source>
+        <translation>客戶端</translation>
+    </message>
+    <message>
+        <location line="+0"/>
+        <location line="+53"/>
+        <source>Downloaded</source>
+        <translation>已下載</translation>
+    </message>
+    <message>
+        <location line="-53"/>
+        <source>Uploaded</source>
+        <translation>已上傳</translation>
+    </message>
+    <message>
+        <location line="+0"/>
+        <source>Source</source>
+        <translation>來源</translation>
+    </message>
+    <message>
+        <location line="+13"/>
+        <location line="+40"/>
+        <source>Peers</source>
+        <translation>同儕數</translation>
+    </message>
+    <message>
+        <location line="-38"/>
+        <source>Trackers</source>
+        <translation>追蹤器</translation>
+    </message>
+    <message>
+        <location line="+5"/>
+        <source>Name</source>
+        <translation>名稱</translation>
+    </message>
+    <message>
+        <location line="+0"/>
+        <source>Size</source>
+        <translation>大小</translation>
+    </message>
+    <message>
+        <location line="+0"/>
+        <source>Progress</source>
+        <translation>進度</translation>
+    </message>
+    <message>
+        <location line="+0"/>
+        <location line="+348"/>
+        <source>Download</source>
+        <translation>下載</translation>
+    </message>
+    <message>
+        <location line="-348"/>
+        <location line="+339"/>
+        <source>Priority</source>
+        <translation>優先權</translation>
+    </message>
+    <message>
+        <location line="-328"/>
+        <source>Files</source>
+        <translation>檔案</translation>
+    </message>
+    <message>
+        <location line="+21"/>
+        <source>URL</source>
+        <translation>URL</translation>
+    </message>
+    <message>
+        <location line="+0"/>
+        <source>Tier</source>
+        <translation>層級</translation>
+    </message>
+    <message>
+        <location line="+0"/>
+        <source>Next Announce</source>
+        <translation>下次發布</translation>
+    </message>
+    <message>
+        <location line="+1"/>
+        <source>Seeds</source>
+        <translation>種子數</translation>
+    </message>
+    <message>
+        <location line="+26"/>
+        <source>Add…</source>
+        <translation>新增…</translation>
+    </message>
+    <message>
+        <location line="+2"/>
+        <source>Remove</source>
+        <translation>移除</translation>
+    </message>
+    <message>
+        <location line="+3"/>
+        <source>Reannounce</source>
+        <translation>重新發布</translation>
+    </message>
+    <message>
+        <location line="+3"/>
+        <source>Show backup trackers</source>
+        <translation>顯示備用追蹤器</translation>
+    </message>
+    <message>
+        <location line="+18"/>
+        <source>This torrent is no longer in the list.</source>
+        <translation>此種子已不在清單中。</translation>
+    </message>
+    <message>
+        <location line="+1"/>
+        <source>BitTorrent is not running.</source>
+        <translation>BitTorrent 未執行。</translation>
+    </message>
+    <message>
+        <location line="+51"/>
+        <source>Peers (%1)</source>
+        <translation>同儕 (%1)</translation>
+    </message>
+    <message>
+        <location line="+28"/>
+        <source>Announcing…</source>
+        <translation>正在發布…</translation>
+    </message>
+    <message>
+        <location line="+2"/>
+        <source>Error: %1</source>
+        <translation>錯誤：%1</translation>
+    </message>
+    <message>
+        <location line="+3"/>
+        <source>Working</source>
+        <translation>運作中</translation>
+    </message>
+    <message>
+        <location line="+0"/>
+        <source>Working — %1</source>
+        <translation>運作中 — %1</translation>
+    </message>
+    <message>
+        <location line="+3"/>
+        <source>Not contacted yet</source>
+        <translation>尚未聯繫</translation>
+    </message>
+    <message>
+        <location line="+17"/>
+        <source>Trackers (%1)</source>
+        <translation>追蹤器 (%1)</translation>
+    </message>
+    <message>
+        <location line="+97"/>
+        <source>Files (%1)</source>
+        <translation>檔案 (%1)</translation>
+    </message>
+    <message>
+        <location line="+63"/>
+        <source>Do Not Download</source>
+        <translation>不下載</translation>
+    </message>
+    <message>
+        <location line="+3"/>
+        <source>Expand All</source>
+        <translation>全部展開</translation>
+    </message>
+    <message>
+        <location line="+1"/>
+        <source>Collapse All</source>
+        <translation>全部摺疊</translation>
+    </message>
+    <message>
+        <location line="+42"/>
+        <source>Could not change the file priorities.</source>
+        <translation>無法變更檔案優先權。</translation>
+    </message>
+    <message>
+        <location line="+12"/>
+        <source>Add Trackers</source>
+        <translation>新增追蹤器</translation>
+    </message>
+    <message>
+        <location line="+0"/>
+        <source>Tracker URLs, one per line:</source>
+        <translation>追蹤器 URL，每行一個：</translation>
+    </message>
+    <message>
+        <location line="+41"/>
+        <source>Could not change the trackers.</source>
+        <translation>無法變更追蹤器。</translation>
+    </message>
+</context>
+<context>
     <name>eMule::TorrentPanel</name>
     <message>
-        <location filename="../src/gui/panels/TorrentPanel.cpp" line="+105"/>
+        <location filename="../src/gui/panels/TorrentPanel.cpp" line="+117"/>
         <source>Torrent download completed: %1</source>
         <translation>種子下載完成：%1</translation>
     </message>
@@ -13991,12 +14710,12 @@ Clicking &apos;Restore Stats&apos; again will reload your current statistics.</s
         <location line="+13"/>
         <location line="+15"/>
         <location line="+11"/>
-        <location line="+388"/>
+        <location line="+518"/>
         <source>Not connected to the eMule core.</source>
         <translation>未連線到 eMule 核心。</translation>
     </message>
     <message>
-        <location line="-438"/>
+        <location line="-568"/>
         <source>Cannot read %1.</source>
         <translation>無法讀取 %1。</translation>
     </message>
@@ -14017,7 +14736,7 @@ Clicking &apos;Restore Stats&apos; again will reload your current statistics.</s
         <translation>種子檔案 (*.torrent);;所有檔案 (*)</translation>
     </message>
     <message>
-        <location line="+53"/>
+        <location line="+70"/>
         <source>Add Torrent…</source>
         <translation>加入種子…</translation>
     </message>
@@ -14067,12 +14786,12 @@ Clicking &apos;Restore Stats&apos; again will reload your current statistics.</s
         <translation>複製磁力連結</translation>
     </message>
     <message>
-        <location line="+63"/>
+        <location line="+78"/>
         <source>BitTorrent Options…</source>
         <translation>BitTorrent 選項…</translation>
     </message>
     <message>
-        <location line="+108"/>
+        <location line="+110"/>
         <source>BitTorrent: %1</source>
         <translation>BitTorrent：%1</translation>
     </message>
@@ -14116,7 +14835,7 @@ Clicking &apos;Restore Stats&apos; again will reload your current statistics.</s
         </translation>
     </message>
     <message>
-        <location line="+67"/>
+        <location line="+163"/>
         <source>Asking the core for the BitTorrent state…</source>
         <translation>正在向核心查詢 BitTorrent 狀態…</translation>
     </message>
@@ -14151,6 +14870,11 @@ Clicking &apos;Restore Stats&apos; again will reload your current statistics.</s
         <location line="+2"/>
         <source>No torrents. Use &quot;Add Torrent…&quot; or &quot;Add Magnet Link…&quot; to start one.</source>
         <translation>沒有種子。使用「加入種子…」或「加入磁力連結…」開始。</translation>
+    </message>
+    <message>
+        <location line="+2"/>
+        <source>No torrents match this filter.</source>
+        <translation>沒有符合此篩選條件的 Torrent。</translation>
     </message>
 </context>
 <context>
@@ -15363,14 +16087,14 @@ A password is set for this release.</source>
 <context>
     <name>eMule::WebServer</name>
     <message>
-        <location filename="../src/core/webserver/WebServer.cpp" line="-3396"/>
-        <location line="+3285"/>
+        <location filename="../src/core/webserver/WebServer.cpp" line="-3394"/>
+        <location line="+3283"/>
         <location line="+49"/>
         <source>Session expired — log in again</source>
         <translation>工作階段已過期 — 請重新登入</translation>
     </message>
     <message>
-        <location line="-3330"/>
+        <location line="-3328"/>
         <source>Guests cannot add downloads</source>
         <translation>訪客無法加入下載</translation>
     </message>
@@ -15514,18 +16238,18 @@ A password is set for this release.</source>
     </message>
     <message>
         <location line="+4"/>
-        <location line="+29"/>
+        <location line="+27"/>
         <source>Saved. The new ports are used after a restart.</source>
         <translation>已儲存。新的連接埠將在重新啟動後生效。</translation>
     </message>
     <message>
-        <location line="-25"/>
+        <location line="-23"/>
         <source>Saved, but a new port is in use. Still listening on TCP %1, UDP %2.</source>
         <translation>已儲存，但新連接埠已被佔用。仍在監聽 TCP %1、UDP %2。</translation>
     </message>
     <message>
         <location line="+4"/>
-        <location line="+21"/>
+        <location line="+19"/>
         <source>Saved.</source>
         <translation>已儲存。</translation>
     </message>

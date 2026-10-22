@@ -1384,6 +1384,9 @@ void UpDownClient::checkDownloadTimeout()
 
 uint16 UpDownClient::availablePartCount() const
 {
+    // complete source keeps no bitmap (processFileStatus) but has every part
+    if (m_completeSource && m_partStatus.empty())
+        return m_partCount;
     uint16 count = 0;
     for (const auto status : m_partStatus) {
         if (status != 0)
@@ -1398,6 +1401,8 @@ uint16 UpDownClient::availablePartCount() const
 
 bool UpDownClient::isPartAvailable(uint32 part) const
 {
+    if (m_completeSource && m_partStatus.empty())
+        return part < m_partCount;
     if (part >= m_partStatus.size())
         return false;
     return m_partStatus[part] != 0;

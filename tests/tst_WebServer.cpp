@@ -213,6 +213,117 @@ public:
     void requestRestart() override { restartRequested = true; }
 };
 
+#ifdef EMULE_HAVE_BITTORRENT
+/// Two torrents: A downloads, B seeds. Records what the web server asked for.
+class FakeTorrentBackend final : public TorrentWebBackend {
+public:
+    static QString idA() { return QStringLiteral("bt:v1:") + QString(40, QLatin1Char('A')); }
+    static QString idB() { return QStringLiteral("bt:v1:") + QString(40, QLatin1Char('B')); }
+
+    bool isRunning = true;
+    bool actionResult = true;
+    mutable QStringList calls;
+    TorrentWebAddResult nextAdd;
+    QByteArray lastFile;
+    QString lastMagnet;
+    bool lastPaused = false;
+    QCborMap options{{QStringLiteral("downloadLimitKb"), 0}, {QStringLiteral("uploadLimitKb"), 0},
+                     {QStringLiteral("maxPeers"), 0},        {QStringLiteral("ratioMode"), 0},
+                     {QStringLiteral("ratioPercent"), 100},  {QStringLiteral("seedTimeMode"), 0},
+                     {QStringLiteral("seedTimeMinutes"), 60}};
+    QList<int> priorities{4, 4, 4};
+    QStringList trackerUrls{QStringLiteral("udp://tracker.test:6969/announce")};
+
+    bool running() const override { return isRunning; }
+    QCborMap status() const override
+    {
+        return {{QStringLiteral("available"), true}, {QStringLiteral("running"), isRunning},
+                {QStringLiteral("torrents"), 2}};
+    }
+    QCborArray torrents() const override { return {torrent(idA()), torrent(idB())}; }
+    QCborMap torrent(const QString& id) const override
+    {
+        if (id == idA())
+            return {{QStringLiteral("id"), id}, {QStringLiteral("name"), QStringLiteral("Alpha")},
+                    {QStringLiteral("state"), 3}, {QStringLiteral("size"), 100},
+                    {QStringLiteral("done"), 40}, {QStringLiteral("hasMetadata"), true},
+                    {QStringLiteral("rateDown"), 500}, {QStringLiteral("rateUp"), 0},
+                    {QStringLiteral("paused"), false}, {QStringLiteral("error"), QString()},
+                    {QStringLiteral("pieceMap"), QByteArray(4, '\x80')}};
+        if (id == idB())
+            return {{QStringLiteral("id"), id}, {QStringLiteral("name"), QStringLiteral("Beta")},
+                    {QStringLiteral("state"), 5}, {QStringLiteral("size"), 50},
+                    {QStringLiteral("done"), 50}, {QStringLiteral("hasMetadata"), true},
+                    {QStringLiteral("rateDown"), 0}, {QStringLiteral("rateUp"), 0},
+                    {QStringLiteral("paused"), false}, {QStringLiteral("error"), QString()},
+                    {QStringLiteral("pieceMap"), QByteArray(4, '\xff')}};
+        return {};
+    }
+    QCborMap details(const QString& id) const override
+    {
+        calls << QStringLiteral("details:") + id;
+        if (torrent(id).isEmpty())
+            return {};
+        QCborArray files;
+        for (qsizetype i = 0; i < priorities.size(); ++i)
+            files.append(QCborMap{{QStringLiteral("index"), i},
+                                  {QStringLiteral("path"), QStringLiteral("f%1").arg(i)},
+                                  {QStringLiteral("priority"), priorities.at(i)}});
+        QCborArray trackers;
+        for (const QString& url : trackerUrls)
+            trackers.append(QCborMap{{QStringLiteral("url"), url}, {QStringLiteral("tier"), 0}});
+        return {{QStringLiteral("files"), files},
+                {QStringLiteral("peers"), QCborArray{QCborMap{{QStringLiteral("address"), QStringLiteral("10.0.0.1:6881")},
+                                                              {QStringLiteral("flags"), QStringLiteral("DE")}}}},
+                {QStringLiteral("trackers"), trackers},
+                {QStringLiteral("availabilityMap"), QByteArray(4, '\x02')},
+                {QStringLiteral("options"), options}};
+    }
+    TorrentWebAddResult addTorrentFile(const QByteArray& data, const QString&, bool paused) override
+    {
+        lastFile = data;
+        lastPaused = paused;
+        return nextAdd;
+    }
+    TorrentWebAddResult addMagnet(const QString& uri, const QString&, bool paused) override
+    {
+        lastMagnet = uri;
+        lastPaused = paused;
+        return nextAdd;
+    }
+    bool remove(const QString& id, bool deleteFiles) override
+    {
+        calls << QStringLiteral("remove:%1:%2").arg(id, deleteFiles ? QStringLiteral("true") : QStringLiteral("false"));
+        return actionResult;
+    }
+    bool pause(const QString& id) override { calls << QStringLiteral("pause:") + id; return actionResult; }
+    bool resume(const QString& id) override { calls << QStringLiteral("resume:") + id; return actionResult; }
+    bool recheck(const QString& id) override { calls << QStringLiteral("recheck:") + id; return actionResult; }
+    bool reannounce(const QString& id) override { calls << QStringLiteral("reannounce:") + id; return actionResult; }
+    bool setFilePriorities(const QString&, const QList<int>& p) override
+    {
+        priorities = p;
+        return true;
+    }
+    bool setOptions(const QString&, const QCborMap& o) override
+    {
+        options = o;
+        return true;
+    }
+    bool addTrackers(const QString&, const QStringList& urls) override
+    {
+        trackerUrls += urls;
+        return true;
+    }
+    bool removeTrackers(const QString&, const QStringList& urls) override
+    {
+        for (const QString& u : urls)
+            trackerUrls.removeAll(u);
+        return true;
+    }
+};
+#endif
+
 /// Records what the web server asked for. Categories 0-2 exist.
 class FakeUsenetBackend final : public UsenetWebBackend {
 public:
@@ -302,6 +413,17 @@ public:
     {
         calls << QStringLiteral("clearcompleted");
         return 1;
+    }
+    QCborMap inspectNzb(const QByteArray& data, const QString& name, QString& error) const override
+    {
+        calls << QStringLiteral("inspect:") + name;
+        if (!data.startsWith("<nzb")) {
+            error = QStringLiteral("Not an NZB");
+            return {};
+        }
+        return {{QStringLiteral("name"), name},
+                {QStringLiteral("files"), QCborArray{QCborMap{{QStringLiteral("index"), 0},
+                                                              {QStringLiteral("name"), QStringLiteral("a.rar")}}}}};
     }
     bool setPriority(const QString& id, int priority) override
     {
@@ -493,6 +615,7 @@ private slots:
     void rest_emptyApiKeyLetsNobodyIn();
     void rest_patchPreferencesIsAllOrNothing();
     void rest_patchPortsReportsListenPorts();
+    void rest_patchReportsRatioCappedDownload();
     void rest_unknownSearchResultsIs404();
     void log_masksTokensAndSecretHeaders();
     void https_withoutAUsableCertificateServesNothing();
@@ -529,8 +652,21 @@ private slots:
     void restUsenetPatchAndDelete();
     void restUsenetAddRawAndUrl();
     void restUsenetWithoutBackendIs503();
+    void restUsenetClearCompletedAndInspect();
     void restUsenetAbsentWhenRestDisabled();
     void theUsenetTemplateHasItsSections();
+
+    // Torrents (only a BitTorrent build has the routes)
+#ifdef EMULE_HAVE_BITTORRENT
+    void restTorrentsListFiltersAndHidesPieceMap();
+    void restTorrentsGetAndLists();
+    void restTorrentsActionsAndRemove();
+    void restTorrentsEditOptionsFilesTrackers();
+    void restTorrentsAdd();
+    void restTorrentsOffOrWithoutBackend();
+#else
+    void restTorrentsAbsentWithoutBitTorrent();
+#endif
 
     // Template engine, escaping and languages
     void templateEngineSubstitutesInOnePass();
@@ -1305,6 +1441,42 @@ void tst_WebServer::rest_patchPreferencesIsAllOrNothing()
     QCOMPARE(patch(R"({"maxUpload":77})"), 200);
     QCOMPARE(m_preferences->maxUpload(), uint32{77});
     m_preferences->setMaxUpload(up);
+}
+
+void tst_WebServer::rest_patchReportsRatioCappedDownload()
+{
+    const uint32 up = m_preferences->maxUpload();
+    const uint32 down = m_preferences->maxDownload();
+    const auto restore = qScopeGuard([&] {
+        m_preferences->setMaxUpload(up);
+        m_preferences->setMaxDownload(down);
+    });
+    const auto limit = [&](const char* json) {
+        const auto r = sendRequest(QByteArrayLiteral("PATCH"), QStringLiteral("/api/v1/preferences"),
+                                   QByteArray(json));
+        return r.json.object().value(QStringLiteral("downloadLimit")).toObject();
+    };
+
+    // 12 KB/s up: 4x
+    QJsonObject o = limit(R"({"maxUpload":12,"maxDownload":500})");
+    QCOMPARE(o.value(QStringLiteral("configuredKb")).toInt(), 500);
+    QCOMPARE(o.value(QStringLiteral("effectiveKb")).toInt(), 48);
+    QVERIFY(o.value(QStringLiteral("ratioCapped")).toBool());
+    QVERIFY(o.value(QStringLiteral("hint")).toString().contains(QStringLiteral("4x")));
+
+    // Unlimited down is capped all the same; 13 KB/s up: 5x
+    o = limit(R"({"maxUpload":13,"maxDownload":0})");
+    QCOMPARE(o.value(QStringLiteral("effectiveKb")).toInt(), 65);
+    QVERIFY(o.value(QStringLiteral("ratioCapped")).toBool());
+
+    // Below the cap, or 20 KB/s up and more: no hint
+    o = limit(R"({"maxUpload":12,"maxDownload":40})");
+    QCOMPARE(o.value(QStringLiteral("effectiveKb")).toInt(), 40);
+    QVERIFY(!o.value(QStringLiteral("ratioCapped")).toBool());
+    QVERIFY(!o.contains(QStringLiteral("hint")));
+    o = limit(R"({"maxUpload":20,"maxDownload":500})");
+    QCOMPARE(o.value(QStringLiteral("effectiveKb")).toInt(), 500);
+    QVERIFY(!o.contains(QStringLiteral("hint")));
 }
 
 void tst_WebServer::rest_patchPortsReportsListenPorts()
@@ -3411,8 +3583,40 @@ void tst_WebServer::restUsenetWithoutBackendIs503()
     QCOMPARE(sendRequest("GET", QStringLiteral("/api/v1/usenet")).statusCode, 503);
     QCOMPARE(sendRequest("GET", QStringLiteral("/api/v1/usenet/stats")).statusCode, 503);
     QCOMPARE(sendRequest("POST", QStringLiteral("/api/v1/usenet/x/pause")).statusCode, 503);
+    QCOMPARE(sendRequest("POST", QStringLiteral("/api/v1/usenet/clear-completed")).statusCode, 503);
     QCOMPARE(sendRequest("POST", QStringLiteral("/api/v1/usenet"),
                          QByteArrayLiteral("{\"url\":\"https://x.test/a.nzb\"}")).statusCode, 503);
+}
+
+void tst_WebServer::restUsenetClearCompletedAndInspect()
+{
+    FakeUsenetBackend fake;
+    m_webServer->setUsenetBackend(&fake);
+    const auto reset = qScopeGuard([this] { m_webServer->setUsenetBackend(nullptr); });
+
+    Response r = sendRequest("POST", QStringLiteral("/api/v1/usenet/clear-completed"));
+    QCOMPARE(r.statusCode, 200);
+    QCOMPARE(r.json.object().value(QStringLiteral("removed")).toInt(), 1);
+    QVERIFY(fake.calls.contains(QStringLiteral("clearcompleted")));
+
+    // Nothing is queued: the files come back, the queue does not grow
+    const auto key = QList<std::pair<QByteArray, QByteArray>>{{QByteArrayLiteral("X-Api-Key"), m_apiKey.toUtf8()}};
+    r = sendRaw(m_port, QByteArrayLiteral("POST"), QStringLiteral("/api/v1/usenet/inspect?name=A.nzb"),
+                QByteArrayLiteral("<nzb/>"), QByteArrayLiteral("application/x-nzb"), key);
+    QCOMPARE(r.statusCode, 200);
+    QCOMPARE(r.json.object().value(QStringLiteral("name")).toString(), QStringLiteral("A.nzb"));
+    QCOMPARE(r.json.object().value(QStringLiteral("files")).toArray().size(), 1);
+    QCOMPARE(fake.rows.size(), 2);
+    r = sendRaw(m_port, QByteArrayLiteral("POST"), QStringLiteral("/api/v1/usenet/inspect"),
+                QByteArrayLiteral("junk"), QByteArrayLiteral("application/x-nzb"), key);
+    QCOMPARE(r.statusCode, 400);
+    QCOMPARE(r.json.object().value(QStringLiteral("error")).toObject()
+                 .value(QStringLiteral("message")).toString(), QStringLiteral("Not an NZB"));
+    QCOMPARE(sendRequest("POST", QStringLiteral("/api/v1/usenet/inspect")).statusCode, 400);
+
+    // Literal routes an id never shadows
+    QVERIFY(!fake.calls.contains(QStringLiteral("details:clear-completed")));
+    QVERIFY(!fake.calls.contains(QStringLiteral("details:inspect")));
 }
 
 void tst_WebServer::restUsenetAbsentWhenRestDisabled()
@@ -3423,6 +3627,217 @@ void tst_WebServer::restUsenetAbsentWhenRestDisabled()
     QCOMPARE(rawGetStatus(server->port(), QStringLiteral("/api/v1/usenet"), /*withKey*/ true), 404);
     server->stop();
 }
+
+#ifdef EMULE_HAVE_BITTORRENT
+
+void tst_WebServer::restTorrentsListFiltersAndHidesPieceMap()
+{
+    FakeTorrentBackend fake;
+    m_webServer->setTorrentBackend(&fake);
+    const auto reset = qScopeGuard([this] { m_webServer->setTorrentBackend(nullptr); });
+
+    QCOMPARE(sendRequest("GET", QStringLiteral("/api/v1/torrents"), {}, /*includeAuth*/ false).statusCode, 401);
+
+    Response r = sendRequest("GET", QStringLiteral("/api/v1/torrents"));
+    QCOMPARE(r.statusCode, 200);
+    QJsonArray rows = r.json.object().value(QStringLiteral("items")).toArray();
+    QCOMPARE(rows.size(), 2);
+    const QJsonObject a = rows.at(0).toObject();
+    QCOMPARE(a.value(QStringLiteral("state")).toString(), QStringLiteral("downloading"));
+    QCOMPARE(a.value(QStringLiteral("complete")).toBool(), false);
+    QVERIFY(!a.contains(QStringLiteral("pieceMap")));
+    QCOMPARE(rows.at(1).toObject().value(QStringLiteral("state")).toString(), QStringLiteral("seeding"));
+
+    const auto idsOf = [this](const QString& filter) {
+        QStringList ids;
+        const Response f = sendRequest("GET", QStringLiteral("/api/v1/torrents?filter=") + filter);
+        for (const QJsonValue& v : f.json.object().value(QStringLiteral("items")).toArray())
+            ids << v.toObject().value(QStringLiteral("name")).toString();
+        return ids;
+    };
+    QCOMPARE(idsOf(QStringLiteral("downloading")), QStringList{QStringLiteral("Alpha")});
+    QCOMPARE(idsOf(QStringLiteral("seeding")), QStringList{QStringLiteral("Beta")});
+    QCOMPARE(idsOf(QStringLiteral("active")), QStringList{QStringLiteral("Alpha")});
+    QVERIFY(idsOf(QStringLiteral("paused")).isEmpty());
+    QCOMPARE(sendRequest("GET", QStringLiteral("/api/v1/torrents?filter=bogus")).statusCode, 400);
+
+    r = sendRequest("GET", QStringLiteral("/api/v1/torrents?limit=1&offset=1"));
+    QCOMPARE(r.json.object().value(QStringLiteral("total")).toInt(), 2);
+    QCOMPARE(r.json.object().value(QStringLiteral("items")).toArray().size(), 1);
+
+    // A literal route an id can never shadow
+    r = sendRequest("GET", QStringLiteral("/api/v1/torrents/status"));
+    QCOMPARE(r.statusCode, 200);
+    QVERIFY(r.json.object().value(QStringLiteral("running")).toBool());
+    QVERIFY(!fake.calls.contains(QStringLiteral("details:status")));
+
+    r = sendRequest("GET", QStringLiteral("/api/v1/capabilities"));
+    QVERIFY(r.json.object().value(QStringLiteral("features")).toObject().value(QStringLiteral("torrents")).toBool());
+}
+
+void tst_WebServer::restTorrentsGetAndLists()
+{
+    FakeTorrentBackend fake;
+    m_webServer->setTorrentBackend(&fake);
+    const auto reset = qScopeGuard([this] { m_webServer->setTorrentBackend(nullptr); });
+    const QString base = QStringLiteral("/api/v1/torrents/") + FakeTorrentBackend::idA();
+
+    Response r = sendRequest("GET", base);
+    QCOMPARE(r.statusCode, 200);
+    QJsonObject o = r.json.object();
+    QCOMPARE(o.value(QStringLiteral("name")).toString(), QStringLiteral("Alpha"));
+    QVERIFY(!o.value(QStringLiteral("pieceMap")).toString().isEmpty());
+    QVERIFY(!o.value(QStringLiteral("availabilityMap")).toString().isEmpty());
+    const QJsonObject options = o.value(QStringLiteral("options")).toObject();
+    QCOMPARE(options.value(QStringLiteral("ratioMode")).toString(), QStringLiteral("global"));
+    QCOMPARE(options.value(QStringLiteral("ratio")).toDouble(), 1.0);
+
+    QCOMPARE(sendRequest("GET", QStringLiteral("/api/v1/torrents/bt:v1:") + QString(40, QLatin1Char('C'))).statusCode, 404);
+    QCOMPARE(sendRequest("GET", QStringLiteral("/api/v1/torrents/short")).statusCode, 400);
+
+    r = sendRequest("GET", base + QStringLiteral("/files"));
+    QCOMPARE(r.statusCode, 200);
+    QCOMPARE(r.json.object().value(QStringLiteral("items")).toArray().size(), 3);
+    r = sendRequest("GET", base + QStringLiteral("/peers"));
+    QCOMPARE(r.json.object().value(QStringLiteral("items")).toArray().at(0).toObject()
+                 .value(QStringLiteral("flags")).toString(), QStringLiteral("DE"));
+    r = sendRequest("GET", base + QStringLiteral("/trackers"));
+    QCOMPARE(r.json.object().value(QStringLiteral("items")).toArray().size(), 1);
+}
+
+void tst_WebServer::restTorrentsActionsAndRemove()
+{
+    FakeTorrentBackend fake;
+    m_webServer->setTorrentBackend(&fake);
+    const auto reset = qScopeGuard([this] { m_webServer->setTorrentBackend(nullptr); });
+    const QString id = FakeTorrentBackend::idA();
+    const QString base = QStringLiteral("/api/v1/torrents/") + id;
+
+    for (const char* action : {"pause", "resume", "recheck", "reannounce"}) {
+        const Response r = sendRequest("POST", base + QLatin1Char('/') + QLatin1StringView(action));
+        QCOMPARE(r.statusCode, 200);
+        QVERIFY(fake.calls.contains(QLatin1StringView(action) + QLatin1Char(':') + id));
+    }
+    QCOMPARE(sendRequest("POST", base + QStringLiteral("/explode")).statusCode, 400);
+    fake.actionResult = false;
+    QCOMPARE(sendRequest("POST", base + QStringLiteral("/pause")).statusCode, 409);
+    fake.actionResult = true;
+
+    // Destructive: nothing happens without the confirmation
+    QCOMPARE(sendRequest("DELETE", base + QStringLiteral("?deleteFiles=true")).statusCode, 400);
+    QVERIFY(!fake.calls.contains(QStringLiteral("remove:%1:true").arg(id)));
+    QCOMPARE(sendRequest("DELETE", base + QStringLiteral("?deleteFiles=true&confirm=true")).statusCode, 200);
+    QVERIFY(fake.calls.contains(QStringLiteral("remove:%1:true").arg(id)));
+}
+
+void tst_WebServer::restTorrentsEditOptionsFilesTrackers()
+{
+    FakeTorrentBackend fake;
+    m_webServer->setTorrentBackend(&fake);
+    const auto reset = qScopeGuard([this] { m_webServer->setTorrentBackend(nullptr); });
+    const QString base = QStringLiteral("/api/v1/torrents/") + FakeTorrentBackend::idA();
+
+    // Only the fields sent change
+    Response r = sendRequest("PATCH", base,
+                             QByteArrayLiteral("{\"uploadLimitKb\":50,\"ratioMode\":\"custom\",\"ratio\":2.5}"));
+    QCOMPARE(r.statusCode, 200);
+    QCOMPARE(fake.options.value(QStringLiteral("uploadLimitKb")).toInteger(), 50);
+    QCOMPARE(fake.options.value(QStringLiteral("ratioMode")).toInteger(), 2);
+    QCOMPARE(fake.options.value(QStringLiteral("ratioPercent")).toInteger(), 250);
+    QCOMPARE(fake.options.value(QStringLiteral("seedTimeMinutes")).toInteger(), 60);
+    QCOMPARE(r.json.object().value(QStringLiteral("ratioMode")).toString(), QStringLiteral("custom"));
+    QCOMPARE(sendRequest("PATCH", base, QByteArrayLiteral("{}")).statusCode, 400);
+    QCOMPARE(sendRequest("PATCH", base, QByteArrayLiteral("{\"ratioMode\":\"sometimes\"}")).statusCode, 400);
+    QCOMPARE(sendRequest("PATCH", base, QByteArrayLiteral("{\"uploadLimitKb\":-1}")).statusCode, 400);
+
+    r = sendRequest("PATCH", base + QStringLiteral("/files"),
+                    QByteArrayLiteral("{\"files\":[0,2],\"priority\":0}"));
+    QCOMPARE(r.statusCode, 200);
+    QCOMPARE(fake.priorities, (QList<int>{0, 4, 0}));
+    QCOMPARE(sendRequest("PATCH", base + QStringLiteral("/files"),
+                         QByteArrayLiteral("{\"files\":[3],\"priority\":4}")).statusCode, 400);
+    QCOMPARE(sendRequest("PATCH", base + QStringLiteral("/files"),
+                         QByteArrayLiteral("{\"files\":[0],\"priority\":9}")).statusCode, 400);
+    QCOMPARE(fake.priorities, (QList<int>{0, 4, 0}));
+
+    r = sendRequest("PATCH", base + QStringLiteral("/trackers"),
+                    QByteArrayLiteral("{\"add\":[\"https://t2.test/announce\"],"
+                                      "\"remove\":[\"udp://tracker.test:6969/announce\"]}"));
+    QCOMPARE(r.statusCode, 200);
+    QCOMPARE(fake.trackerUrls, QStringList{QStringLiteral("https://t2.test/announce")});
+    QCOMPARE(r.json.object().value(QStringLiteral("items")).toArray().size(), 1);
+    QCOMPARE(sendRequest("PATCH", base + QStringLiteral("/trackers"),
+                         QByteArrayLiteral("{\"add\":[\"file:///etc/passwd\"]}")).statusCode, 400);
+    QCOMPARE(sendRequest("PATCH", base + QStringLiteral("/trackers"), QByteArrayLiteral("{}")).statusCode, 400);
+}
+
+void tst_WebServer::restTorrentsAdd()
+{
+    FakeTorrentBackend fake;
+    m_webServer->setTorrentBackend(&fake);
+    const auto reset = qScopeGuard([this] { m_webServer->setTorrentBackend(nullptr); });
+
+    fake.nextAdd = {TorrentWebAddOutcome::Added, FakeTorrentBackend::idA(), {}};
+    Response r = sendRequest("POST", QStringLiteral("/api/v1/torrents"),
+                             QByteArrayLiteral("{\"magnet\":\"magnet:?xt=urn:btih:AAAA\",\"paused\":true}"));
+    QCOMPARE(r.statusCode, 200);
+    QCOMPARE(r.json.object().value(QStringLiteral("id")).toString(), FakeTorrentBackend::idA());
+    QCOMPARE(r.json.object().value(QStringLiteral("outcome")).toString(), QStringLiteral("added"));
+    QCOMPARE(fake.lastMagnet, QStringLiteral("magnet:?xt=urn:btih:AAAA"));
+    QVERIFY(fake.lastPaused);
+
+    // The .torrent itself as the body, options in the query
+    fake.nextAdd.outcome = TorrentWebAddOutcome::Duplicate;
+    r = sendRaw(m_port, QByteArrayLiteral("POST"), QStringLiteral("/api/v1/torrents?paused=false"),
+                QByteArrayLiteral("d4:infod...ee"), QByteArrayLiteral("application/x-bittorrent"),
+                {{QByteArrayLiteral("X-Api-Key"), m_apiKey.toUtf8()}});
+    QCOMPARE(r.statusCode, 409);
+    QCOMPARE(fake.lastFile, QByteArrayLiteral("d4:infod...ee"));
+    QVERIFY(!fake.lastPaused);
+
+    fake.nextAdd.outcome = TorrentWebAddOutcome::Invalid;
+    QCOMPARE(sendRequest("POST", QStringLiteral("/api/v1/torrents"),
+                         QByteArrayLiteral("{\"magnet\":\"magnet:?bad\"}")).statusCode, 400);
+    QCOMPARE(sendRequest("POST", QStringLiteral("/api/v1/torrents"),
+                         QByteArrayLiteral("{\"magnet\":\"http://x.test/a\"}")).statusCode, 400);
+    QCOMPARE(sendRequest("POST", QStringLiteral("/api/v1/torrents"), {}, /*includeAuth*/ false).statusCode, 401);
+}
+
+void tst_WebServer::restTorrentsOffOrWithoutBackend()
+{
+    const QString base = QStringLiteral("/api/v1/torrents/") + FakeTorrentBackend::idA();
+    QCOMPARE(sendRequest("GET", QStringLiteral("/api/v1/torrents")).statusCode, 503);
+    QCOMPARE(sendRequest("GET", QStringLiteral("/api/v1/torrents/status")).statusCode, 503);
+    QCOMPARE(sendRequest("POST", base + QStringLiteral("/pause")).statusCode, 503);
+
+    // Switched off in the preferences: an empty list, every other route 503
+    FakeTorrentBackend fake;
+    fake.isRunning = false;
+    m_webServer->setTorrentBackend(&fake);
+    const auto reset = qScopeGuard([this] { m_webServer->setTorrentBackend(nullptr); });
+    Response r = sendRequest("GET", QStringLiteral("/api/v1/torrents"));
+    QCOMPARE(r.statusCode, 200);
+    QCOMPARE(r.json.object().value(QStringLiteral("total")).toInt(), 0);
+    QCOMPARE(sendRequest("GET", base).statusCode, 503);
+    QCOMPARE(sendRequest("POST", QStringLiteral("/api/v1/torrents"),
+                         QByteArrayLiteral("{\"magnet\":\"magnet:?xt=urn:btih:AAAA\"}")).statusCode, 503);
+    QVERIFY(!sendRequest("GET", QStringLiteral("/api/v1/torrents/status"))
+                 .json.object().value(QStringLiteral("running")).toBool());
+}
+
+#else
+
+void tst_WebServer::restTorrentsAbsentWithoutBitTorrent()
+{
+    QCOMPARE(sendRequest("GET", QStringLiteral("/api/v1/torrents")).statusCode, 404);
+    QCOMPARE(sendRequest("GET", QStringLiteral("/api/v1/torrents/status")).statusCode, 404);
+    const Response r = sendRequest("GET", QStringLiteral("/api/v1/capabilities"));
+    QVERIFY(!r.json.object().value(QStringLiteral("features")).toObject().contains(QStringLiteral("torrents")));
+    for (const QJsonValue& v : r.json.object().value(QStringLiteral("operations")).toArray())
+        QVERIFY2(!v.toString().startsWith(QLatin1StringView("torrents.")), qPrintable(v.toString()));
+}
+
+#endif
 
 void tst_WebServer::theUsenetTemplateHasItsSections()
 {
@@ -4607,7 +5022,22 @@ void tst_WebServer::api_checkedInOpenApiIsCurrent()
         doc.insert(QStringLiteral("info"), info);
         return doc;
     };
-    const QJsonObject generated = m_webServer->openApiDocument();
+    QJsonObject generated = m_webServer->openApiDocument();
+#ifdef EMULE_HAVE_BITTORRENT
+    // The checked-in contract is the default build's: without the BitTorrent routes
+    QJsonObject paths = generated.value(QStringLiteral("paths")).toObject();
+    for (const QString& key : paths.keys()) {
+        if (key.startsWith(QLatin1StringView("/api/v1/torrents")))
+            paths.remove(key);
+    }
+    generated.insert(QStringLiteral("paths"), paths);
+    QJsonArray tags;
+    for (const QJsonValue& tag : generated.value(QStringLiteral("tags")).toArray()) {
+        if (tag.toObject().value(QStringLiteral("name")).toString() != QLatin1StringView("Torrents"))
+            tags.append(tag);
+    }
+    generated.insert(QStringLiteral("tags"), tags);
+#endif
 
     if (qEnvironmentVariableIsSet("EMULE_WRITE_OPENAPI")) {
         QFile out(path);

@@ -13,6 +13,7 @@
 #include "BtTypes.h"
 
 #include <QObject>
+#include <QStringList>
 
 #include <memory>
 #include <optional>
@@ -54,12 +55,21 @@ public:
     /// One libtorrent priority 0..7 per file, in file order.
     bool setFilePriorities(const QString& id, const QList<int>& priorities);
 
+    /// Per-torrent speed, peer and seed limits. nullopt: unknown id.
+    [[nodiscard]] std::optional<BtTorrentOptions> options(const QString& id) const;
+    bool setOptions(const QString& id, const BtTorrentOptions& options);
+    /// Adds trackers to the last tier, skipping those already there.
+    bool addTrackers(const QString& id, const QStringList& urls);
+    bool removeTrackers(const QString& id, const QStringList& urls);
+
     /// The rows as of the last status update (≤ 1 s old).
     [[nodiscard]] QList<BtTorrentRow> torrents() const;
     [[nodiscard]] std::optional<BtTorrentRow> torrent(const QString& id) const;
     [[nodiscard]] QList<BtFileRow> files(const QString& id) const;
     [[nodiscard]] QList<BtPeerRow> peers(const QString& id) const;
     [[nodiscard]] QList<BtTrackerRow> trackers(const QString& id) const;
+    /// Peers per piece, bucketed (BtTorrentView::availabilityMap).
+    [[nodiscard]] QByteArray availabilityMap(const QString& id) const;
     [[nodiscard]] BtStatus status() const;
 
     /// The disk I/O of the session, for an ed3k join (torrent.md §4); null while stopped.

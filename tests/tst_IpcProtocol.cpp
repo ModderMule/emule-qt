@@ -168,6 +168,9 @@ void tst_IpcProtocol::msgTypeEnum_values()
     QCOMPARE(static_cast<int>(IpcMsgType::SetTorrentFilePriorities), 807);
     QCOMPARE(static_cast<int>(IpcMsgType::RecheckTorrent), 808);
     QCOMPARE(static_cast<int>(IpcMsgType::ReannounceTorrent), 809);
+    QCOMPARE(static_cast<int>(IpcMsgType::SetTorrentOptions), 810);
+    QCOMPARE(static_cast<int>(IpcMsgType::AddTorrentTrackers), 811);
+    QCOMPARE(static_cast<int>(IpcMsgType::RemoveTorrentTrackers), 812);
     QCOMPARE(static_cast<int>(IpcMsgType::GetBtStatus), 818);
     QCOMPARE(static_cast<int>(IpcMsgType::PushTorrentAdded), 950);
     QCOMPARE(static_cast<int>(IpcMsgType::PushTorrentUpdate), 951);

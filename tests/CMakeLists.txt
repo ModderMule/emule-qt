@@ -537,6 +537,35 @@ if(EMULE_BITTORRENT)
         "${CMAKE_CURRENT_SOURCE_DIR}/stubs")
     target_link_libraries(tst_TorrentListModel PRIVATE
         eMule::Core eMule::Ipc Qt6::Widgets)
+
+    # State filter, Peers/Trackers/Files pane and the Info/Activity/Options inspector,
+    # off hand-built GetTorrentDetails maps. No daemon: the IPC client stays null.
+    emule_add_test(tst_TorrentDetailsGui FOLDER "Gui"
+        SOURCES tst_TorrentDetailsGui.cpp
+                "${CMAKE_SOURCE_DIR}/src/gui/controls/TorrentFilterProxy.cpp"
+                "${CMAKE_SOURCE_DIR}/src/gui/controls/TorrentListModel.cpp"
+                "${CMAKE_SOURCE_DIR}/src/gui/controls/TorrentListsPane.cpp"
+                "${CMAKE_SOURCE_DIR}/src/gui/controls/TorrentPieceGrid.cpp"
+                "${CMAKE_SOURCE_DIR}/src/gui/dialogs/TorrentDetailsDialog.cpp"
+                "${CMAKE_SOURCE_DIR}/src/gui/dialogs/DetailDialog.cpp"
+                # DetailDialog opens client sheets and reports IPC failures
+                "${CMAKE_SOURCE_DIR}/src/gui/dialogs/ClientDetailDialog.cpp"
+                "${CMAKE_SOURCE_DIR}/src/gui/utils/IpcFeedback.cpp"
+                "${CMAKE_SOURCE_DIR}/src/gui/utils/CountryFlags.cpp"
+                "${CMAKE_SOURCE_DIR}/src/gui/controls/ContentScrollArea.cpp"
+                "${CMAKE_SOURCE_DIR}/src/gui/utils/Appearance.cpp"
+                "${CMAKE_SOURCE_DIR}/src/gui/utils/DialogSizing.cpp"
+                "${CMAKE_SOURCE_DIR}/src/gui/utils/MenuUtils.cpp"
+                "${CMAKE_SOURCE_DIR}/src/gui/utils/PanelPoller.cpp"
+                "${CMAKE_SOURCE_DIR}/src/gui/utils/StatusBarNotifier.cpp"
+                "${CMAKE_SOURCE_DIR}/src/gui/utils/TorrentLinks.cpp"
+                "${CMAKE_SOURCE_DIR}/src/gui/app/UiState.cpp"
+                "${CMAKE_SOURCE_DIR}/src/gui/app/IpcClient.cpp")
+    target_include_directories(tst_TorrentDetailsGui PRIVATE
+        "${CMAKE_SOURCE_DIR}/src/gui"
+        "${CMAKE_CURRENT_SOURCE_DIR}/stubs")
+    target_link_libraries(tst_TorrentDetailsGui PRIVATE
+        eMule::Core eMule::Ipc Qt6::Widgets)
 endif()
 
 # Magnet routing (BitTorrent vs eD2K) and .torrent drops. Pure string work.

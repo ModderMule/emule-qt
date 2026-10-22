@@ -31,6 +31,8 @@ public:
     bool resume(const QString& id) override;
     bool remove(const QString& id, bool deleteFiles) override;
     int clearCompleted() override;
+    [[nodiscard]] QCborMap inspectNzb(const QByteArray& data, const QString& name,
+                                      QString& error) const override;
     bool setPriority(const QString& id, int priority) override;
     bool setCategory(const QString& id, int category) override;
     bool setPassword(const QString& id, const QString& password) override;

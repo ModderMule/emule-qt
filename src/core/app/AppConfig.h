@@ -65,6 +65,13 @@ public:
     /// every consumer, not just the preferences.yml lookup in main().
     [[nodiscard]] static QString configDirOverride();
 
+    /// The lock a core holds on @p configDir for its whole run: one core per profile.
+    [[nodiscard]] static QString coreLockPath(const QString& configDir);
+
+    /// A live core holds the lock of @p configDir. Tells this profile's core from
+    /// another profile's on the same IPC port (issue #49). True when unsure.
+    [[nodiscard]] static bool coreRunningFor(const QString& configDir);
+
 #ifdef Q_OS_WIN
     /// Returns the cached multiUserSharing value (0=per-user, 1=all-users,
     /// 2=program-dir).  Determined once on first call to configDir() by

@@ -6,6 +6,7 @@
 #include "CoreNotifierBridge.h"
 #include "ApiEventFeeder.h"
 #include "DaemonApiBackend.h"
+#include "DaemonTorrentWebBackend.h"
 #include "DaemonUsenetWebBackend.h"
 #include "IpcServer.h"
 #include "MetaSearchService.h"
@@ -429,6 +430,13 @@ void DaemonApp::startWebServer()
     if (!m_usenetWebBackend)
         m_usenetWebBackend = std::make_unique<DaemonUsenetWebBackend>();
     m_webServer->setUsenetBackend(m_usenetWebBackend.get());
+
+#ifdef EMULE_HAVE_BITTORRENT
+    // The /api/v1/torrents routes; stateless, it asks BtBridge each time.
+    if (!m_torrentWebBackend)
+        m_torrentWebBackend = std::make_unique<DaemonTorrentWebBackend>();
+    m_webServer->setTorrentBackend(m_torrentWebBackend.get());
+#endif
 
     // The REST API's daemon half and its event source, kept the same way.
     if (!m_apiBackend)

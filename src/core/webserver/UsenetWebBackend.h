@@ -88,6 +88,11 @@ public:
     virtual bool remove(const QString& id, bool deleteFiles) = 0;
     /// Drop every Complete release from the list, files kept. Returns the count.
     virtual int clearCompleted() = 0;
+
+    /// The InspectNzb map ({name, files: [{index, name, size, isPar2, setKey}]}) of
+    /// an .nzb, nothing queued. Empty with @p error set when it does not parse.
+    [[nodiscard]] virtual QCborMap inspectNzb(const QByteArray& data, const QString& name,
+                                              QString& error) const = 0;
     virtual bool setPriority(const QString& id, int priority) = 0;
     virtual bool setCategory(const QString& id, int category) = 0;
     virtual bool setPassword(const QString& id, const QString& password) = 0;

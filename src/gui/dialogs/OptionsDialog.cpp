@@ -88,7 +88,9 @@
 #include <QTreeWidgetItem>
 #include <QUrlQuery>
 #include <QDialogButtonBox>
+#include <QDir>
 #include <QDirIterator>
+#include <QFileInfo>
 #include <QVBoxLayout>
 
 namespace eMule {
@@ -521,12 +523,16 @@ void OptionsDialog::onPageChanged(int page)
 
 void OptionsDialog::onOk()
 {
+    if (!validateDirectories())
+        return;
     saveSettings();
     accept();
 }
 
 void OptionsDialog::onApply()
 {
+    if (!validateDirectories())
+        return;
     saveSettings();
     m_applyBtn->setEnabled(false);
 }
@@ -1700,8 +1706,8 @@ QWidget* OptionsDialog::createDirectoriesPage()
     // --- Incoming Files group ---
     auto* incomingGroup = new QGroupBox(tr("Incoming Files"), page);
     auto* incomingLayout = new QHBoxLayout(incomingGroup);
+    // Editable like MFC IDC_INCFILES: typed or pasted paths are checked on Apply
     m_incomingDirEdit = new QLineEdit(incomingGroup);
-    m_incomingDirEdit->setReadOnly(true);
     incomingLayout->addWidget(m_incomingDirEdit);
     auto* incomingBrowseBtn = new QPushButton(incomingGroup);
     incomingBrowseBtn->setIcon(style()->standardIcon(QStyle::SP_DirOpenIcon));
@@ -1720,7 +1726,6 @@ QWidget* OptionsDialog::createDirectoriesPage()
     auto* tempGroup = new QGroupBox(tr("Temporary Files"), page);
     auto* tempLayout = new QHBoxLayout(tempGroup);
     m_tempDirEdit = new QLineEdit(tempGroup);
-    m_tempDirEdit->setReadOnly(true);
     tempLayout->addWidget(m_tempDirEdit);
     auto* tempBrowseBtn = new QPushButton(tempGroup);
     tempBrowseBtn->setIcon(style()->standardIcon(QStyle::SP_DirOpenIcon));
@@ -8261,6 +8266,79 @@ bool OptionsDialog::hasPage(int page) const
     // The stack, not PageCount: a stored or --options index may name a page this
     // build leaves out
     return page >= 0 && page < m_pages->count();
+}
+
+bool OptionsDialog::validateDirectories()
+{
+    // MFC CPPgDirectories::OnApply: the fields are typed in, so check them here
+    auto focus = [this](QLineEdit* edit) {
+        selectPage(PageDirectories);
+        edit->setFocus();
+        edit->selectAll();
+        return false;
+    };
+    auto fail = [this, &focus](QLineEdit* edit, const QString& text) {
+        focus(edit);
+        QMessageBox::warning(this, tr("Directories"), text);
+        return false;
+    };
+#if defined(Q_OS_WIN) || defined(Q_OS_MACOS)
+    constexpr auto pathCase = Qt::CaseInsensitive;
+#else
+    constexpr auto pathCase = Qt::CaseSensitive;
+#endif
+    const bool local = !m_ipc || m_ipc->isLocalConnection();
+
+    // Whole sentences per field, so translations need not splice words in
+    struct Field {
+        QLineEdit* edit;
+        QString empty, relative, missing;
+    };
+    const Field fields[] = {
+        {m_incomingDirEdit, tr("Please enter the incoming folder."),
+         tr("The incoming folder must be a full path:\n%1"),
+         tr("The incoming folder does not exist:\n%1\n\nCreate it?")},
+        {m_tempDirEdit, tr("Please enter the temporary folder."),
+         tr("The temporary folder must be a full path:\n%1"),
+         tr("The temporary folder does not exist:\n%1\n\nCreate it?")},
+    };
+    for (const Field& f : fields) {
+        QLineEdit* edit = f.edit;
+        QString path = edit->text().trimmed();
+        // Shell habit: "~/..." means the home folder, only known for a local core
+        if (local && (path == u'~' || path.startsWith(QLatin1StringView("~/"))))
+            path = QDir::homePath() + path.mid(1);
+        if (path != edit->text())
+            edit->setText(path);
+        if (path.isEmpty())
+            return fail(edit, f.empty);
+        if (!QDir::isAbsolutePath(path))
+            return fail(edit, f.relative.arg(path));
+    }
+    if (QDir::cleanPath(m_incomingDirEdit->text()).compare(
+            QDir::cleanPath(m_tempDirEdit->text()), pathCase) == 0)
+        return fail(m_tempDirEdit,
+                    tr("The temporary folder can't be the same as the incoming folder."));
+
+    // A remote core has its own disk: it creates missing folders itself
+    if (!local)
+        return true;
+    for (const Field& f : fields) {
+        QLineEdit* edit = f.edit;
+        const QString path = edit->text();
+        const QFileInfo info(path);
+        if (info.exists() && !info.isDir())
+            return fail(edit, tr("This is a file, not a folder:\n%1").arg(path));
+        if (info.exists())
+            continue;
+        if (QMessageBox::question(this, tr("Directories"), f.missing.arg(path))
+            != QMessageBox::Yes)
+            return focus(edit);
+        if (!QDir().mkpath(path))
+            return fail(edit, tr("Could not create the folder:\n%1").arg(path));
+    }
+
+    return true;
 }
 
 } // namespace eMule

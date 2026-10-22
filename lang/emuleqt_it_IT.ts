@@ -720,7 +720,7 @@ Ha commenti</translation>
         <translation type="vanished">%1 Bytes</translation>
     </message>
     <message>
-        <location filename="../src/gui/dialogs/OptionsDialog.cpp" line="+3117"/>
+        <location filename="../src/gui/dialogs/OptionsDialog.cpp" line="+3122"/>
         <source>Test</source>
         <translation>Test</translation>
     </message>
@@ -861,7 +861,7 @@ Scaricarlo di nuovo?</translation>
     <name>Units</name>
     <message>
         <location filename="../src/core/utils/StringUtils.cpp" line="+72"/>
-        <location filename="../src/core/webserver/WebServer.cpp" line="+4062"/>
+        <location filename="../src/core/webserver/WebServer.cpp" line="+4060"/>
         <source>Bytes</source>
         <translation>Bytes</translation>
     </message>
@@ -6344,36 +6344,36 @@ Scaricarlo di nuovo?</translation>
 <context>
     <name>eMule::OptionsDialog</name>
     <message>
-        <location filename="../src/gui/dialogs/OptionsDialog.cpp" line="-3011"/>
+        <location filename="../src/gui/dialogs/OptionsDialog.cpp" line="-3014"/>
         <source>Options</source>
         <translation>Opzioni</translation>
     </message>
     <message>
         <location line="+61"/>
-        <location line="+1981"/>
+        <location line="+1984"/>
         <source>OK</source>
         <translation>OK</translation>
     </message>
     <message>
-        <location line="-1980"/>
-        <location line="+1981"/>
+        <location line="-1983"/>
+        <location line="+1984"/>
         <source>Cancel</source>
         <translation>Annulla</translation>
     </message>
     <message>
-        <location line="-1980"/>
-        <location line="+5771"/>
+        <location line="-1983"/>
+        <location line="+5774"/>
         <source>Apply</source>
         <translation>Applica</translation>
     </message>
     <message>
-        <location line="-5770"/>
+        <location line="-5773"/>
         <source>Help</source>
         <translation>Aiuto</translation>
     </message>
     <message>
         <location line="+259"/>
-        <location line="+1989"/>
+        <location line="+1992"/>
         <location line="+62"/>
         <location line="+5"/>
         <location line="+9"/>
@@ -6382,7 +6382,7 @@ Scaricarlo di nuovo?</translation>
         <translation>Filtro IP</translation>
     </message>
     <message>
-        <location line="-2075"/>
+        <location line="-2078"/>
         <source>IP filter reloaded: %1 entries.</source>
         <translation>Filtro IP ricaricato: %1 voci.</translation>
     </message>
@@ -6392,7 +6392,7 @@ Scaricarlo di nuovo?</translation>
         <translation>Opzioni -&gt; %1 -&gt; %2</translation>
     </message>
     <message>
-        <location line="+182"/>
+        <location line="+186"/>
         <source>General options</source>
         <translation>Opzioni generali</translation>
     </message>
@@ -6413,26 +6413,26 @@ Scaricarlo di nuovo?</translation>
     </message>
     <message>
         <location line="+8"/>
-        <location line="+5684"/>
+        <location line="+5683"/>
         <source>Language</source>
         <translation>Lingua</translation>
     </message>
     <message>
-        <location line="-5681"/>
+        <location line="-5680"/>
         <source>System Default</source>
         <translation>Predefinito di sistema</translation>
     </message>
     <message>
         <location line="+14"/>
         <location line="+726"/>
-        <location line="+321"/>
+        <location line="+320"/>
         <location line="+450"/>
         <location line="+248"/>
         <source>Miscellaneous</source>
         <translation>Varie</translation>
     </message>
     <message>
-        <location line="-1742"/>
+        <location line="-1741"/>
         <source>Bring to front on link click</source>
         <translation>Porta in primo piano al clic su link</translation>
     </message>
@@ -6518,25 +6518,25 @@ Scaricarlo di nuovo?</translation>
     </message>
     <message>
         <location line="+8"/>
-        <location line="+5620"/>
+        <location line="+5619"/>
         <source>Core</source>
         <translation>Core</translation>
     </message>
     <message>
-        <location line="-5615"/>
+        <location line="-5614"/>
         <source>Address:</source>
         <translation>Indirizzo:</translation>
     </message>
     <message>
         <location line="+4"/>
-        <location line="+1224"/>
+        <location line="+1223"/>
         <location line="+720"/>
         <location line="+421"/>
         <source>Port:</source>
         <translation>Porta:</translation>
     </message>
     <message>
-        <location line="-2362"/>
+        <location line="-2361"/>
         <source>authentication token</source>
         <translation>token di autenticazione</translation>
     </message>
@@ -6692,7 +6692,7 @@ Vuoi davvero continuare?</translation>
     </message>
     <message>
         <location line="+2"/>
-        <location line="+1693"/>
+        <location line="+1692"/>
         <location line="+128"/>
         <location line="+295"/>
         <location line="+1016"/>
@@ -6705,7 +6705,7 @@ Vuoi davvero continuare?</translation>
         <translation>Abilitato</translation>
     </message>
     <message>
-        <location line="-4766"/>
+        <location line="-4765"/>
         <source>Reset</source>
         <translation>Ripristina</translation>
     </message>
@@ -6722,24 +6722,24 @@ Vuoi davvero continuare?</translation>
     <message>
         <location line="+3"/>
         <location line="+6"/>
-        <location line="+4147"/>
+        <location line="+4146"/>
         <location line="+345"/>
         <source> KB/s</source>
         <translation> KB/s</translation>
     </message>
     <message>
-        <location line="-4495"/>
+        <location line="-4494"/>
         <source>Upload</source>
         <translation>Upload</translation>
     </message>
     <message>
         <location line="+9"/>
-        <location line="+4135"/>
+        <location line="+4134"/>
         <source>Limits</source>
         <translation>Limiti</translation>
     </message>
     <message>
-        <location line="-4132"/>
+        <location line="-4131"/>
         <source>Download limit</source>
         <translation>Limite download</translation>
     </message>
@@ -6800,12 +6800,12 @@ Vuoi davvero continuare?</translation>
     </message>
     <message>
         <location line="+4"/>
-        <location line="+6791"/>
+        <location line="+6790"/>
         <source>Any</source>
         <translation>Qualsiasi</translation>
     </message>
     <message>
-        <location line="-6789"/>
+        <location line="-6788"/>
         <source>Use only this network interface, for example a VPN tunnel. Pick one from the list, or type an IP address or a subnet such as 10.64.0.0/10 (the interface holding an address in it). Connections through a proxy are not bound.</source>
         <translation>Usa solo questa interfaccia di rete, ad esempio un tunnel VPN. Scegline una dall&apos;elenco oppure digita un indirizzo IP o una sottorete come 10.64.0.0/10 (l&apos;interfaccia che ha un indirizzo al suo interno). Le connessioni tramite proxy non vengono vincolate.</translation>
     </message>
@@ -6891,12 +6891,12 @@ Vuoi davvero continuare?</translation>
     </message>
     <message>
         <location line="+62"/>
-        <location line="+1416"/>
+        <location line="+1415"/>
         <source>General</source>
         <translation>Generale</translation>
     </message>
     <message>
-        <location line="-1413"/>
+        <location line="-1412"/>
         <source>Enable proxy</source>
         <translation>Abilita proxy</translation>
     </message>
@@ -6947,26 +6947,26 @@ Vuoi davvero continuare?</translation>
     </message>
     <message>
         <location line="+21"/>
-        <location line="+694"/>
+        <location line="+693"/>
         <source>Authentication</source>
         <translation>Autenticazione</translation>
     </message>
     <message>
-        <location line="-691"/>
+        <location line="-690"/>
         <source>Enable authentication</source>
         <translation>Abilita autenticazione</translation>
     </message>
     <message>
         <location line="+7"/>
-        <location line="+1792"/>
+        <location line="+1791"/>
         <location line="+1019"/>
         <location line="+152"/>
         <source>Name:</source>
         <translation>Nome:</translation>
     </message>
     <message>
-        <location line="-2959"/>
-        <location line="+695"/>
+        <location line="-2958"/>
+        <location line="+694"/>
         <location line="+778"/>
         <location line="+19"/>
         <location line="+324"/>
@@ -6974,7 +6974,7 @@ Vuoi davvero continuare?</translation>
         <translation>Password:</translation>
     </message>
     <message>
-        <location line="-1782"/>
+        <location line="-1781"/>
         <source>Update</source>
         <translation>Aggiorna</translation>
     </message>
@@ -7064,7 +7064,7 @@ Vuoi davvero continuare?</translation>
         <translation>File temporanei</translation>
     </message>
     <message>
-        <location line="+13"/>
+        <location line="+12"/>
         <source>Select Temporary Directory</source>
         <translation>Seleziona directory temporanea</translation>
     </message>
@@ -7717,7 +7717,7 @@ Ogni regola sostituisce un modello regex con una stringa di sostituzione.</trans
         <translation>Slot upload (senza overhead)</translation>
     </message>
     <message>
-        <location line="-1641"/>
+        <location line="-1640"/>
         <source>Country flags (IP2Country)</source>
         <translation>Bandiere dei paesi (IP2Country)</translation>
     </message>
@@ -7791,7 +7791,7 @@ Ogni connessione Usenet passa quindi dal proxy, perciò la sua velocità limita 
         <translation>Riconnetti al server tramite il suo indirizzo IPv6 quando la connessione IPv4 ha ottenuto un LowID</translation>
     </message>
     <message>
-        <location line="+353"/>
+        <location line="+352"/>
         <source>Remember files seen in search results</source>
         <translation>Ricorda i file visti nei risultati di ricerca</translation>
     </message>
@@ -8272,7 +8272,7 @@ Ogni connessione Usenet passa quindi dal proxy, perciò la sua velocità limita 
         <translation>Rigoroso</translation>
     </message>
     <message>
-        <location line="-2616"/>
+        <location line="-2615"/>
         <source>BitTorrent</source>
         <translation>BitTorrent</translation>
     </message>
@@ -8342,7 +8342,7 @@ Ogni connessione Usenet passa quindi dal proxy, perciò la sua velocità limita 
         <translation>Consente a due client Low ID di trovare l&apos;indirizzo dell&apos;altro tramite un server che lo supporta o un Kad buddy, quindi di connettersi via IPv6</translation>
     </message>
     <message>
-        <location line="+1025"/>
+        <location line="+1024"/>
         <source>Strict + Chinese</source>
         <translation>Rigoroso + cinese</translation>
     </message>
@@ -9407,7 +9407,78 @@ Aggiungerne uno in seguito non ne scarica l&apos;archivio storico: un nuovo inde
         <translation>Intervallo di aggiornamento connessione server [min.]:</translation>
     </message>
     <message>
-        <location line="-150"/>
+        <location line="+2844"/>
+        <location line="+52"/>
+        <source>Directories</source>
+        <translation>Cartelle</translation>
+    </message>
+    <message>
+        <location line="-36"/>
+        <source>Please enter the incoming folder.</source>
+        <translation>Inserisci la cartella dei file in arrivo.</translation>
+    </message>
+    <message>
+        <location line="+1"/>
+        <source>The incoming folder must be a full path:
+%1</source>
+        <translation>La cartella dei file in arrivo deve essere un percorso completo:
+%1</translation>
+    </message>
+    <message>
+        <location line="+1"/>
+        <source>The incoming folder does not exist:
+%1
+
+Create it?</source>
+        <translation>La cartella dei file in arrivo non esiste:
+%1
+
+Crearla?</translation>
+    </message>
+    <message>
+        <location line="+1"/>
+        <source>Please enter the temporary folder.</source>
+        <translation>Inserisci la cartella dei file temporanei.</translation>
+    </message>
+    <message>
+        <location line="+1"/>
+        <source>The temporary folder must be a full path:
+%1</source>
+        <translation>La cartella dei file temporanei deve essere un percorso completo:
+%1</translation>
+    </message>
+    <message>
+        <location line="+1"/>
+        <source>The temporary folder does not exist:
+%1
+
+Create it?</source>
+        <translation>La cartella dei file temporanei non esiste:
+%1
+
+Crearla?</translation>
+    </message>
+    <message>
+        <location line="+18"/>
+        <source>The temporary folder can&apos;t be the same as the incoming folder.</source>
+        <translation>La cartella temporanea non può coincidere con quella dei file in arrivo.</translation>
+    </message>
+    <message>
+        <location line="+10"/>
+        <source>This is a file, not a folder:
+%1</source>
+        <translation>Questo è un file, non una cartella:
+%1</translation>
+    </message>
+    <message>
+        <location line="+7"/>
+        <source>Could not create the folder:
+%1</source>
+        <translation>Impossibile creare la cartella:
+%1</translation>
+    </message>
+    <message>
+        <location line="-3050"/>
         <location line="+153"/>
         <source>Disabled</source>
         <translation>Disabilitato</translation>
@@ -9481,12 +9552,12 @@ Aggiungerne uno in seguito non ne scarica l&apos;archivio storico: un nuovo inde
         <translation>Filtra IP LAN di server e client</translation>
     </message>
     <message>
-        <location line="-4448"/>
+        <location line="-4447"/>
         <source>Show more controls (advanced mode controls)</source>
         <translation>Mostra più controlli (controlli modalità avanzata)</translation>
     </message>
     <message>
-        <location line="+4451"/>
+        <location line="+4450"/>
         <source>Disable A4AF checks to save CPU</source>
         <translation>Disabilita controlli A4AF per risparmiare CPU</translation>
     </message>
@@ -14459,140 +14530,422 @@ Facendo di nuovo clic su &quot;Ripristina statistiche&quot; verranno ricaricate 
 <context>
     <name>eMule::TorrentDetailsDialog</name>
     <message>
-        <location filename="../src/gui/dialogs/TorrentDetailsDialog.cpp" line="+68"/>
         <source>Skip</source>
-        <translation>Salta</translation>
+        <translation type="vanished">Salta</translation>
     </message>
     <message>
-        <location line="+2"/>
         <source>Low</source>
-        <translation>Bassa</translation>
+        <translation type="vanished">Bassa</translation>
     </message>
     <message>
-        <location line="+2"/>
         <source>Normal</source>
-        <translation>Normale</translation>
+        <translation type="vanished">Normale</translation>
     </message>
     <message>
-        <location line="+2"/>
         <source>High</source>
-        <translation>Alta</translation>
+        <translation type="vanished">Alta</translation>
+    </message>
+    <message>
+        <source>Maximum</source>
+        <translation type="vanished">Massima</translation>
+    </message>
+    <message>
+        <source>Torrent Details</source>
+        <translation type="vanished">Dettagli torrent</translation>
+    </message>
+    <message>
+        <source>File</source>
+        <translation type="vanished">File</translation>
+    </message>
+    <message>
+        <location filename="../src/gui/dialogs/TorrentDetailsDialog.cpp" line="+51"/>
+        <source>N/A</source>
+        <translation>N/D</translation>
+    </message>
+    <message>
+        <location line="+35"/>
+        <source>Use global settings</source>
+        <translation>Usa impostazioni globali</translation>
     </message>
     <message>
         <location line="+1"/>
-        <source>Maximum</source>
-        <translation>Massima</translation>
+        <source>Seed regardless</source>
+        <translation>Seeding illimitato</translation>
     </message>
     <message>
-        <location line="+10"/>
-        <source>Torrent Details</source>
-        <translation>Dettagli torrent</translation>
+        <location line="+1"/>
+        <source>Stop seeding at:</source>
+        <translation>Interrompi seeding a:</translation>
     </message>
     <message>
         <location line="+46"/>
-        <source>File</source>
-        <translation>File</translation>
+        <source>Info</source>
+        <translation>Info</translation>
     </message>
     <message>
-        <location line="+0"/>
+        <location line="+1"/>
+        <source>Activity</source>
+        <translation>Attività</translation>
+    </message>
+    <message>
+        <location line="+1"/>
+        <source>Options</source>
+        <translation>Opzioni</translation>
+    </message>
+    <message>
+        <location line="+4"/>
+        <location line="+2"/>
+        <source>%1 — Torrent Inspector</source>
+        <translation>%1 — Ispettore torrent</translation>
+    </message>
+    <message numerus="yes">
+        <location line="+56"/>
+        <source>%n file(s), %1</source>
+        <translation>
+            <numerusform>%n file, %1</numerusform>
+            <numerusform>%n file, %1</numerusform>
+        </translation>
+    </message>
+    <message>
+        <location line="+1"/>
+        <source>Getting metadata…</source>
+        <translation>Recupero metadati…</translation>
+    </message>
+    <message numerus="yes">
+        <location line="+4"/>
+        <source>%1 (%n piece(s) @ %2)</source>
+        <translation>
+            <numerusform>%1 (%n pezzo @ %2)</numerusform>
+            <numerusform>%1 (%n pezzi @ %2)</numerusform>
+        </translation>
+    </message>
+    <message>
+        <location line="+7"/>
+        <source>Private to this tracker — DHT and PEX disabled</source>
+        <translation>Privato per questo tracker — DHT e PEX disattivati</translation>
+    </message>
+    <message>
+        <location line="+1"/>
+        <source>Public torrent</source>
+        <translation>Torrent pubblico</translation>
+    </message>
+    <message>
+        <location line="+2"/>
+        <source>Created by %1 on %2</source>
+        <translation>Creato da %1 il %2</translation>
+    </message>
+    <message>
+        <location line="+2"/>
+        <source>Created by %1</source>
+        <translation>Creato da %1</translation>
+    </message>
+    <message>
+        <location line="+2"/>
+        <source>Created on %1</source>
+        <translation>Creato il %1</translation>
+    </message>
+    <message>
+        <location line="+13"/>
+        <source>%1 (%2 selected)</source>
+        <translation>%1 (%2 selezionati)</translation>
+    </message>
+    <message>
+        <location line="+21"/>
+        <source>Active now</source>
+        <translation>Attivo ora</translation>
+    </message>
+    <message>
+        <location line="+2"/>
+        <source>%1 ago</source>
+        <translation>%1 fa</translation>
+    </message>
+    <message>
+        <location line="+4"/>
+        <source>Unknown</source>
+        <translation>Sconosciuto</translation>
+    </message>
+    <message>
+        <location line="+25"/>
+        <source>Details</source>
+        <translation>Dettagli</translation>
+    </message>
+    <message>
+        <location line="+2"/>
         <source>Size</source>
         <translation>Dimensione</translation>
     </message>
     <message>
-        <location line="+0"/>
+        <location line="+1"/>
+        <source>Location</source>
+        <translation>Posizione</translation>
+    </message>
+    <message>
+        <location line="+1"/>
+        <source>Hash v1</source>
+        <translation>Hash v1</translation>
+    </message>
+    <message>
+        <location line="+1"/>
+        <source>Hash v2</source>
+        <translation>Hash v2</translation>
+    </message>
+    <message>
+        <location line="+1"/>
+        <source>Privacy</source>
+        <translation>Privacy</translation>
+    </message>
+    <message>
+        <location line="+1"/>
+        <source>Origin</source>
+        <translation>Origine</translation>
+    </message>
+    <message>
+        <location line="+9"/>
+        <source>Copy Magnet Link</source>
+        <translation>Copia link magnet</translation>
+    </message>
+    <message>
+        <location line="+4"/>
+        <source>Magnet</source>
+        <translation>Magnet</translation>
+    </message>
+    <message>
+        <location line="+3"/>
+        <source>Comment</source>
+        <translation>Commento</translation>
+    </message>
+    <message>
+        <location line="+16"/>
+        <source>Transfer</source>
+        <translation>Trasferimento</translation>
+    </message>
+    <message>
+        <location line="+3"/>
+        <source>State</source>
+        <translation>Stato</translation>
+    </message>
+    <message>
+        <location line="+2"/>
+        <source>Have</source>
+        <translation>Posseduti</translation>
+    </message>
+    <message>
+        <location line="+1"/>
+        <source>Availability</source>
+        <translation>Disponibilità</translation>
+    </message>
+    <message>
+        <location line="+3"/>
+        <source>Failed DL</source>
+        <translation>DL falliti</translation>
+    </message>
+    <message>
+        <location line="+1"/>
+        <source>Ratio</source>
+        <translation>Rapporto</translation>
+    </message>
+    <message>
+        <location line="+4"/>
+        <source>Error</source>
+        <translation>Errore</translation>
+    </message>
+    <message>
+        <location line="+28"/>
+        <source>Available</source>
+        <translation>Disponibile</translation>
+    </message>
+    <message>
+        <location line="+1"/>
+        <source>Share of each part that is downloaded</source>
+        <translation>Quota scaricata di ogni parte</translation>
+    </message>
+    <message>
+        <location line="+1"/>
+        <source>Peers that have each part; red: nobody connected has it</source>
+        <translation>Peer che hanno ogni parte; rosso: nessun peer connesso la possiede</translation>
+    </message>
+    <message>
+        <location line="+9"/>
+        <source>Dates</source>
+        <translation>Date</translation>
+    </message>
+    <message>
+        <location line="+2"/>
+        <source>Added</source>
+        <translation>Aggiunto</translation>
+    </message>
+    <message>
+        <location line="+1"/>
         <source>Completed</source>
         <translation>Completato</translation>
     </message>
     <message>
-        <location line="+0"/>
+        <location line="+1"/>
+        <source>Last Activity</source>
+        <translation>Ultima attività</translation>
+    </message>
+    <message>
+        <location line="+2"/>
+        <source>Time Elapsed</source>
+        <translation>Tempo trascorso</translation>
+    </message>
+    <message>
+        <location line="+2"/>
+        <source>Downloading</source>
+        <translation>In scaricamento</translation>
+    </message>
+    <message>
+        <location line="+1"/>
+        <source>Seeding</source>
+        <translation>In seeding</translation>
+    </message>
+    <message>
+        <location line="+1"/>
+        <source>Remaining</source>
+        <translation>Rimanente</translation>
+    </message>
+    <message>
+        <location line="+12"/>
+        <source>Speed</source>
+        <translation>Velocità</translation>
+    </message>
+    <message>
+        <location line="+7"/>
+        <source> KiB/s</source>
+        <translation> KiB/s</translation>
+    </message>
+    <message>
+        <location line="+5"/>
+        <source>Limit download speed:</source>
+        <translation>Limita velocità di download:</translation>
+    </message>
+    <message>
+        <location line="+1"/>
+        <source>Limit upload speed:</source>
+        <translation>Limita velocità di upload:</translation>
+    </message>
+    <message>
+        <location line="+3"/>
+        <source>Seeding Limits</source>
+        <translation>Limiti di seeding</translation>
+    </message>
+    <message>
         <location line="+13"/>
+        <source>Ratio:</source>
+        <translation>Rapporto:</translation>
+    </message>
+    <message>
+        <location line="+7"/>
+        <source> min</source>
+        <translation> min</translation>
+    </message>
+    <message>
+        <location line="+4"/>
+        <source>Seed time:</source>
+        <translation>Tempo di seeding:</translation>
+    </message>
+    <message>
+        <location line="+7"/>
+        <source>Peer Connections</source>
+        <translation>Connessioni peer</translation>
+    </message>
+    <message>
+        <location line="+4"/>
+        <source>Default</source>
+        <translation>Predefinito</translation>
+    </message>
+    <message>
+        <location line="+2"/>
+        <source>Maximum peers:</source>
+        <translation>Peer massimi:</translation>
+    </message>
+    <message>
+        <location line="+87"/>
+        <source>Could not change the torrent options.</source>
+        <translation>Impossibile modificare le opzioni del torrent.</translation>
+    </message>
+    <message numerus="yes">
+        <location line="+17"/>
+        <source>Copied %n magnet link(s).</source>
+        <translation>
+            <numerusform>%n link magnet copiato.</numerusform>
+            <numerusform>%n link magnet copiati.</numerusform>
+        </translation>
+    </message>
+    <message>
+        <location line="-228"/>
+        <location line="+37"/>
         <source>Progress</source>
         <translation>Progresso</translation>
     </message>
     <message>
-        <location line="-13"/>
-        <location line="+65"/>
         <source>Priority</source>
-        <translation>Priorità</translation>
+        <translation type="vanished">Priorità</translation>
     </message>
     <message>
-        <location line="-56"/>
         <source>Files</source>
-        <translation>File</translation>
+        <translation type="vanished">File</translation>
     </message>
     <message>
-        <location line="+4"/>
         <source>Address</source>
-        <translation>Indirizzo</translation>
+        <translation type="vanished">Indirizzo</translation>
     </message>
     <message>
-        <location line="+0"/>
         <source>Client</source>
-        <translation>Client</translation>
+        <translation type="vanished">Client</translation>
     </message>
     <message>
-        <location line="+0"/>
         <source>Down Speed</source>
-        <translation>Velocità di scaricamento</translation>
+        <translation type="vanished">Velocità di scaricamento</translation>
     </message>
     <message>
-        <location line="+1"/>
         <source>Up Speed</source>
-        <translation>Velocità di invio</translation>
+        <translation type="vanished">Velocità di invio</translation>
     </message>
     <message>
-        <location line="+0"/>
+        <location line="-34"/>
         <source>Downloaded</source>
         <translation>Scaricato</translation>
     </message>
     <message>
-        <location line="+0"/>
+        <location line="+1"/>
         <source>Uploaded</source>
         <translation>Inviato</translation>
     </message>
     <message>
-        <location line="+0"/>
         <source>Flags</source>
-        <translation>Flag</translation>
+        <translation type="vanished">Flag</translation>
     </message>
     <message>
-        <location line="+1"/>
         <source>Source</source>
-        <translation>Fonte</translation>
+        <translation type="vanished">Fonte</translation>
     </message>
     <message>
-        <location line="+6"/>
-        <location line="+4"/>
         <source>Peers</source>
-        <translation>Peer</translation>
+        <translation type="vanished">Peer</translation>
     </message>
     <message>
-        <location line="+0"/>
         <source>URL</source>
-        <translation>URL</translation>
+        <translation type="vanished">URL</translation>
     </message>
     <message>
-        <location line="+0"/>
         <source>Tier</source>
-        <translation>Livello</translation>
+        <translation type="vanished">Livello</translation>
     </message>
     <message>
-        <location line="+0"/>
         <source>Status</source>
-        <translation>Stato</translation>
+        <translation type="vanished">Stato</translation>
     </message>
     <message>
-        <location line="+0"/>
         <source>Seeds</source>
-        <translation>Seed</translation>
+        <translation type="vanished">Seed</translation>
     </message>
     <message>
-        <location line="+5"/>
         <source>Trackers</source>
-        <translation>Tracker</translation>
+        <translation type="vanished">Tracker</translation>
     </message>
     <message>
-        <location line="+20"/>
+        <location line="+139"/>
         <source>This torrent is no longer in the list.</source>
         <translation>Questo torrent non è più nella lista.</translation>
     </message>
@@ -14602,54 +14955,77 @@ Facendo di nuovo clic su &quot;Ripristina statistiche&quot; verranno ricaricate 
         <translation>BitTorrent non è in esecuzione.</translation>
     </message>
     <message>
-        <location line="+23"/>
         <source>Download</source>
-        <translation>Download</translation>
+        <translation type="vanished">Download</translation>
     </message>
     <message>
-        <location line="+2"/>
         <source>Do Not Download</source>
-        <translation>Non scaricare</translation>
+        <translation type="vanished">Non scaricare</translation>
     </message>
     <message>
-        <location line="+26"/>
         <source>Could not change the file priorities.</source>
-        <translation>Impossibile modificare le priorità dei file.</translation>
+        <translation type="vanished">Impossibile modificare le priorità dei file.</translation>
     </message>
     <message>
-        <location line="+51"/>
         <source>Files (%1)</source>
-        <translation>File (%1)</translation>
+        <translation type="vanished">File (%1)</translation>
     </message>
     <message>
-        <location line="+17"/>
         <source>Seed</source>
-        <translation>Seed</translation>
+        <translation type="vanished">Seed</translation>
     </message>
     <message>
-        <location line="+2"/>
         <source>Enc</source>
-        <translation>Cifr</translation>
+        <translation type="vanished">Cifr</translation>
     </message>
     <message>
-        <location line="+14"/>
         <source>Peers (%1)</source>
-        <translation>Peer (%1)</translation>
+        <translation type="vanished">Peer (%1)</translation>
     </message>
     <message>
-        <location line="+14"/>
         <source>Working</source>
-        <translation>Funzionante</translation>
+        <translation type="vanished">Funzionante</translation>
+    </message>
+    <message>
+        <source>Not working</source>
+        <translation type="vanished">Non funzionante</translation>
+    </message>
+    <message>
+        <source>Trackers (%1)</source>
+        <translation type="vanished">Tracker (%1)</translation>
+    </message>
+</context>
+<context>
+    <name>eMule::TorrentFilterProxy</name>
+    <message>
+        <location filename="../src/gui/controls/TorrentFilterProxy.cpp" line="+70"/>
+        <source>All</source>
+        <translation>Tutti</translation>
     </message>
     <message>
         <location line="+1"/>
-        <source>Not working</source>
-        <translation>Non funzionante</translation>
+        <source>Downloading</source>
+        <translation>In scaricamento</translation>
     </message>
     <message>
-        <location line="+10"/>
-        <source>Trackers (%1)</source>
-        <translation>Tracker (%1)</translation>
+        <location line="+1"/>
+        <source>Seeding</source>
+        <translation>In seeding</translation>
+    </message>
+    <message>
+        <location line="+1"/>
+        <source>Paused</source>
+        <translation>In pausa</translation>
+    </message>
+    <message>
+        <location line="+1"/>
+        <source>Active</source>
+        <translation>Attiva</translation>
+    </message>
+    <message>
+        <location line="+1"/>
+        <source>Error</source>
+        <translation>Errore</translation>
     </message>
 </context>
 <context>
@@ -14676,12 +15052,12 @@ Facendo di nuovo clic su &quot;Ripristina statistiche&quot; verranno ricaricate 
     </message>
     <message>
         <location line="+1"/>
-        <location line="+160"/>
+        <location line="+168"/>
         <source>Completed</source>
         <translation>Completato</translation>
     </message>
     <message>
-        <location line="-159"/>
+        <location line="-167"/>
         <source>Seeding</source>
         <translation>In seeding</translation>
     </message>
@@ -14711,7 +15087,7 @@ Facendo di nuovo clic su &quot;Ripristina statistiche&quot; verranno ricaricate 
         <translation>Sconosciuto</translation>
     </message>
     <message>
-        <location line="+129"/>
+        <location line="+137"/>
         <source>Private torrent (no DHT, PEX or LSD)</source>
         <translation>Torrent privato (niente DHT, PEX o LSD)</translation>
     </message>
@@ -14782,9 +15158,355 @@ Facendo di nuovo clic su &quot;Ripristina statistiche&quot; verranno ricaricate 
     </message>
 </context>
 <context>
+    <name>eMule::TorrentListsPane</name>
+    <message>
+        <location filename="../src/gui/controls/TorrentListsPane.cpp" line="+85"/>
+        <source>Tracker</source>
+        <translation>Tracker</translation>
+    </message>
+    <message>
+        <location line="+2"/>
+        <source>DHT</source>
+        <translation>DHT</translation>
+    </message>
+    <message>
+        <location line="+2"/>
+        <source>PEX</source>
+        <translation>PEX</translation>
+    </message>
+    <message>
+        <location line="+2"/>
+        <source>Local discovery</source>
+        <translation>Rilevamento locale</translation>
+    </message>
+    <message>
+        <location line="+2"/>
+        <source>Resume data</source>
+        <translation>Dati di ripristino</translation>
+    </message>
+    <message>
+        <location line="+2"/>
+        <source>Incoming</source>
+        <translation>In arrivo</translation>
+    </message>
+    <message>
+        <location line="+30"/>
+        <source>Skip</source>
+        <translation>Salta</translation>
+    </message>
+    <message>
+        <location line="+2"/>
+        <source>Low</source>
+        <translation>Bassa</translation>
+    </message>
+    <message>
+        <location line="+2"/>
+        <source>Normal</source>
+        <translation>Normale</translation>
+    </message>
+    <message>
+        <location line="+2"/>
+        <source>High</source>
+        <translation>Alta</translation>
+    </message>
+    <message>
+        <location line="+1"/>
+        <source>Maximum</source>
+        <translation>Massima</translation>
+    </message>
+    <message>
+        <location line="+9"/>
+        <source>Peer is connected over µTP</source>
+        <translation>Il peer è connesso tramite µTP</translation>
+    </message>
+    <message>
+        <location line="+1"/>
+        <source>Optimistic unchoke</source>
+        <translation>Unchoke ottimistico</translation>
+    </message>
+    <message>
+        <location line="+1"/>
+        <source>Downloading from this peer</source>
+        <translation>Download da questo peer</translation>
+    </message>
+    <message>
+        <location line="+1"/>
+        <source>We would download from this peer if they would let us</source>
+        <translation>Scaricheremmo da questo peer se ce lo permettesse</translation>
+    </message>
+    <message>
+        <location line="+1"/>
+        <source>Uploading to peer</source>
+        <translation>Upload verso il peer</translation>
+    </message>
+    <message>
+        <location line="+1"/>
+        <source>We would upload to this peer if we unchoked it</source>
+        <translation>Invieremmo a questo peer se lo sbloccassimo (unchoke)</translation>
+    </message>
+    <message>
+        <location line="+1"/>
+        <source>Peer has unchoked us, but we&apos;re not interested</source>
+        <translation>Il peer ci ha sbloccati (unchoke), ma non siamo interessati</translation>
+    </message>
+    <message>
+        <location line="+1"/>
+        <source>We unchoked this peer, but they&apos;re not interested</source>
+        <translation>Abbiamo sbloccato (unchoke) questo peer, ma non è interessato</translation>
+    </message>
+    <message>
+        <location line="+1"/>
+        <location line="+102"/>
+        <location line="+141"/>
+        <source>Encrypted connection</source>
+        <translation>Connessione cifrata</translation>
+    </message>
+    <message>
+        <location line="-242"/>
+        <source>Connected through a holepunch</source>
+        <translation>Connesso tramite hole punching</translation>
+    </message>
+    <message>
+        <location line="+1"/>
+        <source>Peer was found through DHT</source>
+        <translation>Peer trovato tramite DHT</translation>
+    </message>
+    <message>
+        <location line="+1"/>
+        <source>Peer was found through Peer Exchange (PEX)</source>
+        <translation>Peer trovato tramite scambio peer (PEX)</translation>
+    </message>
+    <message>
+        <location line="+1"/>
+        <source>Peer is an incoming connection</source>
+        <translation>Il peer è una connessione in entrata</translation>
+    </message>
+    <message>
+        <location line="+40"/>
+        <location line="+95"/>
+        <source>Select a torrent to see its peers, trackers and files.</source>
+        <translation>Seleziona un torrent per vederne peer, tracker e file.</translation>
+    </message>
+    <message>
+        <location line="-40"/>
+        <source>Up</source>
+        <translation>Upload</translation>
+    </message>
+    <message>
+        <location line="+0"/>
+        <source>Down</source>
+        <translation>Download</translation>
+    </message>
+    <message>
+        <location line="+0"/>
+        <source>%</source>
+        <translation>%</translation>
+    </message>
+    <message>
+        <location line="+0"/>
+        <location line="+53"/>
+        <source>Status</source>
+        <translation>Stato</translation>
+    </message>
+    <message>
+        <location line="-53"/>
+        <source>Address</source>
+        <translation>Indirizzo</translation>
+    </message>
+    <message>
+        <location line="+1"/>
+        <source>Client</source>
+        <translation>Client</translation>
+    </message>
+    <message>
+        <location line="+0"/>
+        <location line="+53"/>
+        <source>Downloaded</source>
+        <translation>Scaricato</translation>
+    </message>
+    <message>
+        <location line="-53"/>
+        <source>Uploaded</source>
+        <translation>Inviato</translation>
+    </message>
+    <message>
+        <location line="+0"/>
+        <source>Source</source>
+        <translation>Fonte</translation>
+    </message>
+    <message>
+        <location line="+13"/>
+        <location line="+40"/>
+        <source>Peers</source>
+        <translation>Peer</translation>
+    </message>
+    <message>
+        <location line="-38"/>
+        <source>Trackers</source>
+        <translation>Tracker</translation>
+    </message>
+    <message>
+        <location line="+5"/>
+        <source>Name</source>
+        <translation>Nome</translation>
+    </message>
+    <message>
+        <location line="+0"/>
+        <source>Size</source>
+        <translation>Dimensione</translation>
+    </message>
+    <message>
+        <location line="+0"/>
+        <source>Progress</source>
+        <translation>Progresso</translation>
+    </message>
+    <message>
+        <location line="+0"/>
+        <location line="+348"/>
+        <source>Download</source>
+        <translation>Download</translation>
+    </message>
+    <message>
+        <location line="-348"/>
+        <location line="+339"/>
+        <source>Priority</source>
+        <translation>Priorità</translation>
+    </message>
+    <message>
+        <location line="-328"/>
+        <source>Files</source>
+        <translation>File</translation>
+    </message>
+    <message>
+        <location line="+21"/>
+        <source>URL</source>
+        <translation>URL</translation>
+    </message>
+    <message>
+        <location line="+0"/>
+        <source>Tier</source>
+        <translation>Livello</translation>
+    </message>
+    <message>
+        <location line="+0"/>
+        <source>Next Announce</source>
+        <translation>Prossimo annuncio</translation>
+    </message>
+    <message>
+        <location line="+1"/>
+        <source>Seeds</source>
+        <translation>Seed</translation>
+    </message>
+    <message>
+        <location line="+26"/>
+        <source>Add…</source>
+        <translation>Aggiungi…</translation>
+    </message>
+    <message>
+        <location line="+2"/>
+        <source>Remove</source>
+        <translation>Rimuovi</translation>
+    </message>
+    <message>
+        <location line="+3"/>
+        <source>Reannounce</source>
+        <translation>Riannuncia</translation>
+    </message>
+    <message>
+        <location line="+3"/>
+        <source>Show backup trackers</source>
+        <translation>Mostra tracker di riserva</translation>
+    </message>
+    <message>
+        <location line="+18"/>
+        <source>This torrent is no longer in the list.</source>
+        <translation>Questo torrent non è più nella lista.</translation>
+    </message>
+    <message>
+        <location line="+1"/>
+        <source>BitTorrent is not running.</source>
+        <translation>BitTorrent non è in esecuzione.</translation>
+    </message>
+    <message>
+        <location line="+51"/>
+        <source>Peers (%1)</source>
+        <translation>Peer (%1)</translation>
+    </message>
+    <message>
+        <location line="+28"/>
+        <source>Announcing…</source>
+        <translation>Annuncio in corso…</translation>
+    </message>
+    <message>
+        <location line="+2"/>
+        <source>Error: %1</source>
+        <translation>Errore: %1</translation>
+    </message>
+    <message>
+        <location line="+3"/>
+        <source>Working</source>
+        <translation>Funzionante</translation>
+    </message>
+    <message>
+        <location line="+0"/>
+        <source>Working — %1</source>
+        <translation>Funzionante — %1</translation>
+    </message>
+    <message>
+        <location line="+3"/>
+        <source>Not contacted yet</source>
+        <translation>Non ancora contattato</translation>
+    </message>
+    <message>
+        <location line="+17"/>
+        <source>Trackers (%1)</source>
+        <translation>Tracker (%1)</translation>
+    </message>
+    <message>
+        <location line="+97"/>
+        <source>Files (%1)</source>
+        <translation>File (%1)</translation>
+    </message>
+    <message>
+        <location line="+63"/>
+        <source>Do Not Download</source>
+        <translation>Non scaricare</translation>
+    </message>
+    <message>
+        <location line="+3"/>
+        <source>Expand All</source>
+        <translation>Espandi tutto</translation>
+    </message>
+    <message>
+        <location line="+1"/>
+        <source>Collapse All</source>
+        <translation>Comprimi tutto</translation>
+    </message>
+    <message>
+        <location line="+42"/>
+        <source>Could not change the file priorities.</source>
+        <translation>Impossibile modificare le priorità dei file.</translation>
+    </message>
+    <message>
+        <location line="+12"/>
+        <source>Add Trackers</source>
+        <translation>Aggiungi tracker</translation>
+    </message>
+    <message>
+        <location line="+0"/>
+        <source>Tracker URLs, one per line:</source>
+        <translation>URL dei tracker, uno per riga:</translation>
+    </message>
+    <message>
+        <location line="+41"/>
+        <source>Could not change the trackers.</source>
+        <translation>Impossibile modificare i tracker.</translation>
+    </message>
+</context>
+<context>
     <name>eMule::TorrentPanel</name>
     <message>
-        <location filename="../src/gui/panels/TorrentPanel.cpp" line="+105"/>
+        <location filename="../src/gui/panels/TorrentPanel.cpp" line="+117"/>
         <source>Torrent download completed: %1</source>
         <translation>Download torrent completato: %1</translation>
     </message>
@@ -14802,12 +15524,12 @@ Facendo di nuovo clic su &quot;Ripristina statistiche&quot; verranno ricaricate 
         <location line="+13"/>
         <location line="+15"/>
         <location line="+11"/>
-        <location line="+388"/>
+        <location line="+518"/>
         <source>Not connected to the eMule core.</source>
         <translation>Non connesso al core di eMule.</translation>
     </message>
     <message>
-        <location line="-438"/>
+        <location line="-568"/>
         <source>Cannot read %1.</source>
         <translation>Impossibile leggere %1.</translation>
     </message>
@@ -14828,7 +15550,7 @@ Facendo di nuovo clic su &quot;Ripristina statistiche&quot; verranno ricaricate 
         <translation>File torrent (*.torrent);;Tutti i file (*)</translation>
     </message>
     <message>
-        <location line="+53"/>
+        <location line="+70"/>
         <source>Add Torrent…</source>
         <translation>Aggiungi torrent…</translation>
     </message>
@@ -14878,12 +15600,12 @@ Facendo di nuovo clic su &quot;Ripristina statistiche&quot; verranno ricaricate 
         <translation>Copia link magnet</translation>
     </message>
     <message>
-        <location line="+63"/>
+        <location line="+78"/>
         <source>BitTorrent Options…</source>
         <translation>Opzioni BitTorrent…</translation>
     </message>
     <message>
-        <location line="+108"/>
+        <location line="+110"/>
         <source>BitTorrent: %1</source>
         <translation>BitTorrent: %1</translation>
     </message>
@@ -14929,7 +15651,7 @@ Facendo di nuovo clic su &quot;Ripristina statistiche&quot; verranno ricaricate 
         </translation>
     </message>
     <message>
-        <location line="+67"/>
+        <location line="+163"/>
         <source>Asking the core for the BitTorrent state…</source>
         <translation>Richiesta dello stato BitTorrent al core…</translation>
     </message>
@@ -14965,6 +15687,11 @@ Facendo di nuovo clic su &quot;Ripristina statistiche&quot; verranno ricaricate 
         <location line="+2"/>
         <source>No torrents. Use &quot;Add Torrent…&quot; or &quot;Add Magnet Link…&quot; to start one.</source>
         <translation>Nessun torrent. Usa &quot;Aggiungi torrent…&quot; o &quot;Aggiungi link magnet…&quot; per avviarne uno.</translation>
+    </message>
+    <message>
+        <location line="+2"/>
+        <source>No torrents match this filter.</source>
+        <translation>Nessun torrent corrisponde a questo filtro.</translation>
     </message>
 </context>
 <context>
@@ -16283,14 +17010,14 @@ Per questa release è impostata una password.</translation>
         <translation>Indirizzo</translation>
     </message>
     <message>
-        <location filename="../src/core/webserver/WebServer.cpp" line="-3396"/>
-        <location line="+3285"/>
+        <location filename="../src/core/webserver/WebServer.cpp" line="-3394"/>
+        <location line="+3283"/>
         <location line="+49"/>
         <source>Session expired — log in again</source>
         <translation>Sessione scaduta — accedi di nuovo</translation>
     </message>
     <message>
-        <location line="-3330"/>
+        <location line="-3328"/>
         <source>Guests cannot add downloads</source>
         <translation>Gli ospiti non possono aggiungere download</translation>
     </message>
@@ -16428,18 +17155,18 @@ Per questa release è impostata una password.</translation>
     </message>
     <message>
         <location line="+4"/>
-        <location line="+29"/>
+        <location line="+27"/>
         <source>Saved. The new ports are used after a restart.</source>
         <translation>Salvato. Le nuove porte verranno usate dopo un riavvio.</translation>
     </message>
     <message>
-        <location line="-25"/>
+        <location line="-23"/>
         <source>Saved, but a new port is in use. Still listening on TCP %1, UDP %2.</source>
         <translation>Salvato, ma una nuova porta è già in uso. Ancora in ascolto su TCP %1, UDP %2.</translation>
     </message>
     <message>
         <location line="+4"/>
-        <location line="+21"/>
+        <location line="+19"/>
         <source>Saved.</source>
         <translation>Salvato.</translation>
     </message>
@@ -17127,7 +17854,7 @@ La rete inattiva cede la sua quota all&apos;altra.</translation>
         <translation>File NZB:</translation>
     </message>
     <message>
-        <location filename="../src/core/webserver/WebServer.cpp" line="-1214"/>
+        <location filename="../src/core/webserver/WebServer.cpp" line="-1212"/>
         <location filename="../src/core/webserver/WebTemplateStrings.h" line="+1"/>
         <source>Name</source>
         <translation>Nome</translation>
@@ -17529,7 +18256,7 @@ La rete inattiva cede la sua quota all&apos;altra.</translation>
         <translation>Velocità di upload</translation>
     </message>
     <message>
-        <location filename="../src/core/webserver/WebServer.cpp" line="+1211"/>
+        <location filename="../src/core/webserver/WebServer.cpp" line="+1209"/>
         <location filename="../src/core/webserver/WebTemplateStrings.h" line="+1"/>
         <source>Uploads</source>
         <translation>Upload</translation>

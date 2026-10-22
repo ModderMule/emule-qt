@@ -2981,6 +2981,8 @@ field, query parameter or action name is a `400`.
 | `POST /api/v1/usenet/<id>/pause` · `resume` · `check` | per-release action; resume overrules a check-stop (`ResumeIntent::User`) | `200 row` · `404` · `409 {error}` when the queue refuses |
 | `PATCH /api/v1/usenet/<id>` | any of `{priority, category, password, skipFiles, unskipFiles}` (the last two are NZB file-index arrays, widened to archive sets); all validated before any applies | `200 row` · `400` · `404` · `409` when the queue refuses a skip |
 | `DELETE /api/v1/usenet/<id>?confirm=true[&deleteFiles=true]` | remove; refused without `confirm=true` | `200 {removed, deletedFiles}` · `400` · `404` |
+| `POST /api/v1/usenet/clear-completed` | drop every Complete release from the list, files kept | `200 {removed}` |
+| `POST /api/v1/usenet/inspect[?name=]` | the `.nzb` as the body: its files (`index`, `name`, `size`, `isPar2`, `setKey`), nothing queued; for a partial download add paused, `PATCH skipFiles`, resume | `200 {name, files}` · `400` |
 | `POST /api/v1/usenet/categories/<n>/pause` · `resume` · `cancel` | the category, 0 being all; resume is `Bulk` | `200 {affected}` · `400` |
 
 An add takes one of three shapes:

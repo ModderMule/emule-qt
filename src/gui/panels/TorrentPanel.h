@@ -15,10 +15,11 @@
 #include "ipc/IpcMessage.h"
 
 class QAction;
+class QButtonGroup;
 class QLabel;
 class QMimeData;
 class QPushButton;
-class QSortFilterProxyModel;
+class QSplitter;
 class QTreeView;
 
 namespace eMule {
@@ -26,7 +27,10 @@ namespace eMule {
 class IpcClient;
 class PanelPoller;
 class TorrentDetailsDialog;
+class TorrentFilterProxy;
 class TorrentListModel;
+class TorrentListsPane;
+struct DetailWalker;
 struct TorrentRow;
 
 class TorrentPanel : public QWidget {
@@ -61,10 +65,16 @@ public:
     /// "Add Magnet Link…", shared with the Tools menu.
     [[nodiscard]] QAction* addMagnetAction() const { return m_addMagnetAction; }
 
+    /// Select the first torrent once the list has rows and show @p tab: 0-2 the pane's
+    /// Peers/Trackers/Files, 3-5 the inspector's Info/Activity/Options. For --subtab.
+    void switchToSubTab(int tab);
+
     /// The engine as last reported by GetBtStatus / PushBtStatus.
     [[nodiscard]] bool engineRunning() const;
 
     [[nodiscard]] TorrentListModel* model() const { return m_model; }
+    [[nodiscard]] TorrentFilterProxy* filterProxy() const { return m_proxy; }
+    [[nodiscard]] TorrentListsPane* listsPane() const { return m_pane; }
 
 signals:
     /// Open Options at the BitTorrent page.
@@ -77,6 +87,11 @@ protected:
 
 private:
     void setupUi();
+    QWidget* createFilterBar();
+    void setFilter(int filter);
+    void updateFilterCounts();
+    void onSelectionChanged();
+    [[nodiscard]] DetailWalker makeWalker(const QString& id);
     void refresh();
     void requestStatus();
     void applyStatus(const QCborMap& status);
@@ -101,7 +116,10 @@ private:
 
     QTreeView* m_view = nullptr;
     TorrentListModel* m_model = nullptr;
-    QSortFilterProxyModel* m_proxy = nullptr;
+    TorrentFilterProxy* m_proxy = nullptr;
+    QButtonGroup* m_filterGroup = nullptr;
+    QSplitter* m_splitter = nullptr;
+    TorrentListsPane* m_pane = nullptr;
 
     QLabel* m_summary = nullptr;
     QPushButton* m_optionsButton = nullptr;
@@ -121,6 +139,8 @@ private:
     bool m_statusKnown = false;
 
     QPointer<TorrentDetailsDialog> m_detailsDialog;
+    /// switchToSubTab() waiting for the first rows; -1 = none
+    int m_pendingSubTab = -1;
 };
 
 } // namespace eMule

@@ -23,6 +23,7 @@
 #include <QPointer>
 #include <QShortcut>
 #include <QStyle>
+#include <QTimer>
 #include <QToolButton>
 
 #include <memory>
@@ -302,6 +303,29 @@ void showClientDetails(QWidget* parent, IpcClient* ipc, const QString& clientHas
                 dlg->setWalker(walker);
                 connectDetailNavigation(dlg, ipc, Ipc::IpcMsgType::GetClientDetails);
             }
+
+            // Live values while open (MFC fills the sheet once). One request in flight at
+            // a time, and a reply for a client the walker has left is dropped.
+            QPointer<DetailDialog> dlgPtr(dlg);
+            auto* timer = new QTimer(dlg);
+            auto pending = std::make_shared<bool>(false);
+            QObject::connect(timer, &QTimer::timeout, dlg, [ipc, dlgPtr, pending] {
+                if (!dlgPtr || *pending || !ipc->isConnected())
+                    return;
+                const QString key = dlgPtr->subjectKey();
+                if (key.isEmpty())
+                    return;
+                *pending = true;
+                Ipc::IpcMessage req(Ipc::IpcMsgType::GetClientDetails);
+                req.append(key);
+                ipc->sendRequest(std::move(req), [dlgPtr, pending, key](const Ipc::IpcMessage& r) {
+                    *pending = false;
+                    if (dlgPtr && dlgPtr->subjectKey() == key && r.fieldBool(0))
+                        dlgPtr->applyDetails(r.field(1).toMap());
+                });
+            });
+            timer->start(1000);
+
             dlg->show();
         });
 }

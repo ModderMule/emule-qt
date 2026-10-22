@@ -220,6 +220,9 @@
     <ClCompile Include="utils\TorrentAdd.cpp" Condition="'$(EmuleBitTorrent)'=='true'" />
     <ClCompile Include="controls\TorrentListModel.cpp" Condition="'$(EmuleBitTorrent)'=='true'" />
     <ClCompile Include="controls\TorrentProgressDelegate.cpp" Condition="'$(EmuleBitTorrent)'=='true'" />
+    <ClCompile Include="controls\TorrentFilterProxy.cpp" Condition="'$(EmuleBitTorrent)'=='true'" />
+    <ClCompile Include="controls\TorrentListsPane.cpp" Condition="'$(EmuleBitTorrent)'=='true'" />
+    <ClCompile Include="controls\TorrentPieceGrid.cpp" Condition="'$(EmuleBitTorrent)'=='true'" />
     <ClCompile Include="dialogs\AddTorrentDialog.cpp" Condition="'$(EmuleBitTorrent)'=='true'" />
     <ClCompile Include="dialogs\TorrentDetailsDialog.cpp" Condition="'$(EmuleBitTorrent)'=='true'" />
     <ClCompile Include="panels\TorrentPanel.cpp" Condition="'$(EmuleBitTorrent)'=='true'" />
@@ -444,6 +447,9 @@
     <QtMoc Include="dialogs\PasteTextDialog.h" />
     <QtMoc Include="controls\TorrentListModel.h" Condition="'$(EmuleBitTorrent)'=='true'" />
     <QtMoc Include="controls\TorrentProgressDelegate.h" Condition="'$(EmuleBitTorrent)'=='true'" />
+    <QtMoc Include="controls\TorrentFilterProxy.h" Condition="'$(EmuleBitTorrent)'=='true'" />
+    <QtMoc Include="controls\TorrentListsPane.h" Condition="'$(EmuleBitTorrent)'=='true'" />
+    <QtMoc Include="controls\TorrentPieceGrid.h" Condition="'$(EmuleBitTorrent)'=='true'" />
     <QtMoc Include="dialogs\AddTorrentDialog.h" Condition="'$(EmuleBitTorrent)'=='true'" />
     <QtMoc Include="dialogs\TorrentDetailsDialog.h" Condition="'$(EmuleBitTorrent)'=='true'" />
     <QtMoc Include="panels\TorrentPanel.h" Condition="'$(EmuleBitTorrent)'=='true'" />

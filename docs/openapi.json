@@ -351,7 +351,7 @@
     "info": {
         "description": "Control and observe an eMuleQt core: eD2K and Kad file sharing plus Usenet downloads.\n\n**Authentication.** Send the API key in the `X-Api-Key` header (or as `Authorization: Bearer <key>`). `/health`, `/openapi.json` and `/docs` need none. The stream routes take `?token=` instead.\n\n**Errors.** Every failure is `{\"error\": {\"code\": <HTTP status>, \"message\": \"...\"}}`. An unknown field or query parameter is a 400, never silently ignored. 409 means the request is fine but the core is in the wrong state for it; 503 that a part of the core is not running.\n\n**Lists.** Answer `{items, total, offset, limit}`; page with `?limit=` (1-1000, default 100) and `?offset=`.\n\n**Destructive calls** need `\"confirm\": true` (in the body, or `?confirm=true` on DELETE).\n\n**Identifiers.** A file is named by its eD2K hash, 32 hexadecimal digits. Sizes are bytes. A category is an index into `GET /categories`.\n\n**Terms.** *HighID*: reachable from outside, the normal state. *LowID* / *firewalled*: not reachable, so fewer sources and slower transfers — check port forwarding. *Kad*: the serverless network; it works alongside the eD2K servers. *Source*: a peer that has (part of) a file.\n\n**Typical flow.** `GET /snapshot` → `POST /search` → `GET /search/{id}/results` until `state` is `finished` → `POST /search/{id}/download` → watch `GET /downloads/{hash}` or the `/events` stream.\n\n**Changes.** Every response carries `X-Contract-Version`. `GET /events` pushes changes so clients need not poll.",
         "title": "eMuleQt REST API",
-        "version": "0.6.27",
+        "version": "0.6.28",
         "x-contract-version": 1
     },
     "openapi": "3.1.0",
@@ -2961,7 +2961,7 @@
                 "x-mcp-tool": "preferences_get"
             },
             "patch": {
-                "description": "A JSON object of key and new value. Every key is checked against the schema first; one bad value and nothing is changed. Applied at once unless the schema says restartRequired. The reply holds the new values plus \"listenPorts\": {result, tcpPort, udpPort}, where result is unchanged, applied, restartRequired (connected: the old ports stay until a restart) or bindFailed (port in use: the old ports stay), and the ports are the ones listening now. \"network\": {result} says what a bindAddress change did: unchanged, reopened (every connection closed, the networks reconnect on the new interface; no restart needed) or waiting (interface missing: nothing connects until it appears).",
+                "description": "A JSON object of key and new value. Every key is checked against the schema first; one bad value and nothing is changed. Applied at once unless the schema says restartRequired. The reply holds the new values plus \"listenPorts\": {result, tcpPort, udpPort}, where result is unchanged, applied, restartRequired (connected: the old ports stay until a restart) or bindFailed (port in use: the old ports stay), and the ports are the ones listening now. \"network\": {result} says what a bindAddress change did: unchanged, reopened (every connection closed, the networks reconnect on the new interface; no restart needed) or waiting (interface missing: nothing connects until it appears). \"downloadLimit\": {configuredKb, effectiveKb, ratioCapped, hint?} is the download limit in force (KB/s, 0 = unlimited): with an upload limit under 20 KB/s the download is capped at 3x (under 4), 4x (up to 12) or 5x the upload; \"hint\" explains it when that cap applies.",
                 "operationId": "preferences.patch",
                 "requestBody": {
                     "content": {
@@ -4729,6 +4729,105 @@
                     }
                 },
                 "summary": "Pause, resume or cancel every release of a category",
+                "tags": [
+                    "Usenet"
+                ]
+            }
+        },
+        "/api/v1/usenet/clear-completed": {
+            "post": {
+                "description": "Only the list entries go; the finished files stay where they are.",
+                "operationId": "usenet.clearCompleted",
+                "responses": {
+                    "200": {
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "type": "object"
+                                }
+                            }
+                        },
+                        "description": "Success"
+                    },
+                    "400": {
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/Error"
+                                }
+                            }
+                        },
+                        "description": "A parameter is missing, unknown or out of range."
+                    },
+                    "401": {
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/Error"
+                                }
+                            }
+                        },
+                        "description": "Missing or wrong API key."
+                    }
+                },
+                "summary": "Remove completed Usenet downloads from the list",
+                "tags": [
+                    "Usenet"
+                ],
+                "x-mcp-tool": "usenet_clear_completed"
+            }
+        },
+        "/api/v1/usenet/inspect": {
+            "post": {
+                "description": "Post the .nzb as the request body. Each file has index, name, size, isPar2 and setKey (the volumes of one archive set share it). To download only some, add the NZB paused, PATCH skipFiles with the indices, then resume.",
+                "operationId": "usenet.inspect",
+                "parameters": [
+                    {
+                        "description": "File name of the NZB; default: taken from it.",
+                        "in": "query",
+                        "name": "name",
+                        "required": false,
+                        "schema": {
+                            "description": "File name of the NZB; default: taken from it.",
+                            "maxLength": 255,
+                            "minLength": 0,
+                            "type": "string"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "type": "object"
+                                }
+                            }
+                        },
+                        "description": "Success"
+                    },
+                    "400": {
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/Error"
+                                }
+                            }
+                        },
+                        "description": "A parameter is missing, unknown or out of range."
+                    },
+                    "401": {
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/Error"
+                                }
+                            }
+                        },
+                        "description": "Missing or wrong API key."
+                    }
+                },
+                "summary": "List the files of an .nzb without adding it",
                 "tags": [
                     "Usenet"
                 ]

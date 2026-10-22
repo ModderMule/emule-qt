@@ -678,7 +678,8 @@ enum class IpcMsgType : int {
     ///         failedBytes, error,
     ///         hashV1, hashV2, paused, hasMetadata, private, addedAt, completedAt,
     ///         seedingSeconds, queuePosition, pieceMap, pieces, pieceLength,
-    ///         numFiles, eta}]
+    ///         numFiles, eta, comment, creator, createdAt, lastActivity,
+    ///         activeSeconds, haveBytes, totalSize, availability}]
     GetTorrents             = 800,
     /// [data: bytes, savePath: string (empty = BT download dir), paused: bool]
     /// -> {outcome, id, message}; outcome is BtAddOutcome (0 added, 1 duplicate,
@@ -694,8 +695,13 @@ enum class IpcMsgType : int {
     ResumeTorrent           = 805,
     /// [id: string] -> {files: [{index, path, size, done, priority, pad}],
     ///                  peers: [{address, client, progress, rateDown, rateUp,
-    ///                           downloaded, uploaded, seed, encrypted, utp, source}],
-    ///                  trackers: [{url, tier, working, message, seeds, peers}]}
+    ///                           downloaded, uploaded, seed, encrypted, utp, source,
+    ///                           flags}],
+    ///                  trackers: [{url, tier, working, message, seeds, peers,
+    ///                              downloaded, nextAnnounce, updating, fails,
+    ///                              hasError}],
+    ///                  availabilityMap: bytes, options: {see SetTorrentOptions}}
+    /// flags: Transmission's peer letters; nextAnnounce: seconds, -1 = none
     GetTorrentDetails       = 806,
     /// [id: string, priorities: [int 0..7, one per file]] -> bool
     SetTorrentFilePriorities = 807,
@@ -703,6 +709,15 @@ enum class IpcMsgType : int {
     RecheckTorrent          = 808,
     /// [id: string] -> bool
     ReannounceTorrent       = 809,
+    /// [id: string, {downloadLimitKb, uploadLimitKb, maxPeers, ratioMode,
+    ///  ratioPercent, seedTimeMode, seedTimeMinutes}] -> bool
+    /// Limits in KiB/s, 0 = none; maxPeers 0 = default; modes are BtLimitMode
+    /// (0 global, 1 unlimited, 2 custom)
+    SetTorrentOptions       = 810,
+    /// [id: string, urls: [string]] -> bool
+    AddTorrentTrackers      = 811,
+    /// [id: string, urls: [string]] -> bool
+    RemoveTorrentTrackers   = 812,
     /// [] -> {running, listenPort, listening, dhtNodes, torrents, rateDown, rateUp}
     GetBtStatus             = 818,
 

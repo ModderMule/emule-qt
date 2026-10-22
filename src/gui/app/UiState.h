@@ -54,6 +54,8 @@ public:
     void bindMessagesSplitter(QSplitter* splitter);
     void bindIrcSplitter(QSplitter* splitter);
     void bindStatsSplitter(QSplitter* splitter);
+    /// Torrents tab: the list over the Peers/Trackers/Files pane.
+    void bindTorrentSplitter(QSplitter* splitter);
 
     /// The vertical splitter stacking the three statistics graphs. One QSplitter with
     /// three children holds both dividers, so this covers MFC's SplitterbarPositionStat_HL
@@ -229,6 +231,24 @@ public:
         scheduleSave();
     }
 
+    /// Torrents tab: the state filter (TorrentFilterProxy::Filter) and the pane's tab.
+    [[nodiscard]] int torrentFilter() const { return m_torrentFilter; }
+    void setTorrentFilter(int filter)
+    {
+        if (m_torrentFilter == filter)
+            return;
+        m_torrentFilter = filter;
+        scheduleSave();
+    }
+    [[nodiscard]] int torrentPaneTab() const { return m_torrentPaneTab; }
+    void setTorrentPaneTab(int tab)
+    {
+        if (m_torrentPaneTab == tab)
+            return;
+        m_torrentPaneTab = tab;
+        scheduleSave();
+    }
+
     /// Search list: show what a server found on other networks.
     [[nodiscard]] bool searchShowUsenet() const { return m_searchShowUsenet; }
     [[nodiscard]] bool searchShowKad() const { return m_searchShowKad; }
@@ -322,6 +342,9 @@ private:
     QList<int> m_messagesSplitSizes;
     QList<int> m_ircSplitSizes;
     QList<int> m_statsSplitSizes;
+    QList<int> m_torrentSplitSizes;
+    int m_torrentFilter = 0;
+    int m_torrentPaneTab = 0;
     QList<int> m_statsGraphSplitSizes;
     int  m_windowWidth     = 0;
     int  m_windowHeight    = 0;

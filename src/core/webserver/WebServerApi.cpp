@@ -118,6 +118,28 @@ using L = QLatin1StringView;
     return s("unchanged");
 }
 
+/// Download limit after the upload ratio (DownloadQueue::ratioLimitedDownload), with a
+/// hint when the ratio is what holds it down. KB/s, 0 = unlimited.
+[[nodiscard]] QJsonObject downloadLimitJson(const Preferences& prefs)
+{
+    const uint32 upKb = prefs.maxUploadLimit() == UNLIMITED ? 0 : prefs.maxUploadLimit();
+    const uint64 downKb = prefs.maxDownload();
+    const uint64 capBytes = DownloadQueue::ratioLimitedDownload(0, uint64{upKb} * 1024);
+    const bool capped = capBytes > 0 && (downKb == 0 || capBytes < downKb * 1024);
+    const uint64 effectiveKb = capped ? capBytes / 1024 : downKb;
+    QJsonObject o{{s("configuredKb"), static_cast<qint64>(downKb)},
+                  {s("effectiveKb"), static_cast<qint64>(effectiveKb)},
+                  {s("ratioCapped"), capped}};
+    if (capped) {
+        o.insert(s("hint"),
+                 s("Download limited to %1 KB/s by the upload limit of %2 KB/s: below 20 KB/s "
+                   "upload the download may be at most %3x the upload (3x under 4 KB/s, 4x up "
+                   "to 12 KB/s, 5x above). Set the upload limit to 20 KB/s or more to lift it.")
+                     .arg(effectiveKb).arg(upKb).arg(capBytes / (uint64{upKb} * 1024)));
+    }
+    return o;
+}
+
 /// debug < info < warning < error < fatal — QtMsgType is not in that order.
 [[nodiscard]] int severityRank(const QString& name)
 {
@@ -204,6 +226,9 @@ void WebServer::buildApiTable()
                     {s("webUi"), m_config.webUiEnabled},
                     {s("events"), m_eventHub != nullptr},
                     {s("usenet"), usenetAvailable()},
+#ifdef EMULE_HAVE_BITTORRENT
+                    {s("torrents"), m_torrentBackend && m_torrentBackend->running()},
+#endif
                 }},
                 {s("operations"), ids},
             });
@@ -1219,7 +1244,11 @@ void WebServer::buildApiTable()
                             "\"network\": {result} says what a bindAddress change did: "
                             "unchanged, reopened (every connection closed, the networks "
                             "reconnect on the new interface; no restart needed) or waiting "
-                            "(interface missing: nothing connects until it appears).");
+                            "(interface missing: nothing connects until it appears). "
+                            "\"downloadLimit\": {configuredKb, effectiveKb, ratioCapped, hint?} "
+                            "is the download limit in force (KB/s, 0 = unlimited): with an upload "
+                            "limit under 20 KB/s the download is capped at 3x (under 4), 4x (up "
+                            "to 12) or 5x the upload; \"hint\" explains it when that cap applies.");
         op.flags = FreeBody;
         op.mcpTool = s("preferences_set");
         op.handler = [this](const Call& c) {
@@ -1241,12 +1270,14 @@ void WebServer::buildApiTable()
                                      {s("udpPort"), report.udpPort}});
             reply.insert(s("network"),
                          QJsonObject{{s("result"), bindApplyResultName(report.network)}});
+            reply.insert(s("downloadLimit"), downloadLimitJson(*m_preferences));
             return ok(reply);
         };
         add(op);
     }
 
     addUsenetOperations();
+    addTorrentOperations();
 
     // --- Streams (token in the query, not the API key; routed outside the table) ---
     {
@@ -1283,6 +1314,42 @@ void WebServer::addUsenetOperations()
                             "Usenet queue totals");
         op.flags = ReadOnly;
         op.handler = [this](const Call&) { return toResult(handleRestUsenetStats()); };
+        add(op);
+    }
+    {
+        Operation op = make("usenet.clearCompleted", Method::Post, "/api/v1/usenet/clear-completed",
+                            "Usenet", "Remove completed Usenet downloads from the list",
+                            "Only the list entries go; the finished files stay where they are.");
+        op.mcpTool = s("usenet_clear_completed");
+        op.handler = [this](const Call&) {
+            if (!usenetAvailable())
+                return unavailable("Usenet engine");
+            return ok(QJsonObject{{s("removed"), m_usenetBackend->clearCompleted()}});
+        };
+        add(op);
+    }
+    {
+        Operation op = make("usenet.inspect", Method::Post, "/api/v1/usenet/inspect", "Usenet",
+                            "List the files of an .nzb without adding it",
+                            "Post the .nzb as the request body. Each file has index, name, size, "
+                            "isPar2 and setKey (the volumes of one archive set share it). To "
+                            "download only some, add the NZB paused, PATCH skipFiles with the "
+                            "indices, then resume.");
+        op.flags = ReadOnly | RawBody;
+        op.params = {queryStr(s("name"), s("File name of the NZB; default: taken from it.")).range(0, 255)};
+        op.handler = [this](const Call& c) {
+            if (!usenetAvailable())
+                return unavailable("Usenet engine");
+            if (!c.request || c.request->body().isEmpty())
+                return error(400, s("Post the .nzb as the request body"));
+            // RawBody: the query string is ours to read
+            const QString name = QUrlQuery(c.request->query()).queryItemValue(s("name"), QUrl::FullyDecoded);
+            QString why;
+            const QCborMap inspected = m_usenetBackend->inspectNzb(c.request->body(), name, why);
+            if (inspected.isEmpty())
+                return error(400, why.isEmpty() ? s("Not a readable NZB") : why);
+            return ok(inspected.toJsonObject());
+        };
         add(op);
     }
     {

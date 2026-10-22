@@ -21,6 +21,7 @@
 
 #include <QCoreApplication>
 #include <QFile>
+#include <QLockFile>
 #include <QProcess>
 #include <QLoggingCategory>
 #include <QSocketNotifier>
@@ -104,6 +105,26 @@ int main(int argc, char* argv[])
 
     // -- Normal daemon startup ------------------------------------------------
 
+    // One core per profile. The GUI reads this lock to tell our core from another
+    // profile's on the same IPC port (issue #49).
+    QLockFile coreLock(eMule::AppConfig::coreLockPath(configDir));
+    coreLock.setStaleLockTime(0);   // only a dead holder makes it stale, never age
+    bool locked = coreLock.tryLock(2000);
+    if (!locked && coreLock.error() == QLockFile::LockFailedError) {
+        // Our own pid in it: a container's PID 1 again after a restart
+        qint64 holderPid = 0;
+        if (coreLock.getLockInfo(&holderPid, nullptr, nullptr)
+            && holderPid == QCoreApplication::applicationPid()) {
+            coreLock.removeStaleLockFile();
+            locked = coreLock.tryLock(0);
+        }
+    }
+    if (!locked) {
+        eMule::logError(QStringLiteral("Another core is already running with the config at %1")
+                            .arg(configDir));
+        return 1;
+    }
+
     // Seed bundled config data (webserver assets, template, nodes.dat)
     if (const auto seed = eMule::AppConfig::seedBundledData(configDir);
         seed.seeded || seed.refreshed || seed.conflicts || seed.pruned) {
@@ -186,6 +207,8 @@ int main(int argc, char* argv[])
     eMule::WinShutdownHandler::finished();
 
     if (eMule::DaemonApp::restartRequested()) {
+        // The restarted core takes the lock again: same pid, or a new process
+        coreLock.unlock();
         // The first-start hold belongs to the first start only
         QStringList args = QCoreApplication::arguments().mid(1);
         args.removeAll(QStringLiteral("--hold-connect"));

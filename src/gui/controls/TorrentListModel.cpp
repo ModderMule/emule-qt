@@ -130,6 +130,14 @@ TorrentRow torrentRowFromCbor(const QCborMap& m)
     r.pieceLength = i32("pieceLength");
     r.numFiles = i32("numFiles");
     r.eta = i64("eta", -1);
+    r.comment = str("comment");
+    r.creator = str("creator");
+    r.createdAt = i64("createdAt");
+    r.lastActivity = i64("lastActivity");
+    r.activeSeconds = i64("activeSeconds");
+    r.haveBytes = i64("haveBytes");
+    r.totalSize = i64("totalSize");
+    r.availability = m.value(QLatin1StringView("availability")).toDouble(-1);
     if (r.name.isEmpty())
         r.name = r.hashV1.isEmpty() ? r.id : r.hashV1;   // magnet without dn, no metadata yet
     return r;

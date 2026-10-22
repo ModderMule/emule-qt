@@ -92,6 +92,20 @@ struct BtTorrentRow {
     int numFiles = 0;
     /// seconds left, -1 = unknown
     qint64 eta = -1;
+    /// from the .torrent; empty / 0 when absent or no metadata yet
+    QString comment;
+    QString creator;
+    qint64 createdAt = 0;    ///< Unix seconds
+    /// last payload up or down, Unix seconds; 0 = never
+    qint64 lastActivity = 0;
+    /// time spent active (downloading or seeding)
+    qint64 activeSeconds = 0;
+    /// verified bytes of the whole torrent, wanted or not
+    qint64 haveBytes = 0;
+    /// the whole torrent, wanted or not
+    qint64 totalSize = 0;
+    /// copies in the swarm, from the connected peers (distributed_copies); -1 = unknown
+    double availability = -1;
 };
 
 struct BtFileRow {
@@ -118,6 +132,8 @@ struct BtPeerRow {
     bool utp = false;
     /// "tracker", "dht", "pex", "lsd", "resume", "incoming"
     QString source;
+    /// status letters as in Transmission: T O D d U u K ? E h H X I
+    QString flags;
 };
 
 struct BtTrackerRow {
@@ -127,6 +143,38 @@ struct BtTrackerRow {
     QString message;
     int seeds = -1;
     int peers = -1;
+    /// completed downloads from the scrape; -1 = unknown
+    int downloaded = -1;
+    /// seconds until the next announce; -1 = none scheduled
+    qint64 nextAnnounce = -1;
+    /// announcing now
+    bool updating = false;
+    /// failed announces in a row
+    int fails = 0;
+    bool hasError = false;
+};
+
+/// How a per-torrent seed limit applies. Values are IPC: append only.
+enum class BtLimitMode : quint8 {
+    Global = 0,     ///< the BitTorrent options
+    Unlimited = 1,
+    Custom = 2,
+};
+
+/// Per-torrent options. Speeds and peers live in libtorrent's resume data, the seed
+/// limits in BT/torrent-options.json.
+struct BtTorrentOptions {
+    /// KiB/s, 0 = no own limit
+    int downloadLimitKb = 0;
+    int uploadLimitKb = 0;
+    /// 0 = the session default
+    int maxPeers = 0;
+    BtLimitMode ratioMode = BtLimitMode::Global;
+    int ratioPercent = 100;
+    BtLimitMode seedTimeMode = BtLimitMode::Global;
+    int seedTimeMinutes = 0;
+
+    bool operator==(const BtTorrentOptions&) const = default;
 };
 
 /// Outcome of an add. Values are IPC: append only.

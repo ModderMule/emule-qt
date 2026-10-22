@@ -436,6 +436,12 @@ public:
     [[nodiscard]] uint64 transferredUp() const { return m_transferredUp; }
     [[nodiscard]] uint64 transferredDown() const { return m_transferredDown; }
 
+    /// Average rates over the time spent in a slot with this client — transferred
+    /// bytes / time spent Uploading or Downloading, the running slot included
+    /// (MorphXT GetAvUpDatarate / GetAvDownDatarate). 0 below one second.
+    [[nodiscard]] uint32 avgUpDatarate() const;
+    [[nodiscard]] uint32 avgDownDatarate() const;
+
     // -- Chat / message counting --------------------------------------------
 
     [[nodiscard]] uint8 messagesReceived() const { return m_messagesReceived; }
@@ -1197,6 +1203,7 @@ private:
     uint64 m_curQueueSessionPayloadUp = 0;
     uint64 m_addedPayloadQueueSession = 0;
     uint64 m_uploadTime = 0;
+    uint64 m_upTotalTime = 0;      ///< ms in finished Uploading sessions
     uint64 m_lastUpRequest = 0;
     uint32 m_askedCount = 0;
     uint32 m_askedCountDown = 0;
@@ -1217,6 +1224,7 @@ private:
     uint64 m_curSessionPayloadDown = 0;
     uint64 m_lastBlockOffset = UINT64_MAX;
     uint64 m_downStartTime = 0;
+    uint64 m_downTotalTime = 0;    ///< ms in finished Downloading sessions
     uint64 m_lastBlockReceived = 0;
     uint32 m_downAskedCount = 0;
     uint32 m_remoteQueueRank = 0;

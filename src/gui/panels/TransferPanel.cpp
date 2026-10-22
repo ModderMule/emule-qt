@@ -98,7 +98,6 @@ ClientRow parseClient(const QCborMap& m)
     row.transferredUp   = m.value(QStringLiteral("transferredUp")).toInteger();
     row.transferredDown = m.value(QStringLiteral("transferredDown")).toInteger();
     row.sessionUp       = m.value(QStringLiteral("sessionUp")).toInteger();
-    row.queueSessionPayloadUp = m.value(QStringLiteral("queueSessionPayloadUp")).toInteger();
     row.upDatarate      = m.value(QStringLiteral("upDatarate")).toInteger();
     row.sessionDown     = m.value(QStringLiteral("sessionDown")).toInteger();
     row.downDatarate    = m.value(QStringLiteral("datarate")).toInteger();

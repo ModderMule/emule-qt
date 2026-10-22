@@ -10,11 +10,15 @@
 #include "dialogs/OptionsDialog.h"
 #include "panels/KadPanel.h"
 #include "panels/TransferPanel.h"
+#ifdef EMULE_HAVE_BITTORRENT
+#include "panels/TorrentPanel.h"
+#endif
 #include "utils/CommandLine.h"
 #include "utils/Log.h"
 #include "utils/TorrentLinks.h"
 
 #include <QApplication>
+#include <QDialog>
 #include <QDir>
 #include <QFileInfo>
 #include <QEventLoop>
@@ -142,6 +146,10 @@ void CommandLineExec::applyTabArgs(MainWindow& mainWindow) const
             mainWindow.kadPanel()->switchToSubTab(m_subtab);
         else if (m_activeTab == MainWindow::TabTransfers)
             mainWindow.transferPanel()->switchToSubTab(m_subtab);
+#ifdef EMULE_HAVE_BITTORRENT
+        else if (m_activeTab == MainWindow::TabTorrents && mainWindow.torrentPanel())
+            mainWindow.torrentPanel()->switchToSubTab(m_subtab);
+#endif
     }
 
     // After --subtab: the two Transfers panes cannot show the same list, and the top
@@ -186,6 +194,13 @@ void CommandLineExec::setupScreenshotTimer(QApplication& app, MainWindow& mainWi
                 QWidget* target = QApplication::activeModalWidget();
                 if (!target)
                     target = QApplication::activeWindow();
+                // a GUI started from a shell is not frontmost: no active window, so
+                // take a visible modeless dialog over the main window
+                if (!target) {
+                    for (QWidget* w : QApplication::topLevelWidgets())
+                        if (w->isVisible() && qobject_cast<QDialog*>(w))
+                            target = w;
+                }
                 if (!target)
                     target = &mainWindow;
                 target->repaint();

@@ -721,10 +721,19 @@ namespace eMule::Ipc {
         }
         m.insert(QStringLiteral("identification"), QLatin1String(ident));
         m.insert(QStringLiteral("scoreRatio"),      static_cast<double>(c.credits()->scoreRatio(c.userAddress())));
+        // What this peer grants us; eMule 0.48+ uses the new first-chunk formula
+        const bool newFormula = c.clientSoft() == ClientSoftware::eMule
+            && c.clientVersion() >= makeClientVersion(0, 48, 0);
+        m.insert(QStringLiteral("myScoreRatio"),
+                 static_cast<double>(c.credits()->myScoreRatio(c.userAddress(), newFormula)));
     } else {
         m.insert(QStringLiteral("identification"), QStringLiteral("none"));
         m.insert(QStringLiteral("scoreRatio"),      1.0);
+        m.insert(QStringLiteral("myScoreRatio"),    1.0);
     }
+    // Averages over the time spent in a slot, both directions (MorphXT)
+    m.insert(QStringLiteral("avgUpDatarate"),   static_cast<qint64>(c.avgUpDatarate()));
+    m.insert(QStringLiteral("avgDownDatarate"), static_cast<qint64>(c.avgDownDatarate()));
     m.insert(QStringLiteral("hasValidHash"), c.hasValidHash());
     // MFC shows "-" for the queue score of a client that is not in our upload path
     m.insert(QStringLiteral("uploadIdle"), c.uploadState() == UploadState::None);

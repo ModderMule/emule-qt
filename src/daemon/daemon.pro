@@ -72,6 +72,7 @@ SOURCES += \
     DaemonApp.cpp \
     ApiEventFeeder.cpp \
     DaemonApiBackend.cpp \
+    DaemonTorrentWebBackend.cpp \
     DaemonUsenetWebBackend.cpp \
     IpcClientHandler.cpp \
     IpcClientHandlerMeta.cpp \
@@ -89,6 +90,7 @@ HEADERS += \
     DaemonApp.h \
     ApiEventFeeder.h \
     DaemonApiBackend.h \
+    DaemonTorrentWebBackend.h \
     DaemonUsenetWebBackend.h \
     IpcClientHandler.h \
     IpcServer.h \

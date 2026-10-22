@@ -9,6 +9,7 @@
 
 #include "utils/Types.h"
 #include "webserver/ApiRegistry.h"
+#include "webserver/TorrentWebBackend.h"
 #include "webserver/UsenetWebBackend.h"
 
 #include <QFuture>
@@ -192,6 +193,10 @@ public:
     /// shutdown). Optional and not owned: without it those routes answer 503.
     void setApiBackend(ApiBackend* backend) { m_apiBackend = backend; }
 
+    /// The /api/v1/torrents routes; they exist only in a BitTorrent build. Optional
+    /// and not owned: without it they answer 503.
+    void setTorrentBackend(TorrentWebBackend* backend) { m_torrentBackend = backend; }
+
     /// Source of GET /api/v1/events. Optional and not owned; outlives this server.
     void setEventHub(ApiEventHub* hub) { m_eventHub = hub; }
 
@@ -258,6 +263,7 @@ private:
     // REST API, from the operation table (WebServerApi.cpp)
     void buildApiTable();
     void addUsenetOperations();
+    void addTorrentOperations();   // WebServerTorrents.cpp; empty without BitTorrent
     void registerApiRoutes();
     void registerEventRoute();
     void registerDocsRoutes();
@@ -558,6 +564,9 @@ private:
 
     // Usenet queue (injected by DaemonApp; not owned)
     UsenetWebBackend* m_usenetBackend = nullptr;
+
+    // BitTorrent engine (injected by DaemonApp; not owned)
+    TorrentWebBackend* m_torrentBackend = nullptr;
 
     // REST operation table, and its daemon-side half (not owned)
     api::Registry m_api;

@@ -7,6 +7,7 @@
 #include <libtorrent/torrent_info.hpp>
 
 #include <algorithm>
+#include <chrono>
 
 namespace lt = libtorrent;
 
@@ -63,6 +64,50 @@ QString sourceOf(lt::peer_source_flags_t s)
     return {};
 }
 
+/// A libtorrent clock point → Unix seconds; 0 when never set.
+qint64 unixOf(lt::time_point tp)
+{
+    if (tp == lt::time_point{})
+        return 0;
+    const auto ago = std::chrono::duration_cast<std::chrono::seconds>(lt::clock_type::now() - tp).count();
+    const auto now = std::chrono::duration_cast<std::chrono::seconds>(std::chrono::system_clock::now().time_since_epoch()).count();
+    return std::max<qint64>(0, now - ago);
+}
+
+/// Transmission's peer status letters (libtransmission/peer-mgr.cc).
+QString flagsOf(const lt::peer_info& p)
+{
+    QString f;
+    const auto has = [&p](lt::peer_flags_t bit) { return static_cast<bool>(p.flags & bit); };
+    if (has(lt::peer_info::utp_socket))
+        f += QLatin1Char('T');
+    if (has(lt::peer_info::optimistic_unchoke))
+        f += QLatin1Char('O');
+    const bool weInterested = has(lt::peer_info::interesting);
+    const bool weChoked = has(lt::peer_info::choked);
+    const bool theyInterested = has(lt::peer_info::remote_interested);
+    const bool theyChoked = has(lt::peer_info::remote_choked);
+    if (weInterested)
+        f += weChoked ? QLatin1Char('d') : QLatin1Char('D');
+    if (theyInterested)
+        f += theyChoked ? QLatin1Char('u') : QLatin1Char('U');
+    if (!weChoked && !weInterested)
+        f += QLatin1Char('K');
+    if (!theyChoked && !theyInterested)
+        f += QLatin1Char('?');
+    if (has(lt::peer_info::rc4_encrypted) || has(lt::peer_info::plaintext_encrypted))
+        f += QLatin1Char('E');
+    if (has(lt::peer_info::holepunched))
+        f += QLatin1Char('h');
+    if (p.source & lt::peer_info::dht)
+        f += QLatin1Char('H');
+    else if (p.source & lt::peer_info::pex)
+        f += QLatin1Char('X');
+    if (!has(lt::peer_info::outgoing_connection))
+        f += QLatin1Char('I');
+    return f;
+}
+
 } // namespace
 
 QString BtTorrentView::idOf(const lt::info_hash_t& hashes)
@@ -114,7 +159,15 @@ BtTorrentRow BtTorrentView::row(const lt::torrent_status& st)
         r.pieceLength = ti->piece_length();
         r.numFiles = ti->num_files();
         r.isPrivate = ti->priv();
+        r.comment = QString::fromStdString(ti->comment());
+        r.creator = QString::fromStdString(ti->creator());
+        r.createdAt = static_cast<qint64>(ti->creation_date());
     }
+    r.lastActivity = std::max(unixOf(st.last_download), unixOf(st.last_upload));
+    r.activeSeconds = st.active_duration.count();
+    r.haveBytes = st.total_done;
+    r.totalSize = st.total;
+    r.availability = st.has_metadata ? static_cast<double>(st.distributed_copies) : -1.0;
     if (r.rateDown > 0 && r.size > r.done)
         r.eta = (r.size - r.done) / r.rateDown;
     return r;
@@ -151,6 +204,9 @@ QList<BtPeerRow> BtTorrentView::peers(const lt::torrent_handle& h)
     std::vector<lt::peer_info> list;
     h.get_peer_info(list);
     for (const auto& p : list) {
+        // no half-open attempts: the same peers num_peers counts
+        if (p.flags & lt::peer_info::connecting)
+            continue;
         BtPeerRow r;
         const auto ep = p.remote_endpoint();
         const auto addr = ep.address();
@@ -166,6 +222,7 @@ QList<BtPeerRow> BtTorrentView::peers(const lt::torrent_handle& h)
         r.encrypted = static_cast<bool>(p.flags & (lt::peer_info::rc4_encrypted | lt::peer_info::plaintext_encrypted));
         r.utp = static_cast<bool>(p.flags & lt::peer_info::utp_socket);
         r.source = sourceOf(p.source);
+        r.flags = flagsOf(p);
         out.append(r);
     }
     return out;
@@ -174,23 +231,58 @@ QList<BtPeerRow> BtTorrentView::peers(const lt::torrent_handle& h)
 QList<BtTrackerRow> BtTorrentView::trackers(const lt::torrent_handle& h)
 {
     QList<BtTrackerRow> out;
+    const auto now = lt::clock_type::now();
     for (const auto& a : h.trackers()) {
         BtTrackerRow r;
         r.url = QString::fromStdString(a.url);
         r.tier = a.tier;
+        QString error;
+        // one entry per local address and hash: working if any of them works
         for (const auto& ep : a.endpoints) {
             for (const auto& ih : ep.info_hashes) {
                 if (!ih.message.empty() && r.message.isEmpty())
                     r.message = QString::fromStdString(ih.message);
                 if (ih.last_error)
-                    r.message = QString::fromStdString(ih.last_error.message());
+                    error = QString::fromStdString(ih.last_error.message());
                 else if (ih.fails == 0 && !ih.updating && ih.start_sent)
                     r.working = true;
                 r.seeds = std::max(r.seeds, ih.scrape_complete);
                 r.peers = std::max(r.peers, ih.scrape_incomplete);
+                r.downloaded = std::max(r.downloaded, ih.scrape_downloaded);
+                r.updating = r.updating || ih.updating;
+                r.fails = std::max(r.fails, static_cast<int>(ih.fails));
+                if (ih.next_announce > now) {
+                    const qint64 in = std::chrono::duration_cast<std::chrono::seconds>(ih.next_announce - now).count();
+                    r.nextAnnounce = r.nextAnnounce < 0 ? in : std::min(r.nextAnnounce, in);
+                }
             }
         }
+        if (!r.working && !error.isEmpty()) {
+            r.hasError = true;
+            r.message = error;
+        }
         out.append(r);
+    }
+    return out;
+}
+
+QByteArray BtTorrentView::availabilityMap(const lt::torrent_handle& h, int buckets)
+{
+    std::vector<int> avail;
+    h.piece_availability(avail);
+    const int n = static_cast<int>(avail.size());
+    if (n <= 0 || buckets <= 0)
+        return {};
+    const int count = std::min(n, buckets);
+    QByteArray out(count, '\0');
+    for (int b = 0; b < count; ++b) {
+        const int from = static_cast<int>(static_cast<qint64>(b) * n / count);
+        const int to = std::max(from + 1, static_cast<int>(static_cast<qint64>(b + 1) * n / count));
+        // the rarest piece of the bucket
+        int least = avail[static_cast<std::size_t>(from)];
+        for (int i = from + 1; i < to; ++i)
+            least = std::min(least, avail[static_cast<std::size_t>(i)]);
+        out[b] = static_cast<char>(std::clamp(least, 0, 255));
     }
     return out;
 }

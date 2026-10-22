@@ -31,6 +31,9 @@ if(NOT EMULE_BITTORRENT)
         "panels/TorrentPanel"
         "controls/TorrentListModel"
         "controls/TorrentProgressDelegate"
+        "controls/TorrentFilterProxy"
+        "controls/TorrentListsPane"
+        "controls/TorrentPieceGrid"
         "dialogs/AddTorrentDialog"
         "dialogs/TorrentDetailsDialog"
         "utils/TorrentAdd")

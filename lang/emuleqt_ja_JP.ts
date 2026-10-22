@@ -715,7 +715,7 @@ Has comments</source>
         <translation type="vanished">%1 Bytes</translation>
     </message>
     <message>
-        <location filename="../src/gui/dialogs/OptionsDialog.cpp" line="+3117"/>
+        <location filename="../src/gui/dialogs/OptionsDialog.cpp" line="+3122"/>
         <source>Test</source>
         <translation>テスト</translation>
     </message>
@@ -856,7 +856,7 @@ Download it again?</source>
     <name>Units</name>
     <message>
         <location filename="../src/core/utils/StringUtils.cpp" line="+72"/>
-        <location filename="../src/core/webserver/WebServer.cpp" line="+4062"/>
+        <location filename="../src/core/webserver/WebServer.cpp" line="+4060"/>
         <source>Bytes</source>
         <translation>Bytes</translation>
     </message>
@@ -6328,36 +6328,36 @@ Download it again?</source>
 <context>
     <name>eMule::OptionsDialog</name>
     <message>
-        <location filename="../src/gui/dialogs/OptionsDialog.cpp" line="-3011"/>
+        <location filename="../src/gui/dialogs/OptionsDialog.cpp" line="-3014"/>
         <source>Options</source>
         <translation>オプション</translation>
     </message>
     <message>
         <location line="+61"/>
-        <location line="+1981"/>
+        <location line="+1984"/>
         <source>OK</source>
         <translation>OK</translation>
     </message>
     <message>
-        <location line="-1980"/>
-        <location line="+1981"/>
+        <location line="-1983"/>
+        <location line="+1984"/>
         <source>Cancel</source>
         <translation>キャンセル</translation>
     </message>
     <message>
-        <location line="-1980"/>
-        <location line="+5771"/>
+        <location line="-1983"/>
+        <location line="+5774"/>
         <source>Apply</source>
         <translation>適用</translation>
     </message>
     <message>
-        <location line="-5770"/>
+        <location line="-5773"/>
         <source>Help</source>
         <translation>ヘルプ</translation>
     </message>
     <message>
         <location line="+259"/>
-        <location line="+1989"/>
+        <location line="+1992"/>
         <location line="+62"/>
         <location line="+5"/>
         <location line="+9"/>
@@ -6366,7 +6366,7 @@ Download it again?</source>
         <translation>IP フィルター</translation>
     </message>
     <message>
-        <location line="-2075"/>
+        <location line="-2078"/>
         <source>IP filter reloaded: %1 entries.</source>
         <translation>IP フィルターを再読み込み：%1 エントリ。</translation>
     </message>
@@ -6376,7 +6376,7 @@ Download it again?</source>
         <translation>オプション -&gt; %1 -&gt; %2</translation>
     </message>
     <message>
-        <location line="+182"/>
+        <location line="+186"/>
         <source>General options</source>
         <translation>全般オプション</translation>
     </message>
@@ -6397,26 +6397,26 @@ Download it again?</source>
     </message>
     <message>
         <location line="+8"/>
-        <location line="+5684"/>
+        <location line="+5683"/>
         <source>Language</source>
         <translation>言語</translation>
     </message>
     <message>
-        <location line="-5681"/>
+        <location line="-5680"/>
         <source>System Default</source>
         <translation>システム既定</translation>
     </message>
     <message>
         <location line="+14"/>
         <location line="+726"/>
-        <location line="+321"/>
+        <location line="+320"/>
         <location line="+450"/>
         <location line="+248"/>
         <source>Miscellaneous</source>
         <translation>その他</translation>
     </message>
     <message>
-        <location line="-1742"/>
+        <location line="-1741"/>
         <source>Bring to front on link click</source>
         <translation>リンクのクリック時に前面に表示</translation>
     </message>
@@ -6502,25 +6502,25 @@ Download it again?</source>
     </message>
     <message>
         <location line="+8"/>
-        <location line="+5620"/>
+        <location line="+5619"/>
         <source>Core</source>
         <translation>コア</translation>
     </message>
     <message>
-        <location line="-5615"/>
+        <location line="-5614"/>
         <source>Address:</source>
         <translation>アドレス：</translation>
     </message>
     <message>
         <location line="+4"/>
-        <location line="+1224"/>
+        <location line="+1223"/>
         <location line="+720"/>
         <location line="+421"/>
         <source>Port:</source>
         <translation>ポート：</translation>
     </message>
     <message>
-        <location line="-2362"/>
+        <location line="-2361"/>
         <source>authentication token</source>
         <translation>認証トークン</translation>
     </message>
@@ -6676,7 +6676,7 @@ Are you sure you want to continue?</source>
     </message>
     <message>
         <location line="+2"/>
-        <location line="+1693"/>
+        <location line="+1692"/>
         <location line="+128"/>
         <location line="+295"/>
         <location line="+1016"/>
@@ -6689,7 +6689,7 @@ Are you sure you want to continue?</source>
         <translation>有効</translation>
     </message>
     <message>
-        <location line="-4766"/>
+        <location line="-4765"/>
         <source>Reset</source>
         <translation>リセット</translation>
     </message>
@@ -6706,24 +6706,24 @@ Are you sure you want to continue?</source>
     <message>
         <location line="+3"/>
         <location line="+6"/>
-        <location line="+4147"/>
+        <location line="+4146"/>
         <location line="+345"/>
         <source> KB/s</source>
         <translation> KB/s</translation>
     </message>
     <message>
-        <location line="-4495"/>
+        <location line="-4494"/>
         <source>Upload</source>
         <translation>アップロード</translation>
     </message>
     <message>
         <location line="+9"/>
-        <location line="+4135"/>
+        <location line="+4134"/>
         <source>Limits</source>
         <translation>制限</translation>
     </message>
     <message>
-        <location line="-4132"/>
+        <location line="-4131"/>
         <source>Download limit</source>
         <translation>ダウンロード制限</translation>
     </message>
@@ -6784,12 +6784,12 @@ Are you sure you want to continue?</source>
     </message>
     <message>
         <location line="+4"/>
-        <location line="+6791"/>
+        <location line="+6790"/>
         <source>Any</source>
         <translation>すべて</translation>
     </message>
     <message>
-        <location line="-6789"/>
+        <location line="-6788"/>
         <source>Use only this network interface, for example a VPN tunnel. Pick one from the list, or type an IP address or a subnet such as 10.64.0.0/10 (the interface holding an address in it). Connections through a proxy are not bound.</source>
         <translation>このネットワークインターフェース（VPN トンネルなど）のみを使用します。一覧から選ぶか、IP アドレスまたは 10.64.0.0/10 のようなサブネット（その範囲のアドレスを持つインターフェース）を入力してください。プロキシ経由の接続はバインドされません。</translation>
     </message>
@@ -6875,12 +6875,12 @@ Are you sure you want to continue?</source>
     </message>
     <message>
         <location line="+62"/>
-        <location line="+1416"/>
+        <location line="+1415"/>
         <source>General</source>
         <translation>全般</translation>
     </message>
     <message>
-        <location line="-1413"/>
+        <location line="-1412"/>
         <source>Enable proxy</source>
         <translation>プロキシを有効化</translation>
     </message>
@@ -6931,26 +6931,26 @@ Are you sure you want to continue?</source>
     </message>
     <message>
         <location line="+21"/>
-        <location line="+694"/>
+        <location line="+693"/>
         <source>Authentication</source>
         <translation>認証</translation>
     </message>
     <message>
-        <location line="-691"/>
+        <location line="-690"/>
         <source>Enable authentication</source>
         <translation>認証を有効化</translation>
     </message>
     <message>
         <location line="+7"/>
-        <location line="+1792"/>
+        <location line="+1791"/>
         <location line="+1019"/>
         <location line="+152"/>
         <source>Name:</source>
         <translation>名前：</translation>
     </message>
     <message>
-        <location line="-2959"/>
-        <location line="+695"/>
+        <location line="-2958"/>
+        <location line="+694"/>
         <location line="+778"/>
         <location line="+19"/>
         <location line="+324"/>
@@ -6958,7 +6958,7 @@ Are you sure you want to continue?</source>
         <translation>パスワード：</translation>
     </message>
     <message>
-        <location line="-1782"/>
+        <location line="-1781"/>
         <source>Update</source>
         <translation>更新</translation>
     </message>
@@ -7048,7 +7048,7 @@ Are you sure you want to continue?</source>
         <translation>一時ファイル</translation>
     </message>
     <message>
-        <location line="+13"/>
+        <location line="+12"/>
         <source>Select Temporary Directory</source>
         <translation>一時ディレクトリを選択</translation>
     </message>
@@ -7701,7 +7701,7 @@ Each rule replaces a regex pattern with a replacement string.</source>
         <translation>アップロードスロット（オーバーヘッドなし）</translation>
     </message>
     <message>
-        <location line="-1641"/>
+        <location line="-1640"/>
         <source>Country flags (IP2Country)</source>
         <translation>国旗 (IP2Country)</translation>
     </message>
@@ -7775,7 +7775,7 @@ Every Usenet connection then passes through the proxy, so its speed caps the dow
         <translation>IPv4 接続が LowID になった場合、サーバーの IPv6 アドレスで再接続します</translation>
     </message>
     <message>
-        <location line="+353"/>
+        <location line="+352"/>
         <source>Remember files seen in search results</source>
         <translation>検索結果に出たファイルを記憶する</translation>
     </message>
@@ -8256,7 +8256,7 @@ Every Usenet connection then passes through the proxy, so its speed caps the dow
         <translation>厳格</translation>
     </message>
     <message>
-        <location line="-2616"/>
+        <location line="-2615"/>
         <source>BitTorrent</source>
         <translation>BitTorrent</translation>
     </message>
@@ -8326,7 +8326,7 @@ Every Usenet connection then passes through the proxy, so its speed caps the dow
         <translation>対応サーバーまたは Kad バディを通じて 2 つの Low ID クライアントが互いのアドレスを見つけ、IPv6 で接続します</translation>
     </message>
     <message>
-        <location line="+1025"/>
+        <location line="+1024"/>
         <source>Strict + Chinese</source>
         <translation>厳格 + 中国系</translation>
     </message>
@@ -9391,7 +9391,78 @@ Adding one later does not fetch its back catalogue: a new indexer gets its own f
         <translation>サーバー接続更新間隔 [分]：</translation>
     </message>
     <message>
-        <location line="-150"/>
+        <location line="+2844"/>
+        <location line="+52"/>
+        <source>Directories</source>
+        <translation>フォルダ</translation>
+    </message>
+    <message>
+        <location line="-36"/>
+        <source>Please enter the incoming folder.</source>
+        <translation>受信フォルダを入力してください。</translation>
+    </message>
+    <message>
+        <location line="+1"/>
+        <source>The incoming folder must be a full path:
+%1</source>
+        <translation>受信フォルダはフルパスで指定してください:
+%1</translation>
+    </message>
+    <message>
+        <location line="+1"/>
+        <source>The incoming folder does not exist:
+%1
+
+Create it?</source>
+        <translation>受信フォルダが存在しません:
+%1
+
+作成しますか?</translation>
+    </message>
+    <message>
+        <location line="+1"/>
+        <source>Please enter the temporary folder.</source>
+        <translation>一時フォルダを入力してください。</translation>
+    </message>
+    <message>
+        <location line="+1"/>
+        <source>The temporary folder must be a full path:
+%1</source>
+        <translation>一時フォルダはフルパスで指定してください:
+%1</translation>
+    </message>
+    <message>
+        <location line="+1"/>
+        <source>The temporary folder does not exist:
+%1
+
+Create it?</source>
+        <translation>一時フォルダが存在しません:
+%1
+
+作成しますか?</translation>
+    </message>
+    <message>
+        <location line="+18"/>
+        <source>The temporary folder can&apos;t be the same as the incoming folder.</source>
+        <translation>一時フォルダを受信フォルダと同じにすることはできません。</translation>
+    </message>
+    <message>
+        <location line="+10"/>
+        <source>This is a file, not a folder:
+%1</source>
+        <translation>これはファイルです。フォルダではありません:
+%1</translation>
+    </message>
+    <message>
+        <location line="+7"/>
+        <source>Could not create the folder:
+%1</source>
+        <translation>フォルダを作成できませんでした:
+%1</translation>
+    </message>
+    <message>
+        <location line="-3050"/>
         <location line="+153"/>
         <source>Disabled</source>
         <translation>無効</translation>
@@ -9465,12 +9536,12 @@ Adding one later does not fetch its back catalogue: a new indexer gets its own f
         <translation>サーバーとクライアントの LAN IP をフィルター</translation>
     </message>
     <message>
-        <location line="-4448"/>
+        <location line="-4447"/>
         <source>Show more controls (advanced mode controls)</source>
         <translation>詳細コントロールを表示（詳細モード）</translation>
     </message>
     <message>
-        <location line="+4451"/>
+        <location line="+4450"/>
         <source>Disable A4AF checks to save CPU</source>
         <translation>CPU 節約のため A4AF チェックを無効化</translation>
     </message>
@@ -14436,140 +14507,419 @@ Clicking &apos;Restore Stats&apos; again will reload your current statistics.</s
 <context>
     <name>eMule::TorrentDetailsDialog</name>
     <message>
-        <location filename="../src/gui/dialogs/TorrentDetailsDialog.cpp" line="+68"/>
         <source>Skip</source>
-        <translation>スキップ</translation>
+        <translation type="vanished">スキップ</translation>
     </message>
     <message>
-        <location line="+2"/>
         <source>Low</source>
-        <translation>低い</translation>
+        <translation type="vanished">低い</translation>
     </message>
     <message>
-        <location line="+2"/>
         <source>Normal</source>
-        <translation>通常</translation>
+        <translation type="vanished">通常</translation>
     </message>
     <message>
-        <location line="+2"/>
         <source>High</source>
-        <translation>高い</translation>
+        <translation type="vanished">高い</translation>
+    </message>
+    <message>
+        <source>Maximum</source>
+        <translation type="vanished">最高</translation>
+    </message>
+    <message>
+        <source>Torrent Details</source>
+        <translation type="vanished">Torrent の詳細</translation>
+    </message>
+    <message>
+        <source>File</source>
+        <translation type="vanished">ファイル</translation>
+    </message>
+    <message>
+        <location filename="../src/gui/dialogs/TorrentDetailsDialog.cpp" line="+51"/>
+        <source>N/A</source>
+        <translation>N/A</translation>
+    </message>
+    <message>
+        <location line="+35"/>
+        <source>Use global settings</source>
+        <translation>グローバル設定を使用</translation>
     </message>
     <message>
         <location line="+1"/>
-        <source>Maximum</source>
-        <translation>最高</translation>
+        <source>Seed regardless</source>
+        <translation>制限なしでシード</translation>
     </message>
     <message>
-        <location line="+10"/>
-        <source>Torrent Details</source>
-        <translation>Torrent の詳細</translation>
+        <location line="+1"/>
+        <source>Stop seeding at:</source>
+        <translation>シードを停止:</translation>
     </message>
     <message>
         <location line="+46"/>
-        <source>File</source>
-        <translation>ファイル</translation>
+        <source>Info</source>
+        <translation>情報</translation>
     </message>
     <message>
-        <location line="+0"/>
+        <location line="+1"/>
+        <source>Activity</source>
+        <translation>アクティビティ</translation>
+    </message>
+    <message>
+        <location line="+1"/>
+        <source>Options</source>
+        <translation>オプション</translation>
+    </message>
+    <message>
+        <location line="+4"/>
+        <location line="+2"/>
+        <source>%1 — Torrent Inspector</source>
+        <translation>%1 — トレントインスペクター</translation>
+    </message>
+    <message numerus="yes">
+        <location line="+56"/>
+        <source>%n file(s), %1</source>
+        <translation>
+            <numerusform>%n 個のファイル、%1</numerusform>
+        </translation>
+    </message>
+    <message>
+        <location line="+1"/>
+        <source>Getting metadata…</source>
+        <translation>メタデータを取得中…</translation>
+    </message>
+    <message numerus="yes">
+        <location line="+4"/>
+        <source>%1 (%n piece(s) @ %2)</source>
+        <translation>
+            <numerusform>%1 (%n ピース @ %2)</numerusform>
+        </translation>
+    </message>
+    <message>
+        <location line="+7"/>
+        <source>Private to this tracker — DHT and PEX disabled</source>
+        <translation>このトラッカー専用 — DHT と PEX は無効</translation>
+    </message>
+    <message>
+        <location line="+1"/>
+        <source>Public torrent</source>
+        <translation>公開トレント</translation>
+    </message>
+    <message>
+        <location line="+2"/>
+        <source>Created by %1 on %2</source>
+        <translation>作成者 %1、作成日 %2</translation>
+    </message>
+    <message>
+        <location line="+2"/>
+        <source>Created by %1</source>
+        <translation>作成者 %1</translation>
+    </message>
+    <message>
+        <location line="+2"/>
+        <source>Created on %1</source>
+        <translation>作成日 %1</translation>
+    </message>
+    <message>
+        <location line="+13"/>
+        <source>%1 (%2 selected)</source>
+        <translation>%1 (%2 選択済み)</translation>
+    </message>
+    <message>
+        <location line="+21"/>
+        <source>Active now</source>
+        <translation>現在アクティブ</translation>
+    </message>
+    <message>
+        <location line="+2"/>
+        <source>%1 ago</source>
+        <translation>%1 前</translation>
+    </message>
+    <message>
+        <location line="+4"/>
+        <source>Unknown</source>
+        <translation>不明</translation>
+    </message>
+    <message>
+        <location line="+25"/>
+        <source>Details</source>
+        <translation>詳細</translation>
+    </message>
+    <message>
+        <location line="+2"/>
         <source>Size</source>
         <translation>サイズ</translation>
     </message>
     <message>
-        <location line="+0"/>
+        <location line="+1"/>
+        <source>Location</source>
+        <translation>場所</translation>
+    </message>
+    <message>
+        <location line="+1"/>
+        <source>Hash v1</source>
+        <translation>ハッシュ v1</translation>
+    </message>
+    <message>
+        <location line="+1"/>
+        <source>Hash v2</source>
+        <translation>ハッシュ v2</translation>
+    </message>
+    <message>
+        <location line="+1"/>
+        <source>Privacy</source>
+        <translation>プライバシー</translation>
+    </message>
+    <message>
+        <location line="+1"/>
+        <source>Origin</source>
+        <translation>作成元</translation>
+    </message>
+    <message>
+        <location line="+9"/>
+        <source>Copy Magnet Link</source>
+        <translation>マグネットリンクをコピー</translation>
+    </message>
+    <message>
+        <location line="+4"/>
+        <source>Magnet</source>
+        <translation>マグネット</translation>
+    </message>
+    <message>
+        <location line="+3"/>
+        <source>Comment</source>
+        <translation>コメント</translation>
+    </message>
+    <message>
+        <location line="+16"/>
+        <source>Transfer</source>
+        <translation>転送</translation>
+    </message>
+    <message>
+        <location line="+3"/>
+        <source>State</source>
+        <translation>状態</translation>
+    </message>
+    <message>
+        <location line="+2"/>
+        <source>Have</source>
+        <translation>取得済み</translation>
+    </message>
+    <message>
+        <location line="+1"/>
+        <source>Availability</source>
+        <translation>可用性</translation>
+    </message>
+    <message>
+        <location line="+3"/>
+        <source>Failed DL</source>
+        <translation>失敗した DL</translation>
+    </message>
+    <message>
+        <location line="+1"/>
+        <source>Ratio</source>
+        <translation>比率</translation>
+    </message>
+    <message>
+        <location line="+4"/>
+        <source>Error</source>
+        <translation>エラー</translation>
+    </message>
+    <message>
+        <location line="+28"/>
+        <source>Available</source>
+        <translation>利用可能</translation>
+    </message>
+    <message>
+        <location line="+1"/>
+        <source>Share of each part that is downloaded</source>
+        <translation>各パートのダウンロード済みの割合</translation>
+    </message>
+    <message>
+        <location line="+1"/>
+        <source>Peers that have each part; red: nobody connected has it</source>
+        <translation>各パートを持つピア数。赤: 接続中の誰も持っていない</translation>
+    </message>
+    <message>
+        <location line="+9"/>
+        <source>Dates</source>
+        <translation>日付</translation>
+    </message>
+    <message>
+        <location line="+2"/>
+        <source>Added</source>
+        <translation>追加日</translation>
+    </message>
+    <message>
+        <location line="+1"/>
         <source>Completed</source>
         <translation>完了</translation>
     </message>
     <message>
-        <location line="+0"/>
+        <location line="+1"/>
+        <source>Last Activity</source>
+        <translation>最終アクティビティ</translation>
+    </message>
+    <message>
+        <location line="+2"/>
+        <source>Time Elapsed</source>
+        <translation>経過時間</translation>
+    </message>
+    <message>
+        <location line="+2"/>
+        <source>Downloading</source>
+        <translation>ダウンロード中</translation>
+    </message>
+    <message>
+        <location line="+1"/>
+        <source>Seeding</source>
+        <translation>シード中</translation>
+    </message>
+    <message>
+        <location line="+1"/>
+        <source>Remaining</source>
+        <translation>残り</translation>
+    </message>
+    <message>
+        <location line="+12"/>
+        <source>Speed</source>
+        <translation>速度</translation>
+    </message>
+    <message>
+        <location line="+7"/>
+        <source> KiB/s</source>
+        <translation> KiB/s</translation>
+    </message>
+    <message>
+        <location line="+5"/>
+        <source>Limit download speed:</source>
+        <translation>ダウンロード速度を制限:</translation>
+    </message>
+    <message>
+        <location line="+1"/>
+        <source>Limit upload speed:</source>
+        <translation>アップロード速度を制限:</translation>
+    </message>
+    <message>
+        <location line="+3"/>
+        <source>Seeding Limits</source>
+        <translation>シード制限</translation>
+    </message>
+    <message>
         <location line="+13"/>
+        <source>Ratio:</source>
+        <translation>比率:</translation>
+    </message>
+    <message>
+        <location line="+7"/>
+        <source> min</source>
+        <translation> 分</translation>
+    </message>
+    <message>
+        <location line="+4"/>
+        <source>Seed time:</source>
+        <translation>シード時間:</translation>
+    </message>
+    <message>
+        <location line="+7"/>
+        <source>Peer Connections</source>
+        <translation>ピア接続</translation>
+    </message>
+    <message>
+        <location line="+4"/>
+        <source>Default</source>
+        <translation>既定</translation>
+    </message>
+    <message>
+        <location line="+2"/>
+        <source>Maximum peers:</source>
+        <translation>最大ピア数:</translation>
+    </message>
+    <message>
+        <location line="+87"/>
+        <source>Could not change the torrent options.</source>
+        <translation>トレントのオプションを変更できませんでした。</translation>
+    </message>
+    <message numerus="yes">
+        <location line="+17"/>
+        <source>Copied %n magnet link(s).</source>
+        <translation>
+            <numerusform>%n 件のマグネットリンクをコピーしました。</numerusform>
+        </translation>
+    </message>
+    <message>
+        <location line="-228"/>
+        <location line="+37"/>
         <source>Progress</source>
         <translation>進捗</translation>
     </message>
     <message>
-        <location line="-13"/>
-        <location line="+65"/>
         <source>Priority</source>
-        <translation>優先度</translation>
+        <translation type="vanished">優先度</translation>
     </message>
     <message>
-        <location line="-56"/>
         <source>Files</source>
-        <translation>ファイル</translation>
+        <translation type="vanished">ファイル</translation>
     </message>
     <message>
-        <location line="+4"/>
         <source>Address</source>
-        <translation>アドレス</translation>
+        <translation type="vanished">アドレス</translation>
     </message>
     <message>
-        <location line="+0"/>
         <source>Client</source>
-        <translation>クライアント</translation>
+        <translation type="vanished">クライアント</translation>
     </message>
     <message>
-        <location line="+0"/>
         <source>Down Speed</source>
-        <translation>ダウンロード速度</translation>
+        <translation type="vanished">ダウンロード速度</translation>
     </message>
     <message>
-        <location line="+1"/>
         <source>Up Speed</source>
-        <translation>アップロード速度</translation>
+        <translation type="vanished">アップロード速度</translation>
     </message>
     <message>
-        <location line="+0"/>
+        <location line="-34"/>
         <source>Downloaded</source>
         <translation>ダウンロード済み</translation>
     </message>
     <message>
-        <location line="+0"/>
+        <location line="+1"/>
         <source>Uploaded</source>
         <translation>アップロード済み</translation>
     </message>
     <message>
-        <location line="+0"/>
         <source>Flags</source>
-        <translation>フラグ</translation>
+        <translation type="vanished">フラグ</translation>
     </message>
     <message>
-        <location line="+1"/>
         <source>Source</source>
-        <translation>ソース</translation>
+        <translation type="vanished">ソース</translation>
     </message>
     <message>
-        <location line="+6"/>
-        <location line="+4"/>
         <source>Peers</source>
-        <translation>ピア</translation>
+        <translation type="vanished">ピア</translation>
     </message>
     <message>
-        <location line="+0"/>
         <source>URL</source>
-        <translation>URL</translation>
+        <translation type="vanished">URL</translation>
     </message>
     <message>
-        <location line="+0"/>
         <source>Tier</source>
-        <translation>階層</translation>
+        <translation type="vanished">階層</translation>
     </message>
     <message>
-        <location line="+0"/>
         <source>Status</source>
-        <translation>ステータス</translation>
+        <translation type="vanished">ステータス</translation>
     </message>
     <message>
-        <location line="+0"/>
         <source>Seeds</source>
-        <translation>シード</translation>
+        <translation type="vanished">シード</translation>
     </message>
     <message>
-        <location line="+5"/>
         <source>Trackers</source>
-        <translation>トラッカー</translation>
+        <translation type="vanished">トラッカー</translation>
     </message>
     <message>
-        <location line="+20"/>
+        <location line="+139"/>
         <source>This torrent is no longer in the list.</source>
         <translation>この Torrent はもうリストにありません。</translation>
     </message>
@@ -14579,54 +14929,77 @@ Clicking &apos;Restore Stats&apos; again will reload your current statistics.</s
         <translation>BitTorrent は実行されていません。</translation>
     </message>
     <message>
-        <location line="+23"/>
         <source>Download</source>
-        <translation>ダウンロード</translation>
+        <translation type="vanished">ダウンロード</translation>
     </message>
     <message>
-        <location line="+2"/>
         <source>Do Not Download</source>
-        <translation>ダウンロードしない</translation>
+        <translation type="vanished">ダウンロードしない</translation>
     </message>
     <message>
-        <location line="+26"/>
         <source>Could not change the file priorities.</source>
-        <translation>ファイルの優先度を変更できませんでした。</translation>
+        <translation type="vanished">ファイルの優先度を変更できませんでした。</translation>
     </message>
     <message>
-        <location line="+51"/>
         <source>Files (%1)</source>
-        <translation>ファイル (%1)</translation>
+        <translation type="vanished">ファイル (%1)</translation>
     </message>
     <message>
-        <location line="+17"/>
         <source>Seed</source>
-        <translation>シード</translation>
+        <translation type="vanished">シード</translation>
     </message>
     <message>
-        <location line="+2"/>
         <source>Enc</source>
-        <translation>暗号化</translation>
+        <translation type="vanished">暗号化</translation>
     </message>
     <message>
-        <location line="+14"/>
         <source>Peers (%1)</source>
-        <translation>ピア (%1)</translation>
+        <translation type="vanished">ピア (%1)</translation>
     </message>
     <message>
-        <location line="+14"/>
         <source>Working</source>
-        <translation>正常</translation>
+        <translation type="vanished">正常</translation>
+    </message>
+    <message>
+        <source>Not working</source>
+        <translation type="vanished">異常</translation>
+    </message>
+    <message>
+        <source>Trackers (%1)</source>
+        <translation type="vanished">トラッカー (%1)</translation>
+    </message>
+</context>
+<context>
+    <name>eMule::TorrentFilterProxy</name>
+    <message>
+        <location filename="../src/gui/controls/TorrentFilterProxy.cpp" line="+70"/>
+        <source>All</source>
+        <translation>すべて</translation>
     </message>
     <message>
         <location line="+1"/>
-        <source>Not working</source>
-        <translation>異常</translation>
+        <source>Downloading</source>
+        <translation>ダウンロード中</translation>
     </message>
     <message>
-        <location line="+10"/>
-        <source>Trackers (%1)</source>
-        <translation>トラッカー (%1)</translation>
+        <location line="+1"/>
+        <source>Seeding</source>
+        <translation>シード中</translation>
+    </message>
+    <message>
+        <location line="+1"/>
+        <source>Paused</source>
+        <translation>一時停止</translation>
+    </message>
+    <message>
+        <location line="+1"/>
+        <source>Active</source>
+        <translation>アクティブ</translation>
+    </message>
+    <message>
+        <location line="+1"/>
+        <source>Error</source>
+        <translation>エラー</translation>
     </message>
 </context>
 <context>
@@ -14653,12 +15026,12 @@ Clicking &apos;Restore Stats&apos; again will reload your current statistics.</s
     </message>
     <message>
         <location line="+1"/>
-        <location line="+160"/>
+        <location line="+168"/>
         <source>Completed</source>
         <translation>完了</translation>
     </message>
     <message>
-        <location line="-159"/>
+        <location line="-167"/>
         <source>Seeding</source>
         <translation>シード中</translation>
     </message>
@@ -14688,7 +15061,7 @@ Clicking &apos;Restore Stats&apos; again will reload your current statistics.</s
         <translation>不明</translation>
     </message>
     <message>
-        <location line="+129"/>
+        <location line="+137"/>
         <source>Private torrent (no DHT, PEX or LSD)</source>
         <translation>プライベート Torrent (DHT・PEX・LSD なし)</translation>
     </message>
@@ -14759,9 +15132,355 @@ Clicking &apos;Restore Stats&apos; again will reload your current statistics.</s
     </message>
 </context>
 <context>
+    <name>eMule::TorrentListsPane</name>
+    <message>
+        <location filename="../src/gui/controls/TorrentListsPane.cpp" line="+85"/>
+        <source>Tracker</source>
+        <translation>トラッカー</translation>
+    </message>
+    <message>
+        <location line="+2"/>
+        <source>DHT</source>
+        <translation>DHT</translation>
+    </message>
+    <message>
+        <location line="+2"/>
+        <source>PEX</source>
+        <translation>PEX</translation>
+    </message>
+    <message>
+        <location line="+2"/>
+        <source>Local discovery</source>
+        <translation>ローカル検出</translation>
+    </message>
+    <message>
+        <location line="+2"/>
+        <source>Resume data</source>
+        <translation>再開データ</translation>
+    </message>
+    <message>
+        <location line="+2"/>
+        <source>Incoming</source>
+        <translation>受信フォルダ</translation>
+    </message>
+    <message>
+        <location line="+30"/>
+        <source>Skip</source>
+        <translation>スキップ</translation>
+    </message>
+    <message>
+        <location line="+2"/>
+        <source>Low</source>
+        <translation>低い</translation>
+    </message>
+    <message>
+        <location line="+2"/>
+        <source>Normal</source>
+        <translation>通常</translation>
+    </message>
+    <message>
+        <location line="+2"/>
+        <source>High</source>
+        <translation>高い</translation>
+    </message>
+    <message>
+        <location line="+1"/>
+        <source>Maximum</source>
+        <translation>最高</translation>
+    </message>
+    <message>
+        <location line="+9"/>
+        <source>Peer is connected over µTP</source>
+        <translation>ピアは µTP で接続されています</translation>
+    </message>
+    <message>
+        <location line="+1"/>
+        <source>Optimistic unchoke</source>
+        <translation>楽観的アンチョーク</translation>
+    </message>
+    <message>
+        <location line="+1"/>
+        <source>Downloading from this peer</source>
+        <translation>このピアからダウンロード中</translation>
+    </message>
+    <message>
+        <location line="+1"/>
+        <source>We would download from this peer if they would let us</source>
+        <translation>許可されればこのピアからダウンロードします</translation>
+    </message>
+    <message>
+        <location line="+1"/>
+        <source>Uploading to peer</source>
+        <translation>ピアへアップロード中</translation>
+    </message>
+    <message>
+        <location line="+1"/>
+        <source>We would upload to this peer if we unchoked it</source>
+        <translation>アンチョークすればこのピアへアップロードします</translation>
+    </message>
+    <message>
+        <location line="+1"/>
+        <source>Peer has unchoked us, but we&apos;re not interested</source>
+        <translation>ピアはアンチョークしましたが、こちらは関心がありません</translation>
+    </message>
+    <message>
+        <location line="+1"/>
+        <source>We unchoked this peer, but they&apos;re not interested</source>
+        <translation>このピアをアンチョークしましたが、相手は関心がありません</translation>
+    </message>
+    <message>
+        <location line="+1"/>
+        <location line="+102"/>
+        <location line="+141"/>
+        <source>Encrypted connection</source>
+        <translation>暗号化接続</translation>
+    </message>
+    <message>
+        <location line="-242"/>
+        <source>Connected through a holepunch</source>
+        <translation>ホールパンチで接続</translation>
+    </message>
+    <message>
+        <location line="+1"/>
+        <source>Peer was found through DHT</source>
+        <translation>DHT で見つかったピア</translation>
+    </message>
+    <message>
+        <location line="+1"/>
+        <source>Peer was found through Peer Exchange (PEX)</source>
+        <translation>ピア交換 (PEX) で見つかったピア</translation>
+    </message>
+    <message>
+        <location line="+1"/>
+        <source>Peer is an incoming connection</source>
+        <translation>着信接続のピア</translation>
+    </message>
+    <message>
+        <location line="+40"/>
+        <location line="+95"/>
+        <source>Select a torrent to see its peers, trackers and files.</source>
+        <translation>トレントを選択すると、ピア、トラッカー、ファイルが表示されます。</translation>
+    </message>
+    <message>
+        <location line="-40"/>
+        <source>Up</source>
+        <translation>上り</translation>
+    </message>
+    <message>
+        <location line="+0"/>
+        <source>Down</source>
+        <translation>下り</translation>
+    </message>
+    <message>
+        <location line="+0"/>
+        <source>%</source>
+        <translation>%</translation>
+    </message>
+    <message>
+        <location line="+0"/>
+        <location line="+53"/>
+        <source>Status</source>
+        <translation>ステータス</translation>
+    </message>
+    <message>
+        <location line="-53"/>
+        <source>Address</source>
+        <translation>アドレス</translation>
+    </message>
+    <message>
+        <location line="+1"/>
+        <source>Client</source>
+        <translation>クライアント</translation>
+    </message>
+    <message>
+        <location line="+0"/>
+        <location line="+53"/>
+        <source>Downloaded</source>
+        <translation>ダウンロード済み</translation>
+    </message>
+    <message>
+        <location line="-53"/>
+        <source>Uploaded</source>
+        <translation>アップロード済み</translation>
+    </message>
+    <message>
+        <location line="+0"/>
+        <source>Source</source>
+        <translation>ソース</translation>
+    </message>
+    <message>
+        <location line="+13"/>
+        <location line="+40"/>
+        <source>Peers</source>
+        <translation>ピア</translation>
+    </message>
+    <message>
+        <location line="-38"/>
+        <source>Trackers</source>
+        <translation>トラッカー</translation>
+    </message>
+    <message>
+        <location line="+5"/>
+        <source>Name</source>
+        <translation>名前</translation>
+    </message>
+    <message>
+        <location line="+0"/>
+        <source>Size</source>
+        <translation>サイズ</translation>
+    </message>
+    <message>
+        <location line="+0"/>
+        <source>Progress</source>
+        <translation>進捗</translation>
+    </message>
+    <message>
+        <location line="+0"/>
+        <location line="+348"/>
+        <source>Download</source>
+        <translation>ダウンロード</translation>
+    </message>
+    <message>
+        <location line="-348"/>
+        <location line="+339"/>
+        <source>Priority</source>
+        <translation>優先度</translation>
+    </message>
+    <message>
+        <location line="-328"/>
+        <source>Files</source>
+        <translation>ファイル</translation>
+    </message>
+    <message>
+        <location line="+21"/>
+        <source>URL</source>
+        <translation>URL</translation>
+    </message>
+    <message>
+        <location line="+0"/>
+        <source>Tier</source>
+        <translation>ティア</translation>
+    </message>
+    <message>
+        <location line="+0"/>
+        <source>Next Announce</source>
+        <translation>次回のアナウンス</translation>
+    </message>
+    <message>
+        <location line="+1"/>
+        <source>Seeds</source>
+        <translation>シード</translation>
+    </message>
+    <message>
+        <location line="+26"/>
+        <source>Add…</source>
+        <translation>追加…</translation>
+    </message>
+    <message>
+        <location line="+2"/>
+        <source>Remove</source>
+        <translation>削除</translation>
+    </message>
+    <message>
+        <location line="+3"/>
+        <source>Reannounce</source>
+        <translation>再アナウンス</translation>
+    </message>
+    <message>
+        <location line="+3"/>
+        <source>Show backup trackers</source>
+        <translation>バックアップトラッカーを表示</translation>
+    </message>
+    <message>
+        <location line="+18"/>
+        <source>This torrent is no longer in the list.</source>
+        <translation>この Torrent はもうリストにありません。</translation>
+    </message>
+    <message>
+        <location line="+1"/>
+        <source>BitTorrent is not running.</source>
+        <translation>BitTorrent は実行されていません。</translation>
+    </message>
+    <message>
+        <location line="+51"/>
+        <source>Peers (%1)</source>
+        <translation>ピア (%1)</translation>
+    </message>
+    <message>
+        <location line="+28"/>
+        <source>Announcing…</source>
+        <translation>アナウンス中…</translation>
+    </message>
+    <message>
+        <location line="+2"/>
+        <source>Error: %1</source>
+        <translation>エラー: %1</translation>
+    </message>
+    <message>
+        <location line="+3"/>
+        <source>Working</source>
+        <translation>動作中</translation>
+    </message>
+    <message>
+        <location line="+0"/>
+        <source>Working — %1</source>
+        <translation>動作中 — %1</translation>
+    </message>
+    <message>
+        <location line="+3"/>
+        <source>Not contacted yet</source>
+        <translation>未接続</translation>
+    </message>
+    <message>
+        <location line="+17"/>
+        <source>Trackers (%1)</source>
+        <translation>トラッカー (%1)</translation>
+    </message>
+    <message>
+        <location line="+97"/>
+        <source>Files (%1)</source>
+        <translation>ファイル (%1)</translation>
+    </message>
+    <message>
+        <location line="+63"/>
+        <source>Do Not Download</source>
+        <translation>ダウンロードしない</translation>
+    </message>
+    <message>
+        <location line="+3"/>
+        <source>Expand All</source>
+        <translation>すべて展開</translation>
+    </message>
+    <message>
+        <location line="+1"/>
+        <source>Collapse All</source>
+        <translation>すべて折りたたむ</translation>
+    </message>
+    <message>
+        <location line="+42"/>
+        <source>Could not change the file priorities.</source>
+        <translation>ファイルの優先度を変更できませんでした。</translation>
+    </message>
+    <message>
+        <location line="+12"/>
+        <source>Add Trackers</source>
+        <translation>トラッカーを追加</translation>
+    </message>
+    <message>
+        <location line="+0"/>
+        <source>Tracker URLs, one per line:</source>
+        <translation>トラッカー URL (1 行に 1 つ):</translation>
+    </message>
+    <message>
+        <location line="+41"/>
+        <source>Could not change the trackers.</source>
+        <translation>トラッカーを変更できませんでした。</translation>
+    </message>
+</context>
+<context>
     <name>eMule::TorrentPanel</name>
     <message>
-        <location filename="../src/gui/panels/TorrentPanel.cpp" line="+105"/>
+        <location filename="../src/gui/panels/TorrentPanel.cpp" line="+117"/>
         <source>Torrent download completed: %1</source>
         <translation>Torrent のダウンロードが完了しました: %1</translation>
     </message>
@@ -14779,12 +15498,12 @@ Clicking &apos;Restore Stats&apos; again will reload your current statistics.</s
         <location line="+13"/>
         <location line="+15"/>
         <location line="+11"/>
-        <location line="+388"/>
+        <location line="+518"/>
         <source>Not connected to the eMule core.</source>
         <translation>eMule コアに接続されていません。</translation>
     </message>
     <message>
-        <location line="-438"/>
+        <location line="-568"/>
         <source>Cannot read %1.</source>
         <translation>%1 を読み取れません。</translation>
     </message>
@@ -14805,7 +15524,7 @@ Clicking &apos;Restore Stats&apos; again will reload your current statistics.</s
         <translation>Torrent ファイル (*.torrent);;すべてのファイル (*)</translation>
     </message>
     <message>
-        <location line="+53"/>
+        <location line="+70"/>
         <source>Add Torrent…</source>
         <translation>Torrent を追加…</translation>
     </message>
@@ -14855,12 +15574,12 @@ Clicking &apos;Restore Stats&apos; again will reload your current statistics.</s
         <translation>マグネットリンクをコピー</translation>
     </message>
     <message>
-        <location line="+63"/>
+        <location line="+78"/>
         <source>BitTorrent Options…</source>
         <translation>BitTorrent オプション…</translation>
     </message>
     <message>
-        <location line="+108"/>
+        <location line="+110"/>
         <source>BitTorrent: %1</source>
         <translation>BitTorrent: %1</translation>
     </message>
@@ -14904,7 +15623,7 @@ Clicking &apos;Restore Stats&apos; again will reload your current statistics.</s
         </translation>
     </message>
     <message>
-        <location line="+67"/>
+        <location line="+163"/>
         <source>Asking the core for the BitTorrent state…</source>
         <translation>コアに BitTorrent の状態を問い合わせ中…</translation>
     </message>
@@ -14939,6 +15658,11 @@ Clicking &apos;Restore Stats&apos; again will reload your current statistics.</s
         <location line="+2"/>
         <source>No torrents. Use &quot;Add Torrent…&quot; or &quot;Add Magnet Link…&quot; to start one.</source>
         <translation>Torrent がありません。「Torrent を追加…」または「マグネットリンクを追加…」で開始してください。</translation>
+    </message>
+    <message>
+        <location line="+2"/>
+        <source>No torrents match this filter.</source>
+        <translation>このフィルターに一致するトレントはありません。</translation>
     </message>
 </context>
 <context>
@@ -16246,14 +16970,14 @@ A password is set for this release.</source>
         <translation>アドレス</translation>
     </message>
     <message>
-        <location filename="../src/core/webserver/WebServer.cpp" line="-3396"/>
-        <location line="+3285"/>
+        <location filename="../src/core/webserver/WebServer.cpp" line="-3394"/>
+        <location line="+3283"/>
         <location line="+49"/>
         <source>Session expired — log in again</source>
         <translation>セッションの有効期限が切れました — 再度ログインしてください</translation>
     </message>
     <message>
-        <location line="-3330"/>
+        <location line="-3328"/>
         <source>Guests cannot add downloads</source>
         <translation>ゲストはダウンロードを追加できません</translation>
     </message>
@@ -16389,18 +17113,18 @@ A password is set for this release.</source>
     </message>
     <message>
         <location line="+4"/>
-        <location line="+29"/>
+        <location line="+27"/>
         <source>Saved. The new ports are used after a restart.</source>
         <translation>保存しました。新しいポートは再起動後に使用されます。</translation>
     </message>
     <message>
-        <location line="-25"/>
+        <location line="-23"/>
         <source>Saved, but a new port is in use. Still listening on TCP %1, UDP %2.</source>
         <translation>保存しましたが、新しいポートは使用中です。引き続き TCP %1、UDP %2 で待ち受けています。</translation>
     </message>
     <message>
         <location line="+4"/>
-        <location line="+21"/>
+        <location line="+19"/>
         <source>Saved.</source>
         <translation>保存しました。</translation>
     </message>
@@ -17083,7 +17807,7 @@ Whichever network is idle lends its share to the other.</source>
         <translation>NZB ファイル:</translation>
     </message>
     <message>
-        <location filename="../src/core/webserver/WebServer.cpp" line="-1214"/>
+        <location filename="../src/core/webserver/WebServer.cpp" line="-1212"/>
         <location filename="../src/core/webserver/WebTemplateStrings.h" line="+1"/>
         <source>Name</source>
         <translation>名前</translation>
@@ -17485,7 +18209,7 @@ Whichever network is idle lends its share to the other.</source>
         <translation>アップロード速度</translation>
     </message>
     <message>
-        <location filename="../src/core/webserver/WebServer.cpp" line="+1211"/>
+        <location filename="../src/core/webserver/WebServer.cpp" line="+1209"/>
         <location filename="../src/core/webserver/WebTemplateStrings.h" line="+1"/>
         <source>Uploads</source>
         <translation>アップロード</translation>

@@ -18,6 +18,7 @@
 #include <QTemporaryDir>
 #include <QTest>
 
+#include <algorithm>
 #include <atomic>
 
 namespace lt = libtorrent;
@@ -94,6 +95,7 @@ private slots:
     void joinHookSpoilsAPiece_data();
     void joinHookSpoilsAPiece();
     void resumeAfterRestart();
+    void peersTrackersAndOptions();
 
 private:
     void runJoin(bool spoil, bool deferred);
@@ -239,6 +241,90 @@ void tst_BtLocalSwarm::resumeAfterRestart()
     QTRY_VERIFY_WITH_TIMEOUT(again.torrent(id).has_value() && again.torrent(id)->state == BtState::Seeding, 10'000);
     QVERIFY(again.remove(id, false));
     QVERIFY(again.torrents().isEmpty());
+    again.stop();
+}
+
+void tst_BtLocalSwarm::peersTrackersAndOptions()
+{
+    BtSession seeder;
+    quint16 port = 0;
+    startSeeder(seeder, m_v1, port);
+    const QString seedId = seeder.torrents().first().id;
+
+    BtTorrentOptions opts;
+    opts.uploadLimitKb = 256;
+    opts.maxPeers = 20;
+    opts.ratioMode = BtLimitMode::Custom;
+    opts.ratioPercent = 250;
+    opts.seedTimeMode = BtLimitMode::Unlimited;
+    QVERIFY(seeder.setOptions(seedId, opts));
+    const auto got = seeder.options(seedId);
+    QVERIFY(got.has_value());
+    QCOMPARE(got->uploadLimitKb, 256);
+    QCOMPARE(got->downloadLimitKb, 0);
+    QCOMPARE(got->maxPeers, 20);
+    QCOMPARE(got->ratioMode, BtLimitMode::Custom);
+    QCOMPARE(got->ratioPercent, 250);
+    QCOMPARE(got->seedTimeMode, BtLimitMode::Unlimited);
+    QVERIFY(!seeder.options(QStringLiteral("bt:v1:0000000000000000000000000000000000000000")).has_value());
+
+    BtSession leecher;
+    leecher.start(settingsIn(m_dir, QStringLiteral("leechPeers")));
+    const BtAddResult added = leecher.addMagnet(magnet(m_v1, port));
+    QCOMPARE(added.outcome, BtAddOutcome::Added);
+
+    // Loopback ignores rate limits: the transfer is over in moments, so collect what
+    // both ends saw meanwhile rather than one snapshot.
+    bool sawOutgoingSeed = false;   // the leecher dialled a peer that has everything
+    bool sawIncoming = false;       // ... and the seeder saw it come in
+    bool sawAvailable = false;      // every piece with at least one peer
+    QTRY_VERIFY_WITH_TIMEOUT(([&] {
+        for (const auto& p : leecher.peers(added.id))
+            sawOutgoingSeed = sawOutgoingSeed
+                || (p.address.startsWith(QStringLiteral("127.0.0.1:")) && !p.flags.contains(QLatin1Char('I')) && p.progress >= 1.0);
+        for (const auto& p : seeder.peers(seedId))
+            sawIncoming = sawIncoming || p.flags.contains(QLatin1Char('I'));
+        const QByteArray avail = leecher.availabilityMap(added.id);
+        sawAvailable = sawAvailable
+            || (!avail.isEmpty() && std::all_of(avail.cbegin(), avail.cend(), [](char c) { return c != 0; }));
+        return sawOutgoingSeed && sawIncoming && sawAvailable;
+    }()), kTimeoutMs);
+    QTRY_VERIFY_WITH_TIMEOUT(leecher.torrent(added.id).has_value() && leecher.torrent(added.id)->totalSize == kPayload, 10'000);
+
+    // trackers: add, no duplicate, remove
+    const QString url = QStringLiteral("udp://127.0.0.1:9/announce");
+    QVERIFY(seeder.addTrackers(seedId, {url, url, QStringLiteral(" ")}));
+    QTRY_COMPARE_WITH_TIMEOUT(seeder.trackers(seedId).size(), 1, 5000);
+    QCOMPARE(seeder.trackers(seedId).first().url, url);
+    QVERIFY(seeder.removeTrackers(seedId, {url}));
+    QTRY_VERIFY_WITH_TIMEOUT(seeder.trackers(seedId).isEmpty(), 5000);
+    QVERIFY(!seeder.addTrackers(QStringLiteral("bt:v1:0000000000000000000000000000000000000000"), {url}));
+
+    leecher.stop();
+    seeder.stop();
+
+    // options survive a restart: speeds in the resume data, seed limits in the JSON
+    BtSession again;
+    QSignalSpy addedAgain(&again, &BtSession::torrentAdded);
+    again.start(settingsIn(m_dir, QStringLiteral("seeder%1").arg(m_seeders)));
+    QTRY_VERIFY_WITH_TIMEOUT(addedAgain.count() > 0, 10'000);
+    const auto restored = again.options(seedId);
+    QVERIFY(restored.has_value());
+    QCOMPARE(restored->uploadLimitKb, 256);
+    QCOMPARE(restored->maxPeers, 20);
+    QCOMPARE(restored->ratioMode, BtLimitMode::Custom);
+    QCOMPARE(restored->ratioPercent, 250);
+    QCOMPARE(restored->seedTimeMode, BtLimitMode::Unlimited);
+
+    // back to the defaults: the JSON entry goes
+    QVERIFY(again.setOptions(seedId, BtTorrentOptions{}));
+    const auto cleared = again.options(seedId);
+    QCOMPARE(cleared->uploadLimitKb, 0);
+    QCOMPARE(cleared->maxPeers, 0);
+    QCOMPARE(cleared->ratioMode, BtLimitMode::Global);
+    QFile json(m_dir.filePath(QStringLiteral("seeder%1/BT/torrent-options.json").arg(m_seeders)));
+    QVERIFY(json.open(QIODevice::ReadOnly));
+    QVERIFY(!json.readAll().contains(seedId.toUtf8()));
     again.stop();
 }
 

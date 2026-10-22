@@ -83,6 +83,11 @@ public:
     [[nodiscard]] uint64 downloadedTotal() const;
     [[nodiscard]] float scoreRatio(const Address& forIP) const;
 
+    /// The ratio this peer most likely grants *us*: the same formula with our upload and
+    /// download totals swapped (MorphXT GetMyScoreRatio). @p newFormula: the peer is
+    /// eMule 0.48 or later, which caps the first chunk linearly; older peers do not.
+    [[nodiscard]] float myScoreRatio(const Address& forIP, bool newFormula) const;
+
     void setLastSeen() { m_credits.lastSeen = static_cast<uint32>(std::time(nullptr)); }
     bool setSecureIdent(const uint8* ident, uint8 identLen);
 
@@ -104,6 +109,9 @@ public:
 
 private:
     void initializeIdent();
+
+    /// The credit formula: what a peer that @p received from us and @p sent to us grants.
+    [[nodiscard]] static float creditRatio(uint64 received, uint64 sent, bool newFormula);
 
     CreditStruct m_credits{};
     IdentState m_identState = IdentState::NotAvailable;

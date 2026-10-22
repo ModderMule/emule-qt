@@ -5,6 +5,9 @@
 
 #include <QCborArray>
 #include <QDir>
+#include <QStringList>
+
+#include <algorithm>
 
 #ifdef EMULE_HAVE_BITTORRENT
 #include "BtSession.h"
@@ -61,7 +64,54 @@ QCborMap toCbor(const bt::BtTorrentRow& r)
         {QStringLiteral("pieceLength"), r.pieceLength},
         {QStringLiteral("numFiles"), r.numFiles},
         {QStringLiteral("eta"), r.eta},
+        {QStringLiteral("comment"), r.comment},
+        {QStringLiteral("creator"), r.creator},
+        {QStringLiteral("createdAt"), r.createdAt},
+        {QStringLiteral("lastActivity"), r.lastActivity},
+        {QStringLiteral("activeSeconds"), r.activeSeconds},
+        {QStringLiteral("haveBytes"), r.haveBytes},
+        {QStringLiteral("totalSize"), r.totalSize},
+        {QStringLiteral("availability"), r.availability},
     };
+}
+
+QCborMap optionsToCbor(const bt::BtTorrentOptions& o)
+{
+    return QCborMap{
+        {QStringLiteral("downloadLimitKb"), o.downloadLimitKb},
+        {QStringLiteral("uploadLimitKb"), o.uploadLimitKb},
+        {QStringLiteral("maxPeers"), o.maxPeers},
+        {QStringLiteral("ratioMode"), static_cast<int>(o.ratioMode)},
+        {QStringLiteral("ratioPercent"), o.ratioPercent},
+        {QStringLiteral("seedTimeMode"), static_cast<int>(o.seedTimeMode)},
+        {QStringLiteral("seedTimeMinutes"), o.seedTimeMinutes},
+    };
+}
+
+bt::BtLimitMode limitModeOf(qint64 v)
+{
+    return v == 1 ? bt::BtLimitMode::Unlimited : v == 2 ? bt::BtLimitMode::Custom : bt::BtLimitMode::Global;
+}
+
+bt::BtTorrentOptions optionsFromCbor(const QCborMap& m)
+{
+    bt::BtTorrentOptions o;
+    o.downloadLimitKb = static_cast<int>(std::max<qint64>(0, m.value(QStringLiteral("downloadLimitKb")).toInteger()));
+    o.uploadLimitKb = static_cast<int>(std::max<qint64>(0, m.value(QStringLiteral("uploadLimitKb")).toInteger()));
+    o.maxPeers = static_cast<int>(std::max<qint64>(0, m.value(QStringLiteral("maxPeers")).toInteger()));
+    o.ratioMode = limitModeOf(m.value(QStringLiteral("ratioMode")).toInteger());
+    o.ratioPercent = static_cast<int>(m.value(QStringLiteral("ratioPercent")).toInteger(100));
+    o.seedTimeMode = limitModeOf(m.value(QStringLiteral("seedTimeMode")).toInteger());
+    o.seedTimeMinutes = static_cast<int>(m.value(QStringLiteral("seedTimeMinutes")).toInteger(60));
+    return o;
+}
+
+QStringList stringsOf(const QCborArray& arr)
+{
+    QStringList out;
+    for (const auto& v : arr)
+        out.append(v.toString());
+    return out;
 }
 
 QCborMap addResultToCbor(const bt::BtAddResult& r)
@@ -99,6 +149,7 @@ QCborMap detailsToCbor(const QString& id)
             {QStringLiteral("encrypted"), p.encrypted},
             {QStringLiteral("utp"), p.utp},
             {QStringLiteral("source"), p.source},
+            {QStringLiteral("flags"), p.flags},
         });
     QCborArray trackers;
     for (const auto& t : s_session->trackers(id))
@@ -109,12 +160,21 @@ QCborMap detailsToCbor(const QString& id)
             {QStringLiteral("message"), t.message},
             {QStringLiteral("seeds"), t.seeds},
             {QStringLiteral("peers"), t.peers},
+            {QStringLiteral("downloaded"), t.downloaded},
+            {QStringLiteral("nextAnnounce"), t.nextAnnounce},
+            {QStringLiteral("updating"), t.updating},
+            {QStringLiteral("fails"), t.fails},
+            {QStringLiteral("hasError"), t.hasError},
         });
-    return QCborMap{
+    QCborMap out{
         {QStringLiteral("files"), files},
         {QStringLiteral("peers"), peers},
         {QStringLiteral("trackers"), trackers},
+        {QStringLiteral("availabilityMap"), s_session->availabilityMap(id)},
     };
+    if (const auto o = s_session->options(id))
+        out.insert(QStringLiteral("options"), optionsToCbor(*o));
+    return out;
 }
 
 #endif // EMULE_HAVE_BITTORRENT
@@ -205,6 +265,15 @@ bool handleRequest(const IpcMessage& msg, const std::function<void(const IpcMess
         boolResult(s_session->setFilePriorities(id, prio));
         break;
     }
+    case IpcMsgType::SetTorrentOptions:
+        boolResult(s_session->setOptions(id, optionsFromCbor(msg.fieldMap(1))));
+        break;
+    case IpcMsgType::AddTorrentTrackers:
+        boolResult(s_session->addTrackers(id, stringsOf(msg.fieldArray(1))));
+        break;
+    case IpcMsgType::RemoveTorrentTrackers:
+        boolResult(s_session->removeTrackers(id, stringsOf(msg.fieldArray(1))));
+        break;
     default:
         reply(IpcMessage::makeError(seq, 400, QStringLiteral("Unknown BitTorrent request")));
         break;

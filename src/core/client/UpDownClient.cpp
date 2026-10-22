@@ -239,6 +239,7 @@ void UpDownClient::init()
 
     m_transferredUp = 0;
     m_uploadTime = 0;
+    m_upTotalTime = 0;
     m_askedCount = 0;
     m_lastUpRequest = 0;
     m_curSessionUp = 0;
@@ -255,6 +256,7 @@ void UpDownClient::init()
     m_transferredDown = 0;
     m_curSessionPayloadDown = 0;
     m_downStartTime = 0;
+    m_downTotalTime = 0;
     m_lastBlockOffset = UINT64_MAX;
     m_lastBlockReceived = 0;
     m_totalUDPPackets = 0;
@@ -446,6 +448,8 @@ void UpDownClient::setUploadState(UploadState state)
     if (state != m_uploadState) {
         // Clear rate data when leaving Uploading
         if (m_uploadState == UploadState::Uploading) {
+            if (m_uploadTime != 0)
+                m_upTotalTime += getTickCount() - m_uploadTime;
             m_upDatarate = 0;
             m_sumForAvgUpDataRate = 0;
             m_averageUDR.clear();
@@ -494,6 +498,9 @@ void UpDownClient::setDownloadState(DownloadState state)
         // packets (e.g. multipacket answers) without being blocked by a stale
         // download limit from the previous file's transfer.
         if (m_downloadState == DownloadState::Downloading) {
+            if (m_downStartTime != 0)
+                m_downTotalTime += getTickCount() - m_downStartTime;
+
             // A session that carried a block's worth wipes the record of a bad one.
             if (sessionPayloadDown() >= EMBLOCKSIZE) {
                 m_fruitlessSessionTick = 0;
@@ -554,6 +561,30 @@ void UpDownClient::setDownloadState(DownloadState state)
 
         emit downloadStateChanged(state);
     }
+}
+
+namespace {
+
+uint32 averageRate(uint64 bytes, uint64 finishedMs, uint64 runningSince, bool running)
+{
+    uint64 ms = finishedMs;
+    if (running && runningSince != 0)
+        ms += getTickCount() - runningSince;
+    return ms > 999 ? static_cast<uint32>(bytes / (ms / 1000)) : 0;
+}
+
+} // namespace
+
+uint32 UpDownClient::avgUpDatarate() const
+{
+    return averageRate(m_transferredUp, m_upTotalTime, m_uploadTime,
+                       m_uploadState == UploadState::Uploading);
+}
+
+uint32 UpDownClient::avgDownDatarate() const
+{
+    return averageRate(m_transferredDown, m_downTotalTime, m_downStartTime,
+                       m_downloadState == DownloadState::Downloading);
 }
 
 // ===========================================================================

@@ -157,6 +157,7 @@ private slots:
     void shouldReceiveCryptUDPPackets_followsMfcRule_data();
     void shouldReceiveCryptUDPPackets_followsMfcRule();
     void processFileStatus_exactMultipleAcceptsEd2kCount();
+    void processFileStatus_completeSourceCountsAllParts();
     void isSourceRequestAllowed_followsRarityAndSoftCap();
     void processChangeClientID_lowIdAdoptedOnlyWithKnownServer();
     void processChangeClientID_highIdMustMatchThePeerAddress();
@@ -3322,6 +3323,29 @@ void tst_UpDownClient::processFileStatus_exactMultipleAcceptsEd2kCount()
     QCOMPARE(client.partCount(), file.partCount());
     QVERIFY(client.isPartAvailable(0));
     QVERIFY(client.isPartAvailable(1));
+}
+
+void tst_UpDownClient::processFileStatus_completeSourceCountsAllParts()
+{
+    // Wire count 0 = complete file, no bitmap kept. Tooltip showed
+    // "Available parts: 0" for such a source (emule-qt#50).
+    PartFile file;
+    file.setFileName(QStringLiteral("full.bin"));
+    file.setFileSize(EMFileSize(PARTSIZE * 3 + 100));
+    QCOMPARE(file.partCount(), uint16{4});
+
+    UpDownClient client;
+    SafeMemFile data;
+    data.writeUInt16(0);
+    data.seek(0, SEEK_SET);
+
+    client.processFileStatus(true, data, &file);
+
+    QVERIFY(client.completeSource());
+    QCOMPARE(client.availablePartCount(), file.partCount());
+    QVERIFY(client.isPartAvailable(0));
+    QVERIFY(client.isPartAvailable(3));
+    QVERIFY(!client.isPartAvailable(4));
 }
 
 // ---------------------------------------------------------------------------

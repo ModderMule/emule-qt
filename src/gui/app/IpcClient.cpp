@@ -179,6 +179,9 @@ static QString ipcMsgTypeName(Ipc::IpcMsgType type)
     case T::SetTorrentFilePriorities: return QStringLiteral("SetTorrentFilePriorities");
     case T::RecheckTorrent:       return QStringLiteral("RecheckTorrent");
     case T::ReannounceTorrent:    return QStringLiteral("ReannounceTorrent");
+    case T::SetTorrentOptions:    return QStringLiteral("SetTorrentOptions");
+    case T::AddTorrentTrackers:   return QStringLiteral("AddTorrentTrackers");
+    case T::RemoveTorrentTrackers: return QStringLiteral("RemoveTorrentTrackers");
     case T::GetBtStatus:          return QStringLiteral("GetBtStatus");
     case T::PushTorrentAdded:     return QStringLiteral("PushTorrentAdded");
     case T::PushTorrentUpdate:    return QStringLiteral("PushTorrentUpdate");

@@ -253,6 +253,9 @@ emule_bittorrent {
         utils/TorrentAdd.cpp \
         controls/TorrentListModel.cpp \
         controls/TorrentProgressDelegate.cpp \
+        controls/TorrentFilterProxy.cpp \
+        controls/TorrentListsPane.cpp \
+        controls/TorrentPieceGrid.cpp \
         dialogs/AddTorrentDialog.cpp \
         dialogs/TorrentDetailsDialog.cpp \
         panels/TorrentPanel.cpp
@@ -260,6 +263,9 @@ emule_bittorrent {
         utils/TorrentAdd.h \
         controls/TorrentListModel.h \
         controls/TorrentProgressDelegate.h \
+        controls/TorrentFilterProxy.h \
+        controls/TorrentListsPane.h \
+        controls/TorrentPieceGrid.h \
         dialogs/AddTorrentDialog.h \
         dialogs/TorrentDetailsDialog.h \
         panels/TorrentPanel.h

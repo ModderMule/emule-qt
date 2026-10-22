@@ -184,6 +184,15 @@
     <ClCompile Include="controls\TorrentProgressDelegate.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
+    <ClCompile Include="controls\TorrentFilterProxy.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="controls\TorrentListsPane.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="controls\TorrentPieceGrid.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
     <ClCompile Include="dialogs\AddTorrentDialog.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
@@ -634,6 +643,15 @@
       <Filter>Header Files</Filter>
     </QtMoc>
     <QtMoc Include="controls\TorrentProgressDelegate.h">
+      <Filter>Header Files</Filter>
+    </QtMoc>
+    <QtMoc Include="controls\TorrentFilterProxy.h">
+      <Filter>Header Files</Filter>
+    </QtMoc>
+    <QtMoc Include="controls\TorrentListsPane.h">
+      <Filter>Header Files</Filter>
+    </QtMoc>
+    <QtMoc Include="controls\TorrentPieceGrid.h">
       <Filter>Header Files</Filter>
     </QtMoc>
     <QtMoc Include="dialogs\AddTorrentDialog.h">

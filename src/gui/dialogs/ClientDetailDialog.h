@@ -21,10 +21,15 @@ public:
     /// Swap the dialog to a different client — the Prev/Next walker's entry point.
     void setDetails(const QCborMap& details) override;
 
+    /// Live refresh of the same client: rewrites the values in place, so a selection
+    /// or scroll position survives. Falls back to a rebuild when the rows changed.
+    void applyDetails(const QCborMap& details) override;
+
 private:
     [[nodiscard]] QWidget* buildContent(const QCborMap& details);
 
     QWidget* m_content = nullptr;
+    QString  m_cc;   ///< country row is a flag widget, rebuilt when this changes
 };
 
 } // namespace eMule

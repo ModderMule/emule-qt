@@ -124,6 +124,12 @@ int DaemonUsenetWebBackend::clearCompleted()
     return q ? q->clearCompleted() : 0;
 }
 
+QCborMap DaemonUsenetWebBackend::inspectNzb(const QByteArray& data, const QString& name,
+                                            QString& error) const
+{
+    return UsenetBridge::inspectNzb(data, name, error);
+}
+
 bool DaemonUsenetWebBackend::setPriority(const QString& id, int priority)
 {
     auto* q = UsenetBridge::queue();

@@ -22,6 +22,10 @@ public:
     static QList<BtPeerRow> peers(const libtorrent::torrent_handle& h);
     static QList<BtTrackerRow> trackers(const libtorrent::torrent_handle& h);
 
+    /// Peers that have each piece: up to `buckets` values, each the rarest piece of
+    /// its bucket, capped at 255. Empty without metadata.
+    static QByteArray availabilityMap(const libtorrent::torrent_handle& h, int buckets = 256);
+
     /// The part map of a row: up to `buckets` values 0..255.
     static QByteArray pieceMap(const libtorrent::typed_bitfield<libtorrent::piece_index_t>& pieces, int buckets = 256);
 };

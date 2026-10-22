@@ -155,6 +155,8 @@ private:
 
     void loadSettings();
     void saveSettings();
+    /// Incoming/temp fields: full paths, distinct, created on request. Fails on the page.
+    [[nodiscard]] bool validateDirectories();
     void fillDaemonSettings(const QCborMap& prefs);
     void fillDaemonSettingsFromPrefs();
     /// Value text for the slot-rate slider and the slot count it yields.

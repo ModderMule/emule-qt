@@ -91,6 +91,10 @@
 
 namespace eMule {
 
+namespace {
+bool s_quitWithoutPrompt = false;   // set by quitWithoutPrompt()
+} // namespace
+
 MainWindow::MainWindow(QWidget* parent)
     : QMainWindow(parent)
 {
@@ -705,7 +709,7 @@ void MainWindow::closeEvent(QCloseEvent* event)
     // Closing exits, as in MFC (OnClose → CanClose, EmuleDlg.cpp:1616,1632-1650); only
     // minimizing goes to the tray — see changeEvent(). It used to be the other way round,
     // so with the preference on the close button could not quit at all.
-    if (thePrefs.promptOnExit()) {
+    if (thePrefs.promptOnExit() && !s_quitWithoutPrompt) {
         // MFC restores the window before asking, so the question is never hidden
         if (!isVisible() || isMinimized()) {
             restoreWindow();
@@ -806,6 +810,11 @@ void MainWindow::notifyLogEntry(const QString& text)
 void MainWindow::forceQuit()
 {
     close();
+}
+
+void MainWindow::quitWithoutPrompt()
+{
+    s_quitWithoutPrompt = true;
 }
 
 void MainWindow::setRelatedSearchSupported(bool supported)

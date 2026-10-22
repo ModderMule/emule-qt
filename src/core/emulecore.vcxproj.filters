@@ -576,6 +576,9 @@
     <ClCompile Include="webserver\WebServerMcp.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
+    <ClCompile Include="webserver\WebServerTorrents.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
     <ClCompile Include="webserver\WebSessionManager.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
@@ -819,6 +822,9 @@
       <Filter>Header Files</Filter>
     </ClInclude>
     <ClInclude Include="webserver\OpenApiWriter.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="webserver\TorrentWebBackend.h">
       <Filter>Header Files</Filter>
     </ClInclude>
     <ClInclude Include="webserver\UsenetWebBackend.h">

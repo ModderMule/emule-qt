@@ -127,6 +127,21 @@ QString AppConfig::configDir()
     return dir;
 }
 
+QString AppConfig::coreLockPath(const QString& configDir)
+{
+    return configDir + QStringLiteral("/emulecored.lock");
+}
+
+bool AppConfig::coreRunningFor(const QString& configDir)
+{
+    QLockFile lock(coreLockPath(configDir));
+    lock.setStaleLockTime(0);   // only a dead holder makes it stale, never age
+    if (!lock.tryLock(0))
+        return true;   // held, or not readable: assume a core
+    lock.unlock();
+    return false;
+}
+
 // ---------------------------------------------------------------------------
 // Bundled data seeding
 // ---------------------------------------------------------------------------

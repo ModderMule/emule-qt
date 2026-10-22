@@ -213,6 +213,11 @@ public:
     /// Close and quit — the tray menu's Exit and Cmd+Q. promptOnExit still asks.
     void forceQuit();
 
+    /// Quitting on a signal (SIGTERM, SIGINT, SIGHUP): no Confirm Exit box. A box
+    /// left open then gets a second terminate from inside its modal loop, which
+    /// crashes AppKit on macOS.
+    static void quitWithoutPrompt();
+
     /// The core is not coming up: say which way, and offer Retry / Open Log / Quit.
     /// Never blocks. Problem::None takes the box down again.
     void showCoreStartProblem(eMule::CoreStartWatch::Problem problem);

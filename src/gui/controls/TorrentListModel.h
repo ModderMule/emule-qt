@@ -79,6 +79,14 @@ struct TorrentRow {
     int pieceLength = 0;
     int numFiles = 0;
     qint64 eta = -1;     ///< seconds, -1 = unknown
+    QString comment;
+    QString creator;
+    qint64 createdAt = 0;     ///< Unix seconds, 0 = unknown
+    qint64 lastActivity = 0;  ///< Unix seconds, 0 = never
+    qint64 activeSeconds = 0;
+    qint64 haveBytes = 0;     ///< verified, of the whole torrent
+    qint64 totalSize = 0;     ///< the whole torrent, wanted or not
+    double availability = -1; ///< copies in the swarm, -1 = unknown
 
     /// uploaded / downloaded; -1 when nothing was downloaded yet.
     [[nodiscard]] double ratio() const;

@@ -2,6 +2,7 @@
 #include "utils/TooltipDelayStyle.h"
 #include "pch.h"
 #include <QApplication>
+#include <QDialog>
 #include <QDir>
 #include <QFile>
 #include <QFileInfo>
@@ -119,6 +120,31 @@ bool ipcPortFree(const QString& host, uint16_t port)
     const QHostAddress addr(host);
     QTcpServer probe;
     return probe.listen(addr.isNull() ? QHostAddress(QHostAddress::LocalHost) : addr, port);
+}
+
+/// A core of another profile holds our IPC port, as with a new --config that starts
+/// on the default (issue #49): connecting would show that profile. Moves this one
+/// to the next free port and saves it, so the core started with it reads the same.
+void moveOffForeignCore(const QString& configDir)
+{
+    const QString host = eMule::thePrefs.ipcListenAddress();
+    const uint16_t taken = eMule::thePrefs.ipcPort();
+    if (ipcPortFree(host, taken) || eMule::AppConfig::coreRunningFor(configDir))
+        return;
+    const QList<uint16_t> ownPorts{eMule::thePrefs.port(), eMule::thePrefs.udpPort(),
+                                   eMule::thePrefs.webServerPort()};
+    for (uint32_t port = taken + 1u; port <= 65535u && port <= taken + 100u; ++port) {
+        if (ownPorts.contains(static_cast<uint16_t>(port))
+            || !ipcPortFree(host, static_cast<uint16_t>(port)))
+            continue;
+        eMule::logInfo(QStringLiteral("IPC port %1 belongs to the core of another config, "
+                                      "using %2").arg(taken).arg(port));
+        eMule::thePrefs.setIpcPort(static_cast<uint16_t>(port));
+        eMule::thePrefs.save();
+        return;
+    }
+    eMule::logWarning(QStringLiteral("IPC port %1 belongs to the core of another config, "
+                                     "and no free port follows it").arg(taken));
 }
 
 #if !defined(Q_OS_MACOS) && !defined(Q_OS_WIN)
@@ -318,8 +344,19 @@ int main(int argc, char* argv[])
     QObject::connect(&sigNotifier, &QSocketNotifier::activated, &app, [&]() {
         char tmp;
         ::read(s_sigFd[0], &tmp, sizeof(tmp));
+        static bool quitting = false;
+        if (quitting)
+            return;   // a repeat while we wind down
+        quitting = true;
         eMule::logInfo(QStringLiteral("Signal received — shutting down gracefully..."));
-        QCoreApplication::quit();
+        eMule::MainWindow::quitWithoutPrompt();
+        // Quitting from inside a modal loop crashes AppKit: close the boxes, then
+        // quit once their loops have returned
+        for (QWidget* w : QApplication::topLevelWidgets()) {
+            if (auto* dlg = qobject_cast<QDialog*>(w); dlg && dlg->isVisible())
+                dlg->reject();
+        }
+        QTimer::singleShot(0, &app, &QCoreApplication::quit);
     });
     std::signal(SIGTERM, unixSignalHandler);
     std::signal(SIGINT,  unixSignalHandler);
@@ -426,7 +463,10 @@ int main(int argc, char* argv[])
     auto daemonPid = std::make_shared<qint64>(0);
     if (eMule::thePrefs.ipcEnabled() && !isRemoteCoreAddress(eMule::thePrefs.ipcListenAddress())) {
         const QString earlyPath = resolveDaemonPath();
-        if (!earlyPath.isEmpty() && earlyPath != QStringLiteral("local")
+        const bool ownsCore = !earlyPath.isEmpty() && earlyPath != QStringLiteral("local");
+        if (ownsCore)
+            moveOffForeignCore(configDir);
+        if (ownsCore
             && ipcPortFree(eMule::thePrefs.ipcListenAddress(), eMule::thePrefs.ipcPort())) {
             const bool hold = !cli.screenshotMode() && !eMule::theUiState.firstStartWizardDone();
             *weOwnDaemon = launchDaemon(earlyPath, hold, *daemonPid);

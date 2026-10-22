@@ -35,6 +35,7 @@ private slots:
     void scoreRatio_noDownloads();
     void scoreRatio_withCredits();
     void scoreRatio_cappedAt10();
+    void myScoreRatio_swapsTheTotals();
     void identState_initial();
     void identState_verified();
     void identState_badGuy();
@@ -177,6 +178,30 @@ void tst_ClientCredits::scoreRatio_cappedAt10()
     ClientCredits c(cs);
     float ratio = c.scoreRatio(ip(0x01020304));
     QCOMPARE(ratio, 10.0f);
+}
+
+void tst_ClientCredits::myScoreRatio_swapsTheTotals()
+{
+    CreditStruct cs{};
+    std::memcpy(cs.key.data(), testHash, 16);
+    // We got 1 MiB from them, they got 5 MiB from us
+    cs.downloadedLo = 1 * 1024 * 1024;
+    cs.uploadedLo = 5 * 1024 * 1024;
+    cs.lastSeen = static_cast<uint32>(std::time(nullptr));
+
+    ClientCredits c(cs);
+    QCOMPARE(c.scoreRatio(ip(0x01020304)), 1.0f);
+
+    // New formula: the first-chunk ramp wins, (4 MiB / 8598323) * 2.34 + 1
+    QVERIFY(qAbs(c.myScoreRatio(ip(0x01020304), true) - 2.1415f) < 0.001f);
+    // Old formula: only the sqrt(5 + 2) cap
+    QVERIFY(qAbs(c.myScoreRatio(ip(0x01020304), false) - 2.6458f) < 0.001f);
+
+    // Mirrors scoreRatio() of the swapped record
+    CreditStruct mirrored = cs;
+    std::swap(mirrored.downloadedLo, mirrored.uploadedLo);
+    ClientCredits m(mirrored);
+    QCOMPARE(c.myScoreRatio(ip(0x01020304), true), m.scoreRatio(ip(0x01020304)));
 }
 
 void tst_ClientCredits::identState_initial()

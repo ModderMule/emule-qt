@@ -5,9 +5,12 @@
 #include "panels/TorrentPanel.h"
 
 #include "app/IpcClient.h"
+#include "app/UiState.h"
 #include "controls/AbstractListView.h"
 #include "controls/SortableItems.h"
+#include "controls/TorrentFilterProxy.h"
 #include "controls/TorrentListModel.h"
+#include "controls/TorrentListsPane.h"
 #include "controls/TorrentProgressDelegate.h"
 #include "dialogs/AddTorrentDialog.h"
 #include "dialogs/TorrentDetailsDialog.h"
@@ -18,9 +21,11 @@
 #include "utils/StringUtils.h"
 #include "utils/TorrentAdd.h"
 #include "utils/TorrentLinks.h"
+#include "utils/ViewNavigation.h"
 
 #include <QAction>
 #include <QApplication>
+#include <QButtonGroup>
 #include <QCheckBox>
 #include <QClipboard>
 #include <QDesktopServices>
@@ -38,9 +43,15 @@
 #include <QMessageBox>
 #include <QMimeData>
 #include <QPushButton>
+#include <QSplitter>
 #include <QToolBar>
+#include <QToolButton>
 #include <QUrl>
 #include <QVBoxLayout>
+
+#include <array>
+#include <utility>
+#include <memory>
 
 namespace eMule {
 
@@ -63,6 +74,7 @@ TorrentPanel::~TorrentPanel() = default;
 void TorrentPanel::setIpcClient(IpcClient* ipc)
 {
     m_ipc = ipc;
+    m_pane->setIpcClient(ipc);
     if (!m_ipc)
         return;
 
@@ -195,6 +207,23 @@ bool TorrentPanel::acceptTorrentDrop(const QMimeData* mime)
     return true;
 }
 
+void TorrentPanel::switchToSubTab(int tab)
+{
+    if (m_proxy->rowCount() == 0) {
+        m_pendingSubTab = tab;
+        return;
+    }
+    m_view->setCurrentIndex(m_proxy->index(0, 0));
+    if (tab >= TorrentListsPane::TabPeers && tab <= TorrentListsPane::TabFiles) {
+        m_pane->tabs()->setCurrentIndex(tab);
+        return;
+    }
+    const QString id = m_model->idAt(m_proxy->mapToSource(m_proxy->index(0, 0)).row());
+    showDetails(id);
+    if (m_detailsDialog)
+        m_detailsDialog->tabs()->setCurrentIndex(std::clamp(tab - 3, 0, int(TorrentDetailsDialog::TabOptions)));
+}
+
 bool TorrentPanel::engineRunning() const
 {
     return m_status.value(QStringLiteral("running")).toBool();
@@ -262,13 +291,20 @@ void TorrentPanel::setupUi()
     connect(m_copyMagnetAction, &QAction::triggered, this, &TorrentPanel::onCopyMagnet);
 
     layout->addWidget(toolbar);
+    layout->addWidget(createFilterBar());
 
-    auto* view = new ListTreeView(this);
+    m_splitter = new QSplitter(Qt::Vertical, this);
+    m_splitter->setHandleWidth(4);
+    m_splitter->setChildrenCollapsible(false);
+    m_splitter->setStyleSheet(QStringLiteral("QSplitter::handle { background: palette(mid); }"));
+
+    auto* view = new ListTreeView(m_splitter);
     m_view = view;
     m_model = new TorrentListModel(this);
-    auto* proxy = new SortValueProxy(this);
-    m_proxy = proxy;
+    m_proxy = new TorrentFilterProxy(this);
     m_proxy->setSourceModel(m_model);
+    m_proxy->setFilter(static_cast<TorrentFilterProxy::Filter>(
+        std::clamp(theUiState.torrentFilter(), 0, int(TorrentFilterProxy::FilterCount) - 1)));
     m_proxy->setSortRole(Qt::UserRole);   // raw values, not "1.40 GB"
     m_proxy->setDynamicSortFilter(true);
 
@@ -295,7 +331,9 @@ void TorrentPanel::setupUi()
 
     connect(m_view, &QWidget::customContextMenuRequested, this, &TorrentPanel::onContextMenu);
     connect(m_view->selectionModel(), &QItemSelectionModel::selectionChanged, this,
-            &TorrentPanel::updateActions);
+            &TorrentPanel::onSelectionChanged);
+    connect(m_view->selectionModel(), &QItemSelectionModel::currentChanged, this,
+            &TorrentPanel::onSelectionChanged);
 
     // Double click / Enter / Alt+Enter: Details, as on the MFC download list
     auto details = [this](const QModelIndex& index) {
@@ -314,7 +352,13 @@ void TorrentPanel::setupUi()
     keys.paste = [this] { onPasteMagnets(); };
     bindListKeys(m_view, std::move(keys));
 
-    layout->addWidget(m_view, 1);
+    m_pane = new TorrentListsPane(m_splitter);
+    m_splitter->addWidget(m_view);
+    m_splitter->addWidget(m_pane);
+    m_splitter->setStretchFactor(0, 3);
+    m_splitter->setStretchFactor(1, 2);
+    theUiState.bindTorrentSplitter(m_splitter);
+    layout->addWidget(m_splitter, 1);
 
     // Status line: engine state, and the way to Options when it is off
     auto* statusRow = new QHBoxLayout;
@@ -350,7 +394,9 @@ void TorrentPanel::refresh()
         }
         m_model->setRows(rows);
         updateSummary();
-        updateActions();
+        onSelectionChanged();
+        if (m_pendingSubTab >= 0 && m_proxy->rowCount() > 0)
+            switchToSubTab(std::exchange(m_pendingSubTab, -1));
     });
     // Start/stop is pushed, DHT size is not: refresh it with the list
     requestStatus();
@@ -510,17 +556,112 @@ void TorrentPanel::showDetails(const QString& id)
 {
     if (id.isEmpty())
         return;
-    if (m_detailsDialog && m_detailsDialog->torrentId() == id) {
+    if (m_detailsDialog) {
+        // one inspector, as in Transmission: it follows the torrent asked for
+        m_detailsDialog->setTorrentId(id);
+        m_detailsDialog->setWalker(makeWalker(id));
         m_detailsDialog->raise();
         m_detailsDialog->activateWindow();
         return;
     }
-    if (m_detailsDialog)
-        m_detailsDialog->close();
-    const TorrentRow* row = m_model->findById(id);
-    auto* dialog = new TorrentDetailsDialog(m_ipc, id, row ? row->name : id, this);
+    auto* dialog = new TorrentDetailsDialog(m_ipc, m_model, id, this);
+    dialog->setWalker(makeWalker(id));
     m_detailsDialog = dialog;
     dialog->show();
+    dialog->raise();
+    dialog->activateWindow();
+}
+
+DetailWalker TorrentPanel::makeWalker(const QString& id)
+{
+    // Anchored by id: the model merges rows on each poll, an index would go stale
+    auto anchor = std::make_shared<QString>(id);
+    auto indexOf = [this](const QString& key) -> QModelIndex {
+        const int row = m_model->rowOf(key);
+        return row < 0 ? QModelIndex{} : ViewNav::fromSource(m_view, m_model->index(row, 0));
+    };
+    DetailWalker walker;
+    walker.step = [this, anchor, indexOf](int delta) -> QString {
+        const QModelIndex to = ViewNav::step(m_view, indexOf(*anchor), delta, &ViewNav::isTopLevel);
+        if (!to.isValid())
+            return {};
+        *anchor = m_model->idAt(ViewNav::toSource(to).row());
+        return *anchor;
+    };
+    walker.canStep = [this, anchor, indexOf](int delta) {
+        return ViewNav::peekStep(m_view, indexOf(*anchor), delta, &ViewNav::isTopLevel).isValid();
+    };
+    return walker;
+}
+
+QWidget* TorrentPanel::createFilterBar()
+{
+    auto* bar = new QWidget(this);
+    auto* row = new QHBoxLayout(bar);
+    row->setContentsMargins(6, 2, 6, 2);
+    row->setSpacing(2);
+    m_filterGroup = new QButtonGroup(bar);
+    m_filterGroup->setExclusive(true);
+    for (int f = 0; f < TorrentFilterProxy::FilterCount; ++f) {
+        auto* b = new QToolButton(bar);
+        b->setCheckable(true);
+        b->setAutoRaise(true);
+        b->setText(TorrentFilterProxy::filterName(static_cast<TorrentFilterProxy::Filter>(f)));
+        m_filterGroup->addButton(b, f);
+        row->addWidget(b);
+    }
+    row->addStretch(1);
+    if (auto* b = m_filterGroup->button(std::clamp(theUiState.torrentFilter(), 0,
+                                                   int(TorrentFilterProxy::FilterCount) - 1)))
+        b->setChecked(true);
+    connect(m_filterGroup, &QButtonGroup::idClicked, this, &TorrentPanel::setFilter);
+    return bar;
+}
+
+void TorrentPanel::setFilter(int filter)
+{
+    m_proxy->setFilter(static_cast<TorrentFilterProxy::Filter>(filter));
+    theUiState.setTorrentFilter(filter);
+    updateSummary();
+    onSelectionChanged();
+}
+
+void TorrentPanel::updateFilterCounts()
+{
+    std::array<int, TorrentFilterProxy::FilterCount> counts{};
+    for (int i = 0; i < m_model->count(); ++i) {
+        const TorrentRow* r = m_model->rowAt(i);
+        if (!r)
+            continue;
+        for (int f = 0; f < TorrentFilterProxy::FilterCount; ++f)
+            if (TorrentFilterProxy::matches(*r, static_cast<TorrentFilterProxy::Filter>(f)))
+                ++counts[static_cast<std::size_t>(f)];
+    }
+    for (int f = 0; f < TorrentFilterProxy::FilterCount; ++f) {
+        auto* b = m_filterGroup->button(f);
+        if (!b)
+            continue;
+        const QString text = QStringLiteral("%1 (%2)")
+                                 .arg(TorrentFilterProxy::filterName(static_cast<TorrentFilterProxy::Filter>(f)))
+                                 .arg(counts[static_cast<std::size_t>(f)]);
+        if (b->text() != text)
+            b->setText(text);
+    }
+}
+
+void TorrentPanel::onSelectionChanged()
+{
+    updateActions();
+    // the pane follows the current row; with several selected and none current, the first
+    QString id;
+    const QModelIndex current = m_view->selectionModel()->currentIndex();
+    if (current.isValid() && m_view->selectionModel()->isRowSelected(current.row(), current.parent()))
+        id = m_model->idAt(m_proxy->mapToSource(current).row());
+    if (id.isEmpty()) {
+        const QStringList ids = selectedIds();
+        id = ids.isEmpty() ? QString() : ids.first();
+    }
+    m_pane->setTorrentId(id);
 }
 
 void TorrentPanel::updateActions()
@@ -555,6 +696,7 @@ void TorrentPanel::updateActions()
 
 void TorrentPanel::updateSummary()
 {
+    updateFilterCounts();
     const bool connected = m_ipc && m_ipc->isConnected();
     const bool available = m_status.value(QStringLiteral("available")).toBool(true);
     const bool running = engineRunning();
@@ -597,6 +739,8 @@ void TorrentPanel::updateSummary()
                 .arg(listening ? tr("(listening)") : tr("(not listening)")));
         if (m_model->count() == 0)
             notice = tr("No torrents. Use \"Add Torrent…\" or \"Add Magnet Link…\" to start one.");
+        else if (m_proxy->rowCount() == 0)
+            notice = tr("No torrents match this filter.");
     }
 
     m_optionsButton->setVisible(connected && m_statusKnown && available && !running);

@@ -36,6 +36,9 @@
     <ClCompile Include="DaemonApiBackend.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
+    <ClCompile Include="DaemonTorrentWebBackend.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
     <ClCompile Include="DaemonUsenetWebBackend.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
@@ -99,6 +102,9 @@
       <Filter>Header Files</Filter>
     </ClInclude>
     <ClInclude Include="DaemonApiBackend.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="DaemonTorrentWebBackend.h">
       <Filter>Header Files</Filter>
     </ClInclude>
     <ClInclude Include="DaemonUsenetWebBackend.h">

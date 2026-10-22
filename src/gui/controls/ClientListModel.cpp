@@ -161,13 +161,10 @@ QVariant ClientListModel::displayData(const ClientRow& c, int column) const
         case 0: return clientNameText(c.userName);
         case 1: return c.fileName;
         case 2: return rateCell(c.upDatarate);
-        // Session, not lifetime: MFC's UploadListCtrl.cpp:200-203 shows GetSessionUp(), and
-        // in advanced mode appends the file payload alone — the gap between the two is the
-        // ed2k + in-packet framing this slot has paid for.
-        case 3: return thePrefs.showExtControls()
-                     ? QStringLiteral("%1 (%2)").arg(sizeCell(c.sessionUp),
-                                                     sizeCell(c.queueSessionPayloadUp))
-                     : sizeCell(c.sessionUp);
+        // This slot's bytes, with the credit total in brackets as in the Downloading list.
+        // Diverges on purpose (issue #51): MFC's UploadListCtrl.cpp:200-203 brackets the
+        // slot's file payload instead, which reads as the same number twice.
+        case 3: return sessionWithTotal(c.sessionUp, c.uploadedTotal);
         // MFC UploadListCtrl.cpp:205-213
         case 4: return c.hasLowID ? QStringLiteral("%1 (%2)").arg(hmCell(c.waitStartTime), tr("Low ID"))
                                   : hmCell(c.waitStartTime);
