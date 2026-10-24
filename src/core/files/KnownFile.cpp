@@ -165,7 +165,7 @@ bool KnownFile::loadTagsFromFile(FileDataIO& file)
         case FT_FILENAME:
             if (tag.isStr()) {
                 if (fileName().isEmpty())
-                    setFileName(tag.strValue(), true);
+                    setFileName(tag.strValue());   // as stored, or it never matches the disk again (MFC :637)
             }
             break;
         case FT_FILESIZE:
@@ -1207,16 +1207,21 @@ bool KnownFile::createFromFile(const QString& directory, const QString& filename
     const QString fullPath = directory + u'/' + filename;
 
     QFile file(fullPath);
-    if (!file.open(QIODevice::ReadOnly)) {
-        logError(QStringLiteral("KnownFile::createFromFile: cannot open '%1'").arg(fullPath));
-        return false;
+    uint64 length = 0;
+    time_t openedDate = 0;
+    {
+        // Open and stat are disk time too, most of it for a small file
+        const DiskLoadLimiter::Read timed(DiskLoadLimiter::thisThread());
+        if (!file.open(QIODevice::ReadOnly)) {
+            logError(QStringLiteral("KnownFile::createFromFile: cannot open '%1'").arg(fullPath));
+            return false;
+        }
+        // Size and date of the file we actually hold open, taken right before the read:
+        // the scan that queued it may be minutes old.
+        length = static_cast<uint64>(file.size());
+        openedDate = static_cast<time_t>(
+            file.fileTime(QFileDevice::FileModificationTime).toSecsSinceEpoch());
     }
-
-    // Size and date of the file we actually hold open, taken right before the read:
-    // the scan that queued it may be minutes old.
-    const uint64 length = static_cast<uint64>(file.size());
-    const auto openedDate = static_cast<time_t>(
-        file.fileTime(QFileDevice::FileModificationTime).toSecsSinceEpoch());
     if (scanned && (scanned->size != length || scanned->mtime != openedDate)) {
         logInfo(QStringLiteral("File changed since it was scanned: %1").arg(fullPath));
         if (changedSinceScan)
@@ -1225,7 +1230,8 @@ bool KnownFile::createFromFile(const QString& directory, const QString& filename
     }
 
     setFileSize(length);
-    setFileName(filename, true);
+    // The name on disk, unchanged: a scan finds the record by it (MFC CreateFromFile :357)
+    setFileName(filename);
     setPath(directory);
     setFilePath(fullPath);
     setUtcFileDate(openedDate);
@@ -1413,7 +1419,7 @@ bool KnownFile::createHash(QIODevice& device, uint64 length,
     uint64 read = 0;
     uint64 blockStart = 0;   ///< file offset of the AICH block being hashed
     uint64 blockFilled = 0;  ///< bytes of that block already fed to hashAlg
-    DiskLoadLimiter diskLoad;
+    DiskLoadLimiter& diskLoad = DiskLoadLimiter::thisThread();
 
     while (read < length) {
         // Shutdown must not wait for the rest of a multi-GB file

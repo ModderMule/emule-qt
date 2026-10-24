@@ -378,7 +378,8 @@ private:
     /// Queue one explicitly-shared file for hashing (or re-add it if already known).
     /// Port of srchybrid/SharedFileList.cpp:1468.
     void checkAndAddSingleFile(const QString& filePath);
-    /// Give every idle worker the next waiting file of its volume. m_hashMutex held.
+    /// Top up every worker with waiting files of its volume, up to kMaxJobsPerWorker
+    /// files or kMaxBytesPerWorker bytes. m_hashMutex held.
     void hashNextFile();
     /// Append to the hash queue. m_hashMutex held.
     void queueForHash(UnknownFileEntry entry);
@@ -473,6 +474,11 @@ private:
     /// One sequential worker per physical disk, disks in parallel: two files on the
     /// same spindle only make each other slower. Created on first use.
     static constexpr int kMaxHashWorkers = 4;
+    /// Files handed to one worker ahead of time. One at a time, a small file costs a
+    /// round trip through the event loop and the worker sits idle in between (#46).
+    static constexpr int kMaxJobsPerWorker = 32;
+    /// ... unless they are big: a reload still takes back what has not been handed out.
+    static constexpr uint64 kMaxBytesPerWorker = 64ull * 1024 * 1024;
     /// A share nobody has hashed yet offers its smallest files first.
     static constexpr int kColdStartFiles = 200;
     static constexpr uint64 kColdStartBytes = 256ull * 1024 * 1024;

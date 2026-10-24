@@ -38,6 +38,10 @@ public:
         DiskLoadLimiter& m_limiter;
     };
 
+    /// The calling thread's limiter. Read time adds up across files: a small file is
+    /// read long before kMinBusyNs, and one limiter per file never paused at all (#46).
+    [[nodiscard]] static DiskLoadLimiter& thisThread();
+
     void beginRead();
     void endRead();
 

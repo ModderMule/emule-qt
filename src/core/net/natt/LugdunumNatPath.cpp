@@ -29,6 +29,10 @@ Address serverIPv4(const NatEnv& env, const Server& server)
 
 bool LugdunumNatPath::canServe(const PeerInfo& peer) const
 {
+    // Callback-capable targets always get an odd LowID (Lugdunum and ed2k-server 0.9.85+),
+    // so an even one would only be dropped silently (andrey23127/ed2k-server#39).
+    if ((peer.clientID & 1) == 0)
+        return false;
     const Server* server = env().currentServer();
     // The UDP key and obfuscation port may still be missing: sources arrive before the
     // first stat ping answers, and sendRequest() waits for it.

@@ -47,6 +47,12 @@ DiskLoadLimiter::DiskLoadLimiter(Hooks hooks)
     m_active = m_hooks.allowMainThread || !app || QThread::currentThread() != app->thread();
 }
 
+DiskLoadLimiter& DiskLoadLimiter::thisThread()
+{
+    thread_local DiskLoadLimiter limiter;
+    return limiter;
+}
+
 void DiskLoadLimiter::beginRead()
 {
     if (m_active)

@@ -124,6 +124,7 @@ private slots:
 
     // Lugdunum
     void lugdunum_needsLongIdChange();
+    void lugdunum_skipsEvenLowId();
     void lugdunum_waitsForServerKey();
     void lugdunum_unansweredRequests_refreshKeyOnce();
     void lugdunum_requestIsObfuscatedToObfPort();
@@ -163,6 +164,17 @@ void tst_NatRendezvousPaths::lugdunum_needsLongIdChange()
     f.env->server->setIdChangeLength(24);
     f.env->server->setObfuscationPortUDP(0);      // key and port come later, from a stat ping
     QVERIFY(f.hub->canStart(peer));
+}
+
+void tst_NatRendezvousPaths::lugdunum_skipsEvenLowId()
+{
+    // Even LowID = target never set 0x1000: no 0xA6 for it
+    HubFixture f;
+    logInLugdunum(f);
+    QVERIFY(!f.hub->canStart(f.peerOnServer(78, false)));
+    QVERIFY(!f.hub->start(f.peerOnServer(78, false)));
+    QVERIFY(f.env->udpWith(OP_EDONKEYPROT, OP_NAT_CALLBACKREQUEST).empty());
+    QVERIFY(f.hub->canStart(f.peerOnServer(79, false)));
 }
 
 void tst_NatRendezvousPaths::lugdunum_waitsForServerKey()

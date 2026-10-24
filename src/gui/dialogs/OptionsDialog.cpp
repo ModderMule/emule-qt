@@ -34,6 +34,7 @@
 #include <iterator>   // std::size, for the sidebar table asserts
 
 #include <QCborArray>
+#include <QCollator>
 #include <QApplication>
 #include <QCoreApplication>
 
@@ -8046,21 +8047,38 @@ void OptionsDialog::requestNetworkInterfaces()
         const QSignalBlocker blocker(m_bindInterfaceCombo);
         m_bindInterfaceCombo->clear();
         m_bindInterfaceCombo->addItem(tr("Any"), QString());
+        // OS order follows bring-up order and changes per boot (#52): loopback
+        // first, then natural sort by label (tun2 before tun10)
+        struct Entry { QString label; QString name; bool loopback = false; };
+        std::vector<Entry> entries;
         const QCborArray list = resp.fieldArray(1);
         for (const QCborValue& v : list) {
             const QCborMap nif = v.toMap();
             const QString name = nif.value(QStringLiteral("name")).toString();
             const QString friendly = nif.value(QStringLiteral("friendlyName")).toString();
             QStringList addresses;
-            for (const QCborValue& a : nif.value(QStringLiteral("addresses")).toArray())
+            bool loopback = false;
+            for (const QCborValue& a : nif.value(QStringLiteral("addresses")).toArray()) {
                 addresses << a.toString();
+                loopback = loopback || QHostAddress(a.toString()).isLoopback();
+            }
             if (addresses.isEmpty())
                 continue;
             const QString label = (friendly.isEmpty() || friendly == name)
                 ? name : QStringLiteral("%1 (%2)").arg(friendly, name);
-            m_bindInterfaceCombo->addItem(QStringLiteral("%1 — %2").arg(label, addresses.join(QStringLiteral(", "))),
-                                          name);
+            entries.push_back({QStringLiteral("%1 — %2").arg(label, addresses.join(QStringLiteral(", "))),
+                               name, loopback});
         }
+        QCollator collator;
+        collator.setNumericMode(true);
+        collator.setCaseSensitivity(Qt::CaseInsensitive);
+        std::ranges::sort(entries, [&collator](const Entry& a, const Entry& b) {
+            if (a.loopback != b.loopback)
+                return a.loopback;
+            return collator.compare(a.label, b.label) < 0;
+        });
+        for (const Entry& e : entries)
+            m_bindInterfaceCombo->addItem(e.label, e.name);
         showBindSelection(selection);
     });
 }

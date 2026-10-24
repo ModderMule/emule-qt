@@ -55,6 +55,7 @@ Details and live captures: `lugdunum-nat-callback.local.md`.
 - The requester hears nothing back, so the target sends its own `0xA6` naming the requester
   (mutual callback). The requester gets that as a `0xA7` with the target's endpoint.
 - A notice naming our own ID only reflects our mapped port and is ignored.
+- No `0xA6` for an even-LowID target: callback-capable clients always get an odd LowID.
 - The UDP key and obfuscation port come from the first stat ping, a few seconds after the
   LowID sources. A request waits for them and asks for that ping at once; after 3 unanswered
   requests it asks for a fresh key once, because a restarted eserver ignores the old one

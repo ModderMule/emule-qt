@@ -1179,19 +1179,30 @@ void SharedFileList::attachCollection(KnownFile* file)
 
 void SharedFileList::hashNextFile()
 {
-    // The workers that could take a file now. One with nothing of its own waiting is
-    // marked drained and not searched for again until the queue grows: one long
-    // volume must not cost a full walk of the queue per finished file.
-    QSet<HashingThread*> free;
+    // What each worker holds now. One with nothing of its own waiting is marked drained
+    // and not searched for again until the queue grows: one long volume must not cost
+    // a full walk of the queue per finished file.
+    struct Load {
+        int files = 0;
+        uint64 bytes = 0;
+    };
+    QHash<HashingThread*, Load> load;
+    for (const Hashing& h : m_hashing) {
+        Load& l = load[h.worker];
+        ++l.files;
+        l.bytes += h.entry.size;
+    }
+    const auto hasRoom = [](const Load& l) {
+        return l.files == 0 || (l.files < kMaxJobsPerWorker && l.bytes < kMaxBytesPerWorker);
+    };
+    QSet<HashingThread*> open;
     for (HashingThread* worker : m_hashWorkers)
-        if (!m_drainedWorkers.contains(worker))
-            free.insert(worker);
-    for (const Hashing& h : m_hashing)
-        free.remove(h.worker);
+        if (!m_drainedWorkers.contains(worker) && hasRoom(load.value(worker)))
+            open.insert(worker);
 
-    for (auto it = m_waitingForHash.begin(); it != m_waitingForHash.end() && !free.isEmpty(); ) {
+    for (auto it = m_waitingForHash.begin(); it != m_waitingForHash.end() && !open.isEmpty(); ) {
         HashingThread* worker = workerFor(it->volume);
-        if (!free.remove(worker)) {
+        if (!open.contains(worker)) {
             ++it;
             continue;
         }
@@ -1203,12 +1214,17 @@ void SharedFileList::hashNextFile()
         job.generation = m_generation;
         job.scannedSize = it->size;
         job.scannedMtime = it->mtime;
+        Load& l = load[worker];
+        ++l.files;
+        l.bytes += it->size;
+        if (!hasRoom(l))
+            open.remove(worker);
         m_hashing.insert(it->key, {worker, *it});
         it = m_waitingForHash.erase(it);
         worker->enqueue(std::move(job));
     }
 
-    m_drainedWorkers.unite(free);   // walked the whole queue and found nothing for them
+    m_drainedWorkers.unite(open);   // walked the whole queue and found nothing more for them
 }
 
 void SharedFileList::queueForHash(UnknownFileEntry entry)

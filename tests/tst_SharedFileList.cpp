@@ -81,6 +81,8 @@ private slots:
     void hashFailure_givenUpSurvivesARestart();
     void hashOrder_coldStartTakesTheSmallFilesFirst();
     void hashing_volumesRunSideBySideOneVolumeInSequence();
+    void hashing_bigFilesAreNotHandedOutAhead();
+    void reload_nameWithWindowsReservedCharsIsNotRehashed();
     void moveBetweenSharedDirs_keepsTheFileAndHashesNothing_data();
     void moveBetweenSharedDirs_keepsTheFileAndHashesNothing();
     void singleSharedFile_itsDirectoryIsWatchedAndRescanned();
@@ -1334,8 +1336,9 @@ void tst_SharedFileList::hashing_volumesRunSideBySideOneVolumeInSequence()
         shared.m_volumeKeyFn = [](const QString& dir) { return QFileInfo(dir).fileName(); };
         shared.reload();   // dispatches before any worker result is delivered
 
+        // Each worker is handed its whole volume ahead: small files need no round trip
         QCOMPARE(shared.m_hashWorkers.size(), size_t{2});
-        QCOMPARE(shared.m_hashing.size(), 2);
+        QCOMPARE(shared.m_hashing.size(), 6);
         QSet<QString> volumes;
         QSet<HashingThread*> workers;
         for (const auto& h : std::as_const(shared.m_hashing)) {
@@ -1349,16 +1352,73 @@ void tst_SharedFileList::hashing_volumesRunSideBySideOneVolumeInSequence()
         QCOMPARE(shared.getHashingCount(), 0);
     }
 
-    // Everything on one volume: one file at a time.
+    // Everything on one volume: one worker, which reads them one after the other.
     {
         KnownFileList knownFiles;
         SharedFileList shared(&knownFiles);
         shared.m_volumeKeyFn = [](const QString&) { return QStringLiteral("one"); };
         shared.reload();
         QCOMPARE(shared.m_hashWorkers.size(), size_t{1});
-        QCOMPARE(shared.m_hashing.size(), 1);
+        QCOMPARE(shared.m_hashing.size(), 6);
         QTRY_COMPARE_WITH_TIMEOUT(shared.getCount(), 6, 10000);
     }
+}
+
+// Small files go to the worker in a batch, big ones only up to kMaxBytesPerWorker:
+// a reload can still take back the rest.
+void tst_SharedFileList::hashing_bigFilesAreNotHandedOutAhead()
+{
+    eMule::testing::TempDir tmp;
+    const QString dir = tmp.filePath(QStringLiteral("big"));
+    QDir().mkpath(dir);
+    constexpr qint64 size = 40ll * 1024 * 1024;   // two of them pass the cap
+    for (int i = 0; i < 3; ++i) {
+        QFile f(QDir(dir).filePath(QStringLiteral("big%1.bin").arg(i)));
+        QVERIFY(f.open(QIODevice::WriteOnly));
+        QVERIFY(f.resize(size));   // sparse: quick to write
+        f.write(QByteArray(1, static_cast<char>(i)));   // unique content
+    }
+    thePrefs.setConfigDir(tmp.path());
+    thePrefs.setIncomingDir(dir);
+    thePrefs.setSharedDirs({});
+
+    KnownFileList knownFiles;
+    SharedFileList shared(&knownFiles);
+    shared.reload();
+    QCOMPARE(shared.m_hashing.size(), 2);
+    QCOMPARE(shared.getHashingCount(), 3);
+    QTRY_COMPARE_WITH_TIMEOUT(shared.getCount(), 3, 60000);
+}
+
+// A name Windows would not allow stays as it is in the record. Changed to '-', it
+// never matched the disk again and was hashed at every reload and start (#46).
+void tst_SharedFileList::reload_nameWithWindowsReservedCharsIsNotRehashed()
+{
+#ifdef Q_OS_WIN
+    QSKIP("such names cannot exist on Windows");
+#else
+    eMule::testing::TempDir tmp;
+    const QString dir = tmp.filePath(QStringLiteral("share"));
+    const QString name = QStringLiteral("what: \"really\"?.bin");
+    QVERIFY(!writeFile(dir, name, QByteArray(900, 'r')).isEmpty());
+    thePrefs.setConfigDir(tmp.path());
+    thePrefs.setIncomingDir(dir);
+    thePrefs.setSharedDirs({});
+
+    KnownFileList knownFiles;
+    SharedFileList shared(&knownFiles);
+    shared.reload();
+    QTRY_COMPARE_WITH_TIMEOUT(shared.getCount(), 1, 10000);
+    QTRY_COMPARE_WITH_TIMEOUT(shared.getHashingCount(), 0, 10000);
+    KnownFile* file = nullptr;
+    shared.forEachFile([&](KnownFile* f) { file = f; });
+    QVERIFY(file);
+    QCOMPARE(file->fileName(), name);
+
+    shared.reload();
+    QCOMPARE(shared.getHashingCount(), 0);
+    QCOMPARE(shared.getCount(), 1);
+#endif
 }
 
 // The watcher reports both directories of a move in one batch; seen one at a time
