@@ -10,8 +10,8 @@
 // ---------------------------------------------------------------------------
 #define EMULE_VERSION_MAJOR  0
 #define EMULE_VERSION_MINOR  6
-#define EMULE_VERSION_PATCH  29
-#define EMULE_VERSION_STRING "0.6.29"
+#define EMULE_VERSION_PATCH  30
+#define EMULE_VERSION_STRING "0.6.30"
 
 // ---------------------------------------------------------------------------
 // Platform detection
