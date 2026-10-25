@@ -3931,6 +3931,8 @@ bool IpcClientHandler::applyPreferenceB(const QString& key, const QCborValue& va
     }
     else if (key == QStringLiteral("logPublicIP"))
         thePrefs.setLogPublicIP(val.toBool());
+    else if (key == QStringLiteral("logFakeCheckShared"))
+        thePrefs.setLogFakeCheckShared(val.toBool());
     else if (key == QStringLiteral("closeUPnPOnExit"))
         thePrefs.setCloseUPnPOnExit(val.toBool());
     else if (key == QStringLiteral("portMapProtocols"))

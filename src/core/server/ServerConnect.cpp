@@ -1157,8 +1157,9 @@ void ServerConnect::sendLoginPacket(ServerSocket* socket)
     if (lugdunumNat)
         srvCaps |= SRVCAP_NATTRAVERSAL | SRVCAP_HOLEPUNCH_EXT;   // ed2k-server#39: always together
     // eNode-go PR_NAT wake-up: the server wakes us over TCP instead of us keeping a standing
-    // registration. Same gate as the PR_NAT registration (EnodeNatPath::active).
-    if (lugdunumNat)
+    // registration. Not gated on the data path (it may come after login): a 7-byte
+    // OP_NAT_WAKE is ignored while we are no usable target (EnodeNatPath::active).
+    if (sendUdpPorts)
         srvCaps |= SRVCAP_NAT_WAKE;
     // Remembered on the connection's server copy: supportsNatWake() needs both sides.
     if (Server* cur = socket ? socket->currentServer() : nullptr)

@@ -152,6 +152,14 @@ private slots:
     void prnat_wake_registersOnWake();
     void prnat_wake_needsOurLoginBit();
     void prnat_wake_requesterRegistersOtherFamily();
+    void prnat_wake_bitBeforeDataPath();
+    void prnat_ack_movesToServerEndpoint();
+    void prnat_ack_zeroKeepsDefault();
+    void prnat_ack_ipv6PortOnly();
+    void prnat_ack_lostPingsBackToDefault();
+    void prnat_ack_resetOnServerChange();
+    void prnat_register_backsOffWhenRefused();
+    void prnat_ipv6Session_registersIPv4Too();
 
     // eNode-go PR_NAT, cross-server sweep
     void prnat_sweep_ownServerFirstThenOthers();
@@ -668,6 +676,198 @@ bool natSyncFrom(HubFixture& f, const Endpoint& from, const Hash16& hash)
 }
 
 } // namespace
+
+namespace {
+
+const Address kServerOwnIP = Address::fromString(QStringLiteral("93.184.216.40"));
+constexpr uint16 kServerMainUdp = 5559;
+
+QByteArray ackV4(uint16 port, const Address& ip)
+{
+    return EnodeNatPath::frame(OP_NAT_REGISTER, natPayload({be16(port), be32(ip.toUint32())}));
+}
+
+/// Raw PR_NAT frames with @p opcode, in send order.
+std::vector<SentUdp> natFrames(const HubFixture& f, uint8 opcode)
+{
+    std::vector<SentUdp> out;
+    for (const auto& r : f.env->raw()) {
+        if (r.payload.size() > 5 && uint8(r.payload[5]) == opcode)
+            out.push_back(r);
+    }
+    return out;
+}
+
+} // namespace
+
+void tst_NatRendezvousPaths::prnat_wake_bitBeforeDataPath()
+{
+    // Login bit set while IPv6 was not yet trusted: no standing registration either way,
+    // the wake is ignored until we have a data path and answered after.
+    HubFixture f;
+    Server& s = f.env->logIn(kServerIP, kServerPort, SrvTcpFlag::NatRendezvous | SrvTcpFlag::NatWake);
+    s.setLoginCaps(SRVCAP_NAT_WAKE);
+    f.env->publicIPv6 = {};
+    f.advance(30000);
+    QVERIFY(f.env->raw().empty());
+    QVERIFY(f.hub->handleServerTcp(OP_NAT_WAKE, QByteArray(1, char(EnodeNatPath::kWakeIPv4))));
+    QVERIFY(f.env->raw().empty());
+
+    f.env->publicIPv6 = Address::fromString(QStringLiteral("2a00:1450:4001:801::1"));
+    f.advance(60000);
+    QVERIFY(f.env->raw().empty());                          // still wake mode
+    QVERIFY(f.hub->handleServerTcp(OP_NAT_WAKE, QByteArray(1, char(EnodeNatPath::kWakeIPv4))));
+    QCOMPARE(f.env->raw().size(), size_t{1});
+    QCOMPARE(f.env->raw()[0].payload, EnodeNatPath::frame(OP_NAT_REGISTER, hashBytes(f.env->hash)));
+}
+
+void tst_NatRendezvousPaths::prnat_ack_movesToServerEndpoint()
+{
+    HubFixture f;
+    f.env->logIn(kServerIP, kServerPort, SrvTcpFlag::NatRendezvous);
+    const Endpoint learned(kServerOwnIP, kServerMainUdp);
+    f.hub->process();
+    QCOMPARE(natFrames(f, OP_NAT_REGISTER).back().to, kOwnNat);
+    // an ack from elsewhere moves nothing
+    const QByteArray ack = ackV4(kServerMainUdp, kServerOwnIP);
+    QVERIFY(!f.hub->handleServerDatagram(Endpoint(kPeerIP, EnodeNatPath::kDefaultPort), bytes(ack), ack.size()));
+    QVERIFY(f.hub->handleServerDatagram(kOwnNat, bytes(ack), ack.size()));
+
+    f.advance(EnodeNatPath::kKeepaliveMs);
+    const auto keepalives = natFrames(f, OP_NAT_KEEPALIVE);
+    QCOMPARE(keepalives.size(), size_t{1});
+    QCOMPARE(keepalives[0].to, learned);
+    // PING from the learned endpoint keeps the registration
+    const QByteArray ping = EnodeNatPath::frame(OP_NAT_PING, {});
+    QVERIFY(f.hub->handleServerDatagram(learned, bytes(ping), ping.size()));
+    f.advance(EnodeNatPath::kKeepaliveMs);
+    QCOMPARE(natFrames(f, OP_NAT_REGISTER).size(), size_t{1});
+    QCOMPARE(natFrames(f, OP_NAT_KEEPALIVE).back().to, learned);
+
+    // SYNC2 goes there too, and its SYNC is accepted from there
+    const PeerInfo peer = f.peerOnServer(77);
+    QVERIFY(f.hub->start(peer));
+    QCOMPARE(sync2Targets(f), (std::vector<Endpoint>{learned}));
+    const uint32 connAck = f.hub->attempts().front()->connAck;
+    const QByteArray sync = EnodeNatPath::frame(OP_NAT_SYNC, natPayload({be32(kPeerIP.toUint32()), be16(kPeerUdp),
+                                                                      hashBytes(peer.hash), be32(connAck)}));
+    QVERIFY(f.hub->handleServerDatagram(learned, bytes(sync), sync.size()));
+    QCOMPARE(f.hub->attempts().front()->state, Attempt::State::Punching);
+    // the default endpoint still counts as our server
+    QVERIFY(natFailedFrom(f, kOwnNat, f.peerOnServer(78)));
+}
+
+void tst_NatRendezvousPaths::prnat_ack_zeroKeepsDefault()
+{
+    HubFixture f;
+    f.env->logIn(kServerIP, kServerPort, SrvTcpFlag::NatRendezvous);
+    f.hub->process();
+    const QByteArray ack = ackV4(0, Address());
+    QVERIFY(f.hub->handleServerDatagram(kOwnNat, bytes(ack), ack.size()));
+    f.advance(EnodeNatPath::kKeepaliveMs);
+    QCOMPARE(natFrames(f, OP_NAT_KEEPALIVE).size(), size_t{1});
+    QCOMPARE(natFrames(f, OP_NAT_KEEPALIVE)[0].to, kOwnNat);
+    QVERIFY(f.hub->start(f.peerOnServer(77)));
+    QCOMPARE(sync2Targets(f), (std::vector<Endpoint>{kOwnNat}));
+    // a datagram from the would-be port is not ours
+    Hash16 other{};
+    other.fill(0x64);
+    QVERIFY(!natSyncFrom(f, Endpoint(kServerOwnIP, kServerMainUdp), other));
+}
+
+void tst_NatRendezvousPaths::prnat_ack_ipv6PortOnly()
+{
+    // v6 ack, all-zero address and a port: same address, new port
+    HubFixture f;
+    const Address serverV6 = Address::fromString(QStringLiteral("2a00:1450:4001:800::77"));
+    f.env->logIn(serverV6, kServerPort, SrvTcpFlag::NatRendezvous);
+    f.env->publicIPv6 = Address::fromString(QStringLiteral("2a00:1450:4001:801::1"));
+    f.hub->process();
+    const Endpoint def(serverV6, EnodeNatPath::kDefaultPort);
+    QCOMPARE(natFrames(f, OP_NAT_REGISTER).back().to, def);
+    const QByteArray ack = EnodeNatPath::frame(OP_NAT_REGISTER_IPV6, natPayload({be16(kServerMainUdp), QByteArray(16, '\0')}));
+    QVERIFY(f.hub->handleServerDatagram(def, bytes(ack), ack.size()));
+    f.advance(EnodeNatPath::kKeepaliveMs);
+    QCOMPARE(natFrames(f, OP_NAT_KEEPALIVE).back().to, Endpoint(serverV6, kServerMainUdp));
+}
+
+void tst_NatRendezvousPaths::prnat_ack_lostPingsBackToDefault()
+{
+    HubFixture f;
+    f.env->logIn(kServerIP, kServerPort, SrvTcpFlag::NatRendezvous);
+    const Endpoint learned(kServerOwnIP, kServerMainUdp);
+    f.hub->process();
+    const QByteArray ack = ackV4(kServerMainUdp, kServerOwnIP);
+    QVERIFY(f.hub->handleServerDatagram(kOwnNat, bytes(ack), ack.size()));
+    for (uint64 t = 0; t <= EnodeNatPath::kPingLossMs; t += 1000)
+        f.advance(1000);
+    QCOMPARE(natFrames(f, OP_NAT_KEEPALIVE).back().to, learned);
+    const auto registers = natFrames(f, OP_NAT_REGISTER);
+    QCOMPARE(registers.size(), size_t{2});
+    QCOMPARE(registers.back().to, kOwnNat);                 // the learned one may be what broke
+    // and the old learned endpoint is not ours any more
+    Hash16 other{};
+    other.fill(0x64);
+    QVERIFY(!natSyncFrom(f, learned, other));
+    f.advance(EnodeNatPath::kRegisterMs);                   // back to 5 s until acked
+    QCOMPARE(natFrames(f, OP_NAT_REGISTER).size(), size_t{3});
+    QCOMPARE(natFrames(f, OP_NAT_REGISTER).back().to, kOwnNat);
+}
+
+void tst_NatRendezvousPaths::prnat_ack_resetOnServerChange()
+{
+    HubFixture f;
+    f.env->logIn(kServerIP, kServerPort, SrvTcpFlag::NatRendezvous);
+    f.hub->process();
+    const QByteArray ack = ackV4(kServerMainUdp, kServerOwnIP);
+    QVERIFY(f.hub->handleServerDatagram(kOwnNat, bytes(ack), ack.size()));
+
+    f.env->server.reset();                                  // disconnect, then the same server
+    f.advance(1000);
+    f.env->logIn(kServerIP, kServerPort, SrvTcpFlag::NatRendezvous);
+    f.advance(1000);
+    QCOMPARE(natFrames(f, OP_NAT_REGISTER).back().to, kOwnNat);
+    QVERIFY(!natSyncFrom(f, Endpoint(kServerOwnIP, kServerMainUdp), f.env->hash));
+}
+
+void tst_NatRendezvousPaths::prnat_register_backsOffWhenRefused()
+{
+    HubFixture f;
+    f.env->logIn(kServerIP, kServerPort, SrvTcpFlag::NatRendezvous);
+    f.hub->process();
+    for (uint64 t = 1000; t <= 60000; t += 1000)
+        f.advance(1000);
+    // 0, 5 .. 25 s at kRegisterMs, then one kRegisterSlowMs after the last
+    QCOMPARE(natFrames(f, OP_NAT_REGISTER).size(), size_t{EnodeNatPath::kRegisterTries});
+    for (uint64 t = 0; t < EnodeNatPath::kRegisterSlowMs; t += 1000)
+        f.advance(1000);
+    QCOMPARE(natFrames(f, OP_NAT_REGISTER).size(), size_t{EnodeNatPath::kRegisterTries + 1});
+
+    // an ack resets it: after a lost registration it is 5 s again
+    const QByteArray ack = ackV4(0, Address());
+    QVERIFY(f.hub->handleServerDatagram(kOwnNat, bytes(ack), ack.size()));
+    for (uint64 t = 0; t <= EnodeNatPath::kPingLossMs; t += 1000)
+        f.advance(1000);
+    const size_t before = natFrames(f, OP_NAT_REGISTER).size();
+    f.advance(EnodeNatPath::kRegisterMs);
+    QCOMPARE(natFrames(f, OP_NAT_REGISTER).size(), before + 1);
+}
+
+void tst_NatRendezvousPaths::prnat_ipv6Session_registersIPv4Too()
+{
+    // eNode-go: an IPv6 session has no IPv4 to check, so an IPv4 REGISTER is accepted
+    HubFixture f;
+    const Address serverV6 = Address::fromString(QStringLiteral("2a00:1450:4001:800::77"));
+    Server& s = f.env->logIn(serverV6, kServerPort, SrvTcpFlag::NatRendezvous);
+    QVERIFY(s.addAddress(kServerIP));
+    f.env->sessionAddress = serverV6;
+    f.env->publicIPv6 = Address::fromString(QStringLiteral("2a00:1450:4001:801::1"));
+    f.hub->process();
+    std::vector<Endpoint> to;
+    for (const auto& r : natFrames(f, OP_NAT_REGISTER))
+        to.push_back(r.to);
+    QCOMPARE(to, (std::vector<Endpoint>{kOwnNat, Endpoint(serverV6, EnodeNatPath::kDefaultPort)}));
+}
 
 void tst_NatRendezvousPaths::prnat_sweep_ownServerFirstThenOthers()
 {

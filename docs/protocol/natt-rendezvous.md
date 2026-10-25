@@ -1,6 +1,6 @@
 # LowID-to-LowID rendezvous (NAT traversal signalling)
 
-Status 2026-10-21: implemented in `src/core/net/natt/`. Two LowID peers learn each other's
+Status 2026-10-25 (`PR_NAT` wake-up and cross-server sweep added): implemented in `src/core/net/natt/`. Two LowID peers learn each other's
 public UDP endpoint from an introducer, open their NAT mappings with `OP_HOLEPUNCH`, and swap
 IPv6 addresses over the opened path. The target then dials the requester over ordinary
 TCP/IPv6. A UDP transport for pairs without IPv6 (eMuleAI's QUIC NAT-T dialect,
@@ -22,7 +22,7 @@ Four paths, tried in this order for a source we want to download from:
 | --- | --- | --- |
 | ed2k-server 0.9.84+ | our server sets `OP_IDCHANGE` flag `0x20000`, the peer is a LowID on it | TCP `0x60`/`0x61`/`0x62`, UDP keepalive `0x9F` |
 | Lugdunum eserver 17.x, eNode-go | flag `0x1000` **and** a 24-byte `OP_IDCHANGE`, plus the server UDP key, an odd target ID, and an IPv4 session | server UDP `0xA6` out, UDP `0xA7` / TCP `0x37` in |
-| eNode-go `PR_NAT` | flag `0x40000`, peer's user hash known | UDP protocol `0xF1` to the `ST_NAT_PORT` (default 2004) |
+| eNode-go `PR_NAT` | flag `0x40000`, or `0x200000` when our login carried it; peer's user hash known | UDP protocol `0xF1` to the `ST_NAT_PORT` (default 2004) |
 | Kad serving buddy | the source has a serving buddy, Kad connected | `OP_REASKCALLBACKUDP` with an embedded `OP_RENDEZVOUS` |
 
 All UDP leaves the client UDP socket, so every introducer sees the mapping the peer must punch.
@@ -103,14 +103,20 @@ Spec: `eNode-go/docs/pr-nat-rendezvous-spec.md`.
 
 - Frame `<0xF1><size 4 LE = payload + 1><opcode 1><payload>`; endpoints are big-endian.
 - While logged in to a `0x40000` server and firewalled: `REGISTER 0xE4 <hash 16>` per family
-  (IPv6 too when both sides have one), every 5 s until acked, then `KEEPALIVE 0xE6` every 60 s
+  (IPv6 too when both sides have one), every 5 s until acked (after 6 unanswered, one a
+  minute: a refused REGISTER gets no answer). The ack (`0xE4 <port BE><ip4>`,
+  `0xEC <port BE><ip6>`, IPv6 ack only over IPv6) names the server's preferred endpoint; we
+  send that family's later traffic there and accept frames from it (eNode-go: 2004 → its
+  main UDP port 5559). All-zero parts keep the default. Then `KEEPALIVE 0xE6` every 60 s
   (server TTL 90 s; 30 s on eNode-go v0.5.1 and older). After 65 s without a `PING` (or ack),
-  one unanswered keepalive, we register again: the server lost the registration or our NAT
-  moved us to another port. The 60 s keepalive also holds our NAT mapping open: RFC 4787
+  one unanswered keepalive, we register again, at the default endpoint: the server lost the
+  registration or our NAT moved us to another port. A server change or logout drops the
+  learned endpoint. The 60 s keepalive also holds our NAT mapping open: RFC 4787
   (REQ-5) asks NATs to keep an idle UDP mapping for at least 2 minutes, but some home routers
   drop it after 30–60 s, and then a `SYNC` for a peer on another server may not reach us.
   Peers on the same server are not affected; the wake-up opens a fresh mapping each time.
-- Wake-up: our login sets `0x200000` together with `0x1000`. On a server that also sets flag
+- Wake-up: our login sets `0x200000` whenever NAT traversal is on (`0x1000` still needs a
+  trusted public IPv6 at login). A wake that comes while we have no data path is ignored. On a server that also sets flag
   `0x200000` we keep **no** registration. The server sends TCP `OP_NAT_WAKE 0x46 <families 1>`
   (`0x01` IPv4, `0x02` IPv6) when a peer asks for us, and we `REGISTER` once per family, IPv6
   first. As requester we send the `SYNC2` over IPv6 when we can and `REGISTER` over IPv4 just
@@ -122,9 +128,12 @@ Spec: `eNode-go/docs/pr-nat-rendezvous-spec.md`.
   like a timeout.
 - Only frames from the server's IP, on its NAT port or main UDP port, are read (and, during a
   sweep, from the servers in it; see below).
-- `SYNC2` goes to the family whose `REGISTER` was acked. On an IPv6 server session only the v6
-  register is accepted, and LowID sources from that session carry no server IPv4; they still
+- `SYNC2` goes to the family whose `REGISTER` was acked. An IPv6-connected session has no
+  IPv4 on eNode-go, so an IPv4 `REGISTER` there falls under the "no takeover from another IP"
+  rule and is accepted. LowID sources from that session carry no server IPv4; they still
   count as "on our server" (as for `OP_CALLBACKREQUEST`).
+- We match the peer on the punched path by source IP and the user hash in the handoff, not
+  by `connAck`; a `SYNC` is tied to its attempt by the peer hash.
 
 #### Cross-server sweep
 
@@ -138,9 +147,10 @@ the bits survive a rewrite by stock eMule.
 - **Requester, peer not on our server, hash known.** We send `SYNC2` to the servers one at a
   time:
   - Our own server first, when it speaks `PR_NAT` (a Kad source may be logged in there).
-  - If the peer's server is known (a server source), that server, and only when its UDP
-    flags have `0x40000`. With no such flag the peer can't be registered anywhere, and the
-    source isn't kept.
+  - If the peer's server is known, that server, and only when its UDP flags have
+    `0x40000`. With no such flag the peer can't be registered anywhere, and the source isn't
+    kept. Such a source comes from a saved source list (SLS) with its hash; another
+    server's UDP source answer carries no user hash, so it is dropped.
   - If the peer's server is unknown (a Kad source), every listed server with `0x40000`, the
     one that paired this hash before first. At most 8 servers in all.
 - **Moving to the next server.** On `FAILED`, or after two unanswered `SYNC2`s 4 s apart
@@ -234,8 +244,8 @@ QUIC transport works. Setting them would make eMuleAI peers try a transport we c
 
 ## Live rig
 
-`docker/natt/natnet.py` runs one server and two `emulecored` containers on a Docker bridge
-network (`172.30.77.0/24`, `2001:db8:4677::/64`, lab mode). Each node refuses the server's
+`docker/natt/natnet.py` runs one server (two for `enode2`) and two `emulecored` containers on
+a Docker bridge network (`172.30.77.0/24`, `2001:db8:4677::/64`, lab mode). Each node refuses the server's
 IPv4 dial-back with iptables, so both are LowIDs; A shares a random file, B downloads it.
 The run passes when B's rendezvous used the chosen server, a side dialed the peer's IPv6,
 and the MD5 matches.
@@ -245,7 +255,17 @@ cp docker/natt/natnet.env.example docker/natt/natnet.env    # point at your serv
 python3 docker/natt/natnet.py --server lugdunum --build      # first run: build the images
 python3 docker/natt/natnet.py --server ed2k-server
 python3 docker/natt/natnet.py --server enode --keep          # leave it up; --down later
+python3 docker/natt/natnet.py --server enode2                # cross-server sweep
 ```
+
+`enode2` tests the cross-server sweep with two eNode-go servers:
+- A logs in to server 1. B logs in to server 2; iptables rejects B's TCP to server 1.
+- B's `server.met` lists server 1 with its live UDP flags (`0x40000`) and `ST_NAT_PORT`.
+- B learns A from a saved source list (SLS): B adds the link, stops, gets a `.txtsrc` naming
+  A's LowID on server 1 with A's user hash, and restarts. A server's UDP source answer has no
+  user hash, so this (or a Kad source) is how a client meets a LowID on another server.
+- Passes when B swept 2 servers, got `FAILED 0x01` from its own, was paired by server 1 on
+  the saved NAT port, and the file arrived with a matching MD5.
 
 - Server binaries and checkouts stay outside the repo; `natnet.env` (git-ignored) names them.
   ed2k-server is built in a `rust` container, eNode-go is cross-built with the host's `go`,

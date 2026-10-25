@@ -715,7 +715,7 @@ Has comments</source>
         <translation type="vanished">%1 Bytes</translation>
     </message>
     <message>
-        <location filename="../src/gui/dialogs/OptionsDialog.cpp" line="+3123"/>
+        <location filename="../src/gui/dialogs/OptionsDialog.cpp" line="+3124"/>
         <source>Test</source>
         <translation>테스트</translation>
     </message>
@@ -6334,35 +6334,35 @@ Download it again?</source>
 <context>
     <name>eMule::OptionsDialog</name>
     <message>
-        <location filename="../src/gui/dialogs/OptionsDialog.cpp" line="-3014"/>
+        <location filename="../src/gui/dialogs/OptionsDialog.cpp" line="-3015"/>
         <source>Options</source>
         <translation>옵션</translation>
     </message>
     <message>
         <location line="+61"/>
-        <location line="+1984"/>
+        <location line="+1985"/>
         <source>OK</source>
         <translation>확인</translation>
     </message>
     <message>
-        <location line="-1983"/>
-        <location line="+1984"/>
+        <location line="-1984"/>
+        <location line="+1985"/>
         <source>Cancel</source>
         <translation>취소</translation>
     </message>
     <message>
-        <location line="-1983"/>
-        <location line="+5774"/>
+        <location line="-1984"/>
+        <location line="+5782"/>
         <source>Apply</source>
         <translation>적용</translation>
     </message>
     <message>
-        <location line="-5773"/>
+        <location line="-5781"/>
         <source>Help</source>
         <translation>도움말</translation>
     </message>
     <message>
-        <location line="+259"/>
+        <location line="+260"/>
         <location line="+1992"/>
         <location line="+62"/>
         <location line="+5"/>
@@ -6403,12 +6403,12 @@ Download it again?</source>
     </message>
     <message>
         <location line="+8"/>
-        <location line="+5683"/>
+        <location line="+5690"/>
         <source>Language</source>
         <translation>언어</translation>
     </message>
     <message>
-        <location line="-5680"/>
+        <location line="-5687"/>
         <source>System Default</source>
         <translation>시스템 기본값</translation>
     </message>
@@ -6508,12 +6508,12 @@ Download it again?</source>
     </message>
     <message>
         <location line="+8"/>
-        <location line="+5619"/>
+        <location line="+5626"/>
         <source>Core</source>
         <translation>코어</translation>
     </message>
     <message>
-        <location line="-5614"/>
+        <location line="-5621"/>
         <source>Address:</source>
         <translation>주소:</translation>
     </message>
@@ -6689,13 +6689,13 @@ Are you sure you want to continue?</source>
         <location line="+152"/>
         <location line="+880"/>
         <location line="+298"/>
-        <location line="+277"/>
+        <location line="+284"/>
         <location line="+29"/>
         <source>Enabled</source>
         <translation>활성화됨</translation>
     </message>
     <message>
-        <location line="-4765"/>
+        <location line="-4772"/>
         <source>Reset</source>
         <translation>초기화</translation>
     </message>
@@ -6713,12 +6713,12 @@ Are you sure you want to continue?</source>
         <location line="+3"/>
         <location line="+6"/>
         <location line="+4146"/>
-        <location line="+345"/>
+        <location line="+352"/>
         <source> KB/s</source>
         <translation> KB/s</translation>
     </message>
     <message>
-        <location line="-4494"/>
+        <location line="-4501"/>
         <source>Upload</source>
         <translation>업로드</translation>
     </message>
@@ -6790,12 +6790,12 @@ Are you sure you want to continue?</source>
     </message>
     <message>
         <location line="+4"/>
-        <location line="+6790"/>
+        <location line="+6801"/>
         <source>Any</source>
         <translation>모든</translation>
     </message>
     <message>
-        <location line="-6788"/>
+        <location line="-6799"/>
         <source>Use only this network interface, for example a VPN tunnel. Pick one from the list, or type an IP address or a subnet such as 10.64.0.0/10 (the interface holding an address in it). Connections through a proxy are not bound.</source>
         <translation>이 네트워크 인터페이스(예: VPN 터널)만 사용합니다. 목록에서 선택하거나 IP 주소 또는 10.64.0.0/10 같은 서브넷(해당 범위의 주소를 가진 인터페이스)을 입력하십시오. 프록시를 통한 연결은 바인딩되지 않습니다.</translation>
     </message>
@@ -9397,7 +9397,17 @@ Adding one later does not fetch its back catalogue: a new indexer gets its own f
         <translation>서버 연결 갱신 간격 [분]:</translation>
     </message>
     <message>
-        <location line="+2861"/>
+        <location line="+194"/>
+        <source>Log fake-file header warnings for shared files too</source>
+        <translation>공유 파일의 가짜 파일 헤더 경고도 기록</translation>
+    </message>
+    <message>
+        <location line="+2"/>
+        <source>Downloads are always checked and logged. Shared files are checked again at every start.</source>
+        <translation>다운로드는 항상 검사되고 기록됩니다. 공유 파일은 시작할 때마다 다시 검사됩니다.</translation>
+    </message>
+    <message>
+        <location line="+2676"/>
         <location line="+52"/>
         <source>Directories</source>
         <translation>폴더</translation>
@@ -9468,13 +9478,13 @@ Create it?</source>
 %1</translation>
     </message>
     <message>
-        <location line="-3067"/>
+        <location line="-3078"/>
         <location line="+153"/>
         <source>Disabled</source>
         <translation>비활성화됨</translation>
     </message>
     <message>
-        <location line="+1116"/>
+        <location line="+1123"/>
         <source>Theme</source>
         <translation>테마</translation>
     </message>
@@ -9494,7 +9504,7 @@ Create it?</source>
         <translation>글꼴 크기 변경은 응용 프로그램을 다시 시작한 후 적용됩니다.</translation>
     </message>
     <message>
-        <location line="+1039"/>
+        <location line="+1042"/>
         <source>specialdlp loaded, DLP v%1</source>
         <translation>specialdlp 로드됨, DLP v%1</translation>
     </message>
@@ -9504,7 +9514,7 @@ Create it?</source>
         <translation>specialdlp 라이브러리를 찾을 수 없어 검사가 비활성 상태입니다</translation>
     </message>
     <message>
-        <location line="+664"/>
+        <location line="+665"/>
         <source>Automatic</source>
         <translation>자동</translation>
     </message>
@@ -9518,7 +9528,7 @@ Create it?</source>
         <translation type="vanished">실행 중에만 eD2K 링크 자동 수락</translation>
     </message>
     <message>
-        <location line="-2813"/>
+        <location line="-2824"/>
         <source>Use credit system (reward uploaders)</source>
         <translation>크레딧 시스템 사용(업로더 보상)</translation>
     </message>
@@ -9697,7 +9707,7 @@ Create it?</source>
         <translation>원시 소켓 패킷 기록</translation>
     </message>
     <message>
-        <location line="+9"/>
+        <location line="+16"/>
         <source>Show Usenet log tab</source>
         <translation>Usenet 로그 탭 표시</translation>
     </message>
@@ -9853,7 +9863,7 @@ News server connections switch over immediately.</source>
         <translation>&quot;%1&quot;은(는) IP 주소가 아닙니다. 수신 주소는 변경되지 않았습니다.</translation>
     </message>
     <message>
-        <location line="+482"/>
+        <location line="+485"/>
         <source>File types</source>
         <translation>파일 유형</translation>
     </message>
@@ -9863,7 +9873,7 @@ News server connections switch over immediately.</source>
         <translation>.nzb 파일 연결을 업데이트하지 못했습니다: %1</translation>
     </message>
     <message>
-        <location line="+624"/>
+        <location line="+625"/>
         <source>Port forwarding: %1</source>
         <translation>포트 전달: %1</translation>
     </message>
@@ -9918,17 +9928,17 @@ News server connections switch over immediately.</source>
         <translation>기본값으로 재설정</translation>
     </message>
     <message>
-        <location line="-5013"/>
+        <location line="-5024"/>
         <location line="+1019"/>
         <location line="+154"/>
-        <location line="+1473"/>
+        <location line="+1480"/>
         <location line="+316"/>
-        <location line="+2049"/>
+        <location line="+2053"/>
         <source>Remove</source>
         <translation>제거</translation>
     </message>
     <message>
-        <location line="-6186"/>
+        <location line="-6197"/>
         <source>New eMule Qt version detected</source>
         <translation>새 eMule Qt 버전이 감지되었습니다</translation>
     </message>
@@ -9963,7 +9973,7 @@ News server connections switch over immediately.</source>
         <translation>시작 시 공용 IP 주소 기록</translation>
     </message>
     <message>
-        <location line="+6"/>
+        <location line="+13"/>
         <source>Enable IPC log tab</source>
         <translation>IPC 로그 탭 활성화</translation>
     </message>
@@ -9998,14 +10008,14 @@ News server connections switch over immediately.</source>
         <translation>요청 임대 시간:</translation>
     </message>
     <message>
-        <location line="-2355"/>
+        <location line="-2362"/>
         <location line="+913"/>
-        <location line="+1446"/>
+        <location line="+1453"/>
         <source> s</source>
         <translation> 초</translation>
     </message>
     <message>
-        <location line="-2401"/>
+        <location line="-2408"/>
         <source>Decimal GB, because that is what an invoice says — the 1024-based GB used elsewhere in eMule would put a 1000 GB plan 7% over.
 
 Set it slightly under your plan. The figure is measured here, so it reads a few percent below your provider&apos;s, and articles already in flight when the limit is reached still finish.</source>
@@ -10024,7 +10034,7 @@ Set it slightly under your plan. The figure is measured here, so it reads a few 
         <translation>포트가 열려 있는 동안 eMule은 이 수만큼의 방화벽 뒤 Kad 노드를 위해 콜백 요청을 중계합니다. 노드마다 연결 하나를 사용하므로 &quot;최대 연결 수&quot;의 10분의 1까지만 중계합니다.</translation>
     </message>
     <message>
-        <location line="+416"/>
+        <location line="+423"/>
         <source>New</source>
         <translation>새로 만들기</translation>
     </message>
@@ -10132,11 +10142,11 @@ Set it slightly under your plan. The figure is measured here, so it reads a few 
         <translation>새 일정</translation>
     </message>
     <message>
-        <location line="-2740"/>
+        <location line="-2747"/>
         <location line="+1019"/>
         <location line="+154"/>
-        <location line="+1746"/>
-        <location line="+2087"/>
+        <location line="+1753"/>
+        <location line="+2091"/>
         <source>Add</source>
         <translation>추가</translation>
     </message>
@@ -10149,7 +10159,7 @@ Set it slightly under your plan. The figure is measured here, so it reads a few 
         <translation type="vanished">값 입력:</translation>
     </message>
     <message>
-        <location line="-2050"/>
+        <location line="-2054"/>
         <source>Edit Value</source>
         <translation>값 편집</translation>
     </message>

@@ -410,6 +410,10 @@ public:
     [[nodiscard]] bool logPublicIP() const;
     void setLogPublicIP(bool val);
 
+    /// Fake-file header warnings for shared files too; off = downloads only.
+    [[nodiscard]] bool logFakeCheckShared() const;
+    void setLogFakeCheckShared(bool val);
+
     [[nodiscard]] bool kadVerboseLog() const;
     void setKadVerboseLog(bool val);
 

@@ -642,6 +642,7 @@ private:
     QCheckBox*    m_logRawSocketPacketsCheck = nullptr;
     QCheckBox*    m_logWebServerCheck = nullptr;
     QCheckBox*    m_logPublicIPCheck = nullptr;
+    QCheckBox*    m_logFakeCheckSharedCheck = nullptr;
     QCheckBox*    m_enableIpcLogCheck = nullptr;
     QCheckBox*    m_showUsenetLogCheck = nullptr;
     QCheckBox*    m_startCoreWithConsoleCheck = nullptr;

@@ -715,7 +715,7 @@ Has comments</source>
         <translation type="vanished">%1 Bytes</translation>
     </message>
     <message>
-        <location filename="../src/gui/dialogs/OptionsDialog.cpp" line="+3123"/>
+        <location filename="../src/gui/dialogs/OptionsDialog.cpp" line="+3124"/>
         <source>Test</source>
         <translation>テスト</translation>
     </message>
@@ -6334,35 +6334,35 @@ Download it again?</source>
 <context>
     <name>eMule::OptionsDialog</name>
     <message>
-        <location filename="../src/gui/dialogs/OptionsDialog.cpp" line="-3014"/>
+        <location filename="../src/gui/dialogs/OptionsDialog.cpp" line="-3015"/>
         <source>Options</source>
         <translation>オプション</translation>
     </message>
     <message>
         <location line="+61"/>
-        <location line="+1984"/>
+        <location line="+1985"/>
         <source>OK</source>
         <translation>OK</translation>
     </message>
     <message>
-        <location line="-1983"/>
-        <location line="+1984"/>
+        <location line="-1984"/>
+        <location line="+1985"/>
         <source>Cancel</source>
         <translation>キャンセル</translation>
     </message>
     <message>
-        <location line="-1983"/>
-        <location line="+5774"/>
+        <location line="-1984"/>
+        <location line="+5782"/>
         <source>Apply</source>
         <translation>適用</translation>
     </message>
     <message>
-        <location line="-5773"/>
+        <location line="-5781"/>
         <source>Help</source>
         <translation>ヘルプ</translation>
     </message>
     <message>
-        <location line="+259"/>
+        <location line="+260"/>
         <location line="+1992"/>
         <location line="+62"/>
         <location line="+5"/>
@@ -6403,12 +6403,12 @@ Download it again?</source>
     </message>
     <message>
         <location line="+8"/>
-        <location line="+5683"/>
+        <location line="+5690"/>
         <source>Language</source>
         <translation>言語</translation>
     </message>
     <message>
-        <location line="-5680"/>
+        <location line="-5687"/>
         <source>System Default</source>
         <translation>システム既定</translation>
     </message>
@@ -6508,12 +6508,12 @@ Download it again?</source>
     </message>
     <message>
         <location line="+8"/>
-        <location line="+5619"/>
+        <location line="+5626"/>
         <source>Core</source>
         <translation>コア</translation>
     </message>
     <message>
-        <location line="-5614"/>
+        <location line="-5621"/>
         <source>Address:</source>
         <translation>アドレス：</translation>
     </message>
@@ -6689,13 +6689,13 @@ Are you sure you want to continue?</source>
         <location line="+152"/>
         <location line="+880"/>
         <location line="+298"/>
-        <location line="+277"/>
+        <location line="+284"/>
         <location line="+29"/>
         <source>Enabled</source>
         <translation>有効</translation>
     </message>
     <message>
-        <location line="-4765"/>
+        <location line="-4772"/>
         <source>Reset</source>
         <translation>リセット</translation>
     </message>
@@ -6713,12 +6713,12 @@ Are you sure you want to continue?</source>
         <location line="+3"/>
         <location line="+6"/>
         <location line="+4146"/>
-        <location line="+345"/>
+        <location line="+352"/>
         <source> KB/s</source>
         <translation> KB/s</translation>
     </message>
     <message>
-        <location line="-4494"/>
+        <location line="-4501"/>
         <source>Upload</source>
         <translation>アップロード</translation>
     </message>
@@ -6790,12 +6790,12 @@ Are you sure you want to continue?</source>
     </message>
     <message>
         <location line="+4"/>
-        <location line="+6790"/>
+        <location line="+6801"/>
         <source>Any</source>
         <translation>すべて</translation>
     </message>
     <message>
-        <location line="-6788"/>
+        <location line="-6799"/>
         <source>Use only this network interface, for example a VPN tunnel. Pick one from the list, or type an IP address or a subnet such as 10.64.0.0/10 (the interface holding an address in it). Connections through a proxy are not bound.</source>
         <translation>このネットワークインターフェース（VPN トンネルなど）のみを使用します。一覧から選ぶか、IP アドレスまたは 10.64.0.0/10 のようなサブネット（その範囲のアドレスを持つインターフェース）を入力してください。プロキシ経由の接続はバインドされません。</translation>
     </message>
@@ -9397,7 +9397,17 @@ Adding one later does not fetch its back catalogue: a new indexer gets its own f
         <translation>サーバー接続更新間隔 [分]：</translation>
     </message>
     <message>
-        <location line="+2861"/>
+        <location line="+194"/>
+        <source>Log fake-file header warnings for shared files too</source>
+        <translation>共有ファイルの偽ファイル(ヘッダ)警告もログに記録</translation>
+    </message>
+    <message>
+        <location line="+2"/>
+        <source>Downloads are always checked and logged. Shared files are checked again at every start.</source>
+        <translation>ダウンロードは常にチェックされ、ログに記録されます。共有ファイルは起動のたびに再チェックされます。</translation>
+    </message>
+    <message>
+        <location line="+2676"/>
         <location line="+52"/>
         <source>Directories</source>
         <translation>フォルダ</translation>
@@ -9468,13 +9478,13 @@ Create it?</source>
 %1</translation>
     </message>
     <message>
-        <location line="-3067"/>
+        <location line="-3078"/>
         <location line="+153"/>
         <source>Disabled</source>
         <translation>無効</translation>
     </message>
     <message>
-        <location line="+1116"/>
+        <location line="+1123"/>
         <source>Theme</source>
         <translation>テーマ</translation>
     </message>
@@ -9494,7 +9504,7 @@ Create it?</source>
         <translation>フォントサイズの変更はアプリケーションの再起動後に反映されます。</translation>
     </message>
     <message>
-        <location line="+1039"/>
+        <location line="+1042"/>
         <source>specialdlp loaded, DLP v%1</source>
         <translation>specialdlp 読み込み済み、DLP v%1</translation>
     </message>
@@ -9504,7 +9514,7 @@ Create it?</source>
         <translation>specialdlp ライブラリが見つかりません。チェックは無効です</translation>
     </message>
     <message>
-        <location line="+664"/>
+        <location line="+665"/>
         <source>Automatic</source>
         <translation>自動</translation>
     </message>
@@ -9518,7 +9528,7 @@ Create it?</source>
         <translation type="vanished">実行中のみ eD2K リンクを自動取得</translation>
     </message>
     <message>
-        <location line="-2813"/>
+        <location line="-2824"/>
         <source>Use credit system (reward uploaders)</source>
         <translation>クレジットシステムを使用（アップロード者を報酬）</translation>
     </message>
@@ -9697,7 +9707,7 @@ Create it?</source>
         <translation>生のソケットパケットを記録</translation>
     </message>
     <message>
-        <location line="+9"/>
+        <location line="+16"/>
         <source>Show Usenet log tab</source>
         <translation>Usenet ログタブを表示</translation>
     </message>
@@ -9853,7 +9863,7 @@ News server connections switch over immediately.</source>
         <translation>「%1」は IP アドレスではありません。待ち受けアドレスは変更されませんでした。</translation>
     </message>
     <message>
-        <location line="+482"/>
+        <location line="+485"/>
         <source>File types</source>
         <translation>ファイルの種類</translation>
     </message>
@@ -9863,7 +9873,7 @@ News server connections switch over immediately.</source>
         <translation>.nzb ファイルの関連付けを更新できませんでした: %1</translation>
     </message>
     <message>
-        <location line="+624"/>
+        <location line="+625"/>
         <source>Port forwarding: %1</source>
         <translation>ポート転送: %1</translation>
     </message>
@@ -9918,17 +9928,17 @@ News server connections switch over immediately.</source>
         <translation>既定値に戻す</translation>
     </message>
     <message>
-        <location line="-5013"/>
+        <location line="-5024"/>
         <location line="+1019"/>
         <location line="+154"/>
-        <location line="+1473"/>
+        <location line="+1480"/>
         <location line="+316"/>
-        <location line="+2049"/>
+        <location line="+2053"/>
         <source>Remove</source>
         <translation>削除</translation>
     </message>
     <message>
-        <location line="-6186"/>
+        <location line="-6197"/>
         <source>New eMule Qt version detected</source>
         <translation>新しい eMule Qt バージョンを検出しました</translation>
     </message>
@@ -9963,7 +9973,7 @@ News server connections switch over immediately.</source>
         <translation>起動時にパブリック IP アドレスをログに記録する</translation>
     </message>
     <message>
-        <location line="+6"/>
+        <location line="+13"/>
         <source>Enable IPC log tab</source>
         <translation>IPC ログタブを有効にする</translation>
     </message>
@@ -9998,14 +10008,14 @@ News server connections switch over immediately.</source>
         <translation>要求するリース時間:</translation>
     </message>
     <message>
-        <location line="-2355"/>
+        <location line="-2362"/>
         <location line="+913"/>
-        <location line="+1446"/>
+        <location line="+1453"/>
         <source> s</source>
         <translation> 秒</translation>
     </message>
     <message>
-        <location line="-2401"/>
+        <location line="-2408"/>
         <source>Decimal GB, because that is what an invoice says — the 1024-based GB used elsewhere in eMule would put a 1000 GB plan 7% over.
 
 Set it slightly under your plan. The figure is measured here, so it reads a few percent below your provider&apos;s, and articles already in flight when the limit is reached still finish.</source>
@@ -10024,7 +10034,7 @@ Set it slightly under your plan. The figure is measured here, so it reads a few 
         <translation>ポートが開いている間、eMule はこの数のファイアウォール内 Kad ノードのコールバック要求を中継します。1 ノードにつき接続を 1 つ使用するため、中継するノードは「最大接続数」の 10 分の 1 までです。</translation>
     </message>
     <message>
-        <location line="+416"/>
+        <location line="+423"/>
         <source>New</source>
         <translation>新規</translation>
     </message>
@@ -10132,11 +10142,11 @@ Set it slightly under your plan. The figure is measured here, so it reads a few 
         <translation>新しいスケジュール</translation>
     </message>
     <message>
-        <location line="-2740"/>
+        <location line="-2747"/>
         <location line="+1019"/>
         <location line="+154"/>
-        <location line="+1746"/>
-        <location line="+2087"/>
+        <location line="+1753"/>
+        <location line="+2091"/>
         <source>Add</source>
         <translation>追加</translation>
     </message>
@@ -10149,7 +10159,7 @@ Set it slightly under your plan. The figure is measured here, so it reads a few 
         <translation type="vanished">値を入力：</translation>
     </message>
     <message>
-        <location line="-2050"/>
+        <location line="-2054"/>
         <source>Edit Value</source>
         <translation>値を編集</translation>
     </message>

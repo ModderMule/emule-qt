@@ -555,7 +555,7 @@ Start it with --new-instance or --config &lt;dir&gt; to open another window.</so
         <translation>普通</translation>
     </message>
     <message>
-        <location filename="../src/gui/dialogs/OptionsDialog.cpp" line="+3123"/>
+        <location filename="../src/gui/dialogs/OptionsDialog.cpp" line="+3124"/>
         <source>Test</source>
         <translation>測試</translation>
     </message>
@@ -5926,35 +5926,35 @@ Download it again?</source>
 <context>
     <name>eMule::OptionsDialog</name>
     <message>
-        <location filename="../src/gui/dialogs/OptionsDialog.cpp" line="-3014"/>
+        <location filename="../src/gui/dialogs/OptionsDialog.cpp" line="-3015"/>
         <source>Options</source>
         <translation>選項</translation>
     </message>
     <message>
         <location line="+61"/>
-        <location line="+1984"/>
+        <location line="+1985"/>
         <source>OK</source>
         <translation>確定</translation>
     </message>
     <message>
-        <location line="-1983"/>
-        <location line="+1984"/>
+        <location line="-1984"/>
+        <location line="+1985"/>
         <source>Cancel</source>
         <translation>取消</translation>
     </message>
     <message>
-        <location line="-1983"/>
-        <location line="+5774"/>
+        <location line="-1984"/>
+        <location line="+5782"/>
         <source>Apply</source>
         <translation>套用</translation>
     </message>
     <message>
-        <location line="-5773"/>
+        <location line="-5781"/>
         <source>Help</source>
         <translation>說明</translation>
     </message>
     <message>
-        <location line="+259"/>
+        <location line="+260"/>
         <location line="+1992"/>
         <location line="+62"/>
         <location line="+5"/>
@@ -6000,12 +6000,12 @@ Download it again?</source>
     </message>
     <message>
         <location line="+8"/>
-        <location line="+5683"/>
+        <location line="+5690"/>
         <source>Language</source>
         <translation>語言</translation>
     </message>
     <message>
-        <location line="-5680"/>
+        <location line="-5687"/>
         <source>System Default</source>
         <translation>系統預設</translation>
     </message>
@@ -6105,12 +6105,12 @@ Download it again?</source>
     </message>
     <message>
         <location line="+8"/>
-        <location line="+5619"/>
+        <location line="+5626"/>
         <source>Core</source>
         <translation>核心</translation>
     </message>
     <message>
-        <location line="-5614"/>
+        <location line="-5621"/>
         <source>Address:</source>
         <translation>位址：</translation>
     </message>
@@ -6376,13 +6376,13 @@ Are you sure you want to continue?</source>
         <location line="+152"/>
         <location line="+880"/>
         <location line="+298"/>
-        <location line="+277"/>
+        <location line="+284"/>
         <location line="+29"/>
         <source>Enabled</source>
         <translation>已啟用</translation>
     </message>
     <message>
-        <location line="-4765"/>
+        <location line="-4772"/>
         <source>Reset</source>
         <translation>重置</translation>
     </message>
@@ -6400,12 +6400,12 @@ Are you sure you want to continue?</source>
         <location line="+3"/>
         <location line="+6"/>
         <location line="+4146"/>
-        <location line="+345"/>
+        <location line="+352"/>
         <source> KB/s</source>
         <translation> KB/s</translation>
     </message>
     <message>
-        <location line="-4494"/>
+        <location line="-4501"/>
         <source>Upload</source>
         <translation>上傳</translation>
     </message>
@@ -6477,12 +6477,12 @@ Are you sure you want to continue?</source>
     </message>
     <message>
         <location line="+4"/>
-        <location line="+6790"/>
+        <location line="+6801"/>
         <source>Any</source>
         <translation>任何</translation>
     </message>
     <message>
-        <location line="-6788"/>
+        <location line="-6799"/>
         <source>Use only this network interface, for example a VPN tunnel. Pick one from the list, or type an IP address or a subnet such as 10.64.0.0/10 (the interface holding an address in it). Connections through a proxy are not bound.</source>
         <translation>只使用這個網路介面，例如 VPN 通道。可從清單中選擇，或輸入 IP 位址或子網路，例如 10.64.0.0/10（即擁有該範圍內位址的介面）。透過代理的連線不會被綁定。</translation>
     </message>
@@ -7782,23 +7782,23 @@ Every Usenet connection then passes through the proxy, so its speed caps the dow
         <location line="+19"/>
         <location line="+1019"/>
         <location line="+154"/>
-        <location line="+1746"/>
-        <location line="+2087"/>
+        <location line="+1753"/>
+        <location line="+2091"/>
         <source>Add</source>
         <translation>加入</translation>
     </message>
     <message>
-        <location line="-5005"/>
+        <location line="-5016"/>
         <location line="+1019"/>
         <location line="+154"/>
-        <location line="+1473"/>
+        <location line="+1480"/>
         <location line="+316"/>
-        <location line="+2049"/>
+        <location line="+2053"/>
         <source>Remove</source>
         <translation>移除</translation>
     </message>
     <message>
-        <location line="-4990"/>
+        <location line="-5001"/>
         <source>Display name (optional)</source>
         <translation>顯示名稱（選填）</translation>
     </message>
@@ -7999,12 +7999,12 @@ Set it slightly under your plan. The figure is measured here, so it reads a few 
     <message>
         <location line="+3"/>
         <location line="+913"/>
-        <location line="+1446"/>
+        <location line="+1453"/>
         <source> s</source>
         <translation> 秒</translation>
     </message>
     <message>
-        <location line="-2358"/>
+        <location line="-2365"/>
         <source>Never back off</source>
         <translation>永不退避</translation>
     </message>
@@ -8957,7 +8957,17 @@ Adding one later does not fetch its back catalogue: a new indexer gets its own f
         <translation>伺服器連線重新整理間隔 [分鐘]：</translation>
     </message>
     <message>
-        <location line="+2861"/>
+        <location line="+194"/>
+        <source>Log fake-file header warnings for shared files too</source>
+        <translation>同時記錄共用檔案的偽造檔案標頭警告</translation>
+    </message>
+    <message>
+        <location line="+2"/>
+        <source>Downloads are always checked and logged. Shared files are checked again at every start.</source>
+        <translation>下載一律會檢查並記錄。共用檔案在每次啟動時都會重新檢查。</translation>
+    </message>
+    <message>
+        <location line="+2676"/>
         <location line="+52"/>
         <source>Directories</source>
         <translation>目錄</translation>
@@ -9028,7 +9038,7 @@ Create it?</source>
 %1</translation>
     </message>
     <message>
-        <location line="-3067"/>
+        <location line="-3078"/>
         <location line="+153"/>
         <source>Disabled</source>
         <translation>已停用</translation>
@@ -9235,7 +9245,7 @@ Create it?</source>
         <translation>啟動時記錄公用 IP 位址</translation>
     </message>
     <message>
-        <location line="+3"/>
+        <location line="+10"/>
         <source>Show Usenet log tab</source>
         <translation>顯示 Usenet 記錄分頁</translation>
     </message>
@@ -9589,7 +9599,7 @@ News server connections switch over immediately.</source>
         <translation>「%1」不是 IP 位址。監聽位址未變更。</translation>
     </message>
     <message>
-        <location line="+482"/>
+        <location line="+485"/>
         <source>File types</source>
         <translation>檔案類型</translation>
     </message>
@@ -9609,7 +9619,7 @@ News server connections switch over immediately.</source>
         <translation>找不到 specialdlp 程式庫，檢查未啟用</translation>
     </message>
     <message>
-        <location line="+428"/>
+        <location line="+429"/>
         <source>Port forwarding: %1</source>
         <translation>連接埠轉送：%1</translation>
     </message>

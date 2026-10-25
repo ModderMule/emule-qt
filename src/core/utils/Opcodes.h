@@ -437,7 +437,7 @@
 #define ST_META_API_FP              0x9C    // string "sha256/<base64>" SPKI pin
 #define ST_META_API                 0x9E    // string: Meta API base URL
 #define ST_META_API_VER             0x9F    // uint32: contract version (1)
-#define ST_NAT_PORT                 0x9D    // uint16: eNode-go PR_NAT UDP port, OP_SERVERIDENT only
+#define ST_NAT_PORT                 0x9D    // uint16: eNode-go PR_NAT UDP port, OP_SERVERIDENT; kept in server.met
 
 // ---------------------------------------------------------------------------
 // File tags

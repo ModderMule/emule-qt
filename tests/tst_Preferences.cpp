@@ -1219,6 +1219,26 @@ private slots:
         QVERIFY(!prefs.wantsA4AFLog());
     }
 
+    // Off by default (downloads only); survives YAML and the GUI mirror
+    void logFakeCheckShared_roundTrips()
+    {
+        TempDir tmp;
+        const auto file = tmp.filePath(QStringLiteral("prefs.yaml"));
+
+        Preferences prefs;
+        QVERIFY(!prefs.logFakeCheckShared());
+        prefs.setLogFakeCheckShared(true);
+        QVERIFY(prefs.saveTo(file));
+
+        Preferences loaded;
+        loaded.load(file);
+        QVERIFY(loaded.logFakeCheckShared());
+
+        Preferences mirror;
+        mirror.updateFromCbor(loaded.toIpcMap());
+        QVERIFY(mirror.logFakeCheckShared());
+    }
+
     void randomPort_inRange()
     {
         for (int i = 0; i < 100; ++i) {

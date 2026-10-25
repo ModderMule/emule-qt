@@ -6,6 +6,8 @@
 /// We REGISTER our user hash per family (the server stores the observed source),
 /// keep it alive inside the 90 s TTL (30 s on eNode-go v0.5.1 and older), and pair with SYNC2 <our hash><connAck 4><peer hash>.
 /// Both sides get SYNC (v4) / SYNC_EX / SYNC_IPV6 with the other's endpoint.
+/// The register ack names the server's own address and preferred port per family (0 = keep
+/// ours): later PR_NAT traffic of that family goes there, until the registration is lost.
 /// Wake-up (flag 0x200000, our login bit 0x200000): no standing registration; the
 /// server sends TCP OP_NAT_WAKE <families 1> when a peer asks for us, and we REGISTER
 /// once per family. A requester REGISTERs right before its SYNC2.
@@ -28,6 +30,8 @@ public:
     static constexpr uint16 kDefaultPort  = 2004;
     static constexpr uint64 kKeepaliveMs  = 60000;   // server TTL 90 s
     static constexpr uint64 kRegisterMs   = 5000;    // until acked
+    static constexpr uint32 kRegisterTries = 6;      // unanswered at kRegisterMs (30 s), then
+    static constexpr uint64 kRegisterSlowMs = 60000; // a refused REGISTER gets no answer
     static constexpr uint64 kRepeatMs     = 5000;
     static constexpr uint32 kMaxRequests  = 3;
     /// No PING for this long after an acked registration: the server lost it (or our NAT
@@ -59,7 +63,13 @@ private:
         Endpoint to;
         uint64 lastSentMs = 0;
         uint64 lastPingMs = 0;   ///< last ack or PING
+        uint32 unanswered = 0;   ///< REGISTERs since the last ack
         bool acked = false;
+    };
+    /// Endpoint a register ack moved us to; valid while @c from is still our default.
+    struct Learned {
+        Endpoint from;
+        Endpoint to;
     };
 
     /// We would be a useful target: NAT on, firewalled, a data path.
@@ -68,11 +78,16 @@ private:
     [[nodiscard]] bool wakeMode() const;
     void registerNow(bool ipv6);
 
+    /// Learned endpoint of that family, else defaultNatEndpoint().
     [[nodiscard]] Endpoint natEndpoint(bool ipv6) const;
+    /// Server address + ST_NAT_PORT (2004 when absent).
+    [[nodiscard]] Endpoint defaultNatEndpoint(bool ipv6) const;
+    [[nodiscard]] Endpoint learnedEndpoint(bool ipv6) const;
+    void onRegisterAck(bool ipv6, const Endpoint& from, const Address& addr, uint16 port);
     [[nodiscard]] Endpoint syncEndpoint() const;   ///< where SYNC2 goes
     [[nodiscard]] bool isNatServer(const Endpoint& from) const;   ///< our server or a sweep one
     [[nodiscard]] bool isOwnNatServer(const Endpoint& from) const;
-    void keepRegistered(Registration& reg, const Endpoint& to);
+    void keepRegistered(bool ipv6, bool want);
     void sendSync2(Attempt& attempt);
     /// Our server (when it pairs) then the other capable ones, for a peer not on ours.
     [[nodiscard]] std::vector<Endpoint> sweepServers(const PeerInfo& peer) const;
@@ -85,6 +100,8 @@ private:
 
     Registration m_v4;
     Registration m_v6;
+    Learned m_learnedV4;
+    Learned m_learnedV6;
     QHash<QByteArray, uint64> m_noRendezvous;   ///< hash -> when no server paired it (session)
     struct Paired { Endpoint server; uint64 atMs = 0; };
     QHash<QByteArray, Paired> m_pairedVia;      ///< hash -> server that paired it last

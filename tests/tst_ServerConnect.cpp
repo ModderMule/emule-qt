@@ -382,7 +382,8 @@ void tst_ServerConnect::connectToServer_single_loginAndConnect()
 
 // ---------------------------------------------------------------------------
 // NAT rendezvous login: CT_EMULE_UDPPORTS opts in to ed2k-server's hole punch;
-// the Lugdunum bit 0x1000 only while we hold a public IPv6 (the handoff path).
+// the Lugdunum bit 0x1000 only while we hold a public IPv6 (the handoff path);
+// the PR_NAT wake bit 0x200000 whenever NAT traversal is on.
 // ---------------------------------------------------------------------------
 
 void tst_ServerConnect::login_natTraversalTagAndBit_data()
@@ -448,6 +449,8 @@ void tst_ServerConnect::login_natTraversalTagAndBit()
     QCOMPARE(sawUdpPorts, expectUdpPorts);
     QCOMPARE((flags & SRVCAP_NATTRAVERSAL) != 0, expectNatBit);
     QCOMPARE((flags & SRVCAP_HOLEPUNCH_EXT) != 0, expectNatBit);   // ed2k-server#39: always together
+    // PR_NAT wake bit: whenever NAT traversal is on, the data path may come after login
+    QCOMPARE((flags & SRVCAP_NAT_WAKE) != 0, expectUdpPorts);
 
     conn.disconnect();
     serverSide->close();

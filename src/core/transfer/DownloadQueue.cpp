@@ -440,6 +440,21 @@ bool isSelf(uint32 hybridID, uint16 port,
     return false;
 }
 
+/// A firewalled LowID source is kept only if a NAT rendezvous can reach it.
+/// srvIP is in network byte order, userHash 16 bytes or null.
+bool keepFirewalledLowId(uint32 userId, uint32 srvIP, uint16 srvPort, const uint8* userHash)
+{
+    natt::PeerInfo peer;
+    peer.clientID = userId;
+    peer.serverAddress = Address::fromNetworkOrder(srvIP);
+    peer.serverPort = srvPort;
+    if (userHash) {
+        std::memcpy(peer.hash.data(), userHash, 16);
+        peer.hashKnown = true;
+    }
+    return natt::NatRendezvous::keepLowIdSource(peer);
+}
+
 } // namespace
 
 UpDownClient* DownloadQueue::checkAndAddSource(PartFile* file, UpDownClient* source)
@@ -1095,18 +1110,9 @@ void DownloadQueue::addServerSourceClient(PartFile* file, uint32 userId, uint16 
 
     // Two firewalled clients cannot connect directly, so a low-ID source is dead weight
     // unless a NAT rendezvous on this server can introduce us (net/natt).
-    if (isLowID(userId) && theApp.isFirewalled()) {
-        natt::PeerInfo peer;
-        peer.clientID = userId;
-        peer.serverAddress = Address::fromNetworkOrder(srvIP);
-        peer.serverPort = srvPort;
-        if (hasHash) {
-            std::memcpy(peer.hash.data(), userHash, 16);
-            peer.hashKnown = true;
-        }
-        if (!natt::NatRendezvous::keepLowIdSource(peer))
-            return;
-    }
+    if (isLowID(userId) && theApp.isFirewalled()
+        && !keepFirewalledLowId(userId, srvIP, srvPort, hasHash ? userHash : nullptr))
+        return;
 
     if (!isLowID(userId)) {
         if (!isGoodIP(userId))
@@ -1284,9 +1290,10 @@ bool DownloadQueue::addVettedSource(PartFile* file, uint32 ed2kUserId, const Add
     if (!file || port == 0)
         return false;
 
-    // Two firewalled IPv4 peers can never connect, but an IPv6 peer is dialable
-    // whatever our ED2K ID is, so only drop when IPv4 is all we have.
-    if (v6.isNull() && theApp.isFirewalled() && isLowID(ed2kUserId))
+    // Two firewalled IPv4 peers connect only through a NAT rendezvous, but an IPv6
+    // peer is dialable whatever our ED2K ID is, so only drop when IPv4 is all we have.
+    if (v6.isNull() && theApp.isFirewalled() && isLowID(ed2kUserId)
+        && !keepFirewalledLowId(ed2kUserId, hints.serverIP, hints.serverPort, hints.userHash))
         return false;
 
     if (file->sourceCount() >= static_cast<int>(file->maxSources()))

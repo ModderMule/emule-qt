@@ -386,6 +386,7 @@ OptionsDialog::OptionsDialog(IpcClient* ipc, StatisticsPanel* statsPanel,
     connect(m_logRawSocketPacketsCheck, &QCheckBox::toggled, this, &OptionsDialog::markDirty);
     connect(m_logWebServerCheck, &QCheckBox::toggled, this, &OptionsDialog::markDirty);
     connect(m_logPublicIPCheck, &QCheckBox::toggled, this, &OptionsDialog::markDirty);
+    connect(m_logFakeCheckSharedCheck, &QCheckBox::toggled, this, &OptionsDialog::markDirty);
     connect(m_enableIpcLogCheck, &QCheckBox::toggled, this, &OptionsDialog::markDirty);
     connect(m_showUsenetLogCheck, &QCheckBox::toggled, this, &OptionsDialog::markDirty);
     connect(m_startCoreWithConsoleCheck, &QCheckBox::toggled, this, &OptionsDialog::markDirty);
@@ -5628,6 +5629,13 @@ QWidget* OptionsDialog::createExtendedPage()
     m_logPublicIPCheck = new QCheckBox(tr("Log public IP address on startup"), verboseGroup);
     verboseLayout->addWidget(m_logPublicIPCheck);
 
+    // Not verbose: these warnings go to the normal log. Off = downloads only.
+    m_logFakeCheckSharedCheck = new QCheckBox(
+        tr("Log fake-file header warnings for shared files too"), verboseGroup);
+    m_logFakeCheckSharedCheck->setToolTip(
+        tr("Downloads are always checked and logged. Shared files are checked again at every start."));
+    verboseLayout->addWidget(m_logFakeCheckSharedCheck);
+
     m_showUsenetLogCheck = new QCheckBox(tr("Show Usenet log tab"), verboseGroup);
     verboseLayout->addWidget(m_showUsenetLogCheck);
 
@@ -7050,6 +7058,8 @@ void OptionsDialog::saveSettings()
         req.append(m_logWebServerCheck->isChecked());
         req.append(QStringLiteral("logPublicIP"));
         req.append(m_logPublicIPCheck->isChecked());
+        req.append(QStringLiteral("logFakeCheckShared"));
+        req.append(m_logFakeCheckSharedCheck->isChecked());
         req.append(QStringLiteral("enableIpcLog"));
         req.append(m_enableIpcLogCheck->isChecked());
         req.append(QStringLiteral("showUsenetLog"));
@@ -7366,6 +7376,7 @@ void OptionsDialog::saveSettings()
         thePrefs.setLogRawSocketPackets(m_logRawSocketPacketsCheck->isChecked());
         thePrefs.setLogWebServer(m_logWebServerCheck->isChecked());
         thePrefs.setLogPublicIP(m_logPublicIPCheck->isChecked());
+        thePrefs.setLogFakeCheckShared(m_logFakeCheckSharedCheck->isChecked());
         // USS
         thePrefs.setDynUpEnabled(m_dynUpEnabledCheck->isChecked());
         thePrefs.setMinUpload(static_cast<uint32>(m_dynUpMinUploadSpin->value()));
@@ -7788,6 +7799,7 @@ void OptionsDialog::fillDaemonSettings(const QCborMap& prefs)
     m_logWebServerCheck->setChecked(prefs.value(QStringLiteral("logWebServer")).toBool());
     m_logWebServerCheck->setEnabled(verboseOn);
     m_logPublicIPCheck->setChecked(prefs.value(QStringLiteral("logPublicIP")).toBool());
+    m_logFakeCheckSharedCheck->setChecked(prefs.value(QStringLiteral("logFakeCheckShared")).toBool());
     m_startCoreWithConsoleCheck->setChecked(prefs.value(QStringLiteral("startCoreWithConsole")).toBool());
     // USS
     bool ussOn = prefs.value(QStringLiteral("dynUpEnabled")).toBool();

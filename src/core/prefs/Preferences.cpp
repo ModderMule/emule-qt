@@ -233,6 +233,7 @@ struct Preferences::Data {
     uint32 maxLogFileSize = 1048576; // 1 MB
     bool verbose = true;                // MFC off; deliberate, 2026-10: the log is how a daemon without a window is diagnosed
     bool logPublicIP = false;
+    bool logFakeCheckShared = false;
     bool kadVerboseLog = true;
     bool serverVerboseLog = false;  // Gated server TCP/UDP/search handshake logging
     uint32 maxLogLines = 5000;  // Max lines kept per log tab in the GUI
@@ -1146,6 +1147,10 @@ void Preferences::setVerbose(bool val) { set(&Data::verbose, val); }
 bool Preferences::logPublicIP() const { return get(&Data::logPublicIP); }
 
 void Preferences::setLogPublicIP(bool val) { set(&Data::logPublicIP, val); }
+
+bool Preferences::logFakeCheckShared() const { return get(&Data::logFakeCheckShared); }
+
+void Preferences::setLogFakeCheckShared(bool val) { set(&Data::logFakeCheckShared, val); }
 
 bool Preferences::kadVerboseLog() const { return get(&Data::kadVerboseLog); }
 
@@ -3293,6 +3298,7 @@ QCborMap Preferences::toIpcMap() const
     prefs.insert(QStringLiteral("verbose"), verbose());
     prefs.insert(QStringLiteral("serverVerboseLog"), serverVerboseLog());
     prefs.insert(QStringLiteral("logPublicIP"), logPublicIP());
+    prefs.insert(QStringLiteral("logFakeCheckShared"), logFakeCheckShared());
     prefs.insert(QStringLiteral("closeUPnPOnExit"), closeUPnPOnExit());
     prefs.insert(QStringLiteral("portMapProtocols"), static_cast<int>(portMapProtocols()));
     prefs.insert(QStringLiteral("portMapIPv6"), portMapIPv6());
@@ -3532,6 +3538,7 @@ void Preferences::updateFromCbor(const QCborMap& p)
     m_data->logToDiskGui                = p.value(QStringLiteral("logToDiskGui")).toBool();
     m_data->verbose                     = p.value(QStringLiteral("verbose")).toBool();
     m_data->logPublicIP                 = p.value(QStringLiteral("logPublicIP")).toBool();
+    m_data->logFakeCheckShared          = p.value(QStringLiteral("logFakeCheckShared")).toBool();
     m_data->serverVerboseLog            = p.value(QStringLiteral("serverVerboseLog")).toBool();
     m_data->closeUPnPOnExit             = p.value(QStringLiteral("closeUPnPOnExit")).toBool();
     m_data->fileBufferSize              = static_cast<uint32>(p.value(QStringLiteral("fileBufferSize")).toInteger());
@@ -3979,6 +3986,7 @@ bool Preferences::load(const QString& filePath)
             m_data->maxLogFileSize = l["maxLogFileSize"].as<uint32>(m_data->maxLogFileSize);
             m_data->verbose = l["verbose"].as<bool>(m_data->verbose);
             m_data->logPublicIP = l["logPublicIP"].as<bool>(m_data->logPublicIP);
+            m_data->logFakeCheckShared = l["logFakeCheckShared"].as<bool>(m_data->logFakeCheckShared);
             m_data->kadVerboseLog = l["kadVerboseLog"].as<bool>(m_data->kadVerboseLog);
             m_data->serverVerboseLog = l["serverVerboseLog"].as<bool>(m_data->serverVerboseLog);
             m_data->maxLogLines = l["maxLogLines"].as<uint32>(m_data->maxLogLines);
@@ -5132,6 +5140,7 @@ bool Preferences::saveImpl(const QString& filePath) const
     out << YAML::Key << "maxLogFileSize" << YAML::Value << m_data->maxLogFileSize;
     out << YAML::Key << "verbose" << YAML::Value << m_data->verbose;
     out << YAML::Key << "logPublicIP" << YAML::Value << m_data->logPublicIP;
+    out << YAML::Key << "logFakeCheckShared" << YAML::Value << m_data->logFakeCheckShared;
     out << YAML::Key << "kadVerboseLog" << YAML::Value << m_data->kadVerboseLog;
     out << YAML::Key << "serverVerboseLog" << YAML::Value << m_data->serverVerboseLog;
     out << YAML::Key << "maxLogLines" << YAML::Value << m_data->maxLogLines;

@@ -7,6 +7,7 @@
 /// re-implementation of MorphXT's own parser, which is the only way to prove byte
 /// compatibility without running Windows.
 
+#include "NatTestEnv.h"
 #include "TestHelpers.h"
 #include "app/AppContext.h"
 #include "client/ClientList.h"
@@ -14,6 +15,7 @@
 #include "files/PartFile.h"
 #include "files/SourceSaver.h"
 #include "ipfilter/IPFilter.h"
+#include "net/natt/NatRendezvous.h"
 #include "net/Address.h"
 #include "prefs/Preferences.h"
 #include "transfer/DownloadQueue.h"
@@ -23,6 +25,7 @@
 #include <QDateTime>
 #include <QDir>
 #include <QFile>
+#include <QScopeGuard>
 #include <QTemporaryDir>
 #include <QTest>
 
@@ -245,6 +248,7 @@ private slots:
     void loadRestoresUserHashAndConnectOptions();
     void loadSkipsNonRoutableAddress();
     void loadSkipsUncallableLowIdRecord();
+    void loadKeepsLowIdRecordForNatRendezvous();
 
     // -- lifecycle --
     void firstProcessTickSaves();
@@ -1079,6 +1083,38 @@ void tst_SourceSaver::loadSkipsUncallableLowIdRecord()
     QVERIFY(SourceListFile::write(listPathFor(file.get()), {rec}, QString()));
 
     QCOMPARE(file->sourceSaver().loadAndInject(file.get()), 0);
+}
+
+// Firewalled, a saved LowID source needs a NAT rendezvous: with one that can reach
+// it (here our own server's hole punch), it is restored like any other.
+void tst_SourceSaver::loadKeepsLowIdRecordForNatRendezvous()
+{
+    QueueEnv env;
+    std::unique_ptr<PartFile> file(makePartFile(QStringLiteral("load_lowid_nat.bin"), 0x17));
+    QVERIFY(file);
+    QVERIFY(theApp.isFirewalled());
+
+    SavedSource rec;
+    rec.legacyId       = 123457;
+    rec.port           = 4662;
+    rec.srcExchangeVer = 4;
+    rec.serverIP       = inetAddr(QStringLiteral("5.6.7.8"));
+    rec.serverPort     = 4661;
+    rec.hasUserHash    = true;
+    rec.userHash.fill(0x5A);
+    rec.expiration     = farFutureExpiration();
+    QVERIFY(SourceListFile::write(listPathFor(file.get()), {rec}, QString()));
+
+    // no rendezvous: two firewalled LowIDs cannot meet
+    QCOMPARE(file->sourceSaver().loadAndInject(file.get()), 0);
+
+    natt::test::HubFixture f;
+    f.env->logIn(Address::fromString(QStringLiteral("5.6.7.8")), 4661, SrvTcpFlag::LowIdHolePunch);
+    theApp.natRendezvous = f.hub.get();
+    const auto restore = qScopeGuard([] { theApp.natRendezvous = nullptr; });
+    QCOMPARE(file->sourceSaver().loadAndInject(file.get()), 1);
+    QCOMPARE(file->sourceCount(), 1);
+    QVERIFY(file->srcList().front()->hasLowID());
 }
 
 // ---------------------------------------------------------------------------

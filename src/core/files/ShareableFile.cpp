@@ -4,6 +4,7 @@
 
 #include "files/ShareableFile.h"
 
+#include "prefs/Preferences.h"
 #include "utils/Log.h"
 
 namespace eMule {
@@ -41,8 +42,9 @@ const ContainerCheck& ShareableFile::containerCheck() const
     }
 
     m_containerCheck = checkHead(head, fileName());
-    // Once per file and session: the result is memoised from here on
-    if (m_containerCheck->isSuspect())
+    // Once per file and session: the result is memoised from here on.
+    // Shared files only on request: they are checked again at every start.
+    if (m_containerCheck->isSuspect() && (isPartFile() || thePrefs.logFakeCheckShared()))
         logWarning(QStringLiteral("File header check: %1 — %2")
                        .arg(fileName(), containerWarningText(*m_containerCheck, fileName())));
     return *m_containerCheck;

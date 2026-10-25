@@ -3,6 +3,7 @@
 
 #include "TestHelpers.h"
 #include "files/ShareableFile.h"
+#include "prefs/Preferences.h"
 
 #include <QFile>
 #include <QTemporaryDir>
@@ -22,7 +23,7 @@ private slots:
     void verifiedFileType();
     void infoSummary();
     void theResolvedVerdictNeverReadsTheDisk();
-    void aSuspectHeaderIsLoggedOnce();
+    void aSharedSuspectHeaderIsLoggedOnlyOnRequest();
 };
 
 namespace {
@@ -134,7 +135,7 @@ void tst_ShareableFile::theResolvedVerdictNeverReadsTheDisk()
     QCOMPARE(f.containerCheckIfResolved().expected, QStringLiteral("ASF"));
 }
 
-void tst_ShareableFile::aSuspectHeaderIsLoggedOnce()
+void tst_ShareableFile::aSharedSuspectHeaderIsLoggedOnlyOnRequest()
 {
     QTemporaryDir dir;
     QVERIFY(dir.isValid());
@@ -144,16 +145,29 @@ void tst_ShareableFile::aSuspectHeaderIsLoggedOnce()
         QVERIFY(out.open(QIODevice::WriteOnly));
         out.write("\xFF\xFB\x10\xC0\x0B\x0A\x07\x05\x00\x07\x07\x0A", 12);
     }
+    const bool saved = thePrefs.logFakeCheckShared();
+    g_warnings.clear();
+    const auto previous = qInstallMessageHandler(captureWarnings);
+
+    // Default: downloads only, a shared file stays quiet
+    thePrefs.setLogFakeCheckShared(false);
+    ShareableFile quiet;
+    quiet.setFileName(QStringLiteral("fake.wmv"));
+    quiet.setFilePath(path);
+    QVERIFY(quiet.containerCheck().isSuspect());
+    const qsizetype quietCount = g_warnings.size();
+
+    thePrefs.setLogFakeCheckShared(true);
     ShareableFile f;
     f.setFileName(QStringLiteral("fake.wmv"));
     f.setFilePath(path);
-
-    g_warnings.clear();
-    const auto previous = qInstallMessageHandler(captureWarnings);
     QVERIFY(f.containerCheck().isSuspect());
     QVERIFY(f.containerCheck().isSuspect());   // memoised: no second line
-    qInstallMessageHandler(previous);
 
+    qInstallMessageHandler(previous);
+    thePrefs.setLogFakeCheckShared(saved);
+
+    QCOMPARE(quietCount, 0);
     QCOMPARE(g_warnings.size(), 1);
     QVERIFY(g_warnings.first().contains(QStringLiteral("fake.wmv")));
     QVERIFY(g_warnings.first().contains(QStringLiteral("Named .wmv")));

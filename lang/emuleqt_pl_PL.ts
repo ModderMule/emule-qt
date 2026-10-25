@@ -565,7 +565,7 @@ Uruchom go z --new-instance lub --config &lt;dir&gt;, aby otworzyć kolejne okno
         <translation>Normalny</translation>
     </message>
     <message>
-        <location filename="../src/gui/dialogs/OptionsDialog.cpp" line="+3123"/>
+        <location filename="../src/gui/dialogs/OptionsDialog.cpp" line="+3124"/>
         <source>Test</source>
         <translation>Test</translation>
     </message>
@@ -5956,35 +5956,35 @@ Pobrać ponownie?</translation>
 <context>
     <name>eMule::OptionsDialog</name>
     <message>
-        <location filename="../src/gui/dialogs/OptionsDialog.cpp" line="-3014"/>
+        <location filename="../src/gui/dialogs/OptionsDialog.cpp" line="-3015"/>
         <source>Options</source>
         <translation>Opcje</translation>
     </message>
     <message>
         <location line="+61"/>
-        <location line="+1984"/>
+        <location line="+1985"/>
         <source>OK</source>
         <translation>OK</translation>
     </message>
     <message>
-        <location line="-1983"/>
-        <location line="+1984"/>
+        <location line="-1984"/>
+        <location line="+1985"/>
         <source>Cancel</source>
         <translation>Anuluj</translation>
     </message>
     <message>
-        <location line="-1983"/>
-        <location line="+5774"/>
+        <location line="-1984"/>
+        <location line="+5782"/>
         <source>Apply</source>
         <translation>Zatwierdź</translation>
     </message>
     <message>
-        <location line="-5773"/>
+        <location line="-5781"/>
         <source>Help</source>
         <translation>Pomoc</translation>
     </message>
     <message>
-        <location line="+259"/>
+        <location line="+260"/>
         <location line="+1992"/>
         <location line="+62"/>
         <location line="+5"/>
@@ -6030,12 +6030,12 @@ Pobrać ponownie?</translation>
     </message>
     <message>
         <location line="+8"/>
-        <location line="+5683"/>
+        <location line="+5690"/>
         <source>Language</source>
         <translation>Język</translation>
     </message>
     <message>
-        <location line="-5680"/>
+        <location line="-5687"/>
         <source>System Default</source>
         <translation>Domyślny systemowy</translation>
     </message>
@@ -6135,12 +6135,12 @@ Pobrać ponownie?</translation>
     </message>
     <message>
         <location line="+8"/>
-        <location line="+5619"/>
+        <location line="+5626"/>
         <source>Core</source>
         <translation>Rdzeń</translation>
     </message>
     <message>
-        <location line="-5614"/>
+        <location line="-5621"/>
         <source>Address:</source>
         <translation>Adres:</translation>
     </message>
@@ -6406,13 +6406,13 @@ Czy na pewno chcesz kontynuować?</translation>
         <location line="+152"/>
         <location line="+880"/>
         <location line="+298"/>
-        <location line="+277"/>
+        <location line="+284"/>
         <location line="+29"/>
         <source>Enabled</source>
         <translation>Włączone</translation>
     </message>
     <message>
-        <location line="-4765"/>
+        <location line="-4772"/>
         <source>Reset</source>
         <translation>Resetuj</translation>
     </message>
@@ -6430,12 +6430,12 @@ Czy na pewno chcesz kontynuować?</translation>
         <location line="+3"/>
         <location line="+6"/>
         <location line="+4146"/>
-        <location line="+345"/>
+        <location line="+352"/>
         <source> KB/s</source>
         <translation> KB/s</translation>
     </message>
     <message>
-        <location line="-4494"/>
+        <location line="-4501"/>
         <source>Upload</source>
         <translation>Wysyłanie</translation>
     </message>
@@ -6507,12 +6507,12 @@ Czy na pewno chcesz kontynuować?</translation>
     </message>
     <message>
         <location line="+4"/>
-        <location line="+6790"/>
+        <location line="+6801"/>
         <source>Any</source>
         <translation>Dowolny</translation>
     </message>
     <message>
-        <location line="-6788"/>
+        <location line="-6799"/>
         <source>Use only this network interface, for example a VPN tunnel. Pick one from the list, or type an IP address or a subnet such as 10.64.0.0/10 (the interface holding an address in it). Connections through a proxy are not bound.</source>
         <translation>Używaj tylko tego interfejsu sieciowego, np. tunelu VPN. Wybierz go z listy lub wpisz adres IP albo podsieć, np. 10.64.0.0/10 (interfejs posiadający adres z tej podsieci). Połączenia przez proxy nie są wiązane.</translation>
     </message>
@@ -7812,23 +7812,23 @@ Każde połączenie Usenet przechodzi wtedy przez proxy, więc jego prędkość 
         <location line="+19"/>
         <location line="+1019"/>
         <location line="+154"/>
-        <location line="+1746"/>
-        <location line="+2087"/>
+        <location line="+1753"/>
+        <location line="+2091"/>
         <source>Add</source>
         <translation>Dodaj</translation>
     </message>
     <message>
-        <location line="-5005"/>
+        <location line="-5016"/>
         <location line="+1019"/>
         <location line="+154"/>
-        <location line="+1473"/>
+        <location line="+1480"/>
         <location line="+316"/>
-        <location line="+2049"/>
+        <location line="+2053"/>
         <source>Remove</source>
         <translation>Usuń</translation>
     </message>
     <message>
-        <location line="-4990"/>
+        <location line="-5001"/>
         <source>Display name (optional)</source>
         <translation>Nazwa wyświetlana (opcjonalnie)</translation>
     </message>
@@ -8029,12 +8029,12 @@ Ustaw nieco poniżej swojego planu. Wartość jest mierzona tutaj, więc wychodz
     <message>
         <location line="+3"/>
         <location line="+913"/>
-        <location line="+1446"/>
+        <location line="+1453"/>
         <source> s</source>
         <translation> s</translation>
     </message>
     <message>
-        <location line="-2358"/>
+        <location line="-2365"/>
         <source>Never back off</source>
         <translation>Nigdy nie wstrzymuj</translation>
     </message>
@@ -8987,7 +8987,17 @@ Dodanie indeksera później nie pobiera jego archiwum: nowy indekser dostaje wł
         <translation>Interwał odświeżania połączenia z serwerem [min.]:</translation>
     </message>
     <message>
-        <location line="+2861"/>
+        <location line="+194"/>
+        <source>Log fake-file header warnings for shared files too</source>
+        <translation>Rejestruj ostrzeżenia nagłówka fałszywych plików także dla plików udostępnionych</translation>
+    </message>
+    <message>
+        <location line="+2"/>
+        <source>Downloads are always checked and logged. Shared files are checked again at every start.</source>
+        <translation>Pobierane pliki są zawsze sprawdzane i rejestrowane. Pliki udostępnione są sprawdzane ponownie przy każdym uruchomieniu.</translation>
+    </message>
+    <message>
+        <location line="+2676"/>
         <location line="+52"/>
         <source>Directories</source>
         <translation>Katalogi</translation>
@@ -9058,7 +9068,7 @@ Utworzyć go?</translation>
 %1</translation>
     </message>
     <message>
-        <location line="-3067"/>
+        <location line="-3078"/>
         <location line="+153"/>
         <source>Disabled</source>
         <translation>Wyłączony</translation>
@@ -9265,7 +9275,7 @@ Utworzyć go?</translation>
         <translation>Loguj publiczny adres IP przy uruchomieniu</translation>
     </message>
     <message>
-        <location line="+3"/>
+        <location line="+10"/>
         <source>Show Usenet log tab</source>
         <translation>Pokaż kartę logu Usenet</translation>
     </message>
@@ -9619,7 +9629,7 @@ Połączenia z serwerami news przełączają się natychmiast.</translation>
         <translation>&quot;%1&quot; nie jest adresem IP. Adres nasłuchu nie został zmieniony.</translation>
     </message>
     <message>
-        <location line="+482"/>
+        <location line="+485"/>
         <source>File types</source>
         <translation>Typy plików</translation>
     </message>
@@ -9639,7 +9649,7 @@ Połączenia z serwerami news przełączają się natychmiast.</translation>
         <translation>Nie znaleziono biblioteki specialdlp, sprawdzanie nieaktywne</translation>
     </message>
     <message>
-        <location line="+428"/>
+        <location line="+429"/>
         <source>Port forwarding: %1</source>
         <translation>Przekierowanie portów: %1</translation>
     </message>

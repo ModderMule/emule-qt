@@ -56,12 +56,8 @@ QByteArray EnodeNatPath::frame(uint8 opcode, const QByteArray& payload)
 
 Endpoint EnodeNatPath::natEndpoint(bool ipv6) const
 {
-    const Server* server = env().currentServer();
-    if (!server || (!server->supportsNatRendezvous() && !server->supportsNatWake()))
-        return {};
-    const uint16 port = server->natPort() != 0 ? server->natPort() : kDefaultPort;
-    const Address addr = ipv6 ? server->ipv6Address() : server->ipv4Address();
-    return addr.isNull() ? Endpoint() : Endpoint(addr, port);
+    const Endpoint learned = learnedEndpoint(ipv6);
+    return learned.address().isNull() ? defaultNatEndpoint(ipv6) : learned;
 }
 
 Endpoint EnodeNatPath::syncEndpoint() const
@@ -75,7 +71,8 @@ Endpoint EnodeNatPath::syncEndpoint() const
         }
         return natEndpoint(false);
     }
-    // The acked family first: an IPv6 session has no IPv4 registration the server accepts.
+    // The acked family first: the server holds that candidate. Either family registers on
+    // any session the server has an address for (an IPv6 session has no IPv4 to check).
     if (m_v4.acked && !m_v4.to.address().isNull())
         return m_v4.to;
     if (m_v6.acked && !m_v6.to.address().isNull())
@@ -99,8 +96,13 @@ bool EnodeNatPath::isNatServer(const Endpoint& from) const
 bool EnodeNatPath::isOwnNatServer(const Endpoint& from) const
 {
     const Server* server = env().currentServer();
-    if (!server || (!server->supportsNatRendezvous() && !server->supportsNatWake())
-        || !server->hasAddress(from.address()))
+    if (!server || (!server->supportsNatRendezvous() && !server->supportsNatWake()))
+        return false;
+    // Where a register ack moved us
+    if (const Endpoint learned = learnedEndpoint(from.address().isIPv6());
+        !learned.address().isNull() && from == learned)
+        return true;
+    if (!server->hasAddress(from.address()))
         return false;
     // The handler also answers on the main UDP port.
     const uint16 natPort = server->natPort() != 0 ? server->natPort() : kDefaultPort;
@@ -198,8 +200,10 @@ Endpoint EnodeNatPath::attemptEndpoint(const Attempt& attempt) const
         ? attempt.natServers[attempt.natServerIdx] : syncEndpoint();
 }
 
-void EnodeNatPath::keepRegistered(Registration& reg, const Endpoint& to)
+void EnodeNatPath::keepRegistered(bool ipv6, bool want)
 {
+    Registration& reg = ipv6 ? m_v6 : m_v4;
+    Endpoint to = want ? natEndpoint(ipv6) : Endpoint();
     if (to.address().isNull()) {
         reg = {};
         return;
@@ -210,21 +214,30 @@ void EnodeNatPath::keepRegistered(Registration& reg, const Endpoint& to)
     }
     const uint64 now = env().now();
     // Keepalives that stop being answered: the server lost the registration or our NAT
-    // moved us to a new port, and a keepalive from there matches nothing. Register again.
+    // moved us to a new port, and a keepalive from there matches nothing. Register again,
+    // at the default endpoint: the learned one may be what broke.
     if (reg.acked && now - reg.lastPingMs > kPingLossMs) {
         log(QStringLiteral("no PING from %1 for %2 s, registering again")
                 .arg(to.toString()).arg((now - reg.lastPingMs) / 1000));
-        reg.acked = false;
-        reg.lastSentMs = 0;
+        (ipv6 ? m_learnedV6 : m_learnedV4) = {};
+        to = defaultNatEndpoint(ipv6);
+        reg = {};
+        reg.to = to;
     }
-    const uint64 interval = reg.acked ? kKeepaliveMs : kRegisterMs;
+    // A refused REGISTER gets no answer: slow down after kRegisterTries.
+    const uint64 interval = reg.acked ? kKeepaliveMs
+                          : reg.unanswered >= kRegisterTries ? kRegisterSlowMs : kRegisterMs;
     if (reg.lastSentMs != 0 && now - reg.lastSentMs < interval)
         return;
     reg.lastSentMs = now;
-    if (reg.acked)
+    if (reg.acked) {
         env().sendRawUdp(frame(OP_NAT_KEEPALIVE, {}), to);
-    else
-        env().sendRawUdp(frame(OP_NAT_REGISTER, hashBytes(env().ourHash())), to);
+        return;
+    }
+    if (++reg.unanswered == kRegisterTries)
+        log(QStringLiteral("REGISTER to %1 unanswered %2 times, next every %3 s")
+                .arg(to.toString()).arg(kRegisterTries).arg(kRegisterSlowMs / 1000));
+    env().sendRawUdp(frame(OP_NAT_REGISTER, hashBytes(env().ourHash())), to);
 }
 
 bool EnodeNatPath::active() const
@@ -250,8 +263,13 @@ void EnodeNatPath::tick()
     // Registered only while we could use it: a register makes us pairable by hash. A
     // server that wakes us needs no standing registration at all.
     const bool standing = active() && !wakeMode();
-    keepRegistered(m_v4, standing ? natEndpoint(false) : Endpoint());
-    keepRegistered(m_v6, standing && env().ourPublicIPv6().isIPv6() ? natEndpoint(true) : Endpoint());
+    // Learned endpoints belong to the server (and session) they came from.
+    for (Learned* l : {&m_learnedV4, &m_learnedV6}) {
+        if (!(l->from == defaultNatEndpoint(l == &m_learnedV6)) || ourID() == 0)
+            *l = {};
+    }
+    keepRegistered(false, standing);
+    keepRegistered(true, standing && env().ourPublicIPv6().isIPv6());
 }
 
 bool EnodeNatPath::handleServerTcp(uint8 opcode, const QByteArray& payload)
@@ -290,16 +308,16 @@ bool EnodeNatPath::handleServerUdp(const Endpoint& from, const uint8* data, qsiz
 
     switch (opcode) {
     case OP_NAT_REGISTER:          // v4 ack: <port BE><ip4 BE>
-        if (plen >= 6 && from.address().isIPv4() && isOwnNatServer(from)) {
-            m_v4.acked = true;
-            m_v4.lastPingMs = env().now();
-        }
+        if (plen >= 6 && from.address().isIPv4() && isOwnNatServer(from))
+            onRegisterAck(false, from, Address::fromHostOrder(qFromBigEndian<quint32>(p + 2)),
+                          qFromBigEndian<quint16>(p));
         break;
     case OP_NAT_REGISTER_IPV6:     // v6 ack: <port BE><ip6>
-        if (plen >= 18 && isOwnNatServer(from)) {
-            m_v6.acked = true;
-            m_v6.lastPingMs = env().now();
-        }
+        if (plen >= 18 && from.address().isIPv6() && isOwnNatServer(from))
+            onRegisterAck(true, from,
+                          std::all_of(p + 2, p + 18, [](uint8 b) { return b == 0; })
+                              ? Address() : Address::fromIPv6Bytes(p + 2),
+                          qFromBigEndian<quint16>(p));
         break;
     case OP_NAT_PING:
         if (isOwnNatServer(from))
@@ -396,6 +414,43 @@ void EnodeNatPath::nextServer(Attempt& attempt, const QString& why)
     log(QStringLiteral("#%1 no rendezvous server pairs %2")
             .arg(attempt.id).arg(QString::fromLatin1(hashBytes(attempt.peer.hash).toHex())));
     hub().failOrNext(attempt, QStringLiteral("PR_NAT: no rendezvous server pairs the peer"));
+}
+
+Endpoint EnodeNatPath::defaultNatEndpoint(bool ipv6) const
+{
+    const Server* server = env().currentServer();
+    if (!server || (!server->supportsNatRendezvous() && !server->supportsNatWake()))
+        return {};
+    const uint16 port = server->natPort() != 0 ? server->natPort() : kDefaultPort;
+    const Address addr = ipv6 ? server->ipv6Address() : server->ipv4Address();
+    return addr.isNull() ? Endpoint() : Endpoint(addr, port);
+}
+
+Endpoint EnodeNatPath::learnedEndpoint(bool ipv6) const
+{
+    const Learned& l = ipv6 ? m_learnedV6 : m_learnedV4;
+    if (l.to.address().isNull() || !(l.from == defaultNatEndpoint(ipv6)))
+        return {};
+    return l.to;
+}
+
+void EnodeNatPath::onRegisterAck(bool ipv6, const Endpoint& from, const Address& addr, uint16 port)
+{
+    // Server's own address and preferred port; zero = keep what we sent to.
+    const Endpoint sentTo = natEndpoint(ipv6);
+    if (sentTo.address().isNull())
+        return;
+    const bool useAddr = !addr.isNull() && addr.isIPv6() == ipv6;
+    const Endpoint to(useAddr ? addr : sentTo.address(), port != 0 ? port : sentTo.port());
+    if (!(to == sentTo)) {
+        log(QStringLiteral("register ack from %1: PR_NAT now to %2").arg(from.toString(), to.toString()));
+        (ipv6 ? m_learnedV6 : m_learnedV4) = Learned{defaultNatEndpoint(ipv6), to};
+    }
+    Registration& reg = ipv6 ? m_v6 : m_v4;
+    reg.to = to;
+    reg.acked = true;
+    reg.unanswered = 0;
+    reg.lastPingMs = env().now();
 }
 
 } // namespace eMule::natt
