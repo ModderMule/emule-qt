@@ -1389,8 +1389,10 @@ void ServerConnect::onServerIdent(ServerSocket* socket, const uint8* serverHash,
     entry->setDescription(description);
     // the socket parsed ST_META_API into its own copy of the server; an ident
     // without it clears what an earlier session (or server.met) left
-    if (const Server* cur = socket->currentServer(); cur && cur != entry)
+    if (const Server* cur = socket->currentServer(); cur && cur != entry) {
         entry->setMetaApi(cur->metaApiUrl(), cur->metaApiPin());
+        entry->setNatPort(cur->natPort());   // kept in server.met for cross-server PR_NAT
+    }
     // A hash of "****" (0x2A2A2A2A) marks an eFarm server. MFC: ServerSocket.cpp:463-470.
     if (serverHash != nullptr
         && serverHash[0] == 0x2A && serverHash[1] == 0x2A

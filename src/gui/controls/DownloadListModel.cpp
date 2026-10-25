@@ -29,6 +29,13 @@ namespace eMule {
 
 namespace {
 
+/// Gets an expand arrow: unfinished and with sources, loaded or not.
+/// Completed downloads have no live sources.
+bool isExpandable(const DownloadRow& d)
+{
+    return !d.isComplete() && (!d.sources.empty() || d.sourceCount > 0);
+}
+
 /// MFC's Remaining cell, "<time> (<bytes left>)" for every unfinished file
 /// (srchybrid/DownloadListCtrl.cpp:2062-2066); "?" stands for an unknown time.
 QString remainingText(const DownloadRow& d)
@@ -279,16 +286,29 @@ bool DownloadListModel::hasChildren(const QModelIndex& parent) const
     // Top-level rows may have source children
     if (parent.internalId() == 0) {
         const int row = parent.row();
-        if (row >= 0 && row < static_cast<int>(m_downloads.size())) {
-            const auto& dl = m_downloads[static_cast<size_t>(row)];
-            // Completed downloads have no live sources — never expandable
-            if (dl.isComplete())
-                return false;
-            return !dl.sources.empty() || dl.sourceCount > 0;
-        }
+        if (row >= 0 && row < static_cast<int>(m_downloads.size()))
+            return isExpandable(m_downloads[static_cast<size_t>(row)]);
     }
 
     return false;
+}
+
+bool DownloadListModel::canFetchMore(const QModelIndex& parent) const
+{
+    // Sources load on expand. Saying so makes the sort/filter proxies trust
+    // hasChildren() instead of counting the not-yet-loaded rows (issue #55).
+    if (!parent.isValid() || parent.internalId() != 0)
+        return false;
+    const int row = parent.row();
+    if (row < 0 || row >= static_cast<int>(m_downloads.size()))
+        return false;
+    const auto& dl = m_downloads[static_cast<size_t>(row)];
+    return dl.sources.empty() && isExpandable(dl);
+}
+
+void DownloadListModel::fetchMore(const QModelIndex& /*parent*/)
+{
+    // TransferPanel requests the sources on QTreeView::expanded
 }
 
 QVariant DownloadListModel::data(const QModelIndex& index, int role) const
@@ -619,6 +639,7 @@ void DownloadListModel::setDownloads(std::vector<DownloadRow> incoming)
     }
 
     // 3. Update surviving rows in-place (preserve existing sources)
+    bool expandableFlipped = false;
     QSet<QString> existingHashes;
     existingHashes.reserve(static_cast<qsizetype>(m_downloads.size()));
     for (size_t i = 0; i < m_downloads.size(); ++i) {
@@ -639,12 +660,19 @@ void DownloadListModel::setDownloads(std::vector<DownloadRow> incoming)
             } else {
                 fresh.sources = std::move(existing.sources); // preserve child rows
             }
+            const bool wasExpandable = isExpandable(existing);
             fresh.uid = existing.uid;
             existing = std::move(fresh);
+            expandableFlipped |= wasExpandable != isExpandable(existing);
         }
     }
     if (!m_downloads.empty())
         emit dataChanged(index(0, 0), index(static_cast<int>(m_downloads.size()) - 1, ColCount - 1));
+    // QTreeView caches each row's arrow at layout time; dataChanged does not redo it
+    if (expandableFlipped) {
+        emit layoutAboutToBeChanged();
+        emit layoutChanged();
+    }
 
     // 4. Append new downloads in one batch
     std::vector<DownloadRow> toInsert;

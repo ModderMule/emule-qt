@@ -440,7 +440,7 @@ Has comments</source>
     </message>
     <message>
         <location line="+1"/>
-        <location filename="../src/gui/controls/DownloadListModel.cpp" line="+70"/>
+        <location filename="../src/gui/controls/DownloadListModel.cpp" line="+77"/>
         <source>Passive</source>
         <translation type="unfinished"></translation>
     </message>
@@ -557,7 +557,7 @@ Has comments</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../src/gui/app/main.cpp" line="+400"/>
+        <location filename="../src/gui/app/main.cpp" line="+469"/>
         <source>eMule Qt</source>
         <translation type="unfinished"></translation>
     </message>
@@ -569,7 +569,7 @@ Start it with --new-instance or --config &lt;dir&gt; to open another window.</so
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location line="+469"/>
+        <location line="+472"/>
         <source>Download Added</source>
         <translation type="unfinished"></translation>
     </message>
@@ -630,7 +630,7 @@ Start it with --new-instance or --config &lt;dir&gt; to open another window.</so
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../src/gui/dialogs/OptionsDialog.cpp" line="+3122"/>
+        <location filename="../src/gui/dialogs/OptionsDialog.cpp" line="+3123"/>
         <source>Test</source>
         <translation type="unfinished"></translation>
     </message>
@@ -1783,12 +1783,13 @@ Its downloads keep their files and move to All.</source>
 <context>
     <name>eMule::ClientDetailDialog</name>
     <message>
-        <location filename="../src/gui/dialogs/ClientDetailDialog.cpp" line="+65"/>
+        <location filename="../src/gui/dialogs/ClientDetailDialog.cpp" line="+91"/>
+        <location line="+30"/>
         <source>Client Details: %1</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location line="+17"/>
+        <location line="+15"/>
         <source>General</source>
         <translation type="unfinished"></translation>
     </message>
@@ -1909,7 +1910,7 @@ Its downloads keep their files and move to All.</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location line="+4"/>
+        <location line="+5"/>
         <source>Average Downloadrate</source>
         <translation type="unfinished"></translation>
     </message>
@@ -1929,7 +1930,7 @@ Its downloads keep their files and move to All.</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location line="+23"/>
+        <location line="+25"/>
         <source>Rating (total)</source>
         <translation type="unfinished"></translation>
     </message>
@@ -1944,12 +1945,12 @@ Its downloads keep their files and move to All.</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location line="-63"/>
+        <location line="-66"/>
         <source>Transfer</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location line="+38"/>
+        <location line="+39"/>
         <source>Scores</source>
         <translation type="unfinished"></translation>
     </message>
@@ -1962,7 +1963,7 @@ Its downloads keep their files and move to All.</source>
 <context>
     <name>eMule::ClientListModel</name>
     <message>
-        <location filename="../src/gui/controls/ClientListModel.cpp" line="+243"/>
+        <location filename="../src/gui/controls/ClientListModel.cpp" line="+240"/>
         <location line="+13"/>
         <location line="+13"/>
         <location line="+15"/>
@@ -2082,12 +2083,12 @@ Its downloads keep their files and move to All.</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location line="-202"/>
+        <location line="-199"/>
         <source>Country</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location line="+25"/>
+        <location line="+22"/>
         <location line="+36"/>
         <source>Low ID</source>
         <translation type="unfinished"></translation>
@@ -2631,7 +2632,7 @@ Enter the address and authentication token of a remote core.</source>
 <context>
     <name>eMule::DetailDialog</name>
     <message>
-        <location filename="../src/gui/dialogs/DetailDialog.cpp" line="+201"/>
+        <location filename="../src/gui/dialogs/DetailDialog.cpp" line="+202"/>
         <source>Rename</source>
         <translation type="unfinished"></translation>
     </message>
@@ -2652,7 +2653,7 @@ Enter the address and authentication token of a remote core.</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location line="+103"/>
+        <location line="+126"/>
         <source>Comments</source>
         <translation type="unfinished"></translation>
     </message>
@@ -2670,17 +2671,17 @@ Enter the address and authentication token of a remote core.</source>
 <context>
     <name>eMule::DownloadListModel</name>
     <message>
-        <location filename="../src/gui/controls/DownloadListModel.cpp" line="+767"/>
+        <location filename="../src/gui/controls/DownloadListModel.cpp" line="+788"/>
         <source>Downloading</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location line="-512"/>
+        <location line="-520"/>
         <source>Queue Full</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location line="-156"/>
+        <location line="-169"/>
         <source>Available parts: %1</source>
         <translation type="unfinished"></translation>
     </message>
@@ -2735,7 +2736,7 @@ Enter the address and authentication token of a remote core.</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location line="+235"/>
+        <location line="+248"/>
         <location line="+2"/>
         <source>Never</source>
         <translation type="unfinished"></translation>
@@ -2836,7 +2837,7 @@ Uploaded:	%12</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location line="+218"/>
+        <location line="+226"/>
         <source>Importing part</source>
         <translation type="unfinished"></translation>
     </message>
@@ -2905,8 +2906,8 @@ Uploaded:	%12</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location line="-674"/>
-        <location line="+676"/>
+        <location line="-695"/>
+        <location line="+697"/>
         <source>Asked for another file</source>
         <translation type="unfinished"></translation>
     </message>
@@ -2972,13 +2973,13 @@ Uploaded:	%12</source>
     <message>
         <location line="+29"/>
         <location line="+20"/>
-        <location line="+50"/>
+        <location line="+56"/>
         <source>File Name</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location line="-69"/>
-        <location line="+20"/>
+        <location line="-75"/>
+        <location line="+30"/>
         <source>Hash (MD4)</source>
         <translation type="unfinished"></translation>
     </message>
@@ -2988,55 +2989,55 @@ Uploaded:	%12</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location line="-23"/>
-        <location line="+27"/>
+        <location line="-33"/>
+        <location line="+37"/>
         <source>File Size</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location line="-27"/>
-        <location line="+27"/>
+        <location line="-37"/>
+        <location line="+37"/>
         <source>%1 (%2 Bytes)</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location line="-26"/>
-        <location line="+31"/>
+        <location line="-36"/>
+        <location line="+41"/>
         <source>Completed</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location line="-27"/>
-        <location line="+33"/>
+        <location line="-37"/>
+        <location line="+43"/>
         <source>Status</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location line="-32"/>
-        <location line="+33"/>
+        <location line="-42"/>
+        <location line="+43"/>
         <source>Priority</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location line="-32"/>
-        <location line="+37"/>
-        <location line="+24"/>
+        <location line="-42"/>
+        <location line="+47"/>
+        <location line="+20"/>
         <source>Sources</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location line="-19"/>
+        <location line="-48"/>
         <source>File Path</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location line="-38"/>
-        <location line="+40"/>
+        <location line="-15"/>
+        <location line="+46"/>
         <source>Created</source>
         <translation type="unfinished"></translation>
     </message>
     <message numerus="yes">
-        <location line="-168"/>
+        <location line="-174"/>
         <source>File Details: %n files</source>
         <translation type="unfinished">
             <numerusform></numerusform>
@@ -3045,24 +3046,29 @@ Uploaded:	%12</source>
     </message>
     <message>
         <location line="+121"/>
-        <location line="+33"/>
+        <location line="+43"/>
         <source>Transferred</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location line="-25"/>
-        <location line="+40"/>
+        <location line="-35"/>
+        <location line="+46"/>
         <source>Last Seen Complete</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location line="-39"/>
-        <location line="+40"/>
+        <location line="-45"/>
+        <location line="+46"/>
         <source>Last Reception</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location line="+25"/>
+        <location line="-33"/>
+        <source>Part.met File</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <location line="+58"/>
         <source>No alternative file names reported by sources. Use “Search Kad” to look them up.</source>
         <translation type="unfinished"></translation>
     </message>
@@ -4195,13 +4201,13 @@ Please choose another:</source>
 <context>
     <name>eMule::MainWindow</name>
     <message>
-        <location filename="../src/gui/app/MainWindow.cpp" line="+97"/>
-        <location line="+520"/>
+        <location filename="../src/gui/app/MainWindow.cpp" line="+101"/>
+        <location line="+521"/>
         <source>eMule Qt v%1</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location line="-380"/>
+        <location line="-381"/>
         <location line="+9"/>
         <source>New Version Available</source>
         <translation type="unfinished"></translation>
@@ -4223,12 +4229,12 @@ Please choose another:</source>
     </message>
     <message>
         <location line="+8"/>
-        <location line="+1346"/>
+        <location line="+1347"/>
         <source>eD2K: Disconnected</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location line="-1289"/>
+        <location line="-1290"/>
         <source>Kad: Connected</source>
         <translation type="unfinished"></translation>
     </message>
@@ -4244,17 +4250,17 @@ Please choose another:</source>
     </message>
     <message>
         <location line="+4"/>
-        <location line="+1281"/>
+        <location line="+1282"/>
         <source>Kad: Disconnected</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location line="-1272"/>
+        <location line="-1273"/>
         <source>Users: %1 | Files: %2</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location line="+451"/>
+        <location line="+457"/>
         <source>Open Incoming Folder...</source>
         <translation type="unfinished"></translation>
     </message>
@@ -4294,14 +4300,14 @@ Please choose another:</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location line="-816"/>
+        <location line="-822"/>
         <location line="+7"/>
-        <location line="+812"/>
+        <location line="+818"/>
         <source>Version Check</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location line="-880"/>
+        <location line="-886"/>
         <source>Quit eMule Qt</source>
         <translation type="unfinished"></translation>
     </message>
@@ -4402,7 +4408,7 @@ Enable at least one under Options → Connection to connect.</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location line="+37"/>
+        <location line="+38"/>
         <source>Connected</source>
         <translation type="unfinished"></translation>
     </message>
@@ -4483,7 +4489,7 @@ Up: %3 | Down: %4</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location line="+136"/>
+        <location line="+141"/>
         <source>eMule Log</source>
         <translation type="unfinished"></translation>
     </message>
@@ -4667,12 +4673,12 @@ Enable it under Options → Web Interface, then try again.</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location line="+18"/>
+        <location line="+19"/>
         <source>Up: 0.0</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location line="+11"/>
+        <location line="+5"/>
         <source>Down: 0.0</source>
         <translation type="unfinished"></translation>
     </message>
@@ -6905,7 +6911,7 @@ Are you sure you want to continue?</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location line="+5980"/>
+        <location line="+5997"/>
         <location line="+52"/>
         <source>Directories</source>
         <translation type="unfinished"></translation>
@@ -6966,7 +6972,7 @@ Create it?</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location line="-6147"/>
+        <location line="-6164"/>
         <source>Connect to help channel</source>
         <translation type="unfinished"></translation>
     </message>
@@ -9255,7 +9261,7 @@ News server connections switch over immediately.</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location line="+51"/>
+        <location line="+68"/>
         <source>Database: not connected to the core</source>
         <translation type="unfinished"></translation>
     </message>
@@ -9315,17 +9321,17 @@ News server connections switch over immediately.</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location line="-5037"/>
+        <location line="-5054"/>
         <location line="+1019"/>
         <location line="+154"/>
         <location line="+1473"/>
         <location line="+316"/>
-        <location line="+2032"/>
+        <location line="+2049"/>
         <source>Remove</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location line="-6169"/>
+        <location line="-6186"/>
         <source>New eMule Qt version detected</source>
         <translation type="unfinished"></translation>
     </message>
@@ -9521,12 +9527,12 @@ Set it slightly under your plan. The figure is measured here, so it reads a few 
         <location line="+1019"/>
         <location line="+154"/>
         <location line="+1746"/>
-        <location line="+2070"/>
+        <location line="+2087"/>
         <source>Add</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location line="-2033"/>
+        <location line="-2050"/>
         <source>Edit Value</source>
         <translation type="unfinished"></translation>
     </message>
@@ -14635,7 +14641,7 @@ Clicking &apos;Restore Stats&apos; again will reload your current statistics.</s
 <context>
     <name>eMule::TransferPanel</name>
     <message>
-        <location filename="../src/gui/panels/TransferPanel.cpp" line="+736"/>
+        <location filename="../src/gui/panels/TransferPanel.cpp" line="+735"/>
         <source>Downloads</source>
         <translation></translation>
     </message>

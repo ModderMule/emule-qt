@@ -11,6 +11,7 @@
 #include <QByteArray>
 
 #include <memory>
+#include <vector>
 
 namespace eMule {
 
@@ -49,6 +50,10 @@ public:
     [[nodiscard]] virtual const Server* currentServer() const = 0;
     /// The address the live session dialed.
     [[nodiscard]] virtual Address serverSessionAddress() const = 0;
+    /// Other listed servers that pair any two PR_NAT hashes (UDP flag 0x40000), as
+    /// IPv4 endpoints for a SYNC2. Never the current one. When @p peer's server is
+    /// known only that one (a target registers only where it is logged in), else all.
+    [[nodiscard]] virtual std::vector<Endpoint> rendezvousServers(const PeerInfo& peer) const = 0;
 
     // -- Policy --
     /// Good IP, not IP-filtered, not banned.

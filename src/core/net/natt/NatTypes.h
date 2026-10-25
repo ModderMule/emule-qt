@@ -8,6 +8,7 @@
 #include <QPointer>
 
 #include <array>
+#include <vector>
 
 namespace eMule {
 
@@ -81,6 +82,9 @@ struct Attempt {
     bool peerSentNoAddress = false; ///< its handoff carried no IPv6
 
     uint32 connAck = 0;             ///< PR_NAT pairing nonce
+    /// PR_NAT cross-server sweep: SYNC2 targets tried in turn; empty = same-server flow.
+    std::vector<Endpoint> natServers;
+    uint8 natServerIdx = 0;
     uint64 startedMs = 0;
     uint64 deadlineMs = 0;
     uint64 lastRequestMs = 0;       ///< last path request / repeat

@@ -231,6 +231,16 @@ QWidget* FileDetailDialog::createGeneralTab(const QCborMap& d)
     }
 
     addRow(tr("File Name"), str(d, QLatin1StringView("fileName")));
+
+    // Unfinished download: the daemon sends the .part.met, as MFC does, under its
+    // own label; complete file: the file itself (MFC FileDetailDialogInfo.cpp:118-123)
+    const QString filePath = str(d, QLatin1StringView("filePath"));
+    if (!filePath.isEmpty()) {
+        const bool partMet = d.contains(QLatin1StringView("isComplete"))
+            && !d.value(QLatin1StringView("isComplete")).toBool();
+        addRow(partMet ? tr("Part.met File") : tr("File Path"), filePath);
+    }
+
     addRow(tr("Hash (MD4)"), str(d, QLatin1StringView("hash")));
 
     const QString aich = str(d, QLatin1StringView("aichHash"));
@@ -258,10 +268,6 @@ QWidget* FileDetailDialog::createGeneralTab(const QCborMap& d)
     const qint64 a4af = num(d, QLatin1StringView("a4afSourceCount"));
     addRow(tr("Sources"),
         QStringLiteral("%1 (%2 transferring, %3 A4AF)").arg(src).arg(xfer).arg(a4af));
-
-    const QString filePath = str(d, QLatin1StringView("filePath"));
-    if (!filePath.isEmpty())
-        addRow(tr("File Path"), filePath);
 
     addRow(tr("Created"),           fmtTime(num(d, QLatin1StringView("addedOn"))));
     addRow(tr("Last Seen Complete"), fmtTime(num(d, QLatin1StringView("lastSeenComplete"))));

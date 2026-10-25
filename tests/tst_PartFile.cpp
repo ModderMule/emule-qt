@@ -1214,8 +1214,24 @@ void tst_PartFile::containerCheckReadsTheDataFile()
     QCOMPARE(pf.fakeVerdict().score, 0);
 }
 
+namespace {
+QStringList g_warnings;
+void captureWarnings(QtMsgType type, const QMessageLogContext&, const QString& msg)
+{
+    if (type == QtWarningMsg)
+        g_warnings.append(msg);
+}
+} // namespace
+
 void tst_PartFile::fakeVerdictFollowsTheFirstBytesAndNames()
 {
+    g_warnings.clear();
+    const auto previous = qInstallMessageHandler(captureWarnings);
+    auto restore = qScopeGuard([previous] { qInstallMessageHandler(previous); });
+    const auto logged = [](const QString& part) {
+        return std::ranges::count_if(g_warnings, [&](const QString& m) { return m.contains(part); });
+    };
+
     const QString tempDir = m_tempDir.path() + QStringLiteral("/verdict");
     QDir().mkpath(tempDir);
 
@@ -1234,6 +1250,9 @@ void tst_PartFile::fakeVerdictFollowsTheFirstBytesAndNames()
                          QStringLiteral("Iron Maiden Discography.rar")});
     QVERIFY(pf.fakeVerdict().has(FakeReason::NamesSpanKinds));
     QCOMPARE(pf.fakeVerdict().band, Confidence::Suspect);
+    // Falling to Suspect is logged once, not on every ask
+    QCOMPARE(logged(QStringLiteral("Fake check: Some Movie 2024.avi")), 1);
+    QCOMPARE(logged(QStringLiteral("File header check")), 0);
 
     // The first bytes land and are a Windows program: no waiting for the cache to age
     static const char kExe[] = "MZ\x90\x00\x03\x00\x00\x00\x04\x00\x00\x00";
@@ -1245,6 +1264,12 @@ void tst_PartFile::fakeVerdictFollowsTheFirstBytesAndNames()
     QVERIFY(verdict.has(FakeReason::ExecutableMasquerade));
     QCOMPARE(verdict.score, 100);
     QCOMPARE(verdict.band, Confidence::LikelyFake);
+    // The header gets its own line, and the worse band one more
+    QCOMPARE(logged(QStringLiteral("File header check: Some Movie 2024.avi")), 1);
+    QCOMPARE(logged(QStringLiteral("Fake check: Some Movie 2024.avi")), 2);
+    QCOMPARE(logged(QStringLiteral("program named like a media file")), 1);
+    (void)pf.fakeVerdict();
+    QCOMPARE(g_warnings.size(), 3);
 }
 
 void tst_PartFile::sourceTracking()

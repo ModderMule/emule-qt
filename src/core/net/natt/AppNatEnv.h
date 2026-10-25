@@ -23,6 +23,7 @@ public:
 
     [[nodiscard]] const Server* currentServer() const override;
     [[nodiscard]] Address serverSessionAddress() const override;
+    [[nodiscard]] std::vector<Endpoint> rendezvousServers(const PeerInfo& peer) const override;
 
     [[nodiscard]] bool admit(const Address& addr) const override;
 

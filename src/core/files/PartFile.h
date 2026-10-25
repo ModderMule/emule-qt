@@ -633,6 +633,8 @@ protected:
 
 private:
     void initPartFile();
+    /// One log line when the verdict falls to Suspect or worse.
+    void logFakeVerdict() const;
     void unlinkA4AFSources();
     /// @p alreadyVerified skips the re-read of the data (a rehash has just done it).
     void completeFile(bool alreadyVerified = false);
@@ -755,6 +757,8 @@ private:
     mutable FakeFileVerdict m_fakeVerdict;
     mutable qint64 m_fakeVerdictAt = 0;          // unix secs; 0 = never
     mutable bool m_fakeVerdictHadHead = false;
+    mutable Confidence m_fakeLoggedBand = Confidence::Caution;   // worst band logged; Caution = none
+    uint64 m_lastFakeCheckTick = 0;
 
     // Timestamps
     time_t m_tLastModified = 0;

@@ -8,6 +8,7 @@
 #include "files/PartFile.h"
 #include "files/PartFileWriteThread.h"
 #include "app/AppContext.h"
+#include "search/ConfidenceText.h"
 #include "search/SeenFileIndex.h"
 #include "utils/OtherFunctions.h"
 #include "files/SharedFileList.h"
@@ -2701,6 +2702,12 @@ uint32 PartFile::process(uint32 reduceDownload, uint32 counter)
 
     const uint64 curTick = getTickCount();
 
+    // Runs the fake check (and its log line) also when no GUI polls the list
+    if (curTick >= m_lastFakeCheckTick + SEC2MS(20)) {
+        m_lastFakeCheckTick = curTick;
+        (void)fakeVerdict();
+    }
+
     // Flush buffer if size or time threshold exceeded
     const uint32 bufferSize = thePrefs.fileBufferSize();
     const uint32 bufferTimeLimit = thePrefs.fileBufferTimeLimit();
@@ -3129,6 +3136,7 @@ const FakeFileVerdict& PartFile::fakeVerdict() const
     m_fakeVerdict = assessFile(in, activeFakeFileRules());
     m_fakeVerdictAt = now;
     m_fakeVerdictHadHead = hasHead;
+    logFakeVerdict();
     return m_fakeVerdict;
 }
 
@@ -3160,6 +3168,22 @@ bool PartFile::readContainerHead(QByteArray& head) const
         return false;
     head = file.read(kContainerHeadBytes);
     return true;
+}
+
+void PartFile::logFakeVerdict() const
+{
+    // Suspect or worse, and only when worse than what the log already said
+    const Confidence band = m_fakeVerdict.band;
+    if (band > Confidence::Suspect || band >= m_fakeLoggedBand)
+        return;
+    m_fakeLoggedBand = band;
+
+    QStringList reasons;
+    for (const QString& id : m_fakeVerdict.reasonIds())
+        reasons.push_back(fakeReasonText(id));
+    logWarning(QStringLiteral("Fake check: %1 is rated \"%2\" (score %3 of 100): %4")
+                   .arg(fileName(), confidenceText(confidenceId(band), m_fakeVerdict.score),
+                        QString::number(m_fakeVerdict.score), reasons.join(QStringLiteral("; "))));
 }
 
 // ===========================================================================

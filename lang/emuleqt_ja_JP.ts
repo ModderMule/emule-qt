@@ -417,7 +417,7 @@ Enable Web Interface or REST API under Options → Web Interface.</source>
 %1</translation>
     </message>
     <message>
-        <location filename="../src/gui/app/main.cpp" line="+400"/>
+        <location filename="../src/gui/app/main.cpp" line="+469"/>
         <source>eMule Qt</source>
         <translation>eMule Qt</translation>
     </message>
@@ -431,7 +431,7 @@ Start it with --new-instance or --config &lt;dir&gt; to open another window.</so
 別のウィンドウを開くには --new-instance または --config &lt;フォルダー&gt; を付けて起動してください。</translation>
     </message>
     <message>
-        <location line="+469"/>
+        <location line="+472"/>
         <source>Download Added</source>
         <translation>ダウンロード追加</translation>
     </message>
@@ -582,7 +582,7 @@ Has comments</source>
     </message>
     <message>
         <location line="+1"/>
-        <location filename="../src/gui/controls/DownloadListModel.cpp" line="+70"/>
+        <location filename="../src/gui/controls/DownloadListModel.cpp" line="+77"/>
         <source>Passive</source>
         <translation>パッシブ</translation>
     </message>
@@ -715,7 +715,7 @@ Has comments</source>
         <translation type="vanished">%1 Bytes</translation>
     </message>
     <message>
-        <location filename="../src/gui/dialogs/OptionsDialog.cpp" line="+3122"/>
+        <location filename="../src/gui/dialogs/OptionsDialog.cpp" line="+3123"/>
         <source>Test</source>
         <translation>テスト</translation>
     </message>
@@ -1968,12 +1968,13 @@ Its downloads keep their files and move to All.</source>
 <context>
     <name>eMule::ClientDetailDialog</name>
     <message>
-        <location filename="../src/gui/dialogs/ClientDetailDialog.cpp" line="+65"/>
+        <location filename="../src/gui/dialogs/ClientDetailDialog.cpp" line="+91"/>
+        <location line="+30"/>
         <source>Client Details: %1</source>
         <translation>クライアント詳細: %1</translation>
     </message>
     <message>
-        <location line="+17"/>
+        <location line="+15"/>
         <source>General</source>
         <translation>全般</translation>
     </message>
@@ -2110,7 +2111,7 @@ Its downloads keep their files and move to All.</source>
         <translation>アップロード済み (このセッション)</translation>
     </message>
     <message>
-        <location line="+4"/>
+        <location line="+5"/>
         <source>Average Downloadrate</source>
         <translation>平均ダウンロード速度</translation>
     </message>
@@ -2130,7 +2131,7 @@ Its downloads keep their files and move to All.</source>
         <translation>アップロード合計</translation>
     </message>
     <message>
-        <location line="+23"/>
+        <location line="+25"/>
         <source>Rating (total)</source>
         <translation>評価 (合計)</translation>
     </message>
@@ -2149,7 +2150,7 @@ Its downloads keep their files and move to All.</source>
         <translation type="vanished">未接続</translation>
     </message>
     <message>
-        <location line="-63"/>
+        <location line="-66"/>
         <source>Transfer</source>
         <translation>転送</translation>
     </message>
@@ -2182,7 +2183,7 @@ Its downloads keep their files and move to All.</source>
         <translation type="vanished">アップロード済み (合計)</translation>
     </message>
     <message>
-        <location line="+38"/>
+        <location line="+39"/>
         <source>Scores</source>
         <translation>スコア</translation>
     </message>
@@ -2211,7 +2212,7 @@ Its downloads keep their files and move to All.</source>
 <context>
     <name>eMule::ClientListModel</name>
     <message>
-        <location filename="../src/gui/controls/ClientListModel.cpp" line="+243"/>
+        <location filename="../src/gui/controls/ClientListModel.cpp" line="+240"/>
         <location line="+13"/>
         <location line="+13"/>
         <location line="+15"/>
@@ -2331,12 +2332,12 @@ Its downloads keep their files and move to All.</source>
         <translation>ダウンロード済み</translation>
     </message>
     <message>
-        <location line="-202"/>
+        <location line="-199"/>
         <source>Country</source>
         <translation>国</translation>
     </message>
     <message>
-        <location line="+25"/>
+        <location line="+22"/>
         <location line="+36"/>
         <source>Low ID</source>
         <translation>Low ID</translation>
@@ -2916,7 +2917,7 @@ Enter the address and authentication token of a remote core.</source>
 <context>
     <name>eMule::DetailDialog</name>
     <message>
-        <location filename="../src/gui/dialogs/DetailDialog.cpp" line="+201"/>
+        <location filename="../src/gui/dialogs/DetailDialog.cpp" line="+202"/>
         <source>Rename</source>
         <translation>名前の変更</translation>
     </message>
@@ -2937,7 +2938,7 @@ Enter the address and authentication token of a remote core.</source>
         <translation>Kad を検索</translation>
     </message>
     <message>
-        <location line="+103"/>
+        <location line="+126"/>
         <source>Comments</source>
         <translation>コメント</translation>
     </message>
@@ -2955,7 +2956,7 @@ Enter the address and authentication token of a remote core.</source>
 <context>
     <name>eMule::DownloadListModel</name>
     <message>
-        <location filename="../src/gui/controls/DownloadListModel.cpp" line="+767"/>
+        <location filename="../src/gui/controls/DownloadListModel.cpp" line="+788"/>
         <source>Downloading</source>
         <translation>ダウンロード中</translation>
     </message>
@@ -2964,7 +2965,7 @@ Enter the address and authentication token of a remote core.</source>
         <translation type="vanished">自動 [%1]</translation>
     </message>
     <message>
-        <location line="-512"/>
+        <location line="-520"/>
         <source>Queue Full</source>
         <translation>キューが満杯</translation>
     </message>
@@ -2973,12 +2974,12 @@ Enter the address and authentication token of a remote core.</source>
         <translation type="vanished">利用可能なパート: %1 / %2</translation>
     </message>
     <message>
-        <location line="-122"/>
+        <location line="-135"/>
         <source>Country: %1</source>
         <translation>国: %1</translation>
     </message>
     <message>
-        <location line="+235"/>
+        <location line="+248"/>
         <location line="+2"/>
         <source>Never</source>
         <translation>なし</translation>
@@ -3113,7 +3114,7 @@ ED2K ハッシュ:	%2
         <translation>転送済み</translation>
     </message>
     <message>
-        <location line="+218"/>
+        <location line="+226"/>
         <source>Importing part</source>
         <translation>パートをインポート中</translation>
     </message>
@@ -3182,13 +3183,13 @@ ED2K ハッシュ:	%2
         <translation>HTTP キャッシュ</translation>
     </message>
     <message>
-        <location line="-674"/>
-        <location line="+676"/>
+        <location line="-695"/>
+        <location line="+697"/>
         <source>Asked for another file</source>
         <translation>別のファイルを要求</translation>
     </message>
     <message>
-        <location line="-698"/>
+        <location line="-719"/>
         <source>Available parts: %1</source>
         <translation>利用可能なパート: %1</translation>
     </message>
@@ -3238,7 +3239,7 @@ ED2K ハッシュ:	%2
         <translation>A4AF ファイル</translation>
     </message>
     <message>
-        <location line="+676"/>
+        <location line="+697"/>
         <source>Swap blocked</source>
         <translation>スワップ不可</translation>
     </message>
@@ -3299,13 +3300,13 @@ ED2K ハッシュ:	%2
     <message>
         <location line="+29"/>
         <location line="+20"/>
-        <location line="+50"/>
+        <location line="+56"/>
         <source>File Name</source>
         <translation>ファイル名</translation>
     </message>
     <message>
-        <location line="-69"/>
-        <location line="+20"/>
+        <location line="-75"/>
+        <location line="+30"/>
         <source>Hash (MD4)</source>
         <translation>ハッシュ (MD4)</translation>
     </message>
@@ -3315,55 +3316,55 @@ ED2K ハッシュ:	%2
         <translation>AICH ハッシュ</translation>
     </message>
     <message>
-        <location line="-23"/>
-        <location line="+27"/>
+        <location line="-33"/>
+        <location line="+37"/>
         <source>File Size</source>
         <translation>ファイルサイズ</translation>
     </message>
     <message>
-        <location line="-27"/>
-        <location line="+27"/>
+        <location line="-37"/>
+        <location line="+37"/>
         <source>%1 (%2 Bytes)</source>
         <translation>%1 (%2 Bytes)</translation>
     </message>
     <message>
-        <location line="-26"/>
-        <location line="+31"/>
+        <location line="-36"/>
+        <location line="+41"/>
         <source>Completed</source>
         <translation>完了</translation>
     </message>
     <message>
-        <location line="-27"/>
-        <location line="+33"/>
+        <location line="-37"/>
+        <location line="+43"/>
         <source>Status</source>
         <translation>ステータス</translation>
     </message>
     <message>
-        <location line="-32"/>
-        <location line="+33"/>
+        <location line="-42"/>
+        <location line="+43"/>
         <source>Priority</source>
         <translation>優先度</translation>
     </message>
     <message>
-        <location line="-32"/>
-        <location line="+37"/>
-        <location line="+24"/>
+        <location line="-42"/>
+        <location line="+47"/>
+        <location line="+20"/>
         <source>Sources</source>
         <translation>ソース</translation>
     </message>
     <message>
-        <location line="-19"/>
+        <location line="-48"/>
         <source>File Path</source>
         <translation>ファイルパス</translation>
     </message>
     <message>
-        <location line="-38"/>
-        <location line="+40"/>
+        <location line="-15"/>
+        <location line="+46"/>
         <source>Created</source>
         <translation>作成日時</translation>
     </message>
     <message numerus="yes">
-        <location line="-168"/>
+        <location line="-174"/>
         <source>File Details: %n files</source>
         <translation>
             <numerusform>ファイルの詳細: %n 個のファイル</numerusform>
@@ -3371,24 +3372,29 @@ ED2K ハッシュ:	%2
     </message>
     <message>
         <location line="+121"/>
-        <location line="+33"/>
+        <location line="+43"/>
         <source>Transferred</source>
         <translation>転送済み</translation>
     </message>
     <message>
-        <location line="-25"/>
-        <location line="+40"/>
+        <location line="-35"/>
+        <location line="+46"/>
         <source>Last Seen Complete</source>
         <translation>最後に完全な状態で確認</translation>
     </message>
     <message>
-        <location line="-39"/>
-        <location line="+40"/>
+        <location line="-45"/>
+        <location line="+46"/>
         <source>Last Reception</source>
         <translation>最終受信</translation>
     </message>
     <message>
-        <location line="+25"/>
+        <location line="-33"/>
+        <source>Part.met File</source>
+        <translation>part.met ファイル</translation>
+    </message>
+    <message>
+        <location line="+58"/>
         <source>No alternative file names reported by sources. Use “Search Kad” to look them up.</source>
         <translation>ソースから代替ファイル名は報告されていません。「Kad を検索」で検索してください。</translation>
     </message>
@@ -4647,13 +4653,13 @@ Please choose another:</source>
 <context>
     <name>eMule::MainWindow</name>
     <message>
-        <location filename="../src/gui/app/MainWindow.cpp" line="+97"/>
-        <location line="+520"/>
+        <location filename="../src/gui/app/MainWindow.cpp" line="+101"/>
+        <location line="+521"/>
         <source>eMule Qt v%1</source>
         <translation>eMule Qt v%1</translation>
     </message>
     <message>
-        <location line="-380"/>
+        <location line="-381"/>
         <location line="+9"/>
         <source>New Version Available</source>
         <translation>新しいバージョンが利用可能</translation>
@@ -4675,12 +4681,12 @@ Please choose another:</source>
     </message>
     <message>
         <location line="+8"/>
-        <location line="+1346"/>
+        <location line="+1347"/>
         <source>eD2K: Disconnected</source>
         <translation>eD2K：未接続</translation>
     </message>
     <message>
-        <location line="-1289"/>
+        <location line="-1290"/>
         <source>Kad: Connected</source>
         <translation>Kad：接続済み</translation>
     </message>
@@ -4696,17 +4702,17 @@ Please choose another:</source>
     </message>
     <message>
         <location line="+4"/>
-        <location line="+1281"/>
+        <location line="+1282"/>
         <source>Kad: Disconnected</source>
         <translation>Kad：未接続</translation>
     </message>
     <message>
-        <location line="-1272"/>
+        <location line="-1273"/>
         <source>Users: %1 | Files: %2</source>
         <translation>ユーザー：%1 | ファイル：%2</translation>
     </message>
     <message>
-        <location line="+451"/>
+        <location line="+457"/>
         <source>Open Incoming Folder...</source>
         <translation>受信フォルダを開く...</translation>
     </message>
@@ -4746,14 +4752,14 @@ Please choose another:</source>
         <translation>機能</translation>
     </message>
     <message>
-        <location line="-816"/>
+        <location line="-822"/>
         <location line="+7"/>
-        <location line="+812"/>
+        <location line="+818"/>
         <source>Version Check</source>
         <translation>バージョン確認</translation>
     </message>
     <message>
-        <location line="-880"/>
+        <location line="-886"/>
         <source>Quit eMule Qt</source>
         <translation>eMule Qt を終了</translation>
     </message>
@@ -4860,7 +4866,7 @@ Enable at least one under Options → Connection to connect.</source>
         <translation>ダウン: %1</translation>
     </message>
     <message>
-        <location line="+37"/>
+        <location line="+38"/>
         <source>Connected</source>
         <translation>接続済み</translation>
     </message>
@@ -4942,7 +4948,7 @@ Up: %3 | Down: %4</source>
         <translation>ログエントリ</translation>
     </message>
     <message>
-        <location line="+136"/>
+        <location line="+141"/>
         <source>eMule Log</source>
         <translation>eMule ログ</translation>
     </message>
@@ -5128,12 +5134,12 @@ Enable it under Options → Web Interface, then try again.</source>
         <translation>ユーザー：0 | ファイル：0</translation>
     </message>
     <message>
-        <location line="+18"/>
+        <location line="+19"/>
         <source>Up: 0.0</source>
         <translation>アップ：0.0</translation>
     </message>
     <message>
-        <location line="+11"/>
+        <location line="+5"/>
         <source>Down: 0.0</source>
         <translation>ダウン：0.0</translation>
     </message>
@@ -9391,7 +9397,7 @@ Adding one later does not fetch its back catalogue: a new indexer gets its own f
         <translation>サーバー接続更新間隔 [分]：</translation>
     </message>
     <message>
-        <location line="+2844"/>
+        <location line="+2861"/>
         <location line="+52"/>
         <source>Directories</source>
         <translation>フォルダ</translation>
@@ -9462,7 +9468,7 @@ Create it?</source>
 %1</translation>
     </message>
     <message>
-        <location line="-3050"/>
+        <location line="-3067"/>
         <location line="+153"/>
         <source>Disabled</source>
         <translation>無効</translation>
@@ -9498,7 +9504,7 @@ Create it?</source>
         <translation>specialdlp ライブラリが見つかりません。チェックは無効です</translation>
     </message>
     <message>
-        <location line="+647"/>
+        <location line="+664"/>
         <source>Automatic</source>
         <translation>自動</translation>
     </message>
@@ -9512,7 +9518,7 @@ Create it?</source>
         <translation type="vanished">実行中のみ eD2K リンクを自動取得</translation>
     </message>
     <message>
-        <location line="-2796"/>
+        <location line="-2813"/>
         <source>Use credit system (reward uploaders)</source>
         <translation>クレジットシステムを使用（アップロード者を報酬）</translation>
     </message>
@@ -9862,7 +9868,7 @@ News server connections switch over immediately.</source>
         <translation>ポート転送: %1</translation>
     </message>
     <message>
-        <location line="+51"/>
+        <location line="+68"/>
         <source>Database: not connected to the core</source>
         <translation>データベース: コアに未接続</translation>
     </message>
@@ -9912,17 +9918,17 @@ News server connections switch over immediately.</source>
         <translation>既定値に戻す</translation>
     </message>
     <message>
-        <location line="-4996"/>
+        <location line="-5013"/>
         <location line="+1019"/>
         <location line="+154"/>
         <location line="+1473"/>
         <location line="+316"/>
-        <location line="+2032"/>
+        <location line="+2049"/>
         <source>Remove</source>
         <translation>削除</translation>
     </message>
     <message>
-        <location line="-6169"/>
+        <location line="-6186"/>
         <source>New eMule Qt version detected</source>
         <translation>新しい eMule Qt バージョンを検出しました</translation>
     </message>
@@ -10130,7 +10136,7 @@ Set it slightly under your plan. The figure is measured here, so it reads a few 
         <location line="+1019"/>
         <location line="+154"/>
         <location line="+1746"/>
-        <location line="+2070"/>
+        <location line="+2087"/>
         <source>Add</source>
         <translation>追加</translation>
     </message>
@@ -10143,7 +10149,7 @@ Set it slightly under your plan. The figure is measured here, so it reads a few 
         <translation type="vanished">値を入力：</translation>
     </message>
     <message>
-        <location line="-2033"/>
+        <location line="-2050"/>
         <source>Edit Value</source>
         <translation>値を編集</translation>
     </message>
@@ -15668,7 +15674,7 @@ Clicking &apos;Restore Stats&apos; again will reload your current statistics.</s
 <context>
     <name>eMule::TransferPanel</name>
     <message>
-        <location filename="../src/gui/panels/TransferPanel.cpp" line="+736"/>
+        <location filename="../src/gui/panels/TransferPanel.cpp" line="+735"/>
         <source>Downloads</source>
         <translation>ダウンロード</translation>
     </message>

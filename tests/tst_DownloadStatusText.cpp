@@ -5,9 +5,14 @@
 /// The daemon sends the status as the raw enum token, which is the right wire format
 /// and the wrong thing to put in front of a user: "ready" and "empty" are internal
 /// names for one user-visible distinction, "is anything actually arriving".
+///
+/// Also the expand arrow of a download, which must show before its sources load
+/// (issue #55).
 
 #include "controls/DownloadListModel.h"
 
+#include <QSignalSpy>
+#include <QSortFilterProxyModel>
 #include <QTest>
 
 using namespace eMule;
@@ -22,6 +27,8 @@ private slots:
     void hashingCoversWaitingForHash();
     void completingNamesTheOperation();
     void rankGroupsTheWayMfcDoes();
+    void expandArrowShowsBeforeSourcesLoad();
+    void expandArrowChangeRelaysOutTheView();
 
 private:
     /// The model exposes the mapping only through data(); build a one-row model and
@@ -143,6 +150,60 @@ void tst_DownloadStatusText::rankGroupsTheWayMfcDoes()
     QCOMPARE(rankOf(stopped), 6);
     QCOMPARE(rankOf(rowWith(QStringLiteral("hashing"))), 7);
     QCOMPARE(rankOf(rowWith(QStringLiteral("error"))), 8);
+}
+
+void tst_DownloadStatusText::expandArrowShowsBeforeSourcesLoad()
+{
+    // TransferPanel stacks two sort/filter proxies. A proxy counts loaded child rows
+    // unless the model says more can be fetched, so the arrow hid until first expand.
+    DownloadRow withSources = rowWith(QStringLiteral("ready"));
+    withSources.sourceCount = 3;
+    DownloadRow noSources = rowWith(QStringLiteral("ready"));
+    noSources.hash = QStringLiteral("FFEEDDCCBBAA99887766554433221100");
+    DownloadRow done = rowWith(QStringLiteral("complete"));
+    done.hash = QStringLiteral("0123456789ABCDEF0123456789ABCDEF");
+    done.sourceCount = 3;
+
+    DownloadListModel model;
+    model.setDownloads({withSources, noSources, done});
+    QSortFilterProxyModel sort;
+    sort.setSourceModel(&model);
+    QSortFilterProxyModel filter;
+    filter.setSourceModel(&sort);
+
+    QVERIFY(filter.hasChildren(filter.index(0, 0)));
+    QVERIFY(!filter.hasChildren(filter.index(1, 0)));
+    QVERIFY(!filter.hasChildren(filter.index(2, 0)));
+
+    // Loaded sources answer for themselves; nothing left to fetch
+    SourceRow src;
+    src.userHash = QStringLiteral("AABBCCDDEEFF00112233445566778899");
+    model.setSources(withSources.hash, {src});
+    QVERIFY(!model.canFetchMore(model.index(0, 0)));
+    QCOMPARE(filter.rowCount(filter.index(0, 0)), 1);
+    QVERIFY(filter.hasChildren(filter.index(0, 0)));
+}
+
+void tst_DownloadStatusText::expandArrowChangeRelaysOutTheView()
+{
+    // QTreeView caches the arrow per row at layout time; dataChanged alone leaves it
+    DownloadRow row = rowWith(QStringLiteral("ready"));
+    DownloadListModel model;
+    model.setDownloads({row});
+
+    QSignalSpy layout(&model, &QAbstractItemModel::layoutChanged);
+    model.setDownloads({row});
+    QCOMPARE(layout.count(), 0);   // no flip, no relayout
+
+    row.sourceCount = 2;
+    model.setDownloads({row});
+    QCOMPARE(layout.count(), 1);
+    QVERIFY(model.hasChildren(model.index(0, 0)));
+
+    row.status = QStringLiteral("complete");
+    model.setDownloads({row});
+    QCOMPARE(layout.count(), 2);
+    QVERIFY(!model.hasChildren(model.index(0, 0)));
 }
 
 QTEST_MAIN(tst_DownloadStatusText)

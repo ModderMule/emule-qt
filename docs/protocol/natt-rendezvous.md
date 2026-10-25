@@ -103,9 +103,13 @@ Spec: `eNode-go/docs/pr-nat-rendezvous-spec.md`.
 
 - Frame `<0xF1><size 4 LE = payload + 1><opcode 1><payload>`; endpoints are big-endian.
 - While logged in to a `0x40000` server and firewalled: `REGISTER 0xE4 <hash 16>` per family
-  (IPv6 too when both sides have one), every 5 s until acked, then `KEEPALIVE 0xE6` every 20 s
-  (server TTL 30 s). After 45 s without a `PING` (or ack) we register again: the server lost
-  the registration or our NAT moved us to another port.
+  (IPv6 too when both sides have one), every 5 s until acked, then `KEEPALIVE 0xE6` every 60 s
+  (server TTL 90 s; 30 s on eNode-go v0.5.1 and older). After 65 s without a `PING` (or ack),
+  one unanswered keepalive, we register again: the server lost the registration or our NAT
+  moved us to another port. The 60 s keepalive also holds our NAT mapping open: RFC 4787
+  (REQ-5) asks NATs to keep an idle UDP mapping for at least 2 minutes, but some home routers
+  drop it after 30–60 s, and then a `SYNC` for a peer on another server may not reach us.
+  Peers on the same server are not affected; the wake-up opens a fresh mapping each time.
 - Wake-up: our login sets `0x200000` together with `0x1000`. On a server that also sets flag
   `0x200000` we keep **no** registration. The server sends TCP `OP_NAT_WAKE 0x46 <families 1>`
   (`0x01` IPv4, `0x02` IPv6) when a peer asks for us, and we `REGISTER` once per family, IPv6
@@ -116,12 +120,43 @@ Spec: `eNode-go/docs/pr-nat-rendezvous-spec.md`.
 - Both sides get `SYNC 0xE1` / `SYNC_EX 0xE7` (IPv4) or `SYNC_IPV6 0xED` with the other's
   endpoint; `FAILED 0xE5 <reason 1><hash 16>` moves the request to the next path (Lugdunum),
   like a timeout.
-- Only frames from the server's IP, on its NAT port or main UDP port, are read.
+- Only frames from the server's IP, on its NAT port or main UDP port, are read (and, during a
+  sweep, from the servers in it; see below).
 - `SYNC2` goes to the family whose `REGISTER` was acked. On an IPv6 server session only the v6
   register is accepted, and LowID sources from that session carry no server IPv4; they still
   count as "on our server" (as for `OP_CALLBACKREQUEST`).
-- Same-server only. Cross-server use needs the target's `(hash, rendezvous server)` carried in
-  Kad or source exchange, which nothing defines yet.
+
+#### Cross-server sweep
+
+eNode-go also sets `0x40000` (pairs any two hashes) and `0x200000` (wake-up) in its UDP status
+flags, so the server list shows which servers can pair peers logged in elsewhere.
+`ST_UDPFLAGS` keeps the whole word in server.met. MFC eMule reads and writes it unchanged, so
+the bits survive a rewrite by stock eMule.
+
+- **One server only as target.** We register (or get woken) only on the server we are logged
+  in to. A peer on another server can reach us only through that server.
+- **Requester, peer not on our server, hash known.** We send `SYNC2` to the servers one at a
+  time:
+  - Our own server first, when it speaks `PR_NAT` (a Kad source may be logged in there).
+  - If the peer's server is known (a server source), that server, and only when its UDP
+    flags have `0x40000`. With no such flag the peer can't be registered anywhere, and the
+    source isn't kept.
+  - If the peer's server is unknown (a Kad source), every listed server with `0x40000`, the
+    one that paired this hash before first. At most 8 servers in all.
+- **Moving to the next server.** On `FAILED`, or after two unanswered `SYNC2`s 4 s apart
+  (a wake can take 3 s to fail). A late answer from a server already left is ignored.
+- **Endpoint of a foreign server.** IPv4 plus the `ST_NAT_PORT` from an earlier login, else
+  TCP port + 4 (eNode-go takes `PR_NAT` there too).
+- **Saving the port.** `ST_NAT_PORT` (`0x9D`) is saved in server.met under the same id as in
+  `OP_SERVERIDENT`. Stock eMule ignores the tag and drops it if it rewrites the file.
+- **When nothing pairs.** The hash isn't swept again this session, whatever the re-ask
+  timers say (client re-ask 29 min, server source re-ask 15 min, global UDP search
+  30 min). The attempt falls through to the next path (Kad buddy).
+- **Replies.** `SYNC` and `FAILED` are read from the servers in the attempt's list. A `SYNC`
+  for a hash we didn't ask about, from a server other than our own, is ignored: only our
+  own server introduces us as a target.
+- ToDo: publish `(hash, rendezvous server)` in Kad (stock Kad nodes keep unknown source
+  tags), so a requester needs no sweep.
 
 ### Kad serving buddy
 

@@ -59,6 +59,8 @@ namespace SrvUdpFlag {
     inline constexpr uint32 UdpObfuscation  = 0x00000200;
     inline constexpr uint32 TcpObfuscation  = 0x00000400;
     inline constexpr uint32 Ipv6            = 0x00004000;   // server speaks the IPv6 extension (UDP)
+    inline constexpr uint32 NatRendezvous   = 0x00040000;   // eNode-go: PR_NAT pairs any two hashes (cross-server)
+    inline constexpr uint32 NatWake         = 0x00200000;   // eNode-go: PR_NAT TCP wake-up
 }
 
 // ---------------------------------------------------------------------------
@@ -270,7 +272,8 @@ public:
     [[nodiscard]] uint16 obfuscationPortUDP() const     { return m_obfuscationPortUDP; }
     void setObfuscationPortUDP(uint16 p)                { m_obfuscationPortUDP = p; }
 
-    /// eNode-go PR_NAT UDP port from ST_NAT_PORT (runtime only, 0 = not announced).
+    /// eNode-go PR_NAT UDP port from ST_NAT_PORT (OP_SERVERIDENT, kept in server.met;
+    /// 0 = not announced).
     [[nodiscard]] uint16 natPort() const                { return m_natPort; }
     void setNatPort(uint16 p)                           { m_natPort = p; }
 
@@ -342,6 +345,8 @@ public:
     /// Flag alone is not enough: eserver also sends a 24-byte OP_IDCHANGE.
     [[nodiscard]] bool supportsLugdunumNat() const      { return (m_tcpFlags & SrvTcpFlag::LugdunumNat) != 0 && m_idChangeLength >= 24; }
     [[nodiscard]] bool supportsNatRendezvous() const    { return (m_tcpFlags & SrvTcpFlag::NatRendezvous) != 0; }
+    /// From the status ping: usable as a cross-server rendezvous without logging in.
+    [[nodiscard]] bool supportsNatRendezvousUDP() const { return (m_udpFlags & SrvUdpFlag::NatRendezvous) != 0; }
     /// The server wakes us over TCP for PR_NAT, so we keep no standing registration.
     /// Only when our login carried SRVCAP_NAT_WAKE: without it the server never wakes us.
     [[nodiscard]] bool supportsNatWake() const

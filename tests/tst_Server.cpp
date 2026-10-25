@@ -32,6 +32,7 @@ private slots:
     void writeTags_ipv6RoundTrip();
     void writeTags_noIPv6TagForIPv4();
     void writeTags_metaApiRoundTrip();
+    void writeTags_natRendezvousRoundTrip();
 
     // Dual-stack (one row per server)
     void dualStack_addAddressKeepsBothFamilies();
@@ -703,6 +704,33 @@ void tst_Server::caps_supportsObfuscationTCP()
     srv.setUDPFlags(0);
     srv.setTCPFlags(SrvTcpFlag::TcpObfuscation);
     QVERIFY(srv.supportsObfuscationTCP());
+}
+
+void tst_Server::writeTags_natRendezvousRoundTrip()
+{
+    auto reload = [](const Server& original) {
+        SafeMemFile f;
+        const uint32 tagCount = original.writeTags(f);
+        f.seek(0, 0);
+        Server restored(0x01020304, 4661);
+        for (uint32 i = 0; i < tagCount; ++i) {
+            Tag tag(f, true);
+            restored.addTagFromFile(tag);
+        }
+        return restored;
+    };
+
+    Server original(0x01020304, 4661);
+    QVERIFY(!original.supportsNatRendezvousUDP());
+    QCOMPARE(reload(original).natPort(), uint16{0});   // no tag written, none read
+
+    // PR_NAT bits ride in ST_UDPFLAGS (MFC keeps the whole word); the port is ST_NAT_PORT
+    original.setUDPFlags(SrvUdpFlag::NatRendezvous | SrvUdpFlag::NatWake | SrvUdpFlag::LargeFiles);
+    original.setNatPort(2010);
+    const Server restored = reload(original);
+    QCOMPARE(restored.udpFlags(), original.udpFlags());
+    QVERIFY(restored.supportsNatRendezvousUDP());
+    QCOMPARE(restored.natPort(), uint16{2010});
 }
 
 void tst_Server::caps_supportsObfuscationUDP()

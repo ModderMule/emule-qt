@@ -51,6 +51,7 @@ public:
     uint8 connectOptions = CONNECT_OPT_CRYPT_SUPPORTED;
     std::optional<Server> server;
     Address sessionAddress;
+    std::vector<Endpoint> foreignNatServers;   // rendezvousServers(), in order
     std::set<QString> banned;
     bool connected = false;
 
@@ -109,6 +110,10 @@ public:
     [[nodiscard]] bool enabled() const override { return isEnabled; }
     [[nodiscard]] const Server* currentServer() const override { return server ? &*server : nullptr; }
     [[nodiscard]] Address serverSessionAddress() const override { return sessionAddress; }
+    [[nodiscard]] std::vector<Endpoint> rendezvousServers(const PeerInfo&) const override
+    {
+        return foreignNatServers;
+    }
     [[nodiscard]] bool admit(const Address& addr) const override
     {
         return !addr.isNull() && !banned.contains(addr.toString());

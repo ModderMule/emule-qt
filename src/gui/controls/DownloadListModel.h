@@ -206,6 +206,8 @@ public:
     [[nodiscard]] QVariant headerData(int section, Qt::Orientation orientation,
                                       int role = Qt::DisplayRole) const override;
     [[nodiscard]] bool hasChildren(const QModelIndex& parent = {}) const override;
+    [[nodiscard]] bool canFetchMore(const QModelIndex& parent) const override;
+    void fetchMore(const QModelIndex& parent) override;
 
     /// Replace all downloads with a new snapshot (preserves existing sources).
     void setDownloads(std::vector<DownloadRow> downloads);

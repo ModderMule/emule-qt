@@ -90,6 +90,36 @@ Address AppNatEnv::serverSessionAddress() const
     return theApp.serverConnect ? theApp.serverConnect->sessionAddress() : Address();
 }
 
+std::vector<Endpoint> AppNatEnv::rendezvousServers(const PeerInfo& peer) const
+{
+    std::vector<Endpoint> out;
+    if (!theApp.serverList)
+        return out;
+    const Server* cur = currentServer();
+    const uint32 deadRetries = thePrefs.deadServerRetries();
+    const bool serverKnown = peer.serverPort != 0 || !peer.serverAddress.isNull();
+    for (const auto& s : theApp.serverList->servers()) {
+        if (!s->supportsNatRendezvousUDP() || s->isDeadFor(deadRetries) || s->port() == 0)
+            continue;
+        if (cur && s->port() == cur->port() && cur->hasAddress(s->ipAddress()))
+            continue;
+        const Address v4 = s->ipv4Address();
+        if (!v4.isIPv4() || !isGoodIP(v4))
+            continue;
+        // eNode-go takes PR_NAT on its main UDP port too, the one we know without a login.
+        const Endpoint ep(v4, s->natPort() != 0 ? s->natPort() : static_cast<uint16>(s->port() + 4));
+        if (!serverKnown) {
+            out.push_back(ep);
+            continue;
+        }
+        // An IPv6 session stamps no server address on its sources: match the port alone.
+        if (peer.serverPort == s->port()
+            && (peer.serverAddress.isNull() || s->hasAddress(peer.serverAddress)))
+            return {ep};
+    }
+    return serverKnown ? std::vector<Endpoint>{} : out;
+}
+
 bool AppNatEnv::admit(const Address& addr) const
 {
     if (!isGoodIP(addr))

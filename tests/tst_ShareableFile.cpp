@@ -22,7 +22,17 @@ private slots:
     void verifiedFileType();
     void infoSummary();
     void theResolvedVerdictNeverReadsTheDisk();
+    void aSuspectHeaderIsLoggedOnce();
 };
+
+namespace {
+QStringList g_warnings;
+void captureWarnings(QtMsgType type, const QMessageLogContext&, const QString& msg)
+{
+    if (type == QtWarningMsg)
+        g_warnings.append(msg);
+}
+} // namespace
 
 void tst_ShareableFile::construct_default()
 {
@@ -122,6 +132,31 @@ void tst_ShareableFile::theResolvedVerdictNeverReadsTheDisk()
     QVERIFY(f.containerCheckResolved());
     QVERIFY(f.containerCheckIfResolved().isSuspect());
     QCOMPARE(f.containerCheckIfResolved().expected, QStringLiteral("ASF"));
+}
+
+void tst_ShareableFile::aSuspectHeaderIsLoggedOnce()
+{
+    QTemporaryDir dir;
+    QVERIFY(dir.isValid());
+    const QString path = dir.filePath(QStringLiteral("fake.wmv"));
+    {
+        QFile out(path);
+        QVERIFY(out.open(QIODevice::WriteOnly));
+        out.write("\xFF\xFB\x10\xC0\x0B\x0A\x07\x05\x00\x07\x07\x0A", 12);
+    }
+    ShareableFile f;
+    f.setFileName(QStringLiteral("fake.wmv"));
+    f.setFilePath(path);
+
+    g_warnings.clear();
+    const auto previous = qInstallMessageHandler(captureWarnings);
+    QVERIFY(f.containerCheck().isSuspect());
+    QVERIFY(f.containerCheck().isSuspect());   // memoised: no second line
+    qInstallMessageHandler(previous);
+
+    QCOMPARE(g_warnings.size(), 1);
+    QVERIFY(g_warnings.first().contains(QStringLiteral("fake.wmv")));
+    QVERIFY(g_warnings.first().contains(QStringLiteral("Named .wmv")));
 }
 
 QTEST_MAIN(tst_ShareableFile)
