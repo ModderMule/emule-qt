@@ -3,6 +3,10 @@
         "schemas": {
             "Client": {
                 "properties": {
+                    "a4af": {
+                        "description": "Download sources only: the peer has this file but is asked for another one (reqFileName). Listed last.",
+                        "type": "boolean"
+                    },
                     "addr": {
                         "type": "string"
                     },
@@ -89,6 +93,10 @@
             },
             "Download": {
                 "properties": {
+                    "a4afSourceCount": {
+                        "description": "Peers that have the file but are busy with another of our downloads (A4AF). Not in sourceCount.",
+                        "type": "integer"
+                    },
                     "category": {
                         "description": "Category index; 0 = none.",
                         "type": "integer"
@@ -351,7 +359,7 @@
     "info": {
         "description": "Control and observe an eMuleQt core: eD2K and Kad file sharing plus Usenet downloads.\n\n**Authentication.** Send the API key in the `X-Api-Key` header (or as `Authorization: Bearer <key>`). `/health`, `/openapi.json` and `/docs` need none. The stream routes take `?token=` instead.\n\n**Errors.** Every failure is `{\"error\": {\"code\": <HTTP status>, \"message\": \"...\"}}`. An unknown field or query parameter is a 400, never silently ignored. 409 means the request is fine but the core is in the wrong state for it; 503 that a part of the core is not running.\n\n**Lists.** Answer `{items, total, offset, limit}`; page with `?limit=` (1-1000, default 100) and `?offset=`.\n\n**Destructive calls** need `\"confirm\": true` (in the body, or `?confirm=true` on DELETE).\n\n**Identifiers.** A file is named by its eD2K hash, 32 hexadecimal digits. Sizes are bytes. A category is an index into `GET /categories`.\n\n**Terms.** *HighID*: reachable from outside, the normal state. *LowID* / *firewalled*: not reachable, so fewer sources and slower transfers — check port forwarding. *Kad*: the serverless network; it works alongside the eD2K servers. *Source*: a peer that has (part of) a file.\n\n**Typical flow.** `GET /snapshot` → `POST /search` → `GET /search/{id}/results` until `state` is `finished` → `POST /search/{id}/download` → watch `GET /downloads/{hash}` or the `/events` stream.\n\n**Changes.** Every response carries `X-Contract-Version`. `GET /events` pushes changes so clients need not poll.",
         "title": "eMuleQt REST API",
-        "version": "0.6.28",
+        "version": "0.6.31",
         "x-contract-version": 1
     },
     "openapi": "3.1.0",
@@ -1773,7 +1781,7 @@
         },
         "/api/v1/downloads/{hash}/sources": {
             "get": {
-                "description": "The peers known to have the file, with their state and rates.",
+                "description": "The peers known to have the file, with their state and rates. A4AF peers (busy with another of our downloads) come last, flagged \"a4af\".",
                 "operationId": "downloads.sources",
                 "parameters": [
                     {

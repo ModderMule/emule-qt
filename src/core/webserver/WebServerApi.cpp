@@ -504,7 +504,9 @@ void WebServer::buildApiTable()
     {
         Operation op = make("downloads.sources", Method::Get, "/api/v1/downloads/{hash}/sources",
                             "Downloads", "Sources of a download",
-                            "The peers known to have the file, with their state and rates.");
+                            "The peers known to have the file, with their state and rates. "
+                            "A4AF peers (busy with another of our downloads) come last, "
+                            "flagged \"a4af\".");
         op.flags = ReadOnly | Paged;
         op.mcpTool = s("download_sources");
         op.params = {hashParam()};
@@ -517,8 +519,14 @@ void WebServer::buildApiTable()
             std::vector<const UpDownClient*> sources;
             for (const auto* client : file->srcList())
                 sources.push_back(client);
-            return page(c, static_cast<qsizetype>(sources.size()), [&sources](qsizetype i) {
-                return QJsonValue(toJson(*sources[static_cast<size_t>(i)]));
+            const size_t ownCount = sources.size();
+            for (const auto* client : file->a4afSrcList())
+                sources.push_back(client);
+            return page(c, static_cast<qsizetype>(sources.size()), [&sources, ownCount](qsizetype i) {
+                const auto idx = static_cast<size_t>(i);
+                QJsonObject o = toJson(*sources[idx]);
+                o.insert(QStringLiteral("a4af"), idx >= ownCount);
+                return QJsonValue(o);
             });
         };
         add(op);

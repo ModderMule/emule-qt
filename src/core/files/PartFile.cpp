@@ -3159,7 +3159,8 @@ bool PartFile::readContainerHead(QByteArray& head) const
     // chunk landed. isComplete() is a gap-list scan, far cheaper than an open --
     // and an open here would hand back a hole full of zeroes, which reads as a
     // fake. Saying "not yet" is the honest answer until the bytes are real.
-    if (!isComplete(0, static_cast<uint64>(kContainerHeadBytes) - 1))
+    // BDSafe: a filled gap may still sit in the write buffer, not on disk yet.
+    if (!isCompleteBDSafe(0, static_cast<uint64>(kContainerHeadBytes) - 1))
         return false;
 
     // The data file: m_fullName is the .part.met, whose first bytes are never a container

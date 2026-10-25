@@ -122,6 +122,8 @@ QJsonObject componentSchemas()
         {s("datarate"), schemaInteger(s("Current download speed in bytes per second."))},
         {s("sourceCount"), schemaInteger(s("Peers known to have the file."))},
         {s("transferringSrcCount"), schemaInteger(s("Peers sending right now."))},
+        {s("a4afSourceCount"), schemaInteger(s("Peers that have the file but are busy with another "
+                                               "of our downloads (A4AF). Not in sourceCount."))},
         {s("downPriority"), schemaString(s("veryLow, low, normal, high, veryHigh or auto."))},
         {s("isAutoDownPriority"), schemaBoolean()},
         {s("isPaused"), schemaBoolean()},
@@ -206,6 +208,8 @@ QJsonObject componentSchemas()
         {s("hasLowID"), schemaBoolean()},
         {s("uploadFileName"), schemaString(s("File the peer wants from us."))},
         {s("reqFileName"), schemaString(s("File we want from the peer."))},
+        {s("a4af"), schemaBoolean(s("Download sources only: the peer has this file but is "
+                                    "asked for another one (reqFileName). Listed last."))},
     }));
     c.insert(s("Friend"), schemaObject({
         {s("hash"), schemaString()},
