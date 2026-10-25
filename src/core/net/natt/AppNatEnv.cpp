@@ -153,34 +153,61 @@ Address AppNatEnv::serverSessionAddress() const
     return theApp.serverConnect ? theApp.serverConnect->sessionAddress() : Address();
 }
 
-std::vector<Endpoint> AppNatEnv::rendezvousServers(const PeerInfo& peer) const
+ForeignServer AppNatEnv::foreignServer(const Address& addr, uint16 tcpPort, bool probe)
 {
-    std::vector<Endpoint> out;
-    if (!theApp.serverList)
+    ForeignServer out;
+    out.ipv4 = addr;
+    out.tcpPort = tcpPort;
+    auto* list = theApp.serverList;
+    if (!list || !addr.isIPv4() || tcpPort == 0)
         return out;
-    const Server* cur = currentServer();
-    const uint32 deadRetries = thePrefs.deadServerRetries();
-    const bool serverKnown = peer.serverPort != 0 || !peer.serverAddress.isNull();
-    for (const auto& s : theApp.serverList->servers()) {
-        if (!s->supportsNatRendezvousUDP() || s->isDeadFor(deadRetries) || s->port() == 0)
-            continue;
-        if (cur && s->port() == cur->port() && cur->hasAddress(s->ipAddress()))
-            continue;
-        const Address v4 = s->ipv4Address();
-        if (!v4.isIPv4() || !isGoodIP(v4))
-            continue;
-        // eNode-go takes PR_NAT on its main UDP port too, the one we know without a login.
-        const Endpoint ep(v4, s->natPort() != 0 ? s->natPort() : static_cast<uint16>(s->port() + 4));
-        if (!serverKnown) {
-            out.push_back(ep);
-            continue;
+    if (const Server* s = list->findByIPTcp(addr, tcpPort)) {
+        out.listed = true;
+        if (s->supportsForeignCallbackUDP() && !s->isDeadFor(thePrefs.deadServerRetries())) {
+            out.state = ForeignServer::State::Ready;
+            out.crypt = {s->serverKeyUDP(), s->obfuscationPortUDP()};
         }
-        // An IPv6 session stamps no server address on its sources: match the port alone.
-        if (peer.serverPort == s->port()
-            && (peer.serverAddress.isNull() || s->hasAddress(peer.serverAddress)))
-            return {ep};
+        return out;
     }
-    return serverKnown ? std::vector<Endpoint>{} : out;
+    if (!thePrefs.natDialUnlistedServers())
+        return out;
+    UnlistedServers& unlisted = list->unlisted();
+    const uint64 now = getTickCount();
+    switch (unlisted.state(addr, tcpPort, now)) {
+    case UnlistedServers::State::Pending:
+        out.state = ForeignServer::State::Pending;
+        return out;
+    case UnlistedServers::State::NoAnswer:
+        return out;
+    case UnlistedServers::State::Answered:
+        if (const Server* s = unlisted.find(addr, tcpPort); s && s->supportsForeignCallbackUDP()) {
+            out.state = ForeignServer::State::Ready;
+            out.crypt = {s->serverKeyUDP(), s->obfuscationPortUDP()};
+        }
+        return out;
+    case UnlistedServers::State::Unknown:
+        break;
+    }
+    // A peer names any address as its server: same filters as for a listed one, never
+    // our own address, and the caps in UnlistedServers.
+    if (!probe || !ServerList::isGoodServerIP(addr)
+        || ServerList::isFilteredServerIP(addr, u"NAT callback server", addr.toString())
+        || (theApp.ipFilter && theApp.ipFilter->isFiltered(addr, thePrefs.ipFilterLevel())))
+        return out;
+    if (const uint32 own = theApp.publicIP(); own != 0 && addr == Address::fromNetworkOrder(own))
+        return out;
+    if (list->pingUnlisted(addr, tcpPort, now))
+        out.state = ForeignServer::State::Pending;
+    return out;
+}
+
+void AppNatEnv::refreshForeignServerKey(const Address& addr, uint16 tcpPort)
+{
+    // Listed only: an unlisted server gets its single ping and nothing more.
+    if (auto* list = theApp.serverList) {
+        if (const Server* s = list->findByIPTcp(addr, tcpPort))
+            list->requestStatPing(*s);
+    }
 }
 
 bool AppNatEnv::admit(const Address& addr) const

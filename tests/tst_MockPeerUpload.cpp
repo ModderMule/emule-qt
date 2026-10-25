@@ -67,6 +67,8 @@ namespace {
 constexpr uint16 kFriendPeerPort  = 4772;
 constexpr uint16 kFriendPeerPort2 = 4782;
 constexpr uint16 kSessionPeerPort = 4792;
+constexpr uint16 kFullBlockPeerPort  = 4802;   // one per data row of the full-block test
+constexpr uint16 kFullBlockPeerPort2 = 4812;
 
 /// UploadPipelineFixture publishes neither of these globals, and it is shared with
 /// tst_HttpCacheMultiPeer, so the friend tests install them for their own duration only —
@@ -117,6 +119,8 @@ private slots:
     void uploadFlow_friendSlotBytesAreCounted();
     void uploadFlow_friendDatarateSurvivesPeerLeaving();
     void uploadFlow_sessionUpAndCreditsAreCounted();
+    void uploadFlow_threeFullBlocksAllServed_data();
+    void uploadFlow_threeFullBlocksAllServed();
     void cleanupTestCase();
 
 private:
@@ -161,6 +165,7 @@ private:
     std::array<uint8, 16> m_friendUserHash{};
     std::array<uint8, 16> m_friendUserHash2{};
     std::array<uint8, 16> m_sessionUserHash{};
+    std::array<std::array<uint8, 16>, 2> m_fullBlockUserHash{};
 };
 
 // ---------------------------------------------------------------------------
@@ -189,6 +194,9 @@ void tst_MockPeerUpload::initTestCase()
         b = static_cast<uint8>(dist(rng));
     for (auto& b : m_sessionUserHash)
         b = static_cast<uint8>(dist(rng));
+    for (auto& h : m_fullBlockUserHash)
+        for (auto& b : h)
+            b = static_cast<uint8>(dist(rng));
 }
 
 // ---------------------------------------------------------------------------
@@ -1077,6 +1085,124 @@ void tst_MockPeerUpload::uploadFlow_sessionUpAndCreditsAreCounted()
     QCOMPARE(m_pipe.uploadQueue->failedUploadCount(), failedBefore);
     QVERIFY2(m_pipe.uploadQueue->averageUpTime() > 0,
              "averageUpTime() stayed at zero — m_totalUploadTime never accumulated");
+}
+
+// ---------------------------------------------------------------------------
+// Test: three full 180 KiB blocks in one request are all served (emule-qt#58)
+//
+// Real downloaders ask for 3 x EMBLOCKSIZE per OP_REQUESTPARTS. The reported stall is
+// "180 KB in under a second, then Stalled! Waiting for block request" — exactly one
+// block. The tests above only use 10 KiB blocks, which never reach startBlockReads()'s
+// one-block read-ahead limit, so they cannot see a refill that stops after the first.
+// ---------------------------------------------------------------------------
+
+namespace {
+
+/// True once every byte of [start, end) has arrived, without inflating anything —
+/// receivedDataBlocks() warns on every compressed block that is still partial.
+bool blockArrived(const MockPeerSocket& mock, uint64 start, uint64 end)
+{
+    uint64 plain = 0;
+    uint64 packedGot = 0;
+    uint32 packedTotal = 0;
+    for (const auto& rp : mock.receivedPackets) {
+        if (rp.opcode == OP_SENDINGPART && rp.prot == OP_EDONKEYPROT && rp.data.size() > 24) {
+            uint32 s = 0, e = 0;
+            std::memcpy(&s, rp.data.data() + 16, 4);
+            std::memcpy(&e, rp.data.data() + 20, 4);
+            if (s >= start && e <= end)
+                plain += e - s;
+        } else if (rp.opcode == OP_COMPRESSEDPART && rp.prot == OP_EMULEPROT
+                   && rp.data.size() > 24) {
+            uint32 s = 0;
+            std::memcpy(&s, rp.data.data() + 16, 4);
+            if (s == start) {
+                std::memcpy(&packedTotal, rp.data.data() + 20, 4);
+                packedGot += rp.data.size() - 24;
+            }
+        }
+    }
+    return plain == end - start || (packedTotal > 0 && packedGot == packedTotal);
+}
+
+} // namespace
+
+void tst_MockPeerUpload::uploadFlow_threeFullBlocksAllServed_data()
+{
+    QTest::addColumn<bool>("incompressible");
+    QTest::addColumn<int>("peer");
+
+    QTest::newRow("compressible")   << false << 0;   // OP_COMPRESSEDPART path
+    QTest::newRow("incompressible") << true  << 1;   // OP_SENDINGPART path
+}
+
+void tst_MockPeerUpload::uploadFlow_threeFullBlocksAllServed()
+{
+    QFETCH(bool, incompressible);
+    QFETCH(int, peer);
+
+    thePrefs.setMaxUpload(0);
+    m_pipe.uploadQueue->setThrottler(nullptr);
+    m_pipe.processTimer.start(100);
+
+    // Earlier peers stay tracked, and one address gets few distinct ports (see the test above).
+    QVERIFY(theApp.clientList);
+    theApp.clientList->removeAllTrackedClients();
+    QTRY_VERIFY_WITH_TIMEOUT(!m_pipe.uploadQueue->hasActiveUploads(), 10000);
+
+    const auto& fileHash = incompressible ? m_randomFileHash : m_fileHash;
+    const QString& filePath = incompressible ? m_randomFilePath : m_testFilePath;
+
+    MockPeerSocket mock;
+    UpDownClient* client = nullptr;
+    handshakeMockPeer(mock, m_fullBlockUserHash[static_cast<size_t>(peer)].data(),
+                      peer == 0 ? kFullBlockPeerPort : kFullBlockPeerPort2,
+                      fileHash.data(), client);
+    QVERIFY2(client, "No server-side client carries the mock peer's user hash");
+
+    // Inside part 1, so neither the file start nor a part edge is involved.
+    constexpr uint64 B = EMBLOCKSIZE;
+    const uint64 base = PARTSIZE;
+    QVERIFY(m_fileSize >= base + 6 * B && m_randomFileSize >= base + 6 * B);
+
+    // Two rounds, the way an eMule downloader keeps its pipeline full: the second request
+    // goes out only after the first is drained, so the slot must keep serving after the
+    // buffer ran empty once.
+    for (int round = 0; round < 2; ++round) {
+        const uint64 r = base + static_cast<uint64>(round) * 3 * B;
+        mock.sendPacket(buildRequestParts(fileHash.data(), r, r + B, r + B, r + 2 * B,
+                                          r + 2 * B, r + 3 * B));
+        for (int i = 0; i < 3; ++i) {
+            const uint64 s = r + static_cast<uint64>(i) * B;
+            QTRY_VERIFY2_WITH_TIMEOUT(blockArrived(mock, s, s + B),
+                qPrintable(QStringLiteral("round %1: block %2 (%3-%4) never fully arrived — "
+                                          "slot stalled after %5 data packets")
+                               .arg(round).arg(i).arg(s).arg(s + B)
+                               .arg(mock.dataPacketCount())),
+                20000);
+        }
+    }
+
+    // Content check: every received byte matches the file.
+    QFile file(filePath);
+    QVERIFY(file.open(QIODevice::ReadOnly));
+    uint64 verified = 0;
+    for (const auto& block : mock.receivedDataBlocks()) {
+        QVERIFY(block.start >= base && block.end <= base + 6 * B);
+        QVERIFY(file.seek(static_cast<qint64>(block.start)));
+        const QByteArray expected = file.read(block.data.size());
+        QVERIFY2(block.data == expected,
+                 qPrintable(QStringLiteral("data mismatch at %1-%2").arg(block.start).arg(block.end)));
+        verified += static_cast<uint64>(block.data.size());
+    }
+    QCOMPARE(verified, 6 * B);
+
+    // Nothing ended the slot on us while the peer was still asking.
+    QVERIFY(!mock.hasOpcode(OP_OUTOFPARTREQS));
+    QCOMPARE(client->uploadState(), UploadState::Uploading);
+
+    mock.disconnectFromHost();
+    QTRY_VERIFY_WITH_TIMEOUT(!m_pipe.uploadQueue->hasActiveUploads(), 10000);
 }
 
 // ---------------------------------------------------------------------------

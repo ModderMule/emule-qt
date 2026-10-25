@@ -41,6 +41,9 @@ public:
     /// Why the remote leg failed; empty while it has not.
     [[nodiscard]] const QString& failure() const { return m_failure; }
 
+    /// The TCP connection to the server (or through the proxy to it) came up.
+    [[nodiscard]] bool serverReached() const { return m_serverReached; }
+
 private:
     void onLocalConnection();
     void pumpToRemote();
@@ -54,6 +57,7 @@ private:
     QString m_failure;
     uint16 m_expectedPort = 0;
     bool m_remoteClosed = false;
+    bool m_serverReached = false;
 
     static constexpr qint64 kBufferLimit = 256 * 1024;
 };

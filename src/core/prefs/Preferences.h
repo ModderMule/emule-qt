@@ -114,6 +114,9 @@ public:
     /// LowID<->LowID rendezvous through servers and Kad buddies (net/natt).
     [[nodiscard]] bool natTraversal() const;
     void setNatTraversal(bool val);
+    /// Foreign NAT callback may use a source's server that is not in our list.
+    [[nodiscard]] bool natDialUnlistedServers() const;
+    void setNatDialUnlistedServers(bool val);
 
     [[nodiscard]] bool autoConnectStaticOnly() const;
     void setAutoConnectStaticOnly(bool val);

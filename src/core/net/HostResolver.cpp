@@ -19,6 +19,13 @@ namespace {
 constexpr qint64 kPositiveCacheMs = 300'000;   // 5 min — DNS TTLs we cannot see anyway
 constexpr qint64 kNegativeCacheMs = 60'000;    // 1 min — keeps a link paste from re-storming
 
+/// Names a test pinned with HostResolver::setTestHost().
+std::unordered_map<QString, std::vector<Address>>& testHosts()
+{
+    static std::unordered_map<QString, std::vector<Address>> hosts;
+    return hosts;
+}
+
 bool isWantedFamily(const Address& addr, HostResolver::Preference pref)
 {
     switch (pref) {
@@ -105,6 +112,13 @@ int HostResolver::resolve(const QString& host, Preference pref, QObject* context
         return token;
     }
 
+    if (const auto pinned = testHosts().find(name); pinned != testHosts().end()) {
+        const std::vector<Address> addresses = pinned->second;
+        m_pending.emplace(token, std::move(pending));
+        QTimer::singleShot(0, this, [this, token, addresses] { finish(token, addresses, {}); });
+        return token;
+    }
+
     if (const CacheEntry* entry = cachedEntry(name)) {
         const std::vector<Address> addresses = entry->addresses;
         const QString error = entry->errorString;
@@ -138,6 +152,14 @@ int HostResolver::resolve(const QString& host, Preference pref, QObject* context
 int HostResolver::resolve(const QString& host, Preference pref, Callback cb, int timeoutMs)
 {
     return resolve(host, pref, nullptr, std::move(cb), timeoutMs);
+}
+
+void HostResolver::setTestHost(const QString& host, std::vector<Address> addresses)
+{
+    if (addresses.empty())
+        testHosts().erase(host);
+    else
+        testHosts()[host] = std::move(addresses);
 }
 
 void HostResolver::cancel(int token)

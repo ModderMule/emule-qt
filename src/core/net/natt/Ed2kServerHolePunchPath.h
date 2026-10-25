@@ -12,6 +12,10 @@
 /// 0 / 0.5 / 1 s and punches; the 0x61 that follows is 30 bytes, <peer_crypt 1>
 /// appended, and its role byte says who dials. 0x9F goes server-key obfuscated once we
 /// hold the key: after the first obfuscated one the server ignores plain ones.
+///
+/// Foreign callback (ed2k-server#40): a 0x37 naming requester ID 0 comes from a requester
+/// logged in elsewhere, on any server that announces UDP flag 0x100000. We burst an
+/// obfuscated 0x9F so the server passes our endpoint on, punch, and send no 0xA6.
 
 #include "net/natt/NatPath.h"
 
@@ -41,8 +45,8 @@ public:
 
 private:
     void sendRequest(Attempt& attempt);
-    /// One 0x9F now; false when nothing could be sent.
-    bool sendKeepalive(const Server& server);
+    /// One 0x9F now; false when nothing could be sent. @p obfuscatedOnly: never plain.
+    bool sendKeepalive(const Server& server, bool obfuscatedOnly = false);
     void onInfo(const uint8* data, uint32 size);
     void onFail(const uint8* data, uint32 size);
     void onCallbackNotice(const uint8* data, uint32 size);

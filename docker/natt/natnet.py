@@ -11,13 +11,14 @@ Servers (--server):
     ed2k-server   Rust ed2k-server 0.9.84+                TCP 0x60 / 0x61, UDP 0x9F
     enode         eNode-go                                PR_NAT (UDP 0xF1, port 2004)
     enode-lugdunum  eNode-go with PR_NAT off              UDP 0xA6 / 0xA7, TCP 0x37
-    enode2        two eNode-go servers, A on 1, B on 2    PR_NAT cross-server sweep
+    enode-foreign two eNode-go servers, A on 1, B on 2    foreign callback (UDP flag 0x100000)
 
-enode2: B may not log in to server 1 (its TCP there is rejected) and learns A from a
-saved source list (SLS): A's LowID on server 1 plus its user hash, as a source kept from
-an earlier session. Server 1 sits in B's server.met with its UDP flags (0x40000) and NAT
-port, as if saved by an earlier run. B's SYNC2 goes to its own server 2 first (FAILED:
-A is not registered there), then to server 1, which pairs them.
+enode-foreign: B may not log in to server 1 (its TCP there is rejected) and learns A from
+a saved source list (SLS): A's LowID on server 1, as a source kept from an earlier session.
+B sends server 1 an obfuscated 0xA6 naming A with requester ID 0; server 1 wakes A with a
+0x37 (ID 0), A bursts 0x9F, and server 1 sends B a 0xA7 with A's endpoint. By default
+server 1 sits in B's server.met with its UDP flags; with --unlisted it does not, and B
+confirms it with one plain status ping first (pref natDialUnlistedServers).
 
 NAT modes (--nat):
     none          one bridge, LowID forced by refusing the server's dial-back; the
@@ -43,7 +44,8 @@ Usage:
     python3 docker/natt/natnet.py --server lugdunum --build   # build images, run once
     python3 docker/natt/natnet.py --server ed2k-server        # reuse the images
     python3 docker/natt/natnet.py --server enode --keep       # leave it running afterwards
-    python3 docker/natt/natnet.py --server enode2             # cross-server PR_NAT sweep
+    python3 docker/natt/natnet.py --server enode-foreign      # foreign callback, server 1 listed
+    python3 docker/natt/natnet.py --server enode-foreign --unlisted   # server 1 probed first
     python3 docker/natt/natnet.py --server ed2k-server --nat real            # QUIC NAT-T
     python3 docker/natt/natnet.py --server ed2k-server --nat real --strict   # no plain QUIC
     python3 docker/natt/natnet.py --server ed2k-server --nat symmetric       # must fail cleanly
@@ -82,15 +84,13 @@ SUBNET6 = "2001:db8:4677::/64"
 SERVER_IP = "172.30.77.10"
 SERVER_IP6 = "2001:db8:4677::10"
 SERVER_CONTAINER = "natnet-server"
-# enode2 only: the server B logs in to
+# enode-foreign only: the server B logs in to
 SERVER2_IP = "172.30.77.20"
 SERVER2_IP6 = "2001:db8:4677::20"
 SERVER2_CONTAINER = "natnet-server2"
-NAT_PORT = 2004                         # eNode-go natTraversal.port
 ST_SERVERNAME = 0x01
 ST_UDPFLAGS = 0x92
-ST_NAT_PORT = 0x9D
-UDP_FLAG_NAT_RENDEZVOUS = 0x40000
+UDP_FLAG_FOREIGN_CALLBACK = 0x100000
 NODES = {
     # name: (IPv4, IPv6, user hash). Bytes 5 and 14 are eMule's 0x0E / 0x6F markers:
     # Lugdunum withholds LowID sources from a requester whose hash lacks them.
@@ -122,7 +122,10 @@ SERVERS = {
     # documentation range is not private, so the callback runs as it does on the internet.
     "enode-lugdunum": {"port": 5555, "path": "Lugdunum", "odd_ids": True,
                        "subnet4": "198.51.100"},
-    "enode2":      {"port": 5555, "path": "PR_NAT", "two_servers": True},
+    # Both the callback and the 0x9F burst are IPv4: servers on IPv4 sessions, PR_NAT off,
+    # documentation range for the UDP key (see enode-lugdunum)
+    "enode-foreign": {"port": 5555, "path": "ForeignCallback", "two_servers": True, "odd_ids": True,
+                      "subnet4": "198.51.100", "pr_nat": False},
 }
 
 
@@ -378,6 +381,7 @@ def write_enode_config(env: dict, server_dir: str, pr_nat: bool = True, name: st
             # Off for enode-lugdunum: the client then uses eNode-go's Lugdunum callback
             ("natTraversal.enabled", "true" if pr_nat else "false"),
             ("natTraversal.lugdunumCallback", "true"),
+            ("natTraversal.foreignCallback", "true"),
             # The callback is IPv4-only: eMuleQt skips it on an IPv6 server session, so
             # enode-lugdunum keeps the session on IPv4, as a real Lugdunum server does
             ("ipv6.enabled", "true" if pr_nat and NAT_MODE == "none" else "false"),
@@ -762,7 +766,8 @@ def write_server_config(kind: str, env: dict, server_dir: str, name: str, ip: st
     elif kind == "ed2k-server":
         write_ed2k_server_config(env, server_dir)
     else:
-        write_enode_config(env, server_dir, kind != "enode-lugdunum", name, ip, ip6)
+        write_enode_config(env, server_dir, SERVERS[kind].get("pr_nat", kind != "enode-lugdunum"),
+                           name, ip, ip6)
 
 
 def run_test(args, env: dict) -> int:
@@ -809,15 +814,16 @@ def run_test(args, env: dict) -> int:
     checks = {}
     reject = ""
     if two:
-        # Server 1 as B's earlier session left it in server.met: flags and NAT port
         flags = probe_udp_flags("natnet-A", SERVER_IP, port + 4)
         log(f"server 1 UDP flags: {'none' if flags is None else hex(flags)}")
-        checks["server 1 advertises 0x40000"] = bool(flags and flags & UDP_FLAG_NAT_RENDEZVOUS)
-        if not checks["server 1 advertises 0x40000"]:
-            return fail(args, work, "server 1 does not advertise cross-server PR_NAT")
-        met1 = (SERVER_IP, port, "natnet-enode", {ST_UDPFLAGS: flags, ST_NAT_PORT: NAT_PORT})
-        prepare_node(work, "B", args.size_mb, [(SERVER2_IP, port, "natnet-enode-2", {}), met1],
-                     strict=args.strict)
+        checks["server 1 advertises 0x100000"] = bool(flags and flags & UDP_FLAG_FOREIGN_CALLBACK)
+        if not checks["server 1 advertises 0x100000"]:
+            return fail(args, work, "server 1 does not advertise the foreign callback")
+        # Server 1 as B's earlier session left it in server.met, or (--unlisted) not at all
+        met_b = [(SERVER2_IP, port, "natnet-enode-2", {})]
+        if not args.unlisted:
+            met_b.append((SERVER_IP, port, "natnet-enode", {ST_UDPFLAGS: flags}))
+        prepare_node(work, "B", args.size_mb, met_b, strict=args.strict)
         reject = f"{SERVER_IP}:{port}"
     else:
         prepare_node(work, "B", args.size_mb, [met1], strict=args.strict)
@@ -872,14 +878,16 @@ def run_test(args, env: dict) -> int:
         "MD5 match": got_md5 == expected_md5,
     })
     if two:
+        b_log = node_logs(work, "B")
         checks["B logged in to server 2 only"] = (
-            "Connected to natnet-enode-2 " in node_logs(work, "B")
-            and "Connected to natnet-enode " not in node_logs(work, "B"))
-        checks["sweep of 2 servers"] = bool(re.search(r"sweeping 2 server\(s\)", b_lines))
-        checks["server 2 asked first, FAILED"] = bool(
-            re.search(r"PR_NAT FAILED reason 1 from \S+", b_lines))
-        # The NAT port came from server.met: without it B would use port + 4
-        checks["paired via server 1's saved NAT port"] = f"paired via {SERVER_IP}:{NAT_PORT}" in b_lines
+            "Connected to natnet-enode-2 " in b_log and "Connected to natnet-enode " not in b_log)
+        checks["B read server 1's 0xA7"] = f"0xA7 from {SERVER_IP}:" in b_lines
+        checks["A woken with requester ID 0"] = bool(
+            re.search(r"0x37: id 0 at ", "\n".join(nat_lines(work, "A"))))
+        if args.unlisted:
+            checks["B pinged unlisted server 1 once"] = (
+                b_log.count(f"crypt-ping -> unlisted {SERVER_IP}:{port}") == 1
+                and f"unlisted server {SERVER_IP}:{port} answered" in b_log)
     if spec.get("odd_ids"):
         ids = {n: login_id(work, n) for n in NODES}
         log(f"LowIDs: {ids}")
@@ -1181,6 +1189,8 @@ def main() -> int:
                         help="set encryption.natTraversalStrictObfuscation on both nodes")
     parser.add_argument("--build", action="store_true",
                         help="rebuild the daemon image from this tree (and the Lugdunum/router images)")
+    parser.add_argument("--unlisted", action="store_true",
+                        help="enode-foreign: server 1 not in B's server.met (probed first)")
     parser.add_argument("--keep", action="store_true", help="leave the rig running afterwards")
     parser.add_argument("--timeout", type=int, default=180,
                         help="seconds for the rendezvous and transfer (default: 180)")

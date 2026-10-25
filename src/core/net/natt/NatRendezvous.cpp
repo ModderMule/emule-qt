@@ -10,6 +10,7 @@
 #include "net/Packet.h"
 #include "net/natt/Ed2kServerHolePunchPath.h"
 #include "net/natt/EnodeNatPath.h"
+#include "net/natt/ForeignCallbackPath.h"
 #include "net/natt/KadBuddyNatPath.h"
 #include "net/natt/LugdunumNatPath.h"
 #include "utils/Log.h"
@@ -44,6 +45,7 @@ const char* pathName(PathKind kind) noexcept
     case PathKind::Lugdunum:   return "Lugdunum";
     case PathKind::EnodeNat:   return "PR_NAT";
     case PathKind::KadBuddy:   return "Kad buddy";
+    case PathKind::ForeignCallback: return "ForeignCallback";
     }
     return "?";
 }
@@ -81,12 +83,14 @@ NatRendezvous::NatRendezvous(std::unique_ptr<NatEnv> env, QObject* parent)
     , m_env(std::move(env))
 {
     // Order = preference when several paths can serve a peer (agreed in emule-qt#39):
-    // the same-server paths first, the Kad buddy last. orderedPaths() moves PR_NAT ahead
-    // of Lugdunum when it can serve the peer: eNode-go speaks both, and PR_NAT is faster
-    // and not IPv4-only.
+    // the same-server paths first, then the peer's own server (foreign callback,
+    // ed2k-server#40), the Kad buddy last. orderedPaths() moves PR_NAT ahead of Lugdunum
+    // when it can serve the peer: eNode-go speaks both, and PR_NAT is faster and not
+    // IPv4-only.
     m_paths.push_back(std::make_unique<Ed2kServerHolePunchPath>(*this));
     m_paths.push_back(std::make_unique<LugdunumNatPath>(*this));
     m_paths.push_back(std::make_unique<EnodeNatPath>(*this));
+    m_paths.push_back(std::make_unique<ForeignCallbackPath>(*this));
     m_paths.push_back(std::make_unique<KadBuddyNatPath>(*this));
 
     m_fastTimer.setInterval(100);
@@ -134,6 +138,9 @@ QString NatRendezvous::peerKey(const PeerInfo& peer)
 {
     if (peer.hashKnown)
         return QString::fromLatin1(QByteArray(reinterpret_cast<const char*>(peer.hash.data()), 16).toHex());
+    // A foreign requester (ID 0, no hash) is known by its address alone.
+    if (peer.clientID == 0 && !peer.kadEndpoint.address().isNull())
+        return QStringLiteral("ep:%1").arg(peer.kadEndpoint.address().toString());
     return QStringLiteral("id:%1:%2").arg(peer.serverAddress.toString()).arg(peer.clientID);
 }
 

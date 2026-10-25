@@ -845,7 +845,7 @@ public:
     /// What an upload slot is doing, for the queue's dead-slot check.
     enum class UpSlotActivity {
         Busy,      ///< data is asked for and moving, or the slot is still warming up
-        Idle,      ///< the peer has asked for nothing: no request, nothing buffered, no read pending
+        Idle,      ///< the peer has asked for nothing: no request, nothing buffered or unacked, no read pending
         Stalled    ///< data is waiting to go out and none has for the whole rate window
     };
     /// @param slotAgeMs  getUpStartTimeDelay(); passed in so a test can pick it.

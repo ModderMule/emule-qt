@@ -91,6 +91,10 @@ public:
     /// Clear the address cache (test seam; also useful after a network change).
     void clearCache();
 
+    /// Test seam: @p host resolves to @p addresses in every resolver of the process,
+    /// before the cache and the system. Empty @p addresses removes the entry.
+    static void setTestHost(const QString& host, std::vector<Address> addresses);
+
     /// Order/filter resolved addresses per @p pref, removing duplicates.
     /// Exposed for testing — the resolution path calls this internally.
     [[nodiscard]] static std::vector<Address> orderByPreference(std::vector<Address> addresses,

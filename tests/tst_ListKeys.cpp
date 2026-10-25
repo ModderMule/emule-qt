@@ -5,9 +5,11 @@
 #include "utils/ListActivation.h"
 
 #include <QApplication>
+#include <QComboBox>
 #include <QDialog>
 #include <QKeyEvent>
 #include <QLineEdit>
+#include <QMessageBox>
 #include <QStandardItemModel>
 #include <QTest>
 #include <QTimer>
@@ -61,6 +63,9 @@ private slots:
     void openEditorOwnsTheKeys();
     void findNextWrapsAndRepeats();
     void findIgnoresDisplayPadding();
+    void findDialogRepeatsFromSelection();
+    void findDialogPrefillsLastTerm();
+    void findDialogReportsNoMatch();
     void windowCycleKeysExist();
     void ctrlF2IsItsOwnCommand();
     void spaceTogglesOnlyWhenTheListAnswers();
@@ -210,6 +215,101 @@ void tst_ListKeys::findIgnoresDisplayPadding()
     });
     showFindInListDialog(&view, &view);
     QCOMPARE(view.currentIndex().row(), 1);
+}
+
+void tst_ListKeys::findDialogRepeatsFromSelection()
+{
+    // Issue #57: a second Find from the dialog must go on past the selection.
+    QTreeView view;
+    view.setModel(makeModel(&view, {QStringLiteral("alpha"), QStringLiteral("beta"),
+                                    QStringLiteral("alphabet"), QStringLiteral("gamma")}));
+    view.show();
+
+    const auto answer = [this] {
+        QTimer::singleShot(0, this, [] {
+            auto* dlg = qobject_cast<QDialog*>(QApplication::activeModalWidget());
+            QVERIFY(dlg);
+            dlg->findChild<QLineEdit*>()->setText(QStringLiteral("alph"));
+            dlg->accept();
+        });
+    };
+    answer();
+    showFindInListDialog(&view, &view);
+    QCOMPARE(view.currentIndex().row(), 0);
+    answer();
+    showFindInListDialog(&view, &view);
+    QCOMPARE(view.currentIndex().row(), 2);
+
+    // A current row that isn't selected doesn't count: start at the top (MFC).
+    view.selectionModel()->clearSelection();
+    answer();
+    showFindInListDialog(&view, &view);
+    QCOMPARE(view.currentIndex().row(), 0);
+}
+
+void tst_ListKeys::findDialogPrefillsLastTerm()
+{
+    QTreeView view;
+    auto* model = makeModel(&view, {QStringLiteral("alpha"), QStringLiteral("beta")});
+    model->setColumnCount(2);
+    model->setHorizontalHeaderLabels({QStringLiteral("Name"), QStringLiteral("Size")});
+    model->setItem(0, 1, new QStandardItem(QStringLiteral("10")));
+    model->setItem(1, 1, new QStandardItem(QStringLiteral("20")));
+    view.setModel(model);
+    view.show();
+
+    QTimer::singleShot(0, this, [] {
+        auto* dlg = qobject_cast<QDialog*>(QApplication::activeModalWidget());
+        QVERIFY(dlg);
+        auto* edit = dlg->findChild<QLineEdit*>();
+        QVERIFY(edit->text().isEmpty());
+        edit->setText(QStringLiteral("20"));
+        dlg->findChild<QComboBox*>()->setCurrentIndex(1);
+        dlg->accept();
+    });
+    showFindInListDialog(&view, &view);
+    QCOMPARE(view.currentIndex().row(), 1);
+
+    // Reopened: last term, fully selected so typing replaces it, same column.
+    QString text, selected;
+    int column = -1;
+    QTimer::singleShot(0, this, [&] {
+        auto* dlg = qobject_cast<QDialog*>(QApplication::activeModalWidget());
+        QVERIFY(dlg);
+        auto* edit = dlg->findChild<QLineEdit*>();
+        text = edit->text();
+        selected = edit->selectedText();
+        column = dlg->findChild<QComboBox*>()->currentIndex();
+        dlg->reject();
+    });
+    showFindInListDialog(&view, &view);
+    QCOMPARE(text, QStringLiteral("20"));
+    QCOMPARE(selected, QStringLiteral("20"));
+    QCOMPARE(column, 1);
+}
+
+void tst_ListKeys::findDialogReportsNoMatch()
+{
+    QTreeView view;
+    view.setModel(makeModel(&view, {QStringLiteral("alpha")}));
+    view.show();
+
+    bool sawBox = false;
+    QTimer::singleShot(0, this, [&] {
+        auto* dlg = qobject_cast<QDialog*>(QApplication::activeModalWidget());
+        QVERIFY(dlg);
+        dlg->findChild<QLineEdit*>()->setText(QStringLiteral("zzz"));
+        // The message box opens once accept() returns to the caller.
+        QTimer::singleShot(0, this, [&] {
+            auto* box = qobject_cast<QMessageBox*>(QApplication::activeModalWidget());
+            sawBox = box != nullptr;
+            if (box)
+                box->accept();
+        });
+        dlg->accept();
+    });
+    showFindInListDialog(&view, &view);
+    QVERIFY(sawBox);
 }
 
 void tst_ListKeys::windowCycleKeysExist()

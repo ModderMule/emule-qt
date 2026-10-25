@@ -10,7 +10,9 @@
 #include <QDialog>
 #include <QDialogButtonBox>
 #include <QFormLayout>
+#include <QItemSelectionModel>
 #include <QLineEdit>
+#include <QMessageBox>
 
 namespace eMule {
 
@@ -53,16 +55,45 @@ QString compact(const QString& text)
     return out;
 }
 
+/// No match: the dialog says so, F3 only beeps — MFC DoFind bShowError.
+void reportNoMatch(QWidget* parent, bool showError)
+{
+    if (!showError) {
+        QApplication::beep();
+        return;
+    }
+    QMessageBox::information(parent,
+                             QCoreApplication::translate("eMule::FindInListDialog", "Search"),
+                             QCoreApplication::translate("eMule::FindInListDialog",
+                                                         "No matching entry found."));
+}
+
+/// Row to search after: the selected current row (children count as their
+/// top-level parent), else just before the top / after the bottom — MFC
+/// DoFindNext starts after the selected+focused item, else at row 0.
+int searchStartRow(const QAbstractItemView* view, bool backwards)
+{
+    QModelIndex current = view->currentIndex();
+    const auto* selection = view->selectionModel();
+    if (current.isValid() && selection && selection->isSelected(current)) {
+        while (current.parent().isValid())
+            current = current.parent();
+        return current.row();
+    }
+    return backwards ? view->model()->rowCount() : -1;
+}
+
 /// Select the first row after @p startRow (stepping by @p step, wrapping) whose
 /// @p column text contains @p term, ignoring whitespace. startRow == -1 with
-/// step 1 starts at the top. Beeps on no match, as MFC DoFind does.
-bool selectMatch(QAbstractItemView* view, const QString& rawTerm, int column, int startRow, int step)
+/// step 1 starts at the top.
+bool selectMatch(QWidget* parent, QAbstractItemView* view, const QString& rawTerm, int column,
+                 int startRow, int step, bool showError)
 {
     auto* model = view->model();
     const int rows = model ? model->rowCount() : 0;
     const QString term = compact(rawTerm);
     if (rows <= 0 || column >= model->columnCount() || term.isEmpty()) {
-        QApplication::beep();
+        reportNoMatch(parent, showError);
         return false;
     }
     for (int i = 1; i <= rows; ++i) {
@@ -74,7 +105,7 @@ bool selectMatch(QAbstractItemView* view, const QString& rawTerm, int column, in
             return true;
         }
     }
-    QApplication::beep();
+    reportNoMatch(parent, showError);
     return false;
 }
 
@@ -95,6 +126,12 @@ void showFindInListDialog(QWidget* parent, QAbstractItemView* view)
     // lambda against the enclosing namespace and would file these strings
     // under context "eMule", where the runtime lookup never finds them.
     auto* searchEdit = new QLineEdit(&dlg);
+    const FindState* prev = findState(view, false);
+    if (prev) {
+        // Last term, all selected: Enter repeats it, typing replaces it (MFC).
+        searchEdit->setText(prev->term);
+        searchEdit->selectAll();
+    }
     layout->addRow(QCoreApplication::translate("eMule::FindInListDialog", "Search for:"),
                    searchEdit);
 
@@ -113,6 +150,11 @@ void showFindInListDialog(QWidget* parent, QAbstractItemView* view)
         columnCombo->addItem(QString(), 0);
     if (columnCombo->count() == 1)
         layout->setRowVisible(columnCombo, false);
+    if (prev) {
+        const int idx = columnCombo->findData(prev->column);
+        if (idx >= 0)
+            columnCombo->setCurrentIndex(idx);
+    }
 
     auto* buttons = new QDialogButtonBox(QDialogButtonBox::Ok | QDialogButtonBox::Cancel, &dlg);
     layout->addRow(buttons);
@@ -130,7 +172,8 @@ void showFindInListDialog(QWidget* parent, QAbstractItemView* view)
     auto* state = findState(view, true);
     state->term = term;
     state->column = column;
-    selectMatch(view, term, column, -1, 1);
+    // From the selected row on, not the top, so a repeat finds the next match.
+    selectMatch(parent, view, term, column, searchStartRow(view, false), 1, true);
 }
 
 void findNextInList(QWidget* parent, QAbstractItemView* view, bool backwards)
@@ -142,13 +185,8 @@ void findNextInList(QWidget* parent, QAbstractItemView* view, bool backwards)
         showFindInListDialog(parent, view);
         return;
     }
-    // A source/child row counts as its top-level parent: find only walks top level.
-    QModelIndex current = view->currentIndex();
-    while (current.parent().isValid())
-        current = current.parent();
-    const int rows = view->model()->rowCount();
-    const int start = current.isValid() ? current.row() : (backwards ? rows : -1);
-    selectMatch(view, state->term, state->column, start, backwards ? -1 : 1);
+    selectMatch(parent, view, state->term, state->column, searchStartRow(view, backwards),
+                backwards ? -1 : 1, false);
 }
 
 } // namespace eMule

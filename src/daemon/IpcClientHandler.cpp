@@ -3704,6 +3704,8 @@ bool IpcClientHandler::applyPreferenceA(const QString& key, const QCborValue& va
         thePrefs.setSafeServerConnect(val.toBool());
     else if (key == QStringLiteral("natTraversal"))
         thePrefs.setNatTraversal(val.toBool());
+    else if (key == QStringLiteral("natDialUnlistedServers"))
+        thePrefs.setNatDialUnlistedServers(val.toBool());
     else if (key == QStringLiteral("autoConnectStaticOnly"))
         thePrefs.setAutoConnectStaticOnly(val.toBool());
     else if (key == QStringLiteral("useServerPriorities"))

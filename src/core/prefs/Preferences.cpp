@@ -139,6 +139,7 @@ struct Preferences::Data {
 
     // Server connection
     bool natTraversal = true;           // LowID<->LowID rendezvous (net/natt)
+    bool natDialUnlistedServers = true; // foreign callback via a source's unlisted server
     bool safeServerConnect = true;      // Limit to 1 concurrent connection attempt. MFC off; deliberate, 2026-10: servers blacklist an IP that logs in too often
     bool autoConnectStaticOnly = false; // Only connect to static servers
     bool useServerPriorities = true;    // Sort servers by priority before connecting
@@ -774,6 +775,8 @@ void Preferences::setSkipFirewalledChecksInLanMode(bool val) { set(&Data::skipFi
 bool Preferences::safeServerConnect() const { return get(&Data::safeServerConnect); }
 bool Preferences::natTraversal() const { return get(&Data::natTraversal); }
 void Preferences::setNatTraversal(bool val) { set(&Data::natTraversal, val); }
+bool Preferences::natDialUnlistedServers() const { return get(&Data::natDialUnlistedServers); }
+void Preferences::setNatDialUnlistedServers(bool val) { set(&Data::natDialUnlistedServers, val); }
 
 void Preferences::setSafeServerConnect(bool val) { set(&Data::safeServerConnect, val); }
 
@@ -3144,6 +3147,7 @@ QCborMap Preferences::toIpcMap() const
     // Server
     prefs.insert(QStringLiteral("safeServerConnect"), safeServerConnect());
     prefs.insert(QStringLiteral("natTraversal"), natTraversal());
+    prefs.insert(QStringLiteral("natDialUnlistedServers"), natDialUnlistedServers());
     prefs.insert(QStringLiteral("autoConnectStaticOnly"), autoConnectStaticOnly());
     prefs.insert(QStringLiteral("useServerPriorities"), useServerPriorities());
     prefs.insert(QStringLiteral("addServersFromServer"), addServersFromServer());
@@ -3410,6 +3414,7 @@ void Preferences::updateFromCbor(const QCborMap& p)
     // Server
     m_data->safeServerConnect       = p.value(QStringLiteral("safeServerConnect")).toBool();
     m_data->natTraversal            = p.value(QStringLiteral("natTraversal")).toBool(true);
+    m_data->natDialUnlistedServers  = p.value(QStringLiteral("natDialUnlistedServers")).toBool(true);
     m_data->autoConnectStaticOnly   = p.value(QStringLiteral("autoConnectStaticOnly")).toBool();
     m_data->useServerPriorities     = p.value(QStringLiteral("useServerPriorities")).toBool();
     m_data->addServersFromServer    = p.value(QStringLiteral("addServersFromServer")).toBool();
@@ -3843,6 +3848,7 @@ bool Preferences::load(const QString& filePath)
         if (auto s = root["serverConnection"]) {
             m_data->safeServerConnect = s["safeServerConnect"].as<bool>(m_data->safeServerConnect);
             m_data->natTraversal = s["natTraversal"].as<bool>(m_data->natTraversal);
+            m_data->natDialUnlistedServers = s["natDialUnlistedServers"].as<bool>(m_data->natDialUnlistedServers);
             m_data->autoConnectStaticOnly = s["autoConnectStaticOnly"].as<bool>(m_data->autoConnectStaticOnly);
             m_data->useServerPriorities = s["useServerPriorities"].as<bool>(m_data->useServerPriorities);
             m_data->addServersFromServer = s["addServersFromServer"].as<bool>(m_data->addServersFromServer);
@@ -5010,6 +5016,7 @@ bool Preferences::saveImpl(const QString& filePath) const
     out << YAML::Key << "serverConnection" << YAML::Value << YAML::BeginMap;
     out << YAML::Key << "safeServerConnect" << YAML::Value << m_data->safeServerConnect;
     out << YAML::Key << "natTraversal" << YAML::Value << m_data->natTraversal;
+    out << YAML::Key << "natDialUnlistedServers" << YAML::Value << m_data->natDialUnlistedServers;
     out << YAML::Key << "autoConnectStaticOnly" << YAML::Value << m_data->autoConnectStaticOnly;
     out << YAML::Key << "useServerPriorities" << YAML::Value << m_data->useServerPriorities;
     out << YAML::Key << "addServersFromServer" << YAML::Value << m_data->addServersFromServer;

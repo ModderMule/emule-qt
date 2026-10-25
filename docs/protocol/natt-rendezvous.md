@@ -1,6 +1,7 @@
 # LowID-to-LowID rendezvous (NAT traversal signalling)
 
-Status 2026-10-25 (`PR_NAT` wake-up, cross-server sweep and the QUIC data path added): implemented in `src/core/net/natt/`. Two LowID peers learn each other's
+Status 2026-10-26 (foreign callback added, `PR_NAT` cross-server sweep retired, ed2k-server#40;
+QUIC data path since 2026-10-25): implemented in `src/core/net/natt/`. Two LowID peers learn each other's
 public UDP endpoint from an introducer, open their NAT mappings with `OP_HOLEPUNCH`, and swap
 IPv6 addresses over the opened path. With IPv6 on both sides the target then dials the
 requester over ordinary TCP/IPv6. Otherwise the requester dials the QUIC NAT-T transport
@@ -17,13 +18,14 @@ ended in `LowToLowIP`.
 
 ## Introducers
 
-Four paths, tried in this order for a source we want to download from:
+Five paths, tried in this order for a source we want to download from:
 
 | Path | Used when | Wire |
 | --- | --- | --- |
 | ed2k-server 0.9.84+ | our server sets `OP_IDCHANGE` flag `0x20000`, the peer is a LowID on it | TCP `0x60`/`0x61`/`0x62`, UDP keepalive `0x9F` |
 | Lugdunum eserver 17.x, eNode-go | flag `0x1000` **and** a 24-byte `OP_IDCHANGE`, plus the server UDP key, an odd target ID, and an IPv4 session | server UDP `0xA6` out, UDP `0xA7` / TCP `0x37` in |
-| eNode-go `PR_NAT` | flag `0x40000`, or `0x200000` when our login carried it; peer's user hash known | UDP protocol `0xF1` to the `ST_NAT_PORT` (default 2004) |
+| eNode-go `PR_NAT` | flag `0x40000`, or `0x200000` when our login carried it; the peer is on our server and its user hash is known | UDP protocol `0xF1` to the `ST_NAT_PORT` (default 2004) |
+| Foreign callback | the peer is a LowID on **another** server, which announces UDP status flag `0x100000` | server UDP `0xA6` with our ID 0 to that server, UDP `0xA7` back |
 | Kad serving buddy | the source has a serving buddy, Kad connected | `OP_REASKCALLBACKUDP` with an embedded `OP_RENDEZVOUS` |
 
 All UDP leaves the client UDP socket, so every introducer sees the mapping the peer must punch.
@@ -74,20 +76,25 @@ together. Any other pair gets the plain flow above.
   packet: punch and handoff are obfuscated iff the peer supports it, and the TCP dial uses the
   same bits. A pair where one side requires what the other can't do fails at once.
 - No `0x61` within 4 s of a `0x37`: it came from a plain `0xA6` (a Lugdunum-only requester), so
-  we answer with the reciprocal `0xA6` and go on as a Lugdunum target.
+  we answer with the reciprocal `0xA6` and go on as a Lugdunum target. Not for a `0x37` naming
+  requester ID 0 (a [foreign callback](#foreign-callback-0x100000)): there is no ID to name,
+  so we just punch on.
 
 ### Lugdunum
 
 Details and live captures: `lugdunum-nat-callback.local.md`.
 
-- Login bit `0x1000` only while we hold a confident public IPv6: the server then returns LowID
-  sources to us, and the IPv6 handoff is the only data path we have for them.
+- Login bit `0x1000` only while we have a data path: a confident public IPv6 (TCP handoff) or
+  the QUIC transport. The server then returns LowID sources to us.
 - Request: `0xE3 0xA6 <target id 4><our id 4>`, obfuscated with the server UDP key, to the
   server's UDP obfuscation port. eserver ignores it in plaintext. Repeated every 5 s.
 - Notice: UDP `0xA7` (obfuscated with the same key, from the server's IP) or TCP `0x37`:
   `<ip 4><udp port 2 LE><requester id 4><flags 1>[<hash 16> if flags & 0x80]`.
 - The requester hears nothing back, so the target sends its own `0xA6` naming the requester
   (mutual callback). The requester gets that as a `0xA7` with the target's endpoint.
+- A notice naming requester ID 0 comes from a requester logged in elsewhere (foreign
+  callback). We send no `0xA6` for it, which would name nobody; it goes to the wake-up
+  handling below.
 - A notice naming our own ID only reflects our mapped port and is ignored.
 - No `0xA6` for an even-LowID target: callback-capable clients always get an odd LowID.
 - The UDP key and obfuscation port come from the first stat ping, a few seconds after the
@@ -114,10 +121,10 @@ Spec: `eNode-go/docs/pr-nat-rendezvous-spec.md`.
   registration or our NAT moved us to another port. A server change or logout drops the
   learned endpoint. The 60 s keepalive also holds our NAT mapping open: RFC 4787
   (REQ-5) asks NATs to keep an idle UDP mapping for at least 2 minutes, but some home routers
-  drop it after 30–60 s, and then a `SYNC` for a peer on another server may not reach us.
-  Peers on the same server are not affected; the wake-up opens a fresh mapping each time.
+  drop it after 30–60 s, and then a late `SYNC` may not reach us. The wake-up opens a fresh
+  mapping each time.
 - Wake-up: our login sets `0x200000` whenever NAT traversal is on (`0x1000` still needs a
-  trusted public IPv6 at login). A wake that comes while we have no data path is ignored. On a server that also sets flag
+  data path at login: a trusted public IPv6 or the QUIC transport). A wake that comes while we have no data path is ignored. On a server that also sets flag
   `0x200000` we keep **no** registration. The server sends TCP `OP_NAT_WAKE 0x46 <families 1>`
   (`0x01` IPv4, `0x02` IPv6) when a peer asks for us, and we `REGISTER` once per family, IPv6
   first. As requester we send the `SYNC2` over IPv6 when we can and `REGISTER` over IPv4 just
@@ -127,8 +134,13 @@ Spec: `eNode-go/docs/pr-nat-rendezvous-spec.md`.
 - Both sides get `SYNC 0xE1` / `SYNC_EX 0xE7` (IPv4) or `SYNC_IPV6 0xED` with the other's
   endpoint; `FAILED 0xE5 <reason 1><hash 16>` moves the request to the next path (Lugdunum),
   like a timeout.
-- Only frames from the server's IP, on its NAT port or main UDP port, are read (and, during a
-  sweep, from the servers in it; see below).
+- Only frames from the server's IP, on its NAT port or main UDP port, are read.
+- **Same server only.** We use `PR_NAT` only for a peer logged in to our own server, and we
+  register (or get woken) only there. The cross-server sweep (`SYNC2` to other servers with UDP
+  flag `0x40000`, `ST_NAT_PORT` saved in server.met) was retired on 2026-10-26: a registry
+  keyed by user hash let anyone locate a known user without being in a transfer with them
+  (ed2k-server#40). Peers on other servers go through the foreign callback. `ST_NAT_PORT`
+  from older builds' server.met is dropped on load.
 - `SYNC2` goes to the family whose `REGISTER` was acked. An IPv6-connected session has no
   IPv4 on eNode-go, so an IPv4 `REGISTER` there falls under the "no takeover from another IP"
   rule and is accepted. LowID sources from that session carry no server IPv4; they still
@@ -136,38 +148,71 @@ Spec: `eNode-go/docs/pr-nat-rendezvous-spec.md`.
 - We match the peer on the punched path by source IP and the user hash in the handoff, not
   by `connAck`; a `SYNC` is tied to its attempt by the peer hash.
 
-#### Cross-server sweep
+### Foreign callback (`0x100000`)
 
-eNode-go also sets `0x40000` (pairs any two hashes) and `0x200000` (wake-up) in its UDP status
-flags, so the server list shows which servers can pair peers logged in elsewhere.
-`ST_UDPFLAGS` keeps the whole word in server.met. MFC eMule reads and writes it unchanged, so
-the bits survive a rewrite by stock eMule.
+Agreed in andrey23127/ed2k-server#40. A requester asks the target's **own** server, where the
+requester is not logged in. It knows that server and the target's LowID from source exchange,
+a server's source answer or a saved source list; it names nothing else, so the server hands an
+endpoint only to someone who already knows `server + LowID`, as on one server today.
 
-- **One server only as target.** We register (or get woken) only on the server we are logged
-  in to. A peer on another server can reach us only through that server.
-- **Requester, peer not on our server, hash known.** We send `SYNC2` to the servers one at a
-  time:
-  - Our own server first, when it speaks `PR_NAT` (a Kad source may be logged in there).
-  - If the peer's server is known, that server, and only when its UDP flags have
-    `0x40000`. With no such flag the peer can't be registered anywhere, and the source isn't
-    kept. Such a source comes from a saved source list (SLS) with its hash; another
-    server's UDP source answer carries no user hash, so it is dropped.
-  - If the peer's server is unknown (a Kad source), every listed server with `0x40000`, the
-    one that paired this hash before first. At most 8 servers in all.
-- **Moving to the next server.** On `FAILED`, or after two unanswered `SYNC2`s 4 s apart
-  (a wake can take 3 s to fail). A late answer from a server already left is ignored.
-- **Endpoint of a foreign server.** IPv4 plus the `ST_NAT_PORT` from an earlier login, else
-  TCP port + 4 (eNode-go takes `PR_NAT` there too).
-- **Saving the port.** `ST_NAT_PORT` (`0x9D`) is saved in server.met under the same id as in
-  `OP_SERVERIDENT`. Stock eMule ignores the tag and drops it if it rewrites the file.
-- **When nothing pairs.** The hash isn't swept again this session, whatever the re-ask
-  timers say (client re-ask 29 min, server source re-ask 15 min, global UDP search
-  30 min). The attempt falls through to the next path (Kad buddy).
-- **Replies.** `SYNC` and `FAILED` are read from the servers in the attempt's list. A `SYNC`
-  for a hash we didn't ask about, from a server other than our own, is ignored: only our
-  own server introduces us as a target.
-- ToDo: publish `(hash, rendezvous server)` in Kad (stock Kad nodes keep unknown source
-  tags), so a requester needs no sweep.
+- **Server flag.** UDP status flag `0x100000` (from `OP_GLOBSERVSTATRES` +24), the same
+  number as the extension's TCP bit: "the extension, including requests from clients logged
+  in elsewhere". The server sends it in every status reply, server probes included. It takes
+  an `0xA6` from a client that is not logged in to it. `ST_UDPFLAGS` keeps the word in
+  server.met. Without it this path does not serve the peer: no sweep, no other server is
+  tried. The peer is then left to the same-server paths and the Kad buddy.
+- **Requester → server.** `0xE3 0xA6 <target id 4><0 4><crypt 1>`, obfuscated with the UDP
+  key that server gave our IP in a status ping, to its UDP obfuscation port, from the client
+  UDP socket. The key is valid only for the address that received it, so it proves our source
+  address. `crypt` is our `CONNECT_OPT_CRYPT_*` bits (servers that read only 8 bytes ignore
+  it). Never plain. Re-sent every 5 s, 3 times. A missing key on a listed server asks for a
+  stat ping first.
+- **Server → target.** TCP `0x37 <requester ip 4><udp port 2><0 4><crypt 1>`: requester ID 0,
+  no hash. Only to a target whose login carried `0x1000 | 0x100000` (it answers with the
+  `0x9F` burst), so Lugdunum-only clients (NeoMule, NeoLoader) are never woken for this.
+  ed2k-server also wakes those; they dial as on Lugdunum and the requester gets no `0xA7`.
+  With our `crypt` byte the server applies the one-server crypt rule (mismatch: dropped) and
+  puts the result in the `0x37`; without it, crypt 0.
+- **Target.** Sends no `0xA6`. Punches the requester's endpoint at once and sends `0x9F`
+  (obfuscated with its server's key) at 0, 0.5 and 1 s, so the server learns its fresh port.
+  The attempt is keyed by the requester's address (it has no ID or hash yet); a repeat `0x37`
+  from that address joins it. Crypt bits 0 mean unknown, not "unsupported". On an extension
+  server a `0x61` may follow and is matched by the requester's address; without one the
+  target punches on.
+- **Server → requester.** On the target's first `0x9F`: UDP `0xA7 <target ip 4><udp port 2>
+  <target id 4><crypt 1>[<hash 16>]`, obfuscated with the requester's key, from the server's
+  UDP port. The hash (flag `0x80`) comes only when both sides use the crypt layer. No `0x9F`
+  within 3 s: the same `0xA7` with the last port the server knows for the target (its recent
+  `0xA6` or `0x9F`), or nothing when it knows none. The requester reads it only obfuscated,
+  only from that server's IP, and matches it by target ID.
+- **No oracle.** An unknown, HighID, gone or incapable target gets the requester no answer.
+- **Server limits** (no session to kick, so per source IP): a burst of 10, then 1/s (eNode-go:
+  `natTraversal` config); at most 60 different targets per 10 min; per target at most 6
+  foreign wake-ups a minute; IP-filtered addresses refused.
+- **Then** punch and handoff as for any path: TCP/IPv6 when both have IPv6, else QUIC. So
+  IPv4-only pairs work too.
+
+#### Servers outside our list
+
+A source names its server; it need not be in our list. Pref `natDialUnlistedServers`
+(Options → Server, "Always use a source's server for NAT callback", default **on**):
+
+- **On.** An unlisted server is confirmed first by one obfuscated status ping, as eMule sends
+  to listed servers: a raw random 4-byte challenge plus 0-15 random bytes to TCP port + 12.
+  Only a reply encrypted with that challenge and echoing it counts. It carries the UDP flags, our UDP key and the obfuscation port.
+  The server is kept in a small cache (64 entries, dropped after 1 h idle), never added to the
+  list, saved or shown.
+- **Off.** Only servers already in our list (got3nks' rule in #40).
+
+A peer can name any address, so a bad one could aim pings at a victim. Limits:
+- one ping per address per session, answered or not;
+- at most 10 such pings per 10 minutes;
+- only for a source of an active download;
+- the address must pass the server IP rules (LAN only with `filterLANIPs` off) and the IP
+  filter, and is never our own address;
+- no answer within 15 s, or no `0x100000`, marks the address unusable for the session.
+
+So each client sends a victim at most one datagram of 4-19 bytes per session.
 
 ### Kad serving buddy
 
@@ -255,7 +300,7 @@ is never set. Details: [natt-quic.md § Advertising](natt-quic.md#advertising).
 
 ## Live rig
 
-`docker/natt/natnet.py` runs one server (two for `enode2`) and two `emulecored` containers on
+`docker/natt/natnet.py` runs one server (two for `enode-foreign`) and two `emulecored` containers on
 a Docker bridge network (`172.30.77.0/24`, `2001:db8:4677::/64`, lab mode). Each node refuses the server's
 IPv4 dial-back with iptables, so both are LowIDs; A shares a random file, B downloads it.
 The run passes when B's rendezvous used the chosen server, a side dialed the peer's IPv6,
@@ -266,17 +311,23 @@ cp docker/natt/natnet.env.example docker/natt/natnet.env    # point at your serv
 python3 docker/natt/natnet.py --server lugdunum --build      # first run: build the images
 python3 docker/natt/natnet.py --server ed2k-server
 python3 docker/natt/natnet.py --server enode --keep          # leave it up; --down later
-python3 docker/natt/natnet.py --server enode2                # cross-server sweep
+python3 docker/natt/natnet.py --server enode-foreign         # foreign callback
+python3 docker/natt/natnet.py --server enode-foreign --unlisted
 ```
 
-`enode2` tests the cross-server sweep with two eNode-go servers:
+`enode-foreign` tests the foreign callback with two eNode-go servers:
 - A logs in to server 1. B logs in to server 2; iptables rejects B's TCP to server 1.
-- B's `server.met` lists server 1 with its live UDP flags (`0x40000`) and `ST_NAT_PORT`.
+- Servers run on IPv4 sessions with `PR_NAT` off, in `198.51.100.0/24` (as
+  `enode-lugdunum`): the callback and the `0x9F` burst are IPv4, and the UDP key needs a
+  public IPv4.
 - B learns A from a saved source list (SLS): B adds the link, stops, gets a `.txtsrc` naming
-  A's LowID on server 1 with A's user hash, and restarts. A server's UDP source answer has no
-  user hash, so this (or a Kad source) is how a client meets a LowID on another server.
-- Passes when B swept 2 servers, got `FAILED 0x01` from its own, was paired by server 1 on
-  the saved NAT port, and the file arrived with a matching MD5.
+  A's LowID on server 1, and restarts.
+- By default B's `server.met` lists server 1 with its live UDP flags (`0x100000`). With
+  `--unlisted` it does not, and B confirms server 1 with one obfuscated status ping first.
+- Passes when B used `ForeignCallback` and read server 1's `0xA7`, A was woken with
+  requester ID 0, B never logged in to server 1, and the file arrived with a matching MD5.
+  `--unlisted` also checks that exactly one ping went to server 1 and it answered.
+- One-bridge mode only: `--nat real|symmetric` runs a single server.
 
 - Server binaries and checkouts stay outside the repo; `natnet.env` (git-ignored) names them.
   ed2k-server is built in a `rust` container, eNode-go is cross-built with the host's `go`,

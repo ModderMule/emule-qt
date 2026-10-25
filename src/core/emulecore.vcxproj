@@ -332,6 +332,7 @@
     <ClCompile Include="server\Server.cpp" />
     <ClCompile Include="server\ServerConnect.cpp" />
     <ClCompile Include="server\ServerList.cpp" />
+    <ClCompile Include="server\UnlistedServers.cpp" />
     <ClCompile Include="net\ServerSocket.cpp" />
     <ClCompile Include="utils\SettingsUtils.cpp" />
     <ClCompile Include="files\ShareableFile.cpp" />
@@ -356,6 +357,7 @@
     <ClCompile Include="net\natt\EnodeNatPath.cpp" />
     <ClCompile Include="net\natt\KadBuddyNatPath.cpp" />
     <ClCompile Include="net\natt\LugdunumNatPath.cpp" />
+    <ClCompile Include="net\natt\ForeignCallbackPath.cpp" />
     <ClCompile Include="net\natt\NatPath.cpp" />
     <ClCompile Include="net\natt\NatRendezvous.cpp" />
     <ClCompile Include="net\quic\QuicNatConnection.cpp" />
@@ -389,6 +391,7 @@
     <ClInclude Include="net\natt\EnodeNatPath.h" />
     <ClInclude Include="net\natt\KadBuddyNatPath.h" />
     <ClInclude Include="net\natt\LugdunumNatPath.h" />
+    <ClInclude Include="net\natt\ForeignCallbackPath.h" />
     <ClInclude Include="net\natt\NatEnv.h" />
     <ClInclude Include="net\natt\NatPath.h" />
     <ClInclude Include="net\natt\NatTypes.h" />
@@ -581,6 +584,7 @@
     <QtMoc Include="GeneratedFiles\enodemeta_proto\meta.qpb.h" />
     <QtMoc Include="GeneratedFiles\enodemeta_proto\api.qpb.h" />
     <ClInclude Include="server\Server.h" />
+    <ClInclude Include="server\UnlistedServers.h" />
     <ClInclude Include="server\ServerMsgType.h" />
     <QtMoc Include="server\ServerConnect.h" />
     <QtMoc Include="server\ServerList.h" />

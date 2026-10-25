@@ -416,6 +416,9 @@ void KademliaUDPListener::sendFindBuddyReq(uint32 ip, uint16 udpPort, const KadU
     // Our client hash so the remote can do a callback, our TCP port so it can connect
     io::writeUInt128(packet, prefs->clientHash());
     packet.writeUInt16(theApp.advertisedTcpPort());
+    // Not MFC: our connect options. eMuleAI serves extra buddy slots only to NAT-T peers,
+    // stock nodes ignore the byte
+    packet.writeUInt8(prefs->myConnectOptions());
     sendPacket(packet, KADEMLIA_FINDBUDDY_REQ, ip, udpPort, targetKey, cryptTargetID);
 }
 

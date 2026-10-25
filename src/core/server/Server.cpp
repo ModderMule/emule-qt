@@ -326,9 +326,7 @@ void Server::addTagFromFile(const Tag& tag)
             m_obfuscationPortUDP = static_cast<uint16>(tag.intValue());
         break;
     case ST_NAT_PORT:
-        // Local extension, same id as in OP_SERVERIDENT. Stock eMule drops it.
-        if (tag.isInt())
-            m_natPort = static_cast<uint16>(tag.intValue());
+        // Written by older builds for the retired cross-server PR_NAT; dropped on load.
         break;
     default:
         // Handle legacy string-named tags: "files" and "users"
@@ -486,11 +484,6 @@ uint32 Server::writeTags(FileDataIO& file) const
 
     if (m_obfuscationPortUDP != 0) {
         Tag(ST_UDPPORTOBFUSCATION, static_cast<uint32>(m_obfuscationPortUDP)).writeNewEd2kTag(file);
-        ++count;
-    }
-
-    if (m_natPort != 0) {
-        Tag(ST_NAT_PORT, static_cast<uint32>(m_natPort)).writeNewEd2kTag(file);
         ++count;
     }
 

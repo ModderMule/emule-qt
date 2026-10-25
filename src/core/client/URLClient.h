@@ -12,6 +12,8 @@
 #include <QUrl>
 #include <QList>
 
+#include <deque>
+
 namespace eMule {
 
 class HostResolver;
@@ -113,11 +115,24 @@ protected:
     /// @return true when the connection may proceed; false after disconnecting.
     virtual bool acceptResolvedAddress(const Address& addr);
 
+    /// The socket of a connect that never reached the server was dropped for the
+    /// next address of the name; a request written to it is gone.
+    virtual void connectAttemptDropped() {}
+
 private:
     void sendHelloPacket() override {} // no-op for HTTP
     void connectToHost(); // create socket and initiate TCP connection
 
+    /// The connect of @p failed never reached the server: drop it and dial the next
+    /// address of the name. False when none is left (or the proxy failed).
+    bool dialNextAddress(EMSocket* failed, const QString& reason);
+
+    /// TCP to the server came up on the current socket (for https: the relay's leg).
+    [[nodiscard]] bool serverReached() const;
+
     HostResolver* m_hostResolver = nullptr;   // created on first hostname connect
+    std::deque<Address> m_nextAddresses;      ///< resolved, not dialled yet, in resolver order
+    bool m_serverReached = false;             ///< plain http: the socket connected
     QUrl m_url;                 ///< as last set; a relative redirect resolves against it
     QString m_urlHost;
     bool m_urlTls = false;      ///< https: dialled through m_tlsRelay

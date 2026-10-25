@@ -421,8 +421,8 @@ void ClientUDPSocket::processDatagram(const QNetworkDatagram& datagram)
     // NAT rendezvous: a server's 0xA7 notice or a PR_NAT frame arrives on this socket,
     // because that is where our NAT mapping points. Anything else goes on unchanged.
     // Not gated on the marker byte: an obfuscated 0xA7 only avoids 0xE3 in its first
-    // byte, so about one in 85 starts with 0xC5/0xE4/0xE5. Both server paths accept only
-    // datagrams from the current server's address.
+    // byte, so about one in 85 starts with 0xC5/0xE4/0xE5. The server paths accept only
+    // datagrams from the current server, or from a server a foreign callback asked.
     if (theApp.natRendezvous && theApp.natRendezvous->handleServerDatagram(senderEP, buf, bufLen))
         return;
 

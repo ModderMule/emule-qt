@@ -276,13 +276,15 @@ void tst_KadUDPListener::buddySearch_asksRememberedNodeAfterRestart()
     QTRY_VERIFY_WITH_TIMEOUT(!request.isEmpty(), 5000);
     QCOMPARE(requestPort, kNodeUdp);
 
-    // [opcode] BuddyID (~our Kad ID), our client hash, our TCP port
-    QCOMPARE(request.size(), 1 + 34);
-    SafeMemFile in(reinterpret_cast<const uint8*>(request.constData()) + 1, 34);
+    // [opcode] BuddyID (~our Kad ID), our client hash, our TCP port, our connect options
+    QCOMPARE(request.size(), 1 + 35);
+    SafeMemFile in(reinterpret_cast<const uint8*>(request.constData()) + 1, 35);
     UInt128 buddyID = io::readUInt128(in);
     buddyID.xorWith(UInt128(true));
     QVERIFY(buddyID == kadFixture.kadPrefs().kadId());
     QVERIFY(io::readUInt128(in) == kadFixture.kadPrefs().clientHash());
+    in.readUInt16();
+    QCOMPARE(in.readUInt8(), kadFixture.kadPrefs().myConnectOptions());
 
     // Out-tracked, so the answer is taken and refreshes the stored offer.
     const std::time_t askedAt = Kademlia::buddyStore()->entries().front().lastAsked;

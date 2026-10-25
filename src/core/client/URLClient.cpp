@@ -130,6 +130,9 @@ bool URLClient::tryToConnect(bool ignoreMaxCon, bool noCallbacks)
 
     setConnectingState(ConnectingState::DirectTCP);
 
+    // a reconnect starts from the address that worked; the others came with the old lookup
+    m_nextAddresses.clear();
+
     // If we have an IP already, create socket and connect directly
     if (!connectAddress().isNull()) {
         if (!acceptResolvedAddress(connectAddress()))
@@ -155,6 +158,8 @@ bool URLClient::tryToConnect(bool ignoreMaxCon, bool noCallbacks)
             }
             if (!acceptResolvedAddress(result.first()))
                 return;
+            // the rest is dialled in turn when a connect fails
+            m_nextAddresses.assign(result.addresses.begin() + 1, result.addresses.end());
             setUserAddress(result.first());
             connectToHost();
         });
@@ -526,6 +531,7 @@ void URLClient::connectToHost()
         }
     }
 
+    m_serverReached = false;
     auto* reqSocket = new HttpClientDownSocket(this);
     reqSocket->createSocket();
     setSocket(reqSocket);
@@ -539,8 +545,11 @@ void URLClient::connectToHost()
     // Connect socket signals
     QObject::connect(reqSocket, &ClientReqSocket::clientDisconnected,
                      this, [this, reqSocket](const QString& reason) {
-        if (socket() == reqSocket)   // a replaced socket must not tear down its successor
-            disconnected(reason, true);
+        if (socket() != reqSocket)   // a replaced socket must not tear down its successor
+            return;
+        if (!serverReached() && dialNextAddress(reqSocket, reason))
+            return;
+        disconnected(reason, true);
     });
 
     // Without this the TCP connection completes and then nothing happens: the
@@ -561,8 +570,11 @@ void URLClient::connectToHost()
         reqSocket->setProxy(QNetworkProxy::NoProxy);
         reqSocket->connectToHost(QHostAddress(QHostAddress::LocalHost), relayPort);
     } else {
-        QObject::connect(reqSocket, &ClientReqSocket::socketConnected,
-                         this, &URLClient::connectionEstablished);
+        QObject::connect(reqSocket, &ClientReqSocket::socketConnected, this, [this, reqSocket] {
+            // Darwin can report connected() with no peer before a refusal
+            m_serverReached = reqSocket->peerPort() != 0;
+            connectionEstablished();
+        });
 
         // Configure proxy
         reqSocket->initProxySupport(thePrefs.proxySettings());
@@ -594,6 +606,46 @@ bool URLClient::acceptResolvedAddress(const Address& addr)
                  .arg(addr.toString(), m_urlHost));
     disconnected(QStringLiteral("URL host resolved to an unusable address"));
     return false;
+}
+
+// ===========================================================================
+// dialNextAddress / serverReached — private
+// ===========================================================================
+
+bool URLClient::dialNextAddress(EMSocket* failed, const QString& reason)
+{
+    // Our own proxy failing says nothing about the server's addresses
+    if (m_nextAddresses.empty() || failed->proxyConnectFailed())
+        return false;
+
+    const Address next = m_nextAddresses.front();
+    m_nextAddresses.pop_front();
+    logDebug(QStringLiteral("URLClient: %1 unreachable at %2 (%3) — trying %4")
+                 .arg(m_urlHost, connectAddress().toString(), reason, next.toString()));
+
+    // The dead socket goes; the client stays in its connect attempt
+    releaseSocket(/*destroy*/ false);
+    clearDownloadBlockRequests();
+    m_rangeStart = kNoRange;
+    connectAttemptDropped();
+
+    // Checked like the first one; a refusal ends the attempt there
+    if (!acceptResolvedAddress(next))
+        return true;
+    setUserAddress(next);
+    // https went past connectionEstablished() at the relay; this is a connect again
+    setConnectingState(ConnectingState::DirectTCP);
+    // queued: the failed socket is still unwinding its own disconnect
+    QMetaObject::invokeMethod(this, [this] {
+        if (!socket() && connectingState() == ConnectingState::DirectTCP)
+            connectToHost();
+    }, Qt::QueuedConnection);
+    return true;
+}
+
+bool URLClient::serverReached() const
+{
+    return m_urlTls ? (m_tlsRelay && m_tlsRelay->serverReached()) : m_serverReached;
 }
 
 // ===========================================================================

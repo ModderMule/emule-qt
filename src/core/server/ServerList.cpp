@@ -343,7 +343,7 @@ Server* ServerList::addServer(std::unique_ptr<Server> server, ServerOrigin origi
         return nullptr;
 
     // Reject IP-filtered servers. dynIP servers are filtered post-DNS in
-    // ServerSocket::onDnsLookupFinished (TCP) and UDPSocket::queueDNSRequest (UDP),
+    // ServerSocket::dialResolved (TCP) and UDPSocket::queueDNSRequest (UDP),
     // so skip them here (matching MFC). MFC: CServerList::AddServer() — ServerList.cpp:210-222.
     if (!server->hasDynIP() && isFilteredServerIP(server->ipAddress(), u"AddServer", server->name()))
         return nullptr;
@@ -937,32 +937,9 @@ void ServerList::serverStats()
     // short form and only sends the trailing observed-IP field on the obfuscated channel. With
     // the old gate we could never reach that channel in the one state the reflection is for.
     if (!target->cryptPingReplyPending() && thePrefs.cryptLayerSupported()) {
-        auto* rng = QRandomGenerator::global();
-        const uint32 padding = rng->generate() & 0x0Fu;      // 0..15 padding bytes
-        const uint32 rawLen = 4 + padding;
-        std::vector<uint8> raw(rawLen);
-
-        uint32 obfChallenge = rng->generate();
-        if (obfChallenge == 0)
-            obfChallenge = 1;                                // must be non-zero
-        pokeUInt32(raw.data(), obfChallenge);
-        for (uint32 i = 4; i < rawLen; ++i)
-            raw[i] = static_cast<uint8>(rng->generate() & 0xFFu);
-
-        target->setChallenge(obfChallenge);
-        target->setCryptPingReplyPending(true);
-        target->setLastPinged(static_cast<uint32>(QDateTime::currentMSecsSinceEpoch()));
+        sendCryptPing(*target);
         // Re-ask in ~20s if the server never answers the obfuscated probe.
         target->setLastPingedTime(now - static_cast<uint32>(UDPSERVSTATREASKTIME) + 20);
-
-        logDebug(QStringLiteral("ServerList: obfuscated crypt-ping -> %1 (%2) "
-                                "challenge=0x%3 pad=%4")
-                     .arg(target->name(), target->addressWithPort())
-                     .arg(obfChallenge, 8, 16, QLatin1Char('0'))
-                     .arg(padding));
-
-        theApp.serverConnect->sendRawUDPPacket(
-            *target, static_cast<uint16>(target->port() + 12), raw.data(), rawLen);
         return;
     }
 
@@ -1042,7 +1019,9 @@ void ServerList::processStatusResponse(const uint8* data, uint32 size, const End
 
     // The reply arrives on the server's UDP port (tcpPort + 4) or its
     // obfuscation port; findByIPUdp handles both.
-    Server* server = findByIPUdp(from.address(), from.port(), true);
+    // Unlisted: a source's server we pinged for a foreign NAT callback.
+    Server* server = findStatServer(from.address(), from.port());
+    Server* const unlisted = server && !findByIPUdp(from.address(), from.port(), true) ? server : nullptr;
     if (server == nullptr) {
         logDebug(QStringLiteral("ServerList: OP_GLOBSERVSTATRES from unknown server %1")
                      .arg(from.toString()));
@@ -1106,7 +1085,7 @@ void ServerList::processStatusResponse(const uint8* data, uint32 size, const End
         // theory land on exactly 44 and pass the ladder below; two independent servers would
         // have to emit the identical tail for that to be adopted, which is what the
         // distinct-server threshold is for.
-        if (size == 44) {
+        if (size == 44 && !unlisted) {   // an unlisted server gets no vote on our IP
             noteObservedIPv4(*server, from, peekUInt32(data + 40));
         } else if (size > 40) {
             logDebug(QStringLiteral("ServerList: OP_GLOBSERVSTATRES from %1 has %2 extra bytes "
@@ -1128,6 +1107,13 @@ void ServerList::processStatusResponse(const uint8* data, uint32 size, const End
 
     server->setObfuscationPortTCP(tcpObfPort);
     server->setObfuscationPortUDP(udpObfPort);
+
+    if (unlisted) {
+        m_unlisted.answered(*unlisted);
+        logDebug(QStringLiteral("ServerList: unlisted server %1 answered, udpFlags=0x%2")
+                     .arg(unlisted->addressWithPort()).arg(udpFlags, 8, 16, QLatin1Char('0')));
+        return;
+    }
 
     logDebug(QStringLiteral("ServerList: OP_GLOBSERVSTATRES from %1 — users=%2 files=%3 "
                             "ping=%4ms udpFlags=0x%5 udpKey=0x%6")
@@ -1225,6 +1211,25 @@ void ServerList::processDescResponse(const uint8* data, uint32 size, const Endpo
     }
 
     emit serverUpdated(server);
+}
+
+Server* ServerList::pingUnlisted(const Address& addr, uint16 tcpPort, uint64 nowMs)
+{
+    if (!theApp.serverConnect || !thePrefs.cryptLayerSupported() || findByIPTcp(addr, tcpPort))
+        return nullptr;
+    Server* target = m_unlisted.beginPing(addr, tcpPort, nowMs);
+    if (!target)
+        return nullptr;
+    // The obfuscated ping: its reply confirms a server and carries the flags and our key.
+    sendCryptPing(*target);
+    return target;
+}
+
+Server* ServerList::findStatServer(const Address& addr, uint16 udpPort) const
+{
+    if (Server* s = findByIPUdp(addr, udpPort, true))
+        return s;
+    return m_unlisted.findByIPUdp(addr, udpPort);
 }
 
 void ServerList::requestStatPing(const Server& server)
@@ -1427,6 +1432,35 @@ void ServerList::noteObservedIPv4(const Server& server, const Endpoint& from, ui
     // One host, one vote: keyed on the address the datagram actually came from, so two
     // servers sharing a host correctly count once.
     theApp.recordServerObservedIP(observed, from.address(), who);
+}
+
+void ServerList::sendCryptPing(Server& target)
+{
+    auto* rng = QRandomGenerator::global();
+    const uint32 padding = rng->generate() & 0x0Fu;      // 0..15 padding bytes
+    const uint32 rawLen = 4 + padding;
+    std::vector<uint8> raw(rawLen);
+
+    uint32 challenge = rng->generate();
+    if (challenge == 0)
+        challenge = 1;                                   // must be non-zero
+    pokeUInt32(raw.data(), challenge);
+    for (uint32 i = 4; i < rawLen; ++i)
+        raw[i] = static_cast<uint8>(rng->generate() & 0xFFu);
+
+    target.setChallenge(challenge);
+    target.setCryptPingReplyPending(true);
+    target.setLastPinged(static_cast<uint32>(QDateTime::currentMSecsSinceEpoch()));
+
+    const bool listed = findByIPTcp(target.ipAddress(), target.port()) == &target;
+    logDebug(QStringLiteral("ServerList: obfuscated crypt-ping -> %1%2 challenge=0x%3 pad=%4")
+                 .arg(listed ? target.name() + QLatin1Char(' ') : QStringLiteral("unlisted "),
+                      target.addressWithPort())
+                 .arg(challenge, 8, 16, QLatin1Char('0'))
+                 .arg(padding));
+
+    theApp.serverConnect->sendRawUDPPacket(
+        target, static_cast<uint16>(target.port() + 12), raw.data(), rawLen);
 }
 
 } // namespace eMule

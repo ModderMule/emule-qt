@@ -128,8 +128,9 @@ public:
 
     /// Connect to a specific server. @p dialAddress picks one of a dual-stack
     /// server's addresses (the other-family retry); null = preferred family.
+    /// @p nextAddresses: of a dynIP name, the ones left after @p dialAddress.
     void connectToServer(Server* server, bool multiconnect = false, bool noCrypt = false,
-                         const Address& dialAddress = {});
+                         const Address& dialAddress = {}, std::vector<Address> nextAddresses = {});
 
     /// Abort all pending connection attempts.
     void stopConnectionTry();
@@ -244,6 +245,14 @@ private:
     /// The other-family address to retry a dual-stack server on after a failed TCP
     /// connect, or null (connected once, already a retry, single-family server).
     Address otherFamilyFor(const ServerSocket* socket, const Server* listServer) const;
+
+    /// Where to dial after a failed TCP connect: the next address of the dynIP name,
+    /// else the other family; null address when there is none.
+    struct NextDial {
+        Address address;
+        std::vector<Address> rest;   ///< of the name, after address
+    };
+    NextDial nextDialFor(const ServerSocket* socket, const Server* listServer) const;
 
     /// serverPreferIPv6: may @p entry trade its IPv4 LowID session for an IPv6 one?
     bool wantsIPv6Switch(const ServerSocket* socket, const Server* entry) const;

@@ -26,20 +26,6 @@ QByteArray hashBytes(const Hash16& hash)
     return {reinterpret_cast<const char*>(hash.data()), 16};
 }
 
-/// Makes room for one more entry: drops the oldest once @p map holds @p cap.
-template <typename V, typename AtMs>
-void dropOldest(QHash<QByteArray, V>& map, size_t cap, AtMs atMs)
-{
-    if (static_cast<size_t>(map.size()) < cap || map.isEmpty())
-        return;
-    auto oldest = map.begin();
-    for (auto it = map.begin(); it != map.end(); ++it) {
-        if (atMs(it.value()) < atMs(oldest.value()))
-            oldest = it;
-    }
-    map.erase(oldest);
-}
-
 } // namespace
 
 QByteArray EnodeNatPath::frame(uint8 opcode, const QByteArray& payload)
@@ -81,18 +67,6 @@ Endpoint EnodeNatPath::syncEndpoint() const
     return v4.address().isNull() ? natEndpoint(true) : v4;
 }
 
-bool EnodeNatPath::isNatServer(const Endpoint& from) const
-{
-    if (isOwnNatServer(from))
-        return true;
-    // A server swept for a peer elsewhere answers from where the SYNC2 went. Late
-    // answers from an earlier one in the list still count.
-    return hub().findAttempt([&](const Attempt& a) {
-        return a.path == kind() && a.role == Role::Requester
-            && std::ranges::find(a.natServers, from) != a.natServers.end();
-    }) != nullptr;
-}
-
 bool EnodeNatPath::isOwnNatServer(const Endpoint& from) const
 {
     const Server* server = env().currentServer();
@@ -111,30 +85,17 @@ bool EnodeNatPath::isOwnNatServer(const Endpoint& from) const
 
 bool EnodeNatPath::canServe(const PeerInfo& peer) const
 {
-    if (!peer.hashKnown || env().ourUdpPort() == 0)
-        return false;
-    if (peerOnOurServer(peer))
-        return !syncEndpoint().address().isNull();
-    // Elsewhere (or unknown, as for Kad sources): a sweep, unless one found nothing.
-    return !m_noRendezvous.contains(hashBytes(peer.hash)) && !sweepServers(peer).empty();
+    // Same server only: the server pairs two of its own clients (ed2k-server#40).
+    return peer.hashKnown && env().ourUdpPort() != 0 && peerOnOurServer(peer)
+        && !syncEndpoint().address().isNull();
 }
 
 bool EnodeNatPath::request(Attempt& attempt)
 {
-    attempt.natServers.clear();
-    attempt.natServerIdx = 0;
-    if (!peerOnOurServer(attempt.peer)) {
-        attempt.natServers = sweepServers(attempt.peer);
-        if (attempt.natServers.empty())
-            return false;
-        log(QStringLiteral("#%1 sweeping %2 server(s) for a peer elsewhere")
-                .arg(attempt.id).arg(attempt.natServers.size()));
-    }
     attempt.connAck = getRandomUInt32() | 1u;
     // Wake mode: the SYNC2 registers only its own family; register the other one too, so
     // the server can pair on whichever the target has.
-    const Endpoint own = syncEndpoint();
-    if (wakeMode() && own.address().isIPv6() && attemptEndpoint(attempt) == own)
+    if (wakeMode() && syncEndpoint().address().isIPv6())
         registerNow(false);
     sendSync2(attempt);
     return true;
@@ -144,15 +105,8 @@ void EnodeNatPath::repeat(Attempt& attempt)
 {
     if (attempt.role != Role::Requester || attempt.state != Attempt::State::Requested)
         return;
-    if (attempt.natServers.empty()) {
-        if (repeatDue(attempt, kRepeatMs, kMaxRequests))
-            sendSync2(attempt);
-        return;
-    }
-    if (repeatDue(attempt, kSweepStepMs, kSweepSends))
+    if (repeatDue(attempt, kRepeatMs, kMaxRequests))
         sendSync2(attempt);
-    else if (attempt.requestCount >= kSweepSends && env().now() - attempt.lastRequestMs >= kSweepStepMs)
-        nextServer(attempt, QStringLiteral("no answer"));
 }
 
 void EnodeNatPath::sendSync2(Attempt& attempt)
@@ -166,38 +120,7 @@ void EnodeNatPath::sendSync2(Attempt& attempt)
     ++attempt.requestCount;
     // SYNC2 registers the family it arrives on; the server picks IPv6 when both sides
     // registered one (keepRegistered does that in tick()).
-    env().sendRawUdp(frame(OP_NAT_SYNC2, payload), attemptEndpoint(attempt));
-}
-
-std::vector<Endpoint> EnodeNatPath::sweepServers(const PeerInfo& peer) const
-{
-    // Our own server first, as agreed: a Kad source may well be logged in here.
-    std::vector<Endpoint> others = env().rendezvousServers(peer);
-    // A peer whose server is known is registered there or nowhere.
-    const bool serverKnown = peer.serverPort != 0 || !peer.serverAddress.isNull();
-    if (serverKnown && others.empty())
-        return {};
-    std::vector<Endpoint> out;
-    if (const Endpoint own = syncEndpoint(); !own.address().isNull())
-        out.push_back(own);
-    // The server that paired this hash last time goes next.
-    if (const auto it = m_pairedVia.constFind(hashBytes(peer.hash)); it != m_pairedVia.cend()) {
-        if (const auto hit = std::ranges::find(others, it->server); hit != others.end())
-            std::rotate(others.begin(), hit, hit + 1);
-    }
-    for (const Endpoint& ep : others) {
-        if (out.size() >= kMaxSweepServers)
-            break;
-        if (std::ranges::find(out, ep) == out.end())
-            out.push_back(ep);
-    }
-    return out;
-}
-
-Endpoint EnodeNatPath::attemptEndpoint(const Attempt& attempt) const
-{
-    return attempt.natServerIdx < attempt.natServers.size()
-        ? attempt.natServers[attempt.natServerIdx] : syncEndpoint();
+    env().sendRawUdp(frame(OP_NAT_SYNC2, payload), syncEndpoint());
 }
 
 void EnodeNatPath::keepRegistered(bool ipv6, bool want)
@@ -293,7 +216,7 @@ bool EnodeNatPath::handleServerTcp(uint8 opcode, const QByteArray& payload)
 
 bool EnodeNatPath::handleServerUdp(const Endpoint& from, const uint8* data, qsizetype len)
 {
-    if (data[0] != PR_NAT || !isNatServer(from))
+    if (data[0] != PR_NAT || !isOwnNatServer(from))
         return false;
     if (len < kFrameHeader)
         return true;
@@ -328,18 +251,18 @@ bool EnodeNatPath::handleServerUdp(const Endpoint& from, const uint8* data, qsiz
         if (plen >= 26) {
             const Endpoint udp(Address::fromHostOrder(qFromBigEndian<quint32>(p)),
                                qFromBigEndian<quint16>(p + 4));
-            onSync(from, udp, p + 6, qFromBigEndian<quint32>(p + 22));
+            onSync(udp, p + 6, qFromBigEndian<quint32>(p + 22));
         }
         break;
     case OP_NAT_SYNC_IPV6:
         if (plen >= 38) {
             const Endpoint udp(Address::fromIPv6Bytes(p), qFromBigEndian<quint16>(p + 16));
-            onSync(from, udp, p + 18, qFromBigEndian<quint32>(p + 34));
+            onSync(udp, p + 18, qFromBigEndian<quint32>(p + 34));
         }
         break;
     case OP_NAT_FAILED:
         if (plen >= 17)
-            onFailed(from, p[0], p + 1);
+            onFailed(p[0], p + 1);
         break;
     default:
         log(QStringLiteral("unknown opcode 0x%1").arg(opcode, 2, 16, QLatin1Char('0')));
@@ -348,7 +271,7 @@ bool EnodeNatPath::handleServerUdp(const Endpoint& from, const uint8* data, qsiz
     return true;
 }
 
-void EnodeNatPath::onSync(const Endpoint& from, const Endpoint& udp, const uint8* hash, uint32 connAck)
+void EnodeNatPath::onSync(const Endpoint& udp, const uint8* hash, uint32 connAck)
 {
     PeerInfo peer;
     std::memcpy(peer.hash.data(), hash, 16);
@@ -359,17 +282,9 @@ void EnodeNatPath::onSync(const Endpoint& from, const Endpoint& udp, const uint8
             return a.path == kind() && a.role == Role::Requester && a.peer.hashKnown
                 && a.peer.hash == peer.hash;
         })) {
-        if (!mine->natServers.empty()) {
-            log(QStringLiteral("#%1 paired via %2").arg(mine->id).arg(from.toString()));
-            dropOldest(m_pairedVia, kMaxRemembered, [](const Paired& v) { return v.atMs; });
-            m_pairedVia.insert(hashBytes(peer.hash), Paired{from, env().now()});
-        }
         hub().endpointKnown(*mine, udp);
         return;
     }
-    // Only our own server introduces us as a target (one-server rule).
-    if (!isOwnNatServer(from))
-        return;
     if (const Server* server = env().currentServer()) {
         peer.serverAddress = server->ipAddress();
         peer.serverPort = server->port();
@@ -378,42 +293,14 @@ void EnodeNatPath::onSync(const Endpoint& from, const Endpoint& udp, const uint8
         a->connAck = connAck;
 }
 
-void EnodeNatPath::onFailed(const Endpoint& from, uint8 reason, const uint8* targetHash)
+void EnodeNatPath::onFailed(uint8 reason, const uint8* targetHash)
 {
     Hash16 hash{};
     std::memcpy(hash.data(), targetHash, 16);
-    Attempt* a = hub().findAttempt([&](const Attempt& x) {
-        return x.path == kind() && x.role == Role::Requester && x.peer.hash == hash;
-    });
-    if (!a)
-        return;
-    const QString why = QStringLiteral("PR_NAT FAILED reason %1").arg(reason);
-    if (a->natServers.empty()) {
-        hub().failOrNext(*a, why);
-        return;
-    }
-    // A late answer from a server we already left changes nothing.
-    if (from == attemptEndpoint(*a))
-        nextServer(*a, why);
-}
-
-void EnodeNatPath::nextServer(Attempt& attempt, const QString& why)
-{
-    log(QStringLiteral("#%1 %2 from %3").arg(attempt.id).arg(why, attemptEndpoint(attempt).toString()));
-    if (++attempt.natServerIdx < attempt.natServers.size()) {
-        attempt.requestCount = 0;
-        attempt.lastRequestMs = 0;
-        attempt.connAck = getRandomUInt32() | 1u;
-        attempt.deadlineMs = std::max(attempt.deadlineMs, env().now() + NatRendezvous::kAttemptTimeoutMs);
-        sendSync2(attempt);
-        return;
-    }
-    // Not on any capable server we know: don't sweep for it again this session.
-    dropOldest(m_noRendezvous, kMaxRemembered, [](uint64 at) { return at; });
-    m_noRendezvous.insert(hashBytes(attempt.peer.hash), env().now());
-    log(QStringLiteral("#%1 no rendezvous server pairs %2")
-            .arg(attempt.id).arg(QString::fromLatin1(hashBytes(attempt.peer.hash).toHex())));
-    hub().failOrNext(attempt, QStringLiteral("PR_NAT: no rendezvous server pairs the peer"));
+    if (Attempt* a = hub().findAttempt([&](const Attempt& x) {
+            return x.path == kind() && x.role == Role::Requester && x.peer.hash == hash;
+        }))
+        hub().failOrNext(*a, QStringLiteral("PR_NAT FAILED reason %1").arg(reason));
 }
 
 Endpoint EnodeNatPath::defaultNatEndpoint(bool ipv6) const

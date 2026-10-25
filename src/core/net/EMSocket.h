@@ -108,6 +108,9 @@ public:
     /// buffer, plus whatever the kernel holds beyond MFC's 128 KiB SO_SNDBUF. Our 1 MiB
     /// buffer swallows several blocks of a slow slot at once. Any thread.
     [[nodiscard]] uint64 sendBacklogBeyondMfc() const;
+    /// Every byte written but not yet known to have reached the peer: Qt's buffer plus
+    /// the kernel queue (unacked on macOS/Windows, unsent+unacked on Linux). Any thread.
+    [[nodiscard]] uint64 sendBacklog() const;
 
     // --- ThrottledFileSocket interface ---
 
@@ -177,6 +180,9 @@ private:
     static uint32 getNextFragSize(uint32 current, uint32 minFragSize);
 
     void clearQueues();
+
+    /// sendBacklog() minus @p kernelAllowance bytes of kernel queue.
+    [[nodiscard]] uint64 sendBacklogPast(int64 kernelAllowance) const;
 
     // --- Slots ---
     void onReadyRead();

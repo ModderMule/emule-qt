@@ -37,7 +37,8 @@ public:
 
     [[nodiscard]] const Server* currentServer() const override;
     [[nodiscard]] Address serverSessionAddress() const override;
-    [[nodiscard]] std::vector<Endpoint> rendezvousServers(const PeerInfo& peer) const override;
+    [[nodiscard]] ForeignServer foreignServer(const Address& addr, uint16 tcpPort, bool probe) override;
+    void refreshForeignServerKey(const Address& addr, uint16 tcpPort) override;
 
     [[nodiscard]] bool admit(const Address& addr) const override;
 

@@ -560,7 +560,7 @@ Start het met --new-instance of --config &lt;dir&gt; om een ander venster te ope
         <translation>Normaal</translation>
     </message>
     <message>
-        <location filename="../src/gui/dialogs/OptionsDialog.cpp" line="+3134"/>
+        <location filename="../src/gui/dialogs/OptionsDialog.cpp" line="+3145"/>
         <source>Test</source>
         <translation>Testen</translation>
     </message>
@@ -3112,22 +3112,21 @@ Geüpload:	%12</translation>
         <translation>Laatste ontvangst</translation>
     </message>
     <message>
-        <location line="-33"/>
         <source>Part.met File</source>
-        <translation>Met-bestand</translation>
+        <translation type="vanished">Met-bestand</translation>
     </message>
     <message>
-        <location line="+7"/>
+        <location line="-26"/>
         <source>AICH Hash</source>
         <translation>AICH-hash</translation>
     </message>
     <message>
-        <location line="-7"/>
+        <location line="-6"/>
         <source>File Path</source>
         <translation>Bestandspad</translation>
     </message>
     <message>
-        <location line="+58"/>
+        <location line="+57"/>
         <source>No alternative file names reported by sources. Use “Search Kad” to look them up.</source>
         <translation>Geen alternatieve bestandsnamen door bronnen gemeld. Gebruik “Zoeken in Kad” om ze op te zoeken.</translation>
     </message>
@@ -3230,12 +3229,18 @@ Geüpload:	%12</translation>
 <context>
     <name>eMule::FindInListDialog</name>
     <message>
-        <location filename="../src/gui/dialogs/FindInListDialog.cpp" line="+90"/>
+        <location filename="../src/gui/dialogs/FindInListDialog.cpp" line="+66"/>
+        <location line="+55"/>
         <source>Search</source>
         <translation>Zoeken</translation>
     </message>
     <message>
-        <location line="+8"/>
+        <location line="-54"/>
+        <source>No matching entry found.</source>
+        <translation>Geen overeenkomst gevonden.</translation>
+    </message>
+    <message>
+        <location line="+68"/>
         <source>Search for:</source>
         <translation>Zoeken naar:</translation>
     </message>
@@ -5941,36 +5946,36 @@ Opnieuw downloaden?</translation>
 <context>
     <name>eMule::OptionsDialog</name>
     <message>
-        <location filename="../src/gui/dialogs/OptionsDialog.cpp" line="-3025"/>
+        <location filename="../src/gui/dialogs/OptionsDialog.cpp" line="-3036"/>
         <source>Options</source>
         <translation>Opties</translation>
     </message>
     <message>
         <location line="+61"/>
-        <location line="+1987"/>
+        <location line="+1998"/>
         <source>OK</source>
         <translation>OK</translation>
     </message>
     <message>
-        <location line="-1986"/>
-        <location line="+1987"/>
+        <location line="-1997"/>
+        <location line="+1998"/>
         <source>Cancel</source>
         <translation>Annuleren</translation>
     </message>
     <message>
-        <location line="-1986"/>
-        <location line="+5792"/>
+        <location line="-1997"/>
+        <location line="+5803"/>
         <source>Apply</source>
         <translation>Toepassen</translation>
     </message>
     <message>
-        <location line="-5791"/>
+        <location line="-5802"/>
         <source>Help</source>
         <translation>Help</translation>
     </message>
     <message>
-        <location line="+261"/>
-        <location line="+1993"/>
+        <location line="+263"/>
+        <location line="+2002"/>
         <location line="+62"/>
         <location line="+5"/>
         <location line="+9"/>
@@ -5979,7 +5984,7 @@ Opnieuw downloaden?</translation>
         <translation>IP-filter</translation>
     </message>
     <message>
-        <location line="-2079"/>
+        <location line="-2088"/>
         <source>IP filter reloaded: %1 entries.</source>
         <translation>IP-filter opnieuw geladen: %1 regels.</translation>
     </message>
@@ -6015,26 +6020,26 @@ Opnieuw downloaden?</translation>
     </message>
     <message>
         <location line="+8"/>
-        <location line="+5698"/>
+        <location line="+5707"/>
         <source>Language</source>
         <translation>Taal</translation>
     </message>
     <message>
-        <location line="-5695"/>
+        <location line="-5704"/>
         <source>System Default</source>
         <translation>Systeemstandaard</translation>
     </message>
     <message>
         <location line="+14"/>
         <location line="+726"/>
-        <location line="+320"/>
+        <location line="+329"/>
         <location line="+450"/>
         <location line="+256"/>
         <source>Miscellaneous</source>
         <translation>Diversen</translation>
     </message>
     <message>
-        <location line="-1749"/>
+        <location line="-1758"/>
         <source>Bring to front on link click</source>
         <translation>Naar voren brengen bij klik op verwijzing</translation>
     </message>
@@ -6120,25 +6125,25 @@ Opnieuw downloaden?</translation>
     </message>
     <message>
         <location line="+8"/>
-        <location line="+5634"/>
+        <location line="+5643"/>
         <source>Core</source>
         <translation>Kern</translation>
     </message>
     <message>
-        <location line="-5629"/>
+        <location line="-5638"/>
         <source>Address:</source>
         <translation>Adres:</translation>
     </message>
     <message>
         <location line="+4"/>
-        <location line="+1223"/>
+        <location line="+1232"/>
         <location line="+728"/>
         <location line="+421"/>
         <source>Port:</source>
         <translation>Poort:</translation>
     </message>
     <message>
-        <location line="-2369"/>
+        <location line="-2378"/>
         <source>authentication token</source>
         <translation>authenticatietoken</translation>
     </message>
@@ -6384,7 +6389,7 @@ Weet u zeker dat u wilt doorgaan?</translation>
     </message>
     <message>
         <location line="+2"/>
-        <location line="+1700"/>
+        <location line="+1709"/>
         <location line="+128"/>
         <location line="+295"/>
         <location line="+1016"/>
@@ -6397,7 +6402,7 @@ Weet u zeker dat u wilt doorgaan?</translation>
         <translation>Ingeschakeld</translation>
     </message>
     <message>
-        <location line="-4780"/>
+        <location line="-4789"/>
         <source>Reset</source>
         <translation>Herstellen</translation>
     </message>
@@ -6414,24 +6419,24 @@ Weet u zeker dat u wilt doorgaan?</translation>
     <message>
         <location line="+3"/>
         <location line="+6"/>
-        <location line="+4154"/>
+        <location line="+4163"/>
         <location line="+352"/>
         <source> KB/s</source>
         <translation> KB/s</translation>
     </message>
     <message>
-        <location line="-4509"/>
+        <location line="-4518"/>
         <source>Upload</source>
         <translation>Upload</translation>
     </message>
     <message>
         <location line="+9"/>
-        <location line="+4142"/>
+        <location line="+4151"/>
         <source>Limits</source>
         <translation>Limieten</translation>
     </message>
     <message>
-        <location line="-4139"/>
+        <location line="-4148"/>
         <source>Download limit</source>
         <translation>Downloadlimiet</translation>
     </message>
@@ -6492,12 +6497,12 @@ Weet u zeker dat u wilt doorgaan?</translation>
     </message>
     <message>
         <location line="+4"/>
-        <location line="+6815"/>
+        <location line="+6829"/>
         <source>Any</source>
         <translation>Alle</translation>
     </message>
     <message>
-        <location line="-6813"/>
+        <location line="-6827"/>
         <source>Use only this network interface, for example a VPN tunnel. Pick one from the list, or type an IP address or a subnet such as 10.64.0.0/10 (the interface holding an address in it). Connections through a proxy are not bound.</source>
         <translation>Alleen deze netwerkinterface gebruiken, bijvoorbeeld een VPN-tunnel. Kies er een uit de lijst, of typ een IP-adres of een subnet zoals 10.64.0.0/10 (de interface met een adres daarbinnen). Verbindingen via een proxy worden niet gebonden.</translation>
     </message>
@@ -6583,12 +6588,12 @@ Weet u zeker dat u wilt doorgaan?</translation>
     </message>
     <message>
         <location line="+62"/>
-        <location line="+1423"/>
+        <location line="+1432"/>
         <source>General</source>
         <translation>Algemeen</translation>
     </message>
     <message>
-        <location line="-1420"/>
+        <location line="-1429"/>
         <source>Enable proxy</source>
         <translation>Proxy activeren</translation>
     </message>
@@ -6653,26 +6658,26 @@ Elke Usenet-verbinding loopt dan via de proxy, dus de snelheid ervan begrenst de
     </message>
     <message>
         <location line="+9"/>
-        <location line="+693"/>
+        <location line="+702"/>
         <source>Authentication</source>
         <translation>Identificatie</translation>
     </message>
     <message>
-        <location line="-690"/>
+        <location line="-699"/>
         <source>Enable authentication</source>
         <translation>Identificatie activeren</translation>
     </message>
     <message>
         <location line="+7"/>
-        <location line="+1799"/>
+        <location line="+1808"/>
         <location line="+1019"/>
         <location line="+152"/>
         <source>Name:</source>
         <translation>Naam:</translation>
     </message>
     <message>
-        <location line="-2966"/>
-        <location line="+694"/>
+        <location line="-2975"/>
+        <location line="+703"/>
         <location line="+786"/>
         <location line="+19"/>
         <location line="+324"/>
@@ -6680,7 +6685,7 @@ Elke Usenet-verbinding loopt dan via de proxy, dus de snelheid ervan begrenst de
         <translation>Wachtwoord:</translation>
     </message>
     <message>
-        <location line="-1789"/>
+        <location line="-1798"/>
         <source>Update</source>
         <translation>Bijwerken</translation>
     </message>
@@ -6750,12 +6755,11 @@ Elke Usenet-verbinding loopt dan via de proxy, dus de snelheid ervan begrenst de
         <translation>Low ID met Low ID verbinden via server of Kad-buddy (NAT-traversal)</translation>
     </message>
     <message>
-        <location line="+2"/>
         <source>Lets two Low ID clients find each other&apos;s address through a server that supports it or a Kad buddy, then connect over IPv6</source>
-        <translation>Laat twee Low ID-clients elkaars adres vinden via een server die dit ondersteunt of een Kad-buddy, en daarna verbinden via IPv6</translation>
+        <translation type="vanished">Laat twee Low ID-clients elkaars adres vinden via een server die dit ondersteunt of een Kad-buddy, en daarna verbinden via IPv6</translation>
     </message>
     <message>
-        <location line="+5"/>
+        <location line="+16"/>
         <source>Autoconnect to servers in static list only</source>
         <translation>Alleen automatisch verbinden met servers in statische lijst</translation>
     </message>
@@ -7808,22 +7812,22 @@ Elke Usenet-verbinding loopt dan via de proxy, dus de snelheid ervan begrenst de
         <location line="+1019"/>
         <location line="+154"/>
         <location line="+1753"/>
-        <location line="+2097"/>
+        <location line="+2102"/>
         <source>Add</source>
         <translation>Toevoegen</translation>
     </message>
     <message>
-        <location line="-5022"/>
+        <location line="-5027"/>
         <location line="+1019"/>
         <location line="+154"/>
         <location line="+1480"/>
         <location line="+316"/>
-        <location line="+2059"/>
+        <location line="+2064"/>
         <source>Remove</source>
         <translation>Verwijderen</translation>
     </message>
     <message>
-        <location line="-5007"/>
+        <location line="-5012"/>
         <source>Display name (optional)</source>
         <translation>Weergavenaam (optioneel)</translation>
     </message>
@@ -8992,7 +8996,7 @@ Een later toegevoegde indexer haalt zijn oudere aanbod niet op: een nieuwe index
         <translation>Downloads worden altijd gecontroleerd en gelogd. Gedeelde bestanden worden bij elke start opnieuw gecontroleerd.</translation>
     </message>
     <message>
-        <location line="+2682"/>
+        <location line="+2687"/>
         <location line="+52"/>
         <source>Directories</source>
         <translation>Mappen</translation>
@@ -9063,13 +9067,28 @@ Aanmaken?</translation>
 %1</translation>
     </message>
     <message>
-        <location line="-3084"/>
+        <location line="-3089"/>
         <location line="+153"/>
         <source>Disabled</source>
         <translation>Uitgeschakeld</translation>
     </message>
     <message>
-        <location line="+7"/>
+        <location line="-3898"/>
+        <source>Lets two Low ID clients find each other&apos;s address through a server that supports it or a Kad buddy, then connect over IPv6 or QUIC</source>
+        <translation>Laat twee Low ID-clients elkaars adres vinden via een server die dit ondersteunt of een Kad-buddy, en daarna verbinden via IPv6 of QUIC</translation>
+    </message>
+    <message>
+        <location line="+4"/>
+        <source>Always use a source&apos;s server for NAT callback</source>
+        <translation>Altijd de server van een bron gebruiken voor NAT-callback</translation>
+    </message>
+    <message>
+        <location line="+2"/>
+        <source>Also asks a source&apos;s server that is not in your server list. It is pinged once first and is not added to the list</source>
+        <translation>Vraagt ook de server van een bron die niet in je serverlijst staat. Die wordt eerst één keer gepingd en niet aan de lijst toegevoegd</translation>
+    </message>
+    <message>
+        <location line="+3899"/>
         <source>Max. firewalled Kad nodes served as buddy:</source>
         <translation>Max. gefirewallde Kad-nodes die als buddy worden bediend:</translation>
     </message>
@@ -9614,7 +9633,7 @@ Verbindingen met nieuwsservers schakelen direct om.</translation>
         <translation>De wijziging van de lettergrootte wordt van kracht na een herstart van het programma.</translation>
     </message>
     <message>
-        <location line="+362"/>
+        <location line="+364"/>
         <source>Web Interface</source>
         <translation>Webinterface</translation>
     </message>
@@ -9624,7 +9643,7 @@ Verbindingen met nieuwsservers schakelen direct om.</translation>
         <translation>„%1” is geen IP-adres. Het luisteradres is niet gewijzigd.</translation>
     </message>
     <message>
-        <location line="+486"/>
+        <location line="+487"/>
         <source>File types</source>
         <translation>Bestandstypen</translation>
     </message>
@@ -9634,7 +9653,7 @@ Verbindingen met nieuwsservers schakelen direct om.</translation>
         <translation>De .nzb-bestandskoppeling kon niet worden bijgewerkt: %1</translation>
     </message>
     <message>
-        <location line="+198"/>
+        <location line="+200"/>
         <source>specialdlp loaded, DLP v%1</source>
         <translation>specialdlp geladen, DLP v%1</translation>
     </message>

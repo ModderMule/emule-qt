@@ -77,6 +77,13 @@ private slots:
     void statusResponse_unknownSenderIgnored();
     void statusResponse_defaultObfuscationPorts();
 
+    // Unlisted servers (foreign NAT callback)
+    void unlisted_onePingPerAddress();
+    void unlisted_pingCap();
+    void unlisted_answerReadNeverListed();
+    void unlisted_noAnswerAfterWait();
+    void unlisted_cryptPingReplyFromPort12();
+
     // OP_GLOBSERVSTATRES trailing observed-IPv4 reflection (+40)
     void observedIPv4_adoptedAfterThresholdDistinctServers();
     void observedIPv4_needsExactly44Bytes();
@@ -1571,6 +1578,89 @@ void tst_ServerList::statusResponse_unknownSenderIgnored()
 
     QCOMPARE(s->users(), 0u);
     QCOMPARE(s->challenge(), 0x55AA1234u);
+}
+
+void tst_ServerList::unlisted_onePingPerAddress()
+{
+    UnlistedServers u;
+    const Address a = Address::fromNetworkOrder(0x0A71CB0Bu);
+    QCOMPARE(u.state(a, 4661, 1000), UnlistedServers::State::Unknown);
+    QVERIFY(u.beginPing(a, 4661, 1000) != nullptr);
+    QCOMPARE(u.state(a, 4661, 1000), UnlistedServers::State::Pending);
+    QVERIFY(u.beginPing(a, 4661, 2000) == nullptr);           // once per session
+    QVERIFY(u.beginPing(a, 4662, 2000) != nullptr);           // another port is another server
+    // pruned after an idle hour: still not pinged again
+    const uint64 later = 1000 + UnlistedServers::kIdleMs + 1;
+    QCOMPARE(u.state(a, 4661, later), UnlistedServers::State::NoAnswer);
+    QVERIFY(u.beginPing(a, 4661, later) == nullptr);
+}
+
+void tst_ServerList::unlisted_pingCap()
+{
+    UnlistedServers u;
+    for (uint32 i = 0; i < UnlistedServers::kMaxPings; ++i)
+        QVERIFY(u.beginPing(Address::fromNetworkOrder(0x0A71CB00u + (i << 24)), 4661, 1000));
+    QVERIFY(!u.beginPing(Address::fromNetworkOrder(0x7F71CB00u), 4661, 1000));
+    QVERIFY(u.beginPing(Address::fromNetworkOrder(0x7F71CB00u), 4661, 1000 + UnlistedServers::kPingWindowMs));
+}
+
+void tst_ServerList::unlisted_answerReadNeverListed()
+{
+    ServerList list;
+    const Address a = Address::fromNetworkOrder(0x08080808u);
+    Server* s = list.unlisted().beginPing(a, 4661, 1000);
+    QVERIFY(s);
+    s->setChallenge(0x55AA1234);
+    const QByteArray body = makeStatusBody(0x55AA1234, 1, 2, 0, 0, 0,
+                                           SrvUdpFlag::UdpObfuscation | SrvUdpFlag::ForeignCallback,
+                                           0, 4675, 4661, 0xDEADBEEF);
+    QSignalSpy updated(&list, &ServerList::serverUpdated);
+    list.processStatusResponse(reinterpret_cast<const uint8*>(body.constData()),
+                               static_cast<uint32>(body.size()), udpSenderFor(0x08080808, 4661));
+    QCOMPARE(list.unlisted().state(a, 4661, 2000), UnlistedServers::State::Answered);
+    QVERIFY(s->supportsForeignCallbackUDP());
+    QCOMPARE(s->serverKeyUDPRaw(), 0xDEADBEEFu);
+    QCOMPARE(s->obfuscationPortUDP(), quint16{4675});
+    QCOMPARE(list.serverCount(), size_t{0});                  // never listed
+    QCOMPARE(updated.count(), 0);                             // nor shown
+    // a wrong challenge is no answer
+    Server* t = list.unlisted().beginPing(Address::fromNetworkOrder(0x09090909u), 4661, 1000);
+    t->setChallenge(0x55AA0001);
+    list.processStatusResponse(reinterpret_cast<const uint8*>(body.constData()),
+                               static_cast<uint32>(body.size()), udpSenderFor(0x09090909, 4661));
+    QCOMPARE(list.unlisted().state(Address::fromNetworkOrder(0x09090909u), 4661, 2000),
+             UnlistedServers::State::Pending);
+}
+
+void tst_ServerList::unlisted_noAnswerAfterWait()
+{
+    UnlistedServers u;
+    const Address a = Address::fromNetworkOrder(0x08080808u);
+    QVERIFY(u.beginPing(a, 4661, 1000));
+    QCOMPARE(u.state(a, 4661, 1000 + UnlistedServers::kAnswerWaitMs - 1), UnlistedServers::State::Pending);
+    QCOMPARE(u.state(a, 4661, 1000 + UnlistedServers::kAnswerWaitMs), UnlistedServers::State::NoAnswer);
+}
+
+void tst_ServerList::unlisted_cryptPingReplyFromPort12()
+{
+    // The probe is a crypt ping: random challenge, reply from TCP port + 12.
+    ServerList list;
+    const Address a = Address::fromNetworkOrder(0x08080808u);
+    Server* s = list.unlisted().beginPing(a, 4661, 1000);
+    QVERIFY(s);
+    s->setChallenge(0x12345678);
+    s->setCryptPingReplyPending(true);
+    QCOMPARE(list.findStatServer(a, 4673), s);
+    QCOMPARE(list.findStatServer(a, 4665), s);
+    const QByteArray body = makeStatusBody(0x12345678, 1, 2, 0, 0, 0,
+                                           SrvUdpFlag::UdpObfuscation | SrvUdpFlag::ForeignCallback,
+                                           0, 4673, 4661, 0xDEADBEEF);
+    list.processStatusResponse(reinterpret_cast<const uint8*>(body.constData()),
+                               static_cast<uint32>(body.size()), Endpoint(a, 4673));
+    QCOMPARE(list.unlisted().state(a, 4661, 2000), UnlistedServers::State::Answered);
+    QVERIFY(!s->cryptPingReplyPending());
+    QVERIFY(s->supportsForeignCallbackUDP());
+    QCOMPARE(list.serverCount(), size_t{0});
 }
 
 void tst_ServerList::statusResponse_defaultObfuscationPorts()

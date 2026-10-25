@@ -7,6 +7,7 @@
 /// Replaces CTypedPtrList<CPtrList, CServer*> with std::vector<std::unique_ptr<Server>>.
 
 #include "Server.h"
+#include "UnlistedServers.h"
 #include "utils/Types.h"
 
 #include <QObject>
@@ -130,6 +131,8 @@ public:
     [[nodiscard]] Server* findByIPUdp(const Address& addr, uint16 udpPort,
                                       bool obfuscationPorts = true) const;
     [[nodiscard]] Server* findByAddress(const QString& address, uint16 port) const;
+    /// Server a status reply from @p addr:@p udpPort belongs to: listed, else unlisted.
+    [[nodiscard]] Server* findStatServer(const Address& addr, uint16 udpPort) const;
     /// Stable within one daemon run; survives the Server copy a ServerSocket holds.
     [[nodiscard]] Server* findById(uint32 serverId) const;
 
@@ -181,6 +184,13 @@ public:
     /// Make @p server the next stat-ping target (fresh UDP key and obfuscation ports).
     /// No-op while a crypt ping to it is still unanswered.
     void requestStatPing(const Server& server);
+
+    /// Servers outside the list, probed for a foreign NAT callback.
+    [[nodiscard]] UnlistedServers& unlisted() { return m_unlisted; }
+
+    /// One obfuscated status ping to a source's server that is not in the list.
+    /// nullptr when listed, pinged before this session, over the cap or crypt off.
+    Server* pingUnlisted(const Address& addr, uint16 tcpPort, uint64 nowMs);
 
     /// Periodic tick: persist server.met to `metPath` at most every 17 minutes so
     /// list state (users/files/ping/failedCount/UDP keys) survives a kill/crash,
@@ -242,9 +252,13 @@ private:
     size_t m_statServerPos = 0;
     uint32 m_deletedServerCount = 0;
     uint32 m_lastServerMetSave = 0;   ///< epoch-secs of last periodic save (#28)
+    UnlistedServers m_unlisted;
 
     [[nodiscard]] bool isDuplicate(const Server& server) const;
     void adjustPositionsAfterRemoval(size_t removedIndex);
+
+    /// Obfuscated OP_GLOBSERVSTATREQ to port + 12: a raw random challenge, which keys the reply.
+    void sendCryptPing(Server& target);
 
     /// Validate the IPv4 a server reflected back at us in the trailing field of a
     /// challenge-matched OP_GLOBSERVSTATRES and, if it survives, cast one vote for it.

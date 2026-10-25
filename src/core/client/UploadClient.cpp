@@ -573,8 +573,15 @@ void UpDownClient::sendOutOfPartReqsAndAddToWaitingQueue()
 
 UpDownClient::UpSlotActivity UpDownClient::upSlotActivity(uint32 slotAgeMs) const
 {
-    if (m_blockRequests.empty() && payloadInBuffer() == 0 && m_blockReadBytesQueued == 0)
+    if (m_blockRequests.empty() && payloadInBuffer() == 0 && m_blockReadBytesQueued == 0) {
+        // MFC asks for the next block only once the last one is in
+        // (srchybrid/DownloadClient.cpp:1121-1129); our 1 MiB SO_SNDBUF takes a whole
+        // block at once, so a peer still receiving it has not had the chance to ask.
+        const EMSocket* sock = getFileUploadSocket();
+        if (sock && sock->sendBacklog() != 0)
+            return UpSlotActivity::Busy;
         return UpSlotActivity::Idle;
+    }
     // m_upDatarate is an average over ten seconds: zero means nothing left in all of them.
     if (slotAgeMs > kUpSlotWarmupMs && m_upDatarate == 0)
         return UpSlotActivity::Stalled;

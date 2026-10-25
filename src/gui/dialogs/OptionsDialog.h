@@ -368,6 +368,7 @@ private:
     QCheckBox* m_serverPreferIPv6Check = nullptr;
     QCheckBox* m_safeServerConnectCheck = nullptr;
     QCheckBox* m_natTraversalCheck = nullptr;
+    QCheckBox* m_natDialUnlistedCheck = nullptr;
     QCheckBox* m_autoConnectStaticOnlyCheck = nullptr;
     QCheckBox* m_useServerPrioritiesCheck = nullptr;
     QCheckBox* m_useUserSortedServerListCheck = nullptr;

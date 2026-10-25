@@ -720,7 +720,7 @@ Hat Kommentare</translation>
         <translation type="vanished">%1 Bytes</translation>
     </message>
     <message>
-        <location filename="../src/gui/dialogs/OptionsDialog.cpp" line="+3134"/>
+        <location filename="../src/gui/dialogs/OptionsDialog.cpp" line="+3145"/>
         <source>Test</source>
         <translation>Test</translation>
     </message>
@@ -3366,12 +3366,12 @@ Hochgeladen:	%12</translation>
         <translation>Quellen</translation>
     </message>
     <message>
-        <location line="-48"/>
+        <location line="-47"/>
         <source>File Path</source>
         <translation>Dateipfad</translation>
     </message>
     <message>
-        <location line="-15"/>
+        <location line="-16"/>
         <location line="+46"/>
         <source>Created</source>
         <translation>Erstellt</translation>
@@ -3403,12 +3403,11 @@ Hochgeladen:	%12</translation>
         <translation>Letzter Empfang</translation>
     </message>
     <message>
-        <location line="-33"/>
         <source>Part.met File</source>
-        <translation>met-Datei</translation>
+        <translation type="vanished">met-Datei</translation>
     </message>
     <message>
-        <location line="+58"/>
+        <location line="+25"/>
         <source>No alternative file names reported by sources. Use “Search Kad” to look them up.</source>
         <translation>Von den Quellen wurden keine alternativen Dateinamen gemeldet. Verwenden Sie „Kad durchsuchen“, um danach zu suchen.</translation>
     </message>
@@ -3511,12 +3510,18 @@ Hochgeladen:	%12</translation>
 <context>
     <name>eMule::FindInListDialog</name>
     <message>
-        <location filename="../src/gui/dialogs/FindInListDialog.cpp" line="+90"/>
+        <location filename="../src/gui/dialogs/FindInListDialog.cpp" line="+66"/>
+        <location line="+55"/>
         <source>Search</source>
         <translation>Suche</translation>
     </message>
     <message>
-        <location line="+8"/>
+        <location line="-54"/>
+        <source>No matching entry found.</source>
+        <translation>Kein Treffer gefunden.</translation>
+    </message>
+    <message>
+        <location line="+68"/>
         <source>Search for:</source>
         <translation>Suchen nach:</translation>
     </message>
@@ -6350,36 +6355,36 @@ Erneut herunterladen?</translation>
 <context>
     <name>eMule::OptionsDialog</name>
     <message>
-        <location filename="../src/gui/dialogs/OptionsDialog.cpp" line="-3025"/>
+        <location filename="../src/gui/dialogs/OptionsDialog.cpp" line="-3036"/>
         <source>Options</source>
         <translation>Optionen</translation>
     </message>
     <message>
         <location line="+61"/>
-        <location line="+1987"/>
+        <location line="+1998"/>
         <source>OK</source>
         <translation>OK</translation>
     </message>
     <message>
-        <location line="-1986"/>
-        <location line="+1987"/>
+        <location line="-1997"/>
+        <location line="+1998"/>
         <source>Cancel</source>
         <translation>Abbrechen</translation>
     </message>
     <message>
-        <location line="-1986"/>
-        <location line="+5792"/>
+        <location line="-1997"/>
+        <location line="+5803"/>
         <source>Apply</source>
         <translation>Übernehmen</translation>
     </message>
     <message>
-        <location line="-5791"/>
+        <location line="-5802"/>
         <source>Help</source>
         <translation>Hilfe</translation>
     </message>
     <message>
-        <location line="+261"/>
-        <location line="+1993"/>
+        <location line="+263"/>
+        <location line="+2002"/>
         <location line="+62"/>
         <location line="+5"/>
         <location line="+9"/>
@@ -6388,7 +6393,7 @@ Erneut herunterladen?</translation>
         <translation>IP-Filter</translation>
     </message>
     <message>
-        <location line="-2079"/>
+        <location line="-2088"/>
         <source>IP filter reloaded: %1 entries.</source>
         <translation>IP-Filter neu geladen: %1 Einträge.</translation>
     </message>
@@ -6419,26 +6424,26 @@ Erneut herunterladen?</translation>
     </message>
     <message>
         <location line="+8"/>
-        <location line="+5698"/>
+        <location line="+5707"/>
         <source>Language</source>
         <translation>Sprache</translation>
     </message>
     <message>
-        <location line="-5695"/>
+        <location line="-5704"/>
         <source>System Default</source>
         <translation>Systemstandard</translation>
     </message>
     <message>
         <location line="+14"/>
         <location line="+726"/>
-        <location line="+320"/>
+        <location line="+329"/>
         <location line="+450"/>
         <location line="+256"/>
         <source>Miscellaneous</source>
         <translation>Verschiedenes</translation>
     </message>
     <message>
-        <location line="-1749"/>
+        <location line="-1758"/>
         <source>Bring to front on link click</source>
         <translation>Bei Linkklick in den Vordergrund</translation>
     </message>
@@ -6524,25 +6529,25 @@ Erneut herunterladen?</translation>
     </message>
     <message>
         <location line="+8"/>
-        <location line="+5634"/>
+        <location line="+5643"/>
         <source>Core</source>
         <translation>Kern</translation>
     </message>
     <message>
-        <location line="-5629"/>
+        <location line="-5638"/>
         <source>Address:</source>
         <translation>Adresse:</translation>
     </message>
     <message>
         <location line="+4"/>
-        <location line="+1223"/>
+        <location line="+1232"/>
         <location line="+728"/>
         <location line="+421"/>
         <source>Port:</source>
         <translation>Port:</translation>
     </message>
     <message>
-        <location line="-2369"/>
+        <location line="-2378"/>
         <source>authentication token</source>
         <translation>Authentifizierungstoken</translation>
     </message>
@@ -6698,7 +6703,7 @@ Möchten Sie wirklich fortfahren?</translation>
     </message>
     <message>
         <location line="+2"/>
-        <location line="+1700"/>
+        <location line="+1709"/>
         <location line="+128"/>
         <location line="+295"/>
         <location line="+1016"/>
@@ -6711,7 +6716,7 @@ Möchten Sie wirklich fortfahren?</translation>
         <translation>Aktiviert</translation>
     </message>
     <message>
-        <location line="-4780"/>
+        <location line="-4789"/>
         <source>Reset</source>
         <translation>Zurücksetzen</translation>
     </message>
@@ -6728,24 +6733,24 @@ Möchten Sie wirklich fortfahren?</translation>
     <message>
         <location line="+3"/>
         <location line="+6"/>
-        <location line="+4154"/>
+        <location line="+4163"/>
         <location line="+352"/>
         <source> KB/s</source>
         <translation> KB/s</translation>
     </message>
     <message>
-        <location line="-4509"/>
+        <location line="-4518"/>
         <source>Upload</source>
         <translation>Upload</translation>
     </message>
     <message>
         <location line="+9"/>
-        <location line="+4142"/>
+        <location line="+4151"/>
         <source>Limits</source>
         <translation>Begrenzungen</translation>
     </message>
     <message>
-        <location line="-4139"/>
+        <location line="-4148"/>
         <source>Download limit</source>
         <translation>Download-Begrenzung</translation>
     </message>
@@ -6806,12 +6811,12 @@ Möchten Sie wirklich fortfahren?</translation>
     </message>
     <message>
         <location line="+4"/>
-        <location line="+6815"/>
+        <location line="+6829"/>
         <source>Any</source>
         <translation>Alle</translation>
     </message>
     <message>
-        <location line="-6813"/>
+        <location line="-6827"/>
         <source>Use only this network interface, for example a VPN tunnel. Pick one from the list, or type an IP address or a subnet such as 10.64.0.0/10 (the interface holding an address in it). Connections through a proxy are not bound.</source>
         <translation>Nur diese Netzwerkschnittstelle verwenden, zum Beispiel einen VPN-Tunnel. Wählen Sie eine aus der Liste oder geben Sie eine IP-Adresse oder ein Subnetz wie 10.64.0.0/10 ein (die Schnittstelle, die eine Adresse daraus besitzt). Verbindungen über einen Proxy werden nicht gebunden.</translation>
     </message>
@@ -6897,12 +6902,12 @@ Möchten Sie wirklich fortfahren?</translation>
     </message>
     <message>
         <location line="+62"/>
-        <location line="+1423"/>
+        <location line="+1432"/>
         <source>General</source>
         <translation>Allgemein</translation>
     </message>
     <message>
-        <location line="-1420"/>
+        <location line="-1429"/>
         <source>Enable proxy</source>
         <translation>Proxy aktivieren</translation>
     </message>
@@ -6953,26 +6958,26 @@ Möchten Sie wirklich fortfahren?</translation>
     </message>
     <message>
         <location line="+21"/>
-        <location line="+693"/>
+        <location line="+702"/>
         <source>Authentication</source>
         <translation>Authentifizierung</translation>
     </message>
     <message>
-        <location line="-690"/>
+        <location line="-699"/>
         <source>Enable authentication</source>
         <translation>Authentifizierung aktivieren</translation>
     </message>
     <message>
         <location line="+7"/>
-        <location line="+1799"/>
+        <location line="+1808"/>
         <location line="+1019"/>
         <location line="+152"/>
         <source>Name:</source>
         <translation>Name:</translation>
     </message>
     <message>
-        <location line="-2966"/>
-        <location line="+694"/>
+        <location line="-2975"/>
+        <location line="+703"/>
         <location line="+786"/>
         <location line="+19"/>
         <location line="+324"/>
@@ -6980,7 +6985,7 @@ Möchten Sie wirklich fortfahren?</translation>
         <translation>Passwort:</translation>
     </message>
     <message>
-        <location line="-1789"/>
+        <location line="-1798"/>
         <source>Update</source>
         <translation>Aktualisieren</translation>
     </message>
@@ -7035,7 +7040,22 @@ Möchten Sie wirklich fortfahren?</translation>
         <translation>Sichere Verbindung</translation>
     </message>
     <message>
-        <location line="+11"/>
+        <location line="+6"/>
+        <source>Lets two Low ID clients find each other&apos;s address through a server that supports it or a Kad buddy, then connect over IPv6 or QUIC</source>
+        <translation>Zwei Low-ID-Clients finden über einen Server, der das unterstützt, oder über einen Kad-Buddy die Adresse des anderen und verbinden sich dann über IPv6 oder QUIC</translation>
+    </message>
+    <message>
+        <location line="+4"/>
+        <source>Always use a source&apos;s server for NAT callback</source>
+        <translation>Server einer Quelle immer für den NAT-Rückruf nutzen</translation>
+    </message>
+    <message>
+        <location line="+2"/>
+        <source>Also asks a source&apos;s server that is not in your server list. It is pinged once first and is not added to the list</source>
+        <translation>Fragt auch den Server einer Quelle, der nicht in Ihrer Serverliste steht. Er wird vorher einmal angepingt und nicht zur Liste hinzugefügt</translation>
+    </message>
+    <message>
+        <location line="+8"/>
         <source>Autoconnect to servers in static list only</source>
         <translation>Nur zu Servern der statischen Liste automatisch verbinden</translation>
     </message>
@@ -7723,7 +7743,7 @@ Jede Regel ersetzt ein Regex-Muster durch eine Ersetzungszeichenkette.</translat
         <translation>Upload-Plätze (ohne Overhead)</translation>
     </message>
     <message>
-        <location line="-1648"/>
+        <location line="-1657"/>
         <source>Country flags (IP2Country)</source>
         <translation>Landesflaggen (IP2Country)</translation>
     </message>
@@ -7797,7 +7817,7 @@ Jede Usenet-Verbindung läuft dann über den Proxy, seine Geschwindigkeit begren
         <translation>Verbindet erneut über die IPv6-Adresse des Servers, wenn die IPv4-Verbindung eine LowID erhalten hat</translation>
     </message>
     <message>
-        <location line="+352"/>
+        <location line="+361"/>
         <source>Remember files seen in search results</source>
         <translation>In Suchergebnissen gesehene Dateien merken</translation>
     </message>
@@ -8278,7 +8298,7 @@ Jede Usenet-Verbindung läuft dann über den Proxy, seine Geschwindigkeit begren
         <translation>Streng</translation>
     </message>
     <message>
-        <location line="-2623"/>
+        <location line="-2632"/>
         <source>BitTorrent</source>
         <translation>BitTorrent</translation>
     </message>
@@ -8343,12 +8363,11 @@ Jede Usenet-Verbindung läuft dann über den Proxy, seine Geschwindigkeit begren
         <translation>Low-ID mit Low-ID über Server oder Kad-Buddy verbinden (NAT-Traversal)</translation>
     </message>
     <message>
-        <location line="+2"/>
         <source>Lets two Low ID clients find each other&apos;s address through a server that supports it or a Kad buddy, then connect over IPv6</source>
-        <translation>Zwei Low-ID-Clients finden über einen Server, der das unterstützt, oder über einen Kad-Buddy die Adresse des anderen und verbinden sich dann über IPv6</translation>
+        <translation type="vanished">Zwei Low-ID-Clients finden über einen Server, der das unterstützt, oder über einen Kad-Buddy die Adresse des anderen und verbinden sich dann über IPv6</translation>
     </message>
     <message>
-        <location line="+997"/>
+        <location line="+1008"/>
         <source>Never send unobfuscated NAT traversal (QUIC) packets</source>
         <translation>Niemals unverschleierte NAT-Traversal-Pakete (QUIC) senden</translation>
     </message>
@@ -9433,7 +9452,7 @@ Einen später hinzuzufügen holt nicht dessen Bestand: ein neuer Indexer bekommt
         <translation>Downloads werden immer geprüft und protokolliert. Freigegebene Dateien werden bei jedem Start erneut geprüft.</translation>
     </message>
     <message>
-        <location line="+2682"/>
+        <location line="+2687"/>
         <location line="+52"/>
         <source>Directories</source>
         <translation>Verzeichnisse</translation>
@@ -9504,7 +9523,7 @@ Jetzt anlegen?</translation>
 %1</translation>
     </message>
     <message>
-        <location line="-3084"/>
+        <location line="-3089"/>
         <location line="+153"/>
         <source>Disabled</source>
         <translation>Deaktiviert</translation>
@@ -9530,7 +9549,7 @@ Jetzt anlegen?</translation>
         <translation>Die Änderung der Schriftgröße wird nach einem Neustart der Anwendung wirksam.</translation>
     </message>
     <message>
-        <location line="+1048"/>
+        <location line="+1053"/>
         <source>specialdlp loaded, DLP v%1</source>
         <translation>specialdlp geladen, DLP v%1</translation>
     </message>
@@ -9554,7 +9573,7 @@ Jetzt anlegen?</translation>
         <translation type="vanished">eD2K-Links nur während der Laufzeit automatisch übernehmen</translation>
     </message>
     <message>
-        <location line="-2830"/>
+        <location line="-2835"/>
         <source>Use credit system (reward uploaders)</source>
         <translation>Kreditsystem verwenden (Uploader belohnen)</translation>
     </message>
@@ -9578,12 +9597,12 @@ Jetzt anlegen?</translation>
         <translation>Server- und Client-LAN-IPs filtern</translation>
     </message>
     <message>
-        <location line="-4455"/>
+        <location line="-4464"/>
         <source>Show more controls (advanced mode controls)</source>
         <translation>Mehr Steuerelemente anzeigen (erweiterte Steuerelemente)</translation>
     </message>
     <message>
-        <location line="+4458"/>
+        <location line="+4467"/>
         <source>Disable A4AF checks to save CPU</source>
         <translation>A4AF-Prüfungen deaktivieren um CPU zu sparen</translation>
     </message>
@@ -9879,7 +9898,7 @@ Starten Sie eMule neu, damit alle Verbindungen die neuen Proxy-Einstellungen ver
 Verbindungen zu News-Servern wechseln sofort.</translation>
     </message>
     <message>
-        <location line="+469"/>
+        <location line="+471"/>
         <source>Web Interface</source>
         <translation>Weboberfläche</translation>
     </message>
@@ -9889,7 +9908,7 @@ Verbindungen zu News-Servern wechseln sofort.</translation>
         <translation>&quot;%1&quot; ist keine IP-Adresse. Die Lauschadresse wurde nicht geändert.</translation>
     </message>
     <message>
-        <location line="+486"/>
+        <location line="+487"/>
         <source>File types</source>
         <translation>Dateitypen</translation>
     </message>
@@ -9899,7 +9918,7 @@ Verbindungen zu News-Servern wechseln sofort.</translation>
         <translation>Die .nzb-Dateizuordnung konnte nicht aktualisiert werden: %1</translation>
     </message>
     <message>
-        <location line="+628"/>
+        <location line="+630"/>
         <source>Port forwarding: %1</source>
         <translation>Portweiterleitung: %1</translation>
     </message>
@@ -9954,17 +9973,17 @@ Verbindungen zu News-Servern wechseln sofort.</translation>
         <translation>Auf Standard zurücksetzen</translation>
     </message>
     <message>
-        <location line="-5030"/>
+        <location line="-5035"/>
         <location line="+1019"/>
         <location line="+154"/>
         <location line="+1480"/>
         <location line="+316"/>
-        <location line="+2059"/>
+        <location line="+2064"/>
         <source>Remove</source>
         <translation>Entfernen</translation>
     </message>
     <message>
-        <location line="-6211"/>
+        <location line="-6216"/>
         <source>New eMule Qt version detected</source>
         <translation>Neue eMule-Qt-Version erkannt</translation>
     </message>
@@ -10172,7 +10191,7 @@ Stellen Sie den Wert etwas unter Ihren Tarif. Die Menge wird hier gemessen und l
         <location line="+1019"/>
         <location line="+154"/>
         <location line="+1753"/>
-        <location line="+2097"/>
+        <location line="+2102"/>
         <source>Add</source>
         <translation>Hinzufügen</translation>
     </message>
@@ -10185,7 +10204,7 @@ Stellen Sie den Wert etwas unter Ihren Tarif. Die Menge wird hier gemessen und l
         <translation type="vanished">Wert eingeben:</translation>
     </message>
     <message>
-        <location line="-2060"/>
+        <location line="-2065"/>
         <source>Edit Value</source>
         <translation>Wert bearbeiten</translation>
     </message>

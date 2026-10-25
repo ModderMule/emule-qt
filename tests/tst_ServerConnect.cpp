@@ -7,6 +7,7 @@
 #include "client/ClientList.h"
 #include "client/UpDownClient.h"
 #include "net/Address.h"
+#include "net/HostResolver.h"
 #include "stats/Statistics.h"
 #include "server/ServerConnect.h"
 #include "prefs/Preferences.h"
@@ -213,6 +214,9 @@ private slots:
     void lowIdOnIPv4_redialsIPv6AndRemembers();
     void lowIdOnIPv4_staysWithoutThePref();
     void lowIdOnIPv4_fallsBackWhenIPv6IsDead();
+
+    // A dynIP name with several addresses
+    void dynIP_triesTheNextAddressWhenAConnectFails();
 
     // Smart LowID check (MFC ServerSocket.cpp:326-338)
     void smartLowId_unarmedKeepsFirstLowID();
@@ -1688,6 +1692,49 @@ void tst_ServerConnect::lowIdOnIPv4_fallsBackWhenIPv6IsDead()
     writeIdChange(again4, 0x00000042);
     QVERIFY(QTest::qWaitFor([&] { return conn.isConnected(); }, 5000));
     QVERIFY(conn.sessionAddress().isIPv4());
+    conn.disconnect();
+}
+
+// ---------------------------------------------------------------------------
+// Tests: a dynIP name with several addresses
+// ---------------------------------------------------------------------------
+
+void tst_ServerConnect::dynIP_triesTheNextAddressWhenAConnectFails()
+{
+    const bool hadLanFilter = thePrefs.filterLANIPs();
+    thePrefs.setFilterLANIPs(false);
+    const QString host = QStringLiteral("dyn-two-addresses.test");
+    const auto restore = qScopeGuard([&] {
+        thePrefs.setFilterLANIPs(hadLanFilter);
+        HostResolver::setTestHost(host, {});
+    });
+
+    // only on ::1; the name's first address, 127.0.0.1, refuses the connect
+    QTcpServer v6;
+    if (!v6.listen(QHostAddress::LocalHostIPv6, 0))
+        QSKIP("no IPv6 loopback");
+    HostResolver::setTestHost(host, {Address::fromString(QStringLiteral("::1")),
+                                     Address::fromString(QStringLiteral("127.0.0.1"))});
+
+    ServerList list;
+    auto owned = std::make_unique<Server>(0, v6.serverPort());
+    owned->setDynIP(host);
+    owned->setName(QStringLiteral("Dyn"));
+    Server* entry = list.addServer(std::move(owned));
+    QVERIFY(entry);
+
+    ServerConnect conn(list);
+    conn.setConfig(makeTestConfig());
+    conn.connectToServer(entry, false, true);
+
+    QTcpSocket* side = acceptOn(v6, 10000);
+    QVERIFY(side);
+    QTest::qWait(200);
+    writeIdChange(side, 0x12345678, SRVCAP_ZLIB | SRVCAP_NEWTAGS);
+    QVERIFY(QTest::qWaitFor([&] { return conn.isConnected(); }, 5000));
+    QCOMPARE(conn.sessionAddress(), Address::fromString(QStringLiteral("::1")));
+    // the refused address was the name's, not the server's failure
+    QCOMPARE(entry->failedCount(), 0u);
     conn.disconnect();
 }
 

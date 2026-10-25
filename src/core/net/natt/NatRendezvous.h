@@ -2,9 +2,10 @@
 /// @file NatRendezvous.h
 /// @brief LowID<->LowID rendezvous hub.
 ///
-/// Four introducers tell two firewalled peers each other's public UDP endpoint:
-/// ed2k-server (0x60-0x62), Lugdunum eserver (0xA6/0xA7/0x37), eNode-go PR_NAT (0xF1)
-/// and a Kad serving buddy (OP_RENDEZVOUS). Once an endpoint is known the hub
+/// Introducers tell two firewalled peers each other's public UDP endpoint:
+/// ed2k-server (0x60-0x62), Lugdunum eserver (0xA6/0xA7/0x37), eNode-go PR_NAT (0xF1),
+/// the peer's own server when we are logged in elsewhere (foreign callback, 0xA6 with
+/// our ID 0) and a Kad serving buddy (OP_RENDEZVOUS). Once an endpoint is known the hub
 /// punches the NAT (OP_HOLEPUNCH) and swaps IPv6 addresses over the opened path
 /// (OP_UDPRESERVEDPROT2 / OP_NATT_FRAME_IPV6HANDOFF); the target then dials the
 /// requester over plain TCP/IPv6. peerEndpointReady is the hook for a UDP transport.

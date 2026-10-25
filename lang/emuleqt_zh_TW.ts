@@ -555,7 +555,7 @@ Start it with --new-instance or --config &lt;dir&gt; to open another window.</so
         <translation>普通</translation>
     </message>
     <message>
-        <location filename="../src/gui/dialogs/OptionsDialog.cpp" line="+3134"/>
+        <location filename="../src/gui/dialogs/OptionsDialog.cpp" line="+3145"/>
         <source>Test</source>
         <translation>測試</translation>
     </message>
@@ -3099,22 +3099,21 @@ ED2K 切細值：	%2
         <translation>最後接收</translation>
     </message>
     <message>
-        <location line="-33"/>
         <source>Part.met File</source>
-        <translation>part.met 檔案</translation>
+        <translation type="vanished">part.met 檔案</translation>
     </message>
     <message>
-        <location line="+7"/>
+        <location line="-26"/>
         <source>AICH Hash</source>
         <translation>AICH 切細值</translation>
     </message>
     <message>
-        <location line="-7"/>
+        <location line="-6"/>
         <source>File Path</source>
         <translation>檔案路徑</translation>
     </message>
     <message>
-        <location line="+58"/>
+        <location line="+57"/>
         <source>No alternative file names reported by sources. Use “Search Kad” to look them up.</source>
         <translation>來源未回報其他檔案名稱。使用「搜尋 Kad」進行查詢。</translation>
     </message>
@@ -3217,12 +3216,18 @@ ED2K 切細值：	%2
 <context>
     <name>eMule::FindInListDialog</name>
     <message>
-        <location filename="../src/gui/dialogs/FindInListDialog.cpp" line="+90"/>
+        <location filename="../src/gui/dialogs/FindInListDialog.cpp" line="+66"/>
+        <location line="+55"/>
         <source>Search</source>
         <translation>搜尋</translation>
     </message>
     <message>
-        <location line="+8"/>
+        <location line="-54"/>
+        <source>No matching entry found.</source>
+        <translation>沒有相符合的項目。</translation>
+    </message>
+    <message>
+        <location line="+68"/>
         <source>Search for:</source>
         <translation>搜尋：</translation>
     </message>
@@ -5926,36 +5931,36 @@ Download it again?</source>
 <context>
     <name>eMule::OptionsDialog</name>
     <message>
-        <location filename="../src/gui/dialogs/OptionsDialog.cpp" line="-3025"/>
+        <location filename="../src/gui/dialogs/OptionsDialog.cpp" line="-3036"/>
         <source>Options</source>
         <translation>選項</translation>
     </message>
     <message>
         <location line="+61"/>
-        <location line="+1987"/>
+        <location line="+1998"/>
         <source>OK</source>
         <translation>確定</translation>
     </message>
     <message>
-        <location line="-1986"/>
-        <location line="+1987"/>
+        <location line="-1997"/>
+        <location line="+1998"/>
         <source>Cancel</source>
         <translation>取消</translation>
     </message>
     <message>
-        <location line="-1986"/>
-        <location line="+5792"/>
+        <location line="-1997"/>
+        <location line="+5803"/>
         <source>Apply</source>
         <translation>套用</translation>
     </message>
     <message>
-        <location line="-5791"/>
+        <location line="-5802"/>
         <source>Help</source>
         <translation>說明</translation>
     </message>
     <message>
-        <location line="+261"/>
-        <location line="+1993"/>
+        <location line="+263"/>
+        <location line="+2002"/>
         <location line="+62"/>
         <location line="+5"/>
         <location line="+9"/>
@@ -5964,7 +5969,7 @@ Download it again?</source>
         <translation>IP 過濾器</translation>
     </message>
     <message>
-        <location line="-2079"/>
+        <location line="-2088"/>
         <source>IP filter reloaded: %1 entries.</source>
         <translation>IP 過濾器已重新載入：%1 個項目。</translation>
     </message>
@@ -6000,26 +6005,26 @@ Download it again?</source>
     </message>
     <message>
         <location line="+8"/>
-        <location line="+5698"/>
+        <location line="+5707"/>
         <source>Language</source>
         <translation>語言</translation>
     </message>
     <message>
-        <location line="-5695"/>
+        <location line="-5704"/>
         <source>System Default</source>
         <translation>系統預設</translation>
     </message>
     <message>
         <location line="+14"/>
         <location line="+726"/>
-        <location line="+320"/>
+        <location line="+329"/>
         <location line="+450"/>
         <location line="+256"/>
         <source>Miscellaneous</source>
         <translation>其他</translation>
     </message>
     <message>
-        <location line="-1749"/>
+        <location line="-1758"/>
         <source>Bring to front on link click</source>
         <translation>點選連結時將視窗移至最前</translation>
     </message>
@@ -6105,25 +6110,25 @@ Download it again?</source>
     </message>
     <message>
         <location line="+8"/>
-        <location line="+5634"/>
+        <location line="+5643"/>
         <source>Core</source>
         <translation>核心</translation>
     </message>
     <message>
-        <location line="-5629"/>
+        <location line="-5638"/>
         <source>Address:</source>
         <translation>位址：</translation>
     </message>
     <message>
         <location line="+4"/>
-        <location line="+1223"/>
+        <location line="+1232"/>
         <location line="+728"/>
         <location line="+421"/>
         <source>Port:</source>
         <translation>連接埠：</translation>
     </message>
     <message>
-        <location line="-2369"/>
+        <location line="-2378"/>
         <source>authentication token</source>
         <translation>驗證權杖</translation>
     </message>
@@ -6369,7 +6374,7 @@ Are you sure you want to continue?</source>
     </message>
     <message>
         <location line="+2"/>
-        <location line="+1700"/>
+        <location line="+1709"/>
         <location line="+128"/>
         <location line="+295"/>
         <location line="+1016"/>
@@ -6382,7 +6387,7 @@ Are you sure you want to continue?</source>
         <translation>已啟用</translation>
     </message>
     <message>
-        <location line="-4780"/>
+        <location line="-4789"/>
         <source>Reset</source>
         <translation>重置</translation>
     </message>
@@ -6399,24 +6404,24 @@ Are you sure you want to continue?</source>
     <message>
         <location line="+3"/>
         <location line="+6"/>
-        <location line="+4154"/>
+        <location line="+4163"/>
         <location line="+352"/>
         <source> KB/s</source>
         <translation> KB/s</translation>
     </message>
     <message>
-        <location line="-4509"/>
+        <location line="-4518"/>
         <source>Upload</source>
         <translation>上傳</translation>
     </message>
     <message>
         <location line="+9"/>
-        <location line="+4142"/>
+        <location line="+4151"/>
         <source>Limits</source>
         <translation>限制</translation>
     </message>
     <message>
-        <location line="-4139"/>
+        <location line="-4148"/>
         <source>Download limit</source>
         <translation>下載限制</translation>
     </message>
@@ -6477,12 +6482,12 @@ Are you sure you want to continue?</source>
     </message>
     <message>
         <location line="+4"/>
-        <location line="+6815"/>
+        <location line="+6829"/>
         <source>Any</source>
         <translation>任何</translation>
     </message>
     <message>
-        <location line="-6813"/>
+        <location line="-6827"/>
         <source>Use only this network interface, for example a VPN tunnel. Pick one from the list, or type an IP address or a subnet such as 10.64.0.0/10 (the interface holding an address in it). Connections through a proxy are not bound.</source>
         <translation>只使用這個網路介面，例如 VPN 通道。可從清單中選擇，或輸入 IP 位址或子網路，例如 10.64.0.0/10（即擁有該範圍內位址的介面）。透過代理的連線不會被綁定。</translation>
     </message>
@@ -6568,12 +6573,12 @@ Are you sure you want to continue?</source>
     </message>
     <message>
         <location line="+62"/>
-        <location line="+1423"/>
+        <location line="+1432"/>
         <source>General</source>
         <translation>一般</translation>
     </message>
     <message>
-        <location line="-1420"/>
+        <location line="-1429"/>
         <source>Enable proxy</source>
         <translation>啟用代理</translation>
     </message>
@@ -6638,26 +6643,26 @@ Every Usenet connection then passes through the proxy, so its speed caps the dow
     </message>
     <message>
         <location line="+9"/>
-        <location line="+693"/>
+        <location line="+702"/>
         <source>Authentication</source>
         <translation>驗證</translation>
     </message>
     <message>
-        <location line="-690"/>
+        <location line="-699"/>
         <source>Enable authentication</source>
         <translation>啟用驗證</translation>
     </message>
     <message>
         <location line="+7"/>
-        <location line="+1799"/>
+        <location line="+1808"/>
         <location line="+1019"/>
         <location line="+152"/>
         <source>Name:</source>
         <translation>名稱：</translation>
     </message>
     <message>
-        <location line="-2966"/>
-        <location line="+694"/>
+        <location line="-2975"/>
+        <location line="+703"/>
         <location line="+786"/>
         <location line="+19"/>
         <location line="+324"/>
@@ -6665,7 +6670,7 @@ Every Usenet connection then passes through the proxy, so its speed caps the dow
         <translation>密碼：</translation>
     </message>
     <message>
-        <location line="-1789"/>
+        <location line="-1798"/>
         <source>Update</source>
         <translation>更新</translation>
     </message>
@@ -6735,12 +6740,11 @@ Every Usenet connection then passes through the proxy, so its speed caps the dow
         <translation>透過伺服器或 Kad 夥伴連接 Low ID 與 Low ID (NAT 穿透)</translation>
     </message>
     <message>
-        <location line="+2"/>
         <source>Lets two Low ID clients find each other&apos;s address through a server that supports it or a Kad buddy, then connect over IPv6</source>
-        <translation>讓兩個 Low ID 用戶端透過支援此功能的伺服器或 Kad 夥伴找到對方位址，然後透過 IPv6 連線</translation>
+        <translation type="vanished">讓兩個 Low ID 用戶端透過支援此功能的伺服器或 Kad 夥伴找到對方位址，然後透過 IPv6 連線</translation>
     </message>
     <message>
-        <location line="+5"/>
+        <location line="+16"/>
         <source>Autoconnect to servers in static list only</source>
         <translation>只自動連線到靜態伺服器</translation>
     </message>
@@ -7793,22 +7797,22 @@ Every Usenet connection then passes through the proxy, so its speed caps the dow
         <location line="+1019"/>
         <location line="+154"/>
         <location line="+1753"/>
-        <location line="+2097"/>
+        <location line="+2102"/>
         <source>Add</source>
         <translation>加入</translation>
     </message>
     <message>
-        <location line="-5022"/>
+        <location line="-5027"/>
         <location line="+1019"/>
         <location line="+154"/>
         <location line="+1480"/>
         <location line="+316"/>
-        <location line="+2059"/>
+        <location line="+2064"/>
         <source>Remove</source>
         <translation>移除</translation>
     </message>
     <message>
-        <location line="-5007"/>
+        <location line="-5012"/>
         <source>Display name (optional)</source>
         <translation>顯示名稱（選填）</translation>
     </message>
@@ -8977,7 +8981,7 @@ Adding one later does not fetch its back catalogue: a new indexer gets its own f
         <translation>下載一律會檢查並記錄。共用檔案在每次啟動時都會重新檢查。</translation>
     </message>
     <message>
-        <location line="+2682"/>
+        <location line="+2687"/>
         <location line="+52"/>
         <source>Directories</source>
         <translation>目錄</translation>
@@ -9048,13 +9052,28 @@ Create it?</source>
 %1</translation>
     </message>
     <message>
-        <location line="-3084"/>
+        <location line="-3089"/>
         <location line="+153"/>
         <source>Disabled</source>
         <translation>已停用</translation>
     </message>
     <message>
-        <location line="+7"/>
+        <location line="-3898"/>
+        <source>Lets two Low ID clients find each other&apos;s address through a server that supports it or a Kad buddy, then connect over IPv6 or QUIC</source>
+        <translation>讓兩個 Low ID 用戶端透過支援此功能的伺服器或 Kad 夥伴找到對方位址，然後透過 IPv6 或 QUIC 連線</translation>
+    </message>
+    <message>
+        <location line="+4"/>
+        <source>Always use a source&apos;s server for NAT callback</source>
+        <translation>一律使用來源的伺服器進行 NAT 回呼</translation>
+    </message>
+    <message>
+        <location line="+2"/>
+        <source>Also asks a source&apos;s server that is not in your server list. It is pinged once first and is not added to the list</source>
+        <translation>也會詢問不在伺服器清單中的來源伺服器。會先 ping 一次，且不會加入清單</translation>
+    </message>
+    <message>
+        <location line="+3899"/>
         <source>Max. firewalled Kad nodes served as buddy:</source>
         <translation>作為夥伴服務的防火牆內 Kad 節點最大數：</translation>
     </message>
@@ -9599,7 +9618,7 @@ News server connections switch over immediately.</source>
         <translation>字型大小變更將在重新啟動應用程式後生效。</translation>
     </message>
     <message>
-        <location line="+362"/>
+        <location line="+364"/>
         <source>Web Interface</source>
         <translation>Web 介面</translation>
     </message>
@@ -9609,7 +9628,7 @@ News server connections switch over immediately.</source>
         <translation>「%1」不是 IP 位址。監聽位址未變更。</translation>
     </message>
     <message>
-        <location line="+486"/>
+        <location line="+487"/>
         <source>File types</source>
         <translation>檔案類型</translation>
     </message>
@@ -9619,7 +9638,7 @@ News server connections switch over immediately.</source>
         <translation>無法更新 .nzb 檔案關聯：%1</translation>
     </message>
     <message>
-        <location line="+198"/>
+        <location line="+200"/>
         <source>specialdlp loaded, DLP v%1</source>
         <translation>specialdlp 已載入，DLP v%1</translation>
     </message>

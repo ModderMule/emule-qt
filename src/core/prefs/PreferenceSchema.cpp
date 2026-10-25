@@ -98,6 +98,7 @@ using Kind = PrefSpec::Kind;
     // --- Servers ---
     t << flag("safeServerConnect", "Try one server at a time instead of several in parallel.");
     t << flag("natTraversal", "Let two Low ID clients find each other through a server or Kad buddy.");
+    t << flag("natDialUnlistedServers", "NAT callback: also use a source's server that is not in the server list (pinged once first, never added).");
     t << flag("autoConnectStaticOnly", "Connect automatically to static servers only.");
     t << flag("useServerPriorities", "Prefer servers with a higher priority when connecting.");
     t << flag("addServersFromServer", "Add servers announced by the connected server.");

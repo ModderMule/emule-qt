@@ -6,6 +6,7 @@
 #include "client/URLClient.h"
 #include "files/PartFile.h"
 #include "net/Address.h"
+#include "net/HostResolver.h"
 #include "prefs/Preferences.h"
 #include "utils/Opcodes.h"
 
@@ -37,7 +38,9 @@ public:
 class RangeServer : public QObject {
 public:
     /// @p tls: serve https with the self-signed certificate in tests/data/tls.
-    explicit RangeServer(QByteArray content, bool tls = false) : m_content(std::move(content))
+    explicit RangeServer(QByteArray content, bool tls = false,
+                         const QHostAddress& listenOn = QHostAddress(QHostAddress::LocalHost))
+        : m_content(std::move(content))
     {
         if (tls) {
             auto* sslServer = new QSslServer(this);
@@ -52,7 +55,7 @@ public:
         } else {
             m_server = new QTcpServer(this);
         }
-        m_server->listen(QHostAddress::LocalHost, 0);
+        m_server->listen(listenOn, 0);
         // pendingConnectionAvailable: after the handshake, where there is one
         connect(m_server, &QTcpServer::pendingConnectionAvailable, this, [this] {
             while (QTcpSocket* sock = m_server->nextPendingConnection()) {
@@ -136,6 +139,7 @@ private slots:
     void setUrl_schemesAndUserInfo();
     void fetch_overHttps_data();
     void fetch_overHttps();
+    void fetch_triesTheNextAddressWhenAConnectFails();
 };
 
 // ---------------------------------------------------------------------------
@@ -420,6 +424,58 @@ void tst_URLClient::fetch_overHttps()
         QVERIFY(server.ranges.isEmpty());
         QCOMPARE(client.transferredDown(), uint64{0});
     }
+
+    pf.removeSource(&client);
+    client.setReqFile(nullptr);
+}
+
+// A name with two addresses: the first refuses the connection, the source downloads
+// from the second instead of failing.
+void tst_URLClient::fetch_triesTheNextAddressWhenAConnectFails()
+{
+    const bool savedFilter = thePrefs.filterLANIPs();
+    thePrefs.setFilterLANIPs(false);
+    const QString host = QStringLiteral("two-addresses.test");
+    const auto restore = qScopeGuard([savedFilter, host] {
+        thePrefs.setFilterLANIPs(savedFilter);
+        HostResolver::setTestHost(host, {});
+    });
+
+    QByteArray content(static_cast<qsizetype>(EMBLOCKSIZE + 777), '\0');
+    for (qsizetype i = 0; i < content.size(); ++i)
+        content[i] = static_cast<char>((i * 13 + (i >> 5)) & 0xFF);
+    // ::1 is a peer address only on a lab rig
+    const ScopedLabNetworkMode lab(true);
+    // only on ::1; nothing listens on 127.0.0.1 at that port
+    RangeServer server(content, /*tls*/ false, QHostAddress(QHostAddress::LocalHostIPv6));
+    if (server.port() == 0)
+        QSKIP("no IPv6 loopback");
+    // IPv4 first, as the client asks for
+    HostResolver::setTestHost(host, {Address::fromString(QStringLiteral("::1")),
+                                     Address::fromString(QStringLiteral("127.0.0.1"))});
+
+    eMule::testing::TempDir tmp;
+    const QString incoming = tmp.filePath(QStringLiteral("incoming"));
+    QVERIFY(QDir().mkpath(incoming));
+    const QString savedIncoming = thePrefs.incomingDir();
+    thePrefs.setIncomingDir(incoming);
+    const auto restoreIncoming = qScopeGuard([savedIncoming] { thePrefs.setIncomingDir(savedIncoming); });
+    PartFile pf;
+    pf.setFileName(QStringLiteral("from_the_second_address.bin"));
+    pf.setFileSize(static_cast<uint64>(content.size()));
+    const QByteArray md4 = QCryptographicHash::hash(content, QCryptographicHash::Md4);
+    pf.setFileHash(reinterpret_cast<const uint8*>(md4.constData()));
+    QVERIFY(pf.createPartFile(tmp.path()));
+
+    URLClient client;
+    QVERIFY(client.setUrl(QStringLiteral("http://%1:%2/file").arg(host).arg(server.port())));
+    client.setRequestFile(&pf);
+    pf.addSource(&client);
+    QVERIFY(client.tryToConnect(true));
+
+    QTRY_COMPARE_WITH_TIMEOUT(client.transferredDown(), static_cast<uint64>(content.size()), 10000);
+    QCOMPARE(client.connectAddress(), Address::fromString(QStringLiteral("::1")));
+    QCOMPARE(server.ranges, QList<QByteArray>{"0-" + QByteArray::number(content.size() - 1)});
 
     pf.removeSource(&client);
     client.setReqFile(nullptr);

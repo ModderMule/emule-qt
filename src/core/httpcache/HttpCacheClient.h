@@ -100,6 +100,7 @@ public:
     /// On top of the shared rules: a local address is only dialled in LAN mode for
     /// an offer from a local peer — the same test a literal host gets up front.
     bool acceptResolvedAddress(const Address& addr) override;
+    void connectAttemptDropped() override { m_requestInFlight = false; }
 
 signals:
     /// Emitted exactly once per client, whatever the outcome. The manager sends

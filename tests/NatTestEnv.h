@@ -11,6 +11,7 @@
 
 #include <QByteArray>
 
+#include <map>
 #include <memory>
 #include <optional>
 #include <set>
@@ -51,7 +52,11 @@ public:
     uint8 connectOptions = CONNECT_OPT_CRYPT_SUPPORTED;
     std::optional<Server> server;
     Address sessionAddress;
-    std::vector<Endpoint> foreignNatServers;   // rendezvousServers(), in order
+    /// foreignServer(): servers by "ip:tcpPort"; probe() moves Unknown ones to Pending.
+    std::map<QString, ForeignServer> foreignServers;
+    std::vector<QString> foreignProbes;               // foreignServer(..., probe) that pinged
+    std::vector<QString> foreignKeyRefreshes;
+    bool dialUnlisted = true;
     std::set<QString> banned;
     bool connected = false;
     bool quic = false;                // quicAvailable()
@@ -115,9 +120,36 @@ public:
     [[nodiscard]] bool enabled() const override { return isEnabled; }
     [[nodiscard]] const Server* currentServer() const override { return server ? &*server : nullptr; }
     [[nodiscard]] Address serverSessionAddress() const override { return sessionAddress; }
-    [[nodiscard]] std::vector<Endpoint> rendezvousServers(const PeerInfo&) const override
+    [[nodiscard]] ForeignServer foreignServer(const Address& addr, uint16 port, bool probe) override
     {
-        return foreignNatServers;
+        const QString key = QStringLiteral("%1:%2").arg(addr.toString()).arg(port);
+        if (auto it = foreignServers.find(key); it != foreignServers.end())
+            return it->second;
+        ForeignServer out;
+        out.ipv4 = addr;
+        out.tcpPort = port;
+        // unlisted: one probe, then pending until the test says otherwise
+        if (probe && dialUnlisted) {
+            foreignProbes.push_back(key);
+            out.state = ForeignServer::State::Pending;
+            foreignServers[key] = out;
+        }
+        return out;
+    }
+    void refreshForeignServerKey(const Address& addr, uint16 port) override
+    {
+        foreignKeyRefreshes.push_back(QStringLiteral("%1:%2").arg(addr.toString()).arg(port));
+    }
+    /// A server that answered with flag 0x100000 (listed or probed).
+    void foreignReady(const Address& addr, uint16 port, uint32 key, uint16 obfPort, bool listed = true)
+    {
+        ForeignServer fs;
+        fs.state = ForeignServer::State::Ready;
+        fs.ipv4 = addr;
+        fs.tcpPort = port;
+        fs.crypt = {key, obfPort};
+        fs.listed = listed;
+        foreignServers[QStringLiteral("%1:%2").arg(addr.toString()).arg(port)] = fs;
     }
     [[nodiscard]] bool admit(const Address& addr) const override
     {

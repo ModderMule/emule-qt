@@ -142,8 +142,10 @@ private slots:
 
     // Dead upload slots (recycleDeadSlots)
     void upSlotActivity_tellsIdleFromStalledFromBusy();
+    void upSlotActivity_busyWhileThePeerIsStillReceiving();
     void deadSlot_goesToAWaitingClient();
     void deadSlot_staysWithoutSomeoneToTakeIt();
+    void deadSlot_keptWhileThePeerIsStillReceiving();
     void deadSlot_cooldownDoublesAndKeepsThePeerOutOfTheNextPick();
     void sessionLimit_waitsWhileTheSlotIsProductiveAndTheLineHasRoom();
 
@@ -3020,6 +3022,36 @@ void tst_UploadQueue::upSlotActivity_tellsIdleFromStalledFromBusy()
     QCOMPARE(client->upSlotActivity(UpDownClient::kUpSlotWarmupMs + 1), Activity::Stalled);
 }
 
+// #58: MFC asks for its next block only once the last one is in. A block sitting in our
+// send buffer, not yet taken by the peer, is not an idle slot.
+void tst_UploadQueue::upSlotActivity_busyWhileThePeerIsStillReceiving()
+{
+    QueueRankEnv env;
+    UploadQueue queue;
+    env.wire(queue);
+    GlobalUploadQueue queueGuard(&queue);
+
+    KnownFile* file = env.addNamedFile(0xE8, QStringLiteral("movie.avi"), 10u * 1024 * 1024);
+    auto* client = env.makeClient(84, file);
+    EMSocket* sock = env.connectSocket(client);
+    QVERIFY(sock);
+    QVERIFY(queue.addClientToQueue(client));
+    QCOMPARE(client->uploadState(), UploadState::Uploading);
+
+    using Activity = UpDownClient::UpSlotActivity;
+    QCOMPARE(client->upSlotActivity(0), Activity::Idle);
+
+    // the sink never reads: past both socket buffers, bytes stay unacked
+    const QByteArray chunk(1024 * 1024, 'x');
+    for (int i = 0; i < 32 && sock->sendBacklog() == 0; ++i) {
+        sock->write(chunk);
+        sock->waitForBytesWritten(50);
+    }
+    QVERIFY2(sock->sendBacklog() != 0, "fixture needs unacked bytes");
+    QCOMPARE(client->upSlotActivity(0), Activity::Busy);
+    QCOMPARE(client->upSlotActivity(60'000), Activity::Busy);
+}
+
 void tst_UploadQueue::deadSlot_goesToAWaitingClient()
 {
     SlotGateGuard gates;
@@ -3115,6 +3147,56 @@ void tst_UploadQueue::sessionLimit_waitsWhileTheSlotIsProductiveAndTheLineHasRoo
 
     busy->addQueueSessionPayloadUp((UploadQueue::kSessionStretch - 1) * uint64{SESSIONMAXTRANS});
     QVERIFY2(queue.checkForTimeOver(busy), "the stretch has an end");
+}
+
+// #58: one block, sent into the socket at once, still on its way to the peer. Line has
+// room and someone waits — the slot still stays: the peer cannot ask before it is in.
+void tst_UploadQueue::deadSlot_keptWhileThePeerIsStillReceiving()
+{
+    SlotGateGuard gates;
+    thePrefs.setDynUpEnabled(false);
+    thePrefs.setMaxUpload(100);
+
+    QueueRankEnv env;
+    UploadQueue queue;
+    env.wire(queue);
+    GlobalUploadQueue queueGuard(&queue);
+
+    KnownFile* file = env.addNamedFile(0xE9, QStringLiteral("movie.avi"), 10u * 1024 * 1024);
+    auto* working = env.makeClient(85, file);
+    auto* receiving = env.makeClient(86, file);
+    EMSocket* sock = nullptr;
+    for (auto* c : {working, receiving}) {
+        EMSocket* s = env.connectSocket(c);
+        QVERIFY(s);
+        if (c == receiving)
+            sock = s;
+        QVERIFY(queue.addClientToQueue(c));
+        QCOMPARE(c->uploadState(), UploadState::Uploading);
+    }
+    working->addReqBlock(uploadBlock(file, 0, EMBLOCKSIZE));
+
+    auto* next = env.makeClient(87, file);
+    QVERIFY(env.connectSocket(next));
+    QVERIFY(queue.addClientToQueue(next));
+    QCOMPARE(next->uploadState(), UploadState::OnUploadQueue);
+
+    // the sink never reads: past both socket buffers, bytes stay unacked
+    const QByteArray chunk(1024 * 1024, 'x');
+    for (int i = 0; i < 32 && sock->sendBacklog() == 0; ++i) {
+        sock->write(chunk);
+        sock->waitForBytesWritten(50);
+    }
+    QVERIFY2(sock->sendBacklog() != 0, "fixture needs unacked bytes");
+
+    QSignalSpy ended(&queue, &UploadQueue::uploadEnded);
+    const uint64 t0 = getTickCount();
+    queue.recycleDeadSlots(t0);
+    queue.recycleDeadSlots(t0 + UploadQueue::kDeadSlotMs);
+    queue.recycleDeadSlots(t0 + 60'000);
+    QCOMPARE(ended.count(), 0);
+    QCOMPARE(receiving->uploadState(), UploadState::Uploading);
+    QVERIFY(!queue.isSlotCoolingDown(receiving, t0 + 60'000));
 }
 
 void tst_UploadQueue::deadSlot_staysWithoutSomeoneToTakeIt()

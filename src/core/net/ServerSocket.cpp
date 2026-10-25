@@ -3,6 +3,7 @@
 /// @brief TCP connection to an ED2K server — replaces MFC CServerSocket.
 
 #include "net/ServerSocket.h"
+#include "net/HostResolver.h"
 #include "net/Packet.h"
 #include "app/AppContext.h"
 #include "ipfilter/IPFilter.h"
@@ -68,9 +69,10 @@ ServerSocket::~ServerSocket()
 // ---------------------------------------------------------------------------
 
 void ServerSocket::connectTo(const Server& server, bool noCrypt, const Address& dialAddress,
-                             bool ipv6Switch)
+                             bool ipv6Switch, std::vector<Address> nextAddresses)
 {
     m_curServer = std::make_unique<Server>(server);
+    m_nextAddresses = std::move(nextAddresses);
     m_noCrypt = noCrypt;
     m_ipv6Switch = ipv6Switch && !dialAddress.isNull();
     m_familyFallback = !dialAddress.isNull() && !m_ipv6Switch;
@@ -89,11 +91,14 @@ void ServerSocket::connectTo(const Server& server, bool noCrypt, const Address& 
                                  .arg(m_curServer->dynIP()));
             m_curServer->setIpAddress(literal);
             m_sessionAddress = literal;
+        } else if (!dialAddress.isNull()) {
+            // An address of an earlier lookup: the next one after a failed connect
+            dialResolved(dialAddress);
+            return;
         } else {
             logServerVerbose(QStringLiteral("connectTo: resolving dynIP hostname '%1' for server %2")
                                  .arg(m_curServer->dynIP()).arg(m_curServer->name()));
-            m_dnsTriedFallback = false;
-            startDnsLookup(QDnsLookup::A);
+            startDnsLookup();
             return;
         }
     }
@@ -836,56 +841,33 @@ void ServerSocket::onSocketError(QAbstractSocket::SocketError error)
              failureFor(m_connectionState, m_tcpConnected, socketError));
 }
 
-void ServerSocket::startDnsLookup(QDnsLookup::Type type)
+void ServerSocket::startDnsLookup()
 {
-    // Never destroy the old QDnsLookup from inside its own finished handler.
-    if (m_dnsLookup) {
-        m_dnsLookup->disconnect(this);
-        m_dnsLookup.release()->deleteLater();
-    }
-
-    m_dnsLookup = std::make_unique<QDnsLookup>(type, m_curServer->dynIP(), this);
-    connect(m_dnsLookup.get(), &QDnsLookup::finished, this, &ServerSocket::onDnsLookupFinished);
-    m_dnsLookup->lookup();
+    // QHostInfo through the shared resolver: A and AAAA in one query, the hosts file
+    // honoured. IPv4 leads because a server reached over IPv6 without a routable IPv4
+    // hands out a LowID unconditionally; an AAAA-only name still works.
+    if (!m_resolver)
+        m_resolver = new HostResolver(this);
+    m_resolver->resolve(m_curServer->dynIP(), HostResolver::Preference::PreferIPv4, this,
+        [this](const HostResolver::Result& result) {
+            if (!m_curServer)
+                return;
+            if (!result.ok()) {
+                logWarning(QStringLiteral("DNS lookup failed for %1: %2")
+                               .arg(m_curServer->dynIP(), result.errorString));
+                // Not the server's failure (it may be our resolver): move on, count nothing.
+                failWith(ServerConnState::Error,
+                         {ServerFailure::Phase::Resolve, ServerFailure::Reason::DnsResolution});
+                return;
+            }
+            // the rest is dialled in turn when a connect fails (ServerConnect)
+            m_nextAddresses.assign(result.addresses.begin() + 1, result.addresses.end());
+            dialResolved(result.first());
+        });
 }
 
-void ServerSocket::onDnsLookupFinished()
+void ServerSocket::dialResolved(const Address& resolved)
 {
-    if (!m_dnsLookup || !m_curServer)
-        return;
-
-    const bool failed = m_dnsLookup->error() != QDnsLookup::NoError
-                        || m_dnsLookup->hostAddressRecords().isEmpty();
-    if (failed) {
-        // Try the other family once. This is what makes an AAAA-only server hostname
-        // reachable; the default order is A first because a server reached over IPv6
-        // with no routable IPv4 hands out a LowID unconditionally.
-        if (!m_dnsTriedFallback) {
-            m_dnsTriedFallback = true;
-            const auto next = (m_dnsLookup->type() == QDnsLookup::A) ? QDnsLookup::AAAA
-                                                                     : QDnsLookup::A;
-            logServerVerbose(QStringLiteral("DNS %1 lookup for %2 found nothing — trying %3")
-                                 .arg(m_dnsLookup->type() == QDnsLookup::A
-                                          ? QStringLiteral("A") : QStringLiteral("AAAA"))
-                                 .arg(m_curServer->dynIP())
-                                 .arg(next == QDnsLookup::A
-                                          ? QStringLiteral("A") : QStringLiteral("AAAA")));
-            startDnsLookup(next);
-            return;
-        }
-
-        logWarning(QStringLiteral("DNS lookup failed for %1: %2")
-                       .arg(m_curServer->dynIP())
-                       .arg(m_dnsLookup->errorString()));
-        // Not the server's failure (it may be our resolver): move on, count nothing.
-        failWith(ServerConnState::Error,
-                 {ServerFailure::Phase::Resolve, ServerFailure::Reason::DnsResolution});
-        return;
-    }
-
-    const QHostAddress addr = m_dnsLookup->hostAddressRecords().first().value();
-    const Address resolved = Address::fromQHostAddress(addr);   // either family
-
     // A dynIP server skipped the addServer filter; check the resolved IP now and have
     // the list entry deleted. MFC: CServerSocket::OnHostnameResolved() — ServerSocket.cpp:91.
     if (ServerList::isFilteredServerIP(resolved, u"TCP/DNSResolve", m_curServer->dynIP())) {
@@ -907,6 +889,8 @@ void ServerSocket::onDnsLookupFinished()
         port = m_curServer->obfuscationPortTCP();
     }
 
+    logInfo(QStringLiteral("Connecting to server %1 (%2), resolved from %3")
+                .arg(m_curServer->name(), Endpoint(resolved, port).toString(), m_curServer->dynIP()));
     connectToPeer(resolved, port);
 }
 

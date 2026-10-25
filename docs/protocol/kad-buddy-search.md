@@ -8,7 +8,10 @@ that statement and the two changes eMuleQt makes to the search.
 
 1. The firewalled node runs a Kad lookup (`SearchType::FindBuddy`) and sends
    `KADEMLIA_FINDBUDDY_REQ` (0x51) to the nodes that answer the lookup. The packet carries
-   a BuddyID (`~KadID`), the client hash and the TCP port.
+   a BuddyID (`~KadID`), the client hash and the TCP port. We append one more byte, our
+   connect options, as eMuleAI does. Stock nodes read 34 bytes and ignore it. eMuleAI
+   serves its first buddy to anyone but further ones only when a NAT-T bit is set there.
+   We read 34 bytes and ignore it too, so our multi-buddy slots stay first come.
 2. A node offers itself with `KADEMLIA_FINDBUDDY_RES` (0x5A) only if all of these hold
    (`KademliaUDPListener.cpp` in stock eMule, `process_KADEMLIA_FINDBUDDY_REQ` here):
    - it is not TCP-firewalled;

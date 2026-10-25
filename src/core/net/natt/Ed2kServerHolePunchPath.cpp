@@ -34,9 +34,14 @@ bool Ed2kServerHolePunchPath::request(Attempt& attempt)
 void Ed2kServerHolePunchPath::repeat(Attempt& attempt)
 {
     // Woken by 0x37 and no 0x61 followed: it came from a plain 0xA6 (Lugdunum-only
-    // requester), so answer it Lugdunum's way with the reciprocal 0xA6.
+    // requester), so answer it Lugdunum's way with the reciprocal 0xA6. A foreign
+    // requester (ID 0) has no ID to name: its server sends it our endpoint, we punch on.
     if (attempt.role == Role::Target && attempt.awaitingInfo && env().now() >= attempt.infoDeadlineMs) {
         attempt.awaitingInfo = false;
+        if (attempt.foreignWake) {
+            log(QStringLiteral("#%1: no 0x61 after a foreign 0x37, punching on").arg(attempt.id));
+            return;
+        }
         if (NatPath* lugdunum = hub().path(PathKind::Lugdunum)) {
             log(QStringLiteral("#%1: no 0x61 after 0x37, answering with 0xA6").arg(attempt.id));
             attempt.path = PathKind::Lugdunum;
@@ -100,7 +105,7 @@ bool Ed2kServerHolePunchPath::fastTick()
     for (Attempt* a : pending) {
         const uint64 due = a->burstStartMs + (kBurstCount - a->burstLeft) * kBurstStepMs;
         if (now >= due) {
-            sendKeepalive(*server);
+            sendKeepalive(*server, a->foreignWake);
             --a->burstLeft;
         }
         more = more || a->burstLeft > 0;
@@ -108,16 +113,17 @@ bool Ed2kServerHolePunchPath::fastTick()
     return more;
 }
 
-bool Ed2kServerHolePunchPath::sendKeepalive(const Server& server)
+bool Ed2kServerHolePunchPath::sendKeepalive(const Server& server, bool obfuscatedOnly)
 {
     m_lastKeepaliveMs = env().now();
     // From the client UDP socket. Extension servers take it server-key obfuscated
-    // (IPv4 only); the others get it plain, to the server's UDP port (TCP + 4).
+    // (IPv4 only); the others get it plain, to the server's UDP port (TCP + 4). The
+    // burst after a foreign 0x37 goes obfuscated only: the key proves our address.
     const Address address = env().serverSessionAddress();
     const ServerUdpCrypt crypt = env().serverUdpCrypt();
-    const bool obfuscate = server.supportsHolePunchExtension() && address.isIPv4() && crypt.key != 0
-        && crypt.port != 0 && (env().ourConnectOptions() & CONNECT_OPT_CRYPT_SUPPORTED);
-    if (!obfuscate && m_sentObfuscated) {
+    const bool obfuscate = (server.supportsHolePunchExtension() || obfuscatedOnly) && address.isIPv4()
+        && crypt.key != 0 && crypt.port != 0 && (env().ourConnectOptions() & CONNECT_OPT_CRYPT_SUPPORTED);
+    if (!obfuscate && (m_sentObfuscated || obfuscatedOnly)) {
         // The server ignores plain ones now; they would not refresh our port.
         env().refreshServerKey();
         log(QStringLiteral("0x9F skipped: no server key"));
@@ -153,8 +159,10 @@ bool Ed2kServerHolePunchPath::handleServerTcp(uint8 opcode, const QByteArray& pa
         onFail(data, size);
         return true;
     }
-    // Ahead of LugdunumNatPath: on an extension server a 0x37 is our wake-up call.
-    if (opcode == OP_NAT_CALLBACKREQUESTED && extensionActive()) {
+    // Ahead of LugdunumNatPath: on an extension server a 0x37 is our wake-up call, and
+    // so is one naming requester ID 0 (foreign callback) on any server.
+    if (opcode == OP_NAT_CALLBACKREQUESTED
+        && (extensionActive() || (size >= LugdunumNatPath::kNoticeSize && peekUInt32(data + 6) == 0))) {
         onCallbackNotice(data, size);
         return true;
     }
@@ -207,9 +215,11 @@ void Ed2kServerHolePunchPath::onInfo(const uint8* data, uint32 size)
     };
 
     // Woken by 0x37 (extension): the 0x61 that releases us names the requester's ID.
+    // A foreign requester's 0x37 had none: match its address.
     if (Attempt* woken = hub().findAttempt([&](const Attempt& a) {
             return a.path == kind() && a.role == Role::Target && a.awaitingInfo
-                && ((peerID != 0 && a.peer.clientID == peerID) || (a.peer.hashKnown && a.peer.hash == hash));
+                && ((peerID != 0 && a.peer.clientID == peerID) || (a.peer.hashKnown && a.peer.hash == hash)
+                    || (a.foreignWake && a.peerUdp.address() == udp.address()));
         })) {
         apply(*woken);
         return;
@@ -262,19 +272,34 @@ void Ed2kServerHolePunchPath::onCallbackNotice(const uint8* data, uint32 size)
         log(QStringLiteral("short 0x37 (%1 bytes)").arg(size));
         return;
     }
-    if (n->peer.clientID == ourID())
+    PeerInfo peer = n->peer;
+    const bool foreign = peer.clientID == 0;
+    if (!foreign && peer.clientID == ourID())
         return;
     log(QStringLiteral("0x37: id %1 at %2 flags 0x%3")
-            .arg(n->peer.clientID).arg(n->udp.toString()).arg(n->flags, 2, 16, QLatin1Char('0')));
-    if (!cryptCompatible(env().ourConnectOptions(), n->peer.cryptOptions)) {
+            .arg(peer.clientID).arg(n->udp.toString()).arg(n->flags, 2, 16, QLatin1Char('0')));
+    if (foreign) {
+        // Logged in elsewhere: no hash, and crypt bits only when it sent them.
+        peer.kadEndpoint = n->udp;   // keys the attempt by address (NatRendezvous::peerKey)
+        peer.cryptKnown = (n->flags & 0x07) != 0;
+        // The requester re-sends its 0xA6: a repeat 0x37 only refreshes the port.
+        if (Attempt* same = hub().findAttempt([&](const Attempt& x) {
+                return x.foreignWake && x.peerUdp.address() == n->udp.address();
+            })) {
+            hub().endpointKnown(*same, n->udp);
+            return;
+        }
+    }
+    if (peer.cryptKnown && !cryptCompatible(env().ourConnectOptions(), peer.cryptOptions)) {
         log(QStringLiteral("0x37 dropped: crypt mismatch"));
         return;
     }
-    const bool known = hub().findForPeer(n->peer) != nullptr;
+    const bool known = !foreign && hub().findForPeer(peer) != nullptr;
     // Punching starts at once, towards the requester's freshest port.
-    Attempt* a = hub().acceptNotice(kind(), n->peer, n->udp, 0);
+    Attempt* a = hub().acceptNotice(kind(), peer, n->udp, 0);
     if (!a || known || a->role != Role::Target)
         return;
+    a->foreignWake = foreign;
     // 0x9F at 0, 0.5 and 1 s releases the 0x61 with our fresh port; dial only as it says.
     a->awaitingInfo = true;
     a->infoDeadlineMs = env().now() + kInfoWaitMs;

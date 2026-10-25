@@ -286,8 +286,9 @@ void UDPSocket::onReadyRead()
         // enabled and one of those keys applies, and only accept the result if it
         // decodes to a real ED2K packet — otherwise drop, never re-parse ciphertext
         // as plaintext. MFC: CUDPSocket::OnReceive() — UDPSocket.cpp:159-181.
+        // Unlisted servers too: their probe is a crypt ping (foreign NAT callback).
         Server* srv = theApp.serverList
-                          ? theApp.serverList->findByIPUdp(sender.address(), sender.port())
+                          ? theApp.serverList->findStatServer(sender.address(), sender.port())
                           : nullptr;
         const bool cryptPending = srv && srv->cryptPingReplyPending() && srv->challenge() != 0;
         const bool tryDecrypt = srv && thePrefs.cryptLayerSupported()

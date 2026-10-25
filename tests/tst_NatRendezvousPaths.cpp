@@ -6,7 +6,9 @@
 #include "app/AppContext.h"
 #include "crypto/MD5Hash.h"
 #include "net/EncryptedDatagramSocket.h"
+#include "net/natt/Ed2kServerHolePunchPath.h"
 #include "net/natt/EnodeNatPath.h"
+#include "net/natt/ForeignCallbackPath.h"
 #include "net/natt/KadBuddyNatPath.h"
 #include "utils/OtherFunctions.h"
 
@@ -161,13 +163,20 @@ private slots:
     void prnat_register_backsOffWhenRefused();
     void prnat_ipv6Session_registersIPv4Too();
 
-    // eNode-go PR_NAT, cross-server sweep
-    void prnat_sweep_ownServerFirstThenOthers();
-    void prnat_sweep_noAnswerMovesOn();
-    void prnat_sweep_noPairNotRepeated();
-    void prnat_sweep_pairedServerFirstNextTime();
-    void prnat_sweep_knownServerOnly();
-    void prnat_sweep_oneServerRule();
+    // eNode-go PR_NAT, same server only
+    void prnat_peerElsewhere_notServed();
+    void prnat_otherServer_notHeard();
+
+    // Foreign callback (ed2k-server#40)
+    void foreign_requestToPeersServer();
+    void foreign_notLoggedInAnywhere();
+    void foreign_unlistedProbedOnce();
+    void foreign_unlistedOff();
+    void foreign_waitsForKey();
+    void foreign_answerOnlyFromThatServer();
+    void foreign_noFlagFails();
+    void foreign_target_noReciprocalRequest();
+    void foreign_target_requestersKeptApart();
 
     // Kad buddy
     void kad_requestEnvelopeAndPunches();
@@ -634,14 +643,13 @@ void tst_NatRendezvousPaths::prnat_wake_requesterRegistersOtherFamily()
 }
 
 // ---------------------------------------------------------------------------
-// eNode-go PR_NAT, cross-server sweep
+// eNode-go PR_NAT, same server only
 // ---------------------------------------------------------------------------
 
 namespace {
 
 const Endpoint kOwnNat(kServerIP, EnodeNatPath::kDefaultPort);
 const Endpoint kForeignA(Address::fromString(QStringLiteral("203.0.113.10")), 4665);
-const Endpoint kForeignB(Address::fromString(QStringLiteral("203.0.113.11")), 4665);
 
 /// A LowID with a known hash and no server, as a Kad source.
 PeerInfo peerElsewhere(const HubFixture& f, uint32 id)
@@ -869,123 +877,236 @@ void tst_NatRendezvousPaths::prnat_ipv6Session_registersIPv4Too()
     QCOMPARE(to, (std::vector<Endpoint>{kOwnNat, Endpoint(serverV6, EnodeNatPath::kDefaultPort)}));
 }
 
-void tst_NatRendezvousPaths::prnat_sweep_ownServerFirstThenOthers()
+void tst_NatRendezvousPaths::prnat_peerElsewhere_notServed()
 {
+    // A peer on another server, or a Kad source without one: the server pairs only its
+    // own clients (ed2k-server#40), so PR_NAT does not serve it.
     HubFixture f;
     f.env->logIn(kServerIP, kServerPort, SrvTcpFlag::NatRendezvous);
-    f.env->foreignNatServers = {kForeignA, kForeignB};
-    const PeerInfo peer = peerElsewhere(f, 77);
-    QVERIFY(f.hub->mayKeepLowIdSource(peer));
-    QVERIFY(f.hub->start(peer));
-    QCOMPARE(f.hub->attempts().front()->path, PathKind::EnodeNat);
-    QCOMPARE(sync2Targets(f), (std::vector<Endpoint>{kOwnNat}));
-
-    QVERIFY(natFailedFrom(f, kOwnNat, peer));
-    QCOMPARE(sync2Targets(f), (std::vector<Endpoint>{kOwnNat, kForeignA}));
-    QVERIFY(natFailedFrom(f, kOwnNat, peer));               // late answer: no step
-    QCOMPARE(sync2Targets(f).size(), size_t{2});
-    QVERIFY(natFailedFrom(f, kForeignA, peer));
-    QCOMPARE(sync2Targets(f), (std::vector<Endpoint>{kOwnNat, kForeignA, kForeignB}));
-
-    QVERIFY(natSyncFrom(f, kForeignB, peer.hash));
-    const Attempt* a = f.hub->attempts().front();
-    QCOMPARE(a->state, Attempt::State::Punching);
-    QCOMPARE(a->peerUdp, Endpoint(kPeerIP, kPeerUdp));
+    QVERIFY(!f.hub->path(PathKind::EnodeNat)->canServe(peerElsewhere(f, 77)));
+    PeerInfo other = f.peerOnServer(77);
+    other.serverAddress = kForeignA.address();
+    QVERIFY(!f.hub->path(PathKind::EnodeNat)->canServe(other));
+    QVERIFY(f.hub->path(PathKind::EnodeNat)->canServe(f.peerOnServer(77)));
+    QVERIFY(!f.hub->start(peerElsewhere(f, 77)));
+    QVERIFY(sync2Targets(f).empty());
 }
 
-void tst_NatRendezvousPaths::prnat_sweep_noAnswerMovesOn()
+void tst_NatRendezvousPaths::prnat_otherServer_notHeard()
 {
     HubFixture f;
     f.env->logIn(kServerIP, kServerPort, SrvTcpFlag::NatRendezvous);
-    f.env->foreignNatServers = {kForeignA};
-    const PeerInfo peer = peerElsewhere(f, 77);
-    QVERIFY(f.hub->start(peer));
-    f.advance(EnodeNatPath::kSweepStepMs);                  // second SYNC2 to the same server
-    QCOMPARE(sync2Targets(f), (std::vector<Endpoint>{kOwnNat, kOwnNat}));
-    f.advance(EnodeNatPath::kSweepStepMs);                  // still nothing: next server
-    QCOMPARE(sync2Targets(f), (std::vector<Endpoint>{kOwnNat, kOwnNat, kForeignA}));
-}
-
-void tst_NatRendezvousPaths::prnat_sweep_noPairNotRepeated()
-{
-    HubFixture f;
-    f.env->logIn(kServerIP, kServerPort, SrvTcpFlag::NatRendezvous);
-    f.env->foreignNatServers = {kForeignA};
-    const PeerInfo peer = peerElsewhere(f, 77);
-    QVERIFY(f.hub->start(peer));
-    QVERIFY(natFailedFrom(f, kOwnNat, peer));
-    QVERIFY(natFailedFrom(f, kForeignA, peer));
-    QCOMPARE(f.env->failed.size(), size_t{1});              // no other path: the attempt ends
-    // not on a capable server: no sweep on later re-asks
-    QVERIFY(!f.hub->path(PathKind::EnodeNat)->canServe(peer));
-    QVERIFY(!f.hub->start(peer));
-    QCOMPARE(sync2Targets(f).size(), size_t{2});
-    // other peers are still swept
-    QVERIFY(f.hub->path(PathKind::EnodeNat)->canServe(peerElsewhere(f, 78)));
-}
-
-void tst_NatRendezvousPaths::prnat_sweep_pairedServerFirstNextTime()
-{
-    HubFixture f;
-    f.env->logIn(kServerIP, kServerPort, SrvTcpFlag::NatRendezvous);
-    f.env->foreignNatServers = {kForeignA, kForeignB};
-    const PeerInfo peer = peerElsewhere(f, 77);
-    QVERIFY(f.hub->start(peer));
-    QVERIFY(natFailedFrom(f, kOwnNat, peer));
-    QVERIFY(natFailedFrom(f, kForeignA, peer));
-    QVERIFY(natSyncFrom(f, kForeignB, peer.hash));
-    f.env->connected = true;
-    f.advance(1000);
-    QVERIFY(f.hub->attempts().empty());
-    f.env->connected = false;
-
-    // next time: own server, then the one that paired it
-    QVERIFY(f.hub->start(peer));
-    QVERIFY(natFailedFrom(f, kOwnNat, peer));
-    const auto targets = sync2Targets(f);
-    QCOMPARE(targets.back(), kForeignB);
-}
-
-void tst_NatRendezvousPaths::prnat_sweep_knownServerOnly()
-{
-    // A server source from elsewhere: registered on its server or nowhere.
-    HubFixture f;
-    f.env->logIn(kServerIP, kServerPort, SrvTcpFlag::NatRendezvous);
-    PeerInfo peer = f.peerOnServer(77);
-    peer.serverAddress = kForeignA.address();
-    peer.serverPort = 4661;
-    QVERIFY(!f.hub->mayKeepLowIdSource(peer));              // its server pairs nobody
-    f.env->foreignNatServers = {kForeignA};                 // env returns just that one
-    QVERIFY(f.hub->mayKeepLowIdSource(peer));
-    QVERIFY(f.hub->start(peer));
-    QVERIFY(natFailedFrom(f, kOwnNat, peer));
-    QCOMPARE(sync2Targets(f), (std::vector<Endpoint>{kOwnNat, kForeignA}));
-    // without a hash there is nothing to sweep for
-    peer.hashKnown = false;
-    QVERIFY(!f.hub->path(PathKind::EnodeNat)->canServe(peer));
-}
-
-void tst_NatRendezvousPaths::prnat_sweep_oneServerRule()
-{
-    HubFixture f;
-    f.env->logIn(kServerIP, kServerPort, SrvTcpFlag::NatRendezvous);
-    f.env->foreignNatServers = {kForeignA, kForeignB};
     for (int i = 0; i < 5; ++i)
         f.advance(EnodeNatPath::kRegisterMs);
     for (const auto& r : f.env->raw())
         QCOMPARE(r.to, kOwnNat);                            // we register only where logged in
-
-    // a sweep server introduces nobody to us as a target
-    const PeerInfo peer = peerElsewhere(f, 77);
+    const PeerInfo peer = f.peerOnServer(77);
     QVERIFY(f.hub->start(peer));
-    QVERIFY(natFailedFrom(f, kOwnNat, peer));               // now at A
-    Hash16 other{};
-    other.fill(0x64);
-    QVERIFY(natSyncFrom(f, kForeignA, other));              // consumed, ignored
+    QVERIFY(!natSyncFrom(f, kForeignA, peer.hash));         // not our server: not read
+    QCOMPARE(f.hub->attempts().front()->state, Attempt::State::Requested);
+    QVERIFY(natSyncFrom(f, kOwnNat, peer.hash));
+    QCOMPARE(f.hub->attempts().front()->state, Attempt::State::Punching);
+}
+
+// ---------------------------------------------------------------------------
+// Foreign callback
+// ---------------------------------------------------------------------------
+
+namespace {
+
+const Address kForeignIP = Address::fromString(QStringLiteral("203.0.113.10"));
+constexpr uint16 kForeignPort = 4661;
+constexpr uint16 kForeignObf = 4675;
+constexpr uint32 kForeignKey = 0xCAFEBABE;
+
+/// A LowID logged in to the foreign server.
+PeerInfo peerOnForeign(uint32 id)
+{
+    PeerInfo p;
+    p.clientID = id;
+    p.serverAddress = kForeignIP;
+    p.serverPort = kForeignPort;
+    p.hash.fill(0x5A);
+    p.hashKnown = true;
+    return p;
+}
+
+} // namespace
+
+void tst_NatRendezvousPaths::foreign_requestToPeersServer()
+{
+    HubFixture f;
+    logInLugdunum(f);
+    f.env->connectOptions = CONNECT_OPT_CRYPT_SUPPORTED | CONNECT_OPT_CRYPT_REQUESTED;
+    f.env->foreignReady(kForeignIP, kForeignPort, kForeignKey, kForeignObf);
+    const PeerInfo peer = peerOnForeign(77);
+    QVERIFY(f.hub->start(peer));
+    QCOMPARE(f.hub->attempts().front()->path, PathKind::ForeignCallback);
+    const auto req = f.env->udpWith(OP_EDONKEYPROT, OP_NAT_CALLBACKREQUEST);
+    QCOMPARE(req.size(), size_t{1});
+    QCOMPARE(req[0].to, Endpoint(kForeignIP, kForeignObf));
+    QCOMPARE(req[0].serverKey, kForeignKey);
+    QCOMPARE(req[0].payload.size(), qsizetype{9});
+    QCOMPARE(peekUInt32(bytes(req[0].payload)), 77u);
+    QCOMPARE(peekUInt32(bytes(req[0].payload) + 4), 0u);   // we are not logged in there
+    QCOMPARE(uint8(req[0].payload[8]), uint8{CONNECT_OPT_CRYPT_SUPPORTED | CONNECT_OPT_CRYPT_REQUESTED});
+
+    // re-sent every 5 s, 3 times in all
+    for (int i = 0; i < 4; ++i)
+        f.advance(LugdunumNatPath::kRepeatMs);
+    QCOMPARE(f.env->udpWith(OP_EDONKEYPROT, OP_NAT_CALLBACKREQUEST).size(),
+             size_t{ForeignCallbackPath::kMaxForeignRequests});
+
+    // a peer on our own server is Lugdunum's, an even LowID nobody's
+    QVERIFY(!f.hub->path(PathKind::ForeignCallback)->canServe(f.peerOnServer(79)));
+    QVERIFY(!f.hub->path(PathKind::ForeignCallback)->canServe(peerOnForeign(78)));
+}
+
+void tst_NatRendezvousPaths::foreign_notLoggedInAnywhere()
+{
+    // Kad-only: no server login of ours, the source's server still introduces us
+    HubFixture f;
+    f.env->foreignReady(kForeignIP, kForeignPort, kForeignKey, kForeignObf);
+    QVERIFY(f.hub->start(peerOnForeign(77)));
+    const auto req = f.env->udpWith(OP_EDONKEYPROT, OP_NAT_CALLBACKREQUEST);
+    QCOMPARE(req.size(), size_t{1});
+    QCOMPARE(peekUInt32(bytes(req[0].payload) + 4), 0u);
+}
+
+void tst_NatRendezvousPaths::foreign_unlistedProbedOnce()
+{
+    HubFixture f;
+    logInLugdunum(f);
+    const PeerInfo peer = peerOnForeign(77);
+    QVERIFY(f.hub->mayKeepLowIdSource(peer));                // probe out: kept meanwhile
+    QVERIFY(f.hub->mayKeepLowIdSource(peer));
+    QCOMPARE(f.env->foreignProbes.size(), size_t{1});        // one ping per address
+    QVERIFY(f.hub->start(peer));
+    QVERIFY(f.env->udpWith(OP_EDONKEYPROT, OP_NAT_CALLBACKREQUEST).empty());   // waits for the answer
+    f.env->foreignReady(kForeignIP, kForeignPort, kForeignKey, kForeignObf, false);
+    f.advance(LugdunumNatPath::kRepeatMs);
+    QCOMPARE(f.env->udpWith(OP_EDONKEYPROT, OP_NAT_CALLBACKREQUEST).size(), size_t{1});
+    QCOMPARE(f.env->foreignProbes.size(), size_t{1});
+}
+
+void tst_NatRendezvousPaths::foreign_unlistedOff()
+{
+    HubFixture f;
+    logInLugdunum(f);
+    f.env->dialUnlisted = false;
+    QVERIFY(!f.hub->mayKeepLowIdSource(peerOnForeign(77)));
+    QVERIFY(f.env->foreignProbes.empty());
+    // a listed server with the flag still works
+    f.env->foreignReady(kForeignIP, kForeignPort, kForeignKey, kForeignObf);
+    QVERIFY(f.hub->mayKeepLowIdSource(peerOnForeign(77)));
+}
+
+void tst_NatRendezvousPaths::foreign_waitsForKey()
+{
+    HubFixture f;
+    logInLugdunum(f);
+    f.env->foreignReady(kForeignIP, kForeignPort, 0, kForeignObf);
+    QVERIFY(f.hub->start(peerOnForeign(77)));
+    QVERIFY(f.env->udpWith(OP_EDONKEYPROT, OP_NAT_CALLBACKREQUEST).empty());   // never plain
+    QCOMPARE(f.env->foreignKeyRefreshes.size(), size_t{1});
+    QCOMPARE(f.env->keyRefreshes, 0);                         // not our own server's key
+    f.env->foreignReady(kForeignIP, kForeignPort, kForeignKey, kForeignObf);
+    f.advance(LugdunumNatPath::kRepeatMs);
+    QCOMPARE(f.env->udpWith(OP_EDONKEYPROT, OP_NAT_CALLBACKREQUEST).size(), size_t{1});
+}
+
+void tst_NatRendezvousPaths::foreign_answerOnlyFromThatServer()
+{
+    HubFixture f;
+    logInLugdunum(f);
+    f.env->foreignReady(kForeignIP, kForeignPort, kForeignKey, kForeignObf);
+    QVERIFY(f.hub->start(peerOnForeign(77)));
+    const QByteArray plain = serverDatagram(OP_NAT_CALLBACKREQUESTED_UDP,
+                                            notice(kPeerIP, kPeerUdp, 77, CONNECT_OPT_CRYPT_SUPPORTED));
+    // plaintext, or from another address: not ours
+    QVERIFY(!f.hub->handleServerDatagram(Endpoint(kForeignIP, kForeignPort + 4), bytes(plain), plain.size()));
+    const QByteArray enc = encryptForServer(plain, kForeignKey);
+    const Endpoint stranger(Address::fromString(QStringLiteral("203.0.113.99")), kForeignPort + 4);
+    QVERIFY(!f.hub->handleServerDatagram(stranger, bytes(enc), enc.size()));
+    QCOMPARE(f.hub->attempts().front()->state, Attempt::State::Requested);
+    // the server we asked, with its key
+    QVERIFY(f.hub->handleServerDatagram(Endpoint(kForeignIP, kForeignPort + 4), bytes(enc), enc.size()));
+    const Attempt* a = f.hub->attempts().front();
+    QCOMPARE(a->state, Attempt::State::Punching);
+    QCOMPARE(a->peerUdp, Endpoint(kPeerIP, kPeerUdp));
+    QVERIFY(a->peer.cryptKnown);
+}
+
+void tst_NatRendezvousPaths::foreign_noFlagFails()
+{
+    HubFixture f;
+    logInLugdunum(f);
+    QVERIFY(f.hub->start(peerOnForeign(77)));                // unlisted, probe out
+    ForeignServer no;
+    no.state = ForeignServer::State::No;
+    f.env->foreignServers[QStringLiteral("%1:%2").arg(kForeignIP.toString()).arg(kForeignPort)] = no;
+    f.advance(1000);
+    QCOMPARE(f.env->failed.size(), size_t{1});
+    QVERIFY(f.env->udpWith(OP_EDONKEYPROT, OP_NAT_CALLBACKREQUEST).empty());
+    QVERIFY(!f.hub->mayKeepLowIdSource(peerOnForeign(77)));
+}
+
+void tst_NatRendezvousPaths::foreign_target_noReciprocalRequest()
+{
+    // Our Lugdunum-style server wakes us for a requester logged in elsewhere (ID 0).
+    HubFixture f;
+    logInLugdunum(f);
+    QVERIFY(f.hub->handleServerTcp(OP_NAT_CALLBACKREQUESTED, notice(kPeerIP, kPeerUdp, 0, 0)));
+    auto list = f.hub->attempts();
+    QCOMPARE(list.size(), size_t{1});
+    QCOMPARE(list[0]->role, Role::Target);
+    QVERIFY(list[0]->foreignWake);
+    QVERIFY(!list[0]->peer.cryptKnown);                      // flags 0: not sent
+    QCOMPARE(f.env->udpWith(OP_EMULEPROT, OP_HOLEPUNCH).size(), size_t{1});
+    // 0x9F burst, obfuscated with our server's key, so it passes our port on
+    for (int i = 0; i < 3; ++i) {
+        f.env->clock += Ed2kServerHolePunchPath::kBurstStepMs;
+        f.hub->processFast();
+    }
+    const auto ka = f.env->udpWith(OP_EDONKEYPROT, OP_SERVER_NATT_KEEPALIVE);
+    QCOMPARE(ka.size(), size_t{3});
+    for (const auto& k : ka) {
+        QCOMPARE(k.serverKey, kServerKey);
+        QCOMPARE(k.to, Endpoint(kServerIP, kObfPort));
+        QVERIFY(k.payload == hashBytes(f.env->hash));
+    }
+    // and no 0xA6 naming ID 0, ever
+    for (int i = 0; i < 10; ++i)
+        f.advance(1000);
+    QVERIFY(f.env->udpWith(OP_EDONKEYPROT, OP_NAT_CALLBACKREQUEST).empty());
+    // a repeat 0x37 from the same requester joins the attempt
+    QVERIFY(f.hub->handleServerTcp(OP_NAT_CALLBACKREQUESTED, notice(kPeerIP, kPeerUdp + 1, 0, 0)));
     QCOMPARE(f.hub->attempts().size(), size_t{1});
-    // and a server outside the sweep is not listened to at all
-    const Endpoint notSwept(Address::fromString(QStringLiteral("203.0.113.99")), 4665);
-    QVERIFY(!natSyncFrom(f, notSwept, peer.hash));
+}
+
+void tst_NatRendezvousPaths::foreign_target_requestersKeptApart()
+{
+    HubFixture f;
+    logInLugdunum(f);
+    const Address other = Address::fromString(QStringLiteral("8.8.8.8"));
+    PeerInfo a;
+    a.kadEndpoint = Endpoint(kPeerIP, kPeerUdp);
+    PeerInfo b;
+    b.kadEndpoint = Endpoint(other, kPeerUdp);
+    QVERIFY(NatRendezvous::peerKey(a) != NatRendezvous::peerKey(b));
+
+    // one fails: the other is still let in
+    f.env->banned.insert(kPeerIP.toString());
+    QVERIFY(f.hub->handleServerTcp(OP_NAT_CALLBACKREQUESTED, notice(kPeerIP, kPeerUdp, 0, 0)));
+    QVERIFY(f.hub->attempts().empty());
+    QVERIFY(f.hub->handleServerTcp(OP_NAT_CALLBACKREQUESTED, notice(other, kPeerUdp, 0, 0)));
+    QCOMPARE(f.hub->attempts().size(), size_t{1});
+    // and even when we require obfuscation, unknown crypt bits are no mismatch
+    HubFixture g;
+    logInLugdunum(g);
+    g.env->connectOptions = CONNECT_OPT_CRYPT_SUPPORTED | CONNECT_OPT_CRYPT_REQUESTED | CONNECT_OPT_CRYPT_REQUIRED;
+    QVERIFY(g.hub->handleServerTcp(OP_NAT_CALLBACKREQUESTED, notice(kPeerIP, kPeerUdp, 0, 0)));
+    QCOMPARE(g.hub->attempts().size(), size_t{1});
 }
 
 // ---------------------------------------------------------------------------

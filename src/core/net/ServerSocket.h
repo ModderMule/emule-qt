@@ -11,13 +11,13 @@
 #include "net/Address.h"
 #include "server/ServerFailure.h"
 
-#include <QDnsLookup>
-
 #include <memory>
 #include <optional>
+#include <vector>
 
 namespace eMule {
 
+class HostResolver;
 class Server;
 
 // ---------------------------------------------------------------------------
@@ -62,8 +62,14 @@ public:
     ///        fallback); null = the server's preferred-family address.
     /// @param ipv6Switch @p dialAddress is the IPv6 dialed because IPv4 gave a LowID,
     ///        not a retry after a failure.
+    /// @param nextAddresses The addresses of a dynIP name not dialled yet, after
+    ///        @p dialAddress (which then needs no lookup).
     void connectTo(const Server& server, bool noCrypt = false, const Address& dialAddress = {},
-                   bool ipv6Switch = false);
+                   bool ipv6Switch = false, std::vector<Address> nextAddresses = {});
+
+    /// The addresses of the dynIP name not dialled yet, in resolver order: the next
+    /// attempt when this connect fails.
+    [[nodiscard]] const std::vector<Address>& nextAddresses() const { return m_nextAddresses; }
 
     /// The address this session dialed — decides the session family, which a
     /// dual-stack Server copy can no longer tell by itself.
@@ -210,16 +216,18 @@ private:
     void onSocketConnected();
     void onSocketDisconnected();
     void onSocketError(QAbstractSocket::SocketError error);
-    void onDnsLookupFinished();
 
-    /// Start (or restart) the dynIP lookup with the given record type. Replaces any
-    /// in-flight lookup safely, so it can be called from the finished handler.
-    void startDnsLookup(QDnsLookup::Type type);
+    /// Resolve the dynIP name; both families, IPv4 first.
+    void startDnsLookup();
+
+    /// Dial @p resolved, an address of the dynIP name, after the IP filter.
+    void dialResolved(const Address& resolved);
 
     // --- State ---
     std::unique_ptr<Server> m_curServer;
     Address m_sessionAddress;
-    std::unique_ptr<QDnsLookup> m_dnsLookup;
+    HostResolver* m_resolver = nullptr;     // created at the first dynIP lookup
+    std::vector<Address> m_nextAddresses;
     ServerConnState m_connectionState = ServerConnState::NotConnected;
     ServerFailure m_lastFailure;
     uint64 m_lastTransmission = 0;
@@ -229,7 +237,6 @@ private:
     bool m_noCrypt = false;
     bool m_pendingLogin = false;
     bool m_lowIDBounced = false;
-    bool m_dnsTriedFallback = false;   // the other-family retry has been used
     bool m_familyFallback = false;     // dual-stack retry on the other family
     bool m_ipv6Switch = false;         // IPv6 dial after an IPv4 LowID
     bool m_tcpConnected = false;

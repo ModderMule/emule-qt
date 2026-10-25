@@ -107,6 +107,8 @@ private slots:
     void ext_info_roleDecidesDialer();
     void ext_noInfo_fallsBackToLugdunum();
     void ext_peerCrypt_obfuscatesOrFails();
+    void ext_foreignWake_infoMatchedByAddress();
+    void ext_foreignWake_noFallback();
     // QUIC NAT-T
     void quic_requesterDialsWithoutHandoff();
     void quic_targetWaitsThenFallsBack();
@@ -135,7 +137,11 @@ void tst_NatRendezvous::canStart_gates()
 
     PeerInfo other = peer;
     other.serverAddress = Address::fromString(QStringLiteral("1.2.3.4"));
-    QVERIFY(!f.hub->canStart(other));        // not on our server, no buddy
+    QVERIFY(f.hub->canStart(other));         // its server gets probed (foreign callback)
+    f.env->dialUnlisted = false;
+    f.env->foreignServers.clear();
+    QVERIFY(!f.hub->canStart(other));        // unlisted not allowed, no buddy
+    f.env->dialUnlisted = true;
 
     PeerInfo high = peer;
     high.clientID = 0x05060708;              // HighID
@@ -670,6 +676,40 @@ void tst_NatRendezvous::ext_noInfo_fallsBackToLugdunum()
     QCOMPARE(req[0].serverKey, kServerKey);
     QCOMPARE(f.hub->attempts().front()->path, PathKind::Lugdunum);
     QVERIFY(!f.hub->attempts().front()->awaitingInfo);
+}
+
+void tst_NatRendezvous::ext_foreignWake_infoMatchedByAddress()
+{
+    // 0x37 with requester ID 0 (logged in elsewhere); the 0x61 names its own-server ID
+    HubFixture f;
+    logInExtension(f);
+    QVERIFY(f.hub->handleServerTcp(OP_NAT_CALLBACKREQUESTED, wakeUp(0, CONNECT_OPT_CRYPT_SUPPORTED)));
+    QCOMPARE(f.env->udpWith(OP_EDONKEYPROT, OP_SERVER_NATT_KEEPALIVE).size(), size_t{1});
+    QVERIFY(f.hub->attempts().front()->foreignWake);
+    Hash16 hash{};
+    hash.fill(0x45);
+    f.hub->handleServerTcp(OP_LOWID_HOLEPUNCH_INFO, infoExt(hash, 1234567, 0, CONNECT_OPT_CRYPT_SUPPORTED));
+    const auto list = f.hub->attempts();
+    QCOMPARE(list.size(), size_t{1});
+    QVERIFY(!list[0]->awaitingInfo);
+    QCOMPARE(list[0]->serverRole, int8{0});
+    QVERIFY(list[0]->peer.hash == hash);
+}
+
+void tst_NatRendezvous::ext_foreignWake_noFallback()
+{
+    HubFixture f;
+    logInExtension(f);
+    QVERIFY(f.hub->handleServerTcp(OP_NAT_CALLBACKREQUESTED, wakeUp(0, 0)));
+    for (int i = 0; i < 6; ++i)
+        f.advance(1000);
+    // no 0x61 came: nobody to name in an 0xA6, the attempt punches on
+    QVERIFY(f.env->udpWith(OP_EDONKEYPROT, OP_NAT_CALLBACKREQUEST).empty());
+    const auto list = f.hub->attempts();
+    QCOMPARE(list.size(), size_t{1});
+    QCOMPARE(list[0]->path, PathKind::Ed2kServer);
+    QVERIFY(!list[0]->awaitingInfo);
+    QVERIFY(f.env->udpWith(OP_EMULEPROT, OP_HOLEPUNCH).size() > 1);
 }
 
 void tst_NatRendezvous::ext_peerCrypt_obfuscatesOrFails()

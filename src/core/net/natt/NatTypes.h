@@ -8,7 +8,6 @@
 #include <QPointer>
 
 #include <array>
-#include <vector>
 
 namespace eMule {
 
@@ -26,7 +25,8 @@ enum class PathKind : uint8 {
     Ed2kServer,   ///< ed2k-server 0x60-0x62 (flag 0x20000)
     Lugdunum,     ///< Lugdunum eserver 0xA6/0xA7/0x37 (flag 0x1000)
     EnodeNat,     ///< eNode-go PR_NAT 0xF1 (flag 0x40000)
-    KadBuddy      ///< Kad serving buddy, OP_RENDEZVOUS (compatibility target)
+    KadBuddy,     ///< Kad serving buddy, OP_RENDEZVOUS (compatibility target)
+    ForeignCallback ///< 0xA6 to the source's own server, we are not logged in there (UDP flag 0x100000)
 };
 
 [[nodiscard]] const char* pathName(PathKind kind) noexcept;
@@ -43,6 +43,20 @@ enum class PathKind : uint8 {
 struct ServerUdpCrypt {
     uint32 key = 0;
     uint16 port = 0;   ///< obfuscated UDP port from OP_GLOBSERVSTATRES (Lugdunum and eNode-go: port + 14); port + 12 when the reply has none
+};
+
+/// The server a source is logged in to, for a foreign callback (we are not logged in there).
+struct ForeignServer {
+    enum class State : uint8 {
+        No,        ///< unusable: no flag 0x100000, unlisted and not allowed, or no answer
+        Pending,   ///< unlisted, status ping out
+        Ready      ///< announces 0x100000; crypt may still lack the key
+    };
+    State state = State::No;
+    Address ipv4;
+    uint16 tcpPort = 0;
+    ServerUdpCrypt crypt;
+    bool listed = false;   ///< in our server list (else a probed unlisted one)
 };
 
 struct PeerInfo {
@@ -82,9 +96,6 @@ struct Attempt {
     bool peerSentNoAddress = false; ///< its handoff carried no IPv6
 
     uint32 connAck = 0;             ///< PR_NAT pairing nonce
-    /// PR_NAT cross-server sweep: SYNC2 targets tried in turn; empty = same-server flow.
-    std::vector<Endpoint> natServers;
-    uint8 natServerIdx = 0;
     uint64 startedMs = 0;
     uint64 deadlineMs = 0;
     uint64 lastRequestMs = 0;       ///< last path request / repeat
@@ -99,8 +110,9 @@ struct Attempt {
     bool finished = false;          ///< done or failed; removed on the next tick
     uint8 triedPaths = 0;           ///< requester: bit (1 << PathKind) per path tried
     int8 serverRole = -1;           ///< 30-byte 0x61: 0 = we dial, 1 = the peer dials; -1 = own rule
-    bool awaitingInfo = false;      ///< target woken by 0x37 on a 0x100000 server, no 0x61 yet
-    uint64 infoDeadlineMs = 0;      ///< then: fall back to Lugdunum's reciprocal 0xA6
+    bool awaitingInfo = false;      ///< target woken by 0x37, no 0x61 yet
+    uint64 infoDeadlineMs = 0;      ///< then: Lugdunum's reciprocal 0xA6, or (requester ID 0) go on alone
+    bool foreignWake = false;       ///< target woken by a 0x37 naming requester ID 0 (logged in elsewhere)
     uint8 burstLeft = 0;            ///< target: 0x9F still due of the 0 / 0.5 / 1 s burst
     uint64 burstStartMs = 0;
 };

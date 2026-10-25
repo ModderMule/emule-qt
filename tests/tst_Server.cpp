@@ -721,16 +721,16 @@ void tst_Server::writeTags_natRendezvousRoundTrip()
     };
 
     Server original(0x01020304, 4661);
-    QVERIFY(!original.supportsNatRendezvousUDP());
-    QCOMPARE(reload(original).natPort(), uint16{0});   // no tag written, none read
+    QVERIFY(!original.supportsForeignCallbackUDP());
 
-    // PR_NAT bits ride in ST_UDPFLAGS (MFC keeps the whole word); the port is ST_NAT_PORT
-    original.setUDPFlags(SrvUdpFlag::NatRendezvous | SrvUdpFlag::NatWake | SrvUdpFlag::LargeFiles);
+    // NAT bits ride in ST_UDPFLAGS (MFC keeps the whole word); the PR_NAT port is
+    // session-only now (cross-server PR_NAT retired, ed2k-server#40)
+    original.setUDPFlags(SrvUdpFlag::ForeignCallback | SrvUdpFlag::NatWake | SrvUdpFlag::LargeFiles);
     original.setNatPort(2010);
     const Server restored = reload(original);
     QCOMPARE(restored.udpFlags(), original.udpFlags());
-    QVERIFY(restored.supportsNatRendezvousUDP());
-    QCOMPARE(restored.natPort(), uint16{2010});
+    QVERIFY(restored.supportsForeignCallbackUDP());
+    QCOMPARE(restored.natPort(), uint16{0});
 }
 
 void tst_Server::caps_supportsObfuscationUDP()

@@ -204,7 +204,7 @@ void ServerConnect::connectToAnyServer(size_t startAt, bool prioSort,
 // ---------------------------------------------------------------------------
 
 void ServerConnect::connectToServer(Server* server, bool multiconnect, bool noCrypt,
-                                    const Address& dialAddress)
+                                    const Address& dialAddress, std::vector<Address> nextAddresses)
 {
     if (!server)
         return;
@@ -418,7 +418,7 @@ void ServerConnect::connectToServer(Server* server, bool multiconnect, bool noCr
     m_connectionAttempts[timestamp] = socket;
 
     socket->initProxySupport(thePrefs.proxySettings());
-    socket->connectTo(*server, noCrypt, dial, ipv6Switch);
+    socket->connectTo(*server, noCrypt, dial, ipv6Switch, std::move(nextAddresses));
 }
 
 bool ServerConnect::isConnectedOrConnectingTo(const Server* server) const
@@ -583,12 +583,13 @@ void ServerConnect::connectionFailed(ServerSocket* sender)
     }
 
     // Dual-stack: a server unreachable on one family gets one attempt on the other
-    // before the failure counts against it.
-    const Address otherFamily = (!lostLiveConnection
-                                 && (failState == ServerConnState::ServerDead
-                                     || failState == ServerConnState::FatalError))
-        ? otherFamilyFor(sender, listServer)
-        : Address();
+    // before the failure counts against it; a dynIP name every address it resolved to.
+    const NextDial next = (!lostLiveConnection
+                           && (failState == ServerConnState::ServerDead
+                               || failState == ServerConnState::FatalError))
+        ? nextDialFor(sender, listServer)
+        : NextDial{};
+    const Address& otherFamily = next.address;
 
     if (const ServerFailure& failure = sender->lastFailure(); failure.isSet()) {
         logServerVerbose(QStringLiteral("[%1] failure: phase=%2 reason=%3")
@@ -637,8 +638,9 @@ void ServerConnect::connectionFailed(ServerSocket* sender)
         logInfo(QStringLiteral("Server %1 unreachable over %2 — trying %3")
                     .arg(listServer->name(), ipstr(sender->sessionAddress()), ipstr(otherFamily)));
         const bool single = m_singleConnecting;
+        std::vector<Address> rest = next.rest;
         destroySocket(sender);
-        connectToServer(listServer, !single, false, otherFamily);
+        connectToServer(listServer, !single, false, otherFamily, std::move(rest));
         return;
     }
 
@@ -856,7 +858,8 @@ void ServerConnect::checkForTimeout()
                 listServer->setPreferIPv6Session(false);
                 listServer->setIPv6SwitchFailed(true);
             }
-            const Address otherFamily = otherFamilyFor(socket, listServer);
+            NextDial next = nextDialFor(socket, listServer);
+            const Address otherFamily = next.address;
             const Address tried = socket->sessionAddress();
             // TCP never came up: the server did not answer at all, which counts like a
             // refusal. A stall after the connect (handshake, login) says it is alive.
@@ -878,7 +881,7 @@ void ServerConnect::checkForTimeout()
                 logInfo(QStringLiteral("Server %1 unreachable over %2 — trying %3")
                             .arg(listServer->name(), ipstr(tried), ipstr(otherFamily)));
                 const bool single = m_singleConnecting;
-                connectToServer(listServer, !single, false, otherFamily);
+                connectToServer(listServer, !single, false, otherFamily, std::move(next.rest));
                 if (single)
                     break;      // stopConnectionTry() ran; the remaining copy is stale
                 continue;
@@ -1362,6 +1365,16 @@ Address ServerConnect::otherFamilyFor(const ServerSocket* socket, const Server* 
     return listServer->otherFamilyAddress(socket->sessionAddress());
 }
 
+ServerConnect::NextDial ServerConnect::nextDialFor(const ServerSocket* socket,
+                                                  const Server* listServer) const
+{
+    if (!m_connecting || !socket || !listServer || socket->tcpConnected())
+        return {};
+    if (const auto& left = socket->nextAddresses(); !left.empty())
+        return {left.front(), std::vector<Address>(left.begin() + 1, left.end())};
+    return {otherFamilyFor(socket, listServer), {}};
+}
+
 void ServerConnect::applyServerFlags(ServerSocket* socket, uint32 tcpFlags)
 {
     Server* entry = resolveListEntry(socket);
@@ -1392,7 +1405,7 @@ void ServerConnect::onServerIdent(ServerSocket* socket, const uint8* serverHash,
     // without it clears what an earlier session (or server.met) left
     if (const Server* cur = socket->currentServer(); cur && cur != entry) {
         entry->setMetaApi(cur->metaApiUrl(), cur->metaApiPin());
-        entry->setNatPort(cur->natPort());   // kept in server.met for cross-server PR_NAT
+        entry->setNatPort(cur->natPort());   // PR_NAT port of this session, never saved
     }
     // A hash of "****" (0x2A2A2A2A) marks an eFarm server. MFC: ServerSocket.cpp:463-470.
     if (serverHash != nullptr

@@ -273,6 +273,8 @@ OptionsDialog::OptionsDialog(IpcClient* ipc, StatisticsPanel* statsPanel,
     connect(m_addServersFromClientsCheck, &QCheckBox::toggled, this, &OptionsDialog::markDirty);
     connect(m_safeServerConnectCheck, &QCheckBox::toggled, this, &OptionsDialog::markDirty);
     connect(m_natTraversalCheck, &QCheckBox::toggled, this, &OptionsDialog::markDirty);
+    connect(m_natDialUnlistedCheck, &QCheckBox::toggled, this, &OptionsDialog::markDirty);
+    connect(m_natTraversalCheck, &QCheckBox::toggled, m_natDialUnlistedCheck, &QCheckBox::setEnabled);
     connect(m_autoConnectStaticOnlyCheck, &QCheckBox::toggled, this, &OptionsDialog::markDirty);
     connect(m_useServerPrioritiesCheck, &QCheckBox::toggled, this, &OptionsDialog::markDirty);
     connect(m_useUserSortedServerListCheck, &QCheckBox::toggled, this, &OptionsDialog::markDirty);
@@ -1562,8 +1564,17 @@ QWidget* OptionsDialog::createServerPage()
     m_natTraversalCheck = new QCheckBox(tr("Connect Low ID to Low ID through server or Kad buddy (NAT traversal)"), miscGroup);
     m_natTraversalCheck->setToolTip(
         tr("Lets two Low ID clients find each other's address through a server that supports it "
-           "or a Kad buddy, then connect over IPv6"));
+           "or a Kad buddy, then connect over IPv6 or QUIC"));
     miscLayout->addWidget(m_natTraversalCheck);
+
+    m_natDialUnlistedCheck = new QCheckBox(tr("Always use a source's server for NAT callback"), miscGroup);
+    m_natDialUnlistedCheck->setToolTip(
+        tr("Also asks a source's server that is not in your server list. "
+           "It is pinged once first and is not added to the list"));
+    auto* natDialRow = new QHBoxLayout;
+    natDialRow->setContentsMargins(20, 0, 0, 0);
+    natDialRow->addWidget(m_natDialUnlistedCheck);
+    miscLayout->addLayout(natDialRow);
 
     // "Autoconnect to servers in static list only"
     m_autoConnectStaticOnlyCheck = new QCheckBox(tr("Autoconnect to servers in static list only"), miscGroup);
@@ -6682,6 +6693,8 @@ void OptionsDialog::saveSettings()
         req.append(m_safeServerConnectCheck->isChecked());
         req.append(QStringLiteral("natTraversal"));
         req.append(m_natTraversalCheck->isChecked());
+        req.append(QStringLiteral("natDialUnlistedServers"));
+        req.append(m_natDialUnlistedCheck->isChecked());
         req.append(QStringLiteral("autoConnectStaticOnly"));
         req.append(m_autoConnectStaticOnlyCheck->isChecked());
         req.append(QStringLiteral("useServerPriorities"));
@@ -7257,6 +7270,7 @@ void OptionsDialog::saveSettings()
         // Server page fallback
         thePrefs.setSafeServerConnect(m_safeServerConnectCheck->isChecked());
         thePrefs.setNatTraversal(m_natTraversalCheck->isChecked());
+        thePrefs.setNatDialUnlistedServers(m_natDialUnlistedCheck->isChecked());
         thePrefs.setAutoConnectStaticOnly(m_autoConnectStaticOnlyCheck->isChecked());
         thePrefs.setUseServerPriorities(m_useServerPrioritiesCheck->isChecked());
         thePrefs.setAddServersFromServer(m_addServersFromServerCheck->isChecked());
@@ -7512,6 +7526,8 @@ void OptionsDialog::fillDaemonSettings(const QCborMap& prefs)
     // Server page
     m_safeServerConnectCheck->setChecked(prefs.value(QStringLiteral("safeServerConnect")).toBool());
     m_natTraversalCheck->setChecked(prefs.value(QStringLiteral("natTraversal")).toBool(true));
+    m_natDialUnlistedCheck->setChecked(prefs.value(QStringLiteral("natDialUnlistedServers")).toBool(true));
+    m_natDialUnlistedCheck->setEnabled(m_natTraversalCheck->isChecked());
     m_autoConnectStaticOnlyCheck->setChecked(prefs.value(QStringLiteral("autoConnectStaticOnly")).toBool());
     m_useServerPrioritiesCheck->setChecked(prefs.value(QStringLiteral("useServerPriorities")).toBool());
     m_addServersFromServerCheck->setChecked(prefs.value(QStringLiteral("addServersFromServer")).toBool());

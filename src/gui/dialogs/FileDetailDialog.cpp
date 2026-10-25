@@ -232,14 +232,14 @@ QWidget* FileDetailDialog::createGeneralTab(const QCborMap& d)
 
     addRow(tr("File Name"), str(d, QLatin1StringView("fileName")));
 
-    // Unfinished download: the daemon sends the .part.met, as MFC does, under its
-    // own label; complete file: the file itself (MFC FileDetailDialogInfo.cpp:118-123)
-    const QString filePath = str(d, QLatin1StringView("filePath"));
-    if (!filePath.isEmpty()) {
-        const bool partMet = d.contains(QLatin1StringView("isComplete"))
-            && !d.value(QLatin1StringView("isComplete")).toBool();
-        addRow(partMet ? tr("Part.met File") : tr("File Path"), filePath);
-    }
+    // Unfinished download: the .part (the content), not the .part.met MFC shows
+    // (FileDetailDialogInfo.cpp:118-123) — issue #56. dataPath is the .part for a
+    // download, the file itself otherwise.
+    QString filePath = str(d, QLatin1StringView("dataPath"));
+    if (filePath.isEmpty())
+        filePath = str(d, QLatin1StringView("filePath"));
+    if (!filePath.isEmpty())
+        addRow(tr("File Path"), filePath);
 
     addRow(tr("Hash (MD4)"), str(d, QLatin1StringView("hash")));
 

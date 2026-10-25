@@ -1063,39 +1063,12 @@ bool EMSocket::rawBusyNow() const
 uint64 EMSocket::sendBacklogBeyondMfc() const
 {
     // MFC UseBigSendBuffer, srchybrid/EMSocket.cpp:1106
-    constexpr int64 mfcBigSize = 128 * 1024;
-    int64 kernel = 0;
-    if (const auto* t = transport()) {
-        // unacked bytes stand in for the kernel queue; Qt's buffer is unused
-        return static_cast<uint64>(std::max<int64>(t->pendingSend() - mfcBigSize, 0));
-    }
-    if (const auto fd = socketDescriptor(); fd != -1) {
-        int queued = 0;
-#if defined(Q_OS_DARWIN)
-        socklen_t len = sizeof(queued);
-        if (getsockopt(static_cast<int>(fd), SOL_SOCKET, SO_NWRITE, &queued, &len) == 0)
-            kernel = queued;
-#elif defined(Q_OS_LINUX)
-        if (::ioctl(static_cast<int>(fd), SIOCOUTQ, &queued) == 0)
-            kernel = queued;
-#elif defined(Q_OS_WIN)
-        // No unsent-bytes query on Windows: handed over minus acked, which is what
-        // SO_NWRITE gives on macOS. Acked = sent - retransmitted - in flight.
-        DWORD version = 0;
-        WinTcpInfoV0 info{};
-        DWORD got = 0;
-        if (WSAIoctl(static_cast<SOCKET>(fd), kSioTcpInfo, &version, sizeof(version),
-                     &info, sizeof(info), &got, nullptr, nullptr) == 0
-            && got >= offsetof(WinTcpInfoV0, FastRetrans))
-        {
-            const int64 acked = static_cast<int64>(info.BytesOut) - info.BytesRetrans - info.BytesInFlight;
-            kernel = static_cast<int64>(m_bytesToKernel.load(std::memory_order_relaxed)) - acked;
-        }
-        (void)queued;
-#endif
-    }
-    const int64 qtBuffered = m_cachedBytesToWrite.load(std::memory_order_relaxed);
-    return static_cast<uint64>(std::max<int64>(qtBuffered, 0) + std::max<int64>(kernel - mfcBigSize, 0));
+    return sendBacklogPast(128 * 1024);
+}
+
+uint64 EMSocket::sendBacklog() const
+{
+    return sendBacklogPast(0);
 }
 
 bool EMSocket::hasQueues(bool onlyStandardPackets) const
@@ -1214,6 +1187,46 @@ void EMSocket::connectToPeer(const Address& addr, uint16 port)
 void EMSocket::dataReceived(const uint8* /*data*/, uint32 /*size*/)
 {
     // Default: do nothing. Subclasses override for HTTP mode.
+}
+
+// ---------------------------------------------------------------------------
+// sendBacklogPast
+// ---------------------------------------------------------------------------
+
+uint64 EMSocket::sendBacklogPast(int64 kernelAllowance) const
+{
+    int64 kernel = 0;
+    if (const auto* t = transport()) {
+        // unacked bytes stand in for the kernel queue; Qt's buffer is unused
+        return static_cast<uint64>(std::max<int64>(t->pendingSend() - kernelAllowance, 0));
+    }
+    if (const auto fd = socketDescriptor(); fd != -1) {
+        int queued = 0;
+#if defined(Q_OS_DARWIN)
+        socklen_t len = sizeof(queued);
+        if (getsockopt(static_cast<int>(fd), SOL_SOCKET, SO_NWRITE, &queued, &len) == 0)
+            kernel = queued;
+#elif defined(Q_OS_LINUX)
+        if (::ioctl(static_cast<int>(fd), SIOCOUTQ, &queued) == 0)
+            kernel = queued;
+#elif defined(Q_OS_WIN)
+        // No unsent-bytes query on Windows: handed over minus acked, which is what
+        // SO_NWRITE gives on macOS. Acked = sent - retransmitted - in flight.
+        DWORD version = 0;
+        WinTcpInfoV0 info{};
+        DWORD got = 0;
+        if (WSAIoctl(static_cast<SOCKET>(fd), kSioTcpInfo, &version, sizeof(version),
+                     &info, sizeof(info), &got, nullptr, nullptr) == 0
+            && got >= offsetof(WinTcpInfoV0, FastRetrans))
+        {
+            const int64 acked = static_cast<int64>(info.BytesOut) - info.BytesRetrans - info.BytesInFlight;
+            kernel = static_cast<int64>(m_bytesToKernel.load(std::memory_order_relaxed)) - acked;
+        }
+        (void)queued;
+#endif
+    }
+    const int64 qtBuffered = m_cachedBytesToWrite.load(std::memory_order_relaxed);
+    return static_cast<uint64>(std::max<int64>(qtBuffered, 0) + std::max<int64>(kernel - kernelAllowance, 0));
 }
 
 } // namespace eMule

@@ -20,6 +20,7 @@
 
 #include <zlib.h>
 
+#include <algorithm>
 #include <cstring>
 #include <map>
 #include <vector>
@@ -181,10 +182,10 @@ public:
 
         // Decompress collected compressed blocks
         for (const auto& [offset, entry] : compressedMap) {
-            // Allocate generous output buffer (original block ≤ PARTSIZE)
-            uLongf destLen = entry.totalCompressedLen * 10 + 300;
-            if (destLen < 65536)
-                destLen = 65536;
+            // A block is at most 3 x EMBLOCKSIZE (addReqBlock's cap). Size by that, not by
+            // the packed length: a full block of very compressible data packs past 10:1.
+            uLongf destLen = std::max<uLongf>(entry.totalCompressedLen * 10 + 300,
+                                              3 * EMBLOCKSIZE + 300);
             std::vector<uint8> decompressed(destLen);
 
             int zResult = uncompress(decompressed.data(), &destLen,

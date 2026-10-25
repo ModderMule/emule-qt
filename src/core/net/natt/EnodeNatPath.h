@@ -11,17 +11,12 @@
 /// Wake-up (flag 0x200000, our login bit 0x200000): no standing registration; the
 /// server sends TCP OP_NAT_WAKE <families 1> when a peer asks for us, and we REGISTER
 /// once per family. A requester REGISTERs right before its SYNC2.
-/// Cross-server: we register only on our login server. As a requester for a peer
-/// elsewhere we SYNC2 our own server first, then listed servers with UDP flag 0x40000
-/// one at a time; when none pairs it, that hash is not swept again this session.
-/// ToDo: publish (hash, rendezvous server) in Kad, so a requester needs no guessing.
+/// Same server only: both peers must be logged in to it. Peers on another server go
+/// through ForeignCallbackPath (andrey23127/ed2k-server#40).
 
 #include "net/natt/NatPath.h"
 
 #include <QByteArray>
-#include <QHash>
-
-#include <vector>
 
 namespace eMule::natt {
 
@@ -38,10 +33,6 @@ public:
     /// gave us a new port), so register again. One unanswered keepalive is enough: on an
     /// older server with a 30 s TTL every keepalive finds the candidate expired.
     static constexpr uint64 kPingLossMs   = kKeepaliveMs + 5000;
-    static constexpr uint64 kSweepStepMs  = 4000;    // per server; a wake's FAILED takes 3 s
-    static constexpr uint32 kSweepSends   = 2;       // SYNC2s per server
-    static constexpr size_t kMaxSweepServers = 8;
-    static constexpr size_t kMaxRemembered   = 4096; // m_noRendezvous / m_pairedVia
     static constexpr uint8  kWakeIPv4     = 0x01;   ///< OP_NAT_WAKE family bits
     static constexpr uint8  kWakeIPv6     = 0x02;
 
@@ -85,26 +76,16 @@ private:
     [[nodiscard]] Endpoint learnedEndpoint(bool ipv6) const;
     void onRegisterAck(bool ipv6, const Endpoint& from, const Address& addr, uint16 port);
     [[nodiscard]] Endpoint syncEndpoint() const;   ///< where SYNC2 goes
-    [[nodiscard]] bool isNatServer(const Endpoint& from) const;   ///< our server or a sweep one
     [[nodiscard]] bool isOwnNatServer(const Endpoint& from) const;
     void keepRegistered(bool ipv6, bool want);
     void sendSync2(Attempt& attempt);
-    /// Our server (when it pairs) then the other capable ones, for a peer not on ours.
-    [[nodiscard]] std::vector<Endpoint> sweepServers(const PeerInfo& peer) const;
-    /// SYNC2 target of @p attempt: its sweep server, or our own.
-    [[nodiscard]] Endpoint attemptEndpoint(const Attempt& attempt) const;
-    /// Sweep: on to the next server; none left = remember the hash and fall through.
-    void nextServer(Attempt& attempt, const QString& why);
-    void onSync(const Endpoint& from, const Endpoint& udp, const uint8* hash, uint32 connAck);
-    void onFailed(const Endpoint& from, uint8 reason, const uint8* targetHash);
+    void onSync(const Endpoint& udp, const uint8* hash, uint32 connAck);
+    void onFailed(uint8 reason, const uint8* targetHash);
 
     Registration m_v4;
     Registration m_v6;
     Learned m_learnedV4;
     Learned m_learnedV6;
-    QHash<QByteArray, uint64> m_noRendezvous;   ///< hash -> when no server paired it (session)
-    struct Paired { Endpoint server; uint64 atMs = 0; };
-    QHash<QByteArray, Paired> m_pairedVia;      ///< hash -> server that paired it last
 };
 
 } // namespace eMule::natt

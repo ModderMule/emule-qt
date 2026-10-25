@@ -43,6 +43,8 @@ uint16 TlsRelay::start(const Address& addr, uint16 port, const QString& hostName
         return 0;
     }
 
+    // Darwin can report connected() with no peer before a refusal
+    connect(m_remote, &QSslSocket::connected, this, [this] { m_serverReached = m_remote->peerPort() != 0; });
     connect(m_remote, &QSslSocket::encrypted, this, &TlsRelay::pumpToRemote);
     connect(m_remote, &QSslSocket::readyRead, this, &TlsRelay::pumpToLocal);
     // Certificate errors are never ignored: the handshake fails and lands here.
