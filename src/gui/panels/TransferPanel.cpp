@@ -8,6 +8,7 @@
 #include "app/UiState.h"
 #include "media/PreviewApps.h"
 #include "dialogs/AddSourceDialog.h"
+#include "utils/Clipboard.h"
 #include "utils/Opcodes.h"
 #include "controls/AbstractListView.h"
 #include "controls/SortableItems.h"
@@ -141,6 +142,7 @@ ClientRow parseClient(const QCborMap& m)
     row.queueScore         = m.value(QStringLiteral("queueScore")).toInteger();
     row.lastUpRequestDelay = m.value(QStringLiteral("lastUpRequestDelay")).toInteger();
     row.hasLowID           = m.value(QStringLiteral("hasLowID")).toBool();
+    row.natRoute           = m.value(QStringLiteral("natRoute")).toString();
     row.addNextConnect     = m.value(QStringLiteral("addNextConnect")).toBool();
     if (const QCborMap bar = m.value(QStringLiteral("upStatus")).toMap(); !bar.isEmpty()) {
         row.upStatus.fileSize = bar.value(QStringLiteral("fileSize")).toInteger();
@@ -1252,7 +1254,8 @@ QTreeView* TransferPanel::createClientView(ClientListModel* model,
     auto* hdr = view->header();
     hdr->setStretchLastSection(true);
     hdr->setDefaultSectionSize(100);
-    view->bindColumns(headerKey, columnWidths, {model->countryColumn()});
+    view->bindColumns(headerKey, columnWidths, {model->countryColumn(), model->sharedListColumn()});
+    view->setExtColumns({model->sharedListColumn()}, thePrefs.showExtControls());
     view->setDescendingFirst(descendingFirst);
     CountryFlags::bindFlagColumn(view);
 
@@ -1627,7 +1630,7 @@ void TransferPanel::copyEd2kLink(const QString& hash)
     for (int i = 0; i < m_downloadModel->downloadCount(); ++i) {
         const auto* dl = m_downloadModel->downloadAt(i);
         if (dl && dl->hash == hash) {
-            QApplication::clipboard()->setText(
+            eMule::Clipboard::setText(
                 ed2kFileLink(dl->fileName, static_cast<uint64>(dl->fileSize), dl->hash));
             return;
         }
@@ -1647,7 +1650,7 @@ void TransferPanel::copyEd2kLinks(const QStringList& hashes)
         }
     }
     if (!links.isEmpty())
-        QApplication::clipboard()->setText(links.join(QLatin1Char('\n')));
+        eMule::Clipboard::setText(links.join(QLatin1Char('\n')));
 }
 
 void TransferPanel::sendStopDownload(const QString& hash)
@@ -2397,6 +2400,12 @@ void TransferPanel::applyDisplayOptions()
     m_toolbar2->setButtonsVisible(buttons);
     applyViews(m_topView, m_bottomView, Pane::Top);   // a list may have been disabled
     updateCategoryTabInfo();
+
+    // Shared List column follows "Show more controls"
+    for (const auto& slot : m_clients) {
+        if (auto* view = dynamic_cast<ListTreeView*>(slot.view))
+            view->applyExtColumns(thePrefs.showExtControls());
+    }
 
     // A4AF source rows follow advanced mode
     for (const QString& hash : std::as_const(m_expandedDownloads))

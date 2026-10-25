@@ -11,6 +11,7 @@
 #include "app/IpcClient.h"
 #include "controls/AbstractListView.h"
 #include "prefs/Preferences.h"
+#include "utils/Clipboard.h"
 #include "utils/DialogSizing.h"
 #include "utils/IpcFeedback.h"
 #include "utils/OtherFunctions.h"
@@ -18,7 +19,6 @@
 #include <QCborArray>
 #include <QCheckBox>
 #include <QIcon>
-#include <QClipboard>
 #include <QDateTime>
 #include <QFormLayout>
 #include <QGroupBox>
@@ -327,7 +327,7 @@ QWidget* FileDetailDialog::createFileNamesTab(const QCborMap& d)
     };
     const auto copyName = [this] {
         if (const auto* item = m_fileNamesTree->currentItem())
-            QGuiApplication::clipboard()->setText(item->text(0));
+            eMule::Clipboard::setText(item->text(0));
     };
     connect(takeOverBtn, &QPushButton::clicked, this, takeOver);
     connect(m_fileNamesTree, &QTreeWidget::itemDoubleClicked, this, takeOver);
@@ -553,7 +553,7 @@ QWidget* FileDetailDialog::createEd2kLinkTab(const QCborMap& d)
     btnLayout->addStretch();
     auto* copyBtn = new QPushButton(tr("Copy to Clipboard"));
     connect(copyBtn, &QPushButton::clicked, this, [this] {
-        QGuiApplication::clipboard()->setText(m_linkEdit->toPlainText());
+        eMule::Clipboard::setText(m_linkEdit->toPlainText());
     });
     btnLayout->addWidget(copyBtn);
     layout->addLayout(btnLayout);

@@ -77,6 +77,7 @@ struct ClientRow {
     int64_t queueScore = 0;        // MFC GetScore(false)
     int64_t lastUpRequestDelay = 0;  // ms since the last upload request
     bool hasLowID = false;
+    QString natRoute;              // "quic" | "ipv6" when the live link goes around the LowID
     bool addNextConnect = false;   // LowID peer owed the next free slot
     bool remoteQueueFull = false;
     int kadPort = 0;
@@ -109,8 +110,11 @@ public:
     [[nodiscard]] int clientCount() const { return count(); }
     [[nodiscard]] ClientListMode mode() const { return m_mode; }
 
-    /// The Country column, always the last one.
-    [[nodiscard]] int countryColumn() const { return columnCountValue() - 1; }
+    /// The Country column, the last one before Shared List.
+    [[nodiscard]] int countryColumn() const { return columnCountValue() - 2; }
+    /// Shared List: does the peer allow "View Shared Files". Always the last column,
+    /// shown only with "Show more controls".
+    [[nodiscard]] int sharedListColumn() const { return columnCountValue() - 1; }
     [[nodiscard]] const ClientRow* clientAt(int row) const { return rowAt(row); }
 
 protected:
@@ -120,6 +124,8 @@ private:
     [[nodiscard]] QVariant displayData(const ClientRow& c, int column) const;
     [[nodiscard]] QVariant sortData(const ClientRow& c, int column) const;
     [[nodiscard]] QVariant headerLabel(int column) const;
+    /// "Low ID", plus the NAT-T route of the live link ("Low ID, QUIC")
+    [[nodiscard]] static QString lowIdText(const ClientRow& c);
 
     ClientListMode m_mode;
 };

@@ -1673,6 +1673,9 @@ public:
     /// MorphXT bar detail: downloaded data of unfinished parts in its own colour, part boundary dots.
     [[nodiscard]] bool showPartProgressDetail() const;
     void setShowPartProgressDetail(bool val);
+    /// Downloads with a transferring source, and those sources (A4AF rows too), in bold.
+    [[nodiscard]] bool showActiveDownloadsBold() const;
+    void setShowActiveDownloadsBold(bool val);
 
     [[nodiscard]] bool showRatesInTitle() const;
     void setShowRatesInTitle(bool val);

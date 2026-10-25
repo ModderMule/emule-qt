@@ -5,13 +5,13 @@
 #include "CommentsPanel.h"
 
 #include "controls/AbstractListView.h"
+#include "utils/Clipboard.h"
 #include "utils/ListActivation.h"
 #include "controls/SortableItems.h"
 #include "prefs/Preferences.h"
 #include "utils/RatingIcons.h"
 
 #include <QCborArray>
-#include <QClipboard>
 #include <QGuiApplication>
 #include <QHeaderView>
 #include <QInputDialog>
@@ -167,7 +167,7 @@ void CommentsPanel::copySelectedComments() const
     for (const auto* item : m_tree->selectedItems())
         lines.append(item->text(ColComment));
     if (!lines.isEmpty())
-        QGuiApplication::clipboard()->setText(lines.join(QStringLiteral("\r\n")));
+        eMule::Clipboard::setText(lines.join(QStringLiteral("\r\n")));
 }
 
 } // namespace eMule

@@ -1,32 +1,32 @@
 {
-  "Never send unobfuscated NAT traversal (QUIC) packets": {
+  "Show active downloads in bold": {
     "_context": "eMule::OptionsDialog",
-    "de_DE": "Niemals unverschleierte NAT-Traversal-Pakete (QUIC) senden",
-    "es_ES": "No enviar nunca paquetes de NAT traversal (QUIC) sin ofuscar",
-    "fr_FR": "Ne jamais envoyer de paquets de traversée NAT (QUIC) non masqués",
-    "it_IT": "Non inviare mai pacchetti di NAT traversal (QUIC) non offuscati",
-    "ja_JP": "難読化されていない NAT トラバーサル (QUIC) パケットを送信しない",
-    "ko_KR": "난독화되지 않은 NAT 통과(QUIC) 패킷을 보내지 않음",
-    "nl_NL": "Nooit ongemaskeerde NAT-traversal-pakketten (QUIC) verzenden",
-    "pl_PL": "Nigdy nie wysyłaj niezaciemnionych pakietów NAT traversal (QUIC)",
-    "pt_BR": "Nunca enviar pacotes de travessia NAT (QUIC) não ofuscados",
-    "ru_RU": "Никогда не отправлять необфусцированные пакеты обхода NAT (QUIC)",
-    "zh_CN": "从不发送未混淆的 NAT 穿透 (QUIC) 数据包",
-    "zh_TW": "從不傳送未混淆的 NAT 穿透 (QUIC) 封包"
+    "de_DE": "Aktive Downloads fett anzeigen",
+    "es_ES": "Mostrar descargas activas en negrita",
+    "fr_FR": "Afficher les téléchargements actifs en gras",
+    "it_IT": "Mostra i download attivi in grassetto",
+    "ja_JP": "アクティブなダウンロードを太字で表示",
+    "ko_KR": "활성 다운로드를 굵게 표시",
+    "nl_NL": "Actieve downloads vetgedrukt tonen",
+    "pl_PL": "Pokazuj aktywne pobierania pogrubione",
+    "pt_BR": "Mostrar downloads ativos em negrito",
+    "ru_RU": "Выделять активные загрузки жирным",
+    "zh_CN": "以粗体显示活动下载",
+    "zh_TW": "以粗體顯示活動下載"
   },
-  "Low ID to Low ID transfers over QUIC are always obfuscated when possible. If the other client cannot read them, eMule falls back to unobfuscated packets after 2 seconds. Check this to fail such transfers instead, e.g. on networks that block QUIC.": {
+  "Downloads that are receiving data, and the sources sending it, are drawn in bold. A source listed under another file (A4AF) is bold too while it transfers.": {
     "_context": "eMule::OptionsDialog",
-    "de_DE": "Low-ID-zu-Low-ID-Übertragungen über QUIC werden nach Möglichkeit immer verschleiert. Kann der andere Client sie nicht lesen, wechselt eMule nach 2 Sekunden zu unverschleierten Paketen. Aktivieren, um solche Übertragungen stattdessen scheitern zu lassen, z. B. in Netzen, die QUIC sperren.",
-    "es_ES": "Las transferencias de ID baja a ID baja por QUIC siempre se ofuscan cuando es posible. Si el otro cliente no puede leerlas, eMule recurre a paquetes sin ofuscar tras 2 segundos. Marque esta opción para que esas transferencias fallen, p. ej. en redes que bloquean QUIC.",
-    "fr_FR": "Les transferts ID basse à ID basse via QUIC sont toujours masqués lorsque c'est possible. Si l'autre client ne peut pas les lire, eMule passe à des paquets non masqués au bout de 2 secondes. Cochez cette case pour faire échouer ces transferts à la place, p. ex. sur les réseaux qui bloquent QUIC.",
-    "it_IT": "I trasferimenti da ID basso a ID basso tramite QUIC vengono sempre offuscati quando possibile. Se l'altro client non riesce a leggerli, eMule passa a pacchetti non offuscati dopo 2 secondi. Seleziona questa opzione per far fallire invece questi trasferimenti, ad es. su reti che bloccano QUIC.",
-    "ja_JP": "QUIC による Low ID 同士の転送は、可能な限り常に難読化されます。相手のクライアントが読めない場合、eMule は 2 秒後に難読化なしのパケットに切り替えます。QUIC を遮断するネットワークなどで、代わりにその転送を失敗させるにはチェックします。",
-    "ko_KR": "QUIC를 통한 Low ID 간 전송은 가능하면 항상 난독화됩니다. 상대 클라이언트가 읽을 수 없으면 eMule은 2초 후 난독화되지 않은 패킷으로 전환합니다. QUIC를 차단하는 네트워크 등에서 대신 해당 전송을 실패시키려면 선택하십시오.",
-    "nl_NL": "Low ID-naar-Low ID-overdrachten via QUIC worden waar mogelijk altijd gemaskeerd. Kan de andere client ze niet lezen, dan valt eMule na 2 seconden terug op ongemaskeerde pakketten. Vink dit aan om zulke overdrachten in plaats daarvan te laten mislukken, bijv. op netwerken die QUIC blokkeren.",
-    "pl_PL": "Transfery Low ID do Low ID przez QUIC są zawsze zaciemniane, gdy to możliwe. Jeśli drugi klient nie może ich odczytać, eMule po 2 sekundach przechodzi na niezaciemnione pakiety. Zaznacz, aby zamiast tego takie transfery kończyły się niepowodzeniem, np. w sieciach blokujących QUIC.",
-    "pt_BR": "Transferências de ID baixo para ID baixo via QUIC são sempre ofuscadas quando possível. Se o outro cliente não conseguir lê-las, o eMule passa a usar pacotes não ofuscados após 2 segundos. Marque esta opção para que essas transferências falhem, p. ex. em redes que bloqueiam o QUIC.",
-    "ru_RU": "Передачи между клиентами с Low ID через QUIC по возможности всегда обфусцируются. Если другой клиент не может их прочитать, через 2 секунды eMule переходит на необфусцированные пакеты. Отметьте, чтобы такие передачи вместо этого завершались неудачей, например в сетях, блокирующих QUIC.",
-    "zh_CN": "通过 QUIC 的低 ID 到低 ID 传输会尽可能始终混淆。如果对方客户端无法读取，eMule 会在 2 秒后改用未混淆的数据包。勾选此项可改为让此类传输失败，例如在屏蔽 QUIC 的网络中。",
-    "zh_TW": "透過 QUIC 的低 ID 對低 ID 傳輸會盡可能一律混淆。若對方用戶端無法讀取，eMule 會在 2 秒後改用未混淆的封包。勾選此項可改為讓此類傳輸失敗，例如在封鎖 QUIC 的網路中。"
+    "de_DE": "Downloads, die gerade Daten empfangen, und die Quellen, die sie senden, werden fett dargestellt. Eine unter einer anderen Datei gelistete Quelle (A4AF) ist ebenfalls fett, solange sie überträgt.",
+    "es_ES": "Las descargas que están recibiendo datos, y las fuentes que los envían, se muestran en negrita. Una fuente listada bajo otro archivo (A4AF) también aparece en negrita mientras transfiere.",
+    "fr_FR": "Les téléchargements qui reçoivent des données, et les sources qui les envoient, sont affichés en gras. Une source listée sous un autre fichier (A4AF) est aussi en gras pendant qu'elle transfère.",
+    "it_IT": "I download che stanno ricevendo dati, e le fonti che li inviano, sono mostrati in grassetto. Anche una fonte elencata sotto un altro file (A4AF) è in grassetto mentre trasferisce.",
+    "ja_JP": "データを受信中のダウンロードと、送信しているソースを太字で表示します。別のファイルに表示されているソース (A4AF) も転送中は太字になります。",
+    "ko_KR": "데이터를 받고 있는 다운로드와 이를 보내는 소스를 굵게 표시합니다. 다른 파일 아래에 표시된 소스(A4AF)도 전송 중에는 굵게 표시됩니다.",
+    "nl_NL": "Downloads die gegevens ontvangen, en de bronnen die ze verzenden, worden vetgedrukt weergegeven. Een bron die onder een ander bestand staat (A4AF) is ook vetgedrukt zolang deze overdraagt.",
+    "pl_PL": "Pobierania, które odbierają dane, oraz źródła, które je wysyłają, są pogrubione. Źródło wymienione pod innym plikiem (A4AF) też jest pogrubione, gdy przesyła dane.",
+    "pt_BR": "Downloads que estão recebendo dados, e as fontes que os enviam, são exibidos em negrito. Uma fonte listada em outro arquivo (A4AF) também fica em negrito enquanto transfere.",
+    "ru_RU": "Загрузки, получающие данные, и источники, которые их передают, выделяются жирным. Источник, указанный под другим файлом (A4AF), тоже выделяется жирным, пока передаёт данные.",
+    "zh_CN": "正在接收数据的下载及发送数据的来源以粗体显示。列在其他文件下的来源 (A4AF) 在传输时也以粗体显示。",
+    "zh_TW": "正在接收資料的下載及傳送資料的來源以粗體顯示。列在其他檔案下的來源 (A4AF) 在傳輸時也以粗體顯示。"
   }
 }

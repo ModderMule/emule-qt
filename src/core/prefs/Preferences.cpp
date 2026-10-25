@@ -560,6 +560,7 @@ struct Preferences::Data {
     bool transferDoubleClick = true;
     bool showDwlPercentage = false;
     bool showPartProgressDetail = false;
+    bool showActiveDownloadsBold = false;   // MFC ShowActiveDownloadsBold, INI only, off; MorphXT on
     bool showRatesInTitle = false;
     bool showCatTabInfos = false;
     bool autoRemoveFinishedDownloads = false;
@@ -2944,6 +2945,10 @@ bool Preferences::showPartProgressDetail() const { return get(&Data::showPartPro
 
 void Preferences::setShowPartProgressDetail(bool val) { set(&Data::showPartProgressDetail, val); }
 
+bool Preferences::showActiveDownloadsBold() const { return get(&Data::showActiveDownloadsBold); }
+
+void Preferences::setShowActiveDownloadsBold(bool val) { set(&Data::showActiveDownloadsBold, val); }
+
 bool Preferences::showRatesInTitle() const { return get(&Data::showRatesInTitle); }
 
 void Preferences::setShowRatesInTitle(bool val) { set(&Data::showRatesInTitle, val); }
@@ -4319,6 +4324,7 @@ bool Preferences::load(const QString& filePath)
             m_data->transferDoubleClick = d["transferDoubleClick"].as<bool>(m_data->transferDoubleClick);
             m_data->showDwlPercentage = d["showDwlPercentage"].as<bool>(m_data->showDwlPercentage);
             m_data->showPartProgressDetail = d["showPartProgressDetail"].as<bool>(m_data->showPartProgressDetail);
+            m_data->showActiveDownloadsBold = d["showActiveDownloadsBold"].as<bool>(m_data->showActiveDownloadsBold);
             m_data->showRatesInTitle = d["showRatesInTitle"].as<bool>(m_data->showRatesInTitle);
             m_data->showCatTabInfos = d["showCatTabInfos"].as<bool>(m_data->showCatTabInfos);
             m_data->autoRemoveFinishedDownloads = d["autoRemoveFinishedDownloads"].as<bool>(m_data->autoRemoveFinishedDownloads);
@@ -5469,6 +5475,7 @@ bool Preferences::saveImpl(const QString& filePath) const
     out << YAML::Key << "transferDoubleClick" << YAML::Value << m_data->transferDoubleClick;
     out << YAML::Key << "showDwlPercentage" << YAML::Value << m_data->showDwlPercentage;
     out << YAML::Key << "showPartProgressDetail" << YAML::Value << m_data->showPartProgressDetail;
+    out << YAML::Key << "showActiveDownloadsBold" << YAML::Value << m_data->showActiveDownloadsBold;
     out << YAML::Key << "showRatesInTitle" << YAML::Value << m_data->showRatesInTitle;
     out << YAML::Key << "showCatTabInfos" << YAML::Value << m_data->showCatTabInfos;
     out << YAML::Key << "autoRemoveFinishedDownloads" << YAML::Value << m_data->autoRemoveFinishedDownloads;

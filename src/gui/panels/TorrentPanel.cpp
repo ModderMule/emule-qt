@@ -14,6 +14,7 @@
 #include "controls/TorrentProgressDelegate.h"
 #include "dialogs/AddTorrentDialog.h"
 #include "dialogs/TorrentDetailsDialog.h"
+#include "utils/Clipboard.h"
 #include "utils/ListActivation.h"
 #include "utils/MenuUtils.h"
 #include "utils/PanelPoller.h"
@@ -541,7 +542,7 @@ void TorrentPanel::onCopyMagnet()
         StatusBarNotifier::post(tr("No magnet link: v2-only torrents have no v1 info hash."), 5000);
         return;
     }
-    QApplication::clipboard()->setText(links.join(QLatin1Char('\n')));
+    eMule::Clipboard::setText(links.join(QLatin1Char('\n')));
     StatusBarNotifier::post(tr("Copied %n magnet link(s).", nullptr, int(links.size())), 3000);
 }
 

@@ -9,6 +9,7 @@
 #include <QElapsedTimer>
 #include <QPersistentModelIndex>
 #include <QSignalSpy>
+#include <QTemporaryDir>
 #include <QTest>
 
 using namespace eMule;
@@ -22,6 +23,7 @@ private slots:
     void sharedDirState_matchesWholeFoldersOnly();
     void sharedDirState_unshareWithSubdirs();
     void sharedDirState_nestsUnderNearestSharedParent();
+    void sharedDirState_collectsSubdirectoriesFromDisk();
     void firstListIsAReset();
     void sameListAgainTouchesNothing();
     void newListKeepsSurvivorsInPlace();
@@ -458,6 +460,30 @@ void tst_SharedFilesModel::sharedDirState_nestsUnderNearestSharedParent()
     QCOMPARE(parents.value(videos), QString());
     QCOMPARE(parents.value(live), music);       // "albums" between them is not shared
     QCOMPARE(parents.value(bootleg), live);     // the nearest one, not the topmost
+}
+
+// Ctrl+click in Options and "Share with Subdirectories" (report #9)
+void tst_SharedFilesModel::sharedDirState_collectsSubdirectoriesFromDisk()
+{
+    using namespace SharedDirState;
+    QTemporaryDir tmp;
+    QVERIFY(tmp.isValid());
+    const QString root = QDir::cleanPath(tmp.path());
+    QDir base(root);
+    QVERIFY(base.mkpath(QStringLiteral("a/a1")));
+    QVERIFY(base.mkpath(QStringLiteral("b")));
+    QVERIFY(base.mkpath(QStringLiteral(".hidden/inner")));
+    QVERIFY(base.mkpath(QStringLiteral("skip/below")));
+
+    QStringList dirs{root + QStringLiteral("/b")};   // listed already: not twice
+    collectSubdirectories(root, dirs, [&root](const QString& d) {
+        return d != root + QStringLiteral("/skip");
+    });
+    std::ranges::sort(dirs);
+    QCOMPARE(dirs, (QStringList{root, root + QStringLiteral("/a"), root + QStringLiteral("/a/a1"),
+                                root + QStringLiteral("/b"),
+                                // a refused folder is left out, what is below it is not
+                                root + QStringLiteral("/skip/below")}));
 }
 
 // MFC SharedFilesCtrl SortProc: cases 5-7 against 105-107, 11 against 111.

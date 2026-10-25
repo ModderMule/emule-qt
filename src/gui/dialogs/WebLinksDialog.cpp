@@ -5,13 +5,13 @@
 #include "dialogs/WebLinksDialog.h"
 
 #include "app/UiState.h"
+#include "utils/Clipboard.h"
 #include "utils/DialogSizing.h"
 #include "utils/StatusBarNotifier.h"
 #include "utils/StringUtils.h"
 
 #include <QApplication>
 #include <QCborArray>
-#include <QClipboard>
 #include <QDesktopServices>
 #include <QDialogButtonBox>
 #include <QDir>
@@ -131,7 +131,7 @@ QStringList WebLinksDialog::chosenUrls() const
 void WebLinksDialog::copyLinks()
 {
     const QStringList urls = chosenUrls();
-    QApplication::clipboard()->setText(urls.join(u'\n'));
+    eMule::Clipboard::setText(urls.join(u'\n'));
     StatusBarNotifier::post(tr("Copied %n link(s) to the clipboard.", nullptr, int(urls.size())));
 }
 

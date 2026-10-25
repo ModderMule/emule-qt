@@ -1375,7 +1375,8 @@ void tst_UpDownClient::processHelloPacket_parsesExtSXSkipTagsBit()
     data.writeUInt32(2);
     Tag(CT_VERSION, static_cast<uint32>(EDONKEYVERSION)).writeTagToFile(data);
     Tag(CT_MOD_MISCOPTIONS,
-        static_cast<uint32>(MODMISC_IPV6 | MODMISC_EXTXS | MODMISC_EXTXS_SKIPTAGS))
+        static_cast<uint32>(MODMISC_IPV6 | MODMISC_EXTXS | MODMISC_EXTXS_SKIPTAGS
+                            | MODMISC_NATT_QUIC))
         .writeTagToFile(data);
 
     data.writeUInt32(0);
@@ -1390,6 +1391,9 @@ void tst_UpDownClient::processHelloPacket_parsesExtSXSkipTagsBit()
     QVERIFY(client.supportsIPv6());
     QVERIFY(client.supportsExtendedXS());
     QVERIFY(client.supportsExtSXSkipTags());
+    QVERIFY(client.supportsNatTQuic());
+    // No socket: no NAT-T route to report
+    QCOMPARE(client.natRoute(), UpDownClient::NatRoute::None);
 
     // A peer that sets only the older two bits must NOT be treated as tolerant.
     SafeMemFile legacy;
@@ -1412,6 +1416,7 @@ void tst_UpDownClient::processHelloPacket_parsesExtSXSkipTagsBit()
 
     QVERIFY(legacyClient.supportsExtendedXS());
     QVERIFY(!legacyClient.supportsExtSXSkipTags());
+    QVERIFY(!legacyClient.supportsNatTQuic());
 }
 
 void tst_UpDownClient::processChangeClientIP_acceptsPublicAndRejectsOthers()

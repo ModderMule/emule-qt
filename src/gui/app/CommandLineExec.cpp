@@ -7,6 +7,8 @@
 
 #include "CommandLineExec.h"
 #include "ExternalLinkHandler.h"
+#include "app/IpcClient.h"
+#include "dialogs/DetailDialog.h"
 #include "dialogs/OptionsDialog.h"
 #include "panels/KadPanel.h"
 #include "panels/TransferPanel.h"
@@ -40,6 +42,7 @@ void CommandLineExec::parse(QApplication& app)
     m_parser.addOption(m_subtabTopOption);
     m_parser.addOption(m_delayOption);
     m_parser.addOption(m_optionsOption);
+    m_parser.addOption(m_clientDetailsOption);
     m_parser.addOption(m_configOption);
     m_parser.addOption(m_newInstanceOption);
     m_parser.addOption(m_registerTypesOption);
@@ -57,6 +60,7 @@ void CommandLineExec::parse(QApplication& app)
     m_screenshotPath = m_parser.value(m_screenshotOption);
     m_newInstance = m_parser.isSet(m_newInstanceOption);
     m_screenshotDelay = m_parser.value(m_delayOption).toInt();
+    m_clientDetailsHash = m_parser.value(m_clientDetailsOption);
     m_positionalArgs = m_parser.positionalArguments();
 
     // Parse --tab
@@ -160,6 +164,17 @@ void CommandLineExec::applyTabArgs(MainWindow& mainWindow) const
 
 void CommandLineExec::setupScreenshotTimer(QApplication& app, MainWindow& mainWindow) const
 {
+    if (!m_clientDetailsHash.isEmpty()) {
+        // Connect is async: open on the first connect (or now, when already up)
+        IpcClient* ipc = mainWindow.ipcClient();
+        const QString hash = m_clientDetailsHash;
+        auto open = [&mainWindow, ipc, hash] { showClientDetails(&mainWindow, ipc, hash); };
+        if (ipc && ipc->isConnected())
+            open();
+        else if (ipc)
+            QObject::connect(ipc, &IpcClient::connected, &mainWindow, open,
+                             Qt::SingleShotConnection);
+    }
     if (m_screenshotMode) {
         const QString path = m_screenshotPath;
         const int optPage = m_optionsPage;

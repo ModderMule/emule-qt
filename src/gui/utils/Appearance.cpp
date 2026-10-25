@@ -10,6 +10,7 @@
 #include <QFont>
 #include <QList>
 #include <QPalette>
+#include <QProxyStyle>
 #include <QStyle>
 #include <QStyleFactory>
 #include <QStyleHints>
@@ -88,6 +89,20 @@ Qt::ColorScheme toQt(ThemeChoice theme)
     return Qt::ColorScheme::Unknown;
 }
 
+// Windows 10 native styles draw with the light system theme and ignore a dark palette;
+// only windows11 and Fusion draw dark (report #10)
+bool styleDrawsDark()
+{
+    const QStyle* style = QApplication::style();
+    if (const auto* proxy = qobject_cast<const QProxyStyle*>(style))
+        style = proxy->baseStyle();
+    if (!style)
+        return true;
+    const QString name = style->name();
+    return name.compare(QLatin1StringView("windowsvista"), Qt::CaseInsensitive) != 0
+        && name.compare(QLatin1StringView("windows"), Qt::CaseInsensitive) != 0;
+}
+
 } // namespace
 
 bool applyColorScheme(int scheme, bool allowFallback)
@@ -107,10 +122,15 @@ bool applyColorScheme(int scheme, bool allowFallback)
         return true;
     }
 
-    if (wanted == Qt::ColorScheme::Unknown || hints->colorScheme() == wanted)
+    // Windows accepts the dark scheme (forced or system) even where its style cannot draw it
+    const bool wantsDark = s_theme == ThemeChoice::Dark
+        || (s_theme == ThemeChoice::System && hints->colorScheme() == Qt::ColorScheme::Dark);
+    const bool styleRefusesDark = wantsDark && !styleDrawsDark();
+    if (!styleRefusesDark
+        && (wanted == Qt::ColorScheme::Unknown || hints->colorScheme() == wanted))
         return true;
     if (!allowFallback) {
-        logInfo(QStringLiteral("Theme: platform ignored the colour scheme, applies after restart"));
+        logInfo(QStringLiteral("Theme: colour scheme needs Fusion, applies after restart"));
         return false;
     }
 
@@ -121,10 +141,11 @@ bool applyColorScheme(int scheme, bool allowFallback)
         return false;
     }
     QApplication::setStyle(new TooltipDelayStyle(fusion));
-    QApplication::setPalette(s_theme == ThemeChoice::Dark ? darkPalette()
-                                                          : fusion->standardPalette());
+    QApplication::setPalette(wantsDark ? darkPalette() : fusion->standardPalette());
     s_fusionFallback = true;
-    logInfo(QStringLiteral("Theme: platform ignored the colour scheme, using Fusion"));
+    logInfo(styleRefusesDark
+                ? QStringLiteral("Theme: native style cannot draw dark, using Fusion")
+                : QStringLiteral("Theme: platform ignored the colour scheme, using Fusion"));
     return true;
 }
 

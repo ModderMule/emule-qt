@@ -238,8 +238,8 @@ private:
     /// Asks the daemon for its public addresses first, so both address families get a verdict.
     void openPortTest();
 
-    [[nodiscard]] QString bindSelection() const;
-    void showBindSelection(const QString& selection);
+    [[nodiscard]] static QString comboSelection(const QComboBox* combo);
+    static void showComboSelection(QComboBox* combo, const QString& selection);
     void requestNetworkInterfaces();
     void requestPortMapStatus();
     void showPortMapStatus(const QCborMap& info);
@@ -290,6 +290,7 @@ private:
     QCheckBox* m_transferDoubleClickCheck = nullptr;
     QCheckBox* m_showDwlPercentageCheck = nullptr;
     QCheckBox* m_showPartProgressDetailCheck = nullptr;
+    QCheckBox* m_showActiveDownloadsBoldCheck = nullptr;
     QCheckBox* m_showRatesInTitleCheck = nullptr;
     QCheckBox* m_showCatTabInfosCheck = nullptr;
     QCheckBox* m_autoRemoveFinishedCheck = nullptr;
@@ -700,7 +701,7 @@ private:
     QLineEdit*    m_webKeyEdit = nullptr;
     QPushButton*  m_webKeyBrowseBtn = nullptr;
     QLineEdit*    m_webApiKeyEdit = nullptr;
-    QLineEdit*    m_webListenEdit = nullptr;
+    QComboBox*    m_webListenCombo = nullptr;
     QLineEdit*    m_webAdminPasswordEdit = nullptr;
     QCheckBox*    m_webAdminHiLevCheck = nullptr;
     QCheckBox*    m_webGuestEnabledCheck = nullptr;

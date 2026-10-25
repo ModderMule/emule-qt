@@ -13,7 +13,8 @@ namespace eMule {
 enum class ThemeChoice : int { System = 0, Light = 1, Dark = 2 };
 
 /// Asks Qt for @p scheme. Where the platform ignores the request (some Linux
-/// themes) and @p allowFallback is set, switches to Fusion with a matching palette.
+/// themes, or a Windows 10 style that cannot draw dark) and @p allowFallback is set,
+/// switches to Fusion with a matching palette.
 /// Returns false when the scheme could not be applied live (restart needed).
 bool applyColorScheme(int scheme, bool allowFallback);
 

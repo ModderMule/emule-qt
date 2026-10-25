@@ -7,6 +7,7 @@
 #include "app/IpcClient.h"
 #include "controls/TorrentListModel.h"
 #include "controls/TorrentPieceGrid.h"
+#include "utils/Clipboard.h"
 #include "utils/MenuUtils.h"
 #include "utils/StatusBarNotifier.h"
 #include "utils/StringUtils.h"
@@ -15,7 +16,6 @@
 #include <QApplication>
 #include <QButtonGroup>
 #include <QCheckBox>
-#include <QClipboard>
 #include <QComboBox>
 #include <QDateTime>
 #include <QDoubleSpinBox>
@@ -549,7 +549,7 @@ void TorrentDetailsDialog::copyMagnet()
 {
     if (m_magnet.isEmpty())
         return;
-    QApplication::clipboard()->setText(m_magnet);
+    eMule::Clipboard::setText(m_magnet);
     StatusBarNotifier::post(tr("Copied %n magnet link(s).", nullptr, 1), 3000);
 }
 

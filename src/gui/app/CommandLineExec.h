@@ -109,6 +109,11 @@ private:
         QStringLiteral("Open Options dialog at page (general, display, connection, ...)."),
         QStringLiteral("page")};
 
+    QCommandLineOption m_clientDetailsOption{
+        QStringLiteral("client-details"),
+        QStringLiteral("Open Client Details for a user hash once the core is connected (with --screenshot)."),
+        QStringLiteral("hash")};
+
     QCommandLineOption m_configOption{
         QStringLiteral("config"),
         QStringLiteral("Override config directory (default: platform-specific)."),
@@ -133,6 +138,7 @@ private:
     QString m_screenshotPath;
     int m_screenshotDelay = 3000;
     int m_optionsPage = -1;
+    QString m_clientDetailsHash;
     MainWindow::Tab m_activeTab = MainWindow::TabKad;
     bool m_hasTab = false;
     bool m_hasSubtab = false;

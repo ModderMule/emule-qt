@@ -31,6 +31,7 @@ private slots:
     void serverModel_parsesCc();
     void kadModel_countryColumn();
     void countryColumn_hiddenByDefaultSavedLayoutWins();
+    void sharedListColumn_hiddenByDefaultAndExtOnly();
     void restoreHeader_keepsLayoutWhenColumnAppended();
     void delegate_widensComposedDecoration();
 };
@@ -113,7 +114,7 @@ void tst_CountryFlags::clientModel_countryColumnAndDecoration()
         model.setClients({row});
 
         const int col = model.countryColumn();
-        QCOMPARE(col, model.columnCount() - 1);
+        QCOMPARE(col, model.columnCount() - 2);   // Shared List comes last
         QCOMPARE(model.headerData(col, Qt::Horizontal).toString(), QStringLiteral("Country"));
         QCOMPARE(model.data(model.index(0, col)).toString(), QStringLiteral("Japan"));
         QCOMPARE(model.data(model.index(0, col), Qt::UserRole).toString(), QStringLiteral("Japan"));
@@ -169,6 +170,43 @@ void tst_CountryFlags::countryColumn_hiddenByDefaultSavedLayoutWins()
     other.setModel(&model);
     other.bindColumns(QStringLiteral("tst_countryFlags_known"), {}, {model.countryColumn()});
     QVERIFY(!other.header()->isSectionHidden(model.countryColumn()));
+}
+
+void tst_CountryFlags::sharedListColumn_hiddenByDefaultAndExtOnly()
+{
+    ClientListModel model(ClientListMode::Downloading);
+    ClientRow open, closed, http;
+    closed.noViewShared = true;
+    http.isUrl = true;
+    model.setClients({open, closed, http});
+    const int col = model.sharedListColumn();
+    QCOMPARE(col, model.columnCount() - 1);
+    QCOMPARE(model.headerData(col, Qt::Horizontal).toString(), QStringLiteral("Shared List"));
+    QCOMPARE(model.data(model.index(0, col)).toString(), QStringLiteral("Yes"));
+    QCOMPARE(model.data(model.index(1, col)).toString(), QStringLiteral("No"));
+    QVERIFY(!model.data(model.index(2, col)).isValid());
+
+    // A layout saved before the column existed: the column still starts hidden
+    const QString key = QStringLiteral("tst_countryFlags_sharedList");
+    {
+        QStandardItemModel oldModel(0, model.columnCount() - 1);
+        QHeaderView oldHeader(Qt::Horizontal);
+        oldHeader.setModel(&oldModel);
+        oldHeader.resizeSection(1, 123);
+        theUiState.captureHeaderState(&oldHeader, key);
+    }
+    QCOMPARE(theUiState.headerStateSectionCount(key), model.columnCount() - 1);
+    ListTreeView view;
+    view.setModel(&model);
+    view.bindColumns(key, {}, {model.countryColumn(), col});
+    QCOMPARE(view.header()->sectionSize(1), 123);
+    QVERIFY(view.header()->isSectionHidden(col));
+
+    // Shown by the user, then "Show more controls" turned off: hidden again
+    view.setExtColumns({col}, true);
+    view.header()->setSectionHidden(col, false);
+    view.applyExtColumns(false);
+    QVERIFY(view.header()->isSectionHidden(col));
 }
 
 void tst_CountryFlags::restoreHeader_keepsLayoutWhenColumnAppended()

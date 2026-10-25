@@ -135,6 +135,7 @@ private slots:
     void defaultWidthShowsEveryTabTitle();
     void windowsDoesNotForceTheContentHeight();
     void theSharedDirTreeStartsAtTheMachineRoot();
+    void ctrlClickSharesTheSubdirectories();
 };
 
 /// The regression this file exists for. Named per page, because "the dialog is too tall"
@@ -1121,6 +1122,59 @@ void TestOptionsDialogSizing::theSharedDirTreeStartsAtTheMachineRoot()
         QCOMPARE(proxy->mapFromSource(fsModel->index(volume.absoluteFilePath())).isValid(),
                  !volume.isSymLink());
 #endif
+}
+
+/// Report #9: Ctrl+click (MFC OnLButtonDown, DirectoryTreeCtrl.cpp:136) checked only the
+/// one folder. It takes every folder below with it, both ways.
+void TestOptionsDialogSizing::ctrlClickSharesTheSubdirectories()
+{
+    QTemporaryDir scratch(QDir::homePath() + QStringLiteral("/emuleqt-dirtree-XXXXXX"));
+    QVERIFY(scratch.isValid());
+    const QString root = QDir::cleanPath(scratch.path());
+    QVERIFY(QDir(root).mkpath(QStringLiteral("a/a1")));
+    QVERIFY(QDir(root).mkpath(QStringLiteral("b")));
+
+    OptionsDialog dlg(nullptr, nullptr);
+    dlg.selectPage(OptionsDialog::PageDirectories);
+    dlg.show();
+    QVERIFY(QTest::qWaitForWindowExposed(&dlg));
+    auto* tree = stackOf(dlg)->widget(OptionsDialog::PageDirectories)->findChild<QTreeView*>();
+    QVERIFY(tree);
+    auto* proxy = qobject_cast<QAbstractProxyModel*>(tree->model());
+    auto* fsModel = qobject_cast<QFileSystemModel*>(proxy->sourceModel());
+    const QPersistentModelIndex dir = proxy->mapFromSource(fsModel->index(root));
+    QVERIFY(dir.isValid());
+    tree->scrollTo(dir);
+    QTRY_VERIFY(tree->visualRect(dir).isValid());
+
+    const auto checkOf = [&](const QString& rel) {
+        const QModelIndex i = fsModel->index(rel.isEmpty() ? root : root + u'/' + rel);
+        return fsModel->data(i, Qt::CheckStateRole).toInt();
+    };
+    const auto clickBox = [&](Qt::KeyboardModifiers mods) {
+        QStyleOptionViewItem opt;
+        opt.initFrom(tree);
+        opt.rect = tree->visualRect(dir);
+        opt.features |= QStyleOptionViewItem::HasCheckIndicator;
+        const QRect box = tree->style()->subElementRect(
+            QStyle::SE_ItemViewItemCheckIndicator, &opt, tree);
+        QTest::mouseClick(tree->viewport(), Qt::LeftButton, mods, box.center());
+    };
+
+    clickBox(Qt::ControlModifier);
+    QTRY_COMPARE(checkOf(QString()), int(Qt::Checked));
+    QCOMPARE(checkOf(QStringLiteral("a")), int(Qt::Checked));
+    QCOMPARE(checkOf(QStringLiteral("a/a1")), int(Qt::Checked));
+    QCOMPARE(checkOf(QStringLiteral("b")), int(Qt::Checked));
+
+    clickBox(Qt::ControlModifier);
+    QTRY_COMPARE(checkOf(QString()), int(Qt::Unchecked));
+    QCOMPARE(checkOf(QStringLiteral("a/a1")), int(Qt::Unchecked));
+
+    // A plain click still toggles the one folder
+    clickBox(Qt::NoModifier);
+    QTRY_COMPARE(checkOf(QString()), int(Qt::Checked));
+    QCOMPARE(checkOf(QStringLiteral("a")), int(Qt::Unchecked));
 }
 
 QTEST_MAIN(TestOptionsDialogSizing)

@@ -10,6 +10,7 @@
 #include "prefs/NewsServer.h"
 #include "prefs/Preferences.h"
 #include "stats/NetworkCounters.h"
+#include "utils/Clipboard.h"
 #include "utils/CountryFlags.h"
 #include "utils/PanelPoller.h"
 #include "utils/StringUtils.h"
@@ -20,7 +21,6 @@
 #include <QBuffer>
 #include <QCborArray>
 #include <QCborMap>
-#include <QClipboard>
 #include <QDateTime>
 #include <QFile>
 #include <QFileDialog>
@@ -1854,17 +1854,17 @@ void StatisticsPanel::restoreStats()
 void StatisticsPanel::copyBranch()
 {
     if (auto* item = m_tree->currentItem())
-        QApplication::clipboard()->setText(treeText(true, item));
+        eMule::Clipboard::setText(treeText(true, item));
 }
 
 void StatisticsPanel::copyAllVisible()
 {
-    QApplication::clipboard()->setText(treeText(true));
+    eMule::Clipboard::setText(treeText(true));
 }
 
 void StatisticsPanel::copyAllStats()
 {
-    QApplication::clipboard()->setText(treeText(false));
+    eMule::Clipboard::setText(treeText(false));
 }
 
 void StatisticsPanel::copyHtml(bool onlyVisible, bool branchOnly)
@@ -1872,7 +1872,7 @@ void StatisticsPanel::copyHtml(bool onlyVisible, bool branchOnly)
     QTreeWidgetItem* branch = branchOnly ? m_tree->currentItem() : nullptr;
     if (branchOnly && !branch)
         return;
-    QApplication::clipboard()->setText(treeHtml(onlyVisible, branch));
+    eMule::Clipboard::setText(treeHtml(onlyVisible, branch));
 }
 
 void StatisticsPanel::exportHtml()

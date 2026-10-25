@@ -420,6 +420,18 @@ bool UpDownClient::isIPv6Connection() const
     return m_userAddress.isIPv6();
 }
 
+UpDownClient::NatRoute UpDownClient::natRoute() const
+{
+    if (!m_socket || !m_socket->isConnected())
+        return NatRoute::None;
+    // A transport-backed socket rides a NAT-T stream; QUIC is the only one
+    if (m_socket->hasTransport())
+        return NatRoute::Quic;
+    if (hasLowID() && isIPv6Connection())
+        return NatRoute::IPv6;
+    return NatRoute::None;
+}
+
 void UpDownClient::setBuddyID(const uint8* id)
 {
     if (id) {
@@ -632,6 +644,7 @@ void UpDownClient::clearHelloProperties()
     m_supportsFileIdent = false;
     m_supportsIPv6 = false;
     m_openIPv6 = false;
+    m_supportsNatTQuic = false;
     m_supportsExtendedXS = false;
     m_supportsExtSXSkipTags = false;
     m_supportsHttpCache = false;
@@ -1116,6 +1129,7 @@ bool UpDownClient::processHelloTypePacket(SafeMemFile& data)
                 m_supportsExtendedXS     = (opts & MODMISC_EXTXS) != 0;
                 m_supportsExtSXSkipTags  = (opts & MODMISC_EXTXS_SKIPTAGS) != 0;
                 m_supportsHttpCache      = (opts & MODMISC_HTTPCACHE) != 0;
+                m_supportsNatTQuic       = (opts & MODMISC_NATT_QUIC) != 0;
             }
             break;
 

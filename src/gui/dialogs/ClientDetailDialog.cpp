@@ -191,6 +191,23 @@ QWidget* ClientDetailDialog::buildContent(const QCborMap& d)
                      obfuscation == QLatin1String("enabled") ? tr("Enabled")
                      : obfuscation == QLatin1String("supported") ? tr("Supported")
                      : tr("Not supported or disabled"));
+        // Not in MFC: NAT-T for LowID peers — the route in use, else what the peer supports
+        const QString natRoute = str(d, QLatin1StringView("natRoute"));
+        QString natt;
+        if (natRoute == QLatin1String("quic")) {
+            natt = tr("Connected (%1)").arg(tr("QUIC"));
+        } else if (natRoute == QLatin1String("ipv6")) {
+            natt = tr("Connected (%1)").arg(tr("IPv6 fallback"));
+        } else {
+            QStringList ways;
+            if (d.value(QLatin1StringView("supportsIPv6")).toBool())
+                ways << tr("IPv6 fallback");
+            if (d.value(QLatin1StringView("supportsNatTQuic")).toBool())
+                ways << tr("QUIC");
+            natt = ways.isEmpty() ? tr("Not supported")
+                                  : tr("Supported (%1)").arg(ways.join(QStringLiteral(", ")));
+        }
+        addDetailRow(form, tr("NAT-T"), natt);
 
         const bool kadConn = d.value(QLatin1StringView("kadConnected")).toBool();
         addDetailRow(form, tr("Kad"), kadConn ? tr("Connected") : tr("Disconnected"));

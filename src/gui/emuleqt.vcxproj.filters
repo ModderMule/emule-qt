@@ -459,6 +459,9 @@
     <QtMoc Include="utils\CountryFlags.h">
       <Filter>Header Files</Filter>
     </QtMoc>
+    <ClInclude Include="utils\Clipboard.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
     <ClInclude Include="utils\IpcFeedback.h">
       <Filter>Header Files</Filter>
     </ClInclude>

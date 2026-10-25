@@ -138,6 +138,9 @@ public:
     /// spending our upstream on it. Nothing is ever sent to a peer without this.
     [[nodiscard]] bool supportsHttpCache() const   { return m_supportsHttpCache; }
     void setSupportsHttpCache(bool s)              { m_supportsHttpCache = s; }
+    /// Peer speaks the QUIC NAT-T transport (MODMISC_NATT_QUIC).
+    [[nodiscard]] bool supportsNatTQuic() const    { return m_supportsNatTQuic; }
+    void setSupportsNatTQuic(bool s)               { m_supportsNatTQuic = s; }
 
     /// Our own public IPv6 changed — remember to tell this peer. Deliberately lazy: the
     /// packet goes out the next time we walk this client anyway (upload queue or source
@@ -152,6 +155,11 @@ public:
     /// fallback. Distinct from supportsIPv6()/openIPv6(), which only say the peer *has*
     /// an IPv6 we could use. Used for upload-slot fairness and the per-IPv6 queue limit.
     [[nodiscard]] bool isIPv6Connection() const;
+
+    /// How the live connection gets past this peer's LowID: a QUIC NAT-T stream, or IPv6
+    /// (direct dial or the rendezvous handoff). None when not connected or not LowID.
+    enum class NatRoute : uint8 { None, Quic, IPv6 };
+    [[nodiscard]] NatRoute natRoute() const;
 
     [[nodiscard]] uint32 userIDHybrid() const { return m_userIDHybrid; }
     void setUserIDHybrid(uint32 id) { m_userIDHybrid = id; sourceIdentityChanged(); }
@@ -1305,6 +1313,7 @@ private:
     bool m_supportsExtendedXS = false;  // peer set CT_MOD_MISCOPTIONS bit 0
     bool m_supportsExtSXSkipTags = false; // peer set CT_MOD_MISCOPTIONS bit 5
     bool m_supportsHttpCache = false;   // peer set CT_MOD_MISCOPTIONS bit 10
+    bool m_supportsNatTQuic = false;    // peer set CT_MOD_MISCOPTIONS bit 4
     bool m_sendIPPending = false;       // owe this peer an OP_CHANGE_CLIENT_IP
     bool m_hashsetRequestingAICH = false;
     bool m_testDisableMultiPacket = false;

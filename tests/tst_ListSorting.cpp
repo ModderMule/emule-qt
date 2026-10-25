@@ -38,6 +38,7 @@
 #include <QCborArray>
 #include <QCborMap>
 #include <QDateTime>
+#include <QFont>
 #include <QGuiApplication>
 #include <QImage>
 #include <QPainter>
@@ -126,6 +127,7 @@ private slots:
     void sourceRowsFollowMfcColumns();
     void sourceStatusFollowsMfc();
     void a4afSourcesStayBelowAvailableOnes();
+    void activeDownloadsAreBoldWhenEnabled();
     void sourcesSortByQueueRankWithDownloadingFirst();
     void sourcesSortByPartsAndBySoftware();
     void sourceRowsShowStateAndSoftwareIcons();
@@ -920,6 +922,54 @@ void tst_ListSorting::a4afSourcesStayBelowAvailableOnes()
     QCOMPARE(names(), (QStringList{u"bbb"_s, u"ccc"_s, u"aaa"_s}));
     proxy.sort(DownloadListModel::ColFileName, Qt::DescendingOrder);
     QCOMPARE(names(), (QStringList{u"ccc"_s, u"bbb"_s, u"aaa"_s}));
+}
+
+void tst_ListSorting::activeDownloadsAreBoldWhenEnabled()
+{
+    // MFC DownloadListCtrl.cpp:685-691: file with a transferring source, sources in
+    // DS_DOWNLOADING, A4AF rows too while they send for their other file
+    const bool had = thePrefs.showActiveDownloadsBold();
+    const auto restore = qScopeGuard([had] { thePrefs.setShowActiveDownloadsBold(had); });
+
+    DownloadRow busy;
+    busy.hash = QStringLiteral("busy");
+    busy.status = QStringLiteral("ready");
+    busy.transferringSrcCount = 1;
+    DownloadRow idle;
+    idle.hash = QStringLiteral("idle");
+    idle.status = QStringLiteral("ready");
+
+    const auto source = [](const QString& hash, const QString& state, bool a4af) {
+        SourceRow s;
+        s.userHash = hash;
+        s.downloadState = state;
+        s.a4af = a4af;
+        return s;
+    };
+    DownloadListModel model;
+    model.setDownloads({busy, idle});
+    model.setSources(QStringLiteral("busy"), {source(u"d"_s, u"Downloading"_s, false),
+                                              source(u"q"_s, u"OnQueue"_s, false),
+                                              source(u"a"_s, u"Downloading"_s, true),
+                                              source(u"w"_s, u"OnQueue"_s, true)});
+    const auto bold = [&model](const QModelIndex& idx) {
+        const QVariant v = idx.data(Qt::FontRole);
+        return v.isValid() && v.value<QFont>().bold();
+    };
+    const QModelIndex parent = model.index(0, 0);
+    const auto rowBold = [&](int row) { return bold(model.index(row, DownloadListModel::ColStatus, parent)); };
+
+    thePrefs.setShowActiveDownloadsBold(false);
+    QVERIFY(!bold(model.index(0, 0)));
+    QVERIFY(!rowBold(0));
+
+    thePrefs.setShowActiveDownloadsBold(true);
+    QVERIFY(bold(model.index(0, 0)));
+    QVERIFY(!bold(model.index(1, 0)));
+    QVERIFY(rowBold(0));
+    QVERIFY(!rowBold(1));
+    QVERIFY(rowBold(2));    // A4AF, transferring for its other file
+    QVERIFY(!rowBold(3));
 }
 
 void tst_ListSorting::sourcesSortByQueueRankWithDownloadingFirst()
