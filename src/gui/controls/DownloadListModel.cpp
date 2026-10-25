@@ -19,6 +19,7 @@
 #include "utils/StringUtils.h"
 
 #include <QColor>
+#include <QFont>
 #include <QFileInfo>
 #include <QDateTime>
 #include <QLocale>
@@ -215,6 +216,16 @@ QString sourceTooltipText(const SourceRow& s, bool extended)
     return info;
 }
 
+/// Bold font for a transferring row when the option is on, else no override.
+[[nodiscard]] static QVariant activeBoldFont(bool transferring)
+{
+    if (!transferring || !thePrefs.showActiveDownloadsBold())
+        return {};
+    QFont f;
+    f.setBold(true);
+    return f;
+}
+
 DownloadListModel::DownloadListModel(QObject* parent)
     : QAbstractItemModel(parent)
 {
@@ -404,6 +415,11 @@ QVariant DownloadListModel::data(const QModelIndex& index, int role) const
         if (role == Qt::ToolTipRole)
             return sourceTooltipText(s, thePrefs.showExtControls());
 
+        // MFC DrawItem: a source sending data is bold, an A4AF row too
+        // while it sends for its other file (DownloadListCtrl.cpp:685-691)
+        if (role == Qt::FontRole)
+            return activeBoldFont(s.downloadState == QLatin1String("Downloading"));
+
         // A source fetching over HTTP Cache is not costing the uploader anything,
         // which is worth seeing at a glance — MFC gave PeerCache its own bar for
         // the same reason. Teal, distinct from the blue used for the connected
@@ -433,6 +449,9 @@ QVariant DownloadListModel::data(const QModelIndex& index, int role) const
 
     if (role == Qt::TextAlignmentRole)
         return columnAlignment(index.column());
+
+    if (role == Qt::FontRole)
+        return activeBoldFont(d.transferringSrcCount > 0);
 
     // Column 0 carries the type icon and, when there is something to say, the
     // marks: a red exclamation for a file whose bytes contradict its name, and

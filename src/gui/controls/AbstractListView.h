@@ -84,7 +84,20 @@ public:
             this->sortByColumn(m_defaultSort->first, m_defaultSort->second);
         m_defaultSort.reset();
 
+        const int savedCount = theUiState.headerStateSectionCount(stateKey);
         theUiState.bindHeaderView(hdr, stateKey);
+        // A column added since the layout was saved takes its default, not Qt's "shown"
+        if (savedCount >= 0) {
+            bool changed = false;
+            for (const int hidden : defaultHidden) {
+                if (hidden >= savedCount && hidden < hdr->count()) {
+                    hdr->setSectionHidden(hidden, true);
+                    changed = true;
+                }
+            }
+            if (changed)
+                theUiState.captureHeaderState(hdr, stateKey);
+        }
         installHeaderMenu();
         m_sortColumn = hdr->sortIndicatorSection();
         restoreSortValues();
@@ -122,6 +135,33 @@ public:
     void setLockedColumns(std::initializer_list<int> columns)
     {
         m_lockedColumns = columns;
+    }
+
+    /// Columns that exist only with "Show more controls": while it is off they are
+    /// hidden and left out of the header menu. Survives bindColumns().
+    void setExtColumns(std::initializer_list<int> columns, bool show)
+    {
+        m_extColumns = columns;
+        applyExtColumns(show);
+    }
+
+    /// Re-apply after "Show more controls" changed. Turning it on leaves the
+    /// columns hidden; the header menu brings them back.
+    void applyExtColumns(bool show)
+    {
+        m_showExtColumns = show;
+        if (show)
+            return;
+        auto* hdr = this->header();
+        bool changed = false;
+        for (const int column : m_extColumns) {
+            if (column > 0 && column < hdr->count() && !hdr->isSectionHidden(column)) {
+                hdr->setSectionHidden(column, true);
+                changed = true;
+            }
+        }
+        if (changed && !m_stateKey.isEmpty())
+            theUiState.captureHeaderState(hdr, m_stateKey);
     }
 
 protected:
@@ -268,7 +308,8 @@ private:
         auto* menu = new QMenu(this);
         menu->setAttribute(Qt::WA_DeleteOnClose);
         for (int column = 1; column < hdr->count(); ++column) {
-            if (m_lockedColumns.contains(column))
+            if (m_lockedColumns.contains(column)
+                || (!m_showExtColumns && m_extColumns.contains(column)))
                 continue;
             auto* action = menu->addAction(
                 model->headerData(column, Qt::Horizontal, Qt::DisplayRole).toString());
@@ -306,6 +347,8 @@ private:
     QString          m_stateKey;
     std::vector<int> m_defaultWidths;
     std::set<int>    m_lockedColumns;
+    std::set<int>    m_extColumns;
+    bool             m_showExtColumns = true;
     std::optional<std::pair<int, Qt::SortOrder>> m_defaultSort;
     bool             m_restoredOnShow = false;
     bool             m_headerMenuInstalled = false;

@@ -2,6 +2,7 @@
 /// @file MetaResultActions.cpp
 /// @brief Actions on eNode torrent/Usenet/web/container search rows, including the login detour.
 
+#include "utils/Clipboard.h"
 #include "utils/MetaResultActions.h"
 
 #include "IpcMessage.h"
@@ -17,7 +18,6 @@
 #include "utils/StatusBarNotifier.h"
 
 #include <QApplication>
-#include <QClipboard>
 #include <QCborMap>
 #include <QDir>
 #include <QFile>
@@ -130,7 +130,7 @@ void MetaResultActions::copyMagnets(const QList<Row>& rows)
             links << row.magnet;
     if (links.isEmpty())
         return;
-    QApplication::clipboard()->setText(links.join(u'\n'));
+    eMule::Clipboard::setText(links.join(u'\n'));
     StatusBarNotifier::post(tr("Copied %n magnet link(s) to the clipboard.", nullptr, int(links.size())));
 }
 

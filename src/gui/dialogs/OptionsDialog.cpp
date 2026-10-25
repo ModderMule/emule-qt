@@ -82,6 +82,7 @@
 #include <QSpinBox>
 #include <QShortcut>
 #include <QStackedWidget>
+#include <QStyledItemDelegate>
 #include <QStyle>
 #include <QTabWidget>
 #include <QTreeView>
@@ -229,6 +230,7 @@ OptionsDialog::OptionsDialog(IpcClient* ipc, StatisticsPanel* statsPanel,
     connect(m_transferDoubleClickCheck, &QCheckBox::toggled, this, &OptionsDialog::markDirty);
     connect(m_showDwlPercentageCheck, &QCheckBox::toggled, this, &OptionsDialog::markDirty);
     connect(m_showPartProgressDetailCheck, &QCheckBox::toggled, this, &OptionsDialog::markDirty);
+    connect(m_showActiveDownloadsBoldCheck, &QCheckBox::toggled, this, &OptionsDialog::markDirty);
     connect(m_showRatesInTitleCheck, &QCheckBox::toggled, this, &OptionsDialog::markDirty);
     connect(m_showCatTabInfosCheck, &QCheckBox::toggled, this, &OptionsDialog::markDirty);
     connect(m_autoRemoveFinishedCheck, &QCheckBox::toggled, this, &OptionsDialog::markDirty);
@@ -991,6 +993,13 @@ QWidget* OptionsDialog::createDisplayPage()
            "requested, grey otherwise) and marks every part boundary on the progress line."));
     layout->addWidget(m_showPartProgressDetailCheck);
 
+    // MorphXT "Show downloading files in bold" (PPgMorph); MFC INI only
+    m_showActiveDownloadsBoldCheck = new QCheckBox(tr("Show active downloads in bold"), page);
+    m_showActiveDownloadsBoldCheck->setToolTip(
+        tr("Downloads that are receiving data, and the sources sending it, are drawn in bold. "
+           "A source listed under another file (A4AF) is bold too while it transfers."));
+    layout->addWidget(m_showActiveDownloadsBoldCheck);
+
     m_showRatesInTitleCheck = new QCheckBox(tr("Show transfer rates on title"), page);
     layout->addWidget(m_showRatesInTitleCheck);
 
@@ -1668,6 +1677,18 @@ public:
         return QStringList(m_checked.begin(), m_checked.end());
     }
 
+    /// Ctrl+click: @p path and every folder below it follow @p checked
+    /// (MFC ShareSubDirTree, srchybrid/DirectoryTreeCtrl.cpp:96)
+    void setSubtreeChecked(const QString& path, bool checked)
+    {
+        QStringList dirs = checkedPaths();
+        if (checked)
+            SharedDirState::collectSubdirectories(path, dirs, [](const QString&) { return true; });
+        else
+            dirs = SharedDirState::withoutDir(dirs, path, true);
+        setCheckedPaths(dirs);
+    }
+
 private:
     [[nodiscard]] bool hasCheckedBelow(const QString& path) const
     {
@@ -1678,6 +1699,49 @@ private:
     }
 
     QSet<QString> m_checked;
+};
+
+/// Check box toggles of the shared-folder tree; with Ctrl held (Cmd or Ctrl on macOS)
+/// the whole subtree follows, as MFC OnLButtonDown / OnKeyDown (DirectoryTreeCtrl.cpp:136)
+class SharedDirsDelegate : public QStyledItemDelegate {
+public:
+    SharedDirsDelegate(CheckableFileSystemModel* fsModel, QObject* parent)
+        : QStyledItemDelegate(parent), m_fsModel(fsModel) {}
+
+    bool editorEvent(QEvent* event, QAbstractItemModel* model,
+                     const QStyleOptionViewItem& option, const QModelIndex& index) override
+    {
+        const bool recurse = isToggleEvent(event)
+            && (static_cast<QInputEvent*>(event)->modifiers()
+                & (Qt::ControlModifier | Qt::MetaModifier));
+        const QVariant before = index.data(Qt::CheckStateRole);
+        if (!QStyledItemDelegate::editorEvent(event, model, option, index))
+            return false;
+        const QVariant after = index.data(Qt::CheckStateRole);
+        if (recurse && after != before) {
+            QGuiApplication::setOverrideCursor(Qt::WaitCursor);
+            m_fsModel->setSubtreeChecked(index.data(QFileSystemModel::FilePathRole).toString(),
+                                         after.toInt() == Qt::Checked);
+            QGuiApplication::restoreOverrideCursor();
+        }
+        return true;
+    }
+
+private:
+    [[nodiscard]] static bool isToggleEvent(const QEvent* event)
+    {
+        switch (event->type()) {
+        case QEvent::MouseButtonPress:
+        case QEvent::MouseButtonRelease:
+        case QEvent::MouseButtonDblClick:
+        case QEvent::KeyPress:
+            return true;
+        default:
+            return false;
+        }
+    }
+
+    CheckableFileSystemModel* m_fsModel;
 };
 
 /// Hides hidden folders again once the model lists them: only /Volumes is wanted, and
@@ -1775,6 +1839,7 @@ QWidget* OptionsDialog::createDirectoriesPage()
     for (int i = 1; i < visibleDirs->columnCount(); ++i)
         m_sharedDirsTree->setColumnHidden(i, true);
     m_sharedDirsTree->setHeaderHidden(true);
+    m_sharedDirsTree->setItemDelegate(new SharedDirsDelegate(fsModel, m_sharedDirsTree));
 
     // Open on the home folder, where the tree used to be rooted
     const QString home = QDir::homePath();
@@ -1816,11 +1881,10 @@ QWidget* OptionsDialog::createDirectoriesPage()
         auto* fsModel = static_cast<CheckableFileSystemModel*>(m_sharedDirsModel);
         if (fsModel->checkedPaths().contains(uncPath))
             return;
-        fsModel->setData(fsModel->index(0, 0), Qt::Checked, Qt::CheckStateRole); // trigger change
-        // Directly add to checked set via setCheckedPaths
         auto paths = fsModel->checkedPaths();
         paths.append(uncPath);
         fsModel->setCheckedPaths(paths);
+        markDirty();   // setCheckedPaths() emits no dataChanged
     });
 #else
     uncBtn->setEnabled(false);
@@ -2870,11 +2934,16 @@ QWidget* OptionsDialog::createWebInterfacePage()
     portLayout->addWidget(m_webPortSpin);
     portLayout->addSpacing(12);
     portLayout->addWidget(new QLabel(tr("Listen address:")));
-    m_webListenEdit = new QLineEdit;
-    m_webListenEdit->setPlaceholderText(tr("all interfaces"));
-    m_webListenEdit->setToolTip(tr("Address the web server listens on. Empty: every interface, "
-                                   "reachable from other hosts. 127.0.0.1: this computer only."));
-    portLayout->addWidget(m_webListenEdit, 1);
+    // Same list as the Connection page's interface pick, one entry per address
+    // (the web server binds one address). Filled from GetNetworkInterfaces.
+    m_webListenCombo = new QComboBox;
+    m_webListenCombo->setEditable(true);
+    m_webListenCombo->setInsertPolicy(QComboBox::NoInsert);
+    m_webListenCombo->addItem(tr("Any"), QString());
+    m_webListenCombo->setToolTip(tr("Address the web server listens on. Any: every interface, "
+                                    "reachable from other hosts. 127.0.0.1: this computer only. "
+                                    "Pick one from the list or type an IP address."));
+    portLayout->addWidget(m_webListenCombo, 1);
     generalLayout->addLayout(portLayout);
 
     // Template row
@@ -3082,8 +3151,9 @@ QWidget* OptionsDialog::createWebInterfacePage()
     for (auto* cb : {m_webGzipCheck, m_webUPnPCheck, m_webAdminHiLevCheck})
         connect(cb, &QCheckBox::toggled, this, &OptionsDialog::markDirty);
     for (auto* le : {m_webTemplateEdit, m_webCertEdit, m_webKeyEdit, m_webApiKeyEdit,
-                     m_webAdminPasswordEdit, m_webGuestPasswordEdit, m_webListenEdit})
+                     m_webAdminPasswordEdit, m_webGuestPasswordEdit})
         connect(le, &QLineEdit::textChanged, this, &OptionsDialog::markDirty);
+    connect(m_webListenCombo, &QComboBox::currentTextChanged, this, &OptionsDialog::markDirty);
     for (auto* sb : {m_webPortSpin, m_webSessionTimeoutSpin})
         connect(sb, &QSpinBox::valueChanged, this, &OptionsDialog::markDirty);
 
@@ -6350,6 +6420,7 @@ void OptionsDialog::loadSettings()
     m_transferDoubleClickCheck->setChecked(thePrefs.transferDoubleClick());
     m_showDwlPercentageCheck->setChecked(thePrefs.showDwlPercentage());
     m_showPartProgressDetailCheck->setChecked(thePrefs.showPartProgressDetail());
+    m_showActiveDownloadsBoldCheck->setChecked(thePrefs.showActiveDownloadsBold());
     m_showRatesInTitleCheck->setChecked(thePrefs.showRatesInTitle());
     m_showCatTabInfosCheck->setChecked(thePrefs.showCatTabInfos());
     m_autoRemoveFinishedCheck->setChecked(thePrefs.autoRemoveFinishedDownloads());
@@ -6549,6 +6620,7 @@ void OptionsDialog::saveSettings()
     thePrefs.setTransferDoubleClick(m_transferDoubleClickCheck->isChecked());
     thePrefs.setShowDwlPercentage(m_showDwlPercentageCheck->isChecked());
     thePrefs.setShowPartProgressDetail(m_showPartProgressDetailCheck->isChecked());
+    thePrefs.setShowActiveDownloadsBold(m_showActiveDownloadsBoldCheck->isChecked());
     thePrefs.setShowRatesInTitle(m_showRatesInTitleCheck->isChecked());
     thePrefs.setShowCatTabInfos(m_showCatTabInfosCheck->isChecked());
     thePrefs.setAutoRemoveFinishedDownloads(m_autoRemoveFinishedCheck->isChecked());
@@ -6666,7 +6738,7 @@ void OptionsDialog::saveSettings()
         req.append(QStringLiteral("enableUPnP"));
         req.append(m_upnpCheck->isChecked());
         req.append(QStringLiteral("bindAddress"));
-        req.append(bindSelection());
+        req.append(comboSelection(m_bindInterfaceCombo));
         req.append(QStringLiteral("maxSourcesPerFile"));
         req.append(static_cast<qint64>(m_maxSourcesSpin->value()));
         req.append(QStringLiteral("maxConnections"));
@@ -6951,7 +7023,7 @@ void OptionsDialog::saveSettings()
         req.append(QStringLiteral("webServerPort"));
         req.append(static_cast<qint64>(m_webPortSpin->value()));
         // An address that does not parse is not sent; the stored one stays.
-        if (const QString listen = m_webListenEdit->text().trimmed();
+        if (const QString listen = comboSelection(m_webListenCombo);
             listen.isEmpty() || !QHostAddress(listen).isNull()) {
             req.append(QStringLiteral("webServerListenAddress"));
             req.append(listen);
@@ -7164,6 +7236,8 @@ void OptionsDialog::saveSettings()
         req.append(m_showDwlPercentageCheck->isChecked());
         req.append(QStringLiteral("showPartProgressDetail"));
         req.append(m_showPartProgressDetailCheck->isChecked());
+        req.append(QStringLiteral("showActiveDownloadsBold"));
+        req.append(m_showActiveDownloadsBoldCheck->isChecked());
         req.append(QStringLiteral("showRatesInTitle"));
         req.append(m_showRatesInTitleCheck->isChecked());
         req.append(QStringLiteral("showCatTabInfos"));
@@ -7493,7 +7567,7 @@ void OptionsDialog::fillDaemonSettings(const QCborMap& prefs)
     m_downloadLimitLabel->setText(limitText(m_downloadLimitSlider->value()));
     m_uploadLimitLabel->setText(limitText(m_uploadLimitSlider->value()));
 
-    showBindSelection(prefs.value(QStringLiteral("bindAddress")).toString());
+    showComboSelection(m_bindInterfaceCombo, prefs.value(QStringLiteral("bindAddress")).toString());
     requestNetworkInterfaces();
     requestPortMapStatus();
 
@@ -7757,7 +7831,7 @@ void OptionsDialog::fillDaemonSettings(const QCborMap& prefs)
     m_webCertEdit->setText(prefs.value(QStringLiteral("webServerCertPath")).toString());
     m_webKeyEdit->setText(prefs.value(QStringLiteral("webServerKeyPath")).toString());
     m_webApiKeyEdit->setText(prefs.value(QStringLiteral("webServerApiKey")).toString());
-    m_webListenEdit->setText(prefs.value(QStringLiteral("webServerListenAddress")).toString());
+    showComboSelection(m_webListenCombo, prefs.value(QStringLiteral("webServerListenAddress")).toString());
     m_webAdminHiLevCheck->setChecked(prefs.value(QStringLiteral("webServerAdminAllowHiLevFunc")).toBool());
     m_webGuestEnabledCheck->setChecked(prefs.value(QStringLiteral("webServerGuestEnabled")).toBool());
     updateWebEnabledStates();
@@ -7988,7 +8062,7 @@ void OptionsDialog::updateWebEnabledStates()
 
     // Shared server-level controls — relevant whenever either surface is served.
     m_webPortSpin->setEnabled(anyOn);
-    m_webListenEdit->setEnabled(anyOn);
+    m_webListenCombo->setEnabled(anyOn);
     m_webGzipCheck->setEnabled(anyOn);
     m_webUPnPCheck->setEnabled(anyOn);
     m_webHttpsCheck->setEnabled(anyOn);
@@ -8036,24 +8110,24 @@ void OptionsDialog::openPortTest()
     PortTest::open(m_ipc, this, tcp, udp);
 }
 
-// The value to store: the interface name of a list entry, else the typed text.
-QString OptionsDialog::bindSelection() const
+// The value to store: the data of a list entry, else the typed text.
+QString OptionsDialog::comboSelection(const QComboBox* combo)
 {
-    const int index = m_bindInterfaceCombo->currentIndex();
-    const QString text = m_bindInterfaceCombo->currentText().trimmed();
-    if (index >= 0 && text == m_bindInterfaceCombo->itemText(index))
-        return m_bindInterfaceCombo->itemData(index).toString();
+    const int index = combo->currentIndex();
+    const QString text = combo->currentText().trimmed();
+    if (index >= 0 && text == combo->itemText(index))
+        return combo->itemData(index).toString();
     return text;
 }
 
-void OptionsDialog::showBindSelection(const QString& selection)
+void OptionsDialog::showComboSelection(QComboBox* combo, const QString& selection)
 {
-    const QSignalBlocker blocker(m_bindInterfaceCombo);
-    const int index = m_bindInterfaceCombo->findData(selection, Qt::UserRole, Qt::MatchFixedString);
+    const QSignalBlocker blocker(combo);
+    const int index = combo->findData(selection, Qt::UserRole, Qt::MatchFixedString);
     if (index >= 0)
-        m_bindInterfaceCombo->setCurrentIndex(index);
+        combo->setCurrentIndex(index);
     else
-        m_bindInterfaceCombo->setEditText(selection);   // address, subnet or an absent interface
+        combo->setEditText(selection);   // address, subnet or an absent interface
 }
 
 void OptionsDialog::requestPortMapStatus()
@@ -8087,43 +8161,55 @@ void OptionsDialog::requestNetworkInterfaces()
     m_ipc->sendRequest(std::move(req), [this, self = QPointer<OptionsDialog>(this)](const Ipc::IpcMessage& resp) {
         if (!self || !resp.isValid())
             return;
-        const QString selection = bindSelection();
-        const QSignalBlocker blocker(m_bindInterfaceCombo);
-        m_bindInterfaceCombo->clear();
-        m_bindInterfaceCombo->addItem(tr("Any"), QString());
+        const QString bindSel = comboSelection(m_bindInterfaceCombo);
+        const QString webSel = comboSelection(m_webListenCombo);
         // OS order follows bring-up order and changes per boot (#52): loopback
         // first, then natural sort by label (tun2 before tun10)
-        struct Entry { QString label; QString name; bool loopback = false; };
-        std::vector<Entry> entries;
+        struct Entry { QString label; QString data; bool loopback = false; };
+        std::vector<Entry> bindEntries;
+        std::vector<Entry> webEntries;   // one per address, web server binds one
         const QCborArray list = resp.fieldArray(1);
         for (const QCborValue& v : list) {
             const QCborMap nif = v.toMap();
             const QString name = nif.value(QStringLiteral("name")).toString();
             const QString friendly = nif.value(QStringLiteral("friendlyName")).toString();
+            const QString label = (friendly.isEmpty() || friendly == name)
+                ? name : QStringLiteral("%1 (%2)").arg(friendly, name);
             QStringList addresses;
             bool loopback = false;
             for (const QCborValue& a : nif.value(QStringLiteral("addresses")).toArray()) {
-                addresses << a.toString();
-                loopback = loopback || QHostAddress(a.toString()).isLoopback();
+                const QString address = a.toString();
+                const QHostAddress host(address);
+                addresses << address;
+                loopback = loopback || host.isLoopback();
+                // link-local v6 needs a scope to bind, skip it
+                if (!host.isNull() && !(host.protocol() == QAbstractSocket::IPv6Protocol && host.isLinkLocal()))
+                    webEntries.push_back({QStringLiteral("%1 — %2").arg(label, address), address,
+                                          host.isLoopback()});
             }
             if (addresses.isEmpty())
                 continue;
-            const QString label = (friendly.isEmpty() || friendly == name)
-                ? name : QStringLiteral("%1 (%2)").arg(friendly, name);
-            entries.push_back({QStringLiteral("%1 — %2").arg(label, addresses.join(QStringLiteral(", "))),
-                               name, loopback});
+            bindEntries.push_back({QStringLiteral("%1 — %2").arg(label, addresses.join(QStringLiteral(", "))),
+                                   name, loopback});
         }
         QCollator collator;
         collator.setNumericMode(true);
         collator.setCaseSensitivity(Qt::CaseInsensitive);
-        std::ranges::sort(entries, [&collator](const Entry& a, const Entry& b) {
-            if (a.loopback != b.loopback)
-                return a.loopback;
-            return collator.compare(a.label, b.label) < 0;
-        });
-        for (const Entry& e : entries)
-            m_bindInterfaceCombo->addItem(e.label, e.name);
-        showBindSelection(selection);
+        const auto fill = [&collator, this](QComboBox* combo, std::vector<Entry>& entries, const QString& selection) {
+            std::ranges::sort(entries, [&collator](const Entry& a, const Entry& b) {
+                if (a.loopback != b.loopback)
+                    return a.loopback;
+                return collator.compare(a.label, b.label) < 0;
+            });
+            const QSignalBlocker blocker(combo);
+            combo->clear();
+            combo->addItem(tr("Any"), QString());
+            for (const Entry& e : entries)
+                combo->addItem(e.label, e.data);
+            showComboSelection(combo, selection);
+        };
+        fill(m_bindInterfaceCombo, bindEntries, bindSel);
+        fill(m_webListenCombo, webEntries, webSel);
     });
 }
 

@@ -9,7 +9,9 @@
 /// (srchybrid/SharedDirsTreeCtrl.cpp:774, :847). Header-only, Qt Core only.
 
 #include <QDir>
+#include <QFileInfo>
 #include <QHash>
+#include <QSet>
 #include <QString>
 #include <QStringList>
 
@@ -104,6 +106,37 @@ struct FileSetMenuState {
         kept.append(d);
     }
     return kept;
+}
+
+namespace detail {
+
+template <typename Shareable>
+void collectSubdirectories(const QString& dir, QStringList& dirs, QSet<QString>& listed,
+                           const Shareable& shareable)
+{
+    if (!listed.contains(dirKey(dir)) && shareable(dir)) {
+        dirs.append(dir);
+        listed.insert(dirKey(dir));
+    }
+    const auto entries = QDir(dir).entryInfoList(
+        QDir::Dirs | QDir::NoDotAndDotDot | QDir::NoSymLinks, QDir::Name | QDir::IgnoreCase);
+    for (const QFileInfo& fi : entries)
+        if (!fi.fileName().startsWith(u'.') && fi.isReadable())
+            collectSubdirectories(fi.absoluteFilePath(), dirs, listed, shareable);
+}
+
+} // namespace detail
+
+/// Adds @p root and every folder below it to @p dirs, skipping what is listed already,
+/// what @p shareable refuses, hidden folders and symlinks (MFC ShareSubDirTree /
+/// MarkChildren, srchybrid/DirectoryTreeCtrl.cpp:96, :170). Walks the disk.
+template <typename Shareable>
+void collectSubdirectories(const QString& root, QStringList& dirs, const Shareable& shareable)
+{
+    QSet<QString> listed;
+    for (const QString& d : dirs)
+        listed.insert(dirKey(d));
+    detail::collectSubdirectories(root, dirs, listed, shareable);
 }
 
 /// For every entry of @p dirs its nearest ancestor that is in @p dirs too, or an empty

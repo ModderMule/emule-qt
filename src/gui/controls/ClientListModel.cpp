@@ -65,10 +65,11 @@ QString sourceFromStr(int sf)
 }
 
 // Column counts per mode (matching MFC screenshots), each +1 for MorphXT's Country
-constexpr int UploadingColCount    = 9;  // +Upload Time
-constexpr int DownloadingColCount  = 9;  // two Transfer columns
-constexpr int OnQueueColCount      = 11; // File Pri, Rating, Score, Asked, Last Seen, Entered Queue, Banned, Obtained Parts
-constexpr int KnownClientsColCount = 9;  // +Connected
+// and +1 for Shared List (report #11; appended so saved layouts still restore)
+constexpr int UploadingColCount    = 10; // +Upload Time
+constexpr int DownloadingColCount  = 10; // two Transfer columns
+constexpr int OnQueueColCount      = 12; // File Pri, Rating, Score, Asked, Last Seen, Entered Queue, Banned, Obtained Parts
+constexpr int KnownClientsColCount = 10; // +Connected
 
 } // anonymous namespace
 
@@ -108,6 +109,15 @@ QVariant ClientListModel::data(const QModelIndex& index, int role) const
 
     const bool isCountry = index.column() == countryColumn();
 
+    if (index.column() == sharedListColumn()) {
+        if (c.isUrl)
+            return {};   // HTTP source, no eD2K shared list
+        if (role == Qt::DisplayRole)
+            return c.noViewShared ? tr("No") : tr("Yes");
+        if (role == Qt::UserRole)
+            return c.noViewShared ? 0 : 1;
+    }
+
     if (role == Qt::DisplayRole)
         return isCountry ? QVariant(CountryFlags::columnText(c.cc)) : displayData(c, index.column());
 
@@ -145,6 +155,8 @@ QVariant ClientListModel::headerData(int section, Qt::Orientation orientation, i
         return {};
     if (section == countryColumn())
         return tr("Country");
+    if (section == sharedListColumn())
+        return tr("Shared List");
     return headerLabel(section);
 }
 
@@ -166,8 +178,11 @@ QVariant ClientListModel::displayData(const ClientRow& c, int column) const
         // slot's file payload instead, which reads as the same number twice.
         case 3: return sessionWithTotal(c.sessionUp, c.uploadedTotal);
         // MFC UploadListCtrl.cpp:205-213
-        case 4: return c.hasLowID ? QStringLiteral("%1 (%2)").arg(hmCell(c.waitStartTime), tr("Low ID"))
-                                  : hmCell(c.waitStartTime);
+        case 4: {
+            const QString lowId = lowIdText(c);
+            return lowId.isEmpty() ? hmCell(c.waitStartTime)
+                                   : QStringLiteral("%1 (%2)").arg(hmCell(c.waitStartTime), lowId);
+        }
         case 5: return hmCell(c.uploadStartDelay);
         case 6: return uploadStateText(c.uploadState, c.uploadStalled && thePrefs.showExtControls());
         case 7: return {};   // UploadStatusDelegate draws the bar
@@ -197,12 +212,13 @@ QVariant ClientListModel::displayData(const ClientRow& c, int column) const
         case 2: return c.uploadFilePriority >= 0
                      ? uploadPriorityText(c.uploadFilePriority, c.uploadFileAutoPriority) : QString{};
         case 3: return QString::number(c.queueRating);
-        case 4:
-            if (!c.hasLowID)
-                return QString::number(c.queueScore);
-            return c.addNextConnect
-                ? QStringLiteral("%1 ****").arg(c.queueScore)
-                : QStringLiteral("%1 (%2)").arg(QString::number(c.queueScore), tr("Low ID"));
+        case 4: {
+            if (c.hasLowID && c.addNextConnect)
+                return QStringLiteral("%1 ****").arg(c.queueScore);
+            const QString lowId = lowIdText(c);
+            return lowId.isEmpty() ? QString::number(c.queueScore)
+                                   : QStringLiteral("%1 (%2)").arg(QString::number(c.queueScore), lowId);
+        }
         case 5: return QString::number(c.askedCount);
         case 6: return hmCell(c.lastUpRequestDelay);
         case 7: return hmCell(c.waitStartTime);
@@ -352,6 +368,18 @@ QVariant ClientListModel::headerLabel(int column) const
     }
 
     return {};
+}
+
+QString ClientListModel::lowIdText(const ClientRow& c)
+{
+    QString route;
+    if (c.natRoute == QLatin1String("quic"))
+        route = tr("QUIC");
+    else if (c.natRoute == QLatin1String("ipv6"))
+        route = tr("IPv6");
+    if (!c.hasLowID)
+        return route;
+    return route.isEmpty() ? tr("Low ID") : tr("Low ID, %1").arg(route);
 }
 
 } // namespace eMule

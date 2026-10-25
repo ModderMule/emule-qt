@@ -3,6 +3,7 @@
 /// @brief Search tab panel — implementation.
 
 #include "panels/SearchPanel.h"
+#include "utils/Clipboard.h"
 #include "utils/AsyncMessageBox.h"
 
 #include "app/IpcClient.h"
@@ -39,7 +40,6 @@
 #include <QShortcut>
 #include <QPointer>
 #include <QTimer>
-#include <QClipboard>
 #include <QComboBox>
 #include <QDateTime>
 #include <QCompleter>
@@ -1227,7 +1227,7 @@ void SearchPanel::onResultContextMenu(const QPoint& pos)
                 return;
             const auto src = tab->proxy->mapToSource(selection.first());
             if (const auto* row = tab->indexerModel->resultAt(src.row()))
-                QApplication::clipboard()->setText(row->title);
+                eMule::Clipboard::setText(row->title);
         });
 
         m_contextMenu->popup(m_resultView->viewport()->mapToGlobal(pos));
@@ -1415,7 +1415,7 @@ void SearchPanel::onResultContextMenu(const QPoint& pos)
                 links << QStringLiteral("<a href=\"%1\">%2</a>").arg(link, ref.fileName().toHtmlEscaped());
         }
         if (!links.isEmpty())
-            QApplication::clipboard()->setText(links.join(QStringLiteral("<br>\n")));
+            eMule::Clipboard::setText(links.join(QStringLiteral("<br>\n")));
     });
 
     // Copy Magnet Links — eD2K rows as urn:ed2k, torrents their own; Usenet has none
@@ -1427,7 +1427,7 @@ void SearchPanel::onResultContextMenu(const QPoint& pos)
             if (const QString link = buildMagnetLink(i); !link.isEmpty())
                 links << link;
         if (!links.isEmpty())
-            QApplication::clipboard()->setText(links.join(QLatin1Char('\n')));
+            eMule::Clipboard::setText(links.join(QLatin1Char('\n')));
     });
 
     // Mark as Spam / Mark as not Spam — MFC inserts this right before Remove, with
@@ -1894,7 +1894,7 @@ void SearchPanel::copyEd2kLink(const QModelIndex& proxyIndex)
 {
     const QString link = buildEd2kLink(proxyIndex);
     if (!link.isEmpty())
-        QApplication::clipboard()->setText(link);
+        eMule::Clipboard::setText(link);
 }
 
 void SearchPanel::saveMetaFiles(int kind)
@@ -2946,7 +2946,7 @@ void SearchPanel::copySelectedEd2kLinks()
         if (const QString link = buildEd2kLink(i); !link.isEmpty())
             links << link;
     if (!links.isEmpty())
-        QApplication::clipboard()->setText(links.join(QLatin1Char('\n')));
+        eMule::Clipboard::setText(links.join(QLatin1Char('\n')));
 }
 
 // ---------------------------------------------------------------------------

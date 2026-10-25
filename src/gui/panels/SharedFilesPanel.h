@@ -152,7 +152,6 @@ private:
     /// Content / eD2K tabs, exactly as MFC's EnsureVisible side effect does.
     [[nodiscard]] DetailWalker makeSharedFileWalker(const QString& hash);
     void sendShareDirsUpdate(const QStringList& dirs);
-    static void collectSubdirectories(const QString& root, QStringList& list);
 
     // Models
     SharedFilesModel* m_model = nullptr;

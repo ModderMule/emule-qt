@@ -5,11 +5,11 @@
 #include "MetadataPage.h"
 
 #include "controls/AbstractListView.h"
+#include "utils/Clipboard.h"
 #include "utils/ListActivation.h"
 
 #include <QApplication>
 #include <QCborArray>
-#include <QClipboard>
 #include <QHeaderView>
 #include <QLabel>
 #include <QMenu>
@@ -164,7 +164,7 @@ QWidget* createMetadataPage(const QCborMap& details, const QString& stateKey)
             if (const QString v = item->text(2); !v.isEmpty())
                 values << v;
         if (!values.isEmpty())
-            QApplication::clipboard()->setText(values.join(QLatin1Char('\n')));
+            eMule::Clipboard::setText(values.join(QLatin1Char('\n')));
     };
     ListKeyHandlers keys;
     keys.copy = copyValues;

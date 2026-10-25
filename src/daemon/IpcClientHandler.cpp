@@ -4159,6 +4159,8 @@ bool IpcClientHandler::applyPreferenceC(const QString& key, const QCborValue& va
         thePrefs.setShowDwlPercentage(val.toBool());
     else if (key == QStringLiteral("showPartProgressDetail"))
         thePrefs.setShowPartProgressDetail(val.toBool());
+    else if (key == QStringLiteral("showActiveDownloadsBold"))
+        thePrefs.setShowActiveDownloadsBold(val.toBool());
     else if (key == QStringLiteral("showRatesInTitle"))
         thePrefs.setShowRatesInTitle(val.toBool());
     else if (key == QStringLiteral("showCatTabInfos"))

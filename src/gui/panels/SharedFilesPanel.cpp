@@ -3,6 +3,7 @@
 /// @brief Shared Files tab panel — implementation.
 
 #include "panels/SharedFilesPanel.h"
+#include "utils/Clipboard.h"
 #include "utils/Appearance.h"
 #include "utils/AsyncMessageBox.h"
 #include "utils/SharedFilesFetch.h"
@@ -46,7 +47,6 @@
 #include <QHash>
 #include <QCheckBox>
 #include <QCborMap>
-#include <QClipboard>
 #include <QComboBox>
 #include <QDesktopServices>
 #include <QFileDialog>
@@ -1755,7 +1755,7 @@ void SharedFilesPanel::copyEd2kLink()
 {
     const QString text = m_ed2kText->toPlainText();
     if (!text.isEmpty())
-        QApplication::clipboard()->setText(text);
+        eMule::Clipboard::setText(text);
 }
 
 void SharedFilesPanel::copyEd2kLinks(const QStringList& hashes)
@@ -1772,7 +1772,7 @@ void SharedFilesPanel::copyEd2kLinks(const QStringList& hashes)
                      m_ed2kHtmlCheck->isChecked(),
         [](const QStringList& links, bool) {
             if (!links.isEmpty())
-                QApplication::clipboard()->setText(links.join(QLatin1Char('\n')));
+                eMule::Clipboard::setText(links.join(QLatin1Char('\n')));
         });
 }
 
@@ -1910,7 +1910,9 @@ void SharedFilesPanel::onFolderContextMenu(const QPoint& pos)
         if (!m_ipc || !m_ipc->isConnected())
             return;
         auto dirs = thePrefs.sharedDirs();
-        collectSubdirectories(path, dirs);
+        SharedDirState::collectSubdirectories(path, dirs, [](const QString& d) {
+            return thePrefs.isShareableDirectory(d);
+        });
         sendShareDirsUpdate(dirs);
     });
     shareSubAct->setEnabled(shareable && hasSubdirectories(path));
@@ -2085,20 +2087,6 @@ void SharedFilesPanel::sendShareDirsUpdate(const QStringList& dirs)
         requestSharedFiles();
         syncSharedDirState();   // what the daemon kept, in case it differs
     });
-}
-
-void SharedFilesPanel::collectSubdirectories(const QString& root, QStringList& list)
-{
-    if (!SharedDirState::isSharedDir(list, root) && thePrefs.isShareableDirectory(root))
-        list.append(root);
-    QDir dir(root);
-    const auto entries = dir.entryInfoList(
-        QDir::Dirs | QDir::NoDotAndDotDot | QDir::NoSymLinks,
-        QDir::Name | QDir::IgnoreCase);
-    for (const QFileInfo& fi : entries) {
-        if (!fi.fileName().startsWith(u'.') && fi.isReadable())
-            collectSubdirectories(fi.absoluteFilePath(), list);
-    }
 }
 
 // ---------------------------------------------------------------------------

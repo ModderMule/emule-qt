@@ -35,6 +35,7 @@
 #include "utils/WebServices.h"
 #include "utils/Log.h"
 #include "protocol/ED2KLink.h"
+#include "utils/Clipboard.h"
 #include "utils/Appearance.h"
 #include "utils/Ed2kLinkImporter.h"
 #include "utils/IpcFeedback.h"
@@ -409,6 +410,7 @@ void MainWindow::showOptionsDialog(int page)
     const bool hadSpeedGraph = (m_speedGraph != nullptr);
     const bool hadDwlPercentage = thePrefs.showDwlPercentage();
     const bool hadPartDetail = thePrefs.showPartProgressDetail();
+    const bool hadActiveBold = thePrefs.showActiveDownloadsBold();
     const int hadDepth3D = thePrefs.depth3D();
 
     dlg.exec();
@@ -416,6 +418,7 @@ void MainWindow::showOptionsDialog(int page)
     // Progress bars read the prefs at paint; paused rows get no push to repaint them
     if (thePrefs.showDwlPercentage() != hadDwlPercentage
         || thePrefs.showPartProgressDetail() != hadPartDetail
+        || thePrefs.showActiveDownloadsBold() != hadActiveBold
         || thePrefs.depth3D() != hadDepth3D)
         update();
 
@@ -971,6 +974,12 @@ void MainWindow::onClipboardChanged()
     const QString text = QApplication::clipboard()->text().trimmed();
     if (text.isEmpty() || text == m_lastClipboardContents)
         return;
+
+    // Our own "Copy eD2K Link" etc. — never import it back (MFC IgnoreClipboardLinks, #59)
+    if (Clipboard::isOwnText(text)) {
+        m_lastClipboardContents = text;
+        return;
+    }
 
     // Check if any line contains a link we act on. HTTP Cache configuration links
     // count: copying one off a server's install page is how it is meant to be

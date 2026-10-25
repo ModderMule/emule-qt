@@ -2,6 +2,7 @@
 #include "panels/ServerPanel.h"
 
 #include "app/IpcClient.h"
+#include "utils/Clipboard.h"
 #include "utils/CountryFlags.h"
 #include "utils/MetaResultActions.h"
 #include "core/app/AppConfig.h"
@@ -1471,7 +1472,7 @@ void ServerPanel::copySelectedServerLinks()
     for (const ServerKey& key : selectedServers())
         links << key.link;
     if (!links.isEmpty())
-        QApplication::clipboard()->setText(links.join(QLatin1Char('\n')));
+        eMule::Clipboard::setText(links.join(QLatin1Char('\n')));
 }
 
 void ServerPanel::cutSelectedServers()

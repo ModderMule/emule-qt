@@ -607,6 +607,12 @@ inline void insertDownloadSeed(QCborMap& m, const SearchFile& f)
                                                          : qint64(0));
     m.insert(QStringLiteral("hasLowID"), c.hasLowID());
     m.insert(QStringLiteral("addNextConnect"), c.addNextConnect());
+    // NAT-T route of the live connection: "quic" | "ipv6"; absent otherwise
+    switch (c.natRoute()) {
+    case UpDownClient::NatRoute::Quic: m.insert(QStringLiteral("natRoute"), QStringLiteral("quic")); break;
+    case UpDownClient::NatRoute::IPv6: m.insert(QStringLiteral("natRoute"), QStringLiteral("ipv6")); break;
+    case UpDownClient::NatRoute::None: break;
+    }
 
     // Obtained Parts bar, MFC CUpDownClient::DrawUpStatusBar (UploadClient.cpp:53-114).
     // Parts go bit-packed: every client of the waiting list carries them.
@@ -690,6 +696,10 @@ namespace eMule::Ipc {
         if (auto* srv = app.serverList->findByIPTcp(c.serverAddress().toNetworkUint32(), c.serverPort()))
             m.insert(QStringLiteral("serverName"), srv->name());
     }
+
+    // NAT-T capabilities: IPv6 fallback and the QUIC transport
+    m.insert(QStringLiteral("supportsIPv6"),     c.supportsIPv6());
+    m.insert(QStringLiteral("supportsNatTQuic"), c.supportsNatTQuic());
 
     // Kad
     m.insert(QStringLiteral("kadConnected"), c.kadPort() != 0);

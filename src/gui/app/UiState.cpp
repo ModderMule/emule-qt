@@ -5,6 +5,9 @@
 #include "app/UiState.h"
 
 #include <QAbstractItemView>
+#include <QBitArray>
+#include <QDataStream>
+#include <QHash>
 #include <QItemSelectionModel>
 #include <QDir>
 #include <QFile>
@@ -526,6 +529,26 @@ void UiState::applyHeaderState(QHeaderView* header, const QString& key)
 {
     if (auto it = m_headerStates.constFind(key); it != m_headerStates.constEnd() && !it->isEmpty())
         header->restoreState(*it);
+}
+
+int UiState::headerStateSectionCount(const QString& key) const
+{
+    const QByteArray state = m_headerStates.value(key);
+    if (state.isEmpty())
+        return -1;
+
+    // QHeaderView::saveState() layout: marker, version, then QHeaderViewPrivate::write()
+    QDataStream in(state);
+    in.setVersion(QDataStream::Qt_5_0);
+    int marker = 0, version = 0, orientation = 0, sortOrder = 0, sortSection = 0;
+    bool sortShown = false;
+    QList<int> visualIndices, logicalIndices;
+    QBitArray hidden;
+    QHash<int, int> hiddenSizes;
+    int length = 0, sectionCount = -1;
+    in >> marker >> version >> orientation >> sortOrder >> sortSection >> sortShown
+       >> visualIndices >> logicalIndices >> hidden >> hiddenSizes >> length >> sectionCount;
+    return in.status() == QDataStream::Ok && marker == 0xff ? sectionCount : -1;
 }
 
 void UiState::captureHeaderState(QHeaderView* header, const QString& key)

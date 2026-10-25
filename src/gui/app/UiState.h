@@ -97,6 +97,10 @@ public:
         return !m_headerStates.value(key).isEmpty();
     }
 
+    /// Section count of the saved layout under @p key, -1 when there is none.
+    /// Columns past it were added since, and restoreState() leaves them visible.
+    [[nodiscard]] int headerStateSectionCount(const QString& key) const;
+
     /// Cache @p header's current state under @p key and schedule a save. For
     /// changes no header signal reports (show/hide a column).
     void captureHeaderState(QHeaderView* header, const QString& key);
