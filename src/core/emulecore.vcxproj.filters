@@ -138,6 +138,9 @@
     <ClCompile Include="client\FruitlessSessionLedger.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
+    <ClCompile Include="client\RepeatChunkGuard.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
     <ClCompile Include="files\SourceIndex.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
@@ -729,6 +732,9 @@
       <Filter>Header Files</Filter>
     </ClInclude>
     <ClInclude Include="client\FruitlessSessionLedger.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="client\RepeatChunkGuard.h">
       <Filter>Header Files</Filter>
     </ClInclude>
     <ClInclude Include="files\SourceIndex.h">

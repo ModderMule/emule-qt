@@ -202,9 +202,10 @@ bool ServerSocket::processPacket(const uint8* packet, uint32 size, uint8 opcode)
 
     case OP_IDCHANGE: {
         // MFC: CServerSocket::ProcessPacket() — ServerSocket.cpp:275-350.
-        // Layout: uint32 clientID, [uint32 tcpFlags], [uint32 auxPort],
-        //         [uint32 serverReportedIP]. There is NO obfuscation-TCP-port
-        //         field here — the reference derives that from the flags.
+        // Layout: uint32 clientID, [uint32 tcpFlags], [uint32 server TCP port],
+        //         [uint32 serverReportedIP], and in Lugdunum's NAT form (eNode-go
+        //         too) [uint32 obfuscation TCP port] [uint32 our TCP port as seen].
+        //         The last two are not read; only the 24-byte length matters.
         if (size < 4)
             return failMalformed();
 
@@ -522,6 +523,7 @@ bool ServerSocket::processPacket(const uint8* packet, uint32 size, uint8 opcode)
         break;
 
     case OP_NAT_CALLBACKREQUESTED:
+    case OP_NAT_WAKE:
     case OP_LOWID_HOLEPUNCH_INFO:
     case OP_LOWID_HOLEPUNCH_FAIL:
         // NAT rendezvous notices; parsed by the rendezvous paths (net/natt).

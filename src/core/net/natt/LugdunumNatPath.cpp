@@ -33,6 +33,10 @@ bool LugdunumNatPath::canServe(const PeerInfo& peer) const
     // so an even one would only be dropped silently (andrey23127/ed2k-server#39).
     if ((peer.clientID & 1) == 0)
         return false;
+    // The callback is IPv4 only. On an IPv6 session (eNode-go dual-stack) the server
+    // cannot tie a 0xA6 from our IPv4 to the session, and PR_NAT covers that case.
+    if (env().serverSessionAddress().isIPv6())
+        return false;
     const Server* server = env().currentServer();
     // The UDP key and obfuscation port may still be missing: sources arrive before the
     // first stat ping answers, and sendRequest() waits for it.
@@ -119,28 +123,41 @@ bool LugdunumNatPath::handleServerUdp(const Endpoint& from, const uint8* data, q
     return true;
 }
 
+std::optional<CallbackNotice> LugdunumNatPath::parseNotice(const NatEnv& env, const uint8* data, uint32 size)
+{
+    if (size < kNoticeSize)
+        return std::nullopt;
+    // eserver writes the flags byte before the hash (NeoLoader's parser has it backwards).
+    CallbackNotice n;
+    n.udp = Endpoint(Address::fromNetworkOrder(peekUInt32(data)), peekUInt16(data + 4));
+    n.flags = data[10];
+    n.peer.clientID = peekUInt32(data + 6);
+    // Low bits = requester's (CT_SERVER_FLAGS >> 9) & 7, the CONNECT_OPT_CRYPT_* order.
+    n.peer.cryptOptions = static_cast<uint8>(n.flags & 0x07);
+    n.peer.cryptKnown = true;
+    if ((n.flags & kFlagHasHash) && size >= kNoticeSize + 16) {
+        std::memcpy(n.peer.hash.data(), data + kNoticeSize, 16);
+        n.peer.hashKnown = true;
+    }
+    if (const Server* server = env.currentServer()) {
+        n.peer.serverAddress = server->ipAddress();
+        n.peer.serverPort = server->port();
+    }
+    return n;
+}
+
 void LugdunumNatPath::onNotice(const uint8* data, uint32 size)
 {
-    if (size < kNoticeSize) {
+    const auto n = parseNotice(env(), data, size);
+    if (!n) {
         log(QStringLiteral("short notice (%1 bytes)").arg(size));
         return;
     }
-    // eserver writes the flags byte before the hash (NeoLoader's parser has it backwards).
-    const Endpoint udp(Address::fromNetworkOrder(peekUInt32(data)), peekUInt16(data + 4));
-    const uint32 requesterID = peekUInt32(data + 6);
-    const uint8 flags = data[10];
-    PeerInfo peer;
-    peer.clientID = requesterID;
-    if ((flags & kFlagHasHash) && size >= kNoticeSize + 16) {
-        std::memcpy(peer.hash.data(), data + kNoticeSize, 16);
-        peer.hashKnown = true;
-    }
-    if (const Server* server = env().currentServer()) {
-        peer.serverAddress = server->ipAddress();
-        peer.serverPort = server->port();
-    }
+    const Endpoint& udp = n->udp;
+    const PeerInfo& peer = n->peer;
+    const uint32 requesterID = peer.clientID;
     log(QStringLiteral("notice: id %1 at %2 flags 0x%3")
-            .arg(requesterID).arg(udp.toString()).arg(flags, 2, 16, QLatin1Char('0')));
+            .arg(requesterID).arg(udp.toString()).arg(n->flags, 2, 16, QLatin1Char('0')));
 
     // A callback to ourselves only reflects our own mapped port.
     if (requesterID == ourID())
@@ -154,6 +171,8 @@ void LugdunumNatPath::onNotice(const uint8* data, uint32 size)
             mine->peer.hash = peer.hash;
             mine->peer.hashKnown = true;
         }
+        mine->peer.cryptOptions = peer.cryptOptions;
+        mine->peer.cryptKnown = true;
         hub().endpointKnown(*mine, udp);
         return;
     }

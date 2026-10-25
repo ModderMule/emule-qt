@@ -19,6 +19,7 @@
 
 #include <QHash>
 #include <QObject>
+#include <QTimer>
 #include <QString>
 
 #include <functional>
@@ -87,6 +88,9 @@ public:
     /// 1 s maintenance: repeats, punches, handoffs, dials, timeouts.
     void process();
 
+    /// 100 ms maintenance while a path asked for it (NatPath::fastTick).
+    void processFast();
+
     // -- Input ---------------------------------------------------------------
 
     /// Server TCP notice (0x37, 0x61, 0x62).
@@ -120,6 +124,15 @@ public:
     /// The peer's UDP endpoint is known: start punching and the handoff.
     void endpointKnown(Attempt& attempt, const Endpoint& udp, uint16 tcpPort = 0);
     void fail(Attempt& attempt, const QString& why);
+    /// A path gave up on @p attempt (PR_NAT FAILED): try the next path, else fail it.
+    void failOrNext(Attempt& attempt, const QString& why);
+
+    /// A path has sub-second work: run processFast() every 100 ms until none has.
+    void wantFastTick();
+
+    /// Peer crypt bits to apply to @p attempt; false (and the attempt failed) when one
+    /// side requires obfuscation the other cannot do.
+    bool applyPeerCrypt(Attempt& attempt, uint8 cryptOptions);
 
     /// Snapshot for tests and logging.
     [[nodiscard]] std::vector<const Attempt*> attempts() const;
@@ -136,6 +149,13 @@ signals:
     void attemptFinished(quint32 id, bool connected);
 
 private:
+    /// Paths in the order to try them for @p peer; see the constructor.
+    [[nodiscard]] std::vector<NatPath*> orderedPaths(const PeerInfo& peer) const;
+    /// Requester whose path never produced an endpoint: move to the next untried path
+    /// that can serve the peer. False when none is left.
+    bool tryNextPath(Attempt& attempt);
+    /// Hash to obfuscate a datagram to the peer with, or nullptr for plain.
+    [[nodiscard]] const uint8* peerCryptHash(const Attempt& attempt, bool plainWhenUnknown) const;
     void sendPunch(Attempt& attempt);
     void sendHandoff(Attempt& attempt, bool answer);
     void evaluateDial(Attempt& attempt);
@@ -154,6 +174,7 @@ private:
     QHash<QString, uint64> m_noticeByIp;        ///< rate cap for new target attempts
     QHash<QString, uint64> m_recentDone;        ///< finished attempts; late repeats ignored
     uint32 m_nextId = 1;
+    QTimer m_fastTimer;
 };
 
 } // namespace natt

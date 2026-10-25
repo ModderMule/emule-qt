@@ -9,6 +9,7 @@
 #include "client/BuddyRelayBudget.h"
 #include "client/DeadSourceList.h"
 #include "client/FruitlessSessionLedger.h"
+#include "client/RepeatChunkGuard.h"
 #include "net/Address.h"
 #include "utils/EntityList.h"
 #include "utils/Types.h"
@@ -189,7 +190,8 @@ public:
     /// Matches MFC CClientList::Process() (srchybrid/ClientList.cpp).
     void process();
 
-    void addBannedClient(const Address& addr);
+    /// Ban for durationMs, 0 = CLIENTBANTIME. Never shortens a longer ban already running.
+    void addBannedClient(const Address& addr, uint64 durationMs = 0);
     [[nodiscard]] bool isBannedClient(const Address& addr) const;
     void removeBannedClient(const Address& addr);
 
@@ -250,6 +252,7 @@ public:
 
     DeadSourceList globalDeadSourceList;
     FruitlessSessionLedger fruitlessSessions;
+    RepeatChunkGuard repeatChunks;
 
 signals:
     void clientAdded(UpDownClient* client);
@@ -288,7 +291,7 @@ private:
     std::unordered_map<Address, uint64> m_directCallbackRequests;
     BuddyRelayBudget m_relayBudget;
 
-    std::unordered_map<Address, uint64> m_bannedList;  // Address -> ban tick
+    std::unordered_map<Address, uint64> m_bannedList;  // Address -> tick the ban ends
     std::unordered_map<Address, TrackedClient> m_trackedClients;
     struct HandshakeFailures {
         uint64 windowStart = 0;

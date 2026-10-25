@@ -133,6 +133,11 @@ private slots:
     void lugdunum_udpNotice_plainAndObfuscated();
     void lugdunum_otherServerDatagram_notConsumed();
     void lugdunum_selfNotice_ignored();
+    void lugdunum_skipsIPv6Session();
+
+    // eNode-go: Lugdunum and PR_NAT on one server
+    void enode_prefersPrNatWhenHashKnown();
+    void enode_timedOutPathFallsThrough();
 
     // eNode-go PR_NAT
     void prnat_registersAndKeepsAlive();
@@ -141,6 +146,12 @@ private slots:
     void prnat_ipv6Session();
     void prnat_failed();
     void prnat_badSourceOrFrame();
+    void prnat_failedFallsThroughToLugdunum();
+    void prnat_reregistersWhenPingsStop();
+    void prnat_wake_noStandingRegistration();
+    void prnat_wake_registersOnWake();
+    void prnat_wake_needsOurLoginBit();
+    void prnat_wake_requesterRegistersOtherFamily();
 
     // Kad buddy
     void kad_requestEnvelopeAndPunches();
@@ -311,6 +322,62 @@ void tst_NatRendezvousPaths::lugdunum_selfNotice_ignored()
 // eNode-go PR_NAT
 // ---------------------------------------------------------------------------
 
+void tst_NatRendezvousPaths::lugdunum_skipsIPv6Session()
+{
+    // The callback is IPv4 only: on an IPv6 session the server cannot tie our 0xA6 to us
+    HubFixture f;
+    logInLugdunum(f);
+    f.env->sessionAddress = Address::fromString(QStringLiteral("2a00:1450:4001:800::77"));
+    QVERIFY(!f.hub->start(f.peerOnServer(77, false)));
+    QVERIFY(f.env->udpWith(OP_EDONKEYPROT, OP_NAT_CALLBACKREQUEST).empty());
+}
+
+// ---------------------------------------------------------------------------
+// eNode-go: both Lugdunum (0x1000) and PR_NAT (0x40000)
+// ---------------------------------------------------------------------------
+
+namespace {
+
+void logInEnode(HubFixture& f)
+{
+    logInLugdunum(f);
+    f.env->server->setTCPFlags(SrvTcpFlag::LugdunumNat | SrvTcpFlag::NatRendezvous);
+}
+
+} // namespace
+
+void tst_NatRendezvousPaths::enode_prefersPrNatWhenHashKnown()
+{
+    HubFixture f;
+    logInEnode(f);
+    QVERIFY(f.hub->start(f.peerOnServer(77)));                  // hash known: PR_NAT
+    QCOMPARE(f.hub->attempts().front()->path, PathKind::EnodeNat);
+    QVERIFY(f.env->udpWith(OP_EDONKEYPROT, OP_NAT_CALLBACKREQUEST).empty());
+
+    QVERIFY(f.hub->start(f.peerOnServer(79, false)));           // no hash: only Lugdunum can
+    QCOMPARE(f.hub->attempts().back()->path, PathKind::Lugdunum);
+    QCOMPARE(f.env->udpWith(OP_EDONKEYPROT, OP_NAT_CALLBACKREQUEST).size(), size_t{1});
+}
+
+void tst_NatRendezvousPaths::enode_timedOutPathFallsThrough()
+{
+    HubFixture f;
+    logInEnode(f);
+    const PeerInfo peer = f.peerOnServer(77);
+    QVERIFY(f.hub->start(peer));
+    QCOMPARE(f.hub->attempts().front()->path, PathKind::EnodeNat);
+
+    f.advance(NatRendezvous::kAttemptTimeoutMs);                // PR_NAT never answered
+    QCOMPARE(f.hub->attempts().size(), size_t{1});
+    QCOMPARE(f.hub->attempts().front()->path, PathKind::Lugdunum);
+    QVERIFY(!f.hub->hasFailed(peer));
+    QVERIFY(!f.env->udpWith(OP_EDONKEYPROT, OP_NAT_CALLBACKREQUEST).empty());
+
+    f.advance(NatRendezvous::kAttemptTimeoutMs);                // nothing left to try
+    QVERIFY(f.hub->attempts().empty());
+    QVERIFY(f.hub->hasFailed(peer));
+}
+
 void tst_NatRendezvousPaths::prnat_registersAndKeepsAlive()
 {
     HubFixture f;
@@ -442,6 +509,112 @@ void tst_NatRendezvousPaths::prnat_badSourceOrFrame()
     // server without the flag
     f.env->server->setTCPFlags(0);
     QVERIFY(!f.hub->handleServerDatagram(Endpoint(kServerIP, EnodeNatPath::kDefaultPort), bytes(sync), sync.size()));
+}
+
+void tst_NatRendezvousPaths::prnat_failedFallsThroughToLugdunum()
+{
+    // FAILED (e.g. a woken target that never registered) is not the end: Lugdunum next.
+    HubFixture f;
+    logInEnode(f);
+    const PeerInfo peer = f.peerOnServer(77);
+    QVERIFY(f.hub->start(peer));
+    QCOMPARE(f.hub->attempts().front()->path, PathKind::EnodeNat);
+    const QByteArray failed = EnodeNatPath::frame(OP_NAT_FAILED, natPayload({QByteArray(1, '\1'), hashBytes(peer.hash)}));
+    QVERIFY(f.hub->handleServerDatagram(Endpoint(kServerIP, EnodeNatPath::kDefaultPort), bytes(failed), failed.size()));
+    QCOMPARE(f.hub->attempts().front()->path, PathKind::Lugdunum);
+    QVERIFY(!f.hub->hasFailed(peer));
+    QVERIFY(f.env->failed.empty());
+}
+
+void tst_NatRendezvousPaths::prnat_reregistersWhenPingsStop()
+{
+    HubFixture f;
+    f.env->logIn(kServerIP, kServerPort, SrvTcpFlag::NatRendezvous);
+    const Endpoint nat(kServerIP, EnodeNatPath::kDefaultPort);
+    f.hub->process();
+    const QByteArray ack = EnodeNatPath::frame(OP_NAT_REGISTER, natPayload({be16(2004), be32(kServerIP.toUint32())}));
+    QVERIFY(f.hub->handleServerDatagram(nat, bytes(ack), ack.size()));
+    const QByteArray ping = EnodeNatPath::frame(OP_NAT_PING, {});
+    // answered keepalives: no new REGISTER
+    for (int i = 0; i < 3; ++i) {
+        f.advance(EnodeNatPath::kKeepaliveMs);
+        QVERIFY(f.hub->handleServerDatagram(nat, bytes(ping), ping.size()));
+    }
+    const QByteArray reg = EnodeNatPath::frame(OP_NAT_REGISTER, hashBytes(f.env->hash));
+    auto registers = [&] {
+        return std::ranges::count_if(f.env->raw(), [&](const auto& r) { return r.payload == reg; });
+    };
+    QCOMPARE(registers(), 1);
+    // the server stops answering: register again after kPingLossMs
+    for (uint64 t = 0; t <= EnodeNatPath::kPingLossMs; t += 1000)
+        f.advance(1000);
+    QCOMPARE(registers(), 2);
+}
+
+void tst_NatRendezvousPaths::prnat_wake_noStandingRegistration()
+{
+    HubFixture f;
+    Server& s = f.env->logIn(kServerIP, kServerPort, SrvTcpFlag::NatRendezvous | SrvTcpFlag::NatWake);
+    s.setLoginCaps(SRVCAP_NAT_WAKE);
+    f.hub->process();
+    f.advance(60000);
+    QVERIFY(f.env->raw().empty());
+}
+
+void tst_NatRendezvousPaths::prnat_wake_registersOnWake()
+{
+    HubFixture f;
+    Server& s = f.env->logIn(kServerIP, kServerPort, SrvTcpFlag::NatWake);   // wake without 0x40000
+    s.setLoginCaps(SRVCAP_NAT_WAKE);
+    s.setNatPort(2010);
+    QVERIFY(f.hub->handleServerTcp(OP_NAT_WAKE, QByteArray(1, char(EnodeNatPath::kWakeIPv4 | EnodeNatPath::kWakeIPv6))));
+    auto raw = f.env->raw();
+    QCOMPARE(raw.size(), size_t{1});              // the server has no IPv6: v4 only
+    QCOMPARE(raw[0].to, Endpoint(kServerIP, 2010));
+    QCOMPARE(raw[0].payload, EnodeNatPath::frame(OP_NAT_REGISTER, hashBytes(f.env->hash)));
+    // the SYNC that follows is accepted from the NAT port
+    Hash16 other{};
+    other.fill(0x64);
+    const QByteArray sync = EnodeNatPath::frame(OP_NAT_SYNC, natPayload({be32(kPeerIP.toUint32()), be16(kPeerUdp),
+                                                                      hashBytes(other), be32(5)}));
+    QVERIFY(f.hub->handleServerDatagram(Endpoint(kServerIP, 2010), bytes(sync), sync.size()));
+    QCOMPARE(f.hub->attempts().size(), size_t{1});
+    QCOMPARE(f.hub->attempts().front()->role, Role::Target);
+
+    // not a usable target: consumed, nothing sent
+    HubFixture g;
+    g.env->logIn(kServerIP, kServerPort, SrvTcpFlag::NatWake).setLoginCaps(SRVCAP_NAT_WAKE);
+    g.env->isFirewalled = false;
+    QVERIFY(g.hub->handleServerTcp(OP_NAT_WAKE, QByteArray(1, char(EnodeNatPath::kWakeIPv4))));
+    QVERIFY(g.env->raw().empty());
+}
+
+void tst_NatRendezvousPaths::prnat_wake_needsOurLoginBit()
+{
+    // Flag set, but our login did not carry the bit: the server will not wake us.
+    HubFixture f;
+    f.env->logIn(kServerIP, kServerPort, SrvTcpFlag::NatRendezvous | SrvTcpFlag::NatWake);
+    QVERIFY(!f.env->server->supportsNatWake());
+    f.hub->process();
+    QCOMPARE(f.env->raw().size(), size_t{1});
+    QCOMPARE(f.env->raw()[0].payload, EnodeNatPath::frame(OP_NAT_REGISTER, hashBytes(f.env->hash)));
+}
+
+void tst_NatRendezvousPaths::prnat_wake_requesterRegistersOtherFamily()
+{
+    HubFixture f;
+    const Address serverV6 = Address::fromString(QStringLiteral("2a00:1450:4001:800::77"));
+    Server& s = f.env->logIn(kServerIP, kServerPort, SrvTcpFlag::NatRendezvous | SrvTcpFlag::NatWake);
+    s.setLoginCaps(SRVCAP_NAT_WAKE);
+    s.addAddress(serverV6);
+    f.env->publicIPv6 = Address::fromString(QStringLiteral("2a00:1450:4001:801::1"));
+    QVERIFY(f.hub->start(f.peerOnServer(77)));
+    const auto raw = f.env->raw();
+    QCOMPARE(raw.size(), size_t{2});
+    QCOMPARE(raw[0].to, Endpoint(kServerIP, EnodeNatPath::kDefaultPort));     // REGISTER over IPv4
+    QCOMPARE(raw[0].payload, EnodeNatPath::frame(OP_NAT_REGISTER, hashBytes(f.env->hash)));
+    QCOMPARE(raw[1].to, Endpoint(serverV6, EnodeNatPath::kDefaultPort));      // SYNC2 over IPv6
+    QCOMPARE(uint8(raw[1].payload[5]), uint8{OP_NAT_SYNC2});
 }
 
 // ---------------------------------------------------------------------------

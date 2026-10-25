@@ -42,7 +42,7 @@ QByteArray EnodeNatPath::frame(uint8 opcode, const QByteArray& payload)
 Endpoint EnodeNatPath::natEndpoint(bool ipv6) const
 {
     const Server* server = env().currentServer();
-    if (!server || !server->supportsNatRendezvous())
+    if (!server || (!server->supportsNatRendezvous() && !server->supportsNatWake()))
         return {};
     const uint16 port = server->natPort() != 0 ? server->natPort() : kDefaultPort;
     const Address addr = ipv6 ? server->ipv6Address() : server->ipv4Address();
@@ -51,6 +51,15 @@ Endpoint EnodeNatPath::natEndpoint(bool ipv6) const
 
 Endpoint EnodeNatPath::syncEndpoint() const
 {
+    // Wake mode: nothing is registered, and the SYNC2 registers the family it travels on.
+    // IPv6 first, as the server pairs: our IPv4 is registered just before (request()).
+    if (wakeMode()) {
+        if (env().ourPublicIPv6().isIPv6()) {
+            if (const Endpoint v6 = natEndpoint(true); !v6.address().isNull())
+                return v6;
+        }
+        return natEndpoint(false);
+    }
     // The acked family first: an IPv6 session has no IPv4 registration the server accepts.
     if (m_v4.acked && !m_v4.to.address().isNull())
         return m_v4.to;
@@ -63,7 +72,8 @@ Endpoint EnodeNatPath::syncEndpoint() const
 bool EnodeNatPath::isNatServer(const Endpoint& from) const
 {
     const Server* server = env().currentServer();
-    if (!server || !server->supportsNatRendezvous() || !server->hasAddress(from.address()))
+    if (!server || (!server->supportsNatRendezvous() && !server->supportsNatWake())
+        || !server->hasAddress(from.address()))
         return false;
     // The handler also answers on the main UDP port.
     const uint16 natPort = server->natPort() != 0 ? server->natPort() : kDefaultPort;
@@ -79,6 +89,10 @@ bool EnodeNatPath::canServe(const PeerInfo& peer) const
 bool EnodeNatPath::request(Attempt& attempt)
 {
     attempt.connAck = getRandomUInt32() | 1u;
+    // Wake mode: the SYNC2 registers only its own family; register the other one too, so
+    // the server can pair on whichever the target has.
+    if (wakeMode() && syncEndpoint().address().isIPv6())
+        registerNow(false);
     sendSync2(attempt);
     return true;
 }
@@ -115,6 +129,14 @@ void EnodeNatPath::keepRegistered(Registration& reg, const Endpoint& to)
         reg.to = to;
     }
     const uint64 now = env().now();
+    // Keepalives that stop being answered: the server lost the registration or our NAT
+    // moved us to a new port, and a keepalive from there matches nothing. Register again.
+    if (reg.acked && now - reg.lastPingMs > kPingLossMs) {
+        log(QStringLiteral("no PING from %1 for %2 s, registering again")
+                .arg(to.toString()).arg((now - reg.lastPingMs) / 1000));
+        reg.acked = false;
+        reg.lastSentMs = 0;
+    }
     const uint64 interval = reg.acked ? kKeepaliveMs : kRegisterMs;
     if (reg.lastSentMs != 0 && now - reg.lastSentMs < interval)
         return;
@@ -125,13 +147,50 @@ void EnodeNatPath::keepRegistered(Registration& reg, const Endpoint& to)
         env().sendRawUdp(frame(OP_NAT_REGISTER, hashBytes(env().ourHash())), to);
 }
 
+bool EnodeNatPath::active() const
+{
+    return env().enabled() && env().ourUdpPort() != 0 && env().firewalled() && hub().hasDataPathNow();
+}
+
+bool EnodeNatPath::wakeMode() const
+{
+    const Server* server = env().currentServer();
+    return server && server->supportsNatWake();
+}
+
+void EnodeNatPath::registerNow(bool ipv6)
+{
+    const Endpoint to = natEndpoint(ipv6);
+    if (!to.address().isNull())
+        env().sendRawUdp(frame(OP_NAT_REGISTER, hashBytes(env().ourHash())), to);
+}
+
 void EnodeNatPath::tick()
 {
-    // Registered only while we could use it: a register makes us pairable by hash.
-    const bool active = env().enabled() && env().ourUdpPort() != 0 && env().firewalled()
-                     && hub().hasDataPathNow();
-    keepRegistered(m_v4, active ? natEndpoint(false) : Endpoint());
-    keepRegistered(m_v6, active && env().ourPublicIPv6().isIPv6() ? natEndpoint(true) : Endpoint());
+    // Registered only while we could use it: a register makes us pairable by hash. A
+    // server that wakes us needs no standing registration at all.
+    const bool standing = active() && !wakeMode();
+    keepRegistered(m_v4, standing ? natEndpoint(false) : Endpoint());
+    keepRegistered(m_v6, standing && env().ourPublicIPv6().isIPv6() ? natEndpoint(true) : Endpoint());
+}
+
+bool EnodeNatPath::handleServerTcp(uint8 opcode, const QByteArray& payload)
+{
+    if (opcode != OP_NAT_WAKE)
+        return false;
+    const uint8 families = payload.isEmpty() ? 0 : uint8(payload[0]);
+    if (!active()) {
+        log(QStringLiteral("OP_NAT_WAKE 0x%1 ignored: not a usable target")
+                .arg(families, 2, 16, QLatin1Char('0')));
+        return true;
+    }
+    log(QStringLiteral("OP_NAT_WAKE 0x%1: registering").arg(families, 2, 16, QLatin1Char('0')));
+    // IPv6 first: the server pairs on the first REGISTER in a family the requester has.
+    if ((families & kWakeIPv6) && env().ourPublicIPv6().isIPv6())
+        registerNow(true);
+    if (families & kWakeIPv4)
+        registerNow(false);
+    return true;
 }
 
 bool EnodeNatPath::handleServerUdp(const Endpoint& from, const uint8* data, qsizetype len)
@@ -151,14 +210,19 @@ bool EnodeNatPath::handleServerUdp(const Endpoint& from, const uint8* data, qsiz
 
     switch (opcode) {
     case OP_NAT_REGISTER:          // v4 ack: <port BE><ip4 BE>
-        if (plen >= 6 && from.address().isIPv4())
+        if (plen >= 6 && from.address().isIPv4()) {
             m_v4.acked = true;
+            m_v4.lastPingMs = env().now();
+        }
         break;
     case OP_NAT_REGISTER_IPV6:     // v6 ack: <port BE><ip6>
-        if (plen >= 18)
+        if (plen >= 18) {
             m_v6.acked = true;
+            m_v6.lastPingMs = env().now();
+        }
         break;
     case OP_NAT_PING:
+        (from.address().isIPv4() ? m_v4 : m_v6).lastPingMs = env().now();
         break;
     case OP_NAT_SYNC:
     case OP_NAT_SYNC_EX:
@@ -214,7 +278,7 @@ void EnodeNatPath::onFailed(uint8 reason, const uint8* targetHash)
     if (Attempt* a = hub().findAttempt([&](const Attempt& x) {
             return x.path == kind() && x.role == Role::Requester && x.peer.hash == hash;
         }))
-        hub().fail(*a, QStringLiteral("PR_NAT FAILED reason %1").arg(reason));
+        hub().failOrNext(*a, QStringLiteral("PR_NAT FAILED reason %1").arg(reason));
 }
 
 } // namespace eMule::natt

@@ -101,6 +101,9 @@ class ServerConnect : public QObject {
     friend class ::tst_KadSearch;
 
 public:
+    /// TCP keep-alive while the server wakes us for PR_NAT (no UDP keepalives then).
+    static constexpr uint64 kNatWakeKeepAliveMs = 20 * 60 * 1000;
+
     explicit ServerConnect(ServerList& serverList, QObject* parent = nullptr);
     ~ServerConnect() override;
 

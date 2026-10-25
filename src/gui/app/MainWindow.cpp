@@ -600,6 +600,7 @@ void MainWindow::updateTransferRates(double upKBs, double downKBs,
         m_statusUpLabel->setText(tr("Up: %1").arg(upKBs, 0, 'f', 1));
         m_statusDownLabel->setText(tr("Down: %1").arg(downKBs, 0, 'f', 1));
     }
+    updateTransferStateIcon(upKBs > 0.0, downKBs > 0.0);
 
     updateWindowTitle();
 
@@ -1798,28 +1799,23 @@ void MainWindow::setupStatusBar()
     m_statusUsersWidget->installEventFilter(this);
     sb->addPermanentWidget(m_statusUsersWidget);
 
-    // Up/Down speed indicator with red/green arrow icons (matching MFC status bar)
+    // Up/Down speed indicator: one combined arrow icon, red = idle, green = active
+    // (MFC SBarUpDown + ShowTransferStateIcon)
     m_statusUpDownWidget = new QWidget(this);
     auto* udLayout = new QHBoxLayout(m_statusUpDownWidget);
     udLayout->setContentsMargins(0, 0, 0, 0);
     udLayout->setSpacing(2);
 
-    auto* upIcon = new QLabel;
-    upIcon->setFixedSize(16, 16);
-    upIcon->setScaledContents(true);
-    upIcon->setPixmap(QIcon(QStringLiteral(":/icons/Upload.ico")).pixmap(16, 16));
-    udLayout->addWidget(upIcon);
+    m_statusUpDownIcon = new QLabel;
+    m_statusUpDownIcon->setFixedSize(16, 16);
+    m_statusUpDownIcon->setScaledContents(true);
+    udLayout->addWidget(m_statusUpDownIcon);
+    updateTransferStateIcon(false, false);
 
     m_statusUpLabel = new QLabel(tr("Up: 0.0"));
     udLayout->addWidget(m_statusUpLabel);
 
     udLayout->addWidget(new QLabel(QStringLiteral("|")));
-
-    auto* downIcon = new QLabel;
-    downIcon->setFixedSize(16, 16);
-    downIcon->setScaledContents(true);
-    downIcon->setPixmap(QIcon(QStringLiteral(":/icons/Download.ico")).pixmap(16, 16));
-    udLayout->addWidget(downIcon);
 
     m_statusDownLabel = new QLabel(tr("Down: 0.0"));
     udLayout->addWidget(m_statusDownLabel);
@@ -2315,6 +2311,21 @@ bool MainWindow::isOurDrop(const QMimeData* mime)
 #else
     return false;
 #endif
+}
+
+void MainWindow::updateTransferStateIcon(bool uploading, bool downloading)
+{
+    // MFC ShowTransferStateIcon: bit 0 = down, bit 1 = up
+    static constexpr const char* kIcons[] = {
+        ":/icons/Up0down0.ico", ":/icons/Up0down1.ico",
+        ":/icons/Up1down0.ico", ":/icons/Up1down1.ico",
+    };
+    const int idx = (downloading ? 1 : 0) | (uploading ? 2 : 0);
+    if (!m_statusUpDownIcon || idx == m_transferStateIcon)
+        return;
+    m_transferStateIcon = idx;
+    m_statusUpDownIcon->setPixmap(
+        QIcon(QString::fromLatin1(kIcons[idx])).pixmap(16, 16));
 }
 
 } // namespace eMule

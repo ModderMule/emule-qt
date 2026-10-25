@@ -44,6 +44,10 @@ public:
     /// Per tick (keepalives, registrations).
     virtual void tick() {}
 
+    /// Sub-second work (100 ms while wanted, see NatRendezvous::wantFastTick).
+    /// True while this path still needs it.
+    virtual bool fastTick() { return false; }
+
     /// Notice on the server TCP session. True when consumed.
     virtual bool handleServerTcp(uint8 /*opcode*/, const QByteArray& /*payload*/) { return false; }
 

@@ -239,6 +239,7 @@
 // LowID<->LowID rendezvous, server TCP.
 // Lugdunum eserver: <ip 4><udp port 2><requester id 4><crypt flags 1>[<hash 16> if flags & 0x80]
 #define OP_NAT_CALLBACKREQUESTED    0x37
+#define OP_NAT_WAKE                 0x46    // server -> client: <families 1> (0x01 IPv4, 0x02 IPv6); eNode-go PR_NAT wake-up, answer with REGISTER
 // ed2k-server (flag 0x20000). 0x60/0x61 are client<->client opcodes too; different link.
 #define OP_LOWID_HOLEPUNCH_REQUEST  0x60    // client -> server: <target id 4><our udp port 2>
 #define OP_LOWID_HOLEPUNCH_INFO     0x61    // server -> both: <ip 4><tcp 2><udp 2><hash 16><role 1>[<peer id 4>]
@@ -793,6 +794,8 @@
 #define SRVCAP_NATTRAVERSAL         0x1000    // login bit: Lugdunum NAT callback (UDP 0xA6/0xA7, TCP 0x37)
 // 0x2000 is NeoLoader's IPv6 login bit; we signal IPv6 with the CT_MOD_IP_V6 tag instead.
 #define SRVCAP_META_SEARCH          0x10000   // login bit: can act on eNode meta (torrent/Usenet) rows
+#define SRVCAP_HOLEPUNCH_EXT        0x100000  // login bit: ed2k-server hole-punch extension, always with 0x1000
+#define SRVCAP_NAT_WAKE             0x200000  // login bit: eNode-go PR_NAT wake-up, we keep no standing registration
 
 // Values for CT_SERVER_UDPSEARCH_FLAGS
 #define SRVCAP_UDP_NEWTAGS_LARGEFILES   0x01

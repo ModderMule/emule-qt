@@ -81,11 +81,16 @@ NatRendezvous::NatRendezvous(std::unique_ptr<NatEnv> env, QObject* parent)
     , m_env(std::move(env))
 {
     // Order = preference when several paths can serve a peer (agreed in emule-qt#39):
-    // the same-server paths first, the Kad buddy last.
+    // the same-server paths first, the Kad buddy last. orderedPaths() moves PR_NAT ahead
+    // of Lugdunum when it can serve the peer: eNode-go speaks both, and PR_NAT is faster
+    // and not IPv4-only.
     m_paths.push_back(std::make_unique<Ed2kServerHolePunchPath>(*this));
     m_paths.push_back(std::make_unique<LugdunumNatPath>(*this));
     m_paths.push_back(std::make_unique<EnodeNatPath>(*this));
     m_paths.push_back(std::make_unique<KadBuddyNatPath>(*this));
+
+    m_fastTimer.setInterval(100);
+    connect(&m_fastTimer, &QTimer::timeout, this, &NatRendezvous::processFast);
 }
 
 NatRendezvous::~NatRendezvous() = default;
@@ -185,9 +190,7 @@ bool NatRendezvous::start(const PeerInfo& peer)
         return false;
 
     const uint64 now = m_env->now();
-    for (const auto& p : m_paths) {
-        if (!p->canServe(peer))
-            continue;
+    for (NatPath* p : orderedPaths(peer)) {
         auto a = std::make_unique<Attempt>();
         a->id = m_nextId++;
         a->role = Role::Requester;
@@ -195,6 +198,7 @@ bool NatRendezvous::start(const PeerInfo& peer)
         a->peer = peer;
         a->startedMs = now;
         a->deadlineMs = now + kAttemptTimeoutMs;
+        a->triedPaths = static_cast<uint8>(1u << static_cast<unsigned>(p->kind()));
         if (!p->request(*a))
             continue;
         logDebug(QStringLiteral("NAT-T: rendezvous #%1 via %2 for %3")
@@ -347,6 +351,12 @@ void NatRendezvous::fail(Attempt& a, const QString& why)
     emit attemptFinished(a.id, false);
 }
 
+void NatRendezvous::failOrNext(Attempt& a, const QString& why)
+{
+    if (!tryNextPath(a))
+        fail(a, why);
+}
+
 void NatRendezvous::finish(Attempt& a, bool connected)
 {
     if (a.finished)
@@ -370,6 +380,7 @@ void NatRendezvous::process()
 {
     for (const auto& p : m_paths)
         p->tick();
+    processFast();   // also without an event loop (tests)
 
     const uint64 now = m_env->now();
     // Index loop: paths may add attempts while we run.
@@ -378,7 +389,8 @@ void NatRendezvous::process()
         if (a.finished)
             continue;
         if (now >= a.deadlineMs) {
-            fail(a, QStringLiteral("timeout"));
+            if (!tryNextPath(a))
+                fail(a, QStringLiteral("timeout"));
             continue;
         }
         if (NatPath* p = path(a.path))
@@ -405,14 +417,50 @@ void NatRendezvous::process()
         it = (now - *it >= kRepeatNoticeMs) ? m_recentDone.erase(it) : std::next(it);
 }
 
+void NatRendezvous::processFast()
+{
+    bool wanted = false;
+    for (const auto& p : m_paths)
+        wanted = p->fastTick() || wanted;
+    if (!wanted)
+        m_fastTimer.stop();
+}
+
+void NatRendezvous::wantFastTick()
+{
+    if (!m_fastTimer.isActive())
+        m_fastTimer.start();
+}
+
+bool NatRendezvous::applyPeerCrypt(Attempt& a, uint8 cryptOptions)
+{
+    a.peer.cryptOptions = cryptOptions;
+    a.peer.cryptKnown = true;
+    if (cryptCompatible(m_env->ourConnectOptions(), cryptOptions))
+        return true;
+    fail(a, QStringLiteral("crypt mismatch (peer 0x%1)").arg(cryptOptions, 0, 16));
+    return false;
+}
+
 // ---------------------------------------------------------------------------
 // Punch + handoff
 // ---------------------------------------------------------------------------
 
+const uint8* NatRendezvous::peerCryptHash(const Attempt& a, bool plainWhenUnknown) const
+{
+    if (!a.peer.hashKnown)
+        return nullptr;
+    // Crypt bits from the server: obfuscate from the first packet iff the peer can read it.
+    if (a.peer.cryptKnown)
+        return (a.peer.cryptOptions & CONNECT_OPT_CRYPT_SUPPORTED) ? a.peer.hash.data() : nullptr;
+    return plainWhenUnknown ? nullptr : a.peer.hash.data();
+}
+
 void NatRendezvous::sendPunch(Attempt& a)
 {
     a.lastPunchMs = m_env->now();
-    m_env->sendPeerUdp(std::make_unique<Packet>(OP_HOLEPUNCH, 0, OP_EMULEPROT), a.peerUdp, nullptr);
+    m_env->sendPeerUdp(std::make_unique<Packet>(OP_HOLEPUNCH, 0, OP_EMULEPROT), a.peerUdp,
+                       peerCryptHash(a, true));
 }
 
 void NatRendezvous::sendHandoff(Attempt& a, bool answer)
@@ -433,19 +481,22 @@ void NatRendezvous::sendHandoff(Attempt& a, bool answer)
     pokeUInt16(out + 23, m_env->ourTcpPort());
     if (withV6)
         std::memcpy(out + 25, v6.ipv6Bytes().data(), 16);
-    m_env->sendPeerUdp(std::move(packet), a.peerUdp, a.peer.hashKnown ? a.peer.hash.data() : nullptr);
+    m_env->sendPeerUdp(std::move(packet), a.peerUdp, peerCryptHash(a, false));
 }
 
 void NatRendezvous::evaluateDial(Attempt& a)
 {
-    if (a.finished || a.dialed || !a.peerHandoffSeen)
+    if (a.finished || a.dialed || !a.peerHandoffSeen || a.awaitingInfo)
         return;
     if (a.peerIPv6.isNull() || m_env->ourPublicIPv6().isNull()) {
         // ToDo: hand the punched endpoint to the QUIC NAT-T transport instead of failing.
         fail(a, QStringLiteral("no IPv6 on one side"));
         return;
     }
-    if (a.role == Role::Target) {
+    // A 30-byte 0x61 names the dialer (ed2k-server#39); both sides of such a pair obey it.
+    if (a.serverRole == 1)
+        return;
+    if (a.role == Role::Target || a.serverRole == 0) {
         dial(a);
         return;
     }
@@ -595,6 +646,53 @@ void NatRendezvous::handleHandoff(const uint8* data, uint32 size, const Endpoint
     if (!(flags & kHandoffAnswer))
         sendHandoff(*a, true);
     evaluateDial(*a);
+}
+
+// ---------------------------------------------------------------------------
+// Path choice
+// ---------------------------------------------------------------------------
+
+std::vector<NatPath*> NatRendezvous::orderedPaths(const PeerInfo& peer) const
+{
+    std::vector<NatPath*> out;
+    for (const auto& p : m_paths) {
+        if (p->canServe(peer))
+            out.push_back(p.get());
+    }
+    // PR_NAT ahead of Lugdunum when both can serve: only an eNode-go server offers both.
+    const auto lug = std::ranges::find_if(out, [](NatPath* p) { return p->kind() == PathKind::Lugdunum; });
+    const auto enode = std::ranges::find_if(out, [](NatPath* p) { return p->kind() == PathKind::EnodeNat; });
+    if (lug != out.end() && enode != out.end() && enode > lug)
+        std::rotate(lug, enode, enode + 1);
+    return out;
+}
+
+bool NatRendezvous::tryNextPath(Attempt& a)
+{
+    // Only a path that never answered is worth replacing; once an endpoint is known the
+    // data path failed, and another introduction would not change that.
+    if (a.role != Role::Requester || a.state != Attempt::State::Requested)
+        return false;
+    const uint64 now = m_env->now();
+    for (NatPath* p : orderedPaths(a.peer)) {
+        const auto bit = static_cast<uint8>(1u << static_cast<unsigned>(p->kind()));
+        if (a.triedPaths & bit)
+            continue;
+        a.triedPaths |= bit;
+        const PathKind previous = a.path;
+        a.path = p->kind();
+        a.requestCount = 0;
+        a.lastRequestMs = 0;
+        a.connAck = 0;
+        a.deadlineMs = now + kAttemptTimeoutMs;
+        if (!p->request(a))
+            continue;
+        logDebug(QStringLiteral("NAT-T: #%1 %2 timed out, trying %3")
+                     .arg(a.id)
+                     .arg(QLatin1StringView(pathName(previous)), QLatin1StringView(pathName(a.path))));
+        return true;
+    }
+    return false;
 }
 
 } // namespace eMule::natt

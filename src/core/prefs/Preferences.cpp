@@ -270,6 +270,7 @@ struct Preferences::Data {
 
     // Extended (PPgTweaks)
     bool useCreditSystem = true;     // Reward uploaders
+    bool banRepeatChunkRequests = true; // Ban peers re-requesting a part sent twice
     bool a4afSaveCpu = false;        // Skip A4AF swap checks
     bool autoArchivePreviewStart = true; // Auto-scan archive contents in file details
     QString ed2kHostname;            // Hostname (or IPv6 literal) for own eD2K links
@@ -1242,6 +1243,10 @@ void Preferences::setFileBufferTimeLimit(uint32 val) { set(&Data::fileBufferTime
 bool Preferences::useCreditSystem() const { return get(&Data::useCreditSystem); }
 
 void Preferences::setUseCreditSystem(bool val) { set(&Data::useCreditSystem, val); }
+
+bool Preferences::banRepeatChunkRequests() const { return get(&Data::banRepeatChunkRequests); }
+
+void Preferences::setBanRepeatChunkRequests(bool val) { set(&Data::banRepeatChunkRequests, val); }
 
 bool Preferences::a4afSaveCpu() const { return get(&Data::a4afSaveCpu); }
 
@@ -4015,6 +4020,7 @@ bool Preferences::load(const QString& filePath)
             m_data->useSaveLoadSources = t["useSaveLoadSources"].as<bool>(m_data->useSaveLoadSources);
             m_data->rememberUploadQueue = t["rememberUploadQueue"].as<bool>(m_data->rememberUploadQueue);
             m_data->useCreditSystem = t["useCreditSystem"].as<bool>(m_data->useCreditSystem);
+            m_data->banRepeatChunkRequests = t["banRepeatChunkRequests"].as<bool>(m_data->banRepeatChunkRequests);
             m_data->a4afSaveCpu = t["a4afSaveCpu"].as<bool>(m_data->a4afSaveCpu);
             m_data->autoArchivePreviewStart = t["autoArchivePreviewStart"].as<bool>(m_data->autoArchivePreviewStart);
             m_data->ed2kHostname = QString::fromStdString(t["ed2kHostname"].as<std::string>(m_data->ed2kHostname.toStdString()));
@@ -5167,6 +5173,7 @@ bool Preferences::saveImpl(const QString& filePath) const
     out << YAML::Key << "useSaveLoadSources" << YAML::Value << m_data->useSaveLoadSources;
     out << YAML::Key << "rememberUploadQueue" << YAML::Value << m_data->rememberUploadQueue;
     out << YAML::Key << "useCreditSystem" << YAML::Value << m_data->useCreditSystem;
+    out << YAML::Key << "banRepeatChunkRequests" << YAML::Value << m_data->banRepeatChunkRequests;
     out << YAML::Key << "a4afSaveCpu" << YAML::Value << m_data->a4afSaveCpu;
     out << YAML::Key << "autoArchivePreviewStart" << YAML::Value << m_data->autoArchivePreviewStart;
     out << YAML::Key << "ed2kHostname" << YAML::Value << m_data->ed2kHostname.toStdString();

@@ -30,11 +30,18 @@ enum class PathKind : uint8 {
 
 [[nodiscard]] const char* pathName(PathKind kind) noexcept;
 
+/// Crypt bits (CONNECT_OPT_CRYPT_*: 1 supported, 2 requested, 4 required) that can meet:
+/// neither side requires what the other cannot do.
+[[nodiscard]] constexpr bool cryptCompatible(uint8 ours, uint8 theirs) noexcept
+{
+    return !((ours & 0x04) && !(theirs & 0x01)) && !((theirs & 0x04) && !(ours & 0x01));
+}
+
 /// What a path needs to know about a peer we want to reach.
 /// Server UDP obfuscation state; 0 = not known yet.
 struct ServerUdpCrypt {
     uint32 key = 0;
-    uint16 port = 0;   ///< obfuscated UDP port (Lugdunum: port + 14)
+    uint16 port = 0;   ///< obfuscated UDP port from OP_GLOBSERVSTATRES (Lugdunum and eNode-go: port + 14); port + 12 when the reply has none
 };
 
 struct PeerInfo {
@@ -48,6 +55,8 @@ struct PeerInfo {
     Hash16 buddyID{};
     bool buddyValid = false;
     Hash16 fileHash{};
+    uint8 cryptOptions = 0;         ///< peer's CONNECT_OPT_CRYPT_* bits, valid when cryptKnown
+    bool cryptKnown = false;        ///< from a 30-byte 0x61 or a 0x37/0xA7 crypt byte
 
     /// Built from a source we want to download from.
     [[nodiscard]] static PeerInfo fromClient(const UpDownClient& client);
@@ -83,6 +92,12 @@ struct Attempt {
     bool dialed = false;
     bool endpointReported = false;  ///< peerEndpointReady emitted
     bool finished = false;          ///< done or failed; removed on the next tick
+    uint8 triedPaths = 0;           ///< requester: bit (1 << PathKind) per path tried
+    int8 serverRole = -1;           ///< 30-byte 0x61: 0 = we dial, 1 = the peer dials; -1 = own rule
+    bool awaitingInfo = false;      ///< target woken by 0x37 on a 0x100000 server, no 0x61 yet
+    uint64 infoDeadlineMs = 0;      ///< then: fall back to Lugdunum's reciprocal 0xA6
+    uint8 burstLeft = 0;            ///< target: 0x9F still due of the 0 / 0.5 / 1 s burst
+    uint64 burstStartMs = 0;
 };
 
 } // namespace natt

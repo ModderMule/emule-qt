@@ -370,6 +370,13 @@ public:
 
     /// Decode connect option bits from server callback or Kad.
     void setConnectOptions(uint8 options, bool encryption, bool callback);
+    /// Crypt bits only (CONNECT_OPT_CRYPT_*); the callback bit stays as it is.
+    void setCryptOptions(uint8 options)
+    {
+        m_supportsCryptLayer = (options & 0x01) != 0;
+        m_requestsCryptLayer = (options & 0x02) != 0;
+        m_requiresCryptLayer = (options & 0x04) != 0;
+    }
 
     // -- Key methods (Phase 1, fully implemented) ---------------------------
 
@@ -842,12 +849,17 @@ public:
     /// Move a block whose data is ready from the request queue to the head of the done list.
     /// False when it is no longer pending (flushed with an ended slot).
     bool markBlockDone(const uint8* fileId, uint64 startOffset, uint64 endOffset);
+    /// The block's packets were handed to the socket. It counts as delivered once the sent
+    /// payload passes what was queued up to here. Feeds ClientList::repeatChunks.
+    void noteBlockQueuedForSend(const uint8* fileId, uint64 fileSize, uint64 startOffset,
+                                uint64 endOffset);
     void sendHashsetPacket(const uint8* data, uint32 size, bool fileIdentifiers);
     void sendRankingInfo();
     void sendCommentInfo(const KnownFile* file);
     void addRequestCount(const uint8* fileID);
     void unBan();
-    void ban(const QString& reason = {});
+    /// durationMs 0 = CLIENTBANTIME (2 h).
+    void ban(const QString& reason = {}, uint64 durationMs = 0);
     /// Record one abuse strike against this peer's ADDRESS and ban on the second.
     /// Shared by every flood detector; the counter survives this object's destruction,
     /// so reconnecting does not wipe a strike. See ClientList::trackBadRequest.
@@ -1388,6 +1400,21 @@ private:
     std::list<Requested_Block_Struct*> m_blockRequests;
     std::list<Requested_Block_Struct*> m_doneBlocks;
     uint64 m_blockReadBytesQueued = 0;      // bytes of m_blockRequests the disk thread holds
+    // Blocks on the socket not yet sent in full, oldest first. sentMark is
+    // m_addedPayloadQueueSession right after the block was queued.
+    struct UnconfirmedSend {
+        std::array<uint8, 16> fileId{};
+        uint64 fileSize = 0;
+        uint64 start = 0;
+        uint64 end = 0;
+        uint64 sentMark = 0;
+    };
+    std::deque<UnconfirmedSend> m_unconfirmedSends;
+    static constexpr size_t kMaxUnconfirmedSends = 256;
+    /// Credit blocks the socket has sent in full to ClientList::repeatChunks.
+    void confirmSentBlocks();
+    /// The peer asks for a part it already got from us kMaxDeliveries times in full.
+    [[nodiscard]] bool isRepeatChunkRequest(const Requested_Block_Struct& block) const;
     static constexpr size_t kMaxPendingBlockRequests = 1024;
     // Not MFC, which keeps every block of the slot and walks them all per request.
     // A duplicate request can only repeat a block still in flight; peers keep at most

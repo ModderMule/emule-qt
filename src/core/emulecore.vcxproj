@@ -197,6 +197,7 @@
     <ClCompile Include="client\CorruptionBlackBox.cpp" />
     <ClCompile Include="client\DeadSourceList.cpp" />
     <ClCompile Include="client\FruitlessSessionLedger.cpp" />
+    <ClCompile Include="client\RepeatChunkGuard.cpp" />
     <ClCompile Include="net\GuardedNetworkAccessManager.cpp" />
     <ClCompile Include="net\InterfacePin.cpp" />
     <ClCompile Include="net\ListenConflict.cpp" />
@@ -424,6 +425,7 @@
     <ClInclude Include="client\BuddyRelayBudget.h" />
     <ClInclude Include="client\DeadSourceList.h" />
     <ClInclude Include="client\FruitlessSessionLedger.h" />
+    <ClInclude Include="client\RepeatChunkGuard.h" />
     <ClInclude Include="net\InterfacePin.h" />
     <ClInclude Include="net\ListenConflict.h" />
     <ClInclude Include="media\MediaReadBudget.h" />

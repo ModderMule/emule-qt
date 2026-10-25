@@ -4,6 +4,7 @@
 
 #include "NatTestEnv.h"
 
+#include "app/AppContext.h"
 #include "utils/OtherFunctions.h"
 
 #include <QSignalSpy>
@@ -37,6 +38,45 @@ QByteArray info(const Address& ip, uint16 tcp, uint16 udp, const Hash16& hash, u
     return b;
 }
 
+constexpr uint16 kObfPort = 4675;
+constexpr uint32 kServerKey = 0x11223344;
+
+/// 30-byte 0x61 of an extension pair.
+QByteArray infoExt(const Hash16& hash, uint32 peerId, uint8 role, uint8 peerCrypt)
+{
+    QByteArray b = info(kPeerIP, kPeerTcp, kPeerUdp, hash, peerId);
+    b[24] = char(role);
+    b.append(char(peerCrypt));
+    return b;
+}
+
+/// Lugdunum's 0x37 body: <ip 4><port 2><id 4><flags 1>
+QByteArray wakeUp(uint32 requesterId, uint8 flags)
+{
+    QByteArray b(11, '\0');
+    auto* p = reinterpret_cast<uint8*>(b.data());
+    pokeUInt32(p, kPeerIP.toNetworkUint32());
+    pokeUInt16(p + 4, kPeerUdp);
+    pokeUInt32(p + 6, requesterId);
+    p[10] = flags;
+    return b;
+}
+
+/// ed2k-server 0.9.85 with the extension; we announced 0x100000 | 0x1000.
+Server& logInExtension(HubFixture& f, bool withKey = true)
+{
+    // the server key is valid only for a known public IP
+    theApp.setPublicIP(Address::fromString(QStringLiteral("198.51.100.20")).toNetworkUint32());
+    Server& s = f.env->logIn(kServerIP, kServerPort,
+                             SrvTcpFlag::LowIdHolePunch | SrvTcpFlag::LugdunumNat | SrvTcpFlag::HolePunchExtension);
+    s.setIdChangeLength(24);
+    s.setObfuscationPortUDP(kObfPort);
+    s.setUDPFlags(SrvUdpFlag::UdpObfuscation);
+    if (withKey)
+        s.setServerKeyUDP(kServerKey);
+    return s;
+}
+
 } // namespace
 
 class tst_NatRendezvous : public QObject {
@@ -60,6 +100,13 @@ private slots:
     void keepalive_0x9F_every60s();
     void connected_finishesAttempt();
     void info_repeatAfterConnect_ignored();
+    // hole-punch extension (ed2k-server#39)
+    void ext_keepaliveObfuscatedOnceKeyKnown();
+    void ext_requestCarriesKeepalive();
+    void ext_wakeUp_burstsAndWaitsForInfo();
+    void ext_info_roleDecidesDialer();
+    void ext_noInfo_fallsBackToLugdunum();
+    void ext_peerCrypt_obfuscatesOrFails();
 };
 
 void tst_NatRendezvous::canStart_gates()
@@ -445,6 +492,218 @@ void tst_NatRendezvous::info_repeatAfterConnect_ignored()
     f.hub->handleServerTcp(OP_LOWID_HOLEPUNCH_INFO, info(kPeerIP, kPeerTcp, kPeerUdp, peer.hash, 77));
     QCOMPARE(f.hub->attempts().size(), size_t{1});
     QCOMPARE(f.hub->attempts().front()->role, Role::Target);
+}
+
+// ---------------------------------------------------------------------------
+// Hole-punch extension (ed2k-server#39)
+// ---------------------------------------------------------------------------
+
+void tst_NatRendezvous::ext_keepaliveObfuscatedOnceKeyKnown()
+{
+    // no key yet: plain, as on 0.9.84
+    HubFixture f;
+    Server& s = logInExtension(f, false);
+    f.hub->process();
+    auto ka = f.env->udpWith(OP_EDONKEYPROT, OP_SERVER_NATT_KEEPALIVE);
+    QCOMPARE(ka.size(), size_t{1});
+    QCOMPARE(ka[0].serverKey, 0u);
+    QCOMPARE(ka[0].to, Endpoint(kServerIP, kServerPort + 4));
+
+    // key known: obfuscated to the obfuscation port
+    s.setServerKeyUDP(kServerKey);
+    f.advance(60000);
+    ka = f.env->udpWith(OP_EDONKEYPROT, OP_SERVER_NATT_KEEPALIVE);
+    QCOMPARE(ka.size(), size_t{2});
+    QCOMPARE(ka[1].serverKey, kServerKey);
+    QCOMPARE(ka[1].to, Endpoint(kServerIP, kObfPort));
+
+    // key lost: no plain one (the server would ignore it), ask for a fresh key
+    s.setServerKeyUDP(0);
+    const int refreshes = f.env->keyRefreshes;
+    f.advance(60000);
+    QCOMPARE(f.env->udpWith(OP_EDONKEYPROT, OP_SERVER_NATT_KEEPALIVE).size(), size_t{2});
+    QVERIFY(f.env->keyRefreshes > refreshes);
+
+    // a 0.9.84 server gets it plain even with a key
+    HubFixture g;
+    theApp.setPublicIP(Address::fromString(QStringLiteral("198.51.100.20")).toNetworkUint32());
+    Server& old = g.env->logIn(kServerIP, kServerPort, SrvTcpFlag::LowIdHolePunch);
+    old.setObfuscationPortUDP(kObfPort);
+    old.setServerKeyUDP(kServerKey);
+    g.hub->process();
+    ka = g.env->udpWith(OP_EDONKEYPROT, OP_SERVER_NATT_KEEPALIVE);
+    QCOMPARE(ka.size(), size_t{1});
+    QCOMPARE(ka[0].serverKey, 0u);
+}
+
+void tst_NatRendezvous::ext_requestCarriesKeepalive()
+{
+    HubFixture f;
+    logInExtension(f);
+    f.hub->process();
+    f.env->udp.clear();
+    QVERIFY(f.hub->start(f.peerOnServer(78)));     // even: ed2k-server path only
+    QCOMPARE(f.env->tcp.size(), size_t{1});
+    auto ka = f.env->udpWith(OP_EDONKEYPROT, OP_SERVER_NATT_KEEPALIVE);
+    QCOMPARE(ka.size(), size_t{1});
+    QCOMPARE(ka[0].serverKey, kServerKey);
+    f.advance(10000);                              // repeat 0x60, again with a 0x9F
+    QCOMPARE(f.env->tcp.size(), size_t{2});
+    QCOMPARE(f.env->udpWith(OP_EDONKEYPROT, OP_SERVER_NATT_KEEPALIVE).size(), size_t{2});
+
+    // not without the extension
+    HubFixture g;
+    g.env->logIn(kServerIP, kServerPort, SrvTcpFlag::LowIdHolePunch);
+    g.hub->process();
+    g.env->udp.clear();
+    QVERIFY(g.hub->start(g.peerOnServer(78)));
+    QVERIFY(g.env->udpWith(OP_EDONKEYPROT, OP_SERVER_NATT_KEEPALIVE).empty());
+}
+
+void tst_NatRendezvous::ext_wakeUp_burstsAndWaitsForInfo()
+{
+    HubFixture f;
+    logInExtension(f);
+    f.hub->process();
+    f.env->udp.clear();
+
+    QVERIFY(f.hub->handleServerTcp(OP_NAT_CALLBACKREQUESTED, wakeUp(77, CONNECT_OPT_CRYPT_SUPPORTED)));
+    QVERIFY(f.env->udpWith(OP_EDONKEYPROT, OP_NAT_CALLBACKREQUEST).empty());   // no reciprocal 0xA6
+    QCOMPARE(f.env->udpWith(OP_EMULEPROT, OP_HOLEPUNCH).size(), size_t{1});    // punching at once
+    QCOMPARE(f.env->udpWith(OP_EDONKEYPROT, OP_SERVER_NATT_KEEPALIVE).size(), size_t{1});
+    auto list = f.hub->attempts();
+    QCOMPARE(list.size(), size_t{1});
+    QCOMPARE(list[0]->role, Role::Target);
+    QCOMPARE(list[0]->path, PathKind::Ed2kServer);
+    QVERIFY(list[0]->awaitingInfo);
+
+    f.env->clock += 499;
+    f.hub->processFast();
+    QCOMPARE(f.env->udpWith(OP_EDONKEYPROT, OP_SERVER_NATT_KEEPALIVE).size(), size_t{1});
+    f.env->clock += 1;
+    f.hub->processFast();
+    QCOMPARE(f.env->udpWith(OP_EDONKEYPROT, OP_SERVER_NATT_KEEPALIVE).size(), size_t{2});
+    f.env->clock += 500;
+    f.hub->processFast();
+    f.env->clock += 500;
+    f.hub->processFast();
+    QCOMPARE(f.env->udpWith(OP_EDONKEYPROT, OP_SERVER_NATT_KEEPALIVE).size(), size_t{3});
+
+    // no dial before 0x61, even with the peer's handoff in
+    Hash16 hash{};
+    hash.fill(0x44);
+    const QByteArray h = handoff(hash, 77, kPeerTcp, kPeerV6);
+    f.hub->handleFrame(OP_NATT_FRAME_IPV6HANDOFF, bytes(h), uint32(h.size()), Endpoint(kPeerIP, kPeerUdp), true);
+    QVERIFY(f.env->dials.empty());
+
+    // the 0x61 that releases us joins the same attempt
+    f.hub->handleServerTcp(OP_LOWID_HOLEPUNCH_INFO, infoExt(hash, 77, 0, CONNECT_OPT_CRYPT_SUPPORTED));
+    list = f.hub->attempts();
+    QCOMPARE(list.size(), size_t{1});
+    QVERIFY(!list[0]->awaitingInfo);
+    QCOMPARE(list[0]->serverRole, int8{0});
+    QVERIFY(list[0]->peer.hashKnown);
+    f.advance(1000);
+    QCOMPARE(f.env->dials.size(), size_t{1});
+}
+
+void tst_NatRendezvous::ext_info_roleDecidesDialer()
+{
+    // requester told to wait: never dials, also not after the usual delay
+    {
+        HubFixture f;
+        logInExtension(f);
+        const PeerInfo peer = f.peerOnServer(78);
+        QVERIFY(f.hub->start(peer));
+        f.hub->handleServerTcp(OP_LOWID_HOLEPUNCH_INFO, infoExt(peer.hash, 78, 1, CONNECT_OPT_CRYPT_SUPPORTED));
+        const QByteArray h = handoff(peer.hash, 78, kPeerTcp, kPeerV6);
+        f.hub->handleFrame(OP_NATT_FRAME_IPV6HANDOFF, bytes(h), uint32(h.size()), Endpoint(kPeerIP, kPeerUdp), true);
+        for (int i = 0; i < 10; ++i)
+            f.advance(1000);
+        QVERIFY(f.env->dials.empty());
+    }
+    // requester told to dial: at once, no 5 s wait
+    {
+        HubFixture f;
+        logInExtension(f);
+        const PeerInfo peer = f.peerOnServer(78);
+        QVERIFY(f.hub->start(peer));
+        f.hub->handleServerTcp(OP_LOWID_HOLEPUNCH_INFO, infoExt(peer.hash, 78, 0, CONNECT_OPT_CRYPT_SUPPORTED));
+        const QByteArray h = handoff(peer.hash, 78, kPeerTcp, kPeerV6, true);
+        f.hub->handleFrame(OP_NATT_FRAME_IPV6HANDOFF, bytes(h), uint32(h.size()), Endpoint(kPeerIP, kPeerUdp), true);
+        QCOMPARE(f.env->dials.size(), size_t{1});
+    }
+    // 29 bytes: role stays advisory, today's rule (target dials)
+    {
+        HubFixture f;
+        logInExtension(f);
+        Hash16 hash{};
+        hash.fill(0x33);
+        QByteArray b = info(kPeerIP, kPeerTcp, kPeerUdp, hash, 55);
+        b[24] = 1;
+        f.hub->handleServerTcp(OP_LOWID_HOLEPUNCH_INFO, b);
+        QCOMPARE(f.hub->attempts().front()->serverRole, int8{-1});
+        const QByteArray h = handoff(hash, 55, kPeerTcp, kPeerV6);
+        f.hub->handleFrame(OP_NATT_FRAME_IPV6HANDOFF, bytes(h), uint32(h.size()), Endpoint(kPeerIP, kPeerUdp), true);
+        QCOMPARE(f.env->dials.size(), size_t{1});
+    }
+}
+
+void tst_NatRendezvous::ext_noInfo_fallsBackToLugdunum()
+{
+    // a 0x37 from a plain 0xA6 (Lugdunum-only requester): no 0x61 ever comes
+    HubFixture f;
+    logInExtension(f);
+    f.hub->handleServerTcp(OP_NAT_CALLBACKREQUESTED, wakeUp(77, CONNECT_OPT_CRYPT_SUPPORTED));
+    for (int i = 0; i < 3; ++i)
+        f.advance(1000);
+    QVERIFY(f.env->udpWith(OP_EDONKEYPROT, OP_NAT_CALLBACKREQUEST).empty());
+    f.advance(1000);                               // 4 s
+    const auto req = f.env->udpWith(OP_EDONKEYPROT, OP_NAT_CALLBACKREQUEST);
+    QCOMPARE(req.size(), size_t{1});
+    QCOMPARE(peekUInt32(bytes(req[0].payload)), 77u);
+    QCOMPARE(req[0].serverKey, kServerKey);
+    QCOMPARE(f.hub->attempts().front()->path, PathKind::Lugdunum);
+    QVERIFY(!f.hub->attempts().front()->awaitingInfo);
+}
+
+void tst_NatRendezvous::ext_peerCrypt_obfuscatesOrFails()
+{
+    Hash16 hash{};
+    hash.fill(0x33);
+    // peer supports crypt: punch obfuscated from the first one
+    {
+        HubFixture f;
+        logInExtension(f);
+        f.hub->handleServerTcp(OP_LOWID_HOLEPUNCH_INFO, infoExt(hash, 55, 1, CONNECT_OPT_CRYPT_SUPPORTED));
+        const auto punch = f.env->udpWith(OP_EMULEPROT, OP_HOLEPUNCH);
+        QCOMPARE(punch.size(), size_t{1});
+        QVERIFY(punch[0].encrypted);
+        QCOMPARE(punch[0].cryptHash, hash);
+        QVERIFY(f.hub->attempts().front()->peer.cryptKnown);
+    }
+    // peer can't: everything plain, the handoff too
+    {
+        HubFixture f;
+        logInExtension(f);
+        f.hub->handleServerTcp(OP_LOWID_HOLEPUNCH_INFO, infoExt(hash, 55, 1, 0));
+        QVERIFY(!f.env->udpWith(OP_EMULEPROT, OP_HOLEPUNCH).front().encrypted);
+        QVERIFY(!f.env->udpWith(OP_UDPRESERVEDPROT2, OP_NATT_FRAME_IPV6HANDOFF).front().encrypted);
+    }
+    // we require it, the peer can't: our own request fails
+    {
+        HubFixture f;
+        logInExtension(f);
+        f.env->connectOptions = CONNECT_OPT_CRYPT_SUPPORTED | CONNECT_OPT_CRYPT_REQUESTED | CONNECT_OPT_CRYPT_REQUIRED;
+        const PeerInfo peer = f.peerOnServer(78);
+        QVERIFY(f.hub->start(peer));
+        f.hub->handleServerTcp(OP_LOWID_HOLEPUNCH_INFO, infoExt(peer.hash, 78, 0, 0));
+        QCOMPARE(f.env->failed.size(), size_t{1});
+        QVERIFY(f.env->udpWith(OP_EMULEPROT, OP_HOLEPUNCH).empty());
+        // and an unsolicited one starts nothing
+        f.hub->handleServerTcp(OP_LOWID_HOLEPUNCH_INFO, infoExt(hash, 55, 1, 0));
+        QVERIFY(f.hub->attempts().empty() || f.hub->attempts().front()->finished);
+    }
 }
 
 QTEST_GUILESS_MAIN(tst_NatRendezvous)

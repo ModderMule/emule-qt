@@ -11,7 +11,16 @@
 
 #include "net/natt/NatPath.h"
 
+#include <optional>
+
 namespace eMule::natt {
+
+/// A parsed 0x37 / 0xA7 body.
+struct CallbackNotice {
+    Endpoint udp;       ///< requester's mapped UDP endpoint
+    PeerInfo peer;      ///< requester: ID, crypt bits, hash when sent, our server
+    uint8 flags = 0;
+};
 
 class LugdunumNatPath final : public NatPath {
 public:
@@ -29,6 +38,10 @@ public:
     void repeat(Attempt& attempt) override;
     bool handleServerTcp(uint8 opcode, const QByteArray& payload) override;
     bool handleServerUdp(const Endpoint& from, const uint8* data, qsizetype len) override;
+
+    /// Shared with the ed2k-server extension, whose 0x37 is byte-identical.
+    [[nodiscard]] static std::optional<CallbackNotice> parseNotice(const NatEnv& env, const uint8* data,
+                                                                   uint32 size);
 
 private:
     bool sendRequest(Attempt& attempt);

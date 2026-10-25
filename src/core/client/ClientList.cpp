@@ -858,10 +858,12 @@ void ClientList::processConnectingClients()
 // Banned clients
 // ===========================================================================
 
-void ClientList::addBannedClient(const Address& addr)
+void ClientList::addBannedClient(const Address& addr, uint64 durationMs)
 {
     if (addr.isNull()) return;
-    m_bannedList[addr.peerKey()] = getTickCount();   // IPv6: the whole /64
+    const uint64 until = getTickCount() + (durationMs ? durationMs : CLIENTBANTIME);
+    uint64& entry = m_bannedList[addr.peerKey()];   // IPv6: the whole /64
+    entry = std::max(entry, until);
 }
 
 bool ClientList::isBannedClient(const Address& addr) const
@@ -870,7 +872,7 @@ bool ClientList::isBannedClient(const Address& addr) const
     auto it = m_bannedList.find(addr.peerKey());
     if (it == m_bannedList.end())
         return false;
-    return (getTickCount() < it->second + CLIENTBANTIME);
+    return getTickCount() < it->second;
 }
 
 void ClientList::removeBannedClient(const Address& addr)
@@ -1039,7 +1041,7 @@ void ClientList::cleanUpBannedList()
 
     m_lastBanCleanUp = now;
     std::erase_if(m_bannedList, [now](const auto& pair) {
-        return now >= pair.second + CLIENTBANTIME;
+        return now >= pair.second;
     });
 
     const uint64 now64 = getTickCount();

@@ -169,6 +169,9 @@ void AppNatEnv::dialPeer(const Attempt& attempt, const Address& ipv6)
     }
     if (attempt.peerTcpPort != 0)
         client->setUserPort(attempt.peerTcpPort);
+    // Crypt bits from the server (30-byte 0x61, 0x37): obfuscated from the first packet.
+    if (attempt.peer.cryptKnown)
+        client->setCryptOptions(attempt.peer.cryptOptions);
     client->setUserIPv6(ipv6);
     client->setOpenIPv6(true);
     client->setConnectAddress(ipv6);

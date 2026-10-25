@@ -45,6 +45,8 @@ namespace SrvTcpFlag {
     // 0x80000 = enodemeta FlagServerSearch (reserved, never sent)
     inline constexpr uint32 LowIdHolePunch  = 0x00020000;   // ed2k-server LowID hole punch (0x60-0x62, 0x9F)
     inline constexpr uint32 NatRendezvous   = 0x00040000;   // eNode-go PR_NAT rendezvous (UDP 0xF1)
+    inline constexpr uint32 HolePunchExtension = 0x00100000; // ed2k-server 0.9.85 hole-punch extension (ed2k-server#39)
+    inline constexpr uint32 NatWake         = 0x00200000;   // eNode-go PR_NAT wake-up (TCP OP_NAT_WAKE 0x46)
 }
 
 namespace SrvUdpFlag {
@@ -340,6 +342,22 @@ public:
     /// Flag alone is not enough: eserver also sends a 24-byte OP_IDCHANGE.
     [[nodiscard]] bool supportsLugdunumNat() const      { return (m_tcpFlags & SrvTcpFlag::LugdunumNat) != 0 && m_idChangeLength >= 24; }
     [[nodiscard]] bool supportsNatRendezvous() const    { return (m_tcpFlags & SrvTcpFlag::NatRendezvous) != 0; }
+    /// The server wakes us over TCP for PR_NAT, so we keep no standing registration.
+    /// Only when our login carried SRVCAP_NAT_WAKE: without it the server never wakes us.
+    [[nodiscard]] bool supportsNatWake() const
+    {
+        // SRVCAP_NAT_WAKE has the same value as the server flag.
+        return (m_tcpFlags & SrvTcpFlag::NatWake) != 0 && (m_loginCaps & SrvTcpFlag::NatWake) != 0;
+    }
+    /// The CT_SERVER_FLAGS we sent at login on this connection (transient, never saved).
+    [[nodiscard]] uint32 loginCaps() const              { return m_loginCaps; }
+    void setLoginCaps(uint32 caps)                      { m_loginCaps = caps; }
+    /// Extension pairs only: the 24-byte OP_IDCHANGE proves our 0x1000, and we send
+    /// 0x100000 only with it.
+    [[nodiscard]] bool supportsHolePunchExtension() const
+    {
+        return (m_tcpFlags & SrvTcpFlag::HolePunchExtension) != 0 && supportsLowIdHolePunch() && supportsLugdunumNat();
+    }
 
     /// Check if we hold a valid UDP key for the given client IP. The stored IP
     /// must itself be known: a key stamped before we learned our public IP
@@ -405,6 +423,7 @@ private:
     uint16  m_obfuscationPortUDP = 0;
     uint16  m_natPort = 0;
     uint32  m_idChangeLength = 0;
+    uint32  m_loginCaps = 0;          // transient, never saved
     uint32  m_serverKeyUDP = 0;
     uint32  m_serverKeyUDPIP = 0;
     bool    m_cryptPingReplyPending = false;

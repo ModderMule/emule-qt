@@ -137,6 +137,8 @@ void UploadQueue::onBlockPacketsReady(UpDownClient* client, QByteArray fileId,
             sock->sendPacket(std::make_unique<Packet>(*pkt), false, pkt->statsPayload);
         }
     }
+    if (const KnownFile* file = m_sharedFiles ? m_sharedFiles->getFileByID(id) : nullptr)
+        client->noteBlockQueuedForSend(id, file->fileSize(), startOffset, endOffset);
 
     client->startBlockReads();
 }

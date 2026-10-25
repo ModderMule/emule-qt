@@ -447,6 +447,7 @@ void tst_ServerConnect::login_natTraversalTagAndBit()
     }
     QCOMPARE(sawUdpPorts, expectUdpPorts);
     QCOMPARE((flags & SRVCAP_NATTRAVERSAL) != 0, expectNatBit);
+    QCOMPARE((flags & SRVCAP_HOLEPUNCH_EXT) != 0, expectNatBit);   // ed2k-server#39: always together
 
     conn.disconnect();
     serverSide->close();

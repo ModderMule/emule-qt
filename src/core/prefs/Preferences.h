@@ -512,6 +512,11 @@ public:
     [[nodiscard]] bool useCreditSystem() const;
     void setUseCreditSystem(bool val);
 
+    /// Ban a peer that asks again for a part it already got from us twice in full.
+    /// YAML only (transfer.banRepeatChunkRequests), no GUI.
+    [[nodiscard]] bool banRepeatChunkRequests() const;
+    void setBanRepeatChunkRequests(bool val);
+
     [[nodiscard]] bool a4afSaveCpu() const;
     void setA4afSaveCpu(bool val);
 

@@ -21,11 +21,21 @@ Four paths, tried in this order for a source we want to download from:
 | Path | Used when | Wire |
 | --- | --- | --- |
 | ed2k-server 0.9.84+ | our server sets `OP_IDCHANGE` flag `0x20000`, the peer is a LowID on it | TCP `0x60`/`0x61`/`0x62`, UDP keepalive `0x9F` |
-| Lugdunum eserver 17.x | flag `0x1000` **and** a 24-byte `OP_IDCHANGE`, plus the server UDP key | server UDP `0xA6` out, UDP `0xA7` / TCP `0x37` in |
+| Lugdunum eserver 17.x, eNode-go | flag `0x1000` **and** a 24-byte `OP_IDCHANGE`, plus the server UDP key, an odd target ID, and an IPv4 session | server UDP `0xA6` out, UDP `0xA7` / TCP `0x37` in |
 | eNode-go `PR_NAT` | flag `0x40000`, peer's user hash known | UDP protocol `0xF1` to the `ST_NAT_PORT` (default 2004) |
 | Kad serving buddy | the source has a serving buddy, Kad connected | `OP_REASKCALLBACKUDP` with an embedded `OP_RENDEZVOUS` |
 
 All UDP leaves the client UDP socket, so every introducer sees the mapping the peer must punch.
+
+eNode-go (since 2026-10-25) sets both `0x1000` and `0x40000`. There `PR_NAT` goes before
+Lugdunum whenever it can serve the peer, that is when the peer's hash is known: it is faster
+and not IPv4-only. Lugdunum serves the hashless `OP_FOUNDSOURCES` rows. On any server, a
+requester whose path produced no endpoint within 45 s moves to the next path that can serve
+the peer; the peer is marked failed only when none is left.
+
+The 24-byte `OP_IDCHANGE` is also the proof that our own login carried `0x1000` and crypt
+support: both servers answer 24 bytes only then. So a public IPv6 that became confident
+after login, or a crypt layer that is off, never leads to a request the server would drop.
 
 ### ed2k-server
 
@@ -33,14 +43,37 @@ Spec: the ed2k-server README, "Implementing a compatible client".
 
 - Login: tag `CT_EMULE_UDPPORTS` (`0xF9`) = `(kadPort << 16) | udpPort` whenever the feature is on.
 - Keepalive: `0xE3 0x9F <user hash 16>` every 60 s from the client UDP socket to the server's
-  TCP port + 4, plain, while logged in to a `0x20000` server. The server trusts the observed
+  TCP port + 4, plain (obfuscated on an extension server, below), while logged in to a
+  `0x20000` server. The server trusts the observed
   port for 600 s.
 - Request: `0x60 <target id 4><our udp port 2>`, re-sent every 10 s (3 times) until an answer.
 - Answer to both sides: `0x61 <ip 4><tcp 2><udp 2><hash 16><role 1>[<peer id 4>]`. `peer id`
   (0.9.84+) is read only when the payload has 29 bytes or more. A requester matches it by that
   ID, else by hash, else the single request in flight. Any other `0x61` makes us the target.
-  The role byte is ignored: both sides punch.
+  Both sides punch. The role byte is advisory here; only a 30-byte `0x61` (below) makes it binding.
 - `0x62 <target id 4><reason 1>` ends the request.
+
+#### Hole-punch extension (`0x100000`, ed2k-server 0.9.85+)
+
+Agreed in andrey23127/ed2k-server#39. It applies when the server sets `0x100000` in
+`OP_IDCHANGE` and both clients logged in with `0x100000 | 0x1000`; we always send the two
+together. Any other pair gets the plain flow above.
+
+- Keepalive: on such a server, server-key obfuscated to the server's UDP obfuscation port
+  (as `0xA6`) once we hold the key; plain until then. After the first obfuscated one the
+  server ignores plain ones for the session, so we never go back to plain: without a key the
+  keepalive is skipped and a new key requested.
+- Requester: one `0x9F` right before each `0x60`, so the server has our fresh port.
+- Target: the server wakes us with Lugdunum's `0x37`, byte-identical. We punch towards its
+  endpoint at once, send `0x9F` at 0, 0.5 and 1 s (100 ms timer) and do not dial yet.
+- The `0x61` that follows is 30 bytes: `peer_crypt(1)` appended, the peer's
+  `(CT_SERVER_FLAGS >> 9) & 7` (support, request, require = `CONNECT_OPT_CRYPT_*`).
+  Role `0` dials (at once, also as requester), role `1` never dials and waits.
+- `peer_crypt` (and the crypt byte of a `0x37`/`0xA7`) decides obfuscation from the first
+  packet: punch and handoff are obfuscated iff the peer supports it, and the TCP dial uses the
+  same bits. A pair where one side requires what the other can't do fails at once.
+- No `0x61` within 4 s of a `0x37`: it came from a plain `0xA6` (a Lugdunum-only requester), so
+  we answer with the reciprocal `0xA6` and go on as a Lugdunum target.
 
 ### Lugdunum
 
@@ -66,15 +99,23 @@ Details and live captures: `lugdunum-nat-callback.local.md`.
 
 ### eNode-go `PR_NAT`
 
-Spec: `eNode-go/docs/ipv6-client-implementation-spec.md` §9.
+Spec: `eNode-go/docs/pr-nat-rendezvous-spec.md`.
 
 - Frame `<0xF1><size 4 LE = payload + 1><opcode 1><payload>`; endpoints are big-endian.
 - While logged in to a `0x40000` server and firewalled: `REGISTER 0xE4 <hash 16>` per family
   (IPv6 too when both sides have one), every 5 s until acked, then `KEEPALIVE 0xE6` every 20 s
-  (server TTL 30 s).
+  (server TTL 30 s). After 45 s without a `PING` (or ack) we register again: the server lost
+  the registration or our NAT moved us to another port.
+- Wake-up: our login sets `0x200000` together with `0x1000`. On a server that also sets flag
+  `0x200000` we keep **no** registration. The server sends TCP `OP_NAT_WAKE 0x46 <families 1>`
+  (`0x01` IPv4, `0x02` IPv6) when a peer asks for us, and we `REGISTER` once per family, IPv6
+  first. As requester we send the `SYNC2` over IPv6 when we can and `REGISTER` over IPv4 just
+  before it. An empty `OP_OFFERFILES` after 20 min of TCP silence replaces the keepalives as
+  session activity (eNode-go closes a session after 3600 s without any).
 - Request: `SYNC2 0xE9 <our hash 16><connAck 4><peer hash 16>`, up to 3 times.
 - Both sides get `SYNC 0xE1` / `SYNC_EX 0xE7` (IPv4) or `SYNC_IPV6 0xED` with the other's
-  endpoint; `FAILED 0xE5 <reason 1><hash 16>` ends the request.
+  endpoint; `FAILED 0xE5 <reason 1><hash 16>` moves the request to the next path (Lugdunum),
+  like a timeout.
 - Only frames from the server's IP, on its NAT port or main UDP port, are read.
 - `SYNC2` goes to the family whose `REGISTER` was acked. On an IPv6 server session only the v6
   register is accepted, and LowID sources from that session carry no server IPv4; they still

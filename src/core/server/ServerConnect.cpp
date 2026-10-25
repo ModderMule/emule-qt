@@ -902,10 +902,17 @@ void ServerConnect::checkForTimeout()
 
 void ServerConnect::keepConnectionAlive()
 {
-    if (m_config.serverKeepAliveTimeout == 0)
+    if (!m_connected || !m_connectedSocket)
         return;
 
-    if (!m_connected || !m_connectedSocket)
+    // With the PR_NAT wake-up we send no keepalives over UDP, and those also counted as
+    // activity for this session on eNode-go (idle limit 3600 s). An empty OP_OFFERFILES
+    // after 20 min of silence replaces them: 10 bytes instead of ~200 a minute.
+    uint64 timeout = m_config.serverKeepAliveTimeout;
+    const Server* cur = m_connectedSocket->currentServer();
+    if (cur && cur->supportsNatWake() && (timeout == 0 || timeout > kNatWakeKeepAliveMs))
+        timeout = kNatWakeKeepAliveMs;
+    if (timeout == 0)
         return;
 
     // Same clock as the socket's stamp; two separate timers put the idle time off by
@@ -913,7 +920,7 @@ void ServerConnect::keepConnectionAlive()
     const uint64 elapsed = getTickCount();
     const uint64 lastTx = m_connectedSocket->lastTransmission();
 
-    if (elapsed >= lastTx + m_config.serverKeepAliveTimeout) {
+    if (elapsed >= lastTx + timeout) {
         // "Ping" the server with an empty publish files packet
         SafeMemFile files;
         files.writeUInt32(0); // nr. of files
@@ -1148,7 +1155,14 @@ void ServerConnect::sendLoginPacket(ServerSocket* socket)
     srvCaps |= SRVCAP_ZLIB;
     srvCaps |= SRVCAP_META_SEARCH;   // eNode: we can act on torrent/Usenet rows
     if (lugdunumNat)
-        srvCaps |= SRVCAP_NATTRAVERSAL;
+        srvCaps |= SRVCAP_NATTRAVERSAL | SRVCAP_HOLEPUNCH_EXT;   // ed2k-server#39: always together
+    // eNode-go PR_NAT wake-up: the server wakes us over TCP instead of us keeping a standing
+    // registration. Same gate as the PR_NAT registration (EnodeNatPath::active).
+    if (lugdunumNat)
+        srvCaps |= SRVCAP_NAT_WAKE;
+    // Remembered on the connection's server copy: supportsNatWake() needs both sides.
+    if (Server* cur = socket ? socket->currentServer() : nullptr)
+        cur->setLoginCaps(srvCaps);
     Tag tagFlags(static_cast<uint8>(CT_SERVER_FLAGS), srvCaps);
     tagFlags.writeTagToFile(data);
 

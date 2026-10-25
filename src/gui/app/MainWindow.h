@@ -318,6 +318,7 @@ private:
     void updateTrayToolTip();
     /// "Show transfer rates on title".
     void updateWindowTitle();
+    void updateTransferStateIcon(bool uploading, bool downloading);
 
     /// Ask the daemon for toolbar-graph samples newer than m_speedSeq.
     void pollSpeedHistory();
@@ -351,7 +352,9 @@ private:
     QLabel* m_statusMsg = nullptr;
     QWidget* m_statusUsersWidget = nullptr;   // container for user icon + label
     QLabel* m_statusUsersLabel = nullptr;
-    QWidget* m_statusUpDownWidget = nullptr;  // container for up/down icons + labels
+    QWidget* m_statusUpDownWidget = nullptr;  // container for up/down icon + labels
+    QLabel* m_statusUpDownIcon = nullptr;     // Up[01]down[01] state icon
+    int m_transferStateIcon = -1;             // last index shown, -1 = none
     QLabel* m_statusUpLabel = nullptr;
     QLabel* m_statusDownLabel = nullptr;
     QLabel* m_statusEd2k = nullptr;

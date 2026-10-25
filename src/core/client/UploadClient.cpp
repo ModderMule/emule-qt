@@ -373,6 +373,24 @@ void UpDownClient::addReqBlock(Requested_Block_Struct* reqBlock)
         return;
     }
 
+    // Not MFC (emule-qt#54): a part this peer already got from us twice in full (once
+    // plus one repair) is not served a third time. Checked after the dedup above, so a
+    // block still in flight being asked for again never counts.
+    if (isRepeatChunkRequest(*reqBlock)) {
+        const uint64 part = reqBlock->startOffset / PARTSIZE;
+        const QString reason = QStringLiteral("re-requested part %1 of '%2' after getting it %3 times")
+                                   .arg(part).arg(srcFile->fileName())
+                                   .arg(RepeatChunkGuard::kMaxDeliveries);
+        delete reqBlock;
+        if (thePrefs.logBannedClients())
+            logWarning(QStringLiteral("Clients: %1 (%2), %3")
+                           .arg(userName(), ipstr(m_userAddress), reason));
+        ban(reason, RepeatChunkGuard::kBanMs);
+        if (theApp.uploadQueue)
+            theApp.uploadQueue->removeFromUploadQueue(this);
+        return;
+    }
+
     // Requests are cheap to keep (MFC keeps them all) and some clients ask far ahead, so
     // the limit is generous: more than one session can serve. It only stops hoarding.
     if (m_blockRequests.size() >= kMaxPendingBlockRequests) {
@@ -461,6 +479,8 @@ void UpDownClient::updateUploadingStatisticsData()
 
         m_transferredUp += sentWire;
         m_curQueueSessionPayloadUp += sentPayload;
+        if (sentPayload > 0)
+            confirmSentBlocks();
 
         // Reward this peer for what we just gave it — MFC srchybrid/UploadClient.cpp:442.
         // Keyed on m_userAddress (MFC's GetIP()), matching the ident gate in score().
@@ -576,6 +596,9 @@ void UpDownClient::flushSendBlocks()
     for (auto* block : m_doneBlocks)
         delete block;
     m_doneBlocks.clear();
+
+    // What has not gone out by now is not known to have reached the peer.
+    m_unconfirmedSends.clear();
 }
 
 // ===========================================================================
@@ -601,6 +624,22 @@ bool UpDownClient::markBlockDone(const uint8* fileId, uint64 startOffset, uint64
         m_doneBlocks.pop_back();
     }
     return true;
+}
+
+void UpDownClient::noteBlockQueuedForSend(const uint8* fileId, uint64 fileSize,
+                                          uint64 startOffset, uint64 endOffset)
+{
+    if (!fileId || !thePrefs.banRepeatChunkRequests() || !hasValidHash())
+        return;
+    if (m_unconfirmedSends.size() >= kMaxUnconfirmedSends)
+        m_unconfirmedSends.pop_front();
+    UnconfirmedSend sent;
+    md4cpy(sent.fileId.data(), fileId);
+    sent.fileSize = fileSize;
+    sent.start = startOffset;
+    sent.end = endOffset;
+    sent.sentMark = m_addedPayloadQueueSession;
+    m_unconfirmedSends.push_back(sent);
 }
 
 // ===========================================================================
@@ -770,7 +809,7 @@ void UpDownClient::registerBadRequest(const QString& reason)
     }
 }
 
-void UpDownClient::ban(const QString& reason)
+void UpDownClient::ban(const QString& reason, uint64 durationMs)
 {
     if (m_chatState != ChatState::None) {
         m_chatState = ChatState::None;
@@ -783,7 +822,7 @@ void UpDownClient::ban(const QString& reason)
         logDebug(QStringLiteral("Banning client: %1 reason: %2").arg(userName(), reason));
     // Every offence restarts the 2 h — MFC UploadClient.cpp:649.
     if (theApp.clientList)
-        theApp.clientList->addBannedClient(m_connectAddress);
+        theApp.clientList->addBannedClient(m_connectAddress, durationMs);
     setUploadState(UploadState::Banned);
 }
 
@@ -1555,6 +1594,35 @@ void UpDownClient::maybeAddAsPassiveSource(KnownFile* file)
 
     if (theApp.downloadQueue)
         theApp.downloadQueue->checkAndAddKnownSource(partFile, this, /*ignoreGlobalDeadList*/ true);
+}
+
+// ===========================================================================
+// Repeat chunk guard — emule-qt#54, not MFC
+// ===========================================================================
+
+void UpDownClient::confirmSentBlocks()
+{
+    // Both counters are file payload of whole packets, so once the sent one reaches a
+    // block's mark every byte of it has left the socket.
+    while (!m_unconfirmedSends.empty()
+           && m_curQueueSessionPayloadUp >= m_unconfirmedSends.front().sentMark)
+    {
+        const UnconfirmedSend& sent = m_unconfirmedSends.front();
+        if (theApp.clientList && hasValidHash())
+            theApp.clientList->repeatChunks.noteSent(userHash(), sent.fileId.data(),
+                                                     sent.fileSize, sent.start, sent.end);
+        m_unconfirmedSends.pop_front();
+    }
+}
+
+bool UpDownClient::isRepeatChunkRequest(const Requested_Block_Struct& block) const
+{
+    // Friends are trusted to know why they re-download.
+    if (!thePrefs.banRepeatChunkRequests() || !theApp.clientList || !hasValidHash() || friendPtr())
+        return false;
+    return theApp.clientList->repeatChunks.deliveries(userHash(), block.fileID.data(),
+                                                      block.startOffset)
+        >= RepeatChunkGuard::kMaxDeliveries;
 }
 
 } // namespace eMule

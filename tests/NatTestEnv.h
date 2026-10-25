@@ -48,6 +48,7 @@ public:
     bool isKadConnected = false;
     bool isEnabled = true;
     int keyRefreshes = 0;             // refreshServerKey() calls
+    uint8 connectOptions = CONNECT_OPT_CRYPT_SUPPORTED;
     std::optional<Server> server;
     Address sessionAddress;
     std::set<QString> banned;
@@ -100,7 +101,7 @@ public:
     [[nodiscard]] uint32 ourClientID() const override { return server ? clientID : 0; }
     [[nodiscard]] uint16 ourUdpPort() const override { return udpPort; }
     [[nodiscard]] uint16 ourTcpPort() const override { return tcpPort; }
-    [[nodiscard]] uint8 ourConnectOptions() const override { return CONNECT_OPT_CRYPT_SUPPORTED; }
+    [[nodiscard]] uint8 ourConnectOptions() const override { return connectOptions; }
     [[nodiscard]] uint32 ourPublicIPv4() const override { return publicIPv4; }
     [[nodiscard]] Address ourPublicIPv6() const override { return publicIPv6; }
     [[nodiscard]] bool firewalled() const override { return isFirewalled; }

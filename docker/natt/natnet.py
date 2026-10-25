@@ -10,6 +10,7 @@ Servers (--server):
     lugdunum      Lugdunum eserver 17.x under qemu-i386   UDP 0xA6 / 0xA7, TCP 0x37
     ed2k-server   Rust ed2k-server 0.9.84+                TCP 0x60 / 0x61, UDP 0x9F
     enode         eNode-go                                PR_NAT (UDP 0xF1, port 2004)
+    enode-lugdunum  eNode-go with PR_NAT off              UDP 0xA6 / 0xA7, TCP 0x37
 
 Server binaries live outside this repo; their paths come from docker/natt/natnet.env
 (see natnet.env.example) or the environment.
@@ -66,6 +67,11 @@ SERVERS = {
     "lugdunum":    {"port": 4661, "path": "Lugdunum"},
     "ed2k-server": {"port": 4661, "path": "ed2k-server"},
     "enode":       {"port": 5555, "path": "PR_NAT"},
+    # eNode-go reports 0 instead of a private observed IPv4 to a LowID, and without a
+    # public IPv4 eMuleQt holds back the server UDP key that 0xA6 is sent with. A
+    # documentation range is not private, so the callback runs as it does on the internet.
+    "enode-lugdunum": {"port": 5555, "path": "Lugdunum", "odd_ids": True,
+                       "subnet4": "198.51.100"},
 }
 
 
@@ -300,7 +306,7 @@ def write_ed2k_server_config(env: dict, server_dir: str) -> None:
         f.write(text)
 
 
-def write_enode_config(env: dict, server_dir: str) -> None:
+def write_enode_config(env: dict, server_dir: str, pr_nat: bool = True) -> None:
     template = env.get("NATNET_ENODE_CONFIG") or os.path.join(
         need_path(env, "NATNET_ENODE_SRC", "the eNode-go checkout (for enode.config.yaml)"),
         "enode.config.yaml")
@@ -318,7 +324,12 @@ def write_enode_config(env: dict, server_dir: str) -> None:
             ("ipv6.dynIp6", f'"{SERVER_IP6}"'),
             # A published IPv6 source is a direct source: the rendezvous would never run
             ("ipv6.publishSources", "false"),
-            ("natTraversal.enabled", "true"),
+            # Off for enode-lugdunum: the client then uses eNode-go's Lugdunum callback
+            ("natTraversal.enabled", "true" if pr_nat else "false"),
+            ("natTraversal.lugdunumCallback", "true"),
+            # The callback is IPv4-only: eMuleQt skips it on an IPv6 server session, so
+            # enode-lugdunum keeps the session on IPv4, as a real Lugdunum server does
+            ("ipv6.enabled", "true" if pr_nat else "false"),
             ("metaApi.enabled", "false"),
             ("admin.enabled", "false"),
             ("debug.seedFixtures", "false")):
@@ -433,6 +444,11 @@ def login_state(work: str, name: str):
     return m[-1] if m else None
 
 
+def login_id(work: str, name: str):
+    m = re.findall(r"onLoginReceived: clientID=(\d+) ", node_logs(work, name))
+    return int(m[-1]) if m else None
+
+
 def offered(work: str, name: str) -> bool:
     return bool(re.search(r"Sent [1-9]\d* shared files to server", node_logs(work, name)))
 
@@ -541,9 +557,20 @@ def server_alive() -> bool:
     return out.stdout.strip() == "true"
 
 
+def use_subnet4(prefix: str) -> None:
+    """Move the rig's IPv4 addresses to prefix.0/24 (the IPv6 ones stay)."""
+    global SUBNET4, SERVER_IP
+    SUBNET4 = f"{prefix}.0/24"
+    SERVER_IP = f"{prefix}.10"
+    for name, (ipv4, ipv6, user_hash) in NODES.items():
+        NODES[name] = (f"{prefix}.{ipv4.rsplit('.', 1)[1]}", ipv6, user_hash)
+
+
 def run_test(args, env: dict) -> int:
     kind = args.server
     spec = SERVERS[kind]
+    if spec.get("subnet4"):
+        use_subnet4(spec["subnet4"])
     work = os.path.abspath(env.get("NATNET_WORK") or os.path.expanduser("~/.cache/emuleqt-natnet"))
     run_dir = os.path.join(work, "run")
 
@@ -565,7 +592,7 @@ def run_test(args, env: dict) -> int:
     elif kind == "ed2k-server":
         write_ed2k_server_config(env, server_dir)
     else:
-        write_enode_config(env, server_dir)
+        write_enode_config(env, server_dir, pr_nat=kind != "enode-lugdunum")
     for name in NODES:
         prepare_node(work, name, spec["port"], args.size_mb)
     test_file = os.path.join(run_dir, "A", "data", "incoming", TEST_FILE)
@@ -624,6 +651,10 @@ def run_test(args, env: dict) -> int:
         "IPv6 dial": bool(re.search(r"NAT-T: #\d+ dialing \[", all_lines)),
         "MD5 match": got_md5 == expected_md5,
     }
+    if spec.get("odd_ids"):
+        ids = {n: login_id(work, n) for n in NODES}
+        log(f"LowIDs: {ids}")
+        checks["odd LowIDs (login bit 0x1000)"] = all(i is not None and i & 1 for i in ids.values())
     for what, ok in checks.items():
         log(f"{'PASS' if ok else 'FAIL'}  {what}")
     if not all(checks.values()):
