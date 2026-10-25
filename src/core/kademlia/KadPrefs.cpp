@@ -9,6 +9,7 @@
 #include "kademlia/KadLog.h"
 #include "kademlia/KadRoutingZone.h"
 #include "app/AppContext.h"
+#include "net/natt/NatRendezvous.h"
 #include "client/ClientList.h"
 #include "crypto/MD5Hash.h"
 #include "prefs/Preferences.h"
@@ -336,6 +337,9 @@ uint8 KadPrefs::myConnectOptions(bool encryption, bool callback) const
         && UDPFirewallTester::isOpenAndVerified()) {
         options |= 0x08;
     }
+    // A LowID reachable through a NAT rendezvous + QUIC, as the compatibility target does
+    if (callback && natt::NatRendezvous::quicAvailable())
+        options |= CONNECT_OPT_NATT_QUIC;
     return options;
 }
 

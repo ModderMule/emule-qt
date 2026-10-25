@@ -94,6 +94,7 @@ struct Attempt {
     uint64 lastHandoffMs = 0;
     uint64 dialAtMs = 0;            ///< requester's fallback dial time, 0 = none
     bool dialed = false;
+    uint64 quicDialAtMs = 0;        ///< when this side dials QUIC, 0 = not decided yet
     bool endpointReported = false;  ///< peerEndpointReady emitted
     bool finished = false;          ///< done or failed; removed on the next tick
     uint8 triedPaths = 0;           ///< requester: bit (1 << PathKind) per path tried

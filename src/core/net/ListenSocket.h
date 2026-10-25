@@ -17,6 +17,7 @@
 namespace eMule {
 
 class ClientReqSocket;
+class StreamTransport;
 enum class PeerSocketState : uint8;
 
 // ---------------------------------------------------------------------------
@@ -65,6 +66,9 @@ public:
     /// Whether too many connections are open (for rate limiting).
     [[nodiscard]] bool tooManySockets(bool ignoreInterval = false) const;
 
+    /// An accepted NAT-T stream (QUIC): handled like an accepted TCP connection.
+    void adoptTransport(std::shared_ptr<StreamTransport> transport);
+
     /// Record a new connection attempt, inbound or outbound, for rate tracking.
     void addConnection();
 
@@ -106,6 +110,9 @@ protected:
     void incomingConnection(qintptr socketDescriptor) override;
 
 private:
+    /// Filter, ban, register and announce an accepted socket (TCP or transport).
+    void admitAccepted(ClientReqSocket* reqSocket);
+
     std::list<ClientReqSocket*> m_socketList;
 
     uint16 m_port = 0;

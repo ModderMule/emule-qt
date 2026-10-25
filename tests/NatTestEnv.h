@@ -54,12 +54,17 @@ public:
     std::vector<Endpoint> foreignNatServers;   // rendezvousServers(), in order
     std::set<QString> banned;
     bool connected = false;
+    bool quic = false;                // quicAvailable()
+    bool quicLinkUp = false;          // quicActive()
 
     // -- records --
     std::vector<SentUdp> udp;
     std::vector<SentTcp> tcp;
     std::vector<std::pair<uint32, Address>> dials;   // attempt id, address
     std::vector<uint32> failed;                      // attempt ids
+    std::vector<uint32> quicArms;                    // attempt ids
+    std::vector<std::pair<uint32, Endpoint>> quicDials;
+    std::vector<uint8> quicFrames;                   // frame types handed over
 
     FakeNatEnv()
     {
@@ -162,6 +167,15 @@ public:
     void dialPeer(const Attempt& attempt, const Address& ipv6) override { dials.emplace_back(attempt.id, ipv6); }
     [[nodiscard]] bool peerConnected(const Attempt&) const override { return connected; }
     void attemptFailed(const Attempt& attempt) override { failed.push_back(attempt.id); }
+    [[nodiscard]] bool quicAvailable() const override { return quic; }
+    void armQuic(const Attempt& attempt) override { quicArms.push_back(attempt.id); }
+    void dialPeerQuic(const Attempt& attempt) override { quicDials.emplace_back(attempt.id, attempt.peerUdp); }
+    [[nodiscard]] bool quicActive(const Attempt&) const override { return quicLinkUp; }
+    bool handleQuicFrame(uint8 type, const uint8*, uint32, const Endpoint&, bool) override
+    {
+        quicFrames.push_back(type);
+        return quic;
+    }
 
 private:
     static void fill(SentUdp& s, const Packet& p, const Endpoint& to)

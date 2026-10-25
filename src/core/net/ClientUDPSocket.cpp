@@ -324,29 +324,36 @@ void ClientUDPSocket::flushSendQueue()
         toSend.swap(m_sendReadyQueue);
     }
 
-    for (auto& dg : toSend) {
-        // Bound to one family: the other one has no route from this socket.
-        if (!BindAddress::canReach(dg.destination.address()))
-            continue;
+    for (auto& dg : toSend)
+        writeDatagramNow(dg.data, dg.destination);
+}
 
-        // An IPv6 datagram leaves from the pinned stable address: the receiver keys
-        // obfuscation on the IP it observes, which must be the one we advertise.
-        qint64 sent = 0;
-        if (const Address source = IPv6SourcePin::sourceFor(dg.destination.address());
-            source.isNull()) {
-            sent = m_socket.writeDatagram(
-                dg.data, dg.destination.address().toQHostAddress(), dg.destination.port());
-        } else {
-            QNetworkDatagram datagram(dg.data, dg.destination.address().toQHostAddress(),
-                                      dg.destination.port());
-            datagram.setSender(source.toQHostAddress());
-            sent = m_socket.writeDatagram(datagram);
-        }
-        if (sent < 0) {
-            logWarning(QStringLiteral("UDP send failed to %1 — %2")
-                .arg(dg.destination.toString()).arg(m_socket.errorString()));
-        }
+bool ClientUDPSocket::sendNattFrameNow(uint8 type, const uint8* payload, size_t len, const Endpoint& to,
+                                       const uint8* cryptHash)
+{
+    // header room: 8 bytes of obfuscation plus up to 15 of padding
+    constexpr size_t kRoom = 8 + 15;
+    std::vector<uint8> buf(kRoom + 2 + len);
+    buf[kRoom] = OP_UDPRESERVEDPROT2;
+    buf[kRoom + 1] = type;
+    if (len > 0)
+        std::memcpy(buf.data() + kRoom + 2, payload, len);
+
+    const char* start = reinterpret_cast<const char*>(buf.data() + kRoom);
+    auto size = static_cast<uint32>(2 + len);
+    if (cryptHash) {
+        const Address publicIP = to.address().isIPv6() ? theApp.publicIPv6()
+                                                       : Address::fromNetworkOrder(theApp.publicIP());
+        // random padding spreads the sizes; every receiver skips padLen & 0x0F bytes
+        const auto pad = static_cast<uint8>(getRandomUInt16() & 0x0F);
+        uint8* head = buf.data() + kRoom - 8 - pad;
+        size = EncryptedDatagramSocket::encryptSendClient(head, size, cryptHash, false, 0, 0, publicIP, pad);
+        start = reinterpret_cast<const char*>(head);
     }
+    // QUIC datagrams carry file data the sockets above already count
+    if (type != OP_NATT_FRAME_QUIC && theApp.statistics)
+        theApp.statistics->addUpDataOverheadOther(size);
+    return writeDatagramNow(QByteArray(start, static_cast<qsizetype>(size)), to);
 }
 
 // ---------------------------------------------------------------------------
@@ -653,7 +660,9 @@ QByteArray ClientUDPSocket::decompressKadPayload(const uint8* data, int len)
 bool ClientUDPSocket::processReservedProtPacket(uint8 protByte, const uint8* packet, uint32 size,
                                                 uint8 opcode, const Endpoint& senderEP, bool obfuscated)
 {
-    if (auto* stats = theApp.statistics)
+    // QUIC NAT-T datagrams carry file data the socket above counts
+    const bool quicData = protByte == OP_UDPRESERVEDPROT2 && opcode == OP_NATT_FRAME_QUIC;
+    if (auto* stats = theApp.statistics; stats && !quicData)
         stats->addDownDataOverheadOther(size);
 
     // 0xB2: the byte after the header is a frame type (see OP_NATT_FRAME_*).
@@ -679,6 +688,34 @@ void ClientUDPSocket::growReceiveBuffer()
         logWarning(QStringLiteral("ClientUDPSocket: receive buffer is only %1 bytes").arg(got));
     else
         logDebug(QStringLiteral("ClientUDPSocket: receive buffer %1 bytes").arg(got));
+}
+
+// ---------------------------------------------------------------------------
+// writeDatagramNow — one datagram out of the socket, owner thread
+// ---------------------------------------------------------------------------
+
+bool ClientUDPSocket::writeDatagramNow(const QByteArray& data, const Endpoint& to)
+{
+    // Bound to one family: the other one has no route from this socket.
+    if (!BindAddress::canReach(to.address()))
+        return false;
+
+    // An IPv6 datagram leaves from the pinned stable address: the receiver keys
+    // obfuscation on the IP it observes, which must be the one we advertise.
+    qint64 sent = 0;
+    if (const Address source = IPv6SourcePin::sourceFor(to.address()); source.isNull()) {
+        sent = m_socket.writeDatagram(data, to.address().toQHostAddress(), to.port());
+    } else {
+        QNetworkDatagram datagram(data, to.address().toQHostAddress(), to.port());
+        datagram.setSender(source.toQHostAddress());
+        sent = m_socket.writeDatagram(datagram);
+    }
+    if (sent < 0) {
+        logWarning(QStringLiteral("UDP send failed to %1 — %2")
+            .arg(to.toString()).arg(m_socket.errorString()));
+        return false;
+    }
+    return true;
 }
 
 } // namespace eMule

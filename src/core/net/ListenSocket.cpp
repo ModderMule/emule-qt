@@ -131,47 +131,23 @@ void ListenSocket::incomingConnection(qintptr socketDescriptor)
         return;
     }
 
-    const Address peer = Address::fromQHostAddress(reqSocket->peerAddress());
-
-    // Address-typed, so both families are checked against their own range table.  A v4
-    // peer arriving on the dual-stack listener as ::ffff:a.b.c.d is normalised back to
-    // Family::IPv4 by Address::fromQHostAddress, so it is matched against the v4 table
-    // and not, wrongly, against the v6 one.
-    if (theApp.ipFilter && theApp.ipFilter->isFiltered(peer, thePrefs.ipFilterLevel())) {
-        if (thePrefs.logFilteredIPs()) {
-            logWarning(QStringLiteral("Rejecting connection attempt (IP=%1) - IP filter (%2)")
-                           .arg(ipstr(peer), theApp.ipFilter->lastHitDescription()));
-        }
-        if (theApp.statistics)
-            theApp.statistics->addFilteredClient();
-        reqSocket->safeDelete();
-        return;
-    }
-
-    if (theApp.clientList && theApp.clientList->isBannedClient(peer)) {
-        // MFC increments no counter on this branch — only the filter branch feeds
-        // theStats.filteredclients.  Keep that split so the statistic keeps its meaning.
-        if (thePrefs.logBannedClients()) {
-            // MFC logs the offending client's info via FindClientByIP (IP only, no port).
-            // findByAddress() would need the port too, so use the IPv4 lookup and simply
-            // omit the name for a v6 peer.
-            const UpDownClient* banned =
-                peer.isIPv4() ? theApp.clientList->findByIP(peer.toNetworkUint32()) : nullptr;
-            logWarning(QStringLiteral("Rejecting connection attempt of banned client %1 %2")
-                           .arg(ipstr(peer), banned ? banned->userName() : QString()));
-        }
-        reqSocket->safeDelete();
-        return;
-    }
-
-    reqSocket->setObfuscationConfig(thePrefs.obfuscationConfig());
-    // We accepted this one, so the peer owes us an OP_HELLO before anything else.
-    reqSocket->setIncoming(true);
-
-    addSocket(reqSocket);
-    addConnection();
-    emit newClientConnection(reqSocket);
+    admitAccepted(reqSocket);
 }
+
+void ListenSocket::adoptTransport(std::shared_ptr<StreamTransport> transport)
+{
+    if (!transport)
+        return;
+    // A punched NAT-T link is a connection we accept: same hard limit, same rejections.
+    if (tooManySockets(true) && !serverIsConnecting()) {
+        transport->close();
+        return;
+    }
+    auto* reqSocket = new ClientReqSocket(nullptr, this);
+    reqSocket->attachTransport(std::move(transport), /*announce*/ false);
+    admitAccepted(reqSocket);
+}
+
 
 // ---------------------------------------------------------------------------
 // Connection pool management
@@ -338,6 +314,54 @@ float ListenSocket::maxConPerFiveModifier() const
         static_cast<float>(m_socketList.size()) - m_averageConnections);
     float spikeTolerance = 25.0f * thePrefs.maxConsPerFive() / 10.0f;
     return (spikeSize > spikeTolerance) ? 0.0f : 1.0f - spikeSize / spikeTolerance;
+}
+
+// ---------------------------------------------------------------------------
+// Private helpers
+// ---------------------------------------------------------------------------
+
+void ListenSocket::admitAccepted(ClientReqSocket* reqSocket)
+{
+    const Address peer = Address::fromQHostAddress(reqSocket->peerAddress());
+
+    // Address-typed, so both families are checked against their own range table.  A v4
+    // peer arriving on the dual-stack listener as ::ffff:a.b.c.d is normalised back to
+    // Family::IPv4 by Address::fromQHostAddress, so it is matched against the v4 table
+    // and not, wrongly, against the v6 one.
+    if (theApp.ipFilter && theApp.ipFilter->isFiltered(peer, thePrefs.ipFilterLevel())) {
+        if (thePrefs.logFilteredIPs()) {
+            logWarning(QStringLiteral("Rejecting connection attempt (IP=%1) - IP filter (%2)")
+                           .arg(ipstr(peer), theApp.ipFilter->lastHitDescription()));
+        }
+        if (theApp.statistics)
+            theApp.statistics->addFilteredClient();
+        reqSocket->safeDelete();
+        return;
+    }
+
+    if (theApp.clientList && theApp.clientList->isBannedClient(peer)) {
+        // MFC increments no counter on this branch — only the filter branch feeds
+        // theStats.filteredclients.  Keep that split so the statistic keeps its meaning.
+        if (thePrefs.logBannedClients()) {
+            // MFC logs the offending client's info via FindClientByIP (IP only, no port).
+            // findByAddress() would need the port too, so use the IPv4 lookup and simply
+            // omit the name for a v6 peer.
+            const UpDownClient* banned =
+                peer.isIPv4() ? theApp.clientList->findByIP(peer.toNetworkUint32()) : nullptr;
+            logWarning(QStringLiteral("Rejecting connection attempt of banned client %1 %2")
+                           .arg(ipstr(peer), banned ? banned->userName() : QString()));
+        }
+        reqSocket->safeDelete();
+        return;
+    }
+
+    reqSocket->setObfuscationConfig(thePrefs.obfuscationConfig());
+    // We accepted this one, so the peer owes us an OP_HELLO before anything else.
+    reqSocket->setIncoming(true);
+
+    addSocket(reqSocket);
+    addConnection();
+    emit newClientConnection(reqSocket);
 }
 
 } // namespace eMule

@@ -11,14 +11,79 @@
 #include "kademlia/Kademlia.h"
 #include "net/ClientUDPSocket.h"
 #include "net/EMSocket.h"
+#include "net/ListenSocket.h"
 #include "net/Packet.h"
+#include "net/quic/QuicNatConnection.h"
+#include "net/quic/QuicNatEndpoint.h"
+#include "net/quic/QuicNatIo.h"
 #include "prefs/Preferences.h"
 #include "server/ServerConnect.h"
 #include "server/ServerList.h"
+#include "utils/Log.h"
 #include "utils/Opcodes.h"
 #include "utils/TimeUtils.h"
 
 namespace eMule::natt {
+
+namespace {
+
+uint8 cryptBits()
+{
+    return static_cast<uint8>((thePrefs.cryptLayerSupported() ? CONNECT_OPT_CRYPT_SUPPORTED : 0)
+                              | (thePrefs.cryptLayerRequested() ? CONNECT_OPT_CRYPT_REQUESTED : 0)
+                              | (thePrefs.cryptLayerRequired() ? CONNECT_OPT_CRYPT_REQUIRED : 0));
+}
+
+bool admitAddress(const Address& addr)
+{
+    if (!isGoodIP(addr))
+        return false;
+    if (theApp.ipFilter && theApp.ipFilter->isFiltered(addr, thePrefs.ipFilterLevel()))
+        return false;
+    return !(theApp.clientList && theApp.clientList->isBannedClient(addr));
+}
+
+/// Hash to obfuscate for, or zero when the peer cannot read obfuscated datagrams.
+quic::Hash16 obfuscationHash(const Attempt& a)
+{
+    if (!a.peer.hashKnown || (a.peer.cryptKnown && !(a.peer.cryptOptions & CONNECT_OPT_CRYPT_SUPPORTED)))
+        return {};
+    return a.peer.hash;
+}
+
+} // namespace
+
+/// The client UDP socket and prefs for the QUIC endpoint.
+class AppQuicNatIo final : public quic::QuicNatIo {
+public:
+    [[nodiscard]] quic::Hash16 ourHash() const override { return thePrefs.userHash(); }
+    [[nodiscard]] uint64 nowMs() const override { return getTickCount(); }
+    void sendFrame(uint8 type, const uint8* payload, size_t len, const Endpoint& to,
+                   const quic::Hash16* cryptHash) override
+    {
+        if (theApp.clientUDP)
+            theApp.clientUDP->sendNattFrameNow(type, payload, len, to, cryptHash ? cryptHash->data() : nullptr);
+    }
+    [[nodiscard]] bool canObfuscate(const Endpoint& to) const override
+    {
+        // the client key mixes in our public IP of the destination's family
+        const bool haveIP = to.address().isIPv6() ? !theApp.publicIPv6().isNull() : theApp.publicIP() != 0;
+        return thePrefs.cryptLayerSupported() && haveIP;
+    }
+    [[nodiscard]] bool strictObfuscation() const override { return thePrefs.natTraversalStrictObfuscation(); }
+    [[nodiscard]] bool admit(const Address& addr) const override { return admitAddress(addr); }
+    [[nodiscard]] uint8 connectOptions() const override { return cryptBits(); }
+    [[nodiscard]] Endpoint localEndpoint(const Endpoint& peer) const override
+    {
+        static const std::array<uint8, 16> any6{};
+        return Endpoint(peer.address().isIPv6() ? Address::fromIPv6Bytes(any6.data()) : Address(),
+                        theApp.listeningUdpPort());
+    }
+};
+
+AppNatEnv::AppNatEnv() = default;
+
+AppNatEnv::~AppNatEnv() = default;
 
 uint64 AppNatEnv::now() const
 {
@@ -48,9 +113,7 @@ uint16 AppNatEnv::ourTcpPort() const
 
 uint8 AppNatEnv::ourConnectOptions() const
 {
-    return static_cast<uint8>((thePrefs.cryptLayerSupported() ? CONNECT_OPT_CRYPT_SUPPORTED : 0)
-                              | (thePrefs.cryptLayerRequested() ? CONNECT_OPT_CRYPT_REQUESTED : 0)
-                              | (thePrefs.cryptLayerRequired() ? CONNECT_OPT_CRYPT_REQUIRED : 0));
+    return cryptBits();
 }
 
 uint32 AppNatEnv::ourPublicIPv4() const
@@ -122,11 +185,7 @@ std::vector<Endpoint> AppNatEnv::rendezvousServers(const PeerInfo& peer) const
 
 bool AppNatEnv::admit(const Address& addr) const
 {
-    if (!isGoodIP(addr))
-        return false;
-    if (theApp.ipFilter && theApp.ipFilter->isFiltered(addr, thePrefs.ipFilterLevel()))
-        return false;
-    return !(theApp.clientList && theApp.clientList->isBannedClient(addr));
+    return admitAddress(addr);
 }
 
 void AppNatEnv::sendPeerUdp(std::unique_ptr<Packet> packet, const Endpoint& to, const uint8* cryptHash)
@@ -136,6 +195,8 @@ void AppNatEnv::sendPeerUdp(std::unique_ptr<Packet> packet, const Endpoint& to, 
     // The client key mixes in our public IP of the destination's family.
     const bool haveIP = to.address().isIPv6() ? !theApp.publicIPv6().isNull() : theApp.publicIP() != 0;
     const bool encrypt = cryptHash && thePrefs.cryptLayerSupported() && haveIP;
+    if (!encrypt && packet->prot == OP_UDPRESERVEDPROT2 && thePrefs.natTraversalStrictObfuscation())
+        return;   // strict: no plain 0xB2 frame
     theApp.clientUDP->sendPacket(std::move(packet), to, encrypt, cryptHash, false, 0);
 }
 
@@ -226,6 +287,108 @@ void AppNatEnv::attemptFailed(const Attempt& attempt)
     client->setConnectingState(ConnectingState::None);
     if (client->downloadState() == DownloadState::Connecting)
         client->setDownloadState(DownloadState::LowToLowIP);
+}
+
+bool AppNatEnv::quicAvailable() const
+{
+    return enabled() && theApp.clientUDP && quic::QuicNatEndpoint::available();
+}
+
+void AppNatEnv::armQuic(const Attempt& attempt)
+{
+    auto* ep = quic();
+    if (!ep || attempt.peerUdp.port() == 0)
+        return;
+    const quic::Hash16 crypt = obfuscationHash(attempt);
+    ep->learnPeerHash(attempt.peerUdp, crypt);
+    ep->expect(attempt.peerUdp, attempt.peer.hashKnown ? attempt.peer.hash : quic::Hash16{});
+    ep->sendCaps(attempt.peerUdp, attempt.peer.hashKnown ? attempt.peer.hash : quic::Hash16{},
+                 attempt.peer.fileHash, false);
+}
+
+void AppNatEnv::dialPeerQuic(const Attempt& attempt)
+{
+    auto* ep = quic();
+    if (!ep)
+        return;
+    if (UpDownClient* client = findClient(attempt)) {
+        if (attempt.peerTcpPort != 0)
+            client->setUserPort(attempt.peerTcpPort);
+        // a server source may have no hash yet: the link finds it by address
+        m_quicClients[attempt.peerUdp.address()] = client;
+    }
+    ep->learnPeerHash(attempt.peerUdp, obfuscationHash(attempt));
+    if (!ep->dial(attempt.peerUdp, attempt.peer.hashKnown ? attempt.peer.hash : quic::Hash16{}))
+        logDebug(QStringLiteral("NAT-T QUIC: cannot dial %1").arg(attempt.peerUdp.toString()));
+}
+
+bool AppNatEnv::quicActive(const Attempt& attempt) const
+{
+    return m_quic && m_quic->hasConnection(attempt.peerUdp.address());
+}
+
+bool AppNatEnv::handleQuicFrame(uint8 type, const uint8* data, uint32 size, const Endpoint& from,
+                                bool obfuscated)
+{
+    auto* ep = quic();
+    return ep && ep->handleFrame(type, data, size, from, obfuscated);
+}
+
+// ---------------------------------------------------------------------------
+// Private helpers
+// ---------------------------------------------------------------------------
+
+quic::QuicNatEndpoint* AppNatEnv::quic() const
+{
+    if (m_quic)
+        return m_quic.get();
+    if (!quicAvailable())
+        return nullptr;
+    m_quicIo = std::make_unique<AppQuicNatIo>();
+    m_quic = std::make_unique<quic::QuicNatEndpoint>(*m_quicIo);
+    m_quic->onEstablished = [this](std::shared_ptr<quic::QuicNatConnection> conn, bool outgoing) {
+        const Endpoint peer = conn->peerEndpoint();
+        logDebug(QStringLiteral("NAT-T: QUIC connected %1 (%2)")
+                     .arg(peer.toString(), outgoing ? QStringLiteral("out") : QStringLiteral("in")));
+        if (!outgoing) {
+            // like an accepted TCP connection: the hello finds the known client by hash
+            if (theApp.listenSocket)
+                theApp.listenSocket->adoptTransport(std::move(conn));
+            else
+                conn->close();
+            return;
+        }
+        UpDownClient* client = nullptr;
+        if (const auto it = m_quicClients.find(peer.address()); it != m_quicClients.end()) {
+            client = it->second.data();
+            m_quicClients.erase(it);
+        }
+        if (!client && theApp.clientList)
+            client = theApp.clientList->findByUserHash(conn->peerHash().data());
+        if (!client && theApp.clientList) {
+            // we dialled a requester we did not know (target fallback): as after a callback
+            client = new UpDownClient(0, 1, 0, 0, nullptr);
+            client->setUserHash(conn->peerHash().data());
+            theApp.clientList->addClient(client);
+        }
+        if (!client) {
+            conn->close();
+            return;
+        }
+        if (client->connectingState() == ConnectingState::NatRendezvous)
+            client->setConnectingState(ConnectingState::None);
+        if (!client->connectOverTransport(conn))
+            logDebug(QStringLiteral("NAT-T: QUIC link to %1 not needed, already connected").arg(peer.toString()));
+    };
+    m_quic->onFailed = [](const Endpoint& peer, const quic::Hash16&, const QString& reason) {
+        logDebug(QStringLiteral("NAT-T: QUIC to %1 failed: %2").arg(peer.toString(), reason));
+    };
+    m_quic->onCaps = [](const Endpoint& peer, const quic::Caps& caps, bool ack) {
+        logDebug(QStringLiteral("NAT-T: caps%1 from %2 options 0x%3")
+                     .arg(ack ? QStringLiteral(" ack") : QString(), peer.toString())
+                     .arg(caps.options, 2, 16, QLatin1Char('0')));
+    };
+    return m_quic.get();
 }
 
 } // namespace eMule::natt

@@ -52,12 +52,15 @@ public:
     /// @param senderVerifyKey      Kad sender verify key (0 if not Kad or unknown).
     /// @param publicIP             Our public IP (IPv4 or IPv6), needed for ED2K packets.
     ///                             Must match the family of the datagram's destination.
+    /// @param padding              ED2K only: random bytes after the header (0-15, every
+    ///                             receiver skips them). The payload then starts at
+    ///                             encryptOverheadSize() + padding.
     /// @return                     Total buffer length including encryption overhead.
     static uint32 encryptSendClient(
         uint8* buf, uint32 len,
         const uint8* clientHashOrKadID, bool isKad,
         uint32 receiverVerifyKey, uint32 senderVerifyKey,
-        const Address& publicIP);
+        const Address& publicIP, uint8 padding = 0);
 
     /// Decrypt a received server UDP packet.
     [[nodiscard]] static DecryptResult decryptReceivedServer(

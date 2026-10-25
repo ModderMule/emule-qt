@@ -7,6 +7,7 @@
 /// Uses RC4 stream cipher with MD5-derived keys. Must be protocol-compatible with
 /// existing eMule clients/servers.
 
+#include "net/StreamTransport.h"
 #include "utils/Types.h"
 #include "utils/OtherFunctions.h"
 #include "utils/SafeFile.h"
@@ -88,12 +89,23 @@ struct ObfuscationConfig {
 ///
 /// Subclass this instead of QTcpSocket. Before connecting, call
 /// setObfuscationConfig() and setConnectionEncryption().
-class EncryptedStreamSocket : public QTcpSocket {
+class EncryptedStreamSocket : public QTcpSocket, protected StreamTransportSink {
     Q_OBJECT
 
 public:
     explicit EncryptedStreamSocket(QObject* parent = nullptr);
     ~EncryptedStreamSocket() override;
+
+    /// Carry this socket over @p transport instead of TCP. It then reads as connected to
+    /// the transport's peer. @p announce emits connected() (queued), as an outgoing
+    /// connect would; an accepted link stays quiet like setSocketDescriptor().
+    void attachTransport(std::shared_ptr<StreamTransport> transport, bool announce);
+    [[nodiscard]] bool hasTransport() const { return m_transport != nullptr; }
+    [[nodiscard]] StreamTransport* transport() const { return m_transport.get(); }
+
+    [[nodiscard]] qint64 bytesAvailable() const override;
+    [[nodiscard]] qint64 bytesToWrite() const override;
+    void close() override;
 
     /// Set the encryption configuration.
     void setObfuscationConfig(const ObfuscationConfig& config);
@@ -124,6 +136,14 @@ signals:
     void encryptionError(int errorCode);
 
 protected:
+    qint64 readData(char* data, qint64 maxSize) override;
+    qint64 writeData(const char* data, qint64 size) override;
+
+    // StreamTransportSink
+    void transportReadable() override;
+    void transportWritten(qint64 bytes) override;
+    void transportLost(QAbstractSocket::SocketError error, const QString& reason) override;
+
     /// Must be implemented by subclasses to handle socket errors.
     virtual void onError(int errorCode) = 0;
 
@@ -168,6 +188,9 @@ private:
     void startNegotiation(bool outgoing);
     int sendNegotiatingData(const void* buf, int bufLen, int startCryptFromByte = 0, bool delaySend = false);
 
+    void closeTransport();
+
+    std::shared_ptr<StreamTransport> m_transport;
     ObfuscationConfig m_config;
     std::optional<RC4Key> m_sendKey;
     std::optional<RC4Key> m_receiveKey;

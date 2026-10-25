@@ -719,7 +719,20 @@ SocketSentBytes EMSocket::send(uint32 maxNumberOfBytesToSend, uint32 minFragSize
             // Use Qt's write() when called from the socket's owning thread to
             // preserve Qt's event notification system (readyRead on the peer).
             qint64 result;
-            if (!ownerThread) {
+            if (!ownerThread && hasTransport()) {
+                // One queue for both threads: no ordering to protect
+                result = transport()->write(m_sendBuffer + m_sent, toSend);
+                if (result == 0) {
+                    m_rawBusy.store(true, std::memory_order_relaxed);
+                    return ret;
+                }
+                if (result < 0) {
+                    ret.success = false;
+                    return ret;
+                }
+                m_rawBusy.store(false, std::memory_order_relaxed);
+                m_bytesToKernel.fetch_add(static_cast<uint64>(result), std::memory_order_relaxed);
+            } else if (!ownerThread) {
                 // Background thread (throttler) — bypass Qt's write buffer
                 auto fd = socketDescriptor();
                 if (fd == -1) {
@@ -1026,6 +1039,12 @@ bool EMSocket::rawBusyNow() const
 {
     if (!m_rawBusy.load(std::memory_order_relaxed))
         return false;
+    if (const auto* t = transport()) {
+        const bool blocked = t->blocksWrite();
+        if (!blocked)
+            m_rawBusy.store(false, std::memory_order_relaxed);
+        return blocked;
+    }
     const auto fd = socketDescriptor();
     if (fd == -1)
         return true;
@@ -1046,6 +1065,10 @@ uint64 EMSocket::sendBacklogBeyondMfc() const
     // MFC UseBigSendBuffer, srchybrid/EMSocket.cpp:1106
     constexpr int64 mfcBigSize = 128 * 1024;
     int64 kernel = 0;
+    if (const auto* t = transport()) {
+        // unacked bytes stand in for the kernel queue; Qt's buffer is unused
+        return static_cast<uint64>(std::max<int64>(t->pendingSend() - mfcBigSize, 0));
+    }
     if (const auto fd = socketDescriptor(); fd != -1) {
         int queued = 0;
 #if defined(Q_OS_DARWIN)
@@ -1102,7 +1125,10 @@ bool EMSocket::isEnoughFileDataQueued(uint32 nMinFilePayloadBytes) const
 
 bool EMSocket::useBigSendBuffer()
 {
-    if (!m_useBigSendBuffers) {
+    if (!m_useBigSendBuffers && hasTransport()) {
+        constexpr qint64 bigSize = 1024 * 1024;
+        m_useBigSendBuffers = transport()->setSendBufferLimit(bigSize) >= bigSize;
+    } else if (!m_useBigSendBuffers) {
         // Try to increase the send buffer
         auto fd = socketDescriptor();
         if (fd != -1) {

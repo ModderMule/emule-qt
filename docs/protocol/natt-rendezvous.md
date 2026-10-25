@@ -1,10 +1,11 @@
 # LowID-to-LowID rendezvous (NAT traversal signalling)
 
-Status 2026-10-25 (`PR_NAT` wake-up and cross-server sweep added): implemented in `src/core/net/natt/`. Two LowID peers learn each other's
+Status 2026-10-25 (`PR_NAT` wake-up, cross-server sweep and the QUIC data path added): implemented in `src/core/net/natt/`. Two LowID peers learn each other's
 public UDP endpoint from an introducer, open their NAT mappings with `OP_HOLEPUNCH`, and swap
-IPv6 addresses over the opened path. The target then dials the requester over ordinary
-TCP/IPv6. A UDP transport for pairs without IPv6 (eMuleAI's QUIC NAT-T dialect,
-`0xB2`/`0x01`) is planned and will hook into the same place.
+IPv6 addresses over the opened path. With IPv6 on both sides the target then dials the
+requester over ordinary TCP/IPv6. Otherwise the requester dials the QUIC NAT-T transport
+(`0xB2`/`0x01`, eMuleAI's dialect) over the punched UDP path, see [natt-quic.md](natt-quic.md)
+(2026-10-25).
 
 Live-tested 2026-10-21 with all three servers: ed2k-server 0.9.84, eNode-go `PR_NAT` and
 Lugdunum eserver 17.15, each introducing two LowID daemons that then transfer a 25 MiB file
@@ -175,7 +176,8 @@ The compatibility target's dialect, adopted unchanged (`natt-transports-emuleai.
 - Requester: 6 `OP_HOLEPUNCH` to the source's Kad endpoint (when known), then
   `OP_REASKCALLBACKUDP` to its serving buddy, plain:
   `<buddy id 16><zero 16><0xA0><our hash 16><opts | 0x20><file hash 16>[<our ip 4><udp port 2><hint 1>]`
-  (66 bytes, or 73 when we know our public IPv4). Hint is 0 until we speak QUIC.
+  (66 bytes, or 73 when we know our public IPv4). Hint is 2 (QUIC) while the QUIC transport
+  runs, else 0.
 - Buddy (we serve one): the existing relay forwards it as a stock `OP_REASKCALLBACKTCP`. When
   the envelope has the zero hash, `0xA0` and option `0x20`, we also send the requester
   `OP_NATT_ENDPOINT_HINT` (`0xAA`, 56 bytes:
@@ -211,8 +213,15 @@ flags: 0x01 IPv6 present, 0x02 answer (do not reply)
 - The target dials as soon as it has the peer's address; the requester dials only if no
   connection is up 5 s later. The connection is a normal eD2K TCP connection and attaches to
   the waiting source by its hello.
-- No IPv6 on one side: the attempt fails (ToDo: hand the endpoint to the QUIC transport).
-- `peerEndpointReady(hash, endpoint, role)` is emitted once per attempt for that transport.
+- No IPv6 on one side: the QUIC transport carries the connection
+  ([natt-quic.md § Who dials](natt-quic.md#who-dials)). The requester dials QUIC 1 s after the
+  endpoint is known (2.5 s with an IPv6 of our own, so that a handoff can win first); the
+  target only after 6 s with nothing connected. Without QUIC the attempt fails as before.
+- When the endpoint is known (and again when a punch moves it), the hub arms the QUIC
+  endpoint for the peer's address and sends a CAPS.
+- Peers that never send the `0x11` handoff (eMuleAI, aMule) are no longer waited for: QUIC
+  does not need it.
+- `peerEndpointReady(hash, endpoint, role)` is still emitted once per attempt.
 
 `0x11` is not in use by the other `0xB2` frame types (`0x00`-`0x03`, `0xFF`: eMuleAI).
 
@@ -234,13 +243,15 @@ flags: 0x01 IPv6 present, 0x02 answer (do not reply)
   failing. `askForDownload` and `PartFile::process` treat such a source as reachable.
 - LowID sources are kept while firewalled when a path could serve them: server sources,
   Kad firewalled sources (types 3/5) and source exchange.
-- Nothing works without a data path, which today is a confident public IPv6.
+- Nothing works without a data path: the QUIC transport (OpenSSL ≥ 3.5 build) or a confident
+  public IPv6.
 - Preference `natTraversal` (default on), Options → Server.
 
-## Not advertised
+## Advertised
 
-`CT_MOD_MISCOPTIONS` bit 4 (QUIC NAT-T) and connect options `0x40`/`0x80` stay unset until the
-QUIC transport works. Setting them would make eMuleAI peers try a transport we cannot serve.
+While the QUIC transport runs: `CT_MOD_MISCOPTIONS` bit 4 (`0x10`), connect option `0x40`
+(where the callback bit is computed), Kad buddy hint 2 and the `0x40` caps bit. `0x80` (uTP)
+is never set. Details: [natt-quic.md § Advertising](natt-quic.md#advertising).
 
 ## Live rig
 
@@ -278,6 +289,49 @@ python3 docker/natt/natnet.py --server enode2                # cross-server swee
 - Each run starts a fresh server and fresh `server.met` files: a UDP key kept from an
   earlier eserver instance is dead, and a few logins per IP blacklist an address
   (`blacktime=1` in the rig).
+
+### Real NAT (`--nat real`, `--nat symmetric`)
+
+The default `--nat none` is the one-bridge rig above. `--nat real` tests the QUIC NAT-T
+transport through real Linux NATs, with IPv6 off, so the IPv6 handoff cannot carry anything:
+
+| Network | Subnet | Members |
+| --- | --- | --- |
+| `natpub` | `11.78.0.0/24` | server `.10`, router A `.21`, router B `.22` |
+| `lanA` | `10.77.1.0/24` | router A `.254`, node A `.11` |
+| `lanB` | `10.77.2.0/24` | router B `.254`, node B `.12` |
+
+- Routers (`docker/natt/router`, alpine): `MASQUERADE` out of the public side; `FORWARD` lets
+  LAN→pub out and only `ESTABLISHED,RELATED` back in. Linux conntrack keeps the source port
+  and filters by remote address and port: a port-restricted cone. `--nat symmetric` adds
+  `--random-fully` (a new port per destination), so the punch must fail.
+- Nodes sit on their LAN only, default route via the router's `.254` (docker's `.1` gateway is
+  never used), `disable_ipv6=1`, no `publicIPv6Override`. They are LowIDs on their own: the
+  router drops the server's dial-back. One server only (`enode2` needs `--nat none`).
+- Each node shares its own random file and downloads the other's at the same time.
+- `--strict` sets `encryption.natTraversalStrictObfuscation` on both nodes (any mode).
+- The routers drop unsolicited input to themselves, as a home router does. Accepted, the
+  peer's first punch confirms a conntrack entry on the router, our own mapping towards that
+  peer then clashes with it and gets a new port, and the peer punches the wrong one.
+- `natpub` is public address space on purpose. A server reports a LowID's own IPv4 in
+  `OP_IDCHANGE` only when it is public (ed2k-server sends 0 for RFC 1918), and without it the
+  node cannot key UDP obfuscation: every QUIC frame would go out plain. The rig checks that
+  each node learnt its router's address at login. The TEST-NET ranges fail `isPublicIP()` too.
+- Captures: `run/routerA|B/pub.pcap` (public side) and `lan.pcap`; `rules.txt` has the rules.
+
+`--nat real` passes when: both are LowIDs and learnt their router's address; the rendezvous
+ran via the chosen server; one side logged `NAT-T: #<n> QUIC dialing`, both `NAT-T: QUIC connected <ip:port> (out|in)`; both files
+arrived with matching MD5s; the router captures show no TCP between `.21` and `.22`; the first
+UDP datagram of 1200 bytes or more each way does not start with `0xB2` (the QUIC Initial was
+obfuscated). With `--strict`, no datagram between the routers starts with `0xB2` at all.
+`--nat symmetric` passes when the QUIC dial was made and failed cleanly (`NAT-T: QUIC to …
+failed`, or no link before `--timeout`) with both daemons still running.
+
+```bash
+python3 docker/natt/natnet.py --server ed2k-server --nat real
+python3 docker/natt/natnet.py --server ed2k-server --nat real --strict
+python3 docker/natt/natnet.py --server ed2k-server --nat symmetric --timeout 120
+```
 
 Timings on one Apple Silicon host: ed2k-server and eNode-go about 4 s from adding the link
 to the verified file; Lugdunum about 20 s, most of it eserver's ~12.5 s TCP `0x37` delay.

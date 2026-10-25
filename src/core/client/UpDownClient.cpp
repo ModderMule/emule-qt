@@ -1552,7 +1552,8 @@ void UpDownClient::sendHelloTypePacket(SafeMemFile& data)
     // peer must be free to change that at runtime without re-handshaking.
     Tag(CT_MOD_MISCOPTIONS,
         static_cast<uint32>(MODMISC_IPV6 | MODMISC_EXTXS | MODMISC_EXTXS_SKIPTAGS
-                            | MODMISC_HTTPCACHE))
+                            | MODMISC_HTTPCACHE
+                            | (natt::NatRendezvous::quicAvailable() ? MODMISC_NATT_QUIC : 0u)))
         .writeTagToFile(data);
 
     // CT_MOD_YOUR_IP — tell the peer the address we see it coming from, so it can learn
@@ -2222,7 +2223,31 @@ bool UpDownClient::tryToConnect(bool ignoreMaxCon, bool noCallbacks)
 // connect — MFC BaseClient.cpp:1480-1497
 // ===========================================================================
 
-void UpDownClient::connect()
+bool UpDownClient::connectOverTransport(std::shared_ptr<StreamTransport> transport)
+{
+    if (!transport)
+        return false;
+    if (m_socket && m_socket->isConnected()) {
+        transport->close();
+        return false;
+    }
+    if (m_socket)
+        releaseSocket(/*destroy*/ true);
+    m_connectAddress = transport->peerEndpoint().address();
+    if (theApp.clientList)
+        theApp.clientList->addConnectingClient(this);
+    if (m_reqFile && (m_downloadState == DownloadState::None
+                      || m_downloadState == DownloadState::LowToLowIP))
+        setDownloadState(DownloadState::Connecting);
+    logDebug(QStringLiteral("connectOverTransport: %1 over NAT-T stream %2")
+                 .arg(hasValidHash() ? md4str(userHash()) : QStringLiteral("(no hash yet)"),
+                      transport->peerEndpoint().toString()));
+    m_connectingState = ConnectingState::DirectTCP;
+    connect(std::move(transport));
+    return true;
+}
+
+void UpDownClient::connect(std::shared_ptr<StreamTransport> transport)
 {
     // Create a ClientReqSocket for this peer connection
     auto* reqSocket = new ClientReqSocket(this);
@@ -2305,6 +2330,14 @@ void UpDownClient::connect()
         // Explicitly mark the socket as plaintext so the send path
         // doesn't warn about an unknown encryption state.
         reqSocket->setConnectionEncryption(false, nullptr, false);
+    }
+
+    if (transport) {
+        // already connected end to end: the socket reads as connected and says so
+        reqSocket->attachTransport(std::move(transport), /*announce*/ true);
+        reqSocket->waitForOnConnect();
+        m_connectingState = ConnectingState::DirectTCP;
+        return;
     }
 
     // Configure proxy

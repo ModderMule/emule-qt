@@ -39,6 +39,7 @@ class ClientCredits;
 class ClientReqSocket;
 class FruitlessSessionLedger;
 class EMSocket;
+class StreamTransport;
 class Friend;
 class KnownFile;
 class PartFile;
@@ -687,7 +688,12 @@ public:
     /// Detach m_socket: cut its signals and back-pointer, and with @p destroy also
     /// unregister and safeDelete() it. MFC BaseClient.cpp:1204-1208.
     void releaseSocket(bool destroy);
-    void connect();
+    /// Open the socket and dial m_connectAddress, or, with @p transport, run it over that
+    /// stream (a QUIC NAT-T link) instead of TCP.
+    void connect(std::shared_ptr<StreamTransport> transport = {});
+    /// A NAT-T transport to this peer is up: carry the eD2K session over it.
+    /// False when a socket is already connected (the transport is closed).
+    bool connectOverTransport(std::shared_ptr<StreamTransport> transport);
     virtual void onSocketConnected(int errorCode);
 
     /// Wire signal connections for an incoming (already-accepted) socket.

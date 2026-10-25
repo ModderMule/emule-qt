@@ -7,6 +7,12 @@
     "libmaxminddb",
     "libtorrent",
     "miniupnpc",
+    {
+      "name": "ngtcp2",
+      "features": [
+        "openssl"
+      ]
+    },
     "openssl",
     "par2-turbo",
     "rapidyenc",

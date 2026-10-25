@@ -195,6 +195,7 @@ struct Preferences::Data {
     bool cryptLayerRequested = true;
     bool cryptLayerRequired = false;
     bool cryptLayerRequiredStrict = false;  // MFC hidden .ini option; ignores even server test callbacks
+    bool natTraversalStrictObfuscation = false;  // QUIC NAT-T: no plain fallback
     uint8 cryptTCPPaddingLength = 128;
 
     // Proxy
@@ -942,6 +943,10 @@ void Preferences::setCryptLayerRequired(bool val) { set(&Data::cryptLayerRequire
 bool Preferences::cryptLayerRequiredStrict() const { return get(&Data::cryptLayerRequiredStrict); }
 
 void Preferences::setCryptLayerRequiredStrict(bool val) { set(&Data::cryptLayerRequiredStrict, val); }
+
+bool Preferences::natTraversalStrictObfuscation() const { return get(&Data::natTraversalStrictObfuscation); }
+
+void Preferences::setNatTraversalStrictObfuscation(bool val) { set(&Data::natTraversalStrictObfuscation, val); }
 
 uint8 Preferences::cryptTCPPaddingLength() const { return get(&Data::cryptTCPPaddingLength); }
 
@@ -3207,6 +3212,7 @@ QCborMap Preferences::toIpcMap() const
     prefs.insert(QStringLiteral("cryptLayerRequested"), cryptLayerRequested());
     prefs.insert(QStringLiteral("cryptLayerRequired"), cryptLayerRequired());
     prefs.insert(QStringLiteral("cryptLayerRequiredStrict"), cryptLayerRequiredStrict());
+    prefs.insert(QStringLiteral("natTraversalStrictObfuscation"), natTraversalStrictObfuscation());
     prefs.insert(QStringLiteral("useSafeKad"), useSafeKad());
     prefs.insert(QStringLiteral("useFastKad"), useFastKad());
     prefs.insert(QStringLiteral("useSecureIdent"), useSecureIdent());
@@ -3476,6 +3482,7 @@ void Preferences::updateFromCbor(const QCborMap& p)
     m_data->cryptLayerRequested       = p.value(QStringLiteral("cryptLayerRequested")).toBool();
     m_data->cryptLayerRequired        = p.value(QStringLiteral("cryptLayerRequired")).toBool();
     m_data->cryptLayerRequiredStrict  = p.value(QStringLiteral("cryptLayerRequiredStrict")).toBool();
+    m_data->natTraversalStrictObfuscation = p.value(QStringLiteral("natTraversalStrictObfuscation")).toBool();
     m_data->useSecureIdent            = p.value(QStringLiteral("useSecureIdent")).toBool();
     m_data->antiLeecher               = p.value(QStringLiteral("antiLeecher")).toBool(true);
     m_data->antiLeecherLevel          = std::clamp(static_cast<int>(p.value(QStringLiteral("antiLeecherLevel")).toInteger()), 0, 2);
@@ -3904,6 +3911,8 @@ bool Preferences::load(const QString& filePath)
             m_data->cryptLayerRequested = e["cryptLayerRequested"].as<bool>(m_data->cryptLayerRequested);
             m_data->cryptLayerRequired = e["cryptLayerRequired"].as<bool>(m_data->cryptLayerRequired);
             m_data->cryptLayerRequiredStrict = e["cryptLayerRequiredStrict"].as<bool>(m_data->cryptLayerRequiredStrict);
+            m_data->natTraversalStrictObfuscation =
+                e["natTraversalStrictObfuscation"].as<bool>(m_data->natTraversalStrictObfuscation);
             m_data->cryptTCPPaddingLength = static_cast<uint8>(e["cryptTCPPaddingLength"].as<int>(m_data->cryptTCPPaddingLength));
         }
 
@@ -5060,6 +5069,7 @@ bool Preferences::saveImpl(const QString& filePath) const
     out << YAML::Key << "cryptLayerRequested" << YAML::Value << m_data->cryptLayerRequested;
     out << YAML::Key << "cryptLayerRequired" << YAML::Value << m_data->cryptLayerRequired;
     out << YAML::Key << "cryptLayerRequiredStrict" << YAML::Value << m_data->cryptLayerRequiredStrict;
+    out << YAML::Key << "natTraversalStrictObfuscation" << YAML::Value << m_data->natTraversalStrictObfuscation;
     out << YAML::Key << "cryptTCPPaddingLength" << YAML::Value << static_cast<int>(m_data->cryptTCPPaddingLength);
     out << YAML::EndMap;
 

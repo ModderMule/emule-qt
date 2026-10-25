@@ -33,6 +33,9 @@
     <ClCompile Include="app\AppConfig.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
+    <ClCompile Include="app\InstallerCopy.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
     <ClCompile Include="app\TranslationRouter.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
@@ -537,6 +540,15 @@
     <ClCompile Include="net\natt\NatRendezvous.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
+    <ClCompile Include="net\quic\QuicNatConnection.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="net\quic\QuicNatEndpoint.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="net\quic\QuicTls.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
     <ClCompile Include="net\UDPSocket.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
@@ -636,6 +648,9 @@
       <Filter>Header Files</Filter>
     </ClInclude>
     <ClInclude Include="app\AppConfig.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="app\InstallerCopy.h">
       <Filter>Header Files</Filter>
     </ClInclude>
     <ClInclude Include="app\TranslationRouter.h">
@@ -1215,6 +1230,24 @@
       <Filter>Header Files</Filter>
     </ClInclude>
     <QtMoc Include="net\natt\NatRendezvous.h">
+      <Filter>Header Files</Filter>
+    </QtMoc>
+    <ClInclude Include="net\StreamTransport.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="net\quic\QuicNatConnection.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="net\quic\QuicNatIo.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="net\quic\QuicNatProtocol.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="net\quic\QuicTls.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <QtMoc Include="net\quic\QuicNatEndpoint.h">
       <Filter>Header Files</Filter>
     </QtMoc>
     <QtMoc Include="net\UDPSocket.h">

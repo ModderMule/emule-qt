@@ -83,6 +83,24 @@ public:
     [[nodiscard]] virtual bool peerConnected(const Attempt& attempt) const = 0;
     /// The attempt gave up; park the source (LowToLowIP).
     virtual void attemptFailed(const Attempt& attempt) = 0;
+
+    // -- QUIC NAT-T transport (docs/protocol/natt-quic.md) --
+    /// The transport works here (built in, TLS up, feature on).
+    [[nodiscard]] virtual bool quicAvailable() const { return false; }
+    /// The peer's endpoint is known: accept its QUIC dial for a while, obfuscate for its
+    /// hash, tell it our caps.
+    virtual void armQuic(const Attempt& attempt) { (void)attempt; }
+    /// Dial the peer of @p attempt over QUIC at its punched UDP endpoint.
+    virtual void dialPeerQuic(const Attempt& attempt) { (void)attempt; }
+    /// A QUIC connection to the peer is being set up or carries its session.
+    [[nodiscard]] virtual bool quicActive(const Attempt& attempt) const { (void)attempt; return false; }
+    /// A 0xB2 frame of the transport (0x01-0x03, 0xFF); false when not one.
+    virtual bool handleQuicFrame(uint8 type, const uint8* data, uint32 size, const Endpoint& from,
+                                 bool obfuscated)
+    {
+        (void)type; (void)data; (void)size; (void)from; (void)obfuscated;
+        return false;
+    }
 };
 
 } // namespace natt

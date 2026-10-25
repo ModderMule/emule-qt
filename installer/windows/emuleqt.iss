@@ -9,6 +9,10 @@
 ; request file that the daemon carries out on its next start
 ; (src/core/prefs/LegacyConfigImport).
 ;
+; Setup also leaves a copy of itself in {app}\setup -- not in {app}\config,
+; which is seeded into every user's config dir. The daemon copies it into the
+; user's Incoming dir on its next start, so it gets shared (src/core/app/InstallerCopy).
+;
 ; Saved as UTF-8 with BOM: the translated [CustomMessages] need it.
 
 #ifndef AppVersion
@@ -20,6 +24,8 @@
 
 #define AppName "eMule Qt"
 #define AppExe "emuleqt.exe"
+; Name of the shared copy; InstallerCopy looks for eMuleQt-v*-win64-setup.exe
+#define SetupCopyName "eMuleQt-v" + AppVersion + "-win64-setup.exe"
 ; Never change: identifies the install for upgrades and the uninstaller
 #define AppGuid "CB5B0652-B8AA-5EA7-952F-DDB1DFF59929"
 
@@ -131,6 +137,10 @@ Name: "startmenuicon"; Description: "{cm:StartMenuShortcut}"
 ; when an eMule config was found (SetupImportTask)
 Name: "importemule"; Description: "{cm:ImportEmule}"; Flags: unchecked
 
+[InstallDelete]
+; Setup copy of the version this one replaces
+Type: filesandordirs; Name: "{app}\setup"
+
 [Files]
 Source: "{#StageDir}\*"; DestDir: "{app}"; Flags: ignoreversion recursesubdirs createallsubdirs
 ; Switches the app to the per-user config dir; never seeded into it (AppConfig kNeverSeed)
@@ -150,6 +160,8 @@ Filename: "{app}\{#AppExe}"; Parameters: "--unregister-file-types"; Flags: runhi
 
 [UninstallDelete]
 Type: files; Name: "{app}\config\mfc-import.yml"
+; Copied by [Code], so not in the uninstall log
+Type: filesandordirs; Name: "{app}\setup"
 
 [Code]
 const
@@ -331,10 +343,29 @@ begin
     DeleteFile(Path);
 end;
 
+// Canonical name, even when the download was renamed. A failed copy only
+// means nothing gets shared -- the install itself is fine.
+procedure StageSetupCopy;
+var
+  Dir: String;
+begin
+  Dir := ExpandConstant('{app}\setup');
+  if not ForceDirectories(Dir) then
+  begin
+    Log('Could not create ' + Dir);
+    Exit;
+  end;
+  if not FileCopy(ExpandConstant('{srcexe}'), AddBackslash(Dir) + '{#SetupCopyName}', False) then
+    Log('Could not copy setup to ' + Dir);
+end;
+
 procedure CurStepChanged(CurStep: TSetupStep);
 begin
   if CurStep = ssPostInstall then
+  begin
     WriteImportRequest;
+    StageSetupCopy;
+  end;
 end;
 
 function PointsIntoApp(const Value: String): Boolean;

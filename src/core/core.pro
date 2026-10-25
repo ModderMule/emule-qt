@@ -8,13 +8,15 @@ QT += core network multimedia httpserver concurrent protobuf sql
 QT -= gui
 
 DEFINES += QT_NO_CAST_FROM_ASCII
+# QUIC NAT-T: ngtcp2 + ngtcp2_crypto_ossl, OpenSSL >= 3.5
+DEFINES += EMULE_HAVE_QUIC_NATT=1
 
 INCLUDEPATH += \
     $$PWD
 
 # OpenSSL & zlib
 unix {
-    LIBS += -lssl -lcrypto -lz
+    LIBS += -lngtcp2_crypto_ossl -lngtcp2 -lssl -lcrypto -lz
 }
 win32 {
     DEFINES += NOMINMAX WIN32_LEAN_AND_MEAN
@@ -26,7 +28,7 @@ win32 {
     isEmpty(ZLIB_DIR): ZLIB_DIR = "C:/Program Files/zlib"
 
     INCLUDEPATH += "$$OPENSSL_DIR/include" "$$ZLIB_DIR/include"
-    LIBS += -L"$$OPENSSL_DIR/lib" -lssl -lcrypto -L"$$ZLIB_DIR/lib" -lzlib
+    LIBS += -L"$$OPENSSL_DIR/lib" -lngtcp2_crypto_ossl -lngtcp2 -lssl -lcrypto -L"$$ZLIB_DIR/lib" -lzlib
 }
 
 # Third-party: miniupnpc, yaml-cpp, libarchive, libmaxminddb
@@ -64,6 +66,7 @@ macx {
 
 SOURCES += \
     app/AppConfig.cpp \
+    app/InstallerCopy.cpp \
     app/TranslationRouter.cpp \
     app/AppContext.cpp \
     app/CoreSession.cpp \
@@ -153,6 +156,9 @@ SOURCES += \
     net/SmtpClient.cpp \
     net/TlsRelay.cpp \
     net/UDPSocket.cpp \
+    net/quic/QuicNatConnection.cpp \
+    net/quic/QuicNatEndpoint.cpp \
+    net/quic/QuicTls.cpp \
     prefs/IndexerConfig.cpp \
     prefs/DownloadCategory.cpp \
     prefs/IndexerFeed.cpp \
@@ -211,6 +217,7 @@ SOURCES += \
 
 HEADERS += \
     app/AppConfig.h \
+    app/InstallerCopy.h \
     app/TranslationRouter.h \
     app/AppContext.h \
     app/CoreSession.h \
@@ -309,6 +316,12 @@ HEADERS += \
     net/TlsRelay.h \
     net/ThrottledSocket.h \
     net/UDPSocket.h \
+    net/StreamTransport.h \
+    net/quic/QuicNatConnection.h \
+    net/quic/QuicNatEndpoint.h \
+    net/quic/QuicNatIo.h \
+    net/quic/QuicNatProtocol.h \
+    net/quic/QuicTls.h \
     prefs/DownloadCategory.h \
     prefs/CategoryView.h \
     prefs/IndexerConfig.h \

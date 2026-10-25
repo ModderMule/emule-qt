@@ -107,6 +107,11 @@ private slots:
     void ext_info_roleDecidesDialer();
     void ext_noInfo_fallsBackToLugdunum();
     void ext_peerCrypt_obfuscatesOrFails();
+    // QUIC NAT-T
+    void quic_requesterDialsWithoutHandoff();
+    void quic_targetWaitsThenFallsBack();
+    void quic_ipv6HandoffWins();
+    void quic_framesGoToTransport();
 };
 
 void tst_NatRendezvous::canStart_gates()
@@ -704,6 +709,98 @@ void tst_NatRendezvous::ext_peerCrypt_obfuscatesOrFails()
         f.hub->handleServerTcp(OP_LOWID_HOLEPUNCH_INFO, infoExt(hash, 55, 1, 0));
         QVERIFY(f.hub->attempts().empty() || f.hub->attempts().front()->finished);
     }
+}
+
+void tst_NatRendezvous::quic_requesterDialsWithoutHandoff()
+{
+    HubFixture f;
+    f.env->quic = true;
+    f.env->publicIPv6 = Address();
+    f.env->logIn(kServerIP, kServerPort, SrvTcpFlag::LowIdHolePunch);
+    QVERIFY(f.hub->hasDataPathNow());
+    const PeerInfo peer = f.peerOnServer(77);
+    QVERIFY(f.hub->start(peer));
+    f.hub->handleServerTcp(OP_LOWID_HOLEPUNCH_INFO, info(kPeerIP, kPeerTcp, kPeerUdp, peer.hash, 77));
+    QCOMPARE(f.env->quicArms.size(), size_t{1});
+    QVERIFY(f.env->quicDials.empty());
+    f.advance(1000);                       // the dial time is set on the first tick
+    QVERIFY(f.env->quicDials.empty());
+    f.advance(1000);
+    QCOMPARE(f.env->quicDials.size(), size_t{1});
+    QCOMPARE(f.env->quicDials[0].second, Endpoint(kPeerIP, kPeerUdp));
+    QVERIFY(f.env->dials.empty());
+    // once dialled, never again
+    f.advance(1000);
+    QCOMPARE(f.env->quicDials.size(), size_t{1});
+}
+
+void tst_NatRendezvous::quic_targetWaitsThenFallsBack()
+{
+    HubFixture f;
+    f.env->quic = true;
+    f.env->publicIPv6 = Address();
+    f.env->logIn(kServerIP, kServerPort, SrvTcpFlag::LowIdHolePunch);
+    Hash16 hash{};
+    hash.fill(0x33);
+    f.hub->handleServerTcp(OP_LOWID_HOLEPUNCH_INFO, info(kPeerIP, kPeerTcp, kPeerUdp, hash, 55));
+    QCOMPARE(f.hub->attempts().front()->role, Role::Target);
+    QCOMPARE(f.env->quicArms.size(), size_t{1});
+    f.advance(1000);
+    f.advance(5000);
+    QVERIFY(f.env->quicDials.empty());     // the downloader dials, not us
+    f.advance(1000);
+    QCOMPARE(f.env->quicDials.size(), size_t{1});   // nobody came: a peer that cannot dial
+
+    // a link that came in meanwhile stops the fallback
+    HubFixture g;
+    g.env->quic = true;
+    g.env->publicIPv6 = Address();
+    g.env->logIn(kServerIP, kServerPort, SrvTcpFlag::LowIdHolePunch);
+    g.hub->handleServerTcp(OP_LOWID_HOLEPUNCH_INFO, info(kPeerIP, kPeerTcp, kPeerUdp, hash, 55));
+    g.env->quicLinkUp = true;
+    g.advance(1000);
+    g.advance(7000);
+    QVERIFY(g.env->quicDials.empty());
+}
+
+void tst_NatRendezvous::quic_ipv6HandoffWins()
+{
+    HubFixture f;
+    f.env->quic = true;
+    f.env->logIn(kServerIP, kServerPort, SrvTcpFlag::LowIdHolePunch);
+    const PeerInfo peer = f.peerOnServer(77);
+    QVERIFY(f.hub->start(peer));
+    f.hub->handleServerTcp(OP_LOWID_HOLEPUNCH_INFO, info(kPeerIP, kPeerTcp, kPeerUdp, peer.hash, 77));
+    const QByteArray h = handoff(peer.hash, 77, kPeerTcp, kPeerV6, true);
+    f.hub->handleFrame(OP_NATT_FRAME_IPV6HANDOFF, bytes(h), uint32(h.size()), Endpoint(kPeerIP, kPeerUdp), true);
+    for (int i = 0; i < 5; ++i)
+        f.advance(1000);
+    QCOMPARE(f.env->dials.size(), size_t{1});
+    QVERIFY(f.env->quicDials.empty());
+
+    // a handoff without IPv6 no longer fails the attempt: QUIC carries it
+    HubFixture g;
+    g.env->quic = true;
+    g.env->logIn(kServerIP, kServerPort, SrvTcpFlag::LowIdHolePunch);
+    QVERIFY(g.hub->start(peer));
+    g.hub->handleServerTcp(OP_LOWID_HOLEPUNCH_INFO, info(kPeerIP, kPeerTcp, kPeerUdp, peer.hash, 77));
+    const QByteArray h4 = handoff(peer.hash, 77, kPeerTcp, Address(), true);
+    g.hub->handleFrame(OP_NATT_FRAME_IPV6HANDOFF, bytes(h4), uint32(h4.size()), Endpoint(kPeerIP, kPeerUdp), true);
+    QVERIFY(g.env->failed.empty());
+    g.advance(1000);
+    g.advance(1000);
+    QCOMPARE(g.env->quicDials.size(), size_t{1});
+}
+
+void tst_NatRendezvous::quic_framesGoToTransport()
+{
+    HubFixture f;
+    f.env->quic = true;
+    const uint8 frame[4] = {0xC3, 0, 0, 1};
+    for (uint8 type : {uint8(OP_NATT_FRAME_QUIC), uint8(OP_NATT_FRAME_CAPS), uint8(OP_NATT_FRAME_CAPS_ACK),
+                       uint8(OP_NATT_FRAME_KEY)})
+        f.hub->handleFrame(type, frame, sizeof(frame), Endpoint(kPeerIP, kPeerUdp), true);
+    QCOMPARE(f.env->quicFrames.size(), size_t{4});
 }
 
 QTEST_GUILESS_MAIN(tst_NatRendezvous)

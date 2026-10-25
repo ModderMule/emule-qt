@@ -447,6 +447,7 @@ private:
     QButtonGroup* m_viewSharedGroup = nullptr;
     QCheckBox*    m_cryptLayerRequestedCheck = nullptr;
     QCheckBox*    m_cryptLayerRequiredCheck = nullptr;
+    QCheckBox*    m_natTraversalStrictObfuscationCheck = nullptr;
     QCheckBox*    m_cryptLayerDisableCheck = nullptr;
     QCheckBox*    m_useSecureIdentCheck = nullptr;
     QCheckBox*    m_enableSearchResultFilterCheck = nullptr;

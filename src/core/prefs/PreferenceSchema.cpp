@@ -136,6 +136,7 @@ using Kind = PrefSpec::Kind;
                        "require it."));
     t << flag("cryptLayerRequested", "Ask for obfuscated connections when the peer supports them.");
     t << flag("cryptLayerRequired", "Accept obfuscated connections only.");
+    t << flag("natTraversalStrictObfuscation", "NAT traversal: never send unobfuscated QUIC datagrams.");
     // Keys are loaded at start only, as in MFC
     t << restart(flag("useSecureIdent", "Use secure user identification. Takes effect at the next "
                       "start."));

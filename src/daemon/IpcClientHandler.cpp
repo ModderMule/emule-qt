@@ -3813,6 +3813,8 @@ bool IpcClientHandler::applyPreferenceA(const QString& key, const QCborValue& va
         thePrefs.setCryptLayerRequested(val.toBool());
     else if (key == QStringLiteral("cryptLayerRequired"))
         thePrefs.setCryptLayerRequired(val.toBool());
+    else if (key == QStringLiteral("natTraversalStrictObfuscation"))
+        thePrefs.setNatTraversalStrictObfuscation(val.toBool());
     else if (key == QStringLiteral("useSecureIdent"))
         thePrefs.setUseSecureIdent(val.toBool());
     else if (key == QStringLiteral("antiLeecher"))

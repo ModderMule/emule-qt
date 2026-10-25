@@ -23,9 +23,12 @@ LIBS += \
     -L$$OUT_PWD/../core    -lemulecore \
     -L$$OUT_PWD/../ipc     -lemuleipc
 
+# QUIC NAT-T: ngtcp2 + ngtcp2_crypto_ossl, OpenSSL >= 3.5
+DEFINES += EMULE_HAVE_QUIC_NATT=1
+
 # Third-party libraries (system-installed or from CMake build)
 unix {
-    LIBS += -lssl -lcrypto -lz -lminiupnpc -lyaml-cpp -larchive -lmaxminddb
+    LIBS += -lngtcp2_crypto_ossl -lngtcp2 -lssl -lcrypto -lz -lminiupnpc -lyaml-cpp -larchive -lmaxminddb
 }
 macx {
     LIBS += -framework IOKit -framework CoreFoundation -framework CoreServices
@@ -56,7 +59,7 @@ win32 {
         "$$MINIUPNPC_DIR/include" "$$YAMLCPP_DIR/include" "$$LIBARCHIVE_DIR/include"
 
     LIBS += \
-        -L"$$OPENSSL_DIR/lib" -lssl -lcrypto \
+        -L"$$OPENSSL_DIR/lib" -lngtcp2_crypto_ossl -lngtcp2 -lssl -lcrypto \
         -L"$$ZLIB_DIR/lib" -lzlib \
         -L"$$MINIUPNPC_DIR/lib" -lminiupnpc \
         -L"$$YAMLCPP_DIR/lib" -lyaml-cpp \

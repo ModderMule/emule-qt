@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # ---------------------------------------------------------------------------
-# build-macos-deps.sh — static OpenSSL, zstd and lz4 for a macOS release build
+# build-macos-deps.sh — static OpenSSL, zstd, lz4 and ngtcp2 for a macOS release build
 #
 # Homebrew builds its libraries for the OS and CPU of the machine it runs on.
 # Bundling those made the v0.5.6 app arm64-only and macOS 26-only, although Qt
@@ -28,6 +28,8 @@ ZSTD_VERSION=1.5.7
 ZSTD_SHA256=eb33e51f49a15e023950cd7825ca74a4a2b43db8354825ac24fc1b7ee09e6fa3
 LZ4_VERSION=1.10.0
 LZ4_SHA256=537512904744b35e232912055ccf8ec66d768639ff3abe5788d90d792ec5f48b
+NGTCP2_VERSION=1.25.0
+NGTCP2_SHA256=1c0843076528a87b65e9a9d455100941f4cb65d44f96c5da6ae56df146043955
 
 if [ $# -ne 2 ]; then
     echo "Usage: MACOSX_DEPLOYMENT_TARGET=<ver> $0 <arm64|x86_64> <prefix>" >&2
@@ -95,12 +97,34 @@ make -C "$WORK/lz4-$LZ4_VERSION/lib" -j"$JOBS" liblz4.a \
 cp "$WORK/lz4-$LZ4_VERSION/lib/liblz4.a" "$PREFIX/lib/"
 cp "$WORK/lz4-$LZ4_VERSION/lib/"{lz4.h,lz4hc.h,lz4frame.h} "$PREFIX/include/"
 
+# -- ngtcp2 (QUIC NAT-T; OpenSSL backend needs the 3.5 above) ---------------
+
+fetch "https://github.com/ngtcp2/ngtcp2/releases/download/v$NGTCP2_VERSION/ngtcp2-$NGTCP2_VERSION.tar.gz" "$NGTCP2_SHA256"
+cmake -S "$WORK/ngtcp2-$NGTCP2_VERSION" -B "$WORK/ngtcp2-build" \
+    -DCMAKE_BUILD_TYPE=Release \
+    -DCMAKE_INSTALL_PREFIX="$PREFIX" \
+    -DCMAKE_INSTALL_LIBDIR=lib \
+    -DCMAKE_OSX_ARCHITECTURES="$ARCH" \
+    -DCMAKE_OSX_DEPLOYMENT_TARGET="$MACOSX_DEPLOYMENT_TARGET" \
+    -DCMAKE_POSITION_INDEPENDENT_CODE=ON \
+    -DCMAKE_IGNORE_PREFIX_PATH="/opt/homebrew;/usr/local" \
+    -DENABLE_LIB_ONLY=ON \
+    -DENABLE_STATIC_LIB=ON \
+    -DENABLE_SHARED_LIB=OFF \
+    -DENABLE_OPENSSL=ON \
+    -DENABLE_GNUTLS=OFF \
+    -DBUILD_TESTING=OFF \
+    -DOPENSSL_ROOT_DIR="$PREFIX" \
+    -DOPENSSL_USE_STATIC_LIBS=ON >/dev/null
+cmake --build "$WORK/ngtcp2-build" --parallel "$JOBS" >/dev/null
+cmake --install "$WORK/ngtcp2-build" >/dev/null
+
 # -- Check what was built ----------------------------------------------------
 # A silently ignored flag would give the host's CPU or OS version, which is the
 # bug this script exists to prevent.
 
 FAILED=0
-for lib in libcrypto.a libssl.a libzstd.a liblz4.a; do
+for lib in libcrypto.a libssl.a libzstd.a liblz4.a libngtcp2.a libngtcp2_crypto_ossl.a; do
     archs="$(lipo -archs "$PREFIX/lib/$lib")"
     minos="$(otool -l "$PREFIX/lib/$lib" | awk '$1 == "minos" { print $2 }' | sort -uV | tail -1)"
     echo "  $lib: [$archs] minos ${minos:-?}"

@@ -29,6 +29,8 @@
 
 #include <openssl/bn.h>
 
+#include <QPointer>
+
 
 namespace eMule {
 
@@ -63,7 +65,105 @@ EncryptedStreamSocket::EncryptedStreamSocket(QObject* parent)
 {
 }
 
-EncryptedStreamSocket::~EncryptedStreamSocket() = default;
+EncryptedStreamSocket::~EncryptedStreamSocket()
+{
+    closeTransport();
+}
+
+// ---------------------------------------------------------------------------
+// Stream transport (a non-TCP byte stream under this socket)
+// ---------------------------------------------------------------------------
+
+void EncryptedStreamSocket::attachTransport(std::shared_ptr<StreamTransport> transport, bool announce)
+{
+    if (!transport)
+        return;
+    closeTransport();
+    m_transport = std::move(transport);
+    m_transport->setSink(this);
+
+    const Endpoint peer = m_transport->peerEndpoint();
+    const Endpoint local = m_transport->localEndpoint();
+    setPeerAddress(peer.address().toQHostAddress());
+    setPeerPort(peer.port());
+    setLocalAddress(local.address().toQHostAddress());
+    setLocalPort(local.port());
+    QIODevice::open(QIODevice::ReadWrite | QIODevice::Unbuffered);
+    setSocketState(QAbstractSocket::ConnectedState);
+
+    // disconnectFromHost() is not virtual: ending the socket any way ends the transport
+    connect(this, &QAbstractSocket::disconnected, this, [this] { closeTransport(); });
+
+    if (announce) {
+        QMetaObject::invokeMethod(this, [this] {
+            if (m_transport && state() == QAbstractSocket::ConnectedState)
+                emit connected();
+        }, Qt::QueuedConnection);
+    }
+    if (m_transport->bytesAvailable() > 0)
+        QMetaObject::invokeMethod(this, [this] { transportReadable(); }, Qt::QueuedConnection);
+}
+
+qint64 EncryptedStreamSocket::bytesAvailable() const
+{
+    const qint64 own = QTcpSocket::bytesAvailable();
+    return m_transport ? own + m_transport->bytesAvailable() : own;
+}
+
+qint64 EncryptedStreamSocket::bytesToWrite() const
+{
+    return m_transport ? m_transport->pendingSend() : QTcpSocket::bytesToWrite();
+}
+
+void EncryptedStreamSocket::close()
+{
+    closeTransport();
+    QTcpSocket::close();
+}
+
+qint64 EncryptedStreamSocket::readData(char* data, qint64 maxSize)
+{
+    if (!m_transport)
+        return QTcpSocket::readData(data, maxSize);
+    return m_transport->read(data, maxSize);
+}
+
+qint64 EncryptedStreamSocket::writeData(const char* data, qint64 size)
+{
+    if (!m_transport)
+        return QTcpSocket::writeData(data, size);
+    const qint64 n = m_transport->write(data, size);
+    if (n < 0) {
+        setSocketError(QAbstractSocket::RemoteHostClosedError);
+        setErrorString(QStringLiteral("Stream transport closed"));
+    }
+    return n;
+}
+
+void EncryptedStreamSocket::transportReadable()
+{
+    if (m_transport && state() == QAbstractSocket::ConnectedState)
+        emit readyRead();
+}
+
+void EncryptedStreamSocket::transportWritten(qint64 bytes)
+{
+    if (m_transport && bytes > 0)
+        emit bytesWritten(bytes);
+}
+
+void EncryptedStreamSocket::transportLost(QAbstractSocket::SocketError error, const QString& reason)
+{
+    if (!m_transport)
+        return;
+    // The error handler may delete this socket: nothing touches it after a dead guard
+    const QPointer<EncryptedStreamSocket> guard(this);
+    setSocketError(error);
+    setErrorString(reason);
+    emit errorOccurred(error);
+    if (guard && state() != QAbstractSocket::UnconnectedState)
+        QTcpSocket::disconnectFromHost();
+}
 
 // ---------------------------------------------------------------------------
 // Configuration
@@ -726,6 +826,19 @@ uint8 EncryptedStreamSocket::getSemiRandomNotProtocolMarker()
         return marker;
     }
     return 0x01;
+}
+
+// ---------------------------------------------------------------------------
+// Private helpers
+// ---------------------------------------------------------------------------
+
+void EncryptedStreamSocket::closeTransport()
+{
+    if (!m_transport)
+        return;
+    auto transport = std::move(m_transport);
+    transport->setSink(nullptr);
+    transport->close();
 }
 
 } // namespace eMule

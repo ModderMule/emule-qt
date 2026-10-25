@@ -67,7 +67,7 @@ jobs:
           echo "$RUNNER_TEMP/protoc/bin" >> "$GITHUB_PATH"
           "$RUNNER_TEMP/protoc/bin/protoc" --version
 
-      # Static OpenSSL, zstd and lz4 built for MACOSX_DEPLOYMENT_TARGET.  Homebrew's
+      # Static OpenSSL, zstd, lz4 and ngtcp2 built for MACOSX_DEPLOYMENT_TARGET.  Homebrew's
       # copies are built for the runner's macOS and must not reach the bundle.
       - name: Restore static dependencies
         id: deps-cache

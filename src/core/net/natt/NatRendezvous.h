@@ -41,6 +41,12 @@ public:
     static constexpr uint64 kPunchWindowMs      = 20000;
     static constexpr uint64 kHandoffIntervalMs  = 2000;
     static constexpr uint64 kRequesterDialDelay = 5000;   // the target dials first
+    // QUIC: the downloader (requester) dials once both NATs had a moment to open; with
+    // an IPv6 of our own it first waits for the peer's handoff (TCP/IPv6 wins).
+    static constexpr uint64 kQuicDialDelayMs      = 1000;
+    static constexpr uint64 kQuicDialDelayV6Ms    = 2500;
+    // ... the target only when nothing came (a peer that cannot dial QUIC)
+    static constexpr uint64 kQuicTargetFallbackMs = 6000;
     static constexpr uint64 kNoticeRetryMs      = 30 * 60 * 1000;
     static constexpr uint64 kNoticePerIpMs      = 5000;
     static constexpr uint64 kRepeatNoticeMs     = 10000;  // servers re-send a notice for a few s
@@ -55,10 +61,11 @@ public:
     NatRendezvous(const NatRendezvous&) = delete;
     NatRendezvous& operator=(const NatRendezvous&) = delete;
 
-    /// A data path exists after a rendezvous: today the IPv6 TCP handoff, which needs
-    /// a confident public IPv6 here. ToDo: true unconditionally once the QUIC NAT-T
-    /// transport (eMuleAI dialect, 0xB2/0x01) is in.
+    /// A data path exists after a rendezvous: the QUIC NAT-T transport, or the IPv6 TCP
+    /// handoff when we have a confident public IPv6.
     [[nodiscard]] static bool hasDataPath();
+    /// The QUIC NAT-T transport runs (through theApp.natRendezvous): advertise it.
+    [[nodiscard]] static bool quicAvailable();
     [[nodiscard]] bool hasDataPathNow() const;
 
     [[nodiscard]] NatEnv& env() const { return *m_env; }
@@ -160,6 +167,8 @@ private:
     void sendHandoff(Attempt& attempt, bool answer);
     void evaluateDial(Attempt& attempt);
     void dial(Attempt& attempt);
+    void evaluateQuicDial(Attempt& attempt);
+    void dialQuic(Attempt& attempt);
     void finish(Attempt& attempt, bool connected);
     void handleHolePunch(const Endpoint& from);
     void handleHandoff(const uint8* data, uint32 size, const Endpoint& from);

@@ -10,6 +10,7 @@
 #include "WinShutdownHandler.h"
 
 #include "app/AppConfig.h"
+#include "app/InstallerCopy.h"
 #include "app/TranslationRouter.h"
 #include "files/PartFileConvert.h"
 #include "prefs/LegacyConfigImport.h"
@@ -149,6 +150,11 @@ int main(int argc, char* argv[])
     // MFC preferences.dat dropped into the config dir: take over its user hash
     // before anything reads ours. Logs its own outcome; a rejected file changes nothing.
     (void)eMule::LegacyIdentityImport::run(configDir, eMule::thePrefs);
+
+    // Windows setup left a copy of itself next to the exe: share it from Incoming.
+    // After the MFC import, which may have changed the Incoming dir.
+    (void)eMule::InstallerCopy::run(eMule::InstallerCopy::stagedDir(), configDir,
+                                    eMule::thePrefs.incomingDir());
 
     // Determine IPC target for log message
     QString ipcHost = eMule::thePrefs.ipcListenAddress();

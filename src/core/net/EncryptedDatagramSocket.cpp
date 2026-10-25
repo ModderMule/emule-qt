@@ -215,8 +215,10 @@ uint32 EncryptedDatagramSocket::encryptSendClient(
     uint8* buf, uint32 len,
     const uint8* clientHashOrKadID, bool isKad,
     uint32 receiverVerifyKey, uint32 senderVerifyKey,
-    const Address& publicIP)
+    const Address& publicIP, uint8 padding)
 {
+    // Kad keeps its fixed layout; the length field holds 0-15
+    padding = isKad ? 0 : static_cast<uint8>(padding & 0x0F);
     uint8 kadRecKeyUsed = 0; // NodeID marker
     const uint16 randomKeyPart = getRandomUInt16();
     MD5Hasher md5;
@@ -282,14 +284,16 @@ uint32 EncryptedDatagramSocket::encryptSendClient(
 
     // Write magic value + padding at offset 3
     pokeUInt32(&buf[3], kMagicValueUDPSyncClient);
-    buf[7] = kCryptHeaderPadding;
+    buf[7] = static_cast<uint8>(kCryptHeaderPadding + padding);
+    for (uint8 i = 0; i < padding; ++i)
+        buf[kCryptHeaderSize + i] = static_cast<uint8>(getRandomUInt16());
 
     if (isKad) {
         pokeUInt32(&buf[kCryptHeaderSize], receiverVerifyKey);
         pokeUInt32(&buf[kCryptHeaderSize + 4], senderVerifyKey);
     }
 
-    const uint32 cryptHeaderLen = static_cast<uint32>(encryptOverheadSize(isKad));
+    const uint32 cryptHeaderLen = static_cast<uint32>(encryptOverheadSize(isKad)) + padding;
     len += cryptHeaderLen;
 
     // Encrypt everything from magic value onward (offset 3)

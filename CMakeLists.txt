@@ -498,6 +498,18 @@ if(EMULE_BITTORRENT)
 endif()
 
 # ---------------------------------------------------------------------------
+# QUIC NAT-T transport (LowID<->LowID over a punched UDP path)
+# ---------------------------------------------------------------------------
+option(EMULE_QUIC_NATT "Build the QUIC NAT-T transport (ngtcp2, OpenSSL >= 3.5)" ON)
+if(EMULE_QUIC_NATT)
+    include(${CMAKE_SOURCE_DIR}/cmake/Ngtcp2.cmake)
+endif()
+# The one place EMULE_HAVE_QUIC_NATT is set
+if(EMULE_QUIC_NATT)
+    add_compile_definitions(EMULE_HAVE_QUIC_NATT=1)
+endif()
+
+# ---------------------------------------------------------------------------
 # Subdirectories
 # ---------------------------------------------------------------------------
 add_subdirectory(src)

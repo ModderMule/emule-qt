@@ -347,6 +347,7 @@ OptionsDialog::OptionsDialog(IpcClient* ipc, StatisticsPanel* statsPanel,
     connect(m_cryptLayerRequestedCheck, &QCheckBox::toggled, this, &OptionsDialog::markDirty);
     connect(m_cryptLayerRequiredCheck, &QCheckBox::toggled, this, &OptionsDialog::markDirty);
     connect(m_cryptLayerDisableCheck, &QCheckBox::toggled, this, &OptionsDialog::markDirty);
+    connect(m_natTraversalStrictObfuscationCheck, &QCheckBox::toggled, this, &OptionsDialog::markDirty);
     connect(m_useSecureIdentCheck, &QCheckBox::toggled, this, &OptionsDialog::markDirty);
     connect(m_enableSearchResultFilterCheck, &QCheckBox::toggled, this, &OptionsDialog::markDirty);
     connect(m_ipFilterUpdateUrlEdit, &QLineEdit::textChanged, this, &OptionsDialog::markDirty);
@@ -445,6 +446,7 @@ OptionsDialog::OptionsDialog(IpcClient* ipc, StatisticsPanel* statsPanel,
         }
         m_cryptLayerRequestedCheck->setEnabled(!on);
         m_cryptLayerRequiredCheck->setEnabled(!on && m_cryptLayerRequestedCheck->isChecked());
+        m_natTraversalStrictObfuscationCheck->setEnabled(!on);
     });
     connect(m_cryptLayerRequestedCheck, &QCheckBox::toggled, this, [this](bool on) {
         if (!on)
@@ -2554,6 +2556,14 @@ QWidget* OptionsDialog::createSecurityPage()
     m_cryptLayerDisableCheck = new QCheckBox(
         tr("Disable support for obfuscated connections"), obfuscGroup);
     obfuscLayout->addWidget(m_cryptLayerDisableCheck);
+
+    m_natTraversalStrictObfuscationCheck = new QCheckBox(
+        tr("Never send unobfuscated NAT traversal (QUIC) packets"), obfuscGroup);
+    m_natTraversalStrictObfuscationCheck->setToolTip(
+        tr("Low ID to Low ID transfers over QUIC are always obfuscated when possible. If the other "
+           "client cannot read them, eMule falls back to unobfuscated packets after 2 seconds. "
+           "Check this to fail such transfers instead, e.g. on networks that block QUIC."));
+    obfuscLayout->addWidget(m_natTraversalStrictObfuscationCheck);
 
     layout->addWidget(obfuscGroup);
 
@@ -6810,6 +6820,8 @@ void OptionsDialog::saveSettings()
         req.append(m_cryptLayerRequestedCheck->isChecked());
         req.append(QStringLiteral("cryptLayerRequired"));
         req.append(m_cryptLayerRequiredCheck->isChecked());
+        req.append(QStringLiteral("natTraversalStrictObfuscation"));
+        req.append(m_natTraversalStrictObfuscationCheck->isChecked());
         req.append(QStringLiteral("useSecureIdent"));
         req.append(m_useSecureIdentCheck->isChecked());
         req.append(QStringLiteral("enableSearchResultFilter"));
@@ -7317,6 +7329,7 @@ void OptionsDialog::saveSettings()
         thePrefs.setCryptLayerSupported(!m_cryptLayerDisableCheck->isChecked());
         thePrefs.setCryptLayerRequested(m_cryptLayerRequestedCheck->isChecked());
         thePrefs.setCryptLayerRequired(m_cryptLayerRequiredCheck->isChecked());
+        thePrefs.setNatTraversalStrictObfuscation(m_natTraversalStrictObfuscationCheck->isChecked());
         thePrefs.setUseSecureIdent(m_useSecureIdentCheck->isChecked());
         thePrefs.setEnableSearchResultFilter(m_enableSearchResultFilterCheck->isChecked());
         thePrefs.setAntiLeecher(m_antiLeecherCheck->isChecked());
@@ -7603,6 +7616,9 @@ void OptionsDialog::fillDaemonSettings(const QCborMap& prefs)
     m_cryptLayerRequestedCheck->setEnabled(cryptSupported);
     m_cryptLayerRequiredCheck->setChecked(cryptRequired);
     m_cryptLayerRequiredCheck->setEnabled(cryptSupported && cryptRequested);
+    m_natTraversalStrictObfuscationCheck->setChecked(
+        prefs.value(QStringLiteral("natTraversalStrictObfuscation")).toBool());
+    m_natTraversalStrictObfuscationCheck->setEnabled(cryptSupported);
     m_useSecureIdentCheck->setChecked(prefs.value(QStringLiteral("useSecureIdent")).toBool(true));
     m_enableSearchResultFilterCheck->setChecked(prefs.value(QStringLiteral("enableSearchResultFilter")).toBool(true));
     {

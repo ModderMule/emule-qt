@@ -165,6 +165,10 @@ if(WIN32)
     target_link_libraries(emulecore PRIVATE iphlpapi)
 endif()
 
+if(EMULE_QUIC_NATT)
+    target_link_libraries(emulecore PUBLIC emule::ngtcp2)
+endif()
+
 # -- Precompiled header (replaces old Stdafx.h) --------------------------------
 # Stable headers that rarely change — speeds up incremental builds significantly.
 target_precompile_headers(emulecore PRIVATE

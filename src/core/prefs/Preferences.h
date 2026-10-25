@@ -257,6 +257,10 @@ public:
     // Hidden option (MFC CryptLayerRequiredStrict, .ini-only, default false): when set, even
     // unencrypted server LowID/firewall-test callbacks are rejected while require-encryption is on.
     [[nodiscard]] bool cryptLayerRequiredStrict() const;
+    /// NAT-T: never send a plain 0xB2 frame (QUIC NAT-T); no plain fallback when the
+    /// peer cannot decrypt.
+    [[nodiscard]] bool natTraversalStrictObfuscation() const;
+    void setNatTraversalStrictObfuscation(bool val);
     void setCryptLayerRequiredStrict(bool val);
 
     [[nodiscard]] uint8 cryptTCPPaddingLength() const;

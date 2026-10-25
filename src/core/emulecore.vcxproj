@@ -81,7 +81,7 @@
       <LanguageStandard>stdcpplatest</LanguageStandard>
       <ObjectFileName>release\</ObjectFileName>
       <Optimization>MaxSpeed</Optimization>
-      <PreprocessorDefinitions>_WINDOWS;$(EmuleBtDefines)UNICODE;_UNICODE;WIN32;_ENABLE_EXTENDED_ALIGNED_STORAGE;WIN64;QT_NO_CAST_FROM_ASCII;NOMINMAX;WIN32_LEAN_AND_MEAN;NDEBUG;QT_NO_DEBUG;QT_HTTPSERVER_LIB;%(PreprocessorDefinitions)</PreprocessorDefinitions>
+      <PreprocessorDefinitions>_WINDOWS;$(EmuleBtDefines)$(EmuleQuicDefines)UNICODE;_UNICODE;WIN32;_ENABLE_EXTENDED_ALIGNED_STORAGE;WIN64;QT_NO_CAST_FROM_ASCII;NOMINMAX;WIN32_LEAN_AND_MEAN;NDEBUG;QT_NO_DEBUG;QT_HTTPSERVER_LIB;%(PreprocessorDefinitions)</PreprocessorDefinitions>
       <PreprocessToFile>false</PreprocessToFile>
       <ProgramDataBaseFileName>
       </ProgramDataBaseFileName>
@@ -105,7 +105,7 @@
       <WarningLevel>0</WarningLevel>
     </Midl>
     <ResourceCompile>
-      <PreprocessorDefinitions>_WINDOWS;$(EmuleBtDefines)UNICODE;_UNICODE;WIN32;_ENABLE_EXTENDED_ALIGNED_STORAGE;WIN64;QT_NO_CAST_FROM_ASCII;NOMINMAX;WIN32_LEAN_AND_MEAN;NDEBUG;QT_NO_DEBUG;QT_HTTPSERVER_LIB;%(PreprocessorDefinitions)</PreprocessorDefinitions>
+      <PreprocessorDefinitions>_WINDOWS;$(EmuleBtDefines)$(EmuleQuicDefines)UNICODE;_UNICODE;WIN32;_ENABLE_EXTENDED_ALIGNED_STORAGE;WIN64;QT_NO_CAST_FROM_ASCII;NOMINMAX;WIN32_LEAN_AND_MEAN;NDEBUG;QT_NO_DEBUG;QT_HTTPSERVER_LIB;%(PreprocessorDefinitions)</PreprocessorDefinitions>
     </ResourceCompile>
     <QtMoc>
       <CompilerFlavor>msvc</CompilerFlavor>
@@ -128,7 +128,7 @@
       <LanguageStandard>stdcpplatest</LanguageStandard>
       <ObjectFileName>debug\</ObjectFileName>
       <Optimization>Disabled</Optimization>
-      <PreprocessorDefinitions>_WINDOWS;$(EmuleBtDefines)UNICODE;_UNICODE;WIN32;_ENABLE_EXTENDED_ALIGNED_STORAGE;WIN64;QT_NO_CAST_FROM_ASCII;NOMINMAX;WIN32_LEAN_AND_MEAN;QT_HTTPSERVER_LIB;%(PreprocessorDefinitions)</PreprocessorDefinitions>
+      <PreprocessorDefinitions>_WINDOWS;$(EmuleBtDefines)$(EmuleQuicDefines)UNICODE;_UNICODE;WIN32;_ENABLE_EXTENDED_ALIGNED_STORAGE;WIN64;QT_NO_CAST_FROM_ASCII;NOMINMAX;WIN32_LEAN_AND_MEAN;QT_HTTPSERVER_LIB;%(PreprocessorDefinitions)</PreprocessorDefinitions>
       <PreprocessToFile>false</PreprocessToFile>
       <RuntimeLibrary>MultiThreadedDebugDLL</RuntimeLibrary>
       <SuppressStartupBanner>true</SuppressStartupBanner>
@@ -150,7 +150,7 @@
       <WarningLevel>0</WarningLevel>
     </Midl>
     <ResourceCompile>
-      <PreprocessorDefinitions>_WINDOWS;$(EmuleBtDefines)UNICODE;_UNICODE;WIN32;_ENABLE_EXTENDED_ALIGNED_STORAGE;WIN64;QT_NO_CAST_FROM_ASCII;NOMINMAX;WIN32_LEAN_AND_MEAN;QT_HTTPSERVER_LIB;_DEBUG;%(PreprocessorDefinitions)</PreprocessorDefinitions>
+      <PreprocessorDefinitions>_WINDOWS;$(EmuleBtDefines)$(EmuleQuicDefines)UNICODE;_UNICODE;WIN32;_ENABLE_EXTENDED_ALIGNED_STORAGE;WIN64;QT_NO_CAST_FROM_ASCII;NOMINMAX;WIN32_LEAN_AND_MEAN;QT_HTTPSERVER_LIB;_DEBUG;%(PreprocessorDefinitions)</PreprocessorDefinitions>
     </ResourceCompile>
     <QtMoc>
       <CompilerFlavor>msvc</CompilerFlavor>
@@ -171,6 +171,7 @@
     <ClCompile Include="crypto\AICHSyncThread.cpp" />
     <ClCompile Include="files\AbstractFile.cpp" />
     <ClCompile Include="app\AppConfig.cpp" />
+    <ClCompile Include="app\InstallerCopy.cpp" />
     <ClCompile Include="app\TranslationRouter.cpp" />
     <ClCompile Include="app\AppContext.cpp" />
     <ClCompile Include="archive\ArchiveReader.cpp" />
@@ -357,6 +358,9 @@
     <ClCompile Include="net\natt\LugdunumNatPath.cpp" />
     <ClCompile Include="net\natt\NatPath.cpp" />
     <ClCompile Include="net\natt\NatRendezvous.cpp" />
+    <ClCompile Include="net\quic\QuicNatConnection.cpp" />
+    <ClCompile Include="net\quic\QuicNatEndpoint.cpp" />
+    <ClCompile Include="net\quic\QuicTls.cpp" />
     <ClCompile Include="client\URLClient.cpp" />
     <ClCompile Include="client\UpDownClient.cpp" />
     <ClCompile Include="transfer\UploadBandwidthThrottler.cpp" />
@@ -395,6 +399,7 @@
     <QtMoc Include="crypto\AICHSyncThread.h" />
     <ClInclude Include="files\AbstractFile.h" />
     <ClInclude Include="app\AppConfig.h" />
+    <ClInclude Include="app\InstallerCopy.h" />
     <ClInclude Include="app\TranslationRouter.h" />
     <ClInclude Include="app\AppContext.h" />
     <ClInclude Include="archive\ArchiveReader.h" />
@@ -608,6 +613,12 @@
     <ClInclude Include="utils\Types.h" />
     <QtMoc Include="net\UDPSocket.h" />
     <QtMoc Include="net\natt\NatRendezvous.h" />
+    <ClInclude Include="net\StreamTransport.h" />
+    <ClInclude Include="net\quic\QuicNatConnection.h" />
+    <ClInclude Include="net\quic\QuicNatIo.h" />
+    <ClInclude Include="net\quic\QuicNatProtocol.h" />
+    <ClInclude Include="net\quic\QuicTls.h" />
+    <QtMoc Include="net\quic\QuicNatEndpoint.h" />
     <QtMoc Include="client\URLClient.h" />
     <QtMoc Include="httpcache\HttpCacheClient.h" />
     <QtMoc Include="httpcache\HttpCacheManager.h" />

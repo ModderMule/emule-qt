@@ -359,6 +359,11 @@ jobs:
             if (-not (Test-Path $lnk)) { throw "Shortcut missing: $lnk" }
           }
           if (Test-Path $request) { throw 'Import request written although no eMule config exists' }
+          # Copy for the daemon to share from Incoming; outside config\, which gets seeded.
+          $setupCopy = Join-Path $app "setup\eMuleQt-v$env:APP_VERSION-win64-setup.exe"
+          if (-not (Test-Path $setupCopy)) { throw "Setup copy missing: $setupCopy" }
+          if ((Get-Item $setupCopy).Length -ne (Get-Item $setup).Length) { throw 'Setup copy differs in size' }
+          if (Get-ChildItem (Join-Path $app 'config') -Recurse -Filter '*.exe') { throw 'An exe landed in config\' }
 
           & (Join-Path $app 'emuleqt-mcp.exe') --version
           if ($LASTEXITCODE -ne 0) { throw "installed emuleqt-mcp.exe --version exited with $LASTEXITCODE" }

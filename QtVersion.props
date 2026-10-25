@@ -10,4 +10,10 @@
     <EmuleBtDefines Condition="'$(EmuleBitTorrent)'=='true'">EMULE_HAVE_BITTORRENT=1;TORRENT_USE_OPENSSL;TORRENT_USE_LIBCRYPTO;TORRENT_SSL_PEERS;BOOST_ASIO_NO_DEPRECATED;BOOST_ASIO_ENABLE_CANCELIO;BOOST_SYSTEM_USE_UTF8;</EmuleBtDefines>
     <EmuleBtLibs Condition="'$(EmuleBitTorrent)'=='true'">emulebt.lib;torrent-rasterbar.lib;</EmuleBtLibs>
   </PropertyGroup>
+  <!-- QUIC NAT-T: always on, as CMake EMULE_QUIC_NATT. vcpkg ngtcp2[openssl],
+       dynamic on x64-windows: import libs, no NGTCP2_STATICLIB -->
+  <PropertyGroup Label="QuicNatT">
+    <EmuleQuicDefines>EMULE_HAVE_QUIC_NATT=1;</EmuleQuicDefines>
+    <EmuleQuicLibs>ngtcp2_crypto_ossl.lib;ngtcp2.lib;</EmuleQuicLibs>
+  </PropertyGroup>
 </Project>

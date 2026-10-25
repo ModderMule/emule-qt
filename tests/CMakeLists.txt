@@ -134,6 +134,17 @@ emule_add_test(tst_HttpFileDownload      FOLDER "Net")
 emule_add_test(tst_ClientUDPSocket       FOLDER "Net")
 emule_add_test(tst_NatRendezvous         FOLDER "Net")
 emule_add_test(tst_NatRendezvousPaths    FOLDER "Net")
+emule_add_test(tst_QuicNatProtocol       FOLDER "Net")
+emule_add_test(tst_QuicNatTransport      FOLDER "Net")
+set_tests_properties(tst_QuicNatTransport PROPERTIES TIMEOUT 120)
+# Manual interop driver against an ngtcp2 + GnuTLS peer over localhost UDP; not a CTest
+option(EMULE_QUIC_INTEROP_TEST "Build quic_interop_driver (manual QUIC NAT-T interop)" OFF)
+if(EMULE_QUIC_INTEROP_TEST AND EMULE_QUIC_NATT)
+    qt_add_executable(quic_interop_driver EXCLUDE_FROM_ALL
+        "${CMAKE_CURRENT_SOURCE_DIR}/interop/quic_interop_driver.cpp")
+    target_link_libraries(quic_interop_driver PRIVATE eMule::Core Qt6::Network)
+    set_target_properties(quic_interop_driver PROPERTIES FOLDER "Tests/Net")
+endif()
 emule_add_test(tst_TcpConnect            FOLDER "Net")
 set_tests_properties(tst_TcpConnect PROPERTIES TIMEOUT 30)
 
@@ -220,6 +231,7 @@ emule_add_test(tst_SafeKadFastKad    FOLDER "Kademlia")
 emule_add_test(tst_ConfigSeeding   FOLDER "Prefs" LIBRARIES yaml-cpp::yaml-cpp)
 emule_add_test(tst_Preferences     FOLDER "Prefs")
 emule_add_test(tst_LegacyConfigImport FOLDER "Prefs")
+emule_add_test(tst_InstallerCopy   FOLDER "Prefs")
 emule_add_test(tst_CategoryPrefs   FOLDER "Prefs")
 
 # Module 29s: Media & Preview

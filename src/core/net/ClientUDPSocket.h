@@ -101,6 +101,12 @@ public:
     /// Pre-built bytes sent as they are (eNode-go PR_NAT frames).
     bool sendRawDatagram(const QByteArray& data, const Endpoint& dest);
 
+    /// `0xB2 <type> <payload>` written now, past the throttled queue: the QUIC NAT-T
+    /// transport paces itself. @p cryptHash obfuscates for that user hash with random
+    /// padding (our public IP of the destination's family must be known). Owner thread.
+    bool sendNattFrameNow(uint8 type, const uint8* payload, size_t len, const Endpoint& to,
+                          const uint8* cryptHash);
+
     /// ThrottledControlSocket: send queued data up to bandwidth limit.
     SocketSentBytes sendControlData(uint32 maxNumberOfBytesToSend, uint32 minFragSize) override;
 
@@ -155,6 +161,7 @@ private slots:
     void flushSendQueue();
 
 private:
+    bool writeDatagramNow(const QByteArray& data, const Endpoint& to);
     void growReceiveBuffer();
 
     /// Filter, decrypt and dispatch one datagram. May throw — onReadyRead() catches.

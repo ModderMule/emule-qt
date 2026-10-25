@@ -3,6 +3,7 @@
 
 #include "TestHelpers.h"
 #include "net/EMSocket.h"
+#include "net/StreamTransport.h"
 #include "app/AppContext.h"
 #include "net/Packet.h"
 #include "transfer/UploadBandwidthThrottler.h"
@@ -23,7 +24,9 @@
 
 #include <array>
 #include <cstring>
+#include <atomic>
 #include <memory>
+#include <mutex>
 #include <thread>
 #include <vector>
 
@@ -112,6 +115,9 @@ private slots:
     void rawSend_wouldBlockMarksTheSocketBusy();
     void bigSendBuffer_isReadBack();
     void ownerThreadSend_isReportedToTheThrottler();
+    void transport_carriesPacketsBothWays();
+    void transport_backpressureMarksBusy();
+    void transport_lossReachesTheSocket();
 };
 
 /// Helper: write raw ED2K packet bytes to a socket.
@@ -162,6 +168,105 @@ constexpr std::size_t kBurstPackets = 80;                  ///< ~5.2 MB total, ~
     return QTest::qWaitFor([&sock] { return sock.bytesAvailable() >= expected; }, 15000)
         && sock.bytesAvailable() > 2'000'000;
 }
+
+} // namespace
+
+// ---------------------------------------------------------------------------
+// In-memory stream transport pair (stands in for a QUIC NAT-T link)
+// ---------------------------------------------------------------------------
+
+namespace {
+
+class PipeTransport final : public StreamTransport {
+public:
+    PipeTransport(Endpoint self, Endpoint peer) : m_self(self), m_peerEp(peer) {}
+    PipeTransport* peer = nullptr;
+    QObject context;
+    qint64 limit = 256 * 1024;
+
+    void setSink(StreamTransportSink* sink) override { m_sink = sink; }
+    [[nodiscard]] qint64 bytesAvailable() const override
+    {
+        std::lock_guard lock(m_mx);
+        return m_in.size();
+    }
+    qint64 read(char* data, qint64 maxLen) override
+    {
+        qint64 n;
+        {
+            std::lock_guard lock(m_mx);
+            if (m_in.isEmpty())
+                return m_closed ? -1 : 0;
+            n = std::min<qint64>(maxLen, m_in.size());
+            std::memcpy(data, m_in.constData(), static_cast<size_t>(n));
+            m_in.remove(0, n);
+        }
+        // the writer's bytes are "acked"
+        PipeTransport* w = peer;
+        QMetaObject::invokeMethod(&w->context, [w, n] {
+            if (w->m_sink)
+                w->m_sink->transportWritten(n);
+        }, Qt::QueuedConnection);
+        return n;
+    }
+    void close() override
+    {
+        m_sink = nullptr;
+        if (peer && !m_closed) {
+            m_closed = true;
+            PipeTransport* p = peer;
+            QMetaObject::invokeMethod(&p->context, [p] {
+                p->m_closed = true;
+                if (auto* s = std::exchange(p->m_sink, nullptr))
+                    s->transportLost(QAbstractSocket::RemoteHostClosedError, QStringLiteral("closed"));
+            }, Qt::QueuedConnection);
+        }
+    }
+    [[nodiscard]] Endpoint peerEndpoint() const override { return m_peerEp; }
+    [[nodiscard]] Endpoint localEndpoint() const override { return m_self; }
+    qint64 setSendBufferLimit(qint64 bytes) override { limit = std::max(limit, bytes); return limit; }
+    qint64 write(const char* data, qint64 len) override
+    {
+        if (m_closed)
+            return -1;
+        qint64 take;
+        {
+            std::lock_guard lock(peer->m_mx);
+            const qint64 room = limit - peer->m_in.size();
+            if (room <= 0)
+                return 0;
+            take = std::min(room, len);
+            peer->m_in.append(data, take);
+        }
+        PipeTransport* p = peer;
+        QMetaObject::invokeMethod(&p->context, [p] {
+            if (p->m_sink)
+                p->m_sink->transportReadable();
+        }, Qt::QueuedConnection);
+        return take;
+    }
+    [[nodiscard]] qint64 pendingSend() const override
+    {
+        std::lock_guard lock(peer->m_mx);
+        return peer->m_in.size();
+    }
+    [[nodiscard]] bool blocksWrite() const override { return pendingSend() >= limit; }
+
+private:
+    Endpoint m_self, m_peerEp;
+    StreamTransportSink* m_sink = nullptr;
+    mutable std::mutex m_mx;
+    QByteArray m_in;
+    std::atomic<bool> m_closed{false};
+};
+
+struct TransportPair {
+    Endpoint epA{Address::fromString(QStringLiteral("198.51.100.7")), 4672};
+    Endpoint epB{Address::fromString(QStringLiteral("203.0.113.40")), 5672};
+    std::shared_ptr<PipeTransport> a = std::make_shared<PipeTransport>(epA, epB);
+    std::shared_ptr<PipeTransport> b = std::make_shared<PipeTransport>(epB, epA);
+    TransportPair() { a->peer = b.get(); b->peer = a.get(); }
+};
 
 } // namespace
 
@@ -869,6 +974,86 @@ void tst_EMSocket::ownerThreadSend_isReportedToTheThrottler()
         QCOMPARE(throttler.getSentBytesSinceLastCallAndReset(), uint64{kPayload + sizeof(HeaderStruct)});
         QCOMPARE(throttler.getSentBytesOverheadSinceLastCallAndReset(), uint64{kPayload + sizeof(HeaderStruct)});
     }   // the socket goes before the throttler does
+}
+
+void tst_EMSocket::transport_carriesPacketsBothWays()
+{
+    TransportPair p;
+    TestEMSocket a, b;
+    QSignalSpy connected(&a, &QAbstractSocket::connected);
+    a.attachTransport(p.a, /*announce*/ true);
+    b.attachTransport(p.b, /*announce*/ false);
+    QCOMPARE(a.state(), QAbstractSocket::ConnectedState);
+    QCOMPARE(Address::fromQHostAddress(a.peerAddress()), p.epB.address());
+    QCOMPARE(a.peerPort(), p.epB.port());
+    QCOMPARE(a.socketDescriptor(), qintptr(-1));
+    QTRY_COMPARE(connected.count(), 1);
+    QTRY_VERIFY(a.isConnected());
+
+    const char hello[] = "hello over the stream";
+    auto pkt = std::make_unique<Packet>(OP_HELLO, uint32(sizeof(hello)), OP_EDONKEYPROT);
+    std::memcpy(pkt->pBuffer, hello, sizeof(hello));
+    a.sendPacket(std::move(pkt), true, 0, true);
+    QTRY_COMPARE_WITH_TIMEOUT(b.receivedPackets.size(), std::size_t(1), 3000);
+    QCOMPARE(b.receivedPackets[0].opcode, uint8(OP_HELLO));
+    QVERIFY(std::memcmp(b.receivedPackets[0].data.data(), hello, sizeof(hello)) == 0);
+
+    // file data from the throttler's thread
+    b.setConState(EMSState::Connected);   // an accepted socket is Connected once it reads
+    constexpr int kPackets = 32;
+    constexpr uint32 kPayload = 32 * 1024;
+    for (int i = 0; i < kPackets; ++i) {
+        auto part = std::make_unique<Packet>(OP_SENDINGPART, kPayload, OP_EDONKEYPROT);
+        std::memset(part->pBuffer, i, kPayload);
+        b.sendPacket(std::move(part), false, kPayload);
+    }
+    QTRY_VERIFY_WITH_TIMEOUT(([&] {
+        std::thread t([&] { (void)b.sendFileAndControlData(1 << 20, 1); });
+        t.join();
+        return a.receivedPackets.size() == std::size_t(kPackets);
+    }()), 10000);
+    QCOMPARE(uint8(a.receivedPackets.back().data[0]), uint8(kPackets - 1));
+}
+
+void tst_EMSocket::transport_backpressureMarksBusy()
+{
+    TransportPair p;
+    TestEMSocket a, b;
+    a.attachTransport(p.a, true);
+    b.attachTransport(p.b, false);
+    QTRY_VERIFY(a.isConnected());
+    a.setDownloadLimit(0);   // a reads nothing: b's queue fills
+    for (int i = 0; i < 40; ++i)
+        b.sendPacket(std::make_unique<Packet>(OP_SENDINGPART, 32 * 1024, OP_EDONKEYPROT), false, 32 * 1024);
+    b.setConState(EMSState::Connected);   // an accepted socket is Connected once it reads
+    bool blocked = false;
+    std::thread t([&] {
+        for (int i = 0; i < 50 && !blocked; ++i) {
+            const SocketSentBytes s = b.sendFileAndControlData(1 << 20, 1);
+            if (s.sentBytesStandardPackets == 0)
+                blocked = b.isBusyQuickCheck();
+        }
+    });
+    t.join();
+    QVERIFY(blocked);
+    QVERIFY(b.bytesToWrite() >= 256 * 1024);
+    a.disableDownloadLimit();
+    QTRY_VERIFY_WITH_TIMEOUT(!b.isBusyExtensiveCheck(), 5000);
+}
+
+void tst_EMSocket::transport_lossReachesTheSocket()
+{
+    TransportPair p;
+    TestEMSocket a, b;
+    a.attachTransport(p.a, true);
+    b.attachTransport(p.b, false);
+    QSignalSpy err(&b, &QAbstractSocket::errorOccurred);
+    QSignalSpy gone(&b, &QAbstractSocket::disconnected);
+    a.close();
+    QTRY_COMPARE(err.count(), 1);
+    QTRY_COMPARE(gone.count(), 1);
+    QCOMPARE(b.state(), QAbstractSocket::UnconnectedState);
+    QCOMPARE(b.lastErrorCode, int(QAbstractSocket::RemoteHostClosedError));
 }
 
 QTEST_MAIN(tst_EMSocket)

@@ -38,6 +38,9 @@ jobs:
       # stay buildable with it (no std::ranges::contains, std::print, ...).
       CC: gcc-12
       CXX: g++-12
+      # scripts/build-linux-deps.sh output; a container path, not runner.temp
+      # (that context is the host's path in a container job)
+      LINUX_DEPS: /opt/linux-deps
 
     steps:
       # Before checkout: without git it falls back to a tarball, without submodules
@@ -46,10 +49,10 @@ jobs:
           apt-get update
           apt-get install -y --no-install-recommends \
             ca-certificates curl file git squashfs-tools binutils \
-            gcc-12 g++-12 ninja-build ccache pkg-config \
+            gcc-12 g++-12 make perl ninja-build ccache pkg-config \
             python3 python3-pip python3-venv \
             protobuf-compiler \
-            libssl-dev zlib1g-dev \
+            zlib1g-dev \
             libgl1-mesa-dev libegl1-mesa-dev libvulkan-dev \
             libdbus-1-dev libglib2.0-dev libpulse-dev \
             libfontconfig1-dev libfreetype6-dev \
@@ -84,6 +87,20 @@ jobs:
           -m qthttpserver qtwebsockets qtmultimedia qtgrpc
           -O /opt/Qt
 
+      # OpenSSL 3.5 (shared) + ngtcp2 (static): 22.04's OpenSSL 3.0 has no QUIC
+      # TLS API, which the QUIC NAT-T transport needs. No apt libssl-dev on
+      # purpose: one OpenSSL in the build and in the tarball.
+      - name: Restore OpenSSL/ngtcp2
+        id: deps-cache
+        uses: actions/cache@v4
+        with:
+          path: ${{ env.LINUX_DEPS }}
+          key: linux-deps-ubuntu22.04-gcc12-${{ hashFiles('scripts/build-linux-deps.sh') }}
+
+      - name: Build OpenSSL/ngtcp2
+        if: steps.deps-cache.outputs.cache-hit != 'true'
+        run: scripts/build-linux-deps.sh "$LINUX_DEPS"
+
       - name: Set up ccache
         uses: hendrikmuhs/ccache-action@v1
         with:
@@ -93,7 +110,9 @@ jobs:
         run: >
           cmake -S . -B build -G Ninja
           -DCMAKE_BUILD_TYPE=Release
-          -DCMAKE_PREFIX_PATH="$QT_ROOT_DIR"
+          -DCMAKE_PREFIX_PATH="$QT_ROOT_DIR;$LINUX_DEPS"
+          -DOPENSSL_ROOT_DIR="$LINUX_DEPS"
+          -DOPENSSL_USE_STATIC_LIBS=OFF
           -DCMAKE_C_COMPILER_LAUNCHER=ccache
           -DCMAKE_CXX_COMPILER_LAUNCHER=ccache
           -DEMULE_BUILD_TESTS=OFF
@@ -125,7 +144,8 @@ jobs:
       - name: Bundle
         env:
           GLIBC_MAX: "2.35"   # Ubuntu 22.04, Linux Mint 21, Debian 12
-        run: scripts/bundle-linux.sh deploy-qt build
+        # ldd/linuxdeploy resolve libssl/libcrypto to the 3.5 build, not 22.04's 3.0
+        run: LD_LIBRARY_PATH="$LINUX_DEPS/lib" scripts/bundle-linux.sh deploy-qt build
 
       # The bundle script checks that the files are there; this checks that the
       # shipped bridge starts from the unpacked tarball with its bundled libs.
@@ -137,6 +157,13 @@ jobs:
           mkdir -p "$RUNNER_TEMP/verify"
           tar xzf build/eMuleQt-v*-linux-x86_64.tar.gz -C "$RUNNER_TEMP/verify"
           "$RUNNER_TEMP/verify/eMuleQt/emuleqt-mcp" --version
+          # QUIC NAT-T needs the bundled OpenSSL to be the 3.5 build (not cmp:
+          # linuxdeploy patches the rpath of what it bundles)
+          lib="$RUNNER_TEMP/verify/eMuleQt/lib"
+          grep -aq 'OpenSSL 3\.5\.' "$lib/libcrypto.so.3" \
+            || { echo "Error: bundled libcrypto.so.3 is not OpenSSL 3.5" >&2; exit 1; }
+          grep -aq SSL_set_quic_tls_cbs "$lib/libssl.so.3" \
+            || { echo "Error: bundled libssl.so.3 has no QUIC TLS API" >&2; exit 1; }
 
       - name: Upload artifact
         uses: actions/upload-artifact@v6

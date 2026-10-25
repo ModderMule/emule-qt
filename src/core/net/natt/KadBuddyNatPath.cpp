@@ -19,6 +19,7 @@ namespace eMule::natt {
 namespace {
 
 constexpr uint8 kTransportHintNone = 0;
+constexpr uint8 kTransportHintQuic = 2;
 
 bool isZeroHash(const uint8* p)
 {
@@ -87,7 +88,7 @@ void KadBuddyNatPath::sendEnvelope(Attempt& attempt)
     if (withTail) {
         pokeUInt32(out + 66, publicIP);      // self-reported; the buddy prefers what it sees
         pokeUInt16(out + 70, env().ourUdpPort());
-        out[72] = kTransportHintNone;        // ToDo: 2 (QUIC) once we speak it
+        out[72] = env().quicAvailable() ? kTransportHintQuic : kTransportHintNone;
     }
     attempt.lastRequestMs = env().now();
     ++attempt.requestCount;

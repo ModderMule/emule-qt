@@ -618,9 +618,10 @@
 #define KADHC_MAX_URL_LEN           256
 
 // CT_MOD_MISCOPTIONS (0xAA) bitfield.
-// Bits 1, 3 and 4 are taken by the compatibility target (uTP NAT traversal, serving-buddy
-// pull, QUIC NAT traversal) — do not reuse them even though we implement none of the three.
+// Bits 1, 3 and 4 are the compatibility target's (uTP NAT traversal, serving-buddy pull,
+// QUIC NAT traversal). We set bit 4 when the QUIC NAT-T transport runs; 1 and 3 never.
 #define MODMISC_EXTXS               (1u << 0)   // supports Extended Source Exchange
+#define MODMISC_NATT_QUIC           (1u << 4)   // speaks the QUIC NAT-T transport (0xB2/0x01)
 #define MODMISC_IPV6                (1u << 2)   // supports IPv6
 // "My ExtSX reader skips tags it does not recognise instead of discarding the whole answer."
 // That is what the tag format already mandates, but the compatibility target's reader appends
@@ -639,7 +640,9 @@
 #define CONNECT_OPT_CRYPT_REQUIRED      0x04
 #define CONNECT_OPT_DIRECT_UDP_CALLBACK 0x08
 #define CONNECT_OPT_NATT_ENDPOINT_HINT  0x20    // OP_RENDEZVOUS: buddy may answer with OP_NATT_ENDPOINT_HINT
-// 0x40 QUIC NAT-T and 0x80 uTP NAT-T belong to the compatibility target; not set until we speak QUIC.
+// The compatibility target's two NAT-T bits. We set 0x40 when the QUIC transport runs; 0x80 never.
+#define CONNECT_OPT_NATT_QUIC           0x40
+#define CONNECT_OPT_NATT_UTP            0x80
 
 // ST_IPV6_STATUS (0xAB, uint8) bitfield — server's verdict on our advertised IPv6 (OP_SERVERIDENT).
 // Unset bits mean "no"; the whole tag is omitted when the server has no verdict to report.

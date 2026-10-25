@@ -97,12 +97,17 @@ NatRendezvous::~NatRendezvous() = default;
 
 bool NatRendezvous::hasDataPath()
 {
-    return theApp.hasConfidentPublicIPv6();
+    return theApp.hasConfidentPublicIPv6() || quicAvailable();
+}
+
+bool NatRendezvous::quicAvailable()
+{
+    return theApp.natRendezvous && theApp.natRendezvous->m_env->quicAvailable();
 }
 
 bool NatRendezvous::hasDataPathNow() const
 {
-    return !m_env->ourPublicIPv6().isNull();
+    return !m_env->ourPublicIPv6().isNull() || m_env->quicAvailable();
 }
 
 void NatRendezvous::setPath(std::unique_ptr<NatPath> replacement)
@@ -323,6 +328,8 @@ void NatRendezvous::endpointKnown(Attempt& a, const Endpoint& udp, uint16 tcpPor
     sendPunch(a);
     if (!a.peerHandoffSeen)
         sendHandoff(a, false);
+    if (m_env->quicAvailable())
+        m_env->armQuic(a);
 
     if (!a.endpointReported) {
         a.endpointReported = true;
@@ -486,12 +493,17 @@ void NatRendezvous::sendHandoff(Attempt& a, bool answer)
 
 void NatRendezvous::evaluateDial(Attempt& a)
 {
-    if (a.finished || a.dialed || !a.peerHandoffSeen || a.awaitingInfo)
+    if (a.finished || a.dialed || a.awaitingInfo)
         return;
-    if (a.peerIPv6.isNull() || m_env->ourPublicIPv6().isNull()) {
-        // ToDo: hand the punched endpoint to the QUIC NAT-T transport instead of failing.
-        fail(a, QStringLiteral("no IPv6 on one side"));
-        return;
+    const bool v6Both = a.peerHandoffSeen && !a.peerIPv6.isNull() && !m_env->ourPublicIPv6().isNull();
+    if (!v6Both) {
+        if (m_env->quicAvailable()) {
+            evaluateQuicDial(a);
+            return;
+        }
+        if (a.peerHandoffSeen)
+            fail(a, QStringLiteral("no IPv6 on one side"));
+        return;   // a peer without the handoff: the timeout ends it
     }
     // A 30-byte 0x61 names the dialer (ed2k-server#39); both sides of such a pair obey it.
     if (a.serverRole == 1)
@@ -505,6 +517,37 @@ void NatRendezvous::evaluateDial(Attempt& a)
         a.dialAtMs = now + kRequesterDialDelay;
     else if (now >= a.dialAtMs && !m_env->peerConnected(a))
         dial(a);
+}
+
+void NatRendezvous::evaluateQuicDial(Attempt& a)
+{
+    // only once the punch has started: the peer's endpoint is known
+    if (a.state == Attempt::State::Requested || a.peerUdp.port() == 0)
+        return;
+    // the downloader dials (both peer stacks expect that); a 30-byte 0x61 may say otherwise
+    bool weDial = a.role == Role::Requester;
+    if (a.serverRole == 0)
+        weDial = true;
+    else if (a.serverRole == 1)
+        weDial = false;
+    const uint64 now = m_env->now();
+    if (a.quicDialAtMs == 0) {
+        const uint64 delay = !weDial ? kQuicTargetFallbackMs
+                           : (m_env->ourPublicIPv6().isNull() || a.peerSentNoAddress) ? kQuicDialDelayMs
+                                                                                       : kQuicDialDelayV6Ms;
+        a.quicDialAtMs = now + delay;
+        return;
+    }
+    if (now >= a.quicDialAtMs && !m_env->peerConnected(a) && !m_env->quicActive(a))
+        dialQuic(a);
+}
+
+void NatRendezvous::dialQuic(Attempt& a)
+{
+    a.dialed = true;
+    a.state = Attempt::State::Dialed;
+    logDebug(QStringLiteral("NAT-T: #%1 QUIC dialing %2").arg(a.id).arg(a.peerUdp.toString()));
+    m_env->dialPeerQuic(a);
 }
 
 void NatRendezvous::dial(Attempt& a)
@@ -547,13 +590,15 @@ void NatRendezvous::handlePeerPacket(uint8 opcode, const uint8* data, uint32 siz
 }
 
 void NatRendezvous::handleFrame(uint8 frameType, const uint8* data, uint32 size, const Endpoint& from,
-                                bool /*obfuscated*/)
+                                bool obfuscated)
 {
     if (!m_env->enabled())
         return;
-    if (frameType == OP_NATT_FRAME_IPV6HANDOFF)
+    if (frameType == OP_NATT_FRAME_IPV6HANDOFF) {
         handleHandoff(data, size, from);
-    // ToDo: OP_NATT_FRAME_QUIC / _CAPS / _CAPS_ACK / _KEY once the QUIC transport exists.
+        return;
+    }
+    m_env->handleQuicFrame(frameType, data, size, from, obfuscated);
 }
 
 void NatRendezvous::handleBuddyRelay(const Endpoint& requester, const uint8* data, uint32 size,
@@ -591,6 +636,8 @@ void NatRendezvous::handleHolePunch(const Endpoint& from)
         logDebug(QStringLiteral("NAT-T: #%1 peer port %2 -> %3")
                      .arg(a->id).arg(a->peerUdp.port()).arg(from.port()));
         a->peerUdp = from;
+        if (m_env->quicAvailable())
+            m_env->armQuic(*a);
     }
 }
 
