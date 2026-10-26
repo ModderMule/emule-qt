@@ -127,7 +127,8 @@ private slots:
     void theWizardLimitFieldsFollowTheLineAndTakeAnEdit();
     void theWizardNeedsANetwork();
     void theWizardHasTwoPages();
-    void theWizardBringsKadBackWithUdp();
+    void theWizardTicksKadWhileUdpIsOn();
+    void theWizardSetsAdvancedControls();
     void theWizardReportsTheRealPortMappingResult();
     void theWizardDoesNotWaitWithoutACore();
     void aPortChangeIsReportedAsItWasApplied();
@@ -580,6 +581,7 @@ struct WizardPrefsGuard {
     uint16 udpPort = thePrefs.udpPort();
     bool kad = thePrefs.kadEnabled();
     bool ed2k = thePrefs.networkED2K();
+    bool extControls = thePrefs.showExtControls();
 
     ~WizardPrefsGuard()
     {
@@ -591,6 +593,7 @@ struct WizardPrefsGuard {
         thePrefs.setUdpPort(udpPort);
         thePrefs.setKadEnabled(kad);
         thePrefs.setNetworkED2K(ed2k);
+        thePrefs.setShowExtControls(extControls);
     }
 };
 
@@ -845,29 +848,56 @@ void TestOptionsDialogSizing::theWizardHasTwoPages()
     QCOMPARE(speed.findChild<QStackedWidget*>()->currentIndex(), 1);
 }
 
-/// G47, the other direction: re-enabling UDP gives Kad its tick back.
-void TestOptionsDialogSizing::theWizardBringsKadBackWithUdp()
+/// The Display page's "Show more controls" switch, offered on the first page too.
+void TestOptionsDialogSizing::theWizardSetsAdvancedControls()
 {
     const WizardPrefsGuard guard;
     thePrefs.setKadEnabled(true);
-    thePrefs.setUdpPort(4672);
+    thePrefs.setNetworkED2K(true);
+    thePrefs.setShowExtControls(true);
 
     FirstStartWizard wizard(nullptr);
-    QCheckBox* kad = nullptr;
-    QCheckBox* udpOff = nullptr;
-    for (QCheckBox* b : wizard.findChildren<QCheckBox*>()) {
-        if (b->text() == QStringLiteral("Kad"))
-            kad = b;
-        if (b->text() == QStringLiteral("Disable"))
-            udpOff = b;
-    }
-    QVERIFY(kad && udpOff);
-    QVERIFY(kad->isChecked() && kad->isEnabled());
+    auto* ext = wizard.findChild<QCheckBox*>(QStringLiteral("wizardExtControls"));
+    QVERIFY(ext);
+    QVERIFY(ext->isChecked());
+    QVERIFY(ext->isVisibleTo(wizard.findChild<QStackedWidget*>()->widget(0)));
 
-    udpOff->setChecked(true);
-    QVERIFY(!kad->isChecked() && !kad->isEnabled());
-    udpOff->setChecked(false);
-    QVERIFY(kad->isChecked() && kad->isEnabled());
+    ext->setChecked(false);
+    walkToLastPage(wizard);
+    wizardButton(wizard, QStringLiteral("Finish"))->click();
+    QCOMPARE(wizard.appliedSettings().value(QStringLiteral("showExtControls")).toBool(true), false);
+    QVERIFY(!thePrefs.showExtControls());
+}
+
+/// G47, the other direction: with UDP on, Kad is free and follows its setting. UDP off is
+/// config-file only (udpPort: 0), so the wizard has no switch for it.
+void TestOptionsDialogSizing::theWizardTicksKadWhileUdpIsOn()
+{
+    const WizardPrefsGuard guard;
+    thePrefs.setUdpPort(4672);
+
+    QCheckBox* kad = nullptr;
+    const auto findKad = [&kad](const FirstStartWizard& wizard) {
+        kad = nullptr;
+        for (QCheckBox* b : wizard.findChildren<QCheckBox*>()) {
+            QVERIFY2(b->text() != QStringLiteral("Disable"), "UDP off has no GUI switch");
+            if (b->text() == QStringLiteral("Kad"))
+                kad = b;
+        }
+    };
+
+    thePrefs.setKadEnabled(true);
+    FirstStartWizard on(nullptr);
+    findKad(on);
+    QVERIFY(kad);
+    QVERIFY(kad->isEnabled() && kad->isChecked());
+    QVERIFY(kad->toolTip().isEmpty());
+
+    thePrefs.setKadEnabled(false);
+    FirstStartWizard off(nullptr);
+    findKad(off);
+    QVERIFY(kad);
+    QVERIFY(kad->isEnabled() && !kad->isChecked());
 }
 
 void TestOptionsDialogSizing::theWizardNeedsANetwork()

@@ -108,6 +108,8 @@ private slots:
 
 private:
     void editFilenameCleanups();
+    void setUdpOff(bool off);
+    [[nodiscard]] int udpPortValue() const;
     void setupSidebar();
     void setupPages();
     void setupButtons();
@@ -338,7 +340,7 @@ private:
     QSpinBox*  m_randomPortMinSpin = nullptr;
     QSpinBox*  m_randomPortMaxSpin = nullptr;
     QSpinBox*  m_udpPortSpin = nullptr;
-    QCheckBox* m_udpDisableCheck = nullptr;
+    bool       m_udpOff = false;   ///< udpPort 0 in the config file
     /// Bitmask for the portMapProtocols pref: 1 = PCP, 2 = NAT-PMP, 4 = UPnP.
     [[nodiscard]] quint32 portMapProtocolMask() const;
 

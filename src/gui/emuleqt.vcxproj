@@ -334,6 +334,7 @@
     <ClInclude Include="dialogs\FileDetailsMerge.h" />
     <ClInclude Include="dialogs\CollectionCategory.h" />
     <ClInclude Include="dialogs\PortTest.h" />
+    <ClInclude Include="dialogs\RouterPage.h" />
     <ClInclude Include="controls\SortArrowStyle.h" />
     <ClInclude Include="controls\FitTextTabBar.h" />
     <ClInclude Include="controls\BarShader.h" />

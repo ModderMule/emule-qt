@@ -1209,8 +1209,13 @@ void MainWindow::onFirstTimeWizard()
     m_firstStartWizard = new FirstStartWizard(m_ipc, this);
     m_firstStartWizard->setAttribute(Qt::WA_DeleteOnClose);
     // Once is once: cancelling counts, as in MFC. Tools > wizard reopens it.
-    connect(m_firstStartWizard, &QDialog::finished, this, [this] {
+    connect(m_firstStartWizard, &QDialog::finished, this, [this](int result) {
         theUiState.setFirstStartWizardDone(true);
+        // Lists built on the old showExtControls pick up the wizard's choice
+        if (result == QDialog::Accepted) {
+            m_transferPanel->applyDisplayOptions();
+            m_sharedFilesPanel->applyDisplayOptions();
+        }
         // A core launched for the wizard waits with its auto-connect. Sent after the
         // wizard's SetPreferences, so the ports are rebound first. No-op otherwise.
         if (m_ipc && m_ipc->isConnected())

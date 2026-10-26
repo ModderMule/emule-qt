@@ -720,7 +720,7 @@ Hat Kommentare</translation>
         <translation type="vanished">%1 Bytes</translation>
     </message>
     <message>
-        <location filename="../src/gui/dialogs/OptionsDialog.cpp" line="+3314"/>
+        <location filename="../src/gui/dialogs/OptionsDialog.cpp" line="+3306"/>
         <source>Test</source>
         <translation>Test</translation>
     </message>
@@ -3618,12 +3618,22 @@ Hochgeladen:	%12</translation>
 <context>
     <name>eMule::FirstStartWizard</name>
     <message>
-        <location filename="../src/gui/dialogs/FirstStartWizard.cpp" line="+61"/>
+        <location filename="../src/gui/dialogs/FirstStartWizard.cpp" line="+62"/>
         <source>eMule First Runtime Wizard</source>
         <translation>eMule Erststart-Assistent</translation>
     </message>
     <message>
-        <location line="+357"/>
+        <location line="+214"/>
+        <source>Show more controls (advanced mode controls)</source>
+        <translation>Mehr Steuerelemente anzeigen (erweiterte Steuerelemente)</translation>
+    </message>
+    <message>
+        <location line="+3"/>
+        <source>Shows advanced entries in context menus and extra details in lists.</source>
+        <translation>Zeigt erweiterte Einträge in Kontextmenüs und zusätzliche Details in Listen.</translation>
+    </message>
+    <message>
+        <location line="+147"/>
         <source>Ports and Connection</source>
         <translation>Ports und Verbindung</translation>
     </message>
@@ -3633,13 +3643,13 @@ Hochgeladen:	%12</translation>
         <translation>Verbindung</translation>
     </message>
     <message>
-        <location line="-266"/>
+        <location line="-273"/>
         <source>eMule uses two ports for communication with servers and clients. These ports must be free and available for remote clients. The TCP port must be available to ensure the main functionality of eMule. The UDP port is used for Kad (serverless network) and to reduce network usage (Overhead).</source>
         <translation>eMule verwendet zwei Ports für die Kommunikation mit Servern und Clients. Diese Ports müssen frei und für entfernte Clients verfügbar sein. Der TCP-Port muss verfügbar sein, um die Hauptfunktionalität von eMule sicherzustellen. Der UDP-Port wird für Kad (serverloses Netzwerk) und zur Reduzierung der Netzwerknutzung (Overhead) verwendet.</translation>
     </message>
     <message>
         <location line="-101"/>
-        <location line="+301"/>
+        <location line="+308"/>
         <source>Unlimited</source>
         <translation>Unbegrenzt</translation>
     </message>
@@ -3688,7 +3698,7 @@ If your ISP tries throttle or block eMule, enabling obfuscation will help to cir
 Falls der Internetanbieter eMule drosselt oder blockiert, hilft die Verschleierung, solche Einschränkungen zu umgehen.</translation>
     </message>
     <message>
-        <location line="-187"/>
+        <location line="-194"/>
         <source>You can change the ports here while no network activities have started.</source>
         <translation>Sie können die Ports hier ändern, solange keine Netzwerkaktivitäten gestartet wurden.</translation>
     </message>
@@ -3703,17 +3713,16 @@ Falls der Internetanbieter eMule drosselt oder blockiert, hilft die Verschleieru
         <translation>UDP:</translation>
     </message>
     <message>
-        <location line="+3"/>
         <source>Disable</source>
-        <translation>Deaktivieren</translation>
+        <translation type="vanished">Deaktivieren</translation>
     </message>
     <message>
-        <location line="+6"/>
+        <location line="+4"/>
         <source>Use UPnP to Setup Ports</source>
         <translation>UPnP zur Porteinrichtung verwenden</translation>
     </message>
     <message>
-        <location line="+46"/>
+        <location line="+45"/>
         <source>Here you can test, if your TCP and UDP port can be connected to from remote. This success of this test is required for servers and clients to connect you. The TCP port have to succeed!</source>
         <translation>Hier lässt sich prüfen, ob der TCP- und der UDP-Port von außen erreichbar sind. Der Test muss gelingen, damit Server und Clients eine Verbindung aufbauen können. Der TCP-Port muss erreichbar sein!</translation>
     </message>
@@ -3723,7 +3732,17 @@ Falls der Internetanbieter eMule drosselt oder blockiert, hilft die Verschleieru
         <translation>Ports testen</translation>
     </message>
     <message>
-        <location line="+14"/>
+        <location line="+3"/>
+        <source>Open Router</source>
+        <translation>Router öffnen</translation>
+    </message>
+    <message>
+        <location line="+2"/>
+        <source>Opens the web page of this computer&apos;s router, where ports are forwarded</source>
+        <translation>Öffnet die Webseite des Routers dieses Computers, auf der Ports weitergeleitet werden</translation>
+    </message>
+    <message>
+        <location line="+17"/>
         <source>Choose which Network(s) you want to use</source>
         <translation>Wählen Sie die zu verwendenden Netzwerke</translation>
     </message>
@@ -3746,7 +3765,7 @@ Falls der Internetanbieter eMule drosselt oder blockiert, hilft die Verschleieru
         <translation type="vanished">Ohne diese Funktion verbindet sich eMule etwas schneller mit Servern, es kann aber häufiger zu falschen LowID-Verbindungen kommen.</translation>
     </message>
     <message>
-        <location line="+31"/>
+        <location line="+36"/>
         <source>Select your internet connection. eMule derives its download and upload limits from it, leaving room for your other applications. You can change the limits at any time in the Options.</source>
         <translation>Wählen Sie Ihren Internetanschluss. eMule leitet daraus seine Download- und Upload-Limits ab und lässt Ihren anderen Anwendungen genug Bandbreite. Sie können die Limits jederzeit in den Optionen ändern.</translation>
     </message>
@@ -3833,6 +3852,16 @@ Falls der Internetanbieter eMule drosselt oder blockiert, hilft die Verschleieru
         <translation>Weiter &gt;</translation>
     </message>
     <message>
+        <location line="+34"/>
+        <source>UDP is disabled in the config file (udpPort: 0)</source>
+        <translation>UDP ist in der Konfigurationsdatei deaktiviert (udpPort: 0)</translation>
+    </message>
+    <message>
+        <location line="+6"/>
+        <source>Kad needs UDP, which is disabled in the config file</source>
+        <translation>Kad benötigt UDP, das in der Konfigurationsdatei deaktiviert ist</translation>
+    </message>
+    <message>
         <source>Welcome to eMule</source>
         <translation type="vanished">Willkommen bei eMule</translation>
     </message>
@@ -3865,7 +3894,7 @@ Falls der Internetanbieter eMule drosselt oder blockiert, hilft die Verschleieru
         <translation type="vanished">Verschleierung</translation>
     </message>
     <message>
-        <location line="-3"/>
+        <location line="-43"/>
         <source>Connection Speed</source>
         <translation>Verbindungsgeschwindigkeit</translation>
     </message>
@@ -4841,12 +4870,12 @@ Bitte wählen Sie einen anderen:</translation>
     </message>
     <message>
         <location line="+8"/>
-        <location line="+1355"/>
+        <location line="+1360"/>
         <source>eD2K: Disconnected</source>
         <translation>eD2K: Getrennt</translation>
     </message>
     <message>
-        <location line="-1297"/>
+        <location line="-1302"/>
         <source>Kad: Connected</source>
         <translation>Kad: Verbunden</translation>
     </message>
@@ -4862,12 +4891,12 @@ Bitte wählen Sie einen anderen:</translation>
     </message>
     <message>
         <location line="+4"/>
-        <location line="+1289"/>
+        <location line="+1294"/>
         <source>Kad: Disconnected</source>
         <translation>Kad: Getrennt</translation>
     </message>
     <message>
-        <location line="-1279"/>
+        <location line="-1284"/>
         <source>Users: %1 | Files: %2</source>
         <translation>Benutzer: %1 | Dateien: %2</translation>
     </message>
@@ -5192,7 +5221,7 @@ Aktivieren Sie sie unter Optionen → Weboberfläche und versuchen Sie es erneut
         <translation>Optionen öffnen</translation>
     </message>
     <message>
-        <location line="+191"/>
+        <location line="+196"/>
         <source>Main</source>
         <translation>Hauptfenster</translation>
     </message>
@@ -6555,36 +6584,36 @@ Erneut herunterladen?</translation>
 <context>
     <name>eMule::OptionsDialog</name>
     <message>
-        <location filename="../src/gui/dialogs/OptionsDialog.cpp" line="-3203"/>
+        <location filename="../src/gui/dialogs/OptionsDialog.cpp" line="-3195"/>
         <source>Options</source>
         <translation>Optionen</translation>
     </message>
     <message>
         <location line="+61"/>
-        <location line="+2117"/>
+        <location line="+2109"/>
         <source>OK</source>
         <translation>OK</translation>
     </message>
     <message>
-        <location line="-2116"/>
-        <location line="+2117"/>
+        <location line="-2108"/>
+        <location line="+2109"/>
         <source>Cancel</source>
         <translation>Abbrechen</translation>
     </message>
     <message>
-        <location line="-2116"/>
-        <location line="+5970"/>
+        <location line="-2108"/>
+        <location line="+5962"/>
         <source>Apply</source>
         <translation>Übernehmen</translation>
     </message>
     <message>
-        <location line="-5969"/>
+        <location line="-5961"/>
         <source>Help</source>
         <translation>Hilfe</translation>
     </message>
     <message>
-        <location line="+271"/>
-        <location line="+2113"/>
+        <location line="+270"/>
+        <location line="+2106"/>
         <location line="+59"/>
         <location line="+6"/>
         <location line="+4"/>
@@ -6596,7 +6625,7 @@ Erneut herunterladen?</translation>
         <translation>IP-Filter</translation>
     </message>
     <message>
-        <location line="-2227"/>
+        <location line="-2220"/>
         <source>IP filter reloaded: %1 entries.</source>
         <translation>IP-Filter neu geladen: %1 Einträge.</translation>
     </message>
@@ -6627,18 +6656,18 @@ Erneut herunterladen?</translation>
     </message>
     <message>
         <location line="+8"/>
-        <location line="+5867"/>
+        <location line="+5860"/>
         <source>Language</source>
         <translation>Sprache</translation>
     </message>
     <message>
-        <location line="-5864"/>
+        <location line="-5857"/>
         <source>System Default</source>
         <translation>Systemstandard</translation>
     </message>
     <message>
         <location line="+14"/>
-        <location line="+768"/>
+        <location line="+761"/>
         <location line="+384"/>
         <location line="+464"/>
         <location line="+298"/>
@@ -6646,7 +6675,7 @@ Erneut herunterladen?</translation>
         <translation>Verschiedenes</translation>
     </message>
     <message>
-        <location line="-1911"/>
+        <location line="-1904"/>
         <source>Bring to front on link click</source>
         <translation>Bei Linkklick in den Vordergrund</translation>
     </message>
@@ -6732,25 +6761,25 @@ Erneut herunterladen?</translation>
     </message>
     <message>
         <location line="+8"/>
-        <location line="+5803"/>
+        <location line="+5796"/>
         <source>Core</source>
         <translation>Kern</translation>
     </message>
     <message>
-        <location line="-5798"/>
+        <location line="-5791"/>
         <source>Address:</source>
         <translation>Adresse:</translation>
     </message>
     <message>
         <location line="+4"/>
-        <location line="+1343"/>
+        <location line="+1336"/>
         <location line="+770"/>
         <location line="+427"/>
         <source>Port:</source>
         <translation>Port:</translation>
     </message>
     <message>
-        <location line="-2537"/>
+        <location line="-2530"/>
         <source>authentication token</source>
         <translation>Authentifizierungstoken</translation>
     </message>
@@ -6915,7 +6944,7 @@ Möchten Sie wirklich fortfahren?</translation>
     </message>
     <message>
         <location line="+2"/>
-        <location line="+1854"/>
+        <location line="+1847"/>
         <location line="+133"/>
         <location line="+296"/>
         <location line="+1016"/>
@@ -6928,7 +6957,7 @@ Möchten Sie wirklich fortfahren?</translation>
         <translation>Aktiviert</translation>
     </message>
     <message>
-        <location line="-4940"/>
+        <location line="-4933"/>
         <source>Reset</source>
         <translation>Zurücksetzen</translation>
     </message>
@@ -6945,24 +6974,24 @@ Möchten Sie wirklich fortfahren?</translation>
     <message>
         <location line="+3"/>
         <location line="+6"/>
-        <location line="+4314"/>
+        <location line="+4307"/>
         <location line="+352"/>
         <source> KB/s</source>
         <translation> KB/s</translation>
     </message>
     <message>
-        <location line="-4669"/>
+        <location line="-4662"/>
         <source>Upload</source>
         <translation>Upload</translation>
     </message>
     <message>
         <location line="+9"/>
-        <location line="+4302"/>
+        <location line="+4295"/>
         <source>Limits</source>
         <translation>Begrenzungen</translation>
     </message>
     <message>
-        <location line="-4299"/>
+        <location line="-4292"/>
         <source>Download limit</source>
         <translation>Download-Begrenzung</translation>
     </message>
@@ -6997,23 +7026,21 @@ Möchten Sie wirklich fortfahren?</translation>
         <translation>UDP</translation>
     </message>
     <message>
-        <location line="+4"/>
         <source>Disable</source>
-        <translation>Deaktivieren</translation>
+        <translation type="vanished">Deaktivieren</translation>
     </message>
     <message>
-        <location line="+3"/>
+        <location line="+5"/>
         <source>Test Ports</source>
         <translation>Ports testen</translation>
     </message>
     <message>
         <location line="+4"/>
-        <location line="+6987"/>
         <source>Open Router</source>
         <translation>Router öffnen</translation>
     </message>
     <message>
-        <location line="-6986"/>
+        <location line="+1"/>
         <source>Opens the web page of this computer&apos;s router, where ports are forwarded</source>
         <translation>Öffnet die Webseite des Routers dieses Computers, auf der Ports weitergeleitet werden</translation>
     </message>
@@ -7044,13 +7071,13 @@ Möchten Sie wirklich fortfahren?</translation>
     </message>
     <message>
         <location line="+4"/>
-        <location line="+1725"/>
-        <location line="+5345"/>
+        <location line="+1720"/>
+        <location line="+5301"/>
         <source>Any</source>
         <translation>Alle</translation>
     </message>
     <message>
-        <location line="-7068"/>
+        <location line="-7019"/>
         <source>Use only this network interface, for example a VPN tunnel. Pick one from the list, or type an IP address or a subnet such as 10.64.0.0/10 (the interface holding an address in it). Connections through a proxy are not bound.</source>
         <translation>Nur diese Netzwerkschnittstelle verwenden, zum Beispiel einen VPN-Tunnel. Wählen Sie eine aus der Liste oder geben Sie eine IP-Adresse oder ein Subnetz wie 10.64.0.0/10 ein (die Schnittstelle, die eine Adresse daraus besitzt). Verbindungen über einen Proxy werden nicht gebunden.</translation>
     </message>
@@ -7135,7 +7162,7 @@ Möchten Sie wirklich fortfahren?</translation>
         <translation>Verbindungen zu IPv6-Peers und -Servern über die wechselnde temporäre Adresse (RFC 4941) herstellen. Aus: immer die stabile Adresse verwenden, damit Peers die angekündigte Adresse erreichen.</translation>
     </message>
     <message>
-        <location line="+62"/>
+        <location line="+57"/>
         <location line="+1543"/>
         <source>General</source>
         <translation>Allgemein</translation>
@@ -7980,7 +8007,7 @@ Jede Regel ersetzt ein Regex-Muster durch eine Ersetzungszeichenkette.</translat
         <translation>Upload-Plätze (ohne Overhead)</translation>
     </message>
     <message>
-        <location line="-1802"/>
+        <location line="-1795"/>
         <source>Country flags (IP2Country)</source>
         <translation>Landesflaggen (IP2Country)</translation>
     </message>
@@ -8030,7 +8057,7 @@ Jede Regel ersetzt ein Regex-Muster durch eine Ersetzungszeichenkette.</translat
         <translation type="vanished">Benötigt ein kostenloses &lt;a href=&quot;https://www.maxmind.com/en/geolite2/signup&quot;&gt;MaxMind-GeoLite2&lt;/a&gt;-Konto. Dieses Produkt enthält GeoLite2-Daten von MaxMind.</translation>
     </message>
     <message>
-        <location line="+418"/>
+        <location line="+411"/>
         <source>Use for news servers</source>
         <translation>Für News-Server verwenden</translation>
     </message>
@@ -8534,7 +8561,7 @@ Jede Usenet-Verbindung läuft dann über den Proxy, seine Geschwindigkeit begren
         <translation>Streng</translation>
     </message>
     <message>
-        <location line="-2791"/>
+        <location line="-2784"/>
         <source>BitTorrent</source>
         <translation>BitTorrent</translation>
     </message>
@@ -8594,7 +8621,7 @@ Jede Usenet-Verbindung läuft dann über den Proxy, seine Geschwindigkeit begren
         <translation>Textgröße von Listen, Menüs und Dialogen. Wirkt nach einem Neustart.</translation>
     </message>
     <message>
-        <location line="+502"/>
+        <location line="+495"/>
         <source>Connect Low ID to Low ID through server or Kad buddy (NAT traversal)</source>
         <translation>Low-ID mit Low-ID über Server oder Kad-Buddy verbinden (NAT-Traversal)</translation>
     </message>
@@ -9693,36 +9720,41 @@ Einen später hinzuzufügen holt nicht dessen Bestand: ein neuer Indexer bekommt
         <translation>Downloads werden immer geprüft und protokolliert. Freigegebene Dateien werden bei jedem Start erneut geprüft.</translation>
     </message>
     <message>
-        <location line="+2426"/>
-        <source>A VPN seems to be active (%1). Incoming connections then arrive through the VPN, so port forwarding on your router does not help. Forward the ports at your VPN provider instead, if it offers port forwarding.</source>
-        <translation>Ein VPN scheint aktiv zu sein (%1). Eingehende Verbindungen kommen dann über das VPN an, daher hilft eine Portweiterleitung am Router nicht. Leite die Ports stattdessen beim VPN-Anbieter weiter, falls er Portweiterleitung anbietet.</translation>
+        <location line="+2807"/>
+        <source>UDP is disabled in the config file (udpPort: 0)</source>
+        <translation>UDP ist in der Konfigurationsdatei deaktiviert (udpPort: 0)</translation>
     </message>
     <message>
-        <location line="+5"/>
+        <location line="+3"/>
+        <source>Kad needs UDP, which is disabled in the config file</source>
+        <translation>Kad benötigt UDP, das in der Konfigurationsdatei deaktiviert ist</translation>
+    </message>
+    <message>
+        <source>A VPN seems to be active (%1). Incoming connections then arrive through the VPN, so port forwarding on your router does not help. Forward the ports at your VPN provider instead, if it offers port forwarding.</source>
+        <translation type="vanished">Ein VPN scheint aktiv zu sein (%1). Eingehende Verbindungen kommen dann über das VPN an, daher hilft eine Portweiterleitung am Router nicht. Leite die Ports stattdessen beim VPN-Anbieter weiter, falls er Portweiterleitung anbietet.</translation>
+    </message>
+    <message>
         <source>Could not find your router&apos;s address.
 
 Look up the &quot;default gateway&quot; in this computer&apos;s network settings and open that address in a web browser.</source>
-        <translation>Die Adresse deines Routers wurde nicht gefunden.
+        <translation type="vanished">Die Adresse deines Routers wurde nicht gefunden.
 
 Suche das „Standard-Gateway“ in den Netzwerkeinstellungen dieses Computers und öffne diese Adresse in einem Webbrowser.</translation>
     </message>
     <message>
-        <location line="+16"/>
         <source>Could not open %1 in the default browser.</source>
-        <translation>%1 konnte nicht im Standardbrowser geöffnet werden.</translation>
+        <translation type="vanished">%1 konnte nicht im Standardbrowser geöffnet werden.</translation>
     </message>
     <message>
-        <location line="+9"/>
         <source>Your router is at %1.</source>
-        <translation>Dein Router ist unter %1 erreichbar.</translation>
+        <translation type="vanished">Dein Router ist unter %1 erreichbar.</translation>
     </message>
     <message>
-        <location line="+1"/>
         <source>Open Router Page</source>
-        <translation>Router-Seite öffnen</translation>
+        <translation type="vanished">Router-Seite öffnen</translation>
     </message>
     <message>
-        <location line="+327"/>
+        <location line="-70"/>
         <location line="+52"/>
         <source>Directories</source>
         <translation>Verzeichnisse</translation>
@@ -9793,7 +9825,7 @@ Jetzt anlegen?</translation>
 %1</translation>
     </message>
     <message>
-        <location line="-3186"/>
+        <location line="-3142"/>
         <location line="+153"/>
         <source>Disabled</source>
         <translation>Deaktiviert</translation>
@@ -9819,7 +9851,7 @@ Jetzt anlegen?</translation>
         <translation>Die Änderung der Schriftgröße wird nach einem Neustart der Anwendung wirksam.</translation>
     </message>
     <message>
-        <location line="+1083"/>
+        <location line="+1080"/>
         <source>specialdlp loaded, DLP v%1</source>
         <translation>specialdlp geladen, DLP v%1</translation>
     </message>
@@ -9829,7 +9861,7 @@ Jetzt anlegen?</translation>
         <translation>specialdlp-Bibliothek nicht gefunden, Prüfungen sind inaktiv</translation>
     </message>
     <message>
-        <location line="+728"/>
+        <location line="+687"/>
         <source>Automatic</source>
         <translation>Automatisch</translation>
     </message>
@@ -9843,7 +9875,7 @@ Jetzt anlegen?</translation>
         <translation type="vanished">eD2K-Links nur während der Laufzeit automatisch übernehmen</translation>
     </message>
     <message>
-        <location line="-2932"/>
+        <location line="-2888"/>
         <source>Use credit system (reward uploaders)</source>
         <translation>Kreditsystem verwenden (Uploader belohnen)</translation>
     </message>
@@ -9867,12 +9899,12 @@ Jetzt anlegen?</translation>
         <translation>Server- und Client-LAN-IPs filtern</translation>
     </message>
     <message>
-        <location line="-4615"/>
+        <location line="-4608"/>
         <source>Show more controls (advanced mode controls)</source>
         <translation>Mehr Steuerelemente anzeigen (erweiterte Steuerelemente)</translation>
     </message>
     <message>
-        <location line="+4618"/>
+        <location line="+4611"/>
         <source>Disable A4AF checks to save CPU</source>
         <translation>A4AF-Prüfungen deaktivieren um CPU zu sparen</translation>
     </message>
@@ -10188,7 +10220,7 @@ Verbindungen zu News-Servern wechseln sofort.</translation>
         <translation>Die .nzb-Dateizuordnung konnte nicht aktualisiert werden: %1</translation>
     </message>
     <message>
-        <location line="+688"/>
+        <location line="+644"/>
         <source>Port forwarding: %1</source>
         <translation>Portweiterleitung: %1</translation>
     </message>
@@ -10243,17 +10275,17 @@ Verbindungen zu News-Servern wechseln sofort.</translation>
         <translation>Auf Standard zurücksetzen</translation>
     </message>
     <message>
-        <location line="-5132"/>
+        <location line="-5088"/>
         <location line="+1019"/>
         <location line="+154"/>
         <location line="+1480"/>
         <location line="+316"/>
-        <location line="+2161"/>
+        <location line="+2117"/>
         <source>Remove</source>
         <translation>Entfernen</translation>
     </message>
     <message>
-        <location line="-6361"/>
+        <location line="-6317"/>
         <source>New eMule Qt version detected</source>
         <translation>Neue eMule-Qt-Version erkannt</translation>
     </message>
@@ -10330,12 +10362,12 @@ Verbindungen zu News-Servern wechseln sofort.</translation>
         <translation> s</translation>
     </message>
     <message>
-        <location line="-4946"/>
+        <location line="-4939"/>
         <source>Downloads that are receiving data, and the sources sending it, are drawn in bold. A source listed under another file (A4AF) is bold too while it transfers. The connected server and the selected category tab are bold as well.</source>
         <translation>Downloads, die Daten empfangen, und die Quellen, die sie senden, werden fett dargestellt. Eine Quelle unter einer anderen Datei (A4AF) ist ebenfalls fett, solange sie überträgt. Auch der verbundene Server und der gewählte Kategorie-Tab sind fett.</translation>
     </message>
     <message>
-        <location line="+1017"/>
+        <location line="+1010"/>
         <source>Rename downloads to the name most sources use</source>
         <translation>Downloads nach dem Namen der meisten Quellen umbenennen</translation>
     </message>
@@ -10504,7 +10536,7 @@ Stellen Sie den Wert etwas unter Ihren Tarif. Die Menge wird hier gemessen und l
         <location line="+1019"/>
         <location line="+154"/>
         <location line="+1753"/>
-        <location line="+2199"/>
+        <location line="+2155"/>
         <source>Add</source>
         <translation>Hinzufügen</translation>
     </message>
@@ -10517,7 +10549,7 @@ Stellen Sie den Wert etwas unter Ihren Tarif. Die Menge wird hier gemessen und l
         <translation type="vanished">Wert eingeben:</translation>
     </message>
     <message>
-        <location line="-2162"/>
+        <location line="-2118"/>
         <source>Edit Value</source>
         <translation>Wert bearbeiten</translation>
     </message>
@@ -10689,6 +10721,43 @@ Starten Sie eMule neu, damit alle Verbindungen die neuen Proxy-Einstellungen ver
         <location line="+10"/>
         <source>Image %1 of %2</source>
         <translation>Bild %1 von %2</translation>
+    </message>
+</context>
+<context>
+    <name>eMule::RouterPage</name>
+    <message>
+        <location filename="../src/gui/dialogs/RouterPage.h" line="+30"/>
+        <source>Open Router</source>
+        <translation>Router öffnen</translation>
+    </message>
+    <message>
+        <location line="+3"/>
+        <source>A VPN seems to be active (%1). Incoming connections then arrive through the VPN, so port forwarding on your router does not help. Forward the ports at your VPN provider instead, if it offers port forwarding.</source>
+        <translation>Ein VPN scheint aktiv zu sein (%1). Eingehende Verbindungen kommen dann über das VPN an, daher hilft eine Portweiterleitung am Router nicht. Leite die Ports stattdessen beim VPN-Anbieter weiter, falls er Portweiterleitung anbietet.</translation>
+    </message>
+    <message>
+        <location line="+5"/>
+        <source>Could not find your router&apos;s address.
+
+Look up the &quot;default gateway&quot; in this computer&apos;s network settings and open that address in a web browser.</source>
+        <translation>Die Adresse deines Routers wurde nicht gefunden.
+
+Suche das „Standard-Gateway“ in den Netzwerkeinstellungen dieses Computers und öffne diese Adresse in einem Webbrowser.</translation>
+    </message>
+    <message>
+        <location line="+16"/>
+        <source>Could not open %1 in the default browser.</source>
+        <translation>%1 konnte nicht im Standardbrowser geöffnet werden.</translation>
+    </message>
+    <message>
+        <location line="+9"/>
+        <source>Your router is at %1.</source>
+        <translation>Dein Router ist unter %1 erreichbar.</translation>
+    </message>
+    <message>
+        <location line="+1"/>
+        <source>Open Router Page</source>
+        <translation>Router-Seite öffnen</translation>
     </message>
 </context>
 <context>

@@ -438,6 +438,9 @@
     <ClInclude Include="dialogs\PortTest.h">
       <Filter>Header Files</Filter>
     </ClInclude>
+    <ClInclude Include="dialogs\RouterPage.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
     <ClInclude Include="utils\NotifierText.h">
       <Filter>Header Files</Filter>
     </ClInclude>

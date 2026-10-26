@@ -715,7 +715,7 @@ Has comments</source>
         <translation type="vanished">%1 Bytes</translation>
     </message>
     <message>
-        <location filename="../src/gui/dialogs/OptionsDialog.cpp" line="+3314"/>
+        <location filename="../src/gui/dialogs/OptionsDialog.cpp" line="+3306"/>
         <source>Test</source>
         <translation>测试</translation>
     </message>
@@ -3604,12 +3604,22 @@ ED2K 哈希：	%2
 <context>
     <name>eMule::FirstStartWizard</name>
     <message>
-        <location filename="../src/gui/dialogs/FirstStartWizard.cpp" line="+61"/>
+        <location filename="../src/gui/dialogs/FirstStartWizard.cpp" line="+62"/>
         <source>eMule First Runtime Wizard</source>
         <translation>eMule 首次运行向导</translation>
     </message>
     <message>
-        <location line="+357"/>
+        <location line="+214"/>
+        <source>Show more controls (advanced mode controls)</source>
+        <translation>显示更多控件（高级模式控件）</translation>
+    </message>
+    <message>
+        <location line="+3"/>
+        <source>Shows advanced entries in context menus and extra details in lists.</source>
+        <translation>在右键菜单中显示高级项目，并在列表中显示更多详细信息。</translation>
+    </message>
+    <message>
+        <location line="+147"/>
         <source>Ports and Connection</source>
         <translation>端口和连接</translation>
     </message>
@@ -3619,13 +3629,13 @@ ED2K 哈希：	%2
         <translation>连接</translation>
     </message>
     <message>
-        <location line="-266"/>
+        <location line="-273"/>
         <source>eMule uses two ports for communication with servers and clients. These ports must be free and available for remote clients. The TCP port must be available to ensure the main functionality of eMule. The UDP port is used for Kad (serverless network) and to reduce network usage (Overhead).</source>
         <translation>eMule 使用两个端口与服务器和客户端通信。这些端口必须空闲并对远程客户端可用。TCP 端口必须可用以确保 eMule 的主要功能。UDP 端口用于 Kad（无服务器网络）和减少网络使用（开销）。</translation>
     </message>
     <message>
         <location line="-101"/>
-        <location line="+301"/>
+        <location line="+308"/>
         <source>Unlimited</source>
         <translation>无限制</translation>
     </message>
@@ -3674,7 +3684,7 @@ If your ISP tries throttle or block eMule, enabling obfuscation will help to cir
 如果您的网络服务商试图限速或屏蔽 eMule,启用混淆有助于绕过此类限制。</translation>
     </message>
     <message>
-        <location line="-187"/>
+        <location line="-194"/>
         <source>You can change the ports here while no network activities have started.</source>
         <translation>您可以在尚未开始网络活动时在此更改端口。</translation>
     </message>
@@ -3689,17 +3699,16 @@ If your ISP tries throttle or block eMule, enabling obfuscation will help to cir
         <translation>UDP：</translation>
     </message>
     <message>
-        <location line="+3"/>
         <source>Disable</source>
-        <translation>禁用</translation>
+        <translation type="vanished">禁用</translation>
     </message>
     <message>
-        <location line="+6"/>
+        <location line="+4"/>
         <source>Use UPnP to Setup Ports</source>
         <translation>使用 UPnP 设置端口</translation>
     </message>
     <message>
-        <location line="+46"/>
+        <location line="+45"/>
         <source>Here you can test, if your TCP and UDP port can be connected to from remote. This success of this test is required for servers and clients to connect you. The TCP port have to succeed!</source>
         <translation>您可以在此测试 TCP 和 UDP 端口能否从外部连接。服务器和客户端要连接您,此测试必须成功。TCP 端口必须通过!</translation>
     </message>
@@ -3709,7 +3718,17 @@ If your ISP tries throttle or block eMule, enabling obfuscation will help to cir
         <translation>测试端口</translation>
     </message>
     <message>
-        <location line="+14"/>
+        <location line="+3"/>
+        <source>Open Router</source>
+        <translation>打开路由器</translation>
+    </message>
+    <message>
+        <location line="+2"/>
+        <source>Opens the web page of this computer&apos;s router, where ports are forwarded</source>
+        <translation>打开此计算机路由器的网页，可在其中设置端口转发</translation>
+    </message>
+    <message>
+        <location line="+17"/>
         <source>Choose which Network(s) you want to use</source>
         <translation>选择要使用的网络</translation>
     </message>
@@ -3732,7 +3751,7 @@ If your ISP tries throttle or block eMule, enabling obfuscation will help to cir
         <translation type="vanished">关闭此功能可让 eMule 稍快地连接服务器,但可能导致更多错误的 LowID 连接。</translation>
     </message>
     <message>
-        <location line="+31"/>
+        <location line="+36"/>
         <source>Select your internet connection. eMule derives its download and upload limits from it, leaving room for your other applications. You can change the limits at any time in the Options.</source>
         <translation>请选择您的互联网连接。eMule 会据此确定下载和上传限速，并为其他应用程序留出余量。您可以随时在选项中更改限速。</translation>
     </message>
@@ -3819,6 +3838,16 @@ If your ISP tries throttle or block eMule, enabling obfuscation will help to cir
         <translation>下一步 &gt;</translation>
     </message>
     <message>
+        <location line="+34"/>
+        <source>UDP is disabled in the config file (udpPort: 0)</source>
+        <translation>UDP 已在配置文件中禁用 (udpPort: 0)</translation>
+    </message>
+    <message>
+        <location line="+6"/>
+        <source>Kad needs UDP, which is disabled in the config file</source>
+        <translation>Kad 需要 UDP，但它已在配置文件中禁用</translation>
+    </message>
+    <message>
         <source>Welcome to eMule</source>
         <translation type="vanished">欢迎使用 eMule</translation>
     </message>
@@ -3851,7 +3880,7 @@ If your ISP tries throttle or block eMule, enabling obfuscation will help to cir
         <translation type="vanished">混淆</translation>
     </message>
     <message>
-        <location line="-3"/>
+        <location line="-43"/>
         <source>Connection Speed</source>
         <translation>连接速度</translation>
     </message>
@@ -4827,12 +4856,12 @@ Please choose another:</source>
     </message>
     <message>
         <location line="+8"/>
-        <location line="+1355"/>
+        <location line="+1360"/>
         <source>eD2K: Disconnected</source>
         <translation>eD2K：已断开</translation>
     </message>
     <message>
-        <location line="-1297"/>
+        <location line="-1302"/>
         <source>Kad: Connected</source>
         <translation>Kad：已连接</translation>
     </message>
@@ -4848,12 +4877,12 @@ Please choose another:</source>
     </message>
     <message>
         <location line="+4"/>
-        <location line="+1289"/>
+        <location line="+1294"/>
         <source>Kad: Disconnected</source>
         <translation>Kad：已断开</translation>
     </message>
     <message>
-        <location line="-1279"/>
+        <location line="-1284"/>
         <source>Users: %1 | Files: %2</source>
         <translation>用户：%1 | 文件：%2</translation>
     </message>
@@ -5178,7 +5207,7 @@ Enable it under Options → Web Interface, then try again.</source>
         <translation>打开选项</translation>
     </message>
     <message>
-        <location line="+191"/>
+        <location line="+196"/>
         <source>Main</source>
         <translation>主菜单</translation>
     </message>
@@ -6539,36 +6568,36 @@ Download it again?</source>
 <context>
     <name>eMule::OptionsDialog</name>
     <message>
-        <location filename="../src/gui/dialogs/OptionsDialog.cpp" line="-3203"/>
+        <location filename="../src/gui/dialogs/OptionsDialog.cpp" line="-3195"/>
         <source>Options</source>
         <translation>选项</translation>
     </message>
     <message>
         <location line="+61"/>
-        <location line="+2117"/>
+        <location line="+2109"/>
         <source>OK</source>
         <translation>确定</translation>
     </message>
     <message>
-        <location line="-2116"/>
-        <location line="+2117"/>
+        <location line="-2108"/>
+        <location line="+2109"/>
         <source>Cancel</source>
         <translation>取消</translation>
     </message>
     <message>
-        <location line="-2116"/>
-        <location line="+5970"/>
+        <location line="-2108"/>
+        <location line="+5962"/>
         <source>Apply</source>
         <translation>应用</translation>
     </message>
     <message>
-        <location line="-5969"/>
+        <location line="-5961"/>
         <source>Help</source>
         <translation>帮助</translation>
     </message>
     <message>
-        <location line="+271"/>
-        <location line="+2113"/>
+        <location line="+270"/>
+        <location line="+2106"/>
         <location line="+59"/>
         <location line="+6"/>
         <location line="+4"/>
@@ -6580,7 +6609,7 @@ Download it again?</source>
         <translation>IP 过滤器</translation>
     </message>
     <message>
-        <location line="-2227"/>
+        <location line="-2220"/>
         <source>IP filter reloaded: %1 entries.</source>
         <translation>IP 过滤器已重新加载：%1 条目。</translation>
     </message>
@@ -6611,18 +6640,18 @@ Download it again?</source>
     </message>
     <message>
         <location line="+8"/>
-        <location line="+5867"/>
+        <location line="+5860"/>
         <source>Language</source>
         <translation>语言</translation>
     </message>
     <message>
-        <location line="-5864"/>
+        <location line="-5857"/>
         <source>System Default</source>
         <translation>系统默认</translation>
     </message>
     <message>
         <location line="+14"/>
-        <location line="+768"/>
+        <location line="+761"/>
         <location line="+384"/>
         <location line="+464"/>
         <location line="+298"/>
@@ -6630,7 +6659,7 @@ Download it again?</source>
         <translation>其他</translation>
     </message>
     <message>
-        <location line="-1911"/>
+        <location line="-1904"/>
         <source>Bring to front on link click</source>
         <translation>点击链接时置前</translation>
     </message>
@@ -6716,25 +6745,25 @@ Download it again?</source>
     </message>
     <message>
         <location line="+8"/>
-        <location line="+5803"/>
+        <location line="+5796"/>
         <source>Core</source>
         <translation>核心</translation>
     </message>
     <message>
-        <location line="-5798"/>
+        <location line="-5791"/>
         <source>Address:</source>
         <translation>地址：</translation>
     </message>
     <message>
         <location line="+4"/>
-        <location line="+1343"/>
+        <location line="+1336"/>
         <location line="+770"/>
         <location line="+427"/>
         <source>Port:</source>
         <translation>端口：</translation>
     </message>
     <message>
-        <location line="-2537"/>
+        <location line="-2530"/>
         <source>authentication token</source>
         <translation>认证令牌</translation>
     </message>
@@ -6899,7 +6928,7 @@ Are you sure you want to continue?</source>
     </message>
     <message>
         <location line="+2"/>
-        <location line="+1854"/>
+        <location line="+1847"/>
         <location line="+133"/>
         <location line="+296"/>
         <location line="+1016"/>
@@ -6912,7 +6941,7 @@ Are you sure you want to continue?</source>
         <translation>已启用</translation>
     </message>
     <message>
-        <location line="-4940"/>
+        <location line="-4933"/>
         <source>Reset</source>
         <translation>重置</translation>
     </message>
@@ -6929,24 +6958,24 @@ Are you sure you want to continue?</source>
     <message>
         <location line="+3"/>
         <location line="+6"/>
-        <location line="+4314"/>
+        <location line="+4307"/>
         <location line="+352"/>
         <source> KB/s</source>
         <translation> KB/s</translation>
     </message>
     <message>
-        <location line="-4669"/>
+        <location line="-4662"/>
         <source>Upload</source>
         <translation>上传</translation>
     </message>
     <message>
         <location line="+9"/>
-        <location line="+4302"/>
+        <location line="+4295"/>
         <source>Limits</source>
         <translation>限制</translation>
     </message>
     <message>
-        <location line="-4299"/>
+        <location line="-4292"/>
         <source>Download limit</source>
         <translation>下载限制</translation>
     </message>
@@ -6981,23 +7010,21 @@ Are you sure you want to continue?</source>
         <translation>UDP</translation>
     </message>
     <message>
-        <location line="+4"/>
         <source>Disable</source>
-        <translation>禁用</translation>
+        <translation type="vanished">禁用</translation>
     </message>
     <message>
-        <location line="+3"/>
+        <location line="+5"/>
         <source>Test Ports</source>
         <translation>测试端口</translation>
     </message>
     <message>
         <location line="+4"/>
-        <location line="+6987"/>
         <source>Open Router</source>
         <translation>打开路由器</translation>
     </message>
     <message>
-        <location line="-6986"/>
+        <location line="+1"/>
         <source>Opens the web page of this computer&apos;s router, where ports are forwarded</source>
         <translation>打开此计算机路由器的网页，可在其中设置端口转发</translation>
     </message>
@@ -7028,13 +7055,13 @@ Are you sure you want to continue?</source>
     </message>
     <message>
         <location line="+4"/>
-        <location line="+1725"/>
-        <location line="+5345"/>
+        <location line="+1720"/>
+        <location line="+5301"/>
         <source>Any</source>
         <translation>任意</translation>
     </message>
     <message>
-        <location line="-7068"/>
+        <location line="-7019"/>
         <source>Use only this network interface, for example a VPN tunnel. Pick one from the list, or type an IP address or a subnet such as 10.64.0.0/10 (the interface holding an address in it). Connections through a proxy are not bound.</source>
         <translation>仅使用此网络接口，例如 VPN 隧道。可从列表中选择，或输入 IP 地址或子网（如 10.64.0.0/10，即拥有该范围内地址的接口）。通过代理的连接不会被绑定。</translation>
     </message>
@@ -7119,7 +7146,7 @@ Are you sure you want to continue?</source>
         <translation>使用轮换的临时地址 (RFC 4941) 连接 IPv6 节点和服务器。关闭：始终使用固定地址，使节点能够访问我们公布的地址。</translation>
     </message>
     <message>
-        <location line="+62"/>
+        <location line="+57"/>
         <location line="+1543"/>
         <source>General</source>
         <translation>常规</translation>
@@ -7964,7 +7991,7 @@ Each rule replaces a regex pattern with a replacement string.</source>
         <translation>上传位（无开销）</translation>
     </message>
     <message>
-        <location line="-1802"/>
+        <location line="-1795"/>
         <source>Country flags (IP2Country)</source>
         <translation>国旗 (IP2Country)</translation>
     </message>
@@ -8014,7 +8041,7 @@ Each rule replaces a regex pattern with a replacement string.</source>
         <translation type="vanished">需要免费的 &lt;a href=&quot;https://www.maxmind.com/en/geolite2/signup&quot;&gt;MaxMind GeoLite2&lt;/a&gt; 账户。本产品包含由 MaxMind 创建的 GeoLite2 数据。</translation>
     </message>
     <message>
-        <location line="+418"/>
+        <location line="+411"/>
         <source>Use for news servers</source>
         <translation>同时用于新闻服务器</translation>
     </message>
@@ -8518,7 +8545,7 @@ Every Usenet connection then passes through the proxy, so its speed caps the dow
         <translation>严格</translation>
     </message>
     <message>
-        <location line="-2791"/>
+        <location line="-2784"/>
         <source>BitTorrent</source>
         <translation>BitTorrent</translation>
     </message>
@@ -8578,7 +8605,7 @@ Every Usenet connection then passes through the proxy, so its speed caps the dow
         <translation>列表、菜单和对话框的文字大小。重启后生效。</translation>
     </message>
     <message>
-        <location line="+502"/>
+        <location line="+495"/>
         <source>Connect Low ID to Low ID through server or Kad buddy (NAT traversal)</source>
         <translation>通过服务器或 Kad 伙伴连接 Low ID 与 Low ID (NAT 穿透)</translation>
     </message>
@@ -9677,36 +9704,41 @@ Adding one later does not fetch its back catalogue: a new indexer gets its own f
         <translation>下载始终会被检查并记录。共享文件在每次启动时都会重新检查。</translation>
     </message>
     <message>
-        <location line="+2426"/>
-        <source>A VPN seems to be active (%1). Incoming connections then arrive through the VPN, so port forwarding on your router does not help. Forward the ports at your VPN provider instead, if it offers port forwarding.</source>
-        <translation>VPN 似乎已启用（%1）。传入连接会经由 VPN 到达，因此在路由器上转发端口没有作用。如果 VPN 提供商支持端口转发，请改在那里转发端口。</translation>
+        <location line="+2807"/>
+        <source>UDP is disabled in the config file (udpPort: 0)</source>
+        <translation>UDP 已在配置文件中禁用 (udpPort: 0)</translation>
     </message>
     <message>
-        <location line="+5"/>
+        <location line="+3"/>
+        <source>Kad needs UDP, which is disabled in the config file</source>
+        <translation>Kad 需要 UDP，但它已在配置文件中禁用</translation>
+    </message>
+    <message>
+        <source>A VPN seems to be active (%1). Incoming connections then arrive through the VPN, so port forwarding on your router does not help. Forward the ports at your VPN provider instead, if it offers port forwarding.</source>
+        <translation type="vanished">VPN 似乎已启用（%1）。传入连接会经由 VPN 到达，因此在路由器上转发端口没有作用。如果 VPN 提供商支持端口转发，请改在那里转发端口。</translation>
+    </message>
+    <message>
         <source>Could not find your router&apos;s address.
 
 Look up the &quot;default gateway&quot; in this computer&apos;s network settings and open that address in a web browser.</source>
-        <translation>找不到路由器的地址。
+        <translation type="vanished">找不到路由器的地址。
 
 请在此计算机的网络设置中查找“默认网关”，然后在网页浏览器中打开该地址。</translation>
     </message>
     <message>
-        <location line="+16"/>
         <source>Could not open %1 in the default browser.</source>
-        <translation>无法在默认浏览器中打开 %1。</translation>
+        <translation type="vanished">无法在默认浏览器中打开 %1。</translation>
     </message>
     <message>
-        <location line="+9"/>
         <source>Your router is at %1.</source>
-        <translation>路由器地址为 %1。</translation>
+        <translation type="vanished">路由器地址为 %1。</translation>
     </message>
     <message>
-        <location line="+1"/>
         <source>Open Router Page</source>
-        <translation>打开路由器页面</translation>
+        <translation type="vanished">打开路由器页面</translation>
     </message>
     <message>
-        <location line="+327"/>
+        <location line="-70"/>
         <location line="+52"/>
         <source>Directories</source>
         <translation>目录</translation>
@@ -9777,7 +9809,7 @@ Create it?</source>
 %1</translation>
     </message>
     <message>
-        <location line="-3186"/>
+        <location line="-3142"/>
         <location line="+153"/>
         <source>Disabled</source>
         <translation>已禁用</translation>
@@ -9803,7 +9835,7 @@ Create it?</source>
         <translation>字体大小更改将在重启应用程序后生效。</translation>
     </message>
     <message>
-        <location line="+1083"/>
+        <location line="+1080"/>
         <source>specialdlp loaded, DLP v%1</source>
         <translation>specialdlp 已加载，DLP v%1</translation>
     </message>
@@ -9813,7 +9845,7 @@ Create it?</source>
         <translation>未找到 specialdlp 库，检查未启用</translation>
     </message>
     <message>
-        <location line="+728"/>
+        <location line="+687"/>
         <source>Automatic</source>
         <translation>自动</translation>
     </message>
@@ -9827,7 +9859,7 @@ Create it?</source>
         <translation type="vanished">仅在运行时自动接受 eD2K 链接</translation>
     </message>
     <message>
-        <location line="-2932"/>
+        <location line="-2888"/>
         <source>Use credit system (reward uploaders)</source>
         <translation>使用信用系统（奖励上传者）</translation>
     </message>
@@ -9851,12 +9883,12 @@ Create it?</source>
         <translation>过滤服务器和客户端局域网 IP</translation>
     </message>
     <message>
-        <location line="-4615"/>
+        <location line="-4608"/>
         <source>Show more controls (advanced mode controls)</source>
         <translation>显示更多控件（高级模式控件）</translation>
     </message>
     <message>
-        <location line="+4618"/>
+        <location line="+4611"/>
         <source>Disable A4AF checks to save CPU</source>
         <translation>禁用 A4AF 检查以节省 CPU</translation>
     </message>
@@ -10172,7 +10204,7 @@ News server connections switch over immediately.</source>
         <translation>无法更新 .nzb 文件关联：%1</translation>
     </message>
     <message>
-        <location line="+688"/>
+        <location line="+644"/>
         <source>Port forwarding: %1</source>
         <translation>端口转发：%1</translation>
     </message>
@@ -10227,17 +10259,17 @@ News server connections switch over immediately.</source>
         <translation>恢复默认值</translation>
     </message>
     <message>
-        <location line="-5132"/>
+        <location line="-5088"/>
         <location line="+1019"/>
         <location line="+154"/>
         <location line="+1480"/>
         <location line="+316"/>
-        <location line="+2161"/>
+        <location line="+2117"/>
         <source>Remove</source>
         <translation>删除</translation>
     </message>
     <message>
-        <location line="-6361"/>
+        <location line="-6317"/>
         <source>New eMule Qt version detected</source>
         <translation>检测到新的 eMule Qt 版本</translation>
     </message>
@@ -10314,12 +10346,12 @@ News server connections switch over immediately.</source>
         <translation> 秒</translation>
     </message>
     <message>
-        <location line="-4946"/>
+        <location line="-4939"/>
         <source>Downloads that are receiving data, and the sources sending it, are drawn in bold. A source listed under another file (A4AF) is bold too while it transfers. The connected server and the selected category tab are bold as well.</source>
         <translation>正在接收数据的下载及发送数据的来源以粗体显示。列在其他文件下的来源 (A4AF) 在传输时也以粗体显示。已连接的服务器和选中的分类标签页同样以粗体显示。</translation>
     </message>
     <message>
-        <location line="+1017"/>
+        <location line="+1010"/>
         <source>Rename downloads to the name most sources use</source>
         <translation>将下载重命名为大多数来源使用的名称</translation>
     </message>
@@ -10487,7 +10519,7 @@ Set it slightly under your plan. The figure is measured here, so it reads a few 
         <location line="+1019"/>
         <location line="+154"/>
         <location line="+1753"/>
-        <location line="+2199"/>
+        <location line="+2155"/>
         <source>Add</source>
         <translation>添加</translation>
     </message>
@@ -10500,7 +10532,7 @@ Set it slightly under your plan. The figure is measured here, so it reads a few 
         <translation type="vanished">输入值：</translation>
     </message>
     <message>
-        <location line="-2162"/>
+        <location line="-2118"/>
         <source>Edit Value</source>
         <translation>编辑值</translation>
     </message>
@@ -10672,6 +10704,43 @@ Restart eMule for all connections to use the new proxy settings.</source>
         <location line="+10"/>
         <source>Image %1 of %2</source>
         <translation>第 %1 张，共 %2 张</translation>
+    </message>
+</context>
+<context>
+    <name>eMule::RouterPage</name>
+    <message>
+        <location filename="../src/gui/dialogs/RouterPage.h" line="+30"/>
+        <source>Open Router</source>
+        <translation>打开路由器</translation>
+    </message>
+    <message>
+        <location line="+3"/>
+        <source>A VPN seems to be active (%1). Incoming connections then arrive through the VPN, so port forwarding on your router does not help. Forward the ports at your VPN provider instead, if it offers port forwarding.</source>
+        <translation>VPN 似乎已启用（%1）。传入连接会经由 VPN 到达，因此在路由器上转发端口没有作用。如果 VPN 提供商支持端口转发，请改在那里转发端口。</translation>
+    </message>
+    <message>
+        <location line="+5"/>
+        <source>Could not find your router&apos;s address.
+
+Look up the &quot;default gateway&quot; in this computer&apos;s network settings and open that address in a web browser.</source>
+        <translation>找不到路由器的地址。
+
+请在此计算机的网络设置中查找“默认网关”，然后在网页浏览器中打开该地址。</translation>
+    </message>
+    <message>
+        <location line="+16"/>
+        <source>Could not open %1 in the default browser.</source>
+        <translation>无法在默认浏览器中打开 %1。</translation>
+    </message>
+    <message>
+        <location line="+9"/>
+        <source>Your router is at %1.</source>
+        <translation>路由器地址为 %1。</translation>
+    </message>
+    <message>
+        <location line="+1"/>
+        <source>Open Router Page</source>
+        <translation>打开路由器页面</translation>
     </message>
 </context>
 <context>
