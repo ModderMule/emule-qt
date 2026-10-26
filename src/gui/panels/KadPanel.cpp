@@ -310,8 +310,7 @@ void KadPanel::setupUi()
     m_vertSplitter = new QSplitter(Qt::Vertical, this);
     m_vertSplitter->setHandleWidth(4);
     m_vertSplitter->setChildrenCollapsible(false);
-    m_vertSplitter->setStyleSheet(
-        QStringLiteral("QSplitter::handle { background: palette(mid); }"));
+    useThemedSplitterHandles(m_vertSplitter);
 
     // Top section: tab widget (left) + controls panel (right)
     auto* topSplitter = new QSplitter(Qt::Horizontal);

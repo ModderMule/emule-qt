@@ -3,6 +3,7 @@
 /// @brief The Torrents tab — implementation.
 
 #include "panels/TorrentPanel.h"
+#include "utils/Appearance.h"
 
 #include "app/IpcClient.h"
 #include "app/UiState.h"
@@ -297,7 +298,7 @@ void TorrentPanel::setupUi()
     m_splitter = new QSplitter(Qt::Vertical, this);
     m_splitter->setHandleWidth(4);
     m_splitter->setChildrenCollapsible(false);
-    m_splitter->setStyleSheet(QStringLiteral("QSplitter::handle { background: palette(mid); }"));
+    useThemedSplitterHandles(m_splitter);
 
     auto* view = new ListTreeView(m_splitter);
     m_view = view;

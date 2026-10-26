@@ -657,8 +657,7 @@ void SharedFilesPanel::setupUi()
     m_vertSplitter = new QSplitter(Qt::Vertical, this);
     m_vertSplitter->setHandleWidth(4);
     m_vertSplitter->setChildrenCollapsible(false);
-    m_vertSplitter->setStyleSheet(
-        QStringLiteral("QSplitter::handle { background: palette(mid); }"));
+    useThemedSplitterHandles(m_vertSplitter);
 
     m_vertSplitter->addWidget(createTopSection());
     m_vertSplitter->addWidget(createBottomTabs());
@@ -719,8 +718,7 @@ QWidget* SharedFilesPanel::createTopSection()
     m_horzSplitter = new QSplitter(Qt::Horizontal);
     m_horzSplitter->setHandleWidth(4);
     m_horzSplitter->setChildrenCollapsible(false);
-    m_horzSplitter->setStyleSheet(
-        QStringLiteral("QSplitter::handle { background: palette(mid); }"));
+    useThemedSplitterHandles(m_horzSplitter);
 
     // --- Folder tree ---
     auto* folderTree = new ListTreeWidget;

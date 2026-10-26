@@ -1,5 +1,6 @@
 #include "pch.h"
 #include "panels/ServerPanel.h"
+#include "utils/Appearance.h"
 
 #include "app/IpcClient.h"
 #include "utils/Clipboard.h"
@@ -592,8 +593,7 @@ void ServerPanel::setupUi()
     m_vertSplitter = new QSplitter(Qt::Vertical);
     m_vertSplitter->setHandleWidth(4);
     m_vertSplitter->setChildrenCollapsible(false);
-    m_vertSplitter->setStyleSheet(
-        QStringLiteral("QSplitter::handle { background: palette(mid); }"));
+    useThemedSplitterHandles(m_vertSplitter);
 
     // Left column: server list (top) + log tabs (bottom)
     m_logWidget = new LogWidget;

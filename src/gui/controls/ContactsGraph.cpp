@@ -49,11 +49,11 @@ void ContactsGraph::paintEvent(QPaintEvent* /*event*/)
 
     const QRect r = rect();
 
-    // Background
-    p.fillRect(r, Qt::white);
+    // Background: white in light mode as in MFC, follows the theme
+    p.fillRect(r, palette().color(QPalette::Base));
 
     // Border
-    p.setPen(QPen(QColor(180, 180, 180), 1));
+    p.setPen(QPen(themed(QColor(180, 180, 180), QColor(90, 90, 90)), 1));
     p.drawRect(r.adjusted(0, 0, -1, -1));
 
     // Leave margin for axis labels
@@ -79,7 +79,7 @@ void ContactsGraph::paintEvent(QPaintEvent* /*event*/)
                Qt::AlignRight | Qt::AlignVCenter, QStringLiteral("0"));
 
     // Draw "Contacts" title
-    p.setPen(Qt::black);
+    p.setPen(palette().color(QPalette::Text));
     QFont titleFont;
     titleFont.setPointSize(scaledPointSize(7));
     titleFont.setBold(true);
@@ -94,7 +94,7 @@ void ContactsGraph::paintEvent(QPaintEvent* /*event*/)
                Qt::AlignCenter, tr("Time"));
 
     // Grid lines
-    p.setPen(QPen(QColor(220, 220, 220), 1, Qt::DotLine));
+    p.setPen(QPen(themed(QColor(220, 220, 220), QColor(70, 70, 70)), 1, Qt::DotLine));
     for (int i = 1; i < 4; ++i) {
         const int y = plotArea.bottom() - (plotArea.height() * i / 4);
         p.drawLine(plotArea.left(), y, plotArea.right(), y);
