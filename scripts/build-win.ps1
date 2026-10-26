@@ -215,6 +215,36 @@ function Resolve-BuildTool {
 
 <#
 .SYNOPSIS
+    Find vswhere.exe on PATH or in its common install locations, or $null.
+
+.DESCRIPTION
+    Also puts its directory on PATH: VsDevCmd.bat calls vswhere.exe by bare
+    name and fails ("not recognized") when the Installer dir is missing there.
+#>
+function Resolve-VsWhere {
+    $onPath = Get-Command vswhere.exe -ErrorAction SilentlyContinue
+    if ($onPath) { return $onPath.Source }
+
+    $candidates = @(
+        # VS Installer (always installed with VS 2017+)
+        (Join-Path ${env:ProgramFiles(x86)} 'Microsoft Visual Studio\Installer\vswhere.exe'),
+        (Join-Path $env:ProgramFiles 'Microsoft Visual Studio\Installer\vswhere.exe'),
+        # standalone package managers
+        (Join-Path $env:LOCALAPPDATA 'Microsoft\WinGet\Links\vswhere.exe'),
+        (Join-Path $env:ProgramData 'chocolatey\bin\vswhere.exe'),
+        (Join-Path $env:USERPROFILE 'scoop\shims\vswhere.exe')
+    )
+    foreach ($candidate in $candidates) {
+        if ($candidate -and (Test-Path $candidate)) {
+            $env:PATH = (Split-Path -Parent $candidate) + ';' + $env:PATH
+            return $candidate
+        }
+    }
+    return $null
+}
+
+<#
+.SYNOPSIS
     Import the MSVC environment when not already inside a Developer Prompt.
 
 .DESCRIPTION
@@ -232,8 +262,8 @@ function Import-VsDevEnv {
         return $true
     }
 
-    $vswhere = Join-Path ${env:ProgramFiles(x86)} 'Microsoft Visual Studio\Installer\vswhere.exe'
-    if (-not (Test-Path $vswhere)) { return $false }
+    $vswhere = Resolve-VsWhere
+    if (-not $vswhere) { return $false }
 
     $vsPath = & $vswhere -latest -products * `
         -requires Microsoft.VisualStudio.Component.VC.Tools.x86.x64 `
@@ -297,8 +327,8 @@ function Resolve-VsGenerator {
     if (-not $listed) { return $null }
 
     $installed = @()
-    $vswhere = Join-Path ${env:ProgramFiles(x86)} 'Microsoft Visual Studio\Installer\vswhere.exe'
-    if (Test-Path $vswhere) {
+    $vswhere = Resolve-VsWhere
+    if ($vswhere) {
         # Deliberately no -latest: a machine with both 2022 and 2026 installed
         # must report both, so the intersection below can pick either.
         $installed = @(& $vswhere -products * `
@@ -460,10 +490,12 @@ function Resolve-VcpkgBinDir {
     # build against one is refused up front in Invoke-EMuleBuild anyway.
     $suffixes = if ($Config -eq 'Debug') { @('debug\bin', 'bin') } else { @('bin') }
 
+    # Build dir first: that is what the CMake build linked. A stale src\ tree
+    # shipped OpenSSL 3.4 against ngtcp2 needing 3.5+ (SSL_set_quic_tls_cbs).
     $roots = @(
+        (Join-Path $BuildDir 'vcpkg_installed')         # CMake manifest mode
         (Join-Path $ProjectDir 'src\vcpkg_installed')   # MSBuild / `vcpkg install` run in src\
         (Join-Path $ProjectDir 'vcpkg_installed')
-        (Join-Path $BuildDir 'vcpkg_installed')         # CMake manifest mode
     )
     if ($env:VCPKG_INSTALLATION_ROOT) {
         $roots += (Join-Path $env:VCPKG_INSTALLATION_ROOT 'installed')   # classic mode

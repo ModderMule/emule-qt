@@ -214,8 +214,8 @@ function Resolve-Devenv {
     $onPath = Get-Command devenv.exe -ErrorAction SilentlyContinue
     if ($onPath) { return $onPath.Source }
 
-    $vswhere = Join-Path ${env:ProgramFiles(x86)} 'Microsoft Visual Studio\Installer\vswhere.exe'
-    if (-not (Test-Path $vswhere)) { return $null }
+    $vswhere = Resolve-VsWhere
+    if (-not $vswhere) { return $null }
 
     $vsPath = & $vswhere -latest -products * -property installationPath 2>$null | Select-Object -First 1
     if (-not $vsPath) { return $null }
