@@ -238,6 +238,10 @@ int IPFilter::loadFromDefaultFile(const QString& configDir)
     m_modified = false;
     const QString path = QDir(configDir).filePath(
         QString::fromLatin1(kDefaultIPFilterFilename));
+    if (!QFileInfo::exists(path)) {
+        logInfo(QStringLiteral("IP filter not loaded: \"%1\" not found, 0 entries").arg(path));
+        return 0;
+    }
     return loadFromFile(path);
 }
 
@@ -247,6 +251,8 @@ int IPFilter::loadFromFile(const QString& filePath)
 
     QFile file(filePath);
     if (!file.open(QIODevice::ReadOnly)) {
+        logWarning(QStringLiteral("IP filter not loaded: can't open \"%1\" (%2)")
+                       .arg(filePath, file.errorString()));
         return 0;
     }
 
@@ -281,6 +287,8 @@ int IPFilter::loadFromFile(const QString& filePath)
         uint8 version = 0;
         if (file.read(reinterpret_cast<char*>(&version), 1) != 1
             || (version != 1 && version != 2)) {
+            logWarning(QStringLiteral("IP filter not loaded: \"%1\" has unsupported PeerGuardian2 version %2")
+                           .arg(filePath).arg(version));
             return 0;
         }
         // PeerGuardian2 has no standardised IPv6 record — both published versions store a
@@ -409,7 +417,7 @@ int IPFilter::loadFromFile(const QString& filePath)
     sortAndMerge();
 
     const auto elapsed = getTickCount() - startTime;
-    logInfo(QStringLiteral("Loaded %1 IP filter entries from \"%2\" (%3 ranges found, %4 lines, %5 ms)")
+    logInfo(QStringLiteral("IP filter loaded: %1 entries from \"%2\" (%3 ranges found, %4 lines, %5 ms)")
                 .arg(entryCount())
                 .arg(filePath)
                 .arg(foundRanges)

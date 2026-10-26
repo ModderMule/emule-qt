@@ -21,6 +21,7 @@
 #include "utils/Log.h"
 
 #include <algorithm>
+#include <limits>
 
 namespace eMule {
 
@@ -512,7 +513,7 @@ void UiState::bindHeaderView(QHeaderView* header, const QString& key)
 {
     // Restore saved state (overrides hardcoded defaults if available)
     if (auto it = m_headerStates.constFind(key); it != m_headerStates.constEnd() && !it->isEmpty())
-        header->restoreState(*it);
+        restoreHeaderState(header, *it);
 
     // Cache current state and auto-update on any change.
     // A header with no sections (model not attached yet, or just swapped to
@@ -534,7 +535,7 @@ void UiState::bindHeaderView(QHeaderView* header, const QString& key)
 void UiState::applyHeaderState(QHeaderView* header, const QString& key)
 {
     if (auto it = m_headerStates.constFind(key); it != m_headerStates.constEnd() && !it->isEmpty())
-        header->restoreState(*it);
+        restoreHeaderState(header, *it);
 }
 
 int UiState::headerStateSectionCount(const QString& key) const
@@ -555,6 +556,20 @@ int UiState::headerStateSectionCount(const QString& key) const
     in >> marker >> version >> orientation >> sortOrder >> sortSection >> sortShown
        >> visualIndices >> logicalIndices >> hidden >> hiddenSizes >> length >> sectionCount;
     return in.status() == QDataStream::Ok && marker == 0xff ? sectionCount : -1;
+}
+
+bool UiState::restoreHeaderState(QHeaderView* header, const QByteArray& state)
+{
+    // Also repairs a state an earlier build saved after hitting the Qt bug
+    if (!header->restoreState(repairedHeaderState(state)))
+        return false;
+
+    // Sections appended past the saved count: re-apply with the length fixed.
+    // Counts now match, so Qt takes no append path the second time.
+    const QByteArray current = header->saveState();
+    if (const QByteArray fixed = repairedHeaderState(current); fixed != current)
+        header->restoreState(fixed);
+    return true;
 }
 
 void UiState::captureHeaderState(QHeaderView* header, const QString& key)
@@ -589,6 +604,53 @@ void UiState::guardSelectionOnReset(QAbstractItemView* view)
 // ---------------------------------------------------------------------------
 // Private helpers
 // ---------------------------------------------------------------------------
+
+QByteArray UiState::repairedHeaderState(const QByteArray& state)
+{
+    // Layout per QHeaderView::saveState() / QHeaderViewPrivate::write() (Qt 6.10)
+    QDataStream in(state);
+    in.setVersion(QDataStream::Qt_5_0);
+    int marker = 0, version = 0, orientation = 0, sortOrder = 0, sortSection = 0;
+    bool sortShown = false;
+    QList<int> visualIndices, logicalIndices;
+    QBitArray hidden;
+    QHash<int, int> hiddenSizes;
+    in >> marker >> version >> orientation >> sortOrder >> sortSection >> sortShown
+       >> visualIndices >> logicalIndices >> hidden >> hiddenSizes;
+    if (in.status() != QDataStream::Ok || marker != 0xff || version != 0)
+        return state;
+
+    const qint64 lengthPos = in.device()->pos();
+    int length = 0, sectionCount = 0, stretch = 0, contents = 0, defaultSize = 0,
+        minimumSize = 0, align = 0, resizeMode = 0;
+    bool movable = false, clickable = false, highlight = false, stretchLast = false,
+         cascading = false;
+    quint32 itemCount = 0;
+    in >> length >> sectionCount >> movable >> clickable >> highlight >> stretchLast
+       >> cascading >> stretch >> contents >> defaultSize >> minimumSize >> align
+       >> resizeMode >> itemCount;
+    if (in.status() != QDataStream::Ok || itemCount == 0)
+        return state;
+
+    // SectionItem: size, span count (Qt 4 spans), resize mode
+    qint64 total = 0;
+    for (quint32 i = 0; i < itemCount; ++i) {
+        int size = 0, span = 0, mode = 0;
+        in >> size >> span >> mode;
+        if (in.status() != QDataStream::Ok)
+            return state;
+        total += span > 1 ? qint64(size / span) * span : qint64(size) * std::max(span, 0);
+    }
+    if (total == length || total > std::numeric_limits<int>::max())
+        return state;
+
+    QByteArray fixed = state;
+    QDataStream out(&fixed, QIODevice::ReadWrite);
+    out.setVersion(QDataStream::Qt_5_0);
+    out.device()->seek(lengthPos);
+    out << static_cast<int>(total);
+    return fixed;
+}
 
 void UiState::bindSplitter(QSplitter* splitter, QList<int>& sizes)
 {

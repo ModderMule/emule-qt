@@ -301,6 +301,8 @@ void UpDownClient::addReqBlock(Requested_Block_Struct* reqBlock)
         delete reqBlock;
         return;
     }
+    ++m_slotBlocksAsked;
+    m_slotLastRequestTick = getTickCount();
 
     // A collection slot bypassed the whole queue for one small file; it must not become a
     // free pass for anything else. MFC srchybrid/UploadClient.cpp:335-345.
@@ -387,7 +389,7 @@ void UpDownClient::addReqBlock(Requested_Block_Struct* reqBlock)
                            .arg(userName(), ipstr(m_userAddress), reason));
         ban(reason, RepeatChunkGuard::kBanMs);
         if (theApp.uploadQueue)
-            theApp.uploadQueue->removeFromUploadQueue(this);
+            theApp.uploadQueue->removeFromUploadQueue(this, QStringLiteral("Banned: ") + reason);
         return;
     }
 
@@ -399,6 +401,7 @@ void UpDownClient::addReqBlock(Requested_Block_Struct* reqBlock)
     }
 
     m_blockRequests.push_back(reqBlock);
+    ++m_slotBlocksAccepted;
     startBlockReads();
 }
 
@@ -588,6 +591,40 @@ UpDownClient::UpSlotActivity UpDownClient::upSlotActivity(uint32 slotAgeMs) cons
     return UpSlotActivity::Busy;
 }
 
+QString UpDownClient::upSlotDebugInfo() const
+{
+    if (m_upSlotInfoAtSocketGone)
+        return *m_upSlotInfoAtSocketGone + QStringLiteral(" (at disconnect)");
+    const uint64 now = getTickCount();
+    const auto age = [now](uint64 tick) {
+        return tick ? QStringLiteral("%1 s ago").arg((now - tick) / 1000) : QStringLiteral("never");
+    };
+    // Unacked tells the two stalls apart: > 0 the peer has not got the data, 0 it has
+    // and did not ask again.
+    const EMSocket* sock = getFileUploadSocket();
+    const QString unacked = sock ? QString::number(sock->sendBacklog()) : QStringLiteral("n/a");
+
+    return QStringLiteral("slot %1 s, payload sent %2 B, in buffer %3 B, unacked %4 B, "
+                          "requests asked %5 accepted %6 served %7 pending %8, "
+                          "last request %9, last block queued %10, rate %11 B/s")
+        .arg(getUpStartTimeDelay() / 1000)
+        .arg(m_curQueueSessionPayloadUp)
+        .arg(payloadInBuffer())
+        .arg(unacked)
+        .arg(m_slotBlocksAsked)
+        .arg(m_slotBlocksAccepted)
+        .arg(m_slotBlocksServed)
+        .arg(m_blockRequests.size())
+        .arg(age(m_slotLastRequestTick), age(m_slotLastServedTick))
+        .arg(m_upDatarate);
+}
+
+void UpDownClient::noteUpSlotSocketGone()
+{
+    if (m_uploadState == UploadState::Uploading && thePrefs.verbose())
+        m_upSlotInfoAtSocketGone = upSlotDebugInfo();
+}
+
 // ===========================================================================
 // flushSendBlocks
 // ===========================================================================
@@ -606,6 +643,13 @@ void UpDownClient::flushSendBlocks()
 
     // What has not gone out by now is not known to have reached the peer.
     m_unconfirmedSends.clear();
+
+    m_slotBlocksAsked = 0;
+    m_slotBlocksAccepted = 0;
+    m_slotBlocksServed = 0;
+    m_slotLastRequestTick = 0;
+    m_slotLastServedTick = 0;
+    m_upSlotInfoAtSocketGone.reset();
 }
 
 // ===========================================================================
@@ -626,6 +670,8 @@ bool UpDownClient::markBlockDone(const uint8* fileId, uint64 startOffset, uint64
     }
     m_doneBlocks.push_front(*it);
     m_blockRequests.erase(it);
+    ++m_slotBlocksServed;
+    m_slotLastServedTick = getTickCount();
     while (m_doneBlocks.size() > kMaxDoneBlocks) {
         delete m_doneBlocks.back();
         m_doneBlocks.pop_back();

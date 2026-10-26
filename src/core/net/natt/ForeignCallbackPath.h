@@ -8,8 +8,8 @@
 /// it gave our IP in a status ping (the key proves our address), to its obfuscation port.
 /// It wakes the target with 0x37 (requester ID 0) and, once the target's 0x9F gives it
 /// the target's port (or after 3 s, with the last port it knows), sends us
-/// 0xA7 <ip 4><udp port 2><target id 4><crypt 1>[<hash 16>], obfuscated with the same key.
-/// The hash comes only when both sides use the crypt layer; parseNotice reads either form. One server, no sweep: no flag = this path does not serve the peer.
+/// 0xA7 <ip 4><udp port 2><target id 4><crypt 1><hash 16>, obfuscated with the same key.
+/// 0.9.86 always sends the hash (0x80 = use the crypt layer); parseNotice reads it by length. One server, no sweep: no flag = this path does not serve the peer.
 ///
 /// A server outside our list is used only with pref natDialUnlistedServers (default on),
 /// after one obfuscated status ping confirmed it (UnlistedServers).

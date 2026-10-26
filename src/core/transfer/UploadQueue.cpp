@@ -165,7 +165,7 @@ void UploadQueue::onReadError(UpDownClient* client)
     }
 
     // "IO/Other Error while creating data packet" — MFC srchybrid/UploadQueue.cpp:321-324.
-    removeFromUploadQueue(client);
+    removeFromUploadQueue(client, QStringLiteral("IO error while creating data packet"));
 
     // Takes the file out of the share (or follows a move); onSharedFileRemoved() does the rest.
     if (!goneDir.isEmpty())
@@ -202,7 +202,7 @@ void UploadQueue::onSharedFileRemoved(KnownFile* file)
             logDebug(QStringLiteral("%1: uploaded file \"%2\" is no longer shared — "
                                     "removing from upload list").arg(cur->userName(), file->fileName()));
         }
-        removeFromUploadQueue(cur);
+        removeFromUploadQueue(cur, QStringLiteral("Uploaded file no longer shared"));
     }
 
     // MFC drops these on its next slot pick (srchybrid/UploadQueue.cpp:121-125).
@@ -1018,11 +1018,19 @@ void UploadQueue::releaseUploadFile(const QString& path)
         m_diskIO->releaseFile(path);
 }
 
-bool UploadQueue::removeFromUploadQueue(UpDownClient* client)
+bool UploadQueue::removeFromUploadQueue(UpDownClient* client, const QString& reason)
 {
     auto it = std::find(m_uploadingList.begin(), m_uploadingList.end(), client);
     if (it == m_uploadingList.end())
         return false;
+
+    // MFC logs this under GetLogUlDlEvents (srchybrid/UploadQueue.cpp:706-715); here in the
+    // verbose log, with what tells a stalled peer from one that stopped asking (emule-qt#58).
+    if (thePrefs.verbose()) {
+        logDebug(QStringLiteral("Removing client from upload list: %1 Client: %2 %3")
+                     .arg(reason.isEmpty() ? QStringLiteral("-") : reason,
+                          client->dbgGetClientInfo(), client->upSlotDebugInfo()));
+    }
 
     m_uploadingList.erase(it);
 
@@ -1299,7 +1307,7 @@ void UploadQueue::recycleDeadSlots(uint64 curTick)
                             "(not chosen again for %2 s)")
                  .arg(dead->userName()).arg(wait / 1000));
     m_deadSlotSince.erase(dead);
-    if (removeFromUploadQueue(dead))
+    if (removeFromUploadQueue(dead, QStringLiteral("Dead slot, given to the next in line")))
         dead->sendOutOfPartReqsAndAddToWaitingQueue();
 }
 
@@ -1371,7 +1379,7 @@ void UploadQueue::process()
 
         if (!cur->socket()) {
             // Uploading to a client without a socket — MFC srchybrid/UploadQueue.cpp:315-318.
-            removeFromUploadQueue(cur);
+            removeFromUploadQueue(cur, QStringLiteral("Uploading to client without socket"));
             continue;
         }
 
@@ -1385,7 +1393,7 @@ void UploadQueue::process()
             // addTrackClient(), the m_totalUploadTime that averageUpTime() divides, the
             // collection-slot and add-next-connect flags and the slot renumbering, and the
             // no-socket one booked a failure even for a slot that had transferred fine.
-            if (removeFromUploadQueue(cur))
+            if (removeFromUploadQueue(cur, QStringLiteral("Completed transfer")))
                 cur->sendOutOfPartReqsAndAddToWaitingQueue();
             continue;
         }
@@ -1568,7 +1576,7 @@ bool UploadQueue::followRequestedFile(UpDownClient* client, const uint8* fileId)
         logDebug(QStringLiteral("%1: requested file of a block request is not shared — "
                                 "removing from upload list").arg(client->userName()));
     }
-    removeFromUploadQueue(client);
+    removeFromUploadQueue(client, QStringLiteral("Requested file of a block request not shared"));
     return false;
 }
 

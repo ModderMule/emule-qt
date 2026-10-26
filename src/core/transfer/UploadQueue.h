@@ -45,7 +45,8 @@ public:
 
     // Queue management
     bool addClientToQueue(UpDownClient* client, bool ignoreTimeLimit = false);
-    bool removeFromUploadQueue(UpDownClient* client);
+    /// @param reason  for the verbose slot-end log, as MFC's pszReason
+    bool removeFromUploadQueue(UpDownClient* client, const QString& reason = {});
     bool removeFromWaitingQueue(UpDownClient* client);
 
     /// Put a client rebuilt from uploadqueue.met straight onto the waiting list.

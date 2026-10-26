@@ -2065,11 +2065,9 @@ void CoreSession::loadStep()
     case LoadStage::IpFilter:
         // Before the part files: their sources are checked against it. The server
         // list re-checks itself on filterLoaded.
-        if (m_ipFilter) {
-            const int count = m_ipFilter->loadFromDefaultFile(thePrefs.configDir());
-            if (count > 0)
-                logInfo(QStringLiteral("IP filter loaded: %1 entries").arg(count));
-        }
+        // loadFromDefaultFile() logs the result (entry count, or why not loaded)
+        if (m_ipFilter)
+            m_ipFilter->loadFromDefaultFile(thePrefs.configDir());
         m_loadStage = LoadStage::Credits;
         break;
 
@@ -2080,6 +2078,8 @@ void CoreSession::loadStep()
                 QStringLiteral("clients.met"));
             if (QFile::exists(creditsPath))
                 m_clientCredits->loadList(creditsPath);
+            else
+                logInfo(QStringLiteral("Credit file not found, 0 clients are known"));
         }
         m_creditsLoaded = true;
         m_loadStage = LoadStage::KnownFiles;

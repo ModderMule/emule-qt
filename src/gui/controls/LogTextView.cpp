@@ -48,13 +48,18 @@ int LogTextView::trimTo(int maxBlocks)
 {
     QTextDocument* doc = document();
     const int count = doc->blockCount();
+    const int slack = trimSlack(maxBlocks);
     int excess = count - maxBlocks;
-    if (excess <= 0)
+    // Batched: each removal at the top relays out the whole document, ~2-7 ms at
+    // 5k-20k lines. One line per append saturated the GUI under Kad logging (#65).
+    if (excess < slack)
         return 0;
     if (!(m_autoScroll && m_follow) && m_pendingValue < 0 && m_anchor.document() == doc) {
         // Held: only lines above the top visible one, unless past the ceiling
-        excess = std::max(std::min(excess, m_anchor.block().blockNumber()),
-                          count - maxBlocks * kHeldCapFactor);
+        const int overCeiling = count - maxBlocks * kHeldCapFactor;
+        excess = std::min(excess, m_anchor.block().blockNumber());
+        if (overCeiling >= slack)
+            excess = std::max(excess, overCeiling);
         if (excess <= 0)
             return 0;
     }

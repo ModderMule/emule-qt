@@ -256,7 +256,11 @@ bool KadPrefs::useExternKadPort() const
 {
     if (Kademlia::instance() && Kademlia::instance()->isRunningInLANMode())
         return false;
-    return m_useExternKadPort && m_externKadPort != 0;
+    // MFC Prefs.cpp:404 — no "port known" check here. Gating on it sent
+    // TAG_SOURCEUPORT=intern port until the port was learned; v6+ nodes then
+    // answered HELLO_REQ on that port and a port-rewriting NAT dropped it (#64).
+    // Callers wanting the port value check externalKadPort() != 0 themselves.
+    return m_useExternKadPort;
 }
 
 void KadPrefs::setUseExternKadPort(bool val)

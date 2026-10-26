@@ -539,6 +539,10 @@ void NatRendezvous::evaluateQuicDial(Attempt& a)
         return;
     // the downloader dials (both peer stacks expect that); a 30-byte 0x61 may say otherwise
     bool weDial = a.role == Role::Requester;
+    // Woken with requester ID 0 (ed2k-server#40): punch and wait to be dialled. We have no
+    // hash to obfuscate with, and the requester only takes Initials once its 0xA7 came.
+    if (a.foreignWake && a.role == Role::Target)
+        return;
     if (a.serverRole == 0)
         weDial = true;
     else if (a.serverRole == 1)

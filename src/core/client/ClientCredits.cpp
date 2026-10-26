@@ -253,8 +253,10 @@ void ClientCredits::clearWaitStartTime()
 bool ClientCreditsList::loadList(const QString& filePath)
 {
     SafeFile file;
-    if (!file.open(filePath, QIODevice::ReadOnly))
+    if (!file.open(filePath, QIODevice::ReadOnly)) {
+        logWarning(QStringLiteral("Failed to load credit file \"%1\", 0 clients are known").arg(filePath));
         return false;
+    }
 
     try {
         uint8 version = file.readUInt8();
@@ -283,11 +285,12 @@ bool ClientCreditsList::loadList(const QString& filePath)
             }
         }
 
+        // MFC wording: "Creditfile loaded, %u clients are known"
         if (deleted > 0)
-            logInfo(QStringLiteral("Loaded %1 credits, %2 expired entries skipped")
+            logInfo(QStringLiteral("Credit file loaded, %1 clients are known (%2 expired entries skipped)")
                         .arg(count - deleted).arg(deleted));
         else
-            logInfo(QStringLiteral("Loaded %1 credits").arg(count));
+            logInfo(QStringLiteral("Credit file loaded, %1 clients are known").arg(count));
 
         return true;
     } catch (const FileException& e) {

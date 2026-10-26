@@ -101,6 +101,11 @@ public:
     /// Columns past it were added since, and restoreState() leaves them visible.
     [[nodiscard]] int headerStateSectionCount(const QString& key) const;
 
+    /// QHeaderView::restoreState() with a fix for layouts saved with fewer columns
+    /// than the model now has: Qt appends the new sections but keeps the old total
+    /// length, so they can't be dragged and the next saveState() is rejected (#61).
+    static bool restoreHeaderState(QHeaderView* header, const QByteArray& state);
+
     /// Cache @p header's current state under @p key and schedule a save. For
     /// changes no header signal reports (show/hide a column).
     void captureHeaderState(QHeaderView* header, const QString& key);
@@ -365,6 +370,10 @@ private:
     /// One-time move of the keys older builds kept in the platform QSettings store
     /// (~/.config/eMule/GUI.conf, a macOS plist, the registry), which ignored --config.
     void importLegacySettings();
+
+    /// @p state with its total length set to the sum of its section sizes.
+    /// Unchanged when it already matches or can't be parsed.
+    static QByteArray repairedHeaderState(const QByteArray& state);
 
     QList<int> m_serverSplitSizes;
     QList<int> m_kadSplitSizes;

@@ -282,11 +282,19 @@ void Ed2kServerHolePunchPath::onCallbackNotice(const uint8* data, uint32 size)
         // Logged in elsewhere: no hash, and crypt bits only when it sent them.
         peer.kadEndpoint = n->udp;   // keys the attempt by address (NatRendezvous::peerKey)
         peer.cryptKnown = (n->flags & 0x07) != 0;
-        // The requester re-sends its 0xA6: a repeat 0x37 only refreshes the port.
+        // The requester re-sends its 0xA6: a repeat 0x37 refreshes the port and, once the
+        // last burst is done, bursts 0x9F again. The server answers each batch only after
+        // a 0x9F (or with a port it already knows, none on eNode-go without our keepalives).
         if (Attempt* same = hub().findAttempt([&](const Attempt& x) {
                 return x.foreignWake && x.peerUdp.address() == n->udp.address();
             })) {
             hub().endpointKnown(*same, n->udp);
+            if (same->path == kind() && same->role == Role::Target && same->burstLeft == 0) {
+                same->burstLeft = kBurstCount;
+                same->burstStartMs = env().now();
+                if (fastTick())
+                    hub().wantFastTick();
+            }
             return;
         }
     }

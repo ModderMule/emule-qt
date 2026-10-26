@@ -90,7 +90,8 @@ Details and live captures: `lugdunum-nat-callback.local.md`.
 - Request: `0xE3 0xA6 <target id 4><our id 4>`, obfuscated with the server UDP key, to the
   server's UDP obfuscation port. eserver ignores it in plaintext. Repeated every 5 s.
 - Notice: UDP `0xA7` (obfuscated with the same key, from the server's IP) or TCP `0x37`:
-  `<ip 4><udp port 2 LE><requester id 4><flags 1>[<hash 16> if flags & 0x80]`.
+  `<ip 4><udp port 2 LE><requester id 4><flags 1>[<hash 16>]`. eserver appends the hash exactly
+  when it sets `0x80`; we read it by length.
 - The requester hears nothing back, so the target sends its own `0xA6` naming the requester
   (mutual callback). The requester gets that as a `0xA7` with the target's endpoint.
 - A notice naming requester ID 0 comes from a requester logged in elsewhere (foreign
@@ -177,9 +178,18 @@ endpoint only to someone who already knows `server + LowID`, as on one server to
 - **Target.** Sends no `0xA6`. Punches the requester's endpoint at once and sends `0x9F`
   (obfuscated with its server's key) at 0, 0.5 and 1 s, so the server learns its fresh port.
   The attempt is keyed by the requester's address (it has no ID or hash yet); a repeat `0x37`
-  from that address joins it. Crypt bits 0 mean unknown, not "unsupported". On an extension
-  server a `0x61` may follow and is matched by the requester's address; without one the
-  target punches on.
+  from that address joins it. Crypt bits 0 mean unknown, not "unsupported". **No `0x61`
+  follows a `0x37` with requester ID 0**: the server has neither the requester's hash nor its
+  TCP port to put in one. The target punches on after its 4 s wait and needs no `0x61` to
+  proceed. A stray one is still matched by the requester's address.
+- **Who dials.** Over QUIC (IPv4) the requester, i.e. the downloader, dials 1 s after the
+  `0xA7`. The target punches and waits to be dialled, with no 6 s fallback dial: it has no
+  hash to obfuscate with, and the requester drops Initials until its `0xA7` came. The
+  requester has the peer's hash (from the `0xA7`) for its first Initial.
+- **Repeat `0x37`.** Each repeat `0xA6` brings a new `0x37`; once the last burst is done the
+  target bursts `0x9F` again, so the server's next `0xA7` has a fresh port. eNode-go needs
+  this: it does not set `0x20000`, so we send it no periodic `0x9F` to fall back on. With IPv6 on both
+  sides the target dials TCP/IPv6 as on any path.
 - **Server → requester.** On the target's first `0x9F`: UDP `0xA7 <target ip 4><udp port 2>
   <target id 4><crypt 1>[<hash 16>]`, obfuscated with the requester's key, from the server's
   UDP port. The hash (flag `0x80`) comes only when both sides use the crypt layer. No `0x9F`

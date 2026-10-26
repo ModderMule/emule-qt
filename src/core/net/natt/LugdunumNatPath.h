@@ -28,7 +28,7 @@ public:
     static constexpr uint32 kMaxRequests  = 9;
     static constexpr uint32 kKeyRefreshAfter = 3;   // unanswered requests before a fresh key
     static constexpr uint32 kNoticeSize   = 11;
-    static constexpr uint8  kFlagHasHash  = 0x80;
+    static constexpr uint8  kFlagHasHash  = 0x80;   // eserver: hash follows; read by length
 
     using NatPath::NatPath;
 

@@ -163,7 +163,9 @@ std::optional<CallbackNotice> LugdunumNatPath::parseNotice(const NatEnv& env, co
     // Low bits = requester's (CT_SERVER_FLAGS >> 9) & 7, the CONNECT_OPT_CRYPT_* order.
     n.peer.cryptOptions = static_cast<uint8>(n.flags & 0x07);
     n.peer.cryptKnown = true;
-    if ((n.flags & kFlagHasHash) && size >= kNoticeSize + 16) {
+    // The length says whether the hash follows. eserver sets 0x80 exactly then; a foreign
+    // 0xA7 from ed2k-server 0.9.86+ always has it, with 0x80 only as "use the crypt layer".
+    if (size >= kNoticeSize + 16) {
         std::memcpy(n.peer.hash.data(), data + kNoticeSize, 16);
         n.peer.hashKnown = true;
     }

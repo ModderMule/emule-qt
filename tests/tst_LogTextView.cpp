@@ -78,6 +78,7 @@ private slots:
     void trimWithAutoScrollOffKeepsTopLine();
     void lateInsertAboveKeepsTopLine();
     void streamAtLineCap();
+    void trimsInBatches();
     void heldLineTrimmedAway();
 };
 
@@ -441,10 +442,12 @@ void tst_LogTextView::heldLineTrimmedAway()
     QCOMPARE(topLine(view), top);
     QVERIFY(view.document()->blockCount() > kLimit);
 
-    // Never past the ceiling
+    // Never past the ceiling, give or take one trim batch
     for (int i = 0; i < kLimit * LogTextView::kHeldCapFactor; ++i)
         addTrim();
-    QCOMPARE(view.document()->blockCount(), kLimit * LogTextView::kHeldCapFactor);
+    QVERIFY(view.document()->blockCount() >= kLimit * LogTextView::kHeldCapFactor);
+    QVERIFY(view.document()->blockCount()
+            < kLimit * LogTextView::kHeldCapFactor + LogTextView::trimSlack(kLimit));
 
     // Back on at the bottom: next line trims to the cap and follows
     view.scrollToBottom();
@@ -453,6 +456,31 @@ void tst_LogTextView::heldLineTrimmedAway()
     QTest::qWait(50);
     QCOMPARE(view.document()->blockCount(), kLimit);
     QVERIFY(atBottom(view));
+}
+
+
+void tst_LogTextView::trimsInBatches()
+{
+    // Issue #65: removing the top line relays out the whole document, so a trim
+    // per append at the cap saturated the GUI under Kad logging. Batches only.
+    constexpr int kLimit = 500;
+    const int slack = LogTextView::trimSlack(kLimit);
+    for (const bool autoScroll : {true, false}) {
+        LogTextView view;
+        view.resize(400, 200);
+        view.show();
+        QVERIFY(QTest::qWaitForWindowExposed(&view));
+        view.setAutoScroll(autoScroll);
+        int trims = 0;
+        constexpr int kLines = kLimit * (LogTextView::kHeldCapFactor + 2);
+        for (int i = 0; i < kLines; ++i) {
+            view.append(QStringLiteral("<span>Kad line %1</span>").arg(i));
+            if (view.trimTo(kLimit) > 0)
+                ++trims;
+            QVERIFY(view.document()->blockCount() < kLimit * LogTextView::kHeldCapFactor + slack);
+        }
+        QVERIFY2(trims <= kLines / slack + 1, qPrintable(QString::number(trims)));
+    }
 }
 
 QTEST_MAIN(tst_LogTextView)

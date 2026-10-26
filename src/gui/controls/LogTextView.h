@@ -18,6 +18,8 @@
 #include <QTextBrowser>
 #include <QTextCursor>
 
+#include <algorithm>
+
 namespace eMule {
 
 class LogTextView : public QTextBrowser {
@@ -48,7 +50,11 @@ public:
     /// that is not following keeps the line at its top and everything below it,
     /// up to kHeldCapFactor x @p maxBlocks — trimming that line would leave the
     /// view on the oldest line, where each trim slides the text up (issue #40).
+    /// Trims in batches: nothing until trimSlack() lines are over the limit (#65).
     int trimTo(int maxBlocks);
+
+    /// Lines allowed over a trimTo() limit before a batch goes.
+    [[nodiscard]] static constexpr int trimSlack(int maxBlocks) { return std::max(maxBlocks / 10, 1); }
 
     /// Ceiling for trimTo() while the view holds its position.
     static constexpr int kHeldCapFactor = 4;

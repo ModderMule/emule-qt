@@ -27,6 +27,7 @@
 #include <deque>
 #include <list>
 #include <memory>
+#include <optional>
 #include <unordered_map>
 #include <vector>
 #include <utility>
@@ -862,6 +863,11 @@ public:
     /// @param slotAgeMs  getUpStartTimeDelay(); passed in so a test can pick it.
     [[nodiscard]] UpSlotActivity upSlotActivity(uint32 slotAgeMs) const;
     static constexpr uint32 kUpSlotWarmupMs = 30'000;
+    /// One line on how the slot went: requests asked/accepted/served, last request and
+    /// block ages, buffered and unacked bytes. For the verbose slot-end log (emule-qt#58).
+    [[nodiscard]] QString upSlotDebugInfo() const;
+    /// Freeze upSlotDebugInfo() before the socket and rate are gone (disconnect path).
+    void noteUpSlotSocketGone();
     void flushSendBlocks();
     /// Move a block whose data is ready from the request queue to the head of the done list.
     /// False when it is no longer pending (flushed with an ended slot).
@@ -1419,6 +1425,13 @@ private:
     std::list<Requested_Block_Struct*> m_blockRequests;
     std::list<Requested_Block_Struct*> m_doneBlocks;
     uint64 m_blockReadBytesQueued = 0;      // bytes of m_blockRequests the disk thread holds
+    // Slot diagnostics for upSlotDebugInfo(); reset by flushSendBlocks()
+    uint32 m_slotBlocksAsked = 0;           // block requests received while Uploading
+    uint32 m_slotBlocksAccepted = 0;        // ... that were queued (not dup or dropped)
+    uint32 m_slotBlocksServed = 0;          // blocks whose packets went to the socket
+    uint64 m_slotLastRequestTick = 0;
+    uint64 m_slotLastServedTick = 0;
+    std::optional<QString> m_upSlotInfoAtSocketGone;   // upSlotDebugInfo() before the socket went
     // Blocks on the socket not yet sent in full, oldest first. sentMark is
     // m_addedPayloadQueueSession right after the block was queued.
     struct UnconfirmedSend {

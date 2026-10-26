@@ -175,6 +175,7 @@ private slots:
     void foreign_unlistedOff();
     void foreign_waitsForKey();
     void foreign_answerOnlyFromThatServer();
+    void foreign_answerHashWithoutFlag();
     void foreign_noFlagFails();
     void foreign_target_noReciprocalRequest();
     void foreign_target_requestersKeptApart();
@@ -1043,6 +1044,26 @@ void tst_NatRendezvousPaths::foreign_answerOnlyFromThatServer()
     QVERIFY(a->peer.cryptKnown);
 }
 
+void tst_NatRendezvousPaths::foreign_answerHashWithoutFlag()
+{
+    // ed2k-server 0.9.86: the foreign 0xA7 always has the hash; 0x80 only = use crypt layer
+    HubFixture f;
+    logInLugdunum(f);
+    f.env->foreignReady(kForeignIP, kForeignPort, kForeignKey, kForeignObf);
+    QVERIFY(f.hub->start(peerOnForeign(77)));
+    Hash16 h{};
+    h.fill(0x5A);
+    const QByteArray enc = encryptForServer(
+        serverDatagram(OP_NAT_CALLBACKREQUESTED_UDP, notice(kPeerIP, kPeerUdp, 77, CONNECT_OPT_CRYPT_SUPPORTED, &h)),
+        kForeignKey);
+    QVERIFY(f.hub->handleServerDatagram(Endpoint(kForeignIP, kForeignPort + 4), bytes(enc), enc.size()));
+    const Attempt* a = f.hub->attempts().front();
+    QCOMPARE(a->state, Attempt::State::Punching);
+    QVERIFY(a->peer.hashKnown);
+    QVERIFY(a->peer.hash == h);
+    QCOMPARE(a->peer.cryptOptions, uint8{CONNECT_OPT_CRYPT_SUPPORTED});
+}
+
 void tst_NatRendezvousPaths::foreign_noFlagFails()
 {
     HubFixture f;
@@ -1062,6 +1083,7 @@ void tst_NatRendezvousPaths::foreign_target_noReciprocalRequest()
     // Our Lugdunum-style server wakes us for a requester logged in elsewhere (ID 0).
     HubFixture f;
     logInLugdunum(f);
+    f.env->quic = true;
     QVERIFY(f.hub->handleServerTcp(OP_NAT_CALLBACKREQUESTED, notice(kPeerIP, kPeerUdp, 0, 0)));
     auto list = f.hub->attempts();
     QCOMPARE(list.size(), size_t{1});
@@ -1085,9 +1107,28 @@ void tst_NatRendezvousPaths::foreign_target_noReciprocalRequest()
     for (int i = 0; i < 10; ++i)
         f.advance(1000);
     QVERIFY(f.env->udpWith(OP_EDONKEYPROT, OP_NAT_CALLBACKREQUEST).empty());
-    // a repeat 0x37 from the same requester joins the attempt
+    // punch and wait to be dialled: QUIC armed, never dialled from this side
+    QVERIFY(!f.env->quicArms.empty());
+    QVERIFY(f.env->quicDials.empty());
+    // a repeat 0x37 from the same requester joins the attempt and bursts 0x9F again,
+    // so the server's next 0xA7 has our port
     QVERIFY(f.hub->handleServerTcp(OP_NAT_CALLBACKREQUESTED, notice(kPeerIP, kPeerUdp + 1, 0, 0)));
     QCOMPARE(f.hub->attempts().size(), size_t{1});
+    for (int i = 0; i < 3; ++i) {
+        f.env->clock += Ed2kServerHolePunchPath::kBurstStepMs;
+        f.hub->processFast();
+    }
+    QCOMPARE(f.env->udpWith(OP_EDONKEYPROT, OP_SERVER_NATT_KEEPALIVE).size(), size_t{6});
+    // a repeat inside a running burst does not stack another one
+    QVERIFY(f.hub->handleServerTcp(OP_NAT_CALLBACKREQUESTED, notice(kPeerIP, kPeerUdp + 2, 0, 0)));
+    QVERIFY(f.hub->handleServerTcp(OP_NAT_CALLBACKREQUESTED, notice(kPeerIP, kPeerUdp + 3, 0, 0)));
+    for (int i = 0; i < 6; ++i) {
+        f.env->clock += Ed2kServerHolePunchPath::kBurstStepMs;
+        f.hub->processFast();
+    }
+    QCOMPARE(f.env->udpWith(OP_EDONKEYPROT, OP_SERVER_NATT_KEEPALIVE).size(), size_t{9});
+    f.advance(NatRendezvous::kQuicTargetFallbackMs + 1000);
+    QVERIFY(f.env->quicDials.empty());
 }
 
 void tst_NatRendezvousPaths::foreign_target_requestersKeptApart()

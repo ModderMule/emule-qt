@@ -38,6 +38,7 @@ private slots:
     void candidates_version6IsAccepted();
     void failedRequest_isNotMarkedUsed();
     void queryNextClient_waitsForTheExternalPort();
+    void useExternKadPort_trueBeforePortIsKnown();
 };
 
 void tst_KadFirewallTester::init()
@@ -236,6 +237,19 @@ void tst_KadFirewallTester::queryNextClient_waitsForTheExternalPort()
     prefs->setUseExternKadPort(false);
     QVERIFY(!prefs->useExternKadPort());
     UDPFirewallTester::reset();
+    QVERIFY(prefs->useExternKadPort());
+}
+
+// Issue #64: an unknown extern port must not make us send TAG_SOURCEUPORT.
+// Peers reply to that tag's port, which a port-rewriting NAT drops.
+void tst_KadFirewallTester::useExternKadPort_trueBeforePortIsKnown()
+{
+    eMule::testing::KadFixture kadFixture;
+    UDPFirewallTester::reset();
+    auto* prefs = Kademlia::getInstancePrefs();
+    QVERIFY(prefs != nullptr);
+    (void)prefs->findExternKadPort(true);
+    QCOMPARE(prefs->externalKadPort(), uint16{0});
     QVERIFY(prefs->useExternKadPort());
 }
 

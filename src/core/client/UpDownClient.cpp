@@ -2669,6 +2669,7 @@ bool UpDownClient::disconnected(const QString& reason, bool fromSocket)
     // Detach the socket so tryToConnect() can create a fresh one. One we did not get here from
     // is still live and is closed too — MFC BaseClient.cpp:1204-1208. Left wired, it kept
     // delivering packets and later ran this function again from its own close.
+    noteUpSlotSocketGone();
     releaseSocket(/*destroy*/ !fromSocket);
 
     // A recovery request that was in flight is lost with the connection. Report it so
@@ -2697,8 +2698,9 @@ bool UpDownClient::disconnected(const QString& reason, bool fromSocket)
     {
         setUploadState(UploadState::None);
         if (theApp.uploadQueue)
-            theApp.uploadQueue->removeFromUploadQueue(this);
+            theApp.uploadQueue->removeFromUploadQueue(this, QStringLiteral("Disconnected: ") + reason);
     }
+    m_upSlotInfoAtSocketGone.reset();   // not removed above: must not leak into a later slot
 
     // A hashset request that died with the connection goes back to the file, or no
     // other source is ever asked for it. MFC BaseClient.cpp:1143-1151.
@@ -4684,7 +4686,7 @@ void UpDownClient::onPacketForClient(const uint8* data, uint32 size, uint8 opcod
     case OP_CANCELTRANSFER:
         // Remote client cancelled the transfer — remove from upload queue
         if (theApp.uploadQueue)
-            theApp.uploadQueue->removeFromUploadQueue(this);
+            theApp.uploadQueue->removeFromUploadQueue(this, QStringLiteral("Remote client cancelled transfer"));
         break;
 
     case OP_OUTOFPARTREQS:
@@ -4708,7 +4710,7 @@ void UpDownClient::onPacketForClient(const uint8* data, uint32 size, uint8 opcod
         // Only for the file it is being served (MFC srchybrid/ListenSocket.cpp:553)
         if (size >= 16 && md4equ(m_reqUpFileId.data(), data)) {
             if (theApp.uploadQueue)
-                theApp.uploadQueue->removeFromUploadQueue(this);
+                theApp.uploadQueue->removeFromUploadQueue(this, QStringLiteral("Remote client ended transfer"));
         } else if (size >= 16) {
             checkFailedFileIdReqs(data);
         }

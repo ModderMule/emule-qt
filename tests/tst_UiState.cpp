@@ -6,6 +6,9 @@
 
 #include <QCoreApplication>
 #include <QFile>
+#include <QHeaderView>
+#include <QStandardItemModel>
+#include <QTreeView>
 #include <QSettings>
 #include <QTemporaryDir>
 #include <QTest>
@@ -22,6 +25,7 @@ private slots:
     void fallbacks_whenNeverSaved();
     void legacyStore_importedThenRemoved();
     void legacyStore_yamlValueWins();
+    void headerState_newColumnsStayMovable();
 
 private:
     QTemporaryDir m_legacyDir;   ///< stands in for ~/.config
@@ -119,6 +123,64 @@ void tst_UiState::legacyStore_yamlValueWins()
     s.load(cfg.path());
     QCOMPARE(s.searchHistory(), QStringList{QStringLiteral("new")});
     QVERIFY(QSettings().allKeys().isEmpty());
+}
+
+/// A layout saved before columns were added (issue #61): the new columns must sit
+/// inside the header's length, or they can't be grabbed for a drag.
+void tst_UiState::headerState_newColumnsStayMovable()
+{
+    const auto lengthOk = [](const QHeaderView* header) {
+        int total = 0;
+        for (int i = 0; i < header->count(); ++i)
+            total += header->sectionSize(i);
+        return header->length() == total;
+    };
+
+    QStandardItemModel oldModel(1, 5);
+    QTreeView oldView;
+    oldView.setModel(&oldModel);
+    oldView.header()->moveSection(4, 1);
+    const QByteArray saved = oldView.header()->saveState();
+
+    QStandardItemModel newModel(1, 8);
+    // bindColumns() hides the default-hidden columns before the restore; that
+    // is what leaves Qt's length short
+    const auto hideNew = [](QHeaderView* header) {
+        for (const int column : {5, 6, 7})
+            header->setSectionHidden(column, true);
+    };
+
+    // Plain Qt: the bug this works around (drop the check once Qt fixes it)
+    QTreeView plain;
+    plain.setModel(&newModel);
+    hideNew(plain.header());
+    QVERIFY(plain.header()->restoreState(saved));
+    const QByteArray broken = plain.header()->saveState();
+    if (lengthOk(plain.header()))
+        qInfo("Qt appends restored sections correctly now");
+    else
+        QVERIFY(!QTreeView().header()->restoreState(broken));
+
+    QTreeView view;
+    view.setModel(&newModel);
+    auto* header = view.header();
+    hideNew(header);
+    QVERIFY(UiState::restoreHeaderState(header, saved));
+    QCOMPARE(header->logicalIndex(1), 4);
+    QVERIFY(lengthOk(header));
+    const int last = header->sectionPosition(7) + header->sectionSize(7) / 2;
+    QCOMPARE(header->logicalIndexAt(last), 7);
+
+    // Its own state, and the one an earlier build saved, restore again
+    QTreeView again;
+    again.setModel(&newModel);
+    QVERIFY(again.header()->restoreState(header->saveState()));
+    QTreeView repaired;
+    repaired.setModel(&newModel);
+    hideNew(repaired.header());
+    QVERIFY(UiState::restoreHeaderState(repaired.header(), broken));
+    QVERIFY(lengthOk(repaired.header()));
+    QCOMPARE(repaired.header()->logicalIndex(1), 4);
 }
 
 QTEST_MAIN(tst_UiState)
