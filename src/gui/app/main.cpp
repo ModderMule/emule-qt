@@ -483,6 +483,8 @@ int main(int argc, char* argv[])
                     .arg(seed.seeded).arg(seed.refreshed).arg(seed.conflicts).arg(seed.pruned));
     }
     eMule::theUiState.load(configDir);
+    if (!cli.screenshotMode())
+        eMule::theUiState.countStart();
     eMule::CountryFlags::setSettings(eMule::theUiState.showCountryFlags());
 
     // Start the core now, so it loads while the window is built instead of after.
@@ -812,6 +814,9 @@ int main(int argc, char* argv[])
                 mainWindow.kadPanel()->refreshNodesUrl();
                 // The folder tree marks what sharedDirs just named.
                 mainWindow.sharedFilesPanel()->refreshSharedDirs();
+                // The lists were built on the local prefs file's showExtControls
+                mainWindow.sharedFilesPanel()->applyDisplayOptions();
+                mainWindow.transferPanel()->applyExtColumns();
             });
 
             // Automatic version check: one now if the interval has elapsed, then

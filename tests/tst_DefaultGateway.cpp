@@ -8,6 +8,7 @@
 
 #include "TestHelpers.h"
 #include "net/DefaultGateway.h"
+#include "net/RouterLocator.h"
 
 #include <QTest>
 
@@ -92,8 +93,16 @@ private slots:
     void select_emptyInputYieldsNoGuess();
     void select_endToEndFromProcFixtures();
 
+    // -- router page (RouterLocator) ---------------------------------------
+    void tunnel_recognisesVpnInterfaces();
+    void tunnel_leavesLanInterfacesAlone();
+    void router_skipsTunnelInterfaces();
+    void router_prefersIPv4AndSkipsLinkLocal();
+    void router_onlyTunnelsYieldsNothing();
+
     // -- platform backend --------------------------------------------------
     void platform_lookupIsSaneOrEmpty();
+    void platform_allGatewaysIncludeBestRoute();
 };
 
 // ---------------------------------------------------------------------------
@@ -348,6 +357,107 @@ void tst_DefaultGateway::platform_lookupIsSaneOrEmpty()
             QCOMPARE(bytes[3], uint8(0));
         }
     }
+}
+
+// ---------------------------------------------------------------------------
+// Router page
+// ---------------------------------------------------------------------------
+
+namespace {
+
+GatewayCandidate makeCandidate(const char* address, const char* ifName)
+{
+    GatewayCandidate c;
+    c.address = Address::fromString(QString::fromLatin1(address));
+    c.interfaceName = QString::fromLatin1(ifName);
+    return c;
+}
+
+bool nameIsTunnel(const QString& name)
+{
+    return looksLikeTunnel(name, name, QNetworkInterface::Unknown);
+}
+
+} // namespace
+
+void tst_DefaultGateway::tunnel_recognisesVpnInterfaces()
+{
+    QVERIFY(nameIsTunnel(QStringLiteral("utun4")));
+    QVERIFY(nameIsTunnel(QStringLiteral("tun0")));
+    QVERIFY(nameIsTunnel(QStringLiteral("wg0")));
+    QVERIFY(nameIsTunnel(QStringLiteral("ppp0")));
+    QVERIFY(nameIsTunnel(QStringLiteral("nordlynx")));
+    // Windows: opaque name, the friendly name tells
+    QVERIFY(looksLikeTunnel(u"ethernet_32777", u"OpenVPN TAP-Windows6", QNetworkInterface::Ethernet));
+    QVERIFY(looksLikeTunnel(u"ethernet_32778", u"ProtonVPN", QNetworkInterface::Ethernet));
+    QVERIFY(looksLikeTunnel(u"x", u"x", QNetworkInterface::Ppp));
+    QVERIFY(looksLikeTunnel(u"x", u"x", QNetworkInterface::Virtual));
+}
+
+void tst_DefaultGateway::tunnel_leavesLanInterfacesAlone()
+{
+    QVERIFY(!looksLikeTunnel(u"en0", u"en0", QNetworkInterface::Wifi));
+    QVERIFY(!looksLikeTunnel(u"eth0", u"eth0", QNetworkInterface::Ethernet));
+    QVERIFY(!looksLikeTunnel(u"wlan0", u"wlan0", QNetworkInterface::Wifi));
+    QVERIFY(!looksLikeTunnel(u"ethernet_7", u"Ethernet 2", QNetworkInterface::Ethernet));
+    QVERIFY(!looksLikeTunnel(u"wireless_32768", u"Wi-Fi", QNetworkInterface::Wifi));
+}
+
+void tst_DefaultGateway::router_skipsTunnelInterfaces()
+{
+    // Full-tunnel VPN that installs its own default route
+    const std::vector<GatewayCandidate> candidates = {
+        makeCandidate("10.8.0.1", "utun4"),
+        makeCandidate(kFritzBoxV4, "en0"),
+    };
+    const auto picked = pickRouter(candidates, nameIsTunnel);
+    QVERIFY(picked.has_value());
+    QCOMPARE(picked->address.toString(), QString::fromLatin1(kFritzBoxV4));
+    QCOMPARE(picked->interfaceName, QStringLiteral("en0"));
+}
+
+void tst_DefaultGateway::router_prefersIPv4AndSkipsLinkLocal()
+{
+    std::vector<GatewayCandidate> candidates = {
+        makeCandidate(kFritzBoxV6, "en0"),
+        makeCandidate("2001:db8::1", "en0"),
+        makeCandidate(kFritzBoxV4, "en0"),
+    };
+    auto picked = pickRouter(candidates, nameIsTunnel);
+    QVERIFY(picked.has_value());
+    QCOMPARE(picked->address.toString(), QString::fromLatin1(kFritzBoxV4));
+
+    // IPv6-only LAN: the global next hop, never the link-local one
+    candidates.pop_back();
+    picked = pickRouter(candidates, nameIsTunnel);
+    QVERIFY(picked.has_value());
+    QCOMPARE(picked->address.toString(), QStringLiteral("2001:db8::1"));
+}
+
+void tst_DefaultGateway::router_onlyTunnelsYieldsNothing()
+{
+    const std::vector<GatewayCandidate> candidates = {
+        makeCandidate("10.8.0.1", "tun0"),
+        makeCandidate(kFritzBoxV6, "en0"),   // link-local only
+    };
+    QVERIFY(!pickRouter(candidates, nameIsTunnel).has_value());
+    QVERIFY(!pickRouter({}, nameIsTunnel).has_value());
+}
+
+/// The full table must hold at least what the best-route lookup returns.
+void tst_DefaultGateway::platform_allGatewaysIncludeBestRoute()
+{
+    for (const Address::Family family : {Address::Family::IPv4, Address::Family::IPv6}) {
+        const auto all = allDefaultGateways(family);
+        for (const GatewayCandidate& best : defaultGateways(family)) {
+            const bool found = std::any_of(all.begin(), all.end(), [&](const GatewayCandidate& c) {
+                return c.address == best.address;
+            });
+            QVERIFY2(found, qPrintable(best.toString()));
+        }
+    }
+    const RouterInfo info = locateRouter();
+    qInfo() << "router:" << info.router << "on" << info.routerInterface << "vpn" << info.vpnInterface;
 }
 
 QTEST_MAIN(tst_DefaultGateway)

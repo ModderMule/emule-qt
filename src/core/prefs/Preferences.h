@@ -141,6 +141,16 @@ public:
     [[nodiscard]] uint16 udpPort() const;
     void setUdpPort(uint16 val);
 
+    /// Pick new listen ports at every core start, inside [randomPortMin, randomPortMax]:
+    /// TCP, UDP unless it is off, and the BitTorrent port when BitTorrent is on.
+    [[nodiscard]] bool randomizePortsAtStart() const;
+    void setRandomizePortsAtStart(bool val);
+    [[nodiscard]] uint16 randomPortMin() const;
+    void setRandomPortMin(uint16 val);
+    [[nodiscard]] uint16 randomPortMax() const;
+    void setRandomPortMax(uint16 val);
+    static constexpr uint16 kRandomPortFloor = 1024;
+
     [[nodiscard]] uint16 serverUDPPort() const;
     void setServerUDPPort(uint16 val);
 
@@ -505,6 +515,14 @@ public:
 
     [[nodiscard]] bool rememberCancelledFiles() const;
     void setRememberCancelledFiles(bool val);
+
+    /// Rename a download once to the name most of its sources use. Off by default.
+    [[nodiscard]] bool autoRenameToMajorityName() const;
+    void setAutoRenameToMajorityName(bool val);
+
+    /// Pick up files added to shared folders via the OS file watcher. On by default.
+    [[nodiscard]] bool watchSharedDirs() const;
+    void setWatchSharedDirs(bool val);
 
     /// Keep a record of the files (and their names) seen in search results.
     [[nodiscard]] bool seenFileIndex() const;
@@ -1292,6 +1310,16 @@ public:
     static constexpr QLatin1StringView kDefaultIpFilterUpdateUrl{
         "https://upd.emule-security.org/ipfilter.zip"};
 
+    /// Download ipfilter.dat from ipFilterUpdateUrl() every ipFilterUpdateDays() days.
+    [[nodiscard]] bool ipFilterAutoUpdate() const;
+    void setIpFilterAutoUpdate(bool val);
+    /// 1..365, default 7.
+    [[nodiscard]] int ipFilterUpdateDays() const;
+    void setIpFilterUpdateDays(int val);
+    /// Secs since epoch of the last successful download, 0 = never. Written by the core.
+    [[nodiscard]] qint64 ipFilterLastUpdate() const;
+    void setIpFilterLastUpdate(qint64 val);
+
     [[nodiscard]] bool useSafeKad() const;
     void setUseSafeKad(bool val);
 
@@ -1816,9 +1844,10 @@ public:
 
     // -- Static utilities -----------------------------------------------------
 
+    /// A port in @p lo..@p hi that @p isFree accepts (some port after 50 refusals).
+    [[nodiscard]] static uint16 randomPort(const std::function<bool(uint16)>& isFree,
+                                           uint16 lo = 4096, uint16 hi = 65095);
     /// Generate a random TCP port in [4096, 65095].
-    /// A port in 4096..65095 that @p isFree accepts (some port after 50 refusals).
-    [[nodiscard]] static uint16 randomPort(const std::function<bool(uint16)>& isFree);
     [[nodiscard]] static uint16 randomTCPPort();
 
     /// Generate a random UDP port in [4096, 65095].

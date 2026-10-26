@@ -64,6 +64,9 @@ public:
     void clear();
 
     [[nodiscard]] int searchCount() const { return static_cast<int>(m_searches.size()); }
+    [[nodiscard]] const std::vector<KadSearchRow>& searches() const { return m_searches; }
+    /// Model row of a search, -1 if gone.
+    [[nodiscard]] int rowOf(uint32_t searchId) const;
 
 private:
     std::vector<KadSearchRow> m_searches;

@@ -148,6 +148,7 @@ public:
     /// reloads by hand). Also holds back files that were written a moment ago.
     void setWatchingEnabled(bool enabled);
     [[nodiscard]] SharedDirWatcher* watcher() const { return m_watcher; }
+    [[nodiscard]] bool watchingEnabled() const { return m_watcher != nullptr; }
 
     /// Add a file to the shared list.
     ///

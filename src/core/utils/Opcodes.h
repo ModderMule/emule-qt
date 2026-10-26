@@ -512,6 +512,8 @@
 // collision-free for known.met / .part.met under the FT_ prefix.
 #define FT_KADNOTECACHE             0x90  // cached Kad notes-search results (filenames + comments, keyed by publisher)
 #define FT_MEDIAEXTRACTVER          0x91  // known.met only: version of the media extractor that last read the file
+#define FT_LASTREQUESTED            0x92  // known.met only: uint32 UTC time of the last upload request
+#define FT_NAMELOCKED               0x93  // .part.met only: uint8 1 = no auto-rename (user or auto renamed it)
 
 // eNode meta search rows (torrent/Usenet/web/container in eD2K results) — enodemeta/tags/tags.go.
 // 0x60-0x6F is unused under FT_ in stock, MorphXT and eMuleAI.

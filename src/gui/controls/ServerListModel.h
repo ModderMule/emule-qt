@@ -103,6 +103,9 @@ public:
     /// Set the currently connected server (0 to clear).
     void setConnectedServer(uint32_t serverId);
 
+    /// Repaint the connected row's colour and font, e.g. after the bold option changed.
+    void refreshEmphasis();
+
 protected:
     [[nodiscard]] int columnCountValue() const override { return ColCount; }
 

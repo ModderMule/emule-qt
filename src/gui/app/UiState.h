@@ -171,6 +171,24 @@ public:
         scheduleSave();
     }
 
+    /// GUI starts so far, this one included. The Low ID hint waits for the third.
+    [[nodiscard]] int startCount() const { return m_startCount; }
+    void countStart()
+    {
+        ++m_startCount;
+        scheduleSave();
+    }
+
+    /// "Don't show this again" on the Low ID hint.
+    [[nodiscard]] bool lowIdHintDisabled() const { return m_lowIdHintDisabled; }
+    void setLowIdHintDisabled(bool disabled)
+    {
+        if (m_lowIdHintDisabled == disabled)
+            return;
+        m_lowIdHintDisabled = disabled;
+        scheduleSave();
+    }
+
     /// Country flag next to the client/server icon (IP2Country). Display-only.
     [[nodiscard]] bool showCountryFlags() const { return m_showCountryFlags; }
     void setShowCountryFlags(bool on)
@@ -184,6 +202,16 @@ public:
     void setShowTaskbarProgress(bool on)
     {
         m_showTaskbarProgress = on;
+        scheduleSave();
+    }
+
+    /// Search Details graph switches to the active Kad search by itself (MFC AutoShowLookups).
+    [[nodiscard]] bool kadAutoShowLookups() const { return m_kadAutoShowLookups; }
+    void setKadAutoShowLookups(bool on)
+    {
+        if (m_kadAutoShowLookups == on)
+            return;
+        m_kadAutoShowLookups = on;
         scheduleSave();
     }
 
@@ -360,9 +388,12 @@ private:
     bool m_associateNzbFiles = true;
     bool m_miniMuleAutoClose = false;
     bool m_firstStartWizardDone = false;
+    int m_startCount = 0;
+    bool m_lowIdHintDisabled = false;
     bool m_showCountryFlags = true;
     bool m_showTaskbarProgress = true;
     bool m_showDownloadToolbar = true;
+    bool m_kadAutoShowLookups = true;
     int  m_colorScheme = 0;
     int  m_fontScalePercent = 100;
     QList<int> m_toolbarButtonOrder;

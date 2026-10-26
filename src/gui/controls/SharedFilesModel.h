@@ -38,6 +38,7 @@ struct SharedFileRow {
     int64_t allTimeRequests = 0;
     int64_t allTimeAccepted = 0;
     int64_t allTimeTransferred = 0;
+    int64_t lastRequested = 0;  ///< UTC seconds of the last upload request, 0 = never
     int     completeSources = 0;
     int     completeSourcesLo = 0;
     int     completeSourcesHi = 0;
@@ -115,6 +116,8 @@ public:
         // byte range was sent, StatisticFile.cpp GetFullSpreadCount) would be exacter.
         ColRatio,
         ColSessionRatio,
+        // Time of the last upload request, "Show more controls" only
+        ColLastRequest,
         ColCount
     };
 

@@ -123,6 +123,9 @@ public:
     // logic prefer IPv6 even for an IPv4-LowID peer.
     [[nodiscard]] const Address& userIPv6() const  { return m_userIPv6; }
     void setUserIPv6(const Address& a)             { m_userIPv6 = a; sourceIdentityChanged(); }
+    /// The peer advertised a reachable IPv6 and we have a public one: a direct v6 dial
+    /// reaches it whatever its IPv4 ID (the confidence gate, not shouldAdvertisePublicIPv6()).
+    [[nodiscard]] bool canDialIPv6() const;
     [[nodiscard]] const Address& buddyIPv6() const { return m_buddyIPv6; }
     void setBuddyIPv6(const Address& a)            { m_buddyIPv6 = a; }
     [[nodiscard]] bool openIPv6() const            { return m_openIPv6; }
@@ -1181,6 +1184,7 @@ private:
     QString m_username;
     uint32 m_userIDHybrid = 0;
     Address m_connectAddress;
+    Address m_ipv4BeforeIPv6Dial;   ///< a LowID source's IPv4 endpoint while we try its IPv6
     Address m_userAddress;
     uint16 m_userPort = 0;
     Address m_serverAddress;

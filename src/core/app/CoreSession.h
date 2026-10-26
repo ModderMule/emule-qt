@@ -32,6 +32,7 @@ class FriendList;
 class IPFilter;
 class IP2Country;
 class GeoIpUpdater;
+class IpFilterUpdater;
 class LastCommonRouteFinder;
 class KnownFileList;
 class ListenSocket;
@@ -192,6 +193,8 @@ private:
     /// emitted here and nowhere else, which is what makes it once-per-run — the later
     /// refresh in ServerConnect::initLocalIP() runs on every reconnect and stays silent.
     void initLocalIPv6();
+    /// "Randomize ports at startup": new TCP, UDP and BitTorrent ports from the range.
+    void randomizeListenPorts();
     void autoUpdateServerList();
     void initPortMapper();
     void shutdownPortMapper();
@@ -235,6 +238,7 @@ private:
     std::unique_ptr<IPFilter> m_ipFilter;
     std::unique_ptr<IP2Country> m_ip2Country;
     std::unique_ptr<GeoIpUpdater> m_geoIpUpdater;
+    std::unique_ptr<IpFilterUpdater> m_ipFilterUpdater;
     std::unique_ptr<KnownFileList> m_knownFileList;
     std::unique_ptr<SharedFileList> m_sharedFileList;
     std::unique_ptr<UploadQueue> m_uploadQueue;

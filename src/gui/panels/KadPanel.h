@@ -9,6 +9,7 @@
 ///   - Bottom: Current Searches table
 ///   - Vertical splitter between top and bottom sections
 
+#include <QModelIndex>
 #include <QWidget>
 
 #include <cstdint>
@@ -62,6 +63,7 @@ private slots:
     void onBootstrapTypeChanged();
     void onBootstrapInputChanged();
     void onSearchSelectionChanged();
+    void onSearchDoubleClicked(const QModelIndex& index);
 
 private:
     void setupUi();
@@ -73,6 +75,9 @@ private:
     void requestSearches();
     void requestStatus();
     void requestLookupHistory();
+    void autoPickLookup();
+    void clearLookupGraph();
+    void setLookupTabTitle(const QString& lookupTitle);
     uint32_t selectedSearchId() const;
 
     // Data models
@@ -86,6 +91,8 @@ private:
     QLabel* m_contactsLabel = nullptr;
     QLabel* m_searchesLabel = nullptr;
     KadLookupGraph* m_lookupGraph = nullptr;
+    /// Search the graph shows; may outlive its row (MFC keeps the history while shown).
+    uint32_t m_graphSearchId = 0;
 
     // Right panel controls
     QPushButton*  m_recheckFwBtn     = nullptr;

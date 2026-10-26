@@ -133,6 +133,8 @@ private slots:
     void a4af_removeSourceUnlinksBothSides();
     void a4af_swapFollowsMfcsRules();
     void a4af_periodicPassMovesIdleSources();
+    void a4af_swapAllToThisFileMovesIdleSources();
+    void majorityName_renamesOnceWhenClear();
     void categoryScope_allTabCoversWhatItShows();
     void disconnect_failedSourceLeavesTheFile_data();
     void disconnect_failedSourceLeavesTheFile();
@@ -1843,7 +1845,15 @@ void tst_DownloadQueue::addKadSources_firewalledKeepsBuddylessIPv6Source()
     }
     dq.addKadSourceResult(result);
     QCOMPARE(pf->sourceCount(), 1);
-    QCOMPARE(pf->srcList().front()->userIPv6(), peerV6);
+    UpDownClient* source = pf->srcList().front();
+    QCOMPARE(source->userIPv6(), peerV6);
+
+    // Dialled over IPv6 when added, although the record's IPv4 endpoint (kept for
+    // NAT-T) was set first: not sent to the buddy callback or NAT-T
+    QVERIFY(source->hasLowID());
+    QVERIFY(source->canDialIPv6());
+    QCOMPARE(source->connectAddress(), peerV6);
+    QCOMPARE(source->connectingState(), ConnectingState::DirectTCP);
 
     dq.deleteAll();
 }
@@ -3480,6 +3490,139 @@ void tst_DownloadQueue::a4af_periodicPassMovesIdleSources()
         c->removeFromAllOtherLists();
         dq.removeSource(c);
         clients.removeClient(c);
+        delete c;
+    }
+    dq.deleteAll();
+}
+
+void tst_DownloadQueue::a4af_swapAllToThisFileMovesIdleSources()
+{
+    // Download menu > Source Handling > Swap All A4AF Sources to This File: the idle
+    // ones move, even to the lower-priority file; a transferring one stays.
+    DownloadQueue dq;
+    ClientList clients;
+    DownloadQueue* const savedQueue = theApp.downloadQueue;
+    ClientList* const savedClients = theApp.clientList;
+    theApp.downloadQueue = &dq;
+    theApp.clientList = &clients;
+    const auto restore = qScopeGuard([=] {
+        theApp.downloadQueue = savedQueue;
+        theApp.clientList = savedClients;
+    });
+
+    const uint8 hashA[16] = {77, 1}, hashB[16] = {77, 2};
+    auto* low = createTestPartFile(hashA, QStringLiteral("swap-a.bin"), kPrLow);
+    auto* high = createTestPartFile(hashB, QStringLiteral("swap-b.bin"), kPrHigh);
+    for (auto* pf : {low, high}) {
+        pf->setStatus(PartFileStatus::Empty);
+        dq.addDownload(pf);
+    }
+
+    auto* idle = new UpDownClient();
+    auto* busy = new UpDownClient();
+    uint8 n = 0;
+    for (UpDownClient* c : {idle, busy}) {
+        const Address addr = Address::fromString(QStringLiteral("81.2.72.%1").arg(++n));
+        c->setUserAddress(addr);
+        c->setUserIDHybrid(addr.toUint32());
+        c->setUserPort(4662);
+        c->setReqFile(high);
+        high->addSource(c);
+        QVERIFY(c->addRequestForAnotherFile(low));
+        clients.addClient(c);
+    }
+    idle->setDownloadState(DownloadState::OnQueue);
+    busy->setDownloadState(DownloadState::Downloading);
+    QCOMPARE(low->a4afSourceCount(), 2);
+
+    int swapped = -1;
+    QVERIFY(ops::swapA4AFToDownload(md4str(hashA), &swapped).ok());
+    QCOMPARE(swapped, 1);
+    QCOMPARE(idle->reqFile(), low);
+    QCOMPARE(busy->reqFile(), high);
+    QCOMPARE(low->a4afSourceCount(), 1);
+
+    QCOMPARE(ops::swapA4AFToDownload(QStringLiteral("00112233445566778899AABBCCDDEEFF")).code, 404);
+
+    for (UpDownClient* c : {idle, busy}) {
+        c->setDownloadState(DownloadState::None);
+        c->removeFromAllOtherLists();
+        dq.removeSource(c);
+        clients.removeClient(c);
+        delete c;
+    }
+    dq.deleteAll();
+}
+
+void tst_DownloadQueue::majorityName_renamesOnceWhenClear()
+{
+    // "Rename downloads to the name most sources use": 5 sources and 60% at least,
+    // once, and never after a manual rename
+    const bool savedPref = thePrefs.autoRenameToMajorityName();
+    thePrefs.setAutoRenameToMajorityName(true);
+    const auto restorePref = qScopeGuard([=] { thePrefs.setAutoRenameToMajorityName(savedPref); });
+
+    DownloadQueue dq;
+    const uint8 hash[16] = {78, 1};
+    auto* pf = createTestPartFile(hash, QStringLiteral("old name.avi"));
+    pf->setStatus(PartFileStatus::Empty);
+    dq.addDownload(pf);
+
+    std::vector<UpDownClient*> sources;
+    const auto addSource = [&](const QString& name) {
+        auto* c = new UpDownClient();
+        const Address addr = Address::fromString(
+            QStringLiteral("81.2.73.%1").arg(static_cast<int>(sources.size()) + 1));
+        c->setUserAddress(addr);
+        c->setUserIDHybrid(addr.toUint32());
+        c->setUserPort(4662);
+        c->setReqFile(pf);
+        c->setClientFilename(name);
+        pf->addSource(c);
+        sources.push_back(c);
+    };
+    const QString good = QStringLiteral("Good Name (2026).avi");
+    for (int i = 0; i < 4; ++i)
+        addSource(good);
+    addSource(QStringLiteral("other.avi"));
+    addSource(QStringLiteral("third.avi"));
+
+    // 4 of 6: below 5 sources
+    pf->checkMajorityName();
+    QCOMPARE(pf->fileName(), QStringLiteral("old name.avi"));
+    QVERIFY(!pf->isNameLocked());
+
+    // 5 of 7 = 71%
+    addSource(good);
+    pf->checkMajorityName();
+    QCOMPARE(pf->fileName(), good);
+    QVERIFY(pf->isNameLocked());
+
+    // Once only: a new majority changes nothing
+    for (auto* c : sources)
+        c->setClientFilename(QStringLiteral("Newer.avi"));
+    pf->checkMajorityName();
+    QCOMPARE(pf->fileName(), good);
+
+    // 50% is not enough, and a manual rename locks too
+    pf->setNameLocked(false);
+    for (size_t i = 0; i < sources.size(); ++i)
+        sources[i]->setClientFilename(i % 2 ? QStringLiteral("A.avi") : QStringLiteral("B.avi"));
+    addSource(QStringLiteral("A.avi"));   // 4 A of 8 = 50%
+    pf->checkMajorityName();
+    QCOMPARE(pf->fileName(), good);
+
+    // A manual rename (Rename, Take over) locks the name as well
+    pf->setNameLocked(false);
+    pf->renameTo(QStringLiteral("Mine.avi"));
+    QVERIFY(pf->isNameLocked());
+    for (auto* c : sources)
+        c->setClientFilename(good);
+    pf->checkMajorityName();
+    QCOMPARE(pf->fileName(), QStringLiteral("Mine.avi"));
+
+    for (auto* c : sources) {
+        dq.removeSource(c);
         delete c;
     }
     dq.deleteAll();

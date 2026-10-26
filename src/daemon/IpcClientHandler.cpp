@@ -38,6 +38,7 @@
 #include "files/CollectionKeys.h"
 #include "ipfilter/IPFilter.h"
 #include "geo/GeoIpUpdater.h"
+#include "ipfilter/IpFilterUpdater.h"
 #include "geo/HostCountryResolver.h"
 #include "geo/IP2Country.h"
 #include "client/ClientList.h"
@@ -46,6 +47,7 @@
 #include "files/KnownFileList.h"
 #include "files/PartFileConvert.h"
 #include "files/PartFile.h"
+#include "media/MediaInfo.h"
 #include "files/SharedFileList.h"
 #include "friends/Friend.h"
 #include "friends/FriendList.h"
@@ -95,6 +97,7 @@
 #include "transfer/Scheduler.h"
 #include "transfer/UploadQueue.h"
 #include "utils/Log.h"
+#include "utils/TimeUtils.h"
 
 #include <QCoreApplication>
 #include <QDate>
@@ -376,6 +379,7 @@ void IpcClientHandler::onMessageReceived(const IpcMessage& msg)
     case IpcMsgType::UnbanClient:          handleUnbanClient(msg); break;
     case IpcMsgType::AddDownloadSource:    handleAddDownloadSource(msg); break;
     case IpcMsgType::SetDownloadSourceLimit: handleSetDownloadSourceLimit(msg); break;
+    case IpcMsgType::SwapA4AFToFile:       handleSwapA4AFToFile(msg); break;
     case IpcMsgType::SetDownloadPreviewFlags: handleSetDownloadPreviewFlags(msg); break;
     case IpcMsgType::ImportDownloadParts:  handleImportDownloadParts(msg); break;
     case IpcMsgType::FlushDownload:        handleFlushDownload(msg); break;
@@ -402,6 +406,7 @@ void IpcClientHandler::onMessageReceived(const IpcMessage& msg)
     case IpcMsgType::SyncLogs:             handleSyncLogs(msg); break;
     case IpcMsgType::Shutdown:             handleShutdown(msg); break;
     case IpcMsgType::ReloadIPFilter:       handleReloadIPFilter(msg); break;
+    case IpcMsgType::UpdateIpFilterNow:    handleUpdateIpFilterNow(msg); break;
     case IpcMsgType::GetSchedules:         handleGetSchedules(msg); break;
     case IpcMsgType::SaveSchedules:        handleSaveSchedules(msg); break;
     case IpcMsgType::ScanImportFolder:     handleScanImportFolder(msg); break;
@@ -1397,6 +1402,9 @@ void IpcClientHandler::handleGetEd2kLink(const IpcMessage& msg)
     const bool hashset    = msg.fieldBool(1);
     const bool sourceHint = msg.fieldBool(2);
     const bool html       = msg.fieldBool(3);
+    // Optional, newer GUIs: a line of media info under each HTML link
+    const bool mediaInfo  = html && msg.fieldCount() > 4 && msg.fieldBool(4);
+    int mediaBudget = 100;   // files read for it; each read is bounded (kMediaReadBudget)
 
     // One entry per requested hash, empty for anything we cannot resolve: the selection
     // moves under the GUI between its poll and this reply, and failing the whole batch over
@@ -1424,7 +1432,19 @@ void IpcClientHandler::handleGetEd2kLink(const IpcMessage& msg)
                 file = theApp.downloadQueue->fileByID(hash);
         }
 
-        const QString link = file ? file->getED2kLink(hashset, html, sourceHint) : QString{};
+        QString link = file ? file->getED2kLink(hashset, html, sourceHint) : QString{};
+        // Complete files only: a .part is laid out in parts, not as the media file
+        if (mediaInfo && file && mediaBudget > 0) {
+            const auto* known = dynamic_cast<const KnownFile*>(file);
+            if (known && !dynamic_cast<const PartFile*>(file)) {
+                --mediaBudget;
+                MediaInfo mi;
+                if (extractMediaInfo(known->filePath(), mi)) {
+                    if (const QString summary = mediaInfoSummary(mi); !summary.isEmpty())
+                        link += QStringLiteral("<br><small>%1</small>").arg(summary.toHtmlEscaped());
+                }
+            }
+        }
         budget -= link.size();
         links.append(link);
     }
@@ -1442,6 +1462,23 @@ void IpcClientHandler::handleReloadIPFilter(const IpcMessage& msg)
         count = theApp.ipFilter->loadFromDefaultFile(thePrefs.configDir());
     sendMessage(IpcMessage::makeResult(msg.seqId(), true,
         QCborValue(static_cast<qint64>(count))));
+}
+
+void IpcClientHandler::handleUpdateIpFilterNow(const IpcMessage& msg)
+{
+    if (!theApp.ipFilterUpdater) {
+        sendMessage(IpcMessage::makeError(msg.seqId(), 503, QStringLiteral("IP filter not running")));
+        return;
+    }
+    const QPointer<IpcClientHandler> self(this);
+    const int seqId = msg.seqId();
+    theApp.ipFilterUpdater->updateNow(msg.fieldString(0),
+        [self, seqId](bool ok, int entries, const QString& message) {
+            if (!self)
+                return;
+            QCborArray out{ok, static_cast<qint64>(entries), message};
+            self->sendMessage(IpcMessage::makeResult(seqId, true, QCborValue(out)));
+        });
 }
 
 void IpcClientHandler::handleGetFriends(const IpcMessage& msg)
@@ -1674,6 +1711,17 @@ void IpcClientHandler::handleSetDownloadSourceLimit(const IpcMessage& msg)
         }
     }
     sendMessage(IpcMessage::makeResult(msg.seqId(), true));
+}
+
+void IpcClientHandler::handleSwapA4AFToFile(const IpcMessage& msg)
+{
+    int swapped = 0;
+    const ops::Status st = ops::swapA4AFToDownload(msg.fieldString(0), &swapped);
+    if (!st.ok()) {
+        sendMessage(IpcMessage::makeError(msg.seqId(), st.code, st.message));
+        return;
+    }
+    sendMessage(IpcMessage::makeResult(msg.seqId(), true, static_cast<qint64>(swapped)));
 }
 
 void IpcClientHandler::handleSetDownloadPreviewFlags(const IpcMessage& msg)
@@ -2202,50 +2250,59 @@ void IpcClientHandler::handleGetKadSearches(const IpcMessage& msg)
 
 void IpcClientHandler::handleGetKadLookupHistory(const IpcMessage& msg)
 {
+    // Reply: [true, entries, meta{found, stopped, type, name}]. Ask times go out as
+    // ages in ms (-1 = never asked): GUI and core may not share a clock.
     const uint32_t searchId = static_cast<uint32_t>(msg.fieldInt(0));
     QCborArray entries;
+    QCborMap meta;
+    meta.insert(QStringLiteral("found"), false);
 
-    auto* kad = kad::Kademlia::instance();
-    if (kad) {
-        // Find the search with the given ID
+    const auto ageOf = [now = getTickCount()](uint64_t stamp) -> qint64 {
+        return stamp == 0 ? -1 : static_cast<qint64>(now - std::min(stamp, now));
+    };
+
+    if (kad::Kademlia::instance()) {
         for (const auto& [id, search] : kad::SearchManager::getSearches()) {
-            if (search->getSearchID() == searchId) {
-                auto* history = search->getLookupHistory();
-                if (history) {
-                    auto& he = history->getHistoryEntries();
-                    for (size_t i = 0; i < he.size(); ++i) {
-                        const auto* e = he[i];
-                        QCborMap m;
-                        m.insert(QStringLiteral("contactID"), e->contactID.toHexString());
-                        m.insert(QStringLiteral("distance"), e->distance.toHexString());
-                        m.insert(QStringLiteral("contactVersion"), static_cast<qint64>(e->contactVersion));
-                        m.insert(QStringLiteral("askedContactsTime"), static_cast<qint64>(e->askedContactsTime));
-                        m.insert(QStringLiteral("respondedContact"), static_cast<qint64>(e->respondedContact));
-                        m.insert(QStringLiteral("askedSearchItemTime"), static_cast<qint64>(e->askedSearchItemTime));
-                        m.insert(QStringLiteral("respondedSearchItem"), static_cast<qint64>(e->respondedSearchItem));
-                        m.insert(QStringLiteral("providedCloser"), e->providedCloser);
-                        m.insert(QStringLiteral("forcedInteresting"), e->forcedInteresting);
-
-                        // Encode receivedFromIdx as CBOR array
-                        QCborArray fromArr;
-                        for (int idx : e->receivedFromIdx)
-                            fromArr.append(static_cast<qint64>(idx));
-                        m.insert(QStringLiteral("receivedFromIdx"), fromArr);
-
-                        // 128-bit distance as 4x uint32 chunks for scaling
-                        m.insert(QStringLiteral("dist0"), static_cast<qint64>(e->distance.get32BitChunk(0)));
-                        m.insert(QStringLiteral("dist1"), static_cast<qint64>(e->distance.get32BitChunk(1)));
-                        m.insert(QStringLiteral("dist2"), static_cast<qint64>(e->distance.get32BitChunk(2)));
-                        m.insert(QStringLiteral("dist3"), static_cast<qint64>(e->distance.get32BitChunk(3)));
-
-                        entries.append(m);
-                    }
-                }
+            if (search->getSearchID() != searchId)
+                continue;
+            meta.insert(QStringLiteral("found"), true);
+            meta.insert(QStringLiteral("stopped"), search->stopping());
+            meta.insert(QStringLiteral("type"), kad::Search::getTypeName(search->getSearchType()));
+            meta.insert(QStringLiteral("typeId"), static_cast<qint64>(search->getSearchType()));
+            meta.insert(QStringLiteral("name"), search->getGUIName());
+            const auto* history = search->getLookupHistory();
+            if (!history)
                 break;
+            for (const auto* e : history->getHistoryEntries()) {
+                QCborMap m;
+                m.insert(QStringLiteral("contactID"), e->contactID.toHexString());
+                m.insert(QStringLiteral("distance"), e->distance.toHexString());
+                m.insert(QStringLiteral("contactVersion"), static_cast<qint64>(e->contactVersion));
+                m.insert(QStringLiteral("askedContactsAge"), ageOf(e->askedContactsTime));
+                m.insert(QStringLiteral("respondedContact"), static_cast<qint64>(e->respondedContact));
+                m.insert(QStringLiteral("askedSearchItemAge"), ageOf(e->askedSearchItemTime));
+                m.insert(QStringLiteral("respondedSearchItem"), static_cast<qint64>(e->respondedSearchItem));
+                m.insert(QStringLiteral("providedCloser"), e->providedCloser);
+                m.insert(QStringLiteral("forcedInteresting"), e->forcedInteresting);
+
+                QCborArray fromArr;
+                for (int idx : e->receivedFromIdx)
+                    fromArr.append(static_cast<qint64>(idx));
+                m.insert(QStringLiteral("receivedFromIdx"), fromArr);
+
+                // 128-bit distance as 4x uint32 chunks for scaling
+                m.insert(QStringLiteral("dist0"), static_cast<qint64>(e->distance.get32BitChunk(0)));
+                m.insert(QStringLiteral("dist1"), static_cast<qint64>(e->distance.get32BitChunk(1)));
+                m.insert(QStringLiteral("dist2"), static_cast<qint64>(e->distance.get32BitChunk(2)));
+                m.insert(QStringLiteral("dist3"), static_cast<qint64>(e->distance.get32BitChunk(3)));
+                entries.append(m);
             }
+            break;
         }
     }
-    sendMessage(IpcMessage::makeResult(msg.seqId(), true, QCborValue(entries)));
+    auto reply = IpcMessage::makeResult(msg.seqId(), true, QCborValue(entries));
+    reply.append(meta);
+    sendMessage(reply);
 }
 
 void IpcClientHandler::handleGetNetworkInterfaces(const IpcMessage& msg)
@@ -3242,10 +3299,8 @@ void IpcClientHandler::handleGetDownloadDetails(const IpcMessage& msg)
 
     // Source names: unique filenames with count, from live sources...
     std::unordered_map<QString, int> nameMap;
-    for (const auto* client : pf->srcList()) {
-        if (!client->clientFilename().isEmpty())
-            nameMap[client->clientFilename()]++;
-    }
+    for (const auto& [name, count] : pf->sourceNameCounts(false))
+        nameMap[name] = count;
 
     // Comments: from live sources...
     QCborArray comments;
@@ -3644,6 +3699,12 @@ bool IpcClientHandler::applyPreferenceA(const QString& key, const QCborValue& va
         thePrefs.setPort(static_cast<uint16>(val.toInteger()));
     else if (key == QStringLiteral("udpPort"))
         thePrefs.setUdpPort(static_cast<uint16>(val.toInteger()));
+    else if (key == QStringLiteral("randomizePortsAtStart"))
+        thePrefs.setRandomizePortsAtStart(val.toBool());
+    else if (key == QStringLiteral("randomPortMin"))
+        thePrefs.setRandomPortMin(static_cast<uint16>(std::clamp<qint64>(val.toInteger(), 0, 65535)));
+    else if (key == QStringLiteral("randomPortMax"))
+        thePrefs.setRandomPortMax(static_cast<uint16>(std::clamp<qint64>(val.toInteger(), 0, 65535)));
     else if (key == QStringLiteral("bindAddress"))
         // Reopened once all keys are in: applyPreferenceChanges()
         thePrefs.setBindAddress(val.toString().trimmed());
@@ -3753,6 +3814,16 @@ bool IpcClientHandler::applyPreferenceA(const QString& key, const QCborValue& va
         thePrefs.setRememberDownloadedFiles(val.toBool());
     else if (key == QStringLiteral("rememberCancelledFiles"))
         thePrefs.setRememberCancelledFiles(val.toBool());
+    else if (key == QStringLiteral("autoRenameToMajorityName"))
+        thePrefs.setAutoRenameToMajorityName(val.toBool());
+    else if (key == QStringLiteral("watchSharedDirs")) {
+        thePrefs.setWatchSharedDirs(val.toBool());
+        if (theApp.sharedFileList && theApp.sharedFileList->watchingEnabled() != val.toBool()) {
+            theApp.sharedFileList->setWatchingEnabled(val.toBool());
+            if (val.toBool())
+                theApp.sharedFileList->reload();   // catch what changed while off
+        }
+    }
     else if (key == QStringLiteral("seenFileIndex")) {
         thePrefs.setSeenFileIndex(val.toBool());
         if (theApp.seenFileIndex)
@@ -3827,6 +3898,15 @@ bool IpcClientHandler::applyPreferenceA(const QString& key, const QCborValue& va
         thePrefs.setEnableSearchResultFilter(val.toBool());
     else if (key == QStringLiteral("ipFilterUpdateUrl"))
         thePrefs.setIpFilterUpdateUrl(val.toString());
+    else if (key == QStringLiteral("ipFilterAutoUpdate") || key == QStringLiteral("ipFilterUpdateDays")) {
+        if (key == QStringLiteral("ipFilterAutoUpdate"))
+            thePrefs.setIpFilterAutoUpdate(val.toBool());
+        else
+            thePrefs.setIpFilterUpdateDays(static_cast<int>(val.toInteger()));
+        // Turning it on shouldn't wait for the hourly tick
+        if (theApp.ipFilterUpdater)
+            QTimer::singleShot(0, theApp.ipFilterUpdater, &IpFilterUpdater::checkSchedule);
+    }
     else if (key == QStringLiteral("geoIpAccountId") || key == QStringLiteral("geoIpLicenseKey")
              || key == QStringLiteral("geoIpAutoUpdate")) {
         if (key == QStringLiteral("geoIpAccountId"))

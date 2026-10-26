@@ -29,6 +29,7 @@ class FriendList;
 class IPFilter;
 class IP2Country;
 class GeoIpUpdater;
+class IpFilterUpdater;
 class KnownFileList;
 class ListenSocket;
 class GlobalSearchScheduler;
@@ -66,6 +67,7 @@ struct AppContext {
     IPFilter*        ipFilter       = nullptr;
     IP2Country*      ip2Country     = nullptr;
     GeoIpUpdater*    geoIpUpdater   = nullptr;
+    IpFilterUpdater* ipFilterUpdater = nullptr;
     ListenSocket*    listenSocket   = nullptr;
     FriendList*      friendList     = nullptr;
     ServerConnect*   serverConnect  = nullptr;

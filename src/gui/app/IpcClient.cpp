@@ -112,6 +112,8 @@ static QString ipcMsgTypeName(Ipc::IpcMsgType type)
     case T::PushDownloadRemoved:  return QStringLiteral("PushDownloadRemoved");
     case T::GetKnownFiles:        return QStringLiteral("GetKnownFiles");
     case T::RecoverArchivePreview: return QStringLiteral("RecoverArchivePreview");
+    case T::SwapA4AFToFile:       return QStringLiteral("SwapA4AFToFile");
+    case T::UpdateIpFilterNow:    return QStringLiteral("UpdateIpFilterNow");
     case T::PushNotifierEvent:    return QStringLiteral("PushNotifierEvent");
     case T::PushServerState:      return QStringLiteral("PushServerState");
     case T::PushSearchResult:     return QStringLiteral("PushSearchResult");

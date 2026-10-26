@@ -1,9 +1,12 @@
 #include "pch.h"
 /// @file KadLookupHistory.cpp
-/// @brief Search history tracking implementation.
+/// @brief Search history tracking implementation (MFC LookupHistory.cpp).
 
 #include "kademlia/KadLookupHistory.h"
 #include "kademlia/KadContact.h"
+#include "utils/TimeUtils.h"
+
+#include <algorithm>
 
 
 namespace eMule::kad {
@@ -16,54 +19,42 @@ void LookupHistory::contactReceived(Contact* received, Contact* from,
                                      const UInt128& distance, bool closer,
                                      bool forceInteresting)
 {
-    if (!received)
-        return;
-
-    int fromIdx = -1;
-    if (from)
-        fromIdx = findEntry(from->getClientID());
-
-    // Check if this contact is already tracked
-    int existingIdx = findEntry(received->getClientID());
-    if (existingIdx >= 0) {
-        auto* entry = m_historyEntries[static_cast<size_t>(existingIdx)].get();
-        if (fromIdx >= 0)
-            entry->receivedFromIdx.push_back(fromIdx);
+    // Known contact (same distance = same ID for one target), or response credit only.
+    // MFC matches the first entry it meets when received is null.
+    if (received == nullptr) {
+        if (!m_historyEntries.empty())
+            creditResponder(from, closer, nullptr);
         return;
     }
+    for (auto& entry : m_historyEntries) {
+        if (entry->distance == distance) {
+            creditResponder(from, closer, entry.get());
+            return;
+        }
+    }
 
-    // Add new entry
     auto entry = std::make_unique<HistoryEntry>();
     entry->contactID = received->getClientID();
     entry->distance = distance;
     entry->ip = received->address().toUint32();
     entry->port = received->getUDPPort();
     entry->contactVersion = received->getVersion();
-    entry->providedCloser = closer;
     entry->forcedInteresting = forceInteresting;
-    if (fromIdx >= 0)
-        entry->receivedFromIdx.push_back(fromIdx);
-
-    auto* rawPtr = entry.get();
+    auto* raw = entry.get();
+    creditResponder(from, closer, raw);
     m_historyEntries.push_back(std::move(entry));
-
-    if (rawPtr->isInteresting())
-        m_interestingEntries.push_back(rawPtr);
+    if (forceInteresting)
+        m_interestingEntries.push_back(raw);
 }
 
 void LookupHistory::contactAskedKad(const Contact* contact)
 {
     if (!contact)
         return;
-    int idx = findEntry(contact->getClientID());
-    if (idx >= 0) {
-        auto* entry = m_historyEntries[static_cast<size_t>(idx)].get();
-        entry->askedContactsTime = static_cast<uint32>(time(nullptr));
-        if (!entry->isInteresting()) {
-            // Now interesting since we asked it
-        }
-        if (std::find(m_interestingEntries.begin(), m_interestingEntries.end(), entry) == m_interestingEntries.end())
+    if (auto* entry = findEntry(contact->getClientID())) {
+        if (!entry->isInteresting())
             m_interestingEntries.push_back(entry);
+        entry->askedContactsTime = getTickCount();
     }
 }
 
@@ -71,73 +62,56 @@ void LookupHistory::contactAskedKeyword(const Contact* contact)
 {
     if (!contact)
         return;
-    int idx = findEntry(contact->getClientID());
-    if (idx >= 0) {
-        m_historyEntries[static_cast<size_t>(idx)]->askedSearchItemTime =
-            static_cast<uint32>(time(nullptr));
+    if (auto* entry = findEntry(contact->getClientID())) {
+        if (!entry->isInteresting())
+            m_interestingEntries.push_back(entry);
+        entry->askedSearchItemTime = getTickCount();
     }
 }
 
-void LookupHistory::contactRespondedKeyword(uint32 contactIP, uint16 /*udpPort*/, uint32 resultCount)
+void LookupHistory::contactRespondedKeyword(uint32 contactIP, uint16 udpPort, uint32 resultCount)
 {
-    for (auto& entry : m_historyEntries) {
-        if (entry->ip == contactIP) {
-            entry->respondedSearchItem = resultCount;
-            break;
+    for (auto it = m_interestingEntries.rbegin(); it != m_interestingEntries.rend(); ++it) {
+        if ((*it)->ip == contactIP && (*it)->port == udpPort) {
+            (*it)->respondedSearchItem += resultCount;
+            return;
         }
     }
-}
-
-void LookupHistory::setSearchStopped()
-{
-    m_searchStopped = true;
-}
-
-void LookupHistory::setSearchDeleted()
-{
-    m_searchDeleted = true;
-}
-
-void LookupHistory::setGUIDeleted()
-{
-    // Mark that GUI no longer references this
-}
-
-void LookupHistory::setGUIName(const QString& name)
-{
-    m_guiName = name;
-}
-
-void LookupHistory::setSearchType(uint32 type)
-{
-    m_type = type;
-}
-
-std::vector<LookupHistory::HistoryEntry*>& LookupHistory::getHistoryEntries()
-{
-    m_entryPtrCache.clear();
-    m_entryPtrCache.reserve(m_historyEntries.size());
-    for (auto& entry : m_historyEntries)
-        m_entryPtrCache.push_back(entry.get());
-    return m_entryPtrCache;
-}
-
-std::vector<LookupHistory::HistoryEntry*>& LookupHistory::getInterestingEntries()
-{
-    return m_interestingEntries;
 }
 
 // ---------------------------------------------------------------------------
 // Private methods
 // ---------------------------------------------------------------------------
 
-int LookupHistory::findEntry(const UInt128& contactID) const
+LookupHistory::HistoryEntry* LookupHistory::findEntry(const UInt128& contactID) const
 {
-    for (size_t i = 0; i < m_historyEntries.size(); ++i) {
-        if (m_historyEntries[i]->contactID == contactID)
-            return static_cast<int>(i);
-    }
+    for (auto it = m_historyEntries.rbegin(); it != m_historyEntries.rend(); ++it)
+        if ((*it)->contactID == contactID)
+            return it->get();
+    return nullptr;
+}
+
+int LookupHistory::interestingIdxByID(const UInt128& contactID) const
+{
+    for (auto i = static_cast<int>(m_interestingEntries.size()); --i >= 0;)
+        if (m_interestingEntries[static_cast<size_t>(i)]->contactID == contactID)
+            return i;
     return -1;
+}
+
+void LookupHistory::creditResponder(Contact* from, bool closer, HistoryEntry* received)
+{
+    if (!from)
+        return;
+    const int idx = interestingIdxByID(from->getClientID());
+    if (idx < 0)
+        return;
+    if (received)
+        received->receivedFromIdx.push_back(idx);
+    auto* responder = m_interestingEntries[static_cast<size_t>(idx)];
+    ++responder->respondedContact;
+    if (closer)
+        responder->providedCloser = true;
 }
 
 } // namespace eMule::kad

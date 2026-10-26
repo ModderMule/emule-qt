@@ -298,6 +298,12 @@ private:
     void addPage(QWidget* page);
     void updateConnectButton();
 
+    /// Low ID on eD2K and firewalled on Kad: from the third start on, offer help once
+    /// per session after the state held for a while.
+    [[nodiscard]] bool lowIdHintDue() const;
+    void scheduleLowIdHint();
+    void showLowIdHint();
+
     /// Redraw the tray icon: connection-state base plus MFC's download-rate meter bar.
     /// Cheap to call at 1 Hz — it returns early unless the picture would change.
     /// @param force repaint even then (startup, and after a settings change).
@@ -399,6 +405,8 @@ private:
     bool m_kadRunning = false;
     bool m_kadConnected = false;
     bool m_kadFirewalled = false;
+    bool m_lowIdHintShown = false;   ///< once per session
+    QTimer* m_lowIdHintTimer = nullptr;
 
     // Skin engine
     SkinEngine m_skinEngine;

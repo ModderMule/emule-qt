@@ -223,6 +223,7 @@
     <ClCompile Include="friends\FriendList.cpp" />
     <ClCompile Include="net\HttpClientReqSocket.cpp" />
     <ClCompile Include="ipfilter\IPFilter.cpp" />
+    <ClCompile Include="ipfilter\IpFilterUpdater.cpp" />
     <ClCompile Include="geo\GeoIpUpdater.cpp" />
     <ClCompile Include="geo\HostCountryResolver.cpp" />
     <ClCompile Include="geo\IP2Country.cpp" />
@@ -257,6 +258,7 @@
     <ClCompile Include="net\LastCommonRouteFinder.cpp" />
     <ClCompile Include="net\ListenSocket.cpp" />
     <ClCompile Include="net\DefaultGateway.cpp" />
+    <ClCompile Include="net\RouterLocator.cpp" />
     <ClCompile Include="portmap\PortMapTypes.cpp" />
     <ClCompile Include="portmap\PortMapWire.cpp" />
     <ClCompile Include="portmap\NatPmpMessages.cpp" />
@@ -465,6 +467,7 @@
     <QtMoc Include="portmap\UPnPWorker.h" />
     <QtMoc Include="net\HttpClientReqSocket.h" />
     <QtMoc Include="ipfilter\IPFilter.h" />
+    <QtMoc Include="ipfilter\IpFilterUpdater.h" />
     <QtMoc Include="geo\GeoIpUpdater.h" />
     <ClInclude Include="geo\HostCountryResolver.h" />
     <ClInclude Include="geo\IP2Country.h" />
@@ -531,6 +534,7 @@
     <ClInclude Include="media\ContainerSniffer.h" />
     <ClInclude Include="utils\OtherFunctions.h" />
     <ClInclude Include="net\DefaultGateway.h" />
+    <ClInclude Include="net\RouterLocator.h" />
     <ClInclude Include="portmap\PortMapTypes.h" />
     <ClInclude Include="portmap\PortMapWire.h" />
     <ClInclude Include="portmap\NatPmpMessages.h" />

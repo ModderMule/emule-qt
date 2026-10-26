@@ -85,7 +85,8 @@ bool UpDownClient::askForDownload()
         // neither of those.
         m_lastTriedToConnect = getTickCount();
 
-        if (hasLowID() && lastAskedTime() > 0) {
+        // An IPv6-reachable LowID source is dialled directly, like a HighID one
+        if (hasLowID() && lastAskedTime() > 0 && !canDialIPv6()) {
             // It is already on *our* upload queue, so it will re-ask us of its own accord
             // when its rank comes up. Waiting up to 20 minutes for that costs nothing and
             // saves a callback — MFC srchybrid/DownloadClient.cpp:195-201.

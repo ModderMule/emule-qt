@@ -71,6 +71,9 @@ public:
     /// disabled lists, the category tab info, advanced-mode rows.
     void applyDisplayOptions();
 
+    /// Client-list columns that exist only with "Show more controls".
+    void applyExtColumns();
+
     /// Whether "Search Related Files" can be offered (the server answers it).
     void setRelatedSearchSupported(bool supported) { m_relatedSearchSupported = supported; }
 
@@ -162,8 +165,12 @@ private:
     void searchRelated(const QStringList& hashes, const QStringList& names);
     [[nodiscard]] QString saveDownloadSelection() const;
     [[nodiscard]] QStringList saveDownloadSelectionMulti() const;
-    [[nodiscard]] QString saveClientSelection(QTreeView* view, ClientListModel* model) const;
-    void restoreClientSelection(QTreeView* view, ClientListModel* model, const QString& key);
+    /// User hashes of the selected rows, the current row first.
+    [[nodiscard]] QStringList saveClientSelection(QTreeView* view, ClientListModel* model) const;
+    void restoreClientSelection(QTreeView* view, ClientListModel* model, const QStringList& keys);
+    /// Selected rows of a client list; the row under @p clicked when it isn't selected.
+    [[nodiscard]] std::vector<const ClientRow*> selectedClients(QTreeView* view, ClientListModel* model,
+                                                                const QModelIndex& clicked) const;
     void setTopView(int topId);
     void setBottomView(int clientView);
     /// The one implementation behind both switchers: resolves the two panes asking

@@ -18,6 +18,7 @@
 #include "panels/StatisticsPanel.h"
 #include "net/HttpFileDownload.h"
 #include "prefs/Preferences.h"
+#include "net/RouterLocator.h"
 #include "net/SmtpClient.h"
 #include "dialogs/PortTest.h"
 #include "utils/Appearance.h"
@@ -259,6 +260,9 @@ OptionsDialog::OptionsDialog(IpcClient* ipc, StatisticsPanel* statsPanel,
     connect(m_udpPortSpin, &QSpinBox::valueChanged, this, &OptionsDialog::markDirty);
     connect(m_bindInterfaceCombo, &QComboBox::currentTextChanged, this, &OptionsDialog::markDirty);
     connect(m_udpDisableCheck, &QCheckBox::toggled, this, &OptionsDialog::markDirty);
+    connect(m_randomPortsCheck, &QCheckBox::toggled, this, &OptionsDialog::markDirty);
+    connect(m_randomPortMinSpin, &QSpinBox::valueChanged, this, &OptionsDialog::markDirty);
+    connect(m_randomPortMaxSpin, &QSpinBox::valueChanged, this, &OptionsDialog::markDirty);
     connect(m_upnpCheck, &QCheckBox::toggled, this, &OptionsDialog::markDirty);
     connect(m_maxSourcesSpin, &QSpinBox::valueChanged, this, &OptionsDialog::markDirty);
     connect(m_maxConnectionsSpin, &QSpinBox::valueChanged, this, &OptionsDialog::markDirty);
@@ -316,6 +320,8 @@ OptionsDialog::OptionsDialog(IpcClient* ipc, StatisticsPanel* statsPanel,
     connect(m_onlySameCatCheck, &QCheckBox::toggled, this, &OptionsDialog::markDirty);
     connect(m_rememberDownloadedCheck, &QCheckBox::toggled, this, &OptionsDialog::markDirty);
     connect(m_rememberCancelledCheck, &QCheckBox::toggled, this, &OptionsDialog::markDirty);
+    connect(m_autoRenameMajorityCheck, &QCheckBox::toggled, this, &OptionsDialog::markDirty);
+    connect(m_watchSharedDirsCheck, &QCheckBox::toggled, this, &OptionsDialog::markDirty);
     connect(m_seenFileIndexCheck, &QCheckBox::toggled, this, &OptionsDialog::markDirty);
     connect(m_videoPlayerCmdEdit, &QLineEdit::textChanged, this, &OptionsDialog::markDirty);
     connect(m_videoPlayerArgsEdit, &QLineEdit::textChanged, this, &OptionsDialog::markDirty);
@@ -355,6 +361,8 @@ OptionsDialog::OptionsDialog(IpcClient* ipc, StatisticsPanel* statsPanel,
     connect(m_useSecureIdentCheck, &QCheckBox::toggled, this, &OptionsDialog::markDirty);
     connect(m_enableSearchResultFilterCheck, &QCheckBox::toggled, this, &OptionsDialog::markDirty);
     connect(m_ipFilterUpdateUrlEdit, &QLineEdit::textChanged, this, &OptionsDialog::markDirty);
+    connect(m_ipFilterAutoUpdateCheck, &QCheckBox::toggled, this, &OptionsDialog::markDirty);
+    connect(m_ipFilterUpdateDaysSpin, &QSpinBox::valueChanged, this, &OptionsDialog::markDirty);
     connect(m_antiLeecherCheck, &QCheckBox::toggled, this, &OptionsDialog::markDirty);
     connect(m_antiLeecherLevelCombo, &QComboBox::currentIndexChanged, this, &OptionsDialog::markDirty);
 
@@ -997,7 +1005,8 @@ QWidget* OptionsDialog::createDisplayPage()
     m_showActiveDownloadsBoldCheck = new QCheckBox(tr("Show active downloads in bold"), page);
     m_showActiveDownloadsBoldCheck->setToolTip(
         tr("Downloads that are receiving data, and the sources sending it, are drawn in bold. "
-           "A source listed under another file (A4AF) is bold too while it transfers."));
+           "A source listed under another file (A4AF) is bold too while it transfers. "
+           "The connected server and the selected category tab are bold as well."));
     layout->addWidget(m_showActiveDownloadsBoldCheck);
 
     m_showRatesInTitleCheck = new QCheckBox(tr("Show transfer rates on title"), page);
@@ -1250,8 +1259,42 @@ QWidget* OptionsDialog::createConnectionPage()
     connect(testPortsBtn, &QPushButton::clicked, this, [this] { openPortTest(); });
     portLayout->addWidget(testPortsBtn, 1, 3);
 
+    auto* routerBtn = new QPushButton(tr("Open Router"), portGroup);
+    routerBtn->setToolTip(tr("Opens the web page of this computer's router, where ports are forwarded"));
+    connect(routerBtn, &QPushButton::clicked, this, [this] { openRouterPage(); });
+    portLayout->addWidget(routerBtn, 0, 3);
+
     m_upnpCheck = new QCheckBox(tr("Use UPnP to Setup Ports"), portGroup);
     portLayout->addWidget(m_upnpCheck, 2, 0, 1, 2);
+
+    // Advanced mode only: new ports at every start, from a range
+    auto* randomRow = new QWidget(portGroup);
+    auto* randomLayout = new QHBoxLayout(randomRow);
+    randomLayout->setContentsMargins(0, 0, 0, 0);
+    m_randomPortsCheck = new QCheckBox(tr("Randomize ports at startup, range"), randomRow);
+    m_randomPortsCheck->setToolTip(
+        tr("Picks new free ports from this range at every start: TCP, UDP unless it is "
+           "disabled, and the BitTorrent port when BitTorrent is enabled. Use it with UPnP, "
+           "or forward the whole range in your router."));
+    randomLayout->addWidget(m_randomPortsCheck);
+    m_randomPortMinSpin = new QSpinBox(randomRow);
+    m_randomPortMinSpin->setRange(Preferences::kRandomPortFloor, 65535);
+    m_randomPortMinSpin->setValue(50000);
+    randomLayout->addWidget(m_randomPortMinSpin);
+    randomLayout->addWidget(new QLabel(QStringLiteral("–"), randomRow));
+    m_randomPortMaxSpin = new QSpinBox(randomRow);
+    m_randomPortMaxSpin->setRange(Preferences::kRandomPortFloor, 65535);
+    m_randomPortMaxSpin->setValue(60000);
+    randomLayout->addWidget(m_randomPortMaxSpin);
+    randomLayout->addStretch();
+    const auto syncRandomRange = [this] {
+        m_randomPortMinSpin->setEnabled(m_randomPortsCheck->isChecked());
+        m_randomPortMaxSpin->setEnabled(m_randomPortsCheck->isChecked());
+    };
+    connect(m_randomPortsCheck, &QCheckBox::toggled, this, syncRandomRange);
+    syncRandomRange();
+    randomRow->setVisible(thePrefs.showExtControls());
+    portLayout->addWidget(randomRow, 5, 0, 1, 4);
 
     // Real forwarding status: GetNetworkInfo's portmap section on load, then the
     // daemon's pushes. Full sentence in the tooltip.
@@ -1977,6 +2020,20 @@ QWidget* OptionsDialog::createFilesPage()
 
     m_rememberCancelledCheck = new QCheckBox(tr("Remember cancelled files"), miscGroup);
     miscLayout->addWidget(m_rememberCancelledCheck);
+    // Advanced mode only
+    m_autoRenameMajorityCheck = new QCheckBox(tr("Rename downloads to the name most sources use"), miscGroup);
+    m_autoRenameMajorityCheck->setToolTip(
+        tr("Renames a download once when at least 5 sources and 60% of them use the same name. "
+           "Never after you renamed it yourself, and not when the file looks fake."));
+    m_autoRenameMajorityCheck->setVisible(thePrefs.showExtControls());
+    miscLayout->addWidget(m_autoRenameMajorityCheck);
+    // Advanced mode only
+    m_watchSharedDirsCheck = new QCheckBox(tr("Watch shared folders for new files"), miscGroup);
+    m_watchSharedDirsCheck->setToolTip(
+        tr("Shares files added to a shared folder as they appear. When off, new files are "
+           "only picked up on restart or when you reload the shared files."));
+    m_watchSharedDirsCheck->setVisible(thePrefs.showExtControls());
+    miscLayout->addWidget(m_watchSharedDirsCheck);
 
     m_seenFileIndexCheck = new QCheckBox(tr("Remember files seen in search results"), miscGroup);
     m_seenFileIndexCheck->setToolTip(
@@ -2547,6 +2604,34 @@ QWidget* OptionsDialog::createSecurityPage()
         loadBtn->setEnabled(false);
         loadBtn->setText(tr("Loading..."));
 
+        // The daemon owns ipfilter.dat: let it download, save and reload the list
+        if (m_ipc && m_ipc->isConnected()) {
+            Ipc::IpcMessage req(Ipc::IpcMsgType::UpdateIpFilterNow);
+            req.append(url);
+            m_ipc->sendRequest(std::move(req),
+                [this, loadBtn, self = QPointer<OptionsDialog>(this)](const Ipc::IpcMessage& resp) {
+                    if (!self)
+                        return;
+                    loadBtn->setEnabled(true);
+                    loadBtn->setText(tr("Load"));
+                    if (!resp.isValid() || resp.type() != Ipc::IpcMsgType::Result || !resp.fieldBool(0)) {
+                        QMessageBox::warning(this, tr("IP Filter"),
+                            tr("Failed to download IP filter: %1").arg(tr("the core did not answer")));
+                        return;
+                    }
+                    const QCborArray out = resp.field(1).toArray();
+                    if (!out.at(0).toBool()) {
+                        QMessageBox::warning(this, tr("IP Filter"),
+                            tr("Failed to download IP filter: %1").arg(out.at(2).toString()));
+                        return;
+                    }
+                    QMessageBox::information(this, tr("IP Filter"),
+                        tr("IP filter updated and reloaded (%n range(s)).", nullptr,
+                           static_cast<int>(out.at(1).toInteger())));
+                });
+            return;
+        }
+
         // Most public lists ship compressed; the names are the ones MFC looks for inside
         // an archive (srchybrid/PPgSecurity.cpp:246-250).
         eMule::HttpFileDownload::Options opts;
@@ -2594,6 +2679,20 @@ QWidget* OptionsDialog::createSecurityPage()
     });
     urlRow->addWidget(loadBtn);
     ipFilterLayout->addLayout(urlRow);
+
+    // Scheduled download, done by the core
+    auto* autoRow = new QHBoxLayout;
+    m_ipFilterAutoUpdateCheck = new QCheckBox(tr("Update automatically every"), ipFilterGroup);
+    autoRow->addWidget(m_ipFilterAutoUpdateCheck);
+    m_ipFilterUpdateDaysSpin = new QSpinBox(ipFilterGroup);
+    m_ipFilterUpdateDaysSpin->setRange(1, 365);
+    m_ipFilterUpdateDaysSpin->setValue(7);
+    m_ipFilterUpdateDaysSpin->setSuffix(tr(" days"));
+    m_ipFilterUpdateDaysSpin->setEnabled(false);
+    autoRow->addWidget(m_ipFilterUpdateDaysSpin);
+    autoRow->addStretch();
+    ipFilterLayout->addLayout(autoRow);
+    connect(m_ipFilterAutoUpdateCheck, &QCheckBox::toggled, m_ipFilterUpdateDaysSpin, &QWidget::setEnabled);
 
     layout->addWidget(ipFilterGroup);
 
@@ -6737,6 +6836,12 @@ void OptionsDialog::saveSettings()
         req.append(static_cast<qint64>(m_tcpPortSpin->value()));
         req.append(QStringLiteral("udpPort"));
         req.append(static_cast<qint64>(m_udpDisableCheck->isChecked() ? 0 : m_udpPortSpin->value()));
+        req.append(QStringLiteral("randomizePortsAtStart"));
+        req.append(m_randomPortsCheck->isChecked());
+        req.append(QStringLiteral("randomPortMin"));
+        req.append(static_cast<qint64>(m_randomPortMinSpin->value()));
+        req.append(QStringLiteral("randomPortMax"));
+        req.append(static_cast<qint64>(m_randomPortMaxSpin->value()));
         req.append(QStringLiteral("enableUPnP"));
         req.append(m_upnpCheck->isChecked());
         req.append(QStringLiteral("bindAddress"));
@@ -6845,6 +6950,10 @@ void OptionsDialog::saveSettings()
         req.append(m_rememberDownloadedCheck->isChecked());
         req.append(QStringLiteral("rememberCancelledFiles"));
         req.append(m_rememberCancelledCheck->isChecked());
+        req.append(QStringLiteral("autoRenameToMajorityName"));
+        req.append(m_autoRenameMajorityCheck->isChecked());
+        req.append(QStringLiteral("watchSharedDirs"));
+        req.append(m_watchSharedDirsCheck->isChecked());
         req.append(QStringLiteral("seenFileIndex"));
         req.append(m_seenFileIndexCheck->isChecked());
 
@@ -6920,6 +7029,10 @@ void OptionsDialog::saveSettings()
         req.append(QStringLiteral("ipFilterUpdateUrl"));
         req.append(urlPrefFieldValue(m_ipFilterUpdateUrlEdit,
                                      Preferences::kDefaultIpFilterUpdateUrl));
+        req.append(QStringLiteral("ipFilterAutoUpdate"));
+        req.append(m_ipFilterAutoUpdateCheck->isChecked());
+        req.append(QStringLiteral("ipFilterUpdateDays"));
+        req.append(static_cast<qint64>(m_ipFilterUpdateDaysSpin->value()));
 
         // Display page: IP2Country download (daemon-side)
         req.append(QStringLiteral("geoIpAccountId"));
@@ -7332,6 +7445,9 @@ void OptionsDialog::saveSettings()
         thePrefs.setMaxUpload(m_uploadLimitCheck->isChecked() ? static_cast<uint32>(m_uploadLimitSlider->value()) : 0);
         thePrefs.setPort(static_cast<uint16>(m_tcpPortSpin->value()));
         thePrefs.setUdpPort(m_udpDisableCheck->isChecked() ? uint16(0) : static_cast<uint16>(m_udpPortSpin->value()));
+        thePrefs.setRandomizePortsAtStart(m_randomPortsCheck->isChecked());
+        thePrefs.setRandomPortMin(static_cast<uint16>(m_randomPortMinSpin->value()));
+        thePrefs.setRandomPortMax(static_cast<uint16>(m_randomPortMaxSpin->value()));
         thePrefs.setEnableUPnP(m_upnpCheck->isChecked());
         thePrefs.setMaxSourcesPerFile(static_cast<uint16>(m_maxSourcesSpin->value()));
         thePrefs.setMaxConnections(static_cast<uint16>(m_maxConnectionsSpin->value()));
@@ -7385,6 +7501,8 @@ void OptionsDialog::saveSettings()
         thePrefs.setStartNextPausedFileOnlySameCat(m_onlySameCatCheck->isChecked());
         thePrefs.setRememberDownloadedFiles(m_rememberDownloadedCheck->isChecked());
         thePrefs.setRememberCancelledFiles(m_rememberCancelledCheck->isChecked());
+        thePrefs.setAutoRenameToMajorityName(m_autoRenameMajorityCheck->isChecked());
+        thePrefs.setWatchSharedDirs(m_watchSharedDirsCheck->isChecked());
         thePrefs.setSeenFileIndex(m_seenFileIndexCheck->isChecked());
 
         // Notifications page (daemon-side) fallback
@@ -7426,6 +7544,8 @@ void OptionsDialog::saveSettings()
         thePrefs.setAntiLeecherLevel(m_antiLeecherLevelCombo->currentIndex());
         thePrefs.setIpFilterUpdateUrl(urlPrefFieldValue(m_ipFilterUpdateUrlEdit,
                                                         Preferences::kDefaultIpFilterUpdateUrl));
+        thePrefs.setIpFilterAutoUpdate(m_ipFilterAutoUpdateCheck->isChecked());
+        thePrefs.setIpFilterUpdateDays(m_ipFilterUpdateDaysSpin->value());
         thePrefs.setGeoIpAccountId(m_geoIpAccountEdit->text().trimmed());
         thePrefs.setGeoIpLicenseKey(m_geoIpLicenseEdit->text().trimmed());
         thePrefs.setGeoIpAutoUpdate(m_geoIpAutoUpdateCheck->isChecked());
@@ -7584,6 +7704,11 @@ void OptionsDialog::fillDaemonSettings(const QCborMap& prefs)
         m_udpDisableCheck->setChecked(false);
         m_udpPortSpin->setValue(udpPort);
     }
+    m_randomPortsCheck->setChecked(prefs.value(QStringLiteral("randomizePortsAtStart")).toBool(false));
+    m_randomPortMinSpin->setValue(static_cast<int>(prefs.value(QStringLiteral("randomPortMin")).toInteger(50000)));
+    m_randomPortMaxSpin->setValue(static_cast<int>(prefs.value(QStringLiteral("randomPortMax")).toInteger(60000)));
+    m_randomPortMinSpin->setEnabled(m_randomPortsCheck->isChecked());
+    m_randomPortMaxSpin->setEnabled(m_randomPortsCheck->isChecked());
 
     m_upnpCheck->setChecked(prefs.value(QStringLiteral("enableUPnP")).toBool());
     m_maxSourcesSpin->setValue(static_cast<int>(prefs.value(QStringLiteral("maxSourcesPerFile")).toInteger(400)));
@@ -7662,6 +7787,8 @@ void OptionsDialog::fillDaemonSettings(const QCborMap& prefs)
     m_onlySameCatCheck->setChecked(prefs.value(QStringLiteral("startNextPausedFileOnlySameCat")).toBool());
     m_rememberDownloadedCheck->setChecked(prefs.value(QStringLiteral("rememberDownloadedFiles")).toBool(true));
     m_rememberCancelledCheck->setChecked(prefs.value(QStringLiteral("rememberCancelledFiles")).toBool(true));
+    m_autoRenameMajorityCheck->setChecked(prefs.value(QStringLiteral("autoRenameToMajorityName")).toBool(false));
+    m_watchSharedDirsCheck->setChecked(prefs.value(QStringLiteral("watchSharedDirs")).toBool(true));
     m_seenFileIndexCheck->setChecked(prefs.value(QStringLiteral("seenFileIndex")).toBool(true));
 
     // Notifications page (daemon-side)
@@ -7730,6 +7857,9 @@ void OptionsDialog::fillDaemonSettings(const QCborMap& prefs)
         m_ipFilterUpdateUrlEdit->setText(
             url.isEmpty() ? QString(Preferences::kDefaultIpFilterUpdateUrl) : url);
     }
+    m_ipFilterAutoUpdateCheck->setChecked(prefs.value(QStringLiteral("ipFilterAutoUpdate")).toBool(false));
+    m_ipFilterUpdateDaysSpin->setValue(static_cast<int>(prefs.value(QStringLiteral("ipFilterUpdateDays")).toInteger(7)));
+    m_ipFilterUpdateDaysSpin->setEnabled(m_ipFilterAutoUpdateCheck->isChecked());
     m_geoIpAccountEdit->setText(prefs.value(QStringLiteral("geoIpAccountId")).toString());
     m_geoIpLicenseEdit->setText(prefs.value(QStringLiteral("geoIpLicenseKey")).toString());
     m_geoIpAutoUpdateCheck->setChecked(prefs.value(QStringLiteral("geoIpAutoUpdate")).toBool(true));
@@ -8110,6 +8240,54 @@ void OptionsDialog::openPortTest()
     // IPv4 untested, and vice versa. The daemon is the authority here: it may run on a different
     // host than this GUI, in which case our own addresses would be the wrong ones to test.
     PortTest::open(m_ipc, this, tcp, udp);
+}
+
+void OptionsDialog::openRouterPage()
+{
+    // Local lookup: the browser runs here, and a core in Docker would only see its bridge
+    const RouterInfo info = locateRouter();
+    const QString title = tr("Open Router");
+    const QString vpnNote = info.vpnInterface.isEmpty()
+        ? QString()
+        : tr("A VPN seems to be active (%1). Incoming connections then arrive through the VPN, "
+             "so port forwarding on your router does not help. Forward the ports at your VPN "
+             "provider instead, if it offers port forwarding.").arg(info.vpnInterface);
+
+    if (info.router.isNull()) {
+        QString text = tr("Could not find your router's address.\n\nLook up the \"default gateway\" "
+                          "in this computer's network settings and open that address in a web browser.");
+        if (!vpnNote.isEmpty())
+            text += QStringLiteral("\n\n") + vpnNote;
+        AsyncMessageBox::warning(this, title, text);
+        return;
+    }
+
+    QUrl url;
+    url.setScheme(QStringLiteral("http"));
+    url.setHost(info.router.toString());
+    url.setPath(QStringLiteral("/"));
+
+    const auto openUrl = [this, title, url] {
+        if (!QDesktopServices::openUrl(url))
+            AsyncMessageBox::warning(this, title,
+                                     tr("Could not open %1 in the default browser.").arg(url.toString()));
+    };
+
+    if (vpnNote.isEmpty()) {
+        openUrl();
+        return;
+    }
+
+    auto* box = new QMessageBox(QMessageBox::Warning, title, vpnNote, QMessageBox::Cancel, this);
+    box->setInformativeText(tr("Your router is at %1.").arg(info.router.toString()));
+    auto* openBtn = box->addButton(tr("Open Router Page"), QMessageBox::AcceptRole);
+    box->setDefaultButton(openBtn);
+    box->setAttribute(Qt::WA_DeleteOnClose);
+    connect(box, &QMessageBox::buttonClicked, this, [openBtn, openUrl](QAbstractButton* clicked) {
+        if (clicked == openBtn)
+            openUrl();
+    });
+    box->open();
 }
 
 // The value to store: the data of a list entry, else the typed text.

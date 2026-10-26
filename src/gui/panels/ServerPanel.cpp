@@ -247,6 +247,12 @@ void ServerPanel::refreshUpdateUrl()
     refreshUrlPrefField(m_updateUrlEdit, &Preferences::serverListURL);
 }
 
+void ServerPanel::applyDisplayOptions()
+{
+    if (m_serverListModel)
+        m_serverListModel->refreshEmphasis();
+}
+
 void ServerPanel::onRefreshTimer()
 {
     if (m_ipc && m_ipc->isConnected())

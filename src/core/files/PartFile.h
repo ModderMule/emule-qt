@@ -621,6 +621,24 @@ public:
     /// Names the search result this download came from was seen under.
     void addObservedNames(const QStringList& names);
 
+    /// File name -> how many of the current sources give it, plus the Kad note
+    /// publishers when @p withKadNotes (the File Names page).
+    [[nodiscard]] std::map<QString, int> sourceNameCounts(bool withKadNotes) const;
+
+    /// No automatic rename any more: the user renamed the file, or it was renamed to
+    /// the sources' name once. Persisted in the .part.met.
+    [[nodiscard]] bool isNameLocked() const { return m_nameLocked; }
+    void setNameLocked(bool locked) { m_nameLocked = locked; }
+
+    /// New display/target name: re-publishes the keywords when shared, saves the
+    /// .part.met and locks the name against automatic renames. The caller checks
+    /// the name and the status (CoreOps::renameDownload).
+    void renameTo(const QString& newName);
+
+    /// "Rename downloads to the name most sources use": renames once when that name is
+    /// clearly the majority and the file doesn't look fake. process() runs it every 5 min.
+    void checkMajorityName();
+
     // Archive recovery state
     [[nodiscard]] bool isRecoveringArchive() const { return m_recoveringArchive; }
     void setRecoveringArchive(bool val) { m_recoveringArchive = val; }
@@ -635,6 +653,7 @@ private:
     void initPartFile();
     /// One log line when the verdict falls to Suspect or worse.
     void logFakeVerdict() const;
+
     void unlinkA4AFSources();
     /// @p alreadyVerified skips the re-read of the data (a rehash has just done it).
     void completeFile(bool alreadyVerified = false);
@@ -759,6 +778,8 @@ private:
     mutable bool m_fakeVerdictHadHead = false;
     mutable Confidence m_fakeLoggedBand = Confidence::Caution;   // worst band logged; Caution = none
     uint64 m_lastFakeCheckTick = 0;
+    uint64 m_lastNameCheckTick = 0;
+    bool m_nameLocked = false;
 
     // Timestamps
     time_t m_tLastModified = 0;

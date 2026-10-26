@@ -50,6 +50,9 @@ public:
     /// Reload the server.met URL field after the daemon's preferences or Options changed it.
     void refreshUpdateUrl();
 
+    /// Options the list draws with (the connected server in bold).
+    void applyDisplayOptions();
+
     /// Get the log widget so it can be shared with MainWindow if needed.
     [[nodiscard]] LogWidget* logWidget() const { return m_logWidget; }
 

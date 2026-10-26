@@ -150,6 +150,8 @@ private:
     void handleUnbanClient(const Ipc::IpcMessage& msg);
     void handleAddDownloadSource(const Ipc::IpcMessage& msg);
     void handleSetDownloadSourceLimit(const Ipc::IpcMessage& msg);
+    void handleSwapA4AFToFile(const Ipc::IpcMessage& msg);
+    void handleUpdateIpFilterNow(const Ipc::IpcMessage& msg);
     void handleSetDownloadPreviewFlags(const Ipc::IpcMessage& msg);
     void handleImportDownloadParts(const Ipc::IpcMessage& msg);
     void handleFlushDownload(const Ipc::IpcMessage& msg);

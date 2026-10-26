@@ -145,19 +145,29 @@ public:
         applyExtColumns(show);
     }
 
-    /// Re-apply after "Show more controls" changed. Turning it on leaves the
-    /// columns hidden; the header menu brings them back.
+    /// Re-apply after "Show more controls" changed. Turning it on brings back the
+    /// columns this session's "off" hid (the GUI starts on its local prefs file and
+    /// the daemon's value lands later); others stay for the header menu.
     void applyExtColumns(bool show)
     {
         m_showExtColumns = show;
-        if (show)
-            return;
         auto* hdr = this->header();
         bool changed = false;
-        for (const int column : m_extColumns) {
-            if (column > 0 && column < hdr->count() && !hdr->isSectionHidden(column)) {
-                hdr->setSectionHidden(column, true);
-                changed = true;
+        if (show) {
+            for (const int column : m_extHiddenByOff) {
+                if (column > 0 && column < hdr->count() && hdr->isSectionHidden(column)) {
+                    showColumn(column);
+                    changed = true;
+                }
+            }
+            m_extHiddenByOff.clear();
+        } else {
+            for (const int column : m_extColumns) {
+                if (column > 0 && column < hdr->count() && !hdr->isSectionHidden(column)) {
+                    hdr->setSectionHidden(column, true);
+                    m_extHiddenByOff.insert(column);
+                    changed = true;
+                }
             }
         }
         if (changed && !m_stateKey.isEmpty())
@@ -327,27 +337,33 @@ private:
         if (column < 1 || column >= hdr->count())
             return;
 
-        if (!hdr->isSectionHidden(column)) {
+        if (!hdr->isSectionHidden(column))
             hdr->setSectionHidden(column, true);
-        } else {
-            hdr->setSectionHidden(column, false);
-            // A column hidden since first bind has no width of its own to come back to
-            if (hdr->sectionSize(column) < hdr->minimumSectionSize()) {
-                const int fallback = column < static_cast<int>(m_defaultWidths.size())
-                                             && m_defaultWidths[column] > 0
-                                         ? m_defaultWidths[column]
-                                         : hdr->defaultSectionSize();
-                hdr->resizeSection(column, fallback);
-            }
-        }
+        else
+            showColumn(column);
         if (!m_stateKey.isEmpty())
             theUiState.captureHeaderState(hdr, m_stateKey);
+    }
+
+    void showColumn(int column)
+    {
+        auto* hdr = this->header();
+        hdr->setSectionHidden(column, false);
+        // A column hidden since first bind has no width of its own to come back to
+        if (hdr->sectionSize(column) < hdr->minimumSectionSize()) {
+            const int fallback = column < static_cast<int>(m_defaultWidths.size())
+                                         && m_defaultWidths[column] > 0
+                                     ? m_defaultWidths[column]
+                                     : hdr->defaultSectionSize();
+            hdr->resizeSection(column, fallback);
+        }
     }
 
     QString          m_stateKey;
     std::vector<int> m_defaultWidths;
     std::set<int>    m_lockedColumns;
     std::set<int>    m_extColumns;
+    std::set<int>    m_extHiddenByOff;   ///< shown until "Show more controls" went off
     bool             m_showExtColumns = true;
     std::optional<std::pair<int, Qt::SortOrder>> m_defaultSort;
     bool             m_restoredOnShow = false;

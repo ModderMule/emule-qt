@@ -227,6 +227,33 @@ std::vector<GatewayCandidate> defaultGateways(Address::Family family)
 
 #elif defined(Q_OS_WIN)
 
+namespace {
+
+/// One forward-table row in the selection logic's form. Windows zone ids are
+/// numeric, and QHostAddress::setScopeId() accepts the index rendered as a
+/// string — no name lookup needed.
+[[nodiscard]] RouteEntry routeEntryFromRow(const MIB_IPFORWARD_ROW2& row)
+{
+    RouteEntry entry;
+    entry.isUp = true;
+    entry.isGateway = true;
+    entry.metric = row.Metric;
+    entry.prefixLength = row.DestinationPrefix.PrefixLength;
+
+    if (row.NextHop.si_family == AF_INET6) {
+        entry.gateway = Address::fromIPv6Bytes(
+            reinterpret_cast<const uint8*>(&row.NextHop.Ipv6.sin6_addr));
+    } else if (row.NextHop.si_family == AF_INET) {
+        entry.gateway = Address::fromNetworkOrder(row.NextHop.Ipv4.sin_addr.S_un.S_addr);
+    }
+
+    if (row.InterfaceIndex != 0)
+        entry.interfaceName = QString::number(row.InterfaceIndex);
+    return entry;
+}
+
+} // namespace
+
 std::vector<GatewayCandidate> defaultGateways(Address::Family family)
 {
     // Ask for the route towards a well-known off-link address rather than
@@ -250,25 +277,29 @@ std::vector<GatewayCandidate> defaultGateways(Address::Family family)
         return {};
     }
 
-    RouteEntry entry;
-    entry.isUp = true;
-    entry.isGateway = true;
-    entry.metric = row.Metric;
-    entry.prefixLength = 0;
+    RouteEntry entry = routeEntryFromRow(row);
+    entry.prefixLength = 0;   // best route to an off-link host, whatever its prefix
+    return selectDefaultGateways({entry}, family);
+}
 
-    if (row.NextHop.si_family == AF_INET6) {
-        entry.gateway = Address::fromIPv6Bytes(
-            reinterpret_cast<const uint8*>(&row.NextHop.Ipv6.sin6_addr));
-    } else if (row.NextHop.si_family == AF_INET) {
-        entry.gateway = Address::fromNetworkOrder(row.NextHop.Ipv4.sin_addr.S_un.S_addr);
+std::vector<GatewayCandidate> allDefaultGateways(Address::Family family)
+{
+    // Whole table: behind a VPN the best route is the tunnel's, but the LAN
+    // router's default route is still there.
+    PMIB_IPFORWARD_TABLE2 table = nullptr;
+    const ADDRESS_FAMILY af = family == Address::Family::IPv6 ? AF_INET6 : AF_INET;
+    if (GetIpForwardTable2(af, &table) != NO_ERROR || table == nullptr) {
+        logDebug(QStringLiteral("DefaultGateway: GetIpForwardTable2 failed"));
+        return {};
     }
 
-    // Windows zone ids are numeric, and QHostAddress::setScopeId() accepts the
-    // index rendered as a string — no name lookup needed.
-    if (row.InterfaceIndex != 0)
-        entry.interfaceName = QString::number(row.InterfaceIndex);
+    std::vector<RouteEntry> routes;
+    routes.reserve(table->NumEntries);
+    for (ULONG i = 0; i < table->NumEntries; ++i)
+        routes.push_back(routeEntryFromRow(table->Table[i]));
+    FreeMibTable(table);
 
-    return selectDefaultGateways({entry}, family);
+    return selectDefaultGateways(routes, family);
 }
 
 // ============================================================================
@@ -296,6 +327,14 @@ std::vector<GatewayCandidate> defaultGateways(Address::Family family)
     return selectDefaultGateways(routes, family);
 }
 
+#endif
+
+#if !defined(Q_OS_WIN)
+// The route dumps above already return every default route.
+std::vector<GatewayCandidate> allDefaultGateways(Address::Family family)
+{
+    return defaultGateways(family);
+}
 #endif
 
 // ============================================================================

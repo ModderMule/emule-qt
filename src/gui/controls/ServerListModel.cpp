@@ -9,6 +9,7 @@
 
 #include <QCborMap>
 #include <QColor>
+#include <QFont>
 #include <QHostAddress>
 #include <QIcon>
 
@@ -131,6 +132,17 @@ QVariant ServerListModel::data(const QModelIndex& index, int role) const
     // MFC ServerListCtrl.cpp:209-214: light grey once dead, grey from the second failure.
     // deadServerRetries 0 means "never remove" here, so nothing counts as dead.
     // Darker than MFC's 128/192 greys: 192 on white is under 3:1 contrast (issue #18).
+    // Bold too while "Show active downloads in bold" is on
+    if (role == Qt::FontRole) {
+        if (m_connectedServerId != 0 && r.serverId == m_connectedServerId
+            && thePrefs.showActiveDownloadsBold()) {
+            QFont font;
+            font.setBold(true);
+            return font;
+        }
+        return {};
+    }
+
     if (role == Qt::ForegroundRole) {
         if (m_connectedServerId != 0 && r.serverId == m_connectedServerId)
             return roleColor(TextRole::Info);
@@ -285,8 +297,14 @@ void ServerListModel::setConnectedServer(uint32_t serverId)
     // a dangling proxy currentIndex. The next requestServerList() ->
     // saveSelection() then dereferences it via QModelIndex::data() and crashes
     // inside QSortFilterProxyModel::data(). Mirror refreshFromCborArray().
+    refreshEmphasis();
+}
+
+void ServerListModel::refreshEmphasis()
+{
     if (!m_rows.empty())
-        emit dataChanged(index(0, 0), index(rowCount() - 1, columnCount() - 1), {Qt::ForegroundRole});
+        emit dataChanged(index(0, 0), index(rowCount() - 1, columnCount() - 1),
+                         {Qt::ForegroundRole, Qt::FontRole});
 }
 
 } // namespace eMule

@@ -122,7 +122,10 @@ private:
     void copyEd2kLinks(const QStringList& hashes);
     void rebuildEd2kLink();
     void requestEd2kLinks(const QStringList& hashes, bool hashset, bool sourceHint, bool html,
+                          bool mediaInfo,
                           std::function<void(const QStringList& links, bool hintAvailable)> apply);
+    /// "Include Media Info" applies: advanced mode, HTML on and the box ticked.
+    [[nodiscard]] bool mediaInfoWanted() const;
     [[nodiscard]] const SharedFileRow* currentFile() const;
     [[nodiscard]] QStringList selectedHashes() const;
 
@@ -223,6 +226,7 @@ private:
     QCheckBox* m_ed2kSourceCheck = nullptr;
     QCheckBox* m_ed2kHtmlCheck = nullptr;
     QCheckBox* m_ed2kHashsetCheck = nullptr;
+    QCheckBox* m_ed2kMediaInfoCheck = nullptr;   ///< advanced mode, with HTML only
     QCheckBox* m_ed2kHostnameCheck = nullptr;
     int m_ed2kLinkGeneration = 0;   ///< discards GetEd2kLink replies overtaken by a newer request
     int m_ed2kTabIndex = -1;        ///< bottom-tab index of the eD2K Links page

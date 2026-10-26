@@ -5,6 +5,7 @@
 #include "app/CoreOps.h"
 
 #include "app/AppContext.h"
+#include "client/UpDownClient.h"
 #include "enodemeta/MetaHash.h"
 #include "files/PartFile.h"
 #include "files/SharedFileList.h"
@@ -152,14 +153,8 @@ Status renameDownload(const QString& hashHex, const QString& newNameIn)
     if (state == PartFileStatus::Complete || state == PartFileStatus::Completing)
         return Status::fail(409, QStringLiteral("Download already completed"));
 
-    // Only the display/target name; the .part files keep their numbered names.
-    const bool shared = theApp.sharedFileList && theApp.sharedFileList->isFilePtrInList(file);
-    if (shared)
-        theApp.sharedFileList->removeKeywords(file);
-    file->setFileName(newName, true);
-    if (shared)
-        theApp.sharedFileList->addKeywords(file);
-    file->savePartFile();
+    // Also locks the name: a name the user picked is never renamed automatically
+    file->renameTo(newName);
     return st;
 }
 
@@ -175,6 +170,31 @@ Status setDownloadCategory(const QString& hashHex, uint32 category)
     if (category >= static_cast<uint32>(thePrefs.categoryCount()))
         return Status::fail(400, QStringLiteral("Unknown category"));
     file->setCategory(category);
+    return st;
+}
+
+Status swapA4AFToDownload(const QString& hashHex, int* swapped)
+{
+    Status st;
+    PartFile* file = findDownload(hashHex, st);
+    if (!file)
+        return st;
+    const PartFileStatus state = file->status();
+    if (file->isStopped() || (state != PartFileStatus::Ready && state != PartFileStatus::Empty))
+        return Status::fail(409, QStringLiteral("Download is not active"));
+
+    // A copy: each swap edits the list
+    const std::vector<UpDownClient*> sources = file->a4afSrcList();
+    int moved = 0;
+    for (UpDownClient* client : sources) {
+        if (client && client->swapToAnotherFile(QStringLiteral("Manual swap of all A4AF sources"),
+                                                false, true, false, file, false, false))
+            ++moved;
+    }
+    logInfo(QStringLiteral("Swapped %1 of %2 A4AF sources to \"%3\"")
+                .arg(moved).arg(sources.size()).arg(file->fileName()));
+    if (swapped)
+        *swapped = moved;
     return st;
 }
 

@@ -11,6 +11,9 @@
 #include <QGuiApplication>
 #include <QPalette>
 
+#include <algorithm>
+#include <cmath>
+
 namespace eMule {
 
 /// @p a mixed @p weight of the way towards @p b.
@@ -20,6 +23,30 @@ namespace eMule {
     return QColor::fromRgbF(a.redF()   * (1 - w) + b.redF()   * w,
                             a.greenF() * (1 - w) + b.greenF() * w,
                             a.blueF()  * (1 - w) + b.blueF()  * w);
+}
+
+/// WCAG contrast ratio of two opaque colours, 1 to 21.
+[[nodiscard]] inline qreal contrastRatio(const QColor& a, const QColor& b)
+{
+    const auto luminance = [](const QColor& c) {
+        const auto lin = [](float v) {
+            return v <= 0.04045f ? v / 12.92f : std::pow((v + 0.055f) / 1.055f, 2.4f);
+        };
+        return 0.2126 * lin(c.redF()) + 0.7152 * lin(c.greenF()) + 0.0722 * lin(c.blueF());
+    };
+    const qreal la = luminance(a);
+    const qreal lb = luminance(b);
+    return (std::max(la, lb) + 0.05) / (std::min(la, lb) + 0.05);
+}
+
+/// @p preferred when it reads on @p background (4.5:1), else black or white.
+[[nodiscard]] inline QColor readableTextOn(const QColor& background, const QColor& preferred)
+{
+    if (contrastRatio(preferred, background) >= 4.5)
+        return preferred;
+    const QColor black(Qt::black);
+    const QColor white(Qt::white);
+    return contrastRatio(black, background) >= contrastRatio(white, background) ? black : white;
 }
 
 /// List text faded @p weight of the way into the list background. 0.5 / 0.75 are MFC's

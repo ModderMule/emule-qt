@@ -62,7 +62,9 @@
 #include <QPushButton>
 #include <QTreeView>
 #include <QClipboard>
+#include <QCheckBox>
 #include <QDesktopServices>
+#include <QTimer>
 #include <QCursor>
 #include <QDir>
 #include <QFileDialog>
@@ -435,6 +437,7 @@ void MainWindow::showOptionsDialog(int page)
     if (m_usenetPanel)
         m_usenetPanel->applyDisplayOptions();
     m_sharedFilesPanel->applyDisplayOptions();
+    m_serverPanel->applyDisplayOptions();
     m_sharedFilesPanel->refreshSharedDirs();   // Directories page edits the share
     updateWindowTitle();
 
@@ -500,6 +503,7 @@ void MainWindow::setEd2kStatus(bool connected, bool connecting, bool firewalled,
     }
     m_statusEd2k->setToolTip(tip);
     updateConnectButton();
+    scheduleLowIdHint();
 }
 
 void MainWindow::setEd2kServer(const QString& name, qint64 users)
@@ -562,6 +566,7 @@ void MainWindow::setKadStatus(bool running, bool kadConnected, bool firewalled)
         m_connStatus->setKadState(ConnectionStatusWidget::Disconnected);
     }
     updateConnectButton();
+    scheduleLowIdHint();
 }
 
 void MainWindow::setNetworkStats(quint32 users, quint32 files)
@@ -2336,6 +2341,60 @@ void MainWindow::updateTransferStateIcon(bool uploading, bool downloading)
     m_transferStateIcon = idx;
     m_statusUpDownIcon->setPixmap(
         QIcon(QString::fromLatin1(kIcons[idx])).pixmap(16, 16));
+}
+
+bool MainWindow::lowIdHintDue() const
+{
+    return m_firstStartWizardAllowed && !m_lowIdHintShown && !theUiState.lowIdHintDisabled()
+        && theUiState.startCount() >= 3
+        && m_ed2kConnected && m_ed2kLowID && m_kadConnected && m_kadFirewalled;
+}
+
+void MainWindow::scheduleLowIdHint()
+{
+    if (!lowIdHintDue()) {
+        if (m_lowIdHintTimer)
+            m_lowIdHintTimer->stop();
+        return;
+    }
+    if (!m_lowIdHintTimer) {
+        m_lowIdHintTimer = new QTimer(this);
+        m_lowIdHintTimer->setSingleShot(true);
+        // Firewall checks and reconnects settle within this; a short Low ID is no news
+        m_lowIdHintTimer->setInterval(2 * 60 * 1000);
+        connect(m_lowIdHintTimer, &QTimer::timeout, this, [this] {
+            if (lowIdHintDue())
+                showLowIdHint();
+        });
+    }
+    if (!m_lowIdHintTimer->isActive())
+        m_lowIdHintTimer->start();
+}
+
+void MainWindow::showLowIdHint()
+{
+    m_lowIdHintShown = true;
+    QMessageBox box(QMessageBox::Information, tr("Low ID"),
+                    tr("Other clients cannot connect to you: eD2K gives you a Low ID and Kad "
+                       "reports you as firewalled.\n\n"
+                       "You get fewer sources and slower downloads, and two Low ID clients "
+                       "can rarely exchange data. Usually your router or firewall does not "
+                       "forward your ports. UPnP or a port forwarding rule in your router "
+                       "fixes it in most cases."),
+                    QMessageBox::Close, this);
+    auto* settingsBtn = box.addButton(tr("Open Connection Settings"), QMessageBox::AcceptRole);
+    auto* infoBtn = box.addButton(tr("More Info"), QMessageBox::HelpRole);
+    box.setDefaultButton(settingsBtn);
+    auto* dontShow = new QCheckBox(tr("Don't show this again"), &box);
+    box.setCheckBox(dontShow);
+    box.exec();
+
+    if (dontShow->isChecked())
+        theUiState.setLowIdHintDisabled(true);
+    if (box.clickedButton() == settingsBtn)
+        showOptionsDialog(OptionsDialog::PageConnection);
+    else if (box.clickedButton() == infoBtn)
+        QDesktopServices::openUrl(QUrl(QString(kWebsiteUrl) + QStringLiteral("/help/low-id/")));
 }
 
 } // namespace eMule

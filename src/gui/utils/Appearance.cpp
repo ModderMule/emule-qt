@@ -23,6 +23,10 @@
 #include <cmath>
 #include <utility>
 
+#ifdef Q_OS_WIN
+#include <qt_windows.h>
+#endif
+
 namespace eMule {
 
 namespace {
@@ -179,6 +183,16 @@ void applyFontScale(int percent)
 qreal fontScale()
 {
     return s_fontScale;
+}
+
+QColor systemHighlightColor()
+{
+#ifdef Q_OS_WIN
+    const COLORREF c = GetSysColor(COLOR_HIGHLIGHT);
+    return QColor(GetRValue(c), GetGValue(c), GetBValue(c));
+#else
+    return {};
+#endif
 }
 
 QColor themed(const QColor& light, const QColor& dark)

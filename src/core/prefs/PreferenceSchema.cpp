@@ -68,6 +68,10 @@ using Kind = PrefSpec::Kind;
     t << restart(number("udpPort", 0, 65535, "", "UDP port for Kad and client UDP. 0 disables "
                         "UDP. Moves at once while nothing is connected, otherwise at the next "
                         "start; switching UDP on or off always needs a restart."));
+    t << restart(flag("randomizePortsAtStart", "Pick new listen ports from randomPortMin..randomPortMax "
+                      "at every start: TCP, UDP unless it is off, and BitTorrent when it is on."));
+    t << restart(number("randomPortMin", 1024, 65535, "", "Lowest port randomizePortsAtStart picks."));
+    t << restart(number("randomPortMax", 1024, 65535, "", "Highest port randomizePortsAtStart picks."));
     t << text("bindAddress", 255, "Network interface, IP address or subnet all P2P traffic is bound "
               "to. Empty = any. A change closes every connection and reconnects on the new "
               "interface at once, no restart. While the selected interface is missing nothing "
@@ -124,6 +128,9 @@ using Kind = PrefSpec::Kind;
               "paused download.");
     t << flag("rememberDownloadedFiles", "Remember completed files so search results can mark them.");
     t << flag("rememberCancelledFiles", "Remember cancelled files so search results can mark them.");
+    t << flag("autoRenameToMajorityName", "Rename a download once to the name most of its sources use "
+              "(at least 5 sources and 60%; never after a manual rename or for a suspected fake).");
+    t << flag("watchSharedDirs", "Pick up files added to shared folders as they appear (OS file watcher).");
     t << flag("seenFileIndex", "Keep a local index of files seen in search results.");
     t << flag("useSaveLoadSources", "Save the sources of rare files and reload them at start.");
     t << readOnly(text("incomingDir", 4096, "Directory completed downloads are moved to."));
@@ -146,6 +153,8 @@ using Kind = PrefSpec::Kind;
                 "queue score), 1 = strict (soft hits are banned too), 2 = strict + Chinese VeryCD/easyMule mods.");
     t << flag("filterServerByIP", "Apply the IP filter to servers too.");
     t << number("ipFilterLevel", 0, 255, "", "IP filter entries with a level below this are blocked.");
+    t << flag("ipFilterAutoUpdate", "Download the IP filter from its update URL every ipFilterUpdateDays days.");
+    t << number("ipFilterUpdateDays", 1, 365, "days", "How often the IP filter is downloaded automatically.");
     t << number("viewSharedFilesAccess", 0, 2, "", "Who may browse the shared files: 0 = nobody, "
                 "1 = friends, 2 = everybody.");
     t << flag("enableSearchResultFilter", "Hide search results rated as spam.");

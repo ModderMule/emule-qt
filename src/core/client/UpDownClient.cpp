@@ -50,7 +50,6 @@
 
 #include "utils/Log.h"
 
-#include <utility>
 #include <QBuffer>
 #include <QCoreApplication>
 #include <QCborArray>
@@ -61,6 +60,8 @@
 #include <QPointer>
 #include <QImageReader>
 #include <QRandomGenerator>
+
+#include <utility>
 
 
 
@@ -367,6 +368,11 @@ int UpDownClient::hashType() const
 bool UpDownClient::hasLowID() const
 {
     return isLowID(m_userIDHybrid);
+}
+
+bool UpDownClient::canDialIPv6() const
+{
+    return m_openIPv6 && !m_userIPv6.isNull() && theApp.hasConfidentPublicIPv6();
 }
 
 DeadSourceKey UpDownClient::deadSourceKey() const
@@ -1948,12 +1954,15 @@ bool UpDownClient::tryToConnect(bool ignoreMaxCon, bool noCallbacks)
     // High-ID → IPv4 derivation.
     // Note this is the *confidence* gate, not shouldAdvertisePublicIPv6(): dialling out over
     // v6 stays valid even when a server probed our inbound v6 and found it closed.
-    if (m_connectAddress.isNull()) {
-        if (m_openIPv6 && !m_userIPv6.isNull() && theApp.hasConfidentPublicIPv6())
-            m_connectAddress = m_userIPv6;
-        else if (!hasLowID())
-            m_connectAddress = Address::fromHostOrder(m_userIDHybrid);
+    // A LowID source whose IPv4 endpoint is already set (a Kad firewalled source, for
+    // NAT-T) still gets the IPv6 dial: that IPv4 address only reaches it by callback.
+    if (canDialIPv6() && (m_connectAddress.isNull() || (hasLowID() && !m_connectAddress.isIPv6()))) {
+        if (!m_connectAddress.isNull())
+            m_ipv4BeforeIPv6Dial = m_connectAddress;   // the IPv6 fallback goes back to it
+        m_connectAddress = m_userIPv6;
     }
+    else if (m_connectAddress.isNull() && !hasLowID())
+        m_connectAddress = Address::fromHostOrder(m_userIDHybrid);
 
     // IP filter, on the address we are actually about to dial.  Received IPs are already
     // filtered where they enter (server sources, source exchange, Kad, incoming accepts),
@@ -2738,7 +2747,9 @@ bool UpDownClient::disconnected(const QString& reason, bool fromSocket)
             logDebug(QStringLiteral("IPv6 dial to LowID source %1 failed, trying its LowID route")
                          .arg(dbgGetClientInfo()));
             m_openIPv6 = false;
-            m_connectAddress = Address();
+            // Back to the IPv4 endpoint a Kad source came with (NAT-T needs it); null
+            // for the others, as before
+            m_connectAddress = std::exchange(m_ipv4BeforeIPv6Dial, Address());
             setDownloadState(DownloadState::None);
             // Queued: the socket is still being torn down.
             QTimer::singleShot(0, this, [this] {

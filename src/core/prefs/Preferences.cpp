@@ -150,6 +150,9 @@ struct Preferences::Data {
     // Network
     uint16 port = 0;              // 0 = random
     uint16 udpPort = 0;
+    bool randomizePortsAtStart = false;
+    uint16 randomPortMin = 50000;
+    uint16 randomPortMax = 60000;
     bool udpPortFromFile = false;   // not saved: a stored 0 means "UDP off"
     uint16 serverUDPPort = 65535; // 65535 = random, 0 = disabled
     uint16 maxConnections = 500;
@@ -264,6 +267,8 @@ struct Preferences::Data {
     bool startNextPausedFileOnlySameCat = false;
     bool rememberDownloadedFiles = true;
     bool rememberCancelledFiles = true;
+    bool autoRenameToMajorityName = false;
+    bool watchSharedDirs = true;   // OS file watcher on shared folders
     bool seenFileIndex = true;   // remember files seen in search results (seenfiles.db)
 
     // Transfer
@@ -420,6 +425,9 @@ struct Preferences::Data {
     bool useSafeKad = true;
     bool useFastKad = true;
     QString ipFilterUpdateUrl = Preferences::kDefaultIpFilterUpdateUrl;
+    bool ipFilterAutoUpdate = false;
+    int ipFilterUpdateDays = 7;
+    qint64 ipFilterLastUpdate = 0;         // secs since epoch, last successful download
     QString appToken;
     QString bugReportApiKey;
     QString bugReportDomain;
@@ -810,6 +818,18 @@ uint16 Preferences::port() const { return get(&Data::port); }
 void Preferences::setPort(uint16 val) { set(&Data::port, val); }
 
 uint16 Preferences::udpPort() const { return get(&Data::udpPort); }
+
+bool Preferences::randomizePortsAtStart() const { return get(&Data::randomizePortsAtStart); }
+
+void Preferences::setRandomizePortsAtStart(bool val) { set(&Data::randomizePortsAtStart, val); }
+
+uint16 Preferences::randomPortMin() const { return get(&Data::randomPortMin); }
+
+void Preferences::setRandomPortMin(uint16 val) { set(&Data::randomPortMin, std::max(val, kRandomPortFloor)); }
+
+uint16 Preferences::randomPortMax() const { return get(&Data::randomPortMax); }
+
+void Preferences::setRandomPortMax(uint16 val) { set(&Data::randomPortMax, std::max(val, kRandomPortFloor)); }
 
 void Preferences::setUdpPort(uint16 val) { set(&Data::udpPort, val); }
 
@@ -2407,6 +2427,18 @@ void Preferences::setIpFilterUpdateUrl(const QString& val)
     set(&Data::ipFilterUpdateUrl, urlOrDefault(val, kDefaultIpFilterUpdateUrl));
 }
 
+bool Preferences::ipFilterAutoUpdate() const { return get(&Data::ipFilterAutoUpdate); }
+
+void Preferences::setIpFilterAutoUpdate(bool val) { set(&Data::ipFilterAutoUpdate, val); }
+
+int Preferences::ipFilterUpdateDays() const { return get(&Data::ipFilterUpdateDays); }
+
+void Preferences::setIpFilterUpdateDays(int val) { set(&Data::ipFilterUpdateDays, std::clamp(val, 1, 365)); }
+
+qint64 Preferences::ipFilterLastUpdate() const { return get(&Data::ipFilterLastUpdate); }
+
+void Preferences::setIpFilterLastUpdate(qint64 val) { set(&Data::ipFilterLastUpdate, val); }
+
 QString Preferences::appToken() const { return get(&Data::appToken); }
 
 void Preferences::setAppToken(const QString& val) { set(&Data::appToken, val); }
@@ -2834,6 +2866,14 @@ void Preferences::setRememberDownloadedFiles(bool val) { set(&Data::rememberDown
 bool Preferences::rememberCancelledFiles() const { return get(&Data::rememberCancelledFiles); }
 
 void Preferences::setRememberCancelledFiles(bool val) { set(&Data::rememberCancelledFiles, val); }
+
+bool Preferences::autoRenameToMajorityName() const { return get(&Data::autoRenameToMajorityName); }
+
+void Preferences::setAutoRenameToMajorityName(bool val) { set(&Data::autoRenameToMajorityName, val); }
+
+bool Preferences::watchSharedDirs() const { return get(&Data::watchSharedDirs); }
+
+void Preferences::setWatchSharedDirs(bool val) { set(&Data::watchSharedDirs, val); }
 bool Preferences::seenFileIndex() const { return get(&Data::seenFileIndex); }
 void Preferences::setSeenFileIndex(bool val) { set(&Data::seenFileIndex, val); }
 
@@ -3132,6 +3172,9 @@ QCborMap Preferences::toIpcMap() const
     prefs.insert(QStringLiteral("nick"), nick());
     prefs.insert(QStringLiteral("port"), port());
     prefs.insert(QStringLiteral("udpPort"), udpPort());
+    prefs.insert(QStringLiteral("randomizePortsAtStart"), randomizePortsAtStart());
+    prefs.insert(QStringLiteral("randomPortMin"), randomPortMin());
+    prefs.insert(QStringLiteral("randomPortMax"), randomPortMax());
     prefs.insert(QStringLiteral("bindAddress"), bindAddress());
     prefs.insert(QStringLiteral("maxUpload"), static_cast<qint64>(configuredMaxUpload()));
     prefs.insert(QStringLiteral("maxDownload"), static_cast<qint64>(configuredMaxDownload()));
@@ -3186,6 +3229,8 @@ QCborMap Preferences::toIpcMap() const
     prefs.insert(QStringLiteral("startNextPausedFileOnlySameCat"), startNextPausedFileOnlySameCat());
     prefs.insert(QStringLiteral("rememberDownloadedFiles"), rememberDownloadedFiles());
     prefs.insert(QStringLiteral("rememberCancelledFiles"), rememberCancelledFiles());
+    prefs.insert(QStringLiteral("autoRenameToMajorityName"), autoRenameToMajorityName());
+    prefs.insert(QStringLiteral("watchSharedDirs"), watchSharedDirs());
     prefs.insert(QStringLiteral("seenFileIndex"), seenFileIndex());
 
     // Notifications (daemon-side)
@@ -3229,6 +3274,9 @@ QCborMap Preferences::toIpcMap() const
     prefs.insert(QStringLiteral("antiLeecherLevel"), antiLeecherLevel());
     prefs.insert(QStringLiteral("enableSearchResultFilter"), enableSearchResultFilter());
     prefs.insert(QStringLiteral("ipFilterUpdateUrl"), ipFilterUpdateUrl());
+    prefs.insert(QStringLiteral("ipFilterAutoUpdate"), ipFilterAutoUpdate());
+    prefs.insert(QStringLiteral("ipFilterUpdateDays"), ipFilterUpdateDays());
+    prefs.insert(QStringLiteral("ipFilterLastUpdate"), ipFilterLastUpdate());
     prefs.insert(QStringLiteral("geoIpAccountId"), geoIpAccountId());
     prefs.insert(QStringLiteral("geoIpLicenseKey"), geoIpLicenseKey());
     prefs.insert(QStringLiteral("geoIpAutoUpdate"), geoIpAutoUpdate());
@@ -3398,6 +3446,9 @@ void Preferences::updateFromCbor(const QCborMap& p)
     m_data->nick             = p.value(QStringLiteral("nick")).toString();
     m_data->port             = static_cast<uint16>(p.value(QStringLiteral("port")).toInteger());
     m_data->udpPort          = static_cast<uint16>(p.value(QStringLiteral("udpPort")).toInteger());
+    m_data->randomizePortsAtStart = p.value(QStringLiteral("randomizePortsAtStart")).toBool(false);
+    m_data->randomPortMin    = static_cast<uint16>(p.value(QStringLiteral("randomPortMin")).toInteger(50000));
+    m_data->randomPortMax    = static_cast<uint16>(p.value(QStringLiteral("randomPortMax")).toInteger(60000));
     m_data->bindAddress      = p.value(QStringLiteral("bindAddress")).toString();
     m_data->maxUpload        = static_cast<uint32>(p.value(QStringLiteral("maxUpload")).toInteger());
     m_data->maxDownload      = static_cast<uint32>(p.value(QStringLiteral("maxDownload")).toInteger());
@@ -3457,6 +3508,8 @@ void Preferences::updateFromCbor(const QCborMap& p)
     m_data->startNextPausedFileOnlySameCat = p.value(QStringLiteral("startNextPausedFileOnlySameCat")).toBool();
     m_data->rememberDownloadedFiles       = p.value(QStringLiteral("rememberDownloadedFiles")).toBool();
     m_data->rememberCancelledFiles        = p.value(QStringLiteral("rememberCancelledFiles")).toBool();
+    m_data->autoRenameToMajorityName      = p.value(QStringLiteral("autoRenameToMajorityName")).toBool(false);
+    m_data->watchSharedDirs               = p.value(QStringLiteral("watchSharedDirs")).toBool(true);
     m_data->seenFileIndex                 = p.value(QStringLiteral("seenFileIndex")).toBool(true);
 
     // Notifications
@@ -3501,6 +3554,10 @@ void Preferences::updateFromCbor(const QCborMap& p)
     m_data->useFastKad                = p.value(QStringLiteral("useFastKad")).toBool();
     m_data->ipFilterUpdateUrl         = urlOrDefault(p.value(QStringLiteral("ipFilterUpdateUrl")).toString(),
                                                      kDefaultIpFilterUpdateUrl);
+    m_data->ipFilterAutoUpdate        = p.value(QStringLiteral("ipFilterAutoUpdate")).toBool(false);
+    m_data->ipFilterUpdateDays        = std::clamp(static_cast<int>(
+        p.value(QStringLiteral("ipFilterUpdateDays")).toInteger(7)), 1, 365);
+    m_data->ipFilterLastUpdate        = p.value(QStringLiteral("ipFilterLastUpdate")).toInteger();
     m_data->geoIpAccountId            = p.value(QStringLiteral("geoIpAccountId")).toString();
     m_data->geoIpLicenseKey           = p.value(QStringLiteral("geoIpLicenseKey")).toString();
     m_data->geoIpAutoUpdate           = p.value(QStringLiteral("geoIpAutoUpdate")).toBool(true);
@@ -3654,6 +3711,12 @@ void Preferences::validate()
     // minUpload: clamp min=1
     if (m_data->minUpload < 1)
         m_data->minUpload = 1;
+
+    // Random port range: above the well-known ports, low end first
+    m_data->randomPortMin = std::max(m_data->randomPortMin, kRandomPortFloor);
+    m_data->randomPortMax = std::max(m_data->randomPortMax, kRandomPortFloor);
+    if (m_data->randomPortMin > m_data->randomPortMax)
+        std::swap(m_data->randomPortMin, m_data->randomPortMax);
 
     // A limit above the line's capacity cannot be meant: 4/5 of it for upload, 9/10
     // for download (MFC Preferences.cpp:1931-1937). 0 = unlimited, left alone.
@@ -3876,6 +3939,9 @@ bool Preferences::load(const QString& filePath)
             m_data->port = static_cast<uint16>(n["port"].as<int>(m_data->port));
             m_data->udpPortFromFile = n["udpPort"].IsDefined();
             m_data->udpPort = static_cast<uint16>(n["udpPort"].as<int>(m_data->udpPort));
+            m_data->randomizePortsAtStart = n["randomizePortsAtStart"].as<bool>(m_data->randomizePortsAtStart);
+            m_data->randomPortMin = static_cast<uint16>(n["randomPortMin"].as<int>(m_data->randomPortMin));
+            m_data->randomPortMax = static_cast<uint16>(n["randomPortMax"].as<int>(m_data->randomPortMax));
             m_data->serverUDPPort = static_cast<uint16>(n["serverUDPPort"].as<int>(m_data->serverUDPPort));
             m_data->maxConnections = static_cast<uint16>(n["maxConnections"].as<int>(m_data->maxConnections));
             m_data->maxHalfConnections = static_cast<uint16>(n["maxHalfConnections"].as<int>(m_data->maxHalfConnections));
@@ -4036,6 +4102,8 @@ bool Preferences::load(const QString& filePath)
             m_data->startNextPausedFileOnlySameCat = f["startNextPausedFileOnlySameCat"].as<bool>(m_data->startNextPausedFileOnlySameCat);
             m_data->rememberDownloadedFiles = f["rememberDownloadedFiles"].as<bool>(m_data->rememberDownloadedFiles);
             m_data->rememberCancelledFiles = f["rememberCancelledFiles"].as<bool>(m_data->rememberCancelledFiles);
+            m_data->autoRenameToMajorityName = f["autoRenameToMajorityName"].as<bool>(m_data->autoRenameToMajorityName);
+            m_data->watchSharedDirs = f["watchSharedDirs"].as<bool>(m_data->watchSharedDirs);
             m_data->seenFileIndex = f["seenFileIndex"].as<bool>(m_data->seenFileIndex);
         }
 
@@ -4199,6 +4267,10 @@ bool Preferences::load(const QString& filePath)
                 m_data->ipFilterUpdateUrl = urlOrDefault(
                     QString::fromStdString(sec["ipFilterUpdateUrl"].as<std::string>("")),
                     kDefaultIpFilterUpdateUrl);
+            m_data->ipFilterAutoUpdate = sec["ipFilterAutoUpdate"].as<bool>(m_data->ipFilterAutoUpdate);
+            m_data->ipFilterUpdateDays = std::clamp(
+                sec["ipFilterUpdateDays"].as<int>(m_data->ipFilterUpdateDays), 1, 365);
+            m_data->ipFilterLastUpdate = sec["ipFilterLastUpdate"].as<qint64>(m_data->ipFilterLastUpdate);
             if (sec["bugReportApiKey"])
                 m_data->bugReportApiKey = QString::fromStdString(sec["bugReportApiKey"].as<std::string>());
             if (sec["bugReportDomain"])
@@ -4915,10 +4987,12 @@ ProxySettings Preferences::usenetProxySettings() const
 // Static utilities
 // ---------------------------------------------------------------------------
 
-uint16 Preferences::randomPort(const std::function<bool(uint16)>& isFree)
+uint16 Preferences::randomPort(const std::function<bool(uint16)>& isFree, uint16 lo, uint16 hi)
 {
     // MFC Preferences.cpp:2756-2797 retries until nothing listens on the port.
-    std::uniform_int_distribution<int> dist(4096, 65095);
+    if (lo > hi)
+        std::swap(lo, hi);
+    std::uniform_int_distribution<int> dist(lo, hi);
     uint16 port = 0;
     for (int tries = 0; tries < 50; ++tries) {
         port = static_cast<uint16>(dist(randomEngine()));
@@ -5041,6 +5115,9 @@ bool Preferences::saveImpl(const QString& filePath) const
     out << YAML::Key << "network" << YAML::Value << YAML::BeginMap;
     out << YAML::Key << "port" << YAML::Value << static_cast<int>(m_data->port);
     out << YAML::Key << "udpPort" << YAML::Value << static_cast<int>(m_data->udpPort);
+    out << YAML::Key << "randomizePortsAtStart" << YAML::Value << m_data->randomizePortsAtStart;
+    out << YAML::Key << "randomPortMin" << YAML::Value << static_cast<int>(m_data->randomPortMin);
+    out << YAML::Key << "randomPortMax" << YAML::Value << static_cast<int>(m_data->randomPortMax);
     out << YAML::Key << "serverUDPPort" << YAML::Value << static_cast<int>(m_data->serverUDPPort);
     out << YAML::Key << "maxConnections" << YAML::Value << static_cast<int>(m_data->maxConnections);
     out << YAML::Key << "maxHalfConnections" << YAML::Value << static_cast<int>(m_data->maxHalfConnections);
@@ -5193,6 +5270,8 @@ bool Preferences::saveImpl(const QString& filePath) const
     out << YAML::Key << "startNextPausedFileOnlySameCat" << YAML::Value << m_data->startNextPausedFileOnlySameCat;
     out << YAML::Key << "rememberDownloadedFiles" << YAML::Value << m_data->rememberDownloadedFiles;
     out << YAML::Key << "rememberCancelledFiles" << YAML::Value << m_data->rememberCancelledFiles;
+    out << YAML::Key << "autoRenameToMajorityName" << YAML::Value << m_data->autoRenameToMajorityName;
+    out << YAML::Key << "watchSharedDirs" << YAML::Value << m_data->watchSharedDirs;
     out << YAML::Key << "seenFileIndex" << YAML::Value << m_data->seenFileIndex;
     out << YAML::EndMap;
 
@@ -5357,6 +5436,9 @@ bool Preferences::saveImpl(const QString& filePath) const
     out << YAML::Key << "useSafeKad" << YAML::Value << m_data->useSafeKad;
     out << YAML::Key << "useFastKad" << YAML::Value << m_data->useFastKad;
     out << YAML::Key << "ipFilterUpdateUrl" << YAML::Value << m_data->ipFilterUpdateUrl.toStdString();
+    out << YAML::Key << "ipFilterAutoUpdate" << YAML::Value << m_data->ipFilterAutoUpdate;
+    out << YAML::Key << "ipFilterUpdateDays" << YAML::Value << m_data->ipFilterUpdateDays;
+    out << YAML::Key << "ipFilterLastUpdate" << YAML::Value << m_data->ipFilterLastUpdate;
     if (!m_data->bugReportApiKey.isEmpty())
         out << YAML::Key << "bugReportApiKey" << YAML::Value << m_data->bugReportApiKey.toStdString();
     if (!m_data->bugReportDomain.isEmpty())

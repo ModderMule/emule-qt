@@ -5,7 +5,10 @@
 
 #include "prefs/Preferences.h"
 #include "utils/Appearance.h"
+#include "utils/ColorUtils.h"
 
+#include <QAbstractItemView>
+#include <QPalette>
 #include <QProxyStyle>
 #include <QStyleOption>
 
@@ -53,6 +56,52 @@ public:
             }
         }
         return size;
+    }
+
+    using QProxyStyle::polish;
+
+    // windows11 takes the selection colour from the accent, which can be near-black
+    // (issue #62). MFC lists use the classic system colour: same here.
+    void polish(QPalette& pal) override
+    {
+        QProxyStyle::polish(pal);
+        if (!isWindows11())
+            return;
+        if (const QColor sel = systemHighlightColor(); sel.isValid()) {
+            for (const auto group : {QPalette::Active, QPalette::Inactive})
+                pal.setColor(group, QPalette::Highlight, sel);
+        }
+    }
+
+    // windows11 fills selected/hovered rows of alternating lists with Highlight but
+    // keeps Text: black on blue, or on a dark accent unreadable. Use a readable colour.
+    void drawControl(ControlElement element, const QStyleOption* option, QPainter* painter,
+                     const QWidget* widget = nullptr) const override
+    {
+        if (element == CE_ItemViewItem && isWindows11()) {
+            const auto* vopt = qstyleoption_cast<const QStyleOptionViewItem*>(option);
+            const auto* view = qobject_cast<const QAbstractItemView*>(widget);
+            if (vopt && view && view->alternatingRowColors()
+                && vopt->state.testAnyFlags(State_Selected | State_MouseOver)) {
+                QStyleOptionViewItem copy(*vopt);
+                for (const auto group : {QPalette::Active, QPalette::Inactive}) {
+                    copy.palette.setColor(group, QPalette::Text,
+                        readableTextOn(copy.palette.color(group, QPalette::Highlight),
+                                       copy.palette.color(group, QPalette::HighlightedText)));
+                }
+                QProxyStyle::drawControl(element, &copy, painter, widget);
+                return;
+            }
+        }
+        QProxyStyle::drawControl(element, option, painter, widget);
+    }
+
+private:
+    [[nodiscard]] bool isWindows11() const
+    {
+        const QStyle* base = baseStyle();
+        return base && base->name().compare(QLatin1StringView("windows11"),
+                                            Qt::CaseInsensitive) == 0;
     }
 };
 

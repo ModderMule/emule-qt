@@ -114,6 +114,14 @@ QString KadSearchesModel::typeIconName(int typeId)
     }
 }
 
+int KadSearchesModel::rowOf(uint32_t searchId) const
+{
+    for (size_t i = 0; i < m_searches.size(); ++i)
+        if (m_searches[i].searchId == searchId)
+            return static_cast<int>(i);
+    return -1;
+}
+
 void KadSearchesModel::setSearches(std::vector<KadSearchRow> incoming)
 {
     // Incremental update: avoids beginResetModel()/endResetModel() so that

@@ -2108,6 +2108,10 @@ PartFileLoadResult PartFile::loadPartFile(const QString& directory,
                 if (tag.isInt())
                     m_privateMaxSources = static_cast<uint32>(tag.intValue());
                 break;
+            case FT_NAMELOCKED:
+                if (tag.isInt())
+                    m_nameLocked = tag.intValue() != 0;
+                break;
             case FT_DL_PREVIEW:
                 if (tag.isInt()) {
                     m_previewPrio = (tag.intValue() & 0x01) != 0;
@@ -2530,6 +2534,11 @@ bool PartFile::savePartFile()
             tagCount++;
         }
 
+        if (m_nameLocked) {
+            Tag(FT_NAMELOCKED, uint32{1}).writeNewEd2kTag(file);
+            tagCount++;
+        }
+
         // Bit 0 preview priority, bit 1 pause on preview (MFC PartFile.cpp:1284-1289)
         if (m_previewPrio || m_pauseOnPreview) {
             Tag(FT_DL_PREVIEW, static_cast<uint32>((m_pauseOnPreview ? 2 : 0) | (m_previewPrio ? 1 : 0)))
@@ -2706,6 +2715,11 @@ uint32 PartFile::process(uint32 reduceDownload, uint32 counter)
     if (curTick >= m_lastFakeCheckTick + SEC2MS(20)) {
         m_lastFakeCheckTick = curTick;
         (void)fakeVerdict();
+    }
+
+    if (curTick >= m_lastNameCheckTick + MIN2MS(5)) {
+        m_lastNameCheckTick = curTick;
+        checkMajorityName();
     }
 
     // Flush buffer if size or time threshold exceeded
@@ -3147,6 +3161,73 @@ void PartFile::addObservedNames(const QStringList& names)
             m_observedNames.push_back(name);
     }
     m_fakeVerdictAt = 0;
+}
+
+void PartFile::renameTo(const QString& newName)
+{
+    // Only the display/target name; the .part files keep their numbered names
+    const bool shared = theApp.sharedFileList && theApp.sharedFileList->isFilePtrInList(this);
+    if (shared)
+        theApp.sharedFileList->removeKeywords(this);
+    setFileName(newName, true);
+    if (shared)
+        theApp.sharedFileList->addKeywords(this);
+    m_nameLocked = true;
+    savePartFile();
+}
+
+void PartFile::checkMajorityName()
+{
+    constexpr int kMinSources = 5;
+    constexpr int kMinPercent = 60;
+
+    if (m_nameLocked || !thePrefs.autoRenameToMajorityName())
+        return;
+    const PartFileStatus state = status();
+    if (state == PartFileStatus::Complete || state == PartFileStatus::Completing)
+        return;
+
+    const std::map<QString, int> counts = sourceNameCounts(false);
+    int named = 0;
+    const std::pair<const QString, int>* top = nullptr;
+    for (const auto& entry : counts) {
+        named += entry.second;
+        if (!top || entry.second > top->second)
+            top = &entry;
+    }
+    if (!top || top->second < kMinSources || top->second * 100 < named * kMinPercent)
+        return;
+    // A name the link can't carry stays out (ops::renameDownload's rule)
+    const QString name = top->first.trimmed();
+    if (name.isEmpty() || name.contains(u'|') || name == fileName())
+        return;
+
+    // Not for a file that looks fake: the majority may be the fakers
+    const FakeFileVerdict& verdict = fakeVerdict();
+    if (verdict.band <= Confidence::Suspect || verdict.has(FakeReason::NamesSpanKinds))
+        return;
+
+    const QString oldName = fileName();
+    renameTo(name);
+    m_fakeVerdictAt = 0;   // judged by the new name next time
+    logStatusInfo(QStringLiteral("Download renamed: \"%1\" to \"%2\" (the name %3 of %4 sources use)")
+                      .arg(oldName, name).arg(top->second).arg(named));
+}
+
+std::map<QString, int> PartFile::sourceNameCounts(bool withKadNotes) const
+{
+    std::map<QString, int> counts;
+    for (const UpDownClient* source : m_srcList) {
+        if (source && !source->clientFilename().isEmpty())
+            ++counts[source->clientFilename()];
+    }
+    if (withKadNotes) {
+        for (const auto& [publisher, note] : kadNotes()) {
+            if (!note.fileName.isEmpty())
+                ++counts[note.fileName];
+        }
+    }
+    return counts;
 }
 
 bool PartFile::readContainerHead(QByteArray& head) const
@@ -4765,5 +4846,6 @@ PartFileLoadResult PartFile::importShareazaTempFile(const QString& directory,
     m_gapList.clear();
     return loadPartFile(directory, filename);
 }
+
 
 } // namespace eMule

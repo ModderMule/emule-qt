@@ -66,6 +66,11 @@ struct RouteEntry {
 /// link); callers probe them concurrently rather than trusting the first.
 [[nodiscard]] std::vector<GatewayCandidate> defaultGateways(Address::Family family);
 
+/// Every default route's next hop, best first, including ones the OS is not
+/// using right now (the LAN router while a VPN carries the traffic). Same as
+/// defaultGateways() except on Windows, where that one returns the best route only.
+[[nodiscard]] std::vector<GatewayCandidate> allDefaultGateways(Address::Family family);
+
 // -- Exposed for unit tests ---------------------------------------------------
 // Defined on every platform, not just Linux, so the parsers and the selection
 // rule stay testable everywhere (same arrangement as LocalIPv6's parsers).

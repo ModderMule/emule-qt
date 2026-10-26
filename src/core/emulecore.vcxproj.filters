@@ -189,6 +189,9 @@
     <ClCompile Include="ipfilter\IPFilter.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
+    <ClCompile Include="ipfilter\IpFilterUpdater.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
     <ClCompile Include="geo\GeoIpUpdater.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
@@ -280,6 +283,9 @@
       <Filter>Source Files</Filter>
     </ClCompile>
     <ClCompile Include="net\DefaultGateway.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="net\RouterLocator.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
     <ClCompile Include="portmap\PortMapTypes.cpp">
@@ -806,6 +812,9 @@
     <QtMoc Include="ipfilter\IPFilter.h">
       <Filter>Header Files</Filter>
     </QtMoc>
+    <QtMoc Include="ipfilter\IpFilterUpdater.h">
+      <Filter>Header Files</Filter>
+    </QtMoc>
     <QtMoc Include="geo\GeoIpUpdater.h">
       <Filter>Header Files</Filter>
     </QtMoc>
@@ -969,6 +978,9 @@
       <Filter>Header Files</Filter>
     </ClInclude>
     <ClInclude Include="net\DefaultGateway.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="net\RouterLocator.h">
       <Filter>Header Files</Filter>
     </ClInclude>
     <ClInclude Include="portmap\PortMapTypes.h">

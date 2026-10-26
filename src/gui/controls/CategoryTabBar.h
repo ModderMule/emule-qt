@@ -91,6 +91,10 @@ public:
     /// The name a view filter mode goes by in the menu and on the tab.
     [[nodiscard]] static QString viewFilterTitle(int filter);
 
+    /// Re-measure the tabs after "Show active downloads in bold" changed: the
+    /// active tab is bold while it is on.
+    void applyDisplayOptions();
+
 signals:
     /// The selected tab changed. Carries the *category* index, not the tab's.
     void currentCategoryChanged(int category);
@@ -103,6 +107,8 @@ signals:
     void menuRequested(QMenu* menu, int index);
 
 private:
+    /// Tabs are measured once; a bold tab moving needs them measured again.
+    void relayoutTabs();
     void rebuildTabs();
     /// Title, view filter and info of one tab, as MFC labels it (EditCatTabLabel).
     [[nodiscard]] QString tabLabel(int index) const;

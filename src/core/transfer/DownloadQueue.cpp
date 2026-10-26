@@ -733,7 +733,8 @@ void DownloadQueue::addKadSourceResult(const kad::Kademlia::KadSourceResult& res
         client->setBuddyPort(buddyPort);
         // Not MFC (DownloadQueue.cpp:1571 sets no IP, its comment says it should): the NAT-T
         // paths need the source's own endpoint for the punch burst and to match its replies.
-        // Connect address only, as for type 6: TCP still goes via the buddy callback.
+        // Connect address only, as for type 6: TCP still goes via the buddy callback,
+        // unless an IPv6 dial reaches the source (tryToConnect).
         if (ip != 0)
             client->setConnectAddress(Address::fromHostOrder(ip));
         if (result.natt & KADNATT_QUIC)

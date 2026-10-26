@@ -16,6 +16,8 @@
 #include "utils/StringUtils.h"
 
 #include <QCoreApplication>
+#include <QDateTime>
+#include <QLocale>
 #include <QIcon>
 #include <QPainter>
 #include <QPixmap>
@@ -156,6 +158,10 @@ QVariant SharedFilesModel::data(const QModelIndex& index, int role) const
         case ColCodec:   return f.codec;
         case ColRatio:        return formatShareRatio(f.allTimeTransferred, f.fileSize);
         case ColSessionRatio: return formatShareRatio(f.transferred, f.fileSize);
+        case ColLastRequest:
+            return f.lastRequested > 0
+                ? QLocale().toString(QDateTime::fromSecsSinceEpoch(f.lastRequested), QLocale::ShortFormat)
+                : QString();
         default: break;
         }
     }
@@ -222,6 +228,7 @@ QVariant SharedFilesModel::data(const QModelIndex& index, int role) const
         case ColCodec:           return f.codec;
         case ColRatio:           return shareRatio(f.allTimeTransferred, f.fileSize);
         case ColSessionRatio:    return shareRatio(f.transferred, f.fileSize);
+        case ColLastRequest:     return QVariant::fromValue(f.lastRequested);
         default: break;
         }
     }
@@ -235,6 +242,7 @@ QVariant SharedFilesModel::data(const QModelIndex& index, int role) const
         case ColLength:  return f.length <= 0;
         case ColBitrate: return f.bitrate <= 0;
         case ColCodec:   return f.codec.isEmpty();
+        case ColLastRequest: return f.lastRequested <= 0;
         default:         return false;
         }
     }
@@ -317,6 +325,7 @@ QVariant SharedFilesModel::headerData(int section, Qt::Orientation orientation, 
     case ColCodec:           return tr("Codec");
     case ColRatio:           return tr("Ratio");
     case ColSessionRatio:    return tr("Session Ratio");
+    case ColLastRequest:     return tr("Last Request");
     default:                 return {};
     }
 }

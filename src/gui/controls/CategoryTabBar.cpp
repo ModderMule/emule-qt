@@ -11,6 +11,7 @@
 #include "utils/StatusBarNotifier.h"
 #include "dialogs/CategoryDialog.h"
 #include "utils/PreviewLauncher.h"
+#include "utils/TooltipDelayStyle.h"
 
 #include <algorithm>
 
@@ -19,20 +20,75 @@
 #include <QColor>
 #include <QMenu>
 #include <QMessageBox>
+#include <QApplication>
+#include <QPainter>
 #include <QSignalBlocker>
+#include <QStyleOptionTab>
 
 namespace eMule {
 
 using namespace Ipc;
 
+namespace {
+
+/// Draws the selected tab's label in bold while "Show active downloads in bold" is
+/// on, and makes that tab wide enough for it. Wraps the app style like the list headers.
+class BoldCurrentTabStyle : public TooltipDelayStyle {
+public:
+    explicit BoldCurrentTabStyle(QObject* parent) { setParent(parent); }
+
+    void drawControl(ControlElement element, const QStyleOption* option, QPainter* painter,
+                     const QWidget* widget) const override
+    {
+        if (element == CE_TabBarTabLabel && boldTab(option)) {
+            painter->save();
+            QFont font = painter->font();
+            font.setBold(true);
+            painter->setFont(font);
+            TooltipDelayStyle::drawControl(element, option, painter, widget);
+            painter->restore();
+            return;
+        }
+        TooltipDelayStyle::drawControl(element, option, painter, widget);
+    }
+
+    QSize sizeFromContents(ContentsType type, const QStyleOption* option, const QSize& size,
+                           const QWidget* widget) const override
+    {
+        QSize result = TooltipDelayStyle::sizeFromContents(type, option, size, widget);
+        if (type == CT_TabBarTab && widget && boldTab(option)) {
+            const auto* tab = static_cast<const QStyleOptionTab*>(option);
+            QFont bold = widget->font();
+            bold.setBold(true);
+            const int extra = QFontMetrics(bold).horizontalAdvance(tab->text)
+                            - widget->fontMetrics().horizontalAdvance(tab->text);
+            if (extra > 0)
+                result.rwidth() += extra;
+        }
+        return result;
+    }
+
+private:
+    [[nodiscard]] static bool boldTab(const QStyleOption* option)
+    {
+        return thePrefs.showActiveDownloadsBold() && (option->state & State_Selected)
+            && qstyleoption_cast<const QStyleOptionTab*>(option);
+    }
+};
+
+} // namespace
+
 CategoryTabBar::CategoryTabBar(QWidget* parent) : QTabBar(parent)
 {
     setExpanding(false);
     setDocumentMode(true);
+    setStyle(new BoldCurrentTabStyle(this));
     addTab(tr("All"));
     setTabData(0, QVariant::fromValue(int64_t{0}));
 
     connect(this, &QTabBar::currentChanged, this, [this](int tabIdx) {
+        if (thePrefs.showActiveDownloadsBold())
+            relayoutTabs();   // the bold tab moved
         emit currentCategoryChanged(
             tabIdx >= 0 ? int(tabData(tabIdx).toLongLong()) : 0);
     });
@@ -343,6 +399,11 @@ void CategoryTabBar::showCategoryMenu(int tabIndex, const QPoint& globalPos)
 // Private
 // ---------------------------------------------------------------------------
 
+void CategoryTabBar::applyDisplayOptions()
+{
+    relayoutTabs();
+}
+
 void CategoryTabBar::rebuildTabs()
 {
     // Remember the *category*, not the tab position: a removed category shifts
@@ -506,6 +567,14 @@ void CategoryTabBar::removeCategory(int index)
     oldIndex.removeAt(index);
 
     sendCategories(categories, oldIndex);
+}
+
+void CategoryTabBar::relayoutTabs()
+{
+    // A font change makes QTabBar drop its cached text sizes and lay the tabs out again
+    QEvent event(QEvent::FontChange);
+    QApplication::sendEvent(this, &event);
+    update();
 }
 
 } // namespace eMule

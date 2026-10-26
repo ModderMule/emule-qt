@@ -42,6 +42,10 @@ enum class TextRole : int {
     Caution,  ///< LowID, firewalled, connecting, log warnings
 };
 
+/// Windows' classic selection colour (COLOR_HIGHLIGHT), which MFC lists use.
+/// Unlike the accent colour it ignores personalisation. Invalid off Windows.
+[[nodiscard]] QColor systemHighlightColor();
+
 /// @p light or @p dark, by isDarkScheme().
 [[nodiscard]] QColor themed(const QColor& light, const QColor& dark);
 

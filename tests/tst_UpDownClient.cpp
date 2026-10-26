@@ -96,6 +96,7 @@ private slots:
     void processHello_miscOptions2();
     void processHello_udpPorts();
     void processHello_buddy();
+    void processHello_noTags();
     void processHello_trailing_MLDK();
     void processHello_trailing_hybrid();
     void processHello_clearsPrevious();
@@ -1006,6 +1007,30 @@ void tst_UpDownClient::processHello_buddy()
 
     QCOMPARE(client.buddyAddress().toNetworkUint32(), 0xC0A80101u);
     QCOMPARE(client.buddyPort(), uint16{5555});
+}
+
+void tst_UpDownClient::processHello_noTags()
+{
+    // A plain hello with no tags: 33-byte body (hash size byte + 16 hash + 4 ID + 2 port
+    // + 4 tag count + 4 server IP + 2 server port). Parsed without throwing, so the peer
+    // gets its hello answer instead of a disconnect.
+    uint8 hash[16];
+    fillHash(hash, 0x66);
+    const auto buf = buildHelloPacket(hash, 0x0A0B0C0D, 4662, {}, 0x01020304, 4661);
+    QCOMPARE(buf.size(), 33);
+
+    UpDownClient client;
+    bool threw = false;
+    try {
+        client.processHelloPacket(
+            reinterpret_cast<const uint8*>(buf.constData()), static_cast<uint32>(buf.size()));
+    } catch (...) {
+        threw = true;
+    }
+    QVERIFY(!threw);
+    QCOMPARE(client.userPort(), uint16{4662});
+    QCOMPARE(client.userIDHybrid(), 0x0A0B0C0Du);
+    QVERIFY(client.userName().isEmpty());
 }
 
 void tst_UpDownClient::processHello_trailing_MLDK()

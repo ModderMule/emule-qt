@@ -1108,6 +1108,15 @@ void SearchPanel::onTabContextMenu(const QPoint& pos)
         setMenuDefaultAction(&menu, restoreAct);
     }
     menu.addAction(tr("Close"), this, [this, index] { closeSearch(index); });
+    // Advanced mode only
+    if (thePrefs.showExtControls() && m_tabBar->count() > 1) {
+        menu.addAction(tr("Close Other Tabs"), this, [this, index] {
+            // Back to front, so the indices still to visit stay valid
+            for (int i = m_tabBar->count() - 1; i >= 0; --i)
+                if (i != index)
+                    closeSearch(i);
+        });
+    }
     menu.exec(m_tabBar->mapToGlobal(pos));
 }
 

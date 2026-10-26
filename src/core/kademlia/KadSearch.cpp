@@ -601,6 +601,9 @@ void Search::processResponse(uint32 fromIP, uint16 fromPort, const ContactArray&
     // owned by m_deleteList above, so returning frees them. MFC Search.cpp:346-373.
     if (m_type == SearchType::NodeFwCheckUDP) {
         ++m_answers;
+        // Show on the graph that the contact answered (MFC Search.cpp:367)
+        if (m_lookupHistory)
+            m_lookupHistory->contactReceived(nullptr, pFromContact, UInt128(), true);
         return;
     }
 
@@ -609,6 +612,13 @@ void Search::processResponse(uint32 fromIP, uint16 fromPort, const ContactArray&
     // the search. MFC Search.cpp:346-363.
     if (m_type == SearchType::Node) {
         ++m_answers;
+        // Results go to the graph only (MFC Search.cpp:356-358)
+        if (m_lookupHistory) {
+            for (auto* contact : results) {
+                const UInt128 dist = contact->getDistance();
+                m_lookupHistory->contactReceived(contact, pFromContact, dist, dist < uFromDistance, true);
+            }
+        }
         m_possible.clear();
         return;
     }
@@ -630,8 +640,16 @@ void Search::processResponse(uint32 fromIP, uint16 fromPort, const ContactArray&
     receivedSubnets[fromIP & ~0xFFu] = 1;
 
     bool providedCloserContacts = false;
+    bool historyCloser = false;   // MFC sets it before the filters below
 
     for (auto* contact : results) {
+        // Every listed contact goes to the graph, filtered or not (MFC Search.cpp:391-395)
+        if (m_lookupHistory) {
+            if (contact->getDistance() < uFromDistance)
+                historyCloser = true;
+            m_lookupHistory->contactReceived(contact, pFromContact, contact->getDistance(), historyCloser);
+        }
+
         // Dedup by distance key (MFC Search.cpp:399-400).
         // m_tried contains ALL contacted nodes (responded or not), so checking
         // m_tried + m_possible covers everything. m_best entries are always also
@@ -664,14 +682,6 @@ void Search::processResponse(uint32 fromIP, uint16 fromPort, const ContactArray&
 
         // Add to possible contacts
         m_possible[contact->getDistance()] = contact;
-
-        // Track in lookup history
-        if (m_lookupHistory) {
-            bool closer = contact->getDistance() < m_closestDistantFound;
-            m_lookupHistory->contactReceived(contact, pFromContact, contact->getDistance(), closer);
-            if (closer)
-                m_closestDistantFound = contact->getDistance();
-        }
     }
 
     // Record response in m_responded (keyed by distance, matching MFC m_mapResponded).
@@ -741,6 +751,7 @@ void Search::processResponse(uint32 fromIP, uint16 fromPort, const ContactArray&
 
 void Search::processResult(const UInt128& answer, TagList& info, uint32 fromIP, uint16 fromPort)
 {
+    const uint32 answersBefore = m_answers;
     switch (m_type) {
     case SearchType::File:
         processResultFile(answer, info);
@@ -755,6 +766,9 @@ void Search::processResult(const UInt128& answer, TagList& info, uint32 fromIP, 
         // Store, node and buddy searches ask for no results. MFC has no such arm.
         break;
     }
+    // MFC Search.cpp:903-905
+    if (m_lookupHistory && m_answers > answersBefore)
+        m_lookupHistory->contactRespondedKeyword(fromIP, fromPort, m_answers - answersBefore);
 }
 
 void Search::processResultFile(const UInt128& answer, TagList& info)
@@ -1114,8 +1128,6 @@ void Search::processResultKeyword(const UInt128& answer, TagList& info, uint32 f
            fromIP);
     }
 
-    if (m_lookupHistory)
-        m_lookupHistory->contactRespondedKeyword(fromIP, fromPort, m_answers);
 }
 
 void Search::processResultNotes(const UInt128& answer, TagList& info)
@@ -1282,6 +1294,9 @@ void Search::pinFetchedContacts(const ContactMap& fetched)
         auto [it, inserted] = m_inUse.try_emplace(dist, contact);
         if (!inserted)
             contact->decUse();
+        // Routing-table seeds for the lookup graph (MFC Go(), Search.cpp:174-175)
+        if (m_lookupHistory)
+            m_lookupHistory->contactReceived(contact, nullptr, dist, false);
     }
 }
 
@@ -1425,6 +1440,9 @@ void Search::storePacket(bool flushRemaining)
         // Distance tolerance: skip contacts too far from target (MFC Search.cpp:479-482).
         if (dist.get32BitChunk(0) > kSearchTolerance && !contact->address().isLan())
             continue;
+
+        if (m_lookupHistory)
+            m_lookupHistory->contactAskedKeyword(contact);   // MFC Search.cpp:484
 
         bool sent = false;
         switch (m_type) {

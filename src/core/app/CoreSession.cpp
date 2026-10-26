@@ -12,6 +12,7 @@
 #include "app/AppContext.h"
 #include "ipfilter/IPFilter.h"
 #include "geo/GeoIpUpdater.h"
+#include "ipfilter/IpFilterUpdater.h"
 #include "geo/IP2Country.h"
 #include "client/ClientCensus.h"
 #include "client/DlpLoader.h"
@@ -66,8 +67,10 @@
 #include <QDir>
 #include <QElapsedTimer>
 #include <QFile>
+#include <QSet>
 #include <QTimer>
 
+#include <functional>
 
 namespace eMule {
 
@@ -107,6 +110,8 @@ CoreSession::~CoreSession()
 
 void CoreSession::start()
 {
+    if (thePrefs.randomizePortsAtStart())
+        randomizeListenPorts();
     logInfo(QStringLiteral("Starting core — TCP port %1, UDP port %2")
                 .arg(thePrefs.port()).arg(thePrefs.udpPort()));
     // Before initClientUDP (obfuscation key material), initServerConnect (CT_MOD_IP_V6
@@ -854,6 +859,12 @@ void CoreSession::initClientInfra()
         m_ipFilter = std::make_unique<IPFilter>();
         theApp.ipFilter = m_ipFilter.get();
     }
+    // Scheduled "Update from URL"; loadStep() reads the file first
+    if (!theApp.ipFilterUpdater) {
+        m_ipFilterUpdater = std::make_unique<IpFilterUpdater>(theApp.ipFilter, thePrefs.configDir());
+        theApp.ipFilterUpdater = m_ipFilterUpdater.get();
+        m_ipFilterUpdater->start();
+    }
 
     // Country flags: open the GeoLite2 db and keep it fresh
     if (!theApp.ip2Country) {
@@ -993,6 +1004,10 @@ void CoreSession::shutdownClientInfra()
     if (m_geoIpUpdater) {
         theApp.geoIpUpdater = nullptr;
         m_geoIpUpdater.reset();
+    }
+    if (m_ipFilterUpdater) {
+        theApp.ipFilterUpdater = nullptr;
+        m_ipFilterUpdater.reset();
     }
     if (m_ip2Country) {
         theApp.ip2Country = nullptr;
@@ -2083,7 +2098,7 @@ void CoreSession::loadStep()
             ensureSeenFileIndex();   // our own shares are files we have seen
             theApp.sharedFileList->reload();
             m_sharedFilesScanned = true;
-            theApp.sharedFileList->setWatchingEnabled(true);
+            theApp.sharedFileList->setWatchingEnabled(thePrefs.watchSharedDirs());
 
             // MFC starts CAICHSyncThread once the shared list exists (srchybrid/EmuleDlg.cpp:641).
             m_aichSync = std::make_unique<AICHSyncThread>(thePrefs.configDir(), theApp.sharedFileList);
@@ -2181,6 +2196,34 @@ void CoreSession::finishStart()
     theApp.releaseConnectHold = [this] { releaseConnectHold(); };
     m_tickCounter = 0;
     m_timer.start();
+}
+
+void CoreSession::randomizeListenPorts()
+{
+    const uint16 lo = thePrefs.randomPortMin();
+    const uint16 hi = thePrefs.randomPortMax();
+    QSet<uint16> taken;
+    const auto pick = [&](const std::function<bool(uint16)>& isFree) {
+        const uint16 port = Preferences::randomPort(
+            [&](uint16 p) { return !taken.contains(p) && isFree(p); }, lo, hi);
+        taken.insert(port);
+        return port;
+    };
+
+    thePrefs.setPort(pick(&Preferences::tcpPortFree));
+    if (thePrefs.udpPort() != 0)   // 0 = UDP off
+        thePrefs.setUdpPort(pick(&Preferences::udpPortFree));
+    // libtorrent listens on TCP and UDP of the one port
+    if (thePrefs.btEnabled())
+        thePrefs.setBtListenPort(pick([](uint16 p) {
+            return Preferences::tcpPortFree(p) && Preferences::udpPortFree(p);
+        }));
+
+    logInfo(QStringLiteral("Random listen ports from %1-%2: TCP %3, UDP %4%5")
+                .arg(lo).arg(hi).arg(thePrefs.port()).arg(thePrefs.udpPort())
+                .arg(thePrefs.btEnabled()
+                         ? QStringLiteral(", BitTorrent %1").arg(thePrefs.btListenPort())
+                         : QString()));
 }
 
 } // namespace eMule

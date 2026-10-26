@@ -882,14 +882,16 @@ QWidget* SharedFilesPanel::createTopSection()
     }
     // File Name, Size, Type, Priority, Requests, Transferred, Shared Parts, Complete
     // Sources, Shared eD2K|Kad, Folder, File ID, Accepted Requests, Artist, Album,
-    // Title, Length, Bitrate, Codec, Ratio, Session Ratio. Hidden by default as in MFC.
+    // Title, Length, Bitrate, Codec, Ratio, Session Ratio, Last Request. Hidden by default as in MFC.
     fileView->bindColumns(QStringLiteral("sharedfiles"),
-        {260, 65, 60, 60, 100, 120, 170, 60, 100, 260, 220, 100, 100, 100, 100, 50, 65, 50, 50, 80},
+        {260, 65, 60, 60, 100, 120, 170, 60, 100, 260, 220, 100, 100, 100, 100, 50, 65, 50, 50, 80, 120},
         {SharedFilesModel::ColFolder, SharedFilesModel::ColFileId, SharedFilesModel::ColAccepted,
          SharedFilesModel::ColArtist, SharedFilesModel::ColAlbum, SharedFilesModel::ColTitle,
          SharedFilesModel::ColLength, SharedFilesModel::ColBitrate, SharedFilesModel::ColCodec,
-         SharedFilesModel::ColRatio, SharedFilesModel::ColSessionRatio});
-    fileView->setExtColumns({SharedFilesModel::ColRatio, SharedFilesModel::ColSessionRatio},
+         SharedFilesModel::ColRatio, SharedFilesModel::ColSessionRatio,
+         SharedFilesModel::ColLastRequest});
+    fileView->setExtColumns({SharedFilesModel::ColRatio, SharedFilesModel::ColSessionRatio,
+                             SharedFilesModel::ColLastRequest},
                             thePrefs.showExtControls());
 
     // MFC SharedFilesCtrl.cpp:1093-1134: the numeric columns start descending, and four
@@ -899,7 +901,8 @@ QWidget* SharedFilesPanel::createTopSection()
                                   SharedFilesModel::ColAccepted, SharedFilesModel::ColTransferred,
                                   SharedFilesModel::ColCompleteSources,
                                   SharedFilesModel::ColSharedNetworks,
-                                  SharedFilesModel::ColRatio, SharedFilesModel::ColSessionRatio});
+                                  SharedFilesModel::ColRatio, SharedFilesModel::ColSessionRatio,
+                                  SharedFilesModel::ColLastRequest});
     for (const int column : {SharedFilesModel::ColRequests, SharedFilesModel::ColAccepted,
                              SharedFilesModel::ColTransferred}) {
         fileView->setSortValueColumn(column, [this, column](bool allTime) {
@@ -1106,9 +1109,16 @@ QWidget* SharedFilesPanel::createBottomTabs()
     m_ed2kHtmlCheck = new QCheckBox(tr("Add HTML"));
     m_ed2kHashsetCheck = new QCheckBox(tr("Add Hashset"));
     m_ed2kHostnameCheck = new QCheckBox(tr("Hostname"));
+    // Advanced mode only; read by the core from the file, so complete files only
+    m_ed2kMediaInfoCheck = new QCheckBox(tr("Include Media Info"));
+    m_ed2kMediaInfoCheck->setToolTip(tr("Add a line with resolution, codecs, length and bitrate "
+                                        "under the HTML link of a complete file"));
+    m_ed2kMediaInfoCheck->setEnabled(false);
+    m_ed2kMediaInfoCheck->setVisible(thePrefs.showExtControls());
     advLayout->addWidget(m_ed2kHtmlCheck);
     advLayout->addWidget(m_ed2kHashsetCheck);
     advLayout->addWidget(m_ed2kHostnameCheck);
+    advLayout->addWidget(m_ed2kMediaInfoCheck);
     advLayout->addStretch(1);
     ed2kLayout->addWidget(m_ed2kAdvancedGroup);
 
@@ -1124,6 +1134,8 @@ QWidget* SharedFilesPanel::createBottomTabs()
     connect(m_ed2kHtmlCheck, &QCheckBox::toggled, this, &SharedFilesPanel::rebuildEd2kLink);
     connect(m_ed2kHashsetCheck, &QCheckBox::toggled, this, &SharedFilesPanel::rebuildEd2kLink);
     connect(m_ed2kHostnameCheck, &QCheckBox::toggled, this, &SharedFilesPanel::rebuildEd2kLink);
+    connect(m_ed2kMediaInfoCheck, &QCheckBox::toggled, this, &SharedFilesPanel::rebuildEd2kLink);
+    connect(m_ed2kHtmlCheck, &QCheckBox::toggled, m_ed2kMediaInfoCheck, &QWidget::setEnabled);
 
     // Enabled once the daemon reports it has something to advertise (a hostname or a
     // confirmed public IPv6) — see the GetEd2kLink reply in rebuildEd2kLink().
@@ -1172,6 +1184,7 @@ SharedFileRow sharedRowFromCbor(const QCborMap& m)
     row.allTimeRequests   = m.value(QStringLiteral("allTimeRequests")).toInteger();
     row.allTimeAccepted   = m.value(QStringLiteral("allTimeAccepted")).toInteger();
     row.allTimeTransferred = m.value(QStringLiteral("allTimeTransferred")).toInteger();
+    row.lastRequested     = m.value(QStringLiteral("lastRequested")).toInteger();
     row.completeSources   = static_cast<int>(m.value(QStringLiteral("completeSources")).toInteger());
     row.completeSourcesLo = static_cast<int>(m.value(QStringLiteral("completeSourcesLo")).toInteger());
     row.completeSourcesHi = static_cast<int>(m.value(QStringLiteral("completeSourcesHi")).toInteger());
@@ -1563,7 +1576,8 @@ void SharedFilesPanel::rebuildEd2kLink()
 
     const int flags = (m_ed2kHashsetCheck->isChecked()  ? 1 : 0)
                     | (m_ed2kHostnameCheck->isChecked() ? 2 : 0)
-                    | (m_ed2kHtmlCheck->isChecked()     ? 4 : 0);
+                    | (m_ed2kHtmlCheck->isChecked()     ? 4 : 0)
+                    | (mediaInfoWanted()                ? 8 : 0);
 
     // This runs on every poll. Nothing changed means nothing to ask for — MFC's
     // CED2kLinkDlg::UpdateLink skips the same way.
@@ -1581,7 +1595,7 @@ void SharedFilesPanel::rebuildEd2kLink()
     // must not void a tab refresh that is still in flight.
     const int generation = ++m_ed2kLinkGeneration;
 
-    requestEd2kLinks(hashes, flags & 1, flags & 2, flags & 4,
+    requestEd2kLinks(hashes, flags & 1, flags & 2, flags & 4, flags & 8,
         [this, generation](const QStringList& links, bool hintAvailable) {
             // Drop a stale reply: the selection or a checkbox may have changed since.
             if (generation != m_ed2kLinkGeneration)
@@ -1605,8 +1619,14 @@ void SharedFilesPanel::rebuildEd2kLink()
         });
 }
 
+bool SharedFilesPanel::mediaInfoWanted() const
+{
+    return thePrefs.showExtControls() && m_ed2kHtmlCheck && m_ed2kHtmlCheck->isChecked()
+        && m_ed2kMediaInfoCheck && m_ed2kMediaInfoCheck->isChecked();
+}
+
 void SharedFilesPanel::requestEd2kLinks(
-    const QStringList& hashes, bool hashset, bool sourceHint, bool html,
+    const QStringList& hashes, bool hashset, bool sourceHint, bool html, bool mediaInfo,
     std::function<void(const QStringList& links, bool hintAvailable)> apply)
 {
     if (hashes.isEmpty() || !m_ipc || !m_ipc->isConnected())
@@ -1629,6 +1649,7 @@ void SharedFilesPanel::requestEd2kLinks(
     req.append(hashset);
     req.append(sourceHint);
     req.append(html);
+    req.append(mediaInfo);
 
     m_ipc->sendRequest(std::move(req), [apply = std::move(apply)](const IpcMessage& resp) {
         if (resp.type() != IpcMsgType::Result || !resp.fieldBool(0))
@@ -1772,6 +1793,7 @@ void SharedFilesPanel::copyEd2kLinks(const QStringList& hashes)
                      m_ed2kHashsetCheck->isChecked(),
                      m_ed2kHostnameCheck->isChecked(),
                      m_ed2kHtmlCheck->isChecked(),
+                     mediaInfoWanted(),
         [](const QStringList& links, bool) {
             if (!links.isEmpty())
                 eMule::Clipboard::setText(links.join(QLatin1Char('\n')));
@@ -2186,6 +2208,8 @@ void SharedFilesPanel::applyDisplayOptions()
 {
     if (auto* view = dynamic_cast<ListTreeView*>(m_fileView))
         view->applyExtColumns(thePrefs.showExtControls());
+    if (m_ed2kMediaInfoCheck)
+        m_ed2kMediaInfoCheck->setVisible(thePrefs.showExtControls());
 }
 
 void SharedFilesPanel::refreshSharedDirs()

@@ -67,7 +67,8 @@ signals:
     /// Ask the owning panel to fetch a link with this exact flag combination. The
     /// daemon builds it — the four pre-generated variants in the details map cannot
     /// express combinations such as "hashset + hostname".
-    void requestEd2kLink(const QString& fileHash, bool hashset, bool sourceHint, bool html);
+    void requestEd2kLink(const QString& fileHash, bool hashset, bool sourceHint, bool html,
+                         bool mediaInfo);
 
 public slots:
     /// Re-populate only the tabs a Kad notes result can change (File Names +
@@ -110,6 +111,7 @@ private:
     QCheckBox* m_chkHashset     = nullptr;
     QCheckBox* m_chkHostname    = nullptr;
     QCheckBox* m_chkHtml        = nullptr;
+    QCheckBox* m_chkMediaInfo   = nullptr;   ///< advanced mode, with HTML only
     QString    m_ed2kLink;          ///< plain variant, shown until a request returns
     QString    m_fileHash;
 };

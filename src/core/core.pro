@@ -107,6 +107,7 @@ SOURCES += \
     friends/Friend.cpp \
     friends/FriendList.cpp \
     ipfilter/IPFilter.cpp \
+    ipfilter/IpFilterUpdater.cpp \
     geo/GeoIpUpdater.cpp \
     geo/HostCountryResolver.cpp \
     geo/IP2Country.cpp \
@@ -138,6 +139,7 @@ SOURCES += \
     net/ClientUDPSocket.cpp \
     net/EMSocket.cpp \
     net/ProxySettings.cpp \
+    net/RouterLocator.cpp \
     net/EncryptedDatagramSocket.cpp \
     net/EncryptedStreamSocket.cpp \
     net/HttpClientReqSocket.cpp \
@@ -260,6 +262,7 @@ HEADERS += \
     friends/FriendConnectProgress.h \
     friends/FriendList.h \
     ipfilter/IPFilter.h \
+    ipfilter/IpFilterUpdater.h \
     geo/GeoIpUpdater.h \
     geo/HostCountryResolver.h \
     geo/IP2Country.h \
@@ -295,6 +298,7 @@ HEADERS += \
     net/ClientUDPSocket.h \
     net/EMSocket.h \
     net/ProxySettings.h \
+    net/RouterLocator.h \
     net/EncryptedDatagramSocket.h \
     net/EncryptedStreamSocket.h \
     net/HttpClientReqSocket.h \

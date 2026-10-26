@@ -4,6 +4,10 @@
 
 #include "files/StatisticFile.h"
 
+#include <QDateTime>
+
+#include <algorithm>
+
 namespace eMule {
 
 void StatisticFile::mergeFileStats(const StatisticFile& other)
@@ -14,12 +18,14 @@ void StatisticFile::mergeFileStats(const StatisticFile& other)
     m_allTimeRequested += other.m_allTimeRequested;
     m_allTimeAccepted += other.m_allTimeAccepted;
     m_allTimeTransferred += other.m_allTimeTransferred;
+    m_lastRequested = std::max(m_lastRequested, other.m_lastRequested);
 }
 
 void StatisticFile::addRequest()
 {
     ++m_requested;
     ++m_allTimeRequested;
+    m_lastRequested = static_cast<uint32>(QDateTime::currentSecsSinceEpoch());
 }
 
 void StatisticFile::addAccepted()

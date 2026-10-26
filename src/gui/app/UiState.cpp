@@ -100,8 +100,11 @@ void UiState::load(const QString& configDir)
         m_associateNzbFiles = root["associateNzbFiles"].as<bool>(m_associateNzbFiles);
         m_miniMuleAutoClose = root["miniMuleAutoClose"].as<bool>(m_miniMuleAutoClose);
         m_firstStartWizardDone = root["firstStartWizardDone"].as<bool>(m_firstStartWizardDone);
+        m_startCount = root["startCount"].as<int>(m_startCount);
+        m_lowIdHintDisabled = root["lowIdHintDisabled"].as<bool>(m_lowIdHintDisabled);
         m_showCountryFlags = root["showCountryFlags"].as<bool>(m_showCountryFlags);
         m_showTaskbarProgress = root["showTaskbarProgress"].as<bool>(m_showTaskbarProgress);
+        m_kadAutoShowLookups = root["kadAutoShowLookups"].as<bool>(m_kadAutoShowLookups);
         m_showDownloadToolbar = root["showDownloadToolbar"].as<bool>(m_showDownloadToolbar);
         m_toolbarButtonStyle = root["toolbarButtonStyle"].as<int>(m_toolbarButtonStyle);
         m_colorScheme = std::clamp(root["colorScheme"].as<int>(m_colorScheme), 0, 2);
@@ -218,8 +221,11 @@ void UiState::save(const QString& configDir)
     out << YAML::Key << "associateNzbFiles" << YAML::Value << m_associateNzbFiles;
     out << YAML::Key << "miniMuleAutoClose" << YAML::Value << m_miniMuleAutoClose;
     out << YAML::Key << "firstStartWizardDone" << YAML::Value << m_firstStartWizardDone;
+    out << YAML::Key << "startCount" << YAML::Value << m_startCount;
+    out << YAML::Key << "lowIdHintDisabled" << YAML::Value << m_lowIdHintDisabled;
     out << YAML::Key << "showCountryFlags" << YAML::Value << m_showCountryFlags;
     out << YAML::Key << "showTaskbarProgress" << YAML::Value << m_showTaskbarProgress;
+    out << YAML::Key << "kadAutoShowLookups" << YAML::Value << m_kadAutoShowLookups;
     out << YAML::Key << "showDownloadToolbar" << YAML::Value << m_showDownloadToolbar;
     out << YAML::Key << "toolbarButtonStyle" << YAML::Value << m_toolbarButtonStyle;
     out << YAML::Key << "colorScheme" << YAML::Value << m_colorScheme;

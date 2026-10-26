@@ -142,6 +142,7 @@ void FileDetailDialog::setDetails(const QCborMap& details)
     m_chkHashset          = nullptr;
     m_chkHostname         = nullptr;
     m_chkHtml             = nullptr;
+    m_chkMediaInfo        = nullptr;
     delete m_tabs;
     m_tabs = nullptr;
 
@@ -529,10 +530,17 @@ QWidget* FileDetailDialog::createEd2kLinkTab(const QCborMap& d)
     m_chkHostname = new QCheckBox(tr("Include Hostname"));
     m_chkHostname->setToolTip(tr("Add your hostname or public IPv6 as a source"));
     m_chkHtml = new QCheckBox(tr("HTML Format"));
+    // Advanced mode only; read by the core from the file, so complete files only
+    m_chkMediaInfo = new QCheckBox(tr("Include Media Info"));
+    m_chkMediaInfo->setToolTip(tr("Add a line with resolution, codecs, length and bitrate under "
+                                  "the HTML link of a complete file"));
+    m_chkMediaInfo->setVisible(thePrefs.showExtControls());
+    m_chkMediaInfo->setEnabled(false);
 
     groupLayout->addWidget(m_chkHashset);
     groupLayout->addWidget(m_chkHostname);
     groupLayout->addWidget(m_chkHtml);
+    groupLayout->addWidget(m_chkMediaInfo);
     layout->addWidget(group);
     // One link per file is listed as it came; the options ask for a single file's link
     group->setEnabled(!m_fileHash.isEmpty());
@@ -542,6 +550,8 @@ QWidget* FileDetailDialog::createEd2kLinkTab(const QCborMap& d)
     connect(m_chkHashset,  &QCheckBox::checkStateChanged, this, updateLink);
     connect(m_chkHostname, &QCheckBox::checkStateChanged, this, updateLink);
     connect(m_chkHtml,     &QCheckBox::checkStateChanged, this, updateLink);
+    connect(m_chkMediaInfo, &QCheckBox::checkStateChanged, this, updateLink);
+    connect(m_chkHtml, &QCheckBox::toggled, m_chkMediaInfo, &QWidget::setEnabled);
 
     // Ask for the link once the owning panel has wired requestEd2kLink() up (it connects
     // immediately after construction, so a zero-timer lands after that but before any
@@ -596,7 +606,8 @@ void FileDetailDialog::updateEd2kLinkDisplay()
     // GUI cannot build the link itself: only the core knows what may be advertised.
     if (!m_fileHash.isEmpty()) {
         emit requestEd2kLink(m_fileHash, m_chkHashset->isChecked(),
-                             m_chkHostname->isChecked(), m_chkHtml->isChecked());
+                             m_chkHostname->isChecked(), m_chkHtml->isChecked(),
+                             m_chkMediaInfo && m_chkMediaInfo->isChecked());
         return;
     }
 
@@ -632,7 +643,7 @@ void connectEd2kLinkRequests(FileDetailDialog* dialog, IpcClient* ipc)
 
     QObject::connect(dialog, &FileDetailDialog::requestEd2kLink, dialog,
         [ipc, generation, dlgPtr](const QString& hash, bool hashset,
-                                  bool sourceHint, bool html) {
+                                  bool sourceHint, bool html, bool mediaInfo) {
             if (!ipc->isConnected())
                 return;
             const int myGeneration = ++(*generation);
@@ -642,6 +653,7 @@ void connectEd2kLinkRequests(FileDetailDialog* dialog, IpcClient* ipc)
             req.append(hashset);
             req.append(sourceHint);
             req.append(html);
+            req.append(mediaInfo);
             ipc->sendRequest(std::move(req),
                 [generation, myGeneration, dlgPtr](const Ipc::IpcMessage& resp) {
                     if (!dlgPtr || myGeneration != *generation)

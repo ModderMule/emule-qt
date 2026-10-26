@@ -13,9 +13,12 @@
 #include <QFile>
 #include <QFileInfo>
 #include <QHash>
+#include <QStringList>
 #include <QMediaFormat>
 #include <QMimeDatabase>
 #include <QtEndian>
+
+#include <algorithm>
 
 
 namespace eMule {
@@ -1471,6 +1474,55 @@ bool extractSharedMediaInfo(const QString& filePath, MediaInfo& info, qint64* by
     case MediaKind::None:      break;
     }
     return done(false);
+}
+
+QString mediaInfoSummary(const MediaInfo& info)
+{
+    QStringList parts;
+
+    if (info.videoStreamCount > 0) {
+        QString video;
+        if (info.video.width > 0 && info.video.height > 0)
+            video = QStringLiteral("%1\u00D7%2").arg(info.video.width).arg(info.video.height);
+        QString codec = info.video.codecName;
+        if (codec.isEmpty() && info.video.codecTag != 0)
+            codec = videoFormatName(info.video.codecTag);
+        if (!codec.isEmpty())
+            video = video.isEmpty() ? codec : video + u' ' + codec;
+        if (!video.isEmpty())
+            parts << video;
+    }
+
+    const double length = info.lengthSec > 0.0 ? info.lengthSec
+                        : std::max(info.video.lengthSec, info.audio.lengthSec);
+    if (length >= 1.0) {
+        const auto secs = static_cast<qint64>(length + 0.5);
+        parts << (secs >= 3600
+                      ? QStringLiteral("%1:%2:%3").arg(secs / 3600)
+                            .arg(secs / 60 % 60, 2, 10, QLatin1Char('0'))
+                            .arg(secs % 60, 2, 10, QLatin1Char('0'))
+                      : QStringLiteral("%1:%2").arg(secs / 60)
+                            .arg(secs % 60, 2, 10, QLatin1Char('0')));
+    }
+
+    if (info.audioStreamCount > 0) {
+        QString audio = info.audio.codecName;
+        if (audio.isEmpty() && info.audio.formatTag != 0)
+            audio = audioFormatCodecId(info.audio.formatTag);
+        if (info.audio.channels > 0)
+            audio = audio.isEmpty() ? QStringLiteral("%1ch").arg(info.audio.channels)
+                                    : QStringLiteral("%1 %2ch").arg(audio).arg(info.audio.channels);
+        if (!audio.isEmpty())
+            parts << audio;
+    }
+
+    const uint64 bitsPerSec = uint64{info.video.bitRate} + uint64{info.audio.avgBytesPerSec} * 8;
+    if (bitsPerSec >= 1'000'000)
+        parts << QStringLiteral("%1 Mbit/s").arg(static_cast<double>(bitsPerSec) / 1e6, 0, 'f', 1);
+    else if (bitsPerSec >= 1000)
+        parts << QStringLiteral("%1 kbit/s").arg((bitsPerSec + 500) / 1000);
+
+    return parts.join(QStringLiteral(" \u00B7 "));
 }
 
 } // namespace eMule

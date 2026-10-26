@@ -78,7 +78,9 @@ enum class IpcMsgType : int {
     SetSharedFilePriority = 161, ///< [hash: string, priority: int, isAuto: bool]
     ReloadSharedFiles    = 162, ///< [rebuildMetaData?] — rescan shared directories, or re-read media tags
     GetEd2kLink          = 163, ///< [hashes: QCborArray of strings, hashset: bool,
-                                ///<  sourceHint: bool, html: bool]
+                                ///<  sourceHint: bool, html: bool, mediaInfo?: bool]
+                                ///<   mediaInfo (optional, html only): a media line
+                                ///<   under each complete file's link
                                 ///<   → [ok: bool, [links: QCborArray of strings,
                                 ///<                 sourceHintAvailable: bool]]
                                 ///<   links[i] pairs with hashes[i]; a hash that no longer
@@ -309,6 +311,15 @@ enum class IpcMsgType : int {
     /// far, into a file of its own; the download is only read (MFC "Create preview
     /// file", CArchiveRecovery::recover).
     RecoverArchivePreview   = 289,
+
+    /// [hash: string] -> [ok, swapped: int]. Moves the download's idle A4AF sources
+    /// to it (Source Handling > Swap All A4AF Sources to This File).
+    SwapA4AFToFile          = 290,
+
+    /// [url: string] -> [ok, [success: bool, entries: int, message: string]] when done.
+    /// The daemon downloads ipfilter.dat (empty url = the configured one), saves and
+    /// reloads it. Security page "Load" button.
+    UpdateIpFilterNow       = 291,
 
     // -- Indexers (700-719) --------------------------------------------------
     //

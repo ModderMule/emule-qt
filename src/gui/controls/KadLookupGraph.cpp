@@ -1,36 +1,104 @@
 #include "pch.h"
 #include "controls/KadLookupGraph.h"
-#include "utils/Appearance.h"
 
-#include <QPainter>
-#include <QPaintEvent>
+#include <QContextMenuEvent>
+#include <QCursor>
+#include <QHelpEvent>
+#include <QMenu>
 #include <QMouseEvent>
-#include <QRadialGradient>
+#include <QPaintEvent>
+#include <QPainter>
+#include <QPainterPath>
 #include <QToolTip>
+
+#include <algorithm>
+#include <cmath>
 
 
 namespace eMule {
 
 namespace {
 
+// MFC KadLookupGraph.cpp:38-39
 constexpr int kNodeWidth  = 26;
 constexpr int kNodeHeight = 20;
-constexpr int kIconSize   = 14;
-constexpr int kSelfHotIdx = -2;  // special hover index for the self node
+constexpr int kIconSize   = 16;
+constexpr int64_t kContactTimeoutMs = 3000;   // MFC SEC2MS(3)
+constexpr int64_t kResultTimeoutMs  = 5000;   // MFC SEC2MS(5)
+
+// kad::SearchType values (KadSearchDefs.h)
+enum : int { TypeFile = 2, TypeKeyword = 3, TypeNotes = 4, TypeStoreFile = 5,
+             TypeStoreKeyword = 6, TypeStoreNotes = 7, TypeFindSource = 9 };
+
+using Dist = std::array<uint32_t, 4>;
+
+/// 3 * d, saturating (MFC adds the distance to itself twice).
+Dist times3(const Dist& d)
+{
+    Dist r{};
+    uint64_t carry = 0;
+    for (int c = 3; c >= 0; --c) {
+        const uint64_t v = uint64_t{d[static_cast<size_t>(c)]} * 3 + carry;
+        r[static_cast<size_t>(c)] = static_cast<uint32_t>(v);
+        carry = v >> 32;
+    }
+    if (carry)
+        r.fill(UINT32_MAX);
+    return r;
+}
+
+uint64_t chunk64(const Dist& d, int start)
+{
+    return (uint64_t{d[static_cast<size_t>(start)]} << 32) | d[static_cast<size_t>(start + 1)];
+}
+
+void drawArrow(QPainter& p, QPointF from, QPointF to, const QColor& color)
+{
+    p.setPen(QPen(color, 0.8));
+    p.drawLine(from, to);
+    const QPointF vec = to - from;
+    const double len = std::hypot(vec.x(), vec.y());
+    if (len < 1.0)
+        return;
+    // Arrow head like GDI+ AdjustableArrowCap(6, 4) on a 0.8 px pen
+    const QPointF unit = vec / len;
+    const QPointF normal(-unit.y(), unit.x());
+    const QPointF base = to - unit * 4.8;
+    QPainterPath head;
+    head.moveTo(to);
+    head.lineTo(base + normal * 1.6);
+    head.lineTo(base - normal * 1.6);
+    head.closeSubpath();
+    p.fillPath(head, color);
+}
 
 } // anonymous namespace
 
 KadLookupGraph::KadLookupGraph(QWidget* parent)
     : QWidget(parent)
+    , m_nodeIcons{QIcon(QStringLiteral(":/icons/Contact0.ico")),
+                  QIcon(QStringLiteral(":/icons/Contact1.ico")),
+                  QIcon(QStringLiteral(":/icons/Contact2.ico")),
+                  QIcon(QStringLiteral(":/icons/Contact4.ico"))}
+    , m_iconSearch(QStringLiteral(":/icons/emuleCollSearch.ico"))
+    , m_iconStoreFile(QStringLiteral(":/icons/KadStoreFile.ico"))
+    , m_iconStoreWord(QStringLiteral(":/icons/KadStoreWord.ico"))
+    , m_ovlResponded(QStringLiteral(":/icons/ClientSecureHashOvl.ico"))
+    , m_ovlNoResponse(QStringLiteral(":/icons/NoAccessFolderOvl.ico"))
 {
     setMouseTracking(true);
     setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Expanding);
+    m_snapshotAge.start();
 }
 
-void KadLookupGraph::setEntries(std::vector<LookupEntry> entries)
+void KadLookupGraph::setLookup(std::vector<LookupEntry> entries, int searchType)
 {
     m_entries = std::move(entries);
-    m_hotIdx = -1;
+    m_searchType = searchType;
+    m_snapshotAge.restart();
+    layoutNodes();
+    // MFC recomputes the hot item and its tip on every repaint (KadLookupGraph.cpp:300-311)
+    refreshToolTip();
     update();
 }
 
@@ -38,353 +106,350 @@ void KadLookupGraph::clear()
 {
     m_entries.clear();
     m_nodeRects.clear();
-    m_selfRect = {};
-    m_hotIdx = -1;
+    m_hotId.clear();
+    m_searchType = -1;
+    if (QToolTip::isVisible() && underMouse())
+        QToolTip::hideText();
     update();
 }
 
-void KadLookupGraph::setTitle(const QString& title)
+// ---------------------------------------------------------------------------
+// Events
+// ---------------------------------------------------------------------------
+
+bool KadLookupGraph::event(QEvent* event)
 {
-    m_title = title;
+    if (event->type() == QEvent::ToolTip) {
+        // Built on demand, so a re-hover always shows the latest snapshot
+        const auto* help = static_cast<QHelpEvent*>(event);
+        const int idx = hitTest(help->pos());
+        if (idx >= 0)
+            QToolTip::showText(help->globalPos(), toolTipText(idx), this,
+                               m_nodeRects[static_cast<size_t>(idx)]);
+        else
+            QToolTip::hideText();
+        return true;
+    }
+    return QWidget::event(event);
 }
 
 void KadLookupGraph::paintEvent(QPaintEvent* /*event*/)
 {
-    m_nodeRects.clear();
+    layoutNodes();
 
     QPainter p(this);
     p.setRenderHint(QPainter::Antialiasing, true);
 
+    // MFC: themed list-view frame, COLOR_WINDOW inside
     const QRect rc = rect();
-    p.fillRect(rc, palette().color(QPalette::Window));
-
-    // Inner area with border
-    p.setPen(QPen(QColor(180, 180, 180), 1));
+    p.fillRect(rc, palette().color(QPalette::Base));
+    p.setPen(palette().color(QPalette::Mid));
     p.drawRect(rc.adjusted(0, 0, -1, -1));
 
-    const QRect client = rc.adjusted(2, 2, -2, -2);
-    p.fillRect(client, Qt::white);
-
-    if (m_entries.empty()) {
-        p.setPen(Qt::darkGray);
-        p.drawText(client, Qt::AlignCenter, tr("No search selected"));
-        return;
-    }
-
-    // Font metrics for labels
-    QFont labelFont;
-    labelFont.setPointSize(scaledPointSize(8));
-    p.setFont(labelFont);
-    const QFontMetrics fm(labelFont);
-    const int labelH = fm.height();
-
-    const int leftBorder = 3;
-    const int rightBorder = 8;
-    const int topBorder = labelH + 2;
-    const int bottomBorder = labelH + 2;
-
-    const int baseLineX = client.left() + leftBorder;
-    const int baseLineY = client.bottom() - bottomBorder;
-    const int histWidth  = client.width() - leftBorder - rightBorder;
-    const int histHeight = client.height() - topBorder - bottomBorder;
-
-    if (histWidth < 20 || histHeight < 20)
+    if (m_histWidth <= 0)
         return;
 
-    // Draw axes
-    p.setPen(QPen(QColor(128, 128, 128), 1));
-    p.drawLine(baseLineX, client.top() + topBorder, baseLineX, baseLineY);
-    p.drawLine(baseLineX, baseLineY, baseLineX + histWidth, baseLineY);
+    // Axes and labels are drawn even without a lookup (MFC)
+    p.setRenderHint(QPainter::Antialiasing, false);
+    p.setPen(QColor(128, 128, 128));
+    p.drawLine(m_baseLineX, m_topY, m_baseLineX, m_baseLineY);
+    p.drawLine(m_baseLineX, m_baseLineY, m_baseLineX + m_histWidth, m_baseLineY);
+    p.setPen(palette().color(QPalette::Text));
+    p.setFont(font());
+    p.drawText(QRect(m_baseLineX, m_client.top(), m_client.width(), m_labelHeight),
+               Qt::AlignLeft | Qt::AlignTop | Qt::TextSingleLine, tr("Distance"));
+    p.drawText(QRect(m_client.left(), m_client.bottom() - m_labelHeight + 1, m_client.width(), m_labelHeight),
+               Qt::AlignRight | Qt::AlignBottom | Qt::TextSingleLine, tr("Time"));
+    p.setRenderHint(QPainter::Antialiasing, true);
 
-    // Axis labels
-    p.setPen(Qt::darkGray);
-    p.drawText(QRect(baseLineX, client.top(), histWidth, labelH),
-               Qt::AlignLeft | Qt::TextSingleLine, tr("Distance"));
-    p.drawText(QRect(baseLineX, baseLineY + 2, histWidth, labelH),
-               Qt::AlignRight | Qt::TextSingleLine, tr("Time"));
-
+    const auto visible = static_cast<int>(m_nodeRects.size());
+    if (visible == 0)
+        return;
     const auto hecount = static_cast<int>(m_entries.size());
+    const int hotIdx = hotDrawIdx();
 
-    // How many nodes fit without scrolling?
-    const int maxNodes = histWidth / kNodeWidth;
-    const int visibleNodes = std::min(maxNodes, hecount);
-    if (visibleNodes == 0)
-        return;
+    std::vector<bool> hotConnected(static_cast<size_t>(visible), false);
+    if (hotIdx >= 0)
+        hotConnected[static_cast<size_t>(hotIdx)] = true;
 
-    // Node entry width: fixed while search running, spread when finished
-    int nodeEntryWidth;
-    if (hecount > maxNodes)
-        nodeEntryWidth = kNodeWidth;
-    else
-        nodeEntryWidth = histWidth / hecount;
-
-    // --- Scaling: find the 1/3 closest nodes' max distance, multiply by 3 ---
-    // Collect distances of the visible nodes (from the end of the history - most recent)
-    const int k = std::max(1, visibleNodes / 3);
-    std::vector<int> closestIndices;
-    closestIndices.reserve(static_cast<size_t>(k));
-
-    // Helper to get a uint64 representation from the most significant non-zero 32-bit chunks
-    auto getScaledDist = [this](int entryIdx, int startChunk) -> uint64_t {
-        const auto& e = m_entries[static_cast<size_t>(entryIdx)];
-        return (static_cast<uint64_t>(e.dist[startChunk]) << 32)
-               | static_cast<uint64_t>(e.dist[startChunk + 1]);
-    };
-
-    auto distGreater = [this](int a, int b) {
-        for (int c = 0; c < 4; ++c) {
-            const auto& ea = m_entries[static_cast<size_t>(a)];
-            const auto& eb = m_entries[static_cast<size_t>(b)];
-            if (ea.dist[c] != eb.dist[c])
-                return ea.dist[c] > eb.dist[c];
-        }
-        return false;
-    };
-
-    // Collect the k closest (smallest distance) among visible nodes
-    for (int i = 1; i <= visibleNodes; ++i) {
-        const int idx = hecount - i;
-        if (static_cast<int>(closestIndices.size()) < k) {
-            closestIndices.push_back(idx);
-        } else {
-            // Find the farthest among our k closest and replace if this is closer
-            int farthestPos = 0;
-            for (int j = 1; j < static_cast<int>(closestIndices.size()); ++j) {
-                if (distGreater(closestIndices[static_cast<size_t>(j)],
-                                closestIndices[static_cast<size_t>(farthestPos)]))
-                    farthestPos = j;
-            }
-            if (distGreater(closestIndices[static_cast<size_t>(farthestPos)], idx))
-                closestIndices[static_cast<size_t>(farthestPos)] = idx;
-        }
-    }
-
-    // Find the maximum distance among the k closest
-    int maxClosestIdx = closestIndices[0];
-    for (size_t j = 1; j < closestIndices.size(); ++j) {
-        if (distGreater(static_cast<int>(closestIndices[j]), maxClosestIdx))
-            maxClosestIdx = static_cast<int>(closestIndices[j]);
-    }
-
-    // Find the first non-zero 32-bit chunk for scaling
-    const auto& maxEntry = m_entries[static_cast<size_t>(maxClosestIdx)];
-    int startChunk = 0;
-    for (startChunk = 0; startChunk < 3; ++startChunk) {
-        if (maxEntry.dist[startChunk] > 0)
-            break;
-    }
-    if (startChunk >= 3)
-        startChunk = 2;
-
-    uint64_t scalingDist = getScaledDist(maxClosestIdx, startChunk);
-    if (scalingDist == 0)
-        scalingDist = maxEntry.dist[3];
-
-    // Scale to fit: distance / (plotHeight - nodeHeight) * 3
-    const int plotNodeArea = histHeight - kNodeHeight;
-    if (plotNodeArea <= 0)
-        return;
-
-    scalingDist = (scalingDist / static_cast<uint64_t>(plotNodeArea)) * 3;
-    if (scalingDist == 0)
-        scalingDist = 1;
-
-    // Maximum displayable distance = 3x the 1/3-closest max
-    uint64_t maxScalingDist = getScaledDist(maxClosestIdx, startChunk) * 3;
-
-    // --- Compute node positions ---
-    m_nodeRects.resize(static_cast<size_t>(visibleNodes));
-
-    for (int i = 0; i < visibleNodes; ++i) {
-        const int entryIdx = hecount - (i + 1);
-        const auto& e = m_entries[static_cast<size_t>(entryIdx)];
-
-        uint64_t entryDist = (static_cast<uint64_t>(e.dist[startChunk]) << 32)
-                             | static_cast<uint64_t>(e.dist[startChunk + 1]);
-
-        int yPos;
-        if (entryDist > maxScalingDist) {
-            yPos = client.top() + topBorder;
-        } else {
-            uint64_t drawY = (entryDist > 0) ? (entryDist / scalingDist) : 0;
-            yPos = static_cast<int>((baseLineY - kNodeHeight) - static_cast<int>(drawY));
-        }
-
-        const int xPos = histWidth - ((i + 1) * nodeEntryWidth);
-
-        QRect nodeRect(baseLineX + xPos, yPos, kNodeWidth, kNodeHeight);
-        m_nodeRects[static_cast<size_t>(i)] = { nodeRect, entryIdx };
-    }
-
-    // --- "Self" node: green sphere at top-left (MFC style) ---
-    // Represents our own node — maximum XOR distance from target.
-    const QPoint selfCenter(baseLineX + kNodeWidth / 2,
-                            client.top() + topBorder + kNodeHeight / 2);
-    m_selfRect = QRect(selfCenter.x() - kIconSize / 2, selfCenter.y() - kIconSize / 2,
-                       kIconSize, kIconSize);
-
-    // Determine hot-item connected set
-    // Index -1 represents the self node for hover purposes
-    std::vector<bool> hotConnected(static_cast<size_t>(visibleNodes), false);
-    bool selfHot = false;
-    if (m_hotIdx >= 0 && m_hotIdx < visibleNodes)
-        hotConnected[static_cast<size_t>(m_hotIdx)] = true;
-    if (m_hotIdx == kSelfHotIdx)
-        selfHot = true;
-
-    // --- Draw connection lines ---
-    QPen penGray(QColor(192, 192, 192), 0.8);
-    QPen penDarkGray(QColor(100, 100, 100), 0.8);
-    QPen penRed(QColor(255, 32, 32), 0.8);
-
-    // Lines from self node to initial contacts (entries with empty receivedFromIdx)
-    for (int i = 0; i < visibleNodes; ++i) {
-        const int entryIdx = hecount - (i + 1);
-        const auto& entry = m_entries[static_cast<size_t>(entryIdx)];
-
-        if (entry.receivedFromIdx.empty()) {
-            QPoint pTo = m_nodeRects[static_cast<size_t>(i)].rect.center();
-
-            QPen* pen;
-            if (selfHot) {
+    // Arrows from the reporting node to each contact (MFC KadLookupGraph.cpp:336-357)
+    const QColor gray(192, 192, 192), darkGray(100, 100, 100), red(255, 32, 32);
+    for (int i = 0; i < visible; ++i) {
+        const auto& entry = m_entries[static_cast<size_t>(hecount - (i + 1))];
+        for (const int fromIdx : entry.receivedFromIdx) {
+            if (fromIdx < hecount - visible || fromIdx >= hecount)
+                continue;
+            const int fromDraw = hecount - (fromIdx + 1);
+            const QColor* color = &gray;
+            if (fromDraw == hotIdx) {
                 hotConnected[static_cast<size_t>(i)] = true;
-                pen = &penRed;
-            } else if (i == m_hotIdx) {
-                selfHot = true;
-                pen = &penDarkGray;
-            } else {
-                pen = &penGray;
+                color = &red;
+            } else if (i == hotIdx) {
+                hotConnected[static_cast<size_t>(fromDraw)] = true;
+                color = &darkGray;
             }
-            p.setPen(*pen);
-            p.drawLine(selfCenter, pTo);
+            drawArrow(p, QRectF(m_nodeRects[static_cast<size_t>(fromDraw)]).center(),
+                      QRectF(m_nodeRects[static_cast<size_t>(i)]).center(), *color);
         }
     }
 
-    // Lines between discovered nodes (receivedFromIdx connections)
-    for (int i = 0; i < visibleNodes; ++i) {
-        const int entryIdx = hecount - (i + 1);
-        const auto& entry = m_entries[static_cast<size_t>(entryIdx)];
+    // Node icons, plus the "asked for results" indicator (MFC KadLookupGraph.cpp:415-477)
+    for (int i = 0; i < visible; ++i) {
+        const auto& entry = m_entries[static_cast<size_t>(hecount - (i + 1))];
+        const QPoint pt = m_nodeRects[static_cast<size_t>(i)].center() - QPoint(kIconSize / 2, kIconSize / 2);
+        const QRect iconRect(pt, QSize(kIconSize, kIconSize));
 
-        for (int fromIdx : entry.receivedFromIdx) {
-            if (fromIdx >= hecount - visibleNodes) {
-                const int fromDrawIdx = hecount - (fromIdx + 1);
-                if (fromDrawIdx < 0 || fromDrawIdx >= visibleNodes)
-                    continue;
+        p.setOpacity(hotIdx >= 0 && !hotConnected[static_cast<size_t>(i)] ? 0.5 : 1.0);
+        m_nodeIcons[static_cast<size_t>(nodeIconIdx(entry))].paint(&p, iconRect);
+        p.setOpacity(1.0);
 
-                QPoint pFrom = m_nodeRects[static_cast<size_t>(fromDrawIdx)].rect.center();
-                QPoint pTo   = m_nodeRects[static_cast<size_t>(i)].rect.center();
-
-                QPen* pen;
-                if (fromDrawIdx == m_hotIdx) {
-                    hotConnected[static_cast<size_t>(i)] = true;
-                    pen = &penRed;
-                } else if (i == m_hotIdx) {
-                    hotConnected[static_cast<size_t>(fromDrawIdx)] = true;
-                    pen = &penDarkGray;
-                } else {
-                    pen = &penGray;
-                }
-
-                p.setPen(*pen);
-                p.drawLine(pFrom, pTo);
-            }
+        if (entry.askedSearchItemAge < 0)
+            continue;
+        QRect ind = iconRect;
+        ind.translate(0, pt.y() - kIconSize - 4 >= m_topY ? -20 : 20);
+        switch (m_searchType) {
+        case TypeFile:
+        case TypeKeyword:
+        case TypeNotes:
+        case TypeFindSource:
+            m_iconSearch.paint(&p, ind);
+            if (entry.respondedSearchItem > 0)
+                m_ovlResponded.paint(&p, ind);
+            else if (ageNow(entry.askedSearchItemAge) >= kResultTimeoutMs)
+                m_ovlNoResponse.paint(&p, ind);
+            break;
+        case TypeStoreFile:
+            m_iconStoreFile.paint(&p, ind);
+            break;
+        case TypeStoreKeyword:
+        case TypeStoreNotes:
+            m_iconStoreWord.paint(&p, ind);
+            break;
+        default:   // node lookups and buddy search: nothing to show
+            break;
         }
-    }
-
-    // --- Draw node spheres (MFC-style with 3D gradient) ---
-    auto drawSphere = [&p](const QPoint& center, int radius, QColor color) {
-        QRadialGradient grad(center.x() - radius / 3, center.y() - radius / 3, radius * 1.2,
-                             center.x() - radius / 3, center.y() - radius / 3);
-        grad.setColorAt(0.0, color.lighter(160));
-        grad.setColorAt(0.7, color);
-        grad.setColorAt(1.0, color.darker(150));
-
-        p.setBrush(QBrush(grad));
-        p.setPen(QPen(color.darker(160), 0.8));
-        p.drawEllipse(center, radius, radius);
-    };
-
-    // Draw self node (green, like MFC)
-    {
-        QColor selfColor(0, 180, 0);
-        if (m_hotIdx >= 0 && !selfHot)
-            selfColor.setAlpha(80);
-        drawSphere(selfCenter, kIconSize / 2, selfColor);
-    }
-
-    // Draw lookup history nodes (yellow/gold)
-    for (int i = 0; i < visibleNodes; ++i) {
-        const auto& nr = m_nodeRects[static_cast<size_t>(i)];
-        const auto& entry = m_entries[static_cast<size_t>(nr.entryIdx)];
-
-        QColor color = nodeColor(entry);
-
-        // Dim non-connected nodes when hovering
-        if (m_hotIdx >= 0 && !hotConnected[static_cast<size_t>(i)])
-            color.setAlpha(80);
-
-        drawSphere(nr.rect.center(), kIconSize / 2, color);
     }
 }
 
 void KadLookupGraph::mouseMoveEvent(QMouseEvent* event)
 {
-    const int newHot = hitTest(event->pos());
-    if (newHot != m_hotIdx) {
-        m_hotIdx = newHot;
+    const int idx = hitTest(event->pos());
+    const QString id = idx >= 0 ? m_entries[m_entries.size() - 1 - static_cast<size_t>(idx)].contactID
+                                : QString();
+    if (id != m_hotId) {
+        m_hotId = id;
         update();
-
-        if (m_hotIdx == kSelfHotIdx) {
-            QToolTip::showText(event->globalPosition().toPoint(),
-                               tr("Our node (search initiator)"), this);
-        } else if (m_hotIdx >= 0 && m_hotIdx < static_cast<int>(m_nodeRects.size())) {
-            const auto& nr = m_nodeRects[static_cast<size_t>(m_hotIdx)];
-            const auto& e = m_entries[static_cast<size_t>(nr.entryIdx)];
-            QString tip = QStringLiteral("%1\nDistance: %2\nVersion: %3")
-                              .arg(e.contactID, e.distance)
-                              .arg(e.contactVersion);
-            QToolTip::showText(event->globalPosition().toPoint(), tip, this);
-        } else {
-            QToolTip::hideText();
+        // A tip already up follows the pointer to the next node at once
+        if (QToolTip::isVisible()) {
+            if (idx >= 0)
+                QToolTip::showText(event->globalPosition().toPoint(), toolTipText(idx), this,
+                                   m_nodeRects[static_cast<size_t>(idx)]);
+            else
+                QToolTip::hideText();
         }
     }
     QWidget::mouseMoveEvent(event);
+}
+
+void KadLookupGraph::leaveEvent(QEvent* event)
+{
+    if (!m_hotId.isEmpty()) {
+        m_hotId.clear();
+        update();
+    }
+    QWidget::leaveEvent(event);
+}
+
+void KadLookupGraph::contextMenuEvent(QContextMenuEvent* event)
+{
+    QMenu menu(this);
+    QAction* autoShow = menu.addAction(tr("Automatically show active searches"));
+    autoShow->setCheckable(true);
+    autoShow->setChecked(m_autoShow);
+    if (menu.exec(event->globalPos()) == autoShow) {
+        m_autoShow = autoShow->isChecked();
+        emit autoShowLookupsToggled(m_autoShow);
+    }
 }
 
 // ---------------------------------------------------------------------------
 // Private methods
 // ---------------------------------------------------------------------------
 
+void KadLookupGraph::layoutNodes()
+{
+    m_nodeRects.clear();
+    m_histWidth = 0;
+
+    m_client = rect().adjusted(2, 2, -2, -2);
+    m_labelHeight = std::max(8, fontMetrics().height());
+    constexpr int leftBorder = 3;
+    constexpr int rightBorder = 8;
+    m_topY = m_client.top() + m_labelHeight;
+    m_baseLineX = m_client.left() + leftBorder;
+    m_baseLineY = m_client.bottom() - m_labelHeight;
+    const int histWidth = m_client.width() - leftBorder - rightBorder;
+    const int histHeight = m_baseLineY - m_topY;
+    if (histWidth < kNodeWidth || histHeight <= kNodeHeight)
+        return;
+    m_histWidth = histWidth;
+
+    const auto hecount = static_cast<int>(m_entries.size());
+    if (hecount == 0)
+        return;
+
+    // MFC KadLookupGraph.cpp:213-220
+    const int maxNodes = histWidth / kNodeWidth;
+    const int nodeEntryWidth = hecount > maxNodes ? kNodeWidth : histWidth / hecount;
+    const int visible = std::min(maxNodes, hecount);
+
+    // Scale: 3x the largest distance among the closest third (MFC KadLookupGraph.cpp:222-273)
+    const auto k = static_cast<size_t>(std::max(1, visible / 3));
+    std::vector<Dist> closest;
+    closest.reserve(k);
+    for (int i = 1; i <= visible; ++i) {
+        const Dist& d = m_entries[static_cast<size_t>(hecount - i)].dist;
+        if (closest.size() < k) {
+            closest.push_back(d);
+        } else {
+            auto farthest = std::max_element(closest.begin(), closest.end());
+            if (*farthest > d)
+                *farthest = d;
+        }
+    }
+    const Dist tmpScaling = *std::max_element(closest.begin(), closest.end());
+
+    uint64_t scaling = 0;
+    int startChunk = 0;
+    for (; startChunk < 3; ++startChunk) {
+        if (tmpScaling[static_cast<size_t>(startChunk)] > 0) {
+            scaling = chunk64(tmpScaling, startChunk);
+            break;
+        }
+    }
+    if (scaling == 0) {
+        startChunk = 2;
+        scaling = tmpScaling[3];
+    }
+    scaling = scaling / static_cast<uint64_t>(histHeight - kNodeHeight) * 3;
+    if (scaling == 0)
+        scaling = 1;
+    const Dist maxScaling = times3(tmpScaling);
+
+    const int lowestY = m_baseLineY - kNodeHeight;
+    m_nodeRects.reserve(static_cast<size_t>(visible));
+    for (int i = 1; i <= visible; ++i) {
+        const Dist& d = m_entries[static_cast<size_t>(hecount - i)].dist;
+        int y = m_topY;
+        if (!(d > maxScaling)) {
+            const uint64_t drawY = chunk64(d, startChunk) / scaling;
+            y = lowestY - static_cast<int>(std::min<uint64_t>(drawY, static_cast<uint64_t>(lowestY - m_topY)));
+        }
+        const int x = m_baseLineX + histWidth - i * nodeEntryWidth;
+        m_nodeRects.emplace_back(x, y, kNodeWidth, kNodeHeight);
+    }
+
+    // Hot item follows the pointer as nodes move between snapshots
+    if (underMouse()) {
+        const int idx = hitTest(mapFromGlobal(QCursor::pos()));
+        m_hotId = idx >= 0 ? m_entries[static_cast<size_t>(hecount - 1 - idx)].contactID : QString();
+    }
+}
+
 int KadLookupGraph::hitTest(const QPoint& pos) const
 {
-    // Check self node first (drawn on top)
-    if (m_selfRect.isValid() && m_selfRect.contains(pos))
-        return kSelfHotIdx;
-
-    for (int i = static_cast<int>(m_nodeRects.size()) - 1; i >= 0; --i) {
-        if (m_nodeRects[static_cast<size_t>(i)].rect.contains(pos))
+    for (auto i = static_cast<int>(m_nodeRects.size()); --i >= 0;)
+        if (m_nodeRects[static_cast<size_t>(i)].contains(pos))
             return i;
-    }
     return -1;
 }
 
-QColor KadLookupGraph::nodeColor(const LookupEntry& entry) const
+int KadLookupGraph::hotDrawIdx() const
 {
-    // MFC icon indices: 0=green (responded+closer), 1=blue (responded), 2=yellow (waiting), 3=red (timed out)
-    if (entry.askedContactsTime > 0) {
+    if (m_hotId.isEmpty())
+        return -1;
+    const auto hecount = static_cast<int>(m_entries.size());
+    for (int i = 0; i < static_cast<int>(m_nodeRects.size()); ++i)
+        if (m_entries[static_cast<size_t>(hecount - 1 - i)].contactID == m_hotId)
+            return i;
+    return -1;
+}
+
+int64_t KadLookupGraph::ageNow(int64_t age) const
+{
+    return age < 0 ? -1 : age + m_snapshotAge.elapsed();
+}
+
+int KadLookupGraph::nodeIconIdx(const LookupEntry& entry) const
+{
+    // MFC KadLookupGraph.cpp:422-432: 0 green, 1 blue, 2 yellow, 3 red
+    if (entry.askedContactsAge >= 0) {
         if (entry.respondedContact > 0)
-            return entry.providedCloser ? QColor(0, 180, 0)      // green - responded with closer nodes
-                                        : QColor(50, 120, 220);  // blue - responded without closer nodes
-        else {
-            // MFC: yellow if still waiting (< 3s), red if timed out
-            auto now = static_cast<uint32_t>(time(nullptr));
-            return (now < entry.askedContactsTime + 3) ? QColor(220, 190, 30)  // yellow - still waiting
-                                                       : QColor(200, 50, 50);  // red - timed out
-        }
+            return entry.providedCloser ? 0 : 1;
+        return ageNow(entry.askedContactsAge) >= kContactTimeoutMs ? 3 : 2;
     }
-    if (entry.forcedInteresting)
-        return QColor(220, 190, 30); // yellow - forced interesting, not yet asked
-    return QColor(0, 180, 0); // green - default (matches MFC assert case)
+    return entry.forcedInteresting ? 2 : 0;
+}
+
+QString KadLookupGraph::toolTipText(int drawIdx) const
+{
+    // MFC KadLookupGraph.cpp:500-560
+    const auto hecount = static_cast<int>(m_entries.size());
+    const int realIdx = hecount - (drawIdx + 1);
+    const LookupEntry& e = m_entries[static_cast<size_t>(realIdx)];
+
+    const QString discovered = e.receivedFromIdx.empty()
+        ? tr("Routing Table")
+        : tr("%1 Node(s)").arg(e.receivedFromIdx.size());
+
+    QString foundNodes;
+    if (e.askedContactsAge >= 0) {
+        if (e.respondedContact == 0) {
+            foundNodes = ageNow(e.askedContactsAge) >= kContactTimeoutMs ? tr("No Response") : tr("Asking");
+        } else {
+            unsigned useful = 0;
+            for (const auto& other : m_entries)
+                useful += static_cast<unsigned>(std::ranges::count(other.receivedFromIdx, realIdx));
+            foundNodes = QStringLiteral("%1 (%2)").arg(e.respondedContact).arg(useful);
+        }
+    } else {
+        foundNodes = tr("Not Asked");
+    }
+
+    QString results;
+    if (e.askedSearchItemAge >= 0) {
+        if (e.respondedSearchItem == 0)
+            results = ageNow(e.askedSearchItemAge) >= kResultTimeoutMs ? tr("None") : tr("Asking");
+        else
+            results = QString::number(e.respondedSearchItem);
+    } else {
+        results = tr("Not Asked");
+    }
+
+    const auto row = [](const QString& label, const QString& value) {
+        return QStringLiteral("<tr><td><b>%1:</b></td><td>&nbsp;%2</td></tr>")
+            .arg(label.toHtmlEscaped(), value.toHtmlEscaped());
+    };
+    return QStringLiteral("<qt><b>%1</b><table cellspacing=0>").arg(e.contactID)
+        + row(tr("Distance"), e.distance)
+        + row(tr("Protocol Version"), QString::number(e.contactVersion))
+        + QStringLiteral("<tr><td colspan=2><hr></td></tr>")
+        + row(tr("Discovered by"), discovered)
+        + row(tr("Found Nodes (useful)"), foundNodes)
+        + QStringLiteral("<tr><td colspan=2></td></tr>")
+        + row(tr("Search Results"), results)
+        + QStringLiteral("</table></qt>");
+}
+
+void KadLookupGraph::refreshToolTip()
+{
+    if (!QToolTip::isVisible() || !underMouse())
+        return;
+    const int idx = hotDrawIdx();
+    if (idx >= 0)
+        QToolTip::showText(QCursor::pos(), toolTipText(idx), this, m_nodeRects[static_cast<size_t>(idx)]);
+    else
+        QToolTip::hideText();
 }
 
 } // namespace eMule

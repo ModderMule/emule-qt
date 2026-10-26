@@ -47,6 +47,9 @@ void cancelDownload(PartFile* file);
 Status setDownloadPriority(const QString& hashHex, uint8 priority, bool isAuto);
 Status renameDownload(const QString& hashHex, const QString& newName);
 Status setDownloadCategory(const QString& hashHex, uint32 category);
+/// Moves every idle A4AF source of the download to it. Sources that are transferring
+/// or connecting stay where they are. @p swapped receives how many moved.
+Status swapA4AFToDownload(const QString& hashHex, int* swapped = nullptr);
 
 /// Removes completed entries from the list (the files stay). Empty @p only = all.
 /// @return how many were removed, or -1 without a queue.

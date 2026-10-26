@@ -138,6 +138,10 @@ struct MediaInfo {
 /// back to a MIME label: for one file the user is looking at.
 [[nodiscard]] bool extractMediaInfo(const QString& filePath, MediaInfo& info);
 
+/// One line for a link list, e.g. "1920×1080 H.264 · 1:32:10 · AAC 2ch · 4.1 Mbit/s".
+/// Empty when nothing useful is known.
+[[nodiscard]] QString mediaInfoSummary(const MediaInfo& info);
+
 /// The container a media file's first bytes belong to.
 enum class MediaKind {
     None, Riff, RealMedia, Mp4, Matroska, Asf, Flac, Ogg, Mp3, Aac, Ape, WavPack

@@ -407,7 +407,7 @@ Start it with --new-instance or --config &lt;dir&gt; to open another window.</so
 使用 --new-instance 或 --config &lt;目錄&gt; 啟動以開啟另一個視窗。</translation>
     </message>
     <message>
-        <location line="+472"/>
+        <location line="+477"/>
         <source>Download Added</source>
         <translation>已加入下載</translation>
     </message>
@@ -555,7 +555,7 @@ Start it with --new-instance or --config &lt;dir&gt; to open another window.</so
         <translation>普通</translation>
     </message>
     <message>
-        <location filename="../src/gui/dialogs/OptionsDialog.cpp" line="+3215"/>
+        <location filename="../src/gui/dialogs/OptionsDialog.cpp" line="+3314"/>
         <source>Test</source>
         <translation>測試</translation>
     </message>
@@ -1657,8 +1657,8 @@ M	壓縮資料尚未完全下載
 <context>
     <name>eMule::CategoryTabBar</name>
     <message>
-        <location filename="../src/gui/controls/CategoryTabBar.cpp" line="+32"/>
-        <location line="+47"/>
+        <location filename="../src/gui/controls/CategoryTabBar.cpp" line="+86"/>
+        <location line="+49"/>
         <location line="+63"/>
         <location line="+20"/>
         <location line="+37"/>
@@ -1797,7 +1797,7 @@ M	壓縮資料尚未完全下載
     </message>
     <message>
         <location line="+2"/>
-        <location line="+159"/>
+        <location line="+164"/>
         <source>Remove Category</source>
         <translation>移除分類</translation>
     </message>
@@ -3049,28 +3049,28 @@ ED2K 切細值：	%2
     </message>
     <message>
         <location line="+14"/>
-        <location line="+48"/>
+        <location line="+49"/>
         <location line="+7"/>
         <source>General</source>
         <translation>一般</translation>
     </message>
     <message>
-        <location line="-54"/>
-        <location line="+49"/>
+        <location line="-55"/>
+        <location line="+50"/>
         <location line="+7"/>
         <source>Comments</source>
         <translation>評論</translation>
     </message>
     <message>
-        <location line="-55"/>
-        <location line="+49"/>
+        <location line="-56"/>
+        <location line="+50"/>
         <location line="+7"/>
         <source>Media Info</source>
         <translation>媒體資訊</translation>
     </message>
     <message>
-        <location line="-55"/>
-        <location line="+50"/>
+        <location line="-56"/>
+        <location line="+51"/>
         <location line="+7"/>
         <source>ED2K Link</source>
         <translation>ED2K 連結</translation>
@@ -3282,7 +3282,17 @@ ED2K 切細值：	%2
         <translation>HTML 格式</translation>
     </message>
     <message>
-        <location line="+23"/>
+        <location line="+2"/>
+        <source>Include Media Info</source>
+        <translation>包含媒體資訊</translation>
+    </message>
+    <message>
+        <location line="+1"/>
+        <source>Add a line with resolution, codecs, length and bitrate under the HTML link of a complete file</source>
+        <translation>在完整檔案的 HTML 連結下加入一行，顯示解析度、編解碼器、長度與位元率</translation>
+    </message>
+    <message>
+        <location line="+29"/>
         <source>Copy to Clipboard</source>
         <translation>複製到剪貼簿</translation>
     </message>
@@ -4048,48 +4058,104 @@ Please choose another:</source>
 <context>
     <name>eMule::KadLookupGraph</name>
     <message>
-        <location filename="../src/gui/controls/KadLookupGraph.cpp" line="+70"/>
         <source>No search selected</source>
-        <translation>未選擇搜尋</translation>
+        <translation type="vanished">未選擇搜尋</translation>
     </message>
     <message>
-        <location line="+32"/>
+        <location filename="../src/gui/controls/KadLookupGraph.cpp" line="+160"/>
+        <location line="+274"/>
         <source>Distance</source>
         <translation>距離</translation>
     </message>
     <message>
-        <location line="+2"/>
+        <location line="-272"/>
         <source>Time</source>
         <translation>時間</translation>
     </message>
     <message>
-        <location line="+235"/>
+        <location line="+104"/>
+        <source>Automatically show active searches</source>
+        <translation>自動地顯示作用中搜尋</translation>
+    </message>
+    <message>
+        <location line="+136"/>
+        <source>Routing Table</source>
+        <translation>路由表</translation>
+    </message>
+    <message>
+        <location line="+1"/>
+        <source>%1 Node(s)</source>
+        <translation>%1 節點</translation>
+    </message>
+    <message>
+        <location line="+5"/>
+        <source>No Response</source>
+        <translation>沒有回應</translation>
+    </message>
+    <message>
+        <location line="+0"/>
+        <location line="+14"/>
+        <source>Asking</source>
+        <translation>要求中</translation>
+    </message>
+    <message>
+        <location line="-6"/>
+        <location line="+10"/>
+        <source>Not Asked</source>
+        <translation>尚未詢問</translation>
+    </message>
+    <message>
+        <location line="-4"/>
+        <source>None</source>
+        <translation>無</translation>
+    </message>
+    <message>
+        <location line="+13"/>
+        <source>Protocol Version</source>
+        <translation>協定版本</translation>
+    </message>
+    <message>
+        <location line="+2"/>
+        <source>Discovered by</source>
+        <translation>探索經由</translation>
+    </message>
+    <message>
+        <location line="+1"/>
+        <source>Found Nodes (useful)</source>
+        <translation>發現節點 (有用的)</translation>
+    </message>
+    <message>
+        <location line="+2"/>
+        <source>Search Results</source>
+        <translation>搜尋結果</translation>
+    </message>
+    <message>
         <source>Our node (search initiator)</source>
-        <translation>我們的節點 (搜尋發起者)</translation>
+        <translation type="vanished">我們的節點 (搜尋發起者)</translation>
     </message>
 </context>
 <context>
     <name>eMule::KadPanel</name>
     <message>
-        <location filename="../src/gui/panels/KadPanel.cpp" line="+120"/>
+        <location filename="../src/gui/panels/KadPanel.cpp" line="+115"/>
         <location line="+12"/>
-        <location line="+191"/>
+        <location line="+206"/>
         <location line="+2"/>
-        <location line="+37"/>
-        <location line="+213"/>
+        <location line="+50"/>
+        <location line="+215"/>
         <source>▸ Contacts (0)</source>
         <translation>▸ 聯絡人 (0)</translation>
     </message>
     <message>
-        <location line="-454"/>
+        <location line="-484"/>
         <location line="+12"/>
-        <location line="+391"/>
-        <location line="+97"/>
+        <location line="+419"/>
+        <location line="+99"/>
         <source>▸ Current Searches (0)</source>
         <translation>▸ 目前搜尋 (0)</translation>
     </message>
     <message>
-        <location line="-426"/>
+        <location line="-456"/>
         <source>The URL is invalid.</source>
         <translation>URL 無效。</translation>
     </message>
@@ -4100,25 +4166,26 @@ Please choose another:</source>
     </message>
     <message>
         <location line="+9"/>
-        <location line="+223"/>
+        <location line="+251"/>
         <location line="+40"/>
         <source>Bootstrap</source>
         <translation>啟動</translation>
     </message>
     <message>
-        <location line="-261"/>
+        <location line="-289"/>
         <location line="+77"/>
         <source>Kademlia</source>
         <translation>Kademlia</translation>
     </message>
     <message>
-        <location line="+41"/>
-        <location line="+358"/>
+        <location line="+59"/>
+        <location line="+2"/>
+        <location line="+489"/>
         <source>▸ Search Details</source>
         <translation>▸ 搜尋詳細資料</translation>
     </message>
     <message>
-        <location line="-271"/>
+        <location line="-394"/>
         <source>Recheck Firewall</source>
         <translation>重新檢查防火牆</translation>
     </message>
@@ -4149,7 +4216,7 @@ Please choose another:</source>
         <translation>從已知客戶端</translation>
     </message>
     <message>
-        <location line="+142"/>
+        <location line="+144"/>
         <location line="+3"/>
         <source>▸ Contacts (%1)</source>
         <translation>▸ 聯絡人 (%1)</translation>
@@ -4160,7 +4227,7 @@ Please choose another:</source>
         <translation>▸ 目前搜尋 (%1)</translation>
     </message>
     <message>
-        <location line="+25"/>
+        <location line="+23"/>
         <source>Disconnect</source>
         <translation>中斷連線</translation>
     </message>
@@ -4170,7 +4237,7 @@ Please choose another:</source>
         <translation>取消</translation>
     </message>
     <message>
-        <location line="+65"/>
+        <location line="+138"/>
         <source>▸ Search Details (%1)</source>
         <translation>▸ 搜尋詳細資料 (%1)</translation>
     </message>
@@ -4328,13 +4395,13 @@ Please choose another:</source>
 <context>
     <name>eMule::MainWindow</name>
     <message>
-        <location filename="../src/gui/app/MainWindow.cpp" line="+102"/>
-        <location line="+524"/>
+        <location filename="../src/gui/app/MainWindow.cpp" line="+104"/>
+        <location line="+527"/>
         <source>eMule Qt v%1</source>
         <translation>eMule Qt v%1</translation>
     </message>
     <message>
-        <location line="-424"/>
+        <location line="-427"/>
         <source>Quit eMule Qt</source>
         <translation>結束 eMule Qt</translation>
     </message>
@@ -4371,12 +4438,12 @@ You are running %2. Open the eMule Qt website?</source>
     <message>
         <location line="+11"/>
         <location line="+7"/>
-        <location line="+827"/>
+        <location line="+830"/>
         <source>Version Check</source>
         <translation>版本檢查</translation>
     </message>
     <message>
-        <location line="-833"/>
+        <location line="-836"/>
         <source>You are running the latest version of eMule Qt (v%1).</source>
         <translation>您正在執行最新版本的 eMule Qt (v%1)。</translation>
     </message>
@@ -4409,7 +4476,7 @@ Enable at least one under Options → Connection to connect.</source>
         <translation>eMule 版本 %1 已就緒</translation>
     </message>
     <message>
-        <location line="+68"/>
+        <location line="+69"/>
         <source>eD2K: Connected (LowID)</source>
         <translation>eD2K：已連線 (低-ID)</translation>
     </message>
@@ -4430,17 +4497,17 @@ Enable at least one under Options → Connection to connect.</source>
     </message>
     <message>
         <location line="+4"/>
-        <location line="+1353"/>
+        <location line="+1355"/>
         <source>eD2K: Disconnected</source>
         <translation>eD2K：已中斷連線</translation>
     </message>
     <message>
-        <location line="-1346"/>
+        <location line="-1348"/>
         <source>eD2K Server: %1  (%2 Users)</source>
         <translation>eD2K 伺服器：%1  (%2 位使用者)</translation>
     </message>
     <message>
-        <location line="+21"/>
+        <location line="+22"/>
         <source>Preparing...</source>
         <translation>正在準備...</translation>
     </message>
@@ -4471,7 +4538,7 @@ Enable at least one under Options → Connection to connect.</source>
     </message>
     <message>
         <location line="+4"/>
-        <location line="+1288"/>
+        <location line="+1289"/>
         <source>Kad: Disconnected</source>
         <translation>Kad：已中斷連線</translation>
     </message>
@@ -4919,6 +4986,35 @@ Enable it under Options → Web Interface, then try again.</source>
         <location line="+1"/>
         <source>The core is loading its files…</source>
         <translation>核心正在載入檔案…</translation>
+    </message>
+    <message>
+        <location line="+80"/>
+        <source>Low ID</source>
+        <translation>低-ID</translation>
+    </message>
+    <message>
+        <location line="+1"/>
+        <source>Other clients cannot connect to you: eD2K gives you a Low ID and Kad reports you as firewalled.
+
+You get fewer sources and slower downloads, and two Low ID clients can rarely exchange data. Usually your router or firewall does not forward your ports. UPnP or a port forwarding rule in your router fixes it in most cases.</source>
+        <translation>其他用戶端無法連線到你：eD2K 給了你 Low ID，Kad 回報你位於防火牆後。
+
+你會取得較少的來源、下載較慢，且兩個 Low ID 用戶端幾乎無法交換資料。通常是路由器或防火牆沒有轉送你的連接埠。大多數情況下，啟用 UPnP 或在路由器設定連接埠轉送即可解決。</translation>
+    </message>
+    <message>
+        <location line="+7"/>
+        <source>Open Connection Settings</source>
+        <translation>開啟連線設定</translation>
+    </message>
+    <message>
+        <location line="+1"/>
+        <source>More Info</source>
+        <translation>更多資訊</translation>
+    </message>
+    <message>
+        <location line="+2"/>
+        <source>Don&apos;t show this again</source>
+        <translation>不再顯示</translation>
     </message>
     <message>
         <location filename="../src/gui/app/ToolbarButtons.h" line="+1"/>
@@ -6035,37 +6131,40 @@ Download it again?</source>
 <context>
     <name>eMule::OptionsDialog</name>
     <message>
-        <location filename="../src/gui/dialogs/OptionsDialog.cpp" line="-3105"/>
+        <location filename="../src/gui/dialogs/OptionsDialog.cpp" line="-3203"/>
         <source>Options</source>
         <translation>選項</translation>
     </message>
     <message>
         <location line="+61"/>
-        <location line="+2061"/>
+        <location line="+2117"/>
         <source>OK</source>
         <translation>確定</translation>
     </message>
     <message>
-        <location line="-2060"/>
-        <location line="+2061"/>
+        <location line="-2116"/>
+        <location line="+2117"/>
         <source>Cancel</source>
         <translation>取消</translation>
     </message>
     <message>
-        <location line="-2060"/>
-        <location line="+5872"/>
+        <location line="-2116"/>
+        <location line="+5970"/>
         <source>Apply</source>
         <translation>套用</translation>
     </message>
     <message>
-        <location line="-5871"/>
+        <location line="-5969"/>
         <source>Help</source>
         <translation>說明</translation>
     </message>
     <message>
-        <location line="+264"/>
-        <location line="+2064"/>
-        <location line="+62"/>
+        <location line="+271"/>
+        <location line="+2113"/>
+        <location line="+59"/>
+        <location line="+6"/>
+        <location line="+4"/>
+        <location line="+21"/>
         <location line="+5"/>
         <location line="+9"/>
         <location line="+11"/>
@@ -6073,7 +6172,7 @@ Download it again?</source>
         <translation>IP 過濾器</translation>
     </message>
     <message>
-        <location line="-2150"/>
+        <location line="-2227"/>
         <source>IP filter reloaded: %1 entries.</source>
         <translation>IP 過濾器已重新載入：%1 個項目。</translation>
     </message>
@@ -6109,26 +6208,26 @@ Download it again?</source>
     </message>
     <message>
         <location line="+8"/>
-        <location line="+5776"/>
+        <location line="+5867"/>
         <source>Language</source>
         <translation>語言</translation>
     </message>
     <message>
-        <location line="-5773"/>
+        <location line="-5864"/>
         <source>System Default</source>
         <translation>系統預設</translation>
     </message>
     <message>
         <location line="+14"/>
-        <location line="+733"/>
+        <location line="+768"/>
         <location line="+384"/>
-        <location line="+450"/>
-        <location line="+256"/>
+        <location line="+464"/>
+        <location line="+298"/>
         <source>Miscellaneous</source>
         <translation>其他</translation>
     </message>
     <message>
-        <location line="-1820"/>
+        <location line="-1911"/>
         <source>Bring to front on link click</source>
         <translation>點選連結時將視窗移至最前</translation>
     </message>
@@ -6214,25 +6313,25 @@ Download it again?</source>
     </message>
     <message>
         <location line="+8"/>
-        <location line="+5712"/>
+        <location line="+5803"/>
         <source>Core</source>
         <translation>核心</translation>
     </message>
     <message>
-        <location line="-5707"/>
+        <location line="-5798"/>
         <source>Address:</source>
         <translation>位址：</translation>
     </message>
     <message>
         <location line="+4"/>
-        <location line="+1294"/>
-        <location line="+728"/>
+        <location line="+1343"/>
+        <location line="+770"/>
         <location line="+427"/>
         <source>Port:</source>
         <translation>連接埠：</translation>
     </message>
     <message>
-        <location line="-2446"/>
+        <location line="-2537"/>
         <source>authentication token</source>
         <translation>驗證權杖</translation>
     </message>
@@ -6312,12 +6411,11 @@ Are you sure you want to continue?</source>
         <translation>以粗體顯示活動下載</translation>
     </message>
     <message>
-        <location line="+2"/>
         <source>Downloads that are receiving data, and the sources sending it, are drawn in bold. A source listed under another file (A4AF) is bold too while it transfers.</source>
-        <translation>正在接收資料的下載及傳送資料的來源以粗體顯示。列在其他檔案下的來源 (A4AF) 在傳輸時也以粗體顯示。</translation>
+        <translation type="vanished">正在接收資料的下載及傳送資料的來源以粗體顯示。列在其他檔案下的來源 (A4AF) 在傳輸時也以粗體顯示。</translation>
     </message>
     <message>
-        <location line="+4"/>
+        <location line="+7"/>
         <source>Show transfer rates on title</source>
         <translation>在標題列顯示傳輸速率</translation>
     </message>
@@ -6488,7 +6586,7 @@ Are you sure you want to continue?</source>
     </message>
     <message>
         <location line="+2"/>
-        <location line="+1764"/>
+        <location line="+1854"/>
         <location line="+133"/>
         <location line="+296"/>
         <location line="+1016"/>
@@ -6501,7 +6599,7 @@ Are you sure you want to continue?</source>
         <translation>已啟用</translation>
     </message>
     <message>
-        <location line="-4850"/>
+        <location line="-4940"/>
         <source>Reset</source>
         <translation>重置</translation>
     </message>
@@ -6518,24 +6616,24 @@ Are you sure you want to continue?</source>
     <message>
         <location line="+3"/>
         <location line="+6"/>
-        <location line="+4224"/>
+        <location line="+4314"/>
         <location line="+352"/>
         <source> KB/s</source>
         <translation> KB/s</translation>
     </message>
     <message>
-        <location line="-4579"/>
+        <location line="-4669"/>
         <source>Upload</source>
         <translation>上傳</translation>
     </message>
     <message>
         <location line="+9"/>
-        <location line="+4212"/>
+        <location line="+4302"/>
         <source>Limits</source>
         <translation>限制</translation>
     </message>
     <message>
-        <location line="-4209"/>
+        <location line="-4299"/>
         <source>Download limit</source>
         <translation>下載限制</translation>
     </message>
@@ -6580,12 +6678,12 @@ Are you sure you want to continue?</source>
         <translation>測試連接埠</translation>
     </message>
     <message>
-        <location line="+4"/>
+        <location line="+9"/>
         <source>Use UPnP to Setup Ports</source>
         <translation>使用 UPnP 設定連接埠</translation>
     </message>
     <message>
-        <location line="+5"/>
+        <location line="+34"/>
         <source>Port forwarding: unknown</source>
         <translation>連接埠轉送：未知</translation>
     </message>
@@ -6596,13 +6694,13 @@ Are you sure you want to continue?</source>
     </message>
     <message>
         <location line="+4"/>
-        <location line="+1669"/>
-        <location line="+5266"/>
+        <location line="+1725"/>
+        <location line="+5345"/>
         <source>Any</source>
         <translation>任何</translation>
     </message>
     <message>
-        <location line="-6933"/>
+        <location line="-7068"/>
         <source>Use only this network interface, for example a VPN tunnel. Pick one from the list, or type an IP address or a subnet such as 10.64.0.0/10 (the interface holding an address in it). Connections through a proxy are not bound.</source>
         <translation>只使用這個網路介面，例如 VPN 通道。可從清單中選擇，或輸入 IP 位址或子網路，例如 10.64.0.0/10（即擁有該範圍內位址的介面）。透過代理的連線不會被綁定。</translation>
     </message>
@@ -6688,12 +6786,12 @@ Are you sure you want to continue?</source>
     </message>
     <message>
         <location line="+62"/>
-        <location line="+1487"/>
+        <location line="+1543"/>
         <source>General</source>
         <translation>一般</translation>
     </message>
     <message>
-        <location line="-1484"/>
+        <location line="-1540"/>
         <source>Enable proxy</source>
         <translation>啟用代理</translation>
     </message>
@@ -6758,34 +6856,34 @@ Every Usenet connection then passes through the proxy, so its speed caps the dow
     </message>
     <message>
         <location line="+9"/>
-        <location line="+757"/>
+        <location line="+771"/>
         <source>Authentication</source>
         <translation>驗證</translation>
     </message>
     <message>
-        <location line="-754"/>
+        <location line="-768"/>
         <source>Enable authentication</source>
         <translation>啟用驗證</translation>
     </message>
     <message>
         <location line="+7"/>
-        <location line="+1869"/>
+        <location line="+1925"/>
         <location line="+1019"/>
         <location line="+152"/>
         <source>Name:</source>
         <translation>名稱：</translation>
     </message>
     <message>
-        <location line="-3036"/>
-        <location line="+758"/>
-        <location line="+791"/>
+        <location line="-3092"/>
+        <location line="+772"/>
+        <location line="+833"/>
         <location line="+19"/>
         <location line="+325"/>
         <source>Password:</source>
         <translation>密碼：</translation>
     </message>
     <message>
-        <location line="-1859"/>
+        <location line="-1915"/>
         <source>Update</source>
         <translation>更新</translation>
     </message>
@@ -6970,12 +7068,12 @@ Every Usenet connection then passes through the proxy, so its speed caps the dow
     </message>
     <message>
         <location line="+3"/>
-        <location line="+588"/>
+        <location line="+602"/>
         <source>Edit...</source>
         <translation>編輯...</translation>
     </message>
     <message>
-        <location line="-577"/>
+        <location line="-591"/>
         <source>Try to transfer full chunks to all uploads</source>
         <translation>嘗試對所有上傳傳輸完整區塊</translation>
     </message>
@@ -7020,7 +7118,7 @@ Every Usenet connection then passes through the proxy, so its speed caps the dow
         <translation>記住已取消的檔案</translation>
     </message>
     <message>
-        <location line="+3"/>
+        <location line="+17"/>
         <source>Remember files seen in search results</source>
         <translation>記住搜尋結果中出現過的檔案</translation>
     </message>
@@ -7156,24 +7254,24 @@ Every Usenet connection then passes through the proxy, so its speed caps the dow
     </message>
     <message>
         <location line="+3"/>
-        <location line="+3176"/>
+        <location line="+3218"/>
         <source>Connection</source>
         <translation>連線</translation>
     </message>
     <message>
-        <location line="-3171"/>
+        <location line="-3213"/>
         <source>Server:</source>
         <translation>伺服器：</translation>
     </message>
     <message>
         <location line="+9"/>
         <location line="+14"/>
-        <location line="+1187"/>
+        <location line="+1229"/>
         <source>None</source>
         <translation>無</translation>
     </message>
     <message>
-        <location line="-1199"/>
+        <location line="-1241"/>
         <source>Security:</source>
         <translation>安全性：</translation>
     </message>
@@ -7300,14 +7398,14 @@ Every Usenet connection then passes through the proxy, so its speed caps the dow
     </message>
     <message>
         <location line="+4"/>
-        <location line="+936"/>
+        <location line="+978"/>
         <location line="+1027"/>
         <location line="+154"/>
         <source>Name</source>
         <translation>名稱</translation>
     </message>
     <message>
-        <location line="-2115"/>
+        <location line="-2157"/>
         <source>Users</source>
         <translation>使用者</translation>
     </message>
@@ -7373,28 +7471,31 @@ Every Usenet connection then passes through the proxy, so its speed caps the dow
     </message>
     <message>
         <location line="+7"/>
-        <location line="+444"/>
+        <location line="+486"/>
         <source>Reload</source>
         <translation>重新載入</translation>
     </message>
     <message>
-        <location line="-425"/>
+        <location line="-467"/>
         <source>Update from URL: (filter.dat- or PeerGuardian-format, .gz/.zip accepted)</source>
         <translation>從網址更新：（filter.dat 或 PeerGuardian 格式，支援 .gz/.zip）</translation>
     </message>
     <message>
         <location line="+6"/>
-        <location line="+18"/>
+        <location line="+16"/>
+        <location line="+30"/>
         <source>Load</source>
         <translation>載入</translation>
     </message>
     <message>
-        <location line="-13"/>
+        <location line="-41"/>
         <source>Loading...</source>
         <translation>載入中...</translation>
     </message>
     <message>
-        <location line="+17"/>
+        <location line="+14"/>
+        <location line="+6"/>
+        <location line="+25"/>
         <source>Failed to download IP filter: %1</source>
         <translation>下載 IP 過濾器失敗：%1</translation>
     </message>
@@ -7419,7 +7520,7 @@ Every Usenet connection then passes through the proxy, so its speed caps the dow
         <translation>IP 過濾器已更新並重新載入（已解壓縮「%1」）。</translation>
     </message>
     <message>
-        <location line="+9"/>
+        <location line="+23"/>
         <source>See My Shared Files/Directories</source>
         <translation>看見我分享的檔案/資料夾</translation>
     </message>
@@ -7910,22 +8011,22 @@ Every Usenet connection then passes through the proxy, so its speed caps the dow
         <location line="+1019"/>
         <location line="+154"/>
         <location line="+1753"/>
-        <location line="+2120"/>
+        <location line="+2199"/>
         <source>Add</source>
         <translation>加入</translation>
     </message>
     <message>
-        <location line="-5045"/>
+        <location line="-5124"/>
         <location line="+1019"/>
         <location line="+154"/>
         <location line="+1480"/>
         <location line="+316"/>
-        <location line="+2082"/>
+        <location line="+2161"/>
         <source>Remove</source>
         <translation>移除</translation>
     </message>
     <message>
-        <location line="-5030"/>
+        <location line="-5109"/>
         <source>Display name (optional)</source>
         <translation>顯示名稱（選填）</translation>
     </message>
@@ -7991,14 +8092,78 @@ Every Usenet connection then passes through the proxy, so its speed caps the dow
         <translation>未知</translation>
     </message>
     <message>
-        <location line="+2"/>
+        <location line="-809"/>
+        <location line="+811"/>
         <location line="+1004"/>
         <location line="+165"/>
         <source> days</source>
         <translation> 天</translation>
     </message>
     <message>
-        <location line="-1168"/>
+        <location line="-3663"/>
+        <source>Downloads that are receiving data, and the sources sending it, are drawn in bold. A source listed under another file (A4AF) is bold too while it transfers. The connected server and the selected category tab are bold as well.</source>
+        <translation>正在接收資料的下載及傳送資料的來源以粗體顯示。列在其他檔案下的來源 (A4AF) 在傳輸時也以粗體顯示。已連線的伺服器和選取的分類分頁同樣以粗體顯示。</translation>
+    </message>
+    <message>
+        <location line="+255"/>
+        <location line="+6987"/>
+        <source>Open Router</source>
+        <translation>開啟路由器</translation>
+    </message>
+    <message>
+        <location line="-6986"/>
+        <source>Opens the web page of this computer&apos;s router, where ports are forwarded</source>
+        <translation>開啟此電腦路由器的網頁，可在其中設定連接埠轉送</translation>
+    </message>
+    <message>
+        <location line="+11"/>
+        <source>Randomize ports at startup, range</source>
+        <translation>啟動時隨機選擇連接埠，範圍</translation>
+    </message>
+    <message>
+        <location line="+2"/>
+        <source>Picks new free ports from this range at every start: TCP, UDP unless it is disabled, and the BitTorrent port when BitTorrent is enabled. Use it with UPnP, or forward the whole range in your router.</source>
+        <translation>每次啟動時從此範圍選擇新的空閒連接埠：TCP、UDP（除非已停用），以及啟用 BitTorrent 時的 BitTorrent 連接埠。請搭配 UPnP 使用，或在路由器中轉送整個範圍。</translation>
+    </message>
+    <message>
+        <location line="+748"/>
+        <source>Rename downloads to the name most sources use</source>
+        <translation>將下載重新命名為大多數來源使用的名稱</translation>
+    </message>
+    <message>
+        <location line="+2"/>
+        <source>Renames a download once when at least 5 sources and 60% of them use the same name. Never after you renamed it yourself, and not when the file looks fake.</source>
+        <translation>當至少 5 個來源且其中 60% 使用相同名稱時，將下載重新命名一次。你自行重新命名後不會再改，檔案看起來是假的時也不會。</translation>
+    </message>
+    <message>
+        <location line="+5"/>
+        <source>Watch shared folders for new files</source>
+        <translation>監看共用資料夾中的新檔案</translation>
+    </message>
+    <message>
+        <location line="+2"/>
+        <source>Shares files added to a shared folder as they appear. When off, new files are only picked up on restart or when you reload the shared files.</source>
+        <translation>檔案加入共用資料夾後立即共用。關閉時，新檔案只會在重新啟動或重新載入共用檔案時被發現。</translation>
+    </message>
+    <message>
+        <location line="+586"/>
+        <source>the core did not answer</source>
+        <translation>核心沒有回應</translation>
+    </message>
+    <message numerus="yes">
+        <location line="+10"/>
+        <source>IP filter updated and reloaded (%n range(s)).</source>
+        <translation>
+            <numerusform>IP 篩選器已更新並重新載入（%n 個範圍）。</numerusform>
+        </translation>
+    </message>
+    <message>
+        <location line="+56"/>
+        <source>Update automatically every</source>
+        <translation>自動更新，間隔</translation>
+    </message>
+    <message>
+        <location line="+817"/>
         <source>Retention:</source>
         <translation>保留期：</translation>
     </message>
@@ -9094,7 +9259,36 @@ Adding one later does not fetch its back catalogue: a new indexer gets its own f
         <translation>下載一律會檢查並記錄。共用檔案在每次啟動時都會重新檢查。</translation>
     </message>
     <message>
-        <location line="+2705"/>
+        <location line="+2426"/>
+        <source>A VPN seems to be active (%1). Incoming connections then arrive through the VPN, so port forwarding on your router does not help. Forward the ports at your VPN provider instead, if it offers port forwarding.</source>
+        <translation>VPN 似乎已啟用（%1）。傳入連線會經由 VPN 抵達，因此在路由器上轉送連接埠沒有作用。如果 VPN 供應商支援連接埠轉送，請改在那裡轉送連接埠。</translation>
+    </message>
+    <message>
+        <location line="+5"/>
+        <source>Could not find your router&apos;s address.
+
+Look up the &quot;default gateway&quot; in this computer&apos;s network settings and open that address in a web browser.</source>
+        <translation>找不到路由器的位址。
+
+請在此電腦的網路設定中查詢「預設閘道」，然後在網頁瀏覽器中開啟該位址。</translation>
+    </message>
+    <message>
+        <location line="+16"/>
+        <source>Could not open %1 in the default browser.</source>
+        <translation>無法在預設瀏覽器中開啟 %1。</translation>
+    </message>
+    <message>
+        <location line="+9"/>
+        <source>Your router is at %1.</source>
+        <translation>路由器位址為 %1。</translation>
+    </message>
+    <message>
+        <location line="+1"/>
+        <source>Open Router Page</source>
+        <translation>開啟路由器頁面</translation>
+    </message>
+    <message>
+        <location line="+327"/>
         <location line="+52"/>
         <source>Directories</source>
         <translation>目錄</translation>
@@ -9165,13 +9359,13 @@ Create it?</source>
 %1</translation>
     </message>
     <message>
-        <location line="-3107"/>
+        <location line="-3186"/>
         <location line="+153"/>
         <source>Disabled</source>
         <translation>已停用</translation>
     </message>
     <message>
-        <location line="-3959"/>
+        <location line="-4015"/>
         <source>Lets two Low ID clients find each other&apos;s address through a server that supports it or a Kad buddy, then connect over IPv6 or QUIC</source>
         <translation>讓兩個 Low ID 用戶端透過支援此功能的伺服器或 Kad 夥伴找到對方位址，然後透過 IPv6 或 QUIC 連線</translation>
     </message>
@@ -9186,7 +9380,7 @@ Create it?</source>
         <translation>也會詢問不在伺服器清單中的來源伺服器。會先 ping 一次，且不會加入清單</translation>
     </message>
     <message>
-        <location line="+1362"/>
+        <location line="+1418"/>
         <source>Address the web server listens on. Any: every interface, reachable from other hosts. 127.0.0.1: this computer only. Pick one from the list or type an IP address.</source>
         <translation>Web 伺服器監聽的位址。任何：所有介面，其他主機可以連線。127.0.0.1：只限本機。從清單中選擇或輸入 IP 位址。</translation>
     </message>
@@ -9736,7 +9930,7 @@ News server connections switch over immediately.</source>
         <translation>字型大小變更將在重新啟動應用程式後生效。</translation>
     </message>
     <message>
-        <location line="+364"/>
+        <location line="+378"/>
         <source>Web Interface</source>
         <translation>Web 介面</translation>
     </message>
@@ -9746,7 +9940,7 @@ News server connections switch over immediately.</source>
         <translation>「%1」不是 IP 位址。監聽位址未變更。</translation>
     </message>
     <message>
-        <location line="+489"/>
+        <location line="+496"/>
         <source>File types</source>
         <translation>檔案類型</translation>
     </message>
@@ -9756,7 +9950,7 @@ News server connections switch over immediately.</source>
         <translation>無法更新 .nzb 檔案關聯：%1</translation>
     </message>
     <message>
-        <location line="+200"/>
+        <location line="+207"/>
         <source>specialdlp loaded, DLP v%1</source>
         <translation>specialdlp 已載入，DLP v%1</translation>
     </message>
@@ -9766,7 +9960,7 @@ News server connections switch over immediately.</source>
         <translation>找不到 specialdlp 程式庫，檢查未啟用</translation>
     </message>
     <message>
-        <location line="+429"/>
+        <location line="+480"/>
         <source>Port forwarding: %1</source>
         <translation>連接埠轉送：%1</translation>
     </message>
@@ -10084,14 +10278,14 @@ The keyword(s) used in a Kad search expression must have a minimum length of 3 c
     </message>
     <message>
         <location line="+103"/>
-        <location line="+984"/>
+        <location line="+993"/>
         <location line="+13"/>
         <location line="+521"/>
         <source>Download</source>
         <translation>下載</translation>
     </message>
     <message>
-        <location line="-1498"/>
+        <location line="-1507"/>
         <source>Close All Searches</source>
         <translation>關閉所有搜尋</translation>
     </message>
@@ -10416,7 +10610,12 @@ The keyword(s) used in a Kad search expression must have a minimum length of 3 c
         <translation>關閉</translation>
     </message>
     <message>
-        <location line="+92"/>
+        <location line="+3"/>
+        <source>Close Other Tabs</source>
+        <translation>關閉其他分頁</translation>
+    </message>
+    <message>
+        <location line="+98"/>
         <source>&amp;Download</source>
         <translation>下載(&amp;D)</translation>
     </message>
@@ -10688,7 +10887,7 @@ The keyword(s) used in a Kad search expression must have a minimum length of 3 c
 <context>
     <name>eMule::ServerListModel</name>
     <message>
-        <location filename="../src/gui/controls/ServerListModel.cpp" line="+77"/>
+        <location filename="../src/gui/controls/ServerListModel.cpp" line="+78"/>
         <source>%1 (disabled)</source>
         <translation>%1（已停用）</translation>
     </message>
@@ -10705,7 +10904,7 @@ The keyword(s) used in a Kad search expression must have a minimum length of 3 c
         <translation>否</translation>
     </message>
     <message>
-        <location line="+89"/>
+        <location line="+100"/>
         <source>Server Name</source>
         <translation>伺服器名稱</translation>
     </message>
@@ -10838,7 +11037,7 @@ The keyword(s) used in a Kad search expression must have a minimum length of 3 c
         <translation>已下載 server.met，已解壓縮「%1」（%2 位元組）。正在解析...</translation>
     </message>
     <message>
-        <location line="+23"/>
+        <location line="+29"/>
         <source>Disconnect</source>
         <translation>中斷連線</translation>
     </message>
@@ -11184,7 +11383,7 @@ The keyword(s) used in a Kad search expression must have a minimum length of 3 c
 <context>
     <name>eMule::SharedFilesModel</name>
     <message>
-        <location filename="../src/gui/controls/SharedFilesModel.cpp" line="+44"/>
+        <location filename="../src/gui/controls/SharedFilesModel.cpp" line="+46"/>
         <source>Yes</source>
         <translation>是</translation>
     </message>
@@ -11199,7 +11398,7 @@ The keyword(s) used in a Kad search expression must have a minimum length of 3 c
         <translation>%1 Kbit/s</translation>
     </message>
     <message>
-        <location line="+9"/>
+        <location line="+13"/>
         <source>File Name:	%1
 ED2K Hash:	%2
 Type:	%3
@@ -11222,7 +11421,7 @@ ED2K 切細值：	%2
 資料夾：	%13</translation>
     </message>
     <message>
-        <location line="+136"/>
+        <location line="+138"/>
         <source>File Name</source>
         <translation>檔案名稱</translation>
     </message>
@@ -11321,6 +11520,11 @@ ED2K 切細值：	%2
         <source>Session Ratio</source>
         <translation>本次工作階段分享率</translation>
     </message>
+    <message>
+        <location line="+1"/>
+        <source>Last Request</source>
+        <translation>最後請求</translation>
+    </message>
 </context>
 <context>
     <name>eMule::SharedFilesPanel</name>
@@ -11328,12 +11532,12 @@ ED2K 切細值：	%2
         <location filename="../src/gui/panels/SharedFilesPanel.cpp" line="+177"/>
         <location line="+16"/>
         <location line="+497"/>
-        <location line="+633"/>
+        <location line="+646"/>
         <source>Shared Files (0)</source>
         <translation>已分享檔案 (0)</translation>
     </message>
     <message>
-        <location line="-1017"/>
+        <location line="-1030"/>
         <source>All</source>
         <translation>全部</translation>
     </message>
@@ -11344,71 +11548,71 @@ ED2K 切細值：	%2
     </message>
     <message>
         <location line="+13"/>
-        <location line="+1472"/>
-        <location line="+509"/>
+        <location line="+1494"/>
+        <location line="+511"/>
         <source>Open Folder</source>
         <translation>開啟資料夾</translation>
     </message>
     <message>
-        <location line="-1969"/>
+        <location line="-1993"/>
         <source>Rename...</source>
         <translation>重新命名...</translation>
     </message>
     <message>
         <location line="+8"/>
-        <location line="+1965"/>
+        <location line="+1989"/>
         <source>Delete From Disk</source>
         <translation>從磁碟刪除</translation>
     </message>
     <message>
-        <location line="-1950"/>
+        <location line="-1974"/>
         <source>Unshare</source>
         <translation>取消分享</translation>
     </message>
     <message>
         <location line="+11"/>
-        <location line="+1945"/>
+        <location line="+1969"/>
         <source>Priority (Upload)</source>
         <translation>優先權（上傳）</translation>
     </message>
     <message>
-        <location line="-1930"/>
-        <location line="+1947"/>
+        <location line="-1954"/>
+        <location line="+1971"/>
         <source>Very Low</source>
         <translation>非常低</translation>
     </message>
     <message>
-        <location line="-1946"/>
-        <location line="+1947"/>
+        <location line="-1970"/>
+        <location line="+1971"/>
         <source>Low</source>
         <translation>低</translation>
     </message>
     <message>
-        <location line="-1946"/>
-        <location line="+1947"/>
+        <location line="-1970"/>
+        <location line="+1971"/>
         <source>Normal</source>
         <translation>普通</translation>
     </message>
     <message>
-        <location line="-1946"/>
-        <location line="+1947"/>
+        <location line="-1970"/>
+        <location line="+1971"/>
         <source>High</source>
         <translation>高</translation>
     </message>
     <message>
-        <location line="-1946"/>
-        <location line="+1947"/>
+        <location line="-1970"/>
+        <location line="+1971"/>
         <source>Release</source>
         <translation>發佈</translation>
     </message>
     <message>
-        <location line="-1945"/>
-        <location line="+1946"/>
+        <location line="-1969"/>
+        <location line="+1970"/>
         <source>Auto</source>
         <translation>自動</translation>
     </message>
     <message>
-        <location line="-1932"/>
+        <location line="-1956"/>
         <source>Collection</source>
         <translation>收藏集</translation>
     </message>
@@ -11445,24 +11649,24 @@ ED2K 切細值：	%2
     </message>
     <message>
         <location line="+19"/>
-        <location line="+1852"/>
+        <location line="+1876"/>
         <source>Details...</source>
         <translation>詳細資料...</translation>
     </message>
     <message>
-        <location line="-1845"/>
-        <location line="+1848"/>
+        <location line="-1869"/>
+        <location line="+1872"/>
         <source>Comments...</source>
         <translation>評論...</translation>
     </message>
     <message>
-        <location line="-1833"/>
-        <location line="+1839"/>
+        <location line="-1857"/>
+        <location line="+1863"/>
         <source>eD2K Links...</source>
         <translation>eD2K 連結...</translation>
     </message>
     <message>
-        <location line="-1828"/>
+        <location line="-1852"/>
         <source>Add To IRC Clipboard</source>
         <translation>加入到 IRC 剪貼簿</translation>
     </message>
@@ -11512,7 +11716,7 @@ ED2K 切細值：	%2
         <translation>所有目錄</translation>
     </message>
     <message>
-        <location line="+236"/>
+        <location line="+239"/>
         <source>Current Session</source>
         <translation>目前工作階段</translation>
     </message>
@@ -11601,23 +11805,33 @@ ED2K 切細值：	%2
         <translation>主機名稱</translation>
     </message>
     <message>
-        <location line="+10"/>
+        <location line="+2"/>
+        <source>Include Media Info</source>
+        <translation>包含媒體資訊</translation>
+    </message>
+    <message>
+        <location line="+1"/>
+        <source>Add a line with resolution, codecs, length and bitrate under the HTML link of a complete file</source>
+        <translation>在完整檔案的 HTML 連結下加入一行，顯示解析度、編解碼器、長度與位元率</translation>
+    </message>
+    <message>
+        <location line="+14"/>
         <source>Copy</source>
         <translation>複製</translation>
     </message>
     <message>
-        <location line="+14"/>
-        <location line="+470"/>
+        <location line="+16"/>
+        <location line="+472"/>
         <source>Requires a hostname configured in Preferences, or a public IPv6</source>
         <translation>需要在偏好設定中設定主機名稱，或擁有公開 IPv6</translation>
     </message>
     <message>
-        <location line="-466"/>
+        <location line="-468"/>
         <source>eD2K Links</source>
         <translation>eD2K 連結</translation>
     </message>
     <message>
-        <location line="+167"/>
+        <location line="+168"/>
         <source>Shared Files (%1)</source>
         <translation>已分享檔案 (%1)</translation>
     </message>
@@ -11696,17 +11910,17 @@ The files will remain on disk.</source>
         <translation>取消分享檔案</translation>
     </message>
     <message>
-        <location line="+155"/>
+        <location line="+156"/>
         <source>Add your hostname or public IPv6 as a source</source>
         <translation>將您的主機名稱或公開 IPv6 加入為來源</translation>
     </message>
     <message>
-        <location line="+16"/>
+        <location line="+22"/>
         <source>Showing eD2K links for the first %1 of %2 selected files.</source>
         <translation>正在顯示選取的 %2 個檔案中前 %1 個的 eD2K 連結。</translation>
     </message>
     <message>
-        <location line="+283"/>
+        <location line="+285"/>
         <source>Share Directory</source>
         <translation>分享目錄</translation>
     </message>
@@ -11717,24 +11931,24 @@ The files will remain on disk.</source>
     </message>
     <message>
         <location line="+14"/>
-        <location line="+521"/>
+        <location line="+523"/>
         <source>Unshare Directory</source>
         <translation>取消分享目錄</translation>
     </message>
     <message>
-        <location line="-512"/>
-        <location line="+521"/>
+        <location line="-514"/>
+        <location line="+523"/>
         <source>Unshare with Subdirectories</source>
         <translation>連同子目錄一起取消分享</translation>
     </message>
     <message>
-        <location line="-425"/>
+        <location line="-427"/>
         <source>Open File not available — web server is not running or stream token not received.</source>
         <translation>無法開啟檔案 — Web 伺服器未執行或未收到串流權杖。</translation>
     </message>
     <message>
-        <location line="-1434"/>
-        <location line="+1841"/>
+        <location line="-1456"/>
+        <location line="+1865"/>
         <source>Copy eD2K Links</source>
         <translation>複製 eD2K 連結</translation>
     </message>
@@ -15059,89 +15273,89 @@ Clicking &apos;Restore Stats&apos; again will reload your current statistics.</s
     </message>
     <message>
         <location line="+29"/>
-        <location line="+1949"/>
-        <location line="+171"/>
+        <location line="+2012"/>
+        <location line="+177"/>
         <source>Low</source>
         <translation>低</translation>
     </message>
     <message>
-        <location line="-2119"/>
-        <location line="+1948"/>
-        <location line="+172"/>
+        <location line="-2188"/>
+        <location line="+2011"/>
+        <location line="+178"/>
         <source>Normal</source>
         <translation>普通</translation>
     </message>
     <message>
-        <location line="-2119"/>
-        <location line="+1947"/>
-        <location line="+173"/>
+        <location line="-2188"/>
+        <location line="+2010"/>
+        <location line="+179"/>
         <source>High</source>
         <translation>高</translation>
     </message>
     <message>
-        <location line="-2116"/>
-        <location line="+2120"/>
+        <location line="-2185"/>
+        <location line="+2189"/>
         <source>Very Low</source>
         <translation>非常低</translation>
     </message>
     <message>
-        <location line="-2118"/>
-        <location line="+2120"/>
+        <location line="-2187"/>
+        <location line="+2189"/>
         <source>Very High</source>
         <translation>非常高</translation>
     </message>
     <message>
-        <location line="-2118"/>
-        <location line="+2121"/>
+        <location line="-2187"/>
+        <location line="+2190"/>
         <source>Auto</source>
         <translation>自動</translation>
     </message>
     <message>
-        <location line="-2110"/>
-        <location line="+696"/>
-        <location line="+1246"/>
+        <location line="-2179"/>
+        <location line="+713"/>
+        <location line="+1292"/>
         <source>Pause</source>
         <translation>暫停</translation>
     </message>
     <message>
-        <location line="-1933"/>
-        <location line="+693"/>
-        <location line="+1242"/>
+        <location line="-1996"/>
+        <location line="+710"/>
+        <location line="+1288"/>
         <source>Stop</source>
         <translation>停止</translation>
     </message>
     <message>
-        <location line="-1926"/>
-        <location line="+690"/>
-        <location line="+1238"/>
+        <location line="-1989"/>
+        <location line="+707"/>
+        <location line="+1284"/>
         <source>Resume</source>
         <translation>繼續</translation>
     </message>
     <message>
-        <location line="-1915"/>
-        <location line="+683"/>
-        <location line="+1234"/>
+        <location line="-1978"/>
+        <location line="+700"/>
+        <location line="+1280"/>
         <location line="+4"/>
         <source>Cancel</source>
         <translation>取消</translation>
     </message>
     <message>
-        <location line="-1905"/>
-        <location line="+674"/>
+        <location line="-1968"/>
+        <location line="+691"/>
         <location line="+555"/>
         <source>Open File</source>
         <translation>開啟檔案</translation>
     </message>
     <message>
-        <location line="-1220"/>
+        <location line="-1237"/>
         <location line="+2"/>
-        <location line="+677"/>
+        <location line="+694"/>
         <location line="+590"/>
         <source>Preview</source>
         <translation>預覽</translation>
     </message>
     <message>
-        <location line="-1261"/>
+        <location line="-1278"/>
         <source>Preview with</source>
         <translation>預覽方式</translation>
     </message>
@@ -15157,13 +15371,13 @@ Clicking &apos;Restore Stats&apos; again will reload your current statistics.</s
     </message>
     <message>
         <location line="+9"/>
-        <location line="+2051"/>
-        <location line="+99"/>
+        <location line="+2120"/>
+        <location line="+118"/>
         <source>Details...</source>
         <translation>詳細資料...</translation>
     </message>
     <message>
-        <location line="-2141"/>
+        <location line="-2229"/>
         <source>Comments...</source>
         <translation>評論...</translation>
     </message>
@@ -15174,20 +15388,20 @@ Clicking &apos;Restore Stats&apos; again will reload your current statistics.</s
     </message>
     <message>
         <location line="+0"/>
-        <location line="+1295"/>
+        <location line="+1312"/>
         <location line="+1"/>
         <location line="+10"/>
         <source>Import parts to file...</source>
         <translation>將部分匯入檔案...</translation>
     </message>
     <message>
-        <location line="-1290"/>
-        <location line="+645"/>
+        <location line="-1307"/>
+        <location line="+662"/>
         <source>Clear Completed</source>
         <translation>清除已完成</translation>
     </message>
     <message>
-        <location line="-637"/>
+        <location line="-654"/>
         <source>Source Handling</source>
         <translation>來源處理</translation>
     </message>
@@ -15198,12 +15412,29 @@ Clicking &apos;Restore Stats&apos; again will reload your current statistics.</s
     </message>
     <message>
         <location line="+3"/>
-        <location line="+1218"/>
+        <location line="+1235"/>
         <source>Source Limit...</source>
         <translation>來源限制...</translation>
     </message>
     <message>
-        <location line="-1206"/>
+        <location line="-1232"/>
+        <source>Swap All A4AF Sources to This File</source>
+        <translation>將所有 A4AF 來源切換到此檔案</translation>
+    </message>
+    <message>
+        <location line="+2"/>
+        <source>cannot swap sources.</source>
+        <translation>無法切換來源。</translation>
+    </message>
+    <message numerus="yes">
+        <location line="+6"/>
+        <source>%n A4AF source(s) swapped to this file.</source>
+        <translation>
+            <numerusform>已將 %n 個 A4AF 來源切換到此檔案。</numerusform>
+        </translation>
+    </message>
+    <message>
+        <location line="+16"/>
         <source>Copy eD2K Links</source>
         <translation>複製 eD2K 連結</translation>
     </message>
@@ -15219,13 +15450,13 @@ Clicking &apos;Restore Stats&apos; again will reload your current statistics.</s
     </message>
     <message>
         <location line="+16"/>
-        <location line="+2036"/>
+        <location line="+2109"/>
         <location line="+72"/>
         <source>Find...</source>
         <translation>尋找...</translation>
     </message>
     <message>
-        <location line="-2100"/>
+        <location line="-2173"/>
         <source>Search Related Files</source>
         <translation>搜尋相關檔案</translation>
     </message>
@@ -15236,23 +15467,23 @@ Clicking &apos;Restore Stats&apos; again will reload your current statistics.</s
     </message>
     <message>
         <location line="+11"/>
-        <location line="+546"/>
+        <location line="+548"/>
         <source>Assign To Category</source>
         <translation>指定到類別</translation>
     </message>
     <message>
-        <location line="-541"/>
+        <location line="-543"/>
         <source>New...</source>
         <translation>新增...</translation>
     </message>
     <message>
         <location line="+4"/>
-        <location line="+544"/>
+        <location line="+546"/>
         <source>(Unassign)</source>
         <translation>（取消指定）</translation>
     </message>
     <message>
-        <location line="-526"/>
+        <location line="-528"/>
         <source>Show Toolbar</source>
         <translation>顯示工具列</translation>
     </message>
@@ -15262,7 +15493,7 @@ Clicking &apos;Restore Stats&apos; again will reload your current statistics.</s
         <translation>下載</translation>
     </message>
     <message>
-        <location line="+330"/>
+        <location line="+332"/>
         <source>Clients on queue:   0</source>
         <translation>等候中的用戶端：   0</translation>
     </message>
@@ -15273,12 +15504,12 @@ Clicking &apos;Restore Stats&apos; again will reload your current statistics.</s
     </message>
     <message>
         <location line="+11"/>
-        <location line="+1235"/>
+        <location line="+1281"/>
         <source>Priority</source>
         <translation>優先權</translation>
     </message>
     <message>
-        <location line="-1198"/>
+        <location line="-1244"/>
         <source>Open Folder</source>
         <translation>開啟資料夾</translation>
     </message>
@@ -15351,7 +15582,7 @@ Clicking &apos;Restore Stats&apos; again will reload your current statistics.</s
         <translation>無法開啟檔案 — Web 伺服器未執行或未收到串流權杖。</translation>
     </message>
     <message>
-        <location line="+378"/>
+        <location line="+424"/>
         <source>Uploading</source>
         <translation>上傳中</translation>
     </message>
@@ -15417,36 +15648,36 @@ Clicking &apos;Restore Stats&apos; again will reload your current statistics.</s
         <translation>依字母順序下載</translation>
     </message>
     <message>
-        <location line="+187"/>
-        <location line="+98"/>
+        <location line="+198"/>
+        <location line="+112"/>
         <source>Add To Friends</source>
         <translation>加入到好友</translation>
     </message>
     <message>
-        <location line="-76"/>
-        <location line="+101"/>
+        <location line="-88"/>
+        <location line="+113"/>
         <source>Send Message</source>
         <translation>傳送訊息</translation>
     </message>
     <message>
-        <location line="-90"/>
-        <location line="+97"/>
+        <location line="-102"/>
+        <location line="+109"/>
         <source>View Shared Files</source>
         <translation>檢視已分享檔案</translation>
     </message>
     <message>
-        <location line="-90"/>
-        <location line="+91"/>
+        <location line="-102"/>
+        <location line="+103"/>
         <source>cannot view shared files.</source>
         <translation>無法檢視已分享檔案。</translation>
     </message>
     <message>
-        <location line="-81"/>
+        <location line="-90"/>
         <source>Unban</source>
         <translation>不禁止</translation>
     </message>
     <message>
-        <location line="+115"/>
+        <location line="+124"/>
         <source>Bootstrap</source>
         <translation>啟動</translation>
     </message>

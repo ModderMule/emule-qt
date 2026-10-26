@@ -205,6 +205,10 @@ bool KnownFile::loadTagsFromFile(FileDataIO& file)
             if (tag.isInt())
                 statistic.setAllTimeAccepts(tag.intValue());
             break;
+        case FT_LASTREQUESTED:
+            if (tag.isInt())
+                statistic.setLastRequested(tag.intValue());
+            break;
         case FT_ULPRIORITY:
             if (tag.isInt())
                 setUpPriorityFromTag(tag.intValue());
@@ -319,6 +323,8 @@ bool KnownFile::writeToFile(FileDataIO& file) const
         tagCount += 1; // FT_FLAGS
     if (m_mediaExtractVer > 0)
         tagCount += 1; // FT_MEDIAEXTRACTVER
+    if (statistic.lastRequested() > 0)
+        ++tagCount;    // FT_LASTREQUESTED
 
     // Kad publish times
     if (m_lastPublishTimeKadSrc > 0)
@@ -399,6 +405,8 @@ bool KnownFile::writeToFile(FileDataIO& file) const
         Tag(FT_FLAGS, static_cast<uint32>(m_metaDataVer & 0x0F)).writeNewEd2kTag(file);
     if (m_mediaExtractVer > 0)
         Tag(FT_MEDIAEXTRACTVER, m_mediaExtractVer).writeNewEd2kTag(file);
+    if (statistic.lastRequested() > 0)
+        Tag(FT_LASTREQUESTED, statistic.lastRequested()).writeNewEd2kTag(file);
 
     // Kad timestamps
     if (m_lastPublishTimeKadSrc > 0)

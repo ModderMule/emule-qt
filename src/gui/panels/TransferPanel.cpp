@@ -570,6 +570,21 @@ void TransferPanel::onDownloadContextMenu(const QPoint& pos)
         auto* limitAct = sourcesMenu->addAction(tr("Source Limit..."), this,
             [this, allHashes]() { askSourceLimit(allHashes); });
         limitAct->setEnabled(allUnfinished);
+        auto* swapAct = sourcesMenu->addAction(tr("Swap All A4AF Sources to This File"), this,
+            [this, singleHash]() {
+                if (!IpcFeedback::requireConnection(m_ipc, tr("cannot swap sources.")))
+                    return;
+                IpcMessage msg(IpcMsgType::SwapA4AFToFile);
+                msg.append(singleHash);
+                m_ipc->sendRequest(std::move(msg), [this](const IpcMessage& resp) {
+                    if (resp.type() == IpcMsgType::Result && resp.fieldBool(0))
+                        StatusBarNotifier::post(tr("%n A4AF source(s) swapped to this file.", nullptr,
+                                                   static_cast<int>(resp.fieldInt(1))));
+                    requestDownloads();
+                });
+            });
+        swapAct->setEnabled(singleSel && dl && dl->a4afSrcCount > 0 && !dl->isComplete()
+                            && !dl->isStopped);
         sourcesMenu->setEnabled(hasSel);
     }
 
@@ -1029,6 +1044,8 @@ QWidget* TransferPanel::createBottomPane()
         // Software, Connected, Hash, Country
         {150, 100, 90, 100, 110, 90, 80, 240, 100},
         {1, 2, 4, 5, 6});    // ClientListCtrl.cpp:233-240
+    // Several known clients at once, e.g. to unban them
+    clientSlot(Known).view->setSelectionMode(QAbstractItemView::ExtendedSelection);
 
     // Context menu and double-click are wired per view, and a view keeps them when it
     // moves to the other pane.
@@ -1538,7 +1555,7 @@ void TransferPanel::applyClients(int clientView, std::vector<ClientRow> rows)
     // position — both are keyed back on afterwards.
     const ClientSlot& slot = clientSlot(clientView);
     const int scroll = slot.view->verticalScrollBar()->value();
-    const QString selected = saveClientSelection(slot.view, slot.model);
+    const QStringList selected = saveClientSelection(slot.view, slot.model);
 
     slot.model->setClients(std::move(rows));
 
@@ -2071,45 +2088,91 @@ QStringList TransferPanel::saveDownloadSelectionMulti() const
     return result;
 }
 
-QString TransferPanel::saveClientSelection(QTreeView* view, ClientListModel* model) const
+QStringList TransferPanel::saveClientSelection(QTreeView* view, ClientListModel* model) const
 {
-    // Key on the selected row, not the current one: a deselected row stays current,
+    // Key on the selected rows, not the current one: a deselected row stays current,
     // and restoring it would undo the deselect on the next refresh (issue #27)
-    const auto sel = view->selectionModel()->currentIndex();
-    if (!sel.isValid() || !view->selectionModel()->isSelected(sel))
-        return {};
-
-    // Map through proxy to source model
     const auto* proxy = qobject_cast<const QSortFilterProxyModel*>(view->model());
     if (!proxy)
         return {};
 
-    const QModelIndex srcIdx = proxy->mapToSource(sel);
-    const auto* client = model->clientAt(srcIdx.row());
-    return client ? client->userHash : QString{};
+    QStringList keys;
+    const auto keyOf = [&](const QModelIndex& proxyIdx) {
+        const auto* client = model->clientAt(proxy->mapToSource(proxyIdx).row());
+        if (client && !client->userHash.isEmpty() && !keys.contains(client->userHash))
+            keys << client->userHash;
+    };
+    const auto* sel = view->selectionModel();
+    if (const QModelIndex cur = sel->currentIndex(); cur.isValid() && sel->isSelected(cur))
+        keyOf(cur);
+    for (const QModelIndex& idx : sel->selectedRows(0))
+        keyOf(idx);
+    return keys;
 }
 
-void TransferPanel::restoreClientSelection(QTreeView* view, ClientListModel* model, const QString& key)
+void TransferPanel::restoreClientSelection(QTreeView* view, ClientListModel* model,
+                                           const QStringList& keys)
 {
-    if (key.isEmpty())
+    if (keys.isEmpty())
         return;
 
     const auto* proxy = qobject_cast<const QSortFilterProxyModel*>(view->model());
     if (!proxy)
         return;
 
+    // setCurrentIndex() on the view would ClearAndSelect, so set current without updating and
+    // select every column of each row (selectedRows() wants whole rows)
+    QModelIndex current;
+    QItemSelection selection;
+    const int lastCol = model->columnCount() - 1;
     for (int row = 0; row < model->clientCount(); ++row) {
         const auto* client = model->clientAt(row);
-        if (client && client->userHash == key) {
-            const QModelIndex srcIdx = model->index(row, 0);
-            const QModelIndex proxyIdx = proxy->mapFromSource(srcIdx);
-            if (proxyIdx.isValid()) {
-                view->setCurrentIndex(proxyIdx);
-                view->scrollTo(proxyIdx);
-            }
-            return;
-        }
+        if (!client)
+            continue;
+        const qsizetype pos = keys.indexOf(client->userHash);
+        if (pos < 0)
+            continue;
+        const QModelIndex first = proxy->mapFromSource(model->index(row, 0));
+        const QModelIndex last = proxy->mapFromSource(model->index(row, lastCol));
+        if (!first.isValid())
+            continue;
+        selection.select(first, last.isValid() ? last : first);
+        if (pos == 0)
+            current = first;
     }
+    if (selection.isEmpty())
+        return;
+
+    auto* sel = view->selectionModel();
+    if (!current.isValid())
+        current = selection.first().topLeft();
+    sel->setCurrentIndex(current, QItemSelectionModel::NoUpdate);
+    sel->select(selection, QItemSelectionModel::ClearAndSelect | QItemSelectionModel::Rows);
+    view->scrollTo(current);
+}
+
+std::vector<const ClientRow*> TransferPanel::selectedClients(QTreeView* view, ClientListModel* model,
+                                                             const QModelIndex& clicked) const
+{
+    std::vector<const ClientRow*> result;
+    const auto* proxy = qobject_cast<const QSortFilterProxyModel*>(view->model());
+    if (!proxy)
+        return result;
+    const auto add = [&](const QModelIndex& proxyIdx) {
+        if (const auto* client = model->clientAt(proxy->mapToSource(proxyIdx).row());
+            client && std::ranges::find(result, client) == result.end())
+            result.push_back(client);
+    };
+    // A right click on an unselected row acts on that row alone, as in the download list
+    if (clicked.isValid() && !view->selectionModel()->isRowSelected(clicked.row(), clicked.parent())) {
+        add(clicked);
+        return result;
+    }
+    for (const QModelIndex& idx : view->selectionModel()->selectedRows(0))
+        add(idx);
+    if (result.empty() && clicked.isValid())
+        add(clicked);
+    return result;
 }
 
 // ---------------------------------------------------------------------------
@@ -2399,6 +2462,15 @@ bool TransferPanel::isListDisabled(int clientView)
         || (clientView == OnQueue && thePrefs.disableQueueList());
 }
 
+void TransferPanel::applyExtColumns()
+{
+    // Shared List and ratio columns follow "Show more controls"
+    for (const auto& slot : m_clients) {
+        if (auto* view = dynamic_cast<ListTreeView*>(slot.view))
+            view->applyExtColumns(thePrefs.showExtControls());
+    }
+}
+
 void TransferPanel::applyDisplayOptions()
 {
     const bool buttons = thePrefs.showTransToolbar();
@@ -2406,12 +2478,9 @@ void TransferPanel::applyDisplayOptions()
     m_toolbar2->setButtonsVisible(buttons);
     applyViews(m_topView, m_bottomView, Pane::Top);   // a list may have been disabled
     updateCategoryTabInfo();
+    m_categoryTabBar->applyDisplayOptions();   // the active tab may turn bold
 
-    // Shared List column follows "Show more controls"
-    for (const auto& slot : m_clients) {
-        if (auto* view = dynamic_cast<ListTreeView*>(slot.view))
-            view->applyExtColumns(thePrefs.showExtControls());
-    }
+    applyExtColumns();
 
     // A4AF source rows follow advanced mode
     for (const QString& hash : std::as_const(m_expandedDownloads))
@@ -2569,25 +2638,32 @@ void TransferPanel::onClientContextMenu(QTreeView* view, ClientListModel* model,
         setMenuDefaultAction(&menu, detailsAct);
     }
 
+    // Known Clients takes several rows; the others act on one
+    const auto targets = (model->mode() == ClientListMode::KnownClients)
+        ? selectedClients(view, model, proxyIdx)
+        : (client ? std::vector<const ClientRow*>{client} : std::vector<const ClientRow*>{});
+
     // 2. Add To Friends
     auto* addFriendAct = menu.addAction(menuIcon("UserAdd.ico"), tr("Add To Friends"));
-    addFriendAct->setEnabled(client != nullptr && !client->isFriend);
-    if (client && !client->isFriend) {
-        const QString hash = client->userHash;
-        const QString name = client->userName;
-        const auto ip   = client->ip;
-        const QString addr = client->addr;
-        const auto port = client->port;
-        connect(addFriendAct, &QAction::triggered, this, [this, hash, name, ip, addr, port]() {
+    QList<IpcMessage> friendMsgs;
+    for (const ClientRow* c : targets) {
+        if (c->isFriend)
+            continue;
+        IpcMessage msg(IpcMsgType::AddFriend);
+        msg.append(c->userHash);
+        msg.append(c->userName);
+        msg.append(static_cast<qint64>(c->ip));
+        msg.append(static_cast<qint64>(c->port));
+        msg.append(c->addr);   // IPv6-capable form; ip is 0 for an IPv6 peer
+        friendMsgs << std::move(msg);
+    }
+    addFriendAct->setEnabled(!friendMsgs.isEmpty());
+    if (!friendMsgs.isEmpty()) {
+        connect(addFriendAct, &QAction::triggered, this, [this, friendMsgs]() {
             if (!m_ipc || !m_ipc->isConnected())
                 return;
-            IpcMessage msg(IpcMsgType::AddFriend);
-            msg.append(hash);
-            msg.append(name);
-            msg.append(static_cast<qint64>(ip));
-            msg.append(static_cast<qint64>(port));
-            msg.append(addr);   // IPv6-capable form; ip is 0 for an IPv6 peer
-            m_ipc->sendRequest(std::move(msg));
+            for (IpcMessage msg : friendMsgs)
+                m_ipc->sendRequest(std::move(msg));
         });
     }
 
@@ -2618,19 +2694,31 @@ void TransferPanel::onClientContextMenu(QTreeView* view, ClientListModel* model,
         });
     }
 
-    // Unban: queue list, advanced mode (MFC QueueListCtrl.cpp:412-413)
-    if (model->mode() == ClientListMode::OnQueue && thePrefs.showExtControls()) {
+    // Unban: queue list, advanced mode (MFC QueueListCtrl.cpp:412-413); also on Known
+    // Clients, for every selected banned client
+    const bool unbanList = model->mode() == ClientListMode::OnQueue
+                        || model->mode() == ClientListMode::KnownClients;
+    if (unbanList && thePrefs.showExtControls()) {
         auto* unbanAct = menu.addAction(tr("Unban"));
-        unbanAct->setEnabled(client && client->isBanned);
-        if (client) {
-            const QString clientHash = client->userHash;
-            connect(unbanAct, &QAction::triggered, this, [this, clientHash]() {
+        QStringList banned;
+        for (const ClientRow* c : targets)
+            if (c->isBanned)
+                banned << c->userHash;
+        unbanAct->setEnabled(!banned.isEmpty());
+        if (!banned.isEmpty()) {
+            const bool knownList = model->mode() == ClientListMode::KnownClients;
+            connect(unbanAct, &QAction::triggered, this, [this, banned, knownList]() {
                 if (!m_ipc || !m_ipc->isConnected())
                     return;
-                IpcMessage msg(IpcMsgType::UnbanClient);
-                msg.append(clientHash);
-                m_ipc->sendRequest(std::move(msg));
-                requestUploads();
+                for (const QString& hash : banned) {
+                    IpcMessage msg(IpcMsgType::UnbanClient);
+                    msg.append(hash);
+                    m_ipc->sendRequest(std::move(msg));
+                }
+                if (knownList)
+                    requestKnownClients();
+                else
+                    requestUploads();
             });
         }
     }

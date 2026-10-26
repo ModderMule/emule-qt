@@ -32,6 +32,10 @@ public:
     void setAllTimeAccepts(uint32 val) { m_allTimeAccepted = val; }
     void setAllTimeTransferred(uint64 val) { m_allTimeTransferred = val; }
 
+    /// UTC seconds of the last upload request, 0 = never. Persisted in known.met.
+    [[nodiscard]] uint32 lastRequested() const { return m_lastRequested; }
+    void setLastRequested(uint32 val) { m_lastRequested = val; }
+
 private:
     uint64 m_allTimeTransferred = 0;
     uint64 m_transferred = 0;
@@ -39,6 +43,7 @@ private:
     uint32 m_requested = 0;
     uint32 m_allTimeAccepted = 0;
     uint32 m_accepted = 0;
+    uint32 m_lastRequested = 0;
 };
 
 } // namespace eMule

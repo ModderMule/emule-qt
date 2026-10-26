@@ -238,6 +238,10 @@ private:
     /// Asks the daemon for its public addresses first, so both address families get a verdict.
     void openPortTest();
 
+    /// Open the LAN router's web page in the default browser. Warns first when a
+    /// VPN carries the traffic, since router forwards then do not reach us.
+    void openRouterPage();
+
     [[nodiscard]] static QString comboSelection(const QComboBox* combo);
     static void showComboSelection(QComboBox* combo, const QString& selection);
     void requestNetworkInterfaces();
@@ -330,6 +334,9 @@ private:
     QSlider*   m_slotRateSlider = nullptr;
     QLabel*    m_slotCountLabel = nullptr;
     QSpinBox*  m_tcpPortSpin = nullptr;
+    QCheckBox* m_randomPortsCheck = nullptr;
+    QSpinBox*  m_randomPortMinSpin = nullptr;
+    QSpinBox*  m_randomPortMaxSpin = nullptr;
     QSpinBox*  m_udpPortSpin = nullptr;
     QCheckBox* m_udpDisableCheck = nullptr;
     /// Bitmask for the portMapProtocols pref: 1 = PCP, 2 = NAT-PMP, 4 = UPnP.
@@ -397,6 +404,8 @@ private:
     QCheckBox* m_onlySameCatCheck = nullptr;
     QCheckBox* m_rememberDownloadedCheck = nullptr;
     QCheckBox* m_rememberCancelledCheck = nullptr;
+    QCheckBox* m_autoRenameMajorityCheck = nullptr;
+    QCheckBox* m_watchSharedDirsCheck = nullptr;
     QCheckBox* m_seenFileIndexCheck = nullptr;
     QLineEdit* m_videoPlayerCmdEdit = nullptr;
     QLineEdit* m_videoPlayerArgsEdit = nullptr;
@@ -454,6 +463,8 @@ private:
     QCheckBox*    m_useSecureIdentCheck = nullptr;
     QCheckBox*    m_enableSearchResultFilterCheck = nullptr;
     QLineEdit*    m_ipFilterUpdateUrlEdit = nullptr;
+    QCheckBox*    m_ipFilterAutoUpdateCheck = nullptr;
+    QSpinBox*     m_ipFilterUpdateDaysSpin = nullptr;
     QCheckBox*    m_antiLeecherCheck = nullptr;
     QComboBox*    m_antiLeecherLevelCombo = nullptr;
     QLabel*       m_antiLeecherStatusLabel = nullptr;

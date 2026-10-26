@@ -90,6 +90,7 @@ QCborMap sharedFileRow(KnownFile* kf, const SharedFileList::ShareRules& rules,
     m.insert(QStringLiteral("allTimeRequests"), static_cast<qint64>(kf->statistic.allTimeRequests()));
     m.insert(QStringLiteral("allTimeAccepted"), static_cast<qint64>(kf->statistic.allTimeAccepts()));
     m.insert(QStringLiteral("allTimeTransferred"), static_cast<qint64>(kf->statistic.allTimeTransferred()));
+    m.insert(QStringLiteral("lastRequested"), static_cast<qint64>(kf->statistic.lastRequested()));
     m.insert(QStringLiteral("completeSources"), static_cast<int>(kf->completeSourcesCount()));
     m.insert(QStringLiteral("publishedED2K"), kf->publishedED2K());
     m.insert(QStringLiteral("completeSourcesLo"), static_cast<int>(kf->completeSourcesCountLo()));
