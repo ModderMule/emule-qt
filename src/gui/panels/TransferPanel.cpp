@@ -3,6 +3,7 @@
 /// @brief Transfer tab panel — implementation.
 
 #include "panels/TransferPanel.h"
+#include "utils/Appearance.h"
 
 #include "app/IpcClient.h"
 #include "app/UiState.h"
@@ -695,8 +696,7 @@ void TransferPanel::setupUi()
     m_vertSplitter = new QSplitter(Qt::Vertical, this);
     m_vertSplitter->setHandleWidth(4);
     m_vertSplitter->setChildrenCollapsible(false);
-    m_vertSplitter->setStyleSheet(
-        QStringLiteral("QSplitter::handle { background: palette(mid); }"));
+    useThemedSplitterHandles(m_vertSplitter);
 
     m_vertSplitter->addWidget(createDownloadsSection());
     m_vertSplitter->addWidget(createBottomPane());

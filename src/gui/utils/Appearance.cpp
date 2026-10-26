@@ -10,10 +10,14 @@
 #include <QFont>
 #include <QList>
 #include <QPalette>
+#include <QPainter>
 #include <QProxyStyle>
+#include <QSplitter>
 #include <QStyle>
 #include <QStyleFactory>
 #include <QStyleHints>
+#include <QTimer>
+#include <QWidget>
 
 #include <algorithm>
 #include <cmath>
@@ -103,50 +107,26 @@ bool styleDrawsDark()
         && name.compare(QLatin1StringView("windows"), Qt::CaseInsensitive) != 0;
 }
 
+bool applyCurrentScheme(bool allowFallback);
+void watchSystemScheme();
+
+// Splitter: hooks each handle once it exists. Handle: paints palette(mid) only.
+class SplitterHandlePainter : public QObject
+{
+public:
+    using QObject::QObject;
+    void hook(QSplitter* splitter);
+    bool eventFilter(QObject* watched, QEvent* event) override;
+};
+
 } // namespace
 
 bool applyColorScheme(int scheme, bool allowFallback)
 {
     s_theme = static_cast<ThemeChoice>(std::clamp(scheme, 0, 2));
-    const Qt::ColorScheme wanted = toQt(s_theme);
-    auto* hints = QGuiApplication::styleHints();
-    hints->setColorScheme(wanted);
-
-    // Fusion was set up for an earlier choice: only a restart restores the native style
-    if (s_fusionFallback) {
-        if (s_theme == ThemeChoice::System)
-            return false;
-        QApplication::setPalette(s_theme == ThemeChoice::Dark
-                                     ? darkPalette()
-                                     : QApplication::style()->standardPalette());
-        return true;
-    }
-
-    // Windows accepts the dark scheme (forced or system) even where its style cannot draw it
-    const bool wantsDark = s_theme == ThemeChoice::Dark
-        || (s_theme == ThemeChoice::System && hints->colorScheme() == Qt::ColorScheme::Dark);
-    const bool styleRefusesDark = wantsDark && !styleDrawsDark();
-    if (!styleRefusesDark
-        && (wanted == Qt::ColorScheme::Unknown || hints->colorScheme() == wanted))
-        return true;
-    if (!allowFallback) {
-        logInfo(QStringLiteral("Theme: colour scheme needs Fusion, applies after restart"));
-        return false;
-    }
-
-    // Platform theme refuses the override: Fusion draws any palette
-    auto* fusion = QStyleFactory::create(QStringLiteral("Fusion"));
-    if (!fusion) {
-        logWarning(QStringLiteral("Theme: platform ignored the colour scheme and Fusion is missing"));
-        return false;
-    }
-    QApplication::setStyle(new TooltipDelayStyle(fusion));
-    QApplication::setPalette(wantsDark ? darkPalette() : fusion->standardPalette());
-    s_fusionFallback = true;
-    logInfo(styleRefusesDark
-                ? QStringLiteral("Theme: native style cannot draw dark, using Fusion")
-                : QStringLiteral("Theme: platform ignored the colour scheme, using Fusion"));
-    return true;
+    QGuiApplication::styleHints()->setColorScheme(toQt(s_theme));
+    watchSystemScheme();
+    return applyCurrentScheme(allowFallback);
 }
 
 bool isDarkScheme()
@@ -154,6 +134,25 @@ bool isDarkScheme()
     if (s_theme != ThemeChoice::System)
         return s_theme == ThemeChoice::Dark;
     return QGuiApplication::styleHints()->colorScheme() == Qt::ColorScheme::Dark;
+}
+
+void refreshThemedWidgets()
+{
+    const QWidgetList widgets = QApplication::allWidgets();
+    // Qt keeps the old palette under a style sheet; setting it again repolishes the subtree
+    for (QWidget* w : widgets) {
+        if (const QString sheet = w->styleSheet(); !sheet.isEmpty())
+            w->setStyleSheet(sheet);
+    }
+    // Custom painted controls pick themed() colours at paint time
+    for (QWidget* w : widgets)
+        w->update();
+}
+
+void useThemedSplitterHandles(QSplitter* splitter)
+{
+    static auto* painter = new SplitterHandlePainter(qApp);
+    painter->hook(splitter);
 }
 
 void applyFontScale(int percent)
@@ -215,5 +214,104 @@ int scaledPixelSize(int basePx)
 {
     return std::max(1, static_cast<int>(std::lround(basePx * s_fontScale)));
 }
+
+namespace {
+
+bool applyCurrentScheme(bool allowFallback)
+{
+    auto* hints = QGuiApplication::styleHints();
+    const Qt::ColorScheme wanted = toQt(s_theme);
+    // Windows accepts the dark scheme (forced or system) even where its style cannot draw it
+    const bool wantsDark = isDarkScheme();
+
+    // Fusion already active: only the palette changes. Native style back after restart.
+    if (s_fusionFallback) {
+        QApplication::setPalette(wantsDark ? darkPalette()
+                                           : QApplication::style()->standardPalette());
+        return true;
+    }
+
+    const bool styleRefusesDark = wantsDark && !styleDrawsDark();
+    if (!styleRefusesDark
+        && (wanted == Qt::ColorScheme::Unknown || hints->colorScheme() == wanted))
+        return true;
+    if (!allowFallback) {
+        logInfo(QStringLiteral("Theme: colour scheme needs Fusion, applies after restart"));
+        return false;
+    }
+
+    // Platform theme refuses the override: Fusion draws any palette
+    auto* fusion = QStyleFactory::create(QStringLiteral("Fusion"));
+    if (!fusion) {
+        logWarning(QStringLiteral("Theme: platform ignored the colour scheme and Fusion is missing"));
+        return false;
+    }
+    QApplication::setStyle(new TooltipDelayStyle(fusion));
+    QApplication::setPalette(wantsDark ? darkPalette() : fusion->standardPalette());
+    s_fusionFallback = true;
+    logInfo(styleRefusesDark
+                ? QStringLiteral("Theme: native style cannot draw dark, using Fusion")
+                : QStringLiteral("Theme: platform ignored the colour scheme, using Fusion"));
+    return true;
+}
+
+void SplitterHandlePainter::hook(QSplitter* splitter)
+{
+    // Installing twice is a no-op
+    splitter->installEventFilter(this);
+    for (int i = 0; i < splitter->count(); ++i)
+        splitter->handle(i)->installEventFilter(this);
+}
+
+bool SplitterHandlePainter::eventFilter(QObject* watched, QEvent* event)
+{
+    // Nested splitters too, as the "QSplitter::handle" style sheet covered them
+    if (event->type() == QEvent::Show) {
+        if (auto* splitter = qobject_cast<QSplitter*>(watched)) {
+            for (QSplitter* nested : splitter->findChildren<QSplitter*>())
+                hook(nested);
+        }
+        return false;
+    }
+    // Handles are polished when shown, after construction: safe to cast here
+    if (event->type() == QEvent::ChildPolished) {
+        if (auto* handle = qobject_cast<QSplitterHandle*>(
+                static_cast<QChildEvent*>(event)->child()))
+            handle->installEventFilter(this);
+        return false;
+    }
+    if (event->type() == QEvent::Paint) {
+        if (auto* handle = qobject_cast<QSplitterHandle*>(watched)) {
+            QPainter p(handle);
+            p.fillRect(handle->rect(), handle->palette().color(QPalette::Mid));
+            return true;
+        }
+    }
+    return false;
+}
+
+// Follows a system light/dark switch while running, when the choice is "System"
+void watchSystemScheme()
+{
+    static bool connected = false;
+    if (connected)
+        return;
+    connected = true;
+    QObject::connect(QGuiApplication::styleHints(), &QStyleHints::colorSchemeChanged, qApp,
+        [](Qt::ColorScheme scheme) {
+            if (s_theme != ThemeChoice::System)
+                return;
+            logInfo(QStringLiteral("Theme: system switched to %1")
+                        .arg(scheme == Qt::ColorScheme::Dark ? QStringLiteral("dark")
+                                                             : QStringLiteral("light")));
+            // After Qt has applied the new platform palette
+            QTimer::singleShot(0, qApp, [] {
+                applyCurrentScheme(true);
+                refreshThemedWidgets();
+            });
+        });
+}
+
+} // namespace
 
 } // namespace eMule

@@ -7,6 +7,8 @@
 #include <QString>
 #include <QtGlobal>
 
+class QSplitter;
+
 namespace eMule {
 
 /// UiState::colorScheme() values.
@@ -17,6 +19,14 @@ enum class ThemeChoice : int { System = 0, Light = 1, Dark = 2 };
 /// switches to Fusion with a matching palette.
 /// Returns false when the scheme could not be applied live (restart needed).
 bool applyColorScheme(int scheme, bool allowFallback);
+
+/// Repaints after a theme switch; repolishes widgets with a style sheet, which keep
+/// the old palette otherwise.
+void refreshThemedWidgets();
+
+/// Fills the splitter's handles with palette(mid), like a "QSplitter::handle" style
+/// sheet but without one: a style sheet freezes the palette of the whole subtree.
+void useThemedSplitterHandles(QSplitter* splitter);
 
 /// True when lists are drawn dark: the forced choice, else the system scheme.
 [[nodiscard]] bool isDarkScheme();

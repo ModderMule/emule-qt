@@ -73,8 +73,8 @@ void KadContactHistogram::paintEvent(QPaintEvent* /*event*/)
 
     const QRect rc = rect();
 
-    // White background
-    p.fillRect(rc, Qt::white);
+    // White background in light mode as in MFC, follows the theme
+    p.fillRect(rc, palette().color(QPalette::Base));
 
     // Gray border
     p.setPen(QPen(QColor(128, 128, 128), 1));
@@ -118,7 +118,7 @@ void KadContactHistogram::paintEvent(QPaintEvent* /*event*/)
 
     // -- Colors matching MFC ---
     const QColor axisColor(128, 128, 128);
-    const QColor auxColor(192, 192, 192);
+    const QColor auxColor = themed(QColor(192, 192, 192), QColor(80, 80, 80));
     const QColor barColor(255, 32, 32);
 
     // -- Y-axis step labels (MFC algorithm) ---

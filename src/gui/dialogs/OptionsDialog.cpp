@@ -6655,7 +6655,9 @@ void OptionsDialog::saveSettings()
     if (const int scheme = m_colorSchemeCombo->currentData().toInt();
         scheme != theUiState.colorScheme()) {
         theUiState.setColorScheme(scheme);
-        if (!applyColorScheme(scheme, false)) {
+        if (applyColorScheme(scheme, false)) {
+            refreshThemedWidgets();
+        } else {
             QMessageBox::information(this, tr("Theme"),
                 tr("The theme change will take effect after restarting the application."));
         }
