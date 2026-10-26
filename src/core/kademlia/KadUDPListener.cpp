@@ -918,8 +918,11 @@ void KademliaUDPListener::process_KADEMLIA2_HELLO_RES(const uint8* data, uint32 
     m_hellosReceived.fetch_add(1, std::memory_order_relaxed);
     countKad(&KadCounters::hellosReceived);
 
-    if (!isOnOutTrackList(ip, KADEMLIA2_HELLO_REQ))
+    if (!isOnOutTrackList(ip, KADEMLIA2_HELLO_REQ)) {
+        logKad(QStringLiteral("Kad: [diag] HELLO_RES from %1:%2 — not requested, dropped")
+                   .arg(ipToString(ip)).arg(udpPort));
         return;
+    }
 
     if (len < 19) // 16 (ID) + 2 (TCP port) + 1 (version)
         return;
@@ -932,6 +935,11 @@ void KademliaUDPListener::process_KADEMLIA2_HELLO_RES(const uint8* data, uint32 
     const bool addedOrUpdated =
         addContact_KADEMLIA2(data, len, ip, udpPort, &version, senderKey,
                              ipVerified, true, false, &sendACK, &contactID);
+
+    // Pairs with "[diag] sending HELLO_REQ" — shows which pings get answered (issue #64)
+    logKad(QStringLiteral("Kad: [diag] HELLO_RES from %1:%2 v%3 keyOK=%4 added=%5")
+               .arg(ipToString(ip)).arg(udpPort).arg(version)
+               .arg(int(validReceiverKey)).arg(int(addedOrUpdated)));
 
     if (sendACK) {
         // The remote asked us to prove we are not a spoofed contact. Reply with
