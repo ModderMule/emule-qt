@@ -715,7 +715,7 @@ Has comments</source>
         <translation type="vanished">%1 Bytes</translation>
     </message>
     <message>
-        <location filename="../src/gui/dialogs/OptionsDialog.cpp" line="+3314"/>
+        <location filename="../src/gui/dialogs/OptionsDialog.cpp" line="+3306"/>
         <source>Test</source>
         <translation>테스트</translation>
     </message>
@@ -3604,12 +3604,22 @@ ED2K 해시:	%2
 <context>
     <name>eMule::FirstStartWizard</name>
     <message>
-        <location filename="../src/gui/dialogs/FirstStartWizard.cpp" line="+61"/>
+        <location filename="../src/gui/dialogs/FirstStartWizard.cpp" line="+62"/>
         <source>eMule First Runtime Wizard</source>
         <translation>eMule 첫 실행 마법사</translation>
     </message>
     <message>
-        <location line="+357"/>
+        <location line="+214"/>
+        <source>Show more controls (advanced mode controls)</source>
+        <translation>더 많은 컨트롤 표시(고급 모드)</translation>
+    </message>
+    <message>
+        <location line="+3"/>
+        <source>Shows advanced entries in context menus and extra details in lists.</source>
+        <translation>컨텍스트 메뉴에 고급 항목을, 목록에 추가 정보를 표시합니다.</translation>
+    </message>
+    <message>
+        <location line="+147"/>
         <source>Ports and Connection</source>
         <translation>포트 및 연결</translation>
     </message>
@@ -3619,13 +3629,13 @@ ED2K 해시:	%2
         <translation>연결</translation>
     </message>
     <message>
-        <location line="-266"/>
+        <location line="-273"/>
         <source>eMule uses two ports for communication with servers and clients. These ports must be free and available for remote clients. The TCP port must be available to ensure the main functionality of eMule. The UDP port is used for Kad (serverless network) and to reduce network usage (Overhead).</source>
         <translation>eMule은 서버 및 클라이언트와의 통신에 두 개의 포트를 사용합니다. 이 포트는 원격 클라이언트에서 사용할 수 있어야 합니다. TCP 포트는 eMule의 주요 기능을 보장하기 위해 필요합니다. UDP 포트는 Kad(서버리스 네트워크) 및 네트워크 사용량 절감(오버헤드)에 사용됩니다.</translation>
     </message>
     <message>
         <location line="-101"/>
-        <location line="+301"/>
+        <location line="+308"/>
         <source>Unlimited</source>
         <translation>무제한</translation>
     </message>
@@ -3674,7 +3684,7 @@ If your ISP tries throttle or block eMule, enabling obfuscation will help to cir
 ISP가 eMule을 제한하거나 차단하려는 경우, 난독화를 켜면 그런 제한을 우회하는 데 도움이 됩니다.</translation>
     </message>
     <message>
-        <location line="-187"/>
+        <location line="-194"/>
         <source>You can change the ports here while no network activities have started.</source>
         <translation>네트워크 활동이 시작되지 않은 동안 여기에서 포트를 변경할 수 있습니다.</translation>
     </message>
@@ -3689,17 +3699,16 @@ ISP가 eMule을 제한하거나 차단하려는 경우, 난독화를 켜면 그�
         <translation>UDP:</translation>
     </message>
     <message>
-        <location line="+3"/>
         <source>Disable</source>
-        <translation>비활성화</translation>
+        <translation type="vanished">비활성화</translation>
     </message>
     <message>
-        <location line="+6"/>
+        <location line="+4"/>
         <source>Use UPnP to Setup Ports</source>
         <translation>UPnP로 포트 설정</translation>
     </message>
     <message>
-        <location line="+46"/>
+        <location line="+45"/>
         <source>Here you can test, if your TCP and UDP port can be connected to from remote. This success of this test is required for servers and clients to connect you. The TCP port have to succeed!</source>
         <translation>여기서 TCP 포트와 UDP 포트에 외부에서 연결할 수 있는지 테스트할 수 있습니다. 서버와 클라이언트가 연결하려면 이 테스트가 성공해야 합니다. TCP 포트는 반드시 성공해야 합니다!</translation>
     </message>
@@ -3709,7 +3718,17 @@ ISP가 eMule을 제한하거나 차단하려는 경우, 난독화를 켜면 그�
         <translation>포트 테스트</translation>
     </message>
     <message>
-        <location line="+14"/>
+        <location line="+3"/>
+        <source>Open Router</source>
+        <translation>라우터 열기</translation>
+    </message>
+    <message>
+        <location line="+2"/>
+        <source>Opens the web page of this computer&apos;s router, where ports are forwarded</source>
+        <translation>이 컴퓨터의 라우터 웹 페이지를 엽니다. 여기서 포트를 포워딩합니다</translation>
+    </message>
+    <message>
+        <location line="+17"/>
         <source>Choose which Network(s) you want to use</source>
         <translation>사용할 네트워크 선택</translation>
     </message>
@@ -3732,7 +3751,7 @@ ISP가 eMule을 제한하거나 차단하려는 경우, 난독화를 켜면 그�
         <translation type="vanished">이 기능을 끄면 eMule이 서버에 조금 더 빨리 연결하지만 잘못된 LowID 연결이 늘어날 수 있습니다.</translation>
     </message>
     <message>
-        <location line="+31"/>
+        <location line="+36"/>
         <source>Select your internet connection. eMule derives its download and upload limits from it, leaving room for your other applications. You can change the limits at any time in the Options.</source>
         <translation>인터넷 연결을 선택하세요. eMule은 이를 바탕으로 다운로드 및 업로드 제한을 정하고 다른 프로그램을 위한 여유를 남겨 둡니다. 제한은 옵션에서 언제든지 변경할 수 있습니다.</translation>
     </message>
@@ -3819,6 +3838,16 @@ ISP가 eMule을 제한하거나 차단하려는 경우, 난독화를 켜면 그�
         <translation>다음 &gt;</translation>
     </message>
     <message>
+        <location line="+34"/>
+        <source>UDP is disabled in the config file (udpPort: 0)</source>
+        <translation>설정 파일에서 UDP가 비활성화되어 있습니다 (udpPort: 0)</translation>
+    </message>
+    <message>
+        <location line="+6"/>
+        <source>Kad needs UDP, which is disabled in the config file</source>
+        <translation>Kad에는 UDP가 필요하지만 설정 파일에서 비활성화되어 있습니다</translation>
+    </message>
+    <message>
         <source>Welcome to eMule</source>
         <translation type="vanished">eMule에 오신 것을 환영합니다</translation>
     </message>
@@ -3851,7 +3880,7 @@ ISP가 eMule을 제한하거나 차단하려는 경우, 난독화를 켜면 그�
         <translation type="vanished">난독화</translation>
     </message>
     <message>
-        <location line="-3"/>
+        <location line="-43"/>
         <source>Connection Speed</source>
         <translation>연결 속도</translation>
     </message>
@@ -4827,12 +4856,12 @@ Please choose another:</source>
     </message>
     <message>
         <location line="+8"/>
-        <location line="+1355"/>
+        <location line="+1360"/>
         <source>eD2K: Disconnected</source>
         <translation>eD2K: 연결 해제됨</translation>
     </message>
     <message>
-        <location line="-1297"/>
+        <location line="-1302"/>
         <source>Kad: Connected</source>
         <translation>Kad: 연결됨</translation>
     </message>
@@ -4848,12 +4877,12 @@ Please choose another:</source>
     </message>
     <message>
         <location line="+4"/>
-        <location line="+1289"/>
+        <location line="+1294"/>
         <source>Kad: Disconnected</source>
         <translation>Kad: 연결 해제됨</translation>
     </message>
     <message>
-        <location line="-1279"/>
+        <location line="-1284"/>
         <source>Users: %1 | Files: %2</source>
         <translation>사용자: %1 | 파일: %2</translation>
     </message>
@@ -5178,7 +5207,7 @@ Enable it under Options → Web Interface, then try again.</source>
         <translation>옵션 열기</translation>
     </message>
     <message>
-        <location line="+191"/>
+        <location line="+196"/>
         <source>Main</source>
         <translation>메인</translation>
     </message>
@@ -6539,36 +6568,36 @@ Download it again?</source>
 <context>
     <name>eMule::OptionsDialog</name>
     <message>
-        <location filename="../src/gui/dialogs/OptionsDialog.cpp" line="-3203"/>
+        <location filename="../src/gui/dialogs/OptionsDialog.cpp" line="-3195"/>
         <source>Options</source>
         <translation>옵션</translation>
     </message>
     <message>
         <location line="+61"/>
-        <location line="+2117"/>
+        <location line="+2109"/>
         <source>OK</source>
         <translation>확인</translation>
     </message>
     <message>
-        <location line="-2116"/>
-        <location line="+2117"/>
+        <location line="-2108"/>
+        <location line="+2109"/>
         <source>Cancel</source>
         <translation>취소</translation>
     </message>
     <message>
-        <location line="-2116"/>
-        <location line="+5970"/>
+        <location line="-2108"/>
+        <location line="+5962"/>
         <source>Apply</source>
         <translation>적용</translation>
     </message>
     <message>
-        <location line="-5969"/>
+        <location line="-5961"/>
         <source>Help</source>
         <translation>도움말</translation>
     </message>
     <message>
-        <location line="+271"/>
-        <location line="+2113"/>
+        <location line="+270"/>
+        <location line="+2106"/>
         <location line="+59"/>
         <location line="+6"/>
         <location line="+4"/>
@@ -6580,7 +6609,7 @@ Download it again?</source>
         <translation>IP 필터</translation>
     </message>
     <message>
-        <location line="-2227"/>
+        <location line="-2220"/>
         <source>IP filter reloaded: %1 entries.</source>
         <translation>IP 필터 다시 로드됨: %1개 항목.</translation>
     </message>
@@ -6611,18 +6640,18 @@ Download it again?</source>
     </message>
     <message>
         <location line="+8"/>
-        <location line="+5867"/>
+        <location line="+5860"/>
         <source>Language</source>
         <translation>언어</translation>
     </message>
     <message>
-        <location line="-5864"/>
+        <location line="-5857"/>
         <source>System Default</source>
         <translation>시스템 기본값</translation>
     </message>
     <message>
         <location line="+14"/>
-        <location line="+768"/>
+        <location line="+761"/>
         <location line="+384"/>
         <location line="+464"/>
         <location line="+298"/>
@@ -6630,7 +6659,7 @@ Download it again?</source>
         <translation>기타</translation>
     </message>
     <message>
-        <location line="-1911"/>
+        <location line="-1904"/>
         <source>Bring to front on link click</source>
         <translation>링크 클릭 시 앞으로 가져오기</translation>
     </message>
@@ -6716,25 +6745,25 @@ Download it again?</source>
     </message>
     <message>
         <location line="+8"/>
-        <location line="+5803"/>
+        <location line="+5796"/>
         <source>Core</source>
         <translation>코어</translation>
     </message>
     <message>
-        <location line="-5798"/>
+        <location line="-5791"/>
         <source>Address:</source>
         <translation>주소:</translation>
     </message>
     <message>
         <location line="+4"/>
-        <location line="+1343"/>
+        <location line="+1336"/>
         <location line="+770"/>
         <location line="+427"/>
         <source>Port:</source>
         <translation>포트:</translation>
     </message>
     <message>
-        <location line="-2537"/>
+        <location line="-2530"/>
         <source>authentication token</source>
         <translation>인증 토큰</translation>
     </message>
@@ -6899,7 +6928,7 @@ Are you sure you want to continue?</source>
     </message>
     <message>
         <location line="+2"/>
-        <location line="+1854"/>
+        <location line="+1847"/>
         <location line="+133"/>
         <location line="+296"/>
         <location line="+1016"/>
@@ -6912,7 +6941,7 @@ Are you sure you want to continue?</source>
         <translation>활성화됨</translation>
     </message>
     <message>
-        <location line="-4940"/>
+        <location line="-4933"/>
         <source>Reset</source>
         <translation>초기화</translation>
     </message>
@@ -6929,24 +6958,24 @@ Are you sure you want to continue?</source>
     <message>
         <location line="+3"/>
         <location line="+6"/>
-        <location line="+4314"/>
+        <location line="+4307"/>
         <location line="+352"/>
         <source> KB/s</source>
         <translation> KB/s</translation>
     </message>
     <message>
-        <location line="-4669"/>
+        <location line="-4662"/>
         <source>Upload</source>
         <translation>업로드</translation>
     </message>
     <message>
         <location line="+9"/>
-        <location line="+4302"/>
+        <location line="+4295"/>
         <source>Limits</source>
         <translation>제한</translation>
     </message>
     <message>
-        <location line="-4299"/>
+        <location line="-4292"/>
         <source>Download limit</source>
         <translation>다운로드 제한</translation>
     </message>
@@ -6981,23 +7010,21 @@ Are you sure you want to continue?</source>
         <translation>UDP</translation>
     </message>
     <message>
-        <location line="+4"/>
         <source>Disable</source>
-        <translation>비활성화</translation>
+        <translation type="vanished">비활성화</translation>
     </message>
     <message>
-        <location line="+3"/>
+        <location line="+5"/>
         <source>Test Ports</source>
         <translation>포트 테스트</translation>
     </message>
     <message>
         <location line="+4"/>
-        <location line="+6987"/>
         <source>Open Router</source>
         <translation>라우터 열기</translation>
     </message>
     <message>
-        <location line="-6986"/>
+        <location line="+1"/>
         <source>Opens the web page of this computer&apos;s router, where ports are forwarded</source>
         <translation>이 컴퓨터의 라우터 웹 페이지를 엽니다. 여기서 포트를 포워딩합니다</translation>
     </message>
@@ -7028,13 +7055,13 @@ Are you sure you want to continue?</source>
     </message>
     <message>
         <location line="+4"/>
-        <location line="+1725"/>
-        <location line="+5345"/>
+        <location line="+1720"/>
+        <location line="+5301"/>
         <source>Any</source>
         <translation>모든</translation>
     </message>
     <message>
-        <location line="-7068"/>
+        <location line="-7019"/>
         <source>Use only this network interface, for example a VPN tunnel. Pick one from the list, or type an IP address or a subnet such as 10.64.0.0/10 (the interface holding an address in it). Connections through a proxy are not bound.</source>
         <translation>이 네트워크 인터페이스(예: VPN 터널)만 사용합니다. 목록에서 선택하거나 IP 주소 또는 10.64.0.0/10 같은 서브넷(해당 범위의 주소를 가진 인터페이스)을 입력하십시오. 프록시를 통한 연결은 바인딩되지 않습니다.</translation>
     </message>
@@ -7119,7 +7146,7 @@ Are you sure you want to continue?</source>
         <translation>IPv6 피어와 서버에 주기적으로 바뀌는 임시 주소(RFC 4941)로 연결합니다. 끄기: 항상 고정 주소를 사용하여 피어가 알린 주소로 접속할 수 있게 합니다.</translation>
     </message>
     <message>
-        <location line="+62"/>
+        <location line="+57"/>
         <location line="+1543"/>
         <source>General</source>
         <translation>일반</translation>
@@ -7964,7 +7991,7 @@ Each rule replaces a regex pattern with a replacement string.</source>
         <translation>업로드 슬롯(오버헤드 없음)</translation>
     </message>
     <message>
-        <location line="-1802"/>
+        <location line="-1795"/>
         <source>Country flags (IP2Country)</source>
         <translation>국기 (IP2Country)</translation>
     </message>
@@ -8014,7 +8041,7 @@ Each rule replaces a regex pattern with a replacement string.</source>
         <translation type="vanished">무료 &lt;a href=&quot;https://www.maxmind.com/en/geolite2/signup&quot;&gt;MaxMind GeoLite2&lt;/a&gt; 계정이 필요합니다. 이 제품에는 MaxMind가 만든 GeoLite2 데이터가 포함되어 있습니다.</translation>
     </message>
     <message>
-        <location line="+418"/>
+        <location line="+411"/>
         <source>Use for news servers</source>
         <translation>뉴스 서버에도 사용</translation>
     </message>
@@ -8518,7 +8545,7 @@ Every Usenet connection then passes through the proxy, so its speed caps the dow
         <translation>엄격</translation>
     </message>
     <message>
-        <location line="-2791"/>
+        <location line="-2784"/>
         <source>BitTorrent</source>
         <translation>BitTorrent</translation>
     </message>
@@ -8578,7 +8605,7 @@ Every Usenet connection then passes through the proxy, so its speed caps the dow
         <translation>목록, 메뉴, 대화 상자의 글자 크기입니다. 다시 시작한 후 적용됩니다.</translation>
     </message>
     <message>
-        <location line="+502"/>
+        <location line="+495"/>
         <source>Connect Low ID to Low ID through server or Kad buddy (NAT traversal)</source>
         <translation>서버 또는 Kad 버디를 통해 Low ID끼리 연결 (NAT 통과)</translation>
     </message>
@@ -9677,36 +9704,41 @@ Adding one later does not fetch its back catalogue: a new indexer gets its own f
         <translation>다운로드는 항상 검사되고 기록됩니다. 공유 파일은 시작할 때마다 다시 검사됩니다.</translation>
     </message>
     <message>
-        <location line="+2426"/>
-        <source>A VPN seems to be active (%1). Incoming connections then arrive through the VPN, so port forwarding on your router does not help. Forward the ports at your VPN provider instead, if it offers port forwarding.</source>
-        <translation>VPN이 활성화된 것 같습니다 (%1). 들어오는 연결이 VPN을 통해 도착하므로 라우터의 포트 포워딩은 도움이 되지 않습니다. VPN 제공업체가 포트 포워딩을 지원한다면 그곳에서 포트를 포워딩하세요.</translation>
+        <location line="+2807"/>
+        <source>UDP is disabled in the config file (udpPort: 0)</source>
+        <translation>설정 파일에서 UDP가 비활성화되어 있습니다 (udpPort: 0)</translation>
     </message>
     <message>
-        <location line="+5"/>
+        <location line="+3"/>
+        <source>Kad needs UDP, which is disabled in the config file</source>
+        <translation>Kad에는 UDP가 필요하지만 설정 파일에서 비활성화되어 있습니다</translation>
+    </message>
+    <message>
+        <source>A VPN seems to be active (%1). Incoming connections then arrive through the VPN, so port forwarding on your router does not help. Forward the ports at your VPN provider instead, if it offers port forwarding.</source>
+        <translation type="vanished">VPN이 활성화된 것 같습니다 (%1). 들어오는 연결이 VPN을 통해 도착하므로 라우터의 포트 포워딩은 도움이 되지 않습니다. VPN 제공업체가 포트 포워딩을 지원한다면 그곳에서 포트를 포워딩하세요.</translation>
+    </message>
+    <message>
         <source>Could not find your router&apos;s address.
 
 Look up the &quot;default gateway&quot; in this computer&apos;s network settings and open that address in a web browser.</source>
-        <translation>라우터 주소를 찾을 수 없습니다.
+        <translation type="vanished">라우터 주소를 찾을 수 없습니다.
 
 이 컴퓨터의 네트워크 설정에서 &quot;기본 게이트웨이&quot;를 확인한 후 웹 브라우저에서 그 주소를 여세요.</translation>
     </message>
     <message>
-        <location line="+16"/>
         <source>Could not open %1 in the default browser.</source>
-        <translation>기본 브라우저에서 %1을(를) 열 수 없습니다.</translation>
+        <translation type="vanished">기본 브라우저에서 %1을(를) 열 수 없습니다.</translation>
     </message>
     <message>
-        <location line="+9"/>
         <source>Your router is at %1.</source>
-        <translation>라우터 주소는 %1입니다.</translation>
+        <translation type="vanished">라우터 주소는 %1입니다.</translation>
     </message>
     <message>
-        <location line="+1"/>
         <source>Open Router Page</source>
-        <translation>라우터 페이지 열기</translation>
+        <translation type="vanished">라우터 페이지 열기</translation>
     </message>
     <message>
-        <location line="+327"/>
+        <location line="-70"/>
         <location line="+52"/>
         <source>Directories</source>
         <translation>폴더</translation>
@@ -9777,7 +9809,7 @@ Create it?</source>
 %1</translation>
     </message>
     <message>
-        <location line="-3186"/>
+        <location line="-3142"/>
         <location line="+153"/>
         <source>Disabled</source>
         <translation>비활성화됨</translation>
@@ -9803,7 +9835,7 @@ Create it?</source>
         <translation>글꼴 크기 변경은 응용 프로그램을 다시 시작한 후 적용됩니다.</translation>
     </message>
     <message>
-        <location line="+1083"/>
+        <location line="+1080"/>
         <source>specialdlp loaded, DLP v%1</source>
         <translation>specialdlp 로드됨, DLP v%1</translation>
     </message>
@@ -9813,7 +9845,7 @@ Create it?</source>
         <translation>specialdlp 라이브러리를 찾을 수 없어 검사가 비활성 상태입니다</translation>
     </message>
     <message>
-        <location line="+728"/>
+        <location line="+687"/>
         <source>Automatic</source>
         <translation>자동</translation>
     </message>
@@ -9827,7 +9859,7 @@ Create it?</source>
         <translation type="vanished">실행 중에만 eD2K 링크 자동 수락</translation>
     </message>
     <message>
-        <location line="-2932"/>
+        <location line="-2888"/>
         <source>Use credit system (reward uploaders)</source>
         <translation>크레딧 시스템 사용(업로더 보상)</translation>
     </message>
@@ -9851,12 +9883,12 @@ Create it?</source>
         <translation>서버 및 클라이언트 LAN IP 필터</translation>
     </message>
     <message>
-        <location line="-4615"/>
+        <location line="-4608"/>
         <source>Show more controls (advanced mode controls)</source>
         <translation>더 많은 컨트롤 표시(고급 모드)</translation>
     </message>
     <message>
-        <location line="+4618"/>
+        <location line="+4611"/>
         <source>Disable A4AF checks to save CPU</source>
         <translation>CPU 절약을 위한 A4AF 확인 비활성화</translation>
     </message>
@@ -10172,7 +10204,7 @@ News server connections switch over immediately.</source>
         <translation>.nzb 파일 연결을 업데이트하지 못했습니다: %1</translation>
     </message>
     <message>
-        <location line="+688"/>
+        <location line="+644"/>
         <source>Port forwarding: %1</source>
         <translation>포트 전달: %1</translation>
     </message>
@@ -10227,17 +10259,17 @@ News server connections switch over immediately.</source>
         <translation>기본값으로 재설정</translation>
     </message>
     <message>
-        <location line="-5132"/>
+        <location line="-5088"/>
         <location line="+1019"/>
         <location line="+154"/>
         <location line="+1480"/>
         <location line="+316"/>
-        <location line="+2161"/>
+        <location line="+2117"/>
         <source>Remove</source>
         <translation>제거</translation>
     </message>
     <message>
-        <location line="-6361"/>
+        <location line="-6317"/>
         <source>New eMule Qt version detected</source>
         <translation>새 eMule Qt 버전이 감지되었습니다</translation>
     </message>
@@ -10314,12 +10346,12 @@ News server connections switch over immediately.</source>
         <translation> 초</translation>
     </message>
     <message>
-        <location line="-4946"/>
+        <location line="-4939"/>
         <source>Downloads that are receiving data, and the sources sending it, are drawn in bold. A source listed under another file (A4AF) is bold too while it transfers. The connected server and the selected category tab are bold as well.</source>
         <translation>데이터를 받는 다운로드와 이를 보내는 소스를 굵게 표시합니다. 다른 파일 아래에 있는 소스(A4AF)도 전송 중에는 굵게 표시됩니다. 연결된 서버와 선택된 카테고리 탭도 굵게 표시됩니다.</translation>
     </message>
     <message>
-        <location line="+1017"/>
+        <location line="+1010"/>
         <source>Rename downloads to the name most sources use</source>
         <translation>다운로드 이름을 대부분의 소스가 쓰는 이름으로 변경</translation>
     </message>
@@ -10487,7 +10519,7 @@ Set it slightly under your plan. The figure is measured here, so it reads a few 
         <location line="+1019"/>
         <location line="+154"/>
         <location line="+1753"/>
-        <location line="+2199"/>
+        <location line="+2155"/>
         <source>Add</source>
         <translation>추가</translation>
     </message>
@@ -10500,7 +10532,7 @@ Set it slightly under your plan. The figure is measured here, so it reads a few 
         <translation type="vanished">값 입력:</translation>
     </message>
     <message>
-        <location line="-2162"/>
+        <location line="-2118"/>
         <source>Edit Value</source>
         <translation>값 편집</translation>
     </message>
@@ -10672,6 +10704,43 @@ Restart eMule for all connections to use the new proxy settings.</source>
         <location line="+10"/>
         <source>Image %1 of %2</source>
         <translation>이미지 %1 / %2</translation>
+    </message>
+</context>
+<context>
+    <name>eMule::RouterPage</name>
+    <message>
+        <location filename="../src/gui/dialogs/RouterPage.h" line="+30"/>
+        <source>Open Router</source>
+        <translation>라우터 열기</translation>
+    </message>
+    <message>
+        <location line="+3"/>
+        <source>A VPN seems to be active (%1). Incoming connections then arrive through the VPN, so port forwarding on your router does not help. Forward the ports at your VPN provider instead, if it offers port forwarding.</source>
+        <translation>VPN이 활성화된 것 같습니다 (%1). 들어오는 연결이 VPN을 통해 도착하므로 라우터의 포트 포워딩은 도움이 되지 않습니다. VPN 제공업체가 포트 포워딩을 지원한다면 그곳에서 포트를 포워딩하세요.</translation>
+    </message>
+    <message>
+        <location line="+5"/>
+        <source>Could not find your router&apos;s address.
+
+Look up the &quot;default gateway&quot; in this computer&apos;s network settings and open that address in a web browser.</source>
+        <translation>라우터 주소를 찾을 수 없습니다.
+
+이 컴퓨터의 네트워크 설정에서 &quot;기본 게이트웨이&quot;를 확인한 후 웹 브라우저에서 그 주소를 여세요.</translation>
+    </message>
+    <message>
+        <location line="+16"/>
+        <source>Could not open %1 in the default browser.</source>
+        <translation>기본 브라우저에서 %1을(를) 열 수 없습니다.</translation>
+    </message>
+    <message>
+        <location line="+9"/>
+        <source>Your router is at %1.</source>
+        <translation>라우터 주소는 %1입니다.</translation>
+    </message>
+    <message>
+        <location line="+1"/>
+        <source>Open Router Page</source>
+        <translation>라우터 페이지 열기</translation>
     </message>
 </context>
 <context>

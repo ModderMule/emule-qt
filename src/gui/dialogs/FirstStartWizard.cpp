@@ -3,6 +3,7 @@
 
 #include "dialogs/PortChangeNotice.h"
 #include "dialogs/PortTest.h"
+#include "dialogs/RouterPage.h"
 #include "dialogs/PortMapStatusText.h"
 
 #include "app/IpcClient.h"
@@ -181,11 +182,6 @@ QWidget* FirstStartWizard::setupPortPage()
     auto* udpLabel = new QLabel(tr("UDP:"), container);
     m_udpPortSpin = new QSpinBox(container);
     m_udpPortSpin->setRange(1, 65535);
-    m_udpDisableCheck = new QCheckBox(tr("Disable"), container);
-    connect(m_udpDisableCheck, &QCheckBox::toggled, m_udpPortSpin, &QWidget::setDisabled);
-    // Kad runs over UDP: without it the box is off and greyed (MFC PShtWiz1.cpp:662-668,
-    // which unticks the wrong control and so only greys it).
-    connect(m_udpDisableCheck, &QCheckBox::toggled, this, [this] { syncKadToUdp(); });
 
     m_upnpBtn = new QPushButton(tr("Use UPnP to Setup Ports"), container);
 
@@ -194,7 +190,6 @@ QWidget* FirstStartWizard::setupPortPage()
     portRow->addSpacing(12);
     portRow->addWidget(udpLabel);
     portRow->addWidget(m_udpPortSpin);
-    portRow->addWidget(m_udpDisableCheck);
     portRow->addSpacing(16);
     portRow->addWidget(m_upnpBtn);
     portRow->addStretch();
@@ -241,8 +236,16 @@ QWidget* FirstStartWizard::setupPortPage()
     m_portTestBtn = new QPushButton(tr("Test Ports"), container);
     m_portTestBtn->setObjectName(QStringLiteral("wizardPortTest"));
     connect(m_portTestBtn, &QPushButton::clicked, this, &FirstStartWizard::onPortTest);
+    auto* routerBtn = new QPushButton(tr("Open Router"), container);
+    routerBtn->setObjectName(QStringLiteral("wizardOpenRouter"));
+    routerBtn->setToolTip(tr("Opens the web page of this computer's router, where ports are forwarded"));
+    connect(routerBtn, &QPushButton::clicked, this, [this] { RouterPage::open(this); });
+    auto* testButtons = new QVBoxLayout;
+    testButtons->addWidget(m_portTestBtn);
+    testButtons->addWidget(routerBtn);
+    testButtons->addStretch();
     testRow->addWidget(testInfo, 1);
-    testRow->addWidget(m_portTestBtn, 0, Qt::AlignTop);
+    testRow->addLayout(testButtons);
     vbox->addLayout(testRow);
 
     pageLayout->addWidget(container);
@@ -259,8 +262,6 @@ QWidget* FirstStartWizard::setupPortPage()
     m_kadCheck = new QCheckBox(tr("Kad"), group);
     m_ed2kCheck = new QCheckBox(tr("eD2K"), group);
 
-    connect(m_kadCheck, &QCheckBox::clicked, this, [this](bool on) { m_kadWanted = on; });
-
     groupLayout->addWidget(m_kadCheck);
     groupLayout->addSpacing(40);
     groupLayout->addWidget(m_ed2kCheck);
@@ -270,6 +271,13 @@ QWidget* FirstStartWizard::setupPortPage()
     auto* wrapperLayout = new QVBoxLayout(wrapper);
     wrapperLayout->setContentsMargins(16, 8, 16, 0);
     wrapperLayout->addWidget(group);
+
+    // Same switch as Options > Display
+    m_extControlsCheck = new QCheckBox(tr("Show more controls (advanced mode controls)"), wrapper);
+    m_extControlsCheck->setObjectName(QStringLiteral("wizardExtControls"));
+    m_extControlsCheck->setToolTip(
+        tr("Shows advanced entries in context menus and extra details in lists."));
+    wrapperLayout->addWidget(m_extControlsCheck);
 
     pageLayout->addWidget(wrapper);
     pageLayout->addStretch();
@@ -448,13 +456,20 @@ void FirstStartWizard::fillFromSettings(const QCborMap& prefs)
     const auto tcpPort = number(QLatin1StringView("port"));
     const auto udpPort = number(QLatin1StringView("udpPort"));
     m_tcpPortSpin->setValue(tcpPort > 0 ? static_cast<int>(tcpPort) : Preferences::randomTCPPort());
-    // UDP 0 = disabled; keep it that way rather than switching it on behind the user's back.
-    m_udpDisableCheck->setChecked(udpPort == 0);
+    // UDP 0 = off, set only in the config file: kept, not switched on behind the user's back
+    m_udpOff = udpPort == 0;
     m_udpPortSpin->setValue(udpPort > 0 ? static_cast<int>(udpPort) : Preferences::randomUDPPort());
+    m_udpPortSpin->setEnabled(!m_udpOff);
+    m_udpPortSpin->setToolTip(m_udpOff ? tr("UDP is disabled in the config file (udpPort: 0)")
+                                       : QString());
 
-    m_kadWanted = prefs.value(QLatin1StringView("kadEnabled")).toBool();
-    syncKadToUdp();
+    // Kad runs over UDP: without it the box is off and greyed (MFC PShtWiz1.cpp:662-668)
+    m_kadCheck->setEnabled(!m_udpOff);
+    m_kadCheck->setChecked(!m_udpOff && prefs.value(QLatin1StringView("kadEnabled")).toBool());
+    m_kadCheck->setToolTip(m_udpOff ? tr("Kad needs UDP, which is disabled in the config file")
+                                    : QString());
     m_ed2kCheck->setChecked(prefs.value(QLatin1StringView("networkED2K")).toBool());
+    m_extControlsCheck->setChecked(prefs.value(QLatin1StringView("showExtControls")).toBool(true));
 
     m_current = {number(QLatin1StringView("maxGraphDownloadRate")),
                  number(QLatin1StringView("maxGraphUploadRate")),
@@ -493,13 +508,6 @@ void FirstStartWizard::onNext()
         showPage(page + 1);
     else
         finish();
-}
-
-void FirstStartWizard::syncKadToUdp()
-{
-    const bool udpOff = m_udpDisableCheck->isChecked();
-    m_kadCheck->setEnabled(!udpOff);
-    m_kadCheck->setChecked(!udpOff && m_kadWanted);
 }
 
 void FirstStartWizard::onSpeedSelectionChanged()
@@ -557,7 +565,7 @@ void FirstStartWizard::pushPorts(bool withUPnP, std::function<void(bool ok)> don
     req.append(QStringLiteral("port"));
     req.append(static_cast<qint64>(m_tcpPortSpin->value()));
     req.append(QStringLiteral("udpPort"));
-    req.append(static_cast<qint64>(m_udpDisableCheck->isChecked() ? 0 : m_udpPortSpin->value()));
+    req.append(static_cast<qint64>(m_udpOff ? 0 : m_udpPortSpin->value()));
     m_ipc->sendRequest(std::move(req), [self = QPointer<FirstStartWizard>(this), done = std::move(done)](
                                            const Ipc::IpcMessage& resp) {
         if (self)
@@ -568,7 +576,7 @@ void FirstStartWizard::pushPorts(bool withUPnP, std::function<void(bool ok)> don
 void FirstStartWizard::onPortTest()
 {
     const int tcp = m_tcpPortSpin->value();
-    const int udp = m_udpDisableCheck->isChecked() ? 0 : m_udpPortSpin->value();
+    const int udp = m_udpOff ? 0 : m_udpPortSpin->value();
     if (!m_ipc || !m_ipc->isConnected()) {
         PortTest::open(nullptr, this, tcp, udp);
         return;
@@ -698,10 +706,10 @@ std::optional<BandwidthSettings> FirstStartWizard::chosenBandwidth() const
 void FirstStartWizard::finish()
 {
     const auto tcpPort = static_cast<uint16>(m_tcpPortSpin->value());
-    const auto udpPort = m_udpDisableCheck->isChecked()
-        ? uint16(0) : static_cast<uint16>(m_udpPortSpin->value());
+    const auto udpPort = m_udpOff ? uint16(0) : static_cast<uint16>(m_udpPortSpin->value());
     const bool kadEnabled = m_kadCheck->isChecked();
     const bool ed2kEnabled = m_ed2kCheck->isChecked();
+    const bool extControls = m_extControlsCheck->isChecked();
     const auto bandwidth = chosenBandwidth();
 
     m_applied.clear();
@@ -709,6 +717,7 @@ void FirstStartWizard::finish()
     m_applied.insert(QStringLiteral("udpPort"), udpPort);
     m_applied.insert(QStringLiteral("kadEnabled"), kadEnabled);
     m_applied.insert(QStringLiteral("networkED2K"), ed2kEnabled);
+    m_applied.insert(QStringLiteral("showExtControls"), extControls);
     if (m_upnpRequested)
         m_applied.insert(QStringLiteral("enableUPnP"), true);
     if (bandwidth) {
@@ -724,6 +733,7 @@ void FirstStartWizard::finish()
     thePrefs.setUdpPort(udpPort);
     thePrefs.setKadEnabled(kadEnabled);
     thePrefs.setNetworkED2K(ed2kEnabled);
+    thePrefs.setShowExtControls(extControls);
     if (bandwidth) {
         thePrefs.setMaxGraphDownloadRate(bandwidth->capDown);
         thePrefs.setMaxGraphUploadRate(bandwidth->capUp);
@@ -743,6 +753,8 @@ void FirstStartWizard::finish()
         req.append(kadEnabled);
         req.append(QStringLiteral("networkED2K"));
         req.append(ed2kEnabled);
+        req.append(QStringLiteral("showExtControls"));
+        req.append(extControls);
         if (bandwidth) {
             send("maxGraphDownloadRate", bandwidth->capDown);
             send("maxGraphUploadRate", bandwidth->capUp);

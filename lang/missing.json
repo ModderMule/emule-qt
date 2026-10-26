@@ -1,0 +1,32 @@
+{
+ "UDP is disabled in the config file (udpPort: 0)": {
+  "_context": "eMule::OptionsDialog",
+  "de_DE": "UDP ist in der Konfigurationsdatei deaktiviert (udpPort: 0)",
+  "es_ES": "UDP está desactivado en el archivo de configuración (udpPort: 0)",
+  "fr_FR": "UDP est désactivé dans le fichier de configuration (udpPort: 0)",
+  "it_IT": "UDP è disattivato nel file di configurazione (udpPort: 0)",
+  "ja_JP": "UDP は設定ファイルで無効になっています (udpPort: 0)",
+  "ko_KR": "설정 파일에서 UDP가 비활성화되어 있습니다 (udpPort: 0)",
+  "nl_NL": "UDP is uitgeschakeld in het configuratiebestand (udpPort: 0)",
+  "pl_PL": "UDP jest wyłączone w pliku konfiguracyjnym (udpPort: 0)",
+  "pt_BR": "O UDP está desativado no arquivo de configuração (udpPort: 0)",
+  "ru_RU": "UDP отключён в файле конфигурации (udpPort: 0)",
+  "zh_CN": "UDP 已在配置文件中禁用 (udpPort: 0)",
+  "zh_TW": "UDP 已在設定檔中停用 (udpPort: 0)"
+ },
+ "Kad needs UDP, which is disabled in the config file": {
+  "_context": "eMule::OptionsDialog",
+  "de_DE": "Kad benötigt UDP, das in der Konfigurationsdatei deaktiviert ist",
+  "es_ES": "Kad necesita UDP, que está desactivado en el archivo de configuración",
+  "fr_FR": "Kad a besoin d'UDP, qui est désactivé dans le fichier de configuration",
+  "it_IT": "Kad richiede UDP, che è disattivato nel file di configurazione",
+  "ja_JP": "Kad には UDP が必要ですが、設定ファイルで無効になっています",
+  "ko_KR": "Kad에는 UDP가 필요하지만 설정 파일에서 비활성화되어 있습니다",
+  "nl_NL": "Kad heeft UDP nodig, maar dat is uitgeschakeld in het configuratiebestand",
+  "pl_PL": "Kad wymaga UDP, które jest wyłączone w pliku konfiguracyjnym",
+  "pt_BR": "O Kad precisa de UDP, que está desativado no arquivo de configuração",
+  "ru_RU": "Kad требует UDP, который отключён в файле конфигурации",
+  "zh_CN": "Kad 需要 UDP，但它已在配置文件中禁用",
+  "zh_TW": "Kad 需要 UDP，但它已在設定檔中停用"
+ }
+}

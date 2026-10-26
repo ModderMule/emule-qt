@@ -69,7 +69,6 @@ private:
     /// Hand the ports on the page to the core now; remembers what to restore.
     void pushPorts(bool withUPnP, std::function<void(bool ok)> done);
     void onPortTest();
-    void syncKadToUdp();
     QWidget* setupPortPage();
     QWidget* setupSpeedPage();
     void setupButtons();
@@ -93,7 +92,7 @@ private:
     // Port controls
     QSpinBox* m_tcpPortSpin = nullptr;
     QSpinBox* m_udpPortSpin = nullptr;
-    QCheckBox* m_udpDisableCheck = nullptr;
+    bool m_udpOff = false;   ///< udpPort 0 in the config file, no GUI switch
     QPushButton* m_upnpBtn = nullptr;
     QProgressBar* m_upnpProgress = nullptr;
     QLabel* m_upnpStatus = nullptr;
@@ -103,7 +102,7 @@ private:
     // Network controls
     QCheckBox* m_kadCheck = nullptr;
     QCheckBox* m_ed2kCheck = nullptr;
-    bool m_kadWanted = true;   ///< the Kad tick while UDP, and with it the box, is off
+    QCheckBox* m_extControlsCheck = nullptr;
 
     QPushButton* m_portTestBtn = nullptr;
 

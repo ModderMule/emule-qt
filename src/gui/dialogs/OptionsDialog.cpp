@@ -18,9 +18,9 @@
 #include "panels/StatisticsPanel.h"
 #include "net/HttpFileDownload.h"
 #include "prefs/Preferences.h"
-#include "net/RouterLocator.h"
 #include "net/SmtpClient.h"
 #include "dialogs/PortTest.h"
+#include "dialogs/RouterPage.h"
 #include "utils/Appearance.h"
 #include "utils/CountryFlags.h"
 #include "utils/DialogSizing.h"
@@ -259,7 +259,6 @@ OptionsDialog::OptionsDialog(IpcClient* ipc, StatisticsPanel* statsPanel,
     connect(m_tcpPortSpin, &QSpinBox::valueChanged, this, &OptionsDialog::markDirty);
     connect(m_udpPortSpin, &QSpinBox::valueChanged, this, &OptionsDialog::markDirty);
     connect(m_bindInterfaceCombo, &QComboBox::currentTextChanged, this, &OptionsDialog::markDirty);
-    connect(m_udpDisableCheck, &QCheckBox::toggled, this, &OptionsDialog::markDirty);
     connect(m_randomPortsCheck, &QCheckBox::toggled, this, &OptionsDialog::markDirty);
     connect(m_randomPortMinSpin, &QSpinBox::valueChanged, this, &OptionsDialog::markDirty);
     connect(m_randomPortMaxSpin, &QSpinBox::valueChanged, this, &OptionsDialog::markDirty);
@@ -1252,8 +1251,6 @@ QWidget* OptionsDialog::createConnectionPage()
     m_udpPortSpin = new QSpinBox(portGroup);
     m_udpPortSpin->setRange(1, 65535);
     portLayout->addWidget(m_udpPortSpin, 1, 1);
-    m_udpDisableCheck = new QCheckBox(tr("Disable"), portGroup);
-    portLayout->addWidget(m_udpDisableCheck, 1, 2);
 
     auto* testPortsBtn = new QPushButton(tr("Test Ports"), portGroup);
     connect(testPortsBtn, &QPushButton::clicked, this, [this] { openPortTest(); });
@@ -1433,11 +1430,6 @@ QWidget* OptionsDialog::createConnectionPage()
     connect(m_uploadLimitSlider, &QSlider::valueChanged, this, &OptionsDialog::updateSlotRateLabel);
     connect(m_uploadLimitCheck, &QCheckBox::toggled, this, &OptionsDialog::updateSlotRateLabel);
     updateSlotRateLabel();
-
-    // --- Wire UDP disable checkbox → port spin ---
-    connect(m_udpDisableCheck, &QCheckBox::toggled, this, [this](bool checked) {
-        m_udpPortSpin->setEnabled(!checked);
-    });
 
     return page;
 }
@@ -6835,7 +6827,7 @@ void OptionsDialog::saveSettings()
         req.append(QStringLiteral("port"));
         req.append(static_cast<qint64>(m_tcpPortSpin->value()));
         req.append(QStringLiteral("udpPort"));
-        req.append(static_cast<qint64>(m_udpDisableCheck->isChecked() ? 0 : m_udpPortSpin->value()));
+        req.append(static_cast<qint64>(udpPortValue()));
         req.append(QStringLiteral("randomizePortsAtStart"));
         req.append(m_randomPortsCheck->isChecked());
         req.append(QStringLiteral("randomPortMin"));
@@ -7444,7 +7436,7 @@ void OptionsDialog::saveSettings()
         thePrefs.setMaxDownload(m_downloadLimitCheck->isChecked() ? static_cast<uint32>(m_downloadLimitSlider->value()) : 0);
         thePrefs.setMaxUpload(m_uploadLimitCheck->isChecked() ? static_cast<uint32>(m_uploadLimitSlider->value()) : 0);
         thePrefs.setPort(static_cast<uint16>(m_tcpPortSpin->value()));
-        thePrefs.setUdpPort(m_udpDisableCheck->isChecked() ? uint16(0) : static_cast<uint16>(m_udpPortSpin->value()));
+        thePrefs.setUdpPort(static_cast<uint16>(udpPortValue()));
         thePrefs.setRandomizePortsAtStart(m_randomPortsCheck->isChecked());
         thePrefs.setRandomPortMin(static_cast<uint16>(m_randomPortMinSpin->value()));
         thePrefs.setRandomPortMax(static_cast<uint16>(m_randomPortMaxSpin->value()));
@@ -7696,14 +7688,11 @@ void OptionsDialog::fillDaemonSettings(const QCborMap& prefs)
     auto tcpPort = static_cast<int>(prefs.value(QStringLiteral("port")).toInteger(5662));
     auto udpPort = static_cast<int>(prefs.value(QStringLiteral("udpPort")).toInteger(5672));
     m_tcpPortSpin->setValue(tcpPort);
-    if (udpPort == 0) {
-        m_udpDisableCheck->setChecked(true);
-        m_udpPortSpin->setValue(5672);
-        m_udpPortSpin->setEnabled(false);
-    } else {
-        m_udpDisableCheck->setChecked(false);
+    if (udpPort != 0)
         m_udpPortSpin->setValue(udpPort);
-    }
+    else if (m_udpPortSpin->value() <= 1)
+        m_udpPortSpin->setValue(5672);
+    setUdpOff(udpPort == 0);
     m_randomPortsCheck->setChecked(prefs.value(QStringLiteral("randomizePortsAtStart")).toBool(false));
     m_randomPortMinSpin->setValue(static_cast<int>(prefs.value(QStringLiteral("randomPortMin")).toInteger(50000)));
     m_randomPortMaxSpin->setValue(static_cast<int>(prefs.value(QStringLiteral("randomPortMax")).toInteger(60000)));
@@ -8124,10 +8113,9 @@ void OptionsDialog::applyWizardResult(const QCborMap& applied)
         m_tcpPortSpin->setValue(number(QLatin1StringView("port")));
     if (has(QLatin1StringView("udpPort"))) {
         const int udpPort = number(QLatin1StringView("udpPort"));
-        m_udpDisableCheck->setChecked(udpPort == 0);
-        m_udpPortSpin->setEnabled(udpPort != 0);
         if (udpPort != 0)
             m_udpPortSpin->setValue(udpPort);
+        setUdpOff(udpPort == 0);
     }
     if (has(QLatin1StringView("enableUPnP")))
         m_upnpCheck->setChecked(applied.value(QLatin1StringView("enableUPnP")).toBool());
@@ -8135,6 +8123,9 @@ void OptionsDialog::applyWizardResult(const QCborMap& applied)
         m_kadEnabledCheck->setChecked(applied.value(QLatin1StringView("kadEnabled")).toBool());
     if (has(QLatin1StringView("networkED2K")))
         m_ed2kEnabledCheck->setChecked(applied.value(QLatin1StringView("networkED2K")).toBool());
+    if (has(QLatin1StringView("showExtControls")))
+        m_showExtControlsCheck->setChecked(
+            applied.value(QLatin1StringView("showExtControls")).toBool());
 
     m_loading = wasLoading;
 }
@@ -8226,7 +8217,7 @@ void OptionsDialog::updateWebEnabledStates()
 void OptionsDialog::openPortTest()
 {
     const int tcp = m_tcpPortSpin->value();
-    const int udp = m_udpDisableCheck->isChecked() ? 0 : m_udpPortSpin->value();
+    const int udp = udpPortValue();
 
     // Legacy IPv4-only tester, kept in case it is wanted again: porttest.emule-project.net has no
     // AAAA record and dials back to the IPv4 address it observes, so behind CGNAT or any shared
@@ -8244,50 +8235,7 @@ void OptionsDialog::openPortTest()
 
 void OptionsDialog::openRouterPage()
 {
-    // Local lookup: the browser runs here, and a core in Docker would only see its bridge
-    const RouterInfo info = locateRouter();
-    const QString title = tr("Open Router");
-    const QString vpnNote = info.vpnInterface.isEmpty()
-        ? QString()
-        : tr("A VPN seems to be active (%1). Incoming connections then arrive through the VPN, "
-             "so port forwarding on your router does not help. Forward the ports at your VPN "
-             "provider instead, if it offers port forwarding.").arg(info.vpnInterface);
-
-    if (info.router.isNull()) {
-        QString text = tr("Could not find your router's address.\n\nLook up the \"default gateway\" "
-                          "in this computer's network settings and open that address in a web browser.");
-        if (!vpnNote.isEmpty())
-            text += QStringLiteral("\n\n") + vpnNote;
-        AsyncMessageBox::warning(this, title, text);
-        return;
-    }
-
-    QUrl url;
-    url.setScheme(QStringLiteral("http"));
-    url.setHost(info.router.toString());
-    url.setPath(QStringLiteral("/"));
-
-    const auto openUrl = [this, title, url] {
-        if (!QDesktopServices::openUrl(url))
-            AsyncMessageBox::warning(this, title,
-                                     tr("Could not open %1 in the default browser.").arg(url.toString()));
-    };
-
-    if (vpnNote.isEmpty()) {
-        openUrl();
-        return;
-    }
-
-    auto* box = new QMessageBox(QMessageBox::Warning, title, vpnNote, QMessageBox::Cancel, this);
-    box->setInformativeText(tr("Your router is at %1.").arg(info.router.toString()));
-    auto* openBtn = box->addButton(tr("Open Router Page"), QMessageBox::AcceptRole);
-    box->setDefaultButton(openBtn);
-    box->setAttribute(Qt::WA_DeleteOnClose);
-    connect(box, &QMessageBox::buttonClicked, this, [openBtn, openUrl](QAbstractButton* clicked) {
-        if (clicked == openBtn)
-            openUrl();
-    });
-    box->open();
+    RouterPage::open(this);
 }
 
 // The value to store: the data of a list entry, else the typed text.
@@ -8667,6 +8615,23 @@ bool OptionsDialog::validateDirectories()
     }
 
     return true;
+}
+
+// UDP port 0 = off: set only in the config file, no GUI switch. Kept on save.
+void OptionsDialog::setUdpOff(bool off)
+{
+    m_udpOff = off;
+    m_udpPortSpin->setEnabled(!off);
+    m_udpPortSpin->setToolTip(off ? tr("UDP is disabled in the config file (udpPort: 0)") : QString());
+    // Kad needs UDP (MFC PPgConnection greys it out too)
+    m_kadEnabledCheck->setEnabled(!off);
+    m_kadEnabledCheck->setToolTip(off ? tr("Kad needs UDP, which is disabled in the config file")
+                                      : QString());
+}
+
+int OptionsDialog::udpPortValue() const
+{
+    return m_udpOff ? 0 : m_udpPortSpin->value();
 }
 
 } // namespace eMule
