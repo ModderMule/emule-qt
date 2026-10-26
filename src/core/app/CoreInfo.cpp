@@ -131,7 +131,16 @@ QCborMap networkInfo()
                 {QStringLiteral("udpFiles"), (udp & SrvUdpFlag::ExtGetFiles) != 0},
                 {QStringLiteral("largeFiles"), srv->supportsLargeFilesTCP() || srv->supportsLargeFilesUDP()},
                 {QStringLiteral("obfuscationUdp"), srv->supportsObfuscationUDP()},
-                {QStringLiteral("obfuscationTcp"), srv->supportsObfuscationTCP()}});
+                {QStringLiteral("obfuscationTcp"), srv->supportsObfuscationTCP()},
+                // Not MFC: IPv6 and NAT callback extensions, as usable on this login
+                {QStringLiteral("ipv6Tcp"), srv->supportsIPv6()},
+                {QStringLiteral("ipv6Udp"), srv->supportsIPv6UDP()},
+                {QStringLiteral("lowIdHolePunch"), srv->supportsLowIdHolePunch()},
+                {QStringLiteral("lugdunumNat"), srv->supportsLugdunumNat()},
+                {QStringLiteral("holePunchExtension"), srv->supportsHolePunchExtension()},
+                {QStringLiteral("natRendezvous"), srv->supportsNatRendezvous()},
+                {QStringLiteral("natWake"), srv->supportsNatWake()},
+                {QStringLiteral("foreignCallback"), srv->supportsForeignCallbackUDP()}});
             ed2k.insert(QStringLiteral("server"), server);
         }
     }

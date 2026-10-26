@@ -254,7 +254,16 @@ QString NetworkInfoDialog::infoHtml(const QCborMap& info, bool extended)
                 {"udpFiles", tr("Extended UDP protocol for file requests")},
                 {"largeFiles", tr("Support for large files")},
                 {"obfuscationUdp", tr("Protocol Obfuscation") + QStringLiteral(" (UDP)")},
-                {"obfuscationTcp", tr("Protocol Obfuscation") + QStringLiteral(" (TCP)")}};
+                {"obfuscationTcp", tr("Protocol Obfuscation") + QStringLiteral(" (TCP)")},
+                // Not MFC: IPv6 and NAT callback extensions
+                {"ipv6Tcp", QStringLiteral("IPv6 (TCP)")},
+                {"ipv6Udp", QStringLiteral("IPv6 (UDP)")},
+                {"lowIdHolePunch", tr("LowID hole punching")},
+                {"lugdunumNat", tr("NAT callback (Lugdunum)")},
+                {"holePunchExtension", tr("Hole punching extension")},
+                {"natRendezvous", tr("NAT rendezvous")},
+                {"natWake", tr("NAT wake-up")},
+                {"foreignCallback", tr("Callback for clients on other servers")}};
             for (const auto& [key, label] : lines) {
                 html += QStringLiteral("<tr><td>%1:</td><td>%2</td></tr>")
                             .arg(label, features.value(QLatin1StringView(key)).toBool() ? tr("Yes") : tr("No"));

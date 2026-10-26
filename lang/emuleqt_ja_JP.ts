@@ -323,7 +323,7 @@ The core keeps listening on TCP port %1 and UDP port %2.</source>
 <context>
     <name>PreviewLauncher</name>
     <message>
-        <location filename="../src/gui/utils/PreviewLauncher.cpp" line="+271"/>
+        <location filename="../src/gui/utils/PreviewLauncher.cpp" line="+319"/>
         <source>Not connected to the core.</source>
         <translation>コアに接続されていません。</translation>
     </message>
@@ -856,7 +856,7 @@ Download it again?</source>
     <name>Units</name>
     <message>
         <location filename="../src/core/utils/StringUtils.cpp" line="+72"/>
-        <location filename="../src/core/webserver/WebServer.cpp" line="+4060"/>
+        <location filename="../src/core/webserver/WebServer.cpp" line="+4067"/>
         <source>Bytes</source>
         <translation>Bytes</translation>
     </message>
@@ -6031,12 +6031,12 @@ Download it again?</source>
     </message>
     <message>
         <location line="+2"/>
-        <location line="+231"/>
+        <location line="+240"/>
         <source>Hash:</source>
         <translation>ハッシュ：</translation>
     </message>
     <message>
-        <location line="-229"/>
+        <location line="-238"/>
         <source>TCP Port:</source>
         <translation>TCP ポート:</translation>
     </message>
@@ -6052,46 +6052,46 @@ Download it again?</source>
     </message>
     <message>
         <location line="+6"/>
-        <location line="+172"/>
+        <location line="+181"/>
         <source>Connected</source>
         <translation>接続済み</translation>
     </message>
     <message>
-        <location line="-170"/>
-        <location line="+129"/>
+        <location line="-179"/>
+        <location line="+138"/>
         <location line="+39"/>
         <source>Connecting</source>
         <translation>接続中</translation>
     </message>
     <message>
-        <location line="-166"/>
-        <location line="+129"/>
+        <location line="-175"/>
+        <location line="+138"/>
         <source>Disconnected</source>
         <translation>未接続</translation>
     </message>
     <message>
-        <location line="-128"/>
-        <location line="+129"/>
+        <location line="-137"/>
+        <location line="+138"/>
         <location line="+114"/>
         <source>Status:</source>
         <translation>ステータス：</translation>
     </message>
     <message>
-        <location line="-237"/>
+        <location line="-246"/>
         <location line="+58"/>
-        <location line="+147"/>
+        <location line="+156"/>
         <source>Users:</source>
         <translation>ユーザー:</translation>
     </message>
     <message>
-        <location line="-204"/>
+        <location line="-213"/>
         <location line="+59"/>
-        <location line="+147"/>
+        <location line="+156"/>
         <source>Files:</source>
         <translation>ファイル:</translation>
     </message>
     <message>
-        <location line="-199"/>
+        <location line="-208"/>
         <location line="+26"/>
         <source>Unknown</source>
         <translation>不明</translation>
@@ -6100,18 +6100,18 @@ Download it again?</source>
         <location line="-26"/>
         <location line="+2"/>
         <location line="+43"/>
-        <location line="+89"/>
+        <location line="+98"/>
         <source>IP:Port:</source>
         <translation>IP:ポート:</translation>
     </message>
     <message>
-        <location line="-127"/>
-        <location line="+131"/>
+        <location line="-136"/>
+        <location line="+140"/>
         <source>ID:</source>
         <translation>ID:</translation>
     </message>
     <message>
-        <location line="-129"/>
+        <location line="-138"/>
         <source>Low ID</source>
         <translation>Low ID</translation>
     </message>
@@ -6228,6 +6228,36 @@ Download it again?</source>
         <translation>プロトコル難読化</translation>
     </message>
     <message>
+        <location line="+4"/>
+        <source>LowID hole punching</source>
+        <translation>LowID ホールパンチング</translation>
+    </message>
+    <message>
+        <location line="+1"/>
+        <source>NAT callback (Lugdunum)</source>
+        <translation>NAT コールバック (Lugdunum)</translation>
+    </message>
+    <message>
+        <location line="+1"/>
+        <source>Hole punching extension</source>
+        <translation>ホールパンチング拡張</translation>
+    </message>
+    <message>
+        <location line="+1"/>
+        <source>NAT rendezvous</source>
+        <translation>NAT ランデブー</translation>
+    </message>
+    <message>
+        <location line="+1"/>
+        <source>NAT wake-up</source>
+        <translation>NAT ウェイクアップ</translation>
+    </message>
+    <message>
+        <location line="+1"/>
+        <source>Callback for clients on other servers</source>
+        <translation>他サーバーのクライアントへのコールバック</translation>
+    </message>
+    <message>
         <location line="+3"/>
         <source>Yes</source>
         <translation>はい</translation>
@@ -6325,23 +6355,23 @@ Download it again?</source>
         <translation>URL:</translation>
     </message>
     <message>
-        <location line="-220"/>
-        <location line="+86"/>
+        <location line="-229"/>
+        <location line="+95"/>
         <location line="+15"/>
         <source>Firewalled</source>
         <translation>ファイアウォール</translation>
     </message>
     <message>
-        <location line="-103"/>
+        <location line="-112"/>
         <location line="+4"/>
-        <location line="+84"/>
+        <location line="+93"/>
         <location line="+17"/>
         <source>Open</source>
         <translation>オープン</translation>
     </message>
     <message>
-        <location line="-101"/>
-        <location line="+103"/>
+        <location line="-110"/>
+        <location line="+112"/>
         <source>unverified</source>
         <translation>未検証</translation>
     </message>
@@ -17113,19 +17143,19 @@ A password is set for this release.</source>
         <translation>アドレス</translation>
     </message>
     <message>
-        <location filename="../src/core/webserver/WebServer.cpp" line="-3394"/>
-        <location line="+3283"/>
+        <location filename="../src/core/webserver/WebServer.cpp" line="-3401"/>
+        <location line="+3290"/>
         <location line="+49"/>
         <source>Session expired — log in again</source>
         <translation>セッションの有効期限が切れました — 再度ログインしてください</translation>
     </message>
     <message>
-        <location line="-3328"/>
+        <location line="-3335"/>
         <source>Guests cannot add downloads</source>
         <translation>ゲストはダウンロードを追加できません</translation>
     </message>
     <message>
-        <location line="+590"/>
+        <location line="+597"/>
         <source>Looking for comments on Kad</source>
         <translation>Kad でコメントを検索中</translation>
     </message>

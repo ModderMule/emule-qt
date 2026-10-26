@@ -125,8 +125,22 @@ jobs:
 
       # Release builds only: release.yml downloads the database once and hands it
       # to all three platforms; the bundlers copy data/config wholesale.
+      # Intel runners drop DNS now and then (ENOTFOUND, run 40272092162): retry once.
       - name: Fetch GeoLite2-Country database
+        id: geoip
         if: ${{ inputs.geoip }}
+        continue-on-error: true
+        uses: actions/download-artifact@v8
+        with:
+          name: geoip-db
+          path: data/config
+
+      - name: Wait before GeoLite2 retry
+        if: ${{ inputs.geoip && steps.geoip.outcome == 'failure' }}
+        run: sleep 30
+
+      - name: Fetch GeoLite2-Country database (retry)
+        if: ${{ inputs.geoip && steps.geoip.outcome == 'failure' }}
         uses: actions/download-artifact@v8
         with:
           name: geoip-db

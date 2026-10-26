@@ -331,7 +331,9 @@ void tst_CategoryDialog::networkInfo_listsServerFeaturesAndLanMode()
         {QStringLiteral("unicode"), true}, {QStringLiteral("intTypeTags"), false},
         {QStringLiteral("udpSources"), true}, {QStringLiteral("udpSources2"), false},
         {QStringLiteral("udpFiles"), true}, {QStringLiteral("largeFiles"), true},
-        {QStringLiteral("obfuscationUdp"), true}, {QStringLiteral("obfuscationTcp"), false}};
+        {QStringLiteral("obfuscationUdp"), true}, {QStringLiteral("obfuscationTcp"), false},
+        {QStringLiteral("ipv6Tcp"), true}, {QStringLiteral("lowIdHolePunch"), true},
+        {QStringLiteral("natWake"), false}};
     const QCborMap info{
         {QStringLiteral("client"), QCborMap{{QStringLiteral("nick"), QStringLiteral("me")}}},
         {QStringLiteral("ed2k"),
@@ -360,6 +362,12 @@ void tst_CategoryDialog::networkInfo_listsServerFeaturesAndLanMode()
         QStringLiteral("Extended UDP protocol for source requests #2:\\s+No"))));
     QVERIFY(extended.contains(QRegularExpression(QStringLiteral("Protocol Obfuscation \\(UDP\\):\\s+Yes"))));
     QVERIFY(extended.contains(QRegularExpression(QStringLiteral("Protocol Obfuscation \\(TCP\\):\\s+No"))));
+    // not MFC: IPv6 and NAT callback extensions; a missing key reads No
+    QVERIFY(extended.contains(QRegularExpression(QStringLiteral("IPv6 \\(TCP\\):\\s+Yes"))));
+    QVERIFY(extended.contains(QRegularExpression(QStringLiteral("IPv6 \\(UDP\\):\\s+No"))));
+    QVERIFY(extended.contains(QRegularExpression(QStringLiteral("LowID hole punching:\\s+Yes"))));
+    QVERIFY(extended.contains(QRegularExpression(QStringLiteral("NAT wake-up:\\s+No"))));
+    QVERIFY(extended.contains(QRegularExpression(QStringLiteral("Callback for clients on other servers:\\s+No"))));
     QVERIFY(extended.contains(QStringLiteral("Open (LAN Mode)")));
     QVERIFY(extended.contains(QRegularExpression(QStringLiteral("Ping:\\s+42 ms"))));
     QVERIFY(extended.contains(QStringLiteral("eD2K Server Features")));

@@ -327,7 +327,7 @@ De core blijft luisteren op TCP-poort %1 en UDP-poort %2.</translation>
 <context>
     <name>PreviewLauncher</name>
     <message>
-        <location filename="../src/gui/utils/PreviewLauncher.cpp" line="+271"/>
+        <location filename="../src/gui/utils/PreviewLauncher.cpp" line="+319"/>
         <source>Not connected to the core.</source>
         <translation>Niet verbonden met de core.</translation>
     </message>
@@ -789,7 +789,7 @@ Heeft commentaren</translation>
     <name>Units</name>
     <message>
         <location filename="../src/core/utils/StringUtils.cpp" line="+72"/>
-        <location filename="../src/core/webserver/WebServer.cpp" line="+4060"/>
+        <location filename="../src/core/webserver/WebServer.cpp" line="+4067"/>
         <source>Bytes</source>
         <translation>Bytes</translation>
     </message>
@@ -5637,12 +5637,12 @@ Opnieuw downloaden?</translation>
     </message>
     <message>
         <location line="+2"/>
-        <location line="+231"/>
+        <location line="+240"/>
         <source>Hash:</source>
         <translation>Hash:</translation>
     </message>
     <message>
-        <location line="-229"/>
+        <location line="-238"/>
         <source>TCP Port:</source>
         <translation>TCP-poort:</translation>
     </message>
@@ -5658,66 +5658,66 @@ Opnieuw downloaden?</translation>
     </message>
     <message>
         <location line="+6"/>
-        <location line="+172"/>
+        <location line="+181"/>
         <source>Connected</source>
         <translation>Verbonden</translation>
     </message>
     <message>
-        <location line="-170"/>
-        <location line="+129"/>
+        <location line="-179"/>
+        <location line="+138"/>
         <location line="+39"/>
         <source>Connecting</source>
         <translation>Verbinden</translation>
     </message>
     <message>
-        <location line="-166"/>
-        <location line="+129"/>
+        <location line="-175"/>
+        <location line="+138"/>
         <source>Disconnected</source>
         <translation>Verbinding verbroken</translation>
     </message>
     <message>
-        <location line="-128"/>
-        <location line="+129"/>
+        <location line="-137"/>
+        <location line="+138"/>
         <location line="+114"/>
         <source>Status:</source>
         <translation>Status:</translation>
     </message>
     <message>
-        <location line="-237"/>
+        <location line="-246"/>
         <location line="+58"/>
-        <location line="+147"/>
+        <location line="+156"/>
         <source>Users:</source>
         <translation>Gebruikers:</translation>
     </message>
     <message>
-        <location line="-204"/>
+        <location line="-213"/>
         <location line="+59"/>
-        <location line="+147"/>
+        <location line="+156"/>
         <source>Files:</source>
         <translation>Bestanden:</translation>
     </message>
     <message>
-        <location line="-199"/>
+        <location line="-208"/>
         <location line="+2"/>
         <location line="+43"/>
-        <location line="+89"/>
+        <location line="+98"/>
         <source>IP:Port:</source>
         <translation>IP:poort:</translation>
     </message>
     <message>
-        <location line="-134"/>
+        <location line="-143"/>
         <location line="+26"/>
         <source>Unknown</source>
         <translation>Onbekend</translation>
     </message>
     <message>
         <location line="-19"/>
-        <location line="+131"/>
+        <location line="+140"/>
         <source>ID:</source>
         <translation>ID:</translation>
     </message>
     <message>
-        <location line="-129"/>
+        <location line="-138"/>
         <source>Low ID</source>
         <translation>Laag-ID</translation>
     </message>
@@ -5729,26 +5729,26 @@ Opnieuw downloaden?</translation>
     <message>
         <location line="+11"/>
         <location line="+4"/>
-        <location line="+84"/>
+        <location line="+93"/>
         <location line="+17"/>
         <source>Open</source>
         <translation>Open</translation>
     </message>
     <message>
-        <location line="-103"/>
-        <location line="+86"/>
+        <location line="-112"/>
+        <location line="+95"/>
         <location line="+15"/>
         <source>Firewalled</source>
         <translation>Gefirewalled</translation>
     </message>
     <message>
-        <location line="-99"/>
-        <location line="+103"/>
+        <location line="-108"/>
+        <location line="+112"/>
         <source>unverified</source>
         <translation>niet geverifieerd</translation>
     </message>
     <message>
-        <location line="-100"/>
+        <location line="-109"/>
         <source>IPv6:</source>
         <translation>IPv6:</translation>
     </message>
@@ -5853,6 +5853,36 @@ Opnieuw downloaden?</translation>
         <location line="+1"/>
         <source>Protocol Obfuscation</source>
         <translation>Protocolverduistering</translation>
+    </message>
+    <message>
+        <location line="+4"/>
+        <source>LowID hole punching</source>
+        <translation>LowID-hole punching</translation>
+    </message>
+    <message>
+        <location line="+1"/>
+        <source>NAT callback (Lugdunum)</source>
+        <translation>NAT-terugroep (Lugdunum)</translation>
+    </message>
+    <message>
+        <location line="+1"/>
+        <source>Hole punching extension</source>
+        <translation>Hole punching-uitbreiding</translation>
+    </message>
+    <message>
+        <location line="+1"/>
+        <source>NAT rendezvous</source>
+        <translation>NAT-rendezvous</translation>
+    </message>
+    <message>
+        <location line="+1"/>
+        <source>NAT wake-up</source>
+        <translation>NAT-wekken</translation>
+    </message>
+    <message>
+        <location line="+1"/>
+        <source>Callback for clients on other servers</source>
+        <translation>Terugroep voor clients op andere servers</translation>
     </message>
     <message>
         <location line="+3"/>
@@ -16268,19 +16298,19 @@ Er is een wachtwoord ingesteld voor deze release.</translation>
 <context>
     <name>eMule::WebServer</name>
     <message>
-        <location filename="../src/core/webserver/WebServer.cpp" line="-3394"/>
-        <location line="+3283"/>
+        <location filename="../src/core/webserver/WebServer.cpp" line="-3401"/>
+        <location line="+3290"/>
         <location line="+49"/>
         <source>Session expired — log in again</source>
         <translation>Sessie verlopen — log opnieuw in</translation>
     </message>
     <message>
-        <location line="-3328"/>
+        <location line="-3335"/>
         <source>Guests cannot add downloads</source>
         <translation>Gasten kunnen geen downloads toevoegen</translation>
     </message>
     <message>
-        <location line="+590"/>
+        <location line="+597"/>
         <source>Looking for comments on Kad</source>
         <translation>Zoeken naar commentaar op Kad</translation>
     </message>
