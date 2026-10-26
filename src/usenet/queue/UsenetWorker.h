@@ -119,6 +119,15 @@ struct UsenetFetchResult {
     QString articleFileName;
     qint64 declaredFileSize = 0;
 
+    /// The raw `=ybegin` line (YencDecoder::rawBeginLine()) and its `part=`.
+    /// For the ed3k join (usenet.md §2), which reads name and size its own way.
+    QByteArray rawBeginLine;
+    int yencPart = 0;
+
+    /// An ArticleCorrupt that decoded to its =yend and failed only pcrc32 or
+    /// the =yend size: decodedOffset/decodedBytes are on disk regardless.
+    bool checksumFailed = false;
+
     /// Answer to a probeOnly request: this account has the article. Meaningless
     /// for a normal fetch, and never a verdict on its own — one account saying no
     /// is exactly what the failover ladder exists to survive.

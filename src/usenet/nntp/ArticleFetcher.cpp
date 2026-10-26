@@ -65,6 +65,9 @@ bool ArticleFetcher::beginRun(NntpSocket* socket, const NzbSegment& segment,
     m_groups = groups;
     m_groupIndex = 0;
     m_articleFileName.clear();
+    m_rawBeginLine.clear();
+    m_yencPart = 0;
+    m_checksumFailed = false;
     m_declaredFileSize = 0;
     m_decodedBytes = 0;
     m_decodedOffset = 0;
@@ -211,8 +214,13 @@ void ArticleFetcher::onCommandFinished(NntpCommand* command)
     if (command != m_bodyCommand.get())
         return;
 
-    m_articleFileName = m_bodyCommand->decoder().fileName();
-    m_declaredFileSize = m_bodyCommand->decoder().fileSize();
+    const YencDecoder& decoder = m_bodyCommand->decoder();
+    m_articleFileName = decoder.fileName();
+    m_declaredFileSize = decoder.fileSize();
+    m_rawBeginLine = decoder.rawBeginLine();
+    m_yencPart = decoder.partNumber();
+    m_checksumFailed = decoder.status() == YencDecoder::Status::CrcMismatch
+                       || decoder.status() == YencDecoder::Status::SizeMismatch;
 
     // A write failure outranks a damaged article: a full disk is not something a
     // different server can fix, and reporting it as "article not found" would

@@ -323,6 +323,10 @@ private slots:
     void aCheckingItemNeverGoesSilentWhenTheProxyComesBack();
     void doneEncodedBytesCountsDoneArticlesOfWantedFiles();
     void progressCountsTheBytesOfAnArticleStillInFlight();
+    void everyDecodedArticleIsReportedWithItsRange();
+    void aRefetchedRangeIsAskedOfAnotherServer();
+    void anExternallyWrittenRangeIsNotFetched();
+    void theUsenetJoinFieldsSurviveTheRoundTrip();
 };
 
 void tst_UsenetQueue::downloadsAnNzbByteIdentically()
@@ -5290,6 +5294,273 @@ void tst_UsenetQueue::progressCountsTheBytesOfAnArticleStillInFlight()
     QCOMPARE(queue.itemProgressBytes(id), queue.findItem(id)->totalEncodedBytes());
 
     queue.stop();
+}
+
+
+// The ed3k join's article feed (usenet.md §4): every decoded article, damaged
+// ones included, with where it landed and which account sent it.
+void tst_UsenetQueue::everyDecodedArticleIsReportedWithItsRange()
+{
+    ScopedStatistics stats;
+    const QByteArray whole = payload(kPartSize * 4);
+
+    FakeNntpServer main;
+    FakeNntpServer fill;
+    main.addGroup(QStringLiteral("alt.binaries.test"), 4, 1, 4);
+    fill.addGroup(QStringLiteral("alt.binaries.test"), 4, 1, 4);
+    for (int p = 1; p <= 4; ++p) {
+        const QByteArray good = makeArticle(whole, p, 4, QStringLiteral("fed.bin"));
+        main.addArticle(messageIdFor(p), p == 2 ? damage(good) : good);
+        fill.addArticle(messageIdFor(p), good);
+    }
+    const quint16 mainPort = main.start();
+    const quint16 fillPort = fill.start();
+    QVERIFY(mainPort != 0 && fillPort != 0);
+
+    eMule::testing::TempDir tmp;
+    thePrefs.setConfigDir(tmp.path());
+    thePrefs.setTempDirs({tmp.filePath(QStringLiteral("temp"))});
+    thePrefs.setIncomingDir(tmp.filePath(QStringLiteral("incoming")));
+    thePrefs.setSharedDirs({});
+
+    NewsServer primary = serverConfig(mainPort, 2);
+    primary.level = 0;
+    NewsServer block = serverConfig(fillPort, 2);
+    block.level = 1;
+
+    UsenetQueue queue;
+    queue.applyServers({primary, block}, 60);
+    queue.start();
+
+    QSignalSpy finished(&queue, &UsenetQueue::itemFinished);
+    QSignalSpy decoded(&queue, &UsenetQueue::articleDecoded);
+    QString error;
+    const QString id = queue.addNzb(makeNzb(QStringLiteral("fed.bin"), 4),
+                                    QStringLiteral("fed"), error);
+    QVERIFY(!id.isEmpty());
+    QVERIFY(finished.wait(30000));
+    QVERIFY(finished.at(0).at(1).toBool());
+
+    // Four good articles and the damaged copy that preceded one of them.
+    QCOMPARE(decoded.count(), 5);
+    int bad = 0;
+    QList<int> goodParts;
+    for (const QList<QVariant>& args : std::as_const(decoded)) {
+        QCOMPARE(args.at(0).toString(), id);
+        QCOMPARE(args.at(1).toInt(), 0);
+        const int part = args.at(5).toInt();
+        QCOMPARE(args.at(2).toLongLong(), qint64(part - 1) * kPartSize);
+        QCOMPARE(args.at(3).toLongLong(), qint64(kPartSize));
+        QVERIFY(args.at(6).toByteArray().startsWith(
+            QStringLiteral("=ybegin part=%1 total=4 ").arg(part).toLatin1()));
+        QVERIFY(args.at(6).toByteArray().endsWith("name=fed.bin"));
+        if (args.at(4).toBool()) {
+            goodParts << part;
+            QCOMPARE(args.at(7).toString(), part == 2 ? block.key() : primary.key());
+        } else {
+            ++bad;
+            QCOMPARE(part, 2);
+            QCOMPARE(args.at(7).toString(), primary.key());
+        }
+    }
+    QCOMPARE(bad, 1);
+    std::ranges::sort(goodParts);
+    QCOMPARE(goodParts, QList<int>({1, 2, 3, 4}));
+
+    queue.stop();
+}
+
+// A block that failed under BLAKE3: its articles are asked again, never of the
+// account that sent them.
+void tst_UsenetQueue::aRefetchedRangeIsAskedOfAnotherServer()
+{
+    ScopedStatistics stats;
+    const QByteArray whole = payload(kPartSize * 4);
+
+    FakeNntpServer main;
+    FakeNntpServer fill;
+    main.addGroup(QStringLiteral("alt.binaries.test"), 4, 1, 4);
+    fill.addGroup(QStringLiteral("alt.binaries.test"), 4, 1, 4);
+    for (int p = 1; p <= 4; ++p) {
+        const QByteArray good = makeArticle(whole, p, 4, QStringLiteral("again.bin"));
+        main.addArticle(messageIdFor(p), good);
+        fill.addArticle(messageIdFor(p), good);
+    }
+    main.setHoldArticle(messageIdFor(4));   // keeps the file from sealing
+    const quint16 mainPort = main.start();
+    const quint16 fillPort = fill.start();
+    QVERIFY(mainPort != 0 && fillPort != 0);
+
+    eMule::testing::TempDir tmp;
+    thePrefs.setConfigDir(tmp.path());
+    thePrefs.setTempDirs({tmp.filePath(QStringLiteral("temp"))});
+    thePrefs.setIncomingDir(tmp.filePath(QStringLiteral("incoming")));
+    thePrefs.setSharedDirs({});
+
+    NewsServer primary = serverConfig(mainPort, 2);
+    primary.level = 0;
+    NewsServer block = serverConfig(fillPort, 2);
+    block.level = 1;
+
+    UsenetQueue queue;
+    queue.applyServers({primary, block}, 60);
+    queue.start();
+
+    QSignalSpy finished(&queue, &UsenetQueue::itemFinished);
+    QSignalSpy decoded(&queue, &UsenetQueue::articleDecoded);
+    QString error;
+    const QString id = queue.addNzb(makeNzb(QStringLiteral("again.bin"), 4),
+                                    QStringLiteral("again"), error);
+    QVERIFY(!id.isEmpty());
+    QTRY_VERIFY_WITH_TIMEOUT(decoded.count() == 3, 20000);
+
+    QCOMPARE(queue.refetchRange(QStringLiteral("nope"), 0, 0, 1, primary.key()), 0);
+    QCOMPARE(queue.refetchRange(id, 7, 0, 1, primary.key()), 0);
+    // One byte of part 2 is enough to cover it; parts 1 and 3 stay.
+    QCOMPARE(queue.refetchRange(id, 0, kPartSize + 10, 1, primary.key()), 1);
+    QCOMPARE(queue.findItem(id)->files.at(0).done.count(true), 2);
+    QCOMPARE(queue.findItem(id)->files.at(0).availableEnd(), qint64(kPartSize));
+
+    QTRY_VERIFY_WITH_TIMEOUT(decoded.count() == 4, 20000);
+    QCOMPARE(decoded.last().at(5).toInt(), 2);
+    QCOMPARE(decoded.last().at(7).toString(), block.key());
+
+    main.releaseHeld();
+    QVERIFY(finished.wait(30000));
+    QVERIFY(finished.at(0).at(1).toBool());
+    QFile f(QDir(thePrefs.incomingDir()).filePath(QStringLiteral("again.bin")));
+    QVERIFY(f.open(QIODevice::ReadOnly));
+    QCOMPARE(f.readAll(), whole);
+    f.close();
+
+    const QStringList fillBodies = fill.receivedCommands().filter(QStringLiteral("BODY "));
+    QCOMPARE(fillBodies.size(), 1);
+    QVERIFY(fillBodies.at(0).contains(messageIdFor(2)));
+    // Done for good: a sealed file refuses.
+    QCOMPARE(queue.refetchRange(id, 0, 0, kPartSize, primary.key()), 0);
+
+    queue.stop();
+}
+
+// Bytes ed3k wrote and verified: the articles under them are not fetched.
+void tst_UsenetQueue::anExternallyWrittenRangeIsNotFetched()
+{
+    ScopedStatistics stats;
+    constexpr int kTotal = 6;
+    const QByteArray whole = payload(kPartSize * kTotal);
+
+    FakeNntpServer server;
+    server.addGroup(QStringLiteral("alt.binaries.test"), kTotal, 1, kTotal);
+    for (int p = 1; p <= kTotal; ++p)
+        server.addArticle(messageIdFor(p), makeArticle(whole, p, kTotal,
+                                                       QStringLiteral("ext.bin")));
+    server.setHoldArticle(messageIdFor(2));
+    const quint16 port = server.start();
+    QVERIFY(port != 0);
+
+    eMule::testing::TempDir tmp;
+    thePrefs.setConfigDir(tmp.path());
+    thePrefs.setTempDirs({tmp.filePath(QStringLiteral("temp"))});
+    thePrefs.setIncomingDir(tmp.filePath(QStringLiteral("incoming")));
+    thePrefs.setSharedDirs({});
+
+    UsenetQueue queue;
+    queue.applyServers({serverConfig(port, 1)}, 60);
+    queue.start();
+
+    QSignalSpy finished(&queue, &UsenetQueue::itemFinished);
+    QSignalSpy decoded(&queue, &UsenetQueue::articleDecoded);
+    QString error;
+    const QString id = queue.addNzb(makeNzb(QStringLiteral("ext.bin"), kTotal),
+                                    QStringLiteral("ext"), error);
+    QVERIFY(!id.isEmpty());
+
+    // Nothing is known about part sizes before the first article.
+    QCOMPARE(queue.acceptExternalRange(id, 0, 3 * kPartSize, 3 * kPartSize), 0);
+    QTRY_VERIFY_WITH_TIMEOUT(decoded.count() == 1, 20000);
+
+    // What the ed3k side would have done: write parts 4..6, verified.
+    const qint64 from = 3 * kPartSize;
+    {
+        QFile f(queue.findItem(id)->files.at(0).tempPath);
+        QVERIFY(f.open(QIODevice::ReadWrite));
+        QVERIFY(f.seek(from));
+        QCOMPARE(f.write(whole.mid(int(from))), qint64(whole.size()) - from);
+    }
+    // One byte short of part 6 covers only 4 and 5.
+    const int partial = queue.acceptExternalRange(id, 0, from, 2 * kPartSize + kPartSize - 1);
+    QVERIFY(partial <= 2);
+    const int accepted = partial + queue.acceptExternalRange(id, 0, from, whole.size() - from);
+    QVERIFY2(accepted >= 1, "every article of the range was in flight");
+    QCOMPARE(queue.findItem(id)->files.at(0).availableFrom(from), qint64(whole.size()));
+
+    server.releaseHeld();
+    QVERIFY(finished.wait(30000));
+    QVERIFY(finished.at(0).at(1).toBool());
+    QFile f(QDir(thePrefs.incomingDir()).filePath(QStringLiteral("ext.bin")));
+    QVERIFY(f.open(QIODevice::ReadOnly));
+    QCOMPARE(f.readAll(), whole);
+    f.close();
+
+    // Accepted articles were never asked; only ones already in flight were.
+    int asked = 0;
+    for (int p = 4; p <= kTotal; ++p) {
+        const QString body = QStringLiteral("BODY <%1>").arg(messageIdFor(p));
+        asked += int(server.receivedCommands().count(body));
+    }
+    QCOMPARE(asked, 3 - accepted);
+    QCOMPARE(decoded.count(), kTotal - accepted);
+
+    queue.stop();
+}
+
+// usenet.md §1 needs the raw part numbers, the empty IDs and the head's meta
+// after a restart as much as before it.
+void tst_UsenetQueue::theUsenetJoinFieldsSurviveTheRoundTrip()
+{
+    eMule::testing::TempDir tmp;
+    thePrefs.setConfigDir(tmp.path());
+
+    UsenetQueueItem item;
+    item.id = QStringLiteral("aaaaaaaa-2222-3333-4444-666666666666");
+    item.name = QStringLiteral("join");
+    item.nzb.meta = {{QStringLiteral("ed3k"), QStringLiteral(" ed3k:file?b3=ab&sz=5 ")},
+                     {QStringLiteral("password"), QStringLiteral("pw")}};
+    item.nzb.filesWithoutSegments = 2;
+    NzbFileInfo info;
+    NzbSegment plain{messageIdFor(1), 10, 1};
+    plain.numberText = QStringLiteral("1");
+    NzbSegment padded{messageIdFor(2), 20, 2};
+    padded.numberText = QStringLiteral("02");
+    info.segments = {plain, padded};
+    NzbSegment empty;
+    empty.bytes = 5;
+    empty.numberText = QStringLiteral("+3");
+    empty.position = 1;
+    info.emptyIdSegments = {empty};
+    item.nzb.files.append(info);
+    item.initFileStates(tmp.path());
+
+    QVERIFY(UsenetQueueStore::save(item));
+    UsenetQueueItem loaded;
+    QString error;
+    QVERIFY2(UsenetQueueStore::load(UsenetQueueStore::statePath(item.id), loaded, error),
+             qPrintable(error));
+
+    QCOMPARE(loaded.nzb.meta, item.nzb.meta);
+    QCOMPARE(loaded.nzb.filesWithoutSegments, 2);
+    const NzbFileInfo& got = loaded.nzb.files.at(0);
+    QCOMPARE(got.segments.size(), 2);
+    QCOMPARE(got.segments.at(0).numberText, QStringLiteral("1"));
+    QCOMPARE(got.segments.at(1).numberText, QStringLiteral("02"));
+    QCOMPARE(got.segments.at(1).number, 2);
+    QCOMPARE(got.emptyIdSegments.size(), 1);
+    QCOMPARE(got.emptyIdSegments.at(0).numberText, QStringLiteral("+3"));
+    QCOMPARE(got.emptyIdSegments.at(0).position, 1);
+    QCOMPARE(got.emptyIdSegments.at(0).bytes, 5);
+    QVERIFY(got.emptyIdSegments.at(0).messageId.isEmpty());
+    // Nothing about the download itself moved.
+    QCOMPARE(loaded.files.at(0).done.size(), 2);
 }
 
 #include "tst_UsenetQueue.moc"

@@ -159,6 +159,9 @@ options: 0x01/0x02/0x04 crypt supported/requested/required, 0x08 direct callback
   only be dialled.
 - The uploader (target) arms a passive expectation for the peer's address (20 s, any port on
   that IP, because NATs rebind). Only Initials from armed peers are accepted.
+- Direct UDP path (Kad type 6 + `nat`, [natt-rendezvous.md](natt-rendezvous.md#direct-udp-kad-type-6--nat)):
+  the source's UDP is open, so the downloader dials it right away (same delays); its
+  `OP_DIRECTCALLBACKREQ` with `0x40` arms the source.
 - The target dials itself only as a fallback: when nothing has connected 6 s after the
   endpoint was known (a peer that cannot dial, like aMule as downloader), or when a 30-byte
   ed2k-server `0x61` names it the dialer.

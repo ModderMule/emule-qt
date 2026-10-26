@@ -91,6 +91,13 @@ public:
     /// place the real name appears.
     [[nodiscard]] const QString& fileName() const { return m_fileName; }
 
+    /// The whole `=ybegin` line as received: keyword included, CRLF stripped,
+    /// already dot-unstuffed, nothing split off. usenet.md §2 reads `name=` to
+    /// the end of this line (a glued `=ypart` stays part of the name there,
+    /// unlike fileName()), and wants the bytes to do its own Latin-1 fallback.
+    /// Empty before =ybegin. What packmule's usenet::ybegin() takes.
+    [[nodiscard]] const QByteArray& rawBeginLine() const { return m_beginLine; }
+
     /// Total size of the *whole file*, from `=ybegin size=`.
     [[nodiscard]] qint64 fileSize() const { return m_fileSize; }
 
@@ -134,6 +141,7 @@ private:
     bool m_escape = false;          ///< an '=' ended the previous line
 
     QString m_fileName;
+    QByteArray m_beginLine;         ///< raw =ybegin line, see rawBeginLine()
     qint64 m_fileSize = 0;
     qint64 m_offset = 0;
     qint64 m_endOffset = 0;

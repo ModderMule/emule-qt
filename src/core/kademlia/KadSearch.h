@@ -95,6 +95,7 @@ public:
         uint8   cryptOptions      = 0;
         QString ipv6Hex;                    ///< our public IPv6 as 32-char hex, empty if none
         QString buddyIPv6Hex;               ///< serving buddy's IPv6 as 32-char hex, empty if none
+        uint8   natt              = 0;      ///< TAG_NATT bits, firewalled records only
 
         /// HTTP Cache chunks to advertise alongside this source record, at most
         /// KADHC_MAX_CHUNKS. Empty unless httpCache.publishToKad is on.

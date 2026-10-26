@@ -590,6 +590,11 @@
 #define TAG_IPV6                    "ip6"   // source's public IPv6
 #define TAG_SERVINGBUDDYIPV6        "bi6"   // serving buddy's public IPv6
 
+// NAT-T transports of a firewalled Kad source (types 3/5/6), uint8 bitfield, string-named
+// like TAG_IPV6. Type 6 + QUIC: a firewalled searcher dials it over QUIC (DirectUdpNatPath).
+#define TAG_NATT                    "nat"
+#define KADNATT_QUIC                0x01
+
 // HTTP Cache chunk descriptors carried on a Kad *source* record — see
 // docs/protocol/http-cache-spec.md. Indexed tag families: the name is the prefix
 // below with the chunk number appended ("hcp0", "hcu0", "hcp1", ...).

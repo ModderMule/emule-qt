@@ -157,6 +157,8 @@ private slots:
     void rawFeedReportsAMissingYend_data();
     void rawFeedReportsAMissingYend();
     void rawFeedSkipsHeadersBeforeYbegin();
+    void rawBeginLineIsKeptVerbatim_data();
+    void rawBeginLineIsKeptVerbatim();
     void cleanup();
 };
 
@@ -640,6 +642,47 @@ void tst_UsenetYenc::rawFeedSkipsHeadersBeforeYbegin()
     QVERIFY(r.ended);
     QCOMPARE(r.out, data);
     QCOMPARE(decoder.status(), YencDecoder::Status::Ok);
+}
+
+void tst_UsenetYenc::rawBeginLineIsKeptVerbatim_data()
+{
+    rawFeedMatchesAtEverySplit_data();
+}
+
+// usenet.md §2 reads name= to the end of the =ybegin line, trailing space and
+// tab removed, Latin-1 fallback: the decoder hands the line over untouched,
+// glued =ypart, non-UTF-8 bytes and trailing blanks included.
+void tst_UsenetYenc::rawBeginLineIsKeptVerbatim()
+{
+    QFETCH(bool, lineMode);
+    YencDecoder::setLineModeForTests(lineMode);
+
+    const QByteArray data = patternBytes(300);
+    const QByteArray begin = QByteArrayLiteral(
+        "=ybegin part=1 total=2 line=128 size=600 name=\"h\xe9llo x.bin\" \t"
+        "=ypart begin=1 end=300");
+    QByteArrayList lines{begin};
+    lines << encodeYenc(data);
+    lines << QByteArrayLiteral("=yend size=300 part=1 pcrc32=")
+                 + QByteArray::number(yencCrc32(0, data), 16);
+
+    YencDecoder decoder;
+    QVERIFY(decoder.rawBeginLine().isEmpty());
+    const RawResult r = decodeRaw(decoder, toWire(lines), {7});
+    QVERIFY(r.ended);
+    QCOMPARE(r.out, data);
+    QCOMPARE(decoder.rawBeginLine(), begin);   // CRLF gone, nothing split off
+    QCOMPARE(decoder.offset(), 0);             // the glued =ypart still parsed
+
+    // Trailing blanks and a stuffed leading dot never reach the line.
+    QByteArrayList plain{QByteArrayLiteral("=ybegin line=128 size=300 name=a.bin \t ")};
+    plain << encodeYenc(data);
+    plain << QByteArrayLiteral("=yend size=300 crc32=") + QByteArray::number(yencCrc32(0, data), 16);
+    decodeRaw(decoder, toWire(plain), {300});
+    QCOMPARE(decoder.rawBeginLine(), QByteArrayLiteral("=ybegin line=128 size=300 name=a.bin \t "));
+
+    decoder.reset();
+    QVERIFY(decoder.rawBeginLine().isEmpty());
 }
 
 QTEST_MAIN(tst_UsenetYenc)

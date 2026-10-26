@@ -11,6 +11,7 @@
 
 #include "TestFixtures.h"
 #include "TestHelpers.h"
+#include "NatTestEnv.h"
 
 #include "app/AppContext.h"
 #include "app/CoreSession.h"
@@ -102,6 +103,7 @@ private slots:
     void directCallbackReq_ipv6Sender_existingClient_setsUserIPv6();
     void directCallbackReq_ipv6Sender_newClient_setsUserIPv6();
     void directCallbackReq_deliveredThroughClientUDPSocket();
+    void directCallbackReq_quicBit_armsQuicNoTcpDial();
 
     // -- Public-IPv6 change hook --
     void markPeersForIPChange_marksOnlyConnectedIPv6Peers();
@@ -627,4 +629,24 @@ void tst_CoreSessionHandlers::flushAfterMark_reachesTheWire()
 }
 
 QTEST_MAIN(tst_CoreSessionHandlers)
+// A firewalled requester with CONNECT_OPT_NATT_QUIC can't take our TCP dial-back: we arm
+// QUIC for it (natt::DirectUdpNatPath) and create no client to dial.
+void tst_CoreSessionHandlers::directCallbackReq_quicBit_armsQuicNoTcpDial()
+{
+    KadFixture fx;
+    QVERIFY(kad::Kademlia::instance()->isFirewalled());
+    natt::test::HubFixture hub;
+    hub.env->quic = true;
+    theApp.natRendezvous = hub.hub.get();
+    const auto restore = qScopeGuard([] { theApp.natRendezvous = nullptr; });
+
+    feedDirectCallback(Endpoint(kSender, kSenderUdpPort),
+                       makeDirectCallbackPayload(kTcpPort, kHashByte, 0x01 | CONNECT_OPT_NATT_QUIC));
+    QCOMPARE(m_clientList->clientCount(), 0);
+    QCOMPARE(hub.hub->attempts().size(), size_t{1});
+    QCOMPARE(hub.hub->attempts().front()->path, natt::PathKind::DirectUdp);
+    QCOMPARE(hub.hub->attempts().front()->peerUdp, Endpoint(kSender, kSenderUdpPort));
+    QCOMPARE(hub.env->quicArms.size(), size_t{1});
+}
+
 #include "tst_CoreSessionHandlers.moc"

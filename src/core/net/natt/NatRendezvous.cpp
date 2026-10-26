@@ -8,6 +8,7 @@
 #include "client/UpDownClient.h"
 #include "files/PartFile.h"
 #include "net/Packet.h"
+#include "net/natt/DirectUdpNatPath.h"
 #include "net/natt/Ed2kServerHolePunchPath.h"
 #include "net/natt/EnodeNatPath.h"
 #include "net/natt/ForeignCallbackPath.h"
@@ -46,6 +47,7 @@ const char* pathName(PathKind kind) noexcept
     case PathKind::EnodeNat:   return "PR_NAT";
     case PathKind::KadBuddy:   return "Kad buddy";
     case PathKind::ForeignCallback: return "ForeignCallback";
+    case PathKind::DirectUdp:  return "direct UDP";
     }
     return "?";
 }
@@ -64,6 +66,9 @@ PeerInfo PeerInfo::fromClient(const UpDownClient& client)
     const uint16 udp = client.kadPort() != 0 ? client.kadPort() : client.udpPort();
     if (ip.isIPv4() && udp != 0)
         p.kadEndpoint = Endpoint(ip, udp);
+    p.directUdp = client.supportsDirectUDPCallback() && client.supportsNatTQuic()
+                  && p.kadEndpoint.port() != 0;
+    p.directUdpCrypt = client.supportsCryptLayer();
     if (client.hasValidBuddyID() && !client.buddyAddress().isNull() && client.buddyPort() != 0) {
         p.buddyValid = true;
         p.buddyEndpoint = Endpoint(client.buddyAddress(), client.buddyPort());
@@ -92,6 +97,7 @@ NatRendezvous::NatRendezvous(std::unique_ptr<NatEnv> env, QObject* parent)
     m_paths.push_back(std::make_unique<EnodeNatPath>(*this));
     m_paths.push_back(std::make_unique<ForeignCallbackPath>(*this));
     m_paths.push_back(std::make_unique<KadBuddyNatPath>(*this));
+    m_paths.push_back(std::make_unique<DirectUdpNatPath>(*this));
 
     m_fastTimer.setInterval(100);
     connect(&m_fastTimer, &QTimer::timeout, this, &NatRendezvous::processFast);
@@ -700,6 +706,22 @@ void NatRendezvous::handleHandoff(const uint8* data, uint32 size, const Endpoint
     if (!(flags & kHandoffAnswer))
         sendHandoff(*a, true);
     evaluateDial(*a);
+}
+
+bool NatRendezvous::acceptDirectUdp(const uint8* peerHash, const Endpoint& from, uint16 tcpPort,
+                                    uint8 connectOptions)
+{
+    if (!m_env->enabled() || !m_env->quicAvailable() || !m_env->firewalled())
+        return false;
+    PeerInfo peer;
+    std::memcpy(peer.hash.data(), peerHash, 16);
+    peer.hashKnown = true;
+    peer.kadEndpoint = from;
+    peer.cryptOptions = static_cast<uint8>(connectOptions & 0x07);
+    peer.cryptKnown = true;
+    if (!cryptCompatible(m_env->ourConnectOptions(), peer.cryptOptions))
+        return false;
+    return acceptNotice(PathKind::DirectUdp, peer, from, tcpPort) != nullptr;
 }
 
 // ---------------------------------------------------------------------------

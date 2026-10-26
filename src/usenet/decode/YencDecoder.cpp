@@ -104,6 +104,7 @@ void YencDecoder::reset()
     m_sawPart = false;
     m_escape = false;
     m_fileName.clear();
+    m_beginLine.clear();
     m_fileSize = 0;
     m_offset = 0;
     m_endOffset = 0;
@@ -151,6 +152,7 @@ void YencDecoder::parseBegin(QByteArrayView line)
 {
     m_sawBegin = true;
     m_status = Status::Incomplete;
+    m_beginLine = line.toByteArray();
 
     m_part = int(headerNumber(line, "part=", 0));
     m_total = int(headerNumber(line, "total=", 0));

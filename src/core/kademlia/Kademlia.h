@@ -145,6 +145,7 @@ public:
         const uint8* clientHash = nullptr;    ///< 16 bytes — the ED2K user hash
         const uint8* sourceIPv6 = nullptr;    ///< 16 bytes, or nullptr
         const uint8* buddyIPv6 = nullptr;     ///< 16 bytes, or nullptr
+        uint8 natt = 0;                       ///< TAG_NATT bits (KADNATT_*), 0 if absent
 
         /// HTTP Cache chunks this source advertised for the file, empty for every
         /// client that does not publish them. Carried here because one result is both

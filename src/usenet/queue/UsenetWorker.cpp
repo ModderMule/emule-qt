@@ -270,6 +270,9 @@ void UsenetWorker::finishJob(Job* job, NntpError error, const QString& text)
         result.decodedOffset = job->fetcher->decodedOffset();
         result.articleFileName = job->fetcher->articleFileName();
         result.declaredFileSize = job->fetcher->declaredFileSize();
+        result.rawBeginLine = job->fetcher->rawBeginLine();
+        result.yencPart = job->fetcher->yencPart();
+        result.checksumFailed = job->fetcher->checksumFailed();
         result.articleExists = job->fetcher->articleExists();
     }
 

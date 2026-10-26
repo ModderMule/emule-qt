@@ -254,6 +254,20 @@ bool UsenetQueueStore::save(const UsenetQueueItem& item)
         out.field("", "error", item.error);
     if (!item.nzb.password.isEmpty())
         out.field("", "password", item.nzb.password);
+    // Optional, for the usenet.md join: the head's <meta>s and the files the
+    // parser dropped. Absent = none, which is what older sidecars meant.
+    if (!item.nzb.meta.isEmpty()) {
+        out.raw("nzbMeta:\n");
+        for (const auto& [type, value] : item.nzb.meta) {
+            out.raw("  - {type: ");
+            out.str(type);
+            out.raw(", value: ");
+            out.str(value);
+            out.raw("}\n");
+        }
+    }
+    if (item.nzb.filesWithoutSegments > 0)
+        out.field("", "filesWithoutSegments", item.nzb.filesWithoutSegments);
     // Written only when true, like every other optional key here, so an existing
     // sidecar gains nothing and kStateVersion stays where it is.
     if (item.passwordRequired)
@@ -306,7 +320,25 @@ bool UsenetQueueStore::save(const UsenetQueueItem& item)
             out.num(static_cast<long long>(seg.bytes));
             out.raw(", number: ");
             out.num(seg.number);
+            // Only when it is not the plain decimal of `number` (usenet.md §1).
+            if (seg.numberText != QString::number(seg.number)) {
+                out.raw(", numberText: ");
+                out.str(seg.numberText);
+            }
             out.raw("}\n");
+        }
+        if (!info.emptyIdSegments.isEmpty()) {
+            out.key(kIn, "emptyIdSegments");
+            out.endLine();
+            for (const NzbSegment& seg : info.emptyIdSegments) {
+                out.raw("      - {bytes: ");
+                out.num(static_cast<long long>(seg.bytes));
+                out.raw(", numberText: ");
+                out.str(seg.numberText);
+                out.raw(", position: ");
+                out.num(seg.position);
+                out.raw("}\n");
+            }
         }
 
         out.field(kIn, "tempPath", st.tempPath);
@@ -447,6 +479,13 @@ bool UsenetQueueStore::load(const QString& path, UsenetQueueItem& out, QString& 
         out.error = fromStd(root, "error");
         out.nzb.name = out.name;
         out.nzb.password = fromStd(root, "password");
+        out.nzb.meta.clear();
+        if (const auto meta = root["nzbMeta"]; meta && meta.IsSequence()) {
+            for (const auto& m : meta)
+                out.nzb.meta.append({fromStd(m, "type"), fromStd(m, "value")});
+        }
+        out.nzb.filesWithoutSegments =
+            root["filesWithoutSegments"] ? root["filesWithoutSegments"].as<int>(0) : 0;
         out.passwordRequired =
             root["passwordRequired"] ? root["passwordRequired"].as<bool>(false) : false;
         out.failedLadder = fromStd(root, "failedLadder");
@@ -483,7 +522,19 @@ bool UsenetQueueStore::load(const QString& path, UsenetQueueItem& out, QString& 
                         seg.messageId = fromStd(s, "id");
                         seg.bytes = s["bytes"] ? s["bytes"].as<long long>(0) : 0;
                         seg.number = s["number"] ? s["number"].as<int>(0) : 0;
+                        seg.numberText = s["numberText"] ? fromStd(s, "numberText")
+                                                         : QString::number(seg.number);
                         info.segments.append(seg);
+                    }
+                }
+                if (const auto empty = fnode["emptyIdSegments"]; empty && empty.IsSequence()) {
+                    for (const auto& s : empty) {
+                        NzbSegment seg;
+                        seg.bytes = s["bytes"] ? s["bytes"].as<long long>(0) : 0;
+                        seg.numberText = fromStd(s, "numberText");
+                        seg.number = seg.numberText.toInt();
+                        seg.position = s["position"] ? s["position"].as<int>(-1) : -1;
+                        info.emptyIdSegments.append(seg);
                     }
                 }
 

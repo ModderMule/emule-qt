@@ -528,6 +528,9 @@
     <ClCompile Include="net\natt\EnodeNatPath.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
+    <ClCompile Include="net\natt\DirectUdpNatPath.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
     <ClCompile Include="net\natt\KadBuddyNatPath.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
@@ -615,6 +618,9 @@
       <Filter>Header Files</Filter>
     </ClInclude>
     <ClInclude Include="net\natt\EnodeNatPath.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="net\natt\DirectUdpNatPath.h">
       <Filter>Header Files</Filter>
     </ClInclude>
     <ClInclude Include="net\natt\KadBuddyNatPath.h">

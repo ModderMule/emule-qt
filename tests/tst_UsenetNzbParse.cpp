@@ -42,6 +42,10 @@ private slots:
     void parsesFilesGroupsAndSegments();
     void segmentBytesAreEncodedSize();
     void messageIdBracketsAreStripped();
+    void messageIdsAreUsenetSpecMessageIds();
+    void theRawNumberAttributeIsKept();
+    void emptyMessageIdsAreKeptAside();
+    void metaElementsAreKept();
     void passwordComesFromMetaTag();
     void nameComesFromMetaTag();
     void metaNameDoesNotDisturbThePassword();
@@ -142,6 +146,143 @@ void tst_UsenetNzbParse::messageIdBracketsAreStripped()
              QStringLiteral("part1a@example.com"));
     QCOMPARE(info.files.at(0).segments.at(1).messageId,
              QStringLiteral("part1b@example.com"));
+}
+
+void tst_UsenetNzbParse::messageIdsAreUsenetSpecMessageIds()
+{
+    // usenet.md §1 mᵢ, the vectors of packmule's usenet::message_id test.
+    const QList<QPair<QString, QString>> cases{
+        {QStringLiteral(" \t\r\n<a@b>\n"), QStringLiteral("a@b")},
+        {QStringLiteral("a@b"), QStringLiteral("a@b")},
+        {QStringLiteral("<a b@c>"), QStringLiteral("a b@c")},
+        {QStringLiteral("<<a@b>>"), QStringLiteral("<a@b>")},
+        {QStringLiteral("  "), QString()},
+        {QString(), QString()},
+        {QStringLiteral("<a@b"), QStringLiteral("<a@b")},
+        {QStringLiteral("a@b>"), QStringLiteral("a@b>")},
+        {QStringLiteral(" <a@b> x"), QStringLiteral("<a@b> x")},
+        {QStringLiteral("<>"), QString()},
+        {QStringLiteral("<"), QStringLiteral("<")},
+        // only space, tab, CR, LF are whitespace here
+        {QStringLiteral("\v<a@b>"), QStringLiteral("\v<a@b>")},
+        {QStringLiteral("\u00a0a@b"), QStringLiteral("\u00a0a@b")},
+    };
+    for (const auto& [text, id] : cases)
+        QCOMPARE(normalizeMessageId(text), id);
+
+    // Through the XML reader: entities and character references resolved first.
+    NzbInfo info;
+    QString error;
+    const QByteArray nzb = QByteArrayLiteral(
+        "<nzb><file subject='x'><segments>"
+        "<segment bytes='1' number='2'>p2.sample@vectors.invalid</segment>"
+        "<segment bytes='1' number='1'>\n  &lt;p1.sample@vectors.invalid&gt;\r\n</segment>"
+        "<segment bytes='1' number='3'>&#9;&lt;&lt;q&amp;r@s&gt;&gt; </segment>"
+        "</segments></file></nzb>");
+    QVERIFY(NzbFile::parse(nzb, info, error));
+    const auto& segs = info.files.at(0).segments;
+    QCOMPARE(segs.size(), 3);
+    QCOMPARE(segs.at(0).messageId, QStringLiteral("p2.sample@vectors.invalid"));
+    QCOMPARE(segs.at(1).messageId, QStringLiteral("p1.sample@vectors.invalid"));
+    QCOMPARE(segs.at(2).messageId, QStringLiteral("<q&r@s>"));
+}
+
+void tst_UsenetNzbParse::theRawNumberAttributeIsKept()
+{
+    NzbInfo info;
+    QString error;
+    const QByteArray nzb = QByteArrayLiteral(
+        "<nzb><file subject='x'><segments>"
+        "<segment bytes='1' number='02'>a@b</segment>"
+        "<segment bytes='1' number='+3'>c@d</segment>"
+        "<segment bytes='1' number='1.0'>e@f</segment>"
+        "<segment bytes='1'>g@h</segment>"
+        "</segments></file></nzb>");
+    QVERIFY(NzbFile::parse(nzb, info, error));
+    const auto& segs = info.files.at(0).segments;
+    QCOMPARE(segs.size(), 4);
+    // usenet.md §1 decides on the text; the int stays what it always was.
+    QCOMPARE(segs.at(0).numberText, QStringLiteral("02"));
+    QCOMPARE(segs.at(0).number, 2);
+    QCOMPARE(segs.at(1).numberText, QStringLiteral("+3"));
+    QCOMPARE(segs.at(2).numberText, QStringLiteral("1.0"));
+    QCOMPARE(segs.at(2).number, 0);
+    QVERIFY(segs.at(3).numberText.isEmpty());
+    QCOMPARE(segs.at(3).number, 0);
+}
+
+void tst_UsenetNzbParse::emptyMessageIdsAreKeptAside()
+{
+    NzbInfo info;
+    QString error;
+    const QByteArray nzb = QByteArrayLiteral(
+        "<nzb>"
+        "<file subject='x'><segments>"
+        "<segment bytes='1' number='1'> &lt;&gt; </segment>"
+        "<segment bytes='2' number='2'>b@x</segment>"
+        "<segment bytes='3' number='3'>\n</segment>"
+        "<segment bytes='4' number='4'>d@x</segment>"
+        "</segments></file>"
+        "<file subject='y'><segments>"
+        "<segment bytes='1' number='1'></segment>"
+        "</segments></file>"
+        "<file subject='z'><segments>"
+        "<segment bytes='1' number='1'>z@x</segment>"
+        "</segments></file>"
+        "</nzb>");
+    QVERIFY(NzbFile::parse(nzb, info, error));
+
+    // Fetching is unchanged: only real IDs are segments.
+    QCOMPARE(info.files.size(), 2);
+    const NzbFileInfo& file = info.files.at(0);
+    QCOMPARE(file.segments.size(), 2);
+    QCOMPARE(file.segments.at(0).messageId, QStringLiteral("b@x"));
+    QCOMPARE(file.segments.at(0).position, -1);
+    QVERIFY(file.hasEmptyMessageId());
+    QVERIFY(!info.files.at(1).hasEmptyMessageId());
+
+    // Kept aside, with where they stood.
+    QCOMPARE(file.emptyIdSegments.size(), 2);
+    QCOMPARE(file.emptyIdSegments.at(0).position, 0);
+    QCOMPARE(file.emptyIdSegments.at(0).numberText, QStringLiteral("1"));
+    QCOMPARE(file.emptyIdSegments.at(1).position, 2);
+    QCOMPARE(file.emptyIdSegments.at(1).bytes, 3);
+
+    const QList<NzbSegment> order = file.nzbOrderSegments();
+    QCOMPARE(order.size(), 4);
+    QStringList numbers;
+    for (const NzbSegment& seg : order)
+        numbers << seg.numberText;
+    const QStringList expected{QStringLiteral("1"), QStringLiteral("2"), QStringLiteral("3"),
+                               QStringLiteral("4")};
+    QCOMPARE(numbers, expected);
+    QVERIFY(order.at(0).messageId.isEmpty());
+    QCOMPARE(order.at(3).messageId, QStringLiteral("d@x"));
+
+    // A file of empty IDs only is still dropped, and counted: no post id.
+    QCOMPARE(info.filesWithoutSegments, 1);
+}
+
+void tst_UsenetNzbParse::metaElementsAreKept()
+{
+    NzbInfo info;
+    QString error;
+    const QByteArray nzb = QByteArrayLiteral(
+        "<nzb><head>"
+        "<meta type='password'>pw</meta>"
+        "<meta type='ed3k'> ed3k:file?b3=ab&amp;sz=5&amp;dn=x </meta>"
+        "<meta type='tag'>t</meta>"
+        "</head>"
+        "<file subject='x'><segments><segment bytes='1' number='1'>a@b</segment>"
+        "</segments></file></nzb>");
+    QVERIFY(NzbFile::parse(nzb, info, error));
+    QCOMPARE(info.meta.size(), 3);
+    QCOMPARE(info.meta.at(1).first, QStringLiteral("ed3k"));
+    // Decoded, not trimmed: the reader of usenet.md §6 trims.
+    QCOMPARE(info.meta.at(1).second, QStringLiteral(" ed3k:file?b3=ab&sz=5&dn=x "));
+    QCOMPARE(info.metaValue(QStringLiteral("ED3K")), info.meta.at(1).second);
+    QCOMPARE(info.metaValue(QStringLiteral("none")), QString());
+    QCOMPARE(info.password, QStringLiteral("pw"));
 }
 
 void tst_UsenetNzbParse::passwordComesFromMetaTag()

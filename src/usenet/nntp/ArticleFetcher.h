@@ -90,6 +90,18 @@ public:
     /// Total size of the whole file, from `=ybegin size=`.
     [[nodiscard]] qint64 declaredFileSize() const { return m_declaredFileSize; }
 
+    /// The raw `=ybegin` line, see YencDecoder::rawBeginLine(). Empty when the
+    /// body had none.
+    [[nodiscard]] const QByteArray& rawBeginLine() const { return m_rawBeginLine; }
+
+    /// `=ybegin part=`; 0 for a single-part post.
+    [[nodiscard]] int yencPart() const { return m_yencPart; }
+
+    /// The body decoded to its =yend but failed pcrc32/crc32 or the =yend size.
+    /// Its bytes are in the file all the same (the decoder streams them), which
+    /// is what the ed3k join needs to know: a range to verify and blame.
+    [[nodiscard]] bool checksumFailed() const { return m_checksumFailed; }
+
     /// Decoded bytes this segment contributed.
     [[nodiscard]] qint64 decodedBytes() const { return m_decodedBytes; }
 
@@ -146,6 +158,9 @@ private:
     std::unique_ptr<StatCommand> m_statCommand;
 
     QString m_articleFileName;
+    QByteArray m_rawBeginLine;
+    int m_yencPart = 0;
+    bool m_checksumFailed = false;
     qint64 m_declaredFileSize = 0;
     qint64 m_decodedBytes = 0;
     qint64 m_decodedOffset = 0;

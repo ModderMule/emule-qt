@@ -355,6 +355,7 @@
     <ClCompile Include="net\natt\AppNatEnv.cpp" />
     <ClCompile Include="net\natt\Ed2kServerHolePunchPath.cpp" />
     <ClCompile Include="net\natt\EnodeNatPath.cpp" />
+    <ClCompile Include="net\natt\DirectUdpNatPath.cpp" />
     <ClCompile Include="net\natt\KadBuddyNatPath.cpp" />
     <ClCompile Include="net\natt\LugdunumNatPath.cpp" />
     <ClCompile Include="net\natt\ForeignCallbackPath.cpp" />
@@ -389,6 +390,7 @@
     <ClInclude Include="net\natt\AppNatEnv.h" />
     <ClInclude Include="net\natt\Ed2kServerHolePunchPath.h" />
     <ClInclude Include="net\natt\EnodeNatPath.h" />
+    <ClInclude Include="net\natt\DirectUdpNatPath.h" />
     <ClInclude Include="net\natt\KadBuddyNatPath.h" />
     <ClInclude Include="net\natt\LugdunumNatPath.h" />
     <ClInclude Include="net\natt\ForeignCallbackPath.h" />

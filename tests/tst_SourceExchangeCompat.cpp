@@ -23,6 +23,7 @@
 /// Normative spec: docs/protocol/ipv6-spec.md §3.3 (ExtSX), §0.3 (tag encodings).
 
 #include "TestHelpers.h"
+#include "NatTestEnv.h"
 #include "app/AppContext.h"
 #include "client/ClientCredits.h"
 #include "client/ClientList.h"
@@ -516,6 +517,9 @@ private slots:
     void ipv6TagOnlyForGlobalUnicast();
     void extSxAnswerZlibRoundTrip();
     void addressLessSourceKeptOnExtSxPath();
+    void lowIdSentToQuicPeerWithServer_data();
+    void lowIdSentToQuicPeerWithServer();
+    void lowIdWithoutServerNotSent();
     void requestedVersionIgnoredForExtSxPeer_data();
     void requestedVersionIgnoredForExtSxPeer();
 
@@ -1143,6 +1147,69 @@ void tst_SourceExchangeCompat::extSxAnswerZlibRoundTrip()
 
 // A source with no usable IPv4 at all has nothing to put in the classic record, so it was
 // skipped outright. On the ExtSX path the tag block stands on its own.
+// A LowID goes out only to a QUIC NAT-T requester, with its server, in the form each
+// reader takes for a LowID: raw in classic records, htonl'd on ExtSX (eMuleAI's form).
+// Read back through a NAT hub that keeps it (foreign callback, we are firewalled here) —
+// the reader used to drop the v4 and ExtSX forms as a 0.x.x.x HighID.
+void tst_SourceExchangeCompat::lowIdSentToQuicPeerWithServer_data()
+{
+    QTest::addColumn<bool>("extSX");
+    QTest::addColumn<uint8>("version");
+    QTest::newRow("classic v1") << false << uint8(1);
+    QTest::newRow("classic v4") << false << uint8(4);
+    QTest::newRow("extSX") << true << uint8(SOURCEEXCHANGEEXT_VERSION);
+}
+
+void tst_SourceExchangeCompat::lowIdSentToQuicPeerWithServer()
+{
+    QFETCH(bool, extSX);
+    QFETCH(uint8, version);
+    constexpr uint32 kLowId = 0x00012345;   // odd: NAT-T capable on its server
+
+    auto* low = makeHighIdClient(QStringLiteral("203.0.113.9"), 4662, 0x42);
+    track(low);
+    low->setUserIDHybrid(kLowId);
+    QVERIFY(low->hasLowID());
+
+    auto file = makeFile({ low });
+    auto* peer = track(makeRequester(extSX, extSX));
+    QVERIFY(srcInfoFor(*file, peer, version) == nullptr);   // no QUIC bit: as MFC
+
+    peer->setSupportsNatTQuic(true);
+    auto packet = srcInfoFor(*file, peer, version);
+    QVERIFY(packet != nullptr);
+    const QByteArray body = answerBody(*packet, /*isSX2*/ true);
+    QCOMPARE(readU16(body.constData(), 0), uint16(1));
+    QCOMPARE(readU32(body.constData(), 2), extSX ? htonl(kLowId) : kLowId);
+
+    natt::test::HubFixture hub;
+    theApp.natRendezvous = hub.hub.get();
+    parseInto(body, version, true, peer, [&](PartFile& pf) {
+        QCOMPARE(pf.sourceCount(), 1);
+        auto* learned = pf.srcList().front();
+        QVERIFY(learned->hasLowID());
+        QCOMPARE(learned->userIDHybrid(), kLowId);
+        QCOMPARE(learned->serverAddress().toString(), QStringLiteral("1.2.3.4"));
+        QCOMPARE(learned->serverPort(), uint16(4661));
+    });
+    theApp.natRendezvous = nullptr;
+}
+
+// Without a server there is nothing a receiver can do with a LowID.
+void tst_SourceExchangeCompat::lowIdWithoutServerNotSent()
+{
+    auto* low = makeHighIdClient(QStringLiteral("203.0.113.9"), 4662, 0x42);
+    track(low);
+    low->setUserIDHybrid(0x00012345);
+    low->setServerAddress(Address());
+    low->setServerPort(0);
+
+    auto file = makeFile({ low });
+    auto* peer = track(makeRequester(/*extSX*/ true, true));
+    peer->setSupportsNatTQuic(true);
+    QVERIFY(srcInfoFor(*file, peer, SOURCEEXCHANGEEXT_VERSION) == nullptr);
+}
+
 void tst_SourceExchangeCompat::addressLessSourceKeptOnExtSxPath()
 {
     auto* v6only = new UpDownClient;

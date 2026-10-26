@@ -1,6 +1,6 @@
 # LowID-to-LowID rendezvous (NAT traversal signalling)
 
-Status 2026-10-26 (foreign callback added, `PR_NAT` cross-server sweep retired, ed2k-server#40;
+Status 2026-10-26 (direct UDP path, Kad `nat` tag, LowID source exchange; foreign callback added, `PR_NAT` cross-server sweep retired, ed2k-server#40;
 QUIC data path since 2026-10-25): implemented in `src/core/net/natt/`. Two LowID peers learn each other's
 public UDP endpoint from an introducer, open their NAT mappings with `OP_HOLEPUNCH`, and swap
 IPv6 addresses over the opened path. With IPv6 on both sides the target then dials the
@@ -18,7 +18,7 @@ ended in `LowToLowIP`.
 
 ## Introducers
 
-Five paths, tried in this order for a source we want to download from:
+Six paths, tried in this order for a source we want to download from:
 
 | Path | Used when | Wire |
 | --- | --- | --- |
@@ -27,6 +27,7 @@ Five paths, tried in this order for a source we want to download from:
 | eNode-go `PR_NAT` | flag `0x40000`, or `0x200000` when our login carried it; the peer is on our server and its user hash is known | UDP protocol `0xF1` to the `ST_NAT_PORT` (default 2004) |
 | Foreign callback | the peer is a LowID on **another** server, which announces UDP status flag `0x100000` | server UDP `0xA6` with our ID 0 to that server, UDP `0xA7` back |
 | Kad serving buddy | the source has a serving buddy, Kad connected | `OP_REASKCALLBACKUDP` with an embedded `OP_RENDEZVOUS` |
+| Direct UDP (no introducer) | Kad type 6 source with `nat` QUIC bit, QUIC runs here | `OP_DIRECTCALLBACKREQ` with option `0x40` to the source's Kad endpoint |
 
 All UDP leaves the client UDP socket, so every introducer sees the mapping the peer must punch.
 
@@ -238,6 +239,42 @@ The compatibility target's dialect, adopted unchanged (`natt-transports-emuleai.
   `UpDownClient::disconnected` drops the v6 route and re-asks the source the LowID way, which
   is this path. Without it the source died on the failed dial.
 
+- Fixed 2026-10-26: a type 3/5 source now keeps its own IP (`FT_SOURCEIP`) as connect address,
+  as eMuleAI does. MFC sets none (`srchybrid/DownloadQueue.cpp:1571`, its comment says it should).
+  Without it the 6 punches above were never sent and replies could not be matched by address.
+
+### Direct UDP (Kad type 6 + `nat`)
+
+No introducer: the source is firewalled on TCP, but its UDP is open and verified, so it
+publishes Kad type 6 (MFC). A firewalled downloader drops stock type 6 records (MFC
+`DownloadQueue.cpp:1586`): the stock direct callback makes the source dial *our* TCP.
+
+- Kad tag `nat` (string name, uint8): `0x01` = QUIC NAT-T. Published on every firewalled
+  record (types 3, 5, 6) while the QUIC transport runs; never on 1/4. Storing nodes keep
+  unknown string tags, like `ip6`. On 3/5 it is only a hint; the buddy path ignores it.
+- Downloader, firewalled, type 6 with `0x01`: keeps the source. It sends
+  `OP_DIRECTCALLBACKREQ` (`<tcp port 2><our hash 16><opts 1>`, opts = crypt bits | `0x40`) to
+  the source's Kad endpoint, obfuscated when the source supports crypt, up to 3 times 2 s apart
+  until it dials. The endpoint is known at once: punch, CAPS and the QUIC dial follow as for
+  every path.
+- Source: `OP_DIRECTCALLBACKREQ` with `0x40` while QUIC runs here and we are firewalled
+  starts a target attempt at the sender's endpoint (QUIC armed). No TCP dial-back. Without
+  `0x40` the stock handling is unchanged. The stock rate limit (one per IP per 3 min) still applies.
+
+## Source exchange
+
+- 2026-10-26: to a requester with `CT_MOD_MISCOPTIONS` bit 4 (QUIC) we also send LowID sources
+  that have an IPv4 server. All of them, not only NAT-capable ones (eMuleAI sends only those):
+  a HighID receiver can still use a same-server callback. MFC sends no LowIDs
+  (`srchybrid/KnownFile.cpp:1068`).
+- Wire ID: the raw LowID in the classic records (every version); `htonl(LowID)` on ExtSX,
+  as eMuleAI writes it. The server goes in the classic fields or the ExtSX
+  `CT_EMULE_SERVERIP`/`CT_EMULE_SERVERTCP` tags.
+- Reader fix: LowID is decided by the hybrid form. The ExtSX and classic v3+ LowID records
+  were read as a `0.x.x.x` HighID and dropped, eMuleAI's included.
+- A received LowID is kept while we are firewalled when a path can serve it, mostly the
+  foreign callback (the record names its server).
+
 ## Punch and IPv6 handoff
 
 Once an attempt knows the peer's UDP endpoint:
@@ -287,7 +324,7 @@ flags: 0x01 IPv6 present, 0x02 answer (do not reply)
   can serve the source, a LowID source goes to `ConnectingState::NatRendezvous` instead of
   failing. `askForDownload` and `PartFile::process` treat such a source as reachable.
 - LowID sources are kept while firewalled when a path could serve them: server sources,
-  Kad firewalled sources (types 3/5) and source exchange.
+  Kad firewalled sources (types 3/5, and 6 with `nat`) and source exchange.
 - Nothing works without a data path: the QUIC transport (OpenSSL ≥ 3.5 build) or a confident
   public IPv6.
 - Preference `natTraversal` (default on), Options → Server.

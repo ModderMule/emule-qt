@@ -4063,8 +4063,10 @@ void PartFile::addClientSources(SafeMemFile& data, uint8 clientSXVersion, bool i
         // Whether the v4 field alone is enough to reach this source. A source can carry
         // a deliberately unusable v4 — the reference marks an IPv6-only peer with the
         // HighID sentinel 0xFFFFFFFF, which fails isGoodIP as a broadcast address.
+        // LowID by the hybrid form: an ExtSX LowID arrives byte-swapped (htonl form) and a
+        // classic v3+ one raw, so userIdEd2k would read either as a bogus 0.x.x.x HighID.
         bool v4Usable = true;
-        if (!isLowID(userIdEd2k)) {
+        if (!isLowID(userIdHybrid)) {
             // For high-ID clients, userId == IP: validate it, IP-filter it, and don't
             // re-admit a peer we've already banned via another path.
             const bool filtered = isGoodIP(userIdEd2k) && theApp.ipFilter

@@ -607,6 +607,13 @@ void tst_UsenetArticleFetch::aCrcMismatchIsReportedAsCorrupt()
     QCOMPARE(done.first().at(0).value<NntpError>(), NntpError::ArticleCorrupt);
     QVERIFY(!isFatalToConnection(NntpError::ArticleCorrupt));
     QVERIFY(socket.isReady());
+    // Decoded and written all the same: the ed3k join verifies and blames it.
+    QVERIFY(fetcher.checksumFailed());
+    QCOMPARE(fetcher.decodedBytes(), qint64(whole.size()));
+    QCOMPARE(fetcher.yencPart(), 1);
+    QCOMPARE(fetcher.rawBeginLine(),
+             QStringLiteral("=ybegin part=1 total=1 line=128 size=%1 name=x.bin")
+                 .arg(whole.size()).toLatin1());
 
     // The same connection, still in sync: the good copy of another article comes
     // straight down it. This is what the account backoff used to cost.
@@ -618,6 +625,7 @@ void tst_UsenetArticleFetch::aCrcMismatchIsReportedAsCorrupt()
     QVERIFY(doneGood.wait(5000));
     QCOMPARE(doneGood.first().at(0).value<NntpError>(), NntpError::None);
     QCOMPARE(server.connectionCount(), 1);
+    QVERIFY(!fetcher.checksumFailed());   // per run, not sticky
 
     // A 430 is not corruption either.
     NzbSegment missing;

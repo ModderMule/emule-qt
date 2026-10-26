@@ -56,11 +56,13 @@
 #include <QNetworkProxy>
 #include <QObject>
 #include <QSet>
+#include <QPair>
 #include <QString>
 
 #include <algorithm>
 #include <array>
 #include <memory>
+#include <optional>
 #include <vector>
 
 class QThread;
@@ -244,6 +246,31 @@ public:
     /// repair. What comes back is kept, so a later retry starts from the smaller
     /// hole set.
     bool retryMissingArticles(const QString& id);
+
+    // -- ed3k join hooks (usenet.md §4) -----------------------------------
+    //
+    // Unused until packmule is wired in; harmless without a listener. See
+    // libs/packmule/docs/usenet-join-host.md for the contract.
+
+    /// Fetch the articles covering `[offset, offset + length)` of @p fileIndex
+    /// again, never from @p excludeServerKey (added to their `tried`, so the
+    /// ladder skips it; empty excludes nobody). For a block whose articles
+    /// failed under BLAKE3: their bytes stop counting as written.
+    ///
+    /// An article is covered when its range overlaps: the range it landed at,
+    /// or, for one that never landed this session, part length arithmetic.
+    /// Articles in flight are left alone. Returns how many were re-queued; 0
+    /// for an unknown item, a sealed or skipped file, or a running post job.
+    int refetchRange(const QString& itemId, int fileIndex, qint64 offset, qint64 length,
+                     const QString& excludeServerKey);
+
+    /// Another source (ed3k) wrote and verified `[offset, offset + length)`
+    /// into the file's `tempPath`. Articles wholly inside count as done and are
+    /// not fetched; a hole they filled closes. Needs the part length, so
+    /// nothing is accepted before the item's first article landed. Articles in
+    /// flight still land and overwrite. Returns how many were accepted; 0 when
+    /// refused as for refetchRange().
+    int acceptExternalRange(const QString& itemId, int fileIndex, qint64 offset, qint64 length);
 
     /// Move @p id into category @p category, or out of one with 0.
     bool setItemCategory(const QString& id, int category);
@@ -480,6 +507,17 @@ signals:
 
     /// setEnginePaused() changed the answer.
     void enginePausedChanged(bool paused);
+
+    /// One article decoded into @p fileIndex's file at `[offset, offset +
+    /// length)`, its bytes on disk. @p crcOk is false when it failed pcrc32 or
+    /// the =yend size (it is then asked of the next server, too); true also
+    /// when it carried no checksum. @p partNumber is the NZB `number` of the
+    /// segment, i.e. its place in usenet.md's article list. @p rawYbeginLine
+    /// is YencDecoder::rawBeginLine(). Emitted on this queue's thread after the
+    /// bookkeeping, never from a worker: a slot may call refetchRange().
+    void articleDecoded(const QString& itemId, int fileIndex, qint64 offset, qint64 length,
+                        bool crcOk, int partNumber, const QByteArray& rawYbeginLine,
+                        const QString& serverKey);
 
 private:
     struct SegmentKey {
@@ -725,6 +763,11 @@ private:
         /// The re-run that previews a password-protected set. At most one per
         /// item, because every refresh re-decrypts the whole prefix.
         EncryptedPreviewRun encryptedPreview;
+
+        /// Where each article landed this session, `[start, end)` by
+        /// SegmentKey. What refetchRange() maps a bad block back to articles
+        /// with; runtime only, part arithmetic stands in after a restart.
+        QHash<quint64, QPair<qint64, qint64>> landed;
     };
 
     void startWorkers();
@@ -754,6 +797,15 @@ private:
     void promoteRange(ItemRuntime& rt, int fileIndex, qint64 offset, qint64 length);
 
     void markSegmentDone(ItemRuntime& rt, const UsenetFetchResult& result);
+
+    /// `[start, end)` of one article in its file: where it landed, else part
+    /// length arithmetic (bounded by declaredSize). Nothing when unknown.
+    [[nodiscard]] static std::optional<QPair<qint64, qint64>>
+    segmentRange(const ItemRuntime& rt, int fileIndex, int segmentIndex);
+
+    /// Whether refetchRange()/acceptExternalRange() may touch @p fileIndex.
+    [[nodiscard]] static bool acceptsRangeHooks(const ItemRuntime& rt, int fileIndex);
+
     void handleSegmentFailure(ItemRuntime& rt, const UsenetFetchResult& result);
     /// Put a never-asked article back at the cursor, but behind earlier parts
     /// of its file already waiting there (a retry that must go first).

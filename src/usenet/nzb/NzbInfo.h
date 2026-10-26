@@ -13,6 +13,7 @@
 /// denominator, never as a file offset.
 
 #include <QList>
+#include <QPair>
 #include <QString>
 #include <QStringList>
 
@@ -20,10 +21,27 @@ namespace eMule::usenet {
 
 /// One article of one file.
 struct NzbSegment {
-    QString messageId;   ///< without angle brackets; the wire form adds them
+    /// Without one enclosing `<`/`>` pair; the wire form adds them. Exactly
+    /// usenet.md §1's mᵢ (packmule usenet::message_id), see normalizeMessageId().
+    QString messageId;
     qint64 bytes = 0;    ///< ENCODED size, per the NZB. See the file comment.
     int number = 0;      ///< 1-based part number, as the NZB states it
+
+    /// The `number` attribute as it stands. usenet.md §1 rejects what toInt()
+    /// accepts ("+1", " 1", "1.0"), so the file id is computed from this.
+    /// Empty when the attribute was absent, or loaded from an older sidecar
+    /// whose `number` was plain decimal (then QString::number(number) is it).
+    QString numberText{};
+
+    /// Only for an entry of NzbFileInfo::emptyIdSegments: its 0-based position
+    /// among the file's `<segment>` elements. -1 elsewhere: the position of a
+    /// listed segment is implied by `segments` order.
+    int position = -1;
 };
+
+/// usenet.md §1 mᵢ of a `segment` element's decoded text: space, tab, CR, LF
+/// trimmed, then one enclosing `<` `>` pair removed when both are there.
+[[nodiscard]] QString normalizeMessageId(const QString& text);
 
 /// One posted file, i.e. one `<file>` element.
 struct NzbFileInfo {
@@ -32,6 +50,19 @@ struct NzbFileInfo {
     qint64 date = 0;             ///< seconds since epoch, 0 when absent
     QStringList groups;
     QList<NzbSegment> segments;
+
+    /// `<segment>`s whose message ID came out empty. Never fetched, so kept out
+    /// of `segments`; usenet.md §1 still needs them, as such a part leaves the
+    /// file without a file id. Each carries its `position`.
+    QList<NzbSegment> emptyIdSegments;
+
+    /// An empty message ID is listed. Whether it is the counted entry of its
+    /// number is the file-id rule's call (packmule usenet::parts).
+    [[nodiscard]] bool hasEmptyMessageId() const { return !emptyIdSegments.isEmpty(); }
+
+    /// Every `<segment>` in NZB order, empty IDs included: the input of
+    /// usenet.md §1's file id.
+    [[nodiscard]] QList<NzbSegment> nzbOrderSegments() const;
 
     /// Filename recovered from the subject. **Empty is a normal outcome**, not
     /// an error: obfuscated posts carry no readable name and the real one only
@@ -130,6 +161,18 @@ struct NzbInfo {
     QString name;        ///< display name, normally the .nzb file's own name
     QString password;    ///< from <meta type="password">, or the filename
     QList<NzbFileInfo> files;
+
+    /// Every `<meta>` of the head in order: type attribute, element text as
+    /// decoded (not trimmed). usenet.md §6 carries the post set's link in
+    /// `type="ed3k"`.
+    QList<QPair<QString, QString>> meta;
+
+    /// `<file>` elements dropped because no segment had a message ID. Each has
+    /// no file id, so the NZB has no post id (usenet.md §1).
+    int filesWithoutSegments = 0;
+
+    /// Text of the first `<meta type>` matching @p type (case-insensitive).
+    [[nodiscard]] QString metaValue(const QString& type) const;
 
     [[nodiscard]] qint64 totalEncodedBytes() const;
     [[nodiscard]] int segmentCount() const;

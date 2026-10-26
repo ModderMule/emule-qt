@@ -59,6 +59,7 @@ UsenetSession::UsenetSession(QObject* parent)
     connect(m_queue.get(), &UsenetQueue::itemFinished, this, &UsenetSession::itemFinished);
     connect(m_queue.get(), &UsenetQueue::enginePausedChanged,
             this, &UsenetSession::enginePausedChanged);
+    connect(m_queue.get(), &UsenetQueue::articleDecoded, this, &UsenetSession::articleDecoded);
 
     applyPreferences();
 }
@@ -173,6 +174,18 @@ void UsenetSession::applyPreferences()
             .sfv = thePrefs.usenetSfvCheck(),
         });
     }
+}
+
+int UsenetSession::refetchRange(const QString& itemId, int fileIndex, qint64 offset,
+                                qint64 length, const QString& excludeServerKey)
+{
+    return m_queue->refetchRange(itemId, fileIndex, offset, length, excludeServerKey);
+}
+
+int UsenetSession::acceptExternalRange(const QString& itemId, int fileIndex, qint64 offset,
+                                       qint64 length)
+{
+    return m_queue->acceptExternalRange(itemId, fileIndex, offset, length);
 }
 
 void UsenetSession::remapCategories(const QHash<uint32, uint32>& oldToNew)

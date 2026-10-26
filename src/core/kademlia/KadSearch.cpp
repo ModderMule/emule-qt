@@ -23,6 +23,7 @@
 #include "files/KnownFile.h"
 #include "files/PartFile.h"
 #include "files/SharedFileList.h"
+#include "net/natt/NatRendezvous.h"
 #include "prefs/Preferences.h"
 #include "transfer/DownloadQueue.h"
 #include "protocol/Tag.h"
@@ -238,6 +239,8 @@ void Search::fillSourceReachability(SourcePublishParams& sp)
     auto* kadInst = Kademlia::instance();
     sp.firewalled = theApp.isFirewalled();
     if (sp.firewalled) {
+        if (natt::NatRendezvous::quicAvailable())
+            sp.natt = KADNATT_QUIC;
         sp.directUDPCallback = kadInst && kadInst->isRunning()
             && UDPFirewallTester::isOpenAndVerified();
         if (!sp.directUDPCallback) {
@@ -321,6 +324,10 @@ std::vector<Tag> Search::buildSourcePublishTags(const SourcePublishParams& p, bo
     }
 
     tags.emplace_back(FT_ENCRYPTION, static_cast<uint32>(cryptOptions));
+
+    // Intentional: on 3/5 too, not only 6: searchers learn QUIC before the hello; buddy path ignores it
+    if (p.firewalled && p.natt != 0)
+        tags.emplace_back(QByteArrayLiteral(TAG_NATT), static_cast<uint32>(p.natt));
 
     // IPv6 (string-named hex tags, matching the reference CKadTagStr encoding) — lets a
     // v6-capable peer reach this source over IPv6. Additive: legacy peers skip them.
@@ -821,8 +828,16 @@ void Search::processResultFile(const UInt128& answer, TagList& info)
     uint8 buddyIPv6Bytes[16]{};
     bool hasSourceIPv6 = false;
     bool hasBuddyIPv6 = false;
+    uint8 natt = 0;
     for (const auto& tag : info) {
-        if (!tag.isStr() || tag.nameId() != 0)
+        if (tag.nameId() != 0)
+            continue;
+        if (tag.isInt() && tag.name() == QByteArrayLiteral(TAG_NATT)) {
+            if (sourceType == 3 || sourceType == 5 || sourceType == 6)
+                natt = static_cast<uint8>(tag.intValue());
+            continue;
+        }
+        if (!tag.isStr())
             continue;
         if (tag.name() == QByteArrayLiteral(TAG_IPV6))
             hasSourceIPv6 = strmd4(tag.strValue(), sourceIPv6);
@@ -856,6 +871,7 @@ void Search::processResultFile(const UInt128& answer, TagList& info)
         result.clientHash = sourceClientHash;
         result.sourceIPv6 = hasSourceIPv6 ? sourceIPv6 : nullptr;
         result.buddyIPv6  = hasBuddyIPv6 ? buddyIPv6Bytes : nullptr;
+        result.natt       = natt;
         result.httpCacheChunks = parseHttpCacheChunkTags(info, fileHash);
 
         cb(result);

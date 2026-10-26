@@ -53,6 +53,8 @@ private slots:
     void nodeCompleteSearch_stillWalks();
     void results_onlyFromNodesTheSearchAsked();
     void results_ignoredByStoreSearches();
+    void results_carryNattOnFirewalledTypes_data();
+    void results_carryNattOnFirewalledTypes();
     void responder_isSeenByTheCensus();
     void buddyAndCallbackRequests_carryACryptTarget_data();
     void buddyAndCallbackRequests_carryACryptTarget();
@@ -65,6 +67,7 @@ private slots:
 
     // Source publishing (audit item #4)
     void sourceTags_publishBuddyUdpPort();
+    void sourceTags_nattOnFirewalledTypesOnly();
     void sourceTags_buddyHashUsesStockByteOrder();
     void sourceTags_notFirewalledHasNoBuddyTags();
     void sourceTags_firewalledWithoutBuddyCannotPublish();
@@ -368,7 +371,7 @@ void tst_KadSearch::nodeCompleteSearch_stillWalks()
 namespace {
 
 /// KADEMLIA2_SEARCH_RES carrying one plain source for @p target.
-QByteArray sourceResult(const UInt128& target)
+QByteArray sourceResult(const UInt128& target, uint32 type = 1, uint32 natt = 0)
 {
     SafeMemFile io;
     io.writeUInt8(KADEMLIA2_SEARCH_RES);
@@ -377,9 +380,13 @@ QByteArray sourceResult(const UInt128& target)
     io.writeUInt16(1);
     io::writeUInt128(io, UInt128(uint32{0xC11E47}));
     TagList tags;
-    tags.emplace_back(FT_SOURCETYPE, uint32{1});
+    tags.emplace_back(FT_SOURCETYPE, type);
     tags.emplace_back(FT_SOURCEIP, uint32{0x50010203});
     tags.emplace_back(FT_SOURCEPORT, uint32{4662});
+    if (type == 6)
+        tags.emplace_back(FT_ENCRYPTION, uint32{0x09});
+    if (natt != 0)
+        tags.emplace_back(QByteArrayLiteral(TAG_NATT), natt);
     io::writeKadTagList(io, tags);
     return io.buffer();
 }
@@ -416,6 +423,40 @@ void tst_KadSearch::results_onlyFromNodesTheSearchAsked()
 
     deliverTo(packet, walkIP(1), walkPort(1));
     QCOMPARE(sources, 1);
+
+    Kademlia::setKadSourceResultCallback({});
+    SearchManager::stopAllSearches();
+}
+
+// TAG_NATT reaches the download queue for the firewalled types, never for a HighID record.
+void tst_KadSearch::results_carryNattOnFirewalledTypes_data()
+{
+    QTest::addColumn<uint32>("type");
+    QTest::addColumn<uint8>("expected");
+    QTest::newRow("type 1") << uint32{1} << uint8{0};
+    QTest::newRow("type 3") << uint32{3} << uint8{KADNATT_QUIC};
+    QTest::newRow("type 6") << uint32{6} << uint8{KADNATT_QUIC};
+}
+
+void tst_KadSearch::results_carryNattOnFirewalledTypes()
+{
+    QFETCH(uint32, type);
+    QFETCH(uint8, expected);
+    eMule::testing::KadFixture kadFixture;
+    int sources = 0;
+    uint8 natt = 0xFF;
+    Kademlia::setKadSourceResultCallback([&](const Kademlia::KadSourceResult& r) {
+        ++sources;
+        natt = r.natt;
+    });
+
+    Search* search = startWalk(SearchType::File, 3);
+    QVERIFY(search != nullptr);
+    respond(1);
+    search->m_storeSent[search->m_tried.begin()->first] = true;
+    deliverTo(sourceResult(walkTarget(), type, KADNATT_QUIC), walkIP(1), walkPort(1));
+    QCOMPARE(sources, 1);
+    QCOMPARE(natt, expected);
 
     Kademlia::setKadSourceResultCallback({});
     SearchManager::stopAllSearches();
@@ -603,6 +644,47 @@ void tst_KadSearch::sourceTags_publishBuddyUdpPort()
     const Tag* sourcePort = findTag(tags, FT_SOURCEPORT);
     QVERIFY(sourcePort != nullptr);
     QCOMPARE(static_cast<uint16>(sourcePort->intValue()), uint16{4662});
+}
+
+// TAG_NATT on the firewalled records (3/5/6), never on 1/4 and never when unset.
+void tst_KadSearch::sourceTags_nattOnFirewalledTypesOnly()
+{
+    auto natt = [](const std::vector<Tag>& tags) -> const Tag* {
+        for (const auto& t : tags) {
+            if (t.nameId() == 0 && t.name() == QByteArrayLiteral(TAG_NATT))
+                return &t;
+        }
+        return nullptr;
+    };
+    bool canPublish = false;
+
+    Search::SourcePublishParams direct;
+    direct.firewalled = true;
+    direct.directUDPCallback = true;
+    direct.tcpPort = 4662;
+    direct.natt = KADNATT_QUIC;
+    auto tags = Search::buildSourcePublishTags(direct, canPublish);
+    QVERIFY(canPublish);
+    QVERIFY(natt(tags) != nullptr);
+    QCOMPARE(natt(tags)->intValue(), uint32{KADNATT_QUIC});
+
+    Search::SourcePublishParams buddy = direct;
+    buddy.directUDPCallback = false;
+    buddy.hasBuddy = true;
+    buddy.buddyIP = testIP(5);
+    buddy.buddyUDPPort = 5555;
+    tags = Search::buildSourcePublishTags(buddy, canPublish);
+    QCOMPARE(findTag(tags, FT_SOURCETYPE)->intValue(), uint32{3});
+    QVERIFY(natt(tags) != nullptr);
+
+    Search::SourcePublishParams open = direct;
+    open.firewalled = false;
+    tags = Search::buildSourcePublishTags(open, canPublish);
+    QCOMPARE(findTag(tags, FT_SOURCETYPE)->intValue(), uint32{1});
+    QVERIFY(natt(tags) == nullptr);
+
+    direct.natt = 0;
+    QVERIFY(natt(Search::buildSourcePublishTags(direct, canPublish)) == nullptr);
 }
 
 void tst_KadSearch::sourceReachability_followsTheAppWideState()

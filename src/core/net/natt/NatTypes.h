@@ -26,7 +26,8 @@ enum class PathKind : uint8 {
     Lugdunum,     ///< Lugdunum eserver 0xA6/0xA7/0x37 (flag 0x1000)
     EnodeNat,     ///< eNode-go PR_NAT 0xF1 (flag 0x40000)
     KadBuddy,     ///< Kad serving buddy, OP_RENDEZVOUS (compatibility target)
-    ForeignCallback ///< 0xA6 to the source's own server, we are not logged in there (UDP flag 0x100000)
+    ForeignCallback, ///< 0xA6 to the source's own server, we are not logged in there (UDP flag 0x100000)
+    DirectUdp     ///< no introducer: the source's UDP is open (Kad type 6 + TAG_NATT), OP_DIRECTCALLBACKREQ 0x40
 };
 
 [[nodiscard]] const char* pathName(PathKind kind) noexcept;
@@ -72,6 +73,8 @@ struct PeerInfo {
     Hash16 fileHash{};
     uint8 cryptOptions = 0;         ///< peer's CONNECT_OPT_CRYPT_* bits, valid when cryptKnown
     bool cryptKnown = false;        ///< from a 30-byte 0x61 or a 0x37/0xA7 crypt byte
+    bool directUdp = false;         ///< UDP open + QUIC NAT-T (Kad type 6 with TAG_NATT): dial kadEndpoint
+    bool directUdpCrypt = false;    ///< then: obfuscate the OP_DIRECTCALLBACKREQ to it
 
     /// Built from a source we want to download from.
     [[nodiscard]] static PeerInfo fromClient(const UpDownClient& client);

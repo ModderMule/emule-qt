@@ -6,6 +6,7 @@
 #include "app/AppContext.h"
 #include "crypto/MD5Hash.h"
 #include "net/EncryptedDatagramSocket.h"
+#include "net/natt/DirectUdpNatPath.h"
 #include "net/natt/Ed2kServerHolePunchPath.h"
 #include "net/natt/EnodeNatPath.h"
 #include "net/natt/ForeignCallbackPath.h"
@@ -183,6 +184,11 @@ private slots:
     void kad_endpointHint();
     void kad_buddyRelay_sendsHint();
     void kad_rendezvousFromBuddy();
+
+    // direct UDP (Kad type 6 + TAG_NATT)
+    void direct_requestSendsCallbackAndDialsQuic();
+    void direct_needsQuicAndFlag();
+    void direct_acceptArmsQuic();
 };
 
 // ---------------------------------------------------------------------------
@@ -1130,6 +1136,94 @@ PeerInfo kadPeer()
 }
 
 } // namespace
+
+namespace {
+
+/// A Kad type 6 source with TAG_NATT: UDP open, QUIC, no buddy.
+PeerInfo directPeer()
+{
+    PeerInfo p;
+    p.hashKnown = true;
+    p.hash.fill(0x43);
+    p.clientID = 1;
+    p.kadEndpoint = Endpoint(kPeerIP, kPeerUdp);
+    p.directUdp = true;
+    p.directUdpCrypt = true;
+    p.fileHash.fill(0xF1);
+    return p;
+}
+
+} // namespace
+
+void tst_NatRendezvousPaths::direct_requestSendsCallbackAndDialsQuic()
+{
+    HubFixture f;
+    f.env->quic = true;
+    const PeerInfo peer = directPeer();
+    QVERIFY(f.hub->start(peer));
+    QCOMPARE(f.hub->attempts().front()->path, PathKind::DirectUdp);
+
+    const auto req = f.env->udpWith(OP_EMULEPROT, OP_DIRECTCALLBACKREQ);
+    QCOMPARE(req.size(), size_t{1});
+    QCOMPARE(req[0].to, peer.kadEndpoint);
+    QVERIFY(req[0].encrypted);
+    const QByteArray& r = req[0].payload;
+    QCOMPARE(r.size(), 19);
+    QCOMPARE(peekUInt16(bytes(r)), f.env->tcpPort);
+    QCOMPARE(r.mid(2, 16), hashBytes(f.env->hash));
+    QCOMPARE(uint8(r[18]), uint8(CONNECT_OPT_CRYPT_SUPPORTED | CONNECT_OPT_NATT_QUIC));
+
+    // endpoint known at once: punch, QUIC armed, then the requester dials
+    QVERIFY(!f.env->udpWith(OP_EMULEPROT, OP_HOLEPUNCH).empty());
+    QCOMPARE(f.env->quicArms.size(), size_t{1});
+    f.advance(100);                                         // dial time set
+    f.advance(NatRendezvous::kQuicDialDelayV6Ms + 100);    // fake env has a public IPv6
+    QCOMPARE(f.env->quicDials.size(), size_t{1});
+    QCOMPARE(f.env->quicDials.front().second, peer.kadEndpoint);
+    QVERIFY(f.env->udpWith(OP_EMULEPROT, OP_DIRECTCALLBACKREQ).size() <= DirectUdpNatPath::kMaxRequests);
+}
+
+void tst_NatRendezvousPaths::direct_needsQuicAndFlag()
+{
+    HubFixture f;
+    PeerInfo peer = directPeer();
+    QVERIFY(!f.hub->canStart(peer));     // no QUIC here
+    f.env->quic = true;
+    QVERIFY(f.hub->canStart(peer));
+    peer.directUdp = false;
+    QVERIFY(!f.hub->canStart(peer));     // stock type 6
+    peer = directPeer();
+    f.env->isFirewalled = false;
+    QVERIFY(!f.hub->canStart(peer));     // the stock direct callback reaches us
+}
+
+void tst_NatRendezvousPaths::direct_acceptArmsQuic()
+{
+    Hash16 requester{};
+    requester.fill(0x44);
+    const Endpoint from(kPeerIP, kPeerUdp);
+
+    HubFixture none;
+    QVERIFY(!none.hub->acceptDirectUdp(requester.data(), from, 4662, CONNECT_OPT_CRYPT_SUPPORTED));
+
+    HubFixture f;
+    f.env->quic = true;
+    QVERIFY(f.hub->acceptDirectUdp(requester.data(), from, 4662,
+                                   CONNECT_OPT_CRYPT_SUPPORTED | CONNECT_OPT_NATT_QUIC));
+    const Attempt* a = f.hub->attempts().front();
+    QCOMPARE(a->role, Role::Target);
+    QCOMPARE(a->path, PathKind::DirectUdp);
+    QCOMPARE(a->peerUdp, from);
+    QCOMPARE(a->peerTcpPort, uint16{4662});
+    QCOMPARE(f.env->quicArms.size(), size_t{1});
+    QCOMPARE(f.env->udpWith(OP_EMULEPROT, OP_HOLEPUNCH).front().to, from);
+
+    // crypt the requester can't meet
+    HubFixture g;
+    g.env->quic = true;
+    g.env->connectOptions = 0;
+    QVERIFY(!g.hub->acceptDirectUdp(requester.data(), from, 4662, CONNECT_OPT_CRYPT_REQUIRED | 0x01));
+}
 
 void tst_NatRendezvousPaths::kad_requestEnvelopeAndPunches()
 {

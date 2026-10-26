@@ -223,6 +223,10 @@ struct UsenetFileState {
     /// Merge `[start, end)` into `written`, coalescing with any neighbours.
     void addWritten(qint64 start, qint64 length);
 
+    /// Cut `[start, start + length)` out of `written`, splitting a range that
+    /// straddles it. For bytes that turned out bad (UsenetQueue::refetchRange).
+    void removeWritten(qint64 start, qint64 length);
+
     /// End of the contiguous run that starts at byte 0, i.e. how much of the
     /// file can be streamed from the beginning. 0 when nothing has landed yet.
     ///

@@ -1063,15 +1063,25 @@ std::unique_ptr<Packet> KnownFile::buildSrcInfoPacket(
         if (count >= maxSources)
             break;
 
-        // Skip low-ID clients and the requester itself. Exception: on the ExtSX path a
-        // LowID client that has a reachable public IPv6 is kept — the receiver reaches
-        // it directly over IPv6 (carried in the tag block below).
-        if ((client->hasLowID() && !(extSX && client->openIPv6())) || client == forClient)
+        if (client == forClient)
+            continue;
+
+        // MFC skips every LowID (srchybrid/KnownFile.cpp:1068). Kept: a LowID with a
+        // reachable public IPv6 on the ExtSX path (the receiver dials it directly), and
+        // for a QUIC NAT-T requester a LowID with its IPv4 server, which the receiver
+        // needs for a rendezvous or foreign callback.
+        // Intentional: any LowID with a server, not only NAT-capable ones (unlike eMuleAI): a HighID receiver can still use a same-server callback
+        const bool lowIdV6 = extSX && client->openIPv6();
+        const bool lowIdNat = forClient->supportsNatTQuic() && client->serverAddress().isIPv4()
+                              && client->serverAddress().toNetworkUint32() != 0
+                              && client->serverPort() != 0;
+        if (client->hasLowID() && !lowIdV6 && !lowIdNat)
             continue;
 
         // An address-less client can't be described — except on the ExtSX path, where
-        // the tag block carries an IPv6 that stands on its own.
-        if (client->userAddress().isNull() && !(extSX && client->openIPv6()))
+        // the tag block carries an IPv6 that stands on its own, or a LowID, which is
+        // described by its ID and server.
+        if (client->userAddress().isNull() && !lowIdV6 && !client->hasLowID())
             continue;
 
         if (!eligible(client))
@@ -1083,11 +1093,14 @@ std::unique_ptr<Packet> KnownFile::buildSrcInfoPacket(
         // ExtSX runs at version 1 but still uses htonl(hybrid) rather than the address,
         // matching the reference: for a LowID or IPv6-only source the two disagree, and
         // the reference's reader normalizes the hybrid form back out.
+        //
+        // A LowID goes out raw in the classic formats (the ed2k and the hybrid form are the
+        // same for it); on ExtSX the htonl form, which eMuleAI writes too.
         uint32 wireId;
-        if (usedVersion >= 3)
-            wireId = client->userIDHybrid();
-        else if (extSX)
+        if (extSX)
             wireId = htonl(client->userIDHybrid());
+        else if (usedVersion >= 3 || client->hasLowID())
+            wireId = client->userIDHybrid();
         else
             wireId = client->userAddress().toNetworkUint32();
 

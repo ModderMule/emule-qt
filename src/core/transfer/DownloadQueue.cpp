@@ -700,6 +700,8 @@ void DownloadQueue::addKadSourceResult(const kad::Kademlia::KadSourceResult& res
             natPeer.buddyEndpoint = Endpoint(Address::fromNetworkOrder(buddyIP), buddyPort);
             natPeer.buddyValid = true;
         }
+        if (ip != 0 && udpPort != 0)
+            natPeer.kadEndpoint = Endpoint(Address::fromHostOrder(ip), udpPort);
         if (theApp.isFirewalled() && !(sourceIPv6 && theApp.hasConfidentPublicIPv6())
             && !natt::NatRendezvous::keepLowIdSource(natPeer)) {
             logDebug(QStringLiteral("addKadSourceResult: skipping FW source type %1 — we are firewalled")
@@ -729,6 +731,13 @@ void DownloadQueue::addKadSourceResult(const kad::Kademlia::KadSourceResult& res
             client->setBuddyID(buddyHash);
         client->setBuddyAddress(Address::fromNetworkOrder(buddyIP));
         client->setBuddyPort(buddyPort);
+        // Not MFC (DownloadQueue.cpp:1571 sets no IP, its comment says it should): the NAT-T
+        // paths need the source's own endpoint for the punch burst and to match its replies.
+        // Connect address only, as for type 6: TCP still goes via the buddy callback.
+        if (ip != 0)
+            client->setConnectAddress(Address::fromHostOrder(ip));
+        if (result.natt & KADNATT_QUIC)
+            client->setSupportsNatTQuic(true);
         client->setConnectOptions(buddyCrypt, true, true);
         logDebug(QStringLiteral("Kad FW source for %1: type=%2 buddy=%3:%4")
                      .arg(file->fileName()).arg(sourceType).arg(buddyIP).arg(buddyPort));
@@ -738,14 +747,26 @@ void DownloadQueue::addKadSourceResult(const kad::Kademlia::KadSourceResult& res
 
     case 6: {
         // Direct UDP callback (MFC DownloadQueue.cpp:1584-1601)
-        if (theApp.isFirewalled()) {
-            logDebug(QStringLiteral("addKadSourceResult: skipping type 6 — we are firewalled"));
-            return;
-        }
         if ((buddyCrypt & 0x08) == 0) {
             logDebug(QStringLiteral("addKadSourceResult: type 6 direct callback flag not set (crypt=0x%1)")
                          .arg(buddyCrypt, 2, 16, QLatin1Char('0')));
             return;
+        }
+        // Not MFC: kept while we are firewalled when the source speaks QUIC NAT-T (TAG_NATT);
+        // its UDP is open, so we dial it over QUIC (natt::DirectUdpNatPath).
+        if (theApp.isFirewalled()) {
+            natt::PeerInfo natPeer;
+            if (clientHash) {
+                std::memcpy(natPeer.hash.data(), clientHash, 16);
+                natPeer.hashKnown = true;
+            }
+            if (ip != 0 && udpPort != 0)
+                natPeer.kadEndpoint = Endpoint(Address::fromHostOrder(ip), udpPort);
+            natPeer.directUdp = (result.natt & KADNATT_QUIC) != 0;
+            if (!natPeer.directUdp || !natt::NatRendezvous::keepLowIdSource(natPeer)) {
+                logDebug(QStringLiteral("addKadSourceResult: skipping type 6 — we are firewalled"));
+                return;
+            }
         }
         auto* client = new UpDownClient(tcpPort, 1, 0, 0, file);
         client->setSourceFrom(SourceFrom::Kademlia);
@@ -753,6 +774,8 @@ void DownloadQueue::addKadSourceResult(const kad::Kademlia::KadSourceResult& res
         client->setConnectAddress(Address::fromHostOrder(ip));  // IP for UDP, not TCP (MFC:1596)
         if (clientHash)
             client->setUserHash(clientHash);
+        if (result.natt & KADNATT_QUIC)
+            client->setSupportsNatTQuic(true);
         // callback=true, or setConnectOptions ANDs bit 3 away again and this source is
         // left with no route at all — the check six lines up admitted it precisely
         // because that bit was set. MFC reaches the same place through the default

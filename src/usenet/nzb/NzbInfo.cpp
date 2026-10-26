@@ -6,6 +6,41 @@
 
 namespace eMule::usenet {
 
+QString normalizeMessageId(const QString& text)
+{
+    // Not QString::trimmed(): that also eats \v, \f and Unicode spaces, which
+    // usenet.md §1 keeps, and a file id must match every other client's.
+    const auto isWs = [](QChar c) {
+        return c == u' ' || c == u'\t' || c == u'\r' || c == u'\n';
+    };
+    qsizetype from = 0;
+    qsizetype to = text.size();
+    while (from < to && isWs(text.at(from)))
+        ++from;
+    while (to > from && isWs(text.at(to - 1)))
+        --to;
+    QStringView id = QStringView(text).sliced(from, to - from);
+    // One enclosing pair only; a lone bracket stays (was: each stripped alone).
+    if (id.size() >= 2 && id.startsWith(u'<') && id.endsWith(u'>'))
+        id = id.sliced(1, id.size() - 2);
+    return id.toString();
+}
+
+QList<NzbSegment> NzbFileInfo::nzbOrderSegments() const
+{
+    QList<NzbSegment> out;
+    out.reserve(segments.size() + emptyIdSegments.size());
+    qsizetype listed = 0;
+    for (const NzbSegment& empty : emptyIdSegments) {
+        while (out.size() < empty.position && listed < segments.size())
+            out.append(segments.at(listed++));
+        out.append(empty);
+    }
+    while (listed < segments.size())
+        out.append(segments.at(listed++));
+    return out;
+}
+
 qint64 NzbFileInfo::encodedBytes() const
 {
     qint64 total = 0;
@@ -95,6 +130,15 @@ int NzbInfo::segmentCount() const
     for (const auto& file : files)
         total += int(file.segments.size());
     return total;
+}
+
+QString NzbInfo::metaValue(const QString& type) const
+{
+    for (const auto& [kind, value] : meta) {
+        if (kind.compare(type, Qt::CaseInsensitive) == 0)
+            return value;
+    }
+    return {};
 }
 
 int NzbShortfall::percent() const

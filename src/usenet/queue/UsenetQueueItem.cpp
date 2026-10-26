@@ -90,6 +90,25 @@ void UsenetFileState::addWritten(qint64 start, qint64 length)
     written = std::move(merged);
 }
 
+void UsenetFileState::removeWritten(qint64 start, qint64 length)
+{
+    if (start < 0 || length <= 0)
+        return;
+    const qint64 end = start + length;
+    QList<QPair<qint64, qint64>> kept;
+    for (const auto& r : std::as_const(written)) {
+        if (r.second <= start || r.first >= end) {
+            kept.append(r);
+            continue;
+        }
+        if (r.first < start)
+            kept.append({r.first, start});
+        if (r.second > end)
+            kept.append({end, r.second});
+    }
+    written = std::move(kept);
+}
+
 qint64 UsenetFileState::doneEncodedBytes(const NzbFileInfo& info) const
 {
     qint64 total = 0;

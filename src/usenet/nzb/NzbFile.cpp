@@ -11,31 +11,17 @@
 
 namespace eMule::usenet {
 
-namespace {
-
-/// Strip the angle brackets an NZB may or may not put around a message-id. The
-/// wire form adds them back; carrying them here would produce "<<id>>" and a
-/// silent 430.
-QString normalizeMessageId(QString id)
-{
-    id = id.trimmed();
-    if (id.startsWith(u'<'))
-        id.remove(0, 1);
-    if (id.endsWith(u'>'))
-        id.chop(1);
-    return id;
-}
-
-} // namespace
-
 bool NzbFile::parse(const QByteArray& data, NzbInfo& out, QString& error)
 {
     error.clear();
     out.files.clear();
+    out.meta.clear();
+    out.filesWithoutSegments = 0;
 
     QXmlStreamReader xml(data);
     NzbFileInfo current;
     bool inFile = false;
+    int segmentPosition = 0;   // <segment>s seen in the current <file>
 
     // Taken once for the whole document, not per <file>. It costs a refcount and
     // it buys the property that one NZB is read by one rule set even if the
@@ -53,6 +39,7 @@ bool NzbFile::parse(const QByteArray& data, NzbInfo& out, QString& error)
             if (name == QLatin1String("file")) {
                 current = NzbFileInfo{};
                 inFile = true;
+                segmentPosition = 0;
                 const auto attrs = xml.attributes();
                 current.subject = attrs.value(QLatin1String("subject")).toString();
                 current.poster = attrs.value(QLatin1String("poster")).toString();
@@ -72,14 +59,23 @@ bool NzbFile::parse(const QByteArray& data, NzbInfo& out, QString& error)
                 NzbSegment segment;
                 // Encoded size. Never a file offset -- see NzbInfo.h.
                 segment.bytes = attrs.value(QLatin1String("bytes")).toLongLong();
-                segment.number = attrs.value(QLatin1String("number")).toInt();
+                segment.numberText = attrs.value(QLatin1String("number")).toString();
+                segment.number = segment.numberText.toInt();
+                // Entities resolved by the reader: usenet.md §1 mᵢ.
                 segment.messageId = normalizeMessageId(xml.readElementText());
-                if (!segment.messageId.isEmpty())
+                if (!segment.messageId.isEmpty()) {
                     current.segments.append(segment);
+                } else {
+                    // Not fetchable, but it costs the file its usenet.md file id.
+                    segment.position = segmentPosition;
+                    current.emptyIdSegments.append(segment);
+                }
+                ++segmentPosition;
 
             } else if (name == QLatin1String("meta")) {
                 const auto type = xml.attributes().value(QLatin1String("type")).toString();
                 const QString value = xml.readElementText();
+                out.meta.append({type, value});
                 if (type.compare(QLatin1String("password"), Qt::CaseInsensitive) == 0
                     && !value.isEmpty()) {
                     out.password = value;
@@ -97,6 +93,8 @@ bool NzbFile::parse(const QByteArray& data, NzbInfo& out, QString& error)
                    && xml.name() == QLatin1String("file")) {
             if (!current.segments.isEmpty())
                 out.files.append(current);
+            else
+                ++out.filesWithoutSegments;
             inFile = false;
         }
     }

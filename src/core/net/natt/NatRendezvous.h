@@ -116,6 +116,10 @@ public:
                           const UpDownClient& served);
     /// Our serving buddy relayed an OP_RENDEZVOUS. @p data starts after the opcode byte.
     bool handleRendezvousFromBuddy(const Endpoint& requester, const uint8* data, uint32 size);
+    /// OP_DIRECTCALLBACKREQ with CONNECT_OPT_NATT_QUIC: we are the UDP-open source, the
+    /// firewalled requester at @p from dials QUIC. True = accepted (no TCP dial-back).
+    bool acceptDirectUdp(const uint8* peerHash, const Endpoint& from, uint16 tcpPort,
+                         uint8 connectOptions);
 
     // -- For paths -------------------------------------------------------------
 

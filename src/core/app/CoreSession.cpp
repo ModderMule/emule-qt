@@ -1267,6 +1267,12 @@ void CoreSession::handleDirectCallbackRequest(const Endpoint& senderEP,
         return;
     theApp.clientList->addTrackCallbackRequests(senderAddr);
 
+    // Not MFC: a firewalled requester that speaks QUIC NAT-T can't take our TCP dial-back.
+    // Arm QUIC for it instead; it dials our open UDP port (natt::DirectUdpNatPath).
+    if ((connectOptions & CONNECT_OPT_NATT_QUIC) && senderAddr.isIPv4() && theApp.natRendezvous
+        && theApp.natRendezvous->acceptDirectUdp(userHash, senderEP, tcpPort, connectOptions))
+        return;
+
     auto* client = theApp.clientList->findByEndpoint_UDP(senderAddr, senderEP.port());
     if (!client)
         client = theApp.clientList->findByAddress(senderAddr, tcpPort);

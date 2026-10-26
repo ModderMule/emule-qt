@@ -742,6 +742,118 @@ bool UsenetQueue::retryMissingArticles(const QString& id)
     return true;
 }
 
+int UsenetQueue::refetchRange(const QString& itemId, int fileIndex, qint64 offset,
+                              qint64 length, const QString& excludeServerKey)
+{
+    ItemRuntime* rt = runtimeFor(itemId);
+    if (!rt || length <= 0 || !acceptsRangeHooks(*rt, fileIndex))
+        return 0;
+
+    UsenetFileState& st = rt->item->files[fileIndex];
+    const qint64 end = offset + length;
+    QList<quint64> keys;
+    for (int seg = 0; seg < st.done.size(); ++seg) {
+        const quint64 key = SegmentKey{fileIndex, seg}.packed();
+        if (rt->inFlight.contains(key))
+            continue;
+        // A hole has no bytes to be wrong; the join fills it from ed3k.
+        if (seg < st.missing.size() && st.missing.testBit(seg))
+            continue;
+        const auto range = segmentRange(*rt, fileIndex, seg);
+        if (!range || range->second <= offset || range->first >= end)
+            continue;
+
+        if (st.done.testBit(seg)) {
+            st.done.clearBit(seg);
+            const qint64 bytes = range->second - range->first;
+            st.removeWritten(range->first, bytes);
+            st.decodedBytes = qMax<qint64>(0, st.decodedBytes - bytes);
+            rt->landed.remove(key);
+        }
+        if (!excludeServerKey.isEmpty()) {
+            SegmentAttempt& attempt = rt->attempts[key];
+            if (!attempt.tried.contains(excludeServerKey))
+                attempt.tried.append(excludeServerKey);
+        }
+        keys.append(key);
+    }
+    if (keys.isEmpty())
+        return 0;
+
+    // Next in line, as a retry is (see handleSegmentFailure).
+    for (const quint64 key : std::as_const(keys)) {
+        const qsizetype at = rt->plan.indexOf(key, qBound(0, rt->planCursor, int(rt->plan.size())));
+        if (at >= 0)
+            rt->plan.removeAt(at);
+    }
+    const int insertAt = qBound(0, rt->planCursor, int(rt->plan.size()));
+    for (qsizetype k = keys.size() - 1; k >= 0; --k)
+        rt->plan.insert(insertAt, keys.at(k));
+
+    logUsenet(QStringLiteral("Usenet: re-fetching %1 article(s) of \"%2\" for bytes %3-%4%5")
+                  .arg(keys.size())
+                  .arg(rt->item->bestFileName(fileIndex))
+                  .arg(offset)
+                  .arg(end)
+                  .arg(excludeServerKey.isEmpty()
+                           ? QString()
+                           : QStringLiteral(", not from %1").arg(excludeServerKey)));
+
+    rt->dirty = true;
+    persist(*rt);
+    emit itemChanged(itemId);
+    dispatch();
+    return int(keys.size());
+}
+
+int UsenetQueue::acceptExternalRange(const QString& itemId, int fileIndex, qint64 offset,
+                                     qint64 length)
+{
+    ItemRuntime* rt = runtimeFor(itemId);
+    if (!rt || offset < 0 || length <= 0 || !acceptsRangeHooks(*rt, fileIndex))
+        return 0;
+
+    UsenetFileState& st = rt->item->files[fileIndex];
+    const qint64 end = offset + length;
+    int accepted = 0;
+    for (int seg = 0; seg < st.done.size(); ++seg) {
+        const quint64 key = SegmentKey{fileIndex, seg}.packed();
+        const bool hole = seg < st.missing.size() && st.missing.testBit(seg);
+        if ((st.done.testBit(seg) && !hole) || rt->inFlight.contains(key))
+            continue;
+        const auto range = segmentRange(*rt, fileIndex, seg);
+        if (!range || range->first < offset || range->second > end)
+            continue;
+
+        const qint64 bytes = range->second - range->first;
+        st.done.setBit(seg);
+        st.decodedBytes += bytes;
+        rt->attempts.remove(key);
+        rt->landed.insert(key, *range);
+        if (hole) {
+            // Bytes are there now: the one condition for closing a hole.
+            st.missing.clearBit(seg);
+            st.missingSegments = qMax(0, st.missingSegments - 1);
+            noteRefetchResolved(*rt, fileIndex, seg, /*landed*/ true);
+        }
+        ++accepted;
+    }
+    // On disk whether or not an article lines up with it.
+    st.addWritten(offset, length);
+    rt->dirty = true;
+    if (accepted == 0)
+        return 0;
+
+    logUsenet(QStringLiteral("Usenet: %1 article(s) of \"%2\" came from another source")
+                  .arg(accepted)
+                  .arg(rt->item->bestFileName(fileIndex)));
+    persist(*rt);
+    emit itemChanged(itemId);
+    checkFileCompletion(*rt, fileIndex);
+    dispatch();
+    return accepted;
+}
+
 bool UsenetQueue::setItemPriority(const QString& id, int priority)
 {
     ItemRuntime* rt = runtimeFor(id);
@@ -2237,6 +2349,20 @@ void UsenetQueue::onSegmentFinished(const UsenetFetchResult& result, bool curren
         return;
     }
 
+    // For articleDecoded below, taken now: completion may drop the item.
+    bool decodedToDisk = false;
+    int articleNumber = 0;
+    const bool onDisk = result.error == NntpError::None
+                        || (result.error == NntpError::ArticleCorrupt && result.checksumFailed);
+    if (onDisk && result.decodedBytes > 0 && result.fileIndex >= 0
+        && result.fileIndex < rt->item->nzb.files.size()) {
+        const auto& segments = rt->item->nzb.files.at(result.fileIndex).segments;
+        if (result.segmentIndex >= 0 && result.segmentIndex < segments.size()) {
+            decodedToDisk = true;
+            articleNumber = segments.at(result.segmentIndex).number;
+        }
+    }
+
     const quint64 key = SegmentKey{result.fileIndex, result.segmentIndex}.packed();
     if (current)
         rt->inFlight.remove(key);
@@ -2299,6 +2425,13 @@ void UsenetQueue::onSegmentFinished(const UsenetFetchResult& result, bool curren
         handleSegmentFailure(*rt, result);
     }
 
+    // After the bookkeeping, so a slot sees it settled.
+    if (decodedToDisk) {
+        emit articleDecoded(result.itemId, result.fileIndex, result.decodedOffset,
+                            result.decodedBytes, result.error == NntpError::None,
+                            articleNumber, result.rawBeginLine, result.serverKey);
+    }
+
     dispatch();
 }
 
@@ -2318,6 +2451,10 @@ void UsenetQueue::markSegmentDone(ItemRuntime& rt, const UsenetFetchResult& resu
     }
 
     st.decodedBytes += result.decodedBytes;
+    if (result.decodedBytes > 0) {
+        rt.landed.insert(SegmentKey{result.fileIndex, result.segmentIndex}.packed(),
+                         {result.decodedOffset, result.decodedOffset + result.decodedBytes});
+    }
 
     // Where those bytes actually landed. This is the only record of it: `done`
     // above means *resolved*, and a segment missing on every server sets that
@@ -5395,6 +5532,56 @@ QList<qint64> UsenetQueue::fileProgressBytes(const ItemRuntime& rt)
             out[f] += counter->load(std::memory_order_relaxed);
     }
     return out;
+}
+
+// ---------------------------------------------------------------------------
+// Private — ed3k join hooks
+// ---------------------------------------------------------------------------
+
+std::optional<QPair<qint64, qint64>> UsenetQueue::segmentRange(const ItemRuntime& rt,
+                                                               int fileIndex, int segmentIndex)
+{
+    if (const auto it = rt.landed.constFind(SegmentKey{fileIndex, segmentIndex}.packed());
+        it != rt.landed.cend()) {
+        return *it;
+    }
+
+    const UsenetQueueItem& item = *rt.item;
+    const NzbFileInfo& info = item.nzb.files.at(fileIndex);
+    if (segmentIndex < 0 || segmentIndex >= info.segments.size())
+        return std::nullopt;
+    const int number = info.segments.at(segmentIndex).number;
+    if (number < 1)
+        return std::nullopt;
+
+    // Same borrowing as segmentsCovering(): one posting run, one part size.
+    const UsenetFileState& st = item.files.at(fileIndex);
+    qint64 partLength = st.partLength;
+    if (partLength <= 0) {
+        for (const UsenetFileState& other : item.files)
+            partLength = qMax(partLength, other.partLength);
+    }
+    if (partLength <= 0)
+        return std::nullopt;
+
+    const qint64 start = qint64(number - 1) * partLength;
+    qint64 end = start + partLength;
+    if (st.declaredSize > 0)
+        end = qMin(end, st.declaredSize);
+    if (start >= end)
+        return std::nullopt;
+    return QPair<qint64, qint64>{start, end};
+}
+
+bool UsenetQueue::acceptsRangeHooks(const ItemRuntime& rt, int fileIndex)
+{
+    const UsenetQueueItem& item = *rt.item;
+    if (fileIndex < 0 || fileIndex >= item.files.size() || fileIndex >= item.nzb.files.size())
+        return false;
+    const UsenetFileState& st = item.files.at(fileIndex);
+    // Sealed files may be renamed or repaired already; post jobs read them.
+    return !rt.postRunning && !st.finalized && !st.isSkipped()
+           && item.status != UsenetItemStatus::Complete;
 }
 
 } // namespace eMule::usenet

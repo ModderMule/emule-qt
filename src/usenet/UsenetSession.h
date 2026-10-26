@@ -15,6 +15,7 @@
 
 #include "utils/Types.h"
 
+#include <QByteArray>
 #include <QElapsedTimer>
 #include <QHash>
 #include <QObject>
@@ -139,6 +140,12 @@ public:
     /// for indexers.
     [[nodiscard]] UsenetWatchFolder* watchFolder() const { return m_watchFolder.get(); }
 
+    /// ed3k join hooks, forwarded to UsenetQueue (see there and
+    /// libs/packmule/docs/usenet-join-host.md). Daemon thread only.
+    int refetchRange(const QString& itemId, int fileIndex, qint64 offset, qint64 length,
+                     const QString& excludeServerKey);
+    int acceptExternalRange(const QString& itemId, int fileIndex, qint64 offset, qint64 length);
+
 signals:
     /// Forwarded straight from the queue. DaemonApp turns these into IPC pushes;
     /// UsenetQueue itself knows nothing about IPC, and core knows nothing about
@@ -148,6 +155,11 @@ signals:
     void itemRemoved(const QString& id);
     void itemFinished(const QString& id, bool success, const QString& message);
     void enginePausedChanged(bool paused);
+
+    /// UsenetQueue::articleDecoded, forwarded: the ed3k join's article feed.
+    void articleDecoded(const QString& itemId, int fileIndex, qint64 offset, qint64 length,
+                        bool crcOk, int partNumber, const QByteArray& rawYbeginLine,
+                        const QString& serverKey);
 
 private:
     /// Recompute how the one global download budget is split between ED2K and
