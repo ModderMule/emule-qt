@@ -162,7 +162,10 @@ if [ -n "$MACDEPLOYQT" ]; then
     for helper in "${HELPERS[@]}"; do
         DEPLOY_ARGS+=("-executable=$helper")
     done
-    "$MACDEPLOYQT" "$APP_BUNDLE" -always-overwrite "${DEPLOY_ARGS[@]}" 2>&1 | tail -5 || true
+    # macdeployqt can't exclude single plugins; drop the missing-client-lib noise
+    # of the Mimer/ODBC/PostgreSQL drivers, deleted below anyway
+    "$MACDEPLOYQT" "$APP_BUNDLE" -always-overwrite "${DEPLOY_ARGS[@]}" 2>&1 \
+        | grep -vE 'libmimerapi|libiodbc|libpq\.' | tail -5 || true
     echo "  macdeployqt complete."
     # QtSql is linked for the seen-files index, which uses SQLite only. The other
     # drivers macdeployqt copies want client libraries (libpq, ODBC...) we do not ship.
