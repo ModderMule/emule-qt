@@ -550,6 +550,10 @@ void RoutingZone::onSmallTimer()
         if (c->getType() == 4 && c->getExpireTime() > 0 && c->getExpireTime() <= now) {
             if (!c->inUse()) {
                 countKad(&KadCounters::contactsExpired);
+                // Pairs with HELLO_REQ/HELLO_RES diag lines — shows the table shrinking (issue #64)
+                logKad(QStringLiteral("Kad: [diag] contact %1:%2 v%3 expired — no HELLO_RES, removed (age %4 min)")
+                           .arg(c->address().toString()).arg(c->getUDPPort()).arg(c->getVersion())
+                           .arg((now - c->getCreatedTime()) / 60));
                 m_bin->removeContact(c);
                 emit contactRemoved(c);
                 delete c;
