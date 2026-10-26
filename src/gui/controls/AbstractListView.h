@@ -60,7 +60,7 @@ public:
     /// would destroy the saved layout.
     void bindColumns(const QString& stateKey,
                      std::initializer_list<int> defaultWidths = {},
-                     std::initializer_list<int> defaultHidden = {})
+                     const std::vector<int>& defaultHidden = {})
     {
         m_stateKey = stateKey;
         m_defaultWidths.assign(defaultWidths);
@@ -139,9 +139,9 @@ public:
 
     /// Columns that exist only with "Show more controls": while it is off they are
     /// hidden and left out of the header menu. Survives bindColumns().
-    void setExtColumns(std::initializer_list<int> columns, bool show)
+    void setExtColumns(const std::vector<int>& columns, bool show)
     {
-        m_extColumns = columns;
+        m_extColumns = {columns.begin(), columns.end()};
         applyExtColumns(show);
     }
 

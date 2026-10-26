@@ -1044,6 +1044,13 @@ QHttpServerResponse WebServer::serveRange(const QList<UsenetStreamPiece>& pieces
         // RFC 7233 §2.1: clamp last-byte-pos to file size
         if (rangeEnd >= fileSize)
             rangeEnd = fileSize - 1;
+        // A player probing exactly at the end (VLC after the trailing moov) is
+        // ordinary EOF, not worth a warning
+        if (rangeStart == fileSize) {
+            if (dbg)
+                logDebug(QStringLiteral("Preview: 416 — EOF probe at %1").arg(fileSize));
+            return rangeNotSatisfiable(fileSize);
+        }
         if (rangeStart >= fileSize || rangeStart > rangeEnd) {
             logWarning(QStringLiteral("Preview: 416 — out of bounds: start=%1 end=%2 fileSize=%3")
                 .arg(rangeStart).arg(rangeEnd).arg(fileSize));

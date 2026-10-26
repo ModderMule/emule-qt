@@ -99,6 +99,7 @@ QVariant SharedFilesModel::data(const QModelIndex& index, int role) const
         switch (index.column()) {
         case ColSize: case ColRequests: case ColAccepted: case ColTransferred:
         case ColCompleteSources: case ColLength: case ColBitrate:
+        case ColRatio: case ColSessionRatio:
             return static_cast<int>(Qt::AlignRight | Qt::AlignVCenter);
         default:
             return static_cast<int>(Qt::AlignLeft | Qt::AlignVCenter);
@@ -153,6 +154,8 @@ QVariant SharedFilesModel::data(const QModelIndex& index, int role) const
         case ColBitrate:
             return f.bitrate > 0 ? tr("%1 Kbit/s").arg(f.bitrate) : QString();
         case ColCodec:   return f.codec;
+        case ColRatio:        return formatShareRatio(f.allTimeTransferred, f.fileSize);
+        case ColSessionRatio: return formatShareRatio(f.transferred, f.fileSize);
         default: break;
         }
     }
@@ -217,6 +220,8 @@ QVariant SharedFilesModel::data(const QModelIndex& index, int role) const
         case ColLength:          return QVariant::fromValue(f.length);
         case ColBitrate:         return QVariant::fromValue(f.bitrate);
         case ColCodec:           return f.codec;
+        case ColRatio:           return shareRatio(f.allTimeTransferred, f.fileSize);
+        case ColSessionRatio:    return shareRatio(f.transferred, f.fileSize);
         default: break;
         }
     }
@@ -310,6 +315,8 @@ QVariant SharedFilesModel::headerData(int section, Qt::Orientation orientation, 
     case ColLength:          return tr("Length");
     case ColBitrate:         return tr("Bitrate");
     case ColCodec:           return tr("Codec");
+    case ColRatio:           return tr("Ratio");
+    case ColSessionRatio:    return tr("Session Ratio");
     default:                 return {};
     }
 }

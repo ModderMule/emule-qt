@@ -79,15 +79,26 @@ ClientListModel::ClientListModel(ClientListMode mode, QObject* parent)
 {
 }
 
+std::vector<int> ClientListModel::extColumns() const
+{
+    std::vector<int> cols{sharedListColumn()};
+    if (hasExtraColumns()) {
+        for (int i = 0; i < ExtraCount; ++i)
+            cols.push_back(baseColumnCount() + i);
+    }
+    return cols;
+}
+
+std::vector<int> ClientListModel::defaultHiddenColumns() const
+{
+    std::vector<int> cols = extColumns();
+    cols.push_back(countryColumn());
+    return cols;
+}
+
 int ClientListModel::columnCountValue() const
 {
-    switch (m_mode) {
-    case ClientListMode::Uploading:    return UploadingColCount;
-    case ClientListMode::Downloading:  return DownloadingColCount;
-    case ClientListMode::OnQueue:      return OnQueueColCount;
-    case ClientListMode::KnownClients: return KnownClientsColCount;
-    }
-    return 0;
+    return baseColumnCount() + (hasExtraColumns() ? ExtraCount : 0);
 }
 
 QVariant ClientListModel::data(const QModelIndex& index, int role) const
@@ -96,6 +107,8 @@ QVariant ClientListModel::data(const QModelIndex& index, int role) const
         return {};
 
     const auto& c = m_rows[static_cast<size_t>(index.row())];
+    if (index.column() >= baseColumnCount())
+        return extraData(c, index.column() - baseColumnCount(), role);
 
     // MFC's LVCFMT_RIGHT columns: UploadListCtrl.cpp:77-78, DownloadClientsCtrl.cpp:66-69,
     // ClientListCtrl.cpp:66,68. The queue list has none.
@@ -157,12 +170,62 @@ QVariant ClientListModel::headerData(int section, Qt::Orientation orientation, i
         return tr("Country");
     if (section == sharedListColumn())
         return tr("Shared List");
-    return headerLabel(section);
+    switch (section - baseColumnCount()) {
+    case ExtraUploaded:     return tr("Uploaded");
+    case ExtraDownloaded:   return tr("Downloaded");
+    case ExtraRatio:        return tr("Ratio");
+    case ExtraSessionRatio: return tr("Session Ratio");
+    default:                return headerLabel(section);
+    }
 }
 
 // ---------------------------------------------------------------------------
 // Private
 // ---------------------------------------------------------------------------
+
+int ClientListModel::baseColumnCount() const
+{
+    switch (m_mode) {
+    case ClientListMode::Uploading:    return UploadingColCount;
+    case ClientListMode::Downloading:  return DownloadingColCount;
+    case ClientListMode::OnQueue:      return OnQueueColCount;
+    case ClientListMode::KnownClients: return KnownClientsColCount;
+    }
+    return 0;
+}
+
+bool ClientListModel::hasExtraColumns() const
+{
+    return m_mode == ClientListMode::Uploading || m_mode == ClientListMode::OnQueue;
+}
+
+QVariant ClientListModel::extraData(const ClientRow& c, int extra, int role) const
+{
+    if (role == Qt::TextAlignmentRole)
+        return static_cast<int>(Qt::AlignRight | Qt::AlignVCenter);
+
+    // Uploaded / Downloaded: the peer's credit totals, kept across restarts in clients.met.
+    // Ratio columns: the upload file's bytes sent to anyone, per file size (eMuleAI).
+    if (role == Qt::DisplayRole) {
+        switch (extra) {
+        case ExtraUploaded:     return sizeCell(c.uploadedTotal);
+        case ExtraDownloaded:   return sizeCell(c.downloadedTotal);
+        case ExtraRatio:        return formatShareRatio(c.uploadFileAllTimeTransferred, c.uploadFileSize);
+        case ExtraSessionRatio: return formatShareRatio(c.uploadFileTransferred, c.uploadFileSize);
+        default:                return {};
+        }
+    }
+    if (role == Qt::UserRole) {
+        switch (extra) {
+        case ExtraUploaded:     return QVariant::fromValue(c.uploadedTotal);
+        case ExtraDownloaded:   return QVariant::fromValue(c.downloadedTotal);
+        case ExtraRatio:        return shareRatio(c.uploadFileAllTimeTransferred, c.uploadFileSize);
+        case ExtraSessionRatio: return shareRatio(c.uploadFileTransferred, c.uploadFileSize);
+        default:                return {};
+        }
+    }
+    return {};
+}
 
 QVariant ClientListModel::displayData(const ClientRow& c, int column) const
 {

@@ -1843,28 +1843,28 @@ Jej pobierania zachowają swoje pliki i trafią do Wszystkie.</translation>
 <context>
     <name>eMule::ClientDetailDialog</name>
     <message>
-        <location filename="../src/gui/dialogs/ClientDetailDialog.cpp" line="+91"/>
+        <location filename="../src/gui/dialogs/ClientDetailDialog.cpp" line="+125"/>
         <location line="+30"/>
         <source>Client Details: %1</source>
         <translation>Informacje o użytkowniku: %1</translation>
     </message>
     <message>
-        <location line="+15"/>
+        <location line="+17"/>
         <source>General</source>
         <translation>Ogólne</translation>
     </message>
     <message>
-        <location line="+8"/>
+        <location line="+11"/>
         <source>Name</source>
         <translation>Nazwa</translation>
     </message>
     <message>
-        <location line="+1"/>
+        <location line="+2"/>
         <source>Hash</source>
         <translation>Hash</translation>
     </message>
     <message>
-        <location line="+5"/>
+        <location line="-1"/>
         <source>ID</source>
         <translation>ID</translation>
     </message>
@@ -1879,17 +1879,17 @@ Jej pobierania zachowają swoje pliki i trafią do Wszystkie.</translation>
         <translation>Wysokie ID</translation>
     </message>
     <message>
-        <location line="+2"/>
+        <location line="+4"/>
         <source>Software</source>
         <translation>Program</translation>
     </message>
     <message>
-        <location line="+11"/>
+        <location line="+13"/>
         <source>Country</source>
         <translation>Kraj</translation>
     </message>
     <message>
-        <location line="+15"/>
+        <location line="+24"/>
         <source>Server IP</source>
         <translation>IP serwera</translation>
     </message>
@@ -1914,13 +1914,13 @@ Jej pobierania zachowają swoje pliki i trafią do Wszystkie.</translation>
         <translation>Nieprawidłowa</translation>
     </message>
     <message>
-        <location line="+1"/>
-        <location line="+5"/>
+        <location line="-23"/>
+        <location line="+24"/>
         <source>Not supported or disabled</source>
         <translation>Nie wspierana lub wyłączona</translation>
     </message>
     <message>
-        <location line="-3"/>
+        <location line="-27"/>
         <source>Obfuscation</source>
         <translation>Zaciemnianie</translation>
     </message>
@@ -1935,7 +1935,7 @@ Jej pobierania zachowają swoje pliki i trafią do Wszystkie.</translation>
         <translation>Wspierane</translation>
     </message>
     <message>
-        <location line="+6"/>
+        <location line="+31"/>
         <location line="+2"/>
         <source>Connected (%1)</source>
         <translation>Połączony (%1)</translation>
@@ -1968,7 +1968,7 @@ Jej pobierania zachowają swoje pliki i trafią do Wszystkie.</translation>
         <translation>NAT-T</translation>
     </message>
     <message>
-        <location line="+3"/>
+        <location line="-48"/>
         <source>Kad</source>
         <translation>Kad</translation>
     </message>
@@ -1983,7 +1983,7 @@ Jej pobierania zachowają swoje pliki i trafią do Wszystkie.</translation>
         <translation>Rozłączony</translation>
     </message>
     <message>
-        <location line="+7"/>
+        <location line="+55"/>
         <source>Transfer</source>
         <translation>Transfer</translation>
     </message>
@@ -2056,12 +2056,12 @@ Jej pobierania zachowają swoje pliki i trafią do Wszystkie.</translation>
 <context>
     <name>eMule::ClientListModel</name>
     <message>
-        <location filename="../src/gui/controls/ClientListModel.cpp" line="+95"/>
+        <location filename="../src/gui/controls/ClientListModel.cpp" line="+108"/>
         <source>Country</source>
         <translation>Kraj</translation>
     </message>
     <message>
-        <location line="+220"/>
+        <location line="+270"/>
         <source>QUIC</source>
         <translation>QUIC</translation>
     </message>
@@ -2076,26 +2076,46 @@ Jej pobierania zachowają swoje pliki i trafią do Wszystkie.</translation>
         <translation>Niskie ID</translation>
     </message>
     <message>
-        <location line="-266"/>
-        <location line="+109"/>
+        <location line="-316"/>
+        <location line="+159"/>
         <location line="+15"/>
         <source>Yes</source>
         <translation>Tak</translation>
     </message>
     <message>
-        <location line="-124"/>
-        <location line="+109"/>
+        <location line="-174"/>
+        <location line="+159"/>
         <location line="+15"/>
         <source>No</source>
         <translation>Nie</translation>
     </message>
     <message>
-        <location line="-81"/>
+        <location line="-131"/>
         <source>Shared List</source>
         <translation>Lista udostępnionych</translation>
     </message>
     <message>
-        <location line="+80"/>
+        <location line="+2"/>
+        <source>Uploaded</source>
+        <translation>Wysłano</translation>
+    </message>
+    <message>
+        <location line="+1"/>
+        <source>Downloaded</source>
+        <translation>Pobrano</translation>
+    </message>
+    <message>
+        <location line="+1"/>
+        <source>Ratio</source>
+        <translation>Ratio</translation>
+    </message>
+    <message>
+        <location line="+1"/>
+        <source>Session Ratio</source>
+        <translation>Ratio sesji</translation>
+    </message>
+    <message>
+        <location line="+125"/>
         <source>Unknown</source>
         <translation>Nieznany</translation>
     </message>
@@ -4079,7 +4099,7 @@ Wybierz inny:</translation>
     <message>
         <location filename="../src/gui/panels/KadPanel.cpp" line="+120"/>
         <location line="+12"/>
-        <location line="+192"/>
+        <location line="+191"/>
         <location line="+2"/>
         <location line="+37"/>
         <location line="+213"/>
@@ -4087,15 +4107,15 @@ Wybierz inny:</translation>
         <translation>▸ Kontakty (0)</translation>
     </message>
     <message>
-        <location line="-455"/>
+        <location line="-454"/>
         <location line="+12"/>
-        <location line="+392"/>
+        <location line="+391"/>
         <location line="+97"/>
         <source>▸ Current Searches (0)</source>
         <translation>▸ Bieżące wyszukiwania (0)</translation>
     </message>
     <message>
-        <location line="-427"/>
+        <location line="-426"/>
         <source>The URL is invalid.</source>
         <translation>Nieprawidłowy URL.</translation>
     </message>
@@ -4106,19 +4126,19 @@ Wybierz inny:</translation>
     </message>
     <message>
         <location line="+9"/>
-        <location line="+224"/>
+        <location line="+223"/>
         <location line="+40"/>
         <source>Bootstrap</source>
         <translation>Bootstrap</translation>
     </message>
     <message>
-        <location line="-262"/>
+        <location line="-261"/>
         <location line="+77"/>
         <source>Kademlia</source>
         <translation>Kademlia</translation>
     </message>
     <message>
-        <location line="+42"/>
+        <location line="+41"/>
         <location line="+358"/>
         <source>▸ Search Details</source>
         <translation>▸ Szczegóły wyszukiwania</translation>
@@ -4335,12 +4355,12 @@ Wybierz inny:</translation>
     <name>eMule::MainWindow</name>
     <message>
         <location filename="../src/gui/app/MainWindow.cpp" line="+102"/>
-        <location line="+523"/>
+        <location line="+524"/>
         <source>eMule Qt v%1</source>
         <translation>eMule Qt v%1</translation>
     </message>
     <message>
-        <location line="-423"/>
+        <location line="-424"/>
         <source>Quit eMule Qt</source>
         <translation>Zakończ eMule Qt</translation>
     </message>
@@ -4377,12 +4397,12 @@ Używasz wersji %2. Otworzyć stronę eMule Qt?</translation>
     <message>
         <location line="+11"/>
         <location line="+7"/>
-        <location line="+826"/>
+        <location line="+827"/>
         <source>Version Check</source>
         <translation>Sprawdzanie wersji</translation>
     </message>
     <message>
-        <location line="-832"/>
+        <location line="-833"/>
         <source>You are running the latest version of eMule Qt (v%1).</source>
         <translation>Używasz najnowszej wersji eMule Qt (v%1).</translation>
     </message>
@@ -4415,7 +4435,7 @@ Włącz co najmniej jedną w Opcje → Połączenie, aby się połączyć.</tran
         <translation>eMule w wersji %1 gotowy do pracy</translation>
     </message>
     <message>
-        <location line="+67"/>
+        <location line="+68"/>
         <source>eD2K: Connected (LowID)</source>
         <translation>eD2K: Podłączony (niskie ID)</translation>
     </message>
@@ -6577,12 +6597,12 @@ Czy na pewno chcesz kontynuować?</translation>
     <message>
         <location line="+4"/>
         <location line="+1669"/>
-        <location line="+5264"/>
+        <location line="+5266"/>
         <source>Any</source>
         <translation>Dowolny</translation>
     </message>
     <message>
-        <location line="-6931"/>
+        <location line="-6933"/>
         <source>Use only this network interface, for example a VPN tunnel. Pick one from the list, or type an IP address or a subnet such as 10.64.0.0/10 (the interface holding an address in it). Connections through a proxy are not bound.</source>
         <translation>Używaj tylko tego interfejsu sieciowego, np. tunelu VPN. Wybierz go z listy lub wpisz adres IP albo podsieć, np. 10.64.0.0/10 (interfejs posiadający adres z tej podsieci). Połączenia przez proxy nie są wiązane.</translation>
     </message>
@@ -7890,22 +7910,22 @@ Każde połączenie Usenet przechodzi wtedy przez proxy, więc jego prędkość 
         <location line="+1019"/>
         <location line="+154"/>
         <location line="+1753"/>
-        <location line="+2118"/>
+        <location line="+2120"/>
         <source>Add</source>
         <translation>Dodaj</translation>
     </message>
     <message>
-        <location line="-5043"/>
+        <location line="-5045"/>
         <location line="+1019"/>
         <location line="+154"/>
         <location line="+1480"/>
         <location line="+316"/>
-        <location line="+2080"/>
+        <location line="+2082"/>
         <source>Remove</source>
         <translation>Usuń</translation>
     </message>
     <message>
-        <location line="-5028"/>
+        <location line="-5030"/>
         <source>Display name (optional)</source>
         <translation>Nazwa wyświetlana (opcjonalnie)</translation>
     </message>
@@ -9074,7 +9094,7 @@ Dodanie indeksera później nie pobiera jego archiwum: nowy indekser dostaje wł
         <translation>Pobierane pliki są zawsze sprawdzane i rejestrowane. Pliki udostępnione są sprawdzane ponownie przy każdym uruchomieniu.</translation>
     </message>
     <message>
-        <location line="+2703"/>
+        <location line="+2705"/>
         <location line="+52"/>
         <source>Directories</source>
         <translation>Katalogi</translation>
@@ -9145,7 +9165,7 @@ Utworzyć go?</translation>
 %1</translation>
     </message>
     <message>
-        <location line="-3105"/>
+        <location line="-3107"/>
         <location line="+153"/>
         <source>Disabled</source>
         <translation>Wyłączony</translation>
@@ -9696,7 +9716,7 @@ Połączenia z serwerami news przełączają się natychmiast.</translation>
         <translation>Zmiana ikon zacznie działać po ponownym uruchomieniu aplikacji.</translation>
     </message>
     <message>
-        <location line="+9"/>
+        <location line="+11"/>
         <source>Theme</source>
         <translation>Motyw</translation>
     </message>
@@ -10790,7 +10810,7 @@ Słowa kluczowe w wyszukiwaniu Kad muszą mieć co najmniej 3 znaki.</translatio
 <context>
     <name>eMule::ServerPanel</name>
     <message>
-        <location filename="../src/gui/panels/ServerPanel.cpp" line="+208"/>
+        <location filename="../src/gui/panels/ServerPanel.cpp" line="+209"/>
         <source>Invalid URL: %1</source>
         <translation>Nieprawidłowy URL: %1</translation>
     </message>
@@ -10831,12 +10851,12 @@ Słowa kluczowe w wyszukiwaniu Kad muszą mieć co najmniej 3 znaki.</translatio
     </message>
     <message>
         <location line="+2"/>
-        <location line="+436"/>
+        <location line="+435"/>
         <source>Connect</source>
         <translation>Podłącz</translation>
     </message>
     <message>
-        <location line="-383"/>
+        <location line="-382"/>
         <source>Connect To</source>
         <translation>Połącz z</translation>
     </message>
@@ -10852,12 +10872,12 @@ Słowa kluczowe w wyszukiwaniu Kad muszą mieć co najmniej 3 znaki.</translatio
     </message>
     <message>
         <location line="+1"/>
-        <location line="+547"/>
+        <location line="+546"/>
         <source>Normal</source>
         <translation>Normalny</translation>
     </message>
     <message>
-        <location line="-546"/>
+        <location line="-545"/>
         <source>High</source>
         <translation>Wysoki</translation>
     </message>
@@ -10917,7 +10937,7 @@ Słowa kluczowe w wyszukiwaniu Kad muszą mieć co najmniej 3 znaki.</translatio
         <translation>Znajdź...</translation>
     </message>
     <message>
-        <location line="+56"/>
+        <location line="+55"/>
         <source>▸ Servers (0)</source>
         <translation>▸ Serwery (0)</translation>
     </message>
@@ -11178,12 +11198,12 @@ Słowa kluczowe w wyszukiwaniu Kad muszą mieć co najmniej 3 znaki.</translatio
         <translation>Nie</translation>
     </message>
     <message>
-        <location line="+109"/>
+        <location line="+110"/>
         <source>%1 Kbit/s</source>
         <translation>%1 Kbit/s</translation>
     </message>
     <message>
-        <location line="+7"/>
+        <location line="+9"/>
         <source>File Name:	%1
 ED2K Hash:	%2
 Type:	%3
@@ -11206,7 +11226,7 @@ Udostępniane eD2K|Kad:	%12
 Folder:	%13</translation>
     </message>
     <message>
-        <location line="+134"/>
+        <location line="+136"/>
         <source>File Name</source>
         <translation>Nazwa pliku</translation>
     </message>
@@ -11295,19 +11315,29 @@ Folder:	%13</translation>
         <source>Codec</source>
         <translation>Kodek</translation>
     </message>
+    <message>
+        <location line="+1"/>
+        <source>Ratio</source>
+        <translation>Ratio</translation>
+    </message>
+    <message>
+        <location line="+1"/>
+        <source>Session Ratio</source>
+        <translation>Ratio sesji</translation>
+    </message>
 </context>
 <context>
     <name>eMule::SharedFilesPanel</name>
     <message>
         <location filename="../src/gui/panels/SharedFilesPanel.cpp" line="+177"/>
         <location line="+16"/>
-        <location line="+498"/>
-        <location line="+630"/>
+        <location line="+497"/>
+        <location line="+633"/>
         <source>Shared Files (0)</source>
         <translation>Udostępnione pliki (0)</translation>
     </message>
     <message>
-        <location line="-1015"/>
+        <location line="-1017"/>
         <source>All</source>
         <translation>Wszystkie</translation>
     </message>
@@ -11318,71 +11348,71 @@ Folder:	%13</translation>
     </message>
     <message>
         <location line="+13"/>
-        <location line="+1470"/>
-        <location line="+503"/>
+        <location line="+1472"/>
+        <location line="+509"/>
         <source>Open Folder</source>
         <translation>Otwórz folder</translation>
     </message>
     <message>
-        <location line="-1961"/>
+        <location line="-1969"/>
         <source>Rename...</source>
         <translation>Zmień nazwę...</translation>
     </message>
     <message>
         <location line="+8"/>
-        <location line="+1957"/>
+        <location line="+1965"/>
         <source>Delete From Disk</source>
         <translation>Usuń z dysku</translation>
     </message>
     <message>
-        <location line="-1942"/>
+        <location line="-1950"/>
         <source>Unshare</source>
         <translation>Wstrzymaj udostępnianie</translation>
     </message>
     <message>
         <location line="+11"/>
-        <location line="+1937"/>
+        <location line="+1945"/>
         <source>Priority (Upload)</source>
         <translation>Priorytet (wysyłanie)</translation>
     </message>
     <message>
-        <location line="-1922"/>
-        <location line="+1939"/>
+        <location line="-1930"/>
+        <location line="+1947"/>
         <source>Very Low</source>
         <translation>Bardzo niski</translation>
     </message>
     <message>
-        <location line="-1938"/>
-        <location line="+1939"/>
+        <location line="-1946"/>
+        <location line="+1947"/>
         <source>Low</source>
         <translation>Niski</translation>
     </message>
     <message>
-        <location line="-1938"/>
-        <location line="+1939"/>
+        <location line="-1946"/>
+        <location line="+1947"/>
         <source>Normal</source>
         <translation>Normalny</translation>
     </message>
     <message>
-        <location line="-1938"/>
-        <location line="+1939"/>
+        <location line="-1946"/>
+        <location line="+1947"/>
         <source>High</source>
         <translation>Wysoki</translation>
     </message>
     <message>
-        <location line="-1938"/>
-        <location line="+1939"/>
+        <location line="-1946"/>
+        <location line="+1947"/>
         <source>Release</source>
         <translation>Release</translation>
     </message>
     <message>
-        <location line="-1937"/>
-        <location line="+1938"/>
+        <location line="-1945"/>
+        <location line="+1946"/>
         <source>Auto</source>
         <translation>Auto</translation>
     </message>
     <message>
-        <location line="-1924"/>
+        <location line="-1932"/>
         <source>Collection</source>
         <translation>Kolekcja</translation>
     </message>
@@ -11419,24 +11449,24 @@ Folder:	%13</translation>
     </message>
     <message>
         <location line="+19"/>
-        <location line="+1844"/>
+        <location line="+1852"/>
         <source>Details...</source>
         <translation>Szczegóły...</translation>
     </message>
     <message>
-        <location line="-1837"/>
-        <location line="+1840"/>
+        <location line="-1845"/>
+        <location line="+1848"/>
         <source>Comments...</source>
         <translation>Komentarze...</translation>
     </message>
     <message>
-        <location line="-1825"/>
-        <location line="+1831"/>
+        <location line="-1833"/>
+        <location line="+1839"/>
         <source>eD2K Links...</source>
         <translation>Linki eD2K...</translation>
     </message>
     <message>
-        <location line="-1820"/>
+        <location line="-1828"/>
         <source>Add To IRC Clipboard</source>
         <translation>Dodaj do schowka IRC</translation>
     </message>
@@ -11451,7 +11481,7 @@ Folder:	%13</translation>
         <translation>Usługi Web</translation>
     </message>
     <message>
-        <location line="+72"/>
+        <location line="+71"/>
         <source>Reload</source>
         <translation>Przeładuj</translation>
     </message>
@@ -11461,7 +11491,7 @@ Folder:	%13</translation>
         <translation>Ponownie przeszukaj udostępnione foldery. Przytrzymaj %1, aby zamiast tego ponownie odczytać informacje o multimediach wszystkich udostępnionych plików.</translation>
     </message>
     <message>
-        <location line="+26"/>
+        <location line="+25"/>
         <source>All Shared Files</source>
         <translation>Wszystkie udostępnione pliki</translation>
     </message>
@@ -11486,7 +11516,7 @@ Folder:	%13</translation>
         <translation>Wszystkie foldery</translation>
     </message>
     <message>
-        <location line="+232"/>
+        <location line="+236"/>
         <source>Current Session</source>
         <translation>Bieżąca sesja</translation>
     </message>
@@ -11701,24 +11731,24 @@ Pliki pozostaną na dysku.</numerusform>
     </message>
     <message>
         <location line="+14"/>
-        <location line="+515"/>
+        <location line="+521"/>
         <source>Unshare Directory</source>
         <translation>Wstrzymaj udostępnianie folderu</translation>
     </message>
     <message>
-        <location line="-506"/>
-        <location line="+515"/>
+        <location line="-512"/>
+        <location line="+521"/>
         <source>Unshare with Subdirectories</source>
         <translation>Wstrzymaj udost. z podfolderami</translation>
     </message>
     <message>
-        <location line="-419"/>
+        <location line="-425"/>
         <source>Open File not available — web server is not running or stream token not received.</source>
         <translation>Otwieranie pliku niedostępne — serwer WWW nie działa lub nie otrzymano tokenu strumienia.</translation>
     </message>
     <message>
-        <location line="-1432"/>
-        <location line="+1833"/>
+        <location line="-1434"/>
+        <location line="+1841"/>
         <source>Copy eD2K Links</source>
         <translation>Kopiuj linki eD2K</translation>
     </message>
@@ -14855,7 +14885,7 @@ Ponowne kliknięcie „Przywróć statystyki” wczyta z powrotem bieżące stat
 <context>
     <name>eMule::TorrentPanel</name>
     <message>
-        <location filename="../src/gui/panels/TorrentPanel.cpp" line="+118"/>
+        <location filename="../src/gui/panels/TorrentPanel.cpp" line="+119"/>
         <source>Torrent download completed: %1</source>
         <translation>Ukończono pobieranie torrenta: %1</translation>
     </message>
@@ -15049,95 +15079,95 @@ Ponowne kliknięcie „Przywróć statystyki” wczyta z powrotem bieżące stat
 <context>
     <name>eMule::TransferPanel</name>
     <message>
-        <location filename="../src/gui/panels/TransferPanel.cpp" line="+362"/>
+        <location filename="../src/gui/panels/TransferPanel.cpp" line="+367"/>
         <source>Priority (Download)</source>
         <translation>Priorytet (pobieranie)</translation>
     </message>
     <message>
         <location line="+29"/>
-        <location line="+1948"/>
+        <location line="+1949"/>
         <location line="+171"/>
         <source>Low</source>
         <translation>Niski</translation>
     </message>
     <message>
-        <location line="-2118"/>
-        <location line="+1947"/>
+        <location line="-2119"/>
+        <location line="+1948"/>
         <location line="+172"/>
         <source>Normal</source>
         <translation>Normalny</translation>
     </message>
     <message>
-        <location line="-2118"/>
-        <location line="+1946"/>
+        <location line="-2119"/>
+        <location line="+1947"/>
         <location line="+173"/>
         <source>High</source>
         <translation>Wysoki</translation>
     </message>
     <message>
-        <location line="-2115"/>
-        <location line="+2119"/>
+        <location line="-2116"/>
+        <location line="+2120"/>
         <source>Very Low</source>
         <translation>Bardzo niski</translation>
     </message>
     <message>
-        <location line="-2117"/>
-        <location line="+2119"/>
+        <location line="-2118"/>
+        <location line="+2120"/>
         <source>Very High</source>
         <translation>Bardzo wysoki</translation>
     </message>
     <message>
-        <location line="-2117"/>
-        <location line="+2120"/>
+        <location line="-2118"/>
+        <location line="+2121"/>
         <source>Auto</source>
         <translation>Auto</translation>
     </message>
     <message>
-        <location line="-2109"/>
-        <location line="+695"/>
+        <location line="-2110"/>
+        <location line="+696"/>
         <location line="+1246"/>
         <source>Pause</source>
         <translation>Pauza</translation>
     </message>
     <message>
-        <location line="-1932"/>
-        <location line="+692"/>
+        <location line="-1933"/>
+        <location line="+693"/>
         <location line="+1242"/>
         <source>Stop</source>
         <translation>Zatrzymaj</translation>
     </message>
     <message>
-        <location line="-1925"/>
-        <location line="+689"/>
+        <location line="-1926"/>
+        <location line="+690"/>
         <location line="+1238"/>
         <source>Resume</source>
         <translation>Wznów</translation>
     </message>
     <message>
-        <location line="-1914"/>
-        <location line="+682"/>
+        <location line="-1915"/>
+        <location line="+683"/>
         <location line="+1234"/>
         <location line="+4"/>
         <source>Cancel</source>
         <translation>Anuluj</translation>
     </message>
     <message>
-        <location line="-1904"/>
-        <location line="+673"/>
+        <location line="-1905"/>
+        <location line="+674"/>
         <location line="+555"/>
         <source>Open File</source>
         <translation>Otwórz plik</translation>
     </message>
     <message>
-        <location line="-1219"/>
+        <location line="-1220"/>
         <location line="+2"/>
-        <location line="+676"/>
+        <location line="+677"/>
         <location line="+590"/>
         <source>Preview</source>
         <translation>Podgląd</translation>
     </message>
     <message>
-        <location line="-1260"/>
+        <location line="-1261"/>
         <source>Preview with</source>
         <translation>Podgląd za pomocą</translation>
     </message>
@@ -15153,13 +15183,13 @@ Ponowne kliknięcie „Przywróć statystyki” wczyta z powrotem bieżące stat
     </message>
     <message>
         <location line="+9"/>
-        <location line="+2050"/>
+        <location line="+2051"/>
         <location line="+99"/>
         <source>Details...</source>
         <translation>Szczegóły...</translation>
     </message>
     <message>
-        <location line="-2140"/>
+        <location line="-2141"/>
         <source>Comments...</source>
         <translation>Komentarze...</translation>
     </message>
@@ -15170,20 +15200,20 @@ Ponowne kliknięcie „Przywróć statystyki” wczyta z powrotem bieżące stat
     </message>
     <message>
         <location line="+0"/>
-        <location line="+1294"/>
+        <location line="+1295"/>
         <location line="+1"/>
         <location line="+10"/>
         <source>Import parts to file...</source>
         <translation>Importuj części do pliku...</translation>
     </message>
     <message>
-        <location line="-1289"/>
-        <location line="+644"/>
+        <location line="-1290"/>
+        <location line="+645"/>
         <source>Clear Completed</source>
         <translation>Wyczyść skończone</translation>
     </message>
     <message>
-        <location line="-636"/>
+        <location line="-637"/>
         <source>Source Handling</source>
         <translation>Obsługa źródeł</translation>
     </message>
@@ -15194,12 +15224,12 @@ Ponowne kliknięcie „Przywróć statystyki” wczyta z powrotem bieżące stat
     </message>
     <message>
         <location line="+3"/>
-        <location line="+1217"/>
+        <location line="+1218"/>
         <source>Source Limit...</source>
         <translation>Limit źródeł...</translation>
     </message>
     <message>
-        <location line="-1205"/>
+        <location line="-1206"/>
         <source>Copy eD2K Links</source>
         <translation>Kopiuj linki eD2K</translation>
     </message>
@@ -15215,13 +15245,13 @@ Ponowne kliknięcie „Przywróć statystyki” wczyta z powrotem bieżące stat
     </message>
     <message>
         <location line="+16"/>
-        <location line="+2035"/>
+        <location line="+2036"/>
         <location line="+72"/>
         <source>Find...</source>
         <translation>Znajdź...</translation>
     </message>
     <message>
-        <location line="-2099"/>
+        <location line="-2100"/>
         <source>Search Related Files</source>
         <translation>Znajdź podobne pliki</translation>
     </message>
@@ -15232,33 +15262,33 @@ Ponowne kliknięcie „Przywróć statystyki” wczyta z powrotem bieżące stat
     </message>
     <message>
         <location line="+11"/>
-        <location line="+545"/>
+        <location line="+546"/>
         <source>Assign To Category</source>
         <translation>Przypisz do kategorii</translation>
     </message>
     <message>
-        <location line="-540"/>
+        <location line="-541"/>
         <source>New...</source>
         <translation>Nowa...</translation>
     </message>
     <message>
         <location line="+4"/>
-        <location line="+543"/>
+        <location line="+544"/>
         <source>(Unassign)</source>
         <translation>(Usuń przypisanie)</translation>
     </message>
     <message>
-        <location line="-525"/>
+        <location line="-526"/>
         <source>Show Toolbar</source>
         <translation>Pokaż pasek narzędzi</translation>
     </message>
     <message>
-        <location line="+77"/>
+        <location line="+76"/>
         <source>Downloads</source>
         <translation>Pobieranie</translation>
     </message>
     <message>
-        <location line="+328"/>
+        <location line="+330"/>
         <source>Clients on queue:   0</source>
         <translation>Klienci w kolejce:   0</translation>
     </message>

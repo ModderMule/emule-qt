@@ -127,6 +127,10 @@ ClientRow parseClient(const QCborMap& m)
     row.uploadStartDelay = m.value(QStringLiteral("uploadStartDelay")).toInteger();
     row.uploadFilePriority = static_cast<int>(m.value(QStringLiteral("uploadFilePriority")).toInteger(-1));
     row.uploadFileAutoPriority = m.value(QStringLiteral("uploadFileAutoPriority")).toBool();
+    row.uploadFileSize = m.value(QStringLiteral("uploadFileSize")).toInteger();
+    row.uploadFileTransferred = m.value(QStringLiteral("uploadFileTransferred")).toInteger();
+    row.uploadFileAllTimeTransferred =
+        m.value(QStringLiteral("uploadFileAllTimeTransferred")).toInteger();
     row.isConnected      = m.value(QStringLiteral("isConnected")).toBool();
     row.remoteQueueFull  = m.value(QStringLiteral("remoteQueueFull")).toBool();
     row.kadPort          = static_cast<int>(m.value(QStringLiteral("kadPort")).toInteger());
@@ -993,9 +997,10 @@ QWidget* TransferPanel::createBottomPane()
     // reusing them would let that stale layout override these defaults.
     clientSlot(Uploading).view = createClientView(
         clientSlot(Uploading).model, QStringLiteral("clientsUploading3"),
-        // User Name, File, Speed, Transferred, Waited, Upload Time, Status, Obtained Parts, Country
-        {150, 220, 70, 90, 80, 80, 90, 120, 100},
-        {2, 3, 4, 7});       // first click descending, MFC UploadListCtrl.cpp:286-292
+        // User Name, File, Speed, Transferred, Waited, Upload Time, Status, Obtained Parts, Country,
+        // Shared List, Uploaded, Downloaded, Ratio, Session Ratio
+        {150, 220, 70, 90, 80, 80, 90, 120, 100, 80, 90, 90, 50, 80},
+        {2, 3, 4, 7, 10, 11, 12, 13});       // first click descending, MFC UploadListCtrl.cpp:286-292
     clientSlot(Downloading).view = createClientView(
         clientSlot(Downloading).model, QStringLiteral("clientsDownloading3"),
         // User Name, Software, File, Speed, Available Parts, Transferred, Transferred, Source Type,
@@ -1005,9 +1010,10 @@ QWidget* TransferPanel::createBottomPane()
     clientSlot(OnQueue).view = createClientView(
         clientSlot(OnQueue).model, QStringLiteral("clientsOnQueue3"),
         // User Name, File, File Priority, Rating, Score, Asked, Last Seen,
-        // Entered Queue, Banned, Obtained Parts, Country
-        {150, 220, 80, 70, 60, 60, 100, 110, 60, 120, 100},
-        {2, 3, 4, 5, 8, 9}); // QueueListCtrl.cpp:292-300
+        // Entered Queue, Banned, Obtained Parts, Country, Shared List, Uploaded, Downloaded,
+        // Ratio, Session Ratio
+        {150, 220, 80, 70, 60, 60, 100, 110, 60, 120, 100, 80, 90, 90, 50, 80},
+        {2, 3, 4, 5, 8, 9, 12, 13, 14, 15}); // QueueListCtrl.cpp:292-300, + the 4 new ones
     // Obtained Parts is MFC's upload status bar (UploadListCtrl.cpp:165, QueueListCtrl.cpp:168)
     clientSlot(Uploading).view->setItemDelegateForColumn(
         7, new UploadStatusDelegate(false, clientSlot(Uploading).view));
@@ -1254,8 +1260,8 @@ QTreeView* TransferPanel::createClientView(ClientListModel* model,
     auto* hdr = view->header();
     hdr->setStretchLastSection(true);
     hdr->setDefaultSectionSize(100);
-    view->bindColumns(headerKey, columnWidths, {model->countryColumn(), model->sharedListColumn()});
-    view->setExtColumns({model->sharedListColumn()}, thePrefs.showExtControls());
+    view->bindColumns(headerKey, columnWidths, model->defaultHiddenColumns());
+    view->setExtColumns(model->extColumns(), thePrefs.showExtControls());
     view->setDescendingFirst(descendingFirst);
     CountryFlags::bindFlagColumn(view);
 

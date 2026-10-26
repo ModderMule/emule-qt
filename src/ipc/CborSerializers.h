@@ -592,6 +592,12 @@ inline void insertDownloadSeed(QCborMap& m, const SearchFile& f)
         m.insert(QStringLiteral("uploadFileName"), uf->fileName());
         m.insert(QStringLiteral("uploadFilePriority"), static_cast<int>(uf->upPriority()));
         m.insert(QStringLiteral("uploadFileAutoPriority"), uf->isAutoUpPriority());
+        // Ratio / Session Ratio columns of the Uploading and On Queue lists
+        m.insert(QStringLiteral("uploadFileSize"), static_cast<qint64>(uf->fileSize()));
+        m.insert(QStringLiteral("uploadFileTransferred"),
+                 static_cast<qint64>(uf->statistic.transferred()));
+        m.insert(QStringLiteral("uploadFileAllTimeTransferred"),
+                 static_cast<qint64>(uf->statistic.allTimeTransferred()));
     }
     if (auto spm = buildSourcePartMap(c); !spm.isEmpty())
         m.insert(QStringLiteral("sourcePartMap"), std::move(spm));

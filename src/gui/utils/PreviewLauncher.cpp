@@ -16,12 +16,16 @@
 #include <QDir>
 #include <QFileInfo>
 #include <QProcess>
+#include <QTimer>
 #include <QUrl>
 #include <QUrlQuery>
 
 namespace eMule {
 
 namespace {
+
+/// Pause before a failed player launch is tried again.
+constexpr int kLaunchRetryDelayMs = 1000;
 
 /// The scheme the daemon's HTTP surface answers on.
 ///
@@ -36,6 +40,48 @@ QString daemonWebScheme()
     return ssl ? QStringLiteral("https") : QStringLiteral("http");
 }
 
+/// Run @p program and log a failure, exit code included.
+///
+/// startDetached() only says the process was spawned. A launcher like `open` or
+/// xdg-open fails *after* that: a busy app that misses the Apple event (-1712),
+/// a desktop with no handler. Unparented on purpose: a QProcess destroyed at quit
+/// would kill a handler that the launcher runs in the foreground.
+/// @p retries reruns a failed launch after a short pause; the second try finds
+/// the app awake.
+void startChecked(const QString& program, const QStringList& args, const QString& shown,
+                  int retries = 0)
+{
+    auto* proc = new QProcess;
+    QObject::connect(proc, &QProcess::errorOccurred, proc,
+                     [proc, program, shown](QProcess::ProcessError error) {
+        if (error != QProcess::FailedToStart)
+            return;
+        logWarning(QStringLiteral("Cannot open %1: %2 could not be started (%3)")
+                       .arg(shown, program, proc->errorString()));
+        proc->deleteLater();
+    });
+    QObject::connect(proc, &QProcess::finished, proc,
+                     [proc, program, args, shown, retries](int exitCode,
+                                                           QProcess::ExitStatus status) {
+        proc->deleteLater();
+        if (status == QProcess::NormalExit && exitCode == 0)
+            return;
+        const QString detail = QString::fromLocal8Bit(proc->readAllStandardError()).trimmed();
+        if (retries > 0) {
+            logDebug(QStringLiteral("Opening %1 failed (%2 exit %3), retrying")
+                         .arg(shown, program).arg(exitCode));
+            QTimer::singleShot(kLaunchRetryDelayMs, qApp, [program, args, shown, retries] {
+                startChecked(program, args, shown, retries - 1);
+            });
+            return;
+        }
+        logWarning(QStringLiteral("Cannot open %1: %2 exited with code %3%4")
+                       .arg(shown, program).arg(exitCode)
+                       .arg(detail.isEmpty() ? QString{} : QStringLiteral(" - ") + detail));
+    });
+    proc->start(program, args);
+}
+
 /// Hand @p url to the desktop and log a failure.
 ///
 /// @p shown is what the log may name: never the URL itself for a daemon page,
@@ -45,29 +91,9 @@ bool openOnDesktop(const QUrl& url, const QString& shown)
 #if defined(Q_OS_UNIX) && !defined(Q_OS_MACOS)
     // QDesktopServices reports success once xdg-open is spawned, so a desktop
     // with no handler fails without a trace. Run it ourselves for the exit code.
-    // Unparented on purpose: a QProcess destroyed at quit would kill a handler
-    // that xdg-open runs in the foreground.
-    auto* proc = new QProcess;
-    QObject::connect(proc, &QProcess::errorOccurred, proc,
-                     [proc, shown](QProcess::ProcessError error) {
-        if (error != QProcess::FailedToStart)
-            return;
-        logWarning(QStringLiteral("Cannot open %1: xdg-open could not be started (%2)")
-                       .arg(shown, proc->errorString()));
-        proc->deleteLater();
-    });
-    QObject::connect(proc, &QProcess::finished, proc,
-                     [proc, shown](int exitCode, QProcess::ExitStatus status) {
-        if (status != QProcess::NormalExit || exitCode != 0) {
-            const QString detail = QString::fromLocal8Bit(proc->readAllStandardError()).trimmed();
-            logWarning(QStringLiteral("Cannot open %1: xdg-open exited with code %2%3")
-                           .arg(shown).arg(exitCode)
-                           .arg(detail.isEmpty() ? QString{} : QStringLiteral(" - ") + detail));
-        }
-        proc->deleteLater();
-    });
-    proc->start(QStringLiteral("xdg-open"),
-                {url.isLocalFile() ? url.toLocalFile() : url.toString(QUrl::FullyEncoded)});
+    startChecked(QStringLiteral("xdg-open"),
+                 {url.isLocalFile() ? url.toLocalFile() : url.toString(QUrl::FullyEncoded)},
+                 shown);
     return true;
 #else
     if (QDesktopServices::openUrl(url))
@@ -78,6 +104,17 @@ bool openOnDesktop(const QUrl& url, const QString& shown)
 #endif
 }
 
+#ifdef Q_OS_MACOS
+/// The .app bundle holding @p command, or @p command itself when it is not
+/// inside one. `open -a` names an app, not the binary in Contents/MacOS.
+QString macAppBundle(const QString& command)
+{
+    const qsizetype at = command.indexOf(QStringLiteral(".app/Contents/MacOS/"),
+                                         0, Qt::CaseInsensitive);
+    return at < 0 ? command : command.left(at + 4);
+}
+#endif
+
 } // namespace
 
 void launchPreview(const QString& url)
@@ -87,7 +124,8 @@ void launchPreview(const QString& url)
         logWarning(QStringLiteral("No video player configured. Set it in Options → Files."));
         return;
     }
-    launchPlayer(playerCmd, thePrefs.videoPlayerArgs(), url);
+    if (!launchPlayer(playerCmd, thePrefs.videoPlayerArgs(), url))
+        logWarning(QStringLiteral("Cannot start the video player %1").arg(playerCmd));
 }
 
 bool launchPlayer(const QString& command, const QString& playerArgs, const QString& target)
@@ -116,8 +154,18 @@ bool launchPlayer(const QString& command, const QString& playerArgs, const QStri
     const QString playerName = QFileInfo(command).completeBaseName().toLower();
     if (playerName == QStringLiteral("vlc")) {
 #ifdef Q_OS_MACOS
-        return QProcess::startDetached(QStringLiteral("open"),
-            QStringList{QStringLiteral("-a"), command} + argList);
+        // Not detached: `open` reports a missed Apple event only in its exit
+        // code, and a running VLC that is busy or napping drops the first one.
+        // Player options go behind --args, else `open` reads them as its own.
+        QStringList openArgs{QStringLiteral("-a"), macAppBundle(command)};
+        QStringList playerOpts;
+        for (const QString& arg : std::as_const(argList))
+            (arg == target ? openArgs : playerOpts).append(arg);
+        if (!playerOpts.isEmpty())
+            openArgs << QStringLiteral("--args") << playerOpts;
+        startChecked(QStringLiteral("open"), openArgs, QStringLiteral("the preview in VLC"),
+                     1);
+        return true;
 #else
         argList.prepend(QStringLiteral("--no-playlist-enqueue"));
         argList.prepend(QStringLiteral("--one-instance"));

@@ -65,6 +65,9 @@ public:
     /// "All Directories", and the entries under "Shared Directories".
     void refreshSharedDirs();
 
+    /// Ratio columns follow "Show more controls".
+    void applyDisplayOptions();
+
 signals:
     /// Ask MainWindow to run this search in the Search panel and switch to it.
     /// Emitted by "Search Author's Collections…", which needs an explicit method and

@@ -174,6 +174,18 @@ QString formatSecondsLongHM(qint64 seconds)
     return QStringLiteral("%1 %2 %3 %4").arg(days).arg(unit(kDays)).arg(mins).arg(unit(kMins));
 }
 
+double shareRatio(qint64 uploaded, qint64 fileSize)
+{
+    return fileSize > 0 ? static_cast<double>(uploaded) / static_cast<double>(fileSize) : 0.0;
+}
+
+QString formatShareRatio(qint64 uploaded, qint64 fileSize)
+{
+    if (fileSize <= 0)
+        return {};
+    return QString::number(shareRatio(uploaded, fileSize), 'f', 1);
+}
+
 QString formatQuotaGb(qint64 bytes)
 {
     return QStringLiteral("%1 GB").arg(double(bytes) / 1e9, 0, 'f', 1);

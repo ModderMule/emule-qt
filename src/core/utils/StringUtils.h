@@ -72,6 +72,13 @@ template <std::integral T>
     return formatShortNumber(static_cast<double>(count), decimals);
 }
 
+/// Uploaded bytes per file size: 1.0 = one full copy sent (eMuleAI's Ratio column).
+/// 0 when the size is unknown.
+[[nodiscard]] double shareRatio(qint64 uploaded, qint64 fileSize);
+
+/// shareRatio() with one decimal, "2.3"; empty when the size is unknown.
+[[nodiscard]] QString formatShareRatio(qint64 uploaded, qint64 fileSize);
+
 /// A duration as MFC CastSecondsToHM shows it: "12 secs", "3:05 mins", "2:10 h",
 /// "1 d 3 h"; "?" for a negative value. Unit words translate under context "Units".
 [[nodiscard]] QString formatSecondsHM(qint64 seconds);

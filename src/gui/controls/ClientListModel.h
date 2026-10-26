@@ -71,6 +71,9 @@ struct ClientRow {
     int64_t uploadStartDelay = 0;  // ms since upload started (0 = not uploading)
     int uploadFilePriority = -1;   // up priority of the upload file (-1 = unknown)
     bool uploadFileAutoPriority = false;
+    int64_t uploadFileSize = 0;               // upload file, for the Ratio columns (0 = none)
+    int64_t uploadFileTransferred = 0;        // its bytes sent this session, to anyone
+    int64_t uploadFileAllTimeTransferred = 0; // ... and across restarts
     int upPartCount = 0;           // parts client has (upload context, PARTSIZE chunks)
     bool isConnected = false;      // has active socket connection
     int64_t queueRating = 0;       // MFC GetScore(false, false, true)
@@ -110,17 +113,29 @@ public:
     [[nodiscard]] int clientCount() const { return count(); }
     [[nodiscard]] ClientListMode mode() const { return m_mode; }
 
-    /// The Country column, the last one before Shared List.
-    [[nodiscard]] int countryColumn() const { return columnCountValue() - 2; }
-    /// Shared List: does the peer allow "View Shared Files". Always the last column,
-    /// shown only with "Show more controls".
-    [[nodiscard]] int sharedListColumn() const { return columnCountValue() - 1; }
+    /// The Country column, the one before Shared List.
+    [[nodiscard]] int countryColumn() const { return baseColumnCount() - 2; }
+    /// Shared List: does the peer allow "View Shared Files". Shown only with
+    /// "Show more controls".
+    [[nodiscard]] int sharedListColumn() const { return baseColumnCount() - 1; }
+    /// Columns that exist only with "Show more controls".
+    [[nodiscard]] std::vector<int> extColumns() const;
+    /// Columns hidden on a fresh layout.
+    [[nodiscard]] std::vector<int> defaultHiddenColumns() const;
     [[nodiscard]] const ClientRow* clientAt(int row) const { return rowAt(row); }
 
 protected:
     [[nodiscard]] int columnCountValue() const override;
 
 private:
+    /// Uploading and On Queue append Uploaded, Downloaded, Ratio, Session Ratio
+    /// after Shared List, so saved layouts keep their indices.
+    enum ExtraColumn { ExtraUploaded = 0, ExtraDownloaded, ExtraRatio, ExtraSessionRatio, ExtraCount };
+
+    /// Columns up to and including Shared List.
+    [[nodiscard]] int baseColumnCount() const;
+    [[nodiscard]] bool hasExtraColumns() const;
+    [[nodiscard]] QVariant extraData(const ClientRow& c, int extra, int role) const;
     [[nodiscard]] QVariant displayData(const ClientRow& c, int column) const;
     [[nodiscard]] QVariant sortData(const ClientRow& c, int column) const;
     [[nodiscard]] QVariant headerLabel(int column) const;

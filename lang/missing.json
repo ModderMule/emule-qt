@@ -1,32 +1,17 @@
 {
-  "Show active downloads in bold": {
-    "_context": "eMule::OptionsDialog",
-    "de_DE": "Aktive Downloads fett anzeigen",
-    "es_ES": "Mostrar descargas activas en negrita",
-    "fr_FR": "Afficher les téléchargements actifs en gras",
-    "it_IT": "Mostra i download attivi in grassetto",
-    "ja_JP": "アクティブなダウンロードを太字で表示",
-    "ko_KR": "활성 다운로드를 굵게 표시",
-    "nl_NL": "Actieve downloads vetgedrukt tonen",
-    "pl_PL": "Pokazuj aktywne pobierania pogrubione",
-    "pt_BR": "Mostrar downloads ativos em negrito",
-    "ru_RU": "Выделять активные загрузки жирным",
-    "zh_CN": "以粗体显示活动下载",
-    "zh_TW": "以粗體顯示活動下載"
-  },
-  "Downloads that are receiving data, and the sources sending it, are drawn in bold. A source listed under another file (A4AF) is bold too while it transfers.": {
-    "_context": "eMule::OptionsDialog",
-    "de_DE": "Downloads, die gerade Daten empfangen, und die Quellen, die sie senden, werden fett dargestellt. Eine unter einer anderen Datei gelistete Quelle (A4AF) ist ebenfalls fett, solange sie überträgt.",
-    "es_ES": "Las descargas que están recibiendo datos, y las fuentes que los envían, se muestran en negrita. Una fuente listada bajo otro archivo (A4AF) también aparece en negrita mientras transfiere.",
-    "fr_FR": "Les téléchargements qui reçoivent des données, et les sources qui les envoient, sont affichés en gras. Une source listée sous un autre fichier (A4AF) est aussi en gras pendant qu'elle transfère.",
-    "it_IT": "I download che stanno ricevendo dati, e le fonti che li inviano, sono mostrati in grassetto. Anche una fonte elencata sotto un altro file (A4AF) è in grassetto mentre trasferisce.",
-    "ja_JP": "データを受信中のダウンロードと、送信しているソースを太字で表示します。別のファイルに表示されているソース (A4AF) も転送中は太字になります。",
-    "ko_KR": "데이터를 받고 있는 다운로드와 이를 보내는 소스를 굵게 표시합니다. 다른 파일 아래에 표시된 소스(A4AF)도 전송 중에는 굵게 표시됩니다.",
-    "nl_NL": "Downloads die gegevens ontvangen, en de bronnen die ze verzenden, worden vetgedrukt weergegeven. Een bron die onder een ander bestand staat (A4AF) is ook vetgedrukt zolang deze overdraagt.",
-    "pl_PL": "Pobierania, które odbierają dane, oraz źródła, które je wysyłają, są pogrubione. Źródło wymienione pod innym plikiem (A4AF) też jest pogrubione, gdy przesyła dane.",
-    "pt_BR": "Downloads que estão recebendo dados, e as fontes que os enviam, são exibidos em negrito. Uma fonte listada em outro arquivo (A4AF) também fica em negrito enquanto transfere.",
-    "ru_RU": "Загрузки, получающие данные, и источники, которые их передают, выделяются жирным. Источник, указанный под другим файлом (A4AF), тоже выделяется жирным, пока передаёт данные.",
-    "zh_CN": "正在接收数据的下载及发送数据的来源以粗体显示。列在其他文件下的来源 (A4AF) 在传输时也以粗体显示。",
-    "zh_TW": "正在接收資料的下載及傳送資料的來源以粗體顯示。列在其他檔案下的來源 (A4AF) 在傳輸時也以粗體顯示。"
+  "Session Ratio": {
+    "_context": "eMule::SharedFilesModel",
+    "de_DE": "Sitzungsverhältnis",
+    "es_ES": "Ratio de sesión",
+    "fr_FR": "Ratio de session",
+    "it_IT": "Rapporto sessione",
+    "ja_JP": "セッション比率",
+    "ko_KR": "세션 비율",
+    "nl_NL": "Sessieratio",
+    "pl_PL": "Ratio sesji",
+    "pt_BR": "Proporção da sessão",
+    "ru_RU": "Соотношение за сессию",
+    "zh_CN": "本次会话分享率",
+    "zh_TW": "本次工作階段分享率"
   }
 }

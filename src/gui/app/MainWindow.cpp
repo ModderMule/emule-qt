@@ -434,6 +434,7 @@ void MainWindow::showOptionsDialog(int page)
     m_messagesPanel->applyDisplayOptions();
     if (m_usenetPanel)
         m_usenetPanel->applyDisplayOptions();
+    m_sharedFilesPanel->applyDisplayOptions();
     m_sharedFilesPanel->refreshSharedDirs();   // Directories page edits the share
     updateWindowTitle();
 

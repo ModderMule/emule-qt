@@ -110,6 +110,11 @@ public:
         ColLength,
         ColBitrate,
         ColCodec,
+        // eMuleAI's upload ratios, "Show more controls" only. Transferred / size, so
+        // two half-uploads count as one copy; MorphXT's spread bar (fewest times any
+        // byte range was sent, StatisticFile.cpp GetFullSpreadCount) would be exacter.
+        ColRatio,
+        ColSessionRatio,
         ColCount
     };
 

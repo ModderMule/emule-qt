@@ -882,12 +882,15 @@ QWidget* SharedFilesPanel::createTopSection()
     }
     // File Name, Size, Type, Priority, Requests, Transferred, Shared Parts, Complete
     // Sources, Shared eD2K|Kad, Folder, File ID, Accepted Requests, Artist, Album,
-    // Title, Length, Bitrate, Codec. Hidden by default as in MFC.
+    // Title, Length, Bitrate, Codec, Ratio, Session Ratio. Hidden by default as in MFC.
     fileView->bindColumns(QStringLiteral("sharedfiles"),
-        {260, 65, 60, 60, 100, 120, 170, 60, 100, 260, 220, 100, 100, 100, 100, 50, 65, 50},
+        {260, 65, 60, 60, 100, 120, 170, 60, 100, 260, 220, 100, 100, 100, 100, 50, 65, 50, 50, 80},
         {SharedFilesModel::ColFolder, SharedFilesModel::ColFileId, SharedFilesModel::ColAccepted,
          SharedFilesModel::ColArtist, SharedFilesModel::ColAlbum, SharedFilesModel::ColTitle,
-         SharedFilesModel::ColLength, SharedFilesModel::ColBitrate, SharedFilesModel::ColCodec});
+         SharedFilesModel::ColLength, SharedFilesModel::ColBitrate, SharedFilesModel::ColCodec,
+         SharedFilesModel::ColRatio, SharedFilesModel::ColSessionRatio});
+    fileView->setExtColumns({SharedFilesModel::ColRatio, SharedFilesModel::ColSessionRatio},
+                            thePrefs.showExtControls());
 
     // MFC SharedFilesCtrl.cpp:1093-1134: the numeric columns start descending, and four
     // of them sort by a second value after both directions of the first — all-time
@@ -895,7 +898,8 @@ QWidget* SharedFilesPanel::createTopSection()
     fileView->setDescendingFirst({SharedFilesModel::ColPriority, SharedFilesModel::ColRequests,
                                   SharedFilesModel::ColAccepted, SharedFilesModel::ColTransferred,
                                   SharedFilesModel::ColCompleteSources,
-                                  SharedFilesModel::ColSharedNetworks});
+                                  SharedFilesModel::ColSharedNetworks,
+                                  SharedFilesModel::ColRatio, SharedFilesModel::ColSessionRatio});
     for (const int column : {SharedFilesModel::ColRequests, SharedFilesModel::ColAccepted,
                              SharedFilesModel::ColTransferred}) {
         fileView->setSortValueColumn(column, [this, column](bool allTime) {
@@ -2177,6 +2181,12 @@ void SharedFilesPanel::addFilesystemChild(QTreeWidgetItem* parent,
 // ---------------------------------------------------------------------------
 // Share marks in the folder tree
 // ---------------------------------------------------------------------------
+
+void SharedFilesPanel::applyDisplayOptions()
+{
+    if (auto* view = dynamic_cast<ListTreeView*>(m_fileView))
+        view->applyExtColumns(thePrefs.showExtControls());
+}
 
 void SharedFilesPanel::refreshSharedDirs()
 {

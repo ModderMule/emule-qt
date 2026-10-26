@@ -42,6 +42,7 @@ private slots:
     void incompleteCategoryFilterSplitsPartFiles();
     void fileSetMenuFollowsMfc();
     void numericColumnsAreRightAligned();
+    void ratioColumns();
 };
 
 namespace {
@@ -632,7 +633,25 @@ void tst_SharedFilesModel::numericColumnsAreRightAligned()
     QCOMPARE(right, (QList<int>{SharedFilesModel::ColSize, SharedFilesModel::ColRequests,
                                 SharedFilesModel::ColTransferred, SharedFilesModel::ColCompleteSources,
                                 SharedFilesModel::ColAccepted, SharedFilesModel::ColLength,
-                                SharedFilesModel::ColBitrate}));
+                                SharedFilesModel::ColBitrate, SharedFilesModel::ColRatio,
+                                SharedFilesModel::ColSessionRatio}));
+}
+
+// eMuleAI's Ratio columns: uploaded / size, all-time and this session
+void tst_SharedFilesModel::ratioColumns()
+{
+    SharedFilesModel model;
+    SharedFileRow r = row(0, "a.avi");   // 1000 bytes
+    r.allTimeTransferred = 2340;
+    r.transferred = 450;
+    SharedFileRow empty = row(1, "b.avi");
+    empty.fileSize = 0;
+    model.setFiles({r, empty});
+    QCOMPARE(model.index(0, SharedFilesModel::ColRatio).data().toString(), QStringLiteral("2.3"));
+    QCOMPARE(model.index(0, SharedFilesModel::ColSessionRatio).data().toString(), QStringLiteral("0.5"));
+    QCOMPARE(model.index(0, SharedFilesModel::ColRatio).data(Qt::UserRole).toDouble(), 2.34);
+    QCOMPARE(model.index(1, SharedFilesModel::ColRatio).data().toString(), QString());
+    QCOMPARE(model.headerData(SharedFilesModel::ColRatio, Qt::Horizontal).toString(), QStringLiteral("Ratio"));
 }
 
 QTEST_MAIN(tst_SharedFilesModel)

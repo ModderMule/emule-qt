@@ -32,6 +32,7 @@ private slots:
     void kadModel_countryColumn();
     void countryColumn_hiddenByDefaultSavedLayoutWins();
     void sharedListColumn_hiddenByDefaultAndExtOnly();
+    void clientModel_transferAndRatioColumns();
     void restoreHeader_keepsLayoutWhenColumnAppended();
     void delegate_widensComposedDecoration();
 };
@@ -114,7 +115,7 @@ void tst_CountryFlags::clientModel_countryColumnAndDecoration()
         model.setClients({row});
 
         const int col = model.countryColumn();
-        QCOMPARE(col, model.columnCount() - 2);   // Shared List comes last
+        QCOMPARE(col, model.sharedListColumn() - 1);
         QCOMPARE(model.headerData(col, Qt::Horizontal).toString(), QStringLiteral("Country"));
         QCOMPARE(model.data(model.index(0, col)).toString(), QStringLiteral("Japan"));
         QCOMPARE(model.data(model.index(0, col), Qt::UserRole).toString(), QStringLiteral("Japan"));
@@ -207,6 +208,39 @@ void tst_CountryFlags::sharedListColumn_hiddenByDefaultAndExtOnly()
     view.header()->setSectionHidden(col, false);
     view.applyExtColumns(false);
     QVERIFY(view.header()->isSectionHidden(col));
+}
+
+// Uploading and On Queue append Uploaded, Downloaded, Ratio, Session Ratio after
+// Shared List; all are "Show more controls" columns, hidden on a fresh layout.
+void tst_CountryFlags::clientModel_transferAndRatioColumns()
+{
+    for (const auto mode : {ClientListMode::Uploading, ClientListMode::OnQueue}) {
+        ClientListModel model(mode);
+        ClientRow row;
+        row.uploadedTotal = 3 * 1024 * 1024;
+        row.downloadedTotal = 0;
+        row.uploadFileSize = 1000;
+        row.uploadFileAllTimeTransferred = 2500;
+        row.uploadFileTransferred = 500;
+        model.setClients({row});
+
+        const int first = model.sharedListColumn() + 1;
+        QCOMPARE(model.columnCount(), first + 4);
+        QCOMPARE(model.headerData(first, Qt::Horizontal).toString(), QStringLiteral("Uploaded"));
+        QCOMPARE(model.headerData(first + 3, Qt::Horizontal).toString(), QStringLiteral("Session Ratio"));
+        QCOMPARE(model.data(model.index(0, first)).toString(), QStringLiteral("3.00 MB"));
+        QCOMPARE(model.data(model.index(0, first + 1)).toString(), QString());   // 0 stays blank
+        QCOMPARE(model.data(model.index(0, first + 2)).toString(), QStringLiteral("2.5"));
+        QCOMPARE(model.data(model.index(0, first + 3)).toString(), QStringLiteral("0.5"));
+        QCOMPARE(model.data(model.index(0, first + 2), Qt::UserRole).toDouble(), 2.5);
+
+        const std::vector<int> ext = model.extColumns();
+        QCOMPARE(ext, (std::vector<int>{first - 1, first, first + 1, first + 2, first + 3}));
+    }
+    // The other two tabs keep Shared List last
+    ClientListModel known(ClientListMode::KnownClients);
+    QCOMPARE(known.sharedListColumn(), known.columnCount() - 1);
+    QCOMPARE(known.extColumns(), std::vector<int>{known.sharedListColumn()});
 }
 
 void tst_CountryFlags::restoreHeader_keepsLayoutWhenColumnAppended()
