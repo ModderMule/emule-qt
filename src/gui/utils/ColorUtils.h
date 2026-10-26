@@ -39,10 +39,11 @@ namespace eMule {
     return (std::max(la, lb) + 0.05) / (std::min(la, lb) + 0.05);
 }
 
-/// @p preferred when it reads on @p background (4.5:1), else black or white.
+/// @p preferred when it reads on @p background (3:1), else black or white.
+/// Not 4.5: white on Windows' #0078d7 is 4.49 and must stay white, as in MFC.
 [[nodiscard]] inline QColor readableTextOn(const QColor& background, const QColor& preferred)
 {
-    if (contrastRatio(preferred, background) >= 4.5)
+    if (contrastRatio(preferred, background) >= 3.0)
         return preferred;
     const QColor black(Qt::black);
     const QColor white(Qt::white);
