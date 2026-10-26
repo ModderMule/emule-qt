@@ -69,6 +69,33 @@ so `build-win.ps1 -Config Debug` refuses to run against it rather than mixing CR
 `scripts\debug-gui.ps1` all honour it. The `.vcxproj` files do not — they are hardcoded
 to `x64-windows`.
 
+### Full dependency rebuild after a PowerShell update
+
+vcpkg puts the PowerShell 7 version into every package's ABI hash (`powershell 7.6.x` in
+`vcpkg_installed\<triplet>\share\<port>\vcpkg_abi_info.txt`). When pwsh updates itself, all
+~170 packages, Boost included, look stale. The next CMake reconfigure (usually right after a
+`git pull`) then rebuilds them all from source with the same versions, and the binary cache
+misses. The same happens on an MSVC update.
+
+To stop this, turn off the automatic install once `build\vcpkg_installed\` is populated:
+
+```powershell
+cmake -DVCPKG_MANIFEST_INSTALL=OFF build
+```
+
+The value stays in `build\CMakeCache.txt`, and `build-win.ps1` does not override it. CMake keeps
+using the installed packages and never calls vcpkg again. When `src/vcpkg.json`, the baseline
+or the overlay ports change, update the packages by hand (from the repo root, same triplet):
+
+```powershell
+build\vcpkg\vcpkg install --x-manifest-root=src --x-install-root=build\vcpkg_installed --triplet x64-windows
+```
+
+Or re-enable it for one configure with `-DVCPKG_MANIFEST_INSTALL=ON`. `build-win.ps1 -Clean`
+deletes all of `build\`, including `vcpkg_installed\`. The first configure after it must install
+the packages again (from the binary cache when the ABI is unchanged), so set the flag only after
+that configure.
+
 ## Fallback: Manual library installation
 
 If not using vcpkg, install libraries to the paths expected by the project files:
