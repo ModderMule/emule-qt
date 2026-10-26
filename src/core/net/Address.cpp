@@ -175,7 +175,16 @@ bool Address::isPublicIP() const
                 std::all_of(m_v6.begin(), m_v6.end(), [](uint8 b) { return b == 0; });
             return !unspecified && m_v6[0] != 0xFF;
         }
+    }
+    return isGlobalIP();
+}
 
+bool Address::isGlobalIP() const
+{
+    if (m_family == Family::IPv4)
+        return isPublicIP();    // lab mode never widens IPv4
+
+    if (m_family == Family::IPv6) {
         // ::/128 unspecified, ::1/128 loopback
         if (m_v6[0] == 0 && m_v6[1] == 0 && m_v6[2] == 0 && m_v6[3] == 0 &&
             m_v6[4] == 0 && m_v6[5] == 0 && m_v6[6] == 0 && m_v6[7] == 0 &&

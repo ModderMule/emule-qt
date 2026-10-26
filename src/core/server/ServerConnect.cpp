@@ -45,6 +45,12 @@ ServerConnect::ServerConnect(ServerList& serverList, QObject* parent)
 
     m_retryTimer.setSingleShot(true);
     connect(&m_retryTimer, &QTimer::timeout, this, &ServerConnect::onRetryTimer);
+
+    m_handoverTimer.setSingleShot(true);
+    connect(&m_handoverTimer, &QTimer::timeout, this, [this] {
+        if (m_handoverSocket)
+            failIPv6Handover(m_handoverSocket, QStringLiteral("timed out"));
+    });
 }
 
 ServerConnect::~ServerConnect()
@@ -236,174 +242,7 @@ void ServerConnect::connectToServer(Server* server, bool multiconnect, bool noCr
     if (ipv6Switch)
         dial = server->ipv6Address();
 
-    auto* socket = new ServerSocket(/*!multiconnect*/ m_singleConnecting, this);
-    m_openSockets.push_back(socket);
-
-    // Connect signals from this socket using lambda captures for sender identification
-    connect(socket, &ServerSocket::connectionStateChanged, this,
-            [this, socket](ServerConnState state) {
-                onConnectionStateChanged(socket, state);
-            });
-
-    connect(socket, &ServerSocket::connectionFailed, this,
-            [this, socket](ServerConnState reason) {
-                onConnectionFailed(socket, reason);
-            });
-
-    // Parse server messages for [emDynIP], "server version X.Y" and ERROR/WARNING
-    // before display (#17), then re-emit the surviving text for the GUI.
-    connect(socket, &ServerSocket::serverMessage, this,
-            [this, socket](const QString& msg) { onServerMessage(socket, msg); });
-
-    connect(socket, &ServerSocket::loginReceived, this,
-            [this, socket](uint32 clientID, uint32 tcpFlags, uint32 serverReportedIP) {
-                onLoginReceived(socket, clientID, tcpFlags, serverReportedIP);
-            });
-
-    connect(socket, &ServerSocket::foundSourcesReceived, this,
-            [](const uint8* data, uint32 size, bool obfuscated) {
-                if (thePrefs.wantsSourceExchangeLog() && size >= 17)
-                    logDebug(QStringLiteral("SXRecv: Server source response; Count=%1, File=%2")
-                                 .arg(data[16]).arg(md4str(data)));
-                if (theApp.downloadQueue)
-                    theApp.downloadQueue->addServerSourceResult(data, size, obfuscated);
-            });
-
-    // Servers a connected server advertises (OP_SERVERLIST). Gated on the pref,
-    // matching MFC (CServerSocket::ProcessPacket, GetAddServersFromServer()).
-    connect(socket, &ServerSocket::serverListReceived, this,
-            [](const uint8* data, uint32 size) {
-                if (theApp.serverList && thePrefs.addServersFromServer())
-                    theApp.serverList->addServersFromPacket(data, size);
-            });
-
-    // Learned server metadata (name/description/version — #15, user/file counts —
-    // #16) reaches only the socket's throwaway copy; wire it to the persistent list
-    // entry. MFC: CServerSocket::ProcessPacket() — ServerSocket.cpp:390-397,463-470.
-    connect(socket, &ServerSocket::serverIdentReceived, this,
-            [this, socket](const uint8* serverHash, uint32 /*ip*/, uint16 /*port*/,
-                           const QString& name, const QString& description) {
-                onServerIdent(socket, serverHash, name, description);
-            });
-
-    // Dual-stack: the ident named the server's other address — one row per server.
-    connect(socket, &ServerSocket::serverAddressLearned, this,
-            [this, socket](const Address& addr) {
-                Server* entry = resolveListEntry(socket);
-                if (!entry)
-                    return;
-                m_serverList.attachAddress(entry, addr);
-                // The IPv6 arrived after an accepted IPv4 LowID. Deferred: we are
-                // inside this socket's packet handler.
-                if (socket == m_connectedSocket && m_connected && isLowID()
-                    && wantsIPv6Switch(socket, entry)) {
-                    QTimer::singleShot(0, this, [this, id = entry->serverId()] {
-                        Server* e = m_serverList.findById(id);
-                        if (!e || !m_connected || !isLowID() || !m_connectedSocket
-                            || !wantsIPv6Switch(m_connectedSocket, e))
-                            return;
-                        logInfo(QStringLiteral("Low ID over IPv4 on %1 — switching to its IPv6 address")
-                                    .arg(e->name()));
-                        e->setPreferIPv6Session(true);
-                        connectToServer(e);
-                    });
-                }
-            });
-
-    connect(socket, &ServerSocket::serverStatusReceived, this,
-            [this, socket](uint32 users, uint32 files) {
-                onServerStatus(socket, users, files);
-            });
-
-    // A resolved dynIP server: store the IP on the list entry and collapse its IP
-    // twins (MFC: CServerSocket::OnHostNameResolved — ServerSocket.cpp:79), plus
-    // same-DN duplicates (#18, RemoveDuplicatesByAddress).
-    connect(socket, &ServerSocket::dynIPResolved, this,
-            [this, socket](const Address& addr, const QString& hostname) {
-                const Server* connected = socket->currentServer();
-                if (!connected)
-                    return;
-                if (Server* entry = m_serverList.applyResolvedIP(hostname, connected->port(), addr))
-                    m_serverList.removeDuplicatesByAddress(entry);
-            });
-
-    // Resolved into the IP filter: delete the entry. Look up by DN — the socket copy
-    // has no IP yet. MFC: CServerSocket::OnHostnameResolved() — ServerSocket.cpp:91.
-    connect(socket, &ServerSocket::dynIPFiltered, this,
-            [this, socket](const Address& /*addr*/) {
-                const Server* connected = socket->currentServer();
-                if (!connected)
-                    return;
-                if (Server* entry = listEntryFor(connected))
-                    m_serverList.removeServer(entry);
-            });
-
-    connect(socket, &ServerSocket::searchResultReceived,
-            this,   &ServerConnect::searchResultReceived);
-
-    // NAT rendezvous notices: only from the live session.
-    connect(socket, &ServerSocket::natPacketReceived, this,
-            [this, socket](uint8 opcode, const QByteArray& payload) {
-                if (socket == m_connectedSocket)
-                    emit natServerPacket(opcode, payload);
-            });
-
-    connect(socket, &ServerSocket::callbackRequested, this,
-            [](uint32 clientIP, uint16 clientPort, const uint8* cryptData, uint32 cryptSize) {
-                if (!theApp.clientList)
-                    return;
-                if (theApp.clientList->isBannedClient(Address::fromNetworkOrder(clientIP)))
-                    return;
-
-                auto* client = theApp.clientList->findByConnIP(clientIP, clientPort);
-                if (!client) {
-                    // The requester's IP is its user ID (network order, ed2kID). With 0 there
-                    // it reads as LowID and is never dialled. MFC ServerSocket.cpp:536.
-                    client = new UpDownClient(clientPort, clientIP, 0, 0, nullptr, true);
-                    theApp.clientList->addClient(client);
-                }
-
-                // Apply crypt options if present (options[1] + hash[16] = 17 bytes)
-                if (cryptData && cryptSize >= 17) {
-                    uint8 byCryptOptions = cryptData[0];
-                    const uint8* userHash = cryptData + 1;
-                    if (client->hasValidHash()) {
-                        if (md4equ(client->userHash(), userHash)) {
-                            client->setConnectOptions(byCryptOptions, true, false);
-                        } else {
-                            // Userhash mismatch — the real hash is unknown, so drop
-                            // all crypt-layer flags defensively (options=0, no
-                            // encryption). MFC: CServerSocket — ServerSocket.cpp:553-556.
-                            client->setConnectOptions(0, false, false);
-                        }
-                    } else {
-                        client->setUserHash(userHash);
-                        client->setConnectOptions(byCryptOptions, true, false);
-                    }
-                }
-
-                client->tryToConnect();
-            });
-
-    // IPv6 LowID callback (S4): the server relays the requester's public IPv6 endpoint;
-    // we connect back over IPv6 exactly as the classic 0x35 handler does over IPv4.
-    connect(socket, &ServerSocket::callbackRequestedIPv6, this,
-            [](const Endpoint& requester) {
-                if (!theApp.clientList)
-                    return;
-                const Address& addr = requester.address();
-                if (theApp.clientList->isBannedClient(addr))
-                    return;
-
-                // clientID=1 = LowID marker (no IPv4). setUserAddress points both
-                // userAddress and connectAddress at the IPv6 so tryToConnect dials v6.
-                auto* client = new UpDownClient(requester.port(), 1, 0, 0, nullptr);
-                client->setUserAddress(addr);
-                client->setUserIPv6(addr);
-                client->setOpenIPv6(true);
-                theApp.clientList->addClient(client);
-                client->tryToConnect();
-            });
+    auto* socket = createServerSocket(m_singleConnecting);
 
     logServerVerbose(QStringLiteral("connectToServer: %1 (%2) multiconnect=%3 noCrypt=%4 openSockets=%5")
                          .arg(server->name()).arg(server->addressWithPort())
@@ -488,6 +327,21 @@ void ServerConnect::onConnectionFailed(ServerSocket* socket, ServerConnState /*r
 
 void ServerConnect::connectionEstablished(ServerSocket* sender)
 {
+    if (sender == m_handoverSocket) {
+        if (sender->connectionState() == ServerConnState::WaitForLogin) {
+            // Logs in beside the live IPv4 session (or after it, closeFirst)
+            initLocalIP();
+            logInfo(QStringLiteral("IPv6 handover: connected to %1 (%2), sending login request")
+                        .arg(sender->currentServer() ? sender->currentServer()->name() : QString(),
+                             ipstr(sender->sessionAddress())));
+            m_handoverLoginSent = true;
+            sendLoginPacket(sender);
+        } else if (sender->connectionState() == ServerConnState::Connected) {
+            finishIPv6Handover(sender);
+        }
+        return;
+    }
+
     if (!m_connecting) {
         // Already connected to another server
         destroySocket(sender);
@@ -553,6 +407,11 @@ void ServerConnect::connectionEstablished(ServerSocket* sender)
 
         emit stateChanged();
         emit connectedToServer(cserver ? listEntryFor(cserver) : nullptr);
+
+        // LowID over IPv4 on a dual-stack server: we are online now, move to IPv6
+        // in the background. Deferred: we are inside this socket's packet handler.
+        if (m_handoverServerId != 0 && !m_handoverSocket && sender->sessionAddress().isIPv4())
+            QTimer::singleShot(0, this, [this] { startIPv6Handover(false); });
     }
 }
 
@@ -562,8 +421,28 @@ void ServerConnect::connectionEstablished(ServerSocket* sender)
 
 void ServerConnect::connectionFailed(ServerSocket* sender)
 {
+    if (sender == m_handoverSocket) {
+        failIPv6Handover(sender, sender->connectionState() == ServerConnState::ServerFull
+                                     ? QStringLiteral("closed by the server")
+                                     : QStringLiteral("connection failed"));
+        return;
+    }
+
     if (!m_connecting && sender != m_connectedSocket)
         return;
+
+    // The server closed the IPv4 session because the IPv6 login took it over
+    // (eNode-go releases it right before accepting the new one). Not a loss: the
+    // IPv6 answer follows, and a failed one falls back to IPv4.
+    if (m_connected && sender == m_connectedSocket && m_handoverSocket && m_handoverLoginSent) {
+        logInfo(QStringLiteral("IPv6 handover: server closed the IPv4 session"));
+        destroySocket(sender);
+        m_connecting = true;
+        m_singleConnecting = true;
+        emit sessionHandedOver();
+        emit stateChanged();
+        return;
+    }
 
     const ServerConnState failState = sender->connectionState();
 
@@ -1023,6 +902,9 @@ void ServerConnect::destroySocket(ServerSocket* socket)
         }
     }
 
+    if (socket == m_handoverSocket)
+        resetIPv6Handover();
+
     // Never leave m_connectedSocket pointing at a socket we are about to delete.
     // connectionFailed() funnels every terminal state here, but only its
     // ServerConnState::Disconnected case clears the pointer — FatalError, Error,
@@ -1235,7 +1117,9 @@ void ServerConnect::onLoginReceived(ServerSocket* socket, uint32 clientID, uint3
     // uses the *immutable* per-socket flag — not the mutable m_singleConnecting,
     // which the old post-promotion ordering had already cleared — so a manual
     // single-server connect is honoured and never wanders to another server.
-    if (m_config.smartLowIdCheck) {
+    // The IPv6 handover login is the same server by choice: never bounced elsewhere
+    const bool handover = socket == m_handoverSocket;
+    if (m_config.smartLowIdCheck && !handover) {
         if (!eMule::isLowID(clientID)) {
             m_smartIdState = 1;                       // armed: saw a HighID this run
         } else if (m_smartIdState > 0) {
@@ -1262,22 +1146,18 @@ void ServerConnect::onLoginReceived(ServerSocket* socket, uint32 clientID, uint3
     }
 
     // serverPreferIPv6 (not MFC): a LowID we would keep, on the IPv4 side of a
-    // dual-stack server — redial that server over IPv6 instead.
-    if (Server* entry = listEntryFor(socket->currentServer())) {
+    // dual-stack server — accept it, then move to IPv6 in the background once
+    // connected (startIPv6Handover). Committing first keeps us online meanwhile.
+    if (Server* entry = listEntryFor(socket->currentServer()); entry && !handover) {
         if (!eMule::isLowID(clientID)) {
             if (socket->sessionAddress().isIPv4()) {
                 entry->setPreferIPv6Session(false);
                 entry->setIPv6SwitchFailed(false);
             }
         } else if (wantsIPv6Switch(socket, entry)) {
-            logWarning(QStringLiteral("You have a Low ID over IPv4 on %1 — switching to its IPv6 address.")
+            logWarning(QStringLiteral("You have a Low ID over IPv4 on %1 — moving to its IPv6 address in the background.")
                            .arg(entry->name()));
-            entry->setPreferIPv6Session(true);
-            const bool single = m_singleConnecting;
-            socket->requestLowIDBounce();
-            destroySocket(socket);
-            connectToServer(entry, !single);
-            return;                                    // do NOT commit this LowID
+            m_handoverServerId = entry->serverId();
         }
     }
 
@@ -1373,6 +1253,111 @@ ServerConnect::NextDial ServerConnect::nextDialFor(const ServerSocket* socket,
     if (const auto& left = socket->nextAddresses(); !left.empty())
         return {left.front(), std::vector<Address>(left.begin() + 1, left.end())};
     return {otherFamilyFor(socket, listServer), {}};
+}
+
+void ServerConnect::startIPv6Handover(bool closeFirst)
+{
+    Server* entry = m_serverList.findById(m_handoverServerId);
+    if (m_handoverSocket)
+        return;
+    if (!entry || !m_connected || !m_connectedSocket || !wantsIPv6Switch(m_connectedSocket, entry)
+        || listEntryFor(m_connectedSocket->currentServer()) != entry) {
+        m_handoverServerId = 0;
+        return;
+    }
+    const uint32 serverId = m_handoverServerId;
+
+    if (closeFirst) {
+        // One session per user hash and no takeover: go offline for the IPv6 login
+        logInfo(QStringLiteral("IPv6 handover: %1 refused a second session — closing the IPv4 one first")
+                    .arg(entry->name()));
+        m_connecting = true;
+        m_singleConnecting = true;
+        disconnect();
+    }
+
+    auto* socket = createServerSocket(false);
+    m_handoverSocket = socket;
+    m_handoverServerId = serverId;
+    m_handoverLoginSent = false;
+    m_handoverCloseFirst = closeFirst;
+
+    uint32 timeout = m_config.connectionTimeout;
+    if (thePrefs.proxySettings().useProxy)
+        timeout = std::max<uint32>(timeout, CONNECTION_TIMEOUT);
+    m_handoverTimer.start(static_cast<int>(timeout));
+
+    logInfo(QStringLiteral("IPv6 handover: dialing %1 (%2)")
+                .arg(entry->name(), Endpoint(entry->ipv6Address(), entry->port()).toString()));
+    socket->initProxySupport(thePrefs.proxySettings());
+    socket->connectTo(*entry, false, entry->ipv6Address(), true);
+}
+
+void ServerConnect::finishIPv6Handover(ServerSocket* socket)
+{
+    Server* entry = listEntryFor(socket->currentServer());
+    const bool closeFirst = m_handoverCloseFirst;
+    resetIPv6Handover();
+
+    // Still up: the server let the two overlap (ed2k-server keeps the old socket)
+    if (m_connected && m_connectedSocket) {
+        destroySocket(m_connectedSocket);
+        emit sessionHandedOver();
+    }
+    if (entry) {
+        entry->setPreferIPv6Session(true);   // next connect dials IPv6 straight away
+        entry->setIPv6SwitchFailed(false);
+    }
+    logInfo(QStringLiteral("IPv6 handover to %1 complete%2")
+                .arg(entry ? entry->name() : QString(),
+                     closeFirst ? QString() : QStringLiteral(" without going offline")));
+
+    // The ordinary login path makes it the live session
+    m_connecting = true;
+    connectionEstablished(socket);
+}
+
+void ServerConnect::failIPv6Handover(ServerSocket* socket, const QString& reason)
+{
+    Server* entry = m_serverList.findById(m_handoverServerId);
+    const bool closeFirst = m_handoverCloseFirst;
+    // eNode-go refuses a second session for the hash with a message and a close
+    const bool refused = m_handoverLoginSent && socket->connectionState() == ServerConnState::ServerFull;
+    destroySocket(socket);   // resets the handover state
+
+    if (m_connected && m_connectedSocket) {
+        if (!entry)
+            return;
+        if (refused && !closeFirst) {
+            m_handoverServerId = entry->serverId();
+            QTimer::singleShot(0, this, [this] { startIPv6Handover(true); });
+            return;
+        }
+        logInfo(QStringLiteral("IPv6 handover to %1 failed (%2) — staying on IPv4")
+                    .arg(entry->name(), reason));
+        entry->setIPv6SwitchFailed(true);
+        return;
+    }
+
+    // The IPv4 session is gone already: back to it
+    if (!entry) {
+        stopConnectionTry();
+        return;
+    }
+    logWarning(QStringLiteral("IPv6 handover to %1 failed (%2) — reconnecting over IPv4")
+                   .arg(entry->name(), reason));
+    entry->setPreferIPv6Session(false);
+    entry->setIPv6SwitchFailed(true);
+    connectToServer(entry);
+}
+
+void ServerConnect::resetIPv6Handover()
+{
+    m_handoverTimer.stop();
+    m_handoverSocket = nullptr;
+    m_handoverServerId = 0;
+    m_handoverLoginSent = false;
+    m_handoverCloseFirst = false;
 }
 
 void ServerConnect::applyServerFlags(ServerSocket* socket, uint32 tcpFlags)
@@ -1547,6 +1532,181 @@ QString ServerConnect::serverMessageLogLine(const QString& prefix, const Server*
              srv && !srv->name().isEmpty() ? srv->name() : tr("Server"),
              srv ? srv->addressWithPort() : QString{},
              rest.trimmed());
+}
+
+// ---------------------------------------------------------------------------
+// Socket creation
+// ---------------------------------------------------------------------------
+
+ServerSocket* ServerConnect::createServerSocket(bool manualSingleConnect)
+{
+    auto* socket = new ServerSocket(manualSingleConnect, this);
+    m_openSockets.push_back(socket);
+
+    // Connect signals from this socket using lambda captures for sender identification
+    connect(socket, &ServerSocket::connectionStateChanged, this,
+            [this, socket](ServerConnState state) {
+                onConnectionStateChanged(socket, state);
+            });
+
+    connect(socket, &ServerSocket::connectionFailed, this,
+            [this, socket](ServerConnState reason) {
+                onConnectionFailed(socket, reason);
+            });
+
+    // Parse server messages for [emDynIP], "server version X.Y" and ERROR/WARNING
+    // before display (#17), then re-emit the surviving text for the GUI.
+    connect(socket, &ServerSocket::serverMessage, this,
+            [this, socket](const QString& msg) { onServerMessage(socket, msg); });
+
+    connect(socket, &ServerSocket::loginReceived, this,
+            [this, socket](uint32 clientID, uint32 tcpFlags, uint32 serverReportedIP) {
+                onLoginReceived(socket, clientID, tcpFlags, serverReportedIP);
+            });
+
+    connect(socket, &ServerSocket::foundSourcesReceived, this,
+            [](const uint8* data, uint32 size, bool obfuscated) {
+                if (thePrefs.wantsSourceExchangeLog() && size >= 17)
+                    logDebug(QStringLiteral("SXRecv: Server source response; Count=%1, File=%2")
+                                 .arg(data[16]).arg(md4str(data)));
+                if (theApp.downloadQueue)
+                    theApp.downloadQueue->addServerSourceResult(data, size, obfuscated);
+            });
+
+    // Servers a connected server advertises (OP_SERVERLIST). Gated on the pref,
+    // matching MFC (CServerSocket::ProcessPacket, GetAddServersFromServer()).
+    connect(socket, &ServerSocket::serverListReceived, this,
+            [](const uint8* data, uint32 size) {
+                if (theApp.serverList && thePrefs.addServersFromServer())
+                    theApp.serverList->addServersFromPacket(data, size);
+            });
+
+    // Learned server metadata (name/description/version — #15, user/file counts —
+    // #16) reaches only the socket's throwaway copy; wire it to the persistent list
+    // entry. MFC: CServerSocket::ProcessPacket() — ServerSocket.cpp:390-397,463-470.
+    connect(socket, &ServerSocket::serverIdentReceived, this,
+            [this, socket](const uint8* serverHash, uint32 /*ip*/, uint16 /*port*/,
+                           const QString& name, const QString& description) {
+                onServerIdent(socket, serverHash, name, description);
+            });
+
+    // Dual-stack: the ident named the server's other address — one row per server.
+    connect(socket, &ServerSocket::serverAddressLearned, this,
+            [this, socket](const Address& addr) {
+                Server* entry = resolveListEntry(socket);
+                if (!entry)
+                    return;
+                m_serverList.attachAddress(entry, addr);
+                // The IPv6 arrived after an accepted IPv4 LowID. Deferred: we are
+                // inside this socket's packet handler.
+                if (socket == m_connectedSocket && m_connected && isLowID() && !m_handoverSocket
+                    && wantsIPv6Switch(socket, entry)) {
+                    QTimer::singleShot(0, this, [this, id = entry->serverId()] {
+                        if (m_handoverSocket || !m_connected || !isLowID())
+                            return;
+                        logInfo(QStringLiteral("Low ID over IPv4 — moving to the server's IPv6 address in the background"));
+                        m_handoverServerId = id;
+                        startIPv6Handover(false);
+                    });
+                }
+            });
+
+    connect(socket, &ServerSocket::serverStatusReceived, this,
+            [this, socket](uint32 users, uint32 files) {
+                onServerStatus(socket, users, files);
+            });
+
+    // A resolved dynIP server: store the IP on the list entry and collapse its IP
+    // twins (MFC: CServerSocket::OnHostNameResolved — ServerSocket.cpp:79), plus
+    // same-DN duplicates (#18, RemoveDuplicatesByAddress).
+    connect(socket, &ServerSocket::dynIPResolved, this,
+            [this, socket](const Address& addr, const QString& hostname) {
+                const Server* connected = socket->currentServer();
+                if (!connected)
+                    return;
+                if (Server* entry = m_serverList.applyResolvedIP(hostname, connected->port(), addr))
+                    m_serverList.removeDuplicatesByAddress(entry);
+            });
+
+    // Resolved into the IP filter: delete the entry. Look up by DN — the socket copy
+    // has no IP yet. MFC: CServerSocket::OnHostnameResolved() — ServerSocket.cpp:91.
+    connect(socket, &ServerSocket::dynIPFiltered, this,
+            [this, socket](const Address& /*addr*/) {
+                const Server* connected = socket->currentServer();
+                if (!connected)
+                    return;
+                if (Server* entry = listEntryFor(connected))
+                    m_serverList.removeServer(entry);
+            });
+
+    connect(socket, &ServerSocket::searchResultReceived,
+            this,   &ServerConnect::searchResultReceived);
+
+    // NAT rendezvous notices: only from the live session.
+    connect(socket, &ServerSocket::natPacketReceived, this,
+            [this, socket](uint8 opcode, const QByteArray& payload) {
+                if (socket == m_connectedSocket)
+                    emit natServerPacket(opcode, payload);
+            });
+
+    connect(socket, &ServerSocket::callbackRequested, this,
+            [](uint32 clientIP, uint16 clientPort, const uint8* cryptData, uint32 cryptSize) {
+                if (!theApp.clientList)
+                    return;
+                if (theApp.clientList->isBannedClient(Address::fromNetworkOrder(clientIP)))
+                    return;
+
+                auto* client = theApp.clientList->findByConnIP(clientIP, clientPort);
+                if (!client) {
+                    // The requester's IP is its user ID (network order, ed2kID). With 0 there
+                    // it reads as LowID and is never dialled. MFC ServerSocket.cpp:536.
+                    client = new UpDownClient(clientPort, clientIP, 0, 0, nullptr, true);
+                    theApp.clientList->addClient(client);
+                }
+
+                // Apply crypt options if present (options[1] + hash[16] = 17 bytes)
+                if (cryptData && cryptSize >= 17) {
+                    uint8 byCryptOptions = cryptData[0];
+                    const uint8* userHash = cryptData + 1;
+                    if (client->hasValidHash()) {
+                        if (md4equ(client->userHash(), userHash)) {
+                            client->setConnectOptions(byCryptOptions, true, false);
+                        } else {
+                            // Userhash mismatch — the real hash is unknown, so drop
+                            // all crypt-layer flags defensively (options=0, no
+                            // encryption). MFC: CServerSocket — ServerSocket.cpp:553-556.
+                            client->setConnectOptions(0, false, false);
+                        }
+                    } else {
+                        client->setUserHash(userHash);
+                        client->setConnectOptions(byCryptOptions, true, false);
+                    }
+                }
+
+                client->tryToConnect();
+            });
+
+    // IPv6 LowID callback (S4): the server relays the requester's public IPv6 endpoint;
+    // we connect back over IPv6 exactly as the classic 0x35 handler does over IPv4.
+    connect(socket, &ServerSocket::callbackRequestedIPv6, this,
+            [](const Endpoint& requester) {
+                if (!theApp.clientList)
+                    return;
+                const Address& addr = requester.address();
+                if (theApp.clientList->isBannedClient(addr))
+                    return;
+
+                // clientID=1 = LowID marker (no IPv4). setUserAddress points both
+                // userAddress and connectAddress at the IPv6 so tryToConnect dials v6.
+                auto* client = new UpDownClient(requester.port(), 1, 0, 0, nullptr);
+                client->setUserAddress(addr);
+                client->setUserIPv6(addr);
+                client->setOpenIPv6(true);
+                theApp.clientList->addClient(client);
+                client->tryToConnect();
+            });
+
+    return socket;
 }
 
 } // namespace eMule

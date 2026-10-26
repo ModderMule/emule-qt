@@ -51,6 +51,7 @@
 #include "utils/SafeFile.h"
 
 #include <QDir>
+#include <QElapsedTimer>
 #include <QFile>
 #include <QProcess>
 #include <QRegularExpression>
@@ -203,6 +204,13 @@ private slots:
     void rawPreLoginOversizedHeader();
     void stopServerHardening();
 
+    // Round 12: serverPreferIPv6 handover. A LowID over IPv4 is kept, the IPv6 session
+    // logs in beside it and eNode-go hands the session over (advertised IPv6 + port),
+    // so the client stays online. Same dual-stack eNode as round 9.
+    void startServerHandover();
+    void ipv6HandoverKeepsSessionOnline();
+    void stopServerHandover();
+
     void cleanupTestCase();
 
 private:
@@ -218,6 +226,9 @@ private:
     void connectAndAwaitIPv6Status(uint8& status);
     /// Disconnect and verify the verdict is cleared, so the next login is re-probed.
     void disconnectAndExpectIPv6StatusCleared();
+    /// Start eNode dual-stack with IPv6 probing on, reached on our global IPv6
+    /// (m_probeServerV6). Returns a skip reason; hard config errors fail the test.
+    QString startDualStackServer();
     void disconnectFromServer();
     void publishFiles();
     void searchForKeyword();
@@ -256,6 +267,7 @@ private:
     // Round 9: our global IPv6 the eNode is reached on (and dials back to).
     Address m_probeServerV6;
     bool m_ipv6ProbeActive = false;
+    bool m_handoverActive = false;   // round 12
 
     // Round 8: the ServerList entry the version parsers write onto, and the string
     // the TCP login surface produced (compared against the UDP one later).
@@ -1699,47 +1711,8 @@ void tst_ServerLocalTest::stopServerVersions()
 
 void tst_ServerLocalTest::startServerIPv6Probe()
 {
-    m_probeServerV6 = selectPreferredIPv6(scanLocalIPv6());
-    if (m_probeServerV6.isNull())
-        QSKIP("No global-unicast IPv6 on a local interface — skipping IPv6 dial-back round");
-
-    const qsizetype cfgIdx = m_enodeArgs.indexOf(QStringLiteral("-config")) + 1;
-    if (cfgIdx <= 0 || cfgIdx >= m_enodeArgs.size())
-        QSKIP("SERVER_TEST_CMD has no -config argument — can't derive the IPv6 probe config");
-
-    QFile src(m_enodeArgs[cfgIdx]);
-    QVERIFY2(src.open(QIODevice::ReadOnly), qPrintable(QStringLiteral("Can't read %1").arg(src.fileName())));
-    QString yaml = QString::fromUtf8(src.readAll());
-
-    // Each key must exist exactly where expected, or the round would test the wrong config.
-    const auto force = [&yaml](const QString& pattern, const QString& replacement) {
-        const QRegularExpression re(pattern, QRegularExpression::MultilineOption);
-        if (!re.match(yaml).hasMatch())
-            return false;
-        yaml.replace(re, replacement);
-        return true;
-    };
-    QVERIFY2(force(QStringLiteral(R"(^address:.*$)"), QStringLiteral(R"(address: "")")),
-             "config has no top-level address key");
-    QVERIFY2(force(QStringLiteral(R"(^dynIp:.*$)"), QStringLiteral(R"(dynIp: "192.0.2.1")")),
-             "config has no top-level dynIp key");
-    QVERIFY2(force(QStringLiteral(R"(^(ipv6:\n\s+enabled:).*$)"), QStringLiteral(R"(\1 true)")),
-             "config has no ipv6.enabled key");
-    QVERIFY2(force(QStringLiteral(R"(^(\s+probeReachability:).*$)"), QStringLiteral(R"(\1 true)")),
-             "config has no ipv6.probeReachability key");
-
-    const QString probeCfg = m_tmpDir->filePath(QStringLiteral("enode.v6probe.yaml"));
-    QFile dst(probeCfg);
-    QVERIFY(dst.open(QIODevice::WriteOnly | QIODevice::Truncate));
-    dst.write(yaml.toUtf8());
-    dst.close();
-
-    // Relative paths in the config (logs, fixtures, ipfilter) still resolve against
-    // m_enodeWorkDir — startServer() keeps it as the working directory.
-    const QStringList origArgs = m_enodeArgs;
-    m_enodeArgs[cfgIdx] = probeCfg;
-    startServer();
-    m_enodeArgs = origArgs;
+    if (const QString skip = startDualStackServer(); !skip.isEmpty())
+        QSKIP(qPrintable(skip));
     if (QTest::currentTestFailed())
         return;
 
@@ -1809,6 +1782,60 @@ void tst_ServerLocalTest::stopServerIPv6Probe()
     theApp.serverConnect = nullptr;
     m_ipv6ProbeActive = false;
     stopServer();
+}
+
+QString tst_ServerLocalTest::startDualStackServer()
+{
+    m_probeServerV6 = selectPreferredIPv6(scanLocalIPv6());
+    if (m_probeServerV6.isNull())
+        return QStringLiteral("No global-unicast IPv6 on a local interface");
+
+    const qsizetype cfgIdx = m_enodeArgs.indexOf(QStringLiteral("-config")) + 1;
+    if (cfgIdx <= 0 || cfgIdx >= m_enodeArgs.size())
+        return QStringLiteral("SERVER_TEST_CMD has no -config argument — can't derive the dual-stack config");
+
+    QFile src(m_enodeArgs[cfgIdx]);
+    if (!src.open(QIODevice::ReadOnly)) {
+        QTest::qFail(qPrintable(QStringLiteral("Can't read %1").arg(src.fileName())), __FILE__, __LINE__);
+        return {};
+    }
+    QString yaml = QString::fromUtf8(src.readAll());
+
+    // Each key must exist exactly where expected, or the round would test the wrong config.
+    const auto force = [&yaml](const QString& pattern, const QString& replacement) {
+        const QRegularExpression re(pattern, QRegularExpression::MultilineOption);
+        if (!re.match(yaml).hasMatch())
+            return false;
+        yaml.replace(re, replacement);
+        return true;
+    };
+    const bool ok = force(QStringLiteral(R"(^address:.*$)"), QStringLiteral(R"(address: "")"))
+        && force(QStringLiteral(R"(^dynIp:.*$)"), QStringLiteral(R"(dynIp: "192.0.2.1")"))
+        && force(QStringLiteral(R"(^(ipv6:\n\s+enabled:).*$)"), QStringLiteral(R"(\1 true)"))
+        && force(QStringLiteral(R"(^(\s+probeReachability:).*$)"), QStringLiteral(R"(\1 true)"));
+    if (!ok) {
+        QTest::qFail("config lacks address / dynIp / ipv6.enabled / ipv6.probeReachability", __FILE__, __LINE__);
+        return {};
+    }
+    // Not used here, and its fixed port may be taken (a tunnel to a live server)
+    force(QStringLiteral(R"(^(admin:\n\s+enabled:).*$)"), QStringLiteral(R"(\1 false)"));
+
+    const QString probeCfg = m_tmpDir->filePath(QStringLiteral("enode.v6probe.yaml"));
+    QFile dst(probeCfg);
+    if (!dst.open(QIODevice::WriteOnly | QIODevice::Truncate)) {
+        QTest::qFail("can't write the dual-stack config", __FILE__, __LINE__);
+        return {};
+    }
+    dst.write(yaml.toUtf8());
+    dst.close();
+
+    // Relative paths in the config (logs, fixtures, ipfilter) still resolve against
+    // m_enodeWorkDir — startServer() keeps it as the working directory.
+    const QStringList origArgs = m_enodeArgs;
+    m_enodeArgs[cfgIdx] = probeCfg;
+    startServer();
+    m_enodeArgs = origArgs;
+    return {};
 }
 
 void tst_ServerLocalTest::connectAndAwaitIPv6Status(uint8& status)
@@ -2563,6 +2590,144 @@ void tst_ServerLocalTest::stopServerHardening()
 
     delete m_udpSocket;
     m_udpSocket = nullptr;
+    stopServer();
+}
+
+// ---------------------------------------------------------------------------
+// Round 12: serverPreferIPv6 handover
+//
+// A LowID over IPv4 on a dual-stack server used to cost a second full login: the
+// client dropped the session and redialled over IPv6, offline for the server's whole
+// firewall probe. Now the IPv4 LowID is kept and the IPv6 session logs in beside it.
+// eNode-go refuses a second session for a user hash, except one that arrives from the
+// IPv6 the live IPv4 session advertised (CT_MOD_IP_V6), with the same listen port: it
+// releases the IPv4 session right before accepting the IPv6 one.
+//
+// LowID is forced by closing our listener (the IPv4 dial-back is refused). The IPv6
+// handover connects to our own global address, the one the IPv4 login advertised.
+// ---------------------------------------------------------------------------
+
+void tst_ServerLocalTest::startServerHandover()
+{
+    if (const QString skip = startDualStackServer(); !skip.isEmpty())
+        QSKIP(qPrintable(skip));
+    if (QTest::currentTestFailed())
+        return;
+    m_handoverActive = true;
+    theApp.serverConnect = m_serverConnect;
+}
+
+void tst_ServerLocalTest::ipv6HandoverKeepsSessionOnline()
+{
+    if (!m_handoverActive)
+        QSKIP("IPv6 handover round not active");
+
+    const uint16 port = thePrefs.port();
+    m_listenSocket->stopListening();
+    auto relisten = qScopeGuard([this, port] {
+        if (!m_listenSocket->startListening(port))
+            qWarning() << "Failed to reopen the TCP listener on port" << port;
+    });
+
+    // One list entry with both addresses: the handover looks the server up by id.
+    // Not a dynIP entry: a literal dynIP pins every dial to it. Loopback passes
+    // addServer() only with the LAN filter off, so drop it for the add.
+    m_serverList->removeAllServers();
+    auto srv = std::make_unique<Server>(htonl(0x7F000001), 5555);
+    srv->setName(QStringLiteral("(TESTING!!!) eNode dual-stack"));
+    srv->addAddress(m_probeServerV6);
+    const bool hadLanFilter = thePrefs.filterLANIPs();
+    thePrefs.setFilterLANIPs(false);
+    Server* entry = m_serverList->addServer(std::move(srv));
+    thePrefs.setFilterLANIPs(hadLanFilter);
+    QVERIFY2(entry && entry->hasBothFamilies(), "Failed to add the dual-stack eNode entry");
+
+    ServerConnectConfig cfg;
+    cfg.safeServerConnect = true;
+    cfg.useServerPriorities = false;
+    cfg.reconnectOnDisconnect = false;
+    cfg.userNick = QStringLiteral("eMuleQt-LocalTest-handover");
+    cfg.listenPort = port;
+    cfg.emuleVersionTag = (static_cast<uint32>(SEND_EMULE_VERSION_MJR) << 17)
+                        | (static_cast<uint32>(SEND_EMULE_VERSION_MIN) << 10)
+                        | (static_cast<uint32>(SEND_EMULE_VERSION_UPD) <<  7);
+    cfg.connectionTimeout = 15000;
+    cfg.preferIPv6OnLowID = true;
+    thePrefs.setCryptLayerRequired(false);
+    const auto userHash = thePrefs.userHash();
+    std::copy(userHash.begin(), userHash.end(), cfg.userHash.begin());
+    m_serverConnect->setConfig(cfg);
+
+    QSignalSpy lost(m_serverConnect, &ServerConnect::connectionLost);
+    QSignalSpy disconnected(m_serverConnect, &ServerConnect::disconnectedFromServer);
+    QSignalSpy handedOver(m_serverConnect, &ServerConnect::sessionHandedOver);
+
+    // Offline time once the IPv4 session was up
+    QElapsedTimer clock;
+    qint64 offlineSince = -1;
+    qint64 longestOffline = 0;
+    bool wasOnline = false;
+    const auto conn = connect(m_serverConnect, &ServerConnect::stateChanged, this, [&] {
+        const bool online = m_serverConnect->isConnected();
+        if (wasOnline && !online && offlineSince < 0)
+            offlineSince = clock.elapsed();
+        if (online && offlineSince >= 0) {
+            longestOffline = std::max(longestOffline, clock.elapsed() - offlineSince);
+            offlineSince = -1;
+        }
+        wasOnline = wasOnline || online;
+    });
+    const auto disconnectSpy = qScopeGuard([conn] { QObject::disconnect(conn); });
+    clock.start();
+
+    m_serverConnect->connectToServer(entry, false, /*noCrypt=*/true);
+
+    // Online over IPv4 with the LowID first
+    QVERIFY2(QTest::qWaitFor([this] { return m_serverConnect->isConnected(); }, 15'000),
+             "No IPv4 session within 15 s");
+    QVERIFY(m_serverConnect->sessionAddress().isIPv4());
+    QVERIFY(m_serverConnect->isLowID());
+    const qint64 v4At = clock.elapsed();
+
+    // Then moved to IPv6 behind it
+    QVERIFY2(QTest::qWaitFor([this] {
+                 return m_serverConnect->isConnected() && m_serverConnect->sessionAddress().isIPv6();
+             }, 20'000),
+             "The session never moved to IPv6");
+    qDebug() << "IPv6 handover: IPv4 online after" << v4At << "ms, IPv6 after" << clock.elapsed()
+             << "ms, longest offline" << longestOffline << "ms";
+
+    QCOMPARE(lost.count(), 0);
+    QCOMPARE(disconnected.count(), 0);
+    QCOMPARE(handedOver.count(), 1);
+    QVERIFY2(longestOffline < 1000, "The handover went offline for the IPv6 login");
+    QVERIFY(entry->preferIPv6Session());
+    QVERIFY(!entry->ipv6SwitchFailed());
+
+    // The server took the session over instead of refusing the second one
+    QFile log(m_enodeWorkDir + QStringLiteral("/logs/enode.log"));
+    QVERIFY(log.open(QIODevice::ReadOnly | QIODevice::Text));
+    const QByteArray text = log.readAll();
+    QVERIFY2(text.contains("ipv6 login replaces ipv4 session"), "eNode did not hand the session over");
+    QVERIFY2(!text.contains("already connected"), "eNode refused the IPv6 session");
+    for (const QByteArray& line : text.split('\n')) {
+        if ((line.contains("WARN") || line.contains("ERROR")) && line.contains("login"))
+            QFAIL(qPrintable(QStringLiteral("eNode login warning: ") + QString::fromUtf8(line)));
+    }
+}
+
+void tst_ServerLocalTest::stopServerHandover()
+{
+    if (!m_handoverActive)
+        return;
+
+    // The login lines were checked in the round; the rest of this config's log is
+    // environment noise (meta daemons, the TEST-NET dynIp of the dual-stack config)
+    disconnectFromServer();
+    QTest::qWait(500);
+    m_serverList->removeAllServers();
+    theApp.serverConnect = nullptr;
+    m_handoverActive = false;
     stopServer();
 }
 

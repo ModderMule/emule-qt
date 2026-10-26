@@ -707,6 +707,13 @@ void CoreSession::initServerConnect()
                     theApp.searchList->queue().onServerDisconnected();
             });
 
+    // A server search sent on the IPv4 session is answered by nobody after the IPv6
+    // handover: ask again on the new session.
+    connect(m_serverConnect.get(), &ServerConnect::sessionHandedOver, this, [] {
+        if (theApp.searchList)
+            theApp.searchList->queue().onServerDisconnected();
+    });
+
     // 7. Wire UDP global search results → SearchList
     connect(m_serverUDP.get(), &UDPSocket::globalSearchResult,
             this, [](const uint8* data, uint32 size, const Endpoint& server) {

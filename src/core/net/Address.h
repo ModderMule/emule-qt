@@ -77,6 +77,10 @@ public:
     /// Checks all IANA reserved ranges for both IPv4 and IPv6.
     [[nodiscard]] bool isPublicIP() const;
 
+    /// isPublicIP() with the production rules, whatever lab mode says. Lets a lab-mode
+    /// pick still prefer a real global address over ::1/ULA/link-local.
+    [[nodiscard]] bool isGlobalIP() const;
+
     /// Lab mode — set at startup and on every change from `!thePrefs.filterLANIPs()`, i.e. the existing
     /// "this is a private network" switch. It widens isPublicIP() **for IPv6 only** to every
     /// unicast address (loopback, ULA, link-local, 2001:db8::/32), leaving only multicast and

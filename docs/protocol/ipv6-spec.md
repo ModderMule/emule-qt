@@ -810,9 +810,23 @@ than the usual "prefer IPv6": preferring AAAA on a dual-stack server costs a Hig
 
 eMuleQt has a `serverPreferIPv6` preference (default `true`, Options → Server: "Prefer IPv6 when
 IPv4 gives a Low ID"). IPv4 is still dialled first. When that session is assigned a LowID that
-would be kept and the server has a known IPv6 address, the session is dropped and the same server
-is redialled over IPv6; the choice is remembered for that server until the client restarts. A
-failed IPv6 dial returns to IPv4 and keeps the LowID. A HighID over IPv4 clears it.
+would be kept and the server has a known IPv6 address, the LowID is accepted — the client is
+online at once — and the same server is dialled over IPv6 in the background (a handover):
+
+1. The IPv6 session logs in while the IPv4 one stays up.
+2. The server takes the session over. eNode-go allows this only for a login arriving from the
+   IPv6 the live IPv4 session advertised in `CT_MOD_IP_V6`, with the same listen port, and
+   releases the IPv4 session right before accepting the IPv6 one. ed2k-server replaces any
+   session with the same user hash and leaves the old socket open, so the client closes it.
+3. A server that refuses a second session for the hash (closes the IPv6 login) gets the IPv4
+   session closed first and the IPv6 login repeated; the client is offline for that login only.
+4. A failed IPv6 dial keeps the IPv4 session. A failure after the IPv4 session is gone
+   reconnects over IPv4 and keeps the LowID.
+
+A successful handover is remembered for that server until the client restarts: the next connect
+dials IPv6 first. A HighID over IPv4 clears it. Note that both eNode-go and ed2k-server give an
+IPv6 session a LowID (its ID is the packed IPv4, which is 0), so the handover never upgrades the
+ID itself.
 
 No IPv6 branch exists anywhere in ID handling; a LowID obtained over an IPv6 session is accepted
 normally, and remains usable because IPv6 peers are dialled directly regardless of eD2K ID.

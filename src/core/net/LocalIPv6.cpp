@@ -50,6 +50,8 @@ void filterToGlobalUnicast(std::vector<LocalIPv6Address>& addrs)
     });
 }
 
+Address selectPreferredIPv6Pass(const IPv6PrivacyReport& report, bool preferTemporary);
+
 } // namespace
 
 // ============================================================================
@@ -458,44 +460,16 @@ void classifyByPrefixLifetime(std::vector<LocalIPv6Address>& addrs)
 
 Address selectPreferredIPv6(const IPv6PrivacyReport& report, bool preferTemporary)
 {
-    const auto pick = [&report](auto&& predicate) -> Address {
-        for (const auto& a : report.addresses) {
-            if (a.tentative || !a.address.isPublicIP())
-                continue;
-            if (predicate(a))
-                return a.address;
-        }
-        return {};
-    };
-
-    // By request: advertise the rotating address the OS sends from.
-    if (preferTemporary) {
-        if (const Address a = pick([](const LocalIPv6Address& e) {
-                return e.kind == IPv6AddressKind::Temporary && !e.deprecated; });
-            !a.isNull())
+    // Lab mode passes ::1, ULA and link-local as "public": a real global address still
+    // wins, or a session dialed from ::1 to a global server fails with host unreachable.
+    if (Address::labNetworkMode()) {
+        IPv6PrivacyReport global = report;
+        std::erase_if(global.addresses,
+                      [](const LocalIPv6Address& a) { return !a.address.isGlobalIP(); });
+        if (const Address a = selectPreferredIPv6Pass(global, preferTemporary); !a.isNull())
             return a;
     }
-
-    // Tier 1 — the goal.
-    if (const Address a = pick([](const LocalIPv6Address& e) {
-            return e.kind == IPv6AddressKind::Stable && !e.deprecated; });
-        !a.isNull())
-        return a;
-
-    // Tier 2 — detection unavailable; identical to the old first-match behaviour.
-    if (const Address a = pick([](const LocalIPv6Address& e) {
-            return e.kind == IPv6AddressKind::Unknown && !e.deprecated; });
-        !a.isNull())
-        return a;
-
-    // Tier 3 — rotating beats nothing; the advisory explains the cost.
-    if (const Address a = pick([](const LocalIPv6Address& e) {
-            return e.kind == IPv6AddressKind::Temporary && !e.deprecated; });
-        !a.isNull())
-        return a;
-
-    // Tier 4 — deprecated is still routable for existing flows.
-    return pick([](const LocalIPv6Address&) { return true; });
+    return selectPreferredIPv6Pass(report, preferTemporary);
 }
 
 Address resolveIPv6Override(const QString& overrideLiteral,
@@ -672,5 +646,51 @@ Address updatePublicIPv6(const IPv6PrivacyReport& report)
 
     return theApp.publicIPv6();
 }
+
+namespace {
+
+Address selectPreferredIPv6Pass(const IPv6PrivacyReport& report, bool preferTemporary)
+{
+    const auto pick = [&report](auto&& predicate) -> Address {
+        for (const auto& a : report.addresses) {
+            if (a.tentative || !a.address.isPublicIP())
+                continue;
+            if (predicate(a))
+                return a.address;
+        }
+        return {};
+    };
+
+    // By request: advertise the rotating address the OS sends from.
+    if (preferTemporary) {
+        if (const Address a = pick([](const LocalIPv6Address& e) {
+                return e.kind == IPv6AddressKind::Temporary && !e.deprecated; });
+            !a.isNull())
+            return a;
+    }
+
+    // Tier 1 — the goal.
+    if (const Address a = pick([](const LocalIPv6Address& e) {
+            return e.kind == IPv6AddressKind::Stable && !e.deprecated; });
+        !a.isNull())
+        return a;
+
+    // Tier 2 — detection unavailable; identical to the old first-match behaviour.
+    if (const Address a = pick([](const LocalIPv6Address& e) {
+            return e.kind == IPv6AddressKind::Unknown && !e.deprecated; });
+        !a.isNull())
+        return a;
+
+    // Tier 3 — rotating beats nothing; the advisory explains the cost.
+    if (const Address a = pick([](const LocalIPv6Address& e) {
+            return e.kind == IPv6AddressKind::Temporary && !e.deprecated; });
+        !a.isNull())
+        return a;
+
+    // Tier 4 — deprecated is still routable for existing flows.
+    return pick([](const LocalIPv6Address&) { return true; });
+}
+
+} // namespace
 
 } // namespace eMule

@@ -210,10 +210,12 @@ private slots:
     // Statistics
     void statistics_timeAndReconnectsAcrossTwoConnections();
 
-    // serverPreferIPv6: IPv6 only after an IPv4 LowID
-    void lowIdOnIPv4_redialsIPv6AndRemembers();
+    // serverPreferIPv6: IPv6 only after an IPv4 LowID, moved over in the background
+    void lowIdOnIPv4_handsOverWithoutGoingOffline();
+    void lowIdOnIPv4_serverClosesIPv4BeforeAnswering();
+    void lowIdOnIPv4_refusedSecondSessionClosesIPv4First();
     void lowIdOnIPv4_staysWithoutThePref();
-    void lowIdOnIPv4_fallsBackWhenIPv6IsDead();
+    void lowIdOnIPv4_staysOnIPv4WhenIPv6IsDead();
 
     // A dynIP name with several addresses
     void dynIP_triesTheNextAddressWhenAConnectFails();
@@ -1590,47 +1592,136 @@ static QTcpSocket* acceptOn(QTcpServer& listener, int timeoutMs = 5000)
     return listener.nextPendingConnection();
 }
 
-void tst_ServerConnect::lowIdOnIPv4_redialsIPv6AndRemembers()
+/// Waits for the client's login on a mock server socket.
+static bool loginArrives(QTcpSocket* side, int timeoutMs = 5000)
+{
+    return QTest::qWaitFor([&] { return side->bytesAvailable() > 0; }, timeoutMs);
+}
+
+/// Connected over IPv4 with a LowID, the IPv6 dial accepted and its login received.
+struct HandoverRig {
+    ServerList list;
+    ListedDualStack dual{list, true};
+    ServerConnect conn{list};
+    QTcpSocket* side4 = nullptr;
+    QTcpSocket* side6 = nullptr;
+
+    bool start()
+    {
+        if (!dual.v4.entry)
+            return false;
+        auto cfg = makeTestConfig();
+        cfg.preferIPv6OnLowID = true;
+        conn.setConfig(cfg);
+        conn.connectToServer(dual.v4.entry, false, true);
+        side4 = acceptOn(dual.v4.listener);
+        if (!side4 || !loginArrives(side4))
+            return false;
+        side4->readAll();
+        writeIdChange(side4, 0x00000042);
+        // Online on IPv4 at once: the IPv6 move runs behind it
+        if (!QTest::qWaitFor([&] { return conn.isConnected(); }, 5000)
+            || !conn.sessionAddress().isIPv4())
+            return false;
+        side6 = acceptOn(dual.v6);
+        return side6 && loginArrives(side6);
+    }
+};
+
+void tst_ServerConnect::lowIdOnIPv4_handsOverWithoutGoingOffline()
 {
     const bool hadLanFilter = thePrefs.filterLANIPs();
     thePrefs.setFilterLANIPs(false);
     const auto restoreFilter = qScopeGuard([&] { thePrefs.setFilterLANIPs(hadLanFilter); });
 
-    ServerList list;
-    ListedDualStack dual(list, true);
-    Server* entry = dual.v4.entry;
-    if (!entry)
+    HandoverRig rig;
+    if (!rig.dual.v4.entry)
         QSKIP("no dual-stack loopback listener pair");
+    QSignalSpy lost(&rig.conn, &ServerConnect::connectionLost);
+    QSignalSpy handedOver(&rig.conn, &ServerConnect::sessionHandedOver);
+    QSignalSpy disconnected(&rig.conn, &ServerConnect::disconnectedFromServer);
+    QVERIFY(rig.start());
 
-    ServerConnect conn(list);
-    auto cfg = makeTestConfig();
-    cfg.preferIPv6OnLowID = true;
-    conn.setConfig(cfg);
-    conn.connectToServer(entry, false, true);
+    // Both sessions up; the server answers the IPv6 one (ed2k-server style overlap)
+    QVERIFY(rig.conn.isConnected());
+    bool everOffline = false;
+    connect(&rig.conn, &ServerConnect::stateChanged, &rig.conn,
+            [&] { everOffline = everOffline || !rig.conn.isConnected(); });
+    writeIdChange(rig.side6, 0x00000043);
+    QVERIFY(QTest::qWaitFor([&] { return rig.conn.sessionAddress().isIPv6(); }, 5000));
+    QVERIFY(rig.conn.isConnected());
+    QVERIFY(!everOffline);
+    QCOMPARE(rig.conn.clientID(), uint32{0x43});
 
-    // IPv4 first; its LowID is not kept
-    QTcpSocket* side4 = acceptOn(dual.v4.listener);
-    QVERIFY(side4);
-    QTest::qWait(200);
-    writeIdChange(side4, 0x00000042);
-
-    QTcpSocket* side6 = acceptOn(dual.v6);
-    QVERIFY(side6);
-    QVERIFY(!conn.isConnected());
-    QVERIFY(entry->preferIPv6Session());
-    QTest::qWait(200);
-    writeIdChange(side6, 0x00000043);
-    QVERIFY(QTest::qWaitFor([&] { return conn.isConnected(); }, 5000));
-    QVERIFY(conn.sessionAddress().isIPv6());
-    QVERIFY(conn.isLowID());
+    // The client closed IPv4 itself; nothing reported a loss
+    QVERIFY(QTest::qWaitFor([&] { return rig.side4->state() == QAbstractSocket::UnconnectedState; }, 5000));
+    QCOMPARE(lost.count(), 0);
+    QCOMPARE(disconnected.count(), 0);
+    QCOMPARE(handedOver.count(), 1);
+    QVERIFY(rig.dual.v4.entry->preferIPv6Session());
 
     // The next connect goes straight to IPv6
-    conn.disconnect();
-    conn.connectToServer(entry, false, true);
-    QVERIFY(acceptOn(dual.v6));
+    rig.conn.disconnect();
+    rig.conn.connectToServer(rig.dual.v4.entry, false, true);
+    QVERIFY(acceptOn(rig.dual.v6));
     QTest::qWait(300);
-    QVERIFY(!dual.v4.listener.hasPendingConnections());
-    conn.disconnect();
+    QVERIFY(!rig.dual.v4.listener.hasPendingConnections());
+    rig.conn.disconnect();
+}
+
+void tst_ServerConnect::lowIdOnIPv4_serverClosesIPv4BeforeAnswering()
+{
+    const bool hadLanFilter = thePrefs.filterLANIPs();
+    thePrefs.setFilterLANIPs(false);
+    const auto restoreFilter = qScopeGuard([&] { thePrefs.setFilterLANIPs(hadLanFilter); });
+
+    HandoverRig rig;
+    if (!rig.dual.v4.entry)
+        QSKIP("no dual-stack loopback listener pair");
+    QSignalSpy lost(&rig.conn, &ServerConnect::connectionLost);
+    QVERIFY(rig.start());
+
+    // eNode-go: the old session is released right before the new one is accepted,
+    // so the IPv4 close can reach us ahead of the IPv6 answer
+    rig.side4->close();
+    QVERIFY(QTest::qWaitFor([&] { return !rig.conn.isConnected(); }, 5000));
+    QVERIFY(rig.conn.isConnecting());
+    QTest::qWait(100);
+    QVERIFY(!rig.dual.v4.listener.hasPendingConnections());   // no reconnect over IPv4
+
+    writeIdChange(rig.side6, 0x00000043);
+    QVERIFY(QTest::qWaitFor([&] { return rig.conn.isConnected(); }, 5000));
+    QVERIFY(rig.conn.sessionAddress().isIPv6());
+    QCOMPARE(lost.count(), 0);
+    rig.conn.disconnect();
+}
+
+void tst_ServerConnect::lowIdOnIPv4_refusedSecondSessionClosesIPv4First()
+{
+    const bool hadLanFilter = thePrefs.filterLANIPs();
+    thePrefs.setFilterLANIPs(false);
+    const auto restoreFilter = qScopeGuard([&] { thePrefs.setFilterLANIPs(hadLanFilter); });
+
+    HandoverRig rig;
+    if (!rig.dual.v4.entry)
+        QSKIP("no dual-stack loopback listener pair");
+    QSignalSpy lost(&rig.conn, &ServerConnect::connectionLost);
+    QVERIFY(rig.start());
+
+    // An unpatched eNode-go refuses a second session for the hash and closes it
+    rig.side6->close();
+
+    // Then the client gives up IPv4 and logs in over IPv6 alone
+    QVERIFY(QTest::qWaitFor([&] { return rig.side4->state() == QAbstractSocket::UnconnectedState; }, 5000));
+    QTcpSocket* again6 = acceptOn(rig.dual.v6);
+    QVERIFY(again6);
+    QVERIFY(loginArrives(again6));
+    QVERIFY(!rig.conn.isConnected());
+    writeIdChange(again6, 0x00000043);
+    QVERIFY(QTest::qWaitFor([&] { return rig.conn.isConnected(); }, 5000));
+    QVERIFY(rig.conn.sessionAddress().isIPv6());
+    QCOMPARE(lost.count(), 0);
+    rig.conn.disconnect();
 }
 
 void tst_ServerConnect::lowIdOnIPv4_staysWithoutThePref()
@@ -1661,7 +1752,7 @@ void tst_ServerConnect::lowIdOnIPv4_staysWithoutThePref()
     conn.disconnect();
 }
 
-void tst_ServerConnect::lowIdOnIPv4_fallsBackWhenIPv6IsDead()
+void tst_ServerConnect::lowIdOnIPv4_staysOnIPv4WhenIPv6IsDead()
 {
     const bool hadLanFilter = thePrefs.filterLANIPs();
     thePrefs.setFilterLANIPs(false);
@@ -1676,22 +1767,22 @@ void tst_ServerConnect::lowIdOnIPv4_fallsBackWhenIPv6IsDead()
     auto cfg = makeTestConfig();
     cfg.preferIPv6OnLowID = true;
     conn.setConfig(cfg);
+    QSignalSpy lost(&conn, &ServerConnect::connectionLost);
     conn.connectToServer(entry, false, true);
 
     QTcpSocket* side4 = acceptOn(dual.v4.listener);
     QVERIFY(side4);
-    QTest::qWait(200);
+    QVERIFY(loginArrives(side4));
     writeIdChange(side4, 0x00000042);
 
-    // IPv6 is refused: back on IPv4, and this time the LowID is kept
-    QTcpSocket* again4 = acceptOn(dual.v4.listener, 10000);
-    QVERIFY(again4);
-    QVERIFY(entry->ipv6SwitchFailed());
+    // IPv6 is refused: the IPv4 session simply stays, no second login
+    QVERIFY(QTest::qWaitFor([&] { return entry->ipv6SwitchFailed(); }, 10000));
+    QVERIFY(conn.isConnected());
+    QVERIFY(conn.sessionAddress().isIPv4());
     QVERIFY(!entry->preferIPv6Session());
     QTest::qWait(200);
-    writeIdChange(again4, 0x00000042);
-    QVERIFY(QTest::qWaitFor([&] { return conn.isConnected(); }, 5000));
-    QVERIFY(conn.sessionAddress().isIPv4());
+    QVERIFY(!dual.v4.listener.hasPendingConnections());
+    QCOMPARE(lost.count(), 0);
     conn.disconnect();
 }
 

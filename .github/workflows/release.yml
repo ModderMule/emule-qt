@@ -285,6 +285,21 @@ jobs:
 
           sha256sum "${assets[@]}" | tee SHA256SUMS.txt
 
+      # eD2K links (MD4 + AICH) for the release notes and as an asset.
+      # hashlib can't do MD4 on OpenSSL 3, hence rhash. Links only resolve once
+      # someone seeds the files -- see scripts/seed.local.py.
+      - name: Generate ED2K-LINKS.txt
+        working-directory: dist
+        run: |
+          set -euo pipefail
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq rhash
+          # same file list as SHA256SUMS.txt
+          awk '{print $2}' SHA256SUMS.txt | xargs rhash --ed2k-link -- | tee ED2K-LINKS.txt
+          [ "$(wc -l < ED2K-LINKS.txt)" -eq "$(wc -l < SHA256SUMS.txt)" ] \
+            || { echo "::error::ED2K-LINKS.txt does not match SHA256SUMS.txt"; exit 1; }
+          grep -q '|h=' ED2K-LINKS.txt || echo "::warning::rhash links carry no AICH hash"
+
       - name: Build release notes
         run: |
           set -euo pipefail
@@ -313,6 +328,14 @@ jobs:
             echo
             echo '```'
             cat dist/SHA256SUMS.txt
+            echo '```'
+            echo
+            echo "</details>"
+            echo
+            echo "<details><summary>eD2K links</summary>"
+            echo
+            echo '```'
+            cat dist/ED2K-LINKS.txt
             echo '```'
             echo
             echo "</details>"

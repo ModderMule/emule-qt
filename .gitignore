@@ -115,11 +115,7 @@ __pycache__/
 /tests/vs/release
 
 # local tools and scripts
-*.local.sh
-*.local.log
-*.local.md
-*.local.txt
-*.local.json
+*.local.*
 translations_*.json
 blog-*.md
 windows-3rd.yml

@@ -203,6 +203,10 @@ signals:
     /// ServerConnect.cpp:351-352).
     void connectionLost(const QString& serverName);
 
+    /// The IPv4 session was replaced by an IPv6 one to the same server without going
+    /// offline (serverPreferIPv6). Answers due on the old session will not come.
+    void sessionHandedOver();
+
     /// Client ID was assigned or changed.
     void clientIDChanged(uint32 newID);
 
@@ -256,6 +260,24 @@ private:
 
     /// serverPreferIPv6: may @p entry trade its IPv4 LowID session for an IPv6 one?
     bool wantsIPv6Switch(const ServerSocket* socket, const Server* entry) const;
+
+    // -- IPv6 handover (serverPreferIPv6) -------------------------------------
+    // The IPv4 LowID session is kept and the IPv6 one logs in beside it; the server
+    // takes the session over (eNode-go: advertised IPv6 + port, ed2k-server: any).
+    // A server that refuses a second session gets the IPv4 one closed first.
+
+    /// Dial the IPv6 address of the server in m_handoverServerId. @p closeFirst drops
+    /// the IPv4 session before the dial.
+    void startIPv6Handover(bool closeFirst);
+    /// The IPv6 session logged in: it becomes the live one.
+    void finishIPv6Handover(ServerSocket* socket);
+    /// The IPv6 dial or login failed, or timed out.
+    void failIPv6Handover(ServerSocket* socket, const QString& reason);
+    /// Shared state reset; does not touch the sockets.
+    void resetIPv6Handover();
+
+    /// New socket with every signal wired to this object, in m_openSockets.
+    ServerSocket* createServerSocket(bool manualSingleConnect);
     /// Single-connect only: redial @p listServer plain if the obfuscated try was the first.
     bool retryWithoutObfuscation(Server* listServer);
     /// One failure that is the server's own; disables it at the threshold.
@@ -293,6 +315,13 @@ private:
 
     /// The socket we are actively connected through.
     ServerSocket* m_connectedSocket = nullptr;
+
+    /// IPv6 handover in flight (see startIPv6Handover), else null.
+    ServerSocket* m_handoverSocket = nullptr;
+    QTimer m_handoverTimer;
+    uint32 m_handoverServerId = 0;     ///< list entry to move to IPv6; 0 = none
+    bool m_handoverLoginSent = false;
+    bool m_handoverCloseFirst = false;
 
     QTimer m_retryTimer;
     QElapsedTimer m_elapsedTimer;

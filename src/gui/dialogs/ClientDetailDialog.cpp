@@ -5,6 +5,7 @@
 #include "ClientDetailDialog.h"
 
 #include <QFormLayout>
+#include <QGridLayout>
 #include <QGroupBox>
 #include <QHBoxLayout>
 #include <QLabel>
@@ -45,18 +46,50 @@ struct ValueRow {
     QLabel*   value = nullptr;   // null for a widget row (country)
 };
 
-/// Every form row of @p page in order, caption plus value label.
+/// Bold "label:" caption, right-aligned as in a QFormLayout.
+QLabel* gridCaption(const QString& label)
+{
+    auto* caption = new QLabel(QStringLiteral("<b>%1:</b>").arg(label));
+    caption->setAlignment(Qt::AlignRight | Qt::AlignTop);
+    return caption;
+}
+
+/// Caption at (@p row, @p col), one-line value right of it spanning @p span columns.
+void addGridRow(QGridLayout* grid, int row, int col, const QString& label, const QString& value,
+                int span = 1)
+{
+    // One line, no word wrap: a wrapping label in a grid has its height measured at the
+    // wrong width, which left a scrollbar and a gap under the groups
+    auto* valueLabel = new QLabel(value);
+    valueLabel->setTextInteractionFlags(Qt::TextSelectableByMouse);
+    valueLabel->setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Preferred);
+    grid->addWidget(gridCaption(label), row, col);
+    grid->addWidget(valueLabel, row, col + 1, 1, span, Qt::AlignTop);
+}
+
+/// Every caption/value pair of @p page in order, forms and grids alike.
 QList<ValueRow> valueRows(const QWidget* page)
 {
+    const auto pair = [](const QLayoutItem* labelItem, const QLayoutItem* fieldItem) {
+        const auto* caption = labelItem ? qobject_cast<QLabel*>(labelItem->widget()) : nullptr;
+        return ValueRow{caption ? caption->text() : QString{},
+                        fieldItem ? qobject_cast<QLabel*>(fieldItem->widget()) : nullptr};
+    };
     QList<ValueRow> rows;
-    for (const auto* form : page->findChildren<QFormLayout*>()) {
-        for (int i = 0; i < form->rowCount(); ++i) {
-            const auto* labelItem = form->itemAt(i, QFormLayout::LabelRole);
-            const auto* fieldItem = form->itemAt(i, QFormLayout::FieldRole);
-            const auto* caption = labelItem ? qobject_cast<QLabel*>(labelItem->widget()) : nullptr;
-            rows.append({caption ? caption->text() : QString{},
-                         fieldItem ? qobject_cast<QLabel*>(fieldItem->widget()) : nullptr});
+    for (const auto* grid : page->findChildren<QGridLayout*>()) {
+        for (int r = 0; r < grid->rowCount(); ++r) {
+            for (int c = 0; c + 1 < grid->columnCount(); c += 2) {
+                const auto* labelItem = grid->itemAtPosition(r, c);
+                // a spanned value covers this cell too: not a caption
+                if (labelItem && (c == 0 || labelItem != grid->itemAtPosition(r, c - 1)))
+                    rows.append(pair(labelItem, grid->itemAtPosition(r, c + 1)));
+            }
         }
+    }
+    for (const auto* form : page->findChildren<QFormLayout*>()) {
+        for (int i = 0; i < form->rowCount(); ++i)
+            rows.append(pair(form->itemAt(i, QFormLayout::LabelRole),
+                             form->itemAt(i, QFormLayout::FieldRole)));
     }
     return rows;
 }
@@ -70,9 +103,10 @@ ClientDetailDialog::ClientDetailDialog(const QCborMap& d, QWidget* parent)
 {
     setAttribute(Qt::WA_DeleteOnClose);
 
+    // Wider than MFC's 322 DLU: General pairs two value columns.
     // Height is the content's to decide: the row count varies with the client (a friend
     // slot adds a row) and so does the wrapped height of the file-name values.
-    setDesignedSize(QSize(580, 0), QSize(620, 0));
+    setDesignedSize(QSize(640, 0), QSize(720, 0));
 
     ClientDetailDialog::setDetails(d);
 }
@@ -133,35 +167,48 @@ QWidget* ClientDetailDialog::buildContent(const QCborMap& d)
 
     // ── General group ──────────────────────────────────────────────────
     {
+        // One grid with a shared label column, paired like MFC's IDD_SOURCEDETAILWND:
+        // ID beside the name, the hash full width, then client | connection
         auto* group = new QGroupBox(tr("General"));
-        auto* form  = new QFormLayout(group);
-        form->setFieldGrowthPolicy(QFormLayout::ExpandingFieldsGrow);
+        auto* grid  = new QGridLayout(group);
+        grid->setColumnStretch(1, 3);   // software names are the longest values
+        grid->setColumnStretch(3, 2);
+        grid->setHorizontalSpacing(12);
         DialogSizing::enableHeightForWidth(group);
 
         // Labels and values as MFC CClientDetailPage (srchybrid/ClientDetailDialog.cpp:86-175)
         const QString unknown = QStringLiteral("?");
         const QString userName = str(d, QLatin1StringView("userName"));
-        addDetailRow(form, tr("Name"), userName.isEmpty() ? unknown : userName);
-        addDetailRow(form, tr("Hash"), d.value(QLatin1StringView("hasValidHash")).toBool(true)
-                                       ? str(d, QLatin1StringView("userHash")) : unknown);
-
-        // ID (Low/High)
         const bool lowID = d.value(QLatin1StringView("hasLowID")).toBool();
-        addDetailRow(form, tr("ID"), lowID ? tr("Low ID") : tr("High ID"));
+        addGridRow(grid, 0, 0, tr("Name"), userName.isEmpty() ? unknown : userName);
+        addGridRow(grid, 0, 2, tr("ID"), lowID ? tr("Low ID") : tr("High ID"));
+        addGridRow(grid, 1, 0, tr("Hash"), d.value(QLatin1StringView("hasValidHash")).toBool(true)
+                                           ? str(d, QLatin1StringView("userHash")) : unknown, 3);
 
-        addDetailRow(form, tr("Software"), str(d, QLatin1StringView("software")));
+        addGridRow(grid, 2, 0, tr("Software"), str(d, QLatin1StringView("software")));
 
         // Country (MorphXT IP2Country): flag + long name
-        if (const QString cc = str(d, QLatin1StringView("cc")); !cc.isEmpty()) {
-            auto* row = new QWidget;
-            auto* rowLayout = new QHBoxLayout(row);
-            rowLayout->setContentsMargins(0, 0, 0, 0);
-            auto* flagLabel = new QLabel(row);
+        const QString cc = str(d, QLatin1StringView("cc"));
+        auto* country = new QWidget;
+        auto* rowLayout = new QHBoxLayout(country);
+        rowLayout->setContentsMargins(0, 0, 0, 0);
+        if (!cc.isEmpty()) {
+            auto* flagLabel = new QLabel(country);
             flagLabel->setPixmap(CountryFlags::flag(cc).pixmap(QSize(18, 16)));
             rowLayout->addWidget(flagLabel);
-            rowLayout->addWidget(new QLabel(CountryFlags::tooltip(cc), row), 1);
-            form->addRow(QStringLiteral("<b>%1:</b>").arg(tr("Country")), row);
         }
+        rowLayout->addWidget(new QLabel(cc.isEmpty() ? unknown : CountryFlags::tooltip(cc), country), 1);
+        grid->addWidget(gridCaption(tr("Country")), 3, 0);
+        grid->addWidget(country, 3, 1, Qt::AlignTop);
+
+        const bool kadConn = d.value(QLatin1StringView("kadConnected")).toBool();
+        addGridRow(grid, 4, 0, tr("Kad"), kadConn ? tr("Connected") : tr("Disconnected"));
+
+        const QString obfuscation = str(d, QLatin1StringView("obfuscation"));
+        addGridRow(grid, 5, 0, tr("Obfuscation"),
+                   obfuscation == QLatin1String("enabled") ? tr("Enabled")
+                   : obfuscation == QLatin1String("supported") ? tr("Supported")
+                   : tr("Not supported or disabled"));
 
         // Server. Prefer the string form: "serverIP" is 0 for an IPv6 server, which would
         // otherwise render the row as "\u2014" even though the address is known.
@@ -175,22 +222,18 @@ QWidget* ClientDetailDialog::buildContent(const QCborMap& d)
         else if (srvIP != 0)
             srvEndpoint = ipstr(srvIP, srvPort);
 
-        addDetailRow(form, tr("Server IP"), srvEndpoint.isEmpty() ? unknown : srvEndpoint);
-        addDetailRow(form, tr("Server Name"),
-                     srvEndpoint.isEmpty() || srvName.isEmpty() ? unknown : srvName);
+        addGridRow(grid, 2, 2, tr("Server IP"), srvEndpoint.isEmpty() ? unknown : srvEndpoint);
+        addGridRow(grid, 3, 2, tr("Server Name"),
+                   srvEndpoint.isEmpty() || srvName.isEmpty() ? unknown : srvName);
 
         const bool creditsKnown = d.value(QLatin1StringView("creditsKnown")).toBool();
         const QString ident = str(d, QLatin1StringView("identification"));
-        addDetailRow(form, tr("Identification"),
-                     !creditsKnown ? unknown
-                     : ident == QLatin1String("ok") ? tr("Successful")
-                     : ident == QLatin1String("failed") ? tr("Invalid")
-                     : tr("Not supported or disabled"));
-        const QString obfuscation = str(d, QLatin1StringView("obfuscation"));
-        addDetailRow(form, tr("Obfuscation"),
-                     obfuscation == QLatin1String("enabled") ? tr("Enabled")
-                     : obfuscation == QLatin1String("supported") ? tr("Supported")
-                     : tr("Not supported or disabled"));
+        addGridRow(grid, 4, 2, tr("Identification"),
+                   !creditsKnown ? unknown
+                   : ident == QLatin1String("ok") ? tr("Successful")
+                   : ident == QLatin1String("failed") ? tr("Invalid")
+                   : tr("Not supported or disabled"));
+
         // Not in MFC: NAT-T for LowID peers — the route in use, else what the peer supports
         const QString natRoute = str(d, QLatin1StringView("natRoute"));
         QString natt;
@@ -207,10 +250,7 @@ QWidget* ClientDetailDialog::buildContent(const QCborMap& d)
             natt = ways.isEmpty() ? tr("Not supported")
                                   : tr("Supported (%1)").arg(ways.join(QStringLiteral(", ")));
         }
-        addDetailRow(form, tr("NAT-T"), natt);
-
-        const bool kadConn = d.value(QLatin1StringView("kadConnected")).toBool();
-        addDetailRow(form, tr("Kad"), kadConn ? tr("Connected") : tr("Disconnected"));
+        addGridRow(grid, 5, 2, tr("NAT-T"), natt);
 
         mainLayout->addWidget(group);
     }

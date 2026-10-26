@@ -26,7 +26,7 @@ Website: [emule-qt.org](https://emule-qt.org/)
 - **IP Filtering** — Dynamic blocklists with automatic updates
 - **Media & Archive Preview** — Preview video files and browse archives before download completes
 - **Statistics** — Real-time bandwidth graphs, connection metrics, and Kademlia visualization
-- **Internationalization** — 9 languages out of the box
+- **Internationalization** — 13 languages out of the box
 
 ## Unique Features
 

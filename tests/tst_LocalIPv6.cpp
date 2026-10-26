@@ -66,6 +66,8 @@ private slots:
     void select_allDeprecated_stillReturnsOne();
     void select_emptyReport_returnsNull();
     void select_rejectsUlaAndLinkLocal();
+    void select_labMode_prefersGlobalOverLoopback();
+    void select_labMode_fallsBackToLoopback();
     void select_preservesOsOrderAmongStable();
     void select_privacyPreferenceMovesTemporaryFirst();
 
@@ -182,6 +184,25 @@ void tst_LocalIPv6::select_rejectsUlaAndLinkLocal()
     const auto r = makeReport({makeEntry(kUla, IPv6AddressKind::Stable),
                                makeEntry(kLinkLocal, IPv6AddressKind::Stable)});
     QVERIFY(selectPreferredIPv6(r).isNull());
+}
+
+void tst_LocalIPv6::select_labMode_prefersGlobalOverLoopback()
+{
+    // lo0 is listed first; picking ::1 made the IPv6 server dial fail (host unreachable)
+    const ScopedLabNetworkMode lab(true);
+    const auto r = makeReport({makeEntry("::1", IPv6AddressKind::Stable, false, false, "lo0"),
+                               makeEntry(kUla, IPv6AddressKind::Stable),
+                               makeEntry(kTemporary, IPv6AddressKind::Temporary)});
+    QCOMPARE(selectPreferredIPv6(r).toString(), QString::fromLatin1(kTemporary));
+}
+
+void tst_LocalIPv6::select_labMode_fallsBackToLoopback()
+{
+    // single-host rig: no global address, so ::1 stays usable
+    const ScopedLabNetworkMode lab(true);
+    const auto r = makeReport({makeEntry("::1", IPv6AddressKind::Stable, false, false, "lo0"),
+                               makeEntry(kStable, IPv6AddressKind::Stable, false, true)});
+    QCOMPARE(selectPreferredIPv6(r).toString(), QStringLiteral("::1"));
 }
 
 void tst_LocalIPv6::select_preservesOsOrderAmongStable()
