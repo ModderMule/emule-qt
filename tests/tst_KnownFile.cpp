@@ -571,6 +571,13 @@ void tst_KnownFile::addRemoveUploadingClient()
 // Auto-priority tests
 // ---------------------------------------------------------------------------
 
+// Fake client pointers must leave before the file dies: ~KnownFile detaches its uploaders
+static void dropFakeUploaders(KnownFile& f)
+{
+    while (f.hasUploadingClients())
+        f.removeUploadingClient(f.uploadingClients().back());
+}
+
 void tst_KnownFile::updateAutoUpPriority_low()
 {
     KnownFile f;
@@ -581,6 +588,7 @@ void tst_KnownFile::updateAutoUpPriority_low()
         f.addUploadingClient(reinterpret_cast<UpDownClient*>(static_cast<uintptr_t>(i)));
 
     QCOMPARE(f.upPriority(), kPrLow);
+    dropFakeUploaders(f);
 }
 
 void tst_KnownFile::updateAutoUpPriority_normal()
@@ -593,6 +601,7 @@ void tst_KnownFile::updateAutoUpPriority_normal()
         f.addUploadingClient(reinterpret_cast<UpDownClient*>(static_cast<uintptr_t>(i)));
 
     QCOMPARE(f.upPriority(), kPrNormal);
+    dropFakeUploaders(f);
 }
 
 void tst_KnownFile::updateAutoUpPriority_high()
@@ -607,6 +616,7 @@ void tst_KnownFile::updateAutoUpPriority_high()
     // 1 client → still High (count > 1 needed for Normal)
     f.addUploadingClient(reinterpret_cast<UpDownClient*>(uintptr_t{1}));
     QCOMPARE(f.upPriority(), kPrHigh);
+    dropFakeUploaders(f);
 }
 
 void tst_KnownFile::updateAutoUpPriority_notAuto()

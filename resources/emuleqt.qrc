@@ -231,6 +231,7 @@
         <file alias="PriorityNormal.ico">icons/PriorityNormal.ico</file>
         <file alias="Rating.ico">icons/Rating.ico</file>
         <file alias="RatingBad.ico">icons/RatingBad.ico</file>
+        <file alias="RatingWarn.ico">icons/RatingWarn.ico</file>
         <file alias="emuleCollAdd.ico">icons/emuleCollAdd.ico</file>
         <file alias="emuleCollEdit.ico">icons/emuleCollEdit.ico</file>
         <file alias="emuleCollSearch.ico">icons/emuleCollSearch.ico</file>

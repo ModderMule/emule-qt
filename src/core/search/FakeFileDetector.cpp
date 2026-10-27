@@ -421,7 +421,8 @@ FakeFileVerdict assessFile(const FakeFileInput& in, const FakeFileRules& rules)
         add(verdict, FakeReason::BadSignalComment, 15);
 
     if (in.container.isSuspect()) {
-        add(verdict, FakeReason::HeaderExtensionMismatch, 45);
+        // An MP4 named .avi is a sloppy name, not a fake: still the media it claims.
+        add(verdict, FakeReason::HeaderExtensionMismatch, in.container.isMislabelled() ? 15 : 45);
         if (in.container.foreign == ForeignHead::Executable)
             add(verdict, FakeReason::ExecutableMasquerade, 25);
         else if (in.container.foreign == ForeignHead::Archive)

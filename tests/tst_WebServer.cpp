@@ -2503,7 +2503,9 @@ void tst_WebServer::incomingListingMarksTheFilesThatAreNotWhatTheyClaim()
     //
     // This is the fallback mark, drawn in the page's own CSS: the fixture's config
     // dir has no sprite sheet to inline. The sheet case is the next test.
-    QCOMPARE(html.count(QStringLiteral("class=\"bad\"")), 2);
+    // The fake is red; the MP4 named .avi is still video, so only the yellow one.
+    QCOMPARE(html.count(QStringLiteral("class=\"bad\"")), 1);
+    QCOMPARE(html.count(QStringLiteral("class=\"bad warn\"")), 1);
 
     // Each marker says which kind of wrong it is, because the two call for
     // different reactions: a misnamed container still plays, a fake never will.

@@ -113,7 +113,8 @@ QVariant SharedFilesModel::data(const QModelIndex& index, int role) const
     // the same one the download list draws. Nothing here touches the disk: the
     // daemon's background sweep settled the verdict and sent a bool.
     if (role == Qt::DecorationRole && index.column() == ColFileName) {
-        return fileMarksIcon(f.fileType, f.containerSuspect, f.ownComment,
+        return fileMarksIcon(f.fileType, containerMark(f.containerSuspect, f.containerMislabelled),
+                             f.ownComment,
                              ratingMark(f.hasComment, f.userRating));
     }
     if (role == Qt::DecorationRole && index.column() == ColSharedNetworks)
@@ -187,7 +188,8 @@ QVariant SharedFilesModel::data(const QModelIndex& index, int role) const
                  networkText(f.publishedED2K, f.kadPublished), f.path);
         // The marks in column 0 explain themselves here, worded exactly as they are
         // in the download list — same helper, same cell, same sentence.
-        return QString(tip + fileMarksTooltip(f.fileName, f.containerSuspect,
+        return QString(tip + fileMarksTooltip(f.fileName,
+                                             containerMark(f.containerSuspect, f.containerMislabelled),
                                              f.containerActual, f.hasComment, f.userRating));
     }
 

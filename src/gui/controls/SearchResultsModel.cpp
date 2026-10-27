@@ -402,7 +402,7 @@ QVariant SearchResultsModel::data(const QModelIndex& index, int role) const
             network = QStringLiteral(":/icons/Kad.ico");
         else if (m_hasMeta)
             network = kEmptyBadge;
-        return fileMarksIcon(r.fileType, /*containerSuspect*/ false,
+        return fileMarksIcon(r.fileType, ContainerMark::None,
                              /*ownComment*/ false, mark, network);
     }
 

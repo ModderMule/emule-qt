@@ -13,6 +13,7 @@
 #include "PowerManager.h"
 #include "BandwidthCoordinator.h"
 #include "BtBridge.h"
+#include "Ed3kBridge.h"
 #include "UsenetBridge.h"
 
 #include "IpcMessage.h"
@@ -37,6 +38,7 @@
 #endif
 #ifdef EMULE_HAVE_ED3K
 #include "Ed3kSession.h"
+#include "Ed3kShared.h"
 #include "Ed3kUsenetJoin.h"
 #include "Ed3kTorrentJoin.h"
 #endif
@@ -265,11 +267,32 @@ bool DaemonApp::start()
     // mapped by CoreSession::buildPortMapRequests while ed3kEnabled()
 #ifdef EMULE_HAVE_ED3K
     m_ed3kSession = std::make_unique<ed3k::Ed3kSession>();
+    Ed3kBridge::setSession(m_ed3kSession.get());
+    connect(m_ed3kSession.get(), &ed3k::Ed3kSession::statusChanged, this, [this] {
+        if (!m_ipcServer)
+            return;
+        IpcMessage msg(IpcMsgType::PushEd3kStatus, 0);
+        msg.append(Ed3kBridge::statusToCbor());
+        m_ipcServer->broadcast(msg);
+    });
     // before the node starts: it attaches on statusChanged
     if (auto* queue = m_usenetSession->queue()) {
         m_usenetJoinQueue = ed3k::Ed3kUsenetJoin::queueAdapter(*queue);
         m_usenetJoin = std::make_unique<ed3k::Ed3kUsenetJoin>(*m_ed3kSession, *m_usenetJoinQueue, thePrefs.configDir());
         m_usenetJoin->connectQueue(*queue);
+    }
+    // the share list over ed3k; also attaches on statusChanged
+    if (theApp.sharedFileList) {
+        m_ed3kSharedSource = ed3k::Ed3kShared::listAdapter(*theApp.sharedFileList);
+        m_ed3kShared = std::make_unique<ed3k::Ed3kShared>(*m_ed3kSession, *m_ed3kSharedSource, thePrefs.configDir());
+        m_ed3kShared->connectList(*theApp.sharedFileList);
+        // a completed download stays the same object: no fileAdded
+        if (theApp.downloadQueue)
+            connect(theApp.downloadQueue, &DownloadQueue::fileCompleted, m_ed3kShared.get(), [s = m_ed3kShared.get()](PartFile* f) {
+                if (f)
+                    s->onFileChanged(QByteArray(reinterpret_cast<const char*>(f->fileHash()), 16));
+            });
+        m_ed3kShared->setEnabled(thePrefs.ed3kShareFiles());
     }
     applyEd3kConfig();
 #endif
@@ -304,6 +327,9 @@ bool DaemonApp::start()
 
     // One split of the global limits for all three engines
     m_bandwidth = std::make_unique<BandwidthCoordinator>(m_usenetSession.get(), btSession);
+#ifdef EMULE_HAVE_ED3K
+    m_bandwidth->setEd3k(m_ed3kSession.get());
+#endif
     m_bandwidth->start();
 
     // Indexer search. No enable switch: an account list that is empty is the off
@@ -386,7 +412,12 @@ void DaemonApp::stop()
         m_usenetJoin->stop();
     m_usenetJoin.reset();
     m_usenetJoinQueue.reset();
+    if (m_ed3kShared)
+        m_ed3kShared->stop();
+    m_ed3kShared.reset();
+    m_ed3kSharedSource.reset();
     // saves the node's state; before Usenet
+    Ed3kBridge::setSession(nullptr);
     if (m_ed3kSession)
         m_ed3kSession->stop();
     m_ed3kSession.reset();
@@ -685,6 +716,8 @@ void DaemonApp::applyEd3kConfig()
     if (m_ed3kSession->isRunning() && (!enabled || (port != 0 && m_ed3kSession->udpPort() != port))) {
         if (m_usenetJoin)
             m_usenetJoin->stop();   // restarted on statusChanged
+        if (m_ed3kShared)
+            m_ed3kShared->stop();
 #ifdef EMULE_HAVE_BITTORRENT
         if (m_torrentJoin)
             m_torrentJoin->stop();
@@ -695,9 +728,18 @@ void DaemonApp::applyEd3kConfig()
         ed3k::Ed3kSettings settings;
         settings.udpPort = port;
         settings.configDir = thePrefs.configDir();
+        settings.creditRpc = thePrefs.ed3kCreditRpc();
+        settings.chaintubeRpc = thePrefs.ed3kChaintubeRpc();
         // ToDo: the bindAddress pref (interface selection) for the ed3k socket
         m_ed3kSession->start(settings);
+    } else if (enabled) {
+        // the RPC endpoints take no restart
+        m_ed3kSession->setRpcEndpoints(::ed3k::RpcClass::Credit, thePrefs.ed3kCreditRpc());
+        m_ed3kSession->setRpcEndpoints(::ed3k::RpcClass::Chaintube, thePrefs.ed3kChaintubeRpc());
     }
+    // ed3kShareFiles: on/off while the node runs (starts with it otherwise)
+    if (m_ed3kShared)
+        m_ed3kShared->setEnabled(thePrefs.ed3kShareFiles());
     if (m_coreSession)
         m_coreSession->updatePortMappings();
 #endif

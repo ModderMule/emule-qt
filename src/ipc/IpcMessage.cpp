@@ -184,6 +184,7 @@ quint64 snapshotPushKey(const IpcMessage& msg)
     case IpcMsgType::PushCategoriesChanged:
     case IpcMsgType::PushCoreLoading:
     case IpcMsgType::PushBtStatus:
+    case IpcMsgType::PushEd3kStatus:
         break;
     // One state per search: field 0 is the search id
     case IpcMsgType::PushSearchResult:
@@ -218,6 +219,7 @@ bool isReadOnlyRequest(IpcMsgType type)
     case IpcMsgType::GetTorrentDetails:
     case IpcMsgType::GetBtStatus:
     case IpcMsgType::GetBtStats:
+    case IpcMsgType::GetEd3kStatus:
     case IpcMsgType::GetKadContacts:
     case IpcMsgType::GetKadStatus:
     case IpcMsgType::GetKadSearches:

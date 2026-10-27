@@ -66,6 +66,7 @@ struct Ed3kHttp::Request {
     QList<QHostAddress> addrs;   ///< of the name, offered one by one
     qsizetype nextAddr = 0;
     bool literal = false;        ///< the event had addr: no other address
+    bool rpc = false;            ///< a JSON-RPC call (startRpc): rpcAnswer/rpcFailed, no httpResolved
     QTcpSocket* socket = nullptr;
     QTimer timer;
     bool tcpUp = false;      ///< TCP connected (TLS may still fail)
@@ -115,29 +116,55 @@ void Ed3kHttp::start(const ::ed3k::event::HttpRequest& req)
         m_answers.failed(id);
         return;
     }
-    r->timer.setSingleShot(true);
-    connect(&r->timer, &QTimer::timeout, this, [this, id] {
-        logEd3kDebug(QStringLiteral("http %1: timed out").arg(id));
-        // queued: the timer belongs to the request fail() destroys
-        QMetaObject::invokeMethod(this, [this, id] { fail(id); }, Qt::QueuedConnection);
-    });
-    r->timer.start(std::chrono::seconds(std::clamp<std::uint64_t>(req.timeoutS, 1, 600)));
+    begin(std::move(r));
+}
 
-    Request& ref = *r;
-    m_requests[id] = std::move(r);
-    if (req.addr) {
-        ref.literal = true;
-        connectTo(ref, toQt(*req.addr), req.addr->port ? req.addr->port : req.port);
+void Ed3kHttp::startRpc(std::uint64_t id, const QString& url, const QByteArray& body)
+{
+    const auto failed = [this, id] {
+        if (m_answers.rpcFailed)
+            m_answers.rpcFailed(id);
+    };
+    if (!rpcUrlUsable(url) || std::uint64_t(body.size()) > kRpcBodyMax) {
+        logEd3kDebug(QStringLiteral("rpc %1: unusable endpoint").arg(id));
+        failed();
         return;
     }
-    // a name: resolved here, every address offered to the core first (host-io.md)
-    QHostInfo::lookupHost(ref.url.host(), this, [this, id](const QHostInfo& info) {
-        const auto it = m_requests.find(id);
-        if (it == m_requests.end())
-            return;
-        it->second->addrs = info.addresses();
-        resolveNext(*it->second);
-    });
+    auto r = std::make_unique<Request>();
+    r->rpc = true;
+    r->url = QUrl(url, QUrl::StrictMode);
+    r->tls = r->url.scheme().compare(QLatin1String("https"), Qt::CaseInsensitive) == 0;
+    r->ev.id = id;
+    r->ev.method = ED3K_HTTP_POST;
+    r->ev.url = url.toStdString();
+    r->ev.port = std::uint16_t(r->url.port(r->tls ? 443 : 80));
+    // as mode B (packmule_udp::http rpc)
+    r->ev.headers = "Content-Type: application/json\r\nAccept: application/json\r\nAccept-Encoding: identity\r\n";
+    const auto* bytes = reinterpret_cast<const std::byte*>(body.constData());
+    r->ev.body.assign(bytes, bytes + body.size());
+    r->ev.maxLen = kRpcBodyMax;
+    r->ev.timeoutS = kRpcTimeoutS;
+    // a literal host: that address only
+    if (const QHostAddress ip(r->url.host()); !ip.isNull())
+        r->ev.addr = fromQt(ip, r->ev.port);
+    begin(std::move(r));
+}
+
+bool Ed3kHttp::rpcUrlUsable(const QString& url)
+{
+    const QUrl u(url, QUrl::StrictMode);
+    if (!u.isValid() || u.host().isEmpty() || !u.userInfo().isEmpty())
+        return false;
+    const QString scheme = u.scheme().toLower();
+    if (scheme == QLatin1String("https"))
+        return true;
+    if (scheme != QLatin1String("http"))
+        return false;
+    // plain http only to a node on this machine (chaintube.md §4.3 "a local node")
+    if (u.host().compare(QLatin1String("localhost"), Qt::CaseInsensitive) == 0)
+        return true;
+    const QHostAddress ip(u.host());
+    return !ip.isNull() && ip.isLoopback();
 }
 
 void Ed3kHttp::cancel(std::uint64_t id)
@@ -150,6 +177,34 @@ void Ed3kHttp::clear()
     m_requests.clear();
 }
 
+void Ed3kHttp::begin(std::unique_ptr<Request> r)
+{
+    const std::uint64_t id = r->ev.id;
+    r->timer.setSingleShot(true);
+    connect(&r->timer, &QTimer::timeout, this, [this, id] {
+        logEd3kDebug(QStringLiteral("http %1: timed out").arg(id));
+        // queued: the timer belongs to the request fail() destroys
+        QMetaObject::invokeMethod(this, [this, id] { fail(id); }, Qt::QueuedConnection);
+    });
+    r->timer.start(std::chrono::seconds(std::clamp<std::uint64_t>(r->ev.timeoutS, 1, 600)));
+
+    Request& ref = *r;
+    m_requests[id] = std::move(r);
+    if (ref.ev.addr) {
+        ref.literal = true;
+        connectTo(ref, toQt(*ref.ev.addr), ref.ev.addr->port ? ref.ev.addr->port : ref.ev.port);
+        return;
+    }
+    // a name: resolved here, every address offered to the core first (host-io.md)
+    QHostInfo::lookupHost(ref.url.host(), this, [this, id](const QHostInfo& info) {
+        const auto it = m_requests.find(id);
+        if (it == m_requests.end())
+            return;
+        it->second->addrs = info.addresses();
+        resolveNext(*it->second);
+    });
+}
+
 void Ed3kHttp::resolveNext(Request& r)
 {
     const std::uint64_t id = r.ev.id;
@@ -158,6 +213,11 @@ void Ed3kHttp::resolveNext(Request& r)
         return;
     }
     const QHostAddress ip = r.addrs.at(r.nextAddr++);
+    if (r.rpc) {
+        // the user's endpoint: not the core's to check (mode B does not ask either)
+        connectTo(r, ip, r.ev.port);
+        return;
+    }
     const bool ok = m_answers.resolved(id, fromQt(ip, r.ev.port));
     // the answer may have pumped the engine: look the request up again
     const auto it = m_requests.find(id);
@@ -252,7 +312,8 @@ void Ed3kHttp::onSocketError(std::uint64_t id)
         return;
     }
     // no TCP connection to this address: offer the next one of the name
-    m_answers.unreachable(id);
+    if (!r.rpc)
+        m_answers.unreachable(id);
     const auto again = m_requests.find(id);
     if (again != m_requests.end())
         resolveNext(*again->second);
@@ -398,7 +459,18 @@ void Ed3kHttp::finish(std::uint64_t id)
         return;
     std::unique_ptr<Request> r = std::move(it->second);
     m_requests.erase(it);
-    m_answers.answer(id, r->status, r->headers, r->body);
+    if (!r->rpc) {
+        m_answers.answer(id, r->status, r->headers, r->body);
+        return;
+    }
+    // JSON-RPC: only a 2xx body is an answer (mode B the same)
+    if (r->status >= 200 && r->status < 300 && m_answers.rpcAnswer) {
+        m_answers.rpcAnswer(id, r->body);
+        return;
+    }
+    logEd3kDebug(QStringLiteral("rpc %1: status %2").arg(id).arg(r->status));
+    if (m_answers.rpcFailed)
+        m_answers.rpcFailed(id);
 }
 
 void Ed3kHttp::fail(std::uint64_t id)
@@ -408,7 +480,10 @@ void Ed3kHttp::fail(std::uint64_t id)
         return;
     std::unique_ptr<Request> r = std::move(it->second);
     m_requests.erase(it);
-    m_answers.failed(id);
+    if (!r->rpc)
+        m_answers.failed(id);
+    else if (m_answers.rpcFailed)
+        m_answers.rpcFailed(id);
 }
 
 void Ed3kHttp::drop(std::uint64_t id)

@@ -9,6 +9,8 @@
 #include <QDir>
 #include <QFileInfo>
 #include <QFile>
+#include <QJsonDocument>
+#include <QJsonObject>
 #include <QSignalSpy>
 #include <QTcpServer>
 #include <QTcpSocket>
@@ -28,6 +30,12 @@ private slots:
     void httpAnswersFromLiteralAddress_data();
     void httpAnswersFromLiteralAddress();
     void httpResolvesNameAndAsksFirst();
+    void rpcUrlRule();
+    void rpcCancelDropsTheCall();
+    void rpcPostedToTheConfiguredEndpoint();
+    void rpcWithoutEndpointFails();
+    void trafficCountedAcrossRestart();
+    void limitsKeptAcrossRestart();
 
 private:
     static Ed3kSettings loopback(const QString& dir);
@@ -236,6 +244,172 @@ void tst_Ed3kSession::httpResolvesNameAndAsksFirst()
     QVERIFY(!server.hasPendingConnections());
     QCOMPARE(answers + failures, 0);   // over: IoCancel follows from the core
     QCOMPARE(http.pending(), std::size_t(0));
+}
+
+void tst_Ed3kSession::rpcUrlRule()
+{
+    QVERIFY(Ed3kHttp::rpcUrlUsable(QStringLiteral("https://rpc.example/v1")));
+    QVERIFY(Ed3kHttp::rpcUrlUsable(QStringLiteral("http://127.0.0.1:8545")));
+    QVERIFY(Ed3kHttp::rpcUrlUsable(QStringLiteral("http://[::1]:8545/")));
+    QVERIFY(Ed3kHttp::rpcUrlUsable(QStringLiteral("http://localhost:8545")));
+    // plain http only to this machine; no credentials in the URL
+    QVERIFY(!Ed3kHttp::rpcUrlUsable(QStringLiteral("http://rpc.example/")));
+    QVERIFY(!Ed3kHttp::rpcUrlUsable(QStringLiteral("http://10.0.0.1:8545/")));
+    QVERIFY(!Ed3kHttp::rpcUrlUsable(QStringLiteral("https://user:pw@rpc.example/")));
+    QVERIFY(!Ed3kHttp::rpcUrlUsable(QStringLiteral("ftp://rpc.example/")));
+    QVERIFY(!Ed3kHttp::rpcUrlUsable(QString()));
+}
+
+void tst_Ed3kSession::rpcCancelDropsTheCall()
+{
+    // IoCancel of an RPC id: dropped, no answer either way
+    QTcpServer server;
+    QVERIFY(server.listen(QHostAddress::LocalHost));
+    int answers = 0, failures = 0;
+    Ed3kHttp::Answers answers_{[](std::uint64_t, const ::ed3k::Address&) { return false; }, [](std::uint64_t) {},
+                               [](std::uint64_t, std::uint16_t, const QByteArray&, const QByteArray&) {},
+                               [](std::uint64_t) {}};
+    answers_.rpcAnswer = [&](std::uint64_t, const QByteArray&) { ++answers; };
+    answers_.rpcFailed = [&](std::uint64_t) { ++failures; };
+    Ed3kHttp http(answers_, QStringLiteral("eMuleQt/test"));
+    http.startRpc(5, QStringLiteral("http://127.0.0.1:%1/").arg(server.serverPort()), "{}");
+    QCOMPARE(http.pending(), std::size_t(1));
+    http.cancel(5);
+    QCOMPARE(http.pending(), std::size_t(0));
+    QTest::qWait(200);
+    QCOMPARE(answers + failures, 0);
+    // a URL the rule refuses: failed at once
+    http.startRpc(6, QStringLiteral("http://rpc.example/"), "{}");
+    QCOMPARE(failures, 1);
+}
+
+void tst_Ed3kSession::rpcPostedToTheConfiguredEndpoint()
+{
+    // a JSON-RPC node on loopback: the eth_chainId answer is taken (the eth_call follows),
+    // a 500 fails the read
+    QTcpServer server;
+    QVERIFY(server.listen(QHostAddress::LocalHost));
+    QList<QByteArray> requests;
+    connect(&server, &QTcpServer::newConnection, &server, [&] {
+        QTcpSocket* c = server.nextPendingConnection();
+        auto buf = std::make_shared<QByteArray>();
+        connect(c, &QTcpSocket::readyRead, c, [&, c, buf] {
+            *buf += c->readAll();
+            const qsizetype end = buf->indexOf("\r\n\r\n");
+            if (end < 0)
+                return;
+            const qsizetype lenAt = buf->indexOf("Content-Length: ");
+            const qsizetype len = lenAt < 0 ? 0 : buf->mid(lenAt + 16, buf->indexOf("\r\n", lenAt) - lenAt - 16).toLongLong();
+            if (buf->size() < end + 4 + len)
+                return;
+            requests << *buf;
+            const QJsonObject call = QJsonDocument::fromJson(buf->mid(end + 4, len)).object();
+            QByteArray reply;
+            if (call.value(QStringLiteral("method")).toString() == QStringLiteral("eth_chainId")) {
+                const QByteArray body = QJsonDocument(QJsonObject{{QStringLiteral("jsonrpc"), QStringLiteral("2.0")},
+                                                                  {QStringLiteral("id"), call.value(QStringLiteral("id"))},
+                                                                  {QStringLiteral("result"), QStringLiteral("0x1")}})
+                                            .toJson(QJsonDocument::Compact);
+                reply = "HTTP/1.1 200 OK\r\nContent-Type: application/json\r\nContent-Length: "
+                        + QByteArray::number(body.size()) + "\r\n\r\n" + body;
+            } else {
+                reply = "HTTP/1.1 500 Internal Server Error\r\nContent-Length: 0\r\n\r\n";
+            }
+            c->write(reply);
+            c->disconnectFromHost();
+        });
+    });
+
+    QTemporaryDir dir;
+    QVERIFY(dir.isValid());
+    Ed3kSettings settings = loopback(dir.path());
+    settings.chaintubeRpc = {QStringLiteral("http://127.0.0.1:%1/rpc").arg(server.serverPort())};
+    Ed3kSession s;
+    QVERIFY(s.start(settings));
+    int failed = 0;
+    connect(&s, &Ed3kSession::eventPolled, &s, [&](const ::ed3k::Event& ev, bool*) {
+        if (std::holds_alternative<::ed3k::event::ChainFailed>(ev))
+            ++failed;
+    });
+    bool ok = false;
+    s.post([&](::ed3k::Engine& e, ::ed3k::Now now) {
+        ::ed3k::Engine::ChainAddress content{}, comment{}, vote{};
+        content.fill(0x11);
+        comment.fill(0x22);
+        vote.fill(0x33);
+        ok = e.chainConfigure(1, content, comment, vote, 1).has_value() && e.chainRead(now, ED3K_CHAIN_CONTENT, 7).has_value();
+    });
+    QVERIFY(ok);
+    QTRY_VERIFY_WITH_TIMEOUT(requests.size() >= 2, 10000);
+    const QByteArray& first = requests.at(0);
+    QVERIFY(first.startsWith("POST /rpc HTTP/1.1\r\n"));
+    QVERIFY(first.contains("Content-Type: application/json\r\n"));
+    QVERIFY(first.contains("eth_chainId"));
+    QVERIFY(requests.at(1).contains("eth_call"));   // the answer was taken
+    QTRY_COMPARE_WITH_TIMEOUT(failed, 1, 10000);
+    s.stop();
+}
+
+void tst_Ed3kSession::rpcWithoutEndpointFails()
+{
+    QTemporaryDir dir;
+    QVERIFY(dir.isValid());
+    Ed3kSession s;
+    QVERIFY(s.start(loopback(dir.path())));   // no endpoints
+    int failed = 0;
+    connect(&s, &Ed3kSession::eventPolled, &s, [&](const ::ed3k::Event& ev, bool*) {
+        if (std::holds_alternative<::ed3k::event::ChainFailed>(ev))
+            ++failed;
+    });
+    s.post([&](::ed3k::Engine& e, ::ed3k::Now now) {
+        ::ed3k::Engine::ChainAddress a{};
+        a.fill(0x11);
+        (void)e.chainConfigure(1, a, a, a, 1);
+        (void)e.chainRead(now, ED3K_CHAIN_CONTENT, 7);
+    });
+    QTRY_COMPARE_WITH_TIMEOUT(failed, 1, 5000);
+    s.stop();
+}
+
+void tst_Ed3kSession::trafficCountedAcrossRestart()
+{
+    QTemporaryDir da, db;
+    QVERIFY(da.isValid() && db.isValid());
+    Ed3kSession a, b;
+    QCOMPARE(a.traffic().sent, std::uint64_t(0));
+    QVERIFY(a.start(loopback(da.path())));
+    QVERIFY(b.start(loopback(db.path())));
+    QVERIFY(connectPair(a, b));
+    const Ed3kTraffic t = a.traffic();
+    QVERIFY(t.sent > 0);
+    QVERIFY(t.recv > 0);
+    const Ed3kStatus st = a.status();
+    QVERIFY(st.running);
+    QCOMPARE(st.udpPort, a.udpPort());
+    QCOMPARE(st.nodeId, a.nodeIdHex());
+    QVERIFY(st.contacts > 0);
+    // the counts of a stopped engine stay
+    a.stop();
+    QVERIFY(a.traffic().sent >= t.sent);
+    QVERIFY(!a.status().running);
+    QVERIFY(a.start(loopback(da.path())));
+    QVERIFY(a.traffic().sent >= t.sent);
+    a.stop();
+    b.stop();
+}
+
+void tst_Ed3kSession::limitsKeptAcrossRestart()
+{
+    QTemporaryDir dir;
+    QVERIFY(dir.isValid());
+    Ed3kSession s;
+    s.setLimits(1000, 64 * 1024);   // below the 16 KiB/s floor: raised when applied
+    QVERIFY(s.start(loopback(dir.path())));
+    QCOMPARE(s.limits().up, std::uint64_t(1000));
+    QCOMPARE(s.limits().down, std::uint64_t(64 * 1024));
+    s.setLimits(0, 0);
+    QCOMPARE(s.limits().up, std::uint64_t(0));
+    s.stop();
 }
 
 // ---------------------------------------------------------------------------

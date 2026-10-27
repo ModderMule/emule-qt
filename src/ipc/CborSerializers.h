@@ -244,6 +244,7 @@ inline void insertFakeVerdict(QCborMap& m, const FakeFileVerdict& verdict)
         // by SharedFileList::warmContainerChecks(), and a part file is the same
         // object in both lists, so whichever gets there first settles it for both.
         {QStringLiteral("containerSuspect"),    cc.isSuspect()},
+        {QStringLiteral("containerMislabelled"), cc.isMislabelled()},
         {QStringLiteral("containerExpected"),   cc.expected},
         {QStringLiteral("containerActual"),     cc.actual},
     };

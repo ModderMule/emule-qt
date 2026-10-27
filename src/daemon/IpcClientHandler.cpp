@@ -4,6 +4,7 @@
 #include "IpcClientHandler.h"
 #include "BandwidthCoordinator.h"
 #include "BtBridge.h"
+#include "Ed3kBridge.h"
 #include "UsenetBridge.h"
 #include "CoreNotifierBridge.h"
 #include "SharedFileRows.h"
@@ -323,6 +324,9 @@ void IpcClientHandler::onMessageReceived(const IpcMessage& msg)
 
     // BitTorrent (800-899): BtBridge answers every request of the block
     if (BtBridge::handleRequest(msg, [this](const IpcMessage& reply) { sendMessage(reply); }))
+        return;
+    // ed3k (1000-1049): Ed3kBridge
+    if (Ed3kBridge::handleRequest(msg, [this](const IpcMessage& reply) { sendMessage(reply); }))
         return;
 
     switch (msg.type()) {
@@ -3197,6 +3201,7 @@ void IpcClientHandler::handleBrowseDirectory(const IpcMessage& msg)
             {QStringLiteral("canToggle"), canToggle},
             {QStringLiteral("hash"),      hash},
             {QStringLiteral("containerSuspect"),  check.isSuspect()},
+            {QStringLiteral("containerMislabelled"), check.isMislabelled()},
             {QStringLiteral("containerExpected"), check.expected},
             {QStringLiteral("containerActual"),   check.actual},
         });
@@ -4414,8 +4419,14 @@ bool IpcClientHandler::applyPreferenceEd3k(const QString& key, const QCborValue&
     // ed3k node; the daemon re-reads them on ed3kConfigChanged
     if (key == QStringLiteral("ed3kEnabled"))
         thePrefs.setEd3kEnabled(val.toBool());
+    else if (key == QStringLiteral("ed3kShareFiles"))
+        thePrefs.setEd3kShareFiles(val.toBool());
     else if (key == QStringLiteral("ed3kUdpPort"))
         thePrefs.setEd3kUdpPort(static_cast<uint16>(std::clamp<qint64>(val.toInteger(), 1, 65535)));
+    else if (key == QStringLiteral("ed3kCreditRpc"))
+        thePrefs.setEd3kCreditRpc(Preferences::rpcUrlList(val));
+    else if (key == QStringLiteral("ed3kChaintubeRpc"))
+        thePrefs.setEd3kChaintubeRpc(Preferences::rpcUrlList(val));
     else
         return false;
     return true;

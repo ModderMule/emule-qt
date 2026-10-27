@@ -1702,6 +1702,8 @@ void Search::storePacket(bool flushRemaining)
                        .arg(contact->getVersion()).arg(dist.toHexString()));
             udpListener->sendFindBuddyReq(contact->address().toUint32(), contact->getUDPPort(),
                                           contact->getUDPKey(), &clientID);
+            // Offers come later by TCP, so each request counts as an answer (MFC Search.cpp:838)
+            ++m_answers;
             sent = true;
             break;
         }
@@ -1736,6 +1738,7 @@ void Search::storePacket(bool flushRemaining)
             udpListener->sendPacket(packet, KADEMLIA_CALLBACK_REQ,
                                     contact->address().toUint32(), contact->getUDPPort(),
                                     contact->getUDPKey(), &clientID);
+            ++m_answers;   // MFC Search.cpp:873
             sent = true;
             break;
         }

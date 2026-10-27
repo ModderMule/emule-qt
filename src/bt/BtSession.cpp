@@ -786,6 +786,19 @@ void BtSession::raisePieces(const QString& id, const QList<int>& pieces)
         h.set_piece_deadline(lt::piece_index_t(p), 0);
 }
 
+QBitArray BtSession::havePieces(const QString& id) const
+{
+    const auto h = d->handle(id);
+    if (!h.is_valid())
+        return {};
+    const auto st = h.status(lt::torrent_handle::query_pieces);
+    QBitArray out(st.pieces.size());
+    for (int i = 0; i < st.pieces.size(); ++i)
+        if (st.pieces.get_bit(lt::piece_index_t(i)))
+            out.setBit(i);
+    return out;
+}
+
 QString BtSession::ed3kLink(const QString& id) const
 {
     const auto it = d->links.find(id);
@@ -866,6 +879,9 @@ void BtSession::drainAlerts()
         } else if (auto* pf = lt::alert_cast<lt::piece_finished_alert>(a)) {
             if (const QString id = BtTorrentView::idOf(pf->handle.info_hashes()); d->joins.contains(id))
                 emit pieceResult(id, static_cast<int>(pf->piece_index), true);
+        } else if (auto* tc = lt::alert_cast<lt::torrent_checked_alert>(a)) {
+            if (const QString id = BtTorrentView::idOf(tc->handle.info_hashes()); d->joins.contains(id))
+                emit torrentChecked(id);
         } else if (auto* ls = lt::alert_cast<lt::listen_succeeded_alert>(a)) {
             // one per interface and transport: the port is in the start line
             d->listening = true;

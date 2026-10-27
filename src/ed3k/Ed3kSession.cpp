@@ -182,9 +182,22 @@ bool Ed3kSession::start(const Ed3kSettings& settings)
                 if (m_engine)
                     (void)m_engine->httpFailed(now(), id);
                 pump();
+            },
+            [this](std::uint64_t id, const QByteArray& body) {
+                if (m_engine)
+                    (void)m_engine->rpcAnswer(now(), id, spanOf(body));
+                pump();
+            },
+            [this](std::uint64_t id) {
+                if (m_engine)
+                    (void)m_engine->rpcFailed(now(), id);
+                pump();
             }},
         QStringLiteral("eMuleQt/%1").arg(kAppVersion));
     m_http->setProxy(toNetworkProxy(thePrefs.proxySettings()));
+    // ed3k_rpc_endpoints is for ed3k_open engines only: the URL is picked here (startRpc)
+    m_creditRpc = settings.creditRpc;
+    m_chaintubeRpc = settings.chaintubeRpc;
 
     // ToDo: LAN discovery sockets of mode A (socket-modes.md "Implementer note (LAN
     // discovery)"); until then LAN is off, which ends its first round (bootstrap.md §1)
@@ -193,8 +206,10 @@ bool Ed3kSession::start(const Ed3kSettings& settings)
     loadState();
     // ToDo: node list sources (bootstrap.md §3: bootstrapConfigure, the last
     // BootstrapStarted) and a pref for them
-    // ToDo: upload/download limits through BandwidthCoordinator (setLimits or grants,
-    // noteBytesSentOutsideTheLoop), socket-modes.md "Mode A in eMuleQt"
+    // was: ToDo: upload/download limits through BandwidthCoordinator (setLimits or grants,
+    // noteBytesSentOutsideTheLoop), socket-modes.md "Mode A in eMuleQt" (done: setLimits()
+    // from BandwidthCoordinator, which also reports traffic() to the throttler)
+    applyLimits();
 
     connect(m_socket.get(), &QUdpSocket::readyRead, this, &Ed3kSession::onReadyRead);
     pump();
@@ -220,6 +235,9 @@ void Ed3kSession::stop()
         m_http->clear();
     m_http.reset();
     m_posted.clear();
+    // the counters of this engine stay in traffic()
+    const Ed3kTraffic t = traffic();
+    m_trafficBase = t;
     if (m_socket) {
         m_socket->disconnect(this);
         m_socket->close();
@@ -258,6 +276,50 @@ std::uint64_t Ed3kSession::contactCount() const
         return 0;
     const auto s = m_engine->stats(now());
     return s ? s->contacts : 0;
+}
+
+Ed3kStatus Ed3kSession::status() const
+{
+    Ed3kStatus st;
+    if (!m_engine)
+        return st;
+    st.running = true;
+    st.udpPort = m_port;
+    st.nodeId = nodeIdHex();
+    if (const auto s = m_engine->stats(now())) {
+        st.stats = *s;
+        st.contacts = s->contacts;
+        st.class4 = s->class4;
+        st.class6 = s->class6;
+        st.router = s->router != 0;
+    }
+    return st;
+}
+
+Ed3kTraffic Ed3kSession::traffic() const
+{
+    Ed3kTraffic t = m_trafficBase;
+    if (!m_engine)
+        return t;
+    if (const auto s = m_engine->stats(now())) {
+        t.sent += s->wire_sent;
+        t.recv += s->wire_recv;
+    }
+    return t;
+}
+
+void Ed3kSession::setLimits(std::uint64_t upBytesPerSec, std::uint64_t downBytesPerSec)
+{
+    if (m_limits.up == upBytesPerSec && m_limits.down == downBytesPerSec)
+        return;
+    m_limits = {upBytesPerSec, downBytesPerSec};
+    applyLimits();
+    pump();
+}
+
+void Ed3kSession::setRpcEndpoints(ffi::RpcClass cls, const QStringList& urls)
+{
+    (cls == ffi::RpcClass::Credit ? m_creditRpc : m_chaintubeRpc) = urls;
 }
 
 ffi::Now Ed3kSession::now() const
@@ -395,8 +457,11 @@ void Ed3kSession::dispatch(ffi::Event& ev)
         m_http->start(*h);
         return;
     } else if (const auto* c = std::get_if<e::IoCancel>(&ev)) {
-        m_http->cancel(c->id);
+        m_http->cancel(c->id);   // HTTP and RPC ids alike
         return;
+    } else if (const auto* rpc = std::get_if<e::RpcRequest>(&ev)) {
+        if (startRpc(*rpc))
+            return;   // else a slot may answer it, or answerUnhandled fails it
     } else if (const auto* b = std::get_if<e::KadBootstrapped>(&ev)) {
         logEd3kDebug(QStringLiteral("ed3k: Kad bootstrap (IPv%1): %2 contacts").arg(b->family).arg(b->contacts));
         emit statusChanged();
@@ -414,18 +479,45 @@ void Ed3kSession::dispatch(ffi::Event& ev)
         answerUnhandled(ev);
 }
 
+bool Ed3kSession::startRpc(const ffi::event::RpcRequest& r)
+{
+    const QStringList& urls = r.endpointClass == ED3K_RPC_CREDIT      ? m_creditRpc
+                              : r.endpointClass == ED3K_RPC_CHAINTUBE ? m_chaintubeRpc
+                                                                      : QStringList{};
+    // operator 0: any (the first); n: the n-th (packmule_udp HttpConfig::endpoint)
+    const qsizetype index = r.op == 0 ? 0 : qsizetype(r.op) - 1;
+    if (!m_http || index >= urls.size())
+        return false;
+    const QByteArray body(reinterpret_cast<const char*>(r.body.data()), qsizetype(r.body.size()));
+    m_http->startRpc(r.id, urls.at(index), body);
+    return true;
+}
+
+void Ed3kSession::applyLimits()
+{
+    if (!m_engine)
+        return;
+    // 0 = none; others at least 16 KiB/s (ed3k_set_limits)
+    static constexpr std::uint64_t kFloor = 16 * 1024;
+    const auto floored = [](std::uint64_t v) { return v == 0 ? 0 : std::max(v, kFloor); };
+    const ffi::Limits l{floored(m_limits.up), floored(m_limits.down)};
+    if (auto ok = m_engine->setLimits(now(), l); !ok)
+        logEd3kWarning(QStringLiteral("ed3k: limits not set (error %1)").arg(errorName(ok.error())));
+}
+
 void Ed3kSession::answerUnhandled(const ffi::Event& ev)
 {
     namespace e = ffi::event;
     const ffi::Now t = now();
     if (const auto* w = std::get_if<e::WantBlock>(&ev)) {
-        // ToDo: serve eMule shared files over ed3k
+        // was: ToDo: serve eMule shared files over ed3k (done: Ed3kShared); here only roots nobody serves
         (void)m_engine->blockFail(t, w->id);
-        logEd3kDebug(QStringLiteral("ed3k: block %1 refused, nothing shared").arg(w->id));
+        logEd3kDebug(QStringLiteral("ed3k: block %1 refused, root not shared").arg(w->id));
     } else if (const auto* v = std::get_if<e::VerifyBlock>(&ev)) {
         (void)m_engine->blockFail(t, v->id);
     } else if (const auto* r = std::get_if<e::RpcRequest>(&ev)) {
-        // ToDo: chain RPC endpoints (credit, chaintube): no chain configured
+        // was: ToDo: chain RPC endpoints (credit, chaintube) (done: ed3k.creditRpc /
+        // ed3k.chaintubeRpc, startRpc); here none is configured for its class and operator
         (void)m_engine->rpcFailed(t, r->id);
     } else if (const auto* a = std::get_if<e::BootstrapAsk>(&ev)) {
         // ToDo: ask the user (GUI) before a node list from a link is used
@@ -435,7 +527,8 @@ void Ed3kSession::answerUnhandled(const ffi::Event& ev)
     } else if (const auto* k = std::get_if<e::UnpackAsk>(&ev)) {
         (void)m_engine->unpackEnd(t, k->id, ED3K_UNPACK_UNSUPPORTED);
     }
-    // ToDo: downloads, chat, friends, GUI/IPC status: events only logged for now
+    // ToDo: downloads, chat, friends: events only logged for now (was: GUI/IPC status, done:
+    // Ed3kBridge GetEd3kStatus/PushEd3kStatus)
 }
 
 void Ed3kSession::loadState()
@@ -522,6 +615,7 @@ void Ed3kSession::die(ffi::Error error)
         m_socket.release()->deleteLater();
     if (m_http)
         m_http.release()->deleteLater();
+    m_trafficBase = traffic();   // if the dead engine still reads
     m_engine.reset();
     m_port = 0;
     emit statusChanged();

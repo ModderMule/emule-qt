@@ -28,12 +28,14 @@ namespace eMule::ed3k {
 
 namespace {
 
-/// ALIAS relation SET (alias.md §1): `root` is the manifest of a set
-constexpr std::uint32_t kRelSet = 1;
+// was: a local constant; now ED3K_REL_SET of ed3k.h (the base's startSetSearch default)
+// /// ALIAS relation SET (alias.md §1): `root` is the manifest of a set
+// constexpr std::uint32_t kRelSet = 1;
 /// reads and events handled in one go; a guard, the core gives few
 constexpr int kMaxPerCall = 1 << 16;
-/// member index of a manifest fetched into memory
-constexpr int kManifest = -1;
+// was: a local constant; now the base's kSetManifest (the same -1)
+// /// member index of a manifest fetched into memory
+// constexpr int kManifest = -1;
 
 std::optional<std::vector<std::uint8_t>> hexBytes(const QString& hex, qsizetype len)
 {
@@ -92,15 +94,18 @@ struct Ed3kTorrentJoin::Join {
         ffi::Bytes hashes;           ///< block values: own hash, or of a download's Hashes event
         bool hashing = false;
         quint64 generation = 0;
+        int rehashTries = 0;
         std::set<std::uint64_t> received;   ///< ed3k blocks written (offsets)
     };
     std::vector<Member> members;
+    /// pieces libtorrent has (havePieces, then its verdicts): ed3k skips their blocks
+    QBitArray have;
     /// pieces whose hash job waits for a verdict (PENDING, held)
     std::map<int, std::function<void(bool)>> waiting;
-    /// §4.2: the search whose set is tried, and that set
-    std::uint32_t search = 0;
-    std::optional<ffi::Root> trying;
-    std::vector<ffi::PublisherKey> tryingPublishers;
+    // was: the set search state; now the base's (startSetSearch, setTrying, refuseSet)
+    // std::uint32_t search = 0;
+    // std::optional<ffi::Root> trying;
+    // std::vector<ffi::PublisherKey> tryingPublishers;
     QByteArray completedManifest;
     /// TORRENT_COMPLETE came before every member was hashed: complete() after the last
     bool completePending = false;
@@ -116,6 +121,7 @@ Ed3kTorrentJoin::Ed3kTorrentJoin(Ed3kSession& session, bt::BtSession& bt, const 
     connect(&m_bt, &bt::BtSession::metadataReceived, this, &Ed3kTorrentJoin::onMetadataReceived);
     connect(&m_bt, &bt::BtSession::torrentRemoved, this, &Ed3kTorrentJoin::onTorrentRemoved);
     connect(&m_bt, &bt::BtSession::pieceResult, this, &Ed3kTorrentJoin::onPieceResult);
+    connect(&m_bt, &bt::BtSession::torrentChecked, this, &Ed3kTorrentJoin::onTorrentChecked);
 }
 
 Ed3kTorrentJoin::~Ed3kTorrentJoin()
@@ -133,6 +139,8 @@ void Ed3kTorrentJoin::start()
     QDir().mkpath(torrentDir());
     for (const auto& row : m_bt.torrents())
         (void)ensureJoin(row.id);
+    // what completed before the restart: manifest, info dictionary, verified members
+    shareKept();
     pumpSession();
 }
 
@@ -142,11 +150,7 @@ void Ed3kTorrentJoin::stop()
         return;
     for (const auto& [id, j] : m_joins)
         saveJoin(id);
-    auto* e = m_session.engine();
-    for (const auto& [search, id] : m_setSearches)
-        if (e)
-            (void)e->aliasSearchEnd(search);
-    m_setSearches.clear();
+    // the set searches end in closeAll()
     for (auto& [id, j] : m_joins) {
         m_bt.detachJoin(id);
         // libtorrent's verdict stands for every piece still waiting
@@ -222,8 +226,8 @@ void Ed3kTorrentJoin::addManifestSource(const QString& id, const ffi::Source& so
     const Join* j = findJoin(id);
     if (!j)
         return;
-    if (j->trying)
-        Ed3kJoinBase::addSource(*j->trying, source);
+    if (const auto trying = setTrying(id))
+        Ed3kJoinBase::addSource(*trying, source);
     else if (j->link)
         Ed3kJoinBase::addSource(*j->link, source);
 }
@@ -254,6 +258,7 @@ void Ed3kTorrentJoin::onTorrentRemoved(const QString& id)
     m_noJoin.remove(id);
     // its files are gone or not wanted: not shared any more
     unshareOwner(id);
+    dropKept(id);
     pumpSession();
 }
 
@@ -262,12 +267,34 @@ void Ed3kTorrentJoin::onPieceResult(const QString& id, int piece, bool passed)
     Join* j = findJoin(id);
     if (!j)
         return;
+    if (piece >= 0 && piece < j->have.size())
+        j->have.setBit(piece, passed);
     if (!passed)
         logDebug(QStringLiteral("piece %1 of \"%2\" failed in BitTorrent").arg(piece).arg(name(id)));
     if (auto ok = j->torrent.pieceResult(std::uint64_t(piece), passed); !ok && ok.error() != ffi::Error::NotFound)
         logDebug(QStringLiteral("verdict on piece %1 of %2 not taken (error %3)").arg(piece).arg(id, errorName(ok.error())));
     drainEvents(id);
     pumpSession();
+}
+
+void Ed3kTorrentJoin::onTorrentChecked(const QString& id)
+{
+    Join* j = findJoin(id);
+    if (!j)
+        return;
+    // the resume check found pieces: ask ed3k only for the rest
+    j->have = m_bt.havePieces(id);
+    if (j->torrent.info() && j->torrent.info()->manifest)
+        startDownloads(id);
+    pumpSession();
+}
+
+int Ed3kTorrentJoin::receivedBlocks(const QString& id, int member) const
+{
+    const Join* j = findJoin(id);
+    if (!j || member < 0 || std::size_t(member) >= j->members.size())
+        return 0;
+    return int(j->members[std::size_t(member)].received.size());
 }
 
 // ---------------------------------------------------------------------------
@@ -282,11 +309,11 @@ std::vector<std::uint64_t> Ed3kTorrentJoin::wantedBlocks(const Download& d) cons
     const auto m = j->torrent.member(std::uint64_t(d.member));
     if (!m || m->status != ffi::MemberStatus::Open)
         return {};
-    // ToDo: skip the blocks libtorrent has already (its pieces of the member)
+    // was: ToDo: skip the blocks libtorrent has already (done: Join::have, piecesHad)
     const auto& received = j->members[std::size_t(d.member)].received;
     std::vector<std::uint64_t> wanted;
     for (std::uint64_t off = 0; off < d.size; off += kBlock)
-        if (!received.contains(off))
+        if (!received.contains(off) && !piecesHad(*j, m->start + off, m->start + std::min(off + kBlock, d.size)))
             wanted.push_back(off);
     return wanted;
 }
@@ -320,24 +347,59 @@ void Ed3kTorrentJoin::onFileBlock(const Download& d, const ffi::event::Block& b)
 void Ed3kTorrentJoin::onBlobFetched(const QString& owner, int member, const ffi::Root& root, const QByteArray& data)
 {
     Join* j = findJoin(owner);
-    if (!j || member != kManifest)
+    if (!j || member != kSetManifest)
         return;
     if (j->link && root == *j->link) {
         // §4.1: the manifest of the link
         if (!setManifest(owner, spanOf(data)))
             reportProblem(owner, -1, tr("ed3k: the ed3k link of \"%1\" names no set of this torrent").arg(name(owner)));
+        else
+            keepBlob(owner, data, name(owner), root);
         return;
     }
-    if (!j->trying || root != *j->trying)
-        return;
+    // was: §4.2 a set a record claims, here; now onSetManifest (the base routes it)
+}
+
+void Ed3kTorrentJoin::onSetManifest(const QString& owner, const ffi::Root& root, const QByteArray& data)
+{
     // §4.2: a set a record claims
-    const auto publishers = j->tryingPublishers;
-    if (setManifest(owner, spanOf(data), publishers))
+    if (setManifest(owner, spanOf(data), setPublishers(owner))) {
+        keepBlob(owner, data, name(owner), root);
         return;
-    if (auto* e = m_session.engine(); e && j->search)
-        (void)e->aliasSearchBlame(m_session.now(), j->search, root);
-    j->trying.reset();
-    (void)tryNextSet(owner);
+    }
+    (void)refuseSet(owner, root);
+}
+
+bool Ed3kTorrentJoin::wantsSet(const QString& owner) const
+{
+    const Join* j = findJoin(owner);
+    if (!j)
+        return false;
+    const auto inf = j->torrent.info();
+    return inf && !inf->manifest;
+}
+
+bool Ed3kTorrentJoin::keepsOwner(const QString& owner) const
+{
+    return m_bt.torrent(owner).has_value();
+}
+
+QString Ed3kTorrentJoin::keptMemberPath(const QString& owner, int member) const
+{
+    if (const Join* j = findJoin(owner))
+        return memberPath(*j, member);
+    // no join (complete, its saved join gone): members are the files without padding
+    const auto layout = m_bt.layout(owner);
+    if (!layout || member < 0)
+        return {};
+    int index = 0;
+    for (const auto& f : layout->files) {
+        if (f.pad)
+            continue;
+        if (index++ == member)
+            return f.path;
+    }
+    return {};
 }
 
 void Ed3kTorrentJoin::onDownloadHashes(const Download& d, const ffi::Bytes& blob)
@@ -351,30 +413,20 @@ std::optional<QByteArray> Ed3kTorrentJoin::readShared(const Shared& s, std::uint
 {
     // only bytes verified under the root: checked-only data stays BitTorrent's (§4.1)
     const Join* j = findJoin(s.owner);
-    if (!j || !j->torrent.servable(std::uint64_t(s.member), offset, len))
+    if (!j) {
+        // a kept member of a torrent without a join: hashed again under its root before it was shared
+        QFile f(keptMemberPath(s.owner, s.member));
+        if (!f.open(QIODevice::ReadOnly) || !f.seek(qint64(offset)))
+            return std::nullopt;
+        QByteArray data = f.read(qint64(len));
+        return data.size() == qsizetype(len) ? std::optional(data) : std::nullopt;
+    }
+    if (!j->torrent.servable(std::uint64_t(s.member), offset, len))
         return std::nullopt;
     return readMember(*j, s.member, offset, len);
 }
 
-void Ed3kTorrentJoin::onOtherEvent(const ffi::Event& event)
-{
-    const auto* af = std::get_if<ffi::event::AliasFound>(&event);
-    if (!af)
-        return;
-    const auto it = m_setSearches.find(af->search);
-    if (it == m_setSearches.end())
-        return;
-    const QString id = it->second;
-    Join* j = findJoin(id);
-    if (!j)
-        return;
-    logDebug(QStringLiteral("%1 set(s) claimed for \"%2\"").arg(af->roots).arg(name(id)));
-    // the first search with roots is tried; the others wait
-    if (const auto inf = j->torrent.info(); !j->trying && inf && !inf->manifest) {
-        j->search = af->search;
-        (void)tryNextSet(id);
-    }
-}
+// was: onOtherEvent took the AliasFound of the set searches; now the base's (onSetAliasFound)
 
 bool Ed3kTorrentJoin::hasOwner(const QString& owner) const
 {
@@ -463,10 +515,14 @@ Ed3kTorrentJoin::Join* Ed3kTorrentJoin::ensureJoin(const QString& id)
                 .arg(raw->members.size())
                 .arg(link ? QStringLiteral("from its ed3k link") : QStringLiteral("torrent alone")));
 
+    // members complete but not hashed before the restart (unreadable then): hashed again
+    for (std::size_t m = 0; m < raw->members.size(); ++m)
+        if (const auto tm = raw->torrent.member(m); tm && tm->status == ffi::MemberStatus::Complete)
+            onMemberComplete(id, int(m));
     if (info->manifest) {
         startDownloads(id);   // a restart: the set is known
     } else if (link) {
-        if (linkSize == 0 || !fetchBlob(*link, linkSize, id, kManifest))
+        if (linkSize == 0 || !fetchBlob(*link, linkSize, id, kSetManifest))
             logDebug(QStringLiteral("set of \"%1\" not fetched").arg(name(id)));
     } else {
         startSetSearch(id);
@@ -488,16 +544,7 @@ void Ed3kTorrentJoin::dropJoin(const QString& id, bool keepBlob)
         for (auto& [piece, done] : it->second->waiting)
             done(false);
         stopDownloads(id);
-        auto* e = m_session.engine();
-        for (auto s = m_setSearches.begin(); s != m_setSearches.end();) {
-            if (s->second == id) {
-                if (e)
-                    (void)e->aliasSearchEnd(s->first);
-                s = m_setSearches.erase(s);
-            } else {
-                ++s;
-            }
-        }
+        endSetSearches(id);
         m_joins.erase(it);
     }
     dropDirty(id);
@@ -670,8 +717,13 @@ void Ed3kTorrentJoin::onMemberHashed(const QString& id, int index, quint64 gener
         return;
     m.hashing = false;
     if (!hashed) {
-        // ToDo: hash again later (the file is gone or unreadable)
+        // was: ToDo: hash again later (done: after kRehashMs, and at the next start in ensureJoin)
         logWarning(QStringLiteral("cannot hash member %1 of \"%2\" (%3)").arg(index).arg(name(id), memberPath(*j, index)));
+        if (++m.rehashTries < kRehashTries)
+            QTimer::singleShot(kRehashMs, this, [this, id, index] {
+                if (const auto tm = member(id, index); tm && tm->status == ffi::MemberStatus::Complete)
+                    onMemberComplete(id, index);
+            });
         return;
     }
     m.hashes = hashed->hashes;
@@ -702,6 +754,7 @@ void Ed3kTorrentJoin::onMemberVerified(const QString& id, int index, const ffi::
     const ffi::FileInfo info{root, size, fileName, std::nullopt, 0, 0, 0, 0, 0, 0};
     if (auto ok = e->publish(m_session.now(), info, m_holdBack ? ffi::Publish::Source : ffi::Publish::Both); !ok)
         logDebug(QStringLiteral("publish of member %1 of \"%2\" failed (error %3)").arg(index).arg(name(id), errorName(ok.error())));
+    keepMember(id, index, root, size, file);
     logInfo(QStringLiteral("\"%1\" verified and shared as %2").arg(file, hexOf(root.bytes)));
     emit memberVerified(id, index);
 }
@@ -738,13 +791,8 @@ void Ed3kTorrentJoin::onClaimFalse(const QString& id, const ffi::tev::ClaimFalse
     if (!j)
         return;
     // §8: its publishers are ignored from now on, and the set is not tried again
-    if (e) {
-        const auto t = m_session.now();
-        if (!ev.publishers.empty())
-            (void)e->aliasBan(t, ev.publishers);
-        if (j->search)
-            (void)e->aliasSearchBlame(t, j->search, ev.manifest);
-    }
+    if (e && !ev.publishers.empty())
+        (void)e->aliasBan(m_session.now(), ev.publishers);
     // its ed3k data is dropped: the member downloads stop, nothing of them is served
     for (std::size_t m = 0; m < j->members.size(); ++m) {
         if (const auto tm = j->torrent.member(m); tm && tm->root) {
@@ -756,8 +804,8 @@ void Ed3kTorrentJoin::onClaimFalse(const QString& id, const ffi::tev::ClaimFalse
     logWarning(QStringLiteral("false claim %1 for \"%2\", %3 publisher(s) banned")
                    .arg(hexOf(ev.manifest.bytes), name(id)).arg(ev.publishers.size()));
     reportProblem(id, -1, tr("ed3k: a false set was claimed for \"%1\" and is ignored; the torrent goes on").arg(name(id)));
-    j->trying.reset();
-    if (!tryNextSet(id) && !j->link)
+    // the search's blame, then its next set; none left: searched again
+    if (!refuseSet(id, ev.manifest) && !j->link && !setSearching(id))
         startSetSearch(id);
 }
 
@@ -786,10 +834,12 @@ void Ed3kTorrentJoin::onTorrentComplete(const QString& id)
     }
     const auto t = m_session.now();
     j->completedManifest = QByteArray(reinterpret_cast<const char*>(done->manifest.data()), qsizetype(done->manifest.size()));
-    // ToDo: the manifest and info dictionary are kept in memory only; after a restart
-    // they are not served any more
-    shareBlob(j->completedManifest, torrentName, done->root);
-    shareBlob(m_bt.infoSection(id), torrentName + QStringLiteral(".info"), done->infoRoot);
+    // was: ToDo: the manifest and info dictionary are kept in memory only (done: keepBlob,
+    // shared again at start)
+    keepBlob(id, j->completedManifest, torrentName, done->root);
+    keepBlob(id, m_bt.infoSection(id), torrentName + QStringLiteral(".info"), done->infoRoot);
+    // published again after a restart, as below
+    keepRecords(id, done->root, torrentName, done->aliases);
     // MEMBER rows (file-set.md §6)
     if (auto ok = e->setPublish(t, done->manifest, done->root, nameView); !ok)
         logDebug(QStringLiteral("set of \"%1\" not published (error %2)").arg(torrentName, errorName(ok.error())));
@@ -806,61 +856,26 @@ void Ed3kTorrentJoin::startDownloads(const QString& id)
     Join* j = findJoin(id);
     if (!j)
         return;
+    j->have = m_bt.havePieces(id);
     for (std::size_t i = 0; i < j->members.size(); ++i) {
         const auto m = j->torrent.member(i);
-        if (m && m->root && m->size > 0 && m->status == ffi::MemberStatus::Open && !downloading(*m->root))
+        // all of it in libtorrent: BitTorrent finishes it, MEMBER_COMPLETE hashes it
+        if (m && m->root && m->size > 0 && m->status == ffi::MemberStatus::Open && !downloading(*m->root)
+            && !piecesHad(*j, m->start, m->start + m->size))
             (void)openDownload(*m->root, m->size, id, int(i));
     }
 }
 
 void Ed3kTorrentJoin::startSetSearch(const QString& id)
 {
-    auto* e = m_session.engine();
     const auto row = m_bt.torrent(id);
-    if (!e || !row || !m_searchEnabled || row->isPrivate)
+    if (!row || row->isPrivate)
         return;
-    const auto t = m_session.now();
-    const auto search = [&](const char* scheme, const QString& hex, qsizetype len) {
-        const auto bytes = hexBytes(hex, len);
-        if (!bytes)
-            return;
-        auto s = e->aliasSearchStart(t, scheme, *bytes, kRelSet);
-        if (!s) {
-            logDebug(QStringLiteral("%1 search of \"%2\" not started (error %3)")
-                         .arg(QLatin1StringView(scheme), name(id), errorName(s.error())));
-            return;
-        }
-        m_setSearches[*s] = id;
-    };
-    // a hybrid torrent: both (§5)
-    search("btih", row->hashV1, 20);
-    search("btmh", row->hashV2, 32);
-}
-
-bool Ed3kTorrentJoin::tryNextSet(const QString& id)
-{
-    auto* e = m_session.engine();
-    Join* j = findJoin(id);
-    if (!e || !j || !j->search)
-        return false;
-    for (int tries = 0; tries < 8; ++tries) {
-        auto next = e->aliasSearchNext(j->search);
-        if (!next || !*next)
-            break;
-        const auto& c = **next;
-        if (c.size == 0)
-            continue;
-        j->trying = c.root;
-        j->tryingPublishers.assign(c.publishers.begin(), c.publishers.end());
-        logInfo(QStringLiteral("trying set %1 of \"%2\" (%3 site(s))").arg(hexOf(c.root.bytes), name(id)).arg(c.sites));
-        if (fetchBlob(c.root, c.size, id, kManifest))
-            return true;
-        j->trying.reset();
-    }
-    (void)e->aliasSearchEnd(j->search);
-    m_setSearches.erase(j->search);
-    j->search = 0;
-    return false;
+    // a hybrid torrent: both (§5); relation SET. The candidate loop is the base's (tryNextSet)
+    if (const auto v1 = hexBytes(row->hashV1, 20))
+        (void)Ed3kJoinBase::startSetSearch(id, "btih", *v1);
+    if (const auto v2 = hexBytes(row->hashV2, 32))
+        (void)Ed3kJoinBase::startSetSearch(id, "btmh", *v2);
 }
 
 void Ed3kTorrentJoin::feedPieces(const QString& id, const std::vector<std::uint64_t>& pieces)
@@ -940,6 +955,21 @@ void Ed3kTorrentJoin::saveJoin(const QString& id)
     QDir().mkpath(torrentDir());
     if (!writeBlob(joinPath(id), *blob))
         logWarning(QStringLiteral("cannot write %1").arg(joinPath(id)));
+}
+
+bool Ed3kTorrentJoin::piecesHad(const Join& j, std::uint64_t begin, std::uint64_t end) const
+{
+    // [begin, end) in the piece space; an empty range or no piece map: not had
+    const auto pieceLength = std::uint64_t(j.layout.pieceLength);
+    if (end <= begin || pieceLength == 0 || j.have.isEmpty())
+        return false;
+    const std::uint64_t last = (end - 1) / pieceLength;
+    if (last >= std::uint64_t(j.have.size()))
+        return false;
+    for (std::uint64_t p = begin / pieceLength; p <= last; ++p)
+        if (!j.have.testBit(qsizetype(p)))
+            return false;
+    return true;
 }
 
 QString Ed3kTorrentJoin::torrentDir() const

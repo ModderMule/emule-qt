@@ -11,7 +11,12 @@
 /// computePairSplit() (core/transfer/BandwidthSplit).
 ///
 /// Publishes: thePrefs.setEd2kDownloadBudget/setEd2kUploadBudget (runtime only),
-/// UsenetQueue::setRateLimit, BtSession::setRateLimits.
+/// UsenetQueue::setRateLimit, BtSession::setRateLimits, Ed3kSession::setLimits.
+///
+/// ed3k (packmule) rides on eD2K's share (socket-modes.md "Mode A in eMuleQt"): it may use
+/// all of it (ed3k_set_limits), its traffic joins eD2K's demand, its upload goes to the
+/// throttler (noteBytesSentOutsideTheLoop: in the upload rate, off the budget) and eD2K's
+/// download budget drops by what ed3k receives.
 
 #include "transfer/BandwidthSplit.h"
 namespace eMule::usenet {
@@ -26,6 +31,9 @@ namespace eMule {
 namespace bt {
 class BtSession;
 }
+namespace ed3k {
+class Ed3kSession;
+}
 
 class BandwidthCoordinator {
 public:
@@ -39,6 +47,11 @@ public:
         qint64 uploadLineKb = 0;
         qint64 ed2kUpKb = 0;
         qint64 btUpKb = 0;
+        /// ed3k's limits (eD2K's share before ed3k's use is taken off) and wire rates, B/s
+        qint64 ed3kDownKb = 0;
+        qint64 ed3kUpKb = 0;
+        qint64 ed3kDownRate = 0;
+        qint64 ed3kUpRate = 0;
         /// a busy engine is held below its line by another one
         bool contended = false;
 
@@ -51,6 +64,9 @@ public:
 
     BandwidthCoordinator(const BandwidthCoordinator&) = delete;
     BandwidthCoordinator& operator=(const BandwidthCoordinator&) = delete;
+
+    /// The ed3k node, or null (not built, a test). Set before start().
+    void setEd3k(ed3k::Ed3kSession* session) { m_ed3k = session; }
 
     void start();
     /// Gives every engine the whole line back.
@@ -68,9 +84,20 @@ public:
 
 private:
     void logChange();
+    /// ed3k's wire bytes since the last tick: smoothed rates (B/s) into m_ed3k*Rate, sent
+    /// bytes to the throttler. False: not running.
+    bool sampleEd3k();
 
     usenet::UsenetSession* m_usenet = nullptr;
     bt::BtSession* m_bt = nullptr;
+    ed3k::Ed3kSession* m_ed3k = nullptr;
+#ifdef EMULE_HAVE_ED3K
+    quint64 m_ed3kSent = 0;
+    quint64 m_ed3kRecv = 0;
+    QElapsedTimer m_ed3kClock;
+#endif
+    qint64 m_ed3kUpRate = 0;
+    qint64 m_ed3kDownRate = 0;
     QTimer m_timer;
 
     DownloadPlanState m_downState;

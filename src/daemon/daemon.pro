@@ -91,6 +91,7 @@ SOURCES += \
     DaemonApp.cpp \
     ApiEventFeeder.cpp \
     BtBridge.cpp \
+    Ed3kBridge.cpp \
     DaemonApiBackend.cpp \
     DaemonTorrentWebBackend.cpp \
     DaemonUsenetWebBackend.cpp \
@@ -111,6 +112,7 @@ HEADERS += \
     DaemonApp.h \
     ApiEventFeeder.h \
     BtBridge.h \
+    Ed3kBridge.h \
     DaemonApiBackend.h \
     DaemonTorrentWebBackend.h \
     DaemonUsenetWebBackend.h \

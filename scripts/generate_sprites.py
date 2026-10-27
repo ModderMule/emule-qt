@@ -46,6 +46,7 @@ RATING_ICONS = [
     ("rating_5", "FileRating5.ico"),        # Excellent
     ("rating_search", "emuleCollSearch.ico"),  # a Kad note lookup is running
     ("rating_fake", "RatingBad.ico"),       # the red "not what it claims" mark
+    ("rating_warn", "RatingWarn.ico"),      # yellow: right kind of media, wrong extension
 ]
 RATING_ICON_PX = 16
 

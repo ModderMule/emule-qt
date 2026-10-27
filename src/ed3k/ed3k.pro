@@ -32,6 +32,7 @@ SOURCES += \
     Ed3kHttp.cpp \
     Ed3kJoinBase.cpp \
     Ed3kSession.cpp \
+    Ed3kShared.cpp \
     Ed3kStore.cpp \
     Ed3kTorrentJoin.cpp \
     Ed3kUsenetJoin.cpp
@@ -41,6 +42,7 @@ HEADERS += \
     Ed3kHttp.h \
     Ed3kJoinBase.h \
     Ed3kSession.h \
+    Ed3kShared.h \
     Ed3kStore.h \
     Ed3kTorrentJoin.h \
     Ed3kUsenetJoin.h

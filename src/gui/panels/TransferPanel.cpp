@@ -1352,6 +1352,7 @@ void TransferPanel::requestDownloads()
             row.hasComment        = m.value(QStringLiteral("hasComment")).toBool();
             row.userRating        = static_cast<int>(m.value(QStringLiteral("userRating")).toInteger());
             row.containerSuspect  = m.value(QStringLiteral("containerSuspect")).toBool();
+            row.containerMislabelled = m.value(QStringLiteral("containerMislabelled")).toBool();
             row.containerExpected = m.value(QStringLiteral("containerExpected")).toString();
             row.containerActual   = m.value(QStringLiteral("containerActual")).toString();
             row.confidence        = m.value(QStringLiteral("confidence")).toString();

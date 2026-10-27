@@ -7,6 +7,7 @@
 #include <QCoreApplication>
 #include <QFile>
 #include <QFileInfo>
+#include <QStringList>
 
 #include <cstddef>
 #include <initializer_list>
@@ -31,6 +32,32 @@ QString lookupPair(const MediaPair (&table)[N], const QString& key)
             return QString::fromLatin1(v);
     }
     return {};
+}
+
+/// Media kinds, as bits: a container may carry either.
+constexpr quint8 kAudio = 1;
+constexpr quint8 kVideo = 2;
+
+/// What kind of media an extension promises.
+quint8 extensionKind(const QString& ext)
+{
+    static const QStringList kAudioExt = {
+        QStringLiteral("wma"), QStringLiteral("m4a"), QStringLiteral("wav"),
+        QStringLiteral("ogg"), QStringLiteral("oga"), QStringLiteral("flac"),
+    };
+    return kAudioExt.contains(ext) ? kAudio : kVideo;   // the rest of expectedContainer() is video
+}
+
+/// What kinds of media a container can carry.
+quint8 containerKinds(const QString& container)
+{
+    if (container == QLatin1StringView("WAVE") || container == QLatin1StringView("FLAC")
+        || container == QLatin1StringView("MPEG audio"))
+        return kAudio;
+    if (container == QLatin1StringView("AVI") || container == QLatin1StringView("FLV")
+        || container == QLatin1StringView("MPEG program stream"))
+        return kVideo;
+    return kAudio | kVideo;   // ASF, MP4, Matroska, Ogg, RealMedia
 }
 
 } // namespace
@@ -150,6 +177,9 @@ ContainerCheck checkHead(const QByteArray& head, const QString& fileName)
                                       : ContainerVerdict::WrongContainer;
     if (actual.isEmpty())
         result.foreign = sniffForeignHead(head);
+    else
+        result.sameKind = (extensionKind(QFileInfo(fileName).suffix().toLower())
+                           & containerKinds(actual)) != 0;
     return result;
 }
 
@@ -182,8 +212,15 @@ QString containerWarningText(const ContainerCheck& check, const QString& fileNam
                    "Named .%1 but matches no media container we recognise — very likely a fake.")
             .arg(ext);
     }
-    return QCoreApplication::translate("ContainerSniffer", "Named .%1 but the contents are %2.")
-        .arg(ext, check.actual);
+    QString text = QCoreApplication::translate("ContainerSniffer", "Named .%1 but the contents are %2.")
+                       .arg(ext, check.actual);
+    if (check.isMislabelled()) {
+        text += QLatin1Char(' ')
+              + QCoreApplication::translate(
+                    "ContainerSniffer",
+                    "Only the extension is wrong — most players still open it.");
+    }
+    return text;
 }
 
 } // namespace eMule

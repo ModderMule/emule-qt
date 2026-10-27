@@ -65,6 +65,9 @@ PartFile::~PartFile()
     // would hand a dying object to the shared list (or call into one already gone).
     m_destroying = true;
 
+    // Uploaders let go before the flush below; ~KnownFile repeats it as a no-op (#68)
+    detachUploadingClients();
+
     // A QThread must not outlive its owner's signals half-way through a file: stop it at
     // the next part and wait. It does not start the move once interrupted.
     if (m_moveThread) {

@@ -68,7 +68,12 @@ KnownFile::KnownFile()
     m_upPriority = m_autoUpPriority ? kPrHigh : kPrNormal;
 }
 
-KnownFile::~KnownFile() = default;
+KnownFile::~KnownFile()
+{
+    // Uploaders keep a raw pointer to us; let go first or a later client delete
+    // calls removeUploadingClient() on freed memory (#68). Every delete path is covered.
+    detachUploadingClients();
+}
 
 // ---------------------------------------------------------------------------
 // setFileSize — computes data part count and ED2K part count

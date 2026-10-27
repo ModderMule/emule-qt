@@ -33,7 +33,7 @@ class PowerManager;
 
 namespace usenet { class UsenetSession; }
 namespace bt { class BtSession; }
-namespace ed3k { class Ed3kSession; class Ed3kUsenetJoin; class UsenetJoinQueue; class Ed3kTorrentJoin; }
+namespace ed3k { class Ed3kSession; class Ed3kUsenetJoin; class UsenetJoinQueue; class Ed3kTorrentJoin; class Ed3kShared; class SharedFileSource; }
 namespace indexer { class IndexerFeedList; class IndexerSearchList; }
 
 class DaemonApp : public QObject {
@@ -190,6 +190,9 @@ private:
     /// the usenet join (usenet-join-host.md): needs both sessions; dies before them
     std::unique_ptr<ed3k::UsenetJoinQueue> m_usenetJoinQueue;
     std::unique_ptr<ed3k::Ed3kUsenetJoin> m_usenetJoin;
+    /// eMule's shared files over ed3k (pref ed3kShareFiles); dies before the session
+    std::unique_ptr<ed3k::SharedFileSource> m_ed3kSharedSource;
+    std::unique_ptr<ed3k::Ed3kShared> m_ed3kShared;
 #ifdef EMULE_HAVE_BITTORRENT
     /// the torrent join (torrent-join.md Part C): needs both sessions; dies before them
     std::unique_ptr<ed3k::Ed3kTorrentJoin> m_torrentJoin;

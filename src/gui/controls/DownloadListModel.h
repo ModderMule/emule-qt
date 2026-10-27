@@ -131,6 +131,7 @@ struct DownloadRow {
     // The file's own bytes contradict its name. Independent of the rating above:
     // that one is other people's opinion, this one is provable.
     bool containerSuspect = false;
+    bool containerMislabelled = false;   // suspect, but same kind of media: yellow mark
     QString containerExpected;   // container the extension promises, e.g. "ASF"
     QString containerActual;     // what it really is; empty when unrecognised
 

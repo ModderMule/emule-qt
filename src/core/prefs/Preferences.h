@@ -1288,6 +1288,20 @@ public:
     [[nodiscard]] uint16 ed3kUdpPort() const;
     void setEd3kUdpPort(uint16 val);
 
+    /// eMule's shared files served over ed3k (Ed3kShared); only while ed3k runs. Default on.
+    [[nodiscard]] bool ed3kShareFiles() const;
+    void setEd3kShareFiles(bool val);
+
+    /// JSON-RPC endpoints of the credit ledger / the chaintube chain (https, or http to
+    /// a loopback node); operator n of a call is the n-th. Empty = calls answered failed.
+    /// IPC/REST keys `ed3kCreditRpc` / `ed3kChaintubeRpc`: URLs separated by spaces.
+    [[nodiscard]] QStringList ed3kCreditRpc() const;
+    void setEd3kCreditRpc(const QStringList& urls);
+    [[nodiscard]] QStringList ed3kChaintubeRpc() const;
+    void setEd3kChaintubeRpc(const QStringList& urls);
+    /// "a b c" or an array of strings → the list (empty entries dropped).
+    [[nodiscard]] static QStringList rpcUrlList(const QCborValue& value);
+
     /// ED2K's current slice of maxDownload(), in KB/s. Runtime only: it is
     /// recomputed twice a second from the live split and never written to
     /// preferences.yml, so a crash cannot leave a user permanently throttled.

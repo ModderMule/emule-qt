@@ -3,7 +3,8 @@
 /// BtSessions and ed3k nodes on loopback: a torrent completed over BitTorrent gives its set
 /// (members verified and shared, a manifest); with that set, a torrent with no BitTorrent
 /// peer is filled from ed3k alone (blocks into the files, pieces to libtorrent); the join
-/// is saved and loaded again.
+/// is saved and loaded again; what completed is shared again after a restart, and its
+/// records published again; ed3k is not asked for what libtorrent has already.
 
 #include "BtSession.h"
 #include "Ed3kSession.h"
@@ -125,6 +126,7 @@ private slots:
     void completeTorrentGivesItsSet();
     void ed3kAloneFillsATorrent();
     void linkJoinFetchesItsSet();
+    void ed3kSkipsPiecesLibtorrentHas();
 
 private:
     QTemporaryDir m_dir;
@@ -196,6 +198,25 @@ void tst_Ed3kTorrentJoin::completeTorrentGivesItsSet()
     const auto m0 = join.member(added.id, 0);
     QVERIFY(m0 && m0->root && *m0->root == hashOf(m_a).root);
     QCOMPARE(m0->status, ::ed3k::MemberStatus::Verified);
+    const ::ed3k::Root manifestRoot = hashOf(m_manifest).root;
+    QVERIFY(join.sharesRoot(manifestRoot));
+
+    // a restart: the manifest, the info dictionary and the members are shared again (kept
+    // under Config/ed3k/torrent/<id>/; members hashed again first)
+    join.stop();
+    QVERIFY(!join.sharesRoot(manifestRoot));
+    Ed3kTorrentJoin again(node, leecher, dir);
+    again.setSearchEnabled(false);
+    QSignalSpy republished(&again, &Ed3kTorrentJoin::keptRecordsPublished);
+    again.start();
+    QVERIFY(again.sharesRoot(manifestRoot));
+    QVERIFY(again.sharesRoot(hashOf(leecher.infoSection(added.id)).root));
+    QTRY_VERIFY_WITH_TIMEOUT(again.sharesRoot(hashOf(m_a).root) && again.sharesRoot(hashOf(m_b).root), 10000);
+    // the set (MEMBER rows) and the ALIAS records (btih and btmh: hybrid) go out again
+    QTRY_COMPARE_WITH_TIMEOUT(republished.count(), 1, 10000);
+    QCOMPARE(republished.at(0).at(0).toString(), added.id);
+    QCOMPARE(republished.at(0).at(1).toInt(), 2);
+    again.stop();
 
     join.stop();
     leecher.stop();
@@ -329,6 +350,59 @@ void tst_Ed3kTorrentJoin::linkJoinFetchesItsSet()
     seeder.stop();
     for (Ed3kSession* s : {&node, &m, &a, &c})
         s->stop();
+}
+
+// The first four pieces of member A are on disk before the add: libtorrent's check finds
+// them, and ed3k is asked only for the block it lacks (block 0 is pieces 0-3).
+void tst_Ed3kTorrentJoin::ed3kSkipsPiecesLibtorrentHas()
+{
+    if (m_manifest.isEmpty())
+        QSKIP("needs the set of completeTorrentGivesItsSet");
+    constexpr int kHad = 4 * kPieceLength;
+    static_assert(kHad == 256 * 1024, "block 0 of a member is pieces 0-3");
+    QTemporaryDir da, dc;
+    QVERIFY(da.isValid() && dc.isValid());
+    Ed3kSession a, c;
+    QVERIFY(a.start(loopback(da.path())));
+    QVERIFY(c.start(loopback(dc.path())));
+    shareFrom(a, m_a, hashOf(m_a), this);
+    shareFrom(c, m_b, hashOf(m_b), this);
+
+    const QString dir = m_dir.filePath(QStringLiteral("leech4"));
+    const BtSettings settings = btSettings(dir);
+    QVERIFY(QDir().mkpath(settings.downloadDir + QStringLiteral("/set")));
+    {
+        QFile f(settings.downloadDir + QStringLiteral("/set/a.bin"));
+        QVERIFY(f.open(QIODevice::WriteOnly));
+        QCOMPARE(f.write(m_a.left(kHad)), qint64(kHad));
+    }
+    Ed3kSession node;
+    QVERIFY(node.start(loopback(dir)));
+    BtSession leecher;
+    leecher.start(settings);
+    Ed3kTorrentJoin join(node, leecher, dir);
+    join.setSearchEnabled(false);
+    join.start();
+    QSignalSpy finished(&leecher, &BtSession::torrentFinished);
+
+    const BtAddResult added = leecher.addTorrentFile(m_torrent);
+    QCOMPARE(added.outcome, BtAddOutcome::Added);
+    QTRY_COMPARE_WITH_TIMEOUT(leecher.havePieces(added.id).count(true), qsizetype(4), kTimeoutMs);
+    QVERIFY(join.setManifest(added.id, {reinterpret_cast<const std::byte*>(m_manifest.constData()), std::size_t(m_manifest.size())}));
+    join.addSource(added.id, 0, ::ed3k::Source{*a.nodeId(), false, ::ed3k::Address::v4(127, 0, 0, 1, a.udpPort()), std::nullopt, {}});
+    join.addSource(added.id, 1, ::ed3k::Source{*c.nodeId(), false, ::ed3k::Address::v4(127, 0, 0, 1, c.udpPort()), std::nullopt, {}});
+
+    QTRY_VERIFY_WITH_TIMEOUT(!finished.isEmpty(), kTimeoutMs);
+    QCOMPARE(readFile(settings.downloadDir + QStringLiteral("/set/a.bin")), m_a);
+    // member A: only its second block came over ed3k; member B: its one block
+    QCOMPARE(join.receivedBlocks(added.id, 0), 1);
+    QCOMPARE(join.receivedBlocks(added.id, 1), 1);
+
+    join.stop();
+    leecher.stop();
+    node.stop();
+    a.stop();
+    c.stop();
 }
 
 QTEST_GUILESS_MAIN(tst_Ed3kTorrentJoin)

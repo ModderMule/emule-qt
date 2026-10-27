@@ -251,6 +251,8 @@ signals:
     void torrentFinished(const Ipc::IpcMessage& msg);
     /// [status map] — the BitTorrent engine started, stopped or changed its port.
     void btStatusChanged(const Ipc::IpcMessage& msg);
+    /// [status map] — the ed3k node started, stopped, or its contacts/class changed.
+    void ed3kStatusChanged(const Ipc::IpcMessage& msg);
 
     /// [searchId, rows] — a batch of indexer results, as each indexer answers.
     void indexerResultsReceived(const Ipc::IpcMessage& msg);

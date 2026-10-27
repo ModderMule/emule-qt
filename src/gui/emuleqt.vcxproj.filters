@@ -1173,6 +1173,9 @@
     <None Include="..\..\resources\icons\RatingBad.ico">
       <Filter>Resource Files</Filter>
     </None>
+    <None Include="..\..\resources\icons\RatingWarn.ico">
+      <Filter>Resource Files</Filter>
+    </None>
     <None Include="..\..\resources\icons\Records.ico">
       <Filter>Resource Files</Filter>
     </None>

@@ -460,7 +460,8 @@ QVariant DownloadListModel::data(const QModelIndex& index, int role) const
     if (role == Qt::DecorationRole && index.column() == ColFileName) {
         // No own-comment overlay: MFC's download list overlays are the secure and
         // obfuscated badges, not this one (srchybrid/DownloadListCtrl.cpp:202-205).
-        return fileMarksIcon(d.fileType, d.containerSuspect, /*ownComment*/ false,
+        return fileMarksIcon(d.fileType, containerMark(d.containerSuspect, d.containerMislabelled),
+                             /*ownComment*/ false,
                              ratingMark(d.hasComment, d.userRating));
     }
 
@@ -512,7 +513,8 @@ QVariant DownloadListModel::data(const QModelIndex& index, int role) const
         // fileMarksTooltip(). It says which of the two kinds of wrong this is:
         // "not the container it claims" and "we cannot name what it is" call for
         // different reactions, and the player page already tells them apart.
-        const QString extra = fileMarksTooltip(d.fileName, d.containerSuspect,
+        const QString extra = fileMarksTooltip(d.fileName,
+                                               containerMark(d.containerSuspect, d.containerMislabelled),
                                                d.containerActual, d.hasComment, d.userRating);
 
         QString tip = tr(

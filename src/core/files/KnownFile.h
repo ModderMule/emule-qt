@@ -217,8 +217,7 @@ public:
     // Upload client tracking
     void addUploadingClient(UpDownClient* client);
     void removeUploadingClient(UpDownClient* client);
-    /// Make every uploading client let go of this file. Call before deleting a file
-    /// that may still be uploaded; the destructor does not do it.
+    /// Make every uploading client let go of this file. The destructor calls it too.
     void detachUploadingClients();
     [[nodiscard]] const std::vector<UpDownClient*>& uploadingClients() const { return m_uploadingClients; }
     [[nodiscard]] int uploadingClientCount() const { return static_cast<int>(m_uploadingClients.size()); }
