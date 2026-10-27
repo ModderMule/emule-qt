@@ -27,6 +27,9 @@ struct BtSettings {
     int encryption = 0;
     int maxActiveDownloads = 3;
     int maxActiveSeeds = 5;
+    /// peer connections, session-wide and the default per torrent
+    int maxConnections = 200;
+    int maxConnectionsPerTorrent = 50;
     /// stop seeding at this ratio, percent; 0 = no limit
     int seedRatioPercent = 100;
     /// stop seeding after this long; 0 = no limit
@@ -191,6 +194,19 @@ struct BtAddResult {
     QString id;
     /// English, for the log; the GUI maps the outcome
     QString message;
+};
+
+/// What the engine asks of the shared lines (daemon's BandwidthCoordinator).
+/// Rates are wire bytes, protocol included, as Usenet counts them.
+struct BtDemand {
+    /// a torrent downloading or fetching metadata
+    bool downActive = false;
+    /// a torrent with peers connected that may upload to them
+    bool upActive = false;
+    qint64 downRate = 0;        ///< bytes/s over ~2 s
+    qint64 downRecent = 0;      ///< over ~0.5 s
+    qint64 upRate = 0;
+    qint64 upRecent = 0;
 };
 
 struct BtStatus {

@@ -13,11 +13,13 @@ INCLUDEPATH += \
     $$PWD/../core \
     $$PWD/../ipc \
     $$PWD/../indexer \
-    $$PWD/../usenet
+    $$PWD/../usenet \
+    $$PWD/../bt
 
 # Order matters for a single-pass linker: a static library must come before the
 # ones it depends on. usenet and indexer both use core.
 LIBS += \
+    -L$$OUT_PWD/../bt      -lemulebt \
     -L$$OUT_PWD/../usenet  -lemuleusenet \
     -L$$OUT_PWD/../indexer -lemuleindexer \
     -L$$OUT_PWD/../core    -lemulecore \
@@ -25,10 +27,12 @@ LIBS += \
 
 # QUIC NAT-T: ngtcp2 + ngtcp2_crypto_ossl, OpenSSL >= 3.5
 DEFINES += EMULE_HAVE_QUIC_NATT=1
+# BitTorrent: always on, as CMake EMULE_BITTORRENT (libtorrent-rasterbar >= 2.1 installed)
+DEFINES += EMULE_HAVE_BITTORRENT=1
 
 # Third-party libraries (system-installed or from CMake build)
 unix {
-    LIBS += -lngtcp2_crypto_ossl -lngtcp2 -lssl -lcrypto -lz -lminiupnpc -lyaml-cpp -larchive -lmaxminddb
+    LIBS += -ltorrent-rasterbar -lngtcp2_crypto_ossl -lngtcp2 -lssl -lcrypto -lz -lminiupnpc -lyaml-cpp -larchive -lmaxminddb
 }
 macx {
     LIBS += -framework IOKit -framework CoreFoundation -framework CoreServices
@@ -59,7 +63,7 @@ win32 {
         "$$MINIUPNPC_DIR/include" "$$YAMLCPP_DIR/include" "$$LIBARCHIVE_DIR/include"
 
     LIBS += \
-        -L"$$OPENSSL_DIR/lib" -lngtcp2_crypto_ossl -lngtcp2 -lssl -lcrypto \
+        -L"$$OPENSSL_DIR/lib" -ltorrent-rasterbar -lngtcp2_crypto_ossl -lngtcp2 -lssl -lcrypto \
         -L"$$ZLIB_DIR/lib" -lzlib \
         -L"$$MINIUPNPC_DIR/lib" -lminiupnpc \
         -L"$$YAMLCPP_DIR/lib" -lyaml-cpp \
@@ -74,6 +78,7 @@ SOURCES += \
     CoreNotifierBridge.cpp \
     DaemonApp.cpp \
     ApiEventFeeder.cpp \
+    BtBridge.cpp \
     DaemonApiBackend.cpp \
     DaemonTorrentWebBackend.cpp \
     DaemonUsenetWebBackend.cpp \
@@ -84,6 +89,7 @@ SOURCES += \
     MetaSearchService.cpp \
     PowerManager.cpp \
     UsenetBridge.cpp \
+    BandwidthCoordinator.cpp \
     WinShutdownHandler.cpp
 
 HEADERS += \
@@ -92,6 +98,7 @@ HEADERS += \
     CoreNotifierBridge.h \
     DaemonApp.h \
     ApiEventFeeder.h \
+    BtBridge.h \
     DaemonApiBackend.h \
     DaemonTorrentWebBackend.h \
     DaemonUsenetWebBackend.h \
@@ -100,6 +107,7 @@ HEADERS += \
     MetaSearchService.h \
     PowerManager.h \
     UsenetBridge.h \
+    BandwidthCoordinator.h \
     WinShutdownHandler.h
 
 # generated eNode Meta API messages (core.pro)

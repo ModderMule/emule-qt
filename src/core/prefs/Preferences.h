@@ -1247,7 +1247,28 @@ public:
     [[nodiscard]] int btSeedTimeLimitMinutes() const;
     void setBtSeedTimeLimitMinutes(int val);
 
+    /// Share of the global limits BitTorrent keeps while eD2K and Usenet are busy,
+    /// percent 1–99. Below them in priority; idle bandwidth is borrowed in full.
+    [[nodiscard]] int btDownloadSharePercent() const;
+    void setBtDownloadSharePercent(int val);
+    [[nodiscard]] int btUploadSharePercent() const;
+    void setBtUploadSharePercent(int val);
+
+    /// Peer connections, session-wide and per torrent.
+    [[nodiscard]] int btMaxConnections() const;
+    void setBtMaxConnections(int val);
+    [[nodiscard]] int btMaxConnectionsPerTorrent() const;
+    void setBtMaxConnectionsPerTorrent(int val);
+
+    /// Map the listen port through the app's PortMapper (needs enableUPnP).
+    [[nodiscard]] bool btPortMapping() const;
+    void setBtPortMapping(bool val);
+
     static constexpr uint16 kDefaultBtListenPort = 6881;
+    static constexpr int kDefaultBtSharePercent = 25;
+    static constexpr int kDefaultBtMaxConnections = 200;
+    static constexpr int kDefaultBtMaxConnectionsPerTorrent = 50;
+    static constexpr int kMaxBtConnections = 5000;
     static constexpr int kMaxBtSeedRatioPercent = 10000;
     static constexpr int kMaxBtSeedTimeLimitMinutes = 525600;   // one year
 
@@ -1269,6 +1290,14 @@ public:
     /// falls back to the raw ceiling — which is what must happen when the Usenet
     /// engine stops, or ED2K would stay throttled to its old share forever.
     void setEd2kDownloadBudget(qint64 kbPerSecOrNegative);
+
+    /// ED2K's current slice of the upload line in KB/s, or UNLIMITED. Runtime only,
+    /// like the download budget; set by the daemon's BandwidthCoordinator while
+    /// BitTorrent uploads. Both upload gates (slot count and throttler) must read
+    /// it, or ED2K opens slots for bandwidth it no longer has.
+    [[nodiscard]] uint32 ed2kUploadBudget() const;
+    /// Negative clears the split.
+    void setEd2kUploadBudget(qint64 kbPerSecOrNegative);
 
     /// How many peers must want the same part before it is worth publishing.
     /// The feature's whole premise is one upload serving many, so the default is

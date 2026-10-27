@@ -10,6 +10,7 @@ SUBDIRS = \
     ipc \
     indexer \
     usenet \
+    bt \
     daemon \
     gui \
     tests
@@ -18,11 +19,13 @@ core.subdir    = src/core
 ipc.subdir     = src/ipc
 indexer.subdir = src/indexer
 usenet.subdir  = src/usenet
+bt.subdir      = src/bt
 daemon.subdir  = src/daemon
 gui.subdir     = src/gui
 
 indexer.depends = core
 usenet.depends  = core
-daemon.depends  = core ipc indexer usenet
+bt.depends      = core
+daemon.depends  = core ipc indexer usenet bt
 gui.depends     = core ipc
 tests.depends   = core ipc indexer usenet

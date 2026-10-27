@@ -83,7 +83,9 @@ public:
         PageIndexers,
         PageFeeds,
         PageExtended,
-        PageBitTorrent,     // last: no page without EMULE_HAVE_BITTORRENT
+        PageBitTorrent,     // BT pages last: none without EMULE_HAVE_BITTORRENT
+        PageBtConnection,
+        PageBtBandwidth,
         PageCount
     };
 
@@ -145,8 +147,14 @@ private:
     QWidget* createExtendedPage();
 #ifdef EMULE_HAVE_BITTORRENT
     QWidget* createBitTorrentPage();
+    QWidget* createBtConnectionPage();
+    QWidget* createBtBandwidthPage();
+    /// BT hard-cap maxima and the global-limit label follow the Connection page
+    void updateBtGlobalLimits();
+    /// BT port differs from the other listen ports; warns and shows the page if not
+    [[nodiscard]] bool validateBtPort();
 #endif
-    /// @p page was built: PageBitTorrent only with EMULE_HAVE_BITTORRENT
+    /// @p page was built: BT pages only with EMULE_HAVE_BITTORRENT
     [[nodiscard]] bool hasPage(int page) const;
     QWidget* createPlaceholderPage(const QString& title);
 
@@ -534,6 +542,13 @@ private:
     QSpinBox*       m_btMaxActiveSeedSpin = nullptr;
     QDoubleSpinBox* m_btSeedRatioSpin = nullptr;
     QSpinBox*       m_btSeedTimeSpin = nullptr;
+    QPushButton*    m_btRandomPortBtn = nullptr;
+    QCheckBox*      m_btPortMappingCheck = nullptr;
+    QSpinBox*       m_btMaxConnSpin = nullptr;
+    QSpinBox*       m_btMaxConnPerTorrentSpin = nullptr;
+    QSpinBox*       m_btDownShareSpin = nullptr;
+    QSpinBox*       m_btUpShareSpin = nullptr;
+    QLabel*         m_btGlobalLimitsLabel = nullptr;
 
     /// Working copy of the server list. `password` is only set on an entry the
     /// user actually retyped; every other entry is sent without the field so the

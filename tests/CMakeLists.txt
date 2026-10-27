@@ -391,6 +391,8 @@ emule_add_test(tst_UsenetUsage FOLDER "Usenet" LIBRARIES eMule::Usenet yaml-cpp:
 emule_add_test(tst_UsenetHistory FOLDER "Usenet" LIBRARIES eMule::Usenet yaml-cpp::yaml-cpp)
 # The ED2K/Usenet download split: pure arithmetic, no queue or socket.
 emule_add_test(tst_UsenetBandwidthSplit FOLDER "Usenet" LIBRARIES eMule::Usenet)
+# eD2K/Usenet/BitTorrent share of the global limits: pure arithmetic.
+emule_add_test(tst_BandwidthSplit FOLDER "Transfer")
 # How engine events become Statistics window counters: no socket either.
 emule_add_test(tst_UsenetStatistics FOLDER "Usenet" LIBRARIES eMule::Usenet)
 

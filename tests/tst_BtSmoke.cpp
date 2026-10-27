@@ -18,6 +18,7 @@ class tst_BtSmoke : public QObject {
 private slots:
     void constructs();
     void startStopIsIdempotent();
+    void rateLimitsAndDemand();
     void ids();
     void magnets();
     void torrentFiles();
@@ -54,6 +55,31 @@ void tst_BtSmoke::startStopIsIdempotent()
     QVERIFY(!session.isRunning());
     session.stop();
     QVERIFY(QFile::exists(dir.filePath(QStringLiteral("BT/session.dat"))));
+}
+
+void tst_BtSmoke::rateLimitsAndDemand()
+{
+    QTemporaryDir dir;
+    BtSettings s;
+    s.listenPort = 0;
+    s.dht = false;
+    s.lsd = false;
+    s.stateDir = dir.filePath(QStringLiteral("BT"));
+    s.downloadDir = dir.filePath(QStringLiteral("Incoming"));
+    BtSession session;
+    // before start: kept and applied by start()
+    session.setRateLimits(100, 50);
+    QCOMPARE(session.demand().downActive, false);
+    session.start(s);
+    QVERIFY(session.isRunning());
+    session.setRateLimits(200, 0);
+    session.setRateLimits(200, 0);
+    // no torrent: nothing asked of either line
+    const BtDemand d = session.demand();
+    QVERIFY(!d.downActive);
+    QVERIFY(!d.upActive);
+    QCOMPARE(d.downRate, 0);
+    session.stop();
 }
 
 void tst_BtSmoke::ids()

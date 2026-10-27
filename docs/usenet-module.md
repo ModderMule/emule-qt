@@ -2200,8 +2200,12 @@ There is no download-side throttler in the repo: `UploadBandwidthThrottler` and
 `ThrottledSocket` are upload-only, and ED2K limits download through a 10 Hz
 proportional feedback loop in `DownloadQueue::process()`.
 
-So the one global ceiling is split. `UsenetSession` recomputes every 500 ms, in
-`computeDownloadSplit()` — a pure function, covered by `tst_UsenetBandwidthSplit`.
+So the one global ceiling is split. The daemon's `BandwidthCoordinator` recomputes every
+500 ms; the eD2K/Usenet part is `computePairSplit()` (`core/transfer/BandwidthSplit`), which
+`UsenetSession::computeDownloadSplit()` wraps — pure, covered by `tst_UsenetBandwidthSplit`.
+BitTorrent sits below both: it is split against eD2K and Usenet together first, and this
+split runs on what they get (BitTorrentModule.md, Bandwidth). With BitTorrent idle nothing
+below changes.
 
 `usenetDownloadSharePercent` (default 50) is a **floor while both engines are
 busy, never a cap on an engine whose counterpart is idle.** Each engine reports
@@ -2252,15 +2256,16 @@ ED2K's slice is published as `Preferences::setEd2kDownloadBudget()` and read by
 `DownloadQueue::process()` through **`maxDownloadForEd2k()`, not
 `maxDownload()`** — aiming both engines at the full ceiling lands the combined
 rate at roughly double the cap. The budget is runtime-only and never persisted,
-so a crash cannot leave a user throttled to a stale share. `UsenetSession::stop()`
-clears it. Usenet's cap is always a number when a ceiling is set: its `0` means
+so a crash cannot leave a user throttled to a stale share. A stopped Usenet engine
+counts as idle on the next tick, which clears it (unless BitTorrent holds some back). Usenet's cap is always a number when a ceiling is set: its `0` means
 unlimited, which would ignore `maxDownload` outright.
 
 The split in force travels in `GetStats` and `PushStatsUpdate` as
-`maxDownloadKb` / `usenetLimitKb` / `ed2kBudgetKb` — effective caps in KB/s — and
+`maxDownloadKb` / `usenetLimitKb` / `ed2kBudgetKb` — effective caps in KB/s, plus the
+BitTorrent and upload fields — and
 the Usenet panel's summary line says when eD2K is holding Usenet below the
-ceiling. `log.log` gets one line when the split moves by more than 10 %, at most
-every 5 s, and none at all while nothing contends.
+ceiling. `log.log` gets one line (all engines, both directions) when the split moves by
+more than 10 %, at most every 5 s, and none at all while nothing contends.
 
 ED2K gives bandwidth back more slowly than Usenet takes it: its limiter is a
 multiplicative feedback loop on a 10 s average, where Usenet's is a token

@@ -31,6 +31,7 @@
 
 class QByteArray;
 class QIODevice;
+class QXmlStreamReader;
 
 namespace eMule::usenet {
 
@@ -57,6 +58,10 @@ public:
 
 private:
     NzbFile() = delete;
+
+    /// Text of the current <segment>, read to its end tag; empty when it holds
+    /// a child element (usenet.md §1: no mᵢ).
+    static QString segmentText(QXmlStreamReader& xml);
 };
 
 } // namespace eMule::usenet

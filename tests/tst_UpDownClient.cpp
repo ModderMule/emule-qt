@@ -193,6 +193,7 @@ private slots:
     void setUploadFileID_keepsBlockRequests();
     void markBlockDone_movesToDoneHead();
     void markBlockDone_keepsOnlyTheRecentBlocks();
+    void markBlockDone_keepsEverySentRange();
     void ban_setsState();
     void unBan_clearsState();
     void setSpammer_bansAndUnbans();
@@ -2192,6 +2193,43 @@ void tst_UpDownClient::markBlockDone_keepsOnlyTheRecentBlocks()
     QCOMPARE(client.blockRequests().size(), size_t{1});
 
     client.flushSendBlocks();
+    theApp.sharedFileList = nullptr;
+}
+
+void tst_UpDownClient::markBlockDone_keepsEverySentRange()
+{
+    KnownFileList knownFiles;
+    SharedFileList sharedFiles(&knownFiles);
+    theApp.sharedFileList = &sharedFiles;
+    KnownFile* file = shareFile(sharedFiles, 0x49, QStringLiteral("bar.avi"), 30u * 1024 * 1024);
+    QVERIFY(file);
+
+    UpDownClient client;
+    client.setUploadState(UploadState::Uploading);
+    const auto send = [&](uint64 block) {
+        client.addReqBlock(blockFor(file, block * EMBLOCKSIZE, (block + 1) * EMBLOCKSIZE));
+        return client.markBlockDone(file->fileHash(), block * EMBLOCKSIZE, (block + 1) * EMBLOCKSIZE);
+    };
+    // 70 blocks in a row outlive the done-block cap but stay one range (#60)
+    for (uint64 i = 0; i < 70; ++i)
+        QVERIFY(send(i));
+    using Ranges = std::vector<std::pair<uint64, uint64>>;
+    QCOMPARE(client.sentRanges(), (Ranges{{0, 70 * EMBLOCKSIZE}}));
+
+    // Out of order: a gap, a block before it, then the block closing it
+    QVERIFY(send(100));
+    QVERIFY(send(80));
+    QCOMPARE(client.sentRanges(), (Ranges{{0, 70 * EMBLOCKSIZE},
+                                          {80 * EMBLOCKSIZE, 81 * EMBLOCKSIZE},
+                                          {100 * EMBLOCKSIZE, 101 * EMBLOCKSIZE}}));
+    for (uint64 i = 81; i < 100; ++i)
+        QVERIFY(send(i));
+    QCOMPARE(client.sentRanges(), (Ranges{{0, 70 * EMBLOCKSIZE},
+                                          {80 * EMBLOCKSIZE, 101 * EMBLOCKSIZE}}));
+
+    // A new slot starts empty
+    client.flushSendBlocks();
+    QVERIFY(client.sentRanges().empty());
     theApp.sharedFileList = nullptr;
 }
 

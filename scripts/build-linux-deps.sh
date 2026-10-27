@@ -1,12 +1,13 @@
 #!/usr/bin/env bash
 # ---------------------------------------------------------------------------
-# build-linux-deps.sh — OpenSSL 3.5 and ngtcp2 for the Linux release tarball
+# build-linux-deps.sh — OpenSSL 3.5, ngtcp2 and Boost headers for the Linux release tarball
 #
 # The tarball is built on Ubuntu 22.04 (glibc 2.35 floor), whose OpenSSL is
 # 3.0 -- no QUIC TLS API, which ngtcp2_crypto_ossl needs (3.5+).  This builds
 # OpenSSL 3.5 as shared libs, so Qt's TLS plugin and our code load one libssl
 # (a static 3.5 copy next to a system 3.0 libssl would mix versions in one
-# process), and ngtcp2 as static archives on top of it.
+# process), and ngtcp2 as static archives on top of it.  Boost: headers only,
+# for the static libtorrent-rasterbar CMake builds (FetchContent).
 #
 # Usage:
 #   ./scripts/build-linux-deps.sh <prefix>
@@ -29,6 +30,9 @@ OPENSSL_VERSION=3.5.9
 OPENSSL_SHA256=603f5602e2eef00d77fbd429d34dcd5822bb301757a1bc9cdb24c670f1eb859a
 NGTCP2_VERSION=1.25.0
 NGTCP2_SHA256=1c0843076528a87b65e9a9d455100941f4cb65d44f96c5da6ae56df146043955
+# Same Boost as scripts/build-macos-deps.sh
+BOOST_VERSION=1.92.0
+BOOST_SHA256=c4a3b310ddd2472416e091067166b0713be97c63f38c212c484ada022fd296ce
 
 if [ $# -ne 1 ]; then
     echo "Usage: $0 <prefix>" >&2
@@ -46,7 +50,7 @@ case "$(uname -m)" in
     *) echo "Error: unsupported arch $(uname -m)" >&2; exit 1 ;;
 esac
 
-# fetch <url> <sha256> — download, verify, unpack into $WORK
+# fetch <url> <sha256> [member] — download, verify, unpack (only member if given) into $WORK
 fetch() {
     local url="$1" sha="$2" file
     file="$WORK/$(basename "$url")"
@@ -56,7 +60,8 @@ fetch() {
         echo "Error: checksum mismatch for $url" >&2
         exit 1
     }
-    tar xzf "$file" -C "$WORK"
+    tar xzf "$file" -C "$WORK" ${3:+"$3"}
+    rm -f "$file"
 }
 
 # -- OpenSSL (shared) --------------------------------------------------------
@@ -94,6 +99,13 @@ cmake -S "$WORK/ngtcp2-$NGTCP2_VERSION" -B "$WORK/ngtcp2-build" -G Ninja \
 cmake --build "$WORK/ngtcp2-build" --parallel "$JOBS" >/dev/null
 cmake --install "$WORK/ngtcp2-build" >/dev/null
 
+# -- Boost (headers only, for libtorrent) -----------------------------------
+
+BOOST_DIR="boost_${BOOST_VERSION//./_}"
+fetch "https://archives.boost.io/release/$BOOST_VERSION/source/$BOOST_DIR.tar.gz" "$BOOST_SHA256" "$BOOST_DIR/boost"
+rm -rf "$PREFIX/include/boost"
+mv "$WORK/$BOOST_DIR/boost" "$PREFIX/include/"
+
 # -- Check what was built ----------------------------------------------------
 
 FAILED=0
@@ -106,6 +118,9 @@ done
 ver="$(grep -a -o -m1 "OpenSSL $OPENSSL_VERSION" "$PREFIX/lib/libcrypto.so.3" | head -1 || true)"
 echo "  libcrypto.so.3: ${ver:-unknown version}"
 [ -n "$ver" ] || { echo "Error: libcrypto.so.3 is not OpenSSL $OPENSSL_VERSION" >&2; FAILED=1; }
+bver="$(awk '$1 == "#define" && $2 == "BOOST_LIB_VERSION" { gsub(/"/, "", $3); print $3 }' "$PREFIX/include/boost/version.hpp" 2>/dev/null || true)"
+echo "  boost/version.hpp: ${bver:-missing}"
+[ "$bver" = "$(echo "$BOOST_VERSION" | awk -F. '{ print $1 "_" $2 }')" ] || { echo "Error: Boost headers are not $BOOST_VERSION" >&2; FAILED=1; }
 [ "$FAILED" -eq 0 ] || exit 1
 
 echo "Done: $PREFIX"

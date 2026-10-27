@@ -27,7 +27,45 @@ Only `BtSession.h`, `BtTypes.h` and `BtIds.h` are free of libtorrent types.
 - State: `<config>/BT/session.dat` (DHT state), `<config>/BT/resume/<id>.fastresume`,
   written atomically; resume data every 5 min for changed torrents and at stop.
 - CLI: `emulecored --add-torrent <file|magnet>`.
+- Port: mapped by the app's PortMapper (`PortMapPurpose::BtTcp/BtUdp`, needs UPnP on and
+  `btPortMapping`); libtorrent's own UPnP/NAT-PMP stay off. A second instance picks a free
+  BT port on its first start, like the eD2K ports.
 - Build without it: `-DEMULE_BITTORRENT=OFF`; the daemon then answers 503.
+
+## Bandwidth
+
+BitTorrent shares the global limits (`maxDownload`, `maxUpload`) with eD2K and Usenet.
+Priority eD2K > Usenet > BitTorrent. The daemon's `BandwidthCoordinator` recomputes every
+500 ms with the pure `planDownload()` / `planUpload()` (`core/transfer/BandwidthSplit`,
+`tst_BandwidthSplit`), both built on the same two-sided split Usenet always used
+(`computePairSplit`; see usenet-module.md, Bandwidth):
+
+- Download: BitTorrent against eD2K and Usenet *together*, by `btDownloadSharePercent`
+  (default 25). What the two get is then split between them by `usenetDownloadSharePercent`.
+- Upload: eD2K against BitTorrent by `btUploadSharePercent` (default 25). The line is
+  `UploadQueue::lineCapKB()`: USS's live limit when on, else `maxUpload`. Unlimited = no split.
+- A share is a floor while the others are busy, never a cap: an idle engine lends its whole
+  share, and one pressing its cap is back at its share within ~2 s.
+- BitTorrent's demand: active = a torrent downloading (or fetching metadata) / a torrent with
+  peers that may upload; rates from libtorrent's `net.recv_bytes` / `net.sent_bytes`
+  counters (`post_session_stats`), so protocol overhead counts, as Usenet's wire bytes do.
+- Applied through `BtSession::setRateLimits()` (session caps, only on change).
+  `btMaxDownloadKb` / `btMaxUploadKb` are optional hard caps on top (0 = none).
+- eD2K's upload slice is `Preferences::setEd2kUploadBudget()` (runtime only). **Both** upload
+  gates read it: `uploadCapKB()` (slot count) and `UploadBandwidthThrottler`. Reading only
+  the throttler would keep opening slots for bandwidth eD2K no longer has.
+- Per torrent: every peer is in the session's class and its torrent's, so a per-torrent limit
+  never exceeds the session cap. The daemon also clamps it to the global limit (IPC and
+  REST); the Options tab of the inspector caps its spin boxes the same way.
+- libtorrent does not rate-limit peers on the local network (its default, kept).
+- Stats (`GetStats`, `PushStatsUpdate`): `maxDownloadKb`, `ed2kBudgetKb`, `usenetLimitKb`,
+  `btDownLimitKb`, `uploadLineKb`, `ed2kUploadBudgetKb`, `btUpLimitKb`; KB/s, 0 = unlimited.
+- Connections: `btMaxConnections` (session) and `btMaxConnectionsPerTorrent` (the default of
+  every torrent; a torrent's own "max peers" 0 means this default).
+
+Options: the BitTorrent section has three pages, BitTorrent (switch, folder, queue, seeding),
+Connection (port, mapping, encryption, DHT/LSD/PEX, connection limits) and Bandwidth (shares,
+hard caps). `--options bittorrent|btconnection|btbandwidth` opens them.
 
 ## GUI (Torrents tab)
 
@@ -47,7 +85,8 @@ uploading / they are interested but choked, `K` they unchoked us, not interested
 they are not interested, `E` encrypted, `h` holepunched, `H` from DHT, `X` from PEX, `I` incoming.
 Half-open connection attempts are not listed.
 
-Per-torrent options (IPC 810): speed limits and max peers are libtorrent's (in the resume data);
+Per-torrent options (IPC 810): speed limits and max peers are libtorrent's (in the resume data,
+speed limits clamped to the global limits, max peers 0 = `btMaxConnectionsPerTorrent`);
 seed ratio and seed time override the global ones from `<config>/BT/torrent-options.json`. libtorrent
 does not rate-limit peers on the local network. Trackers: 811 add (last tier, no duplicates),
 812 remove.
@@ -80,9 +119,21 @@ MCP tools: `torrents_list`, `torrents_get`, `torrents_add_magnet`, `torrents_set
 
 ## Build
 
-- `find_package(LibtorrentRasterbar 2.1 CONFIG)` first (vcpkg `libtorrent`, Homebrew),
-  else FetchContent v2.1.1 static, ABI 100, without WebTorrent. Headers are system
+- On in every build (`EMULE_BITTORRENT` defaults to ON; CI, Docker and the scripts pass it
+  explicitly). `-DEMULE_BITTORRENT=OFF` builds without it.
+- `find_package(LibtorrentRasterbar 2.1 CONFIG)` first (vcpkg `libtorrent` ≥ 2.1.1, Homebrew),
+  else FetchContent v2.1.1 **static**, ABI 100, without WebTorrent. Headers are system
   includes. Link the exported target: it carries `TORRENT_ABI_VERSION`.
+- FetchContent needs Boost ≥ 1.74 headers (a CMake config, or a bare tree under `BOOST_ROOT`
+  / the prefix path). Missing → configure stops (`FATAL_ERROR`); it no longer drops to OFF
+  quietly. CI: pinned Boost 1.92 headers from `scripts/build-linux-deps.sh` /
+  `build-macos-deps.sh` (windows-3rd: zip + `BOOST_ROOT`), Docker: apt `libboost-dev`.
+- libtorrent uses the same OpenSSL as the rest (3.5, which QUIC NAT-T needs).
+- ABI 100 has no `torrent_info::comment()/creator()/creation_date()`: BtSession keeps them
+  from the add parameters (`Impl::meta`).
+- Homebrew's target adds `TORRENT_USE_ASSERTS` in Debug although the library is a release
+  build; that changes class layouts and crashed `tst_BtLocalSwarm`. CMake strips it from an
+  installed target.
 - Visual Studio: `src/bt/emulebt.vcxproj`, `tests/vs/tst_BtSmoke.vcxproj`,
   `tests/vs/tst_BtLocalSwarm.vcxproj`; the libtorrent defines there are a guess of what the
   vcpkg port builds with and are not checked on Windows yet.
@@ -102,7 +153,8 @@ MCP tools: `torrents_list`, `torrents_get`, `torrents_add_magnet`, `torrents_set
 
 ## Tests
 
-- `tst_BtSmoke`: ids, magnet detection, inputs, start/stop.
+- `tst_BtSmoke`: ids, magnet detection, inputs, start/stop, rate limits and demand.
+- `tst_BandwidthSplit`: the eD2K/Usenet/BitTorrent plans for download and upload.
 - `tst_BtLocalSwarm`: two sessions on loopback (no network): magnet with metadata exchange,
   duplicate add, a hook that passes every piece (at once and later), a spoiled piece counted
   as failed, resume after a restart; peer letters, availability, tracker add/remove, and
@@ -114,9 +166,6 @@ MCP tools: `torrents_list`, `torrents_get`, `torrents_add_magnet`, `torrents_set
 
 ## Not done yet
 
-- ToDo: map `btListenPort()` with the app's PortMapper (research doc §7.5)
-- ToDo: one download budget for ED2K, Usenet and BitTorrent (research doc §7.7); today
-  BitTorrent has its own limits
 - ToDo: IP filter into `lt::ip_filter` (§7.6), statistics (§7.8)
 - ToDo: the ed3k join wiring in the daemon (`libs/packmule/docs/torrent-join.md`, Part C)
 - ToDo: qmake files (`*.pro`) for src/bt

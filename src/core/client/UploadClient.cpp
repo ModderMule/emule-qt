@@ -640,6 +640,7 @@ void UpDownClient::flushSendBlocks()
     for (auto* block : m_doneBlocks)
         delete block;
     m_doneBlocks.clear();
+    m_sentRanges.clear();
 
     // What has not gone out by now is not known to have reached the peer.
     m_unconfirmedSends.clear();
@@ -669,6 +670,7 @@ bool UpDownClient::markBlockDone(const uint8* fileId, uint64 startOffset, uint64
         m_blockReadBytesQueued -= std::min(m_blockReadBytesQueued, len);
     }
     m_doneBlocks.push_front(*it);
+    noteSentRange(**it);
     m_blockRequests.erase(it);
     ++m_slotBlocksServed;
     m_slotLastServedTick = getTickCount();
@@ -1676,6 +1678,27 @@ bool UpDownClient::isRepeatChunkRequest(const Requested_Block_Struct& block) con
     return theApp.clientList->repeatChunks.deliveries(userHash(), block.fileID.data(),
                                                       block.startOffset)
         >= RepeatChunkGuard::kMaxDeliveries;
+}
+
+void UpDownClient::noteSentRange(const Requested_Block_Struct& block)
+{
+    if (m_sentRangesFileId != block.fileID) {
+        m_sentRanges.clear();
+        m_sentRangesFileId = block.fileID;
+    }
+    // Ranges are sorted and disjoint; swallow every one that touches the new block
+    uint64 start = block.startOffset;
+    uint64 end = block.endOffset;
+    auto first = std::ranges::lower_bound(m_sentRanges, start,
+                                          {}, [](const auto& r) { return r.second + 1; });
+    auto last = first;
+    while (last != m_sentRanges.end() && last->first <= end + 1) {
+        start = std::min(start, last->first);
+        end = std::max(end, last->second);
+        ++last;
+    }
+    first = m_sentRanges.erase(first, last);
+    m_sentRanges.insert(first, {start, end});
 }
 
 } // namespace eMule

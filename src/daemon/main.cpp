@@ -21,6 +21,7 @@
 #include "utils/Log.h"
 
 #include <QCoreApplication>
+#include <QDir>
 #include <QFile>
 #include <QLockFile>
 #include <QProcess>
@@ -108,6 +109,14 @@ int main(int argc, char* argv[])
 
     // One core per profile. The GUI reads this lock to tell our core from another
     // profile's on the same IPC port (issue #49).
+    // A reason left by an earlier failed start must not outlive it
+    eMule::AppConfig::clearCoreStartFailure(configDir);
+    const auto failStart = [&configDir](const QString& reason) {
+        eMule::logError(reason);
+        eMule::AppConfig::writeCoreStartFailure(configDir, reason);
+        return 1;
+    };
+
     QLockFile coreLock(eMule::AppConfig::coreLockPath(configDir));
     coreLock.setStaleLockTime(0);   // only a dead holder makes it stale, never age
     bool locked = coreLock.tryLock(2000);
@@ -121,9 +130,27 @@ int main(int argc, char* argv[])
         }
     }
     if (!locked) {
-        eMule::logError(QStringLiteral("Another core is already running with the config at %1")
-                            .arg(configDir));
-        return 1;
+        // Only LockFailedError means another core; the rest is the dir itself
+        const QString lockPath = eMule::AppConfig::coreLockPath(configDir);
+        switch (coreLock.error()) {
+        case QLockFile::LockFailedError: {
+            qint64 holderPid = 0;
+            QString holderHost;
+            (void)coreLock.getLockInfo(&holderPid, &holderHost, nullptr);
+            return failStart(QStringLiteral("Another core (pid %1) is already running with the "
+                                            "config at %2").arg(holderPid).arg(configDir));
+        }
+        case QLockFile::PermissionError:
+            return failStart(QStringLiteral("Cannot create the lock file %1: permission denied. "
+                                            "The config dir is not writable (antivirus or "
+                                            "Controlled Folder Access may block it).")
+                                 .arg(QDir::toNativeSeparators(lockPath)));
+        case QLockFile::UnknownError:
+        case QLockFile::NoError:
+            break;
+        }
+        return failStart(QStringLiteral("Cannot create the lock file %1 (unknown error).")
+                             .arg(QDir::toNativeSeparators(lockPath)));
     }
 
     // Seed bundled config data (webserver assets, template, nodes.dat)
@@ -177,6 +204,10 @@ int main(int argc, char* argv[])
     daemon.setConnectHold(cli.holdConnect());
     if (!daemon.start()) {
         eMule::logError(QStringLiteral("Failed to start daemon"));
+        // IpcServer logged the reason already
+        eMule::AppConfig::writeCoreStartFailure(
+            configDir, daemon.startError().isEmpty() ? QStringLiteral("Failed to start daemon")
+                                                     : daemon.startError());
         return 1;
     }
 

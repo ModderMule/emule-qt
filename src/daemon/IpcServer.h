@@ -29,6 +29,8 @@ public:
 
     /// Start listening on the given address and port.
     bool start(const QHostAddress& address, uint16_t port);
+    /// Why the last start() failed, with a hint where one helps.
+    [[nodiscard]] QString errorText() const { return m_errorText; }
 
     /// Stop listening and disconnect all clients.
     void stop();
@@ -89,6 +91,7 @@ private:
     QTcpServer m_tcpServer;
     std::vector<std::unique_ptr<IpcClientHandler>> m_clients;
     std::function<void(const Ipc::IpcMessage&)> m_pushTap;
+    QString m_errorText;
 };
 
 } // namespace eMule

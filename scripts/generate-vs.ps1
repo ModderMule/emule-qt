@@ -100,6 +100,7 @@ Write-Host "=== Generating $vsGenerator solution ==="
     '-DVCPKG_MANIFEST_MODE=ON' `
     "-DVCPKG_MANIFEST_DIR=$(Join-Path $projectDir 'src')" `
     "-DVCPKG_TARGET_TRIPLET=$(Resolve-VcpkgTriplet)" `
+    '-DEMULE_BITTORRENT=ON' `
     @qtArgs
 if ($LASTEXITCODE -ne 0) {
     throw "CMake configure failed (exit $LASTEXITCODE)."

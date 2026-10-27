@@ -7,6 +7,7 @@
 #include "app/IpcClient.h"
 #include "controls/TorrentListModel.h"
 #include "controls/TorrentPieceGrid.h"
+#include "prefs/Preferences.h"
 #include "utils/Clipboard.h"
 #include "utils/MenuUtils.h"
 #include "utils/StatusBarNotifier.h"
@@ -401,12 +402,14 @@ QWidget* TorrentDetailsDialog::buildOptionsTab()
         spin->setRange(1, 1'000'000);
         spin->setValue(100);
         spin->setSuffix(tr(" KiB/s"));
+        spin->setToolTip(tr("Also limited by the global and BitTorrent limits."));
         speedForm->addRow(check, spin);
         connect(check, &QCheckBox::toggled, this, &TorrentDetailsDialog::onOptionsEdited);
         connect(spin, &QSpinBox::valueChanged, this, &TorrentDetailsDialog::onOptionsEdited);
     };
     limitRow(tr("Limit download speed:"), m_limitDown, m_limitDownKb);
     limitRow(tr("Limit upload speed:"), m_limitUp, m_limitUpKb);
+    applyRateMaxima();
     layout->addWidget(speed);
 
     auto* seeding = new QGroupBox(tr("Seeding Limits"), page);
@@ -489,6 +492,8 @@ void TorrentDetailsDialog::applyOptions(const QCborMap& options)
     if (m_optionsDirty || m_tabs->widget(TabOptions)->isAncestorOf(QApplication::focusWidget()))
         return;
     m_fillingOptions = true;
+    // The limits may have changed since the last poll
+    applyRateMaxima();
     const int down = int(options.value(QStringLiteral("downloadLimitKb")).toInteger());
     const int up = int(options.value(QStringLiteral("uploadLimitKb")).toInteger());
     m_limitDown->setChecked(down > 0);
@@ -551,6 +556,21 @@ void TorrentDetailsDialog::copyMagnet()
         return;
     eMule::Clipboard::setText(m_magnet);
     StatusBarNotifier::post(tr("Copied %n magnet link(s).", nullptr, 1), 3000);
+}
+
+void TorrentDetailsDialog::applyRateMaxima()
+{
+    // thePrefs mirrors the daemon (GetPreferences on connect); 0 = no limit
+    const auto ceiling = [](uint32 global, uint32 bt) {
+        uint32 kb = 1'000'000;
+        for (const uint32 limit : {global, bt}) {
+            if (limit > 0)
+                kb = std::min(kb, limit);
+        }
+        return int(kb);
+    };
+    m_limitDownKb->setMaximum(ceiling(thePrefs.maxDownload(), thePrefs.btMaxDownloadKb()));
+    m_limitUpKb->setMaximum(ceiling(thePrefs.maxUpload(), thePrefs.btMaxUploadKb()));
 }
 
 } // namespace eMule

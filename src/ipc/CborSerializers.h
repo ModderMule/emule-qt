@@ -643,15 +643,10 @@ inline void insertDownloadSeed(QCborMap& m, const SearchFile& f)
         if (!c.doneBlocks().empty() && c.doneBlocks().front())
             next.append(static_cast<qint64>(c.doneBlocks().front()->startOffset / PARTSIZE));
         bar.insert(QStringLiteral("next"), next);
+        // Every block of the slot, merged (MFC keeps them all, UploadClient.cpp:106)
         QCborArray sent;
-        for (const auto* block : c.doneBlocks()) {
-            if (sent.size() >= 64)
-                break;
-            if (block) {
-                sent.append(QCborArray{static_cast<qint64>(block->startOffset),
-                                       static_cast<qint64>(block->endOffset)});
-            }
-        }
+        for (const auto& [start, end] : c.sentRanges())
+            sent.append(QCborArray{static_cast<qint64>(start), static_cast<qint64>(end)});
         bar.insert(QStringLiteral("sent"), sent);
         m.insert(QStringLiteral("upStatus"), bar);
     }

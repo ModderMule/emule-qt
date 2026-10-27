@@ -27,18 +27,38 @@ bool IpcServer::start(const QHostAddress& address, uint16_t port)
 {
     if (m_tcpServer.isListening())
         stop();
+    m_errorText.clear();
 
     // A wildcard listen succeeds even if another program holds the port on one
     // local address; a local GUI would then talk to that program.
     if (const auto held = heldLocalAddresses(address, port); !held.isEmpty()) {
-        logError(QStringLiteral("IPC server: port %1 is already used by another program on %2")
-                     .arg(port).arg(addressListText(held)));
+        m_errorText = QStringLiteral("IPC port %1 is already used by another program on %2. "
+                                     "Change the IPC port in preferences.yml.")
+                          .arg(port).arg(addressListText(held));
+        logError(QStringLiteral("IPC server: ") + m_errorText);
         return false;
     }
 
     if (!m_tcpServer.listen(address, port)) {
-        logError(QStringLiteral("IPC server failed to listen: %1")
-                     .arg(m_tcpServer.errorString()));
+        m_errorText = QStringLiteral("Cannot listen on IPC port %1:%2: %3")
+                          .arg(address.toString()).arg(port).arg(m_tcpServer.errorString());
+        switch (m_tcpServer.serverError()) {
+        case QAbstractSocket::AddressInUseError:
+            m_errorText += QStringLiteral(". Another program uses the port; "
+                                          "change the IPC port in preferences.yml.");
+            break;
+        case QAbstractSocket::SocketAccessError:
+#ifdef Q_OS_WIN
+            // WSAEACCES: Hyper-V, WSL2 or Docker reserved a range holding the port
+            m_errorText += QStringLiteral(". Windows may reserve this port (check "
+                                          "'netsh int ipv4 show excludedportrange protocol=tcp'); "
+                                          "change the IPC port in preferences.yml.");
+#endif
+            break;
+        default:
+            break;
+        }
+        logError(QStringLiteral("IPC server: ") + m_errorText);
         return false;
     }
     return true;

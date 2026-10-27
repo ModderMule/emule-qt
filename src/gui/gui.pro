@@ -249,8 +249,8 @@ HEADERS += \
     panels/StatisticsPanel.h \
     panels/TransferPanel.h
 
-# BitTorrent: off by default, as in CMake (EMULE_BITTORRENT). `qmake CONFIG+=emule_bittorrent`
-emule_bittorrent {
+# BitTorrent: on by default, as in CMake (EMULE_BITTORRENT). `qmake CONFIG+=no_emule_bittorrent` turns it off
+!no_emule_bittorrent {
     DEFINES += EMULE_HAVE_BITTORRENT=1
     SOURCES += \
         utils/TorrentAdd.cpp \

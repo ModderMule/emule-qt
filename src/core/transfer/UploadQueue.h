@@ -110,6 +110,12 @@ public:
     // Data rates
     void updateDatarates();
     [[nodiscard]] uint32 datarate() const { return m_datarate; }
+    /// Bytes/s over the last @p windowMs (at least one sample interval), for the
+    /// daemon's upload split; datarate() is MFC's 30 s average.
+    [[nodiscard]] uint32 datarateOver(uint32 windowMs) const;
+    /// The upload line in KB/s before any split, UNLIMITED when uncapped: USS's live
+    /// limit when on, else maxUploadLimit().
+    [[nodiscard]] static uint32 lineCapKB();
     [[nodiscard]] bool hasActiveUploads() const { return !m_uploadingList.empty(); }
     [[nodiscard]] uint32 friendDatarate() const { return m_friendDatarate; }
 

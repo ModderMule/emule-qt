@@ -540,6 +540,10 @@ void OptionsDialog::onOk()
 {
     if (!validateDirectories())
         return;
+#ifdef EMULE_HAVE_BITTORRENT
+    if (!validateBtPort())
+        return;
+#endif
     saveSettings();
     accept();
 }
@@ -548,6 +552,10 @@ void OptionsDialog::onApply()
 {
     if (!validateDirectories())
         return;
+#ifdef EMULE_HAVE_BITTORRENT
+    if (!validateBtPort())
+        return;
+#endif
     saveSettings();
     m_applyBtn->setEnabled(false);
 }
@@ -683,6 +691,8 @@ void OptionsDialog::setupSidebar()
     };
     static constexpr PageDef kBitTorrentPages[] = {
         {PageBitTorrent,    "BitTorrent",            QStyle::SP_DriveNetIcon,           "Torrent.ico"},
+        {PageBtConnection,  QT_TR_NOOP("Connection"), QStyle::SP_DirLinkIcon,           "Connection.ico"},
+        {PageBtBandwidth,   QT_TR_NOOP("Bandwidth"),  QStyle::SP_MediaSeekForward,      "Speed.ico"},
     };
 
     // A page added to the enum and to setupPages() but forgotten here would simply be
@@ -781,8 +791,10 @@ void OptionsDialog::setupPages()
     // deliberately outside it, and a wrapper here would scroll them away.
     addPage(PageExtended,      createExtendedPage(), PageScroll::Self);
 #ifdef EMULE_HAVE_BITTORRENT
-    // Last page: leaving it out shifts no other index
+    // Last pages: leaving them out shifts no other index
     addPage(PageBitTorrent,    createBitTorrentPage());
+    addPage(PageBtConnection,  createBtConnectionPage());
+    addPage(PageBtBandwidth,   createBtBandwidthPage());
 #endif
 }
 
@@ -5439,7 +5451,7 @@ void OptionsDialog::revealTestResult(QLabel* result)
 }
 
 // ---------------------------------------------------------------------------
-// BitTorrent page
+// BitTorrent pages: general, Connection, Bandwidth
 // ---------------------------------------------------------------------------
 
 #ifdef EMULE_HAVE_BITTORRENT
@@ -5455,61 +5467,30 @@ QWidget* OptionsDialog::createBitTorrentPage()
            "downloaded or seeded."));
     mainLayout->addWidget(m_btEnabledCheck);
 
-    // -- Connection ---------------------------------------------------------
-    auto* connGroup = new QGroupBox(tr("Connection"), page);
-    auto* connForm = new QFormLayout(connGroup);
+    // -- Folder -------------------------------------------------------------
+    auto* dirGroup = new QGroupBox(tr("Download folder"), page);
+    auto* dirRow = new QHBoxLayout(dirGroup);
+    m_btDownloadDirEdit = new QLineEdit(dirGroup);
+    m_btDownloadDirEdit->setPlaceholderText(tr("Incoming folder"));
+    m_btDownloadDirEdit->setToolTip(tr("Leave empty to save torrents to the incoming folder."));
+    dirRow->addWidget(m_btDownloadDirEdit, 1);
+    m_btDownloadDirBrowse = new QPushButton(tr("Browse…"), dirGroup);
+    dirRow->addWidget(m_btDownloadDirBrowse);
+    mainLayout->addWidget(dirGroup);
 
-    m_btPortSpin = new QSpinBox(connGroup);
-    m_btPortSpin->setRange(1, 65535);
-    m_btPortSpin->setValue(Preferences::kDefaultBtListenPort);
-    m_btPortSpin->setToolTip(tr("Used for both TCP and UDP. Must differ from the eD2K ports."));
-    connForm->addRow(tr("Listen port (TCP/UDP):"), m_btPortSpin);
+    // -- Queue --------------------------------------------------------------
+    auto* queueGroup = new QGroupBox(tr("Queue"), page);
+    auto* queueForm = new QFormLayout(queueGroup);
 
-    m_btEncryptionCombo = new QComboBox(connGroup);
-    // Order matches the btEncryption value
-    m_btEncryptionCombo->addItem(tr("Enabled"));
-    m_btEncryptionCombo->addItem(tr("Forced"));
-    m_btEncryptionCombo->addItem(tr("Disabled"));
-    m_btEncryptionCombo->setToolTip(
-        tr("Enabled prefers encrypted peers and still accepts plain ones. Forced "
-           "refuses unencrypted peers, which leaves fewer to download from."));
-    connForm->addRow(tr("Encryption:"), m_btEncryptionCombo);
-
-    m_btDhtCheck = new QCheckBox(tr("Find peers through the DHT"), connGroup);
-    connForm->addRow(m_btDhtCheck);
-    m_btLsdCheck = new QCheckBox(tr("Find peers on the local network (LSD)"), connGroup);
-    connForm->addRow(m_btLsdCheck);
-    m_btPexCheck = new QCheckBox(tr("Exchange peers with other clients (PEX)"), connGroup);
-    connForm->addRow(m_btPexCheck);
-
-    mainLayout->addWidget(connGroup);
-
-    // -- Limits -------------------------------------------------------------
-    auto* limitsGroup = new QGroupBox(tr("Limits"), page);
-    auto* limitsForm = new QFormLayout(limitsGroup);
-
-    const auto rateSpin = [limitsGroup] {
-        auto* spin = new QSpinBox(limitsGroup);
-        spin->setRange(0, 1000000);
-        spin->setSuffix(tr(" KB/s"));
-        spin->setSpecialValueText(tr("Unlimited"));
-        fitSpecialValue(spin);
-        return spin;
-    };
-    m_btMaxDownSpin = rateSpin();
-    limitsForm->addRow(tr("Download:"), m_btMaxDownSpin);
-    m_btMaxUpSpin = rateSpin();
-    limitsForm->addRow(tr("Upload:"), m_btMaxUpSpin);
-
-    m_btMaxActiveDownSpin = new QSpinBox(limitsGroup);
+    m_btMaxActiveDownSpin = new QSpinBox(queueGroup);
     m_btMaxActiveDownSpin->setRange(1, 100);
-    limitsForm->addRow(tr("Active downloads:"), m_btMaxActiveDownSpin);
+    queueForm->addRow(tr("Active downloads:"), m_btMaxActiveDownSpin);
 
-    m_btMaxActiveSeedSpin = new QSpinBox(limitsGroup);
+    m_btMaxActiveSeedSpin = new QSpinBox(queueGroup);
     m_btMaxActiveSeedSpin->setRange(0, 100);
-    limitsForm->addRow(tr("Active seeds:"), m_btMaxActiveSeedSpin);
+    queueForm->addRow(tr("Active seeds:"), m_btMaxActiveSeedSpin);
 
-    mainLayout->addWidget(limitsGroup);
+    mainLayout->addWidget(queueGroup);
 
     // -- Seeding ------------------------------------------------------------
     auto* seedGroup = new QGroupBox(tr("Seeding"), page);
@@ -5533,28 +5514,13 @@ QWidget* OptionsDialog::createBitTorrentPage()
     seedForm->addRow(tr("Stop after seeding for:"), m_btSeedTimeSpin);
 
     mainLayout->addWidget(seedGroup);
-
-    // -- Folder -------------------------------------------------------------
-    auto* dirGroup = new QGroupBox(tr("Download folder"), page);
-    auto* dirRow = new QHBoxLayout(dirGroup);
-    m_btDownloadDirEdit = new QLineEdit(dirGroup);
-    m_btDownloadDirEdit->setPlaceholderText(tr("Incoming folder"));
-    m_btDownloadDirEdit->setToolTip(tr("Leave empty to save torrents to the incoming folder."));
-    dirRow->addWidget(m_btDownloadDirEdit, 1);
-    m_btDownloadDirBrowse = new QPushButton(tr("Browse…"), dirGroup);
-    dirRow->addWidget(m_btDownloadDirBrowse);
-    mainLayout->addWidget(dirGroup);
-
     mainLayout->addStretch();
 
     // -- Wiring -------------------------------------------------------------
-    for (QCheckBox* box : {m_btEnabledCheck, m_btDhtCheck, m_btLsdCheck, m_btPexCheck})
-        connect(box, &QCheckBox::toggled, this, &OptionsDialog::markDirty);
-    for (QSpinBox* box : {m_btPortSpin, m_btMaxDownSpin, m_btMaxUpSpin,
-                          m_btMaxActiveDownSpin, m_btMaxActiveSeedSpin, m_btSeedTimeSpin})
+    connect(m_btEnabledCheck, &QCheckBox::toggled, this, &OptionsDialog::markDirty);
+    for (QSpinBox* box : {m_btMaxActiveDownSpin, m_btMaxActiveSeedSpin, m_btSeedTimeSpin})
         connect(box, &QSpinBox::valueChanged, this, &OptionsDialog::markDirty);
     connect(m_btSeedRatioSpin, &QDoubleSpinBox::valueChanged, this, &OptionsDialog::markDirty);
-    connect(m_btEncryptionCombo, &QComboBox::currentIndexChanged, this, &OptionsDialog::markDirty);
     connect(m_btDownloadDirEdit, &QLineEdit::textEdited, this, &OptionsDialog::markDirty);
     connect(m_btDownloadDirBrowse, &QPushButton::clicked, this, [this] {
         const QString dir = QFileDialog::getExistingDirectory(
@@ -5564,6 +5530,183 @@ QWidget* OptionsDialog::createBitTorrentPage()
         m_btDownloadDirEdit->setText(dir);
         markDirty();
     });
+
+    return page;
+}
+
+QWidget* OptionsDialog::createBtConnectionPage()
+{
+    auto* page = new QWidget(this);
+    auto* mainLayout = new QVBoxLayout(page);
+    mainLayout->setContentsMargins(4, 4, 4, 4);
+
+    // -- Port ---------------------------------------------------------------
+    auto* portGroup = new QGroupBox(tr("Client Port"), page);
+    auto* portForm = new QFormLayout(portGroup);
+
+    auto* portRow = new QHBoxLayout;
+    m_btPortSpin = new QSpinBox(portGroup);
+    m_btPortSpin->setRange(1, 65535);
+    m_btPortSpin->setValue(Preferences::kDefaultBtListenPort);
+    m_btPortSpin->setToolTip(
+        tr("Used for both TCP and UDP. Must differ from the eD2K ports, the web "
+           "server port and the core port."));
+    portRow->addWidget(m_btPortSpin);
+    m_btRandomPortBtn = new QPushButton(tr("Random"), portGroup);
+    m_btRandomPortBtn->setToolTip(
+        tr("Picks a port that is free for TCP and UDP on this computer."));
+    portRow->addWidget(m_btRandomPortBtn);
+    portRow->addStretch();
+    portForm->addRow(tr("Listen port (TCP/UDP):"), portRow);
+
+    m_btPortMappingCheck = new QCheckBox(tr("Map port with UPnP/NAT-PMP"), portGroup);
+    m_btPortMappingCheck->setToolTip(
+        tr("Forwards the BitTorrent port on the router. Needs \"Use UPnP to Setup "
+           "Ports\" on the Connection page."));
+    portForm->addRow(m_btPortMappingCheck);
+
+    mainLayout->addWidget(portGroup);
+
+    // -- Peers --------------------------------------------------------------
+    auto* peerGroup = new QGroupBox(tr("Peers"), page);
+    auto* peerForm = new QFormLayout(peerGroup);
+
+    m_btEncryptionCombo = new QComboBox(peerGroup);
+    // Order matches the btEncryption value
+    m_btEncryptionCombo->addItem(tr("Enabled"));
+    m_btEncryptionCombo->addItem(tr("Forced"));
+    m_btEncryptionCombo->addItem(tr("Disabled"));
+    m_btEncryptionCombo->setToolTip(
+        tr("Enabled prefers encrypted peers and still accepts plain ones. Forced "
+           "refuses unencrypted peers, which leaves fewer to download from."));
+    peerForm->addRow(tr("Encryption:"), m_btEncryptionCombo);
+
+    m_btDhtCheck = new QCheckBox(tr("Find peers through the DHT"), peerGroup);
+    peerForm->addRow(m_btDhtCheck);
+    m_btLsdCheck = new QCheckBox(tr("Find peers on the local network (LSD)"), peerGroup);
+    peerForm->addRow(m_btLsdCheck);
+    m_btPexCheck = new QCheckBox(tr("Exchange peers with other clients (PEX)"), peerGroup);
+    peerForm->addRow(m_btPexCheck);
+
+    mainLayout->addWidget(peerGroup);
+
+    // -- Connection limits --------------------------------------------------
+    auto* connGroup = new QGroupBox(tr("Connection Limits"), page);
+    auto* connForm = new QFormLayout(connGroup);
+
+    m_btMaxConnSpin = new QSpinBox(connGroup);
+    m_btMaxConnSpin->setRange(2, Preferences::kMaxBtConnections);
+    m_btMaxConnSpin->setValue(Preferences::kDefaultBtMaxConnections);
+    m_btMaxConnSpin->setToolTip(tr("Peer connections of all torrents together."));
+    connForm->addRow(tr("Max. connections:"), m_btMaxConnSpin);
+
+    m_btMaxConnPerTorrentSpin = new QSpinBox(connGroup);
+    m_btMaxConnPerTorrentSpin->setRange(2, Preferences::kMaxBtConnections);
+    m_btMaxConnPerTorrentSpin->setValue(Preferences::kDefaultBtMaxConnectionsPerTorrent);
+    connForm->addRow(tr("Max. connections per torrent:"), m_btMaxConnPerTorrentSpin);
+
+    mainLayout->addWidget(connGroup);
+    mainLayout->addStretch();
+
+    // -- Wiring -------------------------------------------------------------
+    for (QCheckBox* box : {m_btPortMappingCheck, m_btDhtCheck, m_btLsdCheck, m_btPexCheck})
+        connect(box, &QCheckBox::toggled, this, &OptionsDialog::markDirty);
+    for (QSpinBox* box : {m_btPortSpin, m_btMaxConnSpin, m_btMaxConnPerTorrentSpin})
+        connect(box, &QSpinBox::valueChanged, this, &OptionsDialog::markDirty);
+    connect(m_btEncryptionCombo, &QComboBox::currentIndexChanged, this, &OptionsDialog::markDirty);
+    connect(m_btRandomPortBtn, &QPushButton::clicked, this, [this] {
+        // Probes this computer only; a remote core may still find it taken
+        const QList<int> others{m_tcpPortSpin->value(), udpPortValue(),
+                                m_webPortSpin->value(), m_corePortSpin->value()};
+        m_btPortSpin->setValue(Preferences::randomPort([&others](uint16 port) {
+            return !others.contains(int(port)) && Preferences::tcpPortFree(port)
+                   && Preferences::udpPortFree(port);
+        }));
+    });
+
+    return page;
+}
+
+QWidget* OptionsDialog::createBtBandwidthPage()
+{
+    auto* page = new QWidget(this);
+    auto* mainLayout = new QVBoxLayout(page);
+    mainLayout->setContentsMargins(4, 4, 4, 4);
+
+    // -- Global limits, read-only -------------------------------------------
+    auto* globalGroup = new QGroupBox(tr("Global limits"), page);
+    auto* globalLayout = new QVBoxLayout(globalGroup);
+    m_btGlobalLimitsLabel = new QLabel(globalGroup);
+    m_btGlobalLimitsLabel->setToolTip(tr("Set on the Connection page."));
+    globalLayout->addWidget(m_btGlobalLimitsLabel);
+    auto* note = new QLabel(
+        tr("eD2K and Usenet come first. BitTorrent keeps the share below while they are "
+           "busy and uses all the bandwidth they leave idle."), globalGroup);
+    note->setWordWrap(true);
+    note->setEnabled(false);
+    globalLayout->addWidget(note);
+    mainLayout->addWidget(globalGroup);
+
+    // -- Share of the global limits -----------------------------------------
+    auto* shareGroup = new QGroupBox(tr("Sharing"), page);
+    // Usenet's share spin, in a grid so the two line up
+    auto* shareLayout = new QGridLayout(shareGroup);
+    shareLayout->setColumnStretch(2, 1);
+
+    const auto shareRow = [shareGroup, shareLayout](const QString& label, const QString& tip) {
+        const int row = shareLayout->count() / 2;   // label + spin per row
+        shareLayout->addWidget(new QLabel(label, shareGroup), row, 0);
+        auto* spin = new QSpinBox(shareGroup);
+        spin->setRange(1, 99);
+        spin->setSuffix(tr(" %"));
+        spin->setValue(Preferences::kDefaultBtSharePercent);
+        spin->setToolTip(tip);
+        shareLayout->addWidget(spin, row, 1);
+        return spin;
+    };
+    m_btDownShareSpin = shareRow(
+        tr("Share of the download limit:"),
+        tr("How much of the global download limit BitTorrent keeps while eD2K or "
+           "Usenet is also downloading. When they are idle, BitTorrent may use all of it."));
+    m_btUpShareSpin = shareRow(
+        tr("Share of the upload limit:"),
+        tr("How much of the global upload limit BitTorrent keeps while eD2K is also "
+           "uploading. When it is idle, BitTorrent may use all of it."));
+
+    mainLayout->addWidget(shareGroup);
+
+    // -- Optional hard caps -------------------------------------------------
+    auto* capGroup = new QGroupBox(tr("Hard limits"), page);
+    auto* capForm = new QFormLayout(capGroup);
+
+    const auto rateSpin = [capGroup] {
+        auto* spin = new QSpinBox(capGroup);
+        spin->setRange(0, 1000000);
+        spin->setSuffix(tr(" KB/s"));
+        spin->setSpecialValueText(tr("No limit"));
+        fitSpecialValue(spin);
+        spin->setToolTip(
+            tr("BitTorrent never goes above this, even with bandwidth to spare. "
+               "At most the global limit."));
+        return spin;
+    };
+    m_btMaxDownSpin = rateSpin();
+    capForm->addRow(tr("Download:"), m_btMaxDownSpin);
+    m_btMaxUpSpin = rateSpin();
+    capForm->addRow(tr("Upload:"), m_btMaxUpSpin);
+
+    mainLayout->addWidget(capGroup);
+    mainLayout->addStretch();
+
+    // -- Wiring -------------------------------------------------------------
+    for (QSpinBox* box : {m_btDownShareSpin, m_btUpShareSpin, m_btMaxDownSpin, m_btMaxUpSpin})
+        connect(box, &QSpinBox::valueChanged, this, &OptionsDialog::markDirty);
+    // Live from the Connection page, built before this one
+    for (QSlider* slider : {m_downloadLimitSlider, m_uploadLimitSlider})
+        connect(slider, &QSlider::valueChanged, this, &OptionsDialog::updateBtGlobalLimits);
+    for (QCheckBox* box : {m_downloadLimitCheck, m_uploadLimitCheck})
+        connect(box, &QCheckBox::toggled, this, &OptionsDialog::updateBtGlobalLimits);
+    updateBtGlobalLimits();
 
     return page;
 }
@@ -7112,6 +7255,16 @@ void OptionsDialog::saveSettings()
         req.append(static_cast<qint64>(qRound(m_btSeedRatioSpin->value() * 100.0)));
         req.append(QStringLiteral("btSeedTimeLimitMinutes"));
         req.append(static_cast<qint64>(m_btSeedTimeSpin->value()));
+        req.append(QStringLiteral("btPortMapping"));
+        req.append(m_btPortMappingCheck->isChecked());
+        req.append(QStringLiteral("btMaxConnections"));
+        req.append(static_cast<qint64>(m_btMaxConnSpin->value()));
+        req.append(QStringLiteral("btMaxConnectionsPerTorrent"));
+        req.append(static_cast<qint64>(m_btMaxConnPerTorrentSpin->value()));
+        req.append(QStringLiteral("btDownloadSharePercent"));
+        req.append(static_cast<qint64>(m_btDownShareSpin->value()));
+        req.append(QStringLiteral("btUploadSharePercent"));
+        req.append(static_cast<qint64>(m_btUpShareSpin->value()));
 #endif
 
         // Web Interface page
@@ -7934,6 +8087,18 @@ void OptionsDialog::fillDaemonSettings(const QCborMap& prefs)
         double(prefs.value(QStringLiteral("btSeedRatioPercent")).toInteger(100)) / 100.0);
     m_btSeedTimeSpin->setValue(
         int(prefs.value(QStringLiteral("btSeedTimeLimitMinutes")).toInteger(0)));
+    m_btPortMappingCheck->setChecked(prefs.value(QStringLiteral("btPortMapping")).toBool(true));
+    m_btMaxConnSpin->setValue(int(prefs.value(QStringLiteral("btMaxConnections"))
+                                      .toInteger(Preferences::kDefaultBtMaxConnections)));
+    m_btMaxConnPerTorrentSpin->setValue(
+        int(prefs.value(QStringLiteral("btMaxConnectionsPerTorrent"))
+                .toInteger(Preferences::kDefaultBtMaxConnectionsPerTorrent)));
+    m_btDownShareSpin->setValue(int(prefs.value(QStringLiteral("btDownloadSharePercent"))
+                                        .toInteger(Preferences::kDefaultBtSharePercent)));
+    m_btUpShareSpin->setValue(int(prefs.value(QStringLiteral("btUploadSharePercent"))
+                                      .toInteger(Preferences::kDefaultBtSharePercent)));
+    // The label too: valueChanged stays quiet when nothing moved
+    updateBtGlobalLimits();
 #endif
 
     // Web Interface page
@@ -8633,5 +8798,48 @@ int OptionsDialog::udpPortValue() const
 {
     return m_udpOff ? 0 : m_udpPortSpin->value();
 }
+
+
+#ifdef EMULE_HAVE_BITTORRENT
+void OptionsDialog::updateBtGlobalLimits()
+{
+    constexpr int kNoCap = 1000000;
+    const int down = m_downloadLimitCheck->isChecked() ? m_downloadLimitSlider->value() : 0;
+    const int up = m_uploadLimitCheck->isChecked() ? m_uploadLimitSlider->value() : 0;
+    // A cap above the global limit would never bite
+    m_btMaxDownSpin->setMaximum(down > 0 ? down : kNoCap);
+    m_btMaxUpSpin->setMaximum(up > 0 ? up : kNoCap);
+    const auto text = [](int kbps) { return kbps > 0 ? limitText(kbps) : tr("unlimited"); };
+    m_btGlobalLimitsLabel->setText(
+        tr("Download: %1, upload: %2").arg(text(down), text(up)));
+}
+
+bool OptionsDialog::validateBtPort()
+{
+    // Off, the port stays closed
+    if (!m_btEnabledCheck->isChecked())
+        return true;
+    const int bt = m_btPortSpin->value();
+    const std::pair<int, QString> others[] = {
+        {m_tcpPortSpin->value(), tr("The BitTorrent port is the eD2K TCP port.")},
+        {udpPortValue(), tr("The BitTorrent port is the eD2K UDP port.")},
+        // Greyed while neither web UI, REST nor MCP listens
+        {m_webPortSpin->isEnabled() ? m_webPortSpin->value() : 0,
+         tr("The BitTorrent port is the web server port.")},
+        {m_corePortSpin->value(), tr("The BitTorrent port is the core port.")},
+    };
+    for (const auto& [port, text] : others) {
+        if (port != bt)
+            continue;
+        selectPage(PageBtConnection);
+        m_btPortSpin->setFocus();
+        m_btPortSpin->selectAll();
+        QMessageBox::warning(this, tr("BitTorrent"),
+                             text + QLatin1Char('\n') + tr("Please choose another port."));
+        return false;
+    }
+    return true;
+}
+#endif
 
 } // namespace eMule

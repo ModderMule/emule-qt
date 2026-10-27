@@ -27,6 +27,7 @@ lt::settings_pack BtSettingsMap::toPack(const BtSettings& s)
     p.set_int(lt::settings_pack::active_downloads, std::max(1, s.maxActiveDownloads));
     p.set_int(lt::settings_pack::active_seeds, std::max(0, s.maxActiveSeeds));
     p.set_int(lt::settings_pack::active_limit, std::max(1, s.maxActiveDownloads) + std::max(0, s.maxActiveSeeds));
+    p.set_int(lt::settings_pack::connections_limit, std::max(2, s.maxConnections));
 
     int policy = lt::settings_pack::pe_enabled;
     if (s.encryption == 1)

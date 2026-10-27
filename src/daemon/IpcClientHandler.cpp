@@ -2,6 +2,7 @@
 /// @brief Per-connection IPC request handler — implementation.
 
 #include "IpcClientHandler.h"
+#include "BandwidthCoordinator.h"
 #include "BtBridge.h"
 #include "UsenetBridge.h"
 #include "CoreNotifierBridge.h"
@@ -4372,6 +4373,16 @@ bool IpcClientHandler::applyPreferenceBt(const QString& key, const QCborValue& v
         thePrefs.setBtSeedRatioPercent(int(val.toInteger()));
     else if (key == QStringLiteral("btSeedTimeLimitMinutes"))
         thePrefs.setBtSeedTimeLimitMinutes(int(val.toInteger()));
+    else if (key == QStringLiteral("btDownloadSharePercent"))
+        thePrefs.setBtDownloadSharePercent(int(val.toInteger()));
+    else if (key == QStringLiteral("btUploadSharePercent"))
+        thePrefs.setBtUploadSharePercent(int(val.toInteger()));
+    else if (key == QStringLiteral("btMaxConnections"))
+        thePrefs.setBtMaxConnections(int(val.toInteger()));
+    else if (key == QStringLiteral("btMaxConnectionsPerTorrent"))
+        thePrefs.setBtMaxConnectionsPerTorrent(int(val.toInteger()));
+    else if (key == QStringLiteral("btPortMapping"))
+        thePrefs.setBtPortMapping(val.toBool());
     else
         return false;
     return true;
@@ -5316,7 +5327,9 @@ void IpcClientHandler::handleGetUsenetStats(const IpcMessage& msg)
     current.insert(QStringLiteral("running"), queue && queue->isRunning());
     current.insert(QStringLiteral("downRate"), queue ? queue->currentRate() : qint64(0));
     current.insert(QStringLiteral("limitKb"),
-                   session ? session->lastSplit().usenetKb() : qint64(0));
+                   BandwidthCoordinator::instance()
+                       ? BandwidthCoordinator::instance()->snapshot().usenetDownKb
+                       : qint64(0));
     current.insert(QStringLiteral("activeConnections"), queue ? queue->activeFetches() : 0);
     current.insert(QStringLiteral("openConnections"), usenet::NntpSocket::openConnectionCount());
     current.insert(QStringLiteral("paused"), thePrefs.usenetPaused());

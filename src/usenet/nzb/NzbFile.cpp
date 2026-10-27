@@ -61,8 +61,9 @@ bool NzbFile::parse(const QByteArray& data, NzbInfo& out, QString& error)
                 segment.bytes = attrs.value(QLatin1String("bytes")).toLongLong();
                 segment.numberText = attrs.value(QLatin1String("number")).toString();
                 segment.number = segment.numberText.toInt();
-                // Entities resolved by the reader: usenet.md §1 mᵢ.
-                segment.messageId = normalizeMessageId(xml.readElementText());
+                // Entities resolved by the reader: usenet.md §1 mᵢ. A child
+                // element gives no mᵢ (empty id), not a failed NZB.
+                segment.messageId = normalizeMessageId(segmentText(xml));
                 if (!segment.messageId.isEmpty()) {
                     current.segments.append(segment);
                 } else {
@@ -136,6 +137,30 @@ bool NzbFile::parseFile(const QString& path, NzbInfo& out, QString& error)
     if (out.password.isEmpty())
         out.password = fromName;
     return true;
+}
+
+QString NzbFile::segmentText(QXmlStreamReader& xml)
+{
+    // usenet.md §1: CDATA is text, comments/PIs skipped, any child element
+    // voids the id. Reads to the matching </segment> so parsing goes on.
+    QString text;
+    bool hasChild = false;
+    int depth = 0;
+    while (!xml.atEnd()) {
+        const auto token = xml.readNext();
+        if (token == QXmlStreamReader::Characters || token == QXmlStreamReader::EntityReference) {
+            if (depth == 0)
+                text += xml.text();
+        } else if (token == QXmlStreamReader::StartElement) {
+            hasChild = true;
+            ++depth;
+        } else if (token == QXmlStreamReader::EndElement) {
+            if (depth == 0)
+                break;
+            --depth;
+        }
+    }
+    return hasChild ? QString() : text;
 }
 
 QString NzbFile::takePasswordFromName(QString& baseName)

@@ -39,6 +39,8 @@ QString portMapPurposeName(PortMapPurpose purpose)
     case PortMapPurpose::Ed2kTcp:       return QStringLiteral("eD2K TCP");
     case PortMapPurpose::Ed2kClientUdp: return QStringLiteral("eD2K/Kad UDP");
     case PortMapPurpose::WebServer:     return QStringLiteral("Web server");
+    case PortMapPurpose::BtTcp:         return QStringLiteral("BitTorrent TCP");
+    case PortMapPurpose::BtUdp:         return QStringLiteral("BitTorrent UDP");
     }
     return {};
 }

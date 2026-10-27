@@ -161,7 +161,7 @@ void YencDecoder::parseBegin(QByteArrayView line)
     // name= runs to the end of the line, not to the next space -- filenames
     // contain spaces. But some posters emit the =ypart header glued onto the
     // same line, in which case the name stops there and the rest is a real
-    // =ypart to parse (NZBGet daemon/nntp/Decoder.h::ParseName documents this).
+    // =ypart to parse (usenet.md §2; NZBGet's Decoder.h::ParseName does the same).
     const qsizetype nameAt = line.indexOf(QByteArrayView("name=", 5));
     if (nameAt >= 0) {
         QByteArrayView tail = line.sliced(nameAt + 5);

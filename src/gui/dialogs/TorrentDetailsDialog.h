@@ -73,6 +73,8 @@ private:
     void sendOptions();
     void updateOptionEnables();
     void copyMagnet();
+    /// Rate spins top out at the global / BitTorrent limits
+    void applyRateMaxima();
 
     IpcClient* m_ipc = nullptr;
     QPointer<const TorrentListModel> m_model;

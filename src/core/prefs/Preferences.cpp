@@ -684,12 +684,18 @@ struct Preferences::Data {
     int btMaxActiveSeeds = 5;
     int btSeedRatioPercent = 100;      // 0 = no limit
     int btSeedTimeLimitMinutes = 0;    // 0 = no limit
+    int btDownloadSharePercent = Preferences::kDefaultBtSharePercent;
+    int btUploadSharePercent = Preferences::kDefaultBtSharePercent;
+    int btMaxConnections = Preferences::kDefaultBtMaxConnections;
+    int btMaxConnectionsPerTorrent = Preferences::kDefaultBtMaxConnectionsPerTorrent;
+    bool btPortMapping = true;
 
     /// Runtime only — never loaded, never saved. -1 means "no split active", so
     /// maxDownloadForEd2k() falls back to the raw ceiling. Persisting it would
     /// let a crash mid-download leave the user throttled to a stale share with
     /// nothing in the UI to explain it.
     qint64 ed2kDownloadBudget = -1;
+    qint64 ed2kUploadBudget = -1;       // runtime only, never saved
 
 };
 
@@ -2235,6 +2241,33 @@ void Preferences::setBtSeedTimeLimitMinutes(int val)
     set(&Data::btSeedTimeLimitMinutes, std::clamp(val, 0, kMaxBtSeedTimeLimitMinutes));
 }
 
+int Preferences::btDownloadSharePercent() const { return get(&Data::btDownloadSharePercent); }
+void Preferences::setBtDownloadSharePercent(int val)
+{
+    set(&Data::btDownloadSharePercent, std::clamp(val, 1, 99));
+}
+
+int Preferences::btUploadSharePercent() const { return get(&Data::btUploadSharePercent); }
+void Preferences::setBtUploadSharePercent(int val)
+{
+    set(&Data::btUploadSharePercent, std::clamp(val, 1, 99));
+}
+
+int Preferences::btMaxConnections() const { return get(&Data::btMaxConnections); }
+void Preferences::setBtMaxConnections(int val)
+{
+    set(&Data::btMaxConnections, std::clamp(val, 2, kMaxBtConnections));
+}
+
+int Preferences::btMaxConnectionsPerTorrent() const { return get(&Data::btMaxConnectionsPerTorrent); }
+void Preferences::setBtMaxConnectionsPerTorrent(int val)
+{
+    set(&Data::btMaxConnectionsPerTorrent, std::clamp(val, 2, kMaxBtConnections));
+}
+
+bool Preferences::btPortMapping() const { return get(&Data::btPortMapping); }
+void Preferences::setBtPortMapping(bool val) { set(&Data::btPortMapping, val); }
+
 uint32 Preferences::maxDownloadForEd2k() const
 {
     const qint64 budget = get(&Data::ed2kDownloadBudget);
@@ -2244,6 +2277,17 @@ uint32 Preferences::maxDownloadForEd2k() const
 void Preferences::setEd2kDownloadBudget(qint64 kbPerSecOrNegative)
 {
     set(&Data::ed2kDownloadBudget, kbPerSecOrNegative < 0 ? qint64(-1) : kbPerSecOrNegative);
+}
+
+uint32 Preferences::ed2kUploadBudget() const
+{
+    const qint64 budget = get(&Data::ed2kUploadBudget);
+    return budget < 0 ? UNLIMITED : static_cast<uint32>(budget);
+}
+
+void Preferences::setEd2kUploadBudget(qint64 kbPerSecOrNegative)
+{
+    set(&Data::ed2kUploadBudget, kbPerSecOrNegative < 0 ? qint64(-1) : kbPerSecOrNegative);
 }
 
 QString Preferences::usenetTempDir() const
@@ -3338,6 +3382,14 @@ QCborMap Preferences::toIpcMap() const
     prefs.insert(QStringLiteral("btSeedRatioPercent"), static_cast<qint64>(btSeedRatioPercent()));
     prefs.insert(QStringLiteral("btSeedTimeLimitMinutes"),
                  static_cast<qint64>(btSeedTimeLimitMinutes()));
+    prefs.insert(QStringLiteral("btDownloadSharePercent"),
+                 static_cast<qint64>(btDownloadSharePercent()));
+    prefs.insert(QStringLiteral("btUploadSharePercent"),
+                 static_cast<qint64>(btUploadSharePercent()));
+    prefs.insert(QStringLiteral("btMaxConnections"), static_cast<qint64>(btMaxConnections()));
+    prefs.insert(QStringLiteral("btMaxConnectionsPerTorrent"),
+                 static_cast<qint64>(btMaxConnectionsPerTorrent()));
+    prefs.insert(QStringLiteral("btPortMapping"), btPortMapping());
 
     // Statistics
     prefs.insert(QStringLiteral("statsAverageMinutes"), static_cast<qint64>(statsAverageMinutes()));
@@ -3589,6 +3641,15 @@ void Preferences::updateFromCbor(const QCborMap& p)
             int(num("btSeedRatioPercent", 100, 0, kMaxBtSeedRatioPercent));
         m_data->btSeedTimeLimitMinutes =
             int(num("btSeedTimeLimitMinutes", 0, 0, kMaxBtSeedTimeLimitMinutes));
+        m_data->btDownloadSharePercent =
+            int(num("btDownloadSharePercent", kDefaultBtSharePercent, 1, 99));
+        m_data->btUploadSharePercent =
+            int(num("btUploadSharePercent", kDefaultBtSharePercent, 1, 99));
+        m_data->btMaxConnections =
+            int(num("btMaxConnections", kDefaultBtMaxConnections, 2, kMaxBtConnections));
+        m_data->btMaxConnectionsPerTorrent = int(num("btMaxConnectionsPerTorrent",
+            kDefaultBtMaxConnectionsPerTorrent, 2, kMaxBtConnections));
+        m_data->btPortMapping = p.value(QStringLiteral("btPortMapping")).toBool(true);
     }
 
     // Statistics
@@ -4720,6 +4781,16 @@ bool Preferences::load(const QString& filePath)
             m_data->btSeedTimeLimitMinutes = std::clamp(
                 bt["seedTimeLimitMinutes"].as<int>(m_data->btSeedTimeLimitMinutes),
                 0, kMaxBtSeedTimeLimitMinutes);
+            m_data->btDownloadSharePercent = std::clamp(
+                bt["downloadSharePercent"].as<int>(m_data->btDownloadSharePercent), 1, 99);
+            m_data->btUploadSharePercent = std::clamp(
+                bt["uploadSharePercent"].as<int>(m_data->btUploadSharePercent), 1, 99);
+            m_data->btMaxConnections = std::clamp(
+                bt["maxConnections"].as<int>(m_data->btMaxConnections), 2, kMaxBtConnections);
+            m_data->btMaxConnectionsPerTorrent = std::clamp(
+                bt["maxConnectionsPerTorrent"].as<int>(m_data->btMaxConnectionsPerTorrent),
+                2, kMaxBtConnections);
+            m_data->btPortMapping = bt["portMapping"].as<bool>(m_data->btPortMapping);
         }
 
         if (auto ix = root["indexers"]) {
@@ -5796,6 +5867,11 @@ bool Preferences::saveImpl(const QString& filePath) const
     out << YAML::Key << "maxActiveSeeds" << YAML::Value << m_data->btMaxActiveSeeds;
     out << YAML::Key << "seedRatioPercent" << YAML::Value << m_data->btSeedRatioPercent;
     out << YAML::Key << "seedTimeLimitMinutes" << YAML::Value << m_data->btSeedTimeLimitMinutes;
+    out << YAML::Key << "downloadSharePercent" << YAML::Value << m_data->btDownloadSharePercent;
+    out << YAML::Key << "uploadSharePercent" << YAML::Value << m_data->btUploadSharePercent;
+    out << YAML::Key << "maxConnections" << YAML::Value << m_data->btMaxConnections;
+    out << YAML::Key << "maxConnectionsPerTorrent" << YAML::Value << m_data->btMaxConnectionsPerTorrent;
+    out << YAML::Key << "portMapping" << YAML::Value << m_data->btPortMapping;
     out << YAML::EndMap;
 
     // Indexers. After `notifications` for the same reason as the two blocks

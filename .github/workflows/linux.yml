@@ -89,15 +89,16 @@ jobs:
 
       # OpenSSL 3.5 (shared) + ngtcp2 (static): 22.04's OpenSSL 3.0 has no QUIC
       # TLS API, which the QUIC NAT-T transport needs. No apt libssl-dev on
-      # purpose: one OpenSSL in the build and in the tarball.
-      - name: Restore OpenSSL/ngtcp2
+      # purpose: one OpenSSL in the build and in the tarball. Boost headers for
+      # the static libtorrent (FetchContent) that BitTorrent builds against it.
+      - name: Restore OpenSSL/ngtcp2/Boost
         id: deps-cache
         uses: actions/cache@v4
         with:
           path: ${{ env.LINUX_DEPS }}
           key: linux-deps-ubuntu22.04-gcc12-${{ hashFiles('scripts/build-linux-deps.sh') }}
 
-      - name: Build OpenSSL/ngtcp2
+      - name: Build OpenSSL/ngtcp2/Boost
         if: steps.deps-cache.outputs.cache-hit != 'true'
         run: scripts/build-linux-deps.sh "$LINUX_DEPS"
 
@@ -113,6 +114,7 @@ jobs:
           -DCMAKE_PREFIX_PATH="$QT_ROOT_DIR;$LINUX_DEPS"
           -DOPENSSL_ROOT_DIR="$LINUX_DEPS"
           -DOPENSSL_USE_STATIC_LIBS=OFF
+          -DEMULE_BITTORRENT=ON
           -DCMAKE_C_COMPILER_LAUNCHER=ccache
           -DCMAKE_CXX_COMPILER_LAUNCHER=ccache
           -DEMULE_BUILD_TESTS=OFF
@@ -164,6 +166,10 @@ jobs:
             || { echo "Error: bundled libcrypto.so.3 is not OpenSSL 3.5" >&2; exit 1; }
           grep -aq SSL_set_quic_tls_cbs "$lib/libssl.so.3" \
             || { echo "Error: bundled libssl.so.3 has no QUIC TLS API" >&2; exit 1; }
+          # libtorrent is linked static into emulecored
+          if ls "$lib"/libtorrent-rasterbar* >/dev/null 2>&1; then
+            echo "Error: libtorrent-rasterbar bundled as a shared lib" >&2; exit 1
+          fi
 
       - name: Upload artifact
         uses: actions/upload-artifact@v6

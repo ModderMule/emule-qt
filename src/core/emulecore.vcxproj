@@ -373,6 +373,7 @@
     <ClCompile Include="transfer\UploadDiskIOThread.cpp" />
     <ClCompile Include="transfer\UploadQueue.cpp" />
     <ClCompile Include="transfer\UploadQueueStore.cpp" />
+    <ClCompile Include="transfer\BandwidthSplit.cpp" />
     <ClCompile Include="webserver\WebServer.cpp" />
     <ClCompile Include="app\CoreInfo.cpp" />
     <ClCompile Include="app\CoreOps.cpp" />
@@ -473,6 +474,7 @@
     <ClInclude Include="geo\IP2Country.h" />
     <ClInclude Include="transfer\ImportParts.h" />
     <ClInclude Include="transfer\UploadQueueStore.h" />
+    <ClInclude Include="transfer\BandwidthSplit.h" />
     <QtMoc Include="chat\IrcClient.h" />
     <ClInclude Include="chat\IrcEmuleProto.h" />
     <ClInclude Include="chat\IrcNickList.h" />

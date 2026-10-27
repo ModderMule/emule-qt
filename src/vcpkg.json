@@ -5,7 +5,11 @@
   "dependencies": [
     "libarchive",
     "libmaxminddb",
-    "libtorrent",
+    {
+      "name": "libtorrent",
+      "default-features": false,
+      "version>=": "2.1.1"
+    },
     "miniupnpc",
     {
       "name": "ngtcp2",

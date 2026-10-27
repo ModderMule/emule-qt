@@ -10,6 +10,8 @@ QT -= gui
 DEFINES += QT_NO_CAST_FROM_ASCII
 # QUIC NAT-T: ngtcp2 + ngtcp2_crypto_ossl, OpenSSL >= 3.5
 DEFINES += EMULE_HAVE_QUIC_NATT=1
+# BitTorrent: always on, as CMake EMULE_BITTORRENT
+DEFINES += EMULE_HAVE_BITTORRENT=1
 
 INCLUDEPATH += \
     $$PWD
@@ -186,6 +188,7 @@ SOURCES += \
     stats/Statistics.cpp \
     stats/StatsHistory.cpp \
     stats/StatsSnapshot.cpp \
+    transfer/BandwidthSplit.cpp \
     transfer/DownloadQueue.cpp \
     transfer/ImportParts.cpp \
     transfer/Scheduler.cpp \
@@ -355,6 +358,7 @@ HEADERS += \
     stats/Statistics.h \
     stats/StatsHistory.h \
     stats/StatsSnapshot.h \
+    transfer/BandwidthSplit.h \
     transfer/DownloadQueue.h \
     transfer/ImportParts.h \
     transfer/Scheduler.h \

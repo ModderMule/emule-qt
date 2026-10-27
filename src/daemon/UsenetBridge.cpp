@@ -3,6 +3,7 @@
 
 #include "UsenetBridge.h"
 
+#include "BandwidthCoordinator.h"
 #include "IndexerQuery.h"
 #include "UsenetSession.h"
 #include "nzb/NzbFile.h"
@@ -288,13 +289,21 @@ QCborMap archiveEntriesToCbor(const QString& itemId, int fileIndex)
 
 void insertDownloadSplit(QCborMap& stats)
 {
-    // Stopped or not yet constructed reads as unthrottled, which is what it is.
-    const usenet::UsenetSession::DownloadSplit split =
-        usenet::theUsenetSession ? usenet::theUsenetSession->lastSplit()
-                                 : usenet::UsenetSession::DownloadSplit{thePrefs.maxDownload()};
-    stats.insert(QStringLiteral("maxDownloadKb"), static_cast<qint64>(split.ceilingKb));
-    stats.insert(QStringLiteral("usenetLimitKb"), split.usenetKb());
-    stats.insert(QStringLiteral("ed2kBudgetKb"), split.ed2kKb());
+    // Not yet constructed reads as unthrottled, which is what it is. 0 = unlimited.
+    BandwidthCoordinator::Snapshot split;
+    if (const auto* coordinator = BandwidthCoordinator::instance()) {
+        split = coordinator->snapshot();
+    } else {
+        split.maxDownloadKb = split.ed2kDownKb = thePrefs.maxDownload();
+        split.uploadLineKb = split.ed2kUpKb = thePrefs.maxUpload();
+    }
+    stats.insert(QStringLiteral("maxDownloadKb"), split.maxDownloadKb);
+    stats.insert(QStringLiteral("usenetLimitKb"), split.usenetDownKb);
+    stats.insert(QStringLiteral("ed2kBudgetKb"), split.ed2kDownKb);
+    stats.insert(QStringLiteral("btDownLimitKb"), split.btDownKb);
+    stats.insert(QStringLiteral("uploadLineKb"), split.uploadLineKb);
+    stats.insert(QStringLiteral("ed2kUploadBudgetKb"), split.ed2kUpKb);
+    stats.insert(QStringLiteral("btUpLimitKb"), split.btUpKb);
     // Added to rateDown by the GUI's status bar and tray.
     const auto* q = queue();
     stats.insert(QStringLiteral("rateDownUsenet"),

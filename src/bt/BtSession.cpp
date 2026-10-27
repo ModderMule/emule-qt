@@ -16,6 +16,7 @@
 #include <libtorrent/read_resume_data.hpp>
 #include <libtorrent/session.hpp>
 #include <libtorrent/session_params.hpp>
+#include <libtorrent/session_stats.hpp>
 #include <libtorrent/torrent_info.hpp>
 #include <libtorrent/write_resume_data.hpp>
 
@@ -29,6 +30,7 @@
 #include <QTimer>
 
 #include <atomic>
+#include <deque>
 #include <map>
 
 namespace lt = libtorrent;
@@ -42,6 +44,12 @@ constexpr int kTickMs = 1000;
 constexpr int kResumeEveryTicks = 300;
 /// stop() waits this long for resume data
 constexpr qint64 kStopWaitMs = 5000;
+/// Counter samples kept for demand(): the longest rate window plus a sample
+constexpr qint64 kRateHistoryMs = 3000;
+constexpr qint64 kRateWindowMs = 2000;
+constexpr qint64 kRecentWindowMs = 500;
+/// libtorrent reports "no limit" on max_connections as (1 << 24) - 1
+constexpr int kLtNoLimit = (1 << 24) - 1;
 
 const QString kSessionFile = QStringLiteral("session.dat");
 const QString kResumeDir = QStringLiteral("resume");
@@ -121,6 +129,18 @@ struct BtSession::Impl {
     std::map<QString, BtTorrentOptions> seedLimits;
     int ticks = 0;
     int outstandingResume = 0;
+    /// setRateLimits() caps in bytes/s; nullopt = the ones in settings
+    std::optional<std::pair<int, int>> rateLimits;
+    /// session counters for demand(), oldest first
+    struct RateSample {
+        qint64 ms = 0;
+        qint64 recv = 0;
+        qint64 sent = 0;
+    };
+    std::deque<RateSample> rateSamples;
+    QElapsedTimer rateClock;
+    int recvIdx = lt::find_metric_idx("net.recv_bytes");
+    int sentIdx = lt::find_metric_idx("net.sent_bytes");
     bool listening = false;
     int dhtNodes = 0;
 
@@ -142,6 +162,40 @@ struct BtSession::Impl {
     void saveSeedLimits() const;
     BtAddResult add(BtSession& q, lt::add_torrent_params atp, const QString& savePath, bool paused);
     void enforceSeedLimits(const lt::torrent_status& st, const BtTorrentRow& row);
+    /// settings as a pack, with the setRateLimits() caps over the configured ones
+    [[nodiscard]] lt::settings_pack pack(const BtSettings& s) const;
+    /// bytes/s of one counter over at least @p windowMs, from rateSamples
+    [[nodiscard]] qint64 rate(qint64 RateSample::*field, qint64 windowMs) const;
+    /// comment, creator and creation date by id: in add_torrent_params since 2.1
+    struct Meta {
+        QString comment;
+        QString creator;
+        qint64 createdAt = 0;
+    };
+    std::map<QString, Meta> meta;
+    void noteMeta(const QString& id, const lt::add_torrent_params& p)
+    {
+        if (!p.comment.empty() || !p.created_by.empty() || p.creation_date != 0)
+            meta[id] = {QString::fromStdString(p.comment), QString::fromStdString(p.created_by),
+                        static_cast<qint64>(p.creation_date)};
+    }
+    /// BtTorrentView::row() plus what torrent_info no longer has
+    [[nodiscard]] BtTorrentRow row(const lt::torrent_status& st) const
+    {
+        BtTorrentRow r = BtTorrentView::row(st);
+        if (auto it = meta.find(r.id); it != meta.end()) {
+            r.comment = it->second.comment;
+            r.creator = it->second.creator;
+            r.createdAt = it->second.createdAt;
+        }
+        return r;
+    }
+    /// unset or unlimited per-torrent connections → the configured default
+    void defaultConnections(lt::add_torrent_params& atp) const
+    {
+        if (atp.max_connections <= 0 || atp.max_connections >= kLtNoLimit)
+            atp.max_connections = settings.maxConnectionsPerTorrent;
+    }
 };
 
 BtSession::BtSession(QObject* parent)
@@ -176,7 +230,7 @@ void BtSession::start(const BtSettings& settings)
             params = lt::session_params{};
         }
     }
-    params.settings = BtSettingsMap::toPack(settings);
+    params.settings = d->pack(settings);
     params.extensions = extensions(settings);
     params.extensions.push_back(BtJoinDiskIo::pumpPlugin([impl = d.get()] { return impl->io.load(); }));
     params.disk_io_constructor = BtJoinDiskIo::constructor([this](BtJoinDiskIo* io) { d->io = io; });
@@ -206,6 +260,7 @@ void BtSession::start(const BtSettings& settings)
         }
         if (atp.save_path.empty())
             atp.save_path = settings.downloadDir.toStdString();
+        d->defaultConnections(atp);
         d->ses->async_add_torrent(std::move(atp));
         ++loaded;
     }
@@ -261,6 +316,8 @@ void BtSession::stop()
     d->outstandingResume = 0;
     d->listening = false;
     d->dhtNodes = 0;
+    d->rateSamples.clear();
+    d->meta.clear();
     logInfo(QStringLiteral("BitTorrent: stopped"));
     emit statusChanged();
 }
@@ -272,9 +329,54 @@ bool BtSession::isRunning() const
 
 void BtSession::applySettings(const BtSettings& settings)
 {
+    const int oldPerTorrent = d->settings.maxConnectionsPerTorrent;
     d->settings = settings;
-    if (d->ses)
-        d->ses->apply_settings(BtSettingsMap::toPack(settings));
+    if (!d->ses)
+        return;
+    d->ses->apply_settings(d->pack(settings));
+    // torrents on the old default follow the new one; a custom limit stays
+    if (oldPerTorrent != settings.maxConnectionsPerTorrent)
+        for (const auto& [id, h] : d->handles)
+            if (h.is_valid() && h.max_connections() == oldPerTorrent)
+                h.set_max_connections(settings.maxConnectionsPerTorrent);
+}
+
+void BtSession::setRateLimits(quint32 downKb, quint32 upKb)
+{
+    const std::pair limits{BtSettingsMap::rateBytes(downKb), BtSettingsMap::rateBytes(upKb)};
+    if (d->rateLimits == limits)
+        return;
+    d->rateLimits = limits;
+    if (!d->ses)
+        return;
+    lt::settings_pack p;
+    p.set_int(lt::settings_pack::download_rate_limit, limits.first);
+    p.set_int(lt::settings_pack::upload_rate_limit, limits.second);
+    d->ses->apply_settings(std::move(p));
+}
+
+BtDemand BtSession::demand()
+{
+    BtDemand out;
+    if (!d->ses)
+        return out;
+    for (const auto& [id, row] : d->rows) {
+        if (row.paused)
+            continue;
+        if (row.state == BtState::Downloading || row.state == BtState::DownloadingMetadata)
+            out.downActive = true;
+        if ((row.state == BtState::Downloading || row.state == BtState::Seeding
+             || row.state == BtState::Finished)
+            && row.peers > 0)
+            out.upActive = true;
+    }
+    out.downRate = d->rate(&Impl::RateSample::recv, kRateWindowMs);
+    out.downRecent = d->rate(&Impl::RateSample::recv, kRecentWindowMs);
+    out.upRate = d->rate(&Impl::RateSample::sent, kRateWindowMs);
+    out.upRecent = d->rate(&Impl::RateSample::sent, kRecentWindowMs);
+    // answered by a session_stats_alert, sampled in drainAlerts()
+    d->ses->post_session_stats();
+    return out;
 }
 
 BtAddResult BtSession::addTorrentFile(const QByteArray& data, const QString& savePath, bool paused)
@@ -379,8 +481,8 @@ std::optional<BtTorrentOptions> BtSession::options(const QString& id) const
     o.downloadLimitKb = std::max(0, h.download_limit()) / 1024;
     o.uploadLimitKb = std::max(0, h.upload_limit()) / 1024;
     const int peers = h.max_connections();
-    // libtorrent reports "no limit" as (1 << 24) - 1
-    o.maxPeers = peers <= 0 || peers >= (1 << 24) - 1 ? 0 : peers;
+    // 0 = the configured default per torrent
+    o.maxPeers = peers <= 0 || peers >= kLtNoLimit || peers == d->settings.maxConnectionsPerTorrent ? 0 : peers;
     return o;
 }
 
@@ -389,9 +491,11 @@ bool BtSession::setOptions(const QString& id, const BtTorrentOptions& options)
     const auto h = d->handle(id);
     if (!h.is_valid())
         return false;
+    // Every peer is in the session's class as well as the torrent's, so these never
+    // exceed the session caps, which follow BitTorrent's share of the global limits.
     h.set_download_limit(options.downloadLimitKb > 0 ? options.downloadLimitKb * 1024 : 0);
     h.set_upload_limit(options.uploadLimitKb > 0 ? options.uploadLimitKb * 1024 : 0);
-    h.set_max_connections(options.maxPeers > 0 ? options.maxPeers : -1);
+    h.set_max_connections(options.maxPeers > 0 ? options.maxPeers : d->settings.maxConnectionsPerTorrent);
 
     BtTorrentOptions limits;
     limits.ratioMode = options.ratioMode;
@@ -530,9 +634,20 @@ void BtSession::drainAlerts()
     d->ses->pop_alerts(&alerts);
     // pointers die at the next pop_alerts(): copy what is kept
     for (lt::alert* a : alerts) {
-        if (auto* su = lt::alert_cast<lt::state_update_alert>(a)) {
+        if (auto* ss = lt::alert_cast<lt::session_stats_alert>(a)) {
+            const auto counters = ss->counters();
+            if (!d->rateClock.isValid())
+                d->rateClock.start();
+            const qint64 now = d->rateClock.elapsed();
+            const auto at = [&counters](int idx) {
+                return idx >= 0 && idx < counters.size() ? counters[idx] : std::int64_t(0);
+            };
+            d->rateSamples.push_back({now, at(d->recvIdx), at(d->sentIdx)});
+            while (d->rateSamples.size() > 2 && now - d->rateSamples.front().ms > kRateHistoryMs)
+                d->rateSamples.pop_front();
+        } else if (auto* su = lt::alert_cast<lt::state_update_alert>(a)) {
             for (const lt::torrent_status& st : su->status) {
-                BtTorrentRow row = BtTorrentView::row(st);
+                BtTorrentRow row = d->row(st);
                 const QString id = row.id;
                 if (!d->handles.contains(id))
                     continue;
@@ -549,11 +664,13 @@ void BtSession::drainAlerts()
             if (d->handles.contains(id))
                 continue;
             d->handles[id] = at->handle;
-            d->rows[id] = BtTorrentView::row(at->handle.status());
+            d->noteMeta(id, at->params);
+            d->rows[id] = d->row(at->handle.status());
             emit torrentAdded(id);
         } else if (auto* rd = lt::alert_cast<lt::save_resume_data_alert>(a)) {
             d->outstandingResume = std::max(0, d->outstandingResume - 1);
             const QString id = BtTorrentView::idOf(rd->params.info_hashes);
+            d->noteMeta(id, rd->params);
             if (d->handles.contains(id) && !writeAtomic(d->resumePath(id), lt::write_resume_data_buf(rd->params)))
                 logWarning(QStringLiteral("BitTorrent: could not write resume data of %1").arg(id));
         } else if (lt::alert_cast<lt::save_resume_data_failed_alert>(a)) {
@@ -613,13 +730,22 @@ BtAddResult BtSession::Impl::add(BtSession& q, lt::add_torrent_params atp, const
         atp.flags |= lt::torrent_flags::auto_managed;
         atp.flags &= ~lt::torrent_flags::paused;
     }
+    defaultConnections(atp);
+    const lt::add_torrent_params metaOf = [&atp] {
+        lt::add_torrent_params p;
+        p.comment = atp.comment;
+        p.created_by = atp.created_by;
+        p.creation_date = atp.creation_date;
+        return p;
+    }();
     lt::error_code ec;
     lt::torrent_handle h = ses->add_torrent(std::move(atp), ec);
     if (ec || !h.is_valid())
         return {BtAddOutcome::Failed, {}, QString::fromStdString(ec.message())};
     const QString id = BtTorrentView::idOf(h.info_hashes());
     handles[id] = h;
-    rows[id] = BtTorrentView::row(h.status());
+    noteMeta(id, metaOf);
+    rows[id] = row(h.status());
     // kept across a restart from now on
     saveResume(h);
     logInfo(QStringLiteral("BitTorrent: added %1").arg(rows[id].name));
@@ -677,6 +803,33 @@ void BtSession::Impl::enforceSeedLimits(const lt::torrent_status& st, const BtTo
     st.handle.unset_flags(lt::torrent_flags::auto_managed);
     st.handle.pause();
     logInfo(QStringLiteral("BitTorrent: seeding of %1 stopped, %2 reached").arg(row.name, ratioReached ? QStringLiteral("ratio") : QStringLiteral("seed time")));
+}
+
+lt::settings_pack BtSession::Impl::pack(const BtSettings& s) const
+{
+    lt::settings_pack p = BtSettingsMap::toPack(s);
+    if (rateLimits) {
+        p.set_int(lt::settings_pack::download_rate_limit, rateLimits->first);
+        p.set_int(lt::settings_pack::upload_rate_limit, rateLimits->second);
+    }
+    return p;
+}
+
+qint64 BtSession::Impl::rate(qint64 RateSample::*field, qint64 windowMs) const
+{
+    if (rateSamples.size() < 2)
+        return 0;
+    const RateSample& last = rateSamples.back();
+    // the newest sample at least windowMs old, else the oldest
+    const RateSample* first = &rateSamples.front();
+    for (auto it = rateSamples.crbegin() + 1; it != rateSamples.crend(); ++it) {
+        if (last.ms - it->ms >= windowMs) {
+            first = &*it;
+            break;
+        }
+    }
+    const qint64 ms = last.ms - first->ms;
+    return ms > 0 ? std::max<qint64>(0, last.*field - first->*field) * 1000 / ms : 0;
 }
 
 } // namespace eMule::bt

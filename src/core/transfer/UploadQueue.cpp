@@ -37,19 +37,11 @@ namespace eMule {
 namespace {
 
 /// The upload cap both slot gates work against, in KB/s; UNLIMITED when uncapped.
-/// USS on → the finder's live limit; USS off → thePrefs.maxUploadLimit(), which maps
-/// eMuleQt's "no limit" (a raw 0) onto the UNLIMITED sentinel every MFC-derived
-/// comparison below expects.
-///
-/// Unlike MFC (srchybrid/UploadQueue.cpp:405) the finder pointer is null-checked — it is
-/// only constructed by CoreSession, so anything driving the queue without one falls back
-/// to prefs rather than crashing.
+/// The line (lineCapKB) less what BitTorrent holds while it uploads too.
 uint32 uploadCapKB()
 {
-    if (thePrefs.isDynUpEnabled() && theApp.lastCommonRouteFinder
-        && !theApp.lastCommonRouteFinder->hasGivenUp())
-        return theApp.lastCommonRouteFinder->getUpload() / 1024;
-    return thePrefs.maxUploadLimit();
+    // ED2K's slice while BitTorrent uploads too; the throttler applies the same one
+    return std::min(UploadQueue::lineCapKB(), thePrefs.ed2kUploadBudget());
 }
 
 } // namespace
@@ -1205,6 +1197,38 @@ void UploadQueue::updateMaxClientScore(bool force)
 // ===========================================================================
 // updateActiveClientsInfo — MFC CUploadQueue::UpdateActiveClientsInfo
 // ===========================================================================
+
+/// USS on → the finder's live limit; USS off → thePrefs.maxUploadLimit(), which maps
+/// eMuleQt's "no limit" (a raw 0) onto the UNLIMITED sentinel every MFC-derived
+/// comparison expects.
+///
+/// Unlike MFC (srchybrid/UploadQueue.cpp:405) the finder pointer is null-checked — it is
+/// only constructed by CoreSession, so anything driving the queue without one falls back
+/// to prefs rather than crashing.
+uint32 UploadQueue::lineCapKB()
+{
+    if (thePrefs.isDynUpEnabled() && theApp.lastCommonRouteFinder
+        && !theApp.lastCommonRouteFinder->hasGivenUp())
+        return theApp.lastCommonRouteFinder->getUpload() / 1024;
+    return thePrefs.maxUploadLimit();
+}
+
+uint32 UploadQueue::datarateOver(uint32 windowMs) const
+{
+    // Samples are bytes sent per process() call, with their ticks. Like
+    // updateDatarates(), the oldest sample in the window only marks its start.
+    if (m_averageDRList.size() < 2 || m_averageTickList.size() != m_averageDRList.size())
+        return 0;
+    const uint64 last = m_averageTickList.back();
+    size_t first = m_averageTickList.size() - 1;
+    uint64 bytes = 0;
+    while (first > 0 && last - m_averageTickList[first] < windowMs) {
+        bytes += m_averageDRList[first];
+        --first;
+    }
+    const uint64 ms = last - m_averageTickList[first];
+    return ms > 0 ? static_cast<uint32>(bytes * 1000 / ms) : 0;
+}
 
 void UploadQueue::updateDatarates()
 {

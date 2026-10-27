@@ -435,22 +435,62 @@ endif()
 # ---------------------------------------------------------------------------
 # libtorrent-rasterbar — BitTorrent engine of src/bt (docs/BitTorrentModule-Research.local.md)
 #
-# An installed one first (vcpkg, Homebrew, distro), else a static build of v2.1.1.
+# An installed one first (vcpkg, Homebrew, distro), else a static build of v2.1.1
+# against Boost headers and the OpenSSL found above (same libssl as ngtcp2/Qt).
 # Link the exported target only: it carries TORRENT_ABI_VERSION, which must be the
 # same in the library and in every unit that includes its headers.
+#
+# Boost: headers only (libtorrent 2.x links no Boost library). A config package
+# (vcpkg, Homebrew, libboost-dev) or a bare boost/ tree under BOOST_ROOT or a
+# CMAKE_PREFIX_PATH entry's include/ (scripts/build-{linux,macos}-deps.sh).
 # ---------------------------------------------------------------------------
-# OFF until the module ships: libtorrent needs Boost, which CI does not install yet
-option(EMULE_BITTORRENT "Build the BitTorrent module (libtorrent-rasterbar)" OFF)
+option(EMULE_BITTORRENT "Build the BitTorrent module (libtorrent-rasterbar)" ON)
 if(EMULE_BITTORRENT)
+    set(_emule_bt_hint "Install Boost >= 1.74 headers (brew install boost, apt install libboost-dev, \
+vcpkg, or set BOOST_ROOT) or libtorrent-rasterbar >= 2.1, or pass -DEMULE_BITTORRENT=OFF")
     # 2.1: pread_disk_io, torrent_info::layout() (src/bt/session/BtJoinDiskIo.cpp)
     find_package(LibtorrentRasterbar 2.1 CONFIG QUIET)
     if(LibtorrentRasterbar_FOUND)
         message(STATUS "libtorrent-rasterbar ${LibtorrentRasterbar_VERSION}: installed")
+        # Release lib, but its config adds TORRENT_USE_ASSERTS in Debug: other class layout, crash
+        get_target_property(_lt_real LibtorrentRasterbar::torrent-rasterbar ALIASED_TARGET)
+        if(NOT _lt_real)
+            set(_lt_real LibtorrentRasterbar::torrent-rasterbar)
+        endif()
+        get_target_property(_lt_defs ${_lt_real} INTERFACE_COMPILE_DEFINITIONS)
+        if(_lt_defs)
+            list(FILTER _lt_defs EXCLUDE REGEX "TORRENT_USE_ASSERTS")
+            set_target_properties(${_lt_real} PROPERTIES INTERFACE_COMPILE_DEFINITIONS "${_lt_defs}")
+        endif()
     else()
+        find_package(Boost 1.74 CONFIG QUIET)
+        if(Boost_FOUND)
+            message(STATUS "Boost ${Boost_VERSION}: ${Boost_DIR}")
+        else()
+            # bare header tree: no BoostConfig.cmake, so find it by hand
+            find_path(EMULE_BOOST_INCLUDE_DIR boost/version.hpp
+                HINTS ${BOOST_ROOT} ${Boost_ROOT} $ENV{BOOST_ROOT} $ENV{Boost_ROOT}
+                PATH_SUFFIXES include)
+            set(_emule_boost_ver 0)
+            if(EMULE_BOOST_INCLUDE_DIR)
+                file(STRINGS "${EMULE_BOOST_INCLUDE_DIR}/boost/version.hpp" _emule_boost_ver
+                     REGEX "^#define BOOST_VERSION [0-9]+")
+                string(REGEX REPLACE "^#define BOOST_VERSION ([0-9]+).*" "\\1" _emule_boost_ver "${_emule_boost_ver}")
+            endif()
+            if(_emule_boost_ver LESS 107400)
+                unset(EMULE_BOOST_INCLUDE_DIR CACHE)
+                message(FATAL_ERROR "BitTorrent: no Boost >= 1.74 found for libtorrent-rasterbar. ${_emule_bt_hint}")
+            endif()
+            math(EXPR _emule_boost_minor "${_emule_boost_ver} / 100 % 1000")
+            message(STATUS "Boost 1.${_emule_boost_minor} headers: ${EMULE_BOOST_INCLUDE_DIR}")
+            # libtorrent's find_package(Boost) is module mode (FindBoost): hand it the tree
+            set(Boost_INCLUDE_DIR "${EMULE_BOOST_INCLUDE_DIR}" CACHE PATH "Boost headers" FORCE)
+        endif()
         message(STATUS "libtorrent-rasterbar: FetchContent v2.1.1 (static)")
-        # BUILD_SHARED_LIBS is global: off for libtorrent only
+        # BUILD_SHARED_LIBS is global: off for libtorrent only. A normal variable:
+        # it shadows any cache entry (CMP0126) and libtorrent's option() keeps it (CMP0077)
         set(_emule_saved_shared ${BUILD_SHARED_LIBS})
-        set(BUILD_SHARED_LIBS OFF CACHE BOOL "" FORCE)
+        set(BUILD_SHARED_LIBS OFF)
         set(build_tests OFF CACHE BOOL "" FORCE)
         set(build_examples OFF CACHE BOOL "" FORCE)
         set(build_tools OFF CACHE BOOL "" FORCE)
@@ -467,7 +507,7 @@ if(EMULE_BITTORRENT)
             GIT_SUBMODULES deps/try_signal
         )
         FetchContent_MakeAvailable(libtorrent)
-        set(BUILD_SHARED_LIBS ${_emule_saved_shared} CACHE BOOL "" FORCE)
+        set(BUILD_SHARED_LIBS ${_emule_saved_shared})
         if(TARGET torrent-rasterbar AND NOT TARGET LibtorrentRasterbar::torrent-rasterbar)
             add_library(LibtorrentRasterbar::torrent-rasterbar ALIAS torrent-rasterbar)
         endif()
@@ -488,8 +528,7 @@ if(EMULE_BITTORRENT)
         endif()
     endforeach()
     if(NOT TARGET LibtorrentRasterbar::torrent-rasterbar)
-        message(WARNING "libtorrent-rasterbar not available: BitTorrent module off")
-        set(EMULE_BITTORRENT OFF CACHE BOOL "" FORCE)
+        message(FATAL_ERROR "BitTorrent: libtorrent-rasterbar target missing. ${_emule_bt_hint}")
     endif()
 endif()
 # The one place EMULE_HAVE_BITTORRENT is set: every target below inherits it

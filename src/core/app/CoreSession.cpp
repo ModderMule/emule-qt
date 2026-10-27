@@ -1891,6 +1891,15 @@ std::vector<PortMapRequest> CoreSession::buildPortMapRequests() const
             static_cast<uint16>(thePrefs.webServerPort()), QStringLiteral("eMule Web"));
     }
 
+#ifdef EMULE_HAVE_BITTORRENT
+    // libtorrent's own UPnP/NAT-PMP stay off (BtSettingsMap): one mapper per app
+    if (thePrefs.btEnabled() && thePrefs.btPortMapping()) {
+        const auto btPort = static_cast<uint16>(thePrefs.btListenPort());
+        add(PortMapPurpose::BtTcp, PortMapProtocol::Tcp, btPort, QStringLiteral("eMule BitTorrent TCP"));
+        add(PortMapPurpose::BtUdp, PortMapProtocol::Udp, btPort, QStringLiteral("eMule BitTorrent UDP"));
+    }
+#endif
+
     return requests;
 }
 

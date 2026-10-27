@@ -67,8 +67,9 @@ jobs:
           echo "$RUNNER_TEMP/protoc/bin" >> "$GITHUB_PATH"
           "$RUNNER_TEMP/protoc/bin/protoc" --version
 
-      # Static OpenSSL, zstd, lz4 and ngtcp2 built for MACOSX_DEPLOYMENT_TARGET.  Homebrew's
-      # copies are built for the runner's macOS and must not reach the bundle.
+      # Static OpenSSL, zstd, lz4 and ngtcp2 built for MACOSX_DEPLOYMENT_TARGET, plus Boost
+      # headers for the static libtorrent (FetchContent).  Homebrew's copies are built
+      # for the runner's macOS and must not reach the bundle.
       - name: Restore static dependencies
         id: deps-cache
         uses: actions/cache@v4
@@ -96,6 +97,7 @@ jobs:
           -DCMAKE_IGNORE_PREFIX_PATH="/opt/homebrew;/usr/local"
           -DOPENSSL_ROOT_DIR="$RUNNER_TEMP/macos-deps"
           -DOPENSSL_USE_STATIC_LIBS=ON
+          -DEMULE_BITTORRENT=ON
           -DCMAKE_C_COMPILER_LAUNCHER=ccache
           -DCMAKE_CXX_COMPILER_LAUNCHER=ccache
           -DEMULE_BUILD_TESTS=OFF

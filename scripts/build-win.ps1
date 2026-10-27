@@ -708,6 +708,7 @@ function Invoke-EMuleBuild {
             '-G', 'Ninja'
             "-DCMAKE_BUILD_TYPE=$Config"
             "-DCMAKE_PREFIX_PATH=$qt"
+            '-DEMULE_BITTORRENT=ON'
             # Pin the compiler.  Qt installs MinGW under Qt\Tools and puts it on
             # PATH, and CMake's Ninja generator probes c++/g++ *before* cl, so an
             # unpinned configure silently builds with GCC against an MSVC Qt kit.

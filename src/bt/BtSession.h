@@ -42,6 +42,15 @@ public:
     /// New settings while running. PEX changes when the session starts again.
     void applySettings(const BtSettings& settings);
 
+    /// Session-wide caps in KB/s, 0 = unlimited. Set twice a second by the daemon's
+    /// share of the global limits; overrides BtSettings' caps until the next call.
+    /// Cheap when nothing changed.
+    void setRateLimits(quint32 downKb, quint32 upKb);
+
+    /// Demand on the shared lines; samples the session counters as a side effect,
+    /// so call it at a steady pace (the coordinator's tick).
+    [[nodiscard]] BtDemand demand();
+
     /// Adds a .torrent file. `savePath` empty = the download dir.
     BtAddResult addTorrentFile(const QByteArray& data, const QString& savePath = {}, bool paused = false);
     /// Adds a BitTorrent magnet link.

@@ -31,6 +31,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
         python3-venv \
         zlib1g-dev \
         libssl-dev \
+        libboost-dev \
         libglib2.0-dev \
         libdbus-1-dev \
         libpulse-dev \
@@ -58,7 +59,8 @@ ENV LD_LIBRARY_PATH=/opt/Qt/6.10.2/gcc_64/lib
 WORKDIR /src
 COPY . .
 
-RUN cmake -S . -B build -DCMAKE_BUILD_TYPE=RelWithDebInfo \
+# BitTorrent: libtorrent 2.1.1 built static (trixie's 2.0 is too old), Boost headers from apt
+RUN cmake -S . -B build -DCMAKE_BUILD_TYPE=RelWithDebInfo -DEMULE_BITTORRENT=ON \
         -DEMULE_BUILD_TESTS=OFF -DEMULE_SEED_FROM_SOURCE_TREE=OFF \
     && cmake --build build --target emulecored --parallel "$(nproc)"
 

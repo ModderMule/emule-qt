@@ -142,6 +142,32 @@ bool AppConfig::coreRunningFor(const QString& configDir)
     return false;
 }
 
+QString AppConfig::coreStartFailurePath(const QString& configDir)
+{
+    return configDir + QStringLiteral("/emulecored.startfail");
+}
+
+void AppConfig::writeCoreStartFailure(const QString& configDir, const QString& reason)
+{
+    // Best effort: an unwritable config dir is often the very reason
+    QFile file(coreStartFailurePath(configDir));
+    if (file.open(QIODevice::WriteOnly | QIODevice::Truncate | QIODevice::Text))
+        file.write(reason.toUtf8());
+}
+
+void AppConfig::clearCoreStartFailure(const QString& configDir)
+{
+    QFile::remove(coreStartFailurePath(configDir));
+}
+
+QString AppConfig::readCoreStartFailure(const QString& configDir)
+{
+    QFile file(coreStartFailurePath(configDir));
+    if (!file.open(QIODevice::ReadOnly | QIODevice::Text))
+        return {};
+    return QString::fromUtf8(file.read(4096)).trimmed();
+}
+
 // ---------------------------------------------------------------------------
 // Bundled data seeding
 // ---------------------------------------------------------------------------

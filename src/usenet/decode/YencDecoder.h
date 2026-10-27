@@ -93,8 +93,8 @@ public:
 
     /// The whole `=ybegin` line as received: keyword included, CRLF stripped,
     /// already dot-unstuffed, nothing split off. usenet.md §2 reads `name=` to
-    /// the end of this line (a glued `=ypart` stays part of the name there,
-    /// unlike fileName()), and wants the bytes to do its own Latin-1 fallback.
+    /// the end of this line or the first glued `=ypart `, like fileName(), but
+    /// trims only space/tab and wants the bytes to do its own Latin-1 fallback.
     /// Empty before =ybegin. What packmule's usenet::ybegin() takes.
     [[nodiscard]] const QByteArray& rawBeginLine() const { return m_beginLine; }
 

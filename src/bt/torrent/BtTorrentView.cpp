@@ -159,9 +159,13 @@ BtTorrentRow BtTorrentView::row(const lt::torrent_status& st)
         r.pieceLength = ti->piece_length();
         r.numFiles = ti->num_files();
         r.isPrivate = ti->priv();
+        // gone from torrent_info at ABI 100 (2.1, no deprecated functions): BtSession fills
+        // them from the add parameters then
+#if TORRENT_ABI_VERSION < 4
         r.comment = QString::fromStdString(ti->comment());
         r.creator = QString::fromStdString(ti->creator());
         r.createdAt = static_cast<qint64>(ti->creation_date());
+#endif
     }
     r.lastActivity = std::max(unixOf(st.last_download), unixOf(st.last_upload));
     r.activeSeconds = st.active_duration.count();

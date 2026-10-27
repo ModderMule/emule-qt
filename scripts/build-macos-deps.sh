@@ -1,12 +1,13 @@
 #!/usr/bin/env bash
 # ---------------------------------------------------------------------------
-# build-macos-deps.sh — static OpenSSL, zstd, lz4 and ngtcp2 for a macOS release build
+# build-macos-deps.sh — static OpenSSL, zstd, lz4, ngtcp2 and Boost headers for a macOS release build
 #
 # Homebrew builds its libraries for the OS and CPU of the machine it runs on.
 # Bundling those made the v0.5.6 app arm64-only and macOS 26-only, although Qt
 # itself supports x86_64 and macOS 13.  This builds the three libraries the app
 # used to take from Homebrew, as static archives, for a chosen CPU and minimum
-# macOS, so nothing of them ends up as a dylib in the bundle.
+# macOS, so nothing of them ends up as a dylib in the bundle.  Boost: headers
+# only, for the static libtorrent-rasterbar CMake builds (FetchContent).
 #
 # Usage:
 #   MACOSX_DEPLOYMENT_TARGET=13.0 ./scripts/build-macos-deps.sh <arch> <prefix>
@@ -30,6 +31,8 @@ LZ4_VERSION=1.10.0
 LZ4_SHA256=537512904744b35e232912055ccf8ec66d768639ff3abe5788d90d792ec5f48b
 NGTCP2_VERSION=1.25.0
 NGTCP2_SHA256=1c0843076528a87b65e9a9d455100941f4cb65d44f96c5da6ae56df146043955
+BOOST_VERSION=1.92.0
+BOOST_SHA256=c4a3b310ddd2472416e091067166b0713be97c63f38c212c484ada022fd296ce
 
 if [ $# -ne 2 ]; then
     echo "Usage: MACOSX_DEPLOYMENT_TARGET=<ver> $0 <arm64|x86_64> <prefix>" >&2
@@ -55,7 +58,7 @@ trap 'rm -rf "$WORK"' EXIT
 JOBS="$(sysctl -n hw.ncpu)"
 ARCH_FLAGS="-arch $ARCH -mmacosx-version-min=$MACOSX_DEPLOYMENT_TARGET"
 
-# fetch <url> <sha256> — download, verify, unpack into $WORK
+# fetch <url> <sha256> [member] — download, verify, unpack (only member if given) into $WORK
 fetch() {
     local url="$1" sha="$2" file
     file="$WORK/$(basename "$url")"
@@ -65,7 +68,8 @@ fetch() {
         echo "Error: checksum mismatch for $url" >&2
         exit 1
     }
-    tar xzf "$file" -C "$WORK"
+    tar xzf "$file" -C "$WORK" ${3:+"$3"}
+    rm -f "$file"
 }
 
 # -- OpenSSL -----------------------------------------------------------------
@@ -119,6 +123,13 @@ cmake -S "$WORK/ngtcp2-$NGTCP2_VERSION" -B "$WORK/ngtcp2-build" \
 cmake --build "$WORK/ngtcp2-build" --parallel "$JOBS" >/dev/null
 cmake --install "$WORK/ngtcp2-build" >/dev/null
 
+# -- Boost (headers only, for libtorrent) -----------------------------------
+
+BOOST_DIR="boost_${BOOST_VERSION//./_}"
+fetch "https://archives.boost.io/release/$BOOST_VERSION/source/$BOOST_DIR.tar.gz" "$BOOST_SHA256" "$BOOST_DIR/boost"
+rm -rf "$PREFIX/include/boost"
+mv "$WORK/$BOOST_DIR/boost" "$PREFIX/include/"
+
 # -- Check what was built ----------------------------------------------------
 # A silently ignored flag would give the host's CPU or OS version, which is the
 # bug this script exists to prevent.
@@ -137,6 +148,9 @@ for lib in libcrypto.a libssl.a libzstd.a liblz4.a libngtcp2.a libngtcp2_crypto_
         FAILED=1
     fi
 done
+bver="$(awk '$1 == "#define" && $2 == "BOOST_LIB_VERSION" { gsub(/"/, "", $3); print $3 }' "$PREFIX/include/boost/version.hpp" 2>/dev/null || true)"
+echo "  boost/version.hpp: ${bver:-missing}"
+[ "$bver" = "$(echo "$BOOST_VERSION" | awk -F. '{ print $1 "_" $2 }')" ] || { echo "Error: Boost headers are not $BOOST_VERSION" >&2; FAILED=1; }
 [ "$FAILED" -eq 0 ] || exit 1
 
 echo "Done: $PREFIX"

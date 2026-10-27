@@ -13,17 +13,15 @@
 /// reaching into usenet — must never be added, which is why DaemonApp owns this
 /// object rather than AppContext.
 
+#include "transfer/BandwidthSplit.h"
 #include "utils/Types.h"
 
 #include <QByteArray>
-#include <QElapsedTimer>
 #include <QHash>
 #include <QObject>
 #include <QString>
 
 #include <memory>
-
-class QTimer;
 
 namespace eMule::usenet {
 
@@ -67,15 +65,8 @@ public:
     /// the daemon is.
     void remapCategories(const QHash<uint32, uint32>& oldToNew);
 
-    /// What one engine is asking of the shared download line.
-    struct EngineDemand {
-        /// Has work that wants bandwidth right now. Structural, never derived
-        /// from the rate: an engine throttled to a trickle would otherwise read
-        /// as uninterested and never get its share back.
-        bool active = false;
-        qint64 rateBytesPerSec = 0;     ///< measured over ~2 s
-        qint64 recentBytesPerSec = 0;   ///< measured over ~0.5 s; spots an engine pressing its cap
-    };
+    /// What one engine is asking of the shared download line (transfer/BandwidthSplit).
+    using EngineDemand = eMule::EngineDemand;
 
     /// What the split remembers between ticks: each engine's last reserve and
     /// cap, so an engine pressing its cap can claim its share in a few ticks
@@ -113,21 +104,14 @@ public:
         bool operator==(const DownloadSplit&) const = default;
     };
 
-    /// Split the one global download ceiling between ED2K and Usenet.
-    ///
-    /// The share is a floor while both engines are busy, never a cap on one whose
-    /// counterpart is idle or under-using: each engine is held back only because
-    /// the other is active, and only by what the other measurably reserves. Pure
-    /// apart from @p state (may be null = stateless), so the arithmetic is
-    /// testable without a queue.
+    /// Split a download ceiling between ED2K and Usenet: computePairSplit() with
+    /// ED2K first and Usenet second, in the shape the daemon publishes. The daemon's
+    /// BandwidthCoordinator calls it with whatever BitTorrent leaves of maxDownload().
     [[nodiscard]] static DownloadSplit computeDownloadSplit(uint32 ceilingKb,
                                                             int usenetSharePercent,
                                                             EngineDemand usenet,
                                                             EngineDemand ed2k,
                                                             SplitState* state = nullptr);
-
-    /// The split currently in force. Unthrottled while the engine is stopped.
-    [[nodiscard]] DownloadSplit lastSplit() const { return m_split; }
 
     [[nodiscard]] NntpServerPool* pool() const { return m_pool.get(); }
 
@@ -162,21 +146,9 @@ signals:
                         const QString& serverKey);
 
 private:
-    /// Recompute how the one global download budget is split between ED2K and
-    /// Usenet, and publish both halves. Runs every kBandwidthTickMs.
-    void updateBandwidthSplit();
-
-    /// One log line when the split moves materially; see the .cpp for the gate.
-    void logSplitChange(const DownloadSplit& split);
-
     std::unique_ptr<NntpServerPool> m_pool;
     std::unique_ptr<UsenetQueue> m_queue;
     std::unique_ptr<UsenetWatchFolder> m_watchFolder;
-    QTimer* m_bandwidthTimer = nullptr;
-    DownloadSplit m_split;
-    SplitState m_splitState;
-    DownloadSplit m_loggedSplit;
-    QElapsedTimer m_splitLogClock;
     bool m_running = false;
 
     /// Last preferences revision whose subject rules were compiled for the log.

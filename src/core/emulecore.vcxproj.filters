@@ -582,6 +582,9 @@
     <ClCompile Include="transfer\UploadQueueStore.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
+    <ClCompile Include="transfer\BandwidthSplit.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
     <ClCompile Include="webserver\WebServer.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
@@ -828,6 +831,9 @@
       <Filter>Header Files</Filter>
     </ClInclude>
     <ClInclude Include="transfer\UploadQueueStore.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="transfer\BandwidthSplit.h">
       <Filter>Header Files</Filter>
     </ClInclude>
     <QtMoc Include="chat\IrcClient.h">

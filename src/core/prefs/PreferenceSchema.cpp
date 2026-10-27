@@ -193,6 +193,15 @@ using Kind = PrefSpec::Kind;
                 "at this share ratio, in percent (100 = 1.0). 0 = no limit.");
     t << number("btSeedTimeLimitMinutes", 0, Preferences::kMaxBtSeedTimeLimitMinutes, "min",
                 "Stop seeding after this many minutes. 0 = no limit.");
+    t << number("btDownloadSharePercent", 1, 99, "%", "Share of the download limit BitTorrent "
+                "keeps while eD2K and Usenet download too. Idle bandwidth is borrowed in full.");
+    t << number("btUploadSharePercent", 1, 99, "%", "Share of the upload limit BitTorrent keeps "
+                "while eD2K uploads too. Idle bandwidth is borrowed in full.");
+    t << number("btMaxConnections", 2, Preferences::kMaxBtConnections, "",
+                "BitTorrent peer connections, all torrents together.");
+    t << number("btMaxConnectionsPerTorrent", 2, Preferences::kMaxBtConnections, "",
+                "BitTorrent peer connections per torrent.");
+    t << flag("btPortMapping", "Map the BitTorrent port with UPnP/NAT-PMP (needs port mapping on).");
 
     // --- Logging ---
     t << flag("verbose", "Write verbose (debug) log lines.");

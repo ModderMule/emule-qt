@@ -44,7 +44,9 @@ namespace UsenetBridge {
 /// ListUsenetArchiveEntries. Asks for the header bytes it is missing.
 [[nodiscard]] QCborMap archiveEntriesToCbor(const QString& itemId, int fileIndex);
 
-/// `maxDownloadKb`, `usenetLimitKb`, `ed2kBudgetKb` into @p stats.
+/// The split of the global limits (BandwidthCoordinator) into @p stats, KB/s, 0 = unlimited:
+/// `maxDownloadKb`, `ed2kBudgetKb`, `usenetLimitKb`, `btDownLimitKb`, `uploadLineKb`,
+/// `ed2kUploadBudgetKb`, `btUpLimitKb`.
 void insertDownloadSplit(QCborMap& stats);
 
 [[nodiscard]] bool categoryExists(int category);

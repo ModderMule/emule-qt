@@ -762,9 +762,18 @@ void MainWindow::showCoreStartProblem(CoreStartWatch::Problem problem)
     const QString where = QStringLiteral("%1:%2").arg(m_ipc->daemonHost()).arg(m_ipc->daemonPort());
     QString text;
     switch (problem) {
-    case Problem::CoreExited:
+    case Problem::CoreExited: {
         text = tr("The eMule core stopped right after it was started.");
+        // The core's console is hidden: what it left in the config dir is all we have
+        const QString configDir = AppConfig::configDir();
+        const QString reason = AppConfig::readCoreStartFailure(configDir);
+        text += QStringLiteral("\n\n")
+              + (reason.isEmpty()
+                     ? tr("It left no reason, so it may have crashed. Crash reports go to %1.")
+                           .arg(QDir::toNativeSeparators(configDir + QStringLiteral("/crashes")))
+                     : tr("Reason: %1").arg(reason));
         break;
+    }
     case Problem::NoAnswer:
         text = tr("The eMule core at %1 accepts the connection but does not answer. "
                   "It may be busy or stuck.").arg(where);

@@ -8,6 +8,7 @@
 #include <QStringList>
 
 #include <algorithm>
+#include <climits>
 
 #ifdef EMULE_HAVE_BITTORRENT
 #include "BtSession.h"
@@ -96,8 +97,14 @@ bt::BtLimitMode limitModeOf(qint64 v)
 bt::BtTorrentOptions optionsFromCbor(const QCborMap& m)
 {
     bt::BtTorrentOptions o;
-    o.downloadLimitKb = static_cast<int>(std::max<qint64>(0, m.value(QStringLiteral("downloadLimitKb")).toInteger()));
-    o.uploadLimitKb = static_cast<int>(std::max<qint64>(0, m.value(QStringLiteral("uploadLimitKb")).toInteger()));
+    // Never above the global limits (0 = none): the IPC and REST paths both end here
+    const auto perTorrent = [&m](const QString& key, uint32 globalKb) {
+        const qint64 kb = std::max<qint64>(0, m.value(key).toInteger());
+        return static_cast<int>(globalKb > 0 && kb > globalKb ? qint64(globalKb)
+                                                              : std::min<qint64>(kb, INT_MAX / 1024));
+    };
+    o.downloadLimitKb = perTorrent(QStringLiteral("downloadLimitKb"), thePrefs.maxDownload());
+    o.uploadLimitKb = perTorrent(QStringLiteral("uploadLimitKb"), thePrefs.maxUpload());
     o.maxPeers = static_cast<int>(std::max<qint64>(0, m.value(QStringLiteral("maxPeers")).toInteger()));
     o.ratioMode = limitModeOf(m.value(QStringLiteral("ratioMode")).toInteger());
     o.ratioPercent = static_cast<int>(m.value(QStringLiteral("ratioPercent")).toInteger(100));
@@ -327,6 +334,8 @@ bt::BtSettings settingsFromPrefs()
     s.encryption = thePrefs.btEncryption();
     s.maxActiveDownloads = thePrefs.btMaxActiveDownloads();
     s.maxActiveSeeds = thePrefs.btMaxActiveSeeds();
+    s.maxConnections = thePrefs.btMaxConnections();
+    s.maxConnectionsPerTorrent = thePrefs.btMaxConnectionsPerTorrent();
     s.seedRatioPercent = thePrefs.btSeedRatioPercent();
     s.seedTimeLimitMinutes = thePrefs.btSeedTimeLimitMinutes();
     s.userAgent = QStringLiteral("eMuleQt/") + kAppVersion;

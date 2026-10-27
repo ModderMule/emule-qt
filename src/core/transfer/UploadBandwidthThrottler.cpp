@@ -285,6 +285,10 @@ void UploadBandwidthThrottler::runInternal()
             if (allowedDataRate != UNLIMITED)
                 allowedDataRate *= 1024;
         }
+        // ED2K's slice while BitTorrent uploads too (daemon's BandwidthCoordinator)
+        if (const uint32 budgetKB = thePrefs.ed2kUploadBudget(); budgetKB != UNLIMITED)
+            allowedDataRate = static_cast<uint32>(
+                std::min<uint64>(allowedDataRate, std::max<uint64>(1, budgetKB) * 1024));
 
         // Check busy level for slots
         uint32 nBusy = 0;

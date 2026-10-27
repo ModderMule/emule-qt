@@ -909,6 +909,12 @@ public:
     {
         return m_doneBlocks;
     }
+    /// Byte ranges sent this slot, merged and sorted; ends as in Requested_Block_Struct.
+    /// Unlike doneBlocks() it is not capped, so the Obtained Parts bar keeps every sent block.
+    [[nodiscard]] const std::vector<std::pair<uint64, uint64>>& sentRanges() const
+    {
+        return m_sentRanges;
+    }
 
     // -- Phase 3 — download (DownloadClient.cpp) ----------------------------
 
@@ -1424,6 +1430,8 @@ private:
     // Upload block queue
     std::list<Requested_Block_Struct*> m_blockRequests;
     std::list<Requested_Block_Struct*> m_doneBlocks;
+    std::vector<std::pair<uint64, uint64>> m_sentRanges;  // all of m_doneBlocks ever, merged
+    std::array<uint8, 16> m_sentRangesFileId{};           // file m_sentRanges belongs to
     uint64 m_blockReadBytesQueued = 0;      // bytes of m_blockRequests the disk thread holds
     // Slot diagnostics for upSlotDebugInfo(); reset by flushSendBlocks()
     uint32 m_slotBlocksAsked = 0;           // block requests received while Uploading
@@ -1445,6 +1453,8 @@ private:
     static constexpr size_t kMaxUnconfirmedSends = 256;
     /// Credit blocks the socket has sent in full to ClientList::repeatChunks.
     void confirmSentBlocks();
+    /// Merge a sent block into m_sentRanges; a block of another file starts over.
+    void noteSentRange(const Requested_Block_Struct& block);
     /// The peer asks for a part it already got from us kMaxDeliveries times in full.
     [[nodiscard]] bool isRepeatChunkRequest(const Requested_Block_Struct& block) const;
     static constexpr size_t kMaxPendingBlockRequests = 1024;

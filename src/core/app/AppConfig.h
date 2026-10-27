@@ -72,6 +72,16 @@ public:
     /// another profile's on the same IPC port (issue #49). True when unsure.
     [[nodiscard]] static bool coreRunningFor(const QString& configDir);
 
+    /// Why the core of @p configDir quit on start (lock, IPC port). The core
+    /// writes it on the way out and clears it on each start; the GUI shows it.
+    /// Its console is hidden and its log file off by default, so this is the
+    /// only trace a user sees (issue #67).
+    [[nodiscard]] static QString coreStartFailurePath(const QString& configDir);
+    static void writeCoreStartFailure(const QString& configDir, const QString& reason);
+    static void clearCoreStartFailure(const QString& configDir);
+    /// Empty when the last start did not fail, or failed by crashing.
+    [[nodiscard]] static QString readCoreStartFailure(const QString& configDir);
+
 #ifdef Q_OS_WIN
     /// Returns the cached multiUserSharing value (0=per-user, 1=all-users,
     /// 2=program-dir).  Determined once on first call to configDir() by

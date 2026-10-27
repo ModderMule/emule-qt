@@ -32,6 +32,8 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
         python3-venv \
         zlib1g-dev \
         libssl-dev \
+        # Boost headers: static libtorrent for BitTorrent
+        libboost-dev \
         # Qt runtime / linking deps
         libgl1-mesa-dev \
         libxkbcommon-dev \

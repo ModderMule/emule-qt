@@ -126,7 +126,7 @@ bool ipcPortFree(const QString& host, uint16_t port)
 /// --config starts on the default IPC port, so connecting would show the other
 /// profile's core (issue #49); a copied profile shares the TCP/UDP ports too. Moves
 /// each taken one to a free port and saves it, so the core started next reads the same.
-/// TCP/UDP only on @p firstStart: later they may be forwarded on the router.
+/// TCP/UDP/BitTorrent only on @p firstStart: later they may be forwarded on the router.
 void claimFreePorts(const QString& configDir, bool firstStart)
 {
     using eMule::Preferences;
@@ -137,7 +137,7 @@ void claimFreePorts(const QString& configDir, bool firstStart)
     const QString host = eMule::thePrefs.ipcListenAddress();
     if (const uint16_t taken = eMule::thePrefs.ipcPort(); !ipcPortFree(host, taken)) {
         const QList<uint16_t> ownPorts{eMule::thePrefs.port(), eMule::thePrefs.udpPort(),
-                                       eMule::thePrefs.webServerPort()};
+                                       eMule::thePrefs.webServerPort(), eMule::thePrefs.btListenPort()};
         uint16_t freePort = 0;
         for (uint32_t port = taken + 1u; port <= 65535u && port <= taken + 100u; ++port) {
             if (!ownPorts.contains(static_cast<uint16_t>(port))
@@ -172,6 +172,20 @@ void claimFreePorts(const QString& configDir, bool firstStart)
         eMule::logWarning(QStringLiteral("UDP port %1 is taken by another program, using %2")
                               .arg(taken).arg(freePort));
         eMule::thePrefs.setUdpPort(freePort);
+        changed = true;
+    }
+    // BT listens on TCP and UDP alike; stay off the ports above
+    if (const uint16_t taken = eMule::thePrefs.btListenPort();
+        firstStart && (!Preferences::tcpPortFree(taken) || !Preferences::udpPortFree(taken))) {
+        const QList<uint16_t> ownPorts{eMule::thePrefs.port(), eMule::thePrefs.udpPort(),
+                                       eMule::thePrefs.webServerPort(), eMule::thePrefs.ipcPort()};
+        const uint16_t freePort = Preferences::randomPort([&ownPorts](uint16_t port) {
+            return !ownPorts.contains(port) && Preferences::tcpPortFree(port)
+                   && Preferences::udpPortFree(port);
+        });
+        eMule::logWarning(QStringLiteral("BitTorrent port %1 is taken by another program, using %2")
+                              .arg(taken).arg(freePort));
+        eMule::thePrefs.setBtListenPort(freePort);
         changed = true;
     }
 

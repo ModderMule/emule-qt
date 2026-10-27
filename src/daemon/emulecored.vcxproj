@@ -193,6 +193,7 @@
     <ClCompile Include="PowerManager.cpp" />
     <ClCompile Include="BtBridge.cpp" />
     <ClCompile Include="UsenetBridge.cpp" />
+    <ClCompile Include="BandwidthCoordinator.cpp" />
     <ClCompile Include="WinShutdownHandler.cpp" />
   </ItemGroup>
   <ItemGroup>
@@ -212,6 +213,7 @@
     <ClInclude Include="WinShutdownHandler.h" />
     <ClInclude Include="BtBridge.h" />
     <ClInclude Include="UsenetBridge.h" />
+    <ClInclude Include="BandwidthCoordinator.h" />
   </ItemGroup>
   <ItemGroup>
     <CustomBuild Include="debug\moc_predefs.h.cbt">

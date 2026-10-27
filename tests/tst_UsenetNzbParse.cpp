@@ -45,6 +45,7 @@ private slots:
     void messageIdsAreUsenetSpecMessageIds();
     void theRawNumberAttributeIsKept();
     void emptyMessageIdsAreKeptAside();
+    void segmentChildElementGivesNoMessageId();
     void metaElementsAreKept();
     void passwordComesFromMetaTag();
     void nameComesFromMetaTag();
@@ -261,6 +262,34 @@ void tst_UsenetNzbParse::emptyMessageIdsAreKeptAside()
 
     // A file of empty IDs only is still dropped, and counted: no post id.
     QCOMPARE(info.filesWithoutSegments, 1);
+}
+
+void tst_UsenetNzbParse::segmentChildElementGivesNoMessageId()
+{
+    // usenet.md §1: CDATA is text, comments skipped, a child element = no mᵢ.
+    NzbInfo info;
+    QString error;
+    const QByteArray nzb = QByteArrayLiteral(
+        "<nzb>"
+        "<file subject='x'><segments>"
+        "<segment bytes='1' number='1'>a<b>junk</b>@x</segment>"
+        "<segment bytes='2' number='2'><![CDATA[b@x]]></segment>"
+        "<segment bytes='3' number='3'>c<!-- note -->@x</segment>"
+        "</segments></file>"
+        "<file subject='y'><segments>"
+        "<segment bytes='1' number='1'>y@x</segment>"
+        "</segments></file>"
+        "</nzb>");
+    QVERIFY2(NzbFile::parse(nzb, info, error), qPrintable(error));
+
+    QCOMPARE(info.files.size(), 2);
+    const NzbFileInfo& file = info.files.at(0);
+    QCOMPARE(file.segments.size(), 2);
+    QCOMPARE(file.segments.at(0).messageId, QStringLiteral("b@x"));
+    QCOMPARE(file.segments.at(1).messageId, QStringLiteral("c@x"));
+    QCOMPARE(file.emptyIdSegments.size(), 1);
+    QCOMPARE(file.emptyIdSegments.at(0).position, 0);
+    QCOMPARE(info.files.at(1).segments.at(0).messageId, QStringLiteral("y@x"));
 }
 
 void tst_UsenetNzbParse::metaElementsAreKept()

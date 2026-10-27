@@ -23,7 +23,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
         build-essential cmake ninja-build git curl ca-certificates file \
         pkg-config protobuf-compiler squashfs-tools \
         python3 python3-venv \
-        zlib1g-dev libssl-dev libglib2.0-dev libdbus-1-dev libpulse-dev \
+        zlib1g-dev libssl-dev libboost-dev libglib2.0-dev libdbus-1-dev libpulse-dev \
         libgl1-mesa-dev libegl1-mesa-dev libvulkan-dev \
         libfontconfig1-dev libfreetype6-dev libwayland-dev \
         libxkbcommon-dev libxkbcommon-x11-dev \
@@ -55,10 +55,10 @@ ENV LD_LIBRARY_PATH=/opt/qt/lib
 WORKDIR /src
 COPY . .
 
-# Same flags as linux.yml; deploy-qt bundles Qt libs + plugins into the tarball
+# Same flags as linux.yml (libtorrent static, Boost from apt); deploy-qt bundles Qt libs + plugins into the tarball
 RUN test -f external/enodemeta/README.md -a -n "$(ls -A external/specialdlp)" \
         || { echo "submodules missing: git submodule update --init" >&2; exit 1; } \
-    && cmake -S . -B build -G Ninja -DCMAKE_BUILD_TYPE=Release \
+    && cmake -S . -B build -G Ninja -DCMAKE_BUILD_TYPE=Release -DEMULE_BITTORRENT=ON \
         -DEMULE_BUILD_TESTS=OFF -DEMULE_SEED_FROM_SOURCE_TREE=OFF \
     && cmake --build build --parallel "$(nproc)" \
     && for so in $(find /opt/qt/plugins/ -name '*.so'); do \

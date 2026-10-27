@@ -17,6 +17,7 @@
 
 namespace eMule {
 
+class BandwidthCoordinator;
 class CoreSession;
 class ApiEventFeeder;
 class ApiEventHub;
@@ -43,6 +44,8 @@ public:
 
     /// Start the core session and IPC server. Returns true on success.
     bool start();
+    /// Why start() failed; empty after success.
+    [[nodiscard]] QString startError() const { return m_startError; }
     /// Start without auto-connecting (--hold-connect). Before start().
     void setConnectHold(bool hold) { m_connectHold = hold; }
 
@@ -176,11 +179,14 @@ private:
 #ifdef EMULE_HAVE_BITTORRENT
     std::unique_ptr<bt::BtSession> m_btSession;
 #endif
+    /// eD2K/Usenet/BitTorrent share of the global limits; after both sessions
+    std::unique_ptr<BandwidthCoordinator> m_bandwidth;
     std::unique_ptr<indexer::IndexerSearchList> m_indexerSearches;
     std::unique_ptr<indexer::IndexerFeedList> m_indexerFeeds;
     std::unique_ptr<PowerManager> m_powerManager;
     TranslationRouter* m_translations = nullptr;
     bool m_running = false;
+    QString m_startError;
 
     static DaemonApp* s_instance;
     static inline bool s_restartRequested = false;

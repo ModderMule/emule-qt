@@ -11,6 +11,7 @@
 #include "IpcServer.h"
 #include "MetaSearchService.h"
 #include "PowerManager.h"
+#include "BandwidthCoordinator.h"
 #include "BtBridge.h"
 #include "UsenetBridge.h"
 
@@ -162,6 +163,7 @@ bool DaemonApp::start()
     if (!m_ipcServer->start(addr, port)) {
         logError(QStringLiteral("Failed to start IPC server on %1:%2")
                      .arg(addr.toString()).arg(port));
+        m_startError = m_ipcServer->errorText();
         m_coreSession->stop();
         m_coreSession.reset();
         removeLogForwarder();
@@ -252,15 +254,21 @@ bool DaemonApp::start()
         m_usenetSession->start();
 
     // BitTorrent. Like Usenet: always constructed, btEnabled() gates the start.
-    // ToDo: map btListenPort() with the app's PortMapper (research doc §7.5); libtorrent's
-    //       UPnP/NAT-PMP are off (BtSettingsMap)
+    // The listen port is mapped by the app's PortMapper (CoreSession::buildPortMapRequests);
+    // libtorrent's UPnP/NAT-PMP are off (BtSettingsMap)
+    bt::BtSession* btSession = nullptr;
 #ifdef EMULE_HAVE_BITTORRENT
     m_btSession = std::make_unique<bt::BtSession>();
+    btSession = m_btSession.get();
     BtBridge::setSession(m_btSession.get());
     connectBtPushes();
     if (thePrefs.btEnabled())
         m_btSession->start(BtBridge::settingsFromPrefs());
 #endif
+
+    // One split of the global limits for all three engines
+    m_bandwidth = std::make_unique<BandwidthCoordinator>(m_usenetSession.get(), btSession);
+    m_bandwidth->start();
 
     // Indexer search. No enable switch: an account list that is empty is the off
     // state, and there is nothing running to gate — a search only ever happens
@@ -327,6 +335,9 @@ void DaemonApp::stop()
 
     indexer::theIndexerSearchList = nullptr;
     m_indexerSearches.reset();
+
+    // before the sessions it throttles
+    m_bandwidth.reset();
 
     if (theApp.statsHistory)
         theApp.statsHistory->setUsenetDownRateSource({});
@@ -601,6 +612,9 @@ void DaemonApp::applyBtConfig()
         m_btSession->stop();
     else if (enabled)
         m_btSession->applySettings(settings);
+    // port, enable switch or btPortMapping may have changed; diff-based, cheap
+    if (m_coreSession)
+        m_coreSession->updatePortMappings();
 #endif
 }
 
