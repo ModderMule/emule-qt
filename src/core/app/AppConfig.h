@@ -33,6 +33,10 @@ inline constexpr QLatin1StringView kWebsiteUrl{"https://emule-qt.org"};
 /// optional ip4/ip6 hints for the other one.
 inline constexpr QLatin1StringView kPortTestPath{"/test-ports/"};
 
+/// REST endpoint behind that page (JSON). The daemon calls it for the BitTorrent and ed3k tests
+/// (`proto=bt|ed3k`), so the address tested is the daemon's, not the GUI's.
+inline constexpr QLatin1StringView kPortTestApiPath{"/wp-json/emqt/v1/porttest"};
+
 /// One installed translation: its locale code ("de_DE") and native name.
 struct AppLanguage {
     QString code;

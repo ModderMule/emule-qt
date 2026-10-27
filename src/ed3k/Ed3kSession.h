@@ -22,6 +22,7 @@
 #include "Ed3kFfi.h"
 #include "Ed3kLan.h"
 
+#include <QByteArray>
 #include <QElapsedTimer>
 #include <QHostAddress>
 #include <QObject>
@@ -104,6 +105,12 @@ public:
     [[nodiscard]] Ed3kStatus status() const;
     /// Bytes on the wire so far (see Ed3kTraffic).
     [[nodiscard]] Ed3kTraffic traffic() const;
+
+    /// A PROBE to this node itself for a port test from outside (ed3k_port_test_probe);
+    /// empty when not running.
+    [[nodiscard]] QByteArray portTestProbe(std::uint64_t nonce);
+    /// Families a PROBE of that nonce arrived over: bit 0 IPv4, bit 1 IPv6.
+    [[nodiscard]] int portTestSeen(std::uint64_t nonce);
 
     /// Upload/download limits in bytes/s, 0 = none (ed3k_set_limits; others are raised to
     /// its 16 KiB/s floor). Kept across restarts; set by BandwidthCoordinator.

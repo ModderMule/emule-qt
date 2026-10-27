@@ -126,6 +126,35 @@ bool handleRequest(const IpcMessage& msg, const std::function<void(const IpcMess
     return true;
 }
 
+quint16 udpPort()
+{
+#ifdef EMULE_HAVE_ED3K
+    return s_session ? s_session->udpPort() : 0;
+#else
+    return 0;
+#endif
+}
+
+QByteArray portTestProbe(quint64 nonce)
+{
+#ifdef EMULE_HAVE_ED3K
+    return s_session ? s_session->portTestProbe(nonce) : QByteArray();
+#else
+    Q_UNUSED(nonce);
+    return {};
+#endif
+}
+
+int portTestSeen(quint64 nonce)
+{
+#ifdef EMULE_HAVE_ED3K
+    return s_session ? s_session->portTestSeen(nonce) : 0;
+#else
+    Q_UNUSED(nonce);
+    return 0;
+#endif
+}
+
 QCborMap statusToCbor()
 {
     QCborMap out{{QStringLiteral("available"), available()}, {QStringLiteral("running"), false}};

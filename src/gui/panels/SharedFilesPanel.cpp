@@ -101,6 +101,20 @@ constexpr int kRolePath = Qt::UserRole + 1;
 /// Marks the category sub-nodes: 1 a category's incoming folder, 2 its part files.
 constexpr int kRoleCategoryNode = Qt::UserRole + 4;
 
+/// MFC GetFolderLabel (srchybrid/SharedDirsTreeCtrl.cpp:254): a top-level
+/// folder says where it lives, "Name  (parent)"; a drive root is its path.
+QString folderLabel(const QString& dir, bool topFolder)
+{
+    const QString clean = QDir::cleanPath(dir);
+    const QFileInfo info(clean);
+    if (info.fileName().isEmpty())
+        return QDir::toNativeSeparators(clean);
+    QString label = info.fileName();
+    if (topFolder)
+        label += QStringLiteral("  (%1)").arg(QDir::toNativeSeparators(info.path()));
+    return label;
+}
+
 /// The folder icon with an MFC image-list overlay drawn over it
 /// (srchybrid/SharedDirsTreeCtrl.cpp:169-170). An empty path is the plain folder.
 QIcon folderIcon(const QString& overlayPath = {})
@@ -291,7 +305,8 @@ void SharedFilesPanel::rebuildCategoryNodes(const QList<std::pair<QString, QStri
     QTreeWidgetItem* reselect = nullptr;
     for (const QString& dir : nodes.incomingDirs) {
         const bool accessible = QFileInfo::exists(dir);
-        auto* item = new QTreeWidgetItem(m_incomingItem, {QDir(dir).dirName().isEmpty() ? dir : QDir(dir).dirName()});
+        // MFC labels these as top folders too (SharedDirsTreeCtrl.cpp:341)
+        auto* item = new QTreeWidgetItem(m_incomingItem, {folderLabel(dir, true)});
         item->setToolTip(0, QDir::toNativeSeparators(dir));
         item->setData(0, Qt::UserRole, static_cast<int>(SharedFilterType::SpecificDir));
         item->setData(0, kRolePath, dir);
@@ -2349,15 +2364,8 @@ void SharedFilesPanel::rebuildSharedDirsNode()
         const QString parentDir = parents.value(dir);
         QTreeWidgetItem* parentItem = items.value(parentDir, m_sharedDirsItem);
 
-        // MFC GetFolderLabel: a top-level entry says where it lives
         const QString clean = QDir::cleanPath(dir);
-        const QFileInfo info(clean);
-        QString label = info.fileName().isEmpty() ? QDir::toNativeSeparators(clean)
-                                                  : info.fileName();
-        if (parentItem == m_sharedDirsItem && !info.fileName().isEmpty())
-            label += QStringLiteral("  (%1)").arg(QDir::toNativeSeparators(info.path()));
-
-        auto* item = new QTreeWidgetItem(parentItem, {label});
+        auto* item = new QTreeWidgetItem(parentItem, {folderLabel(dir, parentItem == m_sharedDirsItem)});
         item->setData(0, Qt::UserRole, static_cast<int>(SharedFilterType::SpecificDir));
         item->setData(0, kRolePath, dir);
         item->setData(0, kRoleSharedDirItem, true);

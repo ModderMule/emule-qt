@@ -340,6 +340,163 @@ The core keeps listening on TCP port %1 and UDP port %2.</source>
     </message>
 </context>
 <context>
+    <name>PortTest</name>
+    <message>
+        <location filename="../src/gui/dialogs/PortTest.h" line="+82"/>
+        <source>reachable</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <location line="+3"/>
+        <source>not reachable: closed, nothing is listening on this port</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <location line="+2"/>
+        <source>not reachable: rejected by a firewall</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <location line="+2"/>
+        <source>not reachable: no answer (firewall or missing port forwarding)</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <location line="+2"/>
+        <source>not tested: the test server may not send to this port</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <location line="+2"/>
+        <source>not tested: the test server cannot reach this IPv6 address</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <location line="+2"/>
+        <source>not tested: the test packet could not be sent</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <location line="+2"/>
+        <source>not tested: the address is not public</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <location line="+2"/>
+        <source>not tested: too many tests, try again in a minute</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <location line="+1"/>
+        <source>not reachable (%1)</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <location line="+9"/>
+        <source>BitTorrent is not running, so its port cannot be tested.</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <location line="+2"/>
+        <source>The ed3k node is not running, so its port cannot be tested.</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <location line="+2"/>
+        <source>The ed3k node could not make a test packet.</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <location line="+2"/>
+        <source>The test server emule-qt.org did not answer.</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <location line="+2"/>
+        <source>The test server refused the test.</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <location line="+2"/>
+        <source>The test server cannot test this port yet. Please try again later.</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <location line="+3"/>
+        <location line="+90"/>
+        <source>The core did not run the test.</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <location line="-59"/>
+        <source>TCP: %1</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <location line="+2"/>
+        <source>UDP: %1</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <location line="+8"/>
+        <source>BitTorrent port %1. TCP and UDP must both be reachable from the internet.</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <location line="+3"/>
+        <source>Both TCP and UDP are reachable.</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <location line="+2"/>
+        <source>TCP and UDP are both reachable over one address family only.</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <location line="+2"/>
+        <source>TCP and UDP are not both reachable. Other peers can still be reached, but fewer can connect to you.</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <location line="+2"/>
+        <source>ed3k UDP port %1. Only UDP must be reachable: the ed3k node uses no TCP port.</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <location line="+3"/>
+        <source>UDP is reachable.</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <location line="+2"/>
+        <source>UDP is reachable over one address family only.</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <location line="+2"/>
+        <source>UDP is not reachable. The node then finds fewer peers and relies on hole punching.</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <location line="+10"/>
+        <location line="+19"/>
+        <location line="+4"/>
+        <location line="+5"/>
+        <source>Test Ports</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <location line="-28"/>
+        <source>Not connected to the core.</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <location line="+6"/>
+        <source>Testing...</source>
+        <translation type="unfinished"></translation>
+    </message>
+</context>
+<context>
     <name>PreviewLauncher</name>
     <message>
         <location filename="../src/gui/utils/PreviewLauncher.cpp" line="+319"/>
@@ -3239,14 +3396,14 @@ Its names are then resolved after the lists you already follow.</source>
 <context>
     <name>eMule::Ed3kOptionsPages</name>
     <message>
-        <location filename="../src/gui/dialogs/Ed3kOptionsPages.cpp" line="+134"/>
+        <location filename="../src/gui/dialogs/Ed3kOptionsPages.cpp" line="+135"/>
         <source>The ed3k node uses the nickname of the General page: %1</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
         <location line="+80"/>
         <location line="+11"/>
-        <location line="+402"/>
+        <location line="+412"/>
         <location line="+11"/>
         <location line="+23"/>
         <location line="+19"/>
@@ -3257,7 +3414,7 @@ Its names are then resolved after the lists you already follow.</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location line="-513"/>
+        <location line="-523"/>
         <source>The ledger contract is an address: 0x and 40 hexadecimal digits.</source>
         <translation type="unfinished"></translation>
     </message>
@@ -3318,17 +3475,27 @@ Its names are then resolved after the lists you already follow.</source>
     </message>
     <message>
         <location line="+4"/>
-        <location line="+5"/>
+        <location line="+15"/>
         <source>Random</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location line="-4"/>
+        <location line="-14"/>
         <source>UDP port of the ed3k node, not the eD2K UDP port. A change restarts the node.</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
+        <location line="+3"/>
+        <source>Test Ports</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
         <location line="+1"/>
+        <source>Asks emule-qt.org whether the UDP port the node uses now is reachable. ed3k needs only UDP. Apply a changed port first.</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <location line="+7"/>
         <source>UDP port:</source>
         <translation type="unfinished"></translation>
     </message>
@@ -7295,12 +7462,12 @@ Download it again?</source>
     </message>
     <message>
         <location line="-2169"/>
-        <location line="+6155"/>
+        <location line="+6173"/>
         <source>Apply</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location line="-6154"/>
+        <location line="-6172"/>
         <source>Help</source>
         <translation type="unfinished"></translation>
     </message>
@@ -7328,12 +7495,12 @@ Download it again?</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location line="+5136"/>
+        <location line="+5154"/>
         <source>Bandwidth</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location line="-4933"/>
+        <location line="-4951"/>
         <source>General options</source>
         <translation type="unfinished"></translation>
     </message>
@@ -7365,23 +7532,23 @@ Download it again?</source>
     </message>
     <message>
         <location line="+2"/>
-        <location line="+8232"/>
+        <location line="+8250"/>
         <source>BitTorrent</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location line="-8131"/>
+        <location line="-8149"/>
         <source>User Name</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
         <location line="+8"/>
-        <location line="+6014"/>
+        <location line="+6032"/>
         <source>Language</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location line="-6011"/>
+        <location line="-6029"/>
         <source>System Default</source>
         <translation type="unfinished"></translation>
     </message>
@@ -7486,12 +7653,12 @@ Download it again?</source>
     </message>
     <message>
         <location line="+8"/>
-        <location line="+5939"/>
+        <location line="+5957"/>
         <source>Core</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location line="-5934"/>
+        <location line="-5952"/>
         <source>Address:</source>
         <translation type="unfinished"></translation>
     </message>
@@ -7713,15 +7880,14 @@ Are you sure you want to continue?</source>
         <location line="+296"/>
         <location line="+1021"/>
         <location line="+152"/>
-        <location line="+996"/>
-        <location line="+307"/>
+        <location line="+1321"/>
         <location line="+284"/>
         <location line="+29"/>
         <source>Enabled</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location line="-5076"/>
+        <location line="-5094"/>
         <source>Reset</source>
         <translation type="unfinished"></translation>
     </message>
@@ -7738,13 +7904,13 @@ Are you sure you want to continue?</source>
     <message>
         <location line="+3"/>
         <location line="+6"/>
-        <location line="+4468"/>
+        <location line="+4486"/>
         <location line="+334"/>
         <source> KB/s</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location line="-4805"/>
+        <location line="-4823"/>
         <source>Upload</source>
         <translation type="unfinished"></translation>
     </message>
@@ -7781,11 +7947,12 @@ Are you sure you want to continue?</source>
     </message>
     <message>
         <location line="+5"/>
+        <location line="+4332"/>
         <source>Test Ports</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location line="+4"/>
+        <location line="-4328"/>
         <source>Open Router</source>
         <translation type="unfinished"></translation>
     </message>
@@ -7816,12 +7983,12 @@ Are you sure you want to continue?</source>
     </message>
     <message>
         <location line="+6"/>
-        <location line="+4332"/>
+        <location line="+4350"/>
         <source>Connection Limits</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location line="-4330"/>
+        <location line="-4348"/>
         <source>Max. connections</source>
         <translation type="unfinished"></translation>
     </message>
@@ -8436,7 +8603,12 @@ Are you sure you want to continue?</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location line="+5"/>
+        <location line="+4"/>
+        <source>Asks emule-qt.org whether the port the core uses now is reachable over TCP and UDP. Apply a changed port first.</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <location line="+9"/>
         <source>Map port with UPnP/NAT-PMP</source>
         <translation type="unfinished"></translation>
     </message>
@@ -8447,11 +8619,46 @@ Are you sure you want to continue?</source>
     </message>
     <message>
         <location line="+7"/>
+        <source>Protocol Encryption</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <location line="+10"/>
+        <source>Enable protocol encryption</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <location line="+1"/>
+        <source>Prefers encrypted peers and still accepts unencrypted ones.</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <location line="+1"/>
+        <source>Allow encrypted connections only (not recommended)</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <location line="+1"/>
+        <source>Refuses unencrypted peers, which leaves fewer to download from.</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <location line="+1"/>
+        <source>Disable protocol encryption</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <location line="+1"/>
+        <source>Connects without encryption only. Peers that require it cannot connect.</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <location line="+5"/>
         <source>Peers</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location line="+28"/>
+        <location line="+18"/>
         <source>Global limits:</source>
         <translation type="unfinished"></translation>
     </message>
@@ -8623,7 +8830,7 @@ Create it?</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location line="-6596"/>
+        <location line="-6614"/>
         <source>Connect to help channel</source>
         <translation type="unfinished"></translation>
     </message>
@@ -8988,12 +9195,12 @@ Create it?</source>
     <message>
         <location line="+4"/>
         <location line="+1733"/>
-        <location line="+5496"/>
+        <location line="+5514"/>
         <source>Any</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location line="-7227"/>
+        <location line="-7245"/>
         <source>Use only this network interface, for example a VPN tunnel. Pick one from the list, or type an IP address or a subnet such as 10.64.0.0/10 (the interface holding an address in it). Connections through a proxy are not bound.</source>
         <translation type="unfinished"></translation>
     </message>
@@ -9394,12 +9601,11 @@ Every Usenet connection then passes through the proxy, so its speed caps the dow
     </message>
     <message>
         <location line="+8"/>
-        <location line="+2158"/>
         <source>Encryption:</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location line="-2155"/>
+        <location line="+3"/>
         <source>None (119)</source>
         <translation type="unfinished"></translation>
     </message>
@@ -9629,12 +9835,12 @@ Every Usenet connection then passes through the proxy, so its speed caps the dow
         <location line="+1"/>
         <location line="+1963"/>
         <location line="+9"/>
-        <location line="+137"/>
+        <location line="+155"/>
         <source>No limit</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location line="-2101"/>
+        <location line="-2119"/>
         <source>Allowance size:</source>
         <translation type="unfinished"></translation>
     </message>
@@ -9690,19 +9896,19 @@ Every Usenet connection then passes through the proxy, so its speed caps the dow
     </message>
     <message>
         <location line="+8"/>
-        <location line="+2043"/>
+        <location line="+2061"/>
         <source>Share of the download limit:</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location line="-2040"/>
+        <location line="-2058"/>
         <location line="+42"/>
-        <location line="+1990"/>
+        <location line="+2008"/>
         <source> %</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location line="-2030"/>
+        <location line="-2048"/>
         <source>How much of the global download limit Usenet may take while eD2K is also downloading. Whichever engine is idle lends its whole share to the other, so this only applies when both are busy.</source>
         <translation type="unfinished"></translation>
     </message>
@@ -10470,22 +10676,12 @@ Adding one later does not fetch its back catalogue: a new indexer gets its own f
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location line="+118"/>
+        <location line="+126"/>
         <source>Listen port (TCP/UDP):</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location line="+17"/>
-        <source>Forced</source>
-        <translation type="unfinished"></translation>
-    </message>
-    <message>
-        <location line="+3"/>
-        <source>Enabled prefers encrypted peers and still accepts plain ones. Forced refuses unencrypted peers, which leaves fewer to download from.</source>
-        <translation type="unfinished"></translation>
-    </message>
-    <message>
-        <location line="+4"/>
+        <location line="+34"/>
         <source>Find peers through the DHT</source>
         <translation type="unfinished"></translation>
     </message>
@@ -10500,7 +10696,7 @@ Adding one later does not fetch its back catalogue: a new indexer gets its own f
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location line="-122"/>
+        <location line="-140"/>
         <source>Active downloads:</source>
         <translation type="unfinished"></translation>
     </message>
@@ -10555,7 +10751,7 @@ Adding one later does not fetch its back catalogue: a new indexer gets its own f
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location line="+168"/>
+        <location line="+186"/>
         <source>Warning: Do not change these settings unless you know what you are doing. Otherwise you can easily make things worse for yourself. eMule will run fine without adjusting any of these settings.</source>
         <translation type="unfinished"></translation>
     </message>
@@ -10590,8 +10786,7 @@ Adding one later does not fetch its back catalogue: a new indexer gets its own f
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location line="-3275"/>
-        <location line="+162"/>
+        <location line="-3113"/>
         <source>Disabled</source>
         <translation type="unfinished"></translation>
     </message>
@@ -10626,12 +10821,12 @@ Adding one later does not fetch its back catalogue: a new indexer gets its own f
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location line="-4751"/>
+        <location line="-4769"/>
         <source>Show more controls (advanced mode controls)</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location line="+4754"/>
+        <location line="+4772"/>
         <source>Disable A4AF checks to save CPU</source>
         <translation type="unfinished"></translation>
     </message>
@@ -11072,17 +11267,17 @@ Rehash all shared files now?</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location line="-5365"/>
+        <location line="-5383"/>
         <location line="+1024"/>
         <location line="+154"/>
-        <location line="+1605"/>
+        <location line="+1623"/>
         <location line="+316"/>
         <location line="+2182"/>
         <source>Remove</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location line="-6514"/>
+        <location line="-6532"/>
         <source>New eMule Qt version detected</source>
         <translation type="unfinished"></translation>
     </message>
@@ -11092,7 +11287,7 @@ Rehash all shared files now?</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location line="+3303"/>
+        <location line="+3321"/>
         <source>Write eMule core logs to disk</source>
         <translation type="unfinished"></translation>
     </message>
@@ -11152,21 +11347,21 @@ Rehash all shared files now?</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location line="-2492"/>
+        <location line="-2510"/>
         <location line="+918"/>
-        <location line="+1578"/>
+        <location line="+1596"/>
         <source> s</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location line="-2538"/>
+        <location line="-2556"/>
         <source>Decimal GB, because that is what an invoice says — the 1024-based GB used elsewhere in eMule would put a 1000 GB plan 7% over.
 
 Set it slightly under your plan. The figure is measured here, so it reads a few percent below your provider&apos;s, and articles already in flight when the limit is reached still finish.</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location line="+2652"/>
+        <location line="+2670"/>
         <source>New</source>
         <translation type="unfinished"></translation>
     </message>
@@ -11274,10 +11469,10 @@ Set it slightly under your plan. The figure is measured here, so it reads a few 
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location line="-2877"/>
+        <location line="-2895"/>
         <location line="+1024"/>
         <location line="+154"/>
-        <location line="+1878"/>
+        <location line="+1896"/>
         <location line="+2220"/>
         <source>Add</source>
         <translation type="unfinished"></translation>
@@ -12842,9 +13037,9 @@ Folder:	%13</source>
 <context>
     <name>eMule::SharedFilesPanel</name>
     <message>
-        <location filename="../src/gui/panels/SharedFilesPanel.cpp" line="+178"/>
+        <location filename="../src/gui/panels/SharedFilesPanel.cpp" line="+192"/>
         <location line="+16"/>
-        <location line="+509"/>
+        <location line="+510"/>
         <location line="+647"/>
         <source>Shared Files (0)</source>
         <translation type="unfinished"></translation>
@@ -12857,29 +13052,29 @@ Folder:	%13</source>
     <message>
         <location line="+13"/>
         <location line="+1508"/>
-        <location line="+511"/>
+        <location line="+504"/>
         <source>Open Folder</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location line="-2007"/>
+        <location line="-2000"/>
         <source>Rename...</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
         <location line="+182"/>
-        <location line="+1867"/>
+        <location line="+1860"/>
         <source>Copy eD2K Links</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location line="-2029"/>
-        <location line="+1991"/>
+        <location line="-2022"/>
+        <location line="+1984"/>
         <source>Delete From Disk</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location line="-991"/>
+        <location line="-984"/>
         <source>Delete File</source>
         <translation type="unfinished"></translation>
     </message>
@@ -12917,42 +13112,42 @@ The file will remain on disk.</source>
     </message>
     <message>
         <location line="+39"/>
-        <location line="+1971"/>
+        <location line="+1964"/>
         <source>Priority (Upload)</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location line="-1956"/>
-        <location line="+1973"/>
+        <location line="-1949"/>
+        <location line="+1966"/>
         <source>Very Low</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location line="-1972"/>
-        <location line="+1973"/>
+        <location line="-1965"/>
+        <location line="+1966"/>
         <source>Low</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location line="-1972"/>
-        <location line="+1973"/>
+        <location line="-1965"/>
+        <location line="+1966"/>
         <source>Normal</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location line="-1972"/>
-        <location line="+1973"/>
+        <location line="-1965"/>
+        <location line="+1966"/>
         <source>High</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location line="-1970"/>
-        <location line="+1972"/>
+        <location line="-1963"/>
+        <location line="+1965"/>
         <source>Auto</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location line="-1958"/>
+        <location line="-1951"/>
         <source>Collection</source>
         <translation type="unfinished"></translation>
     </message>
@@ -12989,24 +13184,24 @@ The file will remain on disk.</source>
     </message>
     <message>
         <location line="+19"/>
-        <location line="+1878"/>
+        <location line="+1871"/>
         <source>Details...</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location line="-1871"/>
-        <location line="+1874"/>
+        <location line="-1864"/>
+        <location line="+1867"/>
         <source>Comments...</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location line="-1859"/>
-        <location line="+1865"/>
+        <location line="-1852"/>
+        <location line="+1858"/>
         <source>eD2K Links...</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location line="-1854"/>
+        <location line="-1847"/>
         <source>Add To IRC Clipboard</source>
         <translation type="unfinished"></translation>
     </message>
@@ -13136,18 +13331,18 @@ The file will remain on disk.</source>
     </message>
     <message>
         <location line="+14"/>
-        <location line="+523"/>
+        <location line="+516"/>
         <source>Unshare Directory</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location line="-514"/>
-        <location line="+523"/>
+        <location line="-507"/>
+        <location line="+516"/>
         <source>Unshare with Subdirectories</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location line="-427"/>
+        <location line="-420"/>
         <source>Open File not available — web server is not running or stream token not received.</source>
         <translation type="unfinished"></translation>
     </message>
@@ -13168,12 +13363,12 @@ The file will remain on disk.</source>
     </message>
     <message>
         <location line="-649"/>
-        <location line="+1973"/>
+        <location line="+1966"/>
         <source>Release</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location line="-1746"/>
+        <location line="-1739"/>
         <source>Rescan the shared directories. Hold %1 to re-read the media information of all shared files instead.</source>
         <translation type="unfinished"></translation>
     </message>

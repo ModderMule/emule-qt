@@ -8,6 +8,7 @@
 
 #include "IpcMessage.h"
 
+#include <QByteArray>
 #include <QCborMap>
 
 #include <functional>
@@ -37,6 +38,13 @@ void setBootstrap(ed3k::Ed3kBootstrap* bootstrap);
 
 /// Answers an ed3k request through `reply`. False: not an ed3k opcode.
 bool handleRequest(const Ipc::IpcMessage& msg, const std::function<void(const Ipc::IpcMessage&)>& reply);
+
+/// The node's UDP port; 0 when it is not running.
+[[nodiscard]] quint16 udpPort();
+/// A PROBE to the node itself for the port test (PortTestRunner); empty when not running.
+[[nodiscard]] QByteArray portTestProbe(quint64 nonce);
+/// Families a PROBE of that nonce arrived over: bit 0 IPv4, bit 1 IPv6.
+[[nodiscard]] int portTestSeen(quint64 nonce);
 
 /// GetEd3kStatus, also what PushEd3kStatus carries (keys in IpcProtocol.h). Rates come
 /// from the running BandwidthCoordinator (0 without one).

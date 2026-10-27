@@ -213,6 +213,18 @@ bool available()
 #endif
 }
 
+quint16 listenPort()
+{
+#ifdef EMULE_HAVE_BITTORRENT
+    if (!s_session)
+        return 0;
+    const bt::BtStatus st = s_session->status();
+    return st.running && st.listening ? st.listenPort : quint16(0);
+#else
+    return 0;
+#endif
+}
+
 bool isBtRequest(IpcMsgType type)
 {
     const int t = static_cast<int>(type);

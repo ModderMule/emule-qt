@@ -5635,6 +5635,14 @@ QWidget* OptionsDialog::createBtConnectionPage()
     m_btRandomPortBtn->setToolTip(
         tr("Picks a port that is free for TCP and UDP on this computer."));
     portRow->addWidget(m_btRandomPortBtn);
+    auto* btTestBtn = new QPushButton(tr("Test Ports"), portGroup);
+    btTestBtn->setToolTip(
+        tr("Asks emule-qt.org whether the port the core uses now is reachable over TCP and UDP. "
+           "Apply a changed port first."));
+    connect(btTestBtn, &QPushButton::clicked, this, [this, btTestBtn] {
+        PortTest::NetworkTest::run(m_ipc, this, btTestBtn, PortTest::Network::BitTorrent);
+    });
+    portRow->addWidget(btTestBtn);
     portRow->addStretch();
     portForm->addRow(tr("Listen port (TCP/UDP):"), portRow);
 
@@ -5646,19 +5654,29 @@ QWidget* OptionsDialog::createBtConnectionPage()
 
     mainLayout->addWidget(portGroup);
 
+    // -- Encryption (like eD2K Protocol Obfuscation) ------------------------
+    auto* encGroup = new QGroupBox(tr("Protocol Encryption"), page);
+    auto* encLayout = new QVBoxLayout(encGroup);
+    m_btEncryptionGroup = new QButtonGroup(encGroup);
+    // ids match the btEncryption value
+    const auto encRadio = [&](const QString& text, const QString& tip, int id) {
+        auto* radio = new QRadioButton(text, encGroup);
+        radio->setToolTip(tip);
+        m_btEncryptionGroup->addButton(radio, id);
+        encLayout->addWidget(radio);
+    };
+    encRadio(tr("Enable protocol encryption"),
+             tr("Prefers encrypted peers and still accepts unencrypted ones."), 0);
+    encRadio(tr("Allow encrypted connections only (not recommended)"),
+             tr("Refuses unencrypted peers, which leaves fewer to download from."), 1);
+    encRadio(tr("Disable protocol encryption"),
+             tr("Connects without encryption only. Peers that require it cannot connect."), 2);
+    m_btEncryptionGroup->button(0)->setChecked(true);
+    mainLayout->addWidget(encGroup);
+
     // -- Peers --------------------------------------------------------------
     auto* peerGroup = new QGroupBox(tr("Peers"), page);
     auto* peerForm = new QFormLayout(peerGroup);
-
-    m_btEncryptionCombo = new QComboBox(peerGroup);
-    // Order matches the btEncryption value
-    m_btEncryptionCombo->addItem(tr("Enabled"));
-    m_btEncryptionCombo->addItem(tr("Forced"));
-    m_btEncryptionCombo->addItem(tr("Disabled"));
-    m_btEncryptionCombo->setToolTip(
-        tr("Enabled prefers encrypted peers and still accepts plain ones. Forced "
-           "refuses unencrypted peers, which leaves fewer to download from."));
-    peerForm->addRow(tr("Encryption:"), m_btEncryptionCombo);
 
     m_btDhtCheck = new QCheckBox(tr("Find peers through the DHT"), peerGroup);
     peerForm->addRow(m_btDhtCheck);
@@ -5748,7 +5766,7 @@ QWidget* OptionsDialog::createBtConnectionPage()
     for (QCheckBox* box : {m_downloadLimitCheck, m_uploadLimitCheck})
         connect(box, &QCheckBox::toggled, this, &OptionsDialog::updateBtGlobalLimits);
     updateBtGlobalLimits();
-    connect(m_btEncryptionCombo, &QComboBox::currentIndexChanged, this, &OptionsDialog::markDirty);
+    connect(m_btEncryptionGroup, &QButtonGroup::idToggled, this, &OptionsDialog::markDirty);
     connect(m_btRandomPortBtn, &QPushButton::clicked, this, [this] {
         // Probes this computer only; a remote core may still find it taken
         const QList<int> others{m_tcpPortSpin->value(), udpPortValue(),
@@ -7297,7 +7315,7 @@ void OptionsDialog::saveSettings()
         req.append(QStringLiteral("btPex"));
         req.append(m_btPexCheck->isChecked());
         req.append(QStringLiteral("btEncryption"));
-        req.append(static_cast<qint64>(m_btEncryptionCombo->currentIndex()));
+        req.append(static_cast<qint64>(std::max(0, m_btEncryptionGroup->checkedId())));
         req.append(QStringLiteral("btMaxActiveDownloads"));
         req.append(static_cast<qint64>(m_btMaxActiveDownSpin->value()));
         req.append(QStringLiteral("btMaxActiveSeeds"));
@@ -8168,8 +8186,8 @@ void OptionsDialog::fillDaemonSettings(const QCborMap& prefs)
     m_btDhtCheck->setChecked(prefs.value(QStringLiteral("btDht")).toBool(true));
     m_btLsdCheck->setChecked(prefs.value(QStringLiteral("btLsd")).toBool(true));
     m_btPexCheck->setChecked(prefs.value(QStringLiteral("btPex")).toBool(true));
-    m_btEncryptionCombo->setCurrentIndex(
-        std::clamp(int(prefs.value(QStringLiteral("btEncryption")).toInteger(0)), 0, 2));
+    m_btEncryptionGroup->button(
+        std::clamp(int(prefs.value(QStringLiteral("btEncryption")).toInteger(0)), 0, 2))->setChecked(true);
     m_btMaxActiveDownSpin->setValue(
         int(prefs.value(QStringLiteral("btMaxActiveDownloads")).toInteger(3)));
     m_btMaxActiveSeedSpin->setValue(

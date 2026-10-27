@@ -291,6 +291,27 @@ std::optional<ffi::NodeId> Ed3kSession::nodeId() const
     return *id;
 }
 
+QByteArray Ed3kSession::portTestProbe(std::uint64_t nonce)
+{
+    if (!m_engine)
+        return {};
+    auto datagram = m_engine->portTestProbe(now(), nonce);
+    if (!datagram) {
+        logEd3kWarning(QStringLiteral("ed3k: port test probe not made (error %1)").arg(errorName(datagram.error())));
+        return {};
+    }
+    const auto bytes = datagram->bytes();
+    return {reinterpret_cast<const char*>(bytes.data()), qsizetype(bytes.size())};
+}
+
+int Ed3kSession::portTestSeen(std::uint64_t nonce)
+{
+    if (!m_engine)
+        return 0;
+    const auto seen = m_engine->portTestSeen(nonce);
+    return seen ? int(*seen) : 0;
+}
+
 QString Ed3kSession::nodeIdHex() const
 {
     const auto id = nodeId();

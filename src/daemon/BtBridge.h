@@ -30,6 +30,9 @@ void setSession(bt::BtSession* session);
 /// Whether the daemon was built with the BitTorrent module.
 [[nodiscard]] bool available();
 
+/// The port the engine listens on (TCP and UDP); 0 when it is not listening.
+[[nodiscard]] quint16 listenPort();
+
 /// Whether an opcode is one of the BitTorrent block (800-899).
 [[nodiscard]] bool isBtRequest(Ipc::IpcMsgType type);
 

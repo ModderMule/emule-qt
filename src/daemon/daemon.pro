@@ -94,6 +94,7 @@ SOURCES += \
     Ed3kBridge.cpp \
     Ed3kFriendsBridge.cpp \
     Ed3kNamesBridge.cpp \
+    PortTestRunner.cpp \
     Ed3kCreditBridge.cpp \
     DaemonApiBackend.cpp \
     DaemonTorrentWebBackend.cpp \
@@ -118,6 +119,7 @@ HEADERS += \
     Ed3kBridge.h \
     Ed3kFriendsBridge.h \
     Ed3kNamesBridge.h \
+    PortTestRunner.h \
     Ed3kCreditBridge.h \
     DaemonApiBackend.h \
     DaemonTorrentWebBackend.h \

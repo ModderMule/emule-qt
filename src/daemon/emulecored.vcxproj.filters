@@ -75,6 +75,9 @@
     <ClCompile Include="Ed3kNamesBridge.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
+    <ClCompile Include="PortTestRunner.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
     <ClCompile Include="Ed3kCreditBridge.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
@@ -135,6 +138,9 @@
       <Filter>Header Files</Filter>
     </ClInclude>
     <ClInclude Include="Ed3kNamesBridge.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="PortTestRunner.h">
       <Filter>Header Files</Filter>
     </ClInclude>
     <ClInclude Include="Ed3kCreditBridge.h">

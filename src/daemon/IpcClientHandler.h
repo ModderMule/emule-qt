@@ -177,6 +177,7 @@ private:
     void handleGetKadSearches(const Ipc::IpcMessage& msg);
     void handleGetKadLookupHistory(const Ipc::IpcMessage& msg);
     void handleGetNetworkInfo(const Ipc::IpcMessage& msg);
+    void handleTestPorts(const Ipc::IpcMessage& msg);
     void handleGetNetworkInterfaces(const Ipc::IpcMessage& msg);
     void handleRecheckFirewall(const Ipc::IpcMessage& msg);
     void handleSyncLogs(const Ipc::IpcMessage& msg);

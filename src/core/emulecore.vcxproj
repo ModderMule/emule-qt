@@ -180,6 +180,7 @@
     <ClCompile Include="archive\ArchiveScan.cpp" />
     <ClCompile Include="archive\ArchiveUnpack.cpp" />
     <ClCompile Include="net\HttpFileDownload.cpp" />
+    <ClCompile Include="net\PortTestApi.cpp" />
     <ClCompile Include="httpcache\HttpCacheClient.cpp" />
     <ClCompile Include="httpcache\HttpCacheManager.cpp" />
     <ClCompile Include="httpcache\HttpCacheOffer.cpp" />
@@ -418,6 +419,7 @@
     <ClInclude Include="archive\ArchiveUnpack.h" />
     <ClInclude Include="net\HttpDefaults.h" />
     <ClInclude Include="net\HttpFileDownload.h" />
+    <ClInclude Include="net\PortTestApi.h" />
     <ClInclude Include="httpcache\HttpCacheOffer.h" />
     <ClInclude Include="httpcache\HttpCacheReach.h" />
     <ClInclude Include="httpcache\HttpCacheServerProbe.h" />

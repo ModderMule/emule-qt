@@ -116,6 +116,11 @@ enum class IpcMsgType : int {
     ReloadIPFilter       = 220,  ///< [] — reload IP filter from ipfilter.dat
     GetSchedules         = 221,  ///< [] — returns schedulerEnabled + full schedule list
     GetNetworkInterfaces = 223,  ///< [] → CborArray of {name, friendlyName, index, addresses[]} — the daemon's active interfaces, for the bind selection
+    /// [network: int (1 BitTorrent, 2 ed3k)] → [ok, {network, tcpPort?, udpPort,
+    /// targets: [{family: 4|6, ip, tcp?: {open, reason}, udp?: {open, reason}}]}] or an
+    /// Error [PortTestApi::Failure, English detail].
+    /// Runs the emule-qt.org port test from the daemon (PortTestRunner); takes up to ~20 s.
+    TestPorts            = 224,
     SaveSchedules        = 222,  ///< [enabled: bool, schedules: CborArray] — replace all
     ScanImportFolder     = 230,  ///< [folder: string, removeSource: bool] → scan + queue + return jobs
     GetConvertJobs       = 231,  ///< [] → current job list with statuses

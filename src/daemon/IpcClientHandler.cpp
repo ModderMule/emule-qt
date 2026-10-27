@@ -6,6 +6,7 @@
 #include "BtBridge.h"
 #include "Ed3kBridge.h"
 #include "Ed3kCreditBridge.h"
+#include "PortTestRunner.h"
 #include "UsenetBridge.h"
 #include "CoreNotifierBridge.h"
 #include "SharedFileRows.h"
@@ -413,6 +414,7 @@ void IpcClientHandler::onMessageReceived(const IpcMessage& msg)
     case IpcMsgType::GetKadSearches:       handleGetKadSearches(msg); break;
     case IpcMsgType::GetKadLookupHistory:  handleGetKadLookupHistory(msg); break;
     case IpcMsgType::GetNetworkInfo:       handleGetNetworkInfo(msg); break;
+    case IpcMsgType::TestPorts:            handleTestPorts(msg); break;
     case IpcMsgType::GetNetworkInterfaces: handleGetNetworkInterfaces(msg); break;
     case IpcMsgType::RecheckFirewall:      handleRecheckFirewall(msg); break;
     case IpcMsgType::SyncLogs:             handleSyncLogs(msg); break;
@@ -2393,6 +2395,19 @@ void IpcClientHandler::handleGetNetworkInfo(const IpcMessage& msg)
     info.insert(QStringLiteral("web"), webInfo);
 
     sendMessage(IpcMessage::makeResult(msg.seqId(), true, QCborValue(info)));
+}
+
+void IpcClientHandler::handleTestPorts(const IpcMessage& msg)
+{
+    const QPointer<IpcClientHandler> self(this);
+    const int seqId = msg.seqId();
+    PortTestRunner::run(static_cast<int>(msg.fieldInt(0)),
+                        [self, seqId](bool ok, const QCborMap& result, int failure, const QString& detail) {
+        if (!self)
+            return;
+        self->sendMessage(ok ? IpcMessage::makeResult(seqId, true, QCborValue(result))
+                             : IpcMessage::makeError(seqId, failure, detail));
+    });
 }
 
 void IpcClientHandler::handleSyncLogs(const IpcMessage& msg)

@@ -6,6 +6,7 @@
 
 #include "app/Ed3kNameOpener.h"
 #include "app/IpcClient.h"
+#include "dialogs/PortTest.h"
 #include "prefs/Preferences.h"
 #include "IpcMessage.h"
 
@@ -297,7 +298,17 @@ QWidget* Ed3kOptionsPages::buildConnection(QWidget* parent)
     m_udpPortSpin->setRange(0, 65535);
     m_udpPortSpin->setSpecialValueText(tr("Random"));
     m_udpPortSpin->setToolTip(tr("UDP port of the ed3k node, not the eD2K UDP port. A change restarts the node."));
-    portForm->addRow(tr("UDP port:"), m_udpPortSpin);
+    auto* udpRow = new QHBoxLayout;
+    udpRow->addWidget(m_udpPortSpin);
+    auto* testBtn = new QPushButton(tr("Test Ports"), portGroup);
+    testBtn->setToolTip(tr("Asks emule-qt.org whether the UDP port the node uses now is reachable. ed3k needs only "
+                           "UDP. Apply a changed port first."));
+    connect(testBtn, &QPushButton::clicked, this, [this, testBtn] {
+        PortTest::NetworkTest::run(m_ipc, m_parent, testBtn, PortTest::Network::Ed3k);
+    });
+    udpRow->addWidget(testBtn);
+    udpRow->addStretch();
+    portForm->addRow(tr("UDP port:"), udpRow);
     m_sitePortSpin = new QSpinBox(portGroup);
     m_sitePortSpin->setRange(0, 65535);
     m_sitePortSpin->setSpecialValueText(tr("Random"));

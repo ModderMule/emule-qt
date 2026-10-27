@@ -548,7 +548,7 @@ private:
     QCheckBox*      m_btDhtCheck = nullptr;
     QCheckBox*      m_btLsdCheck = nullptr;
     QCheckBox*      m_btPexCheck = nullptr;
-    QComboBox*      m_btEncryptionCombo = nullptr;
+    QButtonGroup*   m_btEncryptionGroup = nullptr; // id = btEncryption
     QSpinBox*       m_btMaxActiveDownSpin = nullptr;
     QSpinBox*       m_btMaxActiveSeedSpin = nullptr;
     QDoubleSpinBox* m_btSeedRatioSpin = nullptr;

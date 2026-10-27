@@ -195,6 +195,7 @@
     <ClCompile Include="Ed3kBridge.cpp" />
     <ClCompile Include="Ed3kFriendsBridge.cpp" />
     <ClCompile Include="Ed3kNamesBridge.cpp" />
+    <ClCompile Include="PortTestRunner.cpp" />
     <ClCompile Include="Ed3kCreditBridge.cpp" />
     <ClCompile Include="UsenetBridge.cpp" />
     <ClCompile Include="BandwidthCoordinator.cpp" />
@@ -219,6 +220,7 @@
     <ClInclude Include="Ed3kBridge.h" />
     <ClInclude Include="Ed3kFriendsBridge.h" />
     <ClInclude Include="Ed3kNamesBridge.h" />
+    <ClInclude Include="PortTestRunner.h" />
     <ClInclude Include="Ed3kCreditBridge.h" />
     <ClInclude Include="UsenetBridge.h" />
     <ClInclude Include="BandwidthCoordinator.h" />
