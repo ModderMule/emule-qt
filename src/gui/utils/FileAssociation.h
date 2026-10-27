@@ -1,7 +1,7 @@
 #pragma once
 
 /// @file FileAssociation.h
-/// @brief Registering .nzb, .torrent and magnet: with the desktop, on all three platforms.
+/// @brief Registering .nzb, .torrent, magnet:, ed3k: and ed2k: with the desktop, on all three platforms.
 ///
 /// The application registers *itself*, because there is nothing else to do it
 /// with: bundle-win.ps1 produces a bare zip and bundle-linux.sh a bare tarball,
@@ -14,9 +14,11 @@
 /// write can be tested on any platform, including the ones where the writers do
 /// not compile in.
 ///
-/// macOS is declarative and needs no writer at all -- Info.plist's
-/// CFBundleDocumentTypes is the whole mechanism, and LaunchServices registers
-/// the bundle when it is installed.
+/// macOS declares the types in Info.plist (LaunchServices registers the bundle
+/// when it is installed), but only at Alternate rank. Becoming the *default*
+/// app is a LaunchServices call, made on request only: the Options check boxes
+/// show the live default (claimedTypes()) and nothing is re-applied at start,
+/// so the app never takes a type from another one by itself.
 
 #include <QList>
 #include <QString>
@@ -40,7 +42,7 @@ struct RegistryValue {
 /// What to claim. Each type the user can switch off on its own (Options).
 struct FileTypes {
     bool nzb = false;
-    /// .torrent (application/x-bittorrent) and the magnet: scheme
+    /// .torrent (application/x-bittorrent), the magnet: and the ed3k: scheme
     bool torrent = false;
     /// the ed2k: scheme. Linux keeps it in the shared desktop entry; Ed2kSchemeHandler
     /// sets it, and it comes along with any other type
@@ -84,13 +86,19 @@ void installLauncher();
 /// The per-user registry values of @p types for @p exePath, relative to Software\\Classes.
 [[nodiscard]] QList<RegistryValue> registryValues(const QString& exePath, FileTypes types);
 
-/// Whether this platform registers at runtime at all. False on macOS, where the
-/// bundle declares its own types and there is nothing to write.
+/// Whether the choice is stored and re-applied at every start (Windows, Linux).
+/// False on macOS, where the system keeps the default app and claimedTypes()
+/// reads it back.
 [[nodiscard]] bool isRuntimeRegistration();
+
+/// The types this app is the default for right now. macOS only (a type counts
+/// when every extension and scheme in it is ours); {} elsewhere.
+[[nodiscard]] FileTypes claimedTypes();
 
 /// Claims @p types for this executable and gives up the others (only while still
 /// ours). Idempotent, so it can run at every start and take an association back
-/// from an application that took it away.
+/// from an application that took it away. On macOS giving up hands the type to
+/// another app that declares it; with none there, it stays ours.
 bool applyFileTypes(FileTypes types, QString& error);
 
 /// Gives up every type. Idempotent (uninstall, --unregister-file-types).

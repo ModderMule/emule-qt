@@ -402,8 +402,8 @@ own; the fields on the hidden tab are real widgets, because
 otherwise write defaults over half the account. Column layout persists under the
 `optionsUsenetServers` key in `uistate.yml`.
 
-The "Open .nzb files with eMule Qt" checkbox is absent on macOS, where the bundle
-declares its document types and there is nothing to switch.
+On macOS the "Open .nzb files with eMule Qt" check box shows the live default app
+(`FileAssociation::claimedTypes()`) instead of a stored setting; see below.
 
 Options → **Feeds** (`PageFeeds`) is a sibling of the Indexers page and copies it
 function for function, with **Check now** where Indexers has **Test** — a feed is
@@ -1769,10 +1769,17 @@ wants the queue behind it.
 `bundle-linux.sh` a bare tarball, so there is no installer to hang a registration
 step off and the application registers itself. Everything is per-user —
 `HKEY_CURRENT_USER\Software\Classes` and `$XDG_DATA_HOME` — because a portable
-archive has no moment at which to ask for elevation. macOS is declarative and has
-no runtime path at all: `Info.plist`'s `CFBundleDocumentTypes` is the whole
-mechanism, with `LSHandlerRank` **Alternate** so a dedicated NZB client keeps
-priority.
+archive has no moment at which to ask for elevation. macOS declares the types in
+`Info.plist`'s `CFBundleDocumentTypes` / `CFBundleURLTypes`, with `LSHandlerRank`
+**Alternate** so a dedicated NZB client keeps priority. Becoming the *default* app
+is a LaunchServices call (`LSSetDefaultRoleHandlerForContentType` on the extension's
+UTI, `LSSetDefaultHandlerForURLScheme` for magnet/ed3k/ed2k), made only when the user
+changes a check box: nothing is re-applied at start (`isRuntimeRegistration()` is
+false), so the app never takes a type away by itself. The boxes read the live
+default back, so Finder's "Change All…" shows up there too. Turning one off hands
+the type to the first other app LaunchServices lists for it; with none, it stays
+ours. Options → General has an "Open eD2K links with eMule Qt" box there in place
+of the MFC "Handle eD2K Links" button.
 
 The two generators in `src/gui/utils/FileAssociation.h` are pure and produce what
 registration *would* write, which is the only part of it a developer machine can

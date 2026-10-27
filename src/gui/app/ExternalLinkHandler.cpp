@@ -55,6 +55,7 @@ void ExternalLinkHandler::open(const QString& link)
     // Only an import needs the daemon. The version-check sentinel and plain web links go
     // to the browser and must not wait behind a connection that may never come up.
     const bool needsDaemon = link.startsWith(QStringLiteral("ed2k:"), Qt::CaseInsensitive)
+                             || link.startsWith(QStringLiteral("ed3k:"), Qt::CaseInsensitive)
                              || link.startsWith(QStringLiteral("magnet:"), Qt::CaseInsensitive);
     if (needsDaemon && !canOpenNow()) {
         queueForLater({link, false});
@@ -130,7 +131,8 @@ void ExternalLinkHandler::openNow(const QString& link)
         return;
     }
 
-    if (!link.startsWith(QStringLiteral("ed2k:"), Qt::CaseInsensitive)
+    const bool ed3k = link.startsWith(QStringLiteral("ed3k:"), Qt::CaseInsensitive);
+    if (!ed3k && !link.startsWith(QStringLiteral("ed2k:"), Qt::CaseInsensitive)
         && !link.startsWith(QStringLiteral("magnet:"), Qt::CaseInsensitive)) {
         QDesktopServices::openUrl(QUrl::fromUserInput(link));
         return;
@@ -153,6 +155,12 @@ void ExternalLinkHandler::openNow(const QString& link)
         return;
     }
 #endif
+
+    if (ed3k) {
+        // ToDo: open the other ed3k links (file without bt=, set, live, room, ...)
+        logWarning(QStringLiteral("Cannot open this ed3k link yet: %1").arg(link));
+        return;
+    }
 
     // Manual: the user clicked or typed this link, so a completed or cancelled file is a
     // genuine re-download request and is left alone.

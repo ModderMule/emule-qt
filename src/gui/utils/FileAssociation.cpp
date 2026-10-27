@@ -1,5 +1,5 @@
 /// @file FileAssociation.cpp
-/// @brief Registering .nzb, .torrent and magnet: with the desktop — implementation.
+/// @brief Registering .nzb, .torrent, magnet:, ed3k: and ed2k: with the desktop — implementation.
 
 #include "utils/FileAssociation.h"
 
@@ -17,6 +17,10 @@
 #ifdef Q_OS_WIN
 #include <QSettings>
 #include <shlobj.h>
+#endif
+
+#ifdef Q_OS_MACOS
+#include <CoreServices/CoreServices.h>
 #endif
 
 namespace eMule::gui::FileAssociation {
@@ -66,7 +70,8 @@ QStringList xdgMimeTypes(FileTypes types)
     if (types.nzb)
         out << QLatin1String(kNzbMimeType);
     if (types.torrent)
-        out << QLatin1String(kTorrentMimeType) << QStringLiteral("x-scheme-handler/magnet");
+        out << QLatin1String(kTorrentMimeType) << QStringLiteral("x-scheme-handler/magnet")
+            << QStringLiteral("x-scheme-handler/ed3k");
     // The ed2k scheme comes along with any type. The macOS bundle has claimed it
     // since day one.
     if (types.any())
@@ -239,13 +244,17 @@ QList<RegistryValue> registryValues(const QString& exePath, FileTypes types)
     };
     if (types.nzb)
         fileType(QStringLiteral(".nzb"), QLatin1String(kProgId), QStringLiteral("NZB Usenet Index File"));
+    // a URL scheme, like ed2k (Ed2kSchemeHandler)
+    const auto urlScheme = [&](const QString& scheme, const QString& name) {
+        out.append({scheme, {}, name});
+        out.append({scheme, QStringLiteral("URL Protocol"), {}});
+        out.append({scheme + QStringLiteral("/DefaultIcon"), {}, icon});
+        out.append({scheme + QStringLiteral("/shell/open/command"), {}, command});
+    };
     if (types.torrent) {
         fileType(QStringLiteral(".torrent"), QLatin1String(kTorrentProgId), QStringLiteral("BitTorrent File"));
-        // a URL scheme, like ed2k (Ed2kSchemeHandler)
-        out.append({QStringLiteral("magnet"), {}, QStringLiteral("URL:Magnet Link")});
-        out.append({QStringLiteral("magnet"), QStringLiteral("URL Protocol"), {}});
-        out.append({QStringLiteral("magnet/DefaultIcon"), {}, icon});
-        out.append({QStringLiteral("magnet/shell/open/command"), {}, command});
+        urlScheme(QStringLiteral("magnet"), QStringLiteral("URL:Magnet Link"));
+        urlScheme(QStringLiteral("ed3k"), QStringLiteral("URL:eD3K Link"));
     }
     return out;
 }
@@ -259,22 +268,189 @@ bool isRuntimeRegistration()
 #endif
 }
 
+#ifndef Q_OS_MACOS
+FileTypes claimedTypes()
+{
+    return {};
+}
+#endif
+
 #ifdef Q_OS_MACOS
+
+// The LaunchServices default-handler calls are deprecated since macOS 12 but
+// still the only C API; NSWorkspace's replacement is Objective-C and async.
+#pragma clang diagnostic push
+#pragma clang diagnostic ignored "-Wdeprecated-declarations"
+
+namespace {
+
+/// One thing LaunchServices keeps a default app for.
+struct Target {
+    bool scheme;    ///< URL scheme, else a file extension
+    QString name;   ///< "magnet", or "torrent" without the dot
+};
+
+QList<Target> targetsOf(FileTypes types)
+{
+    QList<Target> out;
+    if (types.nzb)
+        out.append({false, QStringLiteral("nzb")});
+    if (types.torrent) {
+        out.append({false, QStringLiteral("torrent")});
+        out.append({true, QStringLiteral("magnet")});
+        out.append({true, QStringLiteral("ed3k")});
+    }
+    if (types.ed2k)
+        out.append({true, QStringLiteral("ed2k")});
+    return out;
+}
+
+/// Takes ownership of a Create/Copy result.
+QString takeString(CFStringRef s)
+{
+    if (!s)
+        return {};
+    const QString out = QString::fromCFString(s);
+    CFRelease(s);
+    return out;
+}
+
+QString ownBundleId()
+{
+    const CFStringRef id = CFBundleGetIdentifier(CFBundleGetMainBundle());   // Get rule
+    return id ? QString::fromCFString(id) : QString();
+}
+
+/// LaunchServices keys a file type by UTI: the one an installed app declared
+/// for the extension (Transmission's org.bittorrent.torrent), else a dynamic one.
+QString keyOf(const Target& t)
+{
+    if (t.scheme)
+        return t.name;
+    const CFStringRef ext = t.name.toCFString();
+    const QString uti = takeString(
+        UTTypeCreatePreferredIdentifierForTag(kUTTagClassFilenameExtension, ext, nullptr));
+    CFRelease(ext);
+    return uti;
+}
+
+QString defaultHandler(const Target& t)
+{
+    const CFStringRef key = keyOf(t).toCFString();
+    const QString out = takeString(t.scheme ? LSCopyDefaultHandlerForURLScheme(key)
+                                            : LSCopyDefaultRoleHandlerForContentType(key, kLSRolesAll));
+    CFRelease(key);
+    return out;
+}
+
+QStringList allHandlers(const Target& t)
+{
+    const CFStringRef key = keyOf(t).toCFString();
+    const CFArrayRef list = t.scheme ? LSCopyAllHandlersForURLScheme(key)
+                                     : LSCopyAllRoleHandlersForContentType(key, kLSRolesAll);
+    CFRelease(key);
+    QStringList out;
+    if (!list)
+        return out;
+    for (CFIndex i = 0; i < CFArrayGetCount(list); ++i)
+        out << QString::fromCFString(static_cast<CFStringRef>(CFArrayGetValueAtIndex(list, i)));
+    CFRelease(list);
+    return out;
+}
+
+OSStatus setHandler(const Target& t, const QString& bundleId)
+{
+    const CFStringRef key = keyOf(t).toCFString();
+    const CFStringRef id = bundleId.toCFString();
+    const OSStatus status = t.scheme ? LSSetDefaultHandlerForURLScheme(key, id)
+                                     : LSSetDefaultRoleHandlerForContentType(key, kLSRolesAll, id);
+    CFRelease(id);
+    CFRelease(key);
+    return status;
+}
+
+bool isOurs(const Target& t, const QString& ownId)
+{
+    return defaultHandler(t).compare(ownId, Qt::CaseInsensitive) == 0;
+}
+
+bool ownsAll(FileTypes types, const QString& ownId)
+{
+    const QList<Target> targets = targetsOf(types);
+    return std::ranges::all_of(targets, [&](const Target& t) { return isOurs(t, ownId); });
+}
+
+QString label(const Target& t)
+{
+    if (t.scheme)
+        return QString(t.name + QLatin1Char(':'));
+    return QString(QLatin1Char('.') + t.name);
+}
+
+} // namespace
+
+FileTypes claimedTypes()
+{
+    const QString ownId = ownBundleId();
+    if (ownId.isEmpty())
+        return {};
+    return {.nzb = ownsAll({.nzb = true}, ownId),
+            .torrent = ownsAll({.torrent = true}, ownId),
+            .ed2k = ownsAll({.ed2k = true}, ownId)};
+}
 
 bool applyFileTypes(FileTypes types, QString& error)
 {
-    // Info.plist's CFBundleDocumentTypes is the whole mechanism; LaunchServices
-    // reads it when the bundle is installed. Nothing to write, and saying so is
-    // better than reporting a failure the user cannot act on.
-    Q_UNUSED(types);
-    Q_UNUSED(error);
+    const QString ownId = ownBundleId();
+    if (ownId.isEmpty()) {
+        error = QObject::tr("Not started from the app bundle.");
+        return false;
+    }
+
+    const QList<Target> wantedTargets = targetsOf(types);
+    QStringList failed;
+    for (const Target& t : targetsOf({true, true, true})) {
+        const bool wanted = std::ranges::any_of(wantedTargets, [&](const Target& w) {
+            return w.scheme == t.scheme && w.name == t.name;
+        });
+        if (wanted == isOurs(t, ownId))
+            continue;   // only touch what changes: no system prompt for a no-op
+
+        QString next = ownId;
+        if (!wanted) {
+            // hand it on to whatever else declares it; none, and it stays ours
+            next.clear();
+            for (const QString& id : allHandlers(t)) {
+                if (id.compare(ownId, Qt::CaseInsensitive) != 0) {
+                    next = id;
+                    break;
+                }
+            }
+            if (next.isEmpty()) {
+                logInfo(QStringLiteral("No other app opens %1, it stays with eMule Qt").arg(label(t)));
+                continue;
+            }
+        }
+        const OSStatus status = setHandler(t, next);
+        if (status != noErr) {
+            failed << label(t);
+            logWarning(QStringLiteral("Cannot set the default app of %1 to %2 (OSStatus %3)")
+                           .arg(label(t), next)
+                           .arg(status));
+        }
+    }
+    if (!failed.isEmpty()) {
+        error = QObject::tr("LaunchServices refused %1.").arg(failed.join(QStringLiteral(", ")));
+        return false;
+    }
     return true;
 }
 
+#pragma clang diagnostic pop
+
 bool unregisterFileTypes(QString& error)
 {
-    Q_UNUSED(error);
-    return true;
+    return applyFileTypes({}, error);
 }
 
 #elif defined(Q_OS_WIN)
@@ -290,12 +466,12 @@ void dropFileType(QSettings& classes, const QString& ext, const QString& progId)
     classes.remove(progId);
 }
 
-/// Gives up magnet: while its command still starts this executable.
-void dropMagnet(QSettings& classes)
+/// Gives up a URL scheme while its command still starts this executable.
+void dropScheme(QSettings& classes, const QString& scheme)
 {
-    const QString command = classes.value(QStringLiteral("magnet/shell/open/command/.")).toString();
+    const QString command = classes.value(scheme + QStringLiteral("/shell/open/command/.")).toString();
     if (command.contains(QDir::toNativeSeparators(QCoreApplication::applicationFilePath()), Qt::CaseInsensitive))
-        classes.remove(QStringLiteral("magnet"));
+        classes.remove(scheme);
 }
 
 bool finish(QSettings& classes, QString& error)
@@ -321,7 +497,8 @@ bool applyFileTypes(FileTypes types, QString& error)
         dropFileType(classes, QStringLiteral(".nzb"), QLatin1String(kProgId));
     if (!types.torrent) {
         dropFileType(classes, QStringLiteral(".torrent"), QLatin1String(kTorrentProgId));
-        dropMagnet(classes);
+        dropScheme(classes, QStringLiteral("magnet"));
+        dropScheme(classes, QStringLiteral("ed3k"));
     }
     for (const auto& value : registryValues(exePath(), types)) {
         // Pick the leaf first, and keep the join in a QString: with

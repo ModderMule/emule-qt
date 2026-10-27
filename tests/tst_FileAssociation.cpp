@@ -12,6 +12,8 @@
 #include <QTemporaryDir>
 #include <QTest>
 
+#include <algorithm>
+
 using namespace eMule::gui;
 
 class tst_FileAssociation : public QObject {
@@ -23,7 +25,7 @@ private slots:
     void theMimeDefinitionDeclaresTheNzbGlob();
     void theRegistryValuesStayUnderHkeyCurrentUser();
     void theOpenCommandPassesTheDroppedFile();
-    void macOsNeedsNoRuntimeRegistration();
+    void macOsIsNotReappliedAtStart();
     void theIconsLandWhereTheDesktopEntryLooks();
     void theLauncherEntryClaimsNothing();
     void everyDesktopEntryNamesTheWindowClass();
@@ -138,17 +140,18 @@ void tst_FileAssociation::theOpenCommandPassesTheDroppedFile()
     QCOMPARE(command, QStringLiteral("\"C:\\Program Files\\eMule Qt\\emuleqt.exe\" \"%1\""));
 }
 
-void tst_FileAssociation::macOsNeedsNoRuntimeRegistration()
+void tst_FileAssociation::macOsIsNotReappliedAtStart()
 {
 #ifdef Q_OS_MACOS
-    // Info.plist's CFBundleDocumentTypes is the whole mechanism there, so the
-    // calls succeed by doing nothing rather than reporting a failure the user
-    // cannot act on.
+    // The system keeps the default app; the Options check boxes read it back.
+    // A test binary has no bundle id, so it claims nothing and changes nothing
+    // -- which is also why this never touches the developer's own defaults.
     QVERIFY(!FileAssociation::isRuntimeRegistration());
+    const auto claimed = FileAssociation::claimedTypes();
+    QVERIFY(!claimed.any());
     QString error;
-    QVERIFY(FileAssociation::applyFileTypes(kAll, error));
-    QVERIFY(error.isEmpty());
-    QVERIFY(FileAssociation::unregisterFileTypes(error));
+    QVERIFY(!FileAssociation::applyFileTypes(kAll, error));
+    QVERIFY(!error.isEmpty());
 #else
     QVERIFY(FileAssociation::isRuntimeRegistration());
 #endif
@@ -216,6 +219,9 @@ void tst_FileAssociation::torrentClaimsTheFileTypeAndTheMagnetScheme()
     const QString mime = contentsOf(files, QStringLiteral("emuleqt-torrent.xml"));
     QVERIFY(mime.contains(QStringLiteral("*.torrent")));
     QVERIFY(FileAssociation::xdgMimeTypes(kTorrent).contains(QStringLiteral("x-scheme-handler/magnet")));
+    // ed3k:file?…bt= links go to the Torrents tab, so the torrent switch claims ed3k too
+    QVERIFY(desktop.contains(QStringLiteral("x-scheme-handler/ed3k")));
+    QVERIFY(!FileAssociation::xdgMimeTypes(kNzb).contains(QStringLiteral("x-scheme-handler/ed3k")));
 }
 
 void tst_FileAssociation::typesSwitchedOffAreLeftOut()
@@ -242,7 +248,8 @@ void tst_FileAssociation::typesSwitchedOffAreLeftOut()
 
     QVERIFY(FileAssociation::registryValues(QStringLiteral("C:\\e.exe"), {}).isEmpty());
     for (const auto& value : FileAssociation::registryValues(QStringLiteral("C:\\e.exe"), kNzb))
-        QVERIFY2(!value.key.contains(QStringLiteral("torrent")) && !value.key.startsWith(QStringLiteral("magnet")),
+        QVERIFY2(!value.key.contains(QStringLiteral("torrent")) && !value.key.startsWith(QStringLiteral("magnet"))
+                     && !value.key.startsWith(QStringLiteral("ed3k")),
                  qPrintable(value.key));
 }
 
@@ -263,6 +270,9 @@ void tst_FileAssociation::theMagnetSchemeIsAUrlProtocol()
     }
     QVERIFY(urlProtocol);
     QCOMPARE(command, QStringLiteral("\"C:\\Program Files\\eMule Qt\\emuleqt.exe\" \"%1\""));
+    QVERIFY(std::ranges::any_of(values, [](const FileAssociation::RegistryValue& v) {
+        return v.key == QStringLiteral("ed3k") && v.name == QStringLiteral("URL Protocol");
+    }));
     QCOMPARE(torrentProgId, QStringLiteral("eMuleQt.torrent"));
 }
 

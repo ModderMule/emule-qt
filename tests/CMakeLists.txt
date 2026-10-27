@@ -855,6 +855,8 @@ target_include_directories(tst_FileAssociation PRIVATE
 target_link_libraries(tst_FileAssociation PRIVATE Qt6::Widgets)
 if(WIN32)
     target_link_libraries(tst_FileAssociation PRIVATE shell32)  # SHChangeNotify
+elseif(APPLE)
+    target_link_libraries(tst_FileAssociation PRIVATE "-framework CoreServices")  # LaunchServices
 endif()
 
 # Downloads Status column — the daemon sends the raw enum token ("ready", "empty") and

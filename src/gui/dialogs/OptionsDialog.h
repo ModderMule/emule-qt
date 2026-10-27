@@ -7,6 +7,7 @@
 /// and OK/Cancel/Apply buttons at the bottom.
 
 #include "app/UiState.h"   // kStatsColorCount — the palette this dialog edits
+#include "utils/FileAssociation.h"
 
 #include <QColor>
 #include <QDialog>
@@ -498,6 +499,8 @@ private:
     QPushButton*  m_usenetWatchDirBrowse = nullptr;
     QCheckBox*    m_associateNzbCheck = nullptr;
     QCheckBox*    m_associateTorrentCheck = nullptr;
+    QCheckBox*    m_associateEd2kCheck = nullptr;   // macOS only
+    gui::FileAssociation::FileTypes m_claimedTypes;  // macOS: what the dialog was loaded with
     QCheckBox*    m_usenetCleanupCheck = nullptr;
     QCheckBox*    m_usenetSfvCheck = nullptr;
     QComboBox*    m_usenetUnrepairableCombo = nullptr;

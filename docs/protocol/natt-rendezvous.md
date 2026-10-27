@@ -359,8 +359,11 @@ is never set. Details: [natt-quic.md § Advertising](natt-quic.md#advertising).
 `docker/natt/natnet.py` runs one server (two for `enode-foreign`) and two `emulecored` containers on
 a Docker bridge network (`172.30.77.0/24`, `2001:db8:4677::/64`, lab mode). Each node refuses the server's
 IPv4 dial-back with iptables, so both are LowIDs; A shares a random file, B downloads it.
-The run passes when B's rendezvous used the chosen server, a side dialed the peer's IPv6,
-and the MD5 matches.
+The run passes when B's rendezvous used the chosen server, a side dialed the peer's IPv6
+(TCP, or QUIC on the `SYNC_IPV6` endpoint with `enode`), and the MD5 matches.
+`--fw6` adds a stateful IPv6 firewall on each node, as on a home router: new inbound TCP
+and unpunched UDP are dropped. TCP/IPv6 then fails and QUIC must carry the transfer (over
+IPv6 with `enode`, the QUIC fallback otherwise).
 
 ```bash
 cp docker/natt/natnet.env.example docker/natt/natnet.env    # point at your server copies
@@ -369,6 +372,8 @@ python3 docker/natt/natnet.py --server ed2k-server
 python3 docker/natt/natnet.py --server enode --keep          # leave it up; --down later
 python3 docker/natt/natnet.py --server enode-foreign         # foreign callback
 python3 docker/natt/natnet.py --server enode-foreign --unlisted
+python3 docker/natt/natnet.py --server enode --fw6           # QUIC over IPv6 through the firewall
+python3 docker/natt/natnet.py --server ed2k-server --fw6     # TCP/IPv6 dropped, QUIC fallback
 ```
 
 `enode-foreign` tests the foreign callback with two eNode-go servers:

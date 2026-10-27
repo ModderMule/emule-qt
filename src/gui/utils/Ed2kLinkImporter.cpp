@@ -337,6 +337,7 @@ QString Ed2kLinkImporter::linkFromFileOpenEvent(const QFileOpenEvent& event)
     // been nowhere near a URL parser, and parseED2KLink() splits on '|' before decoding.
     for (const QString& candidate : {event.file(), event.url().toString()}) {
         if (candidate.startsWith(QStringLiteral("ed2k:"), Qt::CaseInsensitive)
+            || candidate.startsWith(QStringLiteral("ed3k:"), Qt::CaseInsensitive)
             || candidate.startsWith(QStringLiteral("magnet:"), Qt::CaseInsensitive)) {
             return candidate;
         }

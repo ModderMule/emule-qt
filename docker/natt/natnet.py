@@ -24,7 +24,8 @@ NAT modes (--nat):
     none          one bridge, LowID forced by refusing the server's dial-back; the
                   data path is the IPv6 TCP handoff (default). With --fw6 each node
                   drops new inbound IPv6 TCP and unpunched UDP (stateful router
-                  firewall): QUIC must carry it, over IPv6 with eNode's SYNC_IPV6
+                  firewall): QUIC must carry it. With eNode (SYNC_IPV6) QUIC over IPv6
+                  goes first anyway
     real          each node on its own LAN behind a router container (Linux conntrack
                   MASQUERADE: port-restricted cone), IPv6 off. Both nodes share a file
                   and download the other's at once; the data path is QUIC over the
@@ -886,12 +887,13 @@ def run_test(args, env: dict) -> int:
         f"rendezvous via {spec['path']}": f"via {spec['path']} for" in b_lines,
         "MD5 match": got_md5 == expected_md5,
     })
-    if FW6:
-        # TCP/IPv6 is dropped: QUIC carries it, over IPv6 when the server gave SYNC_IPV6
+    # eNode's SYNC_IPV6 gives the peer's IPv6 UDP endpoint: QUIC over IPv6 first. Otherwise
+    # TCP/IPv6 first; with --fw6 it is dropped and the QUIC fallback carries it.
+    v6_quic = spec["path"] == "PR_NAT"
+    if v6_quic or FW6:
         q = "\n".join(quic_lines(work, "A") + quic_lines(work, "B"))
-        v6 = spec["path"] == "PR_NAT"
-        checks["QUIC dialing" + (" IPv6" if v6 else "")] = bool(
-            re.search(r"NAT-T: #\d+ QUIC dialing " + (r"\[" if v6 else r"\S"), q))
+        checks["QUIC dialing" + (" IPv6" if v6_quic else "")] = bool(
+            re.search(r"NAT-T: #\d+ QUIC dialing " + (r"\[" if v6_quic else r"\S"), q))
         checks["QUIC connected"] = bool(re.search(r"NAT-T: QUIC connected \S+ \((out|in)\)", q))
     else:
         checks["IPv6 dial"] = bool(re.search(r"NAT-T: #\d+ dialing \[", all_lines))

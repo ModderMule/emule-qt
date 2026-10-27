@@ -866,12 +866,22 @@ QWidget* OptionsDialog::createGeneralPage()
                                  tr("webservices.dat was not found in the config folder."));
         }
     });
+    miscBtnLayout->addWidget(webServicesBtn);
+#ifdef Q_OS_MACOS
+    // no MFC original to match here, and LaunchServices can give the scheme back
+    m_associateEd2kCheck = new QCheckBox(tr("Open eD2K links with eMule Qt"), miscGroup);
+    m_associateEd2kCheck->setToolTip(
+        tr("Makes eMule Qt the default app for ed2k:// links. Turning it off hands "
+           "them to another app that opens them, if there is one."));
+    miscLayout->addWidget(m_associateEd2kCheck);
+    connect(m_associateEd2kCheck, &QCheckBox::toggled, this, &OptionsDialog::markDirty);
+#else
     auto* ed2kLinksBtn = new QPushButton(tr("Handle eD2K Links"), miscGroup);
     connect(ed2kLinksBtn, &QPushButton::clicked, this, [] {
         eMule::registerEd2kUrlScheme();
     });
-    miscBtnLayout->addWidget(webServicesBtn);
     miscBtnLayout->addWidget(ed2kLinksBtn);
+#endif
     miscBtnLayout->addStretch();
     miscLayout->addLayout(miscBtnLayout);
 
@@ -3707,19 +3717,24 @@ QWidget* OptionsDialog::createUsenetPage()
     advancedLayout->addWidget(watchGroup);
 
     // -- Desktop integration ------------------------------------------------
-    if (gui::FileAssociation::isRuntimeRegistration()) {
-        // macOS declares its document types in the bundle, so there is nothing
-        // here to switch on or off.
+    {
         auto* desktopGroup = new QGroupBox(tr("Desktop"), page);
         auto* desktopLayout = new QVBoxLayout(desktopGroup);
 
         m_associateNzbCheck =
             new QCheckBox(tr("Open .nzb files with eMule Qt"), desktopGroup);
+#ifdef Q_OS_MACOS
+        m_associateNzbCheck->setToolTip(
+            tr("Makes eMule Qt the default app for .nzb files, so double-clicking "
+               "one queues it. Turning it off hands them to another app that opens "
+               "them, if there is one."));
+#else
         m_associateNzbCheck->setToolTip(
             tr("Claim .nzb files for this copy of eMule Qt, so double-clicking "
                "one queues it. The setting is for you alone and needs no "
                "administrator; it is re-applied at every start, so another "
                "program taking the association does not keep it."));
+#endif
         desktopLayout->addWidget(m_associateNzbCheck);
         advancedLayout->addWidget(desktopGroup);
 
@@ -5527,16 +5542,23 @@ QWidget* OptionsDialog::createBitTorrentPage()
 
     mainLayout->addWidget(seedGroup);
 
-    // -- Desktop integration (macOS: the bundle declares both) ---------------
-    if (gui::FileAssociation::isRuntimeRegistration()) {
+    // -- Desktop integration --------------------------------------------------
+    {
         auto* desktopGroup = new QGroupBox(tr("Desktop"), page);
         auto* desktopLayout = new QVBoxLayout(desktopGroup);
-        m_associateTorrentCheck =
-            new QCheckBox(tr("Open .torrent files and magnet links with eMule Qt"), desktopGroup);
+        m_associateTorrentCheck = new QCheckBox(
+            tr("Open .torrent files, magnet and ed3k links with eMule Qt"), desktopGroup);
+#ifdef Q_OS_MACOS
         m_associateTorrentCheck->setToolTip(
-            tr("Claim .torrent files and magnet: links for this copy of eMule Qt. The setting "
-               "is for you alone and needs no administrator; it is re-applied at every "
-               "start, so another program taking the association does not keep it."));
+            tr("Makes eMule Qt the default app for .torrent files, magnet: and ed3k: "
+               "links. Turning it off hands them to another app that opens them, if "
+               "there is one."));
+#else
+        m_associateTorrentCheck->setToolTip(
+            tr("Claim .torrent files, magnet: and ed3k: links for this copy of eMule Qt. "
+               "The setting is for you alone and needs no administrator; it is re-applied "
+               "at every start, so another program taking the association does not keep it."));
+#endif
         desktopLayout->addWidget(m_associateTorrentCheck);
         mainLayout->addWidget(desktopGroup);
         connect(m_associateTorrentCheck, &QCheckBox::toggled, this, &OptionsDialog::markDirty);
@@ -7776,6 +7798,24 @@ void OptionsDialog::saveSettings()
     // GUI-only, so it never travels over SetPreferences: the daemon owns
     // preferences.yml and knows nothing about the desktop it is not running on,
     // and it is this executable's path that gets registered.
+#ifdef Q_OS_MACOS
+    // macOS: the system keeps the choice, so only a change from what was shown is applied
+    {
+        const gui::FileAssociation::FileTypes wanted{
+            .nzb = m_associateNzbCheck ? m_associateNzbCheck->isChecked() : m_claimedTypes.nzb,
+            .torrent = m_associateTorrentCheck ? m_associateTorrentCheck->isChecked() : m_claimedTypes.torrent,
+            .ed2k = m_associateEd2kCheck ? m_associateEd2kCheck->isChecked() : m_claimedTypes.ed2k};
+        if (wanted.nzb != m_claimedTypes.nzb || wanted.torrent != m_claimedTypes.torrent
+            || wanted.ed2k != m_claimedTypes.ed2k) {
+            QString assocError;
+            if (!gui::FileAssociation::applyFileTypes(wanted, assocError)) {
+                QMessageBox::warning(this, tr("File types"),
+                                     tr("Could not update the file associations: %1").arg(assocError));
+            }
+            m_claimedTypes = gui::FileAssociation::claimedTypes();
+        }
+    }
+#else
     const bool nzbChanged = m_associateNzbCheck
                             && m_associateNzbCheck->isChecked() != theUiState.associateNzbFiles();
     const bool torrentChanged = m_associateTorrentCheck
@@ -7793,6 +7833,7 @@ void OptionsDialog::saveSettings()
                                  tr("Could not update the file associations: %1").arg(assocError));
         }
     }
+#endif
 
     saveIndexers();
     saveFeeds();
@@ -8051,10 +8092,21 @@ void OptionsDialog::fillDaemonSettings(const QCborMap& prefs)
     }
     if (m_usenetWatchDirEdit)
         m_usenetWatchDirEdit->setText(prefs.value(QStringLiteral("usenetWatchDir")).toString());
+#ifdef Q_OS_MACOS
+    // the live default app, not a stored setting: Finder's "Change All…" shows here too
+    m_claimedTypes = gui::FileAssociation::claimedTypes();
+    if (m_associateNzbCheck)
+        m_associateNzbCheck->setChecked(m_claimedTypes.nzb);
+    if (m_associateTorrentCheck)
+        m_associateTorrentCheck->setChecked(m_claimedTypes.torrent);
+    if (m_associateEd2kCheck)
+        m_associateEd2kCheck->setChecked(m_claimedTypes.ed2k);
+#else
     if (m_associateNzbCheck)
         m_associateNzbCheck->setChecked(theUiState.associateNzbFiles());
     if (m_associateTorrentCheck)
         m_associateTorrentCheck->setChecked(theUiState.associateTorrentFiles());
+#endif
     m_usenetHealthMinSpin->setEnabled(m_usenetHealthCombo->currentIndex() > 0);
     m_usenetCleanupCheck->setEnabled(m_usenetUnpackCheck->isChecked());
     m_usenetDirectUnpackCheck->setEnabled(m_usenetUnpackCheck->isChecked());

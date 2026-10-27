@@ -287,3 +287,6 @@ What eMuleQt's obfuscation does and doesn't do:
 - `docker/natt/natnet.py --nat real`: two LowID daemons behind real NAT routers transfer
   files to each other over QUIC. The router captures are checked for no TCP between the
   peers and an obfuscated first Initial.
+- `docker/natt/natnet.py --fw6`: both nodes behind a stateful IPv6 firewall. With `enode`
+  QUIC over IPv6 carries the transfer; with `ed2k-server` TCP/IPv6 is dropped and the QUIC
+  fallback connects ~8 s after the rendezvous.

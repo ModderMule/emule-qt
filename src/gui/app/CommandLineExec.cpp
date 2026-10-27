@@ -1,6 +1,7 @@
 #include "pch.h"
 #include <QUrl>
 #include "utils/FileAssociation.h"
+#include "app/Ed2kSchemeHandler.h"
 #include "app/MainWindow.h"
 /// @file CommandLineExec.cpp
 /// @brief Command-line parsing and execution for the GUI application.
@@ -50,8 +51,8 @@ void CommandLineExec::parse(QApplication& app)
 
     m_parser.addPositionalArgument(
         QStringLiteral("files"),
-        QStringLiteral("ed2k:// links, and .nzb files to queue."),
-        QStringLiteral("[ed2k://... | file.nzb]"));
+        QStringLiteral("ed2k://, ed3k: and magnet: links, .nzb and .torrent files to queue."),
+        QStringLiteral("[ed2k://... | ed3k:... | magnet:... | file.nzb | file.torrent]"));
 
     processCommandLine(m_parser, app);
 
@@ -251,9 +252,9 @@ void CommandLineExec::openArguments(const QStringList& args, ExternalLinkHandler
             continue;
         }
 
-        // Every BitTorrent magnet; the handler routes it to the Torrents tab (or,
-        // built without BitTorrent, reports it invalid)
-        if (gui::isBitTorrentMagnet(arg)) {
+        // Every BitTorrent magnet and ed3k link; the handler routes it to the
+        // Torrents tab (or, built without BitTorrent, reports it invalid)
+        if (gui::isBitTorrentMagnet(arg) || arg.startsWith(QStringLiteral("ed3k:"), Qt::CaseInsensitive)) {
             linkHandler.open(arg);
             continue;
         }
@@ -284,11 +285,12 @@ bool CommandLineExec::handleFileTypeRegistration() const
         return false;
 
     QString error;
-    const bool ok = wantRegister ? gui::FileAssociation::applyFileTypes({true, true}, error)
+    // ed2k as it is: it has its own switch (Handle eD2K Links)
+    const bool ok = wantRegister ? gui::FileAssociation::applyFileTypes({true, true, isEd2kSchemeRegistered()}, error)
                                  : gui::FileAssociation::unregisterFileTypes(error);
     if (ok) {
-        logInfo(wantRegister ? QStringLiteral("Registered .nzb, .torrent and magnet: with the desktop")
-                             : QStringLiteral("Removed the .nzb, .torrent and magnet: associations"));
+        logInfo(wantRegister ? QStringLiteral("Registered .nzb, .torrent, magnet: and ed3k: with the desktop")
+                             : QStringLiteral("Removed the file and link associations"));
     } else {
         logError(QStringLiteral("File-type registration failed: %1").arg(error));
     }

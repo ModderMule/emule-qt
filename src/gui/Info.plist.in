@@ -86,6 +86,15 @@
 				<string>magnet</string>
 			</array>
 		</dict>
+		<dict>
+			<!-- ed3k:file?…bt= (a torrent as a file set) goes to Torrents. -->
+			<key>CFBundleURLName</key>
+			<string>eD3K Link</string>
+			<key>CFBundleURLSchemes</key>
+			<array>
+				<string>ed3k</string>
+			</array>
+		</dict>
 	</array>
 </dict>
 </plist>
