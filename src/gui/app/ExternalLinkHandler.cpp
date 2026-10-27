@@ -24,6 +24,19 @@
 
 namespace eMule {
 
+namespace {
+
+/// A link we import (via the daemon) instead of handing to the OS.
+/// ed3k:file links with bt= are torrent sets, routed to the Torrents tab.
+bool isImportLink(const QString& link)
+{
+    return link.startsWith(QLatin1StringView("ed2k:"), Qt::CaseInsensitive)
+        || link.startsWith(QLatin1StringView("magnet:"), Qt::CaseInsensitive)
+        || link.startsWith(QLatin1StringView("ed3k:"), Qt::CaseInsensitive);
+}
+
+} // namespace
+
 ExternalLinkHandler::ExternalLinkHandler(QObject* parent)
     : QObject(parent)
 {
@@ -54,10 +67,7 @@ void ExternalLinkHandler::open(const QString& link)
 
     // Only an import needs the daemon. The version-check sentinel and plain web links go
     // to the browser and must not wait behind a connection that may never come up.
-    const bool needsDaemon = link.startsWith(QStringLiteral("ed2k:"), Qt::CaseInsensitive)
-                             || link.startsWith(QStringLiteral("ed3k:"), Qt::CaseInsensitive)
-                             || link.startsWith(QStringLiteral("magnet:"), Qt::CaseInsensitive);
-    if (needsDaemon && !canOpenNow()) {
+    if (isImportLink(link) && !canOpenNow()) {
         queueForLater({link, false});
         return;
     }
@@ -132,8 +142,7 @@ void ExternalLinkHandler::openNow(const QString& link)
     }
 
     const bool ed3k = link.startsWith(QStringLiteral("ed3k:"), Qt::CaseInsensitive);
-    if (!ed3k && !link.startsWith(QStringLiteral("ed2k:"), Qt::CaseInsensitive)
-        && !link.startsWith(QStringLiteral("magnet:"), Qt::CaseInsensitive)) {
+    if (!isImportLink(link)) {
         QDesktopServices::openUrl(QUrl::fromUserInput(link));
         return;
     }
