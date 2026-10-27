@@ -592,6 +592,7 @@ void IpcClient::onMessageReceived(const IpcMessage& msg)
         const QString newToken = msg.fieldString(2);
         if (newToken != m_daemonToken) {
             m_lastKadId = m_lastUsenetId = m_lastServerId = m_lastLogId = m_lastVerboseId = 0;
+            m_lastEd3kId = m_lastEd3kVerboseId = m_lastEd3kKadId = 0;
             m_lastServerMsgId = 0;
             m_daemonToken = newToken;
         }
@@ -736,16 +737,7 @@ void IpcClient::dispatchPushEvent(const IpcMessage& msg)
         const QString cat    = msg.fieldString(1);
         const auto severity  = static_cast<QtMsgType>(msg.fieldInt(2));
 
-        const bool isKad     = (cat == QStringLiteral("emule.kad"));
-        const bool isUsenet  = (cat == QStringLiteral("emule.usenet"));
-        const bool isServer  = (cat == QStringLiteral("emule.server"));
-        const bool isVerbose = (severity == QtDebugMsg);
-
-        int64_t& typeId = isKad    ? m_lastKadId
-                        : isUsenet ? m_lastUsenetId
-                        : isServer ? m_lastServerId
-                        : isVerbose? m_lastVerboseId
-                        :            m_lastLogId;
+        int64_t& typeId = lastLogId(cat, severity);
         if (logId > typeId)
             typeId = logId;
 
@@ -794,7 +786,8 @@ void IpcClient::requestLogSync()
     //  - Daemon restart: all IDs == 0 → min == 0 → full new-daemon buffer shown.
     //  - Reconnect within session: min of per-type IDs → only missed events fetched.
     const int64_t fromId = std::min({m_lastKadId, m_lastUsenetId, m_lastServerId,
-                                     m_lastLogId,  m_lastVerboseId});
+                                     m_lastLogId,  m_lastVerboseId, m_lastEd3kId,
+                                     m_lastEd3kVerboseId, m_lastEd3kKadId});
     IpcMessage req(IpcMsgType::SyncLogs);
     req.append(static_cast<qint64>(fromId));
 
@@ -820,16 +813,7 @@ void IpcClient::replayLogEntries(const QCborArray& entries)
         const auto severity   = static_cast<QtMsgType>(entry[2].toInteger());
 
         // Select per-type checkpoint; skip if already seen for this type
-        const bool isKad     = (cat == QStringLiteral("emule.kad"));
-        const bool isUsenet  = (cat == QStringLiteral("emule.usenet"));
-        const bool isServer  = (cat == QStringLiteral("emule.server"));
-        const bool isVerbose = (severity == QtDebugMsg);
-
-        int64_t& typeId = isKad    ? m_lastKadId
-                        : isUsenet ? m_lastUsenetId
-                        : isServer ? m_lastServerId
-                        : isVerbose? m_lastVerboseId
-                        :            m_lastLogId;
+        int64_t& typeId = lastLogId(cat, severity);
         if (logId <= typeId)
             continue;   // already displayed
         typeId = logId;
@@ -1041,6 +1025,21 @@ void IpcClient::expectRestart()
     // Time for a graceful stop (saving part files) plus the start
     constexpr int kRestartGraceMs = 60'000;
     m_restartDeadline = QDeadlineTimer(kRestartGraceMs);
+}
+
+int64_t& IpcClient::lastLogId(const QString& cat, QtMsgType severity)
+{
+    if (cat == QStringLiteral("emule.kad"))
+        return m_lastKadId;
+    if (cat == QStringLiteral("emule.usenet"))
+        return m_lastUsenetId;
+    if (cat == QStringLiteral("emule.server"))
+        return m_lastServerId;
+    if (cat == QStringLiteral("emule.ed3k.kad"))
+        return m_lastEd3kKadId;
+    if (cat == QStringLiteral("emule.ed3k"))
+        return severity == QtDebugMsg ? m_lastEd3kVerboseId : m_lastEd3kId;
+    return severity == QtDebugMsg ? m_lastVerboseId : m_lastLogId;
 }
 
 } // namespace eMule

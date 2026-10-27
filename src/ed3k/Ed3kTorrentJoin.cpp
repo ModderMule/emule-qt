@@ -21,6 +21,7 @@
 #include <algorithm>
 #include <cstring>
 #include <deque>
+#include <limits>
 #include <mutex>
 #include <set>
 
@@ -409,21 +410,15 @@ void Ed3kTorrentJoin::onDownloadHashes(const Download& d, const ffi::Bytes& blob
         j->members[std::size_t(d.member)].hashes = blob;
 }
 
-std::optional<QByteArray> Ed3kTorrentJoin::readShared(const Shared& s, std::uint64_t offset, std::uint32_t len) const
+std::optional<Ed3kJoinBase::FileRead> Ed3kTorrentJoin::sharedRead(const Shared& s, std::uint64_t offset, std::uint32_t len) const
 {
     // only bytes verified under the root: checked-only data stays BitTorrent's (§4.1)
     const Join* j = findJoin(s.owner);
-    if (!j) {
-        // a kept member of a torrent without a join: hashed again under its root before it was shared
-        QFile f(keptMemberPath(s.owner, s.member));
-        if (!f.open(QIODevice::ReadOnly) || !f.seek(qint64(offset)))
-            return std::nullopt;
-        QByteArray data = f.read(qint64(len));
-        return data.size() == qsizetype(len) ? std::optional(data) : std::nullopt;
-    }
+    if (!j)   // a kept member of a torrent without a join: hashed again under its root before it was shared
+        return FileRead{keptMemberPath(s.owner, s.member), offset, len};
     if (!j->torrent.servable(std::uint64_t(s.member), offset, len))
         return std::nullopt;
-    return readMember(*j, s.member, offset, len);
+    return FileRead{memberPath(*j, s.member), offset, len};
 }
 
 // was: onOtherEvent took the AliasFound of the set searches; now the base's (onSetAliasFound)
@@ -599,21 +594,33 @@ void Ed3kTorrentJoin::onPieceHashed(const QString& id, int piece, const QByteArr
 
 void Ed3kTorrentJoin::serveReads(const QString& id, const std::vector<ffi::TorrentRead>& reads)
 {
-    for (const auto& r : reads) {
-        Join* j = findJoin(id);
-        if (!j)
-            return;
-        // ToDo: one block (256 KiB) read on the daemon thread; move to a worker if
-        // reads ever come in large batches
-        const auto bytes = readMember(*j, int(r.member), r.offset, r.len);
-        if (!bytes) {
-            (void)j->torrent.readFailed(r);
-            continue;
-        }
-        if (auto ok = j->torrent.readDone(m_session.engine(), r, spanOf(*bytes)); !ok)
-            logDebug(QStringLiteral("read %1 of member %2 not taken (error %3)").arg(r.offset).arg(r.member).arg(errorName(ok.error())));
+    const Join* j = findJoin(id);
+    if (!j || reads.empty()) {
+        drainEvents(id);
+        return;
     }
-    drainEvents(id);
+    // was: ToDo: one block (256 KiB) read on the daemon thread; move to a worker if
+    // reads ever come in large batches (done: readInBackground)
+    std::vector<FileRead> files;
+    files.reserve(reads.size());
+    for (const auto& r : reads)
+        files.push_back(FileRead{memberPath(*j, int(r.member)), r.offset, r.len});
+    readInBackground(id, std::move(files), [this, id, reads](ReadResults bytes) {
+        for (std::size_t i = 0; i < reads.size() && i < bytes.size(); ++i) {
+            Join* j = findJoin(id);
+            if (!j)
+                return;
+            const auto& r = reads[i];
+            if (!bytes[i]) {
+                (void)j->torrent.readFailed(r);
+                continue;
+            }
+            if (auto ok = j->torrent.readDone(m_session.engine(), r, spanOf(*bytes[i])); !ok)
+                logDebug(QStringLiteral("read %1 of member %2 not taken (error %3)").arg(r.offset).arg(r.member).arg(errorName(ok.error())));
+        }
+        drainEvents(id);
+        pumpSession();
+    });
 }
 
 void Ed3kTorrentJoin::drainEvents(const QString& id)
@@ -888,24 +895,34 @@ void Ed3kTorrentJoin::feedPieces(const QString& id, const std::vector<std::uint6
         const int size = j->layout.pieceSize(int(piece));
         if (!extents || size <= 0)
             continue;
-        QByteArray data(size, '\0');   // padding between members is zeros
+        // the piece's bytes on a worker (a piece may be MiBs), put together here
+        std::vector<FileRead> reads;
+        std::vector<std::uint64_t> at;
         bool ok = true;
         for (const auto& x : *extents) {
-            if (x.at + x.len > std::uint64_t(size)) {
+            if (x.at + x.len > std::uint64_t(size) || x.len > std::numeric_limits<std::uint32_t>::max()) {
                 ok = false;
                 break;
             }
-            const auto bytes = readMember(*j, int(x.member), x.offset, std::uint32_t(x.len));
-            if (!bytes) {
-                ok = false;
-                break;
-            }
-            std::memcpy(data.data() + x.at, bytes->constData(), std::size_t(bytes->size()));
+            reads.push_back(FileRead{memberPath(*j, int(x.member)), x.offset, std::uint32_t(x.len)});
+            at.push_back(x.at);
         }
-        if (ok)
-            (void)m_bt.addPiece(id, int(piece), data);
-        else
+        if (!ok) {
             logDebug(QStringLiteral("piece %1 of \"%2\" not read for BitTorrent").arg(piece).arg(name(id)));
+            continue;
+        }
+        readInBackground(id, std::move(reads), [this, id, piece, size, at = std::move(at)](ReadResults bytes) {
+            QByteArray data(size, '\0');   // padding between members is zeros
+            for (std::size_t i = 0; i < at.size(); ++i) {
+                if (i >= bytes.size() || !bytes[i]) {
+                    logDebug(QStringLiteral("piece %1 of \"%2\" not read for BitTorrent").arg(piece).arg(name(id)));
+                    return;
+                }
+                std::memcpy(data.data() + at[i], bytes[i]->constData(), std::size_t(bytes[i]->size()));
+            }
+            if (findJoin(id))
+                (void)m_bt.addPiece(id, int(piece), data);
+        });
     }
 }
 
@@ -920,20 +937,6 @@ QString Ed3kTorrentJoin::memberPath(const Join& j, int index) const
     if (index < 0 || std::size_t(index) >= j.memberFile.size())
         return {};
     return j.layout.files.at(j.memberFile[std::size_t(index)]).path;
-}
-
-std::optional<QByteArray> Ed3kTorrentJoin::readMember(const Join& j, int index, std::uint64_t offset, std::uint32_t len) const
-{
-    const QString path = memberPath(j, index);
-    if (path.isEmpty())
-        return std::nullopt;
-    QFile f(path);
-    if (!f.open(QIODevice::ReadOnly) || !f.seek(qint64(offset)))
-        return std::nullopt;
-    QByteArray data = f.read(qint64(len));
-    if (data.size() != qsizetype(len))
-        return std::nullopt;
-    return data;
 }
 
 QString Ed3kTorrentJoin::name(const QString& id) const

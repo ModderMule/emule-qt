@@ -5914,7 +5914,7 @@ QWidget* OptionsDialog::createExtendedPage()
 
     // --- Save log to disk ---
     // One switch per process: the daemon and the GUI write their own set of files
-    // (<name>.log plus <name>_Verbose.log and <name>_Kad.log) in the config
+    // (<name>.log plus _Verbose, _Kad, _Usenet, _Ed3k and _Ed3kKad) in the config
     // directory, so a line can always be traced back to the process that emitted
     // it. Kad gets a file of its own because it would otherwise swamp the verbose
     // log — the same reason it has its own tab.

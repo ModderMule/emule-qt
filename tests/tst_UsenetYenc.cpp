@@ -142,6 +142,7 @@ private slots:
     void singlePartCrcIsVerified();
     void wholeFileCrcOnAMultiPartIsNotThePartsCrc();
     void sizeMismatchIsReported();
+    void yendWithoutSizeFails();
     void ypartLengthMismatchIsReported_data();
     void ypartLengthMismatchIsReported();
     void articleWithoutYbeginIsRejected();
@@ -422,6 +423,20 @@ void tst_UsenetYenc::sizeMismatchIsReported()
     QCOMPARE(decoder.status(), YencDecoder::Status::SizeMismatch);
 }
 
+// usenet.md §4: decoded length must be =yend size; an =yend without size fails
+void tst_UsenetYenc::yendWithoutSizeFails()
+{
+    const QByteArray data = patternBytes(400);
+    YencDecoder decoder;
+
+    QByteArrayList lines{QByteArrayLiteral("=ybegin part=1 line=128 size=400 name=nosize.bin")};
+    lines += encodeYenc(data);
+    lines.append(QByteArrayLiteral("=yend part=1 crc32=") + QByteArray::number(yencCrc32(0, data), 16));
+
+    decodeAll(decoder, lines);
+    QCOMPARE(decoder.status(), YencDecoder::Status::SizeMismatch);
+}
+
 void tst_UsenetYenc::ypartLengthMismatchIsReported_data()
 {
     QTest::addColumn<QByteArray>("ypart");
@@ -433,7 +448,14 @@ void tst_UsenetYenc::ypartLengthMismatchIsReported_data()
     QTest::newRow("end one long") << QByteArrayLiteral("=ypart begin=101 end=401") << false << false;
     QTest::newRow("glued exact") << QByteArrayLiteral("=ypart begin=1 end=300") << true << true;
     QTest::newRow("glued long") << QByteArrayLiteral("=ypart begin=1 end=500") << true << false;
-    QTest::newRow("no end") << QByteArrayLiteral("=ypart begin=101") << false << true;
+    // usenet.md §4: decimal begin and end, 1 <= begin <= end, else failed
+    QTest::newRow("no end") << QByteArrayLiteral("=ypart begin=101") << false << false;
+    QTest::newRow("no begin") << QByteArrayLiteral("=ypart end=400") << false << false;
+    QTest::newRow("begin 0") << QByteArrayLiteral("=ypart begin=0 end=299") << false << false;
+    QTest::newRow("begin above end") << QByteArrayLiteral("=ypart begin=400 end=101") << false << false;
+    QTest::newRow("not decimal") << QByteArrayLiteral("=ypart begin=+101 end=400") << false << false;
+    QTest::newRow("glued no end") << QByteArrayLiteral("=ypart begin=1") << true << false;
+    QTest::newRow("glued no begin or end") << QByteArrayLiteral("=ypart ") << true << false;
 }
 
 // usenet-join-host.md: with =ypart, the decoded length must also be end - begin + 1,

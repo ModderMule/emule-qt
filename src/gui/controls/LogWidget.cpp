@@ -131,6 +131,12 @@ LogWidget::LogWidget(QWidget* parent)
         m_tabBar->addTab(tr("Kad"));
     m_stack->addWidget(m_kadBrowser);
 
+    // ed3k tabs (shown while ed3kEnabled): the node's log, its debug lines, its Kad
+    m_ed3kTabIndex = addLogTab(m_ed3kBrowser, QStringLiteral(":/icons/Log.ico"), tr("ed3k"));
+    addLogTab(m_ed3kVerboseBrowser, QStringLiteral(":/icons/Log.ico"), tr("ed3k Verbose"));
+    addLogTab(m_ed3kKadBrowser, QStringLiteral(":/icons/Kad.ico"), tr("ed3k Kad"));
+    setEd3kTabsVisible(thePrefs.ed3kEnabled());
+
     // IPC tab (shown only when enableIpcLog is true)
     m_ipcLogBrowser = new LogTextView;
     m_ipcLogBrowser->setReadOnly(true);
@@ -263,6 +269,37 @@ void LogWidget::appendUsenet(const QString& msg, const QString& ts, qint64 seqId
     trimToLimit(m_usenetBrowser, m_usenetSeqIds);
 }
 
+void LogWidget::appendEd3k(const QString& msg, const QString& ts, qint64 seqId)
+{
+    appendTo(m_ed3kBrowser, m_ed3kSeqIds, msg, ts, seqId);
+}
+
+void LogWidget::appendEd3kVerbose(const QString& msg, const QString& ts, qint64 seqId)
+{
+    appendTo(m_ed3kVerboseBrowser, m_ed3kVerboseSeqIds, msg, ts, seqId);
+}
+
+void LogWidget::appendEd3kKad(const QString& msg, const QString& ts, qint64 seqId)
+{
+    appendTo(m_ed3kKadBrowser, m_ed3kKadSeqIds, msg, ts, seqId);
+}
+
+void LogWidget::routeEd3k(bool kad, QtMsgType type, const QString& colored, const QString& ts, qint64 seqId)
+{
+    if (m_ed3kTabsVisible) {
+        if (kad)
+            appendEd3kKad(colored, ts, seqId);
+        else if (type == QtDebugMsg)
+            appendEd3kVerbose(colored, ts, seqId);
+        else
+            appendEd3k(colored, ts, seqId);
+    } else if (type == QtWarningMsg) {
+        appendVerbose(colored, ts, seqId);
+    } else if (type != QtDebugMsg) {
+        appendLog(colored, ts, seqId);
+    }
+}
+
 void LogWidget::routeUsenet(QtMsgType type, const QString& colored,
                             const QString& ts, qint64 seqId)
 {
@@ -347,6 +384,13 @@ void LogWidget::setUsenetTabVisible(bool visible)
         m_tabBar->setTabVisible(m_usenetTabIndex, visible);
 }
 
+void LogWidget::setEd3kTabsVisible(bool visible)
+{
+    m_ed3kTabsVisible = visible;
+    for (int i = 0; m_ed3kTabIndex >= 0 && i < 3; ++i)
+        m_tabBar->setTabVisible(m_ed3kTabIndex + i, visible);
+}
+
 void LogWidget::clearAll()
 {
     m_serverInfoBrowser->clear();
@@ -354,11 +398,17 @@ void LogWidget::clearAll()
     m_verboseBrowser->clear();
     m_kadBrowser->clear();
     m_usenetBrowser->clear();
+    m_ed3kBrowser->clear();
+    m_ed3kVerboseBrowser->clear();
+    m_ed3kKadBrowser->clear();
     if (m_ipcLogBrowser) m_ipcLogBrowser->clear();
     m_logSeqIds.clear();
     m_verboseSeqIds.clear();
     m_kadSeqIds.clear();
     m_usenetSeqIds.clear();
+    m_ed3kSeqIds.clear();
+    m_ed3kVerboseSeqIds.clear();
+    m_ed3kKadSeqIds.clear();
     appendLog(QStringLiteral("<font color='%1'>eMule Qt v%2 ready</font>")
                   .arg(roleColorName(TextRole::Info), QString(kAppVersion)));
     clearHighlights();
@@ -370,11 +420,15 @@ QString LogWidget::logText() const { return m_logBrowser->toPlainText(); }
 QString LogWidget::verboseText() const { return m_verboseBrowser->toPlainText(); }
 QString LogWidget::kadText() const { return m_kadBrowser->toPlainText(); }
 QString LogWidget::usenetText() const { return m_usenetBrowser->toPlainText(); }
+QString LogWidget::ed3kText() const { return m_ed3kBrowser->toPlainText(); }
+QString LogWidget::ed3kVerboseText() const { return m_ed3kVerboseBrowser->toPlainText(); }
+QString LogWidget::ed3kKadText() const { return m_ed3kKadBrowser->toPlainText(); }
 
 void LogWidget::setCustomFont(const QFont& font)
 {
     for (auto* browser : {m_serverInfoBrowser, m_logBrowser, m_verboseBrowser,
-                          m_usenetBrowser, m_kadBrowser, m_ipcLogBrowser})
+                          m_usenetBrowser, m_kadBrowser, m_ed3kBrowser, m_ed3kVerboseBrowser,
+                          m_ed3kKadBrowser, m_ipcLogBrowser})
         if (browser) browser->setFont(font);
 }
 
@@ -472,6 +526,14 @@ void LogWidget::messageHandler(QtMsgType type, const QMessageLogContext& context
         return;
     }
 
+    if (std::strncmp(cat, "emule.ed3k", 10) == 0 && (cat[10] == '\0' || cat[10] == '.')) {
+        const bool kad = std::strcmp(cat, "emule.ed3k.kad") == 0;
+        QMetaObject::invokeMethod(s_instance, [kad, type, colored]() {
+            if (s_instance) s_instance->routeEd3k(kad, type, colored);
+        }, Qt::QueuedConnection);
+        return;
+    }
+
     // All other emule messages go to the Log tab (debug+warning go to Verbose)
     if (isVerbose) {
         QMetaObject::invokeMethod(s_instance, [colored]() {
@@ -515,6 +577,33 @@ void LogWidget::clearHighlights()
     m_unseenTabs.clear();
     for (int i = 0; i < m_tabBar->count(); ++i)
         m_tabBar->setTabTextColor(i, QColor{});
+}
+
+void LogWidget::appendTo(LogTextView* browser, QList<qint64>& seqIds, const QString& msg,
+                         const QString& ts, qint64 seqId)
+{
+    const QString timestamp = ts.isEmpty()
+        ? QDateTime::currentDateTime().toString(QStringLiteral("HH:mm:ss"))
+        : ts;
+    if (seqId == 0)
+        seqId = QDateTime::currentDateTime().toSecsSinceEpoch();
+    const QString html = QStringLiteral("<font color='gray'>%1</font> %2").arg(timestamp, msg);
+    insertSorted(browser, seqIds, seqId, html);
+    trimToLimit(browser, seqIds);
+}
+
+int LogWidget::addLogTab(LogTextView*& browser, const QString& icon, const QString& title)
+{
+    browser = new LogTextView;
+    browser->setReadOnly(true);
+    browser->setFont(QFont(QStringLiteral("Helvetica"), scaledPointSize(9)));
+    const int index = m_tabBar->count();
+    if (thePrefs.useOriginalIcons())
+        m_tabBar->addTab(QIcon(icon), title);
+    else
+        m_tabBar->addTab(title);
+    m_stack->addWidget(browser);
+    return index;
 }
 
 } // namespace eMule

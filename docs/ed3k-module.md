@@ -55,6 +55,7 @@ The `ed3k:` block in `preferences.yml`, with IPC/REST keys `ed3kEnabled` and `ed
 | `creditRpc` | `[]` | IPC/REST `ed3kCreditRpc` (URLs separated by spaces): JSON-RPC endpoints of the credit ledger; empty = calls answered failed |
 | `chaintubeRpc` | `[]` | IPC/REST `ed3kChaintubeRpc`: the same for chaintube's chain reads and writes |
 | `shareFiles` | `true` | IPC/REST `ed3kShareFiles`: serve the shared files over ed3k (`Ed3kShared`); only while the node runs |
+| `holdBackPosts` | `false` | IPC/REST `ed3kHoldBackPosts`: hold Usenet posts back (usenet.md §6): no article lists, post sets or `nzb`/`nzb-file` records; the members are shared all the same. A change restarts the usenet join; switching on withdraws the kept `ALIAS` records (`unpublishAlias`) |
 
 The port is mapped as `PortMapPurpose::Ed3kUdp` while `ed3kEnabled`.
 
@@ -82,6 +83,10 @@ permissions.
 The session follows `libs/packmule/docs/ffi.md` "The loop" and mode A of `socket-modes.md`.
 
 - **One thread.** Everything runs on the daemon thread; the engine is not thread-safe.
+  File reads of the joins and of the blocks served go to `Ed3kSession::readPool()` (2
+  threads): `Ed3kJoinBase::readInBackground`, one batch per owner at a time, results back on
+  the daemon thread; dropped at `closeAll()`. `m_readsNow` reads inline (usenet
+  `filesRepaired`: the volumes are deleted right after).
 - **The socket.** One `QUdpSocket` on its own port, dual stack (`QHostAddress::Any`, `local4 = 0.0.0.0:p`, `local6 = [::]:p`). It is not the eD2K socket. Datagrams that are not ed3k are counted and dropped.
 - **The pump.**
   - `readyRead` drains every datagram into `datagramIn`, then pumps once.
@@ -122,9 +127,13 @@ The session follows `libs/packmule/docs/ffi.md` "The loop" and mode A of `socket
   - The lists take effect without a restart (`DaemonApp::applyEd3kConfig`).
 - **A dead engine.** `ED3K_ERR_DEAD` frees the engine and logs it; ed3k stays off until the next start.
 
-Logging uses the category `emule.ed3k` (`logEd3k`, `logEd3kWarning`, `logEd3kError`,
-`logEd3kDebug`). Its lines go to the main log, or to the verbose log for debug lines; it has
-no file of its own yet.
+Logging uses the categories `emule.ed3k` (`logEd3k`, `logEd3kWarning`, `logEd3kError`,
+`logEd3kDebug`) and `emule.ed3k.kad` (`logEd3kKad`, `logEd3kKadWarning`, `logEd3kKadDebug`).
+The GUI shows them in three tabs of the log pane while `ed3kEnabled`: **ed3k** (emule.ed3k
+info, warnings, errors), **ed3k Verbose** (its debug lines) and **ed3k Kad**; hidden, they
+fall back to Log/Verbose and debug lines are dropped (`LogWidget::routeEd3k`). Files:
+`<base>_Ed3k.log` and `<base>_Ed3kKad.log`. Filter rules: `emule.ed3k.debug` follows
+`verbose`, `emule.ed3k.kad.debug` follows `verbose` or `kadVerboseLog`.
 
 ## Status and bandwidth
 
@@ -203,8 +212,8 @@ queue (`Ed3kUsenetJoin::queueAdapter`), before the node starts. It attaches on
     asked for (`rangesHint`, at most 16).
   - `event::Block` is written into `tempPath` (never into a sealed file) → `ed3k_block`.
   - `event::Hashes` → `pending_reads`.
-  - `WantBlock`/`VerifyBlock` of a shared member are answered from the file. `FileRequested`
-    gets a slot at once (ToDo: an upload queue).
+  - `WantBlock`/`VerifyBlock` of a shared member are answered from the file, read on a
+    worker. `FileRequested`: see "Upload queue".
 - **Post set (§4.1, §4.2 step 2):** the manifest is fetched into memory (`fetchBlob`), then
   the article list it names (`ed3k::usenetSetList`: `usenet.list`, `list_size`; above 32 MiB
   not fetched), then `setManifest(manifest, list, publishers)`. §4.1: the root and size of
@@ -231,9 +240,12 @@ ToDo (usenet join):
 - was: archive volumes deleted right after `filesRepaired` (done: hashed in the slot).
 - was: the `ALIAS` (`nzb`, `nzb-file`) and `MEMBER` records of a kept post are not published
   again after a restart (done: `keepRecords`, see Records again).
-- `articleDecoded` gives the part number, not mᵢ: a number listed twice with two IDs is
-  reported under the first ID.
-- A preference for holding posts back (§6), and an ed3k upload queue with slots.
+- was: `articleDecoded` gives the part number, not mᵢ: a number listed twice with two IDs is
+  reported under the first ID (done: the queue hands the message ID; an article fetched under
+  a second ID of its number is not reported).
+- was: a preference for holding posts back (§6) (done: `holdBackPosts`), and an ed3k upload
+  queue with slots (done: see "Upload queue").
+- was: block reads on the daemon thread (done: `readInBackground`, both joins and serving).
 
 ## Torrent join
 

@@ -143,7 +143,7 @@ signals:
     /// UsenetQueue::articleDecoded, forwarded: the ed3k join's article feed.
     void articleDecoded(const QString& itemId, int fileIndex, qint64 offset, qint64 length,
                         bool crcOk, int partNumber, const QByteArray& rawYbeginLine,
-                        const QString& serverKey);
+                        const QString& serverKey, const QString& messageId);
 
 private:
     std::unique_ptr<NntpServerPool> m_pool;

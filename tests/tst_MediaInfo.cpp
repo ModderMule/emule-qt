@@ -802,9 +802,10 @@ private slots:
         const QByteArray bareMp3 = QByteArray(40, '\0') + be(0xFFFB9000u, 4) + QByteArray(40, '\0');
 
         row("mp4 as itself", mp4, "film.mp4", MediaKind::Mp4);
-        row("mp4 called avi", mp4, "film.avi", MediaKind::None);
+        // A misnamed container is read as what it is, as the fake check names it (#55).
+        row("mp4 called avi", mp4, "film.avi", MediaKind::Mp4);
         row("avi as itself", avi, "film.avi", MediaKind::Riff);
-        row("avi called mkv", avi, "film.mkv", MediaKind::None);
+        row("avi called mkv", avi, "film.mkv", MediaKind::Riff);
         row("mp4 with no media name", mp4, "film.bin", MediaKind::Mp4);
         row("tagged mp3", id3, "song.mp3", MediaKind::Mp3);
         row("tag in front of flac", id3, "song.flac", MediaKind::Flac);
@@ -837,8 +838,16 @@ private slots:
         const QByteArray mp4 = buildMP4() + QByteArray(3 * 1024 * 1024, '\x44');
         qint64 bytes = -1;
 
+        // Wrong name, real container: read as what it is, still within the budget (#55).
         MediaInfo wrongName;
-        QVERIFY(!extractSharedMediaInfo(writeTempFile(mp4, u".avi"_s), wrongName, &bytes));
+        QVERIFY(extractSharedMediaInfo(writeTempFile(mp4, u".avi"_s), wrongName, &bytes));
+        QCOMPARE(wrongName.video.codecName, u"h264"_s);
+        QVERIFY(bytes <= kMediaReadBudget);
+
+        // Wrong name, no container at all: one small read and nothing more.
+        MediaInfo junk;
+        QVERIFY(!extractSharedMediaInfo(writeTempFile(QByteArray(3 * 1024 * 1024, 'z'), u".avi"_s),
+                                        junk, &bytes));
         QCOMPARE(bytes, kMediaGateBytes);
 
         MediaInfo notMedia;

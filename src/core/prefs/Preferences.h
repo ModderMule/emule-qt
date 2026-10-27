@@ -406,14 +406,15 @@ public:
 
     // -- Logging --------------------------------------------------------------
 
-    /// Write emulecored.log, emulecored_Verbose.log and emulecored_Kad.log in the
-    /// config directory. One switch per process: the daemon and the GUI keep
+    /// Write emulecored.log, emulecored_Verbose.log, emulecored_Kad.log and the Usenet,
+    /// Ed3k and Ed3kKad files in the config directory. One switch per process: the daemon and the GUI keep
     /// separate files, so a line's origin is never in doubt. @see logToDiskGui
     [[nodiscard]] bool logToDiskCore() const;
     void setLogToDiskCore(bool val);
 
-    /// Write emuleqt.log, emuleqt_Verbose.log and emuleqt_Kad.log in the config
-    /// directory (the Kad file stays empty — Kad runs in the daemon).
+    /// Write emuleqt.log, emuleqt_Verbose.log, emuleqt_Kad.log and the Usenet, Ed3k and
+    /// Ed3kKad files in the config directory (Kad, Usenet, ed3k files stay empty — they run
+    /// in the daemon).
     /// Set by the GUI but persisted by the daemon, which owns preferences.yml.
     [[nodiscard]] bool logToDiskGui() const;
     void setLogToDiskGui(bool val);
@@ -1291,6 +1292,11 @@ public:
     /// eMule's shared files served over ed3k (Ed3kShared); only while ed3k runs. Default on.
     [[nodiscard]] bool ed3kShareFiles() const;
     void setEd3kShareFiles(bool val);
+
+    /// Holding Usenet posts back (usenet.md §6): no article list, post set or nzb/nzb-file
+    /// ALIAS records go out; the members are shared all the same. Default off.
+    [[nodiscard]] bool ed3kHoldBackPosts() const;
+    void setEd3kHoldBackPosts(bool val);
 
     /// JSON-RPC endpoints of the credit ledger / the chaintube chain (https, or http to
     /// a loopback node); operator n of a call is the n-th. Empty = calls answered failed.

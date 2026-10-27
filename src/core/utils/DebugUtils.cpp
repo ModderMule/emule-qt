@@ -12,8 +12,10 @@ Q_LOGGING_CATEGORY(lcEmuleFile,    "emule.file")
 Q_LOGGING_CATEGORY(lcEmuleKad,     "emule.kad")
 // Usenet/NNTP: own GUI tab and own _Usenet file, like Kad.
 Q_LOGGING_CATEGORY(lcEmuleUsenet,  "emule.usenet")
-// ed3k node (packmule): main/verbose log for now
+// ed3k node (packmule): own GUI tabs (ed3k, ed3k Verbose) and own _Ed3k file
 Q_LOGGING_CATEGORY(lcEmuleEd3k,    "emule.ed3k")
+// the ed3k node's Kad: the ed3k Kad tab and the _Ed3kKad file
+Q_LOGGING_CATEGORY(lcEmuleEd3kKad, "emule.ed3k.kad")
 Q_LOGGING_CATEGORY(lcEmuleServer,  "emule.server")
 // Dedicated channel for gated server TCP/UDP/search verbose lines. Routes to the
 // GUI "Verbose" tab (any emule.* category that is not emule.kad/emule.usenet/emule.server falls

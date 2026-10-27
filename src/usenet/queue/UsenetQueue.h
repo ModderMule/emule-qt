@@ -522,11 +522,12 @@ signals:
     /// the =yend size (it is then asked of the next server, too); true also
     /// when it carried no checksum. @p partNumber is the NZB `number` of the
     /// segment, i.e. its place in usenet.md's article list. @p rawYbeginLine
-    /// is YencDecoder::rawBeginLine(). Emitted on this queue's thread after the
+    /// is YencDecoder::rawBeginLine(). @p messageId is the segment fetched (a number
+    /// listed twice has two). Emitted on this queue's thread after the
     /// bookkeeping, never from a worker: a slot may call refetchRange().
     void articleDecoded(const QString& itemId, int fileIndex, qint64 offset, qint64 length,
                         bool crcOk, int partNumber, const QByteArray& rawYbeginLine,
-                        const QString& serverKey);
+                        const QString& serverKey, const QString& messageId);
 
     /// Post-processing repaired the release (PAR2) and it passed; @p fileIndices
     /// are the files none of whose articles could be fetched, still on disk at

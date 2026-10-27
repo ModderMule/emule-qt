@@ -281,6 +281,8 @@ private:
     void performHandshake();
     void dispatchPushEvent(const Ipc::IpcMessage& msg);
     void requestLogSync();
+    /// The last line id shown of the tab a log line of @p cat / @p severity goes to.
+    int64_t& lastLogId(const QString& cat, QtMsgType severity);
 
     /// Emit the lines of a SyncLogs reply or a PushLogBatch not yet shown.
     void replayLogEntries(const QCborArray& entries);
@@ -336,6 +338,9 @@ private:
     int64_t m_lastServerId  = 0;
     int64_t m_lastLogId     = 0;  // Log tab
     int64_t m_lastVerboseId = 0;
+    int64_t m_lastEd3kId = 0;         // ed3k tabs
+    int64_t m_lastEd3kVerboseId = 0;
+    int64_t m_lastEd3kKadId = 0;
     /// Highest Server Info line id displayed, so a reconnect replays only the gap.
     int64_t m_lastServerMsgId = 0;
     QString m_daemonToken;

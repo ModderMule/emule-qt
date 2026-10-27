@@ -26,6 +26,7 @@
 #include <QObject>
 #include <QString>
 #include <QStringList>
+#include <QThreadPool>
 #include <QTimer>
 
 #include <cstdint>
@@ -102,6 +103,12 @@ public:
     void setLimits(std::uint64_t upBytesPerSec, std::uint64_t downBytesPerSec);
     [[nodiscard]] ::ed3k::Limits limits() const { return m_limits; }
 
+    /// Slots of the engine's upload queue policy (ed3k_queue_auto, on from start): 0 = from
+    /// the upload limit. Kept across restarts; set by BandwidthCoordinator.
+    void setUploadSlots(std::uint32_t count);
+    /// The policy's slots, holders and waiting entries; nullopt while not running.
+    [[nodiscard]] std::optional<::ed3k::QueueStats> uploadQueueStats();
+
     /// The JSON-RPC endpoints of a class (see Ed3kSettings); calls out keep their URL.
     void setRpcEndpoints(::ed3k::RpcClass cls, const QStringList& urls);
 
@@ -113,6 +120,8 @@ public:
     [[nodiscard]] ::ed3k::Engine* engine() { return m_engine.get(); }
     /// The time to pass to engine commands.
     [[nodiscard]] ::ed3k::Now now() const;
+    /// Workers for the joins' file reads (2 threads; not behind hashing in the global pool).
+    [[nodiscard]] QThreadPool& readPool() { return m_readPool; }
 
     /// Runs @p cmd on the engine and pumps; inside the pump it runs after the current
     /// event. Dropped when not running.
@@ -135,6 +144,12 @@ private:
     /// RpcRequest to the configured endpoint; false: none for its class and operator.
     bool startRpc(const ::ed3k::event::RpcRequest& r);
     void applyLimits();
+    void applyUploadSlots();
+    /// packmule's log level from the filter rules of emule.ed3k / emule.ed3k.kad (verbose
+    /// when either lets debug lines through); set when it changed.
+    void applyLogLevel();
+    /// A line of packmule (event::Log) into emule.ed3k or emule.ed3k.kad.
+    static void logEngineLine(const ::ed3k::event::Log& line);
     /// Default answer for an event nobody answered.
     void answerUnhandled(const ::ed3k::Event& ev);
     void loadState();
@@ -151,6 +166,7 @@ private:
     std::unique_ptr<Ed3kHttp> m_http;
     QTimer m_timer;
     QTimer m_badSaveTimer;
+    QThreadPool m_readPool;
     QElapsedTimer m_clock;
     QString m_dir;
     std::uint16_t m_port = 0;
@@ -162,6 +178,8 @@ private:
     QStringList m_creditRpc;
     QStringList m_chaintubeRpc;
     ::ed3k::Limits m_limits{};
+    std::uint32_t m_uploadSlots = 0;
+    int m_logLevel = -1;   ///< ed3k::LogLevel set on this engine; -1 = none yet
     Ed3kTraffic m_trafficBase;   ///< of the engines before this one
 };
 

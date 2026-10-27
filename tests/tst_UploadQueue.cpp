@@ -68,6 +68,7 @@ private slots:
     // Slot gating — acceptNewClient, USS off (the cap comes from thePrefs)
     void acceptNewClient_slotFloorAndCeiling();
     void acceptNewClient_lowIdGetsOneExtraSlot();
+    void acceptNewClient_countsForeignSlots();
     void acceptNewClient_datarateGate();
     void acceptNewClient_finiteLimitFromPrefs();
     void acceptNewClient_unlimitedSkipsTheLimitGate();
@@ -1278,6 +1279,25 @@ void tst_UploadQueue::acceptNewClient_slotFloorAndCeiling()
 
 // The one extra slot lowID users get: they are skipped when it was actually their turn,
 // so the gate is re-asked with one slot discounted. MFC srchybrid/UploadQueue.cpp:388-391.
+// ed3k's slots on the same line count with ours: at the floor with them, no new slot.
+void tst_UploadQueue::acceptNewClient_countsForeignSlots()
+{
+    SlotGateGuard guard;
+    thePrefs.setDynUpEnabled(false);
+    thePrefs.setMaxUpload(250);
+    thePrefs.setMaxGraphUploadRate(0);
+
+    UploadQueue queue;
+    QCOMPARE(queue.uploadQueueLength(), 0);
+    QVERIFY(queue.acceptNewClient(false));   // under the floor
+    queue.setForeignSlots(4);
+    QCOMPARE(queue.foreignSlots(), 4);
+    QVERIFY(!queue.acceptNewClient(false));  // at the floor with ed3k's, datarate 0
+    queue.setForeignSlots(-3);
+    QCOMPARE(queue.foreignSlots(), 0);
+    QVERIFY(queue.acceptNewClient(false));
+}
+
 void tst_UploadQueue::acceptNewClient_lowIdGetsOneExtraSlot()
 {
     qRegisterMetaType<eMule::UpDownClient*>("eMule::UpDownClient*");

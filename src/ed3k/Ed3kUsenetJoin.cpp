@@ -363,7 +363,8 @@ void Ed3kUsenetJoin::onItemFinished(const QString& itemId, bool success, const Q
 }
 
 void Ed3kUsenetJoin::onArticleDecoded(const QString& itemId, int fileIndex, qint64 offset, qint64 length, bool crcOk,
-                                      int partNumber, const QByteArray& rawYbeginLine, const QString& serverKey)
+                                      int partNumber, const QByteArray& rawYbeginLine, const QString& serverKey,
+                                      const QString& messageId)
 {
     const auto post = ensurePost(itemId);
     auto* e = m_session.engine();
@@ -372,19 +373,17 @@ void Ed3kUsenetJoin::onArticleDecoded(const QString& itemId, int fileIndex, qint
         return;
 
     // mᵢ of the article: the first <segment> of its number in NZB order (only that one
-    // counts, usenet.md §1; a report for another one would be STALE anyway).
-    // ToDo: the queue could hand the message ID itself; a duplicated number with two
-    // fetched IDs is reported under the first one
-    QString messageId;
-    bool found = false;
+    // counts, usenet.md §1). An article fetched under a second ID of that number is not mᵢ
+    // (was: ToDo: the queue could hand the message ID itself; a duplicated number with two
+    // fetched IDs is reported under the first one (done: messageId from the queue))
+    bool first = false;
     for (const auto& s : item->nzb.files.at(fileIndex).nzbOrderSegments()) {
         if (s.number == partNumber) {
-            messageId = s.messageId;
-            found = true;
+            first = s.messageId == messageId;
             break;
         }
     }
-    if (!found || messageId.isEmpty())
+    if (!first || messageId.isEmpty())
         return;
     const QByteArray id = messageId.toUtf8();
     const std::string_view idView(id.constData(), std::size_t(id.size()));
@@ -439,7 +438,9 @@ void Ed3kUsenetJoin::onFilesRepaired(const QString& itemId, const QList<int>& fi
         // unpack), so their hash at MEMBER_COMPLETE fails; hash them here, synchronously?
         // (done: m_hashNow, MEMBER_COMPLETE of these hashed on this thread)
         m_hashNow = true;
+        m_readsNow = true;   // inline too: the volumes go right after this signal
         serveReads(itemId, std::move(*reads));
+        m_readsNow = false;
         m_hashNow = false;
     }
     // hashes still running on a worker: done here too, before the volumes go
@@ -630,29 +631,43 @@ void Ed3kUsenetJoin::dropPost(const QString& itemId, bool keepBlob)
 
 void Ed3kUsenetJoin::serveReads(const QString& itemId, std::vector<ffi::TorrentRead> reads)
 {
-    std::deque<ffi::TorrentRead> todo(reads.begin(), reads.end());
-    for (int guard = 0; !todo.empty() && guard < kMaxReadsPerCall; ++guard) {
-        const ffi::TorrentRead r = todo.front();
-        todo.pop_front();
-        const auto post = findPost(itemId);
-        if (!post)
-            return;
-        // ToDo: one block (256 KiB) read on the daemon thread; move to a worker if
-        // reads ever come in large batches
-        const auto bytes = readMember(itemId, int(r.member), r.offset, r.len);
-        if (!bytes) {
-            (void)post->join.readFailed(r);
-            continue;
-        }
-        auto more = post->join.blockRead(m_session.engine(), r, spanOf(*bytes));
-        if (!more) {
-            logEd3kDebug(QStringLiteral("ed3k usenet: block %1 of file %2 not taken (error %3)")
-                             .arg(r.offset).arg(r.member).arg(errorName(more.error())));
-            continue;
-        }
-        todo.insert(todo.end(), more->begin(), more->end());
+    if (reads.empty() || !findPost(itemId)) {
+        drainEvents(itemId);
+        return;
     }
-    drainEvents(itemId);
+    // was: ToDo: one block (256 KiB) read on the daemon thread; move to a worker if
+    // reads ever come in large batches (done: readInBackground; inline while m_readsNow)
+    std::vector<FileRead> files;
+    files.reserve(reads.size());
+    for (const auto& r : reads)
+        files.push_back(FileRead{memberPath(itemId, int(r.member)), r.offset, r.len});
+    readInBackground(itemId, std::move(files), [this, itemId, reads = std::move(reads)](ReadResults bytes) {
+        std::vector<ffi::TorrentRead> more;
+        for (std::size_t i = 0; i < reads.size() && i < bytes.size(); ++i) {
+            const auto post = findPost(itemId);
+            if (!post)
+                return;
+            const auto& r = reads[i];
+            // sealed or moved since the path was taken: once more under the path now
+            auto data = bytes[i] ? std::move(bytes[i]) : readMember(itemId, int(r.member), r.offset, r.len);
+            if (!data) {
+                (void)post->join.readFailed(r);
+                continue;
+            }
+            auto next = post->join.blockRead(m_session.engine(), r, spanOf(*data));
+            if (!next) {
+                logEd3kDebug(QStringLiteral("ed3k usenet: block %1 of file %2 not taken (error %3)")
+                                 .arg(r.offset).arg(r.member).arg(errorName(next.error())));
+                continue;
+            }
+            more.insert(more.end(), next->begin(), next->end());
+        }
+        if (!more.empty())
+            serveReads(itemId, std::move(more));   // the next batch of this item
+        else
+            drainEvents(itemId);
+        pumpSession();
+    });
 }
 
 void Ed3kUsenetJoin::drainEvents(const QString& itemId)
@@ -967,25 +982,16 @@ QString Ed3kUsenetJoin::memberPath(const QString& itemId, int fileIndex) const
 std::optional<QByteArray> Ed3kUsenetJoin::readMember(const QString& itemId, int fileIndex, std::uint64_t offset,
                                                      std::uint32_t len) const
 {
-    const QString path = memberPath(itemId, fileIndex);
-    if (path.isEmpty())
-        return std::nullopt;
-    QFile f(path);
-    if (!f.open(QIODevice::ReadOnly) || !f.seek(qint64(offset)))
-        return std::nullopt;
-    QByteArray data = f.read(qint64(len));
-    if (data.size() != qsizetype(len))
-        return std::nullopt;
-    return data;
+    return readFile(FileRead{memberPath(itemId, fileIndex), offset, len});
 }
 
-std::optional<QByteArray> Ed3kUsenetJoin::readShared(const Shared& s, std::uint64_t offset, std::uint32_t len) const
+std::optional<Ed3kJoinBase::FileRead> Ed3kUsenetJoin::sharedRead(const Shared& s, std::uint64_t offset, std::uint32_t len) const
 {
     // only bytes verified under the root (usenet-join.md: servable)
     const auto post = findPost(s.owner);
     if (post && !post->join.servable(std::uint64_t(s.member), offset, len))
         return std::nullopt;
-    return readMember(s.owner, s.member, offset, len);
+    return FileRead{memberPath(s.owner, s.member), offset, len};
 }
 
 bool Ed3kUsenetJoin::sharedGone(const Shared& s) const

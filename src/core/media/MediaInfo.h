@@ -155,14 +155,14 @@ inline constexpr qint64 kMediaSniffBytes = 12;
 inline constexpr qint64 kMediaReadBudget = 2 * 1024 * 1024;
 /// Bumped whenever the extractor learns something: files stamped with an older
 /// value are read again.
-inline constexpr uint32 kMediaExtractVersion = 1;
+inline constexpr uint32 kMediaExtractVersion = 2;   // 2: misnamed containers are read
 
 /// True for an extension the gate holds to a container signature.
 [[nodiscard]] bool isGatedMediaExtension(const QString& fileName);
 
-/// Which reader, if any, is worth running: a media extension must come with its
-/// own container's signature, any other name with a signature in the first
-/// kMediaSniffBytes.
+/// Which reader, if any, is worth running: the container a signature in the first
+/// kMediaSniffBytes names, whatever the extension says; without one, only what a
+/// media extension promises and its weak marks (ID3, frame sync) back up.
 [[nodiscard]] MediaKind mediaGate(QByteArrayView head, const QString& fileName);
 
 /// Metadata for a file in the share: gate first, then exactly one reader, all

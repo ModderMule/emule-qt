@@ -698,6 +698,7 @@ struct Preferences::Data {
     bool ed3kEnabled = false;
     uint16 ed3kUdpPort = 0;            // 0 = random, resolved at load
     bool ed3kShareFiles = true;        // eMule's shared files over ed3k
+    bool ed3kHoldBackPosts = false;    // usenet.md §6
     QStringList ed3kCreditRpc;         // JSON-RPC endpoints; empty = off
     QStringList ed3kChaintubeRpc;
 
@@ -2290,6 +2291,8 @@ void Preferences::setEd3kUdpPort(uint16 val) { set(&Data::ed3kUdpPort, val); }
 
 bool Preferences::ed3kShareFiles() const { return get(&Data::ed3kShareFiles); }
 void Preferences::setEd3kShareFiles(bool val) { set(&Data::ed3kShareFiles, val); }
+bool Preferences::ed3kHoldBackPosts() const { return get(&Data::ed3kHoldBackPosts); }
+void Preferences::setEd3kHoldBackPosts(bool val) { set(&Data::ed3kHoldBackPosts, val); }
 
 QStringList Preferences::ed3kCreditRpc() const { return get(&Data::ed3kCreditRpc); }
 void Preferences::setEd3kCreditRpc(const QStringList& urls) { set(&Data::ed3kCreditRpc, urls); }
@@ -3436,6 +3439,7 @@ QCborMap Preferences::toIpcMap() const
     prefs.insert(QStringLiteral("ed3kEnabled"), ed3kEnabled());
     prefs.insert(QStringLiteral("ed3kUdpPort"), static_cast<qint64>(ed3kUdpPort()));
     prefs.insert(QStringLiteral("ed3kShareFiles"), ed3kShareFiles());
+    prefs.insert(QStringLiteral("ed3kHoldBackPosts"), ed3kHoldBackPosts());
     prefs.insert(QStringLiteral("ed3kCreditRpc"), ed3kCreditRpc().join(QLatin1Char(' ')));
     prefs.insert(QStringLiteral("ed3kChaintubeRpc"), ed3kChaintubeRpc().join(QLatin1Char(' ')));
 
@@ -3705,6 +3709,7 @@ void Preferences::updateFromCbor(const QCborMap& p)
     m_data->ed3kUdpPort = static_cast<uint16>(
         std::clamp<qint64>(p.value(QStringLiteral("ed3kUdpPort")).toInteger(0), 0, 65535));
     m_data->ed3kShareFiles = p.value(QStringLiteral("ed3kShareFiles")).toBool(true);
+    m_data->ed3kHoldBackPosts = p.value(QStringLiteral("ed3kHoldBackPosts")).toBool(false);
     m_data->ed3kCreditRpc = rpcUrlList(p.value(QStringLiteral("ed3kCreditRpc")));
     m_data->ed3kChaintubeRpc = rpcUrlList(p.value(QStringLiteral("ed3kChaintubeRpc")));
 
@@ -4855,6 +4860,7 @@ bool Preferences::load(const QString& filePath)
             const int port = e3["udpPort"].as<int>(m_data->ed3kUdpPort);
             m_data->ed3kUdpPort = (port >= 0 && port <= 65535) ? static_cast<uint16>(port) : 0;
             m_data->ed3kShareFiles = e3["shareFiles"].as<bool>(m_data->ed3kShareFiles);
+            m_data->ed3kHoldBackPosts = e3["holdBackPosts"].as<bool>(m_data->ed3kHoldBackPosts);
             const auto urls = [](const YAML::Node& n) {
                 QStringList out;
                 if (n && n.IsSequence())
@@ -5969,6 +5975,7 @@ bool Preferences::saveImpl(const QString& filePath) const
     out << YAML::Key << "ed3k" << YAML::Value << YAML::BeginMap;
     out << YAML::Key << "enabled" << YAML::Value << m_data->ed3kEnabled;
     out << YAML::Key << "shareFiles" << YAML::Value << m_data->ed3kShareFiles;
+    out << YAML::Key << "holdBackPosts" << YAML::Value << m_data->ed3kHoldBackPosts;
     out << YAML::Key << "udpPort" << YAML::Value << static_cast<int>(m_data->ed3kUdpPort);
     for (const auto& [key, list] : {std::pair{"creditRpc", &m_data->ed3kCreditRpc},
                                     std::pair{"chaintubeRpc", &m_data->ed3kChaintubeRpc}}) {

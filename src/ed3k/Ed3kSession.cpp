@@ -9,6 +9,7 @@
 #include "app/AppConfig.h"
 #include "net/ProxySettings.h"
 #include "prefs/Preferences.h"
+#include "utils/DebugUtils.h"
 #include "utils/Log.h"
 
 #include <QDateTime>
@@ -79,6 +80,7 @@ std::span<const std::byte> spanOf(const QByteArray& b)
 Ed3kSession::Ed3kSession(QObject* parent)
     : QObject(parent)
 {
+    m_readPool.setMaxThreadCount(2);
     m_timer.setSingleShot(true);
     m_timer.setTimerType(Qt::PreciseTimer);
     connect(&m_timer, &QTimer::timeout, this, &Ed3kSession::onTimer);
@@ -210,6 +212,11 @@ bool Ed3kSession::start(const Ed3kSettings& settings)
     // noteBytesSentOutsideTheLoop), socket-modes.md "Mode A in eMuleQt" (done: setLimits()
     // from BandwidthCoordinator, which also reports traffic() to the throttler)
     applyLimits();
+    // was: ToDo: an upload queue and slots for ed3k (done: the engine's policy, eMule's score;
+    // its slot count from BandwidthCoordinator, counted with eD2K's)
+    applyUploadSlots();
+    m_logLevel = -1;
+    applyLogLevel();
 
     connect(m_socket.get(), &QUdpSocket::readyRead, this, &Ed3kSession::onReadyRead);
     pump();
@@ -315,6 +322,23 @@ void Ed3kSession::setLimits(std::uint64_t upBytesPerSec, std::uint64_t downBytes
     m_limits = {upBytesPerSec, downBytesPerSec};
     applyLimits();
     pump();
+}
+
+void Ed3kSession::setUploadSlots(std::uint32_t count)
+{
+    if (m_uploadSlots == count)
+        return;
+    m_uploadSlots = count;
+    applyUploadSlots();
+    pump();
+}
+
+std::optional<ffi::QueueStats> Ed3kSession::uploadQueueStats()
+{
+    if (!m_engine)
+        return std::nullopt;
+    auto s = m_engine->queueStats();
+    return s ? std::optional(*s) : std::nullopt;
 }
 
 void Ed3kSession::setRpcEndpoints(ffi::RpcClass cls, const QStringList& urls)
@@ -429,6 +453,7 @@ void Ed3kSession::onTimer()
         die(ok.error());
         return;
     }
+    applyLogLevel();   // the filter rules may have changed (verbose, kadVerboseLog)
     pump();
 }
 
@@ -462,9 +487,21 @@ void Ed3kSession::dispatch(ffi::Event& ev)
     } else if (const auto* rpc = std::get_if<e::RpcRequest>(&ev)) {
         if (startRpc(*rpc))
             return;   // else a slot may answer it, or answerUnhandled fails it
+    } else if (const auto* l = std::get_if<e::Log>(&ev)) {
+        logEngineLine(*l);
+        return;
     } else if (const auto* b = std::get_if<e::KadBootstrapped>(&ev)) {
-        logEd3kDebug(QStringLiteral("ed3k: Kad bootstrap (IPv%1): %2 contacts").arg(b->family).arg(b->contacts));
+        logEd3kKad(QStringLiteral("ed3k: Kad bootstrap (IPv%1): %2 contacts").arg(b->family).arg(b->contacts));
         emit statusChanged();
+    } else if (const auto* ks = std::get_if<e::KadStored>(&ev)) {
+        logEd3kKadDebug(QStringLiteral("ed3k: Kad store %1 (kind %2): %3 nodes")
+                            .arg(ks->lookup).arg(ks->kind).arg(ks->nodes));
+    } else if (const auto* sp = std::get_if<e::SourcesPublished>(&ev)) {
+        logEd3kKadDebug(QStringLiteral("ed3k: sources published: %1 of %2 nodes stored (%3 again)")
+                            .arg(sp->stored).arg(sp->nodes).arg(sp->again));
+    } else if (const auto* kp = std::get_if<e::KeywordsPublished>(&ev)) {
+        logEd3kKadDebug(QStringLiteral("ed3k: keywords of %1 file(s) published: %2 stored, %3 full, %4 rejected, %5 unanswered")
+                            .arg(kp->files).arg(kp->stored).arg(kp->full).arg(kp->rejected).arg(kp->unanswered));
     } else if (const auto* n = std::get_if<e::NatClass>(&ev)) {
         logEd3kDebug(QStringLiteral("ed3k: IPv%1 class %2").arg(n->family).arg(n->natClass));
         emit statusChanged();
@@ -503,6 +540,36 @@ void Ed3kSession::applyLimits()
     const ffi::Limits l{floored(m_limits.up), floored(m_limits.down)};
     if (auto ok = m_engine->setLimits(now(), l); !ok)
         logEd3kWarning(QStringLiteral("ed3k: limits not set (error %1)").arg(errorName(ok.error())));
+}
+
+void Ed3kSession::applyUploadSlots()
+{
+    if (!m_engine)
+        return;
+    if (auto ok = m_engine->queueAuto(now(), true, m_uploadSlots); !ok)
+        logEd3kWarning(QStringLiteral("ed3k: upload queue not set (error %1)").arg(errorName(ok.error())));
+}
+
+void Ed3kSession::applyLogLevel()
+{
+    if (!m_engine)
+        return;
+    const bool verbose = lcEmuleEd3k().isDebugEnabled() || lcEmuleEd3kKad().isDebugEnabled();
+    const auto level = verbose ? ffi::LogLevel::Verbose : ffi::LogLevel::Info;
+    if (m_logLevel == int(level))
+        return;
+    if (m_engine->logLevel(level))
+        m_logLevel = int(level);
+}
+
+void Ed3kSession::logEngineLine(const ffi::event::Log& line)
+{
+    const QString text = QStringLiteral("ed3k: ") + QString::fromStdString(line.text);
+    const bool verbose = line.level == ffi::LogLevel::Verbose;
+    if (line.area == ffi::LogArea::Kad)
+        verbose ? logEd3kKadDebug(text) : logEd3kKad(text);
+    else
+        verbose ? logEd3kDebug(text) : logEd3k(text);
 }
 
 void Ed3kSession::answerUnhandled(const ffi::Event& ev)

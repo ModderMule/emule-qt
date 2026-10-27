@@ -138,6 +138,7 @@ private:
 
     bool m_sawBegin = false;
     bool m_sawPart = false;
+    bool m_partValid = true;        ///< =ypart had decimal begin/end, 1 <= begin <= end
     bool m_escape = false;          ///< an '=' ended the previous line
 
     QString m_fileName;

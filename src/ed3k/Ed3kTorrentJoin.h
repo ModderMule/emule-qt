@@ -99,7 +99,7 @@ protected:
     void onFileBlock(const Download& d, const ::ed3k::event::Block& b) override;
     void onBlobFetched(const QString& owner, int member, const ::ed3k::Root& root, const QByteArray& data) override;
     void onDownloadHashes(const Download& d, const ::ed3k::Bytes& blob) override;
-    [[nodiscard]] std::optional<QByteArray> readShared(const Shared& s, std::uint64_t offset, std::uint32_t len) const override;
+    [[nodiscard]] std::optional<FileRead> sharedRead(const Shared& s, std::uint64_t offset, std::uint32_t len) const override;
     // was: onOtherEvent for the AliasFound of the set searches; now the base's
     [[nodiscard]] bool wantsSet(const QString& owner) const override;
     void onSetManifest(const QString& owner, const ::ed3k::Root& root, const QByteArray& data) override;
@@ -140,7 +140,6 @@ private:
     void feedPieces(const QString& id, const std::vector<std::uint64_t>& pieces);
     void reportProblem(const QString& id, int member, const QString& message);
     [[nodiscard]] QString memberPath(const Join& j, int member) const;
-    [[nodiscard]] std::optional<QByteArray> readMember(const Join& j, int member, std::uint64_t offset, std::uint32_t len) const;
     [[nodiscard]] QString name(const QString& id) const;
     void saveJoin(const QString& id);
     /// Every piece over [begin, end) of the piece space is in libtorrent (Join::have).

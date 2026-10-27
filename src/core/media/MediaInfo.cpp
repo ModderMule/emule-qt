@@ -1424,6 +1424,10 @@ MediaKind mediaGate(QByteArrayView head, const QString& fileName)
     }
     if (found == promised)
         return promised;
+    // Another container's mandatory signature: read what it is, like the fake
+    // check names it (an MP4 named .avi still has a length and a codec).
+    if (found != MediaKind::None)
+        return found;
 
     // The three that have no magic of their own or may hide behind a tag.
     switch (promised) {

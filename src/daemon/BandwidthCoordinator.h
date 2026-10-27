@@ -87,6 +87,8 @@ private:
     /// ed3k's wire bytes since the last tick: smoothed rates (B/s) into m_ed3k*Rate, sent
     /// bytes to the throttler. False: not running.
     bool sampleEd3k();
+    /// ed3k's upload slot count from its rate, and its held slots into eD2K's slot gate.
+    void applyEd3kSlots(bool ed3kRunning);
 
     usenet::UsenetSession* m_usenet = nullptr;
     bt::BtSession* m_bt = nullptr;

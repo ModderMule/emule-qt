@@ -40,6 +40,8 @@ struct SharedEntry {
     QString path;     ///< full path of the data
     QString name;
     std::uint64_t size = 0;
+    /// the file's upload priority (the engine's queue: eMule's score)
+    ::ed3k::UploadPriority priority = ::ed3k::UploadPriority::Normal;
 };
 
 /// The share list as Ed3kShared reads it: SharedFileList in the daemon
@@ -108,8 +110,9 @@ protected:
     [[nodiscard]] std::vector<std::uint64_t> wantedBlocks(const Download& d) const override;
     void onFileBlock(const Download& d, const ::ed3k::event::Block& b) override;
     void onBlobFetched(const QString& owner, int member, const ::ed3k::Root& root, const QByteArray& data) override;
-    [[nodiscard]] std::optional<QByteArray> readShared(const Shared& s, std::uint64_t offset, std::uint32_t len) const override;
+    [[nodiscard]] std::optional<FileRead> sharedRead(const Shared& s, std::uint64_t offset, std::uint32_t len) const override;
     [[nodiscard]] bool sharedGone(const Shared& s) const override;
+    [[nodiscard]] ::ed3k::UploadPriority uploadPriority(const Shared& s) const override;
     [[nodiscard]] bool hasOwner(const QString& owner) const override;
     void saveOwner(const QString& owner) override;
 
@@ -139,6 +142,8 @@ private:
     void onHashed(const QByteArray& md4, const QString& path, qint64 mtimeMs, const std::optional<FileHash>& hashed);
     /// Files whose shares the base closed (gone or changed): dropped, taken again if listed.
     void recheck();
+    /// Upload priorities read again (the user's, or auto): changed ones to the engine.
+    void refreshPriorities();
     [[nodiscard]] const File* fileOfMember(int member) const;
     /// Size and date of @p path on disk agree with @p f.
     [[nodiscard]] static bool unchanged(const QString& path, std::uint64_t size, qint64 mtimeMs);
@@ -159,6 +164,7 @@ private:
     /// reported by sharedGone() (const): handled on the next turn
     mutable std::set<QByteArray> m_suspects;
     mutable QTimer m_recheckTimer;
+    QTimer m_priorityTimer;
 };
 
 } // namespace eMule::ed3k

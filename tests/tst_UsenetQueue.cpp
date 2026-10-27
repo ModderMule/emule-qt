@@ -5354,6 +5354,7 @@ void tst_UsenetQueue::everyDecodedArticleIsReportedWithItsRange()
         QVERIFY(args.at(6).toByteArray().startsWith(
             QStringLiteral("=ybegin part=%1 total=4 ").arg(part).toLatin1()));
         QVERIFY(args.at(6).toByteArray().endsWith("name=fed.bin"));
+        QCOMPARE(args.at(8).toString(), messageIdFor(part));
         if (args.at(4).toBool()) {
             goodParts << part;
             QCOMPARE(args.at(7).toString(), part == 2 ? block.key() : primary.key());

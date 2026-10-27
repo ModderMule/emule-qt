@@ -35,6 +35,11 @@ constexpr uint32 kRecentWindowMs = 500;
 /// noise; and never more often than kLogMinIntervalMs.
 constexpr qint64 kLogChangePercent = 10;
 constexpr qint64 kLogMinIntervalMs = 5000;
+/// ed3k upload slots: KiB/s each, and the count's bounds (Protocol.md §12.5: 9 to 55 KiB/s
+/// per slot, at least 2)
+constexpr qint64 kEd3kSlotKb = 25;
+constexpr qint64 kEd3kMinSlots = 2;
+constexpr qint64 kEd3kMaxSlots = 20;
 
 BandwidthCoordinator* s_instance = nullptr;
 
@@ -86,8 +91,11 @@ void BandwidthCoordinator::stop()
     if (m_bt)
         m_bt->setRateLimits(thePrefs.btMaxDownloadKb(), thePrefs.btMaxUploadKb());
 #endif
+    if (theApp.uploadQueue)
+        theApp.uploadQueue->setForeignSlots(0);
 #ifdef EMULE_HAVE_ED3K
     if (m_ed3k) {
+        m_ed3k->setUploadSlots(0);   // from its upload limit again
         // the global limits, unshared (0 = none)
         const uint32 line = UploadQueue::lineCapKB();
         m_ed3k->setLimits(line == UNLIMITED ? 0 : quint64(line) * 1024, quint64(thePrefs.maxDownload()) * 1024);
@@ -193,6 +201,7 @@ void BandwidthCoordinator::tick()
     if (m_ed3k)
         m_ed3k->setLimits(quint64(s.ed3kUpKb) * 1024, quint64(s.ed3kDownKb) * 1024);
 #endif
+    applyEd3kSlots(ed3kRunning);
 
     const auto held = [](const EngineDemand& d, qint64 capKb, qint64 lineKb) {
         return d.active && lineKb > 0 && capKb < lineKb;
@@ -236,6 +245,26 @@ bool BandwidthCoordinator::sampleEd3k()
 #else
     return false;
 #endif
+}
+
+void BandwidthCoordinator::applyEd3kSlots(bool ed3kRunning)
+{
+    int held = 0;
+#ifdef EMULE_HAVE_ED3K
+    if (m_ed3k && ed3kRunning) {
+        // eD2K and ed3k slots counted together on one line: ed3k gets slots for what it
+        // sends (about 25 KiB/s each, Protocol.md §12.5: 2 at least), eD2K counts its holders
+        const qint64 perSlot = qint64(kEd3kSlotKb) * 1024;
+        const qint64 want = (m_ed3kUpRate + perSlot - 1) / perSlot;
+        m_ed3k->setUploadSlots(std::uint32_t(std::clamp<qint64>(want, kEd3kMinSlots, kEd3kMaxSlots)));
+        if (const auto q = m_ed3k->uploadQueueStats())
+            held = int(q->holders);
+    }
+#else
+    Q_UNUSED(ed3kRunning)
+#endif
+    if (theApp.uploadQueue)
+        theApp.uploadQueue->setForeignSlots(held);
 }
 
 void BandwidthCoordinator::logChange()

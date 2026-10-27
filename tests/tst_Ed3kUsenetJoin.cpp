@@ -84,7 +84,7 @@ QByteArray makeArticle(const QByteArray& whole, int part, int total, int partSiz
     return out;
 }
 
-QByteArray makeNzb(const QString& fileName, int parts)
+QByteArray makeNzb(const QString& fileName, int parts, int duplicate = 0)
 {
     QByteArray xml = R"(<?xml version="1.0" encoding="iso-8859-1" ?>)"
                      "\n<nzb xmlns=\"http://www.newzbin.com/DTD/2003/nzb\">\n";
@@ -93,6 +93,9 @@ QByteArray makeNzb(const QString& fileName, int parts)
     xml += "    <groups><group>alt.binaries.test</group></groups>\n    <segments>\n";
     for (int p = 1; p <= parts; ++p)
         xml += QStringLiteral("      <segment bytes=\"3500\" number=\"%1\">%2</segment>\n").arg(p).arg(messageIdFor(p)).toUtf8();
+    // a number listed twice: the second ID is not mᵢ (usenet.md §1)
+    if (duplicate > 0)
+        xml += QStringLiteral("      <segment bytes=\"3500\" number=\"%1\">dup%1@example.com</segment>\n").arg(duplicate).toUtf8();
     xml += "    </segments>\n  </file>\n</nzb>\n";
     return xml;
 }
@@ -211,6 +214,7 @@ private slots:
     void aPostSetFoundIsFetchedAndKept();
     void theLinkFetchesItsPostSet();
     void sourcesAreSearchedAgainWhenTheLastStreamClosed();
+    void aDuplicatedNumberCountsUnderItsFirstId();
     void cleanup();
 
 private:
@@ -220,10 +224,11 @@ private:
     /// FakeQueue item (§4.2 by trySet, §4.1 by the link of its NZB) until member 0 verified.
     void fetchPostSet(bool byLink);
     /// The FakeQueue item of one file, @p parts articles of @p partSize; tempPath in @p dir.
-    static std::unique_ptr<UsenetQueueItem> fakeItem(const QString& dir, qint64 size, int parts);
+    static std::unique_ptr<UsenetQueueItem> fakeItem(const QString& dir, qint64 size, int parts, int duplicate = 0);
     /// Writes part @p part of @p data where the queue would, and reports it.
+    /// @p messageId: the segment fetched; empty = the first of that number.
     static void landArticle(Ed3kUsenetJoin& join, const UsenetQueueItem& item, const QByteArray& data, int part,
-                            int parts, int partSize);
+                            int parts, int partSize, const QString& messageId = {});
 };
 
 void tst_Ed3kUsenetJoin::initTestCase()
@@ -390,6 +395,18 @@ void tst_Ed3kUsenetJoin::articlesFromTheQueueVerifyAClaimedMember()
     QTRY_COMPARE_WITH_TIMEOUT(republished.count(), 1, 10000);
     QCOMPARE(republished.at(0).at(0).toString(), id);
     QVERIFY(republished.at(0).at(1).toInt() >= 1);
+    // §6 switched on while running: restarted, the member shared, the set and list not, no ALIAS
+    again.setHoldBack(true);
+    QVERIFY(again.isStarted());
+    QVERIFY(!again.sharesRoot(manifest.root) && !again.sharesRoot(list.root));
+    QTRY_VERIFY_WITH_TIMEOUT(again.sharesRoot(h.root), 10000);
+    QTRY_COMPARE_WITH_TIMEOUT(republished.count(), 2, 10000);
+    QCOMPARE(republished.at(1).at(1).toInt(), 0);
+    // and off again: all of it back
+    again.setHoldBack(false);
+    QVERIFY(again.sharesRoot(manifest.root) && again.sharesRoot(list.root));
+    QTRY_COMPARE_WITH_TIMEOUT(republished.count(), 3, 10000);
+    QVERIFY(republished.at(2).at(1).toInt() >= 1);
     // removed: nothing kept any more
     again.onItemRemoved(id);
     QVERIFY(!QFileInfo::exists(kept));
@@ -625,14 +642,50 @@ void tst_Ed3kUsenetJoin::fetchPostSet(bool byLink)
         s->stop();
 }
 
-std::unique_ptr<UsenetQueueItem> tst_Ed3kUsenetJoin::fakeItem(const QString& dir, qint64 size, int parts)
+// usenet.md §1: where a number is listed twice, the first entry counts. An article
+// fetched under the second ID is not reported (was: reported under the first ID)
+void tst_Ed3kUsenetJoin::aDuplicatedNumberCountsUnderItsFirstId()
+{
+    constexpr int kParts = 3;
+    constexpr int kPart = 2500;
+    const QByteArray data = payload(kParts * kPart - 400, 5);
+    const Hashed h = hashOf(data);
+
+    QTemporaryDir db;
+    QVERIFY(db.isValid());
+    Ed3kSession b;
+    QVERIFY(b.start(loopback(db.path())));
+    FakeQueue queue;
+    queue.item = fakeItem(db.path(), data.size(), kParts, /*duplicate*/ 2);
+    Ed3kUsenetJoin join(b, queue, db.path());
+    join.setSearchEnabled(false);
+    QSignalSpy verified(&join, &Ed3kUsenetJoin::memberVerified);
+    join.start();
+    const QString id = queue.item->id;
+    QVERIFY(join.fileClaim(id, 0, h.root, h.size));
+
+    landArticle(join, *queue.item, data, 1, kParts, kPart);
+    landArticle(join, *queue.item, data, 2, kParts, kPart, QStringLiteral("dup2@example.com"));
+    landArticle(join, *queue.item, data, 3, kParts, kPart);
+    // part 2 came under an ID that is not mᵢ: the member cannot be complete from articles
+    QTest::qWait(1500);
+    QCOMPARE(verified.count(), 0);
+
+    landArticle(join, *queue.item, data, 2, kParts, kPart);
+    QTRY_COMPARE_WITH_TIMEOUT(verified.count(), 1, 30000);
+
+    join.stop();
+    b.stop();
+}
+
+std::unique_ptr<UsenetQueueItem> tst_Ed3kUsenetJoin::fakeItem(const QString& dir, qint64 size, int parts, int duplicate)
 {
     auto item = std::make_unique<UsenetQueueItem>();
     item->id = QStringLiteral("item-1");
     item->name = QStringLiteral("fake");
     item->status = UsenetItemStatus::Downloading;
     QString error;
-    if (!NzbFile::parse(makeNzb(QStringLiteral("f.bin"), parts), item->nzb, error))
+    if (!NzbFile::parse(makeNzb(QStringLiteral("f.bin"), parts, duplicate), item->nzb, error))
         return item;
     UsenetFileState st;
     st.tempPath = QDir(dir).filePath(QStringLiteral("f.bin.usenetpart"));
@@ -645,7 +698,7 @@ std::unique_ptr<UsenetQueueItem> tst_Ed3kUsenetJoin::fakeItem(const QString& dir
 }
 
 void tst_Ed3kUsenetJoin::landArticle(Ed3kUsenetJoin& join, const UsenetQueueItem& item, const QByteArray& data,
-                                     int part, int parts, int partSize)
+                                     int part, int parts, int partSize, const QString& messageId)
 {
     const qint64 offset = qint64(part - 1) * partSize;
     const QByteArray chunk = data.mid(int(offset), partSize);
@@ -655,7 +708,7 @@ void tst_Ed3kUsenetJoin::landArticle(Ed3kUsenetJoin& join, const UsenetQueueItem
     QCOMPARE(f.write(chunk), qint64(chunk.size()));
     f.close();
     join.onArticleDecoded(item.id, 0, offset, chunk.size(), true, part, beginLine(part, parts, data.size(), QStringLiteral("f.bin")),
-                          QStringLiteral("news:563:u"));
+                          QStringLiteral("news:563:u"), messageId.isEmpty() ? messageIdFor(part) : messageId);
 }
 
 QTEST_GUILESS_MAIN(tst_Ed3kUsenetJoin)

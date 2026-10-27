@@ -2,7 +2,7 @@
 
 /// @file LogWidget.h
 /// @brief Tabbed log display matching the MFC "Server Info | Log | Verbose" tabs,
-/// plus Usenet, Kad and IPC.
+/// plus Usenet, Kad, the three ed3k tabs and IPC.
 ///
 /// Installs a Qt message handler to capture qCInfo/qCWarning/qCDebug output
 /// from the core logging categories and routes them to the appropriate tabs.
@@ -22,9 +22,9 @@ namespace eMule {
 
 class LogTextView;
 
-/// Tabbed log widget with Server Info, Log, Verbose, Usenet, Kad, and IPC tabs.
-/// Captures Qt logging category output from the core layer.
-/// The Usenet tab follows showUsenetLog, the IPC tab enableIpcLog.
+/// Tabbed log widget with Server Info, Log, Verbose, Usenet, Kad, ed3k, ed3k Verbose,
+/// ed3k Kad and IPC tabs. Captures Qt logging category output from the core layer.
+/// The Usenet tab follows showUsenetLog, the ed3k tabs ed3kEnabled, the IPC tab enableIpcLog.
 class LogWidget : public QWidget {
     Q_OBJECT
 
@@ -68,6 +68,16 @@ public:
     void routeUsenet(QtMsgType type, const QString& colored,
                      const QString& ts = {}, qint64 seqId = 0);
 
+    /// The ed3k tabs: emule.ed3k (debug lines in ed3k Verbose) and emule.ed3k.kad.
+    void appendEd3k(const QString& msg, const QString& ts = {}, qint64 seqId = 0);
+    void appendEd3kVerbose(const QString& msg, const QString& ts = {}, qint64 seqId = 0);
+    void appendEd3kKad(const QString& msg, const QString& ts = {}, qint64 seqId = 0);
+
+    /// Route one line of an emule.ed3k* category (@p kad: emule.ed3k.kad): to its ed3k
+    /// tab when they are shown, else to Log/Verbose by severity (debug lines dropped).
+    void routeEd3k(bool kad, QtMsgType type, const QString& colored,
+                   const QString& ts = {}, qint64 seqId = 0);
+
     /// Append an IPC message to the IPC tab.
     /// @p outgoing: true = GUI→daemon (green), false = daemon→GUI (purple).
     void appendIpcMessage(const QString& msg, bool outgoing);
@@ -78,6 +88,9 @@ public:
     /// Show or hide the Usenet tab.
     void setUsenetTabVisible(bool visible);
 
+    /// Show or hide the three ed3k tabs.
+    void setEd3kTabsVisible(bool visible);
+
     /// Clear all tabs.
     void clearAll();
 
@@ -86,6 +99,9 @@ public:
     [[nodiscard]] QString verboseText() const;
     [[nodiscard]] QString kadText() const;
     [[nodiscard]] QString usenetText() const;
+    [[nodiscard]] QString ed3kText() const;
+    [[nodiscard]] QString ed3kVerboseText() const;
+    [[nodiscard]] QString ed3kKadText() const;
 
     /// Set a custom font on all log browser tabs.
     void setCustomFont(const QFont& font);
@@ -97,7 +113,7 @@ public:
     void removeMessageHandler();
 
     /// Open or close the GUI's own log files (emuleqt.log, emuleqt_Verbose.log,
-    /// emuleqt_Kad.log and emuleqt_Usenet.log in the config directory) to match the logToDiskGui
+    /// emuleqt_Kad.log, _Usenet, _Ed3k and _Ed3kKad in the config directory) to match the logToDiskGui
     /// pref. The daemon runs DaemonApp::applyLogFileSettings() for its own set
     /// — one switch per process. Safe to call at startup and whenever the pref
     /// changes at runtime.
@@ -122,6 +138,12 @@ private:
 
     int m_batchDepth = 0;   ///< open beginBatch() calls
 
+    /// A timestamped line into a sorted tab.
+    void appendTo(LogTextView* browser, QList<qint64>& seqIds, const QString& msg,
+                  const QString& ts, qint64 seqId);
+    /// A tab with its own browser; its index.
+    int addLogTab(LogTextView*& browser, const QString& icon, const QString& title);
+
     /// Remove oldest lines from @p browser if it exceeds the configured limit.
     static void trimToLimit(LogTextView* browser, QList<qint64>& seqIds);
     static void trimToLimit(LogTextView* browser);
@@ -144,10 +166,15 @@ private:
     LogTextView* m_verboseBrowser = nullptr;
     LogTextView* m_kadBrowser = nullptr;
     LogTextView* m_usenetBrowser = nullptr;
+    LogTextView* m_ed3kBrowser = nullptr;
+    LogTextView* m_ed3kVerboseBrowser = nullptr;
+    LogTextView* m_ed3kKadBrowser = nullptr;
     LogTextView* m_ipcLogBrowser = nullptr;
     int m_ipcTabIndex = -1;
     int m_usenetTabIndex = -1;
     bool m_usenetTabVisible = true;
+    int m_ed3kTabIndex = -1;   ///< the first of the three
+    bool m_ed3kTabsVisible = true;
 
     /// Tabs with text the user has not looked at yet — the highlighted ones.
     QSet<int> m_unseenTabs;
@@ -157,6 +184,9 @@ private:
     QList<qint64> m_verboseSeqIds;
     QList<qint64> m_kadSeqIds;
     QList<qint64> m_usenetSeqIds;
+    QList<qint64> m_ed3kSeqIds;
+    QList<qint64> m_ed3kVerboseSeqIds;
+    QList<qint64> m_ed3kKadSeqIds;
 
     /// Static instance pointer for the message handler callback.
     static LogWidget* s_instance;

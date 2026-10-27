@@ -1046,6 +1046,18 @@ if(WIN32)
     target_link_libraries(tst_SmallScreenDialogs PRIVATE shell32)  # SHChangeNotify
 endif()
 
+# Which tab a log line lands in (the ed3k tabs, their fallback to Log/Verbose).
+emule_add_test(tst_LogWidget FOLDER "Gui"
+    SOURCES tst_LogWidget.cpp
+            "${CMAKE_SOURCE_DIR}/src/gui/controls/LogWidget.cpp"
+            "${CMAKE_SOURCE_DIR}/src/gui/controls/LogTextView.cpp"
+            "${CMAKE_SOURCE_DIR}/src/gui/utils/Appearance.cpp")
+target_include_directories(tst_LogWidget PRIVATE
+    "${CMAKE_SOURCE_DIR}/src/gui"
+    "${CMAKE_SOURCE_DIR}/src/core"
+    "${CMAKE_CURRENT_SOURCE_DIR}/stubs")
+target_link_libraries(tst_LogWidget PRIVATE eMule::Core Qt6::Widgets)
+
 # MFC list accelerators (Del/⌫, F2, clipboard, find) and the find-next state — the
 # event filter and dialog compile standalone against the stub pch.
 emule_add_test(tst_ListKeys FOLDER "Gui"

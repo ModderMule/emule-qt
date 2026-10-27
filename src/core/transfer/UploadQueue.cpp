@@ -454,7 +454,8 @@ bool UploadQueue::acceptNewClient(bool addOnNextConnect) const
     if (addOnNextConnect && curUploadSlots > 0)
         --curUploadSlots;
 
-    return acceptNewClient(curUploadSlots, m_datarate);
+    // ed3k's slots share this line (the daemon's BandwidthCoordinator): counted with ours
+    return acceptNewClient(curUploadSlots + m_foreignSlots, m_datarate);
 }
 
 bool UploadQueue::acceptNewClient(int curUploadSlots, uint32 datarate) const
@@ -514,7 +515,8 @@ bool UploadQueue::forceNewClient(bool allowEmptyWaitingQueue)
         && !theApp.lastCommonRouteFinder->acceptNewClient())
         return false;
 
-    if (slotLadderAllows(curUploadSlots, m_datarate))
+    // the minimum above is eD2K's own; the ladder counts ed3k's slots on the same line too
+    if (slotLadderAllows(curUploadSlots + m_foreignSlots, m_datarate))
         return true;
 
     // The ladder said no, but the throttler saw more slots fully active than we have

@@ -740,6 +740,8 @@ int main(int argc, char* argv[])
                 logWidget->appendKad(colored, timestamp, seqId);
             else if (cat == QStringLiteral("emule.usenet"))
                 logWidget->routeUsenet(severity, colored, timestamp, seqId);
+            else if (cat == QStringLiteral("emule.ed3k") || cat == QStringLiteral("emule.ed3k.kad"))
+                logWidget->routeEd3k(cat == QStringLiteral("emule.ed3k.kad"), severity, colored, timestamp, seqId);
             else if (cat == QStringLiteral("emule.server"))
                 // Raw text, not `colored` — appendServerInfo escapes internally.
                 // The pane's real feed is PushServerMessage; this only catches

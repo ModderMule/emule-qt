@@ -37,6 +37,7 @@ private slots:
     void logFileSink_splitsDebugIntoVerboseFile();
     void logFileSink_routesKadToItsOwnFile();
     void logFileSink_routesUsenetToItsOwnFile();
+    void logFileSink_routesEd3kToItsOwnFiles();
     void logFileSink_disabledWritesNothing();
     void logFileSink_messageHandlerFeedsSink();
 
@@ -276,6 +277,33 @@ void tst_Log::logFileSink_routesUsenetToItsOwnFile()
     QVERIFY(!main.contains(QStringLiteral("usenet")));
     QVERIFY(!verbose.contains(QStringLiteral("usenet")));
     QVERIFY(!kad.contains(QStringLiteral("usenet")));
+}
+
+// ed3k has its own GUI tabs (ed3k, ed3k Verbose, ed3k Kad), so its own two files.
+void tst_Log::logFileSink_routesEd3kToItsOwnFiles()
+{
+    eMule::testing::TempDir tmp;
+    installLogFileMessageHandler();
+    applyLogFileSink(tmp.path(), QStringLiteral("emulecored"), true, 1048576);
+
+    logEd3k(QStringLiteral("an ed3k info"));
+    writeToLogFileSink(QtDebugMsg, "emule.ed3k", QStringLiteral("an ed3k debug"));
+    logEd3kKadWarning(QStringLiteral("an ed3k kad warning"));
+    writeToLogFileSink(QtDebugMsg, "emule.ed3k.kad", QStringLiteral("an ed3k kad debug"));
+    closeLogFileSink();
+
+    const QString main = readAll(tmp.filePath(QStringLiteral("emulecored.log")));
+    const QString verbose = readAll(tmp.filePath(QStringLiteral("emulecored_Verbose.log")));
+    const QString ed3k = readAll(tmp.filePath(QStringLiteral("emulecored_Ed3k.log")));
+    const QString ed3kKad = readAll(tmp.filePath(QStringLiteral("emulecored_Ed3kKad.log")));
+
+    QVERIFY(ed3k.contains(QStringLiteral("emule.ed3k: an ed3k info")));
+    QVERIFY(ed3k.contains(QStringLiteral("emule.ed3k: an ed3k debug")));
+    QVERIFY(!ed3k.contains(QStringLiteral("kad")));
+    QVERIFY(ed3kKad.contains(QStringLiteral("emule.ed3k.kad: an ed3k kad warning")));
+    QVERIFY(ed3kKad.contains(QStringLiteral("emule.ed3k.kad: an ed3k kad debug")));
+    QVERIFY(!main.contains(QStringLiteral("ed3k")));
+    QVERIFY(!verbose.contains(QStringLiteral("ed3k")));
 }
 
 void tst_Log::logFileSink_disabledWritesNothing()

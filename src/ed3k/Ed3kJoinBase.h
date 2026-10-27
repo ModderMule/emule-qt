@@ -21,6 +21,7 @@
 
 #include <atomic>
 #include <cstdint>
+#include <deque>
 #include <functional>
 #include <map>
 #include <memory>
@@ -48,8 +49,10 @@ public:
     virtual void stop() = 0;
     [[nodiscard]] bool isStarted() const { return m_started; }
 
-    /// Holding back (§6): no ALIAS records. Default off.
-    void setHoldBack(bool on) { m_holdBack = on; }
+    /// Holding back (usenet.md §6): no ALIAS records, no kept sets or lists. Default off.
+    /// A change while started restarts the join; switching on withdraws the kept ALIAS records.
+    void setHoldBack(bool on);
+    [[nodiscard]] bool holdsBack() const { return m_holdBack; }
     /// Kad searches (sources, claims) on/off; tests switch them off.
     void setSearchEnabled(bool on) { m_searchEnabled = on; }
     /// Sources of a download are searched again every @p everyMs while no stream holds a
@@ -57,6 +60,8 @@ public:
     void setSourceResearch(int everyMs, int minGapMs);
     /// Kad source searches asked for so far (tests).
     [[nodiscard]] std::size_t sourceSearches() const { return m_sourceSearches; }
+    /// File reads queued or running on a worker (tests).
+    [[nodiscard]] std::size_t readsInFlight() const;
 signals:
     /// The kept set and ALIAS records of @p owner were published again after a start
     /// (@p aliases: records taken; 0 while holding back).
@@ -91,6 +96,16 @@ protected:
         qint64 searchedAt = 0;
     };
 
+    /// A file read for a worker. size, mtimeMs >= 0: the file must still have them.
+    struct FileRead {
+        QString path;
+        std::uint64_t offset = 0;
+        std::uint32_t len = 0;
+        qint64 size = -1;
+        qint64 mtimeMs = -1;
+    };
+    using ReadResults = std::vector<std::optional<QByteArray>>;
+
     /// A root this node serves: a member's file (owner, member) or a blob in memory.
     struct Shared {
         QString owner;
@@ -112,8 +127,14 @@ protected:
     virtual void onBlobFetched(const QString& owner, int member, const ffi::Root& root, const QByteArray& data) = 0;
     /// The block values of a download arrived (event::Hashes).
     virtual void onDownloadHashes(const Download& d, const ffi::Bytes& blob) { Q_UNUSED(d) Q_UNUSED(blob) }
-    /// Bytes of a shared member to serve; nullopt: not servable (not verified, gone).
-    [[nodiscard]] virtual std::optional<QByteArray> readShared(const Shared& s, std::uint64_t offset, std::uint32_t len) const = 0;
+    /// Where the bytes of a shared member to serve are (read on a worker); nullopt: not
+    /// servable (not verified, gone).
+    [[nodiscard]] virtual std::optional<FileRead> sharedRead(const Shared& s, std::uint64_t offset, std::uint32_t len) const = 0;
+    /// The upload priority of a shared member, for the engine's queue (eMule's score).
+    [[nodiscard]] virtual ffi::UploadPriority uploadPriority(const Shared& s) const
+    {
+        Q_UNUSED(s) return ffi::UploadPriority::Normal;
+    }
     /// A shared member could not be read: whether its file is gone for good (not shared then).
     [[nodiscard]] virtual bool sharedGone(const Shared& s) const { Q_UNUSED(s) return false; }
     /// Engine events the base leaves alone (AliasFound of searches not startSetSearch's ...).
@@ -163,6 +184,8 @@ protected:
     /// Opens a member file on the engine (complete or partial). false: refused (logged).
     bool shareMember(const ffi::SharedFile& file, const QString& owner, int member);
     void unshare(const ffi::Root& root);
+    /// uploadPriority() of @p root again (changed by the user).
+    void updateUploadPriority(const ffi::Root& root);
     /// Every root of @p owner.
     void unshareOwner(const QString& owner);
     [[nodiscard]] bool isShared(const ffi::Root& root) const { return m_shared.contains(root); }
@@ -179,6 +202,15 @@ protected:
     void hashInBackground(const QString& path, std::function<void(std::optional<FileHash>)> done);
     /// The same on this thread (files about to be deleted).
     [[nodiscard]] static std::optional<FileHash> hashNow(const QString& path);
+
+    // -- reads ---------------------------------------------------------------
+
+    /// One read; nullopt: unreadable, short, or the file changed (size, mtimeMs).
+    [[nodiscard]] static std::optional<QByteArray> readFile(const FileRead& r);
+    /// Reads @p reads on the session's read pool; @p done on this thread with one result
+    /// each, in order. One batch per @p owner at a time (the order of the calls); dropped at
+    /// closeAll(). Inline while m_readsNow.
+    void readInBackground(const QString& owner, std::vector<FileRead> reads, std::function<void(ReadResults)> done);
 
     // -- §4.2 set searches (alias.md §4) ---------------------------------
 
@@ -242,14 +274,29 @@ protected:
     bool m_started = false;
     bool m_holdBack = false;
     bool m_searchEnabled = true;
+    /// reads inline (files about to be deleted: usenet filesRepaired)
+    bool m_readsNow = false;
 
 private:
     struct SetTry;
     struct Kept;
+    struct ReadBatch {
+        std::vector<FileRead> reads;
+        std::function<void(ReadResults)> done;
+    };
+    struct ReadQueue {
+        std::deque<ReadBatch> batches;
+        bool busy = false;
+    };
 
     void onEventPolled(const ffi::Event& event, bool* handled);
     void onSessionStatus();
     bool answerBlock(std::uint64_t id, const ffi::Root& root, std::uint64_t offset, std::optional<std::uint32_t> len);
+    /// The bytes of a WantBlock / VerifyBlock (nullopt: blockFail, and a gone file unshared).
+    void finishBlock(std::uint64_t id, const ffi::Root& root, std::optional<QByteArray> data);
+    /// The front batch of @p owner on a worker.
+    void runReads(const QString& owner);
+    void readsDone(const QString& owner, ReadResults results);
     void onBlock(const ffi::event::Block& b);
     void onKadFound(const ffi::event::KadFound& found);
     bool open(const ffi::Root& root, std::uint64_t size, const QString& owner, int member, bool inMemory);
@@ -269,6 +316,8 @@ private:
     /// A kept member's first hash is done; the last one publishes the kept records.
     void keptMemberDone(const QString& owner);
     void publishKeptRecords(const QString& owner);
+    /// unpublishAlias of every kept owner's records (hold back switched on).
+    void withdrawKeptRecords();
 
     QString m_tag;
     std::map<ffi::Root, Shared> m_shared;
@@ -286,6 +335,7 @@ private:
     std::size_t m_sourceSearches = 0;
     /// kept members of an owner whose first hash after start is still running
     std::map<QString, int> m_keptPending;
+    std::map<QString, ReadQueue> m_reads;
     std::shared_ptr<std::atomic<bool>> m_cancel;
 };
 

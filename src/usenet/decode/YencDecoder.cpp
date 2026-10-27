@@ -74,6 +74,21 @@ qint64 headerNumber(QByteArrayView line, const char* key, qint64 fallback = 0)
     return ok ? n : fallback;
 }
 
+/// `key=` as a plain decimal number (digits only), or -1 when absent or not one.
+qint64 headerDecimal(QByteArrayView line, const char* key)
+{
+    const auto value = headerValue(line, key);
+    if (value.isEmpty() || value.size() > 18)
+        return -1;
+    qint64 n = 0;
+    for (const char c : value) {
+        if (c < '0' || c > '9')
+            return -1;
+        n = n * 10 + (c - '0');
+    }
+    return n;
+}
+
 } // namespace
 
 quint32 yencCrc32(quint32 crc, QByteArrayView data)
@@ -102,6 +117,7 @@ void YencDecoder::reset()
     m_status = Status::NoBinaryData;
     m_sawBegin = false;
     m_sawPart = false;
+    m_partValid = true;
     m_escape = false;
     m_fileName.clear();
     m_beginLine.clear();
@@ -184,9 +200,13 @@ void YencDecoder::parsePart(QByteArrayView line)
     // begin is 1-BASED. The file offset is begin - 1, and getting this wrong
     // shifts every part by a byte while every CRC still passes -- they verify
     // the payload, not where it lands.
-    const qint64 begin = headerNumber(line, "begin=", 1);
+    const qint64 begin = headerDecimal(line, "begin=");
+    const qint64 end = headerDecimal(line, "end=");
+    // usenet.md §4: decimal begin and end, 1 <= begin <= end, glued or not; else
+    // the article fails as a failed CRC-32 (checked at =yend)
+    m_partValid = begin >= 1 && end >= begin;
     m_offset = begin > 0 ? begin - 1 : 0;
-    m_endOffset = headerNumber(line, "end=", 0);
+    m_endOffset = end > 0 ? end : 0;
 }
 
 void YencDecoder::parseEnd(QByteArrayView line)
@@ -210,13 +230,14 @@ void YencDecoder::parseEnd(QByteArrayView line)
         m_status = Status::NoBinaryData;
         return;
     }
-    if (m_expectedSize >= 0 && m_expectedSize != m_decodedBytes) {
+    // usenet.md §4: decoded length must be =yend size; no size fails too
+    if (m_expectedSize < 0 || m_expectedSize != m_decodedBytes) {
         m_status = Status::SizeMismatch;
         return;
     }
     // =ypart: decoded length must be end - begin + 1 too (usenet.md §4, ruling 47).
-    // m_offset is begin - 1, so that is end - m_offset. No end=: nothing to check
-    if (m_sawPart && m_endOffset > 0 && m_endOffset - m_offset != m_decodedBytes) {
+    // m_offset is begin - 1, so that is end - m_offset. Missing begin/end fails
+    if (m_sawPart && (!m_partValid || m_endOffset - m_offset != m_decodedBytes)) {
         m_status = Status::SizeMismatch;
         return;
     }

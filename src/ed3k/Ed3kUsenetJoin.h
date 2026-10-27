@@ -121,7 +121,8 @@ public slots:
     void onItemRemoved(const QString& itemId);
     void onItemFinished(const QString& itemId, bool success, const QString& message);
     void onArticleDecoded(const QString& itemId, int fileIndex, qint64 offset, qint64 length, bool crcOk,
-                          int partNumber, const QByteArray& rawYbeginLine, const QString& serverKey);
+                          int partNumber, const QByteArray& rawYbeginLine, const QString& serverKey,
+                          const QString& messageId);
     void onFilesRepaired(const QString& itemId, const QList<int>& fileIndices);
 
 signals:
@@ -137,7 +138,7 @@ protected:
     void onFileBlock(const Download& d, const ::ed3k::event::Block& b) override;
     void onBlobFetched(const QString& owner, int member, const ::ed3k::Root& root, const QByteArray& data) override;
     void onDownloadHashes(const Download& d, const ::ed3k::Bytes& blob) override;
-    [[nodiscard]] std::optional<QByteArray> readShared(const Shared& s, std::uint64_t offset, std::uint32_t len) const override;
+    [[nodiscard]] std::optional<FileRead> sharedRead(const Shared& s, std::uint64_t offset, std::uint32_t len) const override;
     [[nodiscard]] bool sharedGone(const Shared& s) const override;
     void onOtherEvent(const ::ed3k::Event& event) override;
     [[nodiscard]] bool wantsSet(const QString& owner) const override;

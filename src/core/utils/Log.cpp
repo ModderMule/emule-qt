@@ -204,6 +204,21 @@ void logEd3kDebug(const QString& msg)
     qCDebug(lcEmuleEd3k).noquote() << msg;
 }
 
+void logEd3kKad(const QString& msg)
+{
+    qCInfo(lcEmuleEd3kKad).noquote() << msg;
+}
+
+void logEd3kKadWarning(const QString& msg)
+{
+    qCWarning(lcEmuleEd3kKad).noquote() << msg;
+}
+
+void logEd3kKadDebug(const QString& msg)
+{
+    qCDebug(lcEmuleEd3kKad).noquote() << msg;
+}
+
 void logStatusInfo(const QString& msg)
 {
     qCInfo(lcEmuleStatus).noquote() << msg;
@@ -239,18 +254,26 @@ void installConsoleMessagePattern(const QString& processTag)
 // Rotating log file sink
 // ---------------------------------------------------------------------------
 //
-// Four files per process, mirroring the reference's theLog / theVerboseLog
-// (srchybrid/Emule.cpp:528-533) plus dedicated Kad and Usenet logs. Disabled until a
-// process opts in.
+// Six files per process, mirroring the reference's theLog / theVerboseLog
+// (srchybrid/Emule.cpp:528-533) plus dedicated Kad, Usenet, ed3k and ed3k Kad logs.
+// Disabled until a process opts in.
 
 namespace {
 
+/// One file per channel; kSinkSuffix names it after the base name.
+enum Sink { SinkLog, SinkVerbose, SinkKad, SinkUsenet, SinkEd3k, SinkEd3kKad, SinkCount };
+constexpr const char* kSinkSuffix[SinkCount] = {".log", "_Verbose.log", "_Kad.log", "_Usenet.log",
+                                                "_Ed3k.log", "_Ed3kKad.log"};
+
 QMutex s_sinkMutex;
-LogFile s_sinkLog;            ///< non-debug lines
-LogFile s_sinkVerboseLog;     ///< debug lines, except Kad
-LogFile s_sinkKadLog;         ///< emule.kad, whatever its severity
-LogFile s_sinkUsenetLog;      ///< emule.usenet, whatever its severity
+LogFile s_sinks[SinkCount];   ///< SinkLog: non-debug lines; SinkVerbose: debug lines of the rest
 bool s_sinkEnabled = false;
+
+void closeSinksLocked()
+{
+    for (auto& f : s_sinks)
+        f.close();
+}
 
 } // namespace
 
@@ -261,38 +284,20 @@ void applyLogFileSink(const QString& dir, const QString& baseName,
     {
         QMutexLocker lock(&s_sinkMutex);
         s_sinkEnabled = false;
-        s_sinkLog.close();
-        s_sinkVerboseLog.close();
-        s_sinkKadLog.close();
-        s_sinkUsenetLog.close();
+        closeSinksLocked();
 
         if (!enabled)
             return;
 
         const QString base = QDir(dir).filePath(baseName);
-        const QString logPath = base + QStringLiteral(".log");
-        const QString verbosePath = base + QStringLiteral("_Verbose.log");
-        const QString kadPath = base + QStringLiteral("_Kad.log");
-        const QString usenetPath = base + QStringLiteral("_Usenet.log");
-
-        if (!s_sinkLog.create(logPath, maxSize))
-            failedPath = logPath;
-        else if (!s_sinkVerboseLog.create(verbosePath, maxSize))
-            failedPath = verbosePath;
-        else if (!s_sinkKadLog.create(kadPath, maxSize))
-            failedPath = kadPath;
-        else if (!s_sinkUsenetLog.create(usenetPath, maxSize))
-            failedPath = usenetPath;
-        else
-            s_sinkEnabled = true;
-
-        if (!s_sinkEnabled) {
-            s_sinkLog.close();
-            s_sinkVerboseLog.close();
-            s_sinkKadLog.close();
-            s_sinkUsenetLog.close();
-        s_sinkUsenetLog.close();
+        for (int i = 0; i < SinkCount && failedPath.isEmpty(); ++i) {
+            const QString path = base + QLatin1StringView(kSinkSuffix[i]);
+            if (!s_sinks[i].create(path, maxSize))
+                failedPath = path;
         }
+        s_sinkEnabled = failedPath.isEmpty();
+        if (!s_sinkEnabled)
+            closeSinksLocked();
     }
 
     // Reported outside the lock, and never from writeToLogFileSink(): that runs
@@ -315,25 +320,28 @@ void writeToLogFileSink(QtMsgType type, const char* category, const QString& msg
     // rule — so it gets its own file rather than drowning the verbose log, which
     // it would otherwise dominate. Tested before the severity split so a future
     // qCWarning(lcEmuleKad) lands here too, exactly as it would in the Kad tab.
-    if (category && std::strcmp(category, "emule.kad") == 0)
-        s_sinkKadLog.log(line);
-    else if (category && std::strcmp(category, "emule.usenet") == 0)
-        s_sinkUsenetLog.log(line);
+    // Usenet, ed3k and ed3k Kad likewise (ed3k: its debug lines too).
+    const auto is = [category](const char* name) { return category && std::strcmp(category, name) == 0; };
+    if (is("emule.kad"))
+        s_sinks[SinkKad].log(line);
+    else if (is("emule.usenet"))
+        s_sinks[SinkUsenet].log(line);
+    else if (is("emule.ed3k"))
+        s_sinks[SinkEd3k].log(line);
+    else if (is("emule.ed3k.kad"))
+        s_sinks[SinkEd3kKad].log(line);
     // Debug is the reference's LOG_DEBUG: it goes to the verbose log only.
     else if (type == QtDebugMsg)
-        s_sinkVerboseLog.log(line);
+        s_sinks[SinkVerbose].log(line);
     else
-        s_sinkLog.log(line);
+        s_sinks[SinkLog].log(line);
 }
 
 void closeLogFileSink()
 {
     QMutexLocker lock(&s_sinkMutex);
     s_sinkEnabled = false;
-    s_sinkLog.close();
-    s_sinkVerboseLog.close();
-    s_sinkKadLog.close();
-    s_sinkUsenetLog.close();
+    closeSinksLocked();
 }
 
 namespace {

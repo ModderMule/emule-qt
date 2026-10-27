@@ -11,6 +11,7 @@
 #include <QDateTime>
 #include <QDir>
 #include <QFile>
+#include <QFileInfo>
 #include <QPointer>
 #include <QThreadPool>
 #include <QUrl>
@@ -23,6 +24,8 @@ namespace eMule::ed3k {
 namespace {
 
 constexpr int kSaveDelayMs = 5000;
+/// read queue of the blocks served (WantBlock, VerifyBlock); never an owner id
+const QString kUploadReads = QStringLiteral("\x01up");
 constexpr std::size_t kMaxStreams = 4;
 constexpr qint64 kHashChunk = 1 << 20;
 /// sources searched again while no stream holds a slot
@@ -81,7 +84,7 @@ std::vector<ffi::Bytes> readRecords(const QString& path)
     qsizetype at = 0;
     while (at + 4 <= raw.size()) {
         const auto* p = reinterpret_cast<const std::uint8_t*>(raw.constData() + at);
-        const qsizetype len = qsizetype(p[0] | (p[1] << 8) | (p[2] << 16) | (std::uint32_t(p[3]) << 24));
+        const qsizetype len = qsizetype(std::uint32_t(p[0]) | (std::uint32_t(p[1]) << 8) | (std::uint32_t(p[2]) << 16) | (std::uint32_t(p[3]) << 24));
         at += 4;
         if (len < 0 || at + len > raw.size())
             break;   // damaged tail: what came before stays
@@ -162,6 +165,20 @@ Ed3kJoinBase::Ed3kJoinBase(Ed3kSession& session, const QString& configDir, QStri
 Ed3kJoinBase::~Ed3kJoinBase()
 {
     m_cancel->store(true);
+}
+
+void Ed3kJoinBase::setHoldBack(bool on)
+{
+    if (on == m_holdBack)
+        return;
+    const bool running = m_started;
+    if (running)
+        stop();   // unshares; start() shares the kept items as the new setting says
+    m_holdBack = on;
+    if (on)
+        withdrawKeptRecords();
+    if (running)
+        start();
 }
 
 void Ed3kJoinBase::setSourceResearch(int everyMs, int minGapMs)
@@ -309,7 +326,17 @@ bool Ed3kJoinBase::shareMember(const ffi::SharedFile& file, const QString& owner
         return false;
     }
     m_shared[file.root] = Shared{owner, member, file.size, {}};
+    // the engine's queue policy ranks its downloaders by it (eMule's score)
+    (void)e->uploadPriority(file.root, uploadPriority(m_shared[file.root]));
     return true;
+}
+
+void Ed3kJoinBase::updateUploadPriority(const ffi::Root& root)
+{
+    auto* e = m_session.engine();
+    const auto it = m_shared.find(root);
+    if (e && it != m_shared.end())
+        (void)e->uploadPriority(root, uploadPriority(it->second));
 }
 
 void Ed3kJoinBase::unshare(const ffi::Root& root)
@@ -365,6 +392,50 @@ std::optional<Ed3kJoinBase::FileHash> Ed3kJoinBase::hashNow(const QString& path)
     if (!hashed)
         return std::nullopt;
     return FileHash{hashed->first.root, hashed->first.size, std::move(hashed->second)};
+}
+
+std::optional<QByteArray> Ed3kJoinBase::readFile(const FileRead& r)
+{
+    if (r.path.isEmpty())
+        return std::nullopt;
+    if (r.size >= 0 || r.mtimeMs >= 0) {
+        // changed on disk since it was hashed: its blocks would not verify
+        const QFileInfo fi(r.path);
+        if (!fi.isFile() || (r.size >= 0 && fi.size() != r.size)
+            || (r.mtimeMs >= 0 && fi.lastModified().toMSecsSinceEpoch() != r.mtimeMs))
+            return std::nullopt;
+    }
+    QFile f(r.path);
+    if (!f.open(QIODevice::ReadOnly) || !f.seek(qint64(r.offset)))
+        return std::nullopt;
+    QByteArray data = f.read(qint64(r.len));
+    if (data.size() != qsizetype(r.len))
+        return std::nullopt;
+    return data;
+}
+
+void Ed3kJoinBase::readInBackground(const QString& owner, std::vector<FileRead> reads, std::function<void(ReadResults)> done)
+{
+    if (m_readsNow) {
+        ReadResults out;
+        out.reserve(reads.size());
+        for (const auto& r : reads)
+            out.push_back(readFile(r));
+        done(std::move(out));
+        return;
+    }
+    auto& q = m_reads[owner];
+    q.batches.push_back(ReadBatch{std::move(reads), std::move(done)});
+    if (!q.busy)
+        runReads(owner);
+}
+
+std::size_t Ed3kJoinBase::readsInFlight() const
+{
+    std::size_t n = 0;
+    for (const auto& [owner, q] : m_reads)
+        n += q.batches.size();
+    return n;
 }
 
 bool Ed3kJoinBase::startSetSearch(const QString& owner, std::string_view scheme, std::span<const std::uint8_t> id,
@@ -568,6 +639,7 @@ void Ed3kJoinBase::beginStart()
 void Ed3kJoinBase::closeAll()
 {
     m_cancel->store(true);
+    m_reads.clear();   // their results are dropped (the cancel flag)
     m_saveTimer.stop();
     m_researchTimer.stop();
     m_dirty.clear();
@@ -650,9 +722,10 @@ void Ed3kJoinBase::onEventPolled(const ffi::Event& event, bool* handled)
             *handled = true;
     } else if (const auto* r = std::get_if<ev::FileRequested>(&event)) {
         if (m_shared.contains(r->root)) {
-            // ToDo: an upload queue and slots for ed3k (bandwidth, fairness); every
-            // downloader of a joined member gets a slot at once for now
-            if (r->first)
+            // was: ToDo: an upload queue and slots for ed3k (bandwidth, fairness); every
+            // downloader of a joined member gets a slot at once for now (done: the engine's
+            // queue policy, ed3k_queue_auto, answers it; a slot at once only without it)
+            if (r->first && !r->autoAnswered)
                 (void)m_session.engine()->queueSet(m_session.now(), r->node, 0, 0);
             if (handled)
                 *handled = true;
@@ -724,36 +797,97 @@ bool Ed3kJoinBase::answerBlock(std::uint64_t id, const ffi::Root& root, std::uin
     if (!e || it == m_shared.end())
         return false;
     const Shared& s = it->second;
-    const auto t = m_session.now();
     if (offset >= s.size) {
-        (void)e->blockFail(t, id);
+        (void)e->blockFail(m_session.now(), id);
         return true;
     }
     const auto n = std::uint32_t(len.value_or(std::uint32_t(std::min<std::uint64_t>(kBlock, s.size - offset))));
-    std::optional<QByteArray> data;
     if (!s.blob.isEmpty()) {
+        std::optional<QByteArray> data;
         if (offset + n <= std::uint64_t(s.blob.size()))
             data = s.blob.mid(qsizetype(offset), qsizetype(n));
-    } else {
-        data = readShared(s, offset, n);
+        finishBlock(id, root, std::move(data));
+        return true;
     }
+    auto read = sharedRead(s, offset, n);
+    if (!read) {
+        finishBlock(id, root, std::nullopt);
+        return true;
+    }
+    // on a worker; the engine waits for the answer by id
+    readInBackground(kUploadReads, {std::move(*read)}, [this, id, root](ReadResults r) {
+        finishBlock(id, root, r.empty() ? std::nullopt : std::move(r.front()));
+        pumpSession();
+    });
+    return true;
+}
+
+void Ed3kJoinBase::finishBlock(std::uint64_t id, const ffi::Root& root, std::optional<QByteArray> data)
+{
+    auto* e = m_session.engine();
+    if (!e)
+        return;
+    const auto t = m_session.now();
     if (!data) {
         (void)e->blockFail(t, id);
-        if (s.blob.isEmpty() && sharedGone(s)) {
+        const auto it = m_shared.find(root);
+        if (it != m_shared.end() && it->second.blob.isEmpty() && sharedGone(it->second)) {
             logDebug(QStringLiteral("%1 is gone, not shared any more").arg(hexOf(root.bytes)));
             (void)e->fileClose(t, root);
             m_shared.erase(it);
         }
-        return true;
+        return;
     }
     auto buf = ffi::Buffer::alloc(std::size_t(data->size()));
     if (!buf) {
         (void)e->blockFail(t, id);
-        return true;
+        return;
     }
     std::memcpy(buf->bytes().data(), data->constData(), std::size_t(data->size()));
     (void)e->blockProvide(t, id, std::move(*buf));
-    return true;
+}
+
+void Ed3kJoinBase::runReads(const QString& owner)
+{
+    const auto it = m_reads.find(owner);
+    if (it == m_reads.end())
+        return;
+    if (it->second.batches.empty()) {
+        m_reads.erase(it);
+        return;
+    }
+    it->second.busy = true;
+    QPointer<Ed3kJoinBase> self(this);
+    const auto cancel = m_cancel;
+    m_session.readPool().start([self, cancel, owner, reads = it->second.batches.front().reads]() {
+        ReadResults out;
+        out.reserve(reads.size());
+        for (const auto& r : reads) {
+            if (cancel->load())
+                return;
+            out.push_back(readFile(r));
+        }
+        QMetaObject::invokeMethod(
+            self.data(),
+            [self, cancel, owner, out = std::move(out)]() mutable {
+                if (self && !cancel->load())
+                    self->readsDone(owner, std::move(out));
+            },
+            Qt::QueuedConnection);
+    });
+}
+
+void Ed3kJoinBase::readsDone(const QString& owner, ReadResults results)
+{
+    const auto it = m_reads.find(owner);
+    if (it == m_reads.end() || it->second.batches.empty())
+        return;
+    auto done = std::move(it->second.batches.front().done);
+    it->second.batches.pop_front();
+    it->second.busy = false;
+    done(std::move(results));   // may queue more of this owner (and start it)
+    if (const auto again = m_reads.find(owner); again != m_reads.end() && !again->second.busy)
+        runReads(owner);
 }
 
 void Ed3kJoinBase::onBlock(const ffi::event::Block& b)
@@ -1029,7 +1163,8 @@ void Ed3kJoinBase::publishKeptRecords(const QString& owner)
         return;
     const auto t = m_session.now();
     const Kept kept = readKept(owner);
-    if (kept.set) {
+    // §6: the set is not shared while holding back (its manifest names the article list)
+    if (kept.set && shareKeptBlobs()) {
         const QByteArray manifest = readBlob(QDir(keptDir(owner)).filePath(blobFile(kept.set->root)));
         const QByteArray n = kept.set->name.toUtf8();
         if (manifest.isEmpty())
@@ -1049,6 +1184,23 @@ void Ed3kJoinBase::publishKeptRecords(const QString& owner)
     logDebug(QStringLiteral("kept records of %1 published again (%2 alias(es))").arg(owner).arg(published));
     pumpSession();
     emit keptRecordsPublished(owner, published);
+}
+
+void Ed3kJoinBase::withdrawKeptRecords()
+{
+    auto* e = m_session.engine();
+    if (!e)
+        return;
+    const QDir dir(joinDir(m_tag));
+    for (const QString& sub : dir.entryList(QDir::Dirs | QDir::NoDotAndDotDot)) {
+        const auto records = readRecords(QDir(dir.filePath(sub)).filePath(kKeptRecords));
+        if (records.empty())
+            continue;
+        if (auto ok = e->unpublishAlias(m_session.now(), records); !ok)
+            logDebug(QStringLiteral("kept ALIAS records of %1 not withdrawn (error %2)")
+                         .arg(QUrl::fromPercentEncoding(sub.toLatin1()), errorName(ok.error())));
+    }
+    pumpSession();
 }
 
 } // namespace eMule::ed3k

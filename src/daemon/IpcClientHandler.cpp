@@ -4421,6 +4421,8 @@ bool IpcClientHandler::applyPreferenceEd3k(const QString& key, const QCborValue&
         thePrefs.setEd3kEnabled(val.toBool());
     else if (key == QStringLiteral("ed3kShareFiles"))
         thePrefs.setEd3kShareFiles(val.toBool());
+    else if (key == QStringLiteral("ed3kHoldBackPosts"))
+        thePrefs.setEd3kHoldBackPosts(val.toBool());
     else if (key == QStringLiteral("ed3kUdpPort"))
         thePrefs.setEd3kUdpPort(static_cast<uint16>(std::clamp<qint64>(val.toInteger(), 1, 65535)));
     else if (key == QStringLiteral("ed3kCreditRpc"))

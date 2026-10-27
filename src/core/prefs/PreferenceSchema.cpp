@@ -207,6 +207,8 @@ using Kind = PrefSpec::Kind;
     t << flag("ed3kEnabled", "Enable the ed3k node (packmule).");
     t << number("ed3kUdpPort", 1, 65535, "", "UDP port of the ed3k node, separate from the eD2K UDP port.");
     t << flag("ed3kShareFiles", "Serve the shared files over ed3k too (while the ed3k node runs).");
+    t << flag("ed3kHoldBackPosts", "Hold Usenet posts back on ed3k: share the files, but not the article "
+                                   "lists, post sets or nzb records (usenet.md §6).");
     t << advanced(text("ed3kCreditRpc", 4096, "JSON-RPC endpoints of the credit ledger (https URLs, separated by "
                                               "spaces; operator n = the n-th). Empty = off."));
     t << advanced(text("ed3kChaintubeRpc", 4096, "JSON-RPC endpoints of the chaintube chain (https URLs, or http to "

@@ -103,6 +103,9 @@ Ed3kShared::Ed3kShared(Ed3kSession& session, SharedFileSource& source, const QSt
     m_recheckTimer.setSingleShot(true);
     m_recheckTimer.setInterval(0);
     connect(&m_recheckTimer, &QTimer::timeout, this, &Ed3kShared::recheck);
+    // no signal for a priority change (auto priority moves by itself): read once a minute
+    m_priorityTimer.setInterval(60 * 1000);
+    connect(&m_priorityTimer, &QTimer::timeout, this, &Ed3kShared::refreshPriorities);
 }
 
 Ed3kShared::~Ed3kShared()
@@ -120,8 +123,18 @@ std::optional<SharedEntry> Ed3kShared::entryOf(const KnownFile& file)
     if (file.isPartFile() || file.hasNullHash() || static_cast<uint64>(file.fileSize()) == 0)
         return std::nullopt;
     // a completed PartFile: filePath() is the final path (dataFilePath() the old .part)
+    const auto priority = [&file] {
+        using P = ::ed3k::UploadPriority;
+        switch (file.upPriority()) {
+        case kPrVeryLow: return P::VeryLow;
+        case kPrLow: return P::Low;
+        case kPrHigh: return P::High;
+        case kPrVeryHigh: return P::Release;   // eMule's "Release"
+        default: return P::Normal;
+        }
+    }();
     return SharedEntry{QByteArray(reinterpret_cast<const char*>(file.fileHash()), 16), file.filePath(), file.fileName(),
-                       static_cast<uint64>(file.fileSize())};
+                       static_cast<uint64>(file.fileSize()), priority};
 }
 
 void Ed3kShared::connectList(SharedFileList& list)
@@ -155,6 +168,7 @@ void Ed3kShared::start()
         add(e);
     logInfo(QStringLiteral("%1 file(s) of the share list, %2 to hash").arg(m_files.size()).arg(m_hashQueue.size()));
     hashNext();
+    m_priorityTimer.start();
     pumpSession();
 }
 
@@ -162,6 +176,7 @@ void Ed3kShared::stop()
 {
     if (!m_started)
         return;
+    m_priorityTimer.stop();
     saveCache();
     if (auto* e = m_session.engine()) {
         const auto t = m_session.now();
@@ -303,21 +318,19 @@ void Ed3kShared::onBlobFetched(const QString& owner, int member, const ffi::Root
     Q_UNUSED(owner) Q_UNUSED(member) Q_UNUSED(root) Q_UNUSED(data)
 }
 
-std::optional<QByteArray> Ed3kShared::readShared(const Shared& s, std::uint64_t offset, std::uint32_t len) const
+std::optional<Ed3kJoinBase::FileRead> Ed3kShared::sharedRead(const Shared& s, std::uint64_t offset, std::uint32_t len) const
 {
     const File* f = fileOfMember(s.member);
     if (!f || !f->shared)
         return std::nullopt;
-    // changed on disk since it was hashed: its blocks would not verify
-    if (!unchanged(f->entry.path, f->entry.size, f->mtimeMs))
-        return std::nullopt;
-    QFile file(f->entry.path);
-    if (!file.open(QIODevice::ReadOnly) || !file.seek(qint64(offset)))
-        return std::nullopt;
-    QByteArray data = file.read(qint64(len));
-    if (data.size() != qsizetype(len))
-        return std::nullopt;
-    return data;
+    // the worker checks size and date: changed since hashed, its blocks would not verify
+    return FileRead{f->entry.path, offset, len, qint64(f->entry.size), f->mtimeMs};
+}
+
+::ed3k::UploadPriority Ed3kShared::uploadPriority(const Shared& s) const
+{
+    const File* f = fileOfMember(s.member);
+    return f ? f->entry.priority : ::ed3k::UploadPriority::Normal;
 }
 
 bool Ed3kShared::sharedGone(const Shared& s) const
@@ -498,6 +511,20 @@ void Ed3kShared::recheck()
     scheduleSave(kOwner);
     hashNext();
     pumpSession();
+}
+
+void Ed3kShared::refreshPriorities()
+{
+    for (auto& [md4, f] : m_files) {
+        if (!f.shared)
+            continue;
+        const auto e = m_source.find(md4);
+        if (!e || e->priority == f.entry.priority)
+            continue;
+        f.entry.priority = e->priority;
+        if (const auto c = m_cache.find(md4); c != m_cache.end())
+            updateUploadPriority(c->second.root);
+    }
 }
 
 const Ed3kShared::File* Ed3kShared::fileOfMember(int member) const

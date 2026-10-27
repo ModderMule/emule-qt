@@ -15,6 +15,7 @@
 #include <QObject>
 #include <QString>
 
+#include <algorithm>
 #include <deque>
 #include <functional>
 #include <memory>
@@ -188,6 +189,11 @@ public:
 
     [[nodiscard]] uint64 maxClientScore() const { return m_maxScore; }
 
+    /// Upload slots of another network on the same line (ed3k, set by the daemon): counted
+    /// with ours by acceptNewClient() and the slot ladder, not by the minimum. 0 = none.
+    void setForeignSlots(int count) { m_foreignSlots = std::max(0, count); }
+    [[nodiscard]] int foreignSlots() const { return m_foreignSlots; }
+
     /// Promote a client into an upload slot. @return false when the slot was NOT opened —
     /// either there was nobody to promote, or the dial failed. MFC CUploadQueue::AddUpNextClient
     /// (srchybrid/UploadQueue.cpp:181), which likewise refuses to insert into the uploading
@@ -327,6 +333,7 @@ private:
     /// checkForTimeOver()'s score kick. Both are inert while thePrefs.transferFullChunks()
     /// is on, which is the default — MFC gates them the same way.
     uint64 m_maxScore = 0;
+    int m_foreignSlots = 0;
     uint64 m_lastCalculatedMaxScore = 0;
 
     // Dead-slot recycling (recycleDeadSlots)

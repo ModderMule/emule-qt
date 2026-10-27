@@ -12,6 +12,7 @@
 #include <QTemporaryDir>
 #include <QTest>
 
+#include <algorithm>
 #include <cstring>
 
 using namespace eMule;
@@ -77,7 +78,7 @@ protected:
     std::vector<std::uint64_t> wantedBlocks(const Download&) const override { return {}; }
     void onFileBlock(const Download&, const ::ed3k::event::Block&) override {}
     void onBlobFetched(const QString&, int, const ::ed3k::Root&, const QByteArray& data) override { got = data; }
-    std::optional<QByteArray> readShared(const Shared&, std::uint64_t, std::uint32_t) const override { return std::nullopt; }
+    std::optional<FileRead> sharedRead(const Shared&, std::uint64_t, std::uint32_t) const override { return std::nullopt; }
     bool hasOwner(const QString&) const override { return false; }
     void saveOwner(const QString&) override {}
 };
@@ -108,6 +109,7 @@ private slots:
     void aSharedFileIsFetchedByItsRoot();
     void theCacheSparesAHashAfterARestart();
     void aRemovedFileIsNotShared();
+    void theUploadQueueServesInTurn();
     void cleanup();
 };
 
@@ -269,6 +271,64 @@ void tst_Ed3kShared::aRemovedFileIsNotShared()
     shared.setEnabled(true);
     QVERIFY(shared.isStarted());
     QTRY_VERIFY_WITH_TIMEOUT(shared.rootOf(md4).has_value(), 20000);
+    shared.stop();
+}
+
+// The engine's queue policy (ed3k_queue_auto, on from the session's start) with one slot:
+// one downloader is served, the other queued (rank ≥ 1), then served; the host answers
+// no FileRequested itself
+void tst_Ed3kShared::theUploadQueueServesInTurn()
+{
+    const QByteArray data = payload(int(6 * kBlock + 77), 4);
+    QTemporaryDir da, db, dc;
+    QVERIFY(da.isValid() && db.isValid() && dc.isValid());
+    const QString path = QDir(da.path()).filePath(QStringLiteral("q.bin"));
+    QVERIFY(writeFile(path, data));
+
+    Ed3kSession a, b, c;
+    QVERIFY(a.start(loopback(da.path())));
+    QVERIFY(b.start(loopback(db.path())));
+    QVERIFY(c.start(loopback(dc.path())));
+    a.setUploadSlots(1);
+    FakeSource src;
+    const QByteArray md4(16, char(0x71));
+    src.entries.push_back(SharedEntry{md4, path, QStringLiteral("q.bin"), std::uint64_t(data.size())});
+    Ed3kShared shared(a, src, da.path());
+    QSignalSpy spy(&shared, &Ed3kShared::fileShared);
+    shared.start();
+    QTRY_COMPARE_WITH_TIMEOUT(spy.count(), 1, 20000);
+    const auto root = *shared.rootOf(md4);
+
+    // every FileRequested on A was answered by the engine
+    int hostAnswers = 0;
+    connect(&a, &Ed3kSession::eventPolled, this, [&](const ::ed3k::Event& ev, bool*) {
+        if (const auto* r = std::get_if<::ed3k::event::FileRequested>(&ev); r && r->first && !r->autoAnswered)
+            ++hostAnswers;
+    });
+    std::vector<std::uint32_t> ranks;
+    for (Ed3kSession* s : {&b, &c})
+        connect(s, &Ed3kSession::eventPolled, this, [&](const ::ed3k::Event& ev, bool*) {
+            if (const auto* q = std::get_if<::ed3k::event::QueueRank>(&ev))
+                ranks.push_back(q->rank);
+        });
+
+    Fetcher fb(b, db.path()), fc(c, dc.path());
+    for (Fetcher* f : {&fb, &fc}) {
+        f->setSearchEnabled(false);
+        f->start();
+    }
+    QVERIFY(fb.fetch(root, std::uint64_t(data.size()), sourceOf(a)));
+    QVERIFY(fc.fetch(root, std::uint64_t(data.size()), sourceOf(a)));
+    QTRY_VERIFY_WITH_TIMEOUT(fb.got == data && fc.got == data, 60000);
+    QCOMPARE(hostAnswers, 0);
+    QVERIFY(std::ranges::count(ranks, 0u) >= 2);                                   // both served
+    QVERIFY(std::ranges::any_of(ranks, [](std::uint32_t r) { return r >= 1; }));   // one waited
+    const auto stats = a.uploadQueueStats();
+    QVERIFY(stats);
+    QCOMPARE(stats->slotCount, 1u);
+
+    fb.stop();
+    fc.stop();
     shared.stop();
 }
 

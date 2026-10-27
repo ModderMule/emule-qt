@@ -2363,6 +2363,7 @@ void UsenetQueue::onSegmentFinished(const UsenetFetchResult& result, bool curren
     // For articleDecoded below, taken now: completion may drop the item.
     bool decodedToDisk = false;
     int articleNumber = 0;
+    QString articleId;
     const bool onDisk = result.error == NntpError::None
                         || (result.error == NntpError::ArticleCorrupt && result.checksumFailed);
     if (onDisk && result.decodedBytes > 0 && result.fileIndex >= 0
@@ -2371,6 +2372,7 @@ void UsenetQueue::onSegmentFinished(const UsenetFetchResult& result, bool curren
         if (result.segmentIndex >= 0 && result.segmentIndex < segments.size()) {
             decodedToDisk = true;
             articleNumber = segments.at(result.segmentIndex).number;
+            articleId = segments.at(result.segmentIndex).messageId;
         }
     }
 
@@ -2440,7 +2442,7 @@ void UsenetQueue::onSegmentFinished(const UsenetFetchResult& result, bool curren
     if (decodedToDisk) {
         emit articleDecoded(result.itemId, result.fileIndex, result.decodedOffset,
                             result.decodedBytes, result.error == NntpError::None,
-                            articleNumber, result.rawBeginLine, result.serverKey);
+                            articleNumber, result.rawBeginLine, result.serverKey, articleId);
     }
 
     dispatch();
