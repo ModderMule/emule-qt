@@ -744,6 +744,18 @@ enum class IpcMsgType : int {
     ///                          error, totalBytes, doneBytes, leftBytes } } }
     GetBtStats              = 819,
 
+    // -- ed3k (1000-1049) -----------------------------------------------------
+    //
+    // The ed3k node (packmule, src/ed3k). Maps of src/daemon/Ed3kBridge.cpp. Answered
+    // with the node off or not built too (available / running false).
+
+    /// [] -> [ok, {available, running, udpPort, nodeId (hex), contacts, class4, class6
+    ///   (0 unknown, 1 open, 2 cone, 3 symmetric), router, wireSent, wireRecv (bytes),
+    ///   rateUp, rateDown (B/s), limitUpKb, limitDownKb (0 = none),
+    ///   stats: {connections, lookups, records, recordBytes, published, queueLen,
+    ///           bannedNodes, bannedHosts, sentFile, sentOther, recvFile, recvOther}}]
+    GetEd3kStatus           = 1000,
+
     // -- Responses (Core -> GUI) ---------------------------------------------
 
     HandshakeOk          = 300,  ///< [version, motd, sessionToken, loading: bool, loadStage: string]
@@ -857,6 +869,12 @@ enum class IpcMsgType : int {
     PushBtStatus           = 953,
     /// [id: string] — every wanted byte is there. Uncoalesced.
     PushTorrentFinished    = 954,
+
+    // -- ed3k pushes (1050-1099) -----------------------------------------------
+
+    /// [{...GetEd3kStatus...}] — the node started or stopped, its contacts, address
+    /// class or router duty changed. A state push: a slow reader keeps the last.
+    PushEd3kStatus         = 1050,
 };
 
 /// What SetCategoryStatus should do to every download in the category.

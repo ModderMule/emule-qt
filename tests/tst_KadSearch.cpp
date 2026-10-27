@@ -58,6 +58,8 @@ private slots:
     void responder_isSeenByTheCensus();
     void buddyAndCallbackRequests_carryACryptTarget_data();
     void buddyAndCallbackRequests_carryACryptTarget();
+    void buddyAndCallbackRequests_countAsAnswers_data();
+    void buddyAndCallbackRequests_countAsAnswers();
     void buddyRequest_carriesInvertedKadIdNotTheWalkTarget();
     void actionPackets_areNotCappedWhileTheSearchRuns();
 
@@ -1135,6 +1137,26 @@ void tst_KadSearch::buddyAndCallbackRequests_carryACryptTarget()
     uint8 id[16] = {0x55};
     id[15] = 1;
     QCOMPARE(targets.front(), UInt128(id));
+}
+
+void tst_KadSearch::buddyAndCallbackRequests_countAsAnswers_data()
+{
+    buddyAndCallbackRequests_carryACryptTarget_data();
+}
+
+// Report #16: the Kad search list showed 0 answers for Find Buddy. MFC counts each
+// sent request, the replies come by TCP.
+void tst_KadSearch::buddyAndCallbackRequests_countAsAnswers()
+{
+    QFETCH(int, type);
+    eMule::testing::KadFixture kadFixture;
+
+    Search* search = startWalk(static_cast<SearchType>(type), 3);
+    QVERIFY(search != nullptr);
+    respond(1);
+    QCOMPARE(search->getAnswers(), uint32{0});
+    search->storePacket(false);
+    QCOMPARE(search->getAnswers(), uint32{1});
 }
 
 // A buddy search may walk to a random target; the BuddyID must stay ~kadID or

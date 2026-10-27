@@ -24,6 +24,13 @@ enum class ContainerVerdict : quint8 {
     NoKnownContainer,   ///< the promised signature is absent and nothing else matches
 };
 
+/// How bad a suspect name is, for the mark beside it.
+enum class ContainerMark : quint8 {
+    None,          ///< nothing to say
+    Mislabelled,   ///< wrong container, same kind of media (MP4 named .avi): yellow
+    Fake,          ///< no media at all, or another kind of media: red
+};
+
 /// What a head that is no media container turned out to be instead.
 enum class ForeignHead : quint8 { None, Executable, Archive };
 
@@ -33,6 +40,7 @@ struct ContainerCheck {
     QString expected;   ///< container the extension promises, e.g. "ASF"
     QString actual;     ///< container the bytes are; empty for NoKnownContainer
     QString mimeType;   ///< MIME for `actual`; empty when we cannot name it
+    bool sameKind = false;   ///< WrongContainer only: `actual` holds what the name promises (video/audio)
 
     /// True when the name is provably wrong. Note that Unchecked is not suspect:
     /// not knowing is not the same as knowing something is off.
@@ -40,6 +48,19 @@ struct ContainerCheck {
     {
         return verdict == ContainerVerdict::WrongContainer
             || verdict == ContainerVerdict::NoKnownContainer;
+    }
+
+    /// Wrong name, but still the media it claims -- a player that sniffs opens it.
+    [[nodiscard]] bool isMislabelled() const
+    {
+        return verdict == ContainerVerdict::WrongContainer && sameKind;
+    }
+
+    [[nodiscard]] ContainerMark mark() const
+    {
+        if (!isSuspect())
+            return ContainerMark::None;
+        return isMislabelled() ? ContainerMark::Mislabelled : ContainerMark::Fake;
     }
 };
 

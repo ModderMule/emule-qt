@@ -379,6 +379,16 @@ void MainWindow::setIpcClient(IpcClient* ipc)
         connect(ipc, &IpcClient::clientSharedFilesReceived, this,
                 &MainWindow::onClientSharedFilesReceived, Qt::UniqueConnection);
 
+    // ed3k node label: asked once per connection, then pushed
+    if (ipc) {
+        connect(ipc, &IpcClient::connected, this, &MainWindow::requestEd3kStatus, Qt::UniqueConnection);
+        connect(ipc, &IpcClient::disconnected, this, [this] { setEd3kStatus({}); });
+        connect(ipc, &IpcClient::ed3kStatusChanged, this,
+                [this](const Ipc::IpcMessage& msg) { setEd3kStatus(msg.fieldMap(0)); });
+        if (ipc->isConnected())
+            requestEd3kStatus();
+    }
+
     // Where the link to the core stands, in the status bar: an empty window with
     // no word on why is indistinguishable from a hang.
     if (ipc) {
@@ -567,6 +577,48 @@ void MainWindow::setKadStatus(bool running, bool kadConnected, bool firewalled)
     }
     updateConnectButton();
     scheduleLowIdHint();
+}
+
+void MainWindow::setEd3kStatus(const QCborMap& status)
+{
+    if (!m_statusEd3k)
+        return;
+    if (!status.value(QStringLiteral("running")).toBool()) {
+        m_statusEd3k->hide();
+        return;
+    }
+    const qint64 contacts = status.value(QStringLiteral("contacts")).toInteger();
+    const qint64 class4 = status.value(QStringLiteral("class4")).toInteger();
+    const qint64 class6 = status.value(QStringLiteral("class6")).toInteger();
+    const bool router = status.value(QStringLiteral("router")).toBool();
+    // behind NAT on every family it knows of, and no router duty
+    const bool firewalled = !router && class4 != 1 && class6 != 1 && (class4 > 1 || class6 > 1);
+    if (contacts > 0 && !firewalled) {
+        m_statusEd3k->setText(tr("ed3k: Connected"));
+        setStatusRole(m_statusEd3k, static_cast<int>(TextRole::Good));
+    } else if (contacts > 0) {
+        m_statusEd3k->setText(tr("ed3k: Connected (Firewalled)"));
+        setStatusRole(m_statusEd3k, static_cast<int>(TextRole::Caution));
+    } else {
+        m_statusEd3k->setText(tr("ed3k: Connecting..."));
+        setStatusRole(m_statusEd3k, static_cast<int>(TextRole::Caution));
+    }
+    const auto className = [](qint64 c) {
+        switch (c) {
+        case 1: return tr("open");
+        case 2: return tr("cone NAT");
+        case 3: return tr("symmetric NAT");
+        default: return tr("unknown");
+        }
+    };
+    const QString nodeId = status.value(QStringLiteral("nodeId")).toString();
+    m_statusEd3k->setToolTip(
+        tr("ed3k node %1\nUDP port: %2\nContacts: %3\nIPv4: %4\nIPv6: %5\nRouter: %6")
+            .arg(nodeId.left(8).toUpper())
+            .arg(status.value(QStringLiteral("udpPort")).toInteger())
+            .arg(contacts)
+            .arg(className(class4), className(class6), router ? tr("yes") : tr("no")));
+    m_statusEd3k->show();
 }
 
 void MainWindow::setNetworkStats(quint32 users, quint32 files)
@@ -878,7 +930,7 @@ void MainWindow::changeEvent(QEvent* event)
     QMainWindow::changeEvent(event);
     // Theme switch: role colours have a light and a dark value
     if (event->type() == QEvent::ThemeChange || event->type() == QEvent::PaletteChange) {
-        for (QLabel* label : {m_statusEd2k, m_statusKad}) {
+        for (QLabel* label : {m_statusEd2k, m_statusKad, m_statusEd3k}) {
             if (const QVariant role = label ? label->property("textRole") : QVariant{}; role.isValid())
                 setStatusRole(label, role.toInt());
         }
@@ -950,7 +1002,7 @@ bool MainWindow::nativeEvent(const QByteArray& eventType, void* message, qintptr
 bool MainWindow::eventFilter(QObject* obj, QEvent* event)
 {
     if (event->type() == QEvent::MouseButtonDblClick) {
-        if (obj == m_statusEd2k || obj == m_statusKad || obj == m_statusUsersWidget) {
+        if (obj == m_statusEd2k || obj == m_statusKad || obj == m_statusEd3k || obj == m_statusUsersWidget) {
             showNetworkInfo();
             return true;
         }
@@ -1868,6 +1920,12 @@ void MainWindow::setupStatusBar()
     m_statusKad->installEventFilter(this);
     sb->addPermanentWidget(m_statusKad);
 
+    // ed3k node: no MFC original; shown like Kad's while it runs
+    m_statusEd3k = new QLabel(this);
+    m_statusEd3k->installEventFilter(this);
+    m_statusEd3k->hide();
+    sb->addPermanentWidget(m_statusEd3k);
+
     // Upload SpeedSense (MFC SBarUSS): shown only while the option is on
     m_statusUss = new QLabel(this);
     m_statusUss->installEventFilter(this);
@@ -1887,6 +1945,16 @@ void MainWindow::setupStatusBar()
                                           : QStringLiteral(":/icons/MessagePending.ico"))
                              .pixmap(16, 16));
         m_statusChat->setToolTip(state == 0 ? QString() : tr("New message — double-click to read"));
+    });
+}
+
+void MainWindow::requestEd3kStatus()
+{
+    if (!m_ipc || !m_ipc->isConnected())
+        return;
+    m_ipc->sendPoll(this, Ipc::IpcMessage(Ipc::IpcMsgType::GetEd3kStatus), [this](const Ipc::IpcMessage& resp) {
+        if (resp.isValid() && resp.fieldBool(0))
+            setEd3kStatus(resp.fieldMap(1));
     });
 }
 

@@ -98,6 +98,9 @@ metadata while the ed3k node runs. What BtSession gives it, without libtorrent t
 - `addPiece(id, piece, bytes)` (`add_piece`, overwrite) and `raisePieces` (`set_piece_deadline`).
 - Signals `metadataReceived(id)` and `pieceResult(id, piece, passed)` (only for torrents with
   a join; needs `alert_category::piece_progress`).
+- `havePieces(id)` (`status(query_pieces).pieces`) and signal `torrentChecked(id)`
+  (`torrent_checked_alert`, joined torrents only): the join asks ed3k only for blocks of
+  pieces libtorrent lacks.
 - `ed3kLink(id)`: an `ed3k:file?…&bt=` link added as a magnet of that infohash, or a magnet's
   `xs` that is an `ed3k:file` link; kept in `<config>/BT/ed3k-links.json`. The GUI routes such
   links like BitTorrent magnets (`gui::isBitTorrentMagnet`).

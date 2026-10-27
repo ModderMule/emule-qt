@@ -37,6 +37,8 @@ constexpr int kSealHoldMs = 10 * 60 * 1000;
 constexpr int kClaimSearchesPerPost = 4;
 /// reads given by block_read in one go; a guard, the core gives few
 constexpr int kMaxReadsPerCall = 1 << 16;
+/// member index of a post set's article list fetched into memory (the manifest: kSetManifest)
+constexpr int kArticleList = -2;
 
 void le32(QByteArray& out, std::size_t v)
 {
@@ -85,6 +87,7 @@ struct Ed3kUsenetJoin::Post {
         quint64 generation = 0;
         std::optional<QDeadlineTimer> holdUntil;
         bool claimSearched = false;
+        int rehashTries = 0;
         /// ACCEPT_RANGEs merged: they come per block, an article across two blocks is
         /// only accepted inside their union (acceptExternalRange: wholly inside)
         QList<QPair<qint64, qint64>> accepted;
@@ -93,6 +96,14 @@ struct Ed3kUsenetJoin::Post {
     std::deque<int> claimQueue;
     int claimsRunning = 0;
     bool finished = false;   ///< the item finished; dropped once no hash is pending
+    /// §4.1: the post root of <meta type="ed3k">
+    std::optional<ffi::Root> link;
+    /// the post set whose article list is fetched: its manifest and publishers
+    std::optional<ffi::Root> setRoot;
+    QByteArray setFile;
+    std::vector<ffi::PublisherKey> setPublishers;
+    bool setFromLink = false;
+    std::optional<ffi::Root> listRoot;
 };
 
 Ed3kUsenetJoin::Ed3kUsenetJoin(Ed3kSession& session, UsenetJoinQueue& queue, const QString& configDir,
@@ -131,6 +142,8 @@ void Ed3kUsenetJoin::start()
     m_queue.setSealHold([this](const QString& itemId, int fileIndex) { return sealHold(itemId, fileIndex); });
     for (const QString& id : m_queue.itemIds())
         (void)ensurePost(id);
+    // what was verified or fetched before the restart: post sets, members
+    shareKept();
     pumpSession();
 }
 
@@ -199,11 +212,8 @@ QByteArray Ed3kUsenetJoin::nzbBuffer(const usenet::NzbInfo& nzb)
 
 std::optional<ffi::Root> Ed3kUsenetJoin::metaRoot(const usenet::NzbInfo& nzb)
 {
-    const QString link = nzb.metaValue(QStringLiteral("ed3k")).trimmed();
-    if (link.isEmpty())
-        return std::nullopt;
-    const QByteArray text = link.toUtf8();
-    auto parsed = ffi::parseFileLink(std::string_view(text.constData(), std::size_t(text.size())));
+    // was: parsed here; now metaLink (its size is needed to fetch the set)
+    const auto parsed = metaLink(nzb);
     if (!parsed)
         return std::nullopt;
     return parsed->root;
@@ -301,6 +311,22 @@ void Ed3kUsenetJoin::addSource(const QString& itemId, int fileIndex, const ffi::
     Ed3kJoinBase::addSource(*m->root, source);
 }
 
+bool Ed3kUsenetJoin::trySet(const QString& itemId, const ffi::Root& root, std::uint64_t size,
+                            std::span<const ffi::PublisherKey> publishers)
+{
+    const auto post = ensurePost(itemId);
+    if (!post || !wantsSet(itemId) || post->setRoot)
+        return false;
+    const bool ok = trySetCandidate(itemId, root, size, publishers);
+    pumpSession();
+    return ok;
+}
+
+void Ed3kUsenetJoin::addBlobSource(const ffi::Root& root, const ffi::Source& source)
+{
+    Ed3kJoinBase::addSource(root, source);
+}
+
 void Ed3kUsenetJoin::onItemAdded(const QString& itemId)
 {
     if (m_started)
@@ -314,6 +340,7 @@ void Ed3kUsenetJoin::onItemRemoved(const QString& itemId)
     m_noJoin.remove(itemId);
     // its files are gone or the user does not want them: not shared any more
     unshareOwner(itemId);
+    dropKept(itemId);
     pumpSession();
 }
 
@@ -408,10 +435,28 @@ void Ed3kUsenetJoin::onFilesRepaired(const QString& itemId, const QList<int>& fi
                              .arg(f).arg(itemId, errorName(reads.error())));
             continue;
         }
-        // ToDo: archive volumes are deleted right after this signal (consumed by the
+        // was: ToDo: archive volumes are deleted right after this signal (consumed by the
         // unpack), so their hash at MEMBER_COMPLETE fails; hash them here, synchronously?
+        // (done: m_hashNow, MEMBER_COMPLETE of these hashed on this thread)
+        m_hashNow = true;
         serveReads(itemId, std::move(*reads));
+        m_hashNow = false;
     }
+    // hashes still running on a worker: done here too, before the volumes go
+    std::vector<int> running;
+    if (const auto p = findPost(itemId))
+        for (std::size_t f = 0; f < p->members.size(); ++f)
+            if (p->members[f].hashing)
+                running.push_back(int(f));
+    m_hashNow = true;
+    for (const int f : running) {
+        const auto p = findPost(itemId);
+        if (!p || std::size_t(f) >= p->members.size())
+            break;
+        p->members[std::size_t(f)].hashing = false;   // the worker's result is stale now
+        onMemberComplete(itemId, f);
+    }
+    m_hashNow = false;
     scheduleSave(itemId);
     pumpSession();
 }
@@ -437,6 +482,38 @@ void Ed3kUsenetJoin::onDownloadHashes(const Download& d, const ffi::Bytes& blob)
         if (auto reads = post->join.pendingReads(m_session.engine()); reads && !reads->empty())
             serveReads(itemId, std::move(*reads));
     }
+}
+
+bool Ed3kUsenetJoin::wantsSet(const QString& owner) const
+{
+    const auto post = findPost(owner);
+    if (!post)
+        return false;
+    const auto info = post->join.info();
+    return info && !info->manifest;
+}
+
+void Ed3kUsenetJoin::onSetManifest(const QString& owner, const ffi::Root& root, const QByteArray& data)
+{
+    // §4.2 step 2: a set an `nzb` record names
+    fetchList(owner, root, data, setPublishers(owner), false);
+}
+
+void Ed3kUsenetJoin::onSetSearchDone(const QString& owner)
+{
+    // §4.2 step 1: `nzb` gave no post set that passes §3: `nzb-file` now
+    logEd3kDebug(QStringLiteral("ed3k usenet: no post set for %1, searching its files").arg(owner));
+    startClaimSearches(owner);
+}
+
+bool Ed3kUsenetJoin::keepsOwner(const QString& owner) const
+{
+    return m_queue.findItem(owner) != nullptr;
+}
+
+QString Ed3kUsenetJoin::keptMemberPath(const QString& owner, int member) const
+{
+    return memberPath(owner, member);
 }
 
 bool Ed3kUsenetJoin::hasOwner(const QString& owner) const
@@ -466,7 +543,8 @@ std::shared_ptr<Ed3kUsenetJoin::Post> Ed3kUsenetJoin::ensurePost(const QString& 
     }
 
     const auto nzb = nzbSegments(item->nzb);
-    const auto link = metaRoot(item->nzb);
+    const auto linked = metaLink(item->nzb);
+    const auto link = linked ? std::optional(linked->root) : std::nullopt;
     std::optional<ffi::UsenetJoin> join;
     const QByteArray blob = readBlob(joinPath(itemId));
     if (!blob.isEmpty()) {
@@ -490,6 +568,7 @@ std::shared_ptr<Ed3kUsenetJoin::Post> Ed3kUsenetJoin::ensurePost(const QString& 
     auto post = std::make_shared<Post>(std::move(*join));
     const auto info = post->join.info();
     post->members.resize(info ? std::size_t(info->members) : 0);
+    post->link = link;
     if (auto search = ffi::UsenetSearch::create(post->join))
         post->search.emplace(std::move(*search));
     m_posts.emplace(itemId, post);
@@ -501,13 +580,20 @@ std::shared_ptr<Ed3kUsenetJoin::Post> Ed3kUsenetJoin::ensurePost(const QString& 
     // members that have a root already (a restart): their downloads go on
     for (std::size_t f = 0; f < post->members.size(); ++f)
         startDownload(itemId, int(f));
-    if (link) {
-        // ToDo: §4.1 fetch the post set (manifest and article list) of the link over ed3k,
+    // members complete but not hashed before the restart (unreadable then): hashed again
+    for (std::size_t f = 0; f < post->members.size(); ++f)
+        if (const auto m = post->join.member(f); m && m->status == ffi::MemberStatus::Complete)
+            onMemberComplete(itemId, int(f));
+    if (info && info->manifest) {
+        // a restart: the set is known
+    } else if (link) {
+        // was: ToDo: §4.1 fetch the post set (manifest and article list) of the link over ed3k,
         // then setManifest(); until then the link only makes the core the BLAKE3 judge
-        logEd3kDebug(QStringLiteral("ed3k usenet: post root %1 of \"%2\": fetching its set is not implemented")
-                         .arg(hexOf(link->bytes), item->name));
+        // (done: fetchBlob → onBlobFetched → fetchList → onListFetched → setManifest)
+        if (linked->size == 0 || !fetchBlob(*link, linked->size, itemId, kSetManifest))
+            logEd3kDebug(QStringLiteral("ed3k usenet: post set %1 of \"%2\" not fetched").arg(hexOf(link->bytes), item->name));
     } else {
-        startClaimSearches(itemId);
+        startPostSearch(itemId);
     }
     scheduleSave(itemId);
     return post;
@@ -524,6 +610,7 @@ void Ed3kUsenetJoin::dropPost(const QString& itemId, bool keepBlob)
     const auto it = m_posts.find(itemId);
     if (it != m_posts.end()) {
         stopDownloads(itemId);
+        endSetSearches(itemId);
         auto* e = m_session.engine();
         for (auto s = m_claimSearches.begin(); s != m_claimSearches.end();) {
             if (s->second.first == itemId) {
@@ -648,6 +735,10 @@ void Ed3kUsenetJoin::onMemberComplete(const QString& itemId, int fileIndex)
     m.generation = ++m_hashGeneration;
     const QString path = memberPath(itemId, fileIndex);
     const quint64 generation = m.generation;
+    if (m_hashNow) {
+        onMemberHashed(itemId, fileIndex, generation, path, hashNow(path));
+        return;
+    }
     hashInBackground(path, [this, itemId, fileIndex, generation, path](std::optional<FileHash> hashed) {
         onMemberHashed(itemId, fileIndex, generation, path, hashed);
     });
@@ -669,9 +760,17 @@ void Ed3kUsenetJoin::onMemberHashed(const QString& itemId, int fileIndex, quint6
         return;
     }
     if (!hashed) {
-        // ToDo: hash again later (the file is gone or unreadable)
+        // was: ToDo: hash again later (the file is gone or unreadable) (done: after
+        // kRehashMs, and at the next start in ensurePost)
         logEd3kWarning(QStringLiteral("ed3k usenet: cannot hash file %1 of %2 (%3)")
                            .arg(fileIndex).arg(itemId, memberPath(itemId, fileIndex)));
+        if (++m.rehashTries < kRehashTries)
+            QTimer::singleShot(kRehashMs, this, [this, itemId, fileIndex] {
+                const auto p = findPost(itemId);
+                const auto again = member(itemId, fileIndex);
+                if (p && !p->finished && again && again->status == ffi::MemberStatus::Complete)
+                    onMemberComplete(itemId, fileIndex);
+            });
     } else {
         m.hashes = hashed->hashes;
         logEd3kDebug(QStringLiteral("ed3k usenet: file %1 of %2 hashed: %3, %4 bytes")
@@ -719,7 +818,9 @@ void Ed3kUsenetJoin::onMemberVerified(const QString& itemId, int fileIndex, cons
         if (auto ok = e->publishAlias(t, one); !ok)
             logEd3kDebug(QStringLiteral("ed3k usenet: nzb-file record of file %1 of %2 not published (error %3)")
                              .arg(fileIndex).arg(itemId, errorName(ok.error())));
+        keepRecords(itemId, std::nullopt, {}, one);
     }
+    keepMember(itemId, fileIndex, root, size, QString::fromStdString(name));
     logEd3k(QStringLiteral("ed3k usenet: \"%1\" verified and shared as %2")
                 .arg(QString::fromStdString(name), hexOf(root.bytes)));
     emit memberVerified(itemId, fileIndex);
@@ -796,17 +897,19 @@ void Ed3kUsenetJoin::onPostComplete(const QString& itemId)
     if (done->root && done->shareList && !done->manifest.empty()) {
         const QByteArray manifest(reinterpret_cast<const char*>(done->manifest.data()), qsizetype(done->manifest.size()));
         const QByteArray list(reinterpret_cast<const char*>(done->list.data()), qsizetype(done->list.size()));
-        // ToDo: the manifest and article list are kept in memory only; after a restart
-        // they are not served any more
-        shareBlob(manifest, name, done->root);
+        // was: ToDo: the manifest and article list are kept in memory only; after a restart
+        // they are not served any more (done: keepBlob, shared again at start)
+        keepBlob(itemId, manifest, name, done->root);
+        keepRecords(itemId, *done->root, name, {});
         if (!list.isEmpty())
-            shareBlob(list, name + QStringLiteral(".articles"), std::nullopt);
+            keepBlob(itemId, list, name + QStringLiteral(".articles"), std::nullopt);
         // MEMBER rows (file-set.md §6)
         if (auto ok = e->setPublish(t, done->manifest, *done->root, std::string_view(nameUtf8.constData(), std::size_t(nameUtf8.size())));
             !ok)
             logEd3kDebug(QStringLiteral("ed3k usenet: set of \"%1\" not published (error %2)").arg(name, errorName(ok.error())));
     }
     if (!done->aliases.empty()) {
+        keepRecords(itemId, std::nullopt, {}, done->aliases);
         if (auto ok = e->publishAlias(t, done->aliases); !ok)
             logEd3kDebug(QStringLiteral("ed3k usenet: ALIAS records of \"%1\" not published (error %2)").arg(name, errorName(ok.error())));
     }
@@ -951,8 +1054,15 @@ void Ed3kUsenetJoin::onFileBlock(const Download& d, const ffi::event::Block& b)
 
 void Ed3kUsenetJoin::onBlobFetched(const QString& owner, int member, const ffi::Root& root, const QByteArray& data)
 {
-    // ToDo: §4.1 the post set of a link (fetchBlob) is not asked for yet
-    Q_UNUSED(owner) Q_UNUSED(member) Q_UNUSED(root) Q_UNUSED(data)
+    // was: ToDo: §4.1 the post set of a link (fetchBlob) is not asked for yet (done: here)
+    const auto post = findPost(owner);
+    if (!post)
+        return;
+    if (member == kSetManifest && post->link && *post->link == root)
+        fetchList(owner, root, data, {}, true);   // §4.1 step 1: the link's manifest
+    else if (member == kArticleList)
+        onListFetched(owner, root, data);
+    pumpSession();
 }
 
 void Ed3kUsenetJoin::onAliasFound(const ffi::event::AliasFound& found)
@@ -971,8 +1081,9 @@ void Ed3kUsenetJoin::onAliasFound(const ffi::event::AliasFound& found)
         if (!next || !*next)
             break;
         const auto& c = **next;
-        // nzb-file names one file: relation SAME (0) only, with a size
-        if (c.rel != 0 || c.size == 0)
+        // nzb-file names one file: relation SAME (asked for), with a size
+        // was: if (c.rel != 0 || c.size == 0) — 0 asked for any relation then
+        if (c.size == 0)
             continue;
         if (fileClaim(itemId, fileIndex, c.root, c.size, c.publishers))
             break;
@@ -991,10 +1102,14 @@ void Ed3kUsenetJoin::startClaimSearches(const QString& itemId)
     const auto info = post->join.info();
     if (!info || info->judge != ffi::UsenetJudge::Articles)
         return;
-    // §4.2: ToDo the `nzb` search of the post id first (sets need their manifest and
+    // §4.2 step 1: `nzb-file` only when `nzb` gave no post set that passes §3
+    if (info->manifest || setSearching(itemId) || post->setRoot)
+        return;
+    // was: §4.2: ToDo the `nzb` search of the post id first (sets need their manifest and
     // article list fetched over ed3k); for now straight to `nzb-file`, whose claims the
-    // articles test either way
-    // ToDo: FFI: alias search rel 0 means "any", SAME (also 0) cannot be asked for
+    // articles test either way (done: startPostSearch, the base's set search)
+    // was: ToDo: FFI: alias search rel 0 means "any", SAME (also 0) cannot be asked for
+    // (done: ED3K_REL_SAME, ED3K_REL_ANY is "any" now)
     if (post->claimQueue.empty()) {
         std::set<std::array<std::uint8_t, 32>> seen;
         for (std::size_t f = 0; f < post->members.size() && seen.size() < 256; ++f) {
@@ -1013,7 +1128,7 @@ void Ed3kUsenetJoin::startClaimSearches(const QString& itemId)
         const auto m = post->join.member(std::uint64_t(f));
         if (!m || !m->fileId || m->root)
             continue;
-        auto search = e->aliasSearchStart(m_session.now(), "nzb-file", std::span<const std::uint8_t>(*m->fileId));
+        auto search = e->aliasSearchStart(m_session.now(), "nzb-file", std::span<const std::uint8_t>(*m->fileId), ED3K_REL_SAME);
         if (!search) {
             logEd3kDebug(QStringLiteral("ed3k usenet: nzb-file search not started (error %1)").arg(errorName(search.error())));
             break;
@@ -1021,6 +1136,102 @@ void Ed3kUsenetJoin::startClaimSearches(const QString& itemId)
         m_claimSearches[*search] = {itemId, f};
         ++post->claimsRunning;
     }
+}
+
+void Ed3kUsenetJoin::startPostSearch(const QString& itemId)
+{
+    const auto post = findPost(itemId);
+    if (!post)
+        return;
+    const auto info = post->join.info();
+    if (!info || info->judge != ffi::UsenetJudge::Articles || info->manifest)
+        return;
+    // §4.2 step 1: ALIAS records of `nzb` name post sets (relation SET), at most 3 tried
+    if (!info->postId || !startSetSearch(itemId, "nzb", std::span<const std::uint8_t>(*info->postId), ED3K_REL_SET))
+        startClaimSearches(itemId);
+}
+
+void Ed3kUsenetJoin::fetchList(const QString& itemId, const ffi::Root& root, const QByteArray& manifest,
+                               std::vector<ffi::PublisherKey> publishers, bool fromLink)
+{
+    const auto post = findPost(itemId);
+    if (!post)
+        return;
+    // §3: the article list the manifest names; one above 32 MiB is not fetched
+    const auto list = ffi::usenetSetList(spanOf(manifest));
+    if (!list) {
+        logEd3kDebug(QStringLiteral("ed3k usenet: set %1 of %2 names no article list (error %3)")
+                         .arg(hexOf(root.bytes), itemId, errorName(list.error())));
+        setRefused(itemId, root, fromLink);
+        return;
+    }
+    post->setRoot = root;
+    post->setFile = manifest;
+    post->setPublishers = std::move(publishers);
+    post->setFromLink = fromLink;
+    post->listRoot = list->root;
+    if (!fetchBlob(list->root, list->size, itemId, kArticleList)) {
+        logEd3kDebug(QStringLiteral("ed3k usenet: article list %1 of %2 not fetched").arg(hexOf(list->root.bytes), itemId));
+        setRefused(itemId, root, fromLink);
+    }
+}
+
+void Ed3kUsenetJoin::onListFetched(const QString& itemId, const ffi::Root& root, const QByteArray& list)
+{
+    const auto post = findPost(itemId);
+    if (!post || !post->setRoot || post->listRoot != root)
+        return;
+    const QByteArray manifest = std::exchange(post->setFile, {});
+    const ffi::Root setRoot = *std::exchange(post->setRoot, std::nullopt);
+    const auto publishers = std::exchange(post->setPublishers, {});
+    const bool fromLink = post->setFromLink;
+    post->listRoot.reset();
+    if (!setManifest(itemId, spanOf(manifest), spanOf(list), publishers)) {
+        setRefused(itemId, setRoot, fromLink);
+        return;
+    }
+    logEd3k(QStringLiteral("ed3k usenet: \"%1\" has its post set %2").arg(postName(itemId), hexOf(setRoot.bytes)));
+    // §6 held back: neither the post set nor the article list is shared
+    if (!m_holdBack) {
+        keepBlob(itemId, manifest, postName(itemId), setRoot);
+        keepBlob(itemId, list, postName(itemId) + QStringLiteral(".articles"), root);
+    }
+}
+
+void Ed3kUsenetJoin::setRefused(const QString& itemId, const ffi::Root& root, bool fromLink)
+{
+    if (const auto post = findPost(itemId)) {
+        post->setRoot.reset();
+        post->setFile.clear();
+        post->setPublishers.clear();
+        post->listRoot.reset();
+    }
+    if (fromLink) {
+        // §4.1: nobody to blame; the post goes on from Usenet, BLAKE3 still the judge
+        reportProblem(itemId, -1, tr("ed3k: the ed3k link of \"%1\" names no post set of it").arg(postName(itemId)));
+        return;
+    }
+    // §4.2 step 2, §8: its publishers blamed, the next set tried; none left: `nzb-file`
+    if (!refuseSet(itemId, root) && !setSearching(itemId))
+        startClaimSearches(itemId);
+}
+
+QString Ed3kUsenetJoin::postName(const QString& itemId) const
+{
+    const auto* item = m_queue.findItem(itemId);
+    return item && !item->name.isEmpty() ? item->name : itemId;
+}
+
+std::optional<ffi::FileLink> Ed3kUsenetJoin::metaLink(const usenet::NzbInfo& nzb)
+{
+    const QString link = nzb.metaValue(QStringLiteral("ed3k")).trimmed();
+    if (link.isEmpty())
+        return std::nullopt;
+    const QByteArray text = link.toUtf8();
+    auto parsed = ffi::parseFileLink(std::string_view(text.constData(), std::size_t(text.size())));
+    if (!parsed)
+        return std::nullopt;
+    return *parsed;
 }
 
 void Ed3kUsenetJoin::savePost(const QString& itemId)

@@ -1246,6 +1246,18 @@ QString webCommentToken(const AbstractFile& f)
     return QStringLiteral("none");
 }
 
+/// The `rating_*` sprite suffix for the container mark: red fake, yellow when
+/// only the extension is wrong (MP4 named .avi), blank otherwise.
+QString webContainerToken(const ContainerCheck& cc)
+{
+    switch (cc.mark()) {
+    case ContainerMark::Fake:        return QStringLiteral("fake");
+    case ContainerMark::Mislabelled: return QStringLiteral("warn");
+    case ContainerMark::None:        break;
+    }
+    return QStringLiteral("none");
+}
+
 /// The `rating_*` sprite suffix. MFC's web UI stops at the three-state comment
 /// icon above; the GUI shows all six, and so does this.
 QString webRatingToken(const AbstractFile& f, bool indicateRatings)
@@ -1312,6 +1324,7 @@ QString pageHead(const QString& title, const QString& extraCss = {})
         "span.bad{display:inline-block;width:15px;height:15px;line-height:15px;"
         "text-align:center;border-radius:50%;background:#d93025;color:#fff;"
         "font-weight:700;font-size:11px;margin-right:6px;cursor:help}"
+        "span.bad.warn{background:#f2b400;color:#1c1e21}"
         "%2</style></head><body>").arg(htmlText(title), extraCss);
 }
 
@@ -1652,12 +1665,12 @@ QString WebServer::ratingSpriteCss() const
     }
 
     // Cell order and offsets are generate_sprites.py's, the same ones
-    // config/webserver/sprite-rating.css uses: none, 0-5, search, fake.
+    // config/webserver/sprite-rating.css uses: none, 0-5, search, fake, warn.
     QString css = QStringLiteral(
         ".rm{display:inline-block;width:16px;height:16px;vertical-align:middle;"
         "background-image:url(data:image/png;base64,%1)}")
         .arg(QString::fromLatin1(sheet.readAll().toBase64()));
-    for (int cell = 0; cell < 9; ++cell) {
+    for (int cell = 0; cell < 10; ++cell) {
         css += QStringLiteral(".rm%1{background-position:-%2px 0}")
                    .arg(cell).arg(cell * 16);
     }
@@ -1811,10 +1824,13 @@ QByteArray WebServer::renderIncomingListing(const QString& absDir, const QString
         QString marker;
         if (check.isSuspect()) {
             const QString why = htmlText(containerWarningText(check, name));
+            const bool mild = check.isMislabelled();
             marker = spriteCss.isEmpty()
                          // No sheet: fall back to the mark drawn in the page's own CSS.
-                         ? QStringLiteral("<span class=\"bad\" title=\"%1\">!</span>").arg(why)
-                         : QStringLiteral("<span class=\"rm rm8\" title=\"%1\"></span>").arg(why);
+                         ? QStringLiteral("<span class=\"%1\" title=\"%2\">!</span>")
+                               .arg(mild ? QStringLiteral("bad warn") : QStringLiteral("bad"), why)
+                         : QStringLiteral("<span class=\"rm %1\" title=\"%2\"></span>")
+                               .arg(mild ? QStringLiteral("rm9") : QStringLiteral("rm8"), why);
         }
 
         // And what other users said, for the files the share knows — the same rating
@@ -2533,7 +2549,7 @@ QString WebServer::buildTransferPage(bool isAdmin, const QString& /*sessionId*/)
             // first look, so this one may read. The share cannot — see the shared page.
             const ContainerCheck& cc = file->containerCheck();
             lineVars[QStringLiteral("DownloadFake")] =
-                cc.isSuspect() ? QStringLiteral("fake") : QStringLiteral("none");
+                webContainerToken(cc);
             lineVars[QStringLiteral("DownloadFakeTitle")] =
                 htmlText(containerWarningText(cc, file->fileName()));
             const FakeFileVerdict& verdict = file->fakeVerdict();
@@ -2780,7 +2796,7 @@ QString WebServer::buildSharedFilesPage(bool /*isAdmin*/, const QString& /*sessi
             // share, so it may not open files (SharedFileList::warmContainerChecks).
             const ContainerCheck& cc = file->containerCheckIfResolved();
             lineVars[QStringLiteral("SharedFake")] =
-                cc.isSuspect() ? QStringLiteral("fake") : QStringLiteral("none");
+                webContainerToken(cc);
             lineVars[QStringLiteral("SharedFakeTitle")] =
                 htmlText(containerWarningText(cc, file->fileName()));
             lineVars[QStringLiteral("SharedFileSize")] = formatByteSize(file->fileSize());

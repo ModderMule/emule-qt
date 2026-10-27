@@ -1,6 +1,8 @@
 /// @file tst_Ed3kUsenetJoin.cpp
 /// @brief The usenet join (src/ed3k/Ed3kUsenetJoin): the NZB buffer, articles from a real
-/// queue verified under a claimed root, and member blocks from another ed3k node.
+/// queue verified under a claimed root, and member blocks from another ed3k node; post sets
+/// (manifest, article list) fetched from other nodes (§4.1 link, §4.2 a set), kept and
+/// shared again after a restart; sources searched again.
 
 #include "FakeNntpServer.h"
 #include "TestFixtures.h"
@@ -18,9 +20,11 @@
 
 #include <QDir>
 #include <QFile>
+#include <QFileInfo>
 #include <QSignalSpy>
 #include <QTemporaryDir>
 #include <QTest>
+#include <QUrl>
 
 #include <cstring>
 
@@ -144,6 +148,17 @@ public:
     void releaseSealHold(const QString&, int) override { ++released; }
 };
 
+::ed3k::Source sourceOf(Ed3kSession& s)
+{
+    return ::ed3k::Source{*s.nodeId(), false, ::ed3k::Address::v4(127, 0, 0, 1, s.udpPort()), std::nullopt, {}};
+}
+
+QByteArray readFile(const QString& path)
+{
+    QFile f(path);
+    return f.open(QIODevice::ReadOnly) ? f.readAll() : QByteArray();
+}
+
 Ed3kSettings loopback(const QString& dir)
 {
     Ed3kSettings s;
@@ -193,9 +208,17 @@ private slots:
     void articlesFromTheQueueVerifyAClaimedMember();
     void blocksFromAnotherNodeFillTheHoles();
     void aFalseClaimDropsItsEd3kBytes();
+    void aPostSetFoundIsFetchedAndKept();
+    void theLinkFetchesItsPostSet();
+    void sourcesAreSearchedAgainWhenTheLastStreamClosed();
     void cleanup();
 
 private:
+    /// what articlesFromTheQueueVerifyAClaimedMember made: the post's set and its file
+    QByteArray m_manifest, m_list, m_whole;
+    /// Fetches the set of articlesFromTheQueueVerifyAClaimedMember from other nodes into a
+    /// FakeQueue item (§4.2 by trySet, §4.1 by the link of its NZB) until member 0 verified.
+    void fetchPostSet(bool byLink);
     /// The FakeQueue item of one file, @p parts articles of @p partSize; tempPath in @p dir.
     static std::unique_ptr<UsenetQueueItem> fakeItem(const QString& dir, qint64 size, int parts);
     /// Writes part @p part of @p data where the queue would, and reports it.
@@ -338,7 +361,40 @@ void tst_Ed3kUsenetJoin::articlesFromTheQueueVerifyAClaimedMember()
     QTRY_VERIFY_WITH_TIMEOUT(!join.hasJoin(id), 5000);
     QVERIFY(!QFile::exists(join.joinPath(id)));
 
+    // §6: the post set made is shared and kept with the member, for a restart
+    const QString kept = QDir(tmp.filePath(QStringLiteral("cfg/ed3k/usenet"))).filePath(QString::fromLatin1(QUrl::toPercentEncoding(id)));
+    QTRY_VERIFY_WITH_TIMEOUT(QFile::exists(QDir(kept).filePath(QStringLiteral("kept.tsv"))), 5000);
+    for (const QString& f : QDir(kept).entryList({QStringLiteral("*.blob")}, QDir::Files)) {
+        const QByteArray blob = readFile(QDir(kept).filePath(f));
+        if (blob.startsWith("ed3knzb\x01"))
+            m_list = blob;
+        else
+            m_manifest = blob;
+    }
+    QVERIFY(!m_manifest.isEmpty() && !m_list.isEmpty());
+    m_whole = whole;
+    const Hashed manifest = hashOf(m_manifest);
+    const Hashed list = hashOf(m_list);
+    QVERIFY(join.sharesRoot(manifest.root) && join.sharesRoot(list.root) && join.sharesRoot(h.root));
+
+    // a restart: shared again, the member hashed again first
     join.stop();
+    QVERIFY(!join.sharesRoot(manifest.root));
+    Ed3kUsenetJoin again(session, *adapter, tmp.filePath(QStringLiteral("cfg")));
+    again.setSearchEnabled(false);
+    QSignalSpy republished(&again, &Ed3kUsenetJoin::keptRecordsPublished);
+    again.start();
+    QVERIFY(again.sharesRoot(manifest.root) && again.sharesRoot(list.root));
+    QTRY_VERIFY_WITH_TIMEOUT(again.sharesRoot(h.root), 10000);
+    // the set and the ALIAS records (nzb, nzb-file) go out again once the member is shared
+    QTRY_COMPARE_WITH_TIMEOUT(republished.count(), 1, 10000);
+    QCOMPARE(republished.at(0).at(0).toString(), id);
+    QVERIFY(republished.at(0).at(1).toInt() >= 1);
+    // removed: nothing kept any more
+    again.onItemRemoved(id);
+    QVERIFY(!QFileInfo::exists(kept));
+
+    again.stop();
     queue.stop();
     session.stop();
 }
@@ -451,9 +507,123 @@ void tst_Ed3kUsenetJoin::aFalseClaimDropsItsEd3kBytes()
     b.stop();
 }
 
+// §4.2 step 2: a post set (from an `nzb` record; here trySet) on other nodes: its
+// manifest, then the article list it names, then setManifest; the member gets its root and
+// comes from a third node. The set is kept and shared again after a restart.
+void tst_Ed3kUsenetJoin::aPostSetFoundIsFetchedAndKept()
+{
+    fetchPostSet(false);
+}
+
+// §4.1: the NZB's <meta type="ed3k"> is the post set's link: fetched at once, BLAKE3 judges
+void tst_Ed3kUsenetJoin::theLinkFetchesItsPostSet()
+{
+    fetchPostSet(true);
+}
+
+// a download whose last stream closed searches its sources again (Kad has no contact here:
+// the search is asked for all the same)
+void tst_Ed3kUsenetJoin::sourcesAreSearchedAgainWhenTheLastStreamClosed()
+{
+    const QByteArray data = payload(int(kBlock + 1000), 7);
+    const Hashed h = hashOf(data);
+    QTemporaryDir dc, db;
+    QVERIFY(dc.isValid() && db.isValid());
+    Ed3kSession c, b;
+    QVERIFY(c.start(loopback(dc.path())));
+    QVERIFY(b.start(loopback(db.path())));
+
+    FakeQueue queue;
+    queue.item = fakeItem(db.path(), data.size(), 3);
+    Ed3kUsenetJoin join(b, queue, db.path());
+    join.setSourceResearch(10 * 60 * 1000, 0);
+    join.start();
+    const QString id = queue.item->id;
+    QVERIFY(join.fileClaim(id, 0, h.root, h.size));
+    const std::size_t first = join.sourceSearches();
+    QVERIFY(first >= 1);
+    // c does not have it: its stream closes, and that was the last one
+    join.addSource(id, 0, sourceOf(c));
+    QTRY_VERIFY_WITH_TIMEOUT(join.sourceSearches() > first, 20000);
+
+    join.stop();
+    b.stop();
+    c.stop();
+}
+
 // ---------------------------------------------------------------------------
 // private
 // ---------------------------------------------------------------------------
+
+void tst_Ed3kUsenetJoin::fetchPostSet(bool byLink)
+{
+    if (m_manifest.isEmpty() || m_list.isEmpty())
+        QSKIP("needs the post set of articlesFromTheQueueVerifyAClaimedMember");
+    const Hashed manifest = hashOf(m_manifest);
+    const Hashed list = hashOf(m_list);
+    const Hashed member = hashOf(m_whole);
+
+    // one node per root: a node grants a slot on a peer's first request only
+    QTemporaryDir dm, dl, da, db;
+    QVERIFY(dm.isValid() && dl.isValid() && da.isValid() && db.isValid());
+    Ed3kSession m, l, a, b;
+    QVERIFY(m.start(loopback(dm.path())) && l.start(loopback(dl.path())) && a.start(loopback(da.path())));
+    QVERIFY(b.start(loopback(db.path())));
+    shareFrom(m, m_manifest, manifest, this);
+    shareFrom(l, m_list, list, this);
+    shareFrom(a, m_whole, member, this);
+
+    // the same NZB (message IDs and numbers: the post id) as the post of the set
+    FakeQueue queue;
+    queue.item = fakeItem(db.path(), m_whole.size(), 3);
+    if (byLink) {
+        ::ed3k::FileLink fl;
+        fl.root = manifest.root;
+        fl.size = manifest.size;
+        fl.name = "joined";
+        const auto link = ::ed3k::writeFileLink(fl);
+        QVERIFY(link.has_value());
+        queue.item->nzb.meta.append({QStringLiteral("ed3k"), QString::fromStdString(*link)});
+        QCOMPARE(Ed3kUsenetJoin::metaRoot(queue.item->nzb), std::optional(manifest.root));
+    }
+    Ed3kUsenetJoin join(b, queue, db.path());
+    join.setSearchEnabled(false);
+    QSignalSpy verified(&join, &Ed3kUsenetJoin::memberVerified);
+    QSignalSpy problems(&join, &Ed3kUsenetJoin::memberProblem);
+    join.start();
+    const QString id = queue.item->id;
+    QVERIFY(join.hasJoin(id));
+    if (!byLink) {
+        const ::ed3k::PublisherKey publisher{5};
+        QVERIFY(join.trySet(id, manifest.root, manifest.size, std::span{&publisher, 1}));
+    }
+    join.addBlobSource(manifest.root, sourceOf(m));
+    // the list download opens once the manifest is there
+    QTRY_VERIFY_WITH_TIMEOUT((join.addBlobSource(list.root, sourceOf(l)), join.member(id, 0) && join.member(id, 0)->root), 30000);
+    QCOMPARE(*join.member(id, 0)->root, member.root);
+    QCOMPARE(problems.count(), 0);
+    // §4.2 step 4: the claim of the set is tested against articles before ed3k bytes count;
+    // the member is one block: all its articles make the comparison
+    if (!byLink)
+        for (int part = 1; part <= 3; ++part)
+            landArticle(join, *queue.item, m_whole, part, 3, 2500);
+    join.addSource(id, 0, sourceOf(a));
+    QTRY_COMPARE_WITH_TIMEOUT(verified.count(), 1, 30000);
+    QCOMPARE(readFile(queue.item->files.at(0).tempPath), m_whole);
+
+    // fetched sets are kept: shared again after a restart
+    QTRY_VERIFY_WITH_TIMEOUT(join.sharesRoot(manifest.root) && join.sharesRoot(list.root), 5000);
+    join.stop();
+    Ed3kUsenetJoin again(b, queue, db.path());
+    again.setSearchEnabled(false);
+    again.start();
+    QVERIFY(again.sharesRoot(manifest.root) && again.sharesRoot(list.root));
+    QTRY_VERIFY_WITH_TIMEOUT(again.sharesRoot(member.root), 10000);
+    again.stop();
+
+    for (Ed3kSession* s : {&m, &l, &a, &b})
+        s->stop();
+}
 
 std::unique_ptr<UsenetQueueItem> tst_Ed3kUsenetJoin::fakeItem(const QString& dir, qint64 size, int parts)
 {

@@ -28,6 +28,7 @@ struct SharedFileRow {
     // The file's own bytes contradict its name. Independent of the rating above:
     // that one is an opinion, this one is a fact about the first twelve bytes.
     bool    containerSuspect = false;
+    bool    containerMislabelled = false;   // suspect, but same kind of media: yellow mark
     QString containerExpected;  // container the extension promises, e.g. "ASF"
     QString containerActual;    // what it really is; empty when unrecognised
     int     upPriority = 1;     // kPrNormal

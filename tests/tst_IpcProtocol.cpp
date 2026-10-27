@@ -178,6 +178,9 @@ void tst_IpcProtocol::msgTypeEnum_values()
     QCOMPARE(static_cast<int>(IpcMsgType::PushTorrentRemoved), 952);
     QCOMPARE(static_cast<int>(IpcMsgType::PushBtStatus), 953);
     QCOMPARE(static_cast<int>(IpcMsgType::PushTorrentFinished), 954);
+    // ed3k (1000-1049) and its pushes (1050-1099)
+    QCOMPARE(static_cast<int>(IpcMsgType::GetEd3kStatus), 1000);
+    QCOMPARE(static_cast<int>(IpcMsgType::PushEd3kStatus), 1050);
 }
 
 QTEST_GUILESS_MAIN(tst_IpcProtocol)

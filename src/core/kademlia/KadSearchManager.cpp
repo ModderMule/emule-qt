@@ -446,7 +446,8 @@ void SearchManager::jumpStart()
         case SearchType::FindBuddy:
             if (now >= search->m_created + kSearchFindBuddyLifetime)
                 del = true;
-            else if (search->getAnswers() >= kSearchFindBuddyTotal
+            // answers = requests sent; MFC stops at kSearchFindBuddyTotal (10)
+            else if (search->getAnswers() >= kSearchFindBuddyRequests
                      || now >= search->m_created + kSearchFindBuddyLifetime - 20)
                 stop = true;
             break;

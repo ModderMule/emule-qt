@@ -13,6 +13,7 @@
 #include "BtJoin.h"
 #include "BtTypes.h"
 
+#include <QBitArray>
 #include <QObject>
 #include <QStringList>
 
@@ -106,6 +107,8 @@ public:
     bool addPiece(const QString& id, int piece, const QByteArray& data);
     /// Asks peers for these pieces first (a held piece waits for them).
     void raisePieces(const QString& id, const QList<int>& pieces);
+    /// Pieces libtorrent has (hash passed); empty before the metadata or for an unknown id.
+    [[nodiscard]] QBitArray havePieces(const QString& id) const;
     /// The ed3k:file link the torrent was added with (link or magnet `xs`); kept across
     /// restarts. Empty: none.
     [[nodiscard]] QString ed3kLink(const QString& id) const;
@@ -121,6 +124,8 @@ signals:
     void metadataReceived(const QString& id);
     /// libtorrent's verdict on a piece of a torrent with a join attached.
     void pieceResult(const QString& id, int piece, bool passed);
+    /// libtorrent checked the files of a torrent with a join attached (havePieces is current).
+    void torrentChecked(const QString& id);
 
 private slots:
     void drainAlerts();

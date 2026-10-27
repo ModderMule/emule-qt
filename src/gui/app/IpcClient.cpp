@@ -192,6 +192,8 @@ static QString ipcMsgTypeName(Ipc::IpcMsgType type)
     case T::PushTorrentRemoved:   return QStringLiteral("PushTorrentRemoved");
     case T::PushBtStatus:         return QStringLiteral("PushBtStatus");
     case T::PushTorrentFinished:  return QStringLiteral("PushTorrentFinished");
+    case T::GetEd3kStatus:        return QStringLiteral("GetEd3kStatus");
+    case T::PushEd3kStatus:       return QStringLiteral("PushEd3kStatus");
     default:
         return QStringLiteral("Unknown(%1)").arg(static_cast<int>(type));
     }
@@ -765,6 +767,7 @@ void IpcClient::dispatchPushEvent(const IpcMessage& msg)
     case IpcMsgType::PushTorrentRemoved:   emit torrentRemoved(msg); break;
     case IpcMsgType::PushTorrentFinished:  emit torrentFinished(msg); break;
     case IpcMsgType::PushBtStatus:         emit btStatusChanged(msg); break;
+    case IpcMsgType::PushEd3kStatus:       emit ed3kStatusChanged(msg); break;
     case IpcMsgType::PushSharedFileUpdate: emit sharedFileUpdated(msg); break;
     case IpcMsgType::PushSharedFileRemoved: emit sharedFileRemoved(msg); break;
     case IpcMsgType::PushUploadUpdate:     emit uploadUpdated(msg); break;

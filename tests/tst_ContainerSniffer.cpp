@@ -24,6 +24,8 @@ const char kAsfMagic[] = "\x30\x26\xB2\x75\x8E\x66\xCF\x11"
                          "\xA6\xD9\x00\xAA\x00\x62\xCE\x6C";
 const char kMp4Magic[] = "\x00\x00\x00\x18" "ftypmp42\x00\x00\x00\x00";
 const char kMkvMagic[] = "\x1A\x45\xDF\xA3\x01\x00\x00\x00\x00\x00\x00\x23";
+const char kAviMagic[] = "RIFF\x00\x10\x00\x00" "AVI ";
+const char kWavMagic[] = "RIFF\x00\x10\x00\x00" "WAVE";
 
 /// The first twelve bytes of the real fake. Random padding whose first two bytes
 /// happen to form an MPEG frame sync -- exactly what talks file(1) into calling
@@ -48,6 +50,7 @@ private slots:
     void mp3IsDeliberatelyNotPromised();
     void anMp4WithoutFtypFirstStillMatches();
     void theWarningSaysWhichKindOfWrongItIs();
+    void sameKindOfMediaIsOnlyMislabelled();
 
 private:
     [[nodiscard]] QString write(const QString& name, const char* bytes, int len);
@@ -176,8 +179,9 @@ void tst_ContainerSniffer::theWarningSaysWhichKindOfWrongItIs()
     // Named it: say so, because that one still plays in the right player.
     const QString path = write(QStringLiteral("movie.wmv"), kMp4Magic, 12);
     const ContainerCheck wrong = checkFile(path, QStringLiteral("movie.wmv"));
-    QCOMPARE(containerWarningText(wrong, QStringLiteral("movie.wmv")),
-             QStringLiteral("Named .wmv but the contents are MP4."));
+    const QString named = containerWarningText(wrong, QStringLiteral("movie.wmv"));
+    QVERIFY(named.startsWith(QStringLiteral("Named .wmv but the contents are MP4.")));
+    QVERIFY(named.contains(QStringLiteral("Only the extension is wrong")));
 
     // Could not name it: do not invent a container. "Likely fake" is the whole of
     // what is known, and pointing the user at a player would waste the trip.
@@ -193,6 +197,35 @@ void tst_ContainerSniffer::theWarningSaysWhichKindOfWrongItIs()
     QVERIFY(containerWarningText(checkFile(real, QStringLiteral("real.wmv")),
                                  QStringLiteral("real.wmv")).isEmpty());
     QVERIFY(containerWarningText(ContainerCheck{}, QStringLiteral("song.mp3")).isEmpty());
+}
+
+void tst_ContainerSniffer::sameKindOfMediaIsOnlyMislabelled()
+{
+    const auto mark = [this](const char* name, const char* bytes) {
+        const QString n = QString::fromLatin1(name);
+        return checkFile(write(n, bytes, 12), n).mark();
+    };
+
+    // Video in another video box, audio in another audio box: yellow, not red.
+    // Issue #55: an MP4 named .avi drew the fake mark although every player opens it.
+    QCOMPARE(mark("issue55.avi", kMp4Magic), ContainerMark::Mislabelled);
+    QCOMPARE(mark("film.mkv", kAviMagic), ContainerMark::Mislabelled);
+    QCOMPARE(mark("song.m4a", kMkvMagic), ContainerMark::Mislabelled);   // Matroska carries audio too
+    QCOMPARE(mark("song.flac", kWavMagic), ContainerMark::Mislabelled);
+
+    // Another kind of media is not what was promised: a .avi that is only sound.
+    QCOMPARE(mark("film.avi", kWavMagic), ContainerMark::Fake);
+    QCOMPARE(mark("song.wav", kAviMagic), ContainerMark::Fake);
+
+    // Nothing recognisable stays red, and an honest file has no mark.
+    QCOMPARE(mark("junk.avi", kJunk), ContainerMark::Fake);
+    QCOMPARE(mark("honest.avi", kAviMagic), ContainerMark::None);
+
+    // Only the mild case says the file still plays.
+    const QString wav = write(QStringLiteral("film2.avi"), kWavMagic, 12);
+    const QString why = containerWarningText(checkFile(wav, QStringLiteral("film2.avi")),
+                                             QStringLiteral("film2.avi"));
+    QCOMPARE(why, QStringLiteral("Named .avi but the contents are WAVE."));
 }
 
 QTEST_MAIN(tst_ContainerSniffer)

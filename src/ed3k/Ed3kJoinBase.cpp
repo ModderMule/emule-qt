@@ -8,10 +8,12 @@
 
 #include "utils/Log.h"
 
+#include <QDateTime>
 #include <QDir>
 #include <QFile>
 #include <QPointer>
 #include <QThreadPool>
+#include <QUrl>
 
 #include <algorithm>
 #include <cstring>
@@ -23,6 +25,13 @@ namespace {
 constexpr int kSaveDelayMs = 5000;
 constexpr std::size_t kMaxStreams = 4;
 constexpr qint64 kHashChunk = 1 << 20;
+/// sources searched again while no stream holds a slot
+constexpr int kResearchMs = 10 * 60 * 1000;
+/// candidates of a set search looked at per try (the engine gives at most 3, alias.md §4)
+constexpr int kSetCandidates = 8;
+const QString kKeptIndex = QStringLiteral("kept.tsv");
+/// ALIAS records to publish again: u32-LE length + Alias, as publishAlias takes them
+const QString kKeptRecords = QStringLiteral("records.bin");
 
 /// Hashes a file on a worker; nullopt when unreadable or cancelled.
 std::optional<std::pair<ffi::Hashed, ffi::Bytes>> hashFile(const QString& path, const std::atomic<bool>& cancel)
@@ -49,7 +58,91 @@ std::optional<std::pair<ffi::Hashed, ffi::Bytes>> hashFile(const QString& path, 
     return std::pair{std::move(*done), std::move(hashes)};
 }
 
+QString blobFile(const ffi::Root& root)
+{
+    return QString::fromLatin1(QByteArray(reinterpret_cast<const char*>(root.bytes.data()), qsizetype(root.bytes.size())).toHex())
+           + QStringLiteral(".blob");
+}
+
+std::optional<ffi::Root> rootOfHex(const QString& hex)
+{
+    const QByteArray raw = QByteArray::fromHex(hex.toLatin1());
+    if (raw.size() != 32)
+        return std::nullopt;
+    ffi::Root r;
+    std::memcpy(r.bytes.data(), raw.constData(), r.bytes.size());
+    return r;
+}
+
+std::vector<ffi::Bytes> readRecords(const QString& path)
+{
+    const QByteArray raw = readBlob(path);
+    std::vector<ffi::Bytes> out;
+    qsizetype at = 0;
+    while (at + 4 <= raw.size()) {
+        const auto* p = reinterpret_cast<const std::uint8_t*>(raw.constData() + at);
+        const qsizetype len = qsizetype(p[0] | (p[1] << 8) | (p[2] << 16) | (std::uint32_t(p[3]) << 24));
+        at += 4;
+        if (len < 0 || at + len > raw.size())
+            break;   // damaged tail: what came before stays
+        const auto* b = reinterpret_cast<const std::byte*>(raw.constData() + at);
+        out.emplace_back(b, b + len);
+        at += len;
+    }
+    return out;
+}
+
+bool writeRecords(const QString& path, const std::vector<ffi::Bytes>& records)
+{
+    std::vector<std::byte> out;
+    for (const auto& r : records) {
+        const auto len = std::uint32_t(r.size());
+        for (int i = 0; i < 4; ++i)
+            out.push_back(std::byte((len >> (8 * i)) & 0xff));
+        out.insert(out.end(), r.begin(), r.end());
+    }
+    return writeBlob(path, out);
+}
+
+/// a name in one TSV field
+QString field(QString s)
+{
+    s.replace(QLatin1Char('\t'), QLatin1Char(' '));
+    s.replace(QLatin1Char('\n'), QLatin1Char(' '));
+    s.replace(QLatin1Char('\r'), QLatin1Char(' '));
+    return s;
+}
+
 } // namespace
+
+// The set tried for an owner (§4.2): from which search, and its publishers.
+struct Ed3kJoinBase::SetTry {
+    std::uint32_t search = 0;
+    std::optional<ffi::Root> root;
+    std::vector<ffi::PublisherKey> publishers;
+};
+
+// What is kept of an owner for a restart (kept.tsv: "b root name", "m member root size name").
+struct Ed3kJoinBase::Kept {
+    struct Blob {
+        ffi::Root root;
+        QString name;
+    };
+    struct Member {
+        int member = -1;
+        ffi::Root root;
+        std::uint64_t size = 0;
+        QString name;
+    };
+    struct Set {
+        ffi::Root root;   ///< the manifest, kept as a blob
+        QString name;
+    };
+    std::vector<Blob> blobs;
+    std::vector<Member> members;
+    /// the set published at completion (MEMBER rows, file-set.md §6)
+    std::optional<Set> set;
+};
 
 Ed3kJoinBase::Ed3kJoinBase(Ed3kSession& session, const QString& configDir, QString tag, QObject* parent)
     : QObject(parent)
@@ -60,6 +153,8 @@ Ed3kJoinBase::Ed3kJoinBase(Ed3kSession& session, const QString& configDir, QStri
 {
     m_saveTimer.setSingleShot(true);
     connect(&m_saveTimer, &QTimer::timeout, this, &Ed3kJoinBase::saveDirty);
+    m_researchTimer.setInterval(kResearchMs);
+    connect(&m_researchTimer, &QTimer::timeout, this, &Ed3kJoinBase::onResearchTimer);
     connect(&m_session, &Ed3kSession::eventPolled, this, &Ed3kJoinBase::onEventPolled, Qt::DirectConnection);
     connect(&m_session, &Ed3kSession::statusChanged, this, &Ed3kJoinBase::onSessionStatus);
 }
@@ -67,6 +162,12 @@ Ed3kJoinBase::Ed3kJoinBase(Ed3kSession& session, const QString& configDir, QStri
 Ed3kJoinBase::~Ed3kJoinBase()
 {
     m_cancel->store(true);
+}
+
+void Ed3kJoinBase::setSourceResearch(int everyMs, int minGapMs)
+{
+    m_researchTimer.setInterval(std::max(1, everyMs));
+    m_researchGapMs = std::max(0, minGapMs);
 }
 
 bool Ed3kJoinBase::openDownload(const ffi::Root& root, std::uint64_t size, const QString& owner, int member)
@@ -166,17 +267,17 @@ void Ed3kJoinBase::requestBlocks(const ffi::Root& root)
     }
 }
 
-void Ed3kJoinBase::shareBlob(const QByteArray& data, const QString& name, std::optional<ffi::Root> expect)
+std::optional<ffi::Root> Ed3kJoinBase::shareBlob(const QByteArray& data, const QString& name, std::optional<ffi::Root> expect)
 {
     auto* e = m_session.engine();
     if (!e || data.isEmpty())
-        return;
+        return std::nullopt;
     ffi::Hasher h;
     if (!h.update(spanOf(data)))
-        return;
+        return std::nullopt;
     auto hashed = h.finish();
     if (!hashed)
-        return;
+        return std::nullopt;
     if (expect && hashed->root != *expect)
         logWarning(QStringLiteral("\"%1\" is not the root it should be").arg(name));
     const QByteArray n = name.toUtf8();
@@ -185,11 +286,12 @@ void Ed3kJoinBase::shareBlob(const QByteArray& data, const QString& name, std::o
     const auto t = m_session.now();
     if (auto ok = e->fileOpen(t, f); !ok && !m_shared.contains(hashed->root)) {
         logDebug(QStringLiteral("cannot share \"%1\" (error %2)").arg(name, errorName(ok.error())));
-        return;
+        return std::nullopt;
     }
     m_shared[hashed->root] = Shared{QString(), -1, hashed->size, data};
     const ffi::FileInfo info{hashed->root, hashed->size, std::string(n.constData(), std::size_t(n.size())), std::nullopt, 0, 0, 0, 0, 0, 0};
     (void)e->publish(t, info, ffi::Publish::Source);
+    return hashed->root;
 }
 
 bool Ed3kJoinBase::shareMember(const ffi::SharedFile& file, const QString& owner, int member)
@@ -256,6 +358,197 @@ void Ed3kJoinBase::hashInBackground(const QString& path, std::function<void(std:
     });
 }
 
+std::optional<Ed3kJoinBase::FileHash> Ed3kJoinBase::hashNow(const QString& path)
+{
+    const std::atomic<bool> never{false};
+    auto hashed = hashFile(path, never);
+    if (!hashed)
+        return std::nullopt;
+    return FileHash{hashed->first.root, hashed->first.size, std::move(hashed->second)};
+}
+
+bool Ed3kJoinBase::startSetSearch(const QString& owner, std::string_view scheme, std::span<const std::uint8_t> id,
+                                  std::uint32_t rel)
+{
+    auto* e = m_session.engine();
+    if (!e || !m_searchEnabled)
+        return false;
+    auto s = e->aliasSearchStart(m_session.now(), scheme, id, rel);
+    if (!s) {
+        logDebug(QStringLiteral("%1 search of %2 not started (error %3)")
+                     .arg(QString::fromUtf8(scheme.data(), qsizetype(scheme.size())), owner, errorName(s.error())));
+        return false;
+    }
+    m_setSearches[*s] = {owner, false};
+    if (!m_setTries.contains(owner))
+        m_setTries.emplace(owner, std::make_unique<SetTry>());
+    return true;
+}
+
+bool Ed3kJoinBase::trySetCandidate(const QString& owner, const ffi::Root& root, std::uint64_t size,
+                                   std::span<const ffi::PublisherKey> publishers)
+{
+    if (size == 0 || !m_session.engine())
+        return false;
+    auto& t = m_setTries[owner];
+    if (!t)
+        t = std::make_unique<SetTry>();
+    if (t->root && downloading(*t->root))
+        return false;   // one set at a time
+    if (!fetchBlob(root, size, owner, kSetManifest))
+        return false;
+    t->root = root;
+    t->publishers.assign(publishers.begin(), publishers.end());
+    logInfo(QStringLiteral("trying set %1 of %2").arg(hexOf(root.bytes), owner));
+    return true;
+}
+
+bool Ed3kJoinBase::refuseSet(const QString& owner, const ffi::Root& root)
+{
+    const auto it = m_setTries.find(owner);
+    if (it == m_setTries.end())
+        return false;
+    SetTry& t = *it->second;
+    if (auto* e = m_session.engine()) {
+        const auto now = m_session.now();
+        // §8: the publishers of the records that named it
+        if (t.search)
+            (void)e->aliasSearchBlame(now, t.search, root);
+        else if (!t.publishers.empty())
+            (void)e->aliasBan(now, t.publishers);
+    }
+    logInfo(QStringLiteral("set %1 of %2 refused").arg(hexOf(root.bytes), owner));
+    if (t.root && *t.root == root) {
+        stopDownload(root);
+        t.root.reset();
+        t.publishers.clear();
+    }
+    return tryNextSet(owner);
+}
+
+std::optional<ffi::Root> Ed3kJoinBase::setTrying(const QString& owner) const
+{
+    const auto it = m_setTries.find(owner);
+    return it == m_setTries.end() ? std::nullopt : it->second->root;
+}
+
+std::vector<ffi::PublisherKey> Ed3kJoinBase::setPublishers(const QString& owner) const
+{
+    const auto it = m_setTries.find(owner);
+    return it == m_setTries.end() ? std::vector<ffi::PublisherKey>{} : it->second->publishers;
+}
+
+void Ed3kJoinBase::endSetSearches(const QString& owner)
+{
+    auto* e = m_session.engine();
+    for (auto it = m_setSearches.begin(); it != m_setSearches.end();) {
+        if (it->second.first == owner) {
+            if (e)
+                (void)e->aliasSearchEnd(it->first);
+            it = m_setSearches.erase(it);
+        } else {
+            ++it;
+        }
+    }
+    if (const auto t = m_setTries.find(owner); t != m_setTries.end()) {
+        if (t->second->root)
+            stopDownload(*t->second->root);
+        m_setTries.erase(t);
+    }
+}
+
+bool Ed3kJoinBase::setSearching(const QString& owner) const
+{
+    return std::ranges::any_of(m_setSearches, [&](const auto& s) { return s.second.first == owner; });
+}
+
+void Ed3kJoinBase::keepBlob(const QString& owner, const QByteArray& data, const QString& name, std::optional<ffi::Root> expect)
+{
+    const auto root = shareBlob(data, name, expect);
+    if (!root)
+        return;
+    Kept kept = readKept(owner);
+    if (std::ranges::any_of(kept.blobs, [&](const Kept::Blob& b) { return b.root == *root; }))
+        return;
+    const QString dir = keptDir(owner);
+    QDir().mkpath(dir);
+    if (!writeBlob(QDir(dir).filePath(blobFile(*root)), spanOf(data))) {
+        logWarning(QStringLiteral("cannot keep \"%1\" in %2").arg(name, dir));
+        return;
+    }
+    kept.blobs.push_back({*root, name});
+    writeKept(owner, kept);
+}
+
+void Ed3kJoinBase::keepMember(const QString& owner, int member, const ffi::Root& root, std::uint64_t size, const QString& name)
+{
+    Kept kept = readKept(owner);
+    std::erase_if(kept.members, [&](const Kept::Member& m) { return m.member == member; });
+    kept.members.push_back({member, root, size, name});
+    writeKept(owner, kept);
+}
+
+void Ed3kJoinBase::keepRecords(const QString& owner, std::optional<ffi::Root> set, const QString& name,
+                               const std::vector<ffi::Bytes>& aliases)
+{
+    if (set) {
+        Kept kept = readKept(owner);
+        kept.set = Kept::Set{*set, name};
+        writeKept(owner, kept);
+    }
+    if (aliases.empty())
+        return;
+    const QString path = QDir(keptDir(owner)).filePath(kKeptRecords);
+    auto records = readRecords(path);
+    for (const auto& a : aliases)
+        if (std::ranges::find(records, a) == records.end())
+            records.push_back(a);
+    QDir().mkpath(keptDir(owner));
+    if (!writeRecords(path, records))
+        logWarning(QStringLiteral("cannot write %1").arg(path));
+}
+
+void Ed3kJoinBase::shareKept()
+{
+    const QDir dir(joinDir(m_tag));
+    for (const QString& sub : dir.entryList(QDir::Dirs | QDir::NoDotAndDotDot)) {
+        const QString owner = QUrl::fromPercentEncoding(sub.toLatin1());
+        if (!keepsOwner(owner)) {
+            logDebug(QStringLiteral("%1 is gone: what was kept of it is dropped").arg(owner));
+            QDir(dir.filePath(sub)).removeRecursively();
+            continue;
+        }
+        const Kept kept = readKept(owner);
+        if (shareKeptBlobs()) {
+            for (const auto& b : kept.blobs) {
+                const QByteArray data = readBlob(QDir(keptDir(owner)).filePath(blobFile(b.root)));
+                if (data.isEmpty())
+                    logDebug(QStringLiteral("kept \"%1\" of %2 is gone").arg(b.name, owner));
+                else
+                    (void)shareBlob(data, b.name, b.root);
+            }
+        }
+        // the records go out once every member had its first hash (publishAlias needs the
+        // roots shared)
+        m_keptPending[owner] = int(kept.members.size());
+        if (kept.members.empty())
+            publishKeptRecords(owner);
+        for (const auto& m : kept.members)
+            shareKeptMember(owner, m.member, m.root, m.size, m.name, 0);
+    }
+}
+
+void Ed3kJoinBase::dropKept(const QString& owner)
+{
+    QDir(keptDir(owner)).removeRecursively();
+}
+
+QString Ed3kJoinBase::keptDir(const QString& owner) const
+{
+    // reversible and safe as a file name (':' of torrent ids, '/')
+    return QDir(joinDir(m_tag)).filePath(QString::fromLatin1(QUrl::toPercentEncoding(owner)));
+}
+
 void Ed3kJoinBase::scheduleSave(const QString& owner)
 {
     if (!hasOwner(owner))
@@ -269,15 +562,19 @@ void Ed3kJoinBase::beginStart()
 {
     m_started = true;
     m_cancel = std::make_shared<std::atomic<bool>>(false);
+    m_researchTimer.start();
 }
 
 void Ed3kJoinBase::closeAll()
 {
     m_cancel->store(true);
     m_saveTimer.stop();
+    m_researchTimer.stop();
     m_dirty.clear();
     if (auto* e = m_session.engine()) {
         const auto t = m_session.now();
+        for (const auto& [search, owner] : m_setSearches)
+            (void)e->aliasSearchEnd(search);
         for (const auto& [root, d] : m_downloads) {
             for (const auto& [stream, slot] : d->streams)
                 (void)e->streamClose(t, stream);
@@ -289,6 +586,8 @@ void Ed3kJoinBase::closeAll()
     m_downloads.clear();
     m_streams.clear();
     m_sourceLookups.clear();
+    m_setSearches.clear();
+    m_setTries.clear();
     m_shared.clear();
     m_started = false;
 }
@@ -396,11 +695,15 @@ void Ed3kJoinBase::onEventPolled(const ffi::Event& event, bool* handled)
             if (const auto d = m_downloads.find(root); d != m_downloads.end()) {
                 d->second->streams.erase(sc->stream);
                 std::erase_if(d->second->outstanding, [&](const auto& o) { return o.second == sc->stream; });
-                // ToDo: search sources again when the last stream closed
+                // was: ToDo: search sources again when the last stream closed (done: searchSourcesAgain)
+                if (d->second->streams.empty())
+                    searchSourcesAgain(root, false);
             }
         }
     } else if (const auto* kf = std::get_if<ev::KadFound>(&event)) {
         onKadFound(*kf);
+    } else if (const auto* af = std::get_if<ev::AliasFound>(&event); af && m_setSearches.contains(af->search)) {
+        onSetAliasFound(*af);
     } else {
         onOtherEvent(event);
     }
@@ -481,6 +784,10 @@ void Ed3kJoinBase::onBlock(const ffi::event::Block& b)
     const QByteArray data = d.memory;
     const ffi::Root root = b.root;
     stopDownload(root);
+    if (member == kSetManifest && setTrying(owner) == root) {
+        onSetManifest(owner, root, data);
+        return;
+    }
     onBlobFetched(owner, member, root, data);
 }
 
@@ -508,11 +815,8 @@ bool Ed3kJoinBase::open(const ffi::Root& root, std::uint64_t size, const QString
     d->size = size;
     d->inMemory = inMemory;
     m_downloads.emplace(root, std::move(d));
-    if (m_searchEnabled) {
-        // ToDo: search again every so often while no stream holds a slot
-        if (auto lookup = e->searchSources(t, root))
-            m_sourceLookups[*lookup] = root;
-    }
+    // was: ToDo: search again every so often while no stream holds a slot (done: m_researchTimer)
+    searchSourcesAgain(root, true);
     return true;
 }
 
@@ -522,6 +826,229 @@ void Ed3kJoinBase::saveDirty()
     m_dirty.clear();
     for (const QString& owner : dirty)
         saveOwner(owner);
+}
+
+void Ed3kJoinBase::searchSourcesAgain(const ffi::Root& root, bool force)
+{
+    auto* e = m_session.engine();
+    const auto it = m_downloads.find(root);
+    if (!e || !m_searchEnabled || it == m_downloads.end())
+        return;
+    Download& d = *it->second;
+    const qint64 now = QDateTime::currentMSecsSinceEpoch();
+    if (!force && d.searchedAt != 0 && now - d.searchedAt < m_researchGapMs)
+        return;
+    d.searchedAt = now;
+    // nodes asked before may have it now (none of them streams any more)
+    if (d.streams.empty())
+        d.asked.clear();
+    ++m_sourceSearches;
+    if (auto lookup = e->searchSources(m_session.now(), root))
+        m_sourceLookups[*lookup] = root;
+}
+
+void Ed3kJoinBase::onResearchTimer()
+{
+    std::vector<ffi::Root> idle;
+    for (const auto& [root, d] : m_downloads)
+        if (std::ranges::none_of(d->streams, [](const auto& s) { return s.second; }))
+            idle.push_back(root);
+    for (const auto& root : idle)
+        searchSourcesAgain(root, false);
+    if (!idle.empty())
+        pumpSession();
+}
+
+void Ed3kJoinBase::onSetAliasFound(const ffi::event::AliasFound& found)
+{
+    const auto it = m_setSearches.find(found.search);
+    if (it == m_setSearches.end())
+        return;
+    it->second.second = true;
+    const QString owner = it->second.first;
+    logDebug(QStringLiteral("%1 set(s) claimed for %2").arg(found.roots).arg(owner));
+    auto& t = m_setTries[owner];
+    if (!t)
+        t = std::make_unique<SetTry>();
+    // the first search with roots is tried; the others wait
+    if (t->search == 0 && !t->root && wantsSet(owner)) {
+        t->search = found.search;
+        (void)tryNextSet(owner);
+    }
+}
+
+bool Ed3kJoinBase::tryNextSet(const QString& owner)
+{
+    auto* e = m_session.engine();
+    const auto it = m_setTries.find(owner);
+    if (!e || it == m_setTries.end())
+        return false;
+    SetTry& t = *it->second;
+    if (t.search != 0) {
+        for (int tries = 0; tries < kSetCandidates; ++tries) {
+            auto next = e->aliasSearchNext(t.search);
+            if (!next || !*next)
+                break;
+            const auto& c = **next;
+            if (c.size == 0)
+                continue;
+            if (!fetchBlob(c.root, c.size, owner, kSetManifest))
+                continue;
+            t.root = c.root;
+            t.publishers.assign(c.publishers.begin(), c.publishers.end());
+            logInfo(QStringLiteral("trying set %1 of %2 (%3 site(s))").arg(hexOf(c.root.bytes), owner).arg(c.sites));
+            return true;
+        }
+        (void)e->aliasSearchEnd(t.search);
+        m_setSearches.erase(t.search);
+        t.search = 0;
+    }
+    // another search of the owner that found roots (a hybrid torrent's second hash)
+    for (const auto& [search, s] : m_setSearches) {
+        if (s.first == owner && s.second) {
+            t.search = search;
+            return tryNextSet(owner);
+        }
+    }
+    if (!setSearching(owner) && wantsSet(owner))
+        onSetSearchDone(owner);
+    return false;
+}
+
+Ed3kJoinBase::Kept Ed3kJoinBase::readKept(const QString& owner) const
+{
+    Kept kept;
+    const QByteArray raw = readBlob(QDir(keptDir(owner)).filePath(kKeptIndex));
+    for (const QString& line : QString::fromUtf8(raw).split(QLatin1Char('\n'), Qt::SkipEmptyParts)) {
+        const QStringList f = line.split(QLatin1Char('\t'));
+        if (f.size() >= 3 && f.at(0) == QLatin1String("b")) {
+            if (const auto root = rootOfHex(f.at(1)))
+                kept.blobs.push_back({*root, f.at(2)});
+        } else if (f.size() >= 3 && f.at(0) == QLatin1String("s")) {
+            if (const auto root = rootOfHex(f.at(1)))
+                kept.set = Kept::Set{*root, f.at(2)};
+        } else if (f.size() >= 5 && f.at(0) == QLatin1String("m")) {
+            bool okMember = false;
+            bool okSize = false;
+            const int member = f.at(1).toInt(&okMember);
+            const std::uint64_t size = f.at(3).toULongLong(&okSize);
+            if (const auto root = rootOfHex(f.at(2)); root && okMember && okSize && member >= 0)
+                kept.members.push_back({member, *root, size, f.at(4)});
+        }
+    }
+    return kept;
+}
+
+void Ed3kJoinBase::writeKept(const QString& owner, const Kept& kept)
+{
+    QString out;
+    for (const auto& b : kept.blobs)
+        out += QStringLiteral("b\t%1\t%2\n").arg(hexOf(b.root.bytes), field(b.name));
+    for (const auto& m : kept.members)
+        out += QStringLiteral("m\t%1\t%2\t%3\t%4\n").arg(m.member).arg(hexOf(m.root.bytes)).arg(m.size).arg(field(m.name));
+    if (kept.set)
+        out += QStringLiteral("s\t%1\t%2\n").arg(hexOf(kept.set->root.bytes), field(kept.set->name));
+    const QString dir = keptDir(owner);
+    QDir().mkpath(dir);
+    const QByteArray utf8 = out.toUtf8();
+    if (!writeBlob(QDir(dir).filePath(kKeptIndex), spanOf(utf8)))
+        logWarning(QStringLiteral("cannot write %1").arg(QDir(dir).filePath(kKeptIndex)));
+}
+
+void Ed3kJoinBase::shareKeptMember(const QString& owner, int member, const ffi::Root& root, std::uint64_t size,
+                                   const QString& name, int tries)
+{
+    const QString path = keptMemberPath(owner, member);
+    if (path.isEmpty()) {
+        if (tries == 0)
+            keptMemberDone(owner);
+        return;
+    }
+    hashInBackground(path, [this, owner, member, root, size, name, tries, path](std::optional<FileHash> hashed) {
+        shareKeptHashed(owner, member, root, size, name, tries, path, hashed);
+        // a first try decides, shared or not; a later one shares, the records are out already
+        if (tries == 0)
+            keptMemberDone(owner);
+    });
+}
+
+void Ed3kJoinBase::shareKeptHashed(const QString& owner, int member, const ffi::Root& root, std::uint64_t size,
+                                   const QString& name, int tries, const QString& path, const std::optional<FileHash>& hashed)
+{
+    {
+        if (!hashed) {
+            // gone or unreadable now: again later, and at the next start
+            logDebug(QStringLiteral("kept member %1 of %2 not readable (%3)").arg(member).arg(owner, path));
+            if (tries + 1 < kRehashTries)
+                QTimer::singleShot(kRehashMs, this, [this, owner, member, root, size, name, tries] {
+                    if (m_started && keepsOwner(owner))
+                        shareKeptMember(owner, member, root, size, name, tries + 1);
+                });
+            return;
+        }
+        if (hashed->root != root || hashed->size != size) {
+            logInfo(QStringLiteral("kept member %1 of %2 changed: not shared any more").arg(member).arg(owner));
+            Kept kept = readKept(owner);
+            std::erase_if(kept.members, [&](const Kept::Member& m) { return m.member == member; });
+            writeKept(owner, kept);
+            return;
+        }
+        const QByteArray n = name.toUtf8();
+        const std::string fileName(n.constData(), std::size_t(n.size()));
+        if (!shareMember(ffi::SharedFile{root, size, fileName, std::nullopt, std::nullopt, ffi::Have::complete(), std::span{hashed->hashes}},
+                         owner, member))
+            return;
+        // was: ToDo: the ALIAS and MEMBER records of a kept post or torrent are not published
+        // again (done: keepRecords, publishKeptRecords after the members)
+        if (auto* e = m_session.engine()) {
+            const ffi::FileInfo info{root, size, fileName, std::nullopt, 0, 0, 0, 0, 0, 0};
+            (void)e->publish(m_session.now(), info, m_holdBack ? ffi::Publish::Source : ffi::Publish::Both);
+        }
+        logDebug(QStringLiteral("kept member %1 of %2 shared again as %3").arg(member).arg(owner, hexOf(root.bytes)));
+        pumpSession();
+    }
+}
+
+void Ed3kJoinBase::keptMemberDone(const QString& owner)
+{
+    const auto it = m_keptPending.find(owner);
+    if (it == m_keptPending.end())
+        return;
+    if (--it->second > 0)
+        return;
+    m_keptPending.erase(it);
+    if (m_started && keepsOwner(owner))
+        publishKeptRecords(owner);
+}
+
+void Ed3kJoinBase::publishKeptRecords(const QString& owner)
+{
+    m_keptPending.erase(owner);
+    auto* e = m_session.engine();
+    if (!e)
+        return;
+    const auto t = m_session.now();
+    const Kept kept = readKept(owner);
+    if (kept.set) {
+        const QByteArray manifest = readBlob(QDir(keptDir(owner)).filePath(blobFile(kept.set->root)));
+        const QByteArray n = kept.set->name.toUtf8();
+        if (manifest.isEmpty())
+            logDebug(QStringLiteral("kept set of %1 is gone: not published").arg(owner));
+        else if (auto ok = e->setPublish(t, spanOf(manifest), kept.set->root, std::string_view(n.constData(), std::size_t(n.size()))); !ok)
+            logDebug(QStringLiteral("kept set of %1 not published (error %2)").arg(owner, errorName(ok.error())));
+    }
+    const auto records = readRecords(QDir(keptDir(owner)).filePath(kKeptRecords));
+    int published = 0;
+    // §6: no ALIAS records while holding back
+    if (!m_holdBack && !records.empty()) {
+        if (auto ok = e->publishAlias(t, records); !ok)
+            logDebug(QStringLiteral("kept ALIAS records of %1 not published (error %2)").arg(owner, errorName(ok.error())));
+        else
+            published = int(records.size());
+    }
+    logDebug(QStringLiteral("kept records of %1 published again (%2 alias(es))").arg(owner).arg(published));
+    pumpSession();
+    emit keptRecordsPublished(owner, published);
 }
 
 } // namespace eMule::ed3k

@@ -25,6 +25,7 @@
 #include <QHostAddress>
 #include <QObject>
 #include <QString>
+#include <QStringList>
 #include <QTimer>
 
 #include <cstdint>
@@ -46,6 +47,29 @@ struct Ed3kSettings {
     QHostAddress bindAddress{QHostAddress::Any};   ///< Any = dual stack
     QString network;             ///< empty = the public network; tests only; a secret
     bool forceOpen = false;      ///< tests: treat the address as open (no NAT tests)
+    /// JSON-RPC endpoints (ed3k.creditRpc / ed3k.chaintubeRpc): operator 0 of a call is the
+    /// first, n the n-th (as mode B, packmule_udp::http). Empty: calls answered failed.
+    QStringList creditRpc;
+    QStringList chaintubeRpc;
+};
+
+/// What GetEd3kStatus shows (Ed3kBridge); all 0 / empty while not running.
+struct Ed3kStatus {
+    bool running = false;
+    std::uint16_t udpPort = 0;
+    QString nodeId;              ///< hex, public
+    std::uint64_t contacts = 0;
+    std::uint32_t class4 = 0;    ///< 0 unknown, 1 open, 2 cone, 3 symmetric
+    std::uint32_t class6 = 0;
+    bool router = false;
+    ::ed3k::Stats stats{};       ///< the engine's counters (size 0 while not running)
+};
+
+/// Datagram payload bytes since this object was made (wire_sent / wire_recv of ed3k_stats,
+/// summed over restarts): what the limits count.
+struct Ed3kTraffic {
+    std::uint64_t sent = 0;
+    std::uint64_t recv = 0;
 };
 
 class Ed3kSession : public QObject {
@@ -68,6 +92,19 @@ public:
     [[nodiscard]] std::optional<::ed3k::NodeId> nodeId() const;
     /// Contacts of the Kad routing table; 0 when not running.
     [[nodiscard]] std::uint64_t contactCount() const;
+    /// Running, port, node, contacts, address class, router and the engine's counters.
+    [[nodiscard]] Ed3kStatus status() const;
+    /// Bytes on the wire so far (see Ed3kTraffic).
+    [[nodiscard]] Ed3kTraffic traffic() const;
+
+    /// Upload/download limits in bytes/s, 0 = none (ed3k_set_limits; others are raised to
+    /// its 16 KiB/s floor). Kept across restarts; set by BandwidthCoordinator.
+    void setLimits(std::uint64_t upBytesPerSec, std::uint64_t downBytesPerSec);
+    [[nodiscard]] ::ed3k::Limits limits() const { return m_limits; }
+
+    /// The JSON-RPC endpoints of a class (see Ed3kSettings); calls out keep their URL.
+    void setRpcEndpoints(::ed3k::RpcClass cls, const QStringList& urls);
+
     /// Folder of the key and state files.
     [[nodiscard]] QString stateDir() const { return m_dir; }
 
@@ -95,6 +132,9 @@ private:
     void onReadyRead();
     void onTimer();
     void dispatch(::ed3k::Event& ev);
+    /// RpcRequest to the configured endpoint; false: none for its class and operator.
+    bool startRpc(const ::ed3k::event::RpcRequest& r);
+    void applyLimits();
     /// Default answer for an event nobody answered.
     void answerUnhandled(const ::ed3k::Event& ev);
     void loadState();
@@ -119,6 +159,10 @@ private:
     bool m_badDirty = false;
     std::vector<std::function<void(::ed3k::Engine&, ::ed3k::Now)>> m_posted;
     std::uint64_t m_notOurs = 0;
+    QStringList m_creditRpc;
+    QStringList m_chaintubeRpc;
+    ::ed3k::Limits m_limits{};
+    Ed3kTraffic m_trafficBase;   ///< of the engines before this one
 };
 
 } // namespace eMule::ed3k

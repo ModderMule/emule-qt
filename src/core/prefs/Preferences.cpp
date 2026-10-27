@@ -23,6 +23,7 @@
 #include <QFile>
 #include <QFileInfo>
 #include <QRandomGenerator>
+#include <QRegularExpression>
 #include <QSaveFile>
 #include <QSet>
 #include <QStandardPaths>
@@ -696,6 +697,9 @@ struct Preferences::Data {
     // -- ed3k (packmule) ------------------------------------------------------
     bool ed3kEnabled = false;
     uint16 ed3kUdpPort = 0;            // 0 = random, resolved at load
+    bool ed3kShareFiles = true;        // eMule's shared files over ed3k
+    QStringList ed3kCreditRpc;         // JSON-RPC endpoints; empty = off
+    QStringList ed3kChaintubeRpc;
 
     /// Runtime only — never loaded, never saved. -1 means "no split active", so
     /// maxDownloadForEd2k() falls back to the raw ceiling. Persisting it would
@@ -2284,6 +2288,27 @@ void Preferences::setEd3kEnabled(bool val) { set(&Data::ed3kEnabled, val); }
 uint16 Preferences::ed3kUdpPort() const { return get(&Data::ed3kUdpPort); }
 void Preferences::setEd3kUdpPort(uint16 val) { set(&Data::ed3kUdpPort, val); }
 
+bool Preferences::ed3kShareFiles() const { return get(&Data::ed3kShareFiles); }
+void Preferences::setEd3kShareFiles(bool val) { set(&Data::ed3kShareFiles, val); }
+
+QStringList Preferences::ed3kCreditRpc() const { return get(&Data::ed3kCreditRpc); }
+void Preferences::setEd3kCreditRpc(const QStringList& urls) { set(&Data::ed3kCreditRpc, urls); }
+QStringList Preferences::ed3kChaintubeRpc() const { return get(&Data::ed3kChaintubeRpc); }
+void Preferences::setEd3kChaintubeRpc(const QStringList& urls) { set(&Data::ed3kChaintubeRpc, urls); }
+
+QStringList Preferences::rpcUrlList(const QCborValue& value)
+{
+    QStringList out;
+    if (value.isArray()) {
+        for (const auto& v : value.toArray())
+            out << v.toString().trimmed();
+    } else {
+        out = value.toString().split(QRegularExpression(QStringLiteral("[\\s,]+")), Qt::SkipEmptyParts);
+    }
+    out.removeAll(QString());
+    return out;
+}
+
 uint32 Preferences::maxDownloadForEd2k() const
 {
     const qint64 budget = get(&Data::ed2kDownloadBudget);
@@ -3410,6 +3435,9 @@ QCborMap Preferences::toIpcMap() const
     // ed3k
     prefs.insert(QStringLiteral("ed3kEnabled"), ed3kEnabled());
     prefs.insert(QStringLiteral("ed3kUdpPort"), static_cast<qint64>(ed3kUdpPort()));
+    prefs.insert(QStringLiteral("ed3kShareFiles"), ed3kShareFiles());
+    prefs.insert(QStringLiteral("ed3kCreditRpc"), ed3kCreditRpc().join(QLatin1Char(' ')));
+    prefs.insert(QStringLiteral("ed3kChaintubeRpc"), ed3kChaintubeRpc().join(QLatin1Char(' ')));
 
     // Statistics
     prefs.insert(QStringLiteral("statsAverageMinutes"), static_cast<qint64>(statsAverageMinutes()));
@@ -3676,6 +3704,9 @@ void Preferences::updateFromCbor(const QCborMap& p)
     m_data->ed3kEnabled = p.value(QStringLiteral("ed3kEnabled")).toBool(false);
     m_data->ed3kUdpPort = static_cast<uint16>(
         std::clamp<qint64>(p.value(QStringLiteral("ed3kUdpPort")).toInteger(0), 0, 65535));
+    m_data->ed3kShareFiles = p.value(QStringLiteral("ed3kShareFiles")).toBool(true);
+    m_data->ed3kCreditRpc = rpcUrlList(p.value(QStringLiteral("ed3kCreditRpc")));
+    m_data->ed3kChaintubeRpc = rpcUrlList(p.value(QStringLiteral("ed3kChaintubeRpc")));
 
     // Statistics
     m_data->statsAverageMinutes   = static_cast<uint32>(p.value(QStringLiteral("statsAverageMinutes")).toInteger());
@@ -4823,6 +4854,17 @@ bool Preferences::load(const QString& filePath)
             m_data->ed3kEnabled = e3["enabled"].as<bool>(m_data->ed3kEnabled);
             const int port = e3["udpPort"].as<int>(m_data->ed3kUdpPort);
             m_data->ed3kUdpPort = (port >= 0 && port <= 65535) ? static_cast<uint16>(port) : 0;
+            m_data->ed3kShareFiles = e3["shareFiles"].as<bool>(m_data->ed3kShareFiles);
+            const auto urls = [](const YAML::Node& n) {
+                QStringList out;
+                if (n && n.IsSequence())
+                    for (const auto& item : n)
+                        if (const QString u = QString::fromStdString(item.as<std::string>("")).trimmed(); !u.isEmpty())
+                            out << u;
+                return out;
+            };
+            m_data->ed3kCreditRpc = urls(e3["creditRpc"]);
+            m_data->ed3kChaintubeRpc = urls(e3["chaintubeRpc"]);
         }
 
         if (auto ix = root["indexers"]) {
@@ -5926,7 +5968,15 @@ bool Preferences::saveImpl(const QString& filePath) const
 
     out << YAML::Key << "ed3k" << YAML::Value << YAML::BeginMap;
     out << YAML::Key << "enabled" << YAML::Value << m_data->ed3kEnabled;
+    out << YAML::Key << "shareFiles" << YAML::Value << m_data->ed3kShareFiles;
     out << YAML::Key << "udpPort" << YAML::Value << static_cast<int>(m_data->ed3kUdpPort);
+    for (const auto& [key, list] : {std::pair{"creditRpc", &m_data->ed3kCreditRpc},
+                                    std::pair{"chaintubeRpc", &m_data->ed3kChaintubeRpc}}) {
+        out << YAML::Key << key << YAML::Value << YAML::BeginSeq;
+        for (const QString& u : *list)
+            out << u.toStdString();
+        out << YAML::EndSeq;
+    }
     out << YAML::EndMap;
 
     // Indexers. After `notifications` for the same reason as the two blocks

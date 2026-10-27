@@ -13,7 +13,11 @@
 /// - articleDecoded → ybegin (crcOk) + article → reads served from the file's tempPath.
 /// - Join events → UsenetQueue hooks (accept/refetch), hashing, sharing, publishing.
 /// - ed3k downloads of members with a root: sources by Kad, blocks into tempPath.
-/// - The join is saved in Config/ed3k/usenet/<itemId>.join (debounced, and at stop).
+/// - The join is saved in Config/ed3k/usenet/<itemId>.join (debounced, and at stop). The
+///   post set (manifest, article list) fetched or made and the verified members are kept
+///   under Config/ed3k/usenet/<itemId>/ and shared again after a restart.
+/// - §4.1 a link (<meta type="ed3k">), §4.2 an `nzb` set (ALIAS search of the post id, the
+///   base's set search): manifest, then the article list it names, fetched → setManifest.
 
 #include "Ed3kJoinBase.h"
 
@@ -105,6 +109,12 @@ public:
                      std::span<const ::ed3k::PublisherKey> publishers = {});
     /// A source of a member's root (from Kad or known): asked for the file.
     void addSource(const QString& itemId, int fileIndex, const ::ed3k::Source& source);
+    /// §4.2: a post set known otherwise (tests): its manifest and article list fetched as
+    /// for one an `nzb` record names. false: not fetched (a set in use, refused).
+    bool trySet(const QString& itemId, const ::ed3k::Root& root, std::uint64_t size,
+                std::span<const ::ed3k::PublisherKey> publishers = {});
+    /// A source of a blob being fetched (the post set's manifest or article list).
+    void addBlobSource(const ::ed3k::Root& root, const ::ed3k::Source& source);
 
 public slots:
     void onItemAdded(const QString& itemId);
@@ -130,6 +140,12 @@ protected:
     [[nodiscard]] std::optional<QByteArray> readShared(const Shared& s, std::uint64_t offset, std::uint32_t len) const override;
     [[nodiscard]] bool sharedGone(const Shared& s) const override;
     void onOtherEvent(const ::ed3k::Event& event) override;
+    [[nodiscard]] bool wantsSet(const QString& owner) const override;
+    void onSetManifest(const QString& owner, const ::ed3k::Root& root, const QByteArray& data) override;
+    void onSetSearchDone(const QString& owner) override;
+    [[nodiscard]] bool keepsOwner(const QString& owner) const override;
+    [[nodiscard]] QString keptMemberPath(const QString& owner, int member) const override;
+    [[nodiscard]] bool shareKeptBlobs() const override { return !m_holdBack; }
     [[nodiscard]] bool hasOwner(const QString& owner) const override;
     void saveOwner(const QString& owner) override;
 
@@ -159,7 +175,18 @@ private:
                                                        std::uint32_t len) const;
     void startDownload(const QString& itemId, int fileIndex);
     void onAliasFound(const ::ed3k::event::AliasFound& f);
+    /// §4.2: the `nzb` search of the post id; none (no post id, searches off): the claims.
+    void startPostSearch(const QString& itemId);
     void startClaimSearches(const QString& itemId);
+    /// The manifest of a post set is there: the article list it names is fetched next.
+    void fetchList(const QString& itemId, const ::ed3k::Root& root, const QByteArray& manifest,
+                   std::vector<::ed3k::PublisherKey> publishers, bool fromLink);
+    void onListFetched(const QString& itemId, const ::ed3k::Root& root, const QByteArray& list);
+    /// A post set that does not do: a link's is told, a candidate's blamed (next one tried).
+    void setRefused(const QString& itemId, const ::ed3k::Root& root, bool fromLink);
+    [[nodiscard]] QString postName(const QString& itemId) const;
+    /// <meta type="ed3k"> parsed; nullopt without or unparsable.
+    [[nodiscard]] static std::optional<::ed3k::FileLink> metaLink(const usenet::NzbInfo& nzb);
     void savePost(const QString& itemId);
     [[nodiscard]] QString usenetDir() const;
 
@@ -171,6 +198,8 @@ private:
     std::map<std::uint32_t, std::pair<QString, int>> m_claimSearches;
     QHash<std::uint64_t, QString> m_serverKeys;
     quint64 m_hashGeneration = 0;
+    /// members complete now are hashed on this thread (volumes about to be deleted)
+    bool m_hashNow = false;
 };
 
 } // namespace eMule::ed3k

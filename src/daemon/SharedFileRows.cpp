@@ -80,6 +80,7 @@ QCborMap sharedFileRow(KnownFile* kf, const SharedFileList::ShareRules& rules,
     // Unchecked is not suspect, and claiming otherwise would be worse than late.
     const ContainerCheck& cc = kf->containerCheckIfResolved();
     m.insert(QStringLiteral("containerSuspect"), cc.isSuspect());
+    m.insert(QStringLiteral("containerMislabelled"), cc.isMislabelled());
     m.insert(QStringLiteral("containerExpected"), cc.expected);
     m.insert(QStringLiteral("containerActual"), cc.actual);
     m.insert(QStringLiteral("upPriority"), static_cast<int>(kf->upPriority()));

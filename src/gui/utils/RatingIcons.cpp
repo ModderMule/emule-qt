@@ -90,23 +90,23 @@ FileMark ratingMark(bool hasComment, int userRating)
     return hasComment ? FileMark::NotRated : FileMark::None;
 }
 
-QIcon fileMarksIcon(const QString& fileType, bool containerSuspect, bool ownComment,
+QIcon fileMarksIcon(const QString& fileType, ContainerMark container, bool ownComment,
                     FileMark mark, const QString& badgePath)
 {
-    return fileMarksIcon(fileTypeIcon(fileType), fileType, containerSuspect, ownComment, mark,
+    return fileMarksIcon(fileTypeIcon(fileType), fileType, container, ownComment, mark,
                          badgePath);
 }
 
-QIcon fileMarksIcon(const QIcon& base, const QString& baseKey, bool containerSuspect,
+QIcon fileMarksIcon(const QIcon& base, const QString& baseKey, ContainerMark container,
                     bool ownComment, FileMark mark, const QString& badgePath)
 {
     // A row with nothing to add is the common case; hand back the plain base
     // icon rather than a one-cell composite of it.
-    if (!containerSuspect && !ownComment && mark == FileMark::None && badgePath.isEmpty())
+    if (container == ContainerMark::None && !ownComment && mark == FileMark::None && badgePath.isEmpty())
         return base;
 
     const QString key = baseKey + QLatin1Char('|') + badgePath + QLatin1Char('|')
-                      + QLatin1Char(containerSuspect ? '1' : '0')
+                      + QString::number(static_cast<int>(container))
                       + QLatin1Char(ownComment ? '1' : '0')
                       + QString::number(static_cast<int>(mark));
 
@@ -117,8 +117,10 @@ QIcon fileMarksIcon(const QIcon& base, const QString& baseKey, bool containerSus
     QStringList marks;
     if (!badgePath.isEmpty())
         marks << badgePath;   // right after the type icon, before any verdict on the file
-    if (containerSuspect)
-        marks << QStringLiteral(":/icons/RatingBad.ico");   // the red exclamation
+    if (container == ContainerMark::Fake)
+        marks << QStringLiteral(":/icons/RatingBad.ico");    // red: not the media it claims
+    else if (container == ContainerMark::Mislabelled)
+        marks << QStringLiteral(":/icons/RatingWarn.ico");   // yellow: only the extension is wrong
     if (const QString ratingPath = markIconPath(mark); !ratingPath.isEmpty())
         marks << ratingPath;
 
@@ -153,16 +155,17 @@ QIcon fileMarksIcon(const QIcon& base, const QString& baseKey, bool containerSus
     return icon;
 }
 
-QString fileMarksTooltip(const QString& fileName, bool containerSuspect,
+QString fileMarksTooltip(const QString& fileName, ContainerMark container,
                          const QString& containerActual, bool hasComment, int userRating)
 {
     QString extra;
 
-    if (containerSuspect) {
+    if (container != ContainerMark::None) {
         ContainerCheck check;
         check.verdict = containerActual.isEmpty() ? ContainerVerdict::NoKnownContainer
                                                   : ContainerVerdict::WrongContainer;
         check.actual = containerActual;
+        check.sameKind = container == ContainerMark::Mislabelled;
         extra += QStringLiteral("\n\n") + containerWarningText(check, fileName);
     }
 

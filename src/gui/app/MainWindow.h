@@ -173,6 +173,10 @@ public:
     /// Update the Kad status label in the footer.
     void setKadStatus(bool running, bool kadConnected, bool firewalled);
 
+    /// The ed3k label next to Kad's (GetEd3kStatus / PushEd3kStatus map). Hidden while
+    /// the node does not run: ed3k is opt-in and has no MFC original.
+    void setEd3kStatus(const QCborMap& status);
+
     /// The connected server answers "related::" searches (MFC CanSearchRelatedFiles).
     void setRelatedSearchSupported(bool supported);
 
@@ -294,6 +298,8 @@ private:
     QString skinsDir() const;
     void applySkinProfile(const QString& path);
     void setupStatusBar();
+    /// GetEd3kStatus once per connection; pushes keep it current.
+    void requestEd3kStatus();
     void setupPages();
     void addPage(QWidget* page);
     void updateConnectButton();
@@ -368,6 +374,7 @@ private:
     QString m_ed2kServerName;
     qint64 m_ed2kServerUsers = 0;
     QLabel* m_statusKad = nullptr;
+    QLabel* m_statusEd3k = nullptr;   ///< ed3k node, hidden while off
     QLabel* m_statusChat = nullptr;   ///< unread-message icon, MFC SBarChatMsg
     ConnectionStatusWidget* m_connStatus = nullptr;
 

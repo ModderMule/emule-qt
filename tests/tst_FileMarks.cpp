@@ -96,18 +96,18 @@ void tst_FileMarks::thePreferenceGovernsRatingsOnly()
 
     // ...but a provable container mismatch is not an opinion, so the checkbox
     // does not silence it. Turning off "indicate ratings" must not hide a fake.
-    const QIcon marked = fileMarksIcon(QStringLiteral("Video"), /*suspect*/ true,
+    const QIcon marked = fileMarksIcon(QStringLiteral("Video"), ContainerMark::Fake,
                                        /*ownComment*/ false, ratingMark(true, 5));
-    const QIcon plain = fileMarksIcon(QStringLiteral("Video"), /*suspect*/ false,
+    const QIcon plain = fileMarksIcon(QStringLiteral("Video"), ContainerMark::None,
                                       /*ownComment*/ false, ratingMark(true, 5));
     QVERIFY(renderOf(marked) != renderOf(plain));
 }
 
 void tst_FileMarks::aSuspectRowLooksDifferentFromACleanOne()
 {
-    const QIcon clean = fileMarksIcon(QStringLiteral("Video"), false, false, FileMark::None);
-    const QIcon suspect = fileMarksIcon(QStringLiteral("Video"), true, false, FileMark::None);
-    const QIcon rated = fileMarksIcon(QStringLiteral("Video"), false, false, FileMark::Fake);
+    const QIcon clean = fileMarksIcon(QStringLiteral("Video"), ContainerMark::None, false, FileMark::None);
+    const QIcon suspect = fileMarksIcon(QStringLiteral("Video"), ContainerMark::Fake, false, FileMark::None);
+    const QIcon rated = fileMarksIcon(QStringLiteral("Video"), ContainerMark::None, false, FileMark::Fake);
 
     QVERIFY(!renderOf(clean).isNull());
     QVERIFY(renderOf(clean) != renderOf(suspect));
@@ -115,9 +115,15 @@ void tst_FileMarks::aSuspectRowLooksDifferentFromACleanOne()
 
     // The two are independent signals, so a file that is both must not collapse
     // into looking like either one alone.
-    const QIcon both = fileMarksIcon(QStringLiteral("Video"), true, false, FileMark::Fake);
+    const QIcon both = fileMarksIcon(QStringLiteral("Video"), ContainerMark::Fake, false, FileMark::Fake);
     QVERIFY(renderOf(both) != renderOf(suspect));
     QVERIFY(renderOf(both) != renderOf(rated));
+
+    // Only the extension wrong (MP4 named .avi): marked, but not with the red one.
+    const QIcon mislabelled =
+        fileMarksIcon(QStringLiteral("Video"), ContainerMark::Mislabelled, false, FileMark::None);
+    QVERIFY(renderOf(mislabelled) != renderOf(clean));
+    QVERIFY(renderOf(mislabelled) != renderOf(suspect));
 }
 
 void tst_FileMarks::ourOwnCommentIsMarkedApartFromEveryoneElses()
@@ -125,10 +131,10 @@ void tst_FileMarks::ourOwnCommentIsMarkedApartFromEveryoneElses()
     // MFC draws two unrelated things: the rating mark for what other people said,
     // and an overlay on the type icon for the fact that *we* commented
     // (srchybrid/SharedFilesCtrl.cpp:561-568). They must not be interchangeable.
-    const QIcon plain = fileMarksIcon(QStringLiteral("Video"), false, false, FileMark::None);
-    const QIcon mine  = fileMarksIcon(QStringLiteral("Video"), false, true, FileMark::None);
-    const QIcon theirs = fileMarksIcon(QStringLiteral("Video"), false, false, FileMark::Good);
-    const QIcon both  = fileMarksIcon(QStringLiteral("Video"), false, true, FileMark::Good);
+    const QIcon plain = fileMarksIcon(QStringLiteral("Video"), ContainerMark::None, false, FileMark::None);
+    const QIcon mine  = fileMarksIcon(QStringLiteral("Video"), ContainerMark::None, true, FileMark::None);
+    const QIcon theirs = fileMarksIcon(QStringLiteral("Video"), ContainerMark::None, false, FileMark::Good);
+    const QIcon both  = fileMarksIcon(QStringLiteral("Video"), ContainerMark::None, true, FileMark::Good);
 
     QVERIFY(!renderOf(mine).isNull());
     QVERIFY(renderOf(mine) != renderOf(plain));
@@ -139,7 +145,7 @@ void tst_FileMarks::ourOwnCommentIsMarkedApartFromEveryoneElses()
     // And it is our own note, not an opinion, so the ratings checkbox leaves it be.
     thePrefs.setIndicateRatings(false);
     const QIcon mineUnindicated =
-        fileMarksIcon(QStringLiteral("Video"), false, true, ratingMark(true, 4));
+        fileMarksIcon(QStringLiteral("Video"), ContainerMark::None, true, ratingMark(true, 4));
     QVERIFY(renderOf(mineUnindicated) != renderOf(plain));
 }
 
@@ -237,12 +243,12 @@ void tst_FileMarks::aNetworkBadgeFollowsTheTypeIcon()
     // network mark follows it, so a torrent .mp4 still reads as a video.
     const QString torrent = QStringLiteral(":/icons/Torrent.ico");
     const QString usenet = QStringLiteral(":/icons/Usenet.ico");
-    const QIcon plain = fileMarksIcon(QStringLiteral("Video"), false, false, FileMark::None);
-    const QIcon videoTorrent = fileMarksIcon(QStringLiteral("Video"), false, false,
+    const QIcon plain = fileMarksIcon(QStringLiteral("Video"), ContainerMark::None, false, FileMark::None);
+    const QIcon videoTorrent = fileMarksIcon(QStringLiteral("Video"), ContainerMark::None, false,
                                              FileMark::None, torrent);
-    const QIcon audioTorrent = fileMarksIcon(QStringLiteral("Audio"), false, false,
+    const QIcon audioTorrent = fileMarksIcon(QStringLiteral("Audio"), ContainerMark::None, false,
                                              FileMark::None, torrent);
-    const QIcon videoUsenet = fileMarksIcon(QStringLiteral("Video"), false, false,
+    const QIcon videoUsenet = fileMarksIcon(QStringLiteral("Video"), ContainerMark::None, false,
                                             FileMark::None, usenet);
 
     const QImage vt = renderOf(videoTorrent);
@@ -257,9 +263,9 @@ void tst_FileMarks::aNetworkBadgeFollowsTheTypeIcon()
 void tst_FileMarks::anEmptyBadgeKeepsTheSlot()
 {
     // An eD2K row beside torrent/Usenet rows keeps the badge width, so names line up
-    const QIcon blank = fileMarksIcon(QStringLiteral("Video"), false, false, FileMark::None,
+    const QIcon blank = fileMarksIcon(QStringLiteral("Video"), ContainerMark::None, false, FileMark::None,
                                       QString(kEmptyBadge));
-    const QIcon torrent = fileMarksIcon(QStringLiteral("Video"), false, false, FileMark::None,
+    const QIcon torrent = fileMarksIcon(QStringLiteral("Video"), ContainerMark::None, false, FileMark::None,
                                         QStringLiteral(":/icons/Torrent.ico"));
     QCOMPARE(blank.availableSizes(), torrent.availableSizes());
 

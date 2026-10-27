@@ -4,7 +4,7 @@
 <context>
     <name>ContainerSniffer</name>
     <message>
-        <location filename="../src/core/media/ContainerSniffer.cpp" line="+180"/>
+        <location filename="../src/core/media/ContainerSniffer.cpp" line="+210"/>
         <source>Named .%1 but matches no media container we recognise — very likely a fake.</source>
         <translation>Имя с расширением .%1, но содержимое не совпадает ни с одним известным медиаконтейнером — скорее всего, подделка.</translation>
     </message>
@@ -12,6 +12,11 @@
         <location line="+5"/>
         <source>Named .%1 but the contents are %2.</source>
         <translation>Имя с расширением .%1, но содержимое — %2.</translation>
+    </message>
+    <message>
+        <location line="+4"/>
+        <source>Only the extension is wrong — most players still open it.</source>
+        <translation>Неверно только расширение — большинство плееров всё равно его откроют.</translation>
     </message>
 </context>
 <context>
@@ -695,7 +700,7 @@ Download it again?</source>
         <translation>Отличный</translation>
     </message>
     <message>
-        <location line="+110"/>
+        <location line="+113"/>
         <source>
 Rating:	%1</source>
         <translation>
@@ -802,7 +807,7 @@ Has comments</source>
     <name>Units</name>
     <message>
         <location filename="../src/core/utils/StringUtils.cpp" line="+72"/>
-        <location filename="../src/core/webserver/WebServer.cpp" line="+4067"/>
+        <location filename="../src/core/webserver/WebServer.cpp" line="+4083"/>
         <source>Bytes</source>
         <translation>байт</translation>
     </message>
@@ -2860,12 +2865,12 @@ Enter the address and authentication token of a remote core.</source>
     </message>
     <message>
         <location line="+2"/>
-        <location line="+715"/>
+        <location line="+717"/>
         <source>Asked for another file</source>
         <translation>Запрошен другой файл</translation>
     </message>
     <message>
-        <location line="-707"/>
+        <location line="-709"/>
         <source>A4AF files</source>
         <translation>Файлы ЗДФ</translation>
     </message>
@@ -2880,13 +2885,13 @@ Enter the address and authentication token of a remote core.</source>
         <translation>Очередь заполнена</translation>
     </message>
     <message>
-        <location line="+121"/>
+        <location line="+122"/>
         <location line="+2"/>
         <source>Never</source>
         <translation>Никогда</translation>
     </message>
     <message>
-        <location line="+35"/>
+        <location line="+36"/>
         <source>File Name:	%1
 ED2K Hash:	%2
 Size:	%3
@@ -4459,12 +4464,12 @@ Please choose another:</source>
     <name>eMule::MainWindow</name>
     <message>
         <location filename="../src/gui/app/MainWindow.cpp" line="+104"/>
-        <location line="+527"/>
+        <location line="+579"/>
         <source>eMule Qt v%1</source>
         <translation>eMule Qt v%1</translation>
     </message>
     <message>
-        <location line="-427"/>
+        <location line="-479"/>
         <source>Quit eMule Qt</source>
         <translation>Выйти из eMule Qt</translation>
     </message>
@@ -4501,12 +4506,12 @@ You are running %2. Open the eMule Qt website?</source>
     <message>
         <location line="+11"/>
         <location line="+7"/>
-        <location line="+839"/>
+        <location line="+891"/>
         <source>Version Check</source>
         <translation>Проверка версии</translation>
     </message>
     <message>
-        <location line="-845"/>
+        <location line="-897"/>
         <source>You are running the latest version of eMule Qt (v%1).</source>
         <translation>У вас последняя версия eMule Qt (v%1).</translation>
     </message>
@@ -4534,7 +4539,7 @@ Enable at least one under Options → Connection to connect.</source>
 Включите хотя бы одну в Настройки → Соединение.</translation>
     </message>
     <message>
-        <location line="+68"/>
+        <location line="+78"/>
         <source>eMule Version %1 ready</source>
         <translation>eMule версии %1 готов</translation>
     </message>
@@ -4560,12 +4565,12 @@ Enable at least one under Options → Connection to connect.</source>
     </message>
     <message>
         <location line="+4"/>
-        <location line="+1369"/>
+        <location line="+1411"/>
         <source>eD2K: Disconnected</source>
         <translation>eD2K: Отсоединён</translation>
     </message>
     <message>
-        <location line="-1362"/>
+        <location line="-1404"/>
         <source>eD2K Server: %1  (%2 Users)</source>
         <translation>eD2K сервер: %1  (%2 пользователей)</translation>
     </message>
@@ -4601,12 +4606,72 @@ Enable at least one under Options → Connection to connect.</source>
     </message>
     <message>
         <location line="+4"/>
-        <location line="+1303"/>
+        <location line="+1345"/>
         <source>Kad: Disconnected</source>
         <translation>Kad: Отсоединён</translation>
     </message>
     <message>
-        <location line="-1293"/>
+        <location line="-1322"/>
+        <source>ed3k: Connected</source>
+        <translation>ed3k: Соединён</translation>
+    </message>
+    <message>
+        <location line="+3"/>
+        <source>ed3k: Connected (Firewalled)</source>
+        <translation>ed3k: Соединён (файрвол)</translation>
+    </message>
+    <message>
+        <location line="+3"/>
+        <source>ed3k: Connecting...</source>
+        <translation>ed3k: Соединение...</translation>
+    </message>
+    <message>
+        <location line="+5"/>
+        <source>open</source>
+        <translation>открыт</translation>
+    </message>
+    <message>
+        <location line="+1"/>
+        <source>cone NAT</source>
+        <translation>конусный NAT</translation>
+    </message>
+    <message>
+        <location line="+1"/>
+        <source>symmetric NAT</source>
+        <translation>симметричный NAT</translation>
+    </message>
+    <message>
+        <location line="+1"/>
+        <source>unknown</source>
+        <translation>неизвестно</translation>
+    </message>
+    <message>
+        <location line="+5"/>
+        <source>ed3k node %1
+UDP port: %2
+Contacts: %3
+IPv4: %4
+IPv6: %5
+Router: %6</source>
+        <translation>Узел ed3k %1
+UDP-порт: %2
+Контакты: %3
+IPv4: %4
+IPv6: %5
+Маршрутизатор: %6</translation>
+    </message>
+    <message>
+        <location line="+4"/>
+        <source>yes</source>
+        <translation>да</translation>
+    </message>
+    <message>
+        <location line="+0"/>
+        <source>no</source>
+        <translation>нет</translation>
+    </message>
+    <message>
+        <location line="+6"/>
         <source>Users: %1 | Files: %2</source>
         <translation>Пользователей: %1 | Файлов: %2</translation>
     </message>
@@ -4964,12 +5029,12 @@ Enable it under Options → Web Interface, then try again.</source>
         <translation>Двойной щелчок — информация о сети</translation>
     </message>
     <message>
-        <location line="+31"/>
+        <location line="+37"/>
         <source>New message — double-click to read</source>
         <translation>Новое сообщение — двойной щелчок для чтения</translation>
     </message>
     <message>
-        <location line="+314"/>
+        <location line="+324"/>
         <source>eD2K Link</source>
         <translation>eD2K ссылка</translation>
     </message>
@@ -11800,7 +11865,7 @@ The keyword(s) used in a Kad search expression must have a minimum length of 3 c
         <translation>Нет</translation>
     </message>
     <message>
-        <location line="+110"/>
+        <location line="+111"/>
         <source>%1 Kbit/s</source>
         <translation>%1 Кбит/с</translation>
     </message>
@@ -11828,7 +11893,7 @@ ED2K хеш:	%2
 Папка:	%13</translation>
     </message>
     <message>
-        <location line="+138"/>
+        <location line="+139"/>
         <source>File Name</source>
         <translation>Имя файла</translation>
     </message>
@@ -11939,12 +12004,12 @@ ED2K хеш:	%2
         <location filename="../src/gui/panels/SharedFilesPanel.cpp" line="+177"/>
         <location line="+16"/>
         <location line="+497"/>
-        <location line="+646"/>
+        <location line="+647"/>
         <source>Shared Files (0)</source>
         <translation>Файлы обмена (0)</translation>
     </message>
     <message>
-        <location line="-1030"/>
+        <location line="-1031"/>
         <source>All</source>
         <translation>Все</translation>
     </message>
@@ -11955,71 +12020,71 @@ ED2K хеш:	%2
     </message>
     <message>
         <location line="+13"/>
-        <location line="+1494"/>
+        <location line="+1496"/>
         <location line="+511"/>
         <source>Open Folder</source>
         <translation>Открыть папку</translation>
     </message>
     <message>
-        <location line="-1993"/>
+        <location line="-1995"/>
         <source>Rename...</source>
         <translation>Переименовать...</translation>
     </message>
     <message>
         <location line="+8"/>
-        <location line="+1989"/>
+        <location line="+1991"/>
         <source>Delete From Disk</source>
         <translation>Удалить с диска</translation>
     </message>
     <message>
-        <location line="-1974"/>
+        <location line="-1976"/>
         <source>Unshare</source>
         <translation>Убрать из обмена</translation>
     </message>
     <message>
         <location line="+11"/>
-        <location line="+1969"/>
+        <location line="+1971"/>
         <source>Priority (Upload)</source>
         <translation>Приоритет (отдача)</translation>
     </message>
     <message>
-        <location line="-1954"/>
-        <location line="+1971"/>
+        <location line="-1956"/>
+        <location line="+1973"/>
         <source>Very Low</source>
         <translation>Очень низкий</translation>
     </message>
     <message>
-        <location line="-1970"/>
-        <location line="+1971"/>
+        <location line="-1972"/>
+        <location line="+1973"/>
         <source>Low</source>
         <translation>Низкий</translation>
     </message>
     <message>
-        <location line="-1970"/>
-        <location line="+1971"/>
+        <location line="-1972"/>
+        <location line="+1973"/>
         <source>Normal</source>
         <translation>Нормальный</translation>
     </message>
     <message>
-        <location line="-1970"/>
-        <location line="+1971"/>
+        <location line="-1972"/>
+        <location line="+1973"/>
         <source>High</source>
         <translation>Высокий</translation>
     </message>
     <message>
-        <location line="-1970"/>
-        <location line="+1971"/>
+        <location line="-1972"/>
+        <location line="+1973"/>
         <source>Release</source>
         <translation>Релиз</translation>
     </message>
     <message>
-        <location line="-1969"/>
-        <location line="+1970"/>
+        <location line="-1971"/>
+        <location line="+1972"/>
         <source>Auto</source>
         <translation>Авто</translation>
     </message>
     <message>
-        <location line="-1956"/>
+        <location line="-1958"/>
         <source>Collection</source>
         <translation>Коллекция</translation>
     </message>
@@ -12056,24 +12121,24 @@ ED2K хеш:	%2
     </message>
     <message>
         <location line="+19"/>
-        <location line="+1876"/>
+        <location line="+1878"/>
         <source>Details...</source>
         <translation>Детали...</translation>
     </message>
     <message>
-        <location line="-1869"/>
-        <location line="+1872"/>
+        <location line="-1871"/>
+        <location line="+1874"/>
         <source>Comments...</source>
         <translation>Комментарии...</translation>
     </message>
     <message>
-        <location line="-1857"/>
-        <location line="+1863"/>
+        <location line="-1859"/>
+        <location line="+1865"/>
         <source>eD2K Links...</source>
         <translation>eD2K ссылки...</translation>
     </message>
     <message>
-        <location line="-1852"/>
+        <location line="-1854"/>
         <source>Add To IRC Clipboard</source>
         <translation>Добавить в буфер обмена IRC</translation>
     </message>
@@ -12228,22 +12293,22 @@ ED2K хеш:	%2
     </message>
     <message>
         <location line="+16"/>
-        <location line="+472"/>
+        <location line="+474"/>
         <source>Requires a hostname configured in Preferences, or a public IPv6</source>
         <translation>Требуется имя хоста, заданное в настройках, или публичный IPv6</translation>
     </message>
     <message>
-        <location line="-468"/>
+        <location line="-470"/>
         <source>eD2K Links</source>
         <translation>eD2K ссылки</translation>
     </message>
     <message>
-        <location line="+168"/>
+        <location line="+169"/>
         <source>Shared Files (%1)</source>
         <translation>Файлы обмена (%1)</translation>
     </message>
     <message>
-        <location line="+55"/>
+        <location line="+56"/>
         <source>%1 (%2 of %3 shared)</source>
         <translation>%1 (%2 из %3 в обмене)</translation>
     </message>
@@ -12364,8 +12429,8 @@ The files will remain on disk.</source>
         <translation>Открытие файла недоступно — веб-сервер не запущен или не получен токен потока.</translation>
     </message>
     <message>
-        <location line="-1456"/>
-        <location line="+1865"/>
+        <location line="-1458"/>
+        <location line="+1867"/>
         <source>Copy eD2K Links</source>
         <translation>Копировать eD2K ссылки</translation>
     </message>
@@ -15813,89 +15878,89 @@ Clicking &apos;Restore Stats&apos; again will reload your current statistics.</s
     </message>
     <message>
         <location line="+29"/>
-        <location line="+2012"/>
+        <location line="+2013"/>
         <location line="+177"/>
         <source>Low</source>
         <translation>Низкий</translation>
     </message>
     <message>
-        <location line="-2188"/>
-        <location line="+2011"/>
+        <location line="-2189"/>
+        <location line="+2012"/>
         <location line="+178"/>
         <source>Normal</source>
         <translation>Нормальный</translation>
     </message>
     <message>
-        <location line="-2188"/>
-        <location line="+2010"/>
+        <location line="-2189"/>
+        <location line="+2011"/>
         <location line="+179"/>
         <source>High</source>
         <translation>Высокий</translation>
     </message>
     <message>
-        <location line="-2185"/>
-        <location line="+2189"/>
+        <location line="-2186"/>
+        <location line="+2190"/>
         <source>Very Low</source>
         <translation>Очень низкий</translation>
     </message>
     <message>
-        <location line="-2187"/>
-        <location line="+2189"/>
+        <location line="-2188"/>
+        <location line="+2190"/>
         <source>Very High</source>
         <translation>Очень высокий</translation>
     </message>
     <message>
-        <location line="-2187"/>
-        <location line="+2190"/>
+        <location line="-2188"/>
+        <location line="+2191"/>
         <source>Auto</source>
         <translation>Авто</translation>
     </message>
     <message>
-        <location line="-2179"/>
+        <location line="-2180"/>
         <location line="+713"/>
-        <location line="+1292"/>
+        <location line="+1293"/>
         <source>Pause</source>
         <translation>Пауза</translation>
     </message>
     <message>
-        <location line="-1996"/>
+        <location line="-1997"/>
         <location line="+710"/>
-        <location line="+1288"/>
+        <location line="+1289"/>
         <source>Stop</source>
         <translation>Остановить</translation>
     </message>
     <message>
-        <location line="-1989"/>
+        <location line="-1990"/>
         <location line="+707"/>
-        <location line="+1284"/>
+        <location line="+1285"/>
         <source>Resume</source>
         <translation>Продолжить</translation>
     </message>
     <message>
-        <location line="-1978"/>
+        <location line="-1979"/>
         <location line="+700"/>
-        <location line="+1280"/>
+        <location line="+1281"/>
         <location line="+4"/>
         <source>Cancel</source>
         <translation>Отмена</translation>
     </message>
     <message>
-        <location line="-1968"/>
+        <location line="-1969"/>
         <location line="+691"/>
-        <location line="+555"/>
+        <location line="+556"/>
         <source>Open File</source>
         <translation>Открыть файл</translation>
     </message>
     <message>
-        <location line="-1237"/>
+        <location line="-1238"/>
         <location line="+2"/>
         <location line="+694"/>
-        <location line="+590"/>
+        <location line="+591"/>
         <source>Preview</source>
         <translation>Предпросмотр</translation>
     </message>
     <message>
-        <location line="-1278"/>
+        <location line="-1279"/>
         <source>Preview with</source>
         <translation>Просмотреть с помощью</translation>
     </message>
@@ -15911,13 +15976,13 @@ Clicking &apos;Restore Stats&apos; again will reload your current statistics.</s
     </message>
     <message>
         <location line="+9"/>
-        <location line="+2120"/>
+        <location line="+2121"/>
         <location line="+118"/>
         <source>Details...</source>
         <translation>Детали...</translation>
     </message>
     <message>
-        <location line="-2229"/>
+        <location line="-2230"/>
         <source>Comments...</source>
         <translation>Комментарии...</translation>
     </message>
@@ -15928,14 +15993,14 @@ Clicking &apos;Restore Stats&apos; again will reload your current statistics.</s
     </message>
     <message>
         <location line="+0"/>
-        <location line="+1312"/>
+        <location line="+1313"/>
         <location line="+1"/>
         <location line="+10"/>
         <source>Import parts to file...</source>
         <translation>Импортировать части в файл...</translation>
     </message>
     <message>
-        <location line="-1307"/>
+        <location line="-1308"/>
         <location line="+662"/>
         <source>Clear Completed</source>
         <translation>Очистить от завершённых</translation>
@@ -15952,12 +16017,12 @@ Clicking &apos;Restore Stats&apos; again will reload your current statistics.</s
     </message>
     <message>
         <location line="+3"/>
-        <location line="+1235"/>
+        <location line="+1236"/>
         <source>Source Limit...</source>
         <translation>Лимит источников...</translation>
     </message>
     <message>
-        <location line="-1232"/>
+        <location line="-1233"/>
         <source>Swap All A4AF Sources to This File</source>
         <translation>Переключить все источники A4AF на этот файл</translation>
     </message>
@@ -15992,13 +16057,13 @@ Clicking &apos;Restore Stats&apos; again will reload your current statistics.</s
     </message>
     <message>
         <location line="+16"/>
-        <location line="+2109"/>
+        <location line="+2110"/>
         <location line="+72"/>
         <source>Find...</source>
         <translation>Найти...</translation>
     </message>
     <message>
-        <location line="-2173"/>
+        <location line="-2174"/>
         <source>Search Related Files</source>
         <translation>Искать похожие файлы</translation>
     </message>
@@ -16046,12 +16111,12 @@ Clicking &apos;Restore Stats&apos; again will reload your current statistics.</s
     </message>
     <message>
         <location line="+11"/>
-        <location line="+1281"/>
+        <location line="+1282"/>
         <source>Priority</source>
         <translation>Приоритет</translation>
     </message>
     <message>
-        <location line="-1244"/>
+        <location line="-1245"/>
         <source>Open Folder</source>
         <translation>Открыть папку</translation>
     </message>
@@ -16081,7 +16146,7 @@ Clicking &apos;Restore Stats&apos; again will reload your current statistics.</s
         <translation>Найти</translation>
     </message>
     <message>
-        <location line="+503"/>
+        <location line="+504"/>
         <location line="+23"/>
         <source>Preview not available — web server is not running or stream token not received.</source>
         <translation>Предпросмотр недоступен — веб-сервер не запущен или не получен токен потока.</translation>
@@ -17053,19 +17118,19 @@ A password is set for this release.</source>
 <context>
     <name>eMule::WebServer</name>
     <message>
-        <location filename="../src/core/webserver/WebServer.cpp" line="-3401"/>
-        <location line="+3290"/>
+        <location filename="../src/core/webserver/WebServer.cpp" line="-3417"/>
+        <location line="+3306"/>
         <location line="+49"/>
         <source>Session expired — log in again</source>
         <translation>Сессия истекла — войдите снова</translation>
     </message>
     <message>
-        <location line="-3335"/>
+        <location line="-3351"/>
         <source>Guests cannot add downloads</source>
         <translation>Гости не могут добавлять загрузки</translation>
     </message>
     <message>
-        <location line="+597"/>
+        <location line="+609"/>
         <source>Looking for comments on Kad</source>
         <translation>Поиск комментариев в Kad</translation>
     </message>
@@ -17080,7 +17145,7 @@ A password is set for this release.</source>
         <translation>Есть комментарии</translation>
     </message>
     <message>
-        <location line="+403"/>
+        <location line="+404"/>
         <location line="+1"/>
         <source>Incoming</source>
         <translation>Загруженные файлы</translation>
@@ -17119,7 +17184,7 @@ A password is set for this release.</source>
         <translation>Воспроизвести</translation>
     </message>
     <message>
-        <location line="+91"/>
+        <location line="+94"/>
         <source>Open this URL in VLC or another player:</source>
         <translation>Откройте этот URL в VLC или другом проигрывателе:</translation>
     </message>

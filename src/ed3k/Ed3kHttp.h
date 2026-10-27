@@ -11,6 +11,11 @@
 /// address is offered to the core (httpResolved) before connecting.
 ///
 /// Every answer goes through Answers; the session calls the engine and pumps.
+///
+/// JSON-RPC (event::RpcRequest, host-io.md): startRpc() POSTs the body to a URL the user
+/// configured (ed3k.creditRpc / ed3k.chaintubeRpc), as mode B does (packmule_udp::http):
+/// application/json, at most 16 MiB back, 30 s; a 2xx body goes to rpcAnswer, the rest to
+/// rpcFailed. The user's URL: its name is resolved here and not offered to the core.
 
 #include "Ed3kFfi.h"
 
@@ -39,7 +44,14 @@ public:
         std::function<void(std::uint64_t id, std::uint16_t status, const QByteArray& headers,
                            const QByteArray& body)> answer;
         std::function<void(std::uint64_t id)> failed;
+        /// JSON-RPC: the body of a 2xx answer / anything else (no connection, other status)
+        std::function<void(std::uint64_t id, const QByteArray& body)> rpcAnswer{};
+        std::function<void(std::uint64_t id)> rpcFailed{};
     };
+
+    /// RPC limits of mode B (packmule_udp::http RPC_BODY_MAX, host_io::RPC_TIMEOUT_S)
+    static constexpr std::uint64_t kRpcBodyMax = 16u << 20;
+    static constexpr std::uint64_t kRpcTimeoutS = 30;
 
     Ed3kHttp(Answers answers, QString userAgent, QObject* parent = nullptr);
     ~Ed3kHttp() override;
@@ -50,7 +62,14 @@ public:
     /// Starts @p req. Failures are answered through Answers, maybe at once.
     void start(const ::ed3k::event::HttpRequest& req);
 
-    /// IoCancel: drops the request, no answer.
+    /// RpcRequest @p id: POSTs @p body to @p url (https, or http to a loopback host).
+    /// Answered through rpcAnswer / rpcFailed, maybe at once.
+    void startRpc(std::uint64_t id, const QString& url, const QByteArray& body);
+
+    /// Whether @p url may take RPC calls: https, or http to a loopback host (a local node).
+    [[nodiscard]] static bool rpcUrlUsable(const QString& url);
+
+    /// IoCancel: drops the request (HTTP or RPC), no answer.
     void cancel(std::uint64_t id);
 
     /// Drops every request, no answers (engine going away).
@@ -61,6 +80,8 @@ public:
 private:
     struct Request;
 
+    /// Arms the timeout and connects (literal) or resolves the name.
+    void begin(std::unique_ptr<Request> r);
     void resolveNext(Request& r);
     void connectTo(Request& r, const QHostAddress& ip, std::uint16_t port);
     void onConnected(std::uint64_t id);

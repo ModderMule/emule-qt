@@ -39,6 +39,7 @@
 
 #include <cstdint>
 #include <cstring>
+#include <memory>
 #include <zlib.h>
 
 using namespace eMule;
@@ -191,6 +192,7 @@ private slots:
     void addReqBlock_dropsPastEofAndOversized();
     void addReqBlock_partFileServesOnlyFlushedData();
     void setUploadFileID_keepsBlockRequests();
+    void deletedUploadFile_releasesClients();
     void markBlockDone_movesToDoneHead();
     void markBlockDone_keepsOnlyTheRecentBlocks();
     void markBlockDone_keepsEverySentRange();
@@ -2163,6 +2165,29 @@ void tst_UpDownClient::setUploadFileID_keepsBlockRequests()
 
     client.setUploadFileID(nullptr);
     theApp.sharedFileList = nullptr;
+}
+
+// #68: a cancelled download still uploading left clients pointing at freed memory;
+// the client's own delete then crashed in removeUploadingClient().
+void tst_UpDownClient::deletedUploadFile_releasesClients()
+{
+    auto client = std::make_unique<UpDownClient>();
+
+    auto* known = new KnownFile;
+    known->setFileSize(EMFileSize(PARTSIZE));
+    client->setUploadFileID(known);
+    QCOMPARE(client->uploadFile(), known);
+    delete known;
+    QVERIFY(client->uploadFile() == nullptr);
+
+    auto* part = new PartFile;
+    part->setFileSize(EMFileSize(PARTSIZE));
+    client->setUploadFileID(part);
+    QCOMPARE(part->uploadingClientCount(), 1);
+    delete part;
+    QVERIFY(client->uploadFile() == nullptr);
+
+    client.reset();   // must not touch either file
 }
 
 // The done list grew by a block per 180 KiB for the whole slot, and every request

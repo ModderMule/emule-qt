@@ -1174,6 +1174,7 @@ SharedFileRow sharedRowFromCbor(const QCborMap& m)
     row.ownComment        = m.value(QStringLiteral("ownComment")).toBool();
     row.userRating        = static_cast<int>(m.value(QStringLiteral("userRating")).toInteger());
     row.containerSuspect  = m.value(QStringLiteral("containerSuspect")).toBool();
+    row.containerMislabelled = m.value(QStringLiteral("containerMislabelled")).toBool();
     row.containerExpected = m.value(QStringLiteral("containerExpected")).toString();
     row.containerActual   = m.value(QStringLiteral("containerActual")).toString();
     row.upPriority        = static_cast<int>(m.value(QStringLiteral("upPriority")).toInteger());
@@ -1354,6 +1355,7 @@ void SharedFilesPanel::requestBrowseDirectory(const QString& dirPath)
             row.shareChecked    = m.value(QStringLiteral("shared")).toBool();
             row.shareToggleable = m.value(QStringLiteral("canToggle")).toBool();
             row.containerSuspect  = m.value(QStringLiteral("containerSuspect")).toBool();
+            row.containerMislabelled = m.value(QStringLiteral("containerMislabelled")).toBool();
             row.containerExpected = m.value(QStringLiteral("containerExpected")).toString();
             row.containerActual   = m.value(QStringLiteral("containerActual")).toString();
             row.path            = dirPath;

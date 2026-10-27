@@ -399,10 +399,15 @@ void tst_FakeFileDetector::header_mismatchAndMasquerade()
     QVERIFY(v.has(FakeReason::ArchiveMasquerade));
     QVERIFY(!v.has(FakeReason::ExecutableMasquerade));
 
-    // Another media container: wrong, but no masquerade
+    // Another video container: only the name is wrong, so it weighs little
     in.container = checkHead(QByteArray("\x1A\x45\xDF\xA3\x00\x00\x00\x00\x00\x00\x00\x00", 12), in.name);
     v = assess(in);
-    QCOMPARE(v.score, 45);
+    QVERIFY(v.reasons.contains({FakeReason::HeaderExtensionMismatch, 15}));
+    QCOMPARE(v.score, 15);
+
+    // Sound only in a .avi: not the media it claims
+    in.container = checkHead(QByteArray("RIFF\x00\x00\x00\x00" "WAVE", 12), in.name);
+    QCOMPARE(assess(in).score, 45);
 
     in.container = checkHead(QByteArray("RIFF\x00\x00\x00\x00" "AVI ", 12), in.name);
     QCOMPARE(assess(in).score, 0);

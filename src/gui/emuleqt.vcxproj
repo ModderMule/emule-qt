@@ -639,6 +639,7 @@
     <None Include="..\..\resources\icons\Proxy.ico" />
     <None Include="..\..\resources\icons\Rating.ico" />
     <None Include="..\..\resources\icons\RatingBad.ico" />
+    <None Include="..\..\resources\icons\RatingWarn.ico" />
     <None Include="..\..\resources\icons\Records.ico" />
     <None Include="..\..\resources\icons\Rename.ico" />
     <None Include="..\..\resources\icons\Scheduler.ico" />

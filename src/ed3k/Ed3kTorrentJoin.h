@@ -18,7 +18,9 @@
 ///   records of the infohashes (btih/btmh, relation SET) name sets; at most 3 are tried.
 /// - Member downloads: ed3k blocks are written into the member files; each piece they
 ///   complete goes to libtorrent (add_piece), which hashes it as from a peer.
-/// - The join is saved in Config/ed3k/torrent/<id>.join (debounced, and at stop).
+/// - The join is saved in Config/ed3k/torrent/<id>.join (debounced, and at stop). The
+///   manifests and info dictionary fetched or made, and the verified members, are kept
+///   under Config/ed3k/torrent/<id>/ and shared again after a restart.
 
 #ifdef EMULE_HAVE_BITTORRENT
 
@@ -73,12 +75,16 @@ public:
     void addManifestSource(const QString& id, const ::ed3k::Source& source);
     /// The manifest TORRENT_COMPLETE gave (shared); empty before.
     [[nodiscard]] QByteArray completedManifest(const QString& id) const;
+    /// ed3k blocks written into @p member (tests: libtorrent's pieces are skipped).
+    [[nodiscard]] int receivedBlocks(const QString& id, int member) const;
 
 public slots:
     void onTorrentAdded(const QString& id);
     void onMetadataReceived(const QString& id);
     void onTorrentRemoved(const QString& id);
     void onPieceResult(const QString& id, int piece, bool passed);
+    /// libtorrent's resume check is done: its pieces are skipped on ed3k.
+    void onTorrentChecked(const QString& id);
 
 signals:
     /// A member verified under its root and is shared.
@@ -94,7 +100,11 @@ protected:
     void onBlobFetched(const QString& owner, int member, const ::ed3k::Root& root, const QByteArray& data) override;
     void onDownloadHashes(const Download& d, const ::ed3k::Bytes& blob) override;
     [[nodiscard]] std::optional<QByteArray> readShared(const Shared& s, std::uint64_t offset, std::uint32_t len) const override;
-    void onOtherEvent(const ::ed3k::Event& event) override;
+    // was: onOtherEvent for the AliasFound of the set searches; now the base's
+    [[nodiscard]] bool wantsSet(const QString& owner) const override;
+    void onSetManifest(const QString& owner, const ::ed3k::Root& root, const QByteArray& data) override;
+    [[nodiscard]] bool keepsOwner(const QString& owner) const override;
+    [[nodiscard]] QString keptMemberPath(const QString& owner, int member) const override;
     [[nodiscard]] bool hasOwner(const QString& owner) const override;
     void saveOwner(const QString& owner) override;
 
@@ -125,8 +135,7 @@ private:
     void startDownloads(const QString& id);
     /// §4.2: ALIAS searches of the infohashes.
     void startSetSearch(const QString& id);
-    /// The next set a search names: its manifest fetched. false: none left.
-    bool tryNextSet(const QString& id);
+    // was: tryNextSet, the next set a search names; now the base's
     /// Pieces an ed3k block completed: read and handed to libtorrent.
     void feedPieces(const QString& id, const std::vector<std::uint64_t>& pieces);
     void reportProblem(const QString& id, int member, const QString& message);
@@ -134,14 +143,15 @@ private:
     [[nodiscard]] std::optional<QByteArray> readMember(const Join& j, int member, std::uint64_t offset, std::uint32_t len) const;
     [[nodiscard]] QString name(const QString& id) const;
     void saveJoin(const QString& id);
+    /// Every piece over [begin, end) of the piece space is in libtorrent (Join::have).
+    [[nodiscard]] bool piecesHad(const Join& j, std::uint64_t begin, std::uint64_t end) const;
     [[nodiscard]] QString torrentDir() const;
 
     bt::BtSession& m_bt;
     std::map<QString, std::unique_ptr<Join>> m_joins;
     /// torrents with no join (private, extension off, complete before ed3k saw them)
     QSet<QString> m_noJoin;
-    /// alias searches → torrent id
-    std::map<std::uint32_t, QString> m_setSearches;
+    // was: alias searches → torrent id; now the base's set searches
     /// the sinks' way back here; closed in the destructor
     std::shared_ptr<Gate> m_gate;
     quint64 m_hashGeneration = 0;

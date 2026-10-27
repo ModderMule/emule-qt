@@ -5,12 +5,15 @@
 ///
 /// Two independent signals share the cell. The rating mark is what other users
 /// said about the file; the red exclamation is what its own bytes say, and only
-/// the first is an opinion the "indicate ratings" preference governs.
+/// the first is an opinion the "indicate ratings" preference governs. That one is
+/// yellow when only the extension is wrong (an MP4 named .avi), red otherwise.
 
 // ratingLabel() -- MFC GetRateString in full -- lives in core, where the web UI can
 // name the same six values too. Pulled in here so the marks header stays the one
 // include a list needs.
 #include "utils/OtherFunctions.h"
+
+#include "media/ContainerSniffer.h"
 
 #include <QIcon>
 #include <QString>
@@ -47,8 +50,16 @@ enum class FileMark : int {
 /// Returns None when the preference is off, so callers need not check it.
 [[nodiscard]] FileMark ratingMark(bool hasComment, int userRating);
 
-/// The whole of column 0: file-type icon, then the red "not what it claims"
-/// mark, then the rating mark.
+/// The container mark from the two flags a row carries over IPC.
+[[nodiscard]] constexpr ContainerMark containerMark(bool suspect, bool mislabelled)
+{
+    if (!suspect)
+        return ContainerMark::None;
+    return mislabelled ? ContainerMark::Mislabelled : ContainerMark::Fake;
+}
+
+/// The whole of column 0: file-type icon, then the red (or yellow) "not what it
+/// claims" mark, then the rating mark.
 ///
 /// MFC draws these one after another in DrawFileItem; composing a single pixmap
 /// gets the same result through the plain QStyledItemDelegate, which is what the
@@ -68,14 +79,14 @@ enum class FileMark : int {
 /// names line up with rows that have a badge (as the country flag slot does).
 inline constexpr QLatin1StringView kEmptyBadge{"-"};
 
-[[nodiscard]] QIcon fileMarksIcon(const QString& fileType, bool containerSuspect,
+[[nodiscard]] QIcon fileMarksIcon(const QString& fileType, ContainerMark container,
                                   bool ownComment, FileMark mark,
                                   const QString& badgePath = {});
 
 /// Same, over an arbitrary base icon. @p baseKey names the base for the composite
 /// cache and must differ from every file type.
 [[nodiscard]] QIcon fileMarksIcon(const QIcon& base, const QString& baseKey,
-                                  bool containerSuspect, bool ownComment, FileMark mark,
+                                  ContainerMark container, bool ownComment, FileMark mark,
                                   const QString& badgePath = {});
 
 /// The lines that explain those marks, for the lists that draw them. Empty when the
@@ -86,7 +97,7 @@ inline constexpr QLatin1StringView kEmptyBadge{"-"};
 /// worse than no mark: the download list and the shared list draw the same cell and
 /// must read the same. The container sentence itself comes from core
 /// (containerWarningText), which the web listings use too.
-[[nodiscard]] QString fileMarksTooltip(const QString& fileName, bool containerSuspect,
+[[nodiscard]] QString fileMarksTooltip(const QString& fileName, ContainerMark container,
                                        const QString& containerActual,
                                        bool hasComment, int userRating);
 

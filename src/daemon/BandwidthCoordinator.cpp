@@ -5,6 +5,7 @@
 #include "queue/UsenetQueue.h"
 #include "UsenetSession.h"
 #include "transfer/DownloadQueue.h"
+#include "transfer/UploadBandwidthThrottler.h"
 #include "transfer/UploadQueue.h"
 #include "utils/Log.h"
 #include "utils/Opcodes.h"
@@ -13,8 +14,13 @@
 #include "BtSession.h"
 #endif
 
+#ifdef EMULE_HAVE_ED3K
+#include "Ed3kSession.h"
+#endif
+
 #include <algorithm>
 #include <cstdlib>
+#include <limits>
 
 namespace eMule {
 
@@ -80,6 +86,13 @@ void BandwidthCoordinator::stop()
     if (m_bt)
         m_bt->setRateLimits(thePrefs.btMaxDownloadKb(), thePrefs.btMaxUploadKb());
 #endif
+#ifdef EMULE_HAVE_ED3K
+    if (m_ed3k) {
+        // the global limits, unshared (0 = none)
+        const uint32 line = UploadQueue::lineCapKB();
+        m_ed3k->setLimits(line == UNLIMITED ? 0 : quint64(line) * 1024, quint64(thePrefs.maxDownload()) * 1024);
+    }
+#endif
     m_downState = {};
     m_upState = {};
 }
@@ -125,6 +138,15 @@ void BandwidthCoordinator::tick()
     }
 #endif
 
+    // ed3k joins eD2K's demand; its upload is in eD2K's rate already (the throttler counts it)
+    const bool ed3kRunning = sampleEd3k();
+    if (ed3kRunning) {
+        ed2kDown.active = ed2kDown.active || m_ed3kDownRate > 0;
+        ed2kDown.rateBytesPerSec += m_ed3kDownRate;
+        ed2kDown.recentBytesPerSec += m_ed3kDownRate;
+        ed2kUp.active = ed2kUp.active || m_ed3kUpRate > 0;
+    }
+
     // -- Download ---------------------------------------------------------------
     Snapshot s;
     const uint32 maxDown = thePrefs.maxDownload();
@@ -132,8 +154,15 @@ void BandwidthCoordinator::tick()
     const DownloadPlan down = planDownload(maxDown, thePrefs.usenetDownloadSharePercent(),
                                            thePrefs.btDownloadSharePercent(), ed2kDown,
                                            usenetDown, btDown, &m_downState);
-    thePrefs.setEd2kDownloadBudget(down.ed2kBudgetKb);
-    s.ed2kDownKb = down.ed2kBudgetKb >= 0 ? down.ed2kBudgetKb : maxDown;
+    // replaced: eD2K yields what ed3k receives of their share
+    // thePrefs.setEd2kDownloadBudget(down.ed2kBudgetKb);
+    // s.ed2kDownKb = down.ed2kBudgetKb >= 0 ? down.ed2kBudgetKb : maxDown;
+    const qint64 emuleDownKb = down.ed2kBudgetKb >= 0 ? down.ed2kBudgetKb : qint64(maxDown);   // 0 = none
+    qint64 ed2kBudgetKb = down.ed2kBudgetKb;
+    if (ed3kRunning && emuleDownKb > 0 && m_ed3kDownRate > 0)
+        ed2kBudgetKb = std::max<qint64>(1, emuleDownKb - m_ed3kDownRate / 1024);
+    thePrefs.setEd2kDownloadBudget(ed2kBudgetKb);
+    s.ed2kDownKb = ed2kBudgetKb >= 0 ? ed2kBudgetKb : maxDown;
     if (usenetRunning) {
         // its 0 is unlimited, so it always gets the number
         usenetQueue->setRateLimit(down.usenetCapKb * 1024);
@@ -155,6 +184,16 @@ void BandwidthCoordinator::tick()
         m_bt->setRateLimits(static_cast<quint32>(s.btDownKb), static_cast<quint32>(s.btUpKb));
 #endif
 
+    // ed3k: all of eMule's share; the throttler and eD2K's budget keep the sum inside it
+    s.ed3kDownKb = emuleDownKb;
+    s.ed3kUpKb = s.ed2kUpKb;
+    s.ed3kDownRate = ed3kRunning ? m_ed3kDownRate : 0;
+    s.ed3kUpRate = ed3kRunning ? m_ed3kUpRate : 0;
+#ifdef EMULE_HAVE_ED3K
+    if (m_ed3k)
+        m_ed3k->setLimits(quint64(s.ed3kUpKb) * 1024, quint64(s.ed3kDownKb) * 1024);
+#endif
+
     const auto held = [](const EngineDemand& d, qint64 capKb, qint64 lineKb) {
         return d.active && lineKb > 0 && capKb < lineKb;
     };
@@ -164,6 +203,39 @@ void BandwidthCoordinator::tick()
 
     m_snapshot = s;
     logChange();
+}
+
+bool BandwidthCoordinator::sampleEd3k()
+{
+#ifdef EMULE_HAVE_ED3K
+    if (!m_ed3k || !m_ed3k->isRunning()) {
+        m_ed3kUpRate = m_ed3kDownRate = 0;
+        return false;
+    }
+    // cumulative over restarts; a dead engine may lose its last counts: never negative
+    const ed3k::Ed3kTraffic t = m_ed3k->traffic();
+    const quint64 sent = t.sent >= m_ed3kSent ? t.sent - m_ed3kSent : 0;
+    const quint64 recv = t.recv >= m_ed3kRecv ? t.recv - m_ed3kRecv : 0;
+    m_ed3kSent = t.sent;
+    m_ed3kRecv = t.recv;
+    if (!m_ed3kClock.isValid()) {
+        m_ed3kClock.start();   // the first sample is the baseline
+        return true;
+    }
+    const qint64 ms = m_ed3kClock.restart();
+    // past the throttler's loop: in the upload rate, off eD2K's budget
+    if (sent > 0 && theApp.uploadBandwidthThrottler)
+        theApp.uploadBandwidthThrottler->noteBytesSentOutsideTheLoop(
+            static_cast<uint32>(std::min<quint64>(sent, std::numeric_limits<uint32>::max())));
+    if (ms > 0) {
+        // half the last value: a 500 ms tick alone is noisy
+        m_ed3kUpRate = (m_ed3kUpRate + qint64(sent * 1000 / quint64(ms))) / 2;
+        m_ed3kDownRate = (m_ed3kDownRate + qint64(recv * 1000 / quint64(ms))) / 2;
+    }
+    return true;
+#else
+    return false;
+#endif
 }
 
 void BandwidthCoordinator::logChange()

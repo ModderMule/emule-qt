@@ -376,9 +376,20 @@ endif()
 if(EMULE_ED3K)
     emule_add_test(tst_Ed3kSession FOLDER "Ed3k" LIBRARIES eMule::Ed3k)
     set_tests_properties(tst_Ed3kSession PROPERTIES TIMEOUT 180)
+    # the daemon side: GetEd3kStatus (Ed3kBridge) and BandwidthCoordinator with the node
+    emule_add_test(tst_Ed3kBridge FOLDER "Ed3k"
+        SOURCES tst_Ed3kBridge.cpp
+                "${CMAKE_SOURCE_DIR}/src/daemon/Ed3kBridge.cpp"
+                "${CMAKE_SOURCE_DIR}/src/daemon/BandwidthCoordinator.cpp"
+        LIBRARIES eMule::Ed3k eMule::Ipc)
+    target_include_directories(tst_Ed3kBridge PRIVATE "${CMAKE_SOURCE_DIR}/src/daemon")
+    set_tests_properties(tst_Ed3kBridge PROPERTIES TIMEOUT 180)
     # usenet join: a fake news server, a fake queue, two nodes on loopback
     emule_add_test(tst_Ed3kUsenetJoin FOLDER "Ed3k" LIBRARIES eMule::Ed3k eMule::Usenet)
     set_tests_properties(tst_Ed3kUsenetJoin PROPERTIES TIMEOUT 180)
+    # eMule shared files over ed3k: a fake share list, two nodes on loopback
+    emule_add_test(tst_Ed3kShared FOLDER "Ed3k" LIBRARIES eMule::Ed3k)
+    set_tests_properties(tst_Ed3kShared PROPERTIES TIMEOUT 180)
     if(TARGET eMule::Bt)
         emule_add_test(tst_Ed3kTorrentJoin FOLDER "Ed3k" LIBRARIES eMule::Ed3k eMule::Bt)
         set_tests_properties(tst_Ed3kTorrentJoin PROPERTIES TIMEOUT 240)
