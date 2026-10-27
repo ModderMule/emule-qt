@@ -212,9 +212,13 @@ MCP tools: `torrents_list`, `torrents_get`, `torrents_add_magnet`, `torrents_set
 - qmake: `src/bt/bt.pro` (a subdir of `eMuleQt.pro`, needs an installed libtorrent); the daemon
   and GUI `.pro` files define `EMULE_HAVE_BITTORRENT`, `ed3k.pro` too (the torrent join). The
   qmake `tests/tests.pro` is a single-binary listing that does not link; the tests are CMake's.
-- Visual Studio: `src/bt/emulebt.vcxproj`, `tests/vs/tst_BtSmoke.vcxproj`,
-  `tests/vs/tst_BtLocalSwarm.vcxproj`; the libtorrent defines there are a guess of what the
-  vcpkg port builds with and are not checked on Windows yet.
+- Visual Studio: `src/bt/emulebt.vcxproj`; the tests under the `Tests\BitTorrent` folder of
+  `src/eMuleQt.sln`: `tst_BtSmoke`, `tst_BtLocalSwarm`, `tst_Ed3kTorrentJoin` (needs
+  `EmuleEd3k`), `tst_TorrentLinks`, `tst_TorrentListModel`, `tst_TorrentDetailsGui`. They come
+  from `TEST_EXTRAS` in `scripts/generate_test_vcxprojs.py`; after a change there run
+  `python scripts/generate_test_vcxprojs.py --only <tests>`, which adds them to the `.sln`
+  in place. The libtorrent defines (`EmuleBtDefines` in `QtVersion.props`) are a guess of
+  what the vcpkg port builds with and are not checked on Windows yet.
 
 ## The join door (BtJoinDiskIo)
 

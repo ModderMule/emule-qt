@@ -36,5 +36,10 @@ if(TARGET eMule::Bt)
     target_link_libraries(emuleed3k PUBLIC eMule::Bt)
 endif()
 
+# ed3k.hpp's templates push Ed3kSession.cpp over MSVC's 2^16 sections (C1128)
+if(MSVC)
+    target_compile_options(emuleed3k PRIVATE /bigobj)
+endif()
+
 set_target_properties(emuleed3k PROPERTIES FOLDER "Libraries")
 source_group(TREE "${CMAKE_CURRENT_SOURCE_DIR}" FILES ${ED3K_SOURCES})

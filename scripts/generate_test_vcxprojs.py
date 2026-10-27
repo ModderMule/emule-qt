@@ -1,7 +1,13 @@
 #!/usr/bin/env python3
-"""Generate per-test Visual Studio vcxproj files and update the solution."""
+"""Generate per-test Visual Studio vcxproj files and update the solution.
 
+No args: rewrites every tests/vs project and the whole src/eMuleQt.sln.
+--only tst_A tst_B: writes just those projects and adds them to the .sln in place.
+"""
+
+import argparse
 import os
+from dataclasses import dataclass, replace
 import uuid
 import glob
 import textwrap
@@ -77,10 +83,10 @@ VCXPROJ_TEMPLATE = textwrap.dedent("""\
       <Import Project="$(QtMsBuild)\\qt_defaults.props" Condition="Exists('$(QtMsBuild)\\qt_defaults.props')" />
       <Import Project="..\\..\\QtVersion.props" />
       <PropertyGroup Label="QtSettings" Condition="'$(Configuration)|$(Platform)'=='Release|x64'">
-        <QtModules>core;network;testlib;gui;multimedia;websockets;httpserver;concurrent;sql</QtModules>
+        <QtModules>{qt_modules}</QtModules>
       </PropertyGroup>
       <PropertyGroup Label="QtSettings" Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">
-        <QtModules>core;network;testlib;gui;multimedia;websockets;httpserver;concurrent;sql</QtModules>
+        <QtModules>{qt_modules}</QtModules>
       </PropertyGroup>
       <Target Name="QtMsBuildNotFound" BeforeTargets="CustomBuild;ClCompile" Condition="!Exists('$(QtMsBuild)\\qt.targets') OR !Exists('$(QtMsBuild)\\Qt.props')">
         <Message Importance="High" Text="QtMsBuild: could not locate qt.targets, qt.props; project may not build correctly." />
@@ -108,7 +114,7 @@ VCXPROJ_TEMPLATE = textwrap.dedent("""\
       </PropertyGroup>
       <ItemDefinitionGroup Condition="'$(Configuration)|$(Platform)'=='Release|x64'">
         <ClCompile>
-          <AdditionalIncludeDirectories>..;..\\..\\src\\core;..\\..\\src\\ipc;..\\..\\src\\usenet;..\\..\\src\\indexer;..\\..\\src\\vcpkg_installed\\x64-windows\\include;..\\..\\src\\vcpkg_installed\\x64-windows\\include\\miniupnpc;release;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
+          <AdditionalIncludeDirectories>{includes}..;..\\..\\src\\core;..\\..\\src\\ipc;..\\..\\src\\usenet;..\\..\\src\\indexer;..\\..\\src\\vcpkg_installed\\x64-windows\\include;..\\..\\src\\vcpkg_installed\\x64-windows\\include\\miniupnpc;release;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
           <AdditionalOptions>-Zc:rvalueCast -Zc:inline -Zc:strictStrings -Zc:throwingNew -permissive- -Zc:__cplusplus -Zc:externConstexpr -utf-8 -w34100 -w34189 -w44996 -w44456 -w44457 -w44458 %(AdditionalOptions)</AdditionalOptions>
           <AssemblerListingLocation>release\\</AssemblerListingLocation>
           <BrowseInformation>false</BrowseInformation>
@@ -118,7 +124,7 @@ VCXPROJ_TEMPLATE = textwrap.dedent("""\
           <LanguageStandard>stdcpplatest</LanguageStandard>
           <ObjectFileName>release\\</ObjectFileName>
           <Optimization>MaxSpeed</Optimization>
-          <PreprocessorDefinitions>$(EmuleQuicDefines)_CONSOLE;UNICODE;_UNICODE;WIN32;_ENABLE_EXTENDED_ALIGNED_STORAGE;WIN64;NOMINMAX;WIN32_LEAN_AND_MEAN;NDEBUG;QT_NO_DEBUG;EMULE_TEST_DATA_DIR=../../tests/data/;EMULE_PROJECT_DATA_DIR=../../data/;%(PreprocessorDefinitions)</PreprocessorDefinitions>
+          <PreprocessorDefinitions>{defines}$(EmuleQuicDefines)_CONSOLE;UNICODE;_UNICODE;WIN32;_ENABLE_EXTENDED_ALIGNED_STORAGE;WIN64;NOMINMAX;WIN32_LEAN_AND_MEAN;NDEBUG;QT_NO_DEBUG;EMULE_TEST_DATA_DIR=../../tests/data/;EMULE_PROJECT_DATA_DIR=../../data/;%(PreprocessorDefinitions)</PreprocessorDefinitions>
           <PreprocessToFile>false</PreprocessToFile>
           <ProgramDataBaseFileName>
           </ProgramDataBaseFileName>
@@ -130,7 +136,7 @@ VCXPROJ_TEMPLATE = textwrap.dedent("""\
           <MultiProcessorCompilation>true</MultiProcessorCompilation>
         </ClCompile>
         <Link>
-          <AdditionalDependencies>emuleusenet.lib;emuleindexer.lib;emulecore.lib;emuleipc.lib;$(EmuleQuicLibs)libssl.lib;libcrypto.lib;z.lib;miniupnpc.lib;yaml-cpp.lib;archive.lib;maxminddb.lib;ws2_32.lib;iphlpapi.lib;$(QTDIR)\\lib\\Qt6HttpServer.lib;%(AdditionalDependencies)</AdditionalDependencies>
+          <AdditionalDependencies>{libs}emuleusenet.lib;emuleindexer.lib;emulecore.lib;emuleipc.lib;$(EmuleQuicLibs)libssl.lib;libcrypto.lib;z.lib;miniupnpc.lib;yaml-cpp.lib;archive.lib;maxminddb.lib;ws2_32.lib;iphlpapi.lib;$(QTDIR)\\lib\\Qt6HttpServer.lib;%(AdditionalDependencies)</AdditionalDependencies>
           <AdditionalLibraryDirectories>..\\..\\bin\\$(Configuration);..\\..\\src\\vcpkg_installed\\x64-windows\\lib;%(AdditionalLibraryDirectories)</AdditionalLibraryDirectories>
           <AdditionalOptions>"/MANIFESTDEPENDENCY:type='win32' name='Microsoft.Windows.Common-Controls' version='6.0.0.0' publicKeyToken='6595b64144ccf1df' language='*' processorArchitecture='*'" %(AdditionalOptions)</AdditionalOptions>
           <DataExecutionPrevention>true</DataExecutionPrevention>
@@ -150,7 +156,7 @@ VCXPROJ_TEMPLATE = textwrap.dedent("""\
           <WarningLevel>0</WarningLevel>
         </Midl>
         <ResourceCompile>
-          <PreprocessorDefinitions>$(EmuleQuicDefines)_CONSOLE;UNICODE;_UNICODE;WIN32;_ENABLE_EXTENDED_ALIGNED_STORAGE;WIN64;NOMINMAX;WIN32_LEAN_AND_MEAN;NDEBUG;QT_NO_DEBUG;%(PreprocessorDefinitions)</PreprocessorDefinitions>
+          <PreprocessorDefinitions>{defines}$(EmuleQuicDefines)_CONSOLE;UNICODE;_UNICODE;WIN32;_ENABLE_EXTENDED_ALIGNED_STORAGE;WIN64;NOMINMAX;WIN32_LEAN_AND_MEAN;NDEBUG;QT_NO_DEBUG;%(PreprocessorDefinitions)</PreprocessorDefinitions>
         </ResourceCompile>
         <QtMoc>
           <CompilerFlavor>msvc</CompilerFlavor>
@@ -163,7 +169,7 @@ VCXPROJ_TEMPLATE = textwrap.dedent("""\
       </ItemDefinitionGroup>
       <ItemDefinitionGroup Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">
         <ClCompile>
-          <AdditionalIncludeDirectories>..;..\\..\\src\\core;..\\..\\src\\ipc;..\\..\\src\\usenet;..\\..\\src\\indexer;..\\..\\src\\vcpkg_installed\\x64-windows\\include;..\\..\\src\\vcpkg_installed\\x64-windows\\include\\miniupnpc;debug;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
+          <AdditionalIncludeDirectories>{includes}..;..\\..\\src\\core;..\\..\\src\\ipc;..\\..\\src\\usenet;..\\..\\src\\indexer;..\\..\\src\\vcpkg_installed\\x64-windows\\include;..\\..\\src\\vcpkg_installed\\x64-windows\\include\\miniupnpc;debug;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
           <AdditionalOptions>-Zc:rvalueCast -Zc:inline -Zc:strictStrings -Zc:throwingNew -permissive- -Zc:__cplusplus -Zc:externConstexpr -utf-8 -w34100 -w34189 -w44996 -w44456 -w44457 -w44458 %(AdditionalOptions)</AdditionalOptions>
           <AssemblerListingLocation>debug\\</AssemblerListingLocation>
           <BrowseInformation>false</BrowseInformation>
@@ -173,7 +179,7 @@ VCXPROJ_TEMPLATE = textwrap.dedent("""\
           <LanguageStandard>stdcpplatest</LanguageStandard>
           <ObjectFileName>debug\\</ObjectFileName>
           <Optimization>Disabled</Optimization>
-          <PreprocessorDefinitions>$(EmuleQuicDefines)_CONSOLE;UNICODE;_UNICODE;WIN32;_ENABLE_EXTENDED_ALIGNED_STORAGE;WIN64;NOMINMAX;WIN32_LEAN_AND_MEAN;EMULE_TEST_DATA_DIR=../../tests/data/;EMULE_PROJECT_DATA_DIR=../../data/;_DEBUG;%(PreprocessorDefinitions)</PreprocessorDefinitions>
+          <PreprocessorDefinitions>{defines}$(EmuleQuicDefines)_CONSOLE;UNICODE;_UNICODE;WIN32;_ENABLE_EXTENDED_ALIGNED_STORAGE;WIN64;NOMINMAX;WIN32_LEAN_AND_MEAN;EMULE_TEST_DATA_DIR=../../tests/data/;EMULE_PROJECT_DATA_DIR=../../data/;_DEBUG;%(PreprocessorDefinitions)</PreprocessorDefinitions>
           <PreprocessToFile>false</PreprocessToFile>
           <RuntimeLibrary>MultiThreadedDebugDLL</RuntimeLibrary>
           <SuppressStartupBanner>true</SuppressStartupBanner>
@@ -183,7 +189,7 @@ VCXPROJ_TEMPLATE = textwrap.dedent("""\
           <MultiProcessorCompilation>true</MultiProcessorCompilation>
         </ClCompile>
         <Link>
-          <AdditionalDependencies>emuleusenet.lib;emuleindexer.lib;emulecore.lib;emuleipc.lib;$(EmuleQuicLibs)libssl.lib;libcrypto.lib;zd.lib;miniupnpc.lib;yaml-cpp.lib;archive.lib;maxminddb.lib;ws2_32.lib;iphlpapi.lib;$(QTDIR)\\lib\\Qt6HttpServerd.lib;%(AdditionalDependencies)</AdditionalDependencies>
+          <AdditionalDependencies>{libs}emuleusenet.lib;emuleindexer.lib;emulecore.lib;emuleipc.lib;$(EmuleQuicLibs)libssl.lib;libcrypto.lib;zd.lib;miniupnpc.lib;yaml-cpp.lib;archive.lib;maxminddb.lib;ws2_32.lib;iphlpapi.lib;$(QTDIR)\\lib\\Qt6HttpServerd.lib;%(AdditionalDependencies)</AdditionalDependencies>
           <AdditionalLibraryDirectories>..\\..\\bin\\$(Configuration);..\\..\\src\\vcpkg_installed\\x64-windows\\debug\\lib;..\\..\\src\\vcpkg_installed\\x64-windows\\lib;%(AdditionalLibraryDirectories)</AdditionalLibraryDirectories>
           <AdditionalOptions>"/MANIFESTDEPENDENCY:type='win32' name='Microsoft.Windows.Common-Controls' version='6.0.0.0' publicKeyToken='6595b64144ccf1df' language='*' processorArchitecture='*'" %(AdditionalOptions)</AdditionalOptions>
           <DataExecutionPrevention>true</DataExecutionPrevention>
@@ -200,7 +206,7 @@ VCXPROJ_TEMPLATE = textwrap.dedent("""\
           <WarningLevel>0</WarningLevel>
         </Midl>
         <ResourceCompile>
-          <PreprocessorDefinitions>$(EmuleQuicDefines)_CONSOLE;UNICODE;_UNICODE;WIN32;_ENABLE_EXTENDED_ALIGNED_STORAGE;WIN64;NOMINMAX;WIN32_LEAN_AND_MEAN;_DEBUG;%(PreprocessorDefinitions)</PreprocessorDefinitions>
+          <PreprocessorDefinitions>{defines}$(EmuleQuicDefines)_CONSOLE;UNICODE;_UNICODE;WIN32;_ENABLE_EXTENDED_ALIGNED_STORAGE;WIN64;NOMINMAX;WIN32_LEAN_AND_MEAN;_DEBUG;%(PreprocessorDefinitions)</PreprocessorDefinitions>
         </ResourceCompile>
         <QtMoc>
           <CompilerFlavor>msvc</CompilerFlavor>
@@ -212,7 +218,7 @@ VCXPROJ_TEMPLATE = textwrap.dedent("""\
         </QtMoc>
       </ItemDefinitionGroup>
       <ItemGroup>
-        <ClCompile Include="..\\{name}.cpp" />
+        <ClCompile Include="..\\{name}.cpp" />{sources}
       </ItemGroup>
       <ItemGroup>
         <CustomBuild Include="..\\{name}.cpp.moc.cbt">
@@ -250,6 +256,96 @@ VCXPROJ_TEMPLATE = textwrap.dedent("""\
 """)
 
 
+DEFAULT_QT_MODULES = "core;network;testlib;gui;multimedia;websockets;httpserver;concurrent;sql"
+
+
+@dataclass(frozen=True)
+class TestExtras:
+    """What a test needs beyond the default template. Mirrors its tests/CMakeLists.txt entry.
+    Paths are repo-relative with '/'."""
+    includes: tuple[str, ...] = ()
+    defines: str = ""              # MSBuild macros/defines, ';'-terminated
+    libs: str = ""                 # ';'-terminated
+    sources: tuple[str, ...] = ()  # extra .cpp compiled into the test; Q_OBJECT headers moc'd
+    widgets: bool = False
+    deps: tuple[str, ...] = ()     # extra project GUIDs the test depends on in the .sln
+    folder: str | None = None      # solution sub-folder under Tests
+
+
+# BitTorrent (libtorrent) and the ed3k torrent join. $(EmuleBt*) / $(EmuleEd3k*) come from
+# QtVersion.props, the same switches emulecored uses.
+BT_INCLUDES = ("src/bt",)
+BT_DEFINES = "$(EmuleBtDefines)"
+BT_LIBS = "$(EmuleBtLibs)"
+GUI_INCLUDES = ("src/gui", "tests/stubs")
+
+TORRENT_LIST_SOURCES = (
+    "src/gui/controls/TorrentListModel.cpp",
+    "src/gui/controls/TorrentProgressDelegate.cpp",
+    "src/gui/controls/BarShader.cpp",
+)
+TORRENT_DETAILS_SOURCES = (
+    "src/gui/controls/TorrentFilterProxy.cpp",
+    "src/gui/controls/TorrentListModel.cpp",
+    "src/gui/controls/TorrentListsPane.cpp",
+    "src/gui/controls/TorrentPieceGrid.cpp",
+    "src/gui/dialogs/TorrentDetailsDialog.cpp",
+    "src/gui/dialogs/DetailDialog.cpp",
+    "src/gui/dialogs/ClientDetailDialog.cpp",
+    "src/gui/utils/IpcFeedback.cpp",
+    "src/gui/utils/CountryFlags.cpp",
+    "src/gui/controls/ContentScrollArea.cpp",
+    "src/gui/utils/Appearance.cpp",
+    "src/gui/utils/DialogSizing.cpp",
+    "src/gui/utils/MenuUtils.cpp",
+    "src/gui/utils/PanelPoller.cpp",
+    "src/gui/utils/StatusBarNotifier.cpp",
+    "src/gui/utils/TorrentLinks.cpp",
+    "src/gui/app/UiState.cpp",
+    "src/gui/app/IpcClient.cpp",
+)
+
+# ed3k tests: need EmuleEd3k (libs/packmule + cargo), like emuleed3k itself. emuleed3k
+# links emulebt (when on) and the usenet join, so the same libs as emulecored.
+ED3K_EXTRAS = TestExtras(
+    includes=BT_INCLUDES + ("src/ed3k", "libs/packmule/crates/packmule-ffi/include"),
+    defines=BT_DEFINES + "$(EmuleEd3kDefines)",
+    libs=BT_LIBS + "$(EmuleEd3kLibs)rapidyenc.lib;par2-turbo.lib;gf16.lib;hasher.lib;",
+    deps=(EMULEBT_GUID, EMULEED3K_GUID), folder="Ed3k")
+
+TEST_EXTRAS: dict[str, TestExtras] = {
+    "tst_BtSmoke": TestExtras(includes=BT_INCLUDES, defines=BT_DEFINES, libs=BT_LIBS,
+                              deps=(EMULEBT_GUID,), folder="BitTorrent"),
+    "tst_BtLocalSwarm": TestExtras(includes=BT_INCLUDES, defines=BT_DEFINES, libs=BT_LIBS,
+                                   deps=(EMULEBT_GUID,), folder="BitTorrent"),
+    "tst_Ed3kTorrentJoin": replace(ED3K_EXTRAS, folder="BitTorrent"),
+    "tst_Ed3kSession": ED3K_EXTRAS,
+    "tst_Ed3kUsenetJoin": ED3K_EXTRAS,
+    "tst_TorrentLinks": TestExtras(includes=GUI_INCLUDES, defines=BT_DEFINES, widgets=True,
+                                   sources=("src/gui/utils/TorrentLinks.cpp",),
+                                   folder="BitTorrent"),
+    "tst_TorrentListModel": TestExtras(includes=GUI_INCLUDES, defines=BT_DEFINES, widgets=True,
+                                       sources=TORRENT_LIST_SOURCES, folder="BitTorrent"),
+    "tst_TorrentDetailsGui": TestExtras(includes=GUI_INCLUDES, defines=BT_DEFINES, widgets=True,
+                                        sources=TORRENT_DETAILS_SOURCES, folder="BitTorrent"),
+    "tst_Ed3kShared": ED3K_EXTRAS,
+    # the daemon side: Ed3kBridge + BandwidthCoordinator
+    "tst_Ed3kBridge": replace(ED3K_EXTRAS, includes=("src/daemon",) + ED3K_EXTRAS.includes,
+                              sources=("src/daemon/Ed3kBridge.cpp",
+                                       "src/daemon/BandwidthCoordinator.cpp")),
+    # GUI sources against the stub pch; include order as in CMake picks the pch.h
+    "tst_LogTextView": TestExtras(includes=GUI_INCLUDES, widgets=True,
+                                  sources=("src/gui/controls/LogTextView.cpp",)),
+    "tst_TaskbarProgress": TestExtras(includes=GUI_INCLUDES, widgets=True,
+                                      sources=("src/gui/utils/TaskbarProgress.cpp",)),
+    "tst_UrlPrefField": TestExtras(includes=GUI_INCLUDES, widgets=True,
+                                   sources=("src/gui/app/IpcClient.cpp",)),
+    "tst_SingleInstance": TestExtras(includes=("tests/stubs", "src/gui"),
+                                     sources=("src/gui/app/SingleInstance.cpp",)),
+}
+NO_EXTRAS = TestExtras()
+
+
 def discover_tests() -> list[str]:
     """Find all tst_*.cpp files and return sorted test names."""
     pattern = os.path.join(TESTS_DIR, "tst_*.cpp")
@@ -260,9 +356,84 @@ def discover_tests() -> list[str]:
     return sorted(names)
 
 
+def vs_path(repo_rel: str) -> str:
+    """Repo-relative path as seen from tests/vs."""
+    return "..\\..\\" + repo_rel.replace("/", "\\")
+
+
+def moc_headers(sources: tuple[str, ...]) -> list[str]:
+    """Headers next to the extra sources that declare Q_OBJECT."""
+    headers = []
+    for src in sources:
+        header = os.path.splitext(src)[0] + ".h"
+        path = os.path.join(PROJECT_ROOT, header)
+        if os.path.exists(path):
+            with open(path, encoding="utf-8", errors="replace") as f:
+                if "Q_OBJECT" in f.read():
+                    headers.append(header)
+    return headers
+
+
+def sources_xml(extras: TestExtras) -> str:
+    """Extra ClCompile items, then QtMoc items in their own ItemGroup."""
+    xml = "".join(f'\n    <ClCompile Include="{vs_path(s)}" />' for s in extras.sources)
+    headers = moc_headers(extras.sources)
+    if headers:
+        xml += "\n  </ItemGroup>\n  <ItemGroup>"
+        for h in headers:
+            xml += (f'\n    <QtMoc Include="{vs_path(h)}">'
+                    "\n      <QtMocFileName>moc_%(Filename).cpp</QtMocFileName>"
+                    "\n    </QtMoc>")
+    return xml
+
+
 def generate_vcxproj(name: str) -> str:
-    guid = make_guid(name)
-    return VCXPROJ_TEMPLATE.format(name=name, guid=guid).rstrip("\r\n")
+    extras = TEST_EXTRAS.get(name, NO_EXTRAS)
+    return VCXPROJ_TEMPLATE.format(
+        name=name,
+        guid=make_guid(name),
+        includes="".join(vs_path(i) + ";" for i in extras.includes),
+        defines=extras.defines,
+        libs=extras.libs,
+        qt_modules=DEFAULT_QT_MODULES + (";widgets" if extras.widgets else ""),
+        sources=sources_xml(extras),
+    ).rstrip("\r\n")
+
+
+def test_deps(name: str) -> list[str]:
+    extras = TEST_EXTRAS.get(name, NO_EXTRAS)
+    return [EMULECORE_GUID, EMULEIPC_GUID, EMULEINDEXER_GUID, EMULEUSENET_GUID, *extras.deps]
+
+
+def folder_guid(folder: str) -> str:
+    return make_guid(f"folder-{folder}")
+
+
+def test_parent(name: str) -> str:
+    """Solution folder a test sits in: Tests, or a sub-folder of it."""
+    folder = TEST_EXTRAS.get(name, NO_EXTRAS).folder
+    return folder_guid(folder) if folder else TESTS_FOLDER_GUID
+
+
+def sub_folders(test_names: list[str]) -> list[str]:
+    return sorted({TEST_EXTRAS[t].folder for t in test_names
+                   if t in TEST_EXTRAS and TEST_EXTRAS[t].folder})
+
+
+def project_lines(name: str, rel_path: str, guid: str, deps: list[str],
+                  type_guid: str = VS_CPP_PROJECT_TYPE) -> list[str]:
+    lines = [f'Project("{type_guid}") = "{name}", "{rel_path}", "{guid}"']
+    if deps:
+        lines.append("\tProjectSection(ProjectDependencies) = postProject")
+        lines += [f"\t\t{d} = {d}" for d in deps]
+        lines.append("\tEndProjectSection")
+    lines.append("EndProject")
+    return lines
+
+
+def config_lines(guid: str) -> list[str]:
+    return [f"\t\t{guid}.{cfg}|x64.{kind} = {cfg}|x64"
+            for cfg in ("Debug", "Release") for kind in ("ActiveCfg", "Build.0")]
 
 
 def generate_sln(test_names: list[str]) -> str:
@@ -291,32 +462,20 @@ def generate_sln(test_names: list[str]) -> str:
     ]
 
     for name, path, guid, deps in existing_projects:
-        lines.append(f'Project("{VS_CPP_PROJECT_TYPE}") = "{name}", "{path}", "{guid}"')
-        if deps:
-            lines.append("\tProjectSection(ProjectDependencies) = postProject")
-            for d in deps:
-                lines.append(f"\t\t{d} = {d}")
-            lines.append("\tEndProjectSection")
-        lines.append("EndProject")
+        lines += project_lines(name, path, guid, deps)
 
-    # Tests solution folder
-    lines.append(f'Project("{VS_FOLDER_TYPE}") = "Tests", "Tests", "{TESTS_FOLDER_GUID}"')
-    lines.append("EndProject")
+    # Tests solution folder and its sub-folders
+    lines += project_lines("Tests", "Tests", TESTS_FOLDER_GUID, [], VS_FOLDER_TYPE)
+    folders = sub_folders(test_names)
+    for folder in folders:
+        lines += project_lines(folder, folder, folder_guid(folder), [], VS_FOLDER_TYPE)
 
     # Test projects
     test_guids = []
     for tname in test_names:
         guid = make_guid(tname)
         test_guids.append((tname, guid))
-        rel_path = f"..\\tests\\vs\\{tname}.vcxproj"
-        lines.append(f'Project("{VS_CPP_PROJECT_TYPE}") = "{tname}", "{rel_path}", "{guid}"')
-        lines.append("\tProjectSection(ProjectDependencies) = postProject")
-        lines.append(f"\t\t{EMULECORE_GUID} = {EMULECORE_GUID}")
-        lines.append(f"\t\t{EMULEIPC_GUID} = {EMULEIPC_GUID}")
-        lines.append(f"\t\t{EMULEINDEXER_GUID} = {EMULEINDEXER_GUID}")
-        lines.append(f"\t\t{EMULEUSENET_GUID} = {EMULEUSENET_GUID}")
-        lines.append("\tEndProjectSection")
-        lines.append("EndProject")
+        lines += project_lines(tname, f"..\\tests\\vs\\{tname}.vcxproj", guid, test_deps(tname))
 
     # Global section
     lines.append("Global")
@@ -331,16 +490,15 @@ def generate_sln(test_names: list[str]) -> str:
     lines.append("\tGlobalSection(ProjectConfigurationPlatforms) = postSolution")
     all_guids = [g for _, _, g, _ in existing_projects] + [g for _, g in test_guids]
     for guid in all_guids:
-        lines.append(f"\t\t{guid}.Debug|x64.ActiveCfg = Debug|x64")
-        lines.append(f"\t\t{guid}.Debug|x64.Build.0 = Debug|x64")
-        lines.append(f"\t\t{guid}.Release|x64.ActiveCfg = Release|x64")
-        lines.append(f"\t\t{guid}.Release|x64.Build.0 = Release|x64")
+        lines += config_lines(guid)
     lines.append("\tEndGlobalSection")
 
-    # Nested projects - put tests under Tests folder
+    # Nested projects - put tests under Tests folder (or a sub-folder of it)
     lines.append("\tGlobalSection(NestedProjects) = preSolution")
-    for _, guid in test_guids:
-        lines.append(f"\t\t{guid} = {TESTS_FOLDER_GUID}")
+    for folder in folders:
+        lines.append(f"\t\t{folder_guid(folder)} = {TESTS_FOLDER_GUID}")
+    for tname, guid in test_guids:
+        lines.append(f"\t\t{guid} = {test_parent(tname)}")
     lines.append("\tEndGlobalSection")
 
     lines.append("\tGlobalSection(ExtensibilityGlobals) = postSolution")
@@ -355,8 +513,56 @@ def generate_sln(test_names: list[str]) -> str:
     return "\n".join(lines) + "\n"
 
 
+def patch_sln(sln: str, test_names: list[str]) -> str:
+    """Add the given tests (and their sub-folders) to an existing .sln, leaving everything
+    else as is. Entries already present are kept."""
+    lines = sln.split("\n")
+
+    def present(guid: str) -> bool:
+        return any(line.startswith("Project(") and line.rstrip().endswith(f'"{guid}"')
+                   for line in lines)
+
+    new_projects, new_configs, new_nested = [], [], []
+    for folder in sub_folders(test_names):
+        guid = folder_guid(folder)
+        if not present(guid):
+            new_projects += project_lines(folder, folder, guid, [], VS_FOLDER_TYPE)
+            new_nested.append(f"\t\t{guid} = {TESTS_FOLDER_GUID}")
+    for tname in test_names:
+        guid = make_guid(tname)
+        if present(guid):
+            continue
+        new_projects += project_lines(tname, f"..\\tests\\vs\\{tname}.vcxproj", guid,
+                                      test_deps(tname))
+        new_configs += config_lines(guid)
+        new_nested.append(f"\t\t{guid} = {test_parent(tname)}")
+
+    def insert_before_end_of(section: str, new: list[str]) -> None:
+        start = next(i for i, line in enumerate(lines) if section in line)
+        end = next(i for i in range(start, len(lines)) if "EndGlobalSection" in lines[i])
+        lines[end:end] = new
+
+    if new_projects:
+        glob_idx = next(i for i, line in enumerate(lines) if line.rstrip() == "Global")
+        lines[glob_idx:glob_idx] = new_projects
+        insert_before_end_of("GlobalSection(ProjectConfigurationPlatforms)", new_configs)
+        insert_before_end_of("GlobalSection(NestedProjects)", new_nested)
+    return "\n".join(lines)
+
+
 def main():
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument("--only", nargs="+", metavar="TEST",
+                        help="write just these tests' vcxproj files and add them to the "
+                             "existing .sln in place (keeps projects this script doesn't know)")
+    args = parser.parse_args()
+
     test_names = discover_tests()
+    if args.only:
+        unknown = sorted(set(args.only) - set(test_names))
+        if unknown:
+            parser.error(f"no tests/<name>.cpp for: {', '.join(unknown)}")
+        test_names = sorted(args.only)
     print(f"Found {len(test_names)} tests")
 
     os.makedirs(VS_DIR, exist_ok=True)
@@ -371,9 +577,17 @@ def main():
     print(f"Generated {len(test_names)} vcxproj files in tests/vs/")
 
     # Update solution file
-    sln_content = generate_sln(test_names)
-    with open(SLN_PATH, "w", encoding="utf-8", newline="\r\n") as f:
-        f.write(sln_content)
+    if args.only:
+        # utf-8-sig: keep the BOM VS writes; newline="" keeps the CRLFs as read
+        with open(SLN_PATH, encoding="utf-8-sig", newline="") as f:
+            sln = f.read()
+        sln_content = patch_sln(sln.replace("\r\n", "\n"), test_names).replace("\n", "\r\n")
+        with open(SLN_PATH, "w", encoding="utf-8-sig", newline="") as f:
+            f.write(sln_content)
+    else:
+        sln_content = generate_sln(test_names)
+        with open(SLN_PATH, "w", encoding="utf-8", newline="\r\n") as f:
+            f.write(sln_content)
 
     print(f"Updated {SLN_PATH}")
 

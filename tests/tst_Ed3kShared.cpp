@@ -193,7 +193,10 @@ void tst_Ed3kShared::theCacheSparesAHashAfterARestart()
         first = *shared.rootOf(md4);
         shared.stop();
         QVERIFY(QFile::exists(shared.cachePath()));
+#ifdef Q_OS_UNIX
+        // Windows: Qt maps only the read-only bit, no owner-only DACL yet (Ed3kStore ToDo)
         QCOMPARE(QFile(shared.cachePath()).permissions() & (QFileDevice::ReadOther | QFileDevice::ReadGroup), QFileDevice::Permissions{});
+#endif
     }
     {
         Ed3kShared shared(a, src, da.path());

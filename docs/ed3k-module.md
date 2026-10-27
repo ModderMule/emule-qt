@@ -354,4 +354,4 @@ ToDo (shared files):
 - The stable IPv6 source address (`IPv6SourcePin`) as `local6`; the `bindAddress` pref for the socket.
 - One preference per optional extension (`Config::extOff`); nick; filter and hops state.
 - An owner-only DACL for `node.key` on Windows.
-- A `tests/vs` project for `tst_Ed3kSession` and `tst_Ed3kBridge` (and the join tests); the generator was not run, since it would also drop `specialdlp` and `emuleqt-mcp` from the `.sln`.
+- `tests/vs` projects: every ed3k test has one (`Tests\Ed3k`, `tst_Ed3kTorrentJoin` in `Tests\BitTorrent`). A new test: add a `TEST_EXTRAS` entry in `scripts/generate_test_vcxprojs.py` if it needs more than the core libs and run it with `--only`, which leaves `specialdlp` and `emuleqt-mcp` in the `.sln` (a run without `--only` drops them).
