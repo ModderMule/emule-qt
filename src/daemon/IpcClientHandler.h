@@ -60,6 +60,7 @@ public:
         BindApplyResult network = BindApplyResult::Unchanged;   ///< bindAddress change
         bool usenetChanged = false;   ///< a usenet* value moved: the session re-reads them
         bool btChanged = false;       ///< a bt* value moved: the BitTorrent engine re-reads them
+        bool ed3kChanged = false;     ///< an ed3k* value moved: the ed3k node restarts or stops
     };
     static PrefApplyOutcome applyPreferenceChanges(const PrefChanges& changes);
     [[nodiscard]] static QCborArray categoryList();
@@ -86,6 +87,9 @@ signals:
 
     /// A bt* preference moved; the BitTorrent engine re-reads them.
     void btConfigChanged();
+
+    /// An ed3k* preference moved; the ed3k node re-reads them.
+    void ed3kConfigChanged();
 
     /// preventStandby changed; the daemon re-evaluates its sleep hold now.
     void standbyConfigChanged();
@@ -140,6 +144,7 @@ private:
     void handleGetSharedFiles(const Ipc::IpcMessage& msg);
     void handleSetSharedFilePriority(const Ipc::IpcMessage& msg);
     void handleReloadSharedFiles(const Ipc::IpcMessage& msg);
+    void handleRehashAllSharedFiles(const Ipc::IpcMessage& msg);
     void handleGetEd2kLink(const Ipc::IpcMessage& msg);
     void handleGetFriends(const Ipc::IpcMessage& msg);
     void handleAddFriend(const Ipc::IpcMessage& msg);
@@ -312,6 +317,7 @@ private:
     static bool applyPreferenceB(const QString& key, const QCborValue& val);
     static bool applyPreferenceC(const QString& key, const QCborValue& val);
     static bool applyPreferenceBt(const QString& key, const QCborValue& val);
+    static bool applyPreferenceEd3k(const QString& key, const QCborValue& val);
 
     std::unique_ptr<Ipc::IpcConnection> m_connection;
     bool m_isLocal = true;

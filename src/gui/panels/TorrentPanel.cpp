@@ -291,6 +291,8 @@ void TorrentPanel::setupUi()
     connect(m_openFolderAction, &QAction::triggered, this, &TorrentPanel::onOpenFolder);
     m_copyMagnetAction = new QAction(menuIcon("Copy.ico"), tr("Copy Magnet Link"), this);
     connect(m_copyMagnetAction, &QAction::triggered, this, &TorrentPanel::onCopyMagnet);
+    m_pasteMagnetAction = new QAction(menuIcon("eD2kLinkPaste.ico"), tr("Paste Magnet Links"), this);
+    connect(m_pasteMagnetAction, &QAction::triggered, this, &TorrentPanel::onPasteMagnets);
 
     layout->addWidget(toolbar);
     layout->addWidget(createFilterBar());
@@ -465,6 +467,10 @@ void TorrentPanel::onContextMenu(const QPoint& pos)
     }
     menu.addAction(m_addFileAction);
     menu.addAction(m_addMagnetAction);
+    // Read at open time, like Paste eD2K Links
+    m_pasteMagnetAction->setEnabled(
+        engineRunning() && !gui::bitTorrentMagnetsIn(QApplication::clipboard()->text()).isEmpty());
+    menu.addAction(m_pasteMagnetAction);
     menu.exec(m_view->viewport()->mapToGlobal(pos));
 }
 
@@ -549,9 +555,10 @@ void TorrentPanel::onCopyMagnet()
 
 void TorrentPanel::onPasteMagnets()
 {
+    // No dialog: pasting is the confirmation, into the default folder, as for eD2K links
     const QStringList magnets = gui::bitTorrentMagnetsIn(QApplication::clipboard()->text());
-    if (!magnets.isEmpty())
-        promptAddMagnets(magnets);
+    if (!magnets.isEmpty() && engineRunning())
+        addMagnets(magnets);
 }
 
 void TorrentPanel::showDetails(const QString& id)

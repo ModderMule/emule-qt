@@ -66,7 +66,8 @@ ApiBackend::PrefApplyReport DaemonApiBackend::applyPreferences(const PrefChanges
     // Queued: the web server answering this request may be the thing that restarts.
     QTimer::singleShot(0, m_ipcServer, [server = m_ipcServer, standby = outcome.standbyChanged,
                                         usenet = outcome.usenetChanged,
-                                        bt = outcome.btChanged] {
+                                        bt = outcome.btChanged,
+                                        ed3k = outcome.ed3kChanged] {
         emit server->webServerConfigChanged();
         if (standby)
             emit server->standbyConfigChanged();
@@ -74,6 +75,8 @@ ApiBackend::PrefApplyReport DaemonApiBackend::applyPreferences(const PrefChanges
             emit server->usenetConfigChanged();
         if (bt)
             emit server->btConfigChanged();
+        if (ed3k)
+            emit server->ed3kConfigChanged();
     });
     return report;
 }

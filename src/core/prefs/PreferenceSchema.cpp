@@ -203,6 +203,10 @@ using Kind = PrefSpec::Kind;
                 "BitTorrent peer connections per torrent.");
     t << flag("btPortMapping", "Map the BitTorrent port with UPnP/NAT-PMP (needs port mapping on).");
 
+    // --- ed3k (packmule) ---
+    t << flag("ed3kEnabled", "Enable the ed3k node (packmule).");
+    t << number("ed3kUdpPort", 1, 65535, "", "UDP port of the ed3k node, separate from the eD2K UDP port.");
+
     // --- Logging ---
     t << flag("verbose", "Write verbose (debug) log lines.");
     t << flag("logToDiskCore", "Write the core log to a file.");

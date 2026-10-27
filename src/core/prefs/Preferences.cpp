@@ -46,7 +46,9 @@ namespace {
 /// of load().  Stored as `startVersion` in the YAML.
 ///   1 — video player resolved on first run
 ///   2 — ipFilterLevel raised off the legacy 100, which filtered nothing
-constexpr uint32 kCurrentPrefsVersion = 2;
+///   3 — BitTorrent switched on: builds before it never compiled BT in, so a stored
+///       `enabled: false` was only the old default
+constexpr uint32 kCurrentPrefsVersion = 3;
 
 /// See Preferences::usenetSubjectPatternsRevision().
 ///
@@ -406,6 +408,7 @@ struct Preferences::Data {
     UsenetCounters cumUsenet;
     IndexerCounters cumIndexer;
     KadCounters cumKad;
+    BtCounters cumBt;
 
     // Records
     uint32 recMaxWorkingServers = 0;
@@ -671,7 +674,7 @@ struct Preferences::Data {
     int indexerCapsRefreshDays = 7;
 
     // -- BitTorrent -----------------------------------------------------------
-    bool btEnabled = false;
+    bool btEnabled = true;
     uint16 btListenPort = Preferences::kDefaultBtListenPort;
     QString btDownloadDir;             // empty = incomingDir
     uint32 btMaxDownloadKb = 0;        // 0 = unlimited
@@ -689,6 +692,10 @@ struct Preferences::Data {
     int btMaxConnections = Preferences::kDefaultBtMaxConnections;
     int btMaxConnectionsPerTorrent = Preferences::kDefaultBtMaxConnectionsPerTorrent;
     bool btPortMapping = true;
+
+    // -- ed3k (packmule) ------------------------------------------------------
+    bool ed3kEnabled = false;
+    uint16 ed3kUdpPort = 0;            // 0 = random, resolved at load
 
     /// Runtime only — never loaded, never saved. -1 means "no split active", so
     /// maxDownloadForEd2k() falls back to the raw ceiling. Persisting it would
@@ -1546,6 +1553,8 @@ IndexerCounters Preferences::cumIndexer() const { return get(&Data::cumIndexer);
 void Preferences::setCumIndexer(const IndexerCounters& val) { set(&Data::cumIndexer, val); }
 KadCounters Preferences::cumKad() const { return get(&Data::cumKad); }
 void Preferences::setCumKad(const KadCounters& val) { set(&Data::cumKad, val); }
+BtCounters Preferences::cumBt() const { return get(&Data::cumBt); }
+void Preferences::setCumBt(const BtCounters& val) { set(&Data::cumBt, val); }
 
 PREF_GS(uint32, recMaxWorkingServers, RecMaxWorkingServers)
 PREF_GS(uint32, recMaxUsersOnline, RecMaxUsersOnline)
@@ -1681,6 +1690,7 @@ void Preferences::forEachCumulativeStat(D& d, F&& f)
     f("cumUsenet", d.cumUsenet);
     f("cumIndexer", d.cumIndexer);
     f("cumKad", d.cumKad);
+    f("cumBt", d.cumBt);
 
     // The cumulative rates are records rather than sums, but MFC clears them
     // with the rest (srchybrid/Preferences.cpp:1140-1163), so they travel with
@@ -2267,6 +2277,12 @@ void Preferences::setBtMaxConnectionsPerTorrent(int val)
 
 bool Preferences::btPortMapping() const { return get(&Data::btPortMapping); }
 void Preferences::setBtPortMapping(bool val) { set(&Data::btPortMapping, val); }
+
+bool Preferences::ed3kEnabled() const { return get(&Data::ed3kEnabled); }
+void Preferences::setEd3kEnabled(bool val) { set(&Data::ed3kEnabled, val); }
+
+uint16 Preferences::ed3kUdpPort() const { return get(&Data::ed3kUdpPort); }
+void Preferences::setEd3kUdpPort(uint16 val) { set(&Data::ed3kUdpPort, val); }
 
 uint32 Preferences::maxDownloadForEd2k() const
 {
@@ -3391,6 +3407,10 @@ QCborMap Preferences::toIpcMap() const
                  static_cast<qint64>(btMaxConnectionsPerTorrent()));
     prefs.insert(QStringLiteral("btPortMapping"), btPortMapping());
 
+    // ed3k
+    prefs.insert(QStringLiteral("ed3kEnabled"), ed3kEnabled());
+    prefs.insert(QStringLiteral("ed3kUdpPort"), static_cast<qint64>(ed3kUdpPort()));
+
     // Statistics
     prefs.insert(QStringLiteral("statsAverageMinutes"), static_cast<qint64>(statsAverageMinutes()));
     prefs.insert(QStringLiteral("graphsUpdateSec"), static_cast<qint64>(graphsUpdateSec()));
@@ -3625,7 +3645,7 @@ void Preferences::updateFromCbor(const QCborMap& p)
         const auto num = [&p](const char* key, qint64 def, qint64 lo, qint64 hi) {
             return std::clamp(p.value(QLatin1StringView(key)).toInteger(def), lo, hi);
         };
-        m_data->btEnabled     = p.value(QStringLiteral("btEnabled")).toBool(false);
+        m_data->btEnabled     = p.value(QStringLiteral("btEnabled")).toBool(true);
         m_data->btListenPort  = static_cast<uint16>(
             num("btListenPort", kDefaultBtListenPort, 1, 65535));
         m_data->btDownloadDir = p.value(QStringLiteral("btDownloadDir")).toString();
@@ -3651,6 +3671,11 @@ void Preferences::updateFromCbor(const QCborMap& p)
             kDefaultBtMaxConnectionsPerTorrent, 2, kMaxBtConnections));
         m_data->btPortMapping = p.value(QStringLiteral("btPortMapping")).toBool(true);
     }
+
+    // ed3k. Defaults for a key an older daemon does not send.
+    m_data->ed3kEnabled = p.value(QStringLiteral("ed3kEnabled")).toBool(false);
+    m_data->ed3kUdpPort = static_cast<uint16>(
+        std::clamp<qint64>(p.value(QStringLiteral("ed3kUdpPort")).toInteger(0), 0, 65535));
 
     // Statistics
     m_data->statsAverageMinutes   = static_cast<uint32>(p.value(QStringLiteral("statsAverageMinutes")).toInteger());
@@ -4304,6 +4329,7 @@ bool Preferences::load(const QString& filePath)
             m_data->cumUsenet = readStatValue(st["cumUsenet"], m_data->cumUsenet);
             m_data->cumIndexer = readStatValue(st["cumIndexer"], m_data->cumIndexer);
             m_data->cumKad = readStatValue(st["cumKad"], m_data->cumKad);
+            m_data->cumBt = readStatValue(st["cumBt"], m_data->cumBt);
 
             // Records
             m_data->recMaxWorkingServers = st["recMaxWorkingServers"].as<uint32>(m_data->recMaxWorkingServers);
@@ -4793,6 +4819,12 @@ bool Preferences::load(const QString& filePath)
             m_data->btPortMapping = bt["portMapping"].as<bool>(m_data->btPortMapping);
         }
 
+        if (auto e3 = root["ed3k"]) {
+            m_data->ed3kEnabled = e3["enabled"].as<bool>(m_data->ed3kEnabled);
+            const int port = e3["udpPort"].as<int>(m_data->ed3kUdpPort);
+            m_data->ed3kUdpPort = (port >= 0 && port <= 65535) ? static_cast<uint16>(port) : 0;
+        }
+
         if (auto ix = root["indexers"]) {
             m_data->indexerResultLimit = std::clamp(
                 ix["resultLimit"].as<int>(m_data->indexerResultLimit), 10, 1000);
@@ -4963,9 +4995,21 @@ bool Preferences::load(const QString& filePath)
         m_data->port = randomTCPPort();
     if (m_data->udpPort == 0 && !m_data->udpPortFromFile)
         m_data->udpPort = randomUDPPort();
+    // ed3k: 0 = random, picked once and saved; never the eD2K UDP or BT port
+    const bool ed3kPortPicked = m_data->ed3kUdpPort == 0;
+    if (ed3kPortPicked) {
+        const uint16 ed2kUdp = m_data->udpPort;
+        const uint16 btPort = m_data->btListenPort;
+        m_data->ed3kUdpPort = randomPort([ed2kUdp, btPort](uint16 p) {
+            return p != ed2kUdp && p != btPort && udpPortFree(p);
+        });
+    }
 
     validate();
     resolveDefaultDirectories();
+
+    if (ed3kPortPicked && !hashGenerated && !saveImpl(m_filePath))
+        logWarning(QStringLiteral("ed3k UDP port could not be saved to %1").arg(m_filePath));
 
     // Persist now: otherwise the file keeps the empty hash until some later save
     if (hashGenerated && !saveImpl(m_filePath))
@@ -4990,6 +5034,10 @@ bool Preferences::load(const QString& filePath)
         // chose 100 is bumped once, which nothing in the config lets us distinguish.
         if (m_data->startVersion < 2 && m_data->ipFilterLevel == 100)
             m_data->ipFilterLevel = 127;
+
+        // v3: BT is on by default now; nobody could have chosen off before
+        if (m_data->startVersion < 3)
+            m_data->btEnabled = true;
 
         m_data->startVersion = kCurrentPrefsVersion;
         saveImpl(m_filePath);
@@ -5486,6 +5534,8 @@ bool Preferences::saveImpl(const QString& filePath) const
     emitStatValue(out, m_data->cumIndexer);
     out << YAML::Key << "cumKad" << YAML::Value;
     emitStatValue(out, m_data->cumKad);
+    out << YAML::Key << "cumBt" << YAML::Value;
+    emitStatValue(out, m_data->cumBt);
 
     // Records
     out << YAML::Key << "recMaxWorkingServers" << YAML::Value << m_data->recMaxWorkingServers;
@@ -5872,6 +5922,11 @@ bool Preferences::saveImpl(const QString& filePath) const
     out << YAML::Key << "maxConnections" << YAML::Value << m_data->btMaxConnections;
     out << YAML::Key << "maxConnectionsPerTorrent" << YAML::Value << m_data->btMaxConnectionsPerTorrent;
     out << YAML::Key << "portMapping" << YAML::Value << m_data->btPortMapping;
+    out << YAML::EndMap;
+
+    out << YAML::Key << "ed3k" << YAML::Value << YAML::BeginMap;
+    out << YAML::Key << "enabled" << YAML::Value << m_data->ed3kEnabled;
+    out << YAML::Key << "udpPort" << YAML::Value << static_cast<int>(m_data->ed3kUdpPort);
     out << YAML::EndMap;
 
     // Indexers. After `notifications` for the same reason as the two blocks

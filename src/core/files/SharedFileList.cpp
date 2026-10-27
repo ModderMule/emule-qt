@@ -40,6 +40,7 @@
 
 #include <map>
 #include <numeric>
+#include <optional>
 #include <tuple>
 
 
@@ -79,7 +80,7 @@ void HashingThread::enqueue(Job job)
 void HashingThread::clearQueue()
 {
     QMutexLocker locker(&m_mutex);
-    std::erase_if(m_queue, [](const Job& j) { return !j.isRehash(); });
+    std::erase_if(m_queue, [](const Job& j) { return !j.isRehash() && !j.fullRehash; });
 }
 
 void HashingThread::requestStop()
@@ -148,7 +149,15 @@ void HashingThread::run()
             return;
         }
 
-        if (ok) {
+        if (job.fullRehash) {
+            if (ok && !job.sharedDirectory.isEmpty())
+                kf->setSharedDirectory(job.sharedDirectory);
+            if (!ok) {
+                delete kf;
+                kf = nullptr;
+            }
+            emit fullRehashDone(kf, job.directory, job.filename, changedSinceScan);
+        } else if (ok) {
             logDebug(QStringLiteral("Hashed OK: %1/%2 (%3 bytes)")
                          .arg(job.directory, job.filename)
                          .arg(kf->fileSize()));
@@ -182,6 +191,9 @@ SharedFileList::~SharedFileList()
         worker->requestStop();
     for (HashingThread* worker : m_hashWorkers)
         worker->wait();
+    // An unfinished rehash pass changes nothing: the old records stay
+    for (const auto& [item, fresh] : m_fullRehash.changed)
+        delete fresh;
     saveHashFailures();
     saveKadPublishStore();
     // Note: files in m_map are owned by KnownFileList, not us
@@ -1268,6 +1280,8 @@ HashingThread* SharedFileList::workerFor(const QString& volume)
                 this, &SharedFileList::onHashingDeferred, Qt::QueuedConnection);
         connect(worker, &HashingThread::partFileRehashed,
                 this, &SharedFileList::onPartFileRehashed, Qt::QueuedConnection);
+        connect(worker, &HashingThread::fullRehashDone,
+                this, &SharedFileList::onFullRehashDone, Qt::QueuedConnection);
         worker->start();
         m_hashWorkers.push_back(worker);
     } else {
@@ -1897,7 +1911,8 @@ void SharedFileList::forEachFile(const std::function<void(KnownFile*)>& callback
 int SharedFileList::getHashingCount() const
 {
     QMutexLocker hashLocker(&m_hashMutex);
-    return static_cast<int>(m_waitingForHash.size() + static_cast<size_t>(m_hashing.size()));
+    return static_cast<int>(m_waitingForHash.size() + static_cast<size_t>(m_hashing.size()))
+           + m_fullRehashLeft.load(std::memory_order_relaxed);
 }
 
 // ---------------------------------------------------------------------------
@@ -1968,6 +1983,215 @@ void SharedFileList::stepMetaDataRebuild()
         if (m_knownFiles)
             m_knownFiles->save();
     }
+}
+
+// ---------------------------------------------------------------------------
+// rehashAllFiles — rebuild known.met from a fresh hash of every shared file
+// ---------------------------------------------------------------------------
+
+int SharedFileList::rehashAllFiles()
+{
+    if (m_fullRehash.active)
+        return -1;
+
+    std::vector<FullRehashItem> items;
+    forEach([&items](KnownFile* file) {
+        if (!file || file->isPartFile() || file->filePath().isEmpty())
+            return;
+        const QFileInfo fi(file->filePath());
+        items.push_back({MD4Key(file->fileHash()), fi.absolutePath(), fi.fileName(),
+                         file->sharedDirectory()});
+    });
+    if (items.empty()) {
+        logInfo(QStringLiteral("Rehash all files: nothing shared"));
+        return 0;
+    }
+
+    // Path order: files of one directory lie together on disk
+    std::ranges::sort(items, [](const FullRehashItem& a, const FullRehashItem& b) {
+        return std::tie(a.directory, a.filename) < std::tie(b.directory, b.filename);
+    });
+
+    m_fullRehash = {};
+    m_fullRehash.active = true;
+    m_fullRehash.total = static_cast<int>(items.size());
+    for (FullRehashItem& item : items) {
+        const QString volume = volumeKeyFor(item.directory);
+        HashingThread* worker = nullptr;
+        {
+            QMutexLocker hashLocker(&m_hashMutex);
+            worker = workerFor(volume);
+        }
+        m_fullRehash.waiting[worker].push_back(std::move(item));
+    }
+    m_fullRehashLeft.store(m_fullRehash.total, std::memory_order_relaxed);
+
+    logInfo(QStringLiteral("Rehashing all %1 shared files; known.met is replaced when done")
+                .arg(m_fullRehash.total));
+    feedFullRehash();
+    return m_fullRehash.total;
+}
+
+void SharedFileList::feedFullRehash()
+{
+    // One file per worker at a time: new files to share are not held up behind
+    // the whole pass, they queue behind one file at most.
+    for (auto it = m_fullRehash.waiting.begin(); it != m_fullRehash.waiting.end(); ) {
+        HashingThread* worker = it.key();
+        if (it->empty()) {
+            it = m_fullRehash.waiting.erase(it);
+            continue;
+        }
+        if (!m_fullRehash.busy.contains(worker)) {
+            FullRehashItem item = std::move(it->front());
+            it->pop_front();
+            HashingThread::Job job;
+            job.directory = item.directory;
+            job.filename = item.filename;
+            job.sharedDirectory = item.sharedDirectory;
+            job.fullRehash = true;
+            m_fullRehash.busy.insert(worker, std::move(item));
+            worker->enqueue(std::move(job));
+        }
+        ++it;
+    }
+
+    if (m_fullRehash.active && m_fullRehash.busy.isEmpty() && m_fullRehash.waiting.isEmpty())
+        finishFullRehash();
+}
+
+void SharedFileList::onFullRehashDone(KnownFile* fresh, const QString& directory,
+                                      const QString& filename, bool changed)
+{
+    std::optional<FullRehashItem> done;
+    for (auto it = m_fullRehash.busy.begin(); it != m_fullRehash.busy.end(); ++it) {
+        if (it->directory == directory && it->filename == filename) {
+            done = std::move(*it);
+            m_fullRehash.busy.erase(it);
+            break;
+        }
+    }
+    if (!done) {
+        delete fresh;   // not from the running pass
+        return;
+    }
+    m_fullRehashLeft.fetch_sub(1, std::memory_order_relaxed);
+
+    if (!fresh) {
+        // Changed or gone since the pass started: the next scan deals with it
+        if (changed || !QFileInfo::exists(directory + u'/' + filename))
+            ++m_fullRehash.skipped;
+        else
+            m_fullRehash.unreadable.push_back(std::move(*done));
+    } else {
+        // Same content and AICH hash: the record stays as it is
+        const KnownFile* old = getFileByID(done->oldHash.data.data());
+        const bool sameAich = old && old->fileIdentifier().hasAICHHash()
+                              && fresh->fileIdentifier().hasAICHHash()
+                              && old->fileIdentifier().getAICHHash()
+                                     == fresh->fileIdentifier().getAICHHash();
+        if (md4equ(fresh->fileHash(), done->oldHash.data.data())
+            && (sameAich || !fresh->fileIdentifier().hasAICHHash())) {
+            ++m_fullRehash.unchanged;
+            delete fresh;
+        } else {
+            m_fullRehash.changed.emplace_back(std::move(*done), fresh);
+        }
+    }
+
+    feedFullRehash();
+}
+
+void SharedFileList::finishFullRehash()
+{
+    FullRehash pass = std::exchange(m_fullRehash, {});
+    m_fullRehashLeft.store(0, std::memory_order_relaxed);
+
+    // The record shared from that path when the pass started, if it still is
+    const auto stillShared = [this](const FullRehashItem& item) -> KnownFile* {
+        KnownFile* old = getFileByID(item.oldHash.data.data());
+        if (!old || old->isPartFile()
+            || pathKey(old->filePath()) != pathKey(item.directory + u'/' + item.filename))
+            return nullptr;
+        return old;
+    };
+
+    int updated = 0;
+    int dropped = 0;
+    for (auto& [item, fresh] : pass.changed) {
+        KnownFile* old = stillShared(item);
+        if (!old) {
+            delete fresh;
+            ++pass.skipped;
+            continue;
+        }
+        if (!md4equ(fresh->fileHash(), old->fileHash())) {
+            // The same content is shared from another path already
+            if (const KnownFile* dup = getFileByID(fresh->fileHash())) {
+                logWarning(QStringLiteral("Rehash: %1 changed and now has the same content as %2, "
+                                          "no longer shared")
+                               .arg(old->filePath(), dup->filePath()));
+                delete fresh;
+                dropSharedRecord(old);
+                ++dropped;
+                continue;
+            }
+            logWarning(QStringLiteral("Rehash: content of %1 changed, shared under its new hash")
+                           .arg(old->filePath()));
+        }
+        replaceSharedRecord(old, fresh);
+        ++updated;
+    }
+
+    for (const FullRehashItem& item : pass.unreadable) {
+        KnownFile* old = stillShared(item);
+        if (!old) {
+            ++pass.skipped;
+            continue;
+        }
+        logWarning(QStringLiteral("Rehash: cannot read %1, no longer shared").arg(old->filePath()));
+        dropSharedRecord(old);
+        ++dropped;
+    }
+
+    if (m_knownFiles)
+        m_knownFiles->save();
+    logInfo(QStringLiteral("known.met rebuilt: %1 files rehashed, %2 unchanged, %3 updated, "
+                           "%4 unshared, %5 skipped")
+                .arg(pass.total).arg(pass.unchanged).arg(updated).arg(dropped).arg(pass.skipped));
+
+    // Unshared files go through the usual hashing again, with its retries
+    if (dropped > 0)
+        reload();
+}
+
+void SharedFileList::replaceSharedRecord(KnownFile* old, KnownFile* fresh)
+{
+    // The user's settings follow the file, whatever its content is now
+    fresh->setUpPriorityFromTag(old->upPriorityTagValue());
+    if (fresh->isAutoUpPriority())
+        fresh->updateAutoUpPriority();
+    if (!md4equ(fresh->fileHash(), old->fileHash())) {
+        // fileinfo.ini keys them by hash
+        if (const QString comment = old->getFileComment(); !comment.isEmpty())
+            fresh->setFileComment(comment);
+        if (const uint32 rating = old->getFileRating(); rating != 0)
+            fresh->setFileRating(rating);
+    }
+
+    removeFile(old);
+    if (m_knownFiles && !m_knownFiles->replaceRecord(old, fresh)) {
+        // old was not a known record: keep it alive, add fresh beside it
+        m_knownFiles->safeAddKFile(fresh);
+    }
+    safeAddKFile(fresh);
+}
+
+void SharedFileList::dropSharedRecord(KnownFile* old)
+{
+    removeFile(old);
+    if (m_knownFiles)
+        m_knownFiles->dropRecord(old);
 }
 
 // ---------------------------------------------------------------------------

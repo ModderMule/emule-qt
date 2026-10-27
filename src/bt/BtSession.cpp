@@ -4,6 +4,9 @@
 #include "session/BtJoinDiskIo.h"
 #include "session/BtSettingsMap.h"
 #include "torrent/BtTorrentView.h"
+#include "app/AppContext.h"
+#include "stats/NetworkCounters.h"
+#include "stats/Statistics.h"
 #include "utils/Log.h"
 
 #include <libtorrent/alert_types.hpp>
@@ -32,6 +35,7 @@
 #include <atomic>
 #include <deque>
 #include <map>
+#include <optional>
 
 namespace lt = libtorrent;
 
@@ -131,16 +135,25 @@ struct BtSession::Impl {
     int outstandingResume = 0;
     /// setRateLimits() caps in bytes/s; nullopt = the ones in settings
     std::optional<std::pair<int, int>> rateLimits;
-    /// session counters for demand(), oldest first
+    /// session counters for demand() and the statistics, oldest first
     struct RateSample {
         qint64 ms = 0;
         qint64 recv = 0;
         qint64 sent = 0;
+        qint64 recvPayload = 0;
+        qint64 sentPayload = 0;
+        qint64 failed = 0;
+        qint64 redundant = 0;
     };
     std::deque<RateSample> rateSamples;
     QElapsedTimer rateClock;
     int recvIdx = lt::find_metric_idx("net.recv_bytes");
     int sentIdx = lt::find_metric_idx("net.sent_bytes");
+    int recvPayloadIdx = lt::find_metric_idx("net.recv_payload_bytes");
+    int sentPayloadIdx = lt::find_metric_idx("net.sent_payload_bytes");
+    int failedIdx = lt::find_metric_idx("net.recv_failed_bytes");
+    int redundantIdx = lt::find_metric_idx("net.recv_redundant_bytes");
+    int peersIdx = lt::find_metric_idx("peer.num_peers_connected");
     bool listening = false;
     int dhtNodes = 0;
 
@@ -166,6 +179,10 @@ struct BtSession::Impl {
     [[nodiscard]] lt::settings_pack pack(const BtSettings& s) const;
     /// bytes/s of one counter over at least @p windowMs, from rateSamples
     [[nodiscard]] qint64 rate(qint64 RateSample::*field, qint64 windowMs) const;
+    /// Statistics' session BtCounters; null without a core (tests)
+    [[nodiscard]] static BtCounters* counters();
+    /// fold @p now, already in rateSamples, into the statistics; @p prev null = first since start
+    void countSample(const RateSample* prev, const RateSample& now, qint64 peers) const;
     /// comment, creator and creation date by id: in add_torrent_params since 2.1
     struct Meta {
         QString comment;
@@ -642,9 +659,14 @@ void BtSession::drainAlerts()
             const auto at = [&counters](int idx) {
                 return idx >= 0 && idx < counters.size() ? counters[idx] : std::int64_t(0);
             };
-            d->rateSamples.push_back({now, at(d->recvIdx), at(d->sentIdx)});
+            const Impl::RateSample sample{now, at(d->recvIdx), at(d->sentIdx), at(d->recvPayloadIdx),
+                                          at(d->sentPayloadIdx), at(d->failedIdx), at(d->redundantIdx)};
+            const std::optional<Impl::RateSample> prev =
+                d->rateSamples.empty() ? std::nullopt : std::optional(d->rateSamples.back());
+            d->rateSamples.push_back(sample);
             while (d->rateSamples.size() > 2 && now - d->rateSamples.front().ms > kRateHistoryMs)
                 d->rateSamples.pop_front();
+            d->countSample(prev ? &*prev : nullptr, sample, at(d->peersIdx));
         } else if (auto* su = lt::alert_cast<lt::state_update_alert>(a)) {
             for (const lt::torrent_status& st : su->status) {
                 BtTorrentRow row = d->row(st);
@@ -677,6 +699,12 @@ void BtSession::drainAlerts()
             d->outstandingResume = std::max(0, d->outstandingResume - 1);
         } else if (auto* tf = lt::alert_cast<lt::torrent_finished_alert>(a)) {
             const QString id = BtTorrentView::idOf(tf->handle.info_hashes());
+            // also posted for a seed loaded at start: only a download counts
+            if (auto it = d->rows.find(id); it != d->rows.end()
+                && (it->second.state == BtState::Downloading
+                    || it->second.state == BtState::DownloadingMetadata))
+                if (BtCounters* c = Impl::counters())
+                    ++c->torrentsCompleted;
             logInfo(QStringLiteral("BitTorrent: %1").arg(message(tf)));
             d->saveResume(tf->handle);
             emit torrentFinished(id);
@@ -700,6 +728,9 @@ void BtSession::drainAlerts()
                    || lt::alert_cast<lt::performance_alert>(a)) {
             logWarning(QStringLiteral("BitTorrent: %1").arg(message(a)));
         } else if (lt::alert_cast<lt::tracker_error_alert>(a) || lt::alert_cast<lt::hash_failed_alert>(a)) {
+            if (lt::alert_cast<lt::hash_failed_alert>(a))
+                if (BtCounters* c = Impl::counters())
+                    ++c->hashFailures;
             logDebug(QStringLiteral("BitTorrent: %1").arg(message(a)));
         }
     }
@@ -749,6 +780,8 @@ BtAddResult BtSession::Impl::add(BtSession& q, lt::add_torrent_params atp, const
     // kept across a restart from now on
     saveResume(h);
     logInfo(QStringLiteral("BitTorrent: added %1").arg(rows[id].name));
+    if (BtCounters* c = counters())
+        ++c->torrentsAdded;
     emit q.torrentAdded(id);
     return {BtAddOutcome::Added, id, {}};
 }
@@ -830,6 +863,42 @@ qint64 BtSession::Impl::rate(qint64 RateSample::*field, qint64 windowMs) const
     }
     const qint64 ms = last.ms - first->ms;
     return ms > 0 ? std::max<qint64>(0, last.*field - first->*field) * 1000 / ms : 0;
+}
+
+BtCounters* BtSession::Impl::counters()
+{
+    return theApp.statistics ? &theApp.statistics->btSession() : nullptr;
+}
+
+void BtSession::Impl::countSample(const RateSample* prev, const RateSample& now, qint64 peers) const
+{
+    BtCounters* c = counters();
+    if (!c)
+        return;
+    const RateSample zero;
+    const RateSample& p = prev ? *prev : zero;
+    const auto delta = [&](qint64 RateSample::*field) {
+        return static_cast<uint64>(std::max<qint64>(0, now.*field - p.*field));
+    };
+    const uint64 payloadDown = delta(&RateSample::recvPayload);
+    const uint64 payloadUp = delta(&RateSample::sentPayload);
+    c->payloadDownBytes += payloadDown;
+    c->payloadUpBytes += payloadUp;
+    c->wireDownBytes += delta(&RateSample::recv);
+    c->wireUpBytes += delta(&RateSample::sent);
+    c->failedBytes += delta(&RateSample::failed);
+    c->redundantBytes += delta(&RateSample::redundant);
+    raiseCounter(c->peakPeers, static_cast<uint64>(std::max<qint64>(0, peers)));
+    if (!prev)
+        return;   // no interval yet: no time, no rate
+    const uint64 ms = static_cast<uint64>(std::max<qint64>(0, now.ms - p.ms));
+    if (payloadDown > 0)
+        c->downloadTimeMs += ms;
+    if (payloadUp > 0)
+        c->uploadTimeMs += ms;
+    // over the demand() window: one 500 ms interval is too spiky for a record
+    raiseCounter(c->maxDownRate, static_cast<uint64>(rate(&RateSample::recvPayload, kRateWindowMs)));
+    raiseCounter(c->maxUpRate, static_cast<uint64>(rate(&RateSample::sentPayload, kRateWindowMs)));
 }
 
 } // namespace eMule::bt

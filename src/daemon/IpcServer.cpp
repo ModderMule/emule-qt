@@ -157,6 +157,8 @@ void IpcServer::onNewConnection()
                 this, &IpcServer::usenetConfigChanged);
         connect(handler.get(), &IpcClientHandler::btConfigChanged,
                 this, &IpcServer::btConfigChanged);
+        connect(handler.get(), &IpcClientHandler::ed3kConfigChanged,
+                this, &IpcServer::ed3kConfigChanged);
         connect(handler.get(), &IpcClientHandler::standbyConfigChanged,
                 this, &IpcServer::standbyConfigChanged);
         connect(handler.get(), &IpcClientHandler::indexerConfigChanged,

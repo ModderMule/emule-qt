@@ -1,7 +1,11 @@
 #include "BtBridge.h"
 
+#include "BandwidthCoordinator.h"
 #include "app/AppConfig.h"
+#include "app/AppContext.h"
 #include "prefs/Preferences.h"
+#include "stats/NetworkCounters.h"
+#include "stats/Statistics.h"
 
 #include <QCborArray>
 #include <QDir>
@@ -226,6 +230,10 @@ bool handleRequest(const IpcMessage& msg, const std::function<void(const IpcMess
         reply(IpcMessage::makeResult(seq, true, statusToCbor()));
         return true;
     }
+    if (msg.type() == IpcMsgType::GetBtStats) {
+        reply(IpcMessage::makeResult(seq, true, statsToCbor()));
+        return true;
+    }
     if (!s_session || !s_session->isRunning()) {
         // the list is empty, not an error, while BitTorrent is off
         if (msg.type() == IpcMsgType::GetTorrents)
@@ -299,6 +307,90 @@ QCborMap rowToCbor(const QString& id)
     Q_UNUSED(id);
 #endif
     return {};
+}
+
+QCborMap statsToCbor()
+{
+    const Statistics* stats = theApp.statistics;
+    QCborMap out;
+    out.insert(QStringLiteral("session"), countersToCbor(stats ? stats->btSession() : BtCounters{}));
+    out.insert(QStringLiteral("cumulative"),
+               countersToCbor(stats ? stats->cumulativeBt() : thePrefs.cumBt()));
+
+    QCborMap current;
+    qint64 rateDown = 0, rateUp = 0, peers = 0;
+    qint64 totalBytes = 0, doneBytes = 0;
+    int downloading = 0, seeding = 0, paused = 0, checking = 0, queued = 0, error = 0;
+    int count = 0;
+    bool running = false;
+    int dhtNodes = 0;
+#ifdef EMULE_HAVE_BITTORRENT
+    if (s_session && s_session->isRunning()) {
+        running = true;
+        dhtNodes = s_session->status().dhtNodes;
+        for (const bt::BtTorrentRow& r : s_session->torrents()) {
+            ++count;
+            rateDown += r.rateDown;
+            rateUp += r.rateUp;
+            peers += r.peers;
+            totalBytes += r.size;
+            doneBytes += r.done;
+            using S = bt::BtState;
+            if (r.paused || r.state == S::Paused)
+                ++paused;
+            else if (r.state == S::Error)
+                ++error;
+            else if (r.state == S::CheckingFiles || r.state == S::CheckingResume)
+                ++checking;
+            else if (r.state == S::Queued)
+                ++queued;
+            else if (r.state == S::Downloading || r.state == S::DownloadingMetadata)
+                ++downloading;
+            else if (r.state == S::Seeding || r.state == S::Finished)
+                ++seeding;
+        }
+    }
+#endif
+    const auto* coordinator = BandwidthCoordinator::instance();
+    current.insert(QStringLiteral("running"), running);
+    current.insert(QStringLiteral("downRate"), rateDown);
+    current.insert(QStringLiteral("upRate"), rateUp);
+    current.insert(QStringLiteral("downLimitKb"), coordinator ? coordinator->snapshot().btDownKb : qint64(0));
+    current.insert(QStringLiteral("upLimitKb"), coordinator ? coordinator->snapshot().btUpKb : qint64(0));
+    current.insert(QStringLiteral("peers"), peers);
+    current.insert(QStringLiteral("dhtNodes"), dhtNodes);
+    current.insert(QStringLiteral("torrents"), QCborMap{
+        {QStringLiteral("count"),       count},
+        {QStringLiteral("downloading"), downloading},
+        {QStringLiteral("seeding"),     seeding},
+        {QStringLiteral("paused"),      paused},
+        {QStringLiteral("checking"),    checking},
+        {QStringLiteral("queued"),      queued},
+        {QStringLiteral("error"),       error},
+        {QStringLiteral("totalBytes"),  totalBytes},
+        {QStringLiteral("doneBytes"),   doneBytes},
+        {QStringLiteral("leftBytes"),   std::max<qint64>(0, totalBytes - doneBytes)},
+    });
+    out.insert(QStringLiteral("current"), current);
+    return out;
+}
+
+EngineRates ratesKb()
+{
+#ifdef EMULE_HAVE_BITTORRENT
+    if (s_session && s_session->isRunning()) {
+        const bt::BtStatus st = s_session->status();
+        return {static_cast<float>(st.rateDown) / 1024.0f, static_cast<float>(st.rateUp) / 1024.0f};
+    }
+#endif
+    return {};
+}
+
+void insertRates(QCborMap& stats)
+{
+    const EngineRates r = ratesKb();
+    stats.insert(QStringLiteral("rateDownBt"), static_cast<double>(r.down));
+    stats.insert(QStringLiteral("rateUpBt"), static_cast<double>(r.up));
 }
 
 QCborMap statusToCbor()

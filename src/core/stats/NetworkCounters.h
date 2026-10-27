@@ -1,7 +1,7 @@
 #pragma once
 
 /// @file NetworkCounters.h
-/// @brief Statistics counter blocks: Usenet, indexers, HTTP Cache, Kademlia.
+/// @brief Statistics counter blocks: Usenet, indexers, HTTP Cache, Kademlia, BitTorrent.
 ///
 /// Core owns the storage and the modules do the counting: Statistics holds the
 /// session half, Preferences the banked cumulative half, and the usenet/indexer
@@ -301,6 +301,51 @@ struct UsenetServerCounters {
     bool operator==(const UsenetServerCounters&) const = default;
 };
 
+/// BitTorrent engine, from libtorrent's session counters. The engine stops and
+/// starts within one session, so the session half lives in Statistics. Rates are
+/// bytes/s, times milliseconds.
+struct BtCounters {
+    // Traffic
+    uint64 payloadDownBytes = 0;   ///< piece data received
+    uint64 payloadUpBytes = 0;     ///< piece data sent
+    uint64 wireDownBytes = 0;      ///< all received: payload, protocol, trackers, DHT
+    uint64 wireUpBytes = 0;        ///< all sent
+    uint64 failedBytes = 0;        ///< in pieces that failed their hash
+    uint64 redundantBytes = 0;     ///< received twice, e.g. in end-game mode
+    uint64 downloadTimeMs = 0;     ///< time piece data was coming in
+    uint64 uploadTimeMs = 0;       ///< time piece data was going out
+    uint64 maxDownRate = 0;        ///< Max, payload
+    uint64 maxUpRate = 0;          ///< Max, payload
+    uint64 peakPeers = 0;          ///< Max, connected peers
+
+    // Torrents
+    uint64 torrentsAdded = 0;      ///< by the user; reloads at start don't count
+    uint64 torrentsCompleted = 0;  ///< finished downloading this session
+    uint64 hashFailures = 0;       ///< pieces
+
+    template<class F> static constexpr void forEachField(F&& f)
+    {
+        using C = BtCounters;
+        f("payloadDownBytes", &C::payloadDownBytes, CounterAgg::Sum);
+        f("payloadUpBytes", &C::payloadUpBytes, CounterAgg::Sum);
+        f("wireDownBytes", &C::wireDownBytes, CounterAgg::Sum);
+        f("wireUpBytes", &C::wireUpBytes, CounterAgg::Sum);
+        f("failedBytes", &C::failedBytes, CounterAgg::Sum);
+        f("redundantBytes", &C::redundantBytes, CounterAgg::Sum);
+        f("downloadTimeMs", &C::downloadTimeMs, CounterAgg::Sum);
+        f("uploadTimeMs", &C::uploadTimeMs, CounterAgg::Sum);
+        f("maxDownRate", &C::maxDownRate, CounterAgg::Max);
+        f("maxUpRate", &C::maxUpRate, CounterAgg::Max);
+        f("peakPeers", &C::peakPeers, CounterAgg::Max);
+
+        f("torrentsAdded", &C::torrentsAdded, CounterAgg::Sum);
+        f("torrentsCompleted", &C::torrentsCompleted, CounterAgg::Sum);
+        f("hashFailures", &C::hashFailures, CounterAgg::Sum);
+    }
+
+    bool operator==(const BtCounters&) const = default;
+};
+
 template<class C>
 concept CounterBlock = requires {
     C::forEachField([](const char*, uint64 C::*, CounterAgg) {});
@@ -320,6 +365,7 @@ static_assert(sizeof(UsenetCounters) == counterFieldCount<UsenetCounters>() * si
 static_assert(sizeof(IndexerCounters) == counterFieldCount<IndexerCounters>() * sizeof(uint64));
 static_assert(sizeof(HttpCacheCounters) == counterFieldCount<HttpCacheCounters>() * sizeof(uint64));
 static_assert(sizeof(KadCounters) == counterFieldCount<KadCounters>() * sizeof(uint64));
+static_assert(sizeof(BtCounters) == counterFieldCount<BtCounters>() * sizeof(uint64));
 static_assert(sizeof(UsenetServerCounters)
               == counterFieldCount<UsenetServerCounters>() * sizeof(uint64));
 

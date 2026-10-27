@@ -333,6 +333,8 @@ const std::array<QColor, UiState::kStatsColorCount>& UiState::defaultStatsColors
         QColor(255, 255, 255),   // 13 Upload friend slots
         QColor(255, 190, 190),   // 14 Upload current (excl. overhead)
         QColor(0, 200, 255),     // 15 Download Usenet — not in MFC
+        QColor(255, 170, 0),     // 16 Download BitTorrent — not in MFC
+        QColor(255, 215, 0),     // 17 Upload BitTorrent — not in MFC
     }};
     return defaults;
 }

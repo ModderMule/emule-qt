@@ -118,6 +118,7 @@ private slots:
 
     // Rebuild of the media tags on request
     void rebuildMetaData_rereadsSharedFilesOnly();
+    void rehashAllFiles_rebuildsKnownMetAtTheEnd();
 
     // Locking (one mutex, no nesting)
     void concurrentIterationWhileMutating();
@@ -2151,6 +2152,84 @@ void tst_SharedFileList::rebuildMetaData_rereadsSharedFilesOnly()
         QCOMPARE(f->metaDataVer(), KnownFile::kMetaDataVer);
         QVERIFY(f->getStrTagValue(FT_MEDIA_CODEC) != QStringLiteral("PCM (Old Display Name)"));
     }
+}
+
+// Rehash all files: nothing changes until the pass is done; then a file whose bytes
+// changed under the same size and date is shared under its new hash, an unreadable one
+// is unshared, and a record of a file that is not shared stays.
+void tst_SharedFileList::rehashAllFiles_rebuildsKnownMetAtTheEnd()
+{
+    eMule::testing::TempDir tmp;
+    const QString shareDir = tmp.filePath(QStringLiteral("share"));
+    const QString keepPath = writeFile(shareDir, QStringLiteral("keep.bin"), QByteArray(4000, 'k'));
+    const QString rotPath = writeFile(shareDir, QStringLiteral("rot.bin"), QByteArray(4000, 'r'));
+    const QString badPath = writeFile(shareDir, QStringLiteral("bad.bin"), QByteArray(4000, 'b'));
+    QVERIFY(!keepPath.isEmpty() && !rotPath.isEmpty() && !badPath.isEmpty());
+
+    thePrefs.setConfigDir(tmp.path());
+    thePrefs.setIncomingDir(tmp.filePath(QStringLiteral("incoming")));
+    thePrefs.setSharedDirs({shareDir});
+
+    KnownFileList knownFiles;
+    knownFiles.init(tmp.path());
+    SharedFileList shared(&knownFiles);
+    shared.reload();
+    QTRY_COMPARE_WITH_TIMEOUT(shared.getCount(), 3, 10000);
+    QTRY_COMPARE_WITH_TIMEOUT(shared.getHashingCount(), 0, 5000);
+
+    const auto at = [&shared](const QString& path) { return sharedAt(shared, path); };
+    KnownFile* keep = at(keepPath);
+    KnownFile* rot = at(rotPath);
+    QVERIFY(keep && rot && at(badPath));
+    const MD4Key keepHash(keep->fileHash());
+    const MD4Key rotHash(rot->fileHash());
+    const MD4Key badHash(at(badPath)->fileHash());
+    rot->setAutoUpPriority(false);
+    rot->setUpPriority(kPrVeryHigh);
+    KnownFile* history = makeFile(knownFiles, 0x77, QStringLiteral("gone.bin"));
+
+    // Bit rot: other bytes, same size and date, which no rescan notices
+    {
+        const QDateTime mtime = QFileInfo(rotPath).lastModified();
+        QFile f(rotPath);
+        QVERIFY(f.open(QIODevice::ReadWrite));
+        f.write("XYZ");
+        QVERIFY(f.setFileTime(mtime, QFileDevice::FileModificationTime));
+        f.close();
+    }
+#ifndef Q_OS_WIN
+    QVERIFY(QFile::setPermissions(badPath, QFileDevice::Permissions{}));
+    const auto restore = qScopeGuard([&] {
+        QFile::setPermissions(badPath, QFileDevice::ReadOwner | QFileDevice::WriteOwner);
+    });
+    const bool badUnreadable = !QFile(badPath).open(QIODevice::ReadOnly);   // false as root
+#else
+    const bool badUnreadable = false;
+#endif
+
+    QCOMPARE(shared.rehashAllFiles(), 3);
+    QCOMPARE(shared.rehashAllFiles(), -1);   // one pass at a time
+    QVERIFY(shared.isRehashingAllFiles());
+    QCOMPARE(at(rotPath), rot);              // the old record serves until the end
+    QTRY_VERIFY_WITH_TIMEOUT(!shared.isRehashingAllFiles(), 10000);
+
+    QCOMPARE(at(keepPath), keep);
+    QVERIFY(md4equ(keep->fileHash(), keepHash.data.data()));
+
+    KnownFile* fresh = at(rotPath);
+    QVERIFY(fresh);
+    QVERIFY(!md4equ(fresh->fileHash(), rotHash.data.data()));
+    QCOMPARE(knownFiles.findKnownFileByID(fresh->fileHash()), fresh);
+    QVERIFY(!knownFiles.findKnownFileByID(rotHash.data.data()));
+    QCOMPARE(fresh->upPriority(), uint8{kPrVeryHigh});
+
+    if (badUnreadable) {
+        QVERIFY(!at(badPath));
+        QVERIFY(!knownFiles.findKnownFileByID(badHash.data.data()));
+    }
+
+    QCOMPARE(knownFiles.findKnownFileByID(history->fileHash()), history);
+    QVERIFY(QFileInfo::exists(tmp.filePath(QStringLiteral("known.met"))));
 }
 
 // One store search per KADEMLIAPUBLISHTIME, not one per tick for as long as files are due.

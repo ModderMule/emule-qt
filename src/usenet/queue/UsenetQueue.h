@@ -61,6 +61,7 @@
 
 #include <algorithm>
 #include <array>
+#include <functional>
 #include <memory>
 #include <optional>
 #include <vector>
@@ -271,6 +272,14 @@ public:
     /// flight still land and overwrite. Returns how many were accepted; 0 when
     /// refused as for refetchRange().
     int acceptExternalRange(const QString& itemId, int fileIndex, qint64 offset, qint64 length);
+
+    /// Asked before a file whose articles all resolved is sealed (renamed, padded):
+    /// true keeps it unsealed, so ed3k can still fill its holes (usenet-join.md
+    /// "Sealing"). Unset: never held. Called on this thread; must not call back in.
+    using SealHold = std::function<bool(const QString& itemId, int fileIndex)>;
+    void setSealHold(SealHold hold) { m_sealHold = std::move(hold); }
+    /// The hold on @p fileIndex is over: seal it now if every article resolved.
+    void releaseSealHold(const QString& itemId, int fileIndex);
 
     /// Move @p id into category @p category, or out of one with 0.
     bool setItemCategory(const QString& id, int category);
@@ -518,6 +527,12 @@ signals:
     void articleDecoded(const QString& itemId, int fileIndex, qint64 offset, qint64 length,
                         bool crcOk, int partNumber, const QByteArray& rawYbeginLine,
                         const QString& serverKey);
+
+    /// Post-processing repaired the release (PAR2) and it passed; @p fileIndices
+    /// are the files none of whose articles could be fetched, still on disk at
+    /// `finalPath` or `tempPath`. Emitted before consumed volumes are deleted.
+    /// The ed3k join's member_repaired (usenet-join-host.md "Repair files").
+    void filesRepaired(const QString& itemId, const QList<int>& fileIndices);
 
 private:
     struct SegmentKey {
@@ -1297,6 +1312,8 @@ private:
 
     QThread* m_postThread = nullptr;
     UsenetPostProcessor* m_postProcessor = nullptr;
+    /// ed3k join: keeps a file unsealed while ed3k fills its holes
+    SealHold m_sealHold;
 
     bool m_par2Enabled    = true;
     bool m_renameEnabled  = true;

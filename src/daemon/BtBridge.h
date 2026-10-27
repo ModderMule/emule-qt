@@ -7,6 +7,7 @@
 /// without it (EMULE_BITTORRENT=OFF), and then every request answers 503.
 
 #include "IpcMessage.h"
+#include "stats/StatsHistory.h"
 
 #include <QCborMap>
 #include <QString>
@@ -41,6 +42,15 @@ bool handleRequest(const Ipc::IpcMessage& msg, const std::function<void(const Ip
 
 /// GetBtStatus, also what PushBtStatus carries.
 [[nodiscard]] QCborMap statusToCbor();
+
+/// Payload rates in KB/s; 0 while stopped or absent.
+[[nodiscard]] EngineRates ratesKb();
+
+/// GetStats' rateDownBt/rateUpBt, which the GUI adds to its totals.
+void insertRates(QCborMap& stats);
+
+/// GetBtStats: the session and cumulative counters plus the live figures.
+[[nodiscard]] QCborMap statsToCbor();
 
 #ifdef EMULE_HAVE_BITTORRENT
 /// The session's settings from Preferences: the download dir resolved, the state dir

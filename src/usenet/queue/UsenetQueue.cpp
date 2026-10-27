@@ -854,6 +854,17 @@ int UsenetQueue::acceptExternalRange(const QString& itemId, int fileIndex, qint6
     return accepted;
 }
 
+void UsenetQueue::releaseSealHold(const QString& itemId, int fileIndex)
+{
+    ItemRuntime* rt = runtimeFor(itemId);
+    if (!rt || rt->postRunning || fileIndex < 0 || fileIndex >= rt->item->files.size())
+        return;
+    if (rt->item->status == UsenetItemStatus::Complete || rt->item->status == UsenetItemStatus::Failed)
+        return;
+    checkFileCompletion(*rt, fileIndex);
+    dispatch();
+}
+
 bool UsenetQueue::setItemPriority(const QString& id, int priority)
 {
     ItemRuntime* rt = runtimeFor(id);
@@ -2656,6 +2667,9 @@ void UsenetQueue::checkFileCompletion(ItemRuntime& rt, int fileIndex)
     // Never sealed: an article that outlived the skip must not publish the file.
     if (st.isSkipped() || st.finalized || !st.allSegmentsDone())
         return;
+    // ed3k still fills holes of it: sealed on releaseSealHold()
+    if (m_sealHold && m_sealHold(rt.item->id, fileIndex))
+        return;
 
     sealFile(rt, fileIndex);
 
@@ -3882,6 +3896,21 @@ void UsenetQueue::onPostFinished(const UsenetPostResult& result)
     cancelEncryptedPreview(*rt);
 
     publishStaged(*rt, result);
+
+    // ed3k join: files PAR2 rebuilt with no article of them fetched; before the
+    // consumed volumes go
+    if (result.repaired || result.par2Outcome == Par2Outcome::Repaired) {
+        QList<int> repaired;
+        for (int f = 0; f < rt->item->files.size(); ++f) {
+            const UsenetFileState& st = rt->item->files.at(f);
+            if (st.isSkipped() || st.done.isEmpty() || st.missingSegments < st.done.size())
+                continue;
+            if (QFileInfo::exists(st.finalPath) || QFileInfo::exists(st.tempPath))
+                repaired.append(f);
+        }
+        if (!repaired.isEmpty())
+            emit filesRepaired(rt->item->id, repaired);
+    }
 
     for (const QString& path : result.consumed)
         QFile::remove(path);

@@ -33,6 +33,7 @@ class PowerManager;
 
 namespace usenet { class UsenetSession; }
 namespace bt { class BtSession; }
+namespace ed3k { class Ed3kSession; class Ed3kUsenetJoin; class UsenetJoinQueue; }
 namespace indexer { class IndexerFeedList; class IndexerSearchList; }
 
 class DaemonApp : public QObject {
@@ -131,6 +132,10 @@ private:
     /// the engine. Reached through IpcServer::btConfigChanged.
     void applyBtConfig();
 
+    /// Start, stop or restart the ed3k node after an ed3k* preference moved.
+    /// Reached through IpcServer::ed3kConfigChanged.
+    void applyEd3kConfig();
+
     /// Re-read the indexer account list after an Options save. Reached from any
     /// IPC client through IpcServer::indexerConfigChanged.
     void applyIndexerConfig();
@@ -178,6 +183,13 @@ private:
     std::unique_ptr<usenet::UsenetSession> m_usenetSession;
 #ifdef EMULE_HAVE_BITTORRENT
     std::unique_ptr<bt::BtSession> m_btSession;
+#endif
+#ifdef EMULE_HAVE_ED3K
+    /// The ed3k node (packmule); started after Usenet, stopped before it
+    std::unique_ptr<ed3k::Ed3kSession> m_ed3kSession;
+    /// the usenet join (usenet-join-host.md): needs both sessions; dies before them
+    std::unique_ptr<ed3k::UsenetJoinQueue> m_usenetJoinQueue;
+    std::unique_ptr<ed3k::Ed3kUsenetJoin> m_usenetJoin;
 #endif
     /// eD2K/Usenet/BitTorrent share of the global limits; after both sessions
     std::unique_ptr<BandwidthCoordinator> m_bandwidth;

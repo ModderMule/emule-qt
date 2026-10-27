@@ -22,6 +22,7 @@
 
 #include <array>
 #include <atomic>
+#include <deque>
 #include <functional>
 #include <vector>
 #include <list>
@@ -70,6 +71,10 @@ public:
         uint64 rehashToken = 0;   // echoed back so a stale result can be told apart
 
         [[nodiscard]] bool isRehash() const { return !rehashFileHash.isEmpty(); }
+
+        /// Hash an already shared file again for SharedFileList::rehashAllFiles().
+        /// Reported by fullRehashDone(), never added to the share by the worker.
+        bool fullRehash = false;
     };
 
     explicit HashingThread(QObject* parent = nullptr);
@@ -77,7 +82,7 @@ public:
     void enqueue(Job job);
     /// Drop queued work. Rehash jobs are kept: a share reload has nothing to do with
     /// a part file mid-verification, and dropping one would strand it in
-    /// WaitingForHash with nothing left to move it on.
+    /// WaitingForHash with nothing left to move it on. Full-rehash jobs are kept too.
     void clearQueue();
     void requestStop();
 
@@ -90,6 +95,10 @@ signals:
     /// One byte per part: 1 if it verified against the hashset, 0 if it did not.
     /// partOk holds one PartFile::PartVerdict value per part.
     void partFileRehashed(const QByteArray& fileHash, const QByteArray& partOk, uint64 token);
+    /// A fullRehash job is done. @p fresh is null when the file could not be read
+    /// (@p changed: it was not what the job expected, not a read error).
+    void fullRehashDone(eMule::KnownFile* fresh, const QString& directory,
+                        const QString& filename, bool changed);
 
 protected:
     void run() override;
@@ -172,6 +181,15 @@ public:
     /// @return number of files queued.
     int rebuildMetaData();
     [[nodiscard]] bool isRebuildingMetaData() const { return !m_metaRebuildQueue.empty(); }
+
+    /// Hash every shared complete file again and rebuild known.met from the result,
+    /// for after disk errors. Runs behind the workers, one file per worker at a time;
+    /// the share keeps using the current records until the whole pass is done, then
+    /// changed files are swapped in, unreadable ones unshared and known.met saved.
+    /// Records of files that are not shared stay as they are.
+    /// @return files queued, or -1 when a pass is already running.
+    int rehashAllFiles();
+    [[nodiscard]] bool isRehashingAllFiles() const { return m_fullRehash.active; }
 
     KnownFile* getFileByID(const uint8* hash) const;
     /// True when exactly this object is shared, not merely one with its hash.
@@ -401,6 +419,16 @@ private:
     void onPartFileRehashed(const QByteArray& fileHash, const QByteArray& partOk, uint64 token);
     void onHashingFailed(const QString& directory, const QString& filename, uint64 generation);
     void onHashingDeferred(const QString& directory, const QString& filename, uint64 generation);
+    void onFullRehashDone(KnownFile* fresh, const QString& directory, const QString& filename,
+                          bool changed);
+    /// Hand each idle worker its next full-rehash file. Main thread.
+    void feedFullRehash();
+    /// All full-rehash files are back: apply the results and save known.met.
+    void finishFullRehash();
+    /// @p fresh takes over @p old's place in the share and in known.met.
+    void replaceSharedRecord(KnownFile* old, KnownFile* fresh);
+    /// Unshare @p old and forget its record; a rescan picks the file up again.
+    void dropSharedRecord(KnownFile* old);
 
     /// First file at or after @p cursor (wrapping) for which @p due says yes; the
     /// cursor moves past it. One walk of the map, not one per probe.
@@ -544,6 +572,29 @@ private:
     /// share between ticks. Main thread only.
     std::vector<MD4Key> m_metaRebuildQueue;
     int m_metaRebuildTotal = 0;
+
+    /// A rehashAllFiles() pass. Main thread only, but for the counter
+    /// getHashingCount() reads.
+    struct FullRehashItem {
+        MD4Key oldHash;   // the record shared when the pass started
+        QString directory;
+        QString filename;
+        QString sharedDirectory;
+    };
+    struct FullRehash {
+        bool active = false;
+        /// Waiting files per worker, so each disk is read one file at a time
+        QHash<HashingThread*, std::deque<FullRehashItem>> waiting;
+        QHash<HashingThread*, FullRehashItem> busy;
+        /// Fresh records that differ from the shared one, applied at the end
+        std::vector<std::pair<FullRehashItem, KnownFile*>> changed;
+        std::vector<FullRehashItem> unreadable;
+        int total = 0;
+        int unchanged = 0;
+        int skipped = 0;
+    };
+    FullRehash m_fullRehash;
+    std::atomic<int> m_fullRehashLeft{0};
 
     /// ED2K republish throttle — MFC m_lastPublishED2KFlag / m_lastPublishED2K
     /// (srchybrid/SharedFileList.cpp:1229-1236). Main thread only.

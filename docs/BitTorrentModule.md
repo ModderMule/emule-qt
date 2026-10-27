@@ -20,8 +20,11 @@ Only `BtSession.h`, `BtTypes.h` and `BtIds.h` are free of libtorrent types.
 
 ## Daemon
 
-- `DaemonApp` constructs `BtSession` always; `btEnabled()` gates the start. Options save →
-  `IpcServer::btConfigChanged` → `applyBtConfig()` starts, stops or applies settings.
+- `DaemonApp` constructs `BtSession` always; `btEnabled()` (default on) gates the start. Options
+  save → `IpcServer::btConfigChanged` → `applyBtConfig()` starts, stops or applies settings. Off,
+  the session stops: nothing downloads or seeds and the port closes; torrents stay in the list
+  (resume data) and continue when it is switched on. Prefs migration v3 switches it on once,
+  because older configs stored the old default `enabled: false`.
 - Pushes: `PushTorrentAdded/Removed/Finished`, `PushBtStatus` uncoalesced,
   `PushTorrentUpdate` coalesced per id (250 ms).
 - State: `<config>/BT/session.dat` (DHT state), `<config>/BT/resume/<id>.fastresume`,
@@ -63,9 +66,10 @@ Priority eD2K > Usenet > BitTorrent. The daemon's `BandwidthCoordinator` recompu
 - Connections: `btMaxConnections` (session) and `btMaxConnectionsPerTorrent` (the default of
   every torrent; a torrent's own "max peers" 0 means this default).
 
-Options: the BitTorrent section has three pages, BitTorrent (switch, folder, queue, seeding),
-Connection (port, mapping, encryption, DHT/LSD/PEX, connection limits) and Bandwidth (shares,
-hard caps). `--options bittorrent|btconnection|btbandwidth` opens them.
+Options: the BitTorrent section has two pages, BitTorrent (switch, folder, queue, seeding) and
+Connection (port, mapping, encryption, DHT/LSD/PEX, bandwidth shares and hard caps, connection
+limits). `--options bittorrent|btconnection` opens them (`btbandwidth` is an alias of
+`btconnection`).
 
 ## GUI (Torrents tab)
 
@@ -77,6 +81,9 @@ Transmission's layout, split between the tab and one inspector window:
 | list | `controls/TorrentListModel`, one row per torrent |
 | bottom pane | `controls/TorrentListsPane`: Peers (Transmission's status letters, tooltip per letter), Trackers (status, next announce, scrape counts; Add/Remove/Reannounce, backup tiers toggle), Files (folder tree with sums, Download check box, priority menu). Follows the current row; polls `GetTorrentDetails` every 2 s while shown |
 | inspector | `dialogs/TorrentDetailsDialog` (double click / Details): Info (size, location, hashes, privacy, origin, magnet, comment), Activity (transfer, piece grid with Progress/Available, dates, times), Options (speed limits, seed ratio and seed time, max peers). Only what the tab does not list. Prev/Next walk the list |
+
+Context menu "Paste Magnet Links" (and Ctrl+V) adds every magnet in the clipboard to the default
+folder, started, without the Add dialog, like "Paste eD2K Links".
 
 `--tab torrents --subtab N` selects the first torrent: 0-2 pane tab, 3-5 inspector tab (screenshots).
 
@@ -90,6 +97,27 @@ speed limits clamped to the global limits, max peers 0 = `btMaxConnectionsPerTor
 seed ratio and seed time override the global ones from `<config>/BT/torrent-options.json`. libtorrent
 does not rate-limit peers on the local network. Trackers: 811 add (last tier, no duplicates),
 812 remove.
+
+## Statistics
+
+`BtCounters` (`core/stats/NetworkCounters.h`) follow the Kad pattern: the session half lives in
+`Statistics::btSession()`, the banked half in `Preferences::cumBt` (YAML `statistics.cumBt`), so
+reset, backup and flush need nothing BitTorrent-specific. `BtSession` folds the deltas of
+libtorrent's session counters (`net.*_bytes`, `net.*_payload_bytes`, failed/redundant bytes,
+`peer.num_peers_connected`) in at each `session_stats_alert`, i.e. at the coordinator's 500 ms
+`demand()`; max rates use the 2 s window. Added counts user adds only, Completed only a torrent
+that was downloading (libtorrent also posts finished for a seed loaded at start).
+
+IPC `GetBtStats` (819) answers with the engine off too; the GUI's Statistics tree shows a
+BitTorrent root (last) with Session, Cumulative and Torrents, hidden when the core has no BT.
+
+Rates (§7.8): the daemon hands `StatsHistory::setBtRateSource` a reader of the payload rates
+(`BtBridge::ratesKb`, cleared before the session goes). Each graph sample appends `btDown`/`btUp`
+after `usenetDown` (`GetStatsHistory` fields 15/16): a BitTorrent line in the Download and the
+Upload graph, colours 16/17 in Options → Statistics. The toolbar graph's samples and `GetStats`'
+`rateDownBt`/`rateUpBt` make status bar, title, tray (tooltip and meter) and MiniMule show the
+totals of eD2K, Usenet and BitTorrent. Overhead in the status bar stays eD2K's; the web graphs stay
+eD2K-only.
 
 ## REST API (`/api/v1/torrents`)
 
@@ -161,12 +189,13 @@ MCP tools: `torrents_list`, `torrents_get`, `torrents_add_magnet`, `torrents_set
   per-torrent options across a restart.
 - `tst_WebServer` (`restTorrents*`): the REST routes against a fake backend; without
   BitTorrent, that they are absent.
+- `tst_StatisticsPanel` (`bitTorrentBranch*`), `tst_Preferences` (`bittorrent_v3SwitchesOn`).
 - `tst_TorrentDetailsGui`: filter buckets, Files tree and check boxes, peer letters, backup
   trackers, the inspector's labels, grid and Options round trip.
 
 ## Not done yet
 
-- ToDo: IP filter into `lt::ip_filter` (§7.6), statistics (§7.8)
+- ToDo: IP filter into `lt::ip_filter` (§7.6)
 - ToDo: the ed3k join wiring in the daemon (`libs/packmule/docs/torrent-join.md`, Part C)
 - ToDo: qmake files (`*.pro`) for src/bt
 - ToDo: Visual Studio projects for `tst_TorrentDetailsGui` (and the other BitTorrent GUI tests)

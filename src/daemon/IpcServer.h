@@ -77,6 +77,9 @@ signals:
     /// Forwarded from any client's IpcClientHandler::btConfigChanged.
     void btConfigChanged();
 
+    /// Forwarded from any client's IpcClientHandler::ed3kConfigChanged.
+    void ed3kConfigChanged();
+
     /// Forwarded from any client's IpcClientHandler::standbyConfigChanged.
     void standbyConfigChanged();
 

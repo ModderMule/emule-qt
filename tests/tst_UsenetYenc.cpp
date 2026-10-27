@@ -142,6 +142,8 @@ private slots:
     void singlePartCrcIsVerified();
     void wholeFileCrcOnAMultiPartIsNotThePartsCrc();
     void sizeMismatchIsReported();
+    void ypartLengthMismatchIsReported_data();
+    void ypartLengthMismatchIsReported();
     void articleWithoutYbeginIsRejected();
     void headersBeforeYbeginAreIgnored();
     void danglingEscapeDoesNotLeakIntoTheNextArticle();
@@ -418,6 +420,42 @@ void tst_UsenetYenc::sizeMismatchIsReported()
     // A truncated article is the commonest real corruption, and it is caught by
     // size even when the poster omitted pcrc32.
     QCOMPARE(decoder.status(), YencDecoder::Status::SizeMismatch);
+}
+
+void tst_UsenetYenc::ypartLengthMismatchIsReported_data()
+{
+    QTest::addColumn<QByteArray>("ypart");
+    QTest::addColumn<bool>("glued");
+    QTest::addColumn<bool>("ok");
+    // 300 bytes decoded, =yend size=300 agrees each time
+    QTest::newRow("exact") << QByteArrayLiteral("=ypart begin=101 end=400") << false << true;
+    QTest::newRow("end one short") << QByteArrayLiteral("=ypart begin=101 end=399") << false << false;
+    QTest::newRow("end one long") << QByteArrayLiteral("=ypart begin=101 end=401") << false << false;
+    QTest::newRow("glued exact") << QByteArrayLiteral("=ypart begin=1 end=300") << true << true;
+    QTest::newRow("glued long") << QByteArrayLiteral("=ypart begin=1 end=500") << true << false;
+    QTest::newRow("no end") << QByteArrayLiteral("=ypart begin=101") << false << true;
+}
+
+// usenet-join-host.md: with =ypart, the decoded length must also be end - begin + 1,
+// else the article counts as a failed CRC-32
+void tst_UsenetYenc::ypartLengthMismatchIsReported()
+{
+    QFETCH(QByteArray, ypart);
+    QFETCH(bool, glued);
+    QFETCH(bool, ok);
+    const QByteArray data = patternBytes(300);
+    const QByteArray begin = QByteArrayLiteral("=ybegin part=2 total=3 line=128 size=1000 name=p.bin");
+    QByteArrayList lines;
+    if (glued)
+        lines << begin + ypart;
+    else
+        lines << begin << ypart;
+    lines += encodeYenc(data);
+    lines << QByteArrayLiteral("=yend size=300 part=2 pcrc32=") + QByteArray::number(yencCrc32(0, data), 16);
+
+    YencDecoder decoder;
+    QCOMPARE(decodeAll(decoder, lines), data);
+    QCOMPARE(decoder.status(), ok ? YencDecoder::Status::Ok : YencDecoder::Status::SizeMismatch);
 }
 
 void tst_UsenetYenc::articleWithoutYbeginIsRejected()

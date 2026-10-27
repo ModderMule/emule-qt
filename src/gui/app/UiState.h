@@ -342,8 +342,9 @@ public:
 
     /// Number of statistics colours, in MFC's index order
     /// (srchybrid/Preferences.h:198 — m_adwStatsColors[15]), plus our own slots
-    /// appended after MFC's: 15 is the Download graph's Usenet line.
-    static constexpr int kStatsColorCount = 16;
+    /// appended after MFC's: 15 is the Download graph's Usenet line, 16/17 the
+    /// Download/Upload graphs' BitTorrent lines.
+    static constexpr int kStatsColorCount = 18;
 
     /// MFC's factory palette, indexed exactly as CPreferences::ResetStatsColor does
     /// (srchybrid/Preferences.cpp:1817-1821). Slot 11 (the tray meter bar) is an

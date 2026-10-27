@@ -692,7 +692,6 @@ void OptionsDialog::setupSidebar()
     static constexpr PageDef kBitTorrentPages[] = {
         {PageBitTorrent,    "BitTorrent",            QStyle::SP_DriveNetIcon,           "Torrent.ico"},
         {PageBtConnection,  QT_TR_NOOP("Connection"), QStyle::SP_DirLinkIcon,           "Connection.ico"},
-        {PageBtBandwidth,   QT_TR_NOOP("Bandwidth"),  QStyle::SP_MediaSeekForward,      "Speed.ico"},
     };
 
     // A page added to the enum and to setupPages() but forgotten here would simply be
@@ -794,7 +793,6 @@ void OptionsDialog::setupPages()
     // Last pages: leaving them out shifts no other index
     addPage(PageBitTorrent,    createBitTorrentPage());
     addPage(PageBtConnection,  createBtConnectionPage());
-    addPage(PageBtBandwidth,   createBtBandwidthPage());
 #endif
 }
 
@@ -2045,6 +2043,17 @@ QWidget* OptionsDialog::createFilesPage()
            "names they went by, so later searches can show what you have seen before."));
     miscLayout->addWidget(m_seenFileIndexCheck);
 
+    auto* rehashRow = new QHBoxLayout;
+    rehashRow->addStretch();
+    m_rehashAllBtn = new QPushButton(tr("Rehash All Files..."), miscGroup);
+    m_rehashAllBtn->setToolTip(
+        tr("Reads every shared file again and rebuilds known.met from the result. "
+           "Only needed after hard disk errors."));
+    m_rehashAllBtn->setEnabled(m_ipc != nullptr);
+    connect(m_rehashAllBtn, &QPushButton::clicked, this, &OptionsDialog::rehashAllSharedFiles);
+    rehashRow->addWidget(m_rehashAllBtn);
+    miscLayout->addLayout(rehashRow);
+
     layout->addWidget(miscGroup);
 
     // === Video Player group ===
@@ -2856,11 +2865,13 @@ QWidget* OptionsDialog::createStatisticsPage()
         {tr("Download Average"), 3},
         {tr("Download Current"), 2},
         {tr("Download Usenet"), 15},
+        {tr("Download BitTorrent"), 16},
         {tr("Upload Session"), 7},
         {tr("Upload Average"), 6},
         {tr("Upload Current"), 5},
         {tr("Upload Slots (no overhead)"), 14},
         {tr("Upload Friend Slots"), 13},
+        {tr("Upload BitTorrent"), 17},
         {tr("Active Connections"), 8},
         {tr("Active Uploads"), 10},
         {tr("Total Uploads"), 9},
@@ -5463,8 +5474,9 @@ QWidget* OptionsDialog::createBitTorrentPage()
 
     m_btEnabledCheck = new QCheckBox(tr("Enable BitTorrent"), page);
     m_btEnabledCheck->setToolTip(
-        tr("Starts the BitTorrent engine with the daemon. Off, no torrent is "
-           "downloaded or seeded."));
+        tr("Runs the BitTorrent engine in the core. Off, the engine stops: no torrent "
+           "is downloaded or seeded and the BitTorrent port is closed. Torrents stay "
+           "in the list and continue when it is switched on again."));
     mainLayout->addWidget(m_btEnabledCheck);
 
     // -- Folder -------------------------------------------------------------
@@ -5590,6 +5602,55 @@ QWidget* OptionsDialog::createBtConnectionPage()
 
     mainLayout->addWidget(peerGroup);
 
+    // -- Bandwidth ----------------------------------------------------------
+    auto* bwGroup = new QGroupBox(tr("Bandwidth"), page);
+    auto* bwForm = new QFormLayout(bwGroup);
+
+    m_btGlobalLimitsLabel = new QLabel(bwGroup);
+    m_btGlobalLimitsLabel->setToolTip(tr("Set on the Connection page."));
+    bwForm->addRow(tr("Global limits:"), m_btGlobalLimitsLabel);
+    auto* note = new QLabel(
+        tr("eD2K and Usenet come first. BitTorrent keeps its share while they are "
+           "busy and uses all the bandwidth they leave idle."), bwGroup);
+    note->setWordWrap(true);
+    note->setEnabled(false);
+    bwForm->addRow(note);
+
+    const auto shareSpin = [bwGroup](const QString& tip) {
+        auto* spin = new QSpinBox(bwGroup);
+        spin->setRange(1, 99);
+        spin->setSuffix(tr(" %"));
+        spin->setValue(Preferences::kDefaultBtSharePercent);
+        spin->setToolTip(tip);
+        return spin;
+    };
+    m_btDownShareSpin = shareSpin(
+        tr("How much of the global download limit BitTorrent keeps while eD2K or "
+           "Usenet is also downloading. When they are idle, BitTorrent may use all of it."));
+    bwForm->addRow(tr("Share of the download limit:"), m_btDownShareSpin);
+    m_btUpShareSpin = shareSpin(
+        tr("How much of the global upload limit BitTorrent keeps while eD2K is also "
+           "uploading. When it is idle, BitTorrent may use all of it."));
+    bwForm->addRow(tr("Share of the upload limit:"), m_btUpShareSpin);
+
+    const auto rateSpin = [bwGroup] {
+        auto* spin = new QSpinBox(bwGroup);
+        spin->setRange(0, 1000000);
+        spin->setSuffix(tr(" KB/s"));
+        spin->setSpecialValueText(tr("No limit"));
+        fitSpecialValue(spin);
+        spin->setToolTip(
+            tr("BitTorrent never goes above this, even with bandwidth to spare. "
+               "At most the global limit."));
+        return spin;
+    };
+    m_btMaxDownSpin = rateSpin();
+    bwForm->addRow(tr("Max. download:"), m_btMaxDownSpin);
+    m_btMaxUpSpin = rateSpin();
+    bwForm->addRow(tr("Max. upload:"), m_btMaxUpSpin);
+
+    mainLayout->addWidget(bwGroup);
+
     // -- Connection limits --------------------------------------------------
     auto* connGroup = new QGroupBox(tr("Connection Limits"), page);
     auto* connForm = new QFormLayout(connGroup);
@@ -5611,8 +5672,15 @@ QWidget* OptionsDialog::createBtConnectionPage()
     // -- Wiring -------------------------------------------------------------
     for (QCheckBox* box : {m_btPortMappingCheck, m_btDhtCheck, m_btLsdCheck, m_btPexCheck})
         connect(box, &QCheckBox::toggled, this, &OptionsDialog::markDirty);
-    for (QSpinBox* box : {m_btPortSpin, m_btMaxConnSpin, m_btMaxConnPerTorrentSpin})
+    for (QSpinBox* box : {m_btPortSpin, m_btMaxConnSpin, m_btMaxConnPerTorrentSpin,
+                          m_btDownShareSpin, m_btUpShareSpin, m_btMaxDownSpin, m_btMaxUpSpin})
         connect(box, &QSpinBox::valueChanged, this, &OptionsDialog::markDirty);
+    // Live from the eD2K Connection page, built before this one
+    for (QSlider* slider : {m_downloadLimitSlider, m_uploadLimitSlider})
+        connect(slider, &QSlider::valueChanged, this, &OptionsDialog::updateBtGlobalLimits);
+    for (QCheckBox* box : {m_downloadLimitCheck, m_uploadLimitCheck})
+        connect(box, &QCheckBox::toggled, this, &OptionsDialog::updateBtGlobalLimits);
+    updateBtGlobalLimits();
     connect(m_btEncryptionCombo, &QComboBox::currentIndexChanged, this, &OptionsDialog::markDirty);
     connect(m_btRandomPortBtn, &QPushButton::clicked, this, [this] {
         // Probes this computer only; a remote core may still find it taken
@@ -5623,90 +5691,6 @@ QWidget* OptionsDialog::createBtConnectionPage()
                    && Preferences::udpPortFree(port);
         }));
     });
-
-    return page;
-}
-
-QWidget* OptionsDialog::createBtBandwidthPage()
-{
-    auto* page = new QWidget(this);
-    auto* mainLayout = new QVBoxLayout(page);
-    mainLayout->setContentsMargins(4, 4, 4, 4);
-
-    // -- Global limits, read-only -------------------------------------------
-    auto* globalGroup = new QGroupBox(tr("Global limits"), page);
-    auto* globalLayout = new QVBoxLayout(globalGroup);
-    m_btGlobalLimitsLabel = new QLabel(globalGroup);
-    m_btGlobalLimitsLabel->setToolTip(tr("Set on the Connection page."));
-    globalLayout->addWidget(m_btGlobalLimitsLabel);
-    auto* note = new QLabel(
-        tr("eD2K and Usenet come first. BitTorrent keeps the share below while they are "
-           "busy and uses all the bandwidth they leave idle."), globalGroup);
-    note->setWordWrap(true);
-    note->setEnabled(false);
-    globalLayout->addWidget(note);
-    mainLayout->addWidget(globalGroup);
-
-    // -- Share of the global limits -----------------------------------------
-    auto* shareGroup = new QGroupBox(tr("Sharing"), page);
-    // Usenet's share spin, in a grid so the two line up
-    auto* shareLayout = new QGridLayout(shareGroup);
-    shareLayout->setColumnStretch(2, 1);
-
-    const auto shareRow = [shareGroup, shareLayout](const QString& label, const QString& tip) {
-        const int row = shareLayout->count() / 2;   // label + spin per row
-        shareLayout->addWidget(new QLabel(label, shareGroup), row, 0);
-        auto* spin = new QSpinBox(shareGroup);
-        spin->setRange(1, 99);
-        spin->setSuffix(tr(" %"));
-        spin->setValue(Preferences::kDefaultBtSharePercent);
-        spin->setToolTip(tip);
-        shareLayout->addWidget(spin, row, 1);
-        return spin;
-    };
-    m_btDownShareSpin = shareRow(
-        tr("Share of the download limit:"),
-        tr("How much of the global download limit BitTorrent keeps while eD2K or "
-           "Usenet is also downloading. When they are idle, BitTorrent may use all of it."));
-    m_btUpShareSpin = shareRow(
-        tr("Share of the upload limit:"),
-        tr("How much of the global upload limit BitTorrent keeps while eD2K is also "
-           "uploading. When it is idle, BitTorrent may use all of it."));
-
-    mainLayout->addWidget(shareGroup);
-
-    // -- Optional hard caps -------------------------------------------------
-    auto* capGroup = new QGroupBox(tr("Hard limits"), page);
-    auto* capForm = new QFormLayout(capGroup);
-
-    const auto rateSpin = [capGroup] {
-        auto* spin = new QSpinBox(capGroup);
-        spin->setRange(0, 1000000);
-        spin->setSuffix(tr(" KB/s"));
-        spin->setSpecialValueText(tr("No limit"));
-        fitSpecialValue(spin);
-        spin->setToolTip(
-            tr("BitTorrent never goes above this, even with bandwidth to spare. "
-               "At most the global limit."));
-        return spin;
-    };
-    m_btMaxDownSpin = rateSpin();
-    capForm->addRow(tr("Download:"), m_btMaxDownSpin);
-    m_btMaxUpSpin = rateSpin();
-    capForm->addRow(tr("Upload:"), m_btMaxUpSpin);
-
-    mainLayout->addWidget(capGroup);
-    mainLayout->addStretch();
-
-    // -- Wiring -------------------------------------------------------------
-    for (QSpinBox* box : {m_btDownShareSpin, m_btUpShareSpin, m_btMaxDownSpin, m_btMaxUpSpin})
-        connect(box, &QSpinBox::valueChanged, this, &OptionsDialog::markDirty);
-    // Live from the Connection page, built before this one
-    for (QSlider* slider : {m_downloadLimitSlider, m_uploadLimitSlider})
-        connect(slider, &QSlider::valueChanged, this, &OptionsDialog::updateBtGlobalLimits);
-    for (QCheckBox* box : {m_downloadLimitCheck, m_uploadLimitCheck})
-        connect(box, &QCheckBox::toggled, this, &OptionsDialog::updateBtGlobalLimits);
-    updateBtGlobalLimits();
 
     return page;
 }
@@ -8068,7 +8052,7 @@ void OptionsDialog::fillDaemonSettings(const QCborMap& prefs)
 
 #ifdef EMULE_HAVE_BITTORRENT
     // BitTorrent page. Defaults stand in for an older daemon without the keys.
-    m_btEnabledCheck->setChecked(prefs.value(QStringLiteral("btEnabled")).toBool(false));
+    m_btEnabledCheck->setChecked(prefs.value(QStringLiteral("btEnabled")).toBool(true));
     m_btPortSpin->setValue(int(prefs.value(QStringLiteral("btListenPort"))
                                    .toInteger(Preferences::kDefaultBtListenPort)));
     m_btDownloadDirEdit->setText(prefs.value(QStringLiteral("btDownloadDir")).toString());
@@ -8684,6 +8668,47 @@ void OptionsDialog::editFilenameCleanups()
         m_filenameCleanups = words;
         markDirty();
     }
+}
+
+void OptionsDialog::rehashAllSharedFiles()
+{
+    if (!m_ipc || !m_ipc->isConnected())
+        return;
+
+    const auto answer = QMessageBox::question(
+        this, tr("Rehash All Files"),
+        tr("This reads every shared file from disk again and rebuilds known.met. "
+           "It takes a long time and should only be used after hard disk errors.\n\n"
+           "Sharing goes on with the current known.met until the rehash is done.\n\n"
+           "Rehash all shared files now?"),
+        QMessageBox::Yes | QMessageBox::No, QMessageBox::No);
+    if (answer != QMessageBox::Yes)
+        return;
+
+    m_rehashAllBtn->setEnabled(false);
+    m_ipc->sendRequest(Ipc::IpcMessage(Ipc::IpcMsgType::RehashAllSharedFiles),
+        [this, self = QPointer<OptionsDialog>(this)](const Ipc::IpcMessage& resp) {
+            if (!self)
+                return;
+            m_rehashAllBtn->setEnabled(true);
+            if (!resp.isValid() || resp.type() != Ipc::IpcMsgType::Result || !resp.fieldBool(0)) {
+                QMessageBox::warning(this, tr("Rehash All Files"),
+                                     tr("The core did not start the rehash."));
+                return;
+            }
+            const int queued = static_cast<int>(resp.field(1).toInteger());
+            if (queued < 0) {
+                QMessageBox::information(this, tr("Rehash All Files"),
+                                         tr("A rehash of all files is already running."));
+            } else if (queued == 0) {
+                QMessageBox::information(this, tr("Rehash All Files"),
+                                         tr("There are no shared files to rehash."));
+            } else {
+                QMessageBox::information(this, tr("Rehash All Files"),
+                    tr("Rehashing %n shared file(s) in the background. known.met is replaced "
+                       "when all are done; the log shows the result.", nullptr, queued));
+            }
+        });
 }
 
 void OptionsDialog::updateSlotRateLabel()

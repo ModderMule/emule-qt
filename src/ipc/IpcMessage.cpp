@@ -217,6 +217,7 @@ bool isReadOnlyRequest(IpcMsgType type)
     case IpcMsgType::GetTorrents:
     case IpcMsgType::GetTorrentDetails:
     case IpcMsgType::GetBtStatus:
+    case IpcMsgType::GetBtStats:
     case IpcMsgType::GetKadContacts:
     case IpcMsgType::GetKadStatus:
     case IpcMsgType::GetKadSearches:

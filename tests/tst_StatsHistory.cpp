@@ -56,6 +56,7 @@ private slots:
     void reset_clearsBothAndChangesEpoch();
     void fieldsAreCarriedThroughSince();
     void usenetRateSource_isSampledClampedAndClearable();
+    void btRateSource_feedsBothScopesAndToolbarTotals();
 };
 
 void tst_StatsHistory::speed_seqStartsAtOneAndIsMonotonic()
@@ -220,6 +221,8 @@ void tst_StatsHistory::fieldsAreCarriedThroughSince()
     QCOMPARE(samples[0].connActive, 0u);
     QCOMPARE(samples[0].downTransferring, 0u);
     QCOMPARE(samples[0].usenetDown, 0.0f);   // no source installed
+    QCOMPARE(samples[0].btDown, 0.0f);
+    QCOMPARE(samples[0].btUp, 0.0f);
 }
 
 // Core cannot see the Usenet engine, so the daemon hands it a reader. The
@@ -249,6 +252,39 @@ void tst_StatsHistory::usenetRateSource_isSampledClampedAndClearable()
     QCOMPARE(speed[0].down, 512.0f);
     QCOMPARE(speed[1].down, 0.0f);
     QCOMPARE(speed[2].down, 0.0f);
+}
+
+// BitTorrent has its own lines in both scopes and counts into the toolbar totals,
+// down and up, on top of Usenet's download.
+void tst_StatsHistory::btRateSource_feedsBothScopesAndToolbarTotals()
+{
+    const ScopedGraphInterval interval(1);
+    StatsHistory hist;
+
+    EngineRates bt{300.0f, 40.0f};
+    hist.setUsenetDownRateSource([] { return 100.0f; });
+    hist.setBtRateSource([&bt] { return bt; });
+    hist.sample(100);
+    bt = {-1.0f, -2.0f};                 // clamped like Usenet's
+    hist.sample(101);
+    hist.setBtRateSource({});
+    hist.sample(102);
+
+    const auto samples = hist.statsSince(0);
+    QCOMPARE(samples.size(), size_t{3});
+    QCOMPARE(samples[0].btDown, 300.0f);
+    QCOMPARE(samples[0].btUp, 40.0f);
+    QCOMPARE(samples[1].btDown, 0.0f);
+    QCOMPARE(samples[1].btUp, 0.0f);
+    QCOMPARE(samples[2].btDown, 0.0f);
+
+    const auto speed = hist.speedSince(0);
+    QCOMPARE(speed.size(), size_t{3});
+    QCOMPARE(speed[0].down, 400.0f);     // Usenet + BitTorrent
+    QCOMPARE(speed[0].up, 40.0f);
+    QCOMPARE(speed[1].down, 100.0f);
+    QCOMPARE(speed[1].up, 0.0f);
+    QCOMPARE(speed[2].down, 100.0f);
 }
 
 QTEST_MAIN(tst_StatsHistory)

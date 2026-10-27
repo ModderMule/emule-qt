@@ -127,7 +127,7 @@ void CommandLineExec::parse(QApplication& app)
 #ifdef EMULE_HAVE_BITTORRENT
             {QStringLiteral("bittorrent"),   OptionsDialog::PageBitTorrent},
             {QStringLiteral("btconnection"), OptionsDialog::PageBtConnection},
-            {QStringLiteral("btbandwidth"),  OptionsDialog::PageBtBandwidth},
+            {QStringLiteral("btbandwidth"),  OptionsDialog::PageBtConnection},
 #endif
         };
         m_optionsPage = optArg.toInt(); // fallback: numeric index

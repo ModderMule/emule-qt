@@ -241,6 +241,46 @@ bool KnownFileList::dropSupersededRecord(KnownFile* fresh)
     return false;
 }
 
+bool KnownFileList::replaceRecord(KnownFile* old, KnownFile* fresh)
+{
+    if (!old || !fresh || old == fresh)
+        return false;
+    // Same hash: safeAddKFile() swaps the objects and merges the statistics itself
+    if (md4equ(old->fileHash(), fresh->fileHash()))
+        return safeAddKFile(fresh);
+
+    const auto it = m_filesMap.find(MD4Key(old->fileHash()));
+    if (it == m_filesMap.end() || it->second != old)
+        return false;   // not ours to delete
+
+    // safeAddKFile(fresh) adds the merged figures to the totals again
+    totalTransferred -= old->statistic.allTimeTransferred();
+    totalRequested -= old->statistic.allTimeRequests();
+    totalAccepted -= old->statistic.allTimeAccepts();
+    fresh->statistic.mergeFileStats(old->statistic);
+
+    unindexBySize(old);
+    m_filesMap.erase(it);
+    old->detachUploadingClients();
+    delete old;
+    return safeAddKFile(fresh);
+}
+
+bool KnownFileList::dropRecord(KnownFile* old)
+{
+    if (!old)
+        return false;
+    const auto it = m_filesMap.find(MD4Key(old->fileHash()));
+    if (it == m_filesMap.end() || it->second != old)
+        return false;
+    unindexBySize(old);
+    m_filesMap.erase(it);
+    old->detachUploadingClients();
+    delete old;
+    markDirty();
+    return true;
+}
+
 void KnownFileList::remove(const KnownFile* file)
 {
     if (!file)

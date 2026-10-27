@@ -34,6 +34,10 @@
 #include "BtSession.h"
 #include "BtTypes.h"
 #endif
+#ifdef EMULE_HAVE_ED3K
+#include "Ed3kSession.h"
+#include "Ed3kUsenetJoin.h"
+#endif
 #include "IndexerFeedList.h"
 #include "IndexerSearch.h"
 #include "IndexerSearchList.h"
@@ -225,6 +229,8 @@ bool DaemonApp::start()
             this, &DaemonApp::applyIndexerConfig);
     connect(m_ipcServer.get(), &IpcServer::btConfigChanged,
             this, &DaemonApp::applyBtConfig);
+    connect(m_ipcServer.get(), &IpcServer::ed3kConfigChanged,
+            this, &DaemonApp::applyEd3kConfig);
 
     // The web server starts in onCoreLoaded(): a REST client must not read
     // half-loaded lists or add a download whose part file is still unread.
@@ -253,6 +259,19 @@ bool DaemonApp::start()
     if (thePrefs.usenetEnabled())
         m_usenetSession->start();
 
+    // ed3k (packmule): after Usenet (E2's usenet join uses both). Its own UDP port,
+    // mapped by CoreSession::buildPortMapRequests while ed3kEnabled()
+#ifdef EMULE_HAVE_ED3K
+    m_ed3kSession = std::make_unique<ed3k::Ed3kSession>();
+    // before the node starts: it attaches on statusChanged
+    if (auto* queue = m_usenetSession->queue()) {
+        m_usenetJoinQueue = ed3k::Ed3kUsenetJoin::queueAdapter(*queue);
+        m_usenetJoin = std::make_unique<ed3k::Ed3kUsenetJoin>(*m_ed3kSession, *m_usenetJoinQueue, thePrefs.configDir());
+        m_usenetJoin->connectQueue(*queue);
+    }
+    applyEd3kConfig();
+#endif
+
     // BitTorrent. Like Usenet: always constructed, btEnabled() gates the start.
     // The listen port is mapped by the app's PortMapper (CoreSession::buildPortMapRequests);
     // libtorrent's UPnP/NAT-PMP are off (BtSettingsMap)
@@ -265,6 +284,9 @@ bool DaemonApp::start()
     if (thePrefs.btEnabled())
         m_btSession->start(BtBridge::settingsFromPrefs());
 #endif
+    // The graphs' and toolbar's BitTorrent rates; reads BtBridge's session, nulled in stop()
+    if (theApp.statsHistory)
+        theApp.statsHistory->setBtRateSource(&BtBridge::ratesKb);
 
     // One split of the global limits for all three engines
     m_bandwidth = std::make_unique<BandwidthCoordinator>(m_usenetSession.get(), btSession);
@@ -339,6 +361,18 @@ void DaemonApp::stop()
     // before the sessions it throttles
     m_bandwidth.reset();
 
+#ifdef EMULE_HAVE_ED3K
+    // the join first: saves itself and closes its downloads while the engine runs
+    if (m_usenetJoin)
+        m_usenetJoin->stop();
+    m_usenetJoin.reset();
+    m_usenetJoinQueue.reset();
+    // saves the node's state; before Usenet
+    if (m_ed3kSession)
+        m_ed3kSession->stop();
+    m_ed3kSession.reset();
+#endif
+
     if (theApp.statsHistory)
         theApp.statsHistory->setUsenetDownRateSource({});
     usenet::theUsenetSession = nullptr;
@@ -347,6 +381,8 @@ void DaemonApp::stop()
     m_usenetSession.reset();
 
     // saves resume data and the DHT state; before IPC and core go away
+    if (theApp.statsHistory)
+        theApp.statsHistory->setBtRateSource({});
     BtBridge::setSession(nullptr);
 #ifdef EMULE_HAVE_BITTORRENT
     if (m_btSession)
@@ -613,6 +649,31 @@ void DaemonApp::applyBtConfig()
     else if (enabled)
         m_btSession->applySettings(settings);
     // port, enable switch or btPortMapping may have changed; diff-based, cheap
+    if (m_coreSession)
+        m_coreSession->updatePortMappings();
+#endif
+}
+
+void DaemonApp::applyEd3kConfig()
+{
+#ifdef EMULE_HAVE_ED3K
+    if (!m_ed3kSession)
+        return;
+    const bool enabled = thePrefs.ed3kEnabled();
+    const uint16 port = thePrefs.ed3kUdpPort();
+    // a port change takes a restart of the node; the state is saved in between
+    if (m_ed3kSession->isRunning() && (!enabled || (port != 0 && m_ed3kSession->udpPort() != port))) {
+        if (m_usenetJoin)
+            m_usenetJoin->stop();   // restarted on statusChanged
+        m_ed3kSession->stop();
+    }
+    if (enabled && !m_ed3kSession->isRunning()) {
+        ed3k::Ed3kSettings settings;
+        settings.udpPort = port;
+        settings.configDir = thePrefs.configDir();
+        // ToDo: the bindAddress pref (interface selection) for the ed3k socket
+        m_ed3kSession->start(settings);
+    }
     if (m_coreSession)
         m_coreSession->updatePortMappings();
 #endif

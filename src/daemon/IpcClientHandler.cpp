@@ -370,6 +370,7 @@ void IpcClientHandler::onMessageReceived(const IpcMessage& msg)
     case IpcMsgType::GetSharedFiles:       handleGetSharedFiles(msg); break;
     case IpcMsgType::SetSharedFilePriority: handleSetSharedFilePriority(msg); break;
     case IpcMsgType::ReloadSharedFiles: handleReloadSharedFiles(msg); break;
+    case IpcMsgType::RehashAllSharedFiles: handleRehashAllSharedFiles(msg); break;
     case IpcMsgType::GetEd2kLink:       handleGetEd2kLink(msg); break;
     case IpcMsgType::GetFriends:           handleGetFriends(msg); break;
     case IpcMsgType::AddFriend:            handleAddFriend(msg); break;
@@ -1397,6 +1398,16 @@ void IpcClientHandler::handleReloadSharedFiles(const IpcMessage& msg)
     sendMessage(IpcMessage::makeResult(msg.seqId(), true));
 }
 
+void IpcClientHandler::handleRehashAllSharedFiles(const IpcMessage& msg)
+{
+    if (!theApp.sharedFileList) {
+        sendMessage(IpcMessage::makeResult(msg.seqId(), false));
+        return;
+    }
+    const int queued = theApp.sharedFileList->rehashAllFiles();
+    sendMessage(IpcMessage::makeResult(msg.seqId(), true, QCborValue(queued)));
+}
+
 void IpcClientHandler::handleGetEd2kLink(const IpcMessage& msg)
 {
     const QCborArray hashes = msg.fieldArray(0);
@@ -1913,6 +1924,7 @@ void IpcClientHandler::handleGetStats(const IpcMessage& msg)
 
     // Likewise daemon-only: the split is Usenet's, and core must not know Usenet.
     UsenetBridge::insertDownloadSplit(stats);
+    BtBridge::insertRates(stats);
 
     sendMessage(IpcMessage::makeResult(msg.seqId(), true, QCborValue(stats)));
 }
@@ -1955,7 +1967,7 @@ void IpcClientHandler::handleGetStatsHistory(const IpcMessage& msg)
     QCborArray samples;
     if (auto* hist = theApp.statsHistory) {
         // Field order is StatsGraphSample's, which is MFC's scope order plus the
-        // appended Usenet rate — the GUI unpacks it positionally into the
+        // appended Usenet and BitTorrent rates — the GUI unpacks it positionally into the
         // download/upload/connection graphs.
         for (const auto& s : hist->statsSince(fromSeq))
             samples.append(QCborArray{static_cast<qint64>(s.seq),
@@ -1972,7 +1984,9 @@ void IpcClientHandler::handleGetStatsHistory(const IpcMessage& msg)
                                       static_cast<qint64>(s.upActive),
                                       static_cast<qint64>(s.upTotal),
                                       static_cast<qint64>(s.downTransferring),
-                                      static_cast<double>(s.usenetDown)});
+                                      static_cast<double>(s.usenetDown),
+                                      static_cast<double>(s.btDown),
+                                      static_cast<double>(s.btUp)});
         out.insert(QStringLiteral("epoch"), static_cast<qint64>(hist->epoch()));
         out.insert(QStringLiteral("oldestSeq"), static_cast<qint64>(hist->oldestStatsSeq()));
     }
@@ -2005,6 +2019,8 @@ void IpcClientHandler::handleSetPreferences(const IpcMessage& msg)
         emit usenetConfigChanged();
     if (outcome.btChanged)
         emit btConfigChanged();
+    if (outcome.ed3kChanged)
+        emit ed3kConfigChanged();
 
     // Notify web server config changes
     emit webServerConfigChanged();
@@ -2060,7 +2076,7 @@ IpcClientHandler::PrefApplyOutcome IpcClientHandler::applyPreferenceChanges(cons
         }
 
         if (!applyPreferenceA(key, val) && !applyPreferenceB(key, val)
-            && !applyPreferenceBt(key, val))
+            && !applyPreferenceBt(key, val) && !applyPreferenceEd3k(key, val))
             applyPreferenceC(key, val);
 
         if (key == QStringLiteral("incomingDir")
@@ -2081,6 +2097,8 @@ IpcClientHandler::PrefApplyOutcome IpcClientHandler::applyPreferenceChanges(cons
         if (key.size() > 2 && key.startsWith(QLatin1StringView("bt")) && key.at(2).isUpper()
             && before.value(key) != after.value(key))
             outcome.btChanged = true;
+        if (key.startsWith(QLatin1StringView("ed3k")) && before.value(key) != after.value(key))
+            outcome.ed3kChanged = true;
     }
 
     // MFC PPgSecurity::OnApply: a stricter server filter prunes the list at once
@@ -4383,6 +4401,18 @@ bool IpcClientHandler::applyPreferenceBt(const QString& key, const QCborValue& v
         thePrefs.setBtMaxConnectionsPerTorrent(int(val.toInteger()));
     else if (key == QStringLiteral("btPortMapping"))
         thePrefs.setBtPortMapping(val.toBool());
+    else
+        return false;
+    return true;
+}
+
+bool IpcClientHandler::applyPreferenceEd3k(const QString& key, const QCborValue& val)
+{
+    // ed3k node; the daemon re-reads them on ed3kConfigChanged
+    if (key == QStringLiteral("ed3kEnabled"))
+        thePrefs.setEd3kEnabled(val.toBool());
+    else if (key == QStringLiteral("ed3kUdpPort"))
+        thePrefs.setEd3kUdpPort(static_cast<uint16>(std::clamp<qint64>(val.toInteger(), 1, 65535)));
     else
         return false;
     return true;

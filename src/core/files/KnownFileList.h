@@ -75,6 +75,11 @@ public:
     /// of whole parts hashed before the boundary fix). Folds that record's statistics
     /// into @p fresh and deletes it; call before safeAddKFile(fresh).
     bool dropSupersededRecord(KnownFile* fresh);
+    /// @p fresh is a new hash of the file behind @p old: it takes over the record,
+    /// statistics included, and @p old is deleted. Unshare @p old first.
+    bool replaceRecord(KnownFile* old, KnownFile* fresh);
+    /// Forget @p old and delete it. Unshare it first. All-time totals keep its share.
+    bool dropRecord(KnownFile* old);
     /// A date one DST hour off matches too; on FAT/exFAT (@p localTimeVolume) also a
     /// rounding step (sameFileDate()). An exact match still wins.
     KnownFile* findKnownFile(const QString& filename, time_t date, uint64 size,

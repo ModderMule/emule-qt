@@ -114,6 +114,7 @@ static QString ipcMsgTypeName(Ipc::IpcMsgType type)
     case T::RecoverArchivePreview: return QStringLiteral("RecoverArchivePreview");
     case T::SwapA4AFToFile:       return QStringLiteral("SwapA4AFToFile");
     case T::UpdateIpFilterNow:    return QStringLiteral("UpdateIpFilterNow");
+    case T::RehashAllSharedFiles: return QStringLiteral("RehashAllSharedFiles");
     case T::PushNotifierEvent:    return QStringLiteral("PushNotifierEvent");
     case T::PushServerState:      return QStringLiteral("PushServerState");
     case T::PushSearchResult:     return QStringLiteral("PushSearchResult");
@@ -185,6 +186,7 @@ static QString ipcMsgTypeName(Ipc::IpcMsgType type)
     case T::AddTorrentTrackers:   return QStringLiteral("AddTorrentTrackers");
     case T::RemoveTorrentTrackers: return QStringLiteral("RemoveTorrentTrackers");
     case T::GetBtStatus:          return QStringLiteral("GetBtStatus");
+    case T::GetBtStats:           return QStringLiteral("GetBtStats");
     case T::PushTorrentAdded:     return QStringLiteral("PushTorrentAdded");
     case T::PushTorrentUpdate:    return QStringLiteral("PushTorrentUpdate");
     case T::PushTorrentRemoved:   return QStringLiteral("PushTorrentRemoved");

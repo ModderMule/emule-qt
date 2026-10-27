@@ -75,6 +75,11 @@ void StatsHistory::setUsenetDownRateSource(std::function<float()> source)
     m_usenetDownRate = std::move(source);
 }
 
+void StatsHistory::setBtRateSource(std::function<EngineRates()> source)
+{
+    m_btRates = std::move(source);
+}
+
 void StatsHistory::reset()
 {
     m_stats.clear();
@@ -137,6 +142,9 @@ void StatsHistory::takeStatsSample(uint32 nowSecs)
 
     if (m_usenetDownRate)
         s.usenetDown = std::max(0.0f, m_usenetDownRate());
+    const EngineRates bt = btRates();
+    s.btDown = bt.down;
+    s.btUp = bt.up;
 
     m_stats.push_back(s);
     if (m_stats.size() > kStatsCapacity)
@@ -152,13 +160,24 @@ void StatsHistory::takeSpeedSample()
         s.down = st->rateDown();
         s.up   = st->rateUp();
     }
-    // The toolbar shows total download, so Usenet counts too.
+    // The toolbar shows the totals of every network
     if (m_usenetDownRate)
         s.down += std::max(0.0f, m_usenetDownRate());
+    const EngineRates bt = btRates();
+    s.down += bt.down;
+    s.up += bt.up;
 
     m_speed.push_back(s);
     if (m_speed.size() > kSpeedCapacity)
         m_speed.pop_front();
+}
+
+EngineRates StatsHistory::btRates() const
+{
+    if (!m_btRates)
+        return {};
+    const EngineRates r = m_btRates();
+    return {std::max(0.0f, r.down), std::max(0.0f, r.up)};
 }
 
 } // namespace eMule

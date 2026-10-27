@@ -321,6 +321,10 @@ enum class IpcMsgType : int {
     /// reloads it. Security page "Load" button.
     UpdateIpFilterNow       = 291,
 
+    /// [] -> [ok, queued: int]. Hash every shared file again and rebuild known.met
+    /// when all are done; queued -1 = a pass is running already. Files page button.
+    RehashAllSharedFiles    = 292,
+
     // -- Indexers (700-719) --------------------------------------------------
     //
     // The shared newznab/torznab client, reserved here when the Usenet blocks
@@ -731,6 +735,14 @@ enum class IpcMsgType : int {
     RemoveTorrentTrackers   = 812,
     /// [] -> {running, listenPort, listening, dhtNodes, torrents, rateDown, rateUp}
     GetBtStatus             = 818,
+    /// [] -> [ok, map]. The BitTorrent branch of the Statistics window; answered
+    /// with the engine off too (the totals are core's).
+    /// { session: BtCounters, cumulative: BtCounters,
+    ///   current: { running, downRate, upRate (B/s payload), downLimitKb, upLimitKb
+    ///              (0 = none), peers, dhtNodes,
+    ///              torrents: { count, downloading, seeding, paused, checking, queued,
+    ///                          error, totalBytes, doneBytes, leftBytes } } }
+    GetBtStats              = 819,
 
     // -- Responses (Core -> GUI) ---------------------------------------------
 

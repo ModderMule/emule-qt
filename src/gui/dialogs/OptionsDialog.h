@@ -85,7 +85,6 @@ public:
         PageExtended,
         PageBitTorrent,     // BT pages last: none without EMULE_HAVE_BITTORRENT
         PageBtConnection,
-        PageBtBandwidth,
         PageCount
     };
 
@@ -110,6 +109,8 @@ private slots:
 
 private:
     void editFilenameCleanups();
+    /// Files page button: confirm, then have the core rehash every shared file.
+    void rehashAllSharedFiles();
     void setUdpOff(bool off);
     [[nodiscard]] int udpPortValue() const;
     void setupSidebar();
@@ -148,7 +149,6 @@ private:
 #ifdef EMULE_HAVE_BITTORRENT
     QWidget* createBitTorrentPage();
     QWidget* createBtConnectionPage();
-    QWidget* createBtBandwidthPage();
     /// BT hard-cap maxima and the global-limit label follow the Connection page
     void updateBtGlobalLimits();
     /// BT port differs from the other listen ports; warns and shows the page if not
@@ -417,6 +417,7 @@ private:
     QCheckBox* m_autoRenameMajorityCheck = nullptr;
     QCheckBox* m_watchSharedDirsCheck = nullptr;
     QCheckBox* m_seenFileIndexCheck = nullptr;
+    QPushButton* m_rehashAllBtn = nullptr;
     QLineEdit* m_videoPlayerCmdEdit = nullptr;
     QLineEdit* m_videoPlayerArgsEdit = nullptr;
 

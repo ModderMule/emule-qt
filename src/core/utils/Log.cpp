@@ -184,6 +184,26 @@ void logUsenetDebug(const QString& msg)
     qCDebug(lcEmuleUsenet).noquote() << msg;
 }
 
+void logEd3k(const QString& msg)
+{
+    qCInfo(lcEmuleEd3k).noquote() << msg;
+}
+
+void logEd3kWarning(const QString& msg)
+{
+    qCWarning(lcEmuleEd3k).noquote() << msg;
+}
+
+void logEd3kError(const QString& msg)
+{
+    qCCritical(lcEmuleEd3k).noquote() << msg;
+}
+
+void logEd3kDebug(const QString& msg)
+{
+    qCDebug(lcEmuleEd3k).noquote() << msg;
+}
+
 void logStatusInfo(const QString& msg)
 {
     qCInfo(lcEmuleStatus).noquote() << msg;

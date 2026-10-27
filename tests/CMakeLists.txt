@@ -372,6 +372,15 @@ if(EMULE_BITTORRENT)
     set_tests_properties(tst_BtLocalSwarm PROPERTIES TIMEOUT 240)
 endif()
 
+# ed3k node (packmule): two nodes on loopback, no network needed
+if(EMULE_ED3K)
+    emule_add_test(tst_Ed3kSession FOLDER "Ed3k" LIBRARIES eMule::Ed3k)
+    set_tests_properties(tst_Ed3kSession PROPERTIES TIMEOUT 180)
+    # usenet join: a fake news server, a fake queue, two nodes on loopback
+    emule_add_test(tst_Ed3kUsenetJoin FOLDER "Ed3k" LIBRARIES eMule::Ed3k eMule::Usenet)
+    set_tests_properties(tst_Ed3kUsenetJoin PROPERTIES TIMEOUT 180)
+endif()
+
 # Usenet (NNTP) module
 emule_add_test(tst_UsenetSmoke FOLDER "Usenet" LIBRARIES eMule::Usenet)
 emule_add_test(tst_NntpSocket  FOLDER "Usenet" LIBRARIES eMule::Usenet)

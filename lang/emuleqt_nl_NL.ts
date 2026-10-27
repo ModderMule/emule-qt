@@ -560,12 +560,12 @@ Start het met --new-instance of --config &lt;dir&gt; om een ander venster te ope
         <translation>Normaal</translation>
     </message>
     <message>
-        <location filename="../src/gui/dialogs/OptionsDialog.cpp" line="+3318"/>
+        <location filename="../src/gui/dialogs/OptionsDialog.cpp" line="+3329"/>
         <source>Test</source>
         <translation>Testen</translation>
     </message>
     <message>
-        <location filename="../src/gui/panels/StatisticsPanel.cpp" line="+342"/>
+        <location filename="../src/gui/panels/StatisticsPanel.cpp" line="+346"/>
         <source>Total Overhead (Packets): 0 Bytes (0)</source>
         <translation>Totale overhead (pakketten): 0 Bytes (0)</translation>
     </message>
@@ -6185,36 +6185,36 @@ Opnieuw downloaden?</translation>
 <context>
     <name>eMule::OptionsDialog</name>
     <message>
-        <location filename="../src/gui/dialogs/OptionsDialog.cpp" line="-3207"/>
+        <location filename="../src/gui/dialogs/OptionsDialog.cpp" line="-3218"/>
         <source>Options</source>
         <translation>Opties</translation>
     </message>
     <message>
         <location line="+61"/>
-        <location line="+2121"/>
+        <location line="+2130"/>
         <source>OK</source>
         <translation>OK</translation>
     </message>
     <message>
-        <location line="-2120"/>
-        <location line="+2121"/>
+        <location line="-2129"/>
+        <location line="+2130"/>
         <source>Cancel</source>
         <translation>Annuleren</translation>
     </message>
     <message>
-        <location line="-2120"/>
-        <location line="+6105"/>
+        <location line="-2129"/>
+        <location line="+6089"/>
         <source>Apply</source>
         <translation>Toepassen</translation>
     </message>
     <message>
-        <location line="-6104"/>
+        <location line="-6088"/>
         <source>Help</source>
         <translation>Help</translation>
     </message>
     <message>
         <location line="+270"/>
-        <location line="+2118"/>
+        <location line="+2127"/>
         <location line="+59"/>
         <location line="+6"/>
         <location line="+4"/>
@@ -6226,7 +6226,7 @@ Opnieuw downloaden?</translation>
         <translation>IP-filter</translation>
     </message>
     <message>
-        <location line="-2232"/>
+        <location line="-2241"/>
         <source>IP filter reloaded: %1 entries.</source>
         <translation>IP-filter opnieuw geladen: %1 regels.</translation>
     </message>
@@ -6236,7 +6236,7 @@ Opnieuw downloaden?</translation>
         <translation>Opties -&gt; %1 -&gt; %2</translation>
     </message>
     <message>
-        <location line="+196"/>
+        <location line="+195"/>
         <source>General options</source>
         <translation>Algemene opties</translation>
     </message>
@@ -6252,23 +6252,23 @@ Opnieuw downloaden?</translation>
     </message>
     <message>
         <location line="+2"/>
-        <location line="+8101"/>
+        <location line="+8127"/>
         <source>BitTorrent</source>
         <translation>BitTorrent</translation>
     </message>
     <message>
-        <location line="-8020"/>
+        <location line="-8047"/>
         <source>User Name</source>
         <translation>Gebruikersnaam</translation>
     </message>
     <message>
         <location line="+8"/>
-        <location line="+5991"/>
+        <location line="+5977"/>
         <source>Language</source>
         <translation>Taal</translation>
     </message>
     <message>
-        <location line="-5988"/>
+        <location line="-5974"/>
         <source>System Default</source>
         <translation>Systeemstandaard</translation>
     </message>
@@ -6276,13 +6276,13 @@ Opnieuw downloaden?</translation>
         <location line="+14"/>
         <location line="+761"/>
         <location line="+384"/>
-        <location line="+464"/>
+        <location line="+475"/>
         <location line="+298"/>
         <source>Miscellaneous</source>
         <translation>Diversen</translation>
     </message>
     <message>
-        <location line="-1904"/>
+        <location line="-1915"/>
         <source>Bring to front on link click</source>
         <translation>Naar voren brengen bij klik op verwijzing</translation>
     </message>
@@ -6368,25 +6368,25 @@ Opnieuw downloaden?</translation>
     </message>
     <message>
         <location line="+8"/>
-        <location line="+5927"/>
+        <location line="+5913"/>
         <source>Core</source>
         <translation>Kern</translation>
     </message>
     <message>
-        <location line="-5922"/>
+        <location line="-5908"/>
         <source>Address:</source>
         <translation>Adres:</translation>
     </message>
     <message>
         <location line="+4"/>
-        <location line="+1336"/>
-        <location line="+770"/>
+        <location line="+1347"/>
+        <location line="+772"/>
         <location line="+427"/>
         <source>Port:</source>
         <translation>Poort:</translation>
     </message>
     <message>
-        <location line="-2530"/>
+        <location line="-2543"/>
         <source>authentication token</source>
         <translation>authenticatietoken</translation>
     </message>
@@ -6641,20 +6641,20 @@ Weet u zeker dat u wilt doorgaan?</translation>
     </message>
     <message>
         <location line="+2"/>
-        <location line="+1847"/>
+        <location line="+1860"/>
         <location line="+133"/>
         <location line="+296"/>
         <location line="+1016"/>
         <location line="+152"/>
-        <location line="+974"/>
-        <location line="+335"/>
+        <location line="+975"/>
+        <location line="+307"/>
         <location line="+284"/>
         <location line="+29"/>
         <source>Enabled</source>
         <translation>Ingeschakeld</translation>
     </message>
     <message>
-        <location line="-5064"/>
+        <location line="-5050"/>
         <source>Reset</source>
         <translation>Herstellen</translation>
     </message>
@@ -6671,13 +6671,13 @@ Weet u zeker dat u wilt doorgaan?</translation>
     <message>
         <location line="+3"/>
         <location line="+6"/>
-        <location line="+4486"/>
-        <location line="+304"/>
+        <location line="+4442"/>
+        <location line="+334"/>
         <source> KB/s</source>
         <translation> KB/s</translation>
     </message>
     <message>
-        <location line="-4793"/>
+        <location line="-4779"/>
         <source>Upload</source>
         <translation>Upload</translation>
     </message>
@@ -6708,12 +6708,12 @@ Weet u zeker dat u wilt doorgaan?</translation>
     </message>
     <message>
         <location line="+23"/>
-        <location line="+4290"/>
+        <location line="+4304"/>
         <source>Client Port</source>
         <translation>Cliëntpoort</translation>
     </message>
     <message>
-        <location line="-4287"/>
+        <location line="-4301"/>
         <source>TCP</source>
         <translation>TCP</translation>
     </message>
@@ -6748,13 +6748,13 @@ Weet u zeker dat u wilt doorgaan?</translation>
     </message>
     <message>
         <location line="+4"/>
-        <location line="+1720"/>
-        <location line="+5454"/>
+        <location line="+1733"/>
+        <location line="+5427"/>
         <source>Any</source>
         <translation>Alle</translation>
     </message>
     <message>
-        <location line="-7172"/>
+        <location line="-7158"/>
         <source>Use only this network interface, for example a VPN tunnel. Pick one from the list, or type an IP address or a subnet such as 10.64.0.0/10 (the interface holding an address in it). Connections through a proxy are not bound.</source>
         <translation>Alleen deze netwerkinterface gebruiken, bijvoorbeeld een VPN-tunnel. Kies er een uit de lijst, of typ een IP-adres of een subnet zoals 10.64.0.0/10 (de interface met een adres daarbinnen). Verbindingen via een proxy worden niet gebonden.</translation>
     </message>
@@ -6775,12 +6775,12 @@ Weet u zeker dat u wilt doorgaan?</translation>
     </message>
     <message>
         <location line="+6"/>
-        <location line="+4243"/>
+        <location line="+4306"/>
         <source>Connection Limits</source>
         <translation>Verbindingslimieten</translation>
     </message>
     <message>
-        <location line="-4241"/>
+        <location line="-4304"/>
         <source>Max. connections</source>
         <translation>Max. verbindingen</translation>
     </message>
@@ -6841,12 +6841,12 @@ Weet u zeker dat u wilt doorgaan?</translation>
     </message>
     <message>
         <location line="+57"/>
-        <location line="+1543"/>
+        <location line="+1556"/>
         <source>General</source>
         <translation>Algemeen</translation>
     </message>
     <message>
-        <location line="-1540"/>
+        <location line="-1553"/>
         <source>Enable proxy</source>
         <translation>Proxy activeren</translation>
     </message>
@@ -6911,34 +6911,34 @@ Elke Usenet-verbinding loopt dan via de proxy, dus de snelheid ervan begrenst de
     </message>
     <message>
         <location line="+9"/>
-        <location line="+771"/>
+        <location line="+782"/>
         <source>Authentication</source>
         <translation>Identificatie</translation>
     </message>
     <message>
-        <location line="-768"/>
+        <location line="-779"/>
         <source>Enable authentication</source>
         <translation>Identificatie activeren</translation>
     </message>
     <message>
         <location line="+7"/>
-        <location line="+1925"/>
+        <location line="+1938"/>
         <location line="+1019"/>
         <location line="+152"/>
         <source>Name:</source>
         <translation>Naam:</translation>
     </message>
     <message>
-        <location line="-3092"/>
-        <location line="+772"/>
-        <location line="+833"/>
+        <location line="-3105"/>
+        <location line="+783"/>
+        <location line="+835"/>
         <location line="+19"/>
         <location line="+325"/>
         <source>Password:</source>
         <translation>Wachtwoord:</translation>
     </message>
     <message>
-        <location line="-1915"/>
+        <location line="-1928"/>
         <source>Update</source>
         <translation>Bijwerken</translation>
     </message>
@@ -7123,12 +7123,12 @@ Elke Usenet-verbinding loopt dan via de proxy, dus de snelheid ervan begrenst de
     </message>
     <message>
         <location line="+3"/>
-        <location line="+602"/>
+        <location line="+613"/>
         <source>Edit...</source>
         <translation>Bewerken...</translation>
     </message>
     <message>
-        <location line="-591"/>
+        <location line="-602"/>
         <source>Try to transfer full chunks to all uploads</source>
         <translation>Probeer volledige chunks over te dragen bij alle uploads</translation>
     </message>
@@ -7183,7 +7183,7 @@ Elke Usenet-verbinding loopt dan via de proxy, dus de snelheid ervan begrenst de
         <translation>Houdt lokaal bij welke bestanden in uw zoekopdrachten opdoken en onder welke namen, zodat latere zoekopdrachten kunnen tonen wat u eerder heeft gezien.</translation>
     </message>
     <message>
-        <location line="+7"/>
+        <location line="+18"/>
         <source>Video Player</source>
         <translation>Videospeler</translation>
     </message>
@@ -7308,8 +7308,8 @@ Elke Usenet-verbinding loopt dan via de proxy, dus de snelheid ervan begrenst de
         <translation>SMTP-serverinstellingen</translation>
     </message>
     <message>
-        <location line="-1556"/>
-        <location line="+1559"/>
+        <location line="-1565"/>
+        <location line="+1568"/>
         <source>Connection</source>
         <translation>Verbinding</translation>
     </message>
@@ -7321,12 +7321,12 @@ Elke Usenet-verbinding loopt dan via de proxy, dus de snelheid ervan begrenst de
     <message>
         <location line="+9"/>
         <location line="+14"/>
-        <location line="+1229"/>
+        <location line="+1231"/>
         <source>None</source>
         <translation>Geen</translation>
     </message>
     <message>
-        <location line="-1241"/>
+        <location line="-1243"/>
         <source>Security:</source>
         <translation>Beveiliging:</translation>
     </message>
@@ -7453,14 +7453,14 @@ Elke Usenet-verbinding loopt dan via de proxy, dus de snelheid ervan begrenst de
     </message>
     <message>
         <location line="+4"/>
-        <location line="+978"/>
+        <location line="+980"/>
         <location line="+1027"/>
         <location line="+154"/>
         <source>Name</source>
         <translation>Naam</translation>
     </message>
     <message>
-        <location line="-2157"/>
+        <location line="-2159"/>
         <source>Users</source>
         <translation>Gebruikers</translation>
     </message>
@@ -7526,12 +7526,12 @@ Elke Usenet-verbinding loopt dan via de proxy, dus de snelheid ervan begrenst de
     </message>
     <message>
         <location line="+7"/>
-        <location line="+486"/>
+        <location line="+488"/>
         <source>Reload</source>
         <translation>Herladen</translation>
     </message>
     <message>
-        <location line="-467"/>
+        <location line="-469"/>
         <source>Update from URL: (filter.dat- or PeerGuardian-format, .gz/.zip accepted)</source>
         <translation>Bijwerken vanaf URL: (filter.dat- of PeerGuardian-formaat, .gz/.zip toegestaan)</translation>
     </message>
@@ -7656,12 +7656,12 @@ Elke Usenet-verbinding loopt dan via de proxy, dus de snelheid ervan begrenst de
     </message>
     <message>
         <location line="+0"/>
-        <location line="+748"/>
+        <location line="+750"/>
         <source>Strict</source>
         <translation>Streng</translation>
     </message>
     <message>
-        <location line="-748"/>
+        <location line="-750"/>
         <source>Strict + Chinese</source>
         <translation>Streng + Chinees</translation>
     </message>
@@ -7692,18 +7692,18 @@ Elke Usenet-verbinding loopt dan via de proxy, dus de snelheid ervan begrenst de
     </message>
     <message>
         <location line="+8"/>
-        <location line="+154"/>
+        <location line="+156"/>
         <source>Update delay: %1 sec</source>
         <translation>Verversingsinterval: %1 sec</translation>
     </message>
     <message>
-        <location line="-153"/>
-        <location line="+154"/>
+        <location line="-155"/>
+        <location line="+156"/>
         <source>Update delay: disabled</source>
         <translation>Verversingsinterval: uitgeschakeld</translation>
     </message>
     <message>
-        <location line="-147"/>
+        <location line="-149"/>
         <source>Time for average graph: 5 mins</source>
         <translation>Tijd voor gemiddeldegrafiek: 5 min</translation>
     </message>
@@ -7748,7 +7748,7 @@ Elke Usenet-verbinding loopt dan via de proxy, dus de snelheid ervan begrenst de
         <translation>Downloads Usenet</translation>
     </message>
     <message>
-        <location line="+1"/>
+        <location line="+2"/>
         <source>Upload Session</source>
         <translation>Uploads sessie-gemiddeld</translation>
     </message>
@@ -7773,7 +7773,7 @@ Elke Usenet-verbinding loopt dan via de proxy, dus de snelheid ervan begrenst de
         <translation>Upload vriendsloten</translation>
     </message>
     <message>
-        <location line="+1"/>
+        <location line="+2"/>
         <source>Active Connections</source>
         <translation>Actieve verbindingen</translation>
     </message>
@@ -8065,23 +8065,23 @@ Elke Usenet-verbinding loopt dan via de proxy, dus de snelheid ervan begrenst de
         <location line="+19"/>
         <location line="+1019"/>
         <location line="+154"/>
-        <location line="+1884"/>
+        <location line="+1857"/>
         <location line="+2177"/>
         <source>Add</source>
         <translation>Toevoegen</translation>
     </message>
     <message>
-        <location line="-5233"/>
+        <location line="-5206"/>
         <location line="+1019"/>
         <location line="+154"/>
-        <location line="+1611"/>
+        <location line="+1584"/>
         <location line="+316"/>
         <location line="+2139"/>
         <source>Remove</source>
         <translation>Verwijderen</translation>
     </message>
     <message>
-        <location line="-5218"/>
+        <location line="-5191"/>
         <source>Display name (optional)</source>
         <translation>Weergavenaam (optioneel)</translation>
     </message>
@@ -8092,12 +8092,12 @@ Elke Usenet-verbinding loopt dan via de proxy, dus de snelheid ervan begrenst de
     </message>
     <message>
         <location line="+8"/>
-        <location line="+2131"/>
+        <location line="+2132"/>
         <source>Encryption:</source>
         <translation>Versleuteling:</translation>
     </message>
     <message>
-        <location line="-2128"/>
+        <location line="-2129"/>
         <source>None (119)</source>
         <translation>Geen (119)</translation>
     </message>
@@ -8147,20 +8147,20 @@ Elke Usenet-verbinding loopt dan via de proxy, dus de snelheid ervan begrenst de
         <translation>Onbekend</translation>
     </message>
     <message>
-        <location line="-809"/>
-        <location line="+811"/>
+        <location line="-811"/>
+        <location line="+813"/>
         <location line="+1004"/>
         <location line="+165"/>
         <source> days</source>
         <translation> dagen</translation>
     </message>
     <message>
-        <location line="-3979"/>
+        <location line="+921"/>
         <source>Bandwidth</source>
         <translation>Bandbreedte</translation>
     </message>
     <message>
-        <location line="+323"/>
+        <location line="-4590"/>
         <source>Downloads that are receiving data, and the sources sending it, are drawn in bold. A source listed under another file (A4AF) is bold too while it transfers. The connected server and the selected category tab are bold as well.</source>
         <translation>Downloads die gegevens ontvangen, en de bronnen die ze sturen, worden vet weergegeven. Een bron onder een ander bestand (A4AF) is ook vet zolang hij overdraagt. De verbonden server en het gekozen categorietabblad zijn ook vet.</translation>
     </message>
@@ -8205,7 +8205,17 @@ Elke Usenet-verbinding loopt dan via de proxy, dus de snelheid ervan begrenst de
         <translation>Deelt bestanden die aan een gedeelde map worden toegevoegd zodra ze verschijnen. Indien uit, worden nieuwe bestanden pas opgemerkt bij een herstart of wanneer je de gedeelde bestanden herlaadt.</translation>
     </message>
     <message>
-        <location line="+586"/>
+        <location line="+13"/>
+        <source>Rehash All Files...</source>
+        <translation>Alle bestanden opnieuw hashen...</translation>
+    </message>
+    <message>
+        <location line="+2"/>
+        <source>Reads every shared file again and rebuilds known.met from the result. Only needed after hard disk errors.</source>
+        <translation>Leest elk gedeeld bestand opnieuw en bouwt known.met opnieuw op uit het resultaat. Alleen nodig na fouten op de harde schijf.</translation>
+    </message>
+    <message>
+        <location line="+582"/>
         <source>the core did not answer</source>
         <translation>de kern antwoordde niet</translation>
     </message>
@@ -8223,7 +8233,17 @@ Elke Usenet-verbinding loopt dan via de proxy, dus de snelheid ervan begrenst de
         <translation>Automatisch bijwerken elke</translation>
     </message>
     <message>
-        <location line="+817"/>
+        <location line="+170"/>
+        <source>Download BitTorrent</source>
+        <translation>Download BitTorrent</translation>
+    </message>
+    <message>
+        <location line="+6"/>
+        <source>Upload BitTorrent</source>
+        <translation>Upload BitTorrent</translation>
+    </message>
+    <message>
+        <location line="+643"/>
         <source>Retention:</source>
         <translation>Retentie:</translation>
     </message>
@@ -8289,14 +8309,14 @@ Elke Usenet-verbinding loopt dan via de proxy, dus de snelheid ervan begrenst de
     </message>
     <message>
         <location line="+1"/>
-        <location line="+1957"/>
+        <location line="+1958"/>
         <location line="+9"/>
-        <location line="+174"/>
+        <location line="+116"/>
         <source>No limit</source>
         <translation>Geen limiet</translation>
     </message>
     <message>
-        <location line="-2137"/>
+        <location line="-2080"/>
         <source>Decimal GB, because that is what an invoice says — the 1024-based GB used elsewhere in eMule would put a 1000 GB plan 7% over.
 
 Set it slightly under your plan. The figure is measured here, so it reads a few percent below your provider&apos;s, and articles already in flight when the limit is reached still finish.</source>
@@ -8352,12 +8372,12 @@ Stel het iets lager in dan uw abonnement. De hoeveelheid wordt hier gemeten en v
     <message>
         <location line="+3"/>
         <location line="+913"/>
-        <location line="+1584"/>
+        <location line="+1557"/>
         <source> s</source>
         <translation> s</translation>
     </message>
     <message>
-        <location line="-2496"/>
+        <location line="-2469"/>
         <source>Never back off</source>
         <translation>Nooit uitstellen</translation>
     </message>
@@ -8368,19 +8388,19 @@ Stel het iets lager in dan uw abonnement. De hoeveelheid wordt hier gemeten en v
     </message>
     <message>
         <location line="+8"/>
-        <location line="+2066"/>
+        <location line="+2017"/>
         <source>Share of the download limit:</source>
         <translation>Aandeel in de downloadlimiet:</translation>
     </message>
     <message>
-        <location line="-2063"/>
+        <location line="-2014"/>
         <location line="+42"/>
-        <location line="+2014"/>
+        <location line="+1964"/>
         <source> %</source>
         <translation> %</translation>
     </message>
     <message>
-        <location line="-2054"/>
+        <location line="-2004"/>
         <source>How much of the global download limit Usenet may take while eD2K is also downloading. Whichever engine is idle lends its whole share to the other, so this only applies when both are busy.</source>
         <translation>Hoeveel van de globale downloadlimiet Usenet mag gebruiken terwijl eD2K ook downloadt. De engine die niets doet, leent zijn hele aandeel aan de andere, dus dit geldt alleen als beide bezig zijn.</translation>
     </message>
@@ -8483,12 +8503,12 @@ De map mag niet in uw tijdelijke, inkomende of configuratiemap liggen: daar schr
     </message>
     <message>
         <location line="+5"/>
-        <location line="+1785"/>
+        <location line="+1786"/>
         <source>Browse…</source>
         <translation>Bladeren…</translation>
     </message>
     <message>
-        <location line="-1775"/>
+        <location line="-1776"/>
         <source>Desktop</source>
         <translation>Bureaublad</translation>
     </message>
@@ -9177,12 +9197,11 @@ Een later toegevoegde indexer haalt zijn oudere aanbod niet op: een nieuwe index
         <translation>BitTorrent inschakelen</translation>
     </message>
     <message>
-        <location line="+2"/>
         <source>Starts the BitTorrent engine with the daemon. Off, no torrent is downloaded or seeded.</source>
-        <translation>Start de BitTorrent-engine samen met de daemon. Uitgeschakeld wordt er geen torrent gedownload of geseed.</translation>
+        <translation type="vanished">Start de BitTorrent-engine samen met de daemon. Uitgeschakeld wordt er geen torrent gedownload of geseed.</translation>
     </message>
     <message>
-        <location line="+3346"/>
+        <location line="+3362"/>
         <source>unlimited</source>
         <translation>onbeperkt</translation>
     </message>
@@ -9221,7 +9240,7 @@ Een later toegevoegde indexer haalt zijn oudere aanbod niet op: een nieuwe index
         <translation type="vanished">Gebruikt voor zowel TCP als UDP. Moet verschillen van de eD2K-poorten.</translation>
     </message>
     <message>
-        <location line="-3278"/>
+        <location line="-3291"/>
         <source>Listen port (TCP/UDP):</source>
         <translation>Luisterpoort (TCP/UDP):</translation>
     </message>
@@ -9255,17 +9274,15 @@ Een later toegevoegde indexer haalt zijn oudere aanbod niet op: een nieuwe index
         <translation type="vanished">Onbeperkt</translation>
     </message>
     <message>
-        <location line="+106"/>
         <source>Download:</source>
-        <translation>Download:</translation>
+        <translation type="vanished">Download:</translation>
     </message>
     <message>
-        <location line="+2"/>
         <source>Upload:</source>
-        <translation>Upload:</translation>
+        <translation type="vanished">Upload:</translation>
     </message>
     <message>
-        <location line="-209"/>
+        <location line="-101"/>
         <source>Active downloads:</source>
         <translation>Actieve downloads:</translation>
     </message>
@@ -9320,7 +9337,7 @@ Een later toegevoegde indexer haalt zijn oudere aanbod niet op: een nieuwe index
         <translation>BitTorrent-downloadmap</translation>
     </message>
     <message>
-        <location line="+196"/>
+        <location line="+168"/>
         <source>Warning: Do not change these settings unless you know what you are doing. Otherwise you can easily make things worse for yourself. eMule will run fine without adjusting any of these settings.</source>
         <translation>Waarschuwing: wijzig deze instellingen niet tenzij u weet wat u doet. Anders kunt u het zichzelf gemakkelijk moeilijker maken. eMule werkt prima zonder iets aan deze instellingen te veranderen.</translation>
     </message>
@@ -9355,7 +9372,7 @@ Een later toegevoegde indexer haalt zijn oudere aanbod niet op: een nieuwe index
         <translation>Downloads worden altijd gecontroleerd en gelogd. Gedeelde bestanden worden bij elke start opnieuw gecontroleerd.</translation>
     </message>
     <message>
-        <location line="+2829"/>
+        <location line="+2870"/>
         <source>UDP is disabled in the config file (udpPort: 0)</source>
         <translation>UDP is uitgeschakeld in het configuratiebestand (udpPort: 0)</translation>
     </message>
@@ -9460,13 +9477,13 @@ Aanmaken?</translation>
 %1</translation>
     </message>
     <message>
-        <location line="-3201"/>
-        <location line="+190"/>
+        <location line="-3214"/>
+        <location line="+162"/>
         <source>Disabled</source>
         <translation>Uitgeschakeld</translation>
     </message>
     <message>
-        <location line="-4146"/>
+        <location line="-4132"/>
         <source>Lets two Low ID clients find each other&apos;s address through a server that supports it or a Kad buddy, then connect over IPv6 or QUIC</source>
         <translation>Laat twee Low ID-clients elkaars adres vinden via een server die dit ondersteunt of een Kad-buddy, en daarna verbinden via IPv6 of QUIC</translation>
     </message>
@@ -9481,12 +9498,17 @@ Aanmaken?</translation>
         <translation>Vraagt ook de server van een bron die niet in je serverlijst staat. Die wordt eerst één keer gepingd en niet aan de lijst toegevoegd</translation>
     </message>
     <message>
-        <location line="+1418"/>
+        <location line="+1431"/>
         <source>Address the web server listens on. Any: every interface, reachable from other hosts. 127.0.0.1: this computer only. Pick one from the list or type an IP address.</source>
         <translation>Adres waarop de webserver luistert. Alle: elke interface, bereikbaar vanaf andere computers. 127.0.0.1: alleen deze computer. Kies er een uit de lijst of typ een IP-adres.</translation>
     </message>
     <message>
-        <location line="+2436"/>
+        <location line="+2420"/>
+        <source>Runs the BitTorrent engine in the core. Off, the engine stops: no torrent is downloaded or seeded and the BitTorrent port is closed. Torrents stay in the list and continue when it is switched on again.</source>
+        <translation>Draait de BitTorrent-engine in de kern. Uit: de engine stopt, er wordt geen torrent gedownload of geseed en de BitTorrent-poort is gesloten. Torrents blijven in de lijst en gaan verder zodra hij weer aan staat.</translation>
+    </message>
+    <message>
+        <location line="+17"/>
         <source>Queue</source>
         <translation>Wachtrij</translation>
     </message>
@@ -9521,7 +9543,17 @@ Aanmaken?</translation>
         <translation>Peers</translation>
     </message>
     <message>
-        <location line="+29"/>
+        <location line="+28"/>
+        <source>Global limits:</source>
+        <translation>Globale limieten:</translation>
+    </message>
+    <message>
+        <location line="+2"/>
+        <source>eD2K and Usenet come first. BitTorrent keeps its share while they are busy and uses all the bandwidth they leave idle.</source>
+        <translation>eD2K en Usenet gaan voor. BitTorrent houdt zijn aandeel zolang zij bezig zijn en gebruikt alle bandbreedte die zij ongebruikt laten.</translation>
+    </message>
+    <message>
+        <location line="+48"/>
         <source>Peer connections of all torrents together.</source>
         <translation>Peerverbindingen van alle torrents samen.</translation>
     </message>
@@ -9536,24 +9568,21 @@ Aanmaken?</translation>
         <translation>Max. verbindingen per torrent:</translation>
     </message>
     <message>
-        <location line="+31"/>
         <source>Global limits</source>
-        <translation>Algemene limieten</translation>
+        <translation type="vanished">Algemene limieten</translation>
     </message>
     <message>
-        <location line="+3"/>
+        <location line="-57"/>
         <source>Set on the Connection page.</source>
         <translation>In te stellen op de pagina &quot;Verbinding&quot;.</translation>
     </message>
     <message>
-        <location line="+3"/>
         <source>eD2K and Usenet come first. BitTorrent keeps the share below while they are busy and uses all the bandwidth they leave idle.</source>
-        <translation>eD2K en Usenet gaan voor. BitTorrent houdt het aandeel hieronder zolang zij bezig zijn en gebruikt alle bandbreedte die zij ongebruikt laten.</translation>
+        <translation type="vanished">eD2K en Usenet gaan voor. BitTorrent houdt het aandeel hieronder zolang zij bezig zijn en gebruikt alle bandbreedte die zij ongebruikt laten.</translation>
     </message>
     <message>
-        <location line="+8"/>
         <source>Sharing</source>
-        <translation>Verdeling</translation>
+        <translation type="vanished">Verdeling</translation>
     </message>
     <message>
         <location line="+18"/>
@@ -9561,27 +9590,36 @@ Aanmaken?</translation>
         <translation>Hoeveel van de algemene downloadlimiet BitTorrent houdt terwijl eD2K of Usenet ook downloadt. Als die niets doen, mag BitTorrent alles gebruiken.</translation>
     </message>
     <message>
-        <location line="+3"/>
+        <location line="+6"/>
         <source>Share of the upload limit:</source>
         <translation>Aandeel in de uploadlimiet:</translation>
     </message>
     <message>
-        <location line="+1"/>
+        <location line="-2"/>
         <source>How much of the global upload limit BitTorrent keeps while eD2K is also uploading. When it is idle, BitTorrent may use all of it.</source>
         <translation>Hoeveel van de algemene uploadlimiet BitTorrent houdt terwijl eD2K ook uploadt. Als eD2K niets doet, mag BitTorrent alles gebruiken.</translation>
     </message>
     <message>
-        <location line="+6"/>
         <source>Hard limits</source>
-        <translation>Vaste limieten</translation>
+        <translation type="vanished">Vaste limieten</translation>
     </message>
     <message>
-        <location line="+10"/>
+        <location line="+11"/>
         <source>BitTorrent never goes above this, even with bandwidth to spare. At most the global limit.</source>
         <translation>BitTorrent gaat hier nooit boven, ook niet met bandbreedte over. Hooguit de algemene limiet.</translation>
     </message>
     <message>
-        <location line="+86"/>
+        <location line="+5"/>
+        <source>Max. download:</source>
+        <translation>Max. download:</translation>
+    </message>
+    <message>
+        <location line="+2"/>
+        <source>Max. upload:</source>
+        <translation>Max. upload:</translation>
+    </message>
+    <message>
+        <location line="+109"/>
         <source>Max. firewalled Kad nodes served as buddy:</source>
         <translation>Max. gefirewallde Kad-nodes die als buddy worden bediend:</translation>
     </message>
@@ -10211,7 +10249,52 @@ Verbindingen met nieuwsservers schakelen direct om.</translation>
         <translation>Standaardwaarden herstellen</translation>
     </message>
     <message>
-        <location line="+35"/>
+        <location line="+37"/>
+        <location line="+16"/>
+        <location line="+6"/>
+        <location line="+3"/>
+        <location line="+3"/>
+        <source>Rehash All Files</source>
+        <translation>Alle bestanden opnieuw hashen</translation>
+    </message>
+    <message>
+        <location line="-27"/>
+        <source>This reads every shared file from disk again and rebuilds known.met. It takes a long time and should only be used after hard disk errors.
+
+Sharing goes on with the current known.met until the rehash is done.
+
+Rehash all shared files now?</source>
+        <translation>Hiermee wordt elk gedeeld bestand opnieuw van de schijf gelezen en wordt known.met opnieuw opgebouwd. Dit duurt lang en is alleen bedoeld na fouten op de harde schijf.
+
+Tot het opnieuw hashen klaar is, wordt gedeeld met de huidige known.met.
+
+Alle gedeelde bestanden nu opnieuw hashen?</translation>
+    </message>
+    <message>
+        <location line="+16"/>
+        <source>The core did not start the rehash.</source>
+        <translation>De kern heeft het opnieuw hashen niet gestart.</translation>
+    </message>
+    <message>
+        <location line="+6"/>
+        <source>A rehash of all files is already running.</source>
+        <translation>Alle bestanden worden al opnieuw gehasht.</translation>
+    </message>
+    <message>
+        <location line="+3"/>
+        <source>There are no shared files to rehash.</source>
+        <translation>Er zijn geen gedeelde bestanden om opnieuw te hashen.</translation>
+    </message>
+    <message numerus="yes">
+        <location line="+3"/>
+        <source>Rehashing %n shared file(s) in the background. known.met is replaced when all are done; the log shows the result.</source>
+        <translation>
+            <numerusform>%n gedeeld bestand wordt op de achtergrond opnieuw gehasht. known.met wordt vervangen als het klaar is; het logboek toont het resultaat.</numerusform>
+            <numerusform>%n gedeelde bestanden worden op de achtergrond opnieuw gehasht. known.met wordt vervangen als alles klaar is; het logboek toont het resultaat.</numerusform>
+        </translation>
+    </message>
+    <message>
+        <location line="+10"/>
         <source>Automatic</source>
         <translation>Automatisch</translation>
     </message>
@@ -12196,60 +12279,60 @@ De bestanden blijven op de schijf staan.</numerusform>
 <context>
     <name>eMule::StatisticsPanel</name>
     <message>
-        <location filename="../src/gui/panels/StatisticsPanel.cpp" line="-161"/>
-        <location line="+107"/>
+        <location filename="../src/gui/panels/StatisticsPanel.cpp" line="-165"/>
+        <location line="+109"/>
         <source>Average (%1 mins)</source>
         <translation>Gemiddelde (%1 min.)</translation>
     </message>
     <message>
         <location line="-86"/>
-        <location line="+103"/>
+        <location line="+105"/>
         <source>Active connections (1:%1)</source>
         <translation>Actieve verbindingen (1:%1)</translation>
     </message>
     <message>
-        <location line="-50"/>
+        <location line="-52"/>
         <source>Statistics Tree</source>
         <translation>Statistiekenboom</translation>
     </message>
     <message>
         <location line="+7"/>
-        <location line="+1064"/>
+        <location line="+1081"/>
         <source>Statistics last reset: %1</source>
         <translation>Statistieken laatst gereset: %1</translation>
     </message>
     <message>
-        <location line="-1064"/>
-        <location line="+312"/>
-        <location line="+574"/>
+        <location line="-1081"/>
+        <location line="+314"/>
+        <location line="+589"/>
         <location line="+167"/>
         <location line="+8"/>
         <location line="+67"/>
         <location line="+69"/>
-        <location line="+988"/>
+        <location line="+1114"/>
         <source>Unknown</source>
         <translation>Onbekend</translation>
     </message>
     <message>
-        <location line="-2160"/>
-        <location line="+9"/>
+        <location line="-2303"/>
+        <location line="+10"/>
         <source>Session average</source>
         <translation>Sessiegemiddelde</translation>
     </message>
     <message>
-        <location line="-6"/>
-        <location line="+8"/>
+        <location line="-7"/>
+        <location line="+9"/>
         <source>Current</source>
         <translation>Huidig</translation>
     </message>
     <message>
-        <location line="-7"/>
-        <location line="+1942"/>
+        <location line="-8"/>
+        <location line="+2085"/>
         <source>Usenet</source>
         <translation>Usenet</translation>
     </message>
     <message>
-        <location line="-1941"/>
+        <location line="-2083"/>
         <source>Download Speed</source>
         <translation>Downloadsnelheid</translation>
     </message>
@@ -12264,7 +12347,7 @@ De bestanden blijven op de schijf staan.</numerusform>
         <translation>Vriendupload</translation>
     </message>
     <message>
-        <location line="+1"/>
+        <location line="+2"/>
         <source>Upload Speed</source>
         <translation>Uploadsnelheid</translation>
     </message>
@@ -12295,53 +12378,54 @@ De bestanden blijven op de schijf staan.</numerusform>
     </message>
     <message>
         <location line="+3"/>
-        <location line="+685"/>
+        <location line="+700"/>
         <location line="+45"/>
-        <location line="+1019"/>
+        <location line="+1058"/>
         <source>Waiting...</source>
         <translation>Wachten...</translation>
     </message>
     <message>
-        <location line="-1748"/>
-        <location line="+620"/>
+        <location line="-1802"/>
+        <location line="+635"/>
         <source>Session UL:DL Ratio: %1</source>
         <translation>Sessie UL:DL-ratio: %1</translation>
     </message>
     <message>
-        <location line="-618"/>
-        <location line="+620"/>
+        <location line="-633"/>
+        <location line="+635"/>
         <source>Session UL:DL Ratio (Friends UL excluded): %1</source>
         <translation>Sessie UL:DL-ratio (exclusief vrienden-UL): %1</translation>
     </message>
     <message>
-        <location line="-619"/>
-        <location line="+621"/>
+        <location line="-634"/>
+        <location line="+636"/>
         <source>Cumulative UL:DL Ratio: %1</source>
         <translation>Gezamenlijke UL:DL-ratio: %1</translation>
     </message>
     <message>
-        <location line="-618"/>
+        <location line="-633"/>
         <location line="+165"/>
         <location line="+25"/>
-        <location line="+336"/>
-        <location line="+1640"/>
+        <location line="+351"/>
+        <location line="+1766"/>
         <source>Uploads</source>
         <translation>Uploads</translation>
     </message>
     <message>
-        <location line="-2162"/>
+        <location line="-2303"/>
         <location line="+67"/>
         <location line="+83"/>
         <location line="+56"/>
         <location line="+43"/>
-        <location line="+1615"/>
+        <location line="+1625"/>
+        <location line="+131"/>
         <location line="+166"/>
         <location line="+121"/>
         <source>Session</source>
         <translation>Sessie</translation>
     </message>
     <message>
-        <location line="-2148"/>
+        <location line="-2289"/>
         <location line="+35"/>
         <source>Uploaded Data: 0 Bytes</source>
         <translation>Geüploade data: 0 bytes</translation>
@@ -12352,12 +12436,12 @@ De bestanden blijven op de schijf staan.</numerusform>
         <location line="+32"/>
         <location line="+43"/>
         <location line="+114"/>
-        <location line="+284"/>
+        <location line="+299"/>
         <source>Clients</source>
         <translation>Cliënten</translation>
     </message>
     <message>
-        <location line="-505"/>
+        <location line="-520"/>
         <location line="+35"/>
         <location line="+32"/>
         <location line="+43"/>
@@ -12370,12 +12454,12 @@ De bestanden blijven op de schijf staan.</numerusform>
         <location line="+32"/>
         <location line="+43"/>
         <location line="+119"/>
-        <location line="+279"/>
+        <location line="+294"/>
         <source>Port</source>
         <translation>Poort</translation>
     </message>
     <message>
-        <location line="-507"/>
+        <location line="-522"/>
         <location line="+35"/>
         <location line="+32"/>
         <location line="+43"/>
@@ -12393,12 +12477,12 @@ De bestanden blijven op de schijf staan.</numerusform>
     <message>
         <location line="-109"/>
         <location line="+35"/>
-        <location line="+481"/>
+        <location line="+496"/>
         <source>Data Source</source>
         <translation>Databron</translation>
     </message>
     <message>
-        <location line="-515"/>
+        <location line="-530"/>
         <location line="+35"/>
         <source>Complete File: 0 Bytes</source>
         <translation>Compleet bestand: 0 bytes</translation>
@@ -12417,14 +12501,14 @@ De bestanden blijven op de schijf staan.</numerusform>
     <message>
         <location line="+6"/>
         <location line="+28"/>
-        <location line="+480"/>
+        <location line="+495"/>
         <location line="+141"/>
         <location line="+45"/>
         <source>Upload Sessions</source>
         <translation>Uploadsessies</translation>
     </message>
     <message>
-        <location line="-689"/>
+        <location line="-704"/>
         <location line="+28"/>
         <source>Average Upload Per Session: 0 Bytes</source>
         <translation>Gemiddelde upload per sessie: 0 bytes</translation>
@@ -12441,24 +12525,25 @@ De bestanden blijven op de schijf staan.</numerusform>
         <location line="+66"/>
         <location line="+41"/>
         <location line="+32"/>
-        <location line="+1620"/>
+        <location line="+1630"/>
+        <location line="+131"/>
         <location line="+162"/>
         <location line="+125"/>
         <source>Cumulative</source>
         <translation>Cumulatief</translation>
     </message>
     <message>
-        <location line="-2093"/>
+        <location line="-2234"/>
         <location line="+105"/>
         <location line="+24"/>
-        <location line="+345"/>
-        <location line="+1249"/>
+        <location line="+360"/>
+        <location line="+1375"/>
         <location line="+380"/>
         <source>Downloads</source>
         <translation>Downloads</translation>
     </message>
     <message>
-        <location line="-2096"/>
+        <location line="-2237"/>
         <location line="+43"/>
         <source>Downloaded Data: 0 Bytes</source>
         <translation>Gedownloade data: 0 bytes</translation>
@@ -12482,14 +12567,14 @@ De bestanden blijven op de schijf staan.</numerusform>
     <message>
         <location line="+3"/>
         <location line="+34"/>
-        <location line="+419"/>
+        <location line="+434"/>
         <location line="+270"/>
         <location line="+10"/>
         <source>Download Sessions</source>
         <translation>Downloadsessies</translation>
     </message>
     <message>
-        <location line="-728"/>
+        <location line="-743"/>
         <location line="+34"/>
         <source>Average Download Per Session: 0 Bytes</source>
         <translation>Gemiddelde download per sessie: 0 bytes</translation>
@@ -12526,20 +12611,21 @@ De bestanden blijven op de schijf staan.</numerusform>
     <message>
         <location line="+7"/>
         <location line="+26"/>
-        <location line="+1586"/>
+        <location line="+1639"/>
+        <location line="+88"/>
         <source>General</source>
         <translation>Algemeen</translation>
     </message>
     <message>
-        <location line="-1610"/>
+        <location line="-1751"/>
         <location line="+26"/>
-        <location line="+708"/>
+        <location line="+723"/>
         <location line="+33"/>
         <source>Reconnects: %1</source>
         <translation>Herstelde verbindingen: %1</translation>
     </message>
     <message>
-        <location line="-759"/>
+        <location line="-774"/>
         <source>Upload Speed: 0 KB/s</source>
         <translation>Uploadsnelheid: 0 KB/s</translation>
     </message>
@@ -12589,13 +12675,13 @@ De bestanden blijven op de schijf staan.</numerusform>
     </message>
     <message>
         <location line="+3"/>
-        <location line="+743"/>
+        <location line="+758"/>
         <location line="+5"/>
         <source>Statistics Last Reset: %1</source>
         <translation>Statistieken laatst gereset: %1</translation>
     </message>
     <message>
-        <location line="-746"/>
+        <location line="-761"/>
         <source>Time Since Last Reset: -</source>
         <translation>Tijd sinds laatste reset: -</translation>
     </message>
@@ -12650,12 +12736,12 @@ De bestanden blijven op de schijf staan.</numerusform>
     </message>
     <message>
         <location line="+3"/>
-        <location line="+1772"/>
+        <location line="+1913"/>
         <source>Network</source>
         <translation>Netwerk</translation>
     </message>
     <message>
-        <location line="-1766"/>
+        <location line="-1907"/>
         <source>Low ID: 0 (0.0%)</source>
         <translation>Laag-ID: 0 (0.0%)</translation>
     </message>
@@ -12686,12 +12772,12 @@ De bestanden blijven op de schijf staan.</numerusform>
     </message>
     <message>
         <location line="+2"/>
-        <location line="+1741"/>
+        <location line="+1882"/>
         <source>By Country</source>
         <translation>Per land</translation>
     </message>
     <message>
-        <location line="-1740"/>
+        <location line="-1881"/>
         <source>Clients by the country of the address they connected from.</source>
         <translation>Cliënten per land van het adres waarvandaan ze verbonden.</translation>
     </message>
@@ -12753,17 +12839,17 @@ De bestanden blijven op de schijf staan.</numerusform>
     </message>
     <message>
         <location line="+2"/>
-        <location line="+908"/>
+        <location line="+923"/>
         <source>Number of Shared Files: %1</source>
         <translation>Aantal gedeelde bestanden: %1</translation>
     </message>
     <message>
-        <location line="-895"/>
+        <location line="-910"/>
         <source>Disk Space</source>
         <translation>Schijfruimte</translation>
     </message>
     <message>
-        <location line="+169"/>
+        <location line="+184"/>
         <source>Projected Averages</source>
         <translation>Geprojecteerde gemiddelden</translation>
     </message>
@@ -12892,11 +12978,12 @@ De bestanden blijven op de schijf staan.</numerusform>
     <message>
         <location line="+68"/>
         <location line="+74"/>
+        <location line="+1127"/>
         <source>Uploaded Data: %1</source>
         <translation>Geüploade data: %1</translation>
     </message>
     <message>
-        <location line="-63"/>
+        <location line="-1190"/>
         <location line="+73"/>
         <location line="+57"/>
         <location line="+99"/>
@@ -12983,12 +13070,13 @@ De bestanden blijven op de schijf staan.</numerusform>
     <message>
         <location line="+68"/>
         <location line="+99"/>
-        <location line="+926"/>
+        <location line="+970"/>
+        <location line="+82"/>
         <source>Downloaded Data: %1</source>
         <translation>Gedownloade data: %1</translation>
     </message>
     <message>
-        <location line="-1007"/>
+        <location line="-1133"/>
         <source>Active Downloads (chunks): %1</source>
         <translation>Actieve downloads (delen): %1</translation>
     </message>
@@ -13024,12 +13112,12 @@ De bestanden blijven op de schijf staan.</numerusform>
     </message>
     <message>
         <location line="+0"/>
-        <location line="+583"/>
+        <location line="+622"/>
         <source>Connecting</source>
         <translation>Verbinden</translation>
     </message>
     <message>
-        <location line="-583"/>
+        <location line="-622"/>
         <source>Connecting via server</source>
         <translation>Verbinden via server</translation>
     </message>
@@ -13092,11 +13180,12 @@ De bestanden blijven op de schijf staan.</numerusform>
     <message>
         <location line="+5"/>
         <location line="+61"/>
+        <location line="+964"/>
         <source>Completed Downloads: %1</source>
         <translation>Voltooide downloads: %1</translation>
     </message>
     <message>
-        <location line="-50"/>
+        <location line="-1014"/>
         <location line="+10"/>
         <source>Average Download Per Session: %1</source>
         <translation>Gemiddelde download per sessie: %1</translation>
@@ -13165,53 +13254,59 @@ De bestanden blijven op de schijf staan.</numerusform>
     </message>
     <message>
         <location line="+3"/>
+        <location line="+892"/>
         <source>Upload Speed: %1</source>
         <translation>Uploadsnelheid: %1</translation>
     </message>
     <message>
-        <location line="+1"/>
+        <location line="-891"/>
         <location line="+17"/>
+        <location line="+878"/>
         <source>Max Upload Rate: %1</source>
         <translation>Max. uploadsnelheid: %1</translation>
     </message>
     <message>
-        <location line="-16"/>
+        <location line="-894"/>
         <location line="+17"/>
         <source>Max Average Upload Rate: %1</source>
         <translation>Max. gemiddelde uploadsnelheid: %1</translation>
     </message>
     <message>
         <location line="-16"/>
-        <location line="+850"/>
+        <location line="+888"/>
+        <location line="+88"/>
         <source>Download Speed: %1</source>
         <translation>Downloadsnelheid: %1</translation>
     </message>
     <message>
-        <location line="-849"/>
+        <location line="-975"/>
         <location line="+17"/>
-        <location line="+834"/>
+        <location line="+873"/>
+        <location line="+87"/>
         <source>Max Download Rate: %1</source>
         <translation>Max. downloadsnelheid: %1</translation>
     </message>
     <message>
-        <location line="-850"/>
+        <location line="-976"/>
         <location line="+17"/>
         <source>Max Average Download Rate: %1</source>
         <translation>Max. gemiddelde downloadsnelheid: %1</translation>
     </message>
     <message>
         <location line="-5"/>
+        <location line="+878"/>
         <source>Average Upload Rate: %1</source>
         <translation>Gemiddelde uploadsnelheid: %1</translation>
     </message>
     <message>
-        <location line="+3"/>
-        <location line="+834"/>
+        <location line="-875"/>
+        <location line="+873"/>
+        <location line="+87"/>
         <source>Average Download Rate: %1</source>
         <translation>Gemiddelde downloadsnelheid: %1</translation>
     </message>
     <message>
-        <location line="-821"/>
+        <location line="-947"/>
         <location line="+5"/>
         <source>Time Since Last Reset: %1</source>
         <translation>Tijd sinds laatste reset: %1</translation>
@@ -13230,18 +13325,20 @@ De bestanden blijven op de schijf staan.</numerusform>
     <message>
         <location line="-18"/>
         <location line="+20"/>
+        <location line="+820"/>
         <source>Upload Time: %1 %2</source>
         <translation>Uploadtijd: %1 %2</translation>
     </message>
     <message>
-        <location line="-18"/>
+        <location line="-838"/>
         <location line="+20"/>
-        <location line="+776"/>
+        <location line="+817"/>
+        <location line="+85"/>
         <source>Download Time: %1 %2</source>
         <translation>Downloadtijd: %1 %2</translation>
     </message>
     <message>
-        <location line="-794"/>
+        <location line="-920"/>
         <source>Current Server Duration: %1 %2</source>
         <translation>Tijd op actieve server: %1 %2</translation>
     </message>
@@ -13394,18 +13491,19 @@ De bestanden blijven op de schijf staan.</numerusform>
     </message>
     <message>
         <location line="+10"/>
-        <location line="+616"/>
+        <location line="+742"/>
         <source>Number of Downloads: %1</source>
         <translation>Aantal downloads: %1</translation>
     </message>
     <message>
-        <location line="-615"/>
-        <location line="+623"/>
+        <location line="-741"/>
+        <location line="+619"/>
+        <location line="+130"/>
         <source>Total Size of Downloads: %1</source>
         <translation>Totale grootte van downloads: %1</translation>
     </message>
     <message>
-        <location line="-622"/>
+        <location line="-748"/>
         <source>Total Completed Size: %1 (%2%)</source>
         <translation>Totaal voltooid: %1 (%2%)</translation>
     </message>
@@ -13430,7 +13528,7 @@ De bestanden blijven op de schijf staan.</numerusform>
         <translation>Extra benodigde ruimte voor downloads: %1</translation>
     </message>
     <message>
-        <location line="+65"/>
+        <location line="+104"/>
         <source>Clients Seen: ≈%1</source>
         <translation>Cliënten gezien: ≈%1</translation>
     </message>
@@ -13571,7 +13669,85 @@ Opnieuw klikken op &apos;Statistieken herstellen&apos; herlaadt uw huidige stati
         <translation>eMule Qt v%1 %2 [%3]</translation>
     </message>
     <message>
-        <location line="+163"/>
+        <location line="+166"/>
+        <source>Connected Peers: %1</source>
+        <translation>Verbonden peers: %1</translation>
+    </message>
+    <message>
+        <location line="+1"/>
+        <source>Peak Peers: %1</source>
+        <translation>Piek peers: %1</translation>
+    </message>
+    <message>
+        <location line="+1"/>
+        <source>DHT Nodes: %1</source>
+        <translation>DHT-knooppunten: %1</translation>
+    </message>
+    <message>
+        <location line="+2"/>
+        <source>Traffic</source>
+        <translation>Verkeer</translation>
+    </message>
+    <message>
+        <location line="+3"/>
+        <source>Network Traffic Received: %1</source>
+        <translation>Ontvangen netwerkverkeer: %1</translation>
+    </message>
+    <message>
+        <location line="+2"/>
+        <source>Network Traffic Sent: %1</source>
+        <translation>Verzonden netwerkverkeer: %1</translation>
+    </message>
+    <message>
+        <location line="+2"/>
+        <source>Redundant Data: %1</source>
+        <translation>Redundante gegevens: %1</translation>
+    </message>
+    <message>
+        <location line="+1"/>
+        <source>Corrupted Data: %1</source>
+        <translation>Beschadigde gegevens: %1</translation>
+    </message>
+    <message>
+        <location line="+1"/>
+        <source>Pieces Failed Hash Check: %1</source>
+        <translation>Stukken met mislukte hashcontrole: %1</translation>
+    </message>
+    <message>
+        <location line="+2"/>
+        <location line="+42"/>
+        <source>Torrents</source>
+        <translation>Torrents</translation>
+    </message>
+    <message>
+        <location line="-41"/>
+        <source>Added: %1</source>
+        <translation>Toegevoegd: %1</translation>
+    </message>
+    <message>
+        <location line="+11"/>
+        <source>Number of Torrents: %1</source>
+        <translation>Aantal torrents: %1</translation>
+    </message>
+    <message>
+        <location line="+2"/>
+        <source>Seeding: %1</source>
+        <translation>Seeden: %1</translation>
+    </message>
+    <message>
+        <location line="+4"/>
+        <source>Error: %1</source>
+        <translation>Fout: %1</translation>
+    </message>
+    <message>
+        <location line="-1942"/>
+        <location line="+10"/>
+        <location line="+1943"/>
+        <source>BitTorrent</source>
+        <translation>BitTorrent</translation>
+    </message>
+    <message>
+        <location line="+40"/>
         <location line="+507"/>
         <source>Open Connections: %1</source>
         <translation>Open verbindingen: %1</translation>
@@ -13592,7 +13768,9 @@ Opnieuw klikken op &apos;Statistieken herstellen&apos; herlaadt uw huidige stati
         <translation>Netwerkverkeer: %1</translation>
     </message>
     <message>
-        <location line="+1"/>
+        <location line="-80"/>
+        <location line="+2"/>
+        <location line="+79"/>
         <source>Overhead: %1 %2</source>
         <translation>Overhead: %1 %2</translation>
     </message>
@@ -13841,22 +14019,26 @@ Opnieuw klikken op &apos;Statistieken herstellen&apos; herlaadt uw huidige stati
         <translation>Feedtreffers: %1</translation>
     </message>
     <message>
-        <location line="+11"/>
+        <location line="-118"/>
+        <location line="+129"/>
         <source>Downloading: %1</source>
         <translation>Downloaden: %1</translation>
     </message>
     <message>
-        <location line="+1"/>
+        <location line="-127"/>
+        <location line="+128"/>
         <source>Queued: %1</source>
         <translation>In wachtrij: %1</translation>
     </message>
     <message>
-        <location line="+1"/>
+        <location line="-127"/>
+        <location line="+128"/>
         <source>Paused: %1</source>
         <translation>Gepauzeerd: %1</translation>
     </message>
     <message>
-        <location line="+1"/>
+        <location line="-127"/>
+        <location line="+128"/>
         <source>Checking: %1</source>
         <translation>Controleren: %1</translation>
     </message>
@@ -13871,12 +14053,14 @@ Opnieuw klikken op &apos;Statistieken herstellen&apos; herlaadt uw huidige stati
         <translation>Voltooid: %1</translation>
     </message>
     <message>
-        <location line="+2"/>
+        <location line="-128"/>
+        <location line="+130"/>
         <source>Total Size Downloaded: %1</source>
         <translation>Totaal gedownload: %1</translation>
     </message>
     <message>
-        <location line="+1"/>
+        <location line="-129"/>
+        <location line="+130"/>
         <source>Total Size Left to Download: %1</source>
         <translation>Nog te downloaden: %1</translation>
     </message>
@@ -15345,12 +15529,12 @@ Opnieuw klikken op &apos;Statistieken herstellen&apos; herlaadt uw huidige stati
         <location line="+13"/>
         <location line="+15"/>
         <location line="+11"/>
-        <location line="+518"/>
+        <location line="+525"/>
         <source>Not connected to the eMule core.</source>
         <translation>Niet verbonden met de eMule-core.</translation>
     </message>
     <message>
-        <location line="-568"/>
+        <location line="-575"/>
         <source>Cannot read %1.</source>
         <translation>%1 kan niet worden gelezen.</translation>
     </message>
@@ -15421,12 +15605,17 @@ Opnieuw klikken op &apos;Statistieken herstellen&apos; herlaadt uw huidige stati
         <translation>Magnet-link kopiëren</translation>
     </message>
     <message>
+        <location line="+2"/>
+        <source>Paste Magnet Links</source>
+        <translation>Magnetlinks plakken</translation>
+    </message>
+    <message>
         <location line="+78"/>
         <source>BitTorrent Options…</source>
         <translation>BitTorrent-opties…</translation>
     </message>
     <message>
-        <location line="+110"/>
+        <location line="+114"/>
         <source>BitTorrent: %1</source>
         <translation>BitTorrent: %1</translation>
     </message>
@@ -15472,7 +15661,7 @@ Opnieuw klikken op &apos;Statistieken herstellen&apos; herlaadt uw huidige stati
         </translation>
     </message>
     <message>
-        <location line="+163"/>
+        <location line="+164"/>
         <source>Asking the core for the BitTorrent state…</source>
         <translation>BitTorrent-status opvragen bij de core…</translation>
     </message>

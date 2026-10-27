@@ -28,6 +28,11 @@ if(TARGET eMule::Bt)
     target_link_libraries(emulecored PRIVATE eMule::Bt)
 endif()
 
+# ed3k (packmule): optional
+if(TARGET eMule::Ed3k)
+    target_link_libraries(emulecored PRIVATE eMule::Ed3k)
+endif()
+
 # WinShutdownHandler: the hidden window that hears about logoff and shutdown
 if(WIN32)
     target_link_libraries(emulecored PRIVATE user32)

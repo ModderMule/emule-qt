@@ -549,6 +549,30 @@ if(EMULE_QUIC_NATT)
 endif()
 
 # ---------------------------------------------------------------------------
+# ed3k network (packmule, Rust). libs/packmule is a separate repo (gitignored):
+# its packmule-ffi CMake runs cargo and gives packmule::ffi. Cargo profile
+# follows CMAKE_BUILD_TYPE (Debug -> debug, else release). See docs/ed3k-module.md
+# ---------------------------------------------------------------------------
+option(EMULE_ED3K "ed3k network (packmule)" ON)
+if(EMULE_ED3K)
+    set(_emule_packmule_ffi "${CMAKE_SOURCE_DIR}/libs/packmule/crates/packmule-ffi")
+    find_program(EMULE_CARGO cargo)
+    if(EXISTS "${_emule_packmule_ffi}/CMakeLists.txt" AND EMULE_CARGO)
+        # PACKMULE_FFI_TESTS defaults off when not top level
+        set(CARGO "${EMULE_CARGO}" CACHE FILEPATH "cargo for packmule-ffi")
+        add_subdirectory("${_emule_packmule_ffi}" "${CMAKE_BINARY_DIR}/packmule-ffi")
+        message(STATUS "ed3k: packmule-ffi from ${_emule_packmule_ffi}")
+    else()
+        message(STATUS "ed3k: libs/packmule or cargo missing, EMULE_ED3K turned off")
+        set(EMULE_ED3K OFF CACHE BOOL "ed3k network (packmule)" FORCE)
+    endif()
+endif()
+# The one place EMULE_HAVE_ED3K is set
+if(EMULE_ED3K)
+    add_compile_definitions(EMULE_HAVE_ED3K=1)
+endif()
+
+# ---------------------------------------------------------------------------
 # Subdirectories
 # ---------------------------------------------------------------------------
 add_subdirectory(src)

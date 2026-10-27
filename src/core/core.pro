@@ -12,6 +12,8 @@ DEFINES += QT_NO_CAST_FROM_ASCII
 DEFINES += EMULE_HAVE_QUIC_NATT=1
 # BitTorrent: always on, as CMake EMULE_BITTORRENT
 DEFINES += EMULE_HAVE_BITTORRENT=1
+# ed3k (packmule): the port mapping of its UDP port (CoreSession), as daemon.pro
+exists($$PWD/../../libs/packmule/Cargo.toml): DEFINES += EMULE_HAVE_ED3K=1
 
 INCLUDEPATH += \
     $$PWD

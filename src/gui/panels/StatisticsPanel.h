@@ -4,7 +4,7 @@
 /// @brief Statistics panel — tree view + oscilloscope graphs.
 ///
 /// Left side: QTreeWidget showing live statistics (transfer, connection,
-/// time, clients, servers, shared files, total downloads, Usenet).
+/// time, clients, servers, shared files, total downloads, Kad, Usenet, BitTorrent).
 /// Right side: 3 stacked StatsGraph widgets (Download, Upload, Connections).
 
 #include <array>
@@ -54,6 +54,9 @@ public:
 
     /// Apply one GetKadStats reply to the Kademlia branch. Public for tests.
     void applyKadStats(const class QCborMap& data);
+
+    /// Apply one GetBtStats reply to the BitTorrent branch. Public for tests.
+    void applyBtStats(const class QCborMap& data);
 
     /// Apply one GetClientStats reply to Clients > Session / Cumulative. Public for tests.
     void applyClientStats(const class QCborMap& data);
@@ -418,6 +421,17 @@ private:
     QTreeWidgetItem* m_itemKadCumCountries = nullptr;
     QList<CounterItem> m_kadSessionRows;
     QList<CounterItem> m_kadCumulativeRows;
+
+    // --- BitTorrent --- (Usenet's layout: Session, Cumulative, Torrents)
+
+    [[nodiscard]] static std::span<const CounterRow> btCounterRows();
+    [[nodiscard]] static std::span<const CounterRow> btTorrentRows();
+    void buildBtBranch(const QIcon& detailIcon, const QIcon& cumulativeIcon);
+
+    QTreeWidgetItem* m_itemBt = nullptr;
+    QList<CounterItem> m_btSessionRows;
+    QList<CounterItem> m_btCumulativeRows;
+    QList<CounterItem> m_btTorrentRows;
 
     // From the last GetStats: what Usenet's download time is a share of.
     qint64 m_sessionUptime = 0;

@@ -115,6 +115,12 @@ void logUsenetWarning(const QString& msg);
 void logUsenetError(const QString& msg);
 void logUsenetDebug(const QString& msg);
 
+/// ed3k (packmule) variants: emule.ed3k. Never log a key, seed or network name.
+void logEd3k(const QString& msg);
+void logEd3kWarning(const QString& msg);
+void logEd3kError(const QString& msg);
+void logEd3kDebug(const QString& msg);
+
 /// Log to the main Log tab and the GUI status bar (MFC LOG_STATUSBAR).
 void logStatusInfo(const QString& msg);
 

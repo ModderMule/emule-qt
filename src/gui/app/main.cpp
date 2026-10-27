@@ -1019,9 +1019,12 @@ int main(int argc, char* argv[])
                 auto val = [&](QLatin1StringView k) {
                     return stats.value(QString(k)).toDouble();
                 };
-                const double upRate = val(QLatin1StringView("rateUp"));
+                // Totals of every network: status bar, title, tray and MiniMule
+                const double upRate = val(QLatin1StringView("rateUp"))
+                                    + val(QLatin1StringView("rateUpBt"));
                 const double downRate = val(QLatin1StringView("rateDown"))
-                                      + val(QLatin1StringView("rateDownUsenet"));
+                                      + val(QLatin1StringView("rateDownUsenet"))
+                                      + val(QLatin1StringView("rateDownBt"));
                 mainWindow.updateTransferRates(
                     upRate, downRate,
                     val(QLatin1StringView("upOverheadRate")),

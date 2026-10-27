@@ -15,6 +15,14 @@ SUBDIRS = \
     gui \
     tests
 
+# ed3k (packmule): only with libs/packmule checked out, as CMake EMULE_ED3K
+exists($$PWD/libs/packmule/Cargo.toml) {
+    SUBDIRS += ed3k
+    ed3k.subdir  = src/ed3k
+    ed3k.depends = core usenet
+    daemon.depends += ed3k
+}
+
 core.subdir    = src/core
 ipc.subdir     = src/ipc
 indexer.subdir = src/indexer

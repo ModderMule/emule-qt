@@ -190,12 +190,14 @@ void StatisticsPanel::applySettings()
     m_graphDown->setSeriesColor(1, theUiState.statsColor(3));    // Average
     m_graphDown->setSeriesColor(2, theUiState.statsColor(2));    // Current
     m_graphDown->setSeriesColor(3, theUiState.statsColor(15));   // Usenet (not in MFC)
+    m_graphDown->setSeriesColor(4, theUiState.statsColor(16));   // BitTorrent (not in MFC)
 
     m_graphUp->setSeriesColor(0, theUiState.statsColor(7));      // Session average
     m_graphUp->setSeriesColor(1, theUiState.statsColor(6));      // Average
     m_graphUp->setSeriesColor(2, theUiState.statsColor(5));      // Current
     m_graphUp->setSeriesColor(3, theUiState.statsColor(14));     // Current excl. overhead
     m_graphUp->setSeriesColor(4, theUiState.statsColor(13));     // Friend slots
+    m_graphUp->setSeriesColor(5, theUiState.statsColor(17));     // BitTorrent (not in MFC)
 
     m_graphConn->setSeriesColor(0, theUiState.statsColor(8));    // Active connections
     m_graphConn->setSeriesColor(1, theUiState.statsColor(10));   // Active uploads
@@ -287,21 +289,23 @@ void StatisticsPanel::setupUi()
 
     // Labels here, colours from applySettings() — which is also what a change in
     // Options re-runs, so the two can never disagree.
-    m_graphDown = new StatsGraph(4, this);
+    m_graphDown = new StatsGraph(5, this);
     m_graphDown->setSeriesInfo(0, tr("Session average"), theUiState.statsColor(4));
     const QString average = tr("Average (%1 mins)").arg(thePrefs.statsAverageMinutes());
     m_graphDown->setSeriesInfo(1, average, theUiState.statsColor(3));
     m_graphDown->setSeriesInfo(2, tr("Current"), theUiState.statsColor(2));
     m_graphDown->setSeriesInfo(3, tr("Usenet"), theUiState.statsColor(15));
+    m_graphDown->setSeriesInfo(4, tr("BitTorrent"), theUiState.statsColor(16));
     m_graphDown->setYUnits(tr("Download Speed"));
     graphSplitter->addWidget(m_graphDown);
 
-    m_graphUp = new StatsGraph(5, this);
+    m_graphUp = new StatsGraph(6, this);
     m_graphUp->setSeriesInfo(0, tr("Session average"), theUiState.statsColor(7));
     m_graphUp->setSeriesInfo(1, average, theUiState.statsColor(6));
     m_graphUp->setSeriesInfo(2, tr("Current"), theUiState.statsColor(5));
     m_graphUp->setSeriesInfo(3, tr("Current (excl. overhead)"), theUiState.statsColor(14));
     m_graphUp->setSeriesInfo(4, tr("Friend upload"), theUiState.statsColor(13));
+    m_graphUp->setSeriesInfo(5, tr("BitTorrent"), theUiState.statsColor(17));
     m_graphUp->setYUnits(tr("Upload Speed"));
     graphSplitter->addWidget(m_graphUp);
 
@@ -690,6 +694,9 @@ void StatisticsPanel::buildTree()
     // ===== Usenet ===== (not in MFC; last, so MFC's own order stays intact)
     buildUsenetBranch(detailIcon, cumulativeIcon);
 
+    // ===== BitTorrent ===== (not in MFC)
+    buildBtBranch(detailIcon, cumulativeIcon);
+
     // Restore expansion state from persistent settings (defaults: Transfer, Connection, Time expanded)
     // Rows created empty get their wording from the one place that formats them.
     updateTree({});
@@ -725,6 +732,17 @@ void StatisticsPanel::requestStats()
             return;
         }
         applyUsenetStats(resp.fieldMap(1));
+    });
+
+    IpcMessage btReq(IpcMsgType::GetBtStats);
+    m_ipc->sendPoll(this, std::move(btReq), [this](const IpcMessage& resp) {
+        if (!resp.isValid())
+            return;
+        if (resp.type() != IpcMsgType::Result || !resp.fieldBool(0)) {
+            m_itemBt->setHidden(true);   // a core built without BitTorrent
+            return;
+        }
+        applyBtStats(resp.fieldMap(1));
     });
 
     IpcMessage kadReq(IpcMsgType::GetKadStats);
@@ -794,8 +812,8 @@ void StatisticsPanel::applyGraphHistory(const QCborMap& data)
     }
 
     // Positional unpack of StatsGraphSample, whose field order is MFC's scope order
-    // (srchybrid/StatisticsDlg.cpp:569-600) plus the appended Usenet rate.
-    constexpr int kFieldCount = 15;
+    // (srchybrid/StatisticsDlg.cpp:569-600) plus the appended Usenet and BitTorrent rates.
+    constexpr int kFieldCount = 17;
     const QCborArray samples = data.value(QStringLiteral("samples")).toArray();
     for (const auto& v : samples) {
         const QCborArray s = v.toArray();
@@ -804,10 +822,11 @@ void StatisticsPanel::applyGraphHistory(const QCborMap& data)
         m_statsSeq = static_cast<quint32>(s.at(0).toInteger());
 
         m_graphDown->appendPoints({s.at(2).toDouble(), s.at(3).toDouble(),
-                                   s.at(4).toDouble(), s.at(14).toDouble()});
+                                   s.at(4).toDouble(), s.at(14).toDouble(),
+                                   s.at(15).toDouble()});
         m_graphUp->appendPoints({s.at(5).toDouble(), s.at(6).toDouble(),
                                  s.at(7).toDouble(), s.at(8).toDouble(),
-                                 s.at(9).toDouble()});
+                                 s.at(9).toDouble(), s.at(16).toDouble()});
         m_graphConn->appendPoints({static_cast<double>(s.at(10).toInteger()) / connectionsRatio(),
                                    static_cast<double>(s.at(11).toInteger()),
                                    static_cast<double>(s.at(12).toInteger()),
@@ -1664,6 +1683,45 @@ void StatisticsPanel::applyUsenetStats(const QCborMap& data)
                       session.value(QStringLiteral("wireBytes")));
 }
 
+void StatisticsPanel::applyBtStats(const QCborMap& data)
+{
+    m_itemBt->setHidden(false);
+
+    const QCborMap current = data.value(QStringLiteral("current")).toMap();
+
+    const auto scopeValues = [&](const QString& scope, qint64 runtimeSecs) {
+        QHash<QString, qint64> v = counterValues(data.value(scope).toMap());
+        const auto rate = [&v](const char* bytes, const char* timeMs) {
+            const qint64 ms = v.value(QLatin1StringView(timeMs));
+            return ms > 0 ? v.value(QLatin1StringView(bytes)) * 1000 / ms : qint64(0);
+        };
+        v.insert(QStringLiteral("avgDownRate"), rate("payloadDownBytes", "downloadTimeMs"));
+        v.insert(QStringLiteral("avgUpRate"), rate("payloadUpBytes", "uploadTimeMs"));
+        v.insert(QStringLiteral("overheadDownBytes"),
+                 std::max<qint64>(0, v.value(QStringLiteral("wireDownBytes"))
+                                         - v.value(QStringLiteral("payloadDownBytes"))));
+        v.insert(QStringLiteral("overheadUpBytes"),
+                 std::max<qint64>(0, v.value(QStringLiteral("wireUpBytes"))
+                                         - v.value(QStringLiteral("payloadUpBytes"))));
+        v.insert(QStringLiteral("runtimeMs"), runtimeSecs * 1000);
+        return v;
+    };
+
+    QHash<QString, qint64> session = scopeValues(QStringLiteral("session"), m_sessionUptime);
+    for (const char* live : {"downRate", "upRate", "peers", "dhtNodes"}) {
+        const QString key = QString::fromLatin1(live);
+        session.insert(key, current.value(key).toInteger());
+    }
+    fillCounterRows(m_btSessionRows, session);
+    fillCounterRows(m_btCumulativeRows, scopeValues(QStringLiteral("cumulative"), m_cumRunTime));
+
+    QHash<QString, qint64> torrents;
+    const QCborMap torrentMap = current.value(QStringLiteral("torrents")).toMap();
+    for (auto it = torrentMap.cbegin(); it != torrentMap.cend(); ++it)
+        torrents.insert(it.key().toString(), it.value().toInteger());
+    fillCounterRows(m_btTorrentRows, torrents);
+}
+
 void StatisticsPanel::applyClientStats(const QCborMap& data)
 {
     const QCborMap seen = data.value(QStringLiteral("seen")).toMap();
@@ -2125,6 +2183,93 @@ QString StatisticsPanel::formatPercent(qint64 part, qint64 whole)
         return QStringLiteral("(0.0%)");
     const double pct = 100.0 * static_cast<double>(part) / static_cast<double>(whole);
     return QStringLiteral("(%1%)").arg(QString::number(pct, 'f', 1));
+}
+
+// ---------------------------------------------------------------------------
+// Private — BitTorrent branch
+// ---------------------------------------------------------------------------
+
+std::span<const StatisticsPanel::CounterRow> StatisticsPanel::btCounterRows()
+{
+    using F = RowFormat;
+    // Keys are BtCounters' (core/stats/NetworkCounters.h) plus the ones
+    // applyBtStats() derives. Rates and data are piece data unless "traffic".
+    static constexpr CounterRow kRows[] = {
+        {QT_TR_NOOP("General"), nullptr},
+        {QT_TR_NOOP("Download Speed: %1"), "downRate", F::Rate, nullptr, 1, true},
+        {QT_TR_NOOP("Upload Speed: %1"), "upRate", F::Rate, nullptr, 1, true},
+        {QT_TR_NOOP("Average Download Rate: %1"), "avgDownRate", F::Rate, nullptr, 1},
+        {QT_TR_NOOP("Max Download Rate: %1"), "maxDownRate", F::Rate, nullptr, 1},
+        {QT_TR_NOOP("Average Upload Rate: %1"), "avgUpRate", F::Rate, nullptr, 1},
+        {QT_TR_NOOP("Max Upload Rate: %1"), "maxUpRate", F::Rate, nullptr, 1},
+        {QT_TR_NOOP("Download Time: %1 %2"), "downloadTimeMs", F::DurationMs, "runtimeMs", 1},
+        {QT_TR_NOOP("Upload Time: %1 %2"), "uploadTimeMs", F::DurationMs, "runtimeMs", 1},
+        {QT_TR_NOOP("Connected Peers: %1"), "peers", F::Count, nullptr, 1, true},
+        {QT_TR_NOOP("Peak Peers: %1"), "peakPeers", F::Count, nullptr, 1},
+        {QT_TR_NOOP("DHT Nodes: %1"), "dhtNodes", F::Count, nullptr, 1, true},
+
+        {QT_TR_NOOP("Traffic"), nullptr},
+        {QT_TR_NOOP("Downloaded Data: %1"), "payloadDownBytes", F::Bytes, nullptr, 1},
+        {QT_TR_NOOP("Uploaded Data: %1"), "payloadUpBytes", F::Bytes, nullptr, 1},
+        {QT_TR_NOOP("Network Traffic Received: %1"), "wireDownBytes", F::Bytes, nullptr, 1},
+        {QT_TR_NOOP("Overhead: %1 %2"), "overheadDownBytes", F::Bytes, "wireDownBytes", 2},
+        {QT_TR_NOOP("Network Traffic Sent: %1"), "wireUpBytes", F::Bytes, nullptr, 1},
+        {QT_TR_NOOP("Overhead: %1 %2"), "overheadUpBytes", F::Bytes, "wireUpBytes", 2},
+        {QT_TR_NOOP("Redundant Data: %1"), "redundantBytes", F::Bytes, nullptr, 1},
+        {QT_TR_NOOP("Corrupted Data: %1"), "failedBytes", F::Bytes, nullptr, 1},
+        {QT_TR_NOOP("Pieces Failed Hash Check: %1"), "hashFailures", F::Count, nullptr, 2},
+
+        {QT_TR_NOOP("Torrents"), nullptr},
+        {QT_TR_NOOP("Added: %1"), "torrentsAdded", F::Count, nullptr, 1},
+        {QT_TR_NOOP("Completed Downloads: %1"), "torrentsCompleted", F::Count, nullptr, 1},
+    };
+    return kRows;
+}
+
+std::span<const StatisticsPanel::CounterRow> StatisticsPanel::btTorrentRows()
+{
+    using F = RowFormat;
+    // Worded like Usenet's Queue
+    static constexpr CounterRow kRows[] = {
+        {QT_TR_NOOP("Number of Torrents: %1"), "count"},
+        {QT_TR_NOOP("Downloading: %1"), "downloading", F::Count, nullptr, 1},
+        {QT_TR_NOOP("Seeding: %1"), "seeding", F::Count, nullptr, 1},
+        {QT_TR_NOOP("Queued: %1"), "queued", F::Count, nullptr, 1},
+        {QT_TR_NOOP("Paused: %1"), "paused", F::Count, nullptr, 1},
+        {QT_TR_NOOP("Checking: %1"), "checking", F::Count, nullptr, 1},
+        {QT_TR_NOOP("Error: %1"), "error", F::Count, nullptr, 1},
+        {QT_TR_NOOP("Total Size of Downloads: %1"), "totalBytes", F::Bytes},
+        {QT_TR_NOOP("Total Size Downloaded: %1"), "doneBytes", F::Bytes},
+        {QT_TR_NOOP("Total Size Left to Download: %1"), "leftBytes", F::Bytes},
+    };
+    return kRows;
+}
+
+void StatisticsPanel::buildBtBranch(const QIcon& detailIcon, const QIcon& cumulativeIcon)
+{
+    // Fixed text down to depth 1, as in the Usenet branch
+    m_itemBt = new QTreeWidgetItem(m_tree, {tr("BitTorrent")});
+    m_itemBt->setIcon(0, QIcon(QStringLiteral(":/icons/Torrent.ico")));
+
+    auto* session = new QTreeWidgetItem(m_itemBt, {tr("Session")});
+    session->setIcon(0, detailIcon);
+    m_btSessionRows.clear();
+    buildCounterRows(session, btCounterRows(), true, m_btSessionRows);
+
+    auto* cumulative = new QTreeWidgetItem(m_itemBt, {tr("Cumulative")});
+    cumulative->setIcon(0, cumulativeIcon);
+    m_btCumulativeRows.clear();
+    buildCounterRows(cumulative, btCounterRows(), false, m_btCumulativeRows);
+
+    auto* torrents = new QTreeWidgetItem(m_itemBt, {tr("Torrents")});
+    torrents->setIcon(0, QIcon(QStringLiteral(":/icons/Download.ico")));
+    m_btTorrentRows.clear();
+    buildCounterRows(torrents, btTorrentRows(), true, m_btTorrentRows);
+
+    const QHash<QString, qint64> zeros;
+    fillCounterRows(m_btSessionRows, zeros);
+    fillCounterRows(m_btCumulativeRows, zeros);
+    fillCounterRows(m_btTorrentRows, zeros);
 }
 
 // ---------------------------------------------------------------------------

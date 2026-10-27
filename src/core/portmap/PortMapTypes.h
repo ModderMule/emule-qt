@@ -32,7 +32,7 @@ enum class PortMapMethod : uint8 { None = 0, Pcp = 1, NatPmp = 2, UPnP = 3 };
 /// OP_SERVER_DESC_RES (UDPSocket.cpp:315-335), all of them replies to a request
 /// we sent first. Our own outbound datagram opens the NAT binding, so an inbound
 /// mapping would add attack surface and buy nothing.
-enum class PortMapPurpose : uint8 { Ed2kTcp, Ed2kClientUdp, WebServer, BtTcp, BtUdp };
+enum class PortMapPurpose : uint8 { Ed2kTcp, Ed2kClientUdp, WebServer, BtTcp, BtUdp, Ed3kUdp };
 
 /// Lifecycle of the subsystem as a whole, and of one mapping.
 ///

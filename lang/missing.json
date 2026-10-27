@@ -1,32 +1,156 @@
 {
- "UDP is disabled in the config file (udpPort: 0)": {
-  "_context": "eMule::OptionsDialog",
-  "de_DE": "UDP ist in der Konfigurationsdatei deaktiviert (udpPort: 0)",
-  "es_ES": "UDP está desactivado en el archivo de configuración (udpPort: 0)",
-  "fr_FR": "UDP est désactivé dans le fichier de configuration (udpPort: 0)",
-  "it_IT": "UDP è disattivato nel file di configurazione (udpPort: 0)",
-  "ja_JP": "UDP は設定ファイルで無効になっています (udpPort: 0)",
-  "ko_KR": "설정 파일에서 UDP가 비활성화되어 있습니다 (udpPort: 0)",
-  "nl_NL": "UDP is uitgeschakeld in het configuratiebestand (udpPort: 0)",
-  "pl_PL": "UDP jest wyłączone w pliku konfiguracyjnym (udpPort: 0)",
-  "pt_BR": "O UDP está desativado no arquivo de configuração (udpPort: 0)",
-  "ru_RU": "UDP отключён в файле конфигурации (udpPort: 0)",
-  "zh_CN": "UDP 已在配置文件中禁用 (udpPort: 0)",
-  "zh_TW": "UDP 已在設定檔中停用 (udpPort: 0)"
- },
- "Kad needs UDP, which is disabled in the config file": {
-  "_context": "eMule::OptionsDialog",
-  "de_DE": "Kad benötigt UDP, das in der Konfigurationsdatei deaktiviert ist",
-  "es_ES": "Kad necesita UDP, que está desactivado en el archivo de configuración",
-  "fr_FR": "Kad a besoin d'UDP, qui est désactivé dans le fichier de configuration",
-  "it_IT": "Kad richiede UDP, che è disattivato nel file di configurazione",
-  "ja_JP": "Kad には UDP が必要ですが、設定ファイルで無効になっています",
-  "ko_KR": "Kad에는 UDP가 필요하지만 설정 파일에서 비활성화되어 있습니다",
-  "nl_NL": "Kad heeft UDP nodig, maar dat is uitgeschakeld in het configuratiebestand",
-  "pl_PL": "Kad wymaga UDP, które jest wyłączone w pliku konfiguracyjnym",
-  "pt_BR": "O Kad precisa de UDP, que está desativado no arquivo de configuração",
-  "ru_RU": "Kad требует UDP, который отключён в файле конфигурации",
-  "zh_CN": "Kad 需要 UDP，但它已在配置文件中禁用",
-  "zh_TW": "Kad 需要 UDP，但它已在設定檔中停用"
- }
+  "Rehash All Files": {
+    "_context": "eMule::OptionsDialog",
+    "de_DE": "Alle Dateien neu hashen",
+    "es_ES": "Rehashear todos los archivos",
+    "fr_FR": "Recalculer le hash de tous les fichiers",
+    "it_IT": "Ricalcola l'hash di tutti i file",
+    "ja_JP": "全ファイルを再ハッシュ",
+    "ko_KR": "모든 파일 다시 해시",
+    "nl_NL": "Alle bestanden opnieuw hashen",
+    "pl_PL": "Przelicz hash wszystkich plików",
+    "pt_BR": "Refazer o hash de todos os arquivos",
+    "ru_RU": "Пересчитать хеш всех файлов",
+    "zh_CN": "重新计算所有文件的哈希",
+    "zh_TW": "重新計算所有檔案的雜湊"
+  },
+  "This reads every shared file from disk again and rebuilds known.met. It takes a long time and should only be used after hard disk errors.\n\nSharing goes on with the current known.met until the rehash is done.\n\nRehash all shared files now?": {
+    "_context": "eMule::OptionsDialog",
+    "de_DE": "Dabei wird jede freigegebene Datei erneut von der Festplatte gelesen und known.met neu aufgebaut. Das dauert lange und sollte nur nach Festplattenfehlern verwendet werden.\n\nBis das Neu-Hashen fertig ist, wird mit der aktuellen known.met weiter freigegeben.\n\nAlle freigegebenen Dateien jetzt neu hashen?",
+    "es_ES": "Esto vuelve a leer del disco cada archivo compartido y reconstruye known.met. Tarda mucho y solo debería usarse tras errores del disco duro.\n\nSe sigue compartiendo con el known.met actual hasta que termine el rehasheo.\n\n¿Rehashear ahora todos los archivos compartidos?",
+    "fr_FR": "Chaque fichier partagé est relu depuis le disque et known.met est reconstruit. Cela prend beaucoup de temps et ne devrait servir qu'après des erreurs de disque dur.\n\nLe partage continue avec le known.met actuel jusqu'à la fin du recalcul.\n\nRecalculer maintenant le hash de tous les fichiers partagés ?",
+    "it_IT": "Ogni file condiviso viene riletto dal disco e known.met viene ricostruito. Richiede molto tempo e andrebbe usato solo dopo errori del disco rigido.\n\nLa condivisione continua con il known.met attuale finché il ricalcolo non è terminato.\n\nRicalcolare ora l'hash di tutti i file condivisi?",
+    "ja_JP": "すべての共有ファイルをディスクから読み直し、known.met を再構築します。時間がかかるため、ハードディスクのエラーの後にのみ使用してください。\n\n再ハッシュが終わるまでは現在の known.met で共有を続けます。\n\n今すぐすべての共有ファイルを再ハッシュしますか？",
+    "ko_KR": "모든 공유 파일을 디스크에서 다시 읽고 known.met을 다시 만듭니다. 시간이 오래 걸리므로 하드 디스크 오류 후에만 사용하십시오.\n\n다시 해시가 끝날 때까지 현재 known.met으로 계속 공유합니다.\n\n지금 모든 공유 파일을 다시 해시하시겠습니까?",
+    "nl_NL": "Hiermee wordt elk gedeeld bestand opnieuw van de schijf gelezen en wordt known.met opnieuw opgebouwd. Dit duurt lang en is alleen bedoeld na fouten op de harde schijf.\n\nTot het opnieuw hashen klaar is, wordt gedeeld met de huidige known.met.\n\nAlle gedeelde bestanden nu opnieuw hashen?",
+    "pl_PL": "Każdy udostępniany plik zostanie ponownie odczytany z dysku, a known.met zostanie odbudowany. Trwa to długo i należy tego używać tylko po błędach dysku twardego.\n\nDo zakończenia przeliczania udostępnianie odbywa się z bieżącym known.met.\n\nPrzeliczyć teraz hash wszystkich udostępnianych plików?",
+    "pt_BR": "Isso lê novamente do disco cada arquivo compartilhado e reconstrói o known.met. Leva muito tempo e só deve ser usado após erros no disco rígido.\n\nO compartilhamento continua com o known.met atual até o novo hash terminar.\n\nRefazer agora o hash de todos os arquivos compartilhados?",
+    "ru_RU": "Каждый общий файл будет заново прочитан с диска, а known.met будет перестроен. Это занимает много времени и нужно только после ошибок жёсткого диска.\n\nПока пересчёт не завершится, раздача продолжается с текущим known.met.\n\nПересчитать хеш всех общих файлов сейчас?",
+    "zh_CN": "这将从磁盘重新读取每个共享文件并重建 known.met。此操作耗时较长，仅应在硬盘出错后使用。\n\n在重新计算完成之前，将继续使用当前的 known.met 进行共享。\n\n现在重新计算所有共享文件的哈希吗？",
+    "zh_TW": "這會從磁碟重新讀取每個共用檔案並重建 known.met。此操作耗時較長，僅應在硬碟出錯後使用。\n\n在重新計算完成之前，將繼續使用目前的 known.met 進行共用。\n\n現在重新計算所有共用檔案的雜湊嗎？"
+  },
+  "The core did not start the rehash.": {
+    "_context": "eMule::OptionsDialog",
+    "de_DE": "Der Kern hat das Neu-Hashen nicht gestartet.",
+    "es_ES": "El núcleo no inició el rehasheo.",
+    "fr_FR": "Le noyau n'a pas lancé le recalcul.",
+    "it_IT": "Il core non ha avviato il ricalcolo.",
+    "ja_JP": "コアが再ハッシュを開始しませんでした。",
+    "ko_KR": "코어가 다시 해시를 시작하지 않았습니다.",
+    "nl_NL": "De kern heeft het opnieuw hashen niet gestart.",
+    "pl_PL": "Rdzeń nie rozpoczął przeliczania.",
+    "pt_BR": "O núcleo não iniciou o novo hash.",
+    "ru_RU": "Ядро не запустило пересчёт.",
+    "zh_CN": "核心未启动重新计算哈希。",
+    "zh_TW": "核心未啟動重新計算雜湊。"
+  },
+  "A rehash of all files is already running.": {
+    "_context": "eMule::OptionsDialog",
+    "de_DE": "Alle Dateien werden bereits neu gehasht.",
+    "es_ES": "Ya hay un rehasheo de todos los archivos en curso.",
+    "fr_FR": "Un recalcul du hash de tous les fichiers est déjà en cours.",
+    "it_IT": "Un ricalcolo dell'hash di tutti i file è già in corso.",
+    "ja_JP": "全ファイルの再ハッシュはすでに実行中です。",
+    "ko_KR": "모든 파일 다시 해시가 이미 실행 중입니다.",
+    "nl_NL": "Alle bestanden worden al opnieuw gehasht.",
+    "pl_PL": "Przeliczanie hashy wszystkich plików już trwa.",
+    "pt_BR": "Já há um novo hash de todos os arquivos em andamento.",
+    "ru_RU": "Пересчёт хеша всех файлов уже выполняется.",
+    "zh_CN": "所有文件的哈希重新计算已在进行中。",
+    "zh_TW": "所有檔案的雜湊重新計算已在進行中。"
+  },
+  "There are no shared files to rehash.": {
+    "_context": "eMule::OptionsDialog",
+    "de_DE": "Es gibt keine freigegebenen Dateien zum Neu-Hashen.",
+    "es_ES": "No hay archivos compartidos que rehashear.",
+    "fr_FR": "Aucun fichier partagé à recalculer.",
+    "it_IT": "Non ci sono file condivisi da ricalcolare.",
+    "ja_JP": "再ハッシュする共有ファイルがありません。",
+    "ko_KR": "다시 해시할 공유 파일이 없습니다.",
+    "nl_NL": "Er zijn geen gedeelde bestanden om opnieuw te hashen.",
+    "pl_PL": "Brak udostępnianych plików do przeliczenia.",
+    "pt_BR": "Não há arquivos compartilhados para refazer o hash.",
+    "ru_RU": "Нет общих файлов для пересчёта.",
+    "zh_CN": "没有可重新计算哈希的共享文件。",
+    "zh_TW": "沒有可重新計算雜湊的共用檔案。"
+  },
+  "Rehashing %n shared file(s) in the background. known.met is replaced when all are done; the log shows the result.": {
+    "_context": "eMule::OptionsDialog",
+    "de_DE": [
+      "%n freigegebene Datei wird im Hintergrund neu gehasht. known.met wird ersetzt, wenn alles fertig ist; das Ergebnis steht im Log.",
+      "%n freigegebene Dateien werden im Hintergrund neu gehasht. known.met wird ersetzt, wenn alle fertig sind; das Ergebnis steht im Log."
+    ],
+    "es_ES": [
+      "Rehasheando %n archivo compartido en segundo plano. known.met se reemplaza cuando termine; el registro muestra el resultado.",
+      "Rehasheando %n archivos compartidos en segundo plano. known.met se reemplaza cuando terminen todos; el registro muestra el resultado."
+    ],
+    "fr_FR": [
+      "Recalcul du hash de %n fichier partagé en arrière-plan. known.met est remplacé une fois terminé ; le journal affiche le résultat.",
+      "Recalcul du hash de %n fichiers partagés en arrière-plan. known.met est remplacé quand tous sont terminés ; le journal affiche le résultat."
+    ],
+    "it_IT": [
+      "Ricalcolo dell'hash di %n file condiviso in background. known.met viene sostituito al termine; il log mostra il risultato.",
+      "Ricalcolo dell'hash di %n file condivisi in background. known.met viene sostituito quando tutti sono terminati; il log mostra il risultato."
+    ],
+    "ja_JP": [
+      "%n 個の共有ファイルをバックグラウンドで再ハッシュしています。すべて終わると known.met が置き換えられ、結果はログに表示されます。"
+    ],
+    "ko_KR": [
+      "공유 파일 %n개를 백그라운드에서 다시 해시하는 중입니다. 모두 끝나면 known.met이 교체되며, 결과는 로그에 표시됩니다."
+    ],
+    "nl_NL": [
+      "%n gedeeld bestand wordt op de achtergrond opnieuw gehasht. known.met wordt vervangen als het klaar is; het logboek toont het resultaat.",
+      "%n gedeelde bestanden worden op de achtergrond opnieuw gehasht. known.met wordt vervangen als alles klaar is; het logboek toont het resultaat."
+    ],
+    "pl_PL": [
+      "Przeliczanie hasha %n udostępnianego pliku w tle. known.met zostanie zastąpiony po zakończeniu; wynik pojawi się w logu.",
+      "Przeliczanie hashy %n udostępnianych plików w tle. known.met zostanie zastąpiony po zakończeniu wszystkich; wynik pojawi się w logu.",
+      "Przeliczanie hashy %n udostępnianych plików w tle. known.met zostanie zastąpiony po zakończeniu wszystkich; wynik pojawi się w logu."
+    ],
+    "pt_BR": [
+      "Refazendo o hash de %n arquivo compartilhado em segundo plano. O known.met é substituído ao terminar; o log mostra o resultado.",
+      "Refazendo o hash de %n arquivos compartilhados em segundo plano. O known.met é substituído quando todos terminarem; o log mostra o resultado."
+    ],
+    "ru_RU": [
+      "Пересчёт хеша %n общего файла в фоне. known.met будет заменён по завершении; результат будет в журнале.",
+      "Пересчёт хеша %n общих файлов в фоне. known.met будет заменён, когда все будут готовы; результат будет в журнале.",
+      "Пересчёт хеша %n общих файлов в фоне. known.met будет заменён, когда все будут готовы; результат будет в журнале."
+    ],
+    "zh_CN": [
+      "正在后台重新计算 %n 个共享文件的哈希。全部完成后将替换 known.met，结果显示在日志中。"
+    ],
+    "zh_TW": [
+      "正在背景重新計算 %n 個共用檔案的雜湊。全部完成後將取代 known.met，結果顯示在記錄中。"
+    ]
+  },
+  "Rehash All Files...": {
+    "_context": "eMule::OptionsDialog",
+    "de_DE": "Alle Dateien neu hashen...",
+    "es_ES": "Rehashear todos los archivos...",
+    "fr_FR": "Recalculer le hash de tous les fichiers...",
+    "it_IT": "Ricalcola l'hash di tutti i file...",
+    "ja_JP": "全ファイルを再ハッシュ...",
+    "ko_KR": "모든 파일 다시 해시...",
+    "nl_NL": "Alle bestanden opnieuw hashen...",
+    "pl_PL": "Przelicz hash wszystkich plików...",
+    "pt_BR": "Refazer o hash de todos os arquivos...",
+    "ru_RU": "Пересчитать хеш всех файлов...",
+    "zh_CN": "重新计算所有文件的哈希...",
+    "zh_TW": "重新計算所有檔案的雜湊..."
+  },
+  "Reads every shared file again and rebuilds known.met from the result. Only needed after hard disk errors.": {
+    "_context": "eMule::OptionsDialog",
+    "de_DE": "Liest jede freigegebene Datei erneut und baut known.met aus dem Ergebnis neu auf. Nur nach Festplattenfehlern nötig.",
+    "es_ES": "Vuelve a leer cada archivo compartido y reconstruye known.met con el resultado. Solo es necesario tras errores del disco duro.",
+    "fr_FR": "Relit chaque fichier partagé et reconstruit known.met à partir du résultat. Utile uniquement après des erreurs de disque dur.",
+    "it_IT": "Rilegge ogni file condiviso e ricostruisce known.met dal risultato. Necessario solo dopo errori del disco rigido.",
+    "ja_JP": "すべての共有ファイルを読み直し、その結果から known.met を再構築します。ハードディスクのエラーの後にのみ必要です。",
+    "ko_KR": "모든 공유 파일을 다시 읽고 그 결과로 known.met을 다시 만듭니다. 하드 디스크 오류 후에만 필요합니다.",
+    "nl_NL": "Leest elk gedeeld bestand opnieuw en bouwt known.met opnieuw op uit het resultaat. Alleen nodig na fouten op de harde schijf.",
+    "pl_PL": "Ponownie odczytuje każdy udostępniany plik i odbudowuje known.met na podstawie wyniku. Potrzebne tylko po błędach dysku twardego.",
+    "pt_BR": "Lê novamente cada arquivo compartilhado e reconstrói o known.met com o resultado. Só é necessário após erros no disco rígido.",
+    "ru_RU": "Заново читает каждый общий файл и перестраивает known.met по результату. Нужно только после ошибок жёсткого диска.",
+    "zh_CN": "重新读取每个共享文件，并根据结果重建 known.met。仅在硬盘出错后需要。",
+    "zh_TW": "重新讀取每個共用檔案，並根據結果重建 known.met。僅在硬碟出錯後需要。"
+  }
 }

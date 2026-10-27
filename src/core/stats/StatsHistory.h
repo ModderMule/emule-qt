@@ -48,13 +48,21 @@ struct StatsGraphSample {
 
     // Not in MFC — appended so the MFC order above stays intact. Download scope.
     float usenetDown = 0.0f;   ///< KB/s, NNTP wire rate
+    float btDown = 0.0f;       ///< KB/s, BitTorrent payload. Download scope
+    float btUp   = 0.0f;       ///< KB/s, BitTorrent payload. Upload scope
+};
+
+/// Down/up rate of an engine core cannot see, in KB/s.
+struct EngineRates {
+    float down = 0.0f;
+    float up   = 0.0f;
 };
 
 /// One point of the toolbar download/upload graph.
 struct SpeedSample {
     uint32 seq  = 0;
-    float  down = 0.0f;   ///< KB/s, eD2K + Usenet
-    float  up   = 0.0f;
+    float  down = 0.0f;   ///< KB/s, eD2K + Usenet + BitTorrent
+    float  up   = 0.0f;   ///< KB/s, eD2K + BitTorrent
 };
 
 /// Ring-buffered sample history for every graph in the UI.
@@ -110,9 +118,13 @@ public:
     /// goes away. Unset reads as 0.
     void setUsenetDownRateSource(std::function<float()> source);
 
+    /// Same for StatsGraphSample::btDown/btUp, which the toolbar totals include too.
+    void setBtRateSource(std::function<EngineRates()> source);
+
 private:
     void takeStatsSample(uint32 nowSecs);
     void takeSpeedSample();
+    [[nodiscard]] EngineRates btRates() const;   ///< clamped ≥ 0; {} without a source
 
     std::deque<StatsGraphSample> m_stats;
     std::deque<SpeedSample> m_speed;
@@ -121,6 +133,7 @@ private:
     uint32 m_lastStatsSampleTime = 0;   ///< epoch secs of the last stats sample
     uint32 m_epoch = 0;
     std::function<float()> m_usenetDownRate;
+    std::function<EngineRates()> m_btRates;
 };
 
 } // namespace eMule

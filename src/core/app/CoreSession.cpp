@@ -1900,6 +1900,13 @@ std::vector<PortMapRequest> CoreSession::buildPortMapRequests() const
     }
 #endif
 
+#ifdef EMULE_HAVE_ED3K
+    // the ed3k node's own UDP socket (src/ed3k/Ed3kSession); 0 = not resolved yet
+    if (thePrefs.ed3kEnabled())
+        add(PortMapPurpose::Ed3kUdp, PortMapProtocol::Udp, thePrefs.ed3kUdpPort(),
+            QStringLiteral("eMule ed3k UDP"));
+#endif
+
     return requests;
 }
 
@@ -2227,6 +2234,10 @@ void CoreSession::randomizeListenPorts()
         thePrefs.setBtListenPort(pick([](uint16 p) {
             return Preferences::tcpPortFree(p) && Preferences::udpPortFree(p);
         }));
+#ifdef EMULE_HAVE_ED3K
+    if (thePrefs.ed3kEnabled())
+        thePrefs.setEd3kUdpPort(pick(&Preferences::udpPortFree));
+#endif
 
     logInfo(QStringLiteral("Random listen ports from %1-%2: TCP %3, UDP %4%5")
                 .arg(lo).arg(hi).arg(thePrefs.port()).arg(thePrefs.udpPort())

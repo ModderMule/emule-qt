@@ -133,6 +133,7 @@ private:
     QAction* m_reannounceAction = nullptr;
     QAction* m_openFolderAction = nullptr;
     QAction* m_copyMagnetAction = nullptr;
+    QAction* m_pasteMagnetAction = nullptr;
     QAction* m_detailsAction = nullptr;
 
     QCborMap m_status;

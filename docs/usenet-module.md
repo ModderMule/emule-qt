@@ -3066,7 +3066,7 @@ marked, never renumbered or removed. Sizes are relative (S/M/L).
 20. **Completion and failure notifications** — email and tray popups exist only
     for eD2K. (S)
 21. **Usenet speed in the tray tooltip, status bar and MiniMule**, which show eD2K
-    only. (S)
+    only. (S) *(built; BitTorrent included too, 2026-10-27)*
 22. **Proxy for news-server connections**; eD2K sockets honour the proxy, NNTP
     connects directly. (S–M) *(built 2026-09-15)*
 23. **Usenet in the web interface**; only the preview link exists there. (M–L)

@@ -1,0 +1,552 @@
+/// @file Ed3kSession.cpp
+/// @brief The ed3k node (packmule) in the daemon — implementation.
+
+#include "Ed3kSession.h"
+
+#include "Ed3kHttp.h"
+#include "Ed3kStore.h"
+
+#include "app/AppConfig.h"
+#include "net/ProxySettings.h"
+#include "prefs/Preferences.h"
+#include "utils/Log.h"
+
+#include <QDateTime>
+#include <QDir>
+#include <QNetworkDatagram>
+#include <QUdpSocket>
+
+#include <algorithm>
+#include <array>
+#include <chrono>
+#include <limits>
+
+namespace eMule::ed3k {
+
+namespace ffi = ::ed3k;
+
+namespace {
+
+// BAD blob at most once a minute (ffi.md "State slots", guide §5.4)
+constexpr std::chrono::seconds kBadSaveEvery{60};
+
+const QString kBadFile = QStringLiteral("bad.dat");
+const QString kKadFile = QStringLiteral("kad.dat");
+const QString kSetsFile = QStringLiteral("sets.dat");
+const QString kFriendFile = QStringLiteral("friend.dat");
+
+ffi::Address toAddress(const QHostAddress& ip, std::uint16_t port)
+{
+    bool v4 = false;
+    const quint32 n = ip.toIPv4Address(&v4);   // also ::ffff:a.b.c.d
+    if (v4)
+        return ffi::Address::v4(std::uint8_t(n >> 24), std::uint8_t(n >> 16), std::uint8_t(n >> 8), std::uint8_t(n), port);
+    ffi::Address a;
+    const Q_IPV6ADDR v6 = ip.toIPv6Address();
+    std::copy(std::begin(v6.c), std::end(v6.c), a.ip.begin());
+    a.port = port;
+    return a;
+}
+
+QHostAddress toQHostAddress(const ffi::Address& a)
+{
+    if (a.isV4())
+        return QHostAddress((quint32(a.ip[12]) << 24) | (quint32(a.ip[13]) << 16) | (quint32(a.ip[14]) << 8)
+                            | quint32(a.ip[15]));
+    Q_IPV6ADDR v6;
+    std::copy(a.ip.begin(), a.ip.end(), v6.c);
+    return QHostAddress(v6);
+}
+
+QString hex(std::span<const std::uint8_t> bytes)
+{
+    return QString::fromLatin1(
+        QByteArray(reinterpret_cast<const char*>(bytes.data()), qsizetype(bytes.size())).toHex());
+}
+
+QString errorName(ffi::Error e)
+{
+    return QString::number(static_cast<int>(e));
+}
+
+std::span<const std::byte> spanOf(const QByteArray& b)
+{
+    return {reinterpret_cast<const std::byte*>(b.constData()), std::size_t(b.size())};
+}
+
+} // namespace
+
+Ed3kSession::Ed3kSession(QObject* parent)
+    : QObject(parent)
+{
+    m_timer.setSingleShot(true);
+    m_timer.setTimerType(Qt::PreciseTimer);
+    connect(&m_timer, &QTimer::timeout, this, &Ed3kSession::onTimer);
+    m_badSaveTimer.setSingleShot(true);
+    connect(&m_badSaveTimer, &QTimer::timeout, this, [this] {
+        if (m_engine && m_badDirty) {
+            m_badDirty = false;
+            saveSlot(ffi::State::BadBlocks, kBadFile);
+        }
+    });
+}
+
+Ed3kSession::~Ed3kSession()
+{
+    stop();
+}
+
+bool Ed3kSession::start(const Ed3kSettings& settings)
+{
+    if (m_engine)
+        return true;
+    m_clock.start();
+    m_dir = eMule::ed3k::stateDir(settings.configDir);
+
+    QString error;
+    std::optional<Seed> seed = loadOrCreateKey(m_dir, &error);
+    if (!seed) {
+        logEd3kError(QStringLiteral("ed3k: key file: %1").arg(error));
+        return false;
+    }
+
+    // the socket first: the engine is told its port
+    auto socket = std::make_unique<QUdpSocket>();
+    if (!socket->bind(settings.bindAddress, settings.udpPort)) {
+        logEd3kError(QStringLiteral("ed3k: cannot bind UDP port %1: %2").arg(settings.udpPort).arg(socket->errorString()));
+        wipe(*seed);
+        return false;
+    }
+    socket->setSocketOption(QAbstractSocket::ReceiveBufferSizeSocketOption, 2 * 1024 * 1024);
+    const std::uint16_t port = socket->localPort();
+
+    ffi::Config cfg;
+    cfg.seed = *seed;
+    wipe(*seed);
+    cfg.network = settings.network.toStdString();
+    cfg.agent = QStringLiteral("eMuleQt %1").arg(kAppVersion).toStdString();
+    // ToDo: nick from thePrefs (Hello.nick), once the GUI shows ed3k peers
+    // the socket of each family; [::] / 0.0.0.0 for a wildcard bind
+    const QHostAddress& bind = settings.bindAddress;
+    if (bind == QHostAddress::Any) {
+        cfg.local4 = ffi::Address::v4(0, 0, 0, 0, port);
+        // ToDo: the stable IPv6 source address (IPv6SourcePin) instead of [::], socket-modes.md §8.3
+        cfg.local6 = ffi::Address{{}, port};
+    } else if (bind == QHostAddress::AnyIPv4) {
+        cfg.local4 = ffi::Address::v4(0, 0, 0, 0, port);
+    } else if (bind == QHostAddress::AnyIPv6) {
+        cfg.local6 = ffi::Address{{}, port};
+    } else if (bind.protocol() == QAbstractSocket::IPv4Protocol) {
+        cfg.local4 = toAddress(bind, port);
+    } else {
+        cfg.local6 = toAddress(bind, port);
+    }
+    cfg.forceOpen4 = settings.forceOpen;
+    cfg.forceOpen6 = settings.forceOpen;
+    // ToDo: one pref per optional extension (cfg.extOff), socket-modes.md "extensions"
+
+    auto engine = ffi::Engine::create(cfg, now());
+    cfg.seed.fill(0);
+    wipe(std::span<std::uint8_t>{cfg.seed});
+    if (!engine) {
+        logEd3kError(QStringLiteral("ed3k: engine not created (error %1)").arg(errorName(engine.error())));
+        return false;
+    }
+    m_engine = std::make_unique<ffi::Engine>(std::move(*engine));
+    m_socket = std::move(socket);
+    m_port = port;
+
+    m_http = std::make_unique<Ed3kHttp>(
+        Ed3kHttp::Answers{
+            [this](std::uint64_t id, const ffi::Address& addr) {
+                if (!m_engine)
+                    return false;
+                const auto ok = m_engine->httpResolved(now(), id, addr);
+                pump();
+                // Denied (or Stale): the request is over, no other address
+                return ok.has_value();
+            },
+            [this](std::uint64_t id) {
+                if (m_engine)
+                    (void)m_engine->httpUnreachable(now(), id);
+                pump();
+            },
+            [this](std::uint64_t id, std::uint16_t status, const QByteArray& headers, const QByteArray& body) {
+                if (m_engine)
+                    (void)m_engine->httpAnswer(now(), id, status,
+                                               std::string_view(headers.constData(), std::size_t(headers.size())),
+                                               spanOf(body));
+                pump();
+            },
+            [this](std::uint64_t id) {
+                if (m_engine)
+                    (void)m_engine->httpFailed(now(), id);
+                pump();
+            }},
+        QStringLiteral("eMuleQt/%1").arg(kAppVersion));
+    m_http->setProxy(toNetworkProxy(thePrefs.proxySettings()));
+
+    // ToDo: LAN discovery sockets of mode A (socket-modes.md "Implementer note (LAN
+    // discovery)"); until then LAN is off, which ends its first round (bootstrap.md §1)
+    (void)m_engine->lanEnable(now(), false);
+    // the state of the last run, before the first datagram
+    loadState();
+    // ToDo: node list sources (bootstrap.md §3: bootstrapConfigure, the last
+    // BootstrapStarted) and a pref for them
+    // ToDo: upload/download limits through BandwidthCoordinator (setLimits or grants,
+    // noteBytesSentOutsideTheLoop), socket-modes.md "Mode A in eMuleQt"
+
+    connect(m_socket.get(), &QUdpSocket::readyRead, this, &Ed3kSession::onReadyRead);
+    pump();
+    if (!m_engine)
+        return false;
+
+    logEd3k(QStringLiteral("ed3k node %1 started on UDP port %2").arg(nodeIdHex()).arg(m_port));
+    emit statusChanged();
+    // datagrams that came before the connect
+    if (m_socket->hasPendingDatagrams())
+        onReadyRead();
+    return m_engine != nullptr;
+}
+
+void Ed3kSession::stop()
+{
+    if (!m_engine)
+        return;
+    m_timer.stop();
+    m_badSaveTimer.stop();
+    saveState(true);
+    if (m_http)
+        m_http->clear();
+    m_http.reset();
+    m_posted.clear();
+    if (m_socket) {
+        m_socket->disconnect(this);
+        m_socket->close();
+    }
+    m_socket.reset();
+    m_engine.reset();
+    m_port = 0;
+    logEd3k(QStringLiteral("ed3k node stopped"));
+    emit statusChanged();
+}
+
+std::uint16_t Ed3kSession::udpPort() const
+{
+    return m_engine ? m_port : 0;
+}
+
+std::optional<ffi::NodeId> Ed3kSession::nodeId() const
+{
+    if (!m_engine)
+        return std::nullopt;
+    auto id = m_engine->nodeId();
+    if (!id)
+        return std::nullopt;
+    return *id;
+}
+
+QString Ed3kSession::nodeIdHex() const
+{
+    const auto id = nodeId();
+    return id ? hex(id->bytes) : QString();
+}
+
+std::uint64_t Ed3kSession::contactCount() const
+{
+    if (!m_engine)
+        return 0;
+    const auto s = m_engine->stats(now());
+    return s ? s->contacts : 0;
+}
+
+ffi::Now Ed3kSession::now() const
+{
+    // +1: mono 0 never reaches the core
+    const auto mono = m_clock.isValid() ? std::uint64_t(m_clock.nsecsElapsed() / 1000) : 0;
+    return ffi::Now{mono + 1, std::uint64_t(QDateTime::currentSecsSinceEpoch())};
+}
+
+void Ed3kSession::post(std::function<void(ffi::Engine&, ffi::Now)> cmd)
+{
+    if (!m_engine || !cmd)
+        return;
+    if (m_pumping) {
+        m_posted.push_back(std::move(cmd));
+        m_pumpAgain = true;
+        return;
+    }
+    cmd(*m_engine, now());
+    pump();
+}
+
+void Ed3kSession::pump()
+{
+    if (!m_engine)
+        return;
+    if (m_pumping) {
+        m_pumpAgain = true;   // a slot called a command: loop once more
+        return;
+    }
+    m_pumping = true;
+    std::array<std::byte, 1500> buf{};
+    do {
+        m_pumpAgain = false;
+        for (bool busy = true; busy && m_engine;) {
+            busy = false;
+            for (;;) {
+                auto d = m_engine->datagramOut(now(), buf);
+                if (!d) {
+                    die(d.error());
+                    break;
+                }
+                if (!*d)
+                    break;
+                busy = true;
+                const auto& dg = **d;
+                // at once and in this order: control before data (socket-modes.md "Priority")
+                m_socket->writeDatagram(reinterpret_cast<const char*>(buf.data()), qint64(dg.len),
+                                        toQHostAddress(dg.to), dg.to.port);
+            }
+            while (m_engine) {
+                auto ev = m_engine->pollEvent();
+                if (!ev) {
+                    die(ev.error());
+                    break;
+                }
+                if (!*ev)
+                    break;
+                busy = true;
+                dispatch(**ev);
+            }
+            while (m_engine && !m_posted.empty()) {
+                auto cmds = std::move(m_posted);
+                m_posted.clear();
+                for (auto& cmd : cmds)
+                    if (m_engine)
+                        cmd(*m_engine, now());
+                busy = true;
+            }
+        }
+    } while (m_pumpAgain && m_engine);
+    m_pumping = false;
+    armTimer();
+}
+
+// ---------------------------------------------------------------------------
+// private
+// ---------------------------------------------------------------------------
+
+void Ed3kSession::onReadyRead()
+{
+    while (m_engine && m_socket && m_socket->hasPendingDatagrams()) {   // drain fully, then pump once
+        const QNetworkDatagram d = m_socket->receiveDatagram();
+        if (!d.isValid())
+            break;
+        const QByteArray data = d.data();
+        const auto ours = m_engine->datagramIn(now(), toAddress(d.senderAddress(), std::uint16_t(d.senderPort())),
+                                               spanOf(data));
+        if (!ours) {
+            if (ours.error() == ffi::Error::Dead) {
+                die(ours.error());
+                return;
+            }
+            continue;
+        }
+        if (!*ours)
+            ++m_notOurs;   // not ed3k: its own socket, so dropped
+    }
+    pump();
+}
+
+void Ed3kSession::onTimer()
+{
+    if (!m_engine)
+        return;
+    if (auto ok = m_engine->timeout(now()); !ok && ok.error() == ffi::Error::Dead) {
+        die(ok.error());
+        return;
+    }
+    pump();
+}
+
+void Ed3kSession::dispatch(ffi::Event& ev)
+{
+    namespace e = ffi::event;
+    if (const auto* s = std::get_if<e::StateChanged>(&ev)) {
+        switch (s->slot) {
+        case ffi::State::BadBlocks:
+            // at most once a minute
+            m_badDirty = true;
+            if (!m_badSaveTimer.isActive())
+                m_badSaveTimer.start(kBadSaveEvery);
+            break;
+        case ffi::State::KadContacts:
+            saveSlot(ffi::State::KadContacts, kKadFile);
+            emit statusChanged();
+            break;
+        case ffi::State::SetGrants:
+            saveSlot(ffi::State::SetGrants, kSetsFile);
+            break;
+        }
+    } else if (std::holds_alternative<e::FriendChanged>(ev)) {
+        saveFriends();
+    } else if (const auto* h = std::get_if<e::HttpRequest>(&ev)) {
+        m_http->start(*h);
+        return;
+    } else if (const auto* c = std::get_if<e::IoCancel>(&ev)) {
+        m_http->cancel(c->id);
+        return;
+    } else if (const auto* b = std::get_if<e::KadBootstrapped>(&ev)) {
+        logEd3kDebug(QStringLiteral("ed3k: Kad bootstrap (IPv%1): %2 contacts").arg(b->family).arg(b->contacts));
+        emit statusChanged();
+    } else if (const auto* n = std::get_if<e::NatClass>(&ev)) {
+        logEd3kDebug(QStringLiteral("ed3k: IPv%1 class %2").arg(n->family).arg(n->natClass));
+        emit statusChanged();
+    } else if (const auto* r = std::get_if<e::Router>(&ev)) {
+        logEd3kDebug(QStringLiteral("ed3k: router %1").arg(r->on ? 1 : 0));
+        emit statusChanged();
+    }
+
+    bool handled = false;
+    emit eventPolled(ev, &handled);
+    if (!handled && m_engine)
+        answerUnhandled(ev);
+}
+
+void Ed3kSession::answerUnhandled(const ffi::Event& ev)
+{
+    namespace e = ffi::event;
+    const ffi::Now t = now();
+    if (const auto* w = std::get_if<e::WantBlock>(&ev)) {
+        // ToDo: serve eMule shared files over ed3k
+        (void)m_engine->blockFail(t, w->id);
+        logEd3kDebug(QStringLiteral("ed3k: block %1 refused, nothing shared").arg(w->id));
+    } else if (const auto* v = std::get_if<e::VerifyBlock>(&ev)) {
+        (void)m_engine->blockFail(t, v->id);
+    } else if (const auto* r = std::get_if<e::RpcRequest>(&ev)) {
+        // ToDo: chain RPC endpoints (credit, chaintube): no chain configured
+        (void)m_engine->rpcFailed(t, r->id);
+    } else if (const auto* a = std::get_if<e::BootstrapAsk>(&ev)) {
+        // ToDo: ask the user (GUI) before a node list from a link is used
+        (void)m_engine->bootstrapAnswer(t, a->ask, false);
+    } else if (const auto* u = std::get_if<e::UnpackRead>(&ev)) {
+        (void)m_engine->unpackReadFailed(t, u->id);
+    } else if (const auto* k = std::get_if<e::UnpackAsk>(&ev)) {
+        (void)m_engine->unpackEnd(t, k->id, ED3K_UNPACK_UNSUPPORTED);
+    }
+    // ToDo: downloads, chat, friends, GUI/IPC status: events only logged for now
+}
+
+void Ed3kSession::loadState()
+{
+    const ffi::Now t = now();
+    const auto put = [&](ffi::State slot, const QString& file) {
+        const QByteArray blob = readBlob(filePath(file));
+        if (blob.isEmpty())
+            return false;
+        if (auto ok = m_engine->statePut(t, slot, spanOf(blob)); !ok) {
+            // a blob that does not parse is dropped, never a reason not to start
+            logEd3kWarning(QStringLiteral("ed3k: %1 dropped (error %2)").arg(file, errorName(ok.error())));
+            return false;
+        }
+        return true;
+    };
+    put(ffi::State::BadBlocks, kBadFile);
+    put(ffi::State::SetGrants, kSetsFile);
+    QByteArray friends = readBlob(filePath(kFriendFile));
+    if (!friends.isEmpty()) {
+        if (auto ok = m_engine->friendImportState(t, spanOf(friends)); !ok && ok.error() != ffi::Error::Unsupported)
+            logEd3kWarning(QStringLiteral("ed3k: %1 dropped (error %2)").arg(kFriendFile, errorName(ok.error())));
+        wipe(friends);
+    }
+    // the KAD blob counts as loaded; without one the contacts are loaded all the same
+    if (!put(ffi::State::KadContacts, kKadFile))
+        (void)m_engine->contactsLoaded(t);
+}
+
+void Ed3kSession::saveState(bool all)
+{
+    if (!m_engine)
+        return;
+    if (all || m_badDirty) {
+        m_badDirty = false;
+        saveSlot(ffi::State::BadBlocks, kBadFile);
+    }
+    if (!all)
+        return;
+    // an empty table does not replace the contacts of an earlier run
+    if (contactCount() > 0)
+        saveSlot(ffi::State::KadContacts, kKadFile);
+    saveSlot(ffi::State::SetGrants, kSetsFile);
+    saveFriends();
+    // ToDo: filter and hops state (filterExportState, hopsExportState) once used
+}
+
+void Ed3kSession::saveSlot(ffi::State slot, const QString& file)
+{
+    auto blob = m_engine->stateGet(now(), slot);
+    if (!blob) {
+        logEd3kWarning(QStringLiteral("ed3k: state %1 not read (error %2)").arg(file, errorName(blob.error())));
+        return;
+    }
+    if (blob->empty())
+        return;
+    if (!writeBlob(filePath(file), blob->bytes()))
+        logEd3kWarning(QStringLiteral("ed3k: cannot write %1").arg(filePath(file)));
+}
+
+void Ed3kSession::saveFriends()
+{
+    auto blob = m_engine->friendExportState();
+    if (!blob || blob->empty())
+        return;
+    if (!writeBlob(filePath(kFriendFile), blob->bytes()))
+        logEd3kWarning(QStringLiteral("ed3k: cannot write %1").arg(filePath(kFriendFile)));
+}
+
+void Ed3kSession::die(ffi::Error error)
+{
+    if (!m_engine)
+        return;
+    logEd3kError(QStringLiteral("ed3k: the engine stopped (error %1); ed3k is off until restarted").arg(errorName(error)));
+    m_timer.stop();
+    m_badSaveTimer.stop();
+    if (m_http)
+        m_http->clear();
+    m_posted.clear();
+    if (m_socket)
+        m_socket->disconnect(this);
+    // the socket and HTTP client may be in a call up the stack: freed later
+    if (m_socket)
+        m_socket.release()->deleteLater();
+    if (m_http)
+        m_http.release()->deleteLater();
+    m_engine.reset();
+    m_port = 0;
+    emit statusChanged();
+}
+
+void Ed3kSession::armTimer()
+{
+    if (!m_engine) {
+        m_timer.stop();
+        return;
+    }
+    const auto at = m_engine->nextTimeout();
+    if (!at) {
+        m_timer.stop();
+        return;
+    }
+    const std::uint64_t mono = now().monoUs;
+    const std::uint64_t waitUs = *at > mono ? *at - mono : 0;
+    const std::uint64_t ms = std::min<std::uint64_t>((waitUs + 999) / 1000, std::numeric_limits<int>::max());
+    m_timer.start(int(ms));
+}
+
+QString Ed3kSession::filePath(const QString& name) const
+{
+    return QDir(m_dir).filePath(name);
+}
+
+} // namespace eMule::ed3k

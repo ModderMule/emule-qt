@@ -245,7 +245,7 @@ private slots:
     void bittorrent_defaults()
     {
         Preferences prefs;
-        QCOMPARE(prefs.btEnabled(), false);
+        QCOMPARE(prefs.btEnabled(), true);
         QCOMPARE(prefs.btListenPort(), uint16{6881});
         QCOMPARE(prefs.btDownloadDir(), QString());
         QCOMPARE(prefs.btMaxDownloadKb(), uint32{0});
@@ -260,6 +260,25 @@ private slots:
         QCOMPARE(prefs.btSeedTimeLimitMinutes(), 0);
     }
 
+    // v3: a config from before BT shipped stored `enabled: false` as the default
+    void bittorrent_v3SwitchesOn()
+    {
+        TempDir tmp;
+        for (const uint32 version : {2u, 3u}) {
+            const auto file = tmp.filePath(QStringLiteral("v%1.yaml").arg(version));
+            {
+                Preferences prefs;
+                prefs.setStartVersion(version);
+                prefs.setBtEnabled(false);
+                QVERIFY(prefs.saveTo(file));
+            }
+            Preferences loaded;
+            QVERIFY(loaded.load(file));
+            QCOMPARE(loaded.btEnabled(), version < 3);
+            QCOMPARE(loaded.startVersion(), 3u);
+        }
+    }
+
     // Every key through YAML and the IPC map, non-default values throughout
     void bittorrent_roundTrip()
     {
@@ -267,7 +286,8 @@ private slots:
         const auto file = tmp.filePath(QStringLiteral("bt.yaml"));
         {
             Preferences prefs;
-            prefs.setBtEnabled(true);
+            prefs.setStartVersion(3);   // past the v3 switch-on
+            prefs.setBtEnabled(false);
             prefs.setBtListenPort(51413);
             prefs.setBtDownloadDir(QStringLiteral("/tmp/torrents"));
             prefs.setBtMaxDownloadKb(2048);
@@ -290,7 +310,7 @@ private slots:
         Preferences loaded;
         QVERIFY(loaded.load(file));
         const auto check = [](const Preferences& p) {
-            QCOMPARE(p.btEnabled(), true);
+            QCOMPARE(p.btEnabled(), false);
             QCOMPARE(p.btListenPort(), uint16{51413});
             QCOMPARE(p.btDownloadDir(), QStringLiteral("/tmp/torrents"));
             QCOMPARE(p.btMaxDownloadKb(), uint32{2048});

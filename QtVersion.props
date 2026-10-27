@@ -10,6 +10,18 @@
     <EmuleBtDefines Condition="'$(EmuleBitTorrent)'=='true'">EMULE_HAVE_BITTORRENT=1;TORRENT_USE_OPENSSL;TORRENT_USE_LIBCRYPTO;TORRENT_SSL_PEERS;BOOST_ASIO_NO_DEPRECATED;BOOST_ASIO_ENABLE_CANCELIO;BOOST_SYSTEM_USE_UTF8;</EmuleBtDefines>
     <EmuleBtLibs Condition="'$(EmuleBitTorrent)'=='true'">emulebt.lib;torrent-rasterbar.lib;</EmuleBtLibs>
   </PropertyGroup>
+  <!-- ed3k (packmule, Rust): the one switch, as CMake EMULE_ED3K. On when libs\packmule
+       exists (a separate repo); off with msbuild /p:EmuleEd3k=false. Needs cargo on PATH:
+       emuleed3k.vcxproj builds packmule_ffi.lib (always --release) in a pre-build step.
+       Not in the .sln build when off: build emulecored without the emuleed3k project. -->
+  <PropertyGroup Label="Ed3k">
+    <EmuleEd3k Condition="'$(EmuleEd3k)'=='' AND Exists('$(MSBuildThisFileDirectory)libs\packmule\Cargo.toml')">true</EmuleEd3k>
+    <EmuleEd3k Condition="'$(EmuleEd3k)'==''">false</EmuleEd3k>
+    <EmulePackmuleTargetDir>$(MSBuildThisFileDirectory)libs\packmule\target\emuleqt-msbuild</EmulePackmuleTargetDir>
+    <EmuleEd3kDefines Condition="'$(EmuleEd3k)'=='true'">EMULE_HAVE_ED3K=1;</EmuleEd3kDefines>
+    <!-- the system libraries rustc names for x86_64-pc-windows-msvc (packmule-ffi CMakeLists.txt) -->
+    <EmuleEd3kLibs Condition="'$(EmuleEd3k)'=='true'">emuleed3k.lib;$(EmulePackmuleTargetDir)\release\packmule_ffi.lib;bcrypt.lib;advapi32.lib;kernel32.lib;ntdll.lib;userenv.lib;dbghelp.lib;ole32.lib;crypt32.lib;</EmuleEd3kLibs>
+  </PropertyGroup>
   <!-- QUIC NAT-T: always on, as CMake EMULE_QUIC_NATT. vcpkg ngtcp2[openssl],
        dynamic on x64-windows: import libs, no NGTCP2_STATICLIB -->
   <PropertyGroup Label="QuicNatT">

@@ -832,6 +832,8 @@ public:
     void setCumIndexer(const IndexerCounters& val);
     [[nodiscard]] KadCounters cumKad() const;
     void setCumKad(const KadCounters& val);
+    [[nodiscard]] BtCounters cumBt() const;
+    void setCumBt(const BtCounters& val);
 
     // Records
     [[nodiscard]] uint32 recMaxWorkingServers() const;
@@ -1271,6 +1273,20 @@ public:
     static constexpr int kMaxBtConnections = 5000;
     static constexpr int kMaxBtSeedRatioPercent = 10000;
     static constexpr int kMaxBtSeedTimeLimitMinutes = 525600;   // one year
+
+    // -- ed3k (packmule) -------------------------------------------------------
+    //
+    // YAML block `ed3k:`, IPC keys `ed3k*`. Consumed by the daemon-only
+    // eMule::Ed3k module (EMULE_HAVE_ED3K); core just stores them.
+
+    /// Engine auto-starts. Off by default: opt-in.
+    [[nodiscard]] bool ed3kEnabled() const;
+    void setEd3kEnabled(bool val);
+
+    /// UDP port of the ed3k node, a socket of its own (not the eD2K UDP one).
+    /// 0 in the file = a random free port, picked once at load and saved.
+    [[nodiscard]] uint16 ed3kUdpPort() const;
+    void setEd3kUdpPort(uint16 val);
 
     /// ED2K's current slice of maxDownload(), in KB/s. Runtime only: it is
     /// recomputed twice a second from the live split and never written to

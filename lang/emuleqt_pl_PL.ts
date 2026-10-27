@@ -565,12 +565,12 @@ Uruchom go z --new-instance lub --config &lt;dir&gt;, aby otworzyć kolejne okno
         <translation>Normalny</translation>
     </message>
     <message>
-        <location filename="../src/gui/dialogs/OptionsDialog.cpp" line="+3318"/>
+        <location filename="../src/gui/dialogs/OptionsDialog.cpp" line="+3329"/>
         <source>Test</source>
         <translation>Test</translation>
     </message>
     <message>
-        <location filename="../src/gui/panels/StatisticsPanel.cpp" line="+342"/>
+        <location filename="../src/gui/panels/StatisticsPanel.cpp" line="+346"/>
         <source>Total Overhead (Packets): 0 Bytes (0)</source>
         <translation>Całkowity narzut (pakiety): 0 bajtów (0)</translation>
     </message>
@@ -6200,36 +6200,36 @@ Pobrać ponownie?</translation>
 <context>
     <name>eMule::OptionsDialog</name>
     <message>
-        <location filename="../src/gui/dialogs/OptionsDialog.cpp" line="-3207"/>
+        <location filename="../src/gui/dialogs/OptionsDialog.cpp" line="-3218"/>
         <source>Options</source>
         <translation>Opcje</translation>
     </message>
     <message>
         <location line="+61"/>
-        <location line="+2121"/>
+        <location line="+2130"/>
         <source>OK</source>
         <translation>OK</translation>
     </message>
     <message>
-        <location line="-2120"/>
-        <location line="+2121"/>
+        <location line="-2129"/>
+        <location line="+2130"/>
         <source>Cancel</source>
         <translation>Anuluj</translation>
     </message>
     <message>
-        <location line="-2120"/>
-        <location line="+6105"/>
+        <location line="-2129"/>
+        <location line="+6089"/>
         <source>Apply</source>
         <translation>Zatwierdź</translation>
     </message>
     <message>
-        <location line="-6104"/>
+        <location line="-6088"/>
         <source>Help</source>
         <translation>Pomoc</translation>
     </message>
     <message>
         <location line="+270"/>
-        <location line="+2118"/>
+        <location line="+2127"/>
         <location line="+59"/>
         <location line="+6"/>
         <location line="+4"/>
@@ -6241,7 +6241,7 @@ Pobrać ponownie?</translation>
         <translation>Filtr IP</translation>
     </message>
     <message>
-        <location line="-2232"/>
+        <location line="-2241"/>
         <source>IP filter reloaded: %1 entries.</source>
         <translation>Przeładowano filtr IP: %1 wpisów.</translation>
     </message>
@@ -6251,7 +6251,7 @@ Pobrać ponownie?</translation>
         <translation>Opcje -&gt; %1 -&gt; %2</translation>
     </message>
     <message>
-        <location line="+196"/>
+        <location line="+195"/>
         <source>General options</source>
         <translation>Opcje ogólne</translation>
     </message>
@@ -6267,23 +6267,23 @@ Pobrać ponownie?</translation>
     </message>
     <message>
         <location line="+2"/>
-        <location line="+8101"/>
+        <location line="+8127"/>
         <source>BitTorrent</source>
         <translation>BitTorrent</translation>
     </message>
     <message>
-        <location line="-8020"/>
+        <location line="-8047"/>
         <source>User Name</source>
         <translation>Nazwa użytkownika</translation>
     </message>
     <message>
         <location line="+8"/>
-        <location line="+5991"/>
+        <location line="+5977"/>
         <source>Language</source>
         <translation>Język</translation>
     </message>
     <message>
-        <location line="-5988"/>
+        <location line="-5974"/>
         <source>System Default</source>
         <translation>Domyślny systemowy</translation>
     </message>
@@ -6291,13 +6291,13 @@ Pobrać ponownie?</translation>
         <location line="+14"/>
         <location line="+761"/>
         <location line="+384"/>
-        <location line="+464"/>
+        <location line="+475"/>
         <location line="+298"/>
         <source>Miscellaneous</source>
         <translation>Inne opcje</translation>
     </message>
     <message>
-        <location line="-1904"/>
+        <location line="-1915"/>
         <source>Bring to front on link click</source>
         <translation>Przywróć po kliknięciu na link</translation>
     </message>
@@ -6383,25 +6383,25 @@ Pobrać ponownie?</translation>
     </message>
     <message>
         <location line="+8"/>
-        <location line="+5927"/>
+        <location line="+5913"/>
         <source>Core</source>
         <translation>Rdzeń</translation>
     </message>
     <message>
-        <location line="-5922"/>
+        <location line="-5908"/>
         <source>Address:</source>
         <translation>Adres:</translation>
     </message>
     <message>
         <location line="+4"/>
-        <location line="+1336"/>
-        <location line="+770"/>
+        <location line="+1347"/>
+        <location line="+772"/>
         <location line="+427"/>
         <source>Port:</source>
         <translation>Port:</translation>
     </message>
     <message>
-        <location line="-2530"/>
+        <location line="-2543"/>
         <source>authentication token</source>
         <translation>token uwierzytelniający</translation>
     </message>
@@ -6656,20 +6656,20 @@ Czy na pewno chcesz kontynuować?</translation>
     </message>
     <message>
         <location line="+2"/>
-        <location line="+1847"/>
+        <location line="+1860"/>
         <location line="+133"/>
         <location line="+296"/>
         <location line="+1016"/>
         <location line="+152"/>
-        <location line="+974"/>
-        <location line="+335"/>
+        <location line="+975"/>
+        <location line="+307"/>
         <location line="+284"/>
         <location line="+29"/>
         <source>Enabled</source>
         <translation>Włączone</translation>
     </message>
     <message>
-        <location line="-5064"/>
+        <location line="-5050"/>
         <source>Reset</source>
         <translation>Resetuj</translation>
     </message>
@@ -6686,13 +6686,13 @@ Czy na pewno chcesz kontynuować?</translation>
     <message>
         <location line="+3"/>
         <location line="+6"/>
-        <location line="+4486"/>
-        <location line="+304"/>
+        <location line="+4442"/>
+        <location line="+334"/>
         <source> KB/s</source>
         <translation> KB/s</translation>
     </message>
     <message>
-        <location line="-4793"/>
+        <location line="-4779"/>
         <source>Upload</source>
         <translation>Wysyłanie</translation>
     </message>
@@ -6723,12 +6723,12 @@ Czy na pewno chcesz kontynuować?</translation>
     </message>
     <message>
         <location line="+23"/>
-        <location line="+4290"/>
+        <location line="+4304"/>
         <source>Client Port</source>
         <translation>Port klienta</translation>
     </message>
     <message>
-        <location line="-4287"/>
+        <location line="-4301"/>
         <source>TCP</source>
         <translation>TCP</translation>
     </message>
@@ -6763,13 +6763,13 @@ Czy na pewno chcesz kontynuować?</translation>
     </message>
     <message>
         <location line="+4"/>
-        <location line="+1720"/>
-        <location line="+5454"/>
+        <location line="+1733"/>
+        <location line="+5427"/>
         <source>Any</source>
         <translation>Dowolny</translation>
     </message>
     <message>
-        <location line="-7172"/>
+        <location line="-7158"/>
         <source>Use only this network interface, for example a VPN tunnel. Pick one from the list, or type an IP address or a subnet such as 10.64.0.0/10 (the interface holding an address in it). Connections through a proxy are not bound.</source>
         <translation>Używaj tylko tego interfejsu sieciowego, np. tunelu VPN. Wybierz go z listy lub wpisz adres IP albo podsieć, np. 10.64.0.0/10 (interfejs posiadający adres z tej podsieci). Połączenia przez proxy nie są wiązane.</translation>
     </message>
@@ -6790,12 +6790,12 @@ Czy na pewno chcesz kontynuować?</translation>
     </message>
     <message>
         <location line="+6"/>
-        <location line="+4243"/>
+        <location line="+4306"/>
         <source>Connection Limits</source>
         <translation>Limity połączeń</translation>
     </message>
     <message>
-        <location line="-4241"/>
+        <location line="-4304"/>
         <source>Max. connections</source>
         <translation>Maks. połączeń</translation>
     </message>
@@ -6856,12 +6856,12 @@ Czy na pewno chcesz kontynuować?</translation>
     </message>
     <message>
         <location line="+57"/>
-        <location line="+1543"/>
+        <location line="+1556"/>
         <source>General</source>
         <translation>Ogólne</translation>
     </message>
     <message>
-        <location line="-1540"/>
+        <location line="-1553"/>
         <source>Enable proxy</source>
         <translation>Włącz proxy</translation>
     </message>
@@ -6926,34 +6926,34 @@ Każde połączenie Usenet przechodzi wtedy przez proxy, więc jego prędkość 
     </message>
     <message>
         <location line="+9"/>
-        <location line="+771"/>
+        <location line="+782"/>
         <source>Authentication</source>
         <translation>Uwierzytelnianie</translation>
     </message>
     <message>
-        <location line="-768"/>
+        <location line="-779"/>
         <source>Enable authentication</source>
         <translation>Włącz uwierzytelnianie</translation>
     </message>
     <message>
         <location line="+7"/>
-        <location line="+1925"/>
+        <location line="+1938"/>
         <location line="+1019"/>
         <location line="+152"/>
         <source>Name:</source>
         <translation>Nazwa:</translation>
     </message>
     <message>
-        <location line="-3092"/>
-        <location line="+772"/>
-        <location line="+833"/>
+        <location line="-3105"/>
+        <location line="+783"/>
+        <location line="+835"/>
         <location line="+19"/>
         <location line="+325"/>
         <source>Password:</source>
         <translation>Hasło:</translation>
     </message>
     <message>
-        <location line="-1915"/>
+        <location line="-1928"/>
         <source>Update</source>
         <translation>Aktualizuj</translation>
     </message>
@@ -7138,12 +7138,12 @@ Każde połączenie Usenet przechodzi wtedy przez proxy, więc jego prędkość 
     </message>
     <message>
         <location line="+3"/>
-        <location line="+602"/>
+        <location line="+613"/>
         <source>Edit...</source>
         <translation>Edytuj...</translation>
     </message>
     <message>
-        <location line="-591"/>
+        <location line="-602"/>
         <source>Try to transfer full chunks to all uploads</source>
         <translation>Próbuj przesłać pełne części do wszystkich pobierających</translation>
     </message>
@@ -7198,7 +7198,7 @@ Każde połączenie Usenet przechodzi wtedy przez proxy, więc jego prędkość 
         <translation>Przechowuje lokalny zapis plików, które pojawiły się w twoich wyszukiwaniach, i nazw, pod jakimi występowały, aby późniejsze wyszukiwania mogły pokazać, co już widziałeś.</translation>
     </message>
     <message>
-        <location line="+7"/>
+        <location line="+18"/>
         <source>Video Player</source>
         <translation>Odtwarzacz wideo</translation>
     </message>
@@ -7323,8 +7323,8 @@ Każde połączenie Usenet przechodzi wtedy przez proxy, więc jego prędkość 
         <translation>Ustawienia serwera SMTP</translation>
     </message>
     <message>
-        <location line="-1556"/>
-        <location line="+1559"/>
+        <location line="-1565"/>
+        <location line="+1568"/>
         <source>Connection</source>
         <translation>Połączenie</translation>
     </message>
@@ -7336,12 +7336,12 @@ Każde połączenie Usenet przechodzi wtedy przez proxy, więc jego prędkość 
     <message>
         <location line="+9"/>
         <location line="+14"/>
-        <location line="+1229"/>
+        <location line="+1231"/>
         <source>None</source>
         <translation>Brak</translation>
     </message>
     <message>
-        <location line="-1241"/>
+        <location line="-1243"/>
         <source>Security:</source>
         <translation>Zabezpieczenia:</translation>
     </message>
@@ -7468,14 +7468,14 @@ Każde połączenie Usenet przechodzi wtedy przez proxy, więc jego prędkość 
     </message>
     <message>
         <location line="+4"/>
-        <location line="+978"/>
+        <location line="+980"/>
         <location line="+1027"/>
         <location line="+154"/>
         <source>Name</source>
         <translation>Nazwa</translation>
     </message>
     <message>
-        <location line="-2157"/>
+        <location line="-2159"/>
         <source>Users</source>
         <translation>Użytkownicy</translation>
     </message>
@@ -7541,12 +7541,12 @@ Każde połączenie Usenet przechodzi wtedy przez proxy, więc jego prędkość 
     </message>
     <message>
         <location line="+7"/>
-        <location line="+486"/>
+        <location line="+488"/>
         <source>Reload</source>
         <translation>Przeładuj</translation>
     </message>
     <message>
-        <location line="-467"/>
+        <location line="-469"/>
         <source>Update from URL: (filter.dat- or PeerGuardian-format, .gz/.zip accepted)</source>
         <translation>Aktualizuj z URL: (format filter.dat lub PeerGuardian, akceptowane .gz/.zip)</translation>
     </message>
@@ -7671,12 +7671,12 @@ Każde połączenie Usenet przechodzi wtedy przez proxy, więc jego prędkość 
     </message>
     <message>
         <location line="+0"/>
-        <location line="+748"/>
+        <location line="+750"/>
         <source>Strict</source>
         <translation>Ścisły</translation>
     </message>
     <message>
-        <location line="-748"/>
+        <location line="-750"/>
         <source>Strict + Chinese</source>
         <translation>Ścisły + chińskie</translation>
     </message>
@@ -7707,18 +7707,18 @@ Każde połączenie Usenet przechodzi wtedy przez proxy, więc jego prędkość 
     </message>
     <message>
         <location line="+8"/>
-        <location line="+154"/>
+        <location line="+156"/>
         <source>Update delay: %1 sec</source>
         <translation>Opóźnienie aktualizacji: %1 sek</translation>
     </message>
     <message>
-        <location line="-153"/>
-        <location line="+154"/>
+        <location line="-155"/>
+        <location line="+156"/>
         <source>Update delay: disabled</source>
         <translation>Opóźnienie aktualizacji: wyłączone</translation>
     </message>
     <message>
-        <location line="-147"/>
+        <location line="-149"/>
         <source>Time for average graph: 5 mins</source>
         <translation>Czas dla wykresu średniej: 5 min</translation>
     </message>
@@ -7763,7 +7763,7 @@ Każde połączenie Usenet przechodzi wtedy przez proxy, więc jego prędkość 
         <translation>Pobieranie - Usenet</translation>
     </message>
     <message>
-        <location line="+1"/>
+        <location line="+2"/>
         <source>Upload Session</source>
         <translation>Wysyłanie - średnia dla sesji</translation>
     </message>
@@ -7788,7 +7788,7 @@ Każde połączenie Usenet przechodzi wtedy przez proxy, więc jego prędkość 
         <translation>Sloty wysyłania dla znajomych</translation>
     </message>
     <message>
-        <location line="+1"/>
+        <location line="+2"/>
         <source>Active Connections</source>
         <translation>Aktywne połączenia</translation>
     </message>
@@ -8080,23 +8080,23 @@ Każde połączenie Usenet przechodzi wtedy przez proxy, więc jego prędkość 
         <location line="+19"/>
         <location line="+1019"/>
         <location line="+154"/>
-        <location line="+1884"/>
+        <location line="+1857"/>
         <location line="+2177"/>
         <source>Add</source>
         <translation>Dodaj</translation>
     </message>
     <message>
-        <location line="-5233"/>
+        <location line="-5206"/>
         <location line="+1019"/>
         <location line="+154"/>
-        <location line="+1611"/>
+        <location line="+1584"/>
         <location line="+316"/>
         <location line="+2139"/>
         <source>Remove</source>
         <translation>Usuń</translation>
     </message>
     <message>
-        <location line="-5218"/>
+        <location line="-5191"/>
         <source>Display name (optional)</source>
         <translation>Nazwa wyświetlana (opcjonalnie)</translation>
     </message>
@@ -8107,12 +8107,12 @@ Każde połączenie Usenet przechodzi wtedy przez proxy, więc jego prędkość 
     </message>
     <message>
         <location line="+8"/>
-        <location line="+2131"/>
+        <location line="+2132"/>
         <source>Encryption:</source>
         <translation>Szyfrowanie:</translation>
     </message>
     <message>
-        <location line="-2128"/>
+        <location line="-2129"/>
         <source>None (119)</source>
         <translation>Brak (119)</translation>
     </message>
@@ -8162,20 +8162,20 @@ Każde połączenie Usenet przechodzi wtedy przez proxy, więc jego prędkość 
         <translation>Nieznany</translation>
     </message>
     <message>
-        <location line="-809"/>
-        <location line="+811"/>
+        <location line="-811"/>
+        <location line="+813"/>
         <location line="+1004"/>
         <location line="+165"/>
         <source> days</source>
         <translation> dni</translation>
     </message>
     <message>
-        <location line="-3979"/>
+        <location line="+921"/>
         <source>Bandwidth</source>
         <translation>Przepustowość</translation>
     </message>
     <message>
-        <location line="+323"/>
+        <location line="-4590"/>
         <source>Downloads that are receiving data, and the sources sending it, are drawn in bold. A source listed under another file (A4AF) is bold too while it transfers. The connected server and the selected category tab are bold as well.</source>
         <translation>Pobierania, które odbierają dane, i źródła, które je wysyłają, są pogrubione. Źródło widoczne pod innym plikiem (A4AF) też jest pogrubione podczas przesyłania. Pogrubione są również połączony serwer i wybrana karta kategorii.</translation>
     </message>
@@ -8220,7 +8220,17 @@ Każde połączenie Usenet przechodzi wtedy przez proxy, więc jego prędkość 
         <translation>Udostępnia pliki dodane do udostępnianego folderu, gdy tylko się pojawią. Gdy wyłączone, nowe pliki są wykrywane dopiero po ponownym uruchomieniu lub przeładowaniu udostępnianych plików.</translation>
     </message>
     <message>
-        <location line="+586"/>
+        <location line="+13"/>
+        <source>Rehash All Files...</source>
+        <translation>Przelicz hash wszystkich plików...</translation>
+    </message>
+    <message>
+        <location line="+2"/>
+        <source>Reads every shared file again and rebuilds known.met from the result. Only needed after hard disk errors.</source>
+        <translation>Ponownie odczytuje każdy udostępniany plik i odbudowuje known.met na podstawie wyniku. Potrzebne tylko po błędach dysku twardego.</translation>
+    </message>
+    <message>
+        <location line="+582"/>
         <source>the core did not answer</source>
         <translation>rdzeń nie odpowiedział</translation>
     </message>
@@ -8239,7 +8249,17 @@ Każde połączenie Usenet przechodzi wtedy przez proxy, więc jego prędkość 
         <translation>Aktualizuj automatycznie co</translation>
     </message>
     <message>
-        <location line="+817"/>
+        <location line="+170"/>
+        <source>Download BitTorrent</source>
+        <translation>Pobieranie - BitTorrent</translation>
+    </message>
+    <message>
+        <location line="+6"/>
+        <source>Upload BitTorrent</source>
+        <translation>Wysyłanie - BitTorrent</translation>
+    </message>
+    <message>
+        <location line="+643"/>
         <source>Retention:</source>
         <translation>Retencja:</translation>
     </message>
@@ -8305,14 +8325,14 @@ Każde połączenie Usenet przechodzi wtedy przez proxy, więc jego prędkość 
     </message>
     <message>
         <location line="+1"/>
-        <location line="+1957"/>
+        <location line="+1958"/>
         <location line="+9"/>
-        <location line="+174"/>
+        <location line="+116"/>
         <source>No limit</source>
         <translation>Bez limitu</translation>
     </message>
     <message>
-        <location line="-2137"/>
+        <location line="-2080"/>
         <source>Decimal GB, because that is what an invoice says — the 1024-based GB used elsewhere in eMule would put a 1000 GB plan 7% over.
 
 Set it slightly under your plan. The figure is measured here, so it reads a few percent below your provider&apos;s, and articles already in flight when the limit is reached still finish.</source>
@@ -8368,12 +8388,12 @@ Ustaw nieco poniżej swojego planu. Wartość jest mierzona tutaj, więc wychodz
     <message>
         <location line="+3"/>
         <location line="+913"/>
-        <location line="+1584"/>
+        <location line="+1557"/>
         <source> s</source>
         <translation> s</translation>
     </message>
     <message>
-        <location line="-2496"/>
+        <location line="-2469"/>
         <source>Never back off</source>
         <translation>Nigdy nie wstrzymuj</translation>
     </message>
@@ -8384,19 +8404,19 @@ Ustaw nieco poniżej swojego planu. Wartość jest mierzona tutaj, więc wychodz
     </message>
     <message>
         <location line="+8"/>
-        <location line="+2066"/>
+        <location line="+2017"/>
         <source>Share of the download limit:</source>
         <translation>Udział w limicie pobierania:</translation>
     </message>
     <message>
-        <location line="-2063"/>
+        <location line="-2014"/>
         <location line="+42"/>
-        <location line="+2014"/>
+        <location line="+1964"/>
         <source> %</source>
         <translation> %</translation>
     </message>
     <message>
-        <location line="-2054"/>
+        <location line="-2004"/>
         <source>How much of the global download limit Usenet may take while eD2K is also downloading. Whichever engine is idle lends its whole share to the other, so this only applies when both are busy.</source>
         <translation>Jaką część globalnego limitu pobierania może zająć Usenet, gdy eD2K także pobiera. Bezczynny silnik oddaje cały swój udział drugiemu, więc dotyczy to tylko sytuacji, gdy oba są zajęte.</translation>
     </message>
@@ -8499,12 +8519,12 @@ Nie może znajdować się w folderze tymczasowym, pobranych ani konfiguracyjnym:
     </message>
     <message>
         <location line="+5"/>
-        <location line="+1785"/>
+        <location line="+1786"/>
         <source>Browse…</source>
         <translation>Przeglądaj…</translation>
     </message>
     <message>
-        <location line="-1775"/>
+        <location line="-1776"/>
         <source>Desktop</source>
         <translation>Pulpit</translation>
     </message>
@@ -9193,12 +9213,11 @@ Dodanie indeksera później nie pobiera jego archiwum: nowy indekser dostaje wł
         <translation>Włącz BitTorrent</translation>
     </message>
     <message>
-        <location line="+2"/>
         <source>Starts the BitTorrent engine with the daemon. Off, no torrent is downloaded or seeded.</source>
-        <translation>Uruchamia silnik BitTorrent razem z demonem. Gdy wyłączony, żaden torrent nie jest pobierany ani wysyłany.</translation>
+        <translation type="vanished">Uruchamia silnik BitTorrent razem z demonem. Gdy wyłączony, żaden torrent nie jest pobierany ani wysyłany.</translation>
     </message>
     <message>
-        <location line="+3346"/>
+        <location line="+3362"/>
         <source>unlimited</source>
         <translation>bez limitu</translation>
     </message>
@@ -9237,7 +9256,7 @@ Dodanie indeksera później nie pobiera jego archiwum: nowy indekser dostaje wł
         <translation type="vanished">Używany dla TCP i UDP. Musi się różnić od portów eD2K.</translation>
     </message>
     <message>
-        <location line="-3278"/>
+        <location line="-3291"/>
         <source>Listen port (TCP/UDP):</source>
         <translation>Port nasłuchu (TCP/UDP):</translation>
     </message>
@@ -9271,17 +9290,15 @@ Dodanie indeksera później nie pobiera jego archiwum: nowy indekser dostaje wł
         <translation type="vanished">Bez limitu</translation>
     </message>
     <message>
-        <location line="+106"/>
         <source>Download:</source>
-        <translation>Pobieranie:</translation>
+        <translation type="vanished">Pobieranie:</translation>
     </message>
     <message>
-        <location line="+2"/>
         <source>Upload:</source>
-        <translation>Wysyłanie:</translation>
+        <translation type="vanished">Wysyłanie:</translation>
     </message>
     <message>
-        <location line="-209"/>
+        <location line="-101"/>
         <source>Active downloads:</source>
         <translation>Aktywne pobierania:</translation>
     </message>
@@ -9336,7 +9353,7 @@ Dodanie indeksera później nie pobiera jego archiwum: nowy indekser dostaje wł
         <translation>Folder pobierania BitTorrent</translation>
     </message>
     <message>
-        <location line="+196"/>
+        <location line="+168"/>
         <source>Warning: Do not change these settings unless you know what you are doing. Otherwise you can easily make things worse for yourself. eMule will run fine without adjusting any of these settings.</source>
         <translation>Uwaga: Nie zmieniaj tych ustawień, jeśli nie wiesz, co robisz. W przeciwnym razie łatwo możesz pogorszyć sytuację. eMule będzie działać dobrze bez zmiany któregokolwiek z tych ustawień.</translation>
     </message>
@@ -9371,7 +9388,7 @@ Dodanie indeksera później nie pobiera jego archiwum: nowy indekser dostaje wł
         <translation>Pobierane pliki są zawsze sprawdzane i rejestrowane. Pliki udostępnione są sprawdzane ponownie przy każdym uruchomieniu.</translation>
     </message>
     <message>
-        <location line="+2829"/>
+        <location line="+2870"/>
         <source>UDP is disabled in the config file (udpPort: 0)</source>
         <translation>UDP jest wyłączone w pliku konfiguracyjnym (udpPort: 0)</translation>
     </message>
@@ -9476,13 +9493,13 @@ Utworzyć go?</translation>
 %1</translation>
     </message>
     <message>
-        <location line="-3201"/>
-        <location line="+190"/>
+        <location line="-3214"/>
+        <location line="+162"/>
         <source>Disabled</source>
         <translation>Wyłączony</translation>
     </message>
     <message>
-        <location line="-4146"/>
+        <location line="-4132"/>
         <source>Lets two Low ID clients find each other&apos;s address through a server that supports it or a Kad buddy, then connect over IPv6 or QUIC</source>
         <translation>Pozwala dwóm klientom Low ID znaleźć nawzajem swoje adresy przez serwer, który to obsługuje, lub przez Kad buddy, a następnie połączyć się przez IPv6 lub QUIC</translation>
     </message>
@@ -9497,12 +9514,17 @@ Utworzyć go?</translation>
         <translation>Pyta także serwer źródła, którego nie ma na Twojej liście serwerów. Najpierw jest jednorazowo pingowany i nie trafia na listę</translation>
     </message>
     <message>
-        <location line="+1418"/>
+        <location line="+1431"/>
         <source>Address the web server listens on. Any: every interface, reachable from other hosts. 127.0.0.1: this computer only. Pick one from the list or type an IP address.</source>
         <translation>Adres, na którym nasłuchuje serwer WWW. Dowolny: każdy interfejs, dostępny z innych hostów. 127.0.0.1: tylko ten komputer. Wybierz z listy lub wpisz adres IP.</translation>
     </message>
     <message>
-        <location line="+2436"/>
+        <location line="+2420"/>
+        <source>Runs the BitTorrent engine in the core. Off, the engine stops: no torrent is downloaded or seeded and the BitTorrent port is closed. Torrents stay in the list and continue when it is switched on again.</source>
+        <translation>Uruchamia silnik BitTorrent w rdzeniu. Wyłączony silnik zatrzymuje się: żaden torrent nie jest pobierany ani seedowany, a port BitTorrent jest zamknięty. Torrenty pozostają na liście i są wznawiane po ponownym włączeniu.</translation>
+    </message>
+    <message>
+        <location line="+17"/>
         <source>Queue</source>
         <translation>Kolejka</translation>
     </message>
@@ -9537,7 +9559,17 @@ Utworzyć go?</translation>
         <translation>Peery</translation>
     </message>
     <message>
-        <location line="+29"/>
+        <location line="+28"/>
+        <source>Global limits:</source>
+        <translation>Limity globalne:</translation>
+    </message>
+    <message>
+        <location line="+2"/>
+        <source>eD2K and Usenet come first. BitTorrent keeps its share while they are busy and uses all the bandwidth they leave idle.</source>
+        <translation>eD2K i Usenet mają pierwszeństwo. BitTorrent zachowuje swój udział, gdy są zajęte, i wykorzystuje całe pasmo, którego nie używają.</translation>
+    </message>
+    <message>
+        <location line="+48"/>
         <source>Peer connections of all torrents together.</source>
         <translation>Połączenia z peerami wszystkich torrentów razem.</translation>
     </message>
@@ -9552,24 +9584,21 @@ Utworzyć go?</translation>
         <translation>Maks. połączeń na torrent:</translation>
     </message>
     <message>
-        <location line="+31"/>
         <source>Global limits</source>
-        <translation>Limity globalne</translation>
+        <translation type="vanished">Limity globalne</translation>
     </message>
     <message>
-        <location line="+3"/>
+        <location line="-57"/>
         <source>Set on the Connection page.</source>
         <translation>Ustawiane na stronie „Połączenie”.</translation>
     </message>
     <message>
-        <location line="+3"/>
         <source>eD2K and Usenet come first. BitTorrent keeps the share below while they are busy and uses all the bandwidth they leave idle.</source>
-        <translation>eD2K i Usenet mają pierwszeństwo. BitTorrent zachowuje poniższy udział, gdy są zajęte, i wykorzystuje całe pasmo, którego nie używają.</translation>
+        <translation type="vanished">eD2K i Usenet mają pierwszeństwo. BitTorrent zachowuje poniższy udział, gdy są zajęte, i wykorzystuje całe pasmo, którego nie używają.</translation>
     </message>
     <message>
-        <location line="+8"/>
         <source>Sharing</source>
-        <translation>Podział</translation>
+        <translation type="vanished">Podział</translation>
     </message>
     <message>
         <location line="+18"/>
@@ -9577,27 +9606,36 @@ Utworzyć go?</translation>
         <translation>Jaką część globalnego limitu pobierania zachowuje BitTorrent, gdy eD2K lub Usenet też pobierają. Gdy są bezczynne, BitTorrent może użyć całości.</translation>
     </message>
     <message>
-        <location line="+3"/>
+        <location line="+6"/>
         <source>Share of the upload limit:</source>
         <translation>Udział w limicie wysyłania:</translation>
     </message>
     <message>
-        <location line="+1"/>
+        <location line="-2"/>
         <source>How much of the global upload limit BitTorrent keeps while eD2K is also uploading. When it is idle, BitTorrent may use all of it.</source>
         <translation>Jaką część globalnego limitu wysyłania zachowuje BitTorrent, gdy eD2K też wysyła. Gdy eD2K jest bezczynne, BitTorrent może użyć całości.</translation>
     </message>
     <message>
-        <location line="+6"/>
         <source>Hard limits</source>
-        <translation>Twarde limity</translation>
+        <translation type="vanished">Twarde limity</translation>
     </message>
     <message>
-        <location line="+10"/>
+        <location line="+11"/>
         <source>BitTorrent never goes above this, even with bandwidth to spare. At most the global limit.</source>
         <translation>BitTorrent nigdy tego nie przekracza, nawet przy wolnym paśmie. Najwyżej limit globalny.</translation>
     </message>
     <message>
-        <location line="+86"/>
+        <location line="+5"/>
+        <source>Max. download:</source>
+        <translation>Maks. pobieranie:</translation>
+    </message>
+    <message>
+        <location line="+2"/>
+        <source>Max. upload:</source>
+        <translation>Maks. wysyłanie:</translation>
+    </message>
+    <message>
+        <location line="+109"/>
         <source>Max. firewalled Kad nodes served as buddy:</source>
         <translation>Maks. węzłów Kad za zaporą obsługiwanych jako koleś:</translation>
     </message>
@@ -10227,7 +10265,53 @@ Połączenia z serwerami news przełączają się natychmiast.</translation>
         <translation>Przywróć domyślne</translation>
     </message>
     <message>
-        <location line="+35"/>
+        <location line="+37"/>
+        <location line="+16"/>
+        <location line="+6"/>
+        <location line="+3"/>
+        <location line="+3"/>
+        <source>Rehash All Files</source>
+        <translation>Przelicz hash wszystkich plików</translation>
+    </message>
+    <message>
+        <location line="-27"/>
+        <source>This reads every shared file from disk again and rebuilds known.met. It takes a long time and should only be used after hard disk errors.
+
+Sharing goes on with the current known.met until the rehash is done.
+
+Rehash all shared files now?</source>
+        <translation>Każdy udostępniany plik zostanie ponownie odczytany z dysku, a known.met zostanie odbudowany. Trwa to długo i należy tego używać tylko po błędach dysku twardego.
+
+Do zakończenia przeliczania udostępnianie odbywa się z bieżącym known.met.
+
+Przeliczyć teraz hash wszystkich udostępnianych plików?</translation>
+    </message>
+    <message>
+        <location line="+16"/>
+        <source>The core did not start the rehash.</source>
+        <translation>Rdzeń nie rozpoczął przeliczania.</translation>
+    </message>
+    <message>
+        <location line="+6"/>
+        <source>A rehash of all files is already running.</source>
+        <translation>Przeliczanie hashy wszystkich plików już trwa.</translation>
+    </message>
+    <message>
+        <location line="+3"/>
+        <source>There are no shared files to rehash.</source>
+        <translation>Brak udostępnianych plików do przeliczenia.</translation>
+    </message>
+    <message numerus="yes">
+        <location line="+3"/>
+        <source>Rehashing %n shared file(s) in the background. known.met is replaced when all are done; the log shows the result.</source>
+        <translation>
+            <numerusform>Przeliczanie hasha %n udostępnianego pliku w tle. known.met zostanie zastąpiony po zakończeniu; wynik pojawi się w logu.</numerusform>
+            <numerusform>Przeliczanie hashy %n udostępnianych plików w tle. known.met zostanie zastąpiony po zakończeniu wszystkich; wynik pojawi się w logu.</numerusform>
+            <numerusform>Przeliczanie hashy %n udostępnianych plików w tle. known.met zostanie zastąpiony po zakończeniu wszystkich; wynik pojawi się w logu.</numerusform>
+        </translation>
+    </message>
+    <message>
+        <location line="+10"/>
         <source>Automatic</source>
         <translation>Automatycznie</translation>
     </message>
@@ -12219,60 +12303,60 @@ Pliki pozostaną na dysku.</numerusform>
 <context>
     <name>eMule::StatisticsPanel</name>
     <message>
-        <location filename="../src/gui/panels/StatisticsPanel.cpp" line="-161"/>
-        <location line="+107"/>
+        <location filename="../src/gui/panels/StatisticsPanel.cpp" line="-165"/>
+        <location line="+109"/>
         <source>Average (%1 mins)</source>
         <translation>Średnia (%1 min)</translation>
     </message>
     <message>
         <location line="-86"/>
-        <location line="+103"/>
+        <location line="+105"/>
         <source>Active connections (1:%1)</source>
         <translation>Aktywne połączenia (1:%1)</translation>
     </message>
     <message>
-        <location line="-50"/>
+        <location line="-52"/>
         <source>Statistics Tree</source>
         <translation>Drzewo statystyk</translation>
     </message>
     <message>
         <location line="+7"/>
-        <location line="+1064"/>
+        <location line="+1081"/>
         <source>Statistics last reset: %1</source>
         <translation>Ostatni reset statystyk: %1</translation>
     </message>
     <message>
-        <location line="-1064"/>
-        <location line="+312"/>
-        <location line="+574"/>
+        <location line="-1081"/>
+        <location line="+314"/>
+        <location line="+589"/>
         <location line="+167"/>
         <location line="+8"/>
         <location line="+67"/>
         <location line="+69"/>
-        <location line="+988"/>
+        <location line="+1114"/>
         <source>Unknown</source>
         <translation>Nieznany</translation>
     </message>
     <message>
-        <location line="-2160"/>
-        <location line="+9"/>
+        <location line="-2303"/>
+        <location line="+10"/>
         <source>Session average</source>
         <translation>Średnia dla sesji</translation>
     </message>
     <message>
-        <location line="-6"/>
-        <location line="+8"/>
+        <location line="-7"/>
+        <location line="+9"/>
         <source>Current</source>
         <translation>Aktualne</translation>
     </message>
     <message>
-        <location line="-7"/>
-        <location line="+1942"/>
+        <location line="-8"/>
+        <location line="+2085"/>
         <source>Usenet</source>
         <translation>Usenet</translation>
     </message>
     <message>
-        <location line="-1941"/>
+        <location line="-2083"/>
         <source>Download Speed</source>
         <translation>Prędkość pobierania</translation>
     </message>
@@ -12287,7 +12371,7 @@ Pliki pozostaną na dysku.</numerusform>
         <translation>Wysyłanie do znajomych</translation>
     </message>
     <message>
-        <location line="+1"/>
+        <location line="+2"/>
         <source>Upload Speed</source>
         <translation>Prędkość wysyłania</translation>
     </message>
@@ -12318,53 +12402,54 @@ Pliki pozostaną na dysku.</numerusform>
     </message>
     <message>
         <location line="+3"/>
-        <location line="+685"/>
+        <location line="+700"/>
         <location line="+45"/>
-        <location line="+1019"/>
+        <location line="+1058"/>
         <source>Waiting...</source>
         <translation>Oczekiwanie...</translation>
     </message>
     <message>
-        <location line="-1748"/>
-        <location line="+620"/>
+        <location line="-1802"/>
+        <location line="+635"/>
         <source>Session UL:DL Ratio: %1</source>
         <translation>Ratio sesji UL:DL: %1</translation>
     </message>
     <message>
-        <location line="-618"/>
-        <location line="+620"/>
+        <location line="-633"/>
+        <location line="+635"/>
         <source>Session UL:DL Ratio (Friends UL excluded): %1</source>
         <translation>Ratio UL:DL sesji (bez wysyłania do znajomych): %1</translation>
     </message>
     <message>
-        <location line="-619"/>
-        <location line="+621"/>
+        <location line="-634"/>
+        <location line="+636"/>
         <source>Cumulative UL:DL Ratio: %1</source>
         <translation>Ratio całk. UL:DL: %1</translation>
     </message>
     <message>
-        <location line="-618"/>
+        <location line="-633"/>
         <location line="+165"/>
         <location line="+25"/>
-        <location line="+336"/>
-        <location line="+1640"/>
+        <location line="+351"/>
+        <location line="+1766"/>
         <source>Uploads</source>
         <translation>Wysyłanie</translation>
     </message>
     <message>
-        <location line="-2162"/>
+        <location line="-2303"/>
         <location line="+67"/>
         <location line="+83"/>
         <location line="+56"/>
         <location line="+43"/>
-        <location line="+1615"/>
+        <location line="+1625"/>
+        <location line="+131"/>
         <location line="+166"/>
         <location line="+121"/>
         <source>Session</source>
         <translation>Sesja</translation>
     </message>
     <message>
-        <location line="-2148"/>
+        <location line="-2289"/>
         <location line="+35"/>
         <source>Uploaded Data: 0 Bytes</source>
         <translation>Wysłane dane: 0 bajtów</translation>
@@ -12375,12 +12460,12 @@ Pliki pozostaną na dysku.</numerusform>
         <location line="+32"/>
         <location line="+43"/>
         <location line="+114"/>
-        <location line="+284"/>
+        <location line="+299"/>
         <source>Clients</source>
         <translation>Klienci</translation>
     </message>
     <message>
-        <location line="-505"/>
+        <location line="-520"/>
         <location line="+35"/>
         <location line="+32"/>
         <location line="+43"/>
@@ -12393,12 +12478,12 @@ Pliki pozostaną na dysku.</numerusform>
         <location line="+32"/>
         <location line="+43"/>
         <location line="+119"/>
-        <location line="+279"/>
+        <location line="+294"/>
         <source>Port</source>
         <translation>Port</translation>
     </message>
     <message>
-        <location line="-507"/>
+        <location line="-522"/>
         <location line="+35"/>
         <location line="+32"/>
         <location line="+43"/>
@@ -12416,12 +12501,12 @@ Pliki pozostaną na dysku.</numerusform>
     <message>
         <location line="-109"/>
         <location line="+35"/>
-        <location line="+481"/>
+        <location line="+496"/>
         <source>Data Source</source>
         <translation>Źródło danych</translation>
     </message>
     <message>
-        <location line="-515"/>
+        <location line="-530"/>
         <location line="+35"/>
         <source>Complete File: 0 Bytes</source>
         <translation>Plik kompletny: 0 bajtów</translation>
@@ -12440,14 +12525,14 @@ Pliki pozostaną na dysku.</numerusform>
     <message>
         <location line="+6"/>
         <location line="+28"/>
-        <location line="+480"/>
+        <location line="+495"/>
         <location line="+141"/>
         <location line="+45"/>
         <source>Upload Sessions</source>
         <translation>Sesje wysyłania</translation>
     </message>
     <message>
-        <location line="-689"/>
+        <location line="-704"/>
         <location line="+28"/>
         <source>Average Upload Per Session: 0 Bytes</source>
         <translation>Średnio wysłano w sesji: 0 bajtów</translation>
@@ -12464,24 +12549,25 @@ Pliki pozostaną na dysku.</numerusform>
         <location line="+66"/>
         <location line="+41"/>
         <location line="+32"/>
-        <location line="+1620"/>
+        <location line="+1630"/>
+        <location line="+131"/>
         <location line="+162"/>
         <location line="+125"/>
         <source>Cumulative</source>
         <translation>Kumulacyjne</translation>
     </message>
     <message>
-        <location line="-2093"/>
+        <location line="-2234"/>
         <location line="+105"/>
         <location line="+24"/>
-        <location line="+345"/>
-        <location line="+1249"/>
+        <location line="+360"/>
+        <location line="+1375"/>
         <location line="+380"/>
         <source>Downloads</source>
         <translation>Pobieranie</translation>
     </message>
     <message>
-        <location line="-2096"/>
+        <location line="-2237"/>
         <location line="+43"/>
         <source>Downloaded Data: 0 Bytes</source>
         <translation>Pobrane dane: 0 bajtów</translation>
@@ -12505,14 +12591,14 @@ Pliki pozostaną na dysku.</numerusform>
     <message>
         <location line="+3"/>
         <location line="+34"/>
-        <location line="+419"/>
+        <location line="+434"/>
         <location line="+270"/>
         <location line="+10"/>
         <source>Download Sessions</source>
         <translation>Sesje pobierania</translation>
     </message>
     <message>
-        <location line="-728"/>
+        <location line="-743"/>
         <location line="+34"/>
         <source>Average Download Per Session: 0 Bytes</source>
         <translation>Średnio pobrano w sesji: 0 bajtów</translation>
@@ -12549,20 +12635,21 @@ Pliki pozostaną na dysku.</numerusform>
     <message>
         <location line="+7"/>
         <location line="+26"/>
-        <location line="+1586"/>
+        <location line="+1639"/>
+        <location line="+88"/>
         <source>General</source>
         <translation>Ogólne</translation>
     </message>
     <message>
-        <location line="-1610"/>
+        <location line="-1751"/>
         <location line="+26"/>
-        <location line="+708"/>
+        <location line="+723"/>
         <location line="+33"/>
         <source>Reconnects: %1</source>
         <translation>Ponowne połączenia: %1</translation>
     </message>
     <message>
-        <location line="-759"/>
+        <location line="-774"/>
         <source>Upload Speed: 0 KB/s</source>
         <translation>Prędkość wysyłania: 0 KB/s</translation>
     </message>
@@ -12612,13 +12699,13 @@ Pliki pozostaną na dysku.</numerusform>
     </message>
     <message>
         <location line="+3"/>
-        <location line="+743"/>
+        <location line="+758"/>
         <location line="+5"/>
         <source>Statistics Last Reset: %1</source>
         <translation>Ostatni reset statystyk: %1</translation>
     </message>
     <message>
-        <location line="-746"/>
+        <location line="-761"/>
         <source>Time Since Last Reset: -</source>
         <translation>Czas od ostatniego resetu: -</translation>
     </message>
@@ -12673,12 +12760,12 @@ Pliki pozostaną na dysku.</numerusform>
     </message>
     <message>
         <location line="+3"/>
-        <location line="+1772"/>
+        <location line="+1913"/>
         <source>Network</source>
         <translation>Sieć</translation>
     </message>
     <message>
-        <location line="-1766"/>
+        <location line="-1907"/>
         <source>Low ID: 0 (0.0%)</source>
         <translation>Low ID: 0 (0.0%)</translation>
     </message>
@@ -12709,12 +12796,12 @@ Pliki pozostaną na dysku.</numerusform>
     </message>
     <message>
         <location line="+2"/>
-        <location line="+1741"/>
+        <location line="+1882"/>
         <source>By Country</source>
         <translation>Według kraju</translation>
     </message>
     <message>
-        <location line="-1740"/>
+        <location line="-1881"/>
         <source>Clients by the country of the address they connected from.</source>
         <translation>Klienci według kraju adresu, z którego się połączyli.</translation>
     </message>
@@ -12776,17 +12863,17 @@ Pliki pozostaną na dysku.</numerusform>
     </message>
     <message>
         <location line="+2"/>
-        <location line="+908"/>
+        <location line="+923"/>
         <source>Number of Shared Files: %1</source>
         <translation>Liczba udostępnionych plików: %1</translation>
     </message>
     <message>
-        <location line="-895"/>
+        <location line="-910"/>
         <source>Disk Space</source>
         <translation>Miejsce na dysku</translation>
     </message>
     <message>
-        <location line="+169"/>
+        <location line="+184"/>
         <source>Projected Averages</source>
         <translation>Szacunkowe średnie</translation>
     </message>
@@ -12915,11 +13002,12 @@ Pliki pozostaną na dysku.</numerusform>
     <message>
         <location line="+68"/>
         <location line="+74"/>
+        <location line="+1127"/>
         <source>Uploaded Data: %1</source>
         <translation>Wysłane dane: %1</translation>
     </message>
     <message>
-        <location line="-63"/>
+        <location line="-1190"/>
         <location line="+73"/>
         <location line="+57"/>
         <location line="+99"/>
@@ -13006,12 +13094,13 @@ Pliki pozostaną na dysku.</numerusform>
     <message>
         <location line="+68"/>
         <location line="+99"/>
-        <location line="+926"/>
+        <location line="+970"/>
+        <location line="+82"/>
         <source>Downloaded Data: %1</source>
         <translation>Pobrane dane: %1</translation>
     </message>
     <message>
-        <location line="-1007"/>
+        <location line="-1133"/>
         <source>Active Downloads (chunks): %1</source>
         <translation>Aktywne pobierania (części): %1</translation>
     </message>
@@ -13047,12 +13136,12 @@ Pliki pozostaną na dysku.</numerusform>
     </message>
     <message>
         <location line="+0"/>
-        <location line="+583"/>
+        <location line="+622"/>
         <source>Connecting</source>
         <translation>Podłączanie</translation>
     </message>
     <message>
-        <location line="-583"/>
+        <location line="-622"/>
         <source>Connecting via server</source>
         <translation>Łączenie przez serwer</translation>
     </message>
@@ -13115,11 +13204,12 @@ Pliki pozostaną na dysku.</numerusform>
     <message>
         <location line="+5"/>
         <location line="+61"/>
+        <location line="+964"/>
         <source>Completed Downloads: %1</source>
         <translation>Zakończone pobrania: %1</translation>
     </message>
     <message>
-        <location line="-50"/>
+        <location line="-1014"/>
         <location line="+10"/>
         <source>Average Download Per Session: %1</source>
         <translation>Średnio pobrano w sesji: %1</translation>
@@ -13188,53 +13278,59 @@ Pliki pozostaną na dysku.</numerusform>
     </message>
     <message>
         <location line="+3"/>
+        <location line="+892"/>
         <source>Upload Speed: %1</source>
         <translation>Prędkość wysyłania: %1</translation>
     </message>
     <message>
-        <location line="+1"/>
+        <location line="-891"/>
         <location line="+17"/>
+        <location line="+878"/>
         <source>Max Upload Rate: %1</source>
         <translation>Maks. prędkość wysyłania: %1</translation>
     </message>
     <message>
-        <location line="-16"/>
+        <location line="-894"/>
         <location line="+17"/>
         <source>Max Average Upload Rate: %1</source>
         <translation>Maks. średnia prędkość wysyłania: %1</translation>
     </message>
     <message>
         <location line="-16"/>
-        <location line="+850"/>
+        <location line="+888"/>
+        <location line="+88"/>
         <source>Download Speed: %1</source>
         <translation>Prędkość pobierania: %1</translation>
     </message>
     <message>
-        <location line="-849"/>
+        <location line="-975"/>
         <location line="+17"/>
-        <location line="+834"/>
+        <location line="+873"/>
+        <location line="+87"/>
         <source>Max Download Rate: %1</source>
         <translation>Maks. prędkość pobierania: %1</translation>
     </message>
     <message>
-        <location line="-850"/>
+        <location line="-976"/>
         <location line="+17"/>
         <source>Max Average Download Rate: %1</source>
         <translation>Maks. średnia prędkość pobierania: %1</translation>
     </message>
     <message>
         <location line="-5"/>
+        <location line="+878"/>
         <source>Average Upload Rate: %1</source>
         <translation>Średnia prędkość wysyłania: %1</translation>
     </message>
     <message>
-        <location line="+3"/>
-        <location line="+834"/>
+        <location line="-875"/>
+        <location line="+873"/>
+        <location line="+87"/>
         <source>Average Download Rate: %1</source>
         <translation>Średnia prędkość pobierania: %1</translation>
     </message>
     <message>
-        <location line="-821"/>
+        <location line="-947"/>
         <location line="+5"/>
         <source>Time Since Last Reset: %1</source>
         <translation>Czas od ostatniego resetu: %1</translation>
@@ -13253,18 +13349,20 @@ Pliki pozostaną na dysku.</numerusform>
     <message>
         <location line="-18"/>
         <location line="+20"/>
+        <location line="+820"/>
         <source>Upload Time: %1 %2</source>
         <translation>Czas wysyłania: %1 %2</translation>
     </message>
     <message>
-        <location line="-18"/>
+        <location line="-838"/>
         <location line="+20"/>
-        <location line="+776"/>
+        <location line="+817"/>
+        <location line="+85"/>
         <source>Download Time: %1 %2</source>
         <translation>Czas pobierania: %1 %2</translation>
     </message>
     <message>
-        <location line="-794"/>
+        <location line="-920"/>
         <source>Current Server Duration: %1 %2</source>
         <translation>Czas działania serwera: %1 %2</translation>
     </message>
@@ -13417,18 +13515,19 @@ Pliki pozostaną na dysku.</numerusform>
     </message>
     <message>
         <location line="+10"/>
-        <location line="+616"/>
+        <location line="+742"/>
         <source>Number of Downloads: %1</source>
         <translation>Liczba pobrań: %1</translation>
     </message>
     <message>
-        <location line="-615"/>
-        <location line="+623"/>
+        <location line="-741"/>
+        <location line="+619"/>
+        <location line="+130"/>
         <source>Total Size of Downloads: %1</source>
         <translation>Całkowity rozmiar pobrań: %1</translation>
     </message>
     <message>
-        <location line="-622"/>
+        <location line="-748"/>
         <source>Total Completed Size: %1 (%2%)</source>
         <translation>Całkowity ukończony rozmiar: %1 (%2%)</translation>
     </message>
@@ -13453,7 +13552,7 @@ Pliki pozostaną na dysku.</numerusform>
         <translation>Dodatkowe miejsce potrzebne do pobrań: %1</translation>
     </message>
     <message>
-        <location line="+65"/>
+        <location line="+104"/>
         <source>Clients Seen: ≈%1</source>
         <translation>Widziani klienci: ≈%1</translation>
     </message>
@@ -13594,7 +13693,85 @@ Ponowne kliknięcie „Przywróć statystyki” wczyta z powrotem bieżące stat
         <translation>eMule Qt v%1 %2 [%3]</translation>
     </message>
     <message>
-        <location line="+163"/>
+        <location line="+166"/>
+        <source>Connected Peers: %1</source>
+        <translation>Połączeni peerzy: %1</translation>
+    </message>
+    <message>
+        <location line="+1"/>
+        <source>Peak Peers: %1</source>
+        <translation>Szczyt peerów: %1</translation>
+    </message>
+    <message>
+        <location line="+1"/>
+        <source>DHT Nodes: %1</source>
+        <translation>Węzły DHT: %1</translation>
+    </message>
+    <message>
+        <location line="+2"/>
+        <source>Traffic</source>
+        <translation>Ruch</translation>
+    </message>
+    <message>
+        <location line="+3"/>
+        <source>Network Traffic Received: %1</source>
+        <translation>Odebrany ruch sieciowy: %1</translation>
+    </message>
+    <message>
+        <location line="+2"/>
+        <source>Network Traffic Sent: %1</source>
+        <translation>Wysłany ruch sieciowy: %1</translation>
+    </message>
+    <message>
+        <location line="+2"/>
+        <source>Redundant Data: %1</source>
+        <translation>Nadmiarowe dane: %1</translation>
+    </message>
+    <message>
+        <location line="+1"/>
+        <source>Corrupted Data: %1</source>
+        <translation>Uszkodzone dane: %1</translation>
+    </message>
+    <message>
+        <location line="+1"/>
+        <source>Pieces Failed Hash Check: %1</source>
+        <translation>Części z błędną sumą kontrolną: %1</translation>
+    </message>
+    <message>
+        <location line="+2"/>
+        <location line="+42"/>
+        <source>Torrents</source>
+        <translation>Torrenty</translation>
+    </message>
+    <message>
+        <location line="-41"/>
+        <source>Added: %1</source>
+        <translation>Dodane: %1</translation>
+    </message>
+    <message>
+        <location line="+11"/>
+        <source>Number of Torrents: %1</source>
+        <translation>Liczba torrentów: %1</translation>
+    </message>
+    <message>
+        <location line="+2"/>
+        <source>Seeding: %1</source>
+        <translation>Seedowanie: %1</translation>
+    </message>
+    <message>
+        <location line="+4"/>
+        <source>Error: %1</source>
+        <translation>Błąd: %1</translation>
+    </message>
+    <message>
+        <location line="-1942"/>
+        <location line="+10"/>
+        <location line="+1943"/>
+        <source>BitTorrent</source>
+        <translation>BitTorrent</translation>
+    </message>
+    <message>
+        <location line="+40"/>
         <location line="+507"/>
         <source>Open Connections: %1</source>
         <translation>Otwarte połączenia: %1</translation>
@@ -13615,7 +13792,9 @@ Ponowne kliknięcie „Przywróć statystyki” wczyta z powrotem bieżące stat
         <translation>Ruch sieciowy: %1</translation>
     </message>
     <message>
-        <location line="+1"/>
+        <location line="-80"/>
+        <location line="+2"/>
+        <location line="+79"/>
         <source>Overhead: %1 %2</source>
         <translation>Narzut: %1 %2</translation>
     </message>
@@ -13864,22 +14043,26 @@ Ponowne kliknięcie „Przywróć statystyki” wczyta z powrotem bieżące stat
         <translation>Dopasowania z kanałów: %1</translation>
     </message>
     <message>
-        <location line="+11"/>
+        <location line="-118"/>
+        <location line="+129"/>
         <source>Downloading: %1</source>
         <translation>Pobieranie: %1</translation>
     </message>
     <message>
-        <location line="+1"/>
+        <location line="-127"/>
+        <location line="+128"/>
         <source>Queued: %1</source>
         <translation>W kolejce: %1</translation>
     </message>
     <message>
-        <location line="+1"/>
+        <location line="-127"/>
+        <location line="+128"/>
         <source>Paused: %1</source>
         <translation>Wstrzymane: %1</translation>
     </message>
     <message>
-        <location line="+1"/>
+        <location line="-127"/>
+        <location line="+128"/>
         <source>Checking: %1</source>
         <translation>Sprawdzanie: %1</translation>
     </message>
@@ -13894,12 +14077,14 @@ Ponowne kliknięcie „Przywróć statystyki” wczyta z powrotem bieżące stat
         <translation>Ukończone: %1</translation>
     </message>
     <message>
-        <location line="+2"/>
+        <location line="-128"/>
+        <location line="+130"/>
         <source>Total Size Downloaded: %1</source>
         <translation>Całkowity pobrany rozmiar: %1</translation>
     </message>
     <message>
-        <location line="+1"/>
+        <location line="-129"/>
+        <location line="+130"/>
         <source>Total Size Left to Download: %1</source>
         <translation>Pozostało do pobrania: %1</translation>
     </message>
@@ -15371,12 +15556,12 @@ Ponowne kliknięcie „Przywróć statystyki” wczyta z powrotem bieżące stat
         <location line="+13"/>
         <location line="+15"/>
         <location line="+11"/>
-        <location line="+518"/>
+        <location line="+525"/>
         <source>Not connected to the eMule core.</source>
         <translation>Brak połączenia z rdzeniem eMule.</translation>
     </message>
     <message>
-        <location line="-568"/>
+        <location line="-575"/>
         <source>Cannot read %1.</source>
         <translation>Nie można odczytać %1.</translation>
     </message>
@@ -15447,12 +15632,17 @@ Ponowne kliknięcie „Przywróć statystyki” wczyta z powrotem bieżące stat
         <translation>Kopiuj link Magnet</translation>
     </message>
     <message>
+        <location line="+2"/>
+        <source>Paste Magnet Links</source>
+        <translation>Wklej linki magnet</translation>
+    </message>
+    <message>
         <location line="+78"/>
         <source>BitTorrent Options…</source>
         <translation>Opcje BitTorrent…</translation>
     </message>
     <message>
-        <location line="+110"/>
+        <location line="+114"/>
         <source>BitTorrent: %1</source>
         <translation>BitTorrent: %1</translation>
     </message>
@@ -15500,7 +15690,7 @@ Ponowne kliknięcie „Przywróć statystyki” wczyta z powrotem bieżące stat
         </translation>
     </message>
     <message>
-        <location line="+163"/>
+        <location line="+164"/>
         <source>Asking the core for the BitTorrent state…</source>
         <translation>Pobieranie stanu BitTorrent z rdzenia…</translation>
     </message>

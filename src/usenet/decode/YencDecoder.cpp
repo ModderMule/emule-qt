@@ -214,6 +214,12 @@ void YencDecoder::parseEnd(QByteArrayView line)
         m_status = Status::SizeMismatch;
         return;
     }
+    // =ypart: decoded length must be end - begin + 1 too (usenet.md §4, ruling 47).
+    // m_offset is begin - 1, so that is end - m_offset. No end=: nothing to check
+    if (m_sawPart && m_endOffset > 0 && m_endOffset - m_offset != m_decodedBytes) {
+        m_status = Status::SizeMismatch;
+        return;
+    }
     // No checksum at all happens; absence is not failure.
     if (m_haveExpectedCrc && m_expectedCrc != m_crc) {
         m_status = Status::CrcMismatch;

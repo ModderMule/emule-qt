@@ -30,6 +30,18 @@ DEFINES += EMULE_HAVE_QUIC_NATT=1
 # BitTorrent: always on, as CMake EMULE_BITTORRENT (libtorrent-rasterbar >= 2.1 installed)
 DEFINES += EMULE_HAVE_BITTORRENT=1
 
+# ed3k (packmule): when libs/packmule exists, as CMake EMULE_ED3K. packmule_ffi from
+# `cargo build --release -p packmule-ffi` in libs/packmule (target/release)
+PACKMULE = $$PWD/../../libs/packmule
+exists($$PACKMULE/Cargo.toml) {
+    DEFINES += EMULE_HAVE_ED3K=1
+    INCLUDEPATH += $$PWD/../ed3k $$PACKMULE/crates/packmule-ffi/include
+    LIBS = -L$$OUT_PWD/../ed3k -lemuleed3k $$LIBS
+    unix: LIBS += -L$$PACKMULE/target/release -lpackmule_ffi -liconv
+    macx: LIBS += -framework Security
+    win32: LIBS += -L$$PACKMULE/target/release -lpackmule_ffi -lbcrypt -ladvapi32 -lntdll -luserenv -ldbghelp -lole32 -lcrypt32
+}
+
 # Third-party libraries (system-installed or from CMake build)
 unix {
     LIBS += -ltorrent-rasterbar -lngtcp2_crypto_ossl -lngtcp2 -lssl -lcrypto -lz -lminiupnpc -lyaml-cpp -larchive -lmaxminddb
