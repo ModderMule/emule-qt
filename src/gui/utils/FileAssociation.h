@@ -42,10 +42,11 @@ struct RegistryValue {
 /// What to claim. Each type the user can switch off on its own (Options).
 struct FileTypes {
     bool nzb = false;
-    /// .torrent (application/x-bittorrent), the magnet: and the ed3k: scheme
+    /// .torrent (application/x-bittorrent) and the magnet: scheme
     bool torrent = false;
     /// the ed2k: scheme. Linux keeps it in the shared desktop entry; Ed2kSchemeHandler
-    /// sets it, and it comes along with any other type
+    /// sets it, and it comes along with any other type. The ed3k: scheme goes with it
+    /// (Options → General)
     bool ed2k = false;
 
     [[nodiscard]] bool any() const { return nzb || torrent || ed2k; }

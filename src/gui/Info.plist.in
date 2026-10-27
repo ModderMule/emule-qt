@@ -87,7 +87,8 @@
 			</array>
 		</dict>
 		<dict>
-			<!-- ed3k:file?…bt= (a torrent as a file set) goes to Torrents. -->
+			<!-- Claimed with ed2k (Options → General). ed3k:file?…bt= (a torrent
+			     as a file set) goes to Torrents. -->
 			<key>CFBundleURLName</key>
 			<string>eD3K Link</string>
 			<key>CFBundleURLSchemes</key>

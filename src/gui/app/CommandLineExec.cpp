@@ -252,8 +252,8 @@ void CommandLineExec::openArguments(const QStringList& args, ExternalLinkHandler
             continue;
         }
 
-        // Every BitTorrent magnet and ed3k link; the handler routes it to the
-        // Torrents tab (or, built without BitTorrent, reports it invalid)
+        // Every BitTorrent magnet and ed3k link; the handler routes a torrent one to
+        // the Torrents tab (or, built without BitTorrent, reports it invalid)
         if (gui::isBitTorrentMagnet(arg) || arg.startsWith(QStringLiteral("ed3k:"), Qt::CaseInsensitive)) {
             linkHandler.open(arg);
             continue;
@@ -285,11 +285,11 @@ bool CommandLineExec::handleFileTypeRegistration() const
         return false;
 
     QString error;
-    // ed2k as it is: it has its own switch (Handle eD2K Links)
+    // ed2k/ed3k as they are: they have their own switch (Options → General)
     const bool ok = wantRegister ? gui::FileAssociation::applyFileTypes({true, true, isEd2kSchemeRegistered()}, error)
                                  : gui::FileAssociation::unregisterFileTypes(error);
     if (ok) {
-        logInfo(wantRegister ? QStringLiteral("Registered .nzb, .torrent, magnet: and ed3k: with the desktop")
+        logInfo(wantRegister ? QStringLiteral("Registered .nzb, .torrent and magnet: with the desktop")
                              : QStringLiteral("Removed the file and link associations"));
     } else {
         logError(QStringLiteral("File-type registration failed: %1").arg(error));
