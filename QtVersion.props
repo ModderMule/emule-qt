@@ -12,7 +12,7 @@
   </PropertyGroup>
   <!-- ed3k (packmule, Rust): the one switch, as CMake EMULE_ED3K. On when libs\packmule
        exists (a separate repo); off with msbuild /p:EmuleEd3k=false. Needs cargo on PATH:
-       emuleed3k.vcxproj builds packmule_ffi.lib (always --release) in a pre-build step.
+       emuleed3k.vcxproj builds packmule_ffi.lib (always cargo release) in a pre-build step.
        Not in the .sln build when off: build emulecored without the emuleed3k project. -->
   <PropertyGroup Label="Ed3k">
     <EmuleEd3k Condition="'$(EmuleEd3k)'=='' AND Exists('$(MSBuildThisFileDirectory)libs\packmule\Cargo.toml')">true</EmuleEd3k>
