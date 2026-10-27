@@ -95,6 +95,7 @@ emule_add_test(tst_AtomicOps        FOLDER "Platform")
 
 # Module 29b: Core utility functions
 emule_add_test(tst_OtherFunctions  FOLDER "Utils")
+emule_add_test(tst_MassRename      FOLDER "Utils")
 emule_add_test(tst_SafeFile        FOLDER "Utils")
 emule_add_test(tst_Log             FOLDER "Utils")
 emule_add_test(tst_CorroborationTally FOLDER "Utils")
@@ -380,16 +381,57 @@ if(EMULE_ED3K)
     emule_add_test(tst_Ed3kBridge FOLDER "Ed3k"
         SOURCES tst_Ed3kBridge.cpp
                 "${CMAKE_SOURCE_DIR}/src/daemon/Ed3kBridge.cpp"
+                "${CMAKE_SOURCE_DIR}/src/daemon/Ed3kFriendsBridge.cpp"
+                "${CMAKE_SOURCE_DIR}/src/daemon/Ed3kNamesBridge.cpp"
+                "${CMAKE_SOURCE_DIR}/src/daemon/Ed3kCreditBridge.cpp"
                 "${CMAKE_SOURCE_DIR}/src/daemon/BandwidthCoordinator.cpp"
         LIBRARIES eMule::Ed3k eMule::Ipc)
     target_include_directories(tst_Ed3kBridge PRIVATE "${CMAKE_SOURCE_DIR}/src/daemon")
     set_tests_properties(tst_Ed3kBridge PROPERTIES TIMEOUT 180)
+    # friends and chat (Ed3kFriends) and their IPC (Ed3kFriendsBridge): two nodes on loopback
+    emule_add_test(tst_Ed3kFriends FOLDER "Ed3k"
+        SOURCES tst_Ed3kFriends.cpp
+                "${CMAKE_SOURCE_DIR}/src/daemon/Ed3kBridge.cpp"
+                "${CMAKE_SOURCE_DIR}/src/daemon/Ed3kFriendsBridge.cpp"
+                "${CMAKE_SOURCE_DIR}/src/daemon/Ed3kNamesBridge.cpp"
+                "${CMAKE_SOURCE_DIR}/src/daemon/Ed3kCreditBridge.cpp"
+                "${CMAKE_SOURCE_DIR}/src/daemon/BandwidthCoordinator.cpp"
+        LIBRARIES eMule::Ed3k eMule::Ipc)
+    target_include_directories(tst_Ed3kFriends PRIVATE "${CMAKE_SOURCE_DIR}/src/daemon")
+    set_tests_properties(tst_Ed3kFriends PROPERTIES TIMEOUT 240)
+    # readable names (Ed3kNames: DNS duty, a web name to a set) and the website server
+    # (Ed3kSiteServer: gate, a page over loopback HTTP); their IPC (Ed3kNamesBridge)
+    emule_add_test(tst_Ed3kNames FOLDER "Ed3k"
+        SOURCES tst_Ed3kNames.cpp
+                "${CMAKE_SOURCE_DIR}/src/daemon/Ed3kBridge.cpp"
+                "${CMAKE_SOURCE_DIR}/src/daemon/Ed3kFriendsBridge.cpp"
+                "${CMAKE_SOURCE_DIR}/src/daemon/Ed3kNamesBridge.cpp"
+                "${CMAKE_SOURCE_DIR}/src/daemon/Ed3kCreditBridge.cpp"
+                "${CMAKE_SOURCE_DIR}/src/daemon/BandwidthCoordinator.cpp"
+        LIBRARIES eMule::Ed3k eMule::Ipc)
+    target_include_directories(tst_Ed3kNames PRIVATE "${CMAKE_SOURCE_DIR}/src/daemon")
+    set_tests_properties(tst_Ed3kNames PROPERTIES TIMEOUT 240)
+    # credits (Ed3kCredit: key file, ledger config through a fake JSON-RPC server) and
+    # their IPC (Ed3kCreditBridge)
+    emule_add_test(tst_Ed3kCredit FOLDER "Ed3k"
+        SOURCES tst_Ed3kCredit.cpp
+                "${CMAKE_SOURCE_DIR}/src/daemon/Ed3kBridge.cpp"
+                "${CMAKE_SOURCE_DIR}/src/daemon/Ed3kFriendsBridge.cpp"
+                "${CMAKE_SOURCE_DIR}/src/daemon/Ed3kNamesBridge.cpp"
+                "${CMAKE_SOURCE_DIR}/src/daemon/Ed3kCreditBridge.cpp"
+                "${CMAKE_SOURCE_DIR}/src/daemon/BandwidthCoordinator.cpp"
+        LIBRARIES eMule::Ed3k eMule::Ipc)
+    target_include_directories(tst_Ed3kCredit PRIVATE "${CMAKE_SOURCE_DIR}/src/daemon")
+    set_tests_properties(tst_Ed3kCredit PROPERTIES TIMEOUT 180)
     # usenet join: a fake news server, a fake queue, two nodes on loopback
     emule_add_test(tst_Ed3kUsenetJoin FOLDER "Ed3k" LIBRARIES eMule::Ed3k eMule::Usenet)
     set_tests_properties(tst_Ed3kUsenetJoin PROPERTIES TIMEOUT 180)
     # eMule shared files over ed3k: a fake share list, two nodes on loopback
     emule_add_test(tst_Ed3kShared FOLDER "Ed3k" LIBRARIES eMule::Ed3k)
     set_tests_properties(tst_Ed3kShared PROPERTIES TIMEOUT 180)
+    # prefs → node: extensions, IPv6 source, filter state, LAN discovery, node list asks
+    emule_add_test(tst_Ed3kPlumbing FOLDER "Ed3k" LIBRARIES eMule::Ed3k)
+    set_tests_properties(tst_Ed3kPlumbing PROPERTIES TIMEOUT 180)
     if(TARGET eMule::Bt)
         emule_add_test(tst_Ed3kTorrentJoin FOLDER "Ed3k" LIBRARIES eMule::Ed3k eMule::Bt)
         set_tests_properties(tst_Ed3kTorrentJoin PROPERTIES TIMEOUT 240)
@@ -518,6 +560,21 @@ target_include_directories(tst_UsenetArchiveEntryDialog PRIVATE
     "${CMAKE_SOURCE_DIR}/src/gui"
     "${CMAKE_CURRENT_SOURCE_DIR}/stubs")
 target_link_libraries(tst_UsenetArchiveEntryDialog PRIVATE
+    eMule::Core eMule::Ipc Qt6::Widgets)
+
+# Mass Rename dialog driven through its mask (MorphXT CMassRenameDialog)
+emule_add_test(tst_MassRenameDialog FOLDER "Gui"
+    SOURCES tst_MassRenameDialog.cpp
+            "${CMAKE_SOURCE_DIR}/src/gui/dialogs/MassRenameDialog.cpp"
+            "${CMAKE_SOURCE_DIR}/src/gui/dialogs/SimpleCleanupDialog.cpp"
+            "${CMAKE_SOURCE_DIR}/src/gui/utils/DialogSizing.cpp"
+            "${CMAKE_SOURCE_DIR}/src/gui/controls/ContentScrollArea.cpp"
+            "${CMAKE_SOURCE_DIR}/src/gui/app/UiState.cpp"
+            "${CMAKE_SOURCE_DIR}/src/gui/app/IpcClient.cpp")
+target_include_directories(tst_MassRenameDialog PRIVATE
+    "${CMAKE_SOURCE_DIR}/src/gui"
+    "${CMAKE_CURRENT_SOURCE_DIR}/stubs")
+target_link_libraries(tst_MassRenameDialog PRIVATE
     eMule::Core eMule::Ipc Qt6::Widgets)
 
 # The nodes.dat / server.met URL inputs: empty falls back to the default.
@@ -774,6 +831,8 @@ emule_add_test(tst_OptionsDialogSizing FOLDER "Gui"
     SOURCES tst_OptionsDialogSizing.cpp
             "${CMAKE_SOURCE_DIR}/src/gui/utils/Appearance.cpp"
             "${CMAKE_SOURCE_DIR}/src/gui/dialogs/OptionsDialog.cpp"
+            "${CMAKE_SOURCE_DIR}/src/gui/dialogs/Ed3kOptionsPages.cpp"
+            "${CMAKE_SOURCE_DIR}/src/gui/app/Ed3kNameOpener.cpp"
             "${CMAKE_SOURCE_DIR}/src/gui/utils/CountryFlags.cpp"
             "${CMAKE_SOURCE_DIR}/src/gui/dialogs/FirstStartWizard.cpp"
             "${CMAKE_SOURCE_DIR}/src/gui/panels/StatisticsPanel.cpp"
@@ -987,6 +1046,8 @@ emule_add_test(tst_SmallScreenDialogs FOLDER "Gui"
             "${CMAKE_SOURCE_DIR}/src/gui/dialogs/FirstStartWizard.cpp"
             "${CMAKE_SOURCE_DIR}/src/gui/dialogs/MetaAccountDialog.cpp"
             "${CMAKE_SOURCE_DIR}/src/gui/dialogs/OptionsDialog.cpp"
+            "${CMAKE_SOURCE_DIR}/src/gui/dialogs/Ed3kOptionsPages.cpp"
+            "${CMAKE_SOURCE_DIR}/src/gui/app/Ed3kNameOpener.cpp"
             "${CMAKE_SOURCE_DIR}/src/gui/dialogs/ToolbarCustomizeDialog.cpp"
             "${CMAKE_SOURCE_DIR}/src/gui/controls/AccordionSidebar.cpp"
             "${CMAKE_SOURCE_DIR}/src/gui/controls/LogTextView.cpp"

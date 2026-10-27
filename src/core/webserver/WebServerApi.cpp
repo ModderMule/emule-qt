@@ -1117,6 +1117,31 @@ void WebServer::buildApiTable()
         };
         add(op);
     }
+    {
+        Operation op = make("friends.removeByAddress", Method::Delete,
+                            "/api/v1/friends/{address}/{port}", "Friends",
+                            "Remove a friend by address",
+                            "For a friend added by address and port, which has no user hash.");
+        op.params = {
+            pathStr(s("address"), s("IPv4 or IPv6 address, as listed in \"addr\".")),
+            pathInt(s("port"), s("TCP port.")).range(1, 65535),
+        };
+        op.handler = [this](const Call& c) {
+            if (!m_friendList)
+                return unavailable("Friend list");
+            const Address addr = Address::fromString(c.str(L("address")));
+            if (addr.isNull())
+                return error(400, s("Invalid address"));
+            auto* f = m_friendList->searchFriendByAddress(
+                addr, static_cast<uint16>(c.integer(L("port"))));
+            if (!f)
+                return error(404, s("Friend not found"));
+            m_friendList->removeFriend(f);
+            saveFriends();
+            return ok(QJsonObject{{s("deleted"), true}});
+        };
+        add(op);
+    }
 
     // --- Statistics and diagnostics ----------------------------------------------
     {

@@ -124,6 +124,9 @@
     <ClCompile Include="app\IpcClient.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
+    <ClCompile Include="app\Ed3kNameOpener.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
     <ClCompile Include="app\CoreStartWatch.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
@@ -131,6 +134,9 @@
       <Filter>Source Files</Filter>
     </ClCompile>
     <ClCompile Include="utils\HttpCacheLinkImporter.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="utils\MassRenameAction.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
     <ClCompile Include="utils\IpcFeedback.cpp">
@@ -229,6 +235,9 @@
     <ClCompile Include="app\MainWindow.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
+    <ClCompile Include="panels\ChatNetwork.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
     <ClCompile Include="panels\MessagesPanel.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
@@ -239,6 +248,9 @@
       <Filter>Source Files</Filter>
     </ClCompile>
     <ClCompile Include="dialogs\OptionsDialog.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="dialogs\Ed3kOptionsPages.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
     <ClCompile Include="dialogs\AddNzbFilesDialog.cpp">
@@ -254,6 +266,12 @@
       <Filter>Source Files</Filter>
     </ClCompile>
     <ClCompile Include="dialogs\PasteLinksDialog.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="dialogs\MassRenameDialog.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="dialogs\SimpleCleanupDialog.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
     <ClCompile Include="dialogs\PasteTextDialog.cpp">
@@ -384,6 +402,9 @@
     <ClInclude Include="app\AutoStart.h">
       <Filter>Header Files</Filter>
     </ClInclude>
+    <ClInclude Include="panels\ChatNetwork.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
     <ClInclude Include="controls\AbstractListView.h">
       <Filter>Header Files</Filter>
     </ClInclude>
@@ -463,6 +484,12 @@
       <Filter>Header Files</Filter>
     </QtMoc>
     <ClInclude Include="utils\Clipboard.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="utils\MassRenameAction.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="dialogs\RenameFileDialog.h">
       <Filter>Header Files</Filter>
     </ClInclude>
     <ClInclude Include="utils\IpcFeedback.h">
@@ -582,6 +609,9 @@
     <QtMoc Include="app\IpcClient.h">
       <Filter>Header Files</Filter>
     </QtMoc>
+    <QtMoc Include="app\Ed3kNameOpener.h">
+      <Filter>Header Files</Filter>
+    </QtMoc>
     <QtMoc Include="app\CoreStartWatch.h">
       <Filter>Header Files</Filter>
     </QtMoc>
@@ -627,6 +657,9 @@
     <QtMoc Include="dialogs\OptionsDialog.h">
       <Filter>Header Files</Filter>
     </QtMoc>
+    <QtMoc Include="dialogs\Ed3kOptionsPages.h">
+      <Filter>Header Files</Filter>
+    </QtMoc>
     <QtMoc Include="dialogs\AddNzbFilesDialog.h">
       <Filter>Header Files</Filter>
     </QtMoc>
@@ -640,6 +673,12 @@
       <Filter>Header Files</Filter>
     </QtMoc>
     <QtMoc Include="dialogs\PasteLinksDialog.h">
+      <Filter>Header Files</Filter>
+    </QtMoc>
+    <QtMoc Include="dialogs\MassRenameDialog.h">
+      <Filter>Header Files</Filter>
+    </QtMoc>
+    <QtMoc Include="dialogs\SimpleCleanupDialog.h">
       <Filter>Header Files</Filter>
     </QtMoc>
     <QtMoc Include="dialogs\PasteTextDialog.h">

@@ -20,6 +20,8 @@
 #include <QVector>
 #include <QWidget>
 
+#include <memory>
+
 class QLabel;
 class QLineEdit;
 class QListView;
@@ -33,6 +35,7 @@ class QToolButton;
 
 namespace eMule {
 
+class ChatNetwork;
 class FriendListModel;
 class IpcClient;
 class LogTextView;
@@ -99,6 +102,10 @@ private slots:
     void onChatTabContextMenu(const QPoint& pos);
     void onChatMessagePush(const Ipc::IpcMessage& msg);
     void onFriendListPush(const Ipc::IpcMessage& msg);
+    void onEd3kChatMessagePush(const Ipc::IpcMessage& msg);
+    void onEd3kChatStatePush(const Ipc::IpcMessage& msg);
+    void onEd3kChatFailedPush(const Ipc::IpcMessage& msg);
+    void onEd3kFriendRequestPush(const Ipc::IpcMessage& msg);
     void showSmileySelector();
     void onChatTabChanged(int index);
     void onChatTabCloseRequested(int index);
@@ -125,6 +132,17 @@ private:
     void openChatTab(const QString& friendHash, const QString& friendName, bool activate = true);
     void closeChatTab(int tabIndex);
     void updateTabBarVisibility();
+
+    /// A message in chat @p key (either network): history, tab, unread cue.
+    void receiveChatMessage(const QString& key, const QString& senderName, const QString& text);
+    /// A dial or look line (ChatConnectProgress) in an open chat.
+    void showChatProgress(const QString& key, int progress);
+    /// The network a chat key belongs to.
+    [[nodiscard]] ChatNetwork& networkFor(const QString& key) const;
+    /// Asks the user once per key to accept or decline an ed3k friend request.
+    void askEd3kFriendRequest(const QString& key, const QString& node, const QString& text);
+    /// "Copy my ed3k friend link": GetEd3kMyFriendLink with a request value, to the clipboard.
+    void copyMyEd3kLink();
 
     /// Mark or clear a session as unread.
     void setNotify(const QString& friendHash, bool on);
@@ -169,6 +187,11 @@ private:
 
     // IPC client
     IpcClient* m_ipc = nullptr;
+    /// The calls that differ between eD2K and ed3k friends (ChatNetwork.h)
+    std::unique_ptr<ChatNetwork> m_ed2kNet;
+    std::unique_ptr<ChatNetwork> m_ed3kNet;
+    bool m_ed3kRunning = false;          ///< GetEd3kFriends "running"
+    QSet<QString> m_ed3kAsked;           ///< request keys already put to the user
 
     // Active chat friend hash
     QString m_activeFriendHash;

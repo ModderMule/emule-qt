@@ -277,6 +277,7 @@
     <ClCompile Include="crypto\MD5Hash.cpp" />
     <ClCompile Include="media\MediaContainers.cpp" />
     <ClCompile Include="media\MediaInfo.cpp" />
+    <ClCompile Include="utils\MassRename.cpp" />
     <ClCompile Include="utils\OtherFunctions.cpp" />
     <ClCompile Include="net\Packet.cpp" />
     <ClCompile Include="net\PeerVetting.cpp" />
@@ -534,6 +535,7 @@
     <ClInclude Include="utils\MapKey.h" />
     <ClInclude Include="media\MediaInfo.h" />
     <ClInclude Include="media\ContainerSniffer.h" />
+    <ClInclude Include="utils\MassRename.h" />
     <ClInclude Include="utils\OtherFunctions.h" />
     <ClInclude Include="net\DefaultGateway.h" />
     <ClInclude Include="net\RouterLocator.h" />

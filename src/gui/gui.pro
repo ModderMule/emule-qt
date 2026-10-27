@@ -87,6 +87,7 @@ SOURCES += \
     app/CoreStartWatch.cpp \
     app/SingleInstance.cpp \
     app/IpcClient.cpp \
+    app/Ed3kNameOpener.cpp \
     app/main.cpp \
     app/MainWindow.cpp \
     app/MiniMuleWidget.cpp \
@@ -132,19 +133,23 @@ SOURCES += \
     dialogs/MetadataPage.cpp \
     dialogs/NetworkInfoDialog.cpp \
     dialogs/OptionsDialog.cpp \
+    dialogs/Ed3kOptionsPages.cpp \
     dialogs/AddNzbFilesDialog.cpp \
     dialogs/NzbFileChooserDialog.cpp \
     dialogs/AddNzbUrlDialog.cpp \
     dialogs/MetaAccountDialog.cpp \
     utils/ClientIcons.cpp \
     utils/CountryFlags.cpp \
+    utils/MassRenameAction.cpp \
     utils/MetaResultActions.cpp \
     utils/TaskbarProgress.cpp \
     utils/TaskbarProgressMac.cpp \
     utils/TaskbarProgressUnity.cpp \
     utils/TaskbarProgressWin.cpp \
     dialogs/PasteLinksDialog.cpp \
+    dialogs/MassRenameDialog.cpp \
     dialogs/PasteTextDialog.cpp \
+    dialogs/SimpleCleanupDialog.cpp \
     utils/TorrentLinks.cpp \
     dialogs/WebLinksDialog.cpp \
     dialogs/PeerPreviewDialog.cpp \
@@ -153,6 +158,7 @@ SOURCES += \
     dialogs/UsenetDetailsDialog.cpp \
     panels/IrcPanel.cpp \
     panels/KadPanel.cpp \
+    panels/ChatNetwork.cpp \
     panels/MessagesPanel.cpp \
     panels/SearchPanel.cpp \
     panels/ServerPanel.cpp \
@@ -167,6 +173,7 @@ HEADERS += \
     app/CoreStartWatch.h \
     app/SingleInstance.h \
     app/IpcClient.h \
+    app/Ed3kNameOpener.h \
     app/MainWindow.h \
     app/MiniMuleWidget.h \
     app/PendingOpenQueue.h \
@@ -222,6 +229,7 @@ HEADERS += \
     dialogs/MetadataPage.h \
     dialogs/NetworkInfoDialog.h \
     dialogs/OptionsDialog.h \
+    dialogs/Ed3kOptionsPages.h \
     dialogs/AddNzbFilesDialog.h \
     dialogs/NzbFileChooserDialog.h \
     dialogs/AddNzbUrlDialog.h \
@@ -229,11 +237,15 @@ HEADERS += \
     utils/ClientIcons.h \
     utils/CountryFlags.h \
     utils/InputHistory.h \
+    utils/MassRenameAction.h \
     utils/MetaResultActions.h \
     utils/TaskbarProgress.h \
     utils/UrlPrefField.h \
     dialogs/PasteLinksDialog.h \
+    dialogs/MassRenameDialog.h \
     dialogs/PasteTextDialog.h \
+    dialogs/RenameFileDialog.h \
+    dialogs/SimpleCleanupDialog.h \
     utils/TorrentLinks.h \
     dialogs/WebLinksDialog.h \
     dialogs/PeerPreviewDialog.h \
@@ -242,6 +254,7 @@ HEADERS += \
     dialogs/UsenetDetailsDialog.h \
     panels/IrcPanel.h \
     panels/KadPanel.h \
+    panels/ChatNetwork.h \
     panels/MessagesPanel.h \
     panels/SearchPanel.h \
     panels/ServerPanel.h \

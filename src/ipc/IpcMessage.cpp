@@ -185,6 +185,7 @@ quint64 snapshotPushKey(const IpcMessage& msg)
     case IpcMsgType::PushCoreLoading:
     case IpcMsgType::PushBtStatus:
     case IpcMsgType::PushEd3kStatus:
+    case IpcMsgType::PushEd3kFriendsChanged:
         break;
     // One state per search: field 0 is the search id
     case IpcMsgType::PushSearchResult:
@@ -220,6 +221,7 @@ bool isReadOnlyRequest(IpcMsgType type)
     case IpcMsgType::GetBtStatus:
     case IpcMsgType::GetBtStats:
     case IpcMsgType::GetEd3kStatus:
+    case IpcMsgType::GetEd3kFriends:
     case IpcMsgType::GetKadContacts:
     case IpcMsgType::GetKadStatus:
     case IpcMsgType::GetKadSearches:

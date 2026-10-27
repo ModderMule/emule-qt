@@ -85,12 +85,18 @@ QString stateDir(const QString& configDir)
 
 std::optional<Seed> loadOrCreateKey(const QString& dir, QString* error)
 {
+    return loadOrCreateSecret(dir, QStringLiteral("node.key"), {}, error);
+}
+
+std::optional<Seed> loadOrCreateSecret(const QString& dir, const QString& name,
+                                       const std::function<bool(const Seed&)>& accept, QString* error)
+{
     if (!QDir().mkpath(dir)) {
         if (error)
             *error = QStringLiteral("cannot create %1").arg(dir);
         return std::nullopt;
     }
-    const QString path = QDir(dir).filePath(QStringLiteral("node.key"));
+    const QString path = QDir(dir).filePath(name);
     Seed seed{};
     if (QFile::exists(path)) {
         QFile f(path);
@@ -112,16 +118,62 @@ std::optional<Seed> loadOrCreateKey(const QString& dir, QString* error)
         }
         return seed;
     }
-    if (RAND_bytes(seed.data(), int(seed.size())) != 1) {
-        if (error)
-            *error = QStringLiteral("no random bytes for the key");
-        return std::nullopt;
+    // a few tries: a credit key must be below the order of the curve (all but ~2^-128)
+    for (int tries = 0;; ++tries) {
+        if (RAND_bytes(seed.data(), int(seed.size())) != 1) {
+            wipe(seed);
+            if (error)
+                *error = QStringLiteral("no random bytes for the key");
+            return std::nullopt;
+        }
+        if (!accept || accept(seed))
+            break;
+        if (tries >= 8) {
+            wipe(seed);
+            if (error)
+                *error = QStringLiteral("no usable key from the random bytes");
+            return std::nullopt;
+        }
     }
     if (!createKeyFile(path, seed, error)) {
         wipe(seed);
         return std::nullopt;
     }
     return seed;
+}
+
+std::optional<Seed> loadSecret(const QString& dir, const QString& name)
+{
+    QFile f(QDir(dir).filePath(name));
+    if (!f.open(QIODevice::ReadOnly))
+        return std::nullopt;
+    Seed seed{};
+    QByteArray raw = f.read(qint64(seed.size()) + 1);
+    const bool sized = raw.size() == qsizetype(seed.size());
+    if (sized)
+        std::copy(raw.cbegin(), raw.cend(), reinterpret_cast<char*>(seed.data()));
+    wipe(raw);
+    if (!sized)
+        return std::nullopt;
+    return seed;
+}
+
+bool replaceSecret(const QString& dir, const QString& name, const Seed& secret, QString* error)
+{
+    if (!QDir().mkpath(dir)) {
+        if (error)
+            *error = QStringLiteral("cannot create %1").arg(dir);
+        return false;
+    }
+    // QSaveFile: a temporary file made owner-only before the first byte, then renamed
+    // ToDo: owner-only DACL on Windows (as createKeyFile)
+    const QString path = QDir(dir).filePath(name);
+    if (!writeBlob(path, std::as_bytes(std::span{secret}))) {
+        if (error)
+            *error = QStringLiteral("write %1 failed").arg(path);
+        return false;
+    }
+    return true;
 }
 
 QByteArray readBlob(const QString& path)

@@ -68,6 +68,9 @@ public:
     [[nodiscard]] Friend* searchFriend(const uint8* userHash, uint32 ip = 0,
                                        uint16 port = 0) const;
 
+    /// A friend without user hash, by address + port, both families. Its only key (#72).
+    [[nodiscard]] Friend* searchFriendByAddress(const Address& addr, uint16 port) const;
+
     /// Check if a friend with the given hex user hash string exists.
     [[nodiscard]] bool isAlreadyFriend(const QString& hexUserHash) const;
 

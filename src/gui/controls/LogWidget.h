@@ -2,7 +2,7 @@
 
 /// @file LogWidget.h
 /// @brief Tabbed log display matching the MFC "Server Info | Log | Verbose" tabs,
-/// plus Usenet, Kad, the three ed3k tabs and IPC.
+/// plus Leecher, Usenet, Kad, the three ed3k tabs and IPC.
 ///
 /// Installs a Qt message handler to capture qCInfo/qCWarning/qCDebug output
 /// from the core logging categories and routes them to the appropriate tabs.
@@ -22,9 +22,9 @@ namespace eMule {
 
 class LogTextView;
 
-/// Tabbed log widget with Server Info, Log, Verbose, Usenet, Kad, ed3k, ed3k Verbose,
+/// Tabbed log widget with Server Info, Log, Verbose, Leecher, Usenet, Kad, ed3k, ed3k Verbose,
 /// ed3k Kad and IPC tabs. Captures Qt logging category output from the core layer.
-/// The Usenet tab follows showUsenetLog, the ed3k tabs ed3kEnabled, the IPC tab enableIpcLog.
+/// The Leecher tab follows antiLeecher, the Usenet tab showUsenetLog, the ed3k tabs ed3kEnabled, the IPC tab enableIpcLog.
 class LogWidget : public QWidget {
     Q_OBJECT
 
@@ -55,6 +55,13 @@ public:
 
     /// Append a message to the Verbose tab.
     void appendVerbose(const QString& msg, const QString& ts = {}, qint64 seqId = 0);
+
+    /// Append a message to the Leecher tab (emule.leecher: bans, anti-leecher hits).
+    void appendLeecher(const QString& msg, const QString& ts = {}, qint64 seqId = 0);
+
+    /// Route one emule.leecher line: to the Leecher tab when it is shown, else to Verbose
+    /// (non-DLP bans still log while DLP is off).
+    void routeLeecher(const QString& colored, const QString& ts = {}, qint64 seqId = 0);
 
     /// Append a message to the Kad tab.
     void appendKad(const QString& msg, const QString& ts = {}, qint64 seqId = 0);
@@ -88,6 +95,9 @@ public:
     /// Show or hide the Usenet tab.
     void setUsenetTabVisible(bool visible);
 
+    /// Show or hide the Leecher tab (follows antiLeecher).
+    void setLeecherTabVisible(bool visible);
+
     /// Show or hide the three ed3k tabs.
     void setEd3kTabsVisible(bool visible);
 
@@ -97,6 +107,7 @@ public:
     /// Plain text accessors for bug report submission.
     [[nodiscard]] QString logText() const;
     [[nodiscard]] QString verboseText() const;
+    [[nodiscard]] QString leecherText() const;
     [[nodiscard]] QString kadText() const;
     [[nodiscard]] QString usenetText() const;
     [[nodiscard]] QString ed3kText() const;
@@ -164,6 +175,7 @@ private:
     LogTextView* m_serverInfoBrowser = nullptr;
     LogTextView* m_logBrowser = nullptr;
     LogTextView* m_verboseBrowser = nullptr;
+    LogTextView* m_leecherBrowser = nullptr;
     LogTextView* m_kadBrowser = nullptr;
     LogTextView* m_usenetBrowser = nullptr;
     LogTextView* m_ed3kBrowser = nullptr;
@@ -172,6 +184,8 @@ private:
     LogTextView* m_ipcLogBrowser = nullptr;
     int m_ipcTabIndex = -1;
     int m_usenetTabIndex = -1;
+    int m_leecherTabIndex = -1;
+    bool m_leecherTabVisible = true;
     bool m_usenetTabVisible = true;
     int m_ed3kTabIndex = -1;   ///< the first of the three
     bool m_ed3kTabsVisible = true;
@@ -182,6 +196,7 @@ private:
     /// Parallel sequence-ID lists (one per sorted browser) for ordered insertion.
     QList<qint64> m_logSeqIds;
     QList<qint64> m_verboseSeqIds;
+    QList<qint64> m_leecherSeqIds;
     QList<qint64> m_kadSeqIds;
     QList<qint64> m_usenetSeqIds;
     QList<qint64> m_ed3kSeqIds;

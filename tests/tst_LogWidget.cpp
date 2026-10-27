@@ -13,6 +13,8 @@ class tst_LogWidget : public QObject {
 private slots:
     void ed3kLinesLandInTheirTabs();
     void ed3kLinesFallBackWhenHidden();
+    void leecherLinesLandInTheirTab();
+    void leecherLinesFallBackWhenHidden();
 };
 
 void tst_LogWidget::ed3kLinesLandInTheirTabs()
@@ -50,6 +52,28 @@ void tst_LogWidget::ed3kLinesFallBackWhenHidden()
     // debug lines would flood Verbose: dropped
     QVERIFY(!w.verboseText().contains(QStringLiteral("kad debug")));
     QVERIFY(w.ed3kText().isEmpty() && w.ed3kKadText().isEmpty());
+}
+
+void tst_LogWidget::leecherLinesLandInTheirTab()
+{
+    LogWidget w;
+    w.setLeecherTabVisible(true);
+    w.routeLeecher(QStringLiteral("Banned: a leecher"));
+
+    QVERIFY(w.leecherText().contains(QStringLiteral("Banned: a leecher")));
+    QVERIFY(!w.logText().contains(QStringLiteral("leecher")));
+    QVERIFY(!w.verboseText().contains(QStringLiteral("leecher")));
+}
+
+// DLP off: the tab is hidden, other bans still reach Verbose
+void tst_LogWidget::leecherLinesFallBackWhenHidden()
+{
+    LogWidget w;
+    w.setLeecherTabVisible(false);
+    w.routeLeecher(QStringLiteral("Banned: Userhash changed"));
+
+    QVERIFY(w.verboseText().contains(QStringLiteral("Userhash changed")));
+    QVERIFY(w.leecherText().isEmpty());
 }
 
 QTEST_MAIN(tst_LogWidget)

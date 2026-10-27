@@ -329,9 +329,35 @@ TEST_EXTRAS: dict[str, TestExtras] = {
     "tst_TorrentDetailsGui": TestExtras(includes=GUI_INCLUDES, defines=BT_DEFINES, widgets=True,
                                         sources=TORRENT_DETAILS_SOURCES, folder="BitTorrent"),
     "tst_Ed3kShared": ED3K_EXTRAS,
+    # prefs → node: extensions, IPv6 source, filter state, LAN discovery, node list asks
+    "tst_Ed3kPlumbing": ED3K_EXTRAS,
     # the daemon side: Ed3kBridge + BandwidthCoordinator
     "tst_Ed3kBridge": replace(ED3K_EXTRAS, includes=("src/daemon",) + ED3K_EXTRAS.includes,
                               sources=("src/daemon/Ed3kBridge.cpp",
+                                       "src/daemon/Ed3kFriendsBridge.cpp",
+                                       "src/daemon/Ed3kNamesBridge.cpp",
+                                       "src/daemon/Ed3kCreditBridge.cpp",
+                                       "src/daemon/BandwidthCoordinator.cpp")),
+    # friends and chat: Ed3kFriends + its IPC (Ed3kFriendsBridge, through Ed3kBridge)
+    "tst_Ed3kFriends": replace(ED3K_EXTRAS, includes=("src/daemon",) + ED3K_EXTRAS.includes,
+                               sources=("src/daemon/Ed3kBridge.cpp",
+                                        "src/daemon/Ed3kFriendsBridge.cpp",
+                                        "src/daemon/Ed3kNamesBridge.cpp",
+                                        "src/daemon/Ed3kCreditBridge.cpp",
+                                        "src/daemon/BandwidthCoordinator.cpp")),
+    # names and websites: Ed3kNames, Ed3kSiteServer + their IPC (Ed3kNamesBridge, through Ed3kBridge)
+    "tst_Ed3kNames": replace(ED3K_EXTRAS, includes=("src/daemon",) + ED3K_EXTRAS.includes,
+                             sources=("src/daemon/Ed3kBridge.cpp",
+                                      "src/daemon/Ed3kFriendsBridge.cpp",
+                                      "src/daemon/Ed3kNamesBridge.cpp",
+                                      "src/daemon/Ed3kCreditBridge.cpp",
+                                      "src/daemon/BandwidthCoordinator.cpp")),
+    # credits: Ed3kCredit (key file, ledger config) + its IPC (Ed3kCreditBridge, through Ed3kBridge)
+    "tst_Ed3kCredit": replace(ED3K_EXTRAS, includes=("src/daemon",) + ED3K_EXTRAS.includes,
+                              sources=("src/daemon/Ed3kBridge.cpp",
+                                       "src/daemon/Ed3kFriendsBridge.cpp",
+                                       "src/daemon/Ed3kNamesBridge.cpp",
+                                       "src/daemon/Ed3kCreditBridge.cpp",
                                        "src/daemon/BandwidthCoordinator.cpp")),
     # GUI sources against the stub pch; include order as in CMake picks the pch.h
     "tst_LogTextView": TestExtras(includes=GUI_INCLUDES, widgets=True,
@@ -342,6 +368,13 @@ TEST_EXTRAS: dict[str, TestExtras] = {
                                    sources=("src/gui/app/IpcClient.cpp",)),
     "tst_SingleInstance": TestExtras(includes=("tests/stubs", "src/gui"),
                                      sources=("src/gui/app/SingleInstance.cpp",)),
+    "tst_MassRenameDialog": TestExtras(includes=GUI_INCLUDES, widgets=True,
+                                       sources=("src/gui/dialogs/MassRenameDialog.cpp",
+                                                "src/gui/dialogs/SimpleCleanupDialog.cpp",
+                                                "src/gui/utils/DialogSizing.cpp",
+                                                "src/gui/controls/ContentScrollArea.cpp",
+                                                "src/gui/app/UiState.cpp",
+                                                "src/gui/app/IpcClient.cpp")),
 }
 NO_EXTRAS = TestExtras()
 

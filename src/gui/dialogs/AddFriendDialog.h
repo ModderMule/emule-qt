@@ -44,10 +44,26 @@ public:
     using Submitter = std::function<void(const AddFriendDialog&, std::function<void(bool)>)>;
     void setSubmitter(Submitter submitter) { m_submitter = std::move(submitter); }
 
+    /// What an ed3k submitter reports: kEd3kAdded, kEd3kNoNode, else an ed3k error
+    /// (ED3K_ERR_*, negative).
+    static constexpr int kEd3kAdded = 1;
+    static constexpr int kEd3kNoNode = 0;
+    /// Who adds an `ed3k:friend` link (with the request text); the IP fields are then unused.
+    using Ed3kSubmitter = std::function<void(const QString& link, const QString& text, std::function<void(int)>)>;
+    void setEd3kSubmitter(Ed3kSubmitter submitter) { m_ed3kSubmitter = std::move(submitter); }
+    /// Whether the ed3k node runs: the ed3k fields are enabled.
+    void setEd3kAvailable(bool on);
+
+    [[nodiscard]] QString ed3kLink() const;
+    [[nodiscard]] QString ed3kText() const;
+
 private slots:
     void onAddClicked();
 
 private:
+    void submitEd3k();
+    [[nodiscard]] QString ed3kError(int code) const;
+
     QLineEdit* m_ipEdit = nullptr;
     QLineEdit* m_portEdit = nullptr;
     QLineEdit* m_nameEdit = nullptr;
@@ -58,6 +74,10 @@ private:
     QPushButton* m_cancelButton = nullptr;
     QLabel*    m_ipLabel = nullptr;
     Submitter  m_submitter;
+    QWidget*   m_ed3kGroup = nullptr;
+    QLineEdit* m_ed3kLinkEdit = nullptr;
+    QLineEdit* m_ed3kTextEdit = nullptr;
+    Ed3kSubmitter m_ed3kSubmitter;
 };
 
 } // namespace eMule

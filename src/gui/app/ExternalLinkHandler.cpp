@@ -7,6 +7,7 @@
 #include "app/ExternalLinkHandler.h"
 
 #include "app/AppConfig.h"
+#include "app/Ed3kNameOpener.h"
 #include "app/IpcClient.h"
 #include "app/MainWindow.h"
 #include "prefs/Preferences.h"
@@ -17,6 +18,7 @@
 #include <QDesktopServices>
 #include <QEvent>
 #include <QFileOpenEvent>
+#include <QMessageBox>
 #include <QTimer>
 #include <QUrl>
 
@@ -32,6 +34,8 @@ ExternalLinkHandler::ExternalLinkHandler(QObject* parent)
 void ExternalLinkHandler::setMainWindow(MainWindow* mainWindow)
 {
     m_mainWindow = mainWindow;
+    if (m_names)
+        m_names->setDialogParent(mainWindow);
     flushPending();
 }
 
@@ -43,6 +47,13 @@ void ExternalLinkHandler::setIpcClient(IpcClient* ipc)
         // flushPending() returns immediately.
         connect(ipc, &IpcClient::connected, this, &ExternalLinkHandler::flushPending,
                 Qt::UniqueConnection);
+        connect(ipc, &IpcClient::ed3kBootstrapAsk, this, &ExternalLinkHandler::askBootstrapSource,
+                Qt::UniqueConnection);
+        // ed3k:name links and names typed in the browser (name.md); its links come back here
+        if (!m_names) {
+            m_names = new Ed3kNameOpener(ipc, [this](const QString& link) { open(link); }, this);
+            m_names->setDialogParent(m_mainWindow);
+        }
     }
     flushPending();
 }
@@ -156,6 +167,28 @@ void ExternalLinkHandler::openNow(const QString& link)
     }
 #endif
 
+    if (ed3k && link.startsWith(QStringLiteral("ed3k:nodes?"), Qt::CaseInsensitive)) {
+        // a node list source (bootstrap.md §3): the daemon asks back (askBootstrapSource)
+        if (!m_ipc) {
+            logWarning(QStringLiteral("Cannot open the ed3k link, no core connection: %1").arg(link));
+            return;
+        }
+        Ipc::IpcMessage msg(Ipc::IpcMsgType::OpenEd3kNodesLink);
+        msg.append(link);
+        m_ipc->sendRequest(std::move(msg), [link](const Ipc::IpcMessage& reply) {
+            if (reply.type() == Ipc::IpcMsgType::Error)
+                logWarning(QStringLiteral("ed3k node list link not taken (%1): %2").arg(reply.fieldString(1), link));
+        });
+        return;
+    }
+    if (ed3k && link.startsWith(QStringLiteral("ed3k:name?"), Qt::CaseInsensitive)) {
+        // a readable name (name.md §1.3): resolved by the core, shown, then opened
+        if (m_names)
+            m_names->open(link);
+        else
+            logWarning(QStringLiteral("Cannot open the ed3k link, no core connection: %1").arg(link));
+        return;
+    }
     if (ed3k) {
         // ToDo: open the other ed3k links (file without bt=, set, live, room, ...)
         logWarning(QStringLiteral("Cannot open this ed3k link yet: %1").arg(link));
@@ -240,6 +273,25 @@ void ExternalLinkHandler::queueForLater(PendingOpen item)
     }
     logInfo(QStringLiteral("%1 received before the daemon was ready — queued (%2)")
                 .arg(what).arg(m_pending.size()));
+}
+
+void ExternalLinkHandler::askBootstrapSource(const Ipc::IpcMessage& msg)
+{
+    const qint64 ask = msg.fieldInt(0);
+    const QString host = msg.fieldString(1);
+    // bootstrap.md §3: the user decides, shown the host name of the URL
+    const auto answer = QMessageBox::question(
+        m_mainWindow, tr("ed3k node list"),
+        tr("A link wants to add a source of ed3k node lists:\n\n%1\n\n"
+           "Node lists are used only to find the first ed3k nodes. Add this source?")
+            .arg(host),
+        QMessageBox::Yes | QMessageBox::No, QMessageBox::No);
+    if (!m_ipc)
+        return;
+    Ipc::IpcMessage reply(Ipc::IpcMsgType::AnswerEd3kBootstrapAsk);
+    reply.append(ask);
+    reply.append(answer == QMessageBox::Yes);
+    m_ipc->sendRequest(std::move(reply));
 }
 
 } // namespace eMule

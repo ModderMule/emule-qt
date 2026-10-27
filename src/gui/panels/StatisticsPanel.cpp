@@ -697,6 +697,9 @@ void StatisticsPanel::buildTree()
     // ===== BitTorrent ===== (not in MFC)
     buildBtBranch(detailIcon, cumulativeIcon);
 
+    // ===== ed3k ===== (not in MFC)
+    buildEd3kBranch(detailIcon);
+
     // Restore expansion state from persistent settings (defaults: Transfer, Connection, Time expanded)
     // Rows created empty get their wording from the one place that formats them.
     updateTree({});
@@ -743,6 +746,17 @@ void StatisticsPanel::requestStats()
             return;
         }
         applyBtStats(resp.fieldMap(1));
+    });
+
+    IpcMessage ed3kReq(IpcMsgType::GetEd3kStatus);
+    m_ipc->sendPoll(this, std::move(ed3kReq), [this](const IpcMessage& resp) {
+        if (!resp.isValid())
+            return;
+        if (resp.type() != IpcMsgType::Result || !resp.fieldBool(0)) {
+            m_itemEd3k->setHidden(true);   // a daemon from before the branch
+            return;
+        }
+        applyEd3kStatus(resp.fieldMap(1));
     });
 
     IpcMessage kadReq(IpcMsgType::GetKadStats);
@@ -1722,6 +1736,76 @@ void StatisticsPanel::applyBtStats(const QCborMap& data)
     fillCounterRows(m_btTorrentRows, torrents);
 }
 
+void StatisticsPanel::applyEd3kStatus(const QCborMap& st)
+{
+    // a core without ed3k: no branch at all
+    if (!st.value(QStringLiteral("available")).toBool()) {
+        m_itemEd3k->setHidden(true);
+        return;
+    }
+    m_itemEd3k->setHidden(false);
+    const bool running = st.value(QStringLiteral("running")).toBool();
+    m_itemEd3kStatus->setText(0, running ? tr("Status: Running on UDP port %1").arg(st.value(QStringLiteral("udpPort")).toInteger())
+                                         : tr("Status: Not running"));
+    const QString node = st.value(QStringLiteral("nodeId")).toString();
+    m_itemEd3kNode->setText(0, tr("Node ID: %1").arg(node.isEmpty() ? tr("n/a") : node));
+    const auto natText = [](qint64 c) {
+        switch (c) {
+        case 1: return tr("Open");
+        case 2: return tr("Cone NAT");
+        case 3: return tr("Symmetric NAT");
+        default: return tr("Unknown");
+        }
+    };
+    m_itemEd3kClass->setText(0, tr("Address Class: IPv4 %1, IPv6 %2")
+                                    .arg(natText(st.value(QStringLiteral("class4")).toInteger()),
+                                         natText(st.value(QStringLiteral("class6")).toInteger())));
+    m_itemEd3kRouter->setText(0, tr("Router: %1").arg(st.value(QStringLiteral("router")).toBool() ? tr("Yes") : tr("No")));
+
+    QHash<QString, qint64> v = counterValues(st.value(QStringLiteral("stats")).toMap());
+    for (const char* key : {"contacts", "wireSent", "wireRecv", "rateUp", "rateDown"}) {
+        const QString k = QString::fromLatin1(key);
+        v.insert(k, st.value(k).toInteger());
+    }
+    const QHash<QString, qint64> queue = counterValues(st.value(QStringLiteral("queue")).toMap());
+    for (auto it = queue.cbegin(); it != queue.cend(); ++it)
+        v.insert(QStringLiteral("queue.") + it.key(), it.value());
+    fillCounterRows(m_ed3kRows, v);
+
+    // credits (credit.md): off by default
+    const QCborMap c = st.value(QStringLiteral("credit")).toMap();
+    const bool on = c.value(QStringLiteral("configured")).toBool();
+    const auto micro = [](qint64 m) {
+        return tr("%1.%2").arg(QLocale().toString(m / 1'000'000)).arg(m % 1'000'000, 6, 10, QLatin1Char('0'));
+    };
+    const QString address = c.value(QStringLiteral("address")).toString();
+    const qint64 balance = c.value(QStringLiteral("balance")).toInteger(-1);
+    const QString rate = c.value(QStringLiteral("stakeRate")).toString();
+    double perCredit = 0;
+    for (const QChar ch : rate)
+        perCredit = perCredit * 16 + QString(ch).toInt(nullptr, 16);
+    perCredit /= 1e18;   // stake units of 10^-18 E3S
+    const QString texts[] = {
+        tr("Status: %1").arg(on ? tr("In use") : c.value(QStringLiteral("enabled")).toBool() ? tr("Not configured") : tr("Off")),
+        tr("Credit Address: %1").arg(address.isEmpty() ? tr("n/a") : address),
+        tr("Balance: %1").arg(on && balance >= 0 ? tr("%1 credits").arg(micro(balance)) : tr("n/a")),
+        tr("Account: %1").arg(!on ? tr("n/a")
+                              : c.value(QStringLiteral("overdrawn")).toBool() ? tr("Overdrawn")
+                              : c.value(QStringLiteral("mature")).toBool()    ? tr("Mature")
+                                                                              : tr("Not mature")),
+        tr("Receipts Signed: %1 (%2)").arg(c.value(QStringLiteral("receiptsSigned")).toInteger())
+            .arg(formatByteSize(c.value(QStringLiteral("kibSigned")).toInteger() * 1024)),
+        tr("Receipts Received: %1 (%2), priority turns given: %3").arg(c.value(QStringLiteral("receiptsTaken")).toInteger())
+            .arg(formatByteSize(c.value(QStringLiteral("kibTaken")).toInteger() * 1024))
+            .arg(c.value(QStringLiteral("slotHints")).toInteger()),
+        tr("Stake: %1, claims waiting: %2")
+            .arg(rate.isEmpty() ? tr("n/a") : perCredit > 0 ? tr("%1 E3S per credit").arg(QLocale().toString(perCredit, 'g', 6)) : tr("burning off"))
+            .arg(c.value(QStringLiteral("claims")).toArray().size()),
+    };
+    for (size_t i = 0; i < m_ed3kCreditItems.size(); ++i)
+        m_ed3kCreditItems[i]->setText(0, texts[i]);
+}
+
 void StatisticsPanel::applyClientStats(const QCborMap& data)
 {
     const QCborMap seen = data.value(QStringLiteral("seen")).toMap();
@@ -2270,6 +2354,65 @@ void StatisticsPanel::buildBtBranch(const QIcon& detailIcon, const QIcon& cumula
     fillCounterRows(m_btSessionRows, zeros);
     fillCounterRows(m_btCumulativeRows, zeros);
     fillCounterRows(m_btTorrentRows, zeros);
+}
+
+std::span<const StatisticsPanel::CounterRow> StatisticsPanel::ed3kCounterRows()
+{
+    using F = RowFormat;
+    // Keys of GetEd3kStatus: its stats map, plus the top-level and "queue." ones applyEd3kStatus() adds
+    static constexpr CounterRow kRows[] = {
+        {QT_TR_NOOP("General"), nullptr},
+        {QT_TR_NOOP("Download Speed: %1"), "rateDown", F::Rate, nullptr, 1},
+        {QT_TR_NOOP("Upload Speed: %1"), "rateUp", F::Rate, nullptr, 1},
+        {QT_TR_NOOP("Connections: %1"), "connections", F::Count, nullptr, 1},
+        {QT_TR_NOOP("Kad Contacts: %1"), "contacts", F::Count, nullptr, 1},
+        {QT_TR_NOOP("Banned Nodes: %1"), "bannedNodes", F::Count, nullptr, 1},
+        {QT_TR_NOOP("Banned Hosts: %1"), "bannedHosts", F::Count, nullptr, 1},
+
+        {QT_TR_NOOP("Traffic"), nullptr},
+        {QT_TR_NOOP("Network Traffic Received: %1"), "wireRecv", F::Bytes, nullptr, 1},
+        {QT_TR_NOOP("File Data: %1 %2"), "recvFile", F::Bytes, "wireRecv", 2},
+        {QT_TR_NOOP("Other: %1 %2"), "recvOther", F::Bytes, "wireRecv", 2},
+        {QT_TR_NOOP("Network Traffic Sent: %1"), "wireSent", F::Bytes, nullptr, 1},
+        {QT_TR_NOOP("File Data: %1 %2"), "sentFile", F::Bytes, "wireSent", 2},
+        {QT_TR_NOOP("Other: %1 %2"), "sentOther", F::Bytes, "wireSent", 2},
+
+        {QT_TR_NOOP("Kad"), nullptr},
+        {QT_TR_NOOP("Lookups Running: %1"), "lookups", F::Count, nullptr, 1},
+        {QT_TR_NOOP("Records Stored: %1"), "records", F::Count, nullptr, 1},
+        {QT_TR_NOOP("Size of the Records: %1"), "recordBytes", F::Bytes, nullptr, 1},
+        {QT_TR_NOOP("Records Published: %1"), "published", F::Count, nullptr, 1},
+
+        {QT_TR_NOOP("Upload Queue"), nullptr},
+        {QT_TR_NOOP("Upload Slots: %1"), "queue.slotCount", F::Count, nullptr, 1},
+        {QT_TR_NOOP("Uploading: %1"), "queue.holders", F::Count, nullptr, 1},
+        {QT_TR_NOOP("Waiting: %1"), "queue.waiting", F::Count, nullptr, 1},
+        {QT_TR_NOOP("Queued Requests: %1"), "queueLen", F::Count, nullptr, 1},
+    };
+    return kRows;
+}
+
+void StatisticsPanel::buildEd3kBranch(const QIcon& detailIcon)
+{
+    m_itemEd3k = new QTreeWidgetItem(m_tree, {tr("ed3k")});
+    m_itemEd3k->setIcon(0, QIcon(QStringLiteral(":/icons/Kad.ico")));
+    m_itemEd3kStatus = new QTreeWidgetItem(m_itemEd3k);
+    m_itemEd3kNode = new QTreeWidgetItem(m_itemEd3k);
+    m_itemEd3kClass = new QTreeWidgetItem(m_itemEd3k);
+    m_itemEd3kRouter = new QTreeWidgetItem(m_itemEd3k);
+
+    auto* session = new QTreeWidgetItem(m_itemEd3k, {tr("Session")});
+    session->setIcon(0, detailIcon);
+    m_ed3kRows.clear();
+    buildCounterRows(session, ed3kCounterRows(), true, m_ed3kRows);
+
+    m_itemEd3kCredit = new QTreeWidgetItem(m_itemEd3k, {tr("Credits")});
+    m_itemEd3kCredit->setIcon(0, QIcon(QStringLiteral(":/icons/Rating.ico")));
+    for (auto& item : m_ed3kCreditItems)
+        item = new QTreeWidgetItem(m_itemEd3kCredit);
+
+    // shown once a core says it has ed3k
+    applyEd3kStatus({});
 }
 
 // ---------------------------------------------------------------------------

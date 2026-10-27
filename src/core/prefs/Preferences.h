@@ -57,6 +57,21 @@ enum class HttpCacheServerAction : uint8 {
     Full,        ///< the list is at kMaxHttpCacheServers and this is not in it
 };
 
+/// Credits of the ed3k node (credit.md), YAML `ed3k: credit:`, IPC keys `ed3kCredit*`.
+/// Off by default (§9); no default chain or contract (§7.1). The key is not a preference:
+/// Config/ed3k/credit.key (Ed3kCredit).
+struct Ed3kCreditPrefs {
+    bool enabled = false;          ///< ed3kCreditEnabled
+    uint64 chainId = 0;            ///< ed3kCreditChainId; 0 = none set
+    QString contract;              ///< ed3kCreditContract: 0x + 40 hex; empty = none set
+    uint32 quorum = 2;             ///< ed3kCreditQuorum: endpoints that must agree (§7.3), held to 1..endpoints
+    uint64 bidMaxPrice = 0;        ///< ed3kCreditBidMaxPrice: µ per MiB at most per download; 0 = receipts only
+    bool sell = false;             ///< ed3kCreditSell: sell priority slots (§5.1)
+    uint64 sellFloor = 0;          ///< ed3kCreditSellFloor: µ per MiB, the lowest bid taken
+    uint32 sellSlots = 0;          ///< ed3kCreditSellSlots: 0 = the upload queue's slots
+    bool operator==(const Ed3kCreditPrefs&) const = default;
+};
+
 // Bandwidth defaults (KiB/s) for a fresh install; also the first start wizard's
 // "recommended defaults". Download unlimited, upload under half a 10 Mbit uplink.
 inline constexpr uint32 kDefaultMaxUpload = 500;
@@ -1308,6 +1323,32 @@ public:
     /// "a b c" or an array of strings → the list (empty entries dropped).
     [[nodiscard]] static QStringList rpcUrlList(const QCborValue& value);
 
+    /// Optional ed3k extensions turned off at start (socket-modes.md "extensions"), by the
+    /// names of their documents (ed3kExtensionNames()). A change restarts the node.
+    /// IPC/REST key `ed3kExtOff`: names separated by spaces. Default: none off.
+    [[nodiscard]] QStringList ed3kExtOff() const;
+    void setEd3kExtOff(const QStringList& names);
+    /// The names ed3kExtOff takes: the optional extensions of wire version 1.
+    [[nodiscard]] static QStringList ed3kExtensionNames();
+    /// LAN discovery (lan-discovery.md) on the local networks. Default on. A change restarts
+    /// the node. IPC/REST key `ed3kLan`.
+    [[nodiscard]] bool ed3kLan() const;
+    void setEd3kLan(bool val);
+    /// Node list sources for the first contact (bootstrap.md §3) as `ed3k:nodes?url=…&key=…`
+    /// links. IPC/REST key `ed3kNodeLists`: links separated by spaces. Default: none.
+    [[nodiscard]] QStringList ed3kNodeLists() const;
+    void setEd3kNodeLists(const QStringList& links);
+    /// TCP port of the local ed3k website server (name.md §6.2, 127.0.0.1 and ::1 only). It
+    /// is part of every site's origin: 0 in the file = a random free port, picked once at
+    /// load and saved. IPC/REST key `ed3kSitePort`; a change rebinds the server.
+    [[nodiscard]] uint16 ed3kSitePort() const;
+    void setEd3kSitePort(uint16 val);
+    /// Credits (credit.md); see Ed3kCreditPrefs. A change reconfigures the node (no restart).
+    [[nodiscard]] Ed3kCreditPrefs ed3kCredit() const;
+    void setEd3kCredit(const Ed3kCreditPrefs& val);
+    /// One `ed3kCredit*` IPC key into @p c (unknown values keep the field). False: not one.
+    static bool applyEd3kCreditKey(Ed3kCreditPrefs& c, const QString& key, const QCborValue& val);
+
     /// ED2K's current slice of maxDownload(), in KB/s. Runtime only: it is
     /// recomputed twice a second from the live split and never written to
     /// preferences.yml, so a crash cannot leave a user permanently throttled.
@@ -1839,6 +1880,17 @@ public:
     /// '|'-separated substrings the auto cleanup strips from a new download's name.
     [[nodiscard]] QString filenameCleanups() const;
     void setFilenameCleanups(const QString& val);
+    /// Mass Rename "Simple cleanup" settings (massrename::SimpleCleanupOptions).
+    [[nodiscard]] int simpleCleanupOptions() const;
+    void setSimpleCleanupOptions(int val);
+    [[nodiscard]] QString simpleCleanupSearch() const;
+    void setSimpleCleanupSearch(const QString& val);
+    [[nodiscard]] QString simpleCleanupReplace() const;
+    void setSimpleCleanupReplace(const QString& val);
+    [[nodiscard]] QStringList simpleCleanupSearchChars() const;
+    void setSimpleCleanupSearchChars(const QStringList& val);
+    [[nodiscard]] QStringList simpleCleanupReplaceChars() const;
+    void setSimpleCleanupReplaceChars(const QStringList& val);
 
     // -- Notifications (GUI-side) --------------------------------------------
 

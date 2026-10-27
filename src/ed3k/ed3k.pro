@@ -7,7 +7,7 @@ TEMPLATE = lib
 CONFIG  += staticlib c++2b
 TARGET   = emuleed3k
 
-QT += core network
+QT += core network httpserver
 QT -= gui
 
 PACKMULE = $$PWD/../../libs/packmule
@@ -29,20 +29,34 @@ win32 {
 }
 
 SOURCES += \
+    Ed3kBootstrap.cpp \
+    Ed3kCredit.cpp \
+    Ed3kFriends.cpp \
     Ed3kHttp.cpp \
     Ed3kJoinBase.cpp \
+    Ed3kLan.cpp \
+    Ed3kNames.cpp \
+    Ed3kPlumbing.cpp \
     Ed3kSession.cpp \
     Ed3kShared.cpp \
+    Ed3kSiteServer.cpp \
     Ed3kStore.cpp \
     Ed3kTorrentJoin.cpp \
     Ed3kUsenetJoin.cpp
 
 HEADERS += \
+    Ed3kBootstrap.h \
+    Ed3kCredit.h \
     Ed3kFfi.h \
+    Ed3kFriends.h \
     Ed3kHttp.h \
     Ed3kJoinBase.h \
+    Ed3kLan.h \
+    Ed3kNames.h \
+    Ed3kPlumbing.h \
     Ed3kSession.h \
     Ed3kShared.h \
+    Ed3kSiteServer.h \
     Ed3kStore.h \
     Ed3kTorrentJoin.h \
     Ed3kUsenetJoin.h

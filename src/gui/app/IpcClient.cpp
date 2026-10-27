@@ -92,6 +92,8 @@ static QString ipcMsgTypeName(Ipc::IpcMsgType type)
     case T::ProbeHttpCacheServer: return QStringLiteral("ProbeHttpCacheServer");
     case T::ApplyHttpCacheConfig: return QStringLiteral("ApplyHttpCacheConfig");
     case T::RenameSharedFile:     return QStringLiteral("RenameSharedFile");
+    case T::RenameDownload:       return QStringLiteral("RenameDownload");
+    case T::RenameFiles:          return QStringLiteral("RenameFiles");
     case T::DeleteSharedFile:     return QStringLiteral("DeleteSharedFile");
     case T::UnshareFile:          return QStringLiteral("UnshareFile");
     case T::SetDownloadCategory:  return QStringLiteral("SetDownloadCategory");
@@ -194,6 +196,39 @@ static QString ipcMsgTypeName(Ipc::IpcMsgType type)
     case T::PushTorrentFinished:  return QStringLiteral("PushTorrentFinished");
     case T::GetEd3kStatus:        return QStringLiteral("GetEd3kStatus");
     case T::PushEd3kStatus:       return QStringLiteral("PushEd3kStatus");
+    case T::OpenEd3kNodesLink:    return QStringLiteral("OpenEd3kNodesLink");
+    case T::AnswerEd3kBootstrapAsk: return QStringLiteral("AnswerEd3kBootstrapAsk");
+    case T::PushEd3kBootstrapAsk: return QStringLiteral("PushEd3kBootstrapAsk");
+    case T::GetEd3kFriends:       return QStringLiteral("GetEd3kFriends");
+    case T::AddEd3kFriend:        return QStringLiteral("AddEd3kFriend");
+    case T::RemoveEd3kFriend:     return QStringLiteral("RemoveEd3kFriend");
+    case T::AnswerEd3kFriendRequest: return QStringLiteral("AnswerEd3kFriendRequest");
+    case T::GetEd3kMyFriendLink:  return QStringLiteral("GetEd3kMyFriendLink");
+    case T::SendEd3kChat:         return QStringLiteral("SendEd3kChat");
+    case T::EndEd3kChat:          return QStringLiteral("EndEd3kChat");
+    case T::PushEd3kFriendsChanged: return QStringLiteral("PushEd3kFriendsChanged");
+    case T::PushEd3kChatMessage:  return QStringLiteral("PushEd3kChatMessage");
+    case T::PushEd3kChatSent:     return QStringLiteral("PushEd3kChatSent");
+    case T::PushEd3kChatFailed:   return QStringLiteral("PushEd3kChatFailed");
+    case T::PushEd3kFriendRequest: return QStringLiteral("PushEd3kFriendRequest");
+    case T::PushEd3kChatState:    return QStringLiteral("PushEd3kChatState");
+    case T::ResolveEd3kName:      return QStringLiteral("ResolveEd3kName");
+    case T::OpenEd3kName:         return QStringLiteral("OpenEd3kName");
+    case T::GetEd3kNames:         return QStringLiteral("GetEd3kNames");
+    case T::SetEd3kPetname:       return QStringLiteral("SetEd3kPetname");
+    case T::RemoveEd3kPetname:    return QStringLiteral("RemoveEd3kPetname");
+    case T::UnpinEd3kName:        return QStringLiteral("UnpinEd3kName");
+    case T::VouchEd3kName:        return QStringLiteral("VouchEd3kName");
+    case T::FollowEd3kNameList:   return QStringLiteral("FollowEd3kNameList");
+    case T::UnfollowEd3kNameList: return QStringLiteral("UnfollowEd3kNameList");
+    case T::MoveEd3kNameList:     return QStringLiteral("MoveEd3kNameList");
+    case T::NewEd3kCreditKey:     return QStringLiteral("NewEd3kCreditKey");
+    case T::ImportEd3kCreditKey:  return QStringLiteral("ImportEd3kCreditKey");
+    case T::ExportEd3kCreditKey:  return QStringLiteral("ExportEd3kCreditKey");
+    case T::PushEd3kNameResolved: return QStringLiteral("PushEd3kNameResolved");
+    case T::PushEd3kNameFailed:   return QStringLiteral("PushEd3kNameFailed");
+    case T::PushEd3kNamesChanged: return QStringLiteral("PushEd3kNamesChanged");
+    case T::PushEd3kNameFriendList: return QStringLiteral("PushEd3kNameFriendList");
     default:
         return QStringLiteral("Unknown(%1)").arg(static_cast<int>(type));
     }
@@ -499,6 +534,81 @@ void IpcClient::sendBatchRequest(const QStringList& keys,
     }
 }
 
+// -- ed3k readable names and websites ----------------------------------------
+
+int IpcClient::resolveEd3kName(const QString& text, ResponseCallback callback)
+{
+    IpcMessage msg(IpcMsgType::ResolveEd3kName);
+    msg.append(text);
+    return sendRequest(std::move(msg), std::move(callback));
+}
+
+int IpcClient::openEd3kName(qint64 id, ResponseCallback callback)
+{
+    IpcMessage msg(IpcMsgType::OpenEd3kName);
+    msg.append(id);
+    return sendRequest(std::move(msg), std::move(callback));
+}
+
+int IpcClient::requestEd3kNames(ResponseCallback callback)
+{
+    return sendRequest(IpcMessage(IpcMsgType::GetEd3kNames), std::move(callback));
+}
+
+int IpcClient::setEd3kPetname(const QString& text, const QString& zone, bool shareable, ResponseCallback callback)
+{
+    IpcMessage msg(IpcMsgType::SetEd3kPetname);
+    msg.append(text);
+    msg.append(zone);
+    msg.append(shareable);
+    return sendRequest(std::move(msg), std::move(callback));
+}
+
+int IpcClient::removeEd3kPetname(const QString& text, ResponseCallback callback)
+{
+    IpcMessage msg(IpcMsgType::RemoveEd3kPetname);
+    msg.append(text);
+    return sendRequest(std::move(msg), std::move(callback));
+}
+
+int IpcClient::unpinEd3kName(const QString& name, ResponseCallback callback)
+{
+    IpcMessage msg(IpcMsgType::UnpinEd3kName);
+    msg.append(name);
+    return sendRequest(std::move(msg), std::move(callback));
+}
+
+int IpcClient::vouchEd3kName(const QString& name, bool on, ResponseCallback callback)
+{
+    IpcMessage msg(IpcMsgType::VouchEd3kName);
+    msg.append(name);
+    msg.append(on);
+    return sendRequest(std::move(msg), std::move(callback));
+}
+
+int IpcClient::followEd3kNameList(const QString& link, const QString& label, ResponseCallback callback)
+{
+    IpcMessage msg(IpcMsgType::FollowEd3kNameList);
+    msg.append(link);
+    msg.append(label);
+    return sendRequest(std::move(msg), std::move(callback));
+}
+
+int IpcClient::unfollowEd3kNameList(qint64 id, ResponseCallback callback)
+{
+    IpcMessage msg(IpcMsgType::UnfollowEd3kNameList);
+    msg.append(id);
+    return sendRequest(std::move(msg), std::move(callback));
+}
+
+int IpcClient::moveEd3kNameList(qint64 id, qint64 place, ResponseCallback callback)
+{
+    IpcMessage msg(IpcMsgType::MoveEd3kNameList);
+    msg.append(id);
+    msg.append(place);
+    return sendRequest(std::move(msg), std::move(callback));
+}
+
 // ---------------------------------------------------------------------------
 // Private slots
 // ---------------------------------------------------------------------------
@@ -592,7 +702,7 @@ void IpcClient::onMessageReceived(const IpcMessage& msg)
         const QString newToken = msg.fieldString(2);
         if (newToken != m_daemonToken) {
             m_lastKadId = m_lastUsenetId = m_lastServerId = m_lastLogId = m_lastVerboseId = 0;
-            m_lastEd3kId = m_lastEd3kVerboseId = m_lastEd3kKadId = 0;
+            m_lastEd3kId = m_lastEd3kVerboseId = m_lastEd3kKadId = m_lastLeecherId = 0;
             m_lastServerMsgId = 0;
             m_daemonToken = newToken;
         }
@@ -760,6 +870,17 @@ void IpcClient::dispatchPushEvent(const IpcMessage& msg)
     case IpcMsgType::PushTorrentFinished:  emit torrentFinished(msg); break;
     case IpcMsgType::PushBtStatus:         emit btStatusChanged(msg); break;
     case IpcMsgType::PushEd3kStatus:       emit ed3kStatusChanged(msg); break;
+    case IpcMsgType::PushEd3kBootstrapAsk: emit ed3kBootstrapAsk(msg); break;
+    case IpcMsgType::PushEd3kFriendsChanged: emit ed3kFriendsChanged(msg); break;
+    case IpcMsgType::PushEd3kChatMessage:  emit ed3kChatMessageReceived(msg); break;
+    case IpcMsgType::PushEd3kChatSent:     emit ed3kChatSent(msg); break;
+    case IpcMsgType::PushEd3kChatFailed:   emit ed3kChatFailed(msg); break;
+    case IpcMsgType::PushEd3kFriendRequest: emit ed3kFriendRequestReceived(msg); break;
+    case IpcMsgType::PushEd3kChatState:    emit ed3kChatStateReceived(msg); break;
+    case IpcMsgType::PushEd3kNameResolved: emit ed3kNameResolved(msg); break;
+    case IpcMsgType::PushEd3kNameFailed:   emit ed3kNameFailed(msg); break;
+    case IpcMsgType::PushEd3kNamesChanged: emit ed3kNamesChanged(msg); break;
+    case IpcMsgType::PushEd3kNameFriendList: emit ed3kNameFriendListOffered(msg); break;
     case IpcMsgType::PushSharedFileUpdate: emit sharedFileUpdated(msg); break;
     case IpcMsgType::PushSharedFileRemoved: emit sharedFileRemoved(msg); break;
     case IpcMsgType::PushUploadUpdate:     emit uploadUpdated(msg); break;
@@ -787,7 +908,7 @@ void IpcClient::requestLogSync()
     //  - Reconnect within session: min of per-type IDs → only missed events fetched.
     const int64_t fromId = std::min({m_lastKadId, m_lastUsenetId, m_lastServerId,
                                      m_lastLogId,  m_lastVerboseId, m_lastEd3kId,
-                                     m_lastEd3kVerboseId, m_lastEd3kKadId});
+                                     m_lastEd3kVerboseId, m_lastEd3kKadId, m_lastLeecherId});
     IpcMessage req(IpcMsgType::SyncLogs);
     req.append(static_cast<qint64>(fromId));
 
@@ -1037,6 +1158,8 @@ int64_t& IpcClient::lastLogId(const QString& cat, QtMsgType severity)
         return m_lastServerId;
     if (cat == QStringLiteral("emule.ed3k.kad"))
         return m_lastEd3kKadId;
+    if (cat == QStringLiteral("emule.leecher"))
+        return m_lastLeecherId;
     if (cat == QStringLiteral("emule.ed3k"))
         return severity == QtDebugMsg ? m_lastEd3kVerboseId : m_lastEd3kId;
     return severity == QtDebugMsg ? m_lastVerboseId : m_lastLogId;

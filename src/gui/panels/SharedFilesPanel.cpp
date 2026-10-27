@@ -19,6 +19,7 @@
 #include "dialogs/FindInListDialog.h"
 #include "dialogs/MediaInfoPanel.h"
 #include "dialogs/RenameFileDialog.h"
+#include "utils/MassRenameAction.h"
 #include "prefs/Preferences.h"
 #include "utils/CountryFlags.h"
 #include "utils/IpcFeedback.h"
@@ -426,6 +427,18 @@ void SharedFilesPanel::onFileContextMenu(const QPoint& pos)
         auto* act = m_contextMenu->addAction(menuIcon("Rename.ico"), tr("Rename..."), this,
                                              &SharedFilesPanel::renameSelectedFile);
         act->setEnabled(singleSel && single && !single->isPartFile);
+    }
+
+    // Mass Rename — advanced mode, as in MorphXT; part files only change their name
+    if (thePrefs.showExtControls()) {
+        auto* act = m_contextMenu->addAction(menuIcon("FileRename.ico"), tr("Mass Rename..."), this,
+                                             [this, hashes]() {
+            QList<MassRenameDialog::Item> items;
+            for (const SharedFileRow* f : rowsForHashes(hashes))
+                items.append({f->hash, f->fileName, f->isPartFile ? QString() : f->path});
+            MassRenameAction::run(this, m_ipc, std::move(items), [this] { requestSharedFiles(); });
+        });
+        act->setEnabled(hasSel);
     }
 
     // Delete From Disk — every selected file must be complete, or an in-progress

@@ -738,6 +738,8 @@ int main(int argc, char* argv[])
             const qint64 seqId = ts > 0 ? static_cast<qint64>(ts) : 0;
             if (cat == QStringLiteral("emule.kad"))
                 logWidget->appendKad(colored, timestamp, seqId);
+            else if (cat == QStringLiteral("emule.leecher"))
+                logWidget->routeLeecher(colored, timestamp, seqId);
             else if (cat == QStringLiteral("emule.usenet"))
                 logWidget->routeUsenet(severity, colored, timestamp, seqId);
             else if (cat == QStringLiteral("emule.ed3k") || cat == QStringLiteral("emule.ed3k.kad"))

@@ -186,7 +186,7 @@ void Ed3kShared::stop()
             if (!f.alias.empty())
                 (void)e->unpublishAlias(t, std::span{&f.alias, 1});
             if (const auto c = m_cache.find(md4); c != m_cache.end())
-                (void)e->unpublish(t, c->second.root, ffi::Publish::Source);
+                (void)e->unpublish(t, c->second.root, f.keywords ? ffi::Publish::Both : ffi::Publish::Source);
         }
     }
     closeAll();
@@ -223,6 +223,12 @@ bool Ed3kShared::aliasPublished(const QByteArray& md4) const
 {
     const auto f = m_files.find(md4);
     return f != m_files.end() && !f->second.alias.empty();
+}
+
+bool Ed3kShared::keywordsPublished(const QByteArray& md4) const
+{
+    const auto f = m_files.find(md4);
+    return f != m_files.end() && f->second.shared && f->second.keywords;
 }
 
 QString Ed3kShared::cachePath() const
@@ -399,7 +405,7 @@ void Ed3kShared::remove(const QByteArray& md4)
                 const auto t = m_session.now();
                 if (!f.alias.empty())
                     (void)e->unpublishAlias(t, std::span{&f.alias, 1});
-                (void)e->unpublish(t, c->second.root, ffi::Publish::Source);
+                (void)e->unpublish(t, c->second.root, f.keywords ? ffi::Publish::Both : ffi::Publish::Source);
             }
             unshare(c->second.root);
         }
@@ -425,8 +431,14 @@ void Ed3kShared::share(File& f, const Hashed& h)
     f.shared = true;
     const auto t = m_session.now();
     const ffi::FileInfo info{h.root, h.size, name, ed2k, 0, 0, 0, 0, 0, 0};
-    if (auto ok = e->publish(t, info, ffi::Publish::Source); !ok)
+    // was: ToDo: keywords (Publish::Both) for files the user wants found over ed3k search
+    // (done: every shared file, as eD2K's share list; only the source while holding back)
+    // if (auto ok = e->publish(t, info, ffi::Publish::Source); !ok)
+    const auto mode = m_holdBack ? ffi::Publish::Source : ffi::Publish::Both;
+    if (auto ok = e->publish(t, info, mode); !ok)
         logDebug(QStringLiteral("publish of \"%1\" failed (error %2)").arg(f.entry.name, errorName(ok.error())));
+    else
+        f.keywords = mode == ffi::Publish::Both;
     // alias.md §3: the root is shared here and both names come from these bytes
     if (!m_holdBack) {
         f.alias = ed2kAlias(f.entry.md4, h.size, h.root, f.entry.name);
@@ -484,8 +496,11 @@ void Ed3kShared::onHashed(const QByteArray& md4, const QString& path, qint64 mti
         return;
     }
     if (!hashed) {
-        // ToDo: hash again later (unreadable now)
+        // was: ToDo: hash again later (unreadable now) (done: after kRehashMs, kRehashTries
+        // times; and at the next start)
         logWarning(QStringLiteral("cannot hash \"%1\"").arg(path));
+        if (++f.rehashTries < kRehashTries)
+            QTimer::singleShot(m_rehashMs, this, [this, md4] { rehash(md4); });
         return;
     }
     // written while hashed: the share list rehashes it and adds it again
@@ -497,6 +512,18 @@ void Ed3kShared::onHashed(const QByteArray& md4, const QString& path, qint64 mti
     h = Hashed{path, hashed->size, mtimeMs, hashed->root, hashed->hashes};
     scheduleSave(kOwner);
     share(f, h);
+}
+
+void Ed3kShared::rehash(const QByteArray& md4)
+{
+    const auto it = m_files.find(md4);
+    if (!m_started || it == m_files.end() || it->second.shared)
+        return;   // stopped, removed or shared meanwhile
+    File& f = it->second;
+    f.mtimeMs = mtimeOf(f.entry.path);
+    enqueueHash(f);
+    hashNext();
+    pumpSession();
 }
 
 void Ed3kShared::recheck()

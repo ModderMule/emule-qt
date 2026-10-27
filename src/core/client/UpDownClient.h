@@ -611,6 +611,8 @@ public:
     [[nodiscard]] QString dbgGetClientInfo(bool formatIP = false) const;
     /// "ip:tcp (UDP p) 'name' soft" for Kad buddy log lines.
     [[nodiscard]] QString kadBuddyInfo() const;
+    /// "'name' soft, ip, hash h" for the Leecher log tab.
+    [[nodiscard]] QString leecherLogInfo() const;
     [[nodiscard]] QString dbgGetFullClientSoftVer() const;
     [[nodiscard]] static QString dbgGetUploadState(UploadState state);
     [[nodiscard]] static QString dbgGetDownloadState(DownloadState state);
@@ -858,11 +860,18 @@ public:
     enum class UpSlotActivity {
         Busy,      ///< data is asked for and moving, or the slot is still warming up
         Idle,      ///< the peer has asked for nothing: no request, nothing buffered or unacked, no read pending
-        Stalled    ///< data is waiting to go out and none has for the whole rate window
+        Stalled    ///< data is waiting to go out and none has for the whole rate window,
+                   ///< or sent data has sat unacked for kUnackedStuckMs
     };
     /// @param slotAgeMs  getUpStartTimeDelay(); passed in so a test can pick it.
     [[nodiscard]] UpSlotActivity upSlotActivity(uint32 slotAgeMs) const;
     static constexpr uint32 kUpSlotWarmupMs = 30'000;
+    /// Unacked bytes that have not gone down for this long are not reaching the peer
+    /// (e.g. a PMTU black hole on its path, emule-qt#58).
+    static constexpr uint32 kUnackedStuckMs = 120'000;
+    /// Sample the upload socket's unacked bytes; called per slot from UploadQueue::process().
+    /// @p curTick is passed in so a test can move time.
+    void noteSendBacklog(uint64 curTick);
     /// One line on how the slot went: requests asked/accepted/served, last request and
     /// block ages, buffered and unacked bytes. For the verbose slot-end log (emule-qt#58).
     [[nodiscard]] QString upSlotDebugInfo() const;
@@ -1439,6 +1448,9 @@ private:
     uint32 m_slotBlocksServed = 0;          // blocks whose packets went to the socket
     uint64 m_slotLastRequestTick = 0;
     uint64 m_slotLastServedTick = 0;
+    uint64 m_slotLastBacklog = 0;           // unacked bytes at the last noteSendBacklog()
+    uint64 m_slotAckProgressTick = 0;       // last time unacked went down or was 0
+    uint32 m_slotUnackedStuckMs = 0;        // time since then, while unacked > 0
     std::optional<QString> m_upSlotInfoAtSocketGone;   // upSlotDebugInfo() before the socket went
     // Blocks on the socket not yet sent in full, oldest first. sentMark is
     // m_addedPayloadQueueSession right after the block was queued.

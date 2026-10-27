@@ -298,6 +298,12 @@ int Ed3kTorrentJoin::receivedBlocks(const QString& id, int member) const
     return int(j->members[std::size_t(member)].received.size());
 }
 
+bool Ed3kTorrentJoin::hasBlockValues(const QString& id, int member) const
+{
+    const Join* j = findJoin(id);
+    return j && member >= 0 && std::size_t(member) < j->members.size() && !j->members[std::size_t(member)].hashes.empty();
+}
+
 // ---------------------------------------------------------------------------
 // protected
 // ---------------------------------------------------------------------------

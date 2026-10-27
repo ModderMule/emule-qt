@@ -46,6 +46,11 @@ void cancelDownload(PartFile* file);
 /// @p priority: PR_VERYLOW..PR_HIGH; ignored when @p isAuto.
 Status setDownloadPriority(const QString& hashHex, uint8 priority, bool isAuto);
 Status renameDownload(const QString& hashHex, const QString& newName);
+/// Renames a complete shared file on disk; a part file goes to renameDownload.
+Status renameSharedFile(const QString& hashHex, const QString& newName);
+/// Mass Rename: an unfinished download gets a new name (its .part stays), any
+/// other file is renamed on disk (MorphXT MP_MASSRENAME).
+Status renameFile(const QString& hashHex, const QString& newName);
 Status setDownloadCategory(const QString& hashHex, uint32 category);
 /// Moves every idle A4AF source of the download to it. Sources that are transferring
 /// or connecting stay where they are. @p swapped receives how many moved.

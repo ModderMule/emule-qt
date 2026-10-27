@@ -346,6 +346,47 @@ private slots:
         QCOMPARE(gui.btSeedRatioPercent(), 100);
     }
 
+    void ed3kCredit_roundTrip()
+    {
+        // credit.md §9: off by default; §7.1: no default chain or contract
+        const Ed3kCreditPrefs none = Preferences().ed3kCredit();
+        QVERIFY(!none.enabled);
+        QCOMPARE(none.chainId, uint64{0});
+        QVERIFY(none.contract.isEmpty());
+
+        TempDir tmp;
+        const auto file = tmp.filePath(QStringLiteral("ed3k.yaml"));
+        Ed3kCreditPrefs c;
+        c.enabled = true;
+        c.chainId = 18'446'744'073'709'551'000ULL;   // above INT64_MAX: text over IPC
+        c.contract = QStringLiteral("0x5fbdb2315678afecb367f032d93f642f64180aa3");
+        c.quorum = 3;
+        c.bidMaxPrice = 2'500'000;
+        c.sell = true;
+        c.sellFloor = 1'000'000;
+        c.sellSlots = 4;
+        {
+            Preferences prefs;
+            prefs.setEd3kCredit(c);
+            QVERIFY(prefs.saveTo(file));
+        }
+        Preferences loaded;
+        QVERIFY(loaded.load(file));
+        QVERIFY(loaded.ed3kCredit() == c);
+
+        Preferences mirror;
+        mirror.updateFromCbor(loaded.toIpcMap());
+        QVERIFY(mirror.ed3kCredit() == c);
+
+        // one IPC key at a time, as SetPreferences applies them; junk keeps the value
+        Ed3kCreditPrefs k = c;
+        QVERIFY(Preferences::applyEd3kCreditKey(k, QStringLiteral("ed3kCreditQuorum"), QCborValue(99)));
+        QCOMPARE(k.quorum, uint32{16});
+        QVERIFY(Preferences::applyEd3kCreditKey(k, QStringLiteral("ed3kCreditChainId"), QCborValue(QStringLiteral("x"))));
+        QCOMPARE(k.chainId, c.chainId);
+        QVERIFY(!Preferences::applyEd3kCreditKey(k, QStringLiteral("ed3kLan"), QCborValue(true)));
+    }
+
     void bittorrent_clamps()
     {
         Preferences prefs;

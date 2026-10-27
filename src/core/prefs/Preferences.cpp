@@ -599,6 +599,13 @@ struct Preferences::Data {
     QString videoPlayerArgs;
     bool autoCleanupFilenames = false;
     QString filenameCleanups = QString::fromUtf16(kDefaultFilenameCleanups);
+    // Mass Rename "Simple cleanup" (MorphXT SimpleCleanup*); flags = massrename::SimpleCleanupFlag
+    int simpleCleanupOptions = 3;
+    QString simpleCleanupSearch;
+    QString simpleCleanupReplace;
+    QStringList simpleCleanupSearchChars{QStringLiteral("\u00E4"), QStringLiteral("\u00F6"), QStringLiteral("\u00FC"), QStringLiteral("\u00C4"),
+                                         QStringLiteral("\u00D6"), QStringLiteral("\u00DC"), QStringLiteral("\u00DF")};
+    QStringList simpleCleanupReplaceChars{QStringLiteral("ae"), QStringLiteral("oe"), QStringLiteral("ue"), QStringLiteral("Ae"), QStringLiteral("Oe"), QStringLiteral("Ue"), QStringLiteral("ss")};
 
     // Notifications (GUI-side)
     int notifySoundType = 0;         // 0=noSound, 1=soundFile, 2=speech
@@ -701,6 +708,11 @@ struct Preferences::Data {
     bool ed3kHoldBackPosts = false;    // usenet.md §6
     QStringList ed3kCreditRpc;         // JSON-RPC endpoints; empty = off
     QStringList ed3kChaintubeRpc;
+    QStringList ed3kExtOff;            // extension names off at start
+    bool ed3kLan = true;               // LAN discovery
+    QStringList ed3kNodeLists;         // ed3k:nodes links (bootstrap.md §3)
+    uint16 ed3kSitePort = 0;           // website server (name.md §6.2); 0 = random, resolved at load
+    Ed3kCreditPrefs ed3kCredit;        // credit.md; off by default (§9)
 
     /// Runtime only — never loaded, never saved. -1 means "no split active", so
     /// maxDownloadForEd2k() falls back to the raw ceiling. Persisting it would
@@ -2298,6 +2310,61 @@ QStringList Preferences::ed3kCreditRpc() const { return get(&Data::ed3kCreditRpc
 void Preferences::setEd3kCreditRpc(const QStringList& urls) { set(&Data::ed3kCreditRpc, urls); }
 QStringList Preferences::ed3kChaintubeRpc() const { return get(&Data::ed3kChaintubeRpc); }
 void Preferences::setEd3kChaintubeRpc(const QStringList& urls) { set(&Data::ed3kChaintubeRpc, urls); }
+QStringList Preferences::ed3kExtOff() const { return get(&Data::ed3kExtOff); }
+void Preferences::setEd3kExtOff(const QStringList& names) { set(&Data::ed3kExtOff, names); }
+bool Preferences::ed3kLan() const { return get(&Data::ed3kLan); }
+void Preferences::setEd3kLan(bool val) { set(&Data::ed3kLan, val); }
+QStringList Preferences::ed3kNodeLists() const { return get(&Data::ed3kNodeLists); }
+void Preferences::setEd3kNodeLists(const QStringList& links) { set(&Data::ed3kNodeLists, links); }
+uint16 Preferences::ed3kSitePort() const { return get(&Data::ed3kSitePort); }
+void Preferences::setEd3kSitePort(uint16 val) { set(&Data::ed3kSitePort, val); }
+Ed3kCreditPrefs Preferences::ed3kCredit() const { return get(&Data::ed3kCredit); }
+void Preferences::setEd3kCredit(const Ed3kCreditPrefs& val) { set(&Data::ed3kCredit, val); }
+
+bool Preferences::applyEd3kCreditKey(Ed3kCreditPrefs& c, const QString& key, const QCborValue& val)
+{
+    // a u64 as a number or a decimal string; anything else keeps the value
+    const auto u64 = [&val](uint64 old) -> uint64 {
+        if (val.isInteger())
+            return val.toInteger() < 0 ? old : static_cast<uint64>(val.toInteger());
+        bool ok = false;
+        const uint64 v = val.toString().trimmed().toULongLong(&ok);
+        return ok ? v : old;
+    };
+    if (key == QLatin1StringView("ed3kCreditEnabled"))
+        c.enabled = val.toBool(c.enabled);
+    else if (key == QLatin1StringView("ed3kCreditChainId"))
+        c.chainId = u64(c.chainId);
+    else if (key == QLatin1StringView("ed3kCreditContract"))
+        c.contract = val.toString().trimmed();
+    else if (key == QLatin1StringView("ed3kCreditQuorum"))
+        c.quorum = static_cast<uint32>(std::clamp<uint64>(u64(c.quorum), 1, 16));
+    else if (key == QLatin1StringView("ed3kCreditBidMaxPrice"))
+        c.bidMaxPrice = u64(c.bidMaxPrice);
+    else if (key == QLatin1StringView("ed3kCreditSell"))
+        c.sell = val.toBool(c.sell);
+    else if (key == QLatin1StringView("ed3kCreditSellFloor"))
+        c.sellFloor = u64(c.sellFloor);
+    else if (key == QLatin1StringView("ed3kCreditSellSlots"))
+        c.sellSlots = static_cast<uint32>(std::min<uint64>(u64(c.sellSlots), 1000));
+    else
+        return false;
+    return true;
+}
+
+QStringList Preferences::ed3kExtensionNames()
+{
+    // the documents of extensions/*.md that a node may turn off (ED3K_EXT_*, Ed3kPlumbing);
+    // ip-diversity is required, kad-datagram, key-puzzle and keyword-load are drafts
+    return {QStringLiteral("alias"), QStringLiteral("bootstrap"), QStringLiteral("browse"),
+            QStringLiteral("chaintube"), QStringLiteral("chat"), QStringLiteral("credit"),
+            QStringLiteral("file-set"), QStringLiteral("filter-list"), QStringLiteral("flood-protection"),
+            QStringLiteral("friend"), QStringLiteral("hidden-set"), QStringLiteral("hops"),
+            QStringLiteral("hoster"), QStringLiteral("http-source"), QStringLiteral("lan-discovery"),
+            QStringLiteral("live"), QStringLiteral("multi-author-set"), QStringLiteral("pubsub"),
+            QStringLiteral("subscription"), QStringLiteral("torrent"), QStringLiteral("usenet"),
+            QStringLiteral("room"), QStringLiteral("name")};
+}
 
 QStringList Preferences::rpcUrlList(const QCborValue& value)
 {
@@ -3166,6 +3233,16 @@ bool Preferences::autoCleanupFilenames() const { return get(&Data::autoCleanupFi
 void Preferences::setAutoCleanupFilenames(bool val) { set(&Data::autoCleanupFilenames, val); }
 
 QString Preferences::filenameCleanups() const { return get(&Data::filenameCleanups); }
+int Preferences::simpleCleanupOptions() const { return get(&Data::simpleCleanupOptions); }
+void Preferences::setSimpleCleanupOptions(int val) { set(&Data::simpleCleanupOptions, val); }
+QString Preferences::simpleCleanupSearch() const { return get(&Data::simpleCleanupSearch); }
+void Preferences::setSimpleCleanupSearch(const QString& val) { set(&Data::simpleCleanupSearch, val); }
+QString Preferences::simpleCleanupReplace() const { return get(&Data::simpleCleanupReplace); }
+void Preferences::setSimpleCleanupReplace(const QString& val) { set(&Data::simpleCleanupReplace, val); }
+QStringList Preferences::simpleCleanupSearchChars() const { return get(&Data::simpleCleanupSearchChars); }
+void Preferences::setSimpleCleanupSearchChars(const QStringList& val) { set(&Data::simpleCleanupSearchChars, val); }
+QStringList Preferences::simpleCleanupReplaceChars() const { return get(&Data::simpleCleanupReplaceChars); }
+void Preferences::setSimpleCleanupReplaceChars(const QStringList& val) { set(&Data::simpleCleanupReplaceChars, val); }
 
 void Preferences::setFilenameCleanups(const QString& val) { set(&Data::filenameCleanups, val); }
 
@@ -3442,6 +3519,22 @@ QCborMap Preferences::toIpcMap() const
     prefs.insert(QStringLiteral("ed3kHoldBackPosts"), ed3kHoldBackPosts());
     prefs.insert(QStringLiteral("ed3kCreditRpc"), ed3kCreditRpc().join(QLatin1Char(' ')));
     prefs.insert(QStringLiteral("ed3kChaintubeRpc"), ed3kChaintubeRpc().join(QLatin1Char(' ')));
+    prefs.insert(QStringLiteral("ed3kExtOff"), ed3kExtOff().join(QLatin1Char(' ')));
+    prefs.insert(QStringLiteral("ed3kLan"), ed3kLan());
+    prefs.insert(QStringLiteral("ed3kNodeLists"), ed3kNodeLists().join(QLatin1Char(' ')));
+    prefs.insert(QStringLiteral("ed3kSitePort"), static_cast<qint64>(ed3kSitePort()));
+    {
+        const Ed3kCreditPrefs c = ed3kCredit();
+        prefs.insert(QStringLiteral("ed3kCreditEnabled"), c.enabled);
+        // u64 as a string: a chain ID may not fit a CBOR signed int
+        prefs.insert(QStringLiteral("ed3kCreditChainId"), QString::number(c.chainId));
+        prefs.insert(QStringLiteral("ed3kCreditContract"), c.contract);
+        prefs.insert(QStringLiteral("ed3kCreditQuorum"), static_cast<qint64>(c.quorum));
+        prefs.insert(QStringLiteral("ed3kCreditBidMaxPrice"), static_cast<qint64>(std::min<uint64>(c.bidMaxPrice, INT64_MAX)));
+        prefs.insert(QStringLiteral("ed3kCreditSell"), c.sell);
+        prefs.insert(QStringLiteral("ed3kCreditSellFloor"), static_cast<qint64>(std::min<uint64>(c.sellFloor, INT64_MAX)));
+        prefs.insert(QStringLiteral("ed3kCreditSellSlots"), static_cast<qint64>(c.sellSlots));
+    }
 
     // Statistics
     prefs.insert(QStringLiteral("statsAverageMinutes"), static_cast<qint64>(statsAverageMinutes()));
@@ -3712,6 +3805,18 @@ void Preferences::updateFromCbor(const QCborMap& p)
     m_data->ed3kHoldBackPosts = p.value(QStringLiteral("ed3kHoldBackPosts")).toBool(false);
     m_data->ed3kCreditRpc = rpcUrlList(p.value(QStringLiteral("ed3kCreditRpc")));
     m_data->ed3kChaintubeRpc = rpcUrlList(p.value(QStringLiteral("ed3kChaintubeRpc")));
+    m_data->ed3kExtOff = rpcUrlList(p.value(QStringLiteral("ed3kExtOff")));
+    m_data->ed3kLan = p.value(QStringLiteral("ed3kLan")).toBool(true);
+    m_data->ed3kNodeLists = rpcUrlList(p.value(QStringLiteral("ed3kNodeLists")));
+    m_data->ed3kSitePort = static_cast<uint16>(
+        std::clamp<qint64>(p.value(QStringLiteral("ed3kSitePort")).toInteger(0), 0, 65535));
+    {
+        // defaults for a key an older daemon does not send
+        Ed3kCreditPrefs c;
+        for (auto it = p.cbegin(); it != p.cend(); ++it)
+            applyEd3kCreditKey(c, it.key().toString(), it.value());
+        m_data->ed3kCredit = c;
+    }
 
     // Statistics
     m_data->statsAverageMinutes   = static_cast<uint32>(p.value(QStringLiteral("statsAverageMinutes")).toInteger());
@@ -4541,6 +4646,21 @@ bool Preferences::load(const QString& filePath)
             m_data->videoPlayerArgs = QString::fromStdString(d["videoPlayerArgs"].as<std::string>(m_data->videoPlayerArgs.toStdString()));
             m_data->autoCleanupFilenames = d["autoCleanupFilenames"].as<bool>(m_data->autoCleanupFilenames);
             m_data->filenameCleanups = QString::fromStdString(d["filenameCleanups"].as<std::string>(m_data->filenameCleanups.toStdString()));
+            if (auto sc = d["simpleCleanup"]) {
+                const auto list = [](const YAML::Node& n, const QStringList& fallback) {
+                    if (!n || !n.IsSequence())
+                        return fallback;
+                    QStringList out;
+                    for (const auto& item : n)
+                        out << QString::fromStdString(item.as<std::string>(""));
+                    return out;
+                };
+                m_data->simpleCleanupOptions = sc["options"].as<int>(m_data->simpleCleanupOptions);
+                m_data->simpleCleanupSearch = QString::fromStdString(sc["search"].as<std::string>(m_data->simpleCleanupSearch.toStdString()));
+                m_data->simpleCleanupReplace = QString::fromStdString(sc["replace"].as<std::string>(m_data->simpleCleanupReplace.toStdString()));
+                m_data->simpleCleanupSearchChars = list(sc["searchChars"], m_data->simpleCleanupSearchChars);
+                m_data->simpleCleanupReplaceChars = list(sc["replaceChars"], m_data->simpleCleanupReplaceChars);
+            }
         }
 
         // Notifications
@@ -4871,6 +4991,22 @@ bool Preferences::load(const QString& filePath)
             };
             m_data->ed3kCreditRpc = urls(e3["creditRpc"]);
             m_data->ed3kChaintubeRpc = urls(e3["chaintubeRpc"]);
+            m_data->ed3kExtOff = urls(e3["extOff"]);
+            m_data->ed3kLan = e3["lan"].as<bool>(m_data->ed3kLan);
+            m_data->ed3kNodeLists = urls(e3["nodeLists"]);
+            const int sitePort = e3["sitePort"].as<int>(m_data->ed3kSitePort);
+            m_data->ed3kSitePort = (sitePort >= 0 && sitePort <= 65535) ? static_cast<uint16>(sitePort) : 0;
+            if (auto cr = e3["credit"]) {
+                Ed3kCreditPrefs& c = m_data->ed3kCredit;
+                c.enabled = cr["enabled"].as<bool>(c.enabled);
+                c.chainId = cr["chainId"].as<uint64>(c.chainId);
+                c.contract = QString::fromStdString(cr["contract"].as<std::string>(c.contract.toStdString())).trimmed();
+                c.quorum = std::clamp<uint32>(cr["quorum"].as<uint32>(c.quorum), 1, 16);
+                c.bidMaxPrice = cr["bidMaxPrice"].as<uint64>(c.bidMaxPrice);
+                c.sell = cr["sell"].as<bool>(c.sell);
+                c.sellFloor = cr["sellFloor"].as<uint64>(c.sellFloor);
+                c.sellSlots = std::min<uint32>(cr["sellSlots"].as<uint32>(c.sellSlots), 1000);
+            }
         }
 
         if (auto ix = root["indexers"]) {
@@ -5052,11 +5188,18 @@ bool Preferences::load(const QString& filePath)
             return p != ed2kUdp && p != btPort && udpPortFree(p);
         });
     }
+    // the website server's port is part of every site's origin: picked once, kept (name.md §6.2)
+    const bool ed3kSitePortPicked = m_data->ed3kSitePort == 0;
+    if (ed3kSitePortPicked) {
+        const uint16 tcp = m_data->port;
+        const uint16 web = m_data->webServerPort;
+        m_data->ed3kSitePort = randomPort([tcp, web](uint16 p) { return p != tcp && p != web && tcpPortFree(p); });
+    }
 
     validate();
     resolveDefaultDirectories();
 
-    if (ed3kPortPicked && !hashGenerated && !saveImpl(m_filePath))
+    if ((ed3kPortPicked || ed3kSitePortPicked) && !hashGenerated && !saveImpl(m_filePath))
         logWarning(QStringLiteral("ed3k UDP port could not be saved to %1").arg(m_filePath));
 
     // Persist now: otherwise the file keeps the empty hash until some later save
@@ -5749,6 +5892,18 @@ bool Preferences::saveImpl(const QString& filePath) const
     out << YAML::Key << "videoPlayerArgs" << YAML::Value << m_data->videoPlayerArgs.toStdString();
     out << YAML::Key << "autoCleanupFilenames" << YAML::Value << m_data->autoCleanupFilenames;
     out << YAML::Key << "filenameCleanups" << YAML::Value << m_data->filenameCleanups.toStdString();
+    out << YAML::Key << "simpleCleanup" << YAML::Value << YAML::BeginMap;
+    out << YAML::Key << "options" << YAML::Value << m_data->simpleCleanupOptions;
+    out << YAML::Key << "search" << YAML::Value << m_data->simpleCleanupSearch.toStdString();
+    out << YAML::Key << "replace" << YAML::Value << m_data->simpleCleanupReplace.toStdString();
+    for (const auto& [key, list] : {std::pair{"searchChars", &m_data->simpleCleanupSearchChars},
+                                    std::pair{"replaceChars", &m_data->simpleCleanupReplaceChars}}) {
+        out << YAML::Key << key << YAML::Value << YAML::BeginSeq;
+        for (const QString& c : *list)
+            out << c.toStdString();
+        out << YAML::EndSeq;
+    }
+    out << YAML::EndMap;
     out << YAML::EndMap;
 
     // Notifications
@@ -5977,12 +6132,29 @@ bool Preferences::saveImpl(const QString& filePath) const
     out << YAML::Key << "shareFiles" << YAML::Value << m_data->ed3kShareFiles;
     out << YAML::Key << "holdBackPosts" << YAML::Value << m_data->ed3kHoldBackPosts;
     out << YAML::Key << "udpPort" << YAML::Value << static_cast<int>(m_data->ed3kUdpPort);
+    out << YAML::Key << "lan" << YAML::Value << m_data->ed3kLan;
+    out << YAML::Key << "sitePort" << YAML::Value << static_cast<int>(m_data->ed3kSitePort);
     for (const auto& [key, list] : {std::pair{"creditRpc", &m_data->ed3kCreditRpc},
-                                    std::pair{"chaintubeRpc", &m_data->ed3kChaintubeRpc}}) {
+                                    std::pair{"chaintubeRpc", &m_data->ed3kChaintubeRpc},
+                                    std::pair{"extOff", &m_data->ed3kExtOff},
+                                    std::pair{"nodeLists", &m_data->ed3kNodeLists}}) {
         out << YAML::Key << key << YAML::Value << YAML::BeginSeq;
         for (const QString& u : *list)
             out << u.toStdString();
         out << YAML::EndSeq;
+    }
+    {
+        const Ed3kCreditPrefs& c = m_data->ed3kCredit;
+        out << YAML::Key << "credit" << YAML::Value << YAML::BeginMap;
+        out << YAML::Key << "enabled" << YAML::Value << c.enabled;
+        out << YAML::Key << "chainId" << YAML::Value << c.chainId;
+        out << YAML::Key << "contract" << YAML::Value << c.contract.toStdString();
+        out << YAML::Key << "quorum" << YAML::Value << c.quorum;
+        out << YAML::Key << "bidMaxPrice" << YAML::Value << c.bidMaxPrice;
+        out << YAML::Key << "sell" << YAML::Value << c.sell;
+        out << YAML::Key << "sellFloor" << YAML::Value << c.sellFloor;
+        out << YAML::Key << "sellSlots" << YAML::Value << c.sellSlots;
+        out << YAML::EndMap;
     }
     out << YAML::EndMap;
 

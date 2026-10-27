@@ -1,6 +1,7 @@
 #include "pch.h"
 #include "utils/FileAssociation.h"
 #include "dialogs/OptionsDialog.h"
+#include "dialogs/Ed3kOptionsPages.h"
 #include "dialogs/FirstStartWizard.h"
 #include "dialogs/PortChangeNotice.h"
 #include "dialogs/PortMapStatusText.h"
@@ -538,7 +539,7 @@ void OptionsDialog::onPageChanged(int page)
 
 void OptionsDialog::onOk()
 {
-    if (!validateDirectories())
+    if (!validateDirectories() || !m_ed3kPages->validate())
         return;
 #ifdef EMULE_HAVE_BITTORRENT
     if (!validateBtPort())
@@ -550,7 +551,7 @@ void OptionsDialog::onOk()
 
 void OptionsDialog::onApply()
 {
-    if (!validateDirectories())
+    if (!validateDirectories() || !m_ed3kPages->validate())
         return;
 #ifdef EMULE_HAVE_BITTORRENT
     if (!validateBtPort())
@@ -693,6 +694,13 @@ void OptionsDialog::setupSidebar()
         {PageBitTorrent,    "BitTorrent",            QStyle::SP_DriveNetIcon,           "Torrent.ico"},
         {PageBtConnection,  QT_TR_NOOP("Connection"), QStyle::SP_DirLinkIcon,           "Connection.ico"},
     };
+    // no MFC original; icons of the nearest eMule pages
+    static constexpr PageDef kEd3kPages[] = {
+        {PageEd3k,           QT_TR_NOOP("ed3k"),       QStyle::SP_DriveNetIcon,          "Kad.ico"},
+        {PageEd3kConnection, QT_TR_NOOP("Connection"), QStyle::SP_DirLinkIcon,           "Connection.ico"},
+        {PageEd3kCredits,    QT_TR_NOOP("Credits"),    QStyle::SP_DialogApplyButton,     "Rating.ico"},
+        {PageEd3kNames,      QT_TR_NOOP("Names"),      QStyle::SP_FileDialogContentsView, "Friends1.ico"},
+    };
 
     // A page added to the enum and to setupPages() but forgotten here would simply be
     // unreachable, with nothing to say so. The count catches a missing entry, the bit set
@@ -705,10 +713,11 @@ void OptionsDialog::setupSidebar()
     };
     static_assert(std::size(kGeneralPages) + std::size(kAdvancedPages)
                           + std::size(kUsenetPages) + std::size(kBitTorrentPages)
+                          + std::size(kEd3kPages)
                       == std::size_t(PageCount),
                   "every Page must appear in a sidebar group");
     static_assert((idMask(kGeneralPages) | idMask(kAdvancedPages) | idMask(kUsenetPages)
-                   | idMask(kBitTorrentPages))
+                   | idMask(kBitTorrentPages) | idMask(kEd3kPages))
                       == (1u << unsigned(PageCount)) - 1u,
                   "every Page must appear in exactly one sidebar group");
 
@@ -734,6 +743,8 @@ void OptionsDialog::setupSidebar()
 #ifdef EMULE_HAVE_BITTORRENT
     fill(tr("BitTorrent"),       kBitTorrentPages);
 #endif
+    // the GUI talks IPC only: shown whatever the core was built with (the page says so)
+    fill(tr("ed3k"),             kEd3kPages);
 }
 
 // ---------------------------------------------------------------------------
@@ -793,7 +804,26 @@ void OptionsDialog::setupPages()
     // Last pages: leaving them out shifts no other index
     addPage(PageBitTorrent,    createBitTorrentPage());
     addPage(PageBtConnection,  createBtConnectionPage());
+#else
+    // empty slots keep the ed3k indices; not in the sidebar (hasPage)
+    addPage(PageBitTorrent,    new QWidget(this));
+    addPage(PageBtConnection,  new QWidget(this));
 #endif
+    // ed3k group: its own file (Ed3kOptionsPages)
+    m_ed3kPages = new Ed3kOptionsPages(m_ipc, this);
+    addPage(PageEd3k,           m_ed3kPages->generalPage());
+    addPage(PageEd3kConnection, m_ed3kPages->connectionPage());
+    addPage(PageEd3kCredits,    m_ed3kPages->creditsPage());
+    addPage(PageEd3kNames,      m_ed3kPages->namesPage());
+    connect(m_ed3kPages, &Ed3kOptionsPages::changed, this, &OptionsDialog::markDirty);
+    connect(m_ed3kPages, &Ed3kOptionsPages::showPage, this, [this](QWidget* page) {
+        for (int i = PageEd3k; i < PageCount; ++i) {
+            if (m_pages->widget(i)->isAncestorOf(page) || m_pages->widget(i) == page) {
+                selectPage(i);
+                break;
+            }
+        }
+    });
 }
 
 void OptionsDialog::setupButtons()
@@ -5914,7 +5944,7 @@ QWidget* OptionsDialog::createExtendedPage()
 
     // --- Save log to disk ---
     // One switch per process: the daemon and the GUI write their own set of files
-    // (<name>.log plus _Verbose, _Kad, _Usenet, _Ed3k and _Ed3kKad) in the config
+    // (<name>.log plus _Verbose, _Kad, _Usenet, _Ed3k, _Ed3kKad and _Leecher) in the config
     // directory, so a line can always be traced back to the process that emitted
     // it. Kad gets a file of its own because it would otherwise swamp the verbose
     // log — the same reason it has its own tab.
@@ -7591,6 +7621,9 @@ void OptionsDialog::saveSettings()
         req.append(QStringLiteral("indicateRatings"));
         req.append(m_indicateRatingsCheck->isChecked());
 
+        // ed3k group (Ed3kOptionsPages)
+        m_ed3kPages->appendTo(req);
+
         // After OK the dialog is hidden: the port notice then goes to its parent
         m_ipc->sendRequest(std::move(req), [self = QPointer<OptionsDialog>(this),
                                             owner = QPointer<QWidget>(parentWidget()),
@@ -7604,6 +7637,7 @@ void OptionsDialog::saveSettings()
         });
     } else {
         // Fallback: save locally
+        m_ed3kPages->saveLocal();
         thePrefs.setNick(m_nickEdit->text());
         thePrefs.setMaxGraphDownloadRate(static_cast<uint32>(m_capacityDownloadSpin->value()));
         thePrefs.setMaxGraphUploadRate(static_cast<uint32>(m_capacityUploadSpin->value()));
@@ -8294,6 +8328,9 @@ void OptionsDialog::fillDaemonSettings(const QCborMap& prefs)
     if (auto* btn = m_multiUserSharingGroup->button(static_cast<int>(prefs.value(QStringLiteral("multiUserSharing")).toInteger(2))))
         btn->setChecked(true);
 #endif
+
+    // ed3k group
+    m_ed3kPages->load(prefs);
 }
 
 // ---------------------------------------------------------------------------
@@ -8804,6 +8841,10 @@ bool OptionsDialog::hasPage(int page) const
 {
     // The stack, not PageCount: a stored or --options index may name a page this
     // build leaves out
+#ifndef EMULE_HAVE_BITTORRENT
+    if (page == PageBitTorrent || page == PageBtConnection)
+        return false;   // empty slots
+#endif
     return page >= 0 && page < m_pages->count();
 }
 

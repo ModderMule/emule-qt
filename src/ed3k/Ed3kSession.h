@@ -20,6 +20,7 @@
 ///   then pump().
 
 #include "Ed3kFfi.h"
+#include "Ed3kLan.h"
 
 #include <QElapsedTimer>
 #include <QHostAddress>
@@ -52,6 +53,12 @@ struct Ed3kSettings {
     /// first, n the n-th (as mode B, packmule_udp::http). Empty: calls answered failed.
     QStringList creditRpc;
     QStringList chaintubeRpc;
+    QString nick;                ///< Hello.nick (thePrefs.nick())
+    std::uint64_t extOff = 0;    ///< ED3K_EXT_* turned off (pref ed3k.extOff, extOffBits)
+    /// LAN discovery: the daemon sets the pref ed3k.lan (default on); off here, so that tests
+    /// of one machine do not find each other over the real LAN
+    bool lan = false;
+    Ed3kLan::Hooks lanHooks;     ///< tests: LAN interfaces and sends by hand
 };
 
 /// What GetEd3kStatus shows (Ed3kBridge); all 0 / empty while not running.
@@ -112,6 +119,16 @@ public:
     /// The JSON-RPC endpoints of a class (see Ed3kSettings); calls out keep their URL.
     void setRpcEndpoints(::ed3k::RpcClass cls, const QStringList& urls);
 
+    /// What the running node was started with (extOff, lan, bind address ...).
+    [[nodiscard]] const Ed3kSettings& settings() const { return m_settings; }
+    /// LAN discovery while it runs, else nullptr.
+    [[nodiscard]] Ed3kLan* lan() { return m_lan.get(); }
+    /// The extensions in force (ED3K_EXT_*); 0 when not running.
+    [[nodiscard]] std::uint64_t extensions() const;
+    /// The IPv6 address advertised as local6 and sent from to global peers (socket-modes.md
+    /// §8.3); null: [::], the system picks.
+    [[nodiscard]] QHostAddress ipv6Source() const { return m_ipv6Source; }
+
     /// Folder of the key and state files.
     [[nodiscard]] QString stateDir() const { return m_dir; }
 
@@ -156,6 +173,11 @@ private:
     void saveState(bool all);
     void saveSlot(::ed3k::State slot, const QString& file);
     void saveFriends();
+    /// An exported state of the engine (filter, hops) into @p file; nothing when empty.
+    void saveExport(const ::ed3k::Result<::ed3k::Buffer>& blob, const QString& file);
+    /// The stable IPv6 source moved (IPv6SourcePin): local6 again.
+    void followIPv6Pin();
+    void writeDatagram(const char* data, qint64 len, const ::ed3k::Address& to);
     /// ED3K_ERR_DEAD: the engine is gone; ed3k off until the next start.
     void die(::ed3k::Error error);
     void armTimer();
@@ -164,8 +186,12 @@ private:
     std::unique_ptr<::ed3k::Engine> m_engine;
     std::unique_ptr<QUdpSocket> m_socket;
     std::unique_ptr<Ed3kHttp> m_http;
+    std::unique_ptr<Ed3kLan> m_lan;
+    Ed3kSettings m_settings;
+    QHostAddress m_ipv6Source;   ///< advertised as local6 and sent from; null: the system's
     QTimer m_timer;
     QTimer m_badSaveTimer;
+    QTimer m_pinTimer;   ///< looks at IPv6SourcePin (LocalIPv6 moves it on a rescan)
     QThreadPool m_readPool;
     QElapsedTimer m_clock;
     QString m_dir;

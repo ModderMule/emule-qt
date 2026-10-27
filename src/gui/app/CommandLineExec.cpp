@@ -130,6 +130,10 @@ void CommandLineExec::parse(QApplication& app)
             {QStringLiteral("btconnection"), OptionsDialog::PageBtConnection},
             {QStringLiteral("btbandwidth"),  OptionsDialog::PageBtConnection},
 #endif
+            {QStringLiteral("ed3k"),           OptionsDialog::PageEd3k},
+            {QStringLiteral("ed3kconnection"), OptionsDialog::PageEd3kConnection},
+            {QStringLiteral("ed3kcredits"),    OptionsDialog::PageEd3kCredits},
+            {QStringLiteral("ed3knames"),      OptionsDialog::PageEd3kNames},
         };
         m_optionsPage = optArg.toInt(); // fallback: numeric index
         for (const auto& [name, value] : pageNames) {

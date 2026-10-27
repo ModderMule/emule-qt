@@ -149,7 +149,8 @@ public:
     /// Only while the line is not full (rate + 2 % under the limit for kUnderfillMs,
     /// or no limit at all) and a reachable client is waiting. A slot counts as dead
     /// when the peer has had all we sent and asked for nothing for kDeadSlotMs, or has data queued and
-    /// took none of it after the warm-up (UpDownClient::upSlotActivity). Without this
+    /// took none of it after the warm-up, or sent data has gone unacked for
+    /// UpDownClient::kUnackedStuckMs (UpDownClient::upSlotActivity). Without this
     /// such a slot lasts until the socket times out: 40 s, 200 s early in the slot.
     ///
     /// The peer goes back on the waiting list the way a finished session does — no

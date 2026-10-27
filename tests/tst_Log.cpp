@@ -38,6 +38,7 @@ private slots:
     void logFileSink_routesKadToItsOwnFile();
     void logFileSink_routesUsenetToItsOwnFile();
     void logFileSink_routesEd3kToItsOwnFiles();
+    void logFileSink_routesLeecherToItsOwnFile();
     void logFileSink_disabledWritesNothing();
     void logFileSink_messageHandlerFeedsSink();
 
@@ -304,6 +305,25 @@ void tst_Log::logFileSink_routesEd3kToItsOwnFiles()
     QVERIFY(ed3kKad.contains(QStringLiteral("emule.ed3k.kad: an ed3k kad debug")));
     QVERIFY(!main.contains(QStringLiteral("ed3k")));
     QVERIFY(!verbose.contains(QStringLiteral("ed3k")));
+}
+
+// Bans have their own GUI tab (Leecher), so their own file.
+void tst_Log::logFileSink_routesLeecherToItsOwnFile()
+{
+    eMule::testing::TempDir tmp;
+    installLogFileMessageHandler();
+    applyLogFileSink(tmp.path(), QStringLiteral("emulecored"), true, 1048576);
+
+    logLeecher(QStringLiteral("Banned: a leecher"));
+    logInfo(QStringLiteral("a general line"));
+    closeLogFileSink();
+
+    const QString main = readAll(tmp.filePath(QStringLiteral("emulecored.log")));
+    const QString leecher = readAll(tmp.filePath(QStringLiteral("emulecored_Leecher.log")));
+
+    QVERIFY(leecher.contains(QStringLiteral("emule.leecher: Banned: a leecher")));
+    QVERIFY(!leecher.contains(QStringLiteral("general")));
+    QVERIFY(!main.contains(QStringLiteral("leecher")));
 }
 
 void tst_Log::logFileSink_disabledWritesNothing()

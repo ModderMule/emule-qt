@@ -16,6 +16,7 @@ namespace eMule {
 
 namespace ed3k {
 class Ed3kSession;
+class Ed3kBootstrap;
 } // namespace ed3k
 
 namespace Ed3kBridge {
@@ -23,6 +24,10 @@ namespace Ed3kBridge {
 /// The node the requests go to; set by DaemonApp, null when absent.
 void setSession(ed3k::Ed3kSession* session);
 [[nodiscard]] ed3k::Ed3kSession* session();
+
+/// Node list sources and their asks (OpenEd3kNodesLink, AnswerEd3kBootstrapAsk); set by
+/// DaemonApp, null when absent.
+void setBootstrap(ed3k::Ed3kBootstrap* bootstrap);
 
 /// Whether the daemon was built with the ed3k module.
 [[nodiscard]] bool available();

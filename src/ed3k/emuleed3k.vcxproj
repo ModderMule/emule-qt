@@ -42,10 +42,10 @@
   <Import Project="$(QtMsBuild)\qt_defaults.props" Condition="Exists('$(QtMsBuild)\qt_defaults.props')" />
   <Import Project="..\..\QtVersion.props" />
   <PropertyGroup Label="QtSettings" Condition="'$(Configuration)|$(Platform)'=='Release|x64'">
-    <QtModules>core</QtModules>
+    <QtModules>core;network;httpserver</QtModules>
   </PropertyGroup>
   <PropertyGroup Label="QtSettings" Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">
-    <QtModules>core</QtModules>
+    <QtModules>core;network;httpserver</QtModules>
   </PropertyGroup>
   <Target Name="QtMsBuildNotFound" BeforeTargets="CustomBuild;ClCompile" Condition="!Exists('$(QtMsBuild)\qt.targets') OR !Exists('$(QtMsBuild)\Qt.props')">
     <Message Importance="High" Text="QtMsBuild: could not locate qt.targets, qt.props; project may not build correctly." />
@@ -167,23 +167,37 @@ cargo build --release -p packmule-ffi --manifest-path ..\..\libs\packmule\Cargo.
     </QtMoc>
   </ItemDefinitionGroup>
   <ItemGroup>
+    <ClCompile Include="Ed3kBootstrap.cpp" />
+    <ClCompile Include="Ed3kCredit.cpp" />
+    <ClCompile Include="Ed3kFriends.cpp" />
     <ClCompile Include="Ed3kHttp.cpp" />
     <ClCompile Include="Ed3kJoinBase.cpp" />
+    <ClCompile Include="Ed3kLan.cpp" />
+    <ClCompile Include="Ed3kNames.cpp" />
+    <ClCompile Include="Ed3kPlumbing.cpp" />
     <ClCompile Include="Ed3kSession.cpp" />
     <ClCompile Include="Ed3kShared.cpp" />
+    <ClCompile Include="Ed3kSiteServer.cpp" />
     <ClCompile Include="Ed3kStore.cpp" />
     <ClCompile Include="Ed3kTorrentJoin.cpp" />
     <ClCompile Include="Ed3kUsenetJoin.cpp" />
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="Ed3kFfi.h" />
+    <ClInclude Include="Ed3kPlumbing.h" />
     <ClInclude Include="Ed3kStore.h" />
   </ItemGroup>
   <ItemGroup>
+    <QtMoc Include="Ed3kBootstrap.h" />
+    <QtMoc Include="Ed3kCredit.h" />
+    <QtMoc Include="Ed3kFriends.h" />
     <QtMoc Include="Ed3kHttp.h" />
     <QtMoc Include="Ed3kJoinBase.h" />
+    <QtMoc Include="Ed3kLan.h" />
+    <QtMoc Include="Ed3kNames.h" />
     <QtMoc Include="Ed3kSession.h" />
     <QtMoc Include="Ed3kShared.h" />
+    <QtMoc Include="Ed3kSiteServer.h" />
     <QtMoc Include="Ed3kTorrentJoin.h" />
     <QtMoc Include="Ed3kUsenetJoin.h" />
   </ItemGroup>

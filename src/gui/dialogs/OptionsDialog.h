@@ -40,6 +40,7 @@ class QTimeEdit;
 namespace eMule {
 
 class AccordionSidebar;
+class Ed3kOptionsPages;
 class IpcClient;
 class StatisticsPanel;
 
@@ -84,8 +85,12 @@ public:
         PageIndexers,
         PageFeeds,
         PageExtended,
-        PageBitTorrent,     // BT pages last: none without EMULE_HAVE_BITTORRENT
+        PageBitTorrent,     // BT pages: empty slots without EMULE_HAVE_BITTORRENT
         PageBtConnection,
+        PageEd3k,           // ed3k group (Ed3kOptionsPages), shown in every build
+        PageEd3kConnection,
+        PageEd3kCredits,
+        PageEd3kNames,
         PageCount
     };
 
@@ -275,6 +280,7 @@ private:
     QPushButton* m_applyBtn = nullptr;
     bool m_loading = false;              // true while IPC callback populates widgets
     bool m_daemonSettingsLoaded = false;  // true after IPC GetPreferences callback
+    Ed3kOptionsPages* m_ed3kPages = nullptr;   ///< the ed3k group's pages
 
     // General page controls
     QLineEdit* m_nickEdit = nullptr;

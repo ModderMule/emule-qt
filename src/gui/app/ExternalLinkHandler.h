@@ -37,6 +37,10 @@
 
 namespace eMule {
 
+namespace Ipc {
+class IpcMessage;
+}
+class Ed3kNameOpener;
 class IpcClient;
 class MainWindow;
 
@@ -77,6 +81,8 @@ protected:
 
 private:
     void openNow(const QString& link);
+    /// PushEd3kBootstrapAsk: the user decides whether an ed3k:nodes link adds its source.
+    void askBootstrapSource(const Ipc::IpcMessage& msg);
     void openFileNow(const QString& path);
     void flushPending();
     /// Whether there is both a window to show something on and a daemon to ask.
@@ -90,6 +96,8 @@ private:
     QPointer<IpcClient> m_ipc;
     /// Links and files that arrived before there was anywhere to put them.
     PendingOpenQueue m_pending;
+    /// ed3k:name links (made with the IPC client)
+    QPointer<Ed3kNameOpener> m_names;
 };
 
 } // namespace eMule

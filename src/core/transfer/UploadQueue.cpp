@@ -717,15 +717,18 @@ UploadQueue::QueueAdmission UploadQueue::checkWaitingListAdmission(UpDownClient*
             // Who keeps the place — MFC UploadQueue.cpp:577-602. The queued one if it
             // proved its identity; the newcomer if only it did; neither if nobody did,
             // since we cannot tell which is the squatter.
+            // Leecher tab, as Xtreme (UploadQueue.cpp:1135-1164, IDS_SAMEUSERHASH)
+            const auto logDuplicate = [client, cur](const QString& removed) {
+                if (thePrefs.logBannedClients())
+                    logLeecher(QStringLiteral("Client '%1' and '%2' have the same hash or IP - removed '%3'; %4")
+                                   .arg(client->userName(), cur->userName(), removed, client->leecherLogInfo()));
+            };
             if (!evictDuplicates || cur->hasPassedSecureIdent(false)) {
-                logDebug(QStringLiteral("%1: rejected duplicate client %2")
-                             .arg(QLatin1String(context), client->userName()));
+                logDuplicate(client->userName());
                 return QueueAdmission::Rejected;
             }
             const bool newcomerIdentified = client->hasPassedSecureIdent(false);
-            logDebug(QStringLiteral("%1: duplicate client %2 — dropped the queued one%3")
-                         .arg(QLatin1String(context), client->userName(),
-                              newcomerIdentified ? QString() : QStringLiteral(" and the new one")));
+            logDuplicate(newcomerIdentified ? cur->userName() : QStringLiteral("Both"));
             removeFromWaitingQueue(cur);
             if (!cur->socket())
                 cur->disconnected(QStringLiteral("AddClientToQueue - same userhash"));
@@ -1410,6 +1413,7 @@ void UploadQueue::process()
         }
 
         cur->updateUploadingStatisticsData();
+        cur->noteSendBacklog(getTickCount());
 
         if (checkForTimeOver(cur)) {
             // "Completed transfer" — MFC srchybrid/UploadQueue.cpp:325-328.

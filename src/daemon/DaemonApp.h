@@ -33,7 +33,7 @@ class PowerManager;
 
 namespace usenet { class UsenetSession; }
 namespace bt { class BtSession; }
-namespace ed3k { class Ed3kSession; class Ed3kUsenetJoin; class UsenetJoinQueue; class Ed3kTorrentJoin; class Ed3kShared; class SharedFileSource; }
+namespace ed3k { class Ed3kSession; class Ed3kUsenetJoin; class UsenetJoinQueue; class Ed3kTorrentJoin; class Ed3kShared; class SharedFileSource; class Ed3kFriends; class Ed3kBootstrap; class Ed3kNames; class Ed3kSiteServer; class Ed3kCredit; }
 namespace indexer { class IndexerFeedList; class IndexerSearchList; }
 
 class DaemonApp : public QObject {
@@ -49,6 +49,8 @@ public:
     [[nodiscard]] QString startError() const { return m_startError; }
     /// Start without auto-connecting (--hold-connect). Before start().
     void setConnectHold(bool hold) { m_connectHold = hold; }
+    /// IPC port from --port, not saved to prefs; 0 = prefs. Before start().
+    void setIpcPortOverride(quint16 port) { m_ipcPortOverride = port; }
 
     /// Quit, then have main() start the daemon again (new ports, same arguments).
     static void requestRestart();
@@ -108,7 +110,7 @@ public:
     static void applyLogFilterRules();
 
     /// Open or close the daemon's own log files (emulecored.log,
-    /// emulecored_Verbose.log, _Kad, _Usenet, _Ed3k, _Ed3kKad in the config directory) to
+    /// emulecored_Verbose.log, _Kad, _Usenet, _Ed3k, _Ed3kKad, _Leecher in the config directory) to
     /// match the logToDiskCore pref. The GUI runs the same call for its own set —
     /// one switch per process, so a line's origin is never in doubt. Safe to call
     /// at startup and whenever the pref changes at runtime.
@@ -168,6 +170,7 @@ private:
 
     std::unique_ptr<CoreSession> m_coreSession;
     bool m_connectHold = false;
+    quint16 m_ipcPortOverride = 0;
     std::unique_ptr<IpcServer> m_ipcServer;
     std::unique_ptr<CoreNotifierBridge> m_notifierBridge;
     /// Declared before m_webServer so the server that points at it dies first.
@@ -193,6 +196,17 @@ private:
     /// eMule's shared files over ed3k (pref ed3kShareFiles); dies before the session
     std::unique_ptr<ed3k::SharedFileSource> m_ed3kSharedSource;
     std::unique_ptr<ed3k::Ed3kShared> m_ed3kShared;
+    /// ed3k friends and chat (Ed3kFriendsBridge); dies before the session
+    std::unique_ptr<ed3k::Ed3kFriends> m_ed3kFriends;
+    /// node list sources (pref ed3kNodeLists) and the asks of ed3k:nodes links; dies before the session
+    std::unique_ptr<ed3k::Ed3kBootstrap> m_ed3kBootstrap;
+    /// readable names and the local website server (Ed3kNamesBridge, pref ed3kSitePort); die before the session
+    std::unique_ptr<ed3k::Ed3kNames> m_ed3kNames;
+    std::unique_ptr<ed3k::Ed3kSiteServer> m_ed3kSites;
+    /// credits (Ed3kCreditBridge, prefs ed3kCredit*); dies before the session
+    std::unique_ptr<ed3k::Ed3kCredit> m_ed3kCredit;
+    /// The ed3k chat options from the eD2K "Messages and Comments" prefs
+    void applyEd3kChatOptions();
 #ifdef EMULE_HAVE_BITTORRENT
     /// the torrent join (torrent-join.md Part C): needs both sessions; dies before them
     std::unique_ptr<ed3k::Ed3kTorrentJoin> m_torrentJoin;

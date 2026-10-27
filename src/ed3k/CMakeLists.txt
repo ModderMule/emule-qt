@@ -22,6 +22,8 @@ target_link_libraries(emuleed3k
     PUBLIC
         Qt6::Core
         Qt6::Network
+        # Ed3kSiteServer: the local website server (name.md §6.2)
+        Qt6::HttpServer
         eMule::Core
         # Ed3kUsenetJoin: the usenet join (usenet-join-host.md); ed3k -> usenet only
         eMule::Usenet

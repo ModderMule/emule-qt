@@ -225,6 +225,17 @@ Friend* FriendList::searchFriend(const uint8* userHash, uint32 ip,
     return nullptr;
 }
 
+Friend* FriendList::searchFriendByAddress(const Address& addr, uint16 port) const
+{
+    if (addr.isNull() || port == 0)
+        return nullptr;
+    for (const auto& f : m_friends) {
+        if (!f->hasUserhash() && f->lastUsedAddress() == addr && f->lastUsedPort() == port)
+            return f.get();
+    }
+    return nullptr;
+}
+
 bool FriendList::isAlreadyFriend(const QString& hexUserHash) const
 {
     for (const auto& f : m_friends) {

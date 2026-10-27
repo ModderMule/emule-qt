@@ -109,6 +109,10 @@ LogWidget::LogWidget(QWidget* parent)
         m_tabBar->addTab(tr("Verbose"));
     m_stack->addWidget(m_verboseBrowser);
 
+    // Leecher tab — Xtreme's Anti-Leecher-Log pane, right after Verbose
+    m_leecherTabIndex = addLogTab(m_leecherBrowser, QStringLiteral(":/icons/Log.ico"), tr("Leecher"));
+    setLeecherTabVisible(thePrefs.antiLeecher());
+
     // Usenet tab (shown only when showUsenetLog is true)
     m_usenetBrowser = new LogTextView;
     m_usenetBrowser->setReadOnly(true);
@@ -243,6 +247,19 @@ void LogWidget::appendVerbose(const QString& msg, const QString& ts, qint64 seqI
     const QString html = QStringLiteral("<font color='gray'>%1</font> %2").arg(timestamp, msg);
     insertSorted(m_verboseBrowser, m_verboseSeqIds, seqId, html);
     trimToLimit(m_verboseBrowser, m_verboseSeqIds);
+}
+
+void LogWidget::appendLeecher(const QString& msg, const QString& ts, qint64 seqId)
+{
+    appendTo(m_leecherBrowser, m_leecherSeqIds, msg, ts, seqId);
+}
+
+void LogWidget::routeLeecher(const QString& colored, const QString& ts, qint64 seqId)
+{
+    if (m_leecherTabVisible)
+        appendLeecher(colored, ts, seqId);
+    else
+        appendVerbose(colored, ts, seqId);
 }
 
 void LogWidget::appendKad(const QString& msg, const QString& ts, qint64 seqId)
@@ -384,6 +401,13 @@ void LogWidget::setUsenetTabVisible(bool visible)
         m_tabBar->setTabVisible(m_usenetTabIndex, visible);
 }
 
+void LogWidget::setLeecherTabVisible(bool visible)
+{
+    m_leecherTabVisible = visible;
+    if (m_leecherTabIndex >= 0)
+        m_tabBar->setTabVisible(m_leecherTabIndex, visible);
+}
+
 void LogWidget::setEd3kTabsVisible(bool visible)
 {
     m_ed3kTabsVisible = visible;
@@ -396,6 +420,7 @@ void LogWidget::clearAll()
     m_serverInfoBrowser->clear();
     m_logBrowser->clear();
     m_verboseBrowser->clear();
+    m_leecherBrowser->clear();
     m_kadBrowser->clear();
     m_usenetBrowser->clear();
     m_ed3kBrowser->clear();
@@ -404,6 +429,7 @@ void LogWidget::clearAll()
     if (m_ipcLogBrowser) m_ipcLogBrowser->clear();
     m_logSeqIds.clear();
     m_verboseSeqIds.clear();
+    m_leecherSeqIds.clear();
     m_kadSeqIds.clear();
     m_usenetSeqIds.clear();
     m_ed3kSeqIds.clear();
@@ -418,6 +444,7 @@ void LogWidget::clearAll()
 
 QString LogWidget::logText() const { return m_logBrowser->toPlainText(); }
 QString LogWidget::verboseText() const { return m_verboseBrowser->toPlainText(); }
+QString LogWidget::leecherText() const { return m_leecherBrowser->toPlainText(); }
 QString LogWidget::kadText() const { return m_kadBrowser->toPlainText(); }
 QString LogWidget::usenetText() const { return m_usenetBrowser->toPlainText(); }
 QString LogWidget::ed3kText() const { return m_ed3kBrowser->toPlainText(); }
@@ -426,7 +453,7 @@ QString LogWidget::ed3kKadText() const { return m_ed3kKadBrowser->toPlainText();
 
 void LogWidget::setCustomFont(const QFont& font)
 {
-    for (auto* browser : {m_serverInfoBrowser, m_logBrowser, m_verboseBrowser,
+    for (auto* browser : {m_serverInfoBrowser, m_logBrowser, m_verboseBrowser, m_leecherBrowser,
                           m_usenetBrowser, m_kadBrowser, m_ed3kBrowser, m_ed3kVerboseBrowser,
                           m_ed3kKadBrowser, m_ipcLogBrowser})
         if (browser) browser->setFont(font);
@@ -515,6 +542,13 @@ void LogWidget::messageHandler(QtMsgType type, const QMessageLogContext& context
     if (isKad) {
         QMetaObject::invokeMethod(s_instance, [colored]() {
             if (s_instance) s_instance->appendKad(colored);
+        }, Qt::QueuedConnection);
+        return;
+    }
+
+    if (std::strcmp(cat, "emule.leecher") == 0) {
+        QMetaObject::invokeMethod(s_instance, [colored]() {
+            if (s_instance) s_instance->routeLeecher(colored);
         }, Qt::QueuedConnection);
         return;
     }

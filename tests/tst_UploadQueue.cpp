@@ -144,6 +144,7 @@ private slots:
     // Dead upload slots (recycleDeadSlots)
     void upSlotActivity_tellsIdleFromStalledFromBusy();
     void upSlotActivity_busyWhileThePeerIsStillReceiving();
+    void upSlotActivity_stalledWhenUnackedStopsMoving();
     void deadSlot_goesToAWaitingClient();
     void deadSlot_staysWithoutSomeoneToTakeIt();
     void deadSlot_keptWhileThePeerIsStillReceiving();
@@ -3070,6 +3071,42 @@ void tst_UploadQueue::upSlotActivity_busyWhileThePeerIsStillReceiving()
     QVERIFY2(sock->sendBacklog() != 0, "fixture needs unacked bytes");
     QCOMPARE(client->upSlotActivity(0), Activity::Busy);
     QCOMPARE(client->upSlotActivity(60'000), Activity::Busy);
+}
+
+// #58: unacked bytes that never go down are not reaching the peer (PMTU black hole).
+void tst_UploadQueue::upSlotActivity_stalledWhenUnackedStopsMoving()
+{
+    QueueRankEnv env;
+    UploadQueue queue;
+    env.wire(queue);
+    GlobalUploadQueue queueGuard(&queue);
+
+    KnownFile* file = env.addNamedFile(0xE9, QStringLiteral("movie.avi"), 10u * 1024 * 1024);
+    auto* client = env.makeClient(85, file);
+    EMSocket* sock = env.connectSocket(client);
+    QVERIFY(sock);
+    QVERIFY(queue.addClientToQueue(client));
+    QCOMPARE(client->uploadState(), UploadState::Uploading);
+
+    const QByteArray chunk(1024 * 1024, 'x');
+    for (int i = 0; i < 32 && sock->sendBacklog() == 0; ++i) {
+        sock->write(chunk);
+        sock->waitForBytesWritten(50);
+    }
+    QVERIFY2(sock->sendBacklog() != 0, "fixture needs unacked bytes");
+
+    using Activity = UpDownClient::UpSlotActivity;
+    const uint64 t0 = 1'000'000;
+    client->noteSendBacklog(t0);
+    client->noteSendBacklog(t0 + UpDownClient::kUnackedStuckMs - 1);
+    QCOMPARE(client->upSlotActivity(0), Activity::Busy);
+    client->noteSendBacklog(t0 + UpDownClient::kUnackedStuckMs);
+    QCOMPARE(client->upSlotActivity(0), Activity::Stalled);
+    QVERIFY(client->uploadStalled());
+
+    // a new slot starts clean
+    client->flushSendBlocks();
+    QCOMPARE(client->upSlotActivity(0), Activity::Busy);
 }
 
 void tst_UploadQueue::deadSlot_goesToAWaitingClient()

@@ -14,6 +14,9 @@
 #include "BandwidthCoordinator.h"
 #include "BtBridge.h"
 #include "Ed3kBridge.h"
+#include "Ed3kCreditBridge.h"
+#include "Ed3kFriendsBridge.h"
+#include "Ed3kNamesBridge.h"
 #include "UsenetBridge.h"
 
 #include "IpcMessage.h"
@@ -24,6 +27,7 @@
 #include "app/CoreSession.h"
 #include "ipfilter/IPFilter.h"
 #include "kademlia/KadLog.h"
+#include "net/BindAddress.h"
 #include "net/HttpDefaults.h"
 #include "prefs/Preferences.h"
 #include "stats/Statistics.h"
@@ -37,8 +41,14 @@
 #include "BtTypes.h"
 #endif
 #ifdef EMULE_HAVE_ED3K
+#include "Ed3kBootstrap.h"
+#include "Ed3kCredit.h"
+#include "Ed3kFriends.h"
+#include "Ed3kNames.h"
+#include "Ed3kPlumbing.h"
 #include "Ed3kSession.h"
 #include "Ed3kShared.h"
+#include "Ed3kSiteServer.h"
 #include "Ed3kUsenetJoin.h"
 #include "Ed3kTorrentJoin.h"
 #endif
@@ -166,7 +176,7 @@ bool DaemonApp::start()
     const QHostAddress addr = thePrefs.ipcListenAddress().isEmpty()
         ? QHostAddress::LocalHost
         : QHostAddress(thePrefs.ipcListenAddress());
-    const uint16 port = thePrefs.ipcPort();
+    const uint16 port = m_ipcPortOverride != 0 ? m_ipcPortOverride : thePrefs.ipcPort();
 
     if (!m_ipcServer->start(addr, port)) {
         logError(QStringLiteral("Failed to start IPC server on %1:%2")
@@ -235,6 +245,11 @@ bool DaemonApp::start()
             this, &DaemonApp::applyBtConfig);
     connect(m_ipcServer.get(), &IpcServer::ed3kConfigChanged,
             this, &DaemonApp::applyEd3kConfig);
+#ifdef EMULE_HAVE_ED3K
+    // after every SetPreferences: the "Messages and Comments" options of ed3k chat
+    connect(m_ipcServer.get(), &IpcServer::webServerConfigChanged,
+            this, &DaemonApp::applyEd3kChatOptions);
+#endif
 
     // The web server starts in onCoreLoaded(): a REST client must not read
     // half-loaded lists or add a download whose part file is still unread.
@@ -295,6 +310,55 @@ bool DaemonApp::start()
             });
         m_ed3kShared->setEnabled(thePrefs.ed3kShareFiles());
     }
+    // friends and chat; attaches on statusChanged
+    m_ed3kFriends = std::make_unique<ed3k::Ed3kFriends>(*m_ed3kSession);
+    applyEd3kChatOptions();
+    Ed3kFriendsBridge::setFriends(m_ed3kFriends.get());
+    Ed3kFriendsBridge::connectPushes(*m_ed3kFriends, [this](const IpcMessage& msg) {
+        if (m_ipcServer)
+            m_ipcServer->broadcast(msg);
+    });
+    // node lists (bootstrap.md §3); an ed3k:nodes link is asked through the GUI, none refuses it
+    m_ed3kBootstrap = std::make_unique<ed3k::Ed3kBootstrap>(*m_ed3kSession);
+    m_ed3kBootstrap->setSources(thePrefs.ed3kNodeLists());
+    m_ed3kBootstrap->setAsker([this](std::uint64_t ask, const QString& host, const QString& url) {
+        if (!m_ipcServer || !m_ipcServer->hasReadyClient())
+            return false;
+        IpcMessage msg(IpcMsgType::PushEd3kBootstrapAsk, 0);
+        msg.append(qint64(ask));
+        msg.append(host);
+        msg.append(url);
+        m_ipcServer->broadcast(msg);
+        return true;
+    });
+    connect(m_ed3kBootstrap.get(), &ed3k::Ed3kBootstrap::sourceAdded, this, [](const QString& link) {
+        QStringList links = thePrefs.ed3kNodeLists();
+        if (links.contains(link))
+            return;
+        links.append(link);
+        thePrefs.setEd3kNodeLists(links);
+        thePrefs.save();
+    });
+    Ed3kBridge::setBootstrap(m_ed3kBootstrap.get());
+    // readable names (DNS duty, name lists) and the local website server; attach on statusChanged
+    m_ed3kNames = std::make_unique<ed3k::Ed3kNames>(*m_ed3kSession, thePrefs.configDir());
+    m_ed3kSites = std::make_unique<ed3k::Ed3kSiteServer>(*m_ed3kSession, *m_ed3kNames);
+    m_ed3kSites->setPort(thePrefs.ed3kSitePort());
+    Ed3kNamesBridge::setNames(m_ed3kNames.get(), m_ed3kSites.get());
+    Ed3kNamesBridge::connectPushes(*m_ed3kNames, m_ed3kSites.get(), [this](const IpcMessage& msg) {
+        if (m_ipcServer)
+            m_ipcServer->broadcast(msg);
+    });
+    // credits (credit.md): key file, ledger from the prefs; configured on statusChanged
+    m_ed3kCredit = std::make_unique<ed3k::Ed3kCredit>(*m_ed3kSession, thePrefs.configDir());
+    Ed3kCreditBridge::setCredit(m_ed3kCredit.get());
+    connect(m_ed3kCredit.get(), &ed3k::Ed3kCredit::statusChanged, this, [this] {
+        if (!m_ipcServer)
+            return;
+        IpcMessage msg(IpcMsgType::PushEd3kStatus, 0);
+        msg.append(Ed3kBridge::statusToCbor());
+        m_ipcServer->broadcast(msg);
+    });
     applyEd3kConfig();
 #endif
 
@@ -417,6 +481,17 @@ void DaemonApp::stop()
         m_ed3kShared->stop();
     m_ed3kShared.reset();
     m_ed3kSharedSource.reset();
+    Ed3kFriendsBridge::setFriends(nullptr);
+    m_ed3kFriends.reset();
+    Ed3kBridge::setBootstrap(nullptr);
+    m_ed3kBootstrap.reset();
+    Ed3kNamesBridge::setNames(nullptr, nullptr);
+    m_ed3kSites.reset();
+    Ed3kCreditBridge::setCredit(nullptr);
+    m_ed3kCredit.reset();
+    if (m_ed3kNames)
+        m_ed3kNames->stop();
+    m_ed3kNames.reset();
     // saves the node's state; before Usenet
     Ed3kBridge::setSession(nullptr);
     if (m_ed3kSession)
@@ -713,8 +788,20 @@ void DaemonApp::applyEd3kConfig()
         return;
     const bool enabled = thePrefs.ed3kEnabled();
     const uint16 port = thePrefs.ed3kUdpPort();
-    // a port change takes a restart of the node; the state is saved in between
-    if (m_ed3kSession->isRunning() && (!enabled || (port != 0 && m_ed3kSession->udpPort() != port))) {
+    // was: ToDo: the bindAddress pref (interface selection) for the ed3k socket (done: its
+    // listen address; a selected interface pins the socket in Ed3kSession::start)
+    const std::optional<QHostAddress> bind = BindAddress::listenAddress();
+    QStringList unknownExt;
+    const std::uint64_t extOff = ed3k::extOffBits(thePrefs.ed3kExtOff(), &unknownExt);
+    if (!unknownExt.isEmpty())
+        logWarning(QStringLiteral("ed3k: unknown extension(s) in ed3k.extOff ignored: %1").arg(unknownExt.join(QLatin1Char(' '))));
+    // a port change takes a restart of the node; the state is saved in between. So do the
+    // extensions, LAN discovery and the bind address (read once at start)
+    const auto& running = m_ed3kSession->settings();
+    const bool startChanged = m_ed3kSession->isRunning()
+                              && (running.extOff != extOff || running.lan != thePrefs.ed3kLan()
+                                  || (bind && running.bindAddress != *bind));
+    if (m_ed3kSession->isRunning() && (!enabled || !bind || startChanged || (port != 0 && m_ed3kSession->udpPort() != port))) {
         if (m_usenetJoin)
             m_usenetJoin->stop();   // restarted on statusChanged
         if (m_ed3kShared)
@@ -731,13 +818,30 @@ void DaemonApp::applyEd3kConfig()
         settings.configDir = thePrefs.configDir();
         settings.creditRpc = thePrefs.ed3kCreditRpc();
         settings.chaintubeRpc = thePrefs.ed3kChaintubeRpc();
-        // ToDo: the bindAddress pref (interface selection) for the ed3k socket
-        m_ed3kSession->start(settings);
+        settings.nick = thePrefs.nick();
+        settings.extOff = extOff;
+        settings.lan = thePrefs.ed3kLan();
+        if (bind) {
+            settings.bindAddress = *bind;
+            m_ed3kSession->start(settings);
+        } else {
+            logWarning(QStringLiteral("ed3k: the bind address %1 does not resolve; the node is not started")
+                           .arg(thePrefs.bindAddress()));
+        }
     } else if (enabled) {
         // the RPC endpoints take no restart
         m_ed3kSession->setRpcEndpoints(::ed3k::RpcClass::Credit, thePrefs.ed3kCreditRpc());
         m_ed3kSession->setRpcEndpoints(::ed3k::RpcClass::Chaintube, thePrefs.ed3kChaintubeRpc());
     }
+    // ed3kSitePort: the website server rebinds (it listens only while the node runs)
+    if (m_ed3kSites)
+        m_ed3kSites->setPort(thePrefs.ed3kSitePort());
+    // ed3kCredit*, ed3kCreditRpc: no restart; reconfigured when the ledger moved
+    if (m_ed3kCredit)
+        m_ed3kCredit->setConfig(thePrefs.ed3kCredit(), int(thePrefs.ed3kCreditRpc().size()));
+    // ed3kNodeLists: no restart
+    if (m_ed3kBootstrap)
+        m_ed3kBootstrap->setSources(thePrefs.ed3kNodeLists());
     // ed3kShareFiles: on/off while the node runs (starts with it otherwise)
     if (m_ed3kShared)
         m_ed3kShared->setEnabled(thePrefs.ed3kShareFiles());
@@ -1039,5 +1143,18 @@ void DaemonApp::applyLogFileSettings()
     applyLogFileSink(AppConfig::configDir(), QStringLiteral("emulecored"),
                      thePrefs.logToDiskCore(), thePrefs.maxLogFileSize());
 }
+
+#ifdef EMULE_HAVE_ED3K
+void DaemonApp::applyEd3kChatOptions()
+{
+    if (!m_ed3kFriends)
+        return;
+    ed3k::Ed3kFriends::ChatOptions o;
+    o.friendsOnly = thePrefs.msgOnlyFriends();
+    o.rateLimit = thePrefs.enableSpamFilter();
+    o.filter = thePrefs.messageFilter().split(QLatin1Char('|'), Qt::SkipEmptyParts);
+    m_ed3kFriends->setChatOptions(o);
+}
+#endif
 
 } // namespace eMule

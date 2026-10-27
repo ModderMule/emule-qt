@@ -235,6 +235,7 @@
     <ClCompile Include="utils\CountryFlags.cpp" />
     <ClCompile Include="controls\ClientListModel.cpp" />
     <ClCompile Include="app\CommandLineExec.cpp" />
+    <ClCompile Include="app\Ed3kNameOpener.cpp" />
     <ClCompile Include="app\ExternalLinkHandler.cpp" />
     <ClCompile Include="controls\ContactsGraph.cpp" />
     <ClCompile Include="controls\AccordionSidebar.cpp" />
@@ -273,16 +274,20 @@
     <ClCompile Include="controls\LogTextView.cpp" />
     <ClCompile Include="controls\LogWidget.cpp" />
     <ClCompile Include="app\MainWindow.cpp" />
+    <ClCompile Include="panels\ChatNetwork.cpp" />
     <ClCompile Include="panels\MessagesPanel.cpp" />
     <ClCompile Include="app\MiniMuleWidget.cpp" />
     <ClCompile Include="dialogs\NetworkInfoDialog.cpp" />
     <ClCompile Include="dialogs\OptionsDialog.cpp" />
+    <ClCompile Include="dialogs\Ed3kOptionsPages.cpp" />
     <ClCompile Include="dialogs\AddNzbFilesDialog.cpp" />
     <ClCompile Include="dialogs\NzbFileChooserDialog.cpp" />
     <ClCompile Include="dialogs\AddNzbUrlDialog.cpp" />
     <ClCompile Include="dialogs\MetaAccountDialog.cpp" />
     <ClCompile Include="dialogs\PasteLinksDialog.cpp" />
+    <ClCompile Include="dialogs\MassRenameDialog.cpp" />
     <ClCompile Include="dialogs\PasteTextDialog.cpp" />
+    <ClCompile Include="dialogs\SimpleCleanupDialog.cpp" />
     <ClCompile Include="dialogs\WebLinksDialog.cpp" />
     <ClCompile Include="dialogs\PeerPreviewDialog.cpp" />
     <ClCompile Include="dialogs\ToolbarCustomizeDialog.cpp" />
@@ -312,6 +317,7 @@
     <ClCompile Include="utils\Ed2kLinkImporter.cpp" />
     <ClCompile Include="utils\HttpCacheLinkImporter.cpp" />
     <ClCompile Include="utils\IpcFeedback.cpp" />
+    <ClCompile Include="utils\MassRenameAction.cpp" />
     <ClCompile Include="utils\ListActivation.cpp" />
     <ClCompile Include="utils\MenuUtils.cpp" />
     <ClCompile Include="utils\ViewNavigation.cpp" />
@@ -329,6 +335,7 @@
   <ItemGroup>
     <ClInclude Include="pch.h" />
     <ClInclude Include="controls\AbstractListView.h" />
+    <ClInclude Include="panels\ChatNetwork.h" />
     <ClInclude Include="controls\SortableItems.h" />
     <ClInclude Include="controls\ListSortClick.h" />
     <ClInclude Include="dialogs\FileDetailsMerge.h" />
@@ -373,6 +380,7 @@
     <ClInclude Include="dialogs\MetadataPage.h" />
     <ClInclude Include="utils\Clipboard.h" />
     <ClInclude Include="utils\IpcFeedback.h" />
+    <ClInclude Include="utils\MassRenameAction.h" />
     <ClInclude Include="utils\AsyncMessageBox.h" />
     <ClInclude Include="utils\InputHistory.h" />
     <ClInclude Include="utils\UrlPrefField.h" />
@@ -424,6 +432,7 @@
     <QtMoc Include="dialogs\FirstStartWizard.h" />
     <QtMoc Include="controls\FriendListModel.h" />
     <QtMoc Include="dialogs\ImportDownloadsDialog.h" />
+    <QtMoc Include="app\Ed3kNameOpener.h" />
     <QtMoc Include="app\ExternalLinkHandler.h" />
     <QtMoc Include="app\IpcClient.h" />
     <QtMoc Include="app\CoreStartWatch.h" />
@@ -441,12 +450,15 @@
     <QtMoc Include="app\MiniMuleWidget.h" />
     <QtMoc Include="dialogs\NetworkInfoDialog.h" />
     <QtMoc Include="dialogs\OptionsDialog.h" />
+    <QtMoc Include="dialogs\Ed3kOptionsPages.h" />
     <QtMoc Include="dialogs\AddNzbFilesDialog.h" />
     <QtMoc Include="dialogs\NzbFileChooserDialog.h" />
     <QtMoc Include="dialogs\AddNzbUrlDialog.h" />
     <QtMoc Include="dialogs\MetaAccountDialog.h" />
     <QtMoc Include="dialogs\PasteLinksDialog.h" />
+    <QtMoc Include="dialogs\MassRenameDialog.h" />
     <QtMoc Include="dialogs\PasteTextDialog.h" />
+    <QtMoc Include="dialogs\SimpleCleanupDialog.h" />
     <QtMoc Include="controls\TorrentListModel.h" Condition="'$(EmuleBitTorrent)'=='true'" />
     <QtMoc Include="controls\TorrentProgressDelegate.h" Condition="'$(EmuleBitTorrent)'=='true'" />
     <QtMoc Include="controls\TorrentFilterProxy.h" Condition="'$(EmuleBitTorrent)'=='true'" />

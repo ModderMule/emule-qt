@@ -9,6 +9,7 @@
 #include "app/UiState.h"
 #include "media/PreviewApps.h"
 #include "dialogs/AddSourceDialog.h"
+#include "utils/MassRenameAction.h"
 #include "utils/Clipboard.h"
 #include "utils/Opcodes.h"
 #include "controls/AbstractListView.h"
@@ -542,6 +543,22 @@ void TransferPanel::onDownloadContextMenu(const QPoint& pos)
             importing ? tr("Stop Import parts to file") : tr("Import parts to file..."), this,
             [this, singleHash, importing]() { importParts(singleHash, importing); });
         act->setEnabled(singleSel && dl && !dl->isComplete() && (importing || !dl->hashsetNeeded));
+
+        // MorphXT MP_MASSRENAME: unfinished files change their name, finished ones on disk
+        auto* renameAct = m_downloadMenu->addAction(menuIcon("FileRename.ico"), tr("Mass Rename..."), this,
+            [this, allHashes]() {
+                QList<MassRenameDialog::Item> items;
+                for (const QString& hash : allHashes) {
+                    if (const DownloadRow* d = m_downloadModel->findByHash(hash))
+                        items.append({d->hash, d->fileName, {}});
+                }
+                QPointer<TransferPanel> self(this);
+                MassRenameAction::run(this, m_ipc, std::move(items), [self] {
+                    if (self)
+                        self->requestDownloads();
+                });
+            });
+        renameAct->setEnabled(hasSel);
     }
 
     m_downloadMenu->addSeparator();

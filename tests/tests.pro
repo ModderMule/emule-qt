@@ -131,6 +131,8 @@ SOURCES += \
     tst_MD4.cpp \
     tst_MD5.cpp \
     tst_MediaInfo.cpp \
+    tst_MassRename.cpp \
+    tst_MassRenameDialog.cpp \
     tst_OtherFunctions.cpp \
     tst_Packet.cpp \
     tst_PartFile.cpp \

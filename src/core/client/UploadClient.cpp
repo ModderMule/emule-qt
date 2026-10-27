@@ -580,9 +580,11 @@ UpDownClient::UpSlotActivity UpDownClient::upSlotActivity(uint32 slotAgeMs) cons
         // MFC asks for the next block only once the last one is in
         // (srchybrid/DownloadClient.cpp:1121-1129); our 1 MiB SO_SNDBUF takes a whole
         // block at once, so a peer still receiving it has not had the chance to ask.
+        // Unless nothing of it has been acked for kUnackedStuckMs: the data is not
+        // getting through, and the socket timeout alone would hold the slot longer.
         const EMSocket* sock = getFileUploadSocket();
         if (sock && sock->sendBacklog() != 0)
-            return UpSlotActivity::Busy;
+            return m_slotUnackedStuckMs >= kUnackedStuckMs ? UpSlotActivity::Stalled : UpSlotActivity::Busy;
         return UpSlotActivity::Idle;
     }
     // m_upDatarate is an average over ten seconds: zero means nothing left in all of them.
@@ -604,7 +606,7 @@ QString UpDownClient::upSlotDebugInfo() const
     const EMSocket* sock = getFileUploadSocket();
     const QString unacked = sock ? QString::number(sock->sendBacklog()) : QStringLiteral("n/a");
 
-    return QStringLiteral("slot %1 s, payload sent %2 B, in buffer %3 B, unacked %4 B, "
+    return QStringLiteral("slot %1 s, payload sent %2 B, in buffer %3 B, unacked %4 B (no ack %12 s), "
                           "requests asked %5 accepted %6 served %7 pending %8, "
                           "last request %9, last block queued %10, rate %11 B/s")
         .arg(getUpStartTimeDelay() / 1000)
@@ -616,7 +618,20 @@ QString UpDownClient::upSlotDebugInfo() const
         .arg(m_slotBlocksServed)
         .arg(m_blockRequests.size())
         .arg(age(m_slotLastRequestTick), age(m_slotLastServedTick))
-        .arg(m_upDatarate);
+        .arg(m_upDatarate)
+        .arg(m_slotUnackedStuckMs / 1000);
+}
+
+void UpDownClient::noteSendBacklog(uint64 curTick)
+{
+    const EMSocket* sock = getFileUploadSocket();
+    const uint64 backlog = sock ? sock->sendBacklog() : 0;
+    // Any drop means the peer acked something; new writes alone only raise it.
+    if (backlog == 0 || backlog < m_slotLastBacklog || m_slotAckProgressTick == 0)
+        m_slotAckProgressTick = curTick;
+    m_slotLastBacklog = backlog;
+    m_slotUnackedStuckMs = backlog == 0 ? 0
+        : static_cast<uint32>(std::min<uint64>(curTick - m_slotAckProgressTick, UINT32_MAX));
 }
 
 void UpDownClient::noteUpSlotSocketGone()
@@ -650,6 +665,9 @@ void UpDownClient::flushSendBlocks()
     m_slotBlocksServed = 0;
     m_slotLastRequestTick = 0;
     m_slotLastServedTick = 0;
+    m_slotLastBacklog = 0;
+    m_slotAckProgressTick = 0;
+    m_slotUnackedStuckMs = 0;
     m_upSlotInfoAtSocketGone.reset();
 }
 
@@ -873,8 +891,9 @@ void UpDownClient::ban(const QString& reason, uint64 durationMs)
     if (theApp.clientList)
         theApp.clientList->addTrackClient(this);
 
-    if (!isBanned())
-        logDebug(QStringLiteral("Banning client: %1 reason: %2").arg(userName(), reason));
+    // One Leecher-tab line per ban (Xtreme UploadClient.cpp:1681)
+    if (!isBanned() && thePrefs.logBannedClients())
+        logLeecher(QStringLiteral("Banned: %1; %2").arg(reason, leecherLogInfo()));
     // Every offence restarts the 2 h — MFC UploadClient.cpp:649.
     if (theApp.clientList)
         theApp.clientList->addBannedClient(m_connectAddress, durationMs);

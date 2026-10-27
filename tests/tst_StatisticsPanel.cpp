@@ -249,6 +249,7 @@ class tst_StatisticsPanel : public QObject {
 private slots:
     void usenetIsTheLastBranchAndMfcsOrderStays();
     void bitTorrentBranchCarriesCountersAndTorrents();
+    void ed3kBranchShowsStatusQueueAndCredits();
     void sessionRowsCarryValuesAndShares();
     void cumulativeLeavesOutTheLiveRows();
     void newsServersAreUpdatedInPlace();
@@ -290,16 +291,69 @@ void tst_StatisticsPanel::usenetIsTheLastBranchAndMfcsOrderStays()
     QVERIFY(tree);
     QCOMPARE(tree->topLevelItem(0)->text(0), QStringLiteral("Transfer"));
 
-    // MFC's branches, then Kad, Usenet and BitTorrent last
+    // MFC's branches, then Kad, Usenet, BitTorrent and ed3k last
     const int count = tree->topLevelItemCount();
-    QCOMPARE(tree->topLevelItem(count - 1)->text(0), QStringLiteral("BitTorrent"));
-    QTreeWidgetItem* usenet = tree->topLevelItem(count - 2);
+    QCOMPARE(tree->topLevelItem(count - 1)->text(0), QStringLiteral("ed3k"));
+    QCOMPARE(tree->topLevelItem(count - 2)->text(0), QStringLiteral("BitTorrent"));
+    QTreeWidgetItem* usenet = tree->topLevelItem(count - 3);
     QCOMPARE(usenet->text(0), QStringLiteral("Usenet"));
     QStringList children;
     for (int i = 0; i < usenet->childCount(); ++i)
         children << usenet->child(i)->text(0);
     QCOMPARE(children, (QStringList{QStringLiteral("Session"), QStringLiteral("Cumulative"),
                                     QStringLiteral("News Servers"), QStringLiteral("Queue")}));
+}
+
+void tst_StatisticsPanel::ed3kBranchShowsStatusQueueAndCredits()
+{
+    StatisticsPanel panel;
+    auto* tree = panel.findChild<QTreeWidget*>();
+    QTreeWidgetItem* e3 = topLevelNamed(tree, QStringLiteral("ed3k"));
+    QVERIFY(e3);
+    // a core without ed3k: no branch
+    QVERIFY(e3->isHidden());
+    panel.applyEd3kStatus(QCborMap{{QStringLiteral("available"), false}});
+    QVERIFY(e3->isHidden());
+
+    const QCborMap st{
+        {QStringLiteral("available"), true},
+        {QStringLiteral("running"), true},
+        {QStringLiteral("udpPort"), 4321},
+        {QStringLiteral("nodeId"), QStringLiteral("00112233445566778899aabbccddeeff")},
+        {QStringLiteral("contacts"), 42},
+        {QStringLiteral("class4"), 1},
+        {QStringLiteral("class6"), 0},
+        {QStringLiteral("router"), true},
+        {QStringLiteral("wireRecv"), 4000},
+        {QStringLiteral("rateUp"), 2048},
+        {QStringLiteral("stats"), QCborMap{{QStringLiteral("recvFile"), 1000}, {QStringLiteral("lookups"), 3}}},
+        {QStringLiteral("queue"), QCborMap{{QStringLiteral("slotCount"), 5}, {QStringLiteral("holders"), 2},
+                                           {QStringLiteral("waiting"), 7}}},
+        {QStringLiteral("credit"), QCborMap{{QStringLiteral("enabled"), true},
+                                            {QStringLiteral("configured"), true},
+                                            {QStringLiteral("address"), QStringLiteral("0x7e5f4552091a69125d5dfcb7b8c2659029395bdf")},
+                                            {QStringLiteral("balance"), 1'500'000},
+                                            {QStringLiteral("mature"), true}}},
+    };
+    panel.applyEd3kStatus(st);
+    QVERIFY(!e3->isHidden());
+    QCOMPARE(childNamed(e3, QStringLiteral("Status:"))->text(0), QStringLiteral("Status: Running on UDP port 4321"));
+    QCOMPARE(childNamed(e3, QStringLiteral("Address Class:"))->text(0), QStringLiteral("Address Class: IPv4 Open, IPv6 Unknown"));
+    QTreeWidgetItem* session = childNamed(e3, QStringLiteral("Session"));
+    QVERIFY(session);
+    QTreeWidgetItem* general = childNamed(session, QStringLiteral("General"));
+    QCOMPARE(childNamed(general, QStringLiteral("Kad Contacts:"))->text(0), QStringLiteral("Kad Contacts: 42"));
+    QCOMPARE(childNamed(general, QStringLiteral("Upload Speed:"))->text(0),
+             QStringLiteral("Upload Speed: %1").arg(formatByteRate(2048)));
+    QTreeWidgetItem* traffic = childNamed(session, QStringLiteral("Traffic"));
+    QTreeWidgetItem* received = childNamed(traffic, QStringLiteral("Network Traffic Received:"));
+    QVERIFY(childNamed(received, QStringLiteral("File Data:"))->text(0).contains(QStringLiteral("25")));
+    QTreeWidgetItem* queue = childNamed(session, QStringLiteral("Upload Queue"));
+    QCOMPARE(childNamed(queue, QStringLiteral("Waiting:"))->text(0), QStringLiteral("Waiting: 7"));
+    QTreeWidgetItem* credits = childNamed(e3, QStringLiteral("Credits"));
+    QVERIFY(credits);
+    QVERIFY(childNamed(credits, QStringLiteral("Balance:"))->text(0).contains(QStringLiteral("500000")));
+    QCOMPARE(childNamed(credits, QStringLiteral("Account:"))->text(0), QStringLiteral("Account: Mature"));
 }
 
 void tst_StatisticsPanel::bitTorrentBranchCarriesCountersAndTorrents()
@@ -598,8 +652,8 @@ void tst_StatisticsPanel::kademliaBranchShowsLiveTableOnlyInSession()
 
     QTreeWidgetItem* kad = topLevelNamed(tree, QStringLiteral("Kademlia"));
     QVERIFY(kad);
-    // Not in MFC, so after MFC's branches, then Usenet and BitTorrent
-    QCOMPARE(tree->indexOfTopLevelItem(kad), tree->topLevelItemCount() - 3);
+    // Not in MFC, so after MFC's branches, then Usenet, BitTorrent and ed3k
+    QCOMPARE(tree->indexOfTopLevelItem(kad), tree->topLevelItemCount() - 4);
 
     QTreeWidgetItem* session = childNamed(kad, QStringLiteral("Session"));
     QTreeWidgetItem* cumulative = childNamed(kad, QStringLiteral("Cumulative"));

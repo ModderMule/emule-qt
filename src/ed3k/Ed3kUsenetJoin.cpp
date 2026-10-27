@@ -637,11 +637,19 @@ void Ed3kUsenetJoin::serveReads(const QString& itemId, std::vector<ffi::TorrentR
     }
     // was: ToDo: one block (256 KiB) read on the daemon thread; move to a worker if
     // reads ever come in large batches (done: readInBackground; inline while m_readsNow)
+    readBatch(itemId, std::move(reads), false);
+}
+
+void Ed3kUsenetJoin::readBatch(const QString& itemId, std::vector<ffi::TorrentRead> reads, bool again)
+{
     std::vector<FileRead> files;
     files.reserve(reads.size());
     for (const auto& r : reads)
         files.push_back(FileRead{memberPath(itemId, int(r.member)), r.offset, r.len});
-    readInBackground(itemId, std::move(files), [this, itemId, reads = std::move(reads)](ReadResults bytes) {
+    std::vector<QString> paths;
+    for (const auto& f : files)
+        paths.push_back(f.path);
+    readInBackground(itemId, std::move(files), [this, itemId, again, paths = std::move(paths), reads = std::move(reads)](ReadResults bytes) {
         std::vector<ffi::TorrentRead> more;
         for (std::size_t i = 0; i < reads.size() && i < bytes.size(); ++i) {
             const auto post = findPost(itemId);
@@ -649,7 +657,17 @@ void Ed3kUsenetJoin::serveReads(const QString& itemId, std::vector<ffi::TorrentR
                 return;
             const auto& r = reads[i];
             // sealed or moved since the path was taken: once more under the path now
-            auto data = bytes[i] ? std::move(bytes[i]) : readMember(itemId, int(r.member), r.offset, r.len);
+            // auto data = bytes[i] ? std::move(bytes[i]) : readMember(itemId, int(r.member), r.offset, r.len);
+            // (was inline on the daemon thread; now this read and the rest again on the pool,
+            // in order and before the batch they led to; inline only while m_readsNow)
+            if (!bytes[i] && !again && i < paths.size() && memberPath(itemId, int(r.member)) != paths[i]) {
+                readBatch(itemId, std::vector<ffi::TorrentRead>(reads.begin() + std::ptrdiff_t(i), reads.end()), true);
+                if (!more.empty())
+                    serveReads(itemId, std::move(more));
+                pumpSession();
+                return;
+            }
+            auto data = std::move(bytes[i]);
             if (!data) {
                 (void)post->join.readFailed(r);
                 continue;

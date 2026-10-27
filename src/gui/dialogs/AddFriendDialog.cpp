@@ -61,6 +61,20 @@ AddFriendDialog::AddFriendDialog(QWidget* parent)
 
     mainLayout->addWidget(additionalGroup);
 
+    // ed3k (no MFC original): an ed3k:friend link instead of address and port
+    auto* ed3kGroup = new QGroupBox(tr("ed3k"), this);
+    m_ed3kGroup = ed3kGroup;
+    auto* ed3kLayout = new QFormLayout(ed3kGroup);
+    m_ed3kLinkEdit = new QLineEdit(this);
+    m_ed3kLinkEdit->setPlaceholderText(QStringLiteral("ed3k:friend?key=..."));
+    ed3kLayout->addRow(tr("ed3k link:"), m_ed3kLinkEdit);
+    m_ed3kTextEdit = new QLineEdit(this);
+    m_ed3kTextEdit->setMaxLength(96);   // friend.md §3: at most 96 B, checked in UTF-8 by the node
+    m_ed3kTextEdit->setPlaceholderText(tr("Request text (optional)"));
+    ed3kLayout->addRow(tr("Message:"), m_ed3kTextEdit);
+    mainLayout->addWidget(ed3kGroup);
+    ed3kGroup->setVisible(false);   // setEd3kSubmitter / setEd3kAvailable show it
+
     // Last Seen label
     m_lastSeenLabel = new QLabel(this);
     auto* lastSeenLayout = new QHBoxLayout;
@@ -86,6 +100,22 @@ AddFriendDialog::AddFriendDialog(QWidget* parent)
     // Not resizable, like the MFC original — but sized from the content, so a longer
     // translation or a larger system font grows the dialog instead of being cut off.
     DialogSizing::applyFixedSize(this, QSize(340, 260));
+}
+
+void AddFriendDialog::setEd3kAvailable(bool on)
+{
+    m_ed3kGroup->setVisible(on && m_ed3kSubmitter);
+    DialogSizing::applyFixedSize(this, QSize(340, on ? 330 : 260));
+}
+
+QString AddFriendDialog::ed3kLink() const
+{
+    return m_ed3kLinkEdit->text().trimmed();
+}
+
+QString AddFriendDialog::ed3kText() const
+{
+    return m_ed3kTextEdit->text().trimmed();
 }
 
 bool AddFriendDialog::parseEndpoint(const QString& ipText, const QString& portText,
@@ -174,6 +204,7 @@ void AddFriendDialog::showFriend(const QString& name, const QString& hash, const
     m_lastSeenLabel->setText(lastSeen > 0
         ? QLocale().toString(QDateTime::fromSecsSinceEpoch(lastSeen), QLocale::ShortFormat)
         : tr("Never"));
+    m_ed3kGroup->hide();
     m_addButton->hide();
     m_cancelButton->setText(tr("Close"));
     m_cancelButton->setFocus();
@@ -185,6 +216,11 @@ void AddFriendDialog::showFriend(const QString& name, const QString& hash, const
 
 void AddFriendDialog::onAddClicked()
 {
+    // an ed3k link wins: the address fields are eD2K's
+    if (m_ed3kGroup->isVisible() && !ed3kLink().isEmpty()) {
+        submitEd3k();
+        return;
+    }
     // MFC CAddFriend::OnAddBtn (AddFriend.cpp:112-155)
     QString address;
     int port = 0;
@@ -217,6 +253,45 @@ void AddFriendDialog::onAddClicked()
             tr("Friend not added.\n\nThere is already a friend with same IP address and port available."));
         self->m_ipEdit->setFocus();
     });
+}
+
+// ---------------------------------------------------------------------------
+// Private: ed3k
+// ---------------------------------------------------------------------------
+
+void AddFriendDialog::submitEd3k()
+{
+    if (!ed3kLink().startsWith(QLatin1String("ed3k:friend?"), Qt::CaseInsensitive)) {
+        QMessageBox::warning(this, tr("Add Friend"), tr("This is not an ed3k friend link."));
+        m_ed3kLinkEdit->setFocus();
+        return;
+    }
+    m_addButton->setEnabled(false);
+    m_ed3kSubmitter(ed3kLink(), ed3kText(), [self = QPointer<AddFriendDialog>(this)](int result) {
+        if (!self)
+            return;
+        self->m_addButton->setEnabled(true);
+        if (result == kEd3kAdded) {
+            self->accept();
+            return;
+        }
+        QMessageBox::warning(self, tr("Add Friend"), tr("Friend not added.\n\n%1").arg(self->ed3kError(result)));
+        self->m_ed3kLinkEdit->setFocus();
+    });
+}
+
+// ED3K_ERR_* of ed3k.h (the GUI does not link packmule)
+QString AddFriendDialog::ed3kError(int code) const
+{
+    switch (code) {
+    case kEd3kNoNode: return tr("The ed3k node is not running.");
+    case -10:         return tr("The ed3k link is invalid.");
+    case -11:         return tr("The message is too long (at most 96 bytes).");
+    case -15:         return tr("This is your own ed3k link.");
+    case -16:         return tr("Too many ed3k friends (at most 64).");
+    case -13:         return tr("ed3k friends are switched off.");
+    default:          return tr("ed3k error %1.").arg(code);
+    }
 }
 
 } // namespace eMule

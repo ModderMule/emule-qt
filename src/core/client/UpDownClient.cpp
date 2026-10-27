@@ -956,6 +956,14 @@ QString UpDownClient::dbgGetClientInfo(bool formatIP) const
         .arg(dbgGetKadState());
 }
 
+QString UpDownClient::leecherLogInfo() const
+{
+    const Address& ip = m_connectAddress.isNull() ? m_userAddress : m_connectAddress;
+    return QStringLiteral("'%1' %2, %3, hash %4")
+        .arg(userName(), dbgGetFullClientSoftVer(), ipstr(ip),
+             hasValidHash() ? md4str(m_userHash.data()) : QStringLiteral("-"));
+}
+
 // ===========================================================================
 // Phase 2 — Hello Handshake & Mule Info Exchange
 // Ported from MFC BaseClient.cpp lines 356-1090
@@ -1237,17 +1245,11 @@ bool UpDownClient::processHelloTypePacket(SafeMemFile& data)
             // First hello on this object: check what this IP:port presented last time.
             if (theApp.clientList
                 && !theApp.clientList->comparePriorUserhash(m_userAddress, m_userPort, found)) {
-                if (thePrefs.logBannedClients())
-                    logWarning(QStringLiteral("Clients: %1 (%2), Ban reason: Userhash changed (Found in TrackedClientsList)")
-                                   .arg(userName(), ipstr(m_userAddress)));
-                ban(QStringLiteral("Userhash changed"));
+                ban(QStringLiteral("Userhash changed (Found in TrackedClientsList)"));
             }
         } else if (m_credits != found) {
             // Allowed, but the peer sits out the ban before the new hash counts.
             setCredits(found);
-            if (thePrefs.logBannedClients())
-                logWarning(QStringLiteral("Clients: %1 (%2), Ban reason: Userhash changed")
-                               .arg(userName(), ipstr(m_userAddress)));
             ban(QStringLiteral("Userhash changed"));
         }
     }
@@ -3260,6 +3262,9 @@ bool UpDownClient::uploadStalled() const
     // hides blocks MFC still sees queued, so a slow but busy slot read as stalled.
     if (m_uploadState != UploadState::Uploading || payloadInBuffer() != 0)
         return false;
+    // unacked but not moving: the peer is not getting it (emule-qt#58)
+    if (m_slotUnackedStuckMs >= kUnackedStuckMs)
+        return true;
     const EMSocket* sock = getFileUploadSocket();
     return !sock || sock->sendBacklogBeyondMfc() == 0;
 }
@@ -5891,10 +5896,9 @@ void UpDownClient::banLeecher(const QString& reason, LeecherCategory category)
     if (m_leecherCategory != category) {
         m_leecherCategory = category;
         m_leecherReason = reason;
-        if (thePrefs.logBannedClients())
-            logWarning(QStringLiteral("[DLP] Clients: %1 (%2), [%3] %4")
-                           .arg(statusName(), ipstr(m_userAddress), reason,
-                                reduceScore ? QStringLiteral("reduce score") : QStringLiteral("ban")));
+        // A ban logs its own line in ban()
+        if (reduceScore && thePrefs.logBannedClients())
+            logLeecher(QStringLiteral("Reduced score: [DLP] %1; %2").arg(reason, leecherLogInfo()));
     }
     if (!reduceScore)
         ban(QStringLiteral("[DLP] ") + reason);
@@ -5903,8 +5907,7 @@ void UpDownClient::banLeecher(const QString& reason, LeecherCategory category)
 void UpDownClient::clearLeecher()
 {
     if (thePrefs.logBannedClients())
-        logDebug(QStringLiteral("[DLP] Clients: %1 (%2), no longer flagged [%3]")
-                     .arg(statusName(), ipstr(m_userAddress), m_leecherReason));
+        logLeecher(QStringLiteral("No longer flagged: [DLP] %1; %2").arg(m_leecherReason, leecherLogInfo()));
     m_leecherCategory = LeecherCategory::None;
     m_leecherReason.clear();
 }

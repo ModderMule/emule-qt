@@ -22,7 +22,9 @@
 #include "server/ServerConnect.h"
 #include "server/ServerList.h"
 #include "transfer/DownloadQueue.h"
+#include "transfer/UploadQueue.h"
 #include "utils/Log.h"
+#include "utils/MassRename.h"
 #include "utils/OtherFunctions.h"
 
 #include <QCoreApplication>
@@ -154,8 +156,76 @@ Status renameDownload(const QString& hashHex, const QString& newNameIn)
         return Status::fail(409, QStringLiteral("Download already completed"));
 
     // Also locks the name: a name the user picked is never renamed automatically
+    const QString oldName = file->fileName();
     file->renameTo(newName);
+    if (oldName != file->fileName())
+        logInfo(QStringLiteral("Renamed download \"%1\" to \"%2\"").arg(oldName, file->fileName()));
     return st;
+}
+
+Status renameSharedFile(const QString& hashHex, const QString& newNameIn)
+{
+    if (!theApp.sharedFileList)
+        return unavailable(QStringLiteral("Shared files"));
+    uint8 hash[16]{};
+    if (!hexToHash(hashHex, hash))
+        return Status::fail(400, QStringLiteral("Invalid hash"));
+    KnownFile* file = theApp.sharedFileList->getFileByID(hash);
+    if (!file)
+        return Status::fail(404, QStringLiteral("Shared file not found"));
+    if (file->isPartFile())
+        return renameDownload(hashHex, newNameIn);
+
+    // The name stays in its directory and must survive the ed2k link format
+    const QString newName = newNameIn.trimmed();
+    if (massrename::isInvalidFileName(newName))
+        return Status::fail(400, QStringLiteral("Invalid file name"));
+    const QString oldName = file->fileName();
+    if (newName == oldName)
+        return {};
+    const QString oldPath = file->filePath();
+    const QString dir = QFileInfo(oldPath).absolutePath();
+    const QString newPath = QDir(dir).filePath(newName);
+    const bool caseOnly = newName.compare(oldName, Qt::CaseInsensitive) == 0;
+    if (!caseOnly && QFileInfo::exists(newPath))
+        return Status::fail(409, QStringLiteral("A file named \"%1\" already exists").arg(newName));
+
+    if (theApp.uploadQueue)
+        theApp.uploadQueue->releaseUploadFile(oldPath);
+    bool renamed = false;
+    if (caseOnly) {
+        // Case-insensitive file systems see the target as the source: go via a temp name
+        const QString tmp = QDir(dir).filePath(newName + QStringLiteral(".emrename"));
+        renamed = QFile::rename(oldPath, tmp) && QFile::rename(tmp, newPath);
+        if (!renamed && QFileInfo::exists(tmp))
+            QFile::rename(tmp, oldPath);
+    } else {
+        renamed = QFile::rename(oldPath, newPath);
+    }
+    if (!renamed) {
+        logWarning(QStringLiteral("Failed to rename \"%1\" to \"%2\"").arg(oldPath, newPath));
+        return Status::fail(500, QStringLiteral("Rename failed"));
+    }
+
+    // The Kad keywords are the words of the name (MFC SharedFilesCtrl rename)
+    theApp.sharedFileList->removeKeywords(file);
+    file->setFileName(newName);
+    file->setFilePath(newPath);
+    theApp.sharedFileList->addKeywords(file);
+    file->noteChanged();
+    logInfo(QStringLiteral("Renamed \"%1\" to \"%2\"").arg(oldName, newName));
+    return {};
+}
+
+Status renameFile(const QString& hashHex, const QString& newName)
+{
+    // Unfinished downloads keep their .part file; complete ones are renamed on disk
+    Status st;
+    if (theApp.downloadQueue) {
+        if (PartFile* file = findDownload(hashHex, st); file && file->isPartFile())
+            return renameDownload(hashHex, newName);
+    }
+    return renameSharedFile(hashHex, newName);
 }
 
 Status setDownloadCategory(const QString& hashHex, uint32 category)

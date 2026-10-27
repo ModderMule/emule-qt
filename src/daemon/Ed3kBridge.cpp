@@ -4,8 +4,12 @@
 #include "Ed3kBridge.h"
 
 #include "BandwidthCoordinator.h"
+#include "Ed3kCreditBridge.h"
+#include "Ed3kFriendsBridge.h"
+#include "Ed3kNamesBridge.h"
 
 #ifdef EMULE_HAVE_ED3K
+#include "Ed3kBootstrap.h"
 #include "Ed3kSession.h"
 #endif
 
@@ -17,6 +21,35 @@ using Ipc::IpcMsgType;
 namespace {
 
 ed3k::Ed3kSession* s_session = nullptr;
+ed3k::Ed3kBootstrap* s_bootstrap = nullptr;
+
+/// OpenEd3kNodesLink, AnswerEd3kBootstrapAsk (1030-1031). False: not one of them.
+bool handleBootstrap(const IpcMessage& msg, const std::function<void(const IpcMessage&)>& reply)
+{
+    const IpcMsgType t = msg.type();
+    if (t != IpcMsgType::OpenEd3kNodesLink && t != IpcMsgType::AnswerEd3kBootstrapAsk)
+        return false;
+#ifdef EMULE_HAVE_ED3K
+    if (!s_bootstrap) {
+        reply(IpcMessage::makeError(msg.seqId(), 503, QStringLiteral("ed3k is not running")));
+        return true;
+    }
+    if (t == IpcMsgType::OpenEd3kNodesLink) {
+        const auto ask = s_bootstrap->openLink(msg.fieldString(0));
+        if (ask)
+            reply(IpcMessage::makeResult(msg.seqId(), true, QCborMap{{QStringLiteral("ask"), qint64(*ask)}}));
+        else
+            reply(IpcMessage::makeError(msg.seqId(), 400, QStringLiteral("Not a usable ed3k:nodes link")));
+    } else {
+        const bool ok = s_bootstrap->answer(std::uint64_t(msg.fieldInt(0)), msg.fieldBool(1));
+        reply(ok ? IpcMessage::makeResult(msg.seqId(), true)
+                 : IpcMessage::makeError(msg.seqId(), 404, QStringLiteral("No such ask")));
+    }
+#else
+    reply(IpcMessage::makeError(msg.seqId(), 503, QStringLiteral("ed3k is not built in")));
+#endif
+    return true;
+}
 
 #ifdef EMULE_HAVE_ED3K
 QCborMap statsToCbor(const ::ed3k::Stats& s)
@@ -50,6 +83,11 @@ ed3k::Ed3kSession* session()
     return s_session;
 }
 
+void setBootstrap(ed3k::Ed3kBootstrap* bootstrap)
+{
+    s_bootstrap = bootstrap;
+}
+
 bool available()
 {
 #ifdef EMULE_HAVE_ED3K
@@ -69,6 +107,18 @@ bool handleRequest(const IpcMessage& msg, const std::function<void(const IpcMess
 {
     if (!isEd3kRequest(msg.type()))
         return false;
+    // friends and chat: 1001-1009
+    if (Ed3kFriendsBridge::handleRequest(msg, reply))
+        return true;
+    // readable names and websites: 1010-1019
+    if (Ed3kNamesBridge::handleRequest(msg, reply))
+        return true;
+    // credits: 1020-1029
+    if (Ed3kCreditBridge::handleRequest(msg, reply))
+        return true;
+    // node list sources: 1030-1031
+    if (handleBootstrap(msg, reply))
+        return true;
     if (msg.type() == IpcMsgType::GetEd3kStatus)
         reply(IpcMessage::makeResult(msg.seqId(), true, statusToCbor()));
     else
@@ -101,6 +151,13 @@ QCborMap statusToCbor()
     out.insert(QStringLiteral("limitDownKb"), qint64(limits.down / 1024));
     if (st.running)
         out.insert(QStringLiteral("stats"), statsToCbor(st.stats));
+    // the engine's upload queue policy (not `slots`: a Qt macro)
+    if (const auto q = s_session->uploadQueueStats())
+        out.insert(QStringLiteral("queue"), QCborMap{{QStringLiteral("slotCount"), qint64(q->slotCount)},
+                                                     {QStringLiteral("holders"), qint64(q->holders)},
+                                                     {QStringLiteral("waiting"), qint64(q->waiting)}});
+    if (const QCborMap credit = Ed3kCreditBridge::statusToCbor(); !credit.isEmpty())
+        out.insert(QStringLiteral("credit"), credit);
 #endif
     return out;
 }

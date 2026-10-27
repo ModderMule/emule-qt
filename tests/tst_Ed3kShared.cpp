@@ -110,6 +110,8 @@ private slots:
     void theCacheSparesAHashAfterARestart();
     void aRemovedFileIsNotShared();
     void theUploadQueueServesInTurn();
+    void keywordsArePublishedUnlessHeldBack();
+    void anUnreadableFileIsHashedAgainLater();
     void cleanup();
 };
 
@@ -277,22 +279,23 @@ void tst_Ed3kShared::aRemovedFileIsNotShared()
     shared.stop();
 }
 
-// The engine's queue policy (ed3k_queue_auto, on from the session's start) with one slot:
-// one downloader is served, the other queued (rank ≥ 1), then served; the host answers
-// no FileRequested itself
+// The engine's queue policy (ed3k_queue_auto, on from the session's start) with 2 slots
+// (its minimum, §12.5): two downloaders are served, the third queued (rank ≥ 1), then
+// served; the host answers no FileRequested itself
 void tst_Ed3kShared::theUploadQueueServesInTurn()
 {
     const QByteArray data = payload(int(6 * kBlock + 77), 4);
-    QTemporaryDir da, db, dc;
-    QVERIFY(da.isValid() && db.isValid() && dc.isValid());
+    QTemporaryDir da, db, dc, dd;
+    QVERIFY(da.isValid() && db.isValid() && dc.isValid() && dd.isValid());
     const QString path = QDir(da.path()).filePath(QStringLiteral("q.bin"));
     QVERIFY(writeFile(path, data));
 
-    Ed3kSession a, b, c;
+    Ed3kSession a, b, c, d;
     QVERIFY(a.start(loopback(da.path())));
     QVERIFY(b.start(loopback(db.path())));
     QVERIFY(c.start(loopback(dc.path())));
-    a.setUploadSlots(1);
+    QVERIFY(d.start(loopback(dd.path())));
+    a.setUploadSlots(2);
     FakeSource src;
     const QByteArray md4(16, char(0x71));
     src.entries.push_back(SharedEntry{md4, path, QStringLiteral("q.bin"), std::uint64_t(data.size())});
@@ -309,30 +312,114 @@ void tst_Ed3kShared::theUploadQueueServesInTurn()
             ++hostAnswers;
     });
     std::vector<std::uint32_t> ranks;
-    for (Ed3kSession* s : {&b, &c})
+    for (Ed3kSession* s : {&b, &c, &d})
         connect(s, &Ed3kSession::eventPolled, this, [&](const ::ed3k::Event& ev, bool*) {
             if (const auto* q = std::get_if<::ed3k::event::QueueRank>(&ev))
                 ranks.push_back(q->rank);
         });
 
-    Fetcher fb(b, db.path()), fc(c, dc.path());
-    for (Fetcher* f : {&fb, &fc}) {
+    Fetcher fb(b, db.path()), fc(c, dc.path()), fd(d, dd.path());
+    for (Fetcher* f : {&fb, &fc, &fd}) {
         f->setSearchEnabled(false);
         f->start();
     }
     QVERIFY(fb.fetch(root, std::uint64_t(data.size()), sourceOf(a)));
     QVERIFY(fc.fetch(root, std::uint64_t(data.size()), sourceOf(a)));
-    QTRY_VERIFY_WITH_TIMEOUT(fb.got == data && fc.got == data, 60000);
+    QVERIFY(fd.fetch(root, std::uint64_t(data.size()), sourceOf(a)));
+    QTRY_VERIFY_WITH_TIMEOUT(fb.got == data && fc.got == data && fd.got == data, 60000);
     QCOMPARE(hostAnswers, 0);
-    QVERIFY(std::ranges::count(ranks, 0u) >= 2);                                   // both served
+    QVERIFY(std::ranges::count(ranks, 0u) >= 3);                                   // all served
     QVERIFY(std::ranges::any_of(ranks, [](std::uint32_t r) { return r >= 1; }));   // one waited
     const auto stats = a.uploadQueueStats();
     QVERIFY(stats);
-    QCOMPARE(stats->slotCount, 1u);
+    QCOMPARE(stats->slotCount, 2u);
 
     fb.stop();
     fc.stop();
+    fd.stop();
     shared.stop();
+}
+
+// a shared file is found by ed3k search: its keywords go out with the source (Publish::Both)
+void tst_Ed3kShared::keywordsArePublishedUnlessHeldBack()
+{
+    const QByteArray data = payload(int(kBlock + 77), 6);
+    QTemporaryDir da, db;
+    QVERIFY(da.isValid() && db.isValid());
+    const QString path = QDir(da.path()).filePath(QStringLiteral("holiday photos.bin"));
+    QVERIFY(writeFile(path, data));
+    Ed3kSession a, b;
+    QVERIFY(a.start(loopback(da.path())));
+    QVERIFY(b.start(loopback(db.path())));
+    // A knows B: its keyword stores have somewhere to go
+    const ::ed3k::Node bNode{*b.nodeId(), ::ed3k::Address::v4(127, 0, 0, 1, b.udpPort())};
+    a.post([&](::ed3k::Engine& e, ::ed3k::Now now) { (void)e.bootstrap(now, std::span<const ::ed3k::Node>{&bNode, 1}); });
+    QTRY_VERIFY_WITH_TIMEOUT(a.contactCount() > 0, 20000);
+    std::uint64_t keywordFiles = 0;
+    connect(&a, &Ed3kSession::eventPolled, this, [&](const ::ed3k::Event& ev, bool*) {
+        if (const auto* k = std::get_if<::ed3k::event::KeywordsPublished>(&ev))
+            keywordFiles += k->files;
+    }, Qt::DirectConnection);
+
+    FakeSource src;
+    const QByteArray md4(16, char(0x61));
+    src.entries.push_back(SharedEntry{md4, path, QStringLiteral("holiday photos.bin"), std::uint64_t(data.size())});
+    {
+        Ed3kShared shared(a, src, da.path());
+        QSignalSpy spy(&shared, &Ed3kShared::fileShared);
+        shared.start();
+        QTRY_COMPARE_WITH_TIMEOUT(spy.count(), 1, 20000);
+        QVERIFY(shared.keywordsPublished(md4));
+        QTRY_VERIFY_WITH_TIMEOUT(keywordFiles > 0, 30000);
+        shared.stop();
+    }
+    {
+        Ed3kShared shared(a, src, da.path());
+        shared.setHoldBack(true);
+        QSignalSpy spy(&shared, &Ed3kShared::fileShared);
+        shared.start();
+        QTRY_COMPARE_WITH_TIMEOUT(spy.count(), 1, 20000);
+        QVERIFY(shared.rootOf(md4));
+        QVERIFY(!shared.keywordsPublished(md4));   // the source only
+        QVERIFY(!shared.aliasPublished(md4));
+        shared.stop();
+    }
+    a.disconnect(this);
+}
+
+// a file that cannot be read when it is hashed is tried again later (kRehashMs)
+void tst_Ed3kShared::anUnreadableFileIsHashedAgainLater()
+{
+#ifndef Q_OS_UNIX
+    QSKIP("needs a file without read permission");
+#else
+    const QByteArray data = payload(int(kBlock + 4321), 7);
+    QTemporaryDir da;
+    QVERIFY(da.isValid());
+    const QString path = QDir(da.path()).filePath(QStringLiteral("locked.bin"));
+    QVERIFY(writeFile(path, data));
+    QVERIFY(QFile::setPermissions(path, QFileDevice::Permissions{}));
+    QFile probe(path);
+    if (probe.open(QIODevice::ReadOnly))
+        QSKIP("runs with rights that read any file");
+    Ed3kSession a;
+    QVERIFY(a.start(loopback(da.path())));
+    FakeSource src;
+    const QByteArray md4(16, char(0x62));
+    src.entries.push_back(SharedEntry{md4, path, QStringLiteral("locked.bin"), std::uint64_t(data.size())});
+    Ed3kShared shared(a, src, da.path());
+    shared.setRehashDelay(300);
+    QSignalSpy spy(&shared, &Ed3kShared::fileShared);
+    shared.start();
+    QTRY_COMPARE_WITH_TIMEOUT(shared.hashCount(), 1, 20000);
+    QTest::qWait(100);
+    QCOMPARE(spy.count(), 0);
+    QVERIFY(QFile::setPermissions(path, QFileDevice::ReadOwner | QFileDevice::WriteOwner));
+    QTRY_COMPARE_WITH_TIMEOUT(spy.count(), 1, 20000);
+    QCOMPARE(shared.hashCount(), 2);
+    QCOMPARE(*shared.rootOf(md4), rootOf(data));
+    shared.stop();
+#endif
 }
 
 QTEST_GUILESS_MAIN(tst_Ed3kShared)

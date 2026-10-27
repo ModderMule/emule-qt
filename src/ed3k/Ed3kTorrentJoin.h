@@ -77,6 +77,8 @@ public:
     [[nodiscard]] QByteArray completedManifest(const QString& id) const;
     /// ed3k blocks written into @p member (tests: libtorrent's pieces are skipped).
     [[nodiscard]] int receivedBlocks(const QString& id, int member) const;
+    /// Whether @p member's block values are there (own hash or a download's).
+    [[nodiscard]] bool hasBlockValues(const QString& id, int member) const;
 
 public slots:
     void onTorrentAdded(const QString& id);

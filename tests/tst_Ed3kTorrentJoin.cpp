@@ -4,7 +4,8 @@
 /// (members verified and shared, a manifest); with that set, a torrent with no BitTorrent
 /// peer is filled from ed3k alone (blocks into the files, pieces to libtorrent); the join
 /// is saved and loaded again; what completed is shared again after a restart, and its
-/// records published again; ed3k is not asked for what libtorrent has already.
+/// records published again; ed3k is not asked for what libtorrent has already; a member
+/// file gone before the worker reads it fails its pieces.
 
 #include "BtSession.h"
 #include "Ed3kSession.h"
@@ -14,9 +15,11 @@
 
 #include <QDir>
 #include <QFile>
+#include <QSemaphore>
 #include <QSignalSpy>
 #include <QTemporaryDir>
 #include <QTest>
+#include <QThreadPool>
 #include <QUrl>
 
 #include <cstring>
@@ -127,6 +130,7 @@ private slots:
     void ed3kAloneFillsATorrent();
     void linkJoinFetchesItsSet();
     void ed3kSkipsPiecesLibtorrentHas();
+    void aGoneMemberFailsItsRead();
 
 private:
     QTemporaryDir m_dir;
@@ -403,6 +407,68 @@ void tst_Ed3kTorrentJoin::ed3kSkipsPiecesLibtorrentHas()
     node.stop();
     a.stop();
     c.stop();
+}
+
+// Block 0 of member A spans pieces 0-3: a recheck of them asks the host to read the block.
+// The read pool is held busy, the file goes away, then the worker reads: the read fails,
+// the pieces waiting on the block fail, nothing crashes.
+void tst_Ed3kTorrentJoin::aGoneMemberFailsItsRead()
+{
+    if (m_manifest.isEmpty())
+        QSKIP("needs the set of completeTorrentGivesItsSet");
+    constexpr int kHad = 4 * kPieceLength;
+    // the block values of A only: every block request is refused
+    QTemporaryDir da;
+    QVERIFY(da.isValid());
+    Ed3kSession a;
+    QVERIFY(a.start(loopback(da.path())));
+    shareFrom(a, QByteArray(), hashOf(m_a), this);
+
+    const QString dir = m_dir.filePath(QStringLiteral("leech5"));
+    const BtSettings settings = btSettings(dir);
+    const QString memberFile = settings.downloadDir + QStringLiteral("/set/a.bin");
+    QVERIFY(QDir().mkpath(settings.downloadDir + QStringLiteral("/set")));
+    {
+        QFile f(memberFile);
+        QVERIFY(f.open(QIODevice::WriteOnly));
+        QCOMPARE(f.write(m_a.left(kHad)), qint64(kHad));
+    }
+    Ed3kSession node;
+    QVERIFY(node.start(loopback(dir)));
+    BtSession leecher;
+    leecher.start(settings);
+    Ed3kTorrentJoin join(node, leecher, dir);
+    join.setSearchEnabled(false);
+    join.start();
+    QSignalSpy checked(&leecher, &BtSession::torrentChecked);
+
+    const BtAddResult added = leecher.addTorrentFile(m_torrent);
+    QCOMPARE(added.outcome, BtAddOutcome::Added);
+    QTRY_COMPARE_WITH_TIMEOUT(leecher.havePieces(added.id).count(true), qsizetype(4), kTimeoutMs);
+    QVERIFY(join.setManifest(added.id, {reinterpret_cast<const std::byte*>(m_manifest.constData()), std::size_t(m_manifest.size())}));
+    join.addSource(added.id, 0, ::ed3k::Source{*a.nodeId(), false, ::ed3k::Address::v4(127, 0, 0, 1, a.udpPort()), std::nullopt, {}});
+    QTRY_VERIFY_WITH_TIMEOUT(join.hasBlockValues(added.id, 0), kTimeoutMs);
+
+    // both read threads busy until the file is gone
+    QSemaphore gate;
+    QThreadPool& pool = node.readPool();
+    for (int i = 0; i < pool.maxThreadCount(); ++i)
+        pool.start([&gate] { gate.acquire(); });
+    const qsizetype checks = checked.count();
+    QVERIFY(leecher.recheck(added.id));
+    QTRY_VERIFY_WITH_TIMEOUT(join.readsInFlight() > 0, kTimeoutMs);
+    QVERIFY(QFile::remove(memberFile));
+    gate.release(pool.maxThreadCount());
+
+    QTRY_COMPARE_WITH_TIMEOUT(join.readsInFlight(), std::size_t(0), kTimeoutMs);
+    QTRY_VERIFY_WITH_TIMEOUT(checked.count() > checks, kTimeoutMs);
+    QCOMPARE(leecher.havePieces(added.id).count(true), qsizetype(0));
+    QVERIFY(join.hasJoin(added.id));
+
+    join.stop();
+    leecher.stop();
+    node.stop();
+    a.stop();
 }
 
 QTEST_GUILESS_MAIN(tst_Ed3kTorrentJoin)

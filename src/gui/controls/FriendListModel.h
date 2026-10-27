@@ -13,8 +13,18 @@
 
 namespace eMule {
 
+/// Which network a friend is on: both share the Messages panel.
+enum class FriendNetwork : quint8 { Ed2k, Ed3k };
+
 struct FriendRow {
+    /// The chat key: the MD4 hex for eD2K, "ed3k:" + node hex for ed3k (FriendListModel::ed3kKey).
     QString hash;
+    FriendNetwork network = FriendNetwork::Ed2k;
+    /// MD4 hex (eD2K) or the 32-byte node key hex (ed3k)
+    QString id;
+    QString node;          ///< ed3k: node ID hex (chats go by node)
+    bool    mutual = false;   ///< ed3k: it added us too
+    bool    asking = false;   ///< ed3k: our request is pending
     QString name;
     int64_t ip = 0;      ///< eD2K byte order; 0 for an IPv6 friend — prefer addr.
     QString addr;        ///< Literal address, both families. Empty when unknown.
@@ -41,8 +51,15 @@ public:
     [[nodiscard]] int rowCount(const QModelIndex& parent = {}) const override;
     [[nodiscard]] QVariant data(const QModelIndex& index, int role) const override;
 
-    /// Replace all rows from a CBOR array received via IPC.
+    /// Replace the eD2K rows from a CBOR array received via IPC (GetFriends).
     void refreshFromCborArray(const QCborArray& arr);
+    /// Replace the ed3k rows (GetEd3kFriends "friends"); they follow the eD2K ones.
+    void refreshEd3k(const QCborArray& arr);
+
+    /// The chat key of an ed3k node (hex), "ed3k:<node>".
+    [[nodiscard]] static QString ed3kKey(const QString& nodeHex);
+    /// The node hex of an ed3k chat key; empty for an eD2K key.
+    [[nodiscard]] static QString ed3kNodeOf(const QString& key);
 
     /// Access a row by index. Returns nullptr if out of range.
     [[nodiscard]] const FriendRow* rowAt(int row) const;
@@ -52,6 +69,8 @@ public:
 
 private:
     [[nodiscard]] static QIcon baseIcon(const FriendRow& row);
+    /// Puts @p rows of @p network in place of the old ones, eD2K first.
+    void replaceRows(FriendNetwork network, std::vector<FriendRow> rows);
 
     std::vector<FriendRow> m_rows;
 };

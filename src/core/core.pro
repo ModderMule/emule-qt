@@ -203,6 +203,7 @@ SOURCES += \
     utils/DiskLoadLimiter.cpp \
     utils/FileDate.cpp \
     utils/Log.cpp \
+    utils/MassRename.cpp \
     utils/OtherFunctions.cpp \
     utils/PathUtils.cpp \
     utils/PerfLog.cpp \
@@ -378,6 +379,7 @@ HEADERS += \
     utils/Exceptions.h \
     utils/Log.h \
     utils/MapKey.h \
+    utils/MassRename.h \
     utils/OtherFunctions.h \
     utils/PathUtils.h \
     utils/PerfLog.h \

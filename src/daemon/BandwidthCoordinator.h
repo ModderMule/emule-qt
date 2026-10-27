@@ -26,6 +26,8 @@ class UsenetSession;
 #include <QElapsedTimer>
 #include <QTimer>
 
+#include <cstdint>
+
 namespace eMule {
 
 namespace bt {
@@ -80,6 +82,10 @@ public:
     /// The running one, or null; for the stats pushes.
     [[nodiscard]] static const BandwidthCoordinator* instance();
 
+    /// ed3k upload slots for an upload share of upKb KB/s: 25 each, at least 2 (Protocol.md
+    /// §12.5: 9 to 55 KiB/s per slot); 0 = no limit, the node chooses.
+    [[nodiscard]] static std::uint32_t ed3kSlotsFor(qint64 upKb);
+
     static constexpr int kTickMs = 500;
 
 private:
@@ -87,8 +93,11 @@ private:
     /// ed3k's wire bytes since the last tick: smoothed rates (B/s) into m_ed3k*Rate, sent
     /// bytes to the throttler. False: not running.
     bool sampleEd3k();
-    /// ed3k's upload slot count from its rate, and its held slots into eD2K's slot gate.
-    void applyEd3kSlots(bool ed3kRunning);
+    // /// ed3k's upload slot count from its rate, and its held slots into eD2K's slot gate.
+    // void applyEd3kSlots(bool ed3kRunning);
+    /// ed3k's upload slot count from the upload share it may use (upKb, 0 = no limit), and
+    /// its held slots into eD2K's slot gate (LAN peers and short slots apart).
+    void applyEd3kSlots(bool ed3kRunning, qint64 upKb);
 
     usenet::UsenetSession* m_usenet = nullptr;
     bt::BtSession* m_bt = nullptr;

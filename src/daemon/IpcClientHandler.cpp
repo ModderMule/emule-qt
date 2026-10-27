@@ -5,6 +5,7 @@
 #include "BandwidthCoordinator.h"
 #include "BtBridge.h"
 #include "Ed3kBridge.h"
+#include "Ed3kCreditBridge.h"
 #include "UsenetBridge.h"
 #include "CoreNotifierBridge.h"
 #include "SharedFileRows.h"
@@ -325,7 +326,11 @@ void IpcClientHandler::onMessageReceived(const IpcMessage& msg)
     // BitTorrent (800-899): BtBridge answers every request of the block
     if (BtBridge::handleRequest(msg, [this](const IpcMessage& reply) { sendMessage(reply); }))
         return;
-    // ed3k (1000-1049): Ed3kBridge
+    // ed3k (1000-1049): Ed3kBridge. The credit key (a secret) only to a GUI on this machine
+    if (Ed3kCreditBridge::carriesKey(msg.type()) && !m_isLocal) {
+        sendMessage(IpcMessage::makeError(msg.seqId(), 403, QStringLiteral("The credit key is not sent to a remote client")));
+        return;
+    }
     if (Ed3kBridge::handleRequest(msg, [this](const IpcMessage& reply) { sendMessage(reply); }))
         return;
 
@@ -345,6 +350,7 @@ void IpcClientHandler::onMessageReceived(const IpcMessage& msg)
     case IpcMsgType::SetDownloadPriority:  handleSetDownloadPriority(msg); break;
     case IpcMsgType::ClearCompleted:       handleClearCompleted(msg); break;
     case IpcMsgType::RenameDownload:       handleRenameDownload(msg); break;
+    case IpcMsgType::RenameFiles:          handleRenameFiles(msg); break;
     case IpcMsgType::GetDownloadSources:   handleGetDownloadSources(msg); break;
     case IpcMsgType::GetServers:           handleGetServers(msg); break;
     case IpcMsgType::RemoveServer:         handleRemoveServer(msg); break;
@@ -693,6 +699,19 @@ void IpcClientHandler::handleClearCompleted(const IpcMessage& msg)
 void IpcClientHandler::handleRenameDownload(const IpcMessage& msg)
 {
     sendStatus(msg, ops::renameDownload(msg.fieldString(0), msg.fieldString(1)));
+}
+
+// Mass Rename: one result row per file, so the GUI can list what failed
+void IpcClientHandler::handleRenameFiles(const IpcMessage& msg)
+{
+    QCborArray results;
+    for (const QCborValue& v : msg.fieldArray(0)) {
+        const QCborArray pair = v.toArray();
+        const QString hash = pair.at(0).toString();
+        const ops::Status st = ops::renameFile(hash, pair.at(1).toString());
+        results.append(QCborArray{hash, st.ok(), st.message});
+    }
+    sendMessage(IpcMessage::makeResult(msg.seqId(), true, results));
 }
 
 void IpcClientHandler::handleGetServers(const IpcMessage& msg)
@@ -1558,17 +1577,24 @@ void IpcClientHandler::handleRemoveFriend(const IpcMessage& msg)
 
     const QString hashStr = msg.fieldString(0);
     uint8 hashBuf[16]{};
-    if (!hexToHash(hashStr, hashBuf)) {
+    const bool hasHash = hexToHash(hashStr, hashBuf);
+    // Fields 1/2: address + port, the only key of a friend added by IP (#72)
+    const Address addr = Address::fromString(msg.fieldString(1));
+    const auto port = static_cast<uint16>(msg.fieldInt(2));
+    if (!hasHash && (addr.isNull() || port == 0)) {
         sendMessage(IpcMessage::makeError(msg.seqId(), 400, QStringLiteral("Invalid hash")));
         return;
     }
 
-    // Find friend by hash
     Friend* target = nullptr;
-    for (const auto& f : theApp.friendList->friends()) {
-        if (f->hasUserhash() && std::memcmp(f->userHash().data(), hashBuf, 16) == 0) {
-            target = f.get();
-            break;
+    if (!hasHash) {
+        target = theApp.friendList->searchFriendByAddress(addr, port);
+    } else {
+        for (const auto& f : theApp.friendList->friends()) {
+            if (f->hasUserhash() && std::memcmp(f->userHash().data(), hashBuf, 16) == 0) {
+                target = f.get();
+                break;
+            }
         }
     }
     if (target) {
@@ -2965,44 +2991,7 @@ void IpcClientHandler::handleApplyHttpCacheConfig(const IpcMessage& msg)
 
 void IpcClientHandler::handleRenameSharedFile(const IpcMessage& msg)
 {
-    const QString hash = msg.fieldString(0);
-    const QString newName = msg.fieldString(1);
-
-    if (!theApp.sharedFileList) {
-        sendMessage(IpcMessage::makeError(msg.seqId(), 503, QStringLiteral("Shared files unavailable")));
-        return;
-    }
-
-    uint8 hashBuf[16]{};
-    if (!hexToHash(hash, hashBuf)) {
-        sendMessage(IpcMessage::makeError(msg.seqId(), 400, QStringLiteral("Invalid hash")));
-        return;
-    }
-    auto* file = theApp.sharedFileList->getFileByID(hashBuf);
-    if (!file) {
-        sendMessage(IpcMessage::makeError(msg.seqId(), 404, QStringLiteral("Shared file not found")));
-        return;
-    }
-    if (newName.isEmpty()) {
-        sendMessage(IpcMessage::makeError(msg.seqId(), 400, QStringLiteral("New name cannot be empty")));
-        return;
-    }
-    const QString oldPath = file->filePath();
-    const QString dir = QFileInfo(oldPath).absolutePath();
-    const QString newPath = dir + QDir::separator() + newName;
-    if (theApp.uploadQueue)
-        theApp.uploadQueue->releaseUploadFile(oldPath);
-    if (!QFile::rename(oldPath, newPath)) {
-        sendMessage(IpcMessage::makeError(msg.seqId(), 500, QStringLiteral("Rename failed")));
-        return;
-    }
-    // The Kad keywords are the words of the name (MFC SharedFilesCtrl rename).
-    theApp.sharedFileList->removeKeywords(file);
-    file->setFileName(newName);
-    file->setFilePath(newPath);
-    theApp.sharedFileList->addKeywords(file);
-    file->noteChanged();
-    sendMessage(IpcMessage::makeResult(msg.seqId(), true));
+    sendStatus(msg, ops::renameSharedFile(msg.fieldString(0), msg.fieldString(1)));
 }
 
 // ---------------------------------------------------------------------------
@@ -4306,6 +4295,21 @@ bool IpcClientHandler::applyPreferenceC(const QString& key, const QCborValue& va
         thePrefs.setAutoCleanupFilenames(val.toBool());
     else if (key == QStringLiteral("filenameCleanups"))
         thePrefs.setFilenameCleanups(val.toString());
+    else if (key == QStringLiteral("simpleCleanupOptions"))
+        thePrefs.setSimpleCleanupOptions(static_cast<int>(val.toInteger()));
+    else if (key == QStringLiteral("simpleCleanupSearch"))
+        thePrefs.setSimpleCleanupSearch(val.toString());
+    else if (key == QStringLiteral("simpleCleanupReplace"))
+        thePrefs.setSimpleCleanupReplace(val.toString());
+    else if (key == QStringLiteral("simpleCleanupSearchChars") || key == QStringLiteral("simpleCleanupReplaceChars")) {
+        QStringList list;
+        for (const QCborValue& v : val.toArray())
+            list << v.toString();
+        if (key == QStringLiteral("simpleCleanupSearchChars"))
+            thePrefs.setSimpleCleanupSearchChars(list);
+        else
+            thePrefs.setSimpleCleanupReplaceChars(list);
+    }
 
     // Notifications page (GUI-side)
     else if (key == QStringLiteral("notifySoundType"))
@@ -4429,6 +4433,16 @@ bool IpcClientHandler::applyPreferenceEd3k(const QString& key, const QCborValue&
         thePrefs.setEd3kCreditRpc(Preferences::rpcUrlList(val));
     else if (key == QStringLiteral("ed3kChaintubeRpc"))
         thePrefs.setEd3kChaintubeRpc(Preferences::rpcUrlList(val));
+    else if (key == QStringLiteral("ed3kExtOff"))
+        thePrefs.setEd3kExtOff(Preferences::rpcUrlList(val));
+    else if (key == QStringLiteral("ed3kLan"))
+        thePrefs.setEd3kLan(val.toBool());
+    else if (key == QStringLiteral("ed3kNodeLists"))
+        thePrefs.setEd3kNodeLists(Preferences::rpcUrlList(val));
+    else if (key == QStringLiteral("ed3kSitePort"))
+        thePrefs.setEd3kSitePort(static_cast<uint16>(std::clamp<qint64>(val.toInteger(), 1, 65535)));
+    else if (Ed3kCreditPrefs c = thePrefs.ed3kCredit(); Preferences::applyEd3kCreditKey(c, key, val))
+        thePrefs.setEd3kCredit(c);   // credits (credit.md): Ed3kCredit reconfigures
     else
         return false;
     return true;

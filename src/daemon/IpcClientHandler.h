@@ -120,6 +120,7 @@ private:
     void handleSetDownloadPriority(const Ipc::IpcMessage& msg);
     void handleClearCompleted(const Ipc::IpcMessage& msg);
     void handleRenameDownload(const Ipc::IpcMessage& msg);
+    void handleRenameFiles(const Ipc::IpcMessage& msg);
     void handleGetDownloadSources(const Ipc::IpcMessage& msg);
     void handleGetServers(const Ipc::IpcMessage& msg);
     void handleRemoveServer(const Ipc::IpcMessage& msg);

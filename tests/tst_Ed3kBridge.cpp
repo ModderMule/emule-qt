@@ -27,6 +27,7 @@ private slots:
     void statusOfARunningNode();
     void onlyTheEd3kBlockIsAnswered();
     void coordinatorLimitsAndCountsTheNode();
+    void coordinatorSizesEd3kSlotsFromTheShare();
 
 private:
     static Ed3kSettings loopback(const QString& dir);
@@ -163,6 +164,35 @@ void tst_Ed3kBridge::coordinatorLimitsAndCountsTheNode()
     a.stop();
     b.stop();
     thePrefs.setMaxDownload(maxDownBefore);
+    thePrefs.setMaxUpload(maxUpBefore);
+}
+
+void tst_Ed3kBridge::coordinatorSizesEd3kSlotsFromTheShare()
+{
+    // 25 KB/s a slot, at least 2, no cap (Protocol.md §12.5); no limit: the node chooses
+    QCOMPARE(BandwidthCoordinator::ed3kSlotsFor(0), 0u);
+    QCOMPARE(BandwidthCoordinator::ed3kSlotsFor(10), 2u);
+    QCOMPARE(BandwidthCoordinator::ed3kSlotsFor(250), 10u);
+    QCOMPARE(BandwidthCoordinator::ed3kSlotsFor(1000), 40u);
+
+    const uint32 maxUpBefore = thePrefs.maxUpload();
+    thePrefs.setMaxUpload(250);
+    QTemporaryDir da;
+    QVERIFY(da.isValid());
+    Ed3kSession a;
+    QVERIFY(a.start(loopback(da.path())));
+    {
+        BandwidthCoordinator bw(nullptr, nullptr);
+        bw.setEd3k(&a);
+        bw.start();
+        // an idle node gets the slots of its share, not 2 for the rate it has not reached
+        QCOMPARE(bw.snapshot().ed3kUpKb, qint64(250));
+        const auto q = a.uploadQueueStats();
+        QVERIFY(q.has_value());
+        QCOMPARE(q->slotCount, 10u);
+        QCOMPARE(q->holders, 0u);
+    }
+    a.stop();
     thePrefs.setMaxUpload(maxUpBefore);
 }
 

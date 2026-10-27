@@ -178,6 +178,9 @@
   <ItemGroup>
     <ClCompile Include="..\tst_Ed3kBridge.cpp" />
     <ClCompile Include="..\..\src\daemon\Ed3kBridge.cpp" />
+    <ClCompile Include="..\..\src\daemon\Ed3kFriendsBridge.cpp" />
+    <ClCompile Include="..\..\src\daemon\Ed3kNamesBridge.cpp" />
+    <ClCompile Include="..\..\src\daemon\Ed3kCreditBridge.cpp" />
     <ClCompile Include="..\..\src\daemon\BandwidthCoordinator.cpp" />
   </ItemGroup>
   <ItemGroup>

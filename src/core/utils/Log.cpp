@@ -219,6 +219,11 @@ void logEd3kKadDebug(const QString& msg)
     qCDebug(lcEmuleEd3kKad).noquote() << msg;
 }
 
+void logLeecher(const QString& msg)
+{
+    qCInfo(lcEmuleLeecher).noquote() << msg;
+}
+
 void logStatusInfo(const QString& msg)
 {
     qCInfo(lcEmuleStatus).noquote() << msg;
@@ -254,16 +259,16 @@ void installConsoleMessagePattern(const QString& processTag)
 // Rotating log file sink
 // ---------------------------------------------------------------------------
 //
-// Six files per process, mirroring the reference's theLog / theVerboseLog
-// (srchybrid/Emule.cpp:528-533) plus dedicated Kad, Usenet, ed3k and ed3k Kad logs.
+// Seven files per process, mirroring the reference's theLog / theVerboseLog
+// (srchybrid/Emule.cpp:528-533) plus dedicated Kad, Usenet, ed3k, ed3k Kad and leecher logs.
 // Disabled until a process opts in.
 
 namespace {
 
 /// One file per channel; kSinkSuffix names it after the base name.
-enum Sink { SinkLog, SinkVerbose, SinkKad, SinkUsenet, SinkEd3k, SinkEd3kKad, SinkCount };
+enum Sink { SinkLog, SinkVerbose, SinkKad, SinkUsenet, SinkEd3k, SinkEd3kKad, SinkLeecher, SinkCount };
 constexpr const char* kSinkSuffix[SinkCount] = {".log", "_Verbose.log", "_Kad.log", "_Usenet.log",
-                                                "_Ed3k.log", "_Ed3kKad.log"};
+                                                "_Ed3k.log", "_Ed3kKad.log", "_Leecher.log"};
 
 QMutex s_sinkMutex;
 LogFile s_sinks[SinkCount];   ///< SinkLog: non-debug lines; SinkVerbose: debug lines of the rest
@@ -320,7 +325,7 @@ void writeToLogFileSink(QtMsgType type, const char* category, const QString& msg
     // rule — so it gets its own file rather than drowning the verbose log, which
     // it would otherwise dominate. Tested before the severity split so a future
     // qCWarning(lcEmuleKad) lands here too, exactly as it would in the Kad tab.
-    // Usenet, ed3k and ed3k Kad likewise (ed3k: its debug lines too).
+    // Usenet, ed3k, ed3k Kad and leecher likewise (ed3k: its debug lines too).
     const auto is = [category](const char* name) { return category && std::strcmp(category, name) == 0; };
     if (is("emule.kad"))
         s_sinks[SinkKad].log(line);
@@ -330,6 +335,8 @@ void writeToLogFileSink(QtMsgType type, const char* category, const QString& msg
         s_sinks[SinkEd3k].log(line);
     else if (is("emule.ed3k.kad"))
         s_sinks[SinkEd3kKad].log(line);
+    else if (is("emule.leecher"))
+        s_sinks[SinkLeecher].log(line);
     // Debug is the reference's LOG_DEBUG: it goes to the verbose log only.
     else if (type == QtDebugMsg)
         s_sinks[SinkVerbose].log(line);

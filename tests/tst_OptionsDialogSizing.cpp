@@ -61,12 +61,24 @@ namespace {
 /// got a scroll area at all, not to police layout by a few pixels.
 constexpr int kPageBudget = 460;
 
-/// Pages this build has: the last one, BitTorrent, only with EMULE_HAVE_BITTORRENT
-#ifdef EMULE_HAVE_BITTORRENT
+/// The stack has every Page; without EMULE_HAVE_BITTORRENT the two BitTorrent slots are
+/// empty and not in the sidebar
 constexpr int kBuiltPages = int(OptionsDialog::PageCount);
+#ifdef EMULE_HAVE_BITTORRENT
+constexpr int kSidebarPages = kBuiltPages;
 #else
-constexpr int kBuiltPages = int(OptionsDialog::PageBitTorrent);
+constexpr int kSidebarPages = kBuiltPages - 2;
 #endif
+/// A page the sidebar lists in this build.
+constexpr bool listed(int page)
+{
+#ifdef EMULE_HAVE_BITTORRENT
+    (void)page;
+    return true;
+#else
+    return page != OptionsDialog::PageBitTorrent && page != OptionsDialog::PageBtConnection;
+#endif
+}
 
 /// The window has to open on a laptop. 700 is the designed default in OptionsDialog's
 /// constructor; a minimum above it means the default could not be honoured, which is
@@ -78,7 +90,8 @@ const char* pageName(int page)
     static const char* names[] = {
         "General", "Display", "Connection", "Proxy", "Server", "Directories", "Files",
         "Notifications", "Statistics", "IRC", "Messages", "Security", "Scheduler",
-        "WebInterface", "Usenet", "Indexers", "Feeds", "Extended", "BitTorrent"};
+        "WebInterface", "Usenet", "Indexers", "Feeds", "Extended", "BitTorrent", "BtConnection",
+        "Ed3k", "Ed3kConnection", "Ed3kCredits", "Ed3kNames"};
     return (page >= 0 && page < int(std::size(names))) ? names[page] : "?";
 }
 
@@ -180,6 +193,8 @@ void TestOptionsDialogSizing::selectPageLandsOnTheMatchingStackIndex()
     QVERIFY(stack);
 
     for (int page = 0; page < kBuiltPages; ++page) {
+        if (!listed(page))
+            continue;
         dlg.selectPage(page);
         QCOMPARE(stack->currentIndex(), page);
     }
@@ -193,10 +208,12 @@ void TestOptionsDialogSizing::everyPageAppearsOnceInTheSidebar()
     OptionsDialog dlg(nullptr, nullptr);
     auto* sidebar = dlg.findChild<AccordionSidebar*>();
     QVERIFY(sidebar);
-    QCOMPARE(sidebar->itemCount(), kBuiltPages);
+    QCOMPARE(sidebar->itemCount(), kSidebarPages);
 
     QSet<int> seen;
     for (int page = 0; page < kBuiltPages; ++page) {
+        if (!listed(page))
+            continue;
         QVERIFY2(sidebar->setCurrentItemId(page), pageName(page));
         QCOMPARE(sidebar->currentItemId(), page);
         QVERIFY2(!seen.contains(page), pageName(page));

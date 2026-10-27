@@ -146,6 +146,31 @@ public:
                           std::function<void(const QString& key,
                                              const Ipc::IpcMessage& reply)> onEach = {});
 
+    // -- ed3k readable names and websites (name.md, IPC 1010-1019) ------------
+    // Replies: [ok, data]; a failure is [false, {error}] (0: no node, else ed3k::Error).
+    // Zones are 64 hex digits (base32 is taken too). The Names options page uses these.
+
+    /// What the user opened (ed3k:name link, petname, alice, a domain, a handle) -> {id};
+    /// ed3kNameResolved / ed3kNameFailed follow with that id.
+    int resolveEd3kName(const QString& text, ResponseCallback callback = nullptr);
+    /// The user opens resolution @p id (pins it) -> {links, url}: url the website to browse.
+    int openEd3kName(qint64 id, ResponseCallback callback);
+    /// -> {running, sitePort, pins: [{name, zone, since, how, howA, howB, vouched, link}],
+    ///     petnames: [{text, zone, shareable}], lists: [{id, link, label, entries, refused}]}
+    int requestEd3kNames(ResponseCallback callback);
+    /// A petname for a zone; shareable (a global label only): friends get it.
+    int setEd3kPetname(const QString& text, const QString& zone, bool shareable, ResponseCallback callback = nullptr);
+    int removeEd3kPetname(const QString& text, ResponseCallback callback = nullptr);
+    /// Only the user changes a pin (§4.4).
+    int unpinEd3kName(const QString& name, ResponseCallback callback = nullptr);
+    /// Vouching publishes a claim and answers friends with it (§4.2, §4.4).
+    int vouchEd3kName(const QString& name, bool on, ResponseCallback callback = nullptr);
+    /// Follows the name list of an ed3k:set link, last in the order -> {id}.
+    int followEd3kNameList(const QString& link, const QString& label, ResponseCallback callback = nullptr);
+    int unfollowEd3kNameList(qint64 id, ResponseCallback callback = nullptr);
+    /// Moves a list to @p place (0 = first: the first list wins).
+    int moveEd3kNameList(qint64 id, qint64 place, ResponseCallback callback = nullptr);
+
     /// Send a Shutdown request to the daemon, then disconnect.
     /// Use this when the GUI launched the daemon and is about to close.
     void sendShutdown();
@@ -253,6 +278,28 @@ signals:
     void btStatusChanged(const Ipc::IpcMessage& msg);
     /// [status map] — the ed3k node started, stopped, or its contacts/class changed.
     void ed3kStatusChanged(const Ipc::IpcMessage& msg);
+    /// [ask, host, url] — an ed3k:nodes link wants a node list source: ask the user.
+    void ed3kBootstrapAsk(const Ipc::IpcMessage& msg);
+    /// [] — ed3k friends, a name, an address or a request changed: GetEd3kFriends.
+    void ed3kFriendsChanged(const Ipc::IpcMessage& msg);
+    /// [node, name, text, id] — an ed3k chat message.
+    void ed3kChatMessageReceived(const Ipc::IpcMessage& msg);
+    /// [node, id] — the peer's node took the message.
+    void ed3kChatSent(const Ipc::IpcMessage& msg);
+    /// [node, id, why, retryAfter] — not delivered.
+    void ed3kChatFailed(const Ipc::IpcMessage& msg);
+    /// [key, node, text, issued] — someone asks to be our ed3k friend.
+    void ed3kFriendRequestReceived(const Ipc::IpcMessage& msg);
+    /// [node, ChatConnectProgress] — a send waits for a look of the friend.
+    void ed3kChatStateReceived(const Ipc::IpcMessage& msg);
+    /// [{id, name, zone, links, how, warnings, ties, confirm, viaSite, …}] — a name resolved.
+    void ed3kNameResolved(const Ipc::IpcMessage& msg);
+    /// [{id, name, why, ties}] — a name not resolved.
+    void ed3kNameFailed(const Ipc::IpcMessage& msg);
+    /// [] — pins, petnames or followed name lists changed: requestEd3kNames.
+    void ed3kNamesChanged(const Ipc::IpcMessage& msg);
+    /// [node, link] — a friend publishes a name list: offer to follow it.
+    void ed3kNameFriendListOffered(const Ipc::IpcMessage& msg);
 
     /// [searchId, rows] — a batch of indexer results, as each indexer answers.
     void indexerResultsReceived(const Ipc::IpcMessage& msg);
@@ -341,6 +388,7 @@ private:
     int64_t m_lastEd3kId = 0;         // ed3k tabs
     int64_t m_lastEd3kVerboseId = 0;
     int64_t m_lastEd3kKadId = 0;
+    int64_t m_lastLeecherId = 0;      // Leecher tab
     /// Highest Server Info line id displayed, so a reconnect replays only the gap.
     int64_t m_lastServerMsgId = 0;
     QString m_daemonToken;

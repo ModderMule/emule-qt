@@ -1074,6 +1074,17 @@ void tst_WebServer::friendsLifecycle()
                            QStringLiteral("/api/v1/friends"));
         QCOMPARE(resp.statusCode, 200);
         QCOMPARE(resp.json.object().value(QStringLiteral("items")).toArray().size(), initialCount + 1);
+
+        // No hash: removed by address + port, as listed (#72)
+        const QString byAddr = QStringLiteral("/api/v1/friends/%1/4662")
+                                   .arg(addedFriend.value(QStringLiteral("addr")).toString());
+        resp = sendRequest(QByteArrayLiteral("DELETE"), byAddr);
+        QCOMPARE(resp.statusCode, 200);
+        resp = sendRequest(QByteArrayLiteral("GET"),
+                           QStringLiteral("/api/v1/friends"));
+        QCOMPARE(resp.json.object().value(QStringLiteral("items")).toArray().size(), initialCount);
+        resp = sendRequest(QByteArrayLiteral("DELETE"), byAddr);
+        QCOMPARE(resp.statusCode, 404);
     }
 }
 

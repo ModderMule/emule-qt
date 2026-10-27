@@ -213,6 +213,24 @@ using Kind = PrefSpec::Kind;
                                               "spaces; operator n = the n-th). Empty = off."));
     t << advanced(text("ed3kChaintubeRpc", 4096, "JSON-RPC endpoints of the chaintube chain (https URLs, or http to "
                                                  "a node on this machine, separated by spaces). Empty = off."));
+    t << advanced(text("ed3kExtOff", 1024, "Optional ed3k extensions turned off (names of their documents, e.g. "
+                                           "lan-discovery chat, separated by spaces). Restarts the node."));
+    t << flag("ed3kLan", "Find ed3k nodes in the local network (LAN discovery). Restarts the node.");
+    t << advanced(number("ed3kSitePort", 1, 65535, "", "TCP port of the local ed3k website server (loopback only). "
+                                                      "Part of every site's address: a change loses what sites stored."));
+    t << advanced(text("ed3kNodeLists", 8192, "Node list sources for the first ed3k contact (ed3k:nodes?url=...&key=... "
+                                              "links, separated by spaces)."));
+    // credits (credit.md): off by default, no default chain or contract (§7.1, §9)
+    t << flag("ed3kCreditEnabled", "Use ed3k credits (credit.md). The ledger is public: it shows with whom this "
+                                   "node traded, how much and when (§9).");
+    t << advanced(text("ed3kCreditChainId", 20, "Chain ID of the credit ledger of the network (decimal). 0 = none."));
+    t << advanced(text("ed3kCreditContract", 42, "Address of the credit ledger contract (0x + 40 hex digits)."));
+    t << advanced(number("ed3kCreditQuorum", 1, 16, "", "Ledger endpoints that must agree on a read they act on (§7.3)."));
+    t << advanced(number("ed3kCreditBidMaxPrice", 0, 9.0e15, "", "Highest price (µ credits per MiB) bid for a priority slot per "
+                                                                 "download. 0 = sign receipts only, never pay."));
+    t << advanced(flag("ed3kCreditSell", "Sell priority upload slots for credits (§5.1)."));
+    t << advanced(number("ed3kCreditSellFloor", 0, 9.0e15, "", "Lowest bid (µ credits per MiB) taken for a priority slot."));
+    t << advanced(number("ed3kCreditSellSlots", 0, 1000, "", "Upload slots the priority lane counts. 0 = the upload queue's."));
 
     // --- Logging ---
     t << flag("verbose", "Write verbose (debug) log lines.");

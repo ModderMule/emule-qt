@@ -16,6 +16,8 @@ Q_LOGGING_CATEGORY(lcEmuleUsenet,  "emule.usenet")
 Q_LOGGING_CATEGORY(lcEmuleEd3k,    "emule.ed3k")
 // the ed3k node's Kad: the ed3k Kad tab and the _Ed3kKad file
 Q_LOGGING_CATEGORY(lcEmuleEd3kKad, "emule.ed3k.kad")
+// bans and anti-leecher hits, one line each: the GUI Leecher tab and the _Leecher file
+Q_LOGGING_CATEGORY(lcEmuleLeecher, "emule.leecher")
 Q_LOGGING_CATEGORY(lcEmuleServer,  "emule.server")
 // Dedicated channel for gated server TCP/UDP/search verbose lines. Routes to the
 // GUI "Verbose" tab (any emule.* category that is not emule.kad/emule.usenet/emule.server falls

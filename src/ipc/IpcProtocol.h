@@ -44,6 +44,7 @@ enum class IpcMsgType : int {
     ClearCompleted       = 116,  ///< [hashes?: array] — remove completed downloads (all, or just these)
     GetDownloadSources   = 117,  ///< [hash: string] — source clients for one download
     RenameDownload       = 118,  ///< [hash: string, newName: string] — rename an unfinished download
+    RenameFiles          = 119,  ///< [[hash, newName]...] → [[hash, ok, error]...] — Mass Rename
     GetUploads           = 120,
     GetDownloadClients   = 121,  ///< [] — source clients we are downloading from
     GetKnownClients      = 122,  ///< [] — all known clients
@@ -87,7 +88,7 @@ enum class IpcMsgType : int {
                                 ///<   resolves yields an empty string, never an error.
     GetFriends           = 170,
     AddFriend            = 171,  ///< [hash, name, ip, port, addr: string] — addr wins if set
-    RemoveFriend         = 172,  ///< [hash]
+    RemoveFriend         = 172,  ///< [hash, addr: string, port] — addr+port when hash empty
     SendChatMessage      = 173,  ///< [hash: string, message: string]
     SetFriendSlot        = 174,  ///< [hash: string, enabled: bool]
     EndChatSession       = 175,  ///< [hash: string] — the chat window closed, so the
@@ -753,8 +754,76 @@ enum class IpcMsgType : int {
     ///   (0 unknown, 1 open, 2 cone, 3 symmetric), router, wireSent, wireRecv (bytes),
     ///   rateUp, rateDown (B/s), limitUpKb, limitDownKb (0 = none),
     ///   stats: {connections, lookups, records, recordBytes, published, queueLen,
-    ///           bannedNodes, bannedHosts, sentFile, sentOther, recvFile, recvOther}}]
+    ///           bannedNodes, bannedHosts, sentFile, sentOther, recvFile, recvOther},
+    ///   queue: {slotCount, holders, waiting} (engine's upload queue policy, while running),
+    ///   credit: {enabled, configured, endpoints, address, problem, balance (µ, -1 unknown),
+    ///           mature, overdrawn, lastTxWhat, lastTxState, lastTxRevert, lastTx,
+    ///           receiptsSigned, kibSigned, receiptsTaken, kibTaken, slotHints, lateBids,
+    ///           wrongChain: [endpoint], stakeRate (uint256 hex, "" unknown), stakeDelay (s),
+    ///           claims: [{id, to, amount (uint256 hex), readyAt}]}}]
     GetEd3kStatus           = 1000,
+
+    // ed3k friends and chat (1001-1009, src/daemon/Ed3kFriendsBridge.cpp). Keys (32 B) and
+    // nodes (16 B) as hex; a chat is keyed by node. Failure: [false, {error: ed3k::Error}].
+    /// [] -> [ok, {running, friends: [{key, node, name, mutual, asking, heldLink, addr,
+    ///   lastSeen}], requests: [{key, node, text, issued}]}]
+    GetEd3kFriends          = 1001,
+    /// [link: string, text: string] -> [ok, {key}]; text goes with a request (`r`), <= 96 B
+    AddEd3kFriend           = 1002,
+    /// [key] -> [ok]
+    RemoveEd3kFriend        = 1003,
+    /// [key, accept: bool] -> [ok]
+    AnswerEd3kFriendRequest = 1004,
+    /// [withRequest: bool, name: string] -> [ok, link: string]
+    GetEd3kMyFriendLink     = 1005,
+    /// [node, text] -> [ok, ids: array]; each id ends as PushEd3kChatSent / _Failed
+    SendEd3kChat            = 1006,
+    /// [node] -> [ok] — the chat window closed
+    EndEd3kChat             = 1007,
+
+    // ed3k readable names and websites (1010-1019, src/daemon/Ed3kNamesBridge.cpp, name.md).
+    // Zones/keys as hex. Failure: [false, {error: ed3k::Error}] (0: no node).
+    /// [text: string (ed3k:name link, petname, alice, a domain, a handle)] -> [ok, {id}];
+    /// PushEd3kNameResolved / PushEd3kNameFailed follow with that id
+    ResolveEd3kName         = 1010,
+    /// [id] -> [ok, {links: [string], url: string}] — the user opens it (pinned, §4.4);
+    /// url: the website of the first ed3k:set link (empty: none, open the links)
+    OpenEd3kName            = 1011,
+    /// [] -> [ok, {running, sitePort, pins: [{name, zone, since, how, howA, howB, vouched,
+    ///   link}], petnames: [{text, zone, shareable}], lists: [{id, link, label, entries,
+    ///   refused}]}] (lists in the user's order: the first wins)
+    GetEd3kNames            = 1012,
+    /// [text, zone (hex or base32), shareable: bool] -> [ok]
+    SetEd3kPetname          = 1013,
+    /// [text] -> [ok]
+    RemoveEd3kPetname       = 1014,
+    /// [name] -> [ok] — only the user changes a pin
+    UnpinEd3kName           = 1015,
+    /// [name, on: bool] -> [ok] — vouching publishes a claim (§4.2)
+    VouchEd3kName           = 1016,
+    /// [link (ed3k:set), label] -> [ok, {id}]
+    FollowEd3kNameList      = 1017,
+    /// [id] -> [ok]
+    UnfollowEd3kNameList    = 1018,
+    /// [id, place] -> [ok] — 0 = first
+    MoveEd3kNameList        = 1019,
+
+    // ed3k credits (1020-1029, src/daemon/Ed3kCreditBridge.cpp, credit.md). The credit key is
+    // a secret: these go to a local GUI only (403 for a remote one); never logged.
+    // Failure: [false, {error: string}]. The rest is in GetEd3kStatus "credit".
+    /// [] -> [ok, {address}] — a new key replaces credit.key (a new address, §2)
+    NewEd3kCreditKey        = 1020,
+    /// [key: hex (64)] -> [ok, {address}] — replaces credit.key
+    ImportEd3kCreditKey     = 1021,
+    /// [] -> [ok, {key: hex (64), address}]
+    ExportEd3kCreditKey     = 1022,
+
+    // ed3k plumbing (1030-1039): node list sources (bootstrap.md §3), Ed3kBridge.cpp
+    /// [link: string (ed3k:nodes?url=…&key=…)] -> [ok, {ask}]; PushEd3kBootstrapAsk follows.
+    /// Failure: node off, link invalid
+    OpenEd3kNodesLink       = 1030,
+    /// [ask: int, yes: bool] -> [ok]; yes adds the source to ed3kNodeLists
+    AnswerEd3kBootstrapAsk  = 1031,
 
     // -- Responses (Core -> GUI) ---------------------------------------------
 
@@ -875,6 +944,33 @@ enum class IpcMsgType : int {
     /// [{...GetEd3kStatus...}] — the node started or stopped, its contacts, address
     /// class or router duty changed. A state push: a slow reader keeps the last.
     PushEd3kStatus         = 1050,
+    /// [] — the ed3k friend list, a name, an address or a request changed
+    PushEd3kFriendsChanged = 1051,
+    /// [node, name, text, id] — a chat message to show once
+    PushEd3kChatMessage    = 1052,
+    /// [node, id] — the peer's node has the message (ChatAck)
+    PushEd3kChatSent       = 1053,
+    /// [node, id, why: ED3K_ASK_*, retryAfter: s]
+    PushEd3kChatFailed     = 1054,
+    /// [key, node, text, issued] — accept or decline (AnswerEd3kFriendRequest)
+    PushEd3kFriendRequest  = 1055,
+    /// [node, ChatConnectProgress] — a send waits for a look of the friend
+    PushEd3kChatState      = 1056,
+    /// [{id, name, zone, label, links, how, howA, howB, howTitle, warnings: [{zone, how, howA,
+    ///   howB}], ties: [zone], confirm, webDisagree, viaSite}] — show how it was resolved,
+    /// ask when confirm or how is DNS-unverified, then OpenEd3kName. viaSite: typed in the
+    /// browser (a readable host of the website server), sent only when it needs the yes
+    PushEd3kNameResolved   = 1060,
+    /// [{id, name, why: ED3K_NAME_WHY_*, ties: [zone]}]
+    PushEd3kNameFailed     = 1061,
+    /// [] — pins, petnames or followed name lists changed: GetEd3kNames
+    PushEd3kNamesChanged   = 1062,
+    /// [node, link] — a friend publishes a name list (§4.5): offer FollowEd3kNameList
+    PushEd3kNameFriendList = 1063,
+    /// [ask: int, host: string, url: string] — an ed3k:nodes link wants to add a node list
+    /// source: ask the user (show host), answer with AnswerEd3kBootstrapAsk. Sent only
+    /// while a GUI is connected; else the daemon refuses at once
+    PushEd3kBootstrapAsk   = 1080,
 };
 
 /// What SetCategoryStatus should do to every download in the category.

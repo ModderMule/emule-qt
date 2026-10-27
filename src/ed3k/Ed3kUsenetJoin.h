@@ -158,6 +158,8 @@ private:
     void dropPost(const QString& itemId, bool keepBlob);
     /// Serves @p reads and those block_read gives, then drains the join's events.
     void serveReads(const QString& itemId, std::vector<::ed3k::TorrentRead> reads);
+    /// One batch on the read pool; @p again: a second try under the paths now (no third).
+    void readBatch(const QString& itemId, std::vector<::ed3k::TorrentRead> reads, bool again);
     /// Polls the join of @p itemId until empty; handlers may drop it.
     void drainEvents(const QString& itemId);
     void handleEvent(const QString& itemId, const ::ed3k::UsenetEvent& ev);

@@ -87,6 +87,11 @@ public:
     [[nodiscard]] std::optional<::ed3k::Root> rootOf(const QByteArray& md4) const;
     /// The `ed2k` ALIAS record of @p md4 is published.
     [[nodiscard]] bool aliasPublished(const QByteArray& md4) const;
+    /// @p md4 is published with its keywords (Publish::Both: found by ed3k search), not only
+    /// as a source; not while holding back.
+    [[nodiscard]] bool keywordsPublished(const QByteArray& md4) const;
+    /// Tests: an unreadable file is hashed again after @p ms (default kRehashMs).
+    void setRehashDelay(int ms) { m_rehashMs = ms; }
     /// Files hashed since construction (cache misses).
     [[nodiscard]] int hashCount() const { return m_hashCount; }
     [[nodiscard]] QString cachePath() const;
@@ -132,6 +137,8 @@ private:
         bool queued = false;  ///< waits for a hash
         bool shared = false;  ///< open on the engine, published
         ::ed3k::Bytes alias;  ///< the ALIAS record published; empty: none
+        bool keywords = false;  ///< published with Publish::Both
+        int rehashTries = 0;    ///< hashes that failed (unreadable)
     };
 
     void add(const SharedEntry& entry);
@@ -140,6 +147,8 @@ private:
     void enqueueHash(File& f);
     void hashNext();
     void onHashed(const QByteArray& md4, const QString& path, qint64 mtimeMs, const std::optional<FileHash>& hashed);
+    /// An unreadable file's hash once more (kRehashMs after it failed).
+    void rehash(const QByteArray& md4);
     /// Files whose shares the base closed (gone or changed): dropped, taken again if listed.
     void recheck();
     /// Upload priorities read again (the user's, or auto): changed ones to the engine.
@@ -161,6 +170,7 @@ private:
     std::deque<QByteArray> m_hashQueue;
     bool m_hashing = false;
     int m_hashCount = 0;
+    int m_rehashMs = kRehashMs;
     /// reported by sharedGone() (const): handled on the next turn
     mutable std::set<QByteArray> m_suspects;
     mutable QTimer m_recheckTimer;

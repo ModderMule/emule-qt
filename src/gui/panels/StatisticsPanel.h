@@ -58,6 +58,9 @@ public:
     /// Apply one GetBtStats reply to the BitTorrent branch. Public for tests.
     void applyBtStats(const class QCborMap& data);
 
+    /// Apply one GetEd3kStatus map to the ed3k branch (hidden when not built in). Public for tests.
+    void applyEd3kStatus(const class QCborMap& status);
+
     /// Apply one GetClientStats reply to Clients > Session / Cumulative. Public for tests.
     void applyClientStats(const class QCborMap& data);
 
@@ -432,6 +435,21 @@ private:
     QList<CounterItem> m_btSessionRows;
     QList<CounterItem> m_btCumulativeRows;
     QList<CounterItem> m_btTorrentRows;
+
+    // --- ed3k --- (no MFC original; GetEd3kStatus: live figures of this run only)
+
+    [[nodiscard]] static std::span<const CounterRow> ed3kCounterRows();
+    void buildEd3kBranch(const QIcon& detailIcon);
+
+    QTreeWidgetItem* m_itemEd3k = nullptr;
+    QTreeWidgetItem* m_itemEd3kStatus = nullptr;
+    QTreeWidgetItem* m_itemEd3kNode = nullptr;
+    QTreeWidgetItem* m_itemEd3kClass = nullptr;
+    QTreeWidgetItem* m_itemEd3kRouter = nullptr;
+    QList<CounterItem> m_ed3kRows;
+    /// Credits: state, address, balance, account, receipts, priority turns, stake
+    QTreeWidgetItem* m_itemEd3kCredit = nullptr;
+    std::array<QTreeWidgetItem*, 7> m_ed3kCreditItems{};
 
     // From the last GetStats: what Usenet's download time is a share of.
     qint64 m_sessionUptime = 0;

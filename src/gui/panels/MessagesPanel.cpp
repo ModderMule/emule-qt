@@ -3,6 +3,7 @@
 /// @brief Messages tab panel implementation — matches MFC eMule Messages window.
 
 #include "panels/MessagesPanel.h"
+#include "panels/ChatNetwork.h"
 
 #include "prefs/Preferences.h"
 
@@ -25,6 +26,9 @@
 
 
 #include <QAction>
+#include <QApplication>
+#include <QClipboard>
+#include <QMessageBox>
 #include <QCborArray>
 #include <QColor>
 #include <QDateTime>
@@ -77,6 +81,8 @@ MessagesPanel::~MessagesPanel() = default;
 void MessagesPanel::setIpcClient(IpcClient* client)
 {
     m_ipc = client;
+    m_ed2kNet = std::make_unique<Ed2kChatNetwork>(client);
+    m_ed3kNet = std::make_unique<Ed3kChatNetwork>(client);
 
     connect(m_ipc, &IpcClient::connected, this, [this]() {
         requestFriendList();
@@ -92,6 +98,17 @@ void MessagesPanel::setIpcClient(IpcClient* client)
             this, &MessagesPanel::onChatMessagePush);
     connect(m_ipc, &IpcClient::friendListChanged,
             this, &MessagesPanel::onFriendListPush);
+    // ed3k friends and chat in the same panel (ChatNetwork)
+    connect(m_ipc, &IpcClient::ed3kFriendsChanged,
+            this, &MessagesPanel::onFriendListPush);
+    connect(m_ipc, &IpcClient::ed3kChatMessageReceived,
+            this, &MessagesPanel::onEd3kChatMessagePush);
+    connect(m_ipc, &IpcClient::ed3kChatStateReceived,
+            this, &MessagesPanel::onEd3kChatStatePush);
+    connect(m_ipc, &IpcClient::ed3kChatFailed,
+            this, &MessagesPanel::onEd3kChatFailedPush);
+    connect(m_ipc, &IpcClient::ed3kFriendRequestReceived,
+            this, &MessagesPanel::onEd3kFriendRequestPush);
 
     // Start refresh timer
     // Only the friend list is polled. Incoming chat arrives on its own push, so
@@ -142,21 +159,17 @@ void MessagesPanel::onSendClicked()
 
     // The reply can land after a tab switch, so the echo goes to the hash we sent to.
     const QString target = m_activeFriendHash;
-    IpcMessage msg(IpcMsgType::SendChatMessage);
-    msg.append(target);
-    msg.append(text);
-
-    m_ipc->sendRequest(std::move(msg), [this, target, text](const IpcMessage& resp) {
-        // An Error reply arrives through this same callback, and its field 0 is the
-        // numeric code — reading it as a bool silently swallowed the failure, so a
-        // message to an offline friend simply vanished.
-        if (resp.type() == IpcMsgType::Error || !resp.fieldBool(0)) {
-            appendChatStatus(target, tr(" ...failed"));
-        } else {
-            appendChatMessage(target, tr("Me"), text, true);
-        }
-        if (target == m_activeFriendHash)
-            updateChatDisplay();
+    // was: IpcMessage(SendChatMessage) here; now per network (ChatNetwork::send), which
+    // also reads an Error reply as a failure
+    networkFor(target).send(target, text, [self = QPointer<MessagesPanel>(this), target, text](bool ok) {
+        if (!self)
+            return;
+        if (!ok)
+            self->appendChatStatus(target, tr(" ...failed"));
+        else
+            self->appendChatMessage(target, tr("Me"), text, true);
+        if (target == self->m_activeFriendHash)
+            self->updateChatDisplay();
     });
 
     m_inputHistory[target].add(text);
@@ -200,10 +213,12 @@ void MessagesPanel::onFriendContextMenu(const QPoint& pos)
 
 void MessagesPanel::onChatMessagePush(const IpcMessage& msg)
 {
-    const QString senderHash = msg.fieldString(0);
-    const QString senderName = msg.fieldString(1);
-    const QString message    = msg.fieldString(2);
+    receiveChatMessage(msg.fieldString(0), msg.fieldString(1), msg.fieldString(2));
+}
 
+void MessagesPanel::receiveChatMessage(const QString& senderHash, const QString& senderName,
+                                       const QString& message)
+{
     appendChatMessage(senderHash, senderName, message, false);
 
     // A new session opens behind the one being read (MFC StartSession(sender, false));
@@ -225,6 +240,49 @@ void MessagesPanel::onChatMessagePush(const IpcMessage& msg)
 void MessagesPanel::onFriendListPush(const IpcMessage& /*msg*/)
 {
     requestFriendList();
+}
+
+// [node, name, text, id]: an ed3k chat keyed "ed3k:<node>"; a stranger by its node
+void MessagesPanel::onEd3kChatMessagePush(const IpcMessage& msg)
+{
+    const QString node = msg.fieldString(0);
+    if (node.isEmpty())
+        return;
+    const QString name = msg.fieldString(1);
+    receiveChatMessage(FriendListModel::ed3kKey(node),
+                       name.isEmpty() ? tr("ed3k %1").arg(node.left(8)) : name, msg.fieldString(2));
+}
+
+void MessagesPanel::onEd3kChatStatePush(const IpcMessage& msg)
+{
+    const QString node = msg.fieldString(0);
+    if (!node.isEmpty())
+        showChatProgress(FriendListModel::ed3kKey(node), static_cast<int>(msg.fieldInt(1)));
+}
+
+// [node, id, why, retryAfter]: ED3K_ASK_* (1 no chat, 2 refused, 3 unreachable, 4 lost, 5 bad)
+void MessagesPanel::onEd3kChatFailedPush(const IpcMessage& msg)
+{
+    const QString key = FriendListModel::ed3kKey(msg.fieldString(0));
+    if (findTabByHash(key) < 0)
+        return;
+    QString text;
+    switch (msg.fieldInt(2)) {
+    case 1:  text = tr(" ...failed: the peer does not chat"); break;
+    case 2:  text = msg.fieldInt(3) > 0
+                 ? tr(" ...failed: refused, try again in %1 s").arg(msg.fieldInt(3))
+                 : tr(" ...failed: refused"); break;
+    case 3:  text = tr(" ...failed: not reachable"); break;
+    default: text = tr(" ...failed"); break;
+    }
+    appendChatStatus(key, text);
+    if (key == m_activeFriendHash)
+        updateChatDisplay();
+}
+
+void MessagesPanel::onEd3kFriendRequestPush(const IpcMessage& msg)
+{
+    askEd3kFriendRequest(msg.fieldString(0), msg.fieldString(1), msg.fieldString(2));
 }
 
 // ---------------------------------------------------------------------------
@@ -408,7 +466,9 @@ void MessagesPanel::setupUi()
     auto* sendMsgAction = m_contextMenu->addAction(QIcon(QStringLiteral(":/icons/UserMessage.ico")), tr("Send Message"));
     connect(sendMsgAction, &QAction::triggered, this, [this]() {
         if (const FriendRow* row = m_friendModel->rowAt(m_friendListView->currentIndex().row()))
-            startSession(row->hash, row->name);
+            startSession(row->hash, row->network == FriendNetwork::Ed3k && row->name.isEmpty()
+                                        ? tr("ed3k %1").arg(row->node.left(8))
+                                        : row->name);
     });
 
     auto* viewSharedAction = m_contextMenu->addAction(QIcon(QStringLiteral(":/icons/SharedFilesList.ico")), tr("View Shared Files"));
@@ -450,18 +510,26 @@ void MessagesPanel::setupUi()
     auto* findAction = m_contextMenu->addAction(QIcon(QStringLiteral(":/icons/Search.ico")), tr("Find..."));
     connect(findAction, &QAction::triggered, this, &MessagesPanel::showFindDialog);
 
+    // ed3k (no MFC original): this node's friend link with a request value, to hand out
+    auto* copyEd3kLinkAction = m_contextMenu->addAction(QIcon(QStringLiteral(":/icons/Copy.ico")),
+                                                        tr("Copy my ed3k friend link"));
+    connect(copyEd3kLinkAction, &QAction::triggered, this, &MessagesPanel::copyMyEd3kLink);
+
     // Update context menu state before showing
     connect(m_contextMenu, &QMenu::aboutToShow, this,
             [this, detailsAction, removeAction, sendMsgAction, viewSharedAction,
-             friendSlotAction, findAction]() {
+             friendSlotAction, findAction, copyEd3kLinkAction]() {
         const bool hasSel = m_friendListView->currentIndex().isValid();
+        const FriendRow* selRow = hasSel ? m_friendModel->rowAt(m_friendListView->currentIndex().row()) : nullptr;
+        const bool ed3kRow = selRow && selRow->network == FriendNetwork::Ed3k;
         detailsAction->setVisible(hasSel);
         removeAction->setEnabled(hasSel);
         sendMsgAction->setEnabled(hasSel);
-        // not for a linked client that refuses it (FriendListCtrl.cpp:160)
-        viewSharedAction->setEnabled(hasSel && !m_infoNoViewShared);
-        friendSlotAction->setEnabled(hasSel);
+        // not for a linked client that refuses it (FriendListCtrl.cpp:160); no client for ed3k
+        viewSharedAction->setEnabled(hasSel && !m_infoNoViewShared && !ed3kRow);
+        friendSlotAction->setEnabled(hasSel && !ed3kRow);
         findAction->setEnabled(m_friendModel->rowCount() > 0);
+        copyEd3kLinkAction->setVisible(m_ed3kRunning);
 
         if (hasSel) {
             const auto* row = m_friendModel->rowAt(m_friendListView->currentIndex().row());
@@ -475,16 +543,26 @@ void MessagesPanel::requestFriendList()
     if (!m_ipc || !m_ipc->isConnected())
         return;
 
-    const QString sel = saveSelection();
-
-    IpcMessage msg(IpcMsgType::GetFriends);
-    m_ipc->sendPoll(this, std::move(msg), [this, sel](const IpcMessage& resp) {
-        if (!resp.fieldBool(0))
-            return;   // keep the list: a dropped connection would otherwise empty it
-        const QCborArray friends = resp.fieldArray(1);
+    // was: GetFriends here; now each network asks for its own rows (ChatNetwork)
+    m_ed2kNet->requestFriends(this, [this](const QCborArray& friends, const QCborMap&) {
+        const QString sel = saveSelection();
         m_friendModel->refreshFromCborArray(friends);
         m_friendsLabel->setText(tr("Friends (%1)").arg(m_friendModel->rowCount()));
         restoreSelection(sel);
+    });
+    m_ed3kNet->requestFriends(this, [this](const QCborArray& friends, const QCborMap& all) {
+        const QString sel = saveSelection();
+        m_ed3kRunning = all.value(QStringLiteral("running")).toBool();
+        m_friendModel->refreshEd3k(friends);
+        m_friendsLabel->setText(tr("Friends (%1)").arg(m_friendModel->rowCount()));
+        restoreSelection(sel);
+        // requests that came while no GUI was connected
+        for (const QCborValue& v : all.value(QStringLiteral("requests")).toArray()) {
+            const QCborMap r = v.toMap();
+            askEd3kFriendRequest(r.value(QStringLiteral("key")).toString(),
+                                 r.value(QStringLiteral("node")).toString(),
+                                 r.value(QStringLiteral("text")).toString());
+        }
     });
 }
 
@@ -500,6 +578,20 @@ void MessagesPanel::updateInfoSection(int row)
         for (QLabel* label : {m_infoName, m_infoHash, m_infoSoftware, m_infoIdent,
                               m_infoUploaded, m_infoDownloaded})
             label->setText(none);
+        return;
+    }
+
+    if (r->network == FriendNetwork::Ed3k) {
+        // no client behind an ed3k friend: its key and how far the friendship is
+        m_infoShownHash = r->hash;
+        m_infoName->setText(r->name.isEmpty() ? unknown : r->name);
+        m_infoHash->setText(r->id);
+        m_infoSoftware->setText(QStringLiteral("ed3k"));
+        m_infoIdent->setText(r->asking ? tr("Request pending")
+                             : r->mutual ? tr("Successful")
+                                         : tr("Not confirmed"));
+        m_infoUploaded->setText(none);
+        m_infoDownloaded->setText(none);
         return;
     }
 
@@ -565,12 +657,13 @@ void MessagesPanel::showFriendDetails(const QModelIndex& index)
             return;
         auto* dlg = new AddFriendDialog(self);
         dlg->setAttribute(Qt::WA_DeleteOnClose);
-        dlg->showFriend(copy.name, copy.hash, copy.hasAddress() ? copy.addr : QString(),
+        dlg->showFriend(copy.name, copy.id.isEmpty() ? copy.hash : copy.id,
+                        copy.hasAddress() ? copy.addr : QString(),
                         copy.port, copy.kadID, copy.lastSeen);
         dlg->show();   // not exec(): this may run inside an IPC reply
     };
-    if (row->hash.isEmpty())
-        showSheet();
+    if (row->hash.isEmpty() || row->network == FriendNetwork::Ed3k)
+        showSheet();   // ed3k: the friend's own sheet, its key as the hash
     else
         showClientDetails(this, m_ipc, row->hash, {}, showSheet);
 }
@@ -582,12 +675,19 @@ void MessagesPanel::onChatTabContextMenu(const QPoint& pos)
     if (tab < 0)
         return;
     const QString hash = m_chatTabBar->tabData(tab).toString();
-    const bool isFriend = m_friendModel->findByHash(hash) >= 0;
+    const int friendRow = m_friendModel->findByHash(hash);
+    const bool isFriend = friendRow >= 0;
+    const bool ed2k = networkFor(hash).hasClientDetails();
 
     QMenu menu(this);
-    menu.addAction(QIcon(QStringLiteral(":/icons/UserDetails.ico")), tr("&Details..."), this,
-                   [this, hash] { showClientDetails(this, m_ipc, hash); });
-    if (!isFriend) {
+    if (ed2k)
+        menu.addAction(QIcon(QStringLiteral(":/icons/UserDetails.ico")), tr("&Details..."), this,
+                       [this, hash] { showClientDetails(this, m_ipc, hash); });
+    else if (isFriend)
+        menu.addAction(QIcon(QStringLiteral(":/icons/UserDetails.ico")), tr("&Details..."), this,
+                       [this, friendRow] { showFriendDetails(m_friendModel->index(friendRow)); });
+    // an ed3k stranger has no key to add: only a link makes a friend (friend.md §1)
+    if (!isFriend && ed2k) {
         menu.addAction(QIcon(QStringLiteral(":/icons/UserAdd.ico")), tr("Add to friends list"),
                        this, [this, hash, name = m_chatTabBar->tabText(tab)] {
             if (!m_ipc || !m_ipc->isConnected())
@@ -604,14 +704,14 @@ void MessagesPanel::onChatTabContextMenu(const QPoint& pos)
                     self->requestFriendList();
             });
         });
-    } else {
+    } else if (isFriend) {
         menu.addAction(QIcon(QStringLiteral(":/icons/UserDelete.ico")), tr("Remove"),
                        this, [this, hash] {
-            if (!m_ipc || !m_ipc->isConnected())
+            // was: IpcMessage(RemoveFriend) with the hash; now per network
+            const FriendRow* row = m_friendModel->rowAt(m_friendModel->findByHash(hash));
+            if (!row)
                 return;
-            IpcMessage msg(IpcMsgType::RemoveFriend);
-            msg.append(hash);
-            m_ipc->sendRequest(std::move(msg), [self = QPointer<MessagesPanel>(this)](const IpcMessage&) {
+            networkFor(hash).removeFriend(*row, [self = QPointer<MessagesPanel>(this)] {
                 if (self)
                     self->requestFriendList();
             });
@@ -682,7 +782,11 @@ void MessagesPanel::updateChatDisplay()
 
 void MessagesPanel::onChatStatePush(const IpcMessage& msg)
 {
-    const QString friendHash = msg.fieldString(0);
+    showChatProgress(msg.fieldString(0), static_cast<int>(msg.fieldInt(1)));
+}
+
+void MessagesPanel::showChatProgress(const QString& friendHash, int progress)
+{
     if (friendHash.isEmpty())
         return;
 
@@ -692,7 +796,7 @@ void MessagesPanel::onChatStatePush(const IpcMessage& msg)
         return;
 
     QString text;
-    switch (static_cast<ChatConnectProgress>(msg.fieldInt(1))) {
+    switch (static_cast<ChatConnectProgress>(progress)) {
     case ChatConnectProgress::Connecting:     text = tr("*** Connecting");              break;
     case ChatConnectProgress::Authenticating: text = tr("*** Authenticating friend");   break;
     case ChatConnectProgress::SearchingKad:   text = tr("*** Searching friend in Kad"); break;
@@ -807,6 +911,20 @@ void MessagesPanel::showAddFriendDialog()
             done(resp.fieldBool(0));
         });
     });
+    // an ed3k:friend link instead: AddEd3kFriend, the daemon's ed3k::Error on failure
+    dlg.setEd3kSubmitter([this](const QString& link, const QString& text, std::function<void(int)> done) {
+        IpcMessage msg(IpcMsgType::AddEd3kFriend);
+        msg.append(link);
+        msg.append(text);
+        m_ipc->sendRequest(std::move(msg), [done = std::move(done)](const IpcMessage& resp) {
+            if (resp.type() == IpcMsgType::Error || !resp.isValid())
+                done(AddFriendDialog::kEd3kNoNode);
+            else
+                done(resp.fieldBool(0) ? AddFriendDialog::kEd3kAdded
+                                       : static_cast<int>(resp.fieldMap(1).value(QStringLiteral("error")).toInteger()));
+        });
+    });
+    dlg.setEd3kAvailable(m_ed3kRunning);
     if (dlg.exec() == QDialog::Accepted)
         requestFriendList();
 }
@@ -832,10 +950,10 @@ void MessagesPanel::removeSelectedFriend()
     if (!row)
         return;
 
-    IpcMessage msg(IpcMsgType::RemoveFriend);
-    msg.append(row->hash);
-    m_ipc->sendRequest(std::move(msg), [this](const IpcMessage&) {
-        requestFriendList();
+    // was: IpcMessage(RemoveFriend) with row->hash; now per network
+    networkFor(row->hash).removeFriend(*row, [self = QPointer<MessagesPanel>(this)] {
+        if (self)
+            self->requestFriendList();
     });
 }
 
@@ -896,11 +1014,9 @@ void MessagesPanel::closeChatTab(int tabIndex)
     // Tell core the session is over, or the peer stays ChatState::Chatting for ever:
     // never reaped, and holding its socket open twice as long. MFC does this from
     // CChatSelector::EndSession (srchybrid/ChatSelector.cpp:464-490).
-    if (m_ipc && !hash.isEmpty()) {
-        IpcMessage msg(IpcMsgType::EndChatSession);
-        msg.append(hash);
-        m_ipc->sendRequest(std::move(msg));
-    }
+    // was: IpcMessage(EndChatSession) with the hash; now per network
+    if (m_ipc && !hash.isEmpty())
+        networkFor(hash).endSession(hash);
     updateTabBarVisibility();
     refreshNotifyCues();
 
@@ -1039,6 +1155,69 @@ void MessagesPanel::refreshNotifyCues()
         m_messageState = state;
         emit messageStateChanged(state);
     }
+}
+
+// ---------------------------------------------------------------------------
+// Private: ed3k friends
+// ---------------------------------------------------------------------------
+
+ChatNetwork& MessagesPanel::networkFor(const QString& key) const
+{
+    return ChatNetwork::networkOf(key) == FriendNetwork::Ed3k ? *m_ed3kNet : *m_ed2kNet;
+}
+
+// friend.md §3: shown once per key, never accepted without the user
+void MessagesPanel::askEd3kFriendRequest(const QString& key, const QString& node, const QString& text)
+{
+    if (key.isEmpty() || m_ed3kAsked.contains(key))
+        return;
+    m_ed3kAsked.insert(key);
+
+    // not exec(): this runs inside an IPC push
+    auto* box = new QMessageBox(QMessageBox::Question, tr("ed3k Friend Request"),
+                                text.isEmpty()
+                                    ? tr("The ed3k node %1 asks to become your friend.").arg(node.left(16))
+                                    : tr("The ed3k node %1 asks to become your friend:\n\n%2")
+                                          .arg(node.left(16), text),
+                                QMessageBox::NoButton, this);
+    box->setAttribute(Qt::WA_DeleteOnClose);
+    auto* acceptBtn = box->addButton(tr("Accept"), QMessageBox::AcceptRole);
+    auto* declineBtn = box->addButton(tr("Decline"), QMessageBox::RejectRole);
+    box->addButton(tr("Later"), QMessageBox::DestructiveRole);
+    connect(box, &QMessageBox::buttonClicked, this, [this, key, acceptBtn, declineBtn](QAbstractButton* b) {
+        if (b != acceptBtn && b != declineBtn) {
+            m_ed3kAsked.remove(key);   // asked again on the next list
+            return;
+        }
+        if (!m_ipc || !m_ipc->isConnected())
+            return;
+        IpcMessage msg(IpcMsgType::AnswerEd3kFriendRequest);
+        msg.append(key);
+        msg.append(b == acceptBtn);
+        m_ipc->sendRequest(std::move(msg), [self = QPointer<MessagesPanel>(this)](const IpcMessage&) {
+            if (self)
+                self->requestFriendList();
+        });
+    });
+    box->show();
+}
+
+void MessagesPanel::copyMyEd3kLink()
+{
+    if (!IpcFeedback::requireConnection(m_ipc, tr("cannot read the ed3k friend link.")))
+        return;
+    IpcMessage msg(IpcMsgType::GetEd3kMyFriendLink);
+    msg.append(true);   // with `r`: whoever gets it can ask to be added
+    msg.append(thePrefs.nick());
+    m_ipc->sendRequest(std::move(msg), [self = QPointer<MessagesPanel>(this)](const IpcMessage& resp) {
+        if (!self)
+            return;
+        if (resp.type() == IpcMsgType::Error || !resp.fieldBool(0)) {
+            QMessageBox::warning(self, tr("ed3k"), tr("The ed3k node is not running."));
+            return;
+        }
+        QApplication::clipboard()->setText(resp.fieldString(1));
+    });
 }
 
 } // namespace eMule

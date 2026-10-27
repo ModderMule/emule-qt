@@ -148,6 +148,9 @@ void tst_IpcProtocol::msgTypeEnum_values()
     // Verify key enum values match the protocol spec
     QCOMPARE(static_cast<int>(IpcMsgType::Handshake), 100);
     QCOMPARE(static_cast<int>(IpcMsgType::GetDownloads), 110);
+    QCOMPARE(static_cast<int>(IpcMsgType::RenameDownload), 118);
+    QCOMPARE(static_cast<int>(IpcMsgType::RenameFiles), 119);
+    QCOMPARE(static_cast<int>(IpcMsgType::RenameSharedFile), 245);
     QCOMPARE(static_cast<int>(IpcMsgType::HandshakeOk), 300);
     QCOMPARE(static_cast<int>(IpcMsgType::Result), 301);
     QCOMPARE(static_cast<int>(IpcMsgType::Error), 302);
