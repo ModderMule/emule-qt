@@ -22,6 +22,7 @@
 
 #include <QDataStream>
 #include <QDir>
+#include <QElapsedTimer>
 #include <QFile>
 #include <QFileInfo>
 #include <QSet>
@@ -82,6 +83,7 @@ private slots:
     void hashOrder_coldStartTakesTheSmallFilesFirst();
     void hashing_volumesRunSideBySideOneVolumeInSequence();
     void hashing_bigFilesAreNotHandedOutAhead();
+    void hashing_laterVolumeDoesNotWalkEarlierQueue();
     void reload_nameWithWindowsReservedCharsIsNotRehashed();
     void moveBetweenSharedDirs_keepsTheFileAndHashesNothing_data();
     void moveBetweenSharedDirs_keepsTheFileAndHashesNothing();
@@ -1363,6 +1365,59 @@ void tst_SharedFileList::hashing_volumesRunSideBySideOneVolumeInSequence()
         QCOMPARE(shared.m_hashing.size(), 6);
         QTRY_COMPARE_WITH_TIMEOUT(shared.getCount(), 6, 10000);
     }
+}
+
+// A disk queued behind a big one is topped up from its own files: a walk over every
+// file of the other disks per hashed file kept the core too busy for IPC (#67).
+void tst_SharedFileList::hashing_laterVolumeDoesNotWalkEarlierQueue()
+{
+    eMule::testing::TempDir tmp;
+    thePrefs.setConfigDir(tmp.path());
+    thePrefs.setIncomingDir(tmp.filePath(QStringLiteral("incoming")));
+    thePrefs.setSharedDirs({});
+
+    KnownFileList knownFiles;
+    SharedFileList shared(&knownFiles);
+    constexpr int bigCount = 100000;
+    constexpr int smallCount = 2000;
+
+    QMutexLocker locker(&shared.m_hashMutex);
+    const auto queue = [&](const QString& volume, int count) {
+        for (int i = 0; i < count; ++i) {
+            const QString name = QStringLiteral("%1-%2.bin").arg(volume).arg(i);
+            // missing on disk: the worker fails them quickly, never delivered here
+            shared.queueForHash({tmp.filePath(volume), name, {}, volume + u'/' + name,
+                                 100, 0, volume});
+        }
+    };
+    queue(QStringLiteral("big"), bigCount);
+    queue(QStringLiteral("small"), smallCount);
+    HashingThread* smallWorker = shared.workerFor(QStringLiteral("small"));
+    // getHashingCount() takes the mutex held here
+    const auto pending = [&shared] {
+        return static_cast<int>(shared.waitingForHashCount()) + static_cast<int>(shared.m_hashing.size());
+    };
+    shared.hashNextFile();
+    QCOMPARE(pending(), bigCount + smallCount);
+
+    // The small disk's files finish one by one, each topping its worker up again
+    QElapsedTimer timer;
+    timer.start();
+    for (int done = 0; done < smallCount; ++done) {
+        QString finished;
+        for (auto it = shared.m_hashing.cbegin(); it != shared.m_hashing.cend(); ++it) {
+            if (it->worker == smallWorker) {
+                finished = it.key();
+                break;
+            }
+        }
+        QVERIFY(!finished.isEmpty());
+        static_cast<void>(shared.takeHashing(finished));
+        shared.hashNextFile();
+    }
+    // a walk of the big queue per file took minutes here
+    QVERIFY2(timer.elapsed() < 5000, qPrintable(QString::number(timer.elapsed())));
+    QCOMPARE(pending(), bigCount);
 }
 
 // Small files go to the worker in a batch, big ones only up to kMaxBytesPerWorker:

@@ -1142,8 +1142,9 @@ void SharedFileList::checkAndAddSingleFile(const QString& filePath)
     const QString volume = volumeKeyFor(fi.absolutePath());
 
     QMutexLocker hashLocker(&m_hashMutex);
+    const auto& queue = m_waitingForHash[workerFor(volume)];
     const bool waiting = std::ranges::any_of(
-        m_waitingForHash, [&key](const UnknownFileEntry& e) { return e.key == key; });
+        queue, [&key](const UnknownFileEntry& e) { return e.key == key; });
     if (!waiting && !m_hashing.contains(key))
         queueForHash({fi.absolutePath(), fi.fileName(), {}, key, static_cast<uint64>(fi.size()),
                       static_cast<time_t>(fi.lastModified().toSecsSinceEpoch()), volume});
@@ -1191,9 +1192,7 @@ void SharedFileList::attachCollection(KnownFile* file)
 
 void SharedFileList::hashNextFile()
 {
-    // What each worker holds now. One with nothing of its own waiting is marked drained
-    // and not searched for again until the queue grows: one long volume must not cost
-    // a full walk of the queue per finished file.
+    // What each worker holds now
     struct Load {
         int files = 0;
         uint64 bytes = 0;
@@ -1207,43 +1206,41 @@ void SharedFileList::hashNextFile()
     const auto hasRoom = [](const Load& l) {
         return l.files == 0 || (l.files < kMaxJobsPerWorker && l.bytes < kMaxBytesPerWorker);
     };
-    QSet<HashingThread*> open;
-    for (HashingThread* worker : m_hashWorkers)
-        if (!m_drainedWorkers.contains(worker) && hasRoom(load.value(worker)))
-            open.insert(worker);
 
-    for (auto it = m_waitingForHash.begin(); it != m_waitingForHash.end() && !open.isEmpty(); ) {
-        HashingThread* worker = workerFor(it->volume);
-        if (!open.contains(worker)) {
-            ++it;
-            continue;
-        }
-
-        HashingThread::Job job;
-        job.directory = it->directory;
-        job.filename = it->filename;
-        job.sharedDirectory = it->sharedDirectory;
-        job.generation = m_generation;
-        job.scannedSize = it->size;
-        job.scannedMtime = it->mtime;
+    // Each worker only from its own queue: no walk past other disks' files
+    for (auto& [worker, queue] : m_waitingForHash) {
         Load& l = load[worker];
-        ++l.files;
-        l.bytes += it->size;
-        if (!hasRoom(l))
-            open.remove(worker);
-        m_hashing.insert(it->key, {worker, *it});
-        it = m_waitingForHash.erase(it);
-        worker->enqueue(std::move(job));
+        while (!queue.empty() && hasRoom(l)) {
+            UnknownFileEntry& entry = queue.front();
+            HashingThread::Job job;
+            job.directory = entry.directory;
+            job.filename = entry.filename;
+            job.sharedDirectory = entry.sharedDirectory;
+            job.generation = m_generation;
+            job.scannedSize = entry.size;
+            job.scannedMtime = entry.mtime;
+            ++l.files;
+            l.bytes += entry.size;
+            const QString key = entry.key;
+            m_hashing.insert(key, {worker, std::move(entry)});
+            queue.pop_front();
+            worker->enqueue(std::move(job));
+        }
     }
-
-    m_drainedWorkers.unite(open);   // walked the whole queue and found nothing more for them
 }
 
 void SharedFileList::queueForHash(UnknownFileEntry entry)
 {
-    static_cast<void>(workerFor(entry.volume));   // exists before the queue is walked
-    m_waitingForHash.push_back(std::move(entry));
-    m_drainedWorkers.clear();
+    HashingThread* worker = workerFor(entry.volume);
+    m_waitingForHash[worker].push_back(std::move(entry));
+}
+
+size_t SharedFileList::waitingForHashCount() const
+{
+    size_t count = 0;
+    for (const auto& [worker, queue] : m_waitingForHash)
+        count += queue.size();
+    return count;
 }
 
 UnknownFileEntry SharedFileList::takeHashing(const QString& key)
@@ -1768,13 +1765,15 @@ void SharedFileList::rescan(const QStringList& onlyDirs)
     // The file on the worker is left to finish.
     {
         QMutexLocker hashLocker(&m_hashMutex);
-        std::erase_if(m_waitingForHash, [&](const UnknownFileEntry& e) {
-            const bool inScope = full || scope.contains(pathKey(e.directory));
-            return inScope && !wantedUnknown.contains(e.key);
-        });
         QSet<QString> waiting;
-        for (const UnknownFileEntry& e : m_waitingForHash)
-            waiting.insert(e.key);
+        for (auto& [worker, queue] : m_waitingForHash) {
+            std::erase_if(queue, [&](const UnknownFileEntry& e) {
+                const bool inScope = full || scope.contains(pathKey(e.directory));
+                return inScope && !wantedUnknown.contains(e.key);
+            });
+            for (const UnknownFileEntry& e : queue)
+                waiting.insert(e.key);
+        }
         for (UnknownFileEntry& e : toHash)
             if (!waiting.contains(e.key) && !m_hashing.contains(e.key))
                 queueForHash(std::move(e));
@@ -1911,7 +1910,7 @@ void SharedFileList::forEachFile(const std::function<void(KnownFile*)>& callback
 int SharedFileList::getHashingCount() const
 {
     QMutexLocker hashLocker(&m_hashMutex);
-    return static_cast<int>(m_waitingForHash.size() + static_cast<size_t>(m_hashing.size()))
+    return static_cast<int>(waitingForHashCount() + static_cast<size_t>(m_hashing.size()))
            + m_fullRehashLeft.load(std::memory_order_relaxed);
 }
 

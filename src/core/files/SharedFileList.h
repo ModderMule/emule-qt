@@ -402,6 +402,8 @@ private:
     void hashNextFile();
     /// Append to the hash queue. m_hashMutex held.
     void queueForHash(UnknownFileEntry entry);
+    /// Files waiting for any worker. m_hashMutex held.
+    [[nodiscard]] size_t waitingForHashCount() const;
     /// The file a worker reported on is off it. m_hashMutex held.
     [[nodiscard]] UnknownFileEntry takeHashing(const QString& key);
     /// The disk a directory is on (QStorageInfo::rootPath), cached. Main thread.
@@ -523,7 +525,9 @@ private:
     /// holds this one while feeding files in through safeAddKFile(), which takes the
     /// other. The two must never nest in either direction.
     mutable QMutex m_hashMutex;
-    std::list<UnknownFileEntry> m_waitingForHash;
+    /// Waiting files, one queue per worker: topping up a worker must not walk the
+    /// files of every other disk (#67, a full walk per hashed file froze the core).
+    std::unordered_map<HashingThread*, std::deque<UnknownFileEntry>> m_waitingForHash;
     uint64 m_generation = 0;
     /// The files on the workers, by path key.
     struct Hashing {
@@ -531,8 +535,6 @@ private:
         UnknownFileEntry entry;
     };
     QHash<QString, Hashing> m_hashing;
-    /// Workers found with nothing waiting; cleared when the queue grows.
-    QSet<HashingThread*> m_drainedWorkers;
 
     /// A file that could not be hashed: tried again after a growing wait, then left
     /// alone until its size or date changes. By path key. Main thread only.
