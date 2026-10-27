@@ -486,6 +486,18 @@ void tst_NatRendezvousPaths::prnat_syncIPv6_andUnsolicited()
     QCOMPARE(list[0]->peerUdp, Endpoint(peerV6, 5555));
     QCOMPARE(list[0]->peerUdp6, Endpoint(peerV6, 5555));
     QCOMPARE(f.env->udpWith(OP_EMULEPROT, OP_HOLEPUNCH).front().to, Endpoint(peerV6, 5555));
+
+    // with QUIC: armed at once, the target's fallback dial goes to the IPv6 endpoint
+    HubFixture g;
+    g.env->quic = true;
+    g.env->logIn(kServerIP, kServerPort, SrvTcpFlag::NatRendezvous);
+    QVERIFY(g.hub->handleServerDatagram(Endpoint(kServerIP, kServerPort + 4), bytes(sync), sync.size()));
+    QCOMPARE(g.env->quicArms.size(), size_t{1});
+    for (int i = 0; i < 7; ++i)
+        g.advance(1000);
+    QCOMPARE(g.env->quicDials.size(), size_t{1});
+    QCOMPARE(g.env->quicDials.front().second, Endpoint(peerV6, 5555));
+    QVERIFY(g.env->dials.empty());
 }
 
 void tst_NatRendezvousPaths::prnat_ipv6Session()

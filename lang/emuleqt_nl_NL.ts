@@ -397,7 +397,7 @@ Schakel de webinterface of REST API in onder Opties → Webinterface.</translati
 <context>
     <name>QObject</name>
     <message>
-        <location filename="../src/gui/app/main.cpp" line="+483"/>
+        <location filename="../src/gui/app/main.cpp" line="+484"/>
         <source>eMule Qt</source>
         <translation>eMule Qt</translation>
     </message>
@@ -411,7 +411,7 @@ Start it with --new-instance or --config &lt;dir&gt; to open another window.</so
 Start het met --new-instance of --config &lt;dir&gt; om een ander venster te openen.</translation>
     </message>
     <message>
-        <location line="+477"/>
+        <location line="+478"/>
         <source>Download Added</source>
         <translation>Download toegevoegd</translation>
     </message>
@@ -614,23 +614,21 @@ Start het met --new-instance of --config &lt;dir&gt; om een ander venster te ope
 %1</translation>
     </message>
     <message>
-        <location filename="../src/gui/utils/FileAssociation.cpp" line="+258"/>
+        <location filename="../src/gui/utils/FileAssociation.cpp" line="+305"/>
         <source>Could not write the file association to the registry.</source>
         <translation>Kon de bestandskoppeling niet naar het register schrijven.</translation>
     </message>
     <message>
-        <location line="+23"/>
         <source>Could not remove the file association from the registry.</source>
-        <translation>Kon de bestandskoppeling niet uit het register verwijderen.</translation>
+        <translation type="vanished">Kon de bestandskoppeling niet uit het register verwijderen.</translation>
     </message>
     <message>
-        <location line="+15"/>
-        <location line="+31"/>
+        <location line="+47"/>
         <source>No writable data directory.</source>
         <translation>Geen beschrijfbare gegevensmap.</translation>
     </message>
     <message>
-        <location line="-23"/>
+        <location line="+34"/>
         <source>Could not create %1.</source>
         <translation>Kon %1 niet aanmaken.</translation>
     </message>
@@ -6203,12 +6201,12 @@ Opnieuw downloaden?</translation>
     </message>
     <message>
         <location line="-2129"/>
-        <location line="+6089"/>
+        <location line="+6104"/>
         <source>Apply</source>
         <translation>Toepassen</translation>
     </message>
     <message>
-        <location line="-6088"/>
+        <location line="-6103"/>
         <source>Help</source>
         <translation>Help</translation>
     </message>
@@ -6252,23 +6250,23 @@ Opnieuw downloaden?</translation>
     </message>
     <message>
         <location line="+2"/>
-        <location line="+8127"/>
+        <location line="+8148"/>
         <source>BitTorrent</source>
         <translation>BitTorrent</translation>
     </message>
     <message>
-        <location line="-8047"/>
+        <location line="-8068"/>
         <source>User Name</source>
         <translation>Gebruikersnaam</translation>
     </message>
     <message>
         <location line="+8"/>
-        <location line="+5977"/>
+        <location line="+5992"/>
         <source>Language</source>
         <translation>Taal</translation>
     </message>
     <message>
-        <location line="-5974"/>
+        <location line="-5989"/>
         <source>System Default</source>
         <translation>Systeemstandaard</translation>
     </message>
@@ -6368,12 +6366,12 @@ Opnieuw downloaden?</translation>
     </message>
     <message>
         <location line="+8"/>
-        <location line="+5913"/>
+        <location line="+5928"/>
         <source>Core</source>
         <translation>Kern</translation>
     </message>
     <message>
-        <location line="-5908"/>
+        <location line="-5923"/>
         <source>Address:</source>
         <translation>Adres:</translation>
     </message>
@@ -6646,7 +6644,7 @@ Weet u zeker dat u wilt doorgaan?</translation>
         <location line="+296"/>
         <location line="+1016"/>
         <location line="+152"/>
-        <location line="+975"/>
+        <location line="+990"/>
         <location line="+307"/>
         <location line="+284"/>
         <location line="+29"/>
@@ -6654,7 +6652,7 @@ Weet u zeker dat u wilt doorgaan?</translation>
         <translation>Ingeschakeld</translation>
     </message>
     <message>
-        <location line="-5050"/>
+        <location line="-5065"/>
         <source>Reset</source>
         <translation>Herstellen</translation>
     </message>
@@ -6671,13 +6669,13 @@ Weet u zeker dat u wilt doorgaan?</translation>
     <message>
         <location line="+3"/>
         <location line="+6"/>
-        <location line="+4442"/>
+        <location line="+4457"/>
         <location line="+334"/>
         <source> KB/s</source>
         <translation> KB/s</translation>
     </message>
     <message>
-        <location line="-4779"/>
+        <location line="-4794"/>
         <source>Upload</source>
         <translation>Upload</translation>
     </message>
@@ -6708,12 +6706,12 @@ Weet u zeker dat u wilt doorgaan?</translation>
     </message>
     <message>
         <location line="+23"/>
-        <location line="+4304"/>
+        <location line="+4319"/>
         <source>Client Port</source>
         <translation>Cliëntpoort</translation>
     </message>
     <message>
-        <location line="-4301"/>
+        <location line="-4316"/>
         <source>TCP</source>
         <translation>TCP</translation>
     </message>
@@ -6749,12 +6747,12 @@ Weet u zeker dat u wilt doorgaan?</translation>
     <message>
         <location line="+4"/>
         <location line="+1733"/>
-        <location line="+5427"/>
+        <location line="+5448"/>
         <source>Any</source>
         <translation>Alle</translation>
     </message>
     <message>
-        <location line="-7158"/>
+        <location line="-7179"/>
         <source>Use only this network interface, for example a VPN tunnel. Pick one from the list, or type an IP address or a subnet such as 10.64.0.0/10 (the interface holding an address in it). Connections through a proxy are not bound.</source>
         <translation>Alleen deze netwerkinterface gebruiken, bijvoorbeeld een VPN-tunnel. Kies er een uit de lijst, of typ een IP-adres of een subnet zoals 10.64.0.0/10 (de interface met een adres daarbinnen). Verbindingen via een proxy worden niet gebonden.</translation>
     </message>
@@ -6775,12 +6773,12 @@ Weet u zeker dat u wilt doorgaan?</translation>
     </message>
     <message>
         <location line="+6"/>
-        <location line="+4306"/>
+        <location line="+4321"/>
         <source>Connection Limits</source>
         <translation>Verbindingslimieten</translation>
     </message>
     <message>
-        <location line="-4304"/>
+        <location line="-4319"/>
         <source>Max. connections</source>
         <translation>Max. verbindingen</translation>
     </message>
@@ -8065,23 +8063,23 @@ Elke Usenet-verbinding loopt dan via de proxy, dus de snelheid ervan begrenst de
         <location line="+19"/>
         <location line="+1019"/>
         <location line="+154"/>
-        <location line="+1857"/>
-        <location line="+2177"/>
+        <location line="+1872"/>
+        <location line="+2183"/>
         <source>Add</source>
         <translation>Toevoegen</translation>
     </message>
     <message>
-        <location line="-5206"/>
+        <location line="-5227"/>
         <location line="+1019"/>
         <location line="+154"/>
-        <location line="+1584"/>
+        <location line="+1599"/>
         <location line="+316"/>
-        <location line="+2139"/>
+        <location line="+2145"/>
         <source>Remove</source>
         <translation>Verwijderen</translation>
     </message>
     <message>
-        <location line="-5191"/>
+        <location line="-5212"/>
         <source>Display name (optional)</source>
         <translation>Weergavenaam (optioneel)</translation>
     </message>
@@ -8092,12 +8090,12 @@ Elke Usenet-verbinding loopt dan via de proxy, dus de snelheid ervan begrenst de
     </message>
     <message>
         <location line="+8"/>
-        <location line="+2132"/>
+        <location line="+2147"/>
         <source>Encryption:</source>
         <translation>Versleuteling:</translation>
     </message>
     <message>
-        <location line="-2129"/>
+        <location line="-2144"/>
         <source>None (119)</source>
         <translation>Geen (119)</translation>
     </message>
@@ -8155,12 +8153,12 @@ Elke Usenet-verbinding loopt dan via de proxy, dus de snelheid ervan begrenst de
         <translation> dagen</translation>
     </message>
     <message>
-        <location line="+921"/>
+        <location line="+936"/>
         <source>Bandwidth</source>
         <translation>Bandbreedte</translation>
     </message>
     <message>
-        <location line="-4590"/>
+        <location line="-4605"/>
         <source>Downloads that are receiving data, and the sources sending it, are drawn in bold. A source listed under another file (A4AF) is bold too while it transfers. The connected server and the selected category tab are bold as well.</source>
         <translation>Downloads die gegevens ontvangen, en de bronnen die ze sturen, worden vet weergegeven. Een bron onder een ander bestand (A4AF) is ook vet zolang hij overdraagt. De verbonden server en het gekozen categorietabblad zijn ook vet.</translation>
     </message>
@@ -8311,12 +8309,12 @@ Elke Usenet-verbinding loopt dan via de proxy, dus de snelheid ervan begrenst de
         <location line="+1"/>
         <location line="+1958"/>
         <location line="+9"/>
-        <location line="+116"/>
+        <location line="+131"/>
         <source>No limit</source>
         <translation>Geen limiet</translation>
     </message>
     <message>
-        <location line="-2080"/>
+        <location line="-2095"/>
         <source>Decimal GB, because that is what an invoice says — the 1024-based GB used elsewhere in eMule would put a 1000 GB plan 7% over.
 
 Set it slightly under your plan. The figure is measured here, so it reads a few percent below your provider&apos;s, and articles already in flight when the limit is reached still finish.</source>
@@ -8372,12 +8370,12 @@ Stel het iets lager in dan uw abonnement. De hoeveelheid wordt hier gemeten en v
     <message>
         <location line="+3"/>
         <location line="+913"/>
-        <location line="+1557"/>
+        <location line="+1572"/>
         <source> s</source>
         <translation> s</translation>
     </message>
     <message>
-        <location line="-2469"/>
+        <location line="-2484"/>
         <source>Never back off</source>
         <translation>Nooit uitstellen</translation>
     </message>
@@ -8388,19 +8386,19 @@ Stel het iets lager in dan uw abonnement. De hoeveelheid wordt hier gemeten en v
     </message>
     <message>
         <location line="+8"/>
-        <location line="+2017"/>
+        <location line="+2032"/>
         <source>Share of the download limit:</source>
         <translation>Aandeel in de downloadlimiet:</translation>
     </message>
     <message>
-        <location line="-2014"/>
+        <location line="-2029"/>
         <location line="+42"/>
-        <location line="+1964"/>
+        <location line="+1979"/>
         <source> %</source>
         <translation> %</translation>
     </message>
     <message>
-        <location line="-2004"/>
+        <location line="-2019"/>
         <source>How much of the global download limit Usenet may take while eD2K is also downloading. Whichever engine is idle lends its whole share to the other, so this only applies when both are busy.</source>
         <translation>Hoeveel van de globale downloadlimiet Usenet mag gebruiken terwijl eD2K ook downloadt. De engine die niets doet, leent zijn hele aandeel aan de andere, dus dit geldt alleen als beide bezig zijn.</translation>
     </message>
@@ -8509,11 +8507,12 @@ De map mag niet in uw tijdelijke, inkomende of configuratiemap liggen: daar schr
     </message>
     <message>
         <location line="-1776"/>
+        <location line="+1819"/>
         <source>Desktop</source>
         <translation>Bureaublad</translation>
     </message>
     <message>
-        <location line="+4"/>
+        <location line="-1815"/>
         <source>Open .nzb files with eMule Qt</source>
         <translation>.nzb-bestanden openen met eMule Qt</translation>
     </message>
@@ -9201,7 +9200,7 @@ Een later toegevoegde indexer haalt zijn oudere aanbod niet op: een nieuwe index
         <translation type="vanished">Start de BitTorrent-engine samen met de daemon. Uitgeschakeld wordt er geen torrent gedownload of geseed.</translation>
     </message>
     <message>
-        <location line="+3362"/>
+        <location line="+3383"/>
         <source>unlimited</source>
         <translation>onbeperkt</translation>
     </message>
@@ -9240,7 +9239,7 @@ Een later toegevoegde indexer haalt zijn oudere aanbod niet op: een nieuwe index
         <translation type="vanished">Gebruikt voor zowel TCP als UDP. Moet verschillen van de eD2K-poorten.</translation>
     </message>
     <message>
-        <location line="-3291"/>
+        <location line="-3297"/>
         <source>Listen port (TCP/UDP):</source>
         <translation>Luisterpoort (TCP/UDP):</translation>
     </message>
@@ -9282,7 +9281,7 @@ Een later toegevoegde indexer haalt zijn oudere aanbod niet op: een nieuwe index
         <translation type="vanished">Upload:</translation>
     </message>
     <message>
-        <location line="-101"/>
+        <location line="-116"/>
         <source>Active downloads:</source>
         <translation>Actieve downloads:</translation>
     </message>
@@ -9332,7 +9331,7 @@ Een later toegevoegde indexer haalt zijn oudere aanbod niet op: een nieuwe index
         <translation>Leeg laten om torrents op te slaan in de map met binnenkomende bestanden.</translation>
     </message>
     <message>
-        <location line="+52"/>
+        <location line="+67"/>
         <source>BitTorrent download folder</source>
         <translation>BitTorrent-downloadmap</translation>
     </message>
@@ -9372,7 +9371,12 @@ Een later toegevoegde indexer haalt zijn oudere aanbod niet op: een nieuwe index
         <translation>Downloads worden altijd gecontroleerd en gelogd. Gedeelde bestanden worden bij elke start opnieuw gecontroleerd.</translation>
     </message>
     <message>
-        <location line="+2870"/>
+        <location line="+1833"/>
+        <source>Could not update the file associations: %1</source>
+        <translation>De bestandskoppelingen konden niet worden bijgewerkt: %1</translation>
+    </message>
+    <message>
+        <location line="+1043"/>
         <source>UDP is disabled in the config file (udpPort: 0)</source>
         <translation>UDP is uitgeschakeld in het configuratiebestand (udpPort: 0)</translation>
     </message>
@@ -9477,13 +9481,13 @@ Aanmaken?</translation>
 %1</translation>
     </message>
     <message>
-        <location line="-3214"/>
+        <location line="-3220"/>
         <location line="+162"/>
         <source>Disabled</source>
         <translation>Uitgeschakeld</translation>
     </message>
     <message>
-        <location line="-4132"/>
+        <location line="-4147"/>
         <source>Lets two Low ID clients find each other&apos;s address through a server that supports it or a Kad buddy, then connect over IPv6 or QUIC</source>
         <translation>Laat twee Low ID-clients elkaars adres vinden via een server die dit ondersteunt of een Kad-buddy, en daarna verbinden via IPv6 of QUIC</translation>
     </message>
@@ -9513,7 +9517,17 @@ Aanmaken?</translation>
         <translation>Wachtrij</translation>
     </message>
     <message>
-        <location line="+70"/>
+        <location line="+41"/>
+        <source>Open .torrent files and magnet links with eMule Qt</source>
+        <translation>.torrent-bestanden en magnetlinks openen met eMule Qt</translation>
+    </message>
+    <message>
+        <location line="+2"/>
+        <source>Claim .torrent files and magnet: links for this copy of eMule Qt. The setting is for you alone and needs no administrator; it is re-applied at every start, so another program taking the association does not keep it.</source>
+        <translation>.torrent-bestanden en magnet:-links claimen voor deze kopie van eMule Qt. De instelling geldt alleen voor u en vereist geen beheerder; ze wordt bij elke start opnieuw toegepast, zodat een ander programma dat de koppeling overneemt die niet houdt.</translation>
+    </message>
+    <message>
+        <location line="+42"/>
         <source>Used for both TCP and UDP. Must differ from the eD2K ports, the web server port and the core port.</source>
         <translation>Voor zowel TCP als UDP. Moet verschillen van de eD2K-poorten, de webserverpoort en de kernpoort.</translation>
     </message>
@@ -10174,14 +10188,13 @@ Verbindingen met nieuwsservers schakelen direct om.</translation>
         <translation>„%1” is geen IP-adres. Het luisteradres is niet gewijzigd.</translation>
     </message>
     <message>
-        <location line="+496"/>
+        <location line="+501"/>
         <source>File types</source>
         <translation>Bestandstypen</translation>
     </message>
     <message>
-        <location line="+1"/>
         <source>Could not update the .nzb file association: %1</source>
-        <translation>De .nzb-bestandskoppeling kon niet worden bijgewerkt: %1</translation>
+        <translation type="vanished">De .nzb-bestandskoppeling kon niet worden bijgewerkt: %1</translation>
     </message>
     <message>
         <location line="+204"/>
@@ -10194,7 +10207,7 @@ Verbindingen met nieuwsservers schakelen direct om.</translation>
         <translation>specialdlp-bibliotheek niet gevonden, controles zijn inactief</translation>
     </message>
     <message>
-        <location line="+451"/>
+        <location line="+453"/>
         <source>Port forwarding: %1</source>
         <translation>Poortdoorverwijzing: %1</translation>
     </message>

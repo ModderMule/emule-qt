@@ -284,11 +284,11 @@ bool CommandLineExec::handleFileTypeRegistration() const
         return false;
 
     QString error;
-    const bool ok = wantRegister ? gui::FileAssociation::registerNzbFileType(error)
-                                 : gui::FileAssociation::unregisterNzbFileType(error);
+    const bool ok = wantRegister ? gui::FileAssociation::applyFileTypes({true, true}, error)
+                                 : gui::FileAssociation::unregisterFileTypes(error);
     if (ok) {
-        logInfo(wantRegister ? QStringLiteral("Registered .nzb with the desktop")
-                             : QStringLiteral("Removed the .nzb file association"));
+        logInfo(wantRegister ? QStringLiteral("Registered .nzb, .torrent and magnet: with the desktop")
+                             : QStringLiteral("Removed the .nzb, .torrent and magnet: associations"));
     } else {
         logError(QStringLiteral("File-type registration failed: %1").arg(error));
     }

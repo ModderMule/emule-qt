@@ -7,6 +7,8 @@
 #include <QList>
 #include <QString>
 
+#include <array>
+
 namespace eMule::bt {
 
 /// The session's settings, resolved by the daemon from Preferences.
@@ -194,6 +196,18 @@ struct BtAddResult {
     QString id;
     /// English, for the log; the GUI maps the outcome
     QString message;
+};
+
+/// A blocked IPv4 range from the app's IP filter, both ends included, host byte order.
+struct BtIpRange4 {
+    quint32 first = 0;
+    quint32 last = 0;
+};
+
+/// A blocked IPv6 range, both ends included, network byte order.
+struct BtIpRange6 {
+    std::array<quint8, 16> first{};
+    std::array<quint8, 16> last{};
 };
 
 /// What the engine asks of the shared lines (daemon's BandwidthCoordinator).

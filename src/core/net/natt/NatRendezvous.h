@@ -43,11 +43,16 @@ public:
     static constexpr uint64 kHandoffIntervalMs  = 2000;
     static constexpr uint64 kRequesterDialDelay = 5000;   // the target dials first
     // QUIC: the downloader (requester) dials once both NATs had a moment to open; with
-    // an IPv6 of our own it first waits for the peer's handoff (TCP/IPv6 wins).
+    // an IPv6 of our own it first waits for the peer's handoff (TCP/IPv6 wins), unless
+    // the server gave a punched IPv6 UDP endpoint (SYNC_IPV6): then QUIC goes first and
+    // TCP/IPv6 follows kRequesterDialDelay later on both sides.
     static constexpr uint64 kQuicDialDelayMs      = 1000;
     static constexpr uint64 kQuicDialDelayV6Ms    = 2500;
     // ... the target only when nothing came (a peer that cannot dial QUIC)
     static constexpr uint64 kQuicTargetFallbackMs = 6000;
+    // after a TCP/IPv6 decision: QUIC when TCP did not connect (stateful IPv6 firewall)
+    static constexpr uint64 kQuicAfterTcpMs       = 7000;
+    static constexpr uint64 kQuicAfterTcpTargetMs = kQuicAfterTcpMs + 5000;
     static constexpr uint64 kNoticeRetryMs      = 30 * 60 * 1000;
     static constexpr uint64 kNoticePerIpMs      = 5000;
     static constexpr uint64 kRepeatNoticeMs     = 10000;  // servers re-send a notice for a few s
@@ -170,9 +175,14 @@ private:
     [[nodiscard]] const uint8* peerCryptHash(const Attempt& attempt, bool plainWhenUnknown) const;
     void sendPunch(Attempt& attempt);
     void sendHandoff(Attempt& attempt, bool answer);
+    /// How QUIC relates to TCP/IPv6 in an attempt.
+    enum class QuicDialMode : uint8 { Only, First, AfterTcp };
+
     void evaluateDial(Attempt& attempt);
+    /// TCP/IPv6 dial; @p fallback: both roles wait kRequesterDialDelay (QUIC went first).
+    void evaluateTcpDial(Attempt& attempt, bool fallback);
     void dial(Attempt& attempt);
-    void evaluateQuicDial(Attempt& attempt);
+    void evaluateQuicDial(Attempt& attempt, QuicDialMode mode);
     void dialQuic(Attempt& attempt);
     void finish(Attempt& attempt, bool connected);
     void handleHolePunch(const Endpoint& from);

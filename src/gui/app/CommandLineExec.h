@@ -126,11 +126,11 @@ private:
 
     QCommandLineOption m_registerTypesOption{
         QStringLiteral("register-file-types"),
-        QStringLiteral("Claim .nzb files for this executable, then exit.")};
+        QStringLiteral("Claim .nzb, .torrent and magnet: links for this executable, then exit.")};
 
     QCommandLineOption m_unregisterTypesOption{
         QStringLiteral("unregister-file-types"),
-        QStringLiteral("Give up the .nzb file association, then exit.")};
+        QStringLiteral("Give up the .nzb, .torrent and magnet: associations, then exit.")};
 
     // Cached parsed values
     bool m_screenshotMode = false;

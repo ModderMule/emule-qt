@@ -21,6 +21,7 @@
 #include "app/AppConfig.h"
 #include "app/AppContext.h"
 #include "app/CoreSession.h"
+#include "ipfilter/IPFilter.h"
 #include "kademlia/KadLog.h"
 #include "net/HttpDefaults.h"
 #include "prefs/Preferences.h"
@@ -37,6 +38,7 @@
 #ifdef EMULE_HAVE_ED3K
 #include "Ed3kSession.h"
 #include "Ed3kUsenetJoin.h"
+#include "Ed3kTorrentJoin.h"
 #endif
 #include "IndexerFeedList.h"
 #include "IndexerSearch.h"
@@ -281,8 +283,20 @@ bool DaemonApp::start()
     btSession = m_btSession.get();
     BtBridge::setSession(m_btSession.get());
     connectBtPushes();
+    // the app's IP filter (§7.6): kept by the session across stop/start
+    BtBridge::applyIpFilter();
+    if (theApp.ipFilter) {
+        connect(theApp.ipFilter, &IPFilter::filterLoaded, this, [] { BtBridge::applyIpFilter(); });
+        connect(theApp.ipFilter, &IPFilter::filterCleared, this, [] { BtBridge::applyIpFilter(); });
+    }
     if (thePrefs.btEnabled())
         m_btSession->start(BtBridge::settingsFromPrefs());
+#endif
+#if defined(EMULE_HAVE_ED3K) && defined(EMULE_HAVE_BITTORRENT)
+    // after both sessions; the node may run already (statusChanged was before this)
+    m_torrentJoin = std::make_unique<ed3k::Ed3kTorrentJoin>(*m_ed3kSession, *m_btSession, thePrefs.configDir());
+    if (m_ed3kSession->isRunning())
+        m_torrentJoin->start();
 #endif
     // The graphs' and toolbar's BitTorrent rates; reads BtBridge's session, nulled in stop()
     if (theApp.statsHistory)
@@ -362,7 +376,12 @@ void DaemonApp::stop()
     m_bandwidth.reset();
 
 #ifdef EMULE_HAVE_ED3K
-    // the join first: saves itself and closes its downloads while the engine runs
+    // the joins first: save themselves and close their downloads while the engines run
+#ifdef EMULE_HAVE_BITTORRENT
+    if (m_torrentJoin)
+        m_torrentJoin->stop();
+    m_torrentJoin.reset();
+#endif
     if (m_usenetJoin)
         m_usenetJoin->stop();
     m_usenetJoin.reset();
@@ -648,6 +667,7 @@ void DaemonApp::applyBtConfig()
         m_btSession->stop();
     else if (enabled)
         m_btSession->applySettings(settings);
+    BtBridge::applyIpFilter(true);
     // port, enable switch or btPortMapping may have changed; diff-based, cheap
     if (m_coreSession)
         m_coreSession->updatePortMappings();
@@ -665,6 +685,10 @@ void DaemonApp::applyEd3kConfig()
     if (m_ed3kSession->isRunning() && (!enabled || (port != 0 && m_ed3kSession->udpPort() != port))) {
         if (m_usenetJoin)
             m_usenetJoin->stop();   // restarted on statusChanged
+#ifdef EMULE_HAVE_BITTORRENT
+        if (m_torrentJoin)
+            m_torrentJoin->stop();
+#endif
         m_ed3kSession->stop();
     }
     if (enabled && !m_ed3kSession->isRunning()) {

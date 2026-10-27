@@ -40,7 +40,7 @@ bool DirectUdpNatPath::request(Attempt& attempt)
 void DirectUdpNatPath::repeat(Attempt& attempt)
 {
     // Until the QUIC dial: a lost request leaves the source without an expectation.
-    if (attempt.role == Role::Requester && !attempt.dialed
+    if (attempt.role == Role::Requester && !attempt.quicDialed
         && repeatDue(attempt, kRepeatMs, kMaxRequests))
         sendRequest(attempt);
 }

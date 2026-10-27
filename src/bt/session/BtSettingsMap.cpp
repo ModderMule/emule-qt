@@ -46,7 +46,9 @@ lt::settings_pack BtSettingsMap::toPack(const BtSettings& s)
     p.set_int(lt::settings_pack::alert_mask,
               static_cast<int>(static_cast<std::uint32_t>(lt::alert_category::error | lt::alert_category::status | lt::alert_category::storage
                                                           | lt::alert_category::tracker | lt::alert_category::performance_warning
-                                                          | lt::alert_category::dht)));
+                                                          | lt::alert_category::dht | lt::alert_category::ip_block
+                                                          // piece_finished_alert, for an ed3k join
+                                                          | lt::alert_category::piece_progress)));
     return p;
 }
 

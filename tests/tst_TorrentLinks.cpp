@@ -33,6 +33,7 @@ private slots:
     void displayName();
     void magnetFromHash();
     void torrentDrop();
+    void ed3kTorrentSetLink();
 };
 
 void tst_TorrentLinks::btihMagnetIsBitTorrent()
@@ -128,6 +129,17 @@ void tst_TorrentLinks::torrentDrop()
     QVERIFY(torrentDropFiles(nullptr).isEmpty());
     QVERIFY(isTorrentFilePath(QStringLiteral("/x/Y.TORRENT")));
     QVERIFY(!isTorrentFilePath(QStringLiteral("/x/y.torrent.part")));
+}
+
+void tst_TorrentLinks::ed3kTorrentSetLink()
+{
+    const QString v1 = QStringLiteral("ed3k:file?b3=abc&sz=10&dn=x&bt=") + QString(40, QLatin1Char('a'));
+    QVERIFY(isBitTorrentMagnet(v1));
+    QVERIFY(isBitTorrentMagnet(QStringLiteral("ed3k:file?bt=") + QString(64, QLatin1Char('F')) + QStringLiteral("&b3=abc")));
+    // a plain ed3k file, or a bt value that is no infohash
+    QVERIFY(!isBitTorrentMagnet(QStringLiteral("ed3k:file?b3=abc&sz=10")));
+    QVERIFY(!isBitTorrentMagnet(QStringLiteral("ed3k:file?b3=abc&bt=1234")));
+    QCOMPARE(bitTorrentMagnetsIn(QStringLiteral("x ") + v1), QStringList{v1});
 }
 
 QTEST_GUILESS_MAIN(tst_TorrentLinks)

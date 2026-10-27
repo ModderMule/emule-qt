@@ -38,6 +38,9 @@
     <ClInclude Include="BtIds.h">
       <Filter>Header Files</Filter>
     </ClInclude>
+    <ClInclude Include="BtJoin.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
     <ClInclude Include="BtTypes.h">
       <Filter>Header Files</Filter>
     </ClInclude>

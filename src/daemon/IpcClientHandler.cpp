@@ -2099,6 +2099,9 @@ IpcClientHandler::PrefApplyOutcome IpcClientHandler::applyPreferenceChanges(cons
             outcome.btChanged = true;
         if (key.startsWith(QLatin1StringView("ed3k")) && before.value(key) != after.value(key))
             outcome.ed3kChanged = true;
+        // the filter level also shapes BitTorrent's IP filter
+        if (key == QLatin1StringView("ipFilterLevel") && before.value(key) != after.value(key))
+            outcome.btChanged = true;
     }
 
     // MFC PPgSecurity::OnApply: a stricter server filter prunes the list at once

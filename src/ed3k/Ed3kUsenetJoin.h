@@ -15,7 +15,7 @@
 /// - ed3k downloads of members with a root: sources by Kad, blocks into tempPath.
 /// - The join is saved in Config/ed3k/usenet/<itemId>.join (debounced, and at stop).
 
-#include "Ed3kFfi.h"
+#include "Ed3kJoinBase.h"
 
 #include <QByteArray>
 #include <QHash>
@@ -60,7 +60,7 @@ public:
     virtual void releaseSealHold(const QString& itemId, int fileIndex) = 0;
 };
 
-class Ed3kUsenetJoin : public QObject {
+class Ed3kUsenetJoin : public Ed3kJoinBase {
     Q_OBJECT
 
 public:
@@ -76,10 +76,9 @@ public:
 
     /// Joins for the items of the queue (saved ones loaded); installs the seal hold.
     /// Called when ed3k starts; idempotent.
-    void start();
+    void start() override;
     /// Saves every join and drops them; closes downloads. Before the ed3k node stops.
-    void stop();
-    [[nodiscard]] bool isStarted() const { return m_started; }
+    void stop() override;
 
     // -- the NZB buffer (usenet-join.md "The object") ----------------------
 
@@ -106,10 +105,6 @@ public:
                      std::span<const ::ed3k::PublisherKey> publishers = {});
     /// A source of a member's root (from Kad or known): asked for the file.
     void addSource(const QString& itemId, int fileIndex, const ::ed3k::Source& source);
-    /// Holding posts back (§6): no ALIAS records, no share list. Default off.
-    void setHoldBack(bool on) { m_holdBack = on; }
-    /// Kad searches (sources, nzb-file claims) on/off; tests switch them off.
-    void setSearchEnabled(bool on) { m_searchEnabled = on; }
 
 public slots:
     void onItemAdded(const QString& itemId);
@@ -127,12 +122,20 @@ signals:
     /// POST_COMPLETE handled: what it gave is published.
     void postCompleted(const QString& itemId, bool hasPostRoot);
 
+protected:
+    [[nodiscard]] std::vector<std::uint64_t> wantedBlocks(const Download& d) const override;
+    void onFileBlock(const Download& d, const ::ed3k::event::Block& b) override;
+    void onBlobFetched(const QString& owner, int member, const ::ed3k::Root& root, const QByteArray& data) override;
+    void onDownloadHashes(const Download& d, const ::ed3k::Bytes& blob) override;
+    [[nodiscard]] std::optional<QByteArray> readShared(const Shared& s, std::uint64_t offset, std::uint32_t len) const override;
+    [[nodiscard]] bool sharedGone(const Shared& s) const override;
+    void onOtherEvent(const ::ed3k::Event& event) override;
+    [[nodiscard]] bool hasOwner(const QString& owner) const override;
+    void saveOwner(const QString& owner) override;
+
 private:
-    struct Download;
     struct Post;
 
-    void onEventPolled(const ::ed3k::Event& event, bool* handled);
-    void onSessionStatus();
     [[nodiscard]] std::shared_ptr<Post> ensurePost(const QString& itemId);
     [[nodiscard]] std::shared_ptr<Post> findPost(const QString& itemId) const;
     void dropPost(const QString& itemId, bool keepBlob);
@@ -142,62 +145,32 @@ private:
     void drainEvents(const QString& itemId);
     void handleEvent(const QString& itemId, const ::ed3k::UsenetEvent& ev);
     void onMemberComplete(const QString& itemId, int fileIndex);
-    void onMemberHashed(const QString& itemId, int fileIndex, quint64 generation, const QString& path, bool ok,
-                        const ::ed3k::Root& root, std::uint64_t size, const ::ed3k::Bytes& hashes);
+    void onMemberHashed(const QString& itemId, int fileIndex, quint64 generation, const QString& path,
+                        const std::optional<FileHash>& hashed);
     void onMemberVerified(const QString& itemId, int fileIndex, const ::ed3k::Root& root);
     void onHaveChanged(const QString& itemId, int fileIndex);
     void onClaimFalse(const QString& itemId, const ::ed3k::uev::ClaimFalse& ev);
     void onPostComplete(const QString& itemId);
-    void shareBlob(const QByteArray& data, const QString& name, std::optional<::ed3k::Root> expect);
     void reportProblem(const QString& itemId, int fileIndex, const QString& message);
     [[nodiscard]] bool sealHold(const QString& itemId, int fileIndex);
     /// The file of a member on disk now: tempPath, or finalPath once published.
     [[nodiscard]] QString memberPath(const QString& itemId, int fileIndex) const;
     [[nodiscard]] std::optional<QByteArray> readMember(const QString& itemId, int fileIndex, std::uint64_t offset,
                                                        std::uint32_t len) const;
-    // ed3k side: serving and downloading
-    bool answerBlock(std::uint64_t id, const ::ed3k::Root& root, std::uint64_t offset, std::optional<std::uint32_t> len);
     void startDownload(const QString& itemId, int fileIndex);
-    void stopDownload(const ::ed3k::Root& root);
-    void requestBlocks(const ::ed3k::Root& root);
-    void onBlock(const ::ed3k::event::Block& b);
-    void onKadFound(const ::ed3k::event::KadFound& f);
     void onAliasFound(const ::ed3k::event::AliasFound& f);
     void startClaimSearches(const QString& itemId);
-    void scheduleSave(const QString& itemId);
-    void saveDirty();
     void savePost(const QString& itemId);
-    void pumpSession();
     [[nodiscard]] QString usenetDir() const;
 
-    Ed3kSession& m_session;
     UsenetJoinQueue& m_queue;
-    QString m_configDir;
     std::map<QString, std::shared_ptr<Post>> m_posts;
     /// items with no join (extension off, malformed NZB, complete): never asked again
     QSet<QString> m_noJoin;
-    /// roots shared (opened on the engine) → member, or a blob (manifest, list)
-    struct Shared {
-        QString itemId;
-        int fileIndex = -1;
-        std::uint64_t size = 0;
-        QByteArray blob;   ///< non-empty: served from memory
-    };
-    std::map<::ed3k::Root, Shared> m_shared;
-    std::map<::ed3k::Root, std::unique_ptr<Download>> m_downloads;
-    /// download streams → root
-    std::map<std::uint64_t, ::ed3k::Root> m_streams;
-    /// Kad source lookups → root; alias searches → (item, member)
-    std::map<std::uint64_t, ::ed3k::Root> m_sourceLookups;
+    /// alias searches → (item, member)
     std::map<std::uint32_t, std::pair<QString, int>> m_claimSearches;
     QHash<std::uint64_t, QString> m_serverKeys;
-    QSet<QString> m_dirty;
-    QTimer m_saveTimer;
     quint64 m_hashGeneration = 0;
-    std::shared_ptr<std::atomic<bool>> m_cancel;
-    bool m_started = false;
-    bool m_holdBack = false;
-    bool m_searchEnabled = true;
 };
 
 } // namespace eMule::ed3k

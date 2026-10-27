@@ -10,6 +10,7 @@
 /// libtorrent runs its own threads. Its alerts are drained on this object's thread
 /// (research doc §5.2); every signal and call here is on that thread.
 
+#include "BtJoin.h"
 #include "BtTypes.h"
 
 #include <QObject>
@@ -17,6 +18,7 @@
 
 #include <memory>
 #include <optional>
+#include <vector>
 
 namespace eMule::bt {
 
@@ -46,6 +48,12 @@ public:
     /// share of the global limits; overrides BtSettings' caps until the next call.
     /// Cheap when nothing changed.
     void setRateLimits(quint32 downKb, quint32 upKb);
+
+    /// The app's IP filter (research doc §7.6): peers in these ranges are refused.
+    /// Kept across stop/start; replaces the previous one. Empty = no filter.
+    void setIpFilter(const std::vector<BtIpRange4>& v4, const std::vector<BtIpRange6>& v6);
+    /// peers refused by the filter since start
+    [[nodiscard]] quint64 blockedPeers() const;
 
     /// Demand on the shared lines; samples the session counters as a side effect,
     /// so call it at a steady pace (the coordinator's tick).
@@ -84,6 +92,24 @@ public:
     /// The disk I/O of the session, for an ed3k join (torrent.md §4); null while stopped.
     [[nodiscard]] BtJoinDiskIo* diskIo() const;
 
+    // -- an ed3k join (torrent.md §4): what it needs of a torrent ----------------
+
+    /// Routes the piece checks of @p id through @p sink, also across stop/start. false:
+    /// unknown id.
+    bool attachJoin(const QString& id, std::shared_ptr<BtJoinSink> sink);
+    void detachJoin(const QString& id);
+    /// The bencoded info dictionary; empty before the metadata is there.
+    [[nodiscard]] QByteArray infoSection(const QString& id) const;
+    /// Pieces and files; nullopt before the metadata or for an unknown id.
+    [[nodiscard]] std::optional<BtLayout> layout(const QString& id) const;
+    /// Hands a whole piece to libtorrent (it hashes it as if a peer had sent it).
+    bool addPiece(const QString& id, int piece, const QByteArray& data);
+    /// Asks peers for these pieces first (a held piece waits for them).
+    void raisePieces(const QString& id, const QList<int>& pieces);
+    /// The ed3k:file link the torrent was added with (link or magnet `xs`); kept across
+    /// restarts. Empty: none.
+    [[nodiscard]] QString ed3kLink(const QString& id) const;
+
 signals:
     void torrentAdded(const QString& id);
     void torrentChanged(const QString& id);
@@ -91,6 +117,10 @@ signals:
     /// every wanted byte is there
     void torrentFinished(const QString& id);
     void statusChanged();
+    /// The info dictionary of a magnet arrived.
+    void metadataReceived(const QString& id);
+    /// libtorrent's verdict on a piece of a torrent with a join attached.
+    void pieceResult(const QString& id, int piece, bool passed);
 
 private slots:
     void drainAlerts();

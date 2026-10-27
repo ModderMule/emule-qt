@@ -32,31 +32,11 @@ namespace ffi = ::ed3k;
 
 namespace {
 
-constexpr std::uint64_t kBlock = 256 * 1024;
 /// a file whose articles all resolved waits this long for ed3k to fill its holes
 constexpr int kSealHoldMs = 10 * 60 * 1000;
-constexpr int kSaveDelayMs = 5000;
-constexpr std::size_t kMaxStreams = 4;
 constexpr int kClaimSearchesPerPost = 4;
 /// reads given by block_read in one go; a guard, the core gives few
 constexpr int kMaxReadsPerCall = 1 << 16;
-constexpr qint64 kHashChunk = 1 << 20;
-
-QString hexOf(std::span<const std::uint8_t> bytes)
-{
-    return QString::fromLatin1(
-        QByteArray(reinterpret_cast<const char*>(bytes.data()), qsizetype(bytes.size())).toHex());
-}
-
-QString errorName(ffi::Error e)
-{
-    return QString::number(static_cast<int>(e));
-}
-
-std::span<const std::byte> spanOf(const QByteArray& b)
-{
-    return {reinterpret_cast<const std::byte*>(b.constData()), std::size_t(b.size())};
-}
 
 void le32(QByteArray& out, std::size_t v)
 {
@@ -92,31 +72,6 @@ private:
     usenet::UsenetQueue& m_q;
 };
 
-/// Hashes a file on a worker; nullopt when unreadable or cancelled.
-std::optional<std::pair<ffi::Hashed, ffi::Bytes>> hashFile(const QString& path, const std::atomic<bool>& cancel)
-{
-    QFile f(path);
-    if (!f.open(QIODevice::ReadOnly))
-        return std::nullopt;
-    ffi::Hasher h;
-    QByteArray chunk;
-    while (!f.atEnd()) {
-        if (cancel.load())
-            return std::nullopt;
-        chunk = f.read(kHashChunk);
-        if (chunk.isEmpty() && f.error() != QFileDevice::NoError)
-            return std::nullopt;
-        if (!h.update(spanOf(chunk)))
-            return std::nullopt;
-    }
-    auto done = h.finish();
-    if (!done)
-        return std::nullopt;
-    const auto bytes = done->hashes.bytes();
-    ffi::Bytes hashes(bytes.begin(), bytes.end());
-    return std::pair{std::move(*done), std::move(hashes)};
-}
-
 } // namespace
 
 // One post: the core's join and what the host keeps per member.
@@ -140,35 +95,16 @@ struct Ed3kUsenetJoin::Post {
     bool finished = false;   ///< the item finished; dropped once no hash is pending
 };
 
-// An ed3k download of one member's root.
-struct Ed3kUsenetJoin::Download {
-    QString itemId;
-    int fileIndex = -1;
-    std::uint64_t size = 0;
-    std::map<std::uint64_t, bool> streams;            ///< stream → holds a slot
-    std::map<std::uint64_t, std::uint64_t> outstanding;   ///< offset → stream
-    std::set<ffi::NodeId> asked;
-    bool hashes = false;
-};
-
 Ed3kUsenetJoin::Ed3kUsenetJoin(Ed3kSession& session, UsenetJoinQueue& queue, const QString& configDir,
                                QObject* parent)
-    : QObject(parent)
-    , m_session(session)
+    : Ed3kJoinBase(session, configDir, QStringLiteral("usenet"), parent)
     , m_queue(queue)
-    , m_configDir(configDir)
-    , m_cancel(std::make_shared<std::atomic<bool>>(false))
 {
-    m_saveTimer.setSingleShot(true);
-    connect(&m_saveTimer, &QTimer::timeout, this, &Ed3kUsenetJoin::saveDirty);
-    connect(&m_session, &Ed3kSession::eventPolled, this, &Ed3kUsenetJoin::onEventPolled, Qt::DirectConnection);
-    connect(&m_session, &Ed3kSession::statusChanged, this, &Ed3kUsenetJoin::onSessionStatus);
 }
 
 Ed3kUsenetJoin::~Ed3kUsenetJoin()
 {
     stop();
-    m_cancel->store(true);
 }
 
 std::unique_ptr<UsenetJoinQueue> Ed3kUsenetJoin::queueAdapter(usenet::UsenetQueue& queue)
@@ -190,8 +126,7 @@ void Ed3kUsenetJoin::start()
 {
     if (m_started || !m_session.isRunning())
         return;
-    m_started = true;
-    m_cancel = std::make_shared<std::atomic<bool>>(false);
+    beginStart();
     QDir().mkpath(usenetDir());
     m_queue.setSealHold([this](const QString& itemId, int fileIndex) { return sealHold(itemId, fileIndex); });
     for (const QString& id : m_queue.itemIds())
@@ -203,11 +138,8 @@ void Ed3kUsenetJoin::stop()
 {
     if (!m_started)
         return;
-    m_cancel->store(true);
-    m_saveTimer.stop();
     for (const auto& [id, post] : m_posts)
         savePost(id);
-    m_dirty.clear();
 
     // files held unsealed for ed3k: sealed now
     QList<std::pair<QString, int>> held;
@@ -216,26 +148,13 @@ void Ed3kUsenetJoin::stop()
             if (post->members[f].holdUntil)
                 held.append({id, int(f)});
 
-    if (auto* e = m_session.engine()) {
-        const auto t = m_session.now();
-        for (const auto& [root, d] : m_downloads) {
-            for (const auto& [stream, slot] : d->streams)
-                (void)e->streamClose(t, stream);
-            (void)e->downloadClose(t, root);
-        }
+    if (auto* e = m_session.engine())
         for (const auto& [search, member] : m_claimSearches)
             (void)e->aliasSearchEnd(search);
-        for (const auto& [root, shared] : m_shared)
-            (void)e->fileClose(t, root);
-    }
-    m_downloads.clear();
-    m_streams.clear();
+    closeAll();
     m_claimSearches.clear();
-    m_sourceLookups.clear();
-    m_shared.clear();
     m_posts.clear();
     m_noJoin.clear();
-    m_started = false;
     m_queue.setSealHold({});
     for (const auto& [id, f] : held)
         m_queue.releaseSealHold(id, f);
@@ -373,28 +292,13 @@ bool Ed3kUsenetJoin::setManifest(const QString& itemId, std::span<const std::byt
 void Ed3kUsenetJoin::addSource(const QString& itemId, int fileIndex, const ffi::Source& source)
 {
     const auto post = findPost(itemId);
-    auto* e = m_session.engine();
-    if (!post || !e)
+    if (!post || !m_session.engine())
         return;
     const auto m = post->join.member(std::uint64_t(fileIndex));
     if (!m || !m->root || !m->size)
         return;
     startDownload(itemId, fileIndex);
-    const auto it = m_downloads.find(*m->root);
-    if (it == m_downloads.end())
-        return;
-    Download& d = *it->second;
-    if (d.streams.size() >= kMaxStreams || d.asked.contains(source.id))
-        return;
-    auto stream = e->fileRequest(m_session.now(), source, ffi::Request{*m->root, d.size, ffi::Have{}, 0, false, false});
-    if (!stream) {
-        logEd3kDebug(QStringLiteral("ed3k usenet: source refused (error %1)").arg(errorName(stream.error())));
-        return;
-    }
-    d.asked.insert(source.id);
-    d.streams[*stream] = false;
-    m_streams[*stream] = *m->root;
-    pumpSession();
+    Ed3kJoinBase::addSource(*m->root, source);
 }
 
 void Ed3kUsenetJoin::onItemAdded(const QString& itemId)
@@ -409,16 +313,7 @@ void Ed3kUsenetJoin::onItemRemoved(const QString& itemId)
     dropPost(itemId, /*keepBlob*/ false);
     m_noJoin.remove(itemId);
     // its files are gone or the user does not want them: not shared any more
-    auto* e = m_session.engine();
-    for (auto it = m_shared.begin(); it != m_shared.end();) {
-        if (it->second.itemId == itemId) {
-            if (e)
-                (void)e->fileClose(m_session.now(), it->first);
-            it = m_shared.erase(it);
-        } else {
-            ++it;
-        }
-    }
+    unshareOwner(itemId);
     pumpSession();
 }
 
@@ -525,87 +420,33 @@ void Ed3kUsenetJoin::onFilesRepaired(const QString& itemId, const QList<int>& fi
 // private
 // ---------------------------------------------------------------------------
 
-void Ed3kUsenetJoin::onEventPolled(const ffi::Event& event, bool* handled)
+void Ed3kUsenetJoin::onOtherEvent(const ffi::Event& event)
 {
-    namespace ev = ffi::event;
-    if (!m_started)
-        return;
-    if (const auto* w = std::get_if<ev::WantBlock>(&event)) {
-        if (answerBlock(w->id, w->root, w->offset, w->len) && handled)
-            *handled = true;
-    } else if (const auto* v = std::get_if<ev::VerifyBlock>(&event)) {
-        if (answerBlock(v->id, v->root, v->offset, std::nullopt) && handled)
-            *handled = true;
-    } else if (const auto* r = std::get_if<ev::FileRequested>(&event)) {
-        if (m_shared.contains(r->root)) {
-            // ToDo: an upload queue and slots for ed3k (bandwidth, fairness); every
-            // downloader of a usenet member gets a slot at once for now
-            if (r->first)
-                (void)m_session.engine()->queueSet(m_session.now(), r->node, 0, 0);
-            if (handled)
-                *handled = true;
-        }
-    } else if (const auto* b = std::get_if<ev::Block>(&event)) {
-        onBlock(*b);
-    } else if (const auto* q = std::get_if<ev::QueueRank>(&event)) {
-        if (const auto it = m_streams.find(q->stream); it != m_streams.end()) {
-            const ffi::Root root = it->second;
-            if (const auto d = m_downloads.find(root); d != m_downloads.end())
-                d->second->streams[q->stream] = q->rank == 0;
-            requestBlocks(root);
-        }
-    } else if (const auto* h = std::get_if<ev::Hashes>(&event)) {
-        if (const auto d = m_downloads.find(h->root); d != m_downloads.end()) {
-            d->second->hashes = true;
-            const QString itemId = d->second->itemId;
-            const int f = d->second->fileIndex;
-            if (const auto post = findPost(itemId)) {
-                if (f >= 0 && std::size_t(f) < post->members.size() && post->members[std::size_t(f)].hashes.empty())
-                    post->members[std::size_t(f)].hashes = h->blob;
-                // block values are there now: articles can be checked
-                if (auto reads = post->join.pendingReads(m_session.engine()); reads && !reads->empty())
-                    serveReads(itemId, std::move(*reads));
-            }
-            requestBlocks(h->root);
-        }
-    } else if (const auto* bf = std::get_if<ev::BlockFailed>(&event)) {
-        if (const auto d = m_downloads.find(bf->root); d != m_downloads.end()) {
-            d->second->outstanding.erase(bf->offset);
-            requestBlocks(bf->root);
-        }
-    } else if (const auto* rv = std::get_if<ev::RangesVoid>(&event)) {
-        if (const auto it = m_streams.find(rv->stream); it != m_streams.end()) {
-            const ffi::Root root = it->second;
-            if (const auto d = m_downloads.find(root); d != m_downloads.end())
-                for (const auto off : rv->offsets)
-                    d->second->outstanding.erase(off);
-        }
-    } else if (const auto* fs = std::get_if<ev::FileStatus>(&event)) {
-        if (m_streams.contains(fs->stream) && !fs->usable)
-            (void)m_session.engine()->streamClose(m_session.now(), fs->stream);
-    } else if (const auto* sc = std::get_if<ev::StreamClosed>(&event)) {
-        if (const auto it = m_streams.find(sc->stream); it != m_streams.end()) {
-            const ffi::Root root = it->second;
-            m_streams.erase(it);
-            if (const auto d = m_downloads.find(root); d != m_downloads.end()) {
-                d->second->streams.erase(sc->stream);
-                std::erase_if(d->second->outstanding, [&](const auto& o) { return o.second == sc->stream; });
-                // ToDo: search sources again when the last stream closed
-            }
-        }
-    } else if (const auto* kf = std::get_if<ev::KadFound>(&event)) {
-        onKadFound(*kf);
-    } else if (const auto* af = std::get_if<ev::AliasFound>(&event)) {
+    if (const auto* af = std::get_if<ffi::event::AliasFound>(&event))
         onAliasFound(*af);
+}
+
+void Ed3kUsenetJoin::onDownloadHashes(const Download& d, const ffi::Bytes& blob)
+{
+    const QString itemId = d.owner;
+    const int f = d.member;
+    if (const auto post = findPost(itemId)) {
+        if (f >= 0 && std::size_t(f) < post->members.size() && post->members[std::size_t(f)].hashes.empty())
+            post->members[std::size_t(f)].hashes = blob;
+        // block values are there now: articles can be checked
+        if (auto reads = post->join.pendingReads(m_session.engine()); reads && !reads->empty())
+            serveReads(itemId, std::move(*reads));
     }
 }
 
-void Ed3kUsenetJoin::onSessionStatus()
+bool Ed3kUsenetJoin::hasOwner(const QString& owner) const
 {
-    if (m_session.isRunning() && !m_started)
-        start();
-    else if (!m_session.isRunning() && m_started)
-        stop();
+    return m_posts.contains(owner);
+}
+
+void Ed3kUsenetJoin::saveOwner(const QString& owner)
+{
+    savePost(owner);
 }
 
 std::shared_ptr<Ed3kUsenetJoin::Post> Ed3kUsenetJoin::ensurePost(const QString& itemId)
@@ -682,12 +523,7 @@ void Ed3kUsenetJoin::dropPost(const QString& itemId, bool keepBlob)
 {
     const auto it = m_posts.find(itemId);
     if (it != m_posts.end()) {
-        std::vector<ffi::Root> roots;
-        for (const auto& [root, d] : m_downloads)
-            if (d->itemId == itemId)
-                roots.push_back(root);
-        for (const auto& root : roots)
-            stopDownload(root);
+        stopDownloads(itemId);
         auto* e = m_session.engine();
         for (auto s = m_claimSearches.begin(); s != m_claimSearches.end();) {
             if (s->second.first == itemId) {
@@ -700,7 +536,7 @@ void Ed3kUsenetJoin::dropPost(const QString& itemId, bool keepBlob)
         }
         m_posts.erase(it);
     }
-    m_dirty.remove(itemId);
+    dropDirty(itemId);
     if (!keepBlob)
         QFile::remove(joinPath(itemId));
 }
@@ -812,29 +648,13 @@ void Ed3kUsenetJoin::onMemberComplete(const QString& itemId, int fileIndex)
     m.generation = ++m_hashGeneration;
     const QString path = memberPath(itemId, fileIndex);
     const quint64 generation = m.generation;
-    QPointer<Ed3kUsenetJoin> self(this);
-    const auto cancel = m_cancel;
-    QThreadPool::globalInstance()->start([self, cancel, path, itemId, fileIndex, generation] {
-        auto hashed = hashFile(path, *cancel);
-        if (cancel->load())
-            return;
-        // owned copies into the lambda; ffi::Hashed holds a move-only Buffer
-        const bool ok = hashed.has_value();
-        const ffi::Root root = ok ? hashed->first.root : ffi::Root{};
-        const std::uint64_t size = ok ? hashed->first.size : 0;
-        ffi::Bytes hashes = ok ? std::move(hashed->second) : ffi::Bytes{};
-        QMetaObject::invokeMethod(
-            self.data(),
-            [self, itemId, fileIndex, generation, path, ok, root, size, hashes = std::move(hashes)] {
-                if (self)
-                    self->onMemberHashed(itemId, fileIndex, generation, path, ok, root, size, hashes);
-            },
-            Qt::QueuedConnection);
+    hashInBackground(path, [this, itemId, fileIndex, generation, path](std::optional<FileHash> hashed) {
+        onMemberHashed(itemId, fileIndex, generation, path, hashed);
     });
 }
 
-void Ed3kUsenetJoin::onMemberHashed(const QString& itemId, int fileIndex, quint64 generation, const QString& path, bool ok,
-                                    const ffi::Root& root, std::uint64_t size, const ffi::Bytes& hashes)
+void Ed3kUsenetJoin::onMemberHashed(const QString& itemId, int fileIndex, quint64 generation, const QString& path,
+                                    const std::optional<FileHash>& hashed)
 {
     const auto post = findPost(itemId);
     if (!post || fileIndex < 0 || std::size_t(fileIndex) >= post->members.size())
@@ -843,20 +663,20 @@ void Ed3kUsenetJoin::onMemberHashed(const QString& itemId, int fileIndex, quint6
     if (m.generation != generation)
         return;
     m.hashing = false;
-    if (!ok && memberPath(itemId, fileIndex) != path) {
+    if (!hashed && memberPath(itemId, fileIndex) != path) {
         // sealed or published while hashed: again at its new place
         onMemberComplete(itemId, fileIndex);
         return;
     }
-    if (!ok) {
+    if (!hashed) {
         // ToDo: hash again later (the file is gone or unreadable)
         logEd3kWarning(QStringLiteral("ed3k usenet: cannot hash file %1 of %2 (%3)")
                            .arg(fileIndex).arg(itemId, memberPath(itemId, fileIndex)));
     } else {
-        m.hashes = hashes;
+        m.hashes = hashed->hashes;
         logEd3kDebug(QStringLiteral("ed3k usenet: file %1 of %2 hashed: %3, %4 bytes")
-                         .arg(fileIndex).arg(itemId, hexOf(root.bytes)).arg(size));
-        if (auto done = post->join.memberHashed(std::uint64_t(fileIndex), hashes); !done)
+                         .arg(fileIndex).arg(itemId, hexOf(hashed->root.bytes)).arg(hashed->size));
+        if (auto done = post->join.memberHashed(std::uint64_t(fileIndex), hashed->hashes); !done)
             logEd3kWarning(QStringLiteral("ed3k usenet: hash of file %1 of %2 not taken (error %3)")
                                .arg(fileIndex).arg(itemId, errorName(done.error())));
         drainEvents(itemId);
@@ -884,17 +704,11 @@ void Ed3kUsenetJoin::onMemberVerified(const QString& itemId, int fileIndex, cons
     const auto t = m_session.now();
 
     // §6: a member verified is shared at once
-    if (m_shared.contains(root)) {
-        (void)e->fileHave(t, root, ffi::Have::complete());
-    } else {
-        const auto& hashes = post->members[std::size_t(fileIndex)].hashes;
-        const ffi::SharedFile f{root, size, name, std::nullopt, std::nullopt, ffi::Have::complete(), std::span{hashes}};
-        if (auto ok = e->fileOpen(t, f); !ok) {
-            logEd3kWarning(QStringLiteral("ed3k usenet: cannot share file %1 of %2 (error %3)")
-                               .arg(fileIndex).arg(itemId, errorName(ok.error())));
-            return;
-        }
-        m_shared[root] = Shared{itemId, fileIndex, size, {}};
+    const auto& hashes = post->members[std::size_t(fileIndex)].hashes;
+    if (!shareMember(ffi::SharedFile{root, size, name, std::nullopt, std::nullopt, ffi::Have::complete(), std::span{hashes}},
+                     itemId, fileIndex)) {
+        logEd3kWarning(QStringLiteral("ed3k usenet: cannot share file %1 of %2").arg(fileIndex).arg(itemId));
+        return;
     }
     const ffi::FileInfo info{root, size, name, std::nullopt, 0, 0, 0, 0, 0, 0};
     if (auto ok = e->publish(t, info, m_holdBack ? ffi::Publish::Source : ffi::Publish::Both); !ok)
@@ -927,21 +741,11 @@ void Ed3kUsenetJoin::onHaveChanged(const QString& itemId, int fileIndex)
     h.kind = static_cast<ffi::Have::Kind>(have->first);
     for (const auto b : have->second)
         h.bits.push_back(std::to_integer<std::uint8_t>(b));
-    const auto t = m_session.now();
-    if (m_shared.contains(*m->root)) {
-        (void)e->fileHave(t, *m->root, h);
-        return;
-    }
-    if (h.kind == ffi::Have::Kind::Nothing)
+    if (!isShared(*m->root) && h.kind == ffi::Have::Kind::Nothing)
         return;
     // the pieces verified so far; served only within servable() (WantBlock)
     const auto& hashes = post->members[std::size_t(fileIndex)].hashes;
-    const ffi::SharedFile f{*m->root, *m->size, m->name, std::nullopt, std::nullopt, h, std::span{hashes}};
-    if (auto ok = e->fileOpen(t, f); ok)
-        m_shared[*m->root] = Shared{itemId, fileIndex, *m->size, {}};
-    else
-        logEd3kDebug(QStringLiteral("ed3k usenet: partial share of file %1 of %2 refused (error %3)")
-                         .arg(fileIndex).arg(itemId, errorName(ok.error())));
+    (void)shareMember(ffi::SharedFile{*m->root, *m->size, m->name, std::nullopt, std::nullopt, h, std::span{hashes}}, itemId, fileIndex);
 }
 
 void Ed3kUsenetJoin::onClaimFalse(const QString& itemId, const ffi::uev::ClaimFalse& ev)
@@ -960,11 +764,7 @@ void Ed3kUsenetJoin::onClaimFalse(const QString& itemId, const ffi::uev::ClaimFa
     if (e && !banned.empty())
         (void)e->aliasBan(m_session.now(), banned);
     stopDownload(ev.root);
-    if (const auto s = m_shared.find(ev.root); s != m_shared.end()) {
-        if (e)
-            (void)e->fileClose(m_session.now(), ev.root);
-        m_shared.erase(s);
-    }
+    unshare(ev.root);
     // those bytes came from ed3k and do not count any more
     for (const auto& r : ev.drop)
         if (r.end > r.start)
@@ -1014,32 +814,6 @@ void Ed3kUsenetJoin::onPostComplete(const QString& itemId)
     emit postCompleted(itemId, done->root.has_value());
 }
 
-void Ed3kUsenetJoin::shareBlob(const QByteArray& data, const QString& name, std::optional<ffi::Root> expect)
-{
-    auto* e = m_session.engine();
-    if (!e || data.isEmpty())
-        return;
-    ffi::Hasher h;
-    if (!h.update(spanOf(data)))
-        return;
-    auto hashed = h.finish();
-    if (!hashed)
-        return;
-    if (expect && hashed->root != *expect)
-        logEd3kWarning(QStringLiteral("ed3k usenet: manifest of \"%1\" is not its post root").arg(name));
-    const QByteArray n = name.toUtf8();
-    const ffi::SharedFile f{hashed->root, hashed->size, std::string(n.constData(), std::size_t(n.size())), std::nullopt,
-                            std::nullopt, ffi::Have::complete(), hashed->hashes.bytes()};
-    const auto t = m_session.now();
-    if (auto ok = e->fileOpen(t, f); !ok && !m_shared.contains(hashed->root)) {
-        logEd3kDebug(QStringLiteral("ed3k usenet: cannot share \"%1\" (error %2)").arg(name, errorName(ok.error())));
-        return;
-    }
-    m_shared[hashed->root] = Shared{QString(), -1, hashed->size, data};
-    const ffi::FileInfo info{hashed->root, hashed->size, std::string(n.constData(), std::size_t(n.size())), std::nullopt, 0, 0, 0, 0, 0, 0};
-    (void)e->publish(t, info, ffi::Publish::Source);
-}
-
 void Ed3kUsenetJoin::reportProblem(const QString& itemId, int fileIndex, const QString& message)
 {
     // the Usenet tab shows emule.usenet: where the user sees the item's messages
@@ -1058,7 +832,7 @@ bool Ed3kUsenetJoin::sealHold(const QString& itemId, int fileIndex)
     if (!m || !m->root || m->status != ffi::MemberStatus::Open)
         return false;
     // only while an ed3k download of it runs
-    if (!m_downloads.contains(*m->root))
+    if (!downloading(*m->root))
         return false;
     const auto missing = post->join.missing(std::uint64_t(fileIndex));
     if (!missing || missing->empty())
@@ -1102,149 +876,58 @@ std::optional<QByteArray> Ed3kUsenetJoin::readMember(const QString& itemId, int 
     return data;
 }
 
-bool Ed3kUsenetJoin::answerBlock(std::uint64_t id, const ffi::Root& root, std::uint64_t offset,
-                                 std::optional<std::uint32_t> len)
+std::optional<QByteArray> Ed3kUsenetJoin::readShared(const Shared& s, std::uint64_t offset, std::uint32_t len) const
 {
-    auto* e = m_session.engine();
-    const auto it = m_shared.find(root);
-    if (!e || it == m_shared.end())
-        return false;
-    const Shared& s = it->second;
-    const auto t = m_session.now();
-    if (offset >= s.size) {
-        (void)e->blockFail(t, id);
-        return true;
-    }
-    const auto n = std::uint32_t(len.value_or(std::uint32_t(std::min<std::uint64_t>(kBlock, s.size - offset))));
-    std::optional<QByteArray> data;
-    if (!s.blob.isEmpty()) {
-        if (offset + n <= std::uint64_t(s.blob.size()))
-            data = s.blob.mid(qsizetype(offset), qsizetype(n));
-    } else {
-        // only bytes verified under the root (usenet-join.md: servable)
-        const auto post = findPost(s.itemId);
-        if (!post || post->join.servable(std::uint64_t(s.fileIndex), offset, n))
-            data = readMember(s.itemId, s.fileIndex, offset, n);
-    }
-    if (!data) {
-        (void)e->blockFail(t, id);
-        // the item is done and its file gone (unpacked volumes, moved): not shared any more
-        if (s.blob.isEmpty() && !findPost(s.itemId) && !QFileInfo::exists(memberPath(s.itemId, s.fileIndex))) {
-            logEd3kDebug(QStringLiteral("ed3k usenet: %1 is gone, not shared any more").arg(hexOf(root.bytes)));
-            (void)e->fileClose(t, root);
-            m_shared.erase(it);
-        }
-        return true;
-    }
-    auto buf = ffi::Buffer::alloc(std::size_t(data->size()));
-    if (!buf) {
-        (void)e->blockFail(t, id);
-        return true;
-    }
-    std::memcpy(buf->bytes().data(), data->constData(), std::size_t(data->size()));
-    (void)e->blockProvide(t, id, std::move(*buf));
-    return true;
+    // only bytes verified under the root (usenet-join.md: servable)
+    const auto post = findPost(s.owner);
+    if (post && !post->join.servable(std::uint64_t(s.member), offset, len))
+        return std::nullopt;
+    return readMember(s.owner, s.member, offset, len);
+}
+
+bool Ed3kUsenetJoin::sharedGone(const Shared& s) const
+{
+    // the item is done and its file gone (unpacked volumes, moved)
+    return !findPost(s.owner) && !QFileInfo::exists(memberPath(s.owner, s.member));
 }
 
 void Ed3kUsenetJoin::startDownload(const QString& itemId, int fileIndex)
 {
-    auto* e = m_session.engine();
     const auto post = findPost(itemId);
-    if (!e || !post || fileIndex < 0)
+    if (!m_session.engine() || !post || fileIndex < 0)
         return;
     const auto m = post->join.member(std::uint64_t(fileIndex));
-    if (!m || !m->root || !m->size || m->status != ffi::MemberStatus::Open || m_downloads.contains(*m->root))
+    if (!m || !m->root || !m->size || m->status != ffi::MemberStatus::Open || downloading(*m->root))
         return;
     const auto missing = post->join.missing(std::uint64_t(fileIndex));
     if (!missing || missing->empty())
         return;
-    const auto t = m_session.now();
-    if (auto ok = e->downloadOpen(t, *m->root, *m->size); !ok)
-        logEd3kDebug(QStringLiteral("ed3k usenet: download of %1 not opened (error %2)").arg(hexOf(m->root->bytes), errorName(ok.error())));
-    auto d = std::make_unique<Download>();
-    d->itemId = itemId;
-    d->fileIndex = fileIndex;
-    d->size = *m->size;
-    m_downloads.emplace(*m->root, std::move(d));
-    if (m_searchEnabled) {
-        // ToDo: search again every so often while no stream holds a slot
-        if (auto lookup = e->searchSources(t, *m->root))
-            m_sourceLookups[*lookup] = *m->root;
-    }
+    (void)openDownload(*m->root, *m->size, itemId, fileIndex);
 }
 
-void Ed3kUsenetJoin::stopDownload(const ffi::Root& root)
+std::vector<std::uint64_t> Ed3kUsenetJoin::wantedBlocks(const Download& d) const
 {
-    const auto it = m_downloads.find(root);
-    if (it == m_downloads.end())
-        return;
-    if (auto* e = m_session.engine()) {
-        const auto t = m_session.now();
-        for (const auto& [stream, slot] : it->second->streams)
-            (void)e->streamClose(t, stream);
-        (void)e->downloadClose(t, root);
-    }
-    std::erase_if(m_streams, [&](const auto& s) { return s.second == root; });
-    std::erase_if(m_sourceLookups, [&](const auto& s) { return s.second == root; });
-    m_downloads.erase(it);
-}
-
-void Ed3kUsenetJoin::requestBlocks(const ffi::Root& root)
-{
-    auto* e = m_session.engine();
-    const auto it = m_downloads.find(root);
-    if (!e || it == m_downloads.end())
-        return;
-    Download& d = *it->second;
-    const auto post = findPost(d.itemId);
-    const auto* item = m_queue.findItem(d.itemId);
-    if (!post || !item || d.fileIndex >= item->files.size() || item->files.at(d.fileIndex).finalized)
-        return;
-    const auto missing = post->join.missing(std::uint64_t(d.fileIndex));
+    const auto post = findPost(d.owner);
+    const auto* item = m_queue.findItem(d.owner);
+    if (!post || !item || d.member >= item->files.size() || item->files.at(d.member).finalized)
+        return {};
+    const auto missing = post->join.missing(std::uint64_t(d.member));
     if (!missing)
-        return;
-
+        return {};
     std::vector<std::uint64_t> wanted;   // block offsets overlapping a missing range
     for (const auto& r : *missing) {
         const std::uint64_t end = std::min(r.end, d.size);
-        for (std::uint64_t off = (r.start / kBlock) * kBlock; off < end; off += kBlock) {
-            if (!d.outstanding.contains(off) && (wanted.empty() || wanted.back() != off) && e->canVerify(root, off))
+        for (std::uint64_t off = (r.start / kBlock) * kBlock; off < end; off += kBlock)
+            if (wanted.empty() || wanted.back() != off)
                 wanted.push_back(off);
-        }
     }
-    std::size_t granted = 0;   // not `slots`: a Qt macro
-    for (const auto& [stream, slot] : d.streams)
-        granted += slot ? 1 : 0;
-    if (wanted.empty() || granted == 0)
-        return;
-    const std::size_t perStream = std::clamp<std::size_t>(e->rangesHint(std::uint32_t(granted)), 1, 16);
-    auto next = wanted.begin();
-    const auto t = m_session.now();
-    for (const auto& [stream, slot] : d.streams) {
-        if (!slot)
-            continue;
-        const auto busy = std::size_t(std::ranges::count_if(d.outstanding, [s = stream](const auto& o) { return o.second == s; }));
-        std::vector<ffi::Range> ranges;
-        for (; next != wanted.end() && busy + ranges.size() < perStream; ++next)
-            ranges.push_back(ffi::Range{*next, std::uint32_t(std::min<std::uint64_t>(kBlock, d.size - *next))});
-        if (ranges.empty())
-            continue;
-        if (auto ok = e->blockRequest(t, stream, ranges); ok) {
-            for (const auto& r : ranges)
-                d.outstanding[r.offset] = stream;
-        }
-    }
+    return wanted;
 }
 
-void Ed3kUsenetJoin::onBlock(const ffi::event::Block& b)
+void Ed3kUsenetJoin::onFileBlock(const Download& d, const ffi::event::Block& b)
 {
-    const auto it = m_downloads.find(b.root);
-    if (it == m_downloads.end())
-        return;
-    Download& d = *it->second;
-    d.outstanding.erase(b.offset);
-    const QString itemId = d.itemId;
-    const int fileIndex = d.fileIndex;
+    const QString itemId = d.owner;
+    const int fileIndex = d.member;
     const auto* item = m_queue.findItem(itemId);
     const auto post = findPost(itemId);
     if (!item || !post || fileIndex >= item->files.size())
@@ -1264,22 +947,12 @@ void Ed3kUsenetJoin::onBlock(const ffi::event::Block& b)
         logEd3kDebug(QStringLiteral("ed3k usenet: block %1 of file %2 not taken (error %3)")
                          .arg(b.offset).arg(fileIndex).arg(errorName(ok.error())));
     drainEvents(itemId);
-    requestBlocks(b.root);
 }
 
-void Ed3kUsenetJoin::onKadFound(const ffi::event::KadFound& found)
+void Ed3kUsenetJoin::onBlobFetched(const QString& owner, int member, const ffi::Root& root, const QByteArray& data)
 {
-    const auto it = m_sourceLookups.find(found.lookup);
-    if (it == m_sourceLookups.end())
-        return;
-    const ffi::Root root = it->second;
-    const auto d = m_downloads.find(root);
-    if (d == m_downloads.end())
-        return;
-    const QString itemId = d->second->itemId;
-    const int fileIndex = d->second->fileIndex;
-    for (const auto& s : found.sources)
-        addSource(itemId, fileIndex, s);
+    // ToDo: §4.1 the post set of a link (fetchBlob) is not asked for yet
+    Q_UNUSED(owner) Q_UNUSED(member) Q_UNUSED(root) Q_UNUSED(data)
 }
 
 void Ed3kUsenetJoin::onAliasFound(const ffi::event::AliasFound& found)
@@ -1350,23 +1023,6 @@ void Ed3kUsenetJoin::startClaimSearches(const QString& itemId)
     }
 }
 
-void Ed3kUsenetJoin::scheduleSave(const QString& itemId)
-{
-    if (!m_posts.contains(itemId))
-        return;
-    m_dirty.insert(itemId);
-    if (!m_saveTimer.isActive())
-        m_saveTimer.start(kSaveDelayMs);
-}
-
-void Ed3kUsenetJoin::saveDirty()
-{
-    const auto dirty = m_dirty;
-    m_dirty.clear();
-    for (const QString& id : dirty)
-        savePost(id);
-}
-
 void Ed3kUsenetJoin::savePost(const QString& itemId)
 {
     const auto post = findPost(itemId);
@@ -1382,15 +1038,9 @@ void Ed3kUsenetJoin::savePost(const QString& itemId)
         logEd3kWarning(QStringLiteral("ed3k usenet: cannot write %1").arg(joinPath(itemId)));
 }
 
-void Ed3kUsenetJoin::pumpSession()
-{
-    if (m_session.isRunning())
-        m_session.pump();
-}
-
 QString Ed3kUsenetJoin::usenetDir() const
 {
-    return QDir(stateDir(m_configDir)).filePath(QStringLiteral("usenet"));
+    return joinDir(QStringLiteral("usenet"));
 }
 
 } // namespace eMule::ed3k

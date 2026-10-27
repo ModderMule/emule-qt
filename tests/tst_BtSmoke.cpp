@@ -9,6 +9,7 @@
 
 #include <QTemporaryDir>
 #include <QTest>
+#include <QUrl>
 
 using namespace eMule::bt;
 
@@ -116,6 +117,22 @@ void tst_BtSmoke::magnets()
     QVERIFY(ok.has_value());
     QCOMPARE(QString::fromStdString(ok->name), QStringLiteral("hello"));
     QVERIFY(!BtAddSource::fromMagnet(QStringLiteral("magnet:?xt=urn:btih:zz")).has_value());
+
+    // an ed3k:file link of a torrent set (torrent.md §7): added as a magnet of its bt=
+    const QString hash = QStringLiteral("0123456789abcdef0123456789abcdef01234567");
+    const QString link = QStringLiteral("ed3k:file?b3=abc&sz=5&dn=set&bt=") + hash;
+    QVERIFY(BtAddSource::isBtMagnet(link));
+    QVERIFY(!BtAddSource::isBtMagnet(QStringLiteral("ed3k:file?b3=abc&sz=5")));
+    auto fromLink = BtAddSource::fromMagnet(link);
+    QVERIFY(fromLink.has_value());
+    QCOMPARE(QString::fromStdString(fromLink->name), QStringLiteral("set"));
+    QVERIFY(fromLink->info_hashes.has_v1());
+    QCOMPARE(BtAddSource::ed3kLinkOf(link), link);
+    // a magnet's xs carries it
+    const QString withXs = QStringLiteral("magnet:?xt=urn:btih:") + hash + QStringLiteral("&xs=")
+                           + QString::fromLatin1(QUrl::toPercentEncoding(link));
+    QCOMPARE(BtAddSource::ed3kLinkOf(withXs), link);
+    QVERIFY(BtAddSource::ed3kLinkOf(QStringLiteral("magnet:?xt=urn:btih:") + hash).isEmpty());
 }
 
 void tst_BtSmoke::torrentFiles()

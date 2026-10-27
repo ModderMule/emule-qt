@@ -44,6 +44,7 @@ static void unixSignalHandler(int)
 #include "app/AppConfig.h"
 #include "app/CommandLineExec.h"
 #include "app/CoreStartWatch.h"
+#include "app/Ed2kSchemeHandler.h"
 #include "app/ExternalLinkHandler.h"
 #include "app/IpcClient.h"
 #include "app/MainWindow.h"
@@ -526,13 +527,14 @@ int main(int argc, char* argv[])
     // promptly when the user turns the setting off.
     if (eMule::gui::FileAssociation::isRuntimeRegistration()) {
         QString assocError;
-        const bool assocOk = eMule::theUiState.associateNzbFiles()
-                                 ? eMule::gui::FileAssociation::registerNzbFileType(assocError)
-                                 : eMule::gui::FileAssociation::unregisterNzbFileType(assocError);
+        const bool assocOk = eMule::gui::FileAssociation::applyFileTypes(
+            {eMule::theUiState.associateNzbFiles(), eMule::theUiState.associateTorrentFiles(),
+             eMule::isEd2kSchemeRegistered()},
+            assocError);
         if (!assocOk) {
             // Never fatal, and never a dialog: a desktop that will not take the
             // association is not a reason to refuse to start.
-            eMule::logWarning(QStringLiteral("Could not update the .nzb file association: %1")
+            eMule::logWarning(QStringLiteral("Could not update the file associations: %1")
                                   .arg(assocError));
         }
     }

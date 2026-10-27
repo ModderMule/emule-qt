@@ -113,6 +113,8 @@ private slots:
     void quic_requesterDialsWithoutHandoff();
     void quic_targetWaitsThenFallsBack();
     void quic_ipv6HandoffWins();
+    void quic_syncIPv6PrefersQuic();
+    void quic_fallbackAfterTcpV6();
     void quic_framesGoToTransport();
 };
 
@@ -817,6 +819,10 @@ void tst_NatRendezvous::quic_ipv6HandoffWins()
         f.advance(1000);
     QCOMPARE(f.env->dials.size(), size_t{1});
     QVERIFY(f.env->quicDials.empty());
+    // TCP/IPv6 did not connect: QUIC after kQuicAfterTcpMs
+    f.advance(2000);
+    QCOMPARE(f.env->quicDials.size(), size_t{1});
+    QCOMPARE(f.env->quicDials[0].second, Endpoint(kPeerIP, kPeerUdp));
 
     // a handoff without IPv6 no longer fails the attempt: QUIC carries it
     HubFixture g;
@@ -830,6 +836,115 @@ void tst_NatRendezvous::quic_ipv6HandoffWins()
     g.advance(1000);
     g.advance(1000);
     QCOMPARE(g.env->quicDials.size(), size_t{1});
+}
+
+void tst_NatRendezvous::quic_syncIPv6PrefersQuic()
+{
+    const Endpoint peerV6Udp(kPeerV6, kPeerUdp);
+    // requester: the server gave the peer's IPv6 UDP endpoint (PR_NAT SYNC_IPV6)
+    {
+        HubFixture f;
+        f.env->quic = true;
+        f.env->logIn(kServerIP, kServerPort, SrvTcpFlag::LowIdHolePunch);
+        const PeerInfo peer = f.peerOnServer(77);
+        QVERIFY(f.hub->start(peer));
+        Attempt* a = f.hub->findForPeer(peer);
+        QVERIFY(a);
+        f.hub->endpointKnown(*a, peerV6Udp, kPeerTcp);
+        const QByteArray h = handoff(peer.hash, 77, kPeerTcp, kPeerV6, true);
+        f.hub->handleFrame(OP_NATT_FRAME_IPV6HANDOFF, bytes(h), uint32(h.size()), peerV6Udp, true);
+        QVERIFY(f.env->dials.empty());               // no TCP/IPv6 first
+        f.advance(1000);
+        QCOMPARE(f.env->quicDials.size(), size_t{1});
+        QCOMPARE(f.env->quicDials[0].second, peerV6Udp);
+        QVERIFY(f.env->dials.empty());
+        for (int i = 0; i < 4; ++i)
+            f.advance(1000);
+        QCOMPARE(f.env->dials.size(), size_t{1});   // TCP/IPv6 fallback
+        QCOMPARE(f.env->dials[0].second, kPeerV6);
+        QCOMPARE(f.env->quicDials.size(), size_t{1});
+    }
+    // ... no TCP fallback once connected
+    {
+        HubFixture f;
+        f.env->quic = true;
+        f.env->logIn(kServerIP, kServerPort, SrvTcpFlag::LowIdHolePunch);
+        const PeerInfo peer = f.peerOnServer(77);
+        QVERIFY(f.hub->start(peer));
+        f.hub->endpointKnown(*f.hub->findForPeer(peer), peerV6Udp, kPeerTcp);
+        const QByteArray h = handoff(peer.hash, 77, kPeerTcp, kPeerV6, true);
+        f.hub->handleFrame(OP_NATT_FRAME_IPV6HANDOFF, bytes(h), uint32(h.size()), peerV6Udp, true);
+        f.advance(1000);
+        QCOMPARE(f.env->quicDials.size(), size_t{1});
+        f.env->connected = true;
+        f.advance(5000);
+        QVERIFY(f.env->dials.empty());
+    }
+    // target: waits for the QUIC dial instead of dialling TCP/IPv6 at once
+    {
+        HubFixture f;
+        f.env->quic = true;
+        f.env->logIn(kServerIP, kServerPort, SrvTcpFlag::LowIdHolePunch);
+        Hash16 hash{};
+        hash.fill(0x33);
+        f.hub->handleServerTcp(OP_LOWID_HOLEPUNCH_INFO, info(kPeerIP, kPeerTcp, kPeerUdp, hash, 55));
+        Attempt* a = f.hub->findAttempt([](const Attempt&) { return true; });
+        QVERIFY(a);
+        QCOMPARE(a->role, Role::Target);
+        f.hub->endpointKnown(*a, peerV6Udp, kPeerTcp);
+        const QByteArray h = handoff(hash, 55, kPeerTcp, kPeerV6);
+        f.hub->handleFrame(OP_NATT_FRAME_IPV6HANDOFF, bytes(h), uint32(h.size()), peerV6Udp, true);
+        QVERIFY(f.env->dials.empty());
+        for (int i = 0; i < 4; ++i)
+            f.advance(1000);
+        QVERIFY(f.env->dials.empty());
+        QVERIFY(f.env->quicDials.empty());
+        f.advance(1000);
+        QCOMPARE(f.env->dials.size(), size_t{1});   // TCP/IPv6 fallback
+        f.advance(1000);
+        QCOMPARE(f.env->quicDials.size(), size_t{1}); // QUIC target fallback
+        QCOMPARE(f.env->quicDials[0].second, peerV6Udp);
+    }
+}
+
+void tst_NatRendezvous::quic_fallbackAfterTcpV6()
+{
+    // target: TCP/IPv6 at once, QUIC only after kQuicAfterTcpTargetMs
+    HubFixture f;
+    f.env->quic = true;
+    f.env->logIn(kServerIP, kServerPort, SrvTcpFlag::LowIdHolePunch);
+    Hash16 hash{};
+    hash.fill(0x33);
+    f.hub->handleServerTcp(OP_LOWID_HOLEPUNCH_INFO, info(kPeerIP, kPeerTcp, kPeerUdp, hash, 55));
+    const QByteArray h = handoff(hash, 55, kPeerTcp, kPeerV6);
+    f.hub->handleFrame(OP_NATT_FRAME_IPV6HANDOFF, bytes(h), uint32(h.size()), Endpoint(kPeerIP, kPeerUdp), true);
+    QCOMPARE(f.env->dials.size(), size_t{1});
+    for (int i = 0; i < 11; ++i)
+        f.advance(1000);
+    QVERIFY(f.env->quicDials.empty());
+    f.advance(1000);
+    QCOMPARE(f.env->quicDials.size(), size_t{1});
+    QCOMPARE(f.env->quicDials[0].second, Endpoint(kPeerIP, kPeerUdp));
+
+    // requester: none once TCP connected, nor while a QUIC link is up
+    for (const bool linkUp : {false, true}) {
+        HubFixture g;
+        g.env->quic = true;
+        g.env->logIn(kServerIP, kServerPort, SrvTcpFlag::LowIdHolePunch);
+        const PeerInfo peer = g.peerOnServer(77);
+        QVERIFY(g.hub->start(peer));
+        g.hub->handleServerTcp(OP_LOWID_HOLEPUNCH_INFO, info(kPeerIP, kPeerTcp, kPeerUdp, peer.hash, 77));
+        const QByteArray h6 = handoff(peer.hash, 77, kPeerTcp, kPeerV6, true);
+        g.hub->handleFrame(OP_NATT_FRAME_IPV6HANDOFF, bytes(h6), uint32(h6.size()), Endpoint(kPeerIP, kPeerUdp), true);
+        g.advance(1000);
+        if (linkUp)
+            g.env->quicLinkUp = true;
+        else
+            g.env->connected = true;
+        for (int i = 0; i < 10; ++i)
+            g.advance(1000);
+        QVERIFY(g.env->quicDials.empty());
+    }
 }
 
 void tst_NatRendezvous::quic_framesGoToTransport()

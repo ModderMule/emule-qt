@@ -52,6 +52,11 @@ void insertRates(QCborMap& stats);
 /// GetBtStats: the session and cumulative counters plus the live figures.
 [[nodiscard]] QCborMap statsToCbor();
 
+/// Hands the app's IP filter (ranges below ipFilterLevel(), the rule of
+/// IPFilter::isFiltered) to the session. `onlyIfLevelChanged`: skip when the level is the
+/// one applied last (options saves). No-op without a session or filter.
+void applyIpFilter(bool onlyIfLevelChanged = false);
+
 #ifdef EMULE_HAVE_BITTORRENT
 /// The session's settings from Preferences: the download dir resolved, the state dir
 /// under the config dir.

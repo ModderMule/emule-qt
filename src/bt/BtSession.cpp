@@ -15,6 +15,7 @@
 #include <libtorrent/extensions/smart_ban.hpp>
 #include <libtorrent/extensions/ut_metadata.hpp>
 #include <libtorrent/extensions/ut_pex.hpp>
+#include <libtorrent/ip_filter.hpp>
 #include <libtorrent/kademlia/dht_state.hpp>
 #include <libtorrent/read_resume_data.hpp>
 #include <libtorrent/session.hpp>
@@ -60,6 +61,8 @@ const QString kResumeDir = QStringLiteral("resume");
 const QString kResumeSuffix = QStringLiteral(".fastresume");
 /// per-torrent seed limits; speeds and peers are in the resume data
 const QString kOptionsFile = QStringLiteral("torrent-options.json");
+/// the ed3k:file links torrents were added with (torrent.md §4.1)
+const QString kLinksFile = QStringLiteral("ed3k-links.json");
 
 /// A torrent plugin of libtorrent as a session plugin: the explicit list of extensions.
 struct TorrentPlugin final : lt::plugin {
@@ -117,6 +120,26 @@ QString message(const lt::alert* a)
     return QString::fromStdString(a->message());
 }
 
+/// A join's sink as the disk I/O's hook of one torrent.
+class SinkHook final : public BtJoinHook {
+public:
+    SinkHook(QString id, std::weak_ptr<BtJoinSink> sink) : m_id(std::move(id)), m_sink(std::move(sink)) {}
+
+    void pieceHashed(lt::piece_index_t piece, std::vector<char> data, std::function<void(bool)> done) override
+    {
+        const auto sink = m_sink.lock();
+        if (!sink) {
+            done(false);
+            return;
+        }
+        sink->pieceHashed(m_id, static_cast<int>(piece), QByteArray(data.data(), qsizetype(data.size())), std::move(done));
+    }
+
+private:
+    QString m_id;
+    std::weak_ptr<BtJoinSink> m_sink;
+};
+
 } // namespace
 
 struct BtSession::Impl {
@@ -156,6 +179,38 @@ struct BtSession::Impl {
     int peersIdx = lt::find_metric_idx("peer.num_peers_connected");
     bool listening = false;
     int dhtNodes = 0;
+    /// ed3k joins by id; attached to each disk I/O the session makes
+    std::map<QString, std::shared_ptr<BtJoinSink>> joins;
+    /// ed3k:file links by id (kLinksFile)
+    std::map<QString, QString> links;
+    void attachSink(const QString& id) const
+    {
+        BtJoinDiskIo* disk = io.load();
+        const auto j = joins.find(id);
+        const auto h = handle(id);
+        if (disk && j != joins.end() && h.is_valid())
+            disk->attach(h.info_hashes(), std::make_shared<SinkHook>(id, j->second));
+    }
+    [[nodiscard]] QString linksPath() const { return QDir(settings.stateDir).filePath(kLinksFile); }
+    void loadLinks()
+    {
+        links.clear();
+        const QJsonObject root = QJsonDocument::fromJson(readAll(linksPath())).object();
+        for (auto it = root.begin(); it != root.end(); ++it)
+            links[it.key()] = it.value().toString();
+    }
+    void saveLinks() const
+    {
+        QJsonObject root;
+        for (const auto& [id, link] : links)
+            root.insert(id, link);
+        const QByteArray json = QJsonDocument(root).toJson(QJsonDocument::Compact);
+        if (!writeAtomic(linksPath(), std::vector<char>(json.begin(), json.end())))
+            logWarning(QStringLiteral("BitTorrent: could not write %1").arg(linksPath()));
+    }
+    /// the app's filter, set again at each start (session state does not keep it)
+    lt::ip_filter ipFilter;
+    quint64 blockedPeers = 0;
 
     [[nodiscard]] QString resumePath(const QString& id) const { return QDir(settings.stateDir).filePath(kResumeDir + QLatin1Char('/') + resumeName(id)); }
     [[nodiscard]] lt::torrent_handle handle(const QString& id) const
@@ -173,7 +228,7 @@ struct BtSession::Impl {
     [[nodiscard]] QString optionsPath() const { return QDir(settings.stateDir).filePath(kOptionsFile); }
     void loadSeedLimits();
     void saveSeedLimits() const;
-    BtAddResult add(BtSession& q, lt::add_torrent_params atp, const QString& savePath, bool paused);
+    BtAddResult add(BtSession& q, lt::add_torrent_params atp, const QString& savePath, bool paused, const QString& link = {});
     void enforceSeedLimits(const lt::torrent_status& st, const BtTorrentRow& row);
     /// settings as a pack, with the setRateLimits() caps over the configured ones
     [[nodiscard]] lt::settings_pack pack(const BtSettings& s) const;
@@ -248,6 +303,8 @@ void BtSession::start(const BtSettings& settings)
         }
     }
     params.settings = d->pack(settings);
+    params.ip_filter = d->ipFilter;
+    d->blockedPeers = 0;
     params.extensions = extensions(settings);
     params.extensions.push_back(BtJoinDiskIo::pumpPlugin([impl = d.get()] { return impl->io.load(); }));
     params.disk_io_constructor = BtJoinDiskIo::constructor([this](BtJoinDiskIo* io) { d->io = io; });
@@ -263,6 +320,7 @@ void BtSession::start(const BtSettings& settings)
     d->ses->set_alert_notify([this] { QMetaObject::invokeMethod(this, &BtSession::drainAlerts, Qt::QueuedConnection); });
 
     d->loadSeedLimits();
+    d->loadLinks();
 
     // the torrents of the last run
     const QDir resumeDir(QDir(settings.stateDir).filePath(kResumeDir));
@@ -372,6 +430,24 @@ void BtSession::setRateLimits(quint32 downKb, quint32 upKb)
     d->ses->apply_settings(std::move(p));
 }
 
+void BtSession::setIpFilter(const std::vector<BtIpRange4>& v4, const std::vector<BtIpRange6>& v6)
+{
+    lt::ip_filter f;
+    for (const BtIpRange4& r : v4)
+        f.add_rule(lt::address_v4(r.first), lt::address_v4(r.last), lt::ip_filter::blocked);
+    for (const BtIpRange6& r : v6)
+        f.add_rule(lt::address_v6(r.first), lt::address_v6(r.last), lt::ip_filter::blocked);
+    d->ipFilter = std::move(f);
+    if (d->ses)
+        d->ses->set_ip_filter(d->ipFilter);
+    logDebug(QStringLiteral("BitTorrent: IP filter of %1 range(s)").arg(v4.size() + v6.size()));
+}
+
+quint64 BtSession::blockedPeers() const
+{
+    return d->blockedPeers;
+}
+
 BtDemand BtSession::demand()
 {
     BtDemand out;
@@ -413,7 +489,7 @@ BtAddResult BtSession::addMagnet(const QString& uri, const QString& savePath, bo
     auto atp = BtAddSource::fromMagnet(uri);
     if (!atp)
         return {BtAddOutcome::Invalid, {}, atp.error()};
-    return d->add(*this, std::move(*atp), savePath, paused);
+    return d->add(*this, std::move(*atp), savePath, paused, BtAddSource::ed3kLinkOf(uri));
 }
 
 bool BtSession::remove(const QString& id, bool deleteFiles)
@@ -425,6 +501,11 @@ bool BtSession::remove(const QString& id, bool deleteFiles)
     d->handles.erase(id);
     d->rows.erase(id);
     d->limitOverride.remove(id);
+    if (d->links.erase(id) > 0)
+        d->saveLinks();
+    if (auto* disk = d->io.load(); disk && d->joins.contains(id))
+        disk->detach(h.info_hashes());
+    d->joins.erase(id);
     if (d->seedLimits.erase(id) > 0)
         d->saveSeedLimits();
     QFile::remove(d->resumePath(id));
@@ -643,6 +724,74 @@ BtJoinDiskIo* BtSession::diskIo() const
     return d->io;
 }
 
+bool BtSession::attachJoin(const QString& id, std::shared_ptr<BtJoinSink> sink)
+{
+    if (!sink || !d->handles.contains(id))
+        return false;
+    d->joins[id] = std::move(sink);
+    d->attachSink(id);
+    return true;
+}
+
+void BtSession::detachJoin(const QString& id)
+{
+    const auto h = d->handle(id);
+    if (auto* disk = d->io.load(); disk && h.is_valid())
+        disk->detach(h.info_hashes());
+    d->joins.erase(id);
+}
+
+QByteArray BtSession::infoSection(const QString& id) const
+{
+    const auto h = d->handle(id);
+    const auto ti = h.is_valid() ? h.torrent_file() : nullptr;
+    if (!ti || !ti->is_valid())
+        return {};
+    const auto info = ti->info_section();
+    return QByteArray(info.data(), qsizetype(info.size()));
+}
+
+std::optional<BtLayout> BtSession::layout(const QString& id) const
+{
+    const auto h = d->handle(id);
+    const auto ti = h.is_valid() ? h.torrent_file() : nullptr;
+    if (!ti || !ti->is_valid())
+        return std::nullopt;
+    const std::string savePath = h.status(lt::torrent_handle::query_save_path).save_path;
+    const lt::file_storage& fs = ti->layout();
+    BtLayout out;
+    out.pieceLength = ti->piece_length();
+    out.pieces = ti->num_pieces();
+    out.total = fs.total_size();
+    for (const lt::file_index_t f : fs.file_range())
+        out.files.append({QString::fromStdString(fs.file_path(f, savePath)), fs.file_size(f), fs.file_offset(f), fs.pad_file_at(f)});
+    return out;
+}
+
+bool BtSession::addPiece(const QString& id, int piece, const QByteArray& data)
+{
+    const auto h = d->handle(id);
+    if (!h.is_valid() || data.isEmpty())
+        return false;
+    h.add_piece(lt::piece_index_t(piece), std::vector<char>(data.begin(), data.end()), lt::torrent_handle::overwrite_existing);
+    return true;
+}
+
+void BtSession::raisePieces(const QString& id, const QList<int>& pieces)
+{
+    const auto h = d->handle(id);
+    if (!h.is_valid())
+        return;
+    for (const int p : pieces)
+        h.set_piece_deadline(lt::piece_index_t(p), 0);
+}
+
+QString BtSession::ed3kLink(const QString& id) const
+{
+    const auto it = d->links.find(id);
+    return it == d->links.end() ? QString() : it->second;
+}
+
 void BtSession::drainAlerts()
 {
     if (!d->ses)
@@ -688,6 +837,7 @@ void BtSession::drainAlerts()
             d->handles[id] = at->handle;
             d->noteMeta(id, at->params);
             d->rows[id] = d->row(at->handle.status());
+            d->attachSink(id);
             emit torrentAdded(id);
         } else if (auto* rd = lt::alert_cast<lt::save_resume_data_alert>(a)) {
             d->outstandingResume = std::max(0, d->outstandingResume - 1);
@@ -710,7 +860,12 @@ void BtSession::drainAlerts()
             emit torrentFinished(id);
         } else if (auto* md = lt::alert_cast<lt::metadata_received_alert>(a)) {
             d->saveResume(md->handle);
-            emit torrentChanged(BtTorrentView::idOf(md->handle.info_hashes()));
+            const QString id = BtTorrentView::idOf(md->handle.info_hashes());
+            emit torrentChanged(id);
+            emit metadataReceived(id);
+        } else if (auto* pf = lt::alert_cast<lt::piece_finished_alert>(a)) {
+            if (const QString id = BtTorrentView::idOf(pf->handle.info_hashes()); d->joins.contains(id))
+                emit pieceResult(id, static_cast<int>(pf->piece_index), true);
         } else if (auto* ls = lt::alert_cast<lt::listen_succeeded_alert>(a)) {
             // one per interface and transport: the port is in the start line
             d->listening = true;
@@ -719,6 +874,15 @@ void BtSession::drainAlerts()
         } else if (auto* lf = lt::alert_cast<lt::listen_failed_alert>(a)) {
             logWarning(QStringLiteral("BitTorrent: %1").arg(message(lf)));
             emit statusChanged();
+        } else if (auto* pb = lt::alert_cast<lt::peer_blocked_alert>(a)) {
+            if (pb->reason == lt::peer_blocked_alert::ip_filter) {
+                ++d->blockedPeers;
+                // ep: `endpoint` is gone at ABI 4 (Linux static build)
+                const auto* blocked = std::get_if<lt::aux::noexcept_movable<lt::tcp::endpoint>>(&pb->ep);
+                logDebug(QStringLiteral("BitTorrent: IP filter blocked %1")
+                               .arg(blocked ? QString::fromStdString(blocked->address().to_string())
+                                            : QStringLiteral("i2p peer")));
+            }
         } else if (auto* ds = lt::alert_cast<lt::dht_stats_alert>(a)) {
             int nodes = 0;
             for (const auto& bucket : ds->routing_table)
@@ -728,9 +892,12 @@ void BtSession::drainAlerts()
                    || lt::alert_cast<lt::performance_alert>(a)) {
             logWarning(QStringLiteral("BitTorrent: %1").arg(message(a)));
         } else if (lt::alert_cast<lt::tracker_error_alert>(a) || lt::alert_cast<lt::hash_failed_alert>(a)) {
-            if (lt::alert_cast<lt::hash_failed_alert>(a))
+            if (auto* hf = lt::alert_cast<lt::hash_failed_alert>(a)) {
                 if (BtCounters* c = Impl::counters())
                     ++c->hashFailures;
+                if (const QString id = BtTorrentView::idOf(hf->handle.info_hashes()); d->joins.contains(id))
+                    emit pieceResult(id, static_cast<int>(hf->piece_index), false);
+            }
             logDebug(QStringLiteral("BitTorrent: %1").arg(message(a)));
         }
     }
@@ -748,7 +915,7 @@ void BtSession::tick()
                 d->saveResume(h, lt::torrent_handle::save_info_dict | lt::torrent_handle::only_if_modified);
 }
 
-BtAddResult BtSession::Impl::add(BtSession& q, lt::add_torrent_params atp, const QString& savePath, bool paused)
+BtAddResult BtSession::Impl::add(BtSession& q, lt::add_torrent_params atp, const QString& savePath, bool paused, const QString& link)
 {
     const lt::info_hash_t hashes = atp.ti ? atp.ti->info_hashes() : atp.info_hashes;
     if (auto found = ses->find_torrent(hashes.get_best()); found.is_valid())
@@ -777,6 +944,10 @@ BtAddResult BtSession::Impl::add(BtSession& q, lt::add_torrent_params atp, const
     handles[id] = h;
     noteMeta(id, metaOf);
     rows[id] = row(h.status());
+    if (!link.isEmpty()) {
+        links[id] = link;
+        saveLinks();
+    }
     // kept across a restart from now on
     saveResume(h);
     logInfo(QStringLiteral("BitTorrent: added %1").arg(rows[id].name));

@@ -9,14 +9,16 @@ Torrent downloads through libtorrent-rasterbar 2.1, in the daemon. Design and ph
 | File | What |
 |---|---|
 | `src/bt/BtSession.{h,cpp}` | façade the daemon owns: libtorrent session, alert drain on the Qt thread, resume data and session state, seed limits |
-| `src/bt/BtTypes.h`, `BtIds.{h,cpp}` | plain Qt rows, settings, outcomes; the id `bt:v1:<40 hex>` / `bt:v2:<64 hex>` |
+| `src/bt/BtTypes.h`, `BtIds.{h,cpp}` | plain Qt rows, settings, outcomes, IP ranges; the id `bt:v1:<40 hex>` / `bt:v2:<64 hex>` |
+| `src/bt/BtJoin.h` | what an ed3k join sees: `BtLayout` (pieces, files), `BtJoinSink` (piece checks) |
 | `src/bt/session/BtSettingsMap.*` | BtSettings → `settings_pack` (UPnP/NAT-PMP off) |
 | `src/bt/session/BtJoinDiskIo.*` | `disk_interface` around `pread_disk_io`: the door an ed3k join uses to veto pieces |
 | `src/bt/add/BtAddSource.*` | `.torrent` bytes / magnet → `add_torrent_params` |
 | `src/bt/torrent/BtTorrentView.*` | `torrent_status`, files, peers, trackers → rows |
-| `src/daemon/BtBridge.*` | IPC 800-899 and the CBOR rows; 503 when the module is not built or off |
+| `src/daemon/BtBridge.*` | IPC 800-899 and the CBOR rows; 503 when the module is not built or off; the IP filter handed over |
+| `src/ed3k/Ed3kTorrentJoin.*` | the ed3k join of torrents (Part C), see "ed3k join" below and `docs/ed3k-module.md` |
 
-Only `BtSession.h`, `BtTypes.h` and `BtIds.h` are free of libtorrent types.
+Only `BtSession.h`, `BtTypes.h`, `BtJoin.h` and `BtIds.h` are free of libtorrent types.
 
 ## Daemon
 
@@ -71,6 +73,35 @@ Connection (port, mapping, encryption, DHT/LSD/PEX, bandwidth shares and hard ca
 limits). `--options bittorrent|btconnection` opens them (`btbandwidth` is an alias of
 `btconnection`).
 
+## IP filter (§7.6)
+
+The app's `IPFilter` stays the source of truth. `BtBridge::applyIpFilter()` hands libtorrent
+the ranges it blocks for eD2K (level below `ipFilterLevel`, the rule of `isFiltered`; the
+table is merged already), IPv4 and IPv6, as one `lt::ip_filter`
+(`BtSession::setIpFilter`). The session keeps it across stop/start (session state does not
+save it). Applied at start, on `IPFilter::filterLoaded`, on the new `filterCleared` (every
+reload, and a reload that finds no file, which emits no `filterLoaded`), and when an options
+save changes `ipFilterLevel` (that key also raises `btConfigChanged`). Each blocked peer
+(`peer_blocked_alert`, category `ip_block`) is counted (`blockedPeers()`) and logged at debug
+level. Torrents keep libtorrent's default `apply_ip_filter`.
+
+## ed3k join (torrent.md §4, Part C)
+
+`Ed3kTorrentJoin` (src/ed3k, `docs/ed3k-module.md` "Torrent join") joins every torrent with
+metadata while the ed3k node runs. What BtSession gives it, without libtorrent types:
+
+- `attachJoin(id, sink)` / `detachJoin(id)`: the piece checks of a torrent go through the
+  sink; kept across stop/start and attached again to each new disk I/O. The join door now
+  reads the piece through the inner disk I/O (16 KiB requests) after libtorrent's hash and
+  hands the bytes to the hook (`BtJoinHook::pieceHashed(piece, data, done)`).
+- `infoSection(id)`, `layout(id)`: the info dictionary and the files on disk.
+- `addPiece(id, piece, bytes)` (`add_piece`, overwrite) and `raisePieces` (`set_piece_deadline`).
+- Signals `metadataReceived(id)` and `pieceResult(id, piece, passed)` (only for torrents with
+  a join; needs `alert_category::piece_progress`).
+- `ed3kLink(id)`: an `ed3k:file?…&bt=` link added as a magnet of that infohash, or a magnet's
+  `xs` that is an `ed3k:file` link; kept in `<config>/BT/ed3k-links.json`. The GUI routes such
+  links like BitTorrent magnets (`gui::isBitTorrentMagnet`).
+
 ## GUI (Torrents tab)
 
 Transmission's layout, split between the tab and one inspector window:
@@ -84,6 +115,15 @@ Transmission's layout, split between the tab and one inspector window:
 
 Context menu "Paste Magnet Links" (and Ctrl+V) adds every magnet in the clipboard to the default
 folder, started, without the Add dialog, like "Paste eD2K Links".
+
+Desktop: Options → BitTorrent → "Open .torrent files and magnet links with eMule Qt" (on by
+default, `UiState::associateTorrentFiles`, re-applied at every start like `.nzb`).
+`FileAssociation::applyFileTypes` writes one desktop entry on Linux for every type
+(`application/x-bittorrent`, `x-scheme-handler/magnet`, `.nzb`, `ed2k`), so claiming one no
+longer drops another, and makes it the default (`xdg-mime default`). Windows: ProgId
+`eMuleQt.torrent` and the `magnet` URL protocol under HKCU; given up only while still ours.
+macOS declares both in `Info.plist.in`. `--register-file-types` / `--unregister-file-types`
+cover all of them; the installer's uninstall step also removes a `magnet` key of the app.
 
 `--tab torrents --subtab N` selects the first torrent: 0-2 pane tab, 3-5 inspector tab (screenshots).
 
@@ -162,6 +202,9 @@ MCP tools: `torrents_list`, `torrents_get`, `torrents_add_magnet`, `torrents_set
 - Homebrew's target adds `TORRENT_USE_ASSERTS` in Debug although the library is a release
   build; that changes class layouts and crashed `tst_BtLocalSwarm`. CMake strips it from an
   installed target.
+- qmake: `src/bt/bt.pro` (a subdir of `eMuleQt.pro`, needs an installed libtorrent); the daemon
+  and GUI `.pro` files define `EMULE_HAVE_BITTORRENT`, `ed3k.pro` too (the torrent join). The
+  qmake `tests/tests.pro` is a single-binary listing that does not link; the tests are CMake's.
 - Visual Studio: `src/bt/emulebt.vcxproj`, `tests/vs/tst_BtSmoke.vcxproj`,
   `tests/vs/tst_BtLocalSwarm.vcxproj`; the libtorrent defines there are a guess of what the
   vcpkg port builds with and are not checked on Windows yet.
@@ -181,7 +224,8 @@ MCP tools: `torrents_list`, `torrents_get`, `torrents_add_magnet`, `torrents_set
 
 ## Tests
 
-- `tst_BtSmoke`: ids, magnet detection, inputs, start/stop, rate limits and demand.
+- `tst_BtSmoke`: ids, magnet detection (also `ed3k:file` links with `bt`, `xs`), inputs,
+  start/stop, rate limits and demand.
 - `tst_BandwidthSplit`: the eD2K/Usenet/BitTorrent plans for download and upload.
 - `tst_BtLocalSwarm`: two sessions on loopback (no network): magnet with metadata exchange,
   duplicate add, a hook that passes every piece (at once and later), a spoiled piece counted
@@ -195,8 +239,5 @@ MCP tools: `torrents_list`, `torrents_get`, `torrents_add_magnet`, `torrents_set
 
 ## Not done yet
 
-- ToDo: IP filter into `lt::ip_filter` (§7.6)
-- ToDo: the ed3k join wiring in the daemon (`libs/packmule/docs/torrent-join.md`, Part C)
-- ToDo: qmake files (`*.pro`) for src/bt
 - ToDo: Visual Studio projects for `tst_TorrentDetailsGui` (and the other BitTorrent GUI tests)
 - ToDo: a Torrents page in the web UI (the REST routes exist)

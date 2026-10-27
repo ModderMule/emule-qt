@@ -40,11 +40,12 @@ class BtJoinHook {
 public:
     virtual ~BtJoinHook() = default;
 
-    /// Called on libtorrent's network thread once the piece's own hash is done.
-    /// `done(spoil)` is called once, from any thread; `spoil` makes libtorrent fail the
-    /// piece. A verdict at once is handed back in place; a later one at the next tick
-    /// (settings_pack::tick_interval, 500 ms), and dropped when the session is gone.
-    virtual void pieceHashed(libtorrent::piece_index_t piece, std::function<void(bool spoil)> done) = 0;
+    /// Called on libtorrent's network thread once the piece's own hash is done, with the
+    /// piece's bytes as written (padding included). `done(spoil)` is called once, from
+    /// any thread; `spoil` makes libtorrent fail the piece. A verdict at once is handed
+    /// back in place; a later one at the next tick (settings_pack::tick_interval,
+    /// 500 ms), and dropped when the session is gone.
+    virtual void pieceHashed(libtorrent::piece_index_t piece, std::vector<char> data, std::function<void(bool spoil)> done) = 0;
 };
 
 class BtJoinDiskIo final : public libtorrent::disk_interface {
@@ -115,6 +116,11 @@ private:
     };
 
     [[nodiscard]] std::shared_ptr<BtJoinHook> hookOf(libtorrent::storage_index_t storage) const;
+    /// A hash job waiting for the hook's verdict.
+    struct Pending;
+    /// Reads a hashed piece through the inner disk I/O, then asks the hook.
+    void readForHook(libtorrent::storage_index_t storage, int pieceSize, std::shared_ptr<BtJoinHook> hook,
+                     std::shared_ptr<Pending> pending, libtorrent::disk_job_flags_t flags);
 
     std::shared_ptr<Ready> m_ready = std::make_shared<Ready>();
     std::unique_ptr<libtorrent::disk_interface> m_inner;
@@ -123,6 +129,8 @@ private:
     std::map<libtorrent::storage_index_t, libtorrent::storage_holder> m_holders;
     /// storage_params::info_hash: info_hash_t::get_best() of the torrent
     std::map<libtorrent::storage_index_t, libtorrent::sha1_hash> m_hashOf;
+    /// storage_params::files: the torrent's, alive as long as its storage
+    std::map<libtorrent::storage_index_t, const libtorrent::file_storage*> m_filesOf;
     std::map<libtorrent::sha1_hash, std::shared_ptr<BtJoinHook>> m_hooks;
 };
 

@@ -159,6 +159,13 @@ public:
         m_associateNzbFiles = on;
         scheduleSave();
     }
+    /// Claim .torrent and magnet: the same way (Windows, Linux).
+    [[nodiscard]] bool associateTorrentFiles() const { return m_associateTorrentFiles; }
+    void setAssociateTorrentFiles(bool on)
+    {
+        m_associateTorrentFiles = on;
+        scheduleSave();
+    }
 
     /// MiniMule closes itself three seconds after the pointer left it. Off, as in MFC,
     /// where it is the hidden "MiniMuleAutoClose" key (MiniMule.cpp:115). No option
@@ -396,6 +403,7 @@ private:
     int  m_optionsHeight   = 0;
     int64_t m_lastVersionCheck = 0;
     bool m_associateNzbFiles = true;
+    bool m_associateTorrentFiles = true;
     bool m_miniMuleAutoClose = false;
     bool m_firstStartWizardDone = false;
     int m_startCount = 0;

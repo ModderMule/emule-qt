@@ -140,6 +140,9 @@ public:
 signals:
     /// Emitted after a filter file is loaded.
     void filterLoaded(int count);
+    /// Emitted when every range was dropped (also before each reload, and when the
+    /// reload finds no file, which emits no filterLoaded).
+    void filterCleared();
 
     /// Emitted when an IP is blocked. Address-typed so IPv6 hits can be reported too.
     void ipBlocked(const Address& addr, const QString& description);

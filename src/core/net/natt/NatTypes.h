@@ -106,9 +106,10 @@ struct Attempt {
     uint64 punchUntilMs = 0;
     uint64 lastPunchMs = 0;
     uint64 lastHandoffMs = 0;
-    uint64 dialAtMs = 0;            ///< requester's fallback dial time, 0 = none
-    bool dialed = false;
+    uint64 dialAtMs = 0;            ///< when this side dials TCP/IPv6, 0 = not decided yet
+    bool dialed = false;            ///< TCP/IPv6 dialled
     uint64 quicDialAtMs = 0;        ///< when this side dials QUIC, 0 = not decided yet
+    bool quicDialed = false;
     bool endpointReported = false;  ///< peerEndpointReady emitted
     bool finished = false;          ///< done or failed; removed on the next tick
     uint8 triedPaths = 0;           ///< requester: bit (1 << PathKind) per path tried
@@ -118,6 +119,12 @@ struct Attempt {
     bool foreignWake = false;       ///< target woken by a 0x37 naming requester ID 0 (logged in elsewhere)
     uint8 burstLeft = 0;            ///< target: 0x9F still due of the 0 / 0.5 / 1 s burst
     uint64 burstStartMs = 0;
+
+    /// QUIC goes to the peer's IPv6 endpoint when a server gave one (PR_NAT SYNC_IPV6).
+    [[nodiscard]] Endpoint quicEndpoint() const
+    {
+        return peerUdp6.port() != 0 ? peerUdp6 : peerUdp;
+    }
 };
 
 } // namespace natt

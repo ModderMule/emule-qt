@@ -26,7 +26,9 @@ inline constexpr bool kBitTorrentBuilt = false;
 #endif
 
 /// True for a magnet that BitTorrent should take: xt=urn:btih:/urn:btmh: and no
-/// eD2K hash (xt=urn:ed2k:, urn:ed2khash:, or an ed2k:// xs/as source).
+/// eD2K hash (xt=urn:ed2k:, urn:ed2khash:, or an ed2k:// xs/as source). Also an
+/// `ed3k:file` link of a torrent set (`bt=` infohash, torrent.md §7): the core adds the
+/// torrent and joins it with ed3k.
 [[nodiscard]] bool isBitTorrentMagnet(const QString& link);
 
 /// The BitTorrent magnets among @p text's lines/tokens, in order.

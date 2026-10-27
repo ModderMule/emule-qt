@@ -99,6 +99,7 @@ void UiState::load(const QString& configDir)
         m_optionsHeight    = root["optionsHeight"].as<int>(m_optionsHeight);
         m_lastVersionCheck = root["lastVersionCheck"].as<int64_t>(m_lastVersionCheck);
         m_associateNzbFiles = root["associateNzbFiles"].as<bool>(m_associateNzbFiles);
+        m_associateTorrentFiles = root["associateTorrentFiles"].as<bool>(m_associateTorrentFiles);
         m_miniMuleAutoClose = root["miniMuleAutoClose"].as<bool>(m_miniMuleAutoClose);
         m_firstStartWizardDone = root["firstStartWizardDone"].as<bool>(m_firstStartWizardDone);
         m_startCount = root["startCount"].as<int>(m_startCount);
@@ -220,6 +221,7 @@ void UiState::save(const QString& configDir)
     out << YAML::Key << "optionsHeight"    << YAML::Value << m_optionsHeight;
     out << YAML::Key << "lastVersionCheck" << YAML::Value << m_lastVersionCheck;
     out << YAML::Key << "associateNzbFiles" << YAML::Value << m_associateNzbFiles;
+    out << YAML::Key << "associateTorrentFiles" << YAML::Value << m_associateTorrentFiles;
     out << YAML::Key << "miniMuleAutoClose" << YAML::Value << m_miniMuleAutoClose;
     out << YAML::Key << "firstStartWizardDone" << YAML::Value << m_firstStartWizardDone;
     out << YAML::Key << "startCount" << YAML::Value << m_startCount;

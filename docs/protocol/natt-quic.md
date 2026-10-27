@@ -157,6 +157,14 @@ options: 0x01/0x02/0x04 crypt supported/requested/required, 0x08 direct callback
   eMuleQt peer can win first (TCP over IPv6 is preferred when both sides have it). This
   matches eMuleAI, where the uploader waits for the downloader's dial, and aMule, which can
   only be dialled.
+- **IPv6.** QUIC prefers the peer's IPv6 UDP endpoint when the introducer gave one (eNode-go
+  `PR_NAT` `SYNC_IPV6`, kept as `Attempt::peerUdp6`; both families are punched and armed).
+  Then QUIC goes first, with no wait for the handoff (requester 1 s, target 6 s): the punch
+  opens stateful IPv6 firewalls, which a TCP/IPv6 connect does not get through. TCP/IPv6
+  follows on both sides 5 s later when nothing connected.
+- **QUIC after TCP/IPv6.** On any other path where the handoff makes TCP/IPv6 the first choice,
+  QUIC is the fallback: the requester dials it 7 s after the TCP decision, the target after
+  12 s, when nothing connected and no QUIC link is up.
 - The uploader (target) arms a passive expectation for the peer's address (20 s, any port on
   that IP, because NATs rebind). Only Initials from armed peers are accepted.
 - Direct UDP path (Kad type 6 + `nat`, [natt-rendezvous.md](natt-rendezvous.md#direct-udp-kad-type-6--nat)):
@@ -267,7 +275,8 @@ What eMuleQt's obfuscation does and doesn't do:
   - caps; close.
 - `tests/tst_EMSocket` `transport_*`: the eD2K socket over a non-TCP stream (framing, the
   throttler thread, back-pressure, loss).
-- `tests/tst_NatRendezvous` `quic_*`: who dials when; the IPv6 handoff still wins.
+- `tests/tst_NatRendezvous` `quic_*`: who dials when; the IPv6 handoff still wins, QUIC after
+  a TCP/IPv6 dial, QUIC first on a `SYNC_IPV6` endpoint.
 - `tests/interop/quic_interop_driver.cpp` (option `EMULE_QUIC_INTEROP_TEST`, manual): our
   endpoint over real localhost UDP against a GnuTLS + ngtcp2 peer that mimics eMuleAI's client
   and server and aMule's server, byte for byte in settings.

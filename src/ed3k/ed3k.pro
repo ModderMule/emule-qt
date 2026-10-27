@@ -11,9 +11,13 @@ QT += core network
 QT -= gui
 
 PACKMULE = $$PWD/../../libs/packmule
-INCLUDEPATH += $$PWD $$PWD/.. $$PWD/../core $$PWD/../usenet $$PACKMULE/crates/packmule-ffi/include
+INCLUDEPATH += $$PWD $$PWD/.. $$PWD/../core $$PWD/../usenet $$PWD/../bt $$PACKMULE/crates/packmule-ffi/include
 
 DEFINES += EMULE_HAVE_ED3K=1
+# BitTorrent: always on, as CMake EMULE_BITTORRENT (the torrent join links emulebt)
+DEFINES += EMULE_HAVE_BITTORRENT=1 \
+    TORRENT_USE_OPENSSL TORRENT_USE_LIBCRYPTO TORRENT_SSL_PEERS \
+    BOOST_ASIO_NO_DEPRECATED BOOST_ASIO_ENABLE_CANCELIO BOOST_SYSTEM_USE_UTF8
 
 unix: LIBS += -lcrypto
 win32 {
@@ -26,13 +30,17 @@ win32 {
 
 SOURCES += \
     Ed3kHttp.cpp \
+    Ed3kJoinBase.cpp \
     Ed3kSession.cpp \
     Ed3kStore.cpp \
+    Ed3kTorrentJoin.cpp \
     Ed3kUsenetJoin.cpp
 
 HEADERS += \
     Ed3kFfi.h \
     Ed3kHttp.h \
+    Ed3kJoinBase.h \
     Ed3kSession.h \
     Ed3kStore.h \
+    Ed3kTorrentJoin.h \
     Ed3kUsenetJoin.h

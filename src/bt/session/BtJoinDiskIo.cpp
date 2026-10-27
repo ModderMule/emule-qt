@@ -3,7 +3,9 @@
 #include <libtorrent/pread_disk_io.hpp>
 #include <libtorrent/session_params.hpp>
 
+#include <algorithm>
 #include <atomic>
+#include <cstring>
 #include <thread>
 
 namespace lt = libtorrent;
@@ -21,8 +23,12 @@ Hash spoiled(Hash h)
     return h;
 }
 
-/// A hash job of libtorrent waiting for the hook's verdict.
-struct Pending {
+/// Read size for a piece handed to the hook: libtorrent's block.
+constexpr int kReadBlock = 16 * 1024;
+
+} // namespace
+
+struct BtJoinDiskIo::Pending {
     std::function<void(lt::piece_index_t, lt::sha1_hash const&, lt::storage_error const&)> handler;
     lt::span<lt::sha256_hash> v2;
     lt::piece_index_t piece;
@@ -36,8 +42,6 @@ struct Pending {
         handler(piece, spoil ? spoiled(hash) : hash, lt::storage_error{});
     }
 };
-
-} // namespace
 
 /// Hands late verdicts back on libtorrent's tick.
 class Pump final : public lt::plugin {
@@ -70,6 +74,7 @@ BtJoinDiskIo::~BtJoinDiskIo()
     std::scoped_lock lock(m_mutex);
     m_hooks.clear();
     m_hashOf.clear();
+    m_filesOf.clear();
     m_holders.clear();
 }
 
@@ -126,6 +131,7 @@ lt::storage_holder BtJoinDiskIo::new_torrent(lt::storage_params const& p, std::s
     std::scoped_lock lock(m_mutex);
     m_holders.insert_or_assign(idx, std::move(inner));
     m_hashOf.insert_or_assign(idx, p.info_hash);
+    m_filesOf.insert_or_assign(idx, &p.files);
     return lt::storage_holder(idx, *this);
 }
 
@@ -135,6 +141,7 @@ void BtJoinDiskIo::remove_torrent(lt::storage_index_t storage)
     {
         std::scoped_lock lock(m_mutex);
         m_hashOf.erase(storage);
+        m_filesOf.erase(storage);
         if (auto it = m_holders.find(storage); it != m_holders.end()) {
             inner = std::move(it->second);
             m_holders.erase(it);
@@ -163,28 +170,22 @@ void BtJoinDiskIo::async_hash(lt::storage_index_t storage, lt::piece_index_t pie
         m_inner->async_hash(storage, piece, v2, flags, std::move(handler));
         return;
     }
+    int pieceSize = 0;
+    {
+        std::scoped_lock lock(m_mutex);
+        if (auto it = m_filesOf.find(storage); it != m_filesOf.end())
+            pieceSize = it->second->piece_size(piece);
+    }
     // v2 is the torrent's buffer and stays valid until the handler ran
     m_inner->async_hash(storage, piece, v2, flags,
-                        [this, hook, v2, handler = std::move(handler)](lt::piece_index_t p, lt::sha1_hash const& h, lt::storage_error const& err) mutable {
-                            if (err) {
+                        [this, storage, pieceSize, flags, hook, v2, handler = std::move(handler)](
+                            lt::piece_index_t p, lt::sha1_hash const& h, lt::storage_error const& err) mutable {
+                            if (err || pieceSize <= 0) {
                                 handler(p, h, err);
                                 return;
                             }
-                            // shared: the verdict may come now, on this thread, or later on another
-                            auto state = std::make_shared<Pending>(Pending{std::move(handler), v2, p, h});
-                            auto inside = std::make_shared<std::atomic<bool>>(true);
-                            const auto caller = std::this_thread::get_id();
-                            hook->pieceHashed(p, [ready = m_ready, state, inside, caller](bool spoil) {
-                                if (inside->load() && std::this_thread::get_id() == caller) {
-                                    // still on libtorrent's thread inside its handler
-                                    state->finish(spoil);
-                                    return;
-                                }
-                                std::scoped_lock lock(ready->mutex);
-                                if (ready->alive)
-                                    ready->jobs.emplace_back([state, spoil] { state->finish(spoil); });
-                            });
-                            inside->store(false);
+                            // the hook judges the bytes: read them first (still on this thread)
+                            readForHook(storage, pieceSize, hook, std::make_shared<Pending>(Pending{std::move(handler), v2, p, h}), flags);
                         });
 }
 
@@ -269,6 +270,59 @@ void BtJoinDiskIo::submit_jobs()
 void BtJoinDiskIo::settings_updated()
 {
     m_inner->settings_updated();
+}
+
+void BtJoinDiskIo::readForHook(lt::storage_index_t storage, int pieceSize, std::shared_ptr<BtJoinHook> hook,
+                               std::shared_ptr<Pending> state, lt::disk_job_flags_t)
+{
+    struct Read {
+        std::vector<char> data;
+        int left = 0;
+        bool failed = false;
+    };
+    auto read = std::make_shared<Read>();
+    read->data.resize(std::size_t(pieceSize));
+    read->left = (pieceSize + kReadBlock - 1) / kReadBlock;
+    const auto ask = [ready = m_ready, hook, state, read] {
+        if (read->failed) {
+            // no bytes, no judge: libtorrent's own verdict stands
+            state->finish(false);
+            return;
+        }
+        auto inside = std::make_shared<std::atomic<bool>>(true);
+        const auto caller = std::this_thread::get_id();
+        hook->pieceHashed(state->piece, std::move(read->data), [ready, state, inside, caller](bool spoil) {
+            if (inside->load() && std::this_thread::get_id() == caller) {
+                // still on libtorrent's thread inside its handler
+                state->finish(spoil);
+                return;
+            }
+            std::scoped_lock lock(ready->mutex);
+            if (ready->alive)
+                ready->jobs.emplace_back([state, spoil] { state->finish(spoil); });
+        });
+        inside->store(false);
+    };
+    for (int offset = 0; offset < pieceSize; offset += kReadBlock) {
+        lt::peer_request r;
+        r.piece = state->piece;
+        r.start = offset;
+        r.length = std::min(kReadBlock, pieceSize - offset);
+        const auto len = std::size_t(r.length);
+        m_inner->async_read(storage, r,
+                            [read, offset, len, ask](lt::disk_buffer_holder buf, lt::storage_error const& err) {
+                                // the holder has no size: the request's length is what was read
+                                if (err || !buf.data())
+                                    read->failed = true;
+                                else
+                                    std::memcpy(read->data.data() + offset, buf.data(), len);
+                                // handlers run on libtorrent's network thread, one at a time
+                                if (--read->left == 0)
+                                    ask();
+                            },
+                            {});
+    }
+    m_inner->submit_jobs();
 }
 
 std::shared_ptr<BtJoinHook> BtJoinDiskIo::hookOf(lt::storage_index_t storage) const

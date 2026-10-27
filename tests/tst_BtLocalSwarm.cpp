@@ -20,6 +20,8 @@
 
 #include <algorithm>
 #include <atomic>
+#include <map>
+#include <mutex>
 
 namespace lt = libtorrent;
 using namespace eMule::bt;
@@ -36,8 +38,12 @@ class SpoilHook final : public BtJoinHook {
 public:
     SpoilHook(bool spoilFirst, bool deferred) : m_spoilFirst(spoilFirst), m_deferred(deferred) {}
 
-    void pieceHashed(lt::piece_index_t, std::function<void(bool)> done) override
+    void pieceHashed(lt::piece_index_t piece, std::vector<char> data, std::function<void(bool)> done) override
     {
+        {
+            std::scoped_lock lock(mutex);
+            pieces[static_cast<int>(piece)] = std::move(data);
+        }
         const bool spoil = calls.fetch_add(1) == 0 && m_spoilFirst;
         if (!m_deferred) {
             done(spoil);
@@ -47,6 +53,9 @@ public:
     }
 
     std::atomic<int> calls{0};
+    /// the bytes the hook was given, by piece
+    std::mutex mutex;
+    std::map<int, std::vector<char>> pieces;
 
 private:
     bool m_spoilFirst;
@@ -96,6 +105,7 @@ private slots:
     void joinHookSpoilsAPiece();
     void resumeAfterRestart();
     void peersTrackersAndOptions();
+    void ipFilterBlocksPeer();
 
 private:
     void runJoin(bool spoil, bool deferred);
@@ -220,6 +230,13 @@ void tst_BtLocalSwarm::runJoin(bool spoil, bool deferred)
         const int pieces = static_cast<int>((kPayload + kPieceLength - 1) / kPieceLength);
         QCOMPARE(hook->calls.load(), pieces);
         QCOMPARE(readDownloaded(leecher, added.id), m_payload);
+        // the hook saw each piece's bytes as written
+        {
+            std::scoped_lock lock(hook->mutex);
+            QCOMPARE(int(hook->pieces.size()), pieces);
+            for (const auto& [piece, bytes] : hook->pieces)
+                QCOMPARE(QByteArray(bytes.data(), qsizetype(bytes.size())), m_payload.mid(piece * kPieceLength, kPieceLength));
+        }
         QCOMPARE(leecher.torrent(added.id)->failedBytes, 0);
     }
     leecher.diskIo()->detach(m_v1.hashes);
@@ -326,6 +343,28 @@ void tst_BtLocalSwarm::peersTrackersAndOptions()
     QVERIFY(json.open(QIODevice::ReadOnly));
     QVERIFY(!json.readAll().contains(seedId.toUtf8()));
     again.stop();
+}
+
+void tst_BtLocalSwarm::ipFilterBlocksPeer()
+{
+    BtSession seeder;
+    quint16 port = 0;
+    startSeeder(seeder, m_v1, port);
+    QVERIFY(port != 0);
+
+    BtSession leecher;
+    // set before start: the session keeps it across start/stop
+    leecher.setIpFilter({{0x7F000000u, 0x7FFFFFFFu}}, {});
+    leecher.start(settingsIn(m_dir, QStringLiteral("filtered")));
+    QSignalSpy finished(&leecher, &BtSession::torrentFinished);
+    const BtAddResult added = leecher.addMagnet(magnet(m_v1, port));
+    QCOMPARE(added.outcome, BtAddOutcome::Added);
+    QTRY_VERIFY_WITH_TIMEOUT(leecher.blockedPeers() > 0, 10'000);
+    QTest::qWait(1000);
+    QVERIFY(finished.isEmpty());
+    QCOMPARE(leecher.torrent(added.id)->done, 0);
+    leecher.stop();
+    seeder.stop();
 }
 
 void tst_BtLocalSwarm::startSeeder(BtSession& seeder, const Torrent& torrent, quint16& port)

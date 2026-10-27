@@ -14,6 +14,9 @@ nodes over Kad. It shares nothing and downloads nothing yet.
 | `tests/tst_Ed3kSession.cpp` | key file, two nodes on loopback, state across a restart, HTTP client |
 | `src/ed3k/Ed3kUsenetJoin.{h,cpp}` | `eMule::ed3k::Ed3kUsenetJoin`: a Usenet download joined with ed3k (see "Usenet join" below) |
 | `tests/tst_Ed3kUsenetJoin.cpp` | NZB buffer, server tag, a real queue + fake news server verified under a claim, blocks from a second node fill holes, a false claim |
+| `src/ed3k/Ed3kJoinBase.{h,cpp}` | what both joins share on the ed3k side: member downloads (sources, streams, block requests), manifests fetched into memory (`fetchBlob`), serving shared roots, sharing blobs, hashing on a worker, debounced saving |
+| `src/ed3k/Ed3kTorrentJoin.{h,cpp}` | `eMule::ed3k::Ed3kTorrentJoin`: a torrent joined with ed3k (see "Torrent join" below); only with `EMULE_HAVE_BITTORRENT`, links `eMule::Bt` |
+| `tests/tst_Ed3kTorrentJoin.cpp` | real `BtSession`s and ed3k nodes on loopback: a completed torrent gives its set, ed3k alone fills a torrent, the join saved and loaded, a magnet with `xs` fetches its set (§4.1) |
 
 `DaemonApp` owns the session (`#ifdef EMULE_HAVE_ED3K`). It starts after the Usenet session
 when `ed3kEnabled`, and it stops before Usenet. `applyEd3kConfig` runs on
@@ -27,12 +30,14 @@ restart) and updates the port mappings.
   - The cargo profile follows `CMAKE_BUILD_TYPE`: `Debug` uses debug, anything else uses release.
   - The cargo target dir is `<build>/packmule-ffi/cargo`.
   - Without `libs/packmule` or `cargo`, the option turns itself off and the build goes on without ed3k.
+  - `emuleed3k` links `eMule::Bt` when that target exists (the torrent join); without it `Ed3kTorrentJoin` compiles to nothing.
 - **MSBuild:** `EmuleEd3k` in `QtVersion.props`.
   - It is on when `libs\packmule\Cargo.toml` exists. Turn it off with `/p:EmuleEd3k=false`.
   - `src/ed3k/emuleed3k.vcxproj` runs `cargo build --release -p packmule-ffi` as a pre-build step, with `CARGO_TARGET_DIR=libs\packmule\target\emuleqt-msbuild`.
   - `emulecored.vcxproj` gets `$(EmuleEd3kLibs)`; `emulecore`/`emulecored` get `$(EmuleEd3kDefines)`.
   - The project is in `eMuleQt.sln` and in `scripts/generate_test_vcxprojs.py`. With the switch off, unload the project, as with `emulebt`.
-- **qmake:** `src/ed3k/ed3k.pro` is a subdir of `eMuleQt.pro` when `libs/packmule` exists. Build `packmule-ffi` with cargo first (`target/release`).
+  - `emuleed3k.vcxproj` also takes `$(EmuleBtDefines)` and `..\bt` for the torrent join.
+- **qmake:** `src/ed3k/ed3k.pro` is a subdir of `eMuleQt.pro` when `libs/packmule` exists (after `bt`, whose headers the torrent join uses). Build `packmule-ffi` with cargo first (`target/release`).
 
 ## Preferences
 
@@ -54,6 +59,8 @@ The port is mapped as `PortMapPurpose::Ed3kUdp` while `ed3kEnabled`.
 | `bad.dat` | `ED3K_STATE_BAD` | at most once a minute after `StateChanged`, and at stop |
 | `sets.dat` | `ED3K_STATE_SETS` | on `StateChanged` and at stop |
 | `friend.dat` | friend state | on `FriendChanged` and at stop |
+| `usenet/<item>.join` | a usenet join | debounced, and at stop |
+| `torrent/<id>.join` | a torrent join (`:` of the id as `_`) | debounced, and at stop |
 
 Every blob is put back before the first datagram. `contactsLoaded()` is called when there is
 no `kad.dat` or it does not parse. A blob that does not parse is dropped with a warning; it is
@@ -164,11 +171,51 @@ ToDo (usenet join):
   reported under the first ID.
 - A preference for holding posts back (§6), and an ed3k upload queue with slots.
 
+## Torrent join
+
+Contract: `libs/packmule/docs/torrent-join.md` (Part C, the host loop); spec
+`docs/ed3k-spec/extensions/torrent.md` §4. `DaemonApp` creates `Ed3kTorrentJoin` after both
+the ed3k and the BitTorrent session, starts it at once when the node runs already, and stops
+it before either session.
+
+- **One join per torrent with metadata** (`torrentAdded`, `metadataReceived`). Members are
+  the files without padding, in order. No join for a private torrent (`DENIED`), with the
+  extension off, or for a torrent complete before ed3k saw it.
+- **Piece checks:** the join attaches a `BtJoinSink` (`BtSession::attachJoin`). libtorrent's
+  hash job hands over the piece's bytes (the door reads them through the inner disk I/O) on
+  its network thread; the sink hops to the daemon thread through a gate the join closes in
+  its destructor. `pieceHashed` → reads served from the member files → `PASS`/`UNKNOWN`
+  pass, `FAIL` spoils, `PENDING` and held pieces wait for `PIECE_VERDICT`. A held piece
+  raises the pieces it waits for (`set_piece_deadline`) and fails after 60 s
+  (`pieceRelease`). libtorrent's verdicts (`piece_finished_alert`, `hash_failed_alert`) go
+  to `pieceResult`.
+- **§4.1:** `ed3k:file?…&bt=` links and magnets with `xs` are added as magnets of the
+  infohash; `BtSession` keeps the link (`BT/ed3k-links.json`). The join fetches the link's
+  manifest into memory, then `setManifest`.
+- **§4.2:** `btih`/`btmh` ALIAS searches with relation SET (`aliasSearchStart`); the engine
+  ranks the claims. Each candidate's manifest is fetched, refused ones and `CLAIM_FALSE` are
+  blamed (`aliasSearchBlame`, `aliasBan`), at most 3 tried. packmule's `SetSearch` is not
+  used: the engine's alias search does the same and does the Kad lookups.
+- **ed3k data:** members with a root get ed3k downloads; blocks are written into the member
+  files, `ed3kBlock` names the pieces they complete, those are read (`extents`, zeros
+  between) and handed to libtorrent (`add_piece`), which hashes them as from a peer.
+- **Completion:** `TORRENT_COMPLETE` waits until every member is hashed (`complete()` needs
+  it), then shares the manifest and the info dictionary from memory, `setPublish` and
+  `publishAlias` (not while holding back). Verified members are shared and published at once.
+- Tests disable Kad searches (`setSearchEnabled(false)`) and add sources by hand
+  (`addSource`, `addManifestSource`).
+
+ToDo (torrent join):
+- Skip the blocks libtorrent has already when asking ed3k for a member.
+- Re-share the manifest and info dictionary after a restart (kept in memory only).
+- Hash a member again when its file was unreadable.
+- Search sources again when every stream closed (both joins).
+
 ## Out of scope (ToDo)
 
 - GUI and IPC status panel: running, port, node ID, contacts (the getters exist: `udpPort()`, `nodeIdHex()`, `contactCount()`, `statusChanged`).
 - Serving eMule shared files over ed3k (`WantBlock` is refused).
-- Downloads other than the usenet join (E2: `src/ed3k/Ed3kUsenetJoin`).
+- Downloads other than the joins (`Ed3kUsenetJoin`, `Ed3kTorrentJoin`).
 - Chain RPC (credit, chaintube): `RpcRequest` is answered failed, since no chain is configured.
 - Node list sources for the first bootstrap (`bootstrapConfigure`, bootstrap.md §3) and keeping `BootstrapStarted`.
 - LAN discovery sockets of mode A (socket-modes.md "Implementer note (LAN discovery)"): LAN is off for now.
@@ -176,4 +223,4 @@ ToDo (usenet join):
 - The stable IPv6 source address (`IPv6SourcePin`) as `local6`; the `bindAddress` pref for the socket.
 - One preference per optional extension (`Config::extOff`); nick; filter and hops state.
 - An owner-only DACL for `node.key` on Windows.
-- A `tests/vs` project for `tst_Ed3kSession`; the generator was not run, since it would also drop `specialdlp` and `emuleqt-mcp` from the `.sln`.
+- A `tests/vs` project for `tst_Ed3kSession` (and the join tests); the generator was not run, since it would also drop `specialdlp` and `emuleqt-mcp` from the `.sln`.

@@ -165,6 +165,7 @@
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="BtIds.h" />
+    <ClInclude Include="BtJoin.h" />
     <ClInclude Include="BtTypes.h" />
     <ClInclude Include="add\BtAddSource.h" />
     <ClInclude Include="session\BtJoinDiskIo.h" />

@@ -33,7 +33,7 @@ class PowerManager;
 
 namespace usenet { class UsenetSession; }
 namespace bt { class BtSession; }
-namespace ed3k { class Ed3kSession; class Ed3kUsenetJoin; class UsenetJoinQueue; }
+namespace ed3k { class Ed3kSession; class Ed3kUsenetJoin; class UsenetJoinQueue; class Ed3kTorrentJoin; }
 namespace indexer { class IndexerFeedList; class IndexerSearchList; }
 
 class DaemonApp : public QObject {
@@ -190,6 +190,10 @@ private:
     /// the usenet join (usenet-join-host.md): needs both sessions; dies before them
     std::unique_ptr<ed3k::UsenetJoinQueue> m_usenetJoinQueue;
     std::unique_ptr<ed3k::Ed3kUsenetJoin> m_usenetJoin;
+#ifdef EMULE_HAVE_BITTORRENT
+    /// the torrent join (torrent-join.md Part C): needs both sessions; dies before them
+    std::unique_ptr<ed3k::Ed3kTorrentJoin> m_torrentJoin;
+#endif
 #endif
     /// eD2K/Usenet/BitTorrent share of the global limits; after both sessions
     std::unique_ptr<BandwidthCoordinator> m_bandwidth;

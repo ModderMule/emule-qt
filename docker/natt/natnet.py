@@ -22,7 +22,9 @@ confirms it with one plain status ping first (pref natDialUnlistedServers).
 
 NAT modes (--nat):
     none          one bridge, LowID forced by refusing the server's dial-back; the
-                  data path is the IPv6 TCP handoff (default)
+                  data path is the IPv6 TCP handoff (default). With --fw6 each node
+                  drops new inbound IPv6 TCP and unpunched UDP (stateful router
+                  firewall): QUIC must carry it, over IPv6 with eNode's SYNC_IPV6
     real          each node on its own LAN behind a router container (Linux conntrack
                   MASQUERADE: port-restricted cone), IPv6 off. Both nodes share a file
                   and download the other's at once; the data path is QUIC over the
@@ -46,6 +48,8 @@ Usage:
     python3 docker/natt/natnet.py --server enode --keep       # leave it running afterwards
     python3 docker/natt/natnet.py --server enode-foreign      # foreign callback, server 1 listed
     python3 docker/natt/natnet.py --server enode-foreign --unlisted   # server 1 probed first
+    python3 docker/natt/natnet.py --server enode --fw6        # IPv6 firewalled: QUIC over IPv6
+    python3 docker/natt/natnet.py --server ed2k-server --fw6  # TCP/IPv6 dropped: QUIC fallback
     python3 docker/natt/natnet.py --server ed2k-server --nat real            # QUIC NAT-T
     python3 docker/natt/natnet.py --server ed2k-server --nat real --strict   # no plain QUIC
     python3 docker/natt/natnet.py --server ed2k-server --nat symmetric       # must fail cleanly
@@ -107,6 +111,7 @@ ROUTERS = {
     "B": ("natnet-rB", "22", "lanB", "10.77.2.0/24", "10.77.2.1", "10.77.2.254", "10.77.2.12"),
 }
 NAT_MODE = "none"
+FW6 = False                             # --fw6: stateful IPv6 firewall on each node
 QUIC_MIN_INITIAL = 1200                 # a client Initial datagram is padded to this
 QUIC_PLAIN_BYTE = 0xB2                  # protocol byte of an unobfuscated NAT-T QUIC datagram
 TCP_PORT = 4662
@@ -488,12 +493,16 @@ def prepare_node(work: str, name: str, size_mb: int, servers, share: str = "",
     return node_dir
 
 
-def start_node(work: str, name: str, server_ips: str, reject_tcp: str = "") -> None:
-    """server_ips: servers whose dial-back is refused; reject_tcp: "ip:port" not to log in to."""
+def start_node(work: str, name: str, server_ips: str, reject_tcp: str = "",
+               server_ips6: str = "") -> None:
+    """server_ips: servers whose dial-back is refused; reject_tcp: "ip:port" not to log in to;
+    server_ips6: servers let through the --fw6 firewall."""
     ipv4, ipv6, _ = NODES[name]
     node_dir = os.path.join(work, "run", name)
     if NAT_MODE == "none":
         net = ["--network", NETWORK, "--ip", ipv4, "--ip6", ipv6]
+        if FW6:
+            net += ["-e", "RIG_FW6=1", "-e", f"SERVER_IP6={server_ips6}"]
     else:
         # LAN only, default route via the router, no IPv6 at all
         _, _, lan, _, _, router_lan, _ = ROUTERS[name]
@@ -791,6 +800,7 @@ def run_test(args, env: dict) -> int:
     for _, ip, ip6, name, subdir in servers:
         write_server_config(kind, env, os.path.join(run_dir, subdir), name, ip, ip6)
     server_ips = " ".join(s[1] for s in servers)
+    server_ips6 = " ".join(s[2] for s in servers)
     met1 = (SERVER_IP, port, "natnet-enode", {})
     prepare_node(work, "A", args.size_mb, [met1], strict=args.strict)
     test_file = os.path.join(run_dir, "A", "data", "incoming", TEST_FILE)
@@ -802,7 +812,7 @@ def run_test(args, env: dict) -> int:
         return fail(args, work, "server did not come up")
 
     # A first: its offer must be on the server before B asks for sources
-    start_node(work, "A", server_ips)
+    start_node(work, "A", server_ips, server_ips6=server_ips6)
     state = wait_for("A login", lambda: login_state(work, "A"), 90)
     if state != "LowID":
         return fail(args, work, f"node A logged in as {state or 'nothing'}, need a LowID")
@@ -828,7 +838,7 @@ def run_test(args, env: dict) -> int:
     else:
         prepare_node(work, "B", args.size_mb, [met1], strict=args.strict)
 
-    start_node(work, "B", server_ips, reject)
+    start_node(work, "B", server_ips, reject, server_ips6)
     state = wait_for("B login", lambda: login_state(work, "B"), 90)
     if state != "LowID":
         return fail(args, work, f"node B logged in as {state or 'nothing'}, need a LowID")
@@ -874,9 +884,17 @@ def run_test(args, env: dict) -> int:
     all_lines = b_lines + "\n".join(nat_lines(work, "A"))
     checks.update({
         f"rendezvous via {spec['path']}": f"via {spec['path']} for" in b_lines,
-        "IPv6 dial": bool(re.search(r"NAT-T: #\d+ dialing \[", all_lines)),
         "MD5 match": got_md5 == expected_md5,
     })
+    if FW6:
+        # TCP/IPv6 is dropped: QUIC carries it, over IPv6 when the server gave SYNC_IPV6
+        q = "\n".join(quic_lines(work, "A") + quic_lines(work, "B"))
+        v6 = spec["path"] == "PR_NAT"
+        checks["QUIC dialing" + (" IPv6" if v6 else "")] = bool(
+            re.search(r"NAT-T: #\d+ QUIC dialing " + (r"\[" if v6 else r"\S"), q))
+        checks["QUIC connected"] = bool(re.search(r"NAT-T: QUIC connected \S+ \((out|in)\)", q))
+    else:
+        checks["IPv6 dial"] = bool(re.search(r"NAT-T: #\d+ dialing \[", all_lines))
     if two:
         b_log = node_logs(work, "B")
         checks["B logged in to server 2 only"] = (
@@ -1185,6 +1203,8 @@ def main() -> int:
                         help="none: one bridge, IPv6 handoff (default); real: LANs behind cone "
                              "NAT routers, QUIC both ways; symmetric: as real with --random-fully "
                              "mapping, QUIC must fail cleanly")
+    parser.add_argument("--fw6", action="store_true",
+                        help="--nat none: stateful IPv6 firewall on both nodes (TCP/IPv6 dropped)")
     parser.add_argument("--strict", action="store_true",
                         help="set encryption.natTraversalStrictObfuscation on both nodes")
     parser.add_argument("--build", action="store_true",
@@ -1205,6 +1225,10 @@ def main() -> int:
     if not shutil.which("docker"):
         die("docker not found")
     env = load_env(args.env_file)
+    global FW6
+    FW6 = args.fw6
+    if FW6 and args.nat != "none":
+        die("--fw6 needs --nat none")
     if args.down:
         down()
         return 0

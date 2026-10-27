@@ -19,7 +19,7 @@ SUBDIRS = \
 exists($$PWD/libs/packmule/Cargo.toml) {
     SUBDIRS += ed3k
     ed3k.subdir  = src/ed3k
-    ed3k.depends = core usenet
+    ed3k.depends = core usenet bt
     daemon.depends += ed3k
 }
 

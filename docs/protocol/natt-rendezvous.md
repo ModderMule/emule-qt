@@ -6,7 +6,8 @@ public UDP endpoint from an introducer, open their NAT mappings with `OP_HOLEPUN
 IPv6 addresses over the opened path. With IPv6 on both sides the target then dials the
 requester over ordinary TCP/IPv6. Otherwise the requester dials the QUIC NAT-T transport
 (`0xB2`/`0x01`, eMuleAI's dialect) over the punched UDP path, see [natt-quic.md](natt-quic.md)
-(2026-10-25).
+(2026-10-25). Since 2026-10-27 QUIC goes first when the introducer gave the peer's IPv6 UDP
+endpoint (`PR_NAT` `SYNC_IPV6`), and QUIC follows a TCP/IPv6 dial that did not connect.
 
 Live-tested 2026-10-21 with all three servers: ed2k-server 0.9.84, eNode-go `PR_NAT` and
 Lugdunum eserver 17.15, each introducing two LowID daemons that then transfer a 25 MiB file
@@ -305,6 +306,14 @@ flags: 0x01 IPv6 present, 0x02 answer (do not reply)
 - The target dials as soon as it has the peer's address; the requester dials only if no
   connection is up 5 s later. The connection is a normal eD2K TCP connection and attaches to
   the waiting source by its hello.
+- That TCP/IPv6 dial is an unpunched inbound connect, which stateful IPv6 router firewalls
+  drop. With QUIC, the requester dials QUIC over the punched UDP path when nothing connected
+  7 s after the TCP decision (the target 12 s), see
+  [natt-quic.md § Who dials](natt-quic.md#who-dials). A QUIC link drops a still pending TCP
+  connect; one that comes after TCP connected is closed.
+- A punched IPv6 UDP endpoint from the introducer (`PR_NAT` `SYNC_IPV6`) turns the order
+  round: QUIC first on that endpoint (requester 1 s, target 6 s), TCP/IPv6 on both sides only
+  when nothing connected 5 s later.
 - No IPv6 on one side: the QUIC transport carries the connection
   ([natt-quic.md § Who dials](natt-quic.md#who-dials)). The requester dials QUIC 1 s after the
   endpoint is known (2.5 s with an IPv6 of our own, so that a handoff can win first); the

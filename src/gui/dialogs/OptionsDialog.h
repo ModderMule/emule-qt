@@ -497,6 +497,7 @@ private:
     QLineEdit*    m_usenetWatchDirEdit = nullptr;
     QPushButton*  m_usenetWatchDirBrowse = nullptr;
     QCheckBox*    m_associateNzbCheck = nullptr;
+    QCheckBox*    m_associateTorrentCheck = nullptr;
     QCheckBox*    m_usenetCleanupCheck = nullptr;
     QCheckBox*    m_usenetSfvCheck = nullptr;
     QComboBox*    m_usenetUnrepairableCombo = nullptr;

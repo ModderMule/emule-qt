@@ -21,6 +21,18 @@ for target in ${RIG_REJECT_TCP:-}; do
         -j REJECT --reject-with tcp-reset
 done
 
+# --fw6: stateful IPv6 firewall as on a home router. No new inbound TCP, peer UDP only
+# once we sent to it (punch); the servers (SERVER_IP6) stay reachable.
+if [ "${RIG_FW6:-0}" = 1 ]; then
+    ip6tables -A INPUT -m conntrack --ctstate ESTABLISHED,RELATED -j ACCEPT
+    ip6tables -A INPUT -p ipv6-icmp -j ACCEPT
+    for ip in ${SERVER_IP6:-}; do
+        ip6tables -A INPUT -s "$ip" -j ACCEPT
+    done
+    ip6tables -A INPUT -p tcp -j DROP
+    ip6tables -A INPUT -p udp -j DROP
+fi
+
 # Unbuffered (-U) so the capture can be read while the node runs
 tcpdump -U -i eth0 -n -w /config/capture.pcap >/dev/null 2>&1 &
 

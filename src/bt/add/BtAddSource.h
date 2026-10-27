@@ -21,11 +21,17 @@ public:
     /// The bytes of a .torrent file. Error: an English reason.
     static std::expected<libtorrent::add_torrent_params, QString> fromTorrentFile(const QByteArray& data);
 
-    /// A magnet link with `xt=urn:btih:` or `urn:btmh:`. An ed2k magnet is refused.
+    /// A magnet link with `xt=urn:btih:` or `urn:btmh:`, or an `ed3k:file` link with `bt`
+    /// (torrent.md §7: as a magnet of that infohash). An ed2k magnet is refused.
     static std::expected<libtorrent::add_torrent_params, QString> fromMagnet(const QString& uri);
 
-    /// Whether text is a BitTorrent magnet link (and not an ed2k one).
+    /// Whether text is a BitTorrent magnet link (and not an ed2k one), or an `ed3k:file`
+    /// link of a torrent set (with `bt`).
     static bool isBtMagnet(const QString& text);
+
+    /// The `ed3k:file` link a torrent is joined under (torrent.md §4.1): the link itself,
+    /// or a magnet's `xs` when it is one. Empty: none. Validated by the ed3k side.
+    static QString ed3kLinkOf(const QString& uri);
 };
 
 } // namespace eMule::bt

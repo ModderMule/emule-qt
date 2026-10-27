@@ -1,7 +1,7 @@
 #pragma once
 
 /// @file FileAssociation.h
-/// @brief Registering .nzb with the desktop, on all three platforms.
+/// @brief Registering .nzb, .torrent and magnet: with the desktop, on all three platforms.
 ///
 /// The application registers *itself*, because there is nothing else to do it
 /// with: bundle-win.ps1 produces a bare zip and bundle-linux.sh a bare tarball,
@@ -20,6 +20,7 @@
 
 #include <QList>
 #include <QString>
+#include <QStringList>
 
 namespace eMule::gui::FileAssociation {
 
@@ -36,11 +37,27 @@ struct RegistryValue {
     QString value;
 };
 
-/// The XDG desktop entry and MIME definition for @p exePath.
+/// What to claim. Each type the user can switch off on its own (Options).
+struct FileTypes {
+    bool nzb = false;
+    /// .torrent (application/x-bittorrent) and the magnet: scheme
+    bool torrent = false;
+    /// the ed2k: scheme. Linux keeps it in the shared desktop entry; Ed2kSchemeHandler
+    /// sets it, and it comes along with any other type
+    bool ed2k = false;
+
+    [[nodiscard]] bool any() const { return nzb || torrent || ed2k; }
+};
+
+/// The XDG desktop entry and the MIME definitions of @p types for @p exePath.
+/// One entry for every type, so claiming one never drops another.
 ///
 /// @p dataHome is $XDG_DATA_HOME, so a test can point it somewhere harmless.
-[[nodiscard]] QList<DesktopFile> nzbDesktopFiles(const QString& exePath,
-                                                 const QString& dataHome);
+[[nodiscard]] QList<DesktopFile> desktopFiles(const QString& exePath, const QString& dataHome,
+                                              FileTypes types);
+
+/// The MIME types an XDG desktop gets told to open with us (`xdg-mime default`).
+[[nodiscard]] QStringList xdgMimeTypes(FileTypes types);
 
 /// One icon the Linux launcher needs in the hicolor theme.
 struct IconFile {
@@ -64,25 +81,24 @@ void installDesktopIcons();
 /// existing emuleqt.desktop is left alone: it may carry a registration.
 void installLauncher();
 
-/// The per-user registry values for @p exePath, relative to Software\\Classes.
-[[nodiscard]] QList<RegistryValue> nzbRegistryValues(const QString& exePath);
+/// The per-user registry values of @p types for @p exePath, relative to Software\\Classes.
+[[nodiscard]] QList<RegistryValue> registryValues(const QString& exePath, FileTypes types);
 
 /// Whether this platform registers at runtime at all. False on macOS, where the
 /// bundle declares its own types and there is nothing to write.
 [[nodiscard]] bool isRuntimeRegistration();
 
-/// Claim .nzb for this executable. Idempotent, so it can run at every start and
-/// take the association back from an application that took it away.
-bool registerNzbFileType(QString& error);
+/// Claims @p types for this executable and gives up the others (only while still
+/// ours). Idempotent, so it can run at every start and take an association back
+/// from an application that took it away.
+bool applyFileTypes(FileTypes types, QString& error);
 
-/// Give it up again. Idempotent.
-bool unregisterNzbFileType(QString& error);
-
-// ToDo: register .torrent (application/x-bittorrent) and the magnet: scheme on
-// Windows/Linux like .nzb above; macOS declares both in Info.plist.in already.
+/// Gives up every type. Idempotent (uninstall, --unregister-file-types).
+bool unregisterFileTypes(QString& error);
 
 /// The MIME type. NZB has no IANA registration; this is the de-facto one.
 inline constexpr auto kNzbMimeType = "application/x-nzb";
+inline constexpr auto kTorrentMimeType = "application/x-bittorrent";
 
 /// Basename of the .desktop file, the icon, and the Wayland app id / WM class.
 /// They have to agree or the desktop cannot tie the window to its launcher.

@@ -612,6 +612,7 @@ void IPFilter::removeAllFilters()
     m_lastHit = nullptr;
     m_lastHit6 = nullptr;
     m_modified = false;
+    emit filterCleared();
 }
 
 void IPFilter::logLastHit(QStringView context) const

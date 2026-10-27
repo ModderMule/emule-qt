@@ -1,5 +1,5 @@
 /// @file tst_FileAssociation.cpp
-/// @brief What registering .nzb would write, on every platform at once.
+/// @brief What registering .nzb, .torrent and magnet: would write, on every platform at once.
 ///
 /// The two generators are pure, which is the point: the Windows and Linux
 /// writers only compile on their own platform, so this is the only part of the
@@ -27,9 +27,16 @@ private slots:
     void theIconsLandWhereTheDesktopEntryLooks();
     void theLauncherEntryClaimsNothing();
     void everyDesktopEntryNamesTheWindowClass();
+    void torrentClaimsTheFileTypeAndTheMagnetScheme();
+    void typesSwitchedOffAreLeftOut();
+    void theMagnetSchemeIsAUrlProtocol();
 };
 
 namespace {
+
+const FileAssociation::FileTypes kNzb{.nzb = true};
+const FileAssociation::FileTypes kTorrent{.torrent = true};
+const FileAssociation::FileTypes kAll{.nzb = true, .torrent = true};
 
 QString contentsOf(const QList<FileAssociation::DesktopFile>& files, const QString& endsWith)
 {
@@ -43,8 +50,8 @@ QString contentsOf(const QList<FileAssociation::DesktopFile>& files, const QStri
 
 void tst_FileAssociation::theDesktopFileClaimsNzbAndTheEd2kScheme()
 {
-    const auto files = FileAssociation::nzbDesktopFiles(QStringLiteral("/opt/emuleqt"),
-                                                        QStringLiteral("/home/u/.local/share"));
+    const auto files = FileAssociation::desktopFiles(QStringLiteral("/opt/emuleqt"),
+                                                     QStringLiteral("/home/u/.local/share"), kNzb);
     QCOMPARE(files.size(), 2);
 
     const QString desktop = contentsOf(files, QStringLiteral("emuleqt.desktop"));
@@ -68,9 +75,9 @@ void tst_FileAssociation::theDesktopEntryQuotesAnExecPathWithSpaces()
     // An unquoted Exec= line with a space in it produces a launcher that
     // silently starts nothing -- and "Application Support" and "Program Files"
     // make that the normal case rather than the exotic one.
-    const auto files = FileAssociation::nzbDesktopFiles(
+    const auto files = FileAssociation::desktopFiles(
         QStringLiteral("/home/u/My Apps/eMule Qt/emuleqt"),
-        QStringLiteral("/home/u/.local/share"));
+        QStringLiteral("/home/u/.local/share"), kNzb);
 
     const QString desktop = contentsOf(files, QStringLiteral("emuleqt.desktop"));
     QVERIFY2(desktop.contains(QStringLiteral("Exec=\"/home/u/My Apps/eMule Qt/emuleqt\" %U")),
@@ -79,8 +86,8 @@ void tst_FileAssociation::theDesktopEntryQuotesAnExecPathWithSpaces()
 
 void tst_FileAssociation::theMimeDefinitionDeclaresTheNzbGlob()
 {
-    const auto files = FileAssociation::nzbDesktopFiles(QStringLiteral("/opt/emuleqt"),
-                                                        QStringLiteral("/home/u/.local/share"));
+    const auto files = FileAssociation::desktopFiles(QStringLiteral("/opt/emuleqt"),
+                                                     QStringLiteral("/home/u/.local/share"), kNzb);
     const QString mime = contentsOf(files, QStringLiteral("emuleqt-nzb.xml"));
 
     QVERIFY(!mime.isEmpty());
@@ -91,8 +98,8 @@ void tst_FileAssociation::theMimeDefinitionDeclaresTheNzbGlob()
 
 void tst_FileAssociation::theRegistryValuesStayUnderHkeyCurrentUser()
 {
-    const auto values = FileAssociation::nzbRegistryValues(
-        QStringLiteral("C:\\Apps\\eMuleQt\\emuleqt.exe"));
+    const auto values = FileAssociation::registryValues(
+        QStringLiteral("C:\\Apps\\eMuleQt\\emuleqt.exe"), kAll);
     QVERIFY(!values.isEmpty());
 
     for (const auto& value : values) {
@@ -117,8 +124,8 @@ void tst_FileAssociation::theRegistryValuesStayUnderHkeyCurrentUser()
 
 void tst_FileAssociation::theOpenCommandPassesTheDroppedFile()
 {
-    const auto values = FileAssociation::nzbRegistryValues(
-        QStringLiteral("C:\\Program Files\\eMule Qt\\emuleqt.exe"));
+    const auto values = FileAssociation::registryValues(
+        QStringLiteral("C:\\Program Files\\eMule Qt\\emuleqt.exe"), kNzb);
 
     QString command;
     for (const auto& value : values)
@@ -139,9 +146,9 @@ void tst_FileAssociation::macOsNeedsNoRuntimeRegistration()
     // cannot act on.
     QVERIFY(!FileAssociation::isRuntimeRegistration());
     QString error;
-    QVERIFY(FileAssociation::registerNzbFileType(error));
+    QVERIFY(FileAssociation::applyFileTypes(kAll, error));
     QVERIFY(error.isEmpty());
-    QVERIFY(FileAssociation::unregisterNzbFileType(error));
+    QVERIFY(FileAssociation::unregisterFileTypes(error));
 #else
     QVERIFY(FileAssociation::isRuntimeRegistration());
 #endif
@@ -191,10 +198,72 @@ void tst_FileAssociation::everyDesktopEntryNamesTheWindowClass()
         QStringLiteral("StartupWMClass=%1\n").arg(QLatin1String(FileAssociation::kDesktopId));
 
     const QString dataHome = QStringLiteral("/home/u/.local/share");
-    const auto files = FileAssociation::nzbDesktopFiles(QStringLiteral("/opt/emuleqt"), dataHome);
+    const auto files = FileAssociation::desktopFiles(QStringLiteral("/opt/emuleqt"), dataHome, kAll);
     QVERIFY(contentsOf(files, QStringLiteral("emuleqt.desktop")).contains(wmClass));
     QVERIFY(FileAssociation::launcherDesktopFile(QStringLiteral("/opt/emuleqt"), dataHome)
                 .contents.contains(wmClass));
+}
+
+void tst_FileAssociation::torrentClaimsTheFileTypeAndTheMagnetScheme()
+{
+    const auto files = FileAssociation::desktopFiles(QStringLiteral("/opt/emuleqt"),
+                                                     QStringLiteral("/home/u/.local/share"), kTorrent);
+    const QString desktop = contentsOf(files, QStringLiteral("emuleqt.desktop"));
+    QVERIFY(desktop.contains(QLatin1String(FileAssociation::kTorrentMimeType)));
+    QVERIFY(desktop.contains(QStringLiteral("x-scheme-handler/magnet")));
+    QVERIFY(desktop.contains(QStringLiteral("x-scheme-handler/ed2k")));
+
+    const QString mime = contentsOf(files, QStringLiteral("emuleqt-torrent.xml"));
+    QVERIFY(mime.contains(QStringLiteral("*.torrent")));
+    QVERIFY(FileAssociation::xdgMimeTypes(kTorrent).contains(QStringLiteral("x-scheme-handler/magnet")));
+}
+
+void tst_FileAssociation::typesSwitchedOffAreLeftOut()
+{
+    // one shared entry: claiming .nzb alone must not claim torrents, and back
+    const auto nzb = FileAssociation::desktopFiles(QStringLiteral("/opt/emuleqt"),
+                                                   QStringLiteral("/home/u/.local/share"), kNzb);
+    QCOMPARE(nzb.size(), 2);
+    QVERIFY(!contentsOf(nzb, QStringLiteral("emuleqt.desktop")).contains(QStringLiteral("magnet")));
+    QVERIFY(contentsOf(nzb, QStringLiteral("emuleqt-torrent.xml")).isEmpty());
+
+    const auto all = FileAssociation::desktopFiles(QStringLiteral("/opt/emuleqt"),
+                                                   QStringLiteral("/home/u/.local/share"), kAll);
+    QCOMPARE(all.size(), 3);
+    const QString desktop = contentsOf(all, QStringLiteral("emuleqt.desktop"));
+    QVERIFY(desktop.contains(QLatin1String(FileAssociation::kNzbMimeType)));
+    QVERIFY(desktop.contains(QLatin1String(FileAssociation::kTorrentMimeType)));
+
+    // ed2k alone (the "Handle eD2K links" button) keeps the entry, claiming nothing else
+    const auto ed2k = FileAssociation::desktopFiles(QStringLiteral("/opt/emuleqt"),
+                                                    QStringLiteral("/home/u/.local/share"), {.ed2k = true});
+    QCOMPARE(ed2k.size(), 1);
+    QVERIFY(contentsOf(ed2k, QStringLiteral("emuleqt.desktop")).contains(QStringLiteral("MimeType=x-scheme-handler/ed2k;\n")));
+
+    QVERIFY(FileAssociation::registryValues(QStringLiteral("C:\\e.exe"), {}).isEmpty());
+    for (const auto& value : FileAssociation::registryValues(QStringLiteral("C:\\e.exe"), kNzb))
+        QVERIFY2(!value.key.contains(QStringLiteral("torrent")) && !value.key.startsWith(QStringLiteral("magnet")),
+                 qPrintable(value.key));
+}
+
+void tst_FileAssociation::theMagnetSchemeIsAUrlProtocol()
+{
+    const auto values = FileAssociation::registryValues(
+        QStringLiteral("C:\\Program Files\\eMule Qt\\emuleqt.exe"), kTorrent);
+    bool urlProtocol = false;
+    QString command;
+    QString torrentProgId;
+    for (const auto& value : values) {
+        if (value.key == QStringLiteral("magnet") && value.name == QStringLiteral("URL Protocol"))
+            urlProtocol = value.value.isEmpty();
+        if (value.key == QStringLiteral("magnet/shell/open/command"))
+            command = value.value;
+        if (value.key == QStringLiteral(".torrent"))
+            torrentProgId = value.value;
+    }
+    QVERIFY(urlProtocol);
+    QCOMPARE(command, QStringLiteral("\"C:\\Program Files\\eMule Qt\\emuleqt.exe\" \"%1\""));
+    QCOMPARE(torrentProgId, QStringLiteral("eMuleQt.torrent"));
 }
 
 QTEST_MAIN(tst_FileAssociation)

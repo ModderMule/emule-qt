@@ -481,6 +481,10 @@ void NatRendezvous::sendPunch(Attempt& a)
     a.lastPunchMs = m_env->now();
     m_env->sendPeerUdp(std::make_unique<Packet>(OP_HOLEPUNCH, 0, OP_EMULEPROT), a.peerUdp,
                        peerCryptHash(a, true));
+    // keep the IPv6 mapping open for QUIC when a later endpoint replaced it
+    if (a.peerUdp6.port() != 0 && a.peerUdp6 != a.peerUdp)
+        m_env->sendPeerUdp(std::make_unique<Packet>(OP_HOLEPUNCH, 0, OP_EMULEPROT), a.peerUdp6,
+                           peerCryptHash(a, true));
 }
 
 void NatRendezvous::sendHandoff(Attempt& a, bool answer)
@@ -506,34 +510,54 @@ void NatRendezvous::sendHandoff(Attempt& a, bool answer)
 
 void NatRendezvous::evaluateDial(Attempt& a)
 {
-    if (a.finished || a.dialed || a.awaitingInfo)
+    if (a.finished || a.awaitingInfo)
         return;
+    const bool quic = m_env->quicAvailable();
     const bool v6Both = a.peerHandoffSeen && !a.peerIPv6.isNull() && !m_env->ourPublicIPv6().isNull();
+    // A punched IPv6 UDP endpoint (PR_NAT SYNC_IPV6) passes stateful IPv6 firewalls,
+    // a TCP/IPv6 connect may not: QUIC first, TCP/IPv6 as the fallback.
+    if (quic && a.peerUdp6.port() != 0) {
+        evaluateQuicDial(a, QuicDialMode::First);
+        if (v6Both && !a.finished)
+            evaluateTcpDial(a, true);
+        return;
+    }
     if (!v6Both) {
-        if (m_env->quicAvailable()) {
-            evaluateQuicDial(a);
+        if (quic) {
+            evaluateQuicDial(a, QuicDialMode::Only);
             return;
         }
         if (a.peerHandoffSeen)
             fail(a, QStringLiteral("no IPv6 on one side"));
         return;   // a peer without the handoff: the timeout ends it
     }
+    evaluateTcpDial(a, false);
+    if (quic && !a.finished)
+        evaluateQuicDial(a, QuicDialMode::AfterTcp);
+}
+
+void NatRendezvous::evaluateTcpDial(Attempt& a, bool fallback)
+{
+    if (a.dialed)
+        return;
     // A 30-byte 0x61 names the dialer (ed2k-server#39); both sides of such a pair obey it.
     if (a.serverRole == 1)
         return;
-    if (a.role == Role::Target || a.serverRole == 0) {
+    const uint64 now = m_env->now();
+    if (!fallback && (a.role == Role::Target || a.serverRole == 0)) {
         dial(a);
         return;
     }
-    const uint64 now = m_env->now();
     if (a.dialAtMs == 0)
         a.dialAtMs = now + kRequesterDialDelay;
     else if (now >= a.dialAtMs && !m_env->peerConnected(a))
         dial(a);
 }
 
-void NatRendezvous::evaluateQuicDial(Attempt& a)
+void NatRendezvous::evaluateQuicDial(Attempt& a, QuicDialMode mode)
 {
+    if (a.quicDialed)
+        return;
     // only once the punch has started: the peer's endpoint is known
     if (a.state == Attempt::State::Requested || a.peerUdp.port() == 0)
         return;
@@ -549,9 +573,20 @@ void NatRendezvous::evaluateQuicDial(Attempt& a)
         weDial = false;
     const uint64 now = m_env->now();
     if (a.quicDialAtMs == 0) {
-        const uint64 delay = !weDial ? kQuicTargetFallbackMs
-                           : (m_env->ourPublicIPv6().isNull() || a.peerSentNoAddress) ? kQuicDialDelayMs
-                                                                                       : kQuicDialDelayV6Ms;
+        uint64 delay = 0;
+        switch (mode) {
+        case QuicDialMode::AfterTcp:
+            delay = weDial ? kQuicAfterTcpMs : kQuicAfterTcpTargetMs;
+            break;
+        case QuicDialMode::First:
+            delay = weDial ? kQuicDialDelayMs : kQuicTargetFallbackMs;
+            break;
+        case QuicDialMode::Only:
+            delay = !weDial ? kQuicTargetFallbackMs
+                  : (m_env->ourPublicIPv6().isNull() || a.peerSentNoAddress) ? kQuicDialDelayMs
+                                                                             : kQuicDialDelayV6Ms;
+            break;
+        }
         a.quicDialAtMs = now + delay;
         return;
     }
@@ -561,9 +596,9 @@ void NatRendezvous::evaluateQuicDial(Attempt& a)
 
 void NatRendezvous::dialQuic(Attempt& a)
 {
-    a.dialed = true;
+    a.quicDialed = true;
     a.state = Attempt::State::Dialed;
-    logDebug(QStringLiteral("NAT-T: #%1 QUIC dialing %2").arg(a.id).arg(a.peerUdp.toString()));
+    logDebug(QStringLiteral("NAT-T: #%1 QUIC dialing %2").arg(a.id).arg(a.quicEndpoint().toString()));
     m_env->dialPeerQuic(a);
 }
 
@@ -696,6 +731,8 @@ void NatRendezvous::handleHandoff(const uint8* data, uint32 size, const Endpoint
         a->peerTcpPort = tcpPort;
     if (sameHost(a->peerUdp, from.address()))
         a->peerUdp = from;
+    if (sameHost(a->peerUdp6, from.address()))
+        a->peerUdp6 = from;
     a->peerHandoffSeen = true;
 
     a->peerIPv6 = Address();

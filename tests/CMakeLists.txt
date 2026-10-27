@@ -379,6 +379,10 @@ if(EMULE_ED3K)
     # usenet join: a fake news server, a fake queue, two nodes on loopback
     emule_add_test(tst_Ed3kUsenetJoin FOLDER "Ed3k" LIBRARIES eMule::Ed3k eMule::Usenet)
     set_tests_properties(tst_Ed3kUsenetJoin PROPERTIES TIMEOUT 180)
+    if(TARGET eMule::Bt)
+        emule_add_test(tst_Ed3kTorrentJoin FOLDER "Ed3k" LIBRARIES eMule::Ed3k eMule::Bt)
+        set_tests_properties(tst_Ed3kTorrentJoin PROPERTIES TIMEOUT 240)
+    endif()
 endif()
 
 # Usenet (NNTP) module

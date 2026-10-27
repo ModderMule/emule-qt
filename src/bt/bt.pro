@@ -33,6 +33,7 @@ SOURCES += \
 
 HEADERS += \
     BtIds.h \
+    BtJoin.h \
     BtSession.h \
     BtTypes.h \
     add/BtAddSource.h \

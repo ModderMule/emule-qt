@@ -201,7 +201,7 @@ public:
     void attemptFailed(const Attempt& attempt) override { failed.push_back(attempt.id); }
     [[nodiscard]] bool quicAvailable() const override { return quic; }
     void armQuic(const Attempt& attempt) override { quicArms.push_back(attempt.id); }
-    void dialPeerQuic(const Attempt& attempt) override { quicDials.emplace_back(attempt.id, attempt.peerUdp); }
+    void dialPeerQuic(const Attempt& attempt) override { quicDials.emplace_back(attempt.id, attempt.quicEndpoint()); }
     [[nodiscard]] bool quicActive(const Attempt&) const override { return quicLinkUp; }
     bool handleQuicFrame(uint8 type, const uint8*, uint32, const Endpoint&, bool) override
     {

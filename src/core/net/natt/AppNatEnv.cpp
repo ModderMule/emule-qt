@@ -324,13 +324,19 @@ bool AppNatEnv::quicAvailable() const
 void AppNatEnv::armQuic(const Attempt& attempt)
 {
     auto* ep = quic();
-    if (!ep || attempt.peerUdp.port() == 0)
+    if (!ep)
         return;
     const quic::Hash16 crypt = obfuscationHash(attempt);
-    ep->learnPeerHash(attempt.peerUdp, crypt);
-    ep->expect(attempt.peerUdp, attempt.peer.hashKnown ? attempt.peer.hash : quic::Hash16{});
-    ep->sendCaps(attempt.peerUdp, attempt.peer.hashKnown ? attempt.peer.hash : quic::Hash16{},
-                 attempt.peer.fileHash, false);
+    const quic::Hash16 hash = attempt.peer.hashKnown ? attempt.peer.hash : quic::Hash16{};
+    // the peer may dial from either family the server gave us
+    const Endpoint second = attempt.peerUdp6 != attempt.peerUdp ? attempt.peerUdp6 : Endpoint();
+    for (const Endpoint& to : {attempt.peerUdp, second}) {
+        if (to.port() == 0)
+            continue;
+        ep->learnPeerHash(to, crypt);
+        ep->expect(to, hash);
+        ep->sendCaps(to, hash, attempt.peer.fileHash, false);
+    }
 }
 
 void AppNatEnv::dialPeerQuic(const Attempt& attempt)
@@ -338,20 +344,21 @@ void AppNatEnv::dialPeerQuic(const Attempt& attempt)
     auto* ep = quic();
     if (!ep)
         return;
+    const Endpoint to = attempt.quicEndpoint();
     if (UpDownClient* client = findClient(attempt)) {
         if (attempt.peerTcpPort != 0)
             client->setUserPort(attempt.peerTcpPort);
         // a server source may have no hash yet: the link finds it by address
-        m_quicClients[attempt.peerUdp.address()] = client;
+        m_quicClients[to.address()] = client;
     }
-    ep->learnPeerHash(attempt.peerUdp, obfuscationHash(attempt));
-    if (!ep->dial(attempt.peerUdp, attempt.peer.hashKnown ? attempt.peer.hash : quic::Hash16{}))
-        logDebug(QStringLiteral("NAT-T QUIC: cannot dial %1").arg(attempt.peerUdp.toString()));
+    ep->learnPeerHash(to, obfuscationHash(attempt));
+    if (!ep->dial(to, attempt.peer.hashKnown ? attempt.peer.hash : quic::Hash16{}))
+        logDebug(QStringLiteral("NAT-T QUIC: cannot dial %1").arg(to.toString()));
 }
 
 bool AppNatEnv::quicActive(const Attempt& attempt) const
 {
-    return m_quic && m_quic->hasConnection(attempt.peerUdp.address());
+    return m_quic && m_quic->hasConnection(attempt.quicEndpoint().address());
 }
 
 bool AppNatEnv::handleQuicFrame(uint8 type, const uint8* data, uint32 size, const Endpoint& from,

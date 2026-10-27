@@ -3,6 +3,7 @@
 #include "BandwidthCoordinator.h"
 #include "app/AppConfig.h"
 #include "app/AppContext.h"
+#include "ipfilter/IPFilter.h"
 #include "prefs/Preferences.h"
 #include "stats/NetworkCounters.h"
 #include "stats/Statistics.h"
@@ -13,6 +14,7 @@
 
 #include <algorithm>
 #include <climits>
+#include <optional>
 
 #ifdef EMULE_HAVE_BITTORRENT
 #include "BtSession.h"
@@ -409,6 +411,31 @@ QCborMap statusToCbor()
     out.insert(QStringLiteral("rateUp"), s.rateUp);
 #endif
     return out;
+}
+
+void applyIpFilter(bool onlyIfLevelChanged)
+{
+#ifdef EMULE_HAVE_BITTORRENT
+    static std::optional<uint32> appliedLevel;
+    if (!s_session || !theApp.ipFilter)
+        return;
+    const uint32 level = thePrefs.ipFilterLevel();
+    if (onlyIfLevelChanged && appliedLevel == level)
+        return;
+    appliedLevel = level;
+    // already merged into disjoint segments, strictest level per segment
+    std::vector<bt::BtIpRange4> v4;
+    for (const IPFilterEntry& e : theApp.ipFilter->entries())
+        if (e.level < level)
+            v4.push_back({e.start, e.end});
+    std::vector<bt::BtIpRange6> v6;
+    for (const IPFilterEntry6& e : theApp.ipFilter->entries6())
+        if (e.level < level)
+            v6.push_back({e.start, e.end});
+    s_session->setIpFilter(v4, v6);
+#else
+    Q_UNUSED(onlyIfLevelChanged)
+#endif
 }
 
 #ifdef EMULE_HAVE_BITTORRENT

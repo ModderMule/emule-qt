@@ -155,7 +155,7 @@ Name: "{autodesktop}\{#AppName}"; Filename: "{app}\{#AppExe}"; Tasks: desktopico
 Filename: "{app}\{#AppExe}"; Description: "{cm:LaunchProgram,{#AppName}}"; Flags: nowait postinstall skipifsilent
 
 [UninstallRun]
-; .nzb association the GUI registered under HKCU
+; .nzb, .torrent and magnet: associations the GUI registered under HKCU
 Filename: "{app}\{#AppExe}"; Parameters: "--unregister-file-types"; Flags: runhidden; RunOnceId: "UnregisterFileTypes"
 
 [UninstallDelete]
@@ -384,6 +384,11 @@ begin
   if RegQueryStringValue(HKCU, 'Software\Classes\ed2k\shell\open\command', '', Value)
      and PointsIntoApp(Value) then
     RegDeleteKeyIncludingSubkeys(HKCU, 'Software\Classes\ed2k');
+  // --unregister-file-types ran before ([UninstallRun]); this catches a copy of
+  // magnet: written by another install path of ours
+  if RegQueryStringValue(HKCU, 'Software\Classes\magnet\shell\open\command', '', Value)
+     and PointsIntoApp(Value) then
+    RegDeleteKeyIncludingSubkeys(HKCU, 'Software\Classes\magnet');
   if RegQueryStringValue(HKCU, 'Software\Microsoft\Windows\CurrentVersion\Run', 'eMuleQt', Value)
      and PointsIntoApp(Value) then
     RegDeleteValue(HKCU, 'Software\Microsoft\Windows\CurrentVersion\Run', 'eMuleQt');

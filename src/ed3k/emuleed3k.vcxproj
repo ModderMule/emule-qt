@@ -72,7 +72,7 @@
   </PropertyGroup>
   <ItemDefinitionGroup Condition="'$(Configuration)|$(Platform)'=='Release|x64'">
     <ClCompile>
-      <AdditionalIncludeDirectories>GeneratedFiles\$(ConfigurationName);GeneratedFiles;.;..;..\core;..\usenet;..\..\libs\packmule\crates\packmule-ffi\include;..\vcpkg_installed\x64-windows\include;release;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
+      <AdditionalIncludeDirectories>GeneratedFiles\$(ConfigurationName);GeneratedFiles;.;..;..\core;..\usenet;..\bt;..\..\libs\packmule\crates\packmule-ffi\include;..\vcpkg_installed\x64-windows\include;release;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
       <AdditionalOptions>-Zc:rvalueCast -Zc:inline -Zc:strictStrings -Zc:throwingNew -permissive- -Zc:__cplusplus -Zc:externConstexpr -utf-8 -w34100 -w34189 -w44996 -w44456 -w44457 -w44458 %(AdditionalOptions)</AdditionalOptions>
       <AssemblerListingLocation>release\</AssemblerListingLocation>
       <BrowseInformation>false</BrowseInformation>
@@ -82,7 +82,7 @@
       <LanguageStandard>stdcpplatest</LanguageStandard>
       <ObjectFileName>release\</ObjectFileName>
       <Optimization>MaxSpeed</Optimization>
-      <PreprocessorDefinitions>_WINDOWS;UNICODE;_UNICODE;WIN32;_ENABLE_EXTENDED_ALIGNED_STORAGE;WIN64;NOMINMAX;WIN32_LEAN_AND_MEAN;EMULE_HAVE_ED3K=1;NDEBUG;QT_NO_DEBUG;%(PreprocessorDefinitions)</PreprocessorDefinitions>
+      <PreprocessorDefinitions>_WINDOWS;UNICODE;_UNICODE;WIN32;_ENABLE_EXTENDED_ALIGNED_STORAGE;WIN64;NOMINMAX;WIN32_LEAN_AND_MEAN;$(EmuleBtDefines)EMULE_HAVE_ED3K=1;NDEBUG;QT_NO_DEBUG;%(PreprocessorDefinitions)</PreprocessorDefinitions>
       <PreprocessToFile>false</PreprocessToFile>
       <ProgramDataBaseFileName>
       </ProgramDataBaseFileName>
@@ -108,7 +108,7 @@ cargo build --release -p packmule-ffi --manifest-path ..\..\libs\packmule\Cargo.
       <WarningLevel>0</WarningLevel>
     </Midl>
     <ResourceCompile>
-      <PreprocessorDefinitions>_WINDOWS;UNICODE;_UNICODE;WIN32;_ENABLE_EXTENDED_ALIGNED_STORAGE;WIN64;NOMINMAX;WIN32_LEAN_AND_MEAN;EMULE_HAVE_ED3K=1;NDEBUG;QT_NO_DEBUG;%(PreprocessorDefinitions)</PreprocessorDefinitions>
+      <PreprocessorDefinitions>_WINDOWS;UNICODE;_UNICODE;WIN32;_ENABLE_EXTENDED_ALIGNED_STORAGE;WIN64;NOMINMAX;WIN32_LEAN_AND_MEAN;$(EmuleBtDefines)EMULE_HAVE_ED3K=1;NDEBUG;QT_NO_DEBUG;%(PreprocessorDefinitions)</PreprocessorDefinitions>
     </ResourceCompile>
     <QtMoc>
       <CompilerFlavor>msvc</CompilerFlavor>
@@ -121,7 +121,7 @@ cargo build --release -p packmule-ffi --manifest-path ..\..\libs\packmule\Cargo.
   </ItemDefinitionGroup>
   <ItemDefinitionGroup Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">
     <ClCompile>
-      <AdditionalIncludeDirectories>GeneratedFiles\$(ConfigurationName);GeneratedFiles;.;..;..\core;..\usenet;..\..\libs\packmule\crates\packmule-ffi\include;..\vcpkg_installed\x64-windows\include;debug;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
+      <AdditionalIncludeDirectories>GeneratedFiles\$(ConfigurationName);GeneratedFiles;.;..;..\core;..\usenet;..\bt;..\..\libs\packmule\crates\packmule-ffi\include;..\vcpkg_installed\x64-windows\include;debug;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
       <AdditionalOptions>-Zc:rvalueCast -Zc:inline -Zc:strictStrings -Zc:throwingNew -permissive- -Zc:__cplusplus -Zc:externConstexpr -utf-8 -w34100 -w34189 -w44996 -w44456 -w44457 -w44458 %(AdditionalOptions)</AdditionalOptions>
       <AssemblerListingLocation>debug\</AssemblerListingLocation>
       <BrowseInformation>false</BrowseInformation>
@@ -131,7 +131,7 @@ cargo build --release -p packmule-ffi --manifest-path ..\..\libs\packmule\Cargo.
       <LanguageStandard>stdcpplatest</LanguageStandard>
       <ObjectFileName>debug\</ObjectFileName>
       <Optimization>Disabled</Optimization>
-      <PreprocessorDefinitions>_WINDOWS;UNICODE;_UNICODE;WIN32;_ENABLE_EXTENDED_ALIGNED_STORAGE;WIN64;NOMINMAX;WIN32_LEAN_AND_MEAN;EMULE_HAVE_ED3K=1;%(PreprocessorDefinitions)</PreprocessorDefinitions>
+      <PreprocessorDefinitions>_WINDOWS;UNICODE;_UNICODE;WIN32;_ENABLE_EXTENDED_ALIGNED_STORAGE;WIN64;NOMINMAX;WIN32_LEAN_AND_MEAN;$(EmuleBtDefines)EMULE_HAVE_ED3K=1;%(PreprocessorDefinitions)</PreprocessorDefinitions>
       <PreprocessToFile>false</PreprocessToFile>
       <RuntimeLibrary>MultiThreadedDebugDLL</RuntimeLibrary>
       <SuppressStartupBanner>true</SuppressStartupBanner>
@@ -155,7 +155,7 @@ cargo build --release -p packmule-ffi --manifest-path ..\..\libs\packmule\Cargo.
       <WarningLevel>0</WarningLevel>
     </Midl>
     <ResourceCompile>
-      <PreprocessorDefinitions>_WINDOWS;UNICODE;_UNICODE;WIN32;_ENABLE_EXTENDED_ALIGNED_STORAGE;WIN64;NOMINMAX;WIN32_LEAN_AND_MEAN;EMULE_HAVE_ED3K=1;_DEBUG;%(PreprocessorDefinitions)</PreprocessorDefinitions>
+      <PreprocessorDefinitions>_WINDOWS;UNICODE;_UNICODE;WIN32;_ENABLE_EXTENDED_ALIGNED_STORAGE;WIN64;NOMINMAX;WIN32_LEAN_AND_MEAN;$(EmuleBtDefines)EMULE_HAVE_ED3K=1;_DEBUG;%(PreprocessorDefinitions)</PreprocessorDefinitions>
     </ResourceCompile>
     <QtMoc>
       <CompilerFlavor>msvc</CompilerFlavor>
@@ -168,8 +168,10 @@ cargo build --release -p packmule-ffi --manifest-path ..\..\libs\packmule\Cargo.
   </ItemDefinitionGroup>
   <ItemGroup>
     <ClCompile Include="Ed3kHttp.cpp" />
+    <ClCompile Include="Ed3kJoinBase.cpp" />
     <ClCompile Include="Ed3kSession.cpp" />
     <ClCompile Include="Ed3kStore.cpp" />
+    <ClCompile Include="Ed3kTorrentJoin.cpp" />
     <ClCompile Include="Ed3kUsenetJoin.cpp" />
   </ItemGroup>
   <ItemGroup>
@@ -178,7 +180,9 @@ cargo build --release -p packmule-ffi --manifest-path ..\..\libs\packmule\Cargo.
   </ItemGroup>
   <ItemGroup>
     <QtMoc Include="Ed3kHttp.h" />
+    <QtMoc Include="Ed3kJoinBase.h" />
     <QtMoc Include="Ed3kSession.h" />
+    <QtMoc Include="Ed3kTorrentJoin.h" />
     <QtMoc Include="Ed3kUsenetJoin.h" />
   </ItemGroup>
   <ItemGroup>

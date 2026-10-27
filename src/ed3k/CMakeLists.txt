@@ -31,5 +31,10 @@ target_link_libraries(emuleed3k
         OpenSSL::Crypto
 )
 
+# Ed3kTorrentJoin: the torrent join (torrent-join.md Part C); ed3k -> bt only
+if(TARGET eMule::Bt)
+    target_link_libraries(emuleed3k PUBLIC eMule::Bt)
+endif()
+
 set_target_properties(emuleed3k PROPERTIES FOLDER "Libraries")
 source_group(TREE "${CMAKE_CURRENT_SOURCE_DIR}" FILES ${ED3K_SOURCES})

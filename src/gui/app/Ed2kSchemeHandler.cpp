@@ -3,6 +3,7 @@
 /// @brief Platform-specific ed2k:// URL scheme registration.
 
 #include "app/Ed2kSchemeHandler.h"
+#include "app/UiState.h"
 #include "utils/FileAssociation.h"
 #include "utils/Log.h"
 
@@ -78,39 +79,20 @@ static QString desktopFilePath()
 
 void registerEd2kUrlScheme()
 {
-    const QString path = desktopFilePath();
-    QDir().mkpath(QFileInfo(path).absolutePath());
-
-    QFile f(path);
-    if (!f.open(QIODevice::WriteOnly | QIODevice::Text)) {
-        logWarning(QStringLiteral("Cannot write %1").arg(path));
+    // the shared desktop entry: written with the other types, so it keeps them
+    QString error;
+    if (!gui::FileAssociation::applyFileTypes(
+            {theUiState.associateNzbFiles(), theUiState.associateTorrentFiles(), true}, error)) {
+        logWarning(QStringLiteral("Cannot register the ed2k:// handler: %1").arg(error));
         return;
     }
-
-    QTextStream out(&f);
-    out << "[Desktop Entry]\n"
-        << "Type=Application\n"
-        << "Name=eMule Qt\n"
-        << "Exec=" << QCoreApplication::applicationFilePath() << " %u\n"
-        << "Icon=emuleqt\n"
-        << "StartupWMClass=emuleqt\n"
-        << "Terminal=false\n"
-        << "MimeType=x-scheme-handler/ed2k;\n"
-        << "NoDisplay=true\n";
-    f.close();
-
-    gui::FileAssociation::installDesktopIcons();
-
-    QProcess::execute(QStringLiteral("xdg-mime"),
-                      {QStringLiteral("default"), QStringLiteral("emuleqt.desktop"),
-                       QStringLiteral("x-scheme-handler/ed2k")});
-
     logInfo(QStringLiteral("Registered as ed2k:// handler"));
 }
 
 bool isEd2kSchemeRegistered()
 {
-    return QFile::exists(desktopFilePath());
+    QFile f(desktopFilePath());
+    return f.open(QIODevice::ReadOnly) && f.readAll().contains("x-scheme-handler/ed2k");
 }
 
 // ---------------------------------------------------------------------------

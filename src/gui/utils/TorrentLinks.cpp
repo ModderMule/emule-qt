@@ -23,6 +23,11 @@ bool startsWithCi(const QString& s, QLatin1StringView prefix)
 bool isBitTorrentMagnet(const QString& link)
 {
     const QString trimmed = link.trimmed();
+    if (startsWithCi(trimmed, QLatin1StringView("ed3k:file?"))) {
+        // a torrent set: bt=<40 or 64 hex>
+        static const QRegularExpression bt(QStringLiteral("[?&]bt=([0-9a-fA-F]{64}|[0-9a-fA-F]{40})(&|$)"));
+        return bt.match(trimmed).hasMatch();
+    }
     if (!startsWithCi(trimmed, QLatin1StringView("magnet:")))
         return false;
     const qsizetype q = trimmed.indexOf(QLatin1Char('?'));

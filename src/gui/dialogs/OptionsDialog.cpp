@@ -5526,6 +5526,21 @@ QWidget* OptionsDialog::createBitTorrentPage()
     seedForm->addRow(tr("Stop after seeding for:"), m_btSeedTimeSpin);
 
     mainLayout->addWidget(seedGroup);
+
+    // -- Desktop integration (macOS: the bundle declares both) ---------------
+    if (gui::FileAssociation::isRuntimeRegistration()) {
+        auto* desktopGroup = new QGroupBox(tr("Desktop"), page);
+        auto* desktopLayout = new QVBoxLayout(desktopGroup);
+        m_associateTorrentCheck =
+            new QCheckBox(tr("Open .torrent files and magnet links with eMule Qt"), desktopGroup);
+        m_associateTorrentCheck->setToolTip(
+            tr("Claim .torrent files and magnet: links for this copy of eMule Qt. The setting "
+               "is for you alone and needs no administrator; it is re-applied at every "
+               "start, so another program taking the association does not keep it."));
+        desktopLayout->addWidget(m_associateTorrentCheck);
+        mainLayout->addWidget(desktopGroup);
+        connect(m_associateTorrentCheck, &QCheckBox::toggled, this, &OptionsDialog::markDirty);
+    }
     mainLayout->addStretch();
 
     // -- Wiring -------------------------------------------------------------
@@ -7761,17 +7776,21 @@ void OptionsDialog::saveSettings()
     // GUI-only, so it never travels over SetPreferences: the daemon owns
     // preferences.yml and knows nothing about the desktop it is not running on,
     // and it is this executable's path that gets registered.
-    if (m_associateNzbCheck
-        && m_associateNzbCheck->isChecked() != theUiState.associateNzbFiles()) {
-        theUiState.setAssociateNzbFiles(m_associateNzbCheck->isChecked());
+    const bool nzbChanged = m_associateNzbCheck
+                            && m_associateNzbCheck->isChecked() != theUiState.associateNzbFiles();
+    const bool torrentChanged = m_associateTorrentCheck
+                                && m_associateTorrentCheck->isChecked() != theUiState.associateTorrentFiles();
+    if (nzbChanged || torrentChanged) {
+        if (nzbChanged)
+            theUiState.setAssociateNzbFiles(m_associateNzbCheck->isChecked());
+        if (torrentChanged)
+            theUiState.setAssociateTorrentFiles(m_associateTorrentCheck->isChecked());
         QString assocError;
-        const bool ok = m_associateNzbCheck->isChecked()
-                            ? gui::FileAssociation::registerNzbFileType(assocError)
-                            : gui::FileAssociation::unregisterNzbFileType(assocError);
-        if (!ok) {
+        if (!gui::FileAssociation::applyFileTypes(
+                {theUiState.associateNzbFiles(), theUiState.associateTorrentFiles(), isEd2kSchemeRegistered()},
+                assocError)) {
             QMessageBox::warning(this, tr("File types"),
-                                 tr("Could not update the .nzb file association: %1")
-                                     .arg(assocError));
+                                 tr("Could not update the file associations: %1").arg(assocError));
         }
     }
 
@@ -8034,6 +8053,8 @@ void OptionsDialog::fillDaemonSettings(const QCborMap& prefs)
         m_usenetWatchDirEdit->setText(prefs.value(QStringLiteral("usenetWatchDir")).toString());
     if (m_associateNzbCheck)
         m_associateNzbCheck->setChecked(theUiState.associateNzbFiles());
+    if (m_associateTorrentCheck)
+        m_associateTorrentCheck->setChecked(theUiState.associateTorrentFiles());
     m_usenetHealthMinSpin->setEnabled(m_usenetHealthCombo->currentIndex() > 0);
     m_usenetCleanupCheck->setEnabled(m_usenetUnpackCheck->isChecked());
     m_usenetDirectUnpackCheck->setEnabled(m_usenetUnpackCheck->isChecked());
