@@ -116,15 +116,15 @@ Transmission's layout, split between the tab and one inspector window:
 Context menu "Paste Magnet Links" (and Ctrl+V) adds every magnet in the clipboard to the default
 folder, started, without the Add dialog, like "Paste eD2K Links".
 
-Desktop: Options → BitTorrent → "Open .torrent files, magnet and ed3k links with eMule Qt" (on by
-default, `UiState::associateTorrentFiles`, re-applied at every start like `.nzb`). ed3k comes
-with it because the only ed3k link the GUI opens so far is `ed3k:file?…bt=` (a torrent as a file
-set → Torrents tab); other ed3k links are logged and dropped (ToDo in `ExternalLinkHandler`).
+Desktop: Options → BitTorrent → "Open .torrent files and magnet links with eMule Qt" (on by
+default, `UiState::associateTorrentFiles`, re-applied at every start like `.nzb`). The ed3k:
+scheme goes with ed2k on Options → General ("Handle eD2K Links", on macOS a check box); the only
+ed3k link the GUI opens so far is `ed3k:file?…bt=` (a torrent as a file set → Torrents tab),
+other ed3k links are logged and dropped (ToDo in `ExternalLinkHandler`).
 `FileAssociation::applyFileTypes` writes one desktop entry on Linux for every type
-(`application/x-bittorrent`, `x-scheme-handler/magnet`, `x-scheme-handler/ed3k`, `.nzb`, `ed2k`),
-so claiming one no longer drops another, and makes it the default (`xdg-mime default`). Windows:
-ProgId `eMuleQt.torrent` and the `magnet` and `ed3k` URL protocols under HKCU; given up only while
-still ours. macOS declares all of them in `Info.plist.in` (rank Alternate) and the check box sets
+(`application/x-bittorrent`, `x-scheme-handler/magnet`, `.nzb`, `ed2k`, `ed3k`), so claiming one
+no longer drops another, and makes it the default (`xdg-mime default`). Windows: ProgId
+`eMuleQt.torrent` and the `magnet` URL protocol under HKCU; given up only while still ours. macOS declares all of them in `Info.plist.in` (rank Alternate) and the check box sets
 the default app through LaunchServices — see the macOS note in `usenet-module.md`.
 `--register-file-types` / `--unregister-file-types` cover all of them; the installer's uninstall
 step also removes a `magnet` key of the app.

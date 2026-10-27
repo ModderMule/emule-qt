@@ -126,7 +126,7 @@ private:
 
     QCommandLineOption m_registerTypesOption{
         QStringLiteral("register-file-types"),
-        QStringLiteral("Claim .nzb, .torrent, magnet: and ed3k: links for this executable, then exit.")};
+        QStringLiteral("Claim .nzb, .torrent and magnet: links for this executable, then exit.")};
 
     QCommandLineOption m_unregisterTypesOption{
         QStringLiteral("unregister-file-types"),

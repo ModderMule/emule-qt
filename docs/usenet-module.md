@@ -1773,13 +1773,13 @@ archive has no moment at which to ask for elevation. macOS declares the types in
 `Info.plist`'s `CFBundleDocumentTypes` / `CFBundleURLTypes`, with `LSHandlerRank`
 **Alternate** so a dedicated NZB client keeps priority. Becoming the *default* app
 is a LaunchServices call (`LSSetDefaultRoleHandlerForContentType` on the extension's
-UTI, `LSSetDefaultHandlerForURLScheme` for magnet/ed3k/ed2k), made only when the user
+UTI, `LSSetDefaultHandlerForURLScheme` for magnet, ed2k and ed3k), made only when the user
 changes a check box: nothing is re-applied at start (`isRuntimeRegistration()` is
 false), so the app never takes a type away by itself. The boxes read the live
 default back, so Finder's "Change All…" shows up there too. Turning one off hands
 the type to the first other app LaunchServices lists for it; with none, it stays
-ours. Options → General has an "Open eD2K links with eMule Qt" box there in place
-of the MFC "Handle eD2K Links" button.
+ours. Options → General has an "Open eD2K and ed3k links with eMule Qt" box there
+in place of the MFC "Handle eD2K Links" button; ed3k always goes with ed2k.
 
 The two generators in `src/gui/utils/FileAssociation.h` are pure and produce what
 registration *would* write, which is the only part of it a developer machine can

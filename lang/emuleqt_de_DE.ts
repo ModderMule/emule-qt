@@ -720,12 +720,12 @@ Hat Kommentare</translation>
         <translation type="vanished">%1 Bytes</translation>
     </message>
     <message>
-        <location filename="../src/gui/dialogs/OptionsDialog.cpp" line="+3339"/>
+        <location filename="../src/gui/dialogs/OptionsDialog.cpp" line="+3340"/>
         <source>Test</source>
         <translation>Test</translation>
     </message>
     <message>
-        <location filename="../src/gui/utils/FileAssociation.cpp" line="+481"/>
+        <location filename="../src/gui/utils/FileAssociation.cpp" line="+480"/>
         <source>Could not write the file association to the registry.</source>
         <translation>Die Dateizuordnung konnte nicht in die Registry geschrieben werden.</translation>
     </message>
@@ -744,7 +744,7 @@ Hat Kommentare</translation>
         <translation>LaunchServices hat %1 abgelehnt.</translation>
     </message>
     <message>
-        <location line="+86"/>
+        <location line="+85"/>
         <source>No writable data directory.</source>
         <translation>Kein beschreibbares Datenverzeichnis.</translation>
     </message>
@@ -6602,24 +6602,24 @@ Erneut herunterladen?</translation>
 <context>
     <name>eMule::OptionsDialog</name>
     <message>
-        <location filename="../src/gui/dialogs/OptionsDialog.cpp" line="-3228"/>
+        <location filename="../src/gui/dialogs/OptionsDialog.cpp" line="-3229"/>
         <source>Options</source>
         <translation>Optionen</translation>
     </message>
     <message>
         <location line="+61"/>
-        <location line="+2140"/>
+        <location line="+2141"/>
         <source>OK</source>
         <translation>OK</translation>
     </message>
     <message>
-        <location line="-2139"/>
-        <location line="+2140"/>
+        <location line="-2140"/>
+        <location line="+2141"/>
         <source>Cancel</source>
         <translation>Abbrechen</translation>
     </message>
     <message>
-        <location line="-2139"/>
+        <location line="-2140"/>
         <location line="+6126"/>
         <source>Apply</source>
         <translation>Übernehmen</translation>
@@ -6631,7 +6631,7 @@ Erneut herunterladen?</translation>
     </message>
     <message>
         <location line="+270"/>
-        <location line="+2137"/>
+        <location line="+2138"/>
         <location line="+59"/>
         <location line="+6"/>
         <location line="+4"/>
@@ -6643,7 +6643,7 @@ Erneut herunterladen?</translation>
         <translation>IP-Filter</translation>
     </message>
     <message>
-        <location line="-2251"/>
+        <location line="-2252"/>
         <source>IP filter reloaded: %1 entries.</source>
         <translation>IP-Filter neu geladen: %1 Einträge.</translation>
     </message>
@@ -6690,7 +6690,7 @@ Erneut herunterladen?</translation>
     </message>
     <message>
         <location line="+14"/>
-        <location line="+771"/>
+        <location line="+772"/>
         <location line="+384"/>
         <location line="+475"/>
         <location line="+298"/>
@@ -6698,7 +6698,7 @@ Erneut herunterladen?</translation>
         <translation>Verschiedenes</translation>
     </message>
     <message>
-        <location line="-1925"/>
+        <location line="-1926"/>
         <source>Bring to front on link click</source>
         <translation>Bei Linkklick in den Vordergrund</translation>
     </message>
@@ -6738,22 +6738,20 @@ Erneut herunterladen?</translation>
         <translation>webservices.dat wurde im Konfigurationsordner nicht gefunden.</translation>
     </message>
     <message>
-        <location line="+6"/>
         <source>Open eD2K links with eMule Qt</source>
-        <translation>eD2K-Links mit eMule Qt öffnen</translation>
+        <translation type="vanished">eD2K-Links mit eMule Qt öffnen</translation>
     </message>
     <message>
-        <location line="+2"/>
         <source>Makes eMule Qt the default app for ed2k:// links. Turning it off hands them to another app that opens them, if there is one.</source>
-        <translation>Macht eMule Qt zur Standard-App für ed2k://-Links. Ausgeschaltet gehen sie an eine andere App, die sie öffnen kann, falls es eine gibt.</translation>
+        <translation type="vanished">Macht eMule Qt zur Standard-App für ed2k://-Links. Ausgeschaltet gehen sie an eine andere App, die sie öffnen kann, falls es eine gibt.</translation>
     </message>
     <message>
-        <location line="+5"/>
+        <location line="+13"/>
         <source>Handle eD2K Links</source>
         <translation>eD2K-Links verarbeiten</translation>
     </message>
     <message>
-        <location line="+12"/>
+        <location line="+13"/>
         <source>Startup</source>
         <translation>Programmstart</translation>
     </message>
@@ -6794,12 +6792,12 @@ Erneut herunterladen?</translation>
     </message>
     <message>
         <location line="+8"/>
-        <location line="+5940"/>
+        <location line="+5939"/>
         <source>Core</source>
         <translation>Kern</translation>
     </message>
     <message>
-        <location line="-5935"/>
+        <location line="-5934"/>
         <source>Address:</source>
         <translation>Adresse:</translation>
     </message>
@@ -6982,7 +6980,7 @@ Möchten Sie wirklich fortfahren?</translation>
         <location line="+296"/>
         <location line="+1021"/>
         <location line="+152"/>
-        <location line="+997"/>
+        <location line="+996"/>
         <location line="+307"/>
         <location line="+284"/>
         <location line="+29"/>
@@ -6990,7 +6988,7 @@ Möchten Sie wirklich fortfahren?</translation>
         <translation>Aktiviert</translation>
     </message>
     <message>
-        <location line="-5077"/>
+        <location line="-5076"/>
         <source>Reset</source>
         <translation>Zurücksetzen</translation>
     </message>
@@ -7007,13 +7005,13 @@ Möchten Sie wirklich fortfahren?</translation>
     <message>
         <location line="+3"/>
         <location line="+6"/>
-        <location line="+4469"/>
+        <location line="+4468"/>
         <location line="+334"/>
         <source> KB/s</source>
         <translation> KB/s</translation>
     </message>
     <message>
-        <location line="-4806"/>
+        <location line="-4805"/>
         <source>Upload</source>
         <translation>Upload</translation>
     </message>
@@ -7044,12 +7042,12 @@ Möchten Sie wirklich fortfahren?</translation>
     </message>
     <message>
         <location line="+23"/>
-        <location line="+4331"/>
+        <location line="+4330"/>
         <source>Client Port</source>
         <translation>Client-Port</translation>
     </message>
     <message>
-        <location line="-4328"/>
+        <location line="-4327"/>
         <source>TCP</source>
         <translation>TCP</translation>
     </message>
@@ -7105,12 +7103,12 @@ Möchten Sie wirklich fortfahren?</translation>
     <message>
         <location line="+4"/>
         <location line="+1733"/>
-        <location line="+5490"/>
+        <location line="+5489"/>
         <source>Any</source>
         <translation>Alle</translation>
     </message>
     <message>
-        <location line="-7221"/>
+        <location line="-7220"/>
         <source>Use only this network interface, for example a VPN tunnel. Pick one from the list, or type an IP address or a subnet such as 10.64.0.0/10 (the interface holding an address in it). Connections through a proxy are not bound.</source>
         <translation>Nur diese Netzwerkschnittstelle verwenden, zum Beispiel einen VPN-Tunnel. Wählen Sie eine aus der Liste oder geben Sie eine IP-Adresse oder ein Subnetz wie 10.64.0.0/10 ein (die Schnittstelle, die eine Adresse daraus besitzt). Verbindungen über einen Proxy werden nicht gebunden.</translation>
     </message>
@@ -7131,12 +7129,12 @@ Möchten Sie wirklich fortfahren?</translation>
     </message>
     <message>
         <location line="+6"/>
-        <location line="+4333"/>
+        <location line="+4332"/>
         <source>Connection Limits</source>
         <translation>Verbindungsbegrenzungen</translation>
     </message>
     <message>
-        <location line="-4331"/>
+        <location line="-4330"/>
         <source>Max. connections</source>
         <translation>Max. Verbindungen</translation>
     </message>
@@ -8125,8 +8123,8 @@ Jede Usenet-Verbindung läuft dann über den Proxy, seine Geschwindigkeit begren
         <translation>Führt lokal Buch über die Dateien, die in Ihren Suchen aufgetaucht sind, und über ihre Namen, damit spätere Suchen zeigen können, was Sie schon gesehen haben.</translation>
     </message>
     <message>
-        <location line="-1358"/>
-        <location line="+1578"/>
+        <location line="-1359"/>
+        <location line="+1579"/>
         <source>Connection</source>
         <translation>Verbindung</translation>
     </message>
@@ -8501,12 +8499,12 @@ Jede Usenet-Verbindung läuft dann über den Proxy, seine Geschwindigkeit begren
     </message>
     <message>
         <location line="+8"/>
-        <location line="+2159"/>
+        <location line="+2158"/>
         <source>Encryption:</source>
         <translation>Verschlüsselung:</translation>
     </message>
     <message>
-        <location line="-2156"/>
+        <location line="-2155"/>
         <source>None (119)</source>
         <translation>Keine (119)</translation>
     </message>
@@ -8595,13 +8593,13 @@ Jede Usenet-Verbindung läuft dann über den Proxy, seine Geschwindigkeit begren
         <translation>Streng</translation>
     </message>
     <message>
-        <location line="-2808"/>
+        <location line="-2809"/>
         <location line="+8200"/>
         <source>BitTorrent</source>
         <translation>BitTorrent</translation>
     </message>
     <message>
-        <location line="-7875"/>
+        <location line="-7874"/>
         <source>Show download progress on the Dock icon</source>
         <translation>Downloadfortschritt auf dem Dock-Symbol anzeigen</translation>
     </message>
@@ -8753,12 +8751,12 @@ Jede Usenet-Verbindung läuft dann über den Proxy, seine Geschwindigkeit begren
         <location line="+1"/>
         <location line="+1963"/>
         <location line="+9"/>
-        <location line="+138"/>
+        <location line="+137"/>
         <source>No limit</source>
         <translation>Kein Limit</translation>
     </message>
     <message>
-        <location line="-2102"/>
+        <location line="-2101"/>
         <source>Allowance size:</source>
         <translation>Volumengröße:</translation>
     </message>
@@ -8814,19 +8812,19 @@ Jede Usenet-Verbindung läuft dann über den Proxy, seine Geschwindigkeit begren
     </message>
     <message>
         <location line="+8"/>
-        <location line="+2044"/>
+        <location line="+2043"/>
         <source>Share of the download limit:</source>
         <translation>Anteil an der Download-Begrenzung:</translation>
     </message>
     <message>
-        <location line="-2041"/>
+        <location line="-2040"/>
         <location line="+42"/>
-        <location line="+1991"/>
+        <location line="+1990"/>
         <source> %</source>
         <translation> %</translation>
     </message>
     <message>
-        <location line="-2031"/>
+        <location line="-2030"/>
         <source>How much of the global download limit Usenet may take while eD2K is also downloading. Whichever engine is idle lends its whole share to the other, so this only applies when both are busy.</source>
         <translation>Wie viel der globalen Download-Begrenzung Usenet nehmen darf, während auch eD2K lädt. Das jeweils untätige Modul überlässt seinen ganzen Anteil dem anderen, dies gilt also nur, wenn beide beschäftigt sind.</translation>
     </message>
@@ -9633,7 +9631,7 @@ Einen später hinzuzufügen holt nicht dessen Bestand: ein neuer Indexer bekommt
         <translation type="vanished">Startet die BitTorrent-Engine mit dem Daemon. Wenn aus, wird kein Torrent heruntergeladen oder geseedet.</translation>
     </message>
     <message>
-        <location line="+3420"/>
+        <location line="+3419"/>
         <source>unlimited</source>
         <translation>unbegrenzt</translation>
     </message>
@@ -9714,7 +9712,7 @@ Einen später hinzuzufügen holt nicht dessen Bestand: ein neuer Indexer bekommt
         <translation type="vanished">Upload:</translation>
     </message>
     <message>
-        <location line="-123"/>
+        <location line="-122"/>
         <source>Active downloads:</source>
         <translation>Aktive Downloads:</translation>
     </message>
@@ -9764,22 +9762,19 @@ Einen später hinzuzufügen holt nicht dessen Bestand: ein neuer Indexer bekommt
         <translation>Leer lassen, um Torrents im Eingangsordner zu speichern.</translation>
     </message>
     <message>
-        <location line="+48"/>
         <source>Open .torrent files, magnet and ed3k links with eMule Qt</source>
-        <translation>.torrent-Dateien, Magnet- und ed3k-Links mit eMule Qt öffnen</translation>
+        <translation type="vanished">.torrent-Dateien, Magnet- und ed3k-Links mit eMule Qt öffnen</translation>
     </message>
     <message>
-        <location line="+3"/>
         <source>Makes eMule Qt the default app for .torrent files, magnet: and ed3k: links. Turning it off hands them to another app that opens them, if there is one.</source>
-        <translation>Macht eMule Qt zur Standard-App für .torrent-Dateien, magnet:- und ed3k:-Links. Ausgeschaltet gehen sie an eine andere App, die sie öffnen kann, falls es eine gibt.</translation>
+        <translation type="vanished">Macht eMule Qt zur Standard-App für .torrent-Dateien, magnet:- und ed3k:-Links. Ausgeschaltet gehen sie an eine andere App, die sie öffnen kann, falls es eine gibt.</translation>
     </message>
     <message>
-        <location line="+5"/>
         <source>Claim .torrent files, magnet: and ed3k: links for this copy of eMule Qt. The setting is for you alone and needs no administrator; it is re-applied at every start, so another program taking the association does not keep it.</source>
-        <translation>.torrent-Dateien, magnet:- und ed3k:-Links für diese Kopie von eMule Qt beanspruchen. Die Einstellung gilt nur für Sie und braucht keinen Administrator; sie wird bei jedem Start erneut angewendet, sodass ein anderes Programm, das die Zuordnung übernimmt, sie nicht behält.</translation>
+        <translation type="vanished">.torrent-Dateien, magnet:- und ed3k:-Links für diese Kopie von eMule Qt beanspruchen. Die Einstellung gilt nur für Sie und braucht keinen Administrator; sie wird bei jedem Start erneut angewendet, sodass ein anderes Programm, das die Zuordnung übernimmt, sie nicht behält.</translation>
     </message>
     <message>
-        <location line="+18"/>
+        <location line="+73"/>
         <source>BitTorrent download folder</source>
         <translation>BitTorrent-Download-Ordner</translation>
     </message>
@@ -10049,12 +10044,27 @@ Jetzt anlegen?</translation>
         <translation>Server- und Client-LAN-IPs filtern</translation>
     </message>
     <message>
-        <location line="-4752"/>
+        <location line="-4751"/>
         <source>Show more controls (advanced mode controls)</source>
         <translation>Mehr Steuerelemente anzeigen (erweiterte Steuerelemente)</translation>
     </message>
     <message>
-        <location line="+989"/>
+        <location line="-198"/>
+        <source>Open eD2K and ed3k links with eMule Qt</source>
+        <translation>eD2K- und ed3k-Links mit eMule Qt öffnen</translation>
+    </message>
+    <message>
+        <location line="+2"/>
+        <source>Makes eMule Qt the default app for ed2k:// and ed3k: links. Turning it off hands them to another app that opens them, if there is one.</source>
+        <translation>Macht eMule Qt zur Standard-App für ed2k://- und ed3k:-Links. Ausgeschaltet gehen sie an eine andere App, die sie öffnen kann, falls es eine gibt.</translation>
+    </message>
+    <message>
+        <location line="+6"/>
+        <source>Makes eMule Qt the handler for ed2k:// and ed3k: links.</source>
+        <translation>Macht eMule Qt zum Handler für ed2k://- und ed3k:-Links.</translation>
+    </message>
+    <message>
+        <location line="+1179"/>
         <source>Rehash All Files...</source>
         <translation>Alle Dateien neu hashen...</translation>
     </message>
@@ -10069,15 +10079,22 @@ Jetzt anlegen?</translation>
         <translation>Führt die BitTorrent-Engine im Kern aus. Aus: Die Engine stoppt, kein Torrent wird herunter- oder hochgeladen und der BitTorrent-Port ist geschlossen. Die Torrents bleiben in der Liste und laufen weiter, sobald sie wieder eingeschaltet wird.</translation>
     </message>
     <message>
+        <location line="+58"/>
         <source>Open .torrent files and magnet links with eMule Qt</source>
-        <translation type="vanished">.torrent-Dateien und Magnet-Links mit eMule Qt öffnen</translation>
+        <translation>.torrent-Dateien und Magnet-Links mit eMule Qt öffnen</translation>
     </message>
     <message>
+        <location line="+3"/>
+        <source>Makes eMule Qt the default app for .torrent files and magnet: links. Turning it off hands them to another app that opens them, if there is one.</source>
+        <translation>Macht eMule Qt zur Standard-App für .torrent-Dateien und magnet:-Links. Ausgeschaltet gehen sie an eine andere App, die sie öffnen kann, falls es eine gibt.</translation>
+    </message>
+    <message>
+        <location line="+4"/>
         <source>Claim .torrent files and magnet: links for this copy of eMule Qt. The setting is for you alone and needs no administrator; it is re-applied at every start, so another program taking the association does not keep it.</source>
-        <translation type="vanished">.torrent-Dateien und magnet:-Links für diese Installation von eMule Qt beanspruchen. Die Einstellung gilt nur für Sie und benötigt keine Administratorrechte; sie wird bei jedem Start erneut angewendet, sodass ein anderes Programm die Zuordnung nicht dauerhaft übernimmt.</translation>
+        <translation>.torrent-Dateien und magnet:-Links für diese Installation von eMule Qt beanspruchen. Die Einstellung gilt nur für Sie und benötigt keine Administratorrechte; sie wird bei jedem Start erneut angewendet, sodass ein anderes Programm die Zuordnung nicht dauerhaft übernimmt.</translation>
     </message>
     <message>
-        <location line="+156"/>
+        <location line="+90"/>
         <source>Global limits:</source>
         <translation>Globale Limits:</translation>
     </message>
@@ -10468,17 +10485,17 @@ Verbindungen zu News-Servern wechseln sofort.</translation>
         <translation>Auf Standard zurücksetzen</translation>
     </message>
     <message>
-        <location line="-5277"/>
+        <location line="-5276"/>
         <location line="+1024"/>
         <location line="+154"/>
-        <location line="+1606"/>
+        <location line="+1605"/>
         <location line="+316"/>
         <location line="+2175"/>
         <source>Remove</source>
         <translation>Entfernen</translation>
     </message>
     <message>
-        <location line="-6508"/>
+        <location line="-6507"/>
         <source>New eMule Qt version detected</source>
         <translation>Neue eMule-Qt-Version erkannt</translation>
     </message>
@@ -10488,7 +10505,7 @@ Verbindungen zu News-Servern wechseln sofort.</translation>
         <translation>Aktualisieren von URL: (filter.dat- oder PeerGuardian-Format, .gz/.zip zulässig)</translation>
     </message>
     <message>
-        <location line="+3304"/>
+        <location line="+3303"/>
         <source>Write eMule core logs to disk</source>
         <translation>eMule-Kernprotokolle auf Datenträger schreiben</translation>
     </message>
@@ -10548,14 +10565,14 @@ Verbindungen zu News-Servern wechseln sofort.</translation>
         <translation>Angeforderte Laufzeit:</translation>
     </message>
     <message>
-        <location line="-2493"/>
+        <location line="-2492"/>
         <location line="+918"/>
-        <location line="+1579"/>
+        <location line="+1578"/>
         <source> s</source>
         <translation> s</translation>
     </message>
     <message>
-        <location line="-5083"/>
+        <location line="-5082"/>
         <source>Downloads that are receiving data, and the sources sending it, are drawn in bold. A source listed under another file (A4AF) is bold too while it transfers. The connected server and the selected category tab are bold as well.</source>
         <translation>Downloads, die Daten empfangen, und die Quellen, die sie senden, werden fett dargestellt. Eine Quelle unter einer anderen Datei (A4AF) ist ebenfalls fett, solange sie überträgt. Auch der verbundene Server und der gewählte Kategorie-Tab sind fett.</translation>
     </message>
@@ -10612,7 +10629,7 @@ Stellen Sie den Wert etwas unter Ihren Tarif. Die Menge wird hier gemessen und l
         <translation>Warteschlange</translation>
     </message>
     <message>
-        <location line="+92"/>
+        <location line="+91"/>
         <source>Used for both TCP and UDP. Must differ from the eD2K ports, the web server port and the core port.</source>
         <translation>Für TCP und UDP. Muss sich von den eD2K-Ports, dem Webserver-Port und dem Core-Port unterscheiden.</translation>
     </message>
@@ -10816,10 +10833,10 @@ Stellen Sie den Wert etwas unter Ihren Tarif. Die Menge wird hier gemessen und l
         <translation>Neuer Zeitplan</translation>
     </message>
     <message>
-        <location line="-2878"/>
+        <location line="-2877"/>
         <location line="+1024"/>
         <location line="+154"/>
-        <location line="+1879"/>
+        <location line="+1878"/>
         <location line="+2213"/>
         <source>Add</source>
         <translation>Hinzufügen</translation>

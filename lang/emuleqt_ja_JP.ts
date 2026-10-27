@@ -715,12 +715,12 @@ Has comments</source>
         <translation type="vanished">%1 Bytes</translation>
     </message>
     <message>
-        <location filename="../src/gui/dialogs/OptionsDialog.cpp" line="+3339"/>
+        <location filename="../src/gui/dialogs/OptionsDialog.cpp" line="+3340"/>
         <source>Test</source>
         <translation>テスト</translation>
     </message>
     <message>
-        <location filename="../src/gui/utils/FileAssociation.cpp" line="+481"/>
+        <location filename="../src/gui/utils/FileAssociation.cpp" line="+480"/>
         <source>Could not write the file association to the registry.</source>
         <translation>ファイルの関連付けをレジストリに書き込めませんでした。</translation>
     </message>
@@ -739,7 +739,7 @@ Has comments</source>
         <translation>LaunchServices が %1 を拒否しました。</translation>
     </message>
     <message>
-        <location line="+86"/>
+        <location line="+85"/>
         <source>No writable data directory.</source>
         <translation>書き込み可能なデータディレクトリがありません。</translation>
     </message>
@@ -6586,24 +6586,24 @@ Download it again?</source>
 <context>
     <name>eMule::OptionsDialog</name>
     <message>
-        <location filename="../src/gui/dialogs/OptionsDialog.cpp" line="-3228"/>
+        <location filename="../src/gui/dialogs/OptionsDialog.cpp" line="-3229"/>
         <source>Options</source>
         <translation>オプション</translation>
     </message>
     <message>
         <location line="+61"/>
-        <location line="+2140"/>
+        <location line="+2141"/>
         <source>OK</source>
         <translation>OK</translation>
     </message>
     <message>
-        <location line="-2139"/>
-        <location line="+2140"/>
+        <location line="-2140"/>
+        <location line="+2141"/>
         <source>Cancel</source>
         <translation>キャンセル</translation>
     </message>
     <message>
-        <location line="-2139"/>
+        <location line="-2140"/>
         <location line="+6126"/>
         <source>Apply</source>
         <translation>適用</translation>
@@ -6615,7 +6615,7 @@ Download it again?</source>
     </message>
     <message>
         <location line="+270"/>
-        <location line="+2137"/>
+        <location line="+2138"/>
         <location line="+59"/>
         <location line="+6"/>
         <location line="+4"/>
@@ -6627,7 +6627,7 @@ Download it again?</source>
         <translation>IP フィルター</translation>
     </message>
     <message>
-        <location line="-2251"/>
+        <location line="-2252"/>
         <source>IP filter reloaded: %1 entries.</source>
         <translation>IP フィルターを再読み込み：%1 エントリ。</translation>
     </message>
@@ -6674,7 +6674,7 @@ Download it again?</source>
     </message>
     <message>
         <location line="+14"/>
-        <location line="+771"/>
+        <location line="+772"/>
         <location line="+384"/>
         <location line="+475"/>
         <location line="+298"/>
@@ -6682,7 +6682,7 @@ Download it again?</source>
         <translation>その他</translation>
     </message>
     <message>
-        <location line="-1925"/>
+        <location line="-1926"/>
         <source>Bring to front on link click</source>
         <translation>リンクのクリック時に前面に表示</translation>
     </message>
@@ -6722,22 +6722,20 @@ Download it again?</source>
         <translation>webservices.dat が設定フォルダに見つかりませんでした。</translation>
     </message>
     <message>
-        <location line="+6"/>
         <source>Open eD2K links with eMule Qt</source>
-        <translation>eD2K リンクを eMule Qt で開く</translation>
+        <translation type="vanished">eD2K リンクを eMule Qt で開く</translation>
     </message>
     <message>
-        <location line="+2"/>
         <source>Makes eMule Qt the default app for ed2k:// links. Turning it off hands them to another app that opens them, if there is one.</source>
-        <translation>eMule Qt を ed2k:// リンクの既定のアプリにします。オフにすると、開ける別のアプリがあればそちらに渡します。</translation>
+        <translation type="vanished">eMule Qt を ed2k:// リンクの既定のアプリにします。オフにすると、開ける別のアプリがあればそちらに渡します。</translation>
     </message>
     <message>
-        <location line="+5"/>
+        <location line="+13"/>
         <source>Handle eD2K Links</source>
         <translation>eD2K リンクを処理</translation>
     </message>
     <message>
-        <location line="+12"/>
+        <location line="+13"/>
         <source>Startup</source>
         <translation>起動</translation>
     </message>
@@ -6778,12 +6776,12 @@ Download it again?</source>
     </message>
     <message>
         <location line="+8"/>
-        <location line="+5940"/>
+        <location line="+5939"/>
         <source>Core</source>
         <translation>コア</translation>
     </message>
     <message>
-        <location line="-5935"/>
+        <location line="-5934"/>
         <source>Address:</source>
         <translation>アドレス：</translation>
     </message>
@@ -6966,7 +6964,7 @@ Are you sure you want to continue?</source>
         <location line="+296"/>
         <location line="+1021"/>
         <location line="+152"/>
-        <location line="+997"/>
+        <location line="+996"/>
         <location line="+307"/>
         <location line="+284"/>
         <location line="+29"/>
@@ -6974,7 +6972,7 @@ Are you sure you want to continue?</source>
         <translation>有効</translation>
     </message>
     <message>
-        <location line="-5077"/>
+        <location line="-5076"/>
         <source>Reset</source>
         <translation>リセット</translation>
     </message>
@@ -6991,13 +6989,13 @@ Are you sure you want to continue?</source>
     <message>
         <location line="+3"/>
         <location line="+6"/>
-        <location line="+4469"/>
+        <location line="+4468"/>
         <location line="+334"/>
         <source> KB/s</source>
         <translation> KB/s</translation>
     </message>
     <message>
-        <location line="-4806"/>
+        <location line="-4805"/>
         <source>Upload</source>
         <translation>アップロード</translation>
     </message>
@@ -7028,12 +7026,12 @@ Are you sure you want to continue?</source>
     </message>
     <message>
         <location line="+23"/>
-        <location line="+4331"/>
+        <location line="+4330"/>
         <source>Client Port</source>
         <translation>クライアントポート</translation>
     </message>
     <message>
-        <location line="-4328"/>
+        <location line="-4327"/>
         <source>TCP</source>
         <translation>TCP</translation>
     </message>
@@ -7089,12 +7087,12 @@ Are you sure you want to continue?</source>
     <message>
         <location line="+4"/>
         <location line="+1733"/>
-        <location line="+5490"/>
+        <location line="+5489"/>
         <source>Any</source>
         <translation>すべて</translation>
     </message>
     <message>
-        <location line="-7221"/>
+        <location line="-7220"/>
         <source>Use only this network interface, for example a VPN tunnel. Pick one from the list, or type an IP address or a subnet such as 10.64.0.0/10 (the interface holding an address in it). Connections through a proxy are not bound.</source>
         <translation>このネットワークインターフェース（VPN トンネルなど）のみを使用します。一覧から選ぶか、IP アドレスまたは 10.64.0.0/10 のようなサブネット（その範囲のアドレスを持つインターフェース）を入力してください。プロキシ経由の接続はバインドされません。</translation>
     </message>
@@ -7115,12 +7113,12 @@ Are you sure you want to continue?</source>
     </message>
     <message>
         <location line="+6"/>
-        <location line="+4333"/>
+        <location line="+4332"/>
         <source>Connection Limits</source>
         <translation>接続制限</translation>
     </message>
     <message>
-        <location line="-4331"/>
+        <location line="-4330"/>
         <source>Max. connections</source>
         <translation>最大接続数</translation>
     </message>
@@ -8109,8 +8107,8 @@ Every Usenet connection then passes through the proxy, so its speed caps the dow
         <translation>検索に現れたファイルとそのときの名前をローカルに記録し、以後の検索で以前に見たものを表示できるようにします。</translation>
     </message>
     <message>
-        <location line="-1358"/>
-        <location line="+1578"/>
+        <location line="-1359"/>
+        <location line="+1579"/>
         <source>Connection</source>
         <translation>接続</translation>
     </message>
@@ -8485,12 +8483,12 @@ Every Usenet connection then passes through the proxy, so its speed caps the dow
     </message>
     <message>
         <location line="+8"/>
-        <location line="+2159"/>
+        <location line="+2158"/>
         <source>Encryption:</source>
         <translation>暗号化:</translation>
     </message>
     <message>
-        <location line="-2156"/>
+        <location line="-2155"/>
         <source>None (119)</source>
         <translation>なし (119)</translation>
     </message>
@@ -8579,13 +8577,13 @@ Every Usenet connection then passes through the proxy, so its speed caps the dow
         <translation>厳格</translation>
     </message>
     <message>
-        <location line="-2808"/>
+        <location line="-2809"/>
         <location line="+8200"/>
         <source>BitTorrent</source>
         <translation>BitTorrent</translation>
     </message>
     <message>
-        <location line="-7875"/>
+        <location line="-7874"/>
         <source>Show download progress on the Dock icon</source>
         <translation>Dock アイコンにダウンロードの進捗を表示</translation>
     </message>
@@ -8737,12 +8735,12 @@ Every Usenet connection then passes through the proxy, so its speed caps the dow
         <location line="+1"/>
         <location line="+1963"/>
         <location line="+9"/>
-        <location line="+138"/>
+        <location line="+137"/>
         <source>No limit</source>
         <translation>制限なし</translation>
     </message>
     <message>
-        <location line="-2102"/>
+        <location line="-2101"/>
         <source>Allowance size:</source>
         <translation>上限サイズ:</translation>
     </message>
@@ -8798,19 +8796,19 @@ Every Usenet connection then passes through the proxy, so its speed caps the dow
     </message>
     <message>
         <location line="+8"/>
-        <location line="+2044"/>
+        <location line="+2043"/>
         <source>Share of the download limit:</source>
         <translation>ダウンロード制限の割り当て:</translation>
     </message>
     <message>
-        <location line="-2041"/>
+        <location line="-2040"/>
         <location line="+42"/>
-        <location line="+1991"/>
+        <location line="+1990"/>
         <source> %</source>
         <translation> %</translation>
     </message>
     <message>
-        <location line="-2031"/>
+        <location line="-2030"/>
         <source>How much of the global download limit Usenet may take while eD2K is also downloading. Whichever engine is idle lends its whole share to the other, so this only applies when both are busy.</source>
         <translation>eD2K も同時にダウンロードしているときに、Usenet が全体のダウンロード制限のうちどれだけを使えるかを指定します。アイドル状態のエンジンは自分の割り当てをすべてもう一方に譲るため、これは両方が動作しているときにのみ適用されます。</translation>
     </message>
@@ -9617,7 +9615,7 @@ Adding one later does not fetch its back catalogue: a new indexer gets its own f
         <translation type="vanished">デーモンと共に BitTorrent エンジンを起動します。オフの場合、Torrent のダウンロードもシードも行いません。</translation>
     </message>
     <message>
-        <location line="+3420"/>
+        <location line="+3419"/>
         <source>unlimited</source>
         <translation>無制限</translation>
     </message>
@@ -9698,7 +9696,7 @@ Adding one later does not fetch its back catalogue: a new indexer gets its own f
         <translation type="vanished">アップロード:</translation>
     </message>
     <message>
-        <location line="-123"/>
+        <location line="-122"/>
         <source>Active downloads:</source>
         <translation>アクティブダウンロード:</translation>
     </message>
@@ -9748,22 +9746,19 @@ Adding one later does not fetch its back catalogue: a new indexer gets its own f
         <translation>空欄にすると Torrent は受信フォルダに保存されます。</translation>
     </message>
     <message>
-        <location line="+48"/>
         <source>Open .torrent files, magnet and ed3k links with eMule Qt</source>
-        <translation>.torrent ファイル、magnet リンク、ed3k リンクを eMule Qt で開く</translation>
+        <translation type="vanished">.torrent ファイル、magnet リンク、ed3k リンクを eMule Qt で開く</translation>
     </message>
     <message>
-        <location line="+3"/>
         <source>Makes eMule Qt the default app for .torrent files, magnet: and ed3k: links. Turning it off hands them to another app that opens them, if there is one.</source>
-        <translation>eMule Qt を .torrent ファイル、magnet: および ed3k: リンクの既定のアプリにします。オフにすると、開ける別のアプリがあればそちらに渡します。</translation>
+        <translation type="vanished">eMule Qt を .torrent ファイル、magnet: および ed3k: リンクの既定のアプリにします。オフにすると、開ける別のアプリがあればそちらに渡します。</translation>
     </message>
     <message>
-        <location line="+5"/>
         <source>Claim .torrent files, magnet: and ed3k: links for this copy of eMule Qt. The setting is for you alone and needs no administrator; it is re-applied at every start, so another program taking the association does not keep it.</source>
-        <translation>.torrent ファイル、magnet: および ed3k: リンクをこの eMule Qt に関連付けます。この設定はあなた専用で管理者権限は不要です。起動のたびに再適用されるため、別のプログラムが関連付けを奪っても維持されません。</translation>
+        <translation type="vanished">.torrent ファイル、magnet: および ed3k: リンクをこの eMule Qt に関連付けます。この設定はあなた専用で管理者権限は不要です。起動のたびに再適用されるため、別のプログラムが関連付けを奪っても維持されません。</translation>
     </message>
     <message>
-        <location line="+18"/>
+        <location line="+73"/>
         <source>BitTorrent download folder</source>
         <translation>BitTorrent ダウンロードフォルダ</translation>
     </message>
@@ -10032,12 +10027,27 @@ Create it?</source>
         <translation>サーバーとクライアントの LAN IP をフィルター</translation>
     </message>
     <message>
-        <location line="-4752"/>
+        <location line="-4751"/>
         <source>Show more controls (advanced mode controls)</source>
         <translation>詳細コントロールを表示（詳細モード）</translation>
     </message>
     <message>
-        <location line="+989"/>
+        <location line="-198"/>
+        <source>Open eD2K and ed3k links with eMule Qt</source>
+        <translation>eD2K リンクと ed3k リンクを eMule Qt で開く</translation>
+    </message>
+    <message>
+        <location line="+2"/>
+        <source>Makes eMule Qt the default app for ed2k:// and ed3k: links. Turning it off hands them to another app that opens them, if there is one.</source>
+        <translation>eMule Qt を ed2k:// および ed3k: リンクの既定のアプリにします。オフにすると、開ける別のアプリがあればそちらに渡します。</translation>
+    </message>
+    <message>
+        <location line="+6"/>
+        <source>Makes eMule Qt the handler for ed2k:// and ed3k: links.</source>
+        <translation>eMule Qt を ed2k:// および ed3k: リンクのハンドラーにします。</translation>
+    </message>
+    <message>
+        <location line="+1179"/>
         <source>Rehash All Files...</source>
         <translation>全ファイルを再ハッシュ...</translation>
     </message>
@@ -10052,15 +10062,22 @@ Create it?</source>
         <translation>コアで BitTorrent エンジンを実行します。オフにするとエンジンは停止し、トレントのダウンロードもシードも行われず、BitTorrent ポートは閉じられます。トレントは一覧に残り、再びオンにすると続行します。</translation>
     </message>
     <message>
+        <location line="+58"/>
         <source>Open .torrent files and magnet links with eMule Qt</source>
-        <translation type="vanished">.torrent ファイルとマグネットリンクを eMule Qt で開く</translation>
+        <translation>.torrent ファイルとマグネットリンクを eMule Qt で開く</translation>
     </message>
     <message>
+        <location line="+3"/>
+        <source>Makes eMule Qt the default app for .torrent files and magnet: links. Turning it off hands them to another app that opens them, if there is one.</source>
+        <translation>eMule Qt を .torrent ファイルと magnet: リンクの既定のアプリにします。オフにすると、開ける別のアプリがあればそちらに渡します。</translation>
+    </message>
+    <message>
+        <location line="+4"/>
         <source>Claim .torrent files and magnet: links for this copy of eMule Qt. The setting is for you alone and needs no administrator; it is re-applied at every start, so another program taking the association does not keep it.</source>
-        <translation type="vanished">.torrent ファイルと magnet: リンクをこの eMule Qt に関連付けます。この設定はあなた専用で、管理者権限は不要です。起動のたびに再適用されるため、他のプログラムが関連付けを奪っても元に戻ります。</translation>
+        <translation>.torrent ファイルと magnet: リンクをこの eMule Qt に関連付けます。この設定はあなた専用で、管理者権限は不要です。起動のたびに再適用されるため、他のプログラムが関連付けを奪っても元に戻ります。</translation>
     </message>
     <message>
-        <location line="+156"/>
+        <location line="+90"/>
         <source>Global limits:</source>
         <translation>全体の制限:</translation>
     </message>
@@ -10451,17 +10468,17 @@ News server connections switch over immediately.</source>
         <translation>既定値に戻す</translation>
     </message>
     <message>
-        <location line="-5277"/>
+        <location line="-5276"/>
         <location line="+1024"/>
         <location line="+154"/>
-        <location line="+1606"/>
+        <location line="+1605"/>
         <location line="+316"/>
         <location line="+2175"/>
         <source>Remove</source>
         <translation>削除</translation>
     </message>
     <message>
-        <location line="-6508"/>
+        <location line="-6507"/>
         <source>New eMule Qt version detected</source>
         <translation>新しい eMule Qt バージョンを検出しました</translation>
     </message>
@@ -10471,7 +10488,7 @@ News server connections switch over immediately.</source>
         <translation>URL から更新: （filter.dat 形式または PeerGuardian 形式、.gz/.zip 可）</translation>
     </message>
     <message>
-        <location line="+3304"/>
+        <location line="+3303"/>
         <source>Write eMule core logs to disk</source>
         <translation>eMule コアのログをディスクに書き込む</translation>
     </message>
@@ -10531,14 +10548,14 @@ News server connections switch over immediately.</source>
         <translation>要求するリース時間:</translation>
     </message>
     <message>
-        <location line="-2493"/>
+        <location line="-2492"/>
         <location line="+918"/>
-        <location line="+1579"/>
+        <location line="+1578"/>
         <source> s</source>
         <translation> 秒</translation>
     </message>
     <message>
-        <location line="-5083"/>
+        <location line="-5082"/>
         <source>Downloads that are receiving data, and the sources sending it, are drawn in bold. A source listed under another file (A4AF) is bold too while it transfers. The connected server and the selected category tab are bold as well.</source>
         <translation>データを受信中のダウンロードと、それを送信しているソースを太字で表示します。別のファイルの下にあるソース (A4AF) も転送中は太字になります。接続中のサーバーと選択中のカテゴリタブも太字になります。</translation>
     </message>
@@ -10594,7 +10611,7 @@ Set it slightly under your plan. The figure is measured here, so it reads a few 
         <translation>キュー</translation>
     </message>
     <message>
-        <location line="+92"/>
+        <location line="+91"/>
         <source>Used for both TCP and UDP. Must differ from the eD2K ports, the web server port and the core port.</source>
         <translation>TCP と UDP の両方に使います。eD2K のポート、Web サーバーのポート、コアのポートとは別にしてください。</translation>
     </message>
@@ -10798,10 +10815,10 @@ Set it slightly under your plan. The figure is measured here, so it reads a few 
         <translation>新しいスケジュール</translation>
     </message>
     <message>
-        <location line="-2878"/>
+        <location line="-2877"/>
         <location line="+1024"/>
         <location line="+154"/>
-        <location line="+1879"/>
+        <location line="+1878"/>
         <location line="+2213"/>
         <source>Add</source>
         <translation>追加</translation>

@@ -5,7 +5,7 @@
 
 namespace eMule {
 
-/// Register this application as the handler for ed2k:// URLs.
+/// Register this application as the handler for ed2k:// URLs, and ed3k: ones with them.
 void registerEd2kUrlScheme();
 
 /// Check whether this application is currently registered as the ed2k:// handler.

@@ -70,12 +70,11 @@ QStringList xdgMimeTypes(FileTypes types)
     if (types.nzb)
         out << QLatin1String(kNzbMimeType);
     if (types.torrent)
-        out << QLatin1String(kTorrentMimeType) << QStringLiteral("x-scheme-handler/magnet")
-            << QStringLiteral("x-scheme-handler/ed3k");
-    // The ed2k scheme comes along with any type. The macOS bundle has claimed it
-    // since day one.
+        out << QLatin1String(kTorrentMimeType) << QStringLiteral("x-scheme-handler/magnet");
+    // The ed2k scheme, and ed3k with it, comes along with any type. The macOS
+    // bundle has claimed ed2k since day one.
     if (types.any())
-        out << QStringLiteral("x-scheme-handler/ed2k");
+        out << QStringLiteral("x-scheme-handler/ed2k") << QStringLiteral("x-scheme-handler/ed3k");
     return out;
 }
 
@@ -254,7 +253,6 @@ QList<RegistryValue> registryValues(const QString& exePath, FileTypes types)
     if (types.torrent) {
         fileType(QStringLiteral(".torrent"), QLatin1String(kTorrentProgId), QStringLiteral("BitTorrent File"));
         urlScheme(QStringLiteral("magnet"), QStringLiteral("URL:Magnet Link"));
-        urlScheme(QStringLiteral("ed3k"), QStringLiteral("URL:eD3K Link"));
     }
     return out;
 }
@@ -298,10 +296,11 @@ QList<Target> targetsOf(FileTypes types)
     if (types.torrent) {
         out.append({false, QStringLiteral("torrent")});
         out.append({true, QStringLiteral("magnet")});
+    }
+    if (types.ed2k) {
+        out.append({true, QStringLiteral("ed2k")});
         out.append({true, QStringLiteral("ed3k")});
     }
-    if (types.ed2k)
-        out.append({true, QStringLiteral("ed2k")});
     return out;
 }
 
@@ -498,7 +497,6 @@ bool applyFileTypes(FileTypes types, QString& error)
     if (!types.torrent) {
         dropFileType(classes, QStringLiteral(".torrent"), QLatin1String(kTorrentProgId));
         dropScheme(classes, QStringLiteral("magnet"));
-        dropScheme(classes, QStringLiteral("ed3k"));
     }
     for (const auto& value : registryValues(exePath(), types)) {
         // Pick the leaf first, and keep the join in a QString: with

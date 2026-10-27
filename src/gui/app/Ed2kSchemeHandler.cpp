@@ -1,6 +1,6 @@
 #include "pch.h"
 /// @file Ed2kSchemeHandler.cpp
-/// @brief Platform-specific ed2k:// URL scheme registration.
+/// @brief Platform-specific ed2k:// URL scheme registration, ed3k: with it.
 
 #include "app/Ed2kSchemeHandler.h"
 #include "app/UiState.h"
@@ -23,6 +23,7 @@
 
 #ifdef Q_OS_WIN
 #include <QSettings>
+#include <utility>
 #endif
 
 namespace eMule {
@@ -41,11 +42,14 @@ void registerEd2kUrlScheme()
         return;
     }
 
-    OSStatus status = LSSetDefaultHandlerForURLScheme(CFSTR("ed2k"), bundleId);
-    if (status == noErr)
-        logInfo(QStringLiteral("Registered as ed2k:// handler"));
-    else
-        logWarning(QStringLiteral("Failed to register ed2k:// handler (OSStatus %1)").arg(status));
+    for (const CFStringRef scheme : {CFSTR("ed2k"), CFSTR("ed3k")}) {
+        const OSStatus status = LSSetDefaultHandlerForURLScheme(scheme, bundleId);
+        const QString name = QString::fromCFString(scheme);
+        if (status == noErr)
+            logInfo(QStringLiteral("Registered as %1: handler").arg(name));
+        else
+            logWarning(QStringLiteral("Failed to register %1: handler (OSStatus %2)").arg(name).arg(status));
+    }
 }
 
 bool isEd2kSchemeRegistered()
@@ -105,13 +109,16 @@ void registerEd2kUrlScheme()
 {
     const QString appPath = QCoreApplication::applicationFilePath().replace(QLatin1Char('/'), QLatin1Char('\\'));
 
-    QSettings reg(QStringLiteral("HKEY_CURRENT_USER\\Software\\Classes\\ed2k"), QSettings::NativeFormat);
-    reg.setValue(QStringLiteral("Default"), QStringLiteral("URL:eD2K Protocol"));
-    reg.setValue(QStringLiteral("URL Protocol"), QString());
-    reg.setValue(QStringLiteral("shell/open/command/Default"),
-                 QStringLiteral("\"%1\" \"%2\"").arg(appPath, QStringLiteral("%1")));
+    for (const auto& [scheme, name] : {std::pair{QStringLiteral("ed2k"), QStringLiteral("URL:eD2K Protocol")},
+                                       std::pair{QStringLiteral("ed3k"), QStringLiteral("URL:eD3K Protocol")}}) {
+        QSettings reg(QStringLiteral("HKEY_CURRENT_USER\\Software\\Classes\\") + scheme, QSettings::NativeFormat);
+        reg.setValue(QStringLiteral("Default"), name);
+        reg.setValue(QStringLiteral("URL Protocol"), QString());
+        reg.setValue(QStringLiteral("shell/open/command/Default"),
+                     QStringLiteral("\"%1\" \"%2\"").arg(appPath, QStringLiteral("%1")));
+    }
 
-    logInfo(QStringLiteral("Registered as ed2k:// handler"));
+    logInfo(QStringLiteral("Registered as ed2k:// and ed3k: handler"));
 }
 
 bool isEd2kSchemeRegistered()

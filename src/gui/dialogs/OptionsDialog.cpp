@@ -869,14 +869,15 @@ QWidget* OptionsDialog::createGeneralPage()
     miscBtnLayout->addWidget(webServicesBtn);
 #ifdef Q_OS_MACOS
     // no MFC original to match here, and LaunchServices can give the scheme back
-    m_associateEd2kCheck = new QCheckBox(tr("Open eD2K links with eMule Qt"), miscGroup);
+    m_associateEd2kCheck = new QCheckBox(tr("Open eD2K and ed3k links with eMule Qt"), miscGroup);
     m_associateEd2kCheck->setToolTip(
-        tr("Makes eMule Qt the default app for ed2k:// links. Turning it off hands "
-           "them to another app that opens them, if there is one."));
+        tr("Makes eMule Qt the default app for ed2k:// and ed3k: links. Turning it off "
+           "hands them to another app that opens them, if there is one."));
     miscLayout->addWidget(m_associateEd2kCheck);
     connect(m_associateEd2kCheck, &QCheckBox::toggled, this, &OptionsDialog::markDirty);
 #else
     auto* ed2kLinksBtn = new QPushButton(tr("Handle eD2K Links"), miscGroup);
+    ed2kLinksBtn->setToolTip(tr("Makes eMule Qt the handler for ed2k:// and ed3k: links."));
     connect(ed2kLinksBtn, &QPushButton::clicked, this, [] {
         eMule::registerEd2kUrlScheme();
     });
@@ -5546,18 +5547,17 @@ QWidget* OptionsDialog::createBitTorrentPage()
     {
         auto* desktopGroup = new QGroupBox(tr("Desktop"), page);
         auto* desktopLayout = new QVBoxLayout(desktopGroup);
-        m_associateTorrentCheck = new QCheckBox(
-            tr("Open .torrent files, magnet and ed3k links with eMule Qt"), desktopGroup);
+        m_associateTorrentCheck =
+            new QCheckBox(tr("Open .torrent files and magnet links with eMule Qt"), desktopGroup);
 #ifdef Q_OS_MACOS
         m_associateTorrentCheck->setToolTip(
-            tr("Makes eMule Qt the default app for .torrent files, magnet: and ed3k: "
-               "links. Turning it off hands them to another app that opens them, if "
-               "there is one."));
+            tr("Makes eMule Qt the default app for .torrent files and magnet: links. "
+               "Turning it off hands them to another app that opens them, if there is one."));
 #else
         m_associateTorrentCheck->setToolTip(
-            tr("Claim .torrent files, magnet: and ed3k: links for this copy of eMule Qt. "
-               "The setting is for you alone and needs no administrator; it is re-applied "
-               "at every start, so another program taking the association does not keep it."));
+            tr("Claim .torrent files and magnet: links for this copy of eMule Qt. The setting "
+               "is for you alone and needs no administrator; it is re-applied at every "
+               "start, so another program taking the association does not keep it."));
 #endif
         desktopLayout->addWidget(m_associateTorrentCheck);
         mainLayout->addWidget(desktopGroup);

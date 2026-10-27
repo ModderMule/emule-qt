@@ -219,9 +219,6 @@ void tst_FileAssociation::torrentClaimsTheFileTypeAndTheMagnetScheme()
     const QString mime = contentsOf(files, QStringLiteral("emuleqt-torrent.xml"));
     QVERIFY(mime.contains(QStringLiteral("*.torrent")));
     QVERIFY(FileAssociation::xdgMimeTypes(kTorrent).contains(QStringLiteral("x-scheme-handler/magnet")));
-    // ed3k:file?…bt= links go to the Torrents tab, so the torrent switch claims ed3k too
-    QVERIFY(desktop.contains(QStringLiteral("x-scheme-handler/ed3k")));
-    QVERIFY(!FileAssociation::xdgMimeTypes(kNzb).contains(QStringLiteral("x-scheme-handler/ed3k")));
 }
 
 void tst_FileAssociation::typesSwitchedOffAreLeftOut()
@@ -244,12 +241,13 @@ void tst_FileAssociation::typesSwitchedOffAreLeftOut()
     const auto ed2k = FileAssociation::desktopFiles(QStringLiteral("/opt/emuleqt"),
                                                     QStringLiteral("/home/u/.local/share"), {.ed2k = true});
     QCOMPARE(ed2k.size(), 1);
-    QVERIFY(contentsOf(ed2k, QStringLiteral("emuleqt.desktop")).contains(QStringLiteral("MimeType=x-scheme-handler/ed2k;\n")));
+    // ed3k goes with ed2k (Options → General)
+    QVERIFY(contentsOf(ed2k, QStringLiteral("emuleqt.desktop"))
+                .contains(QStringLiteral("MimeType=x-scheme-handler/ed2k;x-scheme-handler/ed3k;\n")));
 
     QVERIFY(FileAssociation::registryValues(QStringLiteral("C:\\e.exe"), {}).isEmpty());
     for (const auto& value : FileAssociation::registryValues(QStringLiteral("C:\\e.exe"), kNzb))
-        QVERIFY2(!value.key.contains(QStringLiteral("torrent")) && !value.key.startsWith(QStringLiteral("magnet"))
-                     && !value.key.startsWith(QStringLiteral("ed3k")),
+        QVERIFY2(!value.key.contains(QStringLiteral("torrent")) && !value.key.startsWith(QStringLiteral("magnet")),
                  qPrintable(value.key));
 }
 
@@ -270,8 +268,9 @@ void tst_FileAssociation::theMagnetSchemeIsAUrlProtocol()
     }
     QVERIFY(urlProtocol);
     QCOMPARE(command, QStringLiteral("\"C:\\Program Files\\eMule Qt\\emuleqt.exe\" \"%1\""));
-    QVERIFY(std::ranges::any_of(values, [](const FileAssociation::RegistryValue& v) {
-        return v.key == QStringLiteral("ed3k") && v.name == QStringLiteral("URL Protocol");
+    // ed3k is the ed2k switch's (Ed2kSchemeHandler), never the torrent one's
+    QVERIFY(std::ranges::none_of(values, [](const FileAssociation::RegistryValue& v) {
+        return v.key.startsWith(QStringLiteral("ed3k"));
     }));
     QCOMPARE(torrentProgId, QStringLiteral("eMuleQt.torrent"));
 }

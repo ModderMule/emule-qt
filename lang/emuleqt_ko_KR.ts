@@ -715,12 +715,12 @@ Has comments</source>
         <translation type="vanished">%1 Bytes</translation>
     </message>
     <message>
-        <location filename="../src/gui/dialogs/OptionsDialog.cpp" line="+3339"/>
+        <location filename="../src/gui/dialogs/OptionsDialog.cpp" line="+3340"/>
         <source>Test</source>
         <translation>테스트</translation>
     </message>
     <message>
-        <location filename="../src/gui/utils/FileAssociation.cpp" line="+481"/>
+        <location filename="../src/gui/utils/FileAssociation.cpp" line="+480"/>
         <source>Could not write the file association to the registry.</source>
         <translation>파일 연결을 레지스트리에 기록하지 못했습니다.</translation>
     </message>
@@ -739,7 +739,7 @@ Has comments</source>
         <translation>LaunchServices가 %1을(를) 거부했습니다.</translation>
     </message>
     <message>
-        <location line="+86"/>
+        <location line="+85"/>
         <source>No writable data directory.</source>
         <translation>쓰기 가능한 데이터 디렉터리가 없습니다.</translation>
     </message>
@@ -6586,24 +6586,24 @@ Download it again?</source>
 <context>
     <name>eMule::OptionsDialog</name>
     <message>
-        <location filename="../src/gui/dialogs/OptionsDialog.cpp" line="-3228"/>
+        <location filename="../src/gui/dialogs/OptionsDialog.cpp" line="-3229"/>
         <source>Options</source>
         <translation>옵션</translation>
     </message>
     <message>
         <location line="+61"/>
-        <location line="+2140"/>
+        <location line="+2141"/>
         <source>OK</source>
         <translation>확인</translation>
     </message>
     <message>
-        <location line="-2139"/>
-        <location line="+2140"/>
+        <location line="-2140"/>
+        <location line="+2141"/>
         <source>Cancel</source>
         <translation>취소</translation>
     </message>
     <message>
-        <location line="-2139"/>
+        <location line="-2140"/>
         <location line="+6126"/>
         <source>Apply</source>
         <translation>적용</translation>
@@ -6615,7 +6615,7 @@ Download it again?</source>
     </message>
     <message>
         <location line="+270"/>
-        <location line="+2137"/>
+        <location line="+2138"/>
         <location line="+59"/>
         <location line="+6"/>
         <location line="+4"/>
@@ -6627,7 +6627,7 @@ Download it again?</source>
         <translation>IP 필터</translation>
     </message>
     <message>
-        <location line="-2251"/>
+        <location line="-2252"/>
         <source>IP filter reloaded: %1 entries.</source>
         <translation>IP 필터 다시 로드됨: %1개 항목.</translation>
     </message>
@@ -6674,7 +6674,7 @@ Download it again?</source>
     </message>
     <message>
         <location line="+14"/>
-        <location line="+771"/>
+        <location line="+772"/>
         <location line="+384"/>
         <location line="+475"/>
         <location line="+298"/>
@@ -6682,7 +6682,7 @@ Download it again?</source>
         <translation>기타</translation>
     </message>
     <message>
-        <location line="-1925"/>
+        <location line="-1926"/>
         <source>Bring to front on link click</source>
         <translation>링크 클릭 시 앞으로 가져오기</translation>
     </message>
@@ -6722,22 +6722,20 @@ Download it again?</source>
         <translation>설정 폴더에서 webservices.dat를 찾을 수 없습니다.</translation>
     </message>
     <message>
-        <location line="+6"/>
         <source>Open eD2K links with eMule Qt</source>
-        <translation>eD2K 링크를 eMule Qt로 열기</translation>
+        <translation type="vanished">eD2K 링크를 eMule Qt로 열기</translation>
     </message>
     <message>
-        <location line="+2"/>
         <source>Makes eMule Qt the default app for ed2k:// links. Turning it off hands them to another app that opens them, if there is one.</source>
-        <translation>eMule Qt를 ed2k:// 링크의 기본 앱으로 지정합니다. 끄면 이를 열 수 있는 다른 앱이 있을 경우 그 앱에 넘깁니다.</translation>
+        <translation type="vanished">eMule Qt를 ed2k:// 링크의 기본 앱으로 지정합니다. 끄면 이를 열 수 있는 다른 앱이 있을 경우 그 앱에 넘깁니다.</translation>
     </message>
     <message>
-        <location line="+5"/>
+        <location line="+13"/>
         <source>Handle eD2K Links</source>
         <translation>eD2K 링크 처리</translation>
     </message>
     <message>
-        <location line="+12"/>
+        <location line="+13"/>
         <source>Startup</source>
         <translation>시작</translation>
     </message>
@@ -6778,12 +6776,12 @@ Download it again?</source>
     </message>
     <message>
         <location line="+8"/>
-        <location line="+5940"/>
+        <location line="+5939"/>
         <source>Core</source>
         <translation>코어</translation>
     </message>
     <message>
-        <location line="-5935"/>
+        <location line="-5934"/>
         <source>Address:</source>
         <translation>주소:</translation>
     </message>
@@ -6966,7 +6964,7 @@ Are you sure you want to continue?</source>
         <location line="+296"/>
         <location line="+1021"/>
         <location line="+152"/>
-        <location line="+997"/>
+        <location line="+996"/>
         <location line="+307"/>
         <location line="+284"/>
         <location line="+29"/>
@@ -6974,7 +6972,7 @@ Are you sure you want to continue?</source>
         <translation>활성화됨</translation>
     </message>
     <message>
-        <location line="-5077"/>
+        <location line="-5076"/>
         <source>Reset</source>
         <translation>초기화</translation>
     </message>
@@ -6991,13 +6989,13 @@ Are you sure you want to continue?</source>
     <message>
         <location line="+3"/>
         <location line="+6"/>
-        <location line="+4469"/>
+        <location line="+4468"/>
         <location line="+334"/>
         <source> KB/s</source>
         <translation> KB/s</translation>
     </message>
     <message>
-        <location line="-4806"/>
+        <location line="-4805"/>
         <source>Upload</source>
         <translation>업로드</translation>
     </message>
@@ -7028,12 +7026,12 @@ Are you sure you want to continue?</source>
     </message>
     <message>
         <location line="+23"/>
-        <location line="+4331"/>
+        <location line="+4330"/>
         <source>Client Port</source>
         <translation>클라이언트 포트</translation>
     </message>
     <message>
-        <location line="-4328"/>
+        <location line="-4327"/>
         <source>TCP</source>
         <translation>TCP</translation>
     </message>
@@ -7089,12 +7087,12 @@ Are you sure you want to continue?</source>
     <message>
         <location line="+4"/>
         <location line="+1733"/>
-        <location line="+5490"/>
+        <location line="+5489"/>
         <source>Any</source>
         <translation>모든</translation>
     </message>
     <message>
-        <location line="-7221"/>
+        <location line="-7220"/>
         <source>Use only this network interface, for example a VPN tunnel. Pick one from the list, or type an IP address or a subnet such as 10.64.0.0/10 (the interface holding an address in it). Connections through a proxy are not bound.</source>
         <translation>이 네트워크 인터페이스(예: VPN 터널)만 사용합니다. 목록에서 선택하거나 IP 주소 또는 10.64.0.0/10 같은 서브넷(해당 범위의 주소를 가진 인터페이스)을 입력하십시오. 프록시를 통한 연결은 바인딩되지 않습니다.</translation>
     </message>
@@ -7115,12 +7113,12 @@ Are you sure you want to continue?</source>
     </message>
     <message>
         <location line="+6"/>
-        <location line="+4333"/>
+        <location line="+4332"/>
         <source>Connection Limits</source>
         <translation>연결 제한</translation>
     </message>
     <message>
-        <location line="-4331"/>
+        <location line="-4330"/>
         <source>Max. connections</source>
         <translation>최대 연결 수</translation>
     </message>
@@ -8109,8 +8107,8 @@ Every Usenet connection then passes through the proxy, so its speed caps the dow
         <translation>검색에 나타난 파일과 그때의 이름을 로컬에 기록하여, 이후 검색에서 이전에 본 항목을 표시할 수 있게 합니다.</translation>
     </message>
     <message>
-        <location line="-1358"/>
-        <location line="+1578"/>
+        <location line="-1359"/>
+        <location line="+1579"/>
         <source>Connection</source>
         <translation>연결</translation>
     </message>
@@ -8485,12 +8483,12 @@ Every Usenet connection then passes through the proxy, so its speed caps the dow
     </message>
     <message>
         <location line="+8"/>
-        <location line="+2159"/>
+        <location line="+2158"/>
         <source>Encryption:</source>
         <translation>암호화:</translation>
     </message>
     <message>
-        <location line="-2156"/>
+        <location line="-2155"/>
         <source>None (119)</source>
         <translation>없음 (119)</translation>
     </message>
@@ -8579,13 +8577,13 @@ Every Usenet connection then passes through the proxy, so its speed caps the dow
         <translation>엄격</translation>
     </message>
     <message>
-        <location line="-2808"/>
+        <location line="-2809"/>
         <location line="+8200"/>
         <source>BitTorrent</source>
         <translation>BitTorrent</translation>
     </message>
     <message>
-        <location line="-7875"/>
+        <location line="-7874"/>
         <source>Show download progress on the Dock icon</source>
         <translation>Dock 아이콘에 다운로드 진행률 표시</translation>
     </message>
@@ -8737,12 +8735,12 @@ Every Usenet connection then passes through the proxy, so its speed caps the dow
         <location line="+1"/>
         <location line="+1963"/>
         <location line="+9"/>
-        <location line="+138"/>
+        <location line="+137"/>
         <source>No limit</source>
         <translation>제한 없음</translation>
     </message>
     <message>
-        <location line="-2102"/>
+        <location line="-2101"/>
         <source>Allowance size:</source>
         <translation>허용량 크기:</translation>
     </message>
@@ -8798,19 +8796,19 @@ Every Usenet connection then passes through the proxy, so its speed caps the dow
     </message>
     <message>
         <location line="+8"/>
-        <location line="+2044"/>
+        <location line="+2043"/>
         <source>Share of the download limit:</source>
         <translation>다운로드 제한 중 할당 비율:</translation>
     </message>
     <message>
-        <location line="-2041"/>
+        <location line="-2040"/>
         <location line="+42"/>
-        <location line="+1991"/>
+        <location line="+1990"/>
         <source> %</source>
         <translation> %</translation>
     </message>
     <message>
-        <location line="-2031"/>
+        <location line="-2030"/>
         <source>How much of the global download limit Usenet may take while eD2K is also downloading. Whichever engine is idle lends its whole share to the other, so this only applies when both are busy.</source>
         <translation>eD2K도 다운로드 중일 때 Usenet이 전체 다운로드 제한 중 얼마나 차지할 수 있는지 정합니다. 유휴 상태인 엔진은 자신의 몫을 모두 다른 쪽에 넘겨주므로, 이 값은 양쪽이 모두 바쁠 때만 적용됩니다.</translation>
     </message>
@@ -9617,7 +9615,7 @@ Adding one later does not fetch its back catalogue: a new indexer gets its own f
         <translation type="vanished">데몬과 함께 BitTorrent 엔진을 시작합니다. 끄면 토렌트를 다운로드하거나 시딩하지 않습니다.</translation>
     </message>
     <message>
-        <location line="+3420"/>
+        <location line="+3419"/>
         <source>unlimited</source>
         <translation>무제한</translation>
     </message>
@@ -9698,7 +9696,7 @@ Adding one later does not fetch its back catalogue: a new indexer gets its own f
         <translation type="vanished">업로드:</translation>
     </message>
     <message>
-        <location line="-123"/>
+        <location line="-122"/>
         <source>Active downloads:</source>
         <translation>활성 다운로드:</translation>
     </message>
@@ -9748,22 +9746,19 @@ Adding one later does not fetch its back catalogue: a new indexer gets its own f
         <translation>비워 두면 토렌트를 수신 폴더에 저장합니다.</translation>
     </message>
     <message>
-        <location line="+48"/>
         <source>Open .torrent files, magnet and ed3k links with eMule Qt</source>
-        <translation>.torrent 파일, magnet 및 ed3k 링크를 eMule Qt로 열기</translation>
+        <translation type="vanished">.torrent 파일, magnet 및 ed3k 링크를 eMule Qt로 열기</translation>
     </message>
     <message>
-        <location line="+3"/>
         <source>Makes eMule Qt the default app for .torrent files, magnet: and ed3k: links. Turning it off hands them to another app that opens them, if there is one.</source>
-        <translation>eMule Qt를 .torrent 파일, magnet: 및 ed3k: 링크의 기본 앱으로 지정합니다. 끄면 이를 열 수 있는 다른 앱이 있을 경우 그 앱에 넘깁니다.</translation>
+        <translation type="vanished">eMule Qt를 .torrent 파일, magnet: 및 ed3k: 링크의 기본 앱으로 지정합니다. 끄면 이를 열 수 있는 다른 앱이 있을 경우 그 앱에 넘깁니다.</translation>
     </message>
     <message>
-        <location line="+5"/>
         <source>Claim .torrent files, magnet: and ed3k: links for this copy of eMule Qt. The setting is for you alone and needs no administrator; it is re-applied at every start, so another program taking the association does not keep it.</source>
-        <translation>.torrent 파일, magnet: 및 ed3k: 링크를 이 eMule Qt에 연결합니다. 이 설정은 사용자 본인에게만 적용되며 관리자 권한이 필요 없습니다. 시작할 때마다 다시 적용되므로 다른 프로그램이 연결을 가져가도 유지되지 않습니다.</translation>
+        <translation type="vanished">.torrent 파일, magnet: 및 ed3k: 링크를 이 eMule Qt에 연결합니다. 이 설정은 사용자 본인에게만 적용되며 관리자 권한이 필요 없습니다. 시작할 때마다 다시 적용되므로 다른 프로그램이 연결을 가져가도 유지되지 않습니다.</translation>
     </message>
     <message>
-        <location line="+18"/>
+        <location line="+73"/>
         <source>BitTorrent download folder</source>
         <translation>BitTorrent 다운로드 폴더</translation>
     </message>
@@ -10032,12 +10027,27 @@ Create it?</source>
         <translation>서버 및 클라이언트 LAN IP 필터</translation>
     </message>
     <message>
-        <location line="-4752"/>
+        <location line="-4751"/>
         <source>Show more controls (advanced mode controls)</source>
         <translation>더 많은 컨트롤 표시(고급 모드)</translation>
     </message>
     <message>
-        <location line="+989"/>
+        <location line="-198"/>
+        <source>Open eD2K and ed3k links with eMule Qt</source>
+        <translation>eD2K 및 ed3k 링크를 eMule Qt로 열기</translation>
+    </message>
+    <message>
+        <location line="+2"/>
+        <source>Makes eMule Qt the default app for ed2k:// and ed3k: links. Turning it off hands them to another app that opens them, if there is one.</source>
+        <translation>eMule Qt를 ed2k:// 및 ed3k: 링크의 기본 앱으로 지정합니다. 끄면 이를 열 수 있는 다른 앱이 있을 경우 그 앱에 넘깁니다.</translation>
+    </message>
+    <message>
+        <location line="+6"/>
+        <source>Makes eMule Qt the handler for ed2k:// and ed3k: links.</source>
+        <translation>eMule Qt를 ed2k:// 및 ed3k: 링크 처리기로 지정합니다.</translation>
+    </message>
+    <message>
+        <location line="+1179"/>
         <source>Rehash All Files...</source>
         <translation>모든 파일 다시 해시...</translation>
     </message>
@@ -10052,15 +10062,22 @@ Create it?</source>
         <translation>코어에서 BitTorrent 엔진을 실행합니다. 끄면 엔진이 멈추고 토렌트를 다운로드하거나 시딩하지 않으며 BitTorrent 포트가 닫힙니다. 토렌트는 목록에 남아 있다가 다시 켜면 계속됩니다.</translation>
     </message>
     <message>
+        <location line="+58"/>
         <source>Open .torrent files and magnet links with eMule Qt</source>
-        <translation type="vanished">.torrent 파일과 마그넷 링크를 eMule Qt로 열기</translation>
+        <translation>.torrent 파일과 마그넷 링크를 eMule Qt로 열기</translation>
     </message>
     <message>
+        <location line="+3"/>
+        <source>Makes eMule Qt the default app for .torrent files and magnet: links. Turning it off hands them to another app that opens them, if there is one.</source>
+        <translation>eMule Qt를 .torrent 파일 및 magnet: 링크의 기본 앱으로 지정합니다. 끄면 이를 열 수 있는 다른 앱이 있을 경우 그 앱에 넘깁니다.</translation>
+    </message>
+    <message>
+        <location line="+4"/>
         <source>Claim .torrent files and magnet: links for this copy of eMule Qt. The setting is for you alone and needs no administrator; it is re-applied at every start, so another program taking the association does not keep it.</source>
-        <translation type="vanished">.torrent 파일과 magnet: 링크를 이 eMule Qt에 연결합니다. 이 설정은 현재 사용자에게만 적용되며 관리자 권한이 필요 없습니다. 시작할 때마다 다시 적용되므로, 다른 프로그램이 연결을 가져가더라도 계속 유지하지는 못합니다.</translation>
+        <translation>.torrent 파일과 magnet: 링크를 이 eMule Qt에 연결합니다. 이 설정은 현재 사용자에게만 적용되며 관리자 권한이 필요 없습니다. 시작할 때마다 다시 적용되므로, 다른 프로그램이 연결을 가져가더라도 계속 유지하지는 못합니다.</translation>
     </message>
     <message>
-        <location line="+156"/>
+        <location line="+90"/>
         <source>Global limits:</source>
         <translation>전체 제한:</translation>
     </message>
@@ -10451,17 +10468,17 @@ News server connections switch over immediately.</source>
         <translation>기본값으로 재설정</translation>
     </message>
     <message>
-        <location line="-5277"/>
+        <location line="-5276"/>
         <location line="+1024"/>
         <location line="+154"/>
-        <location line="+1606"/>
+        <location line="+1605"/>
         <location line="+316"/>
         <location line="+2175"/>
         <source>Remove</source>
         <translation>제거</translation>
     </message>
     <message>
-        <location line="-6508"/>
+        <location line="-6507"/>
         <source>New eMule Qt version detected</source>
         <translation>새 eMule Qt 버전이 감지되었습니다</translation>
     </message>
@@ -10471,7 +10488,7 @@ News server connections switch over immediately.</source>
         <translation>URL에서 업데이트: (filter.dat 또는 PeerGuardian 형식, .gz/.zip 허용)</translation>
     </message>
     <message>
-        <location line="+3304"/>
+        <location line="+3303"/>
         <source>Write eMule core logs to disk</source>
         <translation>eMule 코어 로그를 디스크에 기록</translation>
     </message>
@@ -10531,14 +10548,14 @@ News server connections switch over immediately.</source>
         <translation>요청 임대 시간:</translation>
     </message>
     <message>
-        <location line="-2493"/>
+        <location line="-2492"/>
         <location line="+918"/>
-        <location line="+1579"/>
+        <location line="+1578"/>
         <source> s</source>
         <translation> 초</translation>
     </message>
     <message>
-        <location line="-5083"/>
+        <location line="-5082"/>
         <source>Downloads that are receiving data, and the sources sending it, are drawn in bold. A source listed under another file (A4AF) is bold too while it transfers. The connected server and the selected category tab are bold as well.</source>
         <translation>데이터를 받는 다운로드와 이를 보내는 소스를 굵게 표시합니다. 다른 파일 아래에 있는 소스(A4AF)도 전송 중에는 굵게 표시됩니다. 연결된 서버와 선택된 카테고리 탭도 굵게 표시됩니다.</translation>
     </message>
@@ -10594,7 +10611,7 @@ Set it slightly under your plan. The figure is measured here, so it reads a few 
         <translation>대기열</translation>
     </message>
     <message>
-        <location line="+92"/>
+        <location line="+91"/>
         <source>Used for both TCP and UDP. Must differ from the eD2K ports, the web server port and the core port.</source>
         <translation>TCP와 UDP 모두에 사용됩니다. eD2K 포트, 웹 서버 포트, 코어 포트와 달라야 합니다.</translation>
     </message>
@@ -10798,10 +10815,10 @@ Set it slightly under your plan. The figure is measured here, so it reads a few 
         <translation>새 일정</translation>
     </message>
     <message>
-        <location line="-2878"/>
+        <location line="-2877"/>
         <location line="+1024"/>
         <location line="+154"/>
-        <location line="+1879"/>
+        <location line="+1878"/>
         <location line="+2213"/>
         <source>Add</source>
         <translation>추가</translation>
