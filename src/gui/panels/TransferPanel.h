@@ -21,6 +21,7 @@
 #include <initializer_list>
 #include <vector>
 
+#include "controls/DownloadListModel.h"
 #include "dialogs/FileDetailDialog.h"
 #include "prefs/DownloadCategory.h"
 
@@ -126,6 +127,14 @@ private:
                                 std::initializer_list<int> columnWidths,
                                 std::initializer_list<int> descendingFirst);
     void requestDownloads();
+    /// The ed3k downloads (GetEd3kDownloads), merged into the list after the eD2K ones.
+    void requestEd3kDownloads();
+    void takeEd3kDownloads(const QCborMap& list);
+    /// m_ed2kRows + m_ed3kRows into the model.
+    void applyDownloadRows();
+    /// Splits the ed3k rows' hashes (roots) out of @p hashes.
+    [[nodiscard]] QStringList takeEd3kHashes(QStringList& hashes) const;
+    void sendEd3kControl(const QStringList& roots, int action, qint64 value = 0);
     void requestDownloadSources(const QString& hash);
     void requestUploads();
     void requestDownloadClients();
@@ -325,6 +334,9 @@ private:
 
     // Hashes of currently expanded downloads (for source fetching)
     QSet<QString> m_expandedDownloads;
+    /// the last lists of both networks (DownloadRow::network)
+    std::vector<DownloadRow> m_ed2kRows;
+    std::vector<DownloadRow> m_ed3kRows;
 
     // Stream token for preview HTTP streaming (from daemon web server)
     QString m_streamToken;

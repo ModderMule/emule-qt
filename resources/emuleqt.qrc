@@ -118,6 +118,7 @@
         <file alias="Usenet.ico">icons/Usenet.ico</file>
         <file alias="UsenetSearch.ico">icons/UsenetSearch.ico</file>
         <file alias="Torrent.ico">icons/Torrent.ico</file>
+        <file alias="Hoster.ico">icons/Hoster.ico</file>
         <file alias="DownloadsFolder.ico">icons/DownloadsFolder.ico</file>
         <file alias="Preferences.ico">icons/Preferences.ico</file>
         <file alias="Help.ico">icons/Help.ico</file>

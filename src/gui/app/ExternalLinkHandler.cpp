@@ -4,10 +4,12 @@
 #include "panels/TorrentPanel.h"
 #endif
 #include "panels/UsenetPanel.h"
+#include "panels/IrcPanel.h"
 #include "app/ExternalLinkHandler.h"
 
 #include "app/AppConfig.h"
 #include "app/Ed3kNameOpener.h"
+#include "dialogs/Ed3kSetsDialog.h"
 #include "app/IpcClient.h"
 #include "app/MainWindow.h"
 #include "prefs/Preferences.h"
@@ -20,7 +22,9 @@
 #include <QFileOpenEvent>
 #include <QMessageBox>
 #include <QTimer>
+#include <QPushButton>
 #include <QUrl>
+#include <QUrlQuery>
 
 #include <utility>
 
@@ -49,6 +53,10 @@ void ExternalLinkHandler::setIpcClient(IpcClient* ipc)
                 Qt::UniqueConnection);
         connect(ipc, &IpcClient::ed3kBootstrapAsk, this, &ExternalLinkHandler::askBootstrapSource,
                 Qt::UniqueConnection);
+        // ed3k sets: a website that is none (name.md §6.1), a new version to take (file-set.md §5.3)
+        connect(ipc, &IpcClient::ed3kSetOffered, this,
+                [this](const Ipc::IpcMessage& msg) { openEd3kSet(msg.fieldString(0), true); }, Qt::UniqueConnection);
+        connect(ipc, &IpcClient::ed3kSetVersion, this, &ExternalLinkHandler::tellEd3kSetVersion, Qt::UniqueConnection);
         // ed3k:name links and names typed in the browser (name.md); its links come back here
         if (!m_names) {
             m_names = new Ed3kNameOpener(ipc, [this](const QString& link) { open(link); }, this);
@@ -189,8 +197,58 @@ void ExternalLinkHandler::openNow(const QString& link)
             logWarning(QStringLiteral("Cannot open the ed3k link, no core connection: %1").arg(link));
         return;
     }
+    if (ed3k && link.startsWith(QStringLiteral("ed3k:room?"), Qt::CaseInsensitive)) {
+        // a room (room.md §1.3): the IRC panel asks, joins and shows it. A link with s is a
+        // credential: never logged
+        IrcPanel* panel = m_mainWindow ? m_mainWindow->ircPanel() : nullptr;
+        if (!panel) {
+            logWarning(QStringLiteral("No IRC panel to open an ed3k room link in"));
+            return;
+        }
+        m_mainWindow->switchToTab(MainWindow::TabIRC);
+        if (thePrefs.bringToFrontOnLinkClick())
+            m_mainWindow->restoreWindow();
+        panel->openEd3kRoomLink(link);
+        return;
+    }
+    if (ed3k && link.startsWith(QStringLiteral("ed3k:file?"), Qt::CaseInsensitive)) {
+        // a plain file (the bt= ones went to the Torrents tab above): the daemon parses it
+        // (parseFileLink) and downloads it (Ed3kDownloads), shown in Transfers
+        if (!m_ipc) {
+            logWarning(QStringLiteral("Cannot open the ed3k link, no core connection: %1").arg(link));
+            return;
+        }
+        MainWindow* window = m_mainWindow;
+        m_ipc->addEd3kDownloadLink(link, 0, thePrefs.addNewFilesPaused(), [window, link](const Ipc::IpcMessage& reply) {
+            if (reply.type() != Ipc::IpcMsgType::Result || !reply.fieldBool(0)) {
+                const QString why = reply.fieldMap(1).value(QStringLiteral("error")).toString();
+                logWarning(QStringLiteral("ed3k file link not taken (%1): %2").arg(why, link));
+                if (window)
+                    QMessageBox::warning(window, tr("ed3k link"), why.isEmpty() ? tr("The ed3k link could not be added.") : why);
+                return;
+            }
+            if (window) {
+                window->switchToTab(MainWindow::TabTransfers);
+                if (thePrefs.bringToFrontOnLinkClick())
+                    window->restoreWindow();
+            }
+        });
+        return;
+    }
+    if (ed3k && link.startsWith(QStringLiteral("ed3k:set?"), Qt::CaseInsensitive)) {
+        // a set (file-set.md §5.4): asked first; a link with s is a credential: never logged
+        openEd3kSet(link, false);
+        return;
+    }
+    if (ed3k && link.startsWith(QStringLiteral("ed3k:live?"), Qt::CaseInsensitive)) {
+        // a live channel (live.md §1.3): watched, played from the core's loopback
+        watchEd3kLive(link);
+        return;
+    }
     if (ed3k) {
-        // ToDo: open the other ed3k links (file without bt=, set, live, room, ...)
+        // ToDo: open the other ed3k links (friend, nodes by hand, ...); was: room (done: IrcPanel);
+        // was: file without bt= (done: Ed3kDownloads above); was: set and live (done: Ed3kSetsDialog,
+        // openEd3kSet, watchEd3kLive)
         logWarning(QStringLiteral("Cannot open this ed3k link yet: %1").arg(link));
         return;
     }
@@ -292,6 +350,114 @@ void ExternalLinkHandler::askBootstrapSource(const Ipc::IpcMessage& msg)
     reply.append(ask);
     reply.append(answer == QMessageBox::Yes);
     m_ipc->sendRequest(std::move(reply));
+}
+
+void ExternalLinkHandler::openEd3kSet(const QString& link, bool noWebsite)
+{
+    if (!m_ipc) {
+        logWarning(QStringLiteral("Cannot open the ed3k set link, no core connection"));
+        return;
+    }
+    QPointer<MainWindow> window = m_mainWindow;
+    const QString name = QUrlQuery(link.mid(link.indexOf(QLatin1Char('?')) + 1)).queryItemValue(QStringLiteral("dn"), QUrl::FullyDecoded);
+    // file-set.md §2.3: nothing downloads before the user says so
+    QMessageBox box(QMessageBox::Question, tr("ed3k set"),
+                    noWebsite ? tr("This ed3k set is no website. Follow it and download its files?")
+                              : tr("Follow this ed3k set%1?\n\nIts files go to the incoming folder, below a folder of the set's own; "
+                                   "new versions are downloaded as they come.")
+                                    .arg(name.isEmpty() ? QString() : QStringLiteral(" \"%1\"").arg(name)),
+                    QMessageBox::NoButton, window);
+    QPushButton* follow = box.addButton(tr("Follow and Download"), QMessageBox::AcceptRole);
+    QPushButton* choose = box.addButton(tr("Choose Files..."), QMessageBox::ActionRole);
+    QPushButton* site = noWebsite ? nullptr : box.addButton(tr("Open as Website"), QMessageBox::ActionRole);
+    box.addButton(QMessageBox::Cancel);
+    box.setDefaultButton(follow);
+    box.exec();
+    if (!m_ipc)
+        return;
+    if (site && box.clickedButton() == site) {
+        // name.md §6.1: the website server follows it for the user; no website: it offers it back
+        m_ipc->requestEd3kSetSite(link, [](const Ipc::IpcMessage& reply) {
+            const QString url = reply.fieldMap(1).value(QStringLiteral("url")).toString();
+            if (reply.fieldBool(0) && !url.isEmpty())
+                QDesktopServices::openUrl(QUrl(url));
+            else
+                logWarning(QStringLiteral("ed3k: no website server to open the set in"));
+        });
+        return;
+    }
+    if (box.clickedButton() != follow && box.clickedButton() != choose)
+        return;
+    // choose: "ask" keeps the version for the dialog's selection
+    const int policy = box.clickedButton() == follow ? 1 : 0;
+    IpcClient* ipc = m_ipc;
+    m_ipc->followEd3kSet(link, policy, [window, ipc, policy](const Ipc::IpcMessage& reply) {
+        if (!reply.fieldBool(0)) {
+            const QString why = reply.fieldMap(1).value(QStringLiteral("error")).toString();
+            if (window)
+                QMessageBox::warning(window, tr("ed3k set"), why.isEmpty() ? tr("The set could not be followed.") : why);
+            return;
+        }
+        if (!window)
+            return;
+        if (thePrefs.bringToFrontOnLinkClick())
+            window->restoreWindow();
+        if (policy == 0)
+            Ed3kSetsDialog::showDialog(window, ipc)->selectSet(reply.fieldMap(1).value(QStringLiteral("id")).toInteger());
+        else
+            window->switchToTab(MainWindow::TabTransfers);
+    });
+}
+
+void ExternalLinkHandler::watchEd3kLive(const QString& link)
+{
+    if (!m_ipc) {
+        logWarning(QStringLiteral("Cannot open the ed3k live link, no core connection"));
+        return;
+    }
+    QPointer<MainWindow> window = m_mainWindow;
+    IpcClient* ipc = m_ipc;
+    m_ipc->watchEd3kLive(link, [window, ipc](const Ipc::IpcMessage& reply) {
+        if (!reply.fieldBool(0)) {
+            const QString why = reply.fieldMap(1).value(QStringLiteral("error")).toString();
+            if (window)
+                QMessageBox::warning(window, tr("ed3k live stream"), why.isEmpty() ? tr("The stream could not be watched.") : why);
+            return;
+        }
+        // the stream is served on the core's loopback: a remote GUI only lists it
+        const QString url = reply.fieldMap(1).value(QStringLiteral("url")).toString();
+        if (!url.isEmpty() && ipc && ipc->isLocalConnection())
+            QDesktopServices::openUrl(QUrl(url));
+        if (window)
+            Ed3kSetsDialog::showDialog(window, ipc, Ed3kSetsDialog::TabLive);
+    });
+}
+
+void ExternalLinkHandler::tellEd3kSetVersion(const Ipc::IpcMessage& msg)
+{
+    const qint64 id = msg.fieldInt(0);
+    const QString title = msg.fieldString(1);
+    const qint64 seq = msg.fieldInt(2);
+    const auto added = msg.fieldArray(3).size();
+    const auto changed = msg.fieldArray(4).size();
+    // non-modal: a new version is no reason to stop what the user does
+    auto* box = new QMessageBox(QMessageBox::Information, tr("ed3k set"),
+                                tr("Version %1 of the ed3k set \"%2\" is here: %3 new and %4 changed file(s).")
+                                    .arg(seq)
+                                    .arg(title)
+                                    .arg(added)
+                                    .arg(changed),
+                                QMessageBox::NoButton, m_mainWindow);
+    box->setAttribute(Qt::WA_DeleteOnClose);
+    QPushButton* show = box->addButton(tr("Show"), QMessageBox::AcceptRole);
+    box->addButton(tr("Later"), QMessageBox::RejectRole);
+    QPointer<MainWindow> window = m_mainWindow;
+    IpcClient* ipc = m_ipc;
+    connect(box, &QMessageBox::buttonClicked, this, [window, ipc, show, id](QAbstractButton* b) {
+        if (b == show && window && ipc)
+            Ed3kSetsDialog::showDialog(window, ipc)->selectSet(id);
+    });
+    box->open();
 }
 
 } // namespace eMule

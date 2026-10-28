@@ -82,7 +82,7 @@
       <LanguageStandard>stdcpplatest</LanguageStandard>
       <ObjectFileName>release\</ObjectFileName>
       <Optimization>MaxSpeed</Optimization>
-      <PreprocessorDefinitions>_CONSOLE;$(EmuleBtDefines)$(EmuleEd3kDefines)$(EmuleQuicDefines)UNICODE;_UNICODE;WIN32;_ENABLE_EXTENDED_ALIGNED_STORAGE;WIN64;NOMINMAX;WIN32_LEAN_AND_MEAN;NDEBUG;QT_NO_DEBUG;QT_HTTPSERVER_LIB;%(PreprocessorDefinitions)</PreprocessorDefinitions>
+      <PreprocessorDefinitions>_CONSOLE;$(EmuleBtDefines)$(EmuleHosterJdDefines)$(EmuleEd3kDefines)$(EmuleQuicDefines)UNICODE;_UNICODE;WIN32;_ENABLE_EXTENDED_ALIGNED_STORAGE;WIN64;NOMINMAX;WIN32_LEAN_AND_MEAN;NDEBUG;QT_NO_DEBUG;QT_HTTPSERVER_LIB;%(PreprocessorDefinitions)</PreprocessorDefinitions>
       <PreprocessToFile>false</PreprocessToFile>
       <ProgramDataBaseFileName>
       </ProgramDataBaseFileName>
@@ -114,7 +114,7 @@
       <WarningLevel>0</WarningLevel>
     </Midl>
     <ResourceCompile>
-      <PreprocessorDefinitions>_CONSOLE;$(EmuleBtDefines)$(EmuleEd3kDefines)$(EmuleQuicDefines)UNICODE;_UNICODE;WIN32;_ENABLE_EXTENDED_ALIGNED_STORAGE;WIN64;NOMINMAX;WIN32_LEAN_AND_MEAN;NDEBUG;QT_NO_DEBUG;QT_HTTPSERVER_LIB;%(PreprocessorDefinitions)</PreprocessorDefinitions>
+      <PreprocessorDefinitions>_CONSOLE;$(EmuleBtDefines)$(EmuleHosterJdDefines)$(EmuleEd3kDefines)$(EmuleQuicDefines)UNICODE;_UNICODE;WIN32;_ENABLE_EXTENDED_ALIGNED_STORAGE;WIN64;NOMINMAX;WIN32_LEAN_AND_MEAN;NDEBUG;QT_NO_DEBUG;QT_HTTPSERVER_LIB;%(PreprocessorDefinitions)</PreprocessorDefinitions>
     </ResourceCompile>
     <QtMoc>
       <CompilerFlavor>msvc</CompilerFlavor>
@@ -137,7 +137,7 @@
       <LanguageStandard>stdcpplatest</LanguageStandard>
       <ObjectFileName>debug\</ObjectFileName>
       <Optimization>Disabled</Optimization>
-      <PreprocessorDefinitions>_CONSOLE;$(EmuleBtDefines)$(EmuleEd3kDefines)$(EmuleQuicDefines)UNICODE;_UNICODE;WIN32;_ENABLE_EXTENDED_ALIGNED_STORAGE;WIN64;NOMINMAX;WIN32_LEAN_AND_MEAN;QT_HTTPSERVER_LIB;%(PreprocessorDefinitions)</PreprocessorDefinitions>
+      <PreprocessorDefinitions>_CONSOLE;$(EmuleBtDefines)$(EmuleHosterJdDefines)$(EmuleEd3kDefines)$(EmuleQuicDefines)UNICODE;_UNICODE;WIN32;_ENABLE_EXTENDED_ALIGNED_STORAGE;WIN64;NOMINMAX;WIN32_LEAN_AND_MEAN;QT_HTTPSERVER_LIB;%(PreprocessorDefinitions)</PreprocessorDefinitions>
       <PreprocessToFile>false</PreprocessToFile>
       <RuntimeLibrary>MultiThreadedDebugDLL</RuntimeLibrary>
       <SuppressStartupBanner>true</SuppressStartupBanner>
@@ -164,7 +164,7 @@
       <WarningLevel>0</WarningLevel>
     </Midl>
     <ResourceCompile>
-      <PreprocessorDefinitions>_CONSOLE;$(EmuleBtDefines)$(EmuleEd3kDefines)$(EmuleQuicDefines)UNICODE;_UNICODE;WIN32;_ENABLE_EXTENDED_ALIGNED_STORAGE;WIN64;NOMINMAX;WIN32_LEAN_AND_MEAN;QT_HTTPSERVER_LIB;_DEBUG;%(PreprocessorDefinitions)</PreprocessorDefinitions>
+      <PreprocessorDefinitions>_CONSOLE;$(EmuleBtDefines)$(EmuleHosterJdDefines)$(EmuleEd3kDefines)$(EmuleQuicDefines)UNICODE;_UNICODE;WIN32;_ENABLE_EXTENDED_ALIGNED_STORAGE;WIN64;NOMINMAX;WIN32_LEAN_AND_MEAN;QT_HTTPSERVER_LIB;_DEBUG;%(PreprocessorDefinitions)</PreprocessorDefinitions>
     </ResourceCompile>
     <QtMoc>
       <CompilerFlavor>msvc</CompilerFlavor>
@@ -194,9 +194,15 @@
     <ClCompile Include="BtBridge.cpp" />
     <ClCompile Include="Ed3kBridge.cpp" />
     <ClCompile Include="Ed3kFriendsBridge.cpp" />
+    <ClCompile Include="Ed3kRoomsBridge.cpp" />
     <ClCompile Include="Ed3kNamesBridge.cpp" />
     <ClCompile Include="PortTestRunner.cpp" />
     <ClCompile Include="Ed3kCreditBridge.cpp" />
+    <ClCompile Include="Ed3kDownloadsBridge.cpp" />
+    <ClCompile Include="Ed3kSetsBridge.cpp" />
+    <ClCompile Include="Ed3kFiltersBridge.cpp" />
+    <ClCompile Include="Ed3kUploadsBridge.cpp" />
+    <ClCompile Include="Ed3kHosterBridge.cpp" />
     <ClCompile Include="UsenetBridge.cpp" />
     <ClCompile Include="BandwidthCoordinator.cpp" />
     <ClCompile Include="WinShutdownHandler.cpp" />
@@ -212,6 +218,7 @@
     <QtMoc Include="MetaSearchService.h" />
     <QtMoc Include="PowerManager.h" />
     <ClInclude Include="DaemonApiBackend.h" />
+    <ClInclude Include="Ed3kHosterBridge.h" />
     <ClInclude Include="DaemonTorrentWebBackend.h" />
     <ClInclude Include="DaemonUsenetWebBackend.h" />
     <ClInclude Include="SharedFileRows.h" />
@@ -219,9 +226,14 @@
     <ClInclude Include="BtBridge.h" />
     <ClInclude Include="Ed3kBridge.h" />
     <ClInclude Include="Ed3kFriendsBridge.h" />
+    <ClInclude Include="Ed3kRoomsBridge.h" />
     <ClInclude Include="Ed3kNamesBridge.h" />
     <ClInclude Include="PortTestRunner.h" />
     <ClInclude Include="Ed3kCreditBridge.h" />
+    <ClInclude Include="Ed3kDownloadsBridge.h" />
+    <ClInclude Include="Ed3kSetsBridge.h" />
+    <ClInclude Include="Ed3kFiltersBridge.h" />
+    <ClInclude Include="Ed3kUploadsBridge.h" />
     <ClInclude Include="UsenetBridge.h" />
     <ClInclude Include="BandwidthCoordinator.h" />
   </ItemGroup>

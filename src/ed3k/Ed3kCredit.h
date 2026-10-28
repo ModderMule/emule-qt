@@ -15,6 +15,9 @@
 /// - Priority slots: the engine's queue policy (queueAuto, on from start) grants a
 ///   CreditSlotHint itself (ffi.md "The queue policy"); this class only counts them.
 /// - Bids: bidMaxPrice for every root of an ed3k download (FileStatus seen), 0 = none.
+/// - Stake (§6.7): burns and claims for the user (main node only, never the anonymous key,
+///   §9.1); the claims of own burns are kept in Config/ed3k/stake-claims.json (not a secret)
+///   and read again (creditStakeClaim) at each configure and on refreshClaims().
 
 #include "Ed3kFfi.h"
 
@@ -37,12 +40,15 @@ class Ed3kCredit : public QObject {
     Q_OBJECT
 
 public:
+    /// Where a claim is: waiting for readyAt (or ready), claimStake sent, paid.
+    enum class ClaimState : int { Waiting = 0, Claiming = 1, Paid = 2 };
     /// A stake claim of an own burn (§6.7), kept for claimStake.
     struct StakeClaim {
         std::uint64_t id = 0;
         ::ed3k::event::CreditAddress to{};
         ::ed3k::Key32 amount{};   ///< uint256 BE, 10^-18 E3S
         std::uint64_t readyAt = 0;
+        ClaimState state = ClaimState::Waiting;
     };
     /// What the GUI shows (GetEd3kStatus "credit").
     struct Status {
@@ -94,10 +100,28 @@ public:
     [[nodiscard]] static std::optional<::ed3k::event::CreditAddress> parseAddress(const QString& text);
     /// The key file's name in Config/ed3k.
     [[nodiscard]] static QString keyFileName();
+    /// The stake claims' file in Config/ed3k.
+    [[nodiscard]] static QString claimsFileName();
+
+    // -- stake token (§6.7) -------------------------------------------------
+
+    /// burnForStake(@p micro µ, @p to) from the main credit key (never the anonymous one,
+    /// §9.1). Public and for good (§9): the GUI asks first. CreditStakeBurned adds the claim.
+    ::ed3k::Result<> burnForStake(std::uint64_t micro, const ::ed3k::event::CreditAddress& to);
+    /// claimStake(@p id) of a kept claim: Claiming until mined (Paid) or failed (Waiting).
+    ::ed3k::Result<> claimStake(std::uint64_t id);
+    /// Reads every claim not paid again (creditStakeClaim); answers update the list.
+    void refreshClaims();
+    [[nodiscard]] std::vector<StakeClaim> claims() const { return m_status.claims; }
 
 signals:
     /// Status changed (at most once a second for the counters).
     void statusChanged();
+    /// The stake claims changed (added, read again, claimed, paid).
+    void stakeChanged();
+    /// A stake transaction moved: @p what ED3K_CREDIT_TX_BURN_FOR_STAKE / _CLAIM_STAKE,
+    /// @p state ED3K_CREDIT_STATE_*, @p revert ED3K_CREDIT_REVERT_*, @p tx hash hex.
+    void stakeTx(int what, int state, int revert, const QString& tx);
 
 private:
     void onEventPolled(const ::ed3k::Event& event, bool* handled);
@@ -111,6 +135,10 @@ private:
     [[nodiscard]] std::optional<::ed3k::Key32> loadKey(bool create, QString* error) const;
     void readAddress();
     void changed(bool now = false);
+    void onStakeEvent(const ::ed3k::Event& event);
+    void loadClaims();
+    void saveClaims() const;
+    [[nodiscard]] StakeClaim* claim(std::uint64_t id);
 
     Ed3kSession& m_session;
     QString m_dir;

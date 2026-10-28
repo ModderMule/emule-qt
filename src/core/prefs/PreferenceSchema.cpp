@@ -231,6 +231,25 @@ using Kind = PrefSpec::Kind;
     t << advanced(flag("ed3kCreditSell", "Sell priority upload slots for credits (§5.1)."));
     t << advanced(number("ed3kCreditSellFloor", 0, 9.0e15, "", "Lowest bid (µ credits per MiB) taken for a priority slot."));
     t << advanced(number("ed3kCreditSellSlots", 0, 1000, "", "Upload slots the priority lane counts. 0 = the upload queue's."));
+    // chaintube chain (chaintube.md §4.2): no defaults; endpoints in ed3kChaintubeRpc
+    t << advanced(text("ed3kChainId", 20, "Chain ID of the chaintube chain of the network (decimal). 0 = none: no chain reads."));
+    t << advanced(text("ed3kChainContent", 42, "Address of the chaintube content contract (0x + 40 hex digits)."));
+    t << advanced(text("ed3kChainComment", 42, "Address of the chaintube comment contract (0x + 40 hex digits)."));
+    t << advanced(text("ed3kChainVote", 42, "Address of the chaintube vote contract (0x + 40 hex digits)."));
+    t << advanced(text("ed3kChainForwarder", 42, "Address of the forwarder of requests a site sends (0x + 40 hex "
+                                                 "digits). Empty = none."));
+    // hoster links (hoster.md): downloads off by default (§3), vouched links published by default (§4.1).
+    // ed3kHosterAccounts is a list of {host, user, password}: not in the schema, never sent with a password
+    t << flag("ed3kHosterEnabled", "Allow downloads from file hosters: the resolver may open hoster pages, wait out "
+                                   "their timers, show their puzzles and use the accounts given (hoster.md §3).");
+    t << advanced(text("ed3kHosterJava", 1024, "Path of the java program the hoster resolver runs on. Empty = find one."));
+    t << advanced(flag("ed3kHosterAutoJava", "Download a Java runtime into the eMuleQt folder when none is found."));
+    t << number("ed3kHosterMaxStreams", 1, 16, "", "Hoster downloads at once (one per hoster and account in any case).");
+    t << flag("ed3kHosterPuzzles", "Show image puzzles of hosters; off = skip links that ask for one.");
+    t << flag("ed3kHosterPublishLinks", "Publish hoster links: once a link is vouched for, its ALIAS record is published, "
+                                        "it goes with the source record and to downloaders (hoster.md §4.1). This can expose "
+                                        "a file its uploader meant to keep private. Off = links are held back.");
+    t << flag("ed3kHosterFromPeers", "Use hoster links that peers and Kad name for a download.");
 
     // --- Logging ---
     t << flag("verbose", "Write verbose (debug) log lines.");

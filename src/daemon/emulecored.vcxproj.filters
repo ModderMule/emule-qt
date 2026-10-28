@@ -72,6 +72,9 @@
     <ClCompile Include="Ed3kFriendsBridge.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
+    <ClCompile Include="Ed3kRoomsBridge.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
     <ClCompile Include="Ed3kNamesBridge.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
@@ -79,6 +82,18 @@
       <Filter>Source Files</Filter>
     </ClCompile>
     <ClCompile Include="Ed3kCreditBridge.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="Ed3kDownloadsBridge.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="Ed3kSetsBridge.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="Ed3kFiltersBridge.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="Ed3kUploadsBridge.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
     <ClCompile Include="UsenetBridge.cpp">
@@ -137,6 +152,9 @@
     <ClInclude Include="Ed3kFriendsBridge.h">
       <Filter>Header Files</Filter>
     </ClInclude>
+    <ClInclude Include="Ed3kRoomsBridge.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
     <ClInclude Include="Ed3kNamesBridge.h">
       <Filter>Header Files</Filter>
     </ClInclude>
@@ -144,6 +162,18 @@
       <Filter>Header Files</Filter>
     </ClInclude>
     <ClInclude Include="Ed3kCreditBridge.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="Ed3kDownloadsBridge.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="Ed3kSetsBridge.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="Ed3kFiltersBridge.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="Ed3kUploadsBridge.h">
       <Filter>Header Files</Filter>
     </ClInclude>
     <ClInclude Include="UsenetBridge.h">

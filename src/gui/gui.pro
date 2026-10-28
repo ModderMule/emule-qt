@@ -134,6 +134,9 @@ SOURCES += \
     dialogs/NetworkInfoDialog.cpp \
     dialogs/OptionsDialog.cpp \
     dialogs/Ed3kOptionsPages.cpp \
+    dialogs/Ed3kFilterPage.cpp \
+    dialogs/Ed3kStakeGroup.cpp \
+    dialogs/Ed3kSetsDialog.cpp \
     dialogs/AddNzbFilesDialog.cpp \
     dialogs/NzbFileChooserDialog.cpp \
     dialogs/AddNzbUrlDialog.cpp \
@@ -157,6 +160,10 @@ SOURCES += \
     dialogs/UsenetArchiveEntryDialog.cpp \
     dialogs/UsenetDetailsDialog.cpp \
     panels/IrcPanel.cpp \
+    panels/IrcPanelEd3k.cpp \
+    panels/ChatChannelView.cpp \
+    panels/Ed3kRoomTab.cpp \
+    panels/Ed3kRoomList.cpp \
     panels/KadPanel.cpp \
     panels/ChatNetwork.cpp \
     panels/MessagesPanel.cpp \
@@ -230,6 +237,9 @@ HEADERS += \
     dialogs/NetworkInfoDialog.h \
     dialogs/OptionsDialog.h \
     dialogs/Ed3kOptionsPages.h \
+    dialogs/Ed3kFilterPage.h \
+    dialogs/Ed3kStakeGroup.h \
+    dialogs/Ed3kSetsDialog.h \
     dialogs/AddNzbFilesDialog.h \
     dialogs/NzbFileChooserDialog.h \
     dialogs/AddNzbUrlDialog.h \
@@ -253,6 +263,9 @@ HEADERS += \
     dialogs/UsenetArchiveEntryDialog.h \
     dialogs/UsenetDetailsDialog.h \
     panels/IrcPanel.h \
+    panels/ChatChannelView.h \
+    panels/Ed3kRoomTab.h \
+    panels/Ed3kRoomList.h \
     panels/KadPanel.h \
     panels/ChatNetwork.h \
     panels/MessagesPanel.h \
@@ -285,4 +298,11 @@ HEADERS += \
         dialogs/AddTorrentDialog.h \
         dialogs/TorrentDetailsDialog.h \
         panels/TorrentPanel.h
+}
+
+# Hoster resolver: on by default, as in CMake (EMULE_HOSTER_JD). `qmake CONFIG+=no_emule_hoster_jd` turns it off
+!no_emule_hoster_jd {
+    DEFINES += EMULE_HAVE_HOSTER_JD=1
+    SOURCES += panels/HosterPanel.cpp dialogs/HosterPuzzleDialog.cpp
+    HEADERS += panels/HosterPanel.h dialogs/HosterPuzzleDialog.h
 }

@@ -145,6 +145,12 @@ struct DownloadRow {
     /// Model-assigned identity, never 0. Source indexes carry it as internalId.
     quintptr uid = 0;
 
+    /// 0 eD2K (a PartFile, hash = MD4), 1 ed3k (Ed3kDownloads, hash = the root's 64 hex
+    /// digits): its actions go to the ed3k IPC, the eD2K-only ones are off.
+    int network = 0;
+    [[nodiscard]] bool isEd3k() const { return network == 1; }
+    QString ed3kPath;   ///< ed3k: the part file, or the file once complete (a local GUI opens it)
+
     /// A completed download (green 100% bar). Completed files have no live
     /// sources, so they are never expandable in the tree.
     [[nodiscard]] bool isComplete() const { return status == QLatin1String("complete"); }

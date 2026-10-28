@@ -4,6 +4,7 @@
 #include "Ed3kSiteServer.h"
 
 #include "Ed3kSession.h"
+#include "Ed3kSets.h"
 
 #include "utils/Log.h"
 
@@ -37,6 +38,9 @@ struct Ed3kSiteServer::Pending {
     std::optional<ffi::Root> member;
     // a readable host
     std::optional<std::uint64_t> resolve;
+    // a set not held: waiting for its manifest (siteSetStatus), since parkedAt (ms)
+    bool setWait = false;
+    qint64 parkedAt = 0;
 };
 
 namespace {
@@ -88,6 +92,16 @@ QByteArray etagOf(const QByteArray& headerLines)
 qint64 nowMs()
 {
     return QDateTime::currentMSecsSinceEpoch();
+}
+
+qint64 nowS()
+{
+    return QDateTime::currentSecsSinceEpoch();
+}
+
+QString fetchKey(const ::ed3k::Key32& key, const QByteArray& id)
+{
+    return QString::fromLatin1(QByteArray(reinterpret_cast<const char*>(key.data()), qsizetype(key.size())).toHex() + '/' + id.toHex());
 }
 
 const QByteArray kPlain = "Content-Type: text/plain; charset=utf-8\r\nX-Content-Type-Options: nosniff\r\nCache-Control: no-store\r\n";
@@ -146,6 +160,11 @@ QString Ed3kSiteServer::originUrl(const ffi::Key32& key, const QByteArray& id, c
         .arg(QString::fromLatin1(QUrl::toPercentEncoding(p, "/")));
 }
 
+void Ed3kSiteServer::setFetchingSince(const ffi::Key32& key, const QByteArray& id, qint64 secs)
+{
+    m_fetching[fetchKey(key, id)] = secs;
+}
+
 // ---------------------------------------------------------------------------
 // Private
 // ---------------------------------------------------------------------------
@@ -193,6 +212,9 @@ void Ed3kSiteServer::close()
 
 void Ed3kSiteServer::onRequest(const QHttpServerRequest& req, QHttpServerResponder& resp)
 {
+    // hosts of the port that are no website (live streams)
+    if (m_hostHandler && m_hostHandler(req, resp))
+        return;
     const QByteArray hostHeader = req.value("host");
     const auto host = ffi::siteHost(viewOf(hostHeader));
     const std::uint32_t kind = host ? host->kind : ED3K_SITE_HOST_OTHER;
@@ -242,13 +264,14 @@ void Ed3kSiteServer::onRequest(const QHttpServerRequest& req, QHttpServerRespond
         return;
     }
     // a set not held is fetched only for the user (§6.2)
-    if (p->user)
-        (void)m_names.followSite(p->key, p->id);
-    if (!m_names.siteFollowed(p->key, p->id)) {
-        answer(p->responder, p->user ? 503 : 404, {}, kPlain, p->head);
-        return;
-    }
-    park(std::move(p));
+    // was: followed for the user, else 404 (503 when the follow failed); now siteSetStatus
+    // (§6.3, batch 11 ruling #9): wait for the manifest, 504 after 60 s, 503 when not fetched
+    // if (p->user)
+    //     (void)m_names.followSite(p->key, p->id);
+    if (p->user && m_names.followSite(p->key, p->id))
+        m_fetching.try_emplace(fetchKey(p->key, p->id), nowS());
+    p->parkedAt = nowMs();
+    waitForSet(std::move(p));
 }
 
 void Ed3kSiteServer::servePage(std::unique_ptr<Pending> p, const QByteArray& manifest)
@@ -258,7 +281,10 @@ void Ed3kSiteServer::servePage(std::unique_ptr<Pending> p, const QByteArray& man
                                     viewOf(path), true);
     if (!page) {
         // §6.1: a set that is no website is shown as a set, for download
-        // ToDo: offer the set for download in the GUI (file-set.md §2.3)
+        // was: ToDo: offer the set for download in the GUI (file-set.md §2.3) (done: setOffered →
+        // the GUI asks, Ed3kSets follows; only for the user's own request)
+        if (p->user && page.error() == ffi::Error::NotFound)
+            emit setOffered(Ed3kSets::setLink(p->key, p->id));
         answer(p->responder, page.error() == ffi::Error::NotFound ? 404 : 502, "not a website\n", kPlain, p->head);
         return;
     }
@@ -296,6 +322,7 @@ void Ed3kSiteServer::onSiteChanged(const QByteArray& key, const QByteArray& id)
     const QByteArray manifest = m_names.siteManifest(*k, id);
     if (manifest.isEmpty())
         return;
+    m_fetching.erase(fetchKey(*k, id));
     for (auto& p : take([&](const Pending& x) { return !x.resolve && x.manifest.isEmpty() && x.key == *k && x.id == id; }))
         servePage(std::move(p), manifest);
 }
@@ -342,8 +369,35 @@ void Ed3kSiteServer::onFailed(quint64 id, const QString& name, int why, const QL
 void Ed3kSiteServer::onTick()
 {
     const qint64 now = nowMs();
-    for (auto& p : take([&](const Pending& x) { return x.deadline <= now; }))
+    for (auto& p : take([&](const Pending& x) { return x.deadline <= now; })) {
+        // a set's manifest: asked again (504 once the core or the local wait says so)
+        if (p->setWait && p->manifest.isEmpty())
+            waitForSet(std::move(p));
+        else
+            answer(p->responder, 504, {}, kPlain, p->head);
+    }
+}
+
+void Ed3kSiteServer::waitForSet(std::unique_ptr<Pending> p)
+{
+    std::optional<std::uint64_t> since;
+    if (const auto it = m_fetching.find(fetchKey(p->key, p->id)); it != m_fetching.end() && m_names.siteFollowed(p->key, p->id))
+        since = std::uint64_t(std::max<qint64>(0, it->second));
+    const auto st = ffi::siteSetStatus(false, since, std::uint64_t(std::max<qint64>(0, nowS())));
+    if (!st || st->status != 0) {
+        answer(p->responder, st ? st->status : 503, {}, kPlain, p->head);
+        return;
+    }
+    // up to waitS, and no longer than this server waits for anything (tests shorten it)
+    const qint64 now = nowMs();
+    const qint64 left = std::min<qint64>(qint64(st->waitS) * 1000, p->parkedAt + m_waitMs - now);
+    if (left <= 0) {
         answer(p->responder, 504, {}, kPlain, p->head);
+        return;
+    }
+    p->setWait = true;
+    p->deadline = now + left;
+    park(std::move(p));
 }
 
 void Ed3kSiteServer::park(std::unique_ptr<Pending> p)

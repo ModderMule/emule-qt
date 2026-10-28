@@ -700,6 +700,8 @@ void OptionsDialog::setupSidebar()
         {PageEd3kConnection, QT_TR_NOOP("Connection"), QStyle::SP_DirLinkIcon,           "Connection.ico"},
         {PageEd3kCredits,    QT_TR_NOOP("Credits"),    QStyle::SP_DialogApplyButton,     "Rating.ico"},
         {PageEd3kNames,      QT_TR_NOOP("Names"),      QStyle::SP_FileDialogContentsView, "Friends1.ico"},
+        {PageEd3kHoster,     QT_TR_NOOP("Hoster"),     QStyle::SP_ArrowDown,             "Hoster.ico"},
+        {PageEd3kFilters,    QT_TR_NOOP("Filters"),    QStyle::SP_MessageBoxWarning,     "IPFilter.ico"},
     };
 
     // A page added to the enum and to setupPages() but forgotten here would simply be
@@ -815,6 +817,8 @@ void OptionsDialog::setupPages()
     addPage(PageEd3kConnection, m_ed3kPages->connectionPage());
     addPage(PageEd3kCredits,    m_ed3kPages->creditsPage());
     addPage(PageEd3kNames,      m_ed3kPages->namesPage());
+    addPage(PageEd3kHoster,     m_ed3kPages->hosterPage());
+    addPage(PageEd3kFilters,    m_ed3kPages->filtersPage());
     connect(m_ed3kPages, &Ed3kOptionsPages::changed, this, &OptionsDialog::markDirty);
     connect(m_ed3kPages, &Ed3kOptionsPages::showPage, this, [this](QWidget* page) {
         for (int i = PageEd3k; i < PageCount; ++i) {
@@ -2907,12 +2911,14 @@ QWidget* OptionsDialog::createStatisticsPage()
         {tr("Download Current"), 2},
         {tr("Download Usenet"), 15},
         {tr("Download BitTorrent"), 16},
+        {tr("Download ed3k"), 18},
         {tr("Upload Session"), 7},
         {tr("Upload Average"), 6},
         {tr("Upload Current"), 5},
         {tr("Upload Slots (no overhead)"), 14},
         {tr("Upload Friend Slots"), 13},
         {tr("Upload BitTorrent"), 17},
+        {tr("Upload ed3k"), 19},
         {tr("Active Connections"), 8},
         {tr("Active Uploads"), 10},
         {tr("Total Uploads"), 9},

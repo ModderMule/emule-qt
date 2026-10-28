@@ -750,7 +750,7 @@ enum class IpcMsgType : int {
     ///                          error, totalBytes, doneBytes, leftBytes } } }
     GetBtStats              = 819,
 
-    // -- ed3k (1000-1049) -----------------------------------------------------
+    // -- ed3k (1000-1049; more in 1100-1149) -----------------------------------------------------
     //
     // The ed3k node (packmule, src/ed3k). Maps of src/daemon/Ed3kBridge.cpp. Answered
     // with the node off or not built too (available / running false).
@@ -765,7 +765,7 @@ enum class IpcMsgType : int {
     ///           mature, overdrawn, lastTxWhat, lastTxState, lastTxRevert, lastTx,
     ///           receiptsSigned, kibSigned, receiptsTaken, kibTaken, slotHints, lateBids,
     ///           wrongChain: [endpoint], stakeRate (uint256 hex, "" unknown), stakeDelay (s),
-    ///           claims: [{id, to, amount (uint256 hex), readyAt}]}}]
+    ///           claims: [{id, to, amount (uint256 hex), readyAt, state}]}}]
     GetEd3kStatus           = 1000,
 
     // ed3k friends and chat (1001-1009, src/daemon/Ed3kFriendsBridge.cpp). Keys (32 B) and
@@ -823,12 +823,144 @@ enum class IpcMsgType : int {
     /// [] -> [ok, {key: hex (64), address}]
     ExportEd3kCreditKey     = 1022,
 
+    // -- ed3k stake (batch 12): the stake token of credit.md §6.7 (Ed3kCreditBridge). The main
+    // credit key only, never the anonymous one (§9.1). Failure: [false, {error}] (ed3k::Error
+    // as int, 0: no node / credits not in use).
+    /// [micro: int (µ credits), to: string (0x + 40 hex)] -> [ok] — a burn cannot be undone
+    /// and is public (§6.7, §9); the claim follows as PushEd3kStakeClaims
+    BurnEd3kStake           = 1023,
+    /// [id: int] -> [ok] — claimStake of a kept claim (ready); PushEd3kStakeTx / _Claims follow
+    ClaimEd3kStake          = 1024,
+    /// [] -> [ok, {claims: [{id, to, amount (uint256 hex), readyAt, state (0 waiting,
+    ///   1 claiming, 2 paid)}], rate (uint256 hex, "" unknown), delay (s), address}]
+    GetEd3kStakeClaims      = 1025,
+    /// [] -> [ok] — reads every claim not paid again (stakeClaims); PushEd3kStakeClaims follows
+    RefreshEd3kStakeClaims  = 1026,
+
     // ed3k plumbing (1030-1039): node list sources (bootstrap.md §3), Ed3kBridge.cpp
     /// [link: string (ed3k:nodes?url=…&key=…)] -> [ok, {ask}]; PushEd3kBootstrapAsk follows.
     /// Failure: node off, link invalid
     OpenEd3kNodesLink       = 1030,
     /// [ask: int, yes: bool] -> [ok]; yes adds the source to ed3kNodeLists
     AnswerEd3kBootstrapAsk  = 1031,
+
+    // hoster links (1100-1109, hoster.md), Ed3kHosterBridge.cpp. An item: {id, url, host,
+    // name, size, done, speed, state (Ed3kHosterJoin::State), reason (Ed3kHosterJoin::Reason, the
+    // GUI words it), reasonArg (technical, not localized), waitUntil (ms), verified, file, root}
+    /// [] -> [ok, {items: [item], status: {...GetEd3kStatus "hoster"...}}]
+    GetHosterItems          = 1100,
+    /// [text: string (links, one per line)] -> [ok, {ids: [int]}]; PushHosterItem follows each
+    AddHosterLinks          = 1101,
+    /// [id: int, op: "pause"|"resume"|"remove"|"delete"] -> [ok]; delete also removes a complete file
+    HosterAction            = 1102,
+    /// [puzzle: int, text: string] -> [ok]; empty text skips the puzzle
+    AnswerHosterPuzzle      = 1103,
+    /// [host, user, password] -> [ok]; PushHosterAccount follows. Local clients only (a password)
+    CheckHosterAccount      = 1104,
+    /// [] -> [ok]; fetches a Java runtime into the eMuleQt folder (PushEd3kStatus shows progress)
+    DownloadJavaRuntime     = 1105,
+    /// [] -> [ok]; looks for a Java runtime again
+    LocateJavaRuntime       = 1106,
+
+    // -- ed3k downloads (batch 12): plain ed3k files (search rows, ed3k:file links without bt=),
+    // src/daemon/Ed3kDownloadsBridge.cpp. Roots (32 B) as hex. A download: {root, name, size,
+    // done, rate (B/s), sources, transferring, state (0 downloading, 1 paused, 2 verifying,
+    // 3 complete, 4 failed), priority (eMule's kPr*: 0 low, 1 normal, 2 high, 3 very high,
+    // 4 very low), category, owner, path, addedOn, completedOn, error}; a local GUI opens
+    // `path` itself. Failure: [false,
+    // {error: string (localized)}]. (1100-1109 were taken by the hoster links: 1140-1149.)
+    /// [] -> [ok, {running, downloads: [download]}]
+    GetEd3kDownloads        = 1140,
+    /// [root, size, name, category, paused] -> [ok, {root}]
+    AddEd3kDownload         = 1141,
+    /// [link (ed3k:file without bt=), category, paused] -> [ok, {root}]
+    AddEd3kDownloadLink     = 1142,
+    /// [root, action (0 pause, 1 resume, 2 cancel, 3 priority, 4 category, 5 clear completed:
+    /// root ignored), value] -> [ok]
+    Ed3kDownloadControl     = 1143,
+
+    // -- ed3k filter lists (batch 12): filter-list.md, src/daemon/Ed3kFiltersBridge.cpp.
+    // Entry ids (16 B) as hex; subject 1 file root (first 16 B), 2 ed2k MD4, 3 author (node
+    // ID); verdict 0 none, 1 fake, 2 harmful, 3 spam, 4 good. Failure:
+    // [false, {error: ed3k::Error}] (0: no node).
+    /// [] -> [ok, {running, lists: [{id, label, mode (bit 1 hide, 2 refuse), byHand, set (hex,
+    ///   "" none), seq (-1 none yet), files, entries, waiting}], ownMode, own: [{subject, id,
+    ///   verdict, reason}]}]
+    GetEd3kFilters          = 1130,
+    /// [link (ed3k:set), label] -> [ok, {id}]
+    FollowEd3kFilter        = 1131,
+    /// [id] -> [ok]
+    UnfollowEd3kFilter      = 1132,
+    /// [id (0: the own list), hide: bool, refuse: bool] -> [ok]
+    SetEd3kFilterMode       = 1133,
+    /// [subject, id (hex), verdict (0 takes it back), reason] -> [ok]
+    SetEd3kFilterOwn        = 1134,
+    /// [subject, id (hex)] -> [ok, {hide, refuse, shown, own (verdict, -1 none), ownReason,
+    ///   said: [{filter, verdict, label, title, reason}]}]
+    JudgeEd3kFilter         = 1135,
+    /// [label, file: bytes (<= 4 MiB)] -> [ok, {id}] — a list file opened by hand (§2: no
+    /// author, no updates)
+    OpenEd3kFilterFile      = 1136,
+
+    // -- ed3k rooms (batch 12): room.md, src/daemon/Ed3kRoomsBridge.cpp. Rooms (16 B) and post
+    // ids (16 B) as hex, member keys as base32 (52, §1.1). A link with `s` is a credential:
+    // never logged. Failure: [false, {error: ed3k::Error}] (0: no node).
+    /// [] -> [ok, {running, rooms: [{room, link, title, about, nick, owner, moderator, private,
+    ///   closed, moderated, joined, neighbours, generation, keyHeld, keyMissing, memberKey,
+    ///   mods: [key], members: [{key, nick, moderator}]}]}]
+    GetEd3kRooms            = 1120,
+    /// [room] -> [ok, posts: [{id, author, authorId, nick, moderator, sent, text, replyTo}]]
+    GetEd3kRoomPosts        = 1121,
+    /// [title, about, flags (ED3K_ROOM_PRIVATE 1, _CLOSED 2, _MODERATED 4), nick] -> [ok, {room, link}]
+    CreateEd3kRoom          = 1122,
+    /// [link (ed3k:room?...), nick] -> [ok, {room}]
+    JoinEd3kRoom            = 1123,
+    /// [room] -> [ok]
+    LeaveEd3kRoom           = 1124,
+    /// [room, text, replyTo (hex, "" none)] -> [ok, ids: array]; shown as PushEd3kRoomPost
+    PostEd3kRoom            = 1125,
+    /// [room, nick] -> [ok]
+    SetEd3kRoomNick         = 1126,
+    /// [room, title, about, flags (_CLOSED 2, _MODERATED 4), mods: [key]] -> [ok] — owner
+    SetEd3kRoomInfo         = 1127,
+    /// [room, action (0 admit, 1 ban, 2 lift, 3 new generation), member key, until (Unix, 0)]
+    ///   -> [ok, {admit: text} | {generation}] — moderator
+    ModerateEd3kRoom        = 1128,
+    /// [admit text (ed3k-admit:...)] -> [ok, {room}] — newcomer of a closed room
+    ImportEd3kRoomAdmit     = 1129,
+
+    // -- ed3k sets and live (batch 12): followed sets (file-set.md §5.3) and live streams
+    // (live.md), src/daemon/Ed3kSetsBridge.cpp. Set ids are numbers, roots and streams hex.
+    // A set: {id, link ("" for a hidden one: a credential), title, author (key hex), hidden,
+    // pinned, followed, policy (0 ask, 1 download), seq / pendingSeq (-1 none), added, changed,
+    // removed (paths of the pending version), dir, error, totalSize, members: [{path, root,
+    // size, skipped, state (0 skipped, 1 waiting, 2 downloading, 3 complete, 4 failed,
+    // 5 paused), done}], parts: [{author, seq, dir, name, files, size}]}. A stream: {id,
+    // title, media, codecs, state (0 joining, 1 playing, 2 interrupted, 3 no peers, 4 ended),
+    // neighbours, segments, bytes, viewers, url}. Failure: [false, {error: string (localized)}].
+    /// [] -> [ok, {running, sets: [set]}]
+    GetEd3kSets             = 1110,
+    /// [link (ed3k:set), policy] -> [ok, {id}]
+    FollowEd3kSet           = 1111,
+    /// [id] -> [ok] — the member files stay
+    UnfollowEd3kSet         = 1112,
+    /// [id, policy] -> [ok]
+    SetEd3kSetPolicy        = 1113,
+    /// [id, skipped: [path]] -> [ok] — members (or directories) left out
+    SetEd3kSetSelection     = 1114,
+    /// [id] -> [ok] — take the pending version, download what the selection wants
+    ApplyEd3kSetVersion     = 1115,
+    /// [id, author (key hex, "" every author)] -> [ok] — open parts (multi-author-set.md §3.5)
+    DownloadEd3kSetParts    = 1116,
+    /// [link (ed3k:live)] -> [ok, {id, url}]
+    WatchEd3kLive           = 1117,
+    /// [id] -> [ok]
+    LeaveEd3kLive           = 1118,
+    /// [] -> [ok, {running, streams: [stream]}]
+    GetEd3kLive             = 1119,
+    /// [link (ed3k:set)] -> [ok, {url}] — the set's website origin (name.md §6.2; "" while
+    /// the website server does not listen)
+    GetEd3kSetSite          = 1144,
 
     // -- Responses (Core -> GUI) ---------------------------------------------
 
@@ -944,7 +1076,7 @@ enum class IpcMsgType : int {
     /// [id: string] — every wanted byte is there. Uncoalesced.
     PushTorrentFinished    = 954,
 
-    // -- ed3k pushes (1050-1099) -----------------------------------------------
+    // -- ed3k pushes (1050-1099; more in 1150-1199) -----------------------------------------------
 
     /// [{...GetEd3kStatus...}] — the node started or stopped, its contacts, address
     /// class or router duty changed. A state push: a slow reader keeps the last.
@@ -975,7 +1107,56 @@ enum class IpcMsgType : int {
     /// [ask: int, host: string, url: string] — an ed3k:nodes link wants to add a node list
     /// source: ask the user (show host), answer with AnswerEd3kBootstrapAsk. Sent only
     /// while a GUI is connected; else the daemon refuses at once
+    // -- ed3k stake (batch 12), see BurnEd3kStake
+    /// [{...GetEd3kStakeClaims...}] — the claims of own burns changed (a state push)
+    PushEd3kStakeClaims    = 1076,
+    /// [{what (ED3K_CREDIT_TX_BURN_FOR_STAKE 3 / _CLAIM_STAKE 4), state (ED3K_CREDIT_STATE_*),
+    ///   revert (ED3K_CREDIT_REVERT_*), tx (hash hex)}] — a stake transaction moved
+    PushEd3kStakeTx        = 1077,
     PushEd3kBootstrapAsk   = 1080,
+
+    // hoster links (1150-1159)
+    /// [item] — added or changed; coalesced on the id
+    PushHosterItem         = 1150,
+    /// [id: int]
+    PushHosterItemRemoved  = 1151,
+    /// [item: int (0: none), puzzle: int, image: bytes, host, explain, timeout: s] — show the
+    /// image puzzle, answer with AnswerHosterPuzzle
+    PushHosterPuzzle       = 1152,
+    /// [item: int, links: [{url, name, host, size}]] — a folder link: ask which to add (AddHosterLinks)
+    PushHosterLinks        = 1153,
+    /// [host, user, {valid, premium, expires, trafficLeft, error}]
+    PushHosterAccount      = 1154,
+
+    // -- ed3k downloads (batch 12), see GetEd3kDownloads (1150-1154 were taken by the hoster links)
+    /// [{...GetEd3kDownloads...}] — the ed3k download list changed (a state push, at most once a second)
+    PushEd3kDownloads      = 1180,
+
+    // -- ed3k filter lists (batch 12), see GetEd3kFilters
+    /// [] — followed lists, their versions or the own verdicts changed (a state push)
+    PushEd3kFiltersChanged = 1170,
+
+    // -- ed3k rooms (batch 12), see GetEd3kRooms
+    /// [] — the rooms, an info, a nick or a room's state changed (a state push): GetEd3kRooms
+    PushEd3kRoomsChanged   = 1160,
+    /// [room, {id, author, authorId, nick, moderator, sent, text, replyTo}] — a post to show once
+    PushEd3kRoomPost       = 1161,
+    /// [room, ids: array] — posts dropped by a ban
+    PushEd3kRoomPostsRemoved = 1162,
+    /// [room, member key, nick, left: bool, member id: hex]
+    PushEd3kRoomPresence   = 1163,
+    /// [room, kind (Ed3kRooms::Notice), value, flag: bool, who (node hex, member key base32, "")]
+    PushEd3kRoomNotice     = 1164,
+
+    // -- ed3k sets and live (batch 12), see GetEd3kSets / GetEd3kLive
+    /// [{...GetEd3kSets...}] — followed sets, versions or member states changed (a state push)
+    PushEd3kSetsChanged    = 1155,
+    /// [id, title, seq, added, changed, removed] — a new version of a set with policy ask
+    PushEd3kSetVersion     = 1156,
+    /// [{...GetEd3kLive...}] — a stream's state changed (a state push)
+    PushEd3kLiveChanged    = 1157,
+    /// [link] — the user opened a set that is no website (name.md §6.1): offer it for download
+    PushEd3kSetOffer       = 1158,
 };
 
 /// What SetCategoryStatus should do to every download in the category.

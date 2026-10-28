@@ -31,6 +31,8 @@ enum class ToolbarButtonId : int {
     SharedFiles = 14, Messages = 15, IRC = 16, Statistics = 17,
     Usenet = 18, Torrents = 19,
     Options = 20, Tools = 21, Help = 22, DownloadsFolder = 23,
+    // the 10-19 tab block is full: a later tab takes the next free id
+    Hoster = 24,
 };
 
 struct ToolbarButtonDef {
@@ -59,6 +61,9 @@ inline constexpr ToolbarButtonDef kAllButtons[] = {
     // Without it findButtonDef() misses 19: a saved order keeping it just skips it
     {ToolbarButtonId::Torrents,    QT_TRANSLATE_NOOP("eMule::MainWindow", "Torrents"),      "Torrent.ico",    QStyle::SP_DriveNetIcon,             9},
 #endif
+#ifdef EMULE_HAVE_HOSTER_JD
+    {ToolbarButtonId::Hoster,      QT_TRANSLATE_NOOP("eMule::MainWindow", "Hoster"),        "Hoster.ico",     QStyle::SP_ArrowDown,                10},
+#endif
     {ToolbarButtonId::DownloadsFolder, QT_TRANSLATE_NOOP("eMule::MainWindow", "Downloads Folder"), "DownloadsFolder.ico",
                                                     QStyle::SP_DirOpenIcon,             -1},
     {ToolbarButtonId::Options,     QT_TRANSLATE_NOOP("eMule::MainWindow", "Options"),       "Preferences.ico",QStyle::SP_FileDialogDetailedView,  -1},
@@ -74,11 +79,14 @@ inline constexpr ToolbarButtonDef kAllButtons[] = {
 /// only through Customize Toolbar. That is deliberate — the alternative re-adds a
 /// button the user deliberately removed, on every restart.
 inline const QList<int> kDefaultToolbarOrder = {
+    0, 1, 10, 11, 12, 13, 14, 15, 16, 18,
 #ifdef EMULE_HAVE_BITTORRENT
-    0, 1, 10, 11, 12, 13, 14, 15, 16, 18, 19, 17, 1, 23, 20, 21, 22
-#else
-    0, 1, 10, 11, 12, 13, 14, 15, 16, 18, 17, 1, 23, 20, 21, 22
+    19,
 #endif
+#ifdef EMULE_HAVE_HOSTER_JD
+    24,
+#endif
+    17, 1, 23, 20, 21, 22
 };
 
 [[nodiscard]] inline const ToolbarButtonDef* findButtonDef(ToolbarButtonId id)

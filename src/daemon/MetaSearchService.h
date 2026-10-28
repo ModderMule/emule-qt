@@ -16,6 +16,7 @@
 
 #include <QCborMap>
 #include <QHash>
+#include <QSet>
 #include <QObject>
 
 #include <functional>
@@ -75,6 +76,9 @@ public:
     void continueMetaSearch(uint32 searchID) override;
     void cancelMetaSearch(uint32 searchID) override;
 
+    /// The runner of SearchType::Ed3k (the ed3k node's Ed3kSearch); null: refused.
+    void setEd3kRunner(MetaSearchRunner* runner) { m_ed3kRunner = runner; }
+
 private:
     explicit MetaSearchService(QObject* parent);
 
@@ -116,6 +120,9 @@ private:
     QHash<uint32, SearchRun> m_searches;
     /// Search → the server that answered it, where its rows cannot say (IPv6-only).
     QHash<uint32, Target> m_searchTargets;
+    MetaSearchRunner* m_ed3kRunner = nullptr;
+    /// searches handed to m_ed3kRunner
+    QSet<uint32> m_ed3kSearches;
 
     enodemeta::MetaApiClient m_client;
     std::unique_ptr<enodemeta::MetaAccountStore> m_store;

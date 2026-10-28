@@ -229,6 +229,67 @@ static QString ipcMsgTypeName(Ipc::IpcMsgType type)
     case T::PushEd3kNameFailed:   return QStringLiteral("PushEd3kNameFailed");
     case T::PushEd3kNamesChanged: return QStringLiteral("PushEd3kNamesChanged");
     case T::PushEd3kNameFriendList: return QStringLiteral("PushEd3kNameFriendList");
+    case T::GetEd3kRooms:         return QStringLiteral("GetEd3kRooms");
+    case T::GetEd3kRoomPosts:     return QStringLiteral("GetEd3kRoomPosts");
+    case T::CreateEd3kRoom:       return QStringLiteral("CreateEd3kRoom");
+    case T::JoinEd3kRoom:         return QStringLiteral("JoinEd3kRoom");
+    case T::LeaveEd3kRoom:        return QStringLiteral("LeaveEd3kRoom");
+    case T::PostEd3kRoom:         return QStringLiteral("PostEd3kRoom");
+    case T::SetEd3kRoomNick:      return QStringLiteral("SetEd3kRoomNick");
+    case T::SetEd3kRoomInfo:      return QStringLiteral("SetEd3kRoomInfo");
+    case T::ModerateEd3kRoom:     return QStringLiteral("ModerateEd3kRoom");
+    case T::ImportEd3kRoomAdmit:  return QStringLiteral("ImportEd3kRoomAdmit");
+    case T::PushEd3kRoomsChanged: return QStringLiteral("PushEd3kRoomsChanged");
+    case T::PushEd3kRoomPost:     return QStringLiteral("PushEd3kRoomPost");
+    case T::PushEd3kRoomPostsRemoved: return QStringLiteral("PushEd3kRoomPostsRemoved");
+    case T::PushEd3kRoomPresence: return QStringLiteral("PushEd3kRoomPresence");
+    case T::PushEd3kRoomNotice:   return QStringLiteral("PushEd3kRoomNotice");
+    case T::GetEd3kDownloads:     return QStringLiteral("GetEd3kDownloads");
+    case T::AddEd3kDownload:      return QStringLiteral("AddEd3kDownload");
+    case T::AddEd3kDownloadLink:  return QStringLiteral("AddEd3kDownloadLink");
+    case T::Ed3kDownloadControl:  return QStringLiteral("Ed3kDownloadControl");
+    case T::PushEd3kDownloads:    return QStringLiteral("PushEd3kDownloads");
+    case T::GetEd3kSets:          return QStringLiteral("GetEd3kSets");
+    case T::FollowEd3kSet:        return QStringLiteral("FollowEd3kSet");
+    case T::UnfollowEd3kSet:      return QStringLiteral("UnfollowEd3kSet");
+    case T::SetEd3kSetPolicy:     return QStringLiteral("SetEd3kSetPolicy");
+    case T::SetEd3kSetSelection:  return QStringLiteral("SetEd3kSetSelection");
+    case T::ApplyEd3kSetVersion:  return QStringLiteral("ApplyEd3kSetVersion");
+    case T::DownloadEd3kSetParts: return QStringLiteral("DownloadEd3kSetParts");
+    case T::WatchEd3kLive:        return QStringLiteral("WatchEd3kLive");
+    case T::LeaveEd3kLive:        return QStringLiteral("LeaveEd3kLive");
+    case T::GetEd3kLive:          return QStringLiteral("GetEd3kLive");
+    case T::GetEd3kSetSite:       return QStringLiteral("GetEd3kSetSite");
+    case T::PushEd3kSetsChanged:  return QStringLiteral("PushEd3kSetsChanged");
+    case T::PushEd3kSetVersion:   return QStringLiteral("PushEd3kSetVersion");
+    case T::PushEd3kLiveChanged:  return QStringLiteral("PushEd3kLiveChanged");
+    case T::PushEd3kSetOffer:     return QStringLiteral("PushEd3kSetOffer");
+    case T::BurnEd3kStake:        return QStringLiteral("BurnEd3kStake");
+    case T::ClaimEd3kStake:       return QStringLiteral("ClaimEd3kStake");
+    case T::GetEd3kStakeClaims:   return QStringLiteral("GetEd3kStakeClaims");
+    case T::RefreshEd3kStakeClaims: return QStringLiteral("RefreshEd3kStakeClaims");
+    case T::PushEd3kStakeClaims:  return QStringLiteral("PushEd3kStakeClaims");
+    case T::PushEd3kStakeTx:      return QStringLiteral("PushEd3kStakeTx");
+    case T::GetEd3kFilters:       return QStringLiteral("GetEd3kFilters");
+    case T::FollowEd3kFilter:     return QStringLiteral("FollowEd3kFilter");
+    case T::UnfollowEd3kFilter:   return QStringLiteral("UnfollowEd3kFilter");
+    case T::SetEd3kFilterMode:    return QStringLiteral("SetEd3kFilterMode");
+    case T::SetEd3kFilterOwn:     return QStringLiteral("SetEd3kFilterOwn");
+    case T::JudgeEd3kFilter:      return QStringLiteral("JudgeEd3kFilter");
+    case T::OpenEd3kFilterFile:   return QStringLiteral("OpenEd3kFilterFile");
+    case T::PushEd3kFiltersChanged: return QStringLiteral("PushEd3kFiltersChanged");
+    case T::GetHosterItems:       return QStringLiteral("GetHosterItems");
+    case T::AddHosterLinks:       return QStringLiteral("AddHosterLinks");
+    case T::HosterAction:         return QStringLiteral("HosterAction");
+    case T::AnswerHosterPuzzle:   return QStringLiteral("AnswerHosterPuzzle");
+    case T::CheckHosterAccount:   return QStringLiteral("CheckHosterAccount");
+    case T::DownloadJavaRuntime:  return QStringLiteral("DownloadJavaRuntime");
+    case T::LocateJavaRuntime:    return QStringLiteral("LocateJavaRuntime");
+    case T::PushHosterItem:       return QStringLiteral("PushHosterItem");
+    case T::PushHosterItemRemoved: return QStringLiteral("PushHosterItemRemoved");
+    case T::PushHosterPuzzle:     return QStringLiteral("PushHosterPuzzle");
+    case T::PushHosterLinks:      return QStringLiteral("PushHosterLinks");
+    case T::PushHosterAccount:    return QStringLiteral("PushHosterAccount");
     default:
         return QStringLiteral("Unknown(%1)").arg(static_cast<int>(type));
     }
@@ -609,6 +670,210 @@ int IpcClient::moveEd3kNameList(qint64 id, qint64 place, ResponseCallback callba
     return sendRequest(std::move(msg), std::move(callback));
 }
 
+// -- ed3k rooms ----------------------------------------------------------------
+
+void IpcClient::requestEd3kRooms(const QObject* owner, ResponseCallback callback)
+{
+    sendPoll(owner, IpcMessage(IpcMsgType::GetEd3kRooms), std::move(callback));
+}
+
+void IpcClient::requestEd3kDownloads(const QObject* owner, ResponseCallback callback)
+{
+    sendPoll(owner, IpcMessage(IpcMsgType::GetEd3kDownloads), std::move(callback));
+}
+
+int IpcClient::addEd3kDownload(const QString& root, qint64 size, const QString& name, int category, bool paused,
+                               ResponseCallback callback)
+{
+    IpcMessage msg(IpcMsgType::AddEd3kDownload);
+    msg.append(root);
+    msg.append(size);
+    msg.append(name);
+    msg.append(qint64(category));
+    msg.append(paused);
+    return sendRequest(std::move(msg), std::move(callback));
+}
+
+int IpcClient::addEd3kDownloadLink(const QString& link, int category, bool paused, ResponseCallback callback)
+{
+    IpcMessage msg(IpcMsgType::AddEd3kDownloadLink);
+    msg.append(link);
+    msg.append(qint64(category));
+    msg.append(paused);
+    return sendRequest(std::move(msg), std::move(callback));
+}
+
+int IpcClient::controlEd3kDownload(const QString& root, int action, qint64 value, ResponseCallback callback)
+{
+    IpcMessage msg(IpcMsgType::Ed3kDownloadControl);
+    msg.append(root);
+    msg.append(qint64(action));
+    msg.append(value);
+    return sendRequest(std::move(msg), std::move(callback));
+}
+
+// -- ed3k sets and live streams --------------------------------------------------
+
+void IpcClient::requestEd3kSets(const QObject* owner, ResponseCallback callback)
+{
+    sendPoll(owner, IpcMessage(IpcMsgType::GetEd3kSets), std::move(callback));
+}
+
+int IpcClient::followEd3kSet(const QString& link, int policy, ResponseCallback callback)
+{
+    IpcMessage msg(IpcMsgType::FollowEd3kSet);
+    msg.append(link);
+    msg.append(qint64(policy));
+    return sendRequest(std::move(msg), std::move(callback));
+}
+
+int IpcClient::unfollowEd3kSet(qint64 id, ResponseCallback callback)
+{
+    IpcMessage msg(IpcMsgType::UnfollowEd3kSet);
+    msg.append(id);
+    return sendRequest(std::move(msg), std::move(callback));
+}
+
+int IpcClient::setEd3kSetPolicy(qint64 id, int policy, ResponseCallback callback)
+{
+    IpcMessage msg(IpcMsgType::SetEd3kSetPolicy);
+    msg.append(id);
+    msg.append(qint64(policy));
+    return sendRequest(std::move(msg), std::move(callback));
+}
+
+int IpcClient::setEd3kSetSelection(qint64 id, const QStringList& skipped, ResponseCallback callback)
+{
+    IpcMessage msg(IpcMsgType::SetEd3kSetSelection);
+    msg.append(id);
+    QCborArray paths;
+    for (const QString& p : skipped)
+        paths.append(p);
+    msg.append(paths);
+    return sendRequest(std::move(msg), std::move(callback));
+}
+
+int IpcClient::applyEd3kSetVersion(qint64 id, ResponseCallback callback)
+{
+    IpcMessage msg(IpcMsgType::ApplyEd3kSetVersion);
+    msg.append(id);
+    return sendRequest(std::move(msg), std::move(callback));
+}
+
+int IpcClient::downloadEd3kSetParts(qint64 id, const QString& author, ResponseCallback callback)
+{
+    IpcMessage msg(IpcMsgType::DownloadEd3kSetParts);
+    msg.append(id);
+    msg.append(author);
+    return sendRequest(std::move(msg), std::move(callback));
+}
+
+int IpcClient::requestEd3kSetSite(const QString& link, ResponseCallback callback)
+{
+    IpcMessage msg(IpcMsgType::GetEd3kSetSite);
+    msg.append(link);
+    return sendRequest(std::move(msg), std::move(callback));
+}
+
+int IpcClient::watchEd3kLive(const QString& link, ResponseCallback callback)
+{
+    IpcMessage msg(IpcMsgType::WatchEd3kLive);
+    msg.append(link);
+    return sendRequest(std::move(msg), std::move(callback));
+}
+
+int IpcClient::leaveEd3kLive(const QString& id, ResponseCallback callback)
+{
+    IpcMessage msg(IpcMsgType::LeaveEd3kLive);
+    msg.append(id);
+    return sendRequest(std::move(msg), std::move(callback));
+}
+
+void IpcClient::requestEd3kLive(const QObject* owner, ResponseCallback callback)
+{
+    sendPoll(owner, IpcMessage(IpcMsgType::GetEd3kLive), std::move(callback));
+}
+
+int IpcClient::requestEd3kRoomPosts(const QString& room, ResponseCallback callback)
+{
+    IpcMessage msg(IpcMsgType::GetEd3kRoomPosts);
+    msg.append(room);
+    return sendRequest(std::move(msg), std::move(callback));
+}
+
+int IpcClient::createEd3kRoom(const QString& title, const QString& about, int flags, const QString& nick,
+                              ResponseCallback callback)
+{
+    IpcMessage msg(IpcMsgType::CreateEd3kRoom);
+    msg.append(title);
+    msg.append(about);
+    msg.append(qint64(flags));
+    msg.append(nick);
+    return sendRequest(std::move(msg), std::move(callback));
+}
+
+int IpcClient::joinEd3kRoom(const QString& link, const QString& nick, ResponseCallback callback)
+{
+    IpcMessage msg(IpcMsgType::JoinEd3kRoom);
+    msg.append(link);
+    msg.append(nick);
+    return sendRequest(std::move(msg), std::move(callback));
+}
+
+int IpcClient::leaveEd3kRoom(const QString& room, ResponseCallback callback)
+{
+    IpcMessage msg(IpcMsgType::LeaveEd3kRoom);
+    msg.append(room);
+    return sendRequest(std::move(msg), std::move(callback));
+}
+
+int IpcClient::postEd3kRoom(const QString& room, const QString& text, const QString& replyTo, ResponseCallback callback)
+{
+    IpcMessage msg(IpcMsgType::PostEd3kRoom);
+    msg.append(room);
+    msg.append(text);
+    msg.append(replyTo);
+    return sendRequest(std::move(msg), std::move(callback));
+}
+
+int IpcClient::setEd3kRoomNick(const QString& room, const QString& nick, ResponseCallback callback)
+{
+    IpcMessage msg(IpcMsgType::SetEd3kRoomNick);
+    msg.append(room);
+    msg.append(nick);
+    return sendRequest(std::move(msg), std::move(callback));
+}
+
+int IpcClient::setEd3kRoomInfo(const QString& room, const QString& title, const QString& about, int flags,
+                               const QStringList& mods, ResponseCallback callback)
+{
+    IpcMessage msg(IpcMsgType::SetEd3kRoomInfo);
+    msg.append(room);
+    msg.append(title);
+    msg.append(about);
+    msg.append(qint64(flags));
+    msg.append(QCborArray::fromStringList(mods));
+    return sendRequest(std::move(msg), std::move(callback));
+}
+
+int IpcClient::moderateEd3kRoom(const QString& room, int action, const QString& member, qint64 until,
+                                ResponseCallback callback)
+{
+    IpcMessage msg(IpcMsgType::ModerateEd3kRoom);
+    msg.append(room);
+    msg.append(qint64(action));
+    msg.append(member);
+    msg.append(until);
+    return sendRequest(std::move(msg), std::move(callback));
+}
+
+int IpcClient::importEd3kRoomAdmit(const QString& text, ResponseCallback callback)
+{
+    IpcMessage msg(IpcMsgType::ImportEd3kRoomAdmit);
+    msg.append(text);
+    return sendRequest(std::move(msg), std::move(callback));
+}
+
 // ---------------------------------------------------------------------------
 // Private slots
 // ---------------------------------------------------------------------------
@@ -881,6 +1146,24 @@ void IpcClient::dispatchPushEvent(const IpcMessage& msg)
     case IpcMsgType::PushEd3kNameFailed:   emit ed3kNameFailed(msg); break;
     case IpcMsgType::PushEd3kNamesChanged: emit ed3kNamesChanged(msg); break;
     case IpcMsgType::PushEd3kNameFriendList: emit ed3kNameFriendListOffered(msg); break;
+    case IpcMsgType::PushEd3kRoomsChanged: emit ed3kRoomsChanged(msg); break;
+    case IpcMsgType::PushEd3kRoomPost:     emit ed3kRoomPost(msg); break;
+    case IpcMsgType::PushEd3kRoomPostsRemoved: emit ed3kRoomPostsRemoved(msg); break;
+    case IpcMsgType::PushEd3kRoomPresence: emit ed3kRoomPresence(msg); break;
+    case IpcMsgType::PushEd3kRoomNotice:   emit ed3kRoomNotice(msg); break;
+    case IpcMsgType::PushEd3kDownloads:    emit ed3kDownloadsChanged(msg); break;
+    case IpcMsgType::PushEd3kSetsChanged:  emit ed3kSetsChanged(msg); break;
+    case IpcMsgType::PushEd3kSetVersion:   emit ed3kSetVersion(msg); break;
+    case IpcMsgType::PushEd3kLiveChanged:  emit ed3kLiveChanged(msg); break;
+    case IpcMsgType::PushEd3kSetOffer:     emit ed3kSetOffered(msg); break;
+    case IpcMsgType::PushEd3kStakeClaims:  emit ed3kStakeClaimsChanged(msg); break;
+    case IpcMsgType::PushEd3kStakeTx:      emit ed3kStakeTx(msg); break;
+    case IpcMsgType::PushEd3kFiltersChanged: emit ed3kFiltersChanged(msg); break;
+    case IpcMsgType::PushHosterItem:       emit hosterItemChanged(msg); break;
+    case IpcMsgType::PushHosterItemRemoved: emit hosterItemRemoved(msg); break;
+    case IpcMsgType::PushHosterPuzzle:     emit hosterPuzzleAsked(msg); break;
+    case IpcMsgType::PushHosterLinks:      emit hosterLinksExpanded(msg); break;
+    case IpcMsgType::PushHosterAccount:    emit hosterAccountChecked(msg); break;
     case IpcMsgType::PushSharedFileUpdate: emit sharedFileUpdated(msg); break;
     case IpcMsgType::PushSharedFileRemoved: emit sharedFileRemoved(msg); break;
     case IpcMsgType::PushUploadUpdate:     emit uploadUpdated(msg); break;

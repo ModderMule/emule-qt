@@ -57,6 +57,9 @@ private slots:
     void fieldsAreCarriedThroughSince();
     void usenetRateSource_isSampledClampedAndClearable();
     void btRateSource_feedsBothScopesAndToolbarTotals();
+    void ed3kRateSource_feedsBothScopesAndToolbarDownload();
+    void sampleCbor_roundTripsNineteenFields();
+    void sampleCbor_readsOldSeventeenFields();
 };
 
 void tst_StatsHistory::speed_seqStartsAtOneAndIsMonotonic()
@@ -285,6 +288,86 @@ void tst_StatsHistory::btRateSource_feedsBothScopesAndToolbarTotals()
     QCOMPARE(speed[1].down, 100.0f);
     QCOMPARE(speed[1].up, 0.0f);
     QCOMPARE(speed[2].down, 100.0f);
+}
+
+// ed3k has its own lines in both scopes (fields 17/18); the toolbar adds its download
+// only (its sent bytes are in eD2K's upload rate already).
+void tst_StatsHistory::ed3kRateSource_feedsBothScopesAndToolbarDownload()
+{
+    const ScopedGraphInterval interval(1);
+    StatsHistory hist;
+
+    EngineRates e3{20.0f, 8.0f};
+    hist.setEd3kRateSource([&e3] { return e3; });
+    hist.sample(100);
+    e3 = {-1.0f, -1.0f};
+    hist.sample(101);
+    hist.setEd3kRateSource({});
+    hist.sample(102);
+
+    const auto samples = hist.statsSince(0);
+    QCOMPARE(samples.size(), size_t{3});
+    QCOMPARE(samples[0].ed3kDown, 20.0f);
+    QCOMPARE(samples[0].ed3kUp, 8.0f);
+    QCOMPARE(samples[1].ed3kDown, 0.0f);
+    QCOMPARE(samples[1].ed3kUp, 0.0f);
+    QCOMPARE(samples[2].ed3kDown, 0.0f);
+
+    const auto speed = hist.speedSince(0);
+    QCOMPARE(speed[0].down, 20.0f);
+    QCOMPARE(speed[0].up, 0.0f);
+}
+
+// GetStatsHistory sends a sample positionally: 19 fields, ed3k last.
+void tst_StatsHistory::sampleCbor_roundTripsNineteenFields()
+{
+    StatsGraphSample s;
+    s.seq = 7;
+    s.timestamp = 1234;
+    s.downCurrent = 1.5f;
+    s.upFriend = 2.5f;
+    s.connActive = 9;
+    s.downTransferring = 3;
+    s.usenetDown = 4.0f;
+    s.btDown = 5.0f;
+    s.btUp = 6.0f;
+    s.ed3kDown = 7.0f;
+    s.ed3kUp = 8.0f;
+    const QCborArray a = statsSampleToCbor(s);
+    QCOMPARE(a.size(), qsizetype(kStatsSampleFields));
+    QCOMPARE(a.at(17).toDouble(), 7.0);
+    QCOMPARE(a.at(18).toDouble(), 8.0);
+    const auto back = statsSampleFromCbor(a);
+    QVERIFY(back);
+    QCOMPARE(back->seq, 7u);
+    QCOMPARE(back->timestamp, 1234u);
+    QCOMPARE(back->downCurrent, 1.5f);
+    QCOMPARE(back->upFriend, 2.5f);
+    QCOMPARE(back->connActive, 9u);
+    QCOMPARE(back->downTransferring, 3u);
+    QCOMPARE(back->btUp, 6.0f);
+    QCOMPARE(back->ed3kDown, 7.0f);
+    QCOMPARE(back->ed3kUp, 8.0f);
+}
+
+// A core before ed3k sends 17 fields: still read, ed3k as 0; shorter is dropped.
+void tst_StatsHistory::sampleCbor_readsOldSeventeenFields()
+{
+    StatsGraphSample s;
+    s.seq = 3;
+    s.btUp = 6.0f;
+    QCborArray a = statsSampleToCbor(s);
+    a.removeLast();
+    a.removeLast();
+    QCOMPARE(a.size(), qsizetype(kStatsSampleFieldsOld));
+    const auto back = statsSampleFromCbor(a);
+    QVERIFY(back);
+    QCOMPARE(back->seq, 3u);
+    QCOMPARE(back->btUp, 6.0f);
+    QCOMPARE(back->ed3kDown, 0.0f);
+    QCOMPARE(back->ed3kUp, 0.0f);
+    a.removeLast();
+    QVERIFY(!statsSampleFromCbor(a));
 }
 
 QTEST_MAIN(tst_StatsHistory)

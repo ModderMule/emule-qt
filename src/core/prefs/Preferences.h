@@ -72,6 +72,42 @@ struct Ed3kCreditPrefs {
     bool operator==(const Ed3kCreditPrefs&) const = default;
 };
 
+/// The chaintube chain (chaintube.md §4.2), YAML `ed3k: chain:`, IPC keys `ed3kChain*`.
+/// No defaults: the parameters come from the network (a test deployment is named in §4.2).
+/// The RPC endpoints are ed3kChaintubeRpc.
+struct Ed3kChainPrefs {
+    uint64 chainId = 0;            ///< ed3kChainId; 0 = none set (chain reads off)
+    QString content;               ///< ed3kChainContent: 0x + 40 hex; empty = none set
+    QString comment;               ///< ed3kChainComment
+    QString vote;                  ///< ed3kChainVote
+    QString forwarder;             ///< ed3kChainForwarder: of requests a site sends; empty = none
+    bool operator==(const Ed3kChainPrefs&) const = default;
+};
+
+/// A login at a hoster (hoster.md §3): never sent to a peer, never logged. IPC sends it
+/// without the password; an entry without one keeps the stored password.
+struct Ed3kHosterAccount {
+    QString host;      ///< the resolver's plugin host, e.g. "rapidgator.net"
+    QString user;
+    QString password;  ///< encrypted in preferences.yml with the email key
+    bool operator==(const Ed3kHosterAccount&) const = default;
+};
+
+/// Links at file hosters (hoster.md), YAML `ed3k: hoster:`, IPC keys `ed3kHoster*`.
+/// Hoster downloads are off by default (§3); vouched links are published by default (the user's
+/// choice; hoster.md §4.1 holds them back by default).
+struct Ed3kHosterPrefs {
+    bool enabled = false;          ///< ed3kHosterEnabled: the user allowed downloads from hosters
+    QString java;                  ///< ed3kHosterJava: path of `java`; empty = find one
+    bool autoJava = true;          ///< ed3kHosterAutoJava: download a runtime when none is found
+    uint32 maxStreams = 2;         ///< ed3kHosterMaxStreams: hoster streams at once, 1..16
+    bool askPuzzles = true;        ///< ed3kHosterPuzzles: show image puzzles; off = skip them
+    bool publishLinks = true;      ///< ed3kHosterPublishLinks: publish and hand out vouched links (§4.1)
+    bool fromPeers = true;         ///< ed3kHosterFromPeers: use links that peers name
+    QList<Ed3kHosterAccount> accounts; ///< ed3kHosterAccounts
+    bool operator==(const Ed3kHosterPrefs&) const = default;
+};
+
 // Bandwidth defaults (KiB/s) for a fresh install; also the first start wizard's
 // "recommended defaults". Download unlimited, upload under half a 10 Mbit uplink.
 inline constexpr uint32 kDefaultMaxUpload = 500;
@@ -1348,6 +1384,18 @@ public:
     void setEd3kCredit(const Ed3kCreditPrefs& val);
     /// One `ed3kCredit*` IPC key into @p c (unknown values keep the field). False: not one.
     static bool applyEd3kCreditKey(Ed3kCreditPrefs& c, const QString& key, const QCborValue& val);
+    /// The chaintube chain (chaintube.md §4.2); see Ed3kChainPrefs. A change configures the
+    /// running node again (no restart).
+    [[nodiscard]] Ed3kChainPrefs ed3kChain() const;
+    void setEd3kChain(const Ed3kChainPrefs& val);
+    /// One `ed3kChain*` IPC key into @p c (unknown values keep the field). False: not one.
+    static bool applyEd3kChainKey(Ed3kChainPrefs& c, const QString& key, const QCborValue& val);
+    /// Hoster links (hoster.md); see Ed3kHosterPrefs. A change reconfigures the join (no restart).
+    [[nodiscard]] Ed3kHosterPrefs ed3kHoster() const;
+    void setEd3kHoster(const Ed3kHosterPrefs& val);
+    /// One `ed3kHoster*` IPC key into @p h. False: not one. An account without a password
+    /// keeps the one of the same host and user in @p h.
+    static bool applyEd3kHosterKey(Ed3kHosterPrefs& h, const QString& key, const QCborValue& val);
 
     /// ED2K's current slice of maxDownload(), in KB/s. Runtime only: it is
     /// recomputed twice a second from the live split and never written to

@@ -31,7 +31,17 @@ win32 {
 SOURCES += \
     Ed3kBootstrap.cpp \
     Ed3kCredit.cpp \
+    Ed3kDownloads.cpp \
+    Ed3kSearch.cpp \
+    Ed3kChain.cpp \
+    Ed3kFilters.cpp \
+    Ed3kUploads.cpp \
     Ed3kFriends.cpp \
+    Ed3kRooms.cpp \
+    Ed3kSets.cpp \
+    Ed3kSetManifest.cpp \
+    Ed3kLive.cpp \
+    Ed3kHosterJoin.cpp \
     Ed3kHttp.cpp \
     Ed3kJoinBase.cpp \
     Ed3kLan.cpp \
@@ -47,8 +57,18 @@ SOURCES += \
 HEADERS += \
     Ed3kBootstrap.h \
     Ed3kCredit.h \
+    Ed3kDownloads.h \
+    Ed3kSearch.h \
+    Ed3kChain.h \
+    Ed3kFilters.h \
+    Ed3kUploads.h \
     Ed3kFfi.h \
     Ed3kFriends.h \
+    Ed3kRooms.h \
+    Ed3kSets.h \
+    Ed3kSetManifest.h \
+    Ed3kLive.h \
+    Ed3kHosterJoin.h \
     Ed3kHttp.h \
     Ed3kJoinBase.h \
     Ed3kLan.h \
@@ -59,4 +79,12 @@ HEADERS += \
     Ed3kSiteServer.h \
     Ed3kStore.h \
     Ed3kTorrentJoin.h \
+    Ed3kResolver.h \
     Ed3kUsenetJoin.h
+
+# Hoster resolver: on by default, as CMake EMULE_HOSTER_JD. `qmake CONFIG+=no_emule_hoster_jd` turns it off
+!no_emule_hoster_jd {
+    DEFINES += EMULE_HAVE_HOSTER_JD=1
+    SOURCES += Ed3kJavaRuntime.cpp Ed3kJdResolver.cpp
+    HEADERS += Ed3kJavaRuntime.h Ed3kJdResolver.h
+}

@@ -85,6 +85,8 @@ public:
 
     /// The root @p md4 is shared under; nullopt: not (yet) shared.
     [[nodiscard]] std::optional<::ed3k::Root> rootOf(const QByteArray& md4) const;
+    /// The shared file served under @p root; nullopt: none (the upload queue view names files).
+    [[nodiscard]] std::optional<SharedEntry> entryOfRoot(const ::ed3k::Root& root) const;
     /// The `ed2k` ALIAS record of @p md4 is published.
     [[nodiscard]] bool aliasPublished(const QByteArray& md4) const;
     /// @p md4 is published with its keywords (Publish::Both: found by ed3k search), not only

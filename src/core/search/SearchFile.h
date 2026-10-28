@@ -14,6 +14,7 @@
 #include "utils/Opcodes.h"
 #include "utils/Types.h"
 
+#include <QByteArray>
 #include <QString>
 
 #include <list>
@@ -226,6 +227,15 @@ public:
     /// the search list drops these (enodemeta plan §8.1).
     [[nodiscard]] bool isInvalidMetaResult() const { return m_metaInvalid; }
 
+    // --- ed3k rows (an ed3k keyword search, src/ed3k/Ed3kSearch) ---
+
+    /// An ed3k file: its 32-byte root (the hash is its first 16 bytes), the MD4 its
+    /// publisher named (empty: none). GetSearchResults shows it as metaKind 7.
+    void setEd3k(const QByteArray& root, const QByteArray& ed2k) { m_ed3kRoot = root; m_ed3kEd2k = ed2k; }
+    [[nodiscard]] bool isEd3kResult() const { return m_ed3kRoot.size() == 32; }
+    [[nodiscard]] const QByteArray& ed3kRoot() const { return m_ed3kRoot; }
+    [[nodiscard]] const QByteArray& ed3kEd2k() const { return m_ed3kEd2k; }
+
     /// A server result the server itself found on Kad or a web page (FT_META_NETWORK):
     /// an ordinary eD2K file, downloadable like any other. Not a result of our own Kad
     /// search — that is isKadResult().
@@ -302,6 +312,8 @@ private:
     bool m_metaInvalid = false;
     bool m_kadOrigin = false;
     bool m_webOrigin = false;
+    QByteArray m_ed3kRoot;   ///< ed3k row: 32 B root; empty otherwise
+    QByteArray m_ed3kEd2k;
 };
 
 } // namespace eMule

@@ -211,6 +211,18 @@
     <ClCompile Include="panels\IrcPanel.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
+    <ClCompile Include="panels\IrcPanelEd3k.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="panels\ChatChannelView.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="panels\Ed3kRoomTab.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="panels\Ed3kRoomList.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
     <ClCompile Include="controls\KadContactHistogram.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
@@ -251,6 +263,15 @@
       <Filter>Source Files</Filter>
     </ClCompile>
     <ClCompile Include="dialogs\Ed3kOptionsPages.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="dialogs\Ed3kFilterPage.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="dialogs\Ed3kStakeGroup.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="dialogs\Ed3kSetsDialog.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
     <ClCompile Include="dialogs\AddNzbFilesDialog.cpp">
@@ -621,6 +642,15 @@
     <QtMoc Include="panels\IrcPanel.h">
       <Filter>Header Files</Filter>
     </QtMoc>
+    <QtMoc Include="panels\ChatChannelView.h">
+      <Filter>Header Files</Filter>
+    </QtMoc>
+    <QtMoc Include="panels\Ed3kRoomTab.h">
+      <Filter>Header Files</Filter>
+    </QtMoc>
+    <QtMoc Include="panels\Ed3kRoomList.h">
+      <Filter>Header Files</Filter>
+    </QtMoc>
     <QtMoc Include="controls\KadContactHistogram.h">
       <Filter>Header Files</Filter>
     </QtMoc>
@@ -658,6 +688,15 @@
       <Filter>Header Files</Filter>
     </QtMoc>
     <QtMoc Include="dialogs\Ed3kOptionsPages.h">
+      <Filter>Header Files</Filter>
+    </QtMoc>
+    <QtMoc Include="dialogs\Ed3kFilterPage.h">
+      <Filter>Header Files</Filter>
+    </QtMoc>
+    <QtMoc Include="dialogs\Ed3kStakeGroup.h">
+      <Filter>Header Files</Filter>
+    </QtMoc>
+    <QtMoc Include="dialogs\Ed3kSetsDialog.h">
       <Filter>Header Files</Filter>
     </QtMoc>
     <QtMoc Include="dialogs\AddNzbFilesDialog.h">

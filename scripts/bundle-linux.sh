@@ -89,6 +89,14 @@ chmod +x "$STAGE_DIR/emuleqt" "$STAGE_DIR/emulecored" "$STAGE_DIR/emuleqt-mcp"
 echo "  emuleqt"
 echo "  emulecored"
 echo "  emuleqt-mcp"
+# Hoster resolver (scripts/build-hoster-resolver.sh): next to the daemon, optional
+RESOLVER_ZIP="${EMULE_RESOLVER_ZIP:-$BUILD_DIR/hoster-resolver/resolver.zip}"
+if [ -f "$RESOLVER_ZIP" ]; then
+    cp "$RESOLVER_ZIP" "$STAGE_DIR/resolver.zip"
+    echo "  resolver.zip"
+else
+    echo "Warning: no resolver.zip (scripts/build-hoster-resolver.sh) — hoster downloads not bundled."
+fi
 
 # Replace a staged binary by a launcher that points it at the bundled libs.
 # exec, and nothing printed: emuleqt-mcp speaks JSON-RPC on stdout.
@@ -215,6 +223,7 @@ WRAPPER
     # The daemon too: it links Qt modules the GUI may not import (QtProtobuf)
     cp "$STAGE_DIR/emulecored" "$APPDIR/usr/bin/emulecored"
     chmod +x "$APPDIR/usr/bin/emulecored"
+    [ -f "$STAGE_DIR/resolver.zip" ] && cp "$STAGE_DIR/resolver.zip" "$APPDIR/usr/bin/resolver.zip"
 
     # Minimal .desktop file required by linuxdeploy
     cat > "$APPDIR/usr/share/applications/emuleqt.desktop" <<DESKTOP

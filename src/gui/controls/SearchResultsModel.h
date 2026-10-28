@@ -73,6 +73,7 @@ struct SearchResultRow {
     QString metaIndexer;
     QString metaCatalogId;   ///< FT_META_ID, echoed on the metafile fetch
     QCborArray metaServers;  ///< answering servers, [[ip, port], …]
+    QString ed3kRoot;        ///< ed3k row (metaKind 7): the file's root, 64 hex digits
 
     QString directory;       ///< folder of a browsed peer's file
     QString aichHash;        ///< empty when the answers gave none, or disagreed
@@ -94,6 +95,8 @@ struct SearchResultRow {
     [[nodiscard]] bool isUsenet() const { return metaKind == 3; }
     [[nodiscard]] bool isWeb() const { return metaKind == 5; }
     [[nodiscard]] bool isContainer() const { return metaKind == 6; }
+    /// An ed3k file (Ed3kSearch): downloaded by its root (Transfers, network ed3k).
+    [[nodiscard]] bool isEd3k() const { return metaKind == 7; }
     /// A torrent with no .torrent to fetch: its magnet is all there is.
     [[nodiscard]] bool isMagnetOnly() const { return isTorrent() && (metaFlags & 0x08) != 0; }
 

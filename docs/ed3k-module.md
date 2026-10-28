@@ -28,6 +28,9 @@ joins.
 | `src/ed3k/Ed3kFriends.{h,cpp}` | `eMule::ed3k::Ed3kFriends`: ed3k friends and chat (see "Friends and chat" below) |
 | `src/daemon/Ed3kFriendsBridge.{h,cpp}` | IPC 1001-1007 / pushes 1051-1056 of friends and chat, reached through `Ed3kBridge` |
 | `tests/tst_Ed3kFriends.cpp` | three nodes on loopback: a friend by link and request, accepted, found by its record, chat both ways, the message filter; the IPC messages through CBOR frames |
+| `src/ed3k/Ed3kRooms.{h,cpp}` | `eMule::ed3k::Ed3kRooms`: ed3k rooms (see "Rooms" below) |
+| `src/daemon/Ed3kRoomsBridge.{h,cpp}` | IPC 1120-1129 / pushes 1160-1164 of rooms, reached through `Ed3kBridge` |
+| `tests/tst_Ed3kRooms.cpp` | two nodes on loopback: an open room joined by link with posts both ways, a closed room with the admit round trip, a ban, the rooms across a restart; the IPC through CBOR frames |
 | `src/ed3k/Ed3kNames.{h,cpp}` | `eMule::ed3k::Ed3kNames`: readable names (name.md): the DNS duty, name list files, resolving and opening, pins, petnames, followed lists; the sets and members of websites (see "Names and websites" below), derived from `Ed3kJoinBase` |
 | `src/ed3k/Ed3kSiteServer.{h,cpp}` | `eMule::ed3k::Ed3kSiteServer`: the local website server (name.md §6.2), its own `QHttpServer` on 127.0.0.1 and ::1 |
 | `src/daemon/Ed3kNamesBridge.{h,cpp}` | IPC 1010-1019 / pushes 1060-1063 of names and websites, reached through `Ed3kBridge` |
@@ -35,9 +38,32 @@ joins.
 | `tests/tst_Ed3kNames.cpp` | set links, the DNS answer through a fake resolver, a domain-verified web name to a set whose page a second node serves over the website server (302, 200, headers), the gate (421, 405, 403), the IPC |
 | `src/ed3k/Ed3kCredit.{h,cpp}` | `eMule::ed3k::Ed3kCredit`: credits (credit.md): the key file, the ledger from the prefs, bids, the status (see "Credits" below) |
 | `src/daemon/Ed3kCreditBridge.{h,cpp}` | IPC 1020-1022 (the key; local GUI only) and the `credit` map of `GetEd3kStatus`, reached through `Ed3kBridge` |
-| `src/gui/dialogs/Ed3kOptionsPages.{h,cpp}` | GUI: the "ed3k" group of the Options dialog (General, Connection, Credits, Names) |
+| `src/gui/dialogs/Ed3kOptionsPages.{h,cpp}` | GUI: the "ed3k" group of the Options dialog (General, Connection, Credits, Names; Filters: `Ed3kFilterPage`) |
+| `src/gui/dialogs/Ed3kStakeGroup.{h,cpp}` | GUI: the stake group of the Credits page (burn for stake, the claims, "Claim"; see "Stake") |
+| `src/gui/dialogs/Ed3kFilterPage.{h,cpp}` | GUI: Options → ed3k → Filters (followed filter lists, their mode, own verdicts; see "Filter lists") |
+| `tests/tst_Ed3kStake.cpp` | a burn through a fake ledger answering the session's `RpcRequest`s, the claim kept in `stake-claims.json`, loaded and read again after a restart (paid meanwhile), a claim paid, the IPC |
+| `src/ed3k/Ed3kUploads.{h,cpp}` | `eMule::ed3k::Ed3kUploads`: the engine's upload queue as rows for the GUI (observes the queue events only; see "Upload queue") |
+| `src/daemon/Ed3kUploadsBridge.{h,cpp}` | the ed3k rows of `GetUploads` (`network: "ed3k"`) |
+| `tests/tst_Ed3kUploads.cpp` | queue events by hand become rows and stay unhandled, the `GetUploads` rows; four nodes on loopback: holders, a waiting node, named, the rows end |
+| `src/ed3k/Ed3kFilters.{h,cpp}` | `eMule::ed3k::Ed3kFilters`: filter lists (filter-list.md): `FilterFetch` → `fetchBlob` → `filterFile`, follow/unfollow/mode, own verdicts, `judge()`; derived from `Ed3kJoinBase` (see "Filter lists") |
+| `src/daemon/Ed3kFiltersBridge.{h,cpp}` | IPC 1130-1136 / push 1170 of the filter lists, reached through `Ed3kBridge` |
+| `tests/tst_Ed3kFilters.cpp` | follow by link and unfollow, a `FilterFetch` fetched from a second node and handed in, a list file opened by hand marking then hiding an entry, own verdicts across a restart, the IPC |
+| `src/ed3k/Ed3kChain.{h,cpp}` | `eMule::ed3k::Ed3kChain`: `chainConfigure` from the `ed3k.chain` prefs (chaintube.md §4.2) |
 | `tests/tst_Ed3kCredit.cpp` | off by default, the key file (owner-only, stable over a restart, import/export, a new key), the key over IPC, `creditConfigure` reaching a fake JSON-RPC ledger (chain ID, balance, no second configure), an endpoint on another chain |
 | `tests/tst_Ed3kTorrentJoin.cpp` | real `BtSession`s and ed3k nodes on loopback: a completed torrent gives its set, ed3k alone fills a torrent, the join saved and loaded, a magnet with `xs` fetches its set (§4.1) |
+| `src/ed3k/Ed3kDownloads.{h,cpp}` | `eMule::ed3k::Ed3kDownloads`: plain ed3k file downloads (search rows, `ed3k:file` links without `bt=`; set members later), derived from `Ed3kJoinBase` (see "Downloads and search" below) |
+| `src/ed3k/Ed3kSearch.{h,cpp}` | `eMule::ed3k::Ed3kSearch`: ed3k keyword search (`SearchType::Ed3k`) as a `MetaSearchRunner` |
+| `src/daemon/Ed3kDownloadsBridge.{h,cpp}` | IPC 1140-1143 / push 1180 of the downloads, reached through `Ed3kBridge` |
+| `tests/tst_Ed3kSearch.cpp` | a found file as a row, the filter, three nodes on loopback: a shared file's keywords found by another node's search, cancel, no node |
+| `tests/tst_Ed3kDownloads.cpp` | two nodes on loopback: a download verified, moved and shared; pause/resume; a part file taken up after a restart; the IPC |
+| `src/ed3k/Ed3kSets.{h,cpp}` | `eMule::ed3k::Ed3kSets`: followed sets (file-set.md §5.3, hidden and pinned links), their members through `Ed3kDownloads` (see "Sets and live" below) |
+| `src/ed3k/Ed3kSetManifest.{h,cpp}` | a manifest read for showing and choosing members (title, id, seq, paths), local names (§2.2) |
+| `src/ed3k/Ed3kLive.{h,cpp}` | `eMule::ed3k::Ed3kLive`: live streams watched (live.md), served as a progressive HTTP stream on the website server's port |
+| `src/daemon/Ed3kSetsBridge.{h,cpp}` | IPC 1110-1119, 1144 / pushes 1155-1158 of sets and live streams, reached through `Ed3kBridge` |
+| `src/gui/dialogs/Ed3kSetsDialog.{h,cpp}` | GUI: "ed3k Sets" (followed sets, the member tree with check boxes, the policy; live streams) |
+| `tests/tst_Ed3kSets.cpp` | four nodes on loopback: a signed set published (`setPublish` with a seed) and followed by its link, every member downloaded into the set's folder; a chosen part; new versions by policy across restarts; links, the state file owner-only; the IPC; the website server's 503/504/wait and a set that is no website offered |
+| `tests/tst_Ed3kSetsDialog.cpp` | GUI: "ed3k Sets" filled with hand-built CBOR (list, member tree and boxes, ticks kept over a refresh, the live list); `EMULE_SCREENSHOT_DIR` saves a picture of each tab |
+| `tests/tst_Ed3kLive.cpp` | a broadcast in the test (`liveBroadcast`, `livePushSegment`) watched by a second node and read over loopback HTTP (init data first, chunked, ended with the broadcast, 410 after); other hosts and bad links |
 
 `DaemonApp` owns the session (`#ifdef EMULE_HAVE_ED3K`). It starts after the Usenet session
 when `ed3kEnabled`, and it stops before Usenet. `applyEd3kConfig` runs on
@@ -70,6 +96,7 @@ The `ed3k:` block in `preferences.yml`, with IPC/REST keys `ed3kEnabled` and `ed
 | `udpPort` | `0` | 0 = a random free port, picked once at load (never the eD2K UDP or BT port) and saved; random listen ports pick it too |
 | `creditRpc` | `[]` | IPC/REST `ed3kCreditRpc` (URLs separated by spaces): JSON-RPC endpoints of the credit ledger; empty = calls answered failed |
 | `chaintubeRpc` | `[]` | IPC/REST `ed3kChaintubeRpc`: the same for chaintube's chain reads and writes |
+| `chain:` | | chaintube.md §4.2, no defaults: `chainId` (0 = none), `content`, `comment`, `vote` (0x + 40 hex; empty = none), `forwarder` (empty = none); IPC/REST `ed3kChainId` (decimal text), `ed3kChainContent`, `ed3kChainComment`, `ed3kChainVote`, `ed3kChainForwarder` (`Preferences::applyEd3kChainKey`). `Ed3kChain` calls `chainConfigure` at each node start and when they or `chaintubeRpc` change (no restart): only with a chain ID and the three contracts; providers per read 0 without endpoints, 1 when every endpoint is a local node, else 2 (held to the endpoints there are). GUI: Options → ed3k → Connection → Chaintube |
 | `shareFiles` | `true` | IPC/REST `ed3kShareFiles`: serve the shared files over ed3k (`Ed3kShared`); only while the node runs |
 | `sitePort` | `0` | IPC/REST `ed3kSitePort`: TCP port of the website server (name.md §6.2); 0 = a random free port, picked once at load and saved (it is part of every site's origin) |
 | `extOff` | `[]` | IPC/REST `ed3kExtOff` (names separated by spaces): optional extensions turned off (`Preferences::ed3kExtensionNames()`: the names of `extensions/*.md`, `lan` = `lan-discovery`) → `Config::extOff`; unknown names are logged and ignored. A change restarts the node |
@@ -95,6 +122,8 @@ The port is mapped as `PortMapPurpose::Ed3kUdp` while `ed3kEnabled`.
 | `hops.dat` | `hopsExportState` (the entry hops) | at stop |
 | `bootstrap.dat` | the start of the last first contact from node lists (u64 LE, `BootstrapStarted`) | on `BootstrapStarted` |
 | `friend-names.dat` | `keyhex<TAB>name` lines: `dn` of the added links (`Ed3kFriends`); not a credential | when a named link is added or a friend removed |
+| `rooms/joined.cbor` | the joined rooms: room, link (a credential with `s`), nick (`Ed3kRooms`); 0600 | on create, join, leave, nick |
+| `rooms/<room>.member`, `rooms/owner-<room key>.key` | 32-byte seeds: the member key of a room, the room key of an owned room (kept on leave); 0600, never logged | on create or join |
 | `usenet/<item>.join` | a usenet join | debounced, and at stop |
 | `torrent/<id>.join` | a torrent join (`:` of the id as `_`) | debounced, and at stop |
 | `usenet/<item>/`, `torrent/<id>/` | kept for a restart (owner percent-encoded): `<root>.blob` per manifest, article list, info dictionary; `kept.tsv` names them, the verified members and the set published (`s` line); `records.bin` the `ALIAS` records (u32-LE length + `Alias` each) | when fetched, made or verified; dropped with the item or torrent |
@@ -102,6 +131,10 @@ The port is mapped as `PortMapPurpose::Ed3kUdp` while `ed3kEnabled`.
 | `name-lists.dat` | `id<TAB>label<TAB>link` of the followed name lists in the user's order (`Ed3kNames`); not a credential | on follow, unfollow, move |
 | `name-petnames.dat` | `text<TAB>zone hex<TAB>shareable` of the petnames set here (the core lists none); owner-only | on set, remove |
 | `shared.dat` | hash cache of the shared files (`Ed3kShared`) | 5 s after a change, and at stop |
+| `stake-claims.json` | the claims of own burns (credit.md §6.7): `[{id, to, amount (uint256 hex), readyAt, state (0 waiting, 1 claiming, 2 paid)}]`, u64 as text; public on the chain, not a secret | on a burn, a claim, a read of a claim |
+| `sets.json` | the followed sets (`Ed3kSets`): id, link (a hidden set's is a credential), policy, title, folder, members left out, the version applied and the one waiting (root, seq), inner manifests and mounts; owner-only, never logged | on follow, unfollow, policy, selection, a version |
+| `sets/<root hex>.manifest` | the manifests of those versions, inner sets and mounts (the root the core named; a hidden set's: the sealed file's) | when one arrives |
+| `filter-own.dat` | the own filter verdicts mirrored (`subject<TAB>id hex<TAB>verdict<TAB>reason`, a `mode` line; the core lists none, it keeps them in `filter.dat`); not a credential | on a change |
 
 Every blob is put back before the first datagram. `contactsLoaded()` is called when there is
 no `kad.dat` or it does not parse. A blob that does not parse is dropped with a warning; it is
@@ -449,7 +482,16 @@ outside the count.
   ed3k's slots = ⌈ed3k's upload rate / 25 KiB/s⌉, 2 to 20 (`Ed3kSession::setUploadSlots`), and
   the slots it holds (`uploadQueueStats().holders`) go to `UploadQueue::setForeignSlots`, which
   counts them in `acceptNewClient` and the slot ladder (not in eD2K's own minimum).
-- No GUI yet (ToDo below); the policy's grants and takes are in the ed3k Verbose log.
+- was: No GUI yet (ToDo below) (done: `Ed3kUploads`, below); the policy's grants and takes are in the ed3k Verbose log.
+- **GUI** (`Ed3kUploads`, `Ed3kUploadsBridge`): the queue events are observed, never handled
+  (`FileRequested` stays the joins' and the policy's): a request makes a waiting row (node,
+  root, the file's name and size from `Ed3kShared::entryOfRoot`, since, LAN), `SlotUsed` or an
+  accepted `SlotOfferResult` a holder (the bytes of the turn, due), `SlotEnded` /
+  `QueueEntryEnded` drop it. `GetUploads` appends them to `uploading` / `waiting` with
+  `network: "ed3k"`; Transfers → Uploading / On Queue show them with "(ed3k)" after the name
+  and the place by waiting time in the Score column; the eD2K actions (details, friends,
+  message, shared files, unban) are not offered, only "Copy ed3k Node ID" and Find.
+  ToDo: the engine's rank and the node's address (no FFI call lists the queue).
 
 ## Credits
 
@@ -474,17 +516,127 @@ node start:
 - **Status:** balance (`CreditBalance`), mature / overdrawn, the last transaction, receipts
   signed and taken, priority turns, endpoints on another chain, the stake rate
   (`creditStakeParams` after configuring) and the claims of burns.
+- **Stake (§6.7):** `burnForStake` (`creditBurnForStake`, the main key only: anon false, §9.1;
+  no anonymous credit address exists here), `claimStake` (`creditClaimStake`), `refreshClaims`
+  (`creditStakeClaim` of every claim not paid, also at each configure). `CreditStakeBurned`
+  adds a claim, `CreditStakeClaimed` and a read with `to` = 0 mark it paid, a failed or
+  reverted claim transaction sends it back to waiting; kept in `stake-claims.json`, loaded at
+  start, kept over a new key (anyone may claim). IPC `BurnEd3kStake` (1023, µ and `to`),
+  `ClaimEd3kStake` (1024), `GetEd3kStakeClaims` (1025), `RefreshEd3kStakeClaims` (1026);
+  pushes `PushEd3kStakeClaims` (1076, a state push) and `PushEd3kStakeTx` (1077).
 - **GUI:** Options → ed3k → Credits: the switch (ticking it shows the notes of §9, §9.1, §7.3
   and §10 and asks), the ledger, bid and sale, the key (new, import, export; disabled for a
-  remote core) and the account. Options → ed3k → General / Connection hold the other ed3k
+  remote core), the account and the stake group (`Ed3kStakeGroup`: the rate, "Burn for stake…"
+  with the amount, `to` = the own credit address or one entered, and the §6.7/§9 notice that a
+  burn cannot be undone and is public, asked twice; the claims with "Claim" once ready). Options → ed3k → General / Connection hold the other ed3k
   prefs, Names the pins, petnames and followed lists (EN's IPC). A friend's name list
   (`PushEd3kNameFriendList`) is offered by `Ed3kNameOpener` in a non-modal box.
 
 ToDo (credits):
-- Burning for stake and claiming (`creditBurnForStake`, `creditClaimStake`) from the GUI, and
-  the claims kept across restarts (only counted in memory now).
+- was: Burning for stake and claiming (`creditBurnForStake`, `creditClaimStake`) from the GUI, and
+  the claims kept across restarts (only counted in memory now) (done: "Stake" above,
+  `stake-claims.json`, `Ed3kStakeGroup`).
 - The anonymous credit key (`creditAnonKey`, §9.1) once the app hides (`anonStart`).
 - An owner-only DACL for `credit.key` on Windows (as `node.key`).
+
+## Downloads and search
+
+**Search** (Protocol.md §10.3): the Search panel's method "ed3k" is `SearchType::Ed3k` (9).
+`SearchStarter` sends it like a Meta search (`awaitsMeta`, no wait reason) to
+`theApp.metaSearch`; `MetaSearchService` hands it to its ed3k runner (`setEd3kRunner`,
+`Ed3kSearch`, made by `DaemonApp`). `Ed3kSearch` calls `Engine::search(expression, Filter{ext,
+minSize, maxSize, minSources = availability})`; the `KadFound` of that lookup (others' lookups
+are left alone) becomes `SearchFile` rows (`addMetaSearchResult`): name, size, sources,
+complete = sources − partial, length/bitrate tags, hash = the root's first 16 bytes, and
+`SearchFile::setEd3k(root, ed2k)`. `GetSearchResults` shows them as `metaKind` 7 with
+`ed3kRoot` (`ed3kEd2k` when the publisher named one). One answer ends the search; none after
+90 s ends it too. The GUI marks the rows with the Kad icon (no ed3k icon, no MFC original) and
+downloads them with `AddEd3kDownload`.
+
+**Downloads:** `Ed3kDownloads` (owner `dl`, member = a stable id per download; made by
+`DaemonApp` after `Ed3kShared`):
+
+- `<temp>/<root hex>.ed3k.part` (first temp dir) while it runs; each verified block is written
+  there and marked in a bitmap; `Config/ed3k/downloads.dat` (versioned `QDataStream`: root,
+  size, name, owner, category, priority, state, paths, bitmap, dates) 5 s after a change and at
+  stop. Pieces (4 MiB) held are shared from the part file once the block values came.
+- Complete: hashed on a worker (root and size must agree, else downloaded again), moved to the
+  target (the category's incoming dir, else `incomingDir`; a free name when taken), shared
+  (`Publish::Both`, `Source` while holding back) and kept (`keepMember`). `DaemonApp`'s hook
+  adds it to `SharedFileList` (`addFileInSharedLocation`); once `Ed3kShared` serves the root
+  (`fileShared`) the own share is forgotten without a close (`releaseShare`), so nothing is
+  shared twice.
+- Pause (streams and the download closed, part file kept), resume, cancel (part file deleted; a
+  complete row only leaves the list), priority (kept and shown only, ToDo), category, clear
+  completed. Restart: the list is loaded at construction; at start the downloads run again
+  from their part files and the complete ones are shared again.
+- IPC (1140-1143, push 1180; 1100-1109 / 1150-1154 were taken by the hoster links):
+  `GetEd3kDownloads`, `AddEd3kDownload` (root, size, name, category, paused),
+  `AddEd3kDownloadLink` (`ed3k:file` without `bt=`, `parseFileLink`), `Ed3kDownloadControl`;
+  `PushEd3kDownloads` (a state push, at most once a second).
+- GUI: `TransferPanel` merges the ed3k rows (`DownloadRow::network` 1, hash = root hex) after the
+  eD2K ones, marked "(ed3k)" in the name column; pause/stop/resume/cancel/priority/category/clear
+  go to `Ed3kDownloadControl`, open file/folder use the row's path (local GUI); the eD2K-only
+  menu entries are off for ed3k rows. `ExternalLinkHandler` sends `ed3k:file` links without
+  `bt=` to `AddEd3kDownloadLink`.
+
+## Sets and live
+
+**Followed sets** (`Ed3kSets`, DaemonApp after `Ed3kDownloads`; file-set.md §2.3, §5.3):
+
+- **Follow** an `ed3k:set` link: with `id` → `setFollow` (the newest version held handed in
+  after a restart, so only newer heads are fetched), with `s` or `paid=1` → `setFollowHidden`
+  (the link is a credential: kept in `sets.json`, owner-only, never logged, not shown in the
+  list), with `b3`+`sz` → `setFollowPinned` (chaintube.md §3.2). Followed again at each start.
+- **Members are chosen here.** The engine follows with `SetPolicy::Ask` (manifest events
+  only); `Ed3kSetManifest` reads the manifest (title, files, paths). Policy per set: *download*
+  takes every new version at once, *ask* keeps it pending (`PushEd3kSetVersion`; the GUI shows
+  a notice) until "Download Selected" (`ApplyEd3kSetVersion`). The selection is the members
+  left out (paths or folders); new members are taken. Members go through `Ed3kDownloads`
+  (owner `set:<id>`) to `<incoming>/<title>/<path>` (names made safe, never out of that
+  folder, §2.2); size 0 is created; a file there with its size is not downloaded again; nothing
+  is deleted or overwritten (§5.3). Members left out later stop their unfinished downloads.
+  One member downloads at a time per set, in the manifest's order (§4.2; the core keeps one
+  file stream per uploader, a second request to the same node replaces the first): members
+  are added paused and resumed in turn (`queued` in `sets.json`); one the user resumes or
+  cancels leaves the queue.
+- **Inner sets and mounts** (`SetInner`; `SetMount` then the mounted set's `SetManifest`) are
+  shown and downloaded as subfolders. **Open parts** (`SetPart`) are listed; "Download Parts"
+  → `setPartDownload` → `SetMember` → a download at `local`; `SetMemberSources` are added.
+- Only the `Set*` events of its own topics (and mounted ones) are taken: `Ed3kNames` follows
+  website sets, the cores of name and filter lists follow theirs.
+
+**Live streams** (`Ed3kLive`, DaemonApp after `Ed3kSiteServer`; live.md): `WatchEd3kLive` →
+`liveWatchLink`; the website server hands requests of `live-<stream hex>.localhost:<sitePort>`
+to it (`Ed3kSiteServer::setHostHandler`, loopback only like the sites). A response is chunked:
+`Content-Type` from `LiveChannel` (`video/mp4` before it), the init data, the last 4 segments,
+then each new segment; it ends with `LiveEnded`/`LiveLeft` (410 after). States: joining,
+playing, interrupted (`LiveInterrupted`), no peers (`LiveGone` took the last neighbour), ended.
+`LeaveEd3kLive` → `liveLeave`. The GUI opens the URL with `QDesktopServices` (a local core only).
+
+**IPC** (1110-1119, 1144; pushes 1155-1158; `Ed3kSetsBridge`): `GetEd3kSets`, `FollowEd3kSet`,
+`UnfollowEd3kSet`, `SetEd3kSetPolicy`, `SetEd3kSetSelection`, `ApplyEd3kSetVersion`,
+`DownloadEd3kSetParts`, `WatchEd3kLive`, `LeaveEd3kLive`, `GetEd3kLive`, `GetEd3kSetSite` (a
+link's website origin); `PushEd3kSetsChanged`, `PushEd3kLiveChanged` (state pushes),
+`PushEd3kSetVersion`, `PushEd3kSetOffer` (a set opened as a website is none, name.md §6.1).
+
+**GUI:** "ed3k Sets" (`Ed3kSetsDialog`, Transfers → download list menu "ed3k Sets..."):
+the sets (name, author's short key, version, files, size, policy, state), the member tree with
+check boxes, Follow Link…, Unfollow, the policy, Download Selected, Download Parts; a "Live
+Streams" tab (Watch Link…, Open, Stop). `ExternalLinkHandler`: `ed3k:set` asks (Follow and
+Download / Choose Files… / Open as Website / Cancel), `ed3k:live` is watched and opened.
+
+ToDo (sets and live):
+- Paid subscriptions: buying passes (subscription.md, `ed3k_paid_*`, `ed3k_pass_*`) is out of
+  scope; a `paid=1` link is followed like a hidden set and opens nothing without a pass.
+- Live broadcasting (`liveBroadcast`, `livePushSegment`, the channel key) is out of scope.
+- A hidden set's version held is not handed in after a restart (the core wants the sealed
+  manifest; `SetManifest` gives the plain one): the newest is fetched again, members there are
+  not downloaded again.
+- A mount's new version under *ask* is downloaded on the next "Download Selected".
+- §2.3 of live.md: a viewer that cannot play `media`/`codecs` should say so; the player decides.
+- Qt warns "Chunk must have length > 0" when a live response ends (`writeEndChunked` without
+  data); the end is sent all the same.
 
 ## Friends and chat
 
@@ -511,6 +663,37 @@ ToDo (credits):
   `Ed3kChatNetwork`, one chat-tab code). ed3k rows are marked "(ed3k)" and keyed
   `ed3k:<node>`; "Add..." takes an `ed3k:friend` link; a request asks Accept / Decline / Later
   once per key; the friend list menu has "Copy my ed3k friend link".
+
+## Rooms
+
+`Ed3kRooms` (DaemonApp, after `Ed3kFriends`) takes the `Room*` events (room.md) and answers
+the IPC of `Ed3kRoomsBridge`:
+
+- **Requests** (1120-1129): `GetEd3kRooms` (rooms with link, title, about, nick, role, kind,
+  state, own member key, mods, members), `GetEd3kRoomPosts` (the last 200 of a room),
+  `CreateEd3kRoom` (a new room key and member key; the owner's member key is a moderator),
+  `JoinEd3kRoom` (a link), `LeaveEd3kRoom`, `PostEd3kRoom`, `SetEd3kRoomNick`,
+  `SetEd3kRoomInfo` (owner), `ModerateEd3kRoom` (admit → the admit text, ban (≤ 30 days),
+  lift, new generation), `ImportEd3kRoomAdmit`. Rooms and post ids as hex, member keys as
+  base32 (§1.1). A failure is `[false, {error}]`: 0 no node, else `ed3k::Error`.
+- **Pushes** (1160-1164): rooms changed (a state push), a post, posts removed, a presence, a
+  notice (joined, banned, generation, key missing, wrap bad, refused, fault).
+- **Secrets**: the member key per room and the room key of an owned room are files of their own
+  (see "Files"), handed in at every join; the joined rooms are joined again at start. A link
+  with `s` is never logged.
+- **Closed room** (batch 10 reading 1): the newcomer joins by the link and copies its member
+  key; a moderator admits it (the admit text `ed3k-admit:<room base32>:<RoomItem base32>`, an
+  app format); the newcomer imports it.
+- **Ban**: the history drops the member's posts on `RoomBanned` too (the core's own ban gives
+  no `RoomPostsRemoved`).
+- **GUI**: the IRC panel. `ChatChannelView` (log + topic pane) is the tab of an IRC channel,
+  a private chat and, as `Ed3kRoomTab`, of a room: "title (ed3k)", the room info as the
+  topic, members as `nick#abcd` (`@` a moderator) in the nick list, posts in the order of
+  `sent`. A "Rooms (ed3k)" tab next to "Channels" (`Ed3kRoomList`): join by link, create,
+  leave, copy link, copy my member key, import admit, admit a member key, new generation,
+  room info, nick. The nick menu: copy member key, admit, ban, lift, make/remove moderator.
+  `ed3k:room` links open the IRC panel and ask before joining.
+- ToDo: replying to a post from the GUI (the IPC takes `replyTo`); muting a member locally (§6).
 
 ## Names and websites
 
@@ -545,20 +728,61 @@ ToDo (credits):
   fetched first (`fetchBlob`, at most 64 MiB, 256 MiB kept, the oldest go) and sent when in;
   504 after 60 s. `If-None-Match` of the `ETag` → 304. Members kept are shared from memory
   (§6.4).
+- **A set not held** (§6.3, batch 11 ruling #9): `siteSetStatus(held, fetchingSince, now)`:
+  a set fetched for the user waits for its manifest (asked again, at most `ED3K_SITE_SET_WAIT_S`
+  = 60 s from the fetch's start, and no longer than the server's own wait), then 504; a set
+  neither held nor fetched is 503 (was 404 for others' requests). A set that is no website
+  (§6.1, `sitePage` NotFound) is answered 404 and, for the user's own request, offered for
+  download (`setOffered` → `PushEd3kSetOffer` → the GUI asks, `Ed3kSets` follows).
 
 ToDo (names and websites):
 - Range requests from verified blocks, and sending a member as its blocks arrive (§6.3).
 - Keep website manifests and members across restarts, 2 GiB, longest-unviewed first (§6.4).
-- A set that is no website: offer it for download in the GUI (§6.1).
+- was: A set that is no website: offer it for download in the GUI (§6.1) (done: `setOffered`, "Sets and live").
 - was: the Names options page (pins, petnames, lists) uses the IpcClient calls above (done: Options → ed3k → Names, `Ed3kOptionsPages`).
+
+## Filter lists
+
+`Ed3kFilters` (filter-list.md; DaemonApp, derived from `Ed3kJoinBase`, owner `filter`):
+
+- **Following (§2, §3):** only lists the user chose: `filterFollow` of an `ed3k:set` link
+  (Options → ed3k → Filters, "Follow…"), `filterUnfollow`; a list file opened by hand
+  (`filterOpen`, "Open list file…": no author, no updates, said in the row). The core keeps
+  them in `filter.dat`.
+- **List files:** `FilterFetch` → fetched into memory (`fetchBlob`, at most 4 MiB, §2; above:
+  not fetched) → `filterFile`. `FilterUpdated` / `TooLarge` (the version before stays) /
+  `Ignored` / `Changed` are logged and push `PushEd3kFiltersChanged`.
+- **Mode (§3):** mark (the default), hide, or hide and refuse, per list and for the own list
+  (`filterSetMode`, `ED3K_FILTER_OWN`).
+- **Own verdicts:** `filterSetOwn` (None takes it back), mirrored in `filter-own.dat` for the
+  list on the page.
+- **`judge(root, ed2k, author)` → `Judgement`** (each optional; a FILE entry is the root's first
+  16 bytes): `hide` / `refuse` as the core decided over every subject asked (modes, the own
+  verdict, a "show anyway" choice), the verdict shown (the own one first, else the first list's,
+  with its title or label and reason), `disagree` when lists disagree; nullopt when nothing
+  judges it. For search rows (Ed3kSearch) and downloads: mark, hide only when the mode says so;
+  nothing is deleted, no download stopped, no connection refused (§3).
+- **IPC** (1130-1136): `GetEd3kFilters`, `FollowEd3kFilter`, `UnfollowEd3kFilter`,
+  `SetEd3kFilterMode`, `SetEd3kFilterOwn`, `JudgeEd3kFilter`, `OpenEd3kFilterFile`; push
+  `PushEd3kFiltersChanged` (1170, a state push).
+
+ToDo (filter lists): publishing the own list as a set (`filterOwnWrite`, `filterOwnManifest`,
+`setPublish`), "show anyway" (`filterShowAnyway`) and a "mark as fake/spam/harmful/good" action
+on ed3k search rows.
 
 ## Out of scope (ToDo)
 
-- GUI: the ed3k upload queue (slot holders, waiting) in the upload lists or Statistics.
+- was: GUI: the ed3k upload queue (slot holders, waiting) in the upload lists or Statistics (done: the
+  Uploading / On Queue lists, "Upload queue"; Statistics keeps its counts).
 
-- GUI: the ed3k graphs in the Statistics window (was: an ed3k branch in the tree; done: "Status and bandwidth").
-- Downloads other than the joins (`Ed3kUsenetJoin`, `Ed3kTorrentJoin`).
-- Chain configuration from preferences (`chainConfigure`); the RPC endpoints exist (`ed3k.chaintubeRpc`). (Credits: done, see "Credits".)
+- was: GUI: the ed3k graphs in the Statistics window (was: an ed3k branch in the tree; done: "Status and bandwidth")
+  (done: `StatsGraphSample::ed3kDown`/`ed3kUp`, fields 17/18 of `GetStatsHistory` from
+  `BandwidthCoordinator`'s wire rates, "ed3k" lines in the download and upload graphs, colours 18/19;
+  a 17-field sample of an older core still reads; the toolbar adds ed3k's download).
+- was: downloads other than the joins (done: plain files, "Downloads and search"; was: sets and live: ToDo (done: "Sets and live")).
+- Paid subscriptions (buying passes, subscription.md) and live broadcasting: see "Sets and live".
+- was: Chain configuration from preferences (`chainConfigure`); the RPC endpoints exist (`ed3k.chaintubeRpc`). (Credits: done, see "Credits".)
+  (done: `ed3k.chain`, `Ed3kChain`, see "Preferences"). A chaintube GUI (videos, comments, votes) stays out of scope.
 - was: node list sources for the first bootstrap (`bootstrapConfigure`, bootstrap.md §3) and keeping `BootstrapStarted` (done: "Node lists").
 - was: LAN discovery sockets of mode A (done: "LAN discovery").
 - Bandwidth: a share of its own for ed3k (it uses eD2K's); upload slots of the throttler (`ed3k_grant_upload`) instead of `setLimits`.

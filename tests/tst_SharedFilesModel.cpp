@@ -40,6 +40,7 @@ private slots:
     void textFilterMatchesTheCellText();
     void categoryNodesFollowMfc();
     void incompleteCategoryFilterSplitsPartFiles();
+    void incomingFilterIsMainDirOnly();
     void fileSetMenuFollowsMfc();
     void numericColumnsAreRightAligned();
     void ratioColumns();
@@ -600,6 +601,28 @@ void tst_SharedFilesModel::incompleteCategoryFilterSplitsPartFiles()
 
 // MFC CSharedDirsTreeCtrl::OnContextMenu (SharedDirsTreeCtrl.cpp:506-513). The static
 // nodes had no menu at all.
+// MFC CSharedFilesCtrl::AddFile (SharedFilesCtrl.cpp:386-398): Incoming Files is the
+// main incoming dir only; a category's incoming dir counts as a shared directory (#73)
+void tst_SharedFilesModel::incomingFilterIsMainDirOnly()
+{
+    SharedFilesModel model;
+    SharedFileRow main = row(1, "main.avi"), cat = row(2, "cat.avi"), part = row(3, "p.part");
+    main.path = QStringLiteral("/in/");
+    cat.path = QStringLiteral("/media/films");
+    part.path = QStringLiteral("/in");
+    part.isPartFile = true;
+    model.setFiles({main, cat, part});
+
+    SharedFilesSortProxy proxy;
+    proxy.setSourceModel(&model);
+    proxy.setFolderFilter(SharedFilterType::Incoming, QStringLiteral("/IN"));
+    QCOMPARE(proxy.rowCount(), 1);
+    QCOMPARE(proxy.index(0, 0).data().toString(), main.fileName);
+    proxy.setFolderFilter(SharedFilterType::SharedDirs, QStringLiteral("/IN"));
+    QCOMPARE(proxy.rowCount(), 1);
+    QCOMPARE(proxy.index(0, 0).data().toString(), cat.fileName);
+}
+
 void tst_SharedFilesModel::fileSetMenuFollowsMfc()
 {
     using SharedDirState::fileSetMenuState;

@@ -186,6 +186,12 @@ quint64 snapshotPushKey(const IpcMessage& msg)
     case IpcMsgType::PushBtStatus:
     case IpcMsgType::PushEd3kStatus:
     case IpcMsgType::PushEd3kFriendsChanged:
+    case IpcMsgType::PushEd3kStakeClaims:      // ed3k stake (batch 12)
+    case IpcMsgType::PushEd3kFiltersChanged:   // ed3k filter lists (batch 12)
+    case IpcMsgType::PushEd3kRoomsChanged:     // ed3k rooms (batch 12)
+    case IpcMsgType::PushEd3kDownloads:        // ed3k downloads (batch 12)
+    case IpcMsgType::PushEd3kSetsChanged:      // ed3k sets (batch 12)
+    case IpcMsgType::PushEd3kLiveChanged:      // ed3k live (batch 12)
         break;
     // One state per search: field 0 is the search id
     case IpcMsgType::PushSearchResult:
@@ -222,6 +228,9 @@ bool isReadOnlyRequest(IpcMsgType type)
     case IpcMsgType::GetBtStats:
     case IpcMsgType::GetEd3kStatus:
     case IpcMsgType::GetEd3kFriends:
+    case IpcMsgType::GetEd3kDownloads:   // ed3k downloads (batch 12)
+    case IpcMsgType::GetEd3kSets:        // ed3k sets (batch 12)
+    case IpcMsgType::GetEd3kLive:        // ed3k live (batch 12)
     case IpcMsgType::GetKadContacts:
     case IpcMsgType::GetKadStatus:
     case IpcMsgType::GetKadSearches:

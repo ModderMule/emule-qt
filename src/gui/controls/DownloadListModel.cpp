@@ -467,7 +467,8 @@ QVariant DownloadListModel::data(const QModelIndex& index, int role) const
 
     if (role == Qt::DisplayRole) {
         switch (index.column()) {
-        case ColFileName:   return d.fileName;
+        // marked as the Messages panel marks ed3k friends (no MFC original)
+        case ColFileName:   return d.isEd3k() ? tr("%1 (ed3k)").arg(d.fileName) : d.fileName;
         case ColSize:       return formatByteSize(d.fileSize);
         case ColCompleted:  return formatByteSize(d.completedSize);
         case ColSpeed:      return d.datarate > 0 ? formatByteRate(d.datarate) : QString{};

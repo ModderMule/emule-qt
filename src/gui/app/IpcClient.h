@@ -171,6 +171,71 @@ public:
     /// Moves a list to @p place (0 = first: the first list wins).
     int moveEd3kNameList(qint64 id, qint64 place, ResponseCallback callback = nullptr);
 
+    // -- ed3k rooms (room.md, IPC 1120-1129) -----------------------------------
+    // Rooms and post ids as hex, member keys as base32. A link with `s` is a credential.
+    // Replies: [ok, data]; a failure is [false, {error}] (0: no node, else ed3k::Error).
+
+    /// -> {running, rooms: [{room, link, title, about, nick, owner, moderator, ...}]}
+    void requestEd3kRooms(const QObject* owner, ResponseCallback callback);
+    /// -> [ok, posts: [{id, author, authorId, nick, moderator, sent, text, replyTo}]]
+    int requestEd3kRoomPosts(const QString& room, ResponseCallback callback);
+    /// flags ED3K_ROOM_PRIVATE 1, _CLOSED 2, _MODERATED 4 -> {room, link}
+    int createEd3kRoom(const QString& title, const QString& about, int flags, const QString& nick,
+                       ResponseCallback callback = nullptr);
+    /// An ed3k:room link -> {room}
+    int joinEd3kRoom(const QString& link, const QString& nick, ResponseCallback callback = nullptr);
+    int leaveEd3kRoom(const QString& room, ResponseCallback callback = nullptr);
+    /// replyTo: a post id (hex), empty none -> ids
+    int postEd3kRoom(const QString& room, const QString& text, const QString& replyTo = {},
+                     ResponseCallback callback = nullptr);
+    int setEd3kRoomNick(const QString& room, const QString& nick, ResponseCallback callback = nullptr);
+    /// Owner: flags _CLOSED 2, _MODERATED 4; mods: member keys
+    int setEd3kRoomInfo(const QString& room, const QString& title, const QString& about, int flags,
+                        const QStringList& mods, ResponseCallback callback = nullptr);
+    /// Moderator: action 0 admit (-> {admit}), 1 ban, 2 lift, 3 new generation (-> {generation})
+    int moderateEd3kRoom(const QString& room, int action, const QString& member, qint64 until,
+                         ResponseCallback callback = nullptr);
+    /// Newcomer of a closed room: the admit text -> {room}
+    int importEd3kRoomAdmit(const QString& text, ResponseCallback callback = nullptr);
+
+    // -- ed3k downloads (plain files, IPC 1140-1143) ---------------------------
+    // Roots as 64 hex digits. Failure: [false, {error: localized text}].
+
+    /// -> {running, downloads: [{root, name, size, done, rate, sources, transferring, state,
+    ///     priority, category, owner, path, addedOn, completedOn, error}]}
+    void requestEd3kDownloads(const QObject* owner, ResponseCallback callback);
+    /// A search row's file -> {root}
+    int addEd3kDownload(const QString& root, qint64 size, const QString& name, int category, bool paused,
+                        ResponseCallback callback = nullptr);
+    /// An ed3k:file link without bt= -> {root}
+    int addEd3kDownloadLink(const QString& link, int category, bool paused, ResponseCallback callback = nullptr);
+    /// action 0 pause, 1 resume, 2 cancel, 3 priority (value kPr*), 4 category (value), 5 clear completed
+    int controlEd3kDownload(const QString& root, int action, qint64 value = 0, ResponseCallback callback = nullptr);
+
+    // -- ed3k sets and live streams (IPC 1110-1119, 1144) ------------------------
+    // Set ids are numbers; policy 0 ask, 1 download. Failure: [false, {error: localized text}].
+
+    /// -> {running, sets: [{id, link, title, author, hidden, pinned, followed, policy, seq,
+    ///     pendingSeq, added, changed, removed, dir, error, totalSize, members, parts}]}
+    void requestEd3kSets(const QObject* owner, ResponseCallback callback);
+    /// An ed3k:set link -> {id}
+    int followEd3kSet(const QString& link, int policy, ResponseCallback callback = nullptr);
+    int unfollowEd3kSet(qint64 id, ResponseCallback callback = nullptr);
+    int setEd3kSetPolicy(qint64 id, int policy, ResponseCallback callback = nullptr);
+    /// The members (paths) left out
+    int setEd3kSetSelection(qint64 id, const QStringList& skipped, ResponseCallback callback = nullptr);
+    /// Takes the pending version, downloads what the selection wants
+    int applyEd3kSetVersion(qint64 id, ResponseCallback callback = nullptr);
+    /// author: key hex, empty = every author
+    int downloadEd3kSetParts(qint64 id, const QString& author, ResponseCallback callback = nullptr);
+    /// An ed3k:set link -> {url} of its website ("" while the website server does not listen)
+    int requestEd3kSetSite(const QString& link, ResponseCallback callback);
+    /// An ed3k:live link -> {id, url}
+    int watchEd3kLive(const QString& link, ResponseCallback callback = nullptr);
+    int leaveEd3kLive(const QString& id, ResponseCallback callback = nullptr);
+    /// -> {running, streams: [{id, title, media, codecs, state, neighbours, segments, bytes, viewers, url}]}
+    void requestEd3kLive(const QObject* owner, ResponseCallback callback);
+
     /// Send a Shutdown request to the daemon, then disconnect.
     /// Use this when the GUI launched the daemon and is about to close.
     void sendShutdown();
@@ -300,6 +365,42 @@ signals:
     void ed3kNamesChanged(const Ipc::IpcMessage& msg);
     /// [node, link] — a friend publishes a name list: offer to follow it.
     void ed3kNameFriendListOffered(const Ipc::IpcMessage& msg);
+    /// [] — ed3k rooms, an info, a nick or a room's state changed: requestEd3kRooms.
+    void ed3kRoomsChanged(const Ipc::IpcMessage& msg);
+    /// [{...GetEd3kDownloads...}] — the ed3k download list changed.
+    void ed3kDownloadsChanged(const Ipc::IpcMessage& msg);
+    /// [{...GetEd3kSets...}] — followed ed3k sets changed.
+    void ed3kSetsChanged(const Ipc::IpcMessage& msg);
+    /// [id, title, seq, added, changed, removed] — a new version of a set waits for the user.
+    void ed3kSetVersion(const Ipc::IpcMessage& msg);
+    /// [{...GetEd3kLive...}] — an ed3k live stream changed.
+    void ed3kLiveChanged(const Ipc::IpcMessage& msg);
+    /// [link] — a set opened as a website is no website: offer it for download.
+    void ed3kSetOffered(const Ipc::IpcMessage& msg);
+    /// [room, {id, author, authorId, nick, moderator, sent, text, replyTo}] — a post.
+    void ed3kRoomPost(const Ipc::IpcMessage& msg);
+    /// [room, ids] — posts dropped by a ban.
+    void ed3kRoomPostsRemoved(const Ipc::IpcMessage& msg);
+    /// [room, member key, nick, left]
+    void ed3kRoomPresence(const Ipc::IpcMessage& msg);
+    /// [room, kind, value, flag, who] — Ed3kRooms::Notice.
+    void ed3kRoomNotice(const Ipc::IpcMessage& msg);
+    /// [{claims, rate, delay, address}] — the stake claims of own burns changed (credit.md §6.7).
+    void ed3kStakeClaimsChanged(const Ipc::IpcMessage& msg);
+    /// [{what, state, revert, tx}] — a stake transaction moved.
+    void ed3kStakeTx(const Ipc::IpcMessage& msg);
+    /// [] — filter lists or own verdicts changed: GetEd3kFilters.
+    void ed3kFiltersChanged(const Ipc::IpcMessage& msg);
+    /// [item] — a hoster download was added or changed.
+    void hosterItemChanged(const Ipc::IpcMessage& msg);
+    /// [id] — a hoster download was removed.
+    void hosterItemRemoved(const Ipc::IpcMessage& msg);
+    /// [item, puzzle, image, host, explain, timeout] — show an image puzzle.
+    void hosterPuzzleAsked(const Ipc::IpcMessage& msg);
+    /// [item, links] — a folder link: ask which links to add.
+    void hosterLinksExpanded(const Ipc::IpcMessage& msg);
+    /// [host, user, {valid, premium, expires, trafficLeft, error}] — a login was checked.
+    void hosterAccountChecked(const Ipc::IpcMessage& msg);
 
     /// [searchId, rows] — a batch of indexer results, as each indexer answers.
     void indexerResultsReceived(const Ipc::IpcMessage& msg);

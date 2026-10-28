@@ -15,7 +15,13 @@
 #include "BtBridge.h"
 #include "Ed3kBridge.h"
 #include "Ed3kCreditBridge.h"
+#include "Ed3kFiltersBridge.h"
+#include "Ed3kUploadsBridge.h"
+#include "Ed3kDownloadsBridge.h"
+#include "Ed3kSetsBridge.h"
+#include "Ed3kHosterBridge.h"
 #include "Ed3kFriendsBridge.h"
+#include "Ed3kRoomsBridge.h"
 #include "Ed3kNamesBridge.h"
 #include "UsenetBridge.h"
 
@@ -42,8 +48,16 @@
 #endif
 #ifdef EMULE_HAVE_ED3K
 #include "Ed3kBootstrap.h"
+#include "Ed3kChain.h"
 #include "Ed3kCredit.h"
+#include "Ed3kFilters.h"
+#include "Ed3kUploads.h"
+#include "Ed3kDownloads.h"
 #include "Ed3kFriends.h"
+#include "Ed3kRooms.h"
+#include "Ed3kSearch.h"
+#include "Ed3kSets.h"
+#include "Ed3kLive.h"
 #include "Ed3kNames.h"
 #include "Ed3kPlumbing.h"
 #include "Ed3kSession.h"
@@ -51,7 +65,13 @@
 #include "Ed3kSiteServer.h"
 #include "Ed3kUsenetJoin.h"
 #include "Ed3kTorrentJoin.h"
+#include "Ed3kHosterJoin.h"
+#ifdef EMULE_HAVE_HOSTER_JD
+#include "Ed3kJavaRuntime.h"
+#include "Ed3kJdResolver.h"
 #endif
+#endif
+#include "net/ProxySettings.h"
 #include "IndexerFeedList.h"
 #include "IndexerSearch.h"
 #include "IndexerSearchList.h"
@@ -68,11 +88,14 @@
 
 #include <QCoreApplication>
 #include <QDateTime>
+#include <QDir>
+#include <QFileInfo>
 #include <QLoggingCategory>
 #include <QNetworkAccessManager>
 #include <QNetworkReply>
 #include <QNetworkRequest>
 #include <QStringList>
+#include <QUrl>
 #include <QUuid>
 
 #include <openssl/rand.h>
@@ -318,6 +341,13 @@ bool DaemonApp::start()
         if (m_ipcServer)
             m_ipcServer->broadcast(msg);
     });
+    // rooms (room.md); attaches on statusChanged and joins the saved rooms again
+    m_ed3kRooms = std::make_unique<ed3k::Ed3kRooms>(*m_ed3kSession);
+    Ed3kRoomsBridge::setRooms(m_ed3kRooms.get());
+    Ed3kRoomsBridge::connectPushes(*m_ed3kRooms, [this](const IpcMessage& msg) {
+        if (m_ipcServer)
+            m_ipcServer->broadcast(msg);
+    });
     // node lists (bootstrap.md §3); an ed3k:nodes link is asked through the GUI, none refuses it
     m_ed3kBootstrap = std::make_unique<ed3k::Ed3kBootstrap>(*m_ed3kSession);
     m_ed3kBootstrap->setSources(thePrefs.ed3kNodeLists());
@@ -359,7 +389,113 @@ bool DaemonApp::start()
         msg.append(Ed3kBridge::statusToCbor());
         m_ipcServer->broadcast(msg);
     });
+    // stake claims and transactions (credit.md §6.7)
+    Ed3kCreditBridge::connectPushes(*m_ed3kCredit, [this](const IpcMessage& msg) {
+        if (m_ipcServer)
+            m_ipcServer->broadcast(msg);
+    });
+    // batch 12 (G): the upload queue view, filter lists, the chaintube chain from the prefs
+    m_ed3kUploads = std::make_unique<ed3k::Ed3kUploads>(*m_ed3kSession);
+    m_ed3kUploads->setNameLookup([this](const ::ed3k::Root& root) -> std::optional<std::pair<QString, std::uint64_t>> {
+        if (!m_ed3kShared)
+            return std::nullopt;
+        const auto e = m_ed3kShared->entryOfRoot(root);
+        return e ? std::optional(std::pair{e->name, e->size}) : std::nullopt;
+    });
+    Ed3kUploadsBridge::setUploads(m_ed3kUploads.get());
+    m_ed3kFilters = std::make_unique<ed3k::Ed3kFilters>(*m_ed3kSession, thePrefs.configDir());
+    Ed3kFiltersBridge::setFilters(m_ed3kFilters.get());
+    Ed3kFiltersBridge::connectPushes(*m_ed3kFilters, [this](const IpcMessage& msg) {
+        if (m_ipcServer)
+            m_ipcServer->broadcast(msg);
+    });
+    m_ed3kChain = std::make_unique<ed3k::Ed3kChain>(*m_ed3kSession);
+    // plain ed3k downloads; after Ed3kShared (it starts first on statusChanged and takes the
+    // complete files of the share list: those are not shared twice)
+    m_ed3kDownloads = std::make_unique<ed3k::Ed3kDownloads>(*m_ed3kSession, thePrefs.configDir());
+    {
+        const QStringList temps = thePrefs.tempDirs();
+        m_ed3kDownloads->setDirs(temps.isEmpty() ? thePrefs.incomingDir() : temps.first(), thePrefs.incomingDir());
+    }
+    m_ed3kDownloads->setCategoryDir([](int category) { return thePrefs.incomingDirForCategory(category); });
+    m_ed3kDownloads->setCompletedHook([](const ed3k::Ed3kDownloadInfo& done) {
+        // the incoming dir is shared: eD2K hashes it, Ed3kShared then serves it (releaseShare)
+        if (theApp.sharedFileList && !theApp.sharedFileList->addFileInSharedLocation(done.path))
+            logDebug(QStringLiteral("ed3k: %1 is not in a shared location").arg(done.path));
+    });
+    if (m_ed3kShared) {
+        m_ed3kDownloads->setSharedElsewhere([s = m_ed3kShared.get()](const ::ed3k::Root& root) { return s->sharesRoot(root); });
+        connect(m_ed3kShared.get(), &ed3k::Ed3kShared::fileShared, m_ed3kDownloads.get(),
+                [s = m_ed3kShared.get(), d = m_ed3kDownloads.get()](const QByteArray& md4) {
+                    if (const auto root = s->rootOf(md4))
+                        d->releaseShare(*root);
+                });
+    }
+    Ed3kDownloadsBridge::setDownloads(m_ed3kDownloads.get());
+    Ed3kDownloadsBridge::connectPushes(*m_ed3kDownloads, [this](const IpcMessage& msg) {
+        if (m_ipcServer)
+            m_ipcServer->broadcast(msg);
+    });
+    // followed sets: members into <incoming>/<set>/ through the downloads; live streams on
+    // the website server's port (attach on statusChanged)
+    m_ed3kSets = std::make_unique<ed3k::Ed3kSets>(*m_ed3kSession, *m_ed3kDownloads, thePrefs.configDir());
+    m_ed3kSets->setIncomingDir(thePrefs.incomingDir());
+    m_ed3kLive = std::make_unique<ed3k::Ed3kLive>(*m_ed3kSession, *m_ed3kSites);
+    Ed3kSetsBridge::setSets(m_ed3kSets.get(), m_ed3kLive.get(), m_ed3kSites.get());
+    Ed3kSetsBridge::connectPushes(*m_ed3kSets, *m_ed3kLive, m_ed3kSites.get(), [this](const IpcMessage& msg) {
+        if (m_ipcServer)
+            m_ipcServer->broadcast(msg);
+    });
+    // ed3k keyword search: SearchType::Ed3k through the Meta search runner
+    m_ed3kSearch = std::make_unique<ed3k::Ed3kSearch>(*m_ed3kSession);
+    MetaSearchService::instance().setEd3kRunner(m_ed3kSearch.get());
+    // filter lists (filter-list.md §3): mark judged rows, drop them only when a list hides
+    m_ed3kSearch->setJudge([this](const ::ed3k::FoundFile& f) {
+        using J = ed3k::Ed3kSearch::Judged;
+        if (!m_ed3kFilters)
+            return J::None;
+        const auto j = m_ed3kFilters->judge(f.root, f.ed2k, f.publisher);   // AUTHOR: the publishing node (spec question)
+        if (!j || j->verdict == ::ed3k::FilterVerdict::Good)
+            return J::None;
+        return j->hide ? J::Hide : (j->disagree ? J::None : J::Mark);
+    });
+    // hoster links (hoster.md); the resolver is the JDownloader sidecar when built in
+    m_hosterJoin = std::make_unique<ed3k::Ed3kHosterJoin>(*m_ed3kSession, thePrefs.configDir());
+    {
+        const auto pushStatus = [this] {
+            if (!m_ipcServer)
+                return;
+            IpcMessage msg(IpcMsgType::PushEd3kStatus, 0);
+            msg.append(Ed3kBridge::statusToCbor());
+            m_ipcServer->broadcast(msg);
+        };
+        ed3k::Ed3kResolver* resolver = nullptr;
+        ed3k::Ed3kJavaRuntime* java = nullptr;
+#ifdef EMULE_HAVE_HOSTER_JD
+        m_jdResolver = std::make_unique<ed3k::Ed3kJdResolver>();
+        m_javaRuntime = std::make_unique<ed3k::Ed3kJavaRuntime>(QFileInfo(thePrefs.configDir()).absolutePath());
+        resolver = m_jdResolver.get();
+        java = m_javaRuntime.get();
+        connect(m_jdResolver.get(), &ed3k::Ed3kResolver::stateChanged, this, pushStatus);
+        connect(m_javaRuntime.get(), &ed3k::Ed3kJavaRuntime::stateChanged, this, [this, pushStatus] {
+            const auto h = thePrefs.ed3kHoster();
+            // none found: fetch one when the user allows that
+            if (m_javaRuntime->state() == ed3k::Ed3kJavaRuntime::State::Missing && h.enabled && h.autoJava)
+                m_javaRuntime->download();
+            applyHosterConfig();
+            pushStatus();
+        });
+#endif
+        m_hosterJoin->setResolver(resolver);
+        Ed3kHosterBridge::setHoster(m_hosterJoin.get(), resolver, java);
+        Ed3kHosterBridge::connectPushes(*m_hosterJoin, [this](const IpcMessage& msg) {
+            if (m_ipcServer)
+                m_ipcServer->broadcast(msg);
+        });
+    }
     applyEd3kConfig();
+    if (m_ed3kSession->isRunning())
+        m_hosterJoin->start();
 #endif
 
     // BitTorrent. Like Usenet: always constructed, btEnabled() gates the start.
@@ -396,6 +532,14 @@ bool DaemonApp::start()
     m_bandwidth->setEd3k(m_ed3kSession.get());
 #endif
     m_bandwidth->start();
+#ifdef EMULE_HAVE_ED3K
+    // the graphs' ed3k lines: the coordinator's wire rates (B/s → KB/s), cleared before it goes
+    if (theApp.statsHistory)
+        theApp.statsHistory->setEd3kRateSource([bw = m_bandwidth.get()] {
+            const auto& s = bw->snapshot();
+            return EngineRates{static_cast<float>(s.ed3kDownRate) / 1024.0f, static_cast<float>(s.ed3kUpRate) / 1024.0f};
+        });
+#endif
 
     // Indexer search. No enable switch: an account list that is empty is the off
     // state, and there is nothing running to gate — a search only ever happens
@@ -464,6 +608,8 @@ void DaemonApp::stop()
     m_indexerSearches.reset();
 
     // before the sessions it throttles
+    if (theApp.statsHistory)
+        theApp.statsHistory->setEd3kRateSource({});
     m_bandwidth.reset();
 
 #ifdef EMULE_HAVE_ED3K
@@ -477,18 +623,44 @@ void DaemonApp::stop()
         m_usenetJoin->stop();
     m_usenetJoin.reset();
     m_usenetJoinQueue.reset();
+    MetaSearchService::instance().setEd3kRunner(nullptr);
+    m_ed3kSearch.reset();
+    Ed3kSetsBridge::setSets(nullptr, nullptr, nullptr);
+    m_ed3kLive.reset();
+    m_ed3kSets.reset();
+    Ed3kDownloadsBridge::setDownloads(nullptr);
+    if (m_ed3kDownloads)
+        m_ed3kDownloads->stop();
+    m_ed3kDownloads.reset();
     if (m_ed3kShared)
         m_ed3kShared->stop();
     m_ed3kShared.reset();
     m_ed3kSharedSource.reset();
     Ed3kFriendsBridge::setFriends(nullptr);
     m_ed3kFriends.reset();
+    Ed3kRoomsBridge::setRooms(nullptr);
+    m_ed3kRooms.reset();
     Ed3kBridge::setBootstrap(nullptr);
     m_ed3kBootstrap.reset();
     Ed3kNamesBridge::setNames(nullptr, nullptr);
     m_ed3kSites.reset();
     Ed3kCreditBridge::setCredit(nullptr);
     m_ed3kCredit.reset();
+    Ed3kUploadsBridge::setUploads(nullptr);
+    m_ed3kUploads.reset();
+    Ed3kFiltersBridge::setFilters(nullptr);
+    if (m_ed3kFilters)
+        m_ed3kFilters->stop();
+    m_ed3kFilters.reset();
+    m_ed3kChain.reset();
+    Ed3kHosterBridge::setHoster(nullptr, nullptr, nullptr);
+    if (m_hosterJoin)
+        m_hosterJoin->stop();
+    m_hosterJoin.reset();
+#ifdef EMULE_HAVE_HOSTER_JD
+    m_jdResolver.reset();
+    m_javaRuntime.reset();
+#endif
     if (m_ed3kNames)
         m_ed3kNames->stop();
     m_ed3kNames.reset();
@@ -804,8 +976,12 @@ void DaemonApp::applyEd3kConfig()
     if (m_ed3kSession->isRunning() && (!enabled || !bind || startChanged || (port != 0 && m_ed3kSession->udpPort() != port))) {
         if (m_usenetJoin)
             m_usenetJoin->stop();   // restarted on statusChanged
+        if (m_ed3kDownloads)
+            m_ed3kDownloads->stop();
         if (m_ed3kShared)
             m_ed3kShared->stop();
+        if (m_hosterJoin)
+            m_hosterJoin->stop();
 #ifdef EMULE_HAVE_BITTORRENT
         if (m_torrentJoin)
             m_torrentJoin->stop();
@@ -839,6 +1015,9 @@ void DaemonApp::applyEd3kConfig()
     // ed3kCredit*, ed3kCreditRpc: no restart; reconfigured when the ledger moved
     if (m_ed3kCredit)
         m_ed3kCredit->setConfig(thePrefs.ed3kCredit(), int(thePrefs.ed3kCreditRpc().size()));
+    // ed3kChain*, ed3kChaintubeRpc: no restart; chainConfigure again when they moved
+    if (m_ed3kChain)
+        m_ed3kChain->setConfig(thePrefs.ed3kChain(), thePrefs.ed3kChaintubeRpc());
     // ed3kNodeLists: no restart
     if (m_ed3kBootstrap)
         m_ed3kBootstrap->setSources(thePrefs.ed3kNodeLists());
@@ -848,8 +1027,55 @@ void DaemonApp::applyEd3kConfig()
     // ed3kHoldBackPosts: a change restarts the usenet join (kept lists and records follow)
     if (m_usenetJoin)
         m_usenetJoin->setHoldBack(thePrefs.ed3kHoldBackPosts());
+    // ed3kHoster*: no restart
+    applyHosterConfig();
     if (m_coreSession)
         m_coreSession->updatePortMappings();
+#endif
+}
+
+void DaemonApp::applyHosterConfig()
+{
+#ifdef EMULE_HAVE_ED3K
+    if (!m_hosterJoin)
+        return;
+    const Ed3kHosterPrefs h = thePrefs.ed3kHoster();
+    const QStringList temps = thePrefs.tempDirs();
+    m_hosterJoin->setConfig(h, temps.isEmpty() ? QString() : temps.first(), thePrefs.incomingDir());
+#ifdef EMULE_HAVE_HOSTER_JD
+    if (!m_javaRuntime || !m_jdResolver)
+        return;
+    // nothing is fetched unless the user switched hoster downloads on; off stops a fetch
+    m_javaRuntime->setAllowed(h.enabled);
+    if (!h.enabled)
+        m_javaLookedFor = QStringLiteral("\x01");
+    // the runtime is looked for once the user switched hosters on, and again for a new path
+    if (h.enabled && m_javaLookedFor != h.java) {
+        m_javaLookedFor = h.java;
+        m_javaRuntime->locate(h.java);
+    }
+    QString proxy;
+    if (const ProxySettings p = thePrefs.proxySettings(); p.useProxy && !p.host.isEmpty()) {
+        const QString scheme = p.type == PROXYTYPE_HTTP10 || p.type == PROXYTYPE_HTTP11 ? QStringLiteral("http")
+                                                                                        : QStringLiteral("socks5");
+        const QString auth = p.enablePassword && !p.user.isEmpty()
+                                 ? QString::fromLatin1(QUrl::toPercentEncoding(p.user)) + QLatin1Char(':')
+                                       + QString::fromLatin1(QUrl::toPercentEncoding(p.password)) + QLatin1Char('@')
+                                 : QString();
+        proxy = QStringLiteral("%1://%2%3:%4").arg(scheme, auth, p.host).arg(p.port);
+        m_javaRuntime->setProxy(toNetworkProxy(p));
+    } else {
+        m_javaRuntime->setProxy(QNetworkProxy(QNetworkProxy::DefaultProxy));
+    }
+    ed3k::JdResolverConfig cfg;
+    if (const auto rt = m_javaRuntime->runtime())
+        cfg.java = rt->java;
+    cfg.dataDir = QDir(thePrefs.configDir()).filePath(QStringLiteral("ed3k/resolver"));
+    cfg.zip = ed3k::Ed3kJdResolver::findBundledZip();
+    cfg.proxy = proxy;
+    cfg.askPuzzles = h.askPuzzles;
+    m_jdResolver->setConfig(cfg);
+#endif
 #endif
 }
 

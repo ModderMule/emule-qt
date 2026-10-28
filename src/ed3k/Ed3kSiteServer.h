@@ -9,6 +9,9 @@
 /// manifest held (followed for the user only) and its member sent with sitePage's headers.
 /// Only verified bytes go out: members not held are fetched first (Ed3kNames, whole, at most
 /// kSiteMemberMax) and answered 504 after 60 s (§6.3). Listens only while the node runs.
+/// A set not held: siteSetStatus (§6.3, batch 12) says wait for its manifest, 504 or 503.
+/// A set that is no website is offered for download (setOffered, §6.1). Other hosts of the
+/// port (live streams, Ed3kLive) go to a host handler first.
 
 #include "Ed3kNames.h"
 
@@ -20,6 +23,7 @@
 #include <cstdint>
 #include <functional>
 #include <list>
+#include <map>
 #include <memory>
 #include <optional>
 #include <vector>
@@ -51,11 +55,19 @@ public:
     [[nodiscard]] QString originUrl(const ::ed3k::Key32& key, const QByteArray& id, const QString& path = {}) const;
     /// How long a request waits for a manifest, a member or a name (tests shorten it).
     void setWaitMs(int ms) { m_waitMs = ms; }
+    /// Takes requests of hosts it knows before the sites do (true: taken, @p responder moved
+    /// or answered). Live streams (Ed3kLive): `live-<stream hex>.localhost:<port>`.
+    using HostHandler = std::function<bool(const QHttpServerRequest& request, QHttpServerResponder& responder)>;
+    void setHostHandler(HostHandler handler) { m_hostHandler = std::move(handler); }
+    /// When the user's fetch of a set began (Unix seconds); tests set an old one (§6.3: 504).
+    void setFetchingSince(const ::ed3k::Key32& key, const QByteArray& id, qint64 secs);
 
 signals:
     /// A readable host the user typed resolved to a name that needs the user's yes first
     /// (§4.4 confirm, §5.3 DNS unverified): the GUI asks, then opens it.
     void confirmNeeded(const eMule::ed3k::Ed3kNames::Resolved& r);
+    /// The user opened a set that is no website (§6.1): offer it for download (Ed3kSets).
+    void setOffered(const QString& link);
 
 private:
     struct Pending;
@@ -71,6 +83,8 @@ private:
     void onResolved(const Ed3kNames::Resolved& r);
     void onFailed(quint64 id, const QString& name, int why, const QList<QByteArray>& ties);
     void onTick();
+    /// A set not held (§6.3): wait for its manifest, or answer siteSetStatus's 504 / 503.
+    void waitForSet(std::unique_ptr<Pending> p);
     void park(std::unique_ptr<Pending> p);
     /// Takes every parked request @p match accepts.
     std::vector<std::unique_ptr<Pending>> take(const std::function<bool(const Pending&)>& match);
@@ -84,6 +98,9 @@ private:
     std::uint16_t m_port = 0;
     int m_waitMs = kMemberWaitMs;
     bool m_toldFetchSite = false;
+    HostHandler m_hostHandler;
+    /// sets fetched for the user (§6.2) → when the fetch began (Unix seconds)
+    std::map<QString, qint64> m_fetching;
     std::list<std::unique_ptr<Pending>> m_pending;
     QTimer m_tick;
 };

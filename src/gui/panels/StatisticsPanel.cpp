@@ -10,6 +10,7 @@
 #include "prefs/NewsServer.h"
 #include "prefs/Preferences.h"
 #include "stats/NetworkCounters.h"
+#include "stats/StatsHistory.h"
 #include "utils/Clipboard.h"
 #include "utils/CountryFlags.h"
 #include "utils/PanelPoller.h"
@@ -191,6 +192,7 @@ void StatisticsPanel::applySettings()
     m_graphDown->setSeriesColor(2, theUiState.statsColor(2));    // Current
     m_graphDown->setSeriesColor(3, theUiState.statsColor(15));   // Usenet (not in MFC)
     m_graphDown->setSeriesColor(4, theUiState.statsColor(16));   // BitTorrent (not in MFC)
+    m_graphDown->setSeriesColor(5, theUiState.statsColor(18));   // ed3k (not in MFC)
 
     m_graphUp->setSeriesColor(0, theUiState.statsColor(7));      // Session average
     m_graphUp->setSeriesColor(1, theUiState.statsColor(6));      // Average
@@ -198,6 +200,7 @@ void StatisticsPanel::applySettings()
     m_graphUp->setSeriesColor(3, theUiState.statsColor(14));     // Current excl. overhead
     m_graphUp->setSeriesColor(4, theUiState.statsColor(13));     // Friend slots
     m_graphUp->setSeriesColor(5, theUiState.statsColor(17));     // BitTorrent (not in MFC)
+    m_graphUp->setSeriesColor(6, theUiState.statsColor(19));     // ed3k (not in MFC)
 
     m_graphConn->setSeriesColor(0, theUiState.statsColor(8));    // Active connections
     m_graphConn->setSeriesColor(1, theUiState.statsColor(10));   // Active uploads
@@ -289,23 +292,25 @@ void StatisticsPanel::setupUi()
 
     // Labels here, colours from applySettings() — which is also what a change in
     // Options re-runs, so the two can never disagree.
-    m_graphDown = new StatsGraph(5, this);
+    m_graphDown = new StatsGraph(6, this);
     m_graphDown->setSeriesInfo(0, tr("Session average"), theUiState.statsColor(4));
     const QString average = tr("Average (%1 mins)").arg(thePrefs.statsAverageMinutes());
     m_graphDown->setSeriesInfo(1, average, theUiState.statsColor(3));
     m_graphDown->setSeriesInfo(2, tr("Current"), theUiState.statsColor(2));
     m_graphDown->setSeriesInfo(3, tr("Usenet"), theUiState.statsColor(15));
     m_graphDown->setSeriesInfo(4, tr("BitTorrent"), theUiState.statsColor(16));
+    m_graphDown->setSeriesInfo(5, tr("ed3k"), theUiState.statsColor(18));
     m_graphDown->setYUnits(tr("Download Speed"));
     graphSplitter->addWidget(m_graphDown);
 
-    m_graphUp = new StatsGraph(6, this);
+    m_graphUp = new StatsGraph(7, this);
     m_graphUp->setSeriesInfo(0, tr("Session average"), theUiState.statsColor(7));
     m_graphUp->setSeriesInfo(1, average, theUiState.statsColor(6));
     m_graphUp->setSeriesInfo(2, tr("Current"), theUiState.statsColor(5));
     m_graphUp->setSeriesInfo(3, tr("Current (excl. overhead)"), theUiState.statsColor(14));
     m_graphUp->setSeriesInfo(4, tr("Friend upload"), theUiState.statsColor(13));
     m_graphUp->setSeriesInfo(5, tr("BitTorrent"), theUiState.statsColor(17));
+    m_graphUp->setSeriesInfo(6, tr("ed3k"), theUiState.statsColor(19));
     m_graphUp->setYUnits(tr("Upload Speed"));
     graphSplitter->addWidget(m_graphUp);
 
@@ -825,27 +830,46 @@ void StatisticsPanel::applyGraphHistory(const QCborMap& data)
             graph->setSampleIntervalSec(static_cast<double>(interval));
     }
 
-    // Positional unpack of StatsGraphSample, whose field order is MFC's scope order
-    // (srchybrid/StatisticsDlg.cpp:569-600) plus the appended Usenet and BitTorrent rates.
-    constexpr int kFieldCount = 17;
+    // Positional unpack of StatsGraphSample (statsSampleFromCbor): MFC's scope order
+    // (srchybrid/StatisticsDlg.cpp:569-600) plus the appended Usenet, BitTorrent and ed3k
+    // rates; a 17-field sample of an older core reads ed3k as 0.
     const QCborArray samples = data.value(QStringLiteral("samples")).toArray();
     for (const auto& v : samples) {
-        const QCborArray s = v.toArray();
-        if (s.size() < kFieldCount)
+        const auto sample = statsSampleFromCbor(v.toArray());
+        if (!sample)
             continue;
-        m_statsSeq = static_cast<quint32>(s.at(0).toInteger());
+        const StatsGraphSample& s = *sample;
+        m_statsSeq = s.seq;
 
-        m_graphDown->appendPoints({s.at(2).toDouble(), s.at(3).toDouble(),
-                                   s.at(4).toDouble(), s.at(14).toDouble(),
-                                   s.at(15).toDouble()});
-        m_graphUp->appendPoints({s.at(5).toDouble(), s.at(6).toDouble(),
-                                 s.at(7).toDouble(), s.at(8).toDouble(),
-                                 s.at(9).toDouble(), s.at(16).toDouble()});
-        m_graphConn->appendPoints({static_cast<double>(s.at(10).toInteger()) / connectionsRatio(),
-                                   static_cast<double>(s.at(11).toInteger()),
-                                   static_cast<double>(s.at(12).toInteger()),
-                                   static_cast<double>(s.at(13).toInteger())});
+        m_graphDown->appendPoints({s.downAvgSession, s.downAvgTime, s.downCurrent, s.usenetDown, s.btDown, s.ed3kDown});
+        m_graphUp->appendPoints({s.upAvgSession, s.upAvgTime, s.upCurrent, s.upNoOverhead, s.upFriend, s.btUp, s.ed3kUp});
+        m_graphConn->appendPoints({static_cast<double>(s.connActive) / connectionsRatio(),
+                                   static_cast<double>(s.upActive),
+                                   static_cast<double>(s.upTotal),
+                                   static_cast<double>(s.downTransferring)});
     }
+    // replaced by statsSampleFromCbor (kFieldCount 17 → kStatsSampleFields 19, old ones still read):
+    // // Positional unpack of StatsGraphSample, whose field order is MFC's scope order
+    // // (srchybrid/StatisticsDlg.cpp:569-600) plus the appended Usenet and BitTorrent rates.
+    // constexpr int kFieldCount = 17;
+    // const QCborArray samples = data.value(QStringLiteral("samples")).toArray();
+    // for (const auto& v : samples) {
+    //     const QCborArray s = v.toArray();
+    //     if (s.size() < kFieldCount)
+    //         continue;
+    //     m_statsSeq = static_cast<quint32>(s.at(0).toInteger());
+    // 
+    //     m_graphDown->appendPoints({s.at(2).toDouble(), s.at(3).toDouble(),
+    //                                s.at(4).toDouble(), s.at(14).toDouble(),
+    //                                s.at(15).toDouble()});
+    //     m_graphUp->appendPoints({s.at(5).toDouble(), s.at(6).toDouble(),
+    //                              s.at(7).toDouble(), s.at(8).toDouble(),
+    //                              s.at(9).toDouble(), s.at(16).toDouble()});
+    //     m_graphConn->appendPoints({static_cast<double>(s.at(10).toInteger()) / connectionsRatio(),
+    //                                static_cast<double>(s.at(11).toInteger()),
+    //                                static_cast<double>(s.at(12).toInteger()),
+    //                                static_cast<double>(s.at(13).toInteger())});
+    // }
 }
 
 // ---------------------------------------------------------------------------

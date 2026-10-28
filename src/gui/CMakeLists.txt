@@ -46,6 +46,18 @@ if(NOT EMULE_BITTORRENT)
     endforeach()
 endif()
 
+# Hoster resolver off (EMULE_HOSTER_JD): no Hoster tab and no puzzle dialog. The Hoster
+# options page stays: it holds "publish hoster links", which applies without a resolver too.
+if(NOT EMULE_HOSTER_JD)
+    foreach(_f "panels/HosterPanel" "dialogs/HosterPuzzleDialog")
+        foreach(_list PANEL_SOURCES DIALOG_SOURCES)
+            list(REMOVE_ITEM ${_list}
+                "${CMAKE_CURRENT_SOURCE_DIR}/${_f}.cpp"
+                "${CMAKE_CURRENT_SOURCE_DIR}/${_f}.h")
+        endforeach()
+    endforeach()
+endif()
+
 # -- Qt resources -----------------------------------------------------------
 
 set(RESOURCES

@@ -110,6 +110,18 @@ rm -rf "$DOC_DST"
 mkdir -p "$DOC_DST"
 cp "$REPO_ROOT/docs/openapi.json" "$REPO_ROOT/docs/rest-api.md" "$DOC_DST/"
 
+# -- Hoster resolver (JDownloader plugins, scripts/build-hoster-resolver.sh) ----
+# Optional: without it hoster links are stored and passed on, but not downloaded.
+# emulecored unpacks it into its config folder (it must be writable).
+RESOLVER_ZIP="${EMULE_RESOLVER_ZIP:-$BUILD_DIR/hoster-resolver/resolver.zip}"
+[ -f "$RESOLVER_ZIP" ] || RESOLVER_ZIP="$REPO_ROOT/build/hoster-resolver/resolver.zip"
+if [ -f "$RESOLVER_ZIP" ]; then
+    cp "$RESOLVER_ZIP" "$RESOURCES_DIR/resolver.zip"
+    echo "Copied the hoster resolver into bundle."
+else
+    echo "Warning: no resolver.zip (scripts/build-hoster-resolver.sh) — hoster downloads not bundled."
+fi
+
 # -- Copy translation files into bundle --------------------------------------
 
 LANG_DST="$RESOURCES_DIR/lang"

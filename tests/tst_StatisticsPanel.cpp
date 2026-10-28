@@ -1508,15 +1508,17 @@ void tst_StatisticsPanel::graphLegendFollowsTheOptions()
     QStringList units;
     for (const StatsGraph* graph : graphs) {
         units << graph->yUnits();
-        // Usenet and BitTorrent lines are appended after MFC's own series
+        // Usenet, BitTorrent and ed3k lines are appended after MFC's own series
         if (graph->yUnits() == QStringLiteral("Download Speed")) {
-            QCOMPARE(graph->seriesCount(), 5);
+            QCOMPARE(graph->seriesCount(), 6);
             QCOMPARE(graph->seriesLabel(3), QStringLiteral("Usenet"));
             QCOMPARE(graph->seriesLabel(4), QStringLiteral("BitTorrent"));
+            QCOMPARE(graph->seriesLabel(5), QStringLiteral("ed3k"));
         } else if (graph->yUnits() == QStringLiteral("Upload Speed")) {
-            QCOMPARE(graph->seriesCount(), 6);
+            QCOMPARE(graph->seriesCount(), 7);
             QCOMPARE(graph->seriesLabel(4), QStringLiteral("Friend upload"));
             QCOMPARE(graph->seriesLabel(5), QStringLiteral("BitTorrent"));
+            QCOMPARE(graph->seriesLabel(6), QStringLiteral("ed3k"));
         }
     }
     units.sort();

@@ -147,6 +147,29 @@ struct Ed3kJoinBase::Kept {
     std::optional<Set> set;
 };
 
+// Protocol.md §12.5 "One entry per downloader": at most one file stream per uploader, across
+// every join of a session (a second FileRequest to the node replaces the first stream).
+// Daemon thread only.
+struct Ed3kJoinBase::NodeTurns {
+    struct Holder {
+        Ed3kJoinBase* join = nullptr;
+        ffi::Root root;
+        std::uint64_t stream = 0;
+        ffi::Source source;
+    };
+    struct Want {
+        Ed3kJoinBase* join = nullptr;
+        ffi::Root root;
+        ffi::Source source;
+        int priority = 0;
+        std::uint64_t seq = 0;
+    };
+    std::map<ffi::NodeId, Holder> holders;
+    std::map<ffi::NodeId, std::vector<Want>> waiting;
+    std::uint64_t seq = 0;
+    int users = 0;
+};
+
 Ed3kJoinBase::Ed3kJoinBase(Ed3kSession& session, const QString& configDir, QString tag, QObject* parent)
     : QObject(parent)
     , m_session(session)
@@ -160,11 +183,15 @@ Ed3kJoinBase::Ed3kJoinBase(Ed3kSession& session, const QString& configDir, QStri
     connect(&m_researchTimer, &QTimer::timeout, this, &Ed3kJoinBase::onResearchTimer);
     connect(&m_session, &Ed3kSession::eventPolled, this, &Ed3kJoinBase::onEventPolled, Qt::DirectConnection);
     connect(&m_session, &Ed3kSession::statusChanged, this, &Ed3kJoinBase::onSessionStatus);
+    ++turns().users;
 }
 
 Ed3kJoinBase::~Ed3kJoinBase()
 {
     m_cancel->store(true);
+    dropTurns(false);
+    if (--turns().users <= 0)
+        turnsMap().erase(&m_session);
 }
 
 void Ed3kJoinBase::setHoldBack(bool on)
@@ -202,15 +229,29 @@ void Ed3kJoinBase::stopDownload(const ffi::Root& root)
     const auto it = m_downloads.find(root);
     if (it == m_downloads.end())
         return;
-    if (auto* e = m_session.engine()) {
-        const auto t = m_session.now();
-        for (const auto& [stream, slot] : it->second->streams)
-            (void)e->streamClose(t, stream);
-        (void)e->downloadClose(t, root);
-    }
+    // its waits for a turn end; its nodes go to the next waiting download
+    auto& turnsNow = turns();
+    for (auto& [node, q] : turnsNow.waiting)
+        std::erase_if(q, [&](const NodeTurns::Want& w) { return w.join == this && w.root == root; });
+    std::erase_if(turnsNow.waiting, [](const auto& q) { return q.second.empty(); });
+    const auto streams = it->second->streams;
     std::erase_if(m_streams, [&](const auto& s) { return s.second == root; });
     std::erase_if(m_sourceLookups, [&](const auto& s) { return s.second == root; });
-    m_downloads.erase(it);
+    if (auto* e = m_session.engine()) {
+        const auto t = m_session.now();
+        for (const auto& [stream, slot] : streams) {
+            // was: (void)e->streamClose(t, stream);
+            // switched in the turn (§12.5 "Several files in one turn"): the next file's
+            // FileRequest replaces the stream at the core, the slot or position stays
+            if (const auto node = nodeHeldBy(stream); node && passTurn(*node))
+                continue;
+            (void)e->streamClose(t, stream);
+        }
+        (void)e->downloadClose(t, root);
+    }
+    // was: std::erase_if(m_streams / m_sourceLookups) here (now above, before the turns pass)
+    if (const auto again = m_downloads.find(root); again != m_downloads.end())
+        m_downloads.erase(again);
 }
 
 void Ed3kJoinBase::stopDownloads(const QString& owner)
@@ -223,6 +264,12 @@ void Ed3kJoinBase::stopDownloads(const QString& owner)
         stopDownload(root);
 }
 
+const Ed3kJoinBase::Download* Ed3kJoinBase::downloadOf(const ffi::Root& root) const
+{
+    const auto it = m_downloads.find(root);
+    return it == m_downloads.end() ? nullptr : it->second.get();
+}
+
 void Ed3kJoinBase::addSource(const ffi::Root& root, const ffi::Source& source)
 {
     auto* e = m_session.engine();
@@ -232,15 +279,22 @@ void Ed3kJoinBase::addSource(const ffi::Root& root, const ffi::Source& source)
     Download& d = *it->second;
     if (d.streams.size() >= kMaxStreams || d.asked.contains(source.id))
         return;
-    auto stream = e->fileRequest(m_session.now(), source, ffi::Request{root, d.size, ffi::Have{}, 0, false, false});
-    if (!stream) {
-        logDebug(QStringLiteral("source refused (error %1)").arg(errorName(stream.error())));
+    // one file stream per uploader (§12.5): another download holds the node, this one waits
+    if (waitTurn(root, source)) {
+        d.asked.insert(source.id);
         return;
     }
-    d.asked.insert(source.id);
-    d.streams[*stream] = false;
-    m_streams[*stream] = root;
-    pumpSession();
+    (void)openStream(root, source);
+    // was: the FileRequest here (now openStream, also for a turn granted)
+    // auto stream = e->fileRequest(m_session.now(), source, ffi::Request{root, d.size, ffi::Have{}, 0, false, false});
+    // if (!stream) {
+    //     logDebug(QStringLiteral("source refused (error %1)").arg(errorName(stream.error())));
+    //     return;
+    // }
+    // d.asked.insert(source.id);
+    // d.streams[*stream] = false;
+    // m_streams[*stream] = root;
+    // pumpSession();
 }
 
 void Ed3kJoinBase::requestBlocks(const ffi::Root& root)
@@ -259,7 +313,19 @@ void Ed3kJoinBase::requestBlocks(const ffi::Root& root)
     } else {
         wanted = wantedBlocks(d);
     }
-    std::erase_if(wanted, [&](std::uint64_t off) { return d.outstanding.contains(off) || !e->canVerify(root, off); });
+    std::erase_if(wanted, [&](std::uint64_t off) { return d.outstanding.contains(off); });
+    // nothing left for another stream: an idle slot goes to a download waiting for its node
+    if (wanted.empty()) {
+        std::vector<std::uint64_t> idle;
+        for (const auto& [stream, slot] : d.streams)
+            if (slot && std::ranges::none_of(d.outstanding, [s = stream](const auto& o) { return o.second == s; }))
+                idle.push_back(stream);
+        for (const auto stream : idle)
+            (void)switchTurn(root, stream);
+        return;
+    }
+    std::erase_if(wanted, [&](std::uint64_t off) { return !e->canVerify(root, off); });
+    // was: std::erase_if(wanted, [&](std::uint64_t off) { return d.outstanding.contains(off) || !e->canVerify(root, off); });
     std::size_t granted = 0;   // not `slots`: a Qt macro
     for (const auto& [stream, slot] : d.streams)
         granted += slot ? 1 : 0;
@@ -361,6 +427,26 @@ void Ed3kJoinBase::unshareOwner(const QString& owner)
             ++it;
         }
     }
+}
+
+std::expected<ffi::Publish, ffi::Error> Ed3kJoinBase::publishShared(const ffi::FileInfo& info)
+{
+    auto* e = m_session.engine();
+    if (!e)
+        return std::unexpected(ffi::Error::State);
+    const auto t = m_session.now();
+    const auto mode = m_holdBack ? ffi::Publish::Source : ffi::Publish::Both;
+    auto ok = e->publish(t, info, mode);
+    if (ok)
+        return mode;
+    // a name without a keyword: the engine refuses Both before it takes the source record
+    // (packmule-ffi ed3k_publish), so the file would not be found by its root either
+    if (mode == ffi::Publish::Both && ok.error() == ffi::Error::Malformed) {
+        if (auto src = e->publish(t, info, ffi::Publish::Source); !src)
+            return std::unexpected(src.error());
+        return ffi::Publish::Source;
+    }
+    return std::unexpected(ok.error());
 }
 
 void Ed3kJoinBase::hashInBackground(const QString& path, std::function<void(std::optional<FileHash>)> done)
@@ -638,6 +724,8 @@ void Ed3kJoinBase::beginStart()
 
 void Ed3kJoinBase::closeAll()
 {
+    // the nodes held go to downloads of the other joins (a restart of this one alone)
+    dropTurns(true);
     m_cancel->store(true);
     m_reads.clear();   // their results are dropped (the cancel flag)
     m_saveTimer.stop();
@@ -735,8 +823,17 @@ void Ed3kJoinBase::onEventPolled(const ffi::Event& event, bool* handled)
     } else if (const auto* q = std::get_if<ev::QueueRank>(&event)) {
         if (const auto it = m_streams.find(q->stream); it != m_streams.end()) {
             const ffi::Root root = it->second;
-            if (const auto d = m_downloads.find(root); d != m_downloads.end())
-                d->second->streams[q->stream] = q->rank == 0;
+            bool turnEnded = false;
+            if (const auto d = m_downloads.find(root); d != m_downloads.end()) {
+                auto& slot = d->second->streams[q->stream];
+                turnEnded = slot && q->rank > 0;
+                slot = q->rank == 0;
+            }
+            // the turn ended, still connected: the next file waiting for this node asks now
+            // (§12.5: another file keeps the position); with recheck > 0 it would be an early
+            // return, so the stream stays
+            if (turnEnded && q->recheck == 0)
+                (void)switchTurn(root, q->stream);
             requestBlocks(root);
         }
     } else if (const auto* h = std::get_if<ev::Hashes>(&event)) {
@@ -765,6 +862,15 @@ void Ed3kJoinBase::onEventPolled(const ffi::Event& event, bool* handled)
         if (const auto it = m_streams.find(sc->stream); it != m_streams.end()) {
             const ffi::Root root = it->second;
             m_streams.erase(it);
+            // its node goes to the next waiting download (none of them reaches an unreachable one)
+            if (const auto node = nodeHeldBy(sc->stream)) {
+                if (sc->why == ffi::Closed::Unreachable) {
+                    turns().holders.erase(*node);
+                    dropWaiters(*node);
+                } else {
+                    (void)passTurn(*node);
+                }
+            }
             if (const auto d = m_downloads.find(root); d != m_downloads.end()) {
                 d->second->streams.erase(sc->stream);
                 std::erase_if(d->second->outstanding, [&](const auto& o) { return o.second == sc->stream; });
@@ -1136,7 +1242,9 @@ void Ed3kJoinBase::shareKeptHashed(const QString& owner, int member, const ffi::
         // again (done: keepRecords, publishKeptRecords after the members)
         if (auto* e = m_session.engine()) {
             const ffi::FileInfo info{root, size, fileName, std::nullopt, 0, 0, 0, 0, 0, 0};
-            (void)e->publish(m_session.now(), info, m_holdBack ? ffi::Publish::Source : ffi::Publish::Both);
+            // was: (void)e->publish(m_session.now(), info, m_holdBack ? ffi::Publish::Source : ffi::Publish::Both);
+            Q_UNUSED(e)
+            (void)publishShared(info);
         }
         logDebug(QStringLiteral("kept member %1 of %2 shared again as %3").arg(member).arg(owner, hexOf(root.bytes)));
         pumpSession();
@@ -1201,6 +1309,193 @@ void Ed3kJoinBase::withdrawKeptRecords()
                          .arg(QUrl::fromPercentEncoding(sub.toLatin1()), errorName(ok.error())));
     }
     pumpSession();
+}
+
+std::map<const Ed3kSession*, Ed3kJoinBase::NodeTurns>& Ed3kJoinBase::turnsMap()
+{
+    static std::map<const Ed3kSession*, NodeTurns> map;
+    return map;
+}
+
+Ed3kJoinBase::NodeTurns& Ed3kJoinBase::turnsOf(const Ed3kSession& session)
+{
+    return turnsMap()[&session];
+}
+
+Ed3kJoinBase::NodeTurns& Ed3kJoinBase::turns() const
+{
+    return turnsOf(m_session);
+}
+
+bool Ed3kJoinBase::openStream(const ffi::Root& root, const ffi::Source& source)
+{
+    auto* e = m_session.engine();
+    const auto it = m_downloads.find(root);
+    if (!e || it == m_downloads.end())
+        return false;
+    Download& d = *it->second;
+    auto stream = e->fileRequest(m_session.now(), source, ffi::Request{root, d.size, ffi::Have{}, 0, false, false});
+    if (!stream) {
+        logDebug(QStringLiteral("source refused (error %1)").arg(errorName(stream.error())));
+        return false;
+    }
+    d.asked.insert(source.id);
+    d.streams[*stream] = false;
+    m_streams[*stream] = root;
+    turns().holders[source.id] = NodeTurns::Holder{this, root, *stream, source};
+    pumpSession();
+    return true;
+}
+
+bool Ed3kJoinBase::waitTurn(const ffi::Root& root, const ffi::Source& source)
+{
+    auto& t = turns();
+    const auto h = t.holders.find(source.id);
+    if (h == t.holders.end())
+        return false;
+    const NodeTurns::Holder& holder = h->second;
+    if (holder.join == this && holder.root == root)
+        return false;
+    // a holder whose stream is gone without passing (should not happen): free
+    if (!holder.join->m_streams.contains(holder.stream)) {
+        t.holders.erase(h);
+        return false;
+    }
+    auto& q = t.waiting[source.id];
+    if (std::ranges::none_of(q, [&](const NodeTurns::Want& w) { return w.join == this && w.root == root; })) {
+        const auto d = m_downloads.find(root);
+        const int priority = d == m_downloads.end() ? 0 : downloadPriority(*d->second);
+        q.push_back(NodeTurns::Want{this, root, source, priority, ++t.seq});
+        logDebug(QStringLiteral("%1 waits for its turn at %2").arg(hexOf(root.bytes), hexOf(source.id.bytes)));
+    }
+    return true;
+}
+
+std::optional<ffi::NodeId> Ed3kJoinBase::nodeHeldBy(std::uint64_t stream) const
+{
+    for (const auto& [node, h] : turns().holders)
+        if (h.join == this && h.stream == stream)
+            return node;
+    return std::nullopt;
+}
+
+bool Ed3kJoinBase::passTurn(const ffi::NodeId& node)
+{
+    auto& t = turns();
+    t.holders.erase(node);
+    for (;;) {
+        const auto w = t.waiting.find(node);
+        if (w == t.waiting.end())
+            return false;
+        if (w->second.empty()) {
+            t.waiting.erase(w);
+            return false;
+        }
+        // the highest priority first; the same in arrival order (round robin: a download
+        // that switched away waits at the end)
+        const auto best = std::ranges::max_element(w->second, [](const NodeTurns::Want& a, const NodeTurns::Want& b) {
+            return a.priority != b.priority ? a.priority < b.priority : a.seq > b.seq;
+        });
+        const NodeTurns::Want next = *best;
+        w->second.erase(best);
+        if (w->second.empty())
+            t.waiting.erase(w);
+        if (next.join->grantTurn(next.root, next.source))
+            return true;
+    }
+}
+
+bool Ed3kJoinBase::grantTurn(const ffi::Root& root, const ffi::Source& source)
+{
+    const auto it = m_downloads.find(root);
+    if (it == m_downloads.end())
+        return false;
+    if (it->second->streams.size() >= kMaxStreams) {
+        it->second->asked.erase(source.id);   // offered again by a later search
+        return false;
+    }
+    logDebug(QStringLiteral("%1 has its turn at %2").arg(hexOf(root.bytes), hexOf(source.id.bytes)));
+    if (openStream(root, source))
+        return true;
+    it->second->asked.erase(source.id);
+    return false;
+}
+
+bool Ed3kJoinBase::switchTurn(const ffi::Root& root, std::uint64_t stream)
+{
+    auto& t = turns();
+    const auto node = nodeHeldBy(stream);
+    const auto it = m_downloads.find(root);
+    if (!node || it == m_downloads.end() || !t.waiting.contains(*node))
+        return false;
+    Download& d = *it->second;
+    const NodeTurns::Holder holder = t.holders[*node];
+    const auto slot = d.streams.find(stream);
+    const bool held = slot != d.streams.end() && slot->second;
+    // replaced at the core by the next file's stream (StreamClosed Replaced: not ours any more)
+    d.streams.erase(stream);
+    m_streams.erase(stream);
+    std::erase_if(d.outstanding, [&](const auto& o) { return o.second == stream; });
+    if (!passTurn(*node)) {
+        // nobody took it: the stream stays
+        d.streams[stream] = held;
+        m_streams[stream] = root;
+        t.holders[*node] = holder;
+        return false;
+    }
+    // back in line for the node
+    t.waiting[*node].push_back(NodeTurns::Want{this, root, holder.source, downloadPriority(d), ++t.seq});
+    logDebug(QStringLiteral("%1 gave its turn at %2 to the next file").arg(hexOf(root.bytes), hexOf(node->bytes)));
+    return true;
+}
+
+void Ed3kJoinBase::dropWaiters(const ffi::NodeId& node)
+{
+    auto& t = turns();
+    const auto w = t.waiting.find(node);
+    if (w == t.waiting.end())
+        return;
+    const auto waiters = std::move(w->second);
+    t.waiting.erase(w);
+    for (const auto& x : waiters)
+        x.join->turnLost(x.root, node);
+}
+
+void Ed3kJoinBase::turnLost(const ffi::Root& root, const ffi::NodeId& node)
+{
+    const auto it = m_downloads.find(root);
+    if (it == m_downloads.end())
+        return;
+    it->second->asked.erase(node);
+    if (it->second->streams.empty())
+        searchSourcesAgain(root, false);
+}
+
+void Ed3kJoinBase::dropTurns(bool pass)
+{
+    auto& t = turns();
+    for (auto& [node, q] : t.waiting)
+        std::erase_if(q, [this](const NodeTurns::Want& w) { return w.join == this; });
+    std::erase_if(t.waiting, [](const auto& q) { return q.second.empty(); });
+    std::vector<ffi::NodeId> held;
+    for (const auto& [node, h] : t.holders)
+        if (h.join == this)
+            held.push_back(node);
+    for (const auto& node : held) {
+        if (pass) {
+            // the next waiter's FileRequest replaces the stream (closeAll closes the rest)
+            (void)passTurn(node);
+            continue;
+        }
+        // destroyed: no engine calls; the waiters are asked again by a later search
+        t.holders.erase(node);
+        if (const auto w = t.waiting.find(node); w != t.waiting.end()) {
+            for (const auto& x : w->second)
+                if (const auto d = x.join->m_downloads.find(x.root); d != x.join->m_downloads.end())
+                    d->second->asked.erase(node);
+            t.waiting.erase(w);
+        }
+    }
 }
 
 } // namespace eMule::ed3k

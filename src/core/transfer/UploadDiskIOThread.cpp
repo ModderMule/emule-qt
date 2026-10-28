@@ -352,6 +352,9 @@ QList<std::shared_ptr<Packet>> UploadDiskIOThread::createStandardPackets(
 
     while (togo > 0) {
         // eMule 2026 bandwidth: larger packets reduce framing overhead. MFC default: 10240, threshold 13000.
+        // Trade-off (emule-qt#58): an MFC peer at its download limit reads a new source at
+        // 200-600 B/s until one whole packet is in, and cancels after 100 s without one
+        // (DOWNLOADTIMEOUT). 32 KiB can miss that, MFC's 10 KiB mostly not.
         uint32 nPacketSize = (togo < 40000) ? togo : 32768u;
         togo -= nPacketSize;
 
@@ -435,6 +438,9 @@ QList<std::shared_ptr<Packet>> UploadDiskIOThread::createPackedPackets(
 
     while (togo > 0) {
         // eMule 2026 bandwidth: larger packets reduce framing overhead. MFC default: 10240, threshold 13000.
+        // Trade-off (emule-qt#58): an MFC peer at its download limit reads a new source at
+        // 200-600 B/s until one whole packet is in, and cancels after 100 s without one
+        // (DOWNLOADTIMEOUT). 32 KiB can miss that, MFC's 10 KiB mostly not.
         uint32 nPacketSize = (togo < 40000) ? togo : 32768u;
         togo -= nPacketSize;
 

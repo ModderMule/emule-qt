@@ -4,6 +4,9 @@
 
 #include "panels/IrcPanel.h"
 
+#include "panels/ChatChannelView.h"
+#include "panels/Ed3kRoomTab.h"
+
 #include "app/UiState.h"
 #include "controls/AbstractListView.h"
 #include "controls/LogTextView.h"
@@ -171,8 +174,15 @@ void IrcPanel::closeChannel(const QString& key)
     if (key.isEmpty() || key == m_statusKey)
         return;
     auto it = m_channels.find(key);
-    if (it == m_channels.end() || it->type == IrcChannel::ChannelList)
+    if (it == m_channels.end() || it->type == IrcChannel::ChannelList || it->type == IrcChannel::Ed3kRoomList)
         return;
+    // an ed3k room stays joined: its tab goes, the "Rooms (ed3k)" list opens it again
+    if (it->type == IrcChannel::Ed3kRoom) {
+        if (it->room && !m_roomTabsClosed.contains(it->room->room()))
+            m_roomTabsClosed << it->room->room();
+        removeChannelTab(key);
+        return;
+    }
 
     // A channel we are in is left first; the tab goes when the server confirms
     // (MFC IrcWnd.cpp:520-523, IrcMain.cpp:381-384).
@@ -266,7 +276,7 @@ void IrcPanel::onIrcDisconnected()
     const QStringList keys = m_channels.keys();
     for (const QString& key : keys) {
         const IrcChannel::Type type = m_channels.value(key).type;
-        if (type == IrcChannel::ChannelList)
+        if (type == IrcChannel::ChannelList || m_channels.value(key).isEd3k())
             continue;
         if (type == IrcChannel::Normal || type == IrcChannel::Private)
             detachChannel(key);
@@ -328,7 +338,12 @@ QString IrcPanel::messageHtml(const QString& key, const QString& nick, const QSt
     const auto it = m_channels.constFind(key);
     const QString shown = it != m_channels.constEnd() ? it->nicks.decorated(nick) : nick;
     const bool own = nick.compare(m_irc->currentNick(), Qt::CaseInsensitive) == 0;
-    return formatTimestamp()
+    return messageLine(formatTimestamp(), shown, message, own);
+}
+
+QString IrcPanel::messageLine(const QString& stamp, const QString& shown, const QString& message, bool own) const
+{
+    return stamp
          + QStringLiteral("&lt;<span style=\"color:%1;%2\">%3</span>&gt; %4")
                .arg(QLatin1StringView(kMircColors[10]),
                     own ? QString() : QStringLiteral("font-weight:bold;"),
@@ -448,6 +463,8 @@ void IrcPanel::onUserQuit(const QString& nick, const QString& reason)
 {
     // Remove nick from all channels they were in
     for (auto it = m_channels.begin(); it != m_channels.end(); ++it) {
+        if (it->isEd3k())
+            continue;
         if (it->nicks.remove(nick) && !thePrefs.ircIgnoreQuitMessages())
             appendInfo(it.key(), tr("* %1 has quit (%2)").arg(nick, reason), IrcRouting::LineColor::Quit);
     }
@@ -486,6 +503,8 @@ void IrcPanel::onNickChanged(const QString& oldNick, const QString& newNick)
         thePrefs.setIrcNick(newNick);
 
     for (auto it = m_channels.begin(); it != m_channels.end(); ++it) {
+        if (it->isEd3k())
+            continue;
         if (it->nicks.rename(oldNick, newNick) && !thePrefs.ircIgnoreMiscInfoMessages())
             appendInfo(it.key(), tr("* %1 is now known as %2").arg(oldNick, newNick));
     }
@@ -684,8 +703,12 @@ void IrcPanel::setupUi()
     m_nickListView->setContextMenuPolicy(Qt::CustomContextMenu);
     connect(m_nickListView, &QWidget::customContextMenuRequested,
             this, &IrcPanel::onNickContextMenu);
-    connect(m_nickListView, &QListView::doubleClicked, this,
-            [this] { openPrivateChannel(selectedNick()); });
+    connect(m_nickListView, &QListView::doubleClicked, this, [this] {
+        // an ed3k room has no private messages: chat.md needs the node, a room shows keys (§6)
+        if (const IrcChannel* ch = activeChannel(); ch && ch->type == IrcChannel::Ed3kRoom)
+            return;
+        openPrivateChannel(selectedNick());
+    });
     leftLayout->addWidget(m_nickListView, 1);
 
     m_splitter->addWidget(leftWidget);
@@ -952,7 +975,8 @@ int IrcPanel::ensureChannelTab(const QString& name, IrcChannel::Type type)
         m_channelListWidget = tree;
         ch.widget = tree;
 
-        const int idx = m_tabWidget->addTab(tree,
+        // right after Status: the ed3k rooms tabs may be there already (batch 12)
+        const int idx = m_tabWidget->insertTab(1, tree,
             QIcon(QStringLiteral(":/icons/IRC.ico")), tr("Channels"));
         // Non-closeable
         m_tabWidget->tabBar()->setTabButton(idx, QTabBar::RightSide, nullptr);
@@ -962,43 +986,51 @@ int IrcPanel::ensureChannelTab(const QString& name, IrcChannel::Type type)
         return idx;
     }
 
-    // Normal channel or private — LogTextView
-    auto* browser = new LogTextView(this);
-    browser->setReadOnly(true);
-    // Channels are full of ed2k:// links; those belong to the importer, not the OS.
-    TextLinks::wireLinkClicks(browser, this,
-                              [this](const QString& link) { emit linkActivated(link); });
-    if (!m_customFont.family().isEmpty())
-        browser->setFont(m_customFont);
-    ch.log = browser;
-    ch.widget = browser;
-
-    if (type == IrcChannel::Normal) {
-        // A channel has its topic above the log, behind a splitter
-        // (MFC IrcChannelTabCtrl.cpp:186-230; 18 px by default, up to 108).
-        // Theme colours rather than MFC's white on black — deliberate, 2026-10.
-        auto* topic = new LogTextView(this);
-        topic->setReadOnly(true);
-        topic->setObjectName(QStringLiteral("ircTopic"));
-        topic->setVerticalScrollBarPolicy(Qt::ScrollBarAsNeeded);
-        topic->setHorizontalScrollBarPolicy(Qt::ScrollBarAlwaysOff);
-        topic->setMinimumHeight(18);
-        topic->setMaximumHeight(108);
-        TextLinks::wireLinkClicks(topic, this,
-                                  [this](const QString& link) { emit linkActivated(link); });
-        if (!m_customFont.family().isEmpty())
-            topic->setFont(m_customFont);
-
-        auto* split = new QSplitter(Qt::Vertical, this);
-        split->addWidget(topic);
-        split->addWidget(browser);
-        split->setStretchFactor(0, 0);
-        split->setStretchFactor(1, 1);
-        split->setSizes({topic->fontMetrics().height() + 8, 400});
-        split->setChildrenCollapsible(false);
-        ch.topicView = topic;
-        ch.widget = split;
-    }
+    // Normal channel or private — the log, a channel's topic above it
+    // (MFC IrcChannelTabCtrl.cpp:186-230)
+    auto* view = new ChatChannelView(type == IrcChannel::Normal,
+                                     [this](const QString& link) { emit linkActivated(link); }, this);
+    view->applyFont(m_customFont);
+    ch.log = view->log();
+    ch.topicView = view->topicView();
+    ch.widget = view;
+    // was: the panes built here; moved to ChatChannelView, shared with ed3k rooms (batch 12)
+    // auto* browser = new LogTextView(this);
+    // browser->setReadOnly(true);
+    // // Channels are full of ed2k:// links; those belong to the importer, not the OS.
+    // TextLinks::wireLinkClicks(browser, this,
+    //                           [this](const QString& link) { emit linkActivated(link); });
+    // if (!m_customFont.family().isEmpty())
+    //     browser->setFont(m_customFont);
+    // ch.log = browser;
+    // ch.widget = browser;
+    //
+    // if (type == IrcChannel::Normal) {
+    //     // A channel has its topic above the log, behind a splitter
+    //     // (MFC IrcChannelTabCtrl.cpp:186-230; 18 px by default, up to 108).
+    //     // Theme colours rather than MFC's white on black — deliberate, 2026-10.
+    //     auto* topic = new LogTextView(this);
+    //     topic->setReadOnly(true);
+    //     topic->setObjectName(QStringLiteral("ircTopic"));
+    //     topic->setVerticalScrollBarPolicy(Qt::ScrollBarAsNeeded);
+    //     topic->setHorizontalScrollBarPolicy(Qt::ScrollBarAlwaysOff);
+    //     topic->setMinimumHeight(18);
+    //     topic->setMaximumHeight(108);
+    //     TextLinks::wireLinkClicks(topic, this,
+    //                               [this](const QString& link) { emit linkActivated(link); });
+    //     if (!m_customFont.family().isEmpty())
+    //         topic->setFont(m_customFont);
+    //
+    //     auto* split = new QSplitter(Qt::Vertical, this);
+    //     split->addWidget(topic);
+    //     split->addWidget(browser);
+    //     split->setStretchFactor(0, 0);
+    //     split->setStretchFactor(1, 1);
+    //     split->setSizes({topic->fontMetrics().height() + 8, 400});
+    //     split->setChildrenCollapsible(false);
+    //     ch.topicView = topic;
+    //     ch.widget = split;
+    // }
 
     const int idx = m_tabWidget->addTab(ch.widget,
         QIcon(QStringLiteral(":/icons/IRC.ico")), name);
@@ -1038,6 +1070,8 @@ void IrcPanel::removeChannelTab(const QString& name)
 
     if (key == QStringLiteral("__channels__"))
         m_channelListWidget = nullptr;
+    if (it->type == IrcChannel::Ed3kRoomList)
+        m_roomList = nullptr;
 
     m_channels.erase(it);
 }
@@ -1046,7 +1080,8 @@ void IrcPanel::removeAllChannelTabs()
 {
     QStringList keys;
     for (auto it = m_channels.cbegin(); it != m_channels.cend(); ++it) {
-        if (it.key() != m_statusKey)
+        // ed3k rooms are no part of an IRC session
+        if (it.key() != m_statusKey && !it->isEd3k())
             keys.append(it.key());
     }
     for (const QString& k : keys)
@@ -1261,7 +1296,7 @@ void IrcPanel::updateNickList()
     const QString key = activeChannelName();
     auto it = m_channels.constFind(key);
 
-    if (it == m_channels.constEnd() || it->type != IrcChannel::Normal) {
+    if (it == m_channels.constEnd() || (it->type != IrcChannel::Normal && it->type != IrcChannel::Ed3kRoom)) {
         m_nickLabel->setText(tr("Nick"));
         m_nickModel->setStringList({});
         return;
@@ -1273,7 +1308,10 @@ void IrcPanel::updateNickList()
 
 QString IrcPanel::selectedNick() const
 {
-    return IrcNickList::bare(m_nickListView->currentIndex().data().toString(), m_irc->serverModes());
+    // an ed3k room marks moderators with "@" whatever the IRC server uses
+    const IrcChannel* ch = const_cast<IrcPanel*>(this)->activeChannel();
+    const bool room = ch && ch->type == IrcChannel::Ed3kRoom;
+    return IrcNickList::bare(m_nickListView->currentIndex().data().toString(), room ? IrcServerModes{} : m_irc->serverModes());
 }
 
 // MFC CIrcNickListCtrl::OpenPrivateChannel (IrcNickListCtrl.cpp:114-122)
@@ -1310,6 +1348,11 @@ void IrcPanel::onNickContextMenu(const QPoint& pos)
     const IrcChannel* ch = activeChannel();
     if (nick.isEmpty() || !ch)
         return;
+    if (ch->type == IrcChannel::Ed3kRoom) {
+        ed3kNickMenu(ch->room, m_nickListView->currentIndex().data().toString(),
+                     m_nickListView->viewport()->mapToGlobal(pos));
+        return;
+    }
     const QString channel = ch->name;
 
     QMenu menu(this);
@@ -1500,6 +1543,11 @@ void IrcPanel::answerFriendRequest(const QString& nick, const QString& verify)
 
 void IrcPanel::processInput(const QString& text)
 {
+    // an ed3k room posts through the daemon, whatever IRC does
+    if (IrcChannel* room = activeChannel(); room && room->type == IrcChannel::Ed3kRoom) {
+        postToRoom(room->room, text);
+        return;
+    }
     // MFC CIrcChannelTabCtrl::ChatSend (IrcChannelTabCtrl.cpp:531-628)
     if (!m_irc->isConnected())
         return;

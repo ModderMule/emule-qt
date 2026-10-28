@@ -11,10 +11,12 @@
 
 #include "utils/Types.h"
 
+#include <QCborArray>
 #include <QObject>
 
 #include <deque>
 #include <functional>
+#include <optional>
 #include <vector>
 
 namespace eMule {
@@ -50,7 +52,14 @@ struct StatsGraphSample {
     float usenetDown = 0.0f;   ///< KB/s, NNTP wire rate
     float btDown = 0.0f;       ///< KB/s, BitTorrent payload. Download scope
     float btUp   = 0.0f;       ///< KB/s, BitTorrent payload. Upload scope
+    float ed3kDown = 0.0f;     ///< KB/s, ed3k wire rate (BandwidthCoordinator). Download scope
+    float ed3kUp   = 0.0f;     ///< KB/s, ed3k wire rate. Upload scope
 };
+
+/// Fields of a StatsGraphSample on the wire (GetStatsHistory "samples"), positional in
+/// the order above. A sample of an older core has kStatsSampleFieldsOld (no ed3k).
+inline constexpr int kStatsSampleFields = 19;
+inline constexpr int kStatsSampleFieldsOld = 17;
 
 /// Down/up rate of an engine core cannot see, in KB/s.
 struct EngineRates {
@@ -61,9 +70,14 @@ struct EngineRates {
 /// One point of the toolbar download/upload graph.
 struct SpeedSample {
     uint32 seq  = 0;
-    float  down = 0.0f;   ///< KB/s, eD2K + Usenet + BitTorrent
+    float  down = 0.0f;   ///< KB/s, eD2K + Usenet + BitTorrent + ed3k
     float  up   = 0.0f;   ///< KB/s, eD2K + BitTorrent
 };
+
+/// One sample as the positional array of GetStatsHistory (kStatsSampleFields).
+[[nodiscard]] QCborArray statsSampleToCbor(const StatsGraphSample& s);
+/// The array back; one of an older core (17 fields) reads ed3k as 0. nullopt: too short.
+[[nodiscard]] std::optional<StatsGraphSample> statsSampleFromCbor(const QCborArray& a);
 
 /// Ring-buffered sample history for every graph in the UI.
 class StatsHistory : public QObject {
@@ -121,10 +135,15 @@ public:
     /// Same for StatsGraphSample::btDown/btUp, which the toolbar totals include too.
     void setBtRateSource(std::function<EngineRates()> source);
 
+    /// Same for StatsGraphSample::ed3kDown/ed3kUp (KB/s). The toolbar adds the download
+    /// only: ed3k's sent bytes are in eD2K's upload rate already (BandwidthCoordinator).
+    void setEd3kRateSource(std::function<EngineRates()> source);
+
 private:
     void takeStatsSample(uint32 nowSecs);
     void takeSpeedSample();
     [[nodiscard]] EngineRates btRates() const;   ///< clamped ≥ 0; {} without a source
+    [[nodiscard]] static EngineRates clamped(const std::function<EngineRates()>& source);
 
     std::deque<StatsGraphSample> m_stats;
     std::deque<SpeedSample> m_speed;
@@ -134,6 +153,7 @@ private:
     uint32 m_epoch = 0;
     std::function<float()> m_usenetDownRate;
     std::function<EngineRates()> m_btRates;
+    std::function<EngineRates()> m_ed3kRates;
 };
 
 } // namespace eMule

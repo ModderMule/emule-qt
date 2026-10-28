@@ -396,6 +396,8 @@ QVariant SearchResultsModel::data(const QModelIndex& index, int role) const
             network = QStringLiteral(":/icons/Web.ico");
         else if (r.isContainer())
             network = QStringLiteral(":/icons/Container.ico");
+        else if (r.isEd3k())
+            network = QStringLiteral(":/icons/Kad.ico");   // ed3k: no icon of its own (no MFC original)
         else if (r.webOrigin)
             network = QStringLiteral(":/icons/WebEd2k.ico");
         else if (r.kadOrigin)

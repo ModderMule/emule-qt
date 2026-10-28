@@ -83,6 +83,12 @@ private:
     void openNow(const QString& link);
     /// PushEd3kBootstrapAsk: the user decides whether an ed3k:nodes link adds its source.
     void askBootstrapSource(const Ipc::IpcMessage& msg);
+    /// An ed3k:set link (also PushEd3kSetOffer): follow and download, open as website, or not.
+    void openEd3kSet(const QString& link, bool noWebsite);
+    /// An ed3k:live link: watched, opened in the system's player (local core).
+    void watchEd3kLive(const QString& link);
+    /// PushEd3kSetVersion: a new version of a set with policy ask waits for the user.
+    void tellEd3kSetVersion(const Ipc::IpcMessage& msg);
     void openFileNow(const QString& path);
     void flushPending();
     /// Whether there is both a window to show something on and a daemon to ask.

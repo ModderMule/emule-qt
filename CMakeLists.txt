@@ -537,6 +537,18 @@ if(EMULE_BITTORRENT)
 endif()
 
 # ---------------------------------------------------------------------------
+# Hoster resolver: JDownloader's plugins in a Java sidecar (docs/hoster.md).
+# OFF leaves out the resolver, the Java runtime lookup and the Hoster window;
+# ed3k still stores, passes on and looks up hoster links and answers NO_RESOLVER.
+# The sidecar itself is built by scripts/build-hoster-resolver.sh.
+# ---------------------------------------------------------------------------
+option(EMULE_HOSTER_JD "Build the JDownloader hoster resolver (ed3k hoster links)" ON)
+# The one place EMULE_HAVE_HOSTER_JD is set: every target below inherits it
+if(EMULE_HOSTER_JD)
+    add_compile_definitions(EMULE_HAVE_HOSTER_JD=1)
+endif()
+
+# ---------------------------------------------------------------------------
 # QUIC NAT-T transport (LowID<->LowID over a punched UDP path)
 # ---------------------------------------------------------------------------
 option(EMULE_QUIC_NATT "Build the QUIC NAT-T transport (ngtcp2, OpenSSL >= 3.5)" ON)

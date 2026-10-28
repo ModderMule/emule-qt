@@ -1,7 +1,7 @@
 #pragma once
 
 /// @file Ed3kBridge.h
-/// @brief The daemon's one implementation of each ed3k request (IPC 1000-1049).
+/// @brief The daemon's one implementation of each ed3k request (IPC 1000-1049, 1100-1149).
 ///
 /// Like BtBridge.h the header stays free of the ed3k module: the daemon builds without
 /// it (EMULE_ED3K=OFF), and then GetEd3kStatus answers {available: false}.
@@ -33,7 +33,7 @@ void setBootstrap(ed3k::Ed3kBootstrap* bootstrap);
 /// Whether the daemon was built with the ed3k module.
 [[nodiscard]] bool available();
 
-/// Whether an opcode is one of the ed3k block (1000-1049).
+/// Whether an opcode is one of the ed3k blocks (1000-1049, 1100-1149).
 [[nodiscard]] bool isEd3kRequest(Ipc::IpcMsgType type);
 
 /// Answers an ed3k request through `reply`. False: not an ed3k opcode.

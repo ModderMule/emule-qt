@@ -82,7 +82,7 @@
       <LanguageStandard>stdcpplatest</LanguageStandard>
       <ObjectFileName>release\</ObjectFileName>
       <Optimization>MaxSpeed</Optimization>
-      <PreprocessorDefinitions>_WINDOWS;$(EmuleBtDefines)$(EmuleQuicDefines)UNICODE;_UNICODE;WIN32;_ENABLE_EXTENDED_ALIGNED_STORAGE;WIN64;NOMINMAX;WIN32_LEAN_AND_MEAN;NDEBUG;QT_NO_DEBUG;%(PreprocessorDefinitions)</PreprocessorDefinitions>
+      <PreprocessorDefinitions>_WINDOWS;$(EmuleBtDefines)$(EmuleHosterJdDefines)$(EmuleQuicDefines)UNICODE;_UNICODE;WIN32;_ENABLE_EXTENDED_ALIGNED_STORAGE;WIN64;NOMINMAX;WIN32_LEAN_AND_MEAN;NDEBUG;QT_NO_DEBUG;%(PreprocessorDefinitions)</PreprocessorDefinitions>
       <PreprocessToFile>false</PreprocessToFile>
       <ProgramDataBaseFileName>
       </ProgramDataBaseFileName>
@@ -117,7 +117,7 @@
       <WarningLevel>0</WarningLevel>
     </Midl>
     <ResourceCompile>
-      <PreprocessorDefinitions>_WINDOWS;$(EmuleBtDefines)$(EmuleQuicDefines)UNICODE;_UNICODE;WIN32;_ENABLE_EXTENDED_ALIGNED_STORAGE;WIN64;NOMINMAX;WIN32_LEAN_AND_MEAN;NDEBUG;QT_NO_DEBUG;%(PreprocessorDefinitions)</PreprocessorDefinitions>
+      <PreprocessorDefinitions>_WINDOWS;$(EmuleBtDefines)$(EmuleHosterJdDefines)$(EmuleQuicDefines)UNICODE;_UNICODE;WIN32;_ENABLE_EXTENDED_ALIGNED_STORAGE;WIN64;NOMINMAX;WIN32_LEAN_AND_MEAN;NDEBUG;QT_NO_DEBUG;%(PreprocessorDefinitions)</PreprocessorDefinitions>
     </ResourceCompile>
     <QtMoc>
       <CompilerFlavor>msvc</CompilerFlavor>
@@ -148,7 +148,7 @@
       <LanguageStandard>stdcpplatest</LanguageStandard>
       <ObjectFileName>debug\</ObjectFileName>
       <Optimization>Disabled</Optimization>
-      <PreprocessorDefinitions>_WINDOWS;$(EmuleBtDefines)$(EmuleQuicDefines)UNICODE;_UNICODE;WIN32;_ENABLE_EXTENDED_ALIGNED_STORAGE;WIN64;NOMINMAX;WIN32_LEAN_AND_MEAN;%(PreprocessorDefinitions)</PreprocessorDefinitions>
+      <PreprocessorDefinitions>_WINDOWS;$(EmuleBtDefines)$(EmuleHosterJdDefines)$(EmuleQuicDefines)UNICODE;_UNICODE;WIN32;_ENABLE_EXTENDED_ALIGNED_STORAGE;WIN64;NOMINMAX;WIN32_LEAN_AND_MEAN;%(PreprocessorDefinitions)</PreprocessorDefinitions>
       <PreprocessToFile>false</PreprocessToFile>
       <RuntimeLibrary>MultiThreadedDebugDLL</RuntimeLibrary>
       <SuppressStartupBanner>true</SuppressStartupBanner>
@@ -178,7 +178,7 @@
       <WarningLevel>0</WarningLevel>
     </Midl>
     <ResourceCompile>
-      <PreprocessorDefinitions>_WINDOWS;$(EmuleBtDefines)$(EmuleQuicDefines)UNICODE;_UNICODE;WIN32;_ENABLE_EXTENDED_ALIGNED_STORAGE;WIN64;NOMINMAX;WIN32_LEAN_AND_MEAN;_DEBUG;%(PreprocessorDefinitions)</PreprocessorDefinitions>
+      <PreprocessorDefinitions>_WINDOWS;$(EmuleBtDefines)$(EmuleHosterJdDefines)$(EmuleQuicDefines)UNICODE;_UNICODE;WIN32;_ENABLE_EXTENDED_ALIGNED_STORAGE;WIN64;NOMINMAX;WIN32_LEAN_AND_MEAN;_DEBUG;%(PreprocessorDefinitions)</PreprocessorDefinitions>
     </ResourceCompile>
     <QtRcc>
       <InitFuncName>emuleqt</InitFuncName>
@@ -226,6 +226,8 @@
     <ClCompile Include="dialogs\AddTorrentDialog.cpp" Condition="'$(EmuleBitTorrent)'=='true'" />
     <ClCompile Include="dialogs\TorrentDetailsDialog.cpp" Condition="'$(EmuleBitTorrent)'=='true'" />
     <ClCompile Include="panels\TorrentPanel.cpp" Condition="'$(EmuleBitTorrent)'=='true'" />
+    <ClCompile Include="panels\HosterPanel.cpp" Condition="'$(EmuleHosterJd)'=='true'" />
+    <ClCompile Include="dialogs\HosterPuzzleDialog.cpp" Condition="'$(EmuleHosterJd)'=='true'" />
     <ClCompile Include="utils\PriorityText.cpp" />
     <ClCompile Include="utils\Smileys.cpp" />
     <ClCompile Include="utils\ColumnTooltip.cpp" />
@@ -266,6 +268,10 @@
     <ClCompile Include="app\CoreStartWatch.cpp" />
     <ClCompile Include="app\SingleInstance.cpp" />
     <ClCompile Include="panels\IrcPanel.cpp" />
+    <ClCompile Include="panels\IrcPanelEd3k.cpp" />
+    <ClCompile Include="panels\ChatChannelView.cpp" />
+    <ClCompile Include="panels\Ed3kRoomTab.cpp" />
+    <ClCompile Include="panels\Ed3kRoomList.cpp" />
     <ClCompile Include="controls\KadContactHistogram.cpp" />
     <ClCompile Include="controls\KadContactsModel.cpp" />
     <ClCompile Include="controls\KadLookupGraph.cpp" />
@@ -280,6 +286,9 @@
     <ClCompile Include="dialogs\NetworkInfoDialog.cpp" />
     <ClCompile Include="dialogs\OptionsDialog.cpp" />
     <ClCompile Include="dialogs\Ed3kOptionsPages.cpp" />
+    <ClCompile Include="dialogs\Ed3kFilterPage.cpp" />
+    <ClCompile Include="dialogs\Ed3kStakeGroup.cpp" />
+    <ClCompile Include="dialogs\Ed3kSetsDialog.cpp" />
     <ClCompile Include="dialogs\AddNzbFilesDialog.cpp" />
     <ClCompile Include="dialogs\NzbFileChooserDialog.cpp" />
     <ClCompile Include="dialogs\AddNzbUrlDialog.cpp" />
@@ -438,6 +447,9 @@
     <QtMoc Include="app\CoreStartWatch.h" />
     <QtMoc Include="app\SingleInstance.h" />
     <QtMoc Include="panels\IrcPanel.h" />
+    <QtMoc Include="panels\ChatChannelView.h" />
+    <QtMoc Include="panels\Ed3kRoomTab.h" />
+    <QtMoc Include="panels\Ed3kRoomList.h" />
     <QtMoc Include="controls\KadContactHistogram.h" />
     <QtMoc Include="controls\KadContactsModel.h" />
     <QtMoc Include="controls\KadLookupGraph.h" />
@@ -451,6 +463,9 @@
     <QtMoc Include="dialogs\NetworkInfoDialog.h" />
     <QtMoc Include="dialogs\OptionsDialog.h" />
     <QtMoc Include="dialogs\Ed3kOptionsPages.h" />
+    <QtMoc Include="dialogs\Ed3kFilterPage.h" />
+    <QtMoc Include="dialogs\Ed3kStakeGroup.h" />
+    <QtMoc Include="dialogs\Ed3kSetsDialog.h" />
     <QtMoc Include="dialogs\AddNzbFilesDialog.h" />
     <QtMoc Include="dialogs\NzbFileChooserDialog.h" />
     <QtMoc Include="dialogs\AddNzbUrlDialog.h" />
@@ -467,6 +482,8 @@
     <QtMoc Include="dialogs\AddTorrentDialog.h" Condition="'$(EmuleBitTorrent)'=='true'" />
     <QtMoc Include="dialogs\TorrentDetailsDialog.h" Condition="'$(EmuleBitTorrent)'=='true'" />
     <QtMoc Include="panels\TorrentPanel.h" Condition="'$(EmuleBitTorrent)'=='true'" />
+    <QtMoc Include="panels\HosterPanel.h" Condition="'$(EmuleHosterJd)'=='true'" />
+    <QtMoc Include="dialogs\HosterPuzzleDialog.h" Condition="'$(EmuleHosterJd)'=='true'" />
     <QtMoc Include="dialogs\WebLinksDialog.h" />
     <QtMoc Include="dialogs\PeerPreviewDialog.h" />
     <QtMoc Include="dialogs\ToolbarCustomizeDialog.h" />
@@ -716,6 +733,7 @@
     <None Include="..\..\resources\icons\Usenet.ico" />
     <None Include="..\..\resources\icons\UsenetSearch.ico" />
     <None Include="..\..\resources\icons\Torrent.ico" />
+    <None Include="..\..\resources\icons\Hoster.ico" />
     <None Include="..\..\resources\icons\User.ico" />
     <None Include="..\..\resources\icons\UserAdd.ico" />
     <None Include="..\..\resources\icons\UserDelete.ico" />

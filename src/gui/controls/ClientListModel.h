@@ -35,6 +35,9 @@ enum class ClientListMode {
     KnownClients
 };
 
+/// The network of a client row (GetUploads "network"; absent = eD2K).
+enum class ClientNetwork { Ed2k, Ed3k };
+
 /// Row data for one client displayed in any of the 4 bottom tabs.
 struct ClientRow {
     QString userName;
@@ -63,6 +66,7 @@ struct ClientRow {
     bool hasCredit = false;
     bool isFriend = false;
     bool isUrl = false;            ///< HTTP source, not an eD2K client
+    ClientNetwork network = ClientNetwork::Ed2k;   ///< ed3k: a node of the ed3k upload queue, no eD2K actions
     bool noViewShared = false;     ///< peer refuses "View Shared Files"
     int64_t upDatarate = 0;       // bytes/sec upload rate
     int64_t downDatarate = 0;     // bytes/sec download rate

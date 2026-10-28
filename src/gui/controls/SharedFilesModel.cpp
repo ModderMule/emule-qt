@@ -490,6 +490,18 @@ bool SharedFilesModel::removeFile(const QString& hexHash)
 // SharedFilesSortProxy
 // ---------------------------------------------------------------------------
 
+namespace {
+
+/// MFC EqualPaths: a trailing separator and letter case don't count
+bool sameDir(const QString& a, const QString& b)
+{
+    if (a.isEmpty() || b.isEmpty())
+        return false;
+    return QDir::cleanPath(a).compare(QDir::cleanPath(b), Qt::CaseInsensitive) == 0;
+}
+
+} // namespace
+
 void SharedFilesSortProxy::setFolderFilter(SharedFilterType type, const QString& path)
 {
     if (m_filterType == type && m_filterPath == path)
@@ -539,27 +551,17 @@ bool SharedFilesSortProxy::filterAcceptsRow(int sourceRow, const QModelIndex& /*
     switch (m_filterType) {
     case SharedFilterType::AllShared:
         return true;
-    // "Incoming" is every folder finished downloads land in — the global one and
-    // each category that overrides it. The daemon already answers that question
-    // per file: a file it refuses to let us unshare is one of these, because
-    // that is the only rule that forces sharing on
-    // (IpcClientHandler's `canUnshare`). Comparing against one remembered path
-    // could only ever recognise a single incoming directory.
+    // MFC CSharedFilesCtrl::AddFile (SharedFilesCtrl.cpp:386-398): "Incoming" is the
+    // main incoming dir only, "Shared Directories" every finished file outside it,
+    // category incoming dirs included. m_filterPath holds the main incoming dir.
     case SharedFilterType::Incoming:
-        return !f->isPartFile && !f->shareToggleable;
+        return !f->isPartFile && sameDir(f->path, m_filterPath);
     case SharedFilterType::Incomplete:
         return f->isPartFile;
     case SharedFilterType::SharedDirs:
-        return !f->isPartFile && f->shareToggleable;
-    case SharedFilterType::SpecificDir: {
-        // Normalize: strip trailing '/' (but keep bare "/") and compare case-insensitively
-        auto normalize = [](QStringView p) -> QStringView {
-            if (p.size() > 1 && p.endsWith(u'/'))
-                return p.chopped(1);
-            return p;
-        };
-        return normalize(f->path).compare(normalize(m_filterPath), Qt::CaseInsensitive) == 0;
-    }
+        return !f->isPartFile && !sameDir(f->path, m_filterPath);
+    case SharedFilterType::SpecificDir:
+        return sameDir(f->path, m_filterPath);
     case SharedFilterType::IncompleteCategory:
         return f->isPartFile && f->category == m_filterPath.toInt();
     }

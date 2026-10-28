@@ -387,6 +387,56 @@ private slots:
         QVERIFY(!Preferences::applyEd3kCreditKey(k, QStringLiteral("ed3kLan"), QCborValue(true)));
     }
 
+    void ed3kHoster_roundTrip()
+    {
+        // hoster.md §3: downloads off by default; vouched links published by default (user's choice)
+        const Ed3kHosterPrefs none = Preferences().ed3kHoster();
+        QVERIFY(!none.enabled);
+        QVERIFY(none.publishLinks);
+        QVERIFY(none.accounts.isEmpty());
+
+        TempDir tmp;
+        const auto file = tmp.filePath(QStringLiteral("hoster.yaml"));
+        Ed3kHosterPrefs h;
+        h.enabled = true;
+        h.java = QStringLiteral("/opt/jdk/bin/java");
+        h.autoJava = false;
+        h.maxStreams = 3;
+        h.askPuzzles = false;
+        h.publishLinks = false;
+        h.fromPeers = false;
+        h.accounts = {{QStringLiteral("rapidgator.net"), QStringLiteral("me"), QStringLiteral("s3cret")}};
+        {
+            Preferences prefs;
+            prefs.setEd3kHoster(h);
+            QVERIFY(prefs.saveTo(file));
+        }
+        // the password is written encrypted, never in clear
+        QFile raw(file);
+        QVERIFY(raw.open(QIODevice::ReadOnly));
+        QVERIFY(!raw.readAll().contains("s3cret"));
+        Preferences loaded;
+        QVERIFY(loaded.load(file));
+        QVERIFY(loaded.ed3kHoster() == h);
+
+        // IPC carries no password; an account without one keeps the stored password
+        const QCborMap ipc = loaded.toIpcMap();
+        const QCborMap acc = ipc.value(QStringLiteral("ed3kHosterAccounts")).toArray().at(0).toMap();
+        QVERIFY(!acc.contains(QStringLiteral("password")));
+        Ed3kHosterPrefs k = h;
+        QVERIFY(Preferences::applyEd3kHosterKey(k, QStringLiteral("ed3kHosterAccounts"),
+                                                ipc.value(QStringLiteral("ed3kHosterAccounts"))));
+        QCOMPARE(k.accounts.at(0).password, QStringLiteral("s3cret"));
+        QVERIFY(Preferences::applyEd3kHosterKey(k, QStringLiteral("ed3kHosterMaxStreams"), QCborValue(99)));
+        QCOMPARE(k.maxStreams, uint32{16});
+        QVERIFY(!Preferences::applyEd3kHosterKey(k, QStringLiteral("ed3kLan"), QCborValue(true)));
+
+        Preferences mirror;
+        mirror.updateFromCbor(ipc);
+        QCOMPARE(mirror.ed3kHoster().accounts.at(0).user, QStringLiteral("me"));
+        QVERIFY(mirror.ed3kHoster().accounts.at(0).password.isEmpty());
+    }
+
     void bittorrent_clamps()
     {
         Preferences prefs;

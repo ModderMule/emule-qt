@@ -6,6 +6,8 @@
 
 #include "app/Ed3kNameOpener.h"
 #include "app/IpcClient.h"
+#include "dialogs/Ed3kFilterPage.h"
+#include "dialogs/Ed3kStakeGroup.h"
 #include "dialogs/PortTest.h"
 #include "prefs/Preferences.h"
 #include "IpcMessage.h"
@@ -13,6 +15,8 @@
 #include <QCborArray>
 #include <QCheckBox>
 #include <QDateTime>
+#include <QDialog>
+#include <QDialogButtonBox>
 #include <QDoubleSpinBox>
 #include <QFile>
 #include <QFileDialog>
@@ -30,6 +34,7 @@
 #include <QPushButton>
 #include <QRegularExpression>
 #include <QRegularExpressionValidator>
+#include <QSignalBlocker>
 #include <QSpinBox>
 #include <QTreeWidget>
 #include <QVBoxLayout>
@@ -116,7 +121,26 @@ Ed3kOptionsPages::Ed3kOptionsPages(IpcClient* ipc, QWidget* parent)
     m_connection = buildConnection(parent);
     m_credits = buildCredits(parent);
     m_names = buildNames(parent);
+    m_filters = new Ed3kFilterPage(ipc, parent);   // acts at once over IPC (filter-list.md)
+    m_hoster = buildHoster(parent);
     if (m_ipc) {
+        connect(m_ipc, &IpcClient::hosterAccountChecked, this, [this](const IpcMessage& msg) {
+            const QString host = msg.fieldString(0);
+            const QString user = msg.fieldString(1);
+            const QCborMap r = msg.fieldMap(2);
+            for (HosterAccountRow& a : m_accounts) {
+                if (a.host != host || a.user != user)
+                    continue;
+                if (!r.value(QStringLiteral("valid")).toBool())
+                    a.status = tr("Not valid");
+                else if (const qint64 exp = r.value(QStringLiteral("expires")).toInteger(); exp > 0)
+                    a.status = (r.value(QStringLiteral("premium")).toBool() ? tr("Premium until %1") : tr("Free until %1"))
+                                   .arg(QLocale().toString(QDateTime::fromSecsSinceEpoch(exp).date(), QLocale::ShortFormat));
+                else
+                    a.status = r.value(QStringLiteral("premium")).toBool() ? tr("Premium") : tr("Free");
+            }
+            fillAccounts();
+        });
         connect(m_ipc, &IpcClient::ed3kStatusChanged, this,
                 [this](const IpcMessage& msg) { applyStatus(msg.fieldMap(0)); });
         connect(m_ipc, &IpcClient::ed3kNamesChanged, this, [this](const IpcMessage&) { refreshNames(); });
@@ -144,6 +168,16 @@ void Ed3kOptionsPages::load(const QCborMap& p)
     m_sitePortSpin->setValue(int(p.value(QStringLiteral("ed3kSitePort")).toInteger(0)));
     m_nodeListsEdit->setPlainText(linesText(p.value(QStringLiteral("ed3kNodeLists"))));
     m_chaintubeRpcEdit->setPlainText(linesText(p.value(QStringLiteral("ed3kChaintubeRpc"))));
+    {
+        Ed3kChainPrefs ch;
+        for (auto it = p.cbegin(); it != p.cend(); ++it)
+            Preferences::applyEd3kChainKey(ch, it.key().toString(), it.value());
+        m_ctChainIdEdit->setText(ch.chainId == 0 ? QString() : QString::number(ch.chainId));
+        m_ctContentEdit->setText(ch.content);
+        m_ctCommentEdit->setText(ch.comment);
+        m_ctVoteEdit->setText(ch.vote);
+        m_ctForwarderEdit->setText(ch.forwarder);
+    }
 
     Ed3kCreditPrefs c;
     for (auto it = p.cbegin(); it != p.cend(); ++it)
@@ -158,6 +192,22 @@ void Ed3kOptionsPages::load(const QCborMap& p)
     m_sellFloorSpin->setValue(double(c.sellFloor) / kMicro);
     m_sellSlotsSpin->setValue(int(c.sellSlots));
     m_ledgerGroup->setEnabled(c.enabled);
+
+    Ed3kHosterPrefs h;
+    for (auto it = p.cbegin(); it != p.cend(); ++it)
+        Preferences::applyEd3kHosterKey(h, it.key().toString(), it.value());
+    m_hosterEnabledCheck->setChecked(h.enabled);
+    updateJavaButtons();
+    m_hosterStreamsSpin->setValue(int(h.maxStreams));
+    m_hosterPuzzlesCheck->setChecked(h.askPuzzles);
+    m_hosterPeersCheck->setChecked(h.fromPeers);
+    m_publishLinksCheck->setChecked(h.publishLinks);
+    m_javaEdit->setText(h.java);
+    m_autoJavaCheck->setChecked(h.autoJava);
+    m_accounts.clear();
+    for (const Ed3kHosterAccount& a : h.accounts)
+        m_accounts.append({a.host, a.user, {}, false, {}});
+    fillAccounts();
     m_loading = false;
 }
 
@@ -176,6 +226,14 @@ void Ed3kOptionsPages::appendTo(IpcMessage& req) const
     put("ed3kSitePort", qint64(m_sitePortSpin->value()));
     put("ed3kNodeLists", linesOf(m_nodeListsEdit).join(QLatin1Char(' ')));
     put("ed3kChaintubeRpc", linesOf(m_chaintubeRpcEdit).join(QLatin1Char(' ')));
+    {
+        const Ed3kChainPrefs ch = chainPrefs();
+        put("ed3kChainId", QString::number(ch.chainId));   // a u64: as text
+        put("ed3kChainContent", ch.content);
+        put("ed3kChainComment", ch.comment);
+        put("ed3kChainVote", ch.vote);
+        put("ed3kChainForwarder", ch.forwarder);
+    }
     put("ed3kCreditRpc", linesOf(m_creditRpcEdit).join(QLatin1Char(' ')));
     const Ed3kCreditPrefs c = creditPrefs();
     put("ed3kCreditEnabled", c.enabled);
@@ -186,6 +244,23 @@ void Ed3kOptionsPages::appendTo(IpcMessage& req) const
     put("ed3kCreditSell", c.sell);
     put("ed3kCreditSellFloor", qint64(c.sellFloor));
     put("ed3kCreditSellSlots", qint64(c.sellSlots));
+    const Ed3kHosterPrefs h = hosterPrefs();
+    put("ed3kHosterEnabled", h.enabled);
+    put("ed3kHosterJava", h.java);
+    put("ed3kHosterAutoJava", h.autoJava);
+    put("ed3kHosterMaxStreams", qint64(h.maxStreams));
+    put("ed3kHosterPuzzles", h.askPuzzles);
+    put("ed3kHosterPublishLinks", h.publishLinks);
+    put("ed3kHosterFromPeers", h.fromPeers);
+    // a password only when typed here: the daemon keeps the stored one otherwise
+    QCborArray accounts;
+    for (const HosterAccountRow& a : m_accounts) {
+        QCborMap m{{QStringLiteral("host"), a.host}, {QStringLiteral("user"), a.user}};
+        if (a.passwordSet)
+            m.insert(QStringLiteral("password"), a.password);
+        accounts.append(m);
+    }
+    put("ed3kHosterAccounts", accounts);
 }
 
 void Ed3kOptionsPages::saveLocal() const
@@ -201,8 +276,18 @@ void Ed3kOptionsPages::saveLocal() const
         thePrefs.setEd3kSitePort(uint16(m_sitePortSpin->value()));
     thePrefs.setEd3kNodeLists(linesOf(m_nodeListsEdit));
     thePrefs.setEd3kChaintubeRpc(linesOf(m_chaintubeRpcEdit));
+    thePrefs.setEd3kChain(chainPrefs());
     thePrefs.setEd3kCreditRpc(linesOf(m_creditRpcEdit));
     thePrefs.setEd3kCredit(creditPrefs());
+    Ed3kHosterPrefs h = hosterPrefs();
+    // without a daemon the stored passwords are here: keep those not typed again
+    const Ed3kHosterPrefs old = thePrefs.ed3kHoster();
+    for (Ed3kHosterAccount& a : h.accounts)
+        if (a.password.isEmpty())
+            for (const Ed3kHosterAccount& o : old.accounts)
+                if (o.host == a.host && o.user == a.user)
+                    a.password = o.password;
+    thePrefs.setEd3kHoster(h);
 }
 
 bool Ed3kOptionsPages::validate()
@@ -226,7 +311,21 @@ bool Ed3kOptionsPages::validate()
         QMessageBox::warning(m_parent, tr("ed3k credits"), tr("The chain ID is a whole number."));
         return false;
     }
+    // chaintube (chaintube.md §4.2): each contract empty or an address
+    for (QLineEdit* e : {m_ctContentEdit, m_ctCommentEdit, m_ctVoteEdit, m_ctForwarderEdit}) {
+        if (const QString t = e->text().trimmed(); !t.isEmpty() && !kAddress.match(t).hasMatch()) {
+            emit showPage(m_connection);
+            e->setFocus();
+            QMessageBox::warning(m_parent, tr("Chaintube"), tr("A contract is an address: 0x and 40 hexadecimal digits."));
+            return false;
+        }
+    }
     return true;
+}
+
+QWidget* Ed3kOptionsPages::filtersPage() const
+{
+    return m_filters;
 }
 
 QWidget* Ed3kOptionsPages::buildGeneral(QWidget* parent)
@@ -337,7 +436,32 @@ QWidget* Ed3kOptionsPages::buildConnection(QWidget* parent)
     m_chaintubeRpcEdit->setPlaceholderText(QStringLiteral("https://…"));
     m_chaintubeRpcEdit->setFixedHeight(m_chaintubeRpcEdit->fontMetrics().lineSpacing() * 4 + 12);
     chainLayout->addWidget(m_chaintubeRpcEdit);
+    // the network's parameters (§4.2): no defaults; a test deployment is named in the spec
+    auto* chainForm = new QFormLayout;
+    chainForm->setFieldGrowthPolicy(QFormLayout::AllNonFixedFieldsGrow);
+    m_ctChainIdEdit = new QLineEdit(chainGroup);
+    m_ctChainIdEdit->setValidator(new QRegularExpressionValidator(QRegularExpression(QStringLiteral("[0-9]{0,20}")), m_ctChainIdEdit));
+    m_ctChainIdEdit->setPlaceholderText(tr("assigned at deployment"));
+    chainForm->addRow(tr("Chain ID:"), m_ctChainIdEdit);
+    const auto addressEdit = [chainGroup](const QString& tip) {
+        auto* e = new QLineEdit(chainGroup);
+        e->setValidator(new QRegularExpressionValidator(QRegularExpression(QStringLiteral("(0[xX][0-9a-fA-F]{0,40})?")), e));
+        e->setPlaceholderText(QStringLiteral("0x…"));
+        e->setToolTip(tip);
+        return e;
+    };
+    m_ctContentEdit = addressEdit(tr("The content contract of the network. No default."));
+    m_ctCommentEdit = addressEdit(tr("The comment contract of the network. No default."));
+    m_ctVoteEdit = addressEdit(tr("The vote contract of the network. No default."));
+    m_ctForwarderEdit = addressEdit(tr("The forwarder of requests a site sends; empty: none."));
+    chainForm->addRow(tr("Content contract:"), m_ctContentEdit);
+    chainForm->addRow(tr("Comment contract:"), m_ctCommentEdit);
+    chainForm->addRow(tr("Vote contract:"), m_ctVoteEdit);
+    chainForm->addRow(tr("Forwarder:"), m_ctForwarderEdit);
+    chainLayout->addLayout(chainForm);
     layout->addWidget(chainGroup);
+    for (QLineEdit* e : {m_ctChainIdEdit, m_ctContentEdit, m_ctCommentEdit, m_ctVoteEdit, m_ctForwarderEdit})
+        connect(e, &QLineEdit::textEdited, this, [this] { emit changed(); });
     layout->addStretch();
 
     for (QSpinBox* s : {m_udpPortSpin, m_sitePortSpin})
@@ -444,6 +568,9 @@ QWidget* Ed3kOptionsPages::buildCredits(QWidget* parent)
     m_accountLabel = noteLabel(tr("Not known while credits are off."), accountGroup);
     accountLayout->addWidget(m_accountLabel);
     layout->addWidget(accountGroup);
+
+    // stake tokens (credit.md §6.7): burns and claims, at once over IPC
+    layout->addWidget(new Ed3kStakeGroup(m_ipc, page));
 
     // also shown and asked when the switch is ticked (confirmCredits)
     auto* notes = new QGroupBox(tr("What switching credits on means"), page);
@@ -579,6 +706,8 @@ void Ed3kOptionsPages::applyStatus(const QCborMap& st)
         m_runningLabel->setText(tr("The node is running on UDP port %1.").arg(st.value(QStringLiteral("udpPort")).toInteger()));
     else
         m_runningLabel->setText(tr("The node is not running."));
+
+    applyHosterStatus(st.value(QStringLiteral("hoster")).toMap());
 
     const QCborMap c = st.value(QStringLiteral("credit")).toMap();
     const QString address = c.value(QStringLiteral("address")).toString();
@@ -873,6 +1002,17 @@ Ed3kCreditPrefs Ed3kOptionsPages::creditPrefs() const
     return c;
 }
 
+Ed3kChainPrefs Ed3kOptionsPages::chainPrefs() const
+{
+    Ed3kChainPrefs c;
+    c.chainId = m_ctChainIdEdit->text().trimmed().toULongLong();
+    c.content = m_ctContentEdit->text().trimmed();
+    c.comment = m_ctCommentEdit->text().trimmed();
+    c.vote = m_ctVoteEdit->text().trimmed();
+    c.forwarder = m_ctForwarderEdit->text().trimmed();
+    return c;
+}
+
 bool Ed3kOptionsPages::keyActionsAllowed() const
 {
     // the daemon refuses a remote GUI too (403)
@@ -903,6 +1043,337 @@ QString Ed3kOptionsPages::creditsText(qint64 micro)
     const qint64 whole = micro / 1'000'000;
     const qint64 frac = micro % 1'000'000;
     return tr("%1.%2 credits").arg(QLocale().toString(whole)).arg(frac, 6, 10, QLatin1Char('0'));
+}
+
+QWidget* Ed3kOptionsPages::buildHoster(QWidget* parent)
+{
+    auto* page = new QWidget(parent);
+    auto* layout = new QVBoxLayout(page);
+    layout->setContentsMargins(4, 4, 4, 4);
+    const auto edited = [this] {
+        if (!m_loading)
+            emit changed();
+    };
+
+    auto* dlGroup = new QGroupBox(tr("Downloads from file hosters"), page);
+    auto* dlLayout = new QVBoxLayout(dlGroup);
+    m_hosterEnabledCheck = new QCheckBox(tr("Allow downloads from file hosters"), dlGroup);
+    m_hosterEnabledCheck->setToolTip(tr("Lets the resolver open hoster pages, wait out their timers, show their "
+                                        "puzzles and use the accounts below. Off by default."));
+    dlLayout->addWidget(m_hosterEnabledCheck);
+    m_resolverLabel = noteLabel(QString(), dlGroup);
+    dlLayout->addWidget(m_resolverLabel);
+    auto* dlForm = new QFormLayout;
+    dlForm->setFormAlignment(Qt::AlignLeft | Qt::AlignTop);
+    dlForm->setFieldGrowthPolicy(QFormLayout::FieldsStayAtSizeHint);
+    m_hosterStreamsSpin = new QSpinBox(dlGroup);
+    m_hosterStreamsSpin->setRange(1, 16);
+    m_hosterStreamsSpin->setToolTip(tr("Hoster downloads at once. Never more than one per hoster and account."));
+    dlForm->addRow(tr("Downloads at once:"), m_hosterStreamsSpin);
+    dlLayout->addLayout(dlForm);
+    m_hosterPuzzlesCheck = new QCheckBox(tr("Show image puzzles (captchas)"), dlGroup);
+    m_hosterPuzzlesCheck->setToolTip(tr("Off: a link that asks for a puzzle waits instead."));
+    dlLayout->addWidget(m_hosterPuzzlesCheck);
+    m_hosterPeersCheck = new QCheckBox(tr("Use hoster links that other ed3k nodes name"), dlGroup);
+    m_hosterPeersCheck->setVisible(thePrefs.showExtControls());
+    dlLayout->addWidget(m_hosterPeersCheck);
+    layout->addWidget(dlGroup);
+
+    auto* javaGroup = new QGroupBox(tr("Java runtime"), page);
+    auto* javaLayout = new QVBoxLayout(javaGroup);
+    javaLayout->addWidget(noteLabel(tr("The resolver runs JDownloader's hoster plugins in a Java program of its own. "
+                                       "eMuleQt looks for Java 17 or newer and can download one into its folder."),
+                                    javaGroup));
+    m_javaLabel = noteLabel(QString(), javaGroup);
+    javaLayout->addWidget(m_javaLabel);
+    auto* pathRow = new QHBoxLayout;
+    m_javaEdit = new QLineEdit(javaGroup);
+    m_javaEdit->setPlaceholderText(tr("Find automatically"));
+    pathRow->addWidget(new QLabel(tr("Java program:"), javaGroup));
+    pathRow->addWidget(m_javaEdit, 1);
+    auto* browseBtn = new QPushButton(tr("Browse..."), javaGroup);
+    connect(browseBtn, &QPushButton::clicked, this, [this] {
+        const QString f = QFileDialog::getOpenFileName(m_parent, tr("Java program"), m_javaEdit->text());
+        if (!f.isEmpty())
+            m_javaEdit->setText(f);
+    });
+    pathRow->addWidget(browseBtn);
+    auto* pathBox = new QWidget(javaGroup);
+    pathBox->setLayout(pathRow);
+    pathRow->setContentsMargins(0, 0, 0, 0);
+    pathBox->setVisible(thePrefs.showExtControls());
+    javaLayout->addWidget(pathBox);
+    m_autoJavaCheck = new QCheckBox(tr("Download a Java runtime when none is found"), javaGroup);
+    m_autoJavaCheck->setToolTip(tr("Eclipse Temurin from adoptium.net, checked by its SHA-256, into the eMuleQt folder."));
+    javaLayout->addWidget(m_autoJavaCheck);
+    auto* javaBtns = new QHBoxLayout;
+    auto* locateBtn = new QPushButton(tr("Look again"), javaGroup);
+    m_javaLocateBtn = locateBtn;
+    connect(locateBtn, &QPushButton::clicked, this, [this] {
+        if (m_ipc)
+            m_ipc->sendRequest(IpcMessage(IpcMsgType::LocateJavaRuntime));
+    });
+    m_javaDownloadBtn = new QPushButton(tr("Download Java"), javaGroup);
+    connect(m_javaDownloadBtn, &QPushButton::clicked, this, [this] {
+        if (m_ipc)
+            m_ipc->sendRequest(IpcMessage(IpcMsgType::DownloadJavaRuntime));
+    });
+    javaBtns->addWidget(locateBtn);
+    javaBtns->addWidget(m_javaDownloadBtn);
+    javaBtns->addStretch();
+    javaLayout->addLayout(javaBtns);
+    layout->addWidget(javaGroup);
+
+    auto* linkGroup = new QGroupBox(tr("Sharing links"), page);
+    auto* linkLayout = new QVBoxLayout(linkGroup);
+    m_publishLinksCheck = new QCheckBox(tr("Publish hoster links"), linkGroup);
+    linkLayout->addWidget(m_publishLinksCheck);
+    linkLayout->addWidget(noteLabel(tr("A downloaded file is shared either way. Published, its link is found in ed3k "
+                                       "and handed to other nodes: a link is often all that protects a file at a hoster."),
+                                    linkGroup));
+    layout->addWidget(linkGroup);
+
+    auto* accGroup = new QGroupBox(tr("Accounts"), page);
+    auto* accLayout = new QVBoxLayout(accGroup);
+    accLayout->addWidget(noteLabel(tr("Logins at hosters. They stay on this computer: never sent to another node, "
+                                      "never logged."),
+                                   accGroup));
+    m_accountsTree = makeTree({tr("Hoster"), tr("User"), tr("Status")}, accGroup);
+    accLayout->addWidget(m_accountsTree);
+    auto* accBtns = new QHBoxLayout;
+    auto* addBtn = new QPushButton(tr("Add..."), accGroup);
+    auto* editBtn = new QPushButton(tr("Edit..."), accGroup);
+    auto* removeBtn = new QPushButton(tr("Remove"), accGroup);
+    auto* checkBtn = new QPushButton(tr("Check"), accGroup);
+    for (QPushButton* b : {addBtn, editBtn, removeBtn, checkBtn})
+        accBtns->addWidget(b);
+    accBtns->addStretch();
+    accLayout->addLayout(accBtns);
+    layout->addWidget(accGroup);
+    layout->addStretch();
+
+    connect(addBtn, &QPushButton::clicked, this, [this] { editAccount(-1); });
+    connect(editBtn, &QPushButton::clicked, this, [this] {
+        if (auto* it = m_accountsTree->currentItem())
+            editAccount(m_accountsTree->indexOfTopLevelItem(it));
+    });
+    connect(m_accountsTree, &QTreeWidget::itemDoubleClicked, this,
+            [this](QTreeWidgetItem* it) { editAccount(m_accountsTree->indexOfTopLevelItem(it)); });
+    connect(removeBtn, &QPushButton::clicked, this, [this] {
+        const int row = m_accountsTree->currentItem() ? m_accountsTree->indexOfTopLevelItem(m_accountsTree->currentItem()) : -1;
+        if (row < 0 || row >= m_accounts.size())
+            return;
+        m_accounts.removeAt(row);
+        fillAccounts();
+        emit changed();
+    });
+    connect(checkBtn, &QPushButton::clicked, this, &Ed3kOptionsPages::checkAccount);
+
+    connect(m_hosterEnabledCheck, &QCheckBox::toggled, this, [this](bool on) {
+        if (m_loading)
+            return;
+        if (on && !confirmHoster()) {
+            const QSignalBlocker block(m_hosterEnabledCheck);
+            m_hosterEnabledCheck->setChecked(false);
+            updateJavaButtons();
+            return;
+        }
+        updateJavaButtons();
+        emit changed();
+    });
+    connect(m_publishLinksCheck, &QCheckBox::toggled, this, [this](bool on) {
+        if (m_loading)
+            return;
+        if (on && !confirmShareLinks()) {
+            const QSignalBlocker block(m_publishLinksCheck);
+            m_publishLinksCheck->setChecked(false);
+            return;
+        }
+        emit changed();
+    });
+    for (QCheckBox* box : {m_hosterPuzzlesCheck, m_hosterPeersCheck, m_autoJavaCheck})
+        connect(box, &QCheckBox::toggled, this, edited);
+    connect(m_hosterStreamsSpin, &QSpinBox::valueChanged, this, edited);
+    connect(m_javaEdit, &QLineEdit::textEdited, this, edited);
+#ifndef EMULE_HAVE_HOSTER_JD
+    // built without the resolver: links are still passed on, nothing is downloaded
+    dlGroup->setEnabled(false);
+    javaGroup->setVisible(false);
+    accGroup->setVisible(false);
+    m_resolverLabel->setText(tr("This build has no hoster resolver: hoster links are stored and passed on, "
+                                "but not downloaded."));
+#endif
+    return page;
+}
+
+void Ed3kOptionsPages::applyHosterStatus(const QCborMap& h)
+{
+    if (!m_resolverLabel || h.isEmpty())
+        return;
+    if (!h.value(QStringLiteral("compiled")).toBool())
+        return;
+    const QCborMap r = h.value(QStringLiteral("resolver")).toMap();
+    const QString description = r.value(QStringLiteral("description")).toString();
+    const QString reason = r.value(QStringLiteral("reason")).toString();
+    if (r.value(QStringLiteral("available")).toBool())
+        m_resolverLabel->setText(description.isEmpty() ? tr("The resolver is ready.") : tr("Resolver: %1").arg(description));
+    else
+        m_resolverLabel->setText(tr("The resolver is not ready: %1").arg(reason));
+
+    const QCborMap j = h.value(QStringLiteral("java")).toMap();
+    // Ed3kJavaRuntime::State: Unknown, Probing, Ready, Missing, Downloading, Unpacking, Failed
+    const int state = int(j.value(QStringLiteral("state")).toInteger());
+    QString text;
+    switch (state) {
+    case 1: text = tr("Looking for Java..."); break;
+    case 2:
+        text = tr("Java %1 (%2): %3")
+                   .arg(j.value(QStringLiteral("version")).toInteger())
+                   .arg(j.value(QStringLiteral("vendor")).toString(), j.value(QStringLiteral("path")).toString());
+        break;
+    case 3: text = tr("No Java 17 or newer found."); break;
+    case 4: text = tr("Downloading Java... %1%").arg(j.value(QStringLiteral("progress")).toInteger()); break;
+    case 5: text = tr("Installing Java..."); break;
+    case 6: text = tr("Java: %1").arg(j.value(QStringLiteral("error")).toString()); break;
+    default: text = tr("Java is looked for when downloads from hosters are allowed."); break;
+    }
+    m_javaLabel->setText(text);
+    m_javaState = state;
+    m_hosterOnInCore = h.value(QStringLiteral("enabled")).toBool();
+    updateJavaButtons();
+}
+
+void Ed3kOptionsPages::updateJavaButtons()
+{
+    if (!m_javaDownloadBtn || !m_hosterEnabledCheck)
+        return;
+    // a runtime is fetched only for a user who switched hoster downloads on (and applied it)
+    const bool on = m_hosterEnabledCheck->isChecked() && m_hosterOnInCore;
+    const QString why = on ? QString() : tr("Allow downloads from file hosters and apply first.");
+    m_javaDownloadBtn->setEnabled(on && (m_javaState == 3 || m_javaState == 6 || m_javaState == 0));
+    m_javaDownloadBtn->setToolTip(why);
+    if (m_javaLocateBtn) {
+        m_javaLocateBtn->setEnabled(on);
+        m_javaLocateBtn->setToolTip(why);
+    }
+}
+
+bool Ed3kOptionsPages::confirmHoster()
+{
+    const QString text =
+        tr("<p>Downloads from file hosters run JDownloader's hoster plugins on this computer, in a program of their own.</p>"
+           "<ul><li>The hoster sees your address and which file you fetch; with an account, also who you are to it.</li>"
+           "<li>Their pages may show puzzles and timers; eMuleQt shows image puzzles and waits out timers for you.</li>"
+           "<li>Fetching by program is against the terms of many hosters. That is between you and the hoster.</li>"
+           "<li>Every block that ed3k knows is verified; a file ed3k does not know is checked as a whole when complete.</li></ul>"
+           "<p>Allow downloads from file hosters?</p>");
+    return QMessageBox::question(m_parent, tr("Downloads from file hosters"), text,
+                                 QMessageBox::Yes | QMessageBox::No, QMessageBox::No)
+           == QMessageBox::Yes;
+}
+
+bool Ed3kOptionsPages::confirmShareLinks()
+{
+    const QString text =
+        tr("<p>Sharing hoster links means: once a file from a link is downloaded and verified, its link is published "
+           "in ed3k and handed to other nodes that download the same file.</p>"
+           "<p>A link is often all that keeps a file at a hoster private. Whoever knows the link can find the file in "
+           "ed3k, and anyone can find the link of a file you share.</p><p>Publish hoster links?</p>");
+    return QMessageBox::question(m_parent, tr("Publish hoster links"), text, QMessageBox::Yes | QMessageBox::No,
+                                 QMessageBox::No)
+           == QMessageBox::Yes;
+}
+
+void Ed3kOptionsPages::editAccount(int row)
+{
+    const bool add = row < 0 || row >= m_accounts.size();
+    HosterAccountRow a = add ? HosterAccountRow{} : m_accounts.at(row);
+    QDialog dlg(m_parent);
+    dlg.setWindowTitle(add ? tr("Add hoster account") : tr("Edit hoster account"));
+    auto* form = new QFormLayout(&dlg);
+    auto* hostEdit = new QLineEdit(a.host, &dlg);
+    hostEdit->setPlaceholderText(QStringLiteral("rapidgator.net"));
+    auto* userEdit = new QLineEdit(a.user, &dlg);
+    auto* passEdit = new QLineEdit(&dlg);
+    passEdit->setEchoMode(QLineEdit::Password);
+    passEdit->setPlaceholderText(add ? QString() : tr("unchanged"));
+    form->addRow(tr("Hoster:"), hostEdit);
+    form->addRow(tr("User:"), userEdit);
+    form->addRow(tr("Password:"), passEdit);
+    auto* buttons = new QDialogButtonBox(QDialogButtonBox::Ok | QDialogButtonBox::Cancel, &dlg);
+    connect(buttons, &QDialogButtonBox::accepted, &dlg, &QDialog::accept);
+    connect(buttons, &QDialogButtonBox::rejected, &dlg, &QDialog::reject);
+    form->addRow(buttons);
+    if (dlg.exec() != QDialog::Accepted)
+        return;
+    QString host = hostEdit->text().trimmed().toLower();
+    if (host.startsWith(QLatin1StringView("www.")))
+        host = host.mid(4);
+    const QString user = userEdit->text().trimmed();
+    if (host.isEmpty() || user.isEmpty())
+        return;
+    const bool renamed = host != a.host || user != a.user;
+    a.host = host;
+    a.user = user;
+    if (!passEdit->text().isEmpty() || renamed) {
+        a.password = passEdit->text();
+        a.passwordSet = true;
+    }
+    a.status.clear();
+    if (add)
+        m_accounts.append(a);
+    else
+        m_accounts[row] = a;
+    fillAccounts();
+    emit changed();
+}
+
+void Ed3kOptionsPages::checkAccount()
+{
+    const int row = m_accountsTree->currentItem() ? m_accountsTree->indexOfTopLevelItem(m_accountsTree->currentItem()) : -1;
+    if (row < 0 || row >= m_accounts.size() || !m_ipc)
+        return;
+    HosterAccountRow& a = m_accounts[row];
+    if (!a.passwordSet) {
+        // the stored password stays in the core: type it to check
+        bool ok = false;
+        const QString pass = QInputDialog::getText(m_parent, tr("Check hoster account"),
+                                                   tr("Password of %1 at %2:").arg(a.user, a.host), QLineEdit::Password,
+                                                   {}, &ok);
+        if (!ok)
+            return;
+        a.password = pass;
+        a.passwordSet = true;
+    }
+    IpcMessage req(IpcMsgType::CheckHosterAccount);
+    req.append(a.host);
+    req.append(a.user);
+    req.append(a.password);
+    m_ipc->sendRequest(std::move(req));
+    a.status = tr("Checking...");
+    fillAccounts();
+}
+
+void Ed3kOptionsPages::fillAccounts()
+{
+    m_accountsTree->clear();
+    for (const HosterAccountRow& a : m_accounts)
+        m_accountsTree->addTopLevelItem(new QTreeWidgetItem({a.host, a.user, a.status}));
+}
+
+Ed3kHosterPrefs Ed3kOptionsPages::hosterPrefs() const
+{
+    Ed3kHosterPrefs h;
+    h.enabled = m_hosterEnabledCheck->isChecked();
+    h.java = m_javaEdit->text().trimmed();
+    h.autoJava = m_autoJavaCheck->isChecked();
+    h.maxStreams = uint32(m_hosterStreamsSpin->value());
+    h.askPuzzles = m_hosterPuzzlesCheck->isChecked();
+    h.publishLinks = m_publishLinksCheck->isChecked();
+    h.fromPeers = m_hosterPeersCheck->isChecked();
+    for (const HosterAccountRow& a : m_accounts)
+        h.accounts.append({a.host, a.user, a.passwordSet ? a.password : QString()});
+    return h;
 }
 
 } // namespace eMule

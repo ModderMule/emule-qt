@@ -765,7 +765,8 @@ void Ed3kTorrentJoin::onMemberVerified(const QString& id, int index, const ffi::
     if (!shareMember(ffi::SharedFile{root, size, fileName, std::nullopt, std::nullopt, ffi::Have::complete(), std::span{hashes}}, id, index))
         return;
     const ffi::FileInfo info{root, size, fileName, std::nullopt, 0, 0, 0, 0, 0, 0};
-    if (auto ok = e->publish(m_session.now(), info, m_holdBack ? ffi::Publish::Source : ffi::Publish::Both); !ok)
+    // was: e->publish(m_session.now(), info, m_holdBack ? ffi::Publish::Source : ffi::Publish::Both)
+    if (auto ok = publishShared(info); !ok)
         logDebug(QStringLiteral("publish of member %1 of \"%2\" failed (error %3)").arg(index).arg(name(id), errorName(ok.error())));
     keepMember(id, index, root, size, file);
     logInfo(QStringLiteral("\"%1\" verified and shared as %2").arg(file, hexOf(root.bytes)));

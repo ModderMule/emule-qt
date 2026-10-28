@@ -26,6 +26,7 @@
 
 ## ed3k
 - for file hosting & decrypt crawler implementations, compare with JDownloader at `/Volumes/MySSD/Coding/Java/JDownloader` and `/Volumes/MySSD/Coding/Java/JDBrowser`
+- when writing protocol spec: be token efficient and relax on grammar
 
 ## Testing
 - open ports: TCP `5662`, UDP `5672`

@@ -365,7 +365,10 @@ void SharedFilesPanel::onFolderSelectionChanged()
         return;
     }
 
-    m_proxy->setFolderFilter(static_cast<SharedFilterType>(filterType), path);
+    // Both split the share at the main incoming dir
+    const auto type = static_cast<SharedFilterType>(filterType);
+    const bool byIncoming = type == SharedFilterType::Incoming || type == SharedFilterType::SharedDirs;
+    m_proxy->setFolderFilter(type, byIncoming ? thePrefs.incomingDir() : path);
     requestSharedFiles();
 }
 

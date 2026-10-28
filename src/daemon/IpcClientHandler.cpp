@@ -5,7 +5,9 @@
 #include "BandwidthCoordinator.h"
 #include "BtBridge.h"
 #include "Ed3kBridge.h"
+#include "Ed3kUploadsBridge.h"
 #include "Ed3kCreditBridge.h"
+#include "Ed3kHosterBridge.h"
 #include "PortTestRunner.h"
 #include "UsenetBridge.h"
 #include "CoreNotifierBridge.h"
@@ -327,9 +329,14 @@ void IpcClientHandler::onMessageReceived(const IpcMessage& msg)
     // BitTorrent (800-899): BtBridge answers every request of the block
     if (BtBridge::handleRequest(msg, [this](const IpcMessage& reply) { sendMessage(reply); }))
         return;
-    // ed3k (1000-1049): Ed3kBridge. The credit key (a secret) only to a GUI on this machine
+    // ed3k (1000-1049, 1100-1149): Ed3kBridge. The credit key (a secret) only to a GUI on this machine
     if (Ed3kCreditBridge::carriesKey(msg.type()) && !m_isLocal) {
         sendMessage(IpcMessage::makeError(msg.seqId(), 403, QStringLiteral("The credit key is not sent to a remote client")));
+        return;
+    }
+    // a hoster password, like the credit key, only from a GUI on this machine
+    if (Ed3kHosterBridge::carriesSecret(msg.type()) && !m_isLocal) {
+        sendMessage(IpcMessage::makeError(msg.seqId(), 403, QStringLiteral("A hoster password is not taken from a remote client")));
         return;
     }
     if (Ed3kBridge::handleRequest(msg, [this](const IpcMessage& reply) { sendMessage(reply); }))
@@ -623,6 +630,8 @@ void IpcClientHandler::handleGetUploads(const IpcMessage& msg)
             waiting.append(toCbor(*c));
         });
     }
+    // the ed3k upload queue next to eD2K's (network "ed3k")
+    Ed3kUploadsBridge::appendRows(uploading, waiting);
     QCborMap result;
     result.insert(QStringLiteral("uploading"), uploading);
     result.insert(QStringLiteral("waiting"), waiting);
@@ -1999,26 +2008,20 @@ void IpcClientHandler::handleGetStatsHistory(const IpcMessage& msg)
     QCborArray samples;
     if (auto* hist = theApp.statsHistory) {
         // Field order is StatsGraphSample's, which is MFC's scope order plus the
-        // appended Usenet and BitTorrent rates — the GUI unpacks it positionally into the
-        // download/upload/connection graphs.
+        // appended Usenet, BitTorrent and ed3k rates — the GUI unpacks it positionally into the
+        // download/upload/connection graphs (statsSampleToCbor / statsSampleFromCbor).
         for (const auto& s : hist->statsSince(fromSeq))
-            samples.append(QCborArray{static_cast<qint64>(s.seq),
-                                      static_cast<qint64>(s.timestamp),
-                                      static_cast<double>(s.downAvgSession),
-                                      static_cast<double>(s.downAvgTime),
-                                      static_cast<double>(s.downCurrent),
-                                      static_cast<double>(s.upAvgSession),
-                                      static_cast<double>(s.upAvgTime),
-                                      static_cast<double>(s.upCurrent),
-                                      static_cast<double>(s.upNoOverhead),
-                                      static_cast<double>(s.upFriend),
-                                      static_cast<qint64>(s.connActive),
-                                      static_cast<qint64>(s.upActive),
-                                      static_cast<qint64>(s.upTotal),
-                                      static_cast<qint64>(s.downTransferring),
-                                      static_cast<double>(s.usenetDown),
-                                      static_cast<double>(s.btDown),
-                                      static_cast<double>(s.btUp)});
+            samples.append(statsSampleToCbor(s));
+        // replaced by statsSampleToCbor (shared with the GUI's parser and the test):
+        // samples.append(QCborArray{static_cast<qint64>(s.seq), static_cast<qint64>(s.timestamp),
+        //     static_cast<double>(s.downAvgSession), static_cast<double>(s.downAvgTime),
+        //     static_cast<double>(s.downCurrent), static_cast<double>(s.upAvgSession),
+        //     static_cast<double>(s.upAvgTime), static_cast<double>(s.upCurrent),
+        //     static_cast<double>(s.upNoOverhead), static_cast<double>(s.upFriend),
+        //     static_cast<qint64>(s.connActive), static_cast<qint64>(s.upActive),
+        //     static_cast<qint64>(s.upTotal), static_cast<qint64>(s.downTransferring),
+        //     static_cast<double>(s.usenetDown), static_cast<double>(s.btDown),
+        //     static_cast<double>(s.btUp)});
         out.insert(QStringLiteral("epoch"), static_cast<qint64>(hist->epoch()));
         out.insert(QStringLiteral("oldestSeq"), static_cast<qint64>(hist->oldestStatsSeq()));
     }
@@ -4458,6 +4461,10 @@ bool IpcClientHandler::applyPreferenceEd3k(const QString& key, const QCborValue&
         thePrefs.setEd3kSitePort(static_cast<uint16>(std::clamp<qint64>(val.toInteger(), 1, 65535)));
     else if (Ed3kCreditPrefs c = thePrefs.ed3kCredit(); Preferences::applyEd3kCreditKey(c, key, val))
         thePrefs.setEd3kCredit(c);   // credits (credit.md): Ed3kCredit reconfigures
+    else if (Ed3kChainPrefs c = thePrefs.ed3kChain(); Preferences::applyEd3kChainKey(c, key, val))
+        thePrefs.setEd3kChain(c);   // chaintube chain (chaintube.md §4.2): chainConfigure again
+    else if (Ed3kHosterPrefs h = thePrefs.ed3kHoster(); Preferences::applyEd3kHosterKey(h, key, val))
+        thePrefs.setEd3kHoster(h);   // hoster links (hoster.md): the join reconfigures
     else
         return false;
     return true;

@@ -219,6 +219,17 @@ std::optional<ffi::Root> Ed3kShared::rootOf(const QByteArray& md4) const
     return c == m_cache.end() ? std::nullopt : std::optional{c->second.root};
 }
 
+std::optional<SharedEntry> Ed3kShared::entryOfRoot(const ffi::Root& root) const
+{
+    for (const auto& [md4, f] : m_files) {
+        if (!f.shared)
+            continue;
+        if (const auto c = m_cache.find(md4); c != m_cache.end() && c->second.root == root)
+            return f.entry;
+    }
+    return std::nullopt;
+}
+
 bool Ed3kShared::aliasPublished(const QByteArray& md4) const
 {
     const auto f = m_files.find(md4);
@@ -434,11 +445,13 @@ void Ed3kShared::share(File& f, const Hashed& h)
     // was: ToDo: keywords (Publish::Both) for files the user wants found over ed3k search
     // (done: every shared file, as eD2K's share list; only the source while holding back)
     // if (auto ok = e->publish(t, info, ffi::Publish::Source); !ok)
-    const auto mode = m_holdBack ? ffi::Publish::Source : ffi::Publish::Both;
-    if (auto ok = e->publish(t, info, mode); !ok)
+    // const auto mode = m_holdBack ? ffi::Publish::Source : ffi::Publish::Both;
+    // if (auto ok = e->publish(t, info, mode); !ok)
+    // a name without a keyword: its source record alone (publishShared)
+    if (auto ok = publishShared(info); !ok)
         logDebug(QStringLiteral("publish of \"%1\" failed (error %2)").arg(f.entry.name, errorName(ok.error())));
     else
-        f.keywords = mode == ffi::Publish::Both;
+        f.keywords = *ok == ffi::Publish::Both;
     // alias.md §3: the root is shared here and both names come from these bytes
     if (!m_holdBack) {
         f.alias = ed2kAlias(f.entry.md4, h.size, h.root, f.entry.name);

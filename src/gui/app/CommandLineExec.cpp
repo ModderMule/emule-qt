@@ -81,6 +81,9 @@ void CommandLineExec::parse(QApplication& app)
 #ifdef EMULE_HAVE_BITTORRENT
             {QStringLiteral("torrents"),   MainWindow::TabTorrents},
 #endif
+#ifdef EMULE_HAVE_HOSTER_JD
+            {QStringLiteral("hoster"),     MainWindow::TabHoster},
+#endif
         };
         m_activeTab = static_cast<MainWindow::Tab>(tabArg.toInt());
         for (const auto& [name, value] : tabNames) {
@@ -134,6 +137,8 @@ void CommandLineExec::parse(QApplication& app)
             {QStringLiteral("ed3kconnection"), OptionsDialog::PageEd3kConnection},
             {QStringLiteral("ed3kcredits"),    OptionsDialog::PageEd3kCredits},
             {QStringLiteral("ed3knames"),      OptionsDialog::PageEd3kNames},
+            {QStringLiteral("ed3khoster"),     OptionsDialog::PageEd3kHoster},
+            {QStringLiteral("ed3kfilters"),    OptionsDialog::PageEd3kFilters},
         };
         m_optionsPage = optArg.toInt(); // fallback: numeric index
         for (const auto& [name, value] : pageNames) {

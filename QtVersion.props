@@ -24,6 +24,12 @@
   </PropertyGroup>
   <!-- QUIC NAT-T: always on, as CMake EMULE_QUIC_NATT. vcpkg ngtcp2[openssl],
        dynamic on x64-windows: import libs, no NGTCP2_STATICLIB -->
+  <!-- Hoster resolver: JDownloader's plugins in a Java sidecar, as CMake EMULE_HOSTER_JD.
+       Off leaves out the resolver, the Java runtime lookup and the Hoster window -->
+  <PropertyGroup Label="HosterJd">
+    <EmuleHosterJd Condition="'$(EmuleHosterJd)'==''">true</EmuleHosterJd>
+    <EmuleHosterJdDefines Condition="'$(EmuleHosterJd)'=='true'">EMULE_HAVE_HOSTER_JD=1;</EmuleHosterJdDefines>
+  </PropertyGroup>
   <PropertyGroup Label="QuicNatT">
     <EmuleQuicDefines>EMULE_HAVE_QUIC_NATT=1;</EmuleQuicDefines>
     <EmuleQuicLibs>ngtcp2_crypto_ossl.lib;ngtcp2.lib;</EmuleQuicLibs>

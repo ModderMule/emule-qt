@@ -27,6 +27,9 @@
 #include "panels/TransferPanel.h"
 #ifdef EMULE_HAVE_BITTORRENT
 #include "panels/TorrentPanel.h"
+#ifdef EMULE_HAVE_HOSTER_JD
+#include "panels/HosterPanel.h"
+#endif
 #endif
 #include "panels/UsenetPanel.h"
 
@@ -1138,6 +1141,10 @@ void MainWindow::buildToolsMenu()
     if (m_torrentPanel)
         m_toolsMenu->addAction(m_torrentPanel->addMagnetAction());
 #endif
+#ifdef EMULE_HAVE_HOSTER_JD
+    if (m_hosterPanel)
+        m_toolsMenu->addAction(m_hosterPanel->addLinksAction());
+#endif
 
     m_toolsMenu->addSeparator();
 
@@ -2054,6 +2061,20 @@ void MainWindow::setupPages()
     // Same reasoning as the Usenet URL action above
     connect(m_torrentPanel->addMagnetAction(), &QAction::triggered, this,
             [this] { switchToTab(TabTorrents); });
+#endif
+
+#ifdef EMULE_HAVE_HOSTER_JD
+#ifndef EMULE_HAVE_BITTORRENT
+    // keeps TabHoster at its index without the Torrents tab
+    addPage(new QWidget(this));
+#endif
+    // Tab 10: Hoster downloads (hoster.md)
+    m_hosterPanel = new HosterPanel(this);
+    addPage(m_hosterPanel);
+    connect(m_hosterPanel, &HosterPanel::optionsRequested, this,
+            [this] { showOptionsDialog(OptionsDialog::PageEd3kHoster); });
+    connect(m_hosterPanel->addLinksAction(), &QAction::triggered, this,
+            [this] { switchToTab(TabHoster); });
 #endif
 }
 

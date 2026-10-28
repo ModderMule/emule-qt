@@ -911,7 +911,13 @@ void BtSession::drainAlerts()
             if (auto* hf = lt::alert_cast<lt::hash_failed_alert>(a)) {
                 if (BtCounters* c = Impl::counters())
                     ++c->hashFailures;
-                if (const QString id = BtTorrentView::idOf(hf->handle.info_hashes()); d->joins.contains(id))
+                const QString id = BtTorrentView::idOf(hf->handle.info_hashes());
+                // libtorrent counts failed bytes without a state update: refresh the row here
+                if (d->handles.contains(id) && hf->handle.is_valid()) {
+                    d->rows[id] = d->row(hf->handle.status());
+                    emit torrentChanged(id);
+                }
+                if (d->joins.contains(id))
                     emit pieceResult(id, static_cast<int>(hf->piece_index), false);
             }
             logDebug(QStringLiteral("BitTorrent: %1").arg(message(a)));

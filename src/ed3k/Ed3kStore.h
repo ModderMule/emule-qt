@@ -48,4 +48,17 @@ bool writeBlob(const QString& path, std::span<const std::byte> data);
 void wipe(std::span<std::uint8_t> buf);
 void wipe(QByteArray& buf);
 
+/// A 32-byte secret (room key, member key ...) wiped when it goes; never logged.
+class Secret {
+public:
+    explicit Secret(const Seed& seed) : m_seed(seed) {}
+    ~Secret() { wipe(std::span<std::uint8_t>{m_seed}); }
+    Secret(const Secret&) = delete;
+    Secret& operator=(const Secret&) = delete;
+    [[nodiscard]] const Seed& expose() const { return m_seed; }
+
+private:
+    Seed m_seed;
+};
+
 } // namespace eMule::ed3k

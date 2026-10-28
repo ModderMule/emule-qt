@@ -432,6 +432,13 @@ inline void insertDownloadSeed(QCborMap& m, const SearchFile& f)
     // eNode meta row: the network comes from the hash (0 = plain eD2K)
     const auto& meta = f.meta();
     m.insert(QStringLiteral("metaKind"), static_cast<int>(meta.kind));
+    // ed3k row (Ed3kSearch): metaKind 7, downloaded by its root (Ed3kDownload)
+    if (f.isEd3kResult()) {
+        m.insert(QStringLiteral("metaKind"), 7);
+        m.insert(QStringLiteral("ed3kRoot"), QString::fromLatin1(f.ed3kRoot().toHex()));
+        if (!f.ed3kEd2k().isEmpty())
+            m.insert(QStringLiteral("ed3kEd2k"), QString::fromLatin1(f.ed3kEd2k().toHex()));
+    }
     if (f.isMetaResult()) {
         m.insert(QStringLiteral("magnet"),      meta.magnet);
         m.insert(QStringLiteral("metaSeeders"), static_cast<qint64>(meta.seeders));

@@ -43,6 +43,9 @@ enum class SearchType : uint8 {
     /// Web network: link sets, link containers, and the eD2K files, torrents and
     /// magnets web pages offer (enodemeta amendment 27).
     MetaWeb     = 8,
+    /// ed3k keyword search (packmule, Protocol.md §10.3), answered by the daemon's ed3k
+    /// node (Ed3kSearch) through the Meta search runner (MetaSearchService forwards it).
+    Ed3k        = 9,
 };
 
 /// A search an eD2K server's Meta API answers.

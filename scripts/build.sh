@@ -45,7 +45,7 @@ fi
 # -- Configure & Build -------------------------------------------------------
 
 echo "Configuring..."
-cmake -S "$PROJECT_DIR" -B "$BUILD_DIR" -DCMAKE_BUILD_TYPE=Release -DEMULE_BITTORRENT=ON
+cmake -S "$PROJECT_DIR" -B "$BUILD_DIR" -DCMAKE_BUILD_TYPE=Release -DEMULE_BITTORRENT=ON -DEMULE_HOSTER_JD=ON
 
 echo "Building..."
 cmake --build "$BUILD_DIR" --parallel "$(nproc 2>/dev/null || sysctl -n hw.ncpu)"

@@ -9,6 +9,8 @@
 #ifdef EMULE_HAVE_ED3K
 #include "Ed3kCredit.h"
 #include "Ed3kStore.h"
+
+#include <QObject>
 #endif
 
 namespace eMule::Ed3kCreditBridge {
@@ -29,6 +31,25 @@ IpcMessage failure(int seqId, const QString& error)
 QString hexOf(std::span<const std::uint8_t> bytes)
 {
     return QString::fromLatin1(QByteArray(reinterpret_cast<const char*>(bytes.data()), qsizetype(bytes.size())).toHex());
+}
+
+QCborArray claimsToCbor(const std::vector<ed3k::Ed3kCredit::StakeClaim>& claims)
+{
+    QCborArray out;
+    for (const auto& cl : claims)
+        out.append(QCborMap{{QStringLiteral("id"), qint64(cl.id)},
+                            {QStringLiteral("to"), ed3k::Ed3kCredit::addressText(cl.to)},
+                            {QStringLiteral("amount"), hexOf(cl.amount)},
+                            {QStringLiteral("readyAt"), qint64(cl.readyAt)},
+                            {QStringLiteral("state"), int(cl.state)}});
+    return out;
+}
+
+/// error as an ed3k::Error code (0: no node or credits not in use)
+IpcMessage stakeResult(int seq, const ::ed3k::Result<>& ok)
+{
+    return ok ? IpcMessage::makeResult(seq, true)
+              : IpcMessage::makeResult(seq, false, QCborMap{{QStringLiteral("error"), int(ok.error())}});
 }
 
 void answer(const IpcMessage& msg, ed3k::Ed3kCredit& c, const std::function<void(const IpcMessage&)>& reply)
@@ -68,6 +89,26 @@ void answer(const IpcMessage& msg, ed3k::Ed3kCredit& c, const std::function<void
         ed3k::wipe(hex);
         break;
     }
+    case IpcMsgType::BurnEd3kStake: {
+        const qint64 micro = msg.fieldInt(0);
+        const auto to = ed3k::Ed3kCredit::parseAddress(msg.fieldString(1));
+        if (micro <= 0 || !to) {
+            reply(failure(seq, QStringLiteral("an amount and an address (0x + 40 hex) are needed")));
+            break;
+        }
+        reply(stakeResult(seq, c.burnForStake(std::uint64_t(micro), *to)));
+        break;
+    }
+    case IpcMsgType::ClaimEd3kStake:
+        reply(stakeResult(seq, c.claimStake(std::uint64_t(msg.fieldInt(0)))));
+        break;
+    case IpcMsgType::GetEd3kStakeClaims:
+        reply(IpcMessage::makeResult(seq, true, stakeToCbor()));
+        break;
+    case IpcMsgType::RefreshEd3kStakeClaims:
+        c.refreshClaims();
+        reply(IpcMessage::makeResult(seq, true));
+        break;
     default:
         reply(IpcMessage::makeError(seq, 400, QStringLiteral("Unknown ed3k request")));
         break;
@@ -117,12 +158,9 @@ QCborMap statusToCbor()
     QCborArray wrong;
     for (const std::uint32_t e : st.wrongChain)
         wrong.append(qint64(e));
-    QCborArray claims;
-    for (const auto& cl : st.claims)
-        claims.append(QCborMap{{QStringLiteral("id"), qint64(cl.id)},
-                               {QStringLiteral("to"), ed3k::Ed3kCredit::addressText(cl.to)},
-                               {QStringLiteral("amount"), hexOf(cl.amount)},
-                               {QStringLiteral("readyAt"), qint64(cl.readyAt)}});
+    // QCborArray claims;
+    // for (const auto& cl : st.claims) claims.append(QCborMap{{id}, {to}, {amount}, {readyAt}});
+    const QCborArray claims = claimsToCbor(st.claims);   // + state
     const auto i64 = [](std::uint64_t v) { return qint64(std::min<std::uint64_t>(v, INT64_MAX)); };
     return QCborMap{
         {QStringLiteral("enabled"), st.enabled},
@@ -150,6 +188,45 @@ QCborMap statusToCbor()
     };
 #else
     return {};
+#endif
+}
+
+QCborMap stakeToCbor()
+{
+#ifdef EMULE_HAVE_ED3K
+    if (!s_credit)
+        return {};
+    const auto st = s_credit->status();
+    return QCborMap{{QStringLiteral("claims"), claimsToCbor(st.claims)},
+                    {QStringLiteral("rate"), st.stakeRate ? hexOf(*st.stakeRate) : QString()},
+                    {QStringLiteral("delay"), qint64(std::min<std::uint64_t>(st.stakeDelay, INT64_MAX))},
+                    {QStringLiteral("address"), st.address},
+                    {QStringLiteral("configured"), st.configured}};
+#else
+    return {};
+#endif
+}
+
+void connectPushes(ed3k::Ed3kCredit& credit, std::function<void(const IpcMessage&)> broadcast)
+{
+#ifdef EMULE_HAVE_ED3K
+    using C = ed3k::Ed3kCredit;
+    QObject::connect(&credit, &C::stakeChanged, &credit, [broadcast] {
+        IpcMessage m(IpcMsgType::PushEd3kStakeClaims, 0);
+        m.append(stakeToCbor());
+        broadcast(m);
+    });
+    QObject::connect(&credit, &C::stakeTx, &credit, [broadcast](int what, int state, int revert, const QString& tx) {
+        IpcMessage m(IpcMsgType::PushEd3kStakeTx, 0);
+        m.append(QCborMap{{QStringLiteral("what"), what},
+                          {QStringLiteral("state"), state},
+                          {QStringLiteral("revert"), revert},
+                          {QStringLiteral("tx"), tx}});
+        broadcast(m);
+    });
+#else
+    (void)credit;
+    (void)broadcast;
 #endif
 }
 

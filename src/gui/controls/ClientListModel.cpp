@@ -122,9 +122,17 @@ QVariant ClientListModel::data(const QModelIndex& index, int role) const
 
     const bool isCountry = index.column() == countryColumn();
 
+    // ed3k upload queue rows: marked like the Messages panel's, the place instead of a score
+    if (c.network == ClientNetwork::Ed3k && role == Qt::DisplayRole) {
+        if (index.column() == 0)
+            return tr("%1 (ed3k)").arg(clientNameText(c.userName));
+        if (m_mode == ClientListMode::OnQueue && index.column() == 4)
+            return c.remoteQueueRank > 0 ? tr("place %1").arg(c.remoteQueueRank) : QString();
+    }
+
     if (index.column() == sharedListColumn()) {
-        if (c.isUrl)
-            return {};   // HTTP source, no eD2K shared list
+        if (c.isUrl || c.network == ClientNetwork::Ed3k)
+            return {};   // HTTP source / ed3k node, no eD2K shared list
         if (role == Qt::DisplayRole)
             return c.noViewShared ? tr("No") : tr("Yes");
         if (role == Qt::UserRole)

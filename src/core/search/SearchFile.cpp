@@ -260,6 +260,8 @@ SearchFile::SearchFile(const SearchFile* other)
     , m_multipleAICHFound(other->m_multipleAICHFound)
     , m_aichVouchedDirectly(other->m_aichVouchedDirectly)
     , m_aichVoters(other->m_aichVoters)
+    , m_ed3kRoot(other->m_ed3kRoot)
+    , m_ed3kEd2k(other->m_ed3kEd2k)
 {
 }
 

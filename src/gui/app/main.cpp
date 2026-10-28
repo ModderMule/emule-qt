@@ -48,6 +48,9 @@ static void unixSignalHandler(int)
 #include "app/ExternalLinkHandler.h"
 #include "app/IpcClient.h"
 #include "app/MainWindow.h"
+#ifdef EMULE_HAVE_HOSTER_JD
+#include "panels/HosterPanel.h"
+#endif
 #include "app/SingleInstance.h"
 #include "app/UiState.h"
 #include "utils/Appearance.h"
@@ -669,6 +672,9 @@ int main(int argc, char* argv[])
         mainWindow.usenetPanel()->setIpcClient(&ipcClient);
 #ifdef EMULE_HAVE_BITTORRENT
         mainWindow.torrentPanel()->setIpcClient(&ipcClient);
+#endif
+#ifdef EMULE_HAVE_HOSTER_JD
+        mainWindow.hosterPanel()->setIpcClient(&ipcClient);
 #endif
 
         // Wire daemon log messages to the LogWidget

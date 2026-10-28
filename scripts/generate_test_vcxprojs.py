@@ -309,7 +309,8 @@ TORRENT_DETAILS_SOURCES = (
 # links emulebt (when on) and the usenet join, so the same libs as emulecored.
 ED3K_EXTRAS = TestExtras(
     includes=BT_INCLUDES + ("src/ed3k", "libs/packmule/crates/packmule-ffi/include"),
-    defines=BT_DEFINES + "$(EmuleEd3kDefines)",
+    # the hoster resolver switch as emulecored (QtVersion.props, CMake EMULE_HOSTER_JD)
+    defines=BT_DEFINES + "$(EmuleEd3kDefines)$(EmuleHosterJdDefines)",
     libs=BT_LIBS + "$(EmuleEd3kLibs)rapidyenc.lib;par2-turbo.lib;gf16.lib;hasher.lib;",
     deps=(EMULEBT_GUID, EMULEED3K_GUID), folder="Ed3k")
 
@@ -329,6 +330,8 @@ TEST_EXTRAS: dict[str, TestExtras] = {
     "tst_TorrentDetailsGui": TestExtras(includes=GUI_INCLUDES, defines=BT_DEFINES, widgets=True,
                                         sources=TORRENT_DETAILS_SOURCES, folder="BitTorrent"),
     "tst_Ed3kShared": ED3K_EXTRAS,
+    # hoster links: the join with a fake resolver, the JD resolver's and Java lookup's parts
+    "tst_Ed3kHoster": ED3K_EXTRAS,
     # prefs → node: extensions, IPv6 source, filter state, LAN discovery, node list asks
     "tst_Ed3kPlumbing": ED3K_EXTRAS,
     # the daemon side: Ed3kBridge + BandwidthCoordinator
@@ -336,28 +339,89 @@ TEST_EXTRAS: dict[str, TestExtras] = {
                               sources=("src/daemon/Ed3kBridge.cpp",
                                        "src/daemon/Ed3kFriendsBridge.cpp",
                                        "src/daemon/Ed3kNamesBridge.cpp",
+                                       "src/daemon/Ed3kRoomsBridge.cpp",
                                        "src/daemon/Ed3kCreditBridge.cpp",
+                                       "src/daemon/Ed3kHosterBridge.cpp",
+                                       "src/daemon/Ed3kFiltersBridge.cpp",
+                                       "src/daemon/Ed3kDownloadsBridge.cpp",
+                                       "src/daemon/Ed3kSetsBridge.cpp",
                                        "src/daemon/BandwidthCoordinator.cpp")),
     # friends and chat: Ed3kFriends + its IPC (Ed3kFriendsBridge, through Ed3kBridge)
     "tst_Ed3kFriends": replace(ED3K_EXTRAS, includes=("src/daemon",) + ED3K_EXTRAS.includes,
                                sources=("src/daemon/Ed3kBridge.cpp",
                                         "src/daemon/Ed3kFriendsBridge.cpp",
                                         "src/daemon/Ed3kNamesBridge.cpp",
+                                        "src/daemon/Ed3kRoomsBridge.cpp",
                                         "src/daemon/Ed3kCreditBridge.cpp",
+                                        "src/daemon/Ed3kHosterBridge.cpp",
+                                        "src/daemon/Ed3kFiltersBridge.cpp",
+                                        "src/daemon/Ed3kDownloadsBridge.cpp",
+                                        "src/daemon/Ed3kSetsBridge.cpp",
                                         "src/daemon/BandwidthCoordinator.cpp")),
     # names and websites: Ed3kNames, Ed3kSiteServer + their IPC (Ed3kNamesBridge, through Ed3kBridge)
     "tst_Ed3kNames": replace(ED3K_EXTRAS, includes=("src/daemon",) + ED3K_EXTRAS.includes,
                              sources=("src/daemon/Ed3kBridge.cpp",
                                       "src/daemon/Ed3kFriendsBridge.cpp",
                                       "src/daemon/Ed3kNamesBridge.cpp",
+                                      "src/daemon/Ed3kRoomsBridge.cpp",
                                       "src/daemon/Ed3kCreditBridge.cpp",
+                                      "src/daemon/Ed3kHosterBridge.cpp",
+                                      "src/daemon/Ed3kFiltersBridge.cpp",
+                                      "src/daemon/Ed3kDownloadsBridge.cpp",
+                                      "src/daemon/Ed3kSetsBridge.cpp",
                                       "src/daemon/BandwidthCoordinator.cpp")),
     # credits: Ed3kCredit (key file, ledger config) + its IPC (Ed3kCreditBridge, through Ed3kBridge)
     "tst_Ed3kCredit": replace(ED3K_EXTRAS, includes=("src/daemon",) + ED3K_EXTRAS.includes,
                               sources=("src/daemon/Ed3kBridge.cpp",
                                        "src/daemon/Ed3kFriendsBridge.cpp",
                                        "src/daemon/Ed3kNamesBridge.cpp",
+                                       "src/daemon/Ed3kRoomsBridge.cpp",
                                        "src/daemon/Ed3kCreditBridge.cpp",
+                                       "src/daemon/Ed3kHosterBridge.cpp",
+                                       "src/daemon/Ed3kFiltersBridge.cpp",
+                                       "src/daemon/Ed3kDownloadsBridge.cpp",
+                                       "src/daemon/Ed3kSetsBridge.cpp",
+                                       "src/daemon/BandwidthCoordinator.cpp")),
+    # ed3k keyword search (Ed3kSearch)
+    "tst_Ed3kSearch": ED3K_EXTRAS,
+    # plain downloads: Ed3kDownloads + its IPC (Ed3kDownloadsBridge, asked directly)
+    "tst_Ed3kDownloads": replace(ED3K_EXTRAS, includes=("src/daemon",) + ED3K_EXTRAS.includes,
+                                 sources=("src/daemon/Ed3kDownloadsBridge.cpp",)),
+    # sets and live: Ed3kSets, Ed3kLive + their IPC (Ed3kSetsBridge, asked directly); OpenSSL signs
+    "tst_Ed3kSets": replace(ED3K_EXTRAS, includes=("src/daemon",) + ED3K_EXTRAS.includes,
+                            sources=("src/daemon/Ed3kSetsBridge.cpp",)),
+    "tst_Ed3kLive": ED3K_EXTRAS,
+    # rooms: Ed3kRooms + its IPC (Ed3kRoomsBridge, asked directly)
+    "tst_Ed3kRooms": replace(ED3K_EXTRAS, includes=("src/daemon",) + ED3K_EXTRAS.includes,
+                             sources=("src/daemon/Ed3kRoomsBridge.cpp",)),
+    # stake tokens: Ed3kCredit (burn, claim, stake-claims.json) + its IPC (through Ed3kBridge)
+    "tst_Ed3kStake": replace(ED3K_EXTRAS, includes=("src/daemon",) + ED3K_EXTRAS.includes,
+                             sources=("src/daemon/Ed3kBridge.cpp",
+                                       "src/daemon/Ed3kFriendsBridge.cpp",
+                                       "src/daemon/Ed3kNamesBridge.cpp",
+                                       "src/daemon/Ed3kRoomsBridge.cpp",
+                                       "src/daemon/Ed3kCreditBridge.cpp",
+                                       "src/daemon/Ed3kHosterBridge.cpp",
+                                       "src/daemon/Ed3kFiltersBridge.cpp",
+                                       "src/daemon/Ed3kDownloadsBridge.cpp",
+                                       "src/daemon/Ed3kSetsBridge.cpp",
+                                       "src/daemon/Ed3kHosterBridge.cpp",
+                                       "src/daemon/BandwidthCoordinator.cpp")),
+    # the upload queue view: Ed3kUploads + its GetUploads rows (Ed3kUploadsBridge)
+    "tst_Ed3kUploads": replace(ED3K_EXTRAS, includes=("src/daemon",) + ED3K_EXTRAS.includes,
+                               sources=("src/daemon/Ed3kUploadsBridge.cpp",)),
+    # filter lists: Ed3kFilters + its IPC (Ed3kFiltersBridge, through Ed3kBridge)
+    "tst_Ed3kFilters": replace(ED3K_EXTRAS, includes=("src/daemon",) + ED3K_EXTRAS.includes,
+                               sources=("src/daemon/Ed3kBridge.cpp",
+                                       "src/daemon/Ed3kFriendsBridge.cpp",
+                                       "src/daemon/Ed3kNamesBridge.cpp",
+                                       "src/daemon/Ed3kRoomsBridge.cpp",
+                                       "src/daemon/Ed3kCreditBridge.cpp",
+                                       "src/daemon/Ed3kHosterBridge.cpp",
+                                       "src/daemon/Ed3kFiltersBridge.cpp",
+                                       "src/daemon/Ed3kDownloadsBridge.cpp",
+                                       "src/daemon/Ed3kSetsBridge.cpp",
+                                       "src/daemon/Ed3kHosterBridge.cpp",
                                        "src/daemon/BandwidthCoordinator.cpp")),
     # GUI sources against the stub pch; include order as in CMake picks the pch.h
     "tst_LogTextView": TestExtras(includes=GUI_INCLUDES, widgets=True,
@@ -366,6 +430,8 @@ TEST_EXTRAS: dict[str, TestExtras] = {
                                       sources=("src/gui/utils/TaskbarProgress.cpp",)),
     "tst_UrlPrefField": TestExtras(includes=GUI_INCLUDES, widgets=True,
                                    sources=("src/gui/app/IpcClient.cpp",)),
+    "tst_Ed3kSetsDialog": TestExtras(includes=GUI_INCLUDES, widgets=True,
+                                     sources=("src/gui/dialogs/Ed3kSetsDialog.cpp", "src/gui/app/IpcClient.cpp")),
     "tst_SingleInstance": TestExtras(includes=("tests/stubs", "src/gui"),
                                      sources=("src/gui/app/SingleInstance.cpp",)),
     "tst_MassRenameDialog": TestExtras(includes=GUI_INCLUDES, widgets=True,

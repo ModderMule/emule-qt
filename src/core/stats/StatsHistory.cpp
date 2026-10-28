@@ -80,6 +80,65 @@ void StatsHistory::setBtRateSource(std::function<EngineRates()> source)
     m_btRates = std::move(source);
 }
 
+void StatsHistory::setEd3kRateSource(std::function<EngineRates()> source)
+{
+    m_ed3kRates = std::move(source);
+}
+
+QCborArray statsSampleToCbor(const StatsGraphSample& s)
+{
+    // MFC's scope order plus the appended Usenet, BitTorrent and ed3k rates; new fields
+    // go at the end so an older GUI still reads its 17
+    return QCborArray{static_cast<qint64>(s.seq),
+                      static_cast<qint64>(s.timestamp),
+                      static_cast<double>(s.downAvgSession),
+                      static_cast<double>(s.downAvgTime),
+                      static_cast<double>(s.downCurrent),
+                      static_cast<double>(s.upAvgSession),
+                      static_cast<double>(s.upAvgTime),
+                      static_cast<double>(s.upCurrent),
+                      static_cast<double>(s.upNoOverhead),
+                      static_cast<double>(s.upFriend),
+                      static_cast<qint64>(s.connActive),
+                      static_cast<qint64>(s.upActive),
+                      static_cast<qint64>(s.upTotal),
+                      static_cast<qint64>(s.downTransferring),
+                      static_cast<double>(s.usenetDown),
+                      static_cast<double>(s.btDown),
+                      static_cast<double>(s.btUp),
+                      static_cast<double>(s.ed3kDown),
+                      static_cast<double>(s.ed3kUp)};
+}
+
+std::optional<StatsGraphSample> statsSampleFromCbor(const QCborArray& a)
+{
+    if (a.size() < kStatsSampleFieldsOld)
+        return std::nullopt;
+    const auto f = [&a](qsizetype i) { return i < a.size() ? static_cast<float>(a.at(i).toDouble()) : 0.0f; };
+    const auto u = [&a](qsizetype i) { return static_cast<uint32>(std::max<qint64>(0, a.at(i).toInteger())); };
+    StatsGraphSample s;
+    s.seq = u(0);
+    s.timestamp = u(1);
+    s.downAvgSession = f(2);
+    s.downAvgTime = f(3);
+    s.downCurrent = f(4);
+    s.upAvgSession = f(5);
+    s.upAvgTime = f(6);
+    s.upCurrent = f(7);
+    s.upNoOverhead = f(8);
+    s.upFriend = f(9);
+    s.connActive = u(10);
+    s.upActive = u(11);
+    s.upTotal = u(12);
+    s.downTransferring = u(13);
+    s.usenetDown = f(14);
+    s.btDown = f(15);
+    s.btUp = f(16);
+    s.ed3kDown = f(17);   // 0 from a 17-field core
+    s.ed3kUp = f(18);
+    return s;
+}
+
 void StatsHistory::reset()
 {
     m_stats.clear();
@@ -145,6 +204,9 @@ void StatsHistory::takeStatsSample(uint32 nowSecs)
     const EngineRates bt = btRates();
     s.btDown = bt.down;
     s.btUp = bt.up;
+    const EngineRates e3 = clamped(m_ed3kRates);
+    s.ed3kDown = e3.down;
+    s.ed3kUp = e3.up;
 
     m_stats.push_back(s);
     if (m_stats.size() > kStatsCapacity)
@@ -166,6 +228,8 @@ void StatsHistory::takeSpeedSample()
     const EngineRates bt = btRates();
     s.down += bt.down;
     s.up += bt.up;
+    // ed3k's sent bytes are counted in eD2K's upload rate already (noteBytesSentOutsideTheLoop)
+    s.down += clamped(m_ed3kRates).down;
 
     m_speed.push_back(s);
     if (m_speed.size() > kSpeedCapacity)
@@ -174,9 +238,18 @@ void StatsHistory::takeSpeedSample()
 
 EngineRates StatsHistory::btRates() const
 {
-    if (!m_btRates)
+    // if (!m_btRates)
+    //     return {};
+    // const EngineRates r = m_btRates();
+    // return {std::max(0.0f, r.down), std::max(0.0f, r.up)};
+    return clamped(m_btRates);   // shared with ed3k
+}
+
+EngineRates StatsHistory::clamped(const std::function<EngineRates()>& source)
+{
+    if (!source)
         return {};
-    const EngineRates r = m_btRates();
+    const EngineRates r = source();
     return {std::max(0.0f, r.down), std::max(0.0f, r.up)};
 }
 

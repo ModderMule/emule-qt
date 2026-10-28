@@ -29,6 +29,8 @@ LIBS += \
 DEFINES += EMULE_HAVE_QUIC_NATT=1
 # BitTorrent: always on, as CMake EMULE_BITTORRENT (libtorrent-rasterbar >= 2.1 installed)
 DEFINES += EMULE_HAVE_BITTORRENT=1
+# Hoster resolver: on by default, as CMake EMULE_HOSTER_JD. `qmake CONFIG+=no_emule_hoster_jd` turns it off
+!no_emule_hoster_jd: DEFINES += EMULE_HAVE_HOSTER_JD=1
 
 # ed3k (packmule): when libs/packmule exists, as CMake EMULE_ED3K. packmule_ffi from
 # `cargo build --release -p packmule-ffi` in libs/packmule (target/release)
@@ -93,9 +95,15 @@ SOURCES += \
     BtBridge.cpp \
     Ed3kBridge.cpp \
     Ed3kFriendsBridge.cpp \
+    Ed3kRoomsBridge.cpp \
     Ed3kNamesBridge.cpp \
     PortTestRunner.cpp \
     Ed3kCreditBridge.cpp \
+    Ed3kDownloadsBridge.cpp \
+    Ed3kSetsBridge.cpp \
+    Ed3kFiltersBridge.cpp \
+    Ed3kUploadsBridge.cpp \
+    Ed3kHosterBridge.cpp \
     DaemonApiBackend.cpp \
     DaemonTorrentWebBackend.cpp \
     DaemonUsenetWebBackend.cpp \
@@ -118,9 +126,15 @@ HEADERS += \
     BtBridge.h \
     Ed3kBridge.h \
     Ed3kFriendsBridge.h \
+    Ed3kRoomsBridge.h \
     Ed3kNamesBridge.h \
     PortTestRunner.h \
     Ed3kCreditBridge.h \
+    Ed3kDownloadsBridge.h \
+    Ed3kSetsBridge.h \
+    Ed3kFiltersBridge.h \
+    Ed3kUploadsBridge.h \
+    Ed3kHosterBridge.h \
     DaemonApiBackend.h \
     DaemonTorrentWebBackend.h \
     DaemonUsenetWebBackend.h \

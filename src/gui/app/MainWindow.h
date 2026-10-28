@@ -59,6 +59,7 @@ class SharedFilesPanel;
 class StatisticsPanel;
 class TaskbarProgress;
 class TorrentPanel;
+class HosterPanel;
 class TransferPanel;
 class UsenetPanel;
 
@@ -116,6 +117,7 @@ public:
         // end silently renumbers both.
         TabUsenet,
         TabTorrents,    // no page without EMULE_HAVE_BITTORRENT; kept so ids stay put
+        TabHoster,      // no page without EMULE_HAVE_HOSTER_JD
         TabCount
     };
 
@@ -149,6 +151,8 @@ public:
     [[nodiscard]] UsenetPanel* usenetPanel() const { return m_usenetPanel; }
     /// nullptr in a build without EMULE_HAVE_BITTORRENT: no Torrents tab
     [[nodiscard]] TorrentPanel* torrentPanel() const { return m_torrentPanel; }
+    /// Null without EMULE_HAVE_HOSTER_JD.
+    [[nodiscard]] HosterPanel* hosterPanel() const { return m_hosterPanel; }
 
     /// Hand the daemon's stream token to everything that builds a URL from it.
     /// One entry point rather than four: the token arrives with every stats
@@ -359,6 +363,7 @@ private:
     StatisticsPanel* m_statsPanel = nullptr;
     UsenetPanel* m_usenetPanel = nullptr;
     TorrentPanel* m_torrentPanel = nullptr;
+    HosterPanel* m_hosterPanel = nullptr;
 
     // Status bar labels
     QLabel* m_statusMsg = nullptr;

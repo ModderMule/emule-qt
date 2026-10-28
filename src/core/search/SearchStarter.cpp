@@ -212,6 +212,21 @@ SearchDispatch dispatchMetaSearch(uint32 searchID, SearchType type, const Search
     return out;
 }
 
+// ed3k keyword search (Protocol.md §10.3): the daemon's ed3k node through the runner
+// (MetaSearchService hands SearchType::Ed3k to Ed3kSearch); no request, no candidates.
+SearchDispatch dispatchEd3kSearch(uint32 searchID, const SearchParams& params)
+{
+    if (!theApp.metaSearch) {
+        return refusedDispatch(QCoreApplication::translate(
+            "eMule::IpcClientHandler", "ed3k search is not available here."));
+    }
+    theApp.metaSearch->startMetaSearch(searchID, SearchType::Ed3k, params, {}, {});
+    SearchDispatch out;
+    out.outcome = SearchDispatch::Outcome::Sent;
+    out.awaitsMeta = true;
+    return out;
+}
+
 } // anonymous namespace
 
 AutoSearchState gatherAutoSearchState()
@@ -256,6 +271,8 @@ SearchQueueBackend defaultSearchQueueBackend(SearchList& list)
             if (const auto request = buildMetaSearchRequest(params, params.type); !request)
                 return request.error();
         }
+        if (params.type == SearchType::Ed3k && params.expression.trimmed().isEmpty())
+            return QCoreApplication::translate("eMule::IpcClientHandler", "The search expression contains nothing to search for.");
         return {};
     };
 
@@ -273,6 +290,9 @@ SearchQueueBackend defaultSearchQueueBackend(SearchList& list)
         const bool kadUp = kadInst != nullptr && kadInst->isConnected();
         if (type == SearchType::Kademlia)
             return kadUp ? QString() : QString::fromLatin1(SearchWait::Kad);
+        // the ed3k node answers itself (not running: the runner says so)
+        if (type == SearchType::Ed3k)
+            return {};
 
         // Asked over HTTP of a server we know, connected or not. With none known it
         // waits only while a login may still bring one; else the dispatch refuses.
@@ -301,6 +321,10 @@ SearchQueueBackend defaultSearchQueueBackend(SearchList& list)
         if (isMetaSearchType(type)) {
             list.setSearchExpression(searchID, params.expression);
             return dispatchMetaSearch(searchID, type, params);
+        }
+        if (type == SearchType::Ed3k) {
+            list.setSearchExpression(searchID, params.expression);
+            return dispatchEd3kSearch(searchID, params);
         }
         return dispatchEd2kSearch(list, searchID, type, params);
     };

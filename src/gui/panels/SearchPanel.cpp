@@ -390,6 +390,8 @@ QWidget* SearchPanel::createSearchBar()
                            tr("Torrent (Server)"), 7);  // SearchType::MetaTorrent
     m_methodCombo->addItem(QIcon(QStringLiteral(":/icons/Web.ico")),
                            tr("Web (Server)"), 8);      // SearchType::MetaWeb
+    // the ed3k node's keyword search (Protocol.md §10.3); no MFC original
+    m_methodCombo->addItem(QIcon(QStringLiteral(":/icons/Kad.ico")), tr("ed3k"), 9);   // SearchType::Ed3k
     typeRow->addWidget(m_methodCombo);
     m_resetBtn = new QPushButton(tr("Reset"), container);
     connect(m_resetBtn, &QPushButton::clicked, this, [this] {
@@ -1284,7 +1286,8 @@ void SearchPanel::onResultContextMenu(const QPoint& pos)
         // eD2K rows: not already in the transfer list. Usenet rows: the daemon asks.
         // Web, container and magnet-only rows always have something to do, and
         // torrents too when there is a Torrents tab to take them.
-        if (result->isUsenet() || result->isWeb() || result->isContainer()
+        if ((result->isEd3k() && (!m_downloadModel || !m_downloadModel->findByHash(result->ed3kRoot)))
+            || result->isUsenet() || result->isWeb() || result->isContainer()
             || (result->isMagnetOnly() && !result->magnet.isEmpty())
             || (gui::kBitTorrentBuilt && result->isTorrent() && !result->isMagnetOnly())
             || (!result->isMeta() && (!m_downloadModel || !m_downloadModel->findByHash(result->hash))))
@@ -1672,6 +1675,7 @@ void SearchPanel::requestSearchResults(uint32_t searchID, bool whole)
             row.metaIndexer        = m.value(QStringLiteral("metaIndexer")).toString();
             row.metaCatalogId      = m.value(QStringLiteral("metaCatalogId")).toString();
             row.metaServers        = m.value(QStringLiteral("metaServers")).toArray();
+            row.ed3kRoot           = m.value(QStringLiteral("ed3kRoot")).toString();
             row.directory          = m.value(QStringLiteral("directory")).toString();
             row.aichHash           = m.value(QStringLiteral("aichHash")).toString();
             row.kadPublishers      = static_cast<int>(m.value(QStringLiteral("kadPublishers")).toInteger());
@@ -1765,10 +1769,13 @@ void SearchPanel::downloadResults(const QModelIndexList& proxyRows, int category
         QList<MetaResultActions::Row> magnets;
         QList<MetaResultActions::Row> torrents;
         QList<MetaResultActions::Row> web;
+        std::vector<const SearchResultRow*> ed3k;
         for (const auto& idx : proxyRows) {
             const auto* r = refAt(idx).row;
             if (!r || !r->isMeta())
                 ed2kRows.append(idx);
+            else if (r->isEd3k())
+                ed3k.push_back(r);
             else if (r->isUsenet())
                 usenet.append(metaRow(*r));
             else if (r->isMagnetOnly())
@@ -1790,6 +1797,8 @@ void SearchPanel::downloadResults(const QModelIndexList& proxyRows, int category
             metaActions()->addTorrents(tab->searchID, torrents);
         if (!web.isEmpty())
             metaActions()->showWebLinks(tab->searchID, web);
+        if (!ed3k.empty())
+            downloadEd3kResults(ed3k, category, paused.value_or(thePrefs.addNewFilesPaused()));
         if (ed2kRows.isEmpty())
             return;
     } else {
@@ -2198,6 +2207,8 @@ QJsonObject ed2kRowToJson(const SearchResultRow& row)
         o[QStringLiteral("metaAge")]       = static_cast<qint64>(row.metaAgeDays);
         o[QStringLiteral("metaIndexer")]   = row.metaIndexer;
         o[QStringLiteral("metaCatalogId")] = row.metaCatalogId;
+        if (row.isEd3k())
+            o[QStringLiteral("ed3kRoot")] = row.ed3kRoot;
         o[QStringLiteral("metaServers")]   = row.metaServers.toJsonArray();
     }
     return o;
@@ -2256,6 +2267,7 @@ SearchResultRow ed2kRowFromJson(const QJsonObject& r)
     for (const auto& reason : r[QStringLiteral("fakeReasons")].toArray())
         row.fakeReasons.push_back(reason.toString());
     row.metaKind            = r[QStringLiteral("metaKind")].toInt();
+    row.ed3kRoot            = r[QStringLiteral("ed3kRoot")].toString();
     row.magnet              = r[QStringLiteral("magnet")].toString();
     row.metaFlags           = static_cast<qint64>(r[QStringLiteral("metaFlags")].toDouble());
     row.metaAgeDays         = static_cast<qint64>(r[QStringLiteral("metaAge")].toDouble());
@@ -3001,6 +3013,7 @@ QIcon SearchPanel::tabIcon(const SearchTab& tab)
     case 6:  return QIcon(QStringLiteral(":/icons/Usenet.ico"));      // Usenet (Server)
     case 7:  return QIcon(QStringLiteral(":/icons/Torrent.ico"));     // Torrent (Server)
     case 8:  return QIcon(QStringLiteral(":/icons/Web.ico"));         // Web (Server)
+    case 9:  return QIcon(QStringLiteral(":/icons/Kad.ico"));         // ed3k
     default: return QIcon(QStringLiteral(":/icons/KadServer.ico"));   // Automatic
     }
 }
@@ -3056,6 +3069,28 @@ void SearchPanel::applyNetworkFilter(SearchTab& tab)
         filter.web = m_showWebCheck->isChecked();
     }
     proxy->setNetworkFilter(filter);
+}
+
+void SearchPanel::downloadEd3kResults(const std::vector<const SearchResultRow*>& rows, int category, bool paused)
+{
+    if (!m_ipc || !m_ipc->isConnected())
+        return;
+    QPointer<SearchPanel> self(this);
+    for (const SearchResultRow* r : rows) {
+        if (r->ed3kRoot.size() != 64)
+            continue;
+        const QString name = r->fileName;
+        m_ipc->addEd3kDownload(r->ed3kRoot, r->fileSize, name, category, paused, [self, name](const IpcMessage& reply) {
+            if (!self)
+                return;
+            if (reply.type() == IpcMsgType::Result && reply.fieldBool(0)) {
+                StatusBarNotifier::post(tr("ed3k download added: %1").arg(name), 4000);
+                return;
+            }
+            const QString why = reply.fieldMap(1).value(QStringLiteral("error")).toString();
+            StatusBarNotifier::post(why.isEmpty() ? tr("The ed3k download could not be added.") : why, 6000);
+        });
+    }
 }
 
 } // namespace eMule

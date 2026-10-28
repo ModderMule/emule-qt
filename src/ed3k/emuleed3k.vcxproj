@@ -82,7 +82,7 @@
       <LanguageStandard>stdcpplatest</LanguageStandard>
       <ObjectFileName>release\</ObjectFileName>
       <Optimization>MaxSpeed</Optimization>
-      <PreprocessorDefinitions>_WINDOWS;UNICODE;_UNICODE;WIN32;_ENABLE_EXTENDED_ALIGNED_STORAGE;WIN64;NOMINMAX;WIN32_LEAN_AND_MEAN;$(EmuleBtDefines)EMULE_HAVE_ED3K=1;NDEBUG;QT_NO_DEBUG;%(PreprocessorDefinitions)</PreprocessorDefinitions>
+      <PreprocessorDefinitions>_WINDOWS;UNICODE;_UNICODE;WIN32;_ENABLE_EXTENDED_ALIGNED_STORAGE;WIN64;NOMINMAX;WIN32_LEAN_AND_MEAN;$(EmuleBtDefines)$(EmuleHosterJdDefines)EMULE_HAVE_ED3K=1;NDEBUG;QT_NO_DEBUG;%(PreprocessorDefinitions)</PreprocessorDefinitions>
       <PreprocessToFile>false</PreprocessToFile>
       <ProgramDataBaseFileName>
       </ProgramDataBaseFileName>
@@ -108,7 +108,7 @@ cargo build --release -p packmule-ffi --manifest-path ..\..\libs\packmule\Cargo.
       <WarningLevel>0</WarningLevel>
     </Midl>
     <ResourceCompile>
-      <PreprocessorDefinitions>_WINDOWS;UNICODE;_UNICODE;WIN32;_ENABLE_EXTENDED_ALIGNED_STORAGE;WIN64;NOMINMAX;WIN32_LEAN_AND_MEAN;$(EmuleBtDefines)EMULE_HAVE_ED3K=1;NDEBUG;QT_NO_DEBUG;%(PreprocessorDefinitions)</PreprocessorDefinitions>
+      <PreprocessorDefinitions>_WINDOWS;UNICODE;_UNICODE;WIN32;_ENABLE_EXTENDED_ALIGNED_STORAGE;WIN64;NOMINMAX;WIN32_LEAN_AND_MEAN;$(EmuleBtDefines)$(EmuleHosterJdDefines)EMULE_HAVE_ED3K=1;NDEBUG;QT_NO_DEBUG;%(PreprocessorDefinitions)</PreprocessorDefinitions>
     </ResourceCompile>
     <QtMoc>
       <CompilerFlavor>msvc</CompilerFlavor>
@@ -131,7 +131,7 @@ cargo build --release -p packmule-ffi --manifest-path ..\..\libs\packmule\Cargo.
       <LanguageStandard>stdcpplatest</LanguageStandard>
       <ObjectFileName>debug\</ObjectFileName>
       <Optimization>Disabled</Optimization>
-      <PreprocessorDefinitions>_WINDOWS;UNICODE;_UNICODE;WIN32;_ENABLE_EXTENDED_ALIGNED_STORAGE;WIN64;NOMINMAX;WIN32_LEAN_AND_MEAN;$(EmuleBtDefines)EMULE_HAVE_ED3K=1;%(PreprocessorDefinitions)</PreprocessorDefinitions>
+      <PreprocessorDefinitions>_WINDOWS;UNICODE;_UNICODE;WIN32;_ENABLE_EXTENDED_ALIGNED_STORAGE;WIN64;NOMINMAX;WIN32_LEAN_AND_MEAN;$(EmuleBtDefines)$(EmuleHosterJdDefines)EMULE_HAVE_ED3K=1;%(PreprocessorDefinitions)</PreprocessorDefinitions>
       <PreprocessToFile>false</PreprocessToFile>
       <RuntimeLibrary>MultiThreadedDebugDLL</RuntimeLibrary>
       <SuppressStartupBanner>true</SuppressStartupBanner>
@@ -155,7 +155,7 @@ cargo build --release -p packmule-ffi --manifest-path ..\..\libs\packmule\Cargo.
       <WarningLevel>0</WarningLevel>
     </Midl>
     <ResourceCompile>
-      <PreprocessorDefinitions>_WINDOWS;UNICODE;_UNICODE;WIN32;_ENABLE_EXTENDED_ALIGNED_STORAGE;WIN64;NOMINMAX;WIN32_LEAN_AND_MEAN;$(EmuleBtDefines)EMULE_HAVE_ED3K=1;_DEBUG;%(PreprocessorDefinitions)</PreprocessorDefinitions>
+      <PreprocessorDefinitions>_WINDOWS;UNICODE;_UNICODE;WIN32;_ENABLE_EXTENDED_ALIGNED_STORAGE;WIN64;NOMINMAX;WIN32_LEAN_AND_MEAN;$(EmuleBtDefines)$(EmuleHosterJdDefines)EMULE_HAVE_ED3K=1;_DEBUG;%(PreprocessorDefinitions)</PreprocessorDefinitions>
     </ResourceCompile>
     <QtMoc>
       <CompilerFlavor>msvc</CompilerFlavor>
@@ -169,7 +169,19 @@ cargo build --release -p packmule-ffi --manifest-path ..\..\libs\packmule\Cargo.
   <ItemGroup>
     <ClCompile Include="Ed3kBootstrap.cpp" />
     <ClCompile Include="Ed3kCredit.cpp" />
+    <ClCompile Include="Ed3kDownloads.cpp" />
+    <ClCompile Include="Ed3kSearch.cpp" />
+    <ClCompile Include="Ed3kChain.cpp" />
+    <ClCompile Include="Ed3kFilters.cpp" />
+    <ClCompile Include="Ed3kUploads.cpp" />
+    <ClCompile Include="Ed3kJdResolver.cpp" />
+    <ClCompile Include="Ed3kJavaRuntime.cpp" />
+    <ClCompile Include="Ed3kHosterJoin.cpp" />
     <ClCompile Include="Ed3kFriends.cpp" />
+    <ClCompile Include="Ed3kRooms.cpp" />
+    <ClCompile Include="Ed3kSets.cpp" />
+    <ClCompile Include="Ed3kSetManifest.cpp" />
+    <ClCompile Include="Ed3kLive.cpp" />
     <ClCompile Include="Ed3kHttp.cpp" />
     <ClCompile Include="Ed3kJoinBase.cpp" />
     <ClCompile Include="Ed3kLan.cpp" />
@@ -186,11 +198,24 @@ cargo build --release -p packmule-ffi --manifest-path ..\..\libs\packmule\Cargo.
     <ClInclude Include="Ed3kFfi.h" />
     <ClInclude Include="Ed3kPlumbing.h" />
     <ClInclude Include="Ed3kStore.h" />
+    <ClInclude Include="Ed3kSetManifest.h" />
   </ItemGroup>
   <ItemGroup>
     <QtMoc Include="Ed3kBootstrap.h" />
     <QtMoc Include="Ed3kCredit.h" />
+    <QtMoc Include="Ed3kDownloads.h" />
+    <QtMoc Include="Ed3kSearch.h" />
+    <QtMoc Include="Ed3kChain.h" />
+    <QtMoc Include="Ed3kFilters.h" />
+    <QtMoc Include="Ed3kUploads.h" />
+    <QtMoc Include="Ed3kResolver.h" />
+    <QtMoc Include="Ed3kJdResolver.h" />
+    <QtMoc Include="Ed3kJavaRuntime.h" />
+    <QtMoc Include="Ed3kHosterJoin.h" />
     <QtMoc Include="Ed3kFriends.h" />
+    <QtMoc Include="Ed3kRooms.h" />
+    <QtMoc Include="Ed3kSets.h" />
+    <QtMoc Include="Ed3kLive.h" />
     <QtMoc Include="Ed3kHttp.h" />
     <QtMoc Include="Ed3kJoinBase.h" />
     <QtMoc Include="Ed3kLan.h" />

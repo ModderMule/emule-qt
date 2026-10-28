@@ -337,6 +337,8 @@ const std::array<QColor, UiState::kStatsColorCount>& UiState::defaultStatsColors
         QColor(0, 200, 255),     // 15 Download Usenet — not in MFC
         QColor(255, 170, 0),     // 16 Download BitTorrent — not in MFC
         QColor(255, 215, 0),     // 17 Upload BitTorrent — not in MFC
+        QColor(190, 120, 255),   // 18 Download ed3k — not in MFC
+        QColor(255, 120, 220),   // 19 Upload ed3k — not in MFC
     }};
     return defaults;
 }

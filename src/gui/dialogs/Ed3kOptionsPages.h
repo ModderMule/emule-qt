@@ -10,6 +10,11 @@
 ///   asks; the key is made, imported or exported over local IPC only (1020-1022).
 /// - Names (name.md): pins, petnames and followed name lists act at once over IPC
 ///   (1012-1019), not on OK.
+/// - Credits → stake (Ed3kStakeGroup, credit.md §6.7) and Filters (Ed3kFilterPage,
+///   filter-list.md) act at once over IPC; Connection → chaintube chain (chaintube.md §4.2) on OK.
+/// - Hoster (hoster.md): downloads from hosters are off by default; switching them on shows
+///   what it means (§3, §8, §9). Vouched links are published by default (§4.1). Accounts are sent
+///   with their password only when it was typed here; the daemon never sends one back.
 
 #include <QCborMap>
 #include <QList>
@@ -33,6 +38,9 @@ namespace eMule {
 
 class IpcClient;
 struct Ed3kCreditPrefs;
+struct Ed3kChainPrefs;
+class Ed3kFilterPage;
+struct Ed3kHosterPrefs;
 
 namespace Ipc {
 class IpcMessage;
@@ -50,6 +58,8 @@ public:
     [[nodiscard]] QWidget* connectionPage() const { return m_connection; }
     [[nodiscard]] QWidget* creditsPage() const { return m_credits; }
     [[nodiscard]] QWidget* namesPage() const { return m_names; }
+    [[nodiscard]] QWidget* filtersPage() const;
+    [[nodiscard]] QWidget* hosterPage() const { return m_hoster; }
 
     /// From the GetPreferences map (keys ed3k*, nick). Signals stay quiet meanwhile.
     void load(const QCborMap& prefs);
@@ -71,6 +81,7 @@ private:
     QWidget* buildConnection(QWidget* parent);
     QWidget* buildCredits(QWidget* parent);
     QWidget* buildNames(QWidget* parent);
+    QWidget* buildHoster(QWidget* parent);
     /// GetEd3kStatus / PushEd3kStatus: running note, credit address, balance, stake.
     void applyStatus(const QCborMap& status);
     void requestStatus();
@@ -88,9 +99,22 @@ private:
     bool failed(const Ipc::IpcMessage& reply, const QString& what);
     [[nodiscard]] QStringList extOff() const;
     [[nodiscard]] Ed3kCreditPrefs creditPrefs() const;
+    [[nodiscard]] Ed3kChainPrefs chainPrefs() const;
     [[nodiscard]] bool keyActionsAllowed() const;
     [[nodiscard]] static QString notesText();
     [[nodiscard]] static QString creditsText(qint64 micro);
+    /// The "hoster" map of the ed3k status: Java runtime and resolver.
+    void applyHosterStatus(const QCborMap& h);
+    /// The Java buttons: only while hoster downloads are on, ticked and applied.
+    void updateJavaButtons();
+    /// The user ticked "Allow downloads from file hosters": what it means; false: not agreed.
+    [[nodiscard]] bool confirmHoster();
+    /// Holding links back switched off: what sharing a link means (hoster.md §8); false: kept on.
+    [[nodiscard]] bool confirmShareLinks();
+    void editAccount(int row);
+    void checkAccount();
+    void fillAccounts();
+    [[nodiscard]] Ed3kHosterPrefs hosterPrefs() const;
 
     QPointer<IpcClient> m_ipc;
     QWidget* m_parent = nullptr;
@@ -100,6 +124,8 @@ private:
     QWidget* m_connection = nullptr;
     QWidget* m_credits = nullptr;
     QWidget* m_names = nullptr;
+    Ed3kFilterPage* m_filters = nullptr;
+    QWidget* m_hoster = nullptr;
 
     // General
     QLabel* m_runningLabel = nullptr;
@@ -115,6 +141,12 @@ private:
     QSpinBox* m_sitePortSpin = nullptr;
     QPlainTextEdit* m_nodeListsEdit = nullptr;
     QPlainTextEdit* m_chaintubeRpcEdit = nullptr;
+    // chaintube chain (chaintube.md §4.2)
+    QLineEdit* m_ctChainIdEdit = nullptr;
+    QLineEdit* m_ctContentEdit = nullptr;
+    QLineEdit* m_ctCommentEdit = nullptr;
+    QLineEdit* m_ctVoteEdit = nullptr;
+    QLineEdit* m_ctForwarderEdit = nullptr;
 
     // Credits
     QCheckBox* m_creditEnabledCheck = nullptr;
@@ -138,6 +170,30 @@ private:
     QTreeWidget* m_pinsTree = nullptr;
     QTreeWidget* m_petnamesTree = nullptr;
     QTreeWidget* m_listsTree = nullptr;
+
+    // Hoster
+    struct HosterAccountRow {
+        QString host;
+        QString user;
+        QString password;      ///< typed here; empty: the daemon keeps the stored one
+        bool passwordSet = false;
+        QString status;
+    };
+    QCheckBox* m_hosterEnabledCheck = nullptr;
+    QLabel* m_resolverLabel = nullptr;
+    QSpinBox* m_hosterStreamsSpin = nullptr;
+    QCheckBox* m_hosterPuzzlesCheck = nullptr;
+    QCheckBox* m_hosterPeersCheck = nullptr;
+    QCheckBox* m_publishLinksCheck = nullptr;
+    QLabel* m_javaLabel = nullptr;
+    QLineEdit* m_javaEdit = nullptr;
+    QCheckBox* m_autoJavaCheck = nullptr;
+    QPushButton* m_javaDownloadBtn = nullptr;
+    QPushButton* m_javaLocateBtn = nullptr;
+    int m_javaState = 0;          ///< Ed3kJavaRuntime::State from the status
+    bool m_hosterOnInCore = false; ///< the saved switch, as the core runs it
+    QTreeWidget* m_accountsTree = nullptr;
+    QList<HosterAccountRow> m_accounts;
 };
 
 } // namespace eMule

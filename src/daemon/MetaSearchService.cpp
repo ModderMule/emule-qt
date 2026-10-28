@@ -230,6 +230,19 @@ void MetaSearchService::startMetaSearch(uint32 searchID, SearchType type, const 
                                         const pb::SearchRequest& request,
                                         std::vector<MetaSearchCandidate> candidates)
 {
+    if (type == SearchType::Ed3k) {
+        // the ed3k node answers it (Ed3kSearch)
+        if (!m_ed3kRunner) {
+            QTimer::singleShot(0, this, [searchID] {
+                if (theApp.searchList)
+                    theApp.searchList->queue().onMetaSearchFinished(searchID, tr("ed3k is not running."));
+            });
+            return;
+        }
+        m_ed3kSearches.insert(searchID);
+        m_ed3kRunner->startMetaSearch(searchID, type, params, request, std::move(candidates));
+        return;
+    }
     SearchRun run;
     run.type = type;
     run.params = params;
@@ -242,6 +255,10 @@ void MetaSearchService::startMetaSearch(uint32 searchID, SearchType type, const 
 
 void MetaSearchService::continueMetaSearch(uint32 searchID)
 {
+    if (m_ed3kRunner && m_ed3kSearches.contains(searchID)) {
+        m_ed3kRunner->continueMetaSearch(searchID);
+        return;
+    }
     // the queue is still switching the search to running
     QTimer::singleShot(0, this, [this, searchID] {
         const auto it = m_searches.find(searchID);
@@ -259,6 +276,8 @@ void MetaSearchService::continueMetaSearch(uint32 searchID)
 
 void MetaSearchService::cancelMetaSearch(uint32 searchID)
 {
+    if (m_ed3kSearches.remove(searchID) && m_ed3kRunner)
+        m_ed3kRunner->cancelMetaSearch(searchID);
     m_searches.remove(searchID);
 }
 

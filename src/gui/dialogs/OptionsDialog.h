@@ -91,6 +91,8 @@ public:
         PageEd3kConnection,
         PageEd3kCredits,
         PageEd3kNames,
+        PageEd3kHoster,
+        PageEd3kFilters,    // filter lists (Ed3kFilterPage)
         PageCount
     };
 

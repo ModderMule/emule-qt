@@ -843,7 +843,8 @@ void Ed3kUsenetJoin::onMemberVerified(const QString& itemId, int fileIndex, cons
         return;
     }
     const ffi::FileInfo info{root, size, name, std::nullopt, 0, 0, 0, 0, 0, 0};
-    if (auto ok = e->publish(t, info, m_holdBack ? ffi::Publish::Source : ffi::Publish::Both); !ok)
+    // was: e->publish(t, info, m_holdBack ? ffi::Publish::Source : ffi::Publish::Both)
+    if (auto ok = publishShared(info); !ok)
         logEd3kDebug(QStringLiteral("ed3k usenet: publish of file %1 of %2 failed (error %3)")
                          .arg(fileIndex).arg(itemId, errorName(ok.error())));
     if (auto alias = post->join.memberAlias(std::uint64_t(fileIndex), m_holdBack); alias && *alias) {

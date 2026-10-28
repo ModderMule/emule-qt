@@ -127,6 +127,16 @@ else {
     Write-Warning "$configSrc not found -- skipping config data."
 }
 
+# -- Hoster resolver (scripts\build-hoster-resolver.ps1), optional ---------------
+
+$resolverZip = if ($env:EMULE_RESOLVER_ZIP) { $env:EMULE_RESOLVER_ZIP } else { Join-Path $projectDir 'build\hoster-resolver\resolver.zip' }
+if (Test-Path $resolverZip) {
+    Copy-Item $resolverZip (Join-Path $stageDir 'resolver.zip') -Force
+    Write-Host "  resolver.zip"
+} else {
+    Write-Warning "No resolver.zip (scripts\build-hoster-resolver.ps1): hoster downloads not bundled."
+}
+
 # -- Copy API documents -------------------------------------------------------
 
 $docDst = Join-Path $stageDir 'doc'

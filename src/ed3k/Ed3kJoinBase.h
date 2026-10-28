@@ -22,6 +22,7 @@
 #include <atomic>
 #include <cstdint>
 #include <deque>
+#include <expected>
 #include <functional>
 #include <map>
 #include <memory>
@@ -139,6 +140,9 @@ protected:
     [[nodiscard]] virtual bool sharedGone(const Shared& s) const { Q_UNUSED(s) return false; }
     /// Engine events the base leaves alone (AliasFound of searches not startSetSearch's ...).
     virtual void onOtherEvent(const ffi::Event& event) { Q_UNUSED(event) }
+    /// Turn order at a source node shared with other downloads (one file stream per uploader,
+    /// Protocol.md §12.5): higher first, the same in arrival order. Default 0.
+    [[nodiscard]] virtual int downloadPriority(const Download& d) const { Q_UNUSED(d) return 0; }
     /// Whether @p owner still wants a set: the candidates of its set searches are tried only then.
     [[nodiscard]] virtual bool wantsSet(const QString& owner) const { Q_UNUSED(owner) return false; }
     /// The manifest of the set tried for @p owner arrived (verified block by block): take it,
@@ -172,6 +176,8 @@ protected:
     /// Every download of @p owner.
     void stopDownloads(const QString& owner);
     [[nodiscard]] bool downloading(const ffi::Root& root) const { return m_downloads.contains(root); }
+    /// The open download of @p root (streams, outstanding blocks); null: none.
+    [[nodiscard]] const Download* downloadOf(const ffi::Root& root) const;
     /// A source of a download's root: asked for the file.
     void addSource(const ffi::Root& root, const ffi::Source& source);
     void requestBlocks(const ffi::Root& root);
@@ -184,10 +190,16 @@ protected:
     /// Opens a member file on the engine (complete or partial). false: refused (logged).
     bool shareMember(const ffi::SharedFile& file, const QString& owner, int member);
     void unshare(const ffi::Root& root);
+    /// Forgets the share of @p root without closing it on the engine (another sharer took it).
+    void forgetShare(const ffi::Root& root) { m_shared.erase(root); }
     /// uploadPriority() of @p root again (changed by the user).
     void updateUploadPriority(const ffi::Root& root);
     /// Every root of @p owner.
     void unshareOwner(const QString& owner);
+    /// Publishes a shared file: its SOURCE record, and its keywords unless holding back
+    /// (Publish::Both). A name without a keyword (Protocol.md §10.1) gets its source alone.
+    /// The mode taken, or the engine's error.
+    std::expected<ffi::Publish, ffi::Error> publishShared(const ffi::FileInfo& info);
     [[nodiscard]] bool isShared(const ffi::Root& root) const { return m_shared.contains(root); }
 
     // -- hashing -----------------------------------------------------------
@@ -280,6 +292,8 @@ protected:
 private:
     struct SetTry;
     struct Kept;
+    /// Per session: the download holding each source node, and those waiting for it.
+    struct NodeTurns;
     struct ReadBatch {
         std::vector<FileRead> reads;
         std::function<void(ReadResults)> done;
@@ -318,6 +332,33 @@ private:
     void publishKeptRecords(const QString& owner);
     /// unpublishAlias of every kept owner's records (hold back switched on).
     void withdrawKeptRecords();
+
+    // -- turns at a source node (Protocol.md §12.5: one file stream per uploader) --------
+
+    /// The registries by session; turnsOf: the one of @p session (every join of it shares one).
+    [[nodiscard]] static std::map<const Ed3kSession*, NodeTurns>& turnsMap();
+    [[nodiscard]] static NodeTurns& turnsOf(const Ed3kSession& session);
+    [[nodiscard]] NodeTurns& turns() const;
+    /// The FileRequest of @p root to @p source; the node is held by it then. false: refused.
+    bool openStream(const ffi::Root& root, const ffi::Source& source);
+    /// Another download holds the node of @p source: @p root waits for its turn (true).
+    bool waitTurn(const ffi::Root& root, const ffi::Source& source);
+    /// The node a stream of this join holds.
+    [[nodiscard]] std::optional<ffi::NodeId> nodeHeldBy(std::uint64_t stream) const;
+    /// The node is free: the next waiting download takes it (its FileRequest replaces an
+    /// open stream at the core, §12.5: the slot or position stays). false: none took it.
+    bool passTurn(const ffi::NodeId& node);
+    /// @p root of this join gets its turn at the node of @p source. false: not opened.
+    bool grantTurn(const ffi::Root& root, const ffi::Source& source);
+    /// The stream of @p root gives its node to the next waiting download and waits again
+    /// itself (round robin). false: none waits, nothing changed.
+    bool switchTurn(const ffi::Root& root, std::uint64_t stream);
+    /// The waiters of @p node lose it (unreachable): asked again after a source search.
+    void dropWaiters(const ffi::NodeId& node);
+    /// The wait of @p root at @p node ended without a turn.
+    void turnLost(const ffi::Root& root, const ffi::NodeId& node);
+    /// Every turn and wait of this join; @p pass: held nodes go to the next waiter.
+    void dropTurns(bool pass);
 
     QString m_tag;
     std::map<ffi::Root, Shared> m_shared;

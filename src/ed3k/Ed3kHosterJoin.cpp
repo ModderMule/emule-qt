@@ -1,0 +1,1493 @@
+#include "Ed3kHosterJoin.h"
+
+#include "Ed3kSession.h"
+#include "utils/Log.h"
+
+#include <QDateTime>
+#include <QDir>
+#include <QFile>
+#include <QFileInfo>
+#include <QJsonArray>
+#include <QJsonDocument>
+#include <QJsonObject>
+#include <QRegularExpression>
+#include <QPointer>
+#include <QSaveFile>
+#include <QThreadPool>
+#include <QUrl>
+
+#include <algorithm>
+#include <cstring>
+
+namespace eMule::ed3k {
+
+namespace ev = ffi::event;
+
+namespace {
+
+/// bytes per linkData call; the core holds at most a sealed chunk per stream
+constexpr std::uint32_t kFeedChunk = 1024 * 1024;
+/// an ask that failed for a reason of the moment is tried again this often at most
+constexpr int kMaxTries = 5;
+constexpr int kTickMs = 1000;
+/// one item per link, at most this many
+constexpr std::size_t kMaxItems = 4096;
+/// a read of the resolver's file that failed is tried again after this, at most this often
+constexpr int kReadRetryMs = 200;
+constexpr int kMaxReadFailures = 50;
+/// a §4 lookup that has not ended by then: the link is used without a root
+constexpr qint64 kLookupMs = 45 * 1000;
+/// a hoster wait longer than this lets a peer's link stand in
+constexpr qint64 kLongWaitMs = 5 * 60 * 1000;
+/// resume only past this many bytes; below it, starting over costs less than the copy
+constexpr std::uint64_t kMinResume = 1024 * 1024;
+
+qint64 nowMs()
+{
+    return QDateTime::currentMSecsSinceEpoch();
+}
+
+/// A name a file system can hold, never a path.
+QString safeName(QString name)
+{
+    name = QFileInfo(name).fileName();
+    static const QRegularExpression bad(QStringLiteral(R"([\\/:*?"<>|\x00-\x1f])"));
+    name.replace(bad, QStringLiteral("_"));
+    name = name.trimmed();
+    while (name.startsWith(QLatin1Char('.')))
+        name.remove(0, 1);
+    return name.isEmpty() ? QStringLiteral("download") : name.left(200);
+}
+
+/// The first @p len bytes of @p from into @p to (a new file); for the background.
+bool copyPrefix(const QString& from, const QString& to, std::uint64_t len)
+{
+    QFile::remove(to);
+    // the whole file: a clone where the file system has them (APFS, btrfs)
+    if (QFileInfo(from).size() == qint64(len))
+        return QFile::copy(from, to);
+    QFile in(from);
+    QFile out(to);
+    if (!in.open(QIODevice::ReadOnly) || !out.open(QIODevice::WriteOnly))
+        return false;
+    std::uint64_t left = len;
+    while (left > 0) {
+        const QByteArray b = in.read(qint64(std::min<std::uint64_t>(left, 4 * 1024 * 1024)));
+        if (b.isEmpty() || out.write(b) != b.size())
+            return false;
+        left -= std::uint64_t(b.size());
+    }
+    return true;
+}
+
+std::optional<ffi::Root> rootFromHex(const QString& hex)
+{
+    const QByteArray b = QByteArray::fromHex(hex.toLatin1());
+    if (b.size() != 32)
+        return std::nullopt;
+    ffi::Root r;
+    std::memcpy(r.bytes.data(), b.constData(), 32);
+    return r;
+}
+
+} // namespace
+
+struct Ed3kHosterJoin::Entry {
+    Item item;
+    std::optional<ffi::Root> root;
+    std::uint64_t link = 0;              ///< the core's link; 0 = none yet
+    std::set<std::uint64_t> have;        ///< verified block offsets (rooted)
+    std::optional<std::uint32_t> search; ///< §4 lookup running
+    Ed3kResolver::TaskId task = 0;       ///< the resolver task of this item's link
+    qint64 nextAskAt = 0;                ///< Queued/Waiting: ask again then
+    int tries = 0;
+    std::uint64_t peerLink = 0;          ///< a peer's link asked or open for this item
+    std::set<std::uint64_t> peerTried;   ///< peers' links that failed for it
+    bool vouched = false;                ///< §4.1: the node vouches for the item's link
+    std::uint64_t lastDone = 0;          ///< for the speed
+    bool expandAfterCheck = false;
+};
+
+Ed3kHosterJoin::Ed3kHosterJoin(Ed3kSession& session, const QString& configDir, QObject* parent)
+    : Ed3kJoinBase(session, configDir, QStringLiteral("hoster"), parent)
+{
+    m_tick.setInterval(kTickMs);
+    connect(&m_tick, &QTimer::timeout, this, &Ed3kHosterJoin::onTick);
+    // the base's onOtherEvent cannot mark an event answered: a LinkResolve is taken here
+    connect(&session, &Ed3kSession::eventPolled, this, [this](const ffi::Event& event, bool* handled) {
+        if (const auto* r = std::get_if<ev::LinkResolve>(&event); r && m_started) {
+            onResolve(*r);
+            if (handled)
+                *handled = true;
+        }
+    }, Qt::DirectConnection);
+    load();
+}
+
+Ed3kHosterJoin::~Ed3kHosterJoin()
+{
+    if (m_started)
+        stop();
+}
+
+void Ed3kHosterJoin::setResolver(Ed3kResolver* resolver)
+{
+    if (m_resolver)
+        m_resolver->disconnect(this);
+    m_resolver = resolver;
+    if (m_resolver)
+        connect(m_resolver, &Ed3kResolver::taskEvent, this, &Ed3kHosterJoin::onResolverEvent);
+}
+
+void Ed3kHosterJoin::setConfig(const Ed3kHosterPrefs& prefs, const QString& tempDir, const QString& incomingDir)
+{
+    const bool allowed = prefs.enabled != m_prefs.enabled;
+    const bool publishChanged = prefs.publishLinks != m_prefs.publishLinks;
+    m_prefs = prefs;
+    m_tempDir = tempDir;
+    m_incomingDir = incomingDir;
+    if (m_resolver)
+        m_resolver->setAskPuzzles(prefs.askPuzzles);
+    if (allowed && m_started) {
+        if (auto* e = m_session.engine())
+            (void)e->linkAllow(m_prefs.enabled);
+        // switched on: what waited for it goes on
+        if (m_prefs.enabled)
+            for (auto& [id, e] : m_items)
+                if (e->item.state == State::NeedsUser)
+                    begin(*e);
+    }
+    // §4.1: publishing hands out the vouched links; switching it off stops that
+    if (publishChanged && m_started)
+        for (auto& [id, e] : m_items)
+            shareLink(*e);
+}
+
+void Ed3kHosterJoin::start()
+{
+    if (m_started)
+        return;
+    beginStart();
+    if (auto* e = m_session.engine())
+        (void)e->linkAllow(m_prefs.enabled);
+    m_tick.start();
+    for (auto& [id, e] : m_items) {
+        switch (e->item.state) {
+        case State::Complete:
+        case State::Paused:
+        case State::Gone:
+        case State::Failed:
+        case State::NoResolver:
+            break;
+        default:
+            begin(*e);
+        }
+        shareLink(*e);
+    }
+    pumpSession();
+}
+
+void Ed3kHosterJoin::stop()
+{
+    if (!m_started)
+        return;
+    m_tick.stop();
+    for (auto& [id, e] : m_items)
+        release(*e, true);
+    m_asks.clear();
+    for (const auto& [link, a] : m_preparing)
+        QDir(a.dir).removeRecursively();
+    m_preparing.clear();
+    m_matches.clear();
+    m_searches.clear();
+    m_peerLinks.clear();
+    save();
+    closeAll();
+}
+
+QStringList Ed3kHosterJoin::linksIn(const QString& text)
+{
+    static const QRegularExpression re(QStringLiteral(R"((https?://[^\s<>"']+))"), QRegularExpression::CaseInsensitiveOption);
+    QStringList out;
+    for (auto it = re.globalMatch(text); it.hasNext();) {
+        const QString url = it.next().captured(1);
+        if (url.size() <= 1024 && !out.contains(url))
+            out << url;
+    }
+    return out;
+}
+
+QList<quint32> Ed3kHosterJoin::addLinks(const QString& text)
+{
+    QList<quint32> ids;
+    for (const QString& url : linksIn(text)) {
+        const bool known = std::ranges::any_of(m_items, [&url](const auto& p) {
+            return p.second->item.url == url && p.second->item.state != State::Failed;
+        });
+        if (known || m_items.size() >= kMaxItems)
+            continue;
+        auto e = std::make_unique<Entry>();
+        e->item.id = m_nextId++;
+        e->item.url = url;
+        e->item.host = QUrl(url).host();
+        e->item.name = safeName(QUrl(url).fileName());
+        e->item.added = nowMs();
+        Entry& ref = *e;
+        m_items.emplace(ref.item.id, std::move(e));
+        ids << ref.item.id;
+        logInfo(QStringLiteral("link added for %1").arg(ref.item.host));
+        changed(ref);
+        if (m_started)
+            begin(ref);
+        else
+            setState(ref, State::Queued, Reason::WaitingForNode);
+    }
+    save();
+    pumpSession();
+    return ids;
+}
+
+void Ed3kHosterJoin::pause(quint32 id)
+{
+    Entry* e = find(id);
+    if (!e || e->item.state == State::Complete)
+        return;
+    release(*e, true);
+    setState(*e, State::Paused);
+    save();
+    pumpSession();
+}
+
+void Ed3kHosterJoin::resume(quint32 id)
+{
+    Entry* e = find(id);
+    if (!e || e->item.state == State::Complete)
+        return;
+    e->tries = 0;
+    if (m_started)
+        begin(*e);
+    save();
+    pumpSession();
+}
+
+void Ed3kHosterJoin::remove(quint32 id, bool deleteFile)
+{
+    Entry* e = find(id);
+    if (!e)
+        return;
+    const bool complete = e->item.state == State::Complete;
+    release(*e, false);
+    if (!complete || deleteFile)
+        QFile::remove(e->item.file);
+    QDir(workDir(id)).removeRecursively();
+    m_items.erase(id);
+    emit itemRemoved(id);
+    save();
+    pumpSession();
+}
+
+void Ed3kHosterJoin::answerPuzzle(quint64 puzzle, const QString& text)
+{
+    if (m_resolver)
+        m_resolver->answerPuzzle(puzzle, text);
+    if (const auto it = m_puzzles.find(puzzle); it != m_puzzles.end()) {
+        if (Entry* e = find(it->second); e && e->item.state == State::Puzzle)
+            setState(*e, State::Downloading);
+        m_puzzles.erase(it);
+    }
+}
+
+void Ed3kHosterJoin::checkAccount(const QString& host, const QString& user, const QString& password)
+{
+    if (!m_resolver) {
+        ResolverEvent r;
+        r.kind = ResolverEvent::Kind::Failed;
+        r.code = QStringLiteral("unavailable");
+        emit accountChecked(host, user, r);
+        return;
+    }
+    const auto task = m_resolver->accountCheck(host, ResolverAccount{user, password});
+    m_accountChecks[task] = {host, user};
+}
+
+QList<Ed3kHosterJoin::Item> Ed3kHosterJoin::items() const
+{
+    QList<Item> out;
+    for (const auto& [id, e] : m_items)
+        out << e->item;
+    return out;
+}
+
+std::optional<Ed3kHosterJoin::Item> Ed3kHosterJoin::item(quint32 id) const
+{
+    if (const Entry* e = find(id))
+        return e->item;
+    return std::nullopt;
+}
+
+// -- Ed3kJoinBase -------------------------------------------------------------
+
+std::vector<std::uint64_t> Ed3kHosterJoin::wantedBlocks(const Download& d) const
+{
+    std::vector<std::uint64_t> out;
+    const Entry* e = find(idOf(d.owner));
+    if (!e)
+        return out;
+    for (std::uint64_t off = 0; off < d.size; off += kBlock)
+        if (!e->have.contains(off) && !d.outstanding.contains(off))
+            out.push_back(off);
+    return out;
+}
+
+void Ed3kHosterJoin::onFileBlock(const Download& d, const ev::Block& b)
+{
+    Entry* e = find(idOf(d.owner));
+    if (!e || !e->root || e->have.contains(b.offset))
+        return;
+    if (!writeAt(*e, b.offset, std::span{b.data}))
+        return;
+    e->have.insert(b.offset);
+    e->item.done += b.data.size();
+    checkComplete(*e);
+}
+
+void Ed3kHosterJoin::onBlobFetched(const QString&, int, const ffi::Root&, const QByteArray&)
+{
+    // no blobs: hoster items are files
+}
+
+std::optional<Ed3kJoinBase::FileRead> Ed3kHosterJoin::sharedRead(const Shared&, std::uint64_t, std::uint32_t) const
+{
+    // a complete file is in the incoming folder: eMule's shared files serve it
+    return std::nullopt;
+}
+
+void Ed3kHosterJoin::onOtherEvent(const ffi::Event& event)
+{
+    if (const auto* ck = std::get_if<ev::LinkChecked>(&event)) {
+        // §4.1: name and size known, the rootless link is opened
+        if (Entry* e = byLink(ck->link); e && !e->root && e->item.state == State::Checking) {
+            if (!ck->name.empty())
+                e->item.name = safeName(QString::fromStdString(ck->name));
+            if (ck->size)
+                e->item.size = *ck->size;
+            askOpen(*e);
+        }
+    } else if (const auto* b = std::get_if<ev::LinkBlock>(&event))
+        onLinkBlock(b->link, b->root, b->offset, b->data);
+    else if (const auto* u = std::get_if<ev::LinkUnverified>(&event))
+        onLinkUnverified(u->link, u->offset, u->data);
+    else if (const auto* rl = std::get_if<ev::LinkRootless>(&event))
+        onLinkRootless(rl->link, rl->root, rl->size);
+    else if (const auto* en = std::get_if<ev::LinkEnded>(&event))
+        onLinkEnded(en->link, en->code, en->bytes);
+    else if (const auto* c = std::get_if<ev::LinkClaim>(&event))
+        onLinkClaim(c->link, c->root, c->holds);
+    else if (const auto* v = std::get_if<ev::LinkVouched>(&event))
+        onLinkVouched(v->link, v->root);
+    else if (const auto* l = std::get_if<ev::Links>(&event))
+        onPeerLinks(*l);
+    else if (const auto* af = std::get_if<ev::AliasFound>(&event); af && m_searches.contains(af->search))
+        onAliasFound(*af);
+    else if (const auto* d = std::get_if<ev::SetLinksDead>(&event))
+        logInfo(QStringLiteral("links of a set member died: %1").arg(QString::fromStdString(d->links)));
+}
+
+bool Ed3kHosterJoin::hasOwner(const QString& owner) const
+{
+    return find(idOf(owner)) != nullptr;
+}
+
+void Ed3kHosterJoin::saveOwner(const QString&)
+{
+    save();
+}
+
+// -- private ------------------------------------------------------------------
+
+Ed3kHosterJoin::Entry* Ed3kHosterJoin::find(quint32 id) const
+{
+    const auto it = m_items.find(id);
+    return it == m_items.end() ? nullptr : it->second.get();
+}
+
+Ed3kHosterJoin::Entry* Ed3kHosterJoin::byLink(std::uint64_t link) const
+{
+    if (link == 0)
+        return nullptr;
+    for (const auto& [id, e] : m_items)
+        if (e->link == link)
+            return e.get();
+    if (const auto it = m_peerLinks.find(link); it != m_peerLinks.end())
+        return find(it->second.item);
+    return nullptr;
+}
+
+Ed3kHosterJoin::Entry* Ed3kHosterJoin::byRoot(const ffi::Root& root) const
+{
+    for (const auto& [id, e] : m_items)
+        if (e->root && *e->root == root)
+            return e.get();
+    return nullptr;
+}
+
+QString Ed3kHosterJoin::ownerOf(quint32 id)
+{
+    return QStringLiteral("h%1").arg(id);
+}
+
+quint32 Ed3kHosterJoin::idOf(const QString& owner)
+{
+    return owner.startsWith(QLatin1Char('h')) ? owner.mid(1).toUInt() : 0;
+}
+
+void Ed3kHosterJoin::setState(Entry& e, State s, Reason why, const QString& arg)
+{
+    if (e.item.state == s && e.item.reason == why && e.item.reasonArg == arg)
+        return;
+    e.item.state = s;
+    e.item.reason = why;
+    e.item.reasonArg = arg;
+    if (s != State::Waiting)
+        e.item.waitUntil = 0;
+    if (s != State::Downloading)
+        e.item.speed = 0;
+    changed(e);
+    scheduleSave(ownerOf(e.item.id));
+}
+
+void Ed3kHosterJoin::changed(const Entry& e)
+{
+    emit itemChanged(e.item.id);
+}
+
+std::optional<ResolverAccount> Ed3kHosterJoin::accountFor(const QString& host) const
+{
+    for (const Ed3kHosterAccount& a : m_prefs.accounts)
+        if (!host.isEmpty() && (host == a.host || host.endsWith(QLatin1Char('.') + a.host)))
+            return ResolverAccount{a.user, a.password};
+    return std::nullopt;
+}
+
+void Ed3kHosterJoin::begin(Entry& e)
+{
+    // verified blocks stay: the item goes on under its root from where it stood
+    const bool keep = e.root && !e.have.empty() && QFileInfo(e.item.file).isFile();
+    release(e, true);
+    e.peerTried.clear();
+    if (!keep) {
+        e.have.clear();
+        e.item.done = 0;
+        e.item.verified = false;
+        e.item.rootHex.clear();
+        e.root.reset();
+    }
+    if (!m_resolver) {
+        setState(e, State::NoResolver, Reason::NoResolverBuilt);
+        return;
+    }
+    if (!m_resolver->available()) {
+        setState(e, State::NoResolver, Reason::ResolverNotReady, m_resolver->unavailableReason());
+        return;
+    }
+    if (!m_session.engine()) {
+        setState(e, State::Queued, Reason::WaitingForNode);
+        return;
+    }
+    setState(e, State::Matching);
+    m_matches[m_resolver->match(e.item.url)] = e.item.id;
+}
+
+void Ed3kHosterJoin::onMatched(Entry& e, const QString& host)
+{
+    if (host.isEmpty()) {
+        setState(e, State::NoResolver, Reason::NoPlugin, e.item.host);
+        return;
+    }
+    e.item.host = host;
+    if (!m_prefs.enabled) {
+        // §3: no puzzle, timer or account without the user's switch
+        setState(e, State::NeedsUser, Reason::HostersOff);
+        return;
+    }
+    // blocks held under a root: no lookup, the item goes on under it
+    if (e.root && !e.have.empty()) {
+        startRooted(e, *e.root, e.item.size, {}, std::nullopt);
+        return;
+    }
+    lookUp(e);
+}
+
+void Ed3kHosterJoin::lookUp(Entry& e)
+{
+    auto* eng = m_session.engine();
+    const auto id = ffi::linkId(e.item.url.toStdString());
+    // no contacts: nobody to ask, the lookup would only time out
+    if (!eng || !id || m_session.contactCount() == 0) {
+        startRootless(e);
+        return;
+    }
+    const auto search = eng->aliasSearchStart(m_session.now(), "url", std::span<const std::uint8_t>{id->data(), id->size()},
+                                              ED3K_REL_SAME);
+    if (!search) {
+        startRootless(e);
+        return;
+    }
+    e.search = *search;
+    m_searches[*search] = e.item.id;
+    e.nextAskAt = nowMs() + kLookupMs;
+    setState(e, State::Looking);
+}
+
+void Ed3kHosterJoin::onAliasFound(const ev::AliasFound& found)
+{
+    const quint32 id = m_searches[found.search];
+    m_searches.erase(found.search);
+    auto* eng = m_session.engine();
+    Entry* e = find(id);
+    if (!e || !eng) {
+        if (eng)
+            (void)eng->aliasSearchEnd(found.search);
+        return;
+    }
+    e->search.reset();
+    std::optional<::ed3k::Engine::AliasCandidate> cand;
+    if (found.roots > 0)
+        if (auto next = eng->aliasSearchNext(found.search); next && *next)
+            cand = **next;
+    (void)eng->aliasSearchEnd(found.search);
+    if (!cand) {
+        startRootless(*e);
+        return;
+    }
+    std::optional<ffi::Key32> publisher;
+    if (!cand->publishers.empty())
+        publisher = cand->publishers.front();
+    startRooted(*e, cand->root, cand->size, QString::fromStdString(cand->name), publisher);
+}
+
+void Ed3kHosterJoin::startRooted(Entry& e, const ffi::Root& root, std::uint64_t size, const QString& name,
+                                 const std::optional<ffi::Key32>& publisher)
+{
+    auto* eng = m_session.engine();
+    if (!eng)
+        return;
+    ffi::HttpSource src;
+    src.url = e.item.url.toStdString();
+    const auto link = eng->linkAddUser(m_session.now(), root, size, src);
+    if (!link) {
+        logDebug(QStringLiteral("link not added under its root (error %1)").arg(errorName(link.error())));
+        startRootless(e);
+        return;
+    }
+    e.link = *link;
+    e.root = root;
+    e.item.size = size;
+    e.item.verified = true;
+    e.item.rootHex = hexOf(root.bytes);
+    if (!name.isEmpty())
+        e.item.name = safeName(name);
+    if (publisher)
+        (void)eng->linkClaim(e.link, *publisher, true);
+    QDir().mkpath(workDir(e.item.id));
+    if (e.have.empty() || e.item.file.isEmpty()) {
+        e.have.clear();
+        e.item.done = 0;
+        e.item.file = QDir(workDir(e.item.id)).filePath(e.item.name + QStringLiteral(".part"));
+        QFile::remove(e.item.file);
+    }
+    logInfo(QStringLiteral("%1 is known in ed3k, downloading from peers and the link").arg(e.item.host));
+    openDownload(root, size, ownerOf(e.item.id), 0);
+    askOpen(e);
+}
+
+void Ed3kHosterJoin::startRootless(Entry& e)
+{
+    auto* eng = m_session.engine();
+    if (!eng)
+        return;
+    const auto link = eng->linkAddRootless(e.item.url.toStdString());
+    if (!link) {
+        setState(e, State::Failed, Reason::LinkRefused, errorName(link.error()));
+        return;
+    }
+    e.link = *link;
+    QDir().mkpath(workDir(e.item.id));
+    e.item.file = QDir(workDir(e.item.id)).filePath(e.item.name + QStringLiteral(".part"));
+    QFile::remove(e.item.file);
+    // name and size first; open follows LinkChecked
+    if (auto ok = eng->linkAsk(m_session.now(), e.link, ED3K_LINK_CHECK); !ok) {
+        retryLater(e, 15, Reason::Busy);
+        return;
+    }
+    setState(e, State::Checking);
+}
+
+void Ed3kHosterJoin::askOpen(Entry& e)
+{
+    auto* eng = m_session.engine();
+    if (!eng || !e.link)
+        return;
+    if (activeStreams() >= int(m_prefs.maxStreams)) {
+        e.nextAskAt = nowMs() + 5000;
+        setState(e, State::Queued);
+        return;
+    }
+    // a rootless link resumes where its hash stands (the core picks the offset); a rooted
+    // one after the blocks held from 0
+    if (auto ok = eng->linkAsk(m_session.now(), e.link, ED3K_LINK_OPEN, resumeOffset(e)); !ok) {
+        if (ok.error() == ffi::Error::Busy) {
+            // one stream per hoster: a peer's link elsewhere may go now
+            if (tryPeerLink(e))
+                return;
+            e.nextAskAt = nowMs() + 15000;
+            setState(e, State::Queued);
+        } else if (ok.error() == ffi::Error::Denied) {
+            setState(e, State::NeedsUser, Reason::HostersOff);
+        } else {
+            retryLater(e, 60, Reason::LinkRefused, errorName(ok.error()));
+        }
+        return;
+    }
+    setState(e, State::Downloading);
+}
+
+int Ed3kHosterJoin::activeStreams() const
+{
+    return int(std::ranges::count_if(m_asks, [](const auto& a) { return a.second.kind == ED3K_LINK_OPEN && !a.second.ended; }));
+}
+
+void Ed3kHosterJoin::onResolve(const ev::LinkResolve& r)
+{
+    Entry* e = byLink(r.link);
+    const QString url = QString::fromStdString(r.url);
+    if (!m_resolver || !m_resolver->available()) {
+        answer(r.link, ED3K_RESOLVER_NO_RESOLVER);
+        return;
+    }
+    // a link of a peer for a root that is not ours: nobody here writes its bytes
+    if (!e) {
+        answer(r.link, ED3K_RESOLVER_NO_RESOLVER);
+        return;
+    }
+    // a peer's link: its own host, for the account
+    const bool peer = r.link != e->link;
+    const std::optional<ResolverAccount> account = accountFor(peer ? QUrl(url).host() : e->item.host);
+    Ask a;
+    a.link = r.link;
+    a.item = e->item.id;
+    a.kind = r.ask;
+    a.url = url;
+    Ed3kResolver::TaskId task = 0;
+    switch (r.ask) {
+    case ED3K_LINK_CHECK:
+        task = m_resolver->check(url, account);
+        break;
+    case ED3K_LINK_EXPAND:
+        task = m_resolver->expand(url);
+        break;
+    case ED3K_LINK_OPEN: {
+        a.dir = QDir(workDir(e->item.id)).filePath(QStringLiteral("jd-%1").arg(r.link));
+        QDir(a.dir).removeRecursively();
+        QDir().mkpath(a.dir);
+        // resume: r.offset bytes are here already (rootless: what the core hashed; rooted: the
+        // blocks held from 0); JD goes on from its part file when the hoster lets it
+        const auto pl = m_peerLinks.find(r.link);
+        const bool fromStart = pl == m_peerLinks.end() || pl->second.offset == 0;
+        if (r.offset >= kMinResume && fromStart && QFileInfo(e->item.file).size() >= qint64(r.offset)) {
+            prefill(a, e->item.file, r.offset);
+            return;
+        }
+        task = m_resolver->open(url, account, a.dir, 0);
+        break;
+    }
+    default:
+        answer(r.link, ED3K_RESOLVER_FAILED);
+        return;
+    }
+    e->task = task;
+    m_asks[task] = a;
+}
+
+void Ed3kHosterJoin::onResolverEvent(Ed3kResolver::TaskId task, const ResolverEvent& ev)
+{
+    using K = ResolverEvent::Kind;
+    if (ev.kind == K::Puzzle) {
+        quint32 id = 0;
+        if (const auto it = m_asks.find(task); it != m_asks.end())
+            id = it->second.item;
+        if (Entry* e = find(id))
+            setState(*e, State::Puzzle);
+        m_puzzles[ev.puzzle] = id;
+        emit puzzleAsked(id, ev.puzzle, ev.image, ev.host, ev.text, ev.timeoutS);
+        return;
+    }
+    if (const auto it = m_matches.find(task); it != m_matches.end()) {
+        const quint32 id = it->second;
+        m_matches.erase(it);
+        Entry* e = find(id);
+        if (!e)
+            return;
+        if (ev.kind == K::Matched)
+            onMatched(*e, ev.host);
+        else
+            setState(*e, State::NoResolver, Reason::ResolverNotReady, m_resolver ? m_resolver->unavailableReason() : QString());
+        pumpSession();
+        return;
+    }
+    if (const auto it = m_accountChecks.find(task); it != m_accountChecks.end()) {
+        const auto [host, user] = it->second;
+        m_accountChecks.erase(it);
+        emit accountChecked(host, user, ev);
+        return;
+    }
+    const auto it = m_asks.find(task);
+    if (it == m_asks.end())
+        return;
+    Ask& a = it->second;
+    Entry* e = find(a.item);
+    const auto final = [this, task] { m_asks.erase(task); };
+    // what the core is told when no stream is open
+    const auto fail = [&](std::uint32_t kind, std::optional<std::uint64_t> value = std::nullopt) {
+        if (a.opened)
+            endStream(task, true);
+        else
+            answer(a.link, kind, {}, value);
+    };
+
+    switch (ev.kind) {
+    case K::Found:
+        if (e) {
+            if (!ev.name.isEmpty() && !e->item.verified)
+                e->item.name = safeName(ev.name);
+            if (ev.size && !e->item.verified)
+                e->item.size = ev.size;
+            changed(*e);
+        }
+        answer(a.link, ED3K_RESOLVER_CHECKED, ev.name, ev.size ? std::optional<std::uint64_t>(ev.size) : std::nullopt);
+        final();
+        break;
+    case K::Folder:
+        // a folder link: its links become items of their own once the user picks them
+        answer(a.link, ED3K_RESOLVER_FAILED);
+        if (e && m_resolver) {
+            e->expandAfterCheck = true;
+            const auto t = m_resolver->expand(e->item.url);
+            Ask x;
+            x.item = e->item.id;
+            x.kind = ED3K_LINK_EXPAND;
+            m_asks[t] = x;
+        }
+        final();
+        break;
+    case K::Links: {
+        QStringList urls;
+        for (const ResolverLink& l : ev.links)
+            urls << l.url;
+        if (a.link)
+            answer(a.link, ED3K_RESOLVER_EXPANDED, urls.join(QLatin1Char('\n')));
+        if (e) {
+            emit linksExpanded(e->item.id, ev.links);
+            setState(*e, State::Complete, Reason::Folder, QString::number(ev.links.size()));
+        }
+        final();
+        break;
+    }
+    case K::Progress:
+        a.onDisk = std::max(a.onDisk, ev.bytes);
+        if (!ev.path.isEmpty())
+            a.path = ev.path;
+        if (e) {
+            if (ev.total && !e->item.verified && !e->item.size)
+                e->item.size = ev.total;
+            if (e->item.state != State::Downloading && e->item.state != State::Puzzle)
+                setState(*e, State::Downloading);
+        }
+        if (!opened(a, ev))
+            break;
+        feed(task);
+        break;
+    case K::Wait:
+        if (ev.text == QLatin1StringView("timer")) {
+            // JD waits out the hoster's timer itself
+            if (e) {
+                e->item.waitUntil = nowMs() + qint64(ev.seconds) * 1000;
+                setState(*e, State::Waiting, Reason::HosterTimer);
+                changed(*e);
+            }
+            break;
+        }
+        fail(ED3K_RESOLVER_WAIT, ev.seconds);
+        if (e && a.link == e->peerLink) {
+            e->peerLink = 0;
+            e->peerTried.insert(a.link);
+            if (!tryPeerLink(*e) && e->link)
+                retryLater(*e, 30, Reason::EndedEarly);
+        } else if (e) {
+            retryLater(*e, int(std::min<std::uint64_t>(ev.seconds, 24 * 3600)),
+                       ev.text == QLatin1StringView("quota") ? Reason::HosterQuota : Reason::HosterBusy);
+            if (ownLinkStuck(*e))
+                tryPeerLink(*e);
+        }
+        final();
+        break;
+    case K::Done:
+        a.done = true;
+        a.onDisk = ev.size;
+        if (!ev.path.isEmpty())
+            a.path = ev.path;
+        if (!opened(a, ev)) {
+            // an old resolver that tells no start: the bytes are the whole file
+            ResolverEvent whole = ev;
+            whole.from = 0;
+            (void)opened(a, whole);
+        }
+        feed(task);
+        break;
+    case K::Gone:
+        fail(ED3K_RESOLVER_GONE);
+        final();
+        break;
+    case K::NeedsUser:
+        fail(ED3K_RESOLVER_NEEDS_USER);
+        if (e)
+            setState(*e, State::NeedsUser,
+                     ev.text == QLatin1StringView("login") ? Reason::NeedsLogin : Reason::NeedsBrowserPuzzle);
+        final();
+        break;
+    case K::Failed:
+        fail(ev.code == QLatin1StringView("noPlugin") ? ED3K_RESOLVER_NO_RESOLVER : ED3K_RESOLVER_FAILED);
+        if (e && ev.code != QLatin1StringView("noPlugin"))
+            retryLater(*e, 60, Reason::ResolverError, ev.text.isEmpty() ? ev.code : ev.text);
+        final();
+        break;
+    case K::Cancelled:
+        fail(ED3K_RESOLVER_FAILED);
+        final();
+        break;
+    default:
+        break;
+    }
+    pumpSession();
+}
+
+void Ed3kHosterJoin::answer(std::uint64_t link, std::uint32_t kind, const QString& text, std::optional<std::uint64_t> value)
+{
+    auto* eng = m_session.engine();
+    if (!eng || !link)
+        return;
+    if (auto ok = eng->linkAnswer(m_session.now(), link, kind, text.toStdString(), value); !ok)
+        logDebug(QStringLiteral("link answer %1 not taken (error %2)").arg(kind).arg(errorName(ok.error())));
+}
+
+void Ed3kHosterJoin::prefill(Ask a, const QString& from, std::uint64_t offset)
+{
+    const std::uint64_t link = a.link;
+    const QString to = QDir(a.dir).filePath(QStringLiteral("data.part"));
+    a.have = offset;
+    m_preparing[link] = std::move(a);
+    QPointer<Ed3kHosterJoin> self(this);
+    QThreadPool::globalInstance()->start([self, link, from, to, offset] {
+        const bool ok = copyPrefix(from, to, offset);
+        if (!ok)
+            QFile::remove(to);
+        QMetaObject::invokeMethod(
+            self.data(), [self, link, ok] {
+                if (self)
+                    self->prefilled(link, ok);
+            },
+            Qt::QueuedConnection);
+    });
+}
+
+void Ed3kHosterJoin::prefilled(std::uint64_t link, bool ok)
+{
+    auto node = m_preparing.extract(link);
+    if (node.empty())
+        return;   // the item let go of it meanwhile
+    Ask a = std::move(node.mapped());
+    if (!ok) {
+        logDebug(QStringLiteral("cannot copy %1 bytes to resume, the link starts over").arg(a.have));
+        a.have = 0;
+    }
+    openTask(std::move(a));
+}
+
+void Ed3kHosterJoin::openTask(Ask a)
+{
+    Entry* e = find(a.item);
+    if (!e || !m_resolver || !m_resolver->available()) {
+        QDir(a.dir).removeRecursively();
+        answer(a.link, ED3K_RESOLVER_NO_RESOLVER);
+        return;
+    }
+    const bool peer = a.link != e->link;
+    const auto account = accountFor(peer ? QUrl(a.url).host() : e->item.host);
+    const auto task = m_resolver->open(a.url, account, a.dir, a.have);
+    e->task = task;
+    m_asks[task] = std::move(a);
+}
+
+bool Ed3kHosterJoin::opened(Ask& a, const ResolverEvent& ev)
+{
+    if (a.opened)
+        return true;
+    if (a.have > 0) {
+        // the resolver tells once whether the hoster resumed
+        if (!ev.from)
+            return false;
+        const std::uint64_t from = *ev.from >= a.have ? a.have : 0;
+        if (from == 0)
+            if (Entry* e = find(a.item); e && !e->root)
+                e->item.done = 0;   // rootless: hashed again from 0
+        a.fed = from;
+    } else if (a.onDisk == 0 && ev.kind != ResolverEvent::Kind::Done) {
+        return false;
+    }
+    a.opened = true;
+    answer(a.link, ED3K_RESOLVER_OPENED, {}, a.fed);
+    return true;
+}
+
+std::uint64_t Ed3kHosterJoin::resumeOffset(const Entry& e) const
+{
+    if (!e.root || e.item.size == 0)
+        return 0;   // rootless: the core picks where its hash stands
+    std::uint64_t off = 0;
+    while (off < e.item.size && e.have.contains(off))
+        off += kBlock;
+    return off >= e.item.size || off < kMinResume ? 0 : off;
+}
+
+void Ed3kHosterJoin::feed(Ed3kResolver::TaskId task)
+{
+    const auto it = m_asks.find(task);
+    if (it == m_asks.end())
+        return;
+    Ask& a = it->second;
+    if (a.reading || a.ended || !a.opened)
+        return;
+    if (a.fed >= a.onDisk) {
+        if (a.done)
+            endStream(task, false);
+        return;
+    }
+    a.reading = true;
+    const auto len = std::uint32_t(std::min<std::uint64_t>(kFeedChunk, a.onDisk - a.fed));
+    readInBackground(ownerOf(a.item) + QStringLiteral("-feed"), {FileRead{a.path, a.fed, len}},
+                     [this, task](ReadResults r) { fed(task, r.empty() ? std::nullopt : std::move(r.front())); });
+}
+
+void Ed3kHosterJoin::fed(Ed3kResolver::TaskId task, std::optional<QByteArray> data)
+{
+    const auto it = m_asks.find(task);
+    if (it == m_asks.end())
+        return;
+    Ask& a = it->second;
+    a.reading = false;
+    if (a.ended)
+        return;
+    if (!data) {
+        // JD renames data.part to data at the end, maybe while this read ran: read from
+        // there; else the file is behind the progress it told, try again shortly
+        const QString done = a.path.endsWith(QLatin1StringView(".part")) ? a.path.chopped(5) : QString();
+        if (!done.isEmpty() && QFileInfo(done).isFile())
+            a.path = done;
+        if (++a.readFailures > kMaxReadFailures) {
+            logWarning(QStringLiteral("cannot read the resolver's file %1").arg(a.path));
+            endStream(task, true);
+            return;
+        }
+        QTimer::singleShot(kReadRetryMs, this, [this, task] { feed(task); });
+        return;
+    }
+    a.readFailures = 0;
+    auto* eng = m_session.engine();
+    if (!eng) {
+        endStream(task, true);
+        return;
+    }
+    if (auto ok = eng->linkData(m_session.now(), a.link, spanOf(*data)); !ok) {
+        logDebug(QStringLiteral("link data not taken (error %1)").arg(errorName(ok.error())));
+        a.ended = true;
+        if (m_resolver)
+            m_resolver->cancel(task);
+        pumpSession();
+        return;
+    }
+    a.fed += std::uint64_t(data->size());
+    pumpSession();
+    feed(task);
+}
+
+void Ed3kHosterJoin::endStream(Ed3kResolver::TaskId task, bool broken)
+{
+    const auto it = m_asks.find(task);
+    if (it == m_asks.end())
+        return;
+    Ask& a = it->second;
+    if (a.ended)
+        return;
+    a.ended = true;
+    if (auto* eng = m_session.engine(); eng && a.opened)
+        (void)eng->linkEnd(m_session.now(), a.link, broken);
+    if (broken && m_resolver)
+        m_resolver->cancel(task);
+    QDir(a.dir).removeRecursively();
+    m_asks.erase(it);
+    pumpSession();
+}
+
+void Ed3kHosterJoin::onLinkBlock(std::uint64_t link, const ffi::Root& root, std::uint64_t offset, const ffi::Bytes& data)
+{
+    Entry* e = byLink(link);
+    if (!e)
+        e = byRoot(root);
+    if (!e || !e->root || *e->root != root || e->have.contains(offset))
+        return;
+    if (!writeAt(*e, offset, std::span{data}))
+        return;
+    e->have.insert(offset);
+    e->item.done += data.size();
+    checkComplete(*e);
+}
+
+void Ed3kHosterJoin::onLinkUnverified(std::uint64_t link, std::uint64_t offset, const ffi::Bytes& data)
+{
+    Entry* e = byLink(link);
+    if (!e || e->root)
+        return;
+    if (!writeAt(*e, offset, std::span{data}))
+        return;
+    e->item.done = std::max<std::uint64_t>(e->item.done, offset + data.size());
+}
+
+void Ed3kHosterJoin::onLinkRootless(std::uint64_t link, const ffi::Root& root, std::uint64_t size)
+{
+    Entry* e = byLink(link);
+    if (!e)
+        return;
+    e->root = root;
+    e->item.rootHex = hexOf(root.bytes);
+    e->item.size = size;
+    e->item.done = size;
+    logInfo(QStringLiteral("%1: downloaded whole, root %2").arg(e->item.host, e->item.rootHex.left(16)));
+    finish(*e);
+}
+
+void Ed3kHosterJoin::onLinkEnded(std::uint64_t link, std::uint32_t code, std::uint64_t bytes)
+{
+    Entry* e = byLink(link);
+    if (const auto it = m_peerLinks.find(link); it != m_peerLinks.end()) {
+        // a peer's link (the core tells the peer how it went): the next one, else the own
+        if (!e || e->item.state == State::Complete)
+            return;
+        if (e->peerLink == link)
+            e->peerLink = 0;
+        if (code != ED3K_HTTP_OK)
+            e->peerTried.insert(link);
+        logDebug(QStringLiteral("%1: a peer's link ended, code %2, %3 bytes").arg(e->item.host).arg(code).arg(bytes));
+        if (tryPeerLink(*e))
+            return;
+        if (e->link)
+            retryLater(*e, 30, Reason::EndedEarly);
+        else if (e->item.state == State::Downloading)
+            setState(*e, State::Gone, Reason::Removed);
+        pumpSession();
+        return;
+    }
+    if (!e || e->item.state == State::Complete)
+        return;
+    logDebug(QStringLiteral("%1: link ended, code %2, %3 bytes").arg(e->item.host).arg(code).arg(bytes));
+    switch (code) {
+    case ED3K_HTTP_OK:
+        // the stream ended before the file was complete: open it again
+        if (e->item.state != State::Complete)
+            retryLater(*e, 30, Reason::EndedEarly);
+        break;
+    case ED3K_HTTP_GONE:
+        // under a root a peer's link can stand in for the own one, which is dropped
+        if (e->root && tryPeerLink(*e)) {
+            if (auto* eng = m_session.engine())
+                (void)eng->linkRemove(e->link);
+            e->link = 0;
+            break;
+        }
+        release(*e, false);
+        setState(*e, State::Gone, Reason::Removed);
+        break;
+    case ED3K_HTTP_NO_RESOLVER:
+        if (tryPeerLink(*e))
+            break;
+        setState(*e, State::NoResolver, Reason::NoPlugin, e->item.host);
+        break;
+    case ED3K_HTTP_NEEDS_USER:
+        if (tryPeerLink(*e))
+            break;
+        if (e->item.state != State::NeedsUser)
+            setState(*e, State::NeedsUser,
+                     m_prefs.enabled ? Reason::Blocked : Reason::HostersOff);
+        break;
+    case ED3K_HTTP_CORRUPT:
+    case ED3K_HTTP_SIZE_MISMATCH:
+        release(*e, false);
+        setState(*e, State::Failed,
+                 code == ED3K_HTTP_CORRUPT ? Reason::NotTheFile : Reason::OtherSize);
+        break;
+    default:
+        // a wait the resolver told (quota, busy) is the better time
+        if (e->item.state != State::Waiting)
+            retryLater(*e, 60, Reason::TransferFailed);
+    }
+    pumpSession();
+}
+
+void Ed3kHosterJoin::onLinkClaim(std::uint64_t link, const ffi::Root& root, bool holds)
+{
+    Entry* e = byLink(link);
+    if (!e)
+        return;
+    if (holds) {
+        logInfo(QStringLiteral("%1: the first block from the link holds under the root").arg(e->item.host));
+        return;
+    }
+    // §4: a false claim; the core goes on with the link as one without a root
+    logWarning(QStringLiteral("%1: the ALIAS record's root %2 is false").arg(e->item.host, hexOf(root.bytes).left(16)));
+    stopDownload(root);
+    e->root.reset();
+    e->have.clear();
+    e->item.done = 0;
+    e->item.verified = false;
+    e->item.rootHex.clear();
+    QFile::remove(e->item.file);
+    changed(*e);
+}
+
+void Ed3kHosterJoin::onLinkVouched(std::uint64_t link, const ffi::Root& root)
+{
+    Entry* e = byLink(link);
+    // a rootless link vouches once the file is whole, after the item let go of the link
+    if (!e)
+        e = byRoot(root);
+    // only the item's own link: a peer's is not this node's to hand on
+    if (!e || m_peerLinks.contains(link) || e->vouched)
+        return;
+    e->vouched = true;
+    scheduleSave(ownerOf(e->item.id));
+    auto* eng = m_session.engine();
+    // §4.1: only while the user publishes links
+    if (!eng || !m_prefs.publishLinks)
+        return;
+    const auto alias = ffi::linkAliasSame(e->item.url.toStdString(), root, e->item.size, e->item.name.toStdString());
+    if (alias) {
+        const std::vector<ffi::Bytes> list{*alias};
+        if (auto ok = eng->publishAlias(m_session.now(), list); ok)
+            logInfo(QStringLiteral("%1: link published (ALIAS url)").arg(e->item.host));
+    }
+    shareLink(*e);
+}
+
+void Ed3kHosterJoin::onPeerLinks(const ev::Links& links)
+{
+    Entry* e = byRoot(links.root);
+    if (!e || !m_prefs.fromPeers || e->item.state == State::Complete)
+        return;
+    for (const auto& [id, src] : links.links)
+        m_peerLinks[id] = PeerLink{e->item.id, src.offset, QString::fromStdString(src.url)};
+    logDebug(QStringLiteral("%1 hoster link(s) from peers for %2").arg(links.links.size()).arg(e->item.name));
+    if (ownLinkStuck(*e))
+        tryPeerLink(*e);
+}
+
+bool Ed3kHosterJoin::ownLinkStuck(const Entry& e)
+{
+    switch (e.item.state) {
+    case State::NeedsUser:
+    case State::NoResolver:
+        return e.item.reason != Reason::HostersOff;
+    case State::Queued:
+        return e.item.reason == Reason::None;   // one stream per hoster
+    case State::Waiting:
+        return e.item.waitUntil - nowMs() > kLongWaitMs;
+    default:
+        return false;
+    }
+}
+
+bool Ed3kHosterJoin::tryPeerLink(Entry& e)
+{
+    auto* eng = m_session.engine();
+    // §3: only with the user's switch; verified under the root, so only for a rooted item
+    if (!eng || !m_prefs.enabled || !m_prefs.fromPeers || !e.root || e.peerLink || !m_resolver || !m_resolver->available())
+        return false;
+    if (activeStreams() >= int(m_prefs.maxStreams))
+        return false;
+    for (const auto& [link, p] : m_peerLinks) {
+        if (p.item != e.item.id || e.peerTried.contains(link))
+            continue;
+        const std::uint64_t offset = p.offset == 0 ? resumeOffset(e) : 0;
+        if (auto ok = eng->linkAsk(m_session.now(), link, ED3K_LINK_OPEN, offset); !ok) {
+            if (ok.error() != ffi::Error::Busy)
+                e.peerTried.insert(link);
+            continue;
+        }
+        e.peerLink = link;
+        e.nextAskAt = 0;
+        logInfo(QStringLiteral("%1: trying a link a peer named (%2)").arg(e.item.host, QUrl(p.url).host()));
+        setState(e, State::Downloading, Reason::PeerLink, QUrl(p.url).host());
+        return true;
+    }
+    return false;
+}
+
+void Ed3kHosterJoin::shareLink(Entry& e)
+{
+    auto* eng = m_session.engine();
+    if (!eng || !e.root || !e.vouched)
+        return;
+    std::vector<std::string> urls;
+    if (m_prefs.publishLinks)
+        urls.push_back(e.item.url.toStdString());
+    if (auto ok = eng->linkShare(*e.root, urls); !ok)
+        logDebug(QStringLiteral("%1: link not shared (error %2)").arg(e.item.host, errorName(ok.error())));
+    else if (!urls.empty())
+        logInfo(QStringLiteral("%1: link handed out with the file (SOURCE record, downloaders)").arg(e.item.host));
+}
+
+bool Ed3kHosterJoin::writeAt(Entry& e, std::uint64_t offset, std::span<const std::byte> data)
+{
+    QFile f(e.item.file);
+    if (!f.open(QIODevice::ReadWrite) || !f.seek(qint64(offset))
+        || f.write(reinterpret_cast<const char*>(data.data()), qint64(data.size())) != qint64(data.size())) {
+        logWarning(QStringLiteral("cannot write %1: %2").arg(e.item.file, f.errorString()));
+        release(e, true);
+        setState(e, State::Failed, Reason::WriteFailed, f.errorString());
+        return false;
+    }
+    return true;
+}
+
+void Ed3kHosterJoin::checkComplete(Entry& e)
+{
+    if (!e.root || e.item.size == 0)
+        return;
+    const std::uint64_t blocks = (e.item.size + kBlock - 1) / kBlock;
+    if (e.have.size() >= blocks)
+        finish(e);
+    else
+        changed(e);
+}
+
+void Ed3kHosterJoin::finish(Entry& e)
+{
+    if (e.item.state == State::Complete)
+        return;
+    const QString from = e.item.file;
+    release(e, true);
+    // the incoming folder, with a name that is free
+    QDir().mkpath(m_incomingDir);
+    const QFileInfo base(e.item.name);
+    QString to = QDir(m_incomingDir).filePath(e.item.name);
+    for (int n = 1; QFileInfo::exists(to) && n < 1000; ++n)
+        to = QDir(m_incomingDir).filePath(base.completeSuffix().isEmpty()
+                                              ? QStringLiteral("%1 (%2)").arg(base.baseName()).arg(n)
+                                              : QStringLiteral("%1 (%2).%3").arg(base.baseName()).arg(n).arg(base.completeSuffix()));
+    if (!QFile::rename(from, to) && !(QFile::copy(from, to) && QFile::remove(from))) {
+        setState(e, State::Failed, Reason::MoveFailed, m_incomingDir);
+        return;
+    }
+    QDir(workDir(e.item.id)).removeRecursively();
+    e.item.file = to;
+    e.item.done = e.item.size;
+    logInfo(QStringLiteral("completed %1 from %2").arg(QFileInfo(to).fileName(), e.item.host));
+    setState(e, State::Complete);
+    save();
+}
+
+void Ed3kHosterJoin::release(Entry& e, bool keepFile)
+{
+    auto* eng = m_session.engine();
+    if (e.search) {
+        if (eng)
+            (void)eng->aliasSearchEnd(*e.search);
+        m_searches.erase(*e.search);
+        e.search.reset();
+    }
+    for (auto it = m_asks.begin(); it != m_asks.end();) {
+        if (it->second.item != e.item.id) {
+            ++it;
+            continue;
+        }
+        if (it->second.opened && !it->second.ended && eng)
+            (void)eng->linkEnd(m_session.now(), it->second.link, true);
+        if (m_resolver)
+            m_resolver->cancel(it->first);
+        QDir(it->second.dir).removeRecursively();
+        it = m_asks.erase(it);
+    }
+    for (auto it = m_preparing.begin(); it != m_preparing.end();) {
+        if (it->second.item == e.item.id) {
+            QDir(it->second.dir).removeRecursively();
+            it = m_preparing.erase(it);
+        } else {
+            ++it;
+        }
+    }
+    std::erase_if(m_matches, [&e](const auto& m) { return m.second == e.item.id; });
+    std::erase_if(m_peerLinks, [&e](const auto& m) { return m.second.item == e.item.id; });
+    e.peerLink = 0;
+    if (e.root)
+        stopDownload(*e.root);
+    if (e.link && eng)
+        (void)eng->linkRemove(e.link);
+    e.link = 0;
+    e.task = 0;
+    if (!keepFile && e.item.state != State::Complete)
+        QFile::remove(e.item.file);
+}
+
+void Ed3kHosterJoin::retryLater(Entry& e, int seconds, Reason why, const QString& arg)
+{
+    if (++e.tries > kMaxTries) {
+        release(e, true);
+        setState(e, State::Failed, why, arg);
+        return;
+    }
+    e.nextAskAt = nowMs() + qint64(std::max(1, seconds)) * 1000;
+    setState(e, State::Waiting, why, arg);
+    e.item.waitUntil = e.nextAskAt;
+}
+
+void Ed3kHosterJoin::onTick()
+{
+    const qint64 now = nowMs();
+    for (auto& [id, ep] : m_items) {
+        Entry& e = *ep;
+        if (e.item.state == State::Downloading) {
+            const std::uint64_t speed = e.item.done > e.lastDone ? (e.item.done - e.lastDone) * 1000 / kTickMs : 0;
+            if (speed != e.item.speed) {
+                e.item.speed = speed;
+                changed(e);
+            }
+        }
+        e.lastDone = e.item.done;
+        if (e.item.state == State::Looking && e.search && e.nextAskAt && e.nextAskAt <= now) {
+            logDebug(QStringLiteral("%1: lookup timed out, using the link without a root").arg(e.item.host));
+            if (auto* eng = m_session.engine())
+                (void)eng->aliasSearchEnd(*e.search);
+            m_searches.erase(*e.search);
+            e.search.reset();
+            e.nextAskAt = 0;
+            startRootless(e);
+            continue;
+        }
+        if ((e.item.state == State::Queued || e.item.state == State::Waiting) && e.nextAskAt && e.nextAskAt <= now) {
+            e.nextAskAt = 0;
+            // nothing open for the item: a link without one starts over
+            if (!e.link)
+                begin(e);
+            else if (e.root || e.item.size)
+                askOpen(e);
+            else
+                begin(e);
+        }
+    }
+    pumpSession();
+}
+
+void Ed3kHosterJoin::load()
+{
+    QFile f(itemsFile());
+    if (!f.open(QIODevice::ReadOnly))
+        return;
+    const QJsonArray list = QJsonDocument::fromJson(f.readAll()).array();
+    for (const QJsonValue& v : list) {
+        const QJsonObject o = v.toObject();
+        auto e = std::make_unique<Entry>();
+        Item& it = e->item;
+        it.id = quint32(o.value(QStringLiteral("id")).toInteger());
+        it.url = o.value(QStringLiteral("url")).toString();
+        if (it.id == 0 || it.url.isEmpty() || m_items.contains(it.id))
+            continue;
+        it.host = o.value(QStringLiteral("host")).toString();
+        it.name = safeName(o.value(QStringLiteral("name")).toString());
+        it.size = std::uint64_t(o.value(QStringLiteral("size")).toInteger());
+        it.file = o.value(QStringLiteral("file")).toString();
+        it.added = o.value(QStringLiteral("added")).toInteger();
+        it.rootHex = o.value(QStringLiteral("root")).toString();
+        it.state = State(std::clamp<qint64>(o.value(QStringLiteral("state")).toInteger(), 0, int(State::Failed)));
+        it.reason = Reason(std::clamp<qint64>(o.value(QStringLiteral("reason")).toInteger(), 0, int(Reason::Folder)));
+        it.reasonArg = o.value(QStringLiteral("reasonArg")).toString();
+        e->vouched = o.value(QStringLiteral("vouched")).toBool();
+        if (it.state == State::Complete) {
+            it.done = it.size;
+            e->root = rootFromHex(it.rootHex);
+            it.verified = e->root.has_value();
+        } else if (const auto root = rootFromHex(it.rootHex); root && it.size > 0 && QFileInfo(it.file).isFile()) {
+            // a rooted item goes on from its verified blocks: [first offset, count] runs
+            e->root = root;
+            it.verified = true;
+            for (const QJsonValue& run : o.value(QStringLiteral("have")).toArray()) {
+                const QJsonArray r = run.toArray();
+                const auto first = std::uint64_t(r.at(0).toInteger());
+                const auto count = std::uint64_t(r.at(1).toInteger());
+                for (std::uint64_t i = 0; i < count && first + i * kBlock < it.size; ++i)
+                    e->have.insert(first + i * kBlock);
+            }
+            for (const std::uint64_t off : e->have)
+                it.done += std::min<std::uint64_t>(kBlock, it.size - off);
+        }
+        m_nextId = std::max(m_nextId, it.id + 1);
+        m_items.emplace(it.id, std::move(e));
+    }
+}
+
+void Ed3kHosterJoin::save()
+{
+    QJsonArray list;
+    for (const auto& [id, e] : m_items) {
+        const Item& it = e->item;
+        QJsonArray have;
+        for (auto b = e->have.begin(); b != e->have.end();) {
+            const std::uint64_t first = *b;
+            std::uint64_t count = 0;
+            while (b != e->have.end() && *b == first + count * kBlock) {
+                ++count;
+                ++b;
+            }
+            have.append(QJsonArray{qint64(first), qint64(count)});
+        }
+        list.append(QJsonObject{{QStringLiteral("id"), qint64(it.id)},
+                                {QStringLiteral("vouched"), e->vouched},
+                                {QStringLiteral("have"), have},
+                                {QStringLiteral("url"), it.url},
+                                {QStringLiteral("host"), it.host},
+                                {QStringLiteral("name"), it.name},
+                                {QStringLiteral("size"), qint64(it.size)},
+                                {QStringLiteral("file"), it.file},
+                                {QStringLiteral("added"), it.added},
+                                {QStringLiteral("root"), it.rootHex},
+                                {QStringLiteral("state"), int(it.state)},
+                                {QStringLiteral("reason"), int(it.reason)},
+                                {QStringLiteral("reasonArg"), it.reasonArg}});
+    }
+    QDir().mkpath(QFileInfo(itemsFile()).absolutePath());
+    QSaveFile f(itemsFile());
+    if (f.open(QIODevice::WriteOnly)) {
+        f.write(QJsonDocument(list).toJson(QJsonDocument::Indented));
+        f.commit();
+    }
+}
+
+QString Ed3kHosterJoin::itemsFile() const
+{
+    return QDir(joinDir(QStringLiteral("hoster"))).filePath(QStringLiteral("items.json"));
+}
+
+QString Ed3kHosterJoin::workDir(quint32 id) const
+{
+    return QDir(m_tempDir.isEmpty() ? joinDir(QStringLiteral("hoster")) : m_tempDir)
+        .filePath(QStringLiteral("ed3k-hoster/%1").arg(id));
+}
+
+} // namespace eMule::ed3k

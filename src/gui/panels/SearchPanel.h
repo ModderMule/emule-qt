@@ -47,6 +47,7 @@ class IpcClient;
 class MetaResultActions;
 class SearchResultsModel;
 struct SearchResultRef;
+struct SearchResultRow;
 
 /// One StartSearch request. Mirrors the daemon's SearchParams field order.
 struct SearchRequest {
@@ -238,6 +239,8 @@ private:
     /// Send one ED2K download request for a row of the view. A name row downloads
     /// the file under that name (MFC SearchResultsWnd.cpp:516-548).
     void sendDownloadRequest(const QModelIndex& proxyIndex, int category, std::optional<bool> paused);
+    /// ed3k rows (metaKind 7): downloaded by their root (Ed3kDownloads, shown in Transfers).
+    void downloadEd3kResults(const std::vector<const SearchResultRow*>& rows, int category, bool paused);
     [[nodiscard]] QString buildEd2kLink(const QModelIndex& proxyIndex);
     /// magnet:?xt=urn:ed2k for eD2K rows, the server's magnet for torrents, empty for Usenet.
     [[nodiscard]] QString buildMagnetLink(const QModelIndex& proxyIndex);

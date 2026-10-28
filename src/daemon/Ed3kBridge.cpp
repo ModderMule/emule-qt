@@ -5,8 +5,13 @@
 
 #include "BandwidthCoordinator.h"
 #include "Ed3kCreditBridge.h"
+#include "Ed3kFiltersBridge.h"
+#include "Ed3kDownloadsBridge.h"
+#include "Ed3kHosterBridge.h"
 #include "Ed3kFriendsBridge.h"
 #include "Ed3kNamesBridge.h"
+#include "Ed3kRoomsBridge.h"
+#include "Ed3kSetsBridge.h"
 
 #ifdef EMULE_HAVE_ED3K
 #include "Ed3kBootstrap.h"
@@ -100,7 +105,8 @@ bool available()
 bool isEd3kRequest(IpcMsgType type)
 {
     const int t = static_cast<int>(type);
-    return t >= 1000 && t <= 1049;
+    // 1100-1149: second request block (batch 12), the first was full
+    return (t >= 1000 && t <= 1049) || (t >= 1100 && t <= 1149);
 }
 
 bool handleRequest(const IpcMessage& msg, const std::function<void(const IpcMessage&)>& reply)
@@ -116,8 +122,23 @@ bool handleRequest(const IpcMessage& msg, const std::function<void(const IpcMess
     // credits: 1020-1029
     if (Ed3kCreditBridge::handleRequest(msg, reply))
         return true;
+    // filter lists: 1130-1139 (batch 12)
+    if (Ed3kFiltersBridge::handleRequest(msg, reply))
+        return true;
     // node list sources: 1030-1031
     if (handleBootstrap(msg, reply))
+        return true;
+    // hoster links: 1100-1109
+    if (Ed3kHosterBridge::handleRequest(msg, reply))
+        return true;
+    // rooms: 1120-1129
+    if (Ed3kRoomsBridge::handleRequest(msg, reply))
+        return true;
+    // sets and live: 1110-1119, 1144 (before the downloads' 1140-1149)
+    if (Ed3kSetsBridge::handleRequest(msg, reply))
+        return true;
+    // plain downloads: 1140-1149
+    if (Ed3kDownloadsBridge::handleRequest(msg, reply))
         return true;
     if (msg.type() == IpcMsgType::GetEd3kStatus)
         reply(IpcMessage::makeResult(msg.seqId(), true, statusToCbor()));
@@ -187,6 +208,8 @@ QCborMap statusToCbor()
                                                      {QStringLiteral("waiting"), qint64(q->waiting)}});
     if (const QCborMap credit = Ed3kCreditBridge::statusToCbor(); !credit.isEmpty())
         out.insert(QStringLiteral("credit"), credit);
+    if (const QCborMap hoster = Ed3kHosterBridge::statusToCbor(); !hoster.isEmpty())
+        out.insert(QStringLiteral("hoster"), hoster);
 #endif
     return out;
 }

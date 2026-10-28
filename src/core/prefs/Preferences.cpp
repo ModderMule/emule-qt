@@ -713,6 +713,8 @@ struct Preferences::Data {
     QStringList ed3kNodeLists;         // ed3k:nodes links (bootstrap.md §3)
     uint16 ed3kSitePort = 0;           // website server (name.md §6.2); 0 = random, resolved at load
     Ed3kCreditPrefs ed3kCredit;        // credit.md; off by default (§9)
+    Ed3kChainPrefs ed3kChain;          // chaintube.md §4.2; none set by default
+    Ed3kHosterPrefs ed3kHoster;        // hoster.md; off by default (§3)
 
     /// Runtime only — never loaded, never saved. -1 means "no split active", so
     /// maxDownloadForEd2k() falls back to the raw ceiling. Persisting it would
@@ -2352,6 +2354,76 @@ bool Preferences::applyEd3kCreditKey(Ed3kCreditPrefs& c, const QString& key, con
     return true;
 }
 
+Ed3kChainPrefs Preferences::ed3kChain() const { return get(&Data::ed3kChain); }
+void Preferences::setEd3kChain(const Ed3kChainPrefs& val) { set(&Data::ed3kChain, val); }
+
+bool Preferences::applyEd3kChainKey(Ed3kChainPrefs& c, const QString& key, const QCborValue& val)
+{
+    if (key == QLatin1StringView("ed3kChainId")) {
+        // a u64 as a number or a decimal string; anything else keeps the value
+        bool ok = val.isInteger() && val.toInteger() >= 0;
+        uint64 v = ok ? static_cast<uint64>(val.toInteger()) : 0;
+        if (!val.isInteger())
+            v = val.toString().trimmed().toULongLong(&ok);
+        if (ok)
+            c.chainId = v;
+    } else if (key == QLatin1StringView("ed3kChainContent")) {
+        c.content = val.toString().trimmed();
+    } else if (key == QLatin1StringView("ed3kChainComment")) {
+        c.comment = val.toString().trimmed();
+    } else if (key == QLatin1StringView("ed3kChainVote")) {
+        c.vote = val.toString().trimmed();
+    } else if (key == QLatin1StringView("ed3kChainForwarder")) {
+        c.forwarder = val.toString().trimmed();
+    } else {
+        return false;
+    }
+    return true;
+}
+
+Ed3kHosterPrefs Preferences::ed3kHoster() const { return get(&Data::ed3kHoster); }
+void Preferences::setEd3kHoster(const Ed3kHosterPrefs& val) { set(&Data::ed3kHoster, val); }
+
+bool Preferences::applyEd3kHosterKey(Ed3kHosterPrefs& h, const QString& key, const QCborValue& val)
+{
+    if (key == QLatin1StringView("ed3kHosterEnabled"))
+        h.enabled = val.toBool(h.enabled);
+    else if (key == QLatin1StringView("ed3kHosterJava"))
+        h.java = val.toString().trimmed();
+    else if (key == QLatin1StringView("ed3kHosterAutoJava"))
+        h.autoJava = val.toBool(h.autoJava);
+    else if (key == QLatin1StringView("ed3kHosterMaxStreams"))
+        h.maxStreams = static_cast<uint32>(std::clamp<qint64>(val.toInteger(h.maxStreams), 1, 16));
+    else if (key == QLatin1StringView("ed3kHosterPuzzles"))
+        h.askPuzzles = val.toBool(h.askPuzzles);
+    else if (key == QLatin1StringView("ed3kHosterPublishLinks"))
+        h.publishLinks = val.toBool(h.publishLinks);
+    else if (key == QLatin1StringView("ed3kHosterFromPeers"))
+        h.fromPeers = val.toBool(h.fromPeers);
+    else if (key == QLatin1StringView("ed3kHosterAccounts")) {
+        if (!val.isArray())
+            return true;
+        QList<Ed3kHosterAccount> list;
+        for (const QCborValue& v : val.toArray()) {
+            const QCborMap m = v.toMap();
+            Ed3kHosterAccount a{m.value(QStringLiteral("host")).toString().trimmed().toLower(),
+                                m.value(QStringLiteral("user")).toString(), {}};
+            if (a.host.isEmpty() || a.user.isEmpty())
+                continue;
+            if (m.contains(QStringLiteral("password")))
+                a.password = m.value(QStringLiteral("password")).toString();
+            else if (auto old = std::ranges::find_if(h.accounts, [&a](const Ed3kHosterAccount& o) {
+                         return o.host == a.host && o.user == a.user;
+                     }); old != h.accounts.end())
+                a.password = old->password;
+            list.append(a);
+        }
+        h.accounts = list;
+    } else
+        return false;
+    return true;
+}
+
 QStringList Preferences::ed3kExtensionNames()
 {
     // the documents of extensions/*.md that a node may turn off (ED3K_EXT_*, Ed3kPlumbing);
@@ -3535,6 +3607,29 @@ QCborMap Preferences::toIpcMap() const
         prefs.insert(QStringLiteral("ed3kCreditSellFloor"), static_cast<qint64>(std::min<uint64>(c.sellFloor, INT64_MAX)));
         prefs.insert(QStringLiteral("ed3kCreditSellSlots"), static_cast<qint64>(c.sellSlots));
     }
+    {
+        const Ed3kChainPrefs c = ed3kChain();
+        prefs.insert(QStringLiteral("ed3kChainId"), QString::number(c.chainId));   // a u64: as text
+        prefs.insert(QStringLiteral("ed3kChainContent"), c.content);
+        prefs.insert(QStringLiteral("ed3kChainComment"), c.comment);
+        prefs.insert(QStringLiteral("ed3kChainVote"), c.vote);
+        prefs.insert(QStringLiteral("ed3kChainForwarder"), c.forwarder);
+    }
+    {
+        const Ed3kHosterPrefs h = ed3kHoster();
+        prefs.insert(QStringLiteral("ed3kHosterEnabled"), h.enabled);
+        prefs.insert(QStringLiteral("ed3kHosterJava"), h.java);
+        prefs.insert(QStringLiteral("ed3kHosterAutoJava"), h.autoJava);
+        prefs.insert(QStringLiteral("ed3kHosterMaxStreams"), static_cast<qint64>(h.maxStreams));
+        prefs.insert(QStringLiteral("ed3kHosterPuzzles"), h.askPuzzles);
+        prefs.insert(QStringLiteral("ed3kHosterPublishLinks"), h.publishLinks);
+        prefs.insert(QStringLiteral("ed3kHosterFromPeers"), h.fromPeers);
+        // passwords stay in the daemon (hoster.md §3)
+        QCborArray accounts;
+        for (const Ed3kHosterAccount& a : h.accounts)
+            accounts.append(QCborMap{{QStringLiteral("host"), a.host}, {QStringLiteral("user"), a.user}});
+        prefs.insert(QStringLiteral("ed3kHosterAccounts"), accounts);
+    }
 
     // Statistics
     prefs.insert(QStringLiteral("statsAverageMinutes"), static_cast<qint64>(statsAverageMinutes()));
@@ -3816,6 +3911,14 @@ void Preferences::updateFromCbor(const QCborMap& p)
         for (auto it = p.cbegin(); it != p.cend(); ++it)
             applyEd3kCreditKey(c, it.key().toString(), it.value());
         m_data->ed3kCredit = c;
+        Ed3kChainPrefs ch;
+        for (auto it = p.cbegin(); it != p.cend(); ++it)
+            applyEd3kChainKey(ch, it.key().toString(), it.value());
+        m_data->ed3kChain = ch;
+        Ed3kHosterPrefs h;
+        for (auto it = p.cbegin(); it != p.cend(); ++it)
+            applyEd3kHosterKey(h, it.key().toString(), it.value());
+        m_data->ed3kHoster = h;
     }
 
     // Statistics
@@ -5007,6 +5110,39 @@ bool Preferences::load(const QString& filePath)
                 c.sellFloor = cr["sellFloor"].as<uint64>(c.sellFloor);
                 c.sellSlots = std::min<uint32>(cr["sellSlots"].as<uint32>(c.sellSlots), 1000);
             }
+            if (auto ch = e3["chain"]) {
+                Ed3kChainPrefs& c = m_data->ed3kChain;
+                c.chainId = ch["chainId"].as<uint64>(c.chainId);
+                const auto text = [&ch](const char* k, const QString& old) {
+                    return QString::fromStdString(ch[k].as<std::string>(old.toStdString())).trimmed();
+                };
+                c.content = text("content", c.content);
+                c.comment = text("comment", c.comment);
+                c.vote = text("vote", c.vote);
+                c.forwarder = text("forwarder", c.forwarder);
+            }
+            if (auto ho = e3["hoster"]) {
+                Ed3kHosterPrefs& h = m_data->ed3kHoster;
+                h.enabled = ho["enabled"].as<bool>(h.enabled);
+                h.java = QString::fromStdString(ho["java"].as<std::string>(h.java.toStdString())).trimmed();
+                h.autoJava = ho["autoJava"].as<bool>(h.autoJava);
+                h.maxStreams = std::clamp<uint32>(ho["maxStreams"].as<uint32>(h.maxStreams), 1, 16);
+                h.askPuzzles = ho["puzzles"].as<bool>(h.askPuzzles);
+                h.publishLinks = ho["publishLinks"].as<bool>(h.publishLinks);
+                h.fromPeers = ho["fromPeers"].as<bool>(h.fromPeers);
+                h.accounts.clear();
+                if (auto acc = ho["accounts"]; acc && acc.IsSequence()) {
+                    for (const auto& a : acc) {
+                        Ed3kHosterAccount entry{QString::fromStdString(a["host"].as<std::string>("")).trimmed().toLower(),
+                                                QString::fromStdString(a["user"].as<std::string>("")), {}};
+                        if (a["passwordEncrypted"] && !m_data->notifyEmailEncKey.isEmpty())
+                            entry.password = aesDecryptFromBase64(
+                                QString::fromStdString(a["passwordEncrypted"].as<std::string>("")), m_data->notifyEmailEncKey);
+                        if (!entry.host.isEmpty() && !entry.user.isEmpty())
+                            h.accounts.append(entry);
+                    }
+                }
+            }
         }
 
         if (auto ix = root["indexers"]) {
@@ -5954,8 +6090,13 @@ bool Preferences::saveImpl(const QString& filePath) const
                                                  [](const IndexerFeed& feed) {
                                                      return !feed.url.isEmpty();
                                                  });
+    const bool haveHosterPassword = std::ranges::any_of(m_data->ed3kHoster.accounts,
+                                                        [](const Ed3kHosterAccount& a) {
+                                                            return !a.password.isEmpty();
+                                                        });
     if (encKey.isEmpty() && (!m_data->notifyEmailSmtpPassword.isEmpty() || haveCacheKey
-                             || haveUsenetPassword || haveIndexerKey || haveFeedUrl)) {
+                             || haveUsenetPassword || haveIndexerKey || haveFeedUrl
+                             || haveHosterPassword)) {
         encKey = aesRandomKey();
         m_data->notifyEmailEncKey = encKey;
     }
@@ -6154,6 +6295,40 @@ bool Preferences::saveImpl(const QString& filePath) const
         out << YAML::Key << "sell" << YAML::Value << c.sell;
         out << YAML::Key << "sellFloor" << YAML::Value << c.sellFloor;
         out << YAML::Key << "sellSlots" << YAML::Value << c.sellSlots;
+        out << YAML::EndMap;
+    }
+    {
+        const Ed3kChainPrefs& c = m_data->ed3kChain;
+        out << YAML::Key << "chain" << YAML::Value << YAML::BeginMap;
+        out << YAML::Key << "chainId" << YAML::Value << c.chainId;
+        out << YAML::Key << "content" << YAML::Value << c.content.toStdString();
+        out << YAML::Key << "comment" << YAML::Value << c.comment.toStdString();
+        out << YAML::Key << "vote" << YAML::Value << c.vote.toStdString();
+        out << YAML::Key << "forwarder" << YAML::Value << c.forwarder.toStdString();
+        out << YAML::EndMap;
+    }
+    {
+        const Ed3kHosterPrefs& h = m_data->ed3kHoster;
+        out << YAML::Key << "hoster" << YAML::Value << YAML::BeginMap;
+        out << YAML::Key << "enabled" << YAML::Value << h.enabled;
+        out << YAML::Key << "java" << YAML::Value << h.java.toStdString();
+        out << YAML::Key << "autoJava" << YAML::Value << h.autoJava;
+        out << YAML::Key << "maxStreams" << YAML::Value << h.maxStreams;
+        out << YAML::Key << "puzzles" << YAML::Value << h.askPuzzles;
+        out << YAML::Key << "publishLinks" << YAML::Value << h.publishLinks;
+        out << YAML::Key << "fromPeers" << YAML::Value << h.fromPeers;
+        out << YAML::Key << "accounts" << YAML::Value << YAML::BeginSeq;
+        for (const Ed3kHosterAccount& a : h.accounts) {
+            out << YAML::BeginMap;
+            out << YAML::Key << "host" << YAML::Value << a.host.toStdString();
+            out << YAML::Key << "user" << YAML::Value << a.user.toStdString();
+            // no key: the password is dropped rather than written in clear
+            if (!a.password.isEmpty() && !encKey.isEmpty())
+                out << YAML::Key << "passwordEncrypted" << YAML::Value
+                    << aesEncryptToBase64(a.password, encKey).toStdString();
+            out << YAML::EndMap;
+        }
+        out << YAML::EndSeq;
         out << YAML::EndMap;
     }
     out << YAML::EndMap;

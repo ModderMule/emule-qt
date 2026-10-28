@@ -33,7 +33,7 @@ class PowerManager;
 
 namespace usenet { class UsenetSession; }
 namespace bt { class BtSession; }
-namespace ed3k { class Ed3kSession; class Ed3kUsenetJoin; class UsenetJoinQueue; class Ed3kTorrentJoin; class Ed3kShared; class SharedFileSource; class Ed3kFriends; class Ed3kBootstrap; class Ed3kNames; class Ed3kSiteServer; class Ed3kCredit; }
+namespace ed3k { class Ed3kSession; class Ed3kUsenetJoin; class UsenetJoinQueue; class Ed3kTorrentJoin; class Ed3kShared; class SharedFileSource; class Ed3kFriends; class Ed3kRooms; class Ed3kBootstrap; class Ed3kNames; class Ed3kSiteServer; class Ed3kCredit; class Ed3kUploads; class Ed3kFilters; class Ed3kChain; class Ed3kHosterJoin; class Ed3kJdResolver; class Ed3kJavaRuntime; class Ed3kDownloads; class Ed3kSearch; class Ed3kSets; class Ed3kLive; }
 namespace indexer { class IndexerFeedList; class IndexerSearchList; }
 
 class DaemonApp : public QObject {
@@ -198,6 +198,8 @@ private:
     std::unique_ptr<ed3k::Ed3kShared> m_ed3kShared;
     /// ed3k friends and chat (Ed3kFriendsBridge); dies before the session
     std::unique_ptr<ed3k::Ed3kFriends> m_ed3kFriends;
+    /// ed3k rooms (Ed3kRoomsBridge); dies before the session
+    std::unique_ptr<ed3k::Ed3kRooms> m_ed3kRooms;
     /// node list sources (pref ed3kNodeLists) and the asks of ed3k:nodes links; dies before the session
     std::unique_ptr<ed3k::Ed3kBootstrap> m_ed3kBootstrap;
     /// readable names and the local website server (Ed3kNamesBridge, pref ed3kSitePort); die before the session
@@ -205,6 +207,30 @@ private:
     std::unique_ptr<ed3k::Ed3kSiteServer> m_ed3kSites;
     /// credits (Ed3kCreditBridge, prefs ed3kCredit*); dies before the session
     std::unique_ptr<ed3k::Ed3kCredit> m_ed3kCredit;
+    /// the upload queue view (GetUploads), filter lists (Ed3kFiltersBridge), the chaintube
+    /// chain (prefs ed3kChain*); die before the session
+    std::unique_ptr<ed3k::Ed3kUploads> m_ed3kUploads;
+    std::unique_ptr<ed3k::Ed3kFilters> m_ed3kFilters;
+    std::unique_ptr<ed3k::Ed3kChain> m_ed3kChain;
+    /// plain ed3k downloads (Ed3kDownloadsBridge) and ed3k keyword search (SearchType::Ed3k
+    /// through MetaSearchService); die before the session
+    std::unique_ptr<ed3k::Ed3kDownloads> m_ed3kDownloads;
+    std::unique_ptr<ed3k::Ed3kSearch> m_ed3kSearch;
+    /// followed sets (their members through m_ed3kDownloads) and live streams (on the website
+    /// server's port, Ed3kSetsBridge); die before the downloads and the website server
+    std::unique_ptr<ed3k::Ed3kSets> m_ed3kSets;
+    std::unique_ptr<ed3k::Ed3kLive> m_ed3kLive;
+    /// downloads from hoster links (hoster.md, Ed3kHosterBridge, prefs ed3kHoster*); dies before the session
+    std::unique_ptr<ed3k::Ed3kHosterJoin> m_hosterJoin;
+#ifdef EMULE_HAVE_HOSTER_JD
+    /// the JDownloader sidecar and the Java runtime it runs on
+    std::unique_ptr<ed3k::Ed3kJdResolver> m_jdResolver;
+    std::unique_ptr<ed3k::Ed3kJavaRuntime> m_javaRuntime;
+    /// the java pref the last lookup was for
+    QString m_javaLookedFor{QStringLiteral("\x01")};
+#endif
+    /// The hoster prefs into the join, the resolver and the Java lookup
+    void applyHosterConfig();
     /// The ed3k chat options from the eD2K "Messages and Comments" prefs
     void applyEd3kChatOptions();
 #ifdef EMULE_HAVE_BITTORRENT

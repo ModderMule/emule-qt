@@ -1,0 +1,608 @@
+/// @file tst_Ed3kHoster.cpp
+/// @brief Hoster links (hoster.md) through the hoster join (src/ed3k/Ed3kHosterJoin) on a real
+/// ed3k engine, with a fake resolver that writes its part file the way the JDownloader
+/// sidecar does: a link without a root downloaded whole (§4.1) and moved to incoming, the
+/// user's switch (§3), no plugin, a removed file. And the pure parts of the JD resolver and
+/// the Java runtime lookup.
+
+#include "TestHelpers.h"
+
+#include "Ed3kHosterJoin.h"
+#include "Ed3kResolver.h"
+#include "Ed3kSession.h"
+#ifdef EMULE_HAVE_HOSTER_JD
+#include "Ed3kJavaRuntime.h"
+#include "Ed3kJdResolver.h"
+#endif
+
+#include <QDir>
+#include <QDirIterator>
+#include <QFile>
+#include <QJsonArray>
+#include <QJsonDocument>
+#include <QJsonObject>
+#include <QFileInfo>
+#include <QSignalSpy>
+#include <QTemporaryDir>
+#include <QTest>
+#include <QTimer>
+
+using namespace eMule;
+using namespace eMule::ed3k;
+
+namespace {
+
+Ed3kSettings loopback(const QString& dir)
+{
+    Ed3kSettings s;
+    s.configDir = dir;
+    s.udpPort = 0;
+    s.bindAddress = QHostAddress::LocalHost;
+    s.network = QStringLiteral("ed3k test");
+    s.forceOpen = true;
+    return s;
+}
+
+QByteArray content(int size)
+{
+    QByteArray b(size, Qt::Uninitialized);
+    for (int i = 0; i < size; ++i)
+        b[i] = char((i * 31 + i / 7) & 0xff);
+    return b;
+}
+
+/// Takes links of fake.example; writes <dir>/data.part in steps, then renames it to data.
+class FakeResolver : public Ed3kResolver {
+public:
+    QByteArray data = content(700 * 1024 + 123);
+    bool gone = false;
+    int opens = 0;
+    int checks = 0;
+    /// resume: the first open stops (a hoster busy wait) once this many bytes are written
+    qsizetype breakAt = 0;
+    /// resume: the hoster cannot resume, JD starts over from 0
+    bool refuseResume = false;
+    std::uint64_t lastHave = 0;
+    QByteArray lastPrefill;   ///< the front of the part file a resumed open found
+
+    bool available() const override { return true; }
+    QString unavailableReason() const override { return {}; }
+    QString description() const override { return QStringLiteral("fake"); }
+
+    TaskId match(const QString& url) override
+    {
+        const TaskId t = next++;
+        ResolverEvent e;
+        e.kind = ResolverEvent::Kind::Matched;
+        if (url.contains(QLatin1StringView("fake.example")))
+            e.host = QStringLiteral("fake.example");
+        later(t, e);
+        return t;
+    }
+    TaskId check(const QString&, const std::optional<ResolverAccount>&) override
+    {
+        ++checks;
+        const TaskId t = next++;
+        ResolverEvent e;
+        e.kind = gone ? ResolverEvent::Kind::Gone : ResolverEvent::Kind::Found;
+        e.name = QStringLiteral("movie.bin");
+        e.size = std::uint64_t(data.size());
+        later(t, e);
+        return t;
+    }
+    TaskId expand(const QString&) override
+    {
+        const TaskId t = next++;
+        ResolverEvent e;
+        e.kind = ResolverEvent::Kind::Links;
+        e.links = {{QStringLiteral("https://fake.example/f/a"), QStringLiteral("a"), QStringLiteral("fake.example"), 1}};
+        later(t, e);
+        return t;
+    }
+    TaskId open(const QString&, const std::optional<ResolverAccount>&, const QString& dir, std::uint64_t have) override
+    {
+        ++opens;
+        const TaskId t = next++;
+        const QString part = QDir(dir).filePath(QStringLiteral("data.part"));
+        lastHave = have;
+        lastPrefill.clear();
+        if (have > 0) {
+            QFile f(part);
+            if (f.open(QIODevice::ReadOnly))
+                lastPrefill = f.readAll();
+        } else {
+            QFile::remove(part);
+        }
+        const qsizetype from = have > 0 && !refuseResume ? qsizetype(have) : 0;
+        writeStep(t, part, from, have > 0 ? std::optional<std::uint64_t>(std::uint64_t(from)) : std::nullopt);
+        return t;
+    }
+    TaskId accountCheck(const QString&, const ResolverAccount&) override
+    {
+        const TaskId t = next++;
+        ResolverEvent e;
+        e.kind = ResolverEvent::Kind::Account;
+        e.valid = true;
+        later(t, e);
+        return t;
+    }
+    void answerPuzzle(std::uint64_t, const QString&) override {}
+    void cancel(TaskId) override {}
+    void setAskPuzzles(bool) override {}
+    void setProxy(const QString&) override {}
+
+private:
+    TaskId next = 1;
+
+    void later(TaskId t, const ResolverEvent& e)
+    {
+        QTimer::singleShot(0, this, [this, t, e] { emit taskEvent(t, e); });
+    }
+    /// 300 KiB per step, a progress event each, then done (the part renamed, as JD does);
+    /// @p from: told with the first progress of a resumed open
+    void writeStep(TaskId t, const QString& part, qsizetype at, std::optional<std::uint64_t> from = std::nullopt)
+    {
+        QTimer::singleShot(5, this, [this, t, part, at, from] {
+            const qsizetype n = std::min<qsizetype>(300 * 1024, data.size() - at);
+            QFile f(part);
+            if (!f.open(QIODevice::ReadWrite) || !f.seek(at) || f.write(data.constData() + at, n) != n)
+                return;
+            f.close();
+            ResolverEvent e;
+            e.kind = ResolverEvent::Kind::Progress;
+            e.bytes = std::uint64_t(at + n);
+            e.total = std::uint64_t(data.size());
+            e.path = part;
+            e.from = from;
+            emit taskEvent(t, e);
+            if (opens == 1 && breakAt > 0 && at + n >= breakAt) {
+                // the join reads what is on disk first, then the hoster says busy
+                QTimer::singleShot(500, this, [this, t] {
+                    ResolverEvent w;
+                    w.kind = ResolverEvent::Kind::Wait;
+                    w.text = QStringLiteral("busy");
+                    w.seconds = 1;
+                    emit taskEvent(t, w);
+                });
+                return;
+            }
+            if (at + n < data.size()) {
+                writeStep(t, part, at + n);
+                return;
+            }
+            const QString done = part.chopped(5);
+            QFile::rename(part, done);
+            ResolverEvent d;
+            d.kind = ResolverEvent::Kind::Done;
+            d.size = std::uint64_t(data.size());
+            d.path = done;
+            d.name = QStringLiteral("movie.bin");
+            emit taskEvent(t, d);
+        });
+    }
+};
+
+struct Rig {
+    QTemporaryDir tmp;
+    Ed3kSession session;
+    FakeResolver resolver;
+    std::unique_ptr<Ed3kHosterJoin> join;
+    Ed3kHosterPrefs prefs;
+
+    bool start(bool enabled)
+    {
+        if (!session.start(loopback(tmp.filePath(QStringLiteral("cfg")))))
+            return false;
+        join = std::make_unique<Ed3kHosterJoin>(session, tmp.filePath(QStringLiteral("cfg")));
+        join->setResolver(&resolver);
+        prefs.enabled = enabled;
+        join->setConfig(prefs, tmp.filePath(QStringLiteral("temp")), tmp.filePath(QStringLiteral("incoming")));
+        join->start();
+        return true;
+    }
+    [[nodiscard]] Ed3kHosterJoin::State state(quint32 id) const { return join->item(id)->state; }
+};
+
+} // namespace
+
+class tst_Ed3kHoster : public QObject {
+    Q_OBJECT
+
+private slots:
+    void linksIn_takesHttpLinksOnly()
+    {
+        const QStringList l = Ed3kHosterJoin::linksIn(QStringLiteral(
+            "see https://a.example/x and\nhttp://b.example/y?z=1\nftp://c.example/f https://a.example/x"));
+        QCOMPARE(l, (QStringList{QStringLiteral("https://a.example/x"), QStringLiteral("http://b.example/y?z=1")}));
+    }
+
+    /// §4.1: no ALIAS record, the link downloaded whole, its root computed, the file in incoming
+    void rootless_downloadsWholeAndCompletes()
+    {
+        Rig r;
+        QVERIFY(r.start(true));
+        const auto ids = r.join->addLinks(QStringLiteral("https://fake.example/f/1"));
+        QCOMPARE(ids.size(), 1);
+        QTRY_COMPARE_WITH_TIMEOUT(r.state(ids[0]), Ed3kHosterJoin::State::Complete, 60000);
+        const auto item = *r.join->item(ids[0]);
+        QCOMPARE(item.name, QStringLiteral("movie.bin"));
+        QCOMPARE(item.size, std::uint64_t(r.resolver.data.size()));
+        QVERIFY(!item.rootHex.isEmpty());
+        QVERIFY(item.file.startsWith(r.tmp.filePath(QStringLiteral("incoming"))));
+        QFile f(item.file);
+        QVERIFY(f.open(QIODevice::ReadOnly));
+        QCOMPARE(f.readAll(), r.resolver.data);
+        QCOMPARE(r.resolver.checks, 1);
+        QCOMPARE(r.resolver.opens, 1);
+        // the same link again is not a second item
+        QVERIFY(r.join->addLinks(QStringLiteral("https://fake.example/f/1")).isEmpty());
+    }
+
+    /// §3: no puzzle, timer or account without the user's switch: nothing is opened
+    void switchedOff_needsUser()
+    {
+        Rig r;
+        QVERIFY(r.start(false));
+        const auto ids = r.join->addLinks(QStringLiteral("https://fake.example/f/2"));
+        QTRY_COMPARE_WITH_TIMEOUT(r.state(ids[0]), Ed3kHosterJoin::State::NeedsUser, 10000);
+        QCOMPARE(r.resolver.opens, 0);
+        // switched on: it goes on by itself
+        r.prefs.enabled = true;
+        r.join->setConfig(r.prefs, r.tmp.filePath(QStringLiteral("temp")), r.tmp.filePath(QStringLiteral("incoming")));
+        QTRY_COMPARE_WITH_TIMEOUT(r.state(ids[0]), Ed3kHosterJoin::State::Complete, 60000);
+    }
+
+    void unknownHoster_noResolver()
+    {
+        Rig r;
+        QVERIFY(r.start(true));
+        const auto ids = r.join->addLinks(QStringLiteral("https://other.example/f/3"));
+        QTRY_COMPARE_WITH_TIMEOUT(r.state(ids[0]), Ed3kHosterJoin::State::NoResolver, 10000);
+    }
+
+    void removedFile_gone()
+    {
+        Rig r;
+        r.resolver.gone = true;
+        QVERIFY(r.start(true));
+        const auto ids = r.join->addLinks(QStringLiteral("https://fake.example/f/4"));
+        QTRY_COMPARE_WITH_TIMEOUT(r.state(ids[0]), Ed3kHosterJoin::State::Gone, 30000);
+        QCOMPARE(r.resolver.opens, 0);
+    }
+
+    /// items survive a restart; an unfinished one starts again
+    void items_savedAndLoaded()
+    {
+        Rig r;
+        QVERIFY(r.start(true));
+        const auto ids = r.join->addLinks(QStringLiteral("https://fake.example/f/5"));
+        QTRY_COMPARE_WITH_TIMEOUT(r.state(ids[0]), Ed3kHosterJoin::State::Complete, 60000);
+        r.join->stop();
+        Ed3kHosterJoin again(r.session, r.tmp.filePath(QStringLiteral("cfg")));
+        QCOMPARE(again.items().size(), 1);
+        QCOMPARE(again.items().first().state, Ed3kHosterJoin::State::Complete);
+        QCOMPARE(again.items().first().url, QStringLiteral("https://fake.example/f/5"));
+    }
+
+    /// a stream that broke goes on where the core's hash stands: the part file the resolver
+    /// gets holds the real bytes up to there (JD checks the file's hash at the end)
+    void resume_rootless_goesOnFromHash()
+    {
+        Rig r;
+        r.resolver.data = content(3 * 1024 * 1024 + 77);
+        r.resolver.breakAt = 1800 * 1024;
+        QVERIFY(r.start(true));
+        const auto ids = r.join->addLinks(QStringLiteral("https://fake.example/f/r1"));
+        QTRY_COMPARE_WITH_TIMEOUT(r.state(ids[0]), Ed3kHosterJoin::State::Complete, 60000);
+        QCOMPARE(r.resolver.opens, 2);
+        QVERIFY2(r.resolver.lastHave >= 1024 * 1024, qPrintable(QString::number(r.resolver.lastHave)));
+        QCOMPARE(r.resolver.lastPrefill, r.resolver.data.left(qsizetype(r.resolver.lastHave)));
+        QFile f(r.join->item(ids[0])->file);
+        QVERIFY(f.open(QIODevice::ReadOnly));
+        QCOMPARE(f.readAll(), r.resolver.data);
+    }
+
+    /// a hoster that cannot resume: the bytes come again from 0 and the core hashes again
+    void resume_refused_startsOver()
+    {
+        Rig r;
+        r.resolver.data = content(3 * 1024 * 1024 + 77);
+        r.resolver.breakAt = 1800 * 1024;
+        r.resolver.refuseResume = true;
+        QVERIFY(r.start(true));
+        const auto ids = r.join->addLinks(QStringLiteral("https://fake.example/f/r2"));
+        QTRY_COMPARE_WITH_TIMEOUT(r.state(ids[0]), Ed3kHosterJoin::State::Complete, 60000);
+        QCOMPARE(r.resolver.opens, 2);
+        QVERIFY(r.resolver.lastHave > 0);
+        QFile f(r.join->item(ids[0])->file);
+        QVERIFY(f.open(QIODevice::ReadOnly));
+        QCOMPARE(f.readAll(), r.resolver.data);
+    }
+
+    /// a rooted item saved with verified blocks goes on after them, without a new lookup
+    void resume_rooted_afterBlocksHeld()
+    {
+        Rig r;
+        QVERIFY(r.start(true));
+        const auto ids = r.join->addLinks(QStringLiteral("https://fake.example/f/r3"));
+        QTRY_COMPARE_WITH_TIMEOUT(r.state(ids[0]), Ed3kHosterJoin::State::Complete, 60000);
+        r.join->stop();
+        r.join.reset();
+        QString itemsPath;
+        for (QDirIterator it(r.tmp.path(), {QStringLiteral("items.json")}, QDir::Files, QDirIterator::Subdirectories); it.hasNext();)
+            itemsPath = it.next();
+        QVERIFY(!itemsPath.isEmpty());
+        // as if stopped with 6 blocks of 256 KiB held under the root
+        const QByteArray data = content(3 * 1024 * 1024 + 77);
+        const QString part = r.tmp.filePath(QStringLiteral("held.part"));
+        {
+            QFile f(part);
+            QVERIFY(f.open(QIODevice::WriteOnly));
+            f.write(data.left(6 * 256 * 1024));
+        }
+        QFile items(itemsPath);
+        QVERIFY(items.open(QIODevice::ReadOnly));
+        QJsonArray list = QJsonDocument::fromJson(items.readAll()).array();
+        items.close();
+        QJsonObject o = list.at(0).toObject();
+        o[QStringLiteral("state")] = int(Ed3kHosterJoin::State::Downloading);
+        o[QStringLiteral("root")] = QString(64, QLatin1Char('a'));
+        o[QStringLiteral("size")] = qint64(data.size());
+        o[QStringLiteral("file")] = part;
+        o[QStringLiteral("have")] = QJsonArray{QJsonArray{0, 6}};
+        list[0] = o;
+        QVERIFY(items.open(QIODevice::WriteOnly | QIODevice::Truncate));
+        items.write(QJsonDocument(list).toJson());
+        items.close();
+
+        r.resolver.opens = 0;
+        r.join = std::make_unique<Ed3kHosterJoin>(r.session, r.tmp.filePath(QStringLiteral("cfg")));
+        QCOMPARE(r.join->item(ids[0])->done, std::uint64_t(6 * 256 * 1024));
+        r.join->setResolver(&r.resolver);
+        r.join->setConfig(r.prefs, r.tmp.filePath(QStringLiteral("temp")), r.tmp.filePath(QStringLiteral("incoming")));
+        r.join->start();
+        QTRY_COMPARE_WITH_TIMEOUT(r.resolver.opens, 1, 20000);
+        QCOMPARE(r.resolver.lastHave, std::uint64_t(6 * 256 * 1024));
+        QCOMPARE(r.resolver.lastPrefill, data.left(6 * 256 * 1024));
+        QVERIFY(r.join->item(ids[0])->verified);
+    }
+
+    /// no resolver at all (EMULE_HOSTER_JD off): the item says so
+    void noResolver_built()
+    {
+        QTemporaryDir tmp;
+        Ed3kSession session;
+        QVERIFY(session.start(loopback(tmp.filePath(QStringLiteral("cfg")))));
+        Ed3kHosterJoin join(session, tmp.filePath(QStringLiteral("cfg")));
+        join.start();
+        const auto ids = join.addLinks(QStringLiteral("https://fake.example/f/6"));
+        QCOMPARE(join.item(ids[0])->state, Ed3kHosterJoin::State::NoResolver);
+    }
+
+#ifdef EMULE_HAVE_HOSTER_JD
+    void jdResolver_parsesEvents()
+    {
+        using K = ResolverEvent::Kind;
+        auto e = Ed3kJdResolver::parseEvent(
+            R"({"id":7,"ev":"found","url":"u","host":"h.example","name":"a.rar","size":42,"hashType":"sha1","hash":"ab"})");
+        QVERIFY(e);
+        QCOMPARE(e->first, Ed3kResolver::TaskId{7});
+        QCOMPARE(e->second.kind, K::Found);
+        QCOMPARE(e->second.size, std::uint64_t{42});
+        QCOMPARE(e->second.hashType, QStringLiteral("sha1"));
+        e = Ed3kJdResolver::parseEvent(R"({"id":3,"ev":"needsUser","kind":"login"})");
+        QCOMPARE(e->second.kind, K::NeedsUser);
+        QCOMPARE(e->second.text, QStringLiteral("login"));
+        e = Ed3kJdResolver::parseEvent(R"({"id":3,"ev":"wait","seconds":30,"reason":"quota"})");
+        QCOMPARE(e->second.kind, K::Wait);
+        QCOMPARE(e->second.seconds, std::uint64_t{30});
+        QCOMPARE(e->second.text, QStringLiteral("quota"));
+        QVERIFY(!e->second.isFinal());
+        e = Ed3kJdResolver::parseEvent(R"({"id":4,"ev":"puzzle","puzzle":9,"image":"aGk=","timeout":300})");
+        QCOMPARE(e->second.image, QByteArray("hi"));
+        QCOMPARE(e->second.puzzle, std::uint64_t{9});
+        QVERIFY(!Ed3kJdResolver::parseEvent(R"({"id":1,"ev":"ok"})"));
+        QVERIFY(!Ed3kJdResolver::parseEvent("not json"));
+    }
+
+    void jdResolver_unavailableWithoutJava()
+    {
+        Ed3kJdResolver r;
+        QVERIFY(!r.available());
+        QSignalSpy spy(&r, &Ed3kResolver::taskEvent);
+        r.match(QStringLiteral("https://x.example/"));
+        QTRY_COMPARE(spy.size(), 1);
+        QCOMPARE(spy.at(0).at(1).value<ResolverEvent>().kind, ResolverEvent::Kind::Failed);
+    }
+
+    /// nothing is fetched until hoster downloads are switched on
+    void javaRuntime_downloadNeedsHosters()
+    {
+        QTemporaryDir tmp;
+        Ed3kJavaRuntime java(tmp.path());
+        QVERIFY(!java.allowed());
+        QVERIFY(!java.download());
+        QCOMPARE(java.state(), Ed3kJavaRuntime::State::Unknown);
+        QVERIFY(!QFileInfo::exists(java.runtimeDir() + QStringLiteral(".tmp")));
+    }
+
+    void javaRuntime_parsesProperties()
+    {
+        const QByteArray out = "Property settings:\n    java.home = /opt/jdk\n    java.specification.version = 21\n"
+                               "    java.vendor = Eclipse Adoptium\n    os.arch = aarch64\nopenjdk version \"21.0.5\"\n";
+        const auto info = Ed3kJavaRuntime::parseProperties(out, QStringLiteral("/opt/jdk/bin/java"));
+        QVERIFY(info);
+        QCOMPARE(info->feature, 21);
+        QCOMPARE(info->arch, QStringLiteral("arm64"));
+        QCOMPARE(info->vendor, QStringLiteral("Eclipse Adoptium"));
+        const auto old = Ed3kJavaRuntime::parseProperties("    java.specification.version = 1.8\n    os.arch = amd64\n", {});
+        QCOMPARE(old->feature, 8);
+        QCOMPARE(old->arch, QStringLiteral("x86_64"));
+        QVERIFY(!Ed3kJavaRuntime::parseProperties("garbage", {}));
+    }
+
+    void javaRuntime_parsesAdoptium()
+    {
+        // no multi-line raw string here: moc loses the next slot after one
+        const QByteArray json = "[{\"binary\":{\"package\":{\"link\":\"https://github.com/adoptium/x.tar.gz\","
+                                "\"checksum\":\"0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef\","
+                                "\"name\":\"x.tar.gz\",\"size\":47000000}}}]";
+        const auto p = Ed3kJavaRuntime::parseAdoptium(json);
+        QVERIFY(p);
+        QCOMPARE(p->name, QStringLiteral("x.tar.gz"));
+        QCOMPARE(p->size, qint64{47000000});
+        // a name with a path, a plain http link or a bad checksum is refused
+        QVERIFY(!Ed3kJavaRuntime::parseAdoptium(QByteArray(json).replace("x.tar.gz\",\"size", "../x\",\"size")));
+        QVERIFY(!Ed3kJavaRuntime::parseAdoptium(QByteArray(json).replace("https://github", "http://github")));
+        QVERIFY(!Ed3kJavaRuntime::parseAdoptium(QByteArray(json).replace("0123456789abcdef0123", "xyz")));
+        QVERIFY(Ed3kJavaRuntime::adoptiumUrl().startsWith(QStringLiteral("https://api.adoptium.net/v3/assets/latest/21/")));
+    }
+
+    void javaRuntime_candidatesStartWithPref()
+    {
+        QTemporaryDir tmp;
+        const QString fake = tmp.filePath(QStringLiteral("java"));
+        QFile f(fake);
+        QVERIFY(f.open(QIODevice::WriteOnly));
+        f.close();
+        Ed3kJavaRuntime rt(tmp.path());
+        const QStringList c = rt.candidates(fake);
+        QVERIFY(!c.isEmpty());
+        QCOMPARE(c.first(), QDir::cleanPath(fake));
+        QCOMPARE(c.count(QDir::cleanPath(fake)), 1);
+    }
+
+    /// The real thing: a Java found on this machine, resolver.zip installed, JDownloader's
+    /// archive.org plugin, the file through the join into incoming. Network: only with
+    /// EMULE_HOSTER_LIVE=1 and a built resolver.zip (scripts/build-hoster-resolver.sh).
+    void live_jdResolverDownloads()
+    {
+        if (qEnvironmentVariable("EMULE_HOSTER_LIVE") != QLatin1StringView("1"))
+            QSKIP("live: set EMULE_HOSTER_LIVE=1");
+        const QString zip = Ed3kJdResolver::findBundledZip();
+        if (zip.isEmpty())
+            QSKIP("no resolver.zip: run scripts/build-hoster-resolver.sh");
+        QTemporaryDir tmp;
+        Ed3kJavaRuntime java(tmp.path());
+        java.locate({});
+        QTRY_VERIFY_WITH_TIMEOUT(java.state() != Ed3kJavaRuntime::State::Probing, 60000);
+        if (!java.runtime())
+            QSKIP("no Java 17+ on this machine");
+
+        Ed3kJdResolver resolver;
+        JdResolverConfig cfg;
+        cfg.java = java.runtime()->java;
+        cfg.dataDir = tmp.filePath(QStringLiteral("resolver"));
+        cfg.zip = zip;
+        resolver.setConfig(cfg);
+        QVERIFY2(resolver.available(), qPrintable(resolver.unavailableReason()));
+
+        Ed3kSession session;
+        QVERIFY(session.start(loopback(tmp.filePath(QStringLiteral("cfg")))));
+        Ed3kHosterJoin join(session, tmp.filePath(QStringLiteral("cfg")));
+        join.setResolver(&resolver);
+        Ed3kHosterPrefs prefs;
+        prefs.enabled = true;
+        join.setConfig(prefs, tmp.filePath(QStringLiteral("temp")), tmp.filePath(QStringLiteral("incoming")));
+        join.start();
+        const auto ids = join.addLinks(QStringLiteral("https://archive.org/download/testmp3testfile/mpthreetest.mp3"));
+        QCOMPARE(ids.size(), 1);
+        QTRY_VERIFY_WITH_TIMEOUT(join.item(ids[0])->state == Ed3kHosterJoin::State::Complete
+                                     || join.item(ids[0])->state == Ed3kHosterJoin::State::Failed,
+                                 180000);
+        const auto item = *join.item(ids[0]);
+        QVERIFY2(item.state == Ed3kHosterJoin::State::Complete, qPrintable(item.reasonArg));
+        QCOMPARE(item.name, QStringLiteral("mpthreetest.mp3"));
+        QCOMPARE(QFileInfo(item.file).size(), qint64(198658));
+        QVERIFY(!item.rootHex.isEmpty());
+    }
+
+    /// Resume through the real sidecar: the front of the file in data.part, JD goes on from
+    /// there (archive.org takes ranges) and tells from = have; the whole file is the same.
+    void live_jdResolverResumes()
+    {
+        if (qEnvironmentVariable("EMULE_HOSTER_LIVE") != QLatin1StringView("1"))
+            QSKIP("live: set EMULE_HOSTER_LIVE=1");
+        const QString zip = Ed3kJdResolver::findBundledZip();
+        if (zip.isEmpty())
+            QSKIP("no resolver.zip: run scripts/build-hoster-resolver.sh");
+        QTemporaryDir tmp;
+        Ed3kJavaRuntime java(tmp.path());
+        java.locate({});
+        QTRY_VERIFY_WITH_TIMEOUT(java.state() != Ed3kJavaRuntime::State::Probing, 60000);
+        if (!java.runtime())
+            QSKIP("no Java 17+ on this machine");
+        Ed3kJdResolver resolver;
+        JdResolverConfig cfg;
+        cfg.java = java.runtime()->java;
+        cfg.dataDir = tmp.filePath(QStringLiteral("resolver"));
+        cfg.zip = zip;
+        resolver.setConfig(cfg);
+        QVERIFY2(resolver.available(), qPrintable(resolver.unavailableReason()));
+
+        const QString url = QStringLiteral("https://archive.org/download/testmp3testfile/mpthreetest.mp3");
+        // the whole file once, for its bytes
+        std::map<Ed3kResolver::TaskId, std::vector<ResolverEvent>> seen;
+        connect(&resolver, &Ed3kResolver::taskEvent, this,
+                [&seen](Ed3kResolver::TaskId t, const ResolverEvent& e) { seen[t].push_back(e); });
+        const auto done = [&seen](Ed3kResolver::TaskId t) -> const ResolverEvent* {
+            for (const ResolverEvent& e : seen[t])
+                if (e.kind != ResolverEvent::Kind::Progress && e.kind != ResolverEvent::Kind::Wait)
+                    return &e;
+            return nullptr;
+        };
+        const QString dir1 = tmp.filePath(QStringLiteral("t1"));
+        QDir().mkpath(dir1);
+        const auto t1 = resolver.open(url, std::nullopt, dir1, 0);
+        QTRY_VERIFY_WITH_TIMEOUT(done(t1), 180000);
+        QCOMPARE(done(t1)->kind, ResolverEvent::Kind::Done);
+        QFile whole(done(t1)->path);
+        QVERIFY(whole.open(QIODevice::ReadOnly));
+        const QByteArray data = whole.readAll();
+        QVERIFY(data.size() > 100000);
+
+        // again with the first half on disk
+        const qsizetype have = data.size() / 2;
+        const QString dir2 = tmp.filePath(QStringLiteral("t2"));
+        QDir().mkpath(dir2);
+        {
+            QFile part(QDir(dir2).filePath(QStringLiteral("data.part")));
+            QVERIFY(part.open(QIODevice::WriteOnly));
+            part.write(data.left(have));
+        }
+        const auto t2 = resolver.open(url, std::nullopt, dir2, std::uint64_t(have));
+        QTRY_VERIFY_WITH_TIMEOUT(done(t2), 180000);
+        QCOMPARE(done(t2)->kind, ResolverEvent::Kind::Done);
+        std::optional<std::uint64_t> from;
+        for (const ResolverEvent& e : seen[t2])
+            if (e.from && !from)
+                from = e.from;
+        QVERIFY(from);
+        QCOMPARE(*from, std::uint64_t(have));
+        QFile again(done(t2)->path);
+        QVERIFY(again.open(QIODevice::ReadOnly));
+        QCOMPARE(again.readAll(), data);
+    }
+
+    /// Temurin fetched from adoptium.net, its SHA-256 checked, unpacked with tar and found.
+    /// About 45 MB: only with EMULE_HOSTER_LIVE_JAVA=1.
+    void live_javaDownload()
+    {
+        if (qEnvironmentVariable("EMULE_HOSTER_LIVE_JAVA") != QLatin1StringView("1"))
+            QSKIP("live: set EMULE_HOSTER_LIVE_JAVA=1");
+        QTemporaryDir tmp;
+        Ed3kJavaRuntime java(tmp.path());
+        java.setAllowed(true);
+        QVERIFY(java.download());
+        QTRY_VERIFY_WITH_TIMEOUT(java.state() == Ed3kJavaRuntime::State::Ready || java.state() == Ed3kJavaRuntime::State::Failed
+                                     || java.state() == Ed3kJavaRuntime::State::Missing,
+                                 600000);
+        QVERIFY2(java.state() == Ed3kJavaRuntime::State::Ready, qPrintable(java.error()));
+        QCOMPARE(java.runtime()->feature, Ed3kJavaRuntime::kDownloadFeature);
+        QVERIFY(java.runtime()->java.startsWith(java.runtimeDir()));
+    }
+#endif
+};
+
+QTEST_GUILESS_MAIN(tst_Ed3kHoster)
+#include "tst_Ed3kHoster.moc"

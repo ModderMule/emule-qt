@@ -23,6 +23,7 @@
 #include "controls/UploadStatusDelegate.h"
 #include "dialogs/CategoryDialog.h"
 #include "dialogs/ClientDetailDialog.h"
+#include "dialogs/Ed3kSetsDialog.h"
 #include "dialogs/CollectionViewDialog.h"
 #include "dialogs/FindInListDialog.h"
 #include "dialogs/RenameFileDialog.h"
@@ -50,6 +51,7 @@
 #include <QComboBox>
 #include <QCursor>
 #include <QDesktopServices>
+#include <QFileInfo>
 #include <QDialog>
 #include <QDialogButtonBox>
 #include <QFont>
@@ -123,6 +125,12 @@ ClientRow parseClient(const QCborMap& m)
     row.isFriend        = m.value(QStringLiteral("isFriend")).toBool();
     row.isUrl           = m.value(QStringLiteral("isUrl")).toBool();
     row.noViewShared    = m.value(QStringLiteral("noViewSharedFiles")).toBool();
+    // ed3k upload queue rows (Ed3kUploadsBridge): no eD2K client behind them
+    if (m.value(QStringLiteral("network")).toString() == QLatin1String("ed3k")) {
+        row.network = ClientNetwork::Ed3k;
+        row.noViewShared = true;
+        row.remoteQueueRank = static_cast<int>(m.value(QStringLiteral("queueRank")).toInteger());
+    }
 
     // New fields for TODO columns
     row.uploadStartDelay = m.value(QStringLiteral("uploadStartDelay")).toInteger();
@@ -257,6 +265,10 @@ void TransferPanel::setIpcClient(IpcClient* client)
     connect(m_ipc, &IpcClient::downloadUpdated,     this, nudge);
     connect(m_ipc, &IpcClient::uploadUpdated,       this, nudge);
     connect(m_ipc, &IpcClient::knownClientsChanged, this, nudge);
+    // the ed3k list comes whole with its push
+    connect(m_ipc, &IpcClient::ed3kDownloadsChanged, this, [this](const IpcMessage& msg) {
+        takeEd3kDownloads(msg.fieldMap(0));
+    });
 
     // Another GUI — or this one's own edit — changed the list.
     connect(m_ipc, &IpcClient::categoriesChanged, this,
@@ -635,6 +647,10 @@ void TransferPanel::onDownloadContextMenu(const QPoint& pos)
         pasteAct->setEnabled(hasImportableLink && m_ipc && m_ipc->isConnected());
         connect(pasteAct, &QAction::triggered, this, &TransferPanel::pasteDownloadLinks);
     }
+    // followed ed3k sets and live streams (no MFC original)
+    m_downloadMenu->addAction(menuIcon("Folders.ico"), tr("ed3k Sets..."), this, [this] {
+        Ed3kSetsDialog::showDialog(this, m_ipc);
+    })->setEnabled(m_ipc && m_ipc->isConnected());
 
     m_downloadMenu->addSeparator();
 
@@ -696,6 +712,17 @@ void TransferPanel::onDownloadContextMenu(const QPoint& pos)
         m_downloadMenu->addSeparator();
         m_downloadMenu->addAction(tr("Show Toolbar"), this,
                                   [this] { setDownloadToolbarShown(true); });
+    }
+
+    // ed3k rows only: what the ed3k list does (Ed3kDownloadControl, open); the eD2K-only
+    // entries (preview, details, comments, sources, eD2K links, ...) are off
+    if (hasSel && std::all_of(selectedDls.begin(), selectedDls.end(), [](const DownloadRow* d) { return d && d->isEd3k(); })) {
+        const QSet<QString> ed3kActions{tr("Priority (Download)"), tr("Pause"), tr("Stop"), tr("Resume"), tr("Cancel"),
+                                        tr("Open File"), tr("Clear Completed"), tr("Assign To Category"),
+                                        tr("Paste eD2K Links"), tr("ed3k Sets..."), tr("Find..."), tr("Show Toolbar")};
+        for (QAction* act : m_downloadMenu->actions())
+            if (!act->isSeparator() && !ed3kActions.contains(act->text()))
+                act->setEnabled(false);
     }
 
     m_downloadMenu->popup(m_downloadView->viewport()->mapToGlobal(pos));
@@ -1078,7 +1105,8 @@ QWidget* TransferPanel::createBottomPane()
             if (!proxy) return;
             const QModelIndex srcIdx = proxy->mapToSource(proxyIdx);
             const auto* client = model->clientAt(srcIdx.row());
-            if (client)
+            // ed3k upload queue rows have no eD2K client to detail
+            if (client && client->network != ClientNetwork::Ed3k)
                 fetchAndShowClientDetails(client->userHash,
                                           makeClientWalker(view, model, client->userHash));
         };
@@ -1312,14 +1340,107 @@ QTreeView* TransferPanel::createClientView(ClientListModel* model,
 // IPC data requests
 // ---------------------------------------------------------------------------
 
+void TransferPanel::requestEd3kDownloads()
+{
+    if (!m_ipc || !m_ipc->isConnected())
+        return;
+    m_ipc->requestEd3kDownloads(this, [this](const IpcMessage& resp) {
+        if (resp.type() == IpcMsgType::Result && resp.fieldBool(0))
+            takeEd3kDownloads(resp.fieldMap(1));
+    });
+}
+
+void TransferPanel::takeEd3kDownloads(const QCborMap& list)
+{
+    static const QString prio[] = {QStringLiteral("low"), QStringLiteral("normal"), QStringLiteral("high"),
+                                   QStringLiteral("veryHigh"), QStringLiteral("veryLow")};
+    std::vector<DownloadRow> rows;
+    for (const auto& v : list.value(QStringLiteral("downloads")).toArray()) {
+        const QCborMap m = v.toMap();
+        DownloadRow row;
+        row.network = 1;
+        row.hash = m.value(QStringLiteral("root")).toString();
+        row.fileName = m.value(QStringLiteral("name")).toString();
+        row.fileSize = m.value(QStringLiteral("size")).toInteger();
+        row.completedSize = m.value(QStringLiteral("done")).toInteger();
+        row.percentCompleted = row.fileSize > 0 ? 100.0 * double(row.completedSize) / double(row.fileSize) : 0.0;
+        row.datarate = m.value(QStringLiteral("rate")).toInteger();
+        row.sourceCount = int(m.value(QStringLiteral("sources")).toInteger());
+        row.transferringSrcCount = int(m.value(QStringLiteral("transferring")).toInteger());
+        row.availableSrcCount = row.sourceCount;
+        row.priority = prio[std::clamp<qint64>(m.value(QStringLiteral("priority")).toInteger(1), 0, 4)];
+        row.category = m.value(QStringLiteral("category")).toInteger();
+        row.addedOn = m.value(QStringLiteral("addedOn")).toInteger();
+        row.ed3kPath = m.value(QStringLiteral("path")).toString();
+        row.fileType = getFileTypeByName(row.fileName);
+        // the eD2K status tokens (statusText): verifying shows as "Completing (Hashing)"
+        switch (m.value(QStringLiteral("state")).toInteger()) {
+        case 1: row.status = QStringLiteral("paused"); row.isPaused = true; break;
+        case 2: row.status = QStringLiteral("completing"); row.fileOp = 1; break;
+        case 3: row.status = QStringLiteral("complete"); row.percentCompleted = 100.0; break;
+        case 4: row.status = QStringLiteral("error"); break;
+        default: row.status = row.transferringSrcCount > 0 ? QStringLiteral("ready") : QStringLiteral("empty"); break;
+        }
+        if (row.datarate > 0 && row.fileSize > row.completedSize)
+            row.timeRemaining = (row.fileSize - row.completedSize) / row.datarate;
+        // the bar: what is held drawn as one run from the start (the blocks' map is not sent)
+        if (row.fileSize > 0) {
+            row.hasBarRanges = true;
+            if (!row.isComplete() && row.completedSize < row.fileSize)
+                row.gaps = {row.completedSize, row.fileSize - 1};
+        }
+        rows.push_back(std::move(row));
+    }
+    m_ed3kRows = std::move(rows);
+    applyDownloadRows();
+}
+
+void TransferPanel::applyDownloadRows()
+{
+    std::vector<DownloadRow> all = m_ed2kRows;
+    all.insert(all.end(), m_ed3kRows.begin(), m_ed3kRows.end());
+    m_downloadModel->setDownloads(std::move(all));
+}
+
+QStringList TransferPanel::takeEd3kHashes(QStringList& hashes) const
+{
+    QStringList roots;
+    for (auto it = hashes.begin(); it != hashes.end();) {
+        if (const DownloadRow* d = m_downloadModel->findByHash(*it); d && d->isEd3k()) {
+            roots << *it;
+            it = hashes.erase(it);
+        } else {
+            ++it;
+        }
+    }
+    return roots;
+}
+
+void TransferPanel::sendEd3kControl(const QStringList& roots, int action, qint64 value)
+{
+    if (!m_ipc || !m_ipc->isConnected())
+        return;
+    QPointer<TransferPanel> self(this);
+    for (const QString& root : roots)
+        m_ipc->controlEd3kDownload(root, action, value, [self](const IpcMessage& reply) {
+            if (!self)
+                return;
+            if (reply.type() == IpcMsgType::Result && !reply.fieldBool(0))
+                StatusBarNotifier::post(reply.fieldMap(1).value(QStringLiteral("error")).toString(), 5000);
+            self->requestEd3kDownloads();
+        });
+}
+
 void TransferPanel::requestDownloads()
 {
     if (!m_ipc || !m_ipc->isConnected())
         return;
 
+    requestEd3kDownloads();
     IpcMessage req(IpcMsgType::GetDownloads);
     m_ipc->sendPoll(this, std::move(req), [this](const IpcMessage& resp) {
         if (resp.type() != IpcMsgType::Result || !resp.fieldBool(0)) {
+            m_ed2kRows.clear();
             m_downloadModel->clear();
             updateToolbarLabels();
             return;
@@ -1396,7 +1517,9 @@ void TransferPanel::requestDownloads()
         }
 
         // Incremental update preserves selection, expansion, and scroll natively
-        m_downloadModel->setDownloads(std::move(rows));
+        // m_downloadModel->setDownloads(std::move(rows));   (was: eD2K only; now with the ed3k rows)
+        m_ed2kRows = std::move(rows);
+        applyDownloadRows();
         updateCategoryTabInfo();
         updateToolbarLabels();
         // No category rebuild here: the tabs only ever change when the list
@@ -1605,9 +1728,15 @@ void TransferPanel::sendDownloadAction(const QString& hash, int action)
     });
 }
 
-void TransferPanel::sendDownloadActionBatch(const QStringList& hashes, int action)
+void TransferPanel::sendDownloadActionBatch(const QStringList& hashesIn, int action)
 {
-    if (!m_ipc || !m_ipc->isConnected() || hashes.isEmpty())
+    if (!m_ipc || !m_ipc->isConnected() || hashesIn.isEmpty())
+        return;
+    // ed3k rows: pause 0, resume 1, cancel 2 are the same actions there
+    QStringList hashes = hashesIn;
+    if (const QStringList roots = takeEd3kHashes(hashes); !roots.isEmpty())
+        sendEd3kControl(roots, action);
+    if (hashes.isEmpty())
         return;
 
     IpcMsgType msgType;
@@ -1639,10 +1768,14 @@ void TransferPanel::sendSetPriority(const QString& hash, int priority, bool isAu
     });
 }
 
-void TransferPanel::sendSetPriorityBatch(const QStringList& hashes, int priority, bool isAuto)
+void TransferPanel::sendSetPriorityBatch(const QStringList& hashesIn, int priority, bool isAuto)
 {
     if (!m_ipc)
         return;
+    // ed3k: no auto priority, normal stands in for it
+    QStringList hashes = hashesIn;
+    if (const QStringList roots = takeEd3kHashes(hashes); !roots.isEmpty())
+        sendEd3kControl(roots, 3, isAuto ? PrNormal : priority);
 
     m_ipc->sendBatchRequest(hashes, [priority, isAuto](const QString& hash) {
         IpcMessage msg(IpcMsgType::SetDownloadPriority);
@@ -1653,10 +1786,19 @@ void TransferPanel::sendSetPriorityBatch(const QStringList& hashes, int priority
     }, this, [this]() { requestDownloads(); });
 }
 
-void TransferPanel::sendClearCompleted(const QStringList& hashes)
+void TransferPanel::sendClearCompleted(const QStringList& hashesIn)
 {
     if (!m_ipc || !m_ipc->isConnected())
         return;
+    // ed3k: every complete row (none named), or the named ones leave the list
+    QStringList hashes = hashesIn;
+    if (hashes.isEmpty())
+        m_ipc->controlEd3kDownload({}, 5);
+    else if (const QStringList roots = takeEd3kHashes(hashes); !roots.isEmpty()) {
+        sendEd3kControl(roots, 2);
+        if (hashes.isEmpty())
+            return;
+    }
 
     IpcMessage msg(IpcMsgType::ClearCompleted);
     if (!hashes.isEmpty())
@@ -1705,10 +1847,14 @@ void TransferPanel::sendStopDownload(const QString& hash)
     });
 }
 
-void TransferPanel::sendStopDownloadBatch(const QStringList& hashes)
+void TransferPanel::sendStopDownloadBatch(const QStringList& hashesIn)
 {
     if (!m_ipc)
         return;
+    // ed3k has no stop: a pause keeps the part file all the same
+    QStringList hashes = hashesIn;
+    if (const QStringList roots = takeEd3kHashes(hashes); !roots.isEmpty())
+        sendEd3kControl(roots, 0);
 
     m_ipc->sendBatchRequest(hashes, [](const QString& hash) {
         IpcMessage msg(IpcMsgType::StopDownload);
@@ -1733,6 +1879,14 @@ void TransferPanel::sendOpenFolder(const QString& hash)
 {
     if (!m_ipc || !m_ipc->isConnected() || hash.isEmpty())
         return;
+    // ed3k: the path is in the row; a local GUI opens it itself
+    if (const DownloadRow* dl = m_downloadModel->findByHash(hash); dl && dl->isEd3k()) {
+        if (m_ipc->isLocalConnection() && !dl->ed3kPath.isEmpty())
+            QDesktopServices::openUrl(QUrl::fromLocalFile(QFileInfo(dl->ed3kPath).absolutePath()));
+        else
+            openIncomingFolder(m_ipc, m_streamToken);
+        return;
+    }
 
     // The daemon opens the folder on its own host. That is right only while its
     // host is this one -- otherwise it would pop a window on someone else's
@@ -1908,6 +2062,13 @@ void TransferPanel::openDownload(const QString& hash)
         }
     }
 
+    // ed3k: opened from its path by a local GUI (no stream of it over the web server)
+    if (const DownloadRow* dl = m_downloadModel->findByHash(hash); dl && dl->isEd3k()) {
+        if (m_ipc && m_ipc->isLocalConnection() && dl->isComplete())
+            QDesktopServices::openUrl(QUrl::fromLocalFile(dl->ed3kPath));
+        return;
+    }
+
     // A finished collection opens in our viewer. MFC shell-opens it and gets the
     // same, since eMule registers itself for .emulecollection; elsewhere nothing would.
     const ED2KFileType ft = getED2KFileTypeID(fileName);
@@ -1951,10 +2112,13 @@ void TransferPanel::sendSetCategory(const QString& hash, int category)
     });
 }
 
-void TransferPanel::sendSetCategoryBatch(const QStringList& hashes, int category)
+void TransferPanel::sendSetCategoryBatch(const QStringList& hashesIn, int category)
 {
     if (!m_ipc)
         return;
+    QStringList hashes = hashesIn;
+    if (const QStringList roots = takeEd3kHashes(hashes); !roots.isEmpty())
+        sendEd3kControl(roots, 4, category);
 
     m_ipc->sendBatchRequest(hashes, [category](const QString& hash) {
         IpcMessage msg(IpcMsgType::SetDownloadCategory);
@@ -2639,6 +2803,18 @@ void TransferPanel::onClientContextMenu(QTreeView* view, ClientListModel* model,
             const QModelIndex srcIdx = proxy->mapToSource(proxyIdx);
             client = model->clientAt(srcIdx.row());
         }
+    }
+
+    // An ed3k upload queue row: a node, not an eD2K client, so none of the eD2K actions
+    // (details, friends, chat, shared files, ban); only copying its node ID and Find
+    if (client && client->network == ClientNetwork::Ed3k) {
+        QMenu ed3kMenu(this);
+        const QString node = client->userHash;
+        ed3kMenu.addAction(tr("Copy ed3k Node ID"), this, [node]() { eMule::Clipboard::setText(node); });
+        ed3kMenu.addSeparator();
+        ed3kMenu.addAction(menuIcon("Search.ico"), tr("Find..."), this, [this, view]() { showClientFindDialog(view); });
+        ed3kMenu.exec(view->viewport()->mapToGlobal(pos));
+        return;
     }
 
     QMenu menu(this);

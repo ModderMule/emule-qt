@@ -45,6 +45,8 @@ public:
             pieces[static_cast<int>(piece)] = std::move(data);
         }
         const bool spoil = calls.fetch_add(1) == 0 && m_spoilFirst;
+        if (spoil)
+            spoiled = static_cast<int>(piece);
         if (!m_deferred) {
             done(spoil);
             return;
@@ -53,6 +55,8 @@ public:
     }
 
     std::atomic<int> calls{0};
+    /// the spoiled piece, -1 none; may be the short tail piece
+    std::atomic<int> spoiled{-1};
     /// the bytes the hook was given, by piece
     std::mutex mutex;
     std::map<int, std::vector<char>> pieces;
@@ -222,7 +226,10 @@ void tst_BtLocalSwarm::runJoin(bool spoil, bool deferred)
             .arg(row ? row->failedBytes : -1);
     };
     if (spoil) {
-        QTRY_VERIFY2_WITH_TIMEOUT(leecher.torrent(added.id).has_value() && leecher.torrent(added.id)->failedBytes >= kPieceLength,
+        QTRY_VERIFY2_WITH_TIMEOUT(hook->spoiled.load() >= 0, qPrintable(state()), kTimeoutMs);
+        // the first piece hashed is spoiled: the tail piece is shorter than kPieceLength
+        const qint64 spoiledLen = std::min<qint64>(kPieceLength, kPayload - qint64(hook->spoiled.load()) * kPieceLength);
+        QTRY_VERIFY2_WITH_TIMEOUT(leecher.torrent(added.id).has_value() && leecher.torrent(added.id)->failedBytes >= spoiledLen,
                                   qPrintable(state()), kTimeoutMs);
         QVERIFY(finished.isEmpty());
     } else {

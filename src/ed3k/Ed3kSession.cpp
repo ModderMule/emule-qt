@@ -657,6 +657,9 @@ void Ed3kSession::answerUnhandled(const ffi::Event& ev)
         (void)m_engine->unpackReadFailed(t, u->id);
     } else if (const auto* k = std::get_if<e::UnpackAsk>(&ev)) {
         (void)m_engine->unpackEnd(t, k->id, ED3K_UNPACK_UNSUPPORTED);
+    } else if (const auto* l = std::get_if<e::LinkResolve>(&ev)) {
+        // hoster.md §3: no resolver took the ask (none built in, or the hoster join stopped)
+        (void)m_engine->linkAnswer(t, l->link, ED3K_RESOLVER_NO_RESOLVER);
     }
     // ToDo: downloads: events only logged for now (was: GUI/IPC status, done:
     // Ed3kBridge GetEd3kStatus/PushEd3kStatus; was: chat, friends, done: Ed3kFriends)
