@@ -302,7 +302,7 @@ TORRENT_DETAILS_SOURCES = (
     "src/gui/utils/StatusBarNotifier.cpp",
     "src/gui/utils/TorrentLinks.cpp",
     "src/gui/app/UiState.cpp",
-    "src/gui/app/IpcClient.cpp",
+    "src/gui/app/IpcClient.cpp", "src/gui/app/KnownCores.cpp",
 )
 
 # ed3k tests: need EmuleEd3k (libs/packmule + cargo), like emuleed3k itself. emuleed3k
@@ -429,9 +429,12 @@ TEST_EXTRAS: dict[str, TestExtras] = {
     "tst_TaskbarProgress": TestExtras(includes=GUI_INCLUDES, widgets=True,
                                       sources=("src/gui/utils/TaskbarProgress.cpp",)),
     "tst_UrlPrefField": TestExtras(includes=GUI_INCLUDES, widgets=True,
-                                   sources=("src/gui/app/IpcClient.cpp",)),
+                                   sources=("src/gui/app/IpcClient.cpp", "src/gui/app/KnownCores.cpp",)),
     "tst_Ed3kSetsDialog": TestExtras(includes=GUI_INCLUDES, widgets=True,
-                                     sources=("src/gui/dialogs/Ed3kSetsDialog.cpp", "src/gui/app/IpcClient.cpp")),
+                                     sources=("src/gui/dialogs/Ed3kSetsDialog.cpp", "src/gui/app/IpcClient.cpp", "src/gui/app/KnownCores.cpp")),
+    "tst_IpcTls": TestExtras(includes=GUI_INCLUDES + ("src/daemon",), widgets=True,
+                             sources=("src/gui/app/IpcClient.cpp", "src/gui/app/KnownCores.cpp",
+                                      "src/daemon/IpcTlsIdentity.cpp")),
     "tst_SingleInstance": TestExtras(includes=("tests/stubs", "src/gui"),
                                      sources=("src/gui/app/SingleInstance.cpp",)),
     "tst_MassRenameDialog": TestExtras(includes=GUI_INCLUDES, widgets=True,
@@ -440,7 +443,7 @@ TEST_EXTRAS: dict[str, TestExtras] = {
                                                 "src/gui/utils/DialogSizing.cpp",
                                                 "src/gui/controls/ContentScrollArea.cpp",
                                                 "src/gui/app/UiState.cpp",
-                                                "src/gui/app/IpcClient.cpp")),
+                                                "src/gui/app/IpcClient.cpp", "src/gui/app/KnownCores.cpp")),
 }
 NO_EXTRAS = TestExtras()
 

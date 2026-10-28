@@ -330,6 +330,17 @@ void AppContext::noteEffectiveIPv6Change()
     const Address previous = m_publicIPv6Announced;
     m_publicIPv6Announced = effective;
 
+    // Reachability is proven per address: a new one starts unproven. Re-sync the gate
+    // silently — onPublicIPv6Changed below already tells connected peers.
+    if (m_ipv6Reach != IPv6Reachability::Unknown && !(m_ipv6ReachAddr == effective)) {
+        logDebug(QStringLiteral("IPv6: reachability verdict for %1 dropped (address changed)")
+                     .arg(m_ipv6ReachAddr.toString()));
+        m_ipv6Reach = IPv6Reachability::Unknown;
+        m_ipv6ReachSource = IPv6ProofSource::None;
+        m_ipv6ReachAddr = Address{};
+    }
+    m_ipv6GateOpen = shouldAdvertisePublicIPv6();
+
     if (effective.isNull()) {
         logInfo(QStringLiteral("IPv6: no public address available — was %1")
                     .arg(previous.toString()));
@@ -501,6 +512,8 @@ void AppContext::setPublicIPv6Observed(const Address& addr, const QString& serve
 
 void AppContext::clearPublicIPv6Observed()
 {
+    // Only the raw session bits go: the reachability verdict outlives the session, so a
+    // firewalled address is not re-advertised to peers between servers.
     m_publicIPv6Status = 0;
     if (m_publicIPv6Server.isNull())
         return;
@@ -512,6 +525,16 @@ void AppContext::clearPublicIPv6Observed()
 
 void AppContext::setPublicIPv6Status(uint8 status)
 {
+    // A real dial-back is proof either way; a trust default (REACHABLE without PROBED)
+    // proves nothing and leaves the verdict alone.
+    if (status & IPV6ST_PROBED) {
+        const auto r = (status & IPV6ST_REACHABLE) ? IPv6Reachability::Reachable
+                                                   : IPv6Reachability::Unreachable;
+        if (r != m_ipv6Reach || m_ipv6ReachSource != IPv6ProofSource::ServerProbe
+            || !(m_ipv6ReachAddr == publicIPv6()))
+            setIPv6Reachability(r, IPv6ProofSource::ServerProbe);
+    }
+
     if (status == m_publicIPv6Status)
         return;
     m_publicIPv6Status = status;
@@ -532,9 +555,115 @@ void AppContext::setPublicIPv6Status(uint8 status)
 
 bool AppContext::publicIPv6ProbedUnreachable() const
 {
-    // The server actually dial-back-probed our advertised v6 and it failed — do not
-    // present ourselves as v6-reachable. An unset/absent status (0) means "unknown".
-    return (m_publicIPv6Status & IPV6ST_PROBED) && !(m_publicIPv6Status & IPV6ST_REACHABLE);
+    // Only a server probe yields Unreachable; sticky until the address changes.
+    return ipv6Reachability() == IPv6Reachability::Unreachable;
+}
+
+bool AppContext::shouldAdvertisePublicIPv6() const
+{
+    return hasConfidentPublicIPv6() && ipv6Reachability() == IPv6Reachability::Reachable;
+}
+
+IPv6Reachability AppContext::ipv6Reachability() const
+{
+    const Address cur = publicIPv6();
+    if (cur.isNull())
+        return IPv6Reachability::Unknown;
+    if (m_ipv6Reach != IPv6Reachability::Unknown && m_ipv6ReachAddr == cur)
+        return m_ipv6Reach;
+    return thePrefs.ipv6AssumeReachable() ? IPv6Reachability::Reachable
+                                          : IPv6Reachability::Unknown;
+}
+
+IPv6ProofSource AppContext::ipv6ProofSource() const
+{
+    const Address cur = publicIPv6();
+    if (cur.isNull())
+        return IPv6ProofSource::None;
+    if (m_ipv6Reach != IPv6Reachability::Unknown && m_ipv6ReachAddr == cur)
+        return m_ipv6ReachSource;
+    return thePrefs.ipv6AssumeReachable() ? IPv6ProofSource::Assumed : IPv6ProofSource::None;
+}
+
+void AppContext::noteInboundIPv6Peer(const Address& peer)
+{
+    if (!peer.isIPv6() || !peer.isPublicIP())
+        return;
+    const Address cur = publicIPv6();
+    if (cur.isNull())
+        return;
+
+    // Same /64 as one of ours: LAN traffic, never crossed the router's firewall. Lab mode
+    // treats the private rig as the internet, where a shared prefix is normal.
+    if (!Address::labNetworkMode()) {
+        const auto samePrefix = [&peer](const Address& ours) {
+            return ours.isIPv6()
+                && std::equal(ours.ipv6Bytes().begin(), ours.ipv6Bytes().begin() + 8,
+                              peer.ipv6Bytes().begin());
+        };
+        if (samePrefix(cur) || std::ranges::any_of(m_localIPv6, samePrefix))
+            return;
+    }
+
+    if (m_ipv6Reach == IPv6Reachability::Reachable && m_ipv6ReachAddr == cur
+        && m_ipv6ReachSource != IPv6ProofSource::Pinhole)
+        return;
+
+    logInfo(QStringLiteral("IPv6: inbound connection from %1 — %2 is reachable")
+                .arg(peer.toString(), cur.toString()));
+    setIPv6Reachability(IPv6Reachability::Reachable, IPv6ProofSource::InboundPeer);
+}
+
+void AppContext::noteIPv6Pinhole(const Address& internal, bool ok)
+{
+    const Address cur = publicIPv6();
+    if (!ok) {
+        if (m_ipv6ReachSource == IPv6ProofSource::Pinhole
+            && m_ipv6Reach == IPv6Reachability::Reachable) {
+            logInfo(QStringLiteral("IPv6: pinhole for %1 lost — reachability unknown")
+                        .arg(m_ipv6ReachAddr.toString()));
+            setIPv6Reachability(IPv6Reachability::Unknown, IPv6ProofSource::None);
+        }
+        return;
+    }
+    if (cur.isNull() || !(internal == cur))
+        return;
+    if (m_ipv6ReachAddr == cur) {
+        // Any proof already held wins: a probe that failed despite the pinhole means the
+        // pinhole doesn't work; any Reachable verdict needs no second source.
+        if (m_ipv6Reach != IPv6Reachability::Unknown)
+            return;
+    }
+    logInfo(QStringLiteral("IPv6: pinhole opened for %1 — treating it as reachable")
+                .arg(cur.toString()));
+    setIPv6Reachability(IPv6Reachability::Reachable, IPv6ProofSource::Pinhole);
+}
+
+void AppContext::setIPv6Reachability(IPv6Reachability r, IPv6ProofSource src)
+{
+    m_ipv6Reach = r;
+    m_ipv6ReachSource = r == IPv6Reachability::Unknown ? IPv6ProofSource::None : src;
+    m_ipv6ReachAddr = r == IPv6Reachability::Unknown ? Address{} : publicIPv6();
+    noteIPv6GateChange();
+}
+
+void AppContext::noteIPv6GateChange()
+{
+    const bool open = shouldAdvertisePublicIPv6();
+    if (open == m_ipv6GateOpen)
+        return;
+    m_ipv6GateOpen = open;
+    const Address cur = publicIPv6();
+    if (open) {
+        logInfo(QStringLiteral("IPv6: %1 proven reachable — now advertising it to peers")
+                    .arg(cur.toString()));
+        if (onPublicIPv6Changed)
+            onPublicIPv6Changed(cur);
+    } else {
+        logInfo(QStringLiteral("IPv6: %1 not proven reachable — no longer advertising it to "
+                               "peers")
+                    .arg(cur.isNull() ? QStringLiteral("our IPv6") : cur.toString()));
+    }
 }
 
 void AppContext::recordPeerObservedIPv6(const Address& candidate, const QByteArray& peerKey)

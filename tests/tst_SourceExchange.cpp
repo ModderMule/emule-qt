@@ -8,6 +8,7 @@
 /// Reference implementation: eMule 0.70b srchybrid/KnownFile.cpp:1113-1150
 /// and srchybrid/PartFile.cpp:3836-3900.
 
+#include "TestFixtures.h"
 #include "TestHelpers.h"
 #include "app/AppContext.h"
 #include "client/UpDownClient.h"
@@ -246,6 +247,9 @@ private slots:
     void peerCorroboration_adoptsOnlyAfterThresholdDistinctPeers();
     void reflectedIPv6NotHeldLocally_isRejected();
     void publicIPv6_tierPrecedenceAndAdvertiseGate();
+    void publicIPv6_peerGateNeedsProof();
+    void publicIPv6_inboundPeerAndPinholeProof();
+    void publicIPv6_assumeReachablePref();
 
 private:
     std::vector<UpDownClient*> m_clients;
@@ -1204,28 +1208,123 @@ void tst_SourceExchange::publicIPv6_tierPrecedenceAndAdvertiseGate()
     theApp.setPublicIPv6Observed(observed, QStringLiteral("server.example"));
     QCOMPARE(theApp.publicIPv6().toString(), observed.toString());
 
-    // The advertise gate is confidence AND a non-failing probe verdict.
-    QVERIFY(theApp.shouldAdvertisePublicIPv6());
-    theApp.setPublicIPv6Status(IPV6ST_HAVE | IPV6ST_PROBED);        // probed, not reachable
-    QVERIFY(theApp.publicIPv6ProbedUnreachable());
-    QVERIFY(theApp.hasConfidentPublicIPv6());                        // still know the address
-    QVERIFY(!theApp.shouldAdvertisePublicIPv6());                    // but must not publish it
+    // A probe verdict is bound to the address it was given for: a tier change resets it.
     theApp.setPublicIPv6Status(IPV6ST_HAVE | IPV6ST_PROBED | IPV6ST_REACHABLE);
     QVERIFY(theApp.shouldAdvertisePublicIPv6());
-    theApp.setPublicIPv6Status(IPV6ST_HAVE | IPV6ST_REACHABLE);      // assumed, not tested
-    QVERIFY(!theApp.publicIPv6ProbedUnreachable());
-    QVERIFY(theApp.shouldAdvertisePublicIPv6());
-
-    // A v6 session is probed too (eNode-go): a firewalled verdict must not outlive the
-    // session, so the next login re-advertises and gets re-probed.
-    theApp.setPublicIPv6Status(IPV6ST_HAVE | IPV6ST_PROBED);
+    theApp.clearPublicIPv6Observed();                                // observed -> pinned
+    QCOMPARE(theApp.publicIPv6().toString(), pinned.toString());
+    QCOMPARE(theApp.ipv6Reachability(), IPv6Reachability::Unknown);
     QVERIFY(!theApp.shouldAdvertisePublicIPv6());
-    theApp.clearPublicIPv6Observed();
-    QCOMPARE(theApp.publicIPv6Status(), uint8{0});
-    QVERIFY(theApp.shouldAdvertisePublicIPv6());                     // pinned tier still confident
+    QVERIFY(theApp.shouldAdvertisePublicIPv6ToServer());
 
+    theApp.clearIPv6Reachability();
     theApp.setPublicIPv6Override(Address{});
     theApp.setLocalIPv6Addresses({});
+}
+
+void tst_SourceExchange::publicIPv6_peerGateNeedsProof()
+{
+    eMule::testing::IPv6AdvertiseGuard guard;
+    guard.setUnproven();
+    const Address ours = eMule::testing::IPv6AdvertiseGuard::testPublicIPv6();
+
+    // No proof: peers don't get it, the server does (so it can probe).
+    QVERIFY(theApp.hasConfidentPublicIPv6());
+    QVERIFY(theApp.shouldAdvertisePublicIPv6ToServer());
+    QVERIFY(!theApp.shouldAdvertisePublicIPv6());
+
+    // A trust default (REACHABLE without PROBED) proves nothing.
+    theApp.setPublicIPv6Status(IPV6ST_HAVE | IPV6ST_REACHABLE);
+    QVERIFY(!theApp.shouldAdvertisePublicIPv6());
+
+    // A failed probe: still known, still sent to the server, not to peers.
+    theApp.setPublicIPv6Status(IPV6ST_HAVE | IPV6ST_PROBED);
+    QVERIFY(theApp.publicIPv6ProbedUnreachable());
+    QVERIFY(theApp.shouldAdvertisePublicIPv6ToServer());
+    QVERIFY(!theApp.shouldAdvertisePublicIPv6());
+
+    // The verdict outlives the session: no re-advertising between servers.
+    theApp.clearPublicIPv6Observed();
+    QCOMPARE(theApp.publicIPv6Status(), uint8{0});
+    QVERIFY(theApp.publicIPv6ProbedUnreachable());
+    QVERIFY(!theApp.shouldAdvertisePublicIPv6());
+
+    // A passing probe opens the gate and tells connected peers once.
+    int fired = 0;
+    Address firedAddr;
+    theApp.onPublicIPv6Changed = [&](const Address& a) { ++fired; firedAddr = a; };
+    theApp.setPublicIPv6Status(IPV6ST_HAVE | IPV6ST_PROBED | IPV6ST_REACHABLE);
+    QVERIFY(theApp.shouldAdvertisePublicIPv6());
+    QCOMPARE(theApp.ipv6ProofSource(), IPv6ProofSource::ServerProbe);
+    QCOMPARE(fired, 1);
+    QCOMPARE(firedAddr.toString(), ours.toString());
+    theApp.setPublicIPv6Status(IPV6ST_HAVE | IPV6ST_PROBED | IPV6ST_REACHABLE);   // repeat
+    QCOMPARE(fired, 1);
+
+    theApp.clearPublicIPv6Observed();
+    QVERIFY(theApp.shouldAdvertisePublicIPv6());                     // survives disconnect
+
+    // A new address starts unproven.
+    const Address other = Address::fromString(QStringLiteral("2606:4700::101"));
+    theApp.setLocalIPv6Addresses({other});
+    theApp.setPublicIPv6Local(other);
+    QCOMPARE(theApp.ipv6Reachability(), IPv6Reachability::Unknown);
+    QVERIFY(!theApp.shouldAdvertisePublicIPv6());
+}
+
+void tst_SourceExchange::publicIPv6_inboundPeerAndPinholeProof()
+{
+    eMule::testing::IPv6AdvertiseGuard guard;
+    guard.setUnproven();
+    const Address ours = eMule::testing::IPv6AdvertiseGuard::testPublicIPv6();   // 2606:4700::100
+
+    // A peer in our own /64 came across the LAN, not through the router.
+    theApp.noteInboundIPv6Peer(Address::fromString(QStringLiteral("2606:4700::9")));
+    QVERIFY(!theApp.shouldAdvertisePublicIPv6());
+    // Non-public peers prove nothing either.
+    theApp.noteInboundIPv6Peer(Address::fromString(QStringLiteral("fe80::9")));
+    QVERIFY(!theApp.shouldAdvertisePublicIPv6());
+
+    // A peer from elsewhere reached us: reachable.
+    theApp.noteInboundIPv6Peer(Address::fromString(QStringLiteral("2a00:1450:4001::1")));
+    QVERIFY(theApp.shouldAdvertisePublicIPv6());
+    QCOMPARE(theApp.ipv6ProofSource(), IPv6ProofSource::InboundPeer);
+
+    // Pinhole: opens; lost -> unknown; for another address -> ignored.
+    guard.setUnproven();
+    theApp.noteIPv6Pinhole(Address::fromString(QStringLiteral("2606:4700::555")), true);
+    QVERIFY(!theApp.shouldAdvertisePublicIPv6());
+    theApp.noteIPv6Pinhole(ours, true);
+    QVERIFY(theApp.shouldAdvertisePublicIPv6());
+    QCOMPARE(theApp.ipv6ProofSource(), IPv6ProofSource::Pinhole);
+    theApp.noteIPv6Pinhole(Address{}, false);
+    QCOMPARE(theApp.ipv6Reachability(), IPv6Reachability::Unknown);
+
+    // A pinhole does not overturn a failed probe; an inbound peer does (direct evidence).
+    guard.setProbedUnreachable();
+    theApp.noteIPv6Pinhole(ours, true);
+    QVERIFY(!theApp.shouldAdvertisePublicIPv6());
+    theApp.noteInboundIPv6Peer(Address::fromString(QStringLiteral("2a00:1450:4001::1")));
+    QVERIFY(theApp.shouldAdvertisePublicIPv6());
+    // Losing a pinhole doesn't drop proof that came from elsewhere.
+    theApp.noteIPv6Pinhole(Address{}, false);
+    QVERIFY(theApp.shouldAdvertisePublicIPv6());
+}
+
+void tst_SourceExchange::publicIPv6_assumeReachablePref()
+{
+    eMule::testing::IPv6AdvertiseGuard guard;
+    guard.setUnproven();
+    const bool saved = thePrefs.ipv6AssumeReachable();
+    thePrefs.setIpv6AssumeReachable(true);
+
+    QVERIFY(theApp.shouldAdvertisePublicIPv6());
+    QCOMPARE(theApp.ipv6ProofSource(), IPv6ProofSource::Assumed);
+    // A failed probe still wins over the operator's assertion.
+    guard.setProbedUnreachable();
+    QVERIFY(!theApp.shouldAdvertisePublicIPv6());
+
+    thePrefs.setIpv6AssumeReachable(saved);
 }
 
 // MFC PartFile.cpp:3927 only adds a received source. PartFile::process() asks it later through

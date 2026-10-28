@@ -160,6 +160,7 @@
     <ClCompile Include="IpcConnection.cpp" />
     <ClCompile Include="IpcMessage.cpp" />
     <ClCompile Include="IpcProtocol.cpp" />
+    <ClCompile Include="IpcTls.cpp" />
     <ClCompile Include="LogRelay.cpp" />
     <ClCompile Include="PushCoalescer.cpp" />
   </ItemGroup>
@@ -169,6 +170,7 @@
     <QtMoc Include="IpcConnection.h" />
     <ClInclude Include="IpcMessage.h" />
     <ClInclude Include="IpcProtocol.h" />
+    <QtMoc Include="IpcTls.h" />
     <QtMoc Include="LogRelay.h" />
     <QtMoc Include="PushCoalescer.h" />
   </ItemGroup>

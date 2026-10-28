@@ -195,6 +195,7 @@
     <ClCompile Include="..\..\src\gui\utils\TorrentLinks.cpp" />
     <ClCompile Include="..\..\src\gui\app\UiState.cpp" />
     <ClCompile Include="..\..\src\gui\app\IpcClient.cpp" />
+    <ClCompile Include="..\..\src\gui\app\KnownCores.cpp" />
   </ItemGroup>
   <ItemGroup>
     <QtMoc Include="..\..\src\gui\controls\TorrentFilterProxy.h">

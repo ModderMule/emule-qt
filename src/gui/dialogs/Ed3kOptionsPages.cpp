@@ -9,6 +9,7 @@
 #include "dialogs/Ed3kFilterPage.h"
 #include "dialogs/Ed3kStakeGroup.h"
 #include "dialogs/PortTest.h"
+#include "dialogs/RouterPage.h"
 #include "prefs/Preferences.h"
 #include "IpcMessage.h"
 
@@ -155,8 +156,6 @@ void Ed3kOptionsPages::load(const QCborMap& p)
 {
     m_loading = true;
     m_enabledCheck->setChecked(p.value(QStringLiteral("ed3kEnabled")).toBool(false));
-    const QString nick = p.value(QStringLiteral("nick")).toString();
-    m_nickLabel->setText(tr("The ed3k node uses the nickname of the General page: %1").arg(nick.toHtmlEscaped()));
     m_shareFilesCheck->setChecked(p.value(QStringLiteral("ed3kShareFiles")).toBool(true));
     m_holdBackCheck->setChecked(p.value(QStringLiteral("ed3kHoldBackPosts")).toBool(false));
     const QStringList off = Preferences::rpcUrlList(p.value(QStringLiteral("ed3kExtOff")));
@@ -168,16 +167,17 @@ void Ed3kOptionsPages::load(const QCborMap& p)
     m_sitePortSpin->setValue(int(p.value(QStringLiteral("ed3kSitePort")).toInteger(0)));
     m_nodeListsEdit->setPlainText(linesText(p.value(QStringLiteral("ed3kNodeLists"))));
     m_chaintubeRpcEdit->setPlainText(linesText(p.value(QStringLiteral("ed3kChaintubeRpc"))));
-    {
-        Ed3kChainPrefs ch;
-        for (auto it = p.cbegin(); it != p.cend(); ++it)
-            Preferences::applyEd3kChainKey(ch, it.key().toString(), it.value());
-        m_ctChainIdEdit->setText(ch.chainId == 0 ? QString() : QString::number(ch.chainId));
-        m_ctContentEdit->setText(ch.content);
-        m_ctCommentEdit->setText(ch.comment);
-        m_ctVoteEdit->setText(ch.vote);
-        m_ctForwarderEdit->setText(ch.forwarder);
-    }
+    // ToDo: decide whether the user may edit the chaintube chain in the UI (see buildConnection)
+    // {
+    //     Ed3kChainPrefs ch;
+    //     for (auto it = p.cbegin(); it != p.cend(); ++it)
+    //         Preferences::applyEd3kChainKey(ch, it.key().toString(), it.value());
+    //     m_ctChainIdEdit->setText(ch.chainId == 0 ? QString() : QString::number(ch.chainId));
+    //     m_ctContentEdit->setText(ch.content);
+    //     m_ctCommentEdit->setText(ch.comment);
+    //     m_ctVoteEdit->setText(ch.vote);
+    //     m_ctForwarderEdit->setText(ch.forwarder);
+    // }
 
     Ed3kCreditPrefs c;
     for (auto it = p.cbegin(); it != p.cend(); ++it)
@@ -226,14 +226,15 @@ void Ed3kOptionsPages::appendTo(IpcMessage& req) const
     put("ed3kSitePort", qint64(m_sitePortSpin->value()));
     put("ed3kNodeLists", linesOf(m_nodeListsEdit).join(QLatin1Char(' ')));
     put("ed3kChaintubeRpc", linesOf(m_chaintubeRpcEdit).join(QLatin1Char(' ')));
-    {
-        const Ed3kChainPrefs ch = chainPrefs();
-        put("ed3kChainId", QString::number(ch.chainId));   // a u64: as text
-        put("ed3kChainContent", ch.content);
-        put("ed3kChainComment", ch.comment);
-        put("ed3kChainVote", ch.vote);
-        put("ed3kChainForwarder", ch.forwarder);
-    }
+    // ToDo: chaintube chain not in the UI for now: the daemon keeps what it has
+    // {
+    //     const Ed3kChainPrefs ch = chainPrefs();
+    //     put("ed3kChainId", QString::number(ch.chainId));   // a u64: as text
+    //     put("ed3kChainContent", ch.content);
+    //     put("ed3kChainComment", ch.comment);
+    //     put("ed3kChainVote", ch.vote);
+    //     put("ed3kChainForwarder", ch.forwarder);
+    // }
     put("ed3kCreditRpc", linesOf(m_creditRpcEdit).join(QLatin1Char(' ')));
     const Ed3kCreditPrefs c = creditPrefs();
     put("ed3kCreditEnabled", c.enabled);
@@ -276,7 +277,7 @@ void Ed3kOptionsPages::saveLocal() const
         thePrefs.setEd3kSitePort(uint16(m_sitePortSpin->value()));
     thePrefs.setEd3kNodeLists(linesOf(m_nodeListsEdit));
     thePrefs.setEd3kChaintubeRpc(linesOf(m_chaintubeRpcEdit));
-    thePrefs.setEd3kChain(chainPrefs());
+    // thePrefs.setEd3kChain(chainPrefs());   // ToDo: chaintube chain not in the UI for now
     thePrefs.setEd3kCreditRpc(linesOf(m_creditRpcEdit));
     thePrefs.setEd3kCredit(creditPrefs());
     Ed3kHosterPrefs h = hosterPrefs();
@@ -312,14 +313,15 @@ bool Ed3kOptionsPages::validate()
         return false;
     }
     // chaintube (chaintube.md §4.2): each contract empty or an address
-    for (QLineEdit* e : {m_ctContentEdit, m_ctCommentEdit, m_ctVoteEdit, m_ctForwarderEdit}) {
-        if (const QString t = e->text().trimmed(); !t.isEmpty() && !kAddress.match(t).hasMatch()) {
-            emit showPage(m_connection);
-            e->setFocus();
-            QMessageBox::warning(m_parent, tr("Chaintube"), tr("A contract is an address: 0x and 40 hexadecimal digits."));
-            return false;
-        }
-    }
+    // ToDo: back when the chain is editable in the UI again (see buildConnection)
+    // for (QLineEdit* e : {m_ctContentEdit, m_ctCommentEdit, m_ctVoteEdit, m_ctForwarderEdit}) {
+    //     if (const QString t = e->text().trimmed(); !t.isEmpty() && !kAddress.match(t).hasMatch()) {
+    //         emit showPage(m_connection);
+    //         e->setFocus();
+    //         QMessageBox::warning(m_parent, tr("Chaintube"), tr("A contract is an address: 0x and 40 hexadecimal digits."));
+    //         return false;
+    //     }
+    // }
     return true;
 }
 
@@ -338,14 +340,19 @@ QWidget* Ed3kOptionsPages::buildGeneral(QWidget* parent)
     m_enabledCheck->setToolTip(tr("Runs the ed3k node (packmule) in the core, on a UDP port of its own. "
                                   "It finds other nodes over Kad and serves the shared files."));
     layout->addWidget(m_enabledCheck);
+#ifdef EMULE_ED3K_LOCKED
+    // early alpha: CI builds keep the node off (CMakeLists.txt EMULE_ED3K_LOCKED)
+    connect(m_enabledCheck, &QCheckBox::clicked, this, [this](bool on) {
+        if (!on)
+            return;
+        m_enabledCheck->setChecked(false);
+        QMessageBox::information(m_parent, tr("ed3k"),
+                                 tr("This network is early alpha, experimental and not for live use yet. "
+                                    "Please come back later."));
+    });
+#endif
     m_runningLabel = noteLabel(QString(), page);
     layout->addWidget(m_runningLabel);
-
-    auto* idGroup = new QGroupBox(tr("Identity"), page);
-    auto* idLayout = new QVBoxLayout(idGroup);
-    m_nickLabel = noteLabel(QString(), idGroup);
-    idLayout->addWidget(m_nickLabel);
-    layout->addWidget(idGroup);
 
     auto* shareGroup = new QGroupBox(tr("Sharing"), page);
     auto* shareLayout = new QVBoxLayout(shareGroup);
@@ -356,20 +363,22 @@ QWidget* Ed3kOptionsPages::buildGeneral(QWidget* parent)
     shareLayout->addWidget(m_holdBackCheck);
     layout->addWidget(shareGroup);
 
-    auto* extGroup = new QGroupBox(tr("Extensions"), page);
-    auto* extLayout = new QVBoxLayout(extGroup);
-    extLayout->addWidget(noteLabel(tr("Optional parts of the ed3k protocol. A change restarts the node."), extGroup));
-    // one box per extension, three columns (no list: fits the page without scrolling)
-    auto* grid = new QGridLayout;
-    const QStringList names = Preferences::ed3kExtensionNames();
-    const int rows = int((names.size() + 2) / 3);
-    for (int n = 0; n < names.size(); ++n) {
-        auto* box = new QCheckBox(names.at(n), extGroup);
-        m_extChecks.append(box);
-        grid->addWidget(box, n % rows, n / rows);
-    }
-    extLayout->addLayout(grid);
-    layout->addWidget(extGroup);
+    // ToDo: decide which extensions the user can switch. Until then none are shown:
+    // m_extChecks stays empty, so extOff() is empty and every extension is on
+    // auto* extGroup = new QGroupBox(tr("Extensions"), page);
+    // auto* extLayout = new QVBoxLayout(extGroup);
+    // extLayout->addWidget(noteLabel(tr("Optional parts of the ed3k protocol. A change restarts the node."), extGroup));
+    // // one box per extension, three columns (no list: fits the page without scrolling)
+    // auto* grid = new QGridLayout;
+    // const QStringList names = Preferences::ed3kExtensionNames();
+    // const int rows = int((names.size() + 2) / 3);
+    // for (int n = 0; n < names.size(); ++n) {
+    //     auto* box = new QCheckBox(names.at(n), extGroup);
+    //     m_extChecks.append(box);
+    //     grid->addWidget(box, n % rows, n / rows);
+    // }
+    // extLayout->addLayout(grid);
+    // layout->addWidget(extGroup);
     layout->addStretch();
 
     for (QCheckBox* box : {m_enabledCheck, m_shareFilesCheck, m_holdBackCheck})
@@ -406,6 +415,10 @@ QWidget* Ed3kOptionsPages::buildConnection(QWidget* parent)
         PortTest::NetworkTest::run(m_ipc, m_parent, testBtn, PortTest::Network::Ed3k);
     });
     udpRow->addWidget(testBtn);
+    auto* routerBtn = new QPushButton(tr("Open Router"), portGroup);
+    routerBtn->setToolTip(tr("Opens the web page of this computer's router, where ports are forwarded"));
+    connect(routerBtn, &QPushButton::clicked, this, [this] { RouterPage::open(m_parent); });
+    udpRow->addWidget(routerBtn);
     udpRow->addStretch();
     portForm->addRow(tr("UDP port:"), udpRow);
     m_sitePortSpin = new QSpinBox(portGroup);
@@ -430,38 +443,40 @@ QWidget* Ed3kOptionsPages::buildConnection(QWidget* parent)
     auto* chainGroup = new QGroupBox(tr("Chaintube"), page);
     auto* chainLayout = new QVBoxLayout(chainGroup);
     chainLayout->addWidget(noteLabel(tr("JSON-RPC endpoints of the chaintube chain, one URL per line (https, or http "
-                                        "to a node on this computer). The ledger of the credits is on the Credits page."),
+                                        "to a node on this computer)."),
                                      chainGroup));
     m_chaintubeRpcEdit = new QPlainTextEdit(chainGroup);
     m_chaintubeRpcEdit->setPlaceholderText(QStringLiteral("https://…"));
     m_chaintubeRpcEdit->setFixedHeight(m_chaintubeRpcEdit->fontMetrics().lineSpacing() * 4 + 12);
     chainLayout->addWidget(m_chaintubeRpcEdit);
-    // the network's parameters (§4.2): no defaults; a test deployment is named in the spec
-    auto* chainForm = new QFormLayout;
-    chainForm->setFieldGrowthPolicy(QFormLayout::AllNonFixedFieldsGrow);
-    m_ctChainIdEdit = new QLineEdit(chainGroup);
-    m_ctChainIdEdit->setValidator(new QRegularExpressionValidator(QRegularExpression(QStringLiteral("[0-9]{0,20}")), m_ctChainIdEdit));
-    m_ctChainIdEdit->setPlaceholderText(tr("assigned at deployment"));
-    chainForm->addRow(tr("Chain ID:"), m_ctChainIdEdit);
-    const auto addressEdit = [chainGroup](const QString& tip) {
-        auto* e = new QLineEdit(chainGroup);
-        e->setValidator(new QRegularExpressionValidator(QRegularExpression(QStringLiteral("(0[xX][0-9a-fA-F]{0,40})?")), e));
-        e->setPlaceholderText(QStringLiteral("0x…"));
-        e->setToolTip(tip);
-        return e;
-    };
-    m_ctContentEdit = addressEdit(tr("The content contract of the network. No default."));
-    m_ctCommentEdit = addressEdit(tr("The comment contract of the network. No default."));
-    m_ctVoteEdit = addressEdit(tr("The vote contract of the network. No default."));
-    m_ctForwarderEdit = addressEdit(tr("The forwarder of requests a site sends; empty: none."));
-    chainForm->addRow(tr("Content contract:"), m_ctContentEdit);
-    chainForm->addRow(tr("Comment contract:"), m_ctCommentEdit);
-    chainForm->addRow(tr("Vote contract:"), m_ctVoteEdit);
-    chainForm->addRow(tr("Forwarder:"), m_ctForwarderEdit);
-    chainLayout->addLayout(chainForm);
+    // ToDo: decide whether the user may edit the chaintube chain in the UI; only the JSON-RPC
+    // endpoints for now, the daemon keeps the rest (load/appendTo/saveLocal/validate likewise)
+    // // the network's parameters (§4.2): no defaults; a test deployment is named in the spec
+    // auto* chainForm = new QFormLayout;
+    // chainForm->setFieldGrowthPolicy(QFormLayout::AllNonFixedFieldsGrow);
+    // m_ctChainIdEdit = new QLineEdit(chainGroup);
+    // m_ctChainIdEdit->setValidator(new QRegularExpressionValidator(QRegularExpression(QStringLiteral("[0-9]{0,20}")), m_ctChainIdEdit));
+    // m_ctChainIdEdit->setPlaceholderText(tr("assigned at deployment"));
+    // chainForm->addRow(tr("Chain ID:"), m_ctChainIdEdit);
+    // const auto addressEdit = [chainGroup](const QString& tip) {
+    //     auto* e = new QLineEdit(chainGroup);
+    //     e->setValidator(new QRegularExpressionValidator(QRegularExpression(QStringLiteral("(0[xX][0-9a-fA-F]{0,40})?")), e));
+    //     e->setPlaceholderText(QStringLiteral("0x…"));
+    //     e->setToolTip(tip);
+    //     return e;
+    // };
+    // m_ctContentEdit = addressEdit(tr("The content contract of the network. No default."));
+    // m_ctCommentEdit = addressEdit(tr("The comment contract of the network. No default."));
+    // m_ctVoteEdit = addressEdit(tr("The vote contract of the network. No default."));
+    // m_ctForwarderEdit = addressEdit(tr("The forwarder of requests a site sends; empty: none."));
+    // chainForm->addRow(tr("Content contract:"), m_ctContentEdit);
+    // chainForm->addRow(tr("Comment contract:"), m_ctCommentEdit);
+    // chainForm->addRow(tr("Vote contract:"), m_ctVoteEdit);
+    // chainForm->addRow(tr("Forwarder:"), m_ctForwarderEdit);
+    // chainLayout->addLayout(chainForm);
+    // for (QLineEdit* e : {m_ctChainIdEdit, m_ctContentEdit, m_ctCommentEdit, m_ctVoteEdit, m_ctForwarderEdit})
+    //     connect(e, &QLineEdit::textEdited, this, [this] { emit changed(); });
     layout->addWidget(chainGroup);
-    for (QLineEdit* e : {m_ctChainIdEdit, m_ctContentEdit, m_ctCommentEdit, m_ctVoteEdit, m_ctForwarderEdit})
-        connect(e, &QLineEdit::textEdited, this, [this] { emit changed(); });
     layout->addStretch();
 
     for (QSpinBox* s : {m_udpPortSpin, m_sitePortSpin})
@@ -1002,16 +1017,17 @@ Ed3kCreditPrefs Ed3kOptionsPages::creditPrefs() const
     return c;
 }
 
-Ed3kChainPrefs Ed3kOptionsPages::chainPrefs() const
-{
-    Ed3kChainPrefs c;
-    c.chainId = m_ctChainIdEdit->text().trimmed().toULongLong();
-    c.content = m_ctContentEdit->text().trimmed();
-    c.comment = m_ctCommentEdit->text().trimmed();
-    c.vote = m_ctVoteEdit->text().trimmed();
-    c.forwarder = m_ctForwarderEdit->text().trimmed();
-    return c;
-}
+// ToDo: back with the chaintube fields (buildConnection)
+// Ed3kChainPrefs Ed3kOptionsPages::chainPrefs() const
+// {
+//     Ed3kChainPrefs c;
+//     c.chainId = m_ctChainIdEdit->text().trimmed().toULongLong();
+//     c.content = m_ctContentEdit->text().trimmed();
+//     c.comment = m_ctCommentEdit->text().trimmed();
+//     c.vote = m_ctVoteEdit->text().trimmed();
+//     c.forwarder = m_ctForwarderEdit->text().trimmed();
+//     return c;
+// }
 
 bool Ed3kOptionsPages::keyActionsAllowed() const
 {
@@ -1081,8 +1097,7 @@ QWidget* Ed3kOptionsPages::buildHoster(QWidget* parent)
 
     auto* javaGroup = new QGroupBox(tr("Java runtime"), page);
     auto* javaLayout = new QVBoxLayout(javaGroup);
-    javaLayout->addWidget(noteLabel(tr("The resolver runs JDownloader's hoster plugins in a Java program of its own. "
-                                       "eMuleQt looks for Java 17 or newer and can download one into its folder."),
+    javaLayout->addWidget(noteLabel(tr("The resolver runs JDownloader's hoster plugins in a Java program of its own."),
                                     javaGroup));
     m_javaLabel = noteLabel(QString(), javaGroup);
     javaLayout->addWidget(m_javaLabel);

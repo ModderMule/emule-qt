@@ -156,7 +156,7 @@ The server probes the family the session arrived on, so a v6-connected session g
 | --- | --- |
 | `HAVE\|REACHABLE\|PROBED` | verified reachable — published as a v6 source |
 | `HAVE\|PROBED` | verified unreachable (firewalled) — not published, no v6 callbacks routed to us; we stop advertising our v6 |
-| `HAVE\|REACHABLE` | assumed reachable, not tested (server has probing off) |
+| `HAVE\|REACHABLE` | assumed reachable, not tested (server has probing off) — proves nothing to the client (§2.2) |
 | absent | no verdict — assume nothing |
 
 **`CT_SERVER_FLAGS` (`0x20`), UINT32 — client→server login capabilities:**
@@ -219,8 +219,8 @@ The server probes the family the session arrived on, so a v6-connected session g
 
 *(`src/core/app/AppContext.cpp`)*
 
-Every place this specification says "advertise your public IPv6" refers to a single gate. An
-implementation SHOULD reproduce it, because advertising an address you cannot actually be reached
+Every place this specification says "advertise your public IPv6" refers to the gates of §2.2:
+the peer gate, or the login-only server gate. An implementation SHOULD reproduce them, because advertising an address you cannot actually be reached
 on creates dead sources for every peer that believes you.
 
 ### 2.1 Confidence tiers
@@ -237,6 +237,13 @@ on creates dead sources for every peer that believes you.
 Tiers 1 and 3 are accepted only if the reflected address is **also assigned to a local interface**.
 This prevents a hostile or broken peer from convincing a client to advertise someone else's address.
 
+Tier 2 is exempt: an operator literal on no local interface is accepted as-is. Behind NAT66 / NPTv6
+(Docker bridge, some corporate and mobile networks) only the operator knows the translated address.
+Outgoing traffic then leaves from the stable local address (source pinning below can't bind a
+non-local one), no pinhole is requested, and a server reflection of the translated address still
+fails the tier-1 local check, so the override wins on its own. Tier 1 keeps outranking a *local*
+override: configs go stale when a machine moves networks, the observed egress doesn't.
+
 **Source address.** Tier 4 prefers a stable address over an RFC 4941 temporary one. macOS and
 Windows send from the temporary address by default, so what peers observe (tiers 1 and 3, and the
 IPv6 UDP obfuscation key of §3.4) would differ from what is advertised. This implementation
@@ -246,21 +253,52 @@ binds the stable address before connecting, and UDP sets it as the datagram's so
 The OS then chooses the source, and tier 4 picks the temporary address so that the advertised and
 the observed address still agree.
 
-### 2.2 The advertise gate
+### 2.2 The advertise gates
+
+Two gates. Peers get the address only with **positive proof** it is reachable inbound; the server
+gets it unverified, so it can probe it.
 
 ```
-shouldAdvertisePublicIPv6()  =  hasConfidentPublicIPv6()  &&  !publicIPv6ProbedUnreachable()
-
-hasConfidentPublicIPv6()     =  publicIPv6() is IPv6  &&  publicIPv6() is global unicast (§7)
-publicIPv6ProbedUnreachable()=  (ST_IPV6_STATUS & IPV6ST_PROBED) && !(… & IPV6ST_REACHABLE)
+confident        =  publicIPv6() is IPv6  &&  global unicast (§7)
+serverGate       =  confident                                    // login CT_MOD_IP_V6 (§4.1)
+peerGate         =  confident  &&  reachability(publicIPv6()) == Reachable
 ```
 
-A client MUST NOT advertise a public IPv6 in the hello (§3.1), the server login (§4.1), a Kad
-source publish (§5) or an eD2K link (§6) unless this gate is open. The gate is checked freshly at
-each advertisement, not cached.
+`peerGate` covers the hello (§3.1), `OP_CHANGE_CLIENT_IP` (§3.2), Kad source publish (§5) and
+eD2K links (§6). A client MUST NOT advertise its IPv6 there unless it is open. Both gates are
+checked freshly at each advertisement.
 
-The probe verdict is cleared on server disconnect, so a fresh login always re-advertises and gives
-the server another chance to probe.
+**Why fail closed.** Residential dual-stack lines hand out a global /64 straight to the host, but
+the router drops unsolicited inbound IPv6. Tier 4 is then confident, yet the address is dead.
+Without a probe the old "not probed unreachable" gate stayed open and published it everywhere.
+
+**Reachability** is a verdict bound to the address it was given for:
+
+| Event | Verdict |
+| --- | --- |
+| `ST_IPV6_STATUS` with `PROBED\|REACHABLE` | Reachable (server probe) |
+| `ST_IPV6_STATUS` with `PROBED`, no `REACHABLE` | Unreachable |
+| `ST_IPV6_STATUS` `HAVE\|REACHABLE` without `PROBED` | no change — a trust default proves nothing |
+| first hello on an accepted IPv6 connection, peer global and **outside our own /64s** | Reachable (inbound peer) |
+| UPnP IGD2 / PCP pinhole for our eD2K TCP port granted on a public address | Reachable (pinhole) — unless a probe already said Unreachable |
+| that pinhole lost | back to Unknown, if the pinhole was the proof |
+| `publicIPv6()` changes | Unknown |
+
+- Newest event wins, except a pinhole never overturns a failed probe.
+- A LAN peer (same /64) never crossed the router, so it proves nothing. NAT-T links are punched,
+  not accepted — excluded too. Lab mode (§7) skips the /64 test.
+- The verdict is **not** cleared on server disconnect, so a firewalled address is not
+  re-advertised to peers between servers. The next login still sends it (serverGate) and gets
+  re-probed.
+- When peerGate flips open, connected IPv6-capable peers are sent `OP_CHANGE_CLIENT_IP` (§3.2).
+  Closing has nothing to retract (§10.6).
+- **Operator assertion:** `ipv6AssumeReachable` (config file only, default off) makes Unknown read
+  as Reachable. A failed probe still wins. Same idea as another implementation's "advertise IPv6"
+  switch.
+
+Consequence: with no probing server, no pinhole, no inbound IPv6 peer and no assertion, a client
+stays silent about its IPv6 to peers. Inbound IPv6 still arrives via servers that publish us as a
+v6 source; the first such peer opens the gate.
 
 ---
 
@@ -286,7 +324,7 @@ count them.
 | --- | --- | --- |
 | `CT_MOD_MISCOPTIONS` `0xAA` | **always** | UINT32 capability bits (§1.3) |
 | `CT_MOD_YOUR_IP` `0xAD` | the peer's address is known | HASH16 of the peer's IPv6 if the connection is IPv6; otherwise UINT32 IPv4 in network order |
-| `CT_MOD_IP_V6` `0xAE` | the advertise gate is open (§2.2) | HASH16 — our public IPv6 |
+| `CT_MOD_IP_V6` `0xAE` | the peer gate is open (§2.2) | HASH16 — our public IPv6 |
 | `CT_EMULE_SERVINGBUDDYIPV6` `0xA0` | we are firewalled and our buddy has a public IPv6 | HASH16 — the buddy's IPv6 |
 
 Wire bytes for `CT_MOD_MISCOPTIONS` advertising both capabilities:
@@ -343,7 +381,8 @@ re-point the connect address **only if it was already IPv6** — an IPv4 connect
 not be redirected mid-flight.
 
 **Sender rules.** Send it to a connected peer that advertised `MODMISC_IPV6` when your own public
-IPv6 changes, subject to the advertise gate of §2.2. Senders SHOULD NOT broadcast on the instant of
+IPv6 changes or the peer gate of §2.2 opens, subject to that peer gate. It MUST NOT bypass the gate:
+at least one receiver marks the sender IPv6-reachable on any 0xAC, hello tag or not. Senders SHOULD NOT broadcast on the instant of
 the change: mark the affected peers and emit the packet the next time you are writing to each one
 anyway. Privacy addresses (RFC 4941) rotate on a timer, and a fan-out to every open socket per
 rotation is a burst of writes that buys nothing.
@@ -635,11 +674,12 @@ withdrawn (§1.3).
 > the tag or connects over IPv6 — and, in practice, should just be sentinel-safe unconditionally, as eMuleQt is.
 >
 > A consequence worth knowing: because the tag is gated on having a confident public IPv6 of
-> your own (§2.2), a client with a working sentinel parser but no IPv6 address of its own currently
+> your own (serverGate, §2.2), a client with a working sentinel parser but no IPv6 address of its own currently
 > has **no way to tell such a server so**, and receives no IPv6 sources. There is no channel for
 > "I can parse them, I just cannot be one".
 
-Both are sent only when the advertise gate of §2.2 is open. `ST_IPV6_STATUS` is **never sent by a
+Both are sent whenever serverGate of §2.2 is open — unverified, and even after a failed probe, so
+the server can probe again. `ST_IPV6_STATUS` is **never sent by a
 client**; it is receive-only.
 
 `OP_OFFERFILES` carries no IPv6 tag.
@@ -703,8 +743,9 @@ Observed emission conditions (server-dependent, but a useful baseline):
   local interface. On acceptance it becomes tier-1 of §2.1, i.e. what the client advertises from
   the next hello/login onwards. It MUST be cleared on disconnect.
 - `ST_IPV6_STATUS` SHOULD be sent by servers as `TAGTYPE_UINT8`; receivers MUST accept any integer
-  width (§0.3). Only the combination `IPV6ST_PROBED` set **and** `IPV6ST_REACHABLE` clear suppresses
-  further advertisement — an absent tag or an unprobed verdict never suppresses.
+  width (§0.3). Only `IPV6ST_PROBED` carries a verdict (§2.2): with `REACHABLE` it opens the peer
+  gate, without it closes it. An absent tag or an unprobed value changes nothing — the peer gate
+  stays where it was (closed until proven). The login gate is unaffected either way.
 - Servers MUST send their own IPv6 as `CT_MOD_SVR_IP_V6` `0xAF`. A receiver MAY also accept
   `0xAE` HASH16 in this packet as the server's IPv6 (some servers reuse the client tag id);
   `0xAF` wins when both are present, whatever the tag order.
@@ -918,13 +959,13 @@ Body: `UInt128 fileID`, `UInt128 sourceID`, `uint8 tagCount`, *tags*. The classi
 
 Append, **last**:
 
-- `"ip6"` — only when the advertise gate of §2.2 is open. It MAY accompany **any** source type
+- `"ip6"` — only when the peer gate of §2.2 is open. It MAY accompany **any** source type
   (1, 3, 4, 5 or 6).
 - `"bi6"` — only in the firewalled-with-buddy branch, when the buddy has a known IPv6.
 
 **Buddy-less IPv6 record (eMuleQt).** A node that is firewalled on IPv4, has no direct UDP
 callback and no buddy would publish nothing at all (sources, keywords and notes are all held back).
-When the advertise gate of §2.2 is open it publishes anyway: source type 3 (5 above 4 GB) **without**
+When the peer gate of §2.2 is open it publishes anyway: source type 3 (5 above 4 GB) **without**
 `FT_SERVERIP` / `FT_SERVERPORT` / `FT_BUDDYHASH` / `bi6`, plus the usual port, size and
 `FT_ENCRYPTION` tags and `ip6`. Indexing nodes store it unchanged. A stock client finds no route to
 such a source and drops it without any network I/O; an IPv6-capable client dials `ip6` directly.
@@ -1055,7 +1096,7 @@ their own.
 ### 6.5 Advertising your own address in a link
 
 When a client adds itself as a source hint to a link it emits, it MUST apply the gate of §2.2 to the
-IPv6 hint. eMuleQt additionally exposes a user preference (`ed2kLinkAdvertiseIPv6`, default on) and
+IPv6 hint (the peer gate). eMuleQt additionally exposes a user preference (`ed2kLinkAdvertiseIPv6`, default on) and
 supports a configured hostname or literal that is emitted alongside.
 
 ---
@@ -1207,7 +1248,7 @@ A client claiming interoperability with these extensions should implement, at mi
 
 - [ ] Dual-stack listener with `::ffff:` normalisation (§0.2)
 - [ ] `CT_MOD_MISCOPTIONS` emit and parse (§3.1)
-- [ ] `CT_MOD_IP_V6` emit (gated per §2.2) and parse in the hello (§3.1)
+- [ ] `CT_MOD_IP_V6` emit (peer gate, §2.2: positive proof only) and parse in the hello (§3.1)
 - [ ] Dial a LowID peer directly when it has an IPv6 (§3.5)
 - [ ] Global-unicast validation per §7, on **every** ingest path including the hello
 - [ ] `OP_CHANGE_CLIENT_IP` received on `OP_EDONKEYPROT` (§3.2)
@@ -1241,7 +1282,8 @@ A client claiming interoperability with these extensions should implement, at mi
 
 **Recommended**
 
-- [ ] `ST_IPV6_STATUS` handling and suppression on probed-unreachable (§4.3)
+- [ ] `ST_IPV6_STATUS` handling: PROBED verdict feeds reachability, kept across disconnect (§2.2, §4.3)
+- [ ] Login sends `CT_MOD_IP_V6` unverified (serverGate, §2.2)
 - [ ] `CT_MOD_YOUR_IP` corroboration rather than direct adoption (§2.1)
 - [ ] IPv6 UDP obfuscation with the 35-byte key, magic at offset 32 (§3.4)
 - [ ] `server.met` `ST_IPV6` read/write with header IP 0 (§4.8)
@@ -1263,7 +1305,7 @@ A client claiming interoperability with these extensions should implement, at mi
 | `OP_SERVERIDENT`, `OP_IDCHANGE`, callbacks | `src/core/net/ServerSocket.cpp` |
 | Inline source sentinel | `src/core/transfer/DownloadQueue.cpp` |
 | `server.met`, server list block | `src/core/server/ServerList.cpp`, `src/core/server/Server.cpp` |
-| Public-IPv6 confidence gate | `src/core/app/AppContext.cpp` |
+| Public-IPv6 tiers, reachability proof, peer/server gates | `src/core/app/AppContext.cpp`; proof hooks in `src/core/net/ClientReqSocket.cpp` (inbound hello), `src/core/app/CoreSession.cpp` (pinhole) |
 | Kad tags | `src/core/kademlia/KadSearch.cpp`, `src/core/kademlia/KadUDPListener.cpp` |
 | eD2K links | `src/core/protocol/ED2KLink.cpp` |
 
@@ -1279,7 +1321,7 @@ tests, whose names are capitalised "Live".)*
 | --- | --- | --- |
 | `tst_LocalIPv6` | The whole file (34 cases). Stable-vs-temporary address ranking, deprecated/tentative flags, `/proc/net/if_inet6` parsing, Windows lifetime tie-break, `publicIPv6Override` resolution, tier-slot population. Pure — needs no interfaces | no |
 | `tst_Address` | 42 cases. Family construction and round-trips, ordering and hashing across families, the `isPublicIP` reject table (Teredo, documentation, 6to4, multicast, SRv6), `toUint32`/`toNetworkUint32` returning 0 for v6, mapped-v4 conversion, `isGoodIP`, `Endpoint` and `parseHostPort`/`formatHostPort` bracketing, and `labNetworkMode_widensIPv6Only` (§7 lab mode, incl. IPv4 left untouched and the scoped guard restoring state) | no |
-| `tst_SourceExchange` | 12 cases. ExtSX v1 tag-block layout, IPv6 round-trip, unknown-tag skip without desync, LowID-with-IPv6 kept where classic drops it, the 500 cap, hybrid-ID encoding, IPv6-only source survival, `CT_EMULE_USERHASH`/`CT_EMULE_CONOPTS` emitted **only** for a `MODMISC_EXTXS_SKIPTAGS` peer and recovered on parse, plus the §2 confidence gate (peer corroboration threshold, reflection not held locally, tier precedence) | no |
+| `tst_SourceExchange` | 12 cases. ExtSX v1 tag-block layout, IPv6 round-trip, unknown-tag skip without desync, LowID-with-IPv6 kept where classic drops it, the 500 cap, hybrid-ID encoding, IPv6-only source survival, `CT_EMULE_USERHASH`/`CT_EMULE_CONOPTS` emitted **only** for a `MODMISC_EXTXS_SKIPTAGS` peer and recovered on parse, plus the §2 gates (peer corroboration threshold, reflection not held locally, tier precedence, proof sources: probe / inbound peer outside our /64 / pinhole / assumed, verdict kept across disconnect, reset on address change) | no |
 | `tst_SourceExchangeCompat` | 64 cases. The interop layer: two in-test models of foreign readers (stock eMule's fixed-record parser, and the intolerant ExtSX reader of §10 that abandons an answer on any unknown tag) run against real emitted answers. Golden bytes for classic v1–v4 and SX1, the §3.3.3 worked example byte for byte, no IPv6/userhash/crypt leaking into a non-`MODMISC_EXTXS` answer, the `MODMISC_EXTXS_SKIPTAGS` gate proven load-bearing by its negative control, `CT_MOD_IP_V6` emitted only for global unicast, zlib round trip, address-less source kept, hostile input (truncation, over-large `tagCount`, over-declared count, oversized unknown tag, wrong-typed and non-public `CT_MOD_IP_V6`, families judged independently, the classic-v1-from-an-ExtSX-peer ambiguity), the requested version byte on both the standalone and multipacket request forms, the hello capability round trip, and the source request bundled in a multipacket | no |
 | `tst_ED2KLink` | 16 cases. `s6=` grammar (bracketed, bracketed-no-port, bare literal, bare-with-colon-is-an-address, malformed skipped), rejection of non-IPv6 in `s6=`, the v4-LowID drop applying to v4 only, and the legacy-safety invariants: `s6=` after `/` and before `\|sources,`, no IPv6 inside `sources,`, v6-only hints emit no `sources` token, and a re-implementation of the legacy scan recovering exactly the v4 entry. Plus IPv6 server links, bracketed and bare | no |
 | `tst_ServerList` | 9 cases. Adding an IPv6 server, not colliding with a dynIP entry (both project to `uint32` 0), duplicate rejection, `ST_IPV6` `server.met` round-trip incl. mixed lists, static-server round-trip, text and `ed2k://` link import of bracketed literals, `findByIPUdp` by Address | no |

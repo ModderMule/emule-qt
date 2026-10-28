@@ -115,6 +115,8 @@
 #include <QSet>
 #include <QStorageInfo>
 
+#include <openssl/crypto.h>
+
 #ifdef Q_OS_WIN
 #include <qt_windows.h>
 #include <shellapi.h>
@@ -532,19 +534,30 @@ void IpcClientHandler::handleHandshake(const IpcMessage& msg)
     const QString version = msg.fieldString(0);
     logInfo(QStringLiteral("IPC handshake from client, version: %1").arg(version));
 
-    // Authenticate: required for remote clients, optional for localhost.
-    // A local client that sends a token (e.g. Docker port-forward) gets validated + encrypted.
+    // Authenticate: required for remote clients, optional for localhost. A remote
+    // client only gets here over TLS (IpcTlsServer); checked again anyway.
+    if (!m_isLocal && !m_connection->isEncrypted()) {
+        logWarning(QStringLiteral("IPC auth refused — remote client without TLS"));
+        m_connection->close();
+        return;
+    }
     const QString clientToken = msg.fieldString(1);
     if (!m_isLocal || !clientToken.isEmpty()) {
+        const QByteArray given = clientToken.toUtf8();
         const QStringList tokens = thePrefs.ipcTokens();
-        if (tokens.isEmpty() || !tokens.contains(clientToken)) {
+        const bool ok = std::ranges::any_of(tokens, [&given](const QString& t) {
+            const QByteArray want = t.toUtf8();
+            return want.size() == given.size()
+                && CRYPTO_memcmp(want.constData(), given.constData(),
+                                 static_cast<size_t>(want.size())) == 0;
+        });
+        if (!ok) {
             logWarning(QStringLiteral("IPC auth failed — invalid token"));
             sendMessage(IpcMessage::makeError(msg.seqId(), 403,
                 QStringLiteral("Authentication failed")));
             m_connection->close();
             return;
         }
-        m_connection->setEncryptionKey(deriveAesKey(clientToken));
     }
 
     m_handshaked = true;

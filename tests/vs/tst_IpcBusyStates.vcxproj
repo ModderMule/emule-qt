@@ -178,6 +178,7 @@
   <ItemGroup>
     <ClCompile Include="..\tst_IpcBusyStates.cpp" />
     <ClCompile Include="..\..\src\gui\app\IpcClient.cpp" />
+    <ClCompile Include="..\..\src\gui\app\KnownCores.cpp" />
     <ClCompile Include="..\..\src\gui\app\CoreStartWatch.cpp" />
   </ItemGroup>
   <ItemGroup>

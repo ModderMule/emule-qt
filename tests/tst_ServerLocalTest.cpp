@@ -1766,9 +1766,15 @@ void tst_ServerLocalTest::ipv6ProbeFirewalled()
     // Outgoing v6 dials stay allowed: only inbound is blocked.
     QVERIFY(theApp.hasConfidentPublicIPv6());
 
+    // The next login still sends it, so the server can re-probe.
+    QVERIFY(theApp.shouldAdvertisePublicIPv6ToServer());
+
     disconnectAndExpectIPv6StatusCleared();
-    QVERIFY2(theApp.shouldAdvertisePublicIPv6(),
-             "Disconnect must clear the verdict so the next login advertises and is re-probed");
+    // Only the session bits go: the verdict stays, so peers don't get it between servers.
+    QVERIFY2(!theApp.shouldAdvertisePublicIPv6(),
+             "A failed probe must keep the IPv6 off the peer-facing ads after disconnect");
+    QVERIFY(theApp.shouldAdvertisePublicIPv6ToServer());
+    theApp.clearIPv6Reachability();
 }
 
 void tst_ServerLocalTest::stopServerIPv6Probe()

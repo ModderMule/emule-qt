@@ -110,6 +110,7 @@ SOURCES += \
     IpcClientHandler.cpp \
     IpcClientHandlerMeta.cpp \
     IpcServer.cpp \
+    IpcTlsIdentity.cpp \
     main.cpp \
     MetaSearchService.cpp \
     PowerManager.cpp \
@@ -140,6 +141,7 @@ HEADERS += \
     DaemonUsenetWebBackend.h \
     IpcClientHandler.h \
     IpcServer.h \
+    IpcTlsIdentity.h \
     MetaSearchService.h \
     PowerManager.h \
     UsenetBridge.h \

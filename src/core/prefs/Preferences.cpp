@@ -183,6 +183,9 @@ struct Preferences::Data {
     bool separateIPv6Queue = true;
     // Use the OS-preferred temporary IPv6 source instead of pinning the stable address.
     bool ipv6UsePrivacyAddress = false;
+    // Operator says our IPv6 is reachable inbound: advertise it to peers without proof.
+    // Config file only (no UI); a server probe that finds it closed still wins.
+    bool ipv6AssumeReachable = false;
     // Redial a dual-stack server over IPv6 when its IPv4 session gave a LowID. IPv4 is
     // always tried first: only an IPv4 session can hand out a HighID.
     bool serverPreferIPv6 = true;
@@ -925,6 +928,10 @@ void Preferences::setSeparateIPv6Queue(bool val) { set(&Data::separateIPv6Queue,
 bool Preferences::ipv6UsePrivacyAddress() const { return get(&Data::ipv6UsePrivacyAddress); }
 
 void Preferences::setIpv6UsePrivacyAddress(bool val) { set(&Data::ipv6UsePrivacyAddress, val); }
+
+bool Preferences::ipv6AssumeReachable() const { return get(&Data::ipv6AssumeReachable); }
+
+void Preferences::setIpv6AssumeReachable(bool val) { set(&Data::ipv6AssumeReachable, val); }
 
 bool Preferences::serverPreferIPv6() const { return get(&Data::serverPreferIPv6); }
 
@@ -2297,7 +2304,14 @@ void Preferences::setBtMaxConnectionsPerTorrent(int val)
 bool Preferences::btPortMapping() const { return get(&Data::btPortMapping); }
 void Preferences::setBtPortMapping(bool val) { set(&Data::btPortMapping, val); }
 
-bool Preferences::ed3kEnabled() const { return get(&Data::ed3kEnabled); }
+bool Preferences::ed3kEnabled() const
+{
+#ifdef EMULE_ED3K_LOCKED
+    return false;   // early alpha: CI builds keep the node off
+#else
+    return get(&Data::ed3kEnabled);
+#endif
+}
 void Preferences::setEd3kEnabled(bool val) { set(&Data::ed3kEnabled, val); }
 
 uint16 Preferences::ed3kUdpPort() const { return get(&Data::ed3kUdpPort); }
@@ -4286,6 +4300,7 @@ bool Preferences::load(const QString& filePath)
             m_data->ipv4PublicServerConfirmWindowSecs = static_cast<uint32>(n["ipv4PublicServerConfirmWindowSecs"].as<int>(static_cast<int>(m_data->ipv4PublicServerConfirmWindowSecs)));
             m_data->separateIPv6Queue = n["separateIPv6Queue"].as<bool>(m_data->separateIPv6Queue);
             m_data->ipv6UsePrivacyAddress = n["ipv6UsePrivacyAddress"].as<bool>(m_data->ipv6UsePrivacyAddress);
+            m_data->ipv6AssumeReachable = n["ipv6AssumeReachable"].as<bool>(m_data->ipv6AssumeReachable);
             m_data->serverPreferIPv6 = n["serverPreferIPv6"].as<bool>(m_data->serverPreferIPv6);
             m_data->maxConsPerFive = static_cast<uint16>(n["maxConsPerFive"].as<int>(m_data->maxConsPerFive));
             m_data->showOverhead = n["showOverhead"].as<bool>(m_data->showOverhead);
@@ -5576,6 +5591,7 @@ bool Preferences::saveImpl(const QString& filePath) const
     out << YAML::Key << "ipv4PublicServerConfirmWindowSecs" << YAML::Value << static_cast<int>(m_data->ipv4PublicServerConfirmWindowSecs);
     out << YAML::Key << "separateIPv6Queue" << YAML::Value << m_data->separateIPv6Queue;
     out << YAML::Key << "ipv6UsePrivacyAddress" << YAML::Value << m_data->ipv6UsePrivacyAddress;
+    out << YAML::Key << "ipv6AssumeReachable" << YAML::Value << m_data->ipv6AssumeReachable;
     out << YAML::Key << "serverPreferIPv6" << YAML::Value << m_data->serverPreferIPv6;
     out << YAML::Key << "maxConsPerFive" << YAML::Value << static_cast<int>(m_data->maxConsPerFive);
     out << YAML::Key << "showOverhead" << YAML::Value << m_data->showOverhead;

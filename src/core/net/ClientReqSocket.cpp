@@ -308,6 +308,11 @@ bool ClientReqSocket::checkHelloFirst(uint8 protocol, uint8 opcode, uint32 rawSi
 {
     if (protocol == OP_EDONKEYPROT) {
         if (opcode == OP_HELLO) {
+            // First hello on an inbound IPv6 socket: a peer got through to us, so our
+            // IPv6 is reachable (AppContext filters out our own /64). NAT-T links are
+            // punched, not accepted — they prove nothing.
+            if (m_incoming && !m_helloSeen && !hasTransport())
+                theApp.noteInboundIPv6Peer(Address::fromQHostAddress(peerAddress()));
             m_helloSeen = true;
             return true;
         }

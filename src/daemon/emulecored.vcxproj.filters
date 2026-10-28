@@ -48,6 +48,9 @@
     <ClCompile Include="IpcServer.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
+    <ClCompile Include="IpcTlsIdentity.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
     <ClCompile Include="WinShutdownHandler.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
@@ -111,6 +114,9 @@
       <Filter>Header Files</Filter>
     </QtMoc>
     <ClInclude Include="CommandLineExec.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="IpcTlsIdentity.h">
       <Filter>Header Files</Filter>
     </ClInclude>
     <QtMoc Include="CoreNotifierBridge.h">

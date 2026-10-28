@@ -1629,6 +1629,10 @@ void CoreSession::initPortMapper()
     connect(m_portMapper.get(), &PortMapper::statusChanged, this,
             [](PortMapStatus status) {
                 logInfo(QStringLiteral("Port mapping: %1").arg(portMapStatusName(status)));
+                // stop()/clearActive() drop mappings without a mappingChanged(false).
+                if (status == PortMapStatus::Unknown || status == PortMapStatus::Disabled
+                    || status == PortMapStatus::NotMapped || status == PortMapStatus::Failed)
+                    theApp.noteIPv6Pinhole(Address{}, false);
                 // Peers pick a changed port up with the next hello; a server keeps the
                 // one from its login until we reconnect.
                 const uint16 mapped = theApp.mappedTcpPort();
@@ -1646,6 +1650,14 @@ void CoreSession::initPortMapper()
 
     connect(m_portMapper.get(), &PortMapper::mappingChanged, this,
             [](const PortMapping& mapping, bool ok) {
+                // An IPv6 pinhole for the eD2K TCP port proves inbound reachability.
+                if (mapping.request.family == PortMapFamily::IPv6
+                    && mapping.request.purpose == PortMapPurpose::Ed2kTcp) {
+                    const Address internal = !mapping.request.internalClient.isNull()
+                                                 ? mapping.request.internalClient
+                                                 : mapping.externalAddress;
+                    theApp.noteIPv6Pinhole(internal, ok && mapping.isUsable());
+                }
                 if (!ok)
                     return;
                 logInfo(QStringLiteral("Port mapping: %1 port %2 -> external %3 (%4, %5s lease)")
@@ -1860,8 +1872,10 @@ std::vector<PortMapRequest> CoreSession::buildPortMapRequests() const
 
         // IPv6 has no NAT: the same port is opened as a firewall pinhole. On a
         // CGNAT line this is the only path that yields real inbound reachability,
-        // so it is requested whenever we hold a routable address.
-        if (thePrefs.portMapIPv6() && theApp.hasConfidentPublicIPv6()) {
+        // so it is requested whenever we hold a routable address. Not for a NAT66
+        // override: a pinhole needs an internal client on one of our interfaces.
+        if (thePrefs.portMapIPv6() && theApp.hasConfidentPublicIPv6()
+            && theApp.isLocalIPv6(theApp.publicIPv6())) {
             PortMapRequest v6 = request;
             v6.family = PortMapFamily::IPv6;
             v6.internalClient = theApp.publicIPv6();
@@ -1926,6 +1940,9 @@ void CoreSession::initLocalIPv6()
                                   "loopback, ULA, link-local and documentation addresses"));
 
     theApp.onPublicIPv6Changed = &CoreSession::markPeersForIPChange;
+    if (thePrefs.ipv6AssumeReachable())
+        logInfo(QStringLiteral("IPv6: ipv6AssumeReachable set — advertising our IPv6 to peers "
+                               "without proof"));
 
     // Publish first, then narrate: the advisory reports the address actually in effect,
     // which may come from publicIPv6Override rather than auto-selection.

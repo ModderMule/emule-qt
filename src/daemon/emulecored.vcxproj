@@ -188,6 +188,7 @@
     <ClCompile Include="IpcClientHandler.cpp" />
     <ClCompile Include="IpcClientHandlerMeta.cpp" />
     <ClCompile Include="IpcServer.cpp" />
+    <ClCompile Include="IpcTlsIdentity.cpp" />
     <ClCompile Include="main.cpp" />
     <ClCompile Include="MetaSearchService.cpp" />
     <ClCompile Include="PowerManager.cpp" />
@@ -211,6 +212,7 @@
     <QtMoc Include="ApiEventFeeder.h" />
     <QtMoc Include="CliIpcClient.h" />
     <ClInclude Include="CommandLineExec.h" />
+    <ClInclude Include="IpcTlsIdentity.h" />
     <QtMoc Include="CoreNotifierBridge.h" />
     <QtMoc Include="DaemonApp.h" />
     <QtMoc Include="IpcClientHandler.h" />

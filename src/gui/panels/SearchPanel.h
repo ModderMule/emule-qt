@@ -146,6 +146,9 @@ public:
     /// The connected server answers that search (MFC CanSearchRelatedFiles).
     void setRelatedSearchSupported(bool supported) { m_relatedSearchSupported = supported; }
 
+    /// The "ed3k" search method only while the ed3k node is enabled.
+    void setEd3kMethodVisible(bool visible);
+
     /// Show a peer's shared file list in its own tab, creating it on first use and
     /// selecting it. MFC CSearchList::ProcessSearchAnswer(…, sender, …).
     void showClientSharedFiles(uint32_t searchID, const QString& userName);

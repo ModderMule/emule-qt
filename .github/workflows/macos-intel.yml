@@ -31,6 +31,8 @@ permissions:
 
 env:
   FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
+  # ed3k early alpha: node locked off in CI builds (CMakeLists.txt EMULE_ED3K_LOCKED)
+  EMULE_ED3K_LOCKED: "1"
   # Oldest macOS the app runs on; 13.0 is the floor of the Qt 6.10 binaries.
   # Read by CMake, clang, scripts/build-macos-deps.sh and, as a hard check, by
   # scripts/bundle-macos.sh.  Unset, everything is built for the runner's own

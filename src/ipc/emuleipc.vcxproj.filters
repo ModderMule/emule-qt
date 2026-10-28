@@ -24,6 +24,9 @@
     <ClCompile Include="IpcProtocol.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
+    <ClCompile Include="IpcTls.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
     <ClCompile Include="LogRelay.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
@@ -47,6 +50,9 @@
     <ClInclude Include="IpcProtocol.h">
       <Filter>Header Files</Filter>
     </ClInclude>
+    <QtMoc Include="IpcTls.h">
+      <Filter>Header Files</Filter>
+    </QtMoc>
     <QtMoc Include="LogRelay.h">
       <Filter>Header Files</Filter>
     </QtMoc>

@@ -584,6 +584,19 @@ if(EMULE_ED3K)
     add_compile_definitions(EMULE_HAVE_ED3K=1)
 endif()
 
+# ed3k is early alpha: CI builds lock the node off (env EMULE_ED3K_LOCKED=1, set in the
+# GitHub workflows and the Docker image). ToDo: drop once ed3k is ready for live use
+if(DEFINED ENV{EMULE_ED3K_LOCKED} AND NOT "$ENV{EMULE_ED3K_LOCKED}" STREQUAL "" AND NOT "$ENV{EMULE_ED3K_LOCKED}" STREQUAL "0")
+    set(_emule_ed3k_locked_default ON)
+else()
+    set(_emule_ed3k_locked_default OFF)
+endif()
+option(EMULE_ED3K_LOCKED "ed3k node can't be enabled (early alpha)" ${_emule_ed3k_locked_default})
+if(EMULE_ED3K_LOCKED)
+    add_compile_definitions(EMULE_ED3K_LOCKED=1)
+    message(STATUS "ed3k: node locked off (EMULE_ED3K_LOCKED)")
+endif()
+
 # ---------------------------------------------------------------------------
 # Subdirectories
 # ---------------------------------------------------------------------------

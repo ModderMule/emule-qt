@@ -94,6 +94,7 @@ SOURCES += \
     crypto/FileIdentifier.cpp \
     crypto/MD4Hash.cpp \
     crypto/AesCbc.cpp \
+    crypto/SelfSignedCert.cpp \
     crypto/MD5Hash.cpp \
     crypto/SHAHash.cpp \
     files/AbstractFile.cpp \
@@ -251,6 +252,7 @@ HEADERS += \
     crypto/FileIdentifier.h \
     crypto/MD4Hash.h \
     crypto/AesCbc.h \
+    crypto/SelfSignedCert.h \
     crypto/MD5Hash.h \
     crypto/SHAHash.h \
     files/AbstractFile.h \

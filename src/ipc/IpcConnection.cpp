@@ -5,6 +5,7 @@
 
 #include <QCborValue>
 #include <QPointer>
+#include <QSslSocket>
 #include <QScopeGuard>
 #include <QtEndian>
 
@@ -51,9 +52,7 @@ IpcConnection::SendResult IpcConnection::sendMessage(const IpcMessage& msg)
         return SendResult::Overflow;
     }
 
-    QByteArray cborBytes = msg.toArray().toCborValue().toCbor();
-    if (!m_encryptionKey.isEmpty())
-        cborBytes = aesEncryptPayload(cborBytes, m_encryptionKey);
+    const QByteArray cborBytes = msg.toArray().toCborValue().toCbor();
     m_socket->write(encodeFrame(cborBytes));
     m_socket->flush();
     return SendResult::Sent;
@@ -121,14 +120,10 @@ QTcpSocket* IpcConnection::socket() const
     return m_socket;
 }
 
-void IpcConnection::setEncryptionKey(const QByteArray& key)
-{
-    m_encryptionKey = key;
-}
-
 bool IpcConnection::isEncrypted() const
 {
-    return !m_encryptionKey.isEmpty();
+    const auto* ssl = qobject_cast<const QSslSocket*>(m_socket);
+    return ssl && ssl->isEncrypted();
 }
 
 // ---------------------------------------------------------------------------
@@ -266,36 +261,13 @@ void IpcConnection::decodeFrames(const QElapsedTimer& clock, int budgetMs)
         if (budgetMs > 0 && !m_queue.empty() && clock.elapsed() >= budgetMs)
             break;
 
-        if (m_encryptionKey.isEmpty()) {
-            // Unencrypted path
-            auto result = tryDecodeFrame(m_readBuffer);
-            if (!result)
-                break;
+        // TLS (when used) sits below the socket: frames are plain here
+        auto result = tryDecodeFrame(m_readBuffer);
+        if (!result)
+            break;
 
-            m_readBuffer.remove(0, result->bytesConsumed);
-            enqueue(IpcMessage(std::move(result->message)));
-        } else {
-            // Encrypted path
-            auto raw = tryExtractRawFrame(m_readBuffer);
-            if (!raw)
-                break;
-
-            m_readBuffer.remove(0, raw->bytesConsumed);
-
-            QByteArray plain = aesDecryptPayload(raw->payload, m_encryptionKey);
-            if (plain.isEmpty()) {
-                closeInput(QStringLiteral("AES decryption failed"));
-                return;
-            }
-
-            QCborValue val = QCborValue::fromCbor(plain);
-            if (!val.isArray()) {
-                closeInput(QStringLiteral("Invalid CBOR after decryption"));
-                return;
-            }
-
-            enqueue(IpcMessage(val.toArray()));
-        }
+        m_readBuffer.remove(0, result->bytesConsumed);
+        enqueue(IpcMessage(std::move(result->message)));
     }
 
     // Check for oversized frame in progress

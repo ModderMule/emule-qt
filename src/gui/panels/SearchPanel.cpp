@@ -173,6 +173,22 @@ void SearchPanel::setIpcClient(IpcClient* client)
     refreshKnownTypes();
 }
 
+void SearchPanel::setEd3kMethodVisible(bool visible)
+{
+    constexpr int kEd3k = static_cast<int>(SearchType::Ed3k);
+    const int idx = m_methodCombo->findData(kEd3k);
+    if (visible && idx < 0) {
+        m_methodCombo->addItem(QIcon(QStringLiteral(":/icons/Ed3k.ico")), tr("ed3k"), kEd3k);
+        // daemon prefs land after the restore in the ctor
+        if (theUiState.searchLastMethod(0) == kEd3k)
+            m_methodCombo->setCurrentIndex(m_methodCombo->count() - 1);
+    } else if (!visible && idx >= 0) {
+        if (m_methodCombo->currentIndex() == idx)
+            m_methodCombo->setCurrentIndex(m_methodCombo->findData(static_cast<int>(SearchType::Kademlia)));
+        m_methodCombo->removeItem(idx);
+    }
+}
+
 void SearchPanel::startSearchFromExternal(const QString& expression,
                                           const QString& fileType,
                                           int method,
@@ -390,8 +406,8 @@ QWidget* SearchPanel::createSearchBar()
                            tr("Torrent (Server)"), 7);  // SearchType::MetaTorrent
     m_methodCombo->addItem(QIcon(QStringLiteral(":/icons/Web.ico")),
                            tr("Web (Server)"), 8);      // SearchType::MetaWeb
-    // the ed3k node's keyword search (Protocol.md §10.3); no MFC original
-    m_methodCombo->addItem(QIcon(QStringLiteral(":/icons/Kad.ico")), tr("ed3k"), 9);   // SearchType::Ed3k
+    // the ed3k node's keyword search (Protocol.md §10.3); no MFC original. Only while enabled
+    setEd3kMethodVisible(thePrefs.ed3kEnabled());
     typeRow->addWidget(m_methodCombo);
     m_resetBtn = new QPushButton(tr("Reset"), container);
     connect(m_resetBtn, &QPushButton::clicked, this, [this] {
@@ -3013,7 +3029,7 @@ QIcon SearchPanel::tabIcon(const SearchTab& tab)
     case 6:  return QIcon(QStringLiteral(":/icons/Usenet.ico"));      // Usenet (Server)
     case 7:  return QIcon(QStringLiteral(":/icons/Torrent.ico"));     // Torrent (Server)
     case 8:  return QIcon(QStringLiteral(":/icons/Web.ico"));         // Web (Server)
-    case 9:  return QIcon(QStringLiteral(":/icons/Kad.ico"));         // ed3k
+    case 9:  return QIcon(QStringLiteral(":/icons/Ed3k.ico"));        // ed3k
     default: return QIcon(QStringLiteral(":/icons/KadServer.ico"));   // Automatic
     }
 }

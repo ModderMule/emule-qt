@@ -45,7 +45,7 @@ user so the bind mounts stay yours.
 | 4662/tcp | eD2K client connections | yes, same port on host and container |
 | 4672/udp | eD2K + Kad UDP | yes, same port on host and container |
 | 4711/tcp | web UI, REST API, MCP | LAN or reverse proxy |
-| 4712/tcp | GUI IPC (token, AES encrypted) | LAN only |
+| 4712/tcp | GUI IPC (token, TLS) | LAN only |
 | 5800/tcp | GUI via noVNC (`EMULEQT_GUI=1`) | LAN only |
 | 5900/tcp | raw VNC (`EMULEQT_VNC_EXPOSE=1`) | optional |
 
@@ -105,6 +105,14 @@ ipc:
     - "<token from docker logs or EMULEQT_IPC_TOKEN>"
 ```
 
+The link runs over TLS whenever a token is sent. The core creates a
+self-signed certificate on first start (`/config/ipc-cert.pem`, `ipc-key.pem`)
+and logs its SHA-256 fingerprint. The GUI pins that fingerprint on its first
+connect (Options → General → Core → Trusted cores). If the core later shows a
+different certificate, the GUI asks before it sends anything. Compare with the
+fingerprint in `docker logs` before you trust it. Keep `/config` on a volume, or
+every new container gets a new certificate.
+
 Quitting that GUI leaves the core in the container running.
 
 ## REST API and MCP
@@ -126,6 +134,8 @@ emuleqt-mcp --url http://<host>:4711/mcp --api-key "$KEY"
 
 - 4711, 4712 and 5800 control the client. Keep them on the LAN or behind a
   reverse proxy with TLS. Never forward them on the router.
+- 4712 needs TLS from any client that isn't on loopback, and the token is only
+  ever sent inside TLS. A plaintext remote client is dropped.
 - For HTTPS on the web server, mount a cert and set `webserver.httpsEnabled`,
   `certPath` and `keyPath` in `/config/preferences.yml`.
 - Always set `EMULEQT_VNC_PASSWORD` with `EMULEQT_GUI=1`.

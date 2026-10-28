@@ -124,6 +124,9 @@
     <ClCompile Include="app\IpcClient.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
+    <ClCompile Include="app\KnownCores.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
     <ClCompile Include="app\Ed3kNameOpener.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
@@ -421,6 +424,9 @@
       <Filter>Header Files</Filter>
     </QtMoc>
     <ClInclude Include="app\AutoStart.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="app\KnownCores.h">
       <Filter>Header Files</Filter>
     </ClInclude>
     <ClInclude Include="panels\ChatNetwork.h">
@@ -1156,6 +1162,9 @@
       <Filter>Resource Files</Filter>
     </None>
     <None Include="..\..\resources\icons\Info.ico">
+      <Filter>Resource Files</Filter>
+    </None>
+    <None Include="..\..\resources\icons\Ed3k.ico">
       <Filter>Resource Files</Filter>
     </None>
     <None Include="..\..\resources\icons\Kad.ico">

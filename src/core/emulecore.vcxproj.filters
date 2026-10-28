@@ -84,6 +84,9 @@
     <ClCompile Include="crypto\AesCbc.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
+    <ClCompile Include="crypto\SelfSignedCert.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
     <ClCompile Include="client\ClientCredits.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
@@ -1314,6 +1317,9 @@
       <Filter>Header Files</Filter>
     </ClInclude>
     <ClInclude Include="crypto\AesCbc.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="crypto\SelfSignedCert.h">
       <Filter>Header Files</Filter>
     </ClInclude>
     <QtMoc Include="client\UpDownClient.h">

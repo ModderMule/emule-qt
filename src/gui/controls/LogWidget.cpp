@@ -136,9 +136,9 @@ LogWidget::LogWidget(QWidget* parent)
     m_stack->addWidget(m_kadBrowser);
 
     // ed3k tabs (shown while ed3kEnabled): the node's log, its debug lines, its Kad
-    m_ed3kTabIndex = addLogTab(m_ed3kBrowser, QStringLiteral(":/icons/Log.ico"), tr("ed3k"));
+    m_ed3kTabIndex = addLogTab(m_ed3kBrowser, QStringLiteral(":/icons/Ed3k.ico"), tr("ed3k"));
     addLogTab(m_ed3kVerboseBrowser, QStringLiteral(":/icons/Log.ico"), tr("ed3k Verbose"));
-    addLogTab(m_ed3kKadBrowser, QStringLiteral(":/icons/Kad.ico"), tr("ed3k Kad"));
+    addLogTab(m_ed3kKadBrowser, QStringLiteral(":/icons/Ed3k.ico"), tr("ed3k Kad"));
     setEd3kTabsVisible(thePrefs.ed3kEnabled());
 
     // IPC tab (shown only when enableIpcLog is true)

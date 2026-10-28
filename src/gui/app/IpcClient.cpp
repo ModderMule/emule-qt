@@ -3,11 +3,14 @@
 /// @brief GUI-side IPC client — implementation.
 
 #include "app/IpcClient.h"
+#include "app/KnownCores.h"
+#include "IpcTls.h"
 
 #include "prefs/Preferences.h"
 #include "utils/Log.h"
 
 #include <QPointer>
+#include <QSslConfiguration>
 
 #include <memory>
 #include <utility>
@@ -364,6 +367,20 @@ void IpcClient::connectToDaemon(const QHostAddress& address, uint16_t port)
 
     m_connectAttempts = 0;
     m_coreLink = CoreLink::Offline;   // a fresh target: nothing sticks from the last
+    m_pendingFingerprint.clear();
+    beginConnect();
+}
+
+void IpcClient::trustNewCertificate()
+{
+    if (m_pendingFingerprint.isEmpty())
+        return;
+    KnownCores& store = m_knownCores ? *m_knownCores : KnownCores::instance();
+    store.pin(pinKey(), m_pendingFingerprint);
+    logInfo(QStringLiteral("IPC: trusting new certificate of %1 (%2)")
+                .arg(pinKey(), m_pendingFingerprint));
+    m_pendingFingerprint.clear();
+    m_reconnectDelayMs = 1000;
     beginConnect();
 }
 
@@ -386,6 +403,7 @@ void IpcClient::connectToDaemon(const QString& host, uint16_t port)
 
     m_connectAttempts = 0;
     m_coreLink = CoreLink::Offline;
+    m_pendingFingerprint.clear();
     beginConnect();
 }
 
@@ -902,6 +920,57 @@ void IpcClient::onSocketConnected()
     if (!m_hostname.isEmpty() && m_socket)
         m_address = m_socket->peerAddress();
 
+    // TLS for any remote core, and whenever a token goes out: a Docker port
+    // forward looks like loopback here but not to the core.
+    if (!m_address.isLoopback() || !m_authToken.isEmpty()) {
+        QSslConfiguration cfg = m_socket->sslConfiguration();
+        cfg.setProtocol(QSsl::TlsV1_2OrLater);
+        cfg.setPeerVerifyMode(QSslSocket::VerifyNone);   // self-signed: pinned below
+        m_socket->setSslConfiguration(cfg);
+        connect(m_socket, &QSslSocket::encrypted, this, &IpcClient::onSocketEncrypted);
+        m_socket->startClientEncryption();
+        return;
+    }
+    startSession();
+}
+
+void IpcClient::onSocketEncrypted()
+{
+    if (!m_socket)
+        return;
+    const QString fp = Ipc::certFingerprint(m_socket->peerCertificate());
+    KnownCores& store = m_knownCores ? *m_knownCores : KnownCores::instance();
+    const QString key = pinKey();
+    switch (store.check(key, fp)) {
+    case KnownCores::Check::New:
+        store.pin(key, fp);
+        logInfo(QStringLiteral("IPC: pinned certificate of %1 (%2)").arg(key, fp));
+        break;
+    case KnownCores::Check::Match:
+        break;
+    case KnownCores::Check::Mismatch: {
+        // Nothing sent yet, the token included. Stop until the user decides.
+        const QString pinned = store.pinned(key);
+        logWarning(QStringLiteral("IPC: certificate of %1 changed (pinned %2, got %3) — "
+                                  "not connecting")
+                       .arg(key, pinned, fp));
+        m_pendingFingerprint = fp;
+        m_reconnectTimer.stop();
+        disconnect(m_socket, nullptr, this, nullptr);
+        m_socket->abort();
+        m_socket->deleteLater();
+        m_socket = nullptr;
+        m_refusalText = tr("The core's certificate changed");
+        setCoreLink(CoreLink::Refused);
+        emit certificateChanged(key, pinned, fp);
+        return;
+    }
+    }
+    startSession();
+}
+
+void IpcClient::startSession()
+{
     // Detach the pre-handoff error handler: IpcConnection owns the socket now
     // and handles errors through its own onErrorOccurred → disconnected signal.
     // Leaving errorOccurred connected would fire both onConnectionLost() AND
@@ -1063,12 +1132,8 @@ void IpcClient::performHandshake()
     IpcMessage handshake(IpcMsgType::Handshake, m_nextSeqId++);
     handshake.append(QString::fromLatin1(ProtocolVersion));
     if (!m_authToken.isEmpty())
-        handshake.append(m_authToken);
+        handshake.append(m_authToken);   // inside TLS whenever set (onSocketConnected)
     m_connection->sendMessage(handshake);
-
-    // Enable encryption BEFORE the response arrives so we can decrypt HandshakeOk
-    if (!m_authToken.isEmpty())
-        m_connection->setEncryptionKey(deriveAesKey(m_authToken));
 }
 
 void IpcClient::dispatchPushEvent(const IpcMessage& msg)
@@ -1271,7 +1336,8 @@ void IpcClient::sendKeepalive()
 
 void IpcClient::scheduleReconnect()
 {
-    if (!m_autoReconnect || m_reconnectTimer.isActive())
+    // A changed certificate waits for the user (trustNewCertificate())
+    if (!m_autoReconnect || m_reconnectTimer.isActive() || !m_pendingFingerprint.isEmpty())
         return;
 
     // A core we launched is still loading: ask again shortly, quietly. Backing
@@ -1375,7 +1441,7 @@ void IpcClient::beginConnect()
     else
         emit coreLinkChanged();   // the attempt count moved
 
-    m_socket = new QTcpSocket(this);
+    m_socket = new QSslSocket(this);
 
     connect(m_socket, &QTcpSocket::connected,
             this, &IpcClient::onSocketConnected);
@@ -1386,6 +1452,11 @@ void IpcClient::beginConnect()
         m_socket->connectToHost(m_address, m_port);
     else
         m_socket->connectToHost(m_hostname, m_port);
+}
+
+QString IpcClient::pinKey() const
+{
+    return KnownCores::key(m_hostname.isEmpty() ? m_address.toString() : m_hostname, m_port);
 }
 
 void IpcClient::setCoreLink(CoreLink link)

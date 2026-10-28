@@ -180,22 +180,29 @@ QString NetworkInfoDialog::infoHtml(const QCborMap& info, bool extended)
         html += QStringLiteral("<tr><td></td><td>%1</td></tr>")
                     .arg(lowID ? tr("Low ID") : tr("High ID"));
 
-        // IPv6 + the server's dial-back verdict (ST_IPV6_STATUS). A v6 session is
-        // structurally Low ID, so this row is what says whether inbound v6 works.
+        // IPv6 + the core's reachability verdict. A v6 session is structurally Low ID,
+        // so this row is what says whether inbound v6 works — and whether peers get it.
         const QString ipv6 = ed2k.value(QStringLiteral("publicIPv6")).toString();
         if (!ipv6.isEmpty()) {
-            constexpr qint64 kReachable = 0x02;   // IPV6ST_REACHABLE
-            constexpr qint64 kProbed    = 0x04;   // IPV6ST_PROBED
-            const qint64 st = ed2k.value(QStringLiteral("ipv6Status")).toInteger();
+            const qint64 reach = ed2k.value(QStringLiteral("ipv6Reachability")).toInteger();
+            const qint64 proof = ed2k.value(QStringLiteral("ipv6ProofSource")).toInteger();
             QString v6Status;
-            if ((st & kProbed) && (st & kReachable))
-                v6Status = tr("Open");
-            else if (st & kProbed)
+            if (reach == 1) {   // IPv6Reachability::Reachable
+                QString how;
+                switch (proof) {
+                case 1: how = tr("server verified"); break;
+                case 2: how = tr("inbound peer"); break;
+                case 3: how = tr("port mapping"); break;
+                case 4: how = tr("assumed"); break;
+                default: break;
+                }
+                v6Status = how.isEmpty() ? tr("Open")
+                                         : QStringLiteral("%1 (%2)").arg(tr("Open"), how);
+            } else if (reach == 2) {
                 v6Status = tr("Firewalled");
-            else if (st & kReachable)
-                v6Status = QStringLiteral("%1 (%2)").arg(tr("Open"), tr("unverified"));
-            else
-                v6Status = tr("Unknown");
+            } else {
+                v6Status = tr("Not verified, not advertised to peers");
+            }
             html += QStringLiteral("<tr><td>%1</td><td>[%2]:%3</td></tr>").arg(tr("IPv6:"))
                         .arg(ipv6.toHtmlEscaped()).arg(tcpPort);
             html += QStringLiteral("<tr><td>%1</td><td>%2</td></tr>").arg(tr("IPv6 Status:")).arg(v6Status);

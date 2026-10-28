@@ -179,6 +179,7 @@
     <ClCompile Include="..\tst_Ed3kSetsDialog.cpp" />
     <ClCompile Include="..\..\src\gui\dialogs\Ed3kSetsDialog.cpp" />
     <ClCompile Include="..\..\src\gui\app\IpcClient.cpp" />
+    <ClCompile Include="..\..\src\gui\app\KnownCores.cpp" />
   </ItemGroup>
   <ItemGroup>
     <QtMoc Include="..\..\src\gui\dialogs\Ed3kSetsDialog.h">

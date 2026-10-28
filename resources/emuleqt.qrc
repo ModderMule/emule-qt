@@ -112,6 +112,7 @@
         <file alias="ConnectDo.ico">icons/ConnectDo.ico</file>
         <file alias="ConnectDrop.ico">icons/ConnectDrop.ico</file>
         <file alias="Kad.ico">icons/Kad.ico</file>
+        <file alias="Ed3k.ico">icons/Ed3k.ico</file>
         <file alias="ServerList.ico">icons/ServerList.ico</file>
         <file alias="Transfer.ico">icons/Transfer.ico</file>
         <file alias="Statistics.ico">icons/Statistics.ico</file>

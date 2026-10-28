@@ -7,10 +7,10 @@
 /// Provides broadcast() to push events to all connected clients.
 
 #include "IpcMessage.h"
+#include "IpcTls.h"
 
 #include <QHostAddress>
 #include <QObject>
-#include <QTcpServer>
 
 #include <functional>
 #include <memory>
@@ -26,6 +26,9 @@ class IpcServer : public QObject {
 public:
     explicit IpcServer(QObject* parent = nullptr);
     ~IpcServer() override;
+
+    /// TLS identity for remote GUIs. Without one only loopback clients get in.
+    void setTlsIdentity(const QSslCertificate& cert, const QSslKey& key);
 
     /// Start listening on the given address and port.
     bool start(const QHostAddress& address, uint16_t port);
@@ -87,11 +90,11 @@ signals:
     void indexerConfigChanged();
 
 private slots:
-    void onNewConnection();
+    void onSocketReady(QSslSocket* socket, bool isLocal);
     void onClientDisconnected(IpcClientHandler* handler);
 
 private:
-    QTcpServer m_tcpServer;
+    Ipc::IpcTlsServer m_tcpServer;
     std::vector<std::unique_ptr<IpcClientHandler>> m_clients;
     std::function<void(const Ipc::IpcMessage&)> m_pushTap;
     QString m_errorText;

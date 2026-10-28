@@ -1228,7 +1228,7 @@ inline constexpr int ErrSuperseded = 503;
 inline constexpr uint16_t DefaultIpcPort = 4712;
 
 /// Protocol version string.
-inline constexpr const char* ProtocolVersion = "1.0";
+inline constexpr const char* ProtocolVersion = "1.1";   // 1.1: TLS replaces AES-CBC
 
 // ---------------------------------------------------------------------------
 // Framing functions
@@ -1251,31 +1251,5 @@ struct DecodeResult {
 /// Returns std::nullopt if insufficient data or invalid framing.
 /// On success, the caller should remove bytesConsumed from the buffer.
 [[nodiscard]] std::optional<DecodeResult> tryDecodeFrame(const QByteArray& buffer);
-
-// ---------------------------------------------------------------------------
-// Raw frame extraction (for encrypted connections)
-// ---------------------------------------------------------------------------
-
-/// Raw frame payload without CBOR parsing.
-struct RawFrameResult {
-    QByteArray payload;
-    int bytesConsumed = 0;
-};
-
-/// Extract one raw frame from the front of @p buffer (no CBOR parsing).
-[[nodiscard]] std::optional<RawFrameResult> tryExtractRawFrame(const QByteArray& buffer);
-
-// ---------------------------------------------------------------------------
-// AES-256-CBC encryption helpers
-// ---------------------------------------------------------------------------
-
-/// Derive a 32-byte AES-256 key from a token string using SHA-256.
-[[nodiscard]] QByteArray deriveAesKey(const QString& token);
-
-/// AES-256-CBC encrypt: returns [16-byte IV][ciphertext].
-[[nodiscard]] QByteArray aesEncryptPayload(const QByteArray& plaintext, const QByteArray& key);
-
-/// AES-256-CBC decrypt: input is [16-byte IV][ciphertext]. Returns plaintext or empty on failure.
-[[nodiscard]] QByteArray aesDecryptPayload(const QByteArray& data, const QByteArray& key);
 
 } // namespace eMule::Ipc

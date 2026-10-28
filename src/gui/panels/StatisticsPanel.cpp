@@ -2419,7 +2419,7 @@ std::span<const StatisticsPanel::CounterRow> StatisticsPanel::ed3kCounterRows()
 void StatisticsPanel::buildEd3kBranch(const QIcon& detailIcon)
 {
     m_itemEd3k = new QTreeWidgetItem(m_tree, {tr("ed3k")});
-    m_itemEd3k->setIcon(0, QIcon(QStringLiteral(":/icons/Kad.ico")));
+    m_itemEd3k->setIcon(0, QIcon(QStringLiteral(":/icons/Ed3k.ico")));
     m_itemEd3kStatus = new QTreeWidgetItem(m_itemEd3k);
     m_itemEd3kNode = new QTreeWidgetItem(m_itemEd3k);
     m_itemEd3kClass = new QTreeWidgetItem(m_itemEd3k);

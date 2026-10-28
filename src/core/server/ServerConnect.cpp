@@ -998,12 +998,11 @@ void ServerConnect::sendLoginPacket(ServerSocket* socket)
     // and mark this session sentinel-safe. This is safe against legacy servers (they skip
     // the unknown login tag) AND is only sent alongside the inline-sentinel parser
     // (DownloadQueue::parseServerSourceBlock), per the S1/S3a coordination rule.
-    // Same advertise gate as the hello and the Kad source publish. Within a session the
-    // probe verdict always arrives after login, so this never blocks the first attempt;
-    // clearPublicIPv6Observed() zeroes the status on disconnect, so a fresh login re-sends
-    // the tag and the server can probe us again.
+    // Server gate, not the peer gate: sent unverified (even after a failed probe) so the
+    // server can dial-back-probe it. Its verdict then opens or keeps closed the peer gate
+    // (hello, Kad source publish, links).
     const Address publicIPv6 = theApp.publicIPv6();
-    const bool sendIPv6Tag = theApp.shouldAdvertisePublicIPv6();
+    const bool sendIPv6Tag = theApp.shouldAdvertisePublicIPv6ToServer();
 
     // NAT traversal: CT_EMULE_UDPPORTS opts in to ed2k-server's hole punch (safe on any
     // server). The Lugdunum bit makes eserver hand us LowID sources, so only set it while

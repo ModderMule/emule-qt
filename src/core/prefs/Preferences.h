@@ -253,6 +253,12 @@ public:
     [[nodiscard]] bool ipv6UsePrivacyAddress() const;
     void setIpv6UsePrivacyAddress(bool val);
 
+    /// Treat our public IPv6 as reachable inbound without proof, so it is advertised to
+    /// peers on servers that don't probe. Config file only, default off. A server probe
+    /// that finds it closed still suppresses advertising.
+    [[nodiscard]] bool ipv6AssumeReachable() const;
+    void setIpv6AssumeReachable(bool val);
+
     /// Resolve a server hostname AAAA-first instead of A-first. Off by default: reaching
     /// a server over IPv6 without a routable IPv4 yields a LowID unconditionally, so
     /// preferring AAAA on a dual-stack server would cost a HighID for nothing. The other

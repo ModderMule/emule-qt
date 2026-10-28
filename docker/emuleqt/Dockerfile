@@ -17,6 +17,8 @@ FROM debian:trixie AS builder
 
 ARG QT_VERSION
 ARG TARGETARCH
+# 1: ed3k node locked off (early alpha), read by CMakeLists.txt; docker.yml sets it
+ARG EMULE_ED3K_LOCKED=
 ENV DEBIAN_FRONTEND=noninteractive
 
 RUN apt-get update && apt-get install -y --no-install-recommends \

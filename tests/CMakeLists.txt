@@ -347,11 +347,25 @@ emule_add_test(tst_LogRelay FOLDER "Ipc" LIBRARIES eMule::Ipc)
 emule_add_test(tst_IpcBusyStates FOLDER "Ipc"
     SOURCES tst_IpcBusyStates.cpp
             "${CMAKE_SOURCE_DIR}/src/gui/app/IpcClient.cpp"
+            "${CMAKE_SOURCE_DIR}/src/gui/app/KnownCores.cpp"
             "${CMAKE_SOURCE_DIR}/src/gui/app/CoreStartWatch.cpp")
 target_include_directories(tst_IpcBusyStates PRIVATE
     "${CMAKE_SOURCE_DIR}/src/gui"
     "${CMAKE_CURRENT_SOURCE_DIR}/stubs")
 target_link_libraries(tst_IpcBusyStates PRIVATE
+    eMule::Core eMule::Ipc Qt6::Widgets)
+
+# GUI <-> core TLS: pinned certificate, token only inside TLS, plain loopback kept.
+emule_add_test(tst_IpcTls FOLDER "Ipc"
+    SOURCES tst_IpcTls.cpp
+            "${CMAKE_SOURCE_DIR}/src/gui/app/IpcClient.cpp"
+            "${CMAKE_SOURCE_DIR}/src/gui/app/KnownCores.cpp"
+            "${CMAKE_SOURCE_DIR}/src/daemon/IpcTlsIdentity.cpp")
+target_include_directories(tst_IpcTls PRIVATE
+    "${CMAKE_SOURCE_DIR}/src/gui"
+    "${CMAKE_SOURCE_DIR}/src/daemon"
+    "${CMAKE_CURRENT_SOURCE_DIR}/stubs")
+target_link_libraries(tst_IpcTls PRIVATE
     eMule::Core eMule::Ipc Qt6::Widgets)
 
 # Daemon standby prevention — compiles the daemon source standalone.
@@ -626,7 +640,8 @@ emule_add_test(tst_Ed2kLinkImporter FOLDER "Ipc"
             "${CMAKE_SOURCE_DIR}/src/gui/utils/TorrentLinks.cpp"
             "${CMAKE_SOURCE_DIR}/src/gui/utils/HttpCacheLinkImporter.cpp"
             "${CMAKE_SOURCE_DIR}/src/gui/utils/StatusBarNotifier.cpp"
-            "${CMAKE_SOURCE_DIR}/src/gui/app/IpcClient.cpp")
+            "${CMAKE_SOURCE_DIR}/src/gui/app/IpcClient.cpp"
+            "${CMAKE_SOURCE_DIR}/src/gui/app/KnownCores.cpp")
 target_include_directories(tst_Ed2kLinkImporter PRIVATE
     "${CMAKE_SOURCE_DIR}/src/gui"
     "${CMAKE_CURRENT_SOURCE_DIR}/stubs")
@@ -651,7 +666,8 @@ emule_add_test(tst_UsenetArchiveEntryDialog FOLDER "Gui"
             "${CMAKE_SOURCE_DIR}/src/gui/utils/DialogSizing.cpp"
             "${CMAKE_SOURCE_DIR}/src/gui/controls/ContentScrollArea.cpp"
             "${CMAKE_SOURCE_DIR}/src/gui/app/UiState.cpp"
-            "${CMAKE_SOURCE_DIR}/src/gui/app/IpcClient.cpp")
+            "${CMAKE_SOURCE_DIR}/src/gui/app/IpcClient.cpp"
+            "${CMAKE_SOURCE_DIR}/src/gui/app/KnownCores.cpp")
 target_include_directories(tst_UsenetArchiveEntryDialog PRIVATE
     "${CMAKE_SOURCE_DIR}/src/gui"
     "${CMAKE_CURRENT_SOURCE_DIR}/stubs")
@@ -666,7 +682,8 @@ emule_add_test(tst_MassRenameDialog FOLDER "Gui"
             "${CMAKE_SOURCE_DIR}/src/gui/utils/DialogSizing.cpp"
             "${CMAKE_SOURCE_DIR}/src/gui/controls/ContentScrollArea.cpp"
             "${CMAKE_SOURCE_DIR}/src/gui/app/UiState.cpp"
-            "${CMAKE_SOURCE_DIR}/src/gui/app/IpcClient.cpp")
+            "${CMAKE_SOURCE_DIR}/src/gui/app/IpcClient.cpp"
+            "${CMAKE_SOURCE_DIR}/src/gui/app/KnownCores.cpp")
 target_include_directories(tst_MassRenameDialog PRIVATE
     "${CMAKE_SOURCE_DIR}/src/gui"
     "${CMAKE_CURRENT_SOURCE_DIR}/stubs")
@@ -677,7 +694,8 @@ target_link_libraries(tst_MassRenameDialog PRIVATE
 emule_add_test(tst_Ed3kSetsDialog FOLDER "Gui"
     SOURCES tst_Ed3kSetsDialog.cpp
             "${CMAKE_SOURCE_DIR}/src/gui/dialogs/Ed3kSetsDialog.cpp"
-            "${CMAKE_SOURCE_DIR}/src/gui/app/IpcClient.cpp")
+            "${CMAKE_SOURCE_DIR}/src/gui/app/IpcClient.cpp"
+            "${CMAKE_SOURCE_DIR}/src/gui/app/KnownCores.cpp")
 target_include_directories(tst_Ed3kSetsDialog PRIVATE
     "${CMAKE_SOURCE_DIR}/src/gui"
     "${CMAKE_CURRENT_SOURCE_DIR}/stubs")
@@ -687,7 +705,8 @@ target_link_libraries(tst_Ed3kSetsDialog PRIVATE
 # The nodes.dat / server.met URL inputs: empty falls back to the default.
 emule_add_test(tst_UrlPrefField FOLDER "Gui"
     SOURCES tst_UrlPrefField.cpp
-            "${CMAKE_SOURCE_DIR}/src/gui/app/IpcClient.cpp")
+            "${CMAKE_SOURCE_DIR}/src/gui/app/IpcClient.cpp"
+            "${CMAKE_SOURCE_DIR}/src/gui/app/KnownCores.cpp")
 target_include_directories(tst_UrlPrefField PRIVATE
     "${CMAKE_SOURCE_DIR}/src/gui"
     "${CMAKE_CURRENT_SOURCE_DIR}/stubs")
@@ -712,7 +731,8 @@ emule_add_test(tst_UsenetDetailsDialog FOLDER "Gui"
             "${CMAKE_SOURCE_DIR}/src/gui/utils/StatusBarNotifier.cpp"
             "${CMAKE_SOURCE_DIR}/src/gui/controls/ContentScrollArea.cpp"
             "${CMAKE_SOURCE_DIR}/src/gui/app/UiState.cpp"
-            "${CMAKE_SOURCE_DIR}/src/gui/app/IpcClient.cpp")
+            "${CMAKE_SOURCE_DIR}/src/gui/app/IpcClient.cpp"
+            "${CMAKE_SOURCE_DIR}/src/gui/app/KnownCores.cpp")
 target_include_directories(tst_UsenetDetailsDialog PRIVATE
     "${CMAKE_SOURCE_DIR}/src/gui"
     "${CMAKE_CURRENT_SOURCE_DIR}/stubs")
@@ -767,7 +787,8 @@ if(EMULE_BITTORRENT)
                 "${CMAKE_SOURCE_DIR}/src/gui/utils/StatusBarNotifier.cpp"
                 "${CMAKE_SOURCE_DIR}/src/gui/utils/TorrentLinks.cpp"
                 "${CMAKE_SOURCE_DIR}/src/gui/app/UiState.cpp"
-                "${CMAKE_SOURCE_DIR}/src/gui/app/IpcClient.cpp")
+                "${CMAKE_SOURCE_DIR}/src/gui/app/IpcClient.cpp"
+                "${CMAKE_SOURCE_DIR}/src/gui/app/KnownCores.cpp")
     target_include_directories(tst_TorrentDetailsGui PRIVATE
         "${CMAKE_SOURCE_DIR}/src/gui"
         "${CMAKE_CURRENT_SOURCE_DIR}/stubs")
@@ -902,6 +923,7 @@ emule_add_test(tst_MetaSearchGui FOLDER "Gui"
             "${CMAKE_SOURCE_DIR}/src/gui/utils/MenuUtils.cpp"
             "${CMAKE_SOURCE_DIR}/src/gui/utils/ViewSelection.cpp"
             "${CMAKE_SOURCE_DIR}/src/gui/app/IpcClient.cpp"
+            "${CMAKE_SOURCE_DIR}/src/gui/app/KnownCores.cpp"
             "${CMAKE_SOURCE_DIR}/resources/emuleqt.qrc")
 target_include_directories(tst_MetaSearchGui PRIVATE
     "${CMAKE_SOURCE_DIR}/src/gui"
@@ -920,6 +942,7 @@ emule_add_test(tst_CategoryDialog FOLDER "Gui"
             "${CMAKE_SOURCE_DIR}/src/gui/dialogs/AddFriendDialog.cpp"
             "${CMAKE_SOURCE_DIR}/src/gui/dialogs/NetworkInfoDialog.cpp"
             "${CMAKE_SOURCE_DIR}/src/gui/app/IpcClient.cpp"
+            "${CMAKE_SOURCE_DIR}/src/gui/app/KnownCores.cpp"
             "${CMAKE_SOURCE_DIR}/src/gui/utils/DialogSizing.cpp"
             "${CMAKE_SOURCE_DIR}/src/gui/controls/ContentScrollArea.cpp"
             "${CMAKE_SOURCE_DIR}/src/gui/app/UiState.cpp")
@@ -958,6 +981,7 @@ emule_add_test(tst_OptionsDialogSizing FOLDER "Gui"
             "${CMAKE_SOURCE_DIR}/src/gui/app/Ed2kSchemeHandler.cpp"
             "${CMAKE_SOURCE_DIR}/src/gui/app/UiState.cpp"
             "${CMAKE_SOURCE_DIR}/src/gui/app/IpcClient.cpp"
+            "${CMAKE_SOURCE_DIR}/src/gui/app/KnownCores.cpp"
             "${CMAKE_SOURCE_DIR}/resources/emuleqt.qrc")
 target_include_directories(tst_OptionsDialogSizing PRIVATE
     "${CMAKE_SOURCE_DIR}/src/gui"
@@ -978,6 +1002,7 @@ emule_add_test(tst_StatisticsPanel FOLDER "Gui"
             "${CMAKE_SOURCE_DIR}/src/gui/utils/PanelPoller.cpp"
             "${CMAKE_SOURCE_DIR}/src/gui/app/UiState.cpp"
             "${CMAKE_SOURCE_DIR}/src/gui/app/IpcClient.cpp"
+            "${CMAKE_SOURCE_DIR}/src/gui/app/KnownCores.cpp"
             "${CMAKE_SOURCE_DIR}/resources/emuleqt.qrc")
 target_include_directories(tst_StatisticsPanel PRIVATE
     "${CMAKE_SOURCE_DIR}/src/gui"
@@ -1137,6 +1162,7 @@ emule_add_test(tst_FileDetailDialog FOLDER "Gui"
             "${CMAKE_SOURCE_DIR}/src/gui/utils/FileTypeIcons.cpp"
             "${CMAKE_SOURCE_DIR}/src/gui/app/UiState.cpp"
             "${CMAKE_SOURCE_DIR}/src/gui/app/IpcClient.cpp"
+            "${CMAKE_SOURCE_DIR}/src/gui/app/KnownCores.cpp"
             "${CMAKE_SOURCE_DIR}/resources/emuleqt.qrc")
 target_include_directories(tst_FileDetailDialog PRIVATE
     "${CMAKE_SOURCE_DIR}/src/gui"
@@ -1207,6 +1233,7 @@ emule_add_test(tst_SmallScreenDialogs FOLDER "Gui"
             "${CMAKE_SOURCE_DIR}/src/gui/utils/StatusBarNotifier.cpp"
             "${CMAKE_SOURCE_DIR}/src/gui/app/UiState.cpp"
             "${CMAKE_SOURCE_DIR}/src/gui/app/IpcClient.cpp"
+            "${CMAKE_SOURCE_DIR}/src/gui/app/KnownCores.cpp"
             "${CMAKE_SOURCE_DIR}/resources/emuleqt.qrc")
 target_include_directories(tst_SmallScreenDialogs PRIVATE
     "${CMAKE_SOURCE_DIR}/src/gui"

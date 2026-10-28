@@ -90,10 +90,7 @@ public:
     /// Access the underlying socket (e.g. for peer address).
     [[nodiscard]] QTcpSocket* socket() const;
 
-    /// Enable AES-256-CBC encryption for all subsequent messages.
-    void setEncryptionKey(const QByteArray& key);
-
-    /// Returns true if encryption is active.
+    /// True when the socket runs TLS (a QSslSocket past its handshake).
     [[nodiscard]] bool isEncrypted() const;
 
 signals:
@@ -167,7 +164,6 @@ private:
     /// Runs only while drain() does, so it can only fire from a nested event loop
     /// inside a handler: that is the stall dispatchBlocked() reports.
     QTimer m_stallTimer;
-    QByteArray m_encryptionKey;  // Empty = no encryption
     bool m_disconnectEmitted = false;
     /// The socket is gone but queued messages are not through yet.
     bool m_disconnectPending = false;

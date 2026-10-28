@@ -275,6 +275,7 @@
     <ClCompile Include="utils\Log.cpp" />
     <ClCompile Include="crypto\MD4Hash.cpp" />
     <ClCompile Include="crypto\AesCbc.cpp" />
+    <ClCompile Include="crypto\SelfSignedCert.cpp" />
     <ClCompile Include="crypto\MD5Hash.cpp" />
     <ClCompile Include="media\MediaContainers.cpp" />
     <ClCompile Include="media\MediaInfo.cpp" />
@@ -533,6 +534,7 @@
     <ClInclude Include="utils\Log.h" />
     <ClInclude Include="crypto\MD4Hash.h" />
     <ClInclude Include="crypto\AesCbc.h" />
+    <ClInclude Include="crypto\SelfSignedCert.h" />
     <ClInclude Include="crypto\MD5Hash.h" />
     <ClInclude Include="utils\MapKey.h" />
     <ClInclude Include="media\MediaInfo.h" />

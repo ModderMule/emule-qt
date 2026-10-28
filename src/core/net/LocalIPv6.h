@@ -82,9 +82,9 @@ struct IPv6PrivacyReport {
                                           bool preferTemporary = false);
 
 /// Resolve the operator's publicIPv6Override preference against @p report.
-/// Returns null when @p override is empty, is not an IPv6 literal, is not global-unicast,
-/// or is not assigned to any local interface. @p reason receives a log-ready explanation
-/// (empty when the preference was simply unset).
+/// Returns null when @p override is empty, is not an IPv6 literal or is not global-unicast.
+/// An address on no local interface is accepted (NAT66 / NPTv6: only the operator knows the
+/// translated address). @p reason receives a log-ready explanation (empty when unset).
 [[nodiscard]] Address resolveIPv6Override(const QString& overrideLiteral,
                                           const IPv6PrivacyReport& report,
                                           QString* reason = nullptr);

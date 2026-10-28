@@ -502,10 +502,13 @@ Address resolveIPv6Override(const QString& overrideLiteral,
                                  [&wanted](const LocalIPv6Address& a) {
                                      return a.address == wanted && !a.tentative;
                                  });
-    if (it == report.addresses.end())
-        return fail(QStringLiteral("publicIPv6Override %1 is not assigned to any local "
-                                   "interface — falling back to auto-selection")
-                        .arg(wanted.toString()));
+    if (it == report.addresses.end()) {
+        if (reason != nullptr)
+            *reason = QStringLiteral("using configured publicIPv6Override %1 (not on a local "
+                                     "interface: assuming NAT66/NPTv6)")
+                          .arg(wanted.toString());
+        return wanted;
+    }
 
     if (reason != nullptr) {
         *reason = QStringLiteral("using configured publicIPv6Override %1 on %2")
@@ -641,8 +644,13 @@ Address updatePublicIPv6(const IPv6PrivacyReport& report)
         theApp.setPublicIPv6Local(auto_);
 
     // Outgoing IPv6 leaves from the address we advertise from this tier: the override
-    // or the stable pick. Inert while the privacy setting is on (the OS chooses).
-    IPv6SourcePin::setPinAddress(!override.isNull() ? override : selectPreferredIPv6(report));
+    // or the stable pick. A NAT66 override can't be bound, so the stable pick it is.
+    // Inert while the privacy setting is on (the OS chooses).
+    const bool overrideLocal = std::ranges::any_of(report.addresses, [&override](const auto& a) {
+        return a.address == override;
+    });
+    IPv6SourcePin::setPinAddress(!override.isNull() && overrideLocal ? override
+                                                                     : selectPreferredIPv6(report));
 
     return theApp.publicIPv6();
 }

@@ -31,5 +31,5 @@ services:
       - "4662:4662/tcp"
       - "4672:4672/udp"
       - "4711:4711/tcp"   # web UI, REST API, MCP
-      - "4712:4712/tcp"   # GUI IPC (token required)
+      - "4712:4712/tcp"   # GUI IPC (token + TLS, fingerprint pinned on first connect)
       # - "5800:5800/tcp" # GUI via noVNC (EMULEQT_GUI=1)

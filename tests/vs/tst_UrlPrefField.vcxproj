@@ -178,6 +178,7 @@
   <ItemGroup>
     <ClCompile Include="..\tst_UrlPrefField.cpp" />
     <ClCompile Include="..\..\src\gui\app\IpcClient.cpp" />
+    <ClCompile Include="..\..\src\gui\app\KnownCores.cpp" />
   </ItemGroup>
   <ItemGroup>
     <QtMoc Include="..\..\src\gui\app\IpcClient.h">

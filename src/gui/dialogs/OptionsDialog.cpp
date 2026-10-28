@@ -12,6 +12,7 @@
 #include "app/UiState.h"
 #include "app/Ed2kSchemeHandler.h"
 #include "app/IpcClient.h"
+#include "app/KnownCores.h"
 #include "controls/AbstractListView.h"
 #include "controls/AccordionSidebar.h"
 #include "controls/BarShader.h"
@@ -696,11 +697,12 @@ void OptionsDialog::setupSidebar()
     };
     // no MFC original; icons of the nearest eMule pages
     static constexpr PageDef kEd3kPages[] = {
-        {PageEd3k,           QT_TR_NOOP("ed3k"),       QStyle::SP_DriveNetIcon,          "Kad.ico"},
+        {PageEd3k,           QT_TR_NOOP("ed3k"),       QStyle::SP_DriveNetIcon,          "Ed3k.ico"},
         {PageEd3kConnection, QT_TR_NOOP("Connection"), QStyle::SP_DirLinkIcon,           "Connection.ico"},
-        {PageEd3kCredits,    QT_TR_NOOP("Credits"),    QStyle::SP_DialogApplyButton,     "Rating.ico"},
-        {PageEd3kNames,      QT_TR_NOOP("Names"),      QStyle::SP_FileDialogContentsView, "Friends1.ico"},
+        // ToDo: decide how credits are used; the page is built but hidden (hasPage)
+        // {PageEd3kCredits,    QT_TR_NOOP("Credits"),    QStyle::SP_DialogApplyButton,     "Rating.ico"},
         {PageEd3kHoster,     QT_TR_NOOP("Hoster"),     QStyle::SP_ArrowDown,             "Hoster.ico"},
+        {PageEd3kNames,      QT_TR_NOOP("Names"),      QStyle::SP_FileDialogContentsView, "Friends1.ico"},
         {PageEd3kFilters,    QT_TR_NOOP("Filters"),    QStyle::SP_MessageBoxWarning,     "IPFilter.ico"},
     };
 
@@ -713,13 +715,14 @@ void OptionsDialog::setupSidebar()
             mask |= 1u << unsigned(def.id);
         return mask;
     };
+    // + 1: PageEd3kCredits, hidden for now
     static_assert(std::size(kGeneralPages) + std::size(kAdvancedPages)
                           + std::size(kUsenetPages) + std::size(kBitTorrentPages)
-                          + std::size(kEd3kPages)
+                          + std::size(kEd3kPages) + 1
                       == std::size_t(PageCount),
                   "every Page must appear in a sidebar group");
     static_assert((idMask(kGeneralPages) | idMask(kAdvancedPages) | idMask(kUsenetPages)
-                   | idMask(kBitTorrentPages) | idMask(kEd3kPages))
+                   | idMask(kBitTorrentPages) | idMask(kEd3kPages) | (1u << unsigned(PageEd3kCredits)))
                       == (1u << unsigned(PageCount)) - 1u,
                   "every Page must appear in exactly one sidebar group");
 
@@ -815,9 +818,9 @@ void OptionsDialog::setupPages()
     m_ed3kPages = new Ed3kOptionsPages(m_ipc, this);
     addPage(PageEd3k,           m_ed3kPages->generalPage());
     addPage(PageEd3kConnection, m_ed3kPages->connectionPage());
-    addPage(PageEd3kCredits,    m_ed3kPages->creditsPage());
-    addPage(PageEd3kNames,      m_ed3kPages->namesPage());
+    addPage(PageEd3kCredits,    m_ed3kPages->creditsPage());   // not in the sidebar (hasPage)
     addPage(PageEd3kHoster,     m_ed3kPages->hosterPage());
+    addPage(PageEd3kNames,      m_ed3kPages->namesPage());
     addPage(PageEd3kFilters,    m_ed3kPages->filtersPage());
     connect(m_ed3kPages, &Ed3kOptionsPages::changed, this, &OptionsDialog::markDirty);
     connect(m_ed3kPages, &Ed3kOptionsPages::showPage, this, [this](QWidget* page) {
@@ -972,6 +975,34 @@ QWidget* OptionsDialog::createGeneralPage()
     m_coreTokenEdit = new QLineEdit(coreGroup);
     m_coreTokenEdit->setPlaceholderText(tr("authentication token"));
     coreLayout->addRow(tr("Token:"), m_coreTokenEdit);
+
+    // Remote cores' TLS certificates, pinned on first connect
+    m_trustedCoresTree = new QTreeWidget(coreGroup);
+    m_trustedCoresTree->setColumnCount(3);
+    m_trustedCoresTree->setHeaderLabels({tr("Core"), tr("Certificate (SHA-256)"), tr("First Seen")});
+    m_trustedCoresTree->setRootIsDecorated(false);
+    m_trustedCoresTree->setSelectionMode(QAbstractItemView::ExtendedSelection);
+    m_trustedCoresTree->setMaximumHeight(90);
+    m_trustedCoresTree->header()->setStretchLastSection(false);
+    m_trustedCoresTree->header()->setSectionResizeMode(1, QHeaderView::Stretch);
+    auto* removeCoreBtn = new QPushButton(tr("Remove"), coreGroup);
+    removeCoreBtn->setEnabled(false);
+    connect(m_trustedCoresTree, &QTreeWidget::itemSelectionChanged, removeCoreBtn,
+            [this, removeCoreBtn] {
+                removeCoreBtn->setEnabled(!m_trustedCoresTree->selectedItems().isEmpty());
+            });
+    connect(removeCoreBtn, &QPushButton::clicked, this, [this] {
+        const auto items = m_trustedCoresTree->selectedItems();
+        for (QTreeWidgetItem* item : items) {
+            m_trustedCoresRemoved.append(item->text(0));
+            delete item;
+        }
+        markDirty();
+    });
+    auto* trustedRow = new QHBoxLayout;
+    trustedRow->addWidget(m_trustedCoresTree, 1);
+    trustedRow->addWidget(removeCoreBtn, 0, Qt::AlignTop);
+    coreLayout->addRow(tr("Trusted cores:"), trustedRow);
 
     auto* coreNote = new QLabel(tr("Changes require a restart to take effect."), coreGroup);
     coreNote->setStyleSheet(QStringLiteral("color: gray; font-style: italic;"));
@@ -5649,6 +5680,10 @@ QWidget* OptionsDialog::createBtConnectionPage()
         PortTest::NetworkTest::run(m_ipc, this, btTestBtn, PortTest::Network::BitTorrent);
     });
     portRow->addWidget(btTestBtn);
+    auto* btRouterBtn = new QPushButton(tr("Open Router"), portGroup);
+    btRouterBtn->setToolTip(tr("Opens the web page of this computer's router, where ports are forwarded"));
+    connect(btRouterBtn, &QPushButton::clicked, this, [this] { openRouterPage(); });
+    portRow->addWidget(btRouterBtn);
     portRow->addStretch();
     portForm->addRow(tr("Listen port (TCP/UDP):"), portRow);
 
@@ -6721,6 +6756,15 @@ void OptionsDialog::loadSettings()
     m_corePortSpin->setValue(thePrefs.ipcPort());
     if (!thePrefs.ipcTokens().isEmpty())
         m_coreTokenEdit->setText(thePrefs.ipcTokens().first());
+    m_trustedCoresTree->clear();
+    m_trustedCoresRemoved.clear();
+    for (const auto& e : KnownCores::instance().entries()) {
+        auto* item = new QTreeWidgetItem(m_trustedCoresTree);
+        item->setText(0, e.hostPort);
+        item->setText(1, e.fingerprint.left(23) + QStringLiteral("…"));
+        item->setToolTip(1, e.fingerprint);
+        item->setText(2, QLocale().toString(e.firstSeen.toLocalTime(), QLocale::ShortFormat));
+    }
 
     // Display page
     m_depth3DSlider->setValue(thePrefs.depth3D());
@@ -6898,6 +6942,11 @@ void OptionsDialog::saveSettings()
         thePrefs.setStartWithOS(m_startWithOSCheck->isChecked());
         eMule::setAutoStart(m_startWithOSCheck->isChecked());
     }
+
+    // Trusted cores: removals only; the next connect pins afresh
+    for (const QString& hostPort : std::as_const(m_trustedCoresRemoved))
+        KnownCores::instance().remove(hostPort);
+    m_trustedCoresRemoved.clear();
 
     // Core settings — changes require restart
     {
@@ -8869,6 +8918,9 @@ bool OptionsDialog::hasPage(int page) const
     if (page == PageBitTorrent || page == PageBtConnection)
         return false;   // empty slots
 #endif
+    // ToDo: credits page hidden until it is decided how credits are used
+    if (page == PageEd3kCredits)
+        return false;
     return page >= 0 && page < m_pages->count();
 }
 

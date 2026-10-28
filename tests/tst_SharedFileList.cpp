@@ -2423,10 +2423,10 @@ void tst_SharedFileList::canPublishToKad_firewalledNeedsABuddy()
 
     // not MFC: a public IPv6 is a way in too
     QVERIFY(!SharedFileList::canPublishToKad());
-    theApp.setPublicIPv6Override(Address::fromString(QStringLiteral("2606:4700::42")));
-    const auto restoreV6 = qScopeGuard([] { theApp.setPublicIPv6Override(Address{}); });
-    if (theApp.shouldAdvertisePublicIPv6())
-        QVERIFY(SharedFileList::canPublishToKad());
+    eMule::testing::IPv6AdvertiseGuard v6;   // public IPv6, proven reachable
+    QVERIFY(SharedFileList::canPublishToKad());
+    v6.setUnproven();                        // unproven IPv6 is no way in
+    QVERIFY(!SharedFileList::canPublishToKad());
 }
 
 // C56: a downloading .emulecollection is in the shared list long before its bytes

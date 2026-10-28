@@ -20,6 +20,18 @@
 
 namespace eMule {
 
+/// Is our public IPv6 reachable inbound? Bound to the address it was proven for.
+enum class IPv6Reachability : uint8 { Unknown = 0, Reachable = 1, Unreachable = 2 };
+
+/// Where the reachability verdict came from.
+enum class IPv6ProofSource : uint8 {
+    None = 0,
+    ServerProbe = 1,   ///< ST_IPV6_STATUS with IPV6ST_PROBED
+    InboundPeer = 2,   ///< a peer outside our /64 reached us over IPv6 and said hello
+    Pinhole = 3,       ///< UPnP IGD2 / PCP opened an IPv6 pinhole for our TCP port
+    Assumed = 4,       ///< ipv6AssumeReachable pref, no proof
+};
+
 // Forward declarations
 class ClientCreditsList;
 class ClientList;
@@ -220,13 +232,28 @@ struct AppContext {
     /// True when publicIPv6() yields a genuine global-unicast address.
     [[nodiscard]] bool hasConfidentPublicIPv6() const;
 
-    /// The single gate for emitting our own IPv6 (hello CT_MOD_IP_V6, Kad source publish,
-    /// server login CT_MOD_IP_V6): we are confident in the address *and* no server has
-    /// probed it and found it unreachable.
-    [[nodiscard]] bool shouldAdvertisePublicIPv6() const
-    {
-        return hasConfidentPublicIPv6() && !publicIPv6ProbedUnreachable();
-    }
+    /// Peer-facing gate for our own IPv6 (hello CT_MOD_IP_V6, OP_CHANGE_CLIENT_IP, Kad
+    /// source publish, s6= links): confident in the address *and* it is proven reachable
+    /// inbound (server probe, inbound peer, pinhole, or the ipv6AssumeReachable pref).
+    /// Fails closed: no proof, no advertising.
+    [[nodiscard]] bool shouldAdvertisePublicIPv6() const;
+
+    /// Server-facing gate (login CT_MOD_IP_V6): confidence only. The server needs the
+    /// unverified address to probe it.
+    [[nodiscard]] bool shouldAdvertisePublicIPv6ToServer() const { return hasConfidentPublicIPv6(); }
+
+    /// Reachability of the current publicIPv6(). Unknown when the verdict was for another
+    /// address. Unknown + ipv6AssumeReachable pref reads as Reachable.
+    [[nodiscard]] IPv6Reachability ipv6Reachability() const;
+    [[nodiscard]] IPv6ProofSource ipv6ProofSource() const;
+
+    /// An incoming connection from @p peer completed its hello over IPv6. Proves we are
+    /// reachable unless the peer sits in one of our own /64s (LAN, no router in between).
+    void noteInboundIPv6Peer(const Address& peer);
+    /// A UPnP/PCP IPv6 pinhole for our eD2K TCP port for @p internal was opened (ok) or lost.
+    void noteIPv6Pinhole(const Address& internal, bool ok);
+    /// Forget the reachability verdict (tests, network change).
+    void clearIPv6Reachability() { setIPv6Reachability(IPv6Reachability::Unknown, IPv6ProofSource::None); }
 
     /// Called once whenever the address returned by publicIPv6() actually changes — after
     /// tier resolution, so a lower tier moving while a higher one wins is silent. CoreSession
@@ -254,10 +281,13 @@ struct AppContext {
 
     /// Server's ST_IPV6_STATUS verdict on our advertised IPv6 (IPV6ST_* bits; 0 = unknown).
     /// Covers v4 *and* v6 sessions: eNode-go dial-back-probes whichever family we arrived on,
-    /// so a v6 session behind a stateful firewall reads HAVE|PROBED. Logs verdict changes.
+    /// so a v6 session behind a stateful firewall reads HAVE|PROBED. A PROBED verdict feeds
+    /// ipv6Reachability(); an unprobed one (trust default) proves nothing. Logs changes.
     void setPublicIPv6Status(uint8 status);
+    /// Raw bits from the current server session (reset on disconnect; display only).
     [[nodiscard]] uint8 publicIPv6Status() const { return m_publicIPv6Status; }
-    /// True when the server probed our v6 and found it unreachable — suppress advertising.
+    /// True when our current address was probed and found unreachable — kept across
+    /// server disconnects until the address changes or new proof arrives.
     [[nodiscard]] bool publicIPv6ProbedUnreachable() const;
 
     /// Tier 3: record that the peer at @p peerKey observed us at @p candidate (a peer's
@@ -290,6 +320,10 @@ private:
     void noteEffectiveIPv6Change();
     /// Human-readable name of the tier publicIPv6() currently resolves to.
     [[nodiscard]] QString publicIPv6SourceLabel() const;
+    /// Record a reachability verdict for the current publicIPv6(), then noteIPv6GateChange().
+    void setIPv6Reachability(IPv6Reachability r, IPv6ProofSource src);
+    /// Log a peer-gate flip; on open, fire onPublicIPv6Changed so connected peers learn it.
+    void noteIPv6GateChange();
     /// Distinct peers required before a candidate is adopted (>= 1).
     [[nodiscard]] std::size_t peerConfirmThreshold() const;
     /// Distinct servers required before a corroborated IPv4 is adopted (>= 1).
@@ -311,6 +345,12 @@ private:
     Address m_publicIPv6Server;
     /// Server's ST_IPV6_STATUS bits for our advertised v6 (0 = unknown).
     uint8 m_publicIPv6Status = 0;
+    /// Reachability verdict and the address it holds for (not cleared on disconnect).
+    IPv6Reachability m_ipv6Reach = IPv6Reachability::Unknown;
+    IPv6ProofSource m_ipv6ReachSource = IPv6ProofSource::None;
+    Address m_ipv6ReachAddr;
+    /// Last peer-gate state seen by noteIPv6GateChange().
+    bool m_ipv6GateOpen = false;
     std::optional<uint16> m_listenTcpPort;
     std::optional<uint16> m_listenUdpPort;
     /// Last effective address reported by noteEffectiveIPv6Change().

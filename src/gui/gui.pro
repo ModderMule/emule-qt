@@ -87,6 +87,7 @@ SOURCES += \
     app/CoreStartWatch.cpp \
     app/SingleInstance.cpp \
     app/IpcClient.cpp \
+    app/KnownCores.cpp \
     app/Ed3kNameOpener.cpp \
     app/main.cpp \
     app/MainWindow.cpp \
@@ -180,6 +181,7 @@ HEADERS += \
     app/CoreStartWatch.h \
     app/SingleInstance.h \
     app/IpcClient.h \
+    app/KnownCores.h \
     app/Ed3kNameOpener.h \
     app/MainWindow.h \
     app/MiniMuleWidget.h \

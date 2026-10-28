@@ -36,7 +36,7 @@ Website: [emule-qt.org](https://emule-qt.org/)
 - **Indexer Search** — newznab indexers queried in parallel from the same Search tab and de-duplicated, with the grab done daemon-side so the GUI never holds an API key or a download URL
 - **Auto-Download Feeds** — A saved indexer query or an RSS URL polled on a schedule, filtered by regex, size and age, and queued into the category you chose
 - **Cross-Platform** — One codebase running natively on Windows, macOS, and Linux; the original is MFC and Windows-only
-- **Daemon/GUI Split** — Headless `emulecored` + `emuleqt` GUI over an encrypted CBOR IPC link; run the core on a server or NAS and attach the GUI locally or remotely
+- **Daemon/GUI Split** — Headless `emulecored` + `emuleqt` GUI over a CBOR IPC link (TLS with a pinned certificate when remote); run the core on a server or NAS and attach the GUI locally or remotely
 - **IPv6** — Dual-stack across client-to-client, client-to-server, Kademlia, and eD2K links, so IPv6-only and CGNAT users can participate fully — additive and legacy-safe ([spec](docs/protocol/ipv6-spec.md))
 - **HTTP Cache** — When several peers want the same part, encrypt and upload it once, then hand each peer a URL and key; the cache server never sees plaintext ([spec](docs/protocol/http-cache-spec.md))
 - **PCP & NAT-PMP Port Mapping** — Three backends raced at startup — PCP, NAT-PMP, and UPnP IGD1/IGD2 with IPv6 pinholes — graded on whether the exact port was actually granted ([details](docs/port-mapping.md))
@@ -113,6 +113,10 @@ emuleqt (GUI)  ←—  IPC/CBOR over TCP  —→  emulecored (Daemon)
 GPL-2.0 — see [LICENSE](LICENSE).
 
 Based on the original [eMule](https://www.emule-project.com/) by Merkur.
+
+Torrent features implemented thanks to [libtorrent](https://www.libtorrent.org/).
+
+File hoster downloads use a custom process extension implemented via [JDownloader](https://jdownloader.org/).
 
 ---
 

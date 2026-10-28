@@ -583,6 +583,9 @@ void tst_CoreSessionHandlers::publicIPv6Change_firesInstalledHook()
     const Address v6 = IPv6AdvertiseGuard::testPublicIPv6();
     theApp.setLocalIPv6Addresses({v6});
     theApp.setPublicIPv6Local(v6);
+    // A new address is unproven: peers are told only once it is proven reachable.
+    QVERIFY(!client->sendIPPending());
+    guard.setProbedReachable();
 
     QVERIFY(client->sendIPPending());
 
@@ -608,6 +611,7 @@ void tst_CoreSessionHandlers::flushAfterMark_reachesTheWire()
     const Address v6 = IPv6AdvertiseGuard::testPublicIPv6();
     theApp.setLocalIPv6Addresses({v6});
     theApp.setPublicIPv6Local(v6);
+    guard.setProbedReachable();   // gate opens -> hook marks the peer
     QVERIFY(client->sendIPPending());
 
     client->flushPendingIPChange();

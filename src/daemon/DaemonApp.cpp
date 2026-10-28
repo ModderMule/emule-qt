@@ -9,6 +9,7 @@
 #include "DaemonTorrentWebBackend.h"
 #include "DaemonUsenetWebBackend.h"
 #include "IpcServer.h"
+#include "IpcTlsIdentity.h"
 #include "MetaSearchService.h"
 #include "PowerManager.h"
 #include "BandwidthCoordinator.h"
@@ -195,6 +196,17 @@ bool DaemonApp::start()
 
     // Start IPC server
     m_ipcServer = std::make_unique<IpcServer>(this);
+
+    // TLS identity for remote GUIs; they pin its fingerprint on first connect
+    QString tlsError;
+    const IpcTlsIdentity tls = loadOrCreateIpcTlsIdentity(thePrefs.configDir(), &tlsError);
+    if (!tls.cert.isNull()) {
+        m_ipcServer->setTlsIdentity(tls.cert, tls.key);
+        logInfo(QStringLiteral("IPC TLS certificate SHA-256: %1")
+                    .arg(Ipc::certFingerprint(tls.cert)));
+    } else {
+        logError(QStringLiteral("IPC TLS: %1 — remote GUIs cannot connect").arg(tlsError));
+    }
 
     const QHostAddress addr = thePrefs.ipcListenAddress().isEmpty()
         ? QHostAddress::LocalHost

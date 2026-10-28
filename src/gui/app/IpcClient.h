@@ -14,6 +14,7 @@
 #include <QHostAddress>
 #include <QObject>
 #include <QStringList>
+#include <QSslSocket>
 #include <QTcpSocket>
 #include <QTimer>
 
@@ -56,6 +57,12 @@ public:
     [[nodiscard]] qint64 corePid() const { return m_corePid; }
     /// Why the core refused the handshake (CoreLink::Refused).
     [[nodiscard]] QString refusalText() const { return m_refusalText; }
+
+    /// Pin store for remote cores' TLS fingerprints. Default KnownCores::instance().
+    void setKnownCores(class KnownCores* store) { m_knownCores = store; }
+    /// The core's certificate changed (certificateChanged()): pin the new one and
+    /// reconnect. No-op when nothing is pending.
+    void trustNewCertificate();
 
     /// Connect to the daemon at the given address and port.
     /// Enables auto-reconnect: on failure or disconnect the client will
@@ -276,6 +283,11 @@ signals:
     /// coreLink(), connectAttempts() or loadStage() changed.
     void coreLinkChanged();
 
+    /// The remote core at @p hostPort shows a different TLS certificate than the
+    /// one pinned. Nothing was sent; reconnecting stops until trustNewCertificate().
+    void certificateChanged(const QString& hostPort, const QString& pinned,
+                            const QString& presented);
+
     /// Replies are waiting behind a dialog a reply handler opened. The GUI brings
     /// that dialog to the front: hidden, it looks like a hang.
     void dispatchBlocked();
@@ -419,6 +431,7 @@ signals:
 
 private slots:
     void onSocketConnected();
+    void onSocketEncrypted();
     void onMessageReceived(const Ipc::IpcMessage& msg);
     void onConnectionLost();
     void onSocketError();
@@ -436,6 +449,10 @@ private:
     void replayLogEntries(const QCborArray& entries);
     void setCoreLink(CoreLink link);
     void beginConnect();
+    /// TCP (and TLS, if used) is up: hand the socket to IpcConnection and say hello.
+    void startSession();
+    /// "host:port" this client pins the core's certificate under.
+    [[nodiscard]] QString pinKey() const;
 
     /// The reply timer ran out: true when the core is in fact talking and it is
     /// this process that has not got round to reading it.
@@ -465,7 +482,7 @@ private:
     void expectRestart();
 
     std::unique_ptr<Ipc::IpcConnection> m_connection;
-    QTcpSocket* m_socket = nullptr;  // Owned by IpcConnection after handoff
+    QSslSocket* m_socket = nullptr;  // Owned by IpcConnection after handoff
     QTimer m_reconnectTimer;
     QTimer m_handshakeTimer;         // Aborts a stalled handshake
     QTimer m_keepaliveTimer;         // Periodic ping when connected
@@ -494,6 +511,9 @@ private:
     int64_t m_lastServerMsgId = 0;
     QString m_daemonToken;
     QString m_authToken;
+    class KnownCores* m_knownCores = nullptr;
+    /// Fingerprint presented by a core whose pin did not match; reconnects wait.
+    QString m_pendingFingerprint;
     std::unordered_map<int, ResponseCallback> m_pendingCallbacks;
     int m_remotePollingMs = 1500;
 

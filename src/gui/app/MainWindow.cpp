@@ -458,6 +458,7 @@ void MainWindow::showOptionsDialog(int page)
     m_serverPanel->logWidget()->setUsenetTabVisible(thePrefs.showUsenetLog());
     m_serverPanel->logWidget()->setLeecherTabVisible(thePrefs.antiLeecher());
     m_serverPanel->logWidget()->setEd3kTabsVisible(thePrefs.ed3kEnabled());
+    m_searchPanel->setEd3kMethodVisible(thePrefs.ed3kEnabled());
     m_serverPanel->refreshUpdateUrl();   // Options "List..." edits the same URL
 
     // The daemon reacts to logToDiskCore over IPC; logToDiskGui is ours to act on.

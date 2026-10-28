@@ -89,9 +89,9 @@ public:
         PageBtConnection,
         PageEd3k,           // ed3k group (Ed3kOptionsPages), shown in every build
         PageEd3kConnection,
-        PageEd3kCredits,
-        PageEd3kNames,
+        PageEd3kCredits,    // built, not in the sidebar for now (hasPage)
         PageEd3kHoster,
+        PageEd3kNames,
         PageEd3kFilters,    // filter lists (Ed3kFilterPage)
         PageCount
     };
@@ -305,6 +305,9 @@ private:
     QSpinBox*  m_corePortSpin = nullptr;
     QLineEdit* m_coreTokenEdit = nullptr;
     QPushButton* m_shutdownCoreBtn = nullptr;
+    /// Remote cores whose TLS certificate is pinned; removals apply on Apply.
+    QTreeWidget* m_trustedCoresTree = nullptr;
+    QStringList m_trustedCoresRemoved;
 
     // Display page controls
     QSlider* m_depth3DSlider = nullptr;

@@ -265,6 +265,7 @@
     <ClCompile Include="controls\FriendListModel.cpp" />
     <ClCompile Include="dialogs\ImportDownloadsDialog.cpp" />
     <ClCompile Include="app\IpcClient.cpp" />
+    <ClCompile Include="app\KnownCores.cpp" />
     <ClCompile Include="app\CoreStartWatch.cpp" />
     <ClCompile Include="app\SingleInstance.cpp" />
     <ClCompile Include="panels\IrcPanel.cpp" />
@@ -414,6 +415,7 @@
     <QtMoc Include="dialogs\MediaInfoPanel.h" />
     <QtMoc Include="dialogs\BugReportDialog.h" />
     <ClInclude Include="app\AutoStart.h" />
+    <ClInclude Include="app\KnownCores.h" />
     <QtMoc Include="dialogs\ClientDetailDialog.h" />
     <QtMoc Include="dialogs\UsenetArchiveEntryDialog.h" />
     <QtMoc Include="dialogs\UsenetDetailsDialog.h" />
@@ -637,6 +639,7 @@
     <None Include="..\..\resources\icons\IRCClipboard.ico" />
     <None Include="..\..\resources\icons\Incoming.ico" />
     <None Include="..\..\resources\icons\Info.ico" />
+    <None Include="..\..\resources\icons\Ed3k.ico" />
     <None Include="..\..\resources\icons\Kad.ico" />
     <None Include="..\..\resources\icons\KadBootstrap.ico" />
     <None Include="..\..\resources\icons\KadContactList.ico" />

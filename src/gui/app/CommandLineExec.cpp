@@ -135,9 +135,9 @@ void CommandLineExec::parse(QApplication& app)
 #endif
             {QStringLiteral("ed3k"),           OptionsDialog::PageEd3k},
             {QStringLiteral("ed3kconnection"), OptionsDialog::PageEd3kConnection},
-            {QStringLiteral("ed3kcredits"),    OptionsDialog::PageEd3kCredits},
-            {QStringLiteral("ed3knames"),      OptionsDialog::PageEd3kNames},
+            // {QStringLiteral("ed3kcredits"),    OptionsDialog::PageEd3kCredits},   // ToDo: page hidden for now
             {QStringLiteral("ed3khoster"),     OptionsDialog::PageEd3kHoster},
+            {QStringLiteral("ed3knames"),      OptionsDialog::PageEd3kNames},
             {QStringLiteral("ed3kfilters"),    OptionsDialog::PageEd3kFilters},
         };
         m_optionsPage = optArg.toInt(); // fallback: numeric index

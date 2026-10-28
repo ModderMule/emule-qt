@@ -682,6 +682,21 @@ int main(int argc, char* argv[])
         auto* logWidget = mainWindow.serverPanel()->logWidget();
         QObject::connect(&ipcClient, &eMule::IpcClient::ipcLogMessage,
                          logWidget, &eMule::LogWidget::appendIpcMessage);
+        // A remote core shows another TLS certificate than the pinned one: ask.
+        // Queued: the signal comes from inside the socket's encrypted() slot.
+        QObject::connect(&ipcClient, &eMule::IpcClient::certificateChanged, &mainWindow,
+                         [&ipcClient, &mainWindow](const QString& hostPort, const QString& pinned,
+                                                   const QString& presented) {
+            const auto answer = QMessageBox::warning(&mainWindow, QObject::tr("Core Certificate Changed"),
+                QObject::tr("The core at %1 shows a different certificate than the one trusted "
+                            "before. This happens when its ipc-cert.pem was regenerated, but can "
+                            "also mean someone is intercepting the connection.\n\n"
+                            "Trusted: %2\nPresented: %3\n\nTrust the new certificate?")
+                    .arg(hostPort, pinned, presented),
+                QMessageBox::Yes | QMessageBox::No, QMessageBox::No);
+            if (answer == QMessageBox::Yes)
+                ipcClient.trustNewCertificate();
+        }, Qt::QueuedConnection);
         // Server Info pane. Deliberately NOT the log path: the daemon delivers these
         // over a dedicated push event carrying the reference's LOG_INFO/LOG_SUCCESS
         // distinction, and appendServerInfo takes plain text (it escapes internally).
@@ -840,6 +855,8 @@ int main(int argc, char* argv[])
                 mainWindow.kadPanel()->refreshNodesUrl();
                 // The folder tree marks what sharedDirs just named.
                 mainWindow.sharedFilesPanel()->refreshSharedDirs();
+                // ed3k search method follows the daemon's ed3kEnabled
+                mainWindow.searchPanel()->setEd3kMethodVisible(eMule::thePrefs.ed3kEnabled());
                 // The lists were built on the local prefs file's showExtControls
                 mainWindow.sharedFilesPanel()->applyDisplayOptions();
                 mainWindow.transferPanel()->applyExtColumns();

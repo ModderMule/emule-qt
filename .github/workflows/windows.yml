@@ -20,6 +20,8 @@ permissions:
 
 env:
   FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
+  # ed3k early alpha: node locked off in CI builds (CMakeLists.txt EMULE_ED3K_LOCKED)
+  EMULE_ED3K_LOCKED: "1"
   # Release-only triplet: identical to x64-windows (dynamic CRT, dynamic library
   # linkage, same DLL names) except that it skips the debug variant of every
   # dependency.  That variant alone cost 3:21 of an 8:56 dependency step and this

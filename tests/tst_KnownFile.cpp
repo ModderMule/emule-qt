@@ -1201,13 +1201,9 @@ void tst_KnownFile::publishSrc_firewalledWithIPv6NeedsNoBuddy()
     kadFixture.kadPrefs().setLastContact();
     ClientList list;
     kad::Kademlia::setClientList(&list);
-    theApp.setPublicIPv6Override(Address::fromString(QStringLiteral("2606:4700::42")));
-    const auto restore = qScopeGuard([] {
-        theApp.setPublicIPv6Override(Address{});
-        kad::Kademlia::setClientList(nullptr);
-    });
-    if (!theApp.shouldAdvertisePublicIPv6())
-        QSKIP("no usable public IPv6 in this setup");
+    eMule::testing::IPv6AdvertiseGuard v6;   // public IPv6, proven reachable
+    const auto restore = qScopeGuard([] { kad::Kademlia::setClientList(nullptr); });
+    QVERIFY(theApp.shouldAdvertisePublicIPv6());
 
     KnownFile kf;
     QVERIFY(kf.publishSrc());

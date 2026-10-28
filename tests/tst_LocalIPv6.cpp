@@ -97,6 +97,7 @@ private slots:
     // updatePublicIPv6 — tier plumbing
     void update_populatesLocalSetAndTierSlots();
     void update_doesNotDisturbServerObservedTier();
+    void update_natOverrideAdvertisedNotPinned();
     void update_pinsStableSourceUnlessPrivacyOn();
 
     // misc
@@ -253,8 +254,9 @@ void tst_LocalIPv6::override_notLocallyAssigned_reports()
     const auto r = makeReport({makeEntry(kStable)});
     QString reason;
     const Address got = resolveIPv6Override(QStringLiteral("2001:4860:4860::8888"), r, &reason);
-    QVERIFY(got.isNull());
-    QVERIFY(reason.contains(QStringLiteral("not assigned to any local interface")));
+    // Accepted: behind NAT66/NPTv6 only the operator knows the translated address.
+    QCOMPARE(got.toString(), QStringLiteral("2001:4860:4860::8888"));
+    QVERIFY(reason.contains(QStringLiteral("NAT66")));
 }
 
 void tst_LocalIPv6::override_matches_isUsed()
@@ -536,6 +538,40 @@ void tst_LocalIPv6::update_pinsStableSourceUnlessPrivacyOn()
 
     thePrefs.setIpv6UsePrivacyAddress(false);
     theApp.setPublicIPv6Local(Address{});
+    IPv6SourcePin::setPinAddress(Address{});
+}
+
+void tst_LocalIPv6::update_natOverrideAdvertisedNotPinned()
+{
+    thePrefs.setIpv6UsePrivacyAddress(false);
+    theApp.clearPublicIPv6Observed();
+    theApp.setPublicIPv6Local(Address{});
+
+    const Address stable = Address::fromString(QString::fromLatin1(kStable));
+    const auto report = makeReport({makeEntry(kStable, IPv6AddressKind::Stable)});
+
+    // NAT66 / NPTv6: the override is on no interface. Advertise it, send from the stable one.
+    const QString nat = QStringLiteral("2001:4860:4860::8888");
+    thePrefs.setPublicIPv6Override(nat);
+    QCOMPARE(updatePublicIPv6(report).toString(), nat);
+    QCOMPARE(IPv6SourcePin::pinAddress(), stable);
+
+    // A local override is pinned as the source.
+    thePrefs.setPublicIPv6Override(QString::fromLatin1(kStable));
+    QCOMPARE(updatePublicIPv6(report), stable);
+    QCOMPARE(IPv6SourcePin::pinAddress(), stable);
+
+    // A server-observed egress still outranks the override.
+    thePrefs.setPublicIPv6Override(nat);
+    (void)updatePublicIPv6(report);
+    theApp.setPublicIPv6Observed(stable, QStringLiteral("server.example"));
+    QCOMPARE(theApp.publicIPv6(), stable);
+
+    theApp.clearPublicIPv6Observed();
+    thePrefs.setPublicIPv6Override(QString());
+    theApp.setPublicIPv6Override(Address{});
+    theApp.setPublicIPv6Local(Address{});
+    theApp.setLocalIPv6Addresses({});
     IPv6SourcePin::setPinAddress(Address{});
 }
 

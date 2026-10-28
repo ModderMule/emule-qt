@@ -127,12 +127,17 @@ public:
         else
             theApp.setLocalIPv6Addresses({addr});
         theApp.setPublicIPv6Local(addr);       // tier 4
+        // Default: proven reachable, so the peer gate is open. setUnproven() closes it.
+        theApp.clearIPv6Reachability();
+        if (!addr.isNull())
+            setProbedReachable();
     }
 
     ~IPv6AdvertiseGuard()
     {
         theApp.onPublicIPv6Changed = {};       // drop any hook installed under us
         theApp.clearPublicIPv6Observed();
+        theApp.clearIPv6Reachability();
         theApp.setPublicIPv6Status(m_savedStatus);
         theApp.setPublicIPv6Override(m_savedOverride);
         theApp.setPublicIPv6Local(m_savedLocal);
@@ -143,8 +148,14 @@ public:
     IPv6AdvertiseGuard(const IPv6AdvertiseGuard&) = delete;
     IPv6AdvertiseGuard& operator=(const IPv6AdvertiseGuard&) = delete;
 
+    /// No reachability proof: the peer gate is closed, the server gate stays open.
+    void setUnproven()
+    {
+        theApp.setPublicIPv6Status(0);
+        theApp.clearIPv6Reachability();
+    }
     /// A server dial-back probed our address and it failed: we still know the address, but
-    /// must not publish it. shouldAdvertisePublicIPv6() == confident && !probedUnreachable.
+    /// must not publish it to peers.
     void setProbedUnreachable() { theApp.setPublicIPv6Status(IPV6ST_HAVE | IPV6ST_PROBED); }
     void setProbedReachable()
     {

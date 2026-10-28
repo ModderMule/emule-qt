@@ -3,6 +3,7 @@
 #ifdef EMULE_HAVE_QUIC_NATT
 
 #include "net/quic/QuicTls.h"
+#include "crypto/SelfSignedCert.h"
 #include "net/quic/QuicNatProtocol.h"
 
 #include <ngtcp2/ngtcp2_crypto_ossl.h>
@@ -78,27 +79,9 @@ bool commonSetup(SSL_CTX* ctx)
 /// Self-signed ECDSA P-256 certificate, valid a year, backdated a day.
 bool installSelfSigned(SSL_CTX* ctx)
 {
-    std::unique_ptr<EVP_PKEY, decltype(&EVP_PKEY_free)> key(EVP_EC_gen("P-256"), EVP_PKEY_free);
-    std::unique_ptr<X509, decltype(&X509_free)> cert(X509_new(), X509_free);
-    if (!key || !cert)
-        return false;
-    uint8 serial[8];
-    if (RAND_bytes(serial, sizeof(serial)) != 1)
-        return false;
-    serial[0] &= 0x7F;
-    std::unique_ptr<BIGNUM, decltype(&BN_free)> bn(BN_bin2bn(serial, sizeof(serial), nullptr), BN_free);
-    X509_set_version(cert.get(), 2);
-    BN_to_ASN1_INTEGER(bn.get(), X509_get_serialNumber(cert.get()));
-    X509_gmtime_adj(X509_getm_notBefore(cert.get()), -86400);
-    X509_gmtime_adj(X509_getm_notAfter(cert.get()), 365L * 86400);
-    X509_NAME* name = X509_get_subject_name(cert.get());
-    X509_NAME_add_entry_by_txt(name, "CN", MBSTRING_ASC,
-                               reinterpret_cast<const unsigned char*>("ed2k-natt"), -1, -1, 0);
-    X509_set_issuer_name(cert.get(), name);
-    X509_set_pubkey(cert.get(), key.get());
-    if (X509_sign(cert.get(), key.get(), EVP_sha256()) <= 0)
-        return false;
-    return SSL_CTX_use_certificate(ctx, cert.get()) == 1 && SSL_CTX_use_PrivateKey(ctx, key.get()) == 1;
+    const auto id = generateSelfSigned("ed2k-natt", 365);
+    return id && SSL_CTX_use_certificate(ctx, id->cert.get()) == 1
+        && SSL_CTX_use_PrivateKey(ctx, id->key.get()) == 1;
 }
 
 } // namespace

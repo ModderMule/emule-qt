@@ -69,6 +69,11 @@ QCborMap networkInfo()
     ed2k.insert(QStringLiteral("publicIPv6"), theApp.publicIPv6().toString());
     // Server's ST_IPV6_STATUS verdict on that address (IPV6ST_* bits; 0 = no verdict).
     ed2k.insert(QStringLiteral("ipv6Status"), static_cast<qint64>(theApp.publicIPv6Status()));
+    // Peer-gate verdict, kept across sessions: 0 unknown, 1 reachable, 2 unreachable;
+    // proof source per IPv6ProofSource (0 none, 1 probe, 2 inbound, 3 pinhole, 4 assumed).
+    ed2k.insert(QStringLiteral("ipv6Reachability"),
+                static_cast<qint64>(theApp.ipv6Reachability()));
+    ed2k.insert(QStringLiteral("ipv6ProofSource"), static_cast<qint64>(theApp.ipv6ProofSource()));
     // Dotted-quad form of publicIP, so callers that just need a literal (the port test URL) do
     // not each reimplement the ED2K byte order. Empty until a server tells us our IPv4.
     ed2k.insert(QStringLiteral("publicIPv4"),

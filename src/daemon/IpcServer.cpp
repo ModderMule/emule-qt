@@ -8,14 +8,24 @@
 #include "net/ListenConflict.h"
 #include "utils/Log.h"
 
+#include <QSslSocket>
+
 
 namespace eMule {
 
 IpcServer::IpcServer(QObject* parent)
     : QObject(parent)
 {
-    connect(&m_tcpServer, &QTcpServer::newConnection,
-            this, &IpcServer::onNewConnection);
+    connect(&m_tcpServer, &Ipc::IpcTlsServer::ready, this, &IpcServer::onSocketReady);
+    connect(&m_tcpServer, &Ipc::IpcTlsServer::rejected, this,
+            [](const QString& peer, const QString& reason) {
+                logWarning(QStringLiteral("IPC client %1 dropped: %2").arg(peer, reason));
+            });
+}
+
+void IpcServer::setTlsIdentity(const QSslCertificate& cert, const QSslKey& key)
+{
+    m_tcpServer.setIdentity(cert, key);
 }
 
 IpcServer::~IpcServer()
@@ -130,18 +140,14 @@ void IpcServer::notifyCategoriesChanged()
 // Private slots
 // ---------------------------------------------------------------------------
 
-void IpcServer::onNewConnection()
+void IpcServer::onSocketReady(QSslSocket* socket, bool isLocal)
 {
-    while (m_tcpServer.hasPendingConnections()) {
-        QTcpSocket* socket = m_tcpServer.nextPendingConnection();
-        if (!socket)
-            continue;
-
-        const bool isLocal = socket->peerAddress().isLoopback();
-        logInfo(QStringLiteral("IPC client connected from %1:%2%3")
+    {
+        logInfo(QStringLiteral("IPC client connected from %1:%2%3%4")
                     .arg(socket->peerAddress().toString())
                     .arg(socket->peerPort())
-                    .arg(isLocal ? QString() : QStringLiteral(" (remote)")));
+                    .arg(isLocal ? QString() : QStringLiteral(" (remote)"))
+                    .arg(socket->isEncrypted() ? QStringLiteral(", TLS") : QString()));
 
         auto handler = std::make_unique<IpcClientHandler>(socket, isLocal, this);
 

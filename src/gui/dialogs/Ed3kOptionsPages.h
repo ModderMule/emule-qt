@@ -11,7 +11,8 @@
 /// - Names (name.md): pins, petnames and followed name lists act at once over IPC
 ///   (1012-1019), not on OK.
 /// - Credits → stake (Ed3kStakeGroup, credit.md §6.7) and Filters (Ed3kFilterPage,
-///   filter-list.md) act at once over IPC; Connection → chaintube chain (chaintube.md §4.2) on OK.
+///   filter-list.md) act at once over IPC; Connection → chaintube RPC endpoints on OK.
+/// - Credits page is built but not in the sidebar for now (OptionsDialog::hasPage).
 /// - Hoster (hoster.md): downloads from hosters are off by default; switching them on shows
 ///   what it means (§3, §8, §9). Vouched links are published by default (§4.1). Accounts are sent
 ///   with their password only when it was typed here; the daemon never sends one back.
@@ -99,7 +100,7 @@ private:
     bool failed(const Ipc::IpcMessage& reply, const QString& what);
     [[nodiscard]] QStringList extOff() const;
     [[nodiscard]] Ed3kCreditPrefs creditPrefs() const;
-    [[nodiscard]] Ed3kChainPrefs chainPrefs() const;
+    // [[nodiscard]] Ed3kChainPrefs chainPrefs() const;   // ToDo: with the chaintube fields
     [[nodiscard]] bool keyActionsAllowed() const;
     [[nodiscard]] static QString notesText();
     [[nodiscard]] static QString creditsText(qint64 micro);
@@ -130,7 +131,6 @@ private:
     // General
     QLabel* m_runningLabel = nullptr;
     QCheckBox* m_enabledCheck = nullptr;
-    QLabel* m_nickLabel = nullptr;
     QCheckBox* m_shareFilesCheck = nullptr;
     QCheckBox* m_holdBackCheck = nullptr;
     QList<QCheckBox*> m_extChecks;   ///< text = the extension name
@@ -141,12 +141,12 @@ private:
     QSpinBox* m_sitePortSpin = nullptr;
     QPlainTextEdit* m_nodeListsEdit = nullptr;
     QPlainTextEdit* m_chaintubeRpcEdit = nullptr;
-    // chaintube chain (chaintube.md §4.2)
-    QLineEdit* m_ctChainIdEdit = nullptr;
-    QLineEdit* m_ctContentEdit = nullptr;
-    QLineEdit* m_ctCommentEdit = nullptr;
-    QLineEdit* m_ctVoteEdit = nullptr;
-    QLineEdit* m_ctForwarderEdit = nullptr;
+    // chaintube chain (chaintube.md §4.2). ToDo: decide whether the UI edits it
+    // QLineEdit* m_ctChainIdEdit = nullptr;
+    // QLineEdit* m_ctContentEdit = nullptr;
+    // QLineEdit* m_ctCommentEdit = nullptr;
+    // QLineEdit* m_ctVoteEdit = nullptr;
+    // QLineEdit* m_ctForwarderEdit = nullptr;
 
     // Credits
     QCheckBox* m_creditEnabledCheck = nullptr;

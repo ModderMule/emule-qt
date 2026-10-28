@@ -183,6 +183,7 @@
     <ClCompile Include="..\..\src\gui\controls\ContentScrollArea.cpp" />
     <ClCompile Include="..\..\src\gui\app\UiState.cpp" />
     <ClCompile Include="..\..\src\gui\app\IpcClient.cpp" />
+    <ClCompile Include="..\..\src\gui\app\KnownCores.cpp" />
   </ItemGroup>
   <ItemGroup>
     <QtMoc Include="..\..\src\gui\dialogs\MassRenameDialog.h">
