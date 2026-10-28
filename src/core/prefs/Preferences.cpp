@@ -2371,6 +2371,12 @@ bool Preferences::applyEd3kCreditKey(Ed3kCreditPrefs& c, const QString& key, con
         c.sellFloor = u64(c.sellFloor);
     else if (key == QLatin1StringView("ed3kCreditSellSlots"))
         c.sellSlots = static_cast<uint32>(std::min<uint64>(u64(c.sellSlots), 1000));
+    else if (key == QLatin1StringView("ed3kCreditAutoBid"))
+        c.autoBid = val.toBool(c.autoBid);
+    else if (key == QLatin1StringView("ed3kCreditAutoFactor"))
+        c.autoFactor = (val.isDouble() || val.isInteger()) ? Ed3kCreditPrefs::autoFactorOf(val.toDouble()) : c.autoFactor;
+    else if (key == QLatin1StringView("ed3kCreditAutoThreshold"))
+        c.autoThreshold = std::max(u64(c.autoThreshold), Ed3kCreditPrefs::kAutoThresholdMin);
     else
         return false;
     return true;
@@ -3630,6 +3636,9 @@ QCborMap Preferences::toIpcMap() const
         prefs.insert(QStringLiteral("ed3kCreditSell"), c.sell);
         prefs.insert(QStringLiteral("ed3kCreditSellFloor"), static_cast<qint64>(std::min<uint64>(c.sellFloor, INT64_MAX)));
         prefs.insert(QStringLiteral("ed3kCreditSellSlots"), static_cast<qint64>(c.sellSlots));
+        prefs.insert(QStringLiteral("ed3kCreditAutoBid"), c.autoBid);
+        prefs.insert(QStringLiteral("ed3kCreditAutoFactor"), c.autoFactor / 10.0);
+        prefs.insert(QStringLiteral("ed3kCreditAutoThreshold"), static_cast<qint64>(std::min<uint64>(c.autoThreshold, INT64_MAX)));
     }
     {
         const Ed3kChainPrefs c = ed3kChain();
@@ -4210,12 +4219,8 @@ bool Preferences::load(const QString& filePath)
     m_data = std::make_unique<Data>();
 
     if (!QFile::exists(filePath)) {
-        // First run — generate user hash, resolve ports & directories
-        m_data->userHash = generateUserHash();
-        if (m_data->port == 0)
-            m_data->port = randomTCPPort();
-        if (m_data->udpPort == 0)
-            m_data->udpPort = randomUDPPort();
+        // First run — user hash from the ed3k node ID, one port for TCP, UDP and ed3k
+        newIdentity();
         validate();
         resolveDefaultDirectories();
         resolveDefaultVideoPlayer();
@@ -5137,6 +5142,9 @@ bool Preferences::load(const QString& filePath)
                 c.sell = cr["sell"].as<bool>(c.sell);
                 c.sellFloor = cr["sellFloor"].as<uint64>(c.sellFloor);
                 c.sellSlots = std::min<uint32>(cr["sellSlots"].as<uint32>(c.sellSlots), 1000);
+                c.autoBid = cr["autoBid"].as<bool>(c.autoBid);
+                c.autoFactor = Ed3kCreditPrefs::autoFactorOf(cr["autoFactor"].as<double>(c.autoFactor / 10.0));
+                c.autoThreshold = std::max(cr["autoThreshold"].as<uint64>(c.autoThreshold), Ed3kCreditPrefs::kAutoThresholdMin);
             }
             if (auto ch = e3["chain"]) {
                 Ed3kChainPrefs& c = m_data->ed3kChain;
@@ -5161,6 +5169,8 @@ bool Preferences::load(const QString& filePath)
                 h.checkSearchLinks = ho["checkSearchLinks"].as<bool>(h.checkSearchLinks);
                 h.checkMaxParallel = std::clamp(ho["checkMaxParallel"].as<int>(h.checkMaxParallel), 1, 256);
                 h.checkMaxPerHost = std::clamp(ho["checkMaxPerHost"].as<int>(h.checkMaxPerHost), 1, 64);
+                h.recheckHours = std::clamp(ho["recheckHours"].as<int>(h.recheckHours), 0, 8760);
+                h.reportRecheckHours = std::clamp(ho["reportRecheckHours"].as<int>(h.reportRecheckHours), 0, 8760);
                 h.accounts.clear();
                 if (auto acc = ho["accounts"]; acc && acc.IsSequence()) {
                     for (const auto& a : acc) {
@@ -5325,11 +5335,7 @@ bool Preferences::load(const QString& filePath)
         if (QFile::copy(filePath, broken))
             logWarning(QStringLiteral("Unreadable preferences kept as %1").arg(broken));
         m_data = std::make_unique<Data>();
-        m_data->userHash = generateUserHash();
-        if (m_data->port == 0)
-            m_data->port = randomTCPPort();
-        if (m_data->udpPort == 0)
-            m_data->udpPort = randomUDPPort();
+        newIdentity();
         validate();
         resolveDefaultDirectories();
         return false;
@@ -5338,7 +5344,7 @@ bool Preferences::load(const QString& filePath)
     // Generate user hash if missing/invalid
     const bool hashGenerated = isnulmd4(m_data->userHash.data());
     if (hashGenerated)
-        m_data->userHash = generateUserHash();
+        m_data->userHash = newUserHash();
 
     // Resolve port=0 → random. A stored UDP port of 0 is the user's "disable UDP"
     // and stays; only a missing key gets a port (MFC Preferences.cpp:1957-1959).
@@ -5346,14 +5352,20 @@ bool Preferences::load(const QString& filePath)
         m_data->port = randomTCPPort();
     if (m_data->udpPort == 0 && !m_data->udpPortFromFile)
         m_data->udpPort = randomUDPPort();
-    // ed3k: 0 = random, picked once and saved; never the eD2K UDP or BT port
+    // ed3k: 0 = not picked yet, picked once and saved. The eD2K TCP port number (§14.1),
+    // sharing the eD2K UDP socket when that has the same number; else random, never the
+    // eD2K UDP or BT port
     const bool ed3kPortPicked = m_data->ed3kUdpPort == 0;
     if (ed3kPortPicked) {
+        const uint16 tcp = m_data->port;
         const uint16 ed2kUdp = m_data->udpPort;
         const uint16 btPort = m_data->btListenPort;
-        m_data->ed3kUdpPort = randomPort([ed2kUdp, btPort](uint16 p) {
-            return p != ed2kUdp && p != btPort && udpPortFree(p);
-        });
+        if (tcp != btPort && (ed2kUdp == tcp || udpPortFree(tcp)))
+            m_data->ed3kUdpPort = tcp;
+        else
+            m_data->ed3kUdpPort = randomPort([ed2kUdp, btPort](uint16 p) {
+                return p != ed2kUdp && p != btPort && udpPortFree(p);
+            });
     }
     // the website server's port is part of every site's origin: picked once, kept (name.md §6.2)
     const bool ed3kSitePortPicked = m_data->ed3kSitePort == 0;
@@ -5501,6 +5513,58 @@ bool Preferences::udpPortFree(uint16 port)
     QUdpSocket probe;
     return !ipv4WildcardHeld(port, QAbstractSocket::UdpSocket)
         && probe.bind(QHostAddress::Any, port);
+}
+
+namespace {
+Preferences::UserHashSource& userHashSource()
+{
+    static Preferences::UserHashSource source;
+    return source;
+}
+} // namespace
+
+void Preferences::setUserHashSource(UserHashSource source)
+{
+    userHashSource() = std::move(source);
+}
+
+namespace {
+bool s_deferUserHash = false;
+} // namespace
+
+void Preferences::setDeferUserHash(bool defer)
+{
+    s_deferUserHash = defer;
+}
+
+uint16 Preferences::randomSharedPort()
+{
+    return randomPort([](uint16 p) { return p != kDefaultBtListenPort && tcpPortFree(p) && udpPortFree(p); });
+}
+
+std::array<uint8, 16> Preferences::newUserHash()
+{
+    if (const auto& source = userHashSource()) {
+        if (const auto hash = source()) {
+            logInfo(QStringLiteral("User hash %1 derived from the ed3k node ID")
+                        .arg(encodeBase16(std::span<const uint8>(hash->data(), hash->size()))));
+            return *hash;
+        }
+    }
+    return generateUserHash();
+}
+
+void Preferences::newIdentity()
+{
+    // null: the core's load mints it (hashGenerated)
+    if (!s_deferUserHash)
+        m_data->userHash = newUserHash();
+    if (m_data->port == 0)
+        m_data->port = randomSharedPort();
+    if (m_data->udpPort == 0)
+        m_data->udpPort = m_data->port;
+    if (m_data->ed3kUdpPort == 0)
+        m_data->ed3kUdpPort = m_data->port;
 }
 
 std::array<uint8, 16> Preferences::generateUserHash()
@@ -6331,6 +6395,9 @@ bool Preferences::saveImpl(const QString& filePath) const
         out << YAML::Key << "sell" << YAML::Value << c.sell;
         out << YAML::Key << "sellFloor" << YAML::Value << c.sellFloor;
         out << YAML::Key << "sellSlots" << YAML::Value << c.sellSlots;
+        out << YAML::Key << "autoBid" << YAML::Value << c.autoBid;
+        out << YAML::Key << "autoFactor" << YAML::Value << c.autoFactor / 10.0;
+        out << YAML::Key << "autoThreshold" << YAML::Value << c.autoThreshold;
         out << YAML::EndMap;
     }
     {
@@ -6356,6 +6423,8 @@ bool Preferences::saveImpl(const QString& filePath) const
         out << YAML::Key << "checkSearchLinks" << YAML::Value << h.checkSearchLinks;
         out << YAML::Key << "checkMaxParallel" << YAML::Value << h.checkMaxParallel;
         out << YAML::Key << "checkMaxPerHost" << YAML::Value << h.checkMaxPerHost;
+        out << YAML::Key << "recheckHours" << YAML::Value << h.recheckHours;
+        out << YAML::Key << "reportRecheckHours" << YAML::Value << h.reportRecheckHours;
         out << YAML::Key << "accounts" << YAML::Value << YAML::BeginSeq;
         for (const Ed3kHosterAccount& a : h.accounts) {
             out << YAML::BeginMap;

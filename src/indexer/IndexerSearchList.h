@@ -86,8 +86,10 @@ public:
                                             const QString& name, const QString& password,
                                             const QString& error)>;
 
-    /// Fetch one result's .nzb. Runs here rather than in the GUI because the URL
-    /// carries the API key, and the GUI is never given one.
+    /// Fetch one result's .nzb or .torrent. Runs here rather than in the GUI
+    /// because the URL carries the API key, and the GUI is never given one.
+    /// A fetched payload stays 3 h in MetaFileCache: Details, then Download,
+    /// spends one of the indexer's grabs, not two.
     ///
     /// When the search is gone (@p searchId 0: a tab the GUI restored after a
     /// restart) the row comes from the grab cache by @p resultId.
@@ -117,8 +119,8 @@ private:
     void pruneGrabCache();
     [[nodiscard]] static QString grabCachePath();
     [[nodiscard]] const IndexerConfig* accountNamed(const QString& displayName) const;
-    void fetchGrab(const IndexerConfig& account, const QUrl& url, const QString& name,
-                   const QString& password, GrabCallback done);
+    void fetchGrab(const IndexerConfig& account, const QString& resultId, const QUrl& url,
+                   const QString& name, const QString& password, GrabCallback done);
 
     IndexerClient* m_client = nullptr;
     PasswordFlagStore* m_passwordFlags = nullptr;

@@ -235,7 +235,7 @@ void MetaResultActions::sendDownload(quint32 searchID, const Row& row, int categ
 
 void MetaResultActions::fetchMeta(quint32 searchID, const Row& row, const QString& failText,
                                   std::function<void(const QCborMap& data)> onData,
-                                  std::function<bool()> onFail)
+                                  std::function<bool(const QString& reason)> onFail, bool inspect)
 {
     if (!m_ipc || !m_ipc->isConnected())
         return;
@@ -244,18 +244,20 @@ void MetaResultActions::fetchMeta(quint32 searchID, const Row& row, const QStrin
     msg.append(static_cast<qint64>(searchID));
     msg.append(row.hash);
     msg.append(row.ref);
+    msg.append(inspect);
 
     QPointer<MetaResultActions> self(this);
-    m_ipc->sendRequest(std::move(msg), [self, searchID, row, failText, onData, onFail](const IpcMessage& resp) {
+    m_ipc->sendRequest(std::move(msg), [self, searchID, row, failText, onData, onFail, inspect](const IpcMessage& resp) {
         if (!self || !resp.isValid())
             return;
         if (!resp.fieldBool(0)) {
-            const auto retry = [self, searchID, row, failText, onData, onFail] {
+            const auto retry = [self, searchID, row, failText, onData, onFail, inspect] {
                 if (self)
-                    self->fetchMeta(searchID, row, failText, onData, onFail);
+                    self->fetchMeta(searchID, row, failText, onData, onFail, inspect);
             };
-            if (!self->handleAuth(resp.fieldMap(2), retry) && !(onFail && onFail()))
-                self->warn(failText.arg(row.name, resp.fieldString(1)));
+            const QString reason = resp.fieldString(1);
+            if (!self->handleAuth(resp.fieldMap(2), retry) && !(onFail && onFail(reason)))
+                self->warn(failText.arg(row.name, reason));
             return;
         }
         onData(resp.fieldMap(1));
@@ -333,7 +335,8 @@ void MetaResultActions::fetchAndDownloadLinks(quint32 searchID, const Row& row)
         QTimer::singleShot(0, self, [self, row, files] {
             if (!self)
                 return;
-            if (Ed2kLinkImporter::sendHosterLinks(files, self->m_parent))
+            // the row's name is the package: its files under one root, in one folder
+            if (Ed2kLinkImporter::sendHosterLinks(files, self->m_parent, row.name))
                 StatusBarNotifier::post(tr("Added %n file(s) of \"%1\" to the Hoster tab.", nullptr,
                                            int(files.size())).arg(row.name));
             else
@@ -347,7 +350,7 @@ void MetaResultActions::fetchAndAddTorrent(quint32 searchID, const Row& row)
 {
     QPointer<MetaResultActions> self(this);
     // the .torrent is gone or refused: the row's magnet still names it
-    const auto viaMagnet = [self, row] {
+    const auto viaMagnet = [self, row](const QString&) {
         return self && !row.magnet.isEmpty()
             && Ed2kLinkImporter::sendTorrentLinks({row.magnet}, self->m_parent);
     };
@@ -361,6 +364,47 @@ void MetaResultActions::fetchAndAddTorrent(quint32 searchID, const Row& row)
         if (!Ed2kLinkImporter::sendTorrentFile(name, content, self->m_parent))
             self->warn(tr("Could not add \"%1\": the torrent is empty.").arg(row.name));
     }, viaMagnet);
+}
+
+void MetaResultActions::showDetails(quint32 searchID, const Row& row,
+                                    const MetaResultDetailDialog::RowInfo& info,
+                                    std::function<void()> onDownload)
+{
+    if (!m_ipc || !m_ipc->isConnected())
+        return;
+    QPointer<MetaResultDetailDialog> dlg = openDetails(info, std::move(onDownload));
+    fetchMeta(searchID, row, {}, [dlg, row](const QCborMap& data) {
+        if (!dlg)
+            return;
+        QCborMap details = data;
+        details.insert(QStringLiteral("kind"), row.isNzb() ? QStringLiteral("nzb") : QStringLiteral("torrent"));
+        dlg->setDetails(details);
+    }, [dlg](const QString& reason) {
+        if (dlg)
+            dlg->setError(reason);
+        return true;
+    }, true);
+}
+
+void MetaResultActions::showIndexerDetails(quint32 searchID, const QString& resultId,
+                                           const MetaResultDetailDialog::RowInfo& info,
+                                           std::function<void()> onDownload)
+{
+    if (!m_ipc || !m_ipc->isConnected())
+        return;
+    QPointer<MetaResultDetailDialog> dlg = openDetails(info, std::move(onDownload));
+    IpcMessage msg(IpcMsgType::InspectIndexerResult);
+    msg.append(static_cast<qint64>(searchID));
+    msg.append(resultId);
+    m_ipc->sendRequest(std::move(msg), [dlg](const IpcMessage& resp) {
+        if (!dlg || !resp.isValid())
+            return;
+        if (!resp.fieldBool(0)) {
+            dlg->setError(resp.fieldString(1));
+            return;
+        }
+        dlg->setDetails(resp.fieldMap(1));
+    });
 }
 
 bool MetaResultActions::handleAuth(const QCborMap& meta, std::function<void()> retry)
@@ -406,6 +450,17 @@ void MetaResultActions::warn(const QString& text)
     QTimer::singleShot(0, qApp, [parent, text] {
         QMessageBox::warning(parent, tr("Search"), text);
     });
+}
+
+MetaResultDetailDialog* MetaResultActions::openDetails(const MetaResultDetailDialog::RowInfo& info,
+                                                       std::function<void()> onDownload)
+{
+    auto* dlg = new MetaResultDetailDialog(info, m_parent);
+    dlg->setAttribute(Qt::WA_DeleteOnClose);
+    if (onDownload)
+        connect(dlg, &MetaResultDetailDialog::downloadRequested, this, std::move(onDownload));
+    dlg->show();
+    return dlg;
 }
 
 } // namespace eMule

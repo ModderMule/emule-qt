@@ -444,7 +444,9 @@ void TestEd2kLinkImporter::searchRowWebLinksGoToTheHosterHandler()
 
     QList<QStringList> seen;
     bool enabled = false;                                             // ed3kHosterEnabled off
-    Ed2kLinkImporter::setHosterLinkHandler([&seen](const QList<QStringList>& u, QWidget*) { seen += u; },
+    QString package;
+    Ed2kLinkImporter::setHosterLinkHandler([&seen, &package](const QList<QStringList>& u, const QString& p,
+                                                              QWidget*) { seen += u; package = p; },
                                            [&enabled] { return enabled; });
     const auto reset = qScopeGuard([] { Ed2kLinkImporter::setHosterLinkHandler({}, {}); });
     QVERIFY(!Ed2kLinkImporter::hosterReady());
@@ -454,8 +456,9 @@ void TestEd2kLinkImporter::searchRowWebLinksGoToTheHosterHandler()
     enabled = true;
     QVERIFY(Ed2kLinkImporter::hosterReady());
     QVERIFY(!Ed2kLinkImporter::sendHosterLinks({}, nullptr));         // nothing to hand over
-    QVERIFY(Ed2kLinkImporter::sendHosterLinks(urls, nullptr));
+    QVERIFY(Ed2kLinkImporter::sendHosterLinks(urls, nullptr, QStringLiteral("Pack")));
     QCOMPARE(seen, urls);
+    QCOMPARE(package, QStringLiteral("Pack"));
 }
 
 void TestEd2kLinkImporter::linkKindsIn_data()

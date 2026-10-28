@@ -136,7 +136,7 @@ void Ed3kStakeGroup::fill(const QCborMap& stake)
     const QString rate = stake.value(QStringLiteral("rate")).toString();
     const qint64 delay = stake.value(QStringLiteral("delay")).toInteger();
     if (!m_configured)
-        m_rateLabel->setText(tr("Stake tokens need credits in use with ledger endpoints."));
+        m_rateLabel->clear();
     else if (rate.isEmpty())
         m_rateLabel->setText(tr("The stake rate is not read yet."));
     else if (decimalOf(rate) == QLatin1String("0"))

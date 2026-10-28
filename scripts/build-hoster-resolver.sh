@@ -4,7 +4,8 @@
 #
 #   build-hoster-resolver.sh [<dir holding JDownloader, AppWorkUtils, JDBrowser, MyJDownloaderClient>] [<out dir>]
 #
-# Defaults: $JD_DIR or /Volumes/MySSD/Coding/Java, and build/hoster-resolver.
+# Defaults: $JD_DIR (environment, else the project .env) or /Volumes/MySSD/Coding/Java,
+# and build/hoster-resolver.
 # Output:   <out>/resolver/{classes/, libs/, revision.txt, LICENSE} and <out>/resolver.zip,
 #           which the bundle scripts ship and emulecored unpacks into its config dir.
 # Plugins stay loose .class files: JD's plugin scanner lists the directory, not a jar.
@@ -12,6 +13,11 @@ set -e
 
 HERE=$(cd "$(dirname "$0")" && pwd)
 ROOT=$(cd "$HERE/.." && pwd)
+# JD_DIR from the project .env when the environment has none
+if [ -z "${JD_DIR:-}" ] && [ -f "$ROOT/.env" ]; then
+    JD_DIR=$(sed -n 's/^[[:space:]]*JD_DIR[[:space:]]*=[[:space:]]*//p' "$ROOT/.env" | tail -n 1 \
+        | sed 's/[[:space:]]*$//; s/^"\(.*\)"$/\1/; s/^'"'"'\(.*\)'"'"'$/\1/')
+fi
 JD=$(cd "${1:-${JD_DIR:-/Volumes/MySSD/Coding/Java}}" && pwd)
 OUT="${2:-$ROOT/build/hoster-resolver}"
 mkdir -p "$OUT"

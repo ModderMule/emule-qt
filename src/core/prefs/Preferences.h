@@ -25,7 +25,9 @@
 #include <QString>
 #include <QStringList>
 
+#include <algorithm>
 #include <array>
+#include <cmath>
 #include <memory>
 #include <optional>
 
@@ -69,6 +71,22 @@ struct Ed3kCreditPrefs {
     bool sell = false;             ///< ed3kCreditSell: sell priority slots (§5.1)
     uint64 sellFloor = 0;          ///< ed3kCreditSellFloor: µ per MiB, the lowest bid taken
     uint32 sellSlots = 0;          ///< ed3kCreditSellSlots: 0 = the upload queue's slots
+    // autostart highspeed download: bid autoFactor from autoThreshold credits down to ~20 credits
+    bool autoBid = false;          ///< ed3kCreditAutoBid
+    uint32 autoFactor = 50;        ///< ed3kCreditAutoFactor: credits per MiB in tenths, 20..500
+    uint64 autoThreshold = 2000;   ///< ed3kCreditAutoThreshold: credits, at least 200
+    static constexpr uint32 kAutoFactorMin = 20;
+    static constexpr uint32 kAutoFactorMax = 500;
+    static constexpr uint64 kAutoThresholdMin = 200;
+    /// credits per MiB → tenths, rounded and held to 2.0..50.0
+    [[nodiscard]] static uint32 autoFactorOf(double credits)
+    {
+        if (!(credits == credits))   // NaN
+            return 50;
+        return static_cast<uint32>(std::clamp(std::llround(credits * 10.0), qint64(kAutoFactorMin), qint64(kAutoFactorMax)));
+    }
+    /// the bid of the autostart in µ per MiB
+    [[nodiscard]] uint64 autoPrice() const { return uint64(autoFactor) * 100'000; }
     bool operator==(const Ed3kCreditPrefs&) const = default;
 };
 
@@ -107,6 +125,8 @@ struct Ed3kHosterPrefs {
     bool checkSearchLinks = true;  ///< ed3kHosterCheckSearchLinks: a web row's links dialog checks its links
     int checkMaxParallel = 30;     ///< YAML only: those link checks at once
     int checkMaxPerHost = 5;       ///< YAML only: of them at one hoster (its domains count as one)
+    int recheckHours = 72;         ///< YAML only: a published link is checked again after this; 0: never
+    int reportRecheckHours = 6;    ///< YAML only: 3 peers' dead-link reports check it at once, at most this often; 0: never
     QList<Ed3kHosterAccount> accounts; ///< ed3kHosterAccounts
     bool operator==(const Ed3kHosterPrefs&) const = default;
 };
@@ -2038,6 +2058,16 @@ public:
     /// Generate a 16-byte user hash with eMule markers at [5]=14 and [14]=111.
     [[nodiscard]] static std::array<uint8, 16> generateUserHash();
 
+    /// A random port free for both TCP and UDP: eD2K TCP, UDP and ed3k on one number.
+    [[nodiscard]] static uint16 randomSharedPort();
+
+    /// The user hash of a new identity: derived from the ed3k node ID (ed3k Protocol.md
+    /// §14.2). Set by the daemon before load(); unset or nullopt = random (generateUserHash).
+    using UserHashSource = std::function<std::optional<std::array<uint8, 16>>()>;
+    static void setUserHashSource(UserHashSource source);
+    /// The GUI: a new config gets no user hash here; the core mints it (with the source above).
+    static void setDeferUserHash(bool defer);
+
     /// Generate a 32-char hex REST API key (128-bit random).
     [[nodiscard]] static QString generateApiKey();
 
@@ -2114,6 +2144,10 @@ private:
 
     void validate();
     void resolveDefaultDirectories();
+    /// A fresh config: user hash (newUserHash) and one port for TCP, UDP and ed3k.
+    void newIdentity();
+    /// The user hash source's (setUserHashSource), else a random one.
+    [[nodiscard]] static std::array<uint8, 16> newUserHash();
     void resolveDefaultVideoPlayer();
     bool saveImpl(const QString& filePath) const;
 

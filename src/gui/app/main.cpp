@@ -436,6 +436,8 @@ int main(int argc, char* argv[])
         return 0;
 
     const QString prefsPath = configDir + QStringLiteral("/preferences.yml");
+    // a new config: the core derives the user hash from its ed3k node (§14.2)
+    eMule::Preferences::setDeferUserHash(true);
     eMule::thePrefs.load(prefsPath);
 
     // Opens emuleqt.log / emuleqt_Verbose.log if the GUI switch is on. Re-run
@@ -860,6 +862,8 @@ int main(int argc, char* argv[])
                 mainWindow.sharedFilesPanel()->refreshSharedDirs();
                 // ed3k search method follows the daemon's ed3kEnabled
                 mainWindow.searchPanel()->setEd3kMethodVisible(eMule::thePrefs.ed3kEnabled());
+                // Torrents / Hoster tabs follow btEnabled / ed3kEnabled
+                mainWindow.applyFeatureTabs();
                 // The lists were built on the local prefs file's showExtControls
                 mainWindow.sharedFilesPanel()->applyDisplayOptions();
                 mainWindow.transferPanel()->applyExtColumns();

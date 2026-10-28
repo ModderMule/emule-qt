@@ -154,6 +154,7 @@ SOURCES += \
     httpcache/HttpCachePublisher.cpp \
     httpcache/HttpCacheServerProbe.cpp \
     net/HttpFileDownload.cpp \
+    net/MetaFileCache.cpp \
     net/PortTestApi.cpp \
     net/LastCommonRouteFinder.cpp \
     net/ListenSocket.cpp \
@@ -320,6 +321,7 @@ HEADERS += \
     httpcache/HttpCacheTypes.h \
     net/HttpDefaults.h \
     net/HttpFileDownload.h \
+    net/MetaFileCache.h \
     net/PortTestApi.h \
     net/LastCommonRouteFinder.h \
     net/ListenSocket.h \

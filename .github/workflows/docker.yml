@@ -18,6 +18,10 @@ on:
         description: Ship the GeoLite2-Country database from release.yml's geoip-db artifact
         type: boolean
         default: false
+      resolver:
+        description: Ship the hoster resolver from release.yml's resolver-zip artifact
+        type: boolean
+        default: false
   workflow_dispatch:
 
 permissions:
@@ -26,6 +30,9 @@ permissions:
 
 env:
   FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
+  # ed3k: packmule is the private ModderMule/packmule; without the secret
+  # (forks, 3rd party) it is skipped and EMULE_ED3K turns itself off
+  HAS_PACKMULE_TOKEN: ${{ secrets.PACKMULE_TOKEN != '' }}
 
 jobs:
   build:
@@ -48,12 +55,36 @@ jobs:
           ref: ${{ inputs.ref }}   # empty = the run's own commit
           submodules: true          # external/enodemeta, external/specialdlp
 
+      # libs/packmule stays gitignored; the commit is pinned in scripts/packmule.ref.
+      # The Dockerfile has Rust and builds it from the context
+      - name: Read packmule ref
+        if: env.HAS_PACKMULE_TOKEN == 'true'
+        run: echo "PACKMULE_REF=$(tr -d '[:space:]' < scripts/packmule.ref)" >> "$GITHUB_ENV"
+
+      - name: Checkout packmule
+        if: env.HAS_PACKMULE_TOKEN == 'true'
+        uses: actions/checkout@v5
+        with:
+          repository: ModderMule/packmule
+          ref: ${{ env.PACKMULE_REF }}
+          token: ${{ secrets.PACKMULE_TOKEN }}
+          path: libs/packmule
+          persist-credentials: false
+
       - name: Fetch GeoLite2-Country database
         if: ${{ inputs.geoip }}
         uses: actions/download-artifact@v8
         with:
           name: geoip-db
           path: data/config
+
+      # the Dockerfile hands it to bundle-linux.sh
+      - name: Fetch hoster resolver
+        if: ${{ inputs.resolver }}
+        uses: actions/download-artifact@v8
+        with:
+          name: resolver-zip
+          path: hoster-resolver
 
       - name: Image name
         run: echo "IMAGE=ghcr.io/${GITHUB_REPOSITORY_OWNER,,}/emuleqt" >> "$GITHUB_ENV"

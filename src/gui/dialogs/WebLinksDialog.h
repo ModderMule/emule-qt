@@ -10,6 +10,8 @@
 /// ed3kHosterCheckSearchLinks, the daemon checks each link as its download would
 /// (CheckHosterLinks): Status (a colored dot) and Account (a gold star for premium) show it;
 /// Download never waits for that.
+/// Download reads "Download (n)" for n selected links, "Download (all)" for none of several;
+/// the list's context menu has Download and Deselect All.
 
 #include "IpcMessage.h"
 
@@ -21,6 +23,7 @@
 #include <QStringList>
 
 class QCborArray;
+class QPoint;
 
 class QPushButton;
 class QTreeWidget;
@@ -52,6 +55,10 @@ private:
     /// The selected links, or every link, by file.
     [[nodiscard]] QList<QStringList> chosenDownloadFiles() const;
     void downloadLinks();
+    /// "Download (n)" with n selected, "Download (all)" with none of several, else "Download".
+    void updateDownloadLabel();
+    /// Download (the selection, else all) and Deselect All.
+    void showContextMenu(const QPoint& pos);
     /// Asks the daemon to check every link; the Status column stays hidden when it cannot.
     void startChecks();
     void onLinkChecked(const Ipc::IpcMessage& msg);
@@ -62,6 +69,7 @@ private:
 
     QTreeWidget* m_list = nullptr;
     QPushButton* m_openBtn = nullptr;
+    QPushButton* m_downloadBtn = nullptr;   ///< null while hoster downloads are off
     QByteArray m_content;
     QString m_fileName;
     QString m_rowName;

@@ -7,6 +7,8 @@
 #include "app/IpcClient.h"
 #include "app/UiState.h"
 #include "dialogs/HosterPuzzleDialog.h"
+#include "utils/FileTypeIcons.h"
+#include "utils/ListActivation.h"
 #include "utils/MenuUtils.h"
 #include "utils/StringUtils.h"
 #include "IpcMessage.h"
@@ -23,11 +25,13 @@
 #include <QHBoxLayout>
 #include <QHeaderView>
 #include <QLabel>
+#include <QLineEdit>
 #include <QListWidget>
 #include <QMenu>
 #include <QMessageBox>
 #include <QPlainTextEdit>
 #include <QPushButton>
+#include <QRadioButton>
 #include <QTreeWidget>
 #include <QUrl>
 #include <QVBoxLayout>
@@ -41,7 +45,12 @@ namespace {
 
 enum Column { ColName, ColSize, ColProgress, ColSpeed, ColHoster, ColStatus, ColSource, ColCount };
 
+/// ColName data: the item id (0 on a package row) and the package id of a package row
+constexpr int kItemIdRole = Qt::UserRole + 1;
+constexpr int kPackageIdRole = Qt::UserRole + 2;
+
 // Ed3kHosterJoin::State
+constexpr int kStateDownloading = 5;
 constexpr int kStatePaused = 7;
 constexpr int kStateComplete = 8;
 
@@ -93,6 +102,7 @@ QString reasonText(int reason, const QString& arg)
     case 21: return HosterPanel::tr("Cannot move the file to %1").arg(arg);
     case 22: return HosterPanel::tr("Folder: %n link(s)", nullptr, arg.toInt());
     case 23: return HosterPanel::tr("From a link a peer named (%1)").arg(arg);
+    case 24: return HosterPanel::tr("The hoster link is offline, no longer published");
     default: return {};
     }
 }
@@ -138,7 +148,7 @@ HosterPanel::HosterPanel(QWidget* parent)
     m_tree->setColumnCount(ColCount);
     m_tree->setHeaderLabels({tr("File Name"), tr("Size"), tr("Progress"), tr("Speed"), tr("Hoster"), tr("Status"),
                              tr("Source")});
-    m_tree->setRootIsDecorated(false);
+    m_tree->setRootIsDecorated(true);   // packages hold their items
     m_tree->setUniformRowHeights(true);
     m_tree->setSortingEnabled(true);
     m_tree->sortByColumn(ColName, Qt::AscendingOrder);
@@ -154,11 +164,28 @@ HosterPanel::HosterPanel(QWidget* parent)
     connect(addBtn, &QPushButton::clicked, this, [this] { promptAddLinks(); });
     connect(optBtn, &QPushButton::clicked, this, &HosterPanel::optionsRequested);
     connect(m_tree, &QTreeWidget::customContextMenuRequested, this, &HosterPanel::showContextMenu);
-    connect(m_tree, &QTreeWidget::itemDoubleClicked, this, [this](QTreeWidgetItem* row) {
-        const QCborMap it = m_items.value(row->data(ColName, Qt::UserRole + 1).toLongLong());
-        if (it.value(QStringLiteral("state")).toInteger() == kStateComplete)
-            QDesktopServices::openUrl(QUrl::fromLocalFile(QFileInfo(it.value(QStringLiteral("file")).toString()).absolutePath()));
-    });
+    connect(m_tree, &QTreeWidget::itemDoubleClicked, this, &HosterPanel::openRow);
+
+    // the Transfer list's keys
+    ListKeyHandlers keys;
+    keys.activate = [this](const QModelIndex& index) { openRow(m_tree->itemFromIndex(index)); };
+    keys.remove = [this] {
+        const int n = int(selectedIds().size());
+        if (n > 0
+            && QMessageBox::question(this, tr("Remove"), tr("Remove %n download(s) from the list?", nullptr, n),
+                                     QMessageBox::Yes | QMessageBox::No, QMessageBox::No)
+                   == QMessageBox::Yes)
+            act(QStringLiteral("remove"));
+    };
+    keys.copy = [this] { copyLinks(); };
+    keys.paste = [this] {
+        if (const QStringList links = clipboardLinks(); !links.isEmpty())
+            addLinks(links);
+    };
+    keys.find = true;
+    keys.expandKeys = true;
+    keys.escapeDeselects = true;
+    bindListKeys(m_tree, std::move(keys));
 }
 
 HosterPanel::~HosterPanel() = default;
@@ -178,15 +205,15 @@ void HosterPanel::setIpcClient(IpcClient* ipc)
         refresh();
 }
 
-void HosterPanel::addLinks(const QStringList& links)
+void HosterPanel::addLinks(const QStringList& links, const QString& package)
 {
     QList<QStringList> files;
     for (const QString& link : links)
         files.append(QStringList{link});
-    addLinks(files);
+    addLinks(files, package);
 }
 
-void HosterPanel::addLinks(const QList<QStringList>& files)
+void HosterPanel::addLinks(const QList<QStringList>& files, const QString& package, qint64 packageId)
 {
     if (!m_ipc || files.isEmpty())
         return;
@@ -203,6 +230,8 @@ void HosterPanel::addLinks(const QList<QStringList>& files)
     IpcMessage req(IpcMsgType::AddHosterLinks);
     req.append(firsts.join(QLatin1Char('\n')));
     req.append(list);
+    req.append(package.trimmed());
+    req.append(packageId);
     m_ipc->sendRequest(std::move(req), [this](const IpcMessage& r) {
         if (!r.fieldBool(0))
             QMessageBox::warning(this, tr("Hoster links"), r.fieldMap(1).value(QStringLiteral("error")).toString());
@@ -218,6 +247,14 @@ void HosterPanel::promptAddLinks(const QStringList& prefill)
     auto* edit = new QPlainTextEdit(prefill.join(QLatin1Char('\n')), &dlg);
     edit->setMinimumSize(520, 180);
     layout->addWidget(edit);
+    // optional: the links download as one package, into a folder of that name
+    auto* packageRowLayout = new QHBoxLayout;
+    packageRowLayout->addWidget(new QLabel(tr("Package Name:"), &dlg));
+    auto* packageEdit = new QLineEdit(&dlg);
+    packageEdit->setPlaceholderText(tr("optional"));
+    packageEdit->setToolTip(tr("The links download under one entry, into a folder of this name"));
+    packageRowLayout->addWidget(packageEdit, 1);
+    layout->addLayout(packageRowLayout);
     auto* buttons = new QDialogButtonBox(QDialogButtonBox::Ok | QDialogButtonBox::Cancel, &dlg);
     connect(buttons, &QDialogButtonBox::accepted, &dlg, &QDialog::accept);
     connect(buttons, &QDialogButtonBox::rejected, &dlg, &QDialog::reject);
@@ -233,7 +270,7 @@ void HosterPanel::promptAddLinks(const QStringList& prefill)
         QMessageBox::warning(this, tr("Hoster links"), tr("Not connected to the eMule core."));
         return;
     }
-    addLinks(links);
+    addLinks(links, packageEdit->text());
 }
 
 void HosterPanel::refresh()
@@ -246,6 +283,7 @@ void HosterPanel::refresh()
         const QCborMap res = r.fieldMap(1);
         m_tree->clear();
         m_rows.clear();
+        m_packages.clear();
         m_items.clear();
         for (const QCborValue& v : res.value(QStringLiteral("items")).toArray())
             upsert(v.toMap());
@@ -258,20 +296,104 @@ void HosterPanel::upsert(const QCborMap& item)
     const qint64 id = item.value(QStringLiteral("id")).toInteger();
     if (id == 0)
         return;
+    const qint64 oldPackage = m_items.value(id).value(QStringLiteral("packageId")).toInteger();
     m_items[id] = item;
+    const qint64 pkg = item.value(QStringLiteral("packageId")).toInteger();
+    QTreeWidgetItem* parent = pkg != 0 ? packageRow(pkg, item.value(QStringLiteral("package")).toString())
+                                       : nullptr;
     QTreeWidgetItem* row = m_rows.value(id);
+    if (row && row->parent() != parent) {
+        // moved between packages: take it out, put it back under the new parent
+        if (QTreeWidgetItem* old = row->parent())
+            old->removeChild(row);
+        else
+            m_tree->takeTopLevelItem(m_tree->indexOfTopLevelItem(row));
+        if (parent)
+            parent->addChild(row);
+        else
+            m_tree->addTopLevelItem(row);
+    }
     if (!row) {
-        row = new HosterRow(m_tree);
-        row->setData(ColName, Qt::UserRole + 1, id);
+        row = parent ? new HosterRow(parent) : new HosterRow(m_tree);
+        row->setData(ColName, kItemIdRole, id);
         m_rows[id] = row;
     }
     fillRow(row, item);
+    if (oldPackage != 0 && oldPackage != pkg)
+        updatePackage(oldPackage);
+    if (pkg != 0)
+        updatePackage(pkg);
 }
 
 void HosterPanel::removeRow(qint64 id)
 {
-    m_items.remove(id);
+    const qint64 pkg = m_items.take(id).value(QStringLiteral("packageId")).toInteger();
     delete m_rows.take(id);
+    if (pkg != 0)
+        updatePackage(pkg);
+}
+
+QTreeWidgetItem* HosterPanel::packageRow(qint64 id, const QString& name)
+{
+    if (QTreeWidgetItem* row = m_packages.value(id))
+        return row;
+    auto* row = new HosterRow(m_tree);
+    row->setData(ColName, kItemIdRole, 0);
+    row->setData(ColName, kPackageIdRole, id);
+    row->setText(ColName, name);
+    static const QIcon folder(QStringLiteral(":/icons/FolderOpen.ico"));
+    row->setIcon(ColName, folder);
+    row->setToolTip(ColName, name);
+    row->setExpanded(true);
+    m_packages[id] = row;
+    return row;
+}
+
+void HosterPanel::updatePackage(qint64 id)
+{
+    QTreeWidgetItem* row = m_packages.value(id);
+    if (!row)
+        return;
+    if (row->childCount() == 0) {
+        delete m_packages.take(id);
+        return;
+    }
+    qint64 size = 0;
+    qint64 done = 0;
+    qint64 speed = 0;
+    int complete = 0;
+    int downloading = 0;
+    QStringList hosts;
+    for (int i = 0; i < row->childCount(); ++i) {
+        const QCborMap it = m_items.value(row->child(i)->data(ColName, kItemIdRole).toLongLong());
+        const qint64 itemSize = it.value(QStringLiteral("size")).toInteger();
+        const int state = int(it.value(QStringLiteral("state")).toInteger());
+        size += itemSize;
+        done += state == kStateComplete ? itemSize : it.value(QStringLiteral("done")).toInteger();
+        speed += it.value(QStringLiteral("speed")).toInteger();
+        complete += state == kStateComplete ? 1 : 0;
+        downloading += state == kStateDownloading ? 1 : 0;
+        if (const QString host = it.value(QStringLiteral("host")).toString();
+            !host.isEmpty() && !hosts.contains(host))
+            hosts << host;
+    }
+    const int total = row->childCount();
+    const double pct = complete == total ? 100.0 : (size > 0 ? 100.0 * double(done) / double(size) : 0.0);
+    row->setText(ColSize, size > 0 ? formatByteSize(size) : QString());
+    row->setData(ColSize, Qt::UserRole, size);
+    row->setText(ColProgress, QStringLiteral("%1%").arg(pct, 0, 'f', 1));
+    row->setData(ColProgress, Qt::UserRole, pct);
+    row->setText(ColSpeed, speed > 0 ? formatByteRate(double(speed)) : QString());
+    row->setData(ColSpeed, Qt::UserRole, speed);
+    row->setText(ColHoster, hosts.size() <= 2 ? hosts.join(QStringLiteral(", "))
+                                              : tr("%n hoster(s)", nullptr, int(hosts.size())));
+    row->setToolTip(ColHoster, hosts.join(QLatin1Char('\n')));
+    QString status = complete == total ? stateText(kStateComplete)
+                                       : tr("%1 of %2 complete").arg(complete).arg(total);
+    if (downloading > 0 && complete < total)
+        status = stateText(kStateDownloading) + QStringLiteral(", ") + status;
+    row->setText(ColStatus, status);
+    row->setToolTip(ColStatus, status);
 }
 
 void HosterPanel::fillRow(QTreeWidgetItem* row, const QCborMap& it)
@@ -285,6 +407,7 @@ void HosterPanel::fillRow(QTreeWidgetItem* row, const QCborMap& it)
     if (name.isEmpty())
         name = it.value(QStringLiteral("url")).toString();
     row->setText(ColName, name);
+    row->setIcon(ColName, fileTypeIconForName(name));   // as the Transfer window
     row->setToolTip(ColName, it.value(QStringLiteral("url")).toString());
     row->setText(ColSize, size > 0 ? formatByteSize(size) : QString());
     row->setData(ColSize, Qt::UserRole, size);
@@ -334,11 +457,20 @@ void HosterPanel::showContextMenu(const QPoint& pos)
     paste->setEnabled(!pasted.isEmpty() && m_ipc && m_ipc->isConnected());
     for (QAction* a : {pause, resume, remove, del, copy, folder})
         a->setEnabled(!ids.isEmpty());
+    // the folder of the first complete one; a package's is its own folder
+    QString folderFile;
+    for (const qint64 id : ids) {
+        const QCborMap it = m_items.value(id);
+        if (it.value(QStringLiteral("state")).toInteger() == kStateComplete) {
+            folderFile = it.value(QStringLiteral("file")).toString();
+            break;
+        }
+    }
+    folder->setEnabled(!folderFile.isEmpty());
     if (ids.size() == 1) {
         const int state = int(m_items.value(ids.first()).value(QStringLiteral("state")).toInteger());
         pause->setEnabled(state != kStateComplete && state != kStatePaused);
         resume->setEnabled(state != kStateComplete && state != 3 && state != 4 && state != 5);
-        folder->setEnabled(state == kStateComplete);
     }
     QAction* chosen = menu.exec(m_tree->viewport()->mapToGlobal(pos));
     if (chosen == pause)
@@ -352,13 +484,9 @@ void HosterPanel::showContextMenu(const QPoint& pos)
             == QMessageBox::Yes)
             act(QStringLiteral("delete"));
     } else if (chosen == copy) {
-        QStringList urls;
-        for (const qint64 id : ids)
-            urls << m_items.value(id).value(QStringLiteral("url")).toString();
-        QApplication::clipboard()->setText(urls.join(QLatin1Char('\n')));
-    } else if (chosen == folder && !ids.isEmpty()) {
-        const QString file = m_items.value(ids.first()).value(QStringLiteral("file")).toString();
-        QDesktopServices::openUrl(QUrl::fromLocalFile(QFileInfo(file).absolutePath()));
+        copyLinks();
+    } else if (chosen == folder && !folderFile.isEmpty()) {
+        QDesktopServices::openUrl(QUrl::fromLocalFile(QFileInfo(folderFile).absolutePath()));
     } else if (chosen == add) {
         promptAddLinks();
     } else if (chosen == paste) {
@@ -405,6 +533,13 @@ void HosterPanel::onLinks(const IpcMessage& msg)
     const QCborArray links = msg.field(1).toArray();
     if (links.isEmpty())
         return;
+    // the folder becomes a package; inside one already, the user picks (never nested)
+    const QCborMap folderItem = m_items.value(msg.field(0).toInteger());
+    QString folderName = folderItem.value(QStringLiteral("name")).toString();
+    if (folderName.isEmpty())
+        folderName = QUrl(folderItem.value(QStringLiteral("url")).toString()).fileName();
+    const qint64 inPackage = folderItem.value(QStringLiteral("packageId")).toInteger();
+    const QString inPackageName = folderItem.value(QStringLiteral("package")).toString();
     QDialog dlg(window());
     dlg.setWindowTitle(tr("Links of a folder"));
     auto* layout = new QVBoxLayout(&dlg);
@@ -425,17 +560,30 @@ void HosterPanel::onLinks(const IpcMessage& msg)
     }
     list->setMinimumSize(480, 220);
     layout->addWidget(list);
+    QRadioButton* joinPackage = nullptr;
+    if (inPackage != 0) {
+        joinPackage = new QRadioButton(tr("Add to the package \"%1\"").arg(inPackageName), &dlg);
+        auto* newPackage = new QRadioButton(
+            folderName.isEmpty() ? tr("Add as a new package") : tr("Add as a new package \"%1\"").arg(folderName),
+            &dlg);
+        joinPackage->setChecked(true);
+        layout->addWidget(joinPackage);
+        layout->addWidget(newPackage);
+    }
     auto* buttons = new QDialogButtonBox(QDialogButtonBox::Ok | QDialogButtonBox::Cancel, &dlg);
     connect(buttons, &QDialogButtonBox::accepted, &dlg, &QDialog::accept);
     connect(buttons, &QDialogButtonBox::rejected, &dlg, &QDialog::reject);
     layout->addWidget(buttons);
     if (dlg.exec() != QDialog::Accepted)
         return;
-    QStringList urls;
+    QList<QStringList> files;
     for (int i = 0; i < list->count(); ++i)
         if (list->item(i)->checkState() == Qt::Checked)
-            urls << list->item(i)->data(Qt::UserRole).toString();
-    addLinks(urls);
+            files.append(QStringList{list->item(i)->data(Qt::UserRole).toString()});
+    if (joinPackage && joinPackage->isChecked())
+        addLinks(files, {}, inPackage);
+    else
+        addLinks(files, folderName.isEmpty() ? tr("Folder") : folderName);
 }
 
 void HosterPanel::applyStatus(const QCborMap& st)
@@ -456,9 +604,17 @@ void HosterPanel::applyStatus(const QCborMap& st)
 
 QList<qint64> HosterPanel::selectedIds() const
 {
+    // a package row stands for its items; an item selected with its package counts once
     QList<qint64> out;
-    for (QTreeWidgetItem* row : m_tree->selectedItems())
-        out << row->data(ColName, Qt::UserRole + 1).toLongLong();
+    const auto take = [&out](const QTreeWidgetItem* row) {
+        if (const qint64 id = row->data(ColName, kItemIdRole).toLongLong(); id != 0 && !out.contains(id))
+            out << id;
+    };
+    for (QTreeWidgetItem* row : m_tree->selectedItems()) {
+        take(row);
+        for (int i = 0; i < row->childCount(); ++i)
+            take(row->child(i));
+    }
     return out;
 }
 
@@ -473,6 +629,24 @@ QStringList HosterPanel::clipboardLinks()
             links << t;
     }
     return links;
+}
+
+void HosterPanel::openRow(QTreeWidgetItem* row)
+{
+    if (!row)
+        return;
+    const QCborMap it = m_items.value(row->data(ColName, kItemIdRole).toLongLong());
+    if (it.value(QStringLiteral("state")).toInteger() == kStateComplete)
+        QDesktopServices::openUrl(QUrl::fromLocalFile(QFileInfo(it.value(QStringLiteral("file")).toString()).absolutePath()));
+}
+
+void HosterPanel::copyLinks()
+{
+    QStringList urls;
+    for (const qint64 id : selectedIds())
+        urls << m_items.value(id).value(QStringLiteral("url")).toString();
+    if (!urls.isEmpty())
+        QApplication::clipboard()->setText(urls.join(QLatin1Char('\n')));
 }
 
 } // namespace eMule

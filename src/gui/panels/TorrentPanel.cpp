@@ -315,7 +315,7 @@ void TorrentPanel::setupUi()
     m_view->setModel(m_proxy);
     m_view->setItemDelegateForColumn(TorrentListModel::ColProgress,
                                      new TorrentProgressDelegate(m_view));
-    m_view->setRootIsDecorated(false);
+    m_view->setRootIsDecorated(true);   // multi-file torrents list their files
     m_view->setUniformRowHeights(true);
     m_view->setAlternatingRowColors(true);
     m_view->setSelectionMode(QAbstractItemView::ExtendedSelection);
@@ -333,6 +333,18 @@ void TorrentPanel::setupUi()
     view->bindColumns(QStringLiteral("torrentList"),
                       {260, 80, 80, 150, 110, 80, 80, 75, 75, 50, 90, 120});
 
+    connect(m_model, &TorrentListModel::filesWanted, this, &TorrentPanel::fetchFiles);
+    connect(m_view, &QTreeView::expanded, this, [this](const QModelIndex& index) {
+        const QString id = m_model->idOf(m_proxy->mapToSource(index));
+        if (id.isEmpty())
+            return;
+        m_expanded.insert(id);
+        if (m_model->hasFiles(id))
+            fetchFiles(id);   // was loaded before: refresh now, not on the next tick
+    });
+    connect(m_view, &QTreeView::collapsed, this, [this](const QModelIndex& index) {
+        m_expanded.remove(m_model->idOf(m_proxy->mapToSource(index)));
+    });
     connect(m_view, &QWidget::customContextMenuRequested, this, &TorrentPanel::onContextMenu);
     connect(m_view->selectionModel(), &QItemSelectionModel::selectionChanged, this,
             &TorrentPanel::onSelectionChanged);
@@ -343,7 +355,9 @@ void TorrentPanel::setupUi()
     auto details = [this](const QModelIndex& index) {
         if (!index.isValid())
             return;
-        const QString id = m_model->idAt(m_proxy->mapToSource(index).row());
+        if (m_model->fileAt(m_proxy->mapToSource(index)))
+            return;   // a file row: expand/collapse only
+        const QString id = m_model->idOf(m_proxy->mapToSource(index));
         if (!id.isEmpty())
             showDetails(id);
     };
@@ -354,6 +368,9 @@ void TorrentPanel::setupUi()
     keys.remove = [this] { onRemove(); };
     keys.copy = [this] { onCopyMagnet(); };
     keys.paste = [this] { onPasteMagnets(); };
+    keys.find = true;
+    keys.expandKeys = true;   // multi-file torrents hold their files
+    keys.escapeDeselects = true;
     bindListKeys(m_view, std::move(keys));
 
     m_pane = new TorrentListsPane(m_splitter);
@@ -397,6 +414,14 @@ void TorrentPanel::refresh()
                 rows.append(torrentRowFromCbor(v.toMap()));
         }
         m_model->setRows(rows);
+        for (auto it = m_expanded.begin(); it != m_expanded.end();) {
+            if (!m_model->findById(*it)) {
+                it = m_expanded.erase(it);
+                continue;
+            }
+            fetchFiles(*it);
+            ++it;
+        }
         updateSummary();
         onSelectionChanged();
         if (m_pendingSubTab >= 0 && m_proxy->rowCount() > 0)
@@ -427,9 +452,10 @@ void TorrentPanel::applyStatus(const QCborMap& status)
 QStringList TorrentPanel::selectedIds() const
 {
     QStringList ids;
+    // a file row stands for its torrent; a torrent with its files selected counts once
     for (const QModelIndex& index : m_view->selectionModel()->selectedRows()) {
-        const QString id = m_model->idAt(m_proxy->mapToSource(index).row());
-        if (!id.isEmpty())
+        const QString id = m_model->idOf(m_proxy->mapToSource(index));
+        if (!id.isEmpty() && !ids.contains(id))
             ids << id;
     }
     return ids;
@@ -450,6 +476,23 @@ void TorrentPanel::onContextMenu(const QPoint& pos)
     const QStringList ids = selectedIds();
 
     QMenu menu(this);
+    bool fileRows = false;
+    for (const QModelIndex& index : m_view->selectionModel()->selectedRows())
+        fileRows = fileRows || m_model->fileAt(m_proxy->mapToSource(index));
+    if (fileRows) {
+        // Same levels as the Files tab
+        QMenu* prio = menu.addMenu(tr("Priority"));
+        for (const int level : {0, 1, 4, 6, 7}) {
+            const char* icon = level == 0  ? "Cancel.ico"
+                               : level < 4 ? "PriorityLow.ico"
+                               : level > 4 ? "PriorityHigh.ico"
+                                           : "PriorityNormal.ico";
+            prio->addAction(menuIcon(icon), torrentFilePriorityName(level), this,
+                            [this, level] { setFilePriority(level); });
+        }
+        prio->setEnabled(engineRunning());
+        menu.addSeparator();
+    }
     if (!ids.isEmpty()) {
         menu.addAction(m_pauseAction);
         menu.addAction(m_resumeAction);
@@ -665,7 +708,7 @@ void TorrentPanel::onSelectionChanged()
     QString id;
     const QModelIndex current = m_view->selectionModel()->currentIndex();
     if (current.isValid() && m_view->selectionModel()->isRowSelected(current.row(), current.parent()))
-        id = m_model->idAt(m_proxy->mapToSource(current).row());
+        id = m_model->idOf(m_proxy->mapToSource(current));
     if (id.isEmpty()) {
         const QStringList ids = selectedIds();
         id = ids.isEmpty() ? QString() : ids.first();
@@ -756,6 +799,54 @@ void TorrentPanel::updateSummary()
     // Drawn centred in the empty list by AbstractListView
     m_view->setProperty("emptyNotice", notice);
     m_view->viewport()->update();
+}
+
+void TorrentPanel::fetchFiles(const QString& id)
+{
+    if (id.isEmpty() || !m_ipc || !m_ipc->isConnected())
+        return;
+    IpcMessage msg(IpcMsgType::GetTorrentDetails);
+    msg.append(id);
+    m_ipc->sendRequest(std::move(msg), [this, id](const IpcMessage& resp) {
+        if (!resp.isValid() || !resp.fieldBool(0))
+            return;
+        m_model->setFiles(id, resp.fieldMap(1).value(QStringLiteral("files")).toArray());
+    });
+}
+
+void TorrentPanel::setFilePriority(int priority)
+{
+    if (!m_ipc || !m_ipc->isConnected())
+        return;
+    // One request per torrent with its whole priority list
+    QHash<QString, QList<int>> changed;
+    for (const QModelIndex& index : m_view->selectionModel()->selectedRows()) {
+        const QModelIndex src = m_proxy->mapToSource(index);
+        const TorrentFileRow* f = m_model->fileAt(src);
+        if (!f)
+            continue;
+        const QString id = m_model->idOf(src);
+        auto it = changed.find(id);
+        if (it == changed.end())
+            it = changed.insert(id, m_model->priorities(id));
+        if (f->index >= 0 && f->index < it->size())
+            (*it)[f->index] = priority;
+    }
+    for (auto it = changed.cbegin(); it != changed.cend(); ++it) {
+        QCborArray arr;
+        for (const int p : it.value())
+            arr.append(p);
+        IpcMessage msg(IpcMsgType::SetTorrentFilePriorities);
+        msg.append(it.key());
+        msg.append(arr);
+        const QString id = it.key();
+        m_ipc->sendRequest(std::move(msg), [this, id](const IpcMessage& resp) {
+            if (resp.isValid() && !resp.fieldBool(0))
+                StatusBarNotifier::post(tr("Could not change the file priorities."));
+            fetchFiles(id);
+            m_poller->refreshNow();
+        });
+    }
 }
 
 } // namespace eMule

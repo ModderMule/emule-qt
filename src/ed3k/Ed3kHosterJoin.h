@@ -88,6 +88,7 @@ public:
         MoveFailed,          ///< arg: the incoming folder
         Folder,              ///< arg: the number of links found
         PeerLink,            ///< downloading from a link a peer named; arg: its host
+        LinkOffline,         ///< Complete: its link's recheck found it gone, no longer published
     };
 
     /// One download from a hoster link, as the GUI shows it.
@@ -110,6 +111,8 @@ public:
         qint64 added = 0;
         QStringList mirrors;         ///< other links of the same file, not tried yet
         int mirrorNo = 0;            ///< which of the file's links url is (0: the first)
+        quint32 packageId = 0;       ///< 0: no package; else the group it was added in
+        QString package;             ///< the package's name; its folder under incoming
     };
 
     /// What a link check found. Values are sent over IPC: append only.
@@ -118,6 +121,23 @@ public:
         Online,
         Offline,        ///< gone, or not the file it claims
         Unknown,        ///< no plugin, a login, a puzzle, a wait or an error: tried as unchecked
+    };
+
+    /// §4.1: a link this node vouches for and publishes with a complete file: its own link
+    /// first, then peers' links blocks from it verified for. Rechecked every recheckHours.
+    struct SharedLink {
+        QString url;
+        qint64 checkedAt = 0;        ///< ms since the epoch: the vouch or the last recheck
+        bool offline = false;        ///< the last recheck found it gone: withdrawn
+        bool unknown = false;        ///< the last recheck could not tell: kept (not saved)
+        bool aliasOut = false;       ///< the core keeps its ALIAS record (not saved)
+        bool checking = false;       ///< a recheck runs (not saved)
+        qint64 retryAt = 0;          ///< after an unknown recheck (not saved)
+        /// sites (v4 /24, v6 /48) of downloaders that reported it gone or wrong since its last
+        /// check, as the core counts them (not saved)
+        std::vector<std::array<std::uint8_t, 16>> reporters;
+        qint64 reportCheckAt = 0;    ///< ms since the epoch: the last check the reports started
+        bool reportCheck = false;    ///< the running recheck is the reports' (not saved)
     };
 
     /// A link checked ahead of its download (web search rows), or what its item knows.
@@ -145,10 +165,14 @@ public:
     void stop() override;
 
     /// Every http(s) link in @p text becomes an item (duplicates skipped); their ids.
-    QList<quint32> addLinks(const QString& text);
+    /// @p package: see addMirrored().
+    QList<quint32> addLinks(const QString& text, const QString& package = {}, quint32 packageId = 0);
     /// One item per entry of @p files: its first link, the others mirrors to go on with
     /// when that one fails or is stuck. An entry with any link already an item is skipped.
-    QList<quint32> addMirrored(const QList<QStringList>& files);
+    /// @p package not empty: the items form a new package of that name (never nested).
+    /// @p packageId an existing package: they join it instead (wins over @p package).
+    QList<quint32> addMirrored(const QList<QStringList>& files, const QString& package = {},
+                               quint32 packageId = 0);
     void pause(quint32 id);
     void resume(quint32 id);
     /// Removes the item; its unfinished file always, a complete one only with @p deleteFile.
@@ -168,6 +192,8 @@ public:
 
     [[nodiscard]] QList<Item> items() const;
     [[nodiscard]] std::optional<Item> item(quint32 id) const;
+    /// The links @p id publishes or held back (SharedLink).
+    [[nodiscard]] QList<SharedLink> sharedLinks(quint32 id) const;
     /// http(s) links in @p text, one per line or separated by spaces (tests).
     [[nodiscard]] static QStringList linksIn(const QString& text);
 
@@ -229,12 +255,14 @@ private:
         qint64 at = 0;
         bool pending = true;         ///< the core's check runs
         bool adopted = false;        ///< an item took the link while it ran
+        quint32 item = 0;            ///< a recheck of this complete item's shared link
     };
     /// Waits for a free check slot (checkMaxParallel, checkMaxPerHost) or for the core (busy).
     struct QueuedProbe {
         QString url;
         QString host;
         qint64 since = 0;
+        quint32 item = 0;            ///< Probe::item
     };
     /// The last account check of host|user; kept in memory only.
     struct AccountStatus {
@@ -252,6 +280,8 @@ private:
     /// What the item of @p url (its current link) tells; none: no item on it.
     [[nodiscard]] std::optional<LinkCheck> itemCheck(const QString& url) const;
     void expireProbes(qint64 now);
+    /// Removes an ended, unowned check of @p url.
+    void dropProbe(const QString& url);
     /// Account checks for stored logins not checked lately (accountTier()); sites queries
     /// for account hosts of unknown aliases.
     void refreshAccounts();
@@ -307,8 +337,20 @@ private:
     [[nodiscard]] static bool mirrorDue(const Item& it);
     /// Goes on with the next mirror of @p e; verified blocks under a root stay.
     void nextMirror(Entry& e);
-    /// §4.1: the link of @p e goes with its source record and to downloaders when published.
-    void shareLink(Entry& e);
+    /// §4.1: the live shared links of @p e (linkLive) go with its source record, to
+    /// downloaders and as ALIAS records while links are published; the others are withdrawn.
+    void publishShared(Entry& e);
+    /// Not offline, and checked within recheckHours (or unknown at its recheck).
+    [[nodiscard]] bool linkLive(const SharedLink& l, qint64 now) const;
+    [[nodiscard]] qint64 recheckMs() const;
+    /// Queues the rechecks due of complete items' shared links (recheckHours).
+    void queueRechecks(qint64 now);
+    void onRechecked(quint32 item, const QString& url, LinkStatus status);
+    /// hoster.md §2: downloaders' results for links handed out with a file: 3 gone or wrong
+    /// from downloaders in 3 sites check the link at once (reportRecheckHours apart at most).
+    void onHttpResults(const ::ed3k::event::HttpResults& r);
+    /// Whether 3 reports wait for a check of @p l and reportRecheckHours passed.
+    [[nodiscard]] bool reportDue(const SharedLink& l, qint64 now) const;
 
     /// Writes @p data at @p offset of the item's file; false: the disk refused.
     bool writeAt(Entry& e, std::uint64_t offset, std::span<const std::byte> data);
@@ -330,6 +372,7 @@ private:
     QString m_incomingDir;
     std::map<quint32, std::unique_ptr<Entry>> m_items;
     quint32 m_nextId = 1;
+    quint32 m_nextPackageId = 1;
     /// resolver tasks → what they are for
     std::map<Ed3kResolver::TaskId, quint32> m_matches;
     std::map<Ed3kResolver::TaskId, Ask> m_asks;
@@ -338,6 +381,10 @@ private:
     std::map<Ed3kResolver::TaskId, QString> m_probeMatches;
     QList<QueuedProbe> m_probeQueue;
     std::map<std::uint64_t, Probe> m_probes;
+    /// items whose ALIAS waits for the root to be shared (publishAlias State) → since
+    std::map<quint32, qint64> m_aliasPending;
+    /// rootless links downloaded whole → item, for their Vouched (the link is let go first)
+    std::map<std::uint64_t, quint32> m_rootlessDone;
     std::map<QString, LinkCheck> m_checks;
     /// host|user → the last account check
     std::map<QString, AccountStatus> m_accountStatus;

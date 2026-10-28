@@ -180,6 +180,7 @@
     <ClCompile Include="..\..\src\gui\controls\TorrentListModel.cpp" />
     <ClCompile Include="..\..\src\gui\controls\TorrentProgressDelegate.cpp" />
     <ClCompile Include="..\..\src\gui\controls\BarShader.cpp" />
+    <ClCompile Include="..\..\src\gui\utils\FileTypeIcons.cpp" />
   </ItemGroup>
   <ItemGroup>
     <QtMoc Include="..\..\src\gui\controls\TorrentListModel.h">

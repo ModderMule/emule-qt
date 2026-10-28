@@ -272,6 +272,9 @@ struct AppContext {
     /// The GUI's first start wizard closed (or its GUI went away): do the deferred
     /// auto-connect. No-op without a hold. Set by CoreSession.
     std::function<void()> releaseConnectHold;
+    /// eD2K UDP is about to bind this port: an ed3k node on its own socket there lets go
+    /// first (it comes back on the shared socket, §14.1). Set by the daemon.
+    std::function<void(uint16 port)> yieldEd3kUdpPort;
 
     /// Tier 1: the egress IPv6 a server observed us on (CT_MOD_YOUR_IP in OP_SERVERIDENT).
     /// Callers must only pass this for a session that actually connected over IPv6; the

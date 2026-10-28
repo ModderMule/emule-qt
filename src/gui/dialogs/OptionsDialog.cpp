@@ -701,6 +701,7 @@ void OptionsDialog::setupSidebar()
         {PageEd3kConnection, QT_TR_NOOP("Connection"), QStyle::SP_DirLinkIcon,           "Connection.ico"},
         // ToDo: decide how credits are used; the page is built but hidden (hasPage)
         // {PageEd3kCredits,    QT_TR_NOOP("Credits"),    QStyle::SP_DialogApplyButton,     "Rating.ico"},
+        {PageEd3kAutoCredits, QT_TR_NOOP("Credits"),   QStyle::SP_DialogApplyButton,     "Rating.ico"},
         {PageEd3kHoster,     QT_TR_NOOP("Hoster"),     QStyle::SP_ArrowDown,             "Hoster.ico"},
         {PageEd3kNames,      QT_TR_NOOP("Names"),      QStyle::SP_FileDialogContentsView, "Friends1.ico"},
         {PageEd3kFilters,    QT_TR_NOOP("Filters"),    QStyle::SP_MessageBoxWarning,     "IPFilter.ico"},
@@ -822,7 +823,15 @@ void OptionsDialog::setupPages()
     addPage(PageEd3kHoster,     m_ed3kPages->hosterPage());
     addPage(PageEd3kNames,      m_ed3kPages->namesPage());
     addPage(PageEd3kFilters,    m_ed3kPages->filtersPage());
+    addPage(PageEd3kAutoCredits, m_ed3kPages->autoCreditsPage());
     connect(m_ed3kPages, &Ed3kOptionsPages::changed, this, &OptionsDialog::markDirty);
+    connect(m_ed3kPages, &Ed3kOptionsPages::portsJoined, this, [this](int port) {
+        // applied by the core already: the fields follow
+        m_udpPortSpin->setValue(port);
+        setUdpOff(false);
+        setPortsJoined(true);
+    });
+    connect(m_tcpPortSpin, &QSpinBox::valueChanged, m_ed3kPages, &Ed3kOptionsPages::setJoinedPort);
     connect(m_ed3kPages, &Ed3kOptionsPages::showPage, this, [this](QWidget* page) {
         for (int i = PageEd3k; i < PageCount; ++i) {
             if (m_pages->widget(i)->isAncestorOf(page) || m_pages->widget(i) == page) {
@@ -1328,12 +1337,14 @@ QWidget* OptionsDialog::createConnectionPage()
     auto* portGroup = new QGroupBox(tr("Client Port"), page);
     auto* portLayout = new QGridLayout(portGroup);
 
-    portLayout->addWidget(new QLabel(tr("TCP"), portGroup), 0, 0);
+    m_tcpPortLabel = new QLabel(tr("TCP"), portGroup);
+    portLayout->addWidget(m_tcpPortLabel, 0, 0);
     m_tcpPortSpin = new QSpinBox(portGroup);
     m_tcpPortSpin->setRange(1, 65535);
     portLayout->addWidget(m_tcpPortSpin, 0, 1);
 
-    portLayout->addWidget(new QLabel(tr("UDP"), portGroup), 1, 0);
+    m_udpPortLabel = new QLabel(tr("UDP"), portGroup);
+    portLayout->addWidget(m_udpPortLabel, 1, 0);
     m_udpPortSpin = new QSpinBox(portGroup);
     m_udpPortSpin->setRange(1, 65535);
     portLayout->addWidget(m_udpPortSpin, 1, 1);
@@ -7700,6 +7711,10 @@ void OptionsDialog::saveSettings()
 
         // ed3k group (Ed3kOptionsPages)
         m_ed3kPages->appendTo(req);
+        if (m_ed3kPages->portJoined()) {   // ed3k on the one eD2K port (§14.1)
+            req.append(QStringLiteral("ed3kUdpPort"));
+            req.append(static_cast<qint64>(m_tcpPortSpin->value()));
+        }
 
         // After OK the dialog is hidden: the port notice then goes to its parent
         m_ipc->sendRequest(std::move(req), [self = QPointer<OptionsDialog>(this),
@@ -7722,6 +7737,8 @@ void OptionsDialog::saveSettings()
         thePrefs.setMaxUpload(m_uploadLimitCheck->isChecked() ? static_cast<uint32>(m_uploadLimitSlider->value()) : 0);
         thePrefs.setPort(static_cast<uint16>(m_tcpPortSpin->value()));
         thePrefs.setUdpPort(static_cast<uint16>(udpPortValue()));
+        if (m_ed3kPages->portJoined())
+            thePrefs.setEd3kUdpPort(static_cast<uint16>(m_tcpPortSpin->value()));
         thePrefs.setRandomizePortsAtStart(m_randomPortsCheck->isChecked());
         thePrefs.setRandomPortMin(static_cast<uint16>(m_randomPortMinSpin->value()));
         thePrefs.setRandomPortMax(static_cast<uint16>(m_randomPortMaxSpin->value()));
@@ -8001,6 +8018,7 @@ void OptionsDialog::fillDaemonSettings(const QCborMap& prefs)
     else if (m_udpPortSpin->value() <= 1)
         m_udpPortSpin->setValue(5672);
     setUdpOff(udpPort == 0);
+    setPortsJoined(udpPort != 0 && udpPort == tcpPort);
     m_randomPortsCheck->setChecked(prefs.value(QStringLiteral("randomizePortsAtStart")).toBool(false));
     m_randomPortMinSpin->setValue(static_cast<int>(prefs.value(QStringLiteral("randomPortMin")).toInteger(50000)));
     m_randomPortMaxSpin->setValue(static_cast<int>(prefs.value(QStringLiteral("randomPortMax")).toInteger(60000)));
@@ -8452,6 +8470,8 @@ void OptionsDialog::applyWizardResult(const QCborMap& applied)
         if (udpPort != 0)
             m_udpPortSpin->setValue(udpPort);
         setUdpOff(udpPort == 0);
+        if (udpPort != 0 && udpPort == m_tcpPortSpin->value())
+            setPortsJoined(true);
     }
     if (has(QLatin1StringView("enableUPnP")))
         m_upnpCheck->setChecked(applied.value(QLatin1StringView("enableUPnP")).toBool());
@@ -9015,7 +9035,18 @@ void OptionsDialog::setUdpOff(bool off)
 
 int OptionsDialog::udpPortValue() const
 {
+    if (m_portsJoined)
+        return m_tcpPortSpin->value();
     return m_udpOff ? 0 : m_udpPortSpin->value();
+}
+
+void OptionsDialog::setPortsJoined(bool joined)
+{
+    m_portsJoined = m_portsJoined || joined;   // joined stays joined
+    m_udpPortLabel->setVisible(!m_portsJoined);
+    m_udpPortSpin->setVisible(!m_portsJoined);
+    m_tcpPortLabel->setText(m_portsJoined ? tr("TCP/UDP") : tr("TCP"));
+    m_tcpPortSpin->setToolTip(m_portsJoined ? tr("One port for eD2K TCP and UDP, Kad and ed3k") : QString());
 }
 
 

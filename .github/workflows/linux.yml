@@ -9,6 +9,10 @@ on:
         description: Ship the GeoLite2-Country database from release.yml's geoip-db artifact
         type: boolean
         default: false
+      resolver:
+        description: Ship the hoster resolver from release.yml's resolver-zip artifact
+        type: boolean
+        default: false
       ref:
         description: Commit to build; release.yml passes the tag, since its run is on main
         type: string
@@ -43,6 +47,9 @@ jobs:
       # scripts/build-linux-deps.sh output; a container path, not runner.temp
       # (that context is the host's path in a container job)
       LINUX_DEPS: /opt/linux-deps
+      # ed3k: packmule is the private ModderMule/packmule; without the secret
+      # (forks, 3rd party) it is skipped and EMULE_ED3K turns itself off
+      HAS_PACKMULE_TOKEN: ${{ secrets.PACKMULE_TOKEN != '' }}
 
     steps:
       # Before checkout: without git it falls back to a tarball, without submodules
@@ -73,6 +80,39 @@ jobs:
         with:
           ref: ${{ inputs.ref }}   # empty = the run's own commit
           submodules: true   # external/enodemeta: .proto + test vectors
+
+      # libs/packmule stays gitignored; the commit is pinned in scripts/packmule.ref
+      - name: Read packmule ref
+        if: env.HAS_PACKMULE_TOKEN == 'true'
+        run: echo "PACKMULE_REF=$(tr -d '[:space:]' < scripts/packmule.ref)" >> "$GITHUB_ENV"
+
+      - name: Checkout packmule
+        if: env.HAS_PACKMULE_TOKEN == 'true'
+        uses: actions/checkout@v5
+        with:
+          repository: ModderMule/packmule
+          ref: ${{ env.PACKMULE_REF }}
+          token: ${{ secrets.PACKMULE_TOKEN }}
+          path: libs/packmule
+          persist-credentials: false
+
+      # packmule rust-version 1.98; the container has no Rust
+      - name: Install Rust
+        if: env.HAS_PACKMULE_TOKEN == 'true'
+        run: |
+          curl -fsSL --retry 3 https://sh.rustup.rs | sh -s -- -y --profile minimal --default-toolchain stable
+          echo "$HOME/.cargo/bin" >> "$GITHUB_PATH"
+
+      - name: Cache cargo
+        if: env.HAS_PACKMULE_TOKEN == 'true'
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            build/packmule-ffi/cargo
+          key: cargo-linux-x86_64-${{ hashFiles('scripts/packmule.ref', 'libs/packmule/Cargo.lock') }}
+          restore-keys: cargo-linux-x86_64-
 
       - name: Cache Qt
         id: qt-cache
@@ -122,6 +162,13 @@ jobs:
           -DEMULE_BUILD_TESTS=OFF
           -DEMULE_SEED_FROM_SOURCE_TREE=OFF
 
+      # a failed fetch or a missing cargo would ship without ed3k, silently
+      - name: Check ed3k is configured
+        if: env.HAS_PACKMULE_TOKEN == 'true'
+        run: |
+          grep -q '^EMULE_ED3K:BOOL=ON' build/CMakeCache.txt \
+            || { echo "::error::packmule was fetched but EMULE_ED3K is off"; exit 1; }
+
       - name: Build
         run: cmake --build build --parallel 2
 
@@ -145,6 +192,15 @@ jobs:
           name: geoip-db
           path: data/config
 
+      # Release builds only: scripts/publish-release.sh builds it from JD's sources,
+      # release.yml checks it against the tag; bundle-linux.sh's default path
+      - name: Fetch hoster resolver
+        if: ${{ inputs.resolver }}
+        uses: actions/download-artifact@v8
+        with:
+          name: resolver-zip
+          path: build/hoster-resolver
+
       - name: Bundle
         env:
           GLIBC_MAX: "2.35"   # Ubuntu 22.04, Linux Mint 21, Debian 12
@@ -156,6 +212,8 @@ jobs:
       - name: Smoke-test the bundled MCP bridge
         # container default shell is sh (dash): no pipefail
         shell: bash
+        env:
+          RESOLVER: ${{ inputs.resolver }}
         run: |
           set -euo pipefail
           mkdir -p "$RUNNER_TEMP/verify"
@@ -171,6 +229,9 @@ jobs:
           # libtorrent is linked static into emulecored
           if ls "$lib"/libtorrent-rasterbar* >/dev/null 2>&1; then
             echo "Error: libtorrent-rasterbar bundled as a shared lib" >&2; exit 1
+          fi
+          if [ "$RESOLVER" = true ] && [ ! -s "$RUNNER_TEMP/verify/eMuleQt/resolver.zip" ]; then
+            echo "Error: resolver.zip missing from the tarball" >&2; exit 1
           fi
 
       - name: Upload artifact

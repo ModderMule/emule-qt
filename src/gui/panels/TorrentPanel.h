@@ -9,6 +9,7 @@
 
 #include <QCborMap>
 #include <QPointer>
+#include <QSet>
 #include <QStringList>
 #include <QWidget>
 
@@ -107,6 +108,10 @@ private:
     void onCopyMagnet();
     void onPasteMagnets();
     void showDetails(const QString& id);
+    /// GetTorrentDetails for the file rows of @p id.
+    void fetchFiles(const QString& id);
+    /// The selected file rows to @p priority, per torrent.
+    void setFilePriority(int priority);
 
     void updateActions();
     void updateSummary();
@@ -142,6 +147,8 @@ private:
     QPointer<TorrentDetailsDialog> m_detailsDialog;
     /// switchToSubTab() waiting for the first rows; -1 = none
     int m_pendingSubTab = -1;
+    /// Expanded torrents: their files refresh with the poll
+    QSet<QString> m_expanded;
 };
 
 } // namespace eMule

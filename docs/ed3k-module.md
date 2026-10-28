@@ -102,7 +102,7 @@ The `ed3k:` block in `preferences.yml`, with IPC/REST keys `ed3kEnabled` and `ed
 | Key | Default | |
 |---|---|---|
 | `enabled` | `false` | opt-in |
-| `udpPort` | `0` | 0 = a random free port, picked once at load (never the eD2K UDP or BT port) and saved; random listen ports pick it too |
+| `udpPort` | `0` | 0 = not picked yet: at load the eD2K TCP port number (§14.1) when free, else a random one (never the eD2K UDP or BT port); saved. Equal to the eD2K UDP port: one shared socket (see "The socket"). A new config has TCP = UDP = ed3k; random listen ports keep them together |
 | `creditRpc` | `[]` | IPC/REST `ed3kCreditRpc` (URLs separated by spaces): JSON-RPC endpoints of the credit ledger; empty = calls answered failed |
 | `chaintubeRpc` | `[]` | IPC/REST `ed3kChaintubeRpc`: the same for chaintube's chain reads and writes |
 | `chain:` | | chaintube.md §4.2, no defaults: `chainId` (0 = none), `content`, `comment`, `vote` (0x + 40 hex; empty = none), `forwarder` (empty = none); IPC/REST `ed3kChainId` (decimal text), `ed3kChainContent`, `ed3kChainComment`, `ed3kChainVote`, `ed3kChainForwarder` (`Preferences::applyEd3kChainKey`). `Ed3kChain` calls `chainConfigure` at each node start and when they or `chaintubeRpc` change (no restart): only with a chain ID and the three contracts; providers per read 0 without endpoints, 1 when every endpoint is a local node, else 2 (held to the endpoints there are). One remote endpoint only (`Ed3kChain::singleRemote`): the §4.3 SHOULD of two agreeing providers can't be met, said once in the log and as a note under the endpoints (batch 12 #8). GUI: Options → ed3k → Connection → Chaintube |
@@ -166,7 +166,14 @@ The session follows `libs/packmule/docs/ffi.md` "The loop" and mode A of `socket
   `filesRepaired`: the volumes are deleted right after; a worker would read them too late).
   A usenet read that failed because the member moved or was sealed meanwhile is read again
   under the path now on the pool too (`readBatch`, once), in order.
-- **The socket.** One `QUdpSocket` on its own port, dual stack (`QHostAddress::Any`, `local4 = 0.0.0.0:p`, `local6 = [::]:p`). It is not the eD2K socket. Datagrams that are not ed3k are counted and dropped.
+- **The socket.** One `QUdpSocket` on its own port, dual stack (`QHostAddress::Any`, `local4 = 0.0.0.0:p`, `local6 = [::]:p`). Datagrams that are not ed3k are counted and dropped.
+  - **Shared with eD2K (§14.1):** `ed3k.udpPort` = eD2K `udpPort` → the node binds nothing
+    (`Ed3kSettings::sharedSocket` = `ClientUDPSocket::socket()`). `ClientUDPSocket` keeps plain
+    eD2K first bytes (`E3 E4 E5 C5 D4 A3 B2`) and offers every other datagram to
+    `Ed3kSession::offerDatagram` (its foreign handler) before trial decryption; `ED3K_NOT_OURS`
+    goes on to eD2K. One pump per burst (queued). At start the node waits for the eD2K socket
+    (`DaemonApp::onCoreLoaded` applies again); `theApp.yieldEd3kUdpPort` stops a node on its own
+    socket when eD2K UDP moves onto its port. One port mapping (`Ed3kUdp` is skipped).
   - **Bind address:** `BindAddress::listenAddress()` (the `bindAddress` pref); a selection that
     does not resolve does not start the node; a selected interface pins the socket
     (`InterfacePin::pin`). A change restarts the node.

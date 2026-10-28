@@ -98,6 +98,7 @@ SOURCES += \
     tst_FriendConnect.cpp \
     tst_HttpClientReqSocket.cpp \
     tst_HttpFileDownload.cpp \
+    tst_MetaFileCache.cpp \
     tst_ImportParts.cpp \
     tst_IPFilter.cpp \
     tst_IPFilterMatch.cpp \

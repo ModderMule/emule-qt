@@ -8,6 +8,7 @@
 #include "app/UiState.h"
 #include "controls/AbstractListView.h"
 #include "controls/SortableItems.h"
+#include "controls/TorrentFileTree.h"
 #include "utils/MenuUtils.h"
 #include "utils/PanelPoller.h"
 #include "utils/StatusBarNotifier.h"
@@ -37,9 +38,9 @@ namespace {
 
 constexpr int kPollMs = 2000;
 /// File index on a Files row; -1 on a folder row
-constexpr int kFileIndexRole = Qt::UserRole + 1;
-/// Peer address / tracker URL on a row
-constexpr int kKeyRole = Qt::UserRole + 2;
+constexpr int kFileIndexRole = TorrentFileTree::kFileIndexRole;
+/// Peer address / tracker URL on a row; folder path on a folder row
+constexpr int kKeyRole = TorrentFileTree::kPathRole;
 
 /// The priority levels of the Files menu, low to high.
 constexpr std::array kPriorityLevels{0, 1, 4, 6, 7};
@@ -118,19 +119,6 @@ void forEachFile(QTreeWidgetItem* item, const std::function<void(QTreeWidgetItem
 }
 
 } // namespace
-
-QString torrentFilePriorityName(int priority)
-{
-    if (priority <= 0)
-        return TorrentListsPane::tr("Skip");
-    if (priority <= 2)
-        return TorrentListsPane::tr("Low");
-    if (priority <= 4)
-        return TorrentListsPane::tr("Normal");
-    if (priority <= 6)
-        return TorrentListsPane::tr("High");
-    return TorrentListsPane::tr("Maximum");
-}
 
 QString torrentPeerFlagsTooltip(const QString& flags)
 {
@@ -559,18 +547,8 @@ void TorrentListsPane::applyFiles(const QCborArray& files)
 QTreeWidgetItem* TorrentListsPane::folderItem(const QString& path,
                                               QHash<QString, QTreeWidgetItem*>& folders)
 {
-    if (auto* found = folders.value(path))
-        return found;
-    const qsizetype slash = path.lastIndexOf(QLatin1Char('/'));
-    QTreeWidgetItem* parent = slash > 0 ? folderItem(path.left(slash), folders) : nullptr;
-    auto* item = parent ? new SortableTreeItem(parent) : new SortableTreeItem(m_files);
-    item->setData(FileName, kFileIndexRole, -1);
-    item->setData(0, kKeyRole, path);
-    item->setText(FileName, slash >= 0 ? path.mid(slash + 1) : path);
-    item->setIcon(FileName, menuIcon("FolderOpen.ico"));
-    item->setFlags(item->flags() | Qt::ItemIsUserCheckable | Qt::ItemIsAutoTristate);
-    folders.insert(path, item);
-    return item;
+    return TorrentFileTree::folderItem(m_files, path, folders,
+                                       Qt::ItemIsUserCheckable | Qt::ItemIsAutoTristate);
 }
 
 void TorrentListsPane::sumFolders()

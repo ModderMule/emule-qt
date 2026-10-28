@@ -18,6 +18,7 @@
 
 #include <array>
 #include <deque>
+#include <functional>
 #include <memory>
 #include <mutex>
 
@@ -75,6 +76,14 @@ public:
 
     /// SO_RCVBUF as the OS reports it.
     [[nodiscard]] int receiveBufferSize();
+
+    /// Gets each datagram that is not plain eD2K before trial decryption: ed3k sharing this
+    /// port (ed3k Protocol.md §14.1). true = taken. Empty: none.
+    using ForeignHandler = std::function<bool(const QNetworkDatagram&)>;
+    void setForeignHandler(ForeignHandler handler) { m_foreign = std::move(handler); }
+
+    /// The socket itself, for a protocol that shares the port (sends on the owner thread).
+    [[nodiscard]] QUdpSocket& socket() { return m_socket; }
 
     /// Send a packet to a peer. Takes ownership of packet.
     /// @param packet     Packet to send (can be nullptr for raw data).
@@ -188,6 +197,7 @@ private:
     };
 
     QUdpSocket m_socket;
+    ForeignHandler m_foreign;
     std::deque<UDPPack> m_controlQueue;
     std::deque<PreparedDatagram> m_sendReadyQueue;
     mutable std::mutex m_sendLock;

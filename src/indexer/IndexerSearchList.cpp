@@ -5,6 +5,7 @@
 #include "IndexerSearch.h"
 
 #include "app/AppContext.h"
+#include "net/MetaFileCache.h"
 #include "prefs/Preferences.h"
 #include "stats/Statistics.h"
 #include "utils/Log.h"
@@ -220,7 +221,7 @@ void IndexerSearchList::grab(quint32 searchId, const QString& resultId, GrabCall
                      tr("The indexer \"%1\" is no longer configured.").arg(result->indexerName));
                 return;
             }
-            fetchGrab(*account, result->downloadUrl, result->title, result->password, std::move(done));
+            fetchGrab(*account, resultId, result->downloadUrl, result->title, result->password, std::move(done));
             return;
         }
     }
@@ -239,7 +240,7 @@ void IndexerSearchList::grab(quint32 searchId, const QString& resultId, GrabCall
              tr("The indexer \"%1\" is no longer configured.").arg(cached->indexerName));
         return;
     }
-    fetchGrab(*account, cached->downloadUrl, cached->title, cached->password, std::move(done));
+    fetchGrab(*account, resultId, cached->downloadUrl, cached->title, cached->password, std::move(done));
 }
 
 void IndexerSearchList::flushGrabCache()
@@ -360,12 +361,27 @@ const IndexerConfig* IndexerSearchList::accountNamed(const QString& displayName)
     return it == m_accounts.cend() ? nullptr : &*it;
 }
 
-void IndexerSearchList::fetchGrab(const IndexerConfig& account, const QUrl& url, const QString& name,
-                                  const QString& password, GrabCallback done)
+void IndexerSearchList::fetchGrab(const IndexerConfig& account, const QString& resultId, const QUrl& url,
+                                  const QString& name, const QString& password, GrabCallback done)
 {
+    // Details fetched it lately: a Download spends no second grab
+    const QString key = MetaFileCache::indexerKey(resultId);
+    if (const auto cached = MetaFileCache::instance().find(key)) {
+        logDebug(QStringLiteral("Indexers: %1 served from cache").arg(resultId));
+        QTimer::singleShot(0, this, [content = cached->content, name, password, done = std::move(done)] {
+            done(true, content, name, password, {});
+        });
+        return;
+    }
+    if (url.scheme().compare(QLatin1StringView("magnet"), Qt::CaseInsensitive) == 0) {
+        done(false, {}, name, password, tr("The indexer offers only a magnet link for this result."));
+        return;
+    }
     m_client->fetch(account, url,
-                    [name, password, done = std::move(done)](bool ok, const QByteArray& body,
-                                                             const QString& error) {
+                    [key, name, password, done = std::move(done)](bool ok, const QByteArray& body,
+                                                                  const QString& error) {
+        if (ok && !body.isEmpty())
+            MetaFileCache::instance().insert(key, body);
         done(ok, body, name, password, error);
     });
 }

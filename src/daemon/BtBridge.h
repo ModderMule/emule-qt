@@ -55,6 +55,16 @@ void insertRates(QCborMap& stats);
 /// GetBtStats: the session and cumulative counters plus the live figures.
 [[nodiscard]] QCborMap statsToCbor();
 
+/// Adds .torrent bytes to the download dir: AddTorrentFile's {outcome, id, message}.
+/// Outcome 3 (not running) without an engine.
+[[nodiscard]] QCborMap addTorrentData(const QByteArray& data, bool paused);
+
+/// A .torrent read without adding it: {id, name, infoHashV1, infoHashV2, totalSize,
+/// pieceLength, pieceCount, private, comment, creator, creationDate,
+/// files: [{index, path, size, pad}], trackers: [{url, tier}], webSeeds: [url]}.
+/// Works with the engine stopped. Empty with `error` set when unreadable or not built.
+[[nodiscard]] QCborMap inspectTorrent(const QByteArray& data, QString& error);
+
 /// Hands the app's IP filter (ranges below ipFilterLevel(), the rule of
 /// IPFilter::isFiltered) to the session. `onlyIfLevelChanged`: skip when the level is the
 /// one applied last (options saves). No-op without a session or filter.

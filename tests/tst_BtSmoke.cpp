@@ -23,6 +23,7 @@ private slots:
     void ids();
     void magnets();
     void torrentFiles();
+    void inspectTorrentFile();
 };
 
 void tst_BtSmoke::constructs()
@@ -140,6 +141,43 @@ void tst_BtSmoke::torrentFiles()
     QVERIFY(!BtAddSource::fromTorrentFile({}).has_value());
     QVERIFY(!BtAddSource::fromTorrentFile(QByteArray("not bencode")).has_value());
     QVERIFY(!BtAddSource::fromTorrentFile(QByteArray("d4:infod4:name1:aee")).has_value());
+}
+
+void tst_BtSmoke::inspectTorrentFile()
+{
+    // v1, two files in a folder, one tracker, a web seed (keys sorted, as bencode wants)
+    const QByteArray info = QByteArray("d5:filesl"
+                                       "d6:lengthi10e4:pathl3:dir5:a.txtee"
+                                       "d6:lengthi20e4:pathl5:b.bineee"
+                                       "4:name4:demo12:piece lengthi16384e6:pieces20:")
+                            + QByteArray(20, 'x') + QByteArray("e");
+    const QByteArray torrent = QByteArray("d8:announce27:http://tracker.example/annc"
+                                          "7:comment5:hello10:created by4:test13:creation datei1700000000e"
+                                          "4:info")
+                             + info + QByteArray("8:url-list19:http://seed.examplee");
+
+    const auto preview = BtSession::inspectTorrentFile(torrent);
+    QVERIFY2(preview.has_value(), qPrintable(preview.has_value() ? QString() : preview.error()));
+    QCOMPARE(preview->name, QStringLiteral("demo"));
+    QCOMPARE(preview->totalSize, 30);
+    QCOMPARE(preview->pieceLength, 16384);
+    QCOMPARE(preview->pieces, 1);
+    QCOMPARE(preview->hashV1.size(), 40);
+    QVERIFY(preview->hashV2.isEmpty());
+    QVERIFY(preview->id.startsWith(QStringLiteral("bt:v1:")));
+    QCOMPARE(preview->comment, QStringLiteral("hello"));
+    QCOMPARE(preview->creator, QStringLiteral("test"));
+    QCOMPARE(preview->createdAt, 1700000000);
+    QCOMPARE(preview->files.size(), 2);
+    QCOMPARE(preview->files.at(0).path, QStringLiteral("demo/dir/a.txt"));
+    QCOMPARE(preview->files.at(0).size, 10);
+    QCOMPARE(preview->files.at(1).path, QStringLiteral("demo/b.bin"));
+    QCOMPARE(preview->trackers.size(), 1);
+    QCOMPARE(preview->trackers.at(0).url, QStringLiteral("http://tracker.example/annc"));
+    // libtorrent ends a multi-file web seed with a slash
+    QCOMPARE(preview->webSeeds, QList<QString>{QStringLiteral("http://seed.example/")});
+
+    QVERIFY(!BtSession::inspectTorrentFile(QByteArray("garbage")).has_value());
 }
 
 QTEST_GUILESS_MAIN(tst_BtSmoke)

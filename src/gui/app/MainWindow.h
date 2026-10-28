@@ -123,6 +123,10 @@ public:
 
     void switchToTab(Tab tab);
 
+    /// Torrents / Hoster buttons follow btEnabled / ed3kEnabled; a hidden current
+    /// tab falls back to Transfers. After a toolbar rebuild and a prefs change.
+    void applyFeatureTabs();
+
     /// Open the Options dialog, optionally at a specific page index.
     void showOptionsDialog(int page = -1);
 
@@ -297,6 +301,8 @@ private:
     /// Ctrl+Tab / Ctrl+Shift+Tab: next / previous window button in toolbar order
     /// (MFC CemuleDlg::GetNextWindowToolbarButton, EmuleDlg.cpp:2975).
     void cycleTab(int direction);
+    /// Tab of a switched-off feature (Torrents without btEnabled, Hoster without ed3kEnabled)
+    [[nodiscard]] static bool isTabHidden(int tab);
     void loadToolbarSkin(const QString& path);
     void clearToolbarSkin();
     QString skinsDir() const;

@@ -50,6 +50,16 @@ constexpr qint64 kProbeQueueMs = 2 * 60 * 1000;
 constexpr std::size_t kMaxChecks = 4096;
 /// an account's premium state is asked again after this
 constexpr qint64 kAccountTtlMs = 6 * 3600 * 1000;
+/// a shared link's recheck that could not tell is tried again after this (or recheckHours)
+constexpr qint64 kRecheckRetryMs = 6 * 3600 * 1000;
+/// hoster.md §2: dead-link reports from downloaders in this many sites check a shared link at once
+constexpr std::size_t kReportsUntilCheck = 3;
+/// an ALIAS waiting for its root to be shared (hashing after completion or a start): tried
+/// each tick for this long
+constexpr qint64 kAliasWaitMs = 2 * 3600 * 1000;
+/// ALIAS records of a root per scheme the core keeps (alias.md §3); links linkShare takes
+constexpr int kMaxAliasLinks = 4;
+constexpr int kMaxShareLinks = 8;
 
 qint64 nowMs()
 {
@@ -112,7 +122,8 @@ struct Ed3kHosterJoin::Entry {
     int tries = 0;
     std::uint64_t peerLink = 0;          ///< a peer's link asked or open for this item
     std::set<std::uint64_t> peerTried;   ///< peers' links that failed for it
-    bool vouched = false;                ///< §4.1: the node vouches for the item's link
+    QList<SharedLink> shared;            ///< §4.1: links the node vouches for, own first
+    QStringList sharedOut;               ///< what linkShare was given last
     std::uint64_t lastDone = 0;          ///< for the speed
     bool expandAfterCheck = false;
 };
@@ -151,7 +162,8 @@ void Ed3kHosterJoin::setResolver(Ed3kResolver* resolver)
 void Ed3kHosterJoin::setConfig(const Ed3kHosterPrefs& prefs, const QString& tempDir, const QString& incomingDir)
 {
     const bool allowed = prefs.enabled != m_prefs.enabled;
-    const bool publishChanged = prefs.publishLinks != m_prefs.publishLinks;
+    const bool publishChanged = prefs.publishLinks != m_prefs.publishLinks || prefs.recheckHours != m_prefs.recheckHours
+                             || prefs.reportRecheckHours != m_prefs.reportRecheckHours;
     const bool accountsChanged = prefs.accounts != m_prefs.accounts;
     m_prefs = prefs;
     m_tempDir = tempDir;
@@ -167,10 +179,12 @@ void Ed3kHosterJoin::setConfig(const Ed3kHosterPrefs& prefs, const QString& temp
                 if (e->item.state == State::NeedsUser)
                     begin(*e);
     }
-    // §4.1: publishing hands out the vouched links; switching it off stops that
-    if (publishChanged && m_started)
+    // §4.1: publishing hands out the vouched links; switching it off withdraws them
+    if (publishChanged && m_started) {
         for (auto& [id, e] : m_items)
-            shareLink(*e);
+            publishShared(*e);
+        queueRechecks(nowMs());
+    }
     if ((accountsChanged || allowed) && m_started)
         refreshAccounts();
 }
@@ -194,8 +208,10 @@ void Ed3kHosterJoin::start()
         default:
             begin(*e);
         }
-        shareLink(*e);
+        // stale links wait for their recheck (queueRechecks), the rest go out now
+        publishShared(*e);
     }
+    queueRechecks(nowMs());
     refreshAccounts();
     pumpSession();
 }
@@ -205,8 +221,17 @@ void Ed3kHosterJoin::stop()
     if (!m_started)
         return;
     m_tick.stop();
-    for (auto& [id, e] : m_items)
+    for (auto& [id, e] : m_items) {
         release(*e, true);
+        // the core forgets what it keeps refreshing with the node; start() publishes again
+        for (SharedLink& l : e->shared) {
+            l.aliasOut = false;
+            l.checking = false;
+        }
+        e->sharedOut.clear();
+    }
+    m_aliasPending.clear();
+    m_rootlessDone.clear();
     m_asks.clear();
     for (const auto& [link, a] : m_preparing)
         QDir(a.dir).removeRecursively();
@@ -240,16 +265,35 @@ QStringList Ed3kHosterJoin::linksIn(const QString& text)
     return out;
 }
 
-QList<quint32> Ed3kHosterJoin::addLinks(const QString& text)
+QList<quint32> Ed3kHosterJoin::addLinks(const QString& text, const QString& package, quint32 packageId)
 {
     QList<QStringList> files;
     for (const QString& url : linksIn(text))
         files.append(QStringList{url});
-    return addMirrored(files);
+    return addMirrored(files, package, packageId);
 }
 
-QList<quint32> Ed3kHosterJoin::addMirrored(const QList<QStringList>& files)
+QList<quint32> Ed3kHosterJoin::addMirrored(const QList<QStringList>& files, const QString& package,
+                                           quint32 packageId)
 {
+    // the package: an existing one by id, else a new one by name; one level only
+    QString packageName;
+    if (packageId != 0) {
+        const auto it = std::ranges::find_if(m_items, [packageId](const auto& p) {
+            return p.second->item.packageId == packageId;
+        });
+        if (it != m_items.end())
+            packageName = it->second->item.package;
+        else
+            packageId = 0;   // gone meanwhile: a new one of that name, if any
+    }
+    if (packageId == 0 && !package.trimmed().isEmpty()) {
+        // a folder name: "AC/DC" stays one name, not "DC"
+        packageName = safeName(QString(package.trimmed()).replace(QLatin1Char('/'), QLatin1Char('_'))
+                                                         .replace(QLatin1Char('\\'), QLatin1Char('_')));
+        packageId = m_nextPackageId++;
+    }
+
     QList<quint32> ids;
     for (const QStringList& file : files) {
         QStringList urls;
@@ -275,6 +319,8 @@ QList<quint32> Ed3kHosterJoin::addMirrored(const QList<QStringList>& files)
         e->item.host = QUrl(url).host();
         e->item.name = safeName(QUrl(url).fileName());
         e->item.added = nowMs();
+        e->item.packageId = packageId;
+        e->item.package = packageName;
         Entry& ref = *e;
         m_items.emplace(ref.item.id, std::move(e));
         ids << ref.item.id;
@@ -320,9 +366,18 @@ void Ed3kHosterJoin::remove(quint32 id, bool deleteFile)
     if (!e)
         return;
     const bool complete = e->item.state == State::Complete;
+    // its links are not this node's to vouch for any more
+    for (SharedLink& l : e->shared)
+        l.offline = true;
+    publishShared(*e);
+    m_aliasPending.erase(id);
     release(*e, false);
-    if (!complete || deleteFile)
+    if (!complete || deleteFile) {
         QFile::remove(e->item.file);
+        // a package folder goes with its last file (rmdir only takes an empty one)
+        if (complete && !e->item.package.isEmpty())
+            QDir().rmdir(QDir(m_incomingDir).filePath(e->item.package));
+    }
     QDir(workDir(id)).removeRecursively();
     m_items.erase(id);
     emit itemRemoved(id);
@@ -377,11 +432,13 @@ bool Ed3kHosterJoin::checkLinks(const QStringList& urls)
             const LinkCheck& c = it->second;
             if (c.status == LinkStatus::Checking && now - c.at < kProbeQueueMs + kProbeTimeoutMs)
                 continue;   // running; its result follows
-            if (c.status != LinkStatus::Checking && now - c.at < kCheckTtlMs) {
+            // an unknown one is asked again: a wait, a busy resolver or a timeout passes
+            if (c.status != LinkStatus::Checking && c.status != LinkStatus::Unknown && now - c.at < kCheckTtlMs) {
                 emit linkChecked(url, c);
                 continue;
             }
         }
+        dropProbe(url);
         LinkCheck c;
         c.status = LinkStatus::Checking;
         c.at = now;
@@ -448,6 +505,13 @@ std::optional<Ed3kHosterJoin::Item> Ed3kHosterJoin::item(quint32 id) const
     if (const Entry* e = find(id))
         return e->item;
     return std::nullopt;
+}
+
+QList<Ed3kHosterJoin::SharedLink> Ed3kHosterJoin::sharedLinks(quint32 id) const
+{
+    if (const Entry* e = find(id))
+        return e->shared;
+    return {};
 }
 
 // -- Ed3kJoinBase -------------------------------------------------------------
@@ -521,6 +585,8 @@ void Ed3kHosterJoin::onOtherEvent(const ffi::Event& event)
         onLinkVouched(v->link, v->root);
     else if (const auto* l = std::get_if<ev::Links>(&event))
         onPeerLinks(*l);
+    else if (const auto* hr = std::get_if<ev::HttpResults>(&event))
+        onHttpResults(*hr);
     else if (const auto* af = std::get_if<ev::AliasFound>(&event); af && m_searches.contains(af->search))
         onAliasFound(*af);
     else if (const auto* d = std::get_if<ev::SetLinksDead>(&event))
@@ -607,6 +673,10 @@ void Ed3kHosterJoin::setState(Entry& e, State s, Reason why, const QString& arg)
         e.item.waitUntil = 0;
     if (s != State::Downloading)
         e.item.speed = 0;
+    // a links dialog waits on this item's check
+    if (const auto c = m_checks.find(e.item.url); c != m_checks.end() && c->second.status == LinkStatus::Checking)
+        if (const auto ic = itemCheck(e.item.url); ic && ic->status != LinkStatus::Checking)
+            setCheck(e.item.url, *ic);
     changed(e);
     scheduleSave(ownerOf(e.item.id));
 }
@@ -1323,6 +1393,8 @@ void Ed3kHosterJoin::onLinkRootless(std::uint64_t link, const ffi::Root& root, s
     e->item.size = size;
     e->item.done = size;
     logInfo(QStringLiteral("%1: downloaded whole, root %2").arg(e->item.host, e->item.rootHex.left(16)));
+    // its Vouched follows once finish() let go of the link
+    m_rootlessDone[link] = e->item.id;
     finish(*e);
 }
 
@@ -1418,24 +1490,30 @@ void Ed3kHosterJoin::onLinkVouched(std::uint64_t link, const ffi::Root& root)
 {
     Entry* e = byLink(link);
     // a rootless link vouches once the file is whole, after the item let go of the link
+    if (const auto d = m_rootlessDone.find(link); !e && d != m_rootlessDone.end())
+        e = find(d->second);
+    m_rootlessDone.erase(link);
     if (!e)
         e = byRoot(root);
-    // only the item's own link: a peer's is not this node's to hand on
-    if (!e || m_peerLinks.contains(link) || e->vouched)
+    if (!e)
         return;
-    e->vouched = true;
+    // §4.1: the own link, or a peer's blocks from it verified under the root (§4 publisher)
+    const auto peer = m_peerLinks.find(link);
+    const QString url = peer != m_peerLinks.end() ? peer->second.url : e->item.url;
+    if (url.isEmpty() || std::ranges::any_of(e->shared, [&url](const SharedLink& l) { return l.url == url; }))
+        return;
+    SharedLink l;
+    l.url = url;
+    l.checkedAt = nowMs();   // the vouch is the freshest check there is
+    // own link first
+    if (peer == m_peerLinks.end())
+        e->shared.prepend(l);
+    else
+        e->shared.append(l);
+    if (!e->root)
+        e->root = root;
     scheduleSave(ownerOf(e->item.id));
-    auto* eng = m_session.engine();
-    // §4.1: only while the user publishes links
-    if (!eng || !m_prefs.publishLinks)
-        return;
-    const auto alias = ffi::linkAliasSame(e->item.url.toStdString(), root, e->item.size, e->item.name.toStdString());
-    if (alias) {
-        const std::vector<ffi::Bytes> list{*alias};
-        if (auto ok = eng->publishAlias(m_session.now(), list); ok)
-            logInfo(QStringLiteral("%1: link published (ALIAS url)").arg(e->item.host));
-    }
-    shareLink(*e);
+    publishShared(*e);
 }
 
 void Ed3kHosterJoin::onPeerLinks(const ev::Links& links)
@@ -1525,20 +1603,6 @@ bool Ed3kHosterJoin::tryPeerLink(Entry& e)
     return false;
 }
 
-void Ed3kHosterJoin::shareLink(Entry& e)
-{
-    auto* eng = m_session.engine();
-    if (!eng || !e.root || !e.vouched)
-        return;
-    std::vector<std::string> urls;
-    if (m_prefs.publishLinks)
-        urls.push_back(e.item.url.toStdString());
-    if (auto ok = eng->linkShare(*e.root, urls); !ok)
-        logDebug(QStringLiteral("%1: link not shared (error %2)").arg(e.item.host, errorName(ok.error())));
-    else if (!urls.empty())
-        logInfo(QStringLiteral("%1: link handed out with the file (SOURCE record, downloaders)").arg(e.item.host));
-}
-
 bool Ed3kHosterJoin::writeAt(Entry& e, std::uint64_t offset, std::span<const std::byte> data)
 {
     QFile f(e.item.file);
@@ -1569,16 +1633,18 @@ void Ed3kHosterJoin::finish(Entry& e)
         return;
     const QString from = e.item.file;
     release(e, true);
-    // the incoming folder, with a name that is free
-    QDir().mkpath(m_incomingDir);
+    // the incoming folder (a package's own folder in it), with a name that is free
+    const QString dir = e.item.package.isEmpty() ? m_incomingDir
+                                                 : QDir(m_incomingDir).filePath(e.item.package);
+    QDir().mkpath(dir);
     const QFileInfo base(e.item.name);
-    QString to = QDir(m_incomingDir).filePath(e.item.name);
+    QString to = QDir(dir).filePath(e.item.name);
     for (int n = 1; QFileInfo::exists(to) && n < 1000; ++n)
-        to = QDir(m_incomingDir).filePath(base.completeSuffix().isEmpty()
-                                              ? QStringLiteral("%1 (%2)").arg(base.baseName()).arg(n)
-                                              : QStringLiteral("%1 (%2).%3").arg(base.baseName()).arg(n).arg(base.completeSuffix()));
+        to = QDir(dir).filePath(base.completeSuffix().isEmpty()
+                                    ? QStringLiteral("%1 (%2)").arg(base.baseName()).arg(n)
+                                    : QStringLiteral("%1 (%2).%3").arg(base.baseName()).arg(n).arg(base.completeSuffix()));
     if (!QFile::rename(from, to) && !(QFile::copy(from, to) && QFile::remove(from))) {
-        setState(e, State::Failed, Reason::MoveFailed, m_incomingDir);
+        setState(e, State::Failed, Reason::MoveFailed, dir);
         return;
     }
     QDir(workDir(e.item.id)).removeRecursively();
@@ -1694,6 +1760,20 @@ void Ed3kHosterJoin::onTick()
         raiseCounter(m_counters->maxDownRate, totalSpeed);
     }
     expireProbes(now);
+    // ALIAS records whose root was not shared yet
+    for (auto it = m_aliasPending.begin(); it != m_aliasPending.end();) {
+        Entry* e = find(it->first);
+        if (!e || now - it->second > kAliasWaitMs) {
+            if (e)
+                logDebug(QStringLiteral("%1: link not published, the file was never shared").arg(e->item.host));
+            it = m_aliasPending.erase(it);
+            continue;
+        }
+        const quint32 id = it->first;
+        publishShared(*e);   // erases it once every ALIAS is out
+        it = m_aliasPending.upper_bound(id);
+    }
+    queueRechecks(now);
     pumpProbes();
     pumpSession();
 }
@@ -1720,8 +1800,8 @@ void Ed3kHosterJoin::pumpProbes()
             continue;
         }
         const LinkCheck unknown{LinkStatus::Unknown, q.host, {}, 0, nowMs()};
-        // an item took the link meanwhile: it says
-        if (const auto c = itemCheck(q.url)) {
+        // an item took the link meanwhile: it says (a recheck asks the hoster all the same)
+        if (const auto c = q.item ? std::nullopt : itemCheck(q.url)) {
             setCheck(q.url, *c);
             it = m_probeQueue.erase(it);
             continue;
@@ -1733,6 +1813,8 @@ void Ed3kHosterJoin::pumpProbes()
                 continue;
             }
             setCheck(q.url, unknown);
+            if (q.item)
+                onRechecked(q.item, q.url, LinkStatus::Unknown);
             it = m_probeQueue.erase(it);
             continue;
         }
@@ -1743,11 +1825,13 @@ void Ed3kHosterJoin::pumpProbes()
                 continue;
             }
             setCheck(q.url, unknown);
+            if (q.item)
+                onRechecked(q.item, q.url, LinkStatus::Unknown);
             it = m_probeQueue.erase(it);
             continue;
         }
         // Denied: dead or not allowed; LinkEnded tells which
-        m_probes[*link] = Probe{q.url, q.host, nowMs(), true, false};
+        m_probes[*link] = Probe{q.url, q.host, nowMs(), true, false, q.item};
         ++running;
         ++perHost[site];
         it = m_probeQueue.erase(it);
@@ -1763,6 +1847,8 @@ void Ed3kHosterJoin::probeDone(std::uint64_t link, LinkStatus status, const QStr
     p->second.pending = false;
     p->second.at = nowMs();
     setCheck(p->second.url, LinkCheck{status, p->second.host, name, size, p->second.at});
+    if (p->second.item)
+        onRechecked(p->second.item, p->second.url, status);
     // an item took it while it ran: the link is the item's from now on
     if (p->second.adopted)
         m_probes.erase(p);
@@ -1795,15 +1881,31 @@ std::optional<Ed3kHosterJoin::LinkCheck> Ed3kHosterJoin::itemCheck(const QString
         c.size = it.size;
         c.at = nowMs();
         switch (it.state) {
-        case State::Downloading:
         case State::Complete:
+            c.status = it.reason == Reason::LinkOffline ? LinkStatus::Offline : LinkStatus::Online;
+            break;
+        case State::Downloading:
             c.status = LinkStatus::Online;
             break;
         case State::Gone:
             c.status = LinkStatus::Offline;
             break;
-        default:
+        case State::Matching:
+        case State::Looking:
+        case State::Checking:
+            c.status = LinkStatus::Checking;   // setState() hands on the item's answer
+            break;
+        case State::NoResolver:
             c.status = LinkStatus::Unknown;
+            break;
+        default:
+            // the hoster gave a size once: checked online
+            if (it.size > 0)
+                c.status = LinkStatus::Online;
+            else if (!e->link)
+                return std::nullopt;   // no core link held: a check of its own is free to run
+            else
+                c.status = LinkStatus::Unknown;
         }
         return c;
     }
@@ -1819,6 +1921,8 @@ void Ed3kHosterJoin::expireProbes(qint64 now)
         if (p.pending && now - p.at > kProbeTimeoutMs) {
             setCheck(p.url, LinkCheck{LinkStatus::Unknown, p.host, {}, 0, now});
             p.pending = false;
+            if (p.item)
+                onRechecked(p.item, p.url, LinkStatus::Unknown);
             if (!p.adopted) {
                 // the core still waits for the answer: the link goes, a later one starts clean
                 for (auto a = m_asks.begin(); a != m_asks.end();) {
@@ -1852,7 +1956,11 @@ void Ed3kHosterJoin::expireProbes(qint64 now)
     for (auto it = m_probeQueue.begin(); it != m_probeQueue.end();) {
         if (now - it->since > kProbeQueueMs) {
             setCheck(it->url, LinkCheck{LinkStatus::Unknown, it->host, {}, 0, now});
+            const quint32 item = it->item;
+            const QString url = it->url;
             it = m_probeQueue.erase(it);
+            if (item)
+                onRechecked(item, url, LinkStatus::Unknown);
         } else {
             ++it;
         }
@@ -1904,6 +2012,240 @@ void Ed3kHosterJoin::learnSites(const QStringList& sites)
         m_siteOf.insert(d.toLower(), main);
 }
 
+void Ed3kHosterJoin::publishShared(Entry& e)
+{
+    auto* eng = m_session.engine();
+    if (!eng || !e.root)
+        return;
+    const qint64 now = nowMs();
+    const auto t = m_session.now();
+    QStringList urls;
+    bool waiting = false;
+    int aliases = 0;
+    for (SharedLink& l : e.shared) {
+        // §4.1: nothing while links are held back
+        const bool live = m_prefs.publishLinks && linkLive(l, now);
+        if (live && urls.size() < kMaxShareLinks)
+            urls << l.url;
+        const bool wantAlias = live && aliases < kMaxAliasLinks;
+        if (wantAlias)
+            ++aliases;
+        if (wantAlias == l.aliasOut)
+            continue;
+        const auto alias = ffi::linkAliasSame(l.url.toStdString(), *e.root, e.item.size, e.item.name.toStdString());
+        if (!alias) {
+            logDebug(QStringLiteral("%1: no ALIAS record of the link (error %2)").arg(e.item.host, errorName(alias.error())));
+            continue;
+        }
+        const std::vector<ffi::Bytes> list{*alias};
+        const QString host = QUrl(l.url).host();
+        if (wantAlias) {
+            if (auto ok = eng->publishAlias(t, list); ok) {
+                l.aliasOut = true;
+                logInfo(QStringLiteral("%1: link published (ALIAS url)").arg(host));
+            } else if (ok.error() == ffi::Error::State) {
+                waiting = true;   // the file is not shared yet: the tick tries again
+            } else {
+                logDebug(QStringLiteral("%1: link not published (error %2)").arg(host, errorName(ok.error())));
+            }
+        } else {
+            (void)eng->unpublishAlias(t, list);
+            l.aliasOut = false;
+            // Kad has no delete: the copies stored run out within 24 h
+            logInfo(QStringLiteral("%1: link withdrawn (ALIAS url)").arg(host));
+        }
+    }
+    if (waiting)
+        m_aliasPending.try_emplace(e.item.id, now);
+    else
+        m_aliasPending.erase(e.item.id);
+    if (urls == e.sharedOut)
+        return;
+    std::vector<std::string> list;
+    for (const QString& u : std::as_const(urls))
+        list.push_back(u.toStdString());
+    if (auto ok = eng->linkShare(*e.root, list); !ok) {
+        logDebug(QStringLiteral("%1: links not shared (error %2)").arg(e.item.host, errorName(ok.error())));
+        return;
+    }
+    e.sharedOut = urls;
+    if (!urls.isEmpty())
+        logInfo(QStringLiteral("%1: %2 link(s) handed out with the file (SOURCE record, downloaders)").arg(e.item.host).arg(urls.size()));
+    else
+        logInfo(QStringLiteral("%1: links no longer handed out with the file").arg(e.item.host));
+}
+
+bool Ed3kHosterJoin::linkLive(const SharedLink& l, qint64 now) const
+{
+    if (l.offline)
+        return false;
+    const qint64 every = recheckMs();
+    return every == 0 || l.unknown || now - l.checkedAt < every;
+}
+
+qint64 Ed3kHosterJoin::recheckMs() const
+{
+    return qint64(std::max(0, m_prefs.recheckHours)) * 3600 * 1000;
+}
+
+void Ed3kHosterJoin::queueRechecks(qint64 now)
+{
+    const qint64 every = recheckMs();
+    if (!m_started)
+        return;
+    // §3: no hoster is asked anything without the user's switch; a link not checked stays as it is
+    const bool canCheck = m_prefs.enabled && m_resolver && m_resolver->available() && m_session.engine();
+    bool queued = false;
+    for (auto& [id, ep] : m_items) {
+        Entry& e = *ep;
+        if (e.item.state != State::Complete || !e.root)
+            continue;
+        for (SharedLink& l : e.shared) {
+            if (l.checking)
+                continue;
+            const bool reported = reportDue(l, now);
+            if (!reported && (every == 0 || now - l.checkedAt < every || now < l.retryAt))
+                continue;
+            if (reported) {
+                // checked now whether or not anyone can: the reports wait for the next turn
+                l.reporters.clear();
+                l.reportCheckAt = now;
+                scheduleSave(ownerOf(e.item.id));
+            }
+            if (!canCheck) {
+                // stale and nobody to ask: kept as unknown, asked again later
+                if (!l.unknown) {
+                    l.unknown = true;
+                    publishShared(e);
+                }
+                l.retryAt = now + (every == 0 ? kRecheckRetryMs : std::min(kRecheckRetryMs, every));
+                continue;
+            }
+            l.checking = true;
+            l.reportCheck = reported;
+            const QString host = l.url == e.item.url ? e.item.host : QUrl(l.url).host();
+            if (reported)
+                logInfo(QStringLiteral("%1: downloaders in %2 sites reported a published link dead, checking it").arg(host).arg(kReportsUntilCheck));
+            else
+                logDebug(QStringLiteral("%1: rechecking a published link").arg(host));
+            m_probeQueue.append({l.url, host, now, e.item.id});
+            queued = true;
+        }
+    }
+    if (queued)
+        pumpProbes();
+}
+
+void Ed3kHosterJoin::onRechecked(quint32 item, const QString& url, LinkStatus status)
+{
+    Entry* e = find(item);
+    if (!e)
+        return;
+    const auto l = std::ranges::find(e->shared, url, &SharedLink::url);
+    if (l == e->shared.end())
+        return;
+    const qint64 now = nowMs();
+    l->checking = false;
+    const bool byReports = std::exchange(l->reportCheck, false);
+    const QString host = QUrl(url).host();
+    switch (status) {
+    case LinkStatus::Online:
+        if (l->offline)
+            logInfo(QStringLiteral("%1: link online again, published").arg(host));
+        else if (byReports)
+            logInfo(QStringLiteral("%1: reported link is online, kept").arg(host));
+        // the core stopped handing it out after the reports: its count starts over
+        if (byReports && !e->sharedOut.isEmpty() && e->root && m_session.engine()) {
+            (void)m_session.engine()->linkShare(*e->root, {});
+            e->sharedOut.clear();
+        }
+        l->checkedAt = now;
+        l->offline = false;
+        l->unknown = false;
+        break;
+    case LinkStatus::Offline:
+        if (!l->offline)
+            logInfo(QStringLiteral("%1: link offline, withdrawn").arg(host));
+        l->checkedAt = now;
+        l->offline = true;
+        l->unknown = false;
+        break;
+    default:
+        // not proven dead: kept, asked again later
+        l->unknown = true;
+        l->retryAt = now + (recheckMs() == 0 ? kRecheckRetryMs : std::min(kRecheckRetryMs, recheckMs()));
+        logDebug(QStringLiteral("%1: recheck of a published link could not tell").arg(host));
+        break;
+    }
+    // reports count from the last answer on
+    if (status == LinkStatus::Online || status == LinkStatus::Offline)
+        l->reporters.clear();
+    // the item's own link says what the list shows
+    if (url == e->item.url && e->item.state == State::Complete) {
+        const Reason r = l->offline ? Reason::LinkOffline : Reason::None;
+        if (e->item.reason != r && (e->item.reason == Reason::None || e->item.reason == Reason::LinkOffline)) {
+            e->item.reason = r;   // not setState: Complete counted once
+            changed(*e);
+        }
+    }
+    scheduleSave(ownerOf(item));
+    publishShared(*e);
+}
+
+void Ed3kHosterJoin::onHttpResults(const ev::HttpResults& r)
+{
+    // no site (a virtual connection): the core does not count it either
+    if (!m_started || m_prefs.reportRecheckHours <= 0 || std::ranges::all_of(r.site, [](std::uint8_t b) { return b == 0; }))
+        return;
+    // records of 20 bytes: url_id 8, code u32 LE, bytes u64 LE
+    constexpr std::size_t kRecord = 20;
+    std::vector<std::array<std::uint8_t, 8>> dead;
+    for (std::size_t at = 0; at + kRecord <= r.results.size(); at += kRecord) {
+        std::uint32_t code = 0;
+        for (int i = 3; i >= 0; --i)
+            code = (code << 8) | std::to_integer<std::uint8_t>(r.results[at + 8 + std::size_t(i)]);
+        // hoster.md §2: gone or wrong counts; a failed fetch says nothing about the link
+        if (code != ED3K_HTTP_GONE && code != ED3K_HTTP_SIZE_MISMATCH && code != ED3K_HTTP_CORRUPT)
+            continue;
+        std::array<std::uint8_t, 8> id{};
+        for (std::size_t i = 0; i < id.size(); ++i)
+            id[i] = std::to_integer<std::uint8_t>(r.results[at + i]);
+        dead.push_back(id);
+    }
+    if (dead.empty())
+        return;
+    const qint64 now = nowMs();
+    bool due = false;
+    for (auto& [id, ep] : m_items) {
+        Entry& e = *ep;
+        if (e.item.state != State::Complete || !e.root || *e.root != r.root)
+            continue;
+        for (SharedLink& l : e.shared) {
+            // only links handed out count: a withdrawn one is not this node's to answer for
+            if (l.offline || !e.sharedOut.contains(l.url))
+                continue;
+            if (std::ranges::find(dead, ffi::linkUrlId(l.url.toStdString())) == dead.end())
+                continue;
+            if (std::ranges::find(l.reporters, r.site) == l.reporters.end() && l.reporters.size() < 16)
+                l.reporters.push_back(r.site);
+            logDebug(QStringLiteral("%1: a downloader reported a published link dead (%2)")
+                         .arg(QUrl(l.url).host()).arg(l.reporters.size()));
+            due = due || reportDue(l, now);
+        }
+    }
+    if (due)
+        queueRechecks(now);
+}
+
+bool Ed3kHosterJoin::reportDue(const SharedLink& l, qint64 now) const
+{
+    const qint64 floor = qint64(std::max(0, m_prefs.reportRecheckHours)) * 3600 * 1000;
+    if (floor == 0 || l.offline || l.reporters.size() < kReportsUntilCheck)
+        return false;
+    // at most once a floor, counted from any check of the link
+    return now - std::max(l.checkedAt, l.reportCheckAt) >= floor;
+}
+
 void Ed3kHosterJoin::load()
 {
     QFile f(itemsFile());
@@ -1925,13 +2267,29 @@ void Ed3kHosterJoin::load()
         it.added = o.value(QStringLiteral("added")).toInteger();
         it.rootHex = o.value(QStringLiteral("root")).toString();
         it.state = State(std::clamp<qint64>(o.value(QStringLiteral("state")).toInteger(), 0, int(State::Failed)));
-        it.reason = Reason(std::clamp<qint64>(o.value(QStringLiteral("reason")).toInteger(), 0, int(Reason::PeerLink)));
+        it.reason = Reason(std::clamp<qint64>(o.value(QStringLiteral("reason")).toInteger(), 0, int(Reason::LinkOffline)));
         for (const QJsonValue& m : o.value(QStringLiteral("mirrors")).toArray())
             if (const QString url = m.toString(); !url.isEmpty())
                 it.mirrors << url;
         it.mirrorNo = int(o.value(QStringLiteral("mirrorNo")).toInteger());
         it.reasonArg = o.value(QStringLiteral("reasonArg")).toString();
-        e->vouched = o.value(QStringLiteral("vouched")).toBool();
+        it.packageId = quint32(o.value(QStringLiteral("pkg")).toInteger());
+        if (it.packageId != 0)
+            it.package = safeName(o.value(QStringLiteral("pkgName")).toString());
+        m_nextPackageId = std::max(m_nextPackageId, it.packageId + 1);
+        for (const QJsonValue& lv : o.value(QStringLiteral("links")).toArray()) {
+            const QJsonObject lo = lv.toObject();
+            SharedLink l;
+            l.url = lo.value(QStringLiteral("url")).toString();
+            l.checkedAt = lo.value(QStringLiteral("checkedAt")).toInteger();
+            l.offline = lo.value(QStringLiteral("offline")).toBool();
+            l.reportCheckAt = lo.value(QStringLiteral("reportCheckAt")).toInteger();
+            if (!l.url.isEmpty())
+                e->shared << l;
+        }
+        // before the links list: the item's own link, vouched for now
+        if (e->shared.isEmpty() && o.value(QStringLiteral("vouched")).toBool())
+            e->shared << SharedLink{it.url, nowMs()};
         if (it.state == State::Complete) {
             it.done = it.size;
             e->root = rootFromHex(it.rootHex);
@@ -1970,8 +2328,14 @@ void Ed3kHosterJoin::save()
             }
             have.append(QJsonArray{qint64(first), qint64(count)});
         }
-        list.append(QJsonObject{{QStringLiteral("id"), qint64(it.id)},
-                                {QStringLiteral("vouched"), e->vouched},
+        QJsonArray links;
+        for (const SharedLink& l : e->shared)
+            links.append(QJsonObject{{QStringLiteral("url"), l.url},
+                                     {QStringLiteral("checkedAt"), l.checkedAt},
+                                     {QStringLiteral("offline"), l.offline},
+                                     {QStringLiteral("reportCheckAt"), l.reportCheckAt}});
+        QJsonObject o{{QStringLiteral("id"), qint64(it.id)},
+                                {QStringLiteral("links"), links},
                                 {QStringLiteral("have"), have},
                                 {QStringLiteral("url"), it.url},
                                 {QStringLiteral("host"), it.host},
@@ -1984,7 +2348,12 @@ void Ed3kHosterJoin::save()
                                 {QStringLiteral("reason"), int(it.reason)},
                                 {QStringLiteral("reasonArg"), it.reasonArg},
                                 {QStringLiteral("mirrors"), QJsonArray::fromStringList(it.mirrors)},
-                                {QStringLiteral("mirrorNo"), it.mirrorNo}});
+                                {QStringLiteral("mirrorNo"), it.mirrorNo}};
+        if (it.packageId != 0) {
+            o.insert(QStringLiteral("pkg"), qint64(it.packageId));
+            o.insert(QStringLiteral("pkgName"), it.package);
+        }
+        list.append(o);
     }
     QDir().mkpath(QFileInfo(itemsFile()).absolutePath());
     QSaveFile f(itemsFile());
@@ -2009,6 +2378,21 @@ void Ed3kHosterJoin::count(uint64 HosterCounters::* field, uint64 n)
 {
     if (m_counters)
         m_counters->*field += n;
+}
+
+void Ed3kHosterJoin::dropProbe(const QString& url)
+{
+    // an ended check's core link, so the next one starts clean (an item's link stays)
+    auto* eng = m_session.engine();
+    for (auto it = m_probes.begin(); it != m_probes.end();) {
+        if (it->second.url == url && !it->second.pending && !it->second.adopted && !byLink(it->first)) {
+            if (eng)
+                (void)eng->linkRemove(it->first);
+            it = m_probes.erase(it);
+        } else {
+            ++it;
+        }
+    }
 }
 
 } // namespace eMule::ed3k

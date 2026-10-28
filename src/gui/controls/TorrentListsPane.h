@@ -14,6 +14,8 @@
 #include <QString>
 #include <QWidget>
 
+#include "controls/TorrentListModel.h"   // torrentFilePriorityName
+
 class QCborArray;
 class QCheckBox;
 class QLabel;
@@ -27,9 +29,6 @@ namespace eMule {
 
 class IpcClient;
 class PanelPoller;
-
-/// Localized name of a libtorrent file priority 0..7.
-[[nodiscard]] QString torrentFilePriorityName(int priority);
 
 /// One line per letter of Transmission's peer status @p flags, for a tooltip.
 [[nodiscard]] QString torrentPeerFlagsTooltip(const QString& flags);

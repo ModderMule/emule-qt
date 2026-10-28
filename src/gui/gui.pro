@@ -159,6 +159,8 @@ SOURCES += \
     dialogs/WebLinksDialog.cpp \
     dialogs/PeerPreviewDialog.cpp \
     dialogs/SearchDetailDialog.cpp \
+    dialogs/MetaResultDetailDialog.cpp \
+    controls/TorrentFileTree.cpp \
     dialogs/UsenetArchiveEntryDialog.cpp \
     dialogs/UsenetDetailsDialog.cpp \
     panels/IrcPanel.cpp \
@@ -264,6 +266,8 @@ HEADERS += \
     dialogs/WebLinksDialog.h \
     dialogs/PeerPreviewDialog.h \
     dialogs/SearchDetailDialog.h \
+    dialogs/MetaResultDetailDialog.h \
+    controls/TorrentFileTree.h \
     dialogs/UsenetArchiveEntryDialog.h \
     dialogs/UsenetDetailsDialog.h \
     panels/IrcPanel.h \

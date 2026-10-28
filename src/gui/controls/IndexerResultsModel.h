@@ -42,6 +42,8 @@ struct IndexerResultRow {
     int seeders = -1;
     int peers = -1;
     bool isUsenet = true;
+    /// A .torrent/.nzb to fetch, not only a magnet: what Details needs.
+    bool hasFile = true;
 
     /// What the daemon already knows about this release, in SearchFile::KnownType
     /// numbering (0 unknown, 2 in the queue, 3 downloaded, 4 cancelled). A folded

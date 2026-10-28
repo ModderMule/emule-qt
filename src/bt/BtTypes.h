@@ -191,6 +191,26 @@ enum class BtAddOutcome : quint8 {
     Failed = 4,
 };
 
+/// A .torrent read without adding it (search result Details).
+struct BtTorrentPreview {
+    QString id;        ///< BtIds id, as it would be once added
+    QString name;
+    QString hashV1;    ///< hex, empty for v2-only
+    QString hashV2;    ///< hex, empty for v1-only
+    qint64 totalSize = 0;
+    int pieceLength = 0;
+    int pieces = 0;
+    bool isPrivate = false;
+    QString comment;
+    QString creator;
+    qint64 createdAt = 0;   ///< unix seconds, 0 = unknown
+    /// done and priority unset
+    QList<BtFileRow> files;
+    /// url and tier only
+    QList<BtTrackerRow> trackers;
+    QList<QString> webSeeds;
+};
+
 struct BtAddResult {
     BtAddOutcome outcome = BtAddOutcome::Failed;
     QString id;

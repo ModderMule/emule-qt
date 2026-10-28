@@ -7,6 +7,7 @@
 #include "BtTypes.h"
 
 #include <libtorrent/info_hash.hpp>
+#include <libtorrent/add_torrent_params.hpp>
 #include <libtorrent/torrent_handle.hpp>
 #include <libtorrent/torrent_status.hpp>
 
@@ -21,6 +22,8 @@ public:
     static QList<BtFileRow> files(const libtorrent::torrent_handle& h);
     static QList<BtPeerRow> peers(const libtorrent::torrent_handle& h);
     static QList<BtTrackerRow> trackers(const libtorrent::torrent_handle& h);
+    /// What a loaded .torrent holds, without a session.
+    static BtTorrentPreview preview(const libtorrent::add_torrent_params& atp);
 
     /// Peers that have each piece: up to `buckets` values, each the rarest piece of
     /// its bucket, capped at 255. Empty without metadata.

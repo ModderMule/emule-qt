@@ -18,6 +18,7 @@
 #include "dialogs/SearchDetailDialog.h"
 #include "utils/ViewSelection.h"
 
+#include <QPointer>
 #include <QSet>
 
 #include <cstdint>
@@ -43,6 +44,7 @@ namespace eMule {
 class DownloadListModel;
 class FilterEdit;
 class IndexerResultsModel;
+struct IndexerResultRow;
 class IpcClient;
 class MetaResultActions;
 class SearchResultsModel;
@@ -201,6 +203,9 @@ private:
     /// Send one indexer grab. @p force means the user was shown the row's Known
     /// column, asked, and said yes.
     void sendIndexerGrab(int proxyRow, bool force, int category = 0);
+    /// The grab itself, by row: also the Download of an indexer row's Details.
+    void grabIndexerResult(uint32_t searchID, const IndexerResultRow& result,
+                           QPointer<IndexerResultsModel> model, bool force, int category = 0);
 
     /// Category titles, index 0 first, for the Download To submenu. Refreshed
     /// from the daemon rather than kept in sync by hand, on the same
@@ -287,6 +292,12 @@ private:
     /// Open the MFC-style search-result detail sheet for @p hash in tab @p searchID.
     /// Open the result sheet for @p index (proxy coordinates) — the Alt+Enter action.
     void showResultDetails(const QModelIndex& index);
+    /// Details of a torrent/Usenet eNode row (fetched file) or a web row (its links).
+    void showMetaRowDetails(uint32_t searchID, const SearchResultRow& result,
+                            QPointer<SearchResultsModel> model);
+    /// Details of an indexer row: the fetched .torrent/.nzb.
+    void showIndexerRowDetails(uint32_t searchID, const IndexerResultRow& result,
+                               QPointer<IndexerResultsModel> model);
 
     // MFC CSearchListCtrl commands, shared by the context menu and the list keys.
     void removeSelectedResults();    ///< MP_REMOVE / MPG_DELETE (Del, ⌫)

@@ -12,6 +12,7 @@
 #include "IndexerClient.h"
 #include "IndexerSearch.h"
 #include "IndexerSearchList.h"
+#include "net/MetaFileCache.h"
 #include "IndexerQuery.h"
 
 #include "prefs/Preferences.h"
@@ -43,6 +44,7 @@ private slots:
     void pagingStopsWhenTheIndexerRunsOut();
     void stopEndsTheSearchAndKeepsWhatArrived();
     void grabCache_grabsARowAfterARestart();
+    void grab_secondFetchServedFromMetaFileCache();
 };
 
 namespace {
@@ -300,6 +302,7 @@ void tst_IndexerSearch::stopEndsTheSearchAndKeepsWhatArrived()
 void tst_IndexerSearch::grabCache_grabsARowAfterARestart()
 {
     // A restored GUI tab grabs with searchId 0; the daemon must still know the URL.
+    MetaFileCache::instance().clear();   // a payload from another test is no fetch
     QTemporaryDir dir;
     QVERIFY(dir.isValid());
     const QString savedConfigDir = thePrefs.configDir();
@@ -356,6 +359,56 @@ void tst_IndexerSearch::grabCache_grabsARowAfterARestart()
     QVERIFY(done);
     QVERIFY(!ok);
 
+    thePrefs.setIndexers({});
+    thePrefs.setConfigDir(savedConfigDir);
+}
+
+void tst_IndexerSearch::grab_secondFetchServedFromMetaFileCache()
+{
+    // Details fetches the .nzb, the Download after it must not spend a second grab
+    MetaFileCache::instance().clear();
+    QTemporaryDir dir;
+    QVERIFY(dir.isValid());
+    const QString savedConfigDir = thePrefs.configDir();
+    thePrefs.setConfigDir(dir.path());
+
+    QString base;
+    int nzbFetches = 0;
+    FakeIndexerServer server([&base, &nzbFetches](const QUrl& url) {
+        if (url.path().endsWith(QStringLiteral(".nzb"))) {
+            ++nzbFetches;
+            return qMakePair(200, QByteArray("<nzb/>"));
+        }
+        return qMakePair(200, feedWithNzb(base));
+    });
+    base = server.baseUrl();
+    thePrefs.setIndexers({configFor(server, QStringLiteral("One"))});
+    thePrefs.setIndexerMaxPages(1);
+
+    IndexerSearchList list;
+    QSignalSpy finished(&list, &IndexerSearchList::searchFinished);
+    IndexerQuery query;
+    query.text = QStringLiteral("x");
+    QString error;
+    const quint32 id = list.startSearch(query, IndexerKind::Newznab, {}, error);
+    QVERIFY2(id != 0, qPrintable(error));
+    QVERIFY(finished.wait(5000));
+    const QString resultId = list.search(id)->results().first().id;
+
+    for (int i = 0; i < 2; ++i) {
+        bool done = false;
+        QByteArray payload;
+        list.grab(id, resultId, [&](bool ok, const QByteArray& body, const QString&, const QString&,
+                                    const QString&) {
+            done = true;
+            payload = ok ? body : QByteArray();
+        });
+        QTRY_VERIFY_WITH_TIMEOUT(done, 5000);
+        QCOMPARE(payload, QByteArray("<nzb/>"));
+    }
+    QCOMPARE(nzbFetches, 1);
+
+    MetaFileCache::instance().clear();
     thePrefs.setIndexers({});
     thePrefs.setConfigDir(savedConfigDir);
 }

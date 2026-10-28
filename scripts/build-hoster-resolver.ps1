@@ -4,11 +4,21 @@
 #
 # Needs a JDK 17 or newer (JAVA_HOME or javac on PATH). Output: <out>\resolver\ and <out>\resolver.zip.
 param(
-    [string]$JdDir = $(if ($env:JD_DIR) { $env:JD_DIR } else { 'C:\Coding\Java' }),
+    [string]$JdDir = '',
     [string]$OutDir = (Join-Path (Split-Path -Parent $PSScriptRoot) 'build\hoster-resolver')
 )
 $ErrorActionPreference = 'Stop'
 $root = Split-Path -Parent $PSScriptRoot
+# JD_DIR: environment, else the project .env, else C:\Coding\Java
+if (-not $JdDir) {
+    $JdDir = $env:JD_DIR
+    $envFile = Join-Path $root '.env'
+    if (-not $JdDir -and (Test-Path $envFile)) {
+        $line = Get-Content $envFile | Where-Object { $_ -match '^\s*JD_DIR\s*=' } | Select-Object -Last 1
+        if ($line) { $JdDir = ($line -replace '^\s*JD_DIR\s*=\s*', '').Trim().Trim('"', "'") }
+    }
+    if (-not $JdDir) { $JdDir = 'C:\Coding\Java' }
+}
 
 foreach ($p in 'JDownloader', 'AppWorkUtils', 'JDBrowser', 'MyJDownloaderClient') {
     if (-not (Test-Path (Join-Path $JdDir "$p\src"))) { throw "build-hoster-resolver: $JdDir\$p\src missing" }

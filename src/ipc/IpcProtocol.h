@@ -331,6 +331,13 @@ enum class IpcMsgType : int {
     /// when all are done; queued -1 = a pass is running already. Files page button.
     RehashAllSharedFiles    = 292,
 
+    /// [apply: bool] -> [ok, {hashChange: bool, port, udpFrom, ed3kFrom, busy: bool,
+    /// restart: bool}]. eD2K compat (ed3k Protocol.md §14): the user hash derived from the
+    /// ed3k node ID, eD2K UDP and ed3k UDP on the eD2K TCP port. apply false = the plan
+    /// only; busy = another program holds that UDP port (nothing applied). restart = the
+    /// core restarts for the new user hash. Failure: [false, {error}].
+    MigrateEd2kCompat       = 293,
+
     // -- Indexers (700-719) --------------------------------------------------
     //
     // The shared newznab/torznab client, reserved here when the Usenet blocks
@@ -376,7 +383,8 @@ enum class IpcMsgType : int {
     ///  priority: int, paused: bool] -> [ok, itemIdOrError]
     /// The daemon fetches the .nzb itself and hands it to the Usenet queue. The
     /// download URL carries the API key, so it never travels to the GUI and the
-    /// GUI never issues the request.
+    /// GUI never issues the request. A .torrent payload (Torznab) goes to the
+    /// BitTorrent engine instead: [ok, torrentIdOrError, "torrent"].
     ///
     /// Fields 3-5 are AddNzb's, and absent read the same way: 0 means "nobody
     /// chose a category", so a grab with no opinion still gets
@@ -401,6 +409,13 @@ enum class IpcMsgType : int {
     /// then they go one per tick rather than at once: a "check everything" click
     /// must not open one request per feed at the same instant.
     PollIndexerFeedNow      = 710,
+    /// [searchId: int, resultId: string] -> [ok, {kind: "torrent" | "nzb",
+    /// inspection}] or [false, error]. The search row's Details: the daemon
+    /// fetches the .torrent/.nzb as GrabIndexerResult would and parses it
+    /// (InspectNzb's map, or BtBridge::inspectTorrent's). Nothing is queued. The
+    /// payload stays 3 h in MetaFileCache, so the Download that follows does not
+    /// spend a second grab. A row whose `hasFile` is false has only a magnet.
+    InspectIndexerResult    = 711,
 
     // -- Usenet (720-799) ----------------------------------------------------
     //
@@ -645,9 +660,11 @@ enum class IpcMsgType : int {
     SetUsenetPaused         = 740,
 
     /// [nzbBytes, name] -> [ok, {name, files: [{index, name, size, isPar2,
-    /// setKey}]}] or [false, error]. Parse an .nzb without queueing it, so the
-    /// Add NZB dialog can offer its files. `index` is what AddNzb's field 8 names;
-    /// `setKey` groups the volumes of one archive set, empty for other files.
+    /// setKey, segments, missingSegments}], poster, groups, date, articles,
+    /// totalSize, password: bool}] or [false, error]. Parse an .nzb without
+    /// queueing it, so the Add NZB dialog can offer its files. `index` is what
+    /// AddNzb's field 8 names; `setKey` groups the volumes of one archive set,
+    /// empty for other files.
     InspectNzb              = 741,
     /// [] -> [ok, count]. Remove every Complete item from the list, files kept.
     /// The Usenet twin of ClearCompleted.
@@ -662,9 +679,12 @@ enum class IpcMsgType : int {
     //   {status: MetaStatus, serverName, serverAddr: "addr:port", authMode,
     //    registrationUrl, accountUrl, msgCode, pendingSteps: [{title, kind, url}]}
 
-    /// [searchID, hash, (row)] -> [true, {content: bytes, fileName, kind}] or
-    /// [false, error, meta]. For saving the .torrent/.nzb in the GUI; capped
-    /// below MaxPayloadSize.
+    /// [searchID, hash, (row), (inspect: bool)] -> [true, {content: bytes,
+    /// fileName, kind, (inspection | inspectError)}] or [false, error, meta].
+    /// For saving the .torrent/.nzb in the GUI; capped below MaxPayloadSize.
+    /// `inspect` adds the parsed file for the row's Details: InspectNzb's map for
+    /// an NZB, BtBridge::inspectTorrent's for a torrent. The daemon keeps fetched
+    /// files 3 h (MetaFileCache), so a Download after Details does not fetch again.
     ///
     /// Optional `row` {name, metaKind, metaCatalogId, metaServers: [[ip, port]]}
     /// is used when the search is gone (a tab restored after a restart).
@@ -851,12 +871,15 @@ enum class IpcMsgType : int {
 
     // hoster links (1100-1109, hoster.md), Ed3kHosterBridge.cpp. An item: {id, url, host,
     // name, size, done, speed, state (Ed3kHosterJoin::State), reason (Ed3kHosterJoin::Reason, the
-    // GUI words it), reasonArg (technical, not localized), waitUntil (ms), verified, file, root}
+    // GUI words it), reasonArg (technical, not localized), waitUntil (ms), verified, file, root,
+    // packageId (0: none), package (its name)}
     /// [] -> [ok, {items: [item], status: {...GetEd3kStatus "hoster"...}}]
     GetHosterItems          = 1100,
-    /// [text: string (links, one per line), files?: [[url, mirror…]]] -> [ok, {ids: [int]}];
+    /// [text: string (links, one per line), files?: [[url, mirror…]], package?: string,
+    ///  packageId?: int] -> [ok, {ids: [int]}];
     /// files given: one item per file, its other links tried when the first fails or is
-    /// stuck, text ignored. PushHosterItem follows each
+    /// stuck, text ignored. package: the items form a new package (a folder under incoming);
+    /// packageId != 0: they join that package instead. PushHosterItem follows each
     AddHosterLinks          = 1101,
     /// [id: int, op: "pause"|"resume"|"remove"|"delete"] -> [ok]; delete also removes a complete file
     HosterAction            = 1102,

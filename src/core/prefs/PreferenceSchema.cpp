@@ -205,7 +205,7 @@ using Kind = PrefSpec::Kind;
 
     // --- ed3k (packmule) ---
     t << flag("ed3kEnabled", "Enable the ed3k node (packmule).");
-    t << number("ed3kUdpPort", 1, 65535, "", "UDP port of the ed3k node, separate from the eD2K UDP port.");
+    t << number("ed3kUdpPort", 1, 65535, "", "UDP port of the ed3k node. Equal to the eD2K UDP port: one shared socket (ed3k Protocol.md §14.1).");
     t << flag("ed3kShareFiles", "Serve the shared files over ed3k too (while the ed3k node runs).");
     t << flag("ed3kHoldBackPosts", "Hold Usenet posts back on ed3k: share the files, but not the article "
                                    "lists, post sets or nzb records (usenet.md §6).");
@@ -231,6 +231,10 @@ using Kind = PrefSpec::Kind;
     t << advanced(flag("ed3kCreditSell", "Sell priority upload slots for credits (§5.1)."));
     t << advanced(number("ed3kCreditSellFloor", 0, 9.0e15, "", "Lowest bid (µ credits per MiB) taken for a priority slot."));
     t << advanced(number("ed3kCreditSellSlots", 0, 1000, "", "Upload slots the priority lane counts. 0 = the upload queue's."));
+    t << flag("ed3kCreditAutoBid", "Autostart highspeed download: bid the credit factor on every download once the "
+                                   "balance reaches the threshold, until about 20 credits are left.");
+    t << number("ed3kCreditAutoFactor", 2.0, 50.0, "", "Credit factor of the autostart: credits per MiB bid at most.");
+    t << number("ed3kCreditAutoThreshold", 200, 9.0e9, "", "Credit balance that starts the autostart.");
     // chaintube chain (chaintube.md §4.2): no defaults; endpoints in ed3kChaintubeRpc
     t << advanced(text("ed3kChainId", 20, "Chain ID of the chaintube chain of the network (decimal). 0 = none: no chain reads."));
     t << advanced(text("ed3kChainContent", 42, "Address of the chaintube content contract (0x + 40 hex digits)."));

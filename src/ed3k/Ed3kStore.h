@@ -27,6 +27,11 @@ using Seed = std::array<std::uint8_t, 32>;
 /// replaced. Never logs the seed. The caller wipes the result (wipe()).
 [[nodiscard]] std::optional<Seed> loadOrCreateKey(const QString& dir, QString* error = nullptr);
 
+/// The eD2K user hash derived from the node ID of node.key under <@p configDir>/ed3k
+/// (Protocol.md §14.2); creates the key file when missing. nullopt: no key.
+[[nodiscard]] std::optional<std::array<std::uint8_t, 16>> derivedUserHash(const QString& configDir,
+                                                                         QString* error = nullptr);
+
 /// The same for any 32-byte secret file @p name in @p dir (credit.key ...): created from
 /// the CSPRNG until @p accept takes the bytes (null: any), 0600, never replaced here.
 [[nodiscard]] std::optional<Seed> loadOrCreateSecret(const QString& dir, const QString& name,

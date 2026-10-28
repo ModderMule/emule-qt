@@ -1,16 +1,23 @@
 #pragma once
 
 /// @file TorrentListModel.h
-/// @brief Flat model for the Torrents tab: one row per torrent.
+/// @brief Model for the Torrents tab: one row per torrent, files as children.
 ///
 /// Rows come off the wire as the CBOR maps of src/daemon/BtBridge.cpp (the GUI
 /// never links eMule::Bt). Updates are incremental — upsert/remove per push and
 /// a keyed merge per poll — so selection and scroll survive the once-a-second
 /// refresh, as in UsenetQueueModel.
+///
+/// Multi-file torrents get one child row per file. Files are not part of the
+/// torrent row: they come from GetTorrentDetails, asked for when a torrent is
+/// expanded (fetchMore -> filesWanted). internalId of a child = its torrent's
+/// key (stable, never a row number), 0 = top level.
 
-#include <QAbstractTableModel>
+#include <QAbstractItemModel>
 #include <QByteArray>
+#include <QCborArray>
 #include <QCborMap>
+#include <QHash>
 #include <QList>
 #include <QString>
 
@@ -37,6 +44,9 @@ enum class TorrentState : int {
 
 /// Downloading, metadata, checking or moving: the torrent is doing something.
 [[nodiscard]] bool torrentStateActive(TorrentState state);
+
+/// Localized name of a libtorrent file priority 0..7.
+[[nodiscard]] QString torrentFilePriorityName(int priority);
 
 /// What TorrentProgressDelegate reads off the Progress column.
 enum TorrentBarRoles : int {
@@ -97,7 +107,16 @@ struct TorrentRow {
 /// Decode one GetTorrents / PushTorrentUpdate row.
 [[nodiscard]] TorrentRow torrentRowFromCbor(const QCborMap& m);
 
-class TorrentListModel : public QAbstractTableModel {
+/// One file of a torrent, as a child row. Pad files are left out.
+struct TorrentFileRow {
+    int index = -1;      ///< libtorrent file index
+    QString path;        ///< inside the torrent, '/' separated
+    qint64 size = 0;
+    qint64 done = 0;
+    int priority = 4;    ///< 0 skip .. 7 maximum
+};
+
+class TorrentListModel : public QAbstractItemModel {
     Q_OBJECT
 
 public:
@@ -117,10 +136,15 @@ public:
         ColCount
     };
 
-    using QAbstractTableModel::QAbstractTableModel;
+    using QAbstractItemModel::QAbstractItemModel;
 
+    [[nodiscard]] QModelIndex index(int row, int column, const QModelIndex& parent = {}) const override;
+    [[nodiscard]] QModelIndex parent(const QModelIndex& child) const override;
     [[nodiscard]] int rowCount(const QModelIndex& parent = {}) const override;
     [[nodiscard]] int columnCount(const QModelIndex& parent = {}) const override;
+    [[nodiscard]] bool hasChildren(const QModelIndex& parent = {}) const override;
+    [[nodiscard]] bool canFetchMore(const QModelIndex& parent) const override;
+    void fetchMore(const QModelIndex& parent) override;
     [[nodiscard]] QVariant data(const QModelIndex& index, int role = Qt::DisplayRole) const override;
     [[nodiscard]] QVariant headerData(int section, Qt::Orientation orientation,
                                       int role = Qt::DisplayRole) const override;
@@ -138,13 +162,43 @@ public:
     [[nodiscard]] int rowOf(const QString& id) const;
     [[nodiscard]] int count() const { return static_cast<int>(m_rows.size()); }
 
+    /// Torrent id of @p index, a torrent or one of its files.
+    [[nodiscard]] QString idOf(const QModelIndex& index) const;
+    /// The file of a child @p index, else nullptr.
+    [[nodiscard]] const TorrentFileRow* fileAt(const QModelIndex& index) const;
+    /// Whether the files of @p id were loaded (expanded once).
+    [[nodiscard]] bool hasFiles(const QString& id) const;
+
+    /// The `files` array of a GetTorrentDetails reply: replace @p id's children.
+    void setFiles(const QString& id, const QCborArray& files);
+    /// Priorities of every file of @p id by file index (pad files too), for
+    /// SetTorrentFilePriorities. Empty before setFiles().
+    [[nodiscard]] QList<int> priorities(const QString& id) const;
+
+signals:
+    /// A torrent was expanded and its files are not loaded yet.
+    void filesWanted(const QString& id);
+
 private:
+    struct FileSet {
+        std::vector<TorrentFileRow> files;   ///< child rows, no pad files
+        QList<int> priorities;               ///< by file index, pad files too
+    };
+
+    [[nodiscard]] int rowOfKey(quintptr key) const;
+    [[nodiscard]] const TorrentRow* parentRowOf(const QModelIndex& child) const;
+    [[nodiscard]] QVariant fileData(const TorrentRow& r, const TorrentFileRow& f,
+                                    int column, int role) const;
+
     [[nodiscard]] QVariant displayData(const TorrentRow& r, int column) const;
     [[nodiscard]] QVariant sortData(const TorrentRow& r, int column) const;
     [[nodiscard]] QVariant barData(const TorrentRow& r, int role) const;
     [[nodiscard]] QString statusText(const TorrentRow& r) const;
 
     std::vector<TorrentRow> m_rows;
+    std::vector<quintptr> m_keys;            ///< parallel to m_rows
+    QHash<quintptr, FileSet> m_files;        ///< by key, loaded torrents only
+    quintptr m_nextKey = 1;
 };
 
 } // namespace eMule

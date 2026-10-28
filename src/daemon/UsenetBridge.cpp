@@ -400,8 +400,19 @@ QCborMap inspectNzb(const QByteArray& data, const QString& name, QString& error)
     }
 
     QCborArray files;
+    // release facts for the Details view: first poster/date, all groups
+    QString poster;
+    qint64 date = 0;
+    QStringList groups;
     for (int i = 0; i < nzb.files.size(); ++i) {
         const usenet::NzbFileInfo& info = nzb.files.at(i);
+        if (poster.isEmpty())
+            poster = info.poster;
+        if (info.date > 0 && (date == 0 || info.date < date))
+            date = info.date;
+        for (const auto& g : info.groups)
+            if (!groups.contains(g))
+                groups.append(g);
         // The same key the queue widens a skip by, so the dialog can check a
         // whole set at once and agree with what the daemon will do.
         const auto position = usenet::UsenetUnpacker::volumePositionOf(info.fileName);
@@ -411,11 +422,19 @@ QCborMap inspectNzb(const QByteArray& data, const QString& name, QString& error)
             {QStringLiteral("size"),   static_cast<qint64>(info.encodedBytes())},
             {QStringLiteral("isPar2"), info.isPar2()},
             {QStringLiteral("setKey"), position.index >= 0 ? position.baseName : QString()},
+            {QStringLiteral("segments"), static_cast<qint64>(info.segments.size())},
+            {QStringLiteral("missingSegments"), info.missingSegmentCount()},
         });
     }
     return QCborMap{
-        {QStringLiteral("name"),  name.isEmpty() ? nzb.name : name},
-        {QStringLiteral("files"), files},
+        {QStringLiteral("name"),      name.isEmpty() ? nzb.name : name},
+        {QStringLiteral("files"),     files},
+        {QStringLiteral("poster"),    poster},
+        {QStringLiteral("groups"),    QCborArray::fromStringList(groups)},
+        {QStringLiteral("date"),      date},
+        {QStringLiteral("articles"),  nzb.segmentCount()},
+        {QStringLiteral("totalSize"), static_cast<qint64>(nzb.totalEncodedBytes())},
+        {QStringLiteral("password"),  !nzb.password.isEmpty()},
     };
 }
 

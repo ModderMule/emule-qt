@@ -10,6 +10,7 @@
 #include "controls/SearchResultsProxy.h"
 #include "dialogs/MetaAccountDialog.h"
 #include "dialogs/WebLinksDialog.h"
+#include "utils/Ed2kLinkImporter.h"
 #include "utils/ViewSelection.h"
 #include "IpcProtocol.h"
 
@@ -21,6 +22,8 @@
 #include <QHeaderView>
 #include <QLabel>
 #include <QLineEdit>
+#include <QMenu>
+#include <QTimer>
 #include <QPushButton>
 #include <QSignalSpy>
 #include <QSortFilterProxyModel>
@@ -92,6 +95,7 @@ private slots:
     void webAndContainerRows();
     void webLinksDialog_listsAndCopies();
     void webLinksDialog_listsOnionLinks();
+    void webLinksDialog_downloadLabelAndMenu();
     void alternativeNamesAreChildRows();
     void refreshKeepsExpansionAndSelection();
     void mergeTouchesOnlyTheChangedRows();
@@ -487,7 +491,7 @@ void tst_MetaSearchGui::webLinksDialog_listsAndCopies()
     auto* list = dlg.findChild<QTreeWidget*>();
     QVERIFY(list);
     QCOMPARE(list->topLevelItemCount(), 2);
-    QCOMPARE(list->topLevelItem(0)->text(4), QStringLiteral("https://a.test/f/1"));
+    QCOMPARE(list->topLevelItem(0)->text(list->columnCount() - 1), QStringLiteral("https://a.test/f/1"));
     QCOMPARE(list->topLevelItem(0)->text(0), QStringLiteral("1"));   // file numbers count from 1
     QVERIFY(!dlg.findChild<QLabel*>(QStringLiteral("onionNote")));   // no onion link, no Tor hint
     QVERIFY(list->topLevelItem(1)->text(2).isEmpty());                // no size hint
@@ -514,7 +518,7 @@ void tst_MetaSearchGui::webLinksDialog_listsOnionLinks()
     auto* list = dlg.findChild<QTreeWidget*>();
     QVERIFY(list);
     QCOMPARE(list->topLevelItemCount(), 1);
-    QCOMPARE(list->topLevelItem(0)->text(4), onion);
+    QCOMPARE(list->topLevelItem(0)->text(list->columnCount() - 1), onion);
     QCOMPARE(list->topLevelItem(0)->text(3), QStringLiteral("onionhost"));
     QVERIFY(QUrl(onion, QUrl::StrictMode).isValid());   // what Open in Browser hands on
     auto* note = dlg.findChild<QLabel*>(QStringLiteral("onionNote"));
@@ -526,6 +530,77 @@ void tst_MetaSearchGui::webLinksDialog_listsOnionLinks()
     copy->click();
     QCOMPARE(QApplication::clipboard()->text(), onion);
     shoot(&dlg, QStringLiteral("web-links-onion.png"));
+}
+
+void tst_MetaSearchGui::webLinksDialog_downloadLabelAndMenu()
+{
+    QList<QStringList> sent;
+    QString sentPackage;
+    Ed2kLinkImporter::setHosterLinkHandler([&sent, &sentPackage](const QList<QStringList>& files,
+                                                                 const QString& package, QWidget*) {
+                                               sent = files;
+                                               sentPackage = package;
+                                           },
+                                           [] { return true; });
+    const auto link = [](const QString& url, int file) {
+        return QCborMap{{QStringLiteral("url"), url}, {QStringLiteral("file"), file}, {QStringLiteral("hoster"), QStringLiteral("a")}};
+    };
+    const auto button = [](QDialog& d) {
+        return visibleChild<QPushButton>(&d, [](QPushButton* b) { return b->text().startsWith(WebLinksDialog::tr("Download")); });
+    };
+    {
+        // one link: plain Download
+        const QCborMap one{{QStringLiteral("links"), QCborArray{link(QStringLiteral("https://a.test/1"), 0)}}};
+        WebLinksDialog dlg(QStringLiteral("row"), one, {}, QStringLiteral("row.txt"), nullptr);
+        auto* b = button(dlg);
+        QVERIFY(b);
+        QCOMPARE(b->text(), WebLinksDialog::tr("Download"));
+    }
+    const QCborMap three{{QStringLiteral("links"), QCborArray{link(QStringLiteral("https://a.test/1"), 0),
+                                                               link(QStringLiteral("https://b.test/1"), 0),
+                                                               link(QStringLiteral("https://a.test/2"), 1)}}};
+    WebLinksDialog dlg(QStringLiteral("row"), three, {}, QStringLiteral("row.txt"), nullptr);
+    auto* b = button(dlg);
+    QVERIFY(b);
+    QCOMPARE(b->text(), WebLinksDialog::tr("Download (all)"));
+    auto* list = dlg.findChild<QTreeWidget*>();
+    QVERIFY(list);
+    list->topLevelItem(0)->setSelected(true);
+    list->topLevelItem(2)->setSelected(true);
+    QCOMPARE(b->text(), WebLinksDialog::tr("Download (%1)").arg(2));
+
+    // the menu: Download (bold, an icon) and Deselect All
+    QStringList texts;
+    bool icons = true;
+    QString bold;
+    QTimer::singleShot(50, [&] {
+        auto* menu = qobject_cast<QMenu*>(QApplication::activePopupWidget());
+        if (!menu)
+            return;
+        for (QAction* a : menu->actions()) {
+            texts << a->text();
+            icons = icons && !a->icon().isNull();
+        }
+        if (menu->defaultAction())
+            bold = menu->defaultAction()->text();
+        // Deselect All
+        menu->actions().last()->trigger();
+        menu->close();
+    });
+    const QRect r = list->visualItemRect(list->topLevelItem(0));
+    QMetaObject::invokeMethod(list, "customContextMenuRequested", Q_ARG(QPoint, r.center()));
+    QCOMPARE(texts, (QStringList{WebLinksDialog::tr("Download"), WebLinksDialog::tr("Deselect All")}));
+    QVERIFY(icons);
+    QCOMPARE(bold, WebLinksDialog::tr("Download"));
+    QVERIFY(list->selectedItems().isEmpty());
+    QCOMPARE(b->text(), WebLinksDialog::tr("Download (all)"));
+
+    // Download takes the selection: file 2 only
+    list->topLevelItem(2)->setSelected(true);
+    b->click();
+    QCOMPARE(sent, (QList<QStringList>{{QStringLiteral("https://a.test/2")}}));
+    QCOMPARE(sentPackage, QStringLiteral("row"));   // the row's name is the package, even for one file
+    Ed2kLinkImporter::setHosterLinkHandler({}, {});
 }
 
 namespace {

@@ -47,6 +47,8 @@ struct ListKeyHandlers {
     /// Alt+Right / Alt+Left expand / collapse the current tree row
     /// (TransferWnd.cpp:1153, SearchListCtrl.cpp:1517). Numpad +/- is native.
     bool expandKeys = false;
+    /// Esc clears the selection; with none, the key travels on (a dialog's Esc still closes it).
+    bool escapeDeselects = false;
 };
 
 /// Give @p view MFC's two list accelerators: Enter runs the list's primary

@@ -7,7 +7,9 @@
 
 #include "IpcClientHandler.h"
 
+#include "BtBridge.h"
 #include "MetaSearchService.h"
+#include "UsenetBridge.h"
 #include "UsenetSession.h"
 #include "queue/UsenetQueue.h"
 
@@ -157,9 +159,11 @@ void IpcClientHandler::handleFetchMetaFile(const IpcMessage& msg)
 
     QPointer<IpcClientHandler> self(this);
     const int seqId = msg.seqId();
+    // field 3: also parse it, for the search row's Details
+    const bool inspect = msg.fieldBool(3);
 
     MetaSearchService::instance().fetch(*row->target, row->hash16, row->catalogId, kMaxIpcMetafile,
-              [self, seqId, r = *row](MetaStatus status, const QString& error, const QCborMap& meta,
+              [self, seqId, inspect, r = *row](MetaStatus status, const QString& error, const QCborMap& meta,
                                        const enodemeta::pb::MetaFile& file) {
         if (!self)
             return;
@@ -176,6 +180,18 @@ void IpcClientHandler::handleFetchMetaFile(const IpcMessage& msg)
         // verified already, so it parses; the GUI never reads a uri-list itself
         if (r.kind == enodemeta::Kind::Web)
             reply.insert(QStringLiteral("links"), webLinksMap(file.content()));
+        if (inspect) {
+            QString inspectError;
+            QCborMap inspection;
+            if (r.kind == enodemeta::Kind::BtV1 || r.kind == enodemeta::Kind::BtV2)
+                inspection = BtBridge::inspectTorrent(file.content(), inspectError);
+            else if (r.kind == enodemeta::Kind::Nzb)
+                inspection = UsenetBridge::inspectNzb(file.content(), {}, inspectError);
+            if (!inspection.isEmpty())
+                reply.insert(QStringLiteral("inspection"), inspection);
+            else if (!inspectError.isEmpty())
+                reply.insert(QStringLiteral("inspectError"), inspectError);
+        }
         self->sendMessage(IpcMessage::makeResult(seqId, true, reply));
     });
 }

@@ -331,11 +331,12 @@ bool Ed2kLinkImporter::hosterReady()
     return s_hosterLinkHandler && (!s_hosterReady || s_hosterReady());
 }
 
-bool Ed2kLinkImporter::sendHosterLinks(const QList<QStringList>& files, QWidget* parent)
+bool Ed2kLinkImporter::sendHosterLinks(const QList<QStringList>& files, QWidget* parent,
+                                       const QString& package)
 {
     if (!hosterReady() || files.isEmpty())
         return false;
-    s_hosterLinkHandler(files, parent);
+    s_hosterLinkHandler(files, package, parent);
     return true;
 }
 

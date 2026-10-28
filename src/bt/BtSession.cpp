@@ -482,6 +482,14 @@ BtAddResult BtSession::addTorrentFile(const QByteArray& data, const QString& sav
     return d->add(*this, std::move(*atp), savePath, paused);
 }
 
+std::expected<BtTorrentPreview, QString> BtSession::inspectTorrentFile(const QByteArray& data)
+{
+    auto atp = BtAddSource::fromTorrentFile(data);
+    if (!atp)
+        return std::unexpected(atp.error());
+    return BtTorrentView::preview(*atp);
+}
+
 BtAddResult BtSession::addMagnet(const QString& uri, const QString& savePath, bool paused)
 {
     if (!d->ses)

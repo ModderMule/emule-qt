@@ -209,6 +209,7 @@ QCborMap statusToCbor()
         {QStringLiteral("balance"), st.balance ? i64(*st.balance) : qint64(-1)},
         {QStringLiteral("mature"), st.mature},
         {QStringLiteral("overdrawn"), st.overdrawn},
+        {QStringLiteral("autoActive"), st.autoActive},
         {QStringLiteral("lastTxWhat"), qint64(st.lastTxWhat)},
         {QStringLiteral("lastTxState"), qint64(st.lastTxState)},
         {QStringLiteral("lastTxRevert"), qint64(st.lastTxRevert)},

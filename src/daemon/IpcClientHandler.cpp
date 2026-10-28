@@ -13,6 +13,9 @@
 #include "CoreNotifierBridge.h"
 #include "SharedFileRows.h"
 #include "DaemonApp.h"
+#ifdef EMULE_HAVE_ED3K
+#include "Ed3kStore.h"
+#endif
 
 #include "ipc/CborSerializers.h"
 #include "transfer/ImportParts.h"
@@ -391,6 +394,7 @@ void IpcClientHandler::onMessageReceived(const IpcMessage& msg)
     case IpcMsgType::SetSharedFilePriority: handleSetSharedFilePriority(msg); break;
     case IpcMsgType::ReloadSharedFiles: handleReloadSharedFiles(msg); break;
     case IpcMsgType::RehashAllSharedFiles: handleRehashAllSharedFiles(msg); break;
+    case IpcMsgType::MigrateEd2kCompat:    handleMigrateEd2kCompat(msg); break;
     case IpcMsgType::GetEd2kLink:       handleGetEd2kLink(msg); break;
     case IpcMsgType::GetFriends:           handleGetFriends(msg); break;
     case IpcMsgType::AddFriend:            handleAddFriend(msg); break;
@@ -469,6 +473,7 @@ void IpcClientHandler::onMessageReceived(const IpcMessage& msg)
     case IpcMsgType::GetIndexerFeeds:      handleGetIndexerFeeds(msg); break;
     case IpcMsgType::SetIndexerFeeds:      handleSetIndexerFeeds(msg); break;
     case IpcMsgType::PollIndexerFeedNow:   handlePollIndexerFeedNow(msg); break;
+    case IpcMsgType::InspectIndexerResult: handleInspectIndexerResult(msg); break;
 
     case IpcMsgType::GetNewsServers:       handleGetNewsServers(msg); break;
     case IpcMsgType::SetNewsServers:       handleSetNewsServers(msg); break;
@@ -1455,6 +1460,66 @@ void IpcClientHandler::handleRehashAllSharedFiles(const IpcMessage& msg)
     sendMessage(IpcMessage::makeResult(msg.seqId(), true, QCborValue(queued)));
 }
 
+void IpcClientHandler::handleMigrateEd2kCompat(const IpcMessage& msg)
+{
+#ifdef EMULE_HAVE_ED3K
+    const bool apply = msg.fieldBool(0);
+    QString error;
+    const auto derived = ed3k::derivedUserHash(thePrefs.configDir(), &error);
+    if (!derived) {
+        sendMessage(IpcMessage::makeResult(msg.seqId(), false, QCborMap{{QStringLiteral("error"), error}}));
+        return;
+    }
+    // §14.1: ed3k UDP on the eD2K TCP port number; eD2K UDP too, so the two share a socket
+    const uint16 port = static_cast<uint16>(thePrefs.port());
+    const uint16 udpFrom = static_cast<uint16>(thePrefs.udpPort());
+    const uint16 ed3kFrom = thePrefs.ed3kUdpPort();
+    const bool hashChange = *derived != thePrefs.userHash();
+    // held by another program, or by BitTorrent's UDP; ours (eD2K or ed3k) moves over
+    const bool busy = (udpFrom != port && ed3kFrom != port && !Preferences::udpPortFree(port))
+                      || (thePrefs.btEnabled() && thePrefs.btListenPort() == port);
+    const bool restart = apply && !busy && hashChange;
+    QCborMap plan{{QStringLiteral("hashChange"), hashChange},
+                  {QStringLiteral("port"), port},
+                  {QStringLiteral("udpFrom"), udpFrom},
+                  {QStringLiteral("ed3kFrom"), ed3kFrom},
+                  {QStringLiteral("busy"), busy},
+                  {QStringLiteral("restart"), restart}};
+    if (!apply || busy) {
+        sendMessage(IpcMessage::makeResult(msg.seqId(), true, plan));
+        return;
+    }
+
+    if (hashChange) {
+        logInfo(QStringLiteral("eD2K compat: user hash %1 replaces %2 (derived from the ed3k node ID)")
+                    .arg(encodeBase16(std::span<const uint8>(derived->data(), derived->size())),
+                         encodeBase16(std::span<const uint8>(thePrefs.userHash().data(), 16))));
+        thePrefs.setUserHash(*derived);
+    }
+    PrefChanges changes;
+    changes.append({QStringLiteral("udpPort"), static_cast<qint64>(port)});
+    changes.append({QStringLiteral("ed3kUdpPort"), static_cast<qint64>(port)});
+    // saves, the user hash too; moves the sockets unless the core restarts anyway
+    const PrefApplyOutcome outcome = applyPreferenceChanges(changes);
+    if (!outcome.saved) {
+        sendMessage(IpcMessage::makeResult(msg.seqId(), false,
+                                           QCborMap{{QStringLiteral("error"), QStringLiteral("preferences not saved")}}));
+        return;
+    }
+    if (outcome.ed3kChanged)
+        emit ed3kConfigChanged();
+    logInfo(QStringLiteral("eD2K compat: TCP, UDP and ed3k on port %1 (UDP was %2, ed3k %3)")
+                .arg(port).arg(udpFrom).arg(ed3kFrom));
+    sendMessage(IpcMessage::makeResult(msg.seqId(), true, plan));
+    // the new user hash from the start of every session (server login, Kad, obfuscation keys)
+    if (restart)
+        DaemonApp::requestRestart();
+#else
+    sendMessage(IpcMessage::makeResult(msg.seqId(), false,
+                                       QCborMap{{QStringLiteral("error"), QStringLiteral("no ed3k in this build")}}));
+#endif
+}
+
 void IpcClientHandler::handleGetEd2kLink(const IpcMessage& msg)
 {
     const QCborArray hashes = msg.fieldArray(0);
@@ -2159,6 +2224,13 @@ IpcClientHandler::PrefApplyOutcome IpcClientHandler::applyPreferenceChanges(cons
 
     outcome.saved = thePrefs.save();
 
+    // eD2K UDP onto the ed3k port: ed3k moves to the shared socket (§14.1)
+    const uint16 newUdp = static_cast<uint16>(thePrefs.udpPort());
+    if (newUdp != 0 && before.value(QStringLiteral("udpPort")).toInteger() != newUdp) {
+        if (theApp.yieldEd3kUdpPort)
+            theApp.yieldEd3kUdpPort(newUdp);
+        outcome.ed3kChanged = true;
+    }
     // Before the ServerConnect config below reads the bound port. A new bind
     // selection closes every socket and reopens it on the new interface; done after
     // the loop, so the ports of the same patch come along whatever the key order.
@@ -4858,6 +4930,10 @@ QCborMap indexerResultToCbor(const indexer::IndexerResult& result, const QString
         {QStringLiteral("seeders"),   result.seeders},
         {QStringLiteral("peers"),     result.peers},
         {QStringLiteral("isUsenet"),  result.isUsenet()},
+        // a .torrent/.nzb to fetch, not just a magnet: what Details needs
+        {QStringLiteral("hasFile"),
+         result.downloadUrl.isValid() && !result.downloadUrl.isEmpty()
+             && result.downloadUrl.scheme().compare(QLatin1StringView("magnet"), Qt::CaseInsensitive) != 0},
     };
     // A password the indexer hands over is no obstacle, and an unknown flag no finding.
     insertFakeVerdict(row, assessFile(
@@ -5215,14 +5291,24 @@ bool categoryExists(int category)
     return category >= 0 && category < int(thePrefs.categoryCount());
 }
 
+/// A .torrent (bencoded dictionary) rather than an .nzb. An aggregator's rows
+/// can be either kind, so the payload decides, not the account.
+bool isTorrentPayload(const QByteArray& payload)
+{
+    qsizetype i = 0;
+    while (i < payload.size() && QChar::isSpace(uchar(payload.at(i))))
+        ++i;
+    return i < payload.size() && payload.at(i) == 'd';
+}
+
 } // namespace
 
 void IpcClientHandler::handleGrabIndexerResult(const IpcMessage& msg)
 {
-    if (!indexer::theIndexerSearchList || !usenet::theUsenetSession
-        || !usenet::theUsenetSession->queue()) {
+    // the Usenet engine is checked once the payload says it is an .nzb
+    if (!indexer::theIndexerSearchList) {
         sendMessage(IpcMessage::makeResult(msg.seqId(), false,
-                                           QCborValue(tr("The Usenet engine is not running."))));
+                                           QCborValue(tr("No indexer is configured."))));
         return;
     }
 
@@ -5259,6 +5345,20 @@ void IpcClientHandler::handleGrabIndexerResult(const IpcMessage& msg)
             return;
         }
 
+        // Torznab row: to the Torrents tab
+        if (isTorrentPayload(payload)) {
+            const QCborMap added = BtBridge::addTorrentData(payload, choices.paused);
+            const int outcome = int(added.value(QStringLiteral("outcome")).toInteger(4));
+            const bool addedOk = outcome == 0 || outcome == 1;   // added, or already there
+            IpcMessage reply = IpcMessage::makeResult(
+                seqId, addedOk,
+                QCborValue(addedOk ? added.value(QStringLiteral("id")).toString()
+                                   : added.value(QStringLiteral("message")).toString()));
+            reply.append(QStringLiteral("torrent"));
+            self->sendMessage(std::move(reply));
+            return;
+        }
+
         if (!usenet::theUsenetSession || !usenet::theUsenetSession->queue()) {
             self->sendMessage(IpcMessage::makeResult(
                 seqId, false, QCborValue(tr("The Usenet engine is not running."))));
@@ -5277,6 +5377,47 @@ void IpcClientHandler::handleGrabIndexerResult(const IpcMessage& msg)
             &outcome);
         self->sendAddNzbResult(seqId, itemId, addError, outcome,
                                usenet::UsenetAddOrigin::IndexerGrab);
+    });
+}
+
+void IpcClientHandler::handleInspectIndexerResult(const IpcMessage& msg)
+{
+    if (!indexer::theIndexerSearchList) {
+        sendMessage(IpcMessage::makeResult(msg.seqId(), false,
+                                           QCborValue(tr("No indexer is configured."))));
+        return;
+    }
+
+    const auto searchId = static_cast<quint32>(msg.fieldInt(0));
+    const QString resultId = msg.fieldString(1);
+    QPointer<IpcClientHandler> self(this);
+    const int seqId = msg.seqId();
+
+    indexer::theIndexerSearchList->grab(
+        searchId, resultId,
+        [self, seqId](bool ok, const QByteArray& payload, const QString& name, const QString&,
+                      const QString& error) {
+        if (!self)
+            return;
+        if (!ok || payload.isEmpty()) {
+            self->sendMessage(IpcMessage::makeResult(
+                seqId, false, QCborValue(error.isEmpty() ? tr("The indexer returned no file.") : error)));
+            return;
+        }
+        const bool torrent = isTorrentPayload(payload);
+        QString inspectError;
+        const QCborMap inspection = torrent ? BtBridge::inspectTorrent(payload, inspectError)
+                                            : UsenetBridge::inspectNzb(payload, name, inspectError);
+        if (inspection.isEmpty()) {
+            self->sendMessage(IpcMessage::makeResult(
+                seqId, false,
+                QCborValue(inspectError.isEmpty() ? tr("The file could not be read.") : inspectError)));
+            return;
+        }
+        self->sendMessage(IpcMessage::makeResult(
+            seqId, true,
+            QCborMap{{QStringLiteral("kind"), torrent ? QStringLiteral("torrent") : QStringLiteral("nzb")},
+                     {QStringLiteral("inspection"), inspection}}));
     });
 }
 

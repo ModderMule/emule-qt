@@ -25,11 +25,14 @@
 #include <QByteArray>
 #include <QElapsedTimer>
 #include <QHostAddress>
+#include <QNetworkDatagram>
 #include <QObject>
+#include <QPointer>
 #include <QString>
 #include <QStringList>
 #include <QThreadPool>
 #include <QTimer>
+#include <QUdpSocket>
 
 #include <cstdint>
 #include <functional>
@@ -37,7 +40,6 @@
 #include <optional>
 #include <vector>
 
-class QUdpSocket;
 
 namespace eMule::ed3k {
 
@@ -60,6 +62,9 @@ struct Ed3kSettings {
     /// of one machine do not find each other over the real LAN
     bool lan = false;
     Ed3kLan::Hooks lanHooks;     ///< tests: LAN interfaces and sends by hand
+    /// non-null: the eD2K UDP socket bound to udpPort (§14.1); nothing is bound here and its
+    /// owner hands in what is not eD2K (offerDatagram)
+    QPointer<QUdpSocket> sharedSocket;
 };
 
 /// What GetEd3kStatus shows (Ed3kBridge); all 0 / empty while not running.
@@ -96,6 +101,8 @@ public:
     [[nodiscard]] bool isRunning() const { return m_engine != nullptr; }
     /// The bound UDP port; 0 when not running.
     [[nodiscard]] std::uint16_t udpPort() const;
+    /// A datagram from the shared socket (settings().sharedSocket): true = ed3k took it.
+    bool offerDatagram(const QNetworkDatagram& d);
     /// The node ID in hex (public); empty when not running.
     [[nodiscard]] QString nodeIdHex() const;
     [[nodiscard]] std::optional<::ed3k::NodeId> nodeId() const;
@@ -193,7 +200,8 @@ private:
     [[nodiscard]] QString filePath(const QString& name) const;
 
     std::unique_ptr<::ed3k::Engine> m_engine;
-    std::unique_ptr<QUdpSocket> m_socket;
+    std::unique_ptr<QUdpSocket> m_ownSocket;   ///< null on a shared socket
+    QPointer<QUdpSocket> m_socket;             ///< own or shared
     std::unique_ptr<Ed3kHttp> m_http;
     std::unique_ptr<Ed3kLan> m_lan;
     Ed3kSettings m_settings;
@@ -206,6 +214,7 @@ private:
     QString m_dir;
     std::uint16_t m_port = 0;
     bool m_pumping = false;
+    bool m_pumpQueued = false;   ///< a pump after offered datagrams is on its way
     bool m_pumpAgain = false;
     bool m_badDirty = false;
     std::vector<std::function<void(::ed3k::Engine&, ::ed3k::Now)>> m_posted;

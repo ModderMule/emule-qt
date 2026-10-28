@@ -86,6 +86,14 @@ MetaResultActions::Row metaRow(const SearchResultRow& r)
     return {.hash = r.hash, .name = r.fileName, .kind = r.metaKind, .ref = r.metaRef(), .magnet = r.magnet};
 }
 
+/// Whether a row has a Details view: the eD2K sheet, a torrent's or NZB's fetched
+/// file, or a web row's links. A magnet-only torrent, a link container and an
+/// ed3k row have none.
+bool hasDetails(const SearchResultRow& r)
+{
+    return !r.isMeta() || r.isUsenet() || r.isWeb() || (r.isTorrent() && !r.isMagnetOnly());
+}
+
 /// UiState key for the shared search-results header layout (all tabs share it).
 const QString kSearchHeaderKey = QStringLiteral("searchResults");
 
@@ -894,6 +902,7 @@ void SearchPanel::onIndexerResultsPush(const IpcMessage& msg)
         row.seeders     = static_cast<int>(map.value(QStringLiteral("seeders")).toInteger(-1));
         row.peers       = static_cast<int>(map.value(QStringLiteral("peers")).toInteger(-1));
         row.isUsenet    = map.value(QStringLiteral("isUsenet")).toBool(true);
+        row.hasFile     = map.value(QStringLiteral("hasFile")).toBool(true);
         row.confidence  = map.value(QStringLiteral("confidence")).toString();
         row.fakeScore   = static_cast<int>(map.value(QStringLiteral("fakeScore")).toInteger());
         for (const auto& reason : map.value(QStringLiteral("fakeReasons")).toArray())
@@ -972,22 +981,24 @@ void SearchPanel::requestCategories()
 
 void SearchPanel::sendIndexerGrab(int proxyRow, bool force, int category)
 {
-    if (!m_ipc || !m_ipc->isConnected())
-        return;
-
     auto* tab = currentTab();
     if (!tab || !tab->isIndexer())
         return;
 
     const auto srcIdx = tab->proxy->mapToSource(tab->proxy->index(proxyRow, 0));
-    const int srcRow = srcIdx.row();
-    const auto* result = tab->indexerModel->resultAt(srcRow);
-    if (!result)
+    if (const auto* result = tab->indexerModel->resultAt(srcIdx.row()))
+        grabIndexerResult(tab->searchID, *result, QPointer(tab->indexerModel), force, category);
+}
+
+void SearchPanel::grabIndexerResult(uint32_t searchID, const IndexerResultRow& result,
+                                    QPointer<IndexerResultsModel> model, bool force, int category)
+{
+    if (!m_ipc || !m_ipc->isConnected())
         return;
 
     IpcMessage msg(IpcMsgType::GrabIndexerResult);
-    msg.append(static_cast<qint64>(tab->searchID));
-    msg.append(result->id);
+    msg.append(static_cast<qint64>(searchID));
+    msg.append(result.id);
     // Asked and answered. Carried through the fetch so a yes does not spend a
     // second of the indexer's daily grabs re-asking the same question.
     msg.append(force);
@@ -995,10 +1006,9 @@ void SearchPanel::sendIndexerGrab(int proxyRow, bool force, int category)
     // "nobody chose" and auto-categorises.
     msg.append(qint64(category));
 
-    const QString title = result->title;
+    const QString title = result.title;
     // The model, not the tab index and row: tabs close and results refresh while the
     // reply is out, and a stale index marks some other row — or no model at all.
-    const QPointer<IndexerResultsModel> model(tab->indexerModel);
     m_ipc->sendRequest(std::move(msg), [this, title, model](const IpcMessage& resp) {
         if (!resp.isValid())
             return;   // connection dropped: nothing was queued, and nothing refused
@@ -1020,6 +1030,11 @@ void SearchPanel::sendIndexerGrab(int proxyRow, bool force, int category)
                                          tr("Could not queue \"%1\": %2").arg(title, reason));
                 }
             });
+            return;
+        }
+        // a Torznab row's .torrent went to the Torrents tab
+        if (resp.fieldString(2) == QLatin1String("torrent")) {
+            StatusBarNotifier::post(tr("Added \"%1\" to the Torrents tab.").arg(title), 5000);
             return;
         }
         if (model)
@@ -1245,6 +1260,24 @@ void SearchPanel::onResultContextMenu(const QPoint& pos)
             }
         }
 
+        // Details: the fetched .torrent/.nzb. Extended controls only, like the eD2K sheet.
+        if (thePrefs.showExtControls()) {
+            bool hasFile = false;
+            if (singleSel) {
+                const auto src = indexerTab->proxy->mapToSource(selection.first());
+                if (const auto* row = indexerTab->indexerModel->resultAt(src.row()))
+                    hasFile = row->hasFile;
+            }
+            QAction* details = m_contextMenu->addAction(menuIcon("FileInfo.ico"), tr("Details..."));
+            // a magnet-only Torznab row has no file to show
+            details->setEnabled(singleSel && hasFile);
+            connect(details, &QAction::triggered, this, [this] {
+                const auto rows = m_resultView->selectionModel()->selectedRows();
+                if (rows.size() == 1)
+                    showResultDetails(rows.first());
+            });
+        }
+
         QAction* copyName = m_contextMenu->addAction(tr("Copy &Name"));
         copyName->setEnabled(singleSel);
         connect(copyName, &QAction::triggered, this, [this] {
@@ -1275,6 +1308,7 @@ void SearchPanel::onResultContextMenu(const QPoint& pos)
     bool anyContainer = false;
     bool anyMagnet = false;
     bool singleMeta = false;
+    bool singleHasDetails = false;
     QString singleHash;
     QString singleName;
     int64_t singleSize = 0;
@@ -1317,6 +1351,7 @@ void SearchPanel::onResultContextMenu(const QPoint& pos)
             singleName = result->fileName;
             singleSize = result->fileSize;
             singleMeta = result->isMeta();
+            singleHasDetails = hasDetails(*result);
         }
     }
 
@@ -1406,13 +1441,16 @@ void SearchPanel::onResultContextMenu(const QPoint& pos)
     setMenuDefaultAction(m_contextMenu, defaultAction);
 
     // Details... — extended controls only, exactly as MFC gates it, because the
-    // sheet's Metadata page is itself an extended-controls feature.
+    // sheet's Metadata page is itself an extended-controls feature. Torrent and
+    // Usenet rows show their fetched file, web rows their links; a magnet-only
+    // torrent or a link container has nothing to show.
     if (thePrefs.showExtControls()) {
         auto* detailsAction = m_contextMenu->addAction(menuIcon("FileInfo.ico"), tr("Details..."));
-        detailsAction->setEnabled(singleSel && tab && !singleMeta);
-        const uint32_t searchID = tab ? tab->searchID : 0;
-        connect(detailsAction, &QAction::triggered, this, [this, searchID, singleHash] {
-            fetchAndShowSearchDetails(searchID, singleHash, SearchDetailDialog::Metadata);
+        detailsAction->setEnabled(singleSel && tab && singleHasDetails);
+        connect(detailsAction, &QAction::triggered, this, [this] {
+            const auto rows = m_resultView->selectionModel()->selectedRows();
+            if (rows.size() == 1)
+                showResultDetails(rows.first());
         });
     }
 
@@ -1609,16 +1647,70 @@ void SearchPanel::showResultDetails(const QModelIndex& index)
     if (!thePrefs.showExtControls())
         return;
 
-    // The detail sheet is built on a SearchFile — hash, sources, ED2K media tags.
-    // An indexer row has none of them.
-    if (tab->isIndexer())
+    // An indexer row has no SearchFile: its Details is the fetched file
+    if (tab->isIndexer()) {
+        const auto src = tab->proxy->mapToSource(tab->proxy->index(index.row(), 0));
+        if (const auto* row = tab->indexerModel->resultAt(src.row()); row && row->hasFile)
+            showIndexerRowDetails(tab->searchID, *row, QPointer(tab->indexerModel));
         return;
+    }
 
     const auto* result = refAt(index).row;
-    if (!result)
+    if (!result || !hasDetails(*result))
         return;
+    if (result->isMeta()) {
+        showMetaRowDetails(tab->searchID, *result, QPointer(tab->model));
+        return;
+    }
 
     fetchAndShowSearchDetails(tab->searchID, result->hash, SearchDetailDialog::Metadata);
+}
+
+void SearchPanel::showMetaRowDetails(uint32_t searchID, const SearchResultRow& result,
+                                     QPointer<SearchResultsModel> model)
+{
+    const MetaResultActions::Row row = metaRow(result);
+    if (result.isWeb()) {
+        metaActions()->showWebLinks(searchID, {row});
+        return;
+    }
+    MetaResultDetailDialog::RowInfo info;
+    info.name = result.fileName;
+    info.torrent = result.isTorrent();
+    info.size = result.fileSize;
+    info.source = result.metaIndexer;
+    info.ageDays = result.metaAgeDays > 0 ? int(result.metaAgeDays) : -1;
+    QPointer<SearchPanel> self(this);
+    metaActions()->showDetails(searchID, row, info, [self, searchID, row, model] {
+        if (!self)
+            return;
+        // the daemon still has the file: no second fetch
+        if (row.isNzb())
+            self->metaActions()->downloadUsenet(searchID, {row}, 0, model);
+        else if (Ed2kLinkImporter::torrentsReady())
+            self->metaActions()->addTorrents(searchID, {row});
+        else
+            self->metaActions()->saveMetaFiles(searchID, {row});
+    });
+}
+
+void SearchPanel::showIndexerRowDetails(uint32_t searchID, const IndexerResultRow& result,
+                                        QPointer<IndexerResultsModel> model)
+{
+    MetaResultDetailDialog::RowInfo info;
+    info.name = result.title;
+    info.torrent = !result.isUsenet;
+    info.size = result.size;
+    info.source = result.indexerName;
+    info.seeders = result.seeders;
+    info.peers = result.peers;
+    info.ageDays = result.ageDays;
+    info.category = result.category;
+    QPointer<SearchPanel> self(this);
+    metaActions()->showIndexerDetails(searchID, result.id, info, [self, searchID, result, model] {
+        if (self)
+            self->grabIndexerResult(searchID, result, model, false);
+    });
 }
 
 void SearchPanel::onResultDoubleClicked(const QModelIndex& index)
@@ -2365,6 +2457,7 @@ QJsonObject indexerRowToJson(const IndexerResultRow& row)
     o[QStringLiteral("seeders")]           = row.seeders;
     o[QStringLiteral("peers")]             = row.peers;
     o[QStringLiteral("isUsenet")]          = row.isUsenet;
+    o[QStringLiteral("hasFile")]           = row.hasFile;
     o[QStringLiteral("knownType")]         = row.knownType;
     o[QStringLiteral("confidence")]        = row.confidence;
     o[QStringLiteral("fakeScore")]         = row.fakeScore;
@@ -2387,6 +2480,7 @@ IndexerResultRow indexerRowFromJson(const QJsonObject& r)
     row.seeders           = r[QStringLiteral("seeders")].toInt(-1);
     row.peers             = r[QStringLiteral("peers")].toInt(-1);
     row.isUsenet          = r[QStringLiteral("isUsenet")].toBool(true);
+    row.hasFile           = r[QStringLiteral("hasFile")].toBool(true);
     row.knownType         = r[QStringLiteral("knownType")].toInt();
     row.confidence        = r[QStringLiteral("confidence")].toString();
     row.fakeScore         = r[QStringLiteral("fakeScore")].toInt();
