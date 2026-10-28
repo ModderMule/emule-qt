@@ -93,6 +93,7 @@ public:
         PageEd3kHoster,
         PageEd3kNames,
         PageEd3kFilters,    // filter lists (Ed3kFilterPage)
+        PageEd3kAutoCredits, // "Credits" in the sidebar: autostart highspeed download
         PageCount
     };
 
@@ -121,6 +122,8 @@ private:
     void rehashAllSharedFiles();
     void setUdpOff(bool off);
     [[nodiscard]] int udpPortValue() const;
+    /// TCP and UDP (and ed3k) on one number: one "TCP/UDP" field; never split again here.
+    void setPortsJoined(bool joined);
     void setupSidebar();
     void setupPages();
     void setupButtons();
@@ -361,6 +364,9 @@ private:
     QSpinBox*  m_randomPortMaxSpin = nullptr;
     QSpinBox*  m_udpPortSpin = nullptr;
     bool       m_udpOff = false;   ///< udpPort 0 in the config file
+    QLabel*    m_tcpPortLabel = nullptr;
+    QLabel*    m_udpPortLabel = nullptr;
+    bool       m_portsJoined = false;
     /// Bitmask for the portMapProtocols pref: 1 = PCP, 2 = NAT-PMP, 4 = UPnP.
     [[nodiscard]] quint32 portMapProtocolMask() const;
 

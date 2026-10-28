@@ -425,6 +425,64 @@ QCborMap statusToCbor()
     return out;
 }
 
+QCborMap addTorrentData(const QByteArray& data, bool paused)
+{
+#ifdef EMULE_HAVE_BITTORRENT
+    if (s_session && s_session->isRunning())
+        return addResultToCbor(s_session->addTorrentFile(data, {}, paused));
+#else
+    Q_UNUSED(data)
+    Q_UNUSED(paused)
+#endif
+    return QCborMap{{QStringLiteral("outcome"), 3},   // BtAddOutcome::NotRunning
+                    {QStringLiteral("message"), QStringLiteral("The BitTorrent engine is not running.")}};
+}
+
+QCborMap inspectTorrent(const QByteArray& data, QString& error)
+{
+#ifdef EMULE_HAVE_BITTORRENT
+    const auto preview = bt::BtSession::inspectTorrentFile(data);
+    if (!preview) {
+        error = preview.error();
+        return {};
+    }
+    QCborArray files;
+    for (const auto& f : preview->files)
+        files.append(QCborMap{
+            {QStringLiteral("index"), f.index},
+            {QStringLiteral("path"), f.path},
+            {QStringLiteral("size"), f.size},
+            {QStringLiteral("pad"), f.pad},
+        });
+    QCborArray trackers;
+    for (const auto& t : preview->trackers)
+        trackers.append(QCborMap{{QStringLiteral("url"), t.url}, {QStringLiteral("tier"), t.tier}});
+    QCborArray webSeeds;
+    for (const auto& url : preview->webSeeds)
+        webSeeds.append(url);
+    return QCborMap{
+        {QStringLiteral("id"), preview->id},
+        {QStringLiteral("name"), preview->name},
+        {QStringLiteral("infoHashV1"), preview->hashV1},
+        {QStringLiteral("infoHashV2"), preview->hashV2},
+        {QStringLiteral("totalSize"), preview->totalSize},
+        {QStringLiteral("pieceLength"), preview->pieceLength},
+        {QStringLiteral("pieceCount"), preview->pieces},
+        {QStringLiteral("private"), preview->isPrivate},
+        {QStringLiteral("comment"), preview->comment},
+        {QStringLiteral("creator"), preview->creator},
+        {QStringLiteral("creationDate"), preview->createdAt},
+        {QStringLiteral("files"), files},
+        {QStringLiteral("trackers"), trackers},
+        {QStringLiteral("webSeeds"), webSeeds},
+    };
+#else
+    Q_UNUSED(data)
+    error = QStringLiteral("BitTorrent is not built into this daemon.");
+    return {};
+#endif
+}
+
 void applyIpFilter(bool onlyIfLevelChanged)
 {
 #ifdef EMULE_HAVE_BITTORRENT

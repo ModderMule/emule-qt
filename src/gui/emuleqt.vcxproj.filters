@@ -115,6 +115,12 @@
     <ClCompile Include="dialogs\SearchDetailDialog.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
+    <ClCompile Include="dialogs\MetaResultDetailDialog.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="controls\TorrentFileTree.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
     <ClCompile Include="dialogs\FirstStartWizard.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
@@ -567,6 +573,9 @@
     <ClInclude Include="utils\TorrentLinks.h">
       <Filter>Header Files</Filter>
     </ClInclude>
+    <ClInclude Include="controls\TorrentFileTree.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
     <ClInclude Include="utils\TorrentAdd.h">
       <Filter>Header Files</Filter>
     </ClInclude>
@@ -628,6 +637,9 @@
       <Filter>Header Files</Filter>
     </QtMoc>
     <QtMoc Include="dialogs\SearchDetailDialog.h">
+      <Filter>Header Files</Filter>
+    </QtMoc>
+    <QtMoc Include="dialogs\MetaResultDetailDialog.h">
       <Filter>Header Files</Filter>
     </QtMoc>
     <QtMoc Include="dialogs\FirstStartWizard.h">

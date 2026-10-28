@@ -94,6 +94,10 @@ private slots:
     void addressParsing();
     void oneRemoteChainEndpointIsNoted();
     void aRefusedChainAnswerIsShown();
+    void autoBidStartsAtThresholdAndRunsDown();
+    void autoBidStopsBeforeOverdraw();
+    void autoBidNeverWithoutNodeOrRead();
+    void autoBidPrefsAreHeld();
 
 private:
     static Ed3kSettings loopback(const QString& dir);
@@ -373,6 +377,111 @@ Ed3kCreditPrefs tst_Ed3kCredit::testChain()
 QString tst_Ed3kCredit::keyPath(const QString& dir)
 {
     return QDir(eMule::ed3k::stateDir(dir)).filePath(Ed3kCredit::keyFileName());
+}
+
+// autostart highspeed download: from the threshold on, down to ~20 credits (hysteresis)
+void tst_Ed3kCredit::autoBidStartsAtThresholdAndRunsDown()
+{
+    using AutoBid = Ed3kCredit::AutoBid;
+    constexpr std::uint64_t M = AutoBid::kMicro;
+    Ed3kCreditPrefs prefs;
+    prefs.autoBid = true;   // factor 5.0, threshold 2000
+    prefs.bidMaxPrice = 1 * M;
+    AutoBid a;
+    a.ledgerBalance(1999 * M);
+    QVERIFY(!a.update(prefs, true, false, 0));
+    QCOMPARE(a.price(prefs), 1 * M);
+    a.ledgerBalance(2000 * M);
+    QVERIFY(a.update(prefs, true, false, 0));
+    QVERIFY(a.active);
+    QCOMPARE(a.price(prefs), 5 * M);
+    // below the threshold now, far from the stop: keeps running
+    const ::ed3k::event::CreditAddress holder{1};
+    a.signedReceipt(holder, 100, 10 * M, 1'000);
+    a.ledgerBalance(1500 * M);
+    QVERIFY(!a.update(prefs, true, false, 60'000));
+    QVERIFY(a.active);
+    // the open payments reach the 80 % of the read balance: stops, back to the normal bid
+    a.signedReceipt(holder, 100, 1180 * M, 120'000);
+    QVERIFY(a.update(prefs, true, false, 120'000));
+    QVERIFY(!a.active);
+    QCOMPARE(a.price(prefs), 1 * M);
+    // no restart until the estimate is at the threshold again
+    a.ledgerBalance(2100 * M);
+    QVERIFY(!a.update(prefs, true, false, 200'000));
+    a.ledgerBalance(3200 * M);
+    QVERIFY(a.update(prefs, true, false, 200'000));
+    // two days on, the old receipts are no longer open
+    a.signedReceipt(holder, 102, 1 * M, 300'000);
+    QCOMPARE(a.open(), 1 * M);
+}
+
+// the spend of the past seconds stops it while there is still room (never overdrawn, §6.4)
+void tst_Ed3kCredit::autoBidStopsBeforeOverdraw()
+{
+    using AutoBid = Ed3kCredit::AutoBid;
+    constexpr std::uint64_t M = AutoBid::kMicro;
+    Ed3kCreditPrefs prefs;
+    prefs.autoBid = true;
+    prefs.autoThreshold = 200;
+    AutoBid a;
+    a.ledgerBalance(10'000 * M);
+    QVERIFY(a.update(prefs, true, false, 0));
+    // 300 credits in the past 10 s: 30/s, so 300 more coming plus a tranche (20)
+    const ::ed3k::event::CreditAddress h1{1}, h2{2};
+    a.signedReceipt(h1, 100, 150 * M, 1'000);
+    a.signedReceipt(h2, 100, 150 * M, 2'000);
+    QCOMPARE(a.rate(2'000), 30 * M);
+    QVERIFY(!a.update(prefs, true, false, 2'000));
+    // a balance read that lags: what is open still counts
+    a.ledgerBalance(700 * M);
+    // 700 - 300 = 400 left, 320 coming: would run on; but 620 open + coming is past 80 % of 700
+    QVERIFY(a.update(prefs, true, false, 2'000));
+    QVERIFY(!a.active);
+    // the same cumulative value again adds nothing
+    a.signedReceipt(h1, 100, 150 * M, 3'000);
+    QCOMPARE(a.open(), 300 * M);
+}
+
+// ed3k off, credits not in use, no ledger read or overdrawn: never bids
+void tst_Ed3kCredit::autoBidNeverWithoutNodeOrRead()
+{
+    using AutoBid = Ed3kCredit::AutoBid;
+    constexpr std::uint64_t M = AutoBid::kMicro;
+    Ed3kCreditPrefs prefs;
+    prefs.autoBid = true;
+    AutoBid a;
+    QVERIFY(!a.update(prefs, true, false, 0));   // no read
+    a.ledgerBalance(100'000 * M);
+    QVERIFY(!a.update(prefs, false, false, 0));   // ed3k off
+    QVERIFY(!a.update(prefs, true, true, 0));     // overdrawn
+    prefs.autoBid = false;
+    QVERIFY(!a.update(prefs, true, false, 0));
+    prefs.autoBid = true;
+    QVERIFY(a.update(prefs, true, false, 0));
+    QVERIFY(a.update(prefs, false, false, 0));   // node stopped
+    QCOMPARE(a.price(prefs), prefs.bidMaxPrice);
+}
+
+void tst_Ed3kCredit::autoBidPrefsAreHeld()
+{
+    Ed3kCreditPrefs c;
+    QCOMPARE(c.autoFactor, 50u);
+    QCOMPARE(c.autoThreshold, std::uint64_t(2000));
+    QVERIFY(!c.autoBid);
+    const auto factor = [&c](double v) {
+        Preferences::applyEd3kCreditKey(c, QStringLiteral("ed3kCreditAutoFactor"), QCborValue(v));
+        return c.autoFactor;
+    };
+    QCOMPARE(factor(1.0), 20u);
+    QCOMPARE(factor(80.0), 500u);
+    QCOMPARE(factor(5.04), 50u);
+    QCOMPARE(factor(12.3), 123u);
+    Preferences::applyEd3kCreditKey(c, QStringLiteral("ed3kCreditAutoThreshold"), QCborValue(qint64(10)));
+    QCOMPARE(c.autoThreshold, std::uint64_t(200));
+    Preferences::applyEd3kCreditKey(c, QStringLiteral("ed3kCreditAutoThreshold"), QCborValue(qint64(5000)));
+    QCOMPARE(c.autoThreshold, std::uint64_t(5000));
+    QCOMPARE(c.autoPrice(), std::uint64_t(12'300'000));
 }
 
 QTEST_GUILESS_MAIN(tst_Ed3kCredit)

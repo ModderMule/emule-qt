@@ -239,6 +239,8 @@ private:
 #endif
     /// The hoster prefs into the join, the resolver and the Java lookup
     void applyHosterConfig();
+    /// Stops the ed3k node and its joins (restart: applyEd3kConfig()).
+    void stopEd3kNode();
     /// The ed3k chat options from the eD2K "Messages and Comments" prefs
     void applyEd3kChatOptions();
 #ifdef EMULE_HAVE_BITTORRENT

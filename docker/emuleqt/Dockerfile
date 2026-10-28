@@ -50,6 +50,13 @@ RUN case "$TARGETARCH" in \
     && rm -rf /opt/aqt-venv \
     && ln -s "/opt/Qt/$QT_VERSION/$QT_DIR" /opt/qt
 
+# Rust for ed3k (packmule): used only when libs/packmule is in the context,
+# otherwise CMake turns EMULE_ED3K off. packmule rust-version 1.98
+ENV RUSTUP_HOME=/opt/rustup CARGO_HOME=/opt/cargo
+RUN curl -fsSL --retry 3 https://sh.rustup.rs \
+        | sh -s -- -y --profile minimal --default-toolchain stable --no-modify-path
+ENV PATH="/opt/cargo/bin:${PATH}"
+
 ENV CMAKE_PREFIX_PATH=/opt/qt
 ENV PATH="/opt/qt/bin:${PATH}"
 ENV LD_LIBRARY_PATH=/opt/qt/lib
@@ -62,6 +69,8 @@ RUN test -f external/enodemeta/README.md -a -n "$(ls -A external/specialdlp)" \
         || { echo "submodules missing: git submodule update --init" >&2; exit 1; } \
     && cmake -S . -B build -G Ninja -DCMAKE_BUILD_TYPE=Release -DEMULE_BITTORRENT=ON \
         -DEMULE_BUILD_TESTS=OFF -DEMULE_SEED_FROM_SOURCE_TREE=OFF \
+    && { [ ! -f libs/packmule/Cargo.toml ] || grep -q '^EMULE_ED3K:BOOL=ON' build/CMakeCache.txt \
+        || { echo "libs/packmule is in the context but EMULE_ED3K is off" >&2; exit 1; }; } \
     && cmake --build build --parallel "$(nproc)" \
     && for so in $(find /opt/qt/plugins/ -name '*.so'); do \
         # linuxdeploy aborts on a plugin whose libs are absent (gstreamer, gtk3, ...)
@@ -69,6 +78,9 @@ RUN test -f external/enodemeta/README.md -a -n "$(ls -A external/specialdlp)" \
             echo "pruning Qt plugin with missing deps: $so"; rm -f "$so"; \
         fi; \
     done \
+    # hoster resolver: docker.yml puts release.yml's resolver-zip artifact here
+    && if [ -f hoster-resolver/resolver.zip ]; then \
+        export EMULE_RESOLVER_ZIP=/src/hoster-resolver/resolver.zip; fi \
     && scripts/bundle-linux.sh deploy-qt build \
     && mkdir -p /out \
     && tar xzf build/eMuleQt-v*-linux-*.tar.gz -C /out

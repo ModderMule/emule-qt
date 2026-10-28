@@ -60,6 +60,9 @@
     <ClCompile Include="net\HttpFileDownload.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
+    <ClCompile Include="net\MetaFileCache.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
     <ClCompile Include="net\PortTestApi.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
@@ -699,6 +702,9 @@
       <Filter>Header Files</Filter>
     </ClInclude>
     <ClInclude Include="net\HttpFileDownload.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="net\MetaFileCache.h">
       <Filter>Header Files</Filter>
     </ClInclude>
     <ClInclude Include="net\PortTestApi.h">

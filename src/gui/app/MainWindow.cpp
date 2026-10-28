@@ -140,11 +140,12 @@ MainWindow::MainWindow(QWidget* parent)
 #ifdef EMULE_HAVE_HOSTER_JD
     // hoster links of web search rows go to the Hoster tab while hoster downloads are on
     Ed2kLinkImporter::setHosterLinkHandler(
-        [self = QPointer<MainWindow>(this)](const QList<QStringList>& files, QWidget*) {
+        [self = QPointer<MainWindow>(this)](const QList<QStringList>& files, const QString& package,
+                                            QWidget*) {
             if (!self || !self->m_hosterPanel)
                 return;
             self->switchToTab(TabHoster);
-            self->m_hosterPanel->addLinks(files);
+            self->m_hosterPanel->addLinks(files, package);
         },
         [self = QPointer<MainWindow>(this)] {
             return self && self->m_hosterPanel && self->m_hosterPanel->hostersEnabled();
@@ -311,7 +312,7 @@ MainWindow::~MainWindow()
 void MainWindow::switchToTab(Tab tab)
 {
     // TabTorrents has no page without BitTorrent
-    if (tab < 0 || tab >= m_pages->count())
+    if (tab < 0 || tab >= m_pages->count() || isTabHidden(tab))
         return;
     m_pages->setCurrentIndex(tab);
 
@@ -322,6 +323,16 @@ void MainWindow::switchToTab(Tab tab)
             break;
         }
     }
+}
+
+void MainWindow::applyFeatureTabs()
+{
+    if (m_tabGroup) {
+        for (auto* action : m_tabGroup->actions())
+            action->setVisible(!isTabHidden(action->data().toInt()));
+    }
+    if (isTabHidden(m_pages->currentIndex()))
+        switchToTab(TabTransfers);
 }
 
 void MainWindow::onToolbarAction(QAction* action)
@@ -476,6 +487,7 @@ void MainWindow::showOptionsDialog(int page)
     m_serverPanel->logWidget()->setLeecherTabVisible(thePrefs.antiLeecher());
     m_serverPanel->logWidget()->setEd3kTabsVisible(thePrefs.ed3kEnabled());
     m_searchPanel->setEd3kMethodVisible(thePrefs.ed3kEnabled());
+    applyFeatureTabs();
     m_serverPanel->refreshUpdateUrl();   // Options "List..." edits the same URL
 
     // The daemon reacts to logToDiskCore over IPC; logToDiskGui is ours to act on.
@@ -1159,11 +1171,11 @@ void MainWindow::buildToolsMenu()
     if (m_usenetPanel)
         m_toolsMenu->addAction(m_usenetPanel->addNzbUrlAction());
 #ifdef EMULE_HAVE_BITTORRENT
-    if (m_torrentPanel)
+    if (m_torrentPanel && !isTabHidden(TabTorrents))
         m_toolsMenu->addAction(m_torrentPanel->addMagnetAction());
 #endif
 #ifdef EMULE_HAVE_HOSTER_JD
-    if (m_hosterPanel)
+    if (m_hosterPanel && !isTabHidden(TabHoster))
         m_toolsMenu->addAction(m_hosterPanel->addLinksAction());
 #endif
 
@@ -1582,6 +1594,8 @@ void MainWindow::rebuildToolbar()
     } else {
         m_speedGraph = nullptr;
     }
+
+    applyFeatureTabs();
 }
 
 void MainWindow::loadToolbarSkin(const QString& path)
@@ -2262,7 +2276,8 @@ void MainWindow::applySpeedHistory(const QCborMap& data)
 void MainWindow::cycleTab(int direction)
 {
     // Toolbar order, which the user can rearrange; a hidden button is skipped.
-    const QList<QAction*> tabs = m_tabGroup ? m_tabGroup->actions() : QList<QAction*>{};
+    QList<QAction*> tabs = m_tabGroup ? m_tabGroup->actions() : QList<QAction*>{};
+    tabs.removeIf([](const QAction* a) { return isTabHidden(a->data().toInt()); });
     if (tabs.isEmpty())
         return;
     const auto count = static_cast<int>(tabs.size());
@@ -2521,6 +2536,16 @@ void MainWindow::showLowIdHint()
         showOptionsDialog(OptionsDialog::PageConnection);
     else if (box.clickedButton() == infoBtn)
         QDesktopServices::openUrl(QUrl(QString(kWebsiteUrl) + QStringLiteral("/help/low-id/")));
+}
+
+bool MainWindow::isTabHidden(int tab)
+{
+    if (tab == TabTorrents)
+        return !thePrefs.btEnabled();
+    // hoster downloads run on the ed3k node
+    if (tab == TabHoster)
+        return !thePrefs.ed3kEnabled();
+    return false;
 }
 
 } // namespace eMule

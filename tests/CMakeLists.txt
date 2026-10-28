@@ -132,6 +132,7 @@ emule_add_test(tst_UDPSocket             FOLDER "Net")
 emule_add_test(tst_ListenSocket          FOLDER "Net")
 emule_add_test(tst_HttpClientReqSocket   FOLDER "Net")
 emule_add_test(tst_HttpFileDownload      FOLDER "Net")
+emule_add_test(tst_MetaFileCache         FOLDER "Net")
 emule_add_test(tst_ClientUDPSocket       FOLDER "Net")
 emule_add_test(tst_NatRendezvous         FOLDER "Net")
 emule_add_test(tst_NatRendezvousPaths    FOLDER "Net")
@@ -744,6 +745,7 @@ emule_add_test(tst_UsenetDetailsDialog FOLDER "Gui"
             # The model marks a password-protected release with menuIcon().
             "${CMAKE_SOURCE_DIR}/src/gui/utils/MenuUtils.cpp"
             "${CMAKE_SOURCE_DIR}/src/gui/utils/FileTypeIcons.cpp"
+            "${CMAKE_SOURCE_DIR}/src/gui/utils/RatingIcons.cpp"
             "${CMAKE_SOURCE_DIR}/src/gui/utils/DialogSizing.cpp"
             "${CMAKE_SOURCE_DIR}/src/gui/utils/PreviewLauncher.cpp"
             "${CMAKE_SOURCE_DIR}/src/gui/utils/StatusBarNotifier.cpp"
@@ -762,6 +764,8 @@ emule_add_test(tst_UsenetQueueModel FOLDER "Gui"
     SOURCES tst_UsenetQueueModel.cpp
             "${CMAKE_SOURCE_DIR}/src/gui/utils/Appearance.cpp"
             "${CMAKE_SOURCE_DIR}/src/gui/controls/UsenetQueueModel.cpp"
+            "${CMAKE_SOURCE_DIR}/src/gui/utils/FileTypeIcons.cpp"
+            "${CMAKE_SOURCE_DIR}/src/gui/utils/RatingIcons.cpp"
             "${CMAKE_SOURCE_DIR}/src/gui/utils/MenuUtils.cpp")
 target_include_directories(tst_UsenetQueueModel PRIVATE
     "${CMAKE_SOURCE_DIR}/src/gui"
@@ -776,7 +780,8 @@ if(EMULE_BITTORRENT)
         SOURCES tst_TorrentListModel.cpp
                 "${CMAKE_SOURCE_DIR}/src/gui/controls/TorrentListModel.cpp"
                 "${CMAKE_SOURCE_DIR}/src/gui/controls/TorrentProgressDelegate.cpp"
-                "${CMAKE_SOURCE_DIR}/src/gui/controls/BarShader.cpp")
+                "${CMAKE_SOURCE_DIR}/src/gui/controls/BarShader.cpp"
+                "${CMAKE_SOURCE_DIR}/src/gui/utils/FileTypeIcons.cpp")
     target_include_directories(tst_TorrentListModel PRIVATE
         "${CMAKE_SOURCE_DIR}/src/gui"
         "${CMAKE_CURRENT_SOURCE_DIR}/stubs")
@@ -789,7 +794,9 @@ if(EMULE_BITTORRENT)
         SOURCES tst_TorrentDetailsGui.cpp
                 "${CMAKE_SOURCE_DIR}/src/gui/controls/TorrentFilterProxy.cpp"
                 "${CMAKE_SOURCE_DIR}/src/gui/controls/TorrentListModel.cpp"
+                "${CMAKE_SOURCE_DIR}/src/gui/utils/FileTypeIcons.cpp"
                 "${CMAKE_SOURCE_DIR}/src/gui/controls/TorrentListsPane.cpp"
+                "${CMAKE_SOURCE_DIR}/src/gui/controls/TorrentFileTree.cpp"
                 "${CMAKE_SOURCE_DIR}/src/gui/controls/TorrentPieceGrid.cpp"
                 "${CMAKE_SOURCE_DIR}/src/gui/dialogs/TorrentDetailsDialog.cpp"
                 "${CMAKE_SOURCE_DIR}/src/gui/dialogs/DetailDialog.cpp"
@@ -922,6 +929,30 @@ target_include_directories(tst_ListHeaderMenu PRIVATE
 target_link_libraries(tst_ListHeaderMenu PRIVATE
     eMule::Core eMule::Ipc Qt6::Widgets)
 
+# A torrent/Usenet search result's Details, off hand-built inspection maps.
+emule_add_test(tst_MetaResultDetailDialog FOLDER "Gui"
+    SOURCES tst_MetaResultDetailDialog.cpp
+            "${CMAKE_SOURCE_DIR}/src/gui/dialogs/MetaResultDetailDialog.cpp"
+            "${CMAKE_SOURCE_DIR}/src/gui/controls/TorrentFileTree.cpp"
+            "${CMAKE_SOURCE_DIR}/src/gui/dialogs/DetailDialog.cpp"
+            # DetailDialog opens client sheets and reports IPC failures
+            "${CMAKE_SOURCE_DIR}/src/gui/dialogs/ClientDetailDialog.cpp"
+            "${CMAKE_SOURCE_DIR}/src/gui/utils/IpcFeedback.cpp"
+            "${CMAKE_SOURCE_DIR}/src/gui/utils/CountryFlags.cpp"
+            "${CMAKE_SOURCE_DIR}/src/gui/controls/ContentScrollArea.cpp"
+            "${CMAKE_SOURCE_DIR}/src/gui/utils/Appearance.cpp"
+            "${CMAKE_SOURCE_DIR}/src/gui/utils/DialogSizing.cpp"
+            "${CMAKE_SOURCE_DIR}/src/gui/utils/MenuUtils.cpp"
+            "${CMAKE_SOURCE_DIR}/src/gui/utils/StatusBarNotifier.cpp"
+            "${CMAKE_SOURCE_DIR}/src/gui/app/UiState.cpp"
+            "${CMAKE_SOURCE_DIR}/src/gui/app/IpcClient.cpp"
+            "${CMAKE_SOURCE_DIR}/src/gui/app/KnownCores.cpp")
+target_include_directories(tst_MetaResultDetailDialog PRIVATE
+    "${CMAKE_SOURCE_DIR}/src/gui"
+    "${CMAKE_CURRENT_SOURCE_DIR}/stubs")
+target_link_libraries(tst_MetaResultDetailDialog PRIVATE
+    eMule::Core eMule::Ipc Qt6::Widgets)
+
 # eNode torrent/Usenet/web rows in the result list, the Meta API account dialog
 # and a web row's links dialog.
 emule_add_test(tst_MetaSearchGui FOLDER "Gui"
@@ -952,6 +983,29 @@ target_include_directories(tst_MetaSearchGui PRIVATE
     "${CMAKE_CURRENT_SOURCE_DIR}/stubs")
 target_link_libraries(tst_MetaSearchGui PRIVATE
     eMule::Core eMule::Ipc Qt6::Widgets)
+
+# The Hoster tab: package rows from pushed items, folder links. Pushes are emitted
+# on an unconnected IpcClient, so no daemon.
+if(EMULE_HOSTER_JD)
+    emule_add_test(tst_HosterPanel FOLDER "Gui"
+        SOURCES tst_HosterPanel.cpp
+                "${CMAKE_SOURCE_DIR}/src/gui/panels/HosterPanel.cpp"
+                "${CMAKE_SOURCE_DIR}/src/gui/dialogs/HosterPuzzleDialog.cpp"
+                "${CMAKE_SOURCE_DIR}/src/gui/utils/Appearance.cpp"
+                "${CMAKE_SOURCE_DIR}/src/gui/utils/FileTypeIcons.cpp"
+                "${CMAKE_SOURCE_DIR}/src/gui/utils/ListActivation.cpp"
+                "${CMAKE_SOURCE_DIR}/src/gui/dialogs/FindInListDialog.cpp"
+                "${CMAKE_SOURCE_DIR}/src/gui/utils/MenuUtils.cpp"
+                "${CMAKE_SOURCE_DIR}/src/gui/app/UiState.cpp"
+                "${CMAKE_SOURCE_DIR}/src/gui/app/IpcClient.cpp"
+                "${CMAKE_SOURCE_DIR}/src/gui/app/KnownCores.cpp"
+                "${CMAKE_SOURCE_DIR}/resources/emuleqt.qrc")
+    target_include_directories(tst_HosterPanel PRIVATE
+        "${CMAKE_SOURCE_DIR}/src/gui"
+        "${CMAKE_CURRENT_SOURCE_DIR}/stubs")
+    target_link_libraries(tst_HosterPanel PRIVATE
+        eMule::Core eMule::Ipc Qt6::Widgets)
+endif()
 
 # The add/edit category dialog. Constructed directly with a DownloadCategory, so
 # it needs the real dialog and DialogSizing but no daemon and no panel.

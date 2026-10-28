@@ -2,7 +2,11 @@
 #include "controls/UsenetQueueModel.h"
 #include "utils/Appearance.h"
 
+#include "prefs/Preferences.h"
+#include "utils/FileTypeIcons.h"
 #include "utils/MenuUtils.h"
+#include "utils/OtherFunctions.h"
+#include "utils/RatingIcons.h"
 #include "utils/StringUtils.h"
 
 #include <QCborArray>
@@ -361,6 +365,8 @@ QVariant UsenetQueueModel::data(const QModelIndex& index, int role) const
         // them when a repair needs them, which is not the user's call per file.
         if (role == Qt::CheckStateRole && index.column() == ColName && !f.isPar2)
             return int(f.skipped ? Qt::Unchecked : Qt::Checked);
+        if (role == Qt::DecorationRole && index.column() == ColName)
+            return fileTypeIconForName(f.name);   // as the Transfer window
         if (role == Qt::DecorationRole && index.column() == ColStatus)
             return usenetFileStateIcon(f, ownerActive);
         if (role == Qt::ToolTipRole) {
@@ -514,14 +520,27 @@ QVariant UsenetQueueModel::data(const QModelIndex& index, int role) const
         return it.name;
     }
 
-    case Qt::DecorationRole:
-        // A padlock on the name rather than a column of its own: it is a
+    case Qt::DecorationRole: {
+        if (index.column() != ColName)
+            return {};
+        // The type of the release's main file, as the Transfer window shows it:
+        // a release name rarely has an extension, its largest file does.
+        QString typeName = it.name;
+        qint64 largest = -1;
+        for (const UsenetFileRow& f : it.files) {
+            if (!f.isPar2 && f.size > largest) {
+                largest = f.size;
+                typeName = f.name;
+            }
+        }
+        const QString type = getFileTypeByName(typeName);
+        // A padlock right after it rather than a column of its own: it is a
         // property of a handful of releases, and a column would be blank for
-        // every other row. menuIcon() returns a null icon when the user has
-        // turned the original artwork off, which renders as no icon at all.
-        if (index.column() == ColName && (it.hasPassword || it.passwordRequired))
-            return menuIcon("Security.ico");
-        return {};
+        // every other row. Hidden with the original artwork off.
+        const bool lock = (it.hasPassword || it.passwordRequired) && thePrefs.useOriginalIcons();
+        return fileMarksIcon(type, ContainerMark::None, false, FileMark::None,
+                             lock ? QStringLiteral(":/icons/Security.ico") : QString());
+    }
 
     case Qt::FontRole:
         if (it.status == UsenetRowStatus::Downloading || isPostProcessing(it.status)) {

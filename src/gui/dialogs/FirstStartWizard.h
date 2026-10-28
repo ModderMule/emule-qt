@@ -75,6 +75,10 @@ private:
     void showPage(int page);
     void requestDaemonSettings();
     void fillFromSettings(const QCborMap& prefs);
+    /// One port field (joined) or TCP and UDP.
+    void showPortsJoined();
+    /// The UDP port to send: the TCP one when joined, 0 when off.
+    [[nodiscard]] int udpPortValue() const;
     [[nodiscard]] bool networksValid();
     [[nodiscard]] std::optional<BandwidthSettings> selectedBandwidth() const;
     [[nodiscard]] std::optional<BandwidthSettings> chosenBandwidth() const;
@@ -93,6 +97,11 @@ private:
     QSpinBox* m_tcpPortSpin = nullptr;
     QSpinBox* m_udpPortSpin = nullptr;
     bool m_udpOff = false;   ///< udpPort 0 in the config file, no GUI switch
+    QLabel* m_portDescLabel = nullptr;
+    QLabel* m_tcpLabel = nullptr;
+    QLabel* m_udpLabel = nullptr;
+    bool m_portsJoined = false;   ///< TCP = UDP: one "TCP/UDP" field (eD2K and ed3k)
+    bool m_ed3kJoined = false;    ///< ed3k on that port too: moves with it
     QPushButton* m_upnpBtn = nullptr;
     QProgressBar* m_upnpProgress = nullptr;
     QLabel* m_upnpStatus = nullptr;

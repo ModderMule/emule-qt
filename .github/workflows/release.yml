@@ -126,13 +126,19 @@ jobs:
   # locally, rsyncs it to https://emule-qt.org/pub/ before pushing the tag and
   # writes its SHA-256 into the annotated tag message. This job fetches it and
   # fails on a mismatch rather than silently shipping a stale/foreign database.
+  # The hoster resolver (resolver.zip, JDownloader plugins) takes the same path:
+  # publish-release.sh builds it with scripts/build-hoster-resolver.sh, since CI
+  # has no JD sources. Optional: tags before it carry no SHA line and ship none.
   geoip:
-    name: Fetch GeoLite2-Country
+    name: Fetch GeoLite2-Country + hoster resolver
     needs: guard
     runs-on: ubuntu-latest
+    outputs:
+      resolver: ${{ steps.tag.outputs.resolver_sha256 != '' }}
     env:
       TAG: ${{ needs.guard.outputs.tag }}
       GEOIP_URL: https://emule-qt.org/pub/GeoLite2-Country.mmdb
+      RESOLVER_URL: https://emule-qt.org/pub/resolver.zip
     steps:
       # Direct tag fetch instead of actions/checkout, which rewrites annotated
       # tags as lightweight ones and so loses the message.
@@ -153,6 +159,12 @@ jobs:
             exit 1
           fi
           echo "sha256=${sha}" >> "$GITHUB_OUTPUT"
+          rsha="$(git for-each-ref --format='%(contents)' "refs/tags/${TAG}" \
+                  | sed -n 's/^Hoster-Resolver-SHA256: *\([0-9a-f]\{64\}\) *$/\1/p' | head -n1)"
+          if [ -z "$rsha" ]; then
+            echo "::warning::Tag ${TAG} has no 'Hoster-Resolver-SHA256:' line -- this release ships without the hoster resolver"
+          fi
+          echo "resolver_sha256=${rsha}" >> "$GITHUB_OUTPUT"
 
       - name: Download
         env:
@@ -176,14 +188,41 @@ jobs:
           retention-days: 1
           if-no-files-found: error
 
+      - name: Download hoster resolver
+        if: steps.tag.outputs.resolver_sha256 != ''
+        env:
+          EXPECTED: ${{ steps.tag.outputs.resolver_sha256 }}
+        run: |
+          set -euo pipefail
+          mkdir -p resolver
+          curl -fsSL --retry 3 --retry-delay 5 -o resolver/resolver.zip "$RESOLVER_URL"
+          actual="$(sha256sum resolver/resolver.zip | awk '{print $1}')"
+          if [ "$actual" != "$EXPECTED" ]; then
+            echo "::error::${RESOLVER_URL} is not the resolver tagged in ${TAG} (expected ${EXPECTED}, got ${actual}). A later publish may have replaced it -- re-upload the matching file."
+            exit 1
+          fi
+          echo "OK: resolver.zip sha256 ${actual}"
+
+      - name: Upload hoster resolver
+        if: steps.tag.outputs.resolver_sha256 != ''
+        uses: actions/upload-artifact@v6
+        with:
+          name: resolver-zip
+          path: resolver/resolver.zip
+          retention-days: 1
+          if-no-files-found: error
+
   linux:
     name: Linux
     needs: [guard, geoip]
     permissions:
       contents: read
     uses: ./.github/workflows/linux.yml
+    # PACKMULE_TOKEN: the private packmule checkout (ed3k)
+    secrets: inherit
     with:
       geoip: true
+      resolver: ${{ needs.geoip.outputs.resolver == 'true' }}
       ref: ${{ needs.guard.outputs.tag }}
 
   macos:
@@ -192,8 +231,11 @@ jobs:
     permissions:
       contents: read
     uses: ./.github/workflows/macos.yml
+    # PACKMULE_TOKEN: the private packmule checkout (ed3k)
+    secrets: inherit
     with:
       geoip: true
+      resolver: ${{ needs.geoip.outputs.resolver == 'true' }}
       ref: ${{ needs.guard.outputs.tag }}
 
   # Temporary, see macos-intel.yml
@@ -203,8 +245,11 @@ jobs:
     permissions:
       contents: read
     uses: ./.github/workflows/macos-intel.yml
+    # PACKMULE_TOKEN: the private packmule checkout (ed3k)
+    secrets: inherit
     with:
       geoip: true
+      resolver: ${{ needs.geoip.outputs.resolver == 'true' }}
       ref: ${{ needs.guard.outputs.tag }}
 
   windows:
@@ -213,8 +258,11 @@ jobs:
     permissions:
       contents: read
     uses: ./.github/workflows/windows.yml
+    # PACKMULE_TOKEN: the private packmule checkout (ed3k)
+    secrets: inherit
     with:
       geoip: true
+      resolver: ${{ needs.geoip.outputs.resolver == 'true' }}
       ref: ${{ needs.guard.outputs.tag }}
 
   # Not in release's needs: a GHCR hiccup must not hold back the GitHub Release
@@ -225,8 +273,11 @@ jobs:
       contents: read
       packages: write   # push to ghcr.io
     uses: ./.github/workflows/docker.yml
+    # PACKMULE_TOKEN: the private packmule checkout (ed3k)
+    secrets: inherit
     with:
       geoip: true
+      resolver: ${{ needs.geoip.outputs.resolver == 'true' }}
       ref: ${{ needs.guard.outputs.tag }}
       version: ${{ needs.guard.outputs.version }}
 

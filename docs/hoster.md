@@ -17,7 +17,7 @@ Downloads from links at file hosters, verified under ed3k roots. Spec:
 | `Ed3kJavaRuntime` | `src/ed3k/` | finds Java 17+, else downloads Temurin 21 into `<eMuleQt>/runtime/jre` |
 | sidecar driver | `tools/hoster-resolver/` | Java, GPL v3+: JD's plugins unmodified, `SingleDownloadController` subclass, puzzle solver |
 | IPC | `src/daemon/Ed3kHosterBridge.*` | requests 1100-1108 (1107 GetHosterStats, Statistics branch; 1108 CheckHosterLinks), pushes 1150-1154 and 1159 (PushHosterLinkCheck), `hoster` map in `GetEd3kStatus` |
-| GUI | `panels/HosterPanel`, `dialogs/HosterPuzzleDialog`, Options › ed3k › Hoster | list, add links (dialog, or Paste links from the clipboard), image puzzles, settings, accounts; web search rows' Download (`MetaResultActions`, `WebLinksDialog`) adds one item per file with its mirrors, only while `enabled` (else Show Links); the links dialog checks its links (Status column) |
+| GUI | `panels/HosterPanel`, `dialogs/HosterPuzzleDialog`, Options › ed3k › Hoster | list, add links (dialog, or Paste links from the clipboard), image puzzles, settings, accounts; web search rows' Download (`MetaResultActions`, `WebLinksDialog`) adds one item per file with its mirrors, only while `enabled` (else Show Links); the links dialog checks its links (Status column); its Download says "Download (all)" / "Download (n)" for the selection, and a context menu has Download and Deselect All |
 
 ## Flow of a pasted link
 
@@ -58,6 +58,24 @@ the same hoster. The resolver names them from JD's plugin (`LazyHostPlugin.getSi
 `sites` for each account host (on start / account change, once), and `match` adds `sites` for a
 hoster plugin. E.g. a login for `rg.to` counts for `rapidgator.net` and `rapidgator.asia` links,
 checked or not (`siteOf`). An older resolver without `sites`: own domain and subdomains only.
+
+## Packages
+
+Items added together can form a **package**: one row in the Hoster tab with the items as
+children, and one folder under incoming (`<incoming>/<package>/`) their files move to.
+
+- A web search row's Download (`MetaResultActions`, `WebLinksDialog`): always a package named
+  after the row, even with one file.
+- Add links dialog: the optional *Package Name* field. Empty: plain items, as before.
+- A folder link's files (`PushHosterLinks`): a new package named after the folder. A folder
+  item inside a package asks: add to that package, or a new package. Packages never nest.
+
+`AddHosterLinks` field 2 `package` (name) makes a new package; field 3 `packageId` joins an
+existing one and wins. The same name twice is two packages that share a folder. Items carry
+`packageId`/`package` (`Item`, `items.json` keys `pkg`/`pkgName`, the IPC item map); the GUI
+builds the package rows from them and sums size, progress, speed and states. The name is a
+folder name: `/` and `\` become `_`. Removing an item with its file removes the package folder
+once it is empty. Actions on a package row act on all its items.
 
 ## Link checks of a links dialog
 
@@ -104,10 +122,33 @@ A stream that breaks goes on from where it stood instead of starting over:
   the user, no plugin, its hoster busy with another stream, a wait over 5 minutes) a peer's link
   is opened instead, verified block by block under the root; one that fails is not tried again
   for the item. The core reports each result to the peer that named the link.
-- Once the node vouches for the item's own link (`LinkVouched`) and "Publish hoster links" is on, the
-  join publishes its `ALIAS` record and calls `linkShare(root, {url})`: the link goes with the
-  `SOURCE` record (at most 3) and to downloaders that set `LINKS` (at most 8). Switching "Publish
-  hoster links" off stops it (`linkShare(root, {})`); a peer's link is never handed on.
+- **Vouched links** (`LinkVouched`): the item's own link (rooted: first block verified under the
+  root; rootless: whole file gave the root) and a peer's link a block from verified. Kept per
+  item in `items.json` `links` [{url, checkedAt, offline}], own first. Any downloader does this,
+  wherever the link came from (search row, paste): its own node key signs the record, so a link
+  stays findable when its first publisher leaves (alias.md: ≤3 publishers per root and name).
+- **Published** (`publishShared`) while "Publish hoster links" is on, for live links (not offline,
+  checked within `recheckHours`, or unknown at their recheck): `ALIAS` record each (first 4),
+  `linkShare(root, urls)` → `SOURCE` record (first 3) and downloaders that set `LINKS` (first 8).
+  `publishAlias` refused as `State` (root not shared yet: hashing after completion or a start) is
+  tried each tick for 2 h. A start publishes again what was out before.
+- **Recheck** (`recheckHours`, default 72): a complete item's link past it is checked through the
+  same probe queue and limits as a links dialog's (`checkMaxParallel`, `checkMaxPerHost`), before
+  it goes out again; at a start stale links wait for it. Online: published, `checkedAt` moves.
+  Offline: withdrawn, the item says *link offline* (`Reason::LinkOffline`), asked again after the
+  next interval. Unknown (hosters off, no resolver, puzzle, timeout): kept, asked again in
+  min(6 h, interval).
+- **Dead-link reports** (`reportRecheckHours`, default 6): downloaders' `HttpResult`s for a link
+  handed out (`event::HttpResults`, by `url_id` = `ed3k_link_url_id`) that say `GONE`,
+  `SIZE_MISMATCH` or `CORRUPT`, from downloaders in 3 sites (`HttpResults.site`: IPv4 /24, IPv6 /48, as the core counts;
+  none on a virtual connection: not counted), check it at once, at most once
+  per `reportRecheckHours` since its last check (`max(checkedAt, reportCheckAt)`, saved). The core
+  stops handing it out after 3 sites by itself; the check decides: offline withdraws as above,
+  online re-shares it (the core's report count starts over). Reports never withdraw by themselves.
+- **Withdraw** (offline, held back, item removed): Kad has no delete. `unpublishAlias` stops the
+  22 h refresh; stored copies run out within 24 h. `linkShare(root, {})` stops handing it out at
+  once, the next `SOURCE` store (≤4 h) goes without it, other copies run out within 5 h. Other
+  publishers' records are theirs; each rechecks its own.
 
 ## Settings (`preferences.yml`, `ed3k: hoster:`)
 
@@ -123,6 +164,8 @@ A stream that breaks goes on from where it stood instead of starting over:
 | `checkSearchLinks` | `ed3kHosterCheckSearchLinks` | on | a web search row's links dialog checks its links |
 | `checkMaxParallel` | — (YAML only) | 30 | 1-256: those checks at once |
 | `checkMaxPerHost` | — (YAML only) | 5 | 1-64: of them at one hoster |
+| `recheckHours` | — (YAML only) | 72 | 0-8760: a published link is checked again after this; 0 = never |
+| `reportRecheckHours` | — (YAML only) | 6 | 0-8760: 3 dead-link reports check a published link at once, at most this often; 0 = reports never check |
 | `accounts` | `ed3kHosterAccounts` | empty | `{host, user, passwordEncrypted}`; IPC never carries a password out |
 
 ## Java
@@ -152,6 +195,20 @@ because JD writes caches next to the plugin classes. `EMULE_RESOLVER_ZIP` points
 Compile-time switch: CMake `-DEMULE_HOSTER_JD=OFF`, qmake `CONFIG+=no_emule_hoster_jd`, MSBuild
 `/p:EmuleHosterJd=false`. Off: no resolver, no Java lookup, no Hoster tab; ed3k still stores, passes
 on and looks up links and answers `NO_RESOLVER`.
+
+The Hoster tab shows only while ed3k is on (`ed3k: enabled`); the Torrents tab likewise follows
+`bittorrent: enabled`.
+
+### Release builds
+
+- CI has no JD sources: `scripts/publish-release.sh` runs `build-hoster-resolver.sh`, rsyncs the zip to
+  `https://emule-qt.org/pub/resolver.zip` and puts `Hoster-Resolver-SHA256:` in the tag message, next
+  to the GeoLite2 line. `release.yml`'s geoip job checks it and hands `resolver-zip` to every platform
+  and Docker. A tag without the line ships no resolver (warning only).
+- ed3k in CI: the workflows check out the private `ModderMule/packmule` at the commit in
+  `scripts/packmule.ref` into `libs/packmule` (still gitignored), with the `PACKMULE_TOKEN` secret
+  (fine-grained PAT, Contents: read). No secret (forks, `windows-3rd.yml`): no checkout, ed3k off.
+  `publish-release.sh` refuses an unpushed packmule HEAD and commits the new pin with the release.
 
 ## Tests
 

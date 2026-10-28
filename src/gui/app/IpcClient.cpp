@@ -120,6 +120,7 @@ static QString ipcMsgTypeName(Ipc::IpcMsgType type)
     case T::SwapA4AFToFile:       return QStringLiteral("SwapA4AFToFile");
     case T::UpdateIpFilterNow:    return QStringLiteral("UpdateIpFilterNow");
     case T::RehashAllSharedFiles: return QStringLiteral("RehashAllSharedFiles");
+    case T::MigrateEd2kCompat: return QStringLiteral("MigrateEd2kCompat");
     case T::PushNotifierEvent:    return QStringLiteral("PushNotifierEvent");
     case T::PushServerState:      return QStringLiteral("PushServerState");
     case T::PushSearchResult:     return QStringLiteral("PushSearchResult");
@@ -149,6 +150,7 @@ static QString ipcMsgTypeName(Ipc::IpcMsgType type)
     case T::StopIndexerSearch:    return QStringLiteral("StopIndexerSearch");
     case T::RemoveIndexerSearch:  return QStringLiteral("RemoveIndexerSearch");
     case T::GrabIndexerResult:    return QStringLiteral("GrabIndexerResult");
+    case T::InspectIndexerResult: return QStringLiteral("InspectIndexerResult");
     case T::PushIndexerResults:   return QStringLiteral("PushIndexerResults");
     case T::PushIndexerProgress:  return QStringLiteral("PushIndexerProgress");
     case T::PushIndexerSearchDone: return QStringLiteral("PushIndexerSearchDone");

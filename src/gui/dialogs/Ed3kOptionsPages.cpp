@@ -147,6 +147,7 @@ Ed3kOptionsPages::Ed3kOptionsPages(IpcClient* ipc, QWidget* parent)
     m_general = buildGeneral(parent);
     m_connection = buildConnection(parent);
     m_credits = buildCredits(parent);
+    m_autoCredits = buildAutoCredits(parent);
     m_names = buildNames(parent);
     m_filters = new Ed3kFilterPage(ipc, parent);   // acts at once over IPC (filter-list.md)
     m_hoster = buildHoster(parent);
@@ -189,6 +190,15 @@ void Ed3kOptionsPages::load(const QCborMap& p)
         box->setChecked(!off.contains(box->text()));
 
     m_udpPortSpin->setValue(int(p.value(QStringLiteral("ed3kUdpPort")).toInteger(0)));
+    // eD2K TCP, eD2K UDP and ed3k on one number: one port, set on the Connection page
+    {
+        const qint64 tcp = p.value(QStringLiteral("port")).toInteger(0);
+        m_joinedPort = int(tcp);
+        m_portJoined = tcp != 0 && p.value(QStringLiteral("udpPort")).toInteger(0) == tcp
+                       && p.value(QStringLiteral("ed3kUdpPort")).toInteger(0) == tcp;
+        showPortJoined();
+        requestCompatPlan();
+    }
     m_lanCheck->setChecked(p.value(QStringLiteral("ed3kLan")).toBool(true));
     m_sitePortSpin->setValue(int(p.value(QStringLiteral("ed3kSitePort")).toInteger(0)));
     m_nodeListsEdit->setPlainText(linesText(p.value(QStringLiteral("ed3kNodeLists"))));
@@ -219,6 +229,10 @@ void Ed3kOptionsPages::load(const QCborMap& p)
     m_sellFloorSpin->setValue(double(c.sellFloor) / kMicro);
     m_sellSlotsSpin->setValue(int(c.sellSlots));
     m_ledgerGroup->setEnabled(c.enabled);
+    m_autoBidGroup->setChecked(c.autoBid);
+    m_autoFactorSpin->setValue(c.autoFactor / 10.0);
+    m_autoThresholdSpin->setValue(int(std::min<uint64>(c.autoThreshold, uint64(m_autoThresholdSpin->maximum()))));
+    updateAutoCredits();
 
     Ed3kHosterPrefs h;
     for (auto it = p.cbegin(); it != p.cend(); ++it)
@@ -249,7 +263,8 @@ void Ed3kOptionsPages::appendTo(IpcMessage& req) const
     put("ed3kShareFiles", m_shareFilesCheck->isChecked());
     put("ed3kHoldBackPosts", m_holdBackCheck->isChecked());
     put("ed3kExtOff", extOff().join(QLatin1Char(' ')));
-    put("ed3kUdpPort", qint64(m_udpPortSpin->value()));
+    if (!m_portJoined)   // joined: the Connection page sends it
+        put("ed3kUdpPort", qint64(m_udpPortSpin->value()));
     put("ed3kLan", m_lanCheck->isChecked());
     put("ed3kSitePort", qint64(m_sitePortSpin->value()));
     put("ed3kNodeLists", linesOf(m_nodeListsEdit).join(QLatin1Char(' ')));
@@ -273,6 +288,9 @@ void Ed3kOptionsPages::appendTo(IpcMessage& req) const
     put("ed3kCreditSell", c.sell);
     put("ed3kCreditSellFloor", qint64(c.sellFloor));
     put("ed3kCreditSellSlots", qint64(c.sellSlots));
+    put("ed3kCreditAutoBid", c.autoBid);
+    put("ed3kCreditAutoFactor", c.autoFactor / 10.0);
+    put("ed3kCreditAutoThreshold", qint64(c.autoThreshold));
     const Ed3kHosterPrefs h = hosterPrefs();
     put("ed3kHosterEnabled", h.enabled);
     put("ed3kHosterJava", h.java);
@@ -299,7 +317,7 @@ void Ed3kOptionsPages::saveLocal() const
     thePrefs.setEd3kShareFiles(m_shareFilesCheck->isChecked());
     thePrefs.setEd3kHoldBackPosts(m_holdBackCheck->isChecked());
     thePrefs.setEd3kExtOff(extOff());
-    if (m_udpPortSpin->value() > 0)
+    if (!m_portJoined && m_udpPortSpin->value() > 0)
         thePrefs.setEd3kUdpPort(uint16(m_udpPortSpin->value()));
     thePrefs.setEd3kLan(m_lanCheck->isChecked());
     if (m_sitePortSpin->value() > 0)
@@ -366,7 +384,7 @@ QWidget* Ed3kOptionsPages::buildGeneral(QWidget* parent)
     layout->setContentsMargins(4, 4, 4, 4);
 
     m_enabledCheck = new QCheckBox(tr("Enable the ed3k node"), page);
-    m_enabledCheck->setToolTip(tr("Runs the ed3k node (packmule) in the core, on a UDP port of its own. "
+    m_enabledCheck->setToolTip(tr("Runs the ed3k node (packmule) in the core, on the eD2K UDP port or one of its own. "
                                   "It finds other nodes over Kad and serves the shared files."));
     layout->addWidget(m_enabledCheck);
 #ifdef EMULE_ED3K_LOCKED
@@ -391,6 +409,18 @@ QWidget* Ed3kOptionsPages::buildGeneral(QWidget* parent)
     m_holdBackCheck->setToolTip(tr("Share the files of Usenet downloads, but not their article lists, post sets or nzb records."));
     shareLayout->addWidget(m_holdBackCheck);
     layout->addWidget(shareGroup);
+
+    // eD2K compat (Protocol.md §14): derived user hash, one port for eD2K and ed3k
+    auto* compatGroup = new QGroupBox(tr("eD2K compatibility"), page);
+    auto* compatLayout = new QHBoxLayout(compatGroup);
+    m_compatLabel = noteLabel(tr("One port for eD2K and ed3k, and a user hash that tells eD2K peers this client "
+                                 "also speaks ed3k."), compatGroup);
+    compatLayout->addWidget(m_compatLabel, 1);
+    m_compatBtn = new QPushButton(tr("Migrate..."), compatGroup);
+    m_compatBtn->setToolTip(tr("Shows the changes for this configuration and asks before making them."));
+    connect(m_compatBtn, &QPushButton::clicked, this, &Ed3kOptionsPages::migrateEd2kCompat);
+    compatLayout->addWidget(m_compatBtn, 0, Qt::AlignTop);
+    layout->addWidget(compatGroup);
 
     // ToDo: decide which extensions the user can switch. Until then none are shown:
     // m_extChecks stays empty, so extOff() is empty and every extension is on
@@ -434,9 +464,13 @@ QWidget* Ed3kOptionsPages::buildConnection(QWidget* parent)
     m_udpPortSpin = new QSpinBox(portGroup);
     m_udpPortSpin->setRange(0, 65535);
     m_udpPortSpin->setSpecialValueText(tr("Random"));
-    m_udpPortSpin->setToolTip(tr("UDP port of the ed3k node, not the eD2K UDP port. A change restarts the node."));
+    m_udpPortSpin->setToolTip(tr("UDP port of the ed3k node. On the eD2K UDP port it shares that socket. A change restarts the node."));
     auto* udpRow = new QHBoxLayout;
     udpRow->addWidget(m_udpPortSpin);
+    m_udpPortJoinedLabel = new QLabel(portGroup);
+    m_udpPortJoinedLabel->setToolTip(tr("ed3k shares the eD2K TCP/UDP port; change it on the Connection page."));
+    m_udpPortJoinedLabel->setVisible(false);
+    udpRow->addWidget(m_udpPortJoinedLabel);
     auto* testBtn = new QPushButton(tr("Test Ports"), portGroup);
     testBtn->setToolTip(tr("Asks emule-qt.org whether the UDP port the node uses now is reachable. ed3k needs only "
                            "UDP. Apply a changed port first."));
@@ -768,6 +802,8 @@ void Ed3kOptionsPages::applyStatus(const QCborMap& st)
     m_chainRefusedLabel->setVisible(!chainRefused.isEmpty());
 
     const QCborMap c = st.value(QStringLiteral("credit")).toMap();
+    m_creditStatus = c;
+    updateAutoCredits();
     const QString address = c.value(QStringLiteral("address")).toString();
     m_addressLabel->setText(address.isEmpty() ? tr("No credit key yet: one is made when credits are switched on.")
                                               : tr("Credit address: %1").arg(address));
@@ -1020,6 +1056,103 @@ void Ed3kOptionsPages::moveList(int step)
                             [this](const IpcMessage& r) { failed(r, tr("Move")); });
 }
 
+void Ed3kOptionsPages::setJoinedPort(int port)
+{
+    m_joinedPort = port;
+    showPortJoined();
+}
+
+void Ed3kOptionsPages::showPortJoined()
+{
+    m_udpPortSpin->setVisible(!m_portJoined);
+    m_udpPortJoinedLabel->setVisible(m_portJoined);
+    m_udpPortJoinedLabel->setText(tr("%1 (the eD2K TCP/UDP port)").arg(m_joinedPort));
+}
+
+void Ed3kOptionsPages::requestCompatPlan()
+{
+    if (!m_ipc || !m_ipc->isConnected())
+        return;
+    IpcMessage req(IpcMsgType::MigrateEd2kCompat);
+    req.append(false);
+    m_ipc->sendRequest(std::move(req), [self = QPointer<Ed3kOptionsPages>(this)](const IpcMessage& reply) {
+        if (self && reply.type() == IpcMsgType::Result && reply.fieldBool(0))
+            self->applyCompatPlan(reply.fieldMap(1));
+    });
+}
+
+void Ed3kOptionsPages::applyCompatPlan(const QCborMap& plan)
+{
+    const int port = int(plan.value(QStringLiteral("port")).toInteger());
+    const bool done = !plan.value(QStringLiteral("hashChange")).toBool()
+                      && plan.value(QStringLiteral("udpFrom")).toInteger() == port
+                      && plan.value(QStringLiteral("ed3kFrom")).toInteger() == port;
+    m_compatBtn->setEnabled(!done);
+    if (done)
+        m_compatLabel->setText(tr("In use: eD2K and ed3k share port %1, and the user hash is the one derived "
+                                  "from the ed3k node.").arg(port));
+}
+
+void Ed3kOptionsPages::migrateEd2kCompat()
+{
+    if (!m_ipc || !m_ipc->isConnected()) {
+        QMessageBox::warning(m_parent, tr("eD2K compatibility"), tr("No connection to the core."));
+        return;
+    }
+    IpcMessage req(IpcMsgType::MigrateEd2kCompat);
+    req.append(false);
+    m_ipc->sendRequest(std::move(req), [self = QPointer<Ed3kOptionsPages>(this)](const IpcMessage& reply) {
+        if (!self || self->failed(reply, tr("eD2K compatibility")))
+            return;
+        const QCborMap plan = reply.fieldMap(1);
+        self->applyCompatPlan(plan);
+        const int port = int(plan.value(QStringLiteral("port")).toInteger());
+        const int udpFrom = int(plan.value(QStringLiteral("udpFrom")).toInteger());
+        const int ed3kFrom = int(plan.value(QStringLiteral("ed3kFrom")).toInteger());
+        const bool hashChange = plan.value(QStringLiteral("hashChange")).toBool();
+        if (plan.value(QStringLiteral("busy")).toBool()) {
+            QMessageBox::warning(self->m_parent, tr("eD2K compatibility"),
+                                 tr("UDP port %1 is used by another program or by BitTorrent. Change the TCP "
+                                    "port first.").arg(port));
+            return;
+        }
+        QStringList changes;
+        if (hashChange)
+            changes << tr("New user hash: credits earned at other eD2K clients are lost once. The core restarts.");
+        if (udpFrom != port || ed3kFrom != port)
+            changes << tr("eD2K UDP and ed3k move to port %1 (was UDP %2, ed3k %3).").arg(port).arg(udpFrom).arg(ed3kFrom);
+        if (udpFrom != port)
+            changes << tr("Open UDP port %1 in your router.").arg(port);
+        if (changes.isEmpty()) {
+            QMessageBox::information(self->m_parent, tr("eD2K compatibility"), tr("Nothing to change."));
+            return;
+        }
+        const QString text = tr("Switch to eD2K compatibility?") + QStringLiteral("\n\n• ")
+                             + changes.join(QStringLiteral("\n• "));
+        if (QMessageBox::question(self->m_parent, tr("eD2K compatibility"), text, QMessageBox::Yes | QMessageBox::No,
+                                  QMessageBox::No)
+            != QMessageBox::Yes)
+            return;
+        IpcMessage apply(IpcMsgType::MigrateEd2kCompat);
+        apply.append(true);
+        self->m_ipc->sendRequest(std::move(apply), [self](const IpcMessage& done) {
+            if (!self || self->failed(done, tr("eD2K compatibility")))
+                return;
+            const QCborMap result = done.fieldMap(1);
+            if (result.value(QStringLiteral("busy")).toBool())
+                return;   // taken meanwhile: nothing applied
+            const int joined = int(result.value(QStringLiteral("port")).toInteger());
+            self->m_loading = true;
+            self->m_udpPortSpin->setValue(joined);
+            self->m_loading = false;
+            self->m_portJoined = true;
+            self->setJoinedPort(joined);
+            self->m_compatBtn->setEnabled(false);
+            emit self->portsJoined(joined);
+        });
+    });
+}
+
 bool Ed3kOptionsPages::failed(const IpcMessage& reply, const QString& what)
 {
     if (reply.type() == IpcMsgType::Result && reply.fieldBool(0))
@@ -1057,6 +1190,9 @@ Ed3kCreditPrefs Ed3kOptionsPages::creditPrefs() const
     c.sell = m_sellCheck->isChecked();
     c.sellFloor = uint64(microOf(m_sellFloorSpin));
     c.sellSlots = uint32(m_sellSlotsSpin->value());
+    c.autoBid = m_autoBidGroup->isChecked();
+    c.autoFactor = Ed3kCreditPrefs::autoFactorOf(m_autoFactorSpin->value());
+    c.autoThreshold = uint64(m_autoThresholdSpin->value());
     return c;
 }
 
@@ -1446,4 +1582,81 @@ void Ed3kOptionsPages::updateChainNote()
         m_chainSingleNote->setVisible(singleRemoteEndpoint(linesOf(m_chaintubeRpcEdit)));
 }
 
+QWidget* Ed3kOptionsPages::buildAutoCredits(QWidget* parent)
+{
+    auto* page = new QWidget(parent);
+    auto* layout = new QVBoxLayout(page);
+    layout->setContentsMargins(4, 4, 4, 4);
+    const auto edited = [this] {
+        if (!m_loading)
+            emit changed();
+    };
+
+    // spends credits on its own: off by default
+    m_autoBidGroup = new QGroupBox(tr("Autostart highspeed download"), page);
+    m_autoBidGroup->setCheckable(true);
+    m_autoBidGroup->setChecked(false);
+    m_autoBidGroup->setToolTip(tr("Once the credit balance reaches the threshold, every ed3k download bids the credit "
+                                  "factor for priority upload slots. It stops before about 20 credits are left, "
+                                  "from what downloads spent in the past seconds, so the account is never overdrawn."));
+    auto* groupLayout = new QVBoxLayout(m_autoBidGroup);
+    auto* form = new QFormLayout;
+    form->setFormAlignment(Qt::AlignLeft | Qt::AlignTop);
+    form->setFieldGrowthPolicy(QFormLayout::FieldsStayAtSizeHint);
+    m_autoFactorSpin = new QDoubleSpinBox(m_autoBidGroup);
+    m_autoFactorSpin->setDecimals(1);
+    m_autoFactorSpin->setSingleStep(0.5);
+    m_autoFactorSpin->setRange(Ed3kCreditPrefs::kAutoFactorMin / 10.0, Ed3kCreditPrefs::kAutoFactorMax / 10.0);
+    m_autoFactorSpin->setValue(5.0);
+    m_autoFactorSpin->setSuffix(tr(" credits/MiB"));
+    m_autoFactorSpin->setToolTip(tr("The most paid per MiB for a priority slot while the autostart runs."));
+    form->addRow(tr("Credit factor:"), m_autoFactorSpin);
+    m_autoThresholdSpin = new QSpinBox(m_autoBidGroup);
+    m_autoThresholdSpin->setRange(int(Ed3kCreditPrefs::kAutoThresholdMin), 1'000'000'000);
+    m_autoThresholdSpin->setValue(2000);
+    m_autoThresholdSpin->setSuffix(tr(" credits"));
+    m_autoThresholdSpin->setToolTip(tr("The balance at which the autostart begins. It then runs down to about 20 credits."));
+    form->addRow(tr("Autostart threshold:"), m_autoThresholdSpin);
+    groupLayout->addLayout(form);
+    m_autoNoteLabel = noteLabel(QString(), m_autoBidGroup);
+    groupLayout->addWidget(m_autoNoteLabel);
+    layout->addWidget(m_autoBidGroup);
+    layout->addStretch();
+
+    connect(m_autoBidGroup, &QGroupBox::toggled, this, edited);
+    connect(m_autoFactorSpin, &QDoubleSpinBox::valueChanged, this, edited);
+    connect(m_autoThresholdSpin, &QSpinBox::valueChanged, this, edited);
+    // no effect while ed3k is off
+    connect(m_enabledCheck, &QCheckBox::toggled, this, [this] { updateAutoCredits(); });
+    updateAutoCredits();
+    return page;
+}
+
+void Ed3kOptionsPages::updateAutoCredits()
+{
+    if (!m_autoBidGroup)
+        return;
+    const bool ed3kOn = m_enabledCheck->isChecked();
+    m_autoBidGroup->setEnabled(ed3kOn);
+    if (!ed3kOn) {
+        m_autoNoteLabel->setText(tr("ed3k is off: this has no effect."));
+        return;
+    }
+    const QCborMap& c = m_creditStatus;
+    if (c.isEmpty() || !c.value(QStringLiteral("configured")).toBool()) {
+        m_autoNoteLabel->clear();
+        return;
+    }
+    if (c.value(QStringLiteral("overdrawn")).toBool()) {
+        m_autoNoteLabel->setText(tr("The account is overdrawn: nothing is bid."));
+        return;
+    }
+    const qint64 balance = c.value(QStringLiteral("balance")).toInteger(-1);
+    const QString bal = balance < 0 ? tr("not read yet") : creditsText(balance);
+    m_autoNoteLabel->setText(c.value(QStringLiteral("autoActive")).toBool()
+                                 ? tr("Highspeed download is running. Balance: %1").arg(bal)
+                                 : tr("Highspeed download is not running. Balance: %1").arg(bal));
+}
+
 } // namespace eMule
+

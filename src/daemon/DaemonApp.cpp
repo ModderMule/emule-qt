@@ -36,6 +36,7 @@
 #include "ipfilter/IPFilter.h"
 #include "kademlia/KadLog.h"
 #include "net/BindAddress.h"
+#include "net/ClientUDPSocket.h"
 #include "net/HttpDefaults.h"
 #include "prefs/Preferences.h"
 #include "stats/Statistics.h"
@@ -322,6 +323,12 @@ bool DaemonApp::start()
 #ifdef EMULE_HAVE_ED3K
     m_ed3kSession = std::make_unique<ed3k::Ed3kSession>();
     Ed3kBridge::setSession(m_ed3kSession.get());
+    // eD2K UDP takes the port of ed3k's own socket: ed3k lets go and comes back shared (§14.1)
+    theApp.yieldEd3kUdpPort = [this](uint16 port) {
+        if (m_ed3kSession && m_ed3kSession->isRunning() && !m_ed3kSession->settings().sharedSocket
+            && m_ed3kSession->udpPort() == port)
+            stopEd3kNode();
+    };
     connect(m_ed3kSession.get(), &ed3k::Ed3kSession::statusChanged, this, [this] {
         if (!m_ipcServer)
             return;
@@ -738,6 +745,9 @@ void DaemonApp::stop()
     }
     // saves the node's state; before Usenet
     Ed3kBridge::setSession(nullptr);
+    theApp.yieldEd3kUdpPort = {};
+    if (theApp.clientUDP)
+        theApp.clientUDP->setForeignHandler({});
     if (m_ed3kSession)
         m_ed3kSession->stop();
     m_ed3kSession.reset();
@@ -1041,28 +1051,29 @@ void DaemonApp::applyEd3kConfig()
         logWarning(QStringLiteral("ed3k: unknown extension(s) in ed3k.extOff ignored: %1").arg(unknownExt.join(QLatin1Char(' '))));
     // a port change takes a restart of the node; the state is saved in between. So do the
     // extensions, LAN discovery and the bind address (read once at start)
+    // ed3k on the eD2K UDP port: one socket, eD2K's (§14.1); else its own
+    const bool wantShared = port != 0 && port == thePrefs.udpPort();
+    QUdpSocket* shared = nullptr;
+    if (theApp.clientUDP) {
+        if (wantShared)
+            shared = &theApp.clientUDP->socket();
+        theApp.clientUDP->setForeignHandler([session = QPointer<ed3k::Ed3kSession>(m_ed3kSession.get())](
+                                                const QNetworkDatagram& d) { return session && session->offerDatagram(d); });
+    }
     const auto& running = m_ed3kSession->settings();
     const bool startChanged = m_ed3kSession->isRunning()
                               && (running.extOff != extOff || running.lan != thePrefs.ed3kLan()
-                                  || (bind && running.bindAddress != *bind));
-    if (m_ed3kSession->isRunning() && (!enabled || !bind || startChanged || (port != 0 && m_ed3kSession->udpPort() != port))) {
-        if (m_usenetJoin)
-            m_usenetJoin->stop();   // restarted on statusChanged
-        if (m_ed3kDownloads)
-            m_ed3kDownloads->stop();
-        if (m_ed3kShared)
-            m_ed3kShared->stop();
-        if (m_hosterJoin)
-            m_hosterJoin->stop();
-#ifdef EMULE_HAVE_BITTORRENT
-        if (m_torrentJoin)
-            m_torrentJoin->stop();
-#endif
-        m_ed3kSession->stop();
-    }
-    if (enabled && !m_ed3kSession->isRunning()) {
+                                  || (bind && running.bindAddress != *bind)
+                                  || running.sharedSocket.data() != shared);
+    if (m_ed3kSession->isRunning() && (!enabled || !bind || startChanged || (port != 0 && m_ed3kSession->udpPort() != port)))
+        stopEd3kNode();
+    if (enabled && !m_ed3kSession->isRunning() && wantShared && !shared) {
+        // the eD2K socket opens once the core is loaded (onCoreLoaded comes back here)
+        logEd3kDebug(QStringLiteral("ed3k: waits for the eD2K UDP socket on port %1").arg(port));
+    } else if (enabled && !m_ed3kSession->isRunning()) {
         ed3k::Ed3kSettings settings;
         settings.udpPort = port;
+        settings.sharedSocket = shared;
         settings.configDir = thePrefs.configDir();
         settings.creditRpc = thePrefs.ed3kCreditRpc();
         settings.chaintubeRpc = thePrefs.ed3kChaintubeRpc();
@@ -1103,6 +1114,27 @@ void DaemonApp::applyEd3kConfig()
     applyHosterConfig();
     if (m_coreSession)
         m_coreSession->updatePortMappings();
+#endif
+}
+
+void DaemonApp::stopEd3kNode()
+{
+#ifdef EMULE_HAVE_ED3K
+    if (!m_ed3kSession || !m_ed3kSession->isRunning())
+        return;
+    if (m_usenetJoin)
+        m_usenetJoin->stop();   // restarted on statusChanged
+    if (m_ed3kDownloads)
+        m_ed3kDownloads->stop();
+    if (m_ed3kShared)
+        m_ed3kShared->stop();
+    if (m_hosterJoin)
+        m_hosterJoin->stop();
+#ifdef EMULE_HAVE_BITTORRENT
+    if (m_torrentJoin)
+        m_torrentJoin->stop();
+#endif
+    m_ed3kSession->stop();
 #endif
 }
 
@@ -1298,6 +1330,10 @@ void DaemonApp::onCoreLoaded()
     broadcastCoreLoading(false);
     if (m_ipcServer)
         m_ipcServer->replayDeferred();
+#ifdef EMULE_HAVE_ED3K
+    // the eD2K UDP socket is open now: an ed3k node sharing it starts
+    applyEd3kConfig();
+#endif
 }
 
 void DaemonApp::broadcastCoreLoading(bool loading)

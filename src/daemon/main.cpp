@@ -11,6 +11,9 @@
 
 #include "app/AppConfig.h"
 #include "app/InstallerCopy.h"
+#ifdef EMULE_HAVE_ED3K
+#include "Ed3kStore.h"
+#endif
 #include "app/TranslationRouter.h"
 #include "files/PartFileConvert.h"
 #include "prefs/LegacyConfigImport.h"
@@ -98,6 +101,16 @@ int main(int argc, char* argv[])
     eMule::CrashHandler::install(configDir + QStringLiteral("/crashes"));
 
     const QString prefsPath = configDir + QStringLiteral("/preferences.yml");
+#ifdef EMULE_HAVE_ED3K
+    // a new identity's user hash says "also ed3k" (ed3k Protocol.md §14.2)
+    eMule::Preferences::setUserHashSource([configDir] {
+        QString error;
+        auto hash = eMule::ed3k::derivedUserHash(configDir, &error);
+        if (!hash)
+            eMule::logWarning(QStringLiteral("ed3k key file: %1; random user hash").arg(error));
+        return hash;
+    });
+#endif
     eMule::thePrefs.load(prefsPath);
 
     // -- CLI command mode: send to running daemon and exit --------------------

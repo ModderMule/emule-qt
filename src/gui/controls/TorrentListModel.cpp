@@ -1,12 +1,14 @@
 #include "pch.h"
 /// @file TorrentListModel.cpp
-/// @brief Flat model for the Torrents tab — implementation.
+/// @brief Model for the Torrents tab — implementation.
 
 #include "controls/TorrentListModel.h"
 
+#include "utils/FileTypeIcons.h"
 #include "utils/StringUtils.h"
 
 #include <QColor>
+#include <QCoreApplication>
 #include <QDateTime>
 #include <QIcon>
 #include <QLocale>
@@ -75,6 +77,20 @@ bool torrentStateActive(TorrentState state)
     default:
         return false;
     }
+}
+
+QString torrentFilePriorityName(int priority)
+{
+    // the Files tab's words, under its context
+    if (priority <= 0)
+        return QCoreApplication::translate("eMule::TorrentListsPane", "Skip");
+    if (priority <= 2)
+        return QCoreApplication::translate("eMule::TorrentListsPane", "Low");
+    if (priority <= 4)
+        return QCoreApplication::translate("eMule::TorrentListsPane", "Normal");
+    if (priority <= 6)
+        return QCoreApplication::translate("eMule::TorrentListsPane", "High");
+    return QCoreApplication::translate("eMule::TorrentListsPane", "Maximum");
 }
 
 double TorrentRow::ratio() const
@@ -147,19 +163,78 @@ TorrentRow torrentRowFromCbor(const QCborMap& m)
 // Model
 // ---------------------------------------------------------------------------
 
-int TorrentListModel::rowCount(const QModelIndex& parent) const
+QModelIndex TorrentListModel::index(int row, int column, const QModelIndex& parent) const
 {
-    return parent.isValid() ? 0 : count();
+    if (column < 0 || column >= ColCount || row < 0)
+        return {};
+    if (!parent.isValid())
+        return row < count() ? createIndex(row, column, quintptr(0)) : QModelIndex{};
+    if (parent.internalId() != 0 || parent.row() >= count())
+        return {};   // files have no children
+    const auto it = m_files.constFind(m_keys[size_t(parent.row())]);
+    if (it == m_files.cend() || row >= int(it->files.size()))
+        return {};
+    return createIndex(row, column, it.key());
 }
 
-int TorrentListModel::columnCount(const QModelIndex& parent) const
+QModelIndex TorrentListModel::parent(const QModelIndex& child) const
 {
-    return parent.isValid() ? 0 : ColCount;
+    if (!child.isValid() || child.internalId() == 0)
+        return {};
+    const int row = rowOfKey(child.internalId());
+    return row < 0 ? QModelIndex{} : createIndex(row, 0, quintptr(0));
+}
+
+int TorrentListModel::rowCount(const QModelIndex& parent) const
+{
+    if (!parent.isValid())
+        return count();
+    if (parent.internalId() != 0 || parent.column() != 0 || parent.row() >= count())
+        return 0;
+    const auto it = m_files.constFind(m_keys[size_t(parent.row())]);
+    return it == m_files.cend() ? 0 : int(it->files.size());
+}
+
+int TorrentListModel::columnCount(const QModelIndex& /*parent*/) const
+{
+    return ColCount;
+}
+
+bool TorrentListModel::hasChildren(const QModelIndex& parent) const
+{
+    if (!parent.isValid())
+        return count() > 0;
+    if (parent.internalId() != 0 || parent.column() != 0)
+        return false;
+    const TorrentRow* r = rowAt(parent.row());
+    // the arrow shows before the files are loaded
+    return r && r->numFiles > 1;
+}
+
+bool TorrentListModel::canFetchMore(const QModelIndex& parent) const
+{
+    if (!parent.isValid() || parent.internalId() != 0)
+        return false;
+    const TorrentRow* r = rowAt(parent.row());
+    return r && r->numFiles > 1 && !m_files.contains(m_keys[size_t(parent.row())]);
+}
+
+void TorrentListModel::fetchMore(const QModelIndex& parent)
+{
+    if (canFetchMore(parent))
+        emit filesWanted(idAt(parent.row()));
 }
 
 QVariant TorrentListModel::data(const QModelIndex& index, int role) const
 {
-    const TorrentRow* r = index.isValid() ? rowAt(index.row()) : nullptr;
+    if (!index.isValid())
+        return {};
+    if (index.internalId() != 0) {
+        const TorrentRow* parentRow = parentRowOf(index);
+        const TorrentFileRow* f = fileAt(index);
+        return parentRow && f ? fileData(*parentRow, *f, index.column(), role) : QVariant{};
+    }
+    const TorrentRow* r = rowAt(index.row());
     if (!r)
         return {};
 
@@ -172,9 +247,10 @@ QVariant TorrentListModel::data(const QModelIndex& index, int role) const
     case Qt::UserRole:
         return sortData(*r, index.column());
     case Qt::DecorationRole:
+        // as the Transfer window: the file's type; a folder for a multi-file torrent
         if (index.column() == ColName) {
-            static const QIcon icon(QStringLiteral(":/icons/Torrent.ico"));
-            return icon;
+            static const QIcon folder(QStringLiteral(":/icons/FolderOpen.ico"));
+            return r->numFiles > 1 ? folder : fileTypeIconForName(r->name);
         }
         return {};
     case Qt::TextAlignmentRole:
@@ -247,7 +323,9 @@ void TorrentListModel::setRows(const QList<TorrentRow>& rows)
         if (incoming.contains(m_rows[size_t(row)].id))
             continue;
         beginRemoveRows({}, row, row);
+        m_files.remove(m_keys[size_t(row)]);
         m_rows.erase(m_rows.begin() + row);
+        m_keys.erase(m_keys.begin() + row);
         endRemoveRows();
     }
     for (const TorrentRow& r : rows)
@@ -267,6 +345,7 @@ void TorrentListModel::upsertRow(const TorrentRow& row)
     const int first = count();
     beginInsertRows({}, first, first);
     m_rows.push_back(row);
+    m_keys.push_back(m_nextKey++);
     endInsertRows();
 }
 
@@ -276,7 +355,9 @@ void TorrentListModel::removeRow(const QString& id)
     if (at < 0)
         return;
     beginRemoveRows({}, at, at);
+    m_files.remove(m_keys[size_t(at)]);
     m_rows.erase(m_rows.begin() + at);
+    m_keys.erase(m_keys.begin() + at);
     endRemoveRows();
 }
 
@@ -286,6 +367,8 @@ void TorrentListModel::clear()
         return;
     beginResetModel();
     m_rows.clear();
+    m_keys.clear();
+    m_files.clear();
     endResetModel();
 }
 
@@ -311,6 +394,88 @@ int TorrentListModel::rowOf(const QString& id) const
 {
     const auto it = std::ranges::find(m_rows, id, &TorrentRow::id);
     return it == m_rows.end() ? -1 : int(it - m_rows.begin());
+}
+
+QString TorrentListModel::idOf(const QModelIndex& index) const
+{
+    if (!index.isValid())
+        return {};
+    return index.internalId() == 0 ? idAt(index.row()) : idAt(rowOfKey(index.internalId()));
+}
+
+const TorrentFileRow* TorrentListModel::fileAt(const QModelIndex& index) const
+{
+    if (!index.isValid() || index.internalId() == 0)
+        return nullptr;
+    const auto it = m_files.constFind(index.internalId());
+    if (it == m_files.cend() || index.row() >= int(it->files.size()))
+        return nullptr;
+    return &it->files[size_t(index.row())];
+}
+
+bool TorrentListModel::hasFiles(const QString& id) const
+{
+    const int row = rowOf(id);
+    return row >= 0 && m_files.contains(m_keys[size_t(row)]);
+}
+
+void TorrentListModel::setFiles(const QString& id, const QCborArray& files)
+{
+    const int row = rowOf(id);
+    if (row < 0)
+        return;
+    FileSet set;
+    int maxIndex = -1;
+    for (const auto& v : files)
+        maxIndex = std::max(maxIndex, int(v.toMap().value(QStringLiteral("index")).toInteger()));
+    set.priorities = QList<int>(maxIndex + 1, 4);
+    for (const auto& v : files) {
+        const QCborMap m = v.toMap();
+        TorrentFileRow f;
+        f.index = int(m.value(QStringLiteral("index")).toInteger(-1));
+        f.priority = int(m.value(QStringLiteral("priority")).toInteger(4));
+        if (f.index >= 0 && f.index < set.priorities.size())
+            set.priorities[f.index] = f.priority;
+        if (m.value(QStringLiteral("pad")).toBool())
+            continue;   // alignment padding, not a real file
+        f.path = m.value(QStringLiteral("path")).toString();
+        f.size = m.value(QStringLiteral("size")).toInteger();
+        f.done = m.value(QStringLiteral("done")).toInteger();
+        set.files.push_back(std::move(f));
+    }
+
+    const quintptr key = m_keys[size_t(row)];
+    const QModelIndex parent = index(row, 0);
+    auto it = m_files.find(key);
+    const int oldCount = it == m_files.end() ? 0 : int(it->files.size());
+    const int newCount = int(set.files.size());
+    if (it != m_files.end() && oldCount == newCount) {
+        // same file list: update in place, selection stays
+        *it = std::move(set);
+        if (newCount > 0)
+            emit dataChanged(index(0, 0, parent), index(newCount - 1, ColCount - 1, parent));
+        return;
+    }
+    if (oldCount > 0) {
+        beginRemoveRows(parent, 0, oldCount - 1);
+        it->files.clear();
+        endRemoveRows();
+    }
+    if (newCount > 0) {
+        beginInsertRows(parent, 0, newCount - 1);
+        m_files.insert(key, std::move(set));
+        endInsertRows();
+    } else {
+        m_files.insert(key, std::move(set));
+    }
+}
+
+QList<int> TorrentListModel::priorities(const QString& id) const
+{
+    const int row = rowOf(id);
+    if (row < 0)
+        return {};
+    return m_files.value(m_keys[size_t(row)]).priorities;
 }
 
 // ---------------------------------------------------------------------------
@@ -384,6 +549,70 @@ QVariant TorrentListModel::barData(const TorrentRow& r, int role) const
     case kTorrentBarCompleteRole: return r.isComplete();
     case kTorrentBarSourcesRole:  return r.peers + r.seeds;
     default:                      return {};
+    }
+}
+
+int TorrentListModel::rowOfKey(quintptr key) const
+{
+    const auto it = std::ranges::find(m_keys, key);
+    return it == m_keys.end() ? -1 : int(it - m_keys.begin());
+}
+
+const TorrentRow* TorrentListModel::parentRowOf(const QModelIndex& child) const
+{
+    return rowAt(rowOfKey(child.internalId()));
+}
+
+QVariant TorrentListModel::fileData(const TorrentRow& r, const TorrentFileRow& f, int column,
+                                    int role) const
+{
+    const qsizetype slash = f.path.lastIndexOf(QLatin1Char('/'));
+    const QString name = slash >= 0 ? f.path.mid(slash + 1) : f.path;
+    const double share = f.size > 0 ? double(f.done) / double(f.size) : 1.0;
+    const bool complete = f.size > 0 && f.done >= f.size;
+
+    if (column == ColProgress) {
+        switch (role) {
+        case kTorrentBarRole:         return QByteArray();
+        case kTorrentBarPercentRole:  return share * 100.0;
+        case kTorrentBarPausedRole:   return r.state == TorrentState::Paused
+                                             || r.state == TorrentState::Error || f.priority == 0;
+        case kTorrentBarCompleteRole: return complete;
+        case kTorrentBarSourcesRole:  return r.peers + r.seeds;
+        default: break;
+        }
+    }
+
+    switch (role) {
+    case Qt::DisplayRole:
+        switch (column) {
+        case ColName:     return name;
+        case ColSize:     return formatByteSize(f.size);
+        case ColDone:     return formatByteSize(f.done);
+        case ColProgress: return QStringLiteral("%1%").arg(share * 100.0, 0, 'f', 1);
+        case ColStatus:   return torrentFilePriorityName(f.priority);
+        default:          return {};
+        }
+    case Qt::UserRole:
+        switch (column) {
+        case ColName:     return name;
+        case ColSize:     return QVariant::fromValue(f.size);
+        case ColDone:     return QVariant::fromValue(f.done);
+        case ColProgress: return share;
+        case ColStatus:   return f.priority;
+        default:          return {};
+        }
+    case Qt::DecorationRole:
+        return column == ColName ? QVariant(fileTypeIconForName(name)) : QVariant{};
+    case Qt::TextAlignmentRole:
+        return column == ColSize || column == ColDone
+                   ? QVariant(int(Qt::AlignRight | Qt::AlignVCenter)) : QVariant{};
+    case Qt::ForegroundRole:
+        return f.priority == 0 ? QVariant::fromValue(QColor(0x88, 0x88, 0x88)) : QVariant{};
+    case Qt::ToolTipRole:
+        return column == ColName ? QVariant(f.path) : QVariant{};
+    default:
+        return {};
     }
 }
 

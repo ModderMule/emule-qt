@@ -16,6 +16,7 @@
 #endif
 
 #include <QDir>
+#include <QDateTime>
 #include <QDirIterator>
 #include <QFile>
 #include <QJsonArray>
@@ -29,6 +30,8 @@
 #include <QTest>
 #include <QTimer>
 #include <QUrl>
+
+#include <functional>
 
 using namespace eMule;
 using namespace eMule::ed3k;
@@ -257,7 +260,85 @@ struct Rig {
         return true;
     }
     [[nodiscard]] Ed3kHosterJoin::State state(quint32 id) const { return join->item(id)->state; }
+
+    /// A complete item whose own link was vouched for.
+    quint32 completeOne(const QString& url)
+    {
+        const auto ids = join->addLinks(url);
+        if (ids.size() != 1)
+            return 0;
+        if (!QTest::qWaitFor([&] { return state(ids[0]) == Ed3kHosterJoin::State::Complete; }, 60000))
+            return 0;
+        if (!QTest::qWaitFor([&] { return !join->sharedLinks(ids[0]).isEmpty(); }, 10000))
+            return 0;
+        return ids[0];
+    }
+    /// Stops the join, lets @p edit change each saved link, starts a new one with prefs.
+    bool restart(const std::function<void(QJsonObject&)>& edit = {})
+    {
+        join->stop();
+        join.reset();
+        QString itemsPath;
+        for (QDirIterator it(tmp.path(), {QStringLiteral("items.json")}, QDir::Files, QDirIterator::Subdirectories); it.hasNext();)
+            itemsPath = it.next();
+        if (itemsPath.isEmpty())
+            return false;
+        if (edit) {
+            QFile items(itemsPath);
+            if (!items.open(QIODevice::ReadOnly))
+                return false;
+            QJsonArray list = QJsonDocument::fromJson(items.readAll()).array();
+            items.close();
+            for (int i = 0; i < list.size(); ++i) {
+                QJsonObject o = list.at(i).toObject();
+                QJsonArray links = o.value(QStringLiteral("links")).toArray();
+                for (int k = 0; k < links.size(); ++k) {
+                    QJsonObject l = links.at(k).toObject();
+                    edit(l);
+                    links[k] = l;
+                }
+                o[QStringLiteral("links")] = links;
+                list[i] = o;
+            }
+            if (!items.open(QIODevice::WriteOnly | QIODevice::Truncate))
+                return false;
+            items.write(QJsonDocument(list).toJson());
+        }
+        join = std::make_unique<Ed3kHosterJoin>(session, tmp.filePath(QStringLiteral("cfg")));
+        join->setResolver(&resolver);
+        join->setConfig(prefs, tmp.filePath(QStringLiteral("temp")), tmp.filePath(QStringLiteral("incoming")));
+        join->start();
+        return true;
+    }
 };
+
+/// A saved link last checked 100 h ago: past the default 72 h.
+/// A downloader @p node in site 10.0.@p site.0/24 reports @p code for @p url, handed out with
+/// item @p id's file; site 0: none (a virtual connection).
+void report(Rig& r, quint32 id, const QString& url, quint8 node, std::uint32_t code, int site = -1)
+{
+    ::ed3k::event::HttpResults ev;
+    const QByteArray root = QByteArray::fromHex(r.join->item(id)->rootHex.toLatin1());
+    std::copy_n(reinterpret_cast<const std::uint8_t*>(root.constData()), std::min<qsizetype>(root.size(), 32), ev.root.bytes.begin());
+    ev.node.bytes[0] = node;
+    if (site < 0)
+        site = node;
+    if (site > 0)
+        ev.site = {0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0xff, 0xff, 10, 0, std::uint8_t(site), 0};
+    const auto uid = ::ed3k::linkUrlId(url.toStdString());
+    for (const auto b : uid)
+        ev.results.push_back(std::byte(b));
+    for (int i = 0; i < 4; ++i)
+        ev.results.push_back(std::byte((code >> (8 * i)) & 0xff));
+    for (int i = 0; i < 8; ++i)
+        ev.results.push_back(std::byte(0));
+    emit r.session.eventPolled(::ed3k::Event{ev}, nullptr);
+}
+
+void stale(QJsonObject& l)
+{
+    l[QStringLiteral("checkedAt")] = QDateTime::currentMSecsSinceEpoch() - 100LL * 3600 * 1000;
+}
 
 /// linkChecked() results by url.
 struct CheckSpy {
@@ -356,6 +437,237 @@ private slots:
         QCOMPARE(again.items().size(), 1);
         QCOMPARE(again.items().first().state, Ed3kHosterJoin::State::Complete);
         QCOMPARE(again.items().first().url, QStringLiteral("https://fake.example/f/5"));
+    }
+
+    /// a package: one id and name for its items, its own folder under incoming, kept over a
+    /// restart; joining by id, never nested; the folder goes with its last file
+    void packages_groupAndFolder()
+    {
+        Rig r;
+        QVERIFY(r.start(true));
+        const auto a = r.join->addLinks(QStringLiteral("https://fake.example/p/1"), QStringLiteral("Pack/One"));
+        QCOMPARE(a.size(), 1);
+        const quint32 pkg = r.join->item(a[0])->packageId;
+        QVERIFY(pkg != 0);
+        QCOMPARE(r.join->item(a[0])->package, QStringLiteral("Pack_One"));   // a folder name, not a path
+
+        // by id: the same package
+        const auto b = r.join->addMirrored({{QStringLiteral("https://fake.example/p/2")}}, {}, pkg);
+        QCOMPARE(r.join->item(b[0])->packageId, pkg);
+        QCOMPARE(r.join->item(b[0])->package, QStringLiteral("Pack_One"));
+        // the same name again is a new package; no name is none
+        const auto c = r.join->addMirrored({{QStringLiteral("https://fake.example/p/3")}}, QStringLiteral("Pack/One"));
+        QVERIFY(r.join->item(c[0])->packageId != pkg);
+        const auto d = r.join->addLinks(QStringLiteral("https://fake.example/p/4"));
+        QCOMPARE(r.join->item(d[0])->packageId, quint32(0));
+        QVERIFY(r.join->item(d[0])->package.isEmpty());
+
+        QTRY_COMPARE_WITH_TIMEOUT(r.state(a[0]), Ed3kHosterJoin::State::Complete, 60000);
+        const QString incoming = r.tmp.filePath(QStringLiteral("incoming"));
+        const QString file = r.join->item(a[0])->file;
+        QCOMPARE(QFileInfo(file).absolutePath(), QDir(incoming).filePath(QStringLiteral("Pack_One")));
+        QTRY_COMPARE_WITH_TIMEOUT(r.state(d[0]), Ed3kHosterJoin::State::Complete, 60000);
+        QCOMPARE(QFileInfo(r.join->item(d[0])->file).absolutePath(), QDir(incoming).absolutePath());
+
+        // kept over a restart; a new package after it gets a fresh id
+        const quint32 pkgC = r.join->item(c[0])->packageId;
+        QVERIFY(r.restart());
+        QCOMPARE(r.join->item(a[0])->packageId, pkg);
+        QCOMPARE(r.join->item(b[0])->package, QStringLiteral("Pack_One"));
+        QCOMPARE(r.join->item(d[0])->packageId, quint32(0));
+        const auto e = r.join->addLinks(QStringLiteral("https://fake.example/p/5"), QStringLiteral("Next"));
+        QVERIFY(r.join->item(e[0])->packageId > std::max(pkg, pkgC));
+
+        // the folder goes with its last file, not before (c: another package, the same name)
+        QTRY_COMPARE_WITH_TIMEOUT(r.state(b[0]), Ed3kHosterJoin::State::Complete, 60000);
+        QTRY_COMPARE_WITH_TIMEOUT(r.state(c[0]), Ed3kHosterJoin::State::Complete, 60000);
+        QCOMPARE(QFileInfo(r.join->item(c[0])->file).absolutePath(), QDir(incoming).filePath(QStringLiteral("Pack_One")));
+        r.join->remove(a[0], true);
+        r.join->remove(c[0], true);
+        QVERIFY(QFileInfo::exists(QDir(incoming).filePath(QStringLiteral("Pack_One"))));
+        r.join->remove(b[0], true);
+        QVERIFY(!QFileInfo::exists(QDir(incoming).filePath(QStringLiteral("Pack_One"))));
+    }
+
+    /// §4.1: the downloaded link is vouched for, kept with its check time over a restart
+    void shared_vouchedLinkSaved()
+    {
+        Rig r;
+        QVERIFY(r.start(true));
+        const QString u = QStringLiteral("https://fake.example/s/1");
+        const quint32 id = r.completeOne(u);
+        QVERIFY(id);
+        auto links = r.join->sharedLinks(id);
+        QCOMPARE(links.size(), 1);
+        QCOMPARE(links[0].url, u);
+        QVERIFY(links[0].checkedAt > 0);
+        QVERIFY(!links[0].offline);
+        const qint64 at = links[0].checkedAt;
+        const int checks = r.resolver.checks;
+        QVERIFY(r.restart());
+        links = r.join->sharedLinks(id);
+        QCOMPARE(links.size(), 1);
+        QCOMPARE(links[0].checkedAt, at);
+        // fresh: no recheck
+        QTest::qWait(1500);
+        QCOMPARE(r.resolver.checks, checks);
+    }
+
+    /// recheckHours: a stale published link is asked again, though its item is complete
+    void recheck_due_online()
+    {
+        Rig r;
+        QVERIFY(r.start(true));
+        const QString u = QStringLiteral("https://fake.example/s/2");
+        const quint32 id = r.completeOne(u);
+        QVERIFY(id);
+        const int checks = r.resolver.checks;
+        QVERIFY(r.restart(stale));
+        QTRY_COMPARE_WITH_TIMEOUT(r.resolver.checks, checks + 1, 20000);
+        QTRY_VERIFY_WITH_TIMEOUT(QDateTime::currentMSecsSinceEpoch() - r.join->sharedLinks(id)[0].checkedAt < 60000, 10000);
+        QVERIFY(!r.join->sharedLinks(id)[0].offline);
+        QCOMPARE(r.join->item(id)->reason, Ed3kHosterJoin::Reason::None);
+    }
+
+    /// a recheck finds the link gone: withdrawn, the item says so, a links dialog sees it offline
+    void recheck_gone_withdraws()
+    {
+        Rig r;
+        QVERIFY(r.start(true));
+        const QString u = QStringLiteral("https://fake.example/s/3");
+        const quint32 id = r.completeOne(u);
+        QVERIFY(id);
+        r.resolver.goneUrls << u;
+        QVERIFY(r.restart(stale));
+        QTRY_VERIFY_WITH_TIMEOUT(r.join->sharedLinks(id)[0].offline, 20000);
+        QCOMPARE(r.state(id), Ed3kHosterJoin::State::Complete);
+        QCOMPARE(r.join->item(id)->reason, Ed3kHosterJoin::Reason::LinkOffline);
+        CheckSpy spy(*r.join);
+        QVERIFY(r.join->checkLinks({u}));
+        QTRY_COMPARE_WITH_TIMEOUT(spy.status(u), Ed3kHosterJoin::LinkStatus::Offline, 5000);
+        // kept offline over a restart
+        QVERIFY(r.restart());
+        QVERIFY(r.join->sharedLinks(id)[0].offline);
+    }
+
+    /// hosters off: nobody is asked; the stale link is kept as unknown, not withdrawn
+    void recheck_hostersOff_keeps()
+    {
+        Rig r;
+        QVERIFY(r.start(true));
+        const quint32 id = r.completeOne(QStringLiteral("https://fake.example/s/4"));
+        QVERIFY(id);
+        const int checks = r.resolver.checks;
+        r.prefs.enabled = false;
+        QVERIFY(r.restart(stale));
+        QTRY_VERIFY_WITH_TIMEOUT(r.join->sharedLinks(id)[0].unknown, 5000);
+        QVERIFY(!r.join->sharedLinks(id)[0].offline);
+        QCOMPARE(r.resolver.checks, checks);
+    }
+
+    /// recheckHours 0: never asked again
+    void recheck_zero_never()
+    {
+        Rig r;
+        QVERIFY(r.start(true));
+        const quint32 id = r.completeOne(QStringLiteral("https://fake.example/s/5"));
+        QVERIFY(id);
+        const int checks = r.resolver.checks;
+        r.prefs.recheckHours = 0;
+        QVERIFY(r.restart(stale));
+        QTest::qWait(2500);
+        QCOMPARE(r.resolver.checks, checks);
+        QVERIFY(!r.join->sharedLinks(id)[0].unknown);
+    }
+
+    /// rechecks wait for the check limits as the links dialog's do
+    void recheck_respectsLimits()
+    {
+        Rig r;
+        r.prefs.checkMaxPerHost = 1;
+        QVERIFY(r.start(true));
+        QList<quint32> ids;
+        for (int i = 0; i < 3; ++i) {
+            const quint32 id = r.completeOne(QStringLiteral("https://fake.example/s/l%1").arg(i));
+            QVERIFY(id);
+            ids << id;
+        }
+        r.resolver.checkDelayMs = 200;
+        r.resolver.maxRunningChecks.clear();
+        const int checks = r.resolver.checks;
+        QVERIFY(r.restart(stale));
+        QTRY_COMPARE_WITH_TIMEOUT(r.resolver.checks, checks + 3, 30000);
+        QCOMPARE(r.resolver.maxRunningChecks.value(QStringLiteral("fake.example")), 1);
+    }
+
+    /// hoster.md §2: downloaders in 3 sites report the link gone: checked at once, withdrawn when it is
+    void report_threeDead_checksNow()
+    {
+        Rig r;
+        QVERIFY(r.start(true));
+        const QString u = QStringLiteral("https://fake.example/s/r1");
+        const quint32 id = r.completeOne(u);
+        QVERIFY(id);
+        r.resolver.goneUrls << u;
+        // last checked 7 h ago: past the 6 h floor, far from recheckHours
+        QVERIFY(r.restart([](QJsonObject& l) { l[QStringLiteral("checkedAt")] = QDateTime::currentMSecsSinceEpoch() - 7 * 3600 * 1000LL; }));
+        QTest::qWait(1500);   // the start publishes the link
+        const int checks = r.resolver.checks;
+        report(r, id, u, 1, ED3K_HTTP_GONE);
+        report(r, id, u, 2, ED3K_HTTP_CORRUPT);
+        report(r, id, u, 2, ED3K_HTTP_GONE);         // the same downloader again
+        report(r, id, u, 3, ED3K_HTTP_HTTP_FAILED);  // says nothing about the link
+        report(r, id, u, 4, ED3K_HTTP_GONE, 1);      // another node in a site that reported
+        report(r, id, u, 5, ED3K_HTTP_GONE, 0);      // no site: not counted
+        QTest::qWait(1000);
+        QCOMPARE(r.resolver.checks, checks);
+        QCOMPARE(r.join->sharedLinks(id)[0].reporters.size(), std::size_t(2));
+        report(r, id, u, 3, ED3K_HTTP_SIZE_MISMATCH);
+        QTRY_VERIFY_WITH_TIMEOUT(r.join->sharedLinks(id)[0].offline, 20000);
+        QCOMPARE(r.resolver.checks, checks + 1);
+        QCOMPARE(r.join->item(id)->reason, Ed3kHosterJoin::Reason::LinkOffline);
+        QVERIFY(r.join->sharedLinks(id)[0].reportCheckAt > 0);
+    }
+
+    /// reportRecheckHours: reports within it of the last check wait; it holds over a restart
+    void report_floor_holds()
+    {
+        Rig r;
+        QVERIFY(r.start(true));
+        const QString u = QStringLiteral("https://fake.example/s/r2");
+        const quint32 id = r.completeOne(u);
+        QVERIFY(id);
+        QTest::qWait(500);
+        const int checks = r.resolver.checks;
+        // just vouched for: the floor counts from that check
+        for (quint8 n = 1; n <= 3; ++n)
+            report(r, id, u, n, ED3K_HTTP_GONE);
+        QTest::qWait(1000);
+        QCOMPARE(r.resolver.checks, checks);
+        // a report check 1 h ago, the vouch long before: still held
+        QVERIFY(r.restart([](QJsonObject& l) {
+            const qint64 now = QDateTime::currentMSecsSinceEpoch();
+            l[QStringLiteral("checkedAt")] = now - 10 * 3600 * 1000LL;
+            l[QStringLiteral("reportCheckAt")] = now - 3600 * 1000LL;
+        }));
+        QTest::qWait(1500);
+        for (quint8 n = 1; n <= 3; ++n)
+            report(r, id, u, n, ED3K_HTTP_GONE);
+        QTest::qWait(1000);
+        QCOMPARE(r.resolver.checks, checks);
+        // online after the floor: kept, reports start over
+        QVERIFY(r.restart([](QJsonObject& l) {
+            const qint64 now = QDateTime::currentMSecsSinceEpoch();
+            l[QStringLiteral("checkedAt")] = now - 10 * 3600 * 1000LL;
+            l[QStringLiteral("reportCheckAt")] = now - 7 * 3600 * 1000LL;
+        }));
+        QTest::qWait(1500);
+        for (quint8 n = 1; n <= 3; ++n)
+            report(r, id, u, n, ED3K_HTTP_GONE);
+        QTRY_COMPARE_WITH_TIMEOUT(r.resolver.checks, checks + 1, 20000);
+        QTRY_VERIFY_WITH_TIMEOUT(QDateTime::currentMSecsSinceEpoch() - r.join->sharedLinks(id)[0].checkedAt < 60000, 10000);
+        QVERIFY(!r.join->sharedLinks(id)[0].offline);
+        QVERIFY(r.join->sharedLinks(id)[0].reporters.empty());
     }
 
     /// the first mirror's file is gone: the item goes on with the second
@@ -507,6 +819,35 @@ private slots:
         QVERIFY(r.join->checkLinks({u}));
         QCOMPARE(spy.status(u), Ed3kHosterJoin::LinkStatus::Online);
         QCOMPARE(r.resolver.checks, 1);
+    }
+
+    /// an unknown result is not kept: the next dialog asks again
+    void probe_unknown_askedAgain()
+    {
+        Rig r;
+        QVERIFY(r.start(true));
+        CheckSpy spy(*r.join);
+        const QString u = QStringLiteral("https://other.example/p/3b");
+        QVERIFY(r.join->checkLinks({u}));
+        QTRY_COMPARE_WITH_TIMEOUT(spy.count, 1, 10000);
+        QVERIFY(r.join->checkLinks({u}));
+        QCOMPARE(spy.count, 1);   // not answered from the cache
+        QTRY_COMPARE_WITH_TIMEOUT(spy.count, 2, 10000);
+        QCOMPARE(spy.status(u), Ed3kHosterJoin::LinkStatus::Unknown);
+    }
+
+    /// a paused item never checked holds no core link: the dialog's check runs, not "unknown"
+    void probe_pausedItem_checked()
+    {
+        Rig r;
+        QVERIFY(r.start(true));
+        const QString u = QStringLiteral("https://fake.example/p/5b");
+        const auto ids = r.join->addLinks(u);
+        r.join->pause(ids[0]);
+        QCOMPARE(r.state(ids[0]), Ed3kHosterJoin::State::Paused);
+        CheckSpy spy(*r.join);
+        QVERIFY(r.join->checkLinks({u}));
+        QTRY_COMPARE_WITH_TIMEOUT(spy.status(u), Ed3kHosterJoin::LinkStatus::Online, 10000);
     }
 
     /// Download while the dialog's check runs: the item goes on from that check, no second one

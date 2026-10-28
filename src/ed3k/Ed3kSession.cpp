@@ -106,21 +106,30 @@ bool Ed3kSession::start(const Ed3kSettings& settings)
         return false;
     }
 
-    // the socket first: the engine is told its port
-    auto socket = std::make_unique<QUdpSocket>();
-    if (!socket->bind(settings.bindAddress, settings.udpPort)) {
-        logEd3kError(QStringLiteral("ed3k: cannot bind UDP port %1: %2").arg(settings.udpPort).arg(socket->errorString()));
+    // the socket first: the engine is told its port. A shared one is bound and pinned by its
+    // owner (eD2K UDP on the same port, §14.1)
+    std::unique_ptr<QUdpSocket> socket;
+    std::uint16_t port = settings.udpPort;
+    if (!settings.sharedSocket) {
+        socket = std::make_unique<QUdpSocket>();
+        if (!socket->bind(settings.bindAddress, settings.udpPort)) {
+            logEd3kError(QStringLiteral("ed3k: cannot bind UDP port %1: %2").arg(settings.udpPort).arg(socket->errorString()));
+            wipe(*seed);
+            return false;
+        }
+        // the bindAddress pref: a selected interface pins the socket (no default route around it)
+        if (!InterfacePin::pin(socket->socketDescriptor())) {
+            logEd3kError(QStringLiteral("ed3k: the bound interface cannot be pinned; not started"));
+            wipe(*seed);
+            return false;
+        }
+        socket->setSocketOption(QAbstractSocket::ReceiveBufferSizeSocketOption, 2 * 1024 * 1024);
+        port = socket->localPort();
+    } else if (port == 0) {
+        logEd3kError(QStringLiteral("ed3k: a shared socket needs its port"));
         wipe(*seed);
         return false;
     }
-    // the bindAddress pref: a selected interface pins the socket (no default route around it)
-    if (!InterfacePin::pin(socket->socketDescriptor())) {
-        logEd3kError(QStringLiteral("ed3k: the bound interface cannot be pinned; not started"));
-        wipe(*seed);
-        return false;
-    }
-    socket->setSocketOption(QAbstractSocket::ReceiveBufferSizeSocketOption, 2 * 1024 * 1024);
-    const std::uint16_t port = socket->localPort();
 
     ffi::Config cfg;
     cfg.seed = *seed;
@@ -163,7 +172,8 @@ bool Ed3kSession::start(const Ed3kSettings& settings)
         return false;
     }
     m_engine = std::make_unique<ffi::Engine>(std::move(*engine));
-    m_socket = std::move(socket);
+    m_ownSocket = std::move(socket);
+    m_socket = m_ownSocket ? m_ownSocket.get() : settings.sharedSocket.data();
     m_port = port;
     m_settings = settings;
 
@@ -234,17 +244,19 @@ bool Ed3kSession::start(const Ed3kSettings& settings)
     m_logLevel = -1;
     applyLogLevel();
 
-    connect(m_socket.get(), &QUdpSocket::readyRead, this, &Ed3kSession::onReadyRead);
+    if (m_ownSocket)
+        connect(m_ownSocket.get(), &QUdpSocket::readyRead, this, &Ed3kSession::onReadyRead);
     if (settings.bindAddress == QHostAddress::Any || settings.bindAddress == QHostAddress::AnyIPv6)
         m_pinTimer.start();
     pump();
     if (!m_engine)
         return false;
 
-    logEd3k(QStringLiteral("ed3k node %1 started on UDP port %2").arg(nodeIdHex()).arg(m_port));
+    logEd3k(QStringLiteral("ed3k node %1 started on UDP port %2%3").arg(nodeIdHex()).arg(m_port)
+                .arg(m_ownSocket ? QString() : QStringLiteral(" (shared with eD2K)")));
     emit statusChanged();
     // datagrams that came before the connect
-    if (m_socket->hasPendingDatagrams())
+    if (m_ownSocket && m_ownSocket->hasPendingDatagrams())
         onReadyRead();
     return m_engine != nullptr;
 }
@@ -265,11 +277,12 @@ void Ed3kSession::stop()
     // the counters of this engine stay in traffic()
     const Ed3kTraffic t = traffic();
     m_trafficBase = t;
-    if (m_socket) {
-        m_socket->disconnect(this);
-        m_socket->close();
+    if (m_ownSocket) {
+        m_ownSocket->disconnect(this);
+        m_ownSocket->close();
     }
-    m_socket.reset();
+    m_ownSocket.reset();
+    m_socket.clear();
     m_engine.reset();
     m_port = 0;
     logEd3k(QStringLiteral("ed3k node stopped"));
@@ -482,8 +495,8 @@ void Ed3kSession::pump()
 
 void Ed3kSession::onReadyRead()
 {
-    while (m_engine && m_socket && m_socket->hasPendingDatagrams()) {   // drain fully, then pump once
-        const QNetworkDatagram d = m_socket->receiveDatagram();
+    while (m_engine && m_ownSocket && m_ownSocket->hasPendingDatagrams()) {   // drain fully, then pump once
+        const QNetworkDatagram d = m_ownSocket->receiveDatagram();
         if (!d.isValid())
             break;
         const QByteArray data = d.data();
@@ -500,6 +513,31 @@ void Ed3kSession::onReadyRead()
             ++m_notOurs;   // not ed3k: its own socket, so dropped
     }
     pump();
+}
+
+bool Ed3kSession::offerDatagram(const QNetworkDatagram& d)
+{
+    if (!m_engine || m_ownSocket)
+        return false;
+    const QByteArray data = d.data();
+    const auto ours = m_engine->datagramIn(now(), toAddress(d.senderAddress(), std::uint16_t(d.senderPort())), spanOf(data));
+    if (!ours) {
+        if (ours.error() == ffi::Error::Dead)
+            die(ours.error());
+        return false;
+    }
+    if (!*ours)
+        return false;   // eD2K's
+    // one pump for a burst: the owner drains its socket first
+    if (!m_pumpQueued) {
+        m_pumpQueued = true;
+        QMetaObject::invokeMethod(this, [this] {
+            m_pumpQueued = false;
+            if (m_engine)
+                pump();
+        }, Qt::QueuedConnection);
+    }
+    return true;
 }
 
 void Ed3kSession::onTimer()
@@ -787,6 +825,8 @@ void Ed3kSession::followIPv6Pin()
 
 void Ed3kSession::writeDatagram(const char* data, qint64 len, const ffi::Address& to)
 {
+    if (!m_socket)
+        return;   // the shared socket went with the eD2K core
     const QHostAddress ip = toQHostAddress(to);
     // §8.3: global IPv6 peers see the address advertised; loopback, link-local and
     // unique-local ones get the system's source
@@ -811,16 +851,17 @@ void Ed3kSession::die(ffi::Error error)
     if (m_http)
         m_http->clear();
     m_posted.clear();
-    if (m_socket)
-        m_socket->disconnect(this);
+    if (m_ownSocket)
+        m_ownSocket->disconnect(this);
     // its sockets may be in a call up the stack: freed later
     if (m_lan) {
         m_lan->detach();
         m_lan.release()->deleteLater();
     }
     // the socket and HTTP client may be in a call up the stack: freed later
-    if (m_socket)
-        m_socket.release()->deleteLater();
+    if (m_ownSocket)
+        m_ownSocket.release()->deleteLater();
+    m_socket.clear();
     if (m_http)
         m_http.release()->deleteLater();
     m_trafficBase = traffic();   // if the dead engine still reads

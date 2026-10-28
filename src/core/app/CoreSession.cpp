@@ -1915,8 +1915,9 @@ std::vector<PortMapRequest> CoreSession::buildPortMapRequests() const
 #endif
 
 #ifdef EMULE_HAVE_ED3K
-    // the ed3k node's own UDP socket (src/ed3k/Ed3kSession); 0 = not resolved yet
-    if (thePrefs.ed3kEnabled())
+    // the ed3k node's own UDP socket (src/ed3k/Ed3kSession); 0 = not resolved yet. On the
+    // eD2K UDP port it shares that socket and its mapping (§14.1)
+    if (thePrefs.ed3kEnabled() && thePrefs.ed3kUdpPort() != udpPort)
         add(PortMapPurpose::Ed3kUdp, PortMapProtocol::Udp, thePrefs.ed3kUdpPort(),
             QStringLiteral("eMule ed3k UDP"));
 #endif
@@ -2243,16 +2244,27 @@ void CoreSession::randomizeListenPorts()
         return port;
     };
 
-    thePrefs.setPort(pick(&Preferences::tcpPortFree));
-    if (thePrefs.udpPort() != 0)   // 0 = UDP off
-        thePrefs.setUdpPort(pick(&Preferences::udpPortFree));
+    // one port for TCP and UDP (and ed3k) stays one port
+    const bool joined = thePrefs.udpPort() == thePrefs.port();
+    [[maybe_unused]] const bool ed3kJoined = thePrefs.ed3kUdpPort() == thePrefs.port();
+    if (joined) {
+        const uint16 port = pick([](uint16 p) { return Preferences::tcpPortFree(p) && Preferences::udpPortFree(p); });
+        thePrefs.setPort(port);
+        thePrefs.setUdpPort(port);
+    } else {
+        thePrefs.setPort(pick(&Preferences::tcpPortFree));
+        if (thePrefs.udpPort() != 0)   // 0 = UDP off
+            thePrefs.setUdpPort(pick(&Preferences::udpPortFree));
+    }
     // libtorrent listens on TCP and UDP of the one port
     if (thePrefs.btEnabled())
         thePrefs.setBtListenPort(pick([](uint16 p) {
             return Preferences::tcpPortFree(p) && Preferences::udpPortFree(p);
         }));
 #ifdef EMULE_HAVE_ED3K
-    if (thePrefs.ed3kEnabled())
+    if (ed3kJoined)
+        thePrefs.setEd3kUdpPort(thePrefs.port());
+    else if (thePrefs.ed3kEnabled())
         thePrefs.setEd3kUdpPort(pick(&Preferences::udpPortFree));
 #endif
 

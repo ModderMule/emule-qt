@@ -257,7 +257,7 @@ are `http(s)`.
 
 | Opcode | Name | Purpose |
 |---|---|---|
-| 750 | `FetchMetaFile` | fetch the metafile for the GUI to save, or a web row's links |
+| 750 | `FetchMetaFile` | fetch the metafile for the GUI to save, or a web row's links; `inspect` adds the parsed torrent/NZB for the row's Details. Fetched files kept 3 h in the daemon (`MetaFileCache`): Details then Download fetches once |
 | 751 | `DownloadMetaResult` | queue a Usenet row |
 | 752 | `GetMetaAuthStatus` | account status |
 | 753 | `MetaLogin` | log in |

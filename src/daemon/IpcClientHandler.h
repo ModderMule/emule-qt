@@ -146,6 +146,7 @@ private:
     void handleSetSharedFilePriority(const Ipc::IpcMessage& msg);
     void handleReloadSharedFiles(const Ipc::IpcMessage& msg);
     void handleRehashAllSharedFiles(const Ipc::IpcMessage& msg);
+    void handleMigrateEd2kCompat(const Ipc::IpcMessage& msg);
     void handleGetEd2kLink(const Ipc::IpcMessage& msg);
     void handleGetFriends(const Ipc::IpcMessage& msg);
     void handleAddFriend(const Ipc::IpcMessage& msg);
@@ -228,6 +229,7 @@ private:
     void handleGetIndexerFeeds(const Ipc::IpcMessage& msg);
     void handleSetIndexerFeeds(const Ipc::IpcMessage& msg);
     void handlePollIndexerFeedNow(const Ipc::IpcMessage& msg);
+    void handleInspectIndexerResult(const Ipc::IpcMessage& msg);
 
     // Usenet (720-799)
     void handleGetNewsServers(const Ipc::IpcMessage& msg);

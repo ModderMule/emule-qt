@@ -13,6 +13,8 @@
 /// - Credits → stake (Ed3kStakeGroup, credit.md §6.7) and Filters (Ed3kFilterPage,
 ///   filter-list.md) act at once over IPC; Connection → chaintube RPC endpoints on OK.
 /// - Credits page is built but not in the sidebar for now (OptionsDialog::hasPage).
+/// - Auto credits page (in the sidebar as "Credits"): autostart highspeed download, the
+///   credit factor bid from a balance threshold down to ~20 credits (Ed3kCredit::AutoBid).
 /// - Hoster (hoster.md): downloads from hosters are off by default; switching them on shows
 ///   what it means (§3, §8, §9). Vouched links are published by default (§4.1). Accounts are sent
 ///   with their password only when it was typed here; the daemon never sends one back.
@@ -58,6 +60,7 @@ public:
     [[nodiscard]] QWidget* generalPage() const { return m_general; }
     [[nodiscard]] QWidget* connectionPage() const { return m_connection; }
     [[nodiscard]] QWidget* creditsPage() const { return m_credits; }
+    [[nodiscard]] QWidget* autoCreditsPage() const { return m_autoCredits; }
     [[nodiscard]] QWidget* namesPage() const { return m_names; }
     [[nodiscard]] QWidget* filtersPage() const;
     [[nodiscard]] QWidget* hosterPage() const { return m_hoster; }
@@ -70,12 +73,19 @@ public:
     void saveLocal() const;
     /// The contract address and chain ID are well-formed; else shows why and returns false.
     [[nodiscard]] bool validate();
+    /// ed3k on the one eD2K TCP/UDP port (§14.1): no port of its own here; the Connection
+    /// page sends ed3kUdpPort with the eD2K ports.
+    [[nodiscard]] bool portJoined() const { return m_portJoined; }
+    /// The eD2K TCP/UDP port the Connection page shows (note of a joined port).
+    void setJoinedPort(int port);
 
 signals:
     /// A setting was edited (OptionsDialog::markDirty).
     void changed();
     /// validate() failed on this page: OptionsDialog shows it.
     void showPage(QWidget* page);
+    /// eD2K compat applied: TCP, UDP and ed3k on @p port (the Connection page joins them).
+    void portsJoined(int port);
 
 private:
     QWidget* buildGeneral(QWidget* parent);
@@ -86,6 +96,12 @@ private:
     /// GetEd3kStatus / PushEd3kStatus: running note, credit address, balance, stake.
     void applyStatus(const QCborMap& status);
     void requestStatus();
+    /// MigrateEd2kCompat: the plan (apply false) or the switch, after a yes.
+    void migrateEd2kCompat();
+    void requestCompatPlan();
+    void applyCompatPlan(const QCborMap& plan);
+    /// The ed3k UDP spin or, joined, the note naming the shared port.
+    void showPortJoined();
     /// The user ticked "Use credits": the notes of credit.md §9, §9.1, §10; false: not agreed.
     [[nodiscard]] bool confirmCredits();
     void newKey();
@@ -118,6 +134,9 @@ private:
     void checkAccount();
     void fillAccounts();
     [[nodiscard]] Ed3kHosterPrefs hosterPrefs() const;
+    QWidget* buildAutoCredits(QWidget* parent);
+    /// m_autoNoteLabel and the group's enabled state: ed3k on, credits in use, running.
+    void updateAutoCredits();
 
     QPointer<IpcClient> m_ipc;
     QWidget* m_parent = nullptr;
@@ -126,6 +145,7 @@ private:
     QWidget* m_general = nullptr;
     QWidget* m_connection = nullptr;
     QWidget* m_credits = nullptr;
+    QWidget* m_autoCredits = nullptr;
     QWidget* m_names = nullptr;
     Ed3kFilterPage* m_filters = nullptr;
     QWidget* m_hoster = nullptr;
@@ -136,9 +156,14 @@ private:
     QCheckBox* m_shareFilesCheck = nullptr;
     QCheckBox* m_holdBackCheck = nullptr;
     QList<QCheckBox*> m_extChecks;   ///< text = the extension name
+    QLabel* m_compatLabel = nullptr;
+    QPushButton* m_compatBtn = nullptr;
 
     // Connection
     QSpinBox* m_udpPortSpin = nullptr;
+    QLabel* m_udpPortJoinedLabel = nullptr;
+    bool m_portJoined = false;
+    int m_joinedPort = 0;
     QCheckBox* m_lanCheck = nullptr;
     QSpinBox* m_sitePortSpin = nullptr;
     QPlainTextEdit* m_nodeListsEdit = nullptr;
@@ -170,6 +195,13 @@ private:
     QPushButton* m_importKeyBtn = nullptr;
     QPushButton* m_exportKeyBtn = nullptr;
     QLabel* m_accountLabel = nullptr;
+
+    // Auto credits
+    QGroupBox* m_autoBidGroup = nullptr;
+    QDoubleSpinBox* m_autoFactorSpin = nullptr;
+    QSpinBox* m_autoThresholdSpin = nullptr;
+    QLabel* m_autoNoteLabel = nullptr;
+    QCborMap m_creditStatus;   ///< the "credit" map of the last ed3k status
 
     // Names
     QLabel* m_namesNote = nullptr;

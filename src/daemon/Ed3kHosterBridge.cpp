@@ -54,7 +54,9 @@ QCborMap itemToCbor(const ed3k::Ed3kHosterJoin::Item& it)
                     {QStringLiteral("root"), it.rootHex},
                     {QStringLiteral("added"), it.added},
                     {QStringLiteral("mirrorNo"), it.mirrorNo},
-                    {QStringLiteral("mirrors"), qint64(it.mirrors.size())}};
+                    {QStringLiteral("mirrors"), qint64(it.mirrors.size())},
+                    {QStringLiteral("packageId"), qint64(it.packageId)},
+                    {QStringLiteral("package"), it.package}};
 }
 
 /// GetHosterStats: the counters from Statistics, the live part from the items.
@@ -179,7 +181,11 @@ bool handleRequest(const IpcMessage& msg, const std::function<void(const IpcMess
                 urls << u.toString();
             files.append(urls);
         }
-        const auto added = files.isEmpty() ? s_join->addLinks(msg.fieldString(0)) : s_join->addMirrored(files);
+        // field 2: a new package of that name; field 3: an existing package to join
+        const QString package = msg.fieldString(2);
+        const auto packageId = quint32(msg.field(3).toInteger());
+        const auto added = files.isEmpty() ? s_join->addLinks(msg.fieldString(0), package, packageId)
+                                           : s_join->addMirrored(files, package, packageId);
         for (const quint32 id : added)
             ids.append(qint64(id));
         reply(IpcMessage::makeResult(seq, true, QCborMap{{QStringLiteral("ids"), ids}}));

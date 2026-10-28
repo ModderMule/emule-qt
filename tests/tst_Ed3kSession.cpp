@@ -16,6 +16,7 @@
 #include <QTcpSocket>
 #include <QTemporaryDir>
 #include <QTest>
+#include <QUdpSocket>
 
 using namespace eMule::ed3k;
 
@@ -25,6 +26,8 @@ class tst_Ed3kSession : public QObject {
 private slots:
     void keyFileCreatedOnceAndReused();
     void twoNodesFindEachOther();
+    void sharedSocketCarriesBothProtocols();
+    void derivedUserHashIsTheNodes();
     void stateSavedOnStopAndLoaded();
     void brokenKeyFileIsNotReplaced();
     void httpAnswersFromLiteralAddress_data();
@@ -91,6 +94,71 @@ void tst_Ed3kSession::twoNodesFindEachOther()
     QVERIFY(connectPair(a, b));
     // B learnt A from its lookups too
     QTRY_VERIFY_WITH_TIMEOUT(b.contactCount() > 0, 20000);
+}
+
+// §14.1: A runs on a socket it does not own, as on the eD2K UDP port. Its owner hands over
+// what is not plain eD2K; A takes the ed3k datagrams and leaves the rest
+void tst_Ed3kSession::sharedSocketCarriesBothProtocols()
+{
+    QTemporaryDir da, db;
+    QVERIFY(da.isValid() && db.isValid());
+    QUdpSocket shared;
+    QVERIFY(shared.bind(QHostAddress::LocalHost, 0));
+    Ed3kSession a, b;
+    int ed2k = 0;
+    int notOurs = 0;
+    QObject::connect(&shared, &QUdpSocket::readyRead, &shared, [&] {
+        while (shared.hasPendingDatagrams()) {
+            const QNetworkDatagram d = shared.receiveDatagram();
+            const QByteArray data = d.data();
+            const auto first = data.isEmpty() ? std::uint8_t(0) : static_cast<std::uint8_t>(data.at(0));
+            if (first == 0xE3 || first == 0xC5)
+                ++ed2k;   // plain eD2K: never offered
+            else if (!a.offerDatagram(d))
+                ++notOurs;
+        }
+    });
+    Ed3kSettings sa = loopback(da.path());
+    sa.udpPort = shared.localPort();
+    sa.sharedSocket = &shared;
+    QVERIFY(a.start(sa));
+    QCOMPARE(a.udpPort(), shared.localPort());
+    QVERIFY(b.start(loopback(db.path())));
+    QVERIFY(connectPair(a, b));
+    QTRY_VERIFY_WITH_TIMEOUT(b.contactCount() > 0, 20000);
+
+    // eD2K's datagrams on the same port stay eD2K's
+    QUdpSocket peer;
+    QVERIFY(peer.bind(QHostAddress::LocalHost, 0));
+    peer.writeDatagram(QByteArray("\xC5\x90hello", 7), QHostAddress::LocalHost, shared.localPort());
+    peer.writeDatagram(QByteArray(32, '\x5A'), QHostAddress::LocalHost, shared.localPort());   // obfuscated-looking
+    QTRY_COMPARE_WITH_TIMEOUT(ed2k, 1, 5000);
+    QTRY_COMPARE_WITH_TIMEOUT(notOurs, 1, 5000);
+
+    // stop leaves the socket to its owner
+    a.stop();
+    QVERIFY(shared.state() == QAbstractSocket::BoundState);
+    b.stop();
+}
+
+// §14.2: the user hash a new config gets is the one of this node's ID
+void tst_Ed3kSession::derivedUserHashIsTheNodes()
+{
+    QTemporaryDir dir;
+    QVERIFY(dir.isValid());
+    const auto hash = derivedUserHash(dir.path());   // creates node.key
+    QVERIFY(hash.has_value());
+    QCOMPARE((*hash)[5], std::uint8_t(14));
+    QCOMPARE((*hash)[14], std::uint8_t(111));
+    Ed3kSession s;
+    QVERIFY(s.start(loopback(dir.path())));
+    const auto id = s.nodeId();
+    QVERIFY(id.has_value());
+    QCOMPARE(*hash, ::ed3k::userHash(*id));
+    const auto hint = ::ed3k::userHashHint(*hash);
+    QVERIFY(hint.has_value());
+    QVERIFY(std::equal(hint->begin(), hint->end(), id->bytes.begin()));
+    s.stop();
 }
 
 void tst_Ed3kSession::stateSavedOnStopAndLoaded()

@@ -390,6 +390,19 @@ void ClientUDPSocket::processDatagram(const QNetworkDatagram& datagram)
     if (data.size() < 2)
         return;
 
+    // ed3k on the same port (§14.1): plain eD2K first bytes are never an ed3k salt; the rest
+    // goes to ed3k's keyed check before the eD2K trial decryption
+    if (m_foreign) {
+        switch (static_cast<uint8>(data[0])) {
+        case OP_EDONKEYPROT: case OP_KADEMLIAHEADER: case OP_KADEMLIAPACKEDPROT: case OP_EMULEPROT:
+        case OP_PACKEDPROT: case OP_UDPRESERVEDPROT1: case OP_UDPRESERVEDPROT2:
+            break;
+        default:
+            if (m_foreign(datagram))
+                return;
+        }
+    }
+
     const Address senderAddress = Address::fromQHostAddress(datagram.senderAddress());
     const uint16 senderPort = static_cast<uint16>(datagram.senderPort());
     const Endpoint senderEP(senderAddress, senderPort);

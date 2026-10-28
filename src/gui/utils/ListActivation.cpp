@@ -121,6 +121,11 @@ private:
             case Qt::Key_F5:        return run(m_h.refresh);
             case Qt::Key_Insert:    return run(m_h.insert);
             case Qt::Key_Space:     return m_h.toggle && m_h.toggle();
+            case Qt::Key_Escape:
+                if (!m_h.escapeDeselects || !m_view->selectionModel() || !m_view->selectionModel()->hasSelection())
+                    return false;
+                m_view->clearSelection();
+                return true;
             default:                break;
             }
         }

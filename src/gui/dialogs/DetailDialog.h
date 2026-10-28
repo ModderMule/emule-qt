@@ -180,6 +180,8 @@ signals:
 protected:
     /// Where subclasses put their content. The button row sits below it.
     [[nodiscard]] QVBoxLayout* contentLayout() const { return m_contentLayout; }
+    /// The Close box, for a subclass that adds its own action button.
+    [[nodiscard]] QDialogButtonBox* buttonBox() const { return m_buttonBox; }
 
     void setSubjectKey(const QString& key) { m_subjectKey = key; }
 

@@ -154,7 +154,9 @@ void Ed3kShared::connectList(SharedFileList& list)
             if (auto e = entryOf(*f))
                 onFileRelocated(*e);
     });
-    connect(&list, &SharedFileList::fileChanged, this, &Ed3kShared::onFileChanged);
+    // Queued: fileChanged may fire with the list's lock held, and the lookup takes it
+    connect(&list, &SharedFileList::fileChanged, this, &Ed3kShared::onFileChanged,
+            Qt::QueuedConnection);
 }
 
 void Ed3kShared::start()

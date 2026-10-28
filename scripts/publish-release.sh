@@ -21,6 +21,16 @@ set -euo pipefail
 # https://emule-qt.org/pub/ and checks it against the SHA-256 the tag message
 # carries. CI has no MaxMind credentials.
 #
+# The hoster resolver (resolver.zip) goes the same way: built here by
+# scripts/build-hoster-resolver.sh from the JDownloader sources (JD_DIR in .env or
+# the environment, default /Volumes/MySSD/Coding/Java), rsynced to /pub/ and its
+# SHA-256 put in the tag.
+# CI has no JD sources.
+#
+# The ed3k core (libs/packmule, the private ModderMule/packmule) is pinned for CI
+# in scripts/packmule.ref: its HEAD must be pushed, and is written there and
+# committed with the release. CI checks out that commit with PACKMULE_TOKEN.
+#
 # Tags use the vMAJOR.MINOR.PATCH form to match existing tags (v0.1.6, ...).
 #
 # Requires these keys in the project-root .env (gitignored):
@@ -29,6 +39,9 @@ set -euo pipefail
 #   PUBLISH_SSH_HOST     webserver hostname
 #   PUBLISH_REMOTE_PATH  remote directory that serves /pub/
 #   PUBLISH_LOCAL_JSON   local path of emuleqt-version.json
+# and optionally
+#   JD_DIR               dir holding the JDownloader, AppWorkUtils, JDBrowser and
+#                        MyJDownloaderClient SVN trees (an environment JD_DIR wins)
 # and the sshpass + jq tools (brew install hudochenkov/sshpass/sshpass, brew install jq).
 #
 # Pushing the tag triggers .github/workflows/release.yml, which restarts itself
@@ -97,6 +110,33 @@ if [[ "$PUBLISH_ONLY" -eq 0 ]]; then
   fi
 fi
 
+# --- guard: packmule is pushed ----------------------------------------------
+# CI checks out scripts/packmule.ref; a commit that only exists locally fails
+# every platform build after the tag push.
+PM_DIR="libs/packmule"
+PM_REF_FILE="scripts/packmule.ref"
+PM_COMMIT=""
+if [[ "$PUBLISH_ONLY" -eq 0 ]]; then
+  if [[ ! -f "$PM_DIR/Cargo.toml" ]]; then
+    echo "error: ${PM_DIR} is missing (clone ModderMule/packmule there)" >&2
+    exit 1
+  fi
+  if [[ -n "$(git -C "$PM_DIR" status --porcelain)" ]]; then
+    echo "error: ${PM_DIR} has uncommitted changes; commit and push them first" >&2
+    exit 1
+  fi
+  PM_COMMIT="$(git -C "$PM_DIR" rev-parse HEAD)"
+  if ! git -C "$PM_DIR" fetch --quiet origin; then
+    echo "error: could not fetch ${PM_DIR} from its origin" >&2
+    exit 1
+  fi
+  if [[ -z "$(git -C "$PM_DIR" branch -r --contains "$PM_COMMIT" 2>/dev/null)" ]]; then
+    echo "error: ${PM_DIR} commit ${PM_COMMIT:0:12} is not pushed to its origin" >&2
+    echo "  push it first:  git -C ${PM_DIR} push origin HEAD:main" >&2
+    exit 1
+  fi
+fi
+
 # Versions the manifest advertises for the future library auto-update
 # (docs/specialdlp-auto-update.local.md)
 DLP_LIB_VERSION="$(sed -n 's/^project(specialdlp VERSION \([0-9.]*\).*/\1/p' "$DLP_DIR/CMakeLists.txt")"
@@ -128,8 +168,9 @@ fi
 # Same KEY=VALUE semantics as loadEnvFile() in tests/TestHelpers.h: skip blanks
 # and '#' comments, split on the first '=', trim surrounding whitespace, strip
 # one pair of matching quotes. Only
-# PUBLISH_* keys are imported -- .env also holds SMTP credentials that have no
-# business in this script's environment.
+# PUBLISH_* keys and JD_DIR are imported -- .env also holds SMTP credentials that
+# have no business in this script's environment.
+JD_DIR_ENV="${JD_DIR:-}"
 while IFS= read -r line || [[ -n "$line" ]]; do
   line="${line#"${line%%[![:space:]]*}"}"
   [[ -z "$line" || "$line" == \#* ]] && continue
@@ -137,7 +178,7 @@ while IFS= read -r line || [[ -n "$line" ]]; do
   key="${line%%=*}"
   val="${line#*=}"
   key="${key//[[:space:]]/}"
-  [[ "$key" == PUBLISH_* ]] || continue
+  [[ "$key" == PUBLISH_* || "$key" == JD_DIR ]] || continue
   [[ "$key" =~ ^[A-Za-z_][A-Za-z0-9_]*$ ]] || continue
   val="${val#"${val%%[![:space:]]*}"}"
   val="${val%"${val##*[![:space:]]}"}"
@@ -160,6 +201,13 @@ fi
 
 if [[ ! -f "$PUBLISH_LOCAL_JSON" ]]; then
   echo "error: PUBLISH_LOCAL_JSON does not exist: ${PUBLISH_LOCAL_JSON}" >&2
+  exit 1
+fi
+
+# hoster resolver sources (scripts/build-hoster-resolver.sh)
+JD_SRC="${JD_DIR_ENV:-${JD_DIR:-/Volumes/MySSD/Coding/Java}}"
+if [[ "$PUBLISH_ONLY" -eq 0 && ! -d "$JD_SRC/JDownloader/src" ]]; then
+  echo "error: JDownloader sources not found at ${JD_SRC} (set JD_DIR in .env)" >&2
   exit 1
 fi
 
@@ -253,6 +301,15 @@ if [[ "$PUBLISH_ONLY" -eq 0 && "$NEW" != "$CURRENT" ]]; then
   BUMPED=1
 fi
 
+# --- pin packmule for CI ------------------------------------------------------
+# BUMPED also means "files changed": the abort paths revert, the commit step commits
+PM_PIN_CHANGED=0
+if [[ "$PUBLISH_ONLY" -eq 0 && "$(tr -d '[:space:]' < "$PM_REF_FILE" 2>/dev/null)" != "$PM_COMMIT" ]]; then
+  echo "$PM_COMMIT" > "$PM_REF_FILE"
+  PM_PIN_CHANGED=1
+  BUMPED=1
+fi
+
 # --- confirm ----------------------------------------------------------------
 echo
 echo "About to:"
@@ -260,12 +317,17 @@ if [[ "$PUBLISH_ONLY" -eq 1 ]]; then
   echo "  git      : (nothing -- --publish-only, reusing existing tag ${TAG})"
 else
   if [[ "$BUMPED" -eq 1 ]]; then
-    echo "  commit   : release: ${TAG}   (version files -> ${NEW})"
+    what=()
+    [[ "$NEW" != "$CURRENT" ]] && what+=("version files -> ${NEW}")
+    [[ "$PM_PIN_CHANGED" -eq 1 ]] && what+=("${PM_REF_FILE} -> ${PM_COMMIT:0:12}")
+    echo "  commit   : release: ${TAG}   ($(IFS=,; echo "${what[*]}" | sed 's/,/, /g'))"
   else
     echo "  commit   : (none -- tagging existing HEAD at version ${CURRENT})"
   fi
   echo "  geoip    : scripts/fetch-geoip.sh -> rsync to ${PUBLISH_REMOTE_PATH}"
-  echo "  tag      : ${TAG}  (annotated, carries the GeoLite2 SHA-256)"
+  echo "  resolver : scripts/build-hoster-resolver.sh (${JD_SRC}) -> rsync to ${PUBLISH_REMOTE_PATH}"
+  echo "  packmule : ${PM_COMMIT:0:12} (CI checks out ${PM_REF_FILE})"
+  echo "  tag      : ${TAG}  (annotated, carries the GeoLite2 + resolver SHA-256)"
   echo "  push     : ${REMOTE} ${BRANCH}  and  ${REMOTE} ${TAG}"
 fi
 echo "  manifest : ${PUBLISH_LOCAL_JSON}"
@@ -312,15 +374,37 @@ if [[ "$PUBLISH_ONLY" -eq 0 ]]; then
   fi
 fi
 
+# --- hoster resolver ----------------------------------------------------------
+# Built here because CI has no JD sources; same upload-then-tag order as GeoLite2.
+RESOLVER_SHA=""
+if [[ "$PUBLISH_ONLY" -eq 0 ]]; then
+  RESOLVER_ZIP="$ROOT/build/hoster-resolver/resolver.zip"
+  echo "Building the hoster resolver from ${JD_SRC} ..."
+  scripts/build-hoster-resolver.sh "$JD_SRC" "$ROOT/build/hoster-resolver" \
+    || abort_before_tag "hoster resolver build failed"
+  RESOLVER_SHA="$(shasum -a 256 "$RESOLVER_ZIP" | awk '{print $1}')"
+  [[ "$RESOLVER_SHA" =~ ^[0-9a-f]{64}$ ]] || abort_before_tag "could not hash ${RESOLVER_ZIP}"
+
+  echo "Uploading resolver.zip (sha256 ${RESOLVER_SHA}) ..."
+  if ! SSHPASS="$PUBLISH_SSH_PASS" rsync -avz \
+         -e 'sshpass -e ssh -o StrictHostKeyChecking=accept-new' \
+         "$RESOLVER_ZIP" \
+         "${PUBLISH_SSH_USER}@${PUBLISH_SSH_HOST}:${PUBLISH_REMOTE_PATH}"; then
+    abort_before_tag "resolver upload failed"
+  fi
+fi
+
 # --- commit / tag / push ----------------------------------------------------
 if [[ "$PUBLISH_ONLY" -eq 0 ]]; then
   if [[ "$BUMPED" -eq 1 ]]; then
     git add -A
     git commit -m "release: ${TAG}"
   fi
-  # release.yml's geoip job reads this line to verify the hosted database
+  # release.yml's geoip job reads these lines to verify the hosted files
   # the tag push only re-dispatches release.yml onto main, to keep build caches warm
-  git tag -a "${TAG}" -m "Release ${TAG}" -m "GeoLite2-Country-SHA256: ${GEOIP_SHA}"
+  git tag -a "${TAG}" -m "Release ${TAG}" \
+    -m "GeoLite2-Country-SHA256: ${GEOIP_SHA}
+Hoster-Resolver-SHA256: ${RESOLVER_SHA}"
   git push "${REMOTE}" "${BRANCH}"
   git push "${REMOTE}" "${TAG}"
 

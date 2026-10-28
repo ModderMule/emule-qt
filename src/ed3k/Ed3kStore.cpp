@@ -2,6 +2,7 @@
 /// @brief Key file and state blobs of the ed3k node — implementation.
 
 #include "Ed3kStore.h"
+#include "Ed3kFfi.h"
 
 #include <QDir>
 #include <QFile>
@@ -86,6 +87,16 @@ QString stateDir(const QString& configDir)
 std::optional<Seed> loadOrCreateKey(const QString& dir, QString* error)
 {
     return loadOrCreateSecret(dir, QStringLiteral("node.key"), {}, error);
+}
+
+std::optional<std::array<std::uint8_t, 16>> derivedUserHash(const QString& configDir, QString* error)
+{
+    std::optional<Seed> seed = loadOrCreateKey(stateDir(configDir), error);
+    if (!seed)
+        return std::nullopt;
+    const ::ed3k::NodeId id = ::ed3k::seedNodeId(*seed);
+    wipe(*seed);
+    return ::ed3k::userHash(id);
 }
 
 std::optional<Seed> loadOrCreateSecret(const QString& dir, const QString& name,

@@ -965,6 +965,7 @@ QWidget* TransferPanel::createDownloadsSection()
     keys.paste = [this] { pasteDownloadLinks(); };
     keys.find = true;
     keys.expandKeys = true;
+    keys.escapeDeselects = true;
     bindListKeys(m_downloadView, std::move(keys));
 
     // Track collapse via user interaction (clicking the arrow)
@@ -1123,6 +1124,7 @@ QWidget* TransferPanel::createBottomPane()
         keys.details = showDetails;
         keys.middleClick = showDetails;
         keys.find = true;
+        keys.escapeDeselects = true;
         bindListKeys(view, std::move(keys));
     }
 

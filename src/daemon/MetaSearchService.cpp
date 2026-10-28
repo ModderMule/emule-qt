@@ -5,6 +5,7 @@
 
 #include "app/AppContext.h"
 #include "enodemeta/GrpcWeb.h"
+#include "net/MetaFileCache.h"
 #include "search/SearchFile.h"
 #include "search/SearchList.h"
 #include "search/SearchQueue.h"
@@ -112,6 +113,19 @@ void MetaSearchService::fetch(const Target& target, const QByteArray& hash16, co
                               quint32 maxBytes, FetchCallback cb)
 {
     QPointer<MetaSearchService> self(this);
+    // fetched lately (Details, then Download): no second request
+    if (const auto cached = MetaFileCache::instance().find(MetaFileCache::enodeKey(target.serverAddr, hash16));
+        cached && (maxBytes == 0 || cached->content.size() <= qsizetype(maxBytes))) {
+        logDebug(QStringLiteral("Meta API: %1 served from cache").arg(QString::fromLatin1(hash16.toHex())));
+        pb::MetaFile file;
+        file.setContent(cached->content);
+        file.setContentType(cached->contentType);
+        // async like a real fetch: callers never see the answer inside their own call
+        QTimer::singleShot(0, this, [target, file, cb = std::move(cb)] {
+            cb(MetaStatus::Ok, {}, baseMap(MetaStatus::Ok, target), file);
+        });
+        return;
+    }
     m_client.getCaps(target.endpoint, [self, target, hash16, catalogId, maxBytes, cb = std::move(cb)]
                                       (const CallResult& r, const pb::Caps& caps) {
         if (!self)
@@ -467,10 +481,12 @@ void MetaSearchService::fetchWithToken(const Target& target, const pb::Caps& cap
 
     QPointer<MetaSearchService> self(this);
     m_client.getMetaFile(target.endpoint, hash16, catalogId, token, limit,
-        [self, target, caps, origin, cb = std::move(cb)](const CallResult& r, const pb::MetaFile& file) {
+        [self, target, caps, origin, hash16, cb = std::move(cb)](const CallResult& r, const pb::MetaFile& file) {
         if (!self)
             return;
         if (r.ok()) {
+            MetaFileCache::instance().insert(MetaFileCache::enodeKey(target.serverAddr, hash16), file.content(),
+                                             {}, file.contentType());
             cb(MetaStatus::Ok, {}, baseMap(MetaStatus::Ok, target), file);
             return;
         }

@@ -232,6 +232,63 @@ QList<BtPeerRow> BtTorrentView::peers(const lt::torrent_handle& h)
     return out;
 }
 
+BtTorrentPreview BtTorrentView::preview(const lt::add_torrent_params& atp)
+{
+    BtTorrentPreview p;
+    p.comment = QString::fromStdString(atp.comment);
+    p.creator = QString::fromStdString(atp.created_by);
+    p.createdAt = static_cast<qint64>(atp.creation_date);
+    for (std::size_t i = 0; i < atp.trackers.size(); ++i) {
+        BtTrackerRow t;
+        t.url = QString::fromStdString(atp.trackers[i]);
+        t.tier = i < atp.tracker_tiers.size() ? atp.tracker_tiers[i] : 0;
+        p.trackers.append(t);
+    }
+    for (const auto& url : atp.url_seeds)
+        p.webSeeds.append(QString::fromStdString(url));
+
+    const auto& ti = atp.ti;
+    if (!ti)
+        return p;
+    p.id = idOf(ti->info_hashes());
+    p.name = QString::fromStdString(ti->name());
+    if (ti->info_hashes().has_v1())
+        p.hashV1 = hexOf(ti->info_hashes().v1);
+    if (ti->info_hashes().has_v2())
+        p.hashV2 = hexOf(ti->info_hashes().v2);
+    p.totalSize = ti->total_size();
+    p.pieceLength = ti->piece_length();
+    p.pieces = ti->num_pieces();
+    p.isPrivate = ti->priv();
+#if TORRENT_ABI_VERSION < 4
+    // older libtorrent leaves them in torrent_info, not the add parameters
+    if (p.comment.isEmpty())
+        p.comment = QString::fromStdString(ti->comment());
+    if (p.creator.isEmpty())
+        p.creator = QString::fromStdString(ti->creator());
+    if (p.createdAt == 0)
+        p.createdAt = static_cast<qint64>(ti->creation_date());
+    if (p.trackers.isEmpty())
+        for (const auto& a : ti->trackers()) {
+            BtTrackerRow t;
+            t.url = QString::fromStdString(a.url);
+            t.tier = a.tier;
+            p.trackers.append(t);
+        }
+#endif
+    const lt::file_storage& fs = ti->layout();
+    for (lt::file_index_t i : fs.file_range()) {
+        BtFileRow f;
+        f.index = static_cast<int>(i);
+        f.path = QString::fromStdString(fs.file_path(i));
+        f.path.replace(QLatin1Char('\\'), QLatin1Char('/'));
+        f.size = fs.file_size(i);
+        f.pad = fs.pad_file_at(i);
+        p.files.append(f);
+    }
+    return p;
+}
+
 QList<BtTrackerRow> BtTorrentView::trackers(const lt::torrent_handle& h)
 {
     QList<BtTrackerRow> out;

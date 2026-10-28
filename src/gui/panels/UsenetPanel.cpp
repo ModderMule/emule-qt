@@ -423,18 +423,31 @@ void UsenetPanel::setupUi()
     // pairing TransferPanel and SharedFilesPanel use. Both resolve the row from
     // the view at the moment they run, never from a captured index: this list
     // refreshes about once a second.
-    bindListActivation(m_view,
-                       [this](const QModelIndex& index) { activateRow(index); },
-                       [this](const QModelIndex& index) {
-                           if (!index.isValid())
-                               return;
-                           QModelIndex src = toSourceIndex(index);
-                           if (m_model->isFileRow(src))
-                               src = src.parent();
-                           const QString id = m_model->idAt(src.row());
-                           if (!id.isEmpty())
-                               showDetails(id);
-                       });
+    ListKeyHandlers keys;
+    keys.activate = [this](const QModelIndex& index) { activateRow(index); };
+    keys.details = [this](const QModelIndex& index) {
+        if (!index.isValid())
+            return;
+        QModelIndex src = toSourceIndex(index);
+        if (m_model->isFileRow(src))
+            src = src.parent();
+        const QString id = m_model->idAt(src.row());
+        if (!id.isEmpty())
+            showDetails(id);
+    };
+    // Del as the Remove button, asked first as on the Transfer list
+    keys.remove = [this] {
+        const int n = int(selectedItemIds().size());
+        if (n > 0
+            && QMessageBox::question(this, tr("Remove Downloads"), tr("Remove %n download(s) from the list?", nullptr, n),
+                                     QMessageBox::Yes | QMessageBox::No, QMessageBox::No)
+                   == QMessageBox::Yes)
+            onRemove(false);
+    };
+    keys.find = true;
+    keys.expandKeys = true;
+    keys.escapeDeselects = true;
+    bindListKeys(m_view, std::move(keys));
 
     layout->addWidget(m_view, 1);
 

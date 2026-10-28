@@ -17,6 +17,7 @@
 #include <QObject>
 #include <QStringList>
 
+#include <expected>
 #include <memory>
 #include <optional>
 #include <vector>
@@ -62,6 +63,9 @@ public:
 
     /// Adds a .torrent file. `savePath` empty = the download dir.
     BtAddResult addTorrentFile(const QByteArray& data, const QString& savePath = {}, bool paused = false);
+    /// Reads a .torrent without adding it; works with the engine stopped.
+    /// Error: an English reason.
+    [[nodiscard]] static std::expected<BtTorrentPreview, QString> inspectTorrentFile(const QByteArray& data);
     /// Adds a BitTorrent magnet link.
     BtAddResult addMagnet(const QString& uri, const QString& savePath = {}, bool paused = false);
 

@@ -10,6 +10,7 @@
 #include "utils/Clipboard.h"
 #include "utils/DialogSizing.h"
 #include "utils/Ed2kLinkImporter.h"
+#include "utils/MenuUtils.h"
 #include "utils/StatusBarNotifier.h"
 #include "utils/StringUtils.h"
 
@@ -30,6 +31,7 @@
 #include <QPointer>
 #include <QPushButton>
 #include <QMap>
+#include <QMenu>
 #include <QStandardPaths>
 #include <QTreeWidget>
 #include <QUrl>
@@ -160,14 +162,18 @@ WebLinksDialog::WebLinksDialog(const QString& rowName, const QCborMap& links, co
     connect(m_list, &QTreeWidget::itemDoubleClicked, this, [](QTreeWidgetItem* item) {
         QDesktopServices::openUrl(QUrl(item->text(ColLink), QUrl::StrictMode));
     });
+    m_list->setContextMenuPolicy(Qt::CustomContextMenu);
+    connect(m_list, &QWidget::customContextMenuRequested, this, &WebLinksDialog::showContextMenu);
 
     auto* buttons = new QDialogButtonBox(QDialogButtonBox::Close, this);
     // as Usenet and torrent rows: Download while the Hoster tab takes links, saving beside it
     if (Ed2kLinkImporter::hosterReady()) {
-        auto* downloadBtn = buttons->addButton(tr("Download"), QDialogButtonBox::AcceptRole);
-        downloadBtn->setIcon(QIcon(QStringLiteral(":/icons/Download.ico")));
-        downloadBtn->setDefault(true);
-        connect(downloadBtn, &QPushButton::clicked, this, &WebLinksDialog::downloadLinks);
+        m_downloadBtn = buttons->addButton(tr("Download"), QDialogButtonBox::AcceptRole);
+        m_downloadBtn->setIcon(QIcon(QStringLiteral(":/icons/Download.ico")));
+        m_downloadBtn->setDefault(true);
+        connect(m_downloadBtn, &QPushButton::clicked, this, &WebLinksDialog::downloadLinks);
+        connect(m_list, &QTreeWidget::itemSelectionChanged, this, &WebLinksDialog::updateDownloadLabel);
+        updateDownloadLabel();
     }
     auto* copyBtn = buttons->addButton(tr("Copy Links"), QDialogButtonBox::ActionRole);
     copyBtn->setIcon(QIcon(QStringLiteral(":/icons/Copy.ico")));
@@ -181,6 +187,8 @@ WebLinksDialog::WebLinksDialog(const QString& rowName, const QCborMap& links, co
     layout->addWidget(buttons);
 
     DialogSizing::applySize(this, {}, QSize(720, 360), DialogSizing::Fit::Layout);
+    // a long name leaves the other columns in sight; the user can still widen it
+    m_list->setColumnWidth(ColName, std::min(m_list->columnWidth(ColName), width() * 3 / 4));
     startChecks();
 }
 
@@ -243,7 +251,8 @@ void WebLinksDialog::downloadLinks()
     const QList<QStringList> files = chosenDownloadFiles();
     if (files.isEmpty())
         return;
-    if (!Ed2kLinkImporter::sendHosterLinks(files, parentWidget())) {
+    // the search row's name is the package
+    if (!Ed2kLinkImporter::sendHosterLinks(files, parentWidget(), m_rowName)) {
         QMessageBox::warning(this, windowTitle(),
                              tr("Could not add the links of \"%1\": downloads from hosters are off.").arg(m_rowName));
         return;
@@ -251,6 +260,39 @@ void WebLinksDialog::downloadLinks()
     StatusBarNotifier::post(tr("Added %n file(s) of \"%1\" to the Hoster tab.", nullptr, int(files.size()))
                                 .arg(m_rowName));
     accept();
+}
+
+void WebLinksDialog::updateDownloadLabel()
+{
+    if (!m_downloadBtn)
+        return;
+    const auto n = m_list->selectedItems().size();
+    if (n > 0)
+        m_downloadBtn->setText(tr("Download (%1)").arg(n));
+    else if (m_list->topLevelItemCount() > 1)
+        m_downloadBtn->setText(tr("Download (all)"));
+    else
+        m_downloadBtn->setText(tr("Download"));
+}
+
+void WebLinksDialog::showContextMenu(const QPoint& pos)
+{
+    // a right click on an unselected row picks it, as in the search lists
+    if (QTreeWidgetItem* at = m_list->itemAt(pos); at && !at->isSelected()) {
+        m_list->clearSelection();
+        at->setSelected(true);
+    }
+    QMenu menu(this);
+    if (m_downloadBtn) {
+        // as the search results' menu: Download is the bold default
+        auto* download = menu.addAction(menuIcon("Download.ico"), tr("Download"), this, &WebLinksDialog::downloadLinks);
+        download->setEnabled(m_list->topLevelItemCount() > 0);
+        if (download->isEnabled())
+            menu.setDefaultAction(download);
+    }
+    auto* deselect = menu.addAction(menuIcon("Cancel.ico"), tr("Deselect All"), m_list, &QTreeWidget::clearSelection);
+    deselect->setEnabled(!m_list->selectedItems().isEmpty());
+    menu.exec(m_list->viewport()->mapToGlobal(pos));
 }
 
 void WebLinksDialog::startChecks()

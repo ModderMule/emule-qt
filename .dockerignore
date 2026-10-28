@@ -14,8 +14,11 @@ docker/*/crashes/
 docker/*/netmon/
 docker/*/nodes.log
 
-# Local-only trees: not part of the build (libs/packmule is its own repo)
-libs/
+# Local-only trees: not part of the build. libs/packmule (its own, private repo)
+# is built when present (docker.yml fetches it); never its cargo output
+libs/*
+!libs/packmule/
+libs/packmule/target/
 Testing/
 Usenet/
 dev/

@@ -262,6 +262,8 @@
     <ClCompile Include="dialogs\FindInListDialog.cpp" />
     <ClCompile Include="dialogs\MetadataPage.cpp" />
     <ClCompile Include="dialogs\SearchDetailDialog.cpp" />
+    <ClCompile Include="dialogs\MetaResultDetailDialog.cpp" />
+    <ClCompile Include="controls\TorrentFileTree.cpp" />
     <ClCompile Include="dialogs\FirstStartWizard.cpp" />
     <ClCompile Include="controls\FriendListModel.cpp" />
     <ClCompile Include="dialogs\ImportDownloadsDialog.cpp" />
@@ -374,6 +376,7 @@
     <QtMoc Include="utils\MetaResultActions.h" />
     <ClInclude Include="utils\NzbDrop.h" />
     <ClInclude Include="utils\TorrentLinks.h" />
+    <ClInclude Include="controls\TorrentFileTree.h" />
     <ClInclude Include="utils\TorrentAdd.h" Condition="'$(EmuleBitTorrent)'=='true'" />
     <ClInclude Include="utils\PriorityText.h" />
     <ClInclude Include="utils\ClientStateText.h" />
@@ -442,6 +445,7 @@
     <QtMoc Include="dialogs\DetailDialog.h" />
     <QtMoc Include="dialogs\FileDetailDialog.h" />
     <QtMoc Include="dialogs\SearchDetailDialog.h" />
+    <QtMoc Include="dialogs\MetaResultDetailDialog.h" />
     <QtMoc Include="dialogs\FirstStartWizard.h" />
     <QtMoc Include="controls\FriendListModel.h" />
     <QtMoc Include="dialogs\ImportDownloadsDialog.h" />

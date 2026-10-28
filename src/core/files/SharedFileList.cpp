@@ -953,11 +953,17 @@ void SharedFileList::setServerConnect(ServerConnect* sc)
 
 void SharedFileList::clearED2KPublishFlags()
 {
+    // Set outside the lock: each setter emits fileChanged, and a listener that
+    // looks the file up here would wait on m_mutex for ever (core hang on connect)
+    std::vector<KnownFile*> files;
     {
         QMutexLocker locker(&m_mutex);
+        files.reserve(m_map.size());
         for (auto& [key, file] : m_map)
-            file->setPublishedED2K(false);
+            files.push_back(file);
     }
+    for (KnownFile* file : files)
+        file->setPublishedED2K(false);
     // MFC ClearED2KPublishInfo (srchybrid/SharedFileList.cpp:872-877) arms the flag
     // too — otherwise the whole share is marked unpublished and never re-offered.
     m_republishED2K = true;

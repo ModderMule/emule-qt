@@ -150,16 +150,10 @@ QWidget* FirstStartWizard::setupPortPage()
     // Relays the wrapped height of the two paragraphs below up to the fixed dialog size.
     DialogSizing::enableHeightForWidth(container);
 
-    auto* descLabel = new QLabel(
-        tr("eMule uses two ports for communication with servers and clients. "
-           "These ports must be free and available for remote clients. "
-           "The TCP port must be available to ensure the main functionality of eMule. "
-           "The UDP port is used for Kad (serverless network) and to reduce "
-           "network usage (Overhead)."),
-        container);
-    descLabel->setWordWrap(true);
-    DialogSizing::enableHeightForWidth(descLabel);
-    vbox->addWidget(descLabel);
+    m_portDescLabel = new QLabel(container);
+    m_portDescLabel->setWordWrap(true);
+    DialogSizing::enableHeightForWidth(m_portDescLabel);
+    vbox->addWidget(m_portDescLabel);
 
     vbox->addSpacing(4);
 
@@ -175,20 +169,20 @@ QWidget* FirstStartWizard::setupPortPage()
     // Port row: TCP + UDP + UPnP button
     auto* portRow = new QHBoxLayout;
 
-    auto* tcpLabel = new QLabel(tr("TCP:"), container);
+    m_tcpLabel = new QLabel(tr("TCP:"), container);
     m_tcpPortSpin = new QSpinBox(container);
     m_tcpPortSpin->setRange(1, 65535);
 
-    auto* udpLabel = new QLabel(tr("UDP:"), container);
+    m_udpLabel = new QLabel(tr("UDP:"), container);
     m_udpPortSpin = new QSpinBox(container);
     m_udpPortSpin->setRange(1, 65535);
 
     m_upnpBtn = new QPushButton(tr("Use UPnP to Setup Ports"), container);
 
-    portRow->addWidget(tcpLabel);
+    portRow->addWidget(m_tcpLabel);
     portRow->addWidget(m_tcpPortSpin);
     portRow->addSpacing(12);
-    portRow->addWidget(udpLabel);
+    portRow->addWidget(m_udpLabel);
     portRow->addWidget(m_udpPortSpin);
     portRow->addSpacing(16);
     portRow->addWidget(m_upnpBtn);
@@ -455,10 +449,14 @@ void FirstStartWizard::fillFromSettings(const QCborMap& prefs)
 
     const auto tcpPort = number(QLatin1StringView("port"));
     const auto udpPort = number(QLatin1StringView("udpPort"));
-    m_tcpPortSpin->setValue(tcpPort > 0 ? static_cast<int>(tcpPort) : Preferences::randomTCPPort());
+    // a new config has one port for TCP, UDP and ed3k: one field, never split here
+    m_portsJoined = m_portsJoined || tcpPort == 0 || (udpPort != 0 && udpPort == tcpPort);
+    m_ed3kJoined = tcpPort == 0 || number(QLatin1StringView("ed3kUdpPort")) == tcpPort;
+    m_tcpPortSpin->setValue(tcpPort > 0 ? static_cast<int>(tcpPort) : Preferences::randomSharedPort());
     // UDP 0 = off, set only in the config file: kept, not switched on behind the user's back
-    m_udpOff = udpPort == 0;
+    m_udpOff = udpPort == 0 && !m_portsJoined;
     m_udpPortSpin->setValue(udpPort > 0 ? static_cast<int>(udpPort) : Preferences::randomUDPPort());
+    showPortsJoined();
     m_udpPortSpin->setEnabled(!m_udpOff);
     m_udpPortSpin->setToolTip(m_udpOff ? tr("UDP is disabled in the config file (udpPort: 0)")
                                        : QString());
@@ -539,6 +537,31 @@ void FirstStartWizard::onCustomRateEdited()
         onSpeedSelectionChanged();
 }
 
+void FirstStartWizard::showPortsJoined()
+{
+    m_udpLabel->setVisible(!m_portsJoined);
+    m_udpPortSpin->setVisible(!m_portsJoined);
+    m_tcpLabel->setText(m_portsJoined ? tr("TCP/UDP:") : tr("TCP:"));
+    m_portDescLabel->setText(
+        m_portsJoined
+            ? tr("eMule uses one port number for TCP and UDP, for eD2K, Kad and ed3k. It must be free and "
+                 "available for remote clients over both TCP and UDP. TCP is needed for the main "
+                 "functionality of eMule; UDP for Kad (serverless network), ed3k and to reduce network "
+                 "usage (Overhead).")
+            : tr("eMule uses two ports for communication with servers and clients. "
+                 "These ports must be free and available for remote clients. "
+                 "The TCP port must be available to ensure the main functionality of eMule. "
+                 "The UDP port is used for Kad (serverless network) and to reduce "
+                 "network usage (Overhead)."));
+}
+
+int FirstStartWizard::udpPortValue() const
+{
+    if (m_portsJoined)
+        return m_tcpPortSpin->value();
+    return m_udpOff ? 0 : m_udpPortSpin->value();
+}
+
 void FirstStartWizard::onLimitEdited()
 {
     m_limitsEdited = true;
@@ -555,6 +578,7 @@ void FirstStartWizard::pushPorts(bool withUPnP, std::function<void(bool ok)> don
         m_portsBefore.insert(QStringLiteral("enableUPnP"), thePrefs.enableUPnP());
         m_portsBefore.insert(QStringLiteral("port"), thePrefs.port());
         m_portsBefore.insert(QStringLiteral("udpPort"), thePrefs.udpPort());
+        m_portsBefore.insert(QStringLiteral("ed3kUdpPort"), thePrefs.ed3kUdpPort());
     }
 
     Ipc::IpcMessage req(Ipc::IpcMsgType::SetPreferences);
@@ -565,7 +589,11 @@ void FirstStartWizard::pushPorts(bool withUPnP, std::function<void(bool ok)> don
     req.append(QStringLiteral("port"));
     req.append(static_cast<qint64>(m_tcpPortSpin->value()));
     req.append(QStringLiteral("udpPort"));
-    req.append(static_cast<qint64>(m_udpOff ? 0 : m_udpPortSpin->value()));
+    req.append(static_cast<qint64>(udpPortValue()));
+    if (m_ed3kJoined) {   // ed3k moves with the one port (§14.1)
+        req.append(QStringLiteral("ed3kUdpPort"));
+        req.append(static_cast<qint64>(m_tcpPortSpin->value()));
+    }
     m_ipc->sendRequest(std::move(req), [self = QPointer<FirstStartWizard>(this), done = std::move(done)](
                                            const Ipc::IpcMessage& resp) {
         if (self)
@@ -576,7 +604,7 @@ void FirstStartWizard::pushPorts(bool withUPnP, std::function<void(bool ok)> don
 void FirstStartWizard::onPortTest()
 {
     const int tcp = m_tcpPortSpin->value();
-    const int udp = m_udpOff ? 0 : m_udpPortSpin->value();
+    const int udp = udpPortValue();
     if (!m_ipc || !m_ipc->isConnected()) {
         PortTest::open(nullptr, this, tcp, udp);
         return;
@@ -593,6 +621,11 @@ void FirstStartWizard::reject()
         for (const char* key : {"port", "udpPort"}) {
             req.append(QString::fromLatin1(key));
             req.append(m_portsBefore.value(QLatin1StringView(key)).toInteger());
+        }
+        // 0 = not picked yet: nothing to put back
+        if (const qint64 ed3k = m_portsBefore.value(QLatin1StringView("ed3kUdpPort")).toInteger(); ed3k != 0) {
+            req.append(QStringLiteral("ed3kUdpPort"));
+            req.append(ed3k);
         }
         m_ipc->sendRequest(std::move(req));
     }
@@ -706,7 +739,7 @@ std::optional<BandwidthSettings> FirstStartWizard::chosenBandwidth() const
 void FirstStartWizard::finish()
 {
     const auto tcpPort = static_cast<uint16>(m_tcpPortSpin->value());
-    const auto udpPort = m_udpOff ? uint16(0) : static_cast<uint16>(m_udpPortSpin->value());
+    const auto udpPort = static_cast<uint16>(udpPortValue());
     const bool kadEnabled = m_kadCheck->isChecked();
     const bool ed2kEnabled = m_ed2kCheck->isChecked();
     const bool extControls = m_extControlsCheck->isChecked();
@@ -715,6 +748,8 @@ void FirstStartWizard::finish()
     m_applied.clear();
     m_applied.insert(QStringLiteral("port"), tcpPort);
     m_applied.insert(QStringLiteral("udpPort"), udpPort);
+    if (m_ed3kJoined)
+        m_applied.insert(QStringLiteral("ed3kUdpPort"), tcpPort);
     m_applied.insert(QStringLiteral("kadEnabled"), kadEnabled);
     m_applied.insert(QStringLiteral("networkED2K"), ed2kEnabled);
     m_applied.insert(QStringLiteral("showExtControls"), extControls);
@@ -731,6 +766,8 @@ void FirstStartWizard::finish()
     // GUI's in-memory copy, so this session reads what was just chosen
     thePrefs.setPort(tcpPort);
     thePrefs.setUdpPort(udpPort);
+    if (m_ed3kJoined)
+        thePrefs.setEd3kUdpPort(tcpPort);
     thePrefs.setKadEnabled(kadEnabled);
     thePrefs.setNetworkED2K(ed2kEnabled);
     thePrefs.setShowExtControls(extControls);
@@ -749,6 +786,8 @@ void FirstStartWizard::finish()
         };
         send("port", tcpPort);
         send("udpPort", udpPort);
+        if (m_ed3kJoined)
+            send("ed3kUdpPort", tcpPort);
         req.append(QStringLiteral("kadEnabled"));
         req.append(kadEnabled);
         req.append(QStringLiteral("networkED2K"));

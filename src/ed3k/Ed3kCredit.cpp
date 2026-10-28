@@ -55,7 +55,8 @@ Ed3kCredit::~Ed3kCredit() = default;
 void Ed3kCredit::setConfig(const Ed3kCreditPrefs& prefs, int endpoints)
 {
     const bool market = prefs.bidMaxPrice != m_prefs.bidMaxPrice || prefs.sell != m_prefs.sell
-                        || prefs.sellFloor != m_prefs.sellFloor || prefs.sellSlots != m_prefs.sellSlots;
+                        || prefs.sellFloor != m_prefs.sellFloor || prefs.sellSlots != m_prefs.sellSlots
+                        || (m_auto.active && prefs.autoFactor != m_prefs.autoFactor);
     m_prefs = prefs;
     m_endpoints = std::max(endpoints, 0);
     const bool was = m_configured;
@@ -63,6 +64,7 @@ void Ed3kCredit::setConfig(const Ed3kCreditPrefs& prefs, int endpoints)
     // a new configuration applies the market in apply(); else only what moved
     if (m_configured && was && market)
         applyMarket();
+    updateAuto();
     changed(true);
 }
 
@@ -74,6 +76,7 @@ Ed3kCredit::Status Ed3kCredit::status() const
     st.endpoints = m_configured ? m_endpoints : 0;
     st.address = m_address;
     st.problem = m_problem;
+    st.autoActive = m_auto.active;
     return st;
 }
 
@@ -274,6 +277,8 @@ void Ed3kCredit::onEventPolled(const ffi::Event& ev, bool* handled)
     if (const auto* s = std::get_if<e::CreditSigned>(&ev)) {
         ++m_status.receiptsSigned;
         m_status.kibSigned += s->kib;
+        m_auto.signedReceipt(s->holder, s->day, s->spent, QDateTime::currentMSecsSinceEpoch());
+        updateAuto();
     } else if (const auto* r = std::get_if<e::CreditReceipt>(&ev)) {
         ++m_status.receiptsTaken;
         m_status.kibTaken += r->kib;
@@ -301,6 +306,8 @@ void Ed3kCredit::onEventPolled(const ffi::Event& ev, bool* handled)
         changed(true);
     } else if (const auto* b = std::get_if<e::CreditBalance>(&ev)) {
         m_status.balance = b->balance;
+        m_auto.ledgerBalance(b->balance);
+        updateAuto();
         changed(true);
     } else if (const auto* w = std::get_if<e::CreditWrongChain>(&ev)) {
         logEd3kWarning(QStringLiteral("ed3k: credit ledger endpoint %1 is on chain %2, not %3; not used again")
@@ -312,6 +319,7 @@ void Ed3kCredit::onEventPolled(const ffi::Event& ev, bool* handled)
         // §6.4: for good; a new credit address is the way on
         logEd3kWarning(QStringLiteral("ed3k: the credit account is overdrawn (credit.md §6.4)"));
         m_status.overdrawn = true;
+        updateAuto();
         changed(true);
     } else if (std::holds_alternative<e::CreditMature>(ev)) {
         logEd3k(QStringLiteral("ed3k: the credit account is mature: signed receipts mint"));
@@ -349,6 +357,7 @@ void Ed3kCredit::onSessionStatus()
             m_fresh.clear();   // the core forgets what it read
             m_lookups.clear();
             m_looked.clear();
+            m_auto.active = false;
             changed(true);
         }
         return;
@@ -435,7 +444,8 @@ void Ed3kCredit::bid(const ffi::Root& root)
     if (!engine)
         return;
     // 0 takes a bid away (receipts only, §5.4)
-    if (auto ok = engine->creditBid(m_session.now(), root, m_prefs.bidMaxPrice); !ok)
+    // if (auto ok = engine->creditBid(m_session.now(), root, m_prefs.bidMaxPrice); !ok)
+    if (auto ok = engine->creditBid(m_session.now(), root, m_auto.price(m_prefs)); !ok)
         logEd3kDebug(QStringLiteral("ed3k: credits: no bid for %1 (error %2)").arg(hexOf(root.bytes).left(8)).arg(int(ok.error())));
 }
 
@@ -448,6 +458,7 @@ void Ed3kCredit::unconfigure(const QString& why)
         (void)engine->creditOff(m_session.now());
     m_configured = false;
     m_configuredAs.clear();
+    m_auto.active = false;
     logEd3k(why.isEmpty() ? QStringLiteral("ed3k: credits off") : QStringLiteral("ed3k: credits off: %1").arg(why));
     m_session.pump();
 }
@@ -654,6 +665,94 @@ void Ed3kCredit::onClaimTx(const ffi::event::CreditTx& t)
         saveClaims();
         emit stakeChanged();
     }
+}
+
+// ---------------------------------------------------------------------------
+// Autostart highspeed download
+// ---------------------------------------------------------------------------
+
+void Ed3kCredit::AutoBid::signedReceipt(const ffi::event::CreditAddress& holder, std::uint32_t day, std::uint64_t spentMicro,
+                                        std::int64_t nowMs)
+{
+    std::uint64_t& had = spent[{holder, day}];
+    const std::uint64_t grew = spentMicro > had ? spentMicro - had : 0;
+    had = std::max(had, spentMicro);
+    // older than yesterday: no longer open (§5.4)
+    today = std::max(today, day);
+    std::erase_if(spent, [this](const auto& kv) { return kv.first.second + 1 < today; });
+    if (grew == 0)
+        return;
+    samples.emplace_back(nowMs, grew);
+    while (!samples.empty() && samples.front().first < nowMs - kRateWindowMs)
+        samples.pop_front();
+}
+
+void Ed3kCredit::AutoBid::ledgerBalance(std::uint64_t micro)
+{
+    balance = micro;
+}
+
+std::uint64_t Ed3kCredit::AutoBid::open() const
+{
+    std::uint64_t sum = 0;
+    for (const auto& [key, micro] : spent)
+        if (key.second + 1 >= today)
+            sum += micro;
+    return sum;
+}
+
+std::uint64_t Ed3kCredit::AutoBid::estimated() const
+{
+    const std::uint64_t b = balance.value_or(0);
+    const std::uint64_t o = open();
+    return b > o ? b - o : 0;
+}
+
+std::uint64_t Ed3kCredit::AutoBid::rate(std::int64_t nowMs) const
+{
+    std::uint64_t sum = 0;
+    for (const auto& [at, micro] : samples)
+        if (at >= nowMs - kRateWindowMs)
+            sum += micro;
+    return sum / std::uint64_t(kRateWindowMs / 1000);
+}
+
+bool Ed3kCredit::AutoBid::update(const Ed3kCreditPrefs& prefs, bool running, bool overdrawn, std::int64_t nowMs)
+{
+    const bool was = active;
+    // §6.4: overdrawn is for good, so never risk it: no read, no auto bid
+    if (!prefs.autoBid || !running || overdrawn || !balance) {
+        active = false;
+    } else if (!active) {
+        const std::uint64_t threshold = std::max(prefs.autoThreshold, Ed3kCreditPrefs::kAutoThresholdMin);
+        active = estimated() >= threshold * kMicro;
+    } else {
+        // what is still coming: the recent rate for a while, and one tranche paid ahead
+        const std::uint64_t coming = rate(nowMs) * kLookaheadS + prefs.autoPrice() * kTrancheMib;
+        // packmule pays no more than 80 % of the read balance open (§5.4): a bid it can't pay
+        // would be void (§5.2), so stop before that too
+        const std::uint64_t openMax = *balance / 100 * kOpenPct;
+        active = estimated() > kStopAt + coming && open() + coming < openMax;
+    }
+    return active != was;
+}
+
+std::uint64_t Ed3kCredit::AutoBid::price(const Ed3kCreditPrefs& prefs) const
+{
+    return active ? std::max(prefs.bidMaxPrice, prefs.autoPrice()) : prefs.bidMaxPrice;
+}
+
+void Ed3kCredit::updateAuto()
+{
+    const bool running = m_session.engine() != nullptr && m_configured;
+    if (!m_auto.update(m_prefs, running, m_status.overdrawn, QDateTime::currentMSecsSinceEpoch()))
+        return;
+    logEd3k(QStringLiteral("ed3k: credits: highspeed download %1, about %2 credits left")
+                .arg(m_auto.active ? QStringLiteral("started") : QStringLiteral("stopped"))
+                .arg(QString::number(double(m_auto.estimated()) / double(AutoBid::kMicro), 'f', 1)));
+    // a lower bid goes at once (§4.1); a raise at most once per 10 min per uploader
+    applyMarket();
+    changed(true);
 }
 
 } // namespace eMule::ed3k

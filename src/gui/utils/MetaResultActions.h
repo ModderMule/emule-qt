@@ -13,6 +13,8 @@
 /// AuthRequired / AccountInactive: one MetaAccountDialog per server opens, and
 /// every request that hit it is retried once it accepts.
 
+#include "dialogs/MetaResultDetailDialog.h"
+
 #include <QCborMap>
 #include <QHash>
 #include <QList>
@@ -72,6 +74,16 @@ public:
     /// the fetch fails), else saveMetaFiles.
     void addTorrents(quint32 searchID, const QList<Row>& rows);
 
+    /// Details of a torrent (not magnet-only) or Usenet row: the daemon fetches
+    /// and parses the file, a MetaResultDetailDialog shows it. Its Download runs
+    /// @p onDownload; the daemon still has the file then.
+    void showDetails(quint32 searchID, const Row& row, const MetaResultDetailDialog::RowInfo& info,
+                     std::function<void()> onDownload);
+
+    /// The same for an indexer row (InspectIndexerResult).
+    void showIndexerDetails(quint32 searchID, const QString& resultId,
+                            const MetaResultDetailDialog::RowInfo& info, std::function<void()> onDownload);
+
     /// Account status / log out for a server (server list).
     void manageAccount(const QString& serverAddr, const QString& serverName);
 
@@ -80,9 +92,10 @@ private:
                       QPointer<SearchResultsModel> model);
     /// FetchMetaFile for @p row, login detour included. @p onData gets the reply's
     /// map; a failure warns with @p failText (%1 name, %2 reason) unless @p onFail
-    /// handles it.
+    /// handles it. @p inspect: the daemon parses the file too (Details).
     void fetchMeta(quint32 searchID, const Row& row, const QString& failText,
-                   std::function<void(const QCborMap& data)> onData, std::function<bool()> onFail = {});
+                   std::function<void(const QCborMap& data)> onData,
+                   std::function<bool(const QString& reason)> onFail = {}, bool inspect = false);
     void fetchAndSave(quint32 searchID, const Row& row, const QString& path, bool pathIsDir);
     void fetchAndShowLinks(quint32 searchID, const Row& row);
     void fetchAndDownloadLinks(quint32 searchID, const Row& row);
@@ -92,6 +105,9 @@ private:
     /// Returns false when @p meta is no auth problem.
     bool handleAuth(const QCborMap& meta, std::function<void()> retry);
     void warn(const QString& text);
+    /// A Details dialog, shown, its Download wired to @p onDownload.
+    MetaResultDetailDialog* openDetails(const MetaResultDetailDialog::RowInfo& info,
+                                        std::function<void()> onDownload);
 
     IpcClient* m_ipc;
     QPointer<QWidget> m_parent;

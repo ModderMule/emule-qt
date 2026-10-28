@@ -15,6 +15,10 @@
 /// - Priority slots: the engine's queue policy (queueAuto, on from start) grants a
 ///   CreditSlotHint itself (ffi.md "The queue policy"); this class only counts them.
 /// - Bids: bidMaxPrice for every root of an ed3k download (FileStatus seen), 0 = none.
+/// - Autostart highspeed download (AutoBid): from autoThreshold credits on, every download
+///   bids the credit factor until ~20 credits would be left; then back to bidMaxPrice until
+///   the threshold again. Never overdrawn (§6.4): packmule keeps open payments at 80 % of
+///   the balance read, this stops on a local estimate between ledger reads.
 /// - Stake (§6.7): burns and claims for the user (main node only, never the anonymous key,
 ///   §9.1); the claims of own burns are kept in Config/ed3k/stake-claims.json (not a secret)
 ///   and read again (creditStakeClaim) at each configure and on refreshClaims(), with the
@@ -37,6 +41,7 @@
 #include <map>
 #include <optional>
 #include <set>
+#include <utility>
 #include <vector>
 
 namespace eMule::ed3k {
@@ -71,6 +76,7 @@ public:
         std::optional<std::uint64_t> balance;   ///< µ, as last read
         bool mature = false;
         bool overdrawn = false;
+        bool autoActive = false;   ///< autostart highspeed download bids now
         std::uint32_t lastTxWhat = 0;    ///< ED3K_CREDIT_TX_*
         std::uint32_t lastTxState = 0;   ///< ED3K_CREDIT_STATE_*
         std::uint32_t lastTxRevert = 0;  ///< ED3K_CREDIT_REVERT_*
@@ -85,6 +91,40 @@ public:
         std::optional<::ed3k::Key32> stakeRate;  ///< stake units per credit (uint256 BE)
         std::uint64_t stakeDelay = 0;            ///< s
         std::vector<StakeClaim> claims;
+    };
+
+    /// Autostart highspeed download: the decision alone, no engine (testable).
+    struct AutoBid {
+        static constexpr std::uint64_t kMicro = 1'000'000;
+        static constexpr std::uint64_t kStopAt = 20 * kMicro;     ///< µ left when it stops
+        static constexpr std::int64_t kRateWindowMs = 10'000;     ///< spend rate of the past 10 s
+        static constexpr std::uint64_t kLookaheadS = 10;          ///< spend still coming after a stop
+        static constexpr std::uint64_t kTrancheMib = 4;           ///< one tranche paid ahead (§3.2)
+        static constexpr std::uint64_t kOpenPct = 80;             ///< open payments at most (§5.4)
+
+        bool active = false;
+        std::optional<std::uint64_t> balance;   ///< µ, last ledger read
+        /// (holder, day) → cumulative µ signed. Today's and yesterday's are the open payments
+        /// (§5.4): maybe not settled yet, so not in the balance read
+        std::map<std::pair<::ed3k::event::CreditAddress, std::uint32_t>, std::uint64_t> spent;
+        std::uint32_t today = 0;   ///< newest receipt day seen
+        std::deque<std::pair<std::int64_t, std::uint64_t>> samples;   ///< (ms, µ)
+
+        /// A receipt went out: `spent` is cumulative per holder and day.
+        void signedReceipt(const ::ed3k::event::CreditAddress& holder, std::uint32_t day, std::uint64_t spentMicro,
+                           std::int64_t nowMs);
+        /// A ledger read.
+        void ledgerBalance(std::uint64_t micro);
+        /// µ signed today and yesterday, over all holders.
+        [[nodiscard]] std::uint64_t open() const;
+        /// The balance read less the open payments: low on purpose (settled ones count twice).
+        [[nodiscard]] std::uint64_t estimated() const;
+        /// µ per second over the past window.
+        [[nodiscard]] std::uint64_t rate(std::int64_t nowMs) const;
+        /// Starts or stops; true when it flipped. @p running: ed3k on and credits configured.
+        bool update(const Ed3kCreditPrefs& prefs, bool running, bool overdrawn, std::int64_t nowMs);
+        /// The bid now, µ per MiB.
+        [[nodiscard]] std::uint64_t price(const Ed3kCreditPrefs& prefs) const;
     };
 
     Ed3kCredit(Ed3kSession& session, const QString& configDir, QObject* parent = nullptr);
@@ -148,6 +188,8 @@ private:
     void apply();
     void applyMarket();
     void bid(const ::ed3k::Root& root);
+    /// AutoBid::update; a flip re-bids every download.
+    void updateAuto();
     void unconfigure(const QString& why);
     /// Reads credit.key, making it when @p create; nullopt when missing or not a key.
     [[nodiscard]] std::optional<::ed3k::Key32> loadKey(bool create, QString* error) const;
@@ -170,6 +212,7 @@ private:
     QString m_address;
     Status m_status;
     std::set<::ed3k::Root> m_roots;   ///< ed3k downloads seen (bidMaxPrice)
+    AutoBid m_auto;
     std::set<std::uint64_t> m_lookups;              ///< readClaim asked, not answered yet
     std::map<std::uint64_t, StakeClaim> m_looked;   ///< read unpaid by readClaim (fresh view)
     /// kept ids the core may claim this run: an own burn of it, or read (stakeClaims) since

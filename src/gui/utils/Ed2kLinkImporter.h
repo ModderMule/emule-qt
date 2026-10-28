@@ -101,13 +101,17 @@ public:
     static bool sendTorrentFile(const QString& name, const QByteArray& data, QWidget* parent);
 
     /// Who takes hoster links of a web search row — the Hoster tab: one list of mirrors a
-    /// file. Unset without EMULE_HAVE_HOSTER_JD; @p ready says whether hoster downloads are on.
-    using HosterLinkHandler = std::function<void(const QList<QStringList>& files, QWidget* parent)>;
+    /// file, and the package they go under (empty: none). Unset without EMULE_HAVE_HOSTER_JD;
+    /// @p ready says whether hoster downloads are on.
+    using HosterLinkHandler = std::function<void(const QList<QStringList>& files,
+                                                 const QString& package, QWidget* parent)>;
     static void setHosterLinkHandler(HosterLinkHandler handler, std::function<bool()> ready);
     /// Whether hoster links have somewhere to go now.
     [[nodiscard]] static bool hosterReady();
-    /// Hand @p files to the Hoster tab. False when not hosterReady().
-    static bool sendHosterLinks(const QList<QStringList>& files, QWidget* parent);
+    /// Hand @p files to the Hoster tab, as a package named @p package (empty: none).
+    /// False when not hosterReady().
+    static bool sendHosterLinks(const QList<QStringList>& files, QWidget* parent,
+                                const QString& package = {});
 
     /// The non-download links in @p text.
     [[nodiscard]] static OtherLinks otherLinksIn(const QString& text);

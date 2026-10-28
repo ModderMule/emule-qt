@@ -179,7 +179,9 @@
     <ClCompile Include="..\tst_TorrentDetailsGui.cpp" />
     <ClCompile Include="..\..\src\gui\controls\TorrentFilterProxy.cpp" />
     <ClCompile Include="..\..\src\gui\controls\TorrentListModel.cpp" />
+    <ClCompile Include="..\..\src\gui\utils\FileTypeIcons.cpp" />
     <ClCompile Include="..\..\src\gui\controls\TorrentListsPane.cpp" />
+    <ClCompile Include="..\..\src\gui\controls\TorrentFileTree.cpp" />
     <ClCompile Include="..\..\src\gui\controls\TorrentPieceGrid.cpp" />
     <ClCompile Include="..\..\src\gui\dialogs\TorrentDetailsDialog.cpp" />
     <ClCompile Include="..\..\src\gui\dialogs\DetailDialog.cpp" />

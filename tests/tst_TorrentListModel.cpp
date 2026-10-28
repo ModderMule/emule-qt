@@ -5,6 +5,8 @@
 #include "controls/TorrentListModel.h"
 #include "controls/TorrentProgressDelegate.h"
 
+#include <QAbstractItemModelTester>
+#include <QCborArray>
 #include <QCborMap>
 #include <QSet>
 #include <QSignalSpy>
@@ -55,6 +57,7 @@ private slots:
     void stateNames();
     void barRoles();
     void bucketColours();
+    void filesAsChildren();
 };
 
 void tst_TorrentListModel::decodesRow()
@@ -206,6 +209,66 @@ void tst_TorrentListModel::bucketColours()
     QCOMPARE(have.red(), have.blue());
     const QColor half = TorrentProgressDelegate::bucketColor(128, true, false);
     QVERIFY(half != blue && half != have);
+}
+
+void tst_TorrentListModel::filesAsChildren()
+{
+    TorrentListModel model;
+    QAbstractItemModelTester tester(&model, QAbstractItemModelTester::FailureReportingMode::QtTest);
+    QCborMap multi = row(QStringLiteral("m"), QStringLiteral("Album"), 30, 0, 3);
+    multi.insert(QStringLiteral("numFiles"), 3);
+    QCborMap single = row(QStringLiteral("s"), QStringLiteral("one.mkv"), 10, 0, 3);
+    single.insert(QStringLiteral("numFiles"), 1);
+    model.upsertRow(torrentRowFromCbor(single));
+    model.upsertRow(torrentRowFromCbor(multi));
+
+    const QModelIndex s = model.index(0, 0);
+    const QModelIndex m = model.index(1, 0);
+    QVERIFY(!model.hasChildren(s));          // single file: no arrow
+    QVERIFY(model.hasChildren(m));           // the arrow shows before the files load
+    QCOMPARE(model.rowCount(m), 0);
+    QVERIFY(model.canFetchMore(m));
+    QSignalSpy wanted(&model, &TorrentListModel::filesWanted);
+    model.fetchMore(m);
+    QCOMPARE(wanted.count(), 1);
+    QCOMPARE(wanted.first().first().toString(), QStringLiteral("m"));
+
+    const auto file = [](int index, const QString& path, qint64 size, qint64 done, int prio, bool pad = false) {
+        return QCborMap{{QStringLiteral("index"), index}, {QStringLiteral("path"), path},
+                        {QStringLiteral("size"), size}, {QStringLiteral("done"), done},
+                        {QStringLiteral("priority"), prio}, {QStringLiteral("pad"), pad}};
+    };
+    model.setFiles(QStringLiteral("m"), QCborArray{file(0, QStringLiteral("Album/01.mp3"), 10, 10, 4),
+                                                   file(1, QStringLiteral(".pad/1"), 5, 0, 4, true),
+                                                   file(2, QStringLiteral("Album/cover.jpg"), 15, 0, 0)});
+    QVERIFY(!model.canFetchMore(m));
+    QCOMPARE(model.rowCount(m), 2);          // the pad file is left out
+    const QModelIndex c0 = model.index(0, TorrentListModel::ColName, m);
+    const QModelIndex c1 = model.index(1, TorrentListModel::ColStatus, m);
+    QCOMPARE(c0.data().toString(), QStringLiteral("01.mp3"));
+    QCOMPARE(c0.data(Qt::ToolTipRole).toString(), QStringLiteral("Album/01.mp3"));
+    QCOMPARE(c0.parent(), m);
+    QCOMPARE(model.idOf(c0), QStringLiteral("m"));
+    QCOMPARE(model.fileAt(c1)->index, 2);
+    QCOMPARE(c1.data().toString(), torrentFilePriorityName(0));
+    QVERIFY(model.index(1, TorrentListModel::ColProgress, m).data(kTorrentBarPausedRole).toBool());
+    QVERIFY(model.index(0, TorrentListModel::ColProgress, m).data(kTorrentBarCompleteRole).toBool());
+    QCOMPARE(model.priorities(QStringLiteral("m")), (QList<int>{4, 4, 0}));   // pad files too
+
+    // a row before it goes: the files keep their torrent
+    model.removeRow(QStringLiteral("s"));
+    const QModelIndex m2 = model.index(0, 0);
+    QCOMPARE(model.idOf(model.index(0, 0, m2)), QStringLiteral("m"));
+    QCOMPARE(model.index(0, 0, m2).parent().row(), 0);
+
+    // same file list: in place
+    QSignalSpy removed(&model, &QAbstractItemModel::rowsRemoved);
+    model.setFiles(QStringLiteral("m"), QCborArray{file(0, QStringLiteral("Album/01.mp3"), 10, 10, 4),
+                                                   file(2, QStringLiteral("Album/cover.jpg"), 15, 15, 7)});
+    QCOMPARE(removed.count(), 0);
+    QCOMPARE(model.rowCount(m2), 2);
+    model.removeRow(QStringLiteral("m"));
+    QCOMPARE(model.rowCount(), 0);
 }
 
 QTEST_MAIN(tst_TorrentListModel)

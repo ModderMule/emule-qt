@@ -20,6 +20,10 @@ on:
         description: Ship the GeoLite2-Country database from release.yml's geoip-db artifact
         type: boolean
         default: false
+      resolver:
+        description: Ship the hoster resolver from release.yml's resolver-zip artifact
+        type: boolean
+        default: false
       ref:
         description: Commit to build; release.yml passes the tag, since its run is on main
         type: string
@@ -33,6 +37,9 @@ env:
   FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
   # ed3k early alpha: node locked off in CI builds (CMakeLists.txt EMULE_ED3K_LOCKED)
   EMULE_ED3K_LOCKED: "1"
+  # ed3k: packmule is the private ModderMule/packmule; without the secret
+  # (forks, 3rd party) it is skipped and EMULE_ED3K turns itself off
+  HAS_PACKMULE_TOKEN: ${{ secrets.PACKMULE_TOKEN != '' }}
   # Oldest macOS the app runs on; 13.0 is the floor of the Qt 6.10 binaries.
   # Read by CMake, clang, scripts/build-macos-deps.sh and, as a hard check, by
   # scripts/bundle-macos.sh.  Unset, everything is built for the runner's own
@@ -54,6 +61,41 @@ jobs:
         with:
           ref: ${{ inputs.ref }}   # empty = the run's own commit
           submodules: true   # external/enodemeta: .proto + test vectors
+
+      # libs/packmule stays gitignored; the commit is pinned in scripts/packmule.ref
+      - name: Read packmule ref
+        if: env.HAS_PACKMULE_TOKEN == 'true'
+        run: echo "PACKMULE_REF=$(tr -d '[:space:]' < scripts/packmule.ref)" >> "$GITHUB_ENV"
+
+      - name: Checkout packmule
+        if: env.HAS_PACKMULE_TOKEN == 'true'
+        uses: actions/checkout@v5
+        with:
+          repository: ModderMule/packmule
+          ref: ${{ env.PACKMULE_REF }}
+          token: ${{ secrets.PACKMULE_TOKEN }}
+          path: libs/packmule
+          persist-credentials: false
+
+      # packmule rust-version 1.98; cargo builds for the runner's own CPU, which is
+      # BUILD_ARCH here (a cross build would need a --target and another lib path)
+      - name: Install Rust
+        if: env.HAS_PACKMULE_TOKEN == 'true'
+        run: |
+          rustup toolchain install stable --profile minimal
+          rustup default stable
+          cargo --version
+
+      - name: Cache cargo
+        if: env.HAS_PACKMULE_TOKEN == 'true'
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            build/packmule-ffi/cargo
+          key: cargo-macos-${{ env.BUILD_ARCH }}-${{ env.MACOSX_DEPLOYMENT_TARGET }}-${{ hashFiles('scripts/packmule.ref', 'libs/packmule/Cargo.lock') }}
+          restore-keys: cargo-macos-${{ env.BUILD_ARCH }}-${{ env.MACOSX_DEPLOYMENT_TARGET }}-
 
       - name: Install Qt 6
         uses: jurplel/install-qt-action@v4
@@ -113,6 +155,13 @@ jobs:
           -DEMULE_BUILD_TESTS=OFF
           -DEMULE_SEED_FROM_SOURCE_TREE=OFF
 
+      # a failed fetch or a missing cargo would ship without ed3k, silently
+      - name: Check ed3k is configured
+        if: env.HAS_PACKMULE_TOKEN == 'true'
+        run: |
+          grep -q '^EMULE_ED3K:BOOL=ON' build/CMakeCache.txt \
+            || { echo "::error::packmule was fetched but EMULE_ED3K is off"; exit 1; }
+
       - name: Build
         run: cmake --build build --parallel 3
 
@@ -150,8 +199,21 @@ jobs:
           name: geoip-db
           path: data/config
 
+      # Release builds only: scripts/publish-release.sh builds it from JD's sources,
+      # release.yml checks it against the tag; bundle-macos.sh's default path
+      - name: Fetch hoster resolver
+        if: ${{ inputs.resolver }}
+        uses: actions/download-artifact@v8
+        with:
+          name: resolver-zip
+          path: build/hoster-resolver
+
       - name: Bundle
         run: scripts/bundle-macos.sh --dmg build
+
+      - name: Check hoster resolver is bundled
+        if: ${{ inputs.resolver }}
+        run: test -s build/src/gui/emuleqt.app/Contents/Resources/resolver.zip || { echo "::error::resolver.zip missing from the app"; exit 1; }
 
       # The bundle scripts check that the files are there; this checks that the
       # shipped bridge starts, i.e. finds its libraries inside the bundle.
