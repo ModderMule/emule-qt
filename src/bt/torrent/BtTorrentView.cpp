@@ -155,7 +155,8 @@ BtTorrentRow BtTorrentView::row(const lt::torrent_status& st)
     r.queuePosition = static_cast<int>(st.queue_position);
     r.pieceMap = pieceMap(st.pieces);
     r.pieces = st.num_pieces;
-    if (auto ti = st.torrent_file.lock()) {
+    // magnet without metadata yet: torrent_info is an empty stub (piece_length asserts)
+    if (auto ti = st.torrent_file.lock(); ti && ti->is_valid()) {
         r.pieceLength = ti->piece_length();
         r.numFiles = ti->num_files();
         r.isPrivate = ti->priv();
@@ -180,8 +181,9 @@ BtTorrentRow BtTorrentView::row(const lt::torrent_status& st)
 QList<BtFileRow> BtTorrentView::files(const lt::torrent_handle& h)
 {
     QList<BtFileRow> out;
+    // no metadata yet (magnet): empty stub, the per-file calls assert
     auto ti = h.torrent_file();
-    if (!ti)
+    if (!ti || !ti->is_valid())
         return out;
     const lt::file_storage& fs = ti->layout();
     std::vector<std::int64_t> progress;
@@ -272,6 +274,9 @@ QList<BtTrackerRow> BtTorrentView::trackers(const lt::torrent_handle& h)
 
 QByteArray BtTorrentView::availabilityMap(const lt::torrent_handle& h, int buckets)
 {
+    // piece_availability asserts without metadata
+    if (const auto ti = h.torrent_file(); !ti || !ti->is_valid())
+        return {};
     std::vector<int> avail;
     h.piece_availability(avail);
     const int n = static_cast<int>(avail.size());

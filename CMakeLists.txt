@@ -452,13 +452,16 @@ vcpkg, or set BOOST_ROOT) or libtorrent-rasterbar >= 2.1, or pass -DEMULE_BITTOR
     find_package(LibtorrentRasterbar 2.1 CONFIG QUIET)
     if(LibtorrentRasterbar_FOUND)
         message(STATUS "libtorrent-rasterbar ${LibtorrentRasterbar_VERSION}: installed")
-        # Release lib, but its config adds TORRENT_USE_ASSERTS in Debug: other class layout, crash
+        # Its config adds TORRENT_USE_ASSERTS in Debug. Must match the linked lib or class
+        # layouts differ (stack corruption). Release-only package (Homebrew, distro): Debug
+        # links the Release lib, so strip it. Debug lib present (vcpkg): built with it, keep it
         get_target_property(_lt_real LibtorrentRasterbar::torrent-rasterbar ALIASED_TARGET)
         if(NOT _lt_real)
             set(_lt_real LibtorrentRasterbar::torrent-rasterbar)
         endif()
         get_target_property(_lt_defs ${_lt_real} INTERFACE_COMPILE_DEFINITIONS)
-        if(_lt_defs)
+        get_target_property(_lt_configs ${_lt_real} IMPORTED_CONFIGURATIONS)
+        if(_lt_defs AND NOT "DEBUG" IN_LIST _lt_configs)
             list(FILTER _lt_defs EXCLUDE REGEX "TORRENT_USE_ASSERTS")
             set_target_properties(${_lt_real} PROPERTIES INTERFACE_COMPILE_DEFINITIONS "${_lt_defs}")
         endif()
