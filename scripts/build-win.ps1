@@ -679,6 +679,9 @@ function Invoke-EMuleBuild {
         if (Clear-StaleVcpkgCacheEntries -CachePath $cache) { $configured = $false }
     }
 
+    # Optional modules, on by default on every platform
+    $featureArgs = @('-DEMULE_BITTORRENT=ON', '-DEMULE_HOSTER_JD=ON')
+
     if (-not $configured) {
         # Not optional, despite the -BootstrapVcpkg switch: CMakeLists.txt calls
         # find_package(ZLIB REQUIRED) and find_package(OpenSSL REQUIRED), so a
@@ -708,8 +711,7 @@ function Invoke-EMuleBuild {
             '-G', 'Ninja'
             "-DCMAKE_BUILD_TYPE=$Config"
             "-DCMAKE_PREFIX_PATH=$qt"
-            '-DEMULE_BITTORRENT=ON'
-            '-DEMULE_HOSTER_JD=ON'
+            $featureArgs
             # Pin the compiler.  Qt installs MinGW under Qt\Tools and puts it on
             # PATH, and CMake's Ninja generator probes c++/g++ *before* cl, so an
             # unpinned configure silently builds with GCC against an MSVC Qt kit.
@@ -742,6 +744,9 @@ function Invoke-EMuleBuild {
     }
     else {
         Write-Host "Using existing CMake cache in: $BuildDir"
+        # Re-apply feature flags: an old cache may still hold them OFF
+        & $cmake -B $BuildDir @featureArgs
+        if ($LASTEXITCODE -ne 0) { throw 'CMake configure failed.' }
     }
 
     # -- Build ---------------------------------------------------------------

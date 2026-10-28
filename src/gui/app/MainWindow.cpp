@@ -27,9 +27,9 @@
 #include "panels/TransferPanel.h"
 #ifdef EMULE_HAVE_BITTORRENT
 #include "panels/TorrentPanel.h"
+#endif
 #ifdef EMULE_HAVE_HOSTER_JD
 #include "panels/HosterPanel.h"
-#endif
 #endif
 #include "panels/UsenetPanel.h"
 

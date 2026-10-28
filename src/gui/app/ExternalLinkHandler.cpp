@@ -54,8 +54,9 @@ void ExternalLinkHandler::setIpcClient(IpcClient* ipc)
         connect(ipc, &IpcClient::ed3kBootstrapAsk, this, &ExternalLinkHandler::askBootstrapSource,
                 Qt::UniqueConnection);
         // ed3k sets: a website that is none (name.md §6.1), a new version to take (file-set.md §5.3)
-        connect(ipc, &IpcClient::ed3kSetOffered, this,
-                [this](const Ipc::IpcMessage& msg) { openEd3kSet(msg.fieldString(0), true); }, Qt::UniqueConnection);
+        // member slot: UniqueConnection asserts on a lambda
+        connect(ipc, &IpcClient::ed3kSetOffered, this, &ExternalLinkHandler::onEd3kSetOffered,
+                Qt::UniqueConnection);
         connect(ipc, &IpcClient::ed3kSetVersion, this, &ExternalLinkHandler::tellEd3kSetVersion, Qt::UniqueConnection);
         // ed3k:name links and names typed in the browser (name.md); its links come back here
         if (!m_names) {
@@ -431,6 +432,11 @@ void ExternalLinkHandler::watchEd3kLive(const QString& link)
         if (window)
             Ed3kSetsDialog::showDialog(window, ipc, Ed3kSetsDialog::TabLive);
     });
+}
+
+void ExternalLinkHandler::onEd3kSetOffered(const Ipc::IpcMessage& msg)
+{
+    openEd3kSet(msg.fieldString(0), true);
 }
 
 void ExternalLinkHandler::tellEd3kSetVersion(const Ipc::IpcMessage& msg)

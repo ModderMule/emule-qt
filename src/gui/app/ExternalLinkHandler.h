@@ -85,6 +85,8 @@ private:
     void askBootstrapSource(const Ipc::IpcMessage& msg);
     /// An ed3k:set link (also PushEd3kSetOffer): follow and download, open as website, or not.
     void openEd3kSet(const QString& link, bool noWebsite);
+    /// PushEd3kSetOffer: a set a website pointed at, not opened as one.
+    void onEd3kSetOffered(const Ipc::IpcMessage& msg);
     /// An ed3k:live link: watched, opened in the system's player (local core).
     void watchEd3kLive(const QString& link);
     /// PushEd3kSetVersion: a new version of a set with policy ask waits for the user.
