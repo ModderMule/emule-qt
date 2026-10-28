@@ -44,6 +44,8 @@ jobs:
       # stay buildable with it (no std::ranges::contains, std::print, ...).
       CC: gcc-12
       CXX: g++-12
+      # rustc links with `cc` by default; the container has no cc alias
+      CARGO_TARGET_X86_64_UNKNOWN_LINUX_GNU_LINKER: gcc-12
       # scripts/build-linux-deps.sh output; a container path, not runner.temp
       # (that context is the host's path in a container job)
       LINUX_DEPS: /opt/linux-deps
