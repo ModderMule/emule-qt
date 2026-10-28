@@ -248,6 +248,10 @@ private:
     void admitEd3kMember(const QString& room, const QString& memberKey);
     void moderateEd3kMember(const QString& room, int action, const QString& memberKey);
     void setEd3kModerator(Ed3kRoomTab* tab, const QString& memberKey, bool on);
+    /// §2.5: the next post of @p tab answers @p postId.
+    void replyInEd3kRoom(Ed3kRoomTab* tab, const QString& postId);
+    /// §6: a member ID muted (or unmuted) here alone; kept by the daemon.
+    void muteEd3kMember(const QString& room, const QString& memberId, bool on);
     /// A failed room request: "error" of the reply as a line in Status.
     void ed3kRoomFailed(const QString& what, const Ipc::IpcMessage& reply);
     [[nodiscard]] QString ed3kNick() const;

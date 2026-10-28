@@ -3,6 +3,7 @@
 
 #include "Ed3kUploads.h"
 
+#include "Ed3kPlumbing.h"
 #include "Ed3kSession.h"
 
 #include "utils/Log.h"
@@ -10,6 +11,7 @@
 #include <QDateTime>
 
 #include <algorithm>
+#include <iterator>
 
 namespace eMule::ed3k {
 
@@ -29,6 +31,11 @@ Ed3kUploads::~Ed3kUploads() = default;
 std::vector<Ed3kUploads::Row> Ed3kUploads::uploading() const
 {
     std::vector<Row> out;
+    if (auto rows = listed()) {
+        std::ranges::copy_if(*rows, std::back_inserter(out), [](const Row& r) { return r.holding; });
+        std::ranges::sort(out, {}, &Row::since);
+        return out;
+    }
     for (const auto& [node, row] : m_rows)
         if (row.holding)
             out.push_back(row);
@@ -39,6 +46,14 @@ std::vector<Ed3kUploads::Row> Ed3kUploads::uploading() const
 std::vector<Ed3kUploads::Row> Ed3kUploads::waiting() const
 {
     std::vector<Row> out;
+    if (auto rows = listed()) {
+        // the engine's rank (its score: waiting time × the file's priority)
+        std::ranges::copy_if(*rows, std::back_inserter(out), [](const Row& r) { return !r.holding; });
+        std::ranges::stable_sort(out, [](const Row& a, const Row& b) {
+            return a.place != b.place ? (a.place == 0 ? false : b.place == 0 || a.place < b.place) : a.since < b.since;
+        });
+        return out;
+    }
     for (const auto& [node, row] : m_rows)
         if (!row.holding)
             out.push_back(row);
@@ -52,6 +67,50 @@ std::vector<Ed3kUploads::Row> Ed3kUploads::waiting() const
 // ---------------------------------------------------------------------------
 // Private
 // ---------------------------------------------------------------------------
+
+std::optional<std::vector<Ed3kUploads::Row>> Ed3kUploads::listed() const
+{
+    auto* eng = m_session.engine();
+    if (!eng)
+        return std::nullopt;
+    auto list = eng->queueList();
+    if (!list)
+        return std::nullopt;
+    const qint64 nowWall = nowMs();
+    const std::uint64_t nowMono = m_session.now().monoUs;
+    std::vector<Row> out;
+    out.reserve(list->size());
+    for (const auto& q : *list) {
+        Row row;
+        if (const auto it = m_rows.find(q.node); it != m_rows.end() && it->second.root == q.root)
+            row = it->second;   // name, LAN, due
+        row.node = q.node;
+        if (row.root != q.root || (row.fileName.isEmpty() && m_names)) {
+            row.root = q.root;
+            if (m_names)
+                if (const auto named = m_names(q.root)) {
+                    row.fileName = named->first;
+                    row.fileSize = named->second;
+                }
+        }
+        row.holding = q.slot;
+        row.bytes = q.bytes;
+        row.connected = q.connected;
+        row.place = q.slot ? 0 : int(std::min<std::uint32_t>(q.rank, INT32_MAX));
+        // monotonic µs → ms since the epoch
+        const std::uint64_t ago = nowMono > q.waitingSinceUs ? (nowMono - q.waitingSinceUs) / 1000 : 0;
+        row.since = nowWall - qint64(std::min<std::uint64_t>(ago, std::uint64_t(nowWall)));
+        if (q.endpoint) {
+            row.address = toQHostAddress(*q.endpoint).toString();
+            row.port = q.endpoint->port;
+        } else {
+            row.address.clear();
+            row.port = 0;
+        }
+        out.push_back(std::move(row));
+    }
+    return out;
+}
 
 void Ed3kUploads::onEventPolled(const ffi::Event& ev, bool* handled)
 {

@@ -7,7 +7,9 @@
 #include "app/IpcClient.h"
 #include "IpcMessage.h"
 
+#include <QApplication>
 #include <QCborArray>
+#include <QClipboard>
 #include <QComboBox>
 #include <QDialog>
 #include <QDialogButtonBox>
@@ -120,6 +122,20 @@ Ed3kFilterPage::Ed3kFilterPage(IpcClient* ipc, QWidget* parent)
     ownRow->addWidget(m_ownMode);
     ownRow->addStretch();
     ownLayout->addLayout(ownRow);
+    // §2: the own list published as a set others can follow
+    auto* pubRow = new QHBoxLayout;
+    m_publish = new QPushButton(tr("Publish my list…"), ownGroup);
+    m_publish->setToolTip(tr("Shares your own verdicts as a filter list others can follow; published again on every change."));
+    m_unpublish = new QPushButton(tr("Stop publishing"), ownGroup);
+    m_pubLink = new QLineEdit(ownGroup);
+    m_pubLink->setReadOnly(true);
+    m_pubLink->setPlaceholderText(tr("not published"));
+    m_copyLink = new QPushButton(tr("Copy link"), ownGroup);
+    pubRow->addWidget(m_publish);
+    pubRow->addWidget(m_unpublish);
+    pubRow->addWidget(m_pubLink, 1);
+    pubRow->addWidget(m_copyLink);
+    ownLayout->addLayout(pubRow);
     layout->addWidget(ownGroup);
     layout->addStretch();
 
@@ -128,6 +144,12 @@ Ed3kFilterPage::Ed3kFilterPage(IpcClient* ipc, QWidget* parent)
     connect(openBtn, &QPushButton::clicked, this, &Ed3kFilterPage::openFile);
     connect(addBtn, &QPushButton::clicked, this, &Ed3kFilterPage::addOwn);
     connect(removeBtn, &QPushButton::clicked, this, &Ed3kFilterPage::removeOwn);
+    connect(m_publish, &QPushButton::clicked, this, [this] { publishOwn(true); });
+    connect(m_unpublish, &QPushButton::clicked, this, [this] { publishOwn(false); });
+    connect(m_copyLink, &QPushButton::clicked, this, [this] {
+        if (!m_pubLink->text().isEmpty())
+            QApplication::clipboard()->setText(m_pubLink->text());
+    });
     connect(m_listMode, &QComboBox::activated, this, [this] {
         if (auto* it = selected(m_lists))
             applyMode(m_listMode, it->data(0, Qt::UserRole).toLongLong());
@@ -186,6 +208,14 @@ void Ed3kFilterPage::fill(const QCborMap& f)
         it->setText(3, o.value(QStringLiteral("reason")).toString());
         it->setData(0, Qt::UserRole, subject);
     }
+    const QCborMap pub = f.value(QStringLiteral("published")).toMap();
+    m_pubLink->setText(pub.value(QStringLiteral("link")).toString());
+    m_pubTitle = pub.value(QStringLiteral("title")).toString();
+    const bool published = !m_pubLink->text().isEmpty();
+    m_publish->setText(published ? tr("Publish again…") : tr("Publish my list…"));
+    m_publish->setEnabled(running);
+    m_unpublish->setEnabled(running && published);
+    m_copyLink->setEnabled(published);
     m_filling = false;
 }
 
@@ -366,6 +396,38 @@ void Ed3kFilterPage::removeOwn()
     m_ipc->sendRequest(std::move(req), [self = QPointer<Ed3kFilterPage>(this)](const IpcMessage& r) {
         if (self)
             self->failed(r, tr("Remove"));
+    });
+}
+
+void Ed3kFilterPage::publishOwn(bool on)
+{
+    if (!m_ipc)
+        return;
+    QString title;
+    if (on) {
+        bool ok = false;
+        title = QInputDialog::getText(this, tr("Publish my list"),
+                                      tr("Title of your filter list (followers see it):"), QLineEdit::Normal,
+                                      m_pubTitle.isEmpty() ? tr("My filter list") : m_pubTitle, &ok)
+                    .trimmed();
+        if (!ok || title.isEmpty())
+            return;
+    }
+    IpcMessage req(IpcMsgType::PublishEd3kFilterOwn);
+    req.append(title);
+    req.append(on);
+    m_ipc->sendRequest(std::move(req), [self = QPointer<Ed3kFilterPage>(this), on](const IpcMessage& r) {
+        if (!self || self->failed(r, on ? tr("Publish my list") : tr("Stop publishing")))
+            return;
+        const QString link = r.fieldMap(1).value(QStringLiteral("link")).toString();
+        self->m_pubLink->setText(link);
+        if (on && !link.isEmpty()) {
+            QApplication::clipboard()->setText(link);
+            QMessageBox::information(self, tr("Publish my list"),
+                                     tr("Your filter list is published. Its link is in the clipboard: whoever follows "
+                                        "it sees your verdicts."));
+        }
+        self->refresh();
     });
 }
 

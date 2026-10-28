@@ -345,6 +345,7 @@ TEST_EXTRAS: dict[str, TestExtras] = {
                                        "src/daemon/Ed3kFiltersBridge.cpp",
                                        "src/daemon/Ed3kDownloadsBridge.cpp",
                                        "src/daemon/Ed3kSetsBridge.cpp",
+                                       "src/daemon/Ed3kPaidBridge.cpp",
                                        "src/daemon/BandwidthCoordinator.cpp")),
     # friends and chat: Ed3kFriends + its IPC (Ed3kFriendsBridge, through Ed3kBridge)
     "tst_Ed3kFriends": replace(ED3K_EXTRAS, includes=("src/daemon",) + ED3K_EXTRAS.includes,
@@ -357,6 +358,7 @@ TEST_EXTRAS: dict[str, TestExtras] = {
                                         "src/daemon/Ed3kFiltersBridge.cpp",
                                         "src/daemon/Ed3kDownloadsBridge.cpp",
                                         "src/daemon/Ed3kSetsBridge.cpp",
+                                        "src/daemon/Ed3kPaidBridge.cpp",
                                         "src/daemon/BandwidthCoordinator.cpp")),
     # names and websites: Ed3kNames, Ed3kSiteServer + their IPC (Ed3kNamesBridge, through Ed3kBridge)
     "tst_Ed3kNames": replace(ED3K_EXTRAS, includes=("src/daemon",) + ED3K_EXTRAS.includes,
@@ -369,6 +371,7 @@ TEST_EXTRAS: dict[str, TestExtras] = {
                                       "src/daemon/Ed3kFiltersBridge.cpp",
                                       "src/daemon/Ed3kDownloadsBridge.cpp",
                                       "src/daemon/Ed3kSetsBridge.cpp",
+                                      "src/daemon/Ed3kPaidBridge.cpp",
                                       "src/daemon/BandwidthCoordinator.cpp")),
     # credits: Ed3kCredit (key file, ledger config) + its IPC (Ed3kCreditBridge, through Ed3kBridge)
     "tst_Ed3kCredit": replace(ED3K_EXTRAS, includes=("src/daemon",) + ED3K_EXTRAS.includes,
@@ -381,6 +384,7 @@ TEST_EXTRAS: dict[str, TestExtras] = {
                                        "src/daemon/Ed3kFiltersBridge.cpp",
                                        "src/daemon/Ed3kDownloadsBridge.cpp",
                                        "src/daemon/Ed3kSetsBridge.cpp",
+                                       "src/daemon/Ed3kPaidBridge.cpp",
                                        "src/daemon/BandwidthCoordinator.cpp")),
     # ed3k keyword search (Ed3kSearch)
     "tst_Ed3kSearch": ED3K_EXTRAS,
@@ -391,9 +395,15 @@ TEST_EXTRAS: dict[str, TestExtras] = {
     "tst_Ed3kSets": replace(ED3K_EXTRAS, includes=("src/daemon",) + ED3K_EXTRAS.includes,
                             sources=("src/daemon/Ed3kSetsBridge.cpp",)),
     "tst_Ed3kLive": ED3K_EXTRAS,
+    # paid subscriptions: Ed3kPaid + its IPC (Ed3kPaidBridge, asked directly); OpenSSL signs
+    "tst_Ed3kPaid": replace(ED3K_EXTRAS, includes=("src/daemon",) + ED3K_EXTRAS.includes,
+                            sources=("src/daemon/Ed3kPaidBridge.cpp",)),
     # rooms: Ed3kRooms + its IPC (Ed3kRoomsBridge, asked directly)
-    "tst_Ed3kRooms": replace(ED3K_EXTRAS, includes=("src/daemon",) + ED3K_EXTRAS.includes,
-                             sources=("src/daemon/Ed3kRoomsBridge.cpp",)),
+    "tst_Ed3kRooms": replace(ED3K_EXTRAS, includes=("src/daemon", "src/gui") + ED3K_EXTRAS.includes, widgets=True,
+                             sources=("src/daemon/Ed3kRoomsBridge.cpp",
+                                      "src/gui/panels/Ed3kRoomTab.cpp",
+                                      "src/gui/panels/ChatChannelView.cpp",
+                                      "src/gui/controls/LogTextView.cpp")),
     # stake tokens: Ed3kCredit (burn, claim, stake-claims.json) + its IPC (through Ed3kBridge)
     "tst_Ed3kStake": replace(ED3K_EXTRAS, includes=("src/daemon",) + ED3K_EXTRAS.includes,
                              sources=("src/daemon/Ed3kBridge.cpp",
@@ -405,6 +415,7 @@ TEST_EXTRAS: dict[str, TestExtras] = {
                                        "src/daemon/Ed3kFiltersBridge.cpp",
                                        "src/daemon/Ed3kDownloadsBridge.cpp",
                                        "src/daemon/Ed3kSetsBridge.cpp",
+                                       "src/daemon/Ed3kPaidBridge.cpp",
                                        "src/daemon/Ed3kHosterBridge.cpp",
                                        "src/daemon/BandwidthCoordinator.cpp")),
     # the upload queue view: Ed3kUploads + its GetUploads rows (Ed3kUploadsBridge)
@@ -421,6 +432,7 @@ TEST_EXTRAS: dict[str, TestExtras] = {
                                        "src/daemon/Ed3kFiltersBridge.cpp",
                                        "src/daemon/Ed3kDownloadsBridge.cpp",
                                        "src/daemon/Ed3kSetsBridge.cpp",
+                                       "src/daemon/Ed3kPaidBridge.cpp",
                                        "src/daemon/Ed3kHosterBridge.cpp",
                                        "src/daemon/BandwidthCoordinator.cpp")),
     # GUI sources against the stub pch; include order as in CMake picks the pch.h
@@ -430,6 +442,18 @@ TEST_EXTRAS: dict[str, TestExtras] = {
                                       sources=("src/gui/utils/TaskbarProgress.cpp",)),
     "tst_UrlPrefField": TestExtras(includes=GUI_INCLUDES, widgets=True,
                                    sources=("src/gui/app/IpcClient.cpp", "src/gui/app/KnownCores.cpp",)),
+    # the ed3k rows of the download list and the eD2K bar painter
+    "tst_Ed3kDownloadRows": TestExtras(includes=GUI_INCLUDES, widgets=True,
+                                       sources=("src/gui/controls/Ed3kDownloadRows.cpp",
+                                                "src/gui/utils/Appearance.cpp",
+                                                "src/gui/controls/DownloadListModel.cpp",
+                                                "src/gui/controls/DownloadProgressDelegate.cpp",
+                                                "src/gui/controls/BarShader.cpp",
+                                                "src/gui/utils/ClientIcons.cpp",
+                                                "src/gui/utils/CountryFlags.cpp",
+                                                "src/gui/utils/PriorityText.cpp",
+                                                "src/gui/utils/RatingIcons.cpp",
+                                                "src/gui/utils/FileTypeIcons.cpp")),
     "tst_Ed3kSetsDialog": TestExtras(includes=GUI_INCLUDES, widgets=True,
                                      sources=("src/gui/dialogs/Ed3kSetsDialog.cpp", "src/gui/app/IpcClient.cpp", "src/gui/app/KnownCores.cpp")),
     "tst_IpcTls": TestExtras(includes=GUI_INCLUDES + ("src/daemon",), widgets=True,
@@ -444,6 +468,96 @@ TEST_EXTRAS: dict[str, TestExtras] = {
                                                 "src/gui/controls/ContentScrollArea.cpp",
                                                 "src/gui/app/UiState.cpp",
                                                 "src/gui/app/IpcClient.cpp", "src/gui/app/KnownCores.cpp")),
+    # eNode result rows, Meta API account and web links dialogs
+    "tst_MetaSearchGui": TestExtras(includes=GUI_INCLUDES + ("src/core",), widgets=True,
+                                    sources=(
+                                              "src/gui/utils/Appearance.cpp",
+                                              "src/gui/dialogs/WebLinksDialog.cpp",
+                                              "src/gui/utils/Ed2kLinkImporter.cpp",
+                                              "src/gui/utils/TorrentLinks.cpp",
+                                              "src/gui/utils/HttpCacheLinkImporter.cpp",
+                                              "src/gui/utils/DialogSizing.cpp",
+                                              "src/gui/utils/StatusBarNotifier.cpp",
+                                              "src/gui/controls/ContentScrollArea.cpp",
+                                              "src/gui/app/UiState.cpp",
+                                              "src/gui/controls/SearchResultsModel.cpp",
+                                              "src/gui/controls/SearchResultsProxy.cpp",
+                                              "src/gui/controls/FilterEdit.cpp",
+                                              "src/gui/dialogs/MetaAccountDialog.cpp",
+                                              "src/gui/utils/RatingIcons.cpp",
+                                              "src/gui/utils/FileTypeIcons.cpp",
+                                              "src/gui/utils/MenuUtils.cpp",
+                                              "src/gui/utils/ViewSelection.cpp",
+                                              "src/gui/app/IpcClient.cpp",
+                                              "src/gui/app/KnownCores.cpp",
+                                              "resources/emuleqt.qrc")),
+    # every dialog at a small screen size
+    "tst_SmallScreenDialogs": TestExtras(includes=GUI_INCLUDES + ("src/core",), widgets=True,
+                                         sources=(
+                                                   "src/gui/dialogs/AddFriendDialog.cpp",
+                                                   "src/gui/dialogs/AddSourceDialog.cpp",
+                                                   "src/gui/dialogs/ArchivePreviewPanel.cpp",
+                                                   "src/gui/dialogs/BugReportDialog.cpp",
+                                                   "src/gui/dialogs/FirstStartWizard.cpp",
+                                                   "src/gui/dialogs/MetaAccountDialog.cpp",
+                                                   "src/gui/dialogs/OptionsDialog.cpp",
+                                                   "src/gui/dialogs/Ed3kOptionsPages.cpp",
+                                                   "src/gui/dialogs/Ed3kFilterPage.cpp",
+                                                   "src/gui/dialogs/Ed3kStakeGroup.cpp",
+                                                   "src/gui/app/Ed3kNameOpener.cpp",
+                                                   "src/gui/dialogs/ToolbarCustomizeDialog.cpp",
+                                                   "src/gui/controls/AccordionSidebar.cpp",
+                                                   "src/gui/controls/LogTextView.cpp",
+                                                   "src/gui/controls/LogWidget.cpp",
+                                                   "src/gui/controls/StatsGraph.cpp",
+                                                   "src/gui/panels/StatisticsPanel.cpp",
+                                                   "src/gui/utils/FileAssociation.cpp",
+                                                   "src/gui/utils/PanelPoller.cpp",
+                                                   "src/gui/utils/WebServices.cpp",
+                                                   "src/gui/app/AutoStart.cpp",
+                                                   "src/gui/app/Ed2kSchemeHandler.cpp",
+                                                   "src/gui/dialogs/CategoryDialog.cpp",
+                                                   "src/gui/dialogs/ClientDetailDialog.cpp",
+                                                   "src/gui/dialogs/CollectionCreateDialog.cpp",
+                                                   "src/gui/dialogs/CollectionViewDialog.cpp",
+                                                   "src/gui/dialogs/CommentEditPanel.cpp",
+                                                   "src/gui/dialogs/CommentsPanel.cpp",
+                                                   "src/gui/dialogs/CoreConnectDialog.cpp",
+                                                   "src/gui/dialogs/DetailDialog.cpp",
+                                                   "src/gui/dialogs/FileDetailDialog.cpp",
+                                                   "src/gui/dialogs/FindInListDialog.cpp",
+                                                   "src/gui/dialogs/ImportDownloadsDialog.cpp",
+                                                   "src/gui/dialogs/MetadataPage.cpp",
+                                                   "src/gui/dialogs/NetworkInfoDialog.cpp",
+                                                   "src/gui/dialogs/NzbFileChooserDialog.cpp",
+                                                   "src/gui/dialogs/PasteTextDialog.cpp",
+                                                   "src/gui/dialogs/SearchDetailDialog.cpp",
+                                                   "src/gui/dialogs/UsenetArchiveEntryDialog.cpp",
+                                                   "src/gui/dialogs/UsenetDetailsDialog.cpp",
+                                                   "src/gui/dialogs/WebLinksDialog.cpp",
+                                                   "src/gui/utils/Ed2kLinkImporter.cpp",
+                                                   "src/gui/utils/TorrentLinks.cpp",
+                                                   "src/gui/utils/HttpCacheLinkImporter.cpp",
+                                                   "src/gui/controls/BarShader.cpp",
+                                                   "src/gui/controls/ContentScrollArea.cpp",
+                                                   "src/gui/controls/UsenetFileCheckList.cpp",
+                                                   "src/gui/controls/UsenetProgressDelegate.cpp",
+                                                   "src/gui/controls/UsenetQueueModel.cpp",
+                                                   "src/gui/utils/Appearance.cpp",
+                                                   "src/gui/utils/CountryFlags.cpp",
+                                                   "src/gui/utils/DialogSizing.cpp",
+                                                   "src/gui/utils/FileTypeIcons.cpp",
+                                                   "src/gui/utils/IpcFeedback.cpp",
+                                                   "src/gui/utils/ListActivation.cpp",
+                                                   "src/gui/utils/MenuUtils.cpp",
+                                                   "src/gui/utils/PreviewLauncher.cpp",
+                                                   "src/gui/utils/RatingIcons.cpp",
+                                                   "src/gui/utils/SharedFilesFetch.cpp",
+                                                   "src/gui/utils/StatusBarNotifier.cpp",
+                                                   "src/gui/app/UiState.cpp",
+                                                   "src/gui/app/IpcClient.cpp",
+                                                   "src/gui/app/KnownCores.cpp",
+                                                   "resources/emuleqt.qrc")),
 }
 NO_EXTRAS = TestExtras()
 
@@ -477,9 +591,11 @@ def moc_headers(sources: tuple[str, ...]) -> list[str]:
 
 
 def sources_xml(extras: TestExtras) -> str:
-    """Extra ClCompile items, then QtMoc items in their own ItemGroup."""
-    xml = "".join(f'\n    <ClCompile Include="{vs_path(s)}" />' for s in extras.sources)
-    headers = moc_headers(extras.sources)
+    """Extra ClCompile and QtRcc items, then QtMoc items in their own ItemGroup."""
+    cpps = tuple(s for s in extras.sources if not s.endswith(".qrc"))
+    xml = "".join(f'\n    <ClCompile Include="{vs_path(s)}" />' for s in cpps)
+    xml += "".join(f'\n    <QtRcc Include="{vs_path(s)}" />' for s in extras.sources if s.endswith(".qrc"))
+    headers = moc_headers(cpps)
     if headers:
         xml += "\n  </ItemGroup>\n  <ItemGroup>"
         for h in headers:

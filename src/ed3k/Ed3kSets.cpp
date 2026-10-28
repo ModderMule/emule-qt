@@ -4,6 +4,7 @@
 #include "Ed3kSets.h"
 
 #include "Ed3kDownloads.h"
+#include "Ed3kPaid.h"
 #include "Ed3kPlumbing.h"
 #include "Ed3kSession.h"
 #include "Ed3kStore.h"
@@ -139,6 +140,8 @@ bool Ed3kSets::unfollow(std::uint32_t id)
     Set& s = it->second;
     if (auto* e = m_session.engine(); e && s.topic)
         (void)e->setUnfollow(*s.topic);
+    if (const auto scope = paidScopeOf(s); scope && m_paid)
+        m_paid->unfollow(*scope);
     std::erase_if(m_mountTopics, [id](const auto& kv) { return kv.second.first == id; });
     // the manifests go, the member files stay (file-set.md §5.3: nothing is deleted)
     for (const auto* v : {&s.applied, &s.pending})
@@ -201,6 +204,13 @@ bool Ed3kSets::applyVersion(std::uint32_t id)
         s->pending.reset();
         logEd3k(QStringLiteral("ed3k: set %1 version %2 taken").arg(id).arg(s->applied->seq));
     }
+    // was: ToDo: a mount's new version under Ask downloaded on the next apply (done: it waits
+    // in pendingMounts, shown in the dialog, taken here)
+    for (auto& [path, root] : s->pendingMounts)
+        s->mounts[path] = root;
+    if (!s->pendingMounts.empty())
+        logEd3k(QStringLiteral("ed3k: set %1: %2 mount version(s) taken").arg(id).arg(s->pendingMounts.size()));
+    s->pendingMounts.clear();
     download(*s);
     save();
     markChanged();
@@ -235,6 +245,17 @@ std::optional<Ed3kSets::Info> Ed3kSets::info(std::uint32_t id) const
     return s ? std::optional(infoOf(*s)) : std::nullopt;
 }
 
+std::optional<ffi::Key32> Ed3kSets::authorOfManifest(const ffi::Root& root) const
+{
+    for (const auto& [id, s] : m_sets) {
+        if (s.parsed.hidden)
+            continue;
+        if ((s.applied && s.applied->root == root) || (s.pending && s.pending->root == root))
+            return s.parsed.key;
+    }
+    return std::nullopt;
+}
+
 bool Ed3kSets::isRunning() const
 {
     return m_session.isRunning();
@@ -257,6 +278,18 @@ QString Ed3kSets::setLink(const ffi::Key32& key, const QByteArray& id, const QSt
 QString Ed3kSets::statePath() const
 {
     return QDir(stateDir(m_configDir)).filePath(kSetsFile);
+}
+
+void Ed3kSets::setPaid(Ed3kPaid* paid)
+{
+    if (m_paid)
+        disconnect(m_paid, nullptr, this, nullptr);
+    m_paid = paid;
+    if (!m_paid)
+        return;
+    connect(m_paid, &Ed3kPaid::keysArrived, this, &Ed3kSets::onPaidKeys);
+    for (const auto& [id, s] : m_sets)
+        followPaid(s);
 }
 
 // ---------------------------------------------------------------------------
@@ -377,8 +410,18 @@ bool Ed3kSets::followOnEngine(Set& s)
     constexpr auto kEngine = ffi::SetPolicy::Ask;
     ffi::Result<ffi::Topic> topic = std::unexpected(ffi::Error::State);
     if (s.parsed.hidden) {
+        // a paid one (subscription.md §8.3): its scope is followed for the pass and keys
+        followPaid(s);
         const QByteArray l = s.link.toUtf8();
-        topic = e->setFollowHidden(t, std::string_view(l.constData(), std::size_t(l.size())), {}, nullptr, kEngine);
+        const std::string_view link(l.constData(), std::size_t(l.size()));
+        // the version held: the plain manifest SetManifest gave, under its (sealed) root; a
+        // paid set takes none (packmule batch 13)
+        const auto& held = s.pending ? s.pending : s.applied;
+        if (held && !s.parsed.paid)
+            topic = e->setFollowHidden(t, link, spanOf(held->file), &held->root, kEngine);
+        // topic = e->setFollowHidden(t, link, {}, nullptr, kEngine);   (was: the newest fetched again)
+        if (!topic)
+            topic = e->setFollowHidden(t, link, {}, nullptr, kEngine);
     } else if (s.parsed.b3) {
         topic = e->setFollowPinned(t, s.parsed.key, spanOf(s.parsed.id), *s.parsed.b3, s.parsed.sz, kEngine);
     } else {
@@ -446,12 +489,14 @@ void Ed3kSets::onManifest(Set& s, const ffi::Root& root, const ffi::Bytes& file,
             QFile::remove(QDir(setsDir()).filePath(hexOf(s.pending->root.bytes) + QStringLiteral(".manifest")));
         s.pending = std::move(v);
         applyVersion(s.id);
+        followPaid(s);
         return;
     }
     // Ask: the user decides (file-set.md §2.3, §5.3)
     if (s.pending)
         QFile::remove(QDir(setsDir()).filePath(hexOf(s.pending->root.bytes) + QStringLiteral(".manifest")));
     s.pending = std::move(v);
+    followPaid(s);
     logEd3k(QStringLiteral("ed3k: set %1 has a new version %2 (waiting for the user)").arg(s.id).arg(seq));
     save();
     const Info i = infoOf(s);
@@ -464,13 +509,28 @@ void Ed3kSets::onMountManifest(Set& s, const QString& path, const ffi::Root& roo
     const QByteArray f = bytesOf(file);
     if (!Ed3kSetManifest::parse(f))
         return;
+    const auto held = s.mounts.find(path);
+    if (held != s.mounts.end() && held->second == root)
+        return;   // the same again
+    if (const auto p = s.pendingMounts.find(path); p != s.pendingMounts.end() && p->second == root)
+        return;   // offered already
     storeManifest(root, f);
     s.inner[root] = f;
-    s.mounts[path] = root;
     logEd3kDebug(QStringLiteral("ed3k: set %1: a new version of the mount at %2").arg(s.id).arg(path));
-    // ToDo: a mount's new version under Policy::Ask is shown, downloaded on the next apply
-    if (s.policy == Policy::Download)
-        download(s);
+    // was: ToDo: a mount's new version under Policy::Ask is shown, downloaded on the next apply
+    // (done: the first version is taken; a newer one under Ask waits for the user)
+    // s.mounts[path] = root;
+    if (s.policy == Policy::Download || held == s.mounts.end()) {
+        s.mounts[path] = root;
+        s.pendingMounts.erase(path);
+        if (s.policy == Policy::Download)
+            download(s);
+    } else {
+        s.pendingMounts[path] = root;
+        save();
+        const Info i = infoOf(s);
+        emit newVersion(s.id, s.title, s.applied ? s.applied->seq : 0, i.added, i.changed, i.removed);
+    }
     save();
     markChanged();
 }
@@ -625,10 +685,22 @@ Ed3kSets::Info Ed3kSets::infoOf(const Set& s) const
     i.dir = s.dir.isEmpty() ? setDir(s) : s.dir;
     i.error = s.error;
     i.parts = s.parts;
+    for (const auto& [path, root] : s.pendingMounts)
+        i.pendingMounts.append(path);
+    if (const auto scope = paidScopeOf(s))
+        i.paidScope = Ed3kPaid::hexOf(*scope);
     const auto& shown = s.pending ? s.pending : s.applied;
     if (!shown)
         return i;
-    const auto members = flatten(s, shown->file);
+    // the members as they will be: the pending version, mounts' pending versions in place
+    std::optional<Set> view;
+    if (!s.pendingMounts.empty()) {
+        view.emplace(s);
+        for (const auto& [path, root] : s.pendingMounts)
+            view->mounts[path] = root;
+    }
+    // const auto members = flatten(s, shown->file);
+    const auto members = flatten(view ? *view : s, shown->file);
     for (const Ed3kSetEntry& m : members) {
         if (m.isSet)
             continue;
@@ -656,7 +728,7 @@ Ed3kSets::Info Ed3kSets::infoOf(const Set& s) const
         i.members.push_back(std::move(out));
     }
     // the pending version against the applied one (§5.3 step 4)
-    if (s.pending) {
+    if (s.pending || view) {
         std::map<QString, ffi::Root> before;
         QSet<QString> rootsBefore;
         if (s.applied)
@@ -721,7 +793,11 @@ std::optional<Ed3kSets::Link> Ed3kSets::parseLink(const QString& link)
         // a hidden set (hidden-set.md); with id as well: refused (§5.4)
         if (hasId)
             return std::nullopt;
+        // subscription.md §8.3: paid=1 with s refused
+        if (s && paid)
+            return std::nullopt;
         out.hidden = true;
+        out.paid = paid;
         return out;
     }
     const auto id = hasId ? fromBase32(q.queryItemValue(QStringLiteral("id"))) : std::nullopt;
@@ -797,6 +873,10 @@ void Ed3kSets::load()
         for (auto it = mounts.begin(); it != mounts.end(); ++it)
             if (const auto r = rootOf(it.value().toString()))
                 s.mounts[it.key()] = *r;
+        const QJsonObject pendingMounts = o.value(QStringLiteral("pendingMounts")).toObject();
+        for (auto it = pendingMounts.begin(); it != pendingMounts.end(); ++it)
+            if (const auto r = rootOf(it.value().toString()); r && s.inner.contains(*r))
+                s.pendingMounts[it.key()] = *r;
         m_nextId = std::max(m_nextId, s.id + 1);
         m_sets.emplace(s.id, std::move(s));
     }
@@ -819,6 +899,9 @@ void Ed3kSets::save() const
         QJsonObject mounts;
         for (const auto& [path, root] : s.mounts)
             mounts.insert(path, hexOf(root.bytes));
+        QJsonObject pendingMounts;
+        for (const auto& [path, root] : s.pendingMounts)
+            pendingMounts.insert(path, hexOf(root.bytes));
         QStringList skipped(s.skipped.begin(), s.skipped.end());
         skipped.sort();
         sets.append(QJsonObject{
@@ -832,6 +915,7 @@ void Ed3kSets::save() const
             {QStringLiteral("pending"), versionOf(s.pending)},
             {QStringLiteral("inner"), inner},
             {QStringLiteral("mounts"), mounts},
+            {QStringLiteral("pendingMounts"), pendingMounts},
             {QStringLiteral("queued"), queued},
         });
     }
@@ -858,6 +942,65 @@ QByteArray Ed3kSets::loadManifest(const ffi::Root& root) const
 QString Ed3kSets::setsDir() const
 {
     return QDir(stateDir(m_configDir)).filePath(QStringLiteral("sets"));
+}
+
+void Ed3kSets::onPaidKeys(const ffi::Scope& scope)
+{
+    auto* e = m_session.engine();
+    if (!e)
+        return;
+    for (auto& [id, s] : m_sets) {
+        if (!s.parsed.paid || s.applied || s.pending || paidScopeOf(s) != scope)
+            continue;
+        // §8.3: the record opens with a key covering its epoch: looked up again now
+        if (s.topic)
+            (void)e->setUnfollow(*s.topic);
+        s.topic.reset();
+        if (m_attached)
+            (void)followOnEngine(s);
+        logEd3kDebug(QStringLiteral("ed3k: set %1: keys arrived, followed again").arg(id));
+    }
+    markChanged();
+}
+
+std::optional<ffi::Scope> Ed3kSets::paidScopeOf(const Set& s) const
+{
+    if (s.parsed.paid) {
+        const auto scope = ffi::paidScope(3, s.parsed.key, {});
+        return scope ? std::optional(*scope) : std::nullopt;
+    }
+    // a catalogue (§8.2): its manifest names the offer
+    const auto& shown = s.pending ? s.pending : s.applied;
+    if (s.parsed.hidden || !shown)
+        return std::nullopt;
+    const auto m = Ed3kSetManifest::parse(shown->file);
+    if (!m || m->offer.isEmpty() || m->key.size() != 32 || m->id.isEmpty())
+        return std::nullopt;
+    ffi::Key32 key{};
+    std::memcpy(key.data(), m->key.constData(), key.size());
+    const auto scope = ffi::paidScope(2, key, spanOf(m->id));
+    return scope ? std::optional(*scope) : std::nullopt;
+}
+
+void Ed3kSets::followPaid(const Set& s)
+{
+    if (!m_paid)
+        return;
+    const auto scope = paidScopeOf(s);
+    if (!scope)
+        return;
+    const QString title = s.title.isEmpty() ? s.parsed.name : s.title;
+    if (s.parsed.paid) {
+        m_paid->follow(s.parsed.key, *scope, Ed3kPaid::Kind::HiddenSet, title);
+        return;
+    }
+    const auto m = Ed3kSetManifest::parse((s.pending ? s.pending : s.applied)->file);
+    if (!m)
+        return;
+    ffi::Key32 key{};
+    std::memcpy(key.data(), m->key.constData(), key.size());
+    m_paid->follow(key, *scope, Ed3kPaid::Kind::Set, title);
+    (void)m_paid->setOffer(*scope, m->offer);
 }
 
 } // namespace eMule::ed3k

@@ -71,6 +71,7 @@ public:
     TaskId open(const QString& url, const std::optional<ResolverAccount>& account, const QString& dir,
                 std::uint64_t have) override;
     TaskId accountCheck(const QString& host, const ResolverAccount& account) override;
+    TaskId sites(const QString& host) override;
     void answerPuzzle(std::uint64_t puzzle, const QString& text) override;
     void cancel(TaskId task) override;
     void setAskPuzzles(bool on) override;

@@ -11,7 +11,7 @@
     </ProjectConfiguration>
   </ItemGroup>
   <PropertyGroup Label="Globals">
-    <ProjectGuid>{DB3EB04B-CEC6-40DA-8066-00E364DB725D}</ProjectGuid>
+    <ProjectGuid>{09EEEF3A-B91C-5BDD-86BB-A714FE078E7A}</ProjectGuid>
     <RootNamespace>tst_SmallScreenDialogs</RootNamespace>
     <Keyword>QtVS_v304</Keyword>
     <WindowsTargetPlatformVersion>10.0.26100.0</WindowsTargetPlatformVersion>
@@ -41,10 +41,10 @@
   <Import Project="$(QtMsBuild)\qt_defaults.props" Condition="Exists('$(QtMsBuild)\qt_defaults.props')" />
   <Import Project="..\..\QtVersion.props" />
   <PropertyGroup Label="QtSettings" Condition="'$(Configuration)|$(Platform)'=='Release|x64'">
-    <QtModules>core;network;testlib;gui;multimedia;websockets;httpserver;concurrent;sql</QtModules>
+    <QtModules>core;network;testlib;gui;multimedia;websockets;httpserver;concurrent;sql;widgets</QtModules>
   </PropertyGroup>
   <PropertyGroup Label="QtSettings" Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">
-    <QtModules>core;network;testlib;gui;multimedia;websockets;httpserver;concurrent;sql</QtModules>
+    <QtModules>core;network;testlib;gui;multimedia;websockets;httpserver;concurrent;sql;widgets</QtModules>
   </PropertyGroup>
   <Target Name="QtMsBuildNotFound" BeforeTargets="CustomBuild;ClCompile" Condition="!Exists('$(QtMsBuild)\qt.targets') OR !Exists('$(QtMsBuild)\Qt.props')">
     <Message Importance="High" Text="QtMsBuild: could not locate qt.targets, qt.props; project may not build correctly." />
@@ -72,7 +72,7 @@
   </PropertyGroup>
   <ItemDefinitionGroup Condition="'$(Configuration)|$(Platform)'=='Release|x64'">
     <ClCompile>
-      <AdditionalIncludeDirectories>..;..\..\src\core;..\..\src\ipc;..\..\src\usenet;..\..\src\indexer;..\..\src\vcpkg_installed\x64-windows\include;..\..\src\vcpkg_installed\x64-windows\include\miniupnpc;release;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
+      <AdditionalIncludeDirectories>..\..\src\gui;..\..\tests\stubs;..\..\src\core;..;..\..\src\core;..\..\src\ipc;..\..\src\usenet;..\..\src\indexer;..\..\src\vcpkg_installed\x64-windows\include;..\..\src\vcpkg_installed\x64-windows\include\miniupnpc;release;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
       <AdditionalOptions>-Zc:rvalueCast -Zc:inline -Zc:strictStrings -Zc:throwingNew -permissive- -Zc:__cplusplus -Zc:externConstexpr -utf-8 -w34100 -w34189 -w44996 -w44456 -w44457 -w44458 %(AdditionalOptions)</AdditionalOptions>
       <AssemblerListingLocation>release\</AssemblerListingLocation>
       <BrowseInformation>false</BrowseInformation>
@@ -127,7 +127,7 @@
   </ItemDefinitionGroup>
   <ItemDefinitionGroup Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">
     <ClCompile>
-      <AdditionalIncludeDirectories>..;..\..\src\core;..\..\src\ipc;..\..\src\usenet;..\..\src\indexer;..\..\src\vcpkg_installed\x64-windows\include;..\..\src\vcpkg_installed\x64-windows\include\miniupnpc;debug;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
+      <AdditionalIncludeDirectories>..\..\src\gui;..\..\tests\stubs;..\..\src\core;..;..\..\src\core;..\..\src\ipc;..\..\src\usenet;..\..\src\indexer;..\..\src\vcpkg_installed\x64-windows\include;..\..\src\vcpkg_installed\x64-windows\include\miniupnpc;debug;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
       <AdditionalOptions>-Zc:rvalueCast -Zc:inline -Zc:strictStrings -Zc:throwingNew -permissive- -Zc:__cplusplus -Zc:externConstexpr -utf-8 -w34100 -w34189 -w44996 -w44456 -w44457 -w44458 %(AdditionalOptions)</AdditionalOptions>
       <AssemblerListingLocation>debug\</AssemblerListingLocation>
       <BrowseInformation>false</BrowseInformation>
@@ -177,6 +177,195 @@
   </ItemDefinitionGroup>
   <ItemGroup>
     <ClCompile Include="..\tst_SmallScreenDialogs.cpp" />
+    <ClCompile Include="..\..\src\gui\dialogs\AddFriendDialog.cpp" />
+    <ClCompile Include="..\..\src\gui\dialogs\AddSourceDialog.cpp" />
+    <ClCompile Include="..\..\src\gui\dialogs\ArchivePreviewPanel.cpp" />
+    <ClCompile Include="..\..\src\gui\dialogs\BugReportDialog.cpp" />
+    <ClCompile Include="..\..\src\gui\dialogs\FirstStartWizard.cpp" />
+    <ClCompile Include="..\..\src\gui\dialogs\MetaAccountDialog.cpp" />
+    <ClCompile Include="..\..\src\gui\dialogs\OptionsDialog.cpp" />
+    <ClCompile Include="..\..\src\gui\dialogs\Ed3kOptionsPages.cpp" />
+    <ClCompile Include="..\..\src\gui\dialogs\Ed3kFilterPage.cpp" />
+    <ClCompile Include="..\..\src\gui\dialogs\Ed3kStakeGroup.cpp" />
+    <ClCompile Include="..\..\src\gui\app\Ed3kNameOpener.cpp" />
+    <ClCompile Include="..\..\src\gui\dialogs\ToolbarCustomizeDialog.cpp" />
+    <ClCompile Include="..\..\src\gui\controls\AccordionSidebar.cpp" />
+    <ClCompile Include="..\..\src\gui\controls\LogTextView.cpp" />
+    <ClCompile Include="..\..\src\gui\controls\LogWidget.cpp" />
+    <ClCompile Include="..\..\src\gui\controls\StatsGraph.cpp" />
+    <ClCompile Include="..\..\src\gui\panels\StatisticsPanel.cpp" />
+    <ClCompile Include="..\..\src\gui\utils\FileAssociation.cpp" />
+    <ClCompile Include="..\..\src\gui\utils\PanelPoller.cpp" />
+    <ClCompile Include="..\..\src\gui\utils\WebServices.cpp" />
+    <ClCompile Include="..\..\src\gui\app\AutoStart.cpp" />
+    <ClCompile Include="..\..\src\gui\app\Ed2kSchemeHandler.cpp" />
+    <ClCompile Include="..\..\src\gui\dialogs\CategoryDialog.cpp" />
+    <ClCompile Include="..\..\src\gui\dialogs\ClientDetailDialog.cpp" />
+    <ClCompile Include="..\..\src\gui\dialogs\CollectionCreateDialog.cpp" />
+    <ClCompile Include="..\..\src\gui\dialogs\CollectionViewDialog.cpp" />
+    <ClCompile Include="..\..\src\gui\dialogs\CommentEditPanel.cpp" />
+    <ClCompile Include="..\..\src\gui\dialogs\CommentsPanel.cpp" />
+    <ClCompile Include="..\..\src\gui\dialogs\CoreConnectDialog.cpp" />
+    <ClCompile Include="..\..\src\gui\dialogs\DetailDialog.cpp" />
+    <ClCompile Include="..\..\src\gui\dialogs\FileDetailDialog.cpp" />
+    <ClCompile Include="..\..\src\gui\dialogs\FindInListDialog.cpp" />
+    <ClCompile Include="..\..\src\gui\dialogs\ImportDownloadsDialog.cpp" />
+    <ClCompile Include="..\..\src\gui\dialogs\MetadataPage.cpp" />
+    <ClCompile Include="..\..\src\gui\dialogs\NetworkInfoDialog.cpp" />
+    <ClCompile Include="..\..\src\gui\dialogs\NzbFileChooserDialog.cpp" />
+    <ClCompile Include="..\..\src\gui\dialogs\PasteTextDialog.cpp" />
+    <ClCompile Include="..\..\src\gui\dialogs\SearchDetailDialog.cpp" />
+    <ClCompile Include="..\..\src\gui\dialogs\UsenetArchiveEntryDialog.cpp" />
+    <ClCompile Include="..\..\src\gui\dialogs\UsenetDetailsDialog.cpp" />
+    <ClCompile Include="..\..\src\gui\dialogs\WebLinksDialog.cpp" />
+    <ClCompile Include="..\..\src\gui\utils\Ed2kLinkImporter.cpp" />
+    <ClCompile Include="..\..\src\gui\utils\TorrentLinks.cpp" />
+    <ClCompile Include="..\..\src\gui\utils\HttpCacheLinkImporter.cpp" />
+    <ClCompile Include="..\..\src\gui\controls\BarShader.cpp" />
+    <ClCompile Include="..\..\src\gui\controls\ContentScrollArea.cpp" />
+    <ClCompile Include="..\..\src\gui\controls\UsenetFileCheckList.cpp" />
+    <ClCompile Include="..\..\src\gui\controls\UsenetProgressDelegate.cpp" />
+    <ClCompile Include="..\..\src\gui\controls\UsenetQueueModel.cpp" />
+    <ClCompile Include="..\..\src\gui\utils\Appearance.cpp" />
+    <ClCompile Include="..\..\src\gui\utils\CountryFlags.cpp" />
+    <ClCompile Include="..\..\src\gui\utils\DialogSizing.cpp" />
+    <ClCompile Include="..\..\src\gui\utils\FileTypeIcons.cpp" />
+    <ClCompile Include="..\..\src\gui\utils\IpcFeedback.cpp" />
+    <ClCompile Include="..\..\src\gui\utils\ListActivation.cpp" />
+    <ClCompile Include="..\..\src\gui\utils\MenuUtils.cpp" />
+    <ClCompile Include="..\..\src\gui\utils\PreviewLauncher.cpp" />
+    <ClCompile Include="..\..\src\gui\utils\RatingIcons.cpp" />
+    <ClCompile Include="..\..\src\gui\utils\SharedFilesFetch.cpp" />
+    <ClCompile Include="..\..\src\gui\utils\StatusBarNotifier.cpp" />
+    <ClCompile Include="..\..\src\gui\app\UiState.cpp" />
+    <ClCompile Include="..\..\src\gui\app\IpcClient.cpp" />
+    <ClCompile Include="..\..\src\gui\app\KnownCores.cpp" />
+    <QtRcc Include="..\..\resources\emuleqt.qrc" />
+  </ItemGroup>
+  <ItemGroup>
+    <QtMoc Include="..\..\src\gui\dialogs\AddFriendDialog.h">
+      <QtMocFileName>moc_%(Filename).cpp</QtMocFileName>
+    </QtMoc>
+    <QtMoc Include="..\..\src\gui\dialogs\AddSourceDialog.h">
+      <QtMocFileName>moc_%(Filename).cpp</QtMocFileName>
+    </QtMoc>
+    <QtMoc Include="..\..\src\gui\dialogs\ArchivePreviewPanel.h">
+      <QtMocFileName>moc_%(Filename).cpp</QtMocFileName>
+    </QtMoc>
+    <QtMoc Include="..\..\src\gui\dialogs\BugReportDialog.h">
+      <QtMocFileName>moc_%(Filename).cpp</QtMocFileName>
+    </QtMoc>
+    <QtMoc Include="..\..\src\gui\dialogs\FirstStartWizard.h">
+      <QtMocFileName>moc_%(Filename).cpp</QtMocFileName>
+    </QtMoc>
+    <QtMoc Include="..\..\src\gui\dialogs\MetaAccountDialog.h">
+      <QtMocFileName>moc_%(Filename).cpp</QtMocFileName>
+    </QtMoc>
+    <QtMoc Include="..\..\src\gui\dialogs\OptionsDialog.h">
+      <QtMocFileName>moc_%(Filename).cpp</QtMocFileName>
+    </QtMoc>
+    <QtMoc Include="..\..\src\gui\dialogs\Ed3kOptionsPages.h">
+      <QtMocFileName>moc_%(Filename).cpp</QtMocFileName>
+    </QtMoc>
+    <QtMoc Include="..\..\src\gui\dialogs\Ed3kFilterPage.h">
+      <QtMocFileName>moc_%(Filename).cpp</QtMocFileName>
+    </QtMoc>
+    <QtMoc Include="..\..\src\gui\dialogs\Ed3kStakeGroup.h">
+      <QtMocFileName>moc_%(Filename).cpp</QtMocFileName>
+    </QtMoc>
+    <QtMoc Include="..\..\src\gui\app\Ed3kNameOpener.h">
+      <QtMocFileName>moc_%(Filename).cpp</QtMocFileName>
+    </QtMoc>
+    <QtMoc Include="..\..\src\gui\dialogs\ToolbarCustomizeDialog.h">
+      <QtMocFileName>moc_%(Filename).cpp</QtMocFileName>
+    </QtMoc>
+    <QtMoc Include="..\..\src\gui\controls\AccordionSidebar.h">
+      <QtMocFileName>moc_%(Filename).cpp</QtMocFileName>
+    </QtMoc>
+    <QtMoc Include="..\..\src\gui\controls\LogTextView.h">
+      <QtMocFileName>moc_%(Filename).cpp</QtMocFileName>
+    </QtMoc>
+    <QtMoc Include="..\..\src\gui\controls\LogWidget.h">
+      <QtMocFileName>moc_%(Filename).cpp</QtMocFileName>
+    </QtMoc>
+    <QtMoc Include="..\..\src\gui\controls\StatsGraph.h">
+      <QtMocFileName>moc_%(Filename).cpp</QtMocFileName>
+    </QtMoc>
+    <QtMoc Include="..\..\src\gui\panels\StatisticsPanel.h">
+      <QtMocFileName>moc_%(Filename).cpp</QtMocFileName>
+    </QtMoc>
+    <QtMoc Include="..\..\src\gui\utils\PanelPoller.h">
+      <QtMocFileName>moc_%(Filename).cpp</QtMocFileName>
+    </QtMoc>
+    <QtMoc Include="..\..\src\gui\dialogs\CategoryDialog.h">
+      <QtMocFileName>moc_%(Filename).cpp</QtMocFileName>
+    </QtMoc>
+    <QtMoc Include="..\..\src\gui\dialogs\ClientDetailDialog.h">
+      <QtMocFileName>moc_%(Filename).cpp</QtMocFileName>
+    </QtMoc>
+    <QtMoc Include="..\..\src\gui\dialogs\CollectionCreateDialog.h">
+      <QtMocFileName>moc_%(Filename).cpp</QtMocFileName>
+    </QtMoc>
+    <QtMoc Include="..\..\src\gui\dialogs\CollectionViewDialog.h">
+      <QtMocFileName>moc_%(Filename).cpp</QtMocFileName>
+    </QtMoc>
+    <QtMoc Include="..\..\src\gui\dialogs\CommentEditPanel.h">
+      <QtMocFileName>moc_%(Filename).cpp</QtMocFileName>
+    </QtMoc>
+    <QtMoc Include="..\..\src\gui\dialogs\CommentsPanel.h">
+      <QtMocFileName>moc_%(Filename).cpp</QtMocFileName>
+    </QtMoc>
+    <QtMoc Include="..\..\src\gui\dialogs\CoreConnectDialog.h">
+      <QtMocFileName>moc_%(Filename).cpp</QtMocFileName>
+    </QtMoc>
+    <QtMoc Include="..\..\src\gui\dialogs\DetailDialog.h">
+      <QtMocFileName>moc_%(Filename).cpp</QtMocFileName>
+    </QtMoc>
+    <QtMoc Include="..\..\src\gui\dialogs\FileDetailDialog.h">
+      <QtMocFileName>moc_%(Filename).cpp</QtMocFileName>
+    </QtMoc>
+    <QtMoc Include="..\..\src\gui\dialogs\ImportDownloadsDialog.h">
+      <QtMocFileName>moc_%(Filename).cpp</QtMocFileName>
+    </QtMoc>
+    <QtMoc Include="..\..\src\gui\dialogs\NetworkInfoDialog.h">
+      <QtMocFileName>moc_%(Filename).cpp</QtMocFileName>
+    </QtMoc>
+    <QtMoc Include="..\..\src\gui\dialogs\NzbFileChooserDialog.h">
+      <QtMocFileName>moc_%(Filename).cpp</QtMocFileName>
+    </QtMoc>
+    <QtMoc Include="..\..\src\gui\dialogs\PasteTextDialog.h">
+      <QtMocFileName>moc_%(Filename).cpp</QtMocFileName>
+    </QtMoc>
+    <QtMoc Include="..\..\src\gui\dialogs\SearchDetailDialog.h">
+      <QtMocFileName>moc_%(Filename).cpp</QtMocFileName>
+    </QtMoc>
+    <QtMoc Include="..\..\src\gui\dialogs\UsenetArchiveEntryDialog.h">
+      <QtMocFileName>moc_%(Filename).cpp</QtMocFileName>
+    </QtMoc>
+    <QtMoc Include="..\..\src\gui\dialogs\UsenetDetailsDialog.h">
+      <QtMocFileName>moc_%(Filename).cpp</QtMocFileName>
+    </QtMoc>
+    <QtMoc Include="..\..\src\gui\dialogs\WebLinksDialog.h">
+      <QtMocFileName>moc_%(Filename).cpp</QtMocFileName>
+    </QtMoc>
+    <QtMoc Include="..\..\src\gui\controls\ContentScrollArea.h">
+      <QtMocFileName>moc_%(Filename).cpp</QtMocFileName>
+    </QtMoc>
+    <QtMoc Include="..\..\src\gui\controls\UsenetFileCheckList.h">
+      <QtMocFileName>moc_%(Filename).cpp</QtMocFileName>
+    </QtMoc>
+    <QtMoc Include="..\..\src\gui\controls\UsenetProgressDelegate.h">
+      <QtMocFileName>moc_%(Filename).cpp</QtMocFileName>
+    </QtMoc>
+    <QtMoc Include="..\..\src\gui\controls\UsenetQueueModel.h">
+      <QtMocFileName>moc_%(Filename).cpp</QtMocFileName>
+    </QtMoc>
+    <QtMoc Include="..\..\src\gui\utils\CountryFlags.h">
+      <QtMocFileName>moc_%(Filename).cpp</QtMocFileName>
+    </QtMoc>
+    <QtMoc Include="..\..\src\gui\app\IpcClient.h">
+      <QtMocFileName>moc_%(Filename).cpp</QtMocFileName>
+    </QtMoc>
   </ItemGroup>
   <ItemGroup>
     <CustomBuild Include="..\tst_SmallScreenDialogs.cpp.moc.cbt">

@@ -201,6 +201,7 @@
     <ClCompile Include="Ed3kCreditBridge.cpp" />
     <ClCompile Include="Ed3kDownloadsBridge.cpp" />
     <ClCompile Include="Ed3kSetsBridge.cpp" />
+    <ClCompile Include="Ed3kPaidBridge.cpp" />
     <ClCompile Include="Ed3kFiltersBridge.cpp" />
     <ClCompile Include="Ed3kUploadsBridge.cpp" />
     <ClCompile Include="Ed3kHosterBridge.cpp" />
@@ -234,6 +235,7 @@
     <ClInclude Include="Ed3kCreditBridge.h" />
     <ClInclude Include="Ed3kDownloadsBridge.h" />
     <ClInclude Include="Ed3kSetsBridge.h" />
+    <ClInclude Include="Ed3kPaidBridge.h" />
     <ClInclude Include="Ed3kFiltersBridge.h" />
     <ClInclude Include="Ed3kUploadsBridge.h" />
     <ClInclude Include="UsenetBridge.h" />

@@ -413,6 +413,8 @@ struct Preferences::Data {
     IndexerCounters cumIndexer;
     KadCounters cumKad;
     BtCounters cumBt;
+    HosterCounters cumHoster;
+    Ed3kCounters cumEd3k;
 
     // Records
     uint32 recMaxWorkingServers = 0;
@@ -1581,6 +1583,10 @@ KadCounters Preferences::cumKad() const { return get(&Data::cumKad); }
 void Preferences::setCumKad(const KadCounters& val) { set(&Data::cumKad, val); }
 BtCounters Preferences::cumBt() const { return get(&Data::cumBt); }
 void Preferences::setCumBt(const BtCounters& val) { set(&Data::cumBt, val); }
+HosterCounters Preferences::cumHoster() const { return get(&Data::cumHoster); }
+void Preferences::setCumHoster(const HosterCounters& val) { set(&Data::cumHoster, val); }
+Ed3kCounters Preferences::cumEd3k() const { return get(&Data::cumEd3k); }
+void Preferences::setCumEd3k(const Ed3kCounters& val) { set(&Data::cumEd3k, val); }
 
 PREF_GS(uint32, recMaxWorkingServers, RecMaxWorkingServers)
 PREF_GS(uint32, recMaxUsersOnline, RecMaxUsersOnline)
@@ -1717,6 +1723,8 @@ void Preferences::forEachCumulativeStat(D& d, F&& f)
     f("cumIndexer", d.cumIndexer);
     f("cumKad", d.cumKad);
     f("cumBt", d.cumBt);
+    f("cumHoster", d.cumHoster);
+    f("cumEd3k", d.cumEd3k);
 
     // The cumulative rates are records rather than sums, but MFC clears them
     // with the rest (srchybrid/Preferences.cpp:1140-1163), so they travel with
@@ -2414,6 +2422,8 @@ bool Preferences::applyEd3kHosterKey(Ed3kHosterPrefs& h, const QString& key, con
         h.publishLinks = val.toBool(h.publishLinks);
     else if (key == QLatin1StringView("ed3kHosterFromPeers"))
         h.fromPeers = val.toBool(h.fromPeers);
+    else if (key == QLatin1StringView("ed3kHosterCheckSearchLinks"))
+        h.checkSearchLinks = val.toBool(h.checkSearchLinks);
     else if (key == QLatin1StringView("ed3kHosterAccounts")) {
         if (!val.isArray())
             return true;
@@ -3638,6 +3648,7 @@ QCborMap Preferences::toIpcMap() const
         prefs.insert(QStringLiteral("ed3kHosterPuzzles"), h.askPuzzles);
         prefs.insert(QStringLiteral("ed3kHosterPublishLinks"), h.publishLinks);
         prefs.insert(QStringLiteral("ed3kHosterFromPeers"), h.fromPeers);
+        prefs.insert(QStringLiteral("ed3kHosterCheckSearchLinks"), h.checkSearchLinks);
         // passwords stay in the daemon (hoster.md §3)
         QCborArray accounts;
         for (const Ed3kHosterAccount& a : h.accounts)
@@ -4589,6 +4600,8 @@ bool Preferences::load(const QString& filePath)
             m_data->cumIndexer = readStatValue(st["cumIndexer"], m_data->cumIndexer);
             m_data->cumKad = readStatValue(st["cumKad"], m_data->cumKad);
             m_data->cumBt = readStatValue(st["cumBt"], m_data->cumBt);
+            m_data->cumHoster = readStatValue(st["cumHoster"], m_data->cumHoster);
+            m_data->cumEd3k = readStatValue(st["cumEd3k"], m_data->cumEd3k);
 
             // Records
             m_data->recMaxWorkingServers = st["recMaxWorkingServers"].as<uint32>(m_data->recMaxWorkingServers);
@@ -5145,6 +5158,9 @@ bool Preferences::load(const QString& filePath)
                 h.askPuzzles = ho["puzzles"].as<bool>(h.askPuzzles);
                 h.publishLinks = ho["publishLinks"].as<bool>(h.publishLinks);
                 h.fromPeers = ho["fromPeers"].as<bool>(h.fromPeers);
+                h.checkSearchLinks = ho["checkSearchLinks"].as<bool>(h.checkSearchLinks);
+                h.checkMaxParallel = std::clamp(ho["checkMaxParallel"].as<int>(h.checkMaxParallel), 1, 256);
+                h.checkMaxPerHost = std::clamp(ho["checkMaxPerHost"].as<int>(h.checkMaxPerHost), 1, 64);
                 h.accounts.clear();
                 if (auto acc = ho["accounts"]; acc && acc.IsSequence()) {
                     for (const auto& a : acc) {
@@ -5879,6 +5895,10 @@ bool Preferences::saveImpl(const QString& filePath) const
     emitStatValue(out, m_data->cumKad);
     out << YAML::Key << "cumBt" << YAML::Value;
     emitStatValue(out, m_data->cumBt);
+    out << YAML::Key << "cumHoster" << YAML::Value;
+    emitStatValue(out, m_data->cumHoster);
+    out << YAML::Key << "cumEd3k" << YAML::Value;
+    emitStatValue(out, m_data->cumEd3k);
 
     // Records
     out << YAML::Key << "recMaxWorkingServers" << YAML::Value << m_data->recMaxWorkingServers;
@@ -6333,6 +6353,9 @@ bool Preferences::saveImpl(const QString& filePath) const
         out << YAML::Key << "puzzles" << YAML::Value << h.askPuzzles;
         out << YAML::Key << "publishLinks" << YAML::Value << h.publishLinks;
         out << YAML::Key << "fromPeers" << YAML::Value << h.fromPeers;
+        out << YAML::Key << "checkSearchLinks" << YAML::Value << h.checkSearchLinks;
+        out << YAML::Key << "checkMaxParallel" << YAML::Value << h.checkMaxParallel;
+        out << YAML::Key << "checkMaxPerHost" << YAML::Value << h.checkMaxPerHost;
         out << YAML::Key << "accounts" << YAML::Value << YAML::BeginSeq;
         for (const Ed3kHosterAccount& a : h.accounts) {
             out << YAML::BeginMap;

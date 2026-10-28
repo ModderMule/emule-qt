@@ -201,6 +201,7 @@ SOURCES += \
     transfer/UploadQueue.cpp \
     transfer/UploadQueueStore.cpp \
     upnp/UPnPManager.cpp \
+    utils/BlockRuns.cpp \
     utils/DebugUtils.cpp \
     utils/DiskLoadLimiter.cpp \
     utils/FileDate.cpp \
@@ -377,6 +378,7 @@ HEADERS += \
     utils/ByteOrder.h \
     utils/ContainerUtils.h \
     utils/CorroborationTally.h \
+    utils/BlockRuns.h \
     utils/DebugUtils.h \
     utils/DiskLoadLimiter.h \
     utils/FileDate.h \

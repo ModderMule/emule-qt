@@ -9,9 +9,18 @@
 #include "Ed3kFiltersBridge.h"
 #include "Ed3kJoinBase.h"
 #include "Ed3kPlumbing.h"
+#include "Ed3kSearch.h"
 #include "Ed3kSession.h"
+#include "Ed3kSetManifest.h"
+#include "Ed3kStore.h"
+
+#include "app/AppContext.h"
+#include "search/SearchFile.h"
+#include "search/SearchList.h"
 
 #include <QCborArray>
+#include <QDir>
+#include <QFile>
 #include <QSignalSpy>
 #include <QTemporaryDir>
 #include <QTest>
@@ -97,6 +106,12 @@ private slots:
     void aListJudgesAndHidesOnlyWhenSet();
     void ownVerdictsAreKeptAndOverrule();
     void ipcFollowsAndJudges();
+    // batch 13
+    void theOwnListIsPublishedAndAgainOnChange();
+    void showAnywayOverrulesAHidingList();
+    void aMarkJudgesTheSearchRowsAgain();
+    void aSetAuthorJudgesTheRow();
+    void ipcPublishesAndShowsAnyway();
 };
 
 void tst_Ed3kFilters::cleanup()
@@ -300,6 +315,238 @@ void tst_Ed3kFilters::ipcFollowsAndJudges()
     QVERIFY(Ed3kBridge::handleRequest(judge, reply));
     QVERIFY(last.fieldBool(0));
     QCOMPARE(last.fieldMap(1).value(QStringLiteral("own")).toInteger(), 1);
+    f.stop();
+    s.stop();
+}
+
+// §2: the own list as a signed set; the link shown; a new version on every change; kept
+void tst_Ed3kFilters::theOwnListIsPublishedAndAgainOnChange()
+{
+    QTemporaryDir dir;
+    QVERIFY(dir.isValid());
+    const QString manifestPath = QDir(stateDir(dir.path())).filePath(QStringLiteral("filter-own.ed3kset"));
+    QString link;
+    {
+        Ed3kSession s;
+        QVERIFY(s.start(loopback(dir.path())));
+        Ed3kFilters f(s, dir.path());
+        QVERIFY(f.published().link.isEmpty());
+        QVERIFY(f.setOwn(::ed3k::FilterSubject::File, entry(5), ::ed3k::FilterVerdict::Fake, QStringLiteral("not the film")));
+        QVERIFY(!f.publishOwn(QString()));   // a title is needed
+        const auto published = f.publishOwn(QStringLiteral("My fakes"));
+        QVERIFY2(published, "publishOwn refused");
+        link = *published;
+        QVERIFY(link.startsWith(QStringLiteral("ed3k:set?key=")));
+        QVERIFY(link.contains(QStringLiteral("&id=")));
+        QCOMPARE(f.published().link, link);
+        QCOMPARE(f.published().title, QStringLiteral("My fakes"));
+        // the set holds the list file at its top level (§2), signed by the list key, not the node's
+        auto m = Ed3kSetManifest::parse(readBlob(manifestPath));
+        QVERIFY(m);
+        QCOMPARE(m->files.size(), std::size_t(1));
+        QCOMPARE(m->files.front().path, QStringLiteral("My fakes.ed3kflt"));
+        QCOMPARE(m->key.size(), 32);
+        const std::uint64_t seq = m->seq;
+        // a change: a new version after the delay
+        QVERIFY(f.setOwn(::ed3k::FilterSubject::File, entry(6), ::ed3k::FilterVerdict::Spam, {}));
+        QTRY_VERIFY_WITH_TIMEOUT([&] {
+            const auto n = Ed3kSetManifest::parse(readBlob(manifestPath));
+            return n && n->seq > seq;
+        }(), 10000);
+        f.stop();
+        s.stop();
+    }
+    // a restart: the same link, shared and published again
+    Ed3kSession s;
+    QVERIFY(s.start(loopback(dir.path())));
+    Ed3kFilters f(s, dir.path());
+    QCOMPARE(f.published().link, link);
+    f.unpublishOwn();
+    QVERIFY(f.published().link.isEmpty());
+    QVERIFY(!QFile::exists(manifestPath));
+    f.stop();
+    s.stop();
+}
+
+// §3: the user's local choice shows what a list hides; taken back, it hides again
+void tst_Ed3kFilters::showAnywayOverrulesAHidingList()
+{
+    QTemporaryDir da, db;
+    QVERIFY(da.isValid() && db.isValid());
+    Ed3kSession a, b;
+    QVERIFY(a.start(loopback(da.path())));
+    QVERIFY(b.start(loopback(db.path())));
+    const QByteArray file = listFile(a);
+    QVERIFY(!file.isEmpty());
+    Ed3kFilters f(b, db.path());
+    const auto id = f.openFile(QStringLiteral("by hand"), file);
+    QVERIFY(id);
+    QVERIFY(f.setMode(*id, true, false));
+    ::ed3k::Root root;
+    std::fill(root.bytes.begin(), root.bytes.begin() + 16, std::uint8_t(5));
+    auto j = f.judge(root, std::nullopt, std::nullopt);
+    QVERIFY(j && j->hide && !j->shown);
+    QVERIFY(f.showAnyway(root, true));
+    j = f.judge(root, std::nullopt, std::nullopt);
+    QVERIFY(j && !j->hide && j->shown);
+    QVERIFY(j->verdict == ::ed3k::FilterVerdict::Fake);   // still marked: the user sees why
+    QVERIFY(f.showAnyway(root, false));
+    j = f.judge(root, std::nullopt, std::nullopt);
+    QVERIFY(j && j->hide && !j->shown);
+    f.stop();
+}
+
+namespace {
+
+/// The judge DaemonApp gives Ed3kSearch, for @p f (setAuthor: none).
+Ed3kSearch::Judge judgeOf(Ed3kFilters& f, std::optional<::ed3k::Key32> setAuthor = std::nullopt)
+{
+    return [&f, setAuthor](const ::ed3k::FoundFile& found) {
+        Ed3kSearch::Verdict v;
+        const auto j = f.judge(found.root, found.ed2k, found.publisher, setAuthor);
+        if (!j)
+            return v;
+        v.shown = {int(j->verdict), false, j->own, j->shown, j->disagree, j->by, j->reason};
+        if (j->hide)
+            v.judged = Ed3kSearch::Judged::Hide;
+        else if (j->verdict != ::ed3k::FilterVerdict::Good && j->verdict != ::ed3k::FilterVerdict::None)
+            v.judged = Ed3kSearch::Judged::Mark;
+        return v;
+    };
+}
+
+::ed3k::FoundFile found(std::uint8_t fill)
+{
+    ::ed3k::FoundFile ff;
+    ff.root.bytes.fill(fill);
+    ff.publisher.bytes.fill(0x70);
+    ff.size = 1000;
+    ff.name = "film.mkv";
+    ff.sources = 1;
+    return ff;
+}
+
+} // namespace
+
+// "Mark as fake" on a row: the own verdict, the rows judged again (marked, then cleared)
+void tst_Ed3kFilters::aMarkJudgesTheSearchRowsAgain()
+{
+    QTemporaryDir dir;
+    QVERIFY(dir.isValid());
+    Ed3kSession s;
+    QVERIFY(s.start(loopback(dir.path())));
+    Ed3kFilters f(s, dir.path());
+    Ed3kSearch search(s);
+    search.setJudge(judgeOf(f));
+    SearchList list;
+    theApp.searchList = &list;
+    struct Reset {
+        ~Reset() { theApp.searchList = nullptr; }
+    } reset;
+    const uint32 sid = list.newSearch(QString(), SearchParams{});
+    auto row = Ed3kSearch::toSearchFile(found(0x21));
+    QVERIFY(row);
+    QVERIFY(!Ed3kSearch::applyVerdict(*row, Ed3kSearch::Verdict{}));   // nothing judges it
+    list.addMetaSearchResult(sid, row.release());
+    QCOMPARE(list.resultCount(sid), 1u);
+    const auto rowOf = [&] {
+        const SearchFile* out = nullptr;
+        list.forEachResult(sid, [&](const SearchFile* file) { out = file; });
+        return out;
+    };
+    QVERIFY(rowOf() && !rowOf()->isConsideredSpam());
+    Ed3kFilters::EntryId fileId;
+    fileId.fill(0x21);
+    QVERIFY(f.setOwn(::ed3k::FilterSubject::File, fileId, ::ed3k::FilterVerdict::Fake, {}));
+    QCOMPARE(search.rejudge(), 1);
+    QCOMPARE(rowOf()->ed3kJudged().verdict, int(::ed3k::FilterVerdict::Fake));
+    QVERIFY(rowOf()->ed3kJudged().own);
+    QVERIFY(!rowOf()->ed3kJudged().hidden);
+    QVERIFY(rowOf()->isConsideredSpam());
+    QCOMPARE(search.rejudge(), 0);   // unchanged
+    // the own list set to hide: hidden, kept
+    QVERIFY(f.setMode(ED3K_FILTER_OWN, true, false));
+    QCOMPARE(search.rejudge(), 1);
+    QVERIFY(rowOf()->ed3kJudged().hidden);
+    QCOMPARE(list.resultCount(sid), 1u);
+    // "clear": not judged any more
+    QVERIFY(f.setOwn(::ed3k::FilterSubject::File, fileId, ::ed3k::FilterVerdict::None, {}));
+    QCOMPARE(search.rejudge(), 1);
+    QCOMPARE(rowOf()->ed3kJudged().verdict, 0);
+    QVERIFY(!rowOf()->ed3kJudged().hidden);
+    QVERIFY(!rowOf()->isConsideredSpam());
+    // the publisher (AUTHOR, node ID) marks it too
+    Ed3kFilters::EntryId pub;
+    pub.fill(0x70);
+    QVERIFY(f.setOwn(::ed3k::FilterSubject::Author, pub, ::ed3k::FilterVerdict::Spam, {}));
+    QCOMPARE(search.rejudge(), 1);
+    QCOMPARE(rowOf()->ed3kJudged().verdict, int(::ed3k::FilterVerdict::Spam));
+    f.stop();
+    s.stop();
+}
+
+// #18 (filter-list §1): a signed manifest's set author judges the row too
+void tst_Ed3kFilters::aSetAuthorJudgesTheRow()
+{
+    QTemporaryDir dir;
+    QVERIFY(dir.isValid());
+    Ed3kSession s;
+    QVERIFY(s.start(loopback(dir.path())));
+    Ed3kFilters f(s, dir.path());
+    ::ed3k::Key32 author{};
+    author.fill(0x33);
+    const auto authorId = ::ed3k::roomMemberId(author);   // H("ed3k v1 node id", key)[0..16)
+    QVERIFY(authorId);
+    QVERIFY(f.setOwn(::ed3k::FilterSubject::Author, *authorId, ::ed3k::FilterVerdict::Harmful, QStringLiteral("malware")));
+    const auto ff = found(0x22);
+    // the publisher alone: nothing
+    QVERIFY(!f.judge(ff.root, std::nullopt, ff.publisher));
+    // the manifest known: its author marks it
+    const auto j = f.judge(ff.root, std::nullopt, ff.publisher, author);
+    QVERIFY(j);
+    QVERIFY(j->verdict == ::ed3k::FilterVerdict::Harmful);
+    QCOMPARE(j->reason, QStringLiteral("malware"));
+    f.stop();
+    s.stop();
+}
+
+void tst_Ed3kFilters::ipcPublishesAndShowsAnyway()
+{
+    QTemporaryDir dir;
+    QVERIFY(dir.isValid());
+    Ed3kSession s;
+    QVERIFY(s.start(loopback(dir.path())));
+    Ed3kFilters f(s, dir.path());
+    Ed3kFiltersBridge::setFilters(&f);
+    IpcMessage last;
+    const auto reply = [&](const IpcMessage& r) { last = r; };
+    QVERIFY(Ed3kFiltersBridge::isFiltersRequest(IpcMsgType::PublishEd3kFilterOwn));
+    QVERIFY(Ed3kFiltersBridge::isFiltersRequest(IpcMsgType::ShowEd3kFilterAnyway));
+    IpcMessage pub(IpcMsgType::PublishEd3kFilterOwn, 1);
+    pub.append(QStringLiteral("Mine"));
+    pub.append(true);
+    QVERIFY(Ed3kBridge::handleRequest(pub, reply));
+    QVERIFY(last.fieldBool(0));
+    const QString link = last.fieldMap(1).value(QStringLiteral("link")).toString();
+    QVERIFY(link.startsWith(QStringLiteral("ed3k:set?")));
+    QVERIFY(Ed3kBridge::handleRequest(IpcMessage(IpcMsgType::GetEd3kFilters, 2), reply));
+    QCOMPARE(last.fieldMap(1).value(QStringLiteral("published")).toMap().value(QStringLiteral("link")).toString(), link);
+    IpcMessage show(IpcMsgType::ShowEd3kFilterAnyway, 3);
+    show.append(QStringLiteral("05").repeated(32));
+    show.append(true);
+    QVERIFY(Ed3kBridge::handleRequest(show, reply));
+    QVERIFY(last.fieldBool(0));
+    IpcMessage bad(IpcMsgType::ShowEd3kFilterAnyway, 4);
+    bad.append(QStringLiteral("05"));
+    bad.append(true);
+    QVERIFY(Ed3kBridge::handleRequest(bad, reply));
+    QVERIFY(!last.fieldBool(0));
+    IpcMessage stop(IpcMsgType::PublishEd3kFilterOwn, 5);
+    stop.append(QString());
+    stop.append(false);
+    QVERIFY(Ed3kBridge::handleRequest(stop, reply));
+    QVERIFY(last.fieldBool(0));
+    QVERIFY(f.published().link.isEmpty());
     f.stop();
     s.stop();
 }

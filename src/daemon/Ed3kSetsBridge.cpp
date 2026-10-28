@@ -10,6 +10,7 @@
 
 #ifdef EMULE_HAVE_ED3K
 #include "Ed3kLive.h"
+#include "Ed3kLiveBroadcast.h"
 #include "Ed3kNames.h"
 #include "Ed3kSets.h"
 #include "Ed3kSiteServer.h"
@@ -30,6 +31,7 @@ namespace {
 ed3k::Ed3kSets* s_sets = nullptr;
 ed3k::Ed3kLive* s_live = nullptr;
 ed3k::Ed3kSiteServer* s_sites = nullptr;
+ed3k::Ed3kLiveBroadcast* s_broadcast = nullptr;
 #endif
 
 IpcMessage failure(int seqId, const QString& error)
@@ -94,6 +96,8 @@ QCborMap toCbor(const ed3k::Ed3kSets::Info& i)
         {QStringLiteral("totalSize"), qint64(i.totalSize)},
         {QStringLiteral("members"), members},
         {QStringLiteral("parts"), parts},
+        {QStringLiteral("pendingMounts"), strings(i.pendingMounts)},
+        {QStringLiteral("paidScope"), i.paidScope},
     };
 }
 
@@ -109,7 +113,26 @@ QCborMap toCbor(const ed3k::Ed3kLive::Info& i)
         {QStringLiteral("segments"), qint64(i.segments)},
         {QStringLiteral("bytes"), qint64(i.bytes)},
         {QStringLiteral("viewers"), i.viewers},
+        {QStringLiteral("restarts"), qint64(i.restarts)},
         {QStringLiteral("url"), i.url},
+    };
+}
+
+QCborMap toCbor(const ed3k::Ed3kLiveBroadcast::Info& i)
+{
+    // a broadcast of ours, in the same list as the watched streams
+    return QCborMap{
+        {QStringLiteral("id"), i.id},
+        {QStringLiteral("title"), i.title},
+        {QStringLiteral("state"), int(ed3k::Ed3kLive::State::Playing)},
+        {QStringLiteral("neighbours"), i.neighbours},
+        {QStringLiteral("segments"), qint64(i.segments)},
+        {QStringLiteral("bytes"), qint64(i.bytes)},
+        {QStringLiteral("broadcast"), true},
+        {QStringLiteral("link"), i.link},
+        {QStringLiteral("folder"), i.folder},
+        {QStringLiteral("private"), i.isPrivate},
+        {QStringLiteral("error"), i.error},
     };
 }
 
@@ -176,7 +199,10 @@ void answer(const IpcMessage& msg, const std::function<void(const IpcMessage&)>&
         break;
     }
     case IpcMsgType::LeaveEd3kLive:
-        if (s_live && s_live->leave(msg.fieldString(0)))
+        // a broadcast of ours ends (liveEnd), a watched stream is left
+        if (s_broadcast && s_broadcast->stop(msg.fieldString(0)))
+            ok();
+        else if (s_live && s_live->leave(msg.fieldString(0)))
             ok();
         else
             reply(failure(seq, QCoreApplication::translate("eMule::Ed3kSetsBridge", "Unknown ed3k live stream.")));
@@ -184,6 +210,23 @@ void answer(const IpcMessage& msg, const std::function<void(const IpcMessage&)>&
     case IpcMsgType::GetEd3kLive:
         ok(liveToCbor());
         break;
+    case IpcMsgType::BroadcastEd3kLive: {
+        if (!s_broadcast) {
+            reply(failure(seq, QCoreApplication::translate("eMule::Ed3kSetsBridge", "ed3k is not available.")));
+            break;
+        }
+        ed3k::Ed3kLiveBroadcast::Options o;
+        o.folder = msg.fieldString(0);
+        o.title = msg.fieldString(1);
+        o.isPrivate = msg.fieldBool(2);
+        o.playlist = msg.fieldString(3);
+        o.codecs = msg.fieldString(4);
+        if (auto r = s_broadcast->start(o))
+            ok(QCborMap{{QStringLiteral("id"), r->id}, {QStringLiteral("link"), r->link}});
+        else
+            reply(failure(seq, r.error()));
+        break;
+    }
     case IpcMsgType::GetEd3kSetSite: {
         const auto set = ed3k::Ed3kNames::parseSetLink(msg.fieldString(0));
         if (!set) {
@@ -202,6 +245,29 @@ void answer(const IpcMessage& msg, const std::function<void(const IpcMessage&)>&
 
 } // namespace
 
+void setBroadcast(ed3k::Ed3kLiveBroadcast* broadcast)
+{
+#ifdef EMULE_HAVE_ED3K
+    s_broadcast = broadcast;
+#else
+    (void)broadcast;
+#endif
+}
+
+void connectBroadcastPushes(ed3k::Ed3kLiveBroadcast& broadcast, std::function<void(const IpcMessage&)> send)
+{
+#ifdef EMULE_HAVE_ED3K
+    QObject::connect(&broadcast, &ed3k::Ed3kLiveBroadcast::changed, &broadcast, [send] {
+        IpcMessage m(IpcMsgType::PushEd3kLiveChanged, 0);
+        m.append(liveToCbor());
+        send(m);
+    });
+#else
+    (void)broadcast;
+    (void)send;
+#endif
+}
+
 void setSets(ed3k::Ed3kSets* sets, ed3k::Ed3kLive* live, ed3k::Ed3kSiteServer* sites)
 {
 #ifdef EMULE_HAVE_ED3K
@@ -218,7 +284,7 @@ void setSets(ed3k::Ed3kSets* sets, ed3k::Ed3kLive* live, ed3k::Ed3kSiteServer* s
 bool isSetsRequest(IpcMsgType type)
 {
     const int t = static_cast<int>(type);
-    return (t >= 1110 && t <= 1119) || t == 1144;
+    return (t >= 1110 && t <= 1119) || t == 1144 || t == static_cast<int>(IpcMsgType::BroadcastEd3kLive);
 }
 
 bool handleRequest(const IpcMessage& msg, const std::function<void(const IpcMessage&)>& reply)
@@ -264,6 +330,9 @@ QCborMap liveToCbor()
         for (const auto& i : s_live->list())
             list.append(toCbor(i));
     }
+    if (s_broadcast)
+        for (const auto& i : s_broadcast->list())
+            list.append(toCbor(i));
 #endif
     return QCborMap{{QStringLiteral("running"), running}, {QStringLiteral("streams"), list}};
 }

@@ -702,8 +702,11 @@ void StatisticsPanel::buildTree()
     // ===== BitTorrent ===== (not in MFC)
     buildBtBranch(detailIcon, cumulativeIcon);
 
+    // ===== Hoster ===== (not in MFC)
+    buildHosterBranch(detailIcon, cumulativeIcon);
+
     // ===== ed3k ===== (not in MFC)
-    buildEd3kBranch(detailIcon);
+    buildEd3kBranch(detailIcon, cumulativeIcon);
 
     // Restore expansion state from persistent settings (defaults: Transfer, Connection, Time expanded)
     // Rows created empty get their wording from the one place that formats them.
@@ -751,6 +754,17 @@ void StatisticsPanel::requestStats()
             return;
         }
         applyBtStats(resp.fieldMap(1));
+    });
+
+    IpcMessage hosterReq(IpcMsgType::GetHosterStats);
+    m_ipc->sendPoll(this, std::move(hosterReq), [this](const IpcMessage& resp) {
+        if (!resp.isValid())
+            return;
+        if (resp.type() != IpcMsgType::Result || !resp.fieldBool(0)) {
+            m_itemHoster->setHidden(true);   // a core without ed3k, or from before the branch
+            return;
+        }
+        applyHosterStats(resp.fieldMap(1));
     });
 
     IpcMessage ed3kReq(IpcMsgType::GetEd3kStatus);
@@ -1760,6 +1774,29 @@ void StatisticsPanel::applyBtStats(const QCborMap& data)
     fillCounterRows(m_btTorrentRows, torrents);
 }
 
+void StatisticsPanel::applyHosterStats(const QCborMap& data)
+{
+    m_itemHoster->setHidden(false);
+
+    const QCborMap current = data.value(QStringLiteral("current")).toMap();
+
+    const auto scopeValues = [&](const QString& scope, qint64 runtimeSecs) {
+        QHash<QString, qint64> v = counterValues(data.value(scope).toMap());
+        const qint64 total = v.value(QStringLiteral("hosterBytes")) + v.value(QStringLiteral("peerBytes"));
+        const qint64 ms = v.value(QStringLiteral("downloadTimeMs"));
+        v.insert(QStringLiteral("totalBytes"), total);
+        v.insert(QStringLiteral("avgDownRate"), ms > 0 ? total * 1000 / ms : qint64(0));
+        v.insert(QStringLiteral("runtimeMs"), runtimeSecs * 1000);
+        return v;
+    };
+
+    QHash<QString, qint64> session = scopeValues(QStringLiteral("session"), m_sessionUptime);
+    session.insert(QStringLiteral("downRate"), current.value(QStringLiteral("downRate")).toInteger());
+    fillCounterRows(m_hosterSessionRows, session);
+    fillCounterRows(m_hosterCumulativeRows, scopeValues(QStringLiteral("cumulative"), m_cumRunTime));
+    fillCounterRows(m_hosterItemRows, counterValues(current.value(QStringLiteral("items")).toMap()));
+}
+
 void StatisticsPanel::applyEd3kStatus(const QCborMap& st)
 {
     // a core without ed3k: no branch at all
@@ -1786,8 +1823,24 @@ void StatisticsPanel::applyEd3kStatus(const QCborMap& st)
                                          natText(st.value(QStringLiteral("class6")).toInteger())));
     m_itemEd3kRouter->setText(0, tr("Router: %1").arg(st.value(QStringLiteral("router")).toBool() ? tr("Yes") : tr("No")));
 
-    QHash<QString, qint64> v = counterValues(st.value(QStringLiteral("stats")).toMap());
-    for (const char* key : {"contacts", "wireSent", "wireRecv", "rateUp", "rateDown"}) {
+    // banked counters plus the derived rates and times
+    const auto scopeValues = [&](const QString& scope, qint64 runtimeSecs) {
+        QHash<QString, qint64> v = counterValues(st.value(scope).toMap());
+        const qint64 downMs = v.value(QStringLiteral("downloadTimeMs"));
+        const qint64 upMs = v.value(QStringLiteral("uploadTimeMs"));
+        v.insert(QStringLiteral("avgDownRate"), downMs > 0 ? v.value(QStringLiteral("wireRecv")) * 1000 / downMs : qint64(0));
+        v.insert(QStringLiteral("avgUpRate"), upMs > 0 ? v.value(QStringLiteral("wireSent")) * 1000 / upMs : qint64(0));
+        v.insert(QStringLiteral("runtimeMs"), runtimeSecs * 1000);
+        return v;
+    };
+    QHash<QString, qint64> v = scopeValues(QStringLiteral("session"), m_sessionUptime);
+    const QHash<QString, qint64> live = counterValues(st.value(QStringLiteral("stats")).toMap());
+    for (const char* key : {"connections", "bannedNodes", "bannedHosts", "lookups", "records", "recordBytes",
+                            "published", "queueLen"}) {
+        const QString k = QString::fromLatin1(key);
+        v.insert(k, live.value(k));
+    }
+    for (const char* key : {"contacts", "rateUp", "rateDown"}) {
         const QString k = QString::fromLatin1(key);
         v.insert(k, st.value(k).toInteger());
     }
@@ -1795,6 +1848,7 @@ void StatisticsPanel::applyEd3kStatus(const QCborMap& st)
     for (auto it = queue.cbegin(); it != queue.cend(); ++it)
         v.insert(QStringLiteral("queue.") + it.key(), it.value());
     fillCounterRows(m_ed3kRows, v);
+    fillCounterRows(m_ed3kCumulativeRows, scopeValues(QStringLiteral("cumulative"), m_cumRunTime));
 
     // credits (credit.md): off by default
     const QCborMap c = st.value(QStringLiteral("credit")).toMap();
@@ -2380,18 +2434,117 @@ void StatisticsPanel::buildBtBranch(const QIcon& detailIcon, const QIcon& cumula
     fillCounterRows(m_btTorrentRows, zeros);
 }
 
+// ---------------------------------------------------------------------------
+// Private — Hoster branch
+// ---------------------------------------------------------------------------
+
+std::span<const StatisticsPanel::CounterRow> StatisticsPanel::hosterCounterRows()
+{
+    using F = RowFormat;
+    // Keys are HosterCounters' (core/stats/NetworkCounters.h) plus the ones
+    // applyHosterStats() derives
+    static constexpr CounterRow kRows[] = {
+        {QT_TR_NOOP("General"), nullptr},
+        {QT_TR_NOOP("Download Speed: %1"), "downRate", F::Rate, nullptr, 1, true},
+        {QT_TR_NOOP("Average Download Rate: %1"), "avgDownRate", F::Rate, nullptr, 1},
+        {QT_TR_NOOP("Max Download Rate: %1"), "maxDownRate", F::Rate, nullptr, 1},
+        {QT_TR_NOOP("Download Time: %1 %2"), "downloadTimeMs", F::DurationMs, "runtimeMs", 1},
+
+        {QT_TR_NOOP("Traffic"), nullptr},
+        {QT_TR_NOOP("Downloaded Data: %1"), "totalBytes", F::Bytes, nullptr, 1},
+        {QT_TR_NOOP("From Hosters: %1 %2"), "hosterBytes", F::Bytes, "totalBytes", 2},
+        {QT_TR_NOOP("From ed3k Peers: %1 %2"), "peerBytes", F::Bytes, "totalBytes", 2},
+
+        {QT_TR_NOOP("Links"), nullptr},
+        {QT_TR_NOOP("Added: %1"), "linksAdded", F::Count, nullptr, 1},
+        {QT_TR_NOOP("Folders Expanded: %1"), "foldersExpanded", F::Count, nullptr, 1},
+        {QT_TR_NOOP("Links From Peers Used: %1"), "peerLinksUsed", F::Count, nullptr, 1},
+
+        {QT_TR_NOOP("Obstacles"), nullptr},
+        {QT_TR_NOOP("Puzzles Asked: %1"), "puzzlesAsked", F::Count, nullptr, 1},
+        {QT_TR_NOOP("Puzzles Answered: %1"), "puzzlesAnswered", F::Count, nullptr, 1},
+        {QT_TR_NOOP("Hoster Waits: %1"), "hosterWaits", F::Count, nullptr, 1},
+        {QT_TR_NOOP("Streams Reopened: %1"), "retries", F::Count, nullptr, 1},
+
+        {QT_TR_NOOP("Downloads"), nullptr},
+        {QT_TR_NOOP("Completed Downloads: %1"), "completed", F::Count, nullptr, 1},
+        {QT_TR_NOOP("Verified in ed3k: %1 %2"), "completedVerified", F::Count, "completed", 2},
+        {QT_TR_NOOP("Size of Completed Downloads: %1"), "completedBytes", F::Bytes, nullptr, 1},
+        {QT_TR_NOOP("Failed Downloads: %1"), "failed", F::Count, nullptr, 1},
+        {QT_TR_NOOP("Removed by the Hoster: %1"), "gone", F::Count, nullptr, 1},
+    };
+    return kRows;
+}
+
+std::span<const StatisticsPanel::CounterRow> StatisticsPanel::hosterItemRows()
+{
+    using F = RowFormat;
+    // Worded like BitTorrent's Torrents; keys of GetHosterStats current.items
+    static constexpr CounterRow kRows[] = {
+        {QT_TR_NOOP("Number of Links: %1"), "count"},
+        {QT_TR_NOOP("Downloading: %1"), "downloading", F::Count, nullptr, 1},
+        {QT_TR_NOOP("Queued: %1"), "queued", F::Count, nullptr, 1},
+        {QT_TR_NOOP("Waiting: %1"), "waiting", F::Count, nullptr, 1},
+        {QT_TR_NOOP("Puzzle: %1"), "puzzle", F::Count, nullptr, 1},
+        {QT_TR_NOOP("Paused: %1"), "paused", F::Count, nullptr, 1},
+        {QT_TR_NOOP("Needs You: %1"), "needsUser", F::Count, nullptr, 1},
+        {QT_TR_NOOP("Complete: %1"), "complete", F::Count, nullptr, 1},
+        {QT_TR_NOOP("Error: %1"), "failed", F::Count, nullptr, 1},
+        {QT_TR_NOOP("Total Size of Downloads: %1"), "totalBytes", F::Bytes},
+        {QT_TR_NOOP("Total Size Downloaded: %1"), "doneBytes", F::Bytes},
+        {QT_TR_NOOP("Total Size Left to Download: %1"), "leftBytes", F::Bytes},
+    };
+    return kRows;
+}
+
+void StatisticsPanel::buildHosterBranch(const QIcon& detailIcon, const QIcon& cumulativeIcon)
+{
+    // Fixed text down to depth 1, as in the BitTorrent branch
+    m_itemHoster = new QTreeWidgetItem(m_tree, {tr("Hoster")});
+    m_itemHoster->setIcon(0, QIcon(QStringLiteral(":/icons/Hoster.ico")));
+
+    auto* session = new QTreeWidgetItem(m_itemHoster, {tr("Session")});
+    session->setIcon(0, detailIcon);
+    m_hosterSessionRows.clear();
+    buildCounterRows(session, hosterCounterRows(), true, m_hosterSessionRows);
+
+    auto* cumulative = new QTreeWidgetItem(m_itemHoster, {tr("Cumulative")});
+    cumulative->setIcon(0, cumulativeIcon);
+    m_hosterCumulativeRows.clear();
+    buildCounterRows(cumulative, hosterCounterRows(), false, m_hosterCumulativeRows);
+
+    auto* links = new QTreeWidgetItem(m_itemHoster, {tr("Links")});
+    links->setIcon(0, QIcon(QStringLiteral(":/icons/Download.ico")));
+    m_hosterItemRows.clear();
+    buildCounterRows(links, hosterItemRows(), true, m_hosterItemRows);
+
+    const QHash<QString, qint64> zeros;
+    fillCounterRows(m_hosterSessionRows, zeros);
+    fillCounterRows(m_hosterCumulativeRows, zeros);
+    fillCounterRows(m_hosterItemRows, zeros);
+}
+
 std::span<const StatisticsPanel::CounterRow> StatisticsPanel::ed3kCounterRows()
 {
     using F = RowFormat;
-    // Keys of GetEd3kStatus: its stats map, plus the top-level and "queue." ones applyEd3kStatus() adds
+    // Keys are Ed3kCounters' (core/stats/NetworkCounters.h), live ones from GetEd3kStatus
+    // (its stats map, top level and "queue.") and the ones applyEd3kStatus() derives
     static constexpr CounterRow kRows[] = {
         {QT_TR_NOOP("General"), nullptr},
-        {QT_TR_NOOP("Download Speed: %1"), "rateDown", F::Rate, nullptr, 1},
-        {QT_TR_NOOP("Upload Speed: %1"), "rateUp", F::Rate, nullptr, 1},
-        {QT_TR_NOOP("Connections: %1"), "connections", F::Count, nullptr, 1},
-        {QT_TR_NOOP("Kad Contacts: %1"), "contacts", F::Count, nullptr, 1},
-        {QT_TR_NOOP("Banned Nodes: %1"), "bannedNodes", F::Count, nullptr, 1},
-        {QT_TR_NOOP("Banned Hosts: %1"), "bannedHosts", F::Count, nullptr, 1},
+        {QT_TR_NOOP("Download Speed: %1"), "rateDown", F::Rate, nullptr, 1, true},
+        {QT_TR_NOOP("Average Download Rate: %1"), "avgDownRate", F::Rate, nullptr, 1},
+        {QT_TR_NOOP("Max Download Rate: %1"), "maxDownRate", F::Rate, nullptr, 1},
+        {QT_TR_NOOP("Upload Speed: %1"), "rateUp", F::Rate, nullptr, 1, true},
+        {QT_TR_NOOP("Average Upload Rate: %1"), "avgUpRate", F::Rate, nullptr, 1},
+        {QT_TR_NOOP("Max Upload Rate: %1"), "maxUpRate", F::Rate, nullptr, 1},
+        {QT_TR_NOOP("Download Time: %1 %2"), "downloadTimeMs", F::DurationMs, "runtimeMs", 1},
+        {QT_TR_NOOP("Upload Time: %1 %2"), "uploadTimeMs", F::DurationMs, "runtimeMs", 1},
+        {QT_TR_NOOP("Connections: %1"), "connections", F::Count, nullptr, 1, true},
+        {QT_TR_NOOP("Peak Connections: %1"), "peakConnections", F::Count, nullptr, 1},
+        {QT_TR_NOOP("Kad Contacts: %1"), "contacts", F::Count, nullptr, 1, true},
+        {QT_TR_NOOP("Most Contacts: %1"), "peakContacts", F::Count, nullptr, 1},
+        {QT_TR_NOOP("Banned Nodes: %1"), "bannedNodes", F::Count, nullptr, 1, true},
+        {QT_TR_NOOP("Banned Hosts: %1"), "bannedHosts", F::Count, nullptr, 1, true},
 
         {QT_TR_NOOP("Traffic"), nullptr},
         {QT_TR_NOOP("Network Traffic Received: %1"), "wireRecv", F::Bytes, nullptr, 1},
@@ -2402,21 +2555,22 @@ std::span<const StatisticsPanel::CounterRow> StatisticsPanel::ed3kCounterRows()
         {QT_TR_NOOP("Other: %1 %2"), "sentOther", F::Bytes, "wireSent", 2},
 
         {QT_TR_NOOP("Kad"), nullptr},
-        {QT_TR_NOOP("Lookups Running: %1"), "lookups", F::Count, nullptr, 1},
-        {QT_TR_NOOP("Records Stored: %1"), "records", F::Count, nullptr, 1},
-        {QT_TR_NOOP("Size of the Records: %1"), "recordBytes", F::Bytes, nullptr, 1},
-        {QT_TR_NOOP("Records Published: %1"), "published", F::Count, nullptr, 1},
+        {QT_TR_NOOP("Lookups Running: %1"), "lookups", F::Count, nullptr, 1, true},
+        {QT_TR_NOOP("Records Stored: %1"), "records", F::Count, nullptr, 1, true},
+        {QT_TR_NOOP("Size of the Records: %1"), "recordBytes", F::Bytes, nullptr, 1, true},
+        {QT_TR_NOOP("Records Published: %1"), "published", F::Count, nullptr, 1, true},
+        {QT_TR_NOOP("Most Records Published: %1"), "peakPublished", F::Count, nullptr, 1},
 
-        {QT_TR_NOOP("Upload Queue"), nullptr},
-        {QT_TR_NOOP("Upload Slots: %1"), "queue.slotCount", F::Count, nullptr, 1},
-        {QT_TR_NOOP("Uploading: %1"), "queue.holders", F::Count, nullptr, 1},
-        {QT_TR_NOOP("Waiting: %1"), "queue.waiting", F::Count, nullptr, 1},
-        {QT_TR_NOOP("Queued Requests: %1"), "queueLen", F::Count, nullptr, 1},
+        {QT_TR_NOOP("Upload Queue"), nullptr, F::Count, nullptr, 0, true},
+        {QT_TR_NOOP("Upload Slots: %1"), "queue.slotCount", F::Count, nullptr, 1, true},
+        {QT_TR_NOOP("Uploading: %1"), "queue.holders", F::Count, nullptr, 1, true},
+        {QT_TR_NOOP("Waiting: %1"), "queue.waiting", F::Count, nullptr, 1, true},
+        {QT_TR_NOOP("Queued Requests: %1"), "queueLen", F::Count, nullptr, 1, true},
     };
     return kRows;
 }
 
-void StatisticsPanel::buildEd3kBranch(const QIcon& detailIcon)
+void StatisticsPanel::buildEd3kBranch(const QIcon& detailIcon, const QIcon& cumulativeIcon)
 {
     m_itemEd3k = new QTreeWidgetItem(m_tree, {tr("ed3k")});
     m_itemEd3k->setIcon(0, QIcon(QStringLiteral(":/icons/Ed3k.ico")));
@@ -2429,6 +2583,11 @@ void StatisticsPanel::buildEd3kBranch(const QIcon& detailIcon)
     session->setIcon(0, detailIcon);
     m_ed3kRows.clear();
     buildCounterRows(session, ed3kCounterRows(), true, m_ed3kRows);
+
+    auto* cumulative = new QTreeWidgetItem(m_itemEd3k, {tr("Cumulative")});
+    cumulative->setIcon(0, cumulativeIcon);
+    m_ed3kCumulativeRows.clear();
+    buildCounterRows(cumulative, ed3kCounterRows(), false, m_ed3kCumulativeRows);
 
     m_itemEd3kCredit = new QTreeWidgetItem(m_itemEd3k, {tr("Credits")});
     m_itemEd3kCredit->setIcon(0, QIcon(QStringLiteral(":/icons/Rating.ico")));

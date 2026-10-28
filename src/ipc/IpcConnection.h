@@ -160,6 +160,9 @@ private:
     /// QAbstractSocket does not emit readyRead recursively either, so what arrives
     /// meanwhile waits in the socket and drain() collects it on the way out.
     bool m_dispatching = false;
+    /// Event loop depth drain() started at. A readyRead at the same depth is the
+    /// TLS backend re-entering through flush(), not a dialog's loop.
+    int m_dispatchLoopLevel = 0;
 
     /// Runs only while drain() does, so it can only fire from a nested event loop
     /// inside a handler: that is the stall dispatchBlocked() reports.

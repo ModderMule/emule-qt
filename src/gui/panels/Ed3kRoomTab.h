@@ -8,16 +8,26 @@
 ///   moderator: two members with one nick stay apart (room.md §6).
 /// - Posts are kept in the order of `sent` (§6) and shown as plain text; a post a ban
 ///   dropped is taken out (the log is drawn again).
+/// - Reply (§2.5): a post's menu (right click on it) or the nick menu picks the post the next
+///   one answers; a reply shows a quoted line of its post, or "a post not held" (§2.5).
+/// - Mute (§6, local): the posts of a muted member ID are not drawn; the daemon keeps the list.
+/// - #17: after ROOM_MEMBER (a closed room, not admitted) a bar shows the own member key with
+///   Copy, to send to a moderator, and Import admit.
 
 #include "panels/ChatChannelView.h"
 
 #include <QCborMap>
 #include <QMap>
+#include <QSet>
 #include <QString>
 #include <QStringList>
 #include <QVector>
 
 #include <functional>
+#include <utility>
+
+class QLineEdit;
+class QPushButton;
 
 namespace eMule {
 
@@ -36,6 +46,7 @@ public:
         qint64 sent = 0;
         QString text;
         QString replyTo;    ///< post id, empty none
+        QString authorId;   ///< member ID hex (§1.1)
     };
     /// Draws one post: @p shown the member as listed, @p own our own post.
     using PostRenderer = std::function<QString(const Post& post, const QString& shown, bool own, const QString& replyText)>;
@@ -80,9 +91,44 @@ public:
     void removePosts(const QStringList& ids);
     [[nodiscard]] static Post postFrom(const QCborMap& map);
 
+    /// A held post by id; null: none.
+    [[nodiscard]] const Post* post(const QString& id) const;
+    /// The newest post of a member key; null: none.
+    [[nodiscard]] const Post* lastPostOf(const QString& key) const;
+    /// The post drawn at @p pos of the log's viewport; empty: none there.
+    [[nodiscard]] QString postIdAt(const QPoint& pos) const;
+    /// The post the next one answers (§2.5); empty: none.
+    void setReplyTo(const QString& id) { m_replyTo = id; }
+    [[nodiscard]] const QString& replyTo() const { return m_replyTo; }
+    /// The pending reply, cleared.
+    QString takeReplyTo() { return std::exchange(m_replyTo, QString()); }
+    /// §6: muted member IDs (hex) of the row.
+    [[nodiscard]] bool isMuted(const QString& memberId) const { return m_muted.contains(memberId); }
+    /// The member ID (hex) of a member key; empty: not known yet.
+    [[nodiscard]] static QString memberIdOf(const QString& key);
+    /// #17: the bar with the own member key shows (a ROOM_MEMBER refusal).
+    [[nodiscard]] bool showsMemberKeyBar() const;
+    void showMemberKeyBar(bool on);
+    /// "Import admit" makes sense: the room is known closed or moderated, or refused us (#17).
+    [[nodiscard]] bool admitImportable() const;
+
+signals:
+    /// The post menu: answer @p id with the next post.
+    void replyRequested(const QString& id);
+    /// The post menu: mute (or unmute) a member ID.
+    void muteRequested(const QString& memberId, bool on);
+    /// The bar: import an admit.
+    void importAdmitRequested();
+
+protected:
+    bool eventFilter(QObject* watched, QEvent* event) override;
+
 private:
     void redraw();
+    /// Appends @p p to the log, marked as its post (postIdAt); nothing when muted.
+    void draw(const Post& p);
     [[nodiscard]] QString render(const Post& p) const;
+    void buildMemberKeyBar();
 
     QString m_room;
     PostRenderer m_render;
@@ -90,6 +136,11 @@ private:
     QStringList m_mods;
     QMap<QString, QString> m_members;   ///< member key -> nick
     QVector<Post> m_posts;              ///< by sent
+    QString m_replyTo;
+    QSet<QString> m_muted;              ///< member IDs hex
+    QWidget* m_keyBar = nullptr;
+    QLineEdit* m_keyEdit = nullptr;
+    QPushButton* m_importBtn = nullptr;
 };
 
 } // namespace eMule

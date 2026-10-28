@@ -101,6 +101,7 @@ SOURCES += \
     Ed3kCreditBridge.cpp \
     Ed3kDownloadsBridge.cpp \
     Ed3kSetsBridge.cpp \
+    Ed3kPaidBridge.cpp \
     Ed3kFiltersBridge.cpp \
     Ed3kUploadsBridge.cpp \
     Ed3kHosterBridge.cpp \
@@ -133,6 +134,7 @@ HEADERS += \
     Ed3kCreditBridge.h \
     Ed3kDownloadsBridge.h \
     Ed3kSetsBridge.h \
+    Ed3kPaidBridge.h \
     Ed3kFiltersBridge.h \
     Ed3kUploadsBridge.h \
     Ed3kHosterBridge.h \

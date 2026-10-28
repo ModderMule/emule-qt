@@ -104,6 +104,9 @@ struct Ed3kHosterPrefs {
     bool askPuzzles = true;        ///< ed3kHosterPuzzles: show image puzzles; off = skip them
     bool publishLinks = true;      ///< ed3kHosterPublishLinks: publish and hand out vouched links (§4.1)
     bool fromPeers = true;         ///< ed3kHosterFromPeers: use links that peers name
+    bool checkSearchLinks = true;  ///< ed3kHosterCheckSearchLinks: a web row's links dialog checks its links
+    int checkMaxParallel = 30;     ///< YAML only: those link checks at once
+    int checkMaxPerHost = 5;       ///< YAML only: of them at one hoster (its domains count as one)
     QList<Ed3kHosterAccount> accounts; ///< ed3kHosterAccounts
     bool operator==(const Ed3kHosterPrefs&) const = default;
 };
@@ -892,6 +895,10 @@ public:
     void setCumKad(const KadCounters& val);
     [[nodiscard]] BtCounters cumBt() const;
     void setCumBt(const BtCounters& val);
+    [[nodiscard]] HosterCounters cumHoster() const;
+    void setCumHoster(const HosterCounters& val);
+    [[nodiscard]] Ed3kCounters cumEd3k() const;
+    void setCumEd3k(const Ed3kCounters& val);
 
     // Records
     [[nodiscard]] uint32 recMaxWorkingServers() const;

@@ -336,9 +336,15 @@ void IrcPanel::onEd3kRoomNotice(const IpcMessage& msg)
         break;
     case Notice::Refused:
         // ED3K_ROOM_FULL 1, _LEFT 2, _BLOCKED 3, _MEMBER 4
-        if (value == 4)
-            appendInfo(key, tr("* A member refused us: not admitted. Send a moderator your member key, then "
-                               "import the admit (Rooms (ed3k) tab)"), IrcRouting::LineColor::Notice);
+        if (value == 4) {
+            // #17: a closed room; the key goes to a moderator, whose admit reaches the room
+            // was: "... then import the admit (Rooms (ed3k) tab)" (no import needed, §4.2)
+            if (Ed3kRoomTab* tab = roomTab(room); tab && !tab->showsMemberKeyBar()) {
+                tab->showMemberKeyBar(true);
+                appendInfo(key, tr("* A member refused us: this room is closed and you are not admitted yet. Send your "
+                                   "member key (shown above) to a moderator"), IrcRouting::LineColor::Notice);
+            }
+        }
         else if (value == 3)
             appendInfo(key, tr("* A member refused us: banned in this room"), IrcRouting::LineColor::Notice);
         break;
@@ -460,6 +466,15 @@ Ed3kRoomTab* IrcPanel::ensureRoomTab(const QString& room, bool show)
         };
         tab = new Ed3kRoomTab(room, [this](const QString& link) { emit linkActivated(link); }, render, this);
         tab->applyFont(m_customFont);
+        connect(tab, &Ed3kRoomTab::replyRequested, this, [this, tab = QPointer<Ed3kRoomTab>(tab)](const QString& id) {
+            if (tab)
+                replyInEd3kRoom(tab, id);
+        });
+        connect(tab, &Ed3kRoomTab::muteRequested, this, [this, room](const QString& memberId, bool on) {
+            muteEd3kMember(room, memberId, on);
+        });
+        connect(tab, &Ed3kRoomTab::importAdmitRequested, this,
+                [this, room] { onEd3kRoomAction(int(Ed3kRoomList::Action::ImportAdmit), room); });
         tab->setRow(row);
         IrcChannel ch;
         ch.name = tab->tabText();
@@ -502,9 +517,10 @@ void IrcPanel::postToRoom(Ed3kRoomTab* tab, const QString& text)
     if (!tab || !m_ipc || !m_ipc->isConnected() || text.trimmed().isEmpty())
         return;
     // shown when the daemon's post comes back (PushEd3kRoomPost)
-    // ToDo: reply to a post (PostEd3kRoom takes replyTo) and a local mute of a member (§6)
+    // was: ToDo: reply to a post (PostEd3kRoom takes replyTo) and a local mute of a member (§6)
+    // (done: the post and nick menus, replyInEd3kRoom / muteEd3kMember)
     const QString key = Ed3kRoomTab::keyOf(tab->room());
-    m_ipc->postEd3kRoom(tab->room(), text, {}, [self = QPointer<IrcPanel>(this), key](const IpcMessage& r) {
+    m_ipc->postEd3kRoom(tab->room(), text, tab->takeReplyTo(), [self = QPointer<IrcPanel>(this), key](const IpcMessage& r) {
         if (self && (!r.isValid() || !r.fieldBool(0)))
             self->appendInfo(key, tr("* Not posted: %1").arg(errorText(r.fieldMap(1).value(QStringLiteral("error")).toInteger())),
                              IrcRouting::LineColor::Notice);
@@ -523,7 +539,20 @@ void IrcPanel::ed3kNickMenu(Ed3kRoomTab* tab, const QString& shown, const QPoint
     title->setEnabled(false);
     menu.addSeparator();
     menu.addAction(tr("Copy member key"), this, [member] { QApplication::clipboard()->setText(member); })->setEnabled(!member.isEmpty());
-    if (self && !tab->canModerate()) {
+    // §2.5: answer the member's newest post; §6: mute it here alone
+    const Ed3kRoomTab::Post* last = member.isEmpty() ? nullptr : tab->lastPostOf(member);
+    menu.addAction(tr("Reply to last post"), this, [this, tab = QPointer<Ed3kRoomTab>(tab), id = last ? last->id : QString()] {
+        if (tab)
+            replyInEd3kRoom(tab, id);
+    })->setEnabled(last != nullptr);
+    if (const QString memberId = Ed3kRoomTab::memberIdOf(member); !self && !memberId.isEmpty()) {
+        const bool muted = tab->isMuted(memberId);
+        menu.addAction(muted ? tr("Unmute") : tr("Mute"), this,
+                       [this, room, memberId, muted] { muteEd3kMember(room, memberId, !muted); });
+    }
+    // #17: only for a room known closed or moderated, or one that refused us
+    // was: if (self && !tab->canModerate())
+    if (self && !tab->canModerate() && tab->admitImportable()) {
         menu.addAction(tr("Import admit..."), this, [this, room] { onEd3kRoomAction(int(Ed3kRoomList::Action::ImportAdmit), room); });
     }
     if (tab->canModerate() && !member.isEmpty() && !self) {
@@ -701,6 +730,36 @@ void IrcPanel::setEd3kModerator(Ed3kRoomTab* tab, const QString& memberKey, bool
                                if (self && (!r.isValid() || !r.fieldBool(0)))
                                    self->ed3kRoomFailed(tr("The moderators were not changed"), r);
                            });
+}
+
+void IrcPanel::replyInEd3kRoom(Ed3kRoomTab* tab, const QString& postId)
+{
+    const Ed3kRoomTab::Post* p = tab ? tab->post(postId) : nullptr;
+    if (!p)
+        return;
+    tab->setReplyTo(postId);
+    QString quote = p->text.simplified();
+    if (quote.size() > 60)
+        quote = quote.left(60) + QStringLiteral("…");
+    appendInfo(Ed3kRoomTab::keyOf(tab->room()),
+               tr("* Your next post answers %1: %2").arg(Ed3kRoomTab::shownName(p->nick, p->author), quote));
+    m_input->setFocus();
+}
+
+void IrcPanel::muteEd3kMember(const QString& room, const QString& memberId, bool on)
+{
+    if (!m_ipc)
+        return;
+    m_ipc->muteEd3kRoomMember(room, memberId, on, [self = QPointer<IrcPanel>(this), room, on](const IpcMessage& r) {
+        if (!self)
+            return;
+        if (!r.isValid() || !r.fieldBool(0)) {
+            self->ed3kRoomFailed(on ? tr("Not muted") : tr("Not unmuted"), r);
+            return;
+        }
+        self->appendInfo(Ed3kRoomTab::keyOf(room), on ? tr("* Member muted: its posts are hidden here")
+                                                      : tr("* Member unmuted"));
+    });
 }
 
 void IrcPanel::ed3kRoomFailed(const QString& what, const IpcMessage& reply)

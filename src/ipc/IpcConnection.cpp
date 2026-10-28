@@ -7,6 +7,7 @@
 #include <QPointer>
 #include <QSslSocket>
 #include <QScopeGuard>
+#include <QThread>
 #include <QtEndian>
 
 #include <utility>
@@ -148,7 +149,7 @@ void IpcConnection::onReadyRead()
     // Appending is safe; drain() picks the bytes up when the outer pass resumes.
     // (Qt normally keeps a nested readyRead from this socket back by itself.)
     if (m_dispatching) {
-        if (!m_blockedReported) {
+        if (!m_blockedReported && QThread::currentThread()->loopLevel() > m_dispatchLoopLevel) {
             m_blockedReported = true;
             emit dispatchBlocked();
         }
@@ -171,6 +172,7 @@ void IpcConnection::drain()
         return;
 
     m_dispatching = true;
+    m_dispatchLoopLevel = QThread::currentThread()->loopLevel();
     m_blockedReported = false;
     m_stallTimer.start();
     const QPointer<IpcConnection> self(this);

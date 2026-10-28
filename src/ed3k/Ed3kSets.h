@@ -6,8 +6,8 @@
 /// Ed3kDownloads into <incoming>/<set name>/<member path>.
 ///
 /// - follow(link): an `ed3k:set` link with `id` (setFollow, the version held handed in after a
-///   restart), with `s`/`paid=1` (setFollowHidden; the link is a credential: kept owner-only,
-///   never logged), with `b3`+`sz` (setFollowPinned, chaintube.md §3.2: no newer head).
+///   restart), with `s`/`paid=1` (setFollowHidden, with `s` the version held too; the link is
+///   a credential: kept owner-only, never logged), with `b3`+`sz` (setFollowPinned, chaintube.md §3.2: no newer head).
 /// - The engine follows with SetPolicy::Ask: the manifest events only. Which members and
 ///   when is decided here (§2.3: the user chooses members before downloads start; §5.3 "ask,
 ///   or download" per set): Policy::Download takes every new version at once, Policy::Ask
@@ -26,11 +26,20 @@
 /// - Persisted: Config/ed3k/sets.json (links, policy, selection, versions; owner-only) and
 ///   the manifests in Config/ed3k/sets/<root hex>.manifest; followed again at each start.
 ///
-/// ToDo: paid sets (`paid=1`) need a pass (subscription.md), out of scope; followed like a
-/// hidden set, nothing opens without the pass.
-/// ToDo: a hidden set's version held is not handed in after a restart (the core wants the
+/// - Paid sets (subscription.md §8): a `paid=1` link (scope kind 3) and a catalogue whose
+///   manifest has an offer (kind 2) are followed in Ed3kPaid (setPaid), which buys the pass;
+///   keys arriving follow a hidden paid set again so its version opens.
+/// - A mount's new version under Policy::Ask waits like a version (pendingMounts) until
+///   applyVersion().
+///
+/// was: ToDo: paid sets (`paid=1`) need a pass (subscription.md), out of scope; followed like a
+/// hidden set, nothing opens without the pass. (done: Ed3kPaid)
+/// ToDo: the sealed members of a paid catalogue (§8.1 `epoch`) are downloaded sealed; they are
+/// not opened with the epoch key yet.
+/// was: ToDo: a hidden set's version held is not handed in after a restart (the core wants the
 /// sealed manifest, SetManifest gives the plain one): the newest is fetched again, members
-/// already there are not downloaded again.
+/// already there are not downloaded again. (done: the plain file with the sealed root is
+/// taken since packmule batch 13; a paid hidden set still takes none)
 
 #include "Ed3kFfi.h"
 #include "Ed3kSetManifest.h"
@@ -51,6 +60,7 @@ namespace eMule::ed3k {
 
 class Ed3kSession;
 class Ed3kDownloads;
+class Ed3kPaid;
 
 class Ed3kSets : public QObject {
     Q_OBJECT
@@ -95,6 +105,8 @@ public:
         std::vector<Member> members;               ///< of the pending version when there is one
         std::vector<Part> parts;
         std::uint64_t totalSize = 0;
+        QStringList pendingMounts;   ///< mounts with a new version waiting for the user (Ask)
+        QString paidScope;           ///< 32 hex digits of a paid set's scope; empty = not paid
     };
 
     /// @p configDir: Config/ (ed3k/sets.json and ed3k/sets/ below it), loaded here.
@@ -103,6 +115,8 @@ public:
 
     /// The directory below which every set gets its own folder.
     void setIncomingDir(const QString& dir) { m_incomingDir = dir; }
+    /// Paid sets are followed there (null: they are followed as hidden sets only).
+    void setPaid(Ed3kPaid* paid);
 
     /// Follows the set of an `ed3k:set` link. The error is user-visible (localized).
     std::expected<std::uint32_t, QString> follow(const QString& link, Policy policy);
@@ -117,6 +131,9 @@ public:
 
     [[nodiscard]] std::vector<Info> list() const;
     [[nodiscard]] std::optional<Info> info(std::uint32_t id) const;
+    /// The author key of the followed, not hidden set whose version (applied or pending) has
+    /// the manifest @p root; nullopt: no such manifest known (filter-list.md §1, ruling #18).
+    [[nodiscard]] std::optional<::ed3k::Key32> authorOfManifest(const ::ed3k::Root& root) const;
     [[nodiscard]] bool isRunning() const;
 
     /// The owner tag of a set's member downloads.
@@ -137,6 +154,7 @@ private:
         ::ed3k::Key32 key{};
         QByteArray id;
         bool hidden = false;
+        bool paid = false;        ///< `paid=1` (subscription.md §8.3)
         std::optional<::ed3k::Root> b3;
         std::uint64_t sz = 0;
         QString name;
@@ -159,6 +177,8 @@ private:
         /// inner manifests by root; mounts: path → the mounted version's root
         std::map<::ed3k::Root, QByteArray> inner;
         std::map<QString, ::ed3k::Root> mounts;
+        /// mounts' new versions waiting for the user (Policy::Ask): path → root
+        std::map<QString, ::ed3k::Root> pendingMounts;
         /// members added paused, waiting for their turn (one download per set at a time; only
         /// from a sets.json of before now: members of one source take turns in Ed3kJoinBase)
         std::vector<::ed3k::Root> queued;
@@ -169,6 +189,12 @@ private:
 
     void onEventPolled(const ::ed3k::Event& event, bool* handled);
     void onSessionStatus();
+    /// keys of a paid scope: a hidden paid set without a version is followed again
+    void onPaidKeys(const ::ed3k::Scope& scope);
+    /// the paid scope of @p s (kind 3 of a `paid=1` link, kind 2 of a catalogue with an offer)
+    [[nodiscard]] std::optional<::ed3k::Scope> paidScopeOf(const Set& s) const;
+    /// tells Ed3kPaid of a paid set (its scope and offer)
+    void followPaid(const Set& s);
     void attach();
     bool followOnEngine(Set& s);
     Set* setOfTopic(const ::ed3k::Topic& topic, QString* mountPath = nullptr);
@@ -208,6 +234,7 @@ private:
     std::map<::ed3k::Topic, std::pair<std::uint32_t, QString>> m_mountTopics;
     bool m_attached = false;
     bool m_changePending = false;
+    Ed3kPaid* m_paid = nullptr;
 };
 
 } // namespace eMule::ed3k

@@ -180,10 +180,29 @@ void HosterPanel::setIpcClient(IpcClient* ipc)
 
 void HosterPanel::addLinks(const QStringList& links)
 {
-    if (!m_ipc || links.isEmpty())
+    QList<QStringList> files;
+    for (const QString& link : links)
+        files.append(QStringList{link});
+    addLinks(files);
+}
+
+void HosterPanel::addLinks(const QList<QStringList>& files)
+{
+    if (!m_ipc || files.isEmpty())
+        return;
+    QCborArray list;
+    QStringList firsts;
+    for (const QStringList& urls : files) {
+        if (urls.isEmpty())
+            continue;
+        list.append(QCborArray::fromStringList(urls));
+        firsts << urls.first();
+    }
+    if (list.isEmpty())
         return;
     IpcMessage req(IpcMsgType::AddHosterLinks);
-    req.append(links.join(QLatin1Char('\n')));
+    req.append(firsts.join(QLatin1Char('\n')));
+    req.append(list);
     m_ipc->sendRequest(std::move(req), [this](const IpcMessage& r) {
         if (!r.fieldBool(0))
             QMessageBox::warning(this, tr("Hoster links"), r.fieldMap(1).value(QStringLiteral("error")).toString());
@@ -274,6 +293,9 @@ void HosterPanel::fillRow(QTreeWidgetItem* row, const QCborMap& it)
     row->setText(ColSpeed, speed > 0 ? formatByteRate(double(speed)) : QString());
     row->setData(ColSpeed, Qt::UserRole, speed);
     row->setText(ColHoster, it.value(QStringLiteral("host")).toString());
+    const qint64 mirrorNo = it.value(QStringLiteral("mirrorNo")).toInteger();
+    const qint64 mirrorCount = mirrorNo + 1 + it.value(QStringLiteral("mirrors")).toInteger();
+    row->setToolTip(ColHoster, mirrorCount > 1 ? tr("Mirror %1 of %2").arg(mirrorNo + 1).arg(mirrorCount) : QString());
     QString status = stateText(state);
     const QString error = reasonText(int(it.value(QStringLiteral("reason")).toInteger()),
                                      it.value(QStringLiteral("reasonArg")).toString());
@@ -306,6 +328,10 @@ void HosterPanel::showContextMenu(const QPoint& pos)
     QAction* folder = menu.addAction(menuIcon("FolderOpen.ico"), tr("Open folder"));
     menu.addSeparator();
     QAction* add = menu.addAction(menuIcon("ListAdd.ico"), tr("Add links..."));
+    // straight from the clipboard, no dialog
+    const QStringList pasted = clipboardLinks();
+    QAction* paste = menu.addAction(menuIcon("eD2kLinkPaste.ico"), tr("Paste links"));
+    paste->setEnabled(!pasted.isEmpty() && m_ipc && m_ipc->isConnected());
     for (QAction* a : {pause, resume, remove, del, copy, folder})
         a->setEnabled(!ids.isEmpty());
     if (ids.size() == 1) {
@@ -335,6 +361,8 @@ void HosterPanel::showContextMenu(const QPoint& pos)
         QDesktopServices::openUrl(QUrl::fromLocalFile(QFileInfo(file).absolutePath()));
     } else if (chosen == add) {
         promptAddLinks();
+    } else if (chosen == paste) {
+        addLinks(pasted);
     }
 }
 
@@ -415,8 +443,9 @@ void HosterPanel::applyStatus(const QCborMap& st)
     const QCborMap h = st.value(QStringLiteral("hoster")).toMap();
     if (h.isEmpty())
         return;
+    m_enabled = h.value(QStringLiteral("enabled")).toBool();
     QString text;
-    if (!h.value(QStringLiteral("enabled")).toBool())
+    if (!m_enabled)
         text = tr("Downloads from hosters are off (Options, ed3k, Hoster).");
     else if (const QCborMap r = h.value(QStringLiteral("resolver")).toMap(); !r.value(QStringLiteral("available")).toBool())
         text = tr("Resolver not ready: %1").arg(r.value(QStringLiteral("reason")).toString());
@@ -431,6 +460,19 @@ QList<qint64> HosterPanel::selectedIds() const
     for (QTreeWidgetItem* row : m_tree->selectedItems())
         out << row->data(ColName, Qt::UserRole + 1).toLongLong();
     return out;
+}
+
+QStringList HosterPanel::clipboardLinks()
+{
+    QStringList links;
+    const QString text = QApplication::clipboard()->text();
+    for (const QStringView line : QStringView(text).split(QLatin1Char('\n'))) {
+        const QString t = line.trimmed().toString();
+        if (t.startsWith(QLatin1StringView("http://"), Qt::CaseInsensitive)
+            || t.startsWith(QLatin1StringView("https://"), Qt::CaseInsensitive))
+            links << t;
+    }
+    return links;
 }
 
 } // namespace eMule

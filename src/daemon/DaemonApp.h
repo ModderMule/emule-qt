@@ -15,6 +15,8 @@
 #include <memory>
 #include <vector>
 
+class QTimer;
+
 namespace eMule {
 
 class BandwidthCoordinator;
@@ -33,7 +35,7 @@ class PowerManager;
 
 namespace usenet { class UsenetSession; }
 namespace bt { class BtSession; }
-namespace ed3k { class Ed3kSession; class Ed3kUsenetJoin; class UsenetJoinQueue; class Ed3kTorrentJoin; class Ed3kShared; class SharedFileSource; class Ed3kFriends; class Ed3kRooms; class Ed3kBootstrap; class Ed3kNames; class Ed3kSiteServer; class Ed3kCredit; class Ed3kUploads; class Ed3kFilters; class Ed3kChain; class Ed3kHosterJoin; class Ed3kJdResolver; class Ed3kJavaRuntime; class Ed3kDownloads; class Ed3kSearch; class Ed3kSets; class Ed3kLive; }
+namespace ed3k { class Ed3kSession; class Ed3kUsenetJoin; class UsenetJoinQueue; class Ed3kTorrentJoin; class Ed3kShared; class SharedFileSource; class Ed3kFriends; class Ed3kRooms; class Ed3kBootstrap; class Ed3kNames; class Ed3kSiteServer; class Ed3kCredit; class Ed3kUploads; class Ed3kFilters; class Ed3kChain; class Ed3kHosterJoin; class Ed3kJdResolver; class Ed3kJavaRuntime; class Ed3kDownloads; class Ed3kSearch; class Ed3kSets; class Ed3kLive; class Ed3kLiveBroadcast; class Ed3kPaid; }
 namespace indexer { class IndexerFeedList; class IndexerSearchList; }
 
 class DaemonApp : public QObject {
@@ -218,10 +220,16 @@ private:
     std::unique_ptr<ed3k::Ed3kSearch> m_ed3kSearch;
     /// followed sets (their members through m_ed3kDownloads) and live streams (on the website
     /// server's port, Ed3kSetsBridge); die before the downloads and the website server
+    /// paid subscriptions (Ed3kPaidBridge); the sets follow paid sets there: dies after them
+    std::unique_ptr<ed3k::Ed3kPaid> m_ed3kPaid;
     std::unique_ptr<ed3k::Ed3kSets> m_ed3kSets;
     std::unique_ptr<ed3k::Ed3kLive> m_ed3kLive;
+    /// live broadcasting from an HLS folder (Ed3kSetsBridge)
+    std::unique_ptr<ed3k::Ed3kLiveBroadcast> m_ed3kLiveBroadcast;
     /// downloads from hoster links (hoster.md, Ed3kHosterBridge, prefs ed3kHoster*); dies before the session
     std::unique_ptr<ed3k::Ed3kHosterJoin> m_hosterJoin;
+    /// once a second: the node's totals into the ed3k statistics (Ed3kBridge::sampleCounters)
+    QTimer* m_ed3kStatsTimer = nullptr;
 #ifdef EMULE_HAVE_HOSTER_JD
     /// the JDownloader sidecar and the Java runtime it runs on
     std::unique_ptr<ed3k::Ed3kJdResolver> m_jdResolver;

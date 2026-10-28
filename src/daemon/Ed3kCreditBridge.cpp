@@ -7,6 +7,7 @@
 #include <QCborMap>
 
 #ifdef EMULE_HAVE_ED3K
+#include "Ed3kChain.h"
 #include "Ed3kCredit.h"
 #include "Ed3kStore.h"
 
@@ -21,6 +22,7 @@ using Ipc::IpcMsgType;
 namespace {
 
 ed3k::Ed3kCredit* s_credit = nullptr;
+ed3k::Ed3kChain* s_chain = nullptr;
 
 IpcMessage failure(int seqId, const QString& error)
 {
@@ -41,8 +43,21 @@ QCborArray claimsToCbor(const std::vector<ed3k::Ed3kCredit::StakeClaim>& claims)
                             {QStringLiteral("to"), ed3k::Ed3kCredit::addressText(cl.to)},
                             {QStringLiteral("amount"), hexOf(cl.amount)},
                             {QStringLiteral("readyAt"), qint64(cl.readyAt)},
-                            {QStringLiteral("state"), int(cl.state)}});
+                            // one sent before a restart, sent again once read unpaid
+                            {QStringLiteral("state"), int(cl.reclaim ? ed3k::Ed3kCredit::ClaimState::Claiming : cl.state)},
+                            {QStringLiteral("burnTx"), cl.burnTx},
+                            {QStringLiteral("claimTx"), cl.claimTx}});
     return out;
+}
+
+QCborMap lookupToCbor(quint64 id, bool found, bool failed, const QString& to, const QString& amount, quint64 readyAt, bool kept,
+                      bool paid)
+{
+    const auto i64 = [](quint64 v) { return qint64(std::min<quint64>(v, INT64_MAX)); };
+    return QCborMap{{QStringLiteral("id"), i64(id)},          {QStringLiteral("found"), found},
+                    {QStringLiteral("failed"), failed},       {QStringLiteral("to"), to},
+                    {QStringLiteral("amount"), amount},       {QStringLiteral("readyAt"), i64(readyAt)},
+                    {QStringLiteral("kept"), kept},           {QStringLiteral("paid"), paid}};
 }
 
 /// error as an ed3k::Error code (0: no node or credits not in use)
@@ -109,6 +124,11 @@ void answer(const IpcMessage& msg, ed3k::Ed3kCredit& c, const std::function<void
         c.refreshClaims();
         reply(IpcMessage::makeResult(seq, true));
         break;
+    case IpcMsgType::ReadEd3kStakeClaim: {
+        const qint64 id = msg.fieldInt(0);
+        reply(id > 0 ? stakeResult(seq, c.readClaim(std::uint64_t(id))) : failure(seq, QStringLiteral("a claim id is needed")));
+        break;
+    }
     default:
         reply(IpcMessage::makeError(seq, 400, QStringLiteral("Unknown ed3k request")));
         break;
@@ -121,6 +141,24 @@ void answer(const IpcMessage& msg, ed3k::Ed3kCredit& c, const std::function<void
 void setCredit(ed3k::Ed3kCredit* credit)
 {
     s_credit = credit;
+}
+
+void setChain(ed3k::Ed3kChain* chain)
+{
+    s_chain = chain;
+}
+
+QCborMap chainStatusToCbor()
+{
+#ifdef EMULE_HAVE_ED3K
+    if (!s_chain)
+        return {};
+    return QCborMap{{QStringLiteral("configured"), s_chain->isConfigured()},
+                    {QStringLiteral("singleRemote"), s_chain->isSingleRemote()},
+                    {QStringLiteral("refused"), s_chain->lastRefusal()}};
+#else
+    return {};
+#endif
 }
 
 bool isCreditRequest(IpcMsgType type)
@@ -224,6 +262,13 @@ void connectPushes(ed3k::Ed3kCredit& credit, std::function<void(const IpcMessage
                           {QStringLiteral("tx"), tx}});
         broadcast(m);
     });
+    QObject::connect(&credit, &C::stakeLookup, &credit,
+                     [broadcast](quint64 id, bool found, bool failed, const QString& to, const QString& amount, quint64 readyAt, bool kept,
+                                 bool paid) {
+                         IpcMessage m(IpcMsgType::PushEd3kStakeLookup, 0);
+                         m.append(lookupToCbor(id, found, failed, to, amount, readyAt, kept, paid));
+                         broadcast(m);
+                     });
 #else
     (void)credit;
     (void)broadcast;

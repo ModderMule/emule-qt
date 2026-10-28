@@ -249,6 +249,7 @@ class tst_StatisticsPanel : public QObject {
 private slots:
     void usenetIsTheLastBranchAndMfcsOrderStays();
     void bitTorrentBranchCarriesCountersAndTorrents();
+    void hosterBranchCarriesCountersAndLinks();
     void ed3kBranchShowsStatusQueueAndCredits();
     void sessionRowsCarryValuesAndShares();
     void cumulativeLeavesOutTheLiveRows();
@@ -291,11 +292,12 @@ void tst_StatisticsPanel::usenetIsTheLastBranchAndMfcsOrderStays()
     QVERIFY(tree);
     QCOMPARE(tree->topLevelItem(0)->text(0), QStringLiteral("Transfer"));
 
-    // MFC's branches, then Kad, Usenet, BitTorrent and ed3k last
+    // MFC's branches, then Kad, Usenet, BitTorrent, Hoster and ed3k last
     const int count = tree->topLevelItemCount();
     QCOMPARE(tree->topLevelItem(count - 1)->text(0), QStringLiteral("ed3k"));
-    QCOMPARE(tree->topLevelItem(count - 2)->text(0), QStringLiteral("BitTorrent"));
-    QTreeWidgetItem* usenet = tree->topLevelItem(count - 3);
+    QCOMPARE(tree->topLevelItem(count - 2)->text(0), QStringLiteral("Hoster"));
+    QCOMPARE(tree->topLevelItem(count - 3)->text(0), QStringLiteral("BitTorrent"));
+    QTreeWidgetItem* usenet = tree->topLevelItem(count - 4);
     QCOMPARE(usenet->text(0), QStringLiteral("Usenet"));
     QStringList children;
     for (int i = 0; i < usenet->childCount(); ++i)
@@ -324,9 +326,11 @@ void tst_StatisticsPanel::ed3kBranchShowsStatusQueueAndCredits()
         {QStringLiteral("class4"), 1},
         {QStringLiteral("class6"), 0},
         {QStringLiteral("router"), true},
-        {QStringLiteral("wireRecv"), 4000},
         {QStringLiteral("rateUp"), 2048},
-        {QStringLiteral("stats"), QCborMap{{QStringLiteral("recvFile"), 1000}, {QStringLiteral("lookups"), 3}}},
+        {QStringLiteral("stats"), QCborMap{{QStringLiteral("lookups"), 3}}},
+        {QStringLiteral("session"), QCborMap{{QStringLiteral("wireRecv"), 4000}, {QStringLiteral("recvFile"), 1000},
+                                             {QStringLiteral("downloadTimeMs"), 2000}}},
+        {QStringLiteral("cumulative"), QCborMap{{QStringLiteral("wireRecv"), 9000}, {QStringLiteral("peakContacts"), 77}}},
         {QStringLiteral("queue"), QCborMap{{QStringLiteral("slotCount"), 5}, {QStringLiteral("holders"), 2},
                                            {QStringLiteral("waiting"), 7}}},
         {QStringLiteral("credit"), QCborMap{{QStringLiteral("enabled"), true},
@@ -350,6 +354,17 @@ void tst_StatisticsPanel::ed3kBranchShowsStatusQueueAndCredits()
     QVERIFY(childNamed(received, QStringLiteral("File Data:"))->text(0).contains(QStringLiteral("25")));
     QTreeWidgetItem* queue = childNamed(session, QStringLiteral("Upload Queue"));
     QCOMPARE(childNamed(queue, QStringLiteral("Waiting:"))->text(0), QStringLiteral("Waiting: 7"));
+    QCOMPARE(childNamed(general, QStringLiteral("Average Download Rate:"))->text(0),
+             QStringLiteral("Average Download Rate: %1").arg(formatByteRate(2000)));
+    // banked totals; the live figures stay in Session
+    QTreeWidgetItem* cumulative = childNamed(e3, QStringLiteral("Cumulative"));
+    QVERIFY(cumulative);
+    QCOMPARE(childNamed(childNamed(cumulative, QStringLiteral("Traffic")), QStringLiteral("Network Traffic Received:"))->text(0),
+             QStringLiteral("Network Traffic Received: %1").arg(formatByteSize(9000)));
+    QTreeWidgetItem* cumGeneral = childNamed(cumulative, QStringLiteral("General"));
+    QCOMPARE(childNamed(cumGeneral, QStringLiteral("Most Contacts:"))->text(0), QStringLiteral("Most Contacts: 77"));
+    QVERIFY(!childNamed(cumGeneral, QStringLiteral("Kad Contacts:")));
+    QVERIFY(!childNamed(cumulative, QStringLiteral("Upload Queue")));
     QTreeWidgetItem* credits = childNamed(e3, QStringLiteral("Credits"));
     QVERIFY(credits);
     QVERIFY(childNamed(credits, QStringLiteral("Balance:"))->text(0).contains(QStringLiteral("500000")));
@@ -411,6 +426,66 @@ void tst_StatisticsPanel::bitTorrentBranchCarriesCountersAndTorrents()
     QTreeWidgetItem* number = childNamed(bt->child(2), QStringLiteral("Number of Torrents:"));
     QCOMPARE(number->text(0), QStringLiteral("Number of Torrents: 3"));
     QCOMPARE(childNamed(number, QStringLiteral("Seeding:"))->text(0), QStringLiteral("Seeding: 2"));
+}
+
+void tst_StatisticsPanel::hosterBranchCarriesCountersAndLinks()
+{
+    StatisticsPanel panel;
+    auto* tree = panel.findChild<QTreeWidget*>();
+    QTreeWidgetItem* hoster = topLevelNamed(tree, QStringLiteral("Hoster"));
+    QVERIFY(hoster);
+    QCOMPARE(tree->indexOfTopLevelItem(hoster), tree->indexOfTopLevelItem(topLevelNamed(tree, QStringLiteral("BitTorrent"))) + 1);
+
+    HosterCounters s;
+    s.hosterBytes = 3'000'000;
+    s.peerBytes = 1'000'000;
+    s.downloadTimeMs = 4'000;
+    s.completed = 4;
+    s.completedVerified = 1;
+    s.linksAdded = 5;
+    HosterCounters cum = s;
+    cum.linksAdded = 12;
+    const QCborMap reply{
+        {QStringLiteral("session"), countersToCbor(s)},
+        {QStringLiteral("cumulative"), countersToCbor(cum)},
+        {QStringLiteral("current"), QCborMap{
+             {QStringLiteral("downRate"), 2048},
+             {QStringLiteral("items"), QCborMap{{QStringLiteral("count"), 3},
+                                                {QStringLiteral("waiting"), 2}}}}},
+    };
+    hoster->setHidden(true);
+    panel.applyHosterStats(reply);
+    QVERIFY(!hoster->isHidden());
+
+    QStringList children;
+    for (int i = 0; i < hoster->childCount(); ++i)
+        children << hoster->child(i)->text(0);
+    QCOMPARE(children, (QStringList{QStringLiteral("Session"), QStringLiteral("Cumulative"),
+                                    QStringLiteral("Links")}));
+
+    QTreeWidgetItem* general = childNamed(hoster->child(0), QStringLiteral("General"));
+    QCOMPARE(childNamed(general, QStringLiteral("Download Speed:"))->text(0),
+             QStringLiteral("Download Speed: %1").arg(formatByteRate(2048)));
+    QCOMPARE(childNamed(general, QStringLiteral("Average Download Rate:"))->text(0),
+             QStringLiteral("Average Download Rate: %1").arg(formatByteRate(1'000'000)));
+    QTreeWidgetItem* traffic = childNamed(hoster->child(0), QStringLiteral("Traffic"));
+    QTreeWidgetItem* data = childNamed(traffic, QStringLiteral("Downloaded Data:"));
+    QCOMPARE(data->text(0), QStringLiteral("Downloaded Data: %1").arg(formatByteSize(4'000'000)));
+    QCOMPARE(childNamed(data, QStringLiteral("From ed3k Peers:"))->text(0),
+             QStringLiteral("From ed3k Peers: %1 (25.0%)").arg(formatByteSize(1'000'000)));
+    QTreeWidgetItem* done = childNamed(childNamed(hoster->child(0), QStringLiteral("Downloads")),
+                                       QStringLiteral("Completed Downloads:"));
+    QCOMPARE(childNamed(done, QStringLiteral("Verified in ed3k:"))->text(0), QStringLiteral("Verified in ed3k: 1 (25.0%)"));
+
+    // live rows are Session only
+    QTreeWidgetItem* cumGeneral = childNamed(hoster->child(1), QStringLiteral("General"));
+    QVERIFY(!childNamed(cumGeneral, QStringLiteral("Download Speed:")));
+    QCOMPARE(childNamed(childNamed(hoster->child(1), QStringLiteral("Links")), QStringLiteral("Added:"))->text(0),
+             QStringLiteral("Added: 12"));
+
+    QTreeWidgetItem* number = childNamed(hoster->child(2), QStringLiteral("Number of Links:"));
+    QCOMPARE(number->text(0), QStringLiteral("Number of Links: 3"));
+    QCOMPARE(childNamed(number, QStringLiteral("Waiting:"))->text(0), QStringLiteral("Waiting: 2"));
 }
 
 void tst_StatisticsPanel::sessionRowsCarryValuesAndShares()
@@ -652,8 +727,8 @@ void tst_StatisticsPanel::kademliaBranchShowsLiveTableOnlyInSession()
 
     QTreeWidgetItem* kad = topLevelNamed(tree, QStringLiteral("Kademlia"));
     QVERIFY(kad);
-    // Not in MFC, so after MFC's branches, then Usenet, BitTorrent and ed3k
-    QCOMPARE(tree->indexOfTopLevelItem(kad), tree->topLevelItemCount() - 4);
+    // Not in MFC, so after MFC's branches, then Usenet, BitTorrent, Hoster and ed3k
+    QCOMPARE(tree->indexOfTopLevelItem(kad), tree->topLevelItemCount() - 5);
 
     QTreeWidgetItem* session = childNamed(kad, QStringLiteral("Session"));
     QTreeWidgetItem* cumulative = childNamed(kad, QStringLiteral("Cumulative"));

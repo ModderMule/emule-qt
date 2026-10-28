@@ -23,11 +23,14 @@
 #include "Ed3kJoinBase.h"
 #include "Ed3kResolver.h"
 #include "prefs/Preferences.h"
+#include "stats/NetworkCounters.h"
 
 #include <QElapsedTimer>
+#include <QHash>
 #include <QList>
 #include <QPointer>
 #include <QString>
+#include <QStringList>
 #include <QTimer>
 
 #include <cstdint>
@@ -105,6 +108,25 @@ public:
         QString file;                ///< where the bytes go; the incoming file once Complete
         QString rootHex;
         qint64 added = 0;
+        QStringList mirrors;         ///< other links of the same file, not tried yet
+        int mirrorNo = 0;            ///< which of the file's links url is (0: the first)
+    };
+
+    /// What a link check found. Values are sent over IPC: append only.
+    enum class LinkStatus : int {
+        Checking = 0,
+        Online,
+        Offline,        ///< gone, or not the file it claims
+        Unknown,        ///< no plugin, a login, a puzzle, a wait or an error: tried as unchecked
+    };
+
+    /// A link checked ahead of its download (web search rows), or what its item knows.
+    struct LinkCheck {
+        LinkStatus status = LinkStatus::Unknown;
+        QString host;                ///< the plugin's host name; empty: none takes it
+        QString name;
+        std::uint64_t size = 0;      ///< 0 = unknown
+        qint64 at = 0;               ///< ms since the epoch
     };
 
     /// @p configDir: items go to <configDir>/ed3k/hoster.
@@ -116,12 +138,17 @@ public:
     [[nodiscard]] Ed3kResolver* resolver() const { return m_resolver; }
     /// The user's prefs; @p tempDir: parts and the resolver's scratch; @p incomingDir: done files.
     void setConfig(const Ed3kHosterPrefs& prefs, const QString& tempDir, const QString& incomingDir);
+    /// Statistics' session counters; null: not counted (tests). Same thread as the join.
+    void setCounters(HosterCounters* counters) { m_counters = counters; }
 
     void start() override;
     void stop() override;
 
     /// Every http(s) link in @p text becomes an item (duplicates skipped); their ids.
     QList<quint32> addLinks(const QString& text);
+    /// One item per entry of @p files: its first link, the others mirrors to go on with
+    /// when that one fails or is stuck. An entry with any link already an item is skipped.
+    QList<quint32> addMirrored(const QList<QStringList>& files);
     void pause(quint32 id);
     void resume(quint32 id);
     /// Removes the item; its unfinished file always, a complete one only with @p deleteFile.
@@ -129,6 +156,15 @@ public:
     void answerPuzzle(quint64 puzzle, const QString& text);
     /// Checks a login with the resolver; accountChecked() follows.
     void checkAccount(const QString& host, const QString& user, const QString& password);
+    /// Checks @p urls through the core, as an item's own check goes: linkChecked() for each,
+    /// a fresh result at once. The core keeps what it learns (a dead link stays dead), so a
+    /// download soon after starts from it. False: hosters off, no resolver or no node.
+    bool checkLinks(const QStringList& urls);
+    /// 2: an account at @p host that is premium with traffic left, 1: any other account, 0: none.
+    [[nodiscard]] int accountTier(const QString& host) const;
+    /// @p urls (mirrors of one file) best first: offline last, then accountTier(), then
+    /// checked online before unchecked; else in their order.
+    [[nodiscard]] QStringList rankMirrors(const QStringList& urls) const;
 
     [[nodiscard]] QList<Item> items() const;
     [[nodiscard]] std::optional<Item> item(quint32 id) const;
@@ -144,6 +180,8 @@ signals:
     /// The link of @p id names a folder: these are its links (the GUI asks which to add).
     void linksExpanded(quint32 id, const QList<eMule::ed3k::ResolverLink>& links);
     void accountChecked(const QString& host, const QString& user, const eMule::ed3k::ResolverEvent& result);
+    /// A checkLinks() result.
+    void linkChecked(const QString& url, const eMule::ed3k::Ed3kHosterJoin::LinkCheck& check);
 
 protected:
     [[nodiscard]] std::vector<std::uint64_t> wantedBlocks(const Download& d) const override;
@@ -182,6 +220,46 @@ private:
     void setState(Entry& e, State s, Reason why = Reason::None, const QString& arg = {});
     void changed(const Entry& e);
     [[nodiscard]] std::optional<ResolverAccount> accountFor(const QString& host) const;
+    [[nodiscard]] const Ed3kHosterAccount* accountEntry(const QString& host) const;
+
+    /// A link checked for checkLinks(): the core's link, until an item takes it or it expires.
+    struct Probe {
+        QString url;
+        QString host;
+        qint64 at = 0;
+        bool pending = true;         ///< the core's check runs
+        bool adopted = false;        ///< an item took the link while it ran
+    };
+    /// Waits for a free check slot (checkMaxParallel, checkMaxPerHost) or for the core (busy).
+    struct QueuedProbe {
+        QString url;
+        QString host;
+        qint64 since = 0;
+    };
+    /// The last account check of host|user; kept in memory only.
+    struct AccountStatus {
+        bool known = false;          ///< the check answered (false: it failed)
+        bool valid = false;
+        bool premium = false;
+        qint64 expires = 0;
+        qint64 trafficLeft = -1;
+        qint64 at = 0;
+    };
+    void pumpProbes();
+    void probeDone(std::uint64_t link, LinkStatus status, const QString& name = {}, std::uint64_t size = 0);
+    /// Stores @p c for @p url; a final one goes out with linkChecked().
+    void setCheck(const QString& url, const LinkCheck& c);
+    /// What the item of @p url (its current link) tells; none: no item on it.
+    [[nodiscard]] std::optional<LinkCheck> itemCheck(const QString& url) const;
+    void expireProbes(qint64 now);
+    /// Account checks for stored logins not checked lately (accountTier()); sites queries
+    /// for account hosts of unknown aliases.
+    void refreshAccounts();
+    /// The hoster @p host belongs to: its plugin's main domain once the resolver named its
+    /// aliases (rg.to → rapidgator.net); else @p host, lower case, without "www.".
+    [[nodiscard]] QString siteOf(const QString& host) const;
+    /// @p sites: one hoster's domains, main first.
+    void learnSites(const QStringList& sites);
 
     /// The steps of a pasted link.
     void begin(Entry& e);
@@ -224,6 +302,11 @@ private:
     bool tryPeerLink(Entry& e);
     /// The item's own link went nowhere for now: whether a peer's link could stand in.
     [[nodiscard]] static bool ownLinkStuck(const Entry& e);
+    /// Whether @p it should leave its link for the next mirror: the hoster failed or is stuck
+    /// for long, for a reason another hoster may not have.
+    [[nodiscard]] static bool mirrorDue(const Item& it);
+    /// Goes on with the next mirror of @p e; verified blocks under a root stay.
+    void nextMirror(Entry& e);
     /// §4.1: the link of @p e goes with its source record and to downloaders when published.
     void shareLink(Entry& e);
 
@@ -237,6 +320,7 @@ private:
     void onTick();
     void load();
     void save();
+    void count(uint64 HosterCounters::* field, uint64 n = 1);
     [[nodiscard]] QString itemsFile() const;
     [[nodiscard]] QString workDir(quint32 id) const;
 
@@ -250,6 +334,16 @@ private:
     std::map<Ed3kResolver::TaskId, quint32> m_matches;
     std::map<Ed3kResolver::TaskId, Ask> m_asks;
     std::map<Ed3kResolver::TaskId, std::pair<QString, QString>> m_accountChecks;
+    /// checkLinks(): match tasks → url, links waiting, links checking, results by url
+    std::map<Ed3kResolver::TaskId, QString> m_probeMatches;
+    QList<QueuedProbe> m_probeQueue;
+    std::map<std::uint64_t, Probe> m_probes;
+    std::map<QString, LinkCheck> m_checks;
+    /// host|user → the last account check
+    std::map<QString, AccountStatus> m_accountStatus;
+    /// sites tasks → account host; domain → its hoster's main domain (siteOf())
+    std::map<Ed3kResolver::TaskId, QString> m_siteQueries;
+    QHash<QString, QString> m_siteOf;
     /// ALIAS searches (§4 lookup) → item
     std::map<std::uint32_t, quint32> m_searches;
     /// links peers named for our roots
@@ -264,6 +358,7 @@ private:
     /// puzzle → item, to clear the state on answer
     std::map<quint64, quint32> m_puzzles;
     QTimer m_tick;
+    HosterCounters* m_counters = nullptr;
 };
 
 } // namespace eMule::ed3k

@@ -9,6 +9,8 @@
 /// manifest held (followed for the user only) and its member sent with sitePage's headers.
 /// Only verified bytes go out: members not held are fetched first (Ed3kNames, whole, at most
 /// kSiteMemberMax) and answered 504 after 60 s (§6.3). Listens only while the node runs.
+/// Range (RFC 9110): one range of a GET → 206 from the blocks verified so far (it waits for
+/// them within the same 60 s), 416 beyond the end; several ranges → the whole member (200).
 /// A set not held: siteSetStatus (§6.3, batch 12) says wait for its manifest, 504 or 503.
 /// A set that is no website is offered for download (setOffered, §6.1). Other hosts of the
 /// port (live streams, Ed3kLive) go to a host handler first.

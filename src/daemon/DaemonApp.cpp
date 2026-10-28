@@ -20,6 +20,7 @@
 #include "Ed3kUploadsBridge.h"
 #include "Ed3kDownloadsBridge.h"
 #include "Ed3kSetsBridge.h"
+#include "Ed3kPaidBridge.h"
 #include "Ed3kHosterBridge.h"
 #include "Ed3kFriendsBridge.h"
 #include "Ed3kRoomsBridge.h"
@@ -59,6 +60,8 @@
 #include "Ed3kSearch.h"
 #include "Ed3kSets.h"
 #include "Ed3kLive.h"
+#include "Ed3kLiveBroadcast.h"
+#include "Ed3kPaid.h"
 #include "Ed3kNames.h"
 #include "Ed3kPlumbing.h"
 #include "Ed3kSession.h"
@@ -96,6 +99,7 @@
 #include <QNetworkReply>
 #include <QNetworkRequest>
 #include <QStringList>
+#include <QTimer>
 #include <QUrl>
 #include <QUuid>
 
@@ -422,6 +426,15 @@ bool DaemonApp::start()
             m_ipcServer->broadcast(msg);
     });
     m_ed3kChain = std::make_unique<ed3k::Ed3kChain>(*m_ed3kSession);
+    // batch 13 (W): a refused chain read/write and the one-endpoint note in GetEd3kStatus "chain"
+    Ed3kCreditBridge::setChain(m_ed3kChain.get());
+    connect(m_ed3kChain.get(), &ed3k::Ed3kChain::refused, this, [this] {
+        if (!m_ipcServer)
+            return;
+        IpcMessage msg(IpcMsgType::PushEd3kStatus, 0);
+        msg.append(Ed3kBridge::statusToCbor());
+        m_ipcServer->broadcast(msg);
+    });
     // plain ed3k downloads; after Ed3kShared (it starts first on statusChanged and takes the
     // complete files of the share list: those are not shared twice)
     m_ed3kDownloads = std::make_unique<ed3k::Ed3kDownloads>(*m_ed3kSession, thePrefs.configDir());
@@ -450,9 +463,24 @@ bool DaemonApp::start()
     });
     // followed sets: members into <incoming>/<set>/ through the downloads; live streams on
     // the website server's port (attach on statusChanged)
+    // paid subscriptions (buying passes): the paid sets are followed there (batch 13)
+    m_ed3kPaid = std::make_unique<ed3k::Ed3kPaid>(*m_ed3kSession, thePrefs.configDir());
+    Ed3kPaidBridge::setPaid(m_ed3kPaid.get());
+    Ed3kPaidBridge::connectPushes(*m_ed3kPaid, [this](const IpcMessage& msg) {
+        if (m_ipcServer)
+            m_ipcServer->broadcast(msg);
+    });
     m_ed3kSets = std::make_unique<ed3k::Ed3kSets>(*m_ed3kSession, *m_ed3kDownloads, thePrefs.configDir());
     m_ed3kSets->setIncomingDir(thePrefs.incomingDir());
+    m_ed3kSets->setPaid(m_ed3kPaid.get());
     m_ed3kLive = std::make_unique<ed3k::Ed3kLive>(*m_ed3kSession, *m_ed3kSites);
+    // live broadcasting from an HLS folder (batch 13)
+    m_ed3kLiveBroadcast = std::make_unique<ed3k::Ed3kLiveBroadcast>(*m_ed3kSession, thePrefs.configDir());
+    Ed3kSetsBridge::setBroadcast(m_ed3kLiveBroadcast.get());
+    Ed3kSetsBridge::connectBroadcastPushes(*m_ed3kLiveBroadcast, [this](const IpcMessage& msg) {
+        if (m_ipcServer)
+            m_ipcServer->broadcast(msg);
+    });
     Ed3kSetsBridge::setSets(m_ed3kSets.get(), m_ed3kLive.get(), m_ed3kSites.get());
     Ed3kSetsBridge::connectPushes(*m_ed3kSets, *m_ed3kLive, m_ed3kSites.get(), [this](const IpcMessage& msg) {
         if (m_ipcServer)
@@ -464,13 +492,28 @@ bool DaemonApp::start()
     // filter lists (filter-list.md §3): mark judged rows, drop them only when a list hides
     m_ed3kSearch->setJudge([this](const ::ed3k::FoundFile& f) {
         using J = ed3k::Ed3kSearch::Judged;
+        ed3k::Ed3kSearch::Verdict v;
         if (!m_ed3kFilters)
-            return J::None;
-        const auto j = m_ed3kFilters->judge(f.root, f.ed2k, f.publisher);   // AUTHOR: the publishing node (spec question)
-        if (!j || j->verdict == ::ed3k::FilterVerdict::Good)
-            return J::None;
-        return j->hide ? J::Hide : (j->disagree ? J::None : J::Mark);
+            return v;
+        // #18 (filter-list §1): the record's publisher, and for a signed manifest known here
+        // also the set's author; either one marks it
+        const auto setAuthor = m_ed3kSets ? m_ed3kSets->authorOfManifest(f.root) : std::nullopt;
+        const auto j = m_ed3kFilters->judge(f.root, f.ed2k, f.publisher, setAuthor);
+        if (!j)
+            return v;
+        v.shown = {int(j->verdict), false, j->own, j->shown, j->disagree, j->by, j->reason};
+        if (j->hide)
+            v.judged = J::Hide;
+        else if (j->verdict != ::ed3k::FilterVerdict::Good && j->verdict != ::ed3k::FilterVerdict::None && !j->disagree)
+            v.judged = J::Mark;
+        return v;
     });
+    // a verdict, a mode or a set's manifest changed: the rows shown are judged again
+    {
+        auto rejudge = [s = m_ed3kSearch.get()] { (void)s->rejudge(); };
+        connect(m_ed3kFilters.get(), &ed3k::Ed3kFilters::filtersChanged, m_ed3kSearch.get(), rejudge, Qt::QueuedConnection);
+        connect(m_ed3kSets.get(), &ed3k::Ed3kSets::changed, m_ed3kSearch.get(), rejudge, Qt::QueuedConnection);
+    }
     // hoster links (hoster.md); the resolver is the JDownloader sidecar when built in
     m_hosterJoin = std::make_unique<ed3k::Ed3kHosterJoin>(*m_ed3kSession, thePrefs.configDir());
     {
@@ -499,6 +542,7 @@ bool DaemonApp::start()
         });
 #endif
         m_hosterJoin->setResolver(resolver);
+        m_hosterJoin->setCounters(theApp.statistics ? &theApp.statistics->hosterSession() : nullptr);
         Ed3kHosterBridge::setHoster(m_hosterJoin.get(), resolver, java);
         Ed3kHosterBridge::connectPushes(*m_hosterJoin, [this](const IpcMessage& msg) {
             if (m_ipcServer)
@@ -551,6 +595,10 @@ bool DaemonApp::start()
             const auto& s = bw->snapshot();
             return EngineRates{static_cast<float>(s.ed3kDownRate) / 1024.0f, static_cast<float>(s.ed3kUpRate) / 1024.0f};
         });
+    m_ed3kStatsTimer = new QTimer(this);
+    m_ed3kStatsTimer->setInterval(std::chrono::seconds(1));
+    connect(m_ed3kStatsTimer, &QTimer::timeout, this, [] { Ed3kBridge::sampleCounters(); });
+    m_ed3kStatsTimer->start();
 #endif
 
     // Indexer search. No enable switch: an account list that is empty is the off
@@ -638,8 +686,12 @@ void DaemonApp::stop()
     MetaSearchService::instance().setEd3kRunner(nullptr);
     m_ed3kSearch.reset();
     Ed3kSetsBridge::setSets(nullptr, nullptr, nullptr);
+    Ed3kSetsBridge::setBroadcast(nullptr);
+    m_ed3kLiveBroadcast.reset();
     m_ed3kLive.reset();
     m_ed3kSets.reset();
+    Ed3kPaidBridge::setPaid(nullptr);
+    m_ed3kPaid.reset();
     Ed3kDownloadsBridge::setDownloads(nullptr);
     if (m_ed3kDownloads)
         m_ed3kDownloads->stop();
@@ -664,10 +716,13 @@ void DaemonApp::stop()
     if (m_ed3kFilters)
         m_ed3kFilters->stop();
     m_ed3kFilters.reset();
+    Ed3kCreditBridge::setChain(nullptr);
     m_ed3kChain.reset();
     Ed3kHosterBridge::setHoster(nullptr, nullptr, nullptr);
-    if (m_hosterJoin)
+    if (m_hosterJoin) {
+        m_hosterJoin->setCounters(nullptr);   // banked already
         m_hosterJoin->stop();
+    }
     m_hosterJoin.reset();
 #ifdef EMULE_HAVE_HOSTER_JD
     m_jdResolver.reset();
@@ -676,6 +731,11 @@ void DaemonApp::stop()
     if (m_ed3kNames)
         m_ed3kNames->stop();
     m_ed3kNames.reset();
+    // the last totals, banked by the flush below
+    if (m_ed3kStatsTimer) {
+        m_ed3kStatsTimer->stop();
+        Ed3kBridge::sampleCounters();
+    }
     // saves the node's state; before Usenet
     Ed3kBridge::setSession(nullptr);
     if (m_ed3kSession)

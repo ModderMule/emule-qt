@@ -12,15 +12,21 @@
 /// - Own verdicts (§2, §3): filterSetOwn; mirrored here (the core lists none) in
 ///   Config/ed3k/filter-own.dat, not a secret.
 /// - judge(): what a search row, a download or a set shows (§3). Nothing is deleted, no
-///   download stopped, no connection refused because of a list.
+///   download stopped, no connection refused because of a list. A row is judged by its
+///   record's publisher and, for a signed manifest known here, by the set's author (§1).
+/// - Publishing (§2): the own list as a list file in a signed set (filterOwnWrite →
+///   filterOwnManifest → setPublish) under a key of its own (filter-own.key, a secret, not
+///   the node key); published again on every change of the own verdicts and at start.
 
 #include "Ed3kJoinBase.h"
 
 #include <QByteArray>
 #include <QString>
+#include <QTimer>
 
 #include <array>
 #include <cstdint>
+#include <expected>
 #include <optional>
 #include <vector>
 
@@ -95,11 +101,28 @@ public:
 
     /// The core's judgement of one entry.
     ::ed3k::Result<::ed3k::Engine::FilterJudgement> judgeOne(::ed3k::FilterSubject subject, const EntryId& id);
-    /// A search row / download (§3): its root, ed2k MD4 and author (node ID), each optional.
+    /// A search row / download (§3): its root, ed2k MD4 and author (node ID), each optional;
+    /// @p setAuthor the author key of the set when the row is a signed manifest known here
+    /// (filter-list.md §1, batch 12 ruling #18: either one marks it).
     /// nullopt: nothing judges it (or the node is off).
     [[nodiscard]] std::optional<Judgement> judge(const std::optional<::ed3k::Root>& root,
                                                  const std::optional<EntryId>& ed2k,
-                                                 const std::optional<::ed3k::NodeId>& author);
+                                                 const std::optional<::ed3k::NodeId>& author,
+                                                 const std::optional<::ed3k::Key32>& setAuthor = std::nullopt);
+    /// "Show anyway" (§3): a local, unpublished choice for the file of @p root, over every
+    /// list and the own verdict; @p on false takes it back.
+    ::ed3k::Result<> showAnyway(const ::ed3k::Root& root, bool on);
+
+    /// The own list published (§2): its link, title; empty link: not published.
+    struct Published {
+        QString link;
+        QString title;
+    };
+    [[nodiscard]] Published published() const;
+    /// Publishes the own list as a set titled @p title (again on every change); its link.
+    std::expected<QString, ::ed3k::Error> publishOwn(const QString& title);
+    /// Stops publishing it again (what is out stays until it expires).
+    void unpublishOwn();
 
     /// A source of a list file being fetched (tests: no Kad search).
     void addListSource(const ::ed3k::Root& root, const ::ed3k::Source& source) { addSource(root, source); }
@@ -126,10 +149,23 @@ private:
     void loadOwn();
     void saveOwn() const;
     [[nodiscard]] QString localPath(const QString& name) const;
+    /// Writes, shares and publishes a new version of the own list (m_pubId); false: failed (logged).
+    bool republish();
+    /// At start: the version kept shared and published again; else a new one.
+    void restorePublished();
+    /// Shares both files and publishes the manifest under the list key.
+    ::ed3k::Result<> shareAndPublish(const QByteArray& list, const QByteArray& manifest);
+    void schedulePublish();
 
     std::vector<Own> m_own;
     bool m_ownHide = false;
     bool m_ownRefuse = false;
+    // the own list published (§2): set id, title, the roots shared now
+    QByteArray m_pubId;
+    QString m_pubTitle;
+    std::optional<::ed3k::Root> m_pubList;
+    std::optional<::ed3k::Root> m_pubManifest;
+    QTimer m_pubTimer;
 };
 
 } // namespace eMule::ed3k

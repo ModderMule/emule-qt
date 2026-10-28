@@ -339,6 +339,9 @@
     <ClCompile Include="utils\MassRename.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
+    <ClCompile Include="utils\BlockRuns.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
     <ClCompile Include="utils\OtherFunctions.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
@@ -990,6 +993,9 @@
       <Filter>Header Files</Filter>
     </ClInclude>
     <ClInclude Include="utils\MassRename.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="utils\BlockRuns.h">
       <Filter>Header Files</Filter>
     </ClInclude>
     <ClInclude Include="utils\OtherFunctions.h">

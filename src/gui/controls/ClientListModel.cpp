@@ -155,7 +155,10 @@ QVariant ClientListModel::data(const QModelIndex& index, int role) const
         return QVariant::fromValue(c.reqFileSize);
 
     if (role == Qt::DecorationRole && index.column() == 0)
-        return CountryFlags::withFlag(clientSoftwareIcon(c.softwareId, c.hasCredit, c.isFriend), c.cc);
+        return CountryFlags::withFlag(c.network == ClientNetwork::Ed3k
+                                          ? ed3kClientIcon()
+                                          : clientSoftwareIcon(c.softwareId, c.hasCredit, c.isFriend),
+                                      c.cc);
 
     if (role == Qt::ToolTipRole && (index.column() == 0 || isCountry) && !c.cc.isEmpty())
         return CountryFlags::tooltip(c.cc);

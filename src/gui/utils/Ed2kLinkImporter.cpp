@@ -48,6 +48,9 @@ struct ParsedLink {
 Ed2kLinkImporter::OtherLinkHandler s_otherLinkHandler;
 Ed2kLinkImporter::TorrentLinkHandler s_torrentLinkHandler;
 Ed2kLinkImporter::TorrentFileHandler s_torrentFileHandler;
+std::function<bool()> s_torrentsReady;
+Ed2kLinkImporter::HosterLinkHandler s_hosterLinkHandler;
+std::function<bool()> s_hosterReady;
 
 /// Files @p link under its kind; false when it is none of the non-download kinds.
 bool collectOther(const ED2KLink& link, Ed2kLinkImporter::OtherLinks& others)
@@ -307,9 +310,33 @@ void Ed2kLinkImporter::setTorrentFileHandler(TorrentFileHandler handler)
     s_torrentFileHandler = std::move(handler);
 }
 
-bool Ed2kLinkImporter::hasTorrentFileHandler()
+void Ed2kLinkImporter::setTorrentsReady(std::function<bool()> ready)
 {
-    return bool(s_torrentFileHandler);
+    s_torrentsReady = std::move(ready);
+}
+
+bool Ed2kLinkImporter::torrentsReady()
+{
+    return s_torrentLinkHandler && s_torrentFileHandler && (!s_torrentsReady || s_torrentsReady());
+}
+
+void Ed2kLinkImporter::setHosterLinkHandler(HosterLinkHandler handler, std::function<bool()> ready)
+{
+    s_hosterLinkHandler = std::move(handler);
+    s_hosterReady = std::move(ready);
+}
+
+bool Ed2kLinkImporter::hosterReady()
+{
+    return s_hosterLinkHandler && (!s_hosterReady || s_hosterReady());
+}
+
+bool Ed2kLinkImporter::sendHosterLinks(const QList<QStringList>& files, QWidget* parent)
+{
+    if (!hosterReady() || files.isEmpty())
+        return false;
+    s_hosterLinkHandler(files, parent);
+    return true;
 }
 
 bool Ed2kLinkImporter::sendTorrentFile(const QString& name, const QByteArray& data, QWidget* parent)

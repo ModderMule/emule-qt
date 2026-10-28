@@ -480,7 +480,7 @@ void tst_MetaSearchGui::webLinksDialog_listsAndCopies()
     const QCborMap map{{QStringLiteral("title"), QStringLiteral("Some Release")},
                        {QStringLiteral("protected"), true},
                        {QStringLiteral("links"), links}};
-    WebLinksDialog dlg(QStringLiteral("row"), map, "https://a.test/f/1\r\n", QStringLiteral("row.txt"));
+    WebLinksDialog dlg(QStringLiteral("row"), map, "https://a.test/f/1\r\n", QStringLiteral("row.txt"), nullptr);
     QVERIFY(dlg.windowTitle().contains(QStringLiteral("Some Release")));
     QVERIFY(visibleChild<QLabel>(&dlg, [](QLabel* l) { return l->text().contains(u"password"); }));
 
@@ -509,7 +509,7 @@ void tst_MetaSearchGui::webLinksDialog_listsOnionLinks()
                        {QStringLiteral("links"), QCborArray{QCborMap{{QStringLiteral("url"), onion},
                                                                      {QStringLiteral("file"), 0},
                                                                      {QStringLiteral("hoster"), QStringLiteral("onionhost")}}}}};
-    WebLinksDialog dlg(QStringLiteral("row"), map, onion.toUtf8() + "\r\n", QStringLiteral("row.txt"));
+    WebLinksDialog dlg(QStringLiteral("row"), map, onion.toUtf8() + "\r\n", QStringLiteral("row.txt"), nullptr);
 
     auto* list = dlg.findChild<QTreeWidget*>();
     QVERIFY(list);

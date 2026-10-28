@@ -25,6 +25,7 @@
 #include <QGridLayout>
 #include <QGroupBox>
 #include <QHBoxLayout>
+#include <QHostAddress>
 #include <QHeaderView>
 #include <QInputDialog>
 #include <QLabel>
@@ -38,6 +39,7 @@
 #include <QSignalBlocker>
 #include <QSpinBox>
 #include <QTreeWidget>
+#include <QUrl>
 #include <QVBoxLayout>
 
 #include <cmath>
@@ -60,6 +62,30 @@ QStringList linesOf(const QPlainTextEdit* edit)
             out << t;
     }
     return out;
+}
+
+/// Exactly one http(s) endpoint and it is no node on this computer (Ed3kChain::singleRemote's
+/// reading for what is typed: §4.3 wants two independent providers to agree).
+bool singleRemoteEndpoint(const QStringList& urls)
+{
+    const auto local = [](const QUrl& url) {
+        const QHostAddress ip(url.host());
+        return url.host().compare(QLatin1String("localhost"), Qt::CaseInsensitive) == 0 || (!ip.isNull() && ip.isLoopback());
+    };
+    // usable: https, or plain http to this computer (as the daemon takes them)
+    int usable = 0;
+    int remote = 0;
+    for (const QString& u : urls) {
+        const QUrl url(u, QUrl::StrictMode);
+        const QString scheme = url.scheme().toLower();
+        if (!url.isValid() || url.host().isEmpty())
+            continue;
+        if (scheme == QLatin1String("https") || (scheme == QLatin1String("http") && local(url))) {
+            ++usable;
+            remote += local(url) ? 0 : 1;
+        }
+    }
+    return usable == 1 && remote == 1;
 }
 
 /// "a b c" (IPC form) → one per line.
@@ -167,6 +193,7 @@ void Ed3kOptionsPages::load(const QCborMap& p)
     m_sitePortSpin->setValue(int(p.value(QStringLiteral("ed3kSitePort")).toInteger(0)));
     m_nodeListsEdit->setPlainText(linesText(p.value(QStringLiteral("ed3kNodeLists"))));
     m_chaintubeRpcEdit->setPlainText(linesText(p.value(QStringLiteral("ed3kChaintubeRpc"))));
+    updateChainNote();
     // ToDo: decide whether the user may edit the chaintube chain in the UI (see buildConnection)
     // {
     //     Ed3kChainPrefs ch;
@@ -201,6 +228,7 @@ void Ed3kOptionsPages::load(const QCborMap& p)
     m_hosterStreamsSpin->setValue(int(h.maxStreams));
     m_hosterPuzzlesCheck->setChecked(h.askPuzzles);
     m_hosterPeersCheck->setChecked(h.fromPeers);
+    m_hosterCheckLinksCheck->setChecked(h.checkSearchLinks);
     m_publishLinksCheck->setChecked(h.publishLinks);
     m_javaEdit->setText(h.java);
     m_autoJavaCheck->setChecked(h.autoJava);
@@ -253,6 +281,7 @@ void Ed3kOptionsPages::appendTo(IpcMessage& req) const
     put("ed3kHosterPuzzles", h.askPuzzles);
     put("ed3kHosterPublishLinks", h.publishLinks);
     put("ed3kHosterFromPeers", h.fromPeers);
+    put("ed3kHosterCheckSearchLinks", h.checkSearchLinks);
     // a password only when typed here: the daemon keeps the stored one otherwise
     QCborArray accounts;
     for (const HosterAccountRow& a : m_accounts) {
@@ -449,6 +478,16 @@ QWidget* Ed3kOptionsPages::buildConnection(QWidget* parent)
     m_chaintubeRpcEdit->setPlaceholderText(QStringLiteral("https://…"));
     m_chaintubeRpcEdit->setFixedHeight(m_chaintubeRpcEdit->fontMetrics().lineSpacing() * 4 + 12);
     chainLayout->addWidget(m_chaintubeRpcEdit);
+    m_chainSingleNote = noteLabel(tr("Only one remote endpoint: nothing checks its answers. Two endpoints of independent "
+                                     "providers are recommended, or a chain node on this computer."),
+                                  chainGroup);
+    m_chainSingleNote->setVisible(false);
+    chainLayout->addWidget(m_chainSingleNote);
+    m_chainRefusedLabel = noteLabel({}, chainGroup);
+    m_chainRefusedLabel->setTextFormat(Qt::PlainText);
+    m_chainRefusedLabel->setVisible(false);
+    chainLayout->addWidget(m_chainRefusedLabel);
+    connect(m_chaintubeRpcEdit, &QPlainTextEdit::textChanged, this, &Ed3kOptionsPages::updateChainNote);
     // ToDo: decide whether the user may edit the chaintube chain in the UI; only the JSON-RPC
     // endpoints for now, the daemon keeps the rest (load/appendTo/saveLocal/validate likewise)
     // // the network's parameters (§4.2): no defaults; a test deployment is named in the spec
@@ -723,6 +762,10 @@ void Ed3kOptionsPages::applyStatus(const QCborMap& st)
         m_runningLabel->setText(tr("The node is not running."));
 
     applyHosterStatus(st.value(QStringLiteral("hoster")).toMap());
+    // batch 13: the last chain read/write the node refused (its text is plain text of a stranger)
+    const QString chainRefused = st.value(QStringLiteral("chain")).toMap().value(QStringLiteral("refused")).toString();
+    m_chainRefusedLabel->setText(chainRefused);
+    m_chainRefusedLabel->setVisible(!chainRefused.isEmpty());
 
     const QCborMap c = st.value(QStringLiteral("credit")).toMap();
     const QString address = c.value(QStringLiteral("address")).toString();
@@ -1093,6 +1136,10 @@ QWidget* Ed3kOptionsPages::buildHoster(QWidget* parent)
     m_hosterPeersCheck = new QCheckBox(tr("Use hoster links that other ed3k nodes name"), dlGroup);
     m_hosterPeersCheck->setVisible(thePrefs.showExtControls());
     dlLayout->addWidget(m_hosterPeersCheck);
+    m_hosterCheckLinksCheck = new QCheckBox(tr("Check hoster links on search automatically"), dlGroup);
+    m_hosterCheckLinksCheck->setToolTip(tr("The links window of a web search result checks which links are online. "
+                                           "Download prefers online links at hosters you have an account at."));
+    dlLayout->addWidget(m_hosterCheckLinksCheck);
     layout->addWidget(dlGroup);
 
     auto* javaGroup = new QGroupBox(tr("Java runtime"), page);
@@ -1206,7 +1253,7 @@ QWidget* Ed3kOptionsPages::buildHoster(QWidget* parent)
         }
         emit changed();
     });
-    for (QCheckBox* box : {m_hosterPuzzlesCheck, m_hosterPeersCheck, m_autoJavaCheck})
+    for (QCheckBox* box : {m_hosterPuzzlesCheck, m_hosterPeersCheck, m_hosterCheckLinksCheck, m_autoJavaCheck})
         connect(box, &QCheckBox::toggled, this, edited);
     connect(m_hosterStreamsSpin, &QSpinBox::valueChanged, this, edited);
     connect(m_javaEdit, &QLineEdit::textEdited, this, edited);
@@ -1378,7 +1425,8 @@ void Ed3kOptionsPages::fillAccounts()
 
 Ed3kHosterPrefs Ed3kOptionsPages::hosterPrefs() const
 {
-    Ed3kHosterPrefs h;
+    Ed3kHosterPrefs h = thePrefs.ed3kHoster();   // keeps the YAML-only fields
+    h.accounts.clear();
     h.enabled = m_hosterEnabledCheck->isChecked();
     h.java = m_javaEdit->text().trimmed();
     h.autoJava = m_autoJavaCheck->isChecked();
@@ -1386,9 +1434,16 @@ Ed3kHosterPrefs Ed3kOptionsPages::hosterPrefs() const
     h.askPuzzles = m_hosterPuzzlesCheck->isChecked();
     h.publishLinks = m_publishLinksCheck->isChecked();
     h.fromPeers = m_hosterPeersCheck->isChecked();
+    h.checkSearchLinks = m_hosterCheckLinksCheck->isChecked();
     for (const HosterAccountRow& a : m_accounts)
         h.accounts.append({a.host, a.user, a.passwordSet ? a.password : QString()});
     return h;
+}
+
+void Ed3kOptionsPages::updateChainNote()
+{
+    if (m_chainSingleNote)
+        m_chainSingleNote->setVisible(singleRemoteEndpoint(linesOf(m_chaintubeRpcEdit)));
 }
 
 } // namespace eMule

@@ -31,11 +31,16 @@ struct Ed3kSiteServer::Pending {
     bool user = false;
     QString path;          ///< percent-encoded, from "/"
     QByteArray ifNoneMatch;
+    QByteArray range;     ///< Range of a GET (RFC 9110 §14.2), If-Range with it
+    QByteArray ifRange;
     // a set's origin
     ffi::Key32 key{};
     QByteArray id;
     QByteArray manifest;   ///< once there: waiting for a member
     std::optional<ffi::Root> member;
+    /// a range parked for its blocks: offset, length (0: the whole member)
+    std::uint64_t rangeFirst = 0;
+    std::uint64_t rangeLen = 0;
     // a readable host
     std::optional<std::uint64_t> resolve;
     // a set not held: waiting for its manifest (siteSetStatus), since parkedAt (ms)
@@ -105,6 +110,55 @@ QString fetchKey(const ::ed3k::Key32& key, const QByteArray& id)
 }
 
 const QByteArray kPlain = "Content-Type: text/plain; charset=utf-8\r\nX-Content-Type-Options: nosniff\r\nCache-Control: no-store\r\n";
+
+/// What a Range header asks of a member of @p size bytes (RFC 9110 §14.1.2, §14.2).
+struct RangeAsk {
+    enum Kind { Whole, One, Unsatisfiable } kind = Whole;
+    std::uint64_t first = 0;
+    std::uint64_t last = 0;   ///< inclusive
+};
+
+/// One byte range only: several are answered with the whole member (a server MAY ignore
+/// Range, §14.2; no multipart/byteranges here). Not "bytes=" or not parsing: ignored too.
+RangeAsk parseRange(const QByteArray& header, std::uint64_t size)
+{
+    const QByteArray h = header.trimmed();
+    if (h.isEmpty() || !h.toLower().startsWith("bytes=") || size == 0)
+        return {};
+    const QByteArray set = h.mid(6).trimmed();
+    if (set.contains(','))
+        return {};
+    const qsizetype dash = set.indexOf('-');
+    if (dash < 0)
+        return {};
+    const QByteArray a = set.left(dash).trimmed();
+    const QByteArray b = set.mid(dash + 1).trimmed();
+    bool okA = false;
+    bool okB = false;
+    const auto digits = [](const QByteArray& t) { return !t.isEmpty() && std::ranges::all_of(t, [](char c) { return c >= '0' && c <= '9'; }); };
+    if (a.isEmpty()) {
+        // suffix: the last n bytes; 0 is unsatisfiable
+        const std::uint64_t n = digits(b) ? b.toULongLong(&okB) : 0;
+        if (!okB)
+            return {};
+        if (n == 0)
+            return {RangeAsk::Unsatisfiable};
+        return {RangeAsk::One, size - std::min(n, size), size - 1};
+    }
+    const std::uint64_t first = digits(a) ? a.toULongLong(&okA) : 0;
+    if (!okA)
+        return {};
+    std::uint64_t last = size - 1;
+    if (!b.isEmpty()) {
+        last = digits(b) ? b.toULongLong(&okB) : 0;
+        if (!okB || last < first)
+            return {};   // invalid: ignored (§14.1.1)
+        last = std::min(last, size - 1);
+    }
+    if (first >= size)
+        return {RangeAsk::Unsatisfiable};
+    return {RangeAsk::One, first, last};
+}
 
 } // namespace
 
@@ -239,6 +293,11 @@ void Ed3kSiteServer::onRequest(const QHttpServerRequest& req, QHttpServerRespond
     if (p->path.isEmpty())
         p->path = QStringLiteral("/");
     p->ifNoneMatch = req.value("if-none-match").trimmed();
+    // Range only on GET (RFC 9110 §14.2)
+    if (req.method() == QHttpServerRequest::Method::Get) {
+        p->range = req.value("range");
+        p->ifRange = req.value("if-range").trimmed();
+    }
     p->deadline = nowMs() + m_waitMs;
 
     if (kind == ED3K_SITE_HOST_NAME || kind == ED3K_SITE_HOST_WEB) {
@@ -260,6 +319,9 @@ void Ed3kSiteServer::onRequest(const QHttpServerRequest& req, QHttpServerRespond
     p->id = QByteArray(host->text.data(), qsizetype(host->text.size()));
     const QByteArray manifest = m_names.siteManifest(p->key, p->id);
     if (!manifest.isEmpty()) {
+        // one kept from an earlier run: followed for the user, for a newer version (§6.2)
+        if (p->user && !m_names.siteFollowed(p->key, p->id))
+            (void)m_names.followSite(p->key, p->id);
         servePage(std::move(p), manifest);
         return;
     }
@@ -298,9 +360,29 @@ void Ed3kSiteServer::servePage(std::unique_ptr<Pending> p, const QByteArray& man
         answer(p->responder, 304, {}, headers, true);
         return;
     }
-    if (const auto bytes = m_names.siteMember(page->root)) {
-        // ToDo: Range requests from verified blocks (§6.3); the whole member for now
-        answer(p->responder, page->status, *bytes, headers, p->head);
+    // was: ToDo: Range requests from verified blocks (§6.3); the whole member for now
+    // (done: one range, 206/416, from the blocks verified so far; see parseRange)
+    const QByteArray member = headers + "Accept-Ranges: bytes\r\n";
+    // If-Range (§13.1.5): the range only while the ETag is the same (no dates: no Last-Modified)
+    const bool rangeOk = page->status == 200 && !p->range.isEmpty() && (p->ifRange.isEmpty() || p->ifRange == etag);
+    const RangeAsk ask = rangeOk ? parseRange(p->range, page->size) : RangeAsk{};
+    if (ask.kind == RangeAsk::Unsatisfiable) {
+        answer(p->responder, 416, {}, kPlain + "Content-Range: bytes */" + QByteArray::number(qulonglong(page->size)) + "\r\n", p->head);
+        return;
+    }
+    if (ask.kind == RangeAsk::One) {
+        const std::uint64_t len = ask.last - ask.first + 1;
+        if (const auto bytes = m_names.siteMemberRange(page->root, ask.first, len)) {
+            const QByteArray cr = "Content-Range: bytes " + QByteArray::number(qulonglong(ask.first)) + '-'
+                                  + QByteArray::number(qulonglong(ask.last)) + '/' + QByteArray::number(qulonglong(page->size)) + "\r\n";
+            answer(p->responder, 206, *bytes, member + cr, p->head);
+            return;
+        }
+        p->rangeFirst = ask.first;
+        p->rangeLen = len;
+    } else if (const auto bytes = m_names.siteMember(page->root)) {
+        // answer(p->responder, page->status, *bytes, headers, p->head);
+        answer(p->responder, page->status, *bytes, member, p->head);
         return;
     }
     // only verified bytes are sent: the member is fetched first (§6.3)
@@ -309,6 +391,7 @@ void Ed3kSiteServer::servePage(std::unique_ptr<Pending> p, const QByteArray& man
         answer(p->responder, 504, {}, kPlain, p->head);
         return;
     }
+    // a range waits for its blocks, the whole member for all (onTick, onMemberReady; 504 after 60 s)
     p->manifest = manifest;
     p->member = page->root;
     park(std::move(p));
@@ -368,6 +451,14 @@ void Ed3kSiteServer::onFailed(quint64 id, const QString& name, int why, const QL
 
 void Ed3kSiteServer::onTick()
 {
+    // a range whose blocks came in meanwhile (§6.3: sent as blocks pass under the root)
+    for (auto& p : take([&](const Pending& x) {
+             return x.member && x.rangeLen > 0 && m_names.siteMemberRange(*x.member, x.rangeFirst, x.rangeLen).has_value();
+         })) {
+        const QByteArray manifest = p->manifest;
+        p->member.reset();
+        servePage(std::move(p), manifest);
+    }
     const qint64 now = nowMs();
     for (auto& p : take([&](const Pending& x) { return x.deadline <= now; })) {
         // a set's manifest: asked again (504 once the core or the local wait says so)

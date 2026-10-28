@@ -1,7 +1,8 @@
 /// @file tst_Ed3kUploads.cpp
 /// @brief The ed3k upload queue view (Ed3kUploads, Ed3kUploadsBridge): the queue events as
 /// rows, observed only (never handled); real nodes on loopback: a file of A fetched by three
-/// nodes over two slots shows holders and a waiting node, named, and the rows end.
+/// nodes over two slots shows holders and a waiting node (the engine's rank and address,
+/// queueList), named, and the rows end.
 
 #include "Ed3kJoinBase.h"
 #include "Ed3kSession.h"
@@ -205,12 +206,27 @@ void tst_Ed3kUploads::aQueueOfRealNodesShowsAndEnds()
     std::size_t mostHolding = 0;
     bool sawWaiting = false;
     bool named = false;
+    bool rankedWithAddress = false;   // the engine's queueList: rank and endpoint
+    bool holderWithAddress = false;
+    QCborMap waitingRow;
     connect(&up, &Ed3kUploads::changed, this, [&] {
         const auto h = up.uploading();
+        const auto w = up.waiting();
         mostHolding = std::max(mostHolding, h.size());
-        sawWaiting = sawWaiting || !up.waiting().empty();
-        for (const auto& r : h)
+        sawWaiting = sawWaiting || !w.empty();
+        for (const auto& r : h) {
             named = named || (r.fileName == QStringLiteral("q.bin") && r.fileSize == std::uint64_t(data.size()));
+            holderWithAddress = holderWithAddress || (r.address == QStringLiteral("127.0.0.1") && r.port != 0);
+        }
+        for (const auto& r : w)
+            if (r.place >= 1 && r.address == QStringLiteral("127.0.0.1") && r.port != 0 && !rankedWithAddress) {
+                rankedWithAddress = true;
+                Ed3kUploadsBridge::setUploads(&up);
+                QCborArray uploading, waiting;
+                Ed3kUploadsBridge::appendRows(uploading, waiting);
+                if (!waiting.isEmpty())
+                    waitingRow = waiting.at(0).toMap();
+            }
     });
 
     Fetcher fb(b, db.path()), fc(c, dc.path()), fd(d, dd.path());
@@ -227,6 +243,11 @@ void tst_Ed3kUploads::aQueueOfRealNodesShowsAndEnds()
     QVERIFY(mostHolding <= 2);   // the two slots
     QVERIFY(sawWaiting);         // three nodes, two slots: one waited
     QVERIFY(named);
+    QVERIFY(holderWithAddress);
+    QVERIFY(rankedWithAddress);
+    QCOMPARE(waitingRow.value(QStringLiteral("addr")).toString(), QStringLiteral("127.0.0.1"));
+    QVERIFY(waitingRow.value(QStringLiteral("port")).toInteger() > 0);
+    QVERIFY(waitingRow.value(QStringLiteral("queueRank")).toInteger() >= 1);
     // done: the downloaders close their streams, the slots end
     fb.stop();
     fc.stop();

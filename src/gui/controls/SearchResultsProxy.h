@@ -24,6 +24,7 @@ public:
         bool kad = true;      ///< found on Kad by the server; never our own Kad results
         bool torrent = true;
         bool web = true;      ///< web link sets and link containers
+        bool ed3kHidden = false;   ///< ed3k rows a filter list hides (filter-list §3: shown on request)
 
         bool operator==(const NetworkFilter&) const = default;
     };

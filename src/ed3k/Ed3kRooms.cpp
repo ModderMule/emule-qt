@@ -301,6 +301,25 @@ ffi::Result<std::uint64_t> Ed3kRooms::startGeneration(const ffi::Room& room)
     return g;
 }
 
+ffi::Result<> Ed3kRooms::setMuted(const ffi::Room& room, const std::array<std::uint8_t, 16>& memberId, bool on)
+{
+    const auto it = m_rooms.find(room);
+    if (it == m_rooms.end())
+        return std::unexpected(ffi::Error::NotFound);
+    // local only (§6): nothing goes to the core; posts are kept, the GUI hides them
+    Saved& s = m_saved[room];
+    if (on) {
+        it->second.muted.insert(memberId);
+        s.muted.insert(memberId);
+    } else {
+        it->second.muted.erase(memberId);
+        s.muted.erase(memberId);
+    }
+    save();
+    emit roomsChanged();
+    return {};
+}
+
 QString Ed3kRooms::memberKeyText(const ffi::Room& room) const
 {
     const Room* r = find(room);
@@ -449,6 +468,7 @@ void Ed3kRooms::onEventPolled(const ffi::Event& ev, bool* handled)
         *handled = true;
         if (Room* r = roomOf(j->room)) {
             r->joined = true;
+            r->notAdmitted = false;   // a member took us (admitted, #17)
             noticeOf(j->room, Notice::Joined, 0, false, {});
             emit roomsChanged();
         }
@@ -473,6 +493,11 @@ void Ed3kRooms::onEventPolled(const ffi::Event& ev, bool* handled)
         logEd3kDebug(QStringLiteral("ed3k: room %1 refused by %2 (%3)")
                          .arg(roomHex(rf->room), QString::fromLatin1(bytesOf(rf->node.bytes).toHex()))
                          .arg(rf->refusal));
+        // #17: ROOM_MEMBER: the room is closed and we are not admitted; the GUI shows the key
+        if (Room* r = roomOf(rf->room); r && rf->refusal == ED3K_ROOM_MEMBER && !r->notAdmitted) {
+            r->notAdmitted = true;
+            emit roomsChanged();
+        }
         noticeOf(rf->room, Notice::Refused, rf->refusal, false, bytesOf(rf->node.bytes));
     } else if (const auto* f = std::get_if<e::RoomFault>(&ev)) {
         *handled = true;
@@ -509,6 +534,8 @@ void Ed3kRooms::attach()
             m_saved.erase(room);
             m_saved[*joined] = s;
         }
+        if (auto it = m_rooms.find(*joined); it != m_rooms.end())
+            it->second.muted = s.muted;
         // the info of the last run until a neighbour sends a newer one
         if (auto it = m_rooms.find(*joined); it != m_rooms.end() && it->second.title.isEmpty() && !s.info.isEmpty()) {
             Room& r = it->second;
@@ -625,8 +652,19 @@ void Ed3kRooms::loadSaved()
         const QCborMap m = v.toMap();
         const auto room = roomFrom(m.value(QStringLiteral("room")).toString());
         const QString link = m.value(QStringLiteral("link")).toString();
-        if (room && link.startsWith(QLatin1String("ed3k:room?"), Qt::CaseInsensitive))
-            m_saved[*room] = Saved{link, m.value(QStringLiteral("nick")).toString(), m.value(QStringLiteral("info")).toMap()};
+        if (!room || !link.startsWith(QLatin1String("ed3k:room?"), Qt::CaseInsensitive))
+            continue;
+        Saved saved{link, m.value(QStringLiteral("nick")).toString(), m.value(QStringLiteral("info")).toMap(), {}};
+        for (const QCborValue& id : m.value(QStringLiteral("muted")).toArray()) {
+            const QByteArray raw = QByteArray::fromHex(id.toString().toLatin1());
+            std::array<std::uint8_t, 16> mid{};
+            if (raw.size() != qsizetype(mid.size()))
+                continue;
+            std::copy(raw.cbegin(), raw.cend(), reinterpret_cast<char*>(mid.data()));
+            saved.muted.insert(mid);
+        }
+        m_saved[*room] = std::move(saved);
+        // was: m_saved[*room] = Saved{link, nick, info};
     }
 }
 
@@ -645,11 +683,15 @@ void Ed3kRooms::save() const
                             {QStringLiteral("closed"), r->closed}, {QStringLiteral("moderated"), r->moderated},
                             {QStringLiteral("mods"), mods}};
         }
+        QCborArray muted;
+        for (const auto& id : s.muted)
+            muted.append(QString::fromLatin1(bytesOf(id).toHex()));
         list.append(QCborMap{
             {QStringLiteral("room"), roomHex(room)},
             {QStringLiteral("link"), s.link},
             {QStringLiteral("nick"), s.nick},
             {QStringLiteral("info"), info},
+            {QStringLiteral("muted"), muted},
         });
     }
     QByteArray blob = list.toCborValue().toCbor();

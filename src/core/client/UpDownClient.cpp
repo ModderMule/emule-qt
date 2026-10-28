@@ -2019,9 +2019,7 @@ bool UpDownClient::tryToConnect(bool ignoreMaxCon, bool noCallbacks)
         // The three routes, in the order the branches below try them.
         const bool directUdp = supportsDirectUDPCallback() && theApp.listeningUdpPort() != 0
                             && !m_connectAddress.isNull();
-        const bool kadCallback = hasValidBuddyID() && kad::Kademlia::instance()
-                              && kad::Kademlia::instance()->isConnected()
-                              && ((!m_buddyAddress.isNull() && m_buddyPort != 0) || m_reqFile);
+        const bool kadCallback = kadCallbackAvailable();
         const bool serverCallback = theApp.serverConnect
                                  && theApp.serverConnect->isLocalServer(
                                         m_serverAddress.toNetworkUint32(), m_serverPort);
@@ -2144,8 +2142,10 @@ bool UpDownClient::tryToConnect(bool ignoreMaxCon, bool noCallbacks)
 
     // Low-ID client — need callback via server
     if (hasLowID() && theApp.serverConnect && theApp.serverConnect->isConnected()) {
-        // Check if the source is on the same server we're connected to
-        if (theApp.serverConnect->isLocalServer(m_serverAddress.toNetworkUint32(), m_serverPort)) {
+        // Check if the source is on the same server we're connected to. Not MFC: skipped
+        // when this server/LowID already failed a callback and the buddy can take it.
+        if (theApp.serverConnect->isLocalServer(m_serverAddress.toNetworkUint32(), m_serverPort)
+            && !(serverCallbackKnownStale() && kadCallbackAvailable())) {
             // Send callback request via server
             SafeMemFile data;
             data.writeUInt32(m_userIDHybrid);
@@ -2159,47 +2159,9 @@ bool UpDownClient::tryToConnect(bool ignoreMaxCon, bool noCallbacks)
 
     // Kademlia callback path — send KADEMLIA_CALLBACK_REQ via UDP to target's buddy.
     // Matches MFC BaseClient.cpp:1435-1449.
-    if (hasValidBuddyID() && kad::Kademlia::instance()
-        && kad::Kademlia::instance()->isConnected()
-        && ((!m_buddyAddress.isNull() && m_buddyPort != 0) || m_reqFile != nullptr))
-    {
-        // Try to find buddy IP from Kad routing table if we don't have it
-        if (m_buddyAddress.isNull() || m_buddyPort == 0) {
-            kad::UInt128 buddyKadId(m_buddyID.data());
-            if (auto* zone = kad::Kademlia::getInstanceRoutingZone()) {
-                if (auto* contact = zone->getContact(buddyKadId)) {
-                    m_buddyAddress = contact->address();
-                    m_buddyPort = contact->getUDPPort();
-                    logDebug(QStringLiteral("tryToConnect: found buddy IP from Kad routing table: %1:%2")
-                                 .arg(m_buddyAddress.toQHostAddress().toString()).arg(m_buddyPort));
-                }
-            }
-        }
-
-        if (!m_buddyAddress.isNull() && m_buddyPort != 0 && m_reqFile != nullptr) {
-            SafeMemFile data;
-            kad::UInt128 buddyKadId(m_buddyID.data());
-            kad::io::writeUInt128(data, buddyKadId);
-            kad::UInt128 fileId(m_reqFile->fileHash());
-            kad::io::writeUInt128(data, fileId);
-            data.writeUInt16(theApp.advertisedTcpPort());
-
-            auto packet = std::make_unique<Packet>(data, OP_KADEMLIAHEADER, KADEMLIA_CALLBACK_REQ);
-            m_connectingState = ConnectingState::KadCallback;
-            // Not MFC: over the relay's limits the request would be dropped unanswered, so
-            // it is not sent. The attempt then ends by the callback timeout, as a drop does.
-            const bool send = !theApp.clientList
-                || theApp.clientList->allowRelayRequest(m_buddyAddress, m_buddyID.data(),
-                                                        RelayRequest::KadCallback);
-            // MFC FIXME: We don't know which kad version the buddy has, so we need to send unencrypted
-            if (send && theApp.clientUDP)
-                theApp.clientUDP->sendPacket(std::move(packet),
-                                             Endpoint(m_buddyAddress, m_buddyPort),
-                                             false, nullptr, true, 0);
-            setDownloadState(DownloadState::WaitCallbackKad);
-            logDebug(QStringLiteral("tryToConnect: KAD CALLBACK via buddy %1:%2%3")
-                         .arg(m_buddyAddress.toQHostAddress().toString()).arg(m_buddyPort)
-                         .arg(send ? QString() : QStringLiteral(" — not sent, relay limit")));
+    if (kadCallbackAvailable()) {
+        if (resolveBuddyAddress() && m_reqFile != nullptr) {
+            sendKadCallback();
             return true;
         }
         // Buddy IP not in routing table — fall back to FindSource search
@@ -2242,6 +2204,36 @@ bool UpDownClient::tryToConnect(bool ignoreMaxCon, bool noCallbacks)
                  .arg(hasValidBuddyID()));
     disconnected(QStringLiteral("No connection path"));
     return false;
+}
+
+// ===========================================================================
+// fallBackToKadCallback — not MFC. A LowID that moved servers leaves a stale server/LowID
+// with peers still on the old server; MFC keeps sending them dead OP_CALLBACKREQUESTs.
+// ===========================================================================
+
+bool UpDownClient::fallBackToKadCallback()
+{
+    if (m_connectingState != ConnectingState::ServerCallback)
+        return false;
+
+    // Remember the failed record; later tries skip the server while it is unchanged
+    m_staleCallbackServer = m_serverAddress;
+    m_staleCallbackServerPort = m_serverPort;
+    m_staleCallbackUserID = m_userIDHybrid;
+
+    // Only a buddy with a known address; no FindSource lookup from here
+    if (!kadCallbackAvailable() || m_reqFile == nullptr || !resolveBuddyAddress())
+        return false;
+
+    logDebug(QStringLiteral("Server callback for %1 failed (lowID=%2), retrying via Kad buddy")
+                 .arg(userName()).arg(m_userIDHybrid));
+    if (theApp.clientList) {
+        // fresh connect timeout for the Kad attempt
+        theApp.clientList->removeConnectingClient(this);
+        theApp.clientList->addConnectingClient(this);
+    }
+    sendKadCallback();
+    return true;
 }
 
 // ===========================================================================
@@ -5910,6 +5902,68 @@ void UpDownClient::clearLeecher()
         logLeecher(QStringLiteral("No longer flagged: [DLP] %1; %2").arg(m_leecherReason, leecherLogInfo()));
     m_leecherCategory = LeecherCategory::None;
     m_leecherReason.clear();
+}
+
+// ===========================================================================
+// Kad callback helpers — MFC BaseClient.cpp:1435-1449, split out of tryToConnect
+// ===========================================================================
+
+bool UpDownClient::kadCallbackAvailable() const
+{
+    return hasValidBuddyID() && kad::Kademlia::instance()
+        && kad::Kademlia::instance()->isConnected()
+        && ((!m_buddyAddress.isNull() && m_buddyPort != 0) || m_reqFile != nullptr);
+}
+
+bool UpDownClient::resolveBuddyAddress()
+{
+    if (!m_buddyAddress.isNull() && m_buddyPort != 0)
+        return true;
+    // Try to find buddy IP from Kad routing table if we don't have it
+    kad::UInt128 buddyKadId(m_buddyID.data());
+    if (auto* zone = kad::Kademlia::getInstanceRoutingZone()) {
+        if (auto* contact = zone->getContact(buddyKadId)) {
+            m_buddyAddress = contact->address();
+            m_buddyPort = contact->getUDPPort();
+            logDebug(QStringLiteral("tryToConnect: found buddy IP from Kad routing table: %1:%2")
+                         .arg(m_buddyAddress.toQHostAddress().toString()).arg(m_buddyPort));
+        }
+    }
+    return !m_buddyAddress.isNull() && m_buddyPort != 0;
+}
+
+void UpDownClient::sendKadCallback()
+{
+    SafeMemFile data;
+    kad::UInt128 buddyKadId(m_buddyID.data());
+    kad::io::writeUInt128(data, buddyKadId);
+    kad::UInt128 fileId(m_reqFile->fileHash());
+    kad::io::writeUInt128(data, fileId);
+    data.writeUInt16(theApp.advertisedTcpPort());
+
+    auto packet = std::make_unique<Packet>(data, OP_KADEMLIAHEADER, KADEMLIA_CALLBACK_REQ);
+    m_connectingState = ConnectingState::KadCallback;
+    // Not MFC: over the relay's limits the request would be dropped unanswered, so
+    // it is not sent. The attempt then ends by the callback timeout, as a drop does.
+    const bool send = !theApp.clientList
+        || theApp.clientList->allowRelayRequest(m_buddyAddress, m_buddyID.data(),
+                                                RelayRequest::KadCallback);
+    // MFC FIXME: We don't know which kad version the buddy has, so we need to send unencrypted
+    if (send && theApp.clientUDP)
+        theApp.clientUDP->sendPacket(std::move(packet),
+                                     Endpoint(m_buddyAddress, m_buddyPort),
+                                     false, nullptr, true, 0);
+    setDownloadState(DownloadState::WaitCallbackKad);
+    logDebug(QStringLiteral("tryToConnect: KAD CALLBACK via buddy %1:%2%3")
+                 .arg(m_buddyAddress.toQHostAddress().toString()).arg(m_buddyPort)
+                 .arg(send ? QString() : QStringLiteral(" — not sent, relay limit")));
+}
+
+bool UpDownClient::serverCallbackKnownStale() const
+{
+    return m_staleCallbackUserID != 0 && m_staleCallbackUserID == m_userIDHybrid
+        && m_staleCallbackServerPort == m_serverPort
+        && m_staleCallbackServer == m_serverAddress;
 }
 
 } // namespace eMule

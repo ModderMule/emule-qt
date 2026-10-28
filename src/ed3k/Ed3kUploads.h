@@ -8,9 +8,12 @@
 /// QueueEntryEnded): it never marks one handled, the joins and the queue policy answer them.
 /// - A node that asked for a file waits; one whose blocks go out (SlotUsed) or that took an
 ///   offered slot holds a slot. SlotEnded / QueueEntryEnded drop the row.
-/// - The engine tells no rank and no address: the place is the order of waiting (the
+/// - was: The engine tells no rank and no address: the place is the order of waiting (the
 ///   policy's score also weighs the file's priority), the address stays empty.
 ///   ToDo: rank and address once the FFI lists the queue (ed3k_queue_list or similar).
+///   (done: uploading()/waiting() read Engine::queueList: the engine's rank as the place, the
+///   endpoint, since when, the turn's bytes, connected; the events add name, LAN and due.
+///   Without an engine the event rows, place by waiting time.)
 
 #include "Ed3kFfi.h"
 
@@ -37,13 +40,15 @@ public:
         ::ed3k::Root root{};
         QString fileName;            ///< empty: not known (the name lookup knows no such root)
         std::uint64_t fileSize = 0;
-        QString address;             ///< empty: not known
+        QString address;             ///< literal IP; empty: not known (relays only)
+        std::uint16_t port = 0;
+        bool connected = true;       ///< a file stream open (else sent away / not connected)
         bool holding = false;        ///< holds a slot (else waits)
         bool lan = false;
         bool due = false;            ///< the turn reached 16 MiB / 1 h (SlotUsed due)
         std::uint64_t bytes = 0;     ///< file bytes of the running turn
         qint64 since = 0;            ///< ms since the epoch: entered the queue, or got the slot
-        int place = 0;               ///< waiting: 1-based place by waiting time; holding: 0
+        int place = 0;               ///< waiting: the engine's rank (else 1-based by waiting time); holding: 0
     };
     /// name and size of a shared root; nullopt: not known.
     using NameLookup = std::function<std::optional<std::pair<QString, std::uint64_t>>(const ::ed3k::Root&)>;
@@ -64,6 +69,8 @@ signals:
     void changed();
 
 private:
+    /// The engine's queue (queueList) merged with what the events told; nullopt: no engine.
+    [[nodiscard]] std::optional<std::vector<Row>> listed() const;
     void onEventPolled(const ::ed3k::Event& event, bool* handled);
     void onSessionStatus();
     [[nodiscard]] static qint64 nowMs();

@@ -249,6 +249,7 @@
     <ClCompile Include="controls\DownloadListModel.cpp" />
     <ClCompile Include="controls\BarShader.cpp" />
     <ClCompile Include="controls\DownloadProgressDelegate.cpp" />
+    <ClCompile Include="controls\Ed3kDownloadRows.cpp" />
     <ClCompile Include="controls\UsenetFileCheckList.cpp" />
     <ClCompile Include="controls\UsenetProgressDelegate.cpp" />
     <ClCompile Include="app\Ed2kSchemeHandler.cpp" />
@@ -347,6 +348,7 @@
     <ClInclude Include="controls\AbstractListView.h" />
     <ClInclude Include="panels\ChatNetwork.h" />
     <ClInclude Include="controls\SortableItems.h" />
+    <ClInclude Include="controls\Ed3kDownloadRows.h" />
     <ClInclude Include="controls\ListSortClick.h" />
     <ClInclude Include="dialogs\FileDetailsMerge.h" />
     <ClInclude Include="dialogs\CollectionCategory.h" />
@@ -552,6 +554,7 @@
     <None Include="..\..\resources\icons\Client4.ico" />
     <None Include="..\..\resources\icons\ClientCompatible.ico" />
     <None Include="..\..\resources\icons\ClientCompatiblePlus.ico" />
+    <None Include="..\..\resources\icons\ClientEd3k.ico" />
     <None Include="..\..\resources\icons\ClientDefault.ico" />
     <None Include="..\..\resources\icons\ClientDefaultPlus.ico" />
     <None Include="..\..\resources\icons\ClientMLDonkey.ico" />

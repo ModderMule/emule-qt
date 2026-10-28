@@ -55,6 +55,8 @@ bool SearchResultsProxy::filterAcceptsRow(int sourceRow, const QModelIndex& sour
     if (!row)
         return true;
 
+    if (row->isEd3k() && row->ed3kHidden)
+        return m_filter.ed3kHidden;
     if (row->isUsenet())
         return m_filter.usenet;
     if (row->isTorrent())

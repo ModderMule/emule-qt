@@ -403,6 +403,7 @@ if(EMULE_ED3K)
                 "${CMAKE_SOURCE_DIR}/src/daemon/Ed3kFiltersBridge.cpp"
                 "${CMAKE_SOURCE_DIR}/src/daemon/Ed3kDownloadsBridge.cpp"
                 "${CMAKE_SOURCE_DIR}/src/daemon/Ed3kSetsBridge.cpp"
+                "${CMAKE_SOURCE_DIR}/src/daemon/Ed3kPaidBridge.cpp"
                 "${CMAKE_SOURCE_DIR}/src/daemon/BandwidthCoordinator.cpp"
         LIBRARIES eMule::Ed3k eMule::Ipc)
     target_include_directories(tst_Ed3kBridge PRIVATE "${CMAKE_SOURCE_DIR}/src/daemon")
@@ -419,6 +420,7 @@ if(EMULE_ED3K)
                 "${CMAKE_SOURCE_DIR}/src/daemon/Ed3kFiltersBridge.cpp"
                 "${CMAKE_SOURCE_DIR}/src/daemon/Ed3kDownloadsBridge.cpp"
                 "${CMAKE_SOURCE_DIR}/src/daemon/Ed3kSetsBridge.cpp"
+                "${CMAKE_SOURCE_DIR}/src/daemon/Ed3kPaidBridge.cpp"
                 "${CMAKE_SOURCE_DIR}/src/daemon/BandwidthCoordinator.cpp"
         LIBRARIES eMule::Ed3k eMule::Ipc)
     target_include_directories(tst_Ed3kFriends PRIVATE "${CMAKE_SOURCE_DIR}/src/daemon")
@@ -436,6 +438,7 @@ if(EMULE_ED3K)
                 "${CMAKE_SOURCE_DIR}/src/daemon/Ed3kFiltersBridge.cpp"
                 "${CMAKE_SOURCE_DIR}/src/daemon/Ed3kDownloadsBridge.cpp"
                 "${CMAKE_SOURCE_DIR}/src/daemon/Ed3kSetsBridge.cpp"
+                "${CMAKE_SOURCE_DIR}/src/daemon/Ed3kPaidBridge.cpp"
                 "${CMAKE_SOURCE_DIR}/src/daemon/BandwidthCoordinator.cpp"
         LIBRARIES eMule::Ed3k eMule::Ipc)
     target_include_directories(tst_Ed3kNames PRIVATE "${CMAKE_SOURCE_DIR}/src/daemon")
@@ -453,6 +456,7 @@ if(EMULE_ED3K)
                 "${CMAKE_SOURCE_DIR}/src/daemon/Ed3kFiltersBridge.cpp"
                 "${CMAKE_SOURCE_DIR}/src/daemon/Ed3kDownloadsBridge.cpp"
                 "${CMAKE_SOURCE_DIR}/src/daemon/Ed3kSetsBridge.cpp"
+                "${CMAKE_SOURCE_DIR}/src/daemon/Ed3kPaidBridge.cpp"
                 "${CMAKE_SOURCE_DIR}/src/daemon/BandwidthCoordinator.cpp"
         LIBRARIES eMule::Ed3k eMule::Ipc)
     target_include_directories(tst_Ed3kCredit PRIVATE "${CMAKE_SOURCE_DIR}/src/daemon")
@@ -470,6 +474,7 @@ if(EMULE_ED3K)
                 "${CMAKE_SOURCE_DIR}/src/daemon/Ed3kFiltersBridge.cpp"
                 "${CMAKE_SOURCE_DIR}/src/daemon/Ed3kDownloadsBridge.cpp"
                 "${CMAKE_SOURCE_DIR}/src/daemon/Ed3kSetsBridge.cpp"
+                "${CMAKE_SOURCE_DIR}/src/daemon/Ed3kPaidBridge.cpp"
                 "${CMAKE_SOURCE_DIR}/src/daemon/Ed3kHosterBridge.cpp"
                 "${CMAKE_SOURCE_DIR}/src/daemon/BandwidthCoordinator.cpp"
         LIBRARIES eMule::Ed3k eMule::Ipc)
@@ -494,6 +499,7 @@ if(EMULE_ED3K)
                 "${CMAKE_SOURCE_DIR}/src/daemon/Ed3kFiltersBridge.cpp"
                 "${CMAKE_SOURCE_DIR}/src/daemon/Ed3kDownloadsBridge.cpp"
                 "${CMAKE_SOURCE_DIR}/src/daemon/Ed3kSetsBridge.cpp"
+                "${CMAKE_SOURCE_DIR}/src/daemon/Ed3kPaidBridge.cpp"
                 "${CMAKE_SOURCE_DIR}/src/daemon/Ed3kHosterBridge.cpp"
                 "${CMAKE_SOURCE_DIR}/src/daemon/BandwidthCoordinator.cpp"
         LIBRARIES eMule::Ed3k eMule::Ipc)
@@ -501,11 +507,15 @@ if(EMULE_ED3K)
     set_tests_properties(tst_Ed3kFilters PROPERTIES TIMEOUT 240)
     # rooms (Ed3kRooms: create/join/post, a closed room's admit, ban, persistence) and their
     # IPC (Ed3kRoomsBridge): nodes on loopback
+    # batch 13: the room tab (reply line, mute, the member key bar of #17) rides along
     emule_add_test(tst_Ed3kRooms FOLDER "Ed3k"
         SOURCES tst_Ed3kRooms.cpp
                 "${CMAKE_SOURCE_DIR}/src/daemon/Ed3kRoomsBridge.cpp"
-        LIBRARIES eMule::Ed3k eMule::Ipc)
-    target_include_directories(tst_Ed3kRooms PRIVATE "${CMAKE_SOURCE_DIR}/src/daemon")
+                "${CMAKE_SOURCE_DIR}/src/gui/panels/Ed3kRoomTab.cpp"
+                "${CMAKE_SOURCE_DIR}/src/gui/panels/ChatChannelView.cpp"
+                "${CMAKE_SOURCE_DIR}/src/gui/controls/LogTextView.cpp"
+        LIBRARIES eMule::Ed3k eMule::Ipc Qt6::Widgets)
+    target_include_directories(tst_Ed3kRooms PRIVATE "${CMAKE_SOURCE_DIR}/src/daemon" "${CMAKE_SOURCE_DIR}/src/gui")
     set_tests_properties(tst_Ed3kRooms PROPERTIES TIMEOUT 240)
     # ed3k keyword search (Ed3kSearch): one node publishes a file, another finds it
     emule_add_test(tst_Ed3kSearch FOLDER "Ed3k" LIBRARIES eMule::Ed3k)
@@ -527,7 +537,15 @@ if(EMULE_ED3K)
     set_tests_properties(tst_Ed3kSets PROPERTIES TIMEOUT 600)
     # live streams (Ed3kLive): a broadcast in the test watched and served over loopback HTTP
     emule_add_test(tst_Ed3kLive FOLDER "Ed3k" LIBRARIES eMule::Ed3k)
-    set_tests_properties(tst_Ed3kLive PROPERTIES TIMEOUT 180)
+    set_tests_properties(tst_Ed3kLive PROPERTIES TIMEOUT 240)
+    # paid subscriptions (Ed3kPaid, Ed3kPaidBridge): an offer, a pass from a fake seller over
+    # HTTPS on loopback, keys from the publisher's node; kept across a restart
+    emule_add_test(tst_Ed3kPaid FOLDER "Ed3k"
+        SOURCES tst_Ed3kPaid.cpp
+                "${CMAKE_SOURCE_DIR}/src/daemon/Ed3kPaidBridge.cpp"
+        LIBRARIES eMule::Ed3k eMule::Ipc OpenSSL::Crypto)
+    target_include_directories(tst_Ed3kPaid PRIVATE "${CMAKE_SOURCE_DIR}/src/daemon")
+    set_tests_properties(tst_Ed3kPaid PROPERTIES TIMEOUT 240)
     # usenet join: a fake news server, a fake queue, two nodes on loopback
     emule_add_test(tst_Ed3kUsenetJoin FOLDER "Ed3k" LIBRARIES eMule::Ed3k eMule::Usenet)
     set_tests_properties(tst_Ed3kUsenetJoin PROPERTIES TIMEOUT 180)
@@ -910,6 +928,9 @@ emule_add_test(tst_MetaSearchGui FOLDER "Gui"
     SOURCES tst_MetaSearchGui.cpp
             "${CMAKE_SOURCE_DIR}/src/gui/utils/Appearance.cpp"
             "${CMAKE_SOURCE_DIR}/src/gui/dialogs/WebLinksDialog.cpp"
+            "${CMAKE_SOURCE_DIR}/src/gui/utils/Ed2kLinkImporter.cpp"
+            "${CMAKE_SOURCE_DIR}/src/gui/utils/TorrentLinks.cpp"
+            "${CMAKE_SOURCE_DIR}/src/gui/utils/HttpCacheLinkImporter.cpp"
             "${CMAKE_SOURCE_DIR}/src/gui/utils/DialogSizing.cpp"
             "${CMAKE_SOURCE_DIR}/src/gui/utils/StatusBarNotifier.cpp"
             "${CMAKE_SOURCE_DIR}/src/gui/controls/ContentScrollArea.cpp"
@@ -1081,6 +1102,26 @@ target_include_directories(tst_DownloadStatusText PRIVATE
     "${CMAKE_CURRENT_SOURCE_DIR}/stubs")
 target_link_libraries(tst_DownloadStatusText PRIVATE Qt6::Widgets)
 
+# The ed3k rows of the download list (Ed3kDownloadRows) from hand-built CBOR: block runs as the
+# eD2K bar's gaps, pending, sources per piece; painted by the eD2K bar painter.
+emule_add_test(tst_Ed3kDownloadRows FOLDER "Gui"
+    SOURCES tst_Ed3kDownloadRows.cpp
+            "${CMAKE_SOURCE_DIR}/src/gui/controls/Ed3kDownloadRows.cpp"
+            "${CMAKE_SOURCE_DIR}/src/gui/utils/Appearance.cpp"
+            "${CMAKE_SOURCE_DIR}/src/gui/controls/DownloadListModel.cpp"
+            "${CMAKE_SOURCE_DIR}/src/gui/controls/DownloadProgressDelegate.cpp"
+            "${CMAKE_SOURCE_DIR}/src/gui/controls/BarShader.cpp"
+            "${CMAKE_SOURCE_DIR}/src/gui/utils/ClientIcons.cpp"
+            "${CMAKE_SOURCE_DIR}/src/gui/utils/CountryFlags.cpp"
+            "${CMAKE_SOURCE_DIR}/src/gui/utils/PriorityText.cpp"
+            "${CMAKE_SOURCE_DIR}/src/gui/utils/RatingIcons.cpp"
+            "${CMAKE_SOURCE_DIR}/src/gui/utils/FileTypeIcons.cpp")
+target_include_directories(tst_Ed3kDownloadRows PRIVATE
+    "${CMAKE_SOURCE_DIR}/src/gui"
+    "${CMAKE_SOURCE_DIR}/src/core"
+    "${CMAKE_CURRENT_SOURCE_DIR}/stubs")
+target_link_libraries(tst_Ed3kDownloadRows PRIVATE Qt6::Widgets)
+
 # The shared-files list updated in place: diff of a new list, single-row pushes.
 emule_add_test(tst_SharedFilesModel FOLDER "Gui"
     SOURCES tst_SharedFilesModel.cpp
@@ -1215,6 +1256,9 @@ emule_add_test(tst_SmallScreenDialogs FOLDER "Gui"
             "${CMAKE_SOURCE_DIR}/src/gui/dialogs/UsenetArchiveEntryDialog.cpp"
             "${CMAKE_SOURCE_DIR}/src/gui/dialogs/UsenetDetailsDialog.cpp"
             "${CMAKE_SOURCE_DIR}/src/gui/dialogs/WebLinksDialog.cpp"
+            "${CMAKE_SOURCE_DIR}/src/gui/utils/Ed2kLinkImporter.cpp"
+            "${CMAKE_SOURCE_DIR}/src/gui/utils/TorrentLinks.cpp"
+            "${CMAKE_SOURCE_DIR}/src/gui/utils/HttpCacheLinkImporter.cpp"
             "${CMAKE_SOURCE_DIR}/src/gui/controls/BarShader.cpp"
             "${CMAKE_SOURCE_DIR}/src/gui/controls/ContentScrollArea.cpp"
             "${CMAKE_SOURCE_DIR}/src/gui/controls/UsenetFileCheckList.cpp"

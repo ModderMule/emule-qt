@@ -21,6 +21,7 @@
         <file alias="ClientDefaultPlus.ico">icons/ClientDefaultPlus.ico</file>
         <file alias="ClientCompatible.ico">icons/ClientCompatible.ico</file>
         <file alias="ClientCompatiblePlus.ico">icons/ClientCompatiblePlus.ico</file>
+        <file alias="ClientEd3k.ico">icons/ClientEd3k.ico</file>
         <file alias="ClientMLDonkey.ico">icons/ClientMLDonkey.ico</file>
         <file alias="ClientMLDonkeyPlus.ico">icons/ClientMLDonkeyPlus.ico</file>
         <file alias="ClienteDonkeyHybrid.ico">icons/ClienteDonkeyHybrid.ico</file>

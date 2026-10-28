@@ -34,6 +34,47 @@ namespace eMule {
 
 namespace {
 
+/// An ed3k filter list's verdict (filter-list.md §1 Verdict).
+QString ed3kVerdictName(int verdict)
+{
+    switch (verdict) {
+    case 1: return SearchResultsModel::tr("Fake");
+    case 2: return SearchResultsModel::tr("Harmful");
+    case 3: return SearchResultsModel::tr("Spam");
+    case 4: return SearchResultsModel::tr("Good");
+    default: return {};
+    }
+}
+
+/// The Confidence column of an ed3k row a filter list judged: "Fake (list)", "(own)".
+QString ed3kVerdictText(const SearchResultRow& r)
+{
+    QString text = ed3kVerdictName(r.ed3kVerdict);
+    if (!text.isEmpty())
+        text += QStringLiteral(" (%1)").arg(r.ed3kOwn ? SearchResultsModel::tr("own") : r.ed3kBy);
+    if (r.ed3kHidden)
+        text = SearchResultsModel::tr("Hidden: %1").arg(text);
+    return text;
+}
+
+/// §3: the user can always see why: the list, its reason, a disagreement.
+QString ed3kVerdictTooltip(const SearchResultRow& r)
+{
+    QStringList lines;
+    const QString by = r.ed3kOwn ? SearchResultsModel::tr("your own verdict") : r.ed3kBy;
+    if (r.ed3kVerdict != 0)
+        lines << SearchResultsModel::tr("ed3k filter list: %1, by %2").arg(ed3kVerdictName(r.ed3kVerdict), by);
+    if (!r.ed3kReason.isEmpty())
+        lines << SearchResultsModel::tr("Reason: %1").arg(r.ed3kReason);
+    if (r.ed3kDisagree)
+        lines << SearchResultsModel::tr("Lists disagree on this file: marked only");
+    if (r.ed3kHidden)
+        lines << SearchResultsModel::tr("Hidden by the list's mode; \"Show anyway\" in the menu shows it");
+    if (r.ed3kShown)
+        lines << SearchResultsModel::tr("Shown anyway (your choice)");
+    return lines.join(QLatin1Char('\n'));
+}
+
 /// MFC SearchListCtrl.cpp:1413-1416, 1493-1504: 13 steps from the text colour toward blue,
 /// one per source after the first. Dark mode heads for the palette's link blue instead —
 /// pure blue is unreadable on a dark list.
@@ -364,7 +405,11 @@ QVariant SearchResultsModel::data(const QModelIndex& index, int role) const
         case ColCodec:        return codecDisplayName(r.codec);
         case ColKnown:        return knownTypeString(r.knownType);
         case ColSeen:         return seenText(r);
-        case ColConfidence:   return confidenceText(r.confidence, r.fakeScore);
+        case ColConfidence:
+            // an ed3k row a filter list judged: the verdict and who said it (filter-list §3)
+            if (r.isEd3k() && (r.ed3kVerdict != 0 || r.ed3kHidden))
+                return ed3kVerdictText(r);
+            return confidenceText(r.confidence, r.fakeScore);
         case ColFileID:       return r.isMeta() ? QString{} : r.hash;
         case ColFolder:       return r.directory;
         case ColAichHash:     return r.aichHash;
@@ -372,6 +417,9 @@ QVariant SearchResultsModel::data(const QModelIndex& index, int role) const
         }
     }
 
+    if (role == Qt::ToolTipRole && r.isEd3k() && (r.ed3kVerdict != 0 || r.ed3kHidden)
+        && (index.column() == ColConfidence || index.column() == ColFileName))
+        return ed3kVerdictTooltip(r);
     if (role == Qt::ToolTipRole && index.column() == ColConfidence)
         return confidenceTooltip(r.confidence, r.fakeScore, r.fakeReasons);
 

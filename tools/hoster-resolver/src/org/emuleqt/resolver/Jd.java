@@ -5,6 +5,7 @@ package org.emuleqt.resolver;
 import java.io.InterruptedIOException;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Locale;
 import java.util.Map;
 
 import jd.controlling.linkcrawler.CrawledLink;
@@ -92,15 +93,8 @@ final class Jd {
                 return p.getDisplayName();
             }
         }
-        for (final LazyHostPlugin p : HostPluginController.getInstance().list()) {
-            if (p.isFallbackPlugin() || p.isOfflinePlugin() || isGeneric(p.getDisplayName())) {
-                continue;
-            }
-            if (p.canHandle(url)) {
-                return p.getDisplayName();
-            }
-        }
-        return null;
+        final LazyHostPlugin p = matchHostPlugin(url);
+        return p == null ? null : p.getDisplayName();
     }
 
     /** Runs the link through JD's crawler: decrypters first, then host plugins. */
@@ -138,8 +132,53 @@ final class Jd {
         return log;
     }
 
+    /** The host plugin for a domain or one of its aliases (siteSupportedNames); "www." and subdomains too. */
     static LazyHostPlugin hostPlugin(final String host) {
-        return HostPluginController.getInstance().get(host);
+        if (host == null || host.trim().isEmpty()) {
+            return null;
+        }
+        String h = host.trim().toLowerCase(Locale.ROOT);
+        if (h.startsWith("www.")) {
+            h = h.substring(4);
+        }
+        final LazyHostPlugin direct = HostPluginController.getInstance().get(h);
+        if (usable(direct)) {
+            return direct;
+        }
+        for (String d = h; d.indexOf('.') > 0; d = d.substring(d.indexOf('.') + 1)) {
+            for (final LazyHostPlugin p : HostPluginController.getInstance().list()) {
+                if (usable(p) && sites(p).contains(d)) {
+                    return p;
+                }
+            }
+        }
+        return direct;
+    }
+
+    /** A plugin's domains, lower case: its host first, then its aliases. */
+    static List<String> sites(final LazyHostPlugin p) {
+        final List<String> out = new ArrayList<String>();
+        out.add(p.getHost().toLowerCase(Locale.ROOT));
+        final String[] more = p.getSitesSupported();
+        if (more != null) {
+            for (final String s : more) {
+                final String d = s == null ? "" : s.trim().toLowerCase(Locale.ROOT);
+                if (!d.isEmpty() && d.indexOf('.') > 0 && !out.contains(d)) {
+                    out.add(d);
+                }
+            }
+        }
+        return out;
+    }
+
+    /** The host plugin match() would pick, or null. No network. */
+    static LazyHostPlugin matchHostPlugin(final String url) {
+        for (final LazyHostPlugin p : HostPluginController.getInstance().list()) {
+            if (usable(p) && p.canHandle(url)) {
+                return p;
+            }
+        }
+        return null;
     }
 
     /** Maps a plugin failure to an event of the protocol (hoster-resolver.local.md §4). */
@@ -189,6 +228,10 @@ final class Jd {
             return errorEvent(id, "io", e.getClass().getSimpleName());
         }
         return errorEvent(id, "defect", e.getClass().getSimpleName());
+    }
+
+    private static boolean usable(final LazyHostPlugin p) {
+        return p != null && !p.isFallbackPlugin() && !p.isOfflinePlugin() && !isGeneric(p.getDisplayName());
     }
 
     /** A host plugin that would take any link, not a hoster: never a resolver. */

@@ -50,5 +50,9 @@ bool handleRequest(const Ipc::IpcMessage& msg, const std::function<void(const Ip
 /// from the running BandwidthCoordinator (0 without one).
 [[nodiscard]] QCborMap statusToCbor();
 
+/// Add what the node did since the last call to Statistics::ed3kSession (cumulative stats).
+/// Called once a second by the daemon, and once more before the node stops.
+void sampleCounters();
+
 } // namespace Ed3kBridge
 } // namespace eMule

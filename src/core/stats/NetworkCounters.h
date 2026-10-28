@@ -1,7 +1,7 @@
 #pragma once
 
 /// @file NetworkCounters.h
-/// @brief Statistics counter blocks: Usenet, indexers, HTTP Cache, Kademlia, BitTorrent, hoster.
+/// @brief Statistics counter blocks: Usenet, indexers, HTTP Cache, Kademlia, BitTorrent, hoster, ed3k.
 ///
 /// Core owns the storage and the modules do the counting: Statistics holds the
 /// session half, Preferences the banked cumulative half, and the usenet/indexer
@@ -400,6 +400,46 @@ struct HosterCounters {
     bool operator==(const HosterCounters&) const = default;
 };
 
+/// ed3k node (packmule), sampled from its running totals by Ed3kBridge::sampleCounters.
+/// The engine restarts within one session, so the session half lives in Statistics.
+struct Ed3kCounters {
+    // Traffic
+    uint64 wireRecv = 0;           ///< all received on the wire
+    uint64 wireSent = 0;           ///< all sent on the wire
+    uint64 recvFile = 0;           ///< file data received
+    uint64 recvOther = 0;          ///< everything else received
+    uint64 sentFile = 0;           ///< file data sent
+    uint64 sentOther = 0;          ///< everything else sent
+    uint64 downloadTimeMs = 0;     ///< time data was coming in
+    uint64 uploadTimeMs = 0;       ///< time data was going out
+    uint64 maxDownRate = 0;        ///< Max
+    uint64 maxUpRate = 0;          ///< Max
+    // Network
+    uint64 peakConnections = 0;    ///< Max
+    uint64 peakContacts = 0;       ///< Max, Kad contacts
+    uint64 peakPublished = 0;      ///< Max, files with a source record kept stored
+
+    template<class F> static constexpr void forEachField(F&& f)
+    {
+        using C = Ed3kCounters;
+        f("wireRecv", &C::wireRecv, CounterAgg::Sum);
+        f("wireSent", &C::wireSent, CounterAgg::Sum);
+        f("recvFile", &C::recvFile, CounterAgg::Sum);
+        f("recvOther", &C::recvOther, CounterAgg::Sum);
+        f("sentFile", &C::sentFile, CounterAgg::Sum);
+        f("sentOther", &C::sentOther, CounterAgg::Sum);
+        f("downloadTimeMs", &C::downloadTimeMs, CounterAgg::Sum);
+        f("uploadTimeMs", &C::uploadTimeMs, CounterAgg::Sum);
+        f("maxDownRate", &C::maxDownRate, CounterAgg::Max);
+        f("maxUpRate", &C::maxUpRate, CounterAgg::Max);
+        f("peakConnections", &C::peakConnections, CounterAgg::Max);
+        f("peakContacts", &C::peakContacts, CounterAgg::Max);
+        f("peakPublished", &C::peakPublished, CounterAgg::Max);
+    }
+
+    bool operator==(const Ed3kCounters&) const = default;
+};
+
 template<class C>
 concept CounterBlock = requires {
     C::forEachField([](const char*, uint64 C::*, CounterAgg) {});
@@ -421,6 +461,7 @@ static_assert(sizeof(HttpCacheCounters) == counterFieldCount<HttpCacheCounters>(
 static_assert(sizeof(KadCounters) == counterFieldCount<KadCounters>() * sizeof(uint64));
 static_assert(sizeof(BtCounters) == counterFieldCount<BtCounters>() * sizeof(uint64));
 static_assert(sizeof(HosterCounters) == counterFieldCount<HosterCounters>() * sizeof(uint64));
+static_assert(sizeof(Ed3kCounters) == counterFieldCount<Ed3kCounters>() * sizeof(uint64));
 static_assert(sizeof(UsenetServerCounters)
               == counterFieldCount<UsenetServerCounters>() * sizeof(uint64));
 

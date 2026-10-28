@@ -15,11 +15,13 @@
 ///   their links and labels, the core keeps the order).
 /// - Websites (§6): sets followed for the site server (setFollow, its SetManifest kept in
 ///   memory) and their members fetched into memory (cap per member and in all), shared
-///   while kept (§6.4).
+///   while kept (§6.4). Manifests and members are also kept on disk across restarts
+///   (Ed3kSiteCache, 2 GiB, LRU); one read back from disk is shared again from memory.
 ///
 /// Petnames and pins never leave the node but as §4.3 says; nothing here is a secret.
 
 #include "Ed3kJoinBase.h"
+#include "Ed3kSiteCache.h"
 
 #include <QByteArray>
 #include <QHash>
@@ -31,6 +33,7 @@
 #include <functional>
 #include <list>
 #include <map>
+#include <memory>
 #include <optional>
 #include <vector>
 
@@ -106,6 +109,8 @@ public:
     static constexpr std::uint64_t kSiteMemberMax = 64ULL * 1024 * 1024;
     /// What the website members kept in memory take at most; the oldest go first.
     static constexpr std::uint64_t kSiteCacheMax = 256ULL * 1024 * 1024;
+    /// What the manifests and members kept on disk take at most (§6.4), LRU.
+    static constexpr std::uint64_t kSiteDiskMax = Ed3kSiteCache::kDefaultMax;
     /// A name list file at most (§4.5).
     static constexpr std::uint64_t kListFileMax = 4ULL * 1024 * 1024;
 
@@ -156,8 +161,13 @@ public:
     bool followSite(const ::ed3k::Key32& key, const QByteArray& id);
     /// A manifest held of a set (tests; a version kept): siteChanged() follows.
     void setSiteManifest(const ::ed3k::Key32& key, const QByteArray& id, const QByteArray& manifest);
-    /// The bytes of a website member when kept; nullopt: not here.
+    /// The bytes of a website member when kept (in memory, else on disk); nullopt: not here.
     [[nodiscard]] std::optional<QByteArray> siteMember(const ::ed3k::Root& root);
+    /// @p len bytes of a member at @p offset from verified blocks only (§6.3 ranges): the member
+    /// kept, or the blocks of its fetch in memory there so far; nullopt: not (all) there yet.
+    [[nodiscard]] std::optional<QByteArray> siteMemberRange(const ::ed3k::Root& root, std::uint64_t offset, std::uint64_t len);
+    /// The disk cache of the websites (tests set a small cap).
+    [[nodiscard]] Ed3kSiteCache& siteCache() { return *m_cache; }
     /// Fetches a member into memory (siteMemberReady() when it is in). false: above the cap,
     /// not running, or refused.
     bool fetchSiteMember(const ::ed3k::Root& root, std::uint64_t size);
@@ -203,7 +213,8 @@ private:
     void onResolved(const ::ed3k::event::NameResolved& r);
     void onListFetch(const ::ed3k::event::NameListFetch& f);
     void onSiteManifest(const ::ed3k::Topic& topic, const ::ed3k::Bytes& file);
-    void keepMember(const ::ed3k::Root& root, const QByteArray& data);
+    /// Keeps a member in memory (and on disk unless @p fromDisk) and shares it.
+    void keepMember(const ::ed3k::Root& root, const QByteArray& data, bool fromDisk = false);
     [[nodiscard]] static QString siteKey(const ::ed3k::Key32& key, const QByteArray& id);
     void loadLocal();
     void saveLists() const;
@@ -221,6 +232,8 @@ private:
     /// website members in memory, oldest first
     std::list<std::pair<::ed3k::Root, QByteArray>> m_members;
     std::uint64_t m_memberBytes = 0;
+    /// manifests and members across restarts (§6.4)
+    std::unique_ptr<Ed3kSiteCache> m_cache;
     /// lookups of this run (the guard of their late answers)
     std::shared_ptr<int> m_dnsGen;
 };

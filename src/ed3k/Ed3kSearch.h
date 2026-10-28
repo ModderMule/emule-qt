@@ -22,9 +22,7 @@
 #include <map>
 #include <memory>
 
-namespace eMule {
-class SearchFile;
-}
+#include "search/SearchFile.h"
 
 namespace eMule::ed3k {
 
@@ -46,10 +44,22 @@ public:
     void setSinks(ResultSink results, FinishSink finished);
 
     /// Filter lists (filter-list.md §3, Ed3kFilters::judge): Mark shows the row as spam, Hide
-    /// drops it (only when the user set the list to hide). Unset: every row as found.
+    /// keeps it hidden (only when the user set the list to hide; the GUI shows it on request).
+    /// Unset: every row as found.
+    /// was: Hide dropped the row (batch 12); §3 wants what was hidden shown on request
     enum class Judged { None, Mark, Hide };
-    using Judge = std::function<Judged(const ::ed3k::FoundFile& found)>;
+    /// What a row shows: the kind, and the verdict with who said it (SearchFile::Ed3kJudged).
+    struct Verdict {
+        Judged judged = Judged::None;
+        SearchFile::Ed3kJudged shown;
+    };
+    using Judge = std::function<Verdict(const ::ed3k::FoundFile& found)>;
     void setJudge(Judge judge) { m_judge = std::move(judge); }
+    /// Judges every ed3k row of the search lists again (a verdict, a mode or a set author
+    /// changed); changed rows are stamped for the GUI. The rows changed.
+    int rejudge();
+    /// The judgement of @p found put on @p file; true when it changed.
+    static bool applyVerdict(SearchFile& file, const Verdict& v);
     /// A search still waits for its answer (tests).
     [[nodiscard]] bool isRunning(uint32 searchID) const;
 

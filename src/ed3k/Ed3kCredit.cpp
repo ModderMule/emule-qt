@@ -15,6 +15,7 @@
 #include <QJsonArray>
 #include <QJsonDocument>
 #include <QJsonObject>
+#include <QTimer>
 
 #include <algorithm>
 
@@ -193,19 +194,59 @@ ffi::Result<> Ed3kCredit::claimStake(std::uint64_t id)
 {
     auto* engine = m_session.engine();
     StakeClaim* c = claim(id);
-    if (!engine || !m_configured || !c)
-        return std::unexpected(!c ? ffi::Error::NotFound : ffi::Error::State);
-    if (c->state == ClaimState::Paid)
+    // was: ids not kept refused (NotFound)
+    // if (!engine || !m_configured || !c)
+    //     return std::unexpected(!c ? ffi::Error::NotFound : ffi::Error::State);
+    // §9.1 (batch 12 #9): another id only after stakeClaims(id) read it unpaid (readClaim)
+    const auto looked = m_looked.find(id);
+    if (!c && looked == m_looked.end())
+        return std::unexpected(ffi::Error::NotFound);
+    if (!engine || !m_configured)
         return std::unexpected(ffi::Error::State);
+    if (c && c->state == ClaimState::Paid)
+        return std::unexpected(ffi::Error::State);
+    // the core refuses an anonymous `to` and an id neither own nor freshly read (State): a kept
+    // one not read in this run (after a restart) is read first and claimed on the answer
+    if (c && !m_fresh.contains(id)) {
+        auto read = engine->creditStakeClaim(m_session.now(), id);
+        if (read) {
+            c->reclaim = true;
+            saveClaims();
+            emit stakeChanged();
+        }
+        m_session.pump();
+        return read;
+    }
     auto ok = engine->creditClaimStake(m_session.now(), false, id);
     if (ok) {
+        if (!c) {
+            m_status.claims.push_back(looked->second);
+            c = &m_status.claims.back();
+        }
+        m_looked.erase(id);
         c->state = ClaimState::Claiming;
+        c->reclaim = false;
+        m_claimSent.push_back(id);
         saveClaims();
         emit stakeChanged();
         changed(true);
     } else {
         logEd3kWarning(QStringLiteral("ed3k: stake: claim %1 refused (error %2)").arg(id).arg(int(ok.error())));
     }
+    m_session.pump();
+    return ok;
+}
+
+ffi::Result<> Ed3kCredit::readClaim(std::uint64_t id)
+{
+    auto* engine = m_session.engine();
+    if (id == 0)
+        return std::unexpected(ffi::Error::NotFound);
+    if (!engine || !m_configured || m_endpoints == 0)
+        return std::unexpected(ffi::Error::State);
+    auto ok = engine->creditStakeClaim(m_session.now(), id);
+    if (ok)
+        m_lookups.insert(id);
     m_session.pump();
     return ok;
 }
@@ -251,15 +292,10 @@ void Ed3kCredit::onEventPolled(const ffi::Event& ev, bool* handled)
         logEd3k(QStringLiteral("ed3k: credit transaction %1: state %2 (revert %3) %4")
                     .arg(t->what).arg(t->state).arg(t->revert).arg(m_status.lastTx));
         if (t->what == ED3K_CREDIT_TX_BURN_FOR_STAKE || t->what == ED3K_CREDIT_TX_CLAIM_STAKE) {
-            // a claim that did not go through can be sent again (the tx names no claim id)
-            if (t->what == ED3K_CREDIT_TX_CLAIM_STAKE
-                && (t->state == ED3K_CREDIT_STATE_REVERTED || t->state == ED3K_CREDIT_STATE_FAILED)) {
-                for (StakeClaim& c : m_status.claims)
-                    if (c.state == ClaimState::Claiming)
-                        c.state = ClaimState::Waiting;
-                saveClaims();
-                emit stakeChanged();
-            }
+            // // a claim that did not go through can be sent again (the tx names no claim id)
+            // if (CLAIM_STAKE && (REVERTED || FAILED)) { every Claiming → Waiting; save; stakeChanged }
+            // moved to onClaimTx, which also keeps the tx hashes (batch 12 #10)
+            onClaimTx(*t);
             emit stakeTx(int(t->what), int(t->state), int(t->revert), m_status.lastTx);
         }
         changed(true);
@@ -310,6 +346,9 @@ void Ed3kCredit::onSessionStatus()
             m_configured = false;
             m_configuredAs.clear();
             m_roots.clear();
+            m_fresh.clear();   // the core forgets what it read
+            m_lookups.clear();
+            m_looked.clear();
             changed(true);
         }
         return;
@@ -461,27 +500,58 @@ void Ed3kCredit::onStakeEvent(const ffi::Event& ev)
     if (const auto* sb = std::get_if<e::CreditStakeBurned>(&ev)) {
         logEd3k(QStringLiteral("ed3k: stake: burn mined, claim %1 for %2 ready at %3")
                     .arg(sb->id).arg(addressText(sb->to)).arg(sb->readyAt));
+        // the burn's hash (batch 12 #10): in the event, else the one its CreditTx named before
+        m_fresh.insert(sb->id);   // an own burn of this run: claimable at once
+        const QString burnTx = std::ranges::any_of(sb->tx, [](std::uint8_t b) { return b != 0; }) ? hexOf(sb->tx) : m_burnTx;
         if (StakeClaim* c = claim(sb->id))
-            *c = StakeClaim{sb->id, sb->to, sb->amount, sb->readyAt, ClaimState::Waiting};
+            *c = StakeClaim{sb->id, sb->to, sb->amount, sb->readyAt, ClaimState::Waiting, burnTx, {}, false};
         else
-            m_status.claims.push_back(StakeClaim{sb->id, sb->to, sb->amount, sb->readyAt, ClaimState::Waiting});
+            m_status.claims.push_back(StakeClaim{sb->id, sb->to, sb->amount, sb->readyAt, ClaimState::Waiting, burnTx, {}, false});
+        m_burnTx.clear();
     } else if (const auto* sc = std::get_if<e::CreditStakeClaimed>(&ev)) {
         logEd3k(QStringLiteral("ed3k: stake: claim %1 paid to %2").arg(sc->id).arg(addressText(sc->to)));
         if (StakeClaim* c = claim(sc->id)) {
             c->state = ClaimState::Paid;
             c->amount = sc->amount;
+            c->reclaim = false;
+            if (std::ranges::any_of(sc->tx, [](std::uint8_t b) { return b != 0; }))
+                c->claimTx = hexOf(sc->tx);
         }
     } else if (const auto* r = std::get_if<e::CreditStakeClaim>(&ev)) {
         StakeClaim* c = claim(r->id);
+        // a typed id (readClaim): the fresh view claimStake needs, and the answer for the user
+        if (m_lookups.erase(r->id) > 0) {
+            if (!r->failed)
+                m_fresh.insert(r->id);
+            if (!r->failed && r->to && !c)
+                m_looked[r->id] = StakeClaim{r->id, *r->to, r->amount, r->readyAt, ClaimState::Waiting, {}, {}, false};
+            else
+                m_looked.erase(r->id);
+            emit stakeLookup(r->id, r->to.has_value(), r->failed, r->to ? addressText(*r->to) : QString(), hexOf(r->amount),
+                             r->readyAt, c != nullptr, r->claimed);
+        }
         if (!c || r->failed)
             return;   // not ours, or the read failed: as it was
+        m_fresh.insert(r->id);
         if (!r->to) {
             // §6.7: a paid claim reads `to` = 0 (never made does not happen for a kept one)
             c->state = ClaimState::Paid;
+            c->reclaim = false;
         } else {
             c->to = *r->to;
             c->readyAt = r->readyAt;
             c->amount = r->amount;
+            // batch 12 #10: sent before a restart and still unpaid: claimed again once ready
+            // (later: not from inside the engine's poll)
+            if (c->reclaim && c->state != ClaimState::Paid && r->readyAt <= std::uint64_t(QDateTime::currentSecsSinceEpoch())) {
+                c->reclaim = false;
+                QTimer::singleShot(0, this, [this, id = r->id] {
+                    if (auto ok = claimStake(id); !ok)
+                        logEd3kWarning(QStringLiteral("ed3k: stake: claim %1 not sent again (error %2)").arg(id).arg(int(ok.error())));
+                    else
+                        logEd3k(QStringLiteral("ed3k: stake: claim %1 sent again (unpaid after a restart)").arg(id));
+                });
+            }
         }
     } else {
         return;
@@ -515,14 +585,18 @@ void Ed3kCredit::loadClaims()
         const auto to = parseAddress(o.value(QStringLiteral("to")).toString());
         const QByteArray amount = QByteArray::fromHex(o.value(QStringLiteral("amount")).toString().toLatin1());
         const int state = o.value(QStringLiteral("state")).toInt(0);
+        c.burnTx = o.value(QStringLiteral("burnTx")).toString();
+        c.claimTx = o.value(QStringLiteral("claimTx")).toString();
         if (!okId || c.id == 0 || !okAt || !to || amount.size() != qsizetype(c.amount.size()) || state < 0 || state > 2) {
             logEd3kWarning(QStringLiteral("ed3k: a claim of %1 does not parse, dropped").arg(kClaimsFile));
             continue;
         }
         c.to = *to;
         std::copy(amount.cbegin(), amount.cend(), reinterpret_cast<char*>(c.amount.data()));
-        // a claim sent before a restart: its outcome is read again (refreshClaims)
+        // a claim sent before a restart: its outcome is read again (refreshClaims), and it is
+        // claimed again while unpaid (batch 12 #10)
         c.state = state == int(ClaimState::Paid) ? ClaimState::Paid : ClaimState::Waiting;
+        c.reclaim = state == int(ClaimState::Claiming);
         if (!claim(c.id))
             m_status.claims.push_back(c);
     }
@@ -537,7 +611,10 @@ void Ed3kCredit::saveClaims() const
                                {QStringLiteral("to"), addressText(c.to)},
                                {QStringLiteral("amount"), hexOf(c.amount)},
                                {QStringLiteral("readyAt"), QString::number(c.readyAt)},
-                               {QStringLiteral("state"), int(c.state)}});
+                               // one to claim again is still the one sent
+                               {QStringLiteral("state"), int(c.reclaim ? ClaimState::Claiming : c.state)},
+                               {QStringLiteral("burnTx"), c.burnTx},
+                               {QStringLiteral("claimTx"), c.claimTx}});
     const QByteArray data = QJsonDocument(out).toJson(QJsonDocument::Indented);
     QDir().mkpath(m_dir);
     if (!writeBlob(QDir(m_dir).filePath(kClaimsFile), std::as_bytes(std::span{data.constData(), std::size_t(data.size())})))
@@ -548,6 +625,35 @@ Ed3kCredit::StakeClaim* Ed3kCredit::claim(std::uint64_t id)
 {
     const auto it = std::ranges::find(m_status.claims, id, &StakeClaim::id);
     return it == m_status.claims.end() ? nullptr : &*it;
+}
+
+void Ed3kCredit::onClaimTx(const ffi::event::CreditTx& t)
+{
+    const QString hash = t.tx ? hexOf(*t.tx) : QString();
+    if (t.what == ED3K_CREDIT_TX_BURN_FOR_STAKE) {
+        // kept with the claim its StakeBurned names next
+        if (!hash.isEmpty())
+            m_burnTx = hash;
+        return;
+    }
+    // the tx names no claim id: the claims sent are answered in order
+    if (!hash.isEmpty() && !m_claimSent.empty() && t.state == ED3K_CREDIT_STATE_SENT) {
+        if (StakeClaim* c = claim(m_claimSent.front()))
+            c->claimTx = hash;
+        m_claimSent.pop_front();
+        saveClaims();
+        emit stakeChanged();
+        return;
+    }
+    // a claim that did not go through can be sent again
+    if (t.state == ED3K_CREDIT_STATE_REVERTED || t.state == ED3K_CREDIT_STATE_FAILED) {
+        for (StakeClaim& c : m_status.claims)
+            if (c.state == ClaimState::Claiming)
+                c.state = ClaimState::Waiting;
+        m_claimSent.clear();
+        saveClaims();
+        emit stakeChanged();
+    }
 }
 
 } // namespace eMule::ed3k

@@ -235,6 +235,22 @@ public:
     [[nodiscard]] bool isEd3kResult() const { return m_ed3kRoot.size() == 32; }
     [[nodiscard]] const QByteArray& ed3kRoot() const { return m_ed3kRoot; }
     [[nodiscard]] const QByteArray& ed3kEd2k() const { return m_ed3kEd2k; }
+    /// The node ID (16 B) of the record's publisher; empty: none (judged by filter lists).
+    void setEd3kPublisher(const QByteArray& id) { m_ed3kPublisher = id; }
+    [[nodiscard]] const QByteArray& ed3kPublisher() const { return m_ed3kPublisher; }
+    /// What the followed ed3k filter lists said (filter-list.md §3); verdict 0: nothing.
+    struct Ed3kJudged {
+        int verdict = 0;          ///< 1 fake, 2 harmful, 3 spam, 4 good
+        bool hidden = false;      ///< a list (or the own one) hides it: kept, shown on request
+        bool own = false;         ///< the user's own verdict
+        bool shown = false;       ///< the user chose to show it anyway
+        bool disagree = false;    ///< lists disagree: marked only
+        QString by;               ///< the list's title or label; empty for the own
+        QString reason;
+        bool operator==(const Ed3kJudged&) const = default;
+    };
+    void setEd3kJudged(const Ed3kJudged& j) { m_ed3kJudged = j; }
+    [[nodiscard]] const Ed3kJudged& ed3kJudged() const { return m_ed3kJudged; }
 
     /// A server result the server itself found on Kad or a web page (FT_META_NETWORK):
     /// an ordinary eD2K file, downloadable like any other. Not a result of our own Kad
@@ -314,6 +330,8 @@ private:
     bool m_webOrigin = false;
     QByteArray m_ed3kRoot;   ///< ed3k row: 32 B root; empty otherwise
     QByteArray m_ed3kEd2k;
+    QByteArray m_ed3kPublisher;
+    Ed3kJudged m_ed3kJudged;
 };
 
 } // namespace eMule

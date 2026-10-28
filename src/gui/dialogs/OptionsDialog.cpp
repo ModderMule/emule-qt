@@ -6746,7 +6746,7 @@ void OptionsDialog::loadSettings()
     m_versionCheckDaysSpin->setEnabled(thePrefs.versionCheckEnabled());
     m_bringToFrontCheck->setChecked(thePrefs.bringToFrontOnLinkClick());
     {
-        const QString lang = thePrefs.language();
+        const QString lang = theUiState.language(thePrefs.language());
         int langIdx = m_langCombo->findData(lang);
         m_langCombo->setCurrentIndex(langIdx >= 0 ? langIdx : 0);
     }
@@ -6927,10 +6927,14 @@ void OptionsDialog::saveSettings()
     thePrefs.setVersionCheckDays(m_versionCheckDaysSpin->value());
     thePrefs.setBringToFrontOnLinkClick(m_bringToFrontCheck->isChecked());
 
-    // Language change requires restart
+    // Language change requires restart. Kept in uistate.yml: the GUI cannot rely
+    // on the core writing a preferences.yml it reads back (#75). The core still
+    // gets it below, as the web UI's default.
     {
         const QString newLang = m_langCombo->currentData().toString();
-        if (newLang != thePrefs.language()) {
+        if (newLang != theUiState.language(thePrefs.language())) {
+            theUiState.setLanguage(newLang);
+            theUiState.save();   // a restart may follow at once
             thePrefs.setLanguage(newLang);
             QMessageBox::information(this, tr("Language"),
                 tr("The language change will take effect after restarting the application."));

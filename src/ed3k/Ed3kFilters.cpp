@@ -4,11 +4,14 @@
 #include "Ed3kFilters.h"
 
 #include "Ed3kSession.h"
+#include "Ed3kSets.h"
 #include "Ed3kStore.h"
 
 #include "utils/Log.h"
 
 #include <QDir>
+#include <QFile>
+#include <QRandomGenerator>
 #include <QStringList>
 
 #include <algorithm>
@@ -23,6 +26,15 @@ namespace {
 const QString kFetchOwner = QStringLiteral("filter");
 /// the own verdicts mirrored (the core lists none); not a credential
 const QString kOwnFile = QStringLiteral("filter-own.dat");
+/// the key the own list's set is signed with (§2): a secret, never logged
+const QString kOwnKeyFile = QStringLiteral("filter-own.key");
+/// the version published last, shared again at start
+const QString kOwnListFile = QStringLiteral("filter-own.ed3kflt");
+const QString kOwnManifestFile = QStringLiteral("filter-own.ed3kset");
+/// set id bytes (file-set.md §5.1: 1 to 32)
+constexpr int kSetIdBytes = 16;
+/// changes of the own verdicts coalesced before a new version goes out
+constexpr int kPublishDelayMs = 3000;
 
 QString textOf(std::string_view s)
 {
@@ -50,6 +62,11 @@ Ed3kFilters::Ed3kFilters(Ed3kSession& session, const QString& configDir, QObject
 {
     // the base takes blocks and streams; the filter events are taken here
     connect(&m_session, &Ed3kSession::eventPolled, this, &Ed3kFilters::onFilterEvent, Qt::DirectConnection);
+    m_pubTimer.setSingleShot(true);
+    connect(&m_pubTimer, &QTimer::timeout, this, [this] {
+        if (isRunning() && !m_pubId.isEmpty())
+            (void)republish();
+    });
     loadOwn();
     if (m_session.isRunning())
         start();
@@ -65,13 +82,18 @@ void Ed3kFilters::start()
     // the own list's mode lives in filter.dat too; set again in case it was lost
     if (auto* e = m_session.engine(); e && (m_ownHide || m_ownRefuse))
         (void)e->filterSetMode(m_session.now(), ED3K_FILTER_OWN, m_ownHide, m_ownRefuse);
+    if (!m_pubId.isEmpty())
+        restorePublished();
 }
 
 void Ed3kFilters::stop()
 {
     if (!m_started)
         return;
+    m_pubTimer.stop();
     closeAll();
+    m_pubList.reset();
+    m_pubManifest.reset();
 }
 
 bool Ed3kFilters::isRunning() const
@@ -186,6 +208,8 @@ ffi::Result<> Ed3kFilters::setOwn(ffi::FilterSubject subject, const EntryId& id,
     if (verdict != ffi::FilterVerdict::None)
         m_own.push_back(Own{subject, id, verdict, reason});
     saveOwn();
+    // §2: the published list follows the own verdicts
+    schedulePublish();
     pumpSession();
     emit filtersChanged();
     return ok;
@@ -200,7 +224,8 @@ ffi::Result<ffi::Engine::FilterJudgement> Ed3kFilters::judgeOne(ffi::FilterSubje
 }
 
 std::optional<Ed3kFilters::Judgement> Ed3kFilters::judge(const std::optional<ffi::Root>& root, const std::optional<EntryId>& ed2k,
-                                                         const std::optional<ffi::NodeId>& author)
+                                                         const std::optional<ffi::NodeId>& author,
+                                                         const std::optional<ffi::Key32>& setAuthor)
 {
     std::vector<std::pair<ffi::FilterSubject, EntryId>> asks;
     if (root) {
@@ -212,9 +237,20 @@ std::optional<Ed3kFilters::Judgement> Ed3kFilters::judge(const std::optional<ffi
         asks.emplace_back(ffi::FilterSubject::Ed2k, *ed2k);
     if (author)
         asks.emplace_back(ffi::FilterSubject::Author, author->bytes);
+    // #18: the set's author too (§1): the core judges it with the row's first entry
+    // (filterJudge's set author key, batch 13)
+    // was (before the overload): asked as AUTHOR by its node ID, roomMemberId(*setAuthor)
+    // if (setAuthor)
+    //     if (const auto id = ffi::roomMemberId(*setAuthor); id && (!author || author->bytes != *id))
+    //         asks.emplace_back(ffi::FilterSubject::Author, *id);
+    auto* e = m_session.engine();
+    if (!e)
+        return std::nullopt;
     std::optional<Judgement> out;
+    bool first = true;
     for (const auto& [subject, id] : asks) {
-        const auto j = judgeOne(subject, id);
+        const auto j = e->filterJudge(subject, id, first ? setAuthor : std::nullopt);
+        first = false;
         if (!j || (j->said.empty() && !j->own && !j->hide && !j->refuse && !j->shown))
             continue;
         Judgement& r = out ? *out : out.emplace();
@@ -242,6 +278,75 @@ std::optional<Ed3kFilters::Judgement> Ed3kFilters::judge(const std::optional<ffi
         out->refuse = false;
     }
     return out;
+}
+
+ffi::Result<> Ed3kFilters::showAnyway(const ffi::Root& root, bool on)
+{
+    auto* e = m_session.engine();
+    if (!e)
+        return std::unexpected(ffi::Error::State);
+    EntryId id{};   // the file's entry (§1): over every list, the author's ones too (judge())
+    std::copy_n(root.bytes.begin(), id.size(), id.begin());
+    auto ok = e->filterShowAnyway(m_session.now(), ffi::FilterSubject::File, id, on);
+    if (ok)
+        logEd3kDebug(QStringLiteral("ed3k: filter: %1 shown anyway: %2").arg(hexOf(id)).arg(on));
+    pumpSession();
+    emit filtersChanged();
+    return ok;
+}
+
+Ed3kFilters::Published Ed3kFilters::published() const
+{
+    if (m_pubId.isEmpty())
+        return {};
+    auto seed = loadSecret(stateDir(m_configDir), kOwnKeyFile);
+    if (!seed)
+        return {};
+    const Secret key(*seed);
+    wipe(std::span<std::uint8_t>{*seed});
+    const auto pub = ffi::roomMemberKey(key.expose());   // the Ed25519 public key of a seed
+    if (!pub)
+        return {};
+    return Published{Ed3kSets::setLink(*pub, m_pubId, m_pubTitle), m_pubTitle};
+}
+
+std::expected<QString, ffi::Error> Ed3kFilters::publishOwn(const QString& title)
+{
+    if (!isRunning())
+        return std::unexpected(ffi::Error::State);
+    const QString t = title.trimmed();
+    if (t.isEmpty() || t.contains(QLatin1Char('/')))
+        return std::unexpected(ffi::Error::Argument);
+    if (m_pubId.isEmpty()) {
+        // a new set id once; kept so every version is one set (file-set.md §5.1)
+        std::array<quint32, kSetIdBytes / 4> words{};
+        QRandomGenerator::system()->fillRange(words.data(), qsizetype(words.size()));
+        m_pubId = QByteArray(reinterpret_cast<const char*>(words.data()), kSetIdBytes);
+    }
+    m_pubTitle = t;
+    saveOwn();
+    if (!republish())
+        return std::unexpected(ffi::Error::State);
+    emit filtersChanged();
+    return published().link;
+}
+
+void Ed3kFilters::unpublishOwn()
+{
+    m_pubTimer.stop();
+    if (m_pubList)
+        unshare(*m_pubList);
+    if (m_pubManifest)
+        unshare(*m_pubManifest);
+    m_pubList.reset();
+    m_pubManifest.reset();
+    m_pubId.clear();
+    m_pubTitle.clear();
+    QFile::remove(localPath(kOwnListFile));
+    QFile::remove(localPath(kOwnManifestFile));
+    saveOwn();
+    logEd3k(QStringLiteral("ed3k: own filter list no longer published"));
+    emit filtersChanged();
 }
 
 QString Ed3kFilters::ownFileName()
@@ -345,6 +450,13 @@ void Ed3kFilters::loadOwn()
             m_ownRefuse = f.at(2) == QLatin1StringView("1");
             continue;
         }
+        if (f.size() >= 3 && f.at(0) == QLatin1StringView("publish")) {
+            m_pubId = QByteArray::fromHex(f.at(1).toLatin1());
+            m_pubTitle = f.at(2);
+            if (m_pubId.size() != kSetIdBytes)
+                m_pubId.clear();
+            continue;
+        }
         if (f.size() < 3)
             continue;
         const int subject = f.at(0).toInt();
@@ -364,6 +476,8 @@ void Ed3kFilters::loadOwn()
 void Ed3kFilters::saveOwn() const
 {
     QString out = QStringLiteral("mode\t%1\t%2\n").arg(m_ownHide ? 1 : 0).arg(m_ownRefuse ? 1 : 0);
+    if (!m_pubId.isEmpty())
+        out += QStringLiteral("publish\t%1\t%2\n").arg(QString::fromLatin1(m_pubId.toHex()), field(m_pubTitle));
     for (const Own& o : m_own)
         out += QStringLiteral("%1\t%2\t%3\t%4\n").arg(int(o.subject)).arg(hexOf(o.id)).arg(int(o.verdict)).arg(field(o.reason));
     const QByteArray data = out.toUtf8();
@@ -375,6 +489,105 @@ void Ed3kFilters::saveOwn() const
 QString Ed3kFilters::localPath(const QString& name) const
 {
     return QDir(stateDir(m_configDir)).filePath(name);
+}
+
+bool Ed3kFilters::republish()
+{
+    auto* e = m_session.engine();
+    if (!e || m_pubId.isEmpty())
+        return false;
+    const auto t = m_session.now();
+    const QByteArray title = m_pubTitle.toUtf8();
+    if (auto ok = e->filterSetOwnTitle(t, std::string_view(title.constData(), std::size_t(title.size()))); !ok) {
+        logWarning(QStringLiteral("own filter list: title not taken (error %1)").arg(errorName(ok.error())));
+        return false;
+    }
+    // §1, §2: the list file, then a set holding it with a seq above the last
+    auto file = e->filterOwnWrite(t);
+    if (!file) {
+        logWarning(QStringLiteral("own filter list not written (error %1)").arg(errorName(file.error())));
+        return false;
+    }
+    const QByteArray list(reinterpret_cast<const char*>(file->bytes().data()), qsizetype(file->bytes().size()));
+    ffi::Hasher h;
+    if (!h.update(spanOf(list)))
+        return false;
+    const auto hashed = h.finish();
+    if (!hashed)
+        return false;
+    auto seed = loadOrCreateSecret(stateDir(m_configDir), kOwnKeyFile, {});
+    if (!seed) {
+        logWarning(QStringLiteral("own filter list: no list key"));
+        return false;
+    }
+    const Secret key(*seed);
+    wipe(std::span<std::uint8_t>{*seed});
+    auto manifest = e->filterOwnManifest(t, key.expose(), spanOf(m_pubId), hashed->root, hashed->size);
+    if (!manifest) {
+        logWarning(QStringLiteral("own filter list: no manifest (error %1)").arg(errorName(manifest.error())));
+        return false;
+    }
+    const QByteArray man(reinterpret_cast<const char*>(manifest->bytes().data()), qsizetype(manifest->bytes().size()));
+    if (auto ok = shareAndPublish(list, man); !ok) {
+        logWarning(QStringLiteral("own filter list not published (error %1)").arg(errorName(ok.error())));
+        return false;
+    }
+    // kept: shared and published again at start
+    (void)writeBlob(localPath(kOwnListFile), spanOf(list));
+    (void)writeBlob(localPath(kOwnManifestFile), spanOf(man));
+    logEd3k(QStringLiteral("ed3k: own filter list published (%1 verdict(s))").arg(m_own.size()));
+    return true;
+}
+
+void Ed3kFilters::restorePublished()
+{
+    const QByteArray list = readBlob(localPath(kOwnListFile));
+    const QByteArray man = readBlob(localPath(kOwnManifestFile));
+    // a version kept: the same again (its head is re-signed by the core); else a new one
+    if (!list.isEmpty() && !man.isEmpty() && shareAndPublish(list, man))
+        return;
+    (void)republish();
+}
+
+ffi::Result<> Ed3kFilters::shareAndPublish(const QByteArray& list, const QByteArray& manifest)
+{
+    auto* e = m_session.engine();
+    if (!e)
+        return std::unexpected(ffi::Error::State);
+    const QString base = m_pubTitle.isEmpty() ? QStringLiteral("filter list") : m_pubTitle;
+    const auto listRoot = shareBlob(list, base + QStringLiteral(".ed3kflt"), std::nullopt);
+    const auto manRoot = shareBlob(manifest, base + QStringLiteral(".ed3kset"), std::nullopt);
+    if (!listRoot || !manRoot)
+        return std::unexpected(ffi::Error::State);
+    auto seed = loadSecret(stateDir(m_configDir), kOwnKeyFile);
+    if (!seed)
+        return std::unexpected(ffi::Error::Io);
+    const Secret key(*seed);
+    wipe(std::span<std::uint8_t>{*seed});
+    const QByteArray n = (base + QStringLiteral(".ed3kset")).toUtf8();
+    const auto ok = e->setPublish(m_session.now(), spanOf(manifest), *manRoot, std::string_view(n.constData(), std::size_t(n.size())),
+                                  ffi::SetSigner::Seed, &key.expose());
+    if (!ok) {
+        unshare(*manRoot);
+        if (*listRoot != m_pubList)
+            unshare(*listRoot);
+        return std::unexpected(ok.error());
+    }
+    // the version before is no longer shared (a member with unchanged root stays, §2)
+    if (m_pubManifest && *m_pubManifest != *manRoot)
+        unshare(*m_pubManifest);
+    if (m_pubList && *m_pubList != *listRoot)
+        unshare(*m_pubList);
+    m_pubList = listRoot;
+    m_pubManifest = manRoot;
+    pumpSession();
+    return {};
+}
+
+void Ed3kFilters::schedulePublish()
+{
+    if (!m_pubId.isEmpty())
+        m_pubTimer.start(kPublishDelayMs);
 }
 
 } // namespace eMule::ed3k

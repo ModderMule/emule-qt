@@ -51,6 +51,8 @@ private slots:
     void countersCbor_roundTripsAndMissingKeysReadZero();
     void cumulativeUsenet_isBasePlusSession();
     void cumulativeKad_isBasePlusSessionAndFlushIsIdempotent();
+    void cumulativeHoster_isBasePlusSessionAndFlushIsIdempotent();
+    void cumulativeEd3k_isBasePlusSessionAndFlushIsIdempotent();
     void overheadStatsUpdated_signal();
     void uptimeSecs_countsFromTheStartTick();
     void init_stampsStartTickOnceOnly();
@@ -581,6 +583,55 @@ void tst_Statistics::cumulativeKad_isBasePlusSessionAndFlushIsIdempotent()
     stats.flushCumulativeToPrefs(prefs, {});
     QCOMPARE(prefs.cumKad(), total);
     QCOMPARE(stats.cumulativeKad(), total);
+}
+
+void tst_Statistics::cumulativeHoster_isBasePlusSessionAndFlushIsIdempotent()
+{
+    Preferences prefs;
+    HosterCounters banked;
+    banked.hosterBytes = 5'000;
+    banked.maxDownRate = 900;
+    banked.completed = 3;
+    prefs.setCumHoster(banked);
+
+    Statistics stats;
+    stats.init(prefs);
+    stats.hosterSession().hosterBytes += 250;
+    raiseCounter(stats.hosterSession().maxDownRate, 700);
+    stats.hosterSession().completed += 1;
+
+    const HosterCounters total = stats.cumulativeHoster();
+    QCOMPARE(total.hosterBytes, uint64{5'250});
+    QCOMPARE(total.maxDownRate, uint64{900});   // a peak, not an amount
+    QCOMPARE(total.completed, uint64{4});
+
+    stats.flushCumulativeToPrefs(prefs, {});
+    stats.flushCumulativeToPrefs(prefs, {});
+    QCOMPARE(prefs.cumHoster(), total);
+    QCOMPARE(stats.cumulativeHoster(), total);
+}
+
+void tst_Statistics::cumulativeEd3k_isBasePlusSessionAndFlushIsIdempotent()
+{
+    Preferences prefs;
+    Ed3kCounters banked;
+    banked.wireRecv = 8'000;
+    banked.peakContacts = 120;
+    prefs.setCumEd3k(banked);
+
+    Statistics stats;
+    stats.init(prefs);
+    stats.ed3kSession().wireRecv += 500;
+    raiseCounter(stats.ed3kSession().peakContacts, 80);
+
+    const Ed3kCounters total = stats.cumulativeEd3k();
+    QCOMPARE(total.wireRecv, uint64{8'500});
+    QCOMPARE(total.peakContacts, uint64{120});   // a peak, not an amount
+
+    stats.flushCumulativeToPrefs(prefs, {});
+    stats.flushCumulativeToPrefs(prefs, {});
+    QCOMPARE(prefs.cumEd3k(), total);
+    QCOMPARE(stats.cumulativeEd3k(), total);
 }
 
 void tst_Statistics::overheadStatsUpdated_signal()

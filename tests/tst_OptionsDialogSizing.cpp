@@ -62,18 +62,19 @@ namespace {
 constexpr int kPageBudget = 460;
 
 /// The stack has every Page; without EMULE_HAVE_BITTORRENT the two BitTorrent slots are
-/// empty and not in the sidebar
+/// empty and not in the sidebar. ed3k Credits is built but hidden for now (OptionsDialog hasPage)
 constexpr int kBuiltPages = int(OptionsDialog::PageCount);
 #ifdef EMULE_HAVE_BITTORRENT
-constexpr int kSidebarPages = kBuiltPages;
+constexpr int kSidebarPages = kBuiltPages - 1;
 #else
-constexpr int kSidebarPages = kBuiltPages - 2;
+constexpr int kSidebarPages = kBuiltPages - 3;
 #endif
 /// A page the sidebar lists in this build.
 constexpr bool listed(int page)
 {
+    if (page == OptionsDialog::PageEd3kCredits)
+        return false;
 #ifdef EMULE_HAVE_BITTORRENT
-    (void)page;
     return true;
 #else
     return page != OptionsDialog::PageBitTorrent && page != OptionsDialog::PageBtConnection;
@@ -91,7 +92,7 @@ const char* pageName(int page)
         "General", "Display", "Connection", "Proxy", "Server", "Directories", "Files",
         "Notifications", "Statistics", "IRC", "Messages", "Security", "Scheduler",
         "WebInterface", "Usenet", "Indexers", "Feeds", "Extended", "BitTorrent", "BtConnection",
-        "Ed3k", "Ed3kConnection", "Ed3kCredits", "Ed3kNames"};
+        "Ed3k", "Ed3kConnection", "Ed3kCredits", "Ed3kHoster", "Ed3kNames", "Ed3kFilters"};
     return (page >= 0 && page < int(std::size(names))) ? names[page] : "?";
 }
 

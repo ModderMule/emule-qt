@@ -122,6 +122,27 @@ void answer(const IpcMessage& msg, Ed3kFilters& f, const std::function<void(cons
         reply(result(seq, j, j ? judgementToCbor(*j) : QCborMap{}));
         break;
     }
+    case IpcMsgType::PublishEd3kFilterOwn: {
+        if (!msg.fieldBool(1)) {
+            f.unpublishOwn();
+            reply(IpcMessage::makeResult(seq, true, QCborMap{{QStringLiteral("link"), QString()}}));
+            break;
+        }
+        const auto link = f.publishOwn(msg.fieldString(0));
+        reply(link ? IpcMessage::makeResult(seq, true, QCborMap{{QStringLiteral("link"), *link}}) : failure(seq, int(link.error())));
+        break;
+    }
+    case IpcMsgType::ShowEd3kFilterAnyway: {
+        const QByteArray raw = QByteArray::fromHex(msg.fieldString(0).trimmed().toLatin1());
+        ffi::Root root;
+        if (raw.size() != qsizetype(root.bytes.size())) {
+            reply(failure(seq, int(ffi::Error::Argument)));
+            break;
+        }
+        std::copy(raw.cbegin(), raw.cend(), reinterpret_cast<char*>(root.bytes.data()));
+        reply(result(seq, f.showAnyway(root, msg.fieldBool(1))));
+        break;
+    }
     default:
         reply(IpcMessage::makeError(seq, 400, QStringLiteral("Unknown ed3k request")));
         break;
@@ -139,7 +160,8 @@ void setFilters(ed3k::Ed3kFilters* filters)
 bool isFiltersRequest(IpcMsgType type)
 {
     const int t = static_cast<int>(type);
-    return t >= 1130 && t <= 1139;
+    // batch 13: publish, show anyway
+    return (t >= 1130 && t <= 1139) || type == IpcMsgType::PublishEd3kFilterOwn || type == IpcMsgType::ShowEd3kFilterAnyway;
 }
 
 bool handleRequest(const IpcMessage& msg, const std::function<void(const IpcMessage&)>& reply)
@@ -183,10 +205,12 @@ QCborMap filtersToCbor()
                             {QStringLiteral("id"), hexOf(o.id)},
                             {QStringLiteral("verdict"), int(o.verdict)},
                             {QStringLiteral("reason"), o.reason}});
+    const auto pub = s_filters->published();
     return QCborMap{{QStringLiteral("running"), s_filters->isRunning()},
                     {QStringLiteral("lists"), lists},
                     {QStringLiteral("ownMode"), (s_filters->ownHide() ? 1 : 0) | (s_filters->ownRefuse() ? 2 : 0)},
-                    {QStringLiteral("own"), own}};
+                    {QStringLiteral("own"), own},
+                    {QStringLiteral("published"), QCborMap{{QStringLiteral("link"), pub.link}, {QStringLiteral("title"), pub.title}}}};
 #else
     return {{QStringLiteral("running"), false}};
 #endif

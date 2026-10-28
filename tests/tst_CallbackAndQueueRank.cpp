@@ -436,6 +436,8 @@ private slots:
     void natRendezvous_followsFailedIPv6Dial();
     // Kad buddy callback, whole chain: source result -> request to the buddy -> dial back
     void kadCallback_requestReachesBuddyAndDialBackAttaches();
+    // OP_CALLBACK_FAIL -> Kad buddy fallback (LowID moved servers; not MFC)
+    void serverCallbackFail_fallsBackToKadBuddy();
     void incomingHello_unknownPeer_staysSeparateClient();
     // Inbound OP_EMULEINFO — MFC ListenSocket.cpp:274-275
     void incomingHello_legacyEmulePeer_receivesEmuleInfo();
@@ -1494,6 +1496,78 @@ void tst_CallbackAndQueueRank::kadCallback_requestReachesBuddyAndDialBackAttache
     m_downloadQueue->removeSource(source);
     m_clientList->removeClient(source);
     m_downloadQueue->removeFile(partFile);
+}
+
+// ===========================================================================
+// Server callback failed -> Kad buddy (not MFC: MFC stays on the dead server path)
+// ===========================================================================
+
+void tst_CallbackAndQueueRank::serverCallbackFail_fallsBackToKadBuddy()
+{
+    KadFixture kad{KadMode::Connected};
+
+    QUdpSocket buddyReceiver;
+    QVERIFY(buddyReceiver.bind(QHostAddress::LocalHost, 0));
+
+    const uint8 fileHash[16] = {0x20, 0x21, 0x22, 0x23, 0x24, 0x25, 0x26, 0x27,
+                                0x28, 0x29, 0x2A, 0x2B, 0x2C, 0x2D, 0x2E, 0x2F};
+    const uint8 buddyId[16] = {0x01, 0x12, 0x23, 0x34, 0x45, 0x56, 0x67, 0x78,
+                               0x89, 0x9A, 0xAB, 0xBC, 0xCD, 0xDE, 0xEF, 0xF0};
+    PartFile partFile;
+    partFile.setFileSize(EMFileSize(1024 * 1024));
+    partFile.setFileHash(fileHash);
+
+    // A LowID source waiting on a server callback, with a known buddy
+    auto makeSource = [&](uint32 lowId) {
+        auto* c = new UpDownClient();
+        c->setUserIDHybrid(lowId);
+        c->setReqFile(&partFile);
+        c->setBuddyID(buddyId);
+        c->setBuddyAddress(Address::fromHostOrder(0x7F000001));
+        c->setBuddyPort(buddyReceiver.localPort());
+        c->setConnectingState(ConnectingState::ServerCallback);
+        c->setDownloadState(DownloadState::WaitCallback);
+        m_clientList->addClient(c);
+        m_clientList->addConnectingClient(c);
+        return c;
+    };
+    auto drain = [&] {
+        QTest::qWait(200);
+        flushUDPSocket(m_receiverUDP);              // theApp.clientUDP in this fixture
+        return buddyReceiver.hasPendingDatagrams();
+    };
+
+    // Two pending: the fail names no ID, so neither is touched
+    auto* a = makeSource(1111);
+    auto* b = makeSource(2222);
+    m_clientList->serverCallbackFailed();
+    QVERIFY(!drain());
+    QCOMPARE(a->connectingState(), ConnectingState::ServerCallback);
+    QCOMPARE(b->connectingState(), ConnectingState::ServerCallback);
+
+    // One pending: it is retried through the buddy
+    m_clientList->removeConnectingClient(b);
+    b->setConnectingState(ConnectingState::None);
+    m_clientList->serverCallbackFailed();
+    QVERIFY(QTest::qWaitFor([&] {
+        flushUDPSocket(m_receiverUDP);
+        return buddyReceiver.hasPendingDatagrams();
+    }, 5000));
+    const QByteArray dg = buddyReceiver.receiveDatagram().data();
+    QCOMPARE(dg.size(), 36);
+    QCOMPARE(static_cast<uint8>(dg[1]), static_cast<uint8>(KADEMLIA_CALLBACK_REQ));
+    QCOMPARE(a->connectingState(), ConnectingState::KadCallback);
+    QCOMPARE(a->downloadState(), DownloadState::WaitCallbackKad);
+
+    // Only a server callback falls back
+    QVERIFY(!a->fallBackToKadCallback());
+
+    for (auto* c : {a, b}) {
+        m_clientList->removeConnectingClient(c);
+        c->setReqFile(nullptr);
+        m_clientList->removeClient(c);
+        delete c;
+    }
 }
 
 // ===========================================================================

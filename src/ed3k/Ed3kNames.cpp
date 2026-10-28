@@ -30,6 +30,8 @@ const QString kSiteOwner = QStringLiteral("site");
 /// host-side mirrors (not credentials): followed lists, petnames
 const QString kListsFile = QStringLiteral("name-lists.dat");
 const QString kPetnamesFile = QStringLiteral("name-petnames.dat");
+/// websites kept across restarts (§6.4, Ed3kSiteCache)
+const QString kSiteCacheDir = QStringLiteral("site-cache");
 /// §5.1: an answer that has not come within 10 s is no answer
 constexpr int kDnsTimeoutMs = 10'000;
 
@@ -66,6 +68,7 @@ Ed3kNames::Ed3kNames(Ed3kSession& session, const QString& configDir, QObject* pa
 {
     // the base takes blocks and streams; the names events are taken here
     connect(&m_session, &Ed3kSession::eventPolled, this, &Ed3kNames::onNameEvent, Qt::DirectConnection);
+    m_cache = std::make_unique<Ed3kSiteCache>(joinDir(kSiteCacheDir), kSiteDiskMax);
     loadLocal();
     if (m_session.isRunning())
         start();
@@ -347,8 +350,13 @@ std::optional<Ed3kNames::SetRef> Ed3kNames::firstSet(const QStringList& links)
 
 QByteArray Ed3kNames::siteManifest(const ffi::Key32& key, const QByteArray& id) const
 {
-    const auto it = m_sites.find(siteKey(key, id));
-    return it == m_sites.end() ? QByteArray() : it->second.manifest;
+    // const auto it = m_sites.find(siteKey(key, id));
+    // return it == m_sites.end() ? QByteArray() : it->second.manifest;
+    // the one of this run, else the one kept on disk (§6.4: served until a newer one is in)
+    const QString k = siteKey(key, id);
+    if (const auto it = m_sites.find(k); it != m_sites.end() && !it->second.manifest.isEmpty())
+        return it->second.manifest;
+    return m_cache->manifest(k).value_or(QByteArray());
 }
 
 bool Ed3kNames::siteFollowed(const ffi::Key32& key, const QByteArray& id) const
@@ -368,8 +376,19 @@ bool Ed3kNames::followSite(const ffi::Key32& key, const QByteArray& id)
     s.id = id;
     if (s.topic)
         return true;
-    // nothing held is named: the manifests live in memory for this run (ToDo §6.4 in keepMember)
-    auto topic = e->setFollow(m_session.now(), key, spanOf(id), {}, nullptr, ffi::SetPolicy::Ask);
+    // was: nothing held is named: the manifests live in memory for this run (ToDo §6.4 in keepMember)
+    // (done: the manifest kept on disk is named as held, only newer heads are fetched)
+    // auto topic = e->setFollow(m_session.now(), key, spanOf(id), {}, nullptr, ffi::SetPolicy::Ask);
+    const QByteArray held = siteManifest(key, id);
+    std::optional<ffi::Root> heldRoot;
+    if (!held.isEmpty()) {
+        ffi::Hasher h;
+        if (h.update(spanOf(held)))
+            if (auto done = h.finish())
+                heldRoot = done->root;
+    }
+    auto topic = heldRoot ? e->setFollow(m_session.now(), key, spanOf(id), spanOf(held), &*heldRoot, ffi::SetPolicy::Ask)
+                          : e->setFollow(m_session.now(), key, spanOf(id), {}, nullptr, ffi::SetPolicy::Ask);
     if (!topic) {
         logDebug(QStringLiteral("website set not followed (error %1)").arg(errorName(topic.error())));
         return false;
@@ -386,16 +405,42 @@ void Ed3kNames::setSiteManifest(const ffi::Key32& key, const QByteArray& id, con
     s.key = key;
     s.id = id;
     s.manifest = manifest;
+    m_cache->putManifest(siteKey(key, id), manifest);
     emit siteChanged(toBytes(key), id);
 }
 
 std::optional<QByteArray> Ed3kNames::siteMember(const ffi::Root& root)
 {
     const auto it = std::ranges::find_if(m_members, [&](const auto& m) { return m.first == root; });
-    if (it == m_members.end())
-        return std::nullopt;
+    if (it == m_members.end()) {
+        // kept on disk (an earlier run, or gone from memory): checked against its root there
+        auto kept = m_cache->member(root);
+        if (!kept)
+            return std::nullopt;
+        keepMember(root, *kept, true);
+        return kept;
+    }
     m_members.splice(m_members.end(), m_members, it);   // the newest now
     return m_members.back().second;
+}
+
+std::optional<QByteArray> Ed3kNames::siteMemberRange(const ffi::Root& root, std::uint64_t offset, std::uint64_t len)
+{
+    if (len == 0)
+        return std::nullopt;
+    if (const Download* d = downloadOf(root); d && d->inMemory) {
+        // a fetch in memory: only the blocks there (each verified under the root, §6.3)
+        if (offset >= d->size || len > d->size - offset || d->memory.size() != qsizetype(d->size))
+            return std::nullopt;
+        for (std::uint64_t b = offset / kBlock * kBlock; b < offset + len; b += kBlock)
+            if (!d->got.contains(b))
+                return std::nullopt;
+        return d->memory.mid(qsizetype(offset), qsizetype(len));
+    }
+    const auto whole = siteMember(root);
+    if (!whole || offset >= std::uint64_t(whole->size()) || len > std::uint64_t(whole->size()) - offset)
+        return std::nullopt;
+    return whole->mid(qsizetype(offset), qsizetype(len));
 }
 
 bool Ed3kNames::fetchSiteMember(const ffi::Root& root, std::uint64_t size)
@@ -609,13 +654,16 @@ void Ed3kNames::onSiteManifest(const ffi::Topic& topic, const ffi::Bytes& file)
         return;
     // §6.3: a new version is served from the first request after its manifest is complete
     it->second.manifest = QByteArray(reinterpret_cast<const char*>(file.data()), qsizetype(file.size()));
+    m_cache->putManifest(t->second, it->second.manifest);
     emit siteChanged(toBytes(it->second.key), it->second.id);
 }
 
-void Ed3kNames::keepMember(const ffi::Root& root, const QByteArray& data)
+void Ed3kNames::keepMember(const ffi::Root& root, const QByteArray& data, bool fromDisk)
 {
     if (std::ranges::any_of(m_members, [&](const auto& m) { return m.first == root; }))
         return;
+    if (!fromDisk)
+        m_cache->putMember(root, data);
     m_members.emplace_back(root, data);
     m_memberBytes += std::uint64_t(data.size());
     // §6.4: visitors serve the site (shared from memory while kept; no SOURCE record here)
@@ -626,8 +674,8 @@ void Ed3kNames::keepMember(const ffi::Root& root, const QByteArray& data)
         unshare(old);
         m_members.pop_front();
     }
-    // ToDo: keep website members and manifests across restarts, 2 GiB by default, the
-    // sites viewed longest ago first (§6.4)
+    // was: ToDo: keep website members and manifests across restarts, 2 GiB by default, the
+    // sites viewed longest ago first (§6.4) (done: Ed3kSiteCache, LRU by last use)
 }
 
 QString Ed3kNames::siteKey(const ffi::Key32& key, const QByteArray& id)

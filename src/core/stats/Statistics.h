@@ -169,12 +169,18 @@ public:
     [[nodiscard]] const KadCounters& kadSession() const { return m_kadSession; }
     [[nodiscard]] BtCounters& btSession();
     [[nodiscard]] const BtCounters& btSession() const { return m_btSession; }
+    [[nodiscard]] HosterCounters& hosterSession();
+    [[nodiscard]] const HosterCounters& hosterSession() const { return m_hosterSession; }
+    [[nodiscard]] Ed3kCounters& ed3kSession();
+    [[nodiscard]] const Ed3kCounters& ed3kSession() const { return m_ed3kSession; }
 
     /// Banked base + this session — what the tree shows and the flush writes.
     [[nodiscard]] UsenetCounters cumulativeUsenet() const;
     [[nodiscard]] IndexerCounters cumulativeIndexer() const;
     [[nodiscard]] KadCounters cumulativeKad() const;
     [[nodiscard]] BtCounters cumulativeBt() const;
+    [[nodiscard]] HosterCounters cumulativeHoster() const;
+    [[nodiscard]] Ed3kCounters cumulativeEd3k() const;
 
     // --- Download quality counters ---
     //
@@ -353,6 +359,8 @@ public:
         IndexerCounters indexer;
         KadCounters kad;
         BtCounters bt;
+        HosterCounters hoster;
+        Ed3kCounters ed3k;
     };
 
     /// Cumulative totals as of right now — what both the Statistics tree and the
@@ -444,6 +452,8 @@ private:
     IndexerCounters m_indexerSession;
     KadCounters m_kadSession;
     BtCounters m_btSession;
+    HosterCounters m_hosterSession;
+    Ed3kCounters m_ed3kSession;
 
     // Rate history ring buffers
     std::list<RateEntry> m_downRateHistory;

@@ -93,6 +93,9 @@
     <ClCompile Include="Ed3kSetsBridge.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
+    <ClCompile Include="Ed3kPaidBridge.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
     <ClCompile Include="Ed3kFiltersBridge.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
@@ -174,6 +177,9 @@
       <Filter>Header Files</Filter>
     </ClInclude>
     <ClInclude Include="Ed3kSetsBridge.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="Ed3kPaidBridge.h">
       <Filter>Header Files</Filter>
     </ClInclude>
     <ClInclude Include="Ed3kFiltersBridge.h">

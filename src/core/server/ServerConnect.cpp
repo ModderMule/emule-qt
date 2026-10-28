@@ -1648,6 +1648,12 @@ ServerSocket* ServerConnect::createServerSocket(bool manualSingleConnect)
                     emit natServerPacket(opcode, payload);
             });
 
+    // Only the live session's callbacks are ours to attribute.
+    connect(socket, &ServerSocket::callbackFailed, this, [this, socket] {
+        if (socket == m_connectedSocket && theApp.clientList)
+            theApp.clientList->serverCallbackFailed();
+    });
+
     connect(socket, &ServerSocket::callbackRequested, this,
             [](uint32 clientIP, uint16 clientPort, const uint8* cryptData, uint32 cryptSize) {
                 if (!theApp.clientList)

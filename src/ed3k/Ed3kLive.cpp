@@ -29,6 +29,9 @@ struct Ed3kLive::Viewer {
     bool head = false;
 };
 
+/// init data roots kept for later viewers
+constexpr std::size_t kInitsKept = 4;
+
 namespace {
 
 QByteArray bytesOf(const ffi::Bytes& b)
@@ -55,6 +58,23 @@ void answerPlain(QHttpServerResponder& r, QHttpServerResponder::StatusCode code,
         r.write(h, code);
     else
         r.write(body, h, code);
+}
+
+/// A last chunk the container skips (Qt warns on an empty one): an ISO BMFF `free` box, a
+/// null TS packet, an EBML Void element.
+QByteArray fillerOf(const QString& media)
+{
+    if (media.contains(QLatin1String("mp2t"), Qt::CaseInsensitive)) {
+        QByteArray ts(188, char(0xFF));
+        ts[0] = char(0x47);
+        ts[1] = char(0x1F);
+        ts[2] = char(0xFF);
+        ts[3] = char(0x10);
+        return ts;
+    }
+    if (media.contains(QLatin1String("webm"), Qt::CaseInsensitive))
+        return QByteArray("\xEC\x81\x00", 3);
+    return QByteArray("\x00\x00\x00\x08" "free", 8);
 }
 
 } // namespace
@@ -192,6 +212,11 @@ void Ed3kLive::onEventPolled(const ffi::Event& event, bool* handled)
             *handled = true;
             w->initRoot = i->root;
             w->init = bytesOf(i->data);
+            // kept by root: the window may still need the one before (#15)
+            std::erase_if(w->inits, [&](const auto& kv) { return kv.first == i->root; });
+            w->inits.emplace_back(i->root, w->init);
+            while (w->inits.size() > kInitsKept)
+                w->inits.pop_front();
         }
     } else if (const auto* s = std::get_if<e::LiveSegment>(&event)) {
         if (Watched* w = find(s->stream)) {
@@ -268,12 +293,19 @@ bool Ed3kLive::onRequest(const QHttpServerRequest& req, QHttpServerResponder& re
         answerPlain(resp, QHttpServerResponder::StatusCode::Gone, "the broadcast ended\n");
         return true;
     }
+    // a browser at / gets the player page; the stream is at /stream (and / for players)
+    const QString path = req.url().path();
+    if (method == QHttpServerRequest::Method::Get && (path.isEmpty() || path == QLatin1String("/"))
+        && req.value("accept").contains("text/html")) {
+        answerPage(resp, id);
+        return true;
+    }
     auto v = std::make_unique<Viewer>(std::move(resp));
     v->head = method == QHttpServerRequest::Method::Head;
     if (w.viewers.size() >= kViewersMax) {
         auto& old = *w.viewers.front();
         if (old.begun)
-            old.responder.writeEndChunked({});
+            endResponse(w, old);   // was: writeEndChunked({}) (Qt: "Chunk must have length > 0")
         else
             answerPlain(old.responder, QHttpServerResponder::StatusCode::ServiceUnavailable);
         w.viewers.erase(w.viewers.begin());
@@ -294,7 +326,16 @@ bool Ed3kLive::onRequest(const QHttpServerRequest& req, QHttpServerResponder& re
 void Ed3kLive::onSegment(Watched& w, const ffi::event::LiveSegment& s)
 {
     const QByteArray data = bytesOf(s.data);
-    w.window.push_back(data);
+    // #15: one fMP4 response can't take a second moov: a gap, another init or a new
+    // broadcast end the begun responses; the player asks again and gets the new init
+    const bool restart = (w.start || w.windowInit || !w.window.empty())
+                         && (s.gap || s.init != w.windowInit || (w.start && *w.start != s.start));
+    if (restart)
+        restartViewers(w);
+    w.start = s.start;
+    w.windowInit = s.init;
+    // w.window.push_back(data);
+    w.window.push_back(Held{data, s.init});
     while (w.window.size() > kWindow)
         w.window.pop_front();
     ++w.segments;
@@ -325,21 +366,84 @@ void Ed3kLive::begin(Watched& w, Viewer& v)
         return;
     }
     v.responder.writeBeginChunked(h);
-    if (!w.init.isEmpty())
-        v.responder.writeChunk(w.init);
-    for (const QByteArray& seg : w.window)
-        v.responder.writeChunk(seg);
+    // if (!w.init.isEmpty())
+    //     v.responder.writeChunk(w.init);   (was: the newest init, maybe not the window's)
+    const QByteArray init = w.window.empty() ? w.init : initOf(w, w.window.back().init);
+    if (!init.isEmpty())
+        v.responder.writeChunk(init);
+    for (const Held& seg : w.window)
+        v.responder.writeChunk(seg.data);
 }
 
 void Ed3kLive::endViewers(Watched& w)
 {
     for (auto& v : w.viewers) {
         if (v->begun)
-            v->responder.writeEndChunked({});
+            endResponse(w, *v);   // was: writeEndChunked({})
         else
             answerPlain(v->responder, QHttpServerResponder::StatusCode::Gone, "the broadcast ended\n");
     }
     w.viewers.clear();
+}
+
+void Ed3kLive::restartViewers(Watched& w)
+{
+    const auto before = w.viewers.size();
+    std::erase_if(w.viewers, [&](const std::unique_ptr<Viewer>& v) {
+        if (!v->begun)
+            return false;   // waits on, begins with the new init
+        endResponse(w, *v);
+        return true;
+    });
+    w.window.clear();
+    ++w.restarts;
+    if (before != w.viewers.size())
+        logEd3kDebug(QStringLiteral("ed3k: live stream %1 restarted (gap, init or broadcast): %2 response(s) ended")
+                         .arg(idOf(w.stream))
+                         .arg(before - w.viewers.size()));
+    markChanged();
+}
+
+void Ed3kLive::endResponse(const Watched& w, Viewer& v)
+{
+    v.responder.writeEndChunked(fillerOf(w.media));
+}
+
+QByteArray Ed3kLive::initOf(const Watched& w, const std::optional<ffi::Root>& r)
+{
+    if (!r)
+        return {};
+    for (const auto& [root, data] : w.inits)
+        if (root == *r)
+            return data;
+    return w.initRoot == r ? w.init : QByteArray();
+}
+
+void Ed3kLive::answerPage(QHttpServerResponder& r, const QString& id) const
+{
+    // the player reconnects when a response ends (a restart, #15) until the stream is gone
+    const QString title = [&] {
+        const auto i = info(id);
+        return (i && !i->title.isEmpty() ? i->title : tr("ed3k live stream")).toHtmlEscaped();
+    }();
+    const QByteArray page = QStringLiteral(
+                                "<!doctype html><html><head><meta charset=\"utf-8\"><title>%1</title>"
+                                "<style>html,body{margin:0;height:100%;background:#000;color:#ccc;font-family:sans-serif}"
+                                "video{width:100%;height:100%}#m{position:fixed;top:8px;left:8px}</style></head><body>"
+                                "<video id=\"v\" controls autoplay muted playsinline></video><div id=\"m\"></div><script>"
+                                "const v=document.getElementById('v'),m=document.getElementById('m');let n=0;"
+                                "function go(){v.src='/stream?r='+(n++);v.play().catch(()=>{});}"
+                                "async function again(){const r=await fetch('/stream',{method:'HEAD'}).catch(()=>null);"
+                                "if(r&&r.status===410){m.textContent='%2';return;}setTimeout(go,500);}"
+                                "v.addEventListener('ended',again);v.addEventListener('error',again);go();"
+                                "</script></body></html>")
+                                .arg(title, tr("The broadcast ended."))
+                                .toUtf8();
+    QHttpHeaders h;
+    h.append(QHttpHeaders::WellKnownHeader::ContentType, "text/html; charset=utf-8");
+    h.append(QHttpHeaders::WellKnownHeader::CacheControl, "no-store");
+    h.append("X-Content-Type-Options", "nosniff");
+    r.write(page, h, QHttpServerResponder::StatusCode::Ok);
 }
 
 Ed3kLive::Watched* Ed3kLive::find(const ffi::Stream& stream)
@@ -360,6 +464,7 @@ Ed3kLive::Info Ed3kLive::infoOf(const Watched& w) const
     i.segments = w.segments;
     i.bytes = w.bytes;
     i.viewers = int(w.viewers.size());
+    i.restarts = w.restarts;
     i.url = urlOf(i.id);
     return i;
 }

@@ -3,6 +3,8 @@
 
 #include "Ed3kSetManifest.h"
 
+#include "Ed3kProto.h"
+
 #include <QDir>
 #include <QRegularExpression>
 
@@ -12,74 +14,77 @@ namespace eMule::ed3k {
 
 namespace {
 
-// protobuf wire reading, just enough for SetFile / FileSet / Member
-class Reader {
-public:
-    explicit Reader(QByteArrayView data) : m_data(data) {}
+// was: the reader here, now Ed3kProto.h (shared with Ed3kPaid)
+using Reader = Ed3kProtoReader;
 
-    [[nodiscard]] bool atEnd() const { return m_pos >= m_data.size(); }
-
-    bool varint(std::uint64_t& out)
-    {
-        out = 0;
-        for (int shift = 0; shift < 64; shift += 7) {
-            if (m_pos >= m_data.size())
-                return false;
-            const auto b = std::uint8_t(m_data[m_pos++]);
-            out |= std::uint64_t(b & 0x7F) << shift;
-            if ((b & 0x80) == 0)
-                return true;
-        }
-        return false;
-    }
-
-    /// field number and wire type of the next field
-    bool tag(std::uint32_t& field, std::uint32_t& wire)
-    {
-        std::uint64_t t = 0;
-        if (!varint(t) || (t >> 3) == 0 || (t >> 3) > 0x1FFFFFFF)
-            return false;
-        field = std::uint32_t(t >> 3);
-        wire = std::uint32_t(t & 7);
-        return true;
-    }
-
-    bool bytes(QByteArrayView& out)
-    {
-        std::uint64_t len = 0;
-        if (!varint(len) || len > std::uint64_t(m_data.size() - m_pos))
-            return false;
-        out = m_data.sliced(m_pos, qsizetype(len));
-        m_pos += qsizetype(len);
-        return true;
-    }
-
-    /// skips a field of wire type @p wire
-    bool skip(std::uint32_t wire)
-    {
-        std::uint64_t v = 0;
-        QByteArrayView b;
-        switch (wire) {
-        case 0: return varint(v);
-        case 1: return advance(8);
-        case 2: return bytes(b);
-        case 5: return advance(4);
-        default: return false;
-        }
-    }
-
-private:
-    bool advance(qsizetype n)
-    {
-        if (n > m_data.size() - m_pos)
-            return false;
-        m_pos += n;
-        return true;
-    }
-
-    QByteArrayView m_data;
-    qsizetype m_pos = 0;
-};
+// // protobuf wire reading, just enough for SetFile / FileSet / Member
+// class Reader {
+// public:
+//     explicit Reader(QByteArrayView data) : m_data(data) {}
+//
+//     [[nodiscard]] bool atEnd() const { return m_pos >= m_data.size(); }
+//
+//     bool varint(std::uint64_t& out)
+//     {
+//         out = 0;
+//         for (int shift = 0; shift < 64; shift += 7) {
+//             if (m_pos >= m_data.size())
+//                 return false;
+//             const auto b = std::uint8_t(m_data[m_pos++]);
+//             out |= std::uint64_t(b & 0x7F) << shift;
+//             if ((b & 0x80) == 0)
+//                 return true;
+//         }
+//         return false;
+//     }
+//
+//     /// field number and wire type of the next field
+//     bool tag(std::uint32_t& field, std::uint32_t& wire)
+//     {
+//         std::uint64_t t = 0;
+//         if (!varint(t) || (t >> 3) == 0 || (t >> 3) > 0x1FFFFFFF)
+//             return false;
+//         field = std::uint32_t(t >> 3);
+//         wire = std::uint32_t(t & 7);
+//         return true;
+//     }
+//
+//     bool bytes(QByteArrayView& out)
+//     {
+//         std::uint64_t len = 0;
+//         if (!varint(len) || len > std::uint64_t(m_data.size() - m_pos))
+//             return false;
+//         out = m_data.sliced(m_pos, qsizetype(len));
+//         m_pos += qsizetype(len);
+//         return true;
+//     }
+//
+//     /// skips a field of wire type @p wire
+//     bool skip(std::uint32_t wire)
+//     {
+//         std::uint64_t v = 0;
+//         QByteArrayView b;
+//         switch (wire) {
+//         case 0: return varint(v);
+//         case 1: return advance(8);
+//         case 2: return bytes(b);
+//         case 5: return advance(4);
+//         default: return false;
+//         }
+//     }
+//
+// private:
+//     bool advance(qsizetype n)
+//     {
+//         if (n > m_data.size() - m_pos)
+//             return false;
+//         m_pos += n;
+//         return true;
+//     }
+//
+//     QByteArrayView m_data;
+//     qsizetype m_pos = 0;
+// };
 
 struct RawMember {
     Ed3kSetEntry entry;
@@ -145,10 +150,13 @@ bool parseBody(QByteArrayView body, Ed3kSetManifest& out)
             return false;
         QByteArrayView b;
         std::uint64_t v = 0;
-        if (wire == 2 && (field == 1 || field == 2 || field == 3 || field == 6)) {
+        if (wire == 2 && (field == 1 || field == 2 || field == 3 || field == 6 || field == 12)) {
             if (!r.bytes(b))
                 return false;
-            if (field == 1) {
+            if (field == 12) {
+                // subscription.md §3: the SignedOffer of a paid catalogue
+                out.offer = b.toByteArray();
+            } else if (field == 1) {
                 out.title = QString::fromUtf8(b);
             } else if (field == 2) {
                 out.dirs.append(QString::fromUtf8(b));

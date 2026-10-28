@@ -1,14 +1,19 @@
 /// @file tst_Ed3kSetsDialog.cpp
 /// @brief "ed3k Sets" (src/gui/dialogs/Ed3kSetsDialog) driven with hand-built GetEd3kSets /
 /// GetEd3kLive maps, no daemon: the list, the member tree with its boxes, the ticks kept over
-/// a refresh, the live list. EMULE_SCREENSHOT_DIR set: a picture of each tab is saved there.
+/// a refresh, the live list, a paid set (Buy Pass, the pass in the info), a mount's waiting
+/// version, a broadcast of ours. EMULE_SCREENSHOT_DIR set: a picture of each tab is saved there.
 
 #include "dialogs/Ed3kSetsDialog.h"
 
 #include <QCborArray>
+#include <QCheckBox>
 #include <QComboBox>
+#include <QDateTime>
 #include <QDir>
+#include <QLabel>
 #include <QPixmap>
+#include <QPushButton>
 #include <QTabWidget>
 #include <QTest>
 #include <QTreeWidget>
@@ -68,6 +73,7 @@ class tst_Ed3kSetsDialog : public QObject {
 private slots:
     void listAndMemberTree();
     void liveStreams();
+    void aPaidSetAndAWaitingMount();
 };
 
 void tst_Ed3kSetsDialog::listAndMemberTree()
@@ -123,6 +129,55 @@ void tst_Ed3kSetsDialog::liveStreams()
     QCOMPARE(live->topLevelItem(0)->text(1), Ed3kSetsDialog::liveStateText(1));
     QCOMPARE(live->topLevelItem(0)->text(2), QStringLiteral("3"));
     shoot(dlg, QStringLiteral("ed3k-live.png"));
+}
+
+void tst_Ed3kSetsDialog::aPaidSetAndAWaitingMount()
+{
+    Ed3kSetsDialog dlg(nullptr);
+    const QString scope(32, QLatin1Char('5'));
+    QCborMap all = sets(-1);
+    QCborArray rows = all.value(QStringLiteral("sets")).toArray();
+    QCborMap two = rows.at(1).toMap();
+    two.insert(QStringLiteral("paidScope"), scope);
+    rows[1] = two;
+    QCborMap one = rows.at(0).toMap();
+    one.insert(QStringLiteral("pendingMounts"), QCborArray{QStringLiteral("Extras")});
+    rows[0] = one;
+    all.insert(QStringLiteral("sets"), rows);
+    dlg.fillSets(all);
+    dlg.show();
+    auto* list = dlg.findChild<QTreeWidget*>(QStringLiteral("ed3kSets"));
+    auto* buy = dlg.findChild<QPushButton*>(QStringLiteral("ed3kBuyPass"));
+    QVERIFY(list && buy);
+    // the mount's new version: offered, as a version
+    QCOMPARE(list->topLevelItem(0)->text(6), QStringLiteral("New version"));
+    QVERIFY(buy->isHidden());
+    // the paid set: a pass is needed, the price once the offer is known
+    QCOMPARE(list->topLevelItem(1)->text(6), Ed3kSetsDialog::paidStateText(0));
+    dlg.fillPaid(QCborMap{{QStringLiteral("reports"), false},
+                          {QStringLiteral("subs"), QCborArray{QCborMap{{QStringLiteral("scope"), scope},
+                                                                       {QStringLiteral("title"), QStringLiteral("Private photos")},
+                                                                       {QStringLiteral("state"), 2},
+                                                                       {QStringLiteral("until"), QDateTime::currentSecsSinceEpoch() + 86400},
+                                                                       {QStringLiteral("renewing"), true},
+                                                                       {QStringLiteral("hasOffer"), true},
+                                                                       {QStringLiteral("price"), QStringLiteral("4.99 EUR / month")}}}}});
+    list->setCurrentItem(list->topLevelItem(1));
+    QVERIFY(!buy->isHidden());
+    QVERIFY(!buy->isEnabled());   // a pass is held
+    const QString info = dlg.findChild<QLabel*>(QStringLiteral("ed3kSetInfo"))->text();
+    QVERIFY2(info.contains(QStringLiteral("4.99 EUR / month")), qPrintable(info));
+    QVERIFY(info.contains(QStringLiteral("48")));
+    auto* reports = dlg.findChild<QCheckBox*>();
+    QVERIFY(reports && !reports->isChecked());
+    shoot(dlg, QStringLiteral("ed3k-sets-paid.png"));
+    // a broadcast of ours in the live list
+    const QCborMap b{{QStringLiteral("id"), QString(32, QLatin1Char('d'))}, {QStringLiteral("title"), QStringLiteral("My TV")},
+                     {QStringLiteral("state"), 1},  {QStringLiteral("broadcast"), true},
+                     {QStringLiteral("link"), QStringLiteral("ed3k:live?key=a&id=b")}, {QStringLiteral("segments"), 3}};
+    dlg.fillLive(QCborMap{{QStringLiteral("streams"), QCborArray{b}}});
+    auto* live = dlg.findChild<QTreeWidget*>(QStringLiteral("ed3kLive"));
+    QCOMPARE(live->topLevelItem(0)->text(1), QStringLiteral("On air"));
 }
 
 QTEST_MAIN(tst_Ed3kSetsDialog)

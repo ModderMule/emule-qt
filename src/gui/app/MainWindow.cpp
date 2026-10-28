@@ -132,6 +132,23 @@ MainWindow::MainWindow(QWidget* parent)
             self->switchToTab(TabTorrents);
             self->m_torrentPanel->addTorrentData(name, data);
         });
+    // search rows hand torrents over only while the engine runs
+    Ed2kLinkImporter::setTorrentsReady([self = QPointer<MainWindow>(this)] {
+        return self && self->m_torrentPanel && self->m_torrentPanel->engineRunning();
+    });
+#endif
+#ifdef EMULE_HAVE_HOSTER_JD
+    // hoster links of web search rows go to the Hoster tab while hoster downloads are on
+    Ed2kLinkImporter::setHosterLinkHandler(
+        [self = QPointer<MainWindow>(this)](const QList<QStringList>& files, QWidget*) {
+            if (!self || !self->m_hosterPanel)
+                return;
+            self->switchToTab(TabHoster);
+            self->m_hosterPanel->addLinks(files);
+        },
+        [self = QPointer<MainWindow>(this)] {
+            return self && self->m_hosterPanel && self->m_hosterPanel->hostersEnabled();
+        });
 #endif
 
     setupPages();
@@ -803,7 +820,10 @@ void MainWindow::closeEvent(QCloseEvent* event)
     QMainWindow::closeEvent(event);
     // Explicit quit — on macOS the QSystemTrayIcon keeps the event loop alive
     // even after the last window is closed, preventing aboutToQuit from firing.
-    QApplication::quit();
+    // Queued: when this close is part of a quit already (signal, Cmd+Q), a nested
+    // quit is a second [NSApp terminate:] and AppKit then calls exit() from inside
+    // the loop (QThreadStorage warning). That quit ends the loop first, so this never runs.
+    QTimer::singleShot(0, qApp, &QCoreApplication::quit);
 }
 
 void MainWindow::showCoreStartProblem(CoreStartWatch::Problem problem)

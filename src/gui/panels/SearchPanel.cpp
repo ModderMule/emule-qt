@@ -24,7 +24,7 @@
 #include "utils/MetaResultActions.h"
 #include "utils/PreviewLauncher.h"
 #include "utils/StatusBarNotifier.h"
-#include "utils/TorrentLinks.h"
+#include "utils/Ed2kLinkImporter.h"
 #include "dialogs/PeerPreviewDialog.h"
 #include "utils/ViewNavigation.h"
 #include "utils/WebServices.h"
@@ -1280,6 +1280,9 @@ void SearchPanel::onResultContextMenu(const QPoint& pos)
     int64_t singleSize = 0;
     int peerPreviews = 0;
     QString peerPreviewHash;
+    // where a torrent / web row's Download goes: the Torrents / Hoster tab, when on
+    const bool torrentsOn = Ed2kLinkImporter::torrentsReady();
+    const bool hosterOn = Ed2kLinkImporter::hosterReady();
     for (const auto& idx : selection) {
         if (!tab)
             break;
@@ -1300,12 +1303,13 @@ void SearchPanel::onResultContextMenu(const QPoint& pos)
         anyContainer |= result->isContainer();
         anyMagnet |= !result->isMeta() || !result->magnet.isEmpty();
         // eD2K rows: not already in the transfer list. Usenet rows: the daemon asks.
-        // Web, container and magnet-only rows always have something to do, and
-        // torrents too when there is a Torrents tab to take them.
+        // Container rows always have something to do; torrents and magnets when the
+        // Torrents tab takes them, web rows when the Hoster tab does.
         if ((result->isEd3k() && (!m_downloadModel || !m_downloadModel->findByHash(result->ed3kRoot)))
-            || result->isUsenet() || result->isWeb() || result->isContainer()
-            || (result->isMagnetOnly() && !result->magnet.isEmpty())
-            || (gui::kBitTorrentBuilt && result->isTorrent() && !result->isMagnetOnly())
+            || result->isUsenet() || result->isContainer()
+            || (hosterOn && result->isWeb())
+            || (torrentsOn && result->isMagnetOnly() && !result->magnet.isEmpty())
+            || (torrentsOn && result->isTorrent() && !result->isMagnetOnly())
             || (!result->isMeta() && (!m_downloadModel || !m_downloadModel->findByHash(result->hash))))
             anyDownloadable = true;
         if (singleSel) {
@@ -1348,18 +1352,18 @@ void SearchPanel::onResultContextMenu(const QPoint& pos)
     }
     const bool onlyOne = int(anyEd2k) + int(anyUsenet) + int(anyTorrent) + int(anyMagnetOnly) + int(anyWeb)
                        + int(anyContainer) == 1;
-    // eNode torrent rows. With BitTorrent, Download adds them to the Torrents tab
-    // and this saves the .torrent for another client; without, saving is the default.
+    // eNode torrent rows. With BitTorrent on, Download adds them to the Torrents tab
+    // and this saves the .torrent for another client; off or not built, saving is the default.
     if (anyTorrent) {
         auto* torrentAction = m_contextMenu->addAction(
             QIcon(QStringLiteral(":/icons/Torrent.ico")),
-            gui::kBitTorrentBuilt ? tr("Save Torrent File...") : tr("Download Torrent"));
+            torrentsOn ? tr("Save Torrent File...") : tr("Download Torrent"));
         connect(torrentAction, &QAction::triggered, this, [this] { saveMetaFiles(1); });
-        if (onlyOne && !gui::kBitTorrentBuilt)
+        if (onlyOne && !torrentsOn)
             defaultAction = torrentAction;
     }
     // a magnet-only torrent has no .torrent: its magnet is what there is. With
-    // BitTorrent, Download hands it to the Torrents tab; without, copying is the default.
+    // BitTorrent on, Download hands it to the Torrents tab; else copying is the default.
     if (anyMagnetOnly) {
         auto* copyAction = m_contextMenu->addAction(QIcon(QStringLiteral(":/icons/Torrent.ico")),
                                                     tr("Copy Magnet Link"));
@@ -1370,10 +1374,11 @@ void SearchPanel::onResultContextMenu(const QPoint& pos)
                     rows.append(metaRow(*r));
             MetaResultActions::copyMagnets(rows);
         });
-        if (onlyOne && !gui::kBitTorrentBuilt)
+        if (onlyOne && !torrentsOn)
             defaultAction = copyAction;
     }
-    // eNode web rows: the links the page offered
+    // eNode web rows: the links the page offered. With hoster downloads on,
+    // Download starts them in the Hoster tab; off or not built, showing is the default.
     if (anyWeb) {
         auto* linksAction = m_contextMenu->addAction(QIcon(QStringLiteral(":/icons/Web.ico")),
                                                      tr("Show Links..."));
@@ -1387,7 +1392,7 @@ void SearchPanel::onResultContextMenu(const QPoint& pos)
                     rows.append(metaRow(*r));
             metaActions()->showWebLinks(tab->searchID, rows);
         });
-        if (onlyOne)
+        if (onlyOne && !hosterOn)
             defaultAction = linksAction;
     }
     // eNode link containers: the .dlc/.ccf/.rsdf as the page served it
@@ -1499,6 +1504,10 @@ void SearchPanel::onResultContextMenu(const QPoint& pos)
                 requestSearchResults(tab->searchID, true);   // spam re-scoring changed the rows
         });
     }
+
+    // ed3k filter lists (filter-list.md §2, §3): own verdicts, "show anyway", hidden rows
+    if (tab && !tab->isIndexer())
+        addEd3kFilterMenu(*tab);
 
     // Remove (remove from local results list)
     auto* removeAction = m_contextMenu->addAction(menuIcon("ListRemove.ico"), tr("Remove"));
@@ -1692,6 +1701,14 @@ void SearchPanel::requestSearchResults(uint32_t searchID, bool whole)
             row.metaCatalogId      = m.value(QStringLiteral("metaCatalogId")).toString();
             row.metaServers        = m.value(QStringLiteral("metaServers")).toArray();
             row.ed3kRoot           = m.value(QStringLiteral("ed3kRoot")).toString();
+            row.ed3kAuthor         = m.value(QStringLiteral("ed3kAuthor")).toString();
+            row.ed3kVerdict        = static_cast<int>(m.value(QStringLiteral("ed3kVerdict")).toInteger());
+            row.ed3kHidden         = m.value(QStringLiteral("ed3kHidden")).toBool();
+            row.ed3kOwn            = m.value(QStringLiteral("ed3kOwn")).toBool();
+            row.ed3kShown          = m.value(QStringLiteral("ed3kShown")).toBool();
+            row.ed3kDisagree       = m.value(QStringLiteral("ed3kDisagree")).toBool();
+            row.ed3kBy             = m.value(QStringLiteral("ed3kBy")).toString();
+            row.ed3kReason         = m.value(QStringLiteral("ed3kReason")).toString();
             row.directory          = m.value(QStringLiteral("directory")).toString();
             row.aichHash           = m.value(QStringLiteral("aichHash")).toString();
             row.kadPublishers      = static_cast<int>(m.value(QStringLiteral("kadPublishers")).toInteger());
@@ -1776,8 +1793,9 @@ void SearchPanel::downloadResults(const QModelIndexList& proxyRows, int category
         category = m_categoryTabs->count() > 1 ? std::max(m_categoryTabs->currentIndex(), 0) : 0;
 
     // eNode rows leave here: Usenet goes to the Usenet queue, a torrent to the
-    // Torrents tab (built without BitTorrent: its .torrent is saved, a magnet-only
-    // one's magnet copied), a web row shows its links, a link container is saved
+    // Torrents tab (BitTorrent off or not built: its .torrent is saved, a magnet-only
+    // one's magnet copied), a web row's links to the Hoster tab (hosters off or not
+    // built: they are shown), a link container is saved
     QModelIndexList ed2kRows;
     if (!tab->isIndexer() && tab->model) {
         QList<MetaResultActions::Row> usenet;
@@ -1796,7 +1814,7 @@ void SearchPanel::downloadResults(const QModelIndexList& proxyRows, int category
                 usenet.append(metaRow(*r));
             else if (r->isMagnetOnly())
                 magnets.append(metaRow(*r));
-            else if (gui::kBitTorrentBuilt && r->isTorrent())
+            else if (r->isTorrent() && Ed2kLinkImporter::torrentsReady())
                 torrents.append(metaRow(*r));
             else if (r->isWeb())
                 web.append(metaRow(*r));
@@ -1812,7 +1830,7 @@ void SearchPanel::downloadResults(const QModelIndexList& proxyRows, int category
         if (!torrents.isEmpty())
             metaActions()->addTorrents(tab->searchID, torrents);
         if (!web.isEmpty())
-            metaActions()->showWebLinks(tab->searchID, web);
+            metaActions()->downloadWebLinks(tab->searchID, web);
         if (!ed3k.empty())
             downloadEd3kResults(ed3k, category, paused.value_or(thePrefs.addNewFilesPaused()));
         if (ed2kRows.isEmpty())
@@ -3084,6 +3102,7 @@ void SearchPanel::applyNetworkFilter(SearchTab& tab)
         filter.torrent = m_showTorrentCheck->isChecked();
         filter.web = m_showWebCheck->isChecked();
     }
+    filter.ed3kHidden = tab.showEd3kHidden;
     proxy->setNetworkFilter(filter);
 }
 
@@ -3107,6 +3126,96 @@ void SearchPanel::downloadEd3kResults(const std::vector<const SearchResultRow*>&
             StatusBarNotifier::post(why.isEmpty() ? tr("The ed3k download could not be added.") : why, 6000);
         });
     }
+}
+
+// ed3k rows: the own verdict on the file or its publisher (the own list overrules every
+// list), "show anyway" of a row a list hides, and the tab's hidden rows on request (§3)
+void SearchPanel::addEd3kFilterMenu(SearchTab& tab)
+{
+    std::vector<const SearchResultRow*> rows;
+    bool anyHidden = false;
+    bool anyShown = false;
+    bool anyAuthor = false;
+    for (const auto& idx : m_resultView->selectionModel()->selectedRows())
+        if (const auto* r = refAt(idx).row; r && r->isEd3k() && r->ed3kRoot.size() == 64) {
+            rows.push_back(r);
+            anyHidden |= r->ed3kHidden;
+            anyShown |= r->ed3kShown;
+            anyAuthor |= r->ed3kAuthor.size() == 32;
+        }
+    const bool ed3kTab = tab.method == static_cast<int>(SearchType::Ed3k) || !rows.empty();
+    if (!ed3kTab || !m_ipc)
+        return;
+    QMenu* menu = m_contextMenu->addMenu(QIcon(QStringLiteral(":/icons/Ed3k.ico")), tr("ed3k Filter"));
+    const quint32 searchID = tab.searchID;
+    // each sends one request per row; the rows come again once the last one is answered
+    const auto send = [this, searchID](std::vector<IpcMessage> msgs, const QString& what) {
+        auto left = std::make_shared<std::size_t>(msgs.size());
+        for (auto& m : msgs)
+            m_ipc->sendRequest(std::move(m), [self = QPointer<SearchPanel>(this), left, what, searchID](const IpcMessage& r) {
+                if (!self)
+                    return;
+                IpcFeedback::checkOrWarn(r, self, what);
+                if (--*left == 0 && searchID != 0)
+                    self->requestSearchResults(searchID, true);   // judged again in the core
+            });
+    };
+    const auto own = [rows](int subject, int verdict) {
+        std::vector<IpcMessage> msgs;
+        for (const auto* r : rows) {
+            // a FILE entry is the root's first 16 bytes (filter-list.md §1)
+            const QString id = subject == 1 ? r->ed3kRoot.left(32) : r->ed3kAuthor;
+            if (id.size() != 32)
+                continue;
+            IpcMessage m(IpcMsgType::SetEd3kFilterOwn);
+            m.append(qint64(subject));
+            m.append(id.toLower());
+            m.append(qint64(verdict));
+            m.append(QString());
+            msgs.push_back(std::move(m));
+        }
+        return msgs;
+    };
+    QMenu* mark = menu->addMenu(tr("Mark File As"));
+    mark->setEnabled(!rows.empty());
+    const std::pair<int, QString> verdicts[] = {{1, tr("Fake")}, {3, tr("Spam")}, {2, tr("Harmful")}, {4, tr("Good")}};
+    for (const auto& [v, text] : verdicts)
+        connect(mark->addAction(text), &QAction::triggered, this, [send, own, v, what = tr("Mark File As")] { send(own(1, v), what); });
+    mark->addSeparator();
+    connect(mark->addAction(tr("Clear")), &QAction::triggered, this, [send, own, what = tr("Mark File As")] { send(own(1, 0), what); });
+    QMenu* author = menu->addMenu(tr("Mark Publisher As"));
+    author->setEnabled(anyAuthor);
+    connect(author->addAction(tr("Spam")), &QAction::triggered, this, [send, own, what = tr("Mark Publisher As")] { send(own(3, 3), what); });
+    author->addSeparator();
+    connect(author->addAction(tr("Clear")), &QAction::triggered, this, [send, own, what = tr("Mark Publisher As")] { send(own(3, 0), what); });
+    menu->addSeparator();
+    // §3: the user's local choice overrules every list
+    auto* show = menu->addAction(anyShown && !anyHidden ? tr("Hide Again") : tr("Show Anyway"));
+    show->setEnabled(anyHidden || anyShown);
+    connect(show, &QAction::triggered, this, [send, rows, on = anyHidden || !anyShown, what = tr("Show Anyway")] {
+        std::vector<IpcMessage> msgs;
+        for (const auto* r : rows) {
+            if (on ? !r->ed3kHidden : !r->ed3kShown)
+                continue;
+            IpcMessage m(IpcMsgType::ShowEd3kFilterAnyway);
+            m.append(r->ed3kRoot);
+            m.append(on);
+            msgs.push_back(std::move(m));
+        }
+        send(std::move(msgs), what);
+    });
+    auto* showHidden = menu->addAction(tr("Show Rows Hidden by Filter Lists"));
+    showHidden->setCheckable(true);
+    showHidden->setChecked(tab.showEd3kHidden);
+    connect(showHidden, &QAction::toggled, this, [this, searchID](bool on) {
+        for (SearchTab& t : m_tabs)
+            if (t.searchID == searchID) {
+                t.showEd3kHidden = on;
+                applyNetworkFilter(t);
+            }
+        if (const auto* cur = currentTab())
+            m_statusLabel->setText(tabStatusText(*cur));
+    });
 }
 
 } // namespace eMule

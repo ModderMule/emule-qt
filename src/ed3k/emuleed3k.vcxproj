@@ -182,6 +182,8 @@ cargo build --release -p packmule-ffi --manifest-path ..\..\libs\packmule\Cargo.
     <ClCompile Include="Ed3kSets.cpp" />
     <ClCompile Include="Ed3kSetManifest.cpp" />
     <ClCompile Include="Ed3kLive.cpp" />
+    <ClCompile Include="Ed3kLiveBroadcast.cpp" />
+    <ClCompile Include="Ed3kPaid.cpp" />
     <ClCompile Include="Ed3kHttp.cpp" />
     <ClCompile Include="Ed3kJoinBase.cpp" />
     <ClCompile Include="Ed3kLan.cpp" />
@@ -189,6 +191,7 @@ cargo build --release -p packmule-ffi --manifest-path ..\..\libs\packmule\Cargo.
     <ClCompile Include="Ed3kPlumbing.cpp" />
     <ClCompile Include="Ed3kSession.cpp" />
     <ClCompile Include="Ed3kShared.cpp" />
+    <ClCompile Include="Ed3kSiteCache.cpp" />
     <ClCompile Include="Ed3kSiteServer.cpp" />
     <ClCompile Include="Ed3kStore.cpp" />
     <ClCompile Include="Ed3kTorrentJoin.cpp" />
@@ -199,6 +202,8 @@ cargo build --release -p packmule-ffi --manifest-path ..\..\libs\packmule\Cargo.
     <ClInclude Include="Ed3kPlumbing.h" />
     <ClInclude Include="Ed3kStore.h" />
     <ClInclude Include="Ed3kSetManifest.h" />
+    <ClInclude Include="Ed3kSiteCache.h" />
+    <ClInclude Include="Ed3kProto.h" />
   </ItemGroup>
   <ItemGroup>
     <QtMoc Include="Ed3kBootstrap.h" />
@@ -216,6 +221,8 @@ cargo build --release -p packmule-ffi --manifest-path ..\..\libs\packmule\Cargo.
     <QtMoc Include="Ed3kRooms.h" />
     <QtMoc Include="Ed3kSets.h" />
     <QtMoc Include="Ed3kLive.h" />
+    <QtMoc Include="Ed3kLiveBroadcast.h" />
+    <QtMoc Include="Ed3kPaid.h" />
     <QtMoc Include="Ed3kHttp.h" />
     <QtMoc Include="Ed3kJoinBase.h" />
     <QtMoc Include="Ed3kLan.h" />

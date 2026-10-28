@@ -5,10 +5,11 @@
 ///
 /// Usenet "Download" queues the NZB daemon-side (DownloadMetaResult); "Download
 /// NZB File", "Download Torrent" and "Download Container" fetch the metafile and
-/// save it here; a web row's links open in WebLinksDialog. A torrent's Download
-/// fetches the .torrent for the Torrents tab, a magnet-only one hands its magnet
-/// there; built without BitTorrent the .torrent is saved and the magnet copied,
-/// for another client. Any fetch may answer
+/// save it here; a web row's links open in WebLinksDialog, and its Download hands
+/// them to the Hoster tab. A torrent's Download fetches the .torrent for the
+/// Torrents tab, a magnet-only one hands its magnet there; with BitTorrent off or
+/// not built the .torrent is saved and the magnet copied, for another client.
+/// Any fetch may answer
 /// AuthRequired / AccountInactive: one MetaAccountDialog per server opens, and
 /// every request that hit it is retried once it accepts.
 
@@ -57,6 +58,10 @@ public:
     /// Fetch each web row's links and show them, a dialog a row.
     void showWebLinks(quint32 searchID, const QList<Row>& rows);
 
+    /// Fetch each web row's links and start them in the Hoster tab, one download a
+    /// file with its mirrors; links shown instead while hoster downloads are off.
+    void downloadWebLinks(quint32 searchID, const QList<Row>& rows);
+
     /// Magnet-only torrents: their magnets to the clipboard, one a line.
     static void copyMagnets(const QList<Row>& rows);
 
@@ -80,6 +85,7 @@ private:
                    std::function<void(const QCborMap& data)> onData, std::function<bool()> onFail = {});
     void fetchAndSave(quint32 searchID, const Row& row, const QString& path, bool pathIsDir);
     void fetchAndShowLinks(quint32 searchID, const Row& row);
+    void fetchAndDownloadLinks(quint32 searchID, const Row& row);
     void fetchAndAddTorrent(quint32 searchID, const Row& row);
 
     /// Handle an auth failure: open (or reuse) the server's dialog, retry on accept.

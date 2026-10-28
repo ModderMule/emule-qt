@@ -23,6 +23,7 @@ Ed3kChain::Ed3kChain(Ed3kSession& session, QObject* parent)
     , m_session(session)
 {
     connect(&m_session, &Ed3kSession::statusChanged, this, &Ed3kChain::onSessionStatus);
+    connect(&m_session, &Ed3kSession::eventPolled, this, &Ed3kChain::onEventPolled, Qt::DirectConnection);
 }
 
 Ed3kChain::~Ed3kChain() = default;
@@ -34,27 +35,85 @@ void Ed3kChain::setConfig(const Ed3kChainPrefs& prefs, const QStringList& endpoi
     apply();
 }
 
-std::uint32_t Ed3kChain::providersFor(const QStringList& endpoints)
+namespace {
+
+QStringList usableOf(const QStringList& endpoints)
 {
     QStringList usable;
     for (const QString& u : endpoints)
         if (Ed3kHttp::rpcUrlUsable(u))
             usable << u;
+    return usable;
+}
+
+bool isLocal(const QString& url)
+{
+    const QString host = QUrl(url).host();
+    const QHostAddress ip(host);
+    return host.compare(QLatin1String("localhost"), Qt::CaseInsensitive) == 0 || (!ip.isNull() && ip.isLoopback());
+}
+
+} // namespace
+
+std::uint32_t Ed3kChain::providersFor(const QStringList& endpoints)
+{
+    // QStringList usable;
+    // for (const QString& u : endpoints)
+    //     if (Ed3kHttp::rpcUrlUsable(u))
+    //         usable << u;
+    const QStringList usable = usableOf(endpoints);
     if (usable.isEmpty())
         return 0;
-    const bool allLocal = std::ranges::all_of(usable, [](const QString& u) {
-        const QString host = QUrl(u).host();
-        const QHostAddress ip(host);
-        return host.compare(QLatin1String("localhost"), Qt::CaseInsensitive) == 0 || (!ip.isNull() && ip.isLoopback());
-    });
+    // const bool allLocal = std::ranges::all_of(usable, [](const QString& u) { ... loopback ... });
+    const bool allLocal = std::ranges::all_of(usable, isLocal);
     // §4.3: a local node needs nothing more; remote: two independent providers SHOULD agree.
     // One remote endpoint only: 1 (literal reading: asking two of one is no read at all)
     return allLocal ? 1 : std::min<std::uint32_t>(2, std::uint32_t(usable.size()));
 }
 
+bool Ed3kChain::singleRemote(const QStringList& endpoints)
+{
+    const QStringList usable = usableOf(endpoints);
+    return usable.size() == 1 && !isLocal(usable.front());
+}
+
+QString Ed3kChain::refusalText(std::uint32_t why, const QString& message)
+{
+    // the node's text: plain text of a stranger, kept short
+    const QString text = message.simplified().left(200);
+    if (why == ED3K_CHAIN_REFUSED)
+        return text.isEmpty() ? tr("The chain node refused it.") : tr("The chain node refused it: %1").arg(text);
+    if (why == ED3K_CHAIN_BAD_REQUEST)
+        return tr("The forwarder refused the site's request (its signature or nonce does not verify); it was not sent.");
+    return {};
+}
+
 // ---------------------------------------------------------------------------
 // Private
 // ---------------------------------------------------------------------------
+
+void Ed3kChain::onEventPolled(const ffi::Event& ev, bool* handled)
+{
+    Q_UNUSED(handled)   // others may take them too; only told here
+    namespace e = ffi::event;
+    std::uint32_t why = 0;
+    std::string message;
+    if (const auto* f = std::get_if<e::ChainFailed>(&ev)) {
+        why = f->why;
+        message = f->message;
+    } else if (const auto* t = std::get_if<e::ChainTxFailed>(&ev)) {
+        why = t->why;
+        message = t->message;
+    } else {
+        return;
+    }
+    const QString text = refusalText(why, QString::fromUtf8(message.data(), qsizetype(message.size())));
+    if (text.isEmpty())
+        return;
+    m_lastRefusal = text;
+    logEd3kWarning(QStringLiteral("ed3k: chaintube: %1").arg(text));
+    emit refused(text);
+}
 
 void Ed3kChain::onSessionStatus()
 {
@@ -108,6 +167,12 @@ void Ed3kChain::apply()
     m_configuredAs = as;
     m_problem = providers == 0 ? QStringLiteral("no chaintube RPC endpoints: reads off") : QString();
     logEd3k(QStringLiteral("ed3k: chaintube chain %1 configured (%2 provider(s) per read)").arg(m_prefs.chainId).arg(providers));
+    // ruling #8: with one remote endpoint the §4.3 SHOULD can't be met; said once
+    if (singleRemote(m_endpoints) && !m_toldSingle) {
+        m_toldSingle = true;
+        logEd3kWarning(QStringLiteral("ed3k: chaintube: only one remote JSON-RPC endpoint, so no second provider checks "
+                                      "its answers; two independent providers are recommended (chaintube.md §4.3)"));
+    }
     m_session.pump();
 }
 

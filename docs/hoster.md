@@ -12,12 +12,12 @@ Downloads from links at file hosters, verified under ed3k roots. Spec:
 | `ed3k_link_id`, `ed3k_link_alias_same` | `libs/packmule/crates/packmule-ffi/src/pure.rs` | the id of a link (for the §4 lookup) and its `SAME` record (published when hoster links are published) |
 | `ed3k_link_share` | `libs/packmule/crates/packmule-ffi/src/links.rs` | §2/§4.1: the links of a shared root go with its `SOURCE` record and to downloaders (`FileStatus.links`); empty stops |
 | `Ed3kHosterJoin` | `src/ed3k/` | the host side: items, §4 lookup, answers to `LinkResolve`, feeds the resolver's part file in, writes verified blocks, moves the file to incoming |
-| `Ed3kResolver` | `src/ed3k/Ed3kResolver.h` | the interface: match, check, open, expand, accountCheck, puzzles |
+| `Ed3kResolver` | `src/ed3k/Ed3kResolver.h` | the interface: match, check, open, expand, accountCheck, sites, puzzles |
 | `Ed3kJdResolver` | `src/ed3k/` | the JDownloader sidecar over stdin/stdout JSON lines; installs `resolver.zip` |
 | `Ed3kJavaRuntime` | `src/ed3k/` | finds Java 17+, else downloads Temurin 21 into `<eMuleQt>/runtime/jre` |
 | sidecar driver | `tools/hoster-resolver/` | Java, GPL v3+: JD's plugins unmodified, `SingleDownloadController` subclass, puzzle solver |
-| IPC | `src/daemon/Ed3kHosterBridge.*` | requests 1100-1106, pushes 1150-1154, `hoster` map in `GetEd3kStatus` |
-| GUI | `panels/HosterPanel`, `dialogs/HosterPuzzleDialog`, Options › ed3k › Hoster | list, add links, image puzzles, settings, accounts |
+| IPC | `src/daemon/Ed3kHosterBridge.*` | requests 1100-1108 (1107 GetHosterStats, Statistics branch; 1108 CheckHosterLinks), pushes 1150-1154 and 1159 (PushHosterLinkCheck), `hoster` map in `GetEd3kStatus` |
+| GUI | `panels/HosterPanel`, `dialogs/HosterPuzzleDialog`, Options › ed3k › Hoster | list, add links (dialog, or Paste links from the clipboard), image puzzles, settings, accounts; web search rows' Download (`MetaResultActions`, `WebLinksDialog`) adds one item per file with its mirrors, only while `enabled` (else Show Links); the links dialog checks its links (Status column) |
 
 ## Flow of a pasted link
 
@@ -31,6 +31,53 @@ Downloads from links at file hosters, verified under ed3k roots. Spec:
 5. The core asks the resolver (`LinkResolve`); the sidecar writes `<temp>/ed3k-hoster/<id>/jd-<link>/data.part`;
    the join reads it as it grows and hands it in with `linkData`, in order, then `linkEnd`.
 6. Complete: the file moves to the incoming folder; eMule's shared files take it from there.
+
+## Mirrors
+
+A web search row's file can have several links (`AddHosterLinks` field 1: `[[url, mirror…]]`).
+One item per file; `Item::mirrors` holds the links not tried yet (saved in `items.json`).
+The tick moves to the next one (`mirrorDue`) when the current link is:
+
+- hard failed: *Gone*, *No resolver* (no plugin), *Failed* (not a disk error)
+- stuck: *Needs you* for a login, a browser puzzle or a block; a hoster wait over 5 min
+
+Never for a cause no mirror changes (hosters off, no/unready resolver, no node), never Paused
+or Queued. Verified blocks under a root stay, so the next mirror is checked against the same
+root. The last mirror keeps its state; Resume retries it. Host column tooltip: *Mirror n of m*.
+
+**Order** (`rankMirrors`, in `addMirrored`; stable): offline links last, then the account tier
+(2 premium with traffic left and not expired, 1 any other account, 0 none; `accountTier`), then
+links checked online before unchecked ones, else the page's order. Pasted links have no mirrors.
+
+**Account tier**: the join checks each stored login (`accountCheck`) on start, when the accounts
+change and with a link check, at most every 6 h; the manual check in Options fills the same cache.
+In memory only. A login that failed to check counts as an account (1), one found not valid as none.
+
+**Hoster domains**: a login matches its domain, subdomains and "www.", and every other domain of
+the same hoster. The resolver names them from JD's plugin (`LazyHostPlugin.getSitesSupported`):
+`sites` for each account host (on start / account change, once), and `match` adds `sites` for a
+hoster plugin. E.g. a login for `rg.to` counts for `rapidgator.net` and `rapidgator.asia` links,
+checked or not (`siteOf`). An older resolver without `sites`: own domain and subdomains only.
+
+## Link checks of a links dialog
+
+`WebLinksDialog` sends `CheckHosterLinks` with every link when it opens, while hosters are `enabled`
+and `checkSearchLinks` is on (else no Status/Account column). Status: green dot online, red offline, grey unknown; Account:
+"Premium account" with a gold star, or "Account" (shown once one link has a login). Download never waits: unchecked links count as
+online and are checked by the item as before.
+
+The check goes where an item's own goes, through the core: `match` (the plugin host, for the
+account), `linkAddRootless`, `linkAsk(CHECK)`, answered in `onResolve` with the hoster's account.
+`LinkChecked` = online; `LinkEnded` `GONE`/`SIZE_MISMATCH`/`CORRUPT`/`BAD_SOURCE` = offline; else, a
+wait, no plugin or 60 s without an answer = unknown. Puzzles are skipped. At most `checkMaxParallel` (30) at once and
+`checkMaxPerHost` (5) at one hoster, its domains counted as one; a link that waits for a slot or a
+busy hoster over 2 min is unknown.
+
+- The result and the core's link are kept 30 min: Download soon after starts from the link the
+  core already judged. A dead one is refused at once (*Gone*, then the next mirror), no second check.
+- An item's current link is never checked beside it: its state answers (downloading or complete
+  online, gone offline, else unknown).
+- Download while a check runs: the item takes the link over and goes on from that check.
 
 ## Resume
 
@@ -73,6 +120,9 @@ A stream that breaks goes on from where it stood instead of starting over:
 | `puzzles` | `ed3kHosterPuzzles` | on | show image puzzles |
 | `publishLinks` | `ed3kHosterPublishLinks` | **on** | §4.1: vouched links get an `ALIAS` record and are handed out; switching on asks first. Off = holding links back; on is the `hoster.md` §4.1 default |
 | `fromPeers` | `ed3kHosterFromPeers` | on | use links peers name |
+| `checkSearchLinks` | `ed3kHosterCheckSearchLinks` | on | a web search row's links dialog checks its links |
+| `checkMaxParallel` | — (YAML only) | 30 | 1-256: those checks at once |
+| `checkMaxPerHost` | — (YAML only) | 5 | 1-64: of them at one hoster |
 | `accounts` | `ed3kHosterAccounts` | empty | `{host, user, passwordEncrypted}`; IPC never carries a password out |
 
 ## Java
@@ -105,8 +155,8 @@ on and looks up links and answers `NO_RESOLVER`.
 
 ## Tests
 
-- `tst_Ed3kHoster`: the join on a real engine with a fake resolver; the JD resolver's event parser;
-  the Java probe and Adoptium parsing.
+- `tst_Ed3kHoster`: the join on a real engine with a fake resolver (mirrors, link checks `probe_*`,
+  order `rank_*`); the JD resolver's event parser; the Java probe and Adoptium parsing.
 - Live, opt-in: `EMULE_HOSTER_LIVE=1` downloads a small archive.org file through the real sidecar;
   `EMULE_HOSTER_LIVE_JAVA=1` fetches Temurin into a temp folder.
 

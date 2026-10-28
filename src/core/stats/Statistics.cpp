@@ -374,6 +374,18 @@ BtCounters& Statistics::btSession()
     return m_btSession;
 }
 
+HosterCounters& Statistics::hosterSession()
+{
+    Q_ASSERT(QThread::currentThread() == thread());
+    return m_hosterSession;
+}
+
+Ed3kCounters& Statistics::ed3kSession()
+{
+    Q_ASSERT(QThread::currentThread() == thread());
+    return m_ed3kSession;
+}
+
 UsenetCounters Statistics::cumulativeUsenet() const
 {
     return combineCounters(m_cumBase.usenet, m_usenetSession);
@@ -392,6 +404,16 @@ KadCounters Statistics::cumulativeKad() const
 BtCounters Statistics::cumulativeBt() const
 {
     return combineCounters(m_cumBase.bt, m_btSession);
+}
+
+HosterCounters Statistics::cumulativeHoster() const
+{
+    return combineCounters(m_cumBase.hoster, m_hosterSession);
+}
+
+Ed3kCounters Statistics::cumulativeEd3k() const
+{
+    return combineCounters(m_cumBase.ed3k, m_ed3kSession);
 }
 
 // ---------------------------------------------------------------------------
@@ -709,6 +731,8 @@ void Statistics::rebaseCumulative(const Preferences& prefs)
     b.indexer = prefs.cumIndexer();
     b.kad = prefs.cumKad();
     b.bt = prefs.cumBt();
+    b.hoster = prefs.cumHoster();
+    b.ed3k = prefs.cumEd3k();
 
     m_connAvgDownBase = prefs.connAvgDownRate();
     m_connAvgUpBase = prefs.connAvgUpRate();
@@ -819,6 +843,8 @@ Statistics::cumulativeTotals(const ExternalSessionCounters& ext) const
     t.indexer = combineCounters(m_cumBase.indexer, m_indexerSession);
     t.kad = combineCounters(m_cumBase.kad, m_kadSession);
     t.bt = combineCounters(m_cumBase.bt, m_btSession);
+    t.hoster = combineCounters(m_cumBase.hoster, m_hosterSession);
+    t.ed3k = combineCounters(m_cumBase.ed3k, m_ed3kSession);
 
     return t;
 }
@@ -908,6 +934,8 @@ void Statistics::flushCumulativeToPrefs(Preferences& prefs,
     prefs.setCumIndexer(t.indexer);
     prefs.setCumKad(t.kad);
     prefs.setCumBt(t.bt);
+    prefs.setCumHoster(t.hoster);
+    prefs.setCumEd3k(t.ed3k);
 
     // MFC writes the blended Total into ConnAvgDown/UpRate at save
     // (srchybrid/Preferences.cpp:824), so the next session blends with it. The

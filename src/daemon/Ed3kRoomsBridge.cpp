@@ -75,6 +75,9 @@ QCborMap roomToCbor(const Rooms::Room& r)
             {QStringLiteral("nick"), nick},
             {QStringLiteral("moderator"), r.isModerator(key)},
         });
+    QCborArray muted;   // batch 13: member IDs muted here (room.md §6)
+    for (const auto& id : r.muted)
+        muted.append(hexOf(id));
     return QCborMap{
         {QStringLiteral("room"), Rooms::roomHex(r.room)},
         {QStringLiteral("link"), r.link},
@@ -95,6 +98,8 @@ QCborMap roomToCbor(const Rooms::Room& r)
         {QStringLiteral("memberId"), memberIdOf(r.memberKey)},
         {QStringLiteral("mods"), mods},
         {QStringLiteral("members"), members},
+        {QStringLiteral("muted"), muted},
+        {QStringLiteral("notAdmitted"), r.notAdmitted},
     };
 }
 
@@ -152,6 +157,17 @@ void answer(const IpcMessage& msg, Rooms& rooms, const std::function<void(const 
         return;
     }
     switch (msg.type()) {
+    case IpcMsgType::MuteEd3kRoomMember: {
+        const QByteArray raw = QByteArray::fromHex(msg.fieldString(1).trimmed().toLatin1());
+        std::array<std::uint8_t, 16> id{};
+        if (raw.size() != qsizetype(id.size())) {
+            fail(ffi::Error::Argument);
+            break;
+        }
+        std::copy(raw.cbegin(), raw.cend(), reinterpret_cast<char*>(id.data()));
+        done(rooms.setMuted(*room, id, msg.fieldBool(2)));
+        break;
+    }
     case IpcMsgType::GetEd3kRoomPosts: {
         QCborArray posts;
         for (const auto& p : rooms.find(*room)->posts)
@@ -250,7 +266,7 @@ void setRooms(ed3k::Ed3kRooms* rooms)
 bool isRoomsRequest(IpcMsgType type)
 {
     const int t = static_cast<int>(type);
-    return t >= 1120 && t <= 1129;
+    return (t >= 1120 && t <= 1129) || type == IpcMsgType::MuteEd3kRoomMember;   // batch 13: mute
 }
 
 bool handleRequest(const IpcMessage& msg, const std::function<void(const IpcMessage&)>& reply)

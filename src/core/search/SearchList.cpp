@@ -778,6 +778,18 @@ void SearchList::setNotesSearchStatus(const uint8* fileHash, bool running)
         restored->setKadCommentSearchRunning(running);
 }
 
+void SearchList::updateResults(const std::function<bool(SearchFile*)>& change)
+{
+    for (const auto& entry : m_fileLists) {
+        for (const auto& file : entry.files) {
+            if (file->listParent() != nullptr || !change(file.get()))
+                continue;
+            stamp(file.get());
+            emit resultUpdated(file.get());
+        }
+    }
+}
+
 std::vector<uint32> SearchList::searchIDs() const
 {
     std::vector<uint32> ids;

@@ -442,10 +442,14 @@ int main(int argc, char* argv[])
     // once the daemon's GetPreferences answer lands, and after the Options dialog.
     eMule::LogWidget::applyLogFileSettings();
 
+    // Before the translators: the language lives here, preferences.yml is only
+    // the fallback for setups that never picked one in this GUI (#75)
+    eMule::theUiState.load(configDir);
+
     // Determine locale: user-selected language or system default
     QLocale appLocale;
-    if (!eMule::thePrefs.language().isEmpty())
-        appLocale = QLocale(eMule::thePrefs.language());
+    if (const QString lang = eMule::theUiState.language(eMule::thePrefs.language()); !lang.isEmpty())
+        appLocale = QLocale(lang);
 
     // Load Qt's own translations (dialogs, standard buttons, etc.)
     QTranslator qtTranslator;
@@ -500,7 +504,6 @@ int main(int argc, char* argv[])
                                "edits, %4 removed")
                     .arg(seed.seeded).arg(seed.refreshed).arg(seed.conflicts).arg(seed.pruned));
     }
-    eMule::theUiState.load(configDir);
     if (!cli.screenshotMode())
         eMule::theUiState.countStart();
     eMule::CountryFlags::setSettings(eMule::theUiState.showCountryFlags());

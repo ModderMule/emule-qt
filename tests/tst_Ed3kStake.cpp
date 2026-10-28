@@ -2,6 +2,8 @@
 /// @brief ed3k stake tokens (credit.md §6.7) in the daemon: a burn through a fake JSON-RPC
 /// ledger answered on the session's events (no endpoint URL: the RpcRequest is ours), the
 /// claim recorded, kept in stake-claims.json, loaded again and read again, claimed; the IPC.
+/// Batch 13: a typed id read first, then claimed; the tx hashes kept; a claim sent before a
+/// restart sent again while unpaid.
 
 #include "Ed3kBridge.h"
 #include "Ed3kCredit.h"
@@ -16,6 +18,7 @@
 #include <QJsonArray>
 #include <QJsonDocument>
 #include <QJsonObject>
+#include <QSignalSpy>
 #include <QTemporaryDir>
 #include <QTest>
 
@@ -75,6 +78,7 @@ public:
     QString from;               ///< the node's credit address (log topic)
     quint64 claimReadyAt = 0;   ///< readyAt of the burn's claim
     bool claimPaid = false;     ///< stakeClaims(1) reads paid (to = 0)
+    bool holdClaims = false;    ///< a claimStake sent is never mined (no receipt)
     QStringList methods;
     int burns = 0;
     int claims = 0;
@@ -113,6 +117,14 @@ private:
             const QByteArray raw = QByteArray::fromHex(params.at(0).toString().mid(2).toLatin1());
             const QByteArray hash = keccak(raw);
             m_kinds[hash] = raw.contains(keccak("burnForStake(uint256,address)").left(4)) ? 1 : 2;
+            // claimStake(uint256 id): the id word after the selector
+            if (const qsizetype at = raw.indexOf(keccak("claimStake(uint256)").left(4)); at >= 0 && m_kinds[hash] == 2) {
+                const QByteArray w = raw.mid(at + 4, 32);
+                quint64 id = 0;
+                for (qsizetype i = 24; i < w.size(); ++i)
+                    id = id << 8 | quint8(w.at(i));
+                m_claimIds[hash] = id;
+            }
             result = hex0x(hash);
         } else if (method == QStringLiteral("eth_getTransactionReceipt")) {
             const QByteArray hash = QByteArray::fromHex(params.at(0).toString().mid(2).toLatin1());
@@ -131,7 +143,7 @@ private:
     QJsonValue receipt(const QByteArray& hash)
     {
         const int kind = m_kinds.value(hash);
-        if (kind == 0)
+        if (kind == 0 || (kind == 2 && holdClaims))
             return QJsonValue::Null;
         QJsonObject log{{QStringLiteral("address"), kLedger}};
         if (kind == 1) {
@@ -143,7 +155,8 @@ private:
         } else {
             ++claims;
             // StakeClaimed(uint256 indexed id, address indexed to, uint256 amount)
-            log.insert(QStringLiteral("topics"), QJsonArray{hex0x(keccak("StakeClaimed(uint256,address,uint256)")), hex0x(word(1)),
+            log.insert(QStringLiteral("topics"), QJsonArray{hex0x(keccak("StakeClaimed(uint256,address,uint256)")),
+                                                            hex0x(word(m_claimIds.value(hash, 1))),
                                                             hex0x(addressWord(kTo))});
             log.insert(QStringLiteral("data"), hex0x(word(2'000'000)));
         }
@@ -156,6 +169,7 @@ private:
 
     Ed3kSession& m_s;
     QHash<QByteArray, int> m_kinds;   ///< tx hash → 1 burn, 2 claim
+    QHash<QByteArray, quint64> m_claimIds;   ///< claim tx hash → its id
 };
 
 } // namespace
@@ -169,6 +183,8 @@ private slots:
     void claimsReloadAndAreReadAgain();
     void claimPaysTheClaim();
     void ipcRefusesBadInputAndListsClaims();
+    void aTypedIdIsReadThenClaimed();
+    void aClaimSentBeforeARestartIsSentAgain();
 
 private:
     static Ed3kSettings loopback(const QString& dir);
@@ -301,6 +317,98 @@ void tst_Ed3kStake::ipcRefusesBadInputAndListsClaims()
     QCOMPARE(claims.at(0).toMap().value(QStringLiteral("to")).toString(), kTo);
     QCOMPARE(claims.at(0).toMap().value(QStringLiteral("state")).toInteger(), 0);
     QCOMPARE(last.fieldMap(1).value(QStringLiteral("address")).toString(), c.status().address);
+    s.stop();
+}
+
+// §9.1 (batch 12 #9): an id that is no own burn only after stakeClaims(id); then kept like an
+// own one, with the claim's tx hash (#10)
+void tst_Ed3kStake::aTypedIdIsReadThenClaimed()
+{
+    QTemporaryDir dir;
+    QVERIFY(dir.isValid());
+    Ed3kSession s;
+    FakeLedger l(s);
+    Ed3kCredit c(s, dir.path());
+    Ed3kCreditBridge::setCredit(&c);
+    configure(s, c, l, dir.path());
+    QTRY_VERIFY_WITH_TIMEOUT(c.status().stakeRate.has_value(), 10000);
+    l.claimReadyAt = quint64(QDateTime::currentSecsSinceEpoch()) - 60;
+    QSignalSpy looked(&c, &Ed3kCredit::stakeLookup);
+    QCOMPARE(c.claimStake(7).error_or(::ed3k::Error{}), ::ed3k::Error::NotFound);   // not read yet
+
+    // read through the IPC: PushEd3kStakeLookup's data comes as stakeLookup
+    IpcMessage last;
+    IpcMessage read(IpcMsgType::ReadEd3kStakeClaim, 4);
+    read.append(qint64(7));
+    QVERIFY(Ed3kBridge::handleRequest(read, [&](const IpcMessage& r) { last = r; }));
+    QVERIFY(last.fieldBool(0));
+    QTRY_COMPARE_WITH_TIMEOUT(looked.count(), 1, 10000);
+    QCOMPARE(looked.first().at(0).toULongLong(), quint64(7));
+    QVERIFY(looked.first().at(1).toBool());    // found
+    QVERIFY(!looked.first().at(2).toBool());   // not failed
+    QCOMPARE(looked.first().at(3).toString(), kTo);
+    QVERIFY(!looked.first().at(6).toBool());   // not kept
+    QVERIFY(c.claims().empty());
+
+    QVERIFY2(c.claimStake(7), "claimStake of a read id refused");
+    QCOMPARE(c.claims().size(), std::size_t(1));
+    QCOMPARE(c.claims().front().id, std::uint64_t(7));
+    QTRY_VERIFY_WITH_TIMEOUT(c.claims().front().state == Ed3kCredit::ClaimState::Paid, 20000);
+    QVERIFY(!c.claims().front().claimTx.isEmpty());
+    QVERIFY(c.claims().front().burnTx.isEmpty());   // not our burn
+    QFile f(claimsPath(dir.path()));
+    QVERIFY(f.open(QIODevice::ReadOnly));
+    const QJsonObject o = QJsonDocument::fromJson(f.readAll()).array().at(0).toObject();
+    QCOMPARE(o.value(QStringLiteral("claimTx")).toString(), c.claims().front().claimTx);
+
+    // a paid one reads `to` = 0: nothing to claim
+    l.claimPaid = true;
+    QVERIFY(c.readClaim(8));
+    QTRY_COMPARE_WITH_TIMEOUT(looked.count(), 2, 10000);
+    QVERIFY(!looked.at(1).at(1).toBool());
+    QCOMPARE(c.claimStake(8).error_or(::ed3k::Error{}), ::ed3k::Error::NotFound);
+    s.stop();
+}
+
+// batch 12 #10: the burn's and the claim's hashes are kept; a claim whose tx was pending at
+// the stop is read again at the start and claimed again while unpaid
+void tst_Ed3kStake::aClaimSentBeforeARestartIsSentAgain()
+{
+    QTemporaryDir dir;
+    QVERIFY(dir.isValid());
+    QString burnTx;
+    {
+        Ed3kSession s;
+        FakeLedger l(s);
+        Ed3kCredit c(s, dir.path());
+        configure(s, c, l, dir.path());
+        burnOnce(c, l);
+        burnTx = c.claims().front().burnTx;
+        QVERIFY(!burnTx.isEmpty());
+        l.holdClaims = true;   // sent, never mined
+        QVERIFY(c.claimStake(1));
+        QTRY_VERIFY_WITH_TIMEOUT(!c.claims().front().claimTx.isEmpty(), 20000);
+        QVERIFY(c.claims().front().state == Ed3kCredit::ClaimState::Claiming);
+        s.stop();
+    }
+    QFile f(claimsPath(dir.path()));
+    QVERIFY(f.open(QIODevice::ReadOnly));
+    const QJsonObject o = QJsonDocument::fromJson(f.readAll()).array().at(0).toObject();
+    QCOMPARE(o.value(QStringLiteral("burnTx")).toString(), burnTx);
+    QVERIFY(!o.value(QStringLiteral("claimTx")).toString().isEmpty());
+    QCOMPARE(o.value(QStringLiteral("state")).toInt(), 1);
+
+    Ed3kSession s;
+    FakeLedger l(s);
+    l.claimReadyAt = quint64(QDateTime::currentSecsSinceEpoch()) - 60;
+    Ed3kCredit c(s, dir.path());
+    QVERIFY(c.claims().front().reclaim);
+    QCOMPARE(c.claims().front().burnTx, burnTx);
+    configure(s, c, l, dir.path());
+    // read again, unpaid: claimed again, mined this time
+    QTRY_VERIFY_WITH_TIMEOUT(c.claims().front().state == Ed3kCredit::ClaimState::Paid, 20000);
+    QCOMPARE(l.claims, 1);
+    QVERIFY(!c.claims().front().reclaim);
     s.stop();
 }
 

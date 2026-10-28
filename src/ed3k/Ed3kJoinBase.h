@@ -20,6 +20,7 @@
 #include <QTimer>
 
 #include <atomic>
+#include <chrono>
 #include <cstdint>
 #include <deque>
 #include <expected>
@@ -71,6 +72,10 @@ signals:
 public:
     /// Whether this node serves @p root (a member or a blob) now.
     [[nodiscard]] bool sharesRoot(const ffi::Root& root) const { return m_shared.contains(root); }
+    /// A priority switch at a node may happen now: with a slot always; queued, only 30 min after
+    /// the last queued switch there (Protocol.md §12.5: a 2nd within the budget is BUSY).
+    [[nodiscard]] static bool switchAllowed(bool queued, std::optional<std::chrono::steady_clock::time_point> last,
+                                            std::chrono::steady_clock::time_point now);
 
 protected:
     static constexpr std::uint64_t kBlock = 256 * 1024;
@@ -95,6 +100,8 @@ protected:
         std::set<std::uint64_t> got;
         /// sources last searched (ms since the epoch); 0: never
         qint64 searchedAt = 0;
+        /// stream → the uploader's piece bitmap as FileStatus told it (missing bits held)
+        std::map<std::uint64_t, std::vector<std::uint8_t>> sourceHave;
     };
 
     /// A file read for a worker. size, mtimeMs >= 0: the file must still have them.
@@ -140,8 +147,11 @@ protected:
     [[nodiscard]] virtual bool sharedGone(const Shared& s) const { Q_UNUSED(s) return false; }
     /// Engine events the base leaves alone (AliasFound of searches not startSetSearch's ...).
     virtual void onOtherEvent(const ffi::Event& event) { Q_UNUSED(event) }
+    /// Download priority, -2 (very low) to 2 (very high), eD2K's order (realPriority - 2).
     /// Turn order at a source node shared with other downloads (one file stream per uploader,
-    /// Protocol.md §12.5): higher first, the same in arrival order. Default 0.
+    /// Protocol.md §12.5): higher first (a higher waiter takes the node from a lower holder at
+    /// once), the same in arrival order. Also the weight of a download in the session's
+    /// block-request depth and its stream cap (priorityWeight). Default 0.
     [[nodiscard]] virtual int downloadPriority(const Download& d) const { Q_UNUSED(d) return 0; }
     /// Whether @p owner still wants a set: the candidates of its set searches are tried only then.
     [[nodiscard]] virtual bool wantsSet(const QString& owner) const { Q_UNUSED(owner) return false; }
@@ -181,6 +191,14 @@ protected:
     /// A source of a download's root: asked for the file.
     void addSource(const ffi::Root& root, const ffi::Source& source);
     void requestBlocks(const ffi::Root& root);
+    /// downloadPriority() of @p root changed: its waits re-ordered, nodes taken from or given
+    /// to other downloads by the new order, its depth asked again.
+    void priorityChanged(const ffi::Root& root);
+    /// Sources (open streams) holding each 4 MiB piece of @p d, as their FileStatus told it
+    /// (255 at most); empty: no stream told a bitmap.
+    [[nodiscard]] static std::vector<std::uint8_t> pieceAvailability(const Download& d);
+    /// Weight of a download (eD2K's order: very low 1 … very high 5).
+    [[nodiscard]] int priorityWeight(const Download& d) const;
 
     // -- serving -----------------------------------------------------------
 
@@ -341,6 +359,9 @@ private:
     [[nodiscard]] NodeTurns& turns() const;
     /// The FileRequest of @p root to @p source; the node is held by it then. false: refused.
     bool openStream(const ffi::Root& root, const ffi::Source& source);
+    /// A stream of @p root already holds the node of @p source: the newer record goes to
+    /// packmule, which keeps the stream and takes its endpoints and relays (true).
+    bool refreshStream(const ffi::Root& root, const ffi::Source& source);
     /// Another download holds the node of @p source: @p root waits for its turn (true).
     bool waitTurn(const ffi::Root& root, const ffi::Source& source);
     /// The node a stream of this join holds.
@@ -359,6 +380,16 @@ private:
     void turnLost(const ffi::Root& root, const ffi::NodeId& node);
     /// Every turn and wait of this join; @p pass: held nodes go to the next waiter.
     void dropTurns(bool pass);
+    /// The holder of @p node switches to a waiter of higher priority, if one waits. true: switched.
+    bool yieldToHigher(const ffi::NodeId& node);
+
+    // -- priority shares (the session's downloads, every join) ------------------
+
+    /// Streams a download may open (its weight: kMaxStreams at normal).
+    [[nodiscard]] std::size_t streamCap(const Download& d) const;
+    /// Ranges to keep outstanding on each of @p granted streams of @p d: the engine's hint
+    /// for every granted stream of the session, shared by priorityWeight.
+    [[nodiscard]] std::size_t rangesPerStream(const Download& d, std::size_t granted) const;
 
     QString m_tag;
     std::map<ffi::Root, Shared> m_shared;

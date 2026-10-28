@@ -29,6 +29,7 @@
 #include <deque>
 #include <map>
 #include <optional>
+#include <set>
 #include <span>
 #include <vector>
 
@@ -85,6 +86,10 @@ public:
         std::uint64_t generation = 0;
         bool keyHeld = false;
         bool keyMissing = false;
+        /// member IDs muted by the user (§6: local, for themselves alone); kept in joined.cbor
+        std::set<std::array<std::uint8_t, 16>> muted;
+        /// a member answered ROOM_MEMBER (§4.2 step 4): a closed room not admitted yet (#17)
+        bool notAdmitted = false;
 
         [[nodiscard]] bool isModerator(const ::ed3k::Key32& member) const;
         /// This member may admit, ban and start generations.
@@ -122,6 +127,9 @@ public:
     ::ed3k::Result<> lift(const ::ed3k::Room& room, const ::ed3k::Key32& member);
     ::ed3k::Result<std::uint64_t> startGeneration(const ::ed3k::Room& room);
 
+    /// Mutes (or unmutes) a member ID here alone (§6); the GUI hides its posts. Kept.
+    ::ed3k::Result<> setMuted(const ::ed3k::Room& room, const std::array<std::uint8_t, 16>& memberId, bool on);
+
     /// This member's key as text (base32, 52 characters, §1.1): what a newcomer sends.
     [[nodiscard]] QString memberKeyText(const ::ed3k::Room& room) const;
 
@@ -152,6 +160,7 @@ private:
         QString link;
         QString nick;
         QCborMap info;   ///< the last room info (title, about, closed, moderated, mods): shown before a neighbour sends one
+        std::set<std::array<std::uint8_t, 16>> muted;   ///< member IDs muted (§6)
     };
 
     void onEventPolled(const ::ed3k::Event& event, bool* handled);

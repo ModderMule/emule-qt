@@ -22,10 +22,13 @@
 #include <QJsonDocument>
 #include <QJsonObject>
 #include <QFileInfo>
+#include <QHash>
+#include <QSet>
 #include <QSignalSpy>
 #include <QTemporaryDir>
 #include <QTest>
 #include <QTimer>
+#include <QUrl>
 
 using namespace eMule;
 using namespace eMule::ed3k;
@@ -56,8 +59,19 @@ class FakeResolver : public Ed3kResolver {
 public:
     QByteArray data = content(700 * 1024 + 123);
     bool gone = false;
+    QSet<QString> goneUrls;      ///< check() says Gone for these
+    QSet<QString> quotaUrls;     ///< open() says a quota wait of an hour for these
+    QStringList opened;          ///< urls open() was asked for
     int opens = 0;
     int checks = 0;
+    int accountChecks = 0;
+    int checkDelayMs = 0;        ///< check() answers this much later
+    QSet<QString> hosts{QStringLiteral("fake.example")};   ///< hosters match() takes
+    QSet<QString> premiumHosts;  ///< accountCheck() says premium for these
+    QList<QStringList> siteGroups;   ///< one hoster's domains, main first (match() and sites())
+    QHash<QString, int> runningChecks;   ///< check() by url host, until it answers
+    QHash<QString, int> maxRunningChecks;
+    int maxRunningAll = 0;
     /// resume: the first open stops (a hoster busy wait) once this many bytes are written
     qsizetype breakAt = 0;
     /// resume: the hoster cannot resume, JD starts over from 0
@@ -74,20 +88,43 @@ public:
         const TaskId t = next++;
         ResolverEvent e;
         e.kind = ResolverEvent::Kind::Matched;
-        if (url.contains(QLatin1StringView("fake.example")))
-            e.host = QStringLiteral("fake.example");
+        const QString h = QUrl(url).host();
+        if (hosts.contains(h)) {
+            e.sites = group(h);
+            e.host = e.sites.isEmpty() ? h : e.sites.first();
+        }
         later(t, e);
         return t;
     }
-    TaskId check(const QString&, const std::optional<ResolverAccount>&) override
+    TaskId sites(const QString& host) override
+    {
+        const TaskId t = next++;
+        ResolverEvent e;
+        e.kind = ResolverEvent::Kind::Sites;
+        e.sites = group(host);
+        if (!e.sites.isEmpty())
+            e.host = e.sites.first();
+        later(t, e);
+        return t;
+    }
+    TaskId check(const QString& url, const std::optional<ResolverAccount>&) override
     {
         ++checks;
         const TaskId t = next++;
         ResolverEvent e;
-        e.kind = gone ? ResolverEvent::Kind::Gone : ResolverEvent::Kind::Found;
+        e.kind = gone || goneUrls.contains(url) ? ResolverEvent::Kind::Gone : ResolverEvent::Kind::Found;
         e.name = QStringLiteral("movie.bin");
         e.size = std::uint64_t(data.size());
-        later(t, e);
+        const QString h = QUrl(url).host();
+        maxRunningChecks[h] = std::max(maxRunningChecks.value(h), ++runningChecks[h]);
+        int all = 0;
+        for (int n : std::as_const(runningChecks))
+            all += n;
+        maxRunningAll = std::max(maxRunningAll, all);
+        QTimer::singleShot(checkDelayMs, this, [this, t, e, h] {
+            --runningChecks[h];
+            emit taskEvent(t, e);
+        });
         return t;
     }
     TaskId expand(const QString&) override
@@ -99,10 +136,19 @@ public:
         later(t, e);
         return t;
     }
-    TaskId open(const QString&, const std::optional<ResolverAccount>&, const QString& dir, std::uint64_t have) override
+    TaskId open(const QString& url, const std::optional<ResolverAccount>&, const QString& dir, std::uint64_t have) override
     {
         ++opens;
+        opened << url;
         const TaskId t = next++;
+        if (quotaUrls.contains(url)) {
+            ResolverEvent w;
+            w.kind = ResolverEvent::Kind::Wait;
+            w.text = QStringLiteral("quota");
+            w.seconds = 3600;
+            later(t, w);
+            return t;
+        }
         const QString part = QDir(dir).filePath(QStringLiteral("data.part"));
         lastHave = have;
         lastPrefill.clear();
@@ -117,12 +163,14 @@ public:
         writeStep(t, part, from, have > 0 ? std::optional<std::uint64_t>(std::uint64_t(from)) : std::nullopt);
         return t;
     }
-    TaskId accountCheck(const QString&, const ResolverAccount&) override
+    TaskId accountCheck(const QString& host, const ResolverAccount&) override
     {
+        ++accountChecks;
         const TaskId t = next++;
         ResolverEvent e;
         e.kind = ResolverEvent::Kind::Account;
         e.valid = true;
+        e.premium = premiumHosts.contains(host);
         later(t, e);
         return t;
     }
@@ -134,9 +182,17 @@ public:
 private:
     TaskId next = 1;
 
-    void later(TaskId t, const ResolverEvent& e)
+    [[nodiscard]] QStringList group(const QString& host) const
     {
-        QTimer::singleShot(0, this, [this, t, e] { emit taskEvent(t, e); });
+        for (const QStringList& g : siteGroups)
+            if (g.contains(host))
+                return g;
+        return {};
+    }
+
+    void later(TaskId t, const ResolverEvent& e, int delayMs = 0)
+    {
+        QTimer::singleShot(delayMs, this, [this, t, e] { emit taskEvent(t, e); });
     }
     /// 300 KiB per step, a progress event each, then done (the part renamed, as JD does);
     /// @p from: told with the first progress of a resumed open
@@ -201,6 +257,24 @@ struct Rig {
         return true;
     }
     [[nodiscard]] Ed3kHosterJoin::State state(quint32 id) const { return join->item(id)->state; }
+};
+
+/// linkChecked() results by url.
+struct CheckSpy {
+    QHash<QString, Ed3kHosterJoin::LinkCheck> last;
+    int count = 0;
+    explicit CheckSpy(Ed3kHosterJoin& join)
+    {
+        QObject::connect(&join, &Ed3kHosterJoin::linkChecked, &join,
+                         [this](const QString& url, const Ed3kHosterJoin::LinkCheck& c) {
+                             last[url] = c;
+                             ++count;
+                         });
+    }
+    [[nodiscard]] Ed3kHosterJoin::LinkStatus status(const QString& url) const
+    {
+        return last.contains(url) ? last[url].status : Ed3kHosterJoin::LinkStatus::Checking;
+    }
 };
 
 } // namespace
@@ -282,6 +356,290 @@ private slots:
         QCOMPARE(again.items().size(), 1);
         QCOMPARE(again.items().first().state, Ed3kHosterJoin::State::Complete);
         QCOMPARE(again.items().first().url, QStringLiteral("https://fake.example/f/5"));
+    }
+
+    /// the first mirror's file is gone: the item goes on with the second
+    void mirror_goneFirst_takesNext()
+    {
+        Rig r;
+        const QString m1 = QStringLiteral("https://fake.example/m/1");
+        const QString m2 = QStringLiteral("https://fake.example/m/2");
+        r.resolver.goneUrls = {m1};
+        QVERIFY(r.start(true));
+        const auto ids = r.join->addMirrored({{m1, m2}});
+        QCOMPARE(ids.size(), 1);
+        QTRY_COMPARE_WITH_TIMEOUT(r.state(ids[0]), Ed3kHosterJoin::State::Complete, 60000);
+        const auto item = *r.join->item(ids[0]);
+        QCOMPARE(item.url, m2);
+        QCOMPARE(item.mirrorNo, 1);
+        QVERIFY(item.mirrors.isEmpty());
+        QCOMPARE(r.resolver.opened, QStringList{m2});
+    }
+
+    /// no plugin for the first mirror's hoster: the next one at a known hoster
+    void mirror_unknownHoster_takesNext()
+    {
+        Rig r;
+        QVERIFY(r.start(true));
+        const auto ids = r.join->addMirrored({{QStringLiteral("https://other.example/x"), QStringLiteral("https://fake.example/m/3")}});
+        QTRY_COMPARE_WITH_TIMEOUT(r.state(ids[0]), Ed3kHosterJoin::State::Complete, 60000);
+        QCOMPARE(r.join->item(ids[0])->url, QStringLiteral("https://fake.example/m/3"));
+    }
+
+    /// an hour's quota at the first mirror is stuck: the next one goes now
+    void mirror_longWait_takesNext()
+    {
+        Rig r;
+        const QString m1 = QStringLiteral("https://fake.example/m/4");
+        const QString m2 = QStringLiteral("https://fake.example/m/5");
+        r.resolver.quotaUrls = {m1};
+        QVERIFY(r.start(true));
+        const auto ids = r.join->addMirrored({{m1, m2}});
+        QTRY_COMPARE_WITH_TIMEOUT(r.state(ids[0]), Ed3kHosterJoin::State::Complete, 60000);
+        QCOMPARE(r.join->item(ids[0])->url, m2);
+        QCOMPARE(r.resolver.opened, (QStringList{m1, m2}));
+    }
+
+    /// every mirror gone: one item, Gone, nothing left to try
+    void mirror_allGone_staysGone()
+    {
+        Rig r;
+        r.resolver.gone = true;
+        QVERIFY(r.start(true));
+        const auto ids = r.join->addMirrored({{QStringLiteral("https://fake.example/m/6"), QStringLiteral("https://fake.example/m/7")}});
+        QTRY_COMPARE_WITH_TIMEOUT(r.join->item(ids[0])->mirrorNo, 1, 30000);
+        QTRY_COMPARE_WITH_TIMEOUT(r.state(ids[0]), Ed3kHosterJoin::State::Gone, 30000);
+        QVERIFY(r.join->item(ids[0])->mirrors.isEmpty());
+        QCOMPARE(r.join->items().size(), 1);
+        QCOMPARE(r.resolver.opens, 0);
+    }
+
+    /// the mirrors not tried yet survive a restart
+    void mirror_savedAndLoaded()
+    {
+        Rig r;
+        QVERIFY(r.start(false));   // hosters off: the item waits on its first link
+        const QStringList urls{QStringLiteral("https://fake.example/m/8"), QStringLiteral("https://fake.example/m/9"),
+                               QStringLiteral("https://other.example/m/9")};
+        const auto ids = r.join->addMirrored({urls});
+        QTRY_COMPARE_WITH_TIMEOUT(r.state(ids[0]), Ed3kHosterJoin::State::NeedsUser, 10000);
+        QCOMPARE(r.join->item(ids[0])->mirrorNo, 0);   // hosters off is no reason to switch
+        r.join->stop();
+        Ed3kHosterJoin again(r.session, r.tmp.filePath(QStringLiteral("cfg")));
+        QCOMPARE(again.items().size(), 1);
+        QCOMPARE(again.items().first().url, urls[0]);
+        QCOMPARE(again.items().first().mirrors, urls.mid(1));
+    }
+
+    /// a file with any link already an item is not added again
+    void mirror_duplicateGroupSkipped()
+    {
+        Rig r;
+        QVERIFY(r.start(false));
+        QCOMPARE(r.join->addLinks(QStringLiteral("https://fake.example/m/10")).size(), 1);
+        QVERIFY(r.join->addMirrored({{QStringLiteral("https://fake.example/m/11"), QStringLiteral("https://fake.example/m/10")}}).isEmpty());
+        QVERIFY(r.join->addLinks(QStringLiteral("https://fake.example/m/12")).size() == 1);
+        QVERIFY(r.join->addMirrored({{QStringLiteral("https://fake.example/m/12")}}).isEmpty());
+        QCOMPARE(r.join->items().size(), 2);
+    }
+
+    /// a links dialog's check: online, name and size, nothing opened; asked again, the result at once
+    void probe_found_online()
+    {
+        Rig r;
+        QVERIFY(r.start(true));
+        CheckSpy spy(*r.join);
+        const QString u = QStringLiteral("https://fake.example/p/1");
+        QVERIFY(r.join->checkLinks({u}));
+        QTRY_COMPARE_WITH_TIMEOUT(spy.status(u), Ed3kHosterJoin::LinkStatus::Online, 10000);
+        QCOMPARE(spy.last[u].host, QStringLiteral("fake.example"));
+        QCOMPARE(spy.last[u].name, QStringLiteral("movie.bin"));
+        QCOMPARE(spy.last[u].size, std::uint64_t(r.resolver.data.size()));
+        QCOMPARE(r.resolver.checks, 1);
+        QCOMPARE(r.resolver.opens, 0);
+        QVERIFY(r.join->checkLinks({u}));
+        QCOMPARE(spy.count, 2);
+        QCOMPARE(r.resolver.checks, 1);
+    }
+
+    void probe_gone_offline()
+    {
+        Rig r;
+        const QString u = QStringLiteral("https://fake.example/p/2");
+        r.resolver.goneUrls = {u};
+        QVERIFY(r.start(true));
+        CheckSpy spy(*r.join);
+        QVERIFY(r.join->checkLinks({u}));
+        QTRY_COMPARE_WITH_TIMEOUT(spy.status(u), Ed3kHosterJoin::LinkStatus::Offline, 10000);
+    }
+
+    void probe_unknownHoster_unknown()
+    {
+        Rig r;
+        QVERIFY(r.start(true));
+        CheckSpy spy(*r.join);
+        const QString u = QStringLiteral("https://other.example/p/3");
+        QVERIFY(r.join->checkLinks({u}));
+        QTRY_COMPARE_WITH_TIMEOUT(spy.status(u), Ed3kHosterJoin::LinkStatus::Unknown, 10000);
+        QVERIFY(spy.last[u].host.isEmpty());
+        QCOMPARE(r.resolver.checks, 0);
+    }
+
+    /// §3: no hoster is asked anything without the user's switch
+    void probe_hostersOff_none()
+    {
+        Rig r;
+        QVERIFY(r.start(false));
+        QVERIFY(!r.join->checkLinks({QStringLiteral("https://fake.example/p/4")}));
+        QCOMPARE(r.resolver.checks, 0);
+        QCOMPARE(r.resolver.accountChecks, 0);
+    }
+
+    /// an item's link is never checked beside it: its state answers
+    void probe_itemUrl_notProbed()
+    {
+        Rig r;
+        QVERIFY(r.start(true));
+        const QString u = QStringLiteral("https://fake.example/p/5");
+        const auto ids = r.join->addLinks(u);
+        QTRY_COMPARE_WITH_TIMEOUT(r.state(ids[0]), Ed3kHosterJoin::State::Complete, 60000);
+        CheckSpy spy(*r.join);
+        QVERIFY(r.join->checkLinks({u}));
+        QCOMPARE(spy.status(u), Ed3kHosterJoin::LinkStatus::Online);
+        QCOMPARE(r.resolver.checks, 1);
+    }
+
+    /// Download while the dialog's check runs: the item goes on from that check, no second one
+    void probe_adoptedWhileRunning()
+    {
+        Rig r;
+        r.resolver.checkDelayMs = 1500;
+        QVERIFY(r.start(true));
+        const QString u = QStringLiteral("https://fake.example/p/6");
+        QVERIFY(r.join->checkLinks({u}));
+        QTRY_COMPARE_WITH_TIMEOUT(r.resolver.checks, 1, 10000);
+        const auto ids = r.join->addLinks(u);
+        QCOMPARE(ids.size(), 1);
+        QTRY_COMPARE_WITH_TIMEOUT(r.state(ids[0]), Ed3kHosterJoin::State::Complete, 60000);
+        QCOMPARE(r.resolver.checks, 1);
+        QCOMPARE(r.resolver.opens, 1);
+    }
+
+    /// checked first: the offline mirror goes last, the core keeps it dead
+    void probe_thenDownload_offlineLast()
+    {
+        Rig r;
+        const QString m1 = QStringLiteral("https://fake.example/p/7");
+        const QString m2 = QStringLiteral("https://fake.example/p/8");
+        r.resolver.goneUrls = {m1};
+        QVERIFY(r.start(true));
+        CheckSpy spy(*r.join);
+        QVERIFY(r.join->checkLinks({m1, m2}));
+        QTRY_COMPARE_WITH_TIMEOUT(spy.count, 2, 10000);
+        QCOMPARE(r.join->rankMirrors({m1, m2}), (QStringList{m2, m1}));
+        const auto ids = r.join->addMirrored({{m1, m2}});
+        QCOMPARE(r.join->item(ids[0])->url, m2);
+        QCOMPARE(r.join->item(ids[0])->mirrors, QStringList{m1});
+        QTRY_COMPARE_WITH_TIMEOUT(r.state(ids[0]), Ed3kHosterJoin::State::Complete, 60000);
+        QCOMPARE(r.resolver.opened, QStringList{m2});
+    }
+
+    /// a link the dialog found dead: its download is refused by the core, no second check
+    void probe_deadLink_goneAtOnce()
+    {
+        Rig r;
+        const QString u = QStringLiteral("https://fake.example/p/9");
+        r.resolver.goneUrls = {u};
+        QVERIFY(r.start(true));
+        CheckSpy spy(*r.join);
+        QVERIFY(r.join->checkLinks({u}));
+        QTRY_COMPARE_WITH_TIMEOUT(spy.status(u), Ed3kHosterJoin::LinkStatus::Offline, 10000);
+        const auto ids = r.join->addMirrored({{u}});
+        QTRY_COMPARE_WITH_TIMEOUT(r.state(ids[0]), Ed3kHosterJoin::State::Gone, 30000);
+        QCOMPARE(r.resolver.checks, 1);
+    }
+
+    /// premium before a free account before none; unchecked links keep their order
+    void rank_premiumOverFreeOverNone()
+    {
+        Rig r;
+        r.resolver.hosts += {QStringLiteral("free.example"), QStringLiteral("prem.example")};
+        r.resolver.premiumHosts = {QStringLiteral("prem.example")};
+        r.prefs.accounts = {{QStringLiteral("free.example"), QStringLiteral("u"), QStringLiteral("p")},
+                            {QStringLiteral("prem.example"), QStringLiteral("u"), QStringLiteral("p")}};
+        QVERIFY(r.start(true));
+        QTRY_COMPARE_WITH_TIMEOUT(r.join->accountTier(QStringLiteral("prem.example")), 2, 10000);
+        QCOMPARE(r.join->accountTier(QStringLiteral("free.example")), 1);
+        QCOMPARE(r.join->accountTier(QStringLiteral("www.free.example")), 1);
+        QCOMPARE(r.join->accountTier(QStringLiteral("fake.example")), 0);
+        QCOMPARE(r.resolver.accountChecks, 2);
+        const QString none = QStringLiteral("https://fake.example/r/1");
+        const QString free = QStringLiteral("https://free.example/r/1");
+        const QString prem = QStringLiteral("https://prem.example/r/1");
+        QCOMPARE(r.join->rankMirrors({none, free, prem}), (QStringList{prem, free, none}));
+        const QString none2 = QStringLiteral("https://fake.example/r/2");
+        QCOMPARE(r.join->rankMirrors({none2, none}), (QStringList{none2, none}));
+        // checked again only after hours, not on every dialog
+        QVERIFY(r.join->checkLinks({none}));
+        QCOMPARE(r.resolver.accountChecks, 2);
+    }
+
+    /// a login stored under one domain of a hoster counts for its others (JD's aliases)
+    void rank_accountOnAlias()
+    {
+        Rig r;
+        r.resolver.hosts += {QStringLiteral("rapidgator.net"), QStringLiteral("rg.to")};
+        r.resolver.siteGroups = {{QStringLiteral("rapidgator.net"), QStringLiteral("rg.to")}};
+        r.resolver.premiumHosts = {QStringLiteral("rg.to")};
+        r.prefs.accounts = {{QStringLiteral("rg.to"), QStringLiteral("u"), QStringLiteral("p")}};
+        QVERIFY(r.start(true));
+        QTRY_COMPARE_WITH_TIMEOUT(r.join->accountTier(QStringLiteral("rapidgator.net")), 2, 10000);
+        QCOMPARE(r.join->accountTier(QStringLiteral("www.rapidgator.net")), 2);
+        QCOMPARE(r.join->accountTier(QStringLiteral("rg.to")), 2);
+        QCOMPARE(r.join->accountTier(QStringLiteral("fake.example")), 0);
+        // unchecked mirrors: the URL's own domain is enough
+        const QString none = QStringLiteral("https://fake.example/a/1");
+        const QString rg = QStringLiteral("https://rapidgator.net/file/1");
+        QCOMPARE(r.join->rankMirrors({none, rg}), (QStringList{rg, none}));
+    }
+
+    /// link checks: at most checkMaxPerHost at one hoster, others go on beside them
+    void probe_limits_perHost()
+    {
+        Rig r;
+        r.resolver.hosts += {QStringLiteral("a.example"), QStringLiteral("b.example")};
+        r.resolver.checkDelayMs = 300;
+        r.prefs.checkMaxParallel = 30;
+        r.prefs.checkMaxPerHost = 2;
+        QVERIFY(r.start(true));
+        CheckSpy spy(*r.join);
+        QStringList urls;
+        for (int i = 0; i < 5; ++i)
+            urls << QStringLiteral("https://a.example/l/%1").arg(i) << QStringLiteral("https://b.example/l/%1").arg(i);
+        QVERIFY(r.join->checkLinks(urls));
+        for (const QString& u : std::as_const(urls))
+            QTRY_COMPARE_WITH_TIMEOUT(spy.status(u), Ed3kHosterJoin::LinkStatus::Online, 30000);
+        QCOMPARE(r.resolver.maxRunningChecks.value(QStringLiteral("a.example")), 2);
+        QCOMPARE(r.resolver.maxRunningChecks.value(QStringLiteral("b.example")), 2);
+        QCOMPARE(r.resolver.maxRunningAll, 4);
+    }
+
+    /// link checks: at most checkMaxParallel in all
+    void probe_limits_parallel()
+    {
+        Rig r;
+        r.resolver.checkDelayMs = 300;
+        r.prefs.checkMaxParallel = 3;
+        r.prefs.checkMaxPerHost = 5;
+        QVERIFY(r.start(true));
+        CheckSpy spy(*r.join);
+        QStringList urls;
+        for (int i = 0; i < 7; ++i)
+            urls << QStringLiteral("https://fake.example/m/%1").arg(i);
+        QVERIFY(r.join->checkLinks(urls));
+        for (const QString& u : std::as_const(urls))
+            QTRY_COMPARE_WITH_TIMEOUT(spy.status(u), Ed3kHosterJoin::LinkStatus::Online, 30000);
+        QCOMPARE(r.resolver.maxRunningAll, 3);
     }
 
     /// a stream that broke goes on where the core's hash stands: the part file the resolver

@@ -24,6 +24,7 @@
 #include <QDateTime>
 #include <QLocale>
 
+#include <algorithm>
 #include <limits>
 
 namespace eMule {
@@ -460,9 +461,13 @@ QVariant DownloadListModel::data(const QModelIndex& index, int role) const
     if (role == Qt::DecorationRole && index.column() == ColFileName) {
         // No own-comment overlay: MFC's download list overlays are the secure and
         // obfuscated badges, not this one (srchybrid/DownloadListCtrl.cpp:202-205).
+        // ed3k files: the ed3k client mark after the type icon; eD2K rows keep the
+        // slot blank while any ed3k row is listed, so names line up
+        const QString badge = d.isEd3k() ? QStringLiteral(":/icons/ClientEd3k.ico")
+                              : m_hasEd3k ? QString(kEmptyBadge) : QString();
         return fileMarksIcon(d.fileType, containerMark(d.containerSuspect, d.containerMislabelled),
                              /*ownComment*/ false,
-                             ratingMark(d.hasComment, d.userRating));
+                             ratingMark(d.hasComment, d.userRating), badge);
     }
 
     if (role == Qt::DisplayRole) {
@@ -606,7 +611,7 @@ QVariant DownloadListModel::data(const QModelIndex& index, int role) const
         if (!d.hasBarRanges)
             return {};
         return QVariant::fromValue(DownloadBarData{d.fileSize, d.gaps, d.pending, d.partFreq,
-                                                   d.partMap});
+                                                   d.partMap, d.partFreqUnit});
     }
 
     return {};
@@ -642,6 +647,9 @@ void DownloadListModel::setDownloads(std::vector<DownloadRow> incoming)
 {
     // Incremental update: avoids beginResetModel()/endResetModel() so that
     // the view's selection, expansion, and scroll state are preserved.
+
+    // before any dataChanged below: the name column's badge slot depends on it
+    m_hasEd3k = std::ranges::any_of(incoming, &DownloadRow::isEd3k);
 
     // 1. Build lookup of incoming hashes
     QHash<QString, size_t> incomingByHash;

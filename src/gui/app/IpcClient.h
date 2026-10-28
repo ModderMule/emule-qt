@@ -204,6 +204,8 @@ public:
                          ResponseCallback callback = nullptr);
     /// Newcomer of a closed room: the admit text -> {room}
     int importEd3kRoomAdmit(const QString& text, ResponseCallback callback = nullptr);
+    /// Mutes a member ID of a room here alone (room.md §6); false unmutes.
+    int muteEd3kRoomMember(const QString& room, const QString& memberId, bool on, ResponseCallback callback = nullptr);
 
     // -- ed3k downloads (plain files, IPC 1140-1143) ---------------------------
     // Roots as 64 hex digits. Failure: [false, {error: localized text}].
@@ -242,6 +244,16 @@ public:
     int leaveEd3kLive(const QString& id, ResponseCallback callback = nullptr);
     /// -> {running, streams: [{id, title, media, codecs, state, neighbours, segments, bytes, viewers, url}]}
     void requestEd3kLive(const QObject* owner, ResponseCallback callback);
+    /// ed3k live broadcast from an HLS folder (batch 13) -> {id, link}; LeaveEd3kLive ends it
+    int broadcastEd3kLive(const QString& folder, const QString& title, bool isPrivate, const QString& playlist,
+                          const QString& codecs, ResponseCallback callback = nullptr);
+    /// ed3k paid subscriptions (batch 13) -> {running, reports, subs: [...]}
+    void requestEd3kPaid(const QObject* owner, ResponseCallback callback);
+    /// -> {payLink} ("" = PushEd3kPaidAnonWarn first)
+    int buyEd3kPass(const QString& scope, bool anon, ResponseCallback callback = nullptr);
+    /// -> {payLink}
+    int confirmEd3kPaidAnon(const QString& scope, ResponseCallback callback = nullptr);
+    int setEd3kPassReports(bool on, ResponseCallback callback = nullptr);
 
     /// Send a Shutdown request to the daemon, then disconnect.
     /// Use this when the GUI launched the daemon and is about to close.
@@ -387,6 +399,12 @@ signals:
     void ed3kSetVersion(const Ipc::IpcMessage& msg);
     /// [{...GetEd3kLive...}] — an ed3k live stream changed.
     void ed3kLiveChanged(const Ipc::IpcMessage& msg);
+    /// [{...GetEd3kPaid...}] — ed3k paid subscriptions changed.
+    void ed3kPaidChanged(const Ipc::IpcMessage& msg);
+    /// [scope, title] — tell the user the seller sees an address, then confirmEd3kPaidAnon.
+    void ed3kPaidAnonWarn(const Ipc::IpcMessage& msg);
+    /// [scope, title, until] — a pass arrived.
+    void ed3kPassArrived(const Ipc::IpcMessage& msg);
     /// [link] — a set opened as a website is no website: offer it for download.
     void ed3kSetOffered(const Ipc::IpcMessage& msg);
     /// [room, {id, author, authorId, nick, moderator, sent, text, replyTo}] — a post.
@@ -401,6 +419,8 @@ signals:
     void ed3kStakeClaimsChanged(const Ipc::IpcMessage& msg);
     /// [{what, state, revert, tx}] — a stake transaction moved.
     void ed3kStakeTx(const Ipc::IpcMessage& msg);
+    /// [{id, found, paid, failed, to, amount, readyAt, kept}] — ReadEd3kStakeClaim answered (batch 13).
+    void ed3kStakeLookup(const Ipc::IpcMessage& msg);
     /// [] — filter lists or own verdicts changed: GetEd3kFilters.
     void ed3kFiltersChanged(const Ipc::IpcMessage& msg);
     /// [item] — a hoster download was added or changed.
@@ -413,6 +433,8 @@ signals:
     void hosterLinksExpanded(const Ipc::IpcMessage& msg);
     /// [host, user, {valid, premium, expires, trafficLeft, error}] — a login was checked.
     void hosterAccountChecked(const Ipc::IpcMessage& msg);
+    /// [url, {status, host, name, size, account}] — a CheckHosterLinks result.
+    void hosterLinkChecked(const Ipc::IpcMessage& msg);
 
     /// [searchId, rows] — a batch of indexer results, as each indexer answers.
     void indexerResultsReceived(const Ipc::IpcMessage& msg);

@@ -45,6 +45,7 @@ private slots:
     void bitTorrentMagnetsGoToTheTorrentHandler();
     void searchRowMagnetsGoToTheTorrentHandler();
     void searchRowTorrentFilesGoToTheTorrentHandler();
+    void searchRowWebLinksGoToTheHosterHandler();
 
     void linkKindsIn_data();
     void linkKindsIn();
@@ -402,7 +403,8 @@ void TestEd2kLinkImporter::searchRowTorrentFilesGoToTheTorrentHandler()
     const QByteArray data("d4:infod4:name6:Ubuntuee");
 
     Ed2kLinkImporter::setTorrentFileHandler({});
-    QVERIFY(!Ed2kLinkImporter::hasTorrentFileHandler());              // caller saves instead
+    Ed2kLinkImporter::setTorrentLinkHandler([](const QStringList&, QWidget*) {});
+    QVERIFY(!Ed2kLinkImporter::torrentsReady());                      // caller saves instead
     QVERIFY(!Ed2kLinkImporter::sendTorrentFile(QStringLiteral("u.torrent"), data, nullptr));
 
     QString seenName;
@@ -412,13 +414,48 @@ void TestEd2kLinkImporter::searchRowTorrentFilesGoToTheTorrentHandler()
             seenName = name;
             seenData = bytes;
         });
-    const auto reset = qScopeGuard([] { Ed2kLinkImporter::setTorrentFileHandler({}); });
-    QVERIFY(Ed2kLinkImporter::hasTorrentFileHandler());
+    const auto reset = qScopeGuard([] {
+        Ed2kLinkImporter::setTorrentFileHandler({});
+        Ed2kLinkImporter::setTorrentLinkHandler({});
+        Ed2kLinkImporter::setTorrentsReady({});
+    });
+    QVERIFY(Ed2kLinkImporter::torrentsReady());
+    bool engineOn = false;                                            // BitTorrent off in Options
+    Ed2kLinkImporter::setTorrentsReady([&engineOn] { return engineOn; });
+    QVERIFY(!Ed2kLinkImporter::torrentsReady());
+    engineOn = true;
+    QVERIFY(Ed2kLinkImporter::torrentsReady());
     QVERIFY(!Ed2kLinkImporter::sendTorrentFile(QStringLiteral("u.torrent"), {}, nullptr));   // empty
     QVERIFY(seenName.isEmpty());
     QVERIFY(Ed2kLinkImporter::sendTorrentFile(QStringLiteral("u.torrent"), data, nullptr));
     QCOMPARE(seenName, QStringLiteral("u.torrent"));
     QCOMPARE(seenData, data);
+}
+
+void TestEd2kLinkImporter::searchRowWebLinksGoToTheHosterHandler()
+{
+    // one file with two mirrors, one with one
+    const QList<QStringList> urls{{QStringLiteral("https://host.example/f/1"), QStringLiteral("https://mirror.example/f/1")},
+                                  {QStringLiteral("https://host.example/f/2")}};
+
+    Ed2kLinkImporter::setHosterLinkHandler({}, {});                   // built without the hoster
+    QVERIFY(!Ed2kLinkImporter::hosterReady());
+    QVERIFY(!Ed2kLinkImporter::sendHosterLinks(urls, nullptr));
+
+    QList<QStringList> seen;
+    bool enabled = false;                                             // ed3kHosterEnabled off
+    Ed2kLinkImporter::setHosterLinkHandler([&seen](const QList<QStringList>& u, QWidget*) { seen += u; },
+                                           [&enabled] { return enabled; });
+    const auto reset = qScopeGuard([] { Ed2kLinkImporter::setHosterLinkHandler({}, {}); });
+    QVERIFY(!Ed2kLinkImporter::hosterReady());
+    QVERIFY(!Ed2kLinkImporter::sendHosterLinks(urls, nullptr));
+    QVERIFY(seen.isEmpty());
+
+    enabled = true;
+    QVERIFY(Ed2kLinkImporter::hosterReady());
+    QVERIFY(!Ed2kLinkImporter::sendHosterLinks({}, nullptr));         // nothing to hand over
+    QVERIFY(Ed2kLinkImporter::sendHosterLinks(urls, nullptr));
+    QCOMPARE(seen, urls);
 }
 
 void TestEd2kLinkImporter::linkKindsIn_data()

@@ -4,10 +4,15 @@
 #include "Ed3kHosterBridge.h"
 
 #include "PushCoalescer.h"
+#include "app/AppContext.h"
 #include "prefs/Preferences.h"
+#include "stats/NetworkCounters.h"
+#include "stats/Statistics.h"
 
 #include <QCborArray>
 #include <QCborMap>
+
+#include <algorithm>
 
 #ifdef EMULE_HAVE_ED3K
 #include "Ed3kHosterJoin.h"
@@ -47,7 +52,60 @@ QCborMap itemToCbor(const ed3k::Ed3kHosterJoin::Item& it)
                     {QStringLiteral("verified"), it.verified},
                     {QStringLiteral("file"), it.file},
                     {QStringLiteral("root"), it.rootHex},
-                    {QStringLiteral("added"), it.added}};
+                    {QStringLiteral("added"), it.added},
+                    {QStringLiteral("mirrorNo"), it.mirrorNo},
+                    {QStringLiteral("mirrors"), qint64(it.mirrors.size())}};
+}
+
+/// GetHosterStats: the counters from Statistics, the live part from the items.
+QCborMap hosterStatsToCbor(const ed3k::Ed3kHosterJoin& join)
+{
+    using S = ed3k::Ed3kHosterJoin::State;
+    const Statistics* stats = theApp.statistics;
+    QCborMap out;
+    out.insert(QStringLiteral("session"), countersToCbor(stats ? stats->hosterSession() : HosterCounters{}));
+    out.insert(QStringLiteral("cumulative"), countersToCbor(stats ? stats->cumulativeHoster() : thePrefs.cumHoster()));
+
+    qint64 rate = 0, downloading = 0, queued = 0, waiting = 0, puzzle = 0, paused = 0, needsUser = 0,
+           complete = 0, failed = 0, total = 0, done = 0;
+    const QList<ed3k::Ed3kHosterJoin::Item> items = join.items();
+    for (const auto& it : items) {
+        switch (it.state) {
+        case S::Downloading: ++downloading; break;
+        case S::Matching:
+        case S::Looking:
+        case S::Checking:
+        case S::Queued: ++queued; break;
+        case S::Waiting: ++waiting; break;
+        case S::Puzzle: ++puzzle; break;
+        case S::Paused: ++paused; break;
+        case S::NeedsUser:
+        case S::NoResolver: ++needsUser; break;
+        case S::Complete: ++complete; break;
+        case S::Gone:
+        case S::Failed: ++failed; break;
+        }
+        rate += qint64(it.speed);
+        // what is still to come: a complete item is done, a failed one won't be
+        if (it.state != S::Complete && it.state != S::Gone && it.state != S::Failed) {
+            total += qint64(it.size);
+            done += qint64(std::min(it.done, it.size));
+        }
+    }
+    const QCborMap counts{{QStringLiteral("count"), qint64(items.size())},
+                          {QStringLiteral("downloading"), downloading},
+                          {QStringLiteral("queued"), queued},
+                          {QStringLiteral("waiting"), waiting},
+                          {QStringLiteral("puzzle"), puzzle},
+                          {QStringLiteral("paused"), paused},
+                          {QStringLiteral("needsUser"), needsUser},
+                          {QStringLiteral("complete"), complete},
+                          {QStringLiteral("failed"), failed},
+                          {QStringLiteral("totalBytes"), total},
+                          {QStringLiteral("doneBytes"), done},
+                          {QStringLiteral("leftBytes"), std::max<qint64>(0, total - done)}};
+    out.insert(QStringLiteral("current"), QCborMap{{QStringLiteral("downRate"), rate}, {QStringLiteral("items"), counts}});
+    return out;
 }
 
 QCborMap resultToCbor(const ed3k::ResolverEvent& r)
@@ -108,9 +166,21 @@ bool handleRequest(const IpcMessage& msg, const std::function<void(const IpcMess
         reply(IpcMessage::makeResult(seq, true, QCborMap{{QStringLiteral("items"), items}, {QStringLiteral("status"), statusToCbor()}}));
         break;
     }
+    case IpcMsgType::GetHosterStats:
+        reply(IpcMessage::makeResult(seq, true, hosterStatsToCbor(*s_join)));
+        break;
     case IpcMsgType::AddHosterLinks: {
         QCborArray ids;
-        for (const quint32 id : s_join->addLinks(msg.fieldString(0)))
+        // field 1: one list of mirrors per file (web search rows); else the pasted text
+        QList<QStringList> files;
+        for (const QCborValue& f : msg.field(1).toArray()) {
+            QStringList urls;
+            for (const QCborValue& u : f.toArray())
+                urls << u.toString();
+            files.append(urls);
+        }
+        const auto added = files.isEmpty() ? s_join->addLinks(msg.fieldString(0)) : s_join->addMirrored(files);
+        for (const quint32 id : added)
             ids.append(qint64(id));
         reply(IpcMessage::makeResult(seq, true, QCborMap{{QStringLiteral("ids"), ids}}));
         break;
@@ -139,6 +209,21 @@ bool handleRequest(const IpcMessage& msg, const std::function<void(const IpcMess
         s_join->answerPuzzle(quint64(msg.field(0).toInteger()), msg.fieldString(1));
         reply(IpcMessage::makeResult(seq, true, QCborValue{}));
         break;
+    case IpcMsgType::CheckHosterLinks: {
+        if (!thePrefs.ed3kHoster().checkSearchLinks) {
+            reply(failure(seq, QStringLiteral("link checks are off")));
+            break;
+        }
+        QStringList urls;
+        for (const QCborValue& u : msg.field(0).toArray())
+            urls << u.toString();
+        if (!s_join->checkLinks(urls)) {
+            reply(failure(seq, QStringLiteral("hoster downloads are off")));
+            break;
+        }
+        reply(IpcMessage::makeResult(seq, true, QCborValue{}));
+        break;
+    }
     case IpcMsgType::CheckHosterAccount:
         s_join->checkAccount(msg.fieldString(0).trimmed().toLower(), msg.fieldString(1), msg.fieldString(2));
         reply(IpcMessage::makeResult(seq, true, QCborValue{}));
@@ -222,6 +307,17 @@ void connectPushes(ed3k::Ed3kHosterJoin& join, const std::function<void(const Ip
                          msg.append(host);
                          msg.append(user);
                          msg.append(resultToCbor(r));
+                         broadcast(msg);
+                     });
+    QObject::connect(&join, &ed3k::Ed3kHosterJoin::linkChecked, &join,
+                     [broadcast, &join](const QString& url, const ed3k::Ed3kHosterJoin::LinkCheck& c) {
+                         IpcMessage msg(IpcMsgType::PushHosterLinkCheck, 0);
+                         msg.append(url);
+                         msg.append(QCborMap{{QStringLiteral("status"), int(c.status)},
+                                             {QStringLiteral("host"), c.host},
+                                             {QStringLiteral("name"), c.name},
+                                             {QStringLiteral("size"), qint64(c.size)},
+                                             {QStringLiteral("account"), join.accountTier(c.host)}});
                          broadcast(msg);
                      });
 #else

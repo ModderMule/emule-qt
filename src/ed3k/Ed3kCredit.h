@@ -17,7 +17,12 @@
 /// - Bids: bidMaxPrice for every root of an ed3k download (FileStatus seen), 0 = none.
 /// - Stake (§6.7): burns and claims for the user (main node only, never the anonymous key,
 ///   §9.1); the claims of own burns are kept in Config/ed3k/stake-claims.json (not a secret)
-///   and read again (creditStakeClaim) at each configure and on refreshClaims().
+///   and read again (creditStakeClaim) at each configure and on refreshClaims(), with the
+///   burn's and the claim's tx hashes (batch 12 #10). A claim sent before a restart is read
+///   again and claimed again while unpaid; a paid one reads `to` = 0.
+/// - A typed id (not an own burn, batch 12 #9, §9.1): readClaim (stakeClaims) → stakeLookup()
+///   → claimStake; then it is kept like an own one. A `to` that is the anonymous address is
+///   refused by the core (no anonymous credit key here anyway).
 
 #include "Ed3kFfi.h"
 
@@ -28,6 +33,8 @@
 #include <QTimer>
 
 #include <cstdint>
+#include <deque>
+#include <map>
 #include <optional>
 #include <set>
 #include <vector>
@@ -49,6 +56,10 @@ public:
         ::ed3k::Key32 amount{};   ///< uint256 BE, 10^-18 E3S
         std::uint64_t readyAt = 0;
         ClaimState state = ClaimState::Waiting;
+        QString burnTx;    ///< hash hex of the burn; empty: unknown (a typed id)
+        QString claimTx;   ///< hash hex of the last claimStake sent; empty: none yet
+        /// sent before a restart: claimed again once read unpaid (and ready)
+        bool reclaim = false;
     };
     /// What the GUI shows (GetEd3kStatus "credit").
     struct Status {
@@ -108,8 +119,11 @@ public:
     /// burnForStake(@p micro µ, @p to) from the main credit key (never the anonymous one,
     /// §9.1). Public and for good (§9): the GUI asks first. CreditStakeBurned adds the claim.
     ::ed3k::Result<> burnForStake(std::uint64_t micro, const ::ed3k::event::CreditAddress& to);
-    /// claimStake(@p id) of a kept claim: Claiming until mined (Paid) or failed (Waiting).
+    /// claimStake(@p id) of a kept claim, or of one read by readClaim (then kept): Claiming
+    /// until mined (Paid) or failed (Waiting). NotFound: neither (or it reads paid/never made).
     ::ed3k::Result<> claimStake(std::uint64_t id);
+    /// Reads stakeClaims(@p id) of any id (one the user typed): stakeLookup() follows.
+    ::ed3k::Result<> readClaim(std::uint64_t id);
     /// Reads every claim not paid again (creditStakeClaim); answers update the list.
     void refreshClaims();
     [[nodiscard]] std::vector<StakeClaim> claims() const { return m_status.claims; }
@@ -122,6 +136,10 @@ signals:
     /// A stake transaction moved: @p what ED3K_CREDIT_TX_BURN_FOR_STAKE / _CLAIM_STAKE,
     /// @p state ED3K_CREDIT_STATE_*, @p revert ED3K_CREDIT_REVERT_*, @p tx hash hex.
     void stakeTx(int what, int state, int revert, const QString& tx);
+    /// readClaim answered: @p found false: never made or paid (`to` = 0; @p paid: it was made);
+    /// @p failed: the read failed. @p to "0x…", @p amount uint256 hex, @p kept: one of the kept claims.
+    void stakeLookup(quint64 id, bool found, bool failed, const QString& to, const QString& amount, quint64 readyAt,
+                     bool kept, bool paid);
 
 private:
     void onEventPolled(const ::ed3k::Event& event, bool* handled);
@@ -139,6 +157,7 @@ private:
     void loadClaims();
     void saveClaims() const;
     [[nodiscard]] StakeClaim* claim(std::uint64_t id);
+    void onClaimTx(const ::ed3k::event::CreditTx& t);
 
     Ed3kSession& m_session;
     QString m_dir;
@@ -151,6 +170,12 @@ private:
     QString m_address;
     Status m_status;
     std::set<::ed3k::Root> m_roots;   ///< ed3k downloads seen (bidMaxPrice)
+    std::set<std::uint64_t> m_lookups;              ///< readClaim asked, not answered yet
+    std::map<std::uint64_t, StakeClaim> m_looked;   ///< read unpaid by readClaim (fresh view)
+    /// kept ids the core may claim this run: an own burn of it, or read (stakeClaims) since
+    std::set<std::uint64_t> m_fresh;
+    std::deque<std::uint64_t> m_claimSent;          ///< claimStake sent, its tx hash not seen yet
+    QString m_burnTx;                               ///< the last burn's hash (for its StakeBurned)
     QTimer m_changed;
 };
 

@@ -24,6 +24,7 @@
 #include <algorithm>
 #include <array>
 #include <memory>
+#include <optional>
 
 namespace eMule {
 
@@ -164,6 +165,19 @@ public:
     void setAssociateTorrentFiles(bool on)
     {
         m_associateTorrentFiles = on;
+        scheduleSave();
+    }
+
+    /// GUI language code, "" = system default. GUI-only: a core with its own
+    /// config dir (Docker, remote) keeps preferences.yml out of reach (#75).
+    /// Unset until first chosen here; then @p fallback (preferences.yml) applies.
+    [[nodiscard]] QString language(const QString& fallback) const
+    {
+        return m_language.value_or(fallback);
+    }
+    void setLanguage(const QString& code)
+    {
+        m_language = code;
         scheduleSave();
     }
 
@@ -406,6 +420,7 @@ private:
     bool m_associateTorrentFiles = true;
     bool m_miniMuleAutoClose = false;
     bool m_firstStartWizardDone = false;
+    std::optional<QString> m_language;   // unset = take preferences.yml's
     int m_startCount = 0;
     bool m_lowIdHintDisabled = false;
     bool m_showCountryFlags = true;

@@ -11,6 +11,8 @@
 #include "Ed3kDownloads.h"
 #include "Ed3kSession.h"
 
+#include "utils/BlockRuns.h"
+
 #include <QObject>
 
 #include <cstring>
@@ -40,6 +42,10 @@ QString noNode()
 #ifdef EMULE_HAVE_ED3K
 namespace ffi = ::ed3k;
 
+/// Ed3kDownloads' block, and the piece of FileStatus.have (Protocol.md §12.5)
+constexpr std::uint64_t kBarBlock = 256 * 1024;
+constexpr std::uint64_t kBarPiece = 16 * kBarBlock;
+
 QString hexOf(const ffi::Root& r)
 {
     return QString::fromLatin1(QByteArray(reinterpret_cast<const char*>(r.bytes.data()), qsizetype(r.bytes.size())).toHex());
@@ -57,7 +63,7 @@ std::optional<ffi::Root> rootOf(const QString& hex)
 
 QCborMap toCbor(const ed3k::Ed3kDownloadInfo& i)
 {
-    return QCborMap{
+    QCborMap m{
         {QStringLiteral("root"), hexOf(i.root)},
         {QStringLiteral("name"), i.name},
         {QStringLiteral("size"), qint64(i.size)},
@@ -74,6 +80,17 @@ QCborMap toCbor(const ed3k::Ed3kDownloadInfo& i)
         {QStringLiteral("completedOn"), i.completedOn},
         {QStringLiteral("error"), i.error},
     };
+    // the progress bar: held blocks as runs (BlockRuns.h), those asked for, sources per piece
+    m.insert(QStringLiteral("blockSize"), qint64(kBarBlock));
+    m.insert(QStringLiteral("blocks"), encodeBlockRuns(i.blocks));
+    if (!i.pending.empty())
+        m.insert(QStringLiteral("pending"), encodeBlockRuns(i.pending));
+    if (!i.availability.empty()) {
+        m.insert(QStringLiteral("pieceSize"), qint64(kBarPiece));
+        m.insert(QStringLiteral("avail"),
+                 QByteArray(reinterpret_cast<const char*>(i.availability.data()), qsizetype(i.availability.size())));
+    }
+    return m;
 }
 
 void answer(const IpcMessage& msg, ed3k::Ed3kDownloads& d, const std::function<void(const IpcMessage&)>& reply)

@@ -415,6 +415,12 @@ void Ed3kSession::post(std::function<void(ffi::Engine&, ffi::Now)> cmd)
     pump();
 }
 
+void Ed3kSession::savePaidState()
+{
+    if (m_engine)
+        saveSlot(ffi::State::Paid, kPaidFile);
+}
+
 void Ed3kSession::pump()
 {
     if (!m_engine)

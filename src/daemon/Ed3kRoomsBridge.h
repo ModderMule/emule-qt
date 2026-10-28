@@ -20,7 +20,7 @@ namespace Ed3kRoomsBridge {
 /// Set by DaemonApp, null when absent.
 void setRooms(ed3k::Ed3kRooms* rooms);
 
-/// Whether an opcode is one of 1120-1129.
+/// Whether an opcode is one of 1120-1129, or 1044 (batch 13: mute).
 [[nodiscard]] bool isRoomsRequest(Ipc::IpcMsgType type);
 
 /// Answers a rooms request through `reply`. False: not one of them.

@@ -152,6 +152,8 @@ public:
     void post(std::function<void(::ed3k::Engine&, ::ed3k::Now)> cmd);
     /// Drains the engine (see the file comment). Inside the pump: loops once more.
     void pump();
+    /// Saves ED3K_STATE_PAID now (after paidAnonConfirm, subscription.md §5.1).
+    void savePaidState();
 
 signals:
     /// Running, port, contacts, address class changed.

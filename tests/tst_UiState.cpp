@@ -23,6 +23,7 @@ private slots:
 
     void roundTrip_searchAndTransferKeys();
     void fallbacks_whenNeverSaved();
+    void language_roundTripAndFallback();
     void legacyStore_importedThenRemoved();
     void legacyStore_yamlValueWins();
     void headerState_newColumnsStayMovable();
@@ -69,6 +70,30 @@ void tst_UiState::fallbacks_whenNeverSaved()
     QCOMPARE(s.transferTopView(0), 0);
     QCOMPARE(s.transferBottomView(1), 1);
     QVERIFY(s.searchHistory().isEmpty());
+}
+
+// #75: the GUI's own copy, "" (system default) kept apart from never chosen
+void tst_UiState::language_roundTripAndFallback()
+{
+    const QString prefsLang = QStringLiteral("zh_CN");
+    QTemporaryDir cfg;
+    {
+        UiState s;
+        s.load(cfg.path());
+        QCOMPARE(s.language(prefsLang), prefsLang);   // unset: preferences.yml's
+        s.setLanguage(QStringLiteral("en_US"));
+        s.save();
+    }
+    {
+        UiState r;
+        r.load(cfg.path());
+        QCOMPARE(r.language(prefsLang), QStringLiteral("en_US"));
+        r.setLanguage(QString());
+        r.save();
+    }
+    UiState r;
+    r.load(cfg.path());
+    QCOMPARE(r.language(prefsLang), QString());
 }
 
 void tst_UiState::legacyStore_importedThenRemoved()

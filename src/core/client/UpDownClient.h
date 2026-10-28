@@ -299,6 +299,10 @@ public:
 
     [[nodiscard]] ConnectingState connectingState() const { return m_connectingState; }
     void setConnectingState(ConnectingState state) { m_connectingState = state; }
+    /// A server callback for us failed or timed out: retry through the Kad buddy and mark
+    /// the stored server/LowID stale (peer likely moved servers). True when a Kad callback
+    /// went out. Not MFC: MFC never leaves the server path while on the same server.
+    bool fallBackToKadCallback();
 
     [[nodiscard]] InfoPacketState infoPacketsReceived() const { return m_infoPacketsReceived; }
     void setInfoPacketsReceived(InfoPacketState state) { m_infoPacketsReceived = state; }
@@ -1103,6 +1107,15 @@ protected:
     uint32 writeHttpData(uint64 pos, const uint8* data, uint32 size);
 
 private:
+    /// Kad callback route usable: buddy ID valid, Kad connected, buddy address or a file.
+    [[nodiscard]] bool kadCallbackAvailable() const;
+    /// Fill a missing buddy address from the Kad routing table. True when one is known.
+    bool resolveBuddyAddress();
+    /// Send KADEMLIA_CALLBACK_REQ to the known buddy. Needs a buddy address and m_reqFile.
+    void sendKadCallback();
+    /// Stored server/LowID already failed a server callback (see fallBackToKadCallback).
+    [[nodiscard]] bool serverCallbackKnownStale() const;
+
     /// Hash, address, ID or a port changed: the download we are a source of files us
     /// under them, so it has to hear. Every writer of those members ends here.
     void sourceIdentityChanged();
@@ -1246,6 +1259,11 @@ private:
     SourceFrom m_sourceFrom = SourceFrom::Server;
     ChatCaptchaState m_chatCaptchaState = ChatCaptchaState::None;
     ConnectingState m_connectingState = ConnectingState::None;
+    // Server, port and LowID of the last failed server callback; while unchanged the
+    // server path is skipped in favour of the Kad buddy.
+    Address m_staleCallbackServer;
+    uint16 m_staleCallbackServerPort = 0;
+    uint32 m_staleCallbackUserID = 0;
     InfoPacketState m_infoPacketsReceived = InfoPacketState::None;
 
     // -- Upload tracking ----------------------------------------------------

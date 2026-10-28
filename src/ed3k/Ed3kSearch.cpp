@@ -13,6 +13,8 @@
 #include "utils/Log.h"
 #include "utils/Opcodes.h"
 
+#include <algorithm>
+
 namespace eMule::ed3k {
 
 namespace {
@@ -61,7 +63,51 @@ std::unique_ptr<SearchFile> Ed3kSearch::toSearchFile(const ::ed3k::FoundFile& fo
     if (found.bitrate != 0)
         file->addTagUnique(Tag(FT_MEDIA_BITRATE, uint32(found.bitrate)));
     file->setEd3k(bytesOf(found.root.bytes), found.ed2k ? bytesOf(*found.ed2k) : QByteArray());
+    // AUTHOR of filter lists: the record's publisher (filter-list.md §1)
+    file->setEd3kPublisher(bytesOf(found.publisher.bytes));
     return file;
+}
+
+bool Ed3kSearch::applyVerdict(SearchFile& file, const Verdict& v)
+{
+    SearchFile::Ed3kJudged shown = v.shown;
+    shown.hidden = v.judged == Judged::Hide;
+    const bool wasMarked = file.ed3kJudged().hidden || file.ed3kJudged().verdict != 0;
+    const bool changed = !(file.ed3kJudged() == shown);
+    file.setEd3kJudged(shown);
+    // a marked or hidden row sorts as spam; a row no list judges any more is spam no longer
+    if (v.judged != Judged::None)
+        file.setSpamRating(SEARCH_SPAM_THRESHOLD);
+    else if (wasMarked && changed)
+        file.setSpamRating(0);
+    return changed;
+}
+
+int Ed3kSearch::rejudge()
+{
+    if (!m_judge || !theApp.searchList)
+        return 0;
+    int changed = 0;
+    theApp.searchList->updateResults([&](SearchFile* f) {
+        if (!f->isEd3kResult())
+            return false;
+        ::ed3k::FoundFile found;
+        std::copy_n(reinterpret_cast<const std::uint8_t*>(f->ed3kRoot().constData()), found.root.bytes.size(), found.root.bytes.begin());
+        if (f->ed3kEd2k().size() == 16) {
+            found.ed2k.emplace();
+            std::copy_n(reinterpret_cast<const std::uint8_t*>(f->ed3kEd2k().constData()), 16, found.ed2k->begin());
+        }
+        if (f->ed3kPublisher().size() == qsizetype(found.publisher.bytes.size()))
+            std::copy_n(reinterpret_cast<const std::uint8_t*>(f->ed3kPublisher().constData()), found.publisher.bytes.size(),
+                        found.publisher.bytes.begin());
+        found.size = std::uint64_t(f->fileSize());
+        found.name = f->fileName().toStdString();
+        if (!applyVerdict(*f, m_judge(found)))
+            return false;
+        ++changed;
+        return true;
+    });
+    return changed;
 }
 
 ::ed3k::Filter Ed3kSearch::filterOf(const SearchParams& params)
@@ -139,13 +185,11 @@ void Ed3kSearch::onEventPolled(const ::ed3k::Event& event, bool* handled)
     const uint32 searchID = it->second;
     int added = 0;
     for (const auto& f : found->files) {
-        // filter lists (batch 12, G): hidden rows are dropped, marked ones shown as spam
-        const Judged judged = m_judge ? m_judge(f) : Judged::None;
-        if (judged == Judged::Hide)
-            continue;
+        // filter lists (batch 12, G): marked rows shown as spam, hidden ones kept hidden
+        // was: hidden rows were dropped (if (judged == Judged::Hide) continue;)
+        const Verdict judged = m_judge ? m_judge(f) : Verdict{};
         if (auto row = toSearchFile(f)) {
-            if (judged == Judged::Mark)
-                row->setSpamRating(SEARCH_SPAM_THRESHOLD);
+            (void)applyVerdict(*row, judged);
             addResult(searchID, std::move(row));
             ++added;
         }

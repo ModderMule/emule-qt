@@ -140,7 +140,7 @@ QList<Case> cases()
     list.append({"WebLinksDialog", [] {
                      return std::make_unique<WebLinksDialog>(QStringLiteral("row"), QCborMap{},
                                                              QByteArray{},
-                                                             QStringLiteral("file.iso"));
+                                                             QStringLiteral("file.iso"), nullptr);
                  }});
     list.append({"BugReportDialog", [] {
                      static LogWidget log;

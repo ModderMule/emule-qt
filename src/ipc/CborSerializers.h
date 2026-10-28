@@ -438,6 +438,18 @@ inline void insertDownloadSeed(QCborMap& m, const SearchFile& f)
         m.insert(QStringLiteral("ed3kRoot"), QString::fromLatin1(f.ed3kRoot().toHex()));
         if (!f.ed3kEd2k().isEmpty())
             m.insert(QStringLiteral("ed3kEd2k"), QString::fromLatin1(f.ed3kEd2k().toHex()));
+        if (!f.ed3kPublisher().isEmpty())
+            m.insert(QStringLiteral("ed3kAuthor"), QString::fromLatin1(f.ed3kPublisher().toHex()));
+        // filter lists (filter-list.md §3): the verdict, who said it, hidden rows kept
+        if (const auto& j = f.ed3kJudged(); j.verdict != 0 || j.hidden || j.shown) {
+            m.insert(QStringLiteral("ed3kVerdict"), j.verdict);
+            m.insert(QStringLiteral("ed3kHidden"), j.hidden);
+            m.insert(QStringLiteral("ed3kOwn"), j.own);
+            m.insert(QStringLiteral("ed3kShown"), j.shown);
+            m.insert(QStringLiteral("ed3kDisagree"), j.disagree);
+            m.insert(QStringLiteral("ed3kBy"), j.by);
+            m.insert(QStringLiteral("ed3kReason"), j.reason);
+        }
     }
     if (f.isMetaResult()) {
         m.insert(QStringLiteral("magnet"),      meta.magnet);

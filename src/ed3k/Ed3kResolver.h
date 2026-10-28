@@ -12,6 +12,7 @@
 #include <QList>
 #include <QObject>
 #include <QString>
+#include <QStringList>
 
 #include <cstdint>
 #include <optional>
@@ -34,7 +35,8 @@ struct ResolverLink {
 
 struct ResolverEvent {
     enum class Kind {
-        Matched,      ///< match: host (empty: no plugin takes the link)
+        Matched,      ///< match: host (empty: no plugin takes the link); a hoster's sites
+        Sites,        ///< sites: host (empty: no hoster plugin), sites
         Found,        ///< check: name, size, hash
         Folder,       ///< check: the link names count links; ask expand
         Links,        ///< expand: links
@@ -68,6 +70,7 @@ struct ResolverEvent {
     int timeoutS = 0;
     QByteArray image;
     QList<ResolverLink> links;
+    QStringList sites;            ///< a hoster's domains, lower case: its host, then its aliases
     bool valid = false;
     bool premium = false;
     qint64 expires = 0;           ///< unix seconds; 0 = unknown
@@ -104,6 +107,8 @@ public:
     virtual TaskId open(const QString& url, const std::optional<ResolverAccount>& account, const QString& dir,
                         std::uint64_t have) = 0;
     virtual TaskId accountCheck(const QString& host, const ResolverAccount& account) = 0;
+    /// The hoster plugin for a domain or one of its aliases, and all its domains. No network.
+    virtual TaskId sites(const QString& host) = 0;
     /// The user's text for a puzzle; empty = skip it.
     virtual void answerPuzzle(std::uint64_t puzzle, const QString& text) = 0;
     virtual void cancel(TaskId task) = 0;

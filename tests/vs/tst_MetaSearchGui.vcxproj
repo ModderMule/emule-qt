@@ -41,10 +41,10 @@
   <Import Project="$(QtMsBuild)\qt_defaults.props" Condition="Exists('$(QtMsBuild)\qt_defaults.props')" />
   <Import Project="..\..\QtVersion.props" />
   <PropertyGroup Label="QtSettings" Condition="'$(Configuration)|$(Platform)'=='Release|x64'">
-    <QtModules>core;network;testlib;gui;multimedia;websockets;httpserver;concurrent;sql</QtModules>
+    <QtModules>core;network;testlib;gui;multimedia;websockets;httpserver;concurrent;sql;widgets</QtModules>
   </PropertyGroup>
   <PropertyGroup Label="QtSettings" Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">
-    <QtModules>core;network;testlib;gui;multimedia;websockets;httpserver;concurrent;sql</QtModules>
+    <QtModules>core;network;testlib;gui;multimedia;websockets;httpserver;concurrent;sql;widgets</QtModules>
   </PropertyGroup>
   <Target Name="QtMsBuildNotFound" BeforeTargets="CustomBuild;ClCompile" Condition="!Exists('$(QtMsBuild)\qt.targets') OR !Exists('$(QtMsBuild)\Qt.props')">
     <Message Importance="High" Text="QtMsBuild: could not locate qt.targets, qt.props; project may not build correctly." />
@@ -72,7 +72,7 @@
   </PropertyGroup>
   <ItemDefinitionGroup Condition="'$(Configuration)|$(Platform)'=='Release|x64'">
     <ClCompile>
-      <AdditionalIncludeDirectories>..;..\..\src\core;..\..\src\ipc;..\..\src\usenet;..\..\src\indexer;..\..\src\vcpkg_installed\x64-windows\include;..\..\src\vcpkg_installed\x64-windows\include\miniupnpc;release;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
+      <AdditionalIncludeDirectories>..\..\src\gui;..\..\tests\stubs;..\..\src\core;..;..\..\src\core;..\..\src\ipc;..\..\src\usenet;..\..\src\indexer;..\..\src\vcpkg_installed\x64-windows\include;..\..\src\vcpkg_installed\x64-windows\include\miniupnpc;release;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
       <AdditionalOptions>-Zc:rvalueCast -Zc:inline -Zc:strictStrings -Zc:throwingNew -permissive- -Zc:__cplusplus -Zc:externConstexpr -utf-8 -w34100 -w34189 -w44996 -w44456 -w44457 -w44458 %(AdditionalOptions)</AdditionalOptions>
       <AssemblerListingLocation>release\</AssemblerListingLocation>
       <BrowseInformation>false</BrowseInformation>
@@ -127,7 +127,7 @@
   </ItemDefinitionGroup>
   <ItemDefinitionGroup Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">
     <ClCompile>
-      <AdditionalIncludeDirectories>..;..\..\src\core;..\..\src\ipc;..\..\src\usenet;..\..\src\indexer;..\..\src\vcpkg_installed\x64-windows\include;..\..\src\vcpkg_installed\x64-windows\include\miniupnpc;debug;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
+      <AdditionalIncludeDirectories>..\..\src\gui;..\..\tests\stubs;..\..\src\core;..;..\..\src\core;..\..\src\ipc;..\..\src\usenet;..\..\src\indexer;..\..\src\vcpkg_installed\x64-windows\include;..\..\src\vcpkg_installed\x64-windows\include\miniupnpc;debug;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
       <AdditionalOptions>-Zc:rvalueCast -Zc:inline -Zc:strictStrings -Zc:throwingNew -permissive- -Zc:__cplusplus -Zc:externConstexpr -utf-8 -w34100 -w34189 -w44996 -w44456 -w44457 -w44458 %(AdditionalOptions)</AdditionalOptions>
       <AssemblerListingLocation>debug\</AssemblerListingLocation>
       <BrowseInformation>false</BrowseInformation>
@@ -177,6 +177,49 @@
   </ItemDefinitionGroup>
   <ItemGroup>
     <ClCompile Include="..\tst_MetaSearchGui.cpp" />
+    <ClCompile Include="..\..\src\gui\utils\Appearance.cpp" />
+    <ClCompile Include="..\..\src\gui\dialogs\WebLinksDialog.cpp" />
+    <ClCompile Include="..\..\src\gui\utils\Ed2kLinkImporter.cpp" />
+    <ClCompile Include="..\..\src\gui\utils\TorrentLinks.cpp" />
+    <ClCompile Include="..\..\src\gui\utils\HttpCacheLinkImporter.cpp" />
+    <ClCompile Include="..\..\src\gui\utils\DialogSizing.cpp" />
+    <ClCompile Include="..\..\src\gui\utils\StatusBarNotifier.cpp" />
+    <ClCompile Include="..\..\src\gui\controls\ContentScrollArea.cpp" />
+    <ClCompile Include="..\..\src\gui\app\UiState.cpp" />
+    <ClCompile Include="..\..\src\gui\controls\SearchResultsModel.cpp" />
+    <ClCompile Include="..\..\src\gui\controls\SearchResultsProxy.cpp" />
+    <ClCompile Include="..\..\src\gui\controls\FilterEdit.cpp" />
+    <ClCompile Include="..\..\src\gui\dialogs\MetaAccountDialog.cpp" />
+    <ClCompile Include="..\..\src\gui\utils\RatingIcons.cpp" />
+    <ClCompile Include="..\..\src\gui\utils\FileTypeIcons.cpp" />
+    <ClCompile Include="..\..\src\gui\utils\MenuUtils.cpp" />
+    <ClCompile Include="..\..\src\gui\utils\ViewSelection.cpp" />
+    <ClCompile Include="..\..\src\gui\app\IpcClient.cpp" />
+    <ClCompile Include="..\..\src\gui\app\KnownCores.cpp" />
+    <QtRcc Include="..\..\resources\emuleqt.qrc" />
+  </ItemGroup>
+  <ItemGroup>
+    <QtMoc Include="..\..\src\gui\dialogs\WebLinksDialog.h">
+      <QtMocFileName>moc_%(Filename).cpp</QtMocFileName>
+    </QtMoc>
+    <QtMoc Include="..\..\src\gui\controls\ContentScrollArea.h">
+      <QtMocFileName>moc_%(Filename).cpp</QtMocFileName>
+    </QtMoc>
+    <QtMoc Include="..\..\src\gui\controls\SearchResultsModel.h">
+      <QtMocFileName>moc_%(Filename).cpp</QtMocFileName>
+    </QtMoc>
+    <QtMoc Include="..\..\src\gui\controls\SearchResultsProxy.h">
+      <QtMocFileName>moc_%(Filename).cpp</QtMocFileName>
+    </QtMoc>
+    <QtMoc Include="..\..\src\gui\controls\FilterEdit.h">
+      <QtMocFileName>moc_%(Filename).cpp</QtMocFileName>
+    </QtMoc>
+    <QtMoc Include="..\..\src\gui\dialogs\MetaAccountDialog.h">
+      <QtMocFileName>moc_%(Filename).cpp</QtMocFileName>
+    </QtMoc>
+    <QtMoc Include="..\..\src\gui\app\IpcClient.h">
+      <QtMocFileName>moc_%(Filename).cpp</QtMocFileName>
+    </QtMoc>
   </ItemGroup>
   <ItemGroup>
     <CustomBuild Include="..\tst_MetaSearchGui.cpp.moc.cbt">

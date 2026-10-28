@@ -12,8 +12,14 @@
 /// - States: joining (no segment yet), playing, interrupted (LiveInterrupted: no record for
 ///   60 s), no peers (LiveGone took the last neighbour), ended (LiveEnded: the responses end).
 /// - leave(): liveLeave; the responses end.
+/// - Restarts (live.md §2.3, ruling #15 of batch 12): one fMP4 stream can't carry a second
+///   `moov`. On a segment with `gap`, another `init` or a new broadcast (`start`), every begun
+///   response ends (with a filler box, never an empty last chunk) and the window starts anew;
+///   the next request gets the new init data and the window. A browser asking for HTML gets
+///   a small player page at `/` that reconnects to `/stream` when a response ends.
 ///
-/// ToDo: broadcasting (liveBroadcast, livePushSegment, the channel key) is out of scope.
+/// was: ToDo: broadcasting (liveBroadcast, livePushSegment, the channel key) is out of scope.
+/// (done: Ed3kLiveBroadcast)
 /// ToDo: a viewer that cannot play `media`/`codecs` should say so and not join (§2.3); the
 /// system player decides now.
 
@@ -59,6 +65,7 @@ public:
         std::uint64_t segments = 0;
         std::uint64_t bytes = 0;
         int viewers = 0;
+        std::uint64_t restarts = 0;   ///< responses ended for a gap, a new init or broadcast
         QString url;              ///< empty while the website server does not listen
     };
 
@@ -83,6 +90,11 @@ signals:
 
 private:
     struct Viewer;
+    /// a segment held for later viewers, with the init data it needs
+    struct Held {
+        QByteArray data;
+        std::optional<::ed3k::Root> init;
+    };
     struct Watched {
         ::ed3k::Stream stream;
         QString title;
@@ -93,7 +105,14 @@ private:
         std::set<::ed3k::NodeId> neighbours;
         std::optional<::ed3k::Root> initRoot;
         QByteArray init;
-        std::deque<QByteArray> window;
+        // std::deque<QByteArray> window;   (was: one init for all; now per segment, #15)
+        std::deque<Held> window;
+        /// init data by root (the newest few: a viewer begins with its window's)
+        std::deque<std::pair<::ed3k::Root, QByteArray>> inits;
+        /// the broadcast and init of the window; a change restarts the viewers (#15)
+        std::optional<std::uint64_t> start;
+        std::optional<::ed3k::Root> windowInit;
+        std::uint64_t restarts = 0;
         std::uint64_t segments = 0;
         std::uint64_t bytes = 0;
         std::vector<std::unique_ptr<Viewer>> viewers;
@@ -107,6 +126,15 @@ private:
     void begin(Watched& w, Viewer& v);
     /// Ends every response of @p w.
     void endViewers(Watched& w);
+    /// #15: ends the begun responses (the player asks again) and empties the window.
+    void restartViewers(Watched& w);
+    /// The last chunk of a begun response: never empty (Qt refuses that), a box the
+    /// container ignores.
+    void endResponse(const Watched& w, Viewer& v);
+    /// The init data of root @p r held, empty when none.
+    [[nodiscard]] static QByteArray initOf(const Watched& w, const std::optional<::ed3k::Root>& r);
+    /// The player page (HTML) of a stream: it reconnects when a response ends.
+    void answerPage(QHttpServerResponder& r, const QString& id) const;
     Watched* find(const ::ed3k::Stream& stream);
     [[nodiscard]] Info infoOf(const Watched& w) const;
     void markChanged();

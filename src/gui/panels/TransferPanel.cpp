@@ -19,6 +19,7 @@
 #include "controls/CategoryTabBar.h"
 #include "controls/DownloadListModel.h"
 #include "controls/DownloadProgressDelegate.h"
+#include "controls/Ed3kDownloadRows.h"
 #include "controls/TransferToolbar.h"
 #include "controls/UploadStatusDelegate.h"
 #include "dialogs/CategoryDialog.h"
@@ -647,10 +648,11 @@ void TransferPanel::onDownloadContextMenu(const QPoint& pos)
         pasteAct->setEnabled(hasImportableLink && m_ipc && m_ipc->isConnected());
         connect(pasteAct, &QAction::triggered, this, &TransferPanel::pasteDownloadLinks);
     }
-    // followed ed3k sets and live streams (no MFC original)
-    m_downloadMenu->addAction(menuIcon("Folders.ico"), tr("ed3k Sets..."), this, [this] {
-        Ed3kSetsDialog::showDialog(this, m_ipc);
-    })->setEnabled(m_ipc && m_ipc->isConnected());
+    // followed ed3k sets and live streams (no MFC original); only while ed3k is on
+    if (thePrefs.ed3kEnabled())
+        m_downloadMenu->addAction(menuIcon("Folders.ico"), tr("ed3k Sets..."), this, [this] {
+            Ed3kSetsDialog::showDialog(this, m_ipc);
+        })->setEnabled(m_ipc && m_ipc->isConnected());
 
     m_downloadMenu->addSeparator();
 
@@ -1352,45 +1354,8 @@ void TransferPanel::requestEd3kDownloads()
 
 void TransferPanel::takeEd3kDownloads(const QCborMap& list)
 {
-    static const QString prio[] = {QStringLiteral("low"), QStringLiteral("normal"), QStringLiteral("high"),
-                                   QStringLiteral("veryHigh"), QStringLiteral("veryLow")};
-    std::vector<DownloadRow> rows;
-    for (const auto& v : list.value(QStringLiteral("downloads")).toArray()) {
-        const QCborMap m = v.toMap();
-        DownloadRow row;
-        row.network = 1;
-        row.hash = m.value(QStringLiteral("root")).toString();
-        row.fileName = m.value(QStringLiteral("name")).toString();
-        row.fileSize = m.value(QStringLiteral("size")).toInteger();
-        row.completedSize = m.value(QStringLiteral("done")).toInteger();
-        row.percentCompleted = row.fileSize > 0 ? 100.0 * double(row.completedSize) / double(row.fileSize) : 0.0;
-        row.datarate = m.value(QStringLiteral("rate")).toInteger();
-        row.sourceCount = int(m.value(QStringLiteral("sources")).toInteger());
-        row.transferringSrcCount = int(m.value(QStringLiteral("transferring")).toInteger());
-        row.availableSrcCount = row.sourceCount;
-        row.priority = prio[std::clamp<qint64>(m.value(QStringLiteral("priority")).toInteger(1), 0, 4)];
-        row.category = m.value(QStringLiteral("category")).toInteger();
-        row.addedOn = m.value(QStringLiteral("addedOn")).toInteger();
-        row.ed3kPath = m.value(QStringLiteral("path")).toString();
-        row.fileType = getFileTypeByName(row.fileName);
-        // the eD2K status tokens (statusText): verifying shows as "Completing (Hashing)"
-        switch (m.value(QStringLiteral("state")).toInteger()) {
-        case 1: row.status = QStringLiteral("paused"); row.isPaused = true; break;
-        case 2: row.status = QStringLiteral("completing"); row.fileOp = 1; break;
-        case 3: row.status = QStringLiteral("complete"); row.percentCompleted = 100.0; break;
-        case 4: row.status = QStringLiteral("error"); break;
-        default: row.status = row.transferringSrcCount > 0 ? QStringLiteral("ready") : QStringLiteral("empty"); break;
-        }
-        if (row.datarate > 0 && row.fileSize > row.completedSize)
-            row.timeRemaining = (row.fileSize - row.completedSize) / row.datarate;
-        // the bar: what is held drawn as one run from the start (the blocks' map is not sent)
-        if (row.fileSize > 0) {
-            row.hasBarRanges = true;
-            if (!row.isComplete() && row.completedSize < row.fileSize)
-                row.gaps = {row.completedSize, row.fileSize - 1};
-        }
-        rows.push_back(std::move(row));
-    }
+    // was: the rows built here, the bar one run from the start (now Ed3kDownloadRows: the blocks)
+    std::vector<DownloadRow> rows = ed3kDownloadRows(list);
     m_ed3kRows = std::move(rows);
     applyDownloadRows();
 }

@@ -96,6 +96,12 @@ QIcon clientSoftwareIcon(int softwareId, bool hasCredit, bool isFriend)
     return composite;
 }
 
+QIcon ed3kClientIcon()
+{
+    static const QIcon icon(QStringLiteral(":/icons/ClientEd3k.ico"));
+    return icon;
+}
+
 SourceStateIcon sourceStateIconKind(const QString& stateToken, bool remoteQueueFull, bool a4af)
 {
     if (a4af)

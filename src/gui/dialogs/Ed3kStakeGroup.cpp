@@ -15,6 +15,7 @@
 #include <QFormLayout>
 #include <QHBoxLayout>
 #include <QHeaderView>
+#include <QInputDialog>
 #include <QLabel>
 #include <QLineEdit>
 #include <QLocale>
@@ -96,15 +97,19 @@ Ed3kStakeGroup::Ed3kStakeGroup(IpcClient* ipc, QWidget* parent)
     m_burnBtn->setToolTip(tr("Burns credits of this credit address for stake tokens. It cannot be undone and is public."));
     m_claimBtn = new QPushButton(tr("Claim"), this);
     m_claimBtn->setToolTip(tr("Mints a ready claim to its address."));
+    m_claimIdBtn = new QPushButton(tr("Claim id…"), this);
+    m_claimIdBtn->setToolTip(tr("Reads any claim by its id, shows it, and mints it to its address once ready."));
     m_refreshBtn = new QPushButton(tr("Refresh"), this);
     row->addWidget(m_burnBtn);
     row->addWidget(m_claimBtn);
+    row->addWidget(m_claimIdBtn);
     row->addWidget(m_refreshBtn);
     row->addStretch();
     layout->addLayout(row);
 
     connect(m_burnBtn, &QPushButton::clicked, this, &Ed3kStakeGroup::burn);
     connect(m_claimBtn, &QPushButton::clicked, this, &Ed3kStakeGroup::claim);
+    connect(m_claimIdBtn, &QPushButton::clicked, this, &Ed3kStakeGroup::claimId);
     connect(m_refreshBtn, &QPushButton::clicked, this, [this] {
         if (m_ipc && m_ipc->isConnected())
             m_ipc->sendRequest(IpcMessage(IpcMsgType::RefreshEd3kStakeClaims));
@@ -113,6 +118,7 @@ Ed3kStakeGroup::Ed3kStakeGroup(IpcClient* ipc, QWidget* parent)
     if (m_ipc) {
         connect(m_ipc, &IpcClient::ed3kStakeClaimsChanged, this, [this](const IpcMessage& m) { fill(m.fieldMap(0)); });
         connect(m_ipc, &IpcClient::ed3kStakeTx, this, [this](const IpcMessage& m) { onTx(m.fieldMap(0)); });
+        connect(m_ipc, &IpcClient::ed3kStakeLookup, this, [this](const IpcMessage& m) { onLookup(m.fieldMap(0)); });
         connect(m_ipc, &IpcClient::ed3kStatusChanged, this,
                 [this](const IpcMessage& m) { applyCredit(m.fieldMap(0).value(QStringLiteral("credit")).toMap()); });
     }
@@ -159,6 +165,14 @@ void Ed3kStakeGroup::fill(const QCborMap& stake)
                                                 : tr("Paid"));
         it->setData(0, Qt::UserRole, id);
         it->setData(4, Qt::UserRole, state == kClaimWaiting && ready);
+        // the transactions (batch 12 #10)
+        QStringList txs;
+        if (const QString b = c.value(QStringLiteral("burnTx")).toString(); !b.isEmpty())
+            txs << tr("Burn: 0x%1").arg(b);
+        if (const QString t = c.value(QStringLiteral("claimTx")).toString(); !t.isEmpty())
+            txs << tr("Claim: 0x%1").arg(t);
+        for (int col = 0; col < 5 && !txs.isEmpty(); ++col)
+            it->setToolTip(col, txs.join(QLatin1Char('\n')));
         if (id == selected)
             m_tree->setCurrentItem(it);
     }
@@ -202,6 +216,23 @@ QString Ed3kStakeGroup::burnNotice()
               "your name. To avoid that link, burn to a new address and move nothing back to the credit "
               "address.</p>"
               "<p>Only your node's own credit address burns, never an anonymous one.</p>");
+}
+
+QString Ed3kStakeGroup::lookupText(const QCborMap& lookup)
+{
+    const qint64 id = lookup.value(QStringLiteral("id")).toInteger();
+    if (lookup.value(QStringLiteral("failed")).toBool())
+        return tr("Claim %1 could not be read from the ledger. Try again later.").arg(id);
+    if (!lookup.value(QStringLiteral("found")).toBool())
+        return lookup.value(QStringLiteral("paid")).toBool() ? tr("Claim %1 is paid already.").arg(id)
+                                                             : tr("There is no claim %1 to mint: it was never made, or it is paid already.").arg(id);
+    const qint64 readyAt = lookup.value(QStringLiteral("readyAt")).toInteger();
+    const QString when = QLocale().toString(QDateTime::fromSecsSinceEpoch(readyAt), QLocale::ShortFormat);
+    const QString what = tr("Claim %1: %2 E3S to %3.")
+                             .arg(id)
+                             .arg(e3sText(lookup.value(QStringLiteral("amount")).toString()), lookup.value(QStringLiteral("to")).toString());
+    return readyAt <= QDateTime::currentSecsSinceEpoch() ? what + QLatin1Char(' ') + tr("Ready since %1.").arg(when)
+                                                         : what + QLatin1Char(' ') + tr("Ready at %1.").arg(when);
 }
 
 // ---------------------------------------------------------------------------
@@ -297,8 +328,67 @@ void Ed3kStakeGroup::claim()
     auto* it = m_tree->currentItem();
     if (!m_ipc || !it || !it->data(4, Qt::UserRole).toBool())
         return;
+    // IpcMessage req(IpcMsgType::ClaimEd3kStake);
+    // req.append(it->data(0, Qt::UserRole).toLongLong());
+    // m_ipc->sendRequest(...): refused → warning (now sendClaim, shared with "Claim id…")
+    sendClaim(it->data(0, Qt::UserRole).toLongLong());
+}
+
+void Ed3kStakeGroup::claimId()
+{
+    if (!m_ipc || !m_configured)
+        return;
+    bool ok = false;
+    const QString text = QInputDialog::getText(this, tr("Claim id"), tr("Id of the stake claim (anyone may mint it to its address):"),
+                                               QLineEdit::Normal, {}, &ok)
+                             .trimmed();
+    if (!ok)
+        return;
+    const qint64 id = text.toLongLong(&ok);
+    if (!ok || id <= 0) {
+        QMessageBox::warning(this, tr("Claim id"), tr("A claim id is a whole number above 0."));
+        return;
+    }
+    m_lookingFor = id;
+    m_rateLabel->setText(tr("Reading claim %1…").arg(id));
+    IpcMessage req(IpcMsgType::ReadEd3kStakeClaim);
+    req.append(id);
+    m_ipc->sendRequest(std::move(req), [self = QPointer<Ed3kStakeGroup>(this)](const IpcMessage& r) {
+        if (!self || (r.type() == IpcMsgType::Result && r.fieldBool(0)))
+            return;
+        self->m_lookingFor = 0;
+        QMessageBox::warning(self, tr("Claim id"), tr("The claim could not be read (error %1).")
+                                                       .arg(r.fieldMap(1).value(QStringLiteral("error")).toInteger()));
+    });
+}
+
+void Ed3kStakeGroup::onLookup(const QCborMap& lookup)
+{
+    const qint64 id = lookup.value(QStringLiteral("id")).toInteger();
+    if (id == 0 || id != m_lookingFor)
+        return;
+    m_lookingFor = 0;
+    const QString text = lookupText(lookup);
+    m_rateLabel->setText(text);
+    const bool ready = lookup.value(QStringLiteral("found")).toBool() && !lookup.value(QStringLiteral("failed")).toBool()
+                       && lookup.value(QStringLiteral("readyAt")).toInteger() <= QDateTime::currentSecsSinceEpoch();
+    if (!ready) {
+        QMessageBox::information(this, tr("Claim id"), text);
+        return;
+    }
+    QMessageBox box(QMessageBox::Question, tr("Claim id"), text, QMessageBox::Yes | QMessageBox::No, this);
+    box.setInformativeText(tr("Mint it now? Your credit address pays the gas; the stake tokens go to the claim's address."));
+    box.setDefaultButton(QMessageBox::Yes);
+    if (box.exec() == QMessageBox::Yes)
+        sendClaim(id);
+}
+
+void Ed3kStakeGroup::sendClaim(qint64 id)
+{
+    if (!m_ipc)
+        return;
     IpcMessage req(IpcMsgType::ClaimEd3kStake);
-    req.append(it->data(0, Qt::UserRole).toLongLong());
+    req.append(id);
     m_ipc->sendRequest(std::move(req), [self = QPointer<Ed3kStakeGroup>(this)](const IpcMessage& r) {
         if (self && !(r.type() == IpcMsgType::Result && r.fieldBool(0)))
             QMessageBox::warning(self, tr("Claim"), tr("The claim was refused (error %1).")
@@ -323,6 +413,7 @@ void Ed3kStakeGroup::updateButtons()
     m_burnBtn->setEnabled(connected && m_configured);
     auto* it = m_tree->currentItem();
     m_claimBtn->setEnabled(connected && m_configured && it && it->data(4, Qt::UserRole).toBool());
+    m_claimIdBtn->setEnabled(connected && m_configured);
     m_refreshBtn->setEnabled(connected && m_configured);
 }
 

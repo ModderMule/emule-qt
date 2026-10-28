@@ -12,6 +12,13 @@
 #include "Ed3kNamesBridge.h"
 #include "Ed3kRoomsBridge.h"
 #include "Ed3kSetsBridge.h"
+#include "Ed3kPaidBridge.h"
+#include "app/AppContext.h"
+#include "stats/NetworkCounters.h"
+#include "stats/Statistics.h"
+
+#include <algorithm>
+#include <array>
 
 #ifdef EMULE_HAVE_ED3K
 #include "Ed3kBootstrap.h"
@@ -128,6 +135,9 @@ bool handleRequest(const IpcMessage& msg, const std::function<void(const IpcMess
     // node list sources: 1030-1031
     if (handleBootstrap(msg, reply))
         return true;
+    // paid subscriptions: 1035-1038 (batch 13)
+    if (Ed3kPaidBridge::handleRequest(msg, reply))
+        return true;
     // hoster links: 1100-1109
     if (Ed3kHosterBridge::handleRequest(msg, reply))
         return true;
@@ -176,6 +186,41 @@ int portTestSeen(quint64 nonce)
 #endif
 }
 
+void sampleCounters()
+{
+#ifdef EMULE_HAVE_ED3K
+    // last raw totals: the engine's own reset with each restart, a drop counts from 0
+    static std::array<std::uint64_t, 6> last{};
+    Statistics* stats = theApp.statistics;
+    if (!s_session || !stats)
+        return;
+    const ed3k::Ed3kStatus st = s_session->status();
+    const ed3k::Ed3kTraffic t = s_session->traffic();
+    const std::array<std::uint64_t, 6> now{t.recv, t.sent, st.stats.recv_file, st.stats.recv_other,
+                                           st.stats.sent_file, st.stats.sent_other};
+    Ed3kCounters& c = stats->ed3kSession();
+    uint64 Ed3kCounters::* const fields[] = {&Ed3kCounters::wireRecv, &Ed3kCounters::wireSent,
+                                             &Ed3kCounters::recvFile, &Ed3kCounters::recvOther,
+                                             &Ed3kCounters::sentFile, &Ed3kCounters::sentOther};
+    for (size_t i = 0; i < now.size(); ++i) {
+        c.*fields[i] += now[i] >= last[i] ? now[i] - last[i] : now[i];
+        last[i] = now[i];
+    }
+    if (const auto* bw = BandwidthCoordinator::instance()) {
+        const auto snap = bw->snapshot();
+        if (snap.ed3kDownRate > 0)
+            c.downloadTimeMs += 1000;
+        if (snap.ed3kUpRate > 0)
+            c.uploadTimeMs += 1000;
+        raiseCounter(c.maxDownRate, uint64(std::max<qint64>(snap.ed3kDownRate, 0)));
+        raiseCounter(c.maxUpRate, uint64(std::max<qint64>(snap.ed3kUpRate, 0)));
+    }
+    raiseCounter(c.peakConnections, st.stats.connections);
+    raiseCounter(c.peakContacts, st.contacts);
+    raiseCounter(c.peakPublished, st.stats.published);
+#endif
+}
+
 QCborMap statusToCbor()
 {
     QCborMap out{{QStringLiteral("available"), available()}, {QStringLiteral("running"), false}};
@@ -201,6 +246,10 @@ QCborMap statusToCbor()
     out.insert(QStringLiteral("limitDownKb"), qint64(limits.down / 1024));
     if (st.running)
         out.insert(QStringLiteral("stats"), statsToCbor(st.stats));
+    if (const Statistics* stats = theApp.statistics) {
+        out.insert(QStringLiteral("session"), countersToCbor(stats->ed3kSession()));
+        out.insert(QStringLiteral("cumulative"), countersToCbor(stats->cumulativeEd3k()));
+    }
     // the engine's upload queue policy (not `slots`: a Qt macro)
     if (const auto q = s_session->uploadQueueStats())
         out.insert(QStringLiteral("queue"), QCborMap{{QStringLiteral("slotCount"), qint64(q->slotCount)},
@@ -208,6 +257,8 @@ QCborMap statusToCbor()
                                                      {QStringLiteral("waiting"), qint64(q->waiting)}});
     if (const QCborMap credit = Ed3kCreditBridge::statusToCbor(); !credit.isEmpty())
         out.insert(QStringLiteral("credit"), credit);
+    if (const QCborMap chain = Ed3kCreditBridge::chainStatusToCbor(); !chain.isEmpty())
+        out.insert(QStringLiteral("chain"), chain);   // batch 13
     if (const QCborMap hoster = Ed3kHosterBridge::statusToCbor(); !hoster.isEmpty())
         out.insert(QStringLiteral("hoster"), hoster);
 #endif

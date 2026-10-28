@@ -104,6 +104,7 @@ SOURCES += \
     controls/DownloadListModel.cpp \
     controls/BarShader.cpp \
     controls/DownloadProgressDelegate.cpp \
+    controls/Ed3kDownloadRows.cpp \
     controls/UsenetFileCheckList.cpp \
     controls/UsenetProgressDelegate.cpp \
     controls/FriendListModel.cpp \
@@ -202,6 +203,7 @@ HEADERS += \
     controls/FitTextTabBar.h \
     controls/DownloadListModel.h \
     controls/DownloadProgressDelegate.h \
+    controls/Ed3kDownloadRows.h \
     controls/BarShader.h \
     controls/PartBarPainter.h \
     controls/UsenetFileCheckList.h \

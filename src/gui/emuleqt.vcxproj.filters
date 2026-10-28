@@ -82,6 +82,9 @@
     <ClCompile Include="controls\DownloadProgressDelegate.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
+    <ClCompile Include="controls\Ed3kDownloadRows.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
     <ClCompile Include="controls\UsenetFileCheckList.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
@@ -436,6 +439,9 @@
       <Filter>Header Files</Filter>
     </ClInclude>
     <ClInclude Include="controls\SortableItems.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="controls\Ed3kDownloadRows.h">
       <Filter>Header Files</Filter>
     </ClInclude>
     <ClInclude Include="controls\BarShader.h">
@@ -901,6 +907,9 @@
       <Filter>Resource Files</Filter>
     </None>
     <None Include="..\..\resources\icons\ClientCompatiblePlus.ico">
+      <Filter>Resource Files</Filter>
+    </None>
+    <None Include="..\..\resources\icons\ClientEd3k.ico">
       <Filter>Resource Files</Filter>
     </None>
     <None Include="..\..\resources\icons\ClientDefault.ico">

@@ -11,6 +11,9 @@ namespace eMule {
 /// the software icon with a small friend badge at the bottom-right.
 [[nodiscard]] QIcon clientSoftwareIcon(int softwareId, bool hasCredit, bool isFriend);
 
+/// ed3k node: the eMule client icon with a Mars-red mane (no MFC original).
+[[nodiscard]] QIcon ed3kClientIcon();
+
 /// MFC's five source state icons, in its image-list order
 /// (DownloadListCtrl.cpp:181-185).
 enum class SourceStateIcon { Downloading, OnQueue, Connecting, NoNeededOrFull, Unknown };

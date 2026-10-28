@@ -226,6 +226,7 @@ bool isReadOnlyRequest(IpcMsgType type)
     case IpcMsgType::GetTorrentDetails:
     case IpcMsgType::GetBtStatus:
     case IpcMsgType::GetBtStats:
+    case IpcMsgType::GetHosterStats:
     case IpcMsgType::GetEd3kStatus:
     case IpcMsgType::GetEd3kFriends:
     case IpcMsgType::GetEd3kDownloads:   // ed3k downloads (batch 12)

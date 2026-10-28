@@ -87,7 +87,9 @@ void Ed3kRoomList::setRooms(const QCborArray& rooms)
         item->setText(3, kind.join(QStringLiteral(", ")));
         QString state;
         const int neighbours = int(r.value(QStringLiteral("neighbours")).toInteger());
-        if (r.value(QStringLiteral("keyMissing")).toBool())
+        if (r.value(QStringLiteral("notAdmitted")).toBool())
+            state = tr("Not admitted: send your member key to a moderator");
+        else if (r.value(QStringLiteral("keyMissing")).toBool())
             state = tr("Waiting for the room key");
         else if (neighbours > 0)
             state = tr("Joined (%n neighbour(s))", nullptr, neighbours);
@@ -130,8 +132,11 @@ void Ed3kRoomList::showMenu(const QPoint& pos)
     add(tr("Copy link"), Action::CopyLink, has);
     add(tr("Change nick..."), Action::ChangeNick, has);
     add(tr("Copy my member key"), Action::CopyMemberKey, has);
-    // a newcomer knows the room is closed only once admitted: any room with a secret
-    add(tr("Import admit..."), Action::ImportAdmit, has && row.value(QStringLiteral("private")).toBool() && !mod);
+    // #17 (batch 12 ruling): the room info says closed/moderated, or a member refused us
+    // as not admitted; not every room with a secret
+    // was: has && row.value(QStringLiteral("private")).toBool() && !mod
+    const bool importable = closed || row.value(QStringLiteral("moderated")).toBool() || row.value(QStringLiteral("notAdmitted")).toBool();
+    add(tr("Import admit..."), Action::ImportAdmit, has && importable && !mod);
     if (mod) {
         menu.addSeparator();
         add(tr("Admit a member key..."), Action::AdmitKey, true);

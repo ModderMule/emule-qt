@@ -525,6 +525,7 @@ bool ServerSocket::processPacket(const uint8* packet, uint32 size, uint8 opcode)
 
     case OP_CALLBACK_FAIL:
         logWarning(QStringLiteral("Server: Callback attempt failed"));
+        emit callbackFailed();
         break;
 
     case OP_NAT_CALLBACKREQUESTED:

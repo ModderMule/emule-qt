@@ -176,6 +176,8 @@ public:
     void addConnectingClient(UpDownClient* client);
     void removeConnectingClient(const UpDownClient* client);
     void processConnectingClients();
+    /// Server answered OP_CALLBACK_FAIL: Kad fallback for the pending server callback.
+    void serverCallbackFailed();
 
     // -- Banned clients -----------------------------------------------------
 

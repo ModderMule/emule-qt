@@ -3,6 +3,7 @@
 /// configured from the prefs through a fake JSON-RPC node, and the IPC (Ed3kCreditBridge).
 
 #include "Ed3kBridge.h"
+#include "Ed3kChain.h"
 #include "Ed3kCredit.h"
 #include "Ed3kCreditBridge.h"
 #include "Ed3kSession.h"
@@ -91,6 +92,8 @@ private slots:
     void configureReachesTheLedger();
     void wrongChainIsNotUsed();
     void addressParsing();
+    void oneRemoteChainEndpointIsNoted();
+    void aRefusedChainAnswerIsShown();
 
 private:
     static Ed3kSettings loopback(const QString& dir);
@@ -304,6 +307,46 @@ void tst_Ed3kCredit::addressParsing()
     QVERIFY(!Ed3kCredit::parseAddress(QStringLiteral("5fbdb2315678afecb367f032d93f642f64180aa3")));
     QVERIFY(!Ed3kCredit::parseAddress(QStringLiteral("0x5fbdb2315678afecb367f032d93f642f64180aa")));
     QVERIFY(!Ed3kCredit::parseAddress(QStringLiteral("0xzzbdb2315678afecb367f032d93f642f64180aa3")));
+}
+
+// chaintube.md §4.3, batch 12 #8: one remote endpoint can't give two providers (noted once)
+void tst_Ed3kCredit::oneRemoteChainEndpointIsNoted()
+{
+    using eMule::ed3k::Ed3kChain;
+    const QString remote = QStringLiteral("https://rpc.example.org/ext/bc/C/rpc");
+    QVERIFY(Ed3kChain::singleRemote({remote}));
+    QCOMPARE(Ed3kChain::providersFor({remote}), 1u);
+    QVERIFY(!Ed3kChain::singleRemote({remote, QStringLiteral("https://other.example.net/rpc")}));
+    QCOMPARE(Ed3kChain::providersFor({remote, QStringLiteral("https://other.example.net/rpc")}), 2u);
+    QVERIFY(!Ed3kChain::singleRemote({QStringLiteral("http://127.0.0.1:8545")}));   // a local node: enough
+    QVERIFY(!Ed3kChain::singleRemote({}));
+    // an unusable one does not count (plain http to elsewhere)
+    QVERIFY(Ed3kChain::singleRemote({remote, QStringLiteral("http://plain.example.org/rpc")}));
+    // the status the options page reads (GetEd3kStatus "chain")
+    Ed3kSession s;
+    Ed3kChain chain(s);
+    Ed3kCreditBridge::setChain(&chain);
+    chain.setConfig(Ed3kChainPrefs{}, {remote});
+    const QCborMap st = Ed3kCreditBridge::chainStatusToCbor();
+    QVERIFY(st.value(QStringLiteral("singleRemote")).toBool());
+    QCOMPARE(st.value(QStringLiteral("refused")).toString(), QString());
+    Ed3kCreditBridge::setChain(nullptr);
+    QVERIFY(Ed3kCreditBridge::chainStatusToCbor().isEmpty());
+}
+
+// batch 12 #6: a refused read/write is shown with the node's text; other failures are not refusals
+void tst_Ed3kCredit::aRefusedChainAnswerIsShown()
+{
+    using eMule::ed3k::Ed3kChain;
+    QVERIFY(Ed3kChain::refusalText(ED3K_CHAIN_REFUSED, QStringLiteral("insufficient funds for gas * price + value")).contains(
+        QStringLiteral("insufficient funds")));
+    QVERIFY(!Ed3kChain::refusalText(ED3K_CHAIN_REFUSED, {}).isEmpty());
+    QVERIFY(!Ed3kChain::refusalText(ED3K_CHAIN_BAD_REQUEST, {}).isEmpty());
+    QVERIFY(Ed3kChain::refusalText(ED3K_CHAIN_UNREACHABLE, QStringLiteral("x")).isEmpty());
+    // a stranger's text: one line, kept short
+    const QString t = Ed3kChain::refusalText(ED3K_CHAIN_REFUSED, QString(500, QLatin1Char('a')) + QStringLiteral("\nb"));
+    QVERIFY(!t.contains(QLatin1Char('\n')));
+    QVERIFY(t.size() < 300);
 }
 
 Ed3kSettings tst_Ed3kCredit::loopback(const QString& dir)

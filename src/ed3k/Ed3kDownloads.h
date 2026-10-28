@@ -26,9 +26,12 @@
 /// (Publish::Both, keywords unless holding back) and kept (keepMember) for a restart.
 /// Pieces (4 MiB) held are shared while it runs once the block values are in.
 ///
-/// ToDo: the download priority is kept and shown only; the engine has no priority between
+/// was: ToDo: the download priority is kept and shown only; the engine has no priority between
 /// downloads (it could rank block requests or streams per file). (It orders the turns at a
 /// source shared by several downloads: Ed3kJoinBase::downloadPriority.)
+/// (done: Ed3kJoinBase shares by priority weight, eD2K's order: the turn at a shared source,
+/// a higher waiter taking it from a lower holder at once; the session's block-request depth;
+/// the streams opened per download.)
 
 #include "Ed3kJoinBase.h"
 
@@ -82,6 +85,10 @@ struct Ed3kDownloadInfo {
     qint64 addedOn = 0;            ///< s since the epoch
     qint64 completedOn = 0;
     QString error;                 ///< Failed: why (not localized: a log line)
+    std::vector<bool> blocks;      ///< per 256 KiB block: held (verified)
+    std::vector<bool> pending;     ///< per block: asked for, not here yet; empty: not running
+    /// per 4 MiB piece: open sources holding it (FileStatus.have, 255 at most); empty: none told
+    std::vector<std::uint8_t> availability;
 };
 
 class Ed3kDownloads : public Ed3kJoinBase {

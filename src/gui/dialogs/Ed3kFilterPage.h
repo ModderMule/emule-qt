@@ -14,6 +14,8 @@
 
 class QComboBox;
 class QLabel;
+class QLineEdit;
+class QPushButton;
 class QTreeWidget;
 
 namespace eMule {
@@ -48,6 +50,8 @@ private:
     void applyMode(QComboBox* combo, qint64 id);
     void addOwn();
     void removeOwn();
+    /// §2: the own list as a set; again on every change. @p on false stops it.
+    void publishOwn(bool on);
     /// Shows a failed reply; true when it failed.
     bool failed(const Ipc::IpcMessage& reply, const QString& what);
     [[nodiscard]] static int modeOfIndex(int index);
@@ -59,6 +63,11 @@ private:
     QComboBox* m_listMode = nullptr;
     QComboBox* m_ownMode = nullptr;
     QTreeWidget* m_own = nullptr;
+    QLineEdit* m_pubLink = nullptr;
+    QPushButton* m_publish = nullptr;
+    QPushButton* m_unpublish = nullptr;
+    QPushButton* m_copyLink = nullptr;
+    QString m_pubTitle;
     bool m_filling = false;
 };
 

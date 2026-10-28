@@ -41,6 +41,8 @@ SOURCES += \
     Ed3kSets.cpp \
     Ed3kSetManifest.cpp \
     Ed3kLive.cpp \
+    Ed3kLiveBroadcast.cpp \
+    Ed3kPaid.cpp \
     Ed3kHosterJoin.cpp \
     Ed3kHttp.cpp \
     Ed3kJoinBase.cpp \
@@ -49,6 +51,7 @@ SOURCES += \
     Ed3kPlumbing.cpp \
     Ed3kSession.cpp \
     Ed3kShared.cpp \
+    Ed3kSiteCache.cpp \
     Ed3kSiteServer.cpp \
     Ed3kStore.cpp \
     Ed3kTorrentJoin.cpp \
@@ -68,6 +71,9 @@ HEADERS += \
     Ed3kSets.h \
     Ed3kSetManifest.h \
     Ed3kLive.h \
+    Ed3kLiveBroadcast.h \
+    Ed3kPaid.h \
+    Ed3kProto.h \
     Ed3kHosterJoin.h \
     Ed3kHttp.h \
     Ed3kJoinBase.h \
@@ -76,6 +82,7 @@ HEADERS += \
     Ed3kPlumbing.h \
     Ed3kSession.h \
     Ed3kShared.h \
+    Ed3kSiteCache.h \
     Ed3kSiteServer.h \
     Ed3kStore.h \
     Ed3kTorrentJoin.h \

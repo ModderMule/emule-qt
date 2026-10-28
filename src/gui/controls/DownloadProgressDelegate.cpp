@@ -73,12 +73,15 @@ void paintDownloadBar(QPainter& painter, const QRect& rect, const DownloadBarDat
     }
 
     // Gaps, split at part boundaries so each piece takes its part's frequency
+    // (ed3k rows: their 4 MiB pieces, DownloadBarData::freqUnit)
+    const uint64_t freqUnit = bar.freqUnit > 0 ? static_cast<uint64_t>(bar.freqUnit) : PARTSIZE;
     for (qsizetype i = 0; i + 1 < bar.gaps.size(); i += 2) {
         uint64_t start = static_cast<uint64_t>(bar.gaps.at(i));
         const uint64_t end = static_cast<uint64_t>(bar.gaps.at(i + 1));
         while (start <= end) {
-            const uint64_t part = start / PARTSIZE;
-            const uint64_t pieceEnd = std::min(end, (part + 1) * PARTSIZE - 1);
+            // was: start / PARTSIZE, (part + 1) * PARTSIZE - 1
+            const uint64_t part = start / freqUnit;
+            const uint64_t pieceEnd = std::min(end, (part + 1) * freqUnit - 1);
             const uint16_t freq = part < uint64_t(bar.partFreq.size()) ? bar.partFreq.at(qsizetype(part)) : 0;
             shader.fillRange(start, pieceEnd + 1, gapColor(freq, paused));
             start = pieceEnd + 1;

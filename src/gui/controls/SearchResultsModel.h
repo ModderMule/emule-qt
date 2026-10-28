@@ -74,6 +74,15 @@ struct SearchResultRow {
     QString metaCatalogId;   ///< FT_META_ID, echoed on the metafile fetch
     QCborArray metaServers;  ///< answering servers, [[ip, port], …]
     QString ed3kRoot;        ///< ed3k row (metaKind 7): the file's root, 64 hex digits
+    QString ed3kAuthor;      ///< ed3k row: the record's publisher (node ID hex); empty none
+    // ed3k filter lists (filter-list.md §3): verdict 0 none, 1 fake, 2 harmful, 3 spam, 4 good
+    int ed3kVerdict = 0;
+    bool ed3kHidden = false;     ///< a list hides it: kept out unless asked for (§3)
+    bool ed3kOwn = false;        ///< the user's own verdict
+    bool ed3kShown = false;      ///< "show anyway" chosen
+    bool ed3kDisagree = false;
+    QString ed3kBy;              ///< the list that said it; empty for the own
+    QString ed3kReason;
 
     QString directory;       ///< folder of a browsed peer's file
     QString aichHash;        ///< empty when the answers gave none, or disagreed

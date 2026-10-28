@@ -122,6 +122,16 @@ void MetaResultActions::showWebLinks(quint32 searchID, const QList<Row>& rows)
         fetchAndShowLinks(searchID, row);
 }
 
+void MetaResultActions::downloadWebLinks(quint32 searchID, const QList<Row>& rows)
+{
+    if (!Ed2kLinkImporter::hosterReady()) {
+        showWebLinks(searchID, rows);
+        return;
+    }
+    for (const Row& row : rows)
+        fetchAndDownloadLinks(searchID, row);
+}
+
 void MetaResultActions::copyMagnets(const QList<Row>& rows)
 {
     QStringList links;
@@ -140,13 +150,13 @@ void MetaResultActions::handOverMagnets(const QList<Row>& rows)
     for (const Row& row : rows)
         if (!row.magnet.isEmpty())
             links << row.magnet;
-    if (!Ed2kLinkImporter::sendTorrentLinks(links, m_parent))
+    if (!Ed2kLinkImporter::torrentsReady() || !Ed2kLinkImporter::sendTorrentLinks(links, m_parent))
         copyMagnets(rows);
 }
 
 void MetaResultActions::addTorrents(quint32 searchID, const QList<Row>& rows)
 {
-    if (!Ed2kLinkImporter::hasTorrentFileHandler()) {
+    if (!Ed2kLinkImporter::torrentsReady()) {
         saveMetaFiles(searchID, rows);
         return;
     }
@@ -299,9 +309,36 @@ void MetaResultActions::fetchAndShowLinks(quint32 searchID, const Row& row)
         QTimer::singleShot(0, self, [self, row, links, content, fileName] {
             if (!self)
                 return;
-            auto* dlg = new WebLinksDialog(row.name, links, content, fileName, self->m_parent);
+            auto* dlg = new WebLinksDialog(row.name, links, content, fileName, self->m_ipc, self->m_parent);
             dlg->setAttribute(Qt::WA_DeleteOnClose);
             dlg->show();
+        });
+    });
+}
+
+void MetaResultActions::fetchAndDownloadLinks(quint32 searchID, const Row& row)
+{
+    QPointer<MetaResultActions> self(this);
+    fetchMeta(searchID, row, tr("Could not fetch the links of \"%1\": %2"), [self, row](const QCborMap& data) {
+        if (!self)
+            return;
+        // mirrors of one file share its number: one download a file, the core tries them in order
+        const QList<QStringList> files = WebLinksDialog::mirrorsByFile(
+            data.value(QStringLiteral("links")).toMap().value(QStringLiteral("links")).toArray());
+        if (files.isEmpty()) {
+            self->warn(tr("\"%1\" holds no links.").arg(row.name));
+            return;
+        }
+        // one event-loop turn: switching tabs and any warning stay out of the reply's stack
+        QTimer::singleShot(0, self, [self, row, files] {
+            if (!self)
+                return;
+            if (Ed2kLinkImporter::sendHosterLinks(files, self->m_parent))
+                StatusBarNotifier::post(tr("Added %n file(s) of \"%1\" to the Hoster tab.", nullptr,
+                                           int(files.size())).arg(row.name));
+            else
+                self->warn(tr("Could not add the links of \"%1\": downloads from hosters are off.")
+                               .arg(row.name));
         });
     });
 }

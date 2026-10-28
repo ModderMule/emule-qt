@@ -78,6 +78,8 @@ struct DownloadBarData {
     QList<qint64> pending;
     QList<quint16> partFreq;
     QByteArray partMap;
+    /// bytes per partFreq entry; 0: an eD2K part (PARTSIZE). ed3k: its 4 MiB piece
+    qint64 freqUnit = 0;
 };
 
 /// Row data for one download (PartFile) shown in the downloads list.
@@ -120,6 +122,7 @@ struct DownloadRow {
     QList<qint64> gaps;       ///< flat [start, end] pairs, inclusive
     QList<qint64> pending;    ///< requested blocks not yet received, same shape
     QList<quint16> partFreq;  ///< source count per part
+    qint64 partFreqUnit = 0;  ///< bytes per partFreq entry; 0: PARTSIZE (ed3k: a 4 MiB piece)
     bool hasBarRanges = false; ///< daemon sent gaps; else the bar falls back to partMap
     bool isPreviewPossible = false;
 
@@ -273,6 +276,7 @@ private:
     std::vector<DownloadRow> m_downloads;
     QHash<quintptr, int> m_rowByUid;
     quintptr m_nextUid = 1;
+    bool m_hasEd3k = false;   ///< any ed3k row listed: eD2K rows keep a blank badge slot
     QStringList m_categoryNames;
 };
 

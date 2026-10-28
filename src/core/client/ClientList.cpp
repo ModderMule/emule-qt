@@ -841,17 +841,42 @@ void ClientList::processConnectingClients()
 {
     // Time out clients that have been connecting for > 45 seconds.
     // Matches MFC ProcessConnectingClientsList() (srchybrid/ClientList.cpp:877-891).
+    // Collected first: the Kad fallback re-adds to m_connectingClients.
     const uint64 curTick = getTickCount();
-    for (auto it = m_connectingClients.begin(); it != m_connectingClients.end(); ) {
-        if (curTick >= it->insertedTick + 45000u) {
-            auto* client = it->client;
-            it = m_connectingClients.erase(it);
-            if (isValidClient(client))
-                client->disconnected(QStringLiteral("Connection try timeout"));
-        } else {
-            ++it;
-        }
+    std::vector<UpDownClient*> timedOut;
+    std::erase_if(m_connectingClients, [&](const ConnectingClient& cc) {
+        if (curTick < cc.insertedTick + 45000u)
+            return false;
+        timedOut.push_back(cc.client);
+        return true;
+    });
+    for (auto* client : timedOut) {
+        if (!isValidClient(client))
+            continue;
+        // Not MFC: a server callback that never came back may be a LowID that moved
+        // servers; its Kad buddy still reaches it.
+        if (client->fallBackToKadCallback())
+            continue;
+        client->disconnected(QStringLiteral("Connection try timeout"));
     }
+}
+
+void ClientList::serverCallbackFailed()
+{
+    // OP_CALLBACK_FAIL carries no ID; only attributable with exactly one request pending.
+    // With more, each pending one falls back on its own timeout instead.
+    UpDownClient* pending = nullptr;
+    for (const auto& cc : m_connectingClients) {
+        if (!isValidClient(cc.client)
+            || cc.client->connectingState() != ConnectingState::ServerCallback)
+            continue;
+        if (pending)
+            return;
+        pending = cc.client;
+    }
+    // No buddy route: left to the normal timeout, harmless if the guess was wrong
+    if (pending)
+        pending->fallBackToKadCallback();
 }
 
 // ===========================================================================

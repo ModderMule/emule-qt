@@ -8,11 +8,14 @@
 #include "Ed3kSession.h"
 
 #include "IpcProtocol.h"
+#include "controls/LogTextView.h"
+#include "panels/Ed3kRoomTab.h"
 
 #include <QCborArray>
 #include <QCborMap>
 #include <QDir>
 #include <QFile>
+#include <QLineEdit>
 #include <QSignalSpy>
 #include <QTemporaryDir>
 #include <QTest>
@@ -97,13 +100,41 @@ IpcMessage join(Ed3kRooms& rooms, const QString& link, const QString& nick)
     return ask(&rooms, m);
 }
 
-IpcMessage post(Ed3kRooms& rooms, const ::ed3k::Room& room, const QString& text)
+IpcMessage post(Ed3kRooms& rooms, const ::ed3k::Room& room, const QString& text, const QString& replyTo = {})
 {
     IpcMessage m(IpcMsgType::PostEd3kRoom, 3);
     m.append(hexOf(room));
     m.append(text);
-    m.append(QString());
+    m.append(replyTo);
     return ask(&rooms, m);
+}
+
+/// The room's row of GetEd3kRooms.
+QCborMap rowOf(Ed3kRooms& rooms, const ::ed3k::Room& room)
+{
+    for (const QCborValue& v : ask(&rooms, IpcMessage(IpcMsgType::GetEd3kRooms, 20)).fieldMap(1).value(QStringLiteral("rooms")).toArray())
+        if (v.toMap().value(QStringLiteral("room")).toString() == hexOf(room))
+            return v.toMap();
+    return {};
+}
+
+/// A room tab drawing "[reply] text" lines, as the IRC panel does with its own look.
+std::unique_ptr<eMule::Ed3kRoomTab> tabOf(const ::ed3k::Room& room)
+{
+    return std::make_unique<eMule::Ed3kRoomTab>(hexOf(room), [](const QString&) {},
+        [](const eMule::Ed3kRoomTab::Post& p, const QString&, bool, const QString& reply) {
+            return (reply.isEmpty() ? QString() : QStringLiteral("[%1] ").arg(reply)) + p.text.toHtmlEscaped();
+        });
+}
+
+QVector<eMule::Ed3kRoomTab::Post> postsOf(Ed3kRooms& rooms, const ::ed3k::Room& room)
+{
+    IpcMessage m(IpcMsgType::GetEd3kRoomPosts, 21);
+    m.append(hexOf(room));
+    QVector<eMule::Ed3kRoomTab::Post> out;
+    for (const QCborValue& v : ask(&rooms, m).fieldArray(1))
+        out << eMule::Ed3kRoomTab::postFrom(v.toMap());
+    return out;
 }
 
 } // namespace
@@ -119,6 +150,10 @@ private slots:
     void closedRoomAdmitRoundTrip();
     void banDropsPosts();
     void roomsAcrossRestart();
+    // batch 13
+    void replyRoundTripShowsTheQuotedLine();
+    void muteIsKeptAndHidesPosts();
+    void roomMemberShowsTheMemberKey();
 };
 
 void tst_Ed3kRooms::cleanup()
@@ -436,5 +471,161 @@ void tst_Ed3kRooms::roomsAcrossRestart()
     QTRY_COMPARE_WITH_TIMEOUT(rb.find(*room)->title, QStringLiteral("Kept, renamed"), 30000);
 }
 
-QTEST_GUILESS_MAIN(tst_Ed3kRooms)
+// §2.5: reply_to round trip; the post shows a quoted line of its post, or that it answers
+// a post not held (room.md: a reply_to naming no held post)
+void tst_Ed3kRooms::replyRoundTripShowsTheQuotedLine()
+{
+    QTemporaryDir da, db;
+    QVERIFY(da.isValid() && db.isValid());
+    Ed3kSession a, b;
+    QVERIFY(a.start(loopback(da.path())));
+    QVERIFY(b.start(loopback(db.path())));
+    Ed3kRooms ra(a), rb(b);
+    const IpcMessage made = create(ra, QStringLiteral("Talk"), 0, QStringLiteral("alice"));
+    const auto room = Ed3kRooms::roomFrom(made.fieldMap(1).value(QStringLiteral("room")).toString());
+    QVERIFY(room.has_value());
+    QVERIFY(join(rb, made.fieldMap(1).value(QStringLiteral("link")).toString(), QStringLiteral("bob")).fieldBool(0));
+    QVERIFY(connectTo(rb, *room, a));
+    QTRY_VERIFY_WITH_TIMEOUT(rb.find(*room)->joined, 30000);
+    QVERIFY(post(ra, *room, QStringLiteral("who has the film?")).fieldBool(0));
+    QTRY_VERIFY_WITH_TIMEOUT(texts(rb, *room).contains(QStringLiteral("who has the film?")), 30000);
+    const auto& atB = rb.find(*room)->posts;
+    const auto question = std::ranges::find_if(atB, [](const auto& p) { return p.text == QStringLiteral("who has the film?"); });
+    QVERIFY(question != atB.end());
+    const QString questionId = QString::fromLatin1(QByteArray(reinterpret_cast<const char*>(question->id.data()), 16).toHex());
+    QVERIFY(post(rb, *room, QStringLiteral("I do"), questionId).fieldBool(0));
+    QTRY_VERIFY_WITH_TIMEOUT(texts(ra, *room).contains(QStringLiteral("I do")), 30000);
+    const auto& atA = ra.find(*room)->posts;
+    const auto answer = std::ranges::find_if(atA, [](const auto& p) { return p.text == QStringLiteral("I do"); });
+    QVERIFY(answer != atA.end() && answer->replyTo.has_value());
+    QVERIFY(*answer->replyTo == question->id);
+    // over IPC and in the tab: the quoted parent
+    auto tab = tabOf(*room);
+    tab->setRow(rowOf(ra, *room));
+    auto posts = postsOf(ra, *room);
+    tab->setPosts(posts);
+    QVERIFY2(tab->log()->toPlainText().contains(QStringLiteral("] I do")), qPrintable(tab->log()->toPlainText()));
+    QVERIFY(tab->log()->toPlainText().contains(QStringLiteral("who has the film?] I do")));
+    // a reply whose post is not held
+    eMule::Ed3kRoomTab::Post orphan = posts.last();
+    orphan.id = QStringLiteral("ff").repeated(16);
+    orphan.replyTo = QStringLiteral("ee").repeated(16);
+    orphan.text = QStringLiteral("late");
+    orphan.sent = posts.last().sent + 1;
+    QVERIFY(tab->addPost(orphan));
+    QVERIFY(tab->log()->toPlainText().contains(QStringLiteral("[answer to a post not held] late")));
+    // the pending reply of the input is taken once
+    tab->setReplyTo(questionId);
+    QCOMPARE(tab->takeReplyTo(), questionId);
+    QVERIFY(tab->replyTo().isEmpty());
+}
+
+// §6: a member muted here alone, kept across a restart (joined.cbor); its posts not drawn
+void tst_Ed3kRooms::muteIsKeptAndHidesPosts()
+{
+    QTemporaryDir da;
+    QVERIFY(da.isValid());
+    Ed3kSession a;
+    QVERIFY(a.start(loopback(da.path())));
+    const std::uint16_t aPort = a.udpPort();
+    auto ra = std::make_unique<Ed3kRooms>(a);
+    const IpcMessage made = create(*ra, QStringLiteral("Quiet"), 0, QStringLiteral("me"));
+    const auto room = Ed3kRooms::roomFrom(made.fieldMap(1).value(QStringLiteral("room")).toString());
+    QVERIFY(room.has_value());
+    const QString troll = QStringLiteral("ab").repeated(16);
+    QVERIFY(Ed3kRoomsBridge::isRoomsRequest(IpcMsgType::MuteEd3kRoomMember));
+    IpcMessage mute(IpcMsgType::MuteEd3kRoomMember, 30);
+    mute.append(hexOf(*room));
+    mute.append(troll);
+    mute.append(true);
+    QVERIFY(ask(ra.get(), mute).fieldBool(0));
+    IpcMessage bad(IpcMsgType::MuteEd3kRoomMember, 31);
+    bad.append(hexOf(*room));
+    bad.append(QStringLiteral("ab"));
+    bad.append(true);
+    QVERIFY(!ask(ra.get(), bad).fieldBool(0));
+    QCOMPARE(rowOf(*ra, *room).value(QStringLiteral("muted")).toArray(), QCborArray{troll});
+
+    // a restart: still muted
+    a.stop();
+    QVERIFY(a.start(loopback(da.path(), aPort)));
+    ra = std::make_unique<Ed3kRooms>(a);
+    QVERIFY(ra->find(*room));
+    QCOMPARE(rowOf(*ra, *room).value(QStringLiteral("muted")).toArray(), QCborArray{troll});
+
+    // the tab draws no post of that member ID; unmuted, it does again
+    auto tab = tabOf(*room);
+    tab->setRow(rowOf(*ra, *room));
+    eMule::Ed3kRoomTab::Post p;
+    p.id = QStringLiteral("01").repeated(16);
+    p.author = QStringLiteral("x").repeated(52);
+    p.authorId = troll;
+    p.nick = QStringLiteral("troll");
+    p.sent = 100;
+    p.text = QStringLiteral("buy cheap");
+    eMule::Ed3kRoomTab::Post q = p;
+    q.id = QStringLiteral("02").repeated(16);
+    q.authorId = QStringLiteral("cd").repeated(16);
+    q.text = QStringLiteral("hello");
+    q.sent = 101;
+    tab->setPosts({p, q});
+    QVERIFY(tab->isMuted(troll));
+    QVERIFY(!tab->log()->toPlainText().contains(QStringLiteral("buy cheap")));
+    QVERIFY(tab->log()->toPlainText().contains(QStringLiteral("hello")));
+    IpcMessage unmute(IpcMsgType::MuteEd3kRoomMember, 32);
+    unmute.append(hexOf(*room));
+    unmute.append(troll);
+    unmute.append(false);
+    QVERIFY(ask(ra.get(), unmute).fieldBool(0));
+    tab->setRow(rowOf(*ra, *room));
+    QVERIFY(tab->log()->toPlainText().contains(QStringLiteral("buy cheap")));
+}
+
+// #17: a newcomer of a closed room is refused with ROOM_MEMBER: the row says so, the tab
+// shows the own member key to send, "Import admit" is offered; an open room offers no import
+void tst_Ed3kRooms::roomMemberShowsTheMemberKey()
+{
+    QTemporaryDir da, db;
+    QVERIFY(da.isValid() && db.isValid());
+    Ed3kSession a, b;
+    QVERIFY(a.start(loopback(da.path())));
+    QVERIFY(b.start(loopback(db.path())));
+    Ed3kRooms ra(a), rb(b);
+    const IpcMessage made = create(ra, QStringLiteral("Members"), ED3K_ROOM_CLOSED, QStringLiteral("owner"));
+    QVERIFY(made.fieldBool(0));
+    const auto room = Ed3kRooms::roomFrom(made.fieldMap(1).value(QStringLiteral("room")).toString());
+    QVERIFY(room.has_value());
+    QVERIFY(join(rb, made.fieldMap(1).value(QStringLiteral("link")).toString(), QStringLiteral("newbie")).fieldBool(0));
+    // before any refusal: a room with `s` whose info is not known yet offers no import
+    auto tab = tabOf(*room);
+    tab->setRow(rowOf(rb, *room));
+    QVERIFY(!tab->admitImportable());
+    QVERIFY(!tab->showsMemberKeyBar());
+    QSignalSpy notices(&rb, &Ed3kRooms::notice);
+    QVERIFY(connectTo(rb, *room, a));
+    QTRY_VERIFY_WITH_TIMEOUT(rb.find(*room)->notAdmitted, 30000);
+    QVERIFY(std::ranges::any_of(notices, [](const QList<QVariant>& n) {
+        return n.at(1).toInt() == int(Ed3kRooms::Notice::Refused) && n.at(2).toULongLong() == ED3K_ROOM_MEMBER;
+    }));
+    const QCborMap row = rowOf(rb, *room);
+    QVERIFY(row.value(QStringLiteral("notAdmitted")).toBool());
+    tab->setRow(row);
+    QVERIFY(tab->showsMemberKeyBar());
+    QVERIFY(tab->admitImportable());
+    const auto* edit = tab->findChild<QLineEdit*>();
+    QVERIFY(edit);
+    QCOMPARE(edit->text(), rb.memberKeyText(*room));
+    QCOMPARE(edit->text().size(), 52);
+
+    // an open private room: never for its `s` alone
+    const IpcMessage open = create(ra, QStringLiteral("Private"), ED3K_ROOM_PRIVATE, QStringLiteral("owner"));
+    const auto openRoom = Ed3kRooms::roomFrom(open.fieldMap(1).value(QStringLiteral("room")).toString());
+    QVERIFY(openRoom.has_value());
+    auto openTab = tabOf(*openRoom);
+    openTab->setRow(rowOf(ra, *openRoom));
+    QVERIFY(openTab->row().value(QStringLiteral("private")).toBool());
+    QVERIFY(!openTab->admitImportable());
+}
+
+QTEST_MAIN(tst_Ed3kRooms)   // the room tab is a widget
 #include "tst_Ed3kRooms.moc"

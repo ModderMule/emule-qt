@@ -3,6 +3,7 @@
 /// (src/ed3k/Ed3kSiteServer): the DNS duty through a fake resolver, a web name that leads to
 /// a set whose page node A serves and node B's website server sends over loopback HTTP, the
 /// gate (421, 405, 403), the redirect of a readable host, and the IPC (Ed3kNamesBridge).
+/// Range requests (206/416) from verified blocks; websites kept on disk across restarts (LRU).
 
 #include "Ed3kBridge.h"
 #include "Ed3kJoinBase.h"
@@ -10,6 +11,7 @@
 #include "Ed3kNamesBridge.h"
 #include "Ed3kPlumbing.h"
 #include "Ed3kSession.h"
+#include "Ed3kSiteCache.h"
 #include "Ed3kSiteServer.h"
 #include "Ed3kStore.h"
 
@@ -186,6 +188,9 @@ private slots:
     void theDnsAnswerGoesToTheCore();
     void aWebNameLeadsToAPageServedOverLoopback();
     void theGateRefusesOtherHostsAndSites();
+    void rangesComeFromVerifiedBlocks();
+    void websitesAreKeptAcrossRestarts();
+    void theSiteCacheDropsTheOldestAndBrokenFiles();
     void theIpcAnswersNamesAndPetnames();
     void cleanup();
 };
@@ -345,6 +350,160 @@ void tst_Ed3kNames::theGateRefusesOtherHostsAndSites()
     s.stop();
     // not running: not listening (the port serves websites while the node runs)
     QTRY_VERIFY_WITH_TIMEOUT(!sites.isListening(), 5000);
+}
+
+// §6.3 "Range requests answered from verified blocks" (RFC 9110 §14): one range → 206 once
+// its blocks are there, 416 beyond the end, several → 200 whole, If-Range other → 200;
+// a range whose blocks do not come → 504
+void tst_Ed3kNames::rangesComeFromVerifiedBlocks()
+{
+    QTemporaryDir da, db;
+    QVERIFY(da.isValid() && db.isValid());
+    Ed3kSession a, b;
+    QVERIFY(a.start(loopback(da.path())));
+    QVERIFY(b.start(loopback(db.path())));
+    QByteArray big;   // 3 blocks of 256 KiB, not repeating
+    for (int i = 0; big.size() < 600 * 1024; ++i)
+        big += QByteArray::number(i * 7919) + ' ';
+    Sharer share(a, da.path());
+    share.start();
+    const auto root = share.share(big);
+    QVERIFY(root);
+    Ed3kNames names(b, db.path());
+    names.setSearchEnabled(false);
+    ::ed3k::Key32 key{};
+    key.fill(6);
+    names.setSiteManifest(key, "big", manifestOf(QStringLiteral("index.html"), big));
+    Ed3kSiteServer sites(b, names);
+    QTRY_VERIFY_WITH_TIMEOUT(sites.isListening(), 5000);
+    const std::uint16_t port = sites.port();
+    const QByteArray host = QUrl(sites.originUrl(key, "big")).host().toLatin1() + ':' + QByteArray::number(port);
+    const QByteArray total = QByteArray::number(big.size());
+
+    QTimer feed;
+    connect(&feed, &QTimer::timeout, &names, [&] { names.addSiteSource(*root, sourceOf(a)); });
+    feed.start(100);
+    // not held yet: the range waits for its blocks
+    const Http mid = request(port, host, "/", kUser + "Range: bytes=300000-300009\r\n");
+    feed.stop();
+    QCOMPARE(mid.status, 206);
+    QCOMPARE(mid.body, big.mid(300000, 10));
+    QVERIFY2(mid.headers.toLower().contains(QByteArray(QByteArray("content-range: bytes 300000-300009/") + total)), mid.headers.constData());
+    QVERIFY(mid.headers.toLower().contains("accept-ranges: bytes"));
+    QTRY_VERIFY_WITH_TIMEOUT(names.siteMember(*root).has_value(), 30000);
+
+    const QByteArray same = "Sec-Fetch-Site: same-origin\r\n";
+    const Http tail = request(port, host, "/", same + "Range: bytes=-5\r\n");
+    QCOMPARE(tail.status, 206);
+    QCOMPARE(tail.body, big.right(5));
+    const Http open = request(port, host, "/", same + "Range: bytes=600000-\r\n");
+    QCOMPARE(open.status, 206);
+    QCOMPARE(open.body, big.mid(600000));
+    const Http beyond = request(port, host, "/", same + "Range: bytes=" + total + "-\r\n");
+    QCOMPARE(beyond.status, 416);
+    QVERIFY2(beyond.headers.toLower().contains(QByteArray(QByteArray("content-range: bytes */") + total)), beyond.headers.constData());
+    // several ranges: the whole member (no multipart here)
+    const Http several = request(port, host, "/", same + "Range: bytes=0-1,5-6\r\n");
+    QCOMPARE(several.status, 200);
+    QCOMPARE(several.body, big);
+    // If-Range of another version: the whole member
+    const Http other = request(port, host, "/", same + "Range: bytes=0-1\r\nIf-Range: \"other\"\r\n");
+    QCOMPARE(other.status, 200);
+    QCOMPARE(other.body.size(), big.size());
+    // a range that is no "bytes=" range is ignored
+    QCOMPARE(request(port, host, "/", same + "Range: items=0-1\r\n").status, 200);
+
+    // a member whose blocks never come: 504 within the wait
+    sites.setWaitMs(1500);
+    names.setSiteManifest(key, "gone", manifestOf(QStringLiteral("index.html"), QByteArray(1000, 'g')));
+    const QByteArray goneHost = QUrl(sites.originUrl(key, "gone")).host().toLatin1() + ':' + QByteArray::number(port);
+    QCOMPARE(request(port, goneHost, "/", same + "Range: bytes=0-9\r\n").status, 504);
+    names.stop();
+    share.stop();
+}
+
+// §6.4: manifests and members are kept on disk; after a restart the site is served from
+// there with no source at all
+void tst_Ed3kNames::websitesAreKeptAcrossRestarts()
+{
+    QTemporaryDir da, db;
+    QVERIFY(da.isValid() && db.isValid());
+    Ed3kSession a, b;
+    QVERIFY(a.start(loopback(da.path())));
+    QVERIFY(b.start(loopback(db.path())));
+    const QByteArray page = "<!doctype html><p>kept</p>\n";
+    Sharer share(a, da.path());
+    share.start();
+    const auto root = share.share(page);
+    QVERIFY(root);
+    ::ed3k::Key32 key{};
+    key.fill(8);
+    const QByteArray same = "Sec-Fetch-Site: same-origin\r\n";
+    {
+        Ed3kNames names(b, db.path());
+        names.setSearchEnabled(false);
+        names.setSiteManifest(key, "kept", manifestOf(QStringLiteral("index.html"), page));
+        Ed3kSiteServer sites(b, names);
+        QTRY_VERIFY_WITH_TIMEOUT(sites.isListening(), 5000);
+        const QByteArray host = QUrl(sites.originUrl(key, "kept")).host().toLatin1() + ':' + QByteArray::number(sites.port());
+        QTimer feed;
+        connect(&feed, &QTimer::timeout, &names, [&] { names.addSiteSource(*root, sourceOf(a)); });
+        feed.start(100);
+        QCOMPARE(request(sites.port(), host, "/", kUser).body, page);
+        feed.stop();
+        QVERIFY(names.siteCache().hasMember(*root));
+        QVERIFY(names.siteCache().bytes() >= std::uint64_t(page.size()));
+        names.stop();
+    }
+    share.stop();
+    a.stop();   // no source any more
+    b.stop();
+    QVERIFY(b.start(loopback(db.path())));
+    Ed3kNames names(b, db.path());
+    names.setSearchEnabled(false);
+    QVERIFY(!names.siteManifest(key, "kept").isEmpty());
+    Ed3kSiteServer sites(b, names);
+    QTRY_VERIFY_WITH_TIMEOUT(sites.isListening(), 5000);
+    const QByteArray host = QUrl(sites.originUrl(key, "kept")).host().toLatin1() + ':' + QByteArray::number(sites.port());
+    const Http got = request(sites.port(), host, "/", same, "GET", 10000);
+    QCOMPARE(got.status, 200);
+    QCOMPARE(got.body, page);
+    names.stop();
+    b.stop();
+}
+
+// LRU: the file used longest ago goes first; a member not under its root is removed
+void tst_Ed3kNames::theSiteCacheDropsTheOldestAndBrokenFiles()
+{
+    QTemporaryDir d;
+    QVERIFY(d.isValid());
+    Ed3kSiteCache cache(d.filePath(QStringLiteral("c")), 250);
+    const QByteArray m1(100, '1'), m2(100, '2'), m3(100, '3');
+    cache.putMember(rootOf(m1), m1);
+    QTest::qWait(30);
+    cache.putMember(rootOf(m2), m2);
+    QTest::qWait(30);
+    QCOMPARE(cache.member(rootOf(m1)), std::optional<QByteArray>(m1));   // used: the newest now
+    QTest::qWait(30);
+    cache.putMember(rootOf(m3), m3);
+    QVERIFY(cache.hasMember(rootOf(m1)));
+    QVERIFY(!cache.hasMember(rootOf(m2)));
+    QVERIFY(cache.hasMember(rootOf(m3)));
+    QCOMPARE(cache.bytes(), std::uint64_t(200));
+    cache.putManifest(QStringLiteral("aa.bb"), "manifest");
+    QCOMPARE(cache.manifest(QStringLiteral("aa.bb")), std::optional<QByteArray>("manifest"));
+    // the totals come back after a restart
+    Ed3kSiteCache again(d.filePath(QStringLiteral("c")), 250);
+    QCOMPARE(again.bytes(), cache.bytes());
+    // a broken file: not sent, removed
+    QFile f(QDir(d.filePath(QStringLiteral("c"))).filePath(QStringLiteral("m-") + QString::fromLatin1(Ed3kNames::toBytes(rootOf(m3).bytes).toHex())));
+    QVERIFY(f.open(QIODevice::WriteOnly));
+    f.write(QByteArray(100, 'x'));
+    f.close();
+    QVERIFY(!again.member(rootOf(m3)));
+    QVERIFY(!again.hasMember(rootOf(m3)));
+    again.setMax(0);
+    QCOMPARE(again.bytes(), std::uint64_t(0));
 }
 
 // Ed3kNamesBridge through Ed3kBridge: GetEd3kNames, a petname, a resolve, an unknown open

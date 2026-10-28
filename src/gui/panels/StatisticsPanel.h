@@ -58,6 +58,9 @@ public:
     /// Apply one GetBtStats reply to the BitTorrent branch. Public for tests.
     void applyBtStats(const class QCborMap& data);
 
+    /// Apply one GetHosterStats reply to the Hoster branch. Public for tests.
+    void applyHosterStats(const class QCborMap& data);
+
     /// Apply one GetEd3kStatus map to the ed3k branch (hidden when not built in). Public for tests.
     void applyEd3kStatus(const class QCborMap& status);
 
@@ -436,10 +439,21 @@ private:
     QList<CounterItem> m_btCumulativeRows;
     QList<CounterItem> m_btTorrentRows;
 
-    // --- ed3k --- (no MFC original; GetEd3kStatus: live figures of this run only)
+    // --- Hoster --- (BitTorrent's layout: Session, Cumulative, Links)
+
+    [[nodiscard]] static std::span<const CounterRow> hosterCounterRows();
+    [[nodiscard]] static std::span<const CounterRow> hosterItemRows();
+    void buildHosterBranch(const QIcon& detailIcon, const QIcon& cumulativeIcon);
+
+    QTreeWidgetItem* m_itemHoster = nullptr;
+    QList<CounterItem> m_hosterSessionRows;
+    QList<CounterItem> m_hosterCumulativeRows;
+    QList<CounterItem> m_hosterItemRows;
+
+    // --- ed3k --- (no MFC original; GetEd3kStatus: live figures, Session and Cumulative counters)
 
     [[nodiscard]] static std::span<const CounterRow> ed3kCounterRows();
-    void buildEd3kBranch(const QIcon& detailIcon);
+    void buildEd3kBranch(const QIcon& detailIcon, const QIcon& cumulativeIcon);
 
     QTreeWidgetItem* m_itemEd3k = nullptr;
     QTreeWidgetItem* m_itemEd3kStatus = nullptr;
@@ -447,6 +461,7 @@ private:
     QTreeWidgetItem* m_itemEd3kClass = nullptr;
     QTreeWidgetItem* m_itemEd3kRouter = nullptr;
     QList<CounterItem> m_ed3kRows;
+    QList<CounterItem> m_ed3kCumulativeRows;
     /// Credits: state, address, balance, account, receipts, priority turns, stake
     QTreeWidgetItem* m_itemEd3kCredit = nullptr;
     std::array<QTreeWidgetItem*, 7> m_ed3kCreditItems{};

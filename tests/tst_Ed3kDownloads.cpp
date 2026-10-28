@@ -10,6 +10,7 @@
 #include "Ed3kStore.h"
 
 #include "IpcMessage.h"
+#include "utils/BlockRuns.h"
 
 #include <QCborArray>
 #include <QDir>
@@ -139,6 +140,9 @@ private slots:
     void aPartFileIsTakenUpAfterARestart();
     void theIpcListsAndControls();
     void downloadsOfOneSourceTakeTurns();
+    void aHigherPriorityGetsMoreBlocks();
+    void aRaisedPriorityTakesTheSource();
+    void queuedPrioritySwitchesWaitThirtyMinutes();
     void cleanup() { QTest::qWait(10); }
 };
 
@@ -305,6 +309,13 @@ void tst_Ed3kDownloads::theIpcListsAndControls()
     QCOMPARE(rows.size(), 1);
     QCOMPARE(rows.at(0).toMap().value(QStringLiteral("name")).toString(), QStringLiteral("linked file.txt"));
     QCOMPARE(rows.at(0).toMap().value(QStringLiteral("state")).toInteger(), 1);   // paused
+    // the bar: one block, not held, as runs (BlockRuns.h); not running: nothing pending
+    const QCborMap row = rows.at(0).toMap();
+    QCOMPARE(row.value(QStringLiteral("blockSize")).toInteger(), qint64(kBlock));
+    const auto blocks = decodeBlockRuns(row.value(QStringLiteral("blocks")).toByteArray(), 1);
+    QVERIFY(blocks && *blocks == std::vector<bool>{false});
+    QVERIFY(!row.contains(QStringLiteral("pending")));
+    QVERIFY(!row.contains(QStringLiteral("avail")));
 
     Ipc::IpcMessage prio(Ipc::IpcMsgType::Ed3kDownloadControl, 10);
     prio.append(rootHex);
@@ -327,7 +338,8 @@ void tst_Ed3kDownloads::theIpcListsAndControls()
 
 // Protocol.md §12.5: one file stream per uploader (a second FileRequest replaces the first).
 // Three downloads of one source take turns at it (Ed3kJoinBase's turns), the waiting ones by
-// priority, each without a source search again.
+// priority (a higher one takes the node from a lower holder at once), each without a source
+// search again.
 void tst_Ed3kDownloads::downloadsOfOneSourceTakeTurns()
 {
     const QByteArray one = payload(int(6 * kBlock + 11), 4);
@@ -344,15 +356,16 @@ void tst_Ed3kDownloads::downloadsOfOneSourceTakeTurns()
     d.start();
     QSignalSpy done(&d, &Ed3kDownloads::completed);
 
-    // one first (holds the node), then two (low) and three (high) wait
+    // one first (holds the node), then two (low) waits and three (high) takes the node
     QVERIFY(d.add(Ed3kDownloadSpec{a.roots[0], std::uint64_t(one.size()), QStringLiteral("one.bin"), {}, {}, 0, false, 1}).has_value());
     QVERIFY(d.add(Ed3kDownloadSpec{a.roots[1], std::uint64_t(two.size()), QStringLiteral("two.bin"), {}, {}, 0, false, 0}).has_value());
     QVERIFY(d.add(Ed3kDownloadSpec{a.roots[2], std::uint64_t(three.size()), QStringLiteral("three.bin"), {}, {}, 0, false, 2}).has_value());
     for (const auto& root : a.roots)
         d.addSourceTo(root, sourceOf(a.session));
     QTRY_COMPARE_WITH_TIMEOUT(done.count(), 3, 30000);
-    QVERIFY(done.at(0).at(0).value<::ed3k::Root>() == a.roots[0]);
-    QVERIFY(done.at(1).at(0).value<::ed3k::Root>() == a.roots[2]);
+    // was: one, three, two (the holder kept the node; now a higher waiter takes it)
+    QVERIFY(done.at(0).at(0).value<::ed3k::Root>() == a.roots[2]);
+    QVERIFY(done.at(1).at(0).value<::ed3k::Root>() == a.roots[0]);
     QVERIFY(done.at(2).at(0).value<::ed3k::Root>() == a.roots[1]);
     QVERIFY(readFile(d.info(a.roots[0])->path) == one);
     QVERIFY(readFile(d.info(a.roots[1])->path) == two);
@@ -360,6 +373,95 @@ void tst_Ed3kDownloads::downloadsOfOneSourceTakeTurns()
     QCOMPARE(d.sourceSearches(), std::size_t(0));
     d.stop();
     a.shared->stop();
+}
+
+// Download priority (Ed3kJoinBase): two downloads of one source set, the low one asked first;
+// the high one takes the source and has more blocks over the run. While it runs its row tells
+// the blocks held, those asked for and the source's pieces.
+void tst_Ed3kDownloads::aHigherPriorityGetsMoreBlocks()
+{
+    const QByteArray low = payload(int(10 * kBlock + 5), 7);
+    const QByteArray high = payload(int(6 * kBlock + 9), 8);
+    Seeder a;
+    QVERIFY(a.startFiles({{QStringLiteral("low.bin"), low}, {QStringLiteral("high.bin"), high}}));
+    QTemporaryDir db;
+    Ed3kSession b;
+    QVERIFY(b.start(loopback(db.path())));
+    Ed3kDownloads d(b, db.path());
+    d.setSearchEnabled(false);
+    d.setDirs(QDir(db.path()).filePath(QStringLiteral("temp")), QDir(db.path()).filePath(QStringLiteral("in")));
+    d.start();
+    QSignalSpy done(&d, &Ed3kDownloads::completed);
+    std::map<::ed3k::Root, int> blocks;
+    std::optional<Ed3kDownloadInfo> running;
+    int lowWhenHighHeld = -1;   // low's blocks once every block of high is here
+    connect(&d, &Ed3kDownloads::progress, &d, [&](const ::ed3k::Root& root, std::uint64_t) {
+        ++blocks[root];
+        if (root == a.roots[1] && !running)
+            running = d.info(root);
+        if (root == a.roots[1] && blocks[root] == 7)
+            lowWhenHighHeld = blocks[a.roots[0]];
+    });
+
+    QVERIFY(d.add(Ed3kDownloadSpec{a.roots[0], std::uint64_t(low.size()), QStringLiteral("low.bin"), {}, {}, 0, false, 4}).has_value());
+    QVERIFY(d.add(Ed3kDownloadSpec{a.roots[1], std::uint64_t(high.size()), QStringLiteral("high.bin"), {}, {}, 0, false, 3}).has_value());
+    d.addSourceTo(a.roots[0], sourceOf(a.session));   // the very low one holds the node first
+    d.addSourceTo(a.roots[1], sourceOf(a.session));
+    QTRY_VERIFY_WITH_TIMEOUT(!done.isEmpty(), 30000);
+    QVERIFY(done.at(0).at(0).value<::ed3k::Root>() == a.roots[1]);
+    // the low one (10 blocks + 1) would have had all its blocks first without priority
+    QVERIFY2(lowWhenHighHeld >= 0 && lowWhenHighHeld < 7, qPrintable(QString::number(lowWhenHighHeld)));
+    // the row of the running one: a block held, the source holds every piece (complete)
+    QVERIFY(running);
+    QCOMPARE(running->blocks.size(), std::size_t(7));
+    QCOMPARE(std::ranges::count(running->blocks, true), 1);
+    QCOMPARE(running->pending.size(), std::size_t(7));
+    QCOMPARE(running->availability, std::vector<std::uint8_t>{1});
+    QTRY_COMPARE_WITH_TIMEOUT(done.count(), 2, 30000);
+    QVERIFY(readFile(d.info(a.roots[0])->path) == low);
+    QVERIFY(readFile(d.info(a.roots[1])->path) == high);
+    d.stop();
+    a.shared->stop();
+}
+
+// setPriority while two downloads share a source: the raised one takes the node at once.
+void tst_Ed3kDownloads::aRaisedPriorityTakesTheSource()
+{
+    const QByteArray first = payload(int(8 * kBlock + 1), 9);
+    const QByteArray second = payload(int(4 * kBlock + 2), 10);
+    Seeder a;
+    QVERIFY(a.startFiles({{QStringLiteral("first.bin"), first}, {QStringLiteral("second.bin"), second}}));
+    QTemporaryDir db;
+    Ed3kSession b;
+    QVERIFY(b.start(loopback(db.path())));
+    Ed3kDownloads d(b, db.path());
+    d.setSearchEnabled(false);
+    d.setDirs(QDir(db.path()).filePath(QStringLiteral("temp")), QDir(db.path()).filePath(QStringLiteral("in")));
+    d.start();
+    QSignalSpy done(&d, &Ed3kDownloads::completed);
+    QVERIFY(d.add(Ed3kDownloadSpec{a.roots[0], std::uint64_t(first.size()), QStringLiteral("first.bin"), {}, {}, 0, false, 1}).has_value());
+    QVERIFY(d.add(Ed3kDownloadSpec{a.roots[1], std::uint64_t(second.size()), QStringLiteral("second.bin"), {}, {}, 0, false, 1}).has_value());
+    d.addSourceTo(a.roots[0], sourceOf(a.session));
+    d.addSourceTo(a.roots[1], sourceOf(a.session));   // waits: the same priority
+    QVERIFY(d.setPriority(a.roots[1], 3));             // very high: takes the node
+    QTRY_COMPARE_WITH_TIMEOUT(done.count(), 2, 30000);
+    QVERIFY(done.at(0).at(0).value<::ed3k::Root>() == a.roots[1]);
+    QVERIFY(readFile(d.info(a.roots[0])->path) == first);
+    d.stop();
+    a.shared->stop();
+}
+
+// Protocol.md §12.5: while queued, a switch to another file counts in the uploader's 30 min
+// budget (a 2nd one is BUSY, the uploader keeps the old stream): queued, one per 30 min; with
+// a slot a switch keeps the turn and is always allowed.
+void tst_Ed3kDownloads::queuedPrioritySwitchesWaitThirtyMinutes()
+{
+    using namespace std::chrono;
+    const auto now = steady_clock::now();
+    QVERIFY(Ed3kJoinBase::switchAllowed(true, std::nullopt, now));
+    QVERIFY(!Ed3kJoinBase::switchAllowed(true, now - minutes(29), now));
+    QVERIFY(Ed3kJoinBase::switchAllowed(true, now - minutes(30), now));
+    QVERIFY(Ed3kJoinBase::switchAllowed(false, now - seconds(1), now));
 }
 
 QTEST_GUILESS_MAIN(tst_Ed3kDownloads)

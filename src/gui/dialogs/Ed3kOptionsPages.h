@@ -104,6 +104,8 @@ private:
     [[nodiscard]] bool keyActionsAllowed() const;
     [[nodiscard]] static QString notesText();
     [[nodiscard]] static QString creditsText(qint64 micro);
+    /// m_chainSingleNote shown for the endpoints typed.
+    void updateChainNote();
     /// The "hoster" map of the ed3k status: Java runtime and resolver.
     void applyHosterStatus(const QCborMap& h);
     /// The Java buttons: only while hoster downloads are on, ticked and applied.
@@ -141,6 +143,10 @@ private:
     QSpinBox* m_sitePortSpin = nullptr;
     QPlainTextEdit* m_nodeListsEdit = nullptr;
     QPlainTextEdit* m_chaintubeRpcEdit = nullptr;
+    /// one remote endpoint: no second provider (chaintube.md §4.3, batch 12 #8)
+    QLabel* m_chainSingleNote = nullptr;
+    /// the last chain read/write the node refused (GetEd3kStatus "chain", batch 12 #6)
+    QLabel* m_chainRefusedLabel = nullptr;
     // chaintube chain (chaintube.md §4.2). ToDo: decide whether the UI edits it
     // QLineEdit* m_ctChainIdEdit = nullptr;
     // QLineEdit* m_ctContentEdit = nullptr;
@@ -184,6 +190,7 @@ private:
     QSpinBox* m_hosterStreamsSpin = nullptr;
     QCheckBox* m_hosterPuzzlesCheck = nullptr;
     QCheckBox* m_hosterPeersCheck = nullptr;
+    QCheckBox* m_hosterCheckLinksCheck = nullptr;
     QCheckBox* m_publishLinksCheck = nullptr;
     QLabel* m_javaLabel = nullptr;
     QLineEdit* m_javaEdit = nullptr;

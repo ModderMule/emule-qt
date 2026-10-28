@@ -16,6 +16,7 @@
 #include "Ed3kShared.h"
 #include "Ed3kSiteServer.h"
 #include "Ed3kStore.h"
+#include "Ed3kPaid.h"
 
 #include "IpcMessage.h"
 
@@ -251,6 +252,8 @@ struct Follower {
     std::unique_ptr<Ed3kDownloads> downloads;
     std::unique_ptr<Ed3kSets> sets;
     ::ed3k::Source seeder;
+    /// the topic the engine follows the set under (from its first SetManifest)
+    std::optional<::ed3k::Topic> topic;
 
     bool start(const QString& d, const ::ed3k::Node& known, const ::ed3k::Source& from)
     {
@@ -276,6 +279,11 @@ struct Follower {
         // };
         // QObject::connect(downloads.get(), &Ed3kDownloads::added, downloads.get(), feed);
         // QObject::connect(downloads.get(), &Ed3kDownloads::changed, downloads.get(), feed);
+        // before the sets: the topic of their manifests
+        QObject::connect(session.get(), &Ed3kSession::eventPolled, session.get(), [this](const ::ed3k::Event& ev, bool*) {
+            if (const auto* m = std::get_if<::ed3k::event::SetManifest>(&ev); m && !topic)
+                topic = m->set;
+        }, Qt::DirectConnection);
         sets = std::make_unique<Ed3kSets>(*session, *downloads, dir);
         sets->setIncomingDir(incoming());
         return true;
@@ -305,6 +313,7 @@ private slots:
     void aFollowedSetIsDownloadedWhole();
     void aChosenPartIsDownloaded();
     void aNewVersionComesByPolicyAcrossARestart();
+    void aMountsNewVersionWaitsUnderAsk();
     void theIpcListsAndFollows();
     void aSetNotHeldWaitsThen504Or503();
     void aSetThatIsNoWebsiteIsOffered();
@@ -439,6 +448,13 @@ void tst_Ed3kSets::linksAreCheckedBeforeFollowing()
     QVERIFY(hidden);
     QVERIFY(sets.info(*hidden)->hidden);
     QVERIFY(sets.info(*hidden)->link.isEmpty());
+    QVERIFY(sets.info(*hidden)->paidScope.isEmpty());
+    // subscription.md §8.3: paid=1 with s refused; a paid one has its scope (kind 3)
+    QVERIFY(!sets.follow(QStringLiteral("ed3k:set?key=%1&paid=1&s=%1").arg(base32(m_author.key())), Ed3kSets::Policy::Ask));
+    const auto paidSet = sets.follow(QStringLiteral("ed3k:set?key=%1&paid=1").arg(base32(m_author.key())), Ed3kSets::Policy::Ask);
+    QVERIFY(paidSet);
+    QCOMPARE(sets.info(*paidSet)->paidScope, Ed3kPaid::hexOf(*::ed3k::paidScope(3, m_author.key(), {})));
+    QVERIFY(sets.unfollow(*paidSet));
     // kept owner-only (the hidden link is a credential)
     QVERIFY(QFile::exists(sets.statePath()));
 #ifndef Q_OS_WIN
@@ -553,6 +569,48 @@ void tst_Ed3kSets::aNewVersionComesByPolicyAcrossARestart()
     QVERIFY(!m_c.downloads->contains(rootOf(m_members[0].data)) || m_c.downloads->info(rootOf(m_members[0].data))->state
                                                                        == Ed3kDownloadInfo::State::Complete);
     QVERIFY(!QFile::exists(QDir(info->dir).filePath(QStringLiteral("a (1).bin"))));
+}
+
+void tst_Ed3kSets::aMountsNewVersionWaitsUnderAsk()
+{
+    // multi-author-set.md §2: a mount's versions come as SetMount, then the mounted set's
+    // SetManifest; under Ask a newer one waits for the user like a version (was: taken at once)
+    QVERIFY(m_c.sets && m_c.topic);
+    QVERIFY(m_c.sets->setPolicy(m_cSet, Ed3kSets::Policy::Ask));
+    ::ed3k::Topic mounted;
+    mounted.bytes.fill(0x77);
+    bool handled = false;
+    emit m_c.session->eventPolled(::ed3k::event::SetMount{*m_c.topic, "extras", "extras", mounted}, &handled);
+    QVERIFY(handled);
+    const auto manifestOf = [&](const QByteArray& data, std::uint64_t seq) {
+        const QByteArray f = signedManifest(m_author, QStringLiteral("Extras"), {}, {{QStringLiteral("x.bin"), 0, data}}, "extras", seq);
+        ::ed3k::event::SetManifest m{mounted, rootOf(f), {}, seq, std::nullopt};
+        for (char c : f)
+            m.file.push_back(std::byte(c));
+        return m;
+    };
+    // the first version of the mount is taken
+    handled = false;
+    emit m_c.session->eventPolled(manifestOf("extra one", 1), &handled);
+    QVERIFY(handled);
+    QVERIFY(m_c.sets->info(m_cSet)->pendingMounts.isEmpty());
+    // a newer one under Ask: offered, nothing taken
+    QSignalSpy asked(m_c.sets.get(), &Ed3kSets::newVersion);
+    emit m_c.session->eventPolled(manifestOf("extra two", 2), &handled);
+    QCOMPARE(asked.count(), 1);
+    QCOMPARE(m_c.sets->info(m_cSet)->pendingMounts, QStringList{QStringLiteral("extras")});
+    // the same again: still one offer
+    emit m_c.session->eventPolled(manifestOf("extra two", 2), &handled);
+    QCOMPARE(m_c.sets->info(m_cSet)->pendingMounts.size(), 1);
+    QCOMPARE(asked.count(), 1);
+    // kept in sets.json, taken by "Download Selected"
+    QVERIFY(readBlob(m_c.sets->statePath()).contains("pendingMounts"));
+    QVERIFY(m_c.sets->applyVersion(m_cSet));
+    QVERIFY(m_c.sets->info(m_cSet)->pendingMounts.isEmpty());
+    QVERIFY(m_c.sets->setPolicy(m_cSet, Ed3kSets::Policy::Download));
+    // under Download a newer one is taken at once
+    emit m_c.session->eventPolled(manifestOf("extra three", 3), &handled);
+    QVERIFY(m_c.sets->info(m_cSet)->pendingMounts.isEmpty());
 }
 
 void tst_Ed3kSets::theIpcListsAndFollows()

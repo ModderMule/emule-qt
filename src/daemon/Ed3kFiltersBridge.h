@@ -22,7 +22,7 @@ namespace Ed3kFiltersBridge {
 /// Set by DaemonApp, null when absent.
 void setFilters(ed3k::Ed3kFilters* filters);
 
-/// Whether an opcode is one of 1130-1139.
+/// Whether an opcode is one of 1130-1139, or 1042-1043 (batch 13).
 [[nodiscard]] bool isFiltersRequest(Ipc::IpcMsgType type);
 
 /// Answers a filter request through `reply`. False: not one of them.

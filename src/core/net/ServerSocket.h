@@ -158,6 +158,9 @@ signals:
     void callbackRequested(uint32 clientIP, uint16 clientPort,
                            const uint8* cryptOptions, uint32 cryptSize);
 
+    /// OP_CALLBACK_FAIL: the server could not reach the LowID we asked a callback for.
+    void callbackFailed();
+
     /// IPv6 LowID callback (OP_CALLBACKREQUESTED_IPV6): the requester's public IPv6
     /// endpoint. We connect back to it over IPv6 (no crypt trailer in this variant).
     void callbackRequestedIPv6(const eMule::Endpoint& requester);

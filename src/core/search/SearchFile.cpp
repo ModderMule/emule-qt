@@ -262,6 +262,8 @@ SearchFile::SearchFile(const SearchFile* other)
     , m_aichVoters(other->m_aichVoters)
     , m_ed3kRoot(other->m_ed3kRoot)
     , m_ed3kEd2k(other->m_ed3kEd2k)
+    , m_ed3kPublisher(other->m_ed3kPublisher)
+    , m_ed3kJudged(other->m_ed3kJudged)
 {
 }
 

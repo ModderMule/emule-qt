@@ -218,6 +218,11 @@ Ed3kResolver::TaskId Ed3kJdResolver::accountCheck(const QString& host, const Res
                    true);
 }
 
+Ed3kResolver::TaskId Ed3kJdResolver::sites(const QString& host)
+{
+    return request({{QStringLiteral("op"), QStringLiteral("sites")}, {QStringLiteral("host"), host}}, true);
+}
+
 void Ed3kJdResolver::answerPuzzle(std::uint64_t puzzle, const QString& text)
 {
     if (running())
@@ -265,7 +270,7 @@ std::optional<std::pair<Ed3kResolver::TaskId, ResolverEvent>> Ed3kJdResolver::pa
         {QStringLiteral("puzzle"), K::Puzzle},       {QStringLiteral("done"), K::Done},
         {QStringLiteral("gone"), K::Gone},           {QStringLiteral("needsUser"), K::NeedsUser},
         {QStringLiteral("error"), K::Failed},        {QStringLiteral("cancelled"), K::Cancelled},
-        {QStringLiteral("account"), K::Account}};
+        {QStringLiteral("account"), K::Account},    {QStringLiteral("sites"), K::Sites}};
     const auto k = kinds.find(ev);
     if (k == kinds.end())
         return std::nullopt;
@@ -301,6 +306,9 @@ std::optional<std::pair<Ed3kResolver::TaskId, ResolverEvent>> Ed3kJdResolver::pa
                         l.value(QStringLiteral("host")).toString(),
                         static_cast<std::uint64_t>(std::max<qint64>(0, l.value(QStringLiteral("size")).toInteger(0)))});
     }
+    for (const QJsonValue& v : o.value(QStringLiteral("sites")).toArray())
+        if (const QString d = v.toString().toLower(); !d.isEmpty())
+            e.sites.append(d);
     e.valid = o.value(QStringLiteral("valid")).toBool();
     e.premium = o.value(QStringLiteral("premium")).toBool();
     e.expires = o.value(QStringLiteral("expires")).toInteger(0);

@@ -242,6 +242,7 @@ static QString ipcMsgTypeName(Ipc::IpcMsgType type)
     case T::SetEd3kRoomInfo:      return QStringLiteral("SetEd3kRoomInfo");
     case T::ModerateEd3kRoom:     return QStringLiteral("ModerateEd3kRoom");
     case T::ImportEd3kRoomAdmit:  return QStringLiteral("ImportEd3kRoomAdmit");
+    case T::MuteEd3kRoomMember:   return QStringLiteral("MuteEd3kRoomMember");
     case T::PushEd3kRoomsChanged: return QStringLiteral("PushEd3kRoomsChanged");
     case T::PushEd3kRoomPost:     return QStringLiteral("PushEd3kRoomPost");
     case T::PushEd3kRoomPostsRemoved: return QStringLiteral("PushEd3kRoomPostsRemoved");
@@ -267,12 +268,22 @@ static QString ipcMsgTypeName(Ipc::IpcMsgType type)
     case T::PushEd3kSetVersion:   return QStringLiteral("PushEd3kSetVersion");
     case T::PushEd3kLiveChanged:  return QStringLiteral("PushEd3kLiveChanged");
     case T::PushEd3kSetOffer:     return QStringLiteral("PushEd3kSetOffer");
+    case T::GetEd3kPaid:          return QStringLiteral("GetEd3kPaid");
+    case T::BuyEd3kPass:          return QStringLiteral("BuyEd3kPass");
+    case T::ConfirmEd3kPaidAnon:  return QStringLiteral("ConfirmEd3kPaidAnon");
+    case T::SetEd3kPassReports:   return QStringLiteral("SetEd3kPassReports");
+    case T::BroadcastEd3kLive:    return QStringLiteral("BroadcastEd3kLive");
+    case T::PushEd3kPaidChanged:  return QStringLiteral("PushEd3kPaidChanged");
+    case T::PushEd3kPaidAnonWarn: return QStringLiteral("PushEd3kPaidAnonWarn");
+    case T::PushEd3kPassArrived:  return QStringLiteral("PushEd3kPassArrived");
     case T::BurnEd3kStake:        return QStringLiteral("BurnEd3kStake");
     case T::ClaimEd3kStake:       return QStringLiteral("ClaimEd3kStake");
     case T::GetEd3kStakeClaims:   return QStringLiteral("GetEd3kStakeClaims");
     case T::RefreshEd3kStakeClaims: return QStringLiteral("RefreshEd3kStakeClaims");
     case T::PushEd3kStakeClaims:  return QStringLiteral("PushEd3kStakeClaims");
     case T::PushEd3kStakeTx:      return QStringLiteral("PushEd3kStakeTx");
+    case T::ReadEd3kStakeClaim:   return QStringLiteral("ReadEd3kStakeClaim");
+    case T::PushEd3kStakeLookup:  return QStringLiteral("PushEd3kStakeLookup");
     case T::GetEd3kFilters:       return QStringLiteral("GetEd3kFilters");
     case T::FollowEd3kFilter:     return QStringLiteral("FollowEd3kFilter");
     case T::UnfollowEd3kFilter:   return QStringLiteral("UnfollowEd3kFilter");
@@ -280,6 +291,8 @@ static QString ipcMsgTypeName(Ipc::IpcMsgType type)
     case T::SetEd3kFilterOwn:     return QStringLiteral("SetEd3kFilterOwn");
     case T::JudgeEd3kFilter:      return QStringLiteral("JudgeEd3kFilter");
     case T::OpenEd3kFilterFile:   return QStringLiteral("OpenEd3kFilterFile");
+    case T::PublishEd3kFilterOwn: return QStringLiteral("PublishEd3kFilterOwn");
+    case T::ShowEd3kFilterAnyway: return QStringLiteral("ShowEd3kFilterAnyway");
     case T::PushEd3kFiltersChanged: return QStringLiteral("PushEd3kFiltersChanged");
     case T::GetHosterItems:       return QStringLiteral("GetHosterItems");
     case T::AddHosterLinks:       return QStringLiteral("AddHosterLinks");
@@ -288,11 +301,14 @@ static QString ipcMsgTypeName(Ipc::IpcMsgType type)
     case T::CheckHosterAccount:   return QStringLiteral("CheckHosterAccount");
     case T::DownloadJavaRuntime:  return QStringLiteral("DownloadJavaRuntime");
     case T::LocateJavaRuntime:    return QStringLiteral("LocateJavaRuntime");
+    case T::GetHosterStats:       return QStringLiteral("GetHosterStats");
+    case T::CheckHosterLinks:     return QStringLiteral("CheckHosterLinks");
     case T::PushHosterItem:       return QStringLiteral("PushHosterItem");
     case T::PushHosterItemRemoved: return QStringLiteral("PushHosterItemRemoved");
     case T::PushHosterPuzzle:     return QStringLiteral("PushHosterPuzzle");
     case T::PushHosterLinks:      return QStringLiteral("PushHosterLinks");
     case T::PushHosterAccount:    return QStringLiteral("PushHosterAccount");
+    case T::PushHosterLinkCheck:  return QStringLiteral("PushHosterLinkCheck");
     default:
         return QStringLiteral("Unknown(%1)").arg(static_cast<int>(type));
     }
@@ -812,6 +828,45 @@ void IpcClient::requestEd3kLive(const QObject* owner, ResponseCallback callback)
     sendPoll(owner, IpcMessage(IpcMsgType::GetEd3kLive), std::move(callback));
 }
 
+int IpcClient::broadcastEd3kLive(const QString& folder, const QString& title, bool isPrivate, const QString& playlist,
+                                 const QString& codecs, ResponseCallback callback)
+{
+    IpcMessage msg(IpcMsgType::BroadcastEd3kLive);
+    msg.append(folder);
+    msg.append(title);
+    msg.append(isPrivate);
+    msg.append(playlist);
+    msg.append(codecs);
+    return sendRequest(std::move(msg), std::move(callback));
+}
+
+void IpcClient::requestEd3kPaid(const QObject* owner, ResponseCallback callback)
+{
+    sendPoll(owner, IpcMessage(IpcMsgType::GetEd3kPaid), std::move(callback));
+}
+
+int IpcClient::buyEd3kPass(const QString& scope, bool anon, ResponseCallback callback)
+{
+    IpcMessage msg(IpcMsgType::BuyEd3kPass);
+    msg.append(scope);
+    msg.append(anon);
+    return sendRequest(std::move(msg), std::move(callback));
+}
+
+int IpcClient::confirmEd3kPaidAnon(const QString& scope, ResponseCallback callback)
+{
+    IpcMessage msg(IpcMsgType::ConfirmEd3kPaidAnon);
+    msg.append(scope);
+    return sendRequest(std::move(msg), std::move(callback));
+}
+
+int IpcClient::setEd3kPassReports(bool on, ResponseCallback callback)
+{
+    IpcMessage msg(IpcMsgType::SetEd3kPassReports);
+    msg.append(on);
+    return sendRequest(std::move(msg), std::move(callback));
+}
+
 int IpcClient::requestEd3kRoomPosts(const QString& room, ResponseCallback callback)
 {
     IpcMessage msg(IpcMsgType::GetEd3kRoomPosts);
@@ -889,6 +944,15 @@ int IpcClient::importEd3kRoomAdmit(const QString& text, ResponseCallback callbac
 {
     IpcMessage msg(IpcMsgType::ImportEd3kRoomAdmit);
     msg.append(text);
+    return sendRequest(std::move(msg), std::move(callback));
+}
+
+int IpcClient::muteEd3kRoomMember(const QString& room, const QString& memberId, bool on, ResponseCallback callback)
+{
+    IpcMessage msg(IpcMsgType::MuteEd3kRoomMember);
+    msg.append(room);
+    msg.append(memberId);
+    msg.append(on);
     return sendRequest(std::move(msg), std::move(callback));
 }
 
@@ -1220,15 +1284,20 @@ void IpcClient::dispatchPushEvent(const IpcMessage& msg)
     case IpcMsgType::PushEd3kSetsChanged:  emit ed3kSetsChanged(msg); break;
     case IpcMsgType::PushEd3kSetVersion:   emit ed3kSetVersion(msg); break;
     case IpcMsgType::PushEd3kLiveChanged:  emit ed3kLiveChanged(msg); break;
+    case IpcMsgType::PushEd3kPaidChanged:  emit ed3kPaidChanged(msg); break;
+    case IpcMsgType::PushEd3kPaidAnonWarn: emit ed3kPaidAnonWarn(msg); break;
+    case IpcMsgType::PushEd3kPassArrived:  emit ed3kPassArrived(msg); break;
     case IpcMsgType::PushEd3kSetOffer:     emit ed3kSetOffered(msg); break;
     case IpcMsgType::PushEd3kStakeClaims:  emit ed3kStakeClaimsChanged(msg); break;
     case IpcMsgType::PushEd3kStakeTx:      emit ed3kStakeTx(msg); break;
+    case IpcMsgType::PushEd3kStakeLookup:  emit ed3kStakeLookup(msg); break;
     case IpcMsgType::PushEd3kFiltersChanged: emit ed3kFiltersChanged(msg); break;
     case IpcMsgType::PushHosterItem:       emit hosterItemChanged(msg); break;
     case IpcMsgType::PushHosterItemRemoved: emit hosterItemRemoved(msg); break;
     case IpcMsgType::PushHosterPuzzle:     emit hosterPuzzleAsked(msg); break;
     case IpcMsgType::PushHosterLinks:      emit hosterLinksExpanded(msg); break;
     case IpcMsgType::PushHosterAccount:    emit hosterAccountChecked(msg); break;
+    case IpcMsgType::PushHosterLinkCheck:  emit hosterLinkChecked(msg); break;
     case IpcMsgType::PushSharedFileUpdate: emit sharedFileUpdated(msg); break;
     case IpcMsgType::PushSharedFileRemoved: emit sharedFileRemoved(msg); break;
     case IpcMsgType::PushUploadUpdate:     emit uploadUpdated(msg); break;

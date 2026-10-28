@@ -760,6 +760,7 @@ enum class IpcMsgType : int {
     ///   rateUp, rateDown (B/s), limitUpKb, limitDownKb (0 = none),
     ///   stats: {connections, lookups, records, recordBytes, published, queueLen,
     ///           bannedNodes, bannedHosts, sentFile, sentOther, recvFile, recvOther},
+    ///   session, cumulative: Ed3kCounters (stats/NetworkCounters.h; session = this daemon run),
     ///   queue: {slotCount, holders, waiting} (engine's upload queue policy, while running),
     ///   credit: {enabled, configured, endpoints, address, problem, balance (µ, -1 unknown),
     ///           mature, overdrawn, lastTxWhat, lastTxState, lastTxRevert, lastTx,
@@ -836,6 +837,10 @@ enum class IpcMsgType : int {
     GetEd3kStakeClaims      = 1025,
     /// [] -> [ok] — reads every claim not paid again (stakeClaims); PushEd3kStakeClaims follows
     RefreshEd3kStakeClaims  = 1026,
+    // -- ed3k stake typed ids (batch 13), Ed3kCreditBridge. Claims also carry burnTx, claimTx
+    // (hash hex, "" unknown). ClaimEd3kStake takes a kept id or one read by this (§9.1)
+    /// [id: int] -> [ok] — reads stakeClaims(id) of any id; PushEd3kStakeLookup follows
+    ReadEd3kStakeClaim      = 1027,
 
     // ed3k plumbing (1030-1039): node list sources (bootstrap.md §3), Ed3kBridge.cpp
     /// [link: string (ed3k:nodes?url=…&key=…)] -> [ok, {ask}]; PushEd3kBootstrapAsk follows.
@@ -849,7 +854,9 @@ enum class IpcMsgType : int {
     // GUI words it), reasonArg (technical, not localized), waitUntil (ms), verified, file, root}
     /// [] -> [ok, {items: [item], status: {...GetEd3kStatus "hoster"...}}]
     GetHosterItems          = 1100,
-    /// [text: string (links, one per line)] -> [ok, {ids: [int]}]; PushHosterItem follows each
+    /// [text: string (links, one per line), files?: [[url, mirror…]]] -> [ok, {ids: [int]}];
+    /// files given: one item per file, its other links tried when the first fails or is
+    /// stuck, text ignored. PushHosterItem follows each
     AddHosterLinks          = 1101,
     /// [id: int, op: "pause"|"resume"|"remove"|"delete"] -> [ok]; delete also removes a complete file
     HosterAction            = 1102,
@@ -861,6 +868,15 @@ enum class IpcMsgType : int {
     DownloadJavaRuntime     = 1105,
     /// [] -> [ok]; looks for a Java runtime again
     LocateJavaRuntime       = 1106,
+    /// [] -> [ok, map]. The Hoster branch of the Statistics window; failure without a join.
+    /// { session: HosterCounters, cumulative: HosterCounters,
+    ///   current: { downRate (B/s), items: { count, downloading, queued, waiting, puzzle,
+    ///              paused, needsUser, complete, failed, totalBytes, doneBytes, leftBytes } } }
+    GetHosterStats          = 1107,
+    /// [urls: array] -> [ok]; checks each link through the core as its download would (a links
+    /// dialog of a web search row). PushHosterLinkCheck follows each, a fresh result at once.
+    /// Failure while hoster downloads, the resolver or ed3kHosterCheckSearchLinks are off
+    CheckHosterLinks        = 1108,
 
     // -- ed3k downloads (batch 12): plain ed3k files (search rows, ed3k:file links without bt=),
     // src/daemon/Ed3kDownloadsBridge.cpp. Roots (32 B) as hex. A download: {root, name, size,
@@ -885,7 +901,7 @@ enum class IpcMsgType : int {
     // [false, {error: ed3k::Error}] (0: no node).
     /// [] -> [ok, {running, lists: [{id, label, mode (bit 1 hide, 2 refuse), byHand, set (hex,
     ///   "" none), seq (-1 none yet), files, entries, waiting}], ownMode, own: [{subject, id,
-    ///   verdict, reason}]}]
+    ///   verdict, reason}], batch 13: published: {link ("" none), title}}]
     GetEd3kFilters          = 1130,
     /// [link (ed3k:set), label] -> [ok, {id}]
     FollowEd3kFilter        = 1131,
@@ -907,7 +923,8 @@ enum class IpcMsgType : int {
     // never logged. Failure: [false, {error: ed3k::Error}] (0: no node).
     /// [] -> [ok, {running, rooms: [{room, link, title, about, nick, owner, moderator, private,
     ///   closed, moderated, joined, neighbours, generation, keyHeld, keyMissing, memberKey,
-    ///   mods: [key], members: [{key, nick, moderator}]}]}]
+    ///   mods: [key], members: [{key, nick, moderator}], batch 13: muted: [member ID hex],
+    ///   notAdmitted (a member answered ROOM_MEMBER since the last join)}]}]
     GetEd3kRooms            = 1120,
     /// [room] -> [ok, posts: [{id, author, authorId, nick, moderator, sent, text, replyTo}]]
     GetEd3kRoomPosts        = 1121,
@@ -928,6 +945,17 @@ enum class IpcMsgType : int {
     ModerateEd3kRoom        = 1128,
     /// [admit text (ed3k-admit:...)] -> [ok, {room}] — newcomer of a closed room
     ImportEd3kRoomAdmit     = 1129,
+
+    // -- ed3k filters + rooms polish (batch 13): Ed3kFiltersBridge / Ed3kRoomsBridge. Failure as
+    // their blocks above.
+    /// [title, on: bool] -> [ok, {link}] — publish the own filter list as a set (filter-list
+    /// §2), again on every change; on false stops (link "")
+    PublishEd3kFilterOwn    = 1042,
+    /// [root (hex, 64), on: bool] -> [ok] — "show anyway" (§3): a local choice for that file
+    ShowEd3kFilterAnyway    = 1043,
+    /// [room, member ID (hex, 32), on: bool] -> [ok] — mute a member locally (room.md §6);
+    /// kept in rooms/joined.cbor, GetEd3kRooms rows list it in `muted`
+    MuteEd3kRoomMember      = 1044,
 
     // -- ed3k sets and live (batch 12): followed sets (file-set.md §5.3) and live streams
     // (live.md), src/daemon/Ed3kSetsBridge.cpp. Set ids are numbers, roots and streams hex.
@@ -961,6 +989,26 @@ enum class IpcMsgType : int {
     /// [link (ed3k:set)] -> [ok, {url}] — the set's website origin (name.md §6.2; "" while
     /// the website server does not listen)
     GetEd3kSetSite          = 1144,
+
+    // -- ed3k paid subscriptions and live broadcasting (batch 13): subscription.md (buying
+    // passes), live.md §4. src/daemon/Ed3kPaidBridge.cpp (paid), Ed3kSetsBridge.cpp
+    // (broadcast; LeaveEd3kLive ends a broadcast, GetEd3kLive lists them with broadcast: true,
+    // link, folder, error). A scope: 32 hex digits. A subscription: {scope, kind (1 channel,
+    // 2 set, 3 hidden set), title, anon, state (0 no pass, 1 buying, 2 held, 3 refused,
+    // 4 gave up, 5 anonymous warning waits), until (Unix s, 0 none), renewing, renewalEnded,
+    // keys, newestEpoch, price, terms, payHost, period (s), devices, hasOffer}.
+    /// [] -> [ok, {running, reports, subs: [subscription]}]
+    GetEd3kPaid             = 1035,
+    /// [scope, anon: bool] -> [ok, {payLink}] — open payLink in the browser; "" = the user must
+    /// be told first (PushEd3kPaidAnonWarn, then ConfirmEd3kPaidAnon)
+    BuyEd3kPass             = 1036,
+    /// [scope] -> [ok, {payLink}] — the user was told the seller sees an address (§5.1);
+    /// payLink of a purchase ("" for a renewal or resumed poll)
+    ConfirmEd3kPaidAnon     = 1037,
+    /// [on: bool] -> [ok] — share reports (§5.3)
+    SetEd3kPassReports      = 1038,
+    /// [folder, title, private: bool, playlist ("" = the newest .m3u8), codecs] -> [ok, {id, link}]
+    BroadcastEd3kLive       = 1039,
 
     // -- Responses (Core -> GUI) ---------------------------------------------
 
@@ -1113,6 +1161,10 @@ enum class IpcMsgType : int {
     /// [{what (ED3K_CREDIT_TX_BURN_FOR_STAKE 3 / _CLAIM_STAKE 4), state (ED3K_CREDIT_STATE_*),
     ///   revert (ED3K_CREDIT_REVERT_*), tx (hash hex)}] — a stake transaction moved
     PushEd3kStakeTx        = 1077,
+    // -- ed3k stake typed ids (batch 13), see ReadEd3kStakeClaim
+    /// [{id, found (false: never made or paid), paid (not found: it was made), failed (the read
+    ///   failed), to, amount (uint256 hex), readyAt, kept}] — show it; ClaimEd3kStake when found and ready
+    PushEd3kStakeLookup    = 1078,
     PushEd3kBootstrapAsk   = 1080,
 
     // hoster links (1150-1159)
@@ -1127,6 +1179,9 @@ enum class IpcMsgType : int {
     PushHosterLinks        = 1153,
     /// [host, user, {valid, premium, expires, trafficLeft, error}]
     PushHosterAccount      = 1154,
+    /// [url, {status (Ed3kHosterJoin::LinkStatus: 1 online, 2 offline, 3 unknown), host, name,
+    ///   size, account (0 none, 1 an account, 2 premium with traffic left)}] — a CheckHosterLinks result
+    PushHosterLinkCheck    = 1159,
 
     // -- ed3k downloads (batch 12), see GetEd3kDownloads (1150-1154 were taken by the hoster links)
     /// [{...GetEd3kDownloads...}] — the ed3k download list changed (a state push, at most once a second)
@@ -1157,6 +1212,14 @@ enum class IpcMsgType : int {
     PushEd3kLiveChanged    = 1157,
     /// [link] — the user opened a set that is no website (name.md §6.1): offer it for download
     PushEd3kSetOffer       = 1158,
+
+    // -- ed3k paid subscriptions (batch 13), see GetEd3kPaid
+    /// [{...GetEd3kPaid...}] — a subscription, offer or pass changed (a state push)
+    PushEd3kPaidChanged    = 1064,
+    /// [scope, title] — §5.1: tell the user the seller sees an address, then ConfirmEd3kPaidAnon
+    PushEd3kPaidAnonWarn   = 1065,
+    /// [scope, title, until] — a pass arrived (bought or renewed)
+    PushEd3kPassArrived    = 1066,
 };
 
 /// What SetCategoryStatus should do to every download in the category.

@@ -14,6 +14,7 @@ import jd.plugins.DownloadLink;
 
 import org.appwork.storage.JSonStorage;
 import org.appwork.storage.TypeRef;
+import org.jdownloader.plugins.controller.host.LazyHostPlugin;
 
 /**
  * Entry point. Reads one JSON request per line from stdin, answers with events on stdout
@@ -98,9 +99,25 @@ public final class ResolverMain {
             break;
         case "match": {
             final Map<String, Object> m = Out.event(id, "match");
-            final String host = Jd.match(str(req.get("url")));
+            final String url = str(req.get("url"));
+            final String host = Jd.match(url);
             if (host != null) {
                 m.put("host", host);
+                // a hoster's aliases, for account matching
+                final LazyHostPlugin hp = Jd.matchHostPlugin(url);
+                if (hp != null && host.equals(hp.getDisplayName())) {
+                    m.put("sites", Jd.sites(hp));
+                }
+            }
+            Out.send(m);
+            break;
+        }
+        case "sites": {
+            final Map<String, Object> m = Out.event(id, "sites");
+            final LazyHostPlugin hp = Jd.hostPlugin(str(req.get("host")));
+            if (hp != null) {
+                m.put("host", hp.getHost());
+                m.put("sites", Jd.sites(hp));
             }
             Out.send(m);
             break;

@@ -20,6 +20,7 @@
 #include <QSet>
 #include <QStringList>
 
+#include <functional>
 #include <list>
 #include <memory>
 #include <unordered_map>
@@ -213,6 +214,10 @@ public:
         }
         return true;
     }
+
+    /// Lets @p change alter every top-level result of every list; a result it changed
+    /// (returns true) is stamped and resultUpdated. ed3k filter lists judge rows again.
+    void updateResults(const std::function<bool(SearchFile*)>& change);
 
     // --- Kad notes (comments/ratings) ---
 

@@ -6,6 +6,7 @@
 #include "Ed3kSession.h"
 #include "Ed3kStore.h"
 
+#include "files/KnownFile.h"
 #include "utils/Log.h"
 
 #include <QDataStream>
@@ -247,6 +248,8 @@ bool Ed3kDownloads::setPriority(const ffi::Root& root, int priority)
     if (!e)
         return false;
     e->info.priority = std::clamp(priority, 0, 4);
+    // the turns at shared sources, the depth and the stream cap follow it
+    priorityChanged(root);
     scheduleSave(e->info.owner);
     markChanged();
     return true;
@@ -289,9 +292,15 @@ std::optional<Ed3kDownloadInfo> Ed3kDownloads::info(const ffi::Root& root) const
     if (it == m_entries.end())
         return std::nullopt;
     Ed3kDownloadInfo i = it->second.info;
+    i.blocks = it->second.have;
     if (const Download* d = downloadOf(root)) {
         i.sources = int(d->streams.size());
         i.transferring = int(std::ranges::count_if(d->streams, [](const auto& s) { return s.second; }));
+        i.pending.assign(i.blocks.size(), false);
+        for (const auto& [offset, stream] : d->outstanding)
+            if (const auto b = std::size_t(offset / kBlock); b < i.pending.size())
+                i.pending[b] = true;
+        i.availability = pieceAvailability(*d);
     }
     return i;
 }
@@ -443,15 +452,10 @@ void Ed3kDownloads::saveOwner(const QString& owner)
 
 int Ed3kDownloads::downloadPriority(const Download& d) const
 {
-    // kPr* to an order: very low, low, normal, high, very high
+    // kPr* to an order: very low, low, normal, high, very high (eD2K's realPriority - 2)
     const Entry* e = entryOfId(d.member);
-    switch (e ? e->info.priority : 1) {
-    case 4: return -2;
-    case 0: return -1;
-    case 2: return 1;
-    case 3: return 2;
-    default: return 0;
-    }
+    // was: switch (priority) { case 4: return -2; case 0: return -1; case 2: return 1; case 3: return 2; default: return 0; }
+    return realPriority(std::uint8_t(e ? e->info.priority : kPrNormal)) - 2;
 }
 
 // ---------------------------------------------------------------------------

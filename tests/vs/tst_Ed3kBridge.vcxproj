@@ -186,6 +186,7 @@
     <ClCompile Include="..\..\src\daemon\Ed3kFiltersBridge.cpp" />
     <ClCompile Include="..\..\src\daemon\Ed3kDownloadsBridge.cpp" />
     <ClCompile Include="..\..\src\daemon\Ed3kSetsBridge.cpp" />
+    <ClCompile Include="..\..\src\daemon\Ed3kPaidBridge.cpp" />
     <ClCompile Include="..\..\src\daemon\BandwidthCoordinator.cpp" />
   </ItemGroup>
   <ItemGroup>

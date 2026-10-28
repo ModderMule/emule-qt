@@ -99,6 +99,8 @@ struct SearchTab {
     /// Finished, and the server holds a further page (eD2K server, Usenet /
     /// torrent via server): More or scrolling to the end fetches it.
     bool hasMore = false;
+    /// ed3k rows a filter list hides are shown (filter-list.md §3: on request)
+    bool showEd3kHidden = false;
 
     /// What was asked; a double click on the tab puts it back into the form.
     SearchRequest request;
@@ -328,6 +330,8 @@ private:
     void updateMoreButton();
     /// Hide the rows of unticked networks. A tab that asked for one network shows all.
     void applyNetworkFilter(SearchTab& tab);
+    /// The "ed3k Filter" submenu of the result menu (filter-list.md §2, §3).
+    void addEd3kFilterMenu(SearchTab& tab);
     /// Push the filter box's text to every tab and refresh the tab counts.
     void applyTextFilter();
     /// "title (count)", or "title (shown/total)" while the filter box hides rows.
