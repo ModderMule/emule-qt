@@ -7,6 +7,7 @@
 #include "app/IpcClient.h"
 #include "app/UiState.h"
 #include "dialogs/HosterPuzzleDialog.h"
+#include "utils/MenuUtils.h"
 #include "utils/StringUtils.h"
 #include "IpcMessage.h"
 
@@ -148,7 +149,7 @@ HosterPanel::HosterPanel(QWidget* parent)
     layout->addWidget(m_tree, 1);
     theUiState.bindHeaderView(m_tree->header(), QStringLiteral("hosterList"));
 
-    m_addAction = new QAction(tr("Add hoster links..."), this);
+    m_addAction = new QAction(menuIcon("Hoster.ico"), tr("Add hoster links..."), this);
     connect(m_addAction, &QAction::triggered, this, [this] { promptAddLinks(); });
     connect(addBtn, &QPushButton::clicked, this, [this] { promptAddLinks(); });
     connect(optBtn, &QPushButton::clicked, this, &HosterPanel::optionsRequested);
@@ -295,16 +296,16 @@ void HosterPanel::showContextMenu(const QPoint& pos)
 {
     const QList<qint64> ids = selectedIds();
     QMenu menu(this);
-    QAction* pause = menu.addAction(tr("Pause"));
-    QAction* resume = menu.addAction(tr("Resume"));
+    QAction* pause = menu.addAction(menuIcon("Pause.ico"), tr("Pause"));
+    QAction* resume = menu.addAction(menuIcon("Start.ico"), tr("Resume"));
     menu.addSeparator();
-    QAction* remove = menu.addAction(tr("Remove"));
-    QAction* del = menu.addAction(tr("Remove and delete file"));
+    QAction* remove = menu.addAction(menuIcon("ListRemove.ico"), tr("Remove"));
+    QAction* del = menu.addAction(menuIcon("Delete.ico"), tr("Remove and delete file"));
     menu.addSeparator();
-    QAction* copy = menu.addAction(tr("Copy link"));
-    QAction* folder = menu.addAction(tr("Open folder"));
+    QAction* copy = menu.addAction(menuIcon("Copy.ico"), tr("Copy link"));
+    QAction* folder = menu.addAction(menuIcon("FolderOpen.ico"), tr("Open folder"));
     menu.addSeparator();
-    QAction* add = menu.addAction(tr("Add links..."));
+    QAction* add = menu.addAction(menuIcon("ListAdd.ico"), tr("Add links..."));
     for (QAction* a : {pause, resume, remove, del, copy, folder})
         a->setEnabled(!ids.isEmpty());
     if (ids.size() == 1) {

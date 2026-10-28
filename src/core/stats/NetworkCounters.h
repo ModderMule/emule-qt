@@ -1,7 +1,7 @@
 #pragma once
 
 /// @file NetworkCounters.h
-/// @brief Statistics counter blocks: Usenet, indexers, HTTP Cache, Kademlia, BitTorrent.
+/// @brief Statistics counter blocks: Usenet, indexers, HTTP Cache, Kademlia, BitTorrent, hoster.
 ///
 /// Core owns the storage and the modules do the counting: Statistics holds the
 /// session half, Preferences the banked cumulative half, and the usenet/indexer
@@ -346,6 +346,60 @@ struct BtCounters {
     bool operator==(const BtCounters&) const = default;
 };
 
+/// Hoster links (hoster.md), counted by ed3k::Ed3kHosterJoin. The join lives
+/// and dies with the ed3k node, so the session half lives in Statistics.
+struct HosterCounters {
+    // Traffic
+    uint64 hosterBytes = 0;        ///< file data from hoster streams, as written
+    uint64 peerBytes = 0;          ///< verified blocks ed3k peers sent for a hoster item
+    uint64 downloadTimeMs = 0;     ///< time any item was downloading
+    uint64 maxDownRate = 0;        ///< Max, all hoster streams together
+
+    // Links
+    uint64 linksAdded = 0;
+    uint64 foldersExpanded = 0;    ///< folder links the resolver opened up
+    uint64 peerLinksUsed = 0;      ///< a peer's hoster link stood in for the own one
+
+    // Obstacles
+    uint64 puzzlesAsked = 0;
+    uint64 puzzlesAnswered = 0;
+    uint64 hosterWaits = 0;        ///< hoster timer, quota or busy
+    uint64 retries = 0;            ///< a stream ended early and was opened again
+
+    // Downloads
+    uint64 completed = 0;
+    uint64 completedBytes = 0;
+    uint64 completedVerified = 0;  ///< under an ed3k root, every block verified
+    uint64 failed = 0;
+    uint64 gone = 0;               ///< the hoster removed the file
+
+    template<class F> static constexpr void forEachField(F&& f)
+    {
+        using C = HosterCounters;
+        f("hosterBytes", &C::hosterBytes, CounterAgg::Sum);
+        f("peerBytes", &C::peerBytes, CounterAgg::Sum);
+        f("downloadTimeMs", &C::downloadTimeMs, CounterAgg::Sum);
+        f("maxDownRate", &C::maxDownRate, CounterAgg::Max);
+
+        f("linksAdded", &C::linksAdded, CounterAgg::Sum);
+        f("foldersExpanded", &C::foldersExpanded, CounterAgg::Sum);
+        f("peerLinksUsed", &C::peerLinksUsed, CounterAgg::Sum);
+
+        f("puzzlesAsked", &C::puzzlesAsked, CounterAgg::Sum);
+        f("puzzlesAnswered", &C::puzzlesAnswered, CounterAgg::Sum);
+        f("hosterWaits", &C::hosterWaits, CounterAgg::Sum);
+        f("retries", &C::retries, CounterAgg::Sum);
+
+        f("completed", &C::completed, CounterAgg::Sum);
+        f("completedBytes", &C::completedBytes, CounterAgg::Sum);
+        f("completedVerified", &C::completedVerified, CounterAgg::Sum);
+        f("failed", &C::failed, CounterAgg::Sum);
+        f("gone", &C::gone, CounterAgg::Sum);
+    }
+
+    bool operator==(const HosterCounters&) const = default;
+};
+
 template<class C>
 concept CounterBlock = requires {
     C::forEachField([](const char*, uint64 C::*, CounterAgg) {});
@@ -366,6 +420,7 @@ static_assert(sizeof(IndexerCounters) == counterFieldCount<IndexerCounters>() * 
 static_assert(sizeof(HttpCacheCounters) == counterFieldCount<HttpCacheCounters>() * sizeof(uint64));
 static_assert(sizeof(KadCounters) == counterFieldCount<KadCounters>() * sizeof(uint64));
 static_assert(sizeof(BtCounters) == counterFieldCount<BtCounters>() * sizeof(uint64));
+static_assert(sizeof(HosterCounters) == counterFieldCount<HosterCounters>() * sizeof(uint64));
 static_assert(sizeof(UsenetServerCounters)
               == counterFieldCount<UsenetServerCounters>() * sizeof(uint64));
 
