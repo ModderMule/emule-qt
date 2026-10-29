@@ -437,17 +437,21 @@ private:
     KnownFile* nextDueFile(uint32& cursor, const std::function<bool(KnownFile*)>& due);
     /// False while firewalled without a connected buddy or a direct UDP callback.
     [[nodiscard]] static bool canPublishToKad();
-    /// Pace of Kad source publishing for a share of @p sharedFiles files.
-    struct SourcePublishBudget {
+    /// Pace of one kind of Kad store searches.
+    struct PublishBudget {
         int startsPerProbe;   ///< store searches one probe may start
         time_t spacingSecs;   ///< seconds between probes
         uint32 maxSearches;   ///< concurrent store searches
     };
-    [[nodiscard]] static SourcePublishBudget sourcePublishBudget(int sharedFiles);
-    /// Source / notes store searches for the next due files, paced by the budget
-    /// (notes: one per KADEMLIAPUBLISHTIME) and only below the concurrent-store cap.
+    /// Pace of Kad source publishing for a share of @p sharedFiles files.
+    [[nodiscard]] static PublishBudget sourcePublishBudget(int sharedFiles);
+    /// Pace of Kad keyword publishing for @p units 150-file publishes per 24 h.
+    [[nodiscard]] static PublishBudget keywordPublishBudget(int units);
+    /// Source / notes / keyword store searches for the next due entries, paced by the
+    /// budget (notes: one per KADEMLIAPUBLISHTIME) and only below the concurrent cap.
     void publishDueSource(time_t tProbe);
     void publishDueNotes(time_t tProbe);
+    void publishDueKeyword(time_t tProbe);
 
     /// Parse an .emulecollection into the file, if it is one. Does disk I/O, so it
     /// runs outside the map lock — see the hook contract in EntityMap.h.
@@ -611,9 +615,15 @@ private:
     static constexpr time_t kPublishProbeRestSecs = 10;
     time_t m_srcProbeRestUntil = 0;
     time_t m_notesProbeRestUntil = 0;
+    time_t m_keyProbeRestUntil = 0;
     bool m_kadPublishBlocked = false;   // log the hold once, not every tick
     time_t m_lastPublishKadSrc = 0;
     time_t m_lastPublishKadNotes = 0;
+
+    /// The budget that keeps @p units publishes current within @p republishSecs when
+    /// one store search holds its slot some @p slotHoldSecs.
+    [[nodiscard]] static PublishBudget publishBudget(int units, time_t republishSecs,
+                                                     time_t slotHoldSecs, uint32 minSearches);
 };
 
 } // namespace eMule

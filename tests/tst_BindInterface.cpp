@@ -35,6 +35,11 @@ private slots:
     void resolve_literalNarrowsFamily();
     void resolve_wholeInterfaceKeepsBothFamilies();
     void pin_confinesToLoopback();
+    void probe_v6RefusedKeepsIPv4();
+    void probe_v4RefusedKeepsIPv6();
+    void probe_bothRefusedBlocks();
+    void probe_literalNeedsItsFamily();
+    void probe_loopbackPinsIPv4();
     void boundByName_listensAndDialsBothFamilies();
     void boundByName_refusesOtherRoutes();
     void blocked_opensNothing_thenResumes();
@@ -80,6 +85,7 @@ void tst_BindInterface::init()
 void tst_BindInterface::cleanup()
 {
     BindAddress::setInterfaceSource({});
+    BindAddress::setPinProbe({});
     thePrefs.setBindAddress(m_before);
     BindAddress::refresh();
 }
@@ -182,6 +188,83 @@ void tst_BindInterface::pin_confinesToLoopback()
 
     QVERIFY(!InterfacePin::pinToInterface(-1, m_loopback.index(), m_loopback.name()));
     QVERIFY(!InterfacePin::pinToInterface(inside.socketDescriptor(), 0, QString()));
+}
+
+// Windows refuses IPV6_UNICAST_IF on an adapter without IPv6 (#67): IPv4 goes on alone.
+void tst_BindInterface::probe_v6RefusedKeepsIPv4()
+{
+    BindAddress::setInterfaceSource(sample);
+    BindAddress::setPinProbe([](int, const QString&) {
+        return BindAddress::PinProbe{.v4 = true, .v6 = false, .v4Error = 0, .v6Error = 10022};
+    });
+    thePrefs.setBindAddress(QStringLiteral("en0"));
+
+    QCOMPARE(int(BindAddress::current().state), int(State::Bound));
+    QCOMPARE(*BindAddress::listenAddress(), QHostAddress(QHostAddress::AnyIPv4));
+    const Address v4 = Address::fromQHostAddress(QHostAddress(QStringLiteral("1.2.3.4")));
+    const Address v6 = Address::fromQHostAddress(QHostAddress(QStringLiteral("2001:db8::1")));
+    QVERIFY(BindAddress::canReach(v4));
+    QVERIFY(!BindAddress::canReach(v6));
+    QCOMPARE(*BindAddress::sourceFor(v4), QHostAddress(QHostAddress::AnyIPv4));
+    QVERIFY(!BindAddress::sourceFor(v6));
+    QVERIFY(BindAddress::isIPv4Only());
+    QCOMPARE(BindAddress::ipv4Literal(), QStringLiteral("192.168.1.20"));
+}
+
+void tst_BindInterface::probe_v4RefusedKeepsIPv6()
+{
+    BindAddress::setInterfaceSource(sample);
+    BindAddress::setPinProbe([](int, const QString&) {
+        return BindAddress::PinProbe{.v4 = false, .v6 = true, .v4Error = 22, .v6Error = 0};
+    });
+    thePrefs.setBindAddress(QStringLiteral("en0"));
+
+    QCOMPARE(*BindAddress::listenAddress(), QHostAddress(QHostAddress::AnyIPv6));
+    QVERIFY(!BindAddress::canReach(Address::fromQHostAddress(QHostAddress(QStringLiteral("1.2.3.4")))));
+    QVERIFY(BindAddress::canReach(Address::fromQHostAddress(QHostAddress(QStringLiteral("2001:db8::1")))));
+    QVERIFY(BindAddress::ipv4Literal().isEmpty());
+    QVERIFY(!BindAddress::isIPv4Only());
+}
+
+void tst_BindInterface::probe_bothRefusedBlocks()
+{
+    BindAddress::setInterfaceSource(sample);
+    BindAddress::setPinProbe([](int, const QString&) {
+        return BindAddress::PinProbe{.v4 = false, .v6 = false, .v4Error = 10022, .v6Error = 10022};
+    });
+    thePrefs.setBindAddress(QStringLiteral("en0"));
+
+    QCOMPARE(int(BindAddress::current().state), int(State::Blocked));
+    QVERIFY(BindAddress::current().reason.contains(QStringLiteral("10022")));
+    QVERIFY(!BindAddress::listenAddress());
+    QVERIFY(!BindAddress::outboundAllowed());
+}
+
+void tst_BindInterface::probe_literalNeedsItsFamily()
+{
+    BindAddress::setInterfaceSource(sample);
+    BindAddress::setPinProbe([](int, const QString&) {
+        return BindAddress::PinProbe{.v4 = true, .v6 = false, .v4Error = 0, .v6Error = 10022};
+    });
+    thePrefs.setBindAddress(QStringLiteral("192.168.1.20"));
+    QCOMPARE(int(BindAddress::current().state), int(State::Bound));
+
+    thePrefs.setBindAddress(QStringLiteral("2001:db8::20"));
+    QCOMPARE(int(BindAddress::current().state), int(State::Blocked));
+}
+
+// The real probe on loopback; the unbound probe socket must still report its family.
+void tst_BindInterface::probe_loopbackPinsIPv4()
+{
+    if (!m_loopback.isValid())
+        QSKIP("no loopback interface");
+    const BindAddress::PinProbe p = InterfacePin::probe(m_loopback.index(), m_loopback.name());
+    QVERIFY2(p.v4, qPrintable(QString::number(p.v4Error)));
+    QCOMPARE(p.v4Error, 0);
+
+    int error = 0;
+    QVERIFY(!InterfacePin::pinToInterface(-1, m_loopback.index(), m_loopback.name(), &error));
+    QVERIFY(error != 0);
 }
 
 void tst_BindInterface::boundByName_listensAndDialsBothFamilies()

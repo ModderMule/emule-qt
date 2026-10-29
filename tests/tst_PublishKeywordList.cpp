@@ -12,6 +12,7 @@
 #include <cstring>
 #include <memory>
 #include <set>
+#include <vector>
 
 using namespace eMule;
 
@@ -26,6 +27,8 @@ private slots:
     void changesMakeThePublishWalkDueAgain();
     void purge_dropsWhatAReloadLeftUnreferenced();
     void manyFiles_addAndRemoveStayLinear();
+    void publishUnits_followTheReferences();
+    void nextDueKeyword_skipsNotDueAndWraps();
 };
 
 namespace {
@@ -228,6 +231,88 @@ void tst_PublishKeywordList::manyFiles_addAndRemoveStayLinear()
     constexpr qint64 kBudgetMs = 5000;
 #endif
     QVERIFY2(addMs < kBudgetMs && removeMs < kBudgetMs, "keyword bookkeeping is no longer linear");
+}
+
+// One unit per started 150 files of a keyword: the pace of keyword publishing.
+void tst_PublishKeywordList::publishUnits_followTheReferences()
+{
+    QCOMPARE(PublishKeyword::publishUnits(0), 0);
+    QCOMPARE(PublishKeyword::publishUnits(1), 1);
+    QCOMPARE(PublishKeyword::publishUnits(150), 1);
+    QCOMPARE(PublishKeyword::publishUnits(151), 2);
+
+    PublishKeywordList list;
+    std::vector<std::unique_ptr<KnownFile>> files;
+    for (uint32 i = 0; i < 151; ++i) {
+        files.push_back(makeFile(i + 1, QStringLiteral("common word%1.bin").arg(i)));
+        list.addKeywords(files.back().get());
+    }
+    const auto expected = [&list] {
+        int units = 0;
+        list.resetNextKeyword();
+        while (PublishKeyword* kw = list.getNextKeyword())
+            units += PublishKeyword::publishUnits(kw->refCount());
+        list.resetNextKeyword();
+        return units;
+    };
+    QCOMPARE(list.publishUnits(), expected());
+    QVERIFY(list.publishUnits() >= 151 + 2);   // "common" needs 2 batches
+
+    list.removeKeywords(files.front().get());
+    QCOMPARE(list.publishUnits(), expected());
+
+    // Rename: the file moves to other words
+    files[1]->setFileName(QStringLiteral("renamed thing.bin"));
+    list.removeKeywords(files[1].get());
+    list.addKeywords(files[1].get());
+    QCOMPARE(list.publishUnits(), expected());
+
+    list.removeAllKeywordReferences();
+    QCOMPARE(list.publishUnits(), 0);
+    list.addKeywords(files[2].get());
+    list.purgeUnreferencedKeywords();
+    QCOMPARE(list.publishUnits(), expected());
+
+    list.removeAllKeywords();
+    QCOMPARE(list.publishUnits(), 0);
+}
+
+void tst_PublishKeywordList::nextDueKeyword_skipsNotDueAndWraps()
+{
+    PublishKeywordList list;
+    auto a = makeFile(1, QStringLiteral("alpha.bin"));
+    auto b = makeFile(2, QStringLiteral("bravo.bin"));
+    auto c = makeFile(3, QStringLiteral("charlie.bin"));
+    list.addKeywords(a.get());
+    list.addKeywords(b.get());
+    list.addKeywords(c.get());
+    const int count = list.keywordCount();
+    const auto named = [](const QString& word) {
+        return [word](PublishKeyword& kw) {
+            return kw.keyword().compare(word, Qt::CaseInsensitive) == 0;
+        };
+    };
+
+    // Skips the others within one call
+    PublishKeyword* kw = list.nextDueKeyword(count, named(QStringLiteral("charlie")));
+    QVERIFY(kw);
+    QCOMPARE(kw->keyword().toLower(), QStringLiteral("charlie"));
+    // The cursor moved past it, so a keyword before it is found by wrapping
+    kw = list.nextDueKeyword(count, named(QStringLiteral("alpha")));
+    QVERIFY(kw);
+    QCOMPARE(kw->keyword().toLower(), QStringLiteral("alpha"));
+
+    // Nothing due: nullptr after one lap, every keyword asked once
+    int asked = 0;
+    QVERIFY(!list.nextDueKeyword(100, [&asked](PublishKeyword&) { ++asked; return false; }));
+    QCOMPARE(asked, count);
+    // The look limit holds
+    asked = 0;
+    QVERIFY(!list.nextDueKeyword(1, [&asked](PublishKeyword&) { ++asked; return false; }));
+    QCOMPARE(asked, 1);
+
+    PublishKeywordList empty;
+    QVERIFY(!empty.nextDueKeyword(10, [](PublishKeyword&) { return true; }));
 }
 
 QTEST_GUILESS_MAIN(tst_PublishKeywordList)

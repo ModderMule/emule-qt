@@ -3,6 +3,7 @@
 /// @brief The "bind address" preference applied to every socket the client opens.
 
 #include "net/BindAddress.h"
+#include "net/InterfacePin.h"
 #include "prefs/Preferences.h"
 #include "utils/Log.h"
 
@@ -18,6 +19,7 @@ std::mutex s_lock;
 Resolution s_cache;
 bool s_resolved = false;
 std::function<QList<LocalInterface>()> s_source;
+std::function<PinProbe(int, const QString&)> s_probe;
 
 QList<LocalInterface> systemInterfaces()
 {
@@ -67,6 +69,59 @@ void block(Resolution& r, const QString& reason)
     r.reason = reason;
 }
 
+// Whole interface: the wildcard of the families that can be pinned.
+QHostAddress wildcard(const Resolution& r)
+{
+    if (r.state == State::Bound && !r.pin.v6)
+        return QHostAddress(QHostAddress::AnyIPv4);
+    if (r.state == State::Bound && !r.pin.v4)
+        return QHostAddress(QHostAddress::AnyIPv6);
+    return QHostAddress(QHostAddress::Any);
+}
+
+bool familyUsable(const Resolution& r, bool v4)
+{
+    return v4 ? r.pin.v4 : r.pin.v6;
+}
+
+// Try the pin once per resolution, so a refused option is one clear error, not a
+// warning per socket. Caller holds s_lock.
+void probePin(Resolution& r)
+{
+    if (r.state != State::Bound)
+        return;
+    std::function<PinProbe(int, const QString&)> probe = s_probe;
+    if (!probe) {
+        if (s_source)
+            return;   // test interfaces: their indexes are not real
+        probe = InterfacePin::probe;
+    }
+    PinProbe p = probe(r.index, r.name);
+    if (!r.literal.isNull()) {
+        // a literal runs its own family only
+        const bool v4 = r.literal.protocol() == QAbstractSocket::IPv4Protocol;
+        if (!(v4 ? p.v4 : p.v6)) {
+            const QString why = QStringLiteral("cannot pin a socket to interface %1 (error %2)")
+                                    .arg(r.name).arg(v4 ? p.v4Error : p.v6Error);
+            r = Resolution{.selector = r.selector};
+            block(r, why);
+        }
+        return;
+    }
+    if (!p.v4 && !p.v6) {
+        const QString why = QStringLiteral("cannot pin a socket to interface %1 (IPv4 error %2, "
+                                           "IPv6 error %3)").arg(r.name).arg(p.v4Error).arg(p.v6Error);
+        r = Resolution{.selector = r.selector};
+        block(r, why);
+        return;
+    }
+    if (!p.v6)
+        r.hasGlobalIPv6 = false;
+    if (!p.v4)
+        r.v4 = QHostAddress();
+    r.pin = p;
+}
+
 void report(const Resolution& r)
 {
     switch (r.state) {
@@ -82,6 +137,12 @@ void report(const Resolution& r)
         if (r.literal.protocol() == QAbstractSocket::IPv6Protocol)
             logWarning(QStringLiteral("Bound to IPv6 address %1: IPv4-only servers and peers "
                                       "are unreachable").arg(r.literal.toString()));
+        if (!r.pin.v6)
+            logWarning(QStringLiteral("Network interface %1 refuses the IPv6 pin (error %2): "
+                                      "IPv4 only").arg(r.name).arg(r.pin.v6Error));
+        if (!r.pin.v4)
+            logWarning(QStringLiteral("Network interface %1 refuses the IPv4 pin (error %2): "
+                                      "IPv6 only").arg(r.name).arg(r.pin.v4Error));
         break;
     case State::Blocked:
         logError(QStringLiteral("Network interface: %1 — no connection is opened until it "
@@ -94,6 +155,7 @@ void report(const Resolution& r)
 bool resolveLocked(const QString& text)
 {
     Resolution next = resolve(text, s_source ? s_source() : systemInterfaces());
+    probePin(next);
     const bool changed = !s_resolved || next != s_cache;
     s_resolved = true;
     if (changed) {
@@ -181,6 +243,13 @@ void setInterfaceSource(std::function<QList<LocalInterface>()> source)
     s_resolved = false;
 }
 
+void setPinProbe(std::function<PinProbe(int index, const QString& name)> probe)
+{
+    std::lock_guard guard(s_lock);
+    s_probe = std::move(probe);
+    s_resolved = false;
+}
+
 Resolution current()
 {
     // The UDP sockets ask per datagram and from their own thread: resolve once per value.
@@ -214,7 +283,7 @@ std::optional<QHostAddress> listenAddress()
     if (r.state == State::Blocked)
         return std::nullopt;
     if (r.literal.isNull())
-        return QHostAddress(QHostAddress::Any);
+        return wildcard(r);
     return r.literal;
 }
 
@@ -229,6 +298,8 @@ std::optional<QHostAddress> sourceFor(const Address& dest)
             return std::nullopt;
         return r.literal;
     }
+    if (!familyUsable(r, dest.isIPv4()))
+        return std::nullopt;
     return QHostAddress(dest.isIPv4() ? QHostAddress::AnyIPv4 : QHostAddress::AnyIPv6);
 }
 
@@ -240,7 +311,7 @@ bool canReach(const Address& dest)
     if (r.state == State::Blocked)
         return false;
     if (r.literal.isNull())
-        return true;
+        return familyUsable(r, dest.isIPv4());
     return r.literal.protocol() == QAbstractSocket::IPv4Protocol ? dest.isIPv4() : dest.isIPv6();
 }
 

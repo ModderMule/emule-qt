@@ -386,6 +386,7 @@ void SharedFileList::onEntityAdded(KnownFile* file)
     // ... and may be due for publishing
     m_srcProbeRestUntil = 0;
     m_notesProbeRestUntil = 0;
+    m_keyProbeRestUntil = 0;
 }
 
 void SharedFileList::onEntityRemoved(KnownFile* file)
@@ -998,67 +999,7 @@ void SharedFileList::publish()
     const time_t tProbe = std::time(nullptr);
     publishDueSource(tProbe);
     publishDueNotes(tProbe);
-
-    // --- Keyword publishing ---
-    if (kad->getTotalStoreKey() < KADEMLIATOTALSTOREKEY) {
-        time_t tNow = std::time(nullptr);
-
-        if (tNow >= m_keywords.nextPublishTime()) {
-            // The walk never rests: each keyword carries its own 24 h, and a file added
-            // after a lap must not wait one out (MFC SharedFileList.cpp:179-187, :1310).
-            PublishKeyword* kw = m_keywords.getNextKeyword();
-            if (!kw) {
-                m_keywords.resetNextKeyword();
-                kw = m_keywords.getNextKeyword();
-            }
-            m_keywords.setNextPublishTime(tNow + KADEMLIAPUBLISHTIME);
-            if (!kw)
-                return;
-
-            if (keywordIsDue(*kw, tNow)) {
-                // Prepare StoreKeyword search
-                auto* search = kad::SearchManager::prepareLookup(
-                    kad::SearchType::StoreKeyword, false, kw->kadID());
-
-                if (search) {
-                    search->setGUIName(kw->keyword());
-                    // Add file IDs (max 150 per keyword, rotate after)
-                    constexpr int kMaxFilesPerKeyword = 150;
-                    int added = 0;
-
-                    QMutexLocker locker(&m_mutex);
-                    for (KnownFile* file : kw->fileRefs()) {
-                        if (added >= kMaxFilesPerKeyword)
-                            break;
-                        // Skip part files and verify the file is still shared
-                        if (file->isPartFile())
-                            continue;
-                        if (!m_map.contains(MD4Key(file->fileHash())))
-                            continue;
-
-                        kad::UInt128 fileID;
-                        fileID.setValueBE(file->fileHash());
-                        search->addFileID(fileID);
-                        ++added;
-                    }
-                    locker.unlock();
-
-                    if (added > 0) {
-                        kad::logKad(QStringLiteral("Kad: publishing keyword \"%1\" (%2 files)")
-                                   .arg(kw->keyword()).arg(added));
-                        kad::SearchManager::startSearch(search);
-                        kw->incPublishedCount();
-                    } else {
-                        delete search;
-                    }
-
-                    // Rotate references so next publish starts with different files
-                    kw->rotateReferences(added);
-                    noteKeywordPublished(*kw, tNow, added > 0);
-                }
-            }
-        }
-    }
+    publishDueKeyword(tProbe);
 }
 
 bool SharedFileList::keywordIsDue(PublishKeyword& kw, time_t now)
@@ -1076,7 +1017,9 @@ bool SharedFileList::keywordIsDue(PublishKeyword& kw, time_t now)
 
 void SharedFileList::noteKeywordPublished(PublishKeyword& kw, time_t now, bool sent)
 {
-    kw.setNextPublishTime(now + KADEMLIAREPUBLISHTIMEK);
+    // Not MFC: a keyword of more than 150 files publishes the next batch before the
+    // last one expires on the storing nodes, so all of its files stay findable.
+    kw.setNextPublishTime(now + KADEMLIAREPUBLISHTIMEK / kw.batches());
     if (sent)
         m_publishStore.note(kw.kadID(), kw.nextPublishTime(), keywordFingerprint(kw));
 }
@@ -2366,22 +2309,20 @@ bool SharedFileList::canPublishToKad()
 // Other nodes see no more of us per file: a search sends one PUBLISH_SOURCE_REQ to
 // the ~10 nodes nearest that hash (their limit: 2-3/min per sender), and at 2
 // lookups/s a routing-table contact gets about 1 KADEMLIA2_REQ/min against 10/min.
-SharedFileList::SourcePublishBudget SharedFileList::sourcePublishBudget(int sharedFiles)
+SharedFileList::PublishBudget SharedFileList::sourcePublishBudget(int sharedFiles)
 {
-    constexpr int kFilesPerSlot = 600;   // KADEMLIAREPUBLISHTIMES / a 30 s search
-    constexpr uint32 kMaxSlots = 60;
-    const int files = std::max(sharedFiles, 0);
-    // What one start per KADEMLIAPUBLISHTIME keeps current
-    const int mfcPaceFiles = static_cast<int>(KADEMLIAREPUBLISHTIMES / KADEMLIAPUBLISHTIME);
+    return publishBudget(sharedFiles, KADEMLIAREPUBLISHTIMES, 30, KADEMLIATOTALSTORESRC);
+}
 
-    SourcePublishBudget budget{1, KADEMLIAPUBLISHTIME, KADEMLIATOTALSTORESRC};
-    if (files > mfcPaceFiles) {
-        budget.spacingSecs = 1;
-        budget.startsPerProbe = files > 2 * mfcPaceFiles ? 2 : 1;
-    }
-    budget.maxSearches = std::clamp(static_cast<uint32>((files + kFilesPerSlot - 1) / kFilesPerSlot),
-                              uint32{KADEMLIATOTALSTORESRC}, kMaxSlots);
-    return budget;
+// Not MFC, which looks at one keyword per KADEMLIAPUBLISHTIME, due or not, into 3
+// slots. A keyword store holds its slot up to 120 s (kSearchStoreKeywordLifetime),
+// so that keeps a few thousand keywords published; a large share has tens of
+// thousands. The pace follows the publishes due in 24 h, one per 150 files of a
+// keyword. Each keyword lands on its own ~10 nodes, and a 150-file publish is 3
+// PUBLISH_KEY_REQ per node against their limit of 4/min per sender.
+SharedFileList::PublishBudget SharedFileList::keywordPublishBudget(int units)
+{
+    return publishBudget(units, KADEMLIAREPUBLISHTIMEK, 60, KADEMLIATOTALSTOREKEY);
 }
 
 // MFC SharedFileList.cpp:1314-1329, paced by sourcePublishBudget().
@@ -2390,7 +2331,7 @@ void SharedFileList::publishDueSource(time_t tProbe)
     auto* kad = kad::Kademlia::instance();
     if (!kad || tProbe < m_lastPublishKadSrc || tProbe < m_srcProbeRestUntil)
         return;
-    const SourcePublishBudget budget = sourcePublishBudget(getCount());
+    const PublishBudget budget = sourcePublishBudget(getCount());
     // The counter is refreshed once a tick: count this probe's own starts on top
     uint32 running = kad->getTotalStoreSrc();
     if (running >= budget.maxSearches)
@@ -2442,6 +2383,69 @@ void SharedFileList::publishDueNotes(time_t tProbe)
     }
 }
 
+// MFC SharedFileList.cpp:1254-1312, paced by keywordPublishBudget().
+void SharedFileList::publishDueKeyword(time_t tProbe)
+{
+    auto* kad = kad::Kademlia::instance();
+    if (!kad || tProbe < m_keywords.nextPublishTime() || tProbe < m_keyProbeRestUntil)
+        return;
+    const PublishBudget budget = keywordPublishBudget(m_keywords.publishUnits());
+    uint32 running = kad->getTotalStoreKey();
+    if (running >= budget.maxSearches)
+        return;
+
+    // Not-due keywords are skipped within the probe, not one per probe as in MFC.
+    // Bounded: a keyword's first look may hash its file set (keywordIsDue).
+    constexpr int kMaxLooksPerProbe = 2000;
+    m_keywords.setNextPublishTime(tProbe + budget.spacingSecs);
+    for (int i = 0; i < budget.startsPerProbe && running < budget.maxSearches; ++i) {
+        PublishKeyword* kw = m_keywords.nextDueKeyword(
+                kMaxLooksPerProbe, [&](PublishKeyword& k) { return keywordIsDue(k, tProbe); });
+        if (!kw) {
+            if (m_keywords.keywordCount() <= kMaxLooksPerProbe)
+                m_keyProbeRestUntil = tProbe + kPublishProbeRestSecs;
+            return;
+        }
+
+        // Overloaded keyword or one already searched for: due again next lap
+        auto* search = kad::SearchManager::prepareLookup(
+                kad::SearchType::StoreKeyword, false, kw->kadID());
+        if (!search)
+            continue;
+        search->setGUIName(kw->keyword());
+
+        // Up to 150 shared, complete files, then rotate past the ones looked at
+        int added = 0;
+        int looked = 0;
+        {
+            QMutexLocker locker(&m_mutex);
+            for (KnownFile* file : kw->fileRefs()) {
+                if (added >= PublishKeyword::kMaxFilesPerPublish)
+                    break;
+                ++looked;
+                if (file->isPartFile() || !m_map.contains(MD4Key(file->fileHash())))
+                    continue;
+                kad::UInt128 fileID;
+                fileID.setValueBE(file->fileHash());
+                search->addFileID(fileID);
+                ++added;
+            }
+        }
+
+        if (added > 0) {
+            kad::logKad(QStringLiteral("Kad: publishing keyword \"%1\" (%2 files)")
+                            .arg(kw->keyword()).arg(added));
+            kad::SearchManager::startSearch(search);
+            kw->incPublishedCount();
+            ++running;
+        } else {
+            delete search;
+        }
+        kw->rotateReferences(looked);
+        noteKeywordPublished(*kw, tProbe, added > 0);
+    }
+}
+
 // ---------------------------------------------------------------------------
 // pseudoDirName (private)
 // ---------------------------------------------------------------------------
@@ -2482,6 +2486,25 @@ QString SharedFileList::pseudoDirName(const ShareRules& rules, const QString& di
     m_pseudoDirNames.insert(name, dir);
     m_pseudoDirKeys.insert(key);
     return name;
+}
+
+SharedFileList::PublishBudget SharedFileList::publishBudget(int units, time_t republishSecs,
+                                                            time_t slotHoldSecs, uint32 minSearches)
+{
+    constexpr uint32 kMaxSlots = 60;
+    const int work = std::max(units, 0);
+    const int perSlot = static_cast<int>(republishSecs / slotHoldSecs);
+    // What one start per KADEMLIAPUBLISHTIME keeps current
+    const int mfcPace = static_cast<int>(republishSecs / KADEMLIAPUBLISHTIME);
+
+    PublishBudget budget{1, KADEMLIAPUBLISHTIME, minSearches};
+    if (work > mfcPace) {
+        budget.spacingSecs = 1;
+        budget.startsPerProbe = work > 2 * mfcPace ? 2 : 1;
+    }
+    budget.maxSearches = std::clamp(static_cast<uint32>((work + perSlot - 1) / perSlot),
+                                    minSearches, kMaxSlots);
+    return budget;
 }
 
 } // namespace eMule
