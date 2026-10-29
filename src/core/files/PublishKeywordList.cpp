@@ -80,8 +80,13 @@ void PublishKeywordList::addKeywords(KnownFile* file)
         }
         // A published keyword that gains a file is due again on the next lap. MIN2S(30)
         // is MFC's absolute "long ago", not a delay (SharedFileList.cpp:220-227).
-        if ((*it)->addRef(file) && (*it)->nextPublishTime() > MIN2S(30))
-            (*it)->setNextPublishTime(MIN2S(30));
+        PublishKeyword& kw = **it;
+        const int unitsBefore = PublishKeyword::publishUnits(kw.refCount());
+        if (kw.addRef(file)) {
+            m_publishUnits += PublishKeyword::publishUnits(kw.refCount()) - unitsBefore;
+            if (kw.nextPublishTime() > MIN2S(30))
+                kw.setNextPublishTime(MIN2S(30));
+        }
         // find, not ranges::contains: GCC 12 (Ubuntu 22.04 build) lacks it
         if (std::ranges::find(registered, lower) == registered.end())
             registered.push_back(lower);
@@ -107,7 +112,9 @@ void PublishKeywordList::removeKeywords(KnownFile* file)
         if (it == m_index.constEnd())
             continue;
         const KeywordIter kw = *it;
+        const int unitsBefore = PublishKeyword::publishUnits(kw->refCount());
         kw->removeRef(file);
+        m_publishUnits += PublishKeyword::publishUnits(kw->refCount()) - unitsBefore;
         if (kw->refCount() == 0)
             eraseKeyword(kw);
     }
@@ -132,11 +139,26 @@ void PublishKeywordList::resetNextKeyword()
     m_nextKeywordIter = m_keywords.begin();
 }
 
+PublishKeyword* PublishKeywordList::nextDueKeyword(int maxLook,
+                                                  const std::function<bool(PublishKeyword&)>& due)
+{
+    const int looks = std::min(maxLook, keywordCount());
+    for (int i = 0; i < looks; ++i) {
+        if (m_nextKeywordIter == m_keywords.end())
+            m_nextKeywordIter = m_keywords.begin();
+        PublishKeyword& kw = *m_nextKeywordIter++;
+        if (due(kw))
+            return &kw;
+    }
+    return nullptr;
+}
+
 void PublishKeywordList::removeAllKeywordReferences()
 {
     for (auto& kw : m_keywords)
         kw.removeAllReferences();
     m_wordsOf.clear();
+    m_publishUnits = 0;
 }
 
 void PublishKeywordList::purgeUnreferencedKeywords()
@@ -154,6 +176,7 @@ void PublishKeywordList::removeAllKeywords()
     m_keywords.clear();
     m_index.clear();
     m_wordsOf.clear();
+    m_publishUnits = 0;
     m_nextKeywordIter = m_keywords.end();
 }
 
@@ -162,6 +185,7 @@ PublishKeywordList::KeywordIter PublishKeywordList::eraseKeyword(KeywordIter it)
     if (m_nextKeywordIter == it)
         ++m_nextKeywordIter;
     m_index.remove(kad::kadTagStrToLower(it->keyword()));
+    m_publishUnits -= PublishKeyword::publishUnits(it->refCount());
     m_nextPublishTime = 0;
     return m_keywords.erase(it);
 }

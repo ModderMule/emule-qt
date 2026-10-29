@@ -12,7 +12,9 @@
 #include <QHash>
 #include <QString>
 
+#include <algorithm>
 #include <ctime>
+#include <functional>
 #include <list>
 #include <unordered_map>
 #include <unordered_set>
@@ -28,12 +30,22 @@ class KnownFile;
 
 class PublishKeyword {
 public:
+    /// Files one keyword publish carries (MFC); more go out in later batches.
+    static constexpr int kMaxFilesPerPublish = 150;
+
     explicit PublishKeyword(const QString& keyword);
 
     [[nodiscard]] const QString& keyword() const { return m_keyword; }
     [[nodiscard]] const kad::UInt128& kadID() const { return m_kadID; }
     [[nodiscard]] const std::vector<KnownFile*>& fileRefs() const { return m_files; }
     [[nodiscard]] int refCount() const { return static_cast<int>(m_files.size()); }
+    /// Publishes of up to 150 files a @p refs-file keyword needs per 24 h.
+    [[nodiscard]] static int publishUnits(int refs)
+    {
+        return (std::max(refs, 0) + kMaxFilesPerPublish - 1) / kMaxFilesPerPublish;
+    }
+    /// Publishes this keyword needs per 24 h, at least one.
+    [[nodiscard]] int batches() const { return std::max(publishUnits(refCount()), 1); }
 
     /// Returns true if @p file was not referenced yet.
     bool addRef(KnownFile* file);
@@ -81,6 +93,10 @@ public:
     /// Reset the round-robin iterator to the beginning.
     void resetNextKeyword();
 
+    /// First keyword from the cursor (wrapping) that @p due says yes to, looking at
+    /// no more than @p maxLook; the cursor moves past it. nullptr if none of them is.
+    PublishKeyword* nextDueKeyword(int maxLook, const std::function<bool(PublishKeyword&)>& due);
+
     /// Drop every file reference but keep the keywords and their publish times
     /// (MFC RemoveAllKeywordReferences). Follow with purgeUnreferencedKeywords().
     void removeAllKeywordReferences();
@@ -95,6 +111,8 @@ public:
     void setNextPublishTime(time_t t) { m_nextPublishTime = t; }
 
     [[nodiscard]] int keywordCount() const { return static_cast<int>(m_keywords.size()); }
+    /// Sum of PublishKeyword::publishUnits() over all keywords: the 24 h publish work.
+    [[nodiscard]] int publishUnits() const { return m_publishUnits; }
 
 private:
     using KeywordIter = std::list<PublishKeyword>::iterator;
@@ -109,6 +127,7 @@ private:
     /// The lowercased words each file is referenced under.
     std::unordered_map<KnownFile*, std::vector<QString>> m_wordsOf;
     time_t m_nextPublishTime = 0;
+    int m_publishUnits = 0;
 };
 
 } // namespace eMule

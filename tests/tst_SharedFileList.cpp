@@ -115,6 +115,9 @@ private slots:
     void publishDueNotes_probesAreSpacedTwoSeconds();
     void sourcePublishBudget_followsTheShareSize();
     void publishDueSource_usesTheBudget();
+    void keywordPublishBudget_followsTheUnits();
+    void publishDueKeyword_skipsNotDueKeywords();
+    void publishDueKeyword_bigKeywordRepublishesPerBatch();
     void unstoredSourcePublish_isDueAgain();
     void canPublishToKad_firewalledNeedsABuddy();
 
@@ -2367,6 +2370,102 @@ void tst_SharedFileList::publishDueSource_usesTheBudget()
     QCOMPARE(running(), 1);
     shared.publishDueSource(t0 + KADEMLIAPUBLISHTIME);
     QCOMPARE(running(), 2);
+}
+
+// MFC pace for a few thousand keyword publishes a day; more get more slots and
+// probes, up to the same ceiling as sources.
+void tst_SharedFileList::keywordPublishBudget_followsTheUnits()
+{
+    struct Row { int units; int starts; time_t spacing; uint32 searches; };
+    const Row rows[] = {
+        {0, 1, 2, 3}, {1000, 1, 2, 3}, {4320, 1, 2, 3}, {4321, 1, 2, 4},
+        {43200, 1, 2, 30}, {43201, 1, 1, 31}, {86400, 1, 1, 60}, {86401, 2, 1, 60},
+        {200000, 2, 1, 60},
+    };
+    for (const Row& row : rows) {
+        const auto budget = SharedFileList::keywordPublishBudget(row.units);
+        QCOMPARE(budget.startsPerProbe, row.starts);
+        QCOMPARE(budget.spacingSecs, row.spacing);
+        QCOMPARE(budget.maxSearches, row.searches);
+    }
+}
+
+namespace {
+
+/// Every keyword but @p due is published far in the future.
+void onlyKeywordDue(PublishKeywordList& list, const QString& due, time_t notBefore)
+{
+    list.resetNextKeyword();
+    while (PublishKeyword* kw = list.getNextKeyword()) {
+        if (kw->keyword().compare(due, Qt::CaseInsensitive) != 0)
+            kw->setNextPublishTime(notBefore);
+    }
+    list.resetNextKeyword();
+}
+
+} // namespace
+
+// MFC spends a 2 s probe on every keyword, due or not, so one lap of a large list
+// takes longer than the 24 h it has.
+void tst_SharedFileList::publishDueKeyword_skipsNotDueKeywords()
+{
+    eMule::testing::KadFixture kadFixture(eMule::testing::KadMode::Open);
+    kadFixture.kadPrefs().setLastContact();
+    const auto stop = qScopeGuard([] { kad::SearchManager::stopAllSearches(); });
+
+    KnownFileList knownFiles;
+    SharedFileList shared(&knownFiles);
+    for (uint8 i = 1; i <= 20; ++i)
+        shared.safeAddKFile(makeFile(knownFiles, i, QStringLiteral("word%1 filler%1.bin").arg(i)));
+    const time_t t0 = std::time(nullptr);
+    onlyKeywordDue(shared.m_keywords, QStringLiteral("word17"), t0 + HR2S(1));
+
+    PublishKeyword* due = keywordNamed(shared.m_keywords, QStringLiteral("word17"));
+    QVERIFY(due);
+    shared.publishDueKeyword(t0);
+    QVERIFY(kad::SearchManager::alreadySearchingFor(due->kadID()));
+    QCOMPARE(due->publishedCount(), uint32{1});
+    QCOMPARE(due->nextPublishTime(), t0 + KADEMLIAREPUBLISHTIMEK);
+
+    // Nothing else due: the probe rests instead of walking every tick
+    shared.publishDueKeyword(t0 + KADEMLIAPUBLISHTIME);
+    QCOMPARE(shared.m_keyProbeRestUntil, t0 + KADEMLIAPUBLISHTIME + SharedFileList::kPublishProbeRestSecs);
+}
+
+// A keyword of more than 150 files publishes one batch per 24 h / batches, the next
+// 150 files each time, so all of them stay on the storing nodes.
+void tst_SharedFileList::publishDueKeyword_bigKeywordRepublishesPerBatch()
+{
+    eMule::testing::KadFixture kadFixture(eMule::testing::KadMode::Open);
+    kadFixture.kadPrefs().setLastContact();
+    const auto stop = qScopeGuard([] { kad::SearchManager::stopAllSearches(); });
+
+    KnownFileList knownFiles;
+    SharedFileList shared(&knownFiles);
+    for (uint32 i = 1; i <= 301; ++i) {
+        auto* f = new KnownFile();
+        uint8 hash[16]{};
+        std::memcpy(hash, &i, sizeof(i));
+        hash[15] = 0xC5;
+        f->setFileHash(hash);
+        f->setFileName(QStringLiteral("common part%1.bin").arg(i));
+        f->setFileSize(1000);
+        knownFiles.safeAddKFile(f);
+        shared.safeAddKFile(f);
+    }
+    PublishKeyword* common = keywordNamed(shared.m_keywords, QStringLiteral("common"));
+    QVERIFY(common);
+    QCOMPARE(common->refCount(), 301);
+    QCOMPARE(common->batches(), 3);
+    const KnownFile* firstOfBatch2 = common->fileRefs()[PublishKeyword::kMaxFilesPerPublish];
+
+    const time_t t0 = std::time(nullptr);
+    onlyKeywordDue(shared.m_keywords, QStringLiteral("common"), t0 + DAY2S(1));
+    shared.publishDueKeyword(t0);
+    QVERIFY(kad::SearchManager::alreadySearchingFor(common->kadID()));
+    QCOMPARE(common->nextPublishTime(), t0 + KADEMLIAREPUBLISHTIMEK / 3);
+    // The next publish starts where this one stopped
+    QCOMPARE(common->fileRefs().front(), firstOfBatch2);
 }
 
 void tst_SharedFileList::unstoredSourcePublish_isDueAgain()

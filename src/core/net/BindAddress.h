@@ -32,6 +32,16 @@ struct LocalInterface {
     friend bool operator==(const LocalInterface&, const LocalInterface&) = default;
 };
 
+/// Which families a socket can be pinned to on one interface, tried on throwaway sockets.
+struct PinProbe {
+    bool v4 = true;
+    bool v6 = true;
+    int v4Error = 0;                ///< OS error of the failed IPv4 pin, 0 = none
+    int v6Error = 0;
+
+    friend bool operator==(const PinProbe&, const PinProbe&) = default;
+};
+
 enum class State {
     Unrestricted,   ///< nothing selected, nothing pinned
     Bound,          ///< selection resolved to an interface
@@ -47,6 +57,7 @@ struct Resolution {
     QHostAddress literal;           ///< set when the selector is an address
     QHostAddress v4;                ///< interface's first IPv4, may be null
     bool hasGlobalIPv6 = false;
+    PinProbe pin;                   ///< a family that cannot be pinned is not used
     QString reason;                 ///< why Blocked
 
     [[nodiscard]] bool wholeInterface() const { return state == State::Bound && literal.isNull(); }
@@ -62,6 +73,10 @@ struct Resolution {
 /// Test seam: replace the OS enumeration; an empty function restores it.
 void setInterfaceSource(std::function<QList<LocalInterface>()> source);
 
+/// Test seam: replace the pin probe; an empty function restores it. Without a seam the
+/// probe runs only on the OS enumeration (a test source's indexes are not real).
+void setPinProbe(std::function<PinProbe(int index, const QString& name)> probe);
+
 /// The cached resolution; re-resolved when the preference text changed.
 [[nodiscard]] Resolution current();
 
@@ -75,7 +90,8 @@ bool refresh();
 [[nodiscard]] bool isConfigured();
 
 /// What a socket binds to: Any when nothing is configured or a whole interface is
-/// selected, the address for a literal, nullopt when blocked (do not open the socket).
+/// selected (AnyIPv4/AnyIPv6 when the other family cannot be pinned), the address for a
+/// literal, nullopt when blocked (do not open the socket).
 [[nodiscard]] std::optional<QHostAddress> listenAddress();
 
 /// What an outgoing socket towards @p dest binds to before it is pinned; nullopt when
