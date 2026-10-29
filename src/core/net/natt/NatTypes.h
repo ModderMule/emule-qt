@@ -6,6 +6,7 @@
 #include "utils/Types.h"
 
 #include <QPointer>
+#include <QString>
 
 #include <array>
 
@@ -90,6 +91,7 @@ struct Attempt {
     State state = State::Requested;
 
     PeerInfo peer;                  ///< what we knew when starting (requester) or from the notice
+    QString startKey;               ///< peerKey() at creation; a hash learned later changes the live key
     QPointer<UpDownClient> client;  ///< requester: the source; target: the client we dialed
     Endpoint peerUdp;               ///< peer's public UDP endpoint once known
     Endpoint peerUdp6;              ///< second family (PR_NAT IPv6), may be null

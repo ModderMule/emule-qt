@@ -214,6 +214,7 @@ bool NatRendezvous::start(const PeerInfo& peer)
         a->role = Role::Requester;
         a->path = p->kind();
         a->peer = peer;
+        a->startKey = peerKey(peer);
         a->startedMs = now;
         a->deadlineMs = now + kAttemptTimeoutMs;
         a->triedPaths = static_cast<uint8>(1u << static_cast<unsigned>(p->kind()));
@@ -308,6 +309,7 @@ Attempt* NatRendezvous::acceptNotice(PathKind kind, const PeerInfo& peer, const 
     a->role = Role::Target;
     a->path = kind;
     a->peer = peer;
+    a->startKey = peerKey(peer);
     a->startedMs = now;
     a->deadlineMs = now + kAttemptTimeoutMs;
     Attempt* raw = a.get();
@@ -361,12 +363,12 @@ void NatRendezvous::fail(Attempt& a, const QString& why)
     logDebug(QStringLiteral("NAT-T: #%1 %2 failed: %3")
                  .arg(a.id).arg(peerKey(a.peer), why));
     const uint64 now = m_env->now();
-    m_recentDone.insert(peerKey(a.peer), now);
+    remember(m_recentDone, a, now);
     if (a.role == Role::Requester) {
-        m_failedPeers.insert(peerKey(a.peer), now);
+        remember(m_failedPeers, a, now);
         m_env->attemptFailed(a);
     } else {
-        m_noticeFailed.insert(peerKey(a.peer), now);
+        remember(m_noticeFailed, a, now);
     }
     emit attemptFinished(a.id, false);
 }
@@ -382,7 +384,7 @@ void NatRendezvous::finish(Attempt& a, bool connected)
     if (a.finished)
         return;
     a.finished = true;
-    m_recentDone.insert(peerKey(a.peer), m_env->now());
+    remember(m_recentDone, a, m_env->now());
     logDebug(QStringLiteral("NAT-T: #%1 %2 connected").arg(a.id).arg(peerKey(a.peer)));
     emit attemptFinished(a.id, connected);
 }
@@ -544,7 +546,17 @@ void NatRendezvous::evaluateTcpDial(Attempt& a, bool fallback)
     if (a.serverRole == 1)
         return;
     const uint64 now = m_env->now();
-    if (!fallback && (a.role == Role::Target || a.serverRole == 0)) {
+    // ed2k-server#40: after a foreign callback the requester dials. The woken target waits
+    // and dials only late, for a requester whose own dial cannot reach it.
+    if (a.foreignWake && a.role == Role::Target) {
+        if (a.dialAtMs == 0)
+            a.dialAtMs = now + kForeignTargetDialFallbackMs;
+        else if (now >= a.dialAtMs && !m_env->peerConnected(a))
+            dial(a);
+        return;
+    }
+    const bool foreignRequester = a.role == Role::Requester && a.path == PathKind::ForeignCallback;
+    if (!fallback && (a.role == Role::Target || a.serverRole == 0 || foreignRequester)) {
         dial(a);
         return;
     }
@@ -810,6 +822,14 @@ bool NatRendezvous::tryNextPath(Attempt& a)
         return true;
     }
     return false;
+}
+
+void NatRendezvous::remember(QHash<QString, uint64>& map, const Attempt& a, uint64 now)
+{
+    // Under the key it started with too: a source without a hash is looked up by ID later.
+    map.insert(peerKey(a.peer), now);
+    if (!a.startKey.isEmpty())
+        map.insert(a.startKey, now);
 }
 
 } // namespace eMule::natt

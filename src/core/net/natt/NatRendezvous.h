@@ -42,6 +42,9 @@ public:
     static constexpr uint64 kPunchWindowMs      = 20000;
     static constexpr uint64 kHandoffIntervalMs  = 2000;
     static constexpr uint64 kRequesterDialDelay = 5000;   // the target dials first
+    // ...except after a foreign callback (ed2k-server#40): the requester dials at once,
+    // the woken target only as a late fallback
+    static constexpr uint64 kForeignTargetDialFallbackMs = 10000;
     // QUIC: the downloader (requester) dials once both NATs had a moment to open; with
     // an IPv6 of our own it first waits for the peer's handoff (TCP/IPv6 wins), unless
     // the server gave a punched IPv6 UDP endpoint (SYNC_IPV6): then QUIC goes first and
@@ -179,6 +182,8 @@ private:
     enum class QuicDialMode : uint8 { Only, First, AfterTcp };
 
     void evaluateDial(Attempt& attempt);
+    /// Stamps @p map for the attempt's live key and its start key.
+    static void remember(QHash<QString, uint64>& map, const Attempt& a, uint64 now);
     /// TCP/IPv6 dial; @p fallback: both roles wait kRequesterDialDelay (QUIC went first).
     void evaluateTcpDial(Attempt& attempt, bool fallback);
     void dial(Attempt& attempt);

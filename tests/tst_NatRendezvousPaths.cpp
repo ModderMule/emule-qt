@@ -179,6 +179,9 @@ private slots:
     void foreign_noFlagFails();
     void foreign_target_noReciprocalRequest();
     void foreign_target_requestersKeptApart();
+    void foreign_hashlessSourceFailsOnce();
+    void foreign_requesterDialsTcpAtOnce();
+    void foreign_target_waitsToBeDialled();
 
     // Kad buddy
     void kad_requestEnvelopeAndPunches();
@@ -1424,6 +1427,102 @@ void tst_NatRendezvousPaths::kad_rendezvousFromBuddy()
     // too short
     HubFixture h;
     QVERIFY(!h.hub->handleRendezvousFromBuddy(seen, p, 20));
+}
+
+namespace {
+
+const Address kForeignPeerV6 = Address::fromString(QStringLiteral("2a00:1450:4001:801::7"));
+constexpr uint16 kForeignPeerTcp = 31001;
+
+/// The foreign server's 0xA7 for target @p id, 27 bytes, obfuscated with its key.
+bool foreignAnswer(HubFixture& f, uint32 id, const Hash16& hash)
+{
+    const QByteArray enc = encryptForServer(
+        serverDatagram(OP_NAT_CALLBACKREQUESTED_UDP, notice(kPeerIP, kPeerUdp, id, CONNECT_OPT_CRYPT_SUPPORTED, &hash)),
+        kForeignKey);
+    return f.hub->handleServerDatagram(Endpoint(kForeignIP, kForeignPort + 4), bytes(enc), enc.size());
+}
+
+} // namespace
+
+void tst_NatRendezvousPaths::foreign_hashlessSourceFailsOnce()
+{
+    // A source from a server answer has no hash; the 0xA7 brings one. The failure must
+    // still block the source as we know it, or it is asked again every reask.
+    HubFixture f;
+    logInLugdunum(f);
+    f.env->foreignReady(kForeignIP, kForeignPort, kForeignKey, kForeignObf);
+    PeerInfo src = peerOnForeign(77);
+    src.hashKnown = false;
+    src.hash.fill(0);
+    QVERIFY(f.hub->start(src));
+    Hash16 h{};
+    h.fill(0x5A);
+    QVERIFY(foreignAnswer(f, 77, h));
+    QVERIFY(f.hub->attempts().front()->peer.hashKnown);
+    f.advance(NatRendezvous::kAttemptTimeoutMs + 1000);
+    QCOMPARE(f.env->failed.size(), size_t{1});
+    QVERIFY(f.hub->hasFailed(src));
+    QVERIFY(!f.hub->mayKeepLowIdSource(src));
+    QVERIFY(!f.hub->canStart(src));
+    // and under the hash it learned
+    QVERIFY(f.hub->hasFailed(peerOnForeign(77)));
+}
+
+void tst_NatRendezvousPaths::foreign_requesterDialsTcpAtOnce()
+{
+    // ed2k-server#40: the requester dials, without the 5 s it leaves a same-server target.
+    HubFixture f;
+    logInLugdunum(f);
+    f.env->foreignReady(kForeignIP, kForeignPort, kForeignKey, kForeignObf);
+    f.env->publicIPv6 = Address::fromString(QStringLiteral("2a00:1450:4001:800::1"));
+    const PeerInfo peer = peerOnForeign(77);
+    QVERIFY(f.hub->start(peer));
+    QVERIFY(foreignAnswer(f, 77, peer.hash));
+    const QByteArray h = handoff(peer.hash, 77, kForeignPeerTcp, kForeignPeerV6);
+    f.hub->handleFrame(OP_NATT_FRAME_IPV6HANDOFF, bytes(h), uint32(h.size()), Endpoint(kPeerIP, kPeerUdp), true);
+    QCOMPARE(f.env->dials.size(), size_t{1});
+    QCOMPARE(f.env->dials[0].second, kForeignPeerV6);
+    QCOMPARE(f.hub->attempts().front()->peerTcpPort, kForeignPeerTcp);
+}
+
+void tst_NatRendezvousPaths::foreign_target_waitsToBeDialled()
+{
+    // Woken with requester ID 0: punch, answer the handoff, let the requester dial.
+    // A late dial of our own only when it never got through.
+    const auto wake = [](HubFixture& f) {
+        logInLugdunum(f);
+        f.env->publicIPv6 = Address::fromString(QStringLiteral("2a00:1450:4001:800::1"));
+        QVERIFY(f.hub->handleServerTcp(OP_NAT_CALLBACKREQUESTED, notice(kPeerIP, kPeerUdp, 0, 0)));
+        Hash16 hash{};
+        hash.fill(0x77);
+        const QByteArray h = handoff(hash, 123, kForeignPeerTcp, kForeignPeerV6);
+        f.hub->handleFrame(OP_NATT_FRAME_IPV6HANDOFF, bytes(h), uint32(h.size()), Endpoint(kPeerIP, kPeerUdp), false);
+        QVERIFY(f.hub->attempts().front()->peerHandoffSeen);
+    };
+
+    HubFixture f;
+    wake(f);
+    QVERIFY(f.env->dials.empty());
+    QVERIFY(!f.env->udpWith(OP_UDPRESERVEDPROT2, OP_NATT_FRAME_IPV6HANDOFF).empty());   // answered
+    // 4 s for a 0x61 that never comes, then the fallback wait
+    const uint64 noDialMs = Ed2kServerHolePunchPath::kInfoWaitMs + NatRendezvous::kForeignTargetDialFallbackMs - 1000;
+    for (uint64 t = 0; t < noDialMs; t += 1000)
+        f.advance(1000);
+    QVERIFY(f.env->dials.empty());
+    f.advance(1000);
+    f.advance(1000);
+    QCOMPARE(f.env->dials.size(), size_t{1});
+    QCOMPARE(f.env->dials[0].second, kForeignPeerV6);
+
+    // the requester's dial came in: no stream of our own
+    HubFixture g;
+    wake(g);
+    g.advance(Ed2kServerHolePunchPath::kInfoWaitMs);
+    g.env->connected = true;
+    for (int i = 0; i < 20; ++i)
+        g.advance(1000);
+    QVERIFY(g.env->dials.empty());
 }
 
 QTEST_GUILESS_MAIN(tst_NatRendezvousPaths)
