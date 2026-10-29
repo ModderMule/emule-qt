@@ -91,8 +91,10 @@ signals:
     void blockPacketsReady(eMule::UpDownClient* client, QByteArray fileId,
                            quint64 startOffset, quint64 endOffset,
                            QList<std::shared_ptr<eMule::Packet>> packets);
-    /// Emitted on read error for a client.
-    void readError(eMule::UpDownClient* client);
+    /// Emitted on read error for a client. Names the block and the path it was read
+    /// from, so the receiver can tell a file that moved since from a broken one.
+    void readError(eMule::UpDownClient* client, QString filePath, QByteArray fileId,
+                   quint64 startOffset, quint64 endOffset);
 
 protected:
     void run() override;
@@ -108,6 +110,7 @@ private:
     };
 
     void readBlock(const BlockReadRequest& req);
+    void emitReadError(const BlockReadRequest& req);
     /// The bytes of @p req. Caller holds m_readerMutex.
     [[nodiscard]] bool readRange(const BlockReadRequest& req, QByteArray& data);
     [[nodiscard]] bool readUncached(const BlockReadRequest& req, QByteArray& data);

@@ -238,14 +238,19 @@ public:
     [[nodiscard]] bool isPartComplete(uint32 part) const override { return isComplete(part); }
 
     /// KnownFile::dataFilePath — the `.part` data file, i.e. fullName() (which is
-    /// the `.part.met`) with the `.met` suffix removed.
+    /// the `.part.met`) with the `.met` suffix removed. Once complete, the `.part`
+    /// is gone and the file itself holds the bytes (emule-qt#81).
     [[nodiscard]] QString dataFilePath() const override
     {
+        if (m_status == PartFileStatus::Complete)
+            return filePath();
         QString path = m_fullName;
         if (path.endsWith(QStringLiteral(".met")))
             path.chop(4);
         return path;
     }
+    /// KnownFile::uploadReadsOnHold — while verify + move run, the `.part` may vanish.
+    [[nodiscard]] bool uploadReadsOnHold() const override { return m_completionRunning; }
     [[nodiscard]] bool isPureGap(uint64 start, uint64 end) const;
     [[nodiscard]] bool isAlreadyRequested(uint64 start, uint64 end) const;
     [[nodiscard]] uint64 totalGapSizeInRange(uint64 start, uint64 end) const;

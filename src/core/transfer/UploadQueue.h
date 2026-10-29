@@ -244,7 +244,8 @@ private slots:
     void onBlockPacketsReady(eMule::UpDownClient* client, QByteArray fileId,
                              quint64 startOffset, quint64 endOffset,
                              QList<std::shared_ptr<eMule::Packet>> packets);
-    void onReadError(eMule::UpDownClient* client);
+    void onReadError(eMule::UpDownClient* client, const QString& filePath, const QByteArray& fileId,
+                     quint64 startOffset, quint64 endOffset);
     /// A file left the share (deleted, unshared, cancelled): end its slots, drop its waiters.
     void onSharedFileRemoved(eMule::KnownFile* file);
 

@@ -15,7 +15,7 @@
 
 
 ## GUI
-- make the GUI look as close to the original MFC GUI as possible by comparing with sreenshots at `docs/eMuleScreensGUI`
+- make the GUI look as close to the original MFC GUI as possible by comparing with screenshots at `docs/eMuleScreensGUI`
 - no need for backwards compatibility between GUI and core. Latest GUI working with latest core is preferred
 - always localize translations using `./scripts/translate_missing.py`
 
@@ -29,7 +29,7 @@
 - when writing protocol spec: be token efficient and relax on grammar
 
 ## Testing
-- open ports: TCP `5662`, UDP `5672`
+- open ports: TCP + UDP `5662`
 - kill `emulecored` after testing
 - never disable UDP or TCP encryption as it is required by most peers to connect
 - start the GUI with  `--screenshot` cmd arg to take screenshots

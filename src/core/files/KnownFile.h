@@ -119,6 +119,10 @@ public:
     /// re-deriving the `.part.met` → `.part` rule.
     [[nodiscard]] virtual QString dataFilePath() const { return filePath(); }
 
+    /// No new upload reads for now: the data file is being moved (MFC bNoNewReads).
+    /// Reads wait, the slot stays.
+    [[nodiscard]] virtual bool uploadReadsOnHold() const { return false; }
+
     /// Do we hold every byte of part @p part?
     ///
     /// Always true for a completed shared file — a KnownFile has no gaps by
