@@ -497,7 +497,7 @@ void Ed3kDownloads::openEntry(Entry& e)
     // a part file gone since: what the bitmap says is not there any more
     if (e.info.done > 0 && !QFile::exists(e.info.partPath)) {
         logWarning(QStringLiteral("part file of \"%1\" is gone: downloaded again").arg(e.info.name));
-        std::ranges::fill(e.have, false);
+        std::fill(e.have.begin(), e.have.end(), false);  // not ranges: GCC 12 rejects vector<bool>
         e.info.done = 0;
     }
     QDir().mkpath(QFileInfo(e.info.partPath).absolutePath());
@@ -529,7 +529,7 @@ void Ed3kDownloads::verified(const ffi::Root& root, const std::optional<FileHash
         logWarning(QStringLiteral("\"%1\" does not hash to its root: downloaded again").arg(e->info.name));
         if (isShared(root))
             unshare(root);
-        std::ranges::fill(e->have, false);
+        std::fill(e->have.begin(), e->have.end(), false);
         e->info.done = 0;
         QFile::remove(e->info.partPath);
         e->info.state = Ed3kDownloadInfo::State::Downloading;
@@ -699,7 +699,7 @@ void Ed3kDownloads::load()
         e.sharedByList = sharedByList;
         e.have = unpackBits(have, std::size_t(blockCount(size)));
         if (e.info.state == Ed3kDownloadInfo::State::Complete) {
-            std::ranges::fill(e.have, true);
+            std::fill(e.have.begin(), e.have.end(), true);
             e.info.done = size;
         } else {
             for (std::size_t i = 0; i < e.have.size(); ++i)
