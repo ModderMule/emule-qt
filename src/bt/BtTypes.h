@@ -6,6 +6,7 @@
 #include <QByteArray>
 #include <QList>
 #include <QString>
+#include <QStringList>
 
 #include <array>
 
@@ -14,6 +15,10 @@ namespace eMule::bt {
 /// The session's settings, resolved by the daemon from Preferences.
 struct BtSettings {
     quint16 listenPort = 6881;
+    /// bind selection (bindAddress pref): listen and dial from these only; empty = all
+    QStringList bindAddresses;
+    /// the bound interface is gone: session paused, no socket at all
+    bool networkBlocked = false;
     /// where new torrents are saved; never empty
     QString downloadDir;
     /// <config>/BT: session.dat and resume/

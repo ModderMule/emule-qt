@@ -14,8 +14,8 @@ namespace eMule::bt {
 lt::settings_pack BtSettingsMap::toPack(const BtSettings& s)
 {
     lt::settings_pack p;
-    const auto port = std::to_string(s.listenPort);
-    p.set_str(lt::settings_pack::listen_interfaces, "0.0.0.0:" + port + ",[::]:" + port);
+    p.set_str(lt::settings_pack::listen_interfaces, listenInterfaces(s));
+    p.set_str(lt::settings_pack::outgoing_interfaces, outgoingInterfaces(s));
     p.set_bool(lt::settings_pack::enable_dht, s.dht);
     p.set_bool(lt::settings_pack::enable_lsd, s.lsd);
     // the app's PortMapper maps the port (research doc §7.5)
@@ -56,6 +56,31 @@ int BtSettingsMap::rateBytes(quint32 kb)
 {
     const qint64 bytes = qint64(kb) * 1024;
     return static_cast<int>(std::min<qint64>(bytes, std::numeric_limits<int>::max()));
+}
+
+std::string BtSettingsMap::listenInterfaces(const BtSettings& s)
+{
+    // blocked: no listen socket, so no DHT, tracker or peer traffic either
+    if (s.networkBlocked)
+        return {};
+    const std::string port = std::to_string(s.listenPort);
+    if (s.bindAddresses.isEmpty())
+        return "0.0.0.0:" + port + ",[::]:" + port;
+    std::string out;
+    for (const QString& a : s.bindAddresses) {
+        if (!out.empty())
+            out += ',';
+        const std::string ip = a.toStdString();
+        out += a.contains(QLatin1Char(':')) ? "[" + ip + "]:" + port : ip + ":" + port;
+    }
+    return out;
+}
+
+std::string BtSettingsMap::outgoingInterfaces(const BtSettings& s)
+{
+    if (s.networkBlocked || s.bindAddresses.isEmpty())
+        return {};
+    return s.bindAddresses.join(QLatin1Char(',')).toStdString();
 }
 
 } // namespace eMule::bt

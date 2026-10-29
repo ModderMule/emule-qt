@@ -4,6 +4,7 @@
 #include "BtIds.h"
 #include "BtSession.h"
 #include "add/BtAddSource.h"
+#include "session/BtSettingsMap.h"
 
 #include <libtorrent/version.hpp>
 
@@ -19,6 +20,8 @@ class tst_BtSmoke : public QObject {
 private slots:
     void constructs();
     void startStopIsIdempotent();
+    void bindSelectionMapsToInterfaces();
+    void blockedStartsPausedThenResumes();
     void rateLimitsAndDemand();
     void ids();
     void magnets();
@@ -57,6 +60,47 @@ void tst_BtSmoke::startStopIsIdempotent()
     QVERIFY(!session.isRunning());
     session.stop();
     QVERIFY(QFile::exists(dir.filePath(QStringLiteral("BT/session.dat"))));
+}
+
+// bindAddress pref: libtorrent listens and dials from the bound addresses only
+void tst_BtSmoke::bindSelectionMapsToInterfaces()
+{
+    BtSettings s;
+    s.listenPort = 6881;
+    QCOMPARE(BtSettingsMap::listenInterfaces(s), std::string("0.0.0.0:6881,[::]:6881"));
+    QCOMPARE(BtSettingsMap::outgoingInterfaces(s), std::string());
+
+    s.bindAddresses = {QStringLiteral("10.8.0.2"), QStringLiteral("fd00::2")};
+    QCOMPARE(BtSettingsMap::listenInterfaces(s), std::string("10.8.0.2:6881,[fd00::2]:6881"));
+    QCOMPARE(BtSettingsMap::outgoingInterfaces(s), std::string("10.8.0.2,fd00::2"));
+    const libtorrent::settings_pack p = BtSettingsMap::toPack(s);
+    QCOMPARE(p.get_str(libtorrent::settings_pack::listen_interfaces), std::string("10.8.0.2:6881,[fd00::2]:6881"));
+
+    // blocked: no wildcard fallback
+    s.networkBlocked = true;
+    QCOMPARE(BtSettingsMap::listenInterfaces(s), std::string());
+    QCOMPARE(BtSettingsMap::outgoingInterfaces(s), std::string());
+}
+
+// blocked at start: the session comes up paused, unblocking resumes it
+void tst_BtSmoke::blockedStartsPausedThenResumes()
+{
+    QTemporaryDir dir;
+    BtSettings s;
+    s.listenPort = 0;
+    s.dht = false;
+    s.lsd = false;
+    s.networkBlocked = true;
+    s.stateDir = dir.filePath(QStringLiteral("BT"));
+    s.downloadDir = dir.filePath(QStringLiteral("Incoming"));
+    BtSession session;
+    session.start(s);
+    QVERIFY(session.isRunning());
+    s.networkBlocked = false;
+    s.bindAddresses = {QStringLiteral("127.0.0.1")};
+    session.applySettings(s);
+    QTRY_VERIFY_WITH_TIMEOUT(session.status().listening, 5000);
+    session.stop();
 }
 
 void tst_BtSmoke::rateLimitsAndDemand()

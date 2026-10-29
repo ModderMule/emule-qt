@@ -304,6 +304,9 @@ void BtSession::start(const BtSettings& settings)
     }
     params.settings = d->pack(settings);
     params.ip_filter = d->ipFilter;
+    // bound interface gone: start paused, applySettings() resumes
+    if (settings.networkBlocked)
+        params.flags |= lt::session::paused;
     d->blockedPeers = 0;
     params.extensions = extensions(settings);
     params.extensions.push_back(BtJoinDiskIo::pumpPlugin([impl = d.get()] { return impl->io.load(); }));
@@ -405,10 +408,17 @@ bool BtSession::isRunning() const
 void BtSession::applySettings(const BtSettings& settings)
 {
     const int oldPerTorrent = d->settings.maxConnectionsPerTorrent;
+    const bool wasBlocked = d->settings.networkBlocked;
     d->settings = settings;
     if (!d->ses)
         return;
+    if (settings.networkBlocked && !wasBlocked) {
+        d->ses->pause();
+        d->listening = false;
+    }
     d->ses->apply_settings(d->pack(settings));
+    if (!settings.networkBlocked && wasBlocked)
+        d->ses->resume();
     // torrents on the old default follow the new one; a custom limit stays
     if (oldPerTorrent != settings.maxConnectionsPerTorrent)
         for (const auto& [id, h] : d->handles)

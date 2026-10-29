@@ -245,6 +245,8 @@ bool DaemonApp::start()
     theApp.onNetworkSuspended = [this](bool) {
         if (m_usenetSession)
             m_usenetSession->onNetworkRouteChanged();
+        // libtorrent opens its own sockets: rebind to the new interface, pause when gone
+        applyBtConfig();
         if (m_notifierBridge)
             m_notifierBridge->pushNetworkState();
     };

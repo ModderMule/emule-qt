@@ -4,6 +4,7 @@
 #include "app/AppConfig.h"
 #include "app/AppContext.h"
 #include "ipfilter/IPFilter.h"
+#include "net/BindAddress.h"
 #include "prefs/Preferences.h"
 #include "stats/NetworkCounters.h"
 #include "stats/Statistics.h"
@@ -36,6 +37,35 @@ IpcMessage unavailable(const IpcMessage& msg)
 }
 
 #ifdef EMULE_HAVE_BITTORRENT
+
+// The bindAddress pref for libtorrent: the literal, or the bound interface's addresses
+// of the families that can be pinned. Link-local IPv6 needs a scope id: left out.
+void applyBindSelection(bt::BtSettings& s)
+{
+    const BindAddress::Resolution r = BindAddress::current();
+    if (r.state == BindAddress::State::Blocked) {
+        s.networkBlocked = true;
+        return;
+    }
+    if (r.state != BindAddress::State::Bound)
+        return;
+    if (!r.literal.isNull()) {
+        s.bindAddresses = {r.literal.toString()};
+        return;
+    }
+    for (const BindAddress::LocalInterface& li : BindAddress::localInterfaces()) {
+        if (li.index != r.index)
+            continue;
+        for (const QHostAddress& a : li.addresses) {
+            const bool v4 = a.protocol() == QAbstractSocket::IPv4Protocol;
+            if (v4 ? r.pin.v4 : (r.pin.v6 && !a.isLinkLocal()))
+                s.bindAddresses.append(a.toString());
+        }
+    }
+    // bound, yet nothing libtorrent can use: never fall back to all interfaces
+    if (s.bindAddresses.isEmpty())
+        s.networkBlocked = true;
+}
 
 QCborMap toCbor(const bt::BtTorrentRow& r)
 {
@@ -513,6 +543,7 @@ bt::BtSettings settingsFromPrefs()
 {
     bt::BtSettings s;
     s.listenPort = thePrefs.btListenPort();
+    applyBindSelection(s);
     s.downloadDir = thePrefs.btDownloadDir().isEmpty() ? thePrefs.incomingDir() : thePrefs.btDownloadDir();
     s.stateDir = QDir(thePrefs.configDir()).filePath(QStringLiteral("BT"));
     s.maxDownloadKb = thePrefs.btMaxDownloadKb();
