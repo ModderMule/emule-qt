@@ -19,6 +19,7 @@
 #include <QDateTime>
 #include <QDir>
 #include <QFile>
+#include <QFileInfo>
 #include <QSignalSpy>
 #include <QTemporaryDir>
 #include <QScopeGuard>
@@ -2282,12 +2283,17 @@ void tst_PartFile::completion_loadedCompleteFileIsVerifiedAndDelivered()
         QVERIFY(QFile::resize(partPath, static_cast<qint64>(PARTSIZE + 50)));
 
     loaded.finishLoadedDownload();
+    QVERIFY(loaded.uploadReadsOnHold());   // the .part may vanish any moment now
     QTRY_COMPARE_WITH_TIMEOUT(moved.count(), 1, 10000);
 
     if (!truncated) {
         QCOMPARE(moved.takeFirst().at(0).toBool(), true);
         QCOMPARE(loaded.status(), PartFileStatus::Complete);
         QVERIFY(QFile::exists(incoming + QStringLiteral("/loaded.bin")));
+        // Uploads read the delivered file now, not the deleted .part (emule-qt#81)
+        QCOMPARE(QFileInfo(loaded.dataFilePath()).canonicalFilePath(),
+                 QFileInfo(incoming + QStringLiteral("/loaded.bin")).canonicalFilePath());
+        QVERIFY(!loaded.uploadReadsOnHold());
         return;
     }
 

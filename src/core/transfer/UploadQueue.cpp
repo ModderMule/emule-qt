@@ -139,11 +139,25 @@ void UploadQueue::onBlockPacketsReady(UpDownClient* client, QByteArray fileId,
 // onReadError — handle disk read failure for a client
 // ===========================================================================
 
-void UploadQueue::onReadError(UpDownClient* client)
+void UploadQueue::onReadError(UpDownClient* client, const QString& filePath,
+                              const QByteArray& fileId, quint64 startOffset, quint64 endOffset)
 {
     // Pointer compare first, the client may be gone.
     if (!client || std::ranges::find(m_uploadingList, client) == m_uploadingList.end())
         return;
+
+    // Read from a path the file has left since (a download that completed and moved to
+    // incoming): not an IO error, read it again from where it is now (emule-qt#81).
+    if (fileId.size() == 16 && m_sharedFiles) {
+        const auto* id = reinterpret_cast<const uint8*>(fileId.constData());
+        if (const KnownFile* file = m_sharedFiles->getFileByID(id);
+            file && (file->uploadReadsOnHold() || file->dataFilePath() != filePath)
+            && client->requeueBlockRead(id, startOffset, endOffset))
+        {
+            client->startBlockReads();
+            return;
+        }
+    }
 
     // Not MFC, which keeps offering a file that is gone until the user reloads: the
     // peer would queue up again, get a slot and fail the same way.

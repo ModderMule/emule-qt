@@ -438,6 +438,10 @@ void UpDownClient::startBlockReads()
             it = m_blockRequests.erase(it);
             continue;
         }
+        // Being moved to incoming: wait, the next pass reads from the new path.
+        // MFC srchybrid/UploadDiskIOThread.cpp:216.
+        if (srcFile->uploadReadsOnHold())
+            break;
 
         if (thePrefs.logRawSocketPackets())
             logDebug(QStringLiteral("startBlockReads: start=%1 end=%2 file=%3")
@@ -674,6 +678,19 @@ void UpDownClient::flushSendBlocks()
 // ===========================================================================
 // markBlockDone — MFC UploadDiskIOThread.cpp:262 (queue head → done head)
 // ===========================================================================
+
+bool UpDownClient::requeueBlockRead(const uint8* fileId, uint64 startOffset, uint64 endOffset)
+{
+    const auto it = std::ranges::find_if(m_blockRequests, [&](const Requested_Block_Struct* b) {
+        return b && b->readQueued && b->startOffset == startOffset && b->endOffset == endOffset
+            && md4equ(b->fileID.data(), fileId);
+    });
+    if (it == m_blockRequests.end())
+        return false;
+    (*it)->readQueued = false;
+    m_blockReadBytesQueued -= std::min(m_blockReadBytesQueued, endOffset - startOffset);
+    return true;
+}
 
 bool UpDownClient::markBlockDone(const uint8* fileId, uint64 startOffset, uint64 endOffset)
 {

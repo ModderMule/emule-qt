@@ -146,14 +146,14 @@ void UploadDiskIOThread::readBlock(const BlockReadRequest& req)
         return;
 
     if (req.startOffset >= req.endOffset) {
-        emit readError(req.client);
+        emitReadError(req);
         return;
     }
 
     uint64 dataLen = req.endOffset - req.startOffset;
     if (dataLen > EMBLOCKSIZE * 3) {
         logWarning(QStringLiteral("UploadDiskIOThread: Block too large: %1").arg(dataLen));
-        emit readError(req.client);
+        emitReadError(req);
         return;
     }
 
@@ -168,7 +168,7 @@ void UploadDiskIOThread::readBlock(const BlockReadRequest& req)
         }
     }
     if (static_cast<uint64>(data.size()) != dataLen) {
-        emit readError(req.client);
+        emitReadError(req);
         return;
     }
 
@@ -478,6 +478,13 @@ QList<std::shared_ptr<Packet>> UploadDiskIOThread::createPackedPackets(
     }
 
     return packets;
+}
+
+void UploadDiskIOThread::emitReadError(const BlockReadRequest& req)
+{
+    emit readError(req.client, req.filePath,
+                   QByteArray(reinterpret_cast<const char*>(req.fileHash.data()), 16),
+                   req.startOffset, req.endOffset);
 }
 
 } // namespace eMule

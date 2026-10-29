@@ -100,7 +100,7 @@ void FriendList::save(const QString& configDir) const
             commitAndReplace(file, tmpPath, filePath, theApp.commitFilesNow());
         }
 
-        logInfo(QStringLiteral("FriendList: saved %1 friends to %2")
+        logDebug(QStringLiteral("FriendList: saved %1 friends to %2")
                     .arg(m_friends.size())
                     .arg(filePath));
 

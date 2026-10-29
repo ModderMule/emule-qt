@@ -885,6 +885,8 @@ public:
     /// Move a block whose data is ready from the request queue to the head of the done list.
     /// False when it is no longer pending (flushed with an ended slot).
     bool markBlockDone(const uint8* fileId, uint64 startOffset, uint64 endOffset);
+    /// A queued read failed but may succeed again: hand the block back to startBlockReads().
+    bool requeueBlockRead(const uint8* fileId, uint64 startOffset, uint64 endOffset);
     /// The block's packets were handed to the socket. It counts as delivered once the sent
     /// payload passes what was queued up to here. Feeds ClientList::repeatChunks.
     void noteBlockQueuedForSend(const uint8* fileId, uint64 fileSize, uint64 startOffset,
