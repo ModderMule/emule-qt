@@ -592,6 +592,7 @@ struct Preferences::Data {
     QString logFont;  // Empty = system default; QFont::toString() format
 
     // IP2Country (MaxMind GeoLite2 download)
+    int geoIpSource = 0;                   // GeoIpSource: 0 MaxMind, 1 DB-IP
     QString geoIpAccountId;
     QString geoIpLicenseKey;
     bool geoIpAutoUpdate = true;
@@ -3298,6 +3299,10 @@ bool Preferences::useOriginalIcons() const { return get(&Data::useOriginalIcons)
 
 void Preferences::setUseOriginalIcons(bool val) { set(&Data::useOriginalIcons, val); }
 
+int Preferences::geoIpSource() const { return get(&Data::geoIpSource); }
+
+void Preferences::setGeoIpSource(int val) { set(&Data::geoIpSource, std::clamp(val, 0, 1)); }
+
 QString Preferences::geoIpAccountId() const { return get(&Data::geoIpAccountId); }
 
 void Preferences::setGeoIpAccountId(const QString& val) { set(&Data::geoIpAccountId, val); }
@@ -3552,6 +3557,7 @@ QCborMap Preferences::toIpcMap() const
     prefs.insert(QStringLiteral("ipFilterAutoUpdate"), ipFilterAutoUpdate());
     prefs.insert(QStringLiteral("ipFilterUpdateDays"), ipFilterUpdateDays());
     prefs.insert(QStringLiteral("ipFilterLastUpdate"), ipFilterLastUpdate());
+    prefs.insert(QStringLiteral("geoIpSource"), geoIpSource());
     prefs.insert(QStringLiteral("geoIpAccountId"), geoIpAccountId());
     prefs.insert(QStringLiteral("geoIpLicenseKey"), geoIpLicenseKey());
     prefs.insert(QStringLiteral("geoIpAutoUpdate"), geoIpAutoUpdate());
@@ -3894,6 +3900,8 @@ void Preferences::updateFromCbor(const QCborMap& p)
     m_data->ipFilterUpdateDays        = std::clamp(static_cast<int>(
         p.value(QStringLiteral("ipFilterUpdateDays")).toInteger(7)), 1, 365);
     m_data->ipFilterLastUpdate        = p.value(QStringLiteral("ipFilterLastUpdate")).toInteger();
+    m_data->geoIpSource               = std::clamp(static_cast<int>(
+        p.value(QStringLiteral("geoIpSource")).toInteger(0)), 0, 1);
     m_data->geoIpAccountId            = p.value(QStringLiteral("geoIpAccountId")).toString();
     m_data->geoIpLicenseKey           = p.value(QStringLiteral("geoIpLicenseKey")).toString();
     m_data->geoIpAutoUpdate           = p.value(QStringLiteral("geoIpAutoUpdate")).toBool(true);
@@ -4656,6 +4664,7 @@ bool Preferences::load(const QString& filePath)
 
         // IP2Country
         if (auto geo = root["geoip"]) {
+            m_data->geoIpSource = std::clamp(geo["source"].as<int>(m_data->geoIpSource), 0, 1);
             m_data->geoIpAccountId = QString::fromStdString(geo["accountId"].as<std::string>(m_data->geoIpAccountId.toStdString()));
             m_data->geoIpLicenseKey = QString::fromStdString(geo["licenseKey"].as<std::string>(m_data->geoIpLicenseKey.toStdString()));
             m_data->geoIpAutoUpdate = geo["autoUpdate"].as<bool>(m_data->geoIpAutoUpdate);
@@ -6012,6 +6021,7 @@ bool Preferences::saveImpl(const QString& filePath) const
 
     // IP2Country
     out << YAML::Key << "geoip" << YAML::Value << YAML::BeginMap;
+    out << YAML::Key << "source" << YAML::Value << m_data->geoIpSource;
     out << YAML::Key << "accountId" << YAML::Value << m_data->geoIpAccountId.toStdString();
     out << YAML::Key << "licenseKey" << YAML::Value << m_data->geoIpLicenseKey.toStdString();
     out << YAML::Key << "autoUpdate" << YAML::Value << m_data->geoIpAutoUpdate;

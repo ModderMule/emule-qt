@@ -8,6 +8,8 @@
 
 #include <maxminddb.h>
 
+#include <QDir>
+#include <QFile>
 #include <QMutexLocker>
 #include <QTimeZone>
 #include <QtEndian>
@@ -26,6 +28,26 @@ constexpr qsizetype kMaxCacheEntries = 20000;
 {
     const Q_IPV6ADDR v6 = addr.toIPv6Address();
     return QByteArray(reinterpret_cast<const char*>(v6.c), 16);
+}
+
+/// libmaxminddb takes UTF-8 on Windows (CreateFileW); encodeName() there is the
+/// ANSI code page, so a non-ASCII profile path failed with FILE_OPEN_ERROR (#100)
+[[nodiscard]] QByteArray mmdbPath(const QString& path)
+{
+#ifdef Q_OS_WIN
+    return QDir::toNativeSeparators(path).toUtf8();
+#else
+    return QFile::encodeName(path);
+#endif
+}
+
+/// MMDB_strerror() plus the file name when the file itself could not be opened
+[[nodiscard]] QString openErrorText(int rc, const QString& path)
+{
+    QString msg = QString::fromUtf8(MMDB_strerror(rc));
+    if (rc == MMDB_FILE_OPEN_ERROR || rc == MMDB_IO_ERROR)
+        msg += QStringLiteral(" (%1)").arg(QDir::toNativeSeparators(path));
+    return msg;
 }
 
 [[nodiscard]] QString readIsoCode(MMDB_entry_s& entry, const char* branch)
@@ -53,13 +75,13 @@ IP2Country::~IP2Country() = default;
 bool IP2Country::open(const QString& path, QString* error)
 {
     auto db = std::make_shared<Db>();
-    const QByteArray native = QFile::encodeName(path);
+    const QByteArray native = mmdbPath(path);
     const int rc = MMDB_open(native.constData(), MMDB_MODE_MMAP, &db->mmdb);
     if (rc != MMDB_SUCCESS) {
         // MMDB_open leaves nothing to close on failure
         std::memset(&db->mmdb, 0, sizeof(db->mmdb));
         if (error)
-            *error = QString::fromUtf8(MMDB_strerror(rc));
+            *error = openErrorText(rc, path);
         return false;
     }
     db->path = path;
@@ -95,6 +117,14 @@ QDateTime IP2Country::buildDate() const
         return {};
     return QDateTime::fromSecsSinceEpoch(static_cast<qint64>(db->mmdb.metadata.build_epoch),
                                          QTimeZone::UTC);
+}
+
+QString IP2Country::databaseType() const
+{
+    const auto db = current();
+    if (!db || !db->mmdb.metadata.database_type)
+        return {};
+    return QString::fromLatin1(db->mmdb.metadata.database_type);
 }
 
 QString IP2Country::countryCode(const Address& addr) const
@@ -161,11 +191,11 @@ QString IP2Country::countryCode(const QHostAddress& addr) const
 bool IP2Country::isValidDatabase(const QString& path, QString* error)
 {
     MMDB_s mmdb{};
-    const QByteArray native = QFile::encodeName(path);
+    const QByteArray native = mmdbPath(path);
     const int rc = MMDB_open(native.constData(), MMDB_MODE_MMAP, &mmdb);
     if (rc != MMDB_SUCCESS) {
         if (error)
-            *error = QString::fromUtf8(MMDB_strerror(rc));
+            *error = openErrorText(rc, path);
         return false;
     }
     const QByteArray type(mmdb.metadata.database_type ? mmdb.metadata.database_type : "");
@@ -183,7 +213,7 @@ QDateTime IP2Country::buildDateOf(const QString& path)
     if (!isValidDatabase(path))
         return {};
     MMDB_s mmdb{};
-    const QByteArray native = QFile::encodeName(path);
+    const QByteArray native = mmdbPath(path);
     if (MMDB_open(native.constData(), MMDB_MODE_MMAP, &mmdb) != MMDB_SUCCESS)
         return {};
     const auto epoch = static_cast<qint64>(mmdb.metadata.build_epoch);

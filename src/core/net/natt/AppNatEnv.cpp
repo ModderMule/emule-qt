@@ -19,8 +19,10 @@
 #include "prefs/Preferences.h"
 #include "server/ServerConnect.h"
 #include "server/ServerList.h"
+#include "utils/ByteOrder.h"
 #include "utils/Log.h"
 #include "utils/Opcodes.h"
+#include "utils/OtherFunctions.h"
 #include "utils/TimeUtils.h"
 
 namespace eMule::natt {
@@ -119,6 +121,24 @@ uint8 AppNatEnv::ourConnectOptions() const
 uint32 AppNatEnv::ourPublicIPv4() const
 {
     return theApp.publicIP();
+}
+
+uint32 AppNatEnv::serverSeenIPv4() const
+{
+    const uint32 id = ourClientID();
+    if (id == 0)
+        return 0;
+    return eMule::isLowID(id) ? theApp.ed2kSessionIP() : id;
+}
+
+uint32 AppNatEnv::udpSeenIPv4() const
+{
+    // Kad's address comes from KADEMLIA_FIREWALLED_RES: the UDP source the node saw
+    auto* kadInst = kad::Kademlia::instance();
+    if (!kadInst || !kadInst->isConnected())
+        return 0;
+    const uint32 ip = kadInst->getIPAddress();
+    return ip != 0 ? htonl(ip) : 0;
 }
 
 Address AppNatEnv::ourPublicIPv6() const

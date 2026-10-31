@@ -49,6 +49,7 @@ struct ResolverEvent {
         Failed,       ///< code: "io", "defect", "failed", "noPlugin", "folder", "unavailable"; text
         Cancelled,
         Account,      ///< accountCheck: valid, premium, expires, trafficLeft
+        Status,       ///< open: what the plugin does, text: "link", "hoster", "hosterAccount", "puzzle", "connect", "transfer"
     };
     Kind kind = Kind::Failed;
     QString host;
@@ -79,7 +80,7 @@ struct ResolverEvent {
     /// The last event of a task.
     [[nodiscard]] bool isFinal() const
     {
-        return kind != Kind::Progress && kind != Kind::Wait && kind != Kind::Puzzle;
+        return kind != Kind::Progress && kind != Kind::Wait && kind != Kind::Puzzle && kind != Kind::Status;
     }
 };
 

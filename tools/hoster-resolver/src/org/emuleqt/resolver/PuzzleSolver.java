@@ -44,6 +44,9 @@ final class PuzzleSolver extends ChallengeSolver<String> {
     static void install() {
         final ChallengeResponseController crc = ChallengeResponseController.getInstance();
         crc.init();
+        // headless JD wants MyJDownloader logins: this solver's isEnabled() starts it, which then asks on
+        // the console, i.e. reads stdin, the daemon's request pipe. A download hung there for good.
+        org.jdownloader.api.captcha.CaptchaAPISolver.getInstance().getService().getConfigV3().setEnabled(false);
         try {
             final Method m = ChallengeResponseController.class.getDeclaredMethod("addSolver", ChallengeSolver.class);
             m.setAccessible(true);

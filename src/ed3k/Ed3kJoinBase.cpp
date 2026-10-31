@@ -843,17 +843,22 @@ QString Ed3kJoinBase::joinDir(const QString& sub) const
 
 void Ed3kJoinBase::logDebug(const QString& msg) const
 {
-    logEd3kDebug(QStringLiteral("ed3k %1: ").arg(m_tag) + msg);
+    qCDebug(logCategory()).noquote() << logPrefix() + msg;
 }
 
 void Ed3kJoinBase::logWarning(const QString& msg) const
 {
-    logEd3kWarning(QStringLiteral("ed3k %1: ").arg(m_tag) + msg);
+    qCWarning(logCategory()).noquote() << logPrefix() + msg;
 }
 
 void Ed3kJoinBase::logInfo(const QString& msg) const
 {
-    logEd3k(QStringLiteral("ed3k %1: ").arg(m_tag) + msg);
+    qCInfo(logCategory()).noquote() << logPrefix() + msg;
+}
+
+Ed3kJoinBase::LogCategory Ed3kJoinBase::logCategory() const
+{
+    return &lcEmuleEd3k;
 }
 
 QString Ed3kJoinBase::hexOf(std::span<const std::uint8_t> bytes)
@@ -1704,6 +1709,13 @@ bool Ed3kJoinBase::refreshStream(const ffi::Root& root, const ffi::Source& sourc
     }
     pumpSession();
     return true;
+}
+
+QString Ed3kJoinBase::logPrefix() const
+{
+    // own tab: the tag alone; in the ed3k tab: "ed3k <tag>"
+    return logCategory() == &lcEmuleEd3k ? QStringLiteral("ed3k %1: ").arg(m_tag)
+                                        : m_tag + QStringLiteral(": ");
 }
 
 } // namespace eMule::ed3k

@@ -1557,6 +1557,7 @@ void DaemonApp::applyLogFilterRules()
     // lines follow the Kad switch, like eD2K's Kad
     if (thePrefs.kadVerboseLog())
         rules << QStringLiteral("emule.ed3k.kad.debug=true");
+    // emule.hoster.debug and emule.torrent.debug (DHT, IP filter alerts) follow verbose above
 
     QLoggingCategory::setFilterRules(rules.join(QLatin1Char('\n')));
 }

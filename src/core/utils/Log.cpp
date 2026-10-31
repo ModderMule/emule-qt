@@ -219,6 +219,41 @@ void logEd3kKadDebug(const QString& msg)
     qCDebug(lcEmuleEd3kKad).noquote() << msg;
 }
 
+void logHoster(const QString& msg)
+{
+    qCInfo(lcEmuleHoster).noquote() << msg;
+}
+
+void logHosterWarning(const QString& msg)
+{
+    qCWarning(lcEmuleHoster).noquote() << msg;
+}
+
+void logHosterError(const QString& msg)
+{
+    qCCritical(lcEmuleHoster).noquote() << msg;
+}
+
+void logHosterDebug(const QString& msg)
+{
+    qCDebug(lcEmuleHoster).noquote() << msg;
+}
+
+void logTorrent(const QString& msg)
+{
+    qCInfo(lcEmuleTorrent).noquote() << msg;
+}
+
+void logTorrentWarning(const QString& msg)
+{
+    qCWarning(lcEmuleTorrent).noquote() << msg;
+}
+
+void logTorrentDebug(const QString& msg)
+{
+    qCDebug(lcEmuleTorrent).noquote() << msg;
+}
+
 void logLeecher(const QString& msg)
 {
     qCInfo(lcEmuleLeecher).noquote() << msg;
@@ -259,16 +294,17 @@ void installConsoleMessagePattern(const QString& processTag)
 // Rotating log file sink
 // ---------------------------------------------------------------------------
 //
-// Seven files per process, mirroring the reference's theLog / theVerboseLog
-// (srchybrid/Emule.cpp:528-533) plus dedicated Kad, Usenet, ed3k, ed3k Kad and leecher logs.
+// Nine files per process, mirroring the reference's theLog / theVerboseLog
+// (srchybrid/Emule.cpp:528-533) plus dedicated Kad, Usenet, ed3k, ed3k Kad, hoster, torrent and leecher logs.
 // Disabled until a process opts in.
 
 namespace {
 
 /// One file per channel; kSinkSuffix names it after the base name.
-enum Sink { SinkLog, SinkVerbose, SinkKad, SinkUsenet, SinkEd3k, SinkEd3kKad, SinkLeecher, SinkCount };
+enum Sink { SinkLog, SinkVerbose, SinkKad, SinkUsenet, SinkEd3k, SinkEd3kKad, SinkHoster, SinkTorrent, SinkLeecher, SinkCount };
 constexpr const char* kSinkSuffix[SinkCount] = {".log", "_Verbose.log", "_Kad.log", "_Usenet.log",
-                                                "_Ed3k.log", "_Ed3kKad.log", "_Leecher.log"};
+                                                "_Ed3k.log", "_Ed3kKad.log", "_Hoster.log", "_Torrent.log",
+                                                "_Leecher.log"};
 
 QMutex s_sinkMutex;
 LogFile s_sinks[SinkCount];   ///< SinkLog: non-debug lines; SinkVerbose: debug lines of the rest
@@ -325,7 +361,7 @@ void writeToLogFileSink(QtMsgType type, const char* category, const QString& msg
     // rule — so it gets its own file rather than drowning the verbose log, which
     // it would otherwise dominate. Tested before the severity split so a future
     // qCWarning(lcEmuleKad) lands here too, exactly as it would in the Kad tab.
-    // Usenet, ed3k, ed3k Kad and leecher likewise (ed3k: its debug lines too).
+    // Usenet, ed3k, ed3k Kad, hoster, torrent and leecher likewise (ed3k: its debug lines too).
     const auto is = [category](const char* name) { return category && std::strcmp(category, name) == 0; };
     if (is("emule.kad"))
         s_sinks[SinkKad].log(line);
@@ -335,6 +371,10 @@ void writeToLogFileSink(QtMsgType type, const char* category, const QString& msg
         s_sinks[SinkEd3k].log(line);
     else if (is("emule.ed3k.kad"))
         s_sinks[SinkEd3kKad].log(line);
+    else if (is("emule.hoster"))
+        s_sinks[SinkHoster].log(line);
+    else if (is("emule.torrent"))
+        s_sinks[SinkTorrent].log(line);
     else if (is("emule.leecher"))
         s_sinks[SinkLeecher].log(line);
     // Debug is the reference's LOG_DEBUG: it goes to the verbose log only.

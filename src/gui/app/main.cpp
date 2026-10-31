@@ -776,6 +776,10 @@ int main(int argc, char* argv[])
                 logWidget->routeLeecher(colored, timestamp, seqId);
             else if (cat == QStringLiteral("emule.usenet"))
                 logWidget->routeUsenet(severity, colored, timestamp, seqId);
+            else if (cat == QStringLiteral("emule.torrent"))
+                logWidget->routeTorrent(severity, colored, timestamp, seqId);
+            else if (cat == QStringLiteral("emule.hoster"))
+                logWidget->routeHoster(severity, colored, timestamp, seqId);
             else if (cat == QStringLiteral("emule.ed3k") || cat == QStringLiteral("emule.ed3k.kad"))
                 logWidget->routeEd3k(cat == QStringLiteral("emule.ed3k.kad"), severity, colored, timestamp, seqId);
             else if (cat == QStringLiteral("emule.server"))

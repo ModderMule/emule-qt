@@ -206,7 +206,7 @@ bool Ed3kJavaRuntime::download()
         m_nam = std::make_unique<QNetworkAccessManager>();
     m_nam->setProxy(m_proxy);
     setState(State::Downloading);
-    logEd3k(QStringLiteral("hoster: no Java %1+ found, downloading Temurin %2").arg(kMinFeature).arg(kDownloadFeature));
+    logHoster(QStringLiteral("hoster: no Java %1+ found, downloading Temurin %2").arg(kMinFeature).arg(kDownloadFeature));
     m_reply = m_nam->get(Http::makeRequest(QUrl(adoptiumUrl())));
     connect(m_reply, &QNetworkReply::finished, this, &Ed3kJavaRuntime::onMetadata);
     return true;
@@ -231,7 +231,7 @@ void Ed3kJavaRuntime::setAllowed(bool allowed)
         QFile::remove(archive);
     }
     QDir(runtimeDir() + QStringLiteral(".tmp")).removeRecursively();
-    logEd3k(QStringLiteral("hoster: Java runtime download stopped (hoster downloads switched off)"));
+    logHoster(QStringLiteral("hoster: Java runtime download stopped (hoster downloads switched off)"));
     setState(State::Missing);
 }
 
@@ -264,14 +264,14 @@ void Ed3kJavaRuntime::probeFinished(const QString& java, const QByteArray& out)
 {
     const auto info = parseProperties(out, java);
     if (!info) {
-        logEd3kDebug(QStringLiteral("hoster: %1 is no Java runtime").arg(java));
+        logHosterDebug(QStringLiteral("hoster: %1 is no Java runtime").arg(java));
     } else if (info->feature < kMinFeature) {
-        logEd3kDebug(QStringLiteral("hoster: %1 is Java %2, %3 or newer is needed").arg(java).arg(info->feature).arg(kMinFeature));
+        logHosterDebug(QStringLiteral("hoster: %1 is Java %2, %3 or newer is needed").arg(java).arg(info->feature).arg(kMinFeature));
     } else if (info->arch != hostArch()) {
-        logEd3kDebug(QStringLiteral("hoster: %1 is for %2, not %3").arg(java, info->arch, hostArch()));
+        logHosterDebug(QStringLiteral("hoster: %1 is for %2, not %3").arg(java, info->arch, hostArch()));
     } else {
         m_info = info;
-        logEd3k(QStringLiteral("hoster: Java %1 (%2) at %3").arg(info->feature).arg(info->vendor, java));
+        logHoster(QStringLiteral("hoster: Java %1 (%2) at %3").arg(info->feature).arg(info->vendor, java));
         setState(State::Ready);
         return;
     }
@@ -344,10 +344,10 @@ void Ed3kJavaRuntime::adoptLegacy()
         return;
     QDir().mkpath(QFileInfo(runtimeDir()).absolutePath());
     if (!QDir().rename(m_legacyDir, runtimeDir())) {
-        logEd3kWarning(QStringLiteral("hoster: cannot move the Java runtime %1 to %2").arg(m_legacyDir, runtimeDir()));
+        logHosterWarning(QStringLiteral("hoster: cannot move the Java runtime %1 to %2").arg(m_legacyDir, runtimeDir()));
         return;
     }
-    logEd3k(QStringLiteral("hoster: Java runtime moved to %1").arg(runtimeDir()));
+    logHoster(QStringLiteral("hoster: Java runtime moved to %1").arg(runtimeDir()));
     // <eMuleQt>/runtime: gone once nothing else is left in it
     const QString parent = QFileInfo(m_legacyDir).absolutePath();
     QDir().rmdir(parent);
@@ -406,7 +406,7 @@ void Ed3kJavaRuntime::unpackDone(int exitCode)
     // downloaded by us, not a browser: no quarantine flag is expected; drop one anyway
     QProcess::execute(QStringLiteral("xattr"), {QStringLiteral("-dr"), QStringLiteral("com.apple.quarantine"), runtimeDir()});
 #endif
-    logEd3k(QStringLiteral("hoster: Java runtime installed at %1").arg(runtimeDir()));
+    logHoster(QStringLiteral("hoster: Java runtime installed at %1").arg(runtimeDir()));
     setState(State::Unknown);
     locate({});
 }
@@ -426,7 +426,7 @@ void Ed3kJavaRuntime::setState(State s, const QString& error)
     m_state = s;
     m_error = error;
     if (s == State::Failed)
-        logEd3kWarning(QStringLiteral("hoster: Java runtime: %1").arg(error));
+        logHosterWarning(QStringLiteral("hoster: Java runtime: %1").arg(error));
     emit stateChanged();
 }
 

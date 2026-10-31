@@ -120,6 +120,26 @@ QString message(const lt::alert* a)
     return QString::fromStdString(a->message());
 }
 
+/// libtorrent's own line of @p a to the Torrent tab. Skips the per-piece/block,
+/// stats and incoming-DHT alerts: a firehose, and polled anyway.
+void forwardAlert(const lt::alert* a)
+{
+    if (lt::alert_cast<lt::session_stats_alert>(a) || lt::alert_cast<lt::state_update_alert>(a)
+        || lt::alert_cast<lt::dht_stats_alert>(a) || lt::alert_cast<lt::dht_get_peers_alert>(a)
+        || lt::alert_cast<lt::dht_announce_alert>(a))
+        return;
+    const lt::alert_category_t cat = a->category();
+    if (cat & lt::alert_category::piece_progress)
+        return;
+    const QString line = QString::fromLatin1(a->what()) + QStringLiteral(": ") + message(a);
+    if (cat & (lt::alert_category::error | lt::alert_category::performance_warning))
+        logTorrentWarning(line);
+    else if (cat & (lt::alert_category::dht | lt::alert_category::ip_block))
+        logTorrentDebug(line);
+    else
+        logTorrent(line);
+}
+
 /// A join's sink as the disk I/O's hook of one torrent.
 class SinkHook final : public BtJoinHook {
 public:
@@ -831,6 +851,7 @@ void BtSession::drainAlerts()
     d->ses->pop_alerts(&alerts);
     // pointers die at the next pop_alerts(): copy what is kept
     for (lt::alert* a : alerts) {
+        forwardAlert(a);
         if (auto* ss = lt::alert_cast<lt::session_stats_alert>(a)) {
             const auto counters = ss->counters();
             if (!d->rateClock.isValid())
@@ -900,10 +921,9 @@ void BtSession::drainAlerts()
         } else if (auto* tc = lt::alert_cast<lt::torrent_checked_alert>(a)) {
             if (const QString id = BtTorrentView::idOf(tc->handle.info_hashes()); d->joins.contains(id))
                 emit torrentChecked(id);
-        } else if (auto* ls = lt::alert_cast<lt::listen_succeeded_alert>(a)) {
+        } else if (lt::alert_cast<lt::listen_succeeded_alert>(a)) {
             // one per interface and transport: the port is in the start line
             d->listening = true;
-            logDebug(QStringLiteral("BitTorrent: %1").arg(message(ls)));
             emit statusChanged();
         } else if (auto* lf = lt::alert_cast<lt::listen_failed_alert>(a)) {
             logWarning(QStringLiteral("BitTorrent: %1").arg(message(lf)));
@@ -938,7 +958,6 @@ void BtSession::drainAlerts()
                 if (d->joins.contains(id))
                     emit pieceResult(id, static_cast<int>(hf->piece_index), false);
             }
-            logDebug(QStringLiteral("BitTorrent: %1").arg(message(a)));
         }
     }
 }

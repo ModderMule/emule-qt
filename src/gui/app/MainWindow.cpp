@@ -338,6 +338,14 @@ void MainWindow::applyFeatureTabs()
     }
     if (isTabHidden(m_pages->currentIndex()))
         switchToTab(TabTransfers);
+    // log tabs of a network follow its switch too
+    if (m_serverPanel) {
+        LogWidget* log = m_serverPanel->logWidget();
+        log->setUsenetTabVisible(thePrefs.usenetEnabled() && thePrefs.showUsenetLog());
+        log->setTorrentTabVisible(thePrefs.btEnabled());
+        log->setHosterTabVisible(thePrefs.hosterDownloadsOn());
+        log->setEd3kTabsVisible(thePrefs.ed3kEnabled());
+    }
 }
 
 void MainWindow::onToolbarAction(QAction* action)
@@ -497,9 +505,7 @@ void MainWindow::showOptionsDialog(int page)
     updateWindowTitle();
 
     m_serverPanel->logWidget()->setIpcTabVisible(thePrefs.enableIpcLog());
-    m_serverPanel->logWidget()->setUsenetTabVisible(thePrefs.showUsenetLog());
     m_serverPanel->logWidget()->setLeecherTabVisible(thePrefs.antiLeecher());
-    m_serverPanel->logWidget()->setEd3kTabsVisible(thePrefs.ed3kEnabled());
     m_searchPanel->setEd3kMethodVisible(thePrefs.ed3kEnabled());
     applyFeatureTabs();
     m_serverPanel->refreshUpdateUrl();   // Options "List..." edits the same URL

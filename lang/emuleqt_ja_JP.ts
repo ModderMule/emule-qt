@@ -630,7 +630,7 @@ Trust the new certificate?</source>
 新しい証明書を信頼しますか?</translation>
     </message>
     <message>
-        <location line="+309"/>
+        <location line="+313"/>
         <source>Download Added</source>
         <translation>ダウンロード追加</translation>
     </message>
@@ -914,7 +914,7 @@ Has comments</source>
         <translation type="vanished">%1 Bytes</translation>
     </message>
     <message>
-        <location filename="../src/gui/dialogs/OptionsDialog.cpp" line="+3423"/>
+        <location filename="../src/gui/dialogs/OptionsDialog.cpp" line="+3431"/>
         <source>Test</source>
         <translation>テスト</translation>
     </message>
@@ -7387,6 +7387,31 @@ If your ISP tries throttle or block eMule, enabling obfuscation will help to cir
     </message>
     <message>
         <location line="+9"/>
+        <source>Opening the link</source>
+        <translation>リンクを開いています</translation>
+    </message>
+    <message>
+        <location line="+2"/>
+        <source>Talking to the hoster</source>
+        <translation>ホスターと通信中</translation>
+    </message>
+    <message>
+        <location line="+2"/>
+        <source>Logging in, talking to the hoster</source>
+        <translation>ログイン中、ホスターと通信中</translation>
+    </message>
+    <message>
+        <location line="+2"/>
+        <source>Solving a captcha</source>
+        <translation>キャプチャを解いています</translation>
+    </message>
+    <message>
+        <location line="+2"/>
+        <source>Connecting for the transfer</source>
+        <translation>転送のため接続中</translation>
+    </message>
+    <message>
+        <location line="+8"/>
         <source>Waiting for the ed3k node</source>
         <translation>ed3k ノードを待機中</translation>
     </message>
@@ -7508,7 +7533,7 @@ If your ISP tries throttle or block eMule, enabling obfuscation will help to cir
         <translation>ホスターのリンクはオフラインのため、公開を停止しました</translation>
     </message>
     <message>
-        <location line="+29"/>
+        <location line="+30"/>
         <source>Hoster downloads</source>
         <translation>ホスターダウンロード</translation>
     </message>
@@ -9051,13 +9076,26 @@ Other members see your nick and posts; your node takes part in passing the room&
         <translation>リーチャー</translation>
     </message>
     <message>
-        <location line="+9"/>
-        <location line="+2"/>
+        <location line="+4"/>
         <source>Usenet</source>
         <translation>Usenet</translation>
     </message>
     <message>
-        <location line="+9"/>
+        <source>Usenet Verbose</source>
+        <translation type="vanished">Usenet 詳細</translation>
+    </message>
+    <message>
+        <location line="+4"/>
+        <source>Torrent</source>
+        <translation>トレント</translation>
+    </message>
+    <message>
+        <location line="+4"/>
+        <source>Hoster</source>
+        <translation>ホスター</translation>
+    </message>
+    <message>
+        <location line="+8"/>
         <location line="+2"/>
         <source>Kad</source>
         <translation>Kad</translation>
@@ -9084,7 +9122,7 @@ Other members see your nick and posts; your node takes part in passing the room&
         <translation>IPC</translation>
     </message>
     <message>
-        <location line="+441"/>
+        <location line="+500"/>
         <source>Click here to check if a new version is available</source>
         <translation>クリックして新しいバージョンがあるか確認します</translation>
     </message>
@@ -9093,18 +9131,18 @@ Other members see your nick and posts; your node takes part in passing the room&
     <name>eMule::MainWindow</name>
     <message>
         <location filename="../src/gui/app/MainWindow.cpp" line="+107"/>
-        <location line="+627"/>
+        <location line="+633"/>
         <source>eMule Qt v%1</source>
         <translation>eMule Qt v%1</translation>
     </message>
     <message>
-        <location line="-464"/>
+        <location line="-470"/>
         <location line="+9"/>
         <source>New Version Available</source>
         <translation>新しいバージョンが利用可能</translation>
     </message>
     <message>
-        <location line="+258"/>
+        <location line="+264"/>
         <source>eD2K: Connected (LowID)</source>
         <translation>eD2K：接続済み (LowID)</translation>
     </message>
@@ -9191,14 +9229,14 @@ Other members see your nick and posts; your node takes part in passing the room&
         <translation>機能</translation>
     </message>
     <message>
-        <location line="-927"/>
+        <location line="-933"/>
         <location line="+7"/>
-        <location line="+923"/>
+        <location line="+929"/>
         <source>Version Check</source>
         <translation>バージョン確認</translation>
     </message>
     <message>
-        <location line="-996"/>
+        <location line="-1002"/>
         <source>Quit eMule Qt</source>
         <translation>eMule Qt を終了</translation>
     </message>
@@ -9241,7 +9279,7 @@ You are running %2. Open the eMule Qt website?</source>
 %1</translation>
     </message>
     <message>
-        <location line="+77"/>
+        <location line="+85"/>
         <source>Cannot Connect</source>
         <translation>接続できません</translation>
     </message>
@@ -9260,7 +9298,7 @@ Enable at least one under Options → Connection to connect.</source>
         <translation>eMule バージョン %1 の準備ができました</translation>
     </message>
     <message>
-        <location line="+94"/>
+        <location line="+92"/>
         <source>Blocked: network interface not available</source>
         <translation>ブロック中: ネットワークインターフェースが利用できません</translation>
     </message>
@@ -11380,36 +11418,36 @@ Download it again?</source>
 <context>
     <name>eMule::OptionsDialog</name>
     <message>
-        <location filename="../src/gui/dialogs/OptionsDialog.cpp" line="-3307"/>
+        <location filename="../src/gui/dialogs/OptionsDialog.cpp" line="-3315"/>
         <source>Options</source>
         <translation>オプション</translation>
     </message>
     <message>
         <location line="+61"/>
-        <location line="+2217"/>
+        <location line="+2225"/>
         <source>OK</source>
         <translation>OK</translation>
     </message>
     <message>
-        <location line="-2216"/>
-        <location line="+2217"/>
+        <location line="-2224"/>
+        <location line="+2225"/>
         <source>Cancel</source>
         <translation>キャンセル</translation>
     </message>
     <message>
-        <location line="-2216"/>
-        <location line="+6237"/>
+        <location line="-2224"/>
+        <location line="+6245"/>
         <source>Apply</source>
         <translation>適用</translation>
     </message>
     <message>
-        <location line="-6236"/>
+        <location line="-6244"/>
         <source>Help</source>
         <translation>ヘルプ</translation>
     </message>
     <message>
-        <location line="+270"/>
-        <location line="+2214"/>
+        <location line="+271"/>
+        <location line="+2221"/>
         <location line="+59"/>
         <location line="+6"/>
         <location line="+4"/>
@@ -11421,7 +11459,7 @@ Download it again?</source>
         <translation>IP フィルター</translation>
     </message>
     <message>
-        <location line="-2328"/>
+        <location line="-2335"/>
         <source>IP filter reloaded: %1 entries.</source>
         <translation>IP フィルターを再読み込み：%1 エントリ。</translation>
     </message>
@@ -11431,12 +11469,12 @@ Download it again?</source>
         <translation>オプション -&gt; %1 -&gt; %2</translation>
     </message>
     <message>
-        <location line="+5218"/>
+        <location line="+5225"/>
         <source>Bandwidth</source>
         <translation>帯域幅</translation>
     </message>
     <message>
-        <location line="-5010"/>
+        <location line="-5017"/>
         <source>General options</source>
         <translation>全般オプション</translation>
     </message>
@@ -11457,18 +11495,18 @@ Download it again?</source>
     </message>
     <message>
         <location line="+8"/>
-        <location line="+6094"/>
+        <location line="+6101"/>
         <source>Language</source>
         <translation>言語</translation>
     </message>
     <message>
-        <location line="-6091"/>
+        <location line="-6098"/>
         <source>System Default</source>
         <translation>システム既定</translation>
     </message>
     <message>
         <location line="+14"/>
-        <location line="+804"/>
+        <location line="+811"/>
         <location line="+384"/>
         <location line="+475"/>
         <location line="+298"/>
@@ -11476,7 +11514,7 @@ Download it again?</source>
         <translation>その他</translation>
     </message>
     <message>
-        <location line="-1958"/>
+        <location line="-1965"/>
         <source>Bring to front on link click</source>
         <translation>リンクのクリック時に前面に表示</translation>
     </message>
@@ -11571,25 +11609,25 @@ Download it again?</source>
     <message>
         <location line="+8"/>
         <location line="+18"/>
-        <location line="+6006"/>
+        <location line="+6013"/>
         <source>Core</source>
         <translation>コア</translation>
     </message>
     <message>
-        <location line="-6019"/>
+        <location line="-6026"/>
         <source>Address:</source>
         <translation>アドレス：</translation>
     </message>
     <message>
         <location line="+4"/>
-        <location line="+1379"/>
+        <location line="+1386"/>
         <location line="+774"/>
         <location line="+427"/>
         <source>Port:</source>
         <translation>ポート：</translation>
     </message>
     <message>
-        <location line="-2577"/>
+        <location line="-2584"/>
         <source>authentication token</source>
         <translation>認証トークン</translation>
     </message>
@@ -11713,12 +11751,12 @@ Are you sure you want to continue?</source>
         <translation>オリジナルの eMule アイコンを使用</translation>
     </message>
     <message>
-        <location line="+31"/>
+        <location line="+8041"/>
         <source>A database ships with each release. An optional free &lt;a href=&quot;https://www.maxmind.com/en/geolite2/signup&quot;&gt;MaxMind GeoLite2&lt;/a&gt; account keeps it current in between. This product includes GeoLite2 data created by MaxMind.</source>
         <translation>各リリースにはデータベースが同梱されています。任意の無料 &lt;a href=&quot;https://www.maxmind.com/en/geolite2/signup&quot;&gt;MaxMind GeoLite2&lt;/a&gt; アカウントを使うと、リリースの間も最新の状態に保たれます。この製品には MaxMind が作成した GeoLite2 データが含まれています。</translation>
     </message>
     <message>
-        <location line="+15"/>
+        <location line="-7988"/>
         <source>Save CPU &amp;&amp; Memory Usage</source>
         <translation>CPU &amp;&amp; メモリ使用量を節約</translation>
     </message>
@@ -11826,12 +11864,12 @@ Are you sure you want to continue?</source>
     </message>
     <message>
         <location line="-4344"/>
-        <location line="+7744"/>
+        <location line="+7761"/>
         <source>TCP</source>
         <translation>TCP</translation>
     </message>
     <message>
-        <location line="-7738"/>
+        <location line="-7755"/>
         <source>UDP</source>
         <translation>UDP</translation>
     </message>
@@ -11885,12 +11923,12 @@ Are you sure you want to continue?</source>
     <message>
         <location line="+4"/>
         <location line="+1735"/>
-        <location line="+5575"/>
+        <location line="+5582"/>
         <source>Any</source>
         <translation>すべて</translation>
     </message>
     <message>
-        <location line="-7308"/>
+        <location line="-7315"/>
         <source>Use only this network interface, for example a VPN tunnel. Pick one from the list, or type an IP address or a subnet such as 10.64.0.0/10 (the interface holding an address in it). Connections through a proxy are not bound.</source>
         <translation>このネットワークインターフェース（VPN トンネルなど）のみを使用します。一覧から選ぶか、IP アドレスまたは 10.64.0.0/10 のようなサブネット（その範囲のアドレスを持つインターフェース）を入力してください。プロキシ経由の接続はバインドされません。</translation>
     </message>
@@ -12821,7 +12859,7 @@ Each rule replaces a regex pattern with a replacement string.</source>
         <translation>アップロードスロット（オーバーヘッドなし）</translation>
     </message>
     <message>
-        <location line="-1812"/>
+        <location line="-1819"/>
         <source>Country flags (IP2Country)</source>
         <translation>国旗 (IP2Country)</translation>
     </message>
@@ -12847,17 +12885,17 @@ Each rule replaces a regex pattern with a replacement string.</source>
         <translation type="vanished">正式名</translation>
     </message>
     <message>
-        <location line="+3"/>
+        <location line="+10"/>
         <source>MaxMind account ID:</source>
         <translation>MaxMind アカウント ID:</translation>
     </message>
     <message>
-        <location line="+3"/>
+        <location line="+4"/>
         <source>License key:</source>
         <translation>ライセンスキー:</translation>
     </message>
     <message>
-        <location line="+5"/>
+        <location line="+6"/>
         <source>Update the database weekly</source>
         <translation>データベースを毎週更新</translation>
     </message>
@@ -12871,7 +12909,7 @@ Each rule replaces a regex pattern with a replacement string.</source>
         <translation type="vanished">無料の &lt;a href=&quot;https://www.maxmind.com/en/geolite2/signup&quot;&gt;MaxMind GeoLite2&lt;/a&gt; アカウントが必要です。この製品には MaxMind が作成した GeoLite2 データが含まれています。</translation>
     </message>
     <message>
-        <location line="+415"/>
+        <location line="+413"/>
         <source>Use for news servers</source>
         <translation>ニュースサーバーにも使用する</translation>
     </message>
@@ -12905,9 +12943,9 @@ Every Usenet connection then passes through the proxy, so its speed caps the dow
         <translation>検索に現れたファイルとそのときの名前をローカルに記録し、以後の検索で以前に見たものを表示できるようにします。</translation>
     </message>
     <message>
-        <location line="-1435"/>
+        <location line="-1442"/>
         <location line="+5"/>
-        <location line="+1650"/>
+        <location line="+1657"/>
         <source>Connection</source>
         <translation>接続</translation>
     </message>
@@ -13375,13 +13413,13 @@ Every Usenet connection then passes through the proxy, so its speed caps the dow
         <translation>厳格</translation>
     </message>
     <message>
-        <location line="-2874"/>
-        <location line="+8373"/>
+        <location line="-2881"/>
+        <location line="+8397"/>
         <source>BitTorrent</source>
         <translation>BitTorrent</translation>
     </message>
     <message>
-        <location line="-7988"/>
+        <location line="-8012"/>
         <source>Show download progress on the Dock icon</source>
         <translation>Dock アイコンにダウンロードの進捗を表示</translation>
     </message>
@@ -13396,7 +13434,7 @@ Every Usenet connection then passes through the proxy, so its speed caps the dow
         <translation>コンテキストメニューに詳細な項目を、リストに追加情報を表示します。</translation>
     </message>
     <message>
-        <location line="+50"/>
+        <location line="+57"/>
         <source>Appearance</source>
         <translation>外観</translation>
     </message>
@@ -14437,7 +14475,22 @@ Adding one later does not fetch its back catalogue: a new indexer gets its own f
         <translation>BitTorrent を有効にする</translation>
     </message>
     <message>
-        <location line="+3502"/>
+        <location line="+3207"/>
+        <source>Downloading the DB-IP country database...</source>
+        <translation>DB-IP 国データベースをダウンロード中...</translation>
+    </message>
+    <message>
+        <location line="+66"/>
+        <source>Database: %1 from %2</source>
+        <translation>データベース: %1（%2）</translation>
+    </message>
+    <message>
+        <location line="+3"/>
+        <source>Database: none — click &quot;Update now&quot; to download it</source>
+        <translation>データベース: なし — 「今すぐ更新」をクリックしてダウンロード</translation>
+    </message>
+    <message>
+        <location line="+243"/>
         <source>TCP/UDP</source>
         <translation>TCP/UDP</translation>
     </message>
@@ -14452,11 +14505,16 @@ Adding one later does not fetch its back catalogue: a new indexer gets its own f
         <translation>%1 — 利用不可</translation>
     </message>
     <message>
+        <location line="+16"/>
+        <source>DB-IP Country Lite is free and needs no account; it is updated monthly. &lt;a href=&quot;https://db-ip.com&quot;&gt;IP Geolocation by DB-IP&lt;/a&gt; (CC BY 4.0).</source>
+        <translation>DB-IP Country Lite は無料でアカウント不要、毎月更新されます。&lt;a href=&quot;https://db-ip.com&quot;&gt;IP Geolocation by DB-IP&lt;/a&gt; (CC BY 4.0).</translation>
+    </message>
+    <message>
         <source>Starts the BitTorrent engine with the daemon. Off, no torrent is downloaded or seeded.</source>
         <translation type="vanished">デーモンと共に BitTorrent エンジンを起動します。オフの場合、Torrent のダウンロードもシードも行いません。</translation>
     </message>
     <message>
-        <location line="-48"/>
+        <location line="-64"/>
         <source>unlimited</source>
         <translation>無制限</translation>
     </message>
@@ -14495,7 +14553,7 @@ Adding one later does not fetch its back catalogue: a new indexer gets its own f
         <translation type="vanished">TCP と UDP の両方で使用します。eD2K のポートとは異なる必要があります。</translation>
     </message>
     <message>
-        <location line="-3412"/>
+        <location line="-3429"/>
         <source>Listen port (TCP/UDP):</source>
         <translation>待ち受けポート (TCP/UDP):</translation>
     </message>
@@ -14637,13 +14695,13 @@ Adding one later does not fetch its back catalogue: a new indexer gets its own f
         <translation>ダウンロードは常にチェックされ、ログに記録されます。共有ファイルは起動のたびに再チェックされます。</translation>
     </message>
     <message>
-        <location line="+1870"/>
+        <location line="+1873"/>
         <location line="+20"/>
         <source>Could not update the file associations: %1</source>
         <translation>ファイルの関連付けを更新できませんでした: %1</translation>
     </message>
     <message>
-        <location line="+937"/>
+        <location line="+951"/>
         <location line="+16"/>
         <location line="+6"/>
         <location line="+3"/>
@@ -14792,7 +14850,7 @@ Create it?</source>
 %1</translation>
     </message>
     <message>
-        <location line="-3152"/>
+        <location line="-3169"/>
         <source>Disabled</source>
         <translation>無効</translation>
     </message>
@@ -14817,7 +14875,7 @@ Create it?</source>
         <translation>フォントサイズの変更はアプリケーションの再起動後に反映されます。</translation>
     </message>
     <message>
-        <location line="+1135"/>
+        <location line="+1138"/>
         <source>specialdlp loaded, DLP v%1</source>
         <translation>specialdlp 読み込み済み、DLP v%1</translation>
     </message>
@@ -14827,7 +14885,7 @@ Create it?</source>
         <translation>specialdlp ライブラリが見つかりません。チェックは無効です</translation>
     </message>
     <message>
-        <location line="+770"/>
+        <location line="+784"/>
         <source>Automatic</source>
         <translation>自動</translation>
     </message>
@@ -14841,7 +14899,7 @@ Create it?</source>
         <translation type="vanished">実行中のみ eD2K リンクを自動取得</translation>
     </message>
     <message>
-        <location line="-3044"/>
+        <location line="-3061"/>
         <source>Use credit system (reward uploaders)</source>
         <translation>クレジットシステムを使用（アップロード者を報酬）</translation>
     </message>
@@ -14865,7 +14923,7 @@ Create it?</source>
         <translation>サーバーとクライアントの LAN IP をフィルター</translation>
     </message>
     <message>
-        <location line="-4790"/>
+        <location line="-4797"/>
         <source>Show more controls (advanced mode controls)</source>
         <translation>詳細コントロールを表示（詳細モード）</translation>
     </message>
@@ -14926,7 +14984,22 @@ Create it?</source>
         <translation>信頼済みコア:</translation>
     </message>
     <message>
-        <location line="+1123"/>
+        <location line="+142"/>
+        <source>Database source:</source>
+        <translation>データベースの提供元:</translation>
+    </message>
+    <message>
+        <location line="+2"/>
+        <source>MaxMind GeoLite2 (free account)</source>
+        <translation>MaxMind GeoLite2（無料アカウント）</translation>
+    </message>
+    <message>
+        <location line="+1"/>
+        <source>DB-IP Country Lite (no account)</source>
+        <translation>DB-IP Country Lite（アカウント不要）</translation>
+    </message>
+    <message>
+        <location line="+985"/>
         <source>Rehash All Files...</source>
         <translation>全ファイルを再ハッシュ...</translation>
     </message>
@@ -15312,7 +15385,7 @@ News server connections switch over immediately.</source>
 ニュースサーバーの接続はすぐに切り替わります。</translation>
     </message>
     <message>
-        <location line="+509"/>
+        <location line="+511"/>
         <source>Web Interface</source>
         <translation>Web インターフェース</translation>
     </message>
@@ -15322,7 +15395,7 @@ News server connections switch over immediately.</source>
         <translation>「%1」は IP アドレスではありません。待ち受けアドレスは変更されませんでした。</translation>
     </message>
     <message>
-        <location line="+518"/>
+        <location line="+519"/>
         <location line="+20"/>
         <source>File types</source>
         <translation>ファイルの種類</translation>
@@ -15332,7 +15405,7 @@ News server connections switch over immediately.</source>
         <translation type="vanished">.nzb ファイルの関連付けを更新できませんでした: %1</translation>
     </message>
     <message>
-        <location line="+680"/>
+        <location line="+684"/>
         <source>Port forwarding: %1</source>
         <translation>ポート転送: %1</translation>
     </message>
@@ -15342,7 +15415,7 @@ News server connections switch over immediately.</source>
         <translation>データベース: コアに未接続</translation>
     </message>
     <message>
-        <location line="+27"/>
+        <location line="+31"/>
         <source>Downloading the GeoLite2 country database...</source>
         <translation>GeoLite2 国データベースをダウンロード中...</translation>
     </message>
@@ -15352,12 +15425,11 @@ News server connections switch over immediately.</source>
         <translation>更新に失敗しました: コアが応答しません</translation>
     </message>
     <message>
-        <location line="+53"/>
         <source>Database: GeoLite2-Country from %1</source>
-        <translation>データベース: GeoLite2-Country (%1)</translation>
+        <translation type="vanished">データベース: GeoLite2-Country (%1)</translation>
     </message>
     <message>
-        <location line="+3"/>
+        <location line="+62"/>
         <source>Database: none — enter your MaxMind account ID and license key</source>
         <translation>データベース: なし — MaxMind のアカウント ID とライセンスキーを入力してください</translation>
     </message>
@@ -15387,18 +15459,18 @@ News server connections switch over immediately.</source>
         <translation>既定値に戻す</translation>
     </message>
     <message>
-        <location line="-7888"/>
-        <location line="+2522"/>
+        <location line="-7912"/>
+        <location line="+2529"/>
         <location line="+1035"/>
         <location line="+154"/>
         <location line="+1627"/>
         <location line="+316"/>
-        <location line="+2232"/>
+        <location line="+2249"/>
         <source>Remove</source>
         <translation>削除</translation>
     </message>
     <message>
-        <location line="-6599"/>
+        <location line="-6616"/>
         <source>New eMule Qt version detected</source>
         <translation>新しい eMule Qt バージョンを検出しました</translation>
     </message>
@@ -15475,12 +15547,12 @@ News server connections switch over immediately.</source>
         <translation> 秒</translation>
     </message>
     <message>
-        <location line="-5121"/>
+        <location line="-5128"/>
         <source>Downloads that are receiving data, and the sources sending it, are drawn in bold. A source listed under another file (A4AF) is bold too while it transfers. The connected server and the selected category tab are bold as well.</source>
         <translation>データを受信中のダウンロードと、それを送信しているソースを太字で表示します。別のファイルの下にあるソース (A4AF) も転送中は太字になります。接続中のサーバーと選択中のカテゴリタブも太字になります。</translation>
     </message>
     <message>
-        <location line="+1014"/>
+        <location line="+1021"/>
         <source>Rename downloads to the name most sources use</source>
         <translation>ダウンロードを最も多くのソースが使う名前に変更する</translation>
     </message>
@@ -15739,7 +15811,7 @@ Set it slightly under your plan. The figure is measured here, so it reads a few 
         <location line="+1035"/>
         <location line="+154"/>
         <location line="+1900"/>
-        <location line="+2270"/>
+        <location line="+2287"/>
         <source>Add</source>
         <translation>追加</translation>
     </message>
@@ -15752,7 +15824,7 @@ Set it slightly under your plan. The figure is measured here, so it reads a few 
         <translation type="vanished">値を入力：</translation>
     </message>
     <message>
-        <location line="-2233"/>
+        <location line="-2250"/>
         <source>Edit Value</source>
         <translation>値を編集</translation>
     </message>

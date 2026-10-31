@@ -44,6 +44,8 @@ public:
     uint16 udpPort = 4672;
     uint16 tcpPort = 4662;
     uint32 publicIPv4 = 0;
+    uint32 serverSeenIP = 0;          // serverSeenIPv4()
+    uint32 udpSeenIP = 0;             // udpSeenIPv4()
     Address publicIPv6 = Address::fromString(QStringLiteral("2a00:1450:4001:800::1"));
     bool isFirewalled = true;
     bool isKadConnected = false;
@@ -115,6 +117,8 @@ public:
     [[nodiscard]] uint16 ourTcpPort() const override { return tcpPort; }
     [[nodiscard]] uint8 ourConnectOptions() const override { return connectOptions; }
     [[nodiscard]] uint32 ourPublicIPv4() const override { return publicIPv4; }
+    [[nodiscard]] uint32 serverSeenIPv4() const override { return serverSeenIP; }
+    [[nodiscard]] uint32 udpSeenIPv4() const override { return udpSeenIP; }
     [[nodiscard]] Address ourPublicIPv6() const override { return publicIPv6; }
     [[nodiscard]] bool firewalled() const override { return isFirewalled; }
     [[nodiscard]] bool kadConnected() const override { return isKadConnected; }

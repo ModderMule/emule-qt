@@ -630,7 +630,7 @@ Trust the new certificate?</source>
 信任新证书吗?</translation>
     </message>
     <message>
-        <location line="+309"/>
+        <location line="+313"/>
         <source>Download Added</source>
         <translation>下载已添加</translation>
     </message>
@@ -914,7 +914,7 @@ Has comments</source>
         <translation type="vanished">%1 Bytes</translation>
     </message>
     <message>
-        <location filename="../src/gui/dialogs/OptionsDialog.cpp" line="+3423"/>
+        <location filename="../src/gui/dialogs/OptionsDialog.cpp" line="+3431"/>
         <source>Test</source>
         <translation>测试</translation>
     </message>
@@ -7387,6 +7387,31 @@ If your ISP tries throttle or block eMule, enabling obfuscation will help to cir
     </message>
     <message>
         <location line="+9"/>
+        <source>Opening the link</source>
+        <translation>正在打开链接</translation>
+    </message>
+    <message>
+        <location line="+2"/>
+        <source>Talking to the hoster</source>
+        <translation>正在与网盘通信</translation>
+    </message>
+    <message>
+        <location line="+2"/>
+        <source>Logging in, talking to the hoster</source>
+        <translation>正在登录，与网盘通信</translation>
+    </message>
+    <message>
+        <location line="+2"/>
+        <source>Solving a captcha</source>
+        <translation>正在解验证码</translation>
+    </message>
+    <message>
+        <location line="+2"/>
+        <source>Connecting for the transfer</source>
+        <translation>正在连接以传输</translation>
+    </message>
+    <message>
+        <location line="+8"/>
         <source>Waiting for the ed3k node</source>
         <translation>正在等待 ed3k 节点</translation>
     </message>
@@ -7508,7 +7533,7 @@ If your ISP tries throttle or block eMule, enabling obfuscation will help to cir
         <translation>托管链接已离线，不再发布</translation>
     </message>
     <message>
-        <location line="+29"/>
+        <location line="+30"/>
         <source>Hoster downloads</source>
         <translation>网盘下载</translation>
     </message>
@@ -9051,13 +9076,26 @@ Other members see your nick and posts; your node takes part in passing the room&
         <translation>吸血客户端</translation>
     </message>
     <message>
-        <location line="+9"/>
-        <location line="+2"/>
+        <location line="+4"/>
         <source>Usenet</source>
         <translation>Usenet</translation>
     </message>
     <message>
-        <location line="+9"/>
+        <source>Usenet Verbose</source>
+        <translation type="vanished">Usenet 详细</translation>
+    </message>
+    <message>
+        <location line="+4"/>
+        <source>Torrent</source>
+        <translation>种子</translation>
+    </message>
+    <message>
+        <location line="+4"/>
+        <source>Hoster</source>
+        <translation>网盘</translation>
+    </message>
+    <message>
+        <location line="+8"/>
         <location line="+2"/>
         <source>Kad</source>
         <translation>Kad</translation>
@@ -9084,7 +9122,7 @@ Other members see your nick and posts; your node takes part in passing the room&
         <translation>IPC</translation>
     </message>
     <message>
-        <location line="+441"/>
+        <location line="+500"/>
         <source>Click here to check if a new version is available</source>
         <translation>点击此处检查是否有新版本</translation>
     </message>
@@ -9093,18 +9131,18 @@ Other members see your nick and posts; your node takes part in passing the room&
     <name>eMule::MainWindow</name>
     <message>
         <location filename="../src/gui/app/MainWindow.cpp" line="+107"/>
-        <location line="+627"/>
+        <location line="+633"/>
         <source>eMule Qt v%1</source>
         <translation>eMule Qt v%1</translation>
     </message>
     <message>
-        <location line="-464"/>
+        <location line="-470"/>
         <location line="+9"/>
         <source>New Version Available</source>
         <translation>有新版本可用</translation>
     </message>
     <message>
-        <location line="+258"/>
+        <location line="+264"/>
         <source>eD2K: Connected (LowID)</source>
         <translation>eD2K：已连接 (LowID)</translation>
     </message>
@@ -9191,14 +9229,14 @@ Other members see your nick and posts; your node takes part in passing the room&
         <translation>功能</translation>
     </message>
     <message>
-        <location line="-927"/>
+        <location line="-933"/>
         <location line="+7"/>
-        <location line="+923"/>
+        <location line="+929"/>
         <source>Version Check</source>
         <translation>版本检查</translation>
     </message>
     <message>
-        <location line="-996"/>
+        <location line="-1002"/>
         <source>Quit eMule Qt</source>
         <translation>退出 eMule Qt</translation>
     </message>
@@ -9241,7 +9279,7 @@ You are running %2. Open the eMule Qt website?</source>
 %1</translation>
     </message>
     <message>
-        <location line="+77"/>
+        <location line="+85"/>
         <source>Cannot Connect</source>
         <translation>无法连接</translation>
     </message>
@@ -9260,7 +9298,7 @@ Enable at least one under Options → Connection to connect.</source>
         <translation>eMule 版本 %1 已就绪</translation>
     </message>
     <message>
-        <location line="+94"/>
+        <location line="+92"/>
         <source>Blocked: network interface not available</source>
         <translation>已阻止：网络接口不可用</translation>
     </message>
@@ -11380,36 +11418,36 @@ Download it again?</source>
 <context>
     <name>eMule::OptionsDialog</name>
     <message>
-        <location filename="../src/gui/dialogs/OptionsDialog.cpp" line="-3307"/>
+        <location filename="../src/gui/dialogs/OptionsDialog.cpp" line="-3315"/>
         <source>Options</source>
         <translation>选项</translation>
     </message>
     <message>
         <location line="+61"/>
-        <location line="+2217"/>
+        <location line="+2225"/>
         <source>OK</source>
         <translation>确定</translation>
     </message>
     <message>
-        <location line="-2216"/>
-        <location line="+2217"/>
+        <location line="-2224"/>
+        <location line="+2225"/>
         <source>Cancel</source>
         <translation>取消</translation>
     </message>
     <message>
-        <location line="-2216"/>
-        <location line="+6237"/>
+        <location line="-2224"/>
+        <location line="+6245"/>
         <source>Apply</source>
         <translation>应用</translation>
     </message>
     <message>
-        <location line="-6236"/>
+        <location line="-6244"/>
         <source>Help</source>
         <translation>帮助</translation>
     </message>
     <message>
-        <location line="+270"/>
-        <location line="+2214"/>
+        <location line="+271"/>
+        <location line="+2221"/>
         <location line="+59"/>
         <location line="+6"/>
         <location line="+4"/>
@@ -11421,7 +11459,7 @@ Download it again?</source>
         <translation>IP 过滤器</translation>
     </message>
     <message>
-        <location line="-2328"/>
+        <location line="-2335"/>
         <source>IP filter reloaded: %1 entries.</source>
         <translation>IP 过滤器已重新加载：%1 条目。</translation>
     </message>
@@ -11431,12 +11469,12 @@ Download it again?</source>
         <translation>选项 -&gt; %1 -&gt; %2</translation>
     </message>
     <message>
-        <location line="+5218"/>
+        <location line="+5225"/>
         <source>Bandwidth</source>
         <translation>带宽</translation>
     </message>
     <message>
-        <location line="-5010"/>
+        <location line="-5017"/>
         <source>General options</source>
         <translation>常规选项</translation>
     </message>
@@ -11457,18 +11495,18 @@ Download it again?</source>
     </message>
     <message>
         <location line="+8"/>
-        <location line="+6094"/>
+        <location line="+6101"/>
         <source>Language</source>
         <translation>语言</translation>
     </message>
     <message>
-        <location line="-6091"/>
+        <location line="-6098"/>
         <source>System Default</source>
         <translation>系统默认</translation>
     </message>
     <message>
         <location line="+14"/>
-        <location line="+804"/>
+        <location line="+811"/>
         <location line="+384"/>
         <location line="+475"/>
         <location line="+298"/>
@@ -11476,7 +11514,7 @@ Download it again?</source>
         <translation>其他</translation>
     </message>
     <message>
-        <location line="-1958"/>
+        <location line="-1965"/>
         <source>Bring to front on link click</source>
         <translation>点击链接时置前</translation>
     </message>
@@ -11571,25 +11609,25 @@ Download it again?</source>
     <message>
         <location line="+8"/>
         <location line="+18"/>
-        <location line="+6006"/>
+        <location line="+6013"/>
         <source>Core</source>
         <translation>核心</translation>
     </message>
     <message>
-        <location line="-6019"/>
+        <location line="-6026"/>
         <source>Address:</source>
         <translation>地址：</translation>
     </message>
     <message>
         <location line="+4"/>
-        <location line="+1379"/>
+        <location line="+1386"/>
         <location line="+774"/>
         <location line="+427"/>
         <source>Port:</source>
         <translation>端口：</translation>
     </message>
     <message>
-        <location line="-2577"/>
+        <location line="-2584"/>
         <source>authentication token</source>
         <translation>认证令牌</translation>
     </message>
@@ -11713,12 +11751,12 @@ Are you sure you want to continue?</source>
         <translation>使用原版 eMule 图标</translation>
     </message>
     <message>
-        <location line="+31"/>
+        <location line="+8041"/>
         <source>A database ships with each release. An optional free &lt;a href=&quot;https://www.maxmind.com/en/geolite2/signup&quot;&gt;MaxMind GeoLite2&lt;/a&gt; account keeps it current in between. This product includes GeoLite2 data created by MaxMind.</source>
         <translation>每个版本都附带一个数据库。可选的免费 &lt;a href=&quot;https://www.maxmind.com/en/geolite2/signup&quot;&gt;MaxMind GeoLite2&lt;/a&gt; 帐户可在版本之间保持其最新。本产品包含由 MaxMind 创建的 GeoLite2 数据。</translation>
     </message>
     <message>
-        <location line="+15"/>
+        <location line="-7988"/>
         <source>Save CPU &amp;&amp; Memory Usage</source>
         <translation>节省 CPU &amp;&amp; 内存</translation>
     </message>
@@ -11826,12 +11864,12 @@ Are you sure you want to continue?</source>
     </message>
     <message>
         <location line="-4344"/>
-        <location line="+7744"/>
+        <location line="+7761"/>
         <source>TCP</source>
         <translation>TCP</translation>
     </message>
     <message>
-        <location line="-7738"/>
+        <location line="-7755"/>
         <source>UDP</source>
         <translation>UDP</translation>
     </message>
@@ -11885,12 +11923,12 @@ Are you sure you want to continue?</source>
     <message>
         <location line="+4"/>
         <location line="+1735"/>
-        <location line="+5575"/>
+        <location line="+5582"/>
         <source>Any</source>
         <translation>任意</translation>
     </message>
     <message>
-        <location line="-7308"/>
+        <location line="-7315"/>
         <source>Use only this network interface, for example a VPN tunnel. Pick one from the list, or type an IP address or a subnet such as 10.64.0.0/10 (the interface holding an address in it). Connections through a proxy are not bound.</source>
         <translation>仅使用此网络接口，例如 VPN 隧道。可从列表中选择，或输入 IP 地址或子网（如 10.64.0.0/10，即拥有该范围内地址的接口）。通过代理的连接不会被绑定。</translation>
     </message>
@@ -12821,7 +12859,7 @@ Each rule replaces a regex pattern with a replacement string.</source>
         <translation>上传位（无开销）</translation>
     </message>
     <message>
-        <location line="-1812"/>
+        <location line="-1819"/>
         <source>Country flags (IP2Country)</source>
         <translation>国旗 (IP2Country)</translation>
     </message>
@@ -12847,17 +12885,17 @@ Each rule replaces a regex pattern with a replacement string.</source>
         <translation type="vanished">全称</translation>
     </message>
     <message>
-        <location line="+3"/>
+        <location line="+10"/>
         <source>MaxMind account ID:</source>
         <translation>MaxMind 账户 ID:</translation>
     </message>
     <message>
-        <location line="+3"/>
+        <location line="+4"/>
         <source>License key:</source>
         <translation>许可证密钥:</translation>
     </message>
     <message>
-        <location line="+5"/>
+        <location line="+6"/>
         <source>Update the database weekly</source>
         <translation>每周更新数据库</translation>
     </message>
@@ -12871,7 +12909,7 @@ Each rule replaces a regex pattern with a replacement string.</source>
         <translation type="vanished">需要免费的 &lt;a href=&quot;https://www.maxmind.com/en/geolite2/signup&quot;&gt;MaxMind GeoLite2&lt;/a&gt; 账户。本产品包含由 MaxMind 创建的 GeoLite2 数据。</translation>
     </message>
     <message>
-        <location line="+415"/>
+        <location line="+413"/>
         <source>Use for news servers</source>
         <translation>同时用于新闻服务器</translation>
     </message>
@@ -12905,9 +12943,9 @@ Every Usenet connection then passes through the proxy, so its speed caps the dow
         <translation>在本地记录搜索中出现过的文件及其当时的名称，以便之后的搜索能显示您以前见过的内容。</translation>
     </message>
     <message>
-        <location line="-1435"/>
+        <location line="-1442"/>
         <location line="+5"/>
-        <location line="+1650"/>
+        <location line="+1657"/>
         <source>Connection</source>
         <translation>连接</translation>
     </message>
@@ -13375,13 +13413,13 @@ Every Usenet connection then passes through the proxy, so its speed caps the dow
         <translation>严格</translation>
     </message>
     <message>
-        <location line="-2874"/>
-        <location line="+8373"/>
+        <location line="-2881"/>
+        <location line="+8397"/>
         <source>BitTorrent</source>
         <translation>BitTorrent</translation>
     </message>
     <message>
-        <location line="-7988"/>
+        <location line="-8012"/>
         <source>Show download progress on the Dock icon</source>
         <translation>在程序坞图标上显示下载进度</translation>
     </message>
@@ -13396,7 +13434,7 @@ Every Usenet connection then passes through the proxy, so its speed caps the dow
         <translation>在右键菜单中显示高级项目，并在列表中显示更多详细信息。</translation>
     </message>
     <message>
-        <location line="+50"/>
+        <location line="+57"/>
         <source>Appearance</source>
         <translation>外观</translation>
     </message>
@@ -14437,7 +14475,22 @@ Adding one later does not fetch its back catalogue: a new indexer gets its own f
         <translation>启用 BitTorrent</translation>
     </message>
     <message>
-        <location line="+3502"/>
+        <location line="+3207"/>
+        <source>Downloading the DB-IP country database...</source>
+        <translation>正在下载 DB-IP 国家数据库...</translation>
+    </message>
+    <message>
+        <location line="+66"/>
+        <source>Database: %1 from %2</source>
+        <translation>数据库：%1（%2）</translation>
+    </message>
+    <message>
+        <location line="+3"/>
+        <source>Database: none — click &quot;Update now&quot; to download it</source>
+        <translation>数据库：无 — 点击“立即更新”下载</translation>
+    </message>
+    <message>
+        <location line="+243"/>
         <source>TCP/UDP</source>
         <translation>TCP/UDP</translation>
     </message>
@@ -14452,11 +14505,16 @@ Adding one later does not fetch its back catalogue: a new indexer gets its own f
         <translation>%1 — 不可用</translation>
     </message>
     <message>
+        <location line="+16"/>
+        <source>DB-IP Country Lite is free and needs no account; it is updated monthly. &lt;a href=&quot;https://db-ip.com&quot;&gt;IP Geolocation by DB-IP&lt;/a&gt; (CC BY 4.0).</source>
+        <translation>DB-IP Country Lite 免费且无需账户，每月更新。&lt;a href=&quot;https://db-ip.com&quot;&gt;IP Geolocation by DB-IP&lt;/a&gt; (CC BY 4.0).</translation>
+    </message>
+    <message>
         <source>Starts the BitTorrent engine with the daemon. Off, no torrent is downloaded or seeded.</source>
         <translation type="vanished">随守护进程启动 BitTorrent 引擎。关闭时不下载也不做种任何种子。</translation>
     </message>
     <message>
-        <location line="-48"/>
+        <location line="-64"/>
         <source>unlimited</source>
         <translation>无限制</translation>
     </message>
@@ -14495,7 +14553,7 @@ Adding one later does not fetch its back catalogue: a new indexer gets its own f
         <translation type="vanished">同时用于 TCP 和 UDP。必须与 eD2K 端口不同。</translation>
     </message>
     <message>
-        <location line="-3412"/>
+        <location line="-3429"/>
         <source>Listen port (TCP/UDP):</source>
         <translation>监听端口 (TCP/UDP)：</translation>
     </message>
@@ -14637,13 +14695,13 @@ Adding one later does not fetch its back catalogue: a new indexer gets its own f
         <translation>下载始终会被检查并记录。共享文件在每次启动时都会重新检查。</translation>
     </message>
     <message>
-        <location line="+1870"/>
+        <location line="+1873"/>
         <location line="+20"/>
         <source>Could not update the file associations: %1</source>
         <translation>无法更新文件关联：%1</translation>
     </message>
     <message>
-        <location line="+937"/>
+        <location line="+951"/>
         <location line="+16"/>
         <location line="+6"/>
         <location line="+3"/>
@@ -14792,7 +14850,7 @@ Create it?</source>
 %1</translation>
     </message>
     <message>
-        <location line="-3152"/>
+        <location line="-3169"/>
         <source>Disabled</source>
         <translation>已禁用</translation>
     </message>
@@ -14817,7 +14875,7 @@ Create it?</source>
         <translation>字体大小更改将在重启应用程序后生效。</translation>
     </message>
     <message>
-        <location line="+1135"/>
+        <location line="+1138"/>
         <source>specialdlp loaded, DLP v%1</source>
         <translation>specialdlp 已加载，DLP v%1</translation>
     </message>
@@ -14827,7 +14885,7 @@ Create it?</source>
         <translation>未找到 specialdlp 库，检查未启用</translation>
     </message>
     <message>
-        <location line="+770"/>
+        <location line="+784"/>
         <source>Automatic</source>
         <translation>自动</translation>
     </message>
@@ -14841,7 +14899,7 @@ Create it?</source>
         <translation type="vanished">仅在运行时自动接受 eD2K 链接</translation>
     </message>
     <message>
-        <location line="-3044"/>
+        <location line="-3061"/>
         <source>Use credit system (reward uploaders)</source>
         <translation>使用信用系统（奖励上传者）</translation>
     </message>
@@ -14865,7 +14923,7 @@ Create it?</source>
         <translation>过滤服务器和客户端局域网 IP</translation>
     </message>
     <message>
-        <location line="-4790"/>
+        <location line="-4797"/>
         <source>Show more controls (advanced mode controls)</source>
         <translation>显示更多控件（高级模式控件）</translation>
     </message>
@@ -14926,7 +14984,22 @@ Create it?</source>
         <translation>受信任的核心:</translation>
     </message>
     <message>
-        <location line="+1123"/>
+        <location line="+142"/>
+        <source>Database source:</source>
+        <translation>数据库来源：</translation>
+    </message>
+    <message>
+        <location line="+2"/>
+        <source>MaxMind GeoLite2 (free account)</source>
+        <translation>MaxMind GeoLite2（免费账户）</translation>
+    </message>
+    <message>
+        <location line="+1"/>
+        <source>DB-IP Country Lite (no account)</source>
+        <translation>DB-IP Country Lite（无需账户）</translation>
+    </message>
+    <message>
+        <location line="+985"/>
         <source>Rehash All Files...</source>
         <translation>重新计算所有文件的哈希...</translation>
     </message>
@@ -15312,7 +15385,7 @@ News server connections switch over immediately.</source>
 新闻服务器连接会立即切换。</translation>
     </message>
     <message>
-        <location line="+509"/>
+        <location line="+511"/>
         <source>Web Interface</source>
         <translation>Web 界面</translation>
     </message>
@@ -15322,7 +15395,7 @@ News server connections switch over immediately.</source>
         <translation>“%1”不是 IP 地址。监听地址未更改。</translation>
     </message>
     <message>
-        <location line="+518"/>
+        <location line="+519"/>
         <location line="+20"/>
         <source>File types</source>
         <translation>文件类型</translation>
@@ -15332,7 +15405,7 @@ News server connections switch over immediately.</source>
         <translation type="vanished">无法更新 .nzb 文件关联：%1</translation>
     </message>
     <message>
-        <location line="+680"/>
+        <location line="+684"/>
         <source>Port forwarding: %1</source>
         <translation>端口转发：%1</translation>
     </message>
@@ -15342,7 +15415,7 @@ News server connections switch over immediately.</source>
         <translation>数据库：未连接到核心</translation>
     </message>
     <message>
-        <location line="+27"/>
+        <location line="+31"/>
         <source>Downloading the GeoLite2 country database...</source>
         <translation>正在下载 GeoLite2 国家数据库...</translation>
     </message>
@@ -15352,12 +15425,11 @@ News server connections switch over immediately.</source>
         <translation>更新失败：核心无响应</translation>
     </message>
     <message>
-        <location line="+53"/>
         <source>Database: GeoLite2-Country from %1</source>
-        <translation>数据库：GeoLite2-Country（%1）</translation>
+        <translation type="vanished">数据库：GeoLite2-Country（%1）</translation>
     </message>
     <message>
-        <location line="+3"/>
+        <location line="+62"/>
         <source>Database: none — enter your MaxMind account ID and license key</source>
         <translation>数据库：无 — 请输入 MaxMind 账户 ID 和许可证密钥</translation>
     </message>
@@ -15387,18 +15459,18 @@ News server connections switch over immediately.</source>
         <translation>恢复默认值</translation>
     </message>
     <message>
-        <location line="-7888"/>
-        <location line="+2522"/>
+        <location line="-7912"/>
+        <location line="+2529"/>
         <location line="+1035"/>
         <location line="+154"/>
         <location line="+1627"/>
         <location line="+316"/>
-        <location line="+2232"/>
+        <location line="+2249"/>
         <source>Remove</source>
         <translation>删除</translation>
     </message>
     <message>
-        <location line="-6599"/>
+        <location line="-6616"/>
         <source>New eMule Qt version detected</source>
         <translation>检测到新的 eMule Qt 版本</translation>
     </message>
@@ -15475,12 +15547,12 @@ News server connections switch over immediately.</source>
         <translation> 秒</translation>
     </message>
     <message>
-        <location line="-5121"/>
+        <location line="-5128"/>
         <source>Downloads that are receiving data, and the sources sending it, are drawn in bold. A source listed under another file (A4AF) is bold too while it transfers. The connected server and the selected category tab are bold as well.</source>
         <translation>正在接收数据的下载及发送数据的来源以粗体显示。列在其他文件下的来源 (A4AF) 在传输时也以粗体显示。已连接的服务器和选中的分类标签页同样以粗体显示。</translation>
     </message>
     <message>
-        <location line="+1014"/>
+        <location line="+1021"/>
         <source>Rename downloads to the name most sources use</source>
         <translation>将下载重命名为大多数来源使用的名称</translation>
     </message>
@@ -15739,7 +15811,7 @@ Set it slightly under your plan. The figure is measured here, so it reads a few 
         <location line="+1035"/>
         <location line="+154"/>
         <location line="+1900"/>
-        <location line="+2270"/>
+        <location line="+2287"/>
         <source>Add</source>
         <translation>添加</translation>
     </message>
@@ -15752,7 +15824,7 @@ Set it slightly under your plan. The figure is measured here, so it reads a few 
         <translation type="vanished">输入值：</translation>
     </message>
     <message>
-        <location line="-2233"/>
+        <location line="-2250"/>
         <source>Edit Value</source>
         <translation>编辑值</translation>
     </message>

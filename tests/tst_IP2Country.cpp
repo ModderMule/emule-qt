@@ -1,5 +1,5 @@
 /// @file tst_IP2Country.cpp
-/// @brief GeoLite2 country lookup, the MaxMind downloader and the hostname resolver.
+/// @brief GeoLite2 country lookup, the MaxMind / DB-IP downloader and the hostname resolver.
 ///
 /// Uses MaxMind's public GeoIP2-Country-Test.mmdb (MaxMind-DB repo, test-data/);
 /// expected codes come from its source JSON. Never touches the network.
@@ -61,6 +61,28 @@ QByteArray makeTarGz(const QByteArray& mmdb)
     return out;
 }
 
+/// A DB-IP style download: the bare .mmdb, gzipped (no tar).
+QByteArray makeGz(const QByteArray& mmdb)
+{
+    QByteArray out(static_cast<qsizetype>(mmdb.size() + 64 * 1024), '\0');
+    size_t used = 0;
+    archive* a = archive_write_new();
+    archive_write_add_filter_gzip(a);
+    archive_write_set_format_raw(a);
+    archive_write_open_memory(a, out.data(), static_cast<size_t>(out.size()), &used);
+    archive_entry* e = archive_entry_new();
+    archive_entry_set_pathname(e, "dbip-country-lite.mmdb");
+    archive_entry_set_size(e, mmdb.size());
+    archive_entry_set_filetype(e, AE_IFREG);
+    archive_write_header(a, e);
+    archive_write_data(a, mmdb.constData(), static_cast<size_t>(mmdb.size()));
+    archive_entry_free(e);
+    archive_write_close(a);
+    archive_write_free(a);
+    out.truncate(static_cast<qsizetype>(used));
+    return out;
+}
+
 /// The test database with its metadata build_epoch moved by @p delta seconds.
 /// Its encoding is uint64 of 4 bytes: control 0x04, extended type 0x02, then big-endian.
 QByteArray shiftedBuildEpoch(qint64 delta)
@@ -100,6 +122,8 @@ public:
     QByteArray body;
     QByteArray location;      ///< sent with a 3xx status
     QByteArray lastRequest;
+    QByteArrayList paths;     ///< request path of every request
+    QByteArray notFoundPath;  ///< a request for this path gets 404
     int requests = 0;
 
     explicit FakeMaxMind(const QHostAddress& bind = QHostAddress::LocalHost)
@@ -113,6 +137,10 @@ public:
                         return;
                     lastRequest = m_buffer.take(s);
                     ++requests;
+                    const QByteArray path = lastRequest.split(' ').value(1);
+                    paths.append(path);
+                    const int status = !notFoundPath.isEmpty() && path == notFoundPath
+                                           ? 404 : this->status;
                     const QByteArray reason = status == 200 ? "OK" : status == 304 ? "Not Modified"
                                             : status == 302 ? "Found" : "Unauthorized";
                     const QByteArray payload = status == 200 ? body : QByteArray();
@@ -133,6 +161,14 @@ public:
     [[nodiscard]] QUrl url(const QString& host = QStringLiteral("127.0.0.1")) const
     {
         return QUrl(QStringLiteral("http://%1:%2/geoip/download").arg(host).arg(m_server.serverPort()));
+    }
+
+    /// DB-IP style template, %1 = "yyyy-MM"
+    [[nodiscard]] QString dbIpTemplate() const
+    {
+        return QStringLiteral("http://127.0.0.1:%1/free/dbip-country-lite-%2.mmdb.gz")
+            .arg(m_server.serverPort())
+            .arg(QStringLiteral("%1"));
     }
 
     [[nodiscard]] QByteArray header(const QByteArray& name) const
@@ -189,6 +225,11 @@ private slots:
     void updater_rejectedCredentials();
     void updater_noCredentialsNoRequest();
 
+    void dbip_downloadsWithoutCredentials();
+    void dbip_fallsBackToPreviousMonth();
+    void dbip_keepsGeoLiteUntilDownloaded();
+    void dbip_scheduleRunsWithoutCredentials();
+
     void bundle_adoptedWhenLiveMissingOrInvalid();
     void bundle_adoptedWhenNewer();
     void bundle_olderOrEqualIgnored();
@@ -201,6 +242,10 @@ private:
     [[nodiscard]] QString livePath() const
     {
         return m_dir.filePath(QString::fromLatin1(kGeoIpDatabaseFilename));
+    }
+    [[nodiscard]] QString dbIpPath() const
+    {
+        return m_dir.filePath(QString::fromLatin1(kDbIpDatabaseFilename));
     }
     [[nodiscard]] QString bundlePath() const
     {
@@ -220,6 +265,7 @@ void tst_IP2Country::init()
     thePrefs.setGeoIpLicenseKey(QStringLiteral("SeCrEtLiCeNsEkEy"));
     thePrefs.setGeoIpAutoUpdate(false);
     thePrefs.setGeoIpLastCheck(0);
+    thePrefs.setGeoIpSource(static_cast<int>(GeoIpSource::MaxMind));
 }
 
 void tst_IP2Country::cleanup()
@@ -227,7 +273,9 @@ void tst_IP2Country::cleanup()
     theApp.ip2Country = nullptr;
     m_db.close();
     QFile::remove(livePath());
+    QFile::remove(dbIpPath());
     QFile::remove(bundlePath());
+    thePrefs.setGeoIpSource(static_cast<int>(GeoIpSource::MaxMind));
 }
 
 void tst_IP2Country::lookup_knownRanges()
@@ -456,6 +504,99 @@ void tst_IP2Country::updater_noCredentialsNoRequest()
     QTest::qWait(50);
     QVERIFY(!updater.isRunning());
     QCOMPARE(server.requests, 0);
+}
+
+void tst_IP2Country::dbip_downloadsWithoutCredentials()
+{
+    thePrefs.setGeoIpSource(static_cast<int>(GeoIpSource::DbIp));
+    FakeMaxMind server;
+    server.body = makeGz(readFile(testDb()));
+
+    GeoIpUpdater updater(&m_db, m_dir.path());
+    updater.setDbIpUrlTemplate(server.dbIpTemplate());
+    QCOMPARE(updater.databasePath(), dbIpPath());
+    bool ok = false;
+    QString message;
+    QVERIFY(runUpdate(updater, ok, message));
+    QVERIFY2(ok, qPrintable(message));
+    QVERIFY2(message.contains(QStringLiteral("DB-IP")), qPrintable(message));
+    QCOMPARE(server.requests, 1);
+    QVERIFY(server.header("Authorization").isEmpty());
+    const QByteArray month =
+        QDateTime::currentDateTimeUtc().date().toString(QStringLiteral("yyyy-MM")).toLatin1();
+    QCOMPARE(server.paths.value(0), "/free/dbip-country-lite-" + month + ".mmdb.gz");
+    QCOMPARE(readFile(dbIpPath()), readFile(testDb()));
+    QVERIFY(!QFileInfo::exists(livePath()));
+    QCOMPARE(m_db.path(), dbIpPath());
+    QCOMPARE(m_db.countryCode(QHostAddress(QStringLiteral("81.2.69.160"))), QStringLiteral("GB"));
+}
+
+void tst_IP2Country::dbip_fallsBackToPreviousMonth()
+{
+    thePrefs.setGeoIpSource(static_cast<int>(GeoIpSource::DbIp));
+    const QDate today = QDateTime::currentDateTimeUtc().date();
+    FakeMaxMind server;
+    server.body = makeGz(readFile(testDb()));
+    server.notFoundPath = "/free/dbip-country-lite-"
+                          + today.toString(QStringLiteral("yyyy-MM")).toLatin1() + ".mmdb.gz";
+
+    GeoIpUpdater updater(&m_db, m_dir.path());
+    updater.setDbIpUrlTemplate(server.dbIpTemplate());
+    bool ok = false;
+    QString message;
+    QVERIFY(runUpdate(updater, ok, message));
+    QVERIFY2(ok, qPrintable(message));
+    QCOMPARE(server.requests, 2);
+    QCOMPARE(server.paths.value(1),
+             "/free/dbip-country-lite-"
+                 + today.addMonths(-1).toString(QStringLiteral("yyyy-MM")).toLatin1() + ".mmdb.gz");
+    QVERIFY(m_db.isLoaded());
+
+    // Both months missing: one failure, no third try
+    FakeMaxMind gone;
+    gone.status = 404;
+    updater.setDbIpUrlTemplate(gone.dbIpTemplate());
+    QVERIFY(runUpdate(updater, ok, message));
+    QVERIFY(!ok);
+    QCOMPARE(gone.requests, 2);
+    QVERIFY(m_db.isLoaded());   // the installed file survives
+}
+
+void tst_IP2Country::dbip_keepsGeoLiteUntilDownloaded()
+{
+    QVERIFY(QFile::copy(testDb(), livePath()));
+    thePrefs.setGeoIpSource(static_cast<int>(GeoIpSource::DbIp));
+    GeoIpUpdater updater(&m_db, m_dir.path());
+    updater.setBundleDir(QString());
+    updater.start();
+    QCOMPARE(m_db.path(), livePath());   // DB-IP file missing: GeoLite2 stays in use
+
+    QVERIFY(QFile::copy(testDb(), dbIpPath()));
+    updater.reloadForSource();
+    QCOMPARE(m_db.path(), dbIpPath());
+
+    thePrefs.setGeoIpSource(static_cast<int>(GeoIpSource::MaxMind));
+    updater.reloadForSource();
+    QCOMPARE(m_db.path(), livePath());
+}
+
+void tst_IP2Country::dbip_scheduleRunsWithoutCredentials()
+{
+    thePrefs.setGeoIpSource(static_cast<int>(GeoIpSource::DbIp));
+    thePrefs.setGeoIpLicenseKey(QString());
+    thePrefs.setGeoIpAutoUpdate(true);
+    QVERIFY(QFile::copy(testDb(), livePath()));
+    FakeMaxMind server;
+    server.body = makeGz(readFile(testDb()));
+
+    GeoIpUpdater updater(&m_db, m_dir.path());
+    updater.setDbIpUrlTemplate(server.dbIpTemplate());
+    updater.setBundleDir(QString());
+    QSignalSpy changed(&updater, &GeoIpUpdater::databaseChanged);
+    updater.start();   // GeoLite2 loaded, but it doesn't count for DB-IP: due
+    QVERIFY(QTest::qWaitFor([&] { return changed.count() == 1; }, 10000));
+    QCOMPARE(server.requests, 1);
+    QCOMPARE(m_db.path(), dbIpPath());
 }
 
 void tst_IP2Country::bundle_adoptedWhenLiveMissingOrInvalid()

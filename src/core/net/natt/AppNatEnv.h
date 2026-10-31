@@ -30,6 +30,8 @@ public:
     [[nodiscard]] uint16 ourTcpPort() const override;
     [[nodiscard]] uint8 ourConnectOptions() const override;
     [[nodiscard]] uint32 ourPublicIPv4() const override;
+    [[nodiscard]] uint32 serverSeenIPv4() const override;
+    [[nodiscard]] uint32 udpSeenIPv4() const override;
     [[nodiscard]] Address ourPublicIPv6() const override;
     [[nodiscard]] bool firewalled() const override;
     [[nodiscard]] bool kadConnected() const override;

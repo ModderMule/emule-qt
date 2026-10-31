@@ -17,6 +17,9 @@
 /// logged in elsewhere, on any server that announces UDP flag 0x100000. We burst 0x9F
 /// (plain while we hold no valid key) so the server passes our endpoint on, punch, and
 /// send no 0xA6. No 0x60 from an IPv6 session (0x62 reason 5).
+///
+/// Periodic 0x9F paused while Kad sees our UDP on another IPv4 than the server sees our
+/// TCP on (carrier NAT): the server only takes 0x9F from the session's address.
 
 #include "net/natt/NatPath.h"
 
@@ -52,11 +55,14 @@ private:
     void onFail(const uint8* data, uint32 size);
     void onCallbackNotice(const uint8* data, uint32 size);
     [[nodiscard]] bool extensionActive() const;
+    /// IPv4 session whose TCP and UDP leave from different public addresses (Kad's view).
+    [[nodiscard]] bool addressSplit() const;
 
     Endpoint m_session;             ///< server session the keepalive state belongs to
     uint32 m_sessionID = 0;
     uint64 m_lastKeepaliveMs = 0;
     bool m_sentObfuscated = false;  ///< plain 0x9F are ignored from here on
+    bool m_splitAddress = false;    ///< periodic 0x9F paused, see addressSplit()
 };
 
 } // namespace eMule::natt

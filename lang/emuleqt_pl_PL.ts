@@ -616,7 +616,7 @@ Przedstawiony: %3
 Zaufać nowemu certyfikatowi?</translation>
     </message>
     <message>
-        <location line="+309"/>
+        <location line="+313"/>
         <source>Download Added</source>
         <translation>Dodano pobieranie</translation>
     </message>
@@ -766,7 +766,7 @@ Zaufać nowemu certyfikatowi?</translation>
         <translation>Normalny</translation>
     </message>
     <message>
-        <location filename="../src/gui/dialogs/OptionsDialog.cpp" line="+3423"/>
+        <location filename="../src/gui/dialogs/OptionsDialog.cpp" line="+3431"/>
         <source>Test</source>
         <translation>Test</translation>
     </message>
@@ -7049,6 +7049,31 @@ Jego pliki trafiają do folderu pobranych, do własnego folderu zestawu; nowe we
     </message>
     <message>
         <location line="+9"/>
+        <source>Opening the link</source>
+        <translation>Otwieranie linku</translation>
+    </message>
+    <message>
+        <location line="+2"/>
+        <source>Talking to the hoster</source>
+        <translation>Komunikacja z hostingiem</translation>
+    </message>
+    <message>
+        <location line="+2"/>
+        <source>Logging in, talking to the hoster</source>
+        <translation>Logowanie, komunikacja z hostingiem</translation>
+    </message>
+    <message>
+        <location line="+2"/>
+        <source>Solving a captcha</source>
+        <translation>Rozwiązywanie captcha</translation>
+    </message>
+    <message>
+        <location line="+2"/>
+        <source>Connecting for the transfer</source>
+        <translation>Łączenie w celu transferu</translation>
+    </message>
+    <message>
+        <location line="+8"/>
         <source>Waiting for the ed3k node</source>
         <translation>Oczekiwanie na węzeł ed3k</translation>
     </message>
@@ -7172,7 +7197,7 @@ Jego pliki trafiają do folderu pobranych, do własnego folderu zestawu; nowe we
         <translation>Link hostingu jest offline i nie jest już publikowany</translation>
     </message>
     <message>
-        <location line="+29"/>
+        <location line="+30"/>
         <source>Hoster downloads</source>
         <translation>Pobierania z hostingów</translation>
     </message>
@@ -8693,13 +8718,26 @@ Inni członkowie widzą Twój nick i wpisy; Twój węzeł uczestniczy w przekazy
         <translation>Leecherzy</translation>
     </message>
     <message>
-        <location line="+9"/>
-        <location line="+2"/>
+        <location line="+4"/>
         <source>Usenet</source>
         <translation>Usenet</translation>
     </message>
     <message>
-        <location line="+9"/>
+        <source>Usenet Verbose</source>
+        <translation type="vanished">Usenet Szczegółowy</translation>
+    </message>
+    <message>
+        <location line="+4"/>
+        <source>Torrent</source>
+        <translation>Torrent</translation>
+    </message>
+    <message>
+        <location line="+4"/>
+        <source>Hoster</source>
+        <translation>Hosting</translation>
+    </message>
+    <message>
+        <location line="+8"/>
         <location line="+2"/>
         <source>Kad</source>
         <translation>Kad</translation>
@@ -8726,7 +8764,7 @@ Inni członkowie widzą Twój nick i wpisy; Twój węzeł uczestniczy w przekazy
         <translation>IPC</translation>
     </message>
     <message>
-        <location line="+441"/>
+        <location line="+500"/>
         <source>Click here to check if a new version is available</source>
         <translation>Kliknij tutaj, aby sprawdzić, czy dostępna jest nowa wersja</translation>
     </message>
@@ -8735,12 +8773,12 @@ Inni członkowie widzą Twój nick i wpisy; Twój węzeł uczestniczy w przekazy
     <name>eMule::MainWindow</name>
     <message>
         <location filename="../src/gui/app/MainWindow.cpp" line="+107"/>
-        <location line="+627"/>
+        <location line="+633"/>
         <source>eMule Qt v%1</source>
         <translation>eMule Qt v%1</translation>
     </message>
     <message>
-        <location line="-509"/>
+        <location line="-515"/>
         <source>Quit eMule Qt</source>
         <translation>Zakończ eMule Qt</translation>
     </message>
@@ -8777,12 +8815,12 @@ Używasz wersji %2. Otworzyć stronę eMule Qt?</translation>
     <message>
         <location line="+11"/>
         <location line="+7"/>
-        <location line="+923"/>
+        <location line="+929"/>
         <source>Version Check</source>
         <translation>Sprawdzanie wersji</translation>
     </message>
     <message>
-        <location line="-929"/>
+        <location line="-935"/>
         <source>You are running the latest version of eMule Qt (v%1).</source>
         <translation>Używasz najnowszej wersji eMule Qt (v%1).</translation>
     </message>
@@ -8796,7 +8834,7 @@ Używasz wersji %2. Otworzyć stronę eMule Qt?</translation>
 %1</translation>
     </message>
     <message>
-        <location line="+77"/>
+        <location line="+85"/>
         <source>Cannot Connect</source>
         <translation>Nie można połączyć</translation>
     </message>
@@ -8815,7 +8853,7 @@ Włącz co najmniej jedną w Opcje → Połączenie, aby się połączyć.</tran
         <translation>eMule w wersji %1 gotowy do pracy</translation>
     </message>
     <message>
-        <location line="+82"/>
+        <location line="+80"/>
         <source>eD2K: Connected (LowID)</source>
         <translation>eD2K: Podłączony (niskie ID)</translation>
     </message>
@@ -11028,36 +11066,36 @@ Pobrać ponownie?</translation>
 <context>
     <name>eMule::OptionsDialog</name>
     <message>
-        <location filename="../src/gui/dialogs/OptionsDialog.cpp" line="-3307"/>
+        <location filename="../src/gui/dialogs/OptionsDialog.cpp" line="-3315"/>
         <source>Options</source>
         <translation>Opcje</translation>
     </message>
     <message>
         <location line="+61"/>
-        <location line="+2217"/>
+        <location line="+2225"/>
         <source>OK</source>
         <translation>OK</translation>
     </message>
     <message>
-        <location line="-2216"/>
-        <location line="+2217"/>
+        <location line="-2224"/>
+        <location line="+2225"/>
         <source>Cancel</source>
         <translation>Anuluj</translation>
     </message>
     <message>
-        <location line="-2216"/>
-        <location line="+6237"/>
+        <location line="-2224"/>
+        <location line="+6245"/>
         <source>Apply</source>
         <translation>Zatwierdź</translation>
     </message>
     <message>
-        <location line="-6236"/>
+        <location line="-6244"/>
         <source>Help</source>
         <translation>Pomoc</translation>
     </message>
     <message>
-        <location line="+270"/>
-        <location line="+2214"/>
+        <location line="+271"/>
+        <location line="+2221"/>
         <location line="+59"/>
         <location line="+6"/>
         <location line="+4"/>
@@ -11069,7 +11107,7 @@ Pobrać ponownie?</translation>
         <translation>Filtr IP</translation>
     </message>
     <message>
-        <location line="-2328"/>
+        <location line="-2335"/>
         <source>IP filter reloaded: %1 entries.</source>
         <translation>Przeładowano filtr IP: %1 wpisów.</translation>
     </message>
@@ -11095,29 +11133,29 @@ Pobrać ponownie?</translation>
     </message>
     <message>
         <location line="+2"/>
-        <location line="+8373"/>
+        <location line="+8397"/>
         <source>BitTorrent</source>
         <translation>BitTorrent</translation>
     </message>
     <message>
-        <location line="-8262"/>
+        <location line="-8286"/>
         <source>User Name</source>
         <translation>Nazwa użytkownika</translation>
     </message>
     <message>
         <location line="+8"/>
-        <location line="+6094"/>
+        <location line="+6101"/>
         <source>Language</source>
         <translation>Język</translation>
     </message>
     <message>
-        <location line="-6091"/>
+        <location line="-6098"/>
         <source>System Default</source>
         <translation>Domyślny systemowy</translation>
     </message>
     <message>
         <location line="+14"/>
-        <location line="+804"/>
+        <location line="+811"/>
         <location line="+384"/>
         <location line="+475"/>
         <location line="+298"/>
@@ -11125,7 +11163,7 @@ Pobrać ponownie?</translation>
         <translation>Inne opcje</translation>
     </message>
     <message>
-        <location line="-1958"/>
+        <location line="-1965"/>
         <source>Bring to front on link click</source>
         <translation>Przywróć po kliknięciu na link</translation>
     </message>
@@ -11212,25 +11250,25 @@ Pobrać ponownie?</translation>
     <message>
         <location line="+8"/>
         <location line="+18"/>
-        <location line="+6006"/>
+        <location line="+6013"/>
         <source>Core</source>
         <translation>Rdzeń</translation>
     </message>
     <message>
-        <location line="-6019"/>
+        <location line="-6026"/>
         <source>Address:</source>
         <translation>Adres:</translation>
     </message>
     <message>
         <location line="+4"/>
-        <location line="+1379"/>
+        <location line="+1386"/>
         <location line="+774"/>
         <location line="+427"/>
         <source>Port:</source>
         <translation>Port:</translation>
     </message>
     <message>
-        <location line="-2577"/>
+        <location line="-2584"/>
         <source>authentication token</source>
         <translation>token uwierzytelniający</translation>
     </message>
@@ -11384,17 +11422,17 @@ Czy na pewno chcesz kontynuować?</translation>
         <translation>Pokazuj flagi krajów</translation>
     </message>
     <message>
-        <location line="+3"/>
+        <location line="+10"/>
         <source>MaxMind account ID:</source>
         <translation>ID konta MaxMind:</translation>
     </message>
     <message>
-        <location line="+3"/>
+        <location line="+4"/>
         <source>License key:</source>
         <translation>Klucz licencyjny:</translation>
     </message>
     <message>
-        <location line="+5"/>
+        <location line="+6"/>
         <source>Update the database weekly</source>
         <translation>Aktualizuj bazę co tydzień</translation>
     </message>
@@ -11404,12 +11442,12 @@ Czy na pewno chcesz kontynuować?</translation>
         <translation>Aktualizuj teraz</translation>
     </message>
     <message>
-        <location line="+7"/>
+        <location line="+8008"/>
         <source>A database ships with each release. An optional free &lt;a href=&quot;https://www.maxmind.com/en/geolite2/signup&quot;&gt;MaxMind GeoLite2&lt;/a&gt; account keeps it current in between. This product includes GeoLite2 data created by MaxMind.</source>
         <translation>Baza danych jest dołączona do każdego wydania. Opcjonalne darmowe konto &lt;a href=&quot;https://www.maxmind.com/en/geolite2/signup&quot;&gt;MaxMind GeoLite2&lt;/a&gt; pozwala ją aktualizować pomiędzy wydaniami. Ten produkt zawiera dane GeoLite2 stworzone przez MaxMind.</translation>
     </message>
     <message>
-        <location line="+15"/>
+        <location line="-7988"/>
         <source>Save CPU &amp;&amp; Memory Usage</source>
         <translation>Oszczędzaj procesor &amp;&amp; pamięć</translation>
     </message>
@@ -11557,12 +11595,12 @@ Czy na pewno chcesz kontynuować?</translation>
     </message>
     <message>
         <location line="-4344"/>
-        <location line="+7744"/>
+        <location line="+7761"/>
         <source>TCP</source>
         <translation>TCP</translation>
     </message>
     <message>
-        <location line="-7738"/>
+        <location line="-7755"/>
         <source>UDP</source>
         <translation>UDP</translation>
     </message>
@@ -11594,12 +11632,12 @@ Czy na pewno chcesz kontynuować?</translation>
     <message>
         <location line="+4"/>
         <location line="+1735"/>
-        <location line="+5575"/>
+        <location line="+5582"/>
         <source>Any</source>
         <translation>Dowolny</translation>
     </message>
     <message>
-        <location line="-7308"/>
+        <location line="-7315"/>
         <source>Use only this network interface, for example a VPN tunnel. Pick one from the list, or type an IP address or a subnet such as 10.64.0.0/10 (the interface holding an address in it). Connections through a proxy are not bound.</source>
         <translation>Używaj tylko tego interfejsu sieciowego, np. tunelu VPN. Wybierz go z listy lub wpisz adres IP albo podsieć, np. 10.64.0.0/10 (interfejs posiadający adres z tej podsieci). Połączenia przez proxy nie są wiązane.</translation>
     </message>
@@ -12153,14 +12191,14 @@ Każde połączenie Usenet przechodzi wtedy przez proxy, więc jego prędkość 
         <translation>Ustawienia serwera SMTP</translation>
     </message>
     <message>
-        <location line="-1652"/>
+        <location line="-1659"/>
         <location line="+5"/>
-        <location line="+1650"/>
+        <location line="+1657"/>
         <source>Connection</source>
         <translation>Połączenie</translation>
     </message>
     <message>
-        <location line="-1651"/>
+        <location line="-1658"/>
         <location line="+53"/>
         <source>ed3k</source>
         <translation>ed3k</translation>
@@ -12216,7 +12254,22 @@ Każde połączenie Usenet przechodzi wtedy przez proxy, więc jego prędkość 
         <translation>Zaufane rdzenie:</translation>
     </message>
     <message>
-        <location line="+1342"/>
+        <location line="+142"/>
+        <source>Database source:</source>
+        <translation>Źródło bazy danych:</translation>
+    </message>
+    <message>
+        <location line="+2"/>
+        <source>MaxMind GeoLite2 (free account)</source>
+        <translation>MaxMind GeoLite2 (darmowe konto)</translation>
+    </message>
+    <message>
+        <location line="+1"/>
+        <source>DB-IP Country Lite (no account)</source>
+        <translation>DB-IP Country Lite (bez konta)</translation>
+    </message>
+    <message>
+        <location line="+1204"/>
         <source>Server:</source>
         <translation>Serwer:</translation>
     </message>
@@ -12968,23 +13021,23 @@ Każde połączenie Usenet przechodzi wtedy przez proxy, więc jego prędkość 
         <location line="+1035"/>
         <location line="+154"/>
         <location line="+1900"/>
-        <location line="+2270"/>
+        <location line="+2287"/>
         <source>Add</source>
         <translation>Dodaj</translation>
     </message>
     <message>
-        <location line="-7880"/>
-        <location line="+2522"/>
+        <location line="-7904"/>
+        <location line="+2529"/>
         <location line="+1035"/>
         <location line="+154"/>
         <location line="+1627"/>
         <location line="+316"/>
-        <location line="+2232"/>
+        <location line="+2249"/>
         <source>Remove</source>
         <translation>Usuń</translation>
     </message>
     <message>
-        <location line="-5343"/>
+        <location line="-5360"/>
         <source>Display name (optional)</source>
         <translation>Nazwa wyświetlana (opcjonalnie)</translation>
     </message>
@@ -13062,7 +13115,7 @@ Każde połączenie Usenet przechodzi wtedy przez proxy, więc jego prędkość 
         <translation>Przepustowość</translation>
     </message>
     <message>
-        <location line="-4655"/>
+        <location line="-4662"/>
         <source>Downloads that are receiving data, and the sources sending it, are drawn in bold. A source listed under another file (A4AF) is bold too while it transfers. The connected server and the selected category tab are bold as well.</source>
         <translation>Pobierania, które odbierają dane, i źródła, które je wysyłają, są pogrubione. Źródło widoczne pod innym plikiem (A4AF) też jest pogrubione podczas przesyłania. Pogrubione są również połączony serwer i wybrana karta kategorii.</translation>
     </message>
@@ -13075,7 +13128,7 @@ Każde połączenie Usenet przechodzi wtedy przez proxy, więc jego prędkość 
         <translation type="vanished">Ustawia eMule Qt jako domyślną aplikację dla linków ed2k://. Wyłączenie przekazuje je innej aplikacji, która je otwiera, jeśli taka istnieje.</translation>
     </message>
     <message>
-        <location line="+255"/>
+        <location line="+262"/>
         <location line="+4351"/>
         <source>Open Router</source>
         <translation>Otwórz router</translation>
@@ -14144,7 +14197,22 @@ Dodanie indeksera później nie pobiera jego archiwum: nowy indekser dostaje wł
         <translation>Włącz BitTorrent</translation>
     </message>
     <message>
-        <location line="+3502"/>
+        <location line="+3207"/>
+        <source>Downloading the DB-IP country database...</source>
+        <translation>Pobieranie bazy krajów DB-IP...</translation>
+    </message>
+    <message>
+        <location line="+66"/>
+        <source>Database: %1 from %2</source>
+        <translation>Baza danych: %1 z %2</translation>
+    </message>
+    <message>
+        <location line="+3"/>
+        <source>Database: none — click &quot;Update now&quot; to download it</source>
+        <translation>Baza danych: brak — kliknij &quot;Aktualizuj teraz&quot;, aby pobrać</translation>
+    </message>
+    <message>
+        <location line="+243"/>
         <source>TCP/UDP</source>
         <translation>TCP/UDP</translation>
     </message>
@@ -14159,11 +14227,16 @@ Dodanie indeksera później nie pobiera jego archiwum: nowy indekser dostaje wł
         <translation>%1 — niedostępny</translation>
     </message>
     <message>
+        <location line="+16"/>
+        <source>DB-IP Country Lite is free and needs no account; it is updated monthly. &lt;a href=&quot;https://db-ip.com&quot;&gt;IP Geolocation by DB-IP&lt;/a&gt; (CC BY 4.0).</source>
+        <translation>DB-IP Country Lite jest darmowa, nie wymaga konta i jest aktualizowana co miesiąc. &lt;a href=&quot;https://db-ip.com&quot;&gt;IP Geolocation by DB-IP&lt;/a&gt; (CC BY 4.0).</translation>
+    </message>
+    <message>
         <source>Starts the BitTorrent engine with the daemon. Off, no torrent is downloaded or seeded.</source>
         <translation type="vanished">Uruchamia silnik BitTorrent razem z demonem. Gdy wyłączony, żaden torrent nie jest pobierany ani wysyłany.</translation>
     </message>
     <message>
-        <location line="-48"/>
+        <location line="-64"/>
         <source>unlimited</source>
         <translation>bez limitu</translation>
     </message>
@@ -14202,7 +14275,7 @@ Dodanie indeksera później nie pobiera jego archiwum: nowy indekser dostaje wł
         <translation type="vanished">Używany dla TCP i UDP. Musi się różnić od portów eD2K.</translation>
     </message>
     <message>
-        <location line="-3412"/>
+        <location line="-3429"/>
         <source>Listen port (TCP/UDP):</source>
         <translation>Port nasłuchu (TCP/UDP):</translation>
     </message>
@@ -14344,13 +14417,13 @@ Dodanie indeksera później nie pobiera jego archiwum: nowy indekser dostaje wł
         <translation>Pobierane pliki są zawsze sprawdzane i rejestrowane. Pliki udostępnione są sprawdzane ponownie przy każdym uruchomieniu.</translation>
     </message>
     <message>
-        <location line="+1870"/>
+        <location line="+1873"/>
         <location line="+20"/>
         <source>Could not update the file associations: %1</source>
         <translation>Nie można zaktualizować skojarzeń plików: %1</translation>
     </message>
     <message>
-        <location line="+1080"/>
+        <location line="+1094"/>
         <source>UDP is disabled in the config file (udpPort: 0)</source>
         <translation>UDP jest wyłączone w pliku konfiguracyjnym (udpPort: 0)</translation>
     </message>
@@ -14455,7 +14528,7 @@ Utworzyć go?</translation>
 %1</translation>
     </message>
     <message>
-        <location line="-3152"/>
+        <location line="-3169"/>
         <source>Disabled</source>
         <translation>Wyłączony</translation>
     </message>
@@ -15196,7 +15269,7 @@ Połączenia z serwerami news przełączają się natychmiast.</translation>
         <translation>Zmiana rozmiaru czcionki zacznie działać po ponownym uruchomieniu aplikacji.</translation>
     </message>
     <message>
-        <location line="+390"/>
+        <location line="+392"/>
         <source>Web Interface</source>
         <translation>Interfejs WWW</translation>
     </message>
@@ -15206,7 +15279,7 @@ Połączenia z serwerami news przełączają się natychmiast.</translation>
         <translation>&quot;%1&quot; nie jest adresem IP. Adres nasłuchu nie został zmieniony.</translation>
     </message>
     <message>
-        <location line="+518"/>
+        <location line="+519"/>
         <location line="+20"/>
         <source>File types</source>
         <translation>Typy plików</translation>
@@ -15226,7 +15299,7 @@ Połączenia z serwerami news przełączają się natychmiast.</translation>
         <translation>Nie znaleziono biblioteki specialdlp, sprawdzanie nieaktywne</translation>
     </message>
     <message>
-        <location line="+473"/>
+        <location line="+477"/>
         <source>Port forwarding: %1</source>
         <translation>Przekierowanie portów: %1</translation>
     </message>
@@ -15236,7 +15309,7 @@ Połączenia z serwerami news przełączają się natychmiast.</translation>
         <translation>Baza danych: brak połączenia z rdzeniem</translation>
     </message>
     <message>
-        <location line="+27"/>
+        <location line="+31"/>
         <source>Downloading the GeoLite2 country database...</source>
         <translation>Pobieranie bazy krajów GeoLite2...</translation>
     </message>
@@ -15246,12 +15319,11 @@ Połączenia z serwerami news przełączają się natychmiast.</translation>
         <translation>Aktualizacja nieudana: rdzeń nie odpowiedział</translation>
     </message>
     <message>
-        <location line="+53"/>
         <source>Database: GeoLite2-Country from %1</source>
-        <translation>Baza danych: GeoLite2-Country z %1</translation>
+        <translation type="vanished">Baza danych: GeoLite2-Country z %1</translation>
     </message>
     <message>
-        <location line="+3"/>
+        <location line="+62"/>
         <source>Database: none — enter your MaxMind account ID and license key</source>
         <translation>Baza danych: brak — wpisz ID konta MaxMind i klucz licencyjny</translation>
     </message>

@@ -91,6 +91,8 @@ public:
     QByteArray lastPrefill;   ///< the front of the part file a resumed open found
 
     bool ready = true;           ///< false: like JD before the Java probe ends
+    QStringList openSteps;       ///< open() sends these status events first
+    bool holdAfterSteps = false; ///< open() stops after its steps (a plugin stuck on a captcha)
 
     bool available() const override { return ready; }
     QString unavailableReason() const override { return ready ? QString() : QStringLiteral("No Java runtime"); }
@@ -167,6 +169,14 @@ public:
             later(t, w);
             return t;
         }
+        for (const QString& step : std::as_const(openSteps)) {
+            ResolverEvent st;
+            st.kind = ResolverEvent::Kind::Status;
+            st.text = step;
+            later(t, st);
+        }
+        if (holdAfterSteps)
+            return t;
         const QString part = QDir(dir).filePath(QStringLiteral("data.part"));
         lastHave = have;
         lastPrefill.clear();
@@ -511,6 +521,36 @@ private slots:
     }
 
     /// resolver not ready yet (Java still probed): the item goes on once it is, also after a restart
+    /// the resolver's step before bytes flow shows as the reason of Downloading
+    void status_stepShownWhileDownloading()
+    {
+        Rig r;
+        r.resolver.openSteps = {QStringLiteral("link"), QStringLiteral("puzzle")};
+        r.resolver.holdAfterSteps = true;
+        QVERIFY(r.start(true));
+        const auto ids = r.join->addLinks(QStringLiteral("https://fake.example/f/st"));
+        QTRY_COMPARE_WITH_TIMEOUT(r.join->item(ids[0])->reasonArg, QStringLiteral("puzzle"), 60000);
+        QCOMPARE(r.state(ids[0]), Ed3kHosterJoin::State::Downloading);
+        QCOMPARE(r.join->item(ids[0])->reason, Ed3kHosterJoin::Reason::HosterStep);
+    }
+
+    /// "transfer" clears the step; the download completes
+    void status_transferClearsStep()
+    {
+        Rig r;
+        r.resolver.openSteps = {QStringLiteral("hoster"), QStringLiteral("transfer")};
+        QVERIFY(r.start(true));
+        QStringList steps;
+        QObject::connect(r.join.get(), &Ed3kHosterJoin::itemChanged, r.join.get(), [&](quint32 id) {
+            if (const auto it = r.join->item(id); it && it->reason == Ed3kHosterJoin::Reason::HosterStep)
+                steps << it->reasonArg;
+        });
+        const auto ids = r.join->addLinks(QStringLiteral("https://fake.example/f/tr"));
+        QTRY_COMPARE_WITH_TIMEOUT(r.state(ids[0]), Ed3kHosterJoin::State::Complete, 60000);
+        QVERIFY(steps.contains(QStringLiteral("hoster")));
+        QCOMPARE(r.join->item(ids[0])->reason, Ed3kHosterJoin::Reason::None);
+    }
+
     void resolverNotReady_retriedWhenReady()
     {
         Rig r;
@@ -1256,6 +1296,10 @@ private slots:
         e = Ed3kJdResolver::parseEvent(R"({"id":4,"ev":"puzzle","puzzle":9,"image":"aGk=","timeout":300})");
         QCOMPARE(e->second.image, QByteArray("hi"));
         QCOMPARE(e->second.puzzle, std::uint64_t{9});
+        e = Ed3kJdResolver::parseEvent(R"({"id":5,"ev":"status","text":"puzzle"})");
+        QCOMPARE(e->second.kind, K::Status);
+        QCOMPARE(e->second.text, QStringLiteral("puzzle"));
+        QVERIFY(!e->second.isFinal());
         QVERIFY(!Ed3kJdResolver::parseEvent(R"({"id":1,"ev":"ok"})"));
         QVERIFY(!Ed3kJdResolver::parseEvent("not json"));
     }

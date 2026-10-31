@@ -38,6 +38,10 @@ public:
     [[nodiscard]] virtual uint32 ourPublicIPv4() const = 0;
     /// Confident global IPv6, null otherwise.
     [[nodiscard]] virtual Address ourPublicIPv6() const = 0;
+    /// IPv4 the server sees our TCP session on (HighID, or OP_IDCHANGE), wire order, 0 if unknown.
+    [[nodiscard]] virtual uint32 serverSeenIPv4() const = 0;
+    /// IPv4 Kad nodes see our UDP socket on, wire order, 0 if unknown.
+    [[nodiscard]] virtual uint32 udpSeenIPv4() const = 0;
     /// We cannot accept inbound TCP (no ED2K HighID, Kad not open).
     [[nodiscard]] virtual bool firewalled() const = 0;
     [[nodiscard]] virtual bool kadConnected() const = 0;

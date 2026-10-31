@@ -92,6 +92,7 @@ public:
         Folder,              ///< arg: the number of links found
         PeerLink,            ///< downloading from a link a peer named; arg: its host
         LinkOffline,         ///< Complete: its link's recheck found it gone, no longer published
+        HosterStep,          ///< Downloading, no bytes yet; arg: the resolver's status ("hoster", "puzzle", ...)
     };
 
     /// One download from a hoster link, as the GUI shows it.
@@ -225,6 +226,7 @@ protected:
     void onOtherEvent(const ::ed3k::Event& event) override;
     [[nodiscard]] bool hasOwner(const QString& owner) const override;
     void saveOwner(const QString& owner) override;
+    [[nodiscard]] LogCategory logCategory() const override;   ///< emule.hoster: the Hoster tab
 
 private:
     struct Entry;

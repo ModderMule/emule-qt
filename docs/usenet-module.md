@@ -63,11 +63,12 @@ All Usenet and NNTP lines go to their own category, `emule.usenet`, through
 (`core/utils/Log.h`). Never use `logInfo` in `src/usenet/`.
 
 - **Where they show:**
-  - The GUI's **Usenet** log tab, which sits between Verbose and Kad.
+  - The GUI's **Usenet** log tab (all severities), between Leecher and Torrent.
   - The `emulecored_Usenet.log` file, whatever the severity.
-- **Hiding the tab:** Options → Extended → "Show Usenet log tab" (`showUsenetLog`,
-  default on). When it is off, the GUI routes these lines back to Log (info and
-  errors) and Verbose (warnings). Debug lines are dropped there.
+- **Hiding the tab:** it shows only while Usenet is on (`usenetEnabled`) and
+  Options → Extended → "Show Usenet log tab" (`showUsenetLog`, default on). When
+  hidden, the GUI routes these lines back to Log (info and errors) and Verbose
+  (warnings). Debug lines are dropped there.
 - **Debug is always on** (`emule.usenet.debug=true` in the daemon filter rules),
   so nothing may be logged per article.
 - **What the debug lines cover:**

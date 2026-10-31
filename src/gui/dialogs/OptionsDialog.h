@@ -278,6 +278,9 @@ private:
     /// Ask the daemon for the country of every news-server host not known yet.
     void lookupNewsServerCountries();
     void showGeoIpStatus(const QCborMap& status, const QString& message = {});
+    /// Grey out the MaxMind account inputs unless MaxMind is the selected source.
+    void updateGeoIpSourceUi();
+    [[nodiscard]] int geoIpSourceSelection() const;
 
     static QIcon makePadlockIcon();
 
@@ -337,6 +340,10 @@ private:
     QCheckBox* m_useOriginalIconsCheck = nullptr;
     bool m_initialUseOriginalIcons = false;
     QCheckBox* m_showCountryFlagsCheck = nullptr;
+    QComboBox* m_geoIpSourceCombo = nullptr;
+    QLabel* m_geoIpAccountLabel = nullptr;
+    QLabel* m_geoIpLicenseLabel = nullptr;
+    QLabel* m_geoIpInfoLabel = nullptr;
     QLineEdit* m_geoIpAccountEdit = nullptr;
     QLineEdit* m_geoIpLicenseEdit = nullptr;
     QCheckBox* m_geoIpAutoUpdateCheck = nullptr;

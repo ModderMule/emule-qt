@@ -2864,6 +2864,8 @@ namespace {
     st[QStringLiteral("loaded")] = db && db->isLoaded();
     st[QStringLiteral("buildDate")] =
         (db && db->isLoaded()) ? db->buildDate().toSecsSinceEpoch() : qint64(0);
+    st[QStringLiteral("type")] = (db && db->isLoaded()) ? db->databaseType() : QString();
+    st[QStringLiteral("source")] = thePrefs.geoIpSource();
     st[QStringLiteral("lastCheck")] = thePrefs.geoIpLastCheck();
     st[QStringLiteral("updating")] = theApp.geoIpUpdater && theApp.geoIpUpdater->isRunning();
     return st;
@@ -4057,6 +4059,17 @@ bool IpcClientHandler::applyPreferenceA(const QString& key, const QCborValue& va
         // Turning it on shouldn't wait for the hourly tick
         if (theApp.ipFilterUpdater)
             QTimer::singleShot(0, theApp.ipFilterUpdater, &IpFilterUpdater::checkSchedule);
+    }
+    else if (key == QStringLiteral("geoIpSource")) {
+        const int source = static_cast<int>(val.toInteger());
+        if (source != thePrefs.geoIpSource()) {
+            thePrefs.setGeoIpSource(source);
+            // Open the new source's file now; download it if it's missing
+            if (theApp.geoIpUpdater) {
+                theApp.geoIpUpdater->reloadForSource();
+                QTimer::singleShot(0, theApp.geoIpUpdater, &GeoIpUpdater::checkSchedule);
+            }
+        }
     }
     else if (key == QStringLiteral("geoIpAccountId") || key == QStringLiteral("geoIpLicenseKey")
              || key == QStringLiteral("geoIpAutoUpdate")) {

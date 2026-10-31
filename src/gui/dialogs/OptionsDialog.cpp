@@ -250,6 +250,7 @@ OptionsDialog::OptionsDialog(IpcClient* ipc, StatisticsPanel* statsPanel,
     connect(m_useAutoCompletionCheck, &QCheckBox::toggled, this, &OptionsDialog::markDirty);
     connect(m_useOriginalIconsCheck, &QCheckBox::toggled, this, &OptionsDialog::markDirty);
     connect(m_showCountryFlagsCheck, &QCheckBox::toggled, this, &OptionsDialog::markDirty);
+    connect(m_geoIpSourceCombo, &QComboBox::currentIndexChanged, this, &OptionsDialog::markDirty);
     connect(m_geoIpAccountEdit, &QLineEdit::textChanged, this, &OptionsDialog::markDirty);
     connect(m_geoIpLicenseEdit, &QLineEdit::textChanged, this, &OptionsDialog::markDirty);
     connect(m_geoIpAutoUpdateCheck, &QCheckBox::toggled, this, &OptionsDialog::markDirty);
@@ -1149,41 +1150,48 @@ QWidget* OptionsDialog::createDisplayPage()
         tr("Shows advanced entries in context menus and extra details in lists."));
     layout->addWidget(m_showExtControlsCheck);
 
-    // --- Country flags (MorphXT IP2Country, GeoLite2 database) ---
+    // --- Country flags (MorphXT IP2Country, GeoLite2 / DB-IP database) ---
     auto* geoGroup = new QGroupBox(tr("Country flags (IP2Country)"), page);
     auto* geoGrid = new QGridLayout(geoGroup);
     m_showCountryFlagsCheck = new QCheckBox(tr("Show country flags"), geoGroup);
     geoGrid->addWidget(m_showCountryFlagsCheck, 0, 0, 1, 4);
 
-    geoGrid->addWidget(new QLabel(tr("MaxMind account ID:"), geoGroup), 1, 0);
+    // Order = GeoIpSource values; MaxMind stays first and default (#100)
+    geoGrid->addWidget(new QLabel(tr("Database source:"), geoGroup), 1, 0);
+    m_geoIpSourceCombo = new QComboBox(geoGroup);
+    m_geoIpSourceCombo->addItem(tr("MaxMind GeoLite2 (free account)"), 0);
+    m_geoIpSourceCombo->addItem(tr("DB-IP Country Lite (no account)"), 1);
+    geoGrid->addWidget(m_geoIpSourceCombo, 1, 1, 1, 3);
+
+    m_geoIpAccountLabel = new QLabel(tr("MaxMind account ID:"), geoGroup);
+    geoGrid->addWidget(m_geoIpAccountLabel, 2, 0);
     m_geoIpAccountEdit = new QLineEdit(geoGroup);
-    geoGrid->addWidget(m_geoIpAccountEdit, 1, 1);
-    geoGrid->addWidget(new QLabel(tr("License key:"), geoGroup), 1, 2);
+    geoGrid->addWidget(m_geoIpAccountEdit, 2, 1);
+    m_geoIpLicenseLabel = new QLabel(tr("License key:"), geoGroup);
+    geoGrid->addWidget(m_geoIpLicenseLabel, 2, 2);
     m_geoIpLicenseEdit = new QLineEdit(geoGroup);
     m_geoIpLicenseEdit->setEchoMode(QLineEdit::Password);
-    geoGrid->addWidget(m_geoIpLicenseEdit, 1, 3);
+    geoGrid->addWidget(m_geoIpLicenseEdit, 2, 3);
 
     m_geoIpAutoUpdateCheck = new QCheckBox(tr("Update the database weekly"), geoGroup);
-    geoGrid->addWidget(m_geoIpAutoUpdateCheck, 2, 0, 1, 2);
+    geoGrid->addWidget(m_geoIpAutoUpdateCheck, 3, 0, 1, 2);
     m_geoIpUpdateBtn = new QPushButton(tr("Update now"), geoGroup);
-    geoGrid->addWidget(m_geoIpUpdateBtn, 2, 3);
+    geoGrid->addWidget(m_geoIpUpdateBtn, 3, 3);
 
     m_geoIpStatusLabel = new QLabel(geoGroup);
     m_geoIpStatusLabel->setWordWrap(true);
-    geoGrid->addWidget(m_geoIpStatusLabel, 3, 0, 1, 4);
-    auto* geoInfo = new QLabel(
-        tr("A database ships with each release. An optional free "
-           "<a href=\"https://www.maxmind.com/en/geolite2/signup\">MaxMind GeoLite2</a> "
-           "account keeps it current in between. This product includes GeoLite2 data "
-           "created by MaxMind."),
-        geoGroup);
-    geoInfo->setWordWrap(true);
-    geoInfo->setOpenExternalLinks(true);
-    geoInfo->setStyleSheet(QStringLiteral("color: gray;"));
-    geoGrid->addWidget(geoInfo, 4, 0, 1, 4);
+    geoGrid->addWidget(m_geoIpStatusLabel, 4, 0, 1, 4);
+    m_geoIpInfoLabel = new QLabel(geoGroup);
+    m_geoIpInfoLabel->setWordWrap(true);
+    m_geoIpInfoLabel->setOpenExternalLinks(true);
+    m_geoIpInfoLabel->setStyleSheet(QStringLiteral("color: gray;"));
+    geoGrid->addWidget(m_geoIpInfoLabel, 5, 0, 1, 4);
     geoGrid->setColumnStretch(1, 1);
     geoGrid->setColumnStretch(3, 1);
     connect(m_geoIpUpdateBtn, &QPushButton::clicked, this, &OptionsDialog::updateGeoIpNow);
+    connect(m_geoIpSourceCombo, &QComboBox::currentIndexChanged, this,
+            &OptionsDialog::updateGeoIpSourceUi);
+    updateGeoIpSourceUi();
     layout->addWidget(geoGroup);
 
     // --- Save CPU & Memory Usage group ---
@@ -7325,6 +7333,8 @@ void OptionsDialog::saveSettings()
         req.append(static_cast<qint64>(m_ipFilterUpdateDaysSpin->value()));
 
         // Display page: IP2Country download (daemon-side)
+        req.append(QStringLiteral("geoIpSource"));
+        req.append(static_cast<qint64>(geoIpSourceSelection()));
         req.append(QStringLiteral("geoIpAccountId"));
         req.append(m_geoIpAccountEdit->text().trimmed());
         req.append(QStringLiteral("geoIpLicenseKey"));
@@ -7867,6 +7877,7 @@ void OptionsDialog::saveSettings()
                                                         Preferences::kDefaultIpFilterUpdateUrl));
         thePrefs.setIpFilterAutoUpdate(m_ipFilterAutoUpdateCheck->isChecked());
         thePrefs.setIpFilterUpdateDays(m_ipFilterUpdateDaysSpin->value());
+        thePrefs.setGeoIpSource(geoIpSourceSelection());
         thePrefs.setGeoIpAccountId(m_geoIpAccountEdit->text().trimmed());
         thePrefs.setGeoIpLicenseKey(m_geoIpLicenseEdit->text().trimmed());
         thePrefs.setGeoIpAutoUpdate(m_geoIpAutoUpdateCheck->isChecked());
@@ -8202,6 +8213,10 @@ void OptionsDialog::fillDaemonSettings(const QCborMap& prefs)
     m_ipFilterAutoUpdateCheck->setChecked(prefs.value(QStringLiteral("ipFilterAutoUpdate")).toBool(false));
     m_ipFilterUpdateDaysSpin->setValue(static_cast<int>(prefs.value(QStringLiteral("ipFilterUpdateDays")).toInteger(7)));
     m_ipFilterUpdateDaysSpin->setEnabled(m_ipFilterAutoUpdateCheck->isChecked());
+    if (const int idx = m_geoIpSourceCombo->findData(
+            static_cast<int>(prefs.value(QStringLiteral("geoIpSource")).toInteger(0)));
+        idx >= 0)
+        m_geoIpSourceCombo->setCurrentIndex(idx);
     m_geoIpAccountEdit->setText(prefs.value(QStringLiteral("geoIpAccountId")).toString());
     m_geoIpLicenseEdit->setText(prefs.value(QStringLiteral("geoIpLicenseKey")).toString());
     m_geoIpAutoUpdateCheck->setChecked(prefs.value(QStringLiteral("geoIpAutoUpdate")).toBool(true));
@@ -8771,7 +8786,10 @@ void OptionsDialog::updateGeoIpNow()
         return;
 
     // Store what's in the fields first, so "Update now" works before Apply
+    const bool dbIp = geoIpSourceSelection() == 1;
     Ipc::IpcMessage creds(Ipc::IpcMsgType::SetPreferences);
+    creds.append(QStringLiteral("geoIpSource"));
+    creds.append(static_cast<qint64>(geoIpSourceSelection()));
     creds.append(QStringLiteral("geoIpAccountId"));
     creds.append(m_geoIpAccountEdit->text().trimmed());
     creds.append(QStringLiteral("geoIpLicenseKey"));
@@ -8779,7 +8797,8 @@ void OptionsDialog::updateGeoIpNow()
     m_ipc->sendRequest(std::move(creds));
 
     m_geoIpUpdateBtn->setEnabled(false);
-    m_geoIpStatusLabel->setText(tr("Downloading the GeoLite2 country database..."));
+    m_geoIpStatusLabel->setText(dbIp ? tr("Downloading the DB-IP country database...")
+                                     : tr("Downloading the GeoLite2 country database..."));
     Ipc::IpcMessage req(Ipc::IpcMsgType::UpdateGeoIpDatabase);
     m_ipc->sendRequest(std::move(req),
                        [this, self = QPointer<OptionsDialog>(this)](const Ipc::IpcMessage& resp) {
@@ -8840,8 +8859,14 @@ void OptionsDialog::showGeoIpStatus(const QCborMap& status, const QString& messa
     if (status.value(QStringLiteral("loaded")).toBool()) {
         const QDateTime built = QDateTime::fromSecsSinceEpoch(
             status.value(QStringLiteral("buildDate")).toInteger());
-        text = tr("Database: GeoLite2-Country from %1")
-                   .arg(QLocale().toString(built.date(), QLocale::ShortFormat));
+        const QString type = status.value(QStringLiteral("type")).toString();
+        const QString name = type.startsWith(u"DBIP", Qt::CaseInsensitive)
+                                 ? QStringLiteral("DB-IP Country Lite")
+                                 : QStringLiteral("GeoLite2-Country");
+        text = tr("Database: %1 from %2")
+                   .arg(name, QLocale().toString(built.date(), QLocale::ShortFormat));
+    } else if (geoIpSourceSelection() == 1) {
+        text = tr("Database: none — click \"Update now\" to download it");
     } else {
         text = tr("Database: none — enter your MaxMind account ID and license key");
     }
@@ -9148,6 +9173,28 @@ void OptionsDialog::showBindSelection(const QString& selection)
     // an interface that is gone blocks all traffic: show it, not a bare id
     combo->addItem(tr("%1 — not available").arg(selection), selection);
     combo->setCurrentIndex(combo->count() - 1);
+}
+
+void OptionsDialog::updateGeoIpSourceUi()
+{
+    const bool maxMind = geoIpSourceSelection() == 0;
+    for (QWidget* w : {static_cast<QWidget*>(m_geoIpAccountLabel), static_cast<QWidget*>(m_geoIpAccountEdit),
+                       static_cast<QWidget*>(m_geoIpLicenseLabel), static_cast<QWidget*>(m_geoIpLicenseEdit)})
+        w->setEnabled(maxMind);
+    // DB-IP Lite is CC BY 4.0: the link back is required
+    m_geoIpInfoLabel->setText(
+        maxMind ? tr("A database ships with each release. An optional free "
+                     "<a href=\"https://www.maxmind.com/en/geolite2/signup\">MaxMind GeoLite2</a> "
+                     "account keeps it current in between. This product includes GeoLite2 data "
+                     "created by MaxMind.")
+                : tr("DB-IP Country Lite is free and needs no account; it is updated monthly. "
+                     "<a href=\"https://db-ip.com\">IP Geolocation by DB-IP</a> "
+                     "(CC BY 4.0)."));
+}
+
+int OptionsDialog::geoIpSourceSelection() const
+{
+    return m_geoIpSourceCombo ? m_geoIpSourceCombo->currentData().toInt() : 0;
 }
 
 } // namespace eMule
