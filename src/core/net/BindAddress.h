@@ -65,6 +65,14 @@ struct Resolution {
     friend bool operator==(const Resolution&, const Resolution&) = default;
 };
 
+/// Sockets opened under @p a are still right under @p b. Routes do not count: a VPN
+/// adds its routes after the adapter is up, pinned sockets stay valid meanwhile.
+[[nodiscard]] inline bool sameBinding(Resolution a, Resolution b)
+{
+    a.noInternetRoute = b.noInternetRoute = false;
+    return a == b;
+}
+
 /// Pure: resolve @p selector against @p interfaces.
 [[nodiscard]] Resolution resolve(const QString& selector, const QList<LocalInterface>& interfaces);
 
