@@ -75,6 +75,8 @@ void tst_BtSmoke::bindSelectionMapsToInterfaces()
     QCOMPARE(BtSettingsMap::outgoingInterfaces(s), std::string("10.8.0.2,fd00::2"));
     const libtorrent::settings_pack p = BtSettingsMap::toPack(s);
     QCOMPARE(p.get_str(libtorrent::settings_pack::listen_interfaces), std::string("10.8.0.2:6881,[fd00::2]:6881"));
+    // download ACKs must not eat the upload limit (#87)
+    QVERIFY(!p.get_bool(libtorrent::settings_pack::rate_limit_ip_overhead));
 
     // blocked: no wildcard fallback
     s.networkBlocked = true;

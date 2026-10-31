@@ -21,8 +21,14 @@ namespace eMule::natt {
 bool Ed2kServerHolePunchPath::canServe(const PeerInfo& peer) const
 {
     const Server* server = env().currentServer();
-    return server && server->supportsLowIdHolePunch() && env().ourUdpPort() != 0
-        && peerOnOurServer(peer);
+    // An IPv6 session has no IPv4 endpoint to hand out: the server answers 0x62 reason 5.
+    if (!server || !server->supportsLowIdHolePunch() || env().ourUdpPort() == 0
+        || !env().serverSessionAddress().isIPv4() || !peerOnOurServer(peer))
+        return false;
+    // Lugdunum's ID scheme (our own LowID odd): only 0x1000 clients get odd LowIDs, an even
+    // one is a stock client that cannot punch (0x62 reason 4).
+    const bool parityScheme = server->supportsLugdunumNat() && (ourID() & 1) != 0;
+    return !parityScheme || (peer.clientID & 1) != 0;
 }
 
 bool Ed2kServerHolePunchPath::request(Attempt& attempt)
@@ -87,6 +93,9 @@ void Ed2kServerHolePunchPath::tick()
         m_session = session;
         m_sessionID = env().ourClientID();
         m_sentObfuscated = false;
+        // A key from an earlier session does not count: fetch one for this session.
+        if (server->supportsHolePunchExtension() && session.address().isIPv4() && env().serverUdpCrypt().key == 0)
+            env().refreshServerKey();
     }
     if (fresh || env().now() - m_lastKeepaliveMs >= kKeepaliveMs)
         sendKeepalive(*server);
@@ -113,17 +122,19 @@ bool Ed2kServerHolePunchPath::fastTick()
     return more;
 }
 
-bool Ed2kServerHolePunchPath::sendKeepalive(const Server& server, bool obfuscatedOnly)
+bool Ed2kServerHolePunchPath::sendKeepalive(const Server& server, bool foreignWake)
 {
     m_lastKeepaliveMs = env().now();
     // From the client UDP socket. Extension servers take it server-key obfuscated
-    // (IPv4 only); the others get it plain, to the server's UDP port (TCP + 4). The
-    // burst after a foreign 0x37 goes obfuscated only: the key proves our address.
+    // (IPv4 only), as does the burst after a foreign 0x37 (only ed2k-server sends one);
+    // the others get it plain, to the server's UDP port (TCP + 4). Plain also while we
+    // hold no valid key (a LowID on ed2k-server may not know its IP): the server takes
+    // plain ones until it has read an obfuscated one.
     const Address address = env().serverSessionAddress();
     const ServerUdpCrypt crypt = env().serverUdpCrypt();
-    const bool obfuscate = (server.supportsHolePunchExtension() || obfuscatedOnly) && address.isIPv4()
+    const bool obfuscate = (server.supportsHolePunchExtension() || foreignWake) && address.isIPv4()
         && crypt.key != 0 && crypt.port != 0 && (env().ourConnectOptions() & CONNECT_OPT_CRYPT_SUPPORTED);
-    if (!obfuscate && (m_sentObfuscated || obfuscatedOnly)) {
+    if (!obfuscate && m_sentObfuscated) {
         // The server ignores plain ones now; they would not refresh our port.
         env().refreshServerKey();
         log(QStringLiteral("0x9F skipped: no server key"));

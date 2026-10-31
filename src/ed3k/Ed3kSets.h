@@ -211,6 +211,8 @@ private:
     /// The next queued member of @p s when none of its downloads runs.
     void pumpQueue(Set& s);
     void pumpOwnerOf(const ::ed3k::Root& root);
+    /// A download owned by a set not followed here (a .met copied in): a plain download.
+    void releaseOrphan(const ::ed3k::Root& root);
     /// The files of a version, inner sets and mounts flattened (depth-limited).
     [[nodiscard]] std::vector<Ed3kSetEntry> flatten(const Set& s, const QByteArray& file) const;
     void flattenInto(const Set& s, const QByteArray& file, const QString& prefix, int depth, std::vector<Ed3kSetEntry>& out) const;

@@ -158,6 +158,11 @@ if(APPLE)
             COMMAND ${CMAKE_COMMAND} -E copy_if_different
                     $<TARGET_FILE:emuleqt-mcp> "${_emule_bundle_dir}/MacOS/emuleqt-mcp")
     endif()
+    if(TARGET emuleqt-updater)
+        list(APPEND _emule_bundle_cmds
+            COMMAND ${CMAKE_COMMAND} -E copy_if_different
+                    $<TARGET_FILE:emuleqt-updater> "${_emule_bundle_dir}/MacOS/emuleqt-updater")
+    endif()
     if(TARGET specialdlp)
         list(APPEND _emule_bundle_cmds
             COMMAND ${CMAKE_COMMAND} -E make_directory "${_emule_bundle_dir}/Frameworks"
@@ -168,6 +173,9 @@ if(APPLE)
         COMMENT "Refreshing helpers in emuleqt.app"
         VERBATIM)
     set_target_properties(emuleqt_bundle_helpers PROPERTIES FOLDER "Gui")
+    if(TARGET emuleqt-updater)
+        add_dependencies(emuleqt_bundle_helpers emuleqt-updater)
+    endif()
     add_dependencies(emuleqt emuleqt_bundle_helpers)
 endif()
 

@@ -299,6 +299,10 @@ public:
 
     [[nodiscard]] ConnectingState connectingState() const { return m_connectingState; }
     void setConnectingState(ConnectingState state) { m_connectingState = state; }
+    /// ed3k for this download source (ed3k §14.2). Pending with connectingState Ed3kHint
+    /// waits for it; Failed then dials over eD2K, Preferred stays off eD2K.
+    [[nodiscard]] Ed3kRoute ed3kRoute() const { return m_ed3kRoute; }
+    void setEd3kRoute(Ed3kRoute route);
     /// A server callback for us failed or timed out: retry through the Kad buddy and mark
     /// the stored server/LowID stale (peer likely moved servers). True when a Kad callback
     /// went out. Not MFC: MFC never leaves the server path while on the same server.
@@ -380,6 +384,7 @@ public:
     [[nodiscard]] uint32 clientVersion() const { return m_clientVersion; }
     void setEmuleVersion(uint8 v) { m_emuleVersion = v; }
     void setClientVersion(uint32 v) { m_clientVersion = v; }
+    void setClientSoft(ClientSoftware s) { m_clientSoft = s; }
     void setCompatibleClient(uint8 v) { m_compatibleClient = v; }
     void setIsHybrid(bool v) { m_isHybrid = v; }
     void setIsMLDonkey(bool v) { m_isMLDonkey = v; }
@@ -1217,6 +1222,7 @@ private:
 
     // -- Identity -----------------------------------------------------------
     std::array<uint8, 16> m_userHash{};
+    Ed3kRoute m_ed3kRoute = Ed3kRoute::Untried;
     QString m_username;
     uint32 m_userIDHybrid = 0;
     Address m_connectAddress;

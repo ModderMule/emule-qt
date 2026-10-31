@@ -14,6 +14,18 @@ covered here; it stays English and returns JSON.
   - `{{js:Text}}` sits inside a `'…'` / `"…"` JavaScript string literal.
 - **Custom templates** (`webserver.templatePath`) without markers still render, in English.
 
+## Where the files come from
+
+- **Template:** `webserver.templatePath`, else `Config/eMule.tmpl` (seeded, tracks the build
+  unless edited), else the program folder's bundled `config/eMule.tmpl`.
+- **Images, styles, scripts** (`.css .js .png .gif .jpg .ico`), per file, first found:
+  1. the folder of a custom `templatePath`;
+  2. `Config/webserver/` — the user's overrides, empty by default but for a `README.txt`;
+  3. the program folder's bundled `config/webserver/` (`AppConfig::bundledDataDir()`).
+- `Config/webserver/` is no longer seeded (#88). Copies an older version seeded there are removed
+  on start unless edited; an edited one stays and acts as an override.
+- Windows portable mode: the config dir is the bundle; its `webserver/` is the shipped folder.
+
 ## How substitution works
 
 `WebTemplateEngine::substitute()` makes **one left-to-right pass**:

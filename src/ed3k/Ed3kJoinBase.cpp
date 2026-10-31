@@ -937,8 +937,11 @@ void Ed3kJoinBase::onEventPolled(const ffi::Event& event, bool* handled)
         if (const auto it = m_streams.find(fs->stream); it != m_streams.end() && fs->have)
             if (const auto d = m_downloads.find(it->second); d != m_downloads.end())
                 d->second->sourceHave[fs->stream] = *fs->have;   // absent: unchanged
-        if (m_streams.contains(fs->stream) && !fs->usable)
+        const bool ours = m_streams.contains(fs->stream);
+        if (ours && !fs->usable)
             (void)m_session.engine()->streamClose(m_session.now(), fs->stream);
+        if (ours)
+            onStreamStatus(*fs);
     } else if (const auto* sc = std::get_if<ev::StreamClosed>(&event)) {
         if (const auto it = m_streams.find(sc->stream); it != m_streams.end()) {
             const ffi::Root root = it->second;
@@ -960,6 +963,7 @@ void Ed3kJoinBase::onEventPolled(const ffi::Event& event, bool* handled)
                 if (d->second->streams.empty())
                     searchSourcesAgain(root, false);
             }
+            onStreamClosed(*sc);
         }
     } else if (const auto* kf = std::get_if<ev::KadFound>(&event)) {
         onKadFound(*kf);
@@ -1425,6 +1429,7 @@ bool Ed3kJoinBase::openStream(const ffi::Root& root, const ffi::Source& source)
     d.streams[*stream] = false;
     m_streams[*stream] = root;
     turns().holders[source.id] = NodeTurns::Holder{this, root, *stream, source};
+    onStreamOpened(root, *stream, source);
     pumpSession();
     return true;
 }

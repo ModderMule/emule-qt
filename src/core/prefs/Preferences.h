@@ -112,10 +112,10 @@ struct Ed3kHosterAccount {
 };
 
 /// Links at file hosters (hoster.md), YAML `ed3k: hoster:`, IPC keys `ed3kHoster*`.
-/// Hoster downloads are off by default (§3); vouched links are published by default (the user's
-/// choice; hoster.md §4.1 holds them back by default).
+/// Hoster downloads are on by default (they need the ed3k node); vouched links are published by
+/// default (the user's choice; hoster.md §4.1 holds them back by default).
 struct Ed3kHosterPrefs {
-    bool enabled = false;          ///< ed3kHosterEnabled: the user allowed downloads from hosters
+    bool enabled = true;           ///< ed3kHosterEnabled: the user allowed downloads from hosters
     QString java;                  ///< ed3kHosterJava: path of `java`; empty = find one
     bool autoJava = true;          ///< ed3kHosterAutoJava: download a runtime when none is found
     uint32 maxStreams = 2;         ///< ed3kHosterMaxStreams: hoster streams at once, 1..16
@@ -127,6 +127,7 @@ struct Ed3kHosterPrefs {
     int checkMaxPerHost = 5;       ///< YAML only: of them at one hoster (its domains count as one)
     int recheckHours = 72;         ///< YAML only: a published link is checked again after this; 0: never
     int reportRecheckHours = 6;    ///< YAML only: 3 peers' dead-link reports check it at once, at most this often; 0: never
+    QString sharedPluginDir;       ///< YAML only: resolver plugins unpacked once for several instances; empty: per instance
     QList<Ed3kHosterAccount> accounts; ///< ed3kHosterAccounts
     bool operator==(const Ed3kHosterPrefs&) const = default;
 };
@@ -1376,6 +1377,9 @@ public:
     /// eMule's shared files served over ed3k (Ed3kShared); only while ed3k runs. Default on.
     [[nodiscard]] bool ed3kShareFiles() const;
     void setEd3kShareFiles(bool val);
+    /// eD2K downloads also fetch from ed3k peers, dual peers over ed3k (Protocol.md §14.4)
+    [[nodiscard]] bool ed3kJointDownloads() const;
+    void setEd3kJointDownloads(bool val);
 
     /// Holding Usenet posts back (usenet.md §6): no article list, post set or nzb/nzb-file
     /// ALIAS records go out; the members are shared all the same. Default off.
@@ -1425,6 +1429,8 @@ public:
     static bool applyEd3kChainKey(Ed3kChainPrefs& c, const QString& key, const QCborValue& val);
     /// Hoster links (hoster.md); see Ed3kHosterPrefs. A change reconfigures the join (no restart).
     [[nodiscard]] Ed3kHosterPrefs ed3kHoster() const;
+    /// Hoster downloads run: they are allowed and the ed3k node they run on is enabled
+    [[nodiscard]] bool hosterDownloadsOn() const;
     void setEd3kHoster(const Ed3kHosterPrefs& val);
     /// One `ed3kHoster*` IPC key into @p h. False: not one. An account without a password
     /// keeps the one of the same host and user in @p h.

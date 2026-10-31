@@ -4,11 +4,23 @@
 
 #include "BandwidthCoordinator.h"
 #include "Ed3kBridge.h"
+#include "Ed3kCredit.h"
+#include "Ed3kCreditBridge.h"
+#include "Ed3kDownloads.h"
+#include "Ed3kDownloadsBridge.h"
+#include "Ed3kHosterBridge.h"
+#include "Ed3kHosterJoin.h"
+#include "Ed3kPaid.h"
+#include "Ed3kPaidBridge.h"
 #include "Ed3kSession.h"
+#include "Ed3kSets.h"
+#include "Ed3kSetsBridge.h"
+#include "Ed3kStore.h"
 
 #include "prefs/Preferences.h"
 
 #include <QDeadlineTimer>
+#include <QFileInfo>
 #include <QTemporaryDir>
 #include <QTest>
 
@@ -24,6 +36,7 @@ class tst_Ed3kBridge : public QObject {
 private slots:
     void cleanup();
     void statusWithoutNode();
+    void offWritesNoEd3kState();
     void statusOfARunningNode();
     void onlyTheEd3kBlockIsAnswered();
     void coordinatorLimitsAndCountsTheNode();
@@ -53,6 +66,71 @@ void tst_Ed3kBridge::statusWithoutNode()
     QCOMPARE(off.value(QStringLiteral("running")).toBool(), false);
     QCOMPARE(off.value(QStringLiteral("udpPort")).toInteger(), 0);
     QVERIFY(!off.contains(QStringLiteral("stats")));
+}
+
+void tst_Ed3kBridge::offWritesNoEd3kState()
+{
+    // #88: ed3k switched off, the requests that would write state are refused and
+    // config/ed3k is never created; reads still answer
+    QTemporaryDir tmp;
+    QVERIFY(tmp.isValid());
+    const QString cfg = tmp.filePath(QStringLiteral("cfg"));
+    const QString ed3kDir = eMule::ed3k::stateDir(cfg);
+    const bool wasOn = thePrefs.ed3kEnabled();
+    thePrefs.setEd3kEnabled(false);
+
+    Ed3kSession s;   // never started, as in the daemon while off
+    eMule::ed3k::Ed3kDownloads downloads(s, cfg);
+    eMule::ed3k::Ed3kCredit credit(s, cfg);
+    eMule::ed3k::Ed3kPaid paid(s, cfg);
+    eMule::ed3k::Ed3kSets sets(s, downloads, cfg);
+    eMule::ed3k::Ed3kHosterJoin hoster(s, cfg);
+    Ed3kBridge::setSession(&s);
+    Ed3kDownloadsBridge::setDownloads(&downloads);
+    Ed3kCreditBridge::setCredit(&credit);
+    Ed3kPaidBridge::setPaid(&paid);
+    Ed3kSetsBridge::setSets(&sets, nullptr, nullptr);
+    Ed3kHosterBridge::setHoster(&hoster, nullptr, nullptr);
+
+    const auto ask = [](IpcMsgType type, const QList<QCborValue>& fields) {
+        IpcMessage msg(type, 7);
+        for (const QCborValue& f : fields)
+            msg.append(f);
+        std::optional<IpcMessage> answer;
+        const bool handled = Ed3kBridge::handleRequest(msg, [&](const IpcMessage& r) { answer = r; });
+        return std::pair{handled, answer};
+    };
+    const auto refused = [&](IpcMsgType type, const QList<QCborValue>& fields) {
+        const auto [handled, answer] = ask(type, fields);
+        return handled && answer && answer->type() == IpcMsgType::Result && !answer->fieldBool(0);
+    };
+    const QString root(64, QLatin1Char('a'));
+    QVERIFY(refused(IpcMsgType::AddEd3kDownload, {root, 1000, QStringLiteral("x.bin"), 0, false}));
+    QVERIFY(refused(IpcMsgType::AddEd3kDownloadLink, {QStringLiteral("ed3k:file?x"), 0, false}));
+    QVERIFY(refused(IpcMsgType::Ed3kDownloadControl, {root, 5}));
+    QVERIFY(refused(IpcMsgType::NewEd3kCreditKey, {}));
+    QVERIFY(refused(IpcMsgType::ImportEd3kCreditKey, {QStringLiteral("00")}));
+    QVERIFY(refused(IpcMsgType::SetEd3kPassReports, {false}));
+    QVERIFY(refused(IpcMsgType::FollowEd3kSet, {QStringLiteral("ed3k:set?x"), 0}));
+    QVERIFY(refused(IpcMsgType::AddHosterLinks, {QStringLiteral("https://fake.example/f/1")}));
+    QVERIFY(refused(IpcMsgType::DownloadJavaRuntime, {}));
+    // reads answer
+    QVERIFY(!refused(IpcMsgType::GetEd3kDownloads, {}));
+    QVERIFY(!refused(IpcMsgType::GetHosterItems, {}));
+    QVERIFY(!refused(IpcMsgType::GetEd3kPaid, {}));
+    QVERIFY(!QFileInfo::exists(ed3kDir));
+
+    // the same request with ed3k on does write: the test above is not empty
+    thePrefs.setEd3kEnabled(true);
+    QVERIFY(!refused(IpcMsgType::SetEd3kPassReports, {false}));
+    QVERIFY(QFileInfo::exists(ed3kDir));
+
+    Ed3kDownloadsBridge::setDownloads(nullptr);
+    Ed3kCreditBridge::setCredit(nullptr);
+    Ed3kPaidBridge::setPaid(nullptr);
+    Ed3kSetsBridge::setSets(nullptr, nullptr, nullptr);
+    Ed3kHosterBridge::setHoster(nullptr, nullptr, nullptr);
+    thePrefs.setEd3kEnabled(wasOn);
 }
 
 void tst_Ed3kBridge::statusOfARunningNode()

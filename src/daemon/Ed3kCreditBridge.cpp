@@ -2,6 +2,7 @@
 /// @brief ed3k credits over IPC — implementation.
 
 #include "Ed3kCreditBridge.h"
+#include "Ed3kOffGate.h"
 
 #include <QCborArray>
 #include <QCborMap>
@@ -177,6 +178,9 @@ bool handleRequest(const IpcMessage& msg, const std::function<void(const IpcMess
 {
     if (!isCreditRequest(msg.type()))
         return false;
+    // ed3k off: nothing under config/ed3k is written
+    if (Ed3kBridge::refuseWhileOff(msg, {IpcMsgType::ExportEd3kCreditKey, IpcMsgType::GetEd3kStakeClaims, IpcMsgType::ReadEd3kStakeClaim}, reply))
+        return true;
 #ifdef EMULE_HAVE_ED3K
     if (s_credit) {
         answer(msg, *s_credit, reply);

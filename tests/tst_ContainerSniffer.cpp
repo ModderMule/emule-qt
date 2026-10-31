@@ -8,6 +8,7 @@
 /// know what a file is when we do not, and claiming a file is fine when it is not.
 
 #include "media/ContainerSniffer.h"
+#include "files/ShareableFile.h"
 
 #include <QDir>
 #include <QFile>
@@ -34,6 +35,18 @@ const char kWavMagic[] = "RIFF\x00\x10\x00\x00" "WAVE";
 const char kJunk[]     = "\xFF\xFB\x10\xC0\x0B\x0A\x07\x05"
                          "\x00\x07\x07\x0A";
 
+/// One Ogg BOS page holding @p packet, the way every stream opens.
+QByteArray oggBosPage(const QByteArray& packet)
+{
+    QByteArray page("OggS");
+    page += '\0';                      // version
+    page += '\x02';                    // BOS
+    page += QByteArray(20, '\0');      // granule, serial, sequence, CRC
+    page += '\x01';                    // one lacing value
+    page += static_cast<char>(packet.size());
+    return page + packet;
+}
+
 } // namespace
 
 class tst_ContainerSniffer : public QObject {
@@ -51,6 +64,8 @@ private slots:
     void anMp4WithoutFtypFirstStillMatches();
     void theWarningSaysWhichKindOfWrongItIs();
     void sameKindOfMediaIsOnlyMislabelled();
+    void anOggFilmIsVideoNotMusic();
+    void aRenameDropsTheCachedVerdict();
 
 private:
     [[nodiscard]] QString write(const QString& name, const char* bytes, int len);
@@ -226,6 +241,45 @@ void tst_ContainerSniffer::sameKindOfMediaIsOnlyMislabelled()
     const QString why = containerWarningText(checkFile(wav, QStringLiteral("film2.avi")),
                                              QStringLiteral("film2.avi"));
     QCOMPARE(why, QStringLiteral("Named .avi but the contents are WAVE."));
+}
+
+void tst_ContainerSniffer::anOggFilmIsVideoNotMusic()
+{
+    // Issue #95: an OGM film named .ogg is fine, and it is video.
+    const QByteArray vorbis = oggBosPage(QByteArray("\x01" "vorbis", 7) + QByteArray(23, '\0'));
+    const QByteArray ogm = oggBosPage(QByteArray("\x01" "video\0\0\0", 9) + QByteArray("H264") + QByteArray(40, '\0'));
+    const QByteArray theora = oggBosPage(QByteArray("\x80" "theora", 7) + QByteArray(35, '\0'));
+    const QByteArray skeleton = oggBosPage(QByteArray("fishead\0", 8) + QByteArray(56, '\0'));
+
+    const ContainerCheck film = checkHead(ogm + vorbis, QStringLiteral("film.ogg"));
+    QCOMPARE(film.verdict, ContainerVerdict::Matches);
+    QVERIFY(film.hasVideo);
+    QVERIFY(oggHasVideo(skeleton + theora + vorbis));   // Skeleton first, video second
+
+    const ContainerCheck song = checkHead(vorbis, QStringLiteral("song.ogg"));
+    QCOMPARE(song.verdict, ContainerVerdict::Matches);
+    QVERIFY(!song.hasVideo);
+    QVERIFY(!oggHasVideo(QByteArray(kMp4Magic, 16)));
+    QVERIFY(!oggHasVideo(ogm.left(30)));   // cut before the codec id
+}
+
+void tst_ContainerSniffer::aRenameDropsTheCachedVerdict()
+{
+    // Issue #95: judged as .avi, renamed .ogg, the old "only the extension is wrong" stuck.
+    const QByteArray ogm = oggBosPage(QByteArray("\x01" "video\0\0\0", 9) + QByteArray(44, '\0'));
+    const QString path = write(QStringLiteral("renamed.bin"), ogm.constData(), static_cast<int>(ogm.size()));
+
+    ShareableFile file;
+    file.setFilePath(path);
+    file.setFileName(QStringLiteral("film.avi"));
+    QVERIFY(file.containerCheck().isMislabelled());
+    QCOMPARE(file.displayFileType(), QStringLiteral("Video"));
+
+    file.setFileName(QStringLiteral("film.ogg"));
+    QVERIFY(!file.containerCheckResolved());
+    QCOMPARE(file.containerCheck().verdict, ContainerVerdict::Matches);
+    QCOMPARE(file.fileType(), QStringLiteral("Audio"));         // what peers are told
+    QCOMPARE(file.displayFileType(), QStringLiteral("Video"));  // what the lists draw
 }
 
 QTEST_MAIN(tst_ContainerSniffer)

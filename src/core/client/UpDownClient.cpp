@@ -3224,6 +3224,9 @@ uint8 UpDownClient::getUnicodeSupport() const
 
 QString UpDownClient::downloadStateDisplayString() const
 {
+    // downloaded over ed3k instead (ed3k §14.4), idle on eD2K
+    if (m_ed3kRoute == Ed3kRoute::Preferred && m_downloadState == DownloadState::None)
+        return QStringLiteral("ViaEd3k");
     return dbgGetDownloadState(m_downloadState);
 }
 

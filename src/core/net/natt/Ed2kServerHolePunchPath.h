@@ -14,8 +14,9 @@
 /// hold the key: after the first obfuscated one the server ignores plain ones.
 ///
 /// Foreign callback (ed2k-server#40): a 0x37 naming requester ID 0 comes from a requester
-/// logged in elsewhere, on any server that announces UDP flag 0x100000. We burst an
-/// obfuscated 0x9F so the server passes our endpoint on, punch, and send no 0xA6.
+/// logged in elsewhere, on any server that announces UDP flag 0x100000. We burst 0x9F
+/// (plain while we hold no valid key) so the server passes our endpoint on, punch, and
+/// send no 0xA6. No 0x60 from an IPv6 session (0x62 reason 5).
 
 #include "net/natt/NatPath.h"
 
@@ -45,8 +46,8 @@ public:
 
 private:
     void sendRequest(Attempt& attempt);
-    /// One 0x9F now; false when nothing could be sent. @p obfuscatedOnly: never plain.
-    bool sendKeepalive(const Server& server, bool obfuscatedOnly = false);
+    /// One 0x9F now; false when nothing could be sent. @p foreignWake: obfuscate when we can.
+    bool sendKeepalive(const Server& server, bool foreignWake = false);
     void onInfo(const uint8* data, uint32 size);
     void onFail(const uint8* data, uint32 size);
     void onCallbackNotice(const uint8* data, uint32 size);

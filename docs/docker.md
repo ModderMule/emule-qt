@@ -15,7 +15,7 @@ browser. It is built for `linux/amd64` and `linux/arm64` on every release.
 docker run -d --name emuleqt \
   --stop-timeout 60 \
   -e EMULEQT_WEB_PASSWORD=change-me \
-  -p 4662:4662/tcp -p 4672:4672/udp \
+  -p 4662:4662/tcp -p 4662:4662/udp \
   -p 4711:4711 -p 4712:4712 \
   -v ./config:/config -v ./data:/data \
   ghcr.io/moddermule/emuleqt:latest
@@ -31,7 +31,7 @@ Give the container time to stop (`--stop-timeout 60` or `stop_grace_period:
 
 | Path | Content |
 |---|---|
-| `/config` | `preferences.yml`, `server.met`, `nodes.dat`, part-file index, logs. `/config/gui` holds the in-container GUI's own prefs |
+| `/config` | `preferences.yml`, `server.met`, `nodes.dat`, part-file index, logs. `/config/gui` holds the in-container GUI's own prefs. `ed3k/`: the ed3k node's state (identity key, lists; the hoster resolver and Java runtime only while hoster downloads are on). `BT/`: torrent session and resume data. `webserver/`: only overrides of the web UI files shipped in the image (see its `README.txt`) |
 | `/data/incoming` | completed downloads (shared) |
 | `/data/temp` | part files |
 
@@ -43,15 +43,19 @@ user so the bind mounts stay yours.
 | Port | Use | Expose |
 |---|---|---|
 | 4662/tcp | eD2K client connections | yes, same port on host and container |
-| 4672/udp | eD2K + Kad UDP | yes, same port on host and container |
+| 4662/udp | eD2K + Kad UDP (and ed3k) | yes, same port on host and container |
 | 4711/tcp | web UI, REST API, MCP | LAN or reverse proxy |
 | 4712/tcp | GUI IPC (token, TLS) | LAN only |
 | 5800/tcp | GUI via noVNC (`EMULEQT_GUI=1`) | LAN only |
 | 5900/tcp | raw VNC (`EMULEQT_VNC_EXPOSE=1`) | optional |
 
 Peers are told the P2P ports, so the host side must match. To use other ports,
-change both sides together: `-e EMULEQT_TCP_PORT=5662 -p 5662:5662`. Forward
-them on your router for a HighID. UPnP is off in the container.
+change both sides together: `-e EMULEQT_TCP_PORT=5662 -p 5662:5662/tcp -p 5662:5662/udp`.
+TCP and UDP use one port number (eD2K compat, ed3k Protocol.md §14.1). Forward
+both on your router for a HighID. UPnP is off in the container.
+
+Containers created before this keep their `preferences.yml` and with it the old
+UDP port (4672): keep mapping `4672:4672/udp` for them.
 
 `--network host` works too. It avoids the Docker NAT and gives the core the
 host's IPv6 addresses. Then the `-p` flags are not needed.
@@ -67,7 +71,7 @@ file.
 |---|---|---|
 | `PUID` / `PGID` | `1000` | owner of `/config` and `/data` (applied every start) |
 | `EMULEQT_TCP_PORT` | `4662` | eD2K TCP port |
-| `EMULEQT_UDP_PORT` | `4672` | eD2K/Kad UDP port |
+| `EMULEQT_UDP_PORT` | = TCP port | eD2K/Kad UDP port; one port for TCP and UDP unless set |
 | `EMULEQT_NICK` | core default | user nick |
 | `EMULEQT_IPC_TOKEN` | random | GUI IPC token; a generated one is printed in `docker logs` |
 | `EMULEQT_WEB` | `1` | web server on :4711 |

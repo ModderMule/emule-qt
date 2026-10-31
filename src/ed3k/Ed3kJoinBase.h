@@ -147,6 +147,15 @@ protected:
     [[nodiscard]] virtual bool sharedGone(const Shared& s) const { Q_UNUSED(s) return false; }
     /// Engine events the base leaves alone (AliasFound of searches not startSetSearch's ...).
     virtual void onOtherEvent(const ffi::Event& event) { Q_UNUSED(event) }
+    /// A file stream of a download was opened to @p source (FileRequest sent).
+    virtual void onStreamOpened(const ffi::Root& root, std::uint64_t stream, const ffi::Source& source)
+    {
+        Q_UNUSED(root) Q_UNUSED(stream) Q_UNUSED(source)
+    }
+    /// The FileStatus of a stream of this join (after the base took it).
+    virtual void onStreamStatus(const ffi::event::FileStatus& status) { Q_UNUSED(status) }
+    /// A stream of this join closed (after the base dropped it).
+    virtual void onStreamClosed(const ffi::event::StreamClosed& closed) { Q_UNUSED(closed) }
     /// Download priority, -2 (very low) to 2 (very high), eD2K's order (realPriority - 2).
     /// Turn order at a source node shared with other downloads (one file stream per uploader,
     /// Protocol.md §12.5): higher first (a higher waiter takes the node from a lower holder at

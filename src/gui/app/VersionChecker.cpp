@@ -9,138 +9,22 @@
 
 #include <QCoreApplication>
 #include <QDateTime>
-#include <QJsonDocument>
-#include <QJsonObject>
 #include <QNetworkAccessManager>
 #include <QNetworkReply>
 #include <QNetworkRequest>
 #include <QTimer>
 #include <QUrl>
-#include <QVersionNumber>
-
-// Key this build uses to look itself up in the manifest's "downloads" map
-// (windows-x64, mac-arm64, linux-x64, ...). Left undefined on OS/CPU combinations
-// the manifest has no entry for, in which case no download URL is ever offered.
-#if defined(Q_OS_WIN)
-#  define EMULE_MANIFEST_OS "windows"
-#elif defined(Q_OS_MACOS)
-#  define EMULE_MANIFEST_OS "mac"
-#elif defined(Q_OS_LINUX)
-#  define EMULE_MANIFEST_OS "linux"
-#endif
-
-#if defined(Q_PROCESSOR_X86_64)
-#  define EMULE_MANIFEST_ARCH "x64"
-#elif defined(Q_PROCESSOR_ARM_64)
-#  define EMULE_MANIFEST_ARCH "arm64"
-#endif
-
-#if defined(EMULE_MANIFEST_OS) && defined(EMULE_MANIFEST_ARCH)
-#  define EMULE_MANIFEST_PLATFORM EMULE_MANIFEST_OS "-" EMULE_MANIFEST_ARCH
-#endif
 
 namespace eMule {
 
 namespace {
-
-/// Where the manifest lives when nothing overrides it.
-constexpr QLatin1StringView kDefaultManifestUrl{"https://emule-qt.org/pub/emuleqt-version.json"};
 
 /// How often the periodic timer wakes up to ask whether a check is due. The interval
 /// itself is 1-14 days, so hourly is plenty; the comparison is against wall-clock
 /// seconds, so a suspended machine simply finds the check overdue when it wakes.
 constexpr int kPeriodicTickMs = 60 * 60 * 1000;
 
-/// Pick this platform's download URL out of the manifest's "downloads" object.
-///
-/// Returns an empty string whenever the manifest has nothing usable to offer:
-/// no "downloads" object, no entry for this platform, a placeholder entry with
-/// size 0, or a URL that is not plain http(s). None of those are errors — the
-/// manifest legitimately advertises a new version before the binaries for every
-/// platform exist (all six entries are currently not-ready:// stubs with size 0),
-/// so they are skipped silently rather than logged.
-QString downloadUrlForThisPlatform(const QJsonObject& manifest)
-{
-    const QString key = VersionChecker::platformKey();
-    if (key.isEmpty())
-        return {};
-
-    const QJsonObject downloads = manifest.value(QStringLiteral("downloads")).toObject();
-    const QJsonObject entry = downloads.value(key).toObject();
-    if (entry.isEmpty())
-        return {};
-
-    // size 0 (or missing/non-numeric, which also yields 0) marks a placeholder
-    if (entry.value(QStringLiteral("size")).toInteger(0) <= 0)
-        return {};
-
-    const QUrl url(entry.value(QStringLiteral("url")).toString(), QUrl::StrictMode);
-    if (!url.isValid() || url.host().isEmpty())
-        return {};
-    if (url.scheme() != QStringLiteral("https") && url.scheme() != QStringLiteral("http"))
-        return {};
-
-    return url.toString();
-}
-
 } // namespace
-
-// ---------------------------------------------------------------------------
-// Pure helpers — no network, no preferences, no widgets (see tst_VersionChecker)
-// ---------------------------------------------------------------------------
-
-VersionChecker::Manifest VersionChecker::parse(const QByteArray& json)
-{
-    Manifest info;
-
-    QJsonParseError parseError;
-    const QJsonDocument doc = QJsonDocument::fromJson(json, &parseError);
-    if (!doc.isObject()) {
-        info.error = parseError.error == QJsonParseError::NoError
-                         ? tr("the version manifest is not a JSON object")
-                         : tr("invalid JSON response: %1").arg(parseError.errorString());
-        return info;
-    }
-
-    const QJsonObject obj = doc.object();
-    info.latest = obj.value(QStringLiteral("latest")).toString();
-    if (info.latest.isEmpty()) {
-        info.error = tr("the version manifest has no 'latest' field");
-        return info;
-    }
-
-    // Optional from here on — a manifest missing any of these is still usable.
-    info.date = QDateTime::fromString(obj.value(QStringLiteral("date")).toString(),
-                                      Qt::ISODate).date();
-    info.releaseNotes = obj.value(QStringLiteral("releaseNotes")).toString();
-    info.minVersion   = obj.value(QStringLiteral("minVersion")).toString();
-    info.downloadUrl  = downloadUrlForThisPlatform(obj);
-    return info;
-}
-
-bool VersionChecker::isNewer(const QString& remote, const QString& local)
-{
-    const QVersionNumber r = QVersionNumber::fromString(remote);
-    const QVersionNumber l = QVersionNumber::fromString(local);
-    if (r.isNull() || l.isNull())
-        return false;
-    return r > l;
-}
-
-QString VersionChecker::platformKey()
-{
-#ifdef EMULE_MANIFEST_PLATFORM
-    return QStringLiteral(EMULE_MANIFEST_PLATFORM);
-#else
-    return {};
-#endif
-}
-
-QString VersionChecker::manifestUrl()
-{
-    const QString override = qEnvironmentVariable("EMULEQT_VERSION_MANIFEST_URL");
-    return override.isEmpty() ? QString(kDefaultManifestUrl) : override;
-}
 
 // ---------------------------------------------------------------------------
 

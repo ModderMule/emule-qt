@@ -17,6 +17,10 @@ namespace eMule {
 /// Enough for every signature below, incl. RIFF's form type at offset 8.
 inline constexpr qint64 kContainerHeadBytes = 12;
 
+/// What to read when the file has it: room for an Ogg file's first stream headers
+/// (a Skeleton page, then the codec ones), which say whether it is audio or video.
+inline constexpr qint64 kContainerProbeBytes = 512;
+
 enum class ContainerVerdict : quint8 {
     Unchecked,          ///< extension we make no promise about, or bytes not readable yet
     Matches,            ///< the normal case: it is what it says it is
@@ -41,6 +45,7 @@ struct ContainerCheck {
     QString actual;     ///< container the bytes are; empty for NoKnownContainer
     QString mimeType;   ///< MIME for `actual`; empty when we cannot name it
     bool sameKind = false;   ///< WrongContainer only: `actual` holds what the name promises (video/audio)
+    bool hasVideo = false;   ///< bytes show a video stream (Ogg only so far); an .ogg may be a film
 
     /// True when the name is provably wrong. Note that Unchecked is not suspect:
     /// not knowing is not the same as knowing something is off.
@@ -66,6 +71,10 @@ struct ContainerCheck {
 
 /// The container a file's first bytes actually are; empty when unrecognised.
 [[nodiscard]] QString sniffContainer(const QByteArray& head);
+
+/// Whether an Ogg file's first streams include video (Theora, OGM, VP8, Dirac, Daala).
+/// Reads the BOS pages present in @p head; false when there are none.
+[[nodiscard]] bool oggHasVideo(const QByteArray& head);
 
 /// A program or an archive, by its mandatory signature (MZ, ELF, ZIP, RAR, 7z).
 [[nodiscard]] ForeignHead sniffForeignHead(const QByteArray& head);

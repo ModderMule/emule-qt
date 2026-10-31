@@ -75,7 +75,7 @@ private slots:
     // GlobalSearchScheduler — the pacing
     void sweep_asksOneServerPerInterval();
     void sweep_cancelStopsTheTicks();
-    void sweep_stopsOnSourcesNotFiles();
+    void sweep_stopsOnFilesNotSources();
     void sweep_cancelSearchIgnoresOtherSearches();
     void sweep_startFromTheEndSignalSurvives();
     void sweep_emptyServerListEndsImmediately();
@@ -245,10 +245,10 @@ void tst_GlobalSearchScheduler::sweep_cancelStopsTheTicks()
     QCOMPARE(spy.count(), 0);
 }
 
-void tst_GlobalSearchScheduler::sweep_stopsOnSourcesNotFiles()
+void tst_GlobalSearchScheduler::sweep_stopsOnFilesNotSources()
 {
-    // MFC stops once the summed availability passes MAX_RESULTS (100), however few
-    // files that is — SearchResultsWnd.cpp:473.
+    // Stops at 400 files, whatever their sources: one server's 300-file answer
+    // must not end it before a 2nd server is asked (#92). MFC stopped past 100 sources.
     ServerList servers;
     fillServers(servers, 20);
     ScopedServerList scoped(&servers);
@@ -258,15 +258,16 @@ void tst_GlobalSearchScheduler::sweep_stopsOnSourcesNotFiles()
     theApp.searchList = &list;
     const uint32 id = list.newSearch({}, SearchParams{});
 
-    const auto add = [&](uint8 hashByte, uint32 sources) {
+    const auto add = [&](uint32 n, uint32 sources) {
         uint8 hash[16];
-        std::memset(hash, hashByte, 16);
+        std::memset(hash, 0xAB, 16);
+        std::memcpy(hash, &n, sizeof n);
         SafeMemFile mem;
         mem.write(hash, 16);
         mem.writeUInt32(0x0A000001);
         mem.writeUInt16(4662);
         mem.writeUInt32(3);
-        Tag(FT_FILENAME, QStringLiteral("f%1.avi").arg(hashByte)).writeNewEd2kTag(mem, UTF8Mode::Raw);
+        Tag(FT_FILENAME, QStringLiteral("f%1.avi").arg(n)).writeNewEd2kTag(mem, UTF8Mode::Raw);
         Tag(FT_FILESIZE, uint32{10000}).writeNewEd2kTag(mem);
         Tag(FT_SOURCES, sources).writeNewEd2kTag(mem);
         const QByteArray packet = mem.takeBuffer();
@@ -280,14 +281,23 @@ void tst_GlobalSearchScheduler::sweep_stopsOnSourcesNotFiles()
     sched.start(id, QByteArrayLiteral("payload"), false, false);
     QVERIFY(sched.isRunning());
 
-    add(1, 40);
-    add(2, 40);
+    add(1, 5000);
     sched.onResultCountChanged(id);
-    QVERIFY(sched.isRunning());   // 80 sources
+    QVERIFY(sched.isRunning());   // many sources, one file
 
-    add(3, 40);
+    for (uint32 i = 2; i <= 300; ++i)
+        add(i, 1);
     sched.onResultCountChanged(id);
-    QVERIFY(!sched.isRunning());  // 120 sources in three files
+    QVERIFY(sched.isRunning());   // a full server answer: ask on
+
+    for (uint32 i = 301; i < 400; ++i)
+        add(i, 1);
+    sched.onResultCountChanged(id);
+    QVERIFY(sched.isRunning());   // 399 files
+
+    add(400, 1);
+    sched.onResultCountChanged(id);
+    QVERIFY(!sched.isRunning());  // 400 files
 
     theApp.searchList = savedList;
 }

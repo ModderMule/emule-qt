@@ -2134,6 +2134,10 @@ void TransferPanel::fetchAndShowFileDetails(const QStringList& hashes,
                 return;
             auto* dlg = new FileDetailDialog(pending->files, tab, this);
             connectCommentFilter(dlg, m_ipc);
+            QStringList shown;
+            for (const QCborMap& f : pending->files)
+                shown << f.value(QLatin1StringView("hash")).toString();
+            connectDownloadDetailsRefresh(dlg, m_ipc, shown);
             dlg->show();
         });
     }
@@ -2157,6 +2161,7 @@ void TransferPanel::fetchAndShowFileDetails(const QString& hash,
         connectCommentPosting(dlg, m_ipc);
         dlg->setWalker(makeDownloadWalker(hash));
         connectDetailNavigation(dlg, m_ipc, IpcMsgType::GetDownloadDetails);
+        connectDownloadDetailsRefresh(dlg, m_ipc, {hash});
         dlg->show();
     });
 }

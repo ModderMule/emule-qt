@@ -362,7 +362,7 @@ function Resolve-VsGenerator {
 
     Layouts, in order:
       build\src\{gui,daemon,mcpbridge}\           CMake single-config (Ninja)
-      build\src\{gui,daemon,mcpbridge}\<Config>\  CMake multi-config (Visual Studio)
+      build\src\{gui,daemon,mcpbridge,updater}\<Config>\  CMake multi-config (Visual Studio)
       build\                            Ninja, alternate layout
       bin\<Config>\                     Visual Studio projects
       bin\<other config>\               last resort
@@ -372,7 +372,7 @@ function Resolve-VsGenerator {
 #>
 function Find-EMuleBinary {
     param(
-        [Parameter(Mandatory)][ValidateSet('emuleqt.exe', 'emulecored.exe', 'emuleqt-mcp.exe', 'specialdlp.dll')][string]$Name,
+        [Parameter(Mandatory)][ValidateSet('emuleqt.exe', 'emulecored.exe', 'emuleqt-mcp.exe', 'emuleqt-updater.exe', 'specialdlp.dll')][string]$Name,
         [ValidateSet('Release', 'Debug')][string]$Config = 'Release',
         [string]$BuildDir = (Get-DefaultBuildDir),
         [string]$ProjectDir = (Get-ProjectDir),
@@ -382,6 +382,7 @@ function Find-EMuleBinary {
     $subDir = switch ($Name) {
         'emuleqt.exe'     { 'gui' }
         'emuleqt-mcp.exe' { 'mcpbridge' }
+        'emuleqt-updater.exe' { 'updater' }
         default           { 'daemon' }
     }
     $altConfig = if ($Config -eq 'Debug') { 'Release' } else { 'Debug' }

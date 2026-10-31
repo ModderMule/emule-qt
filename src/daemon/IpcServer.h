@@ -11,6 +11,7 @@
 
 #include <QHostAddress>
 #include <QObject>
+#include <QStringList>
 
 #include <functional>
 #include <memory>
@@ -56,6 +57,17 @@ public:
 
     /// Number of currently connected clients.
     [[nodiscard]] int clientCount() const;
+
+    /// A local GUI connected right now, with its pid and relaunch command.
+    struct LocalGui {
+        qint64 pid = 0;
+        QStringList relaunch;
+    };
+    [[nodiscard]] std::vector<LocalGui> localGuis() const;
+
+    /// PushCoreUpdating to each client: [version, reopened]. Only a GUI the
+    /// updater starts again quits; the others wait for the core to come back.
+    void notifyCoreUpdating(const QString& version);
 
     /// Sees every broadcast before the clients do, connected or not. For the REST
     /// event stream, which carries the same news.

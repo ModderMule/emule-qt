@@ -95,6 +95,9 @@ Ed3kSets::Ed3kSets(Ed3kSession& session, Ed3kDownloads& downloads, const QString
         for (auto& [id, s] : m_sets)
             pumpQueue(s);
     });
+    connect(&m_downloads, &Ed3kDownloads::added, this, &Ed3kSets::releaseOrphan);
+    for (const auto& d : m_downloads.list())
+        releaseOrphan(d.root);
     onSessionStatus();
 }
 
@@ -398,6 +401,19 @@ void Ed3kSets::pumpOwnerOf(const ffi::Root& root)
     for (auto& [id, s] : m_sets)
         if (!d || d->owner == ownerOf(id))
             pumpQueue(s);
+}
+
+void Ed3kSets::releaseOrphan(const ffi::Root& root)
+{
+    const auto d = m_downloads.info(root);
+    if (!d || d->state == Ed3kDownloadInfo::State::Complete || !d->owner.startsWith(QLatin1String("set:")))
+        return;
+    bool ok = false;
+    const std::uint32_t id = d->owner.mid(4).toUInt(&ok);
+    if (ok && m_sets.contains(id))
+        return;
+    logEd3k(QStringLiteral("ed3k: \"%1\" belongs to a set not followed here: a plain download").arg(d->name));
+    m_downloads.setOwner(root, Ed3kDownloads::kOwner);
 }
 
 bool Ed3kSets::followOnEngine(Set& s)

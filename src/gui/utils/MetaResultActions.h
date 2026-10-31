@@ -93,17 +93,20 @@ private:
     /// FetchMetaFile for @p row, login detour included. @p onData gets the reply's
     /// map; a failure warns with @p failText (%1 name, %2 reason) unless @p onFail
     /// handles it. @p inspect: the daemon parses the file too (Details).
+    /// @p onCancel: the login asked for was cancelled (nothing else is called).
     void fetchMeta(quint32 searchID, const Row& row, const QString& failText,
                    std::function<void(const QCborMap& data)> onData,
-                   std::function<bool(const QString& reason)> onFail = {}, bool inspect = false);
+                   std::function<bool(const QString& reason)> onFail = {}, bool inspect = false,
+                   std::function<void()> onCancel = {});
     void fetchAndSave(quint32 searchID, const Row& row, const QString& path, bool pathIsDir);
     void fetchAndShowLinks(quint32 searchID, const Row& row);
     void fetchAndDownloadLinks(quint32 searchID, const Row& row);
     void fetchAndAddTorrent(quint32 searchID, const Row& row);
 
-    /// Handle an auth failure: open (or reuse) the server's dialog, retry on accept.
-    /// Returns false when @p meta is no auth problem.
-    bool handleAuth(const QCborMap& meta, std::function<void()> retry);
+    /// Handle an auth failure: open (or reuse) the server's dialog, retry on accept,
+    /// @p onCancel on reject. Returns false when @p meta is no auth problem.
+    bool handleAuth(const QCborMap& meta, std::function<void()> retry,
+                    std::function<void()> onCancel = {});
     void warn(const QString& text);
     /// A Details dialog, shown, its Download wired to @p onDownload.
     MetaResultDetailDialog* openDetails(const MetaResultDetailDialog::RowInfo& info,
@@ -112,7 +115,11 @@ private:
     IpcClient* m_ipc;
     QPointer<QWidget> m_parent;
     QHash<QString, QPointer<MetaAccountDialog>> m_dialogs;
-    QHash<QString, QList<std::function<void()>>> m_retries;
+    struct PendingRetry {
+        std::function<void()> retry;
+        std::function<void()> onCancel;
+    };
+    QHash<QString, QList<PendingRetry>> m_retries;
 };
 
 } // namespace eMule

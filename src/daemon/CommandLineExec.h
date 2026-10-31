@@ -34,6 +34,11 @@ public:
     /// is about to ask for the ports.
     [[nodiscard]] bool holdConnect() const;
 
+    /// --autoupdate[=hours]: install new releases by itself.
+    [[nodiscard]] bool autoUpdate() const;
+    /// Hours from --autoupdate=N; 0 = the version-check interval.
+    [[nodiscard]] int autoUpdateHours() const;
+
 private:
     QCommandLineParser m_parser;
 
@@ -82,6 +87,18 @@ private:
     QCommandLineOption m_holdConnectOption{
         QStringLiteral("hold-connect"),
         QStringLiteral("Do not auto-connect until the GUI's first start wizard is done.")};
+
+    QCommandLineOption m_autoUpdateOption{
+        QStringLiteral("autoupdate"),
+        QStringLiteral("Download and install new releases, then restart. Optional =hours "
+                       "overrides the version check interval (1-720).")};
+
+    // filled from --autoupdate=N by AutoUpdater::normalizeArgs
+    QCommandLineOption m_autoUpdateHoursOption = [] {
+        QCommandLineOption o(QStringLiteral("autoupdate-hours"), QString(), QStringLiteral("hours"));
+        o.setFlags(QCommandLineOption::HiddenFromHelp);
+        return o;
+    }();
 };
 
 } // namespace eMule

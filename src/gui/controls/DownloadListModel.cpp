@@ -144,6 +144,7 @@ int downloadStateSortOrder(const QString& state)
     if (state == QLatin1String("ReqHashSet"))         return 4;
     if (state == QLatin1String("WaitCallback"))       return 5;
     if (state == QLatin1String("WaitCallbackKad"))    return 6;
+    if (state == QLatin1String("ViaEd3k"))            return 3;
     if (state == QLatin1String("NoNeededParts"))      return 7;
     if (state == QLatin1String("RemoteQueueFull"))    return 8;
     if (state == QLatin1String("TooManyConns"))       return 9;

@@ -32,10 +32,13 @@ public final class ResolverMain {
 
     public static void main(final String[] args) throws Exception {
         Out.claimStdout();
-        // JD runs from loose classes here, which AppWorkUtils takes for an IDE: that would pick
+        // JD runs outside its updater install here, which AppWorkUtils takes for an IDE: that would pick
         // the new HTTPDownloader (no resume from chunksProgress) and IDE-only checks. Be the
         // release build. Must run before BrowserAdapter loads (its NEW_CORE is final).
         org.appwork.utils.DebugMode.TRUE_IN_IDE_ELSE_FALSE = false;
+        // JD's core is Core.jar now, which would make PluginClassLoader want bcprov under ROOT/libs
+        // (JD's updater layout). Keep the loose-classes behaviour the driver was made for.
+        Jd.notJared();
         Jd.init();
         PuzzleSolver.install();
         Out.log("ready, " + Jd.hostPluginCount() + " host and " + Jd.crawlerPluginCount() + " crawler plugins");

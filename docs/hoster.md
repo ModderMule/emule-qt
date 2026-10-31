@@ -14,7 +14,7 @@ Downloads from links at file hosters, verified under ed3k roots. Spec:
 | `Ed3kHosterJoin` | `src/ed3k/` | the host side: items, §4 lookup, answers to `LinkResolve`, feeds the resolver's part file in, writes verified blocks, moves the file to incoming |
 | `Ed3kResolver` | `src/ed3k/Ed3kResolver.h` | the interface: match, check, open, expand, accountCheck, sites, puzzles |
 | `Ed3kJdResolver` | `src/ed3k/` | the JDownloader sidecar over stdin/stdout JSON lines; installs `resolver.zip` |
-| `Ed3kJavaRuntime` | `src/ed3k/` | finds Java 17+, else downloads Temurin 21 into `<eMuleQt>/runtime/jre` |
+| `Ed3kJavaRuntime` | `src/ed3k/` | finds Java 17+, else downloads Temurin 21 into `Config/ed3k/java/jre` (an older `<eMuleQt>/runtime/jre` is moved there) |
 | sidecar driver | `tools/hoster-resolver/` | Java, GPL v3+: JD's plugins unmodified, `SingleDownloadController` subclass, puzzle solver |
 | IPC | `src/daemon/Ed3kHosterBridge.*` | requests 1100-1108 (1107 GetHosterStats, Statistics branch; 1108 CheckHosterLinks), pushes 1150-1154 and 1159 (PushHosterLinkCheck), `hoster` map in `GetEd3kStatus` |
 | GUI | `panels/HosterPanel`, `dialogs/HosterPuzzleDialog`, Options › ed3k › Hoster | list, add links (dialog, or Paste links from the clipboard), image puzzles, settings, accounts; web search rows' Download (`MetaResultActions`, `WebLinksDialog`) adds one item per file with its mirrors, only while `enabled` (else Show Links); the links dialog checks its links (Status column); its Download says "Download (all)" / "Download (n)" for the selection, and a context menu has Download and Deselect All |
@@ -22,7 +22,10 @@ Downloads from links at file hosters, verified under ed3k roots. Spec:
 ## Flow of a pasted link
 
 1. **match**: a JD plugin that takes the link (crawler plugins first, as JD does). None: *No resolver*.
-2. **Off by default** (§3): with "Allow downloads from file hosters" off the item waits as *Needs you*.
+2. **The user's switch** (§3), on by default, no confirm dialog: with "Allow downloads from file hosters"
+   off the item waits as *Needs you*. Hosters run on the ed3k node: the Hoster tab shows, the resolver is
+   unpacked and Java looked for only while both `ed3k.enabled` and `ed3k.hoster.enabled` are on
+   (`Preferences::hosterDownloadsOn`). Off: `Config/ed3k/resolver/plugins` is removed (#88).
 3. **§4 lookup**: `ALIAS` records of the link's `url` id. A root found: an ed3k download of it with
    Kad sources, and the link as one more source; the first block from the link tests the claim.
    Skipped while the node has no contacts; given up after 45 s.
@@ -110,9 +113,12 @@ A stream that breaks goes on from where it stood instead of starting over:
 - The sidecar tells where the new bytes start once JD decided (`progress`/`done` field `from`):
   `have` when the hoster resumed, `0` when it could not; the join answers `OPENED from` and feeds
   from there. Below 1 MiB it starts over (cheaper than the copy).
-- The sidecar runs JD from loose classes, which AppWorkUtils takes for an IDE: it sets
+- The sidecar runs JD outside its updater install, which AppWorkUtils takes for an IDE: it sets
   `DebugMode.TRUE_IN_IDE_ELSE_FALSE = false` first, else JD picks `HTTPDownloader`, which ignores
-  `chunksProgress`.
+  `chunksProgress`. It also forces `Application.IS_JARED` false: in jar mode `PluginClassLoader`
+  wants `bcprov` under `ROOT/libs` (the updater layout) and fails BouncyCastle classes.
+- Puzzle images JD saved (`jd/captchas/`) are deleted when the sidecar starts; it stops after
+  5 min idle, so they don't pile up.
 - A rootless item that is paused, or the daemon restarted, starts over: the hash lives in the core.
 
 ## Links of peers and sharing links
@@ -154,7 +160,7 @@ A stream that breaks goes on from where it stood instead of starting over:
 
 | Key | IPC | Default | |
 |---|---|---|---|
-| `enabled` | `ed3kHosterEnabled` | off | the user's switch (§3); the GUI shows what it means first |
+| `enabled` | `ed3kHosterEnabled` | on | the user's switch (§3); needs `ed3k.enabled` (also on by default) |
 | `java` | `ed3kHosterJava` | empty | path of `java`; empty = find one |
 | `autoJava` | `ed3kHosterAutoJava` | on | download Temurin when none is found |
 | `maxStreams` | `ed3kHosterMaxStreams` | 2 | 1-16; one per hoster and account in any case |
@@ -170,7 +176,7 @@ A stream that breaks goes on from where it stood instead of starting over:
 
 ## Java
 
-Probe order: the pref, `<eMuleQt>/runtime/jre`, `$JAVA_HOME`, macOS `java_home -v 17+`, `java` on
+Probe order: the pref, `Config/ed3k/java/jre`, `$JAVA_HOME`, macOS `java_home -v 17+`, `java` on
 `PATH`, the usual install folders. A candidate must be Java 17+ and of the daemon's CPU
 architecture. None found and `autoJava` on: Eclipse Temurin 21 JRE from `api.adoptium.net`,
 through the Proxy page's proxy, SHA-256 checked, unpacked with the system `tar`.
@@ -187,10 +193,23 @@ scripts/build-hoster-resolver.sh [<dir with JDownloader, AppWorkUtils, JDBrowser
 ```
 
 Default source dir: `$JD_DIR` or `/Volumes/MySSD/Coding/Java` (SVN checkouts). Needs a JDK 17+.
-Output: `build/hoster-resolver/resolver.zip` (about 38 MB: the plugins as loose classes, JD's core,
-the jars a headless JD loads). The bundle scripts copy it next to the daemon (macOS:
-`Contents/Resources`); `emulecored` unpacks it into `Config/ed3k/resolver/plugins` when it changed,
-because JD writes caches next to the plugin classes. `EMULE_RESOLVER_ZIP` points at another zip.
+Output: `build/hoster-resolver/resolver.zip` (about 33 MB). Layout of `resolver/`:
+
+| Path | What |
+|---|---|
+| `Core.jar` | JD core, AppWork, the driver, translations/json defaults (~9.7k classes, 13 MB) |
+| `jd/plugins/{hoster,decrypter}/` | plugins, loose: JD's scanners list the folder beside the jar holding `jd.SecondLevelLaunch` (2.3k files, 20 MB) |
+| `libs/` | 15 jars a headless JD loads (15 MB) |
+| `revision.txt`, `LICENSE` | JD SVN revision, GPL |
+
+Classpath: `Core.jar`, the `resolver/` dir (for the loose plugins), `libs/*`. Left out of `libs/`
+besides JD's GUI/desktop jars: `cling-*` + `seamless-http/xml` (UPnP reconnect, MyJD direct
+server), `jsvg` (icons), `jna_platform.jar` (same file as `jna-platform.jar`). `seamless-util` stays
+(archive.org plugin, image puzzles); `miglayout`, `image4j`, `Filters` stay because plugin and
+puzzle classes link them. GUI classes stay in `Core.jar`: plugins link them. The bundle scripts copy it next to the daemon (macOS:
+`Contents/Resources`); `emulecored` unpacks it into `Config/ed3k/resolver/plugins` when it changed and
+hoster downloads are on, because JD writes caches next to the plugin classes. Switched off, the
+unpacked plugins are removed again (48 MB, 2.4k files; 89 MB and 12k files before Core.jar, #88). `EMULE_RESOLVER_ZIP` points at another zip.
 
 Compile-time switch: CMake `-DEMULE_HOSTER_JD=OFF`, qmake `CONFIG+=no_emule_hoster_jd`, MSBuild
 `/p:EmuleHosterJd=false`. Off: no resolver, no Java lookup, no Hoster tab; ed3k still stores, passes

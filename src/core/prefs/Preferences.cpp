@@ -707,9 +707,10 @@ struct Preferences::Data {
     bool btPortMapping = true;
 
     // -- ed3k (packmule) ------------------------------------------------------
-    bool ed3kEnabled = false;
+    bool ed3kEnabled = true;
     uint16 ed3kUdpPort = 0;            // 0 = random, resolved at load
     bool ed3kShareFiles = true;        // eMule's shared files over ed3k
+    bool ed3kJointDownloads = true;    // eD2K downloads from ed3k too (§14.4)
     bool ed3kHoldBackPosts = false;    // usenet.md §6
     QStringList ed3kCreditRpc;         // JSON-RPC endpoints; empty = off
     QStringList ed3kChaintubeRpc;
@@ -719,7 +720,7 @@ struct Preferences::Data {
     uint16 ed3kSitePort = 0;           // website server (name.md §6.2); 0 = random, resolved at load
     Ed3kCreditPrefs ed3kCredit;        // credit.md; off by default (§9)
     Ed3kChainPrefs ed3kChain;          // chaintube.md §4.2; none set by default
-    Ed3kHosterPrefs ed3kHoster;        // hoster.md; off by default (§3)
+    Ed3kHosterPrefs ed3kHoster;        // hoster.md; on by default
 
     /// Runtime only — never loaded, never saved. -1 means "no split active", so
     /// maxDownloadForEd2k() falls back to the raw ceiling. Persisting it would
@@ -2312,14 +2313,7 @@ void Preferences::setBtMaxConnectionsPerTorrent(int val)
 bool Preferences::btPortMapping() const { return get(&Data::btPortMapping); }
 void Preferences::setBtPortMapping(bool val) { set(&Data::btPortMapping, val); }
 
-bool Preferences::ed3kEnabled() const
-{
-#ifdef EMULE_ED3K_LOCKED
-    return false;   // early alpha: CI builds keep the node off
-#else
-    return get(&Data::ed3kEnabled);
-#endif
-}
+bool Preferences::ed3kEnabled() const { return get(&Data::ed3kEnabled); }
 void Preferences::setEd3kEnabled(bool val) { set(&Data::ed3kEnabled, val); }
 
 uint16 Preferences::ed3kUdpPort() const { return get(&Data::ed3kUdpPort); }
@@ -2327,6 +2321,8 @@ void Preferences::setEd3kUdpPort(uint16 val) { set(&Data::ed3kUdpPort, val); }
 
 bool Preferences::ed3kShareFiles() const { return get(&Data::ed3kShareFiles); }
 void Preferences::setEd3kShareFiles(bool val) { set(&Data::ed3kShareFiles, val); }
+bool Preferences::ed3kJointDownloads() const { return get(&Data::ed3kJointDownloads); }
+void Preferences::setEd3kJointDownloads(bool val) { set(&Data::ed3kJointDownloads, val); }
 bool Preferences::ed3kHoldBackPosts() const { return get(&Data::ed3kHoldBackPosts); }
 void Preferences::setEd3kHoldBackPosts(bool val) { set(&Data::ed3kHoldBackPosts, val); }
 
@@ -2410,6 +2406,7 @@ bool Preferences::applyEd3kChainKey(Ed3kChainPrefs& c, const QString& key, const
 }
 
 Ed3kHosterPrefs Preferences::ed3kHoster() const { return get(&Data::ed3kHoster); }
+bool Preferences::hosterDownloadsOn() const { return ed3kEnabled() && ed3kHoster().enabled; }
 void Preferences::setEd3kHoster(const Ed3kHosterPrefs& val) { set(&Data::ed3kHoster, val); }
 
 bool Preferences::applyEd3kHosterKey(Ed3kHosterPrefs& h, const QString& key, const QCborValue& val)
@@ -3618,6 +3615,7 @@ QCborMap Preferences::toIpcMap() const
     prefs.insert(QStringLiteral("ed3kEnabled"), ed3kEnabled());
     prefs.insert(QStringLiteral("ed3kUdpPort"), static_cast<qint64>(ed3kUdpPort()));
     prefs.insert(QStringLiteral("ed3kShareFiles"), ed3kShareFiles());
+    prefs.insert(QStringLiteral("ed3kJointDownloads"), ed3kJointDownloads());
     prefs.insert(QStringLiteral("ed3kHoldBackPosts"), ed3kHoldBackPosts());
     prefs.insert(QStringLiteral("ed3kCreditRpc"), ed3kCreditRpc().join(QLatin1Char(' ')));
     prefs.insert(QStringLiteral("ed3kChaintubeRpc"), ed3kChaintubeRpc().join(QLatin1Char(' ')));
@@ -3927,10 +3925,11 @@ void Preferences::updateFromCbor(const QCborMap& p)
     }
 
     // ed3k. Defaults for a key an older daemon does not send.
-    m_data->ed3kEnabled = p.value(QStringLiteral("ed3kEnabled")).toBool(false);
+    m_data->ed3kEnabled = p.value(QStringLiteral("ed3kEnabled")).toBool(true);
     m_data->ed3kUdpPort = static_cast<uint16>(
         std::clamp<qint64>(p.value(QStringLiteral("ed3kUdpPort")).toInteger(0), 0, 65535));
     m_data->ed3kShareFiles = p.value(QStringLiteral("ed3kShareFiles")).toBool(true);
+    m_data->ed3kJointDownloads = p.value(QStringLiteral("ed3kJointDownloads")).toBool(true);
     m_data->ed3kHoldBackPosts = p.value(QStringLiteral("ed3kHoldBackPosts")).toBool(false);
     m_data->ed3kCreditRpc = rpcUrlList(p.value(QStringLiteral("ed3kCreditRpc")));
     m_data->ed3kChaintubeRpc = rpcUrlList(p.value(QStringLiteral("ed3kChaintubeRpc")));
@@ -5116,6 +5115,7 @@ bool Preferences::load(const QString& filePath)
             const int port = e3["udpPort"].as<int>(m_data->ed3kUdpPort);
             m_data->ed3kUdpPort = (port >= 0 && port <= 65535) ? static_cast<uint16>(port) : 0;
             m_data->ed3kShareFiles = e3["shareFiles"].as<bool>(m_data->ed3kShareFiles);
+            m_data->ed3kJointDownloads = e3["jointDownloads"].as<bool>(m_data->ed3kJointDownloads);
             m_data->ed3kHoldBackPosts = e3["holdBackPosts"].as<bool>(m_data->ed3kHoldBackPosts);
             const auto urls = [](const YAML::Node& n) {
                 QStringList out;
@@ -5171,6 +5171,7 @@ bool Preferences::load(const QString& filePath)
                 h.checkMaxPerHost = std::clamp(ho["checkMaxPerHost"].as<int>(h.checkMaxPerHost), 1, 64);
                 h.recheckHours = std::clamp(ho["recheckHours"].as<int>(h.recheckHours), 0, 8760);
                 h.reportRecheckHours = std::clamp(ho["reportRecheckHours"].as<int>(h.reportRecheckHours), 0, 8760);
+                h.sharedPluginDir = QString::fromStdString(ho["sharedPluginDir"].as<std::string>(h.sharedPluginDir.toStdString())).trimmed();
                 h.accounts.clear();
                 if (auto acc = ho["accounts"]; acc && acc.IsSequence()) {
                     for (const auto& a : acc) {
@@ -6371,6 +6372,7 @@ bool Preferences::saveImpl(const QString& filePath) const
     out << YAML::Key << "ed3k" << YAML::Value << YAML::BeginMap;
     out << YAML::Key << "enabled" << YAML::Value << m_data->ed3kEnabled;
     out << YAML::Key << "shareFiles" << YAML::Value << m_data->ed3kShareFiles;
+    out << YAML::Key << "jointDownloads" << YAML::Value << m_data->ed3kJointDownloads;
     out << YAML::Key << "holdBackPosts" << YAML::Value << m_data->ed3kHoldBackPosts;
     out << YAML::Key << "udpPort" << YAML::Value << static_cast<int>(m_data->ed3kUdpPort);
     out << YAML::Key << "lan" << YAML::Value << m_data->ed3kLan;
@@ -6425,6 +6427,7 @@ bool Preferences::saveImpl(const QString& filePath) const
         out << YAML::Key << "checkMaxPerHost" << YAML::Value << h.checkMaxPerHost;
         out << YAML::Key << "recheckHours" << YAML::Value << h.recheckHours;
         out << YAML::Key << "reportRecheckHours" << YAML::Value << h.reportRecheckHours;
+        out << YAML::Key << "sharedPluginDir" << YAML::Value << h.sharedPluginDir.toStdString();
         out << YAML::Key << "accounts" << YAML::Value << YAML::BeginSeq;
         for (const Ed3kHosterAccount& a : h.accounts) {
             out << YAML::BeginMap;

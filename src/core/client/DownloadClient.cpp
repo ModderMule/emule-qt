@@ -113,8 +113,60 @@ bool UpDownClient::askForDownload()
     // the connection, then commit to the state the connection will complete into.
     swapToAnotherFile(QStringLiteral("A4AF check before TCP file re-ask. askForDownload()"),
                       true, false, false, nullptr, true, true);
+
+    // ed3k Protocol.md §14.2/§14.4: a derived user hash is tried over ed3k first; a peer
+    // reached there is used over ed3k only. Not MFC.
+    if (theApp.ed3kHint && m_reqFile && m_ed3kRoute != Ed3kRoute::Failed) {
+        const bool connected = m_socket && m_socket->isConnected();
+        if (m_ed3kRoute == Ed3kRoute::Preferred) {
+            if (!connected) {
+                if (m_downloadState != DownloadState::None)
+                    setDownloadState(DownloadState::None);
+                return false;
+            }
+        } else if (m_ed3kRoute == Ed3kRoute::Untried && hasValidHash()) {
+            const auto hint = theApp.ed3kHint(*this, !connected);
+            if (hint == AppContext::Ed3kHint::NoHint) {
+                m_ed3kRoute = Ed3kRoute::Failed;
+            } else if (hint == AppContext::Ed3kHint::Started) {
+                m_ed3kRoute = Ed3kRoute::Pending;
+                // connected: eD2K goes on alongside; else it waits for the answer
+                if (!connected) {
+                    setDownloadState(DownloadState::Connecting);
+                    m_connectingState = ConnectingState::Ed3kHint;
+                    logDebug(QStringLiteral("askForDownload: ed3k first for %1").arg(userName()));
+                    return true;
+                }
+            }
+        }
+    }
+
     setDownloadState(DownloadState::Connecting);
     return tryToConnect();
+}
+
+// ===========================================================================
+// setEd3kRoute
+// ===========================================================================
+
+void UpDownClient::setEd3kRoute(Ed3kRoute route)
+{
+    m_ed3kRoute = route;
+    if (m_connectingState != ConnectingState::Ed3kHint)
+        return;
+    if (route == Ed3kRoute::Pending)
+        return;
+    m_connectingState = ConnectingState::None;
+    if (route == Ed3kRoute::Preferred) {
+        // downloaded over ed3k: idle here, kept as a source
+        if (m_downloadState == DownloadState::Connecting)
+            setDownloadState(DownloadState::None);
+        return;
+    }
+    // MUST fall back to eD2K and keep the source (§14.2)
+    if (m_reqFile)
+        setDownloadState(DownloadState::Connecting);
+    (void)tryToConnect();
 }
 
 // ===========================================================================

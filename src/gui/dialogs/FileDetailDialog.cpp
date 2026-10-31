@@ -10,6 +10,7 @@
 #include "MetadataPage.h"
 #include "app/IpcClient.h"
 #include "controls/AbstractListView.h"
+#include "controls/ContentScrollArea.h"
 #include "prefs/Preferences.h"
 #include "utils/Clipboard.h"
 #include "utils/DialogSizing.h"
@@ -20,16 +21,20 @@
 #include <QCheckBox>
 #include <QIcon>
 #include <QDateTime>
+#include <QFileInfo>
 #include <QFormLayout>
+#include <QGridLayout>
 #include <QGroupBox>
 #include <QGuiApplication>
 #include <QHeaderView>
 #include <QLabel>
 #include <QLineEdit>
 #include <QLocale>
+#include <QPalette>
 #include <QMenu>
 #include <QPointer>
 #include <QPushButton>
+#include <QScrollBar>
 #include <QTabWidget>
 #include <QTextEdit>
 #include <QTimer>
@@ -37,6 +42,8 @@
 #include <QVBoxLayout>
 
 #include "utils/StringUtils.h"
+
+#include <memory>
 
 namespace eMule {
 
@@ -63,6 +70,81 @@ QString fmtTime(qint64 epoch)
         return QStringLiteral("\u2014");
     return QLocale().toString(QDateTime::fromSecsSinceEpoch(epoch), QLocale::ShortFormat);
 }
+
+/// MFC's "%s   (%s ago)" date, or @p none when not set (FileDetailDialogInfo.cpp:136-182)
+QString fmtTimeAgo(qint64 epoch, const QString& none)
+{
+    if (epoch <= 0)
+        return none;
+    const qint64 ago = std::max<qint64>(0, QDateTime::currentSecsSinceEpoch() - epoch);
+    return FileDetailDialog::tr("%1   (%2 ago)").arg(fmtTime(epoch), formatSecondsLongHM(ago));
+}
+
+/// "1.2 MB (3.4%)" — the share is of @p whole, 0 when there is none
+QString sizeAndShare(qint64 part, qint64 whole)
+{
+    const double pct = whole > 0 ? 100.0 * static_cast<double>(part) / static_cast<double>(whole) : 0.0;
+    return QStringLiteral("%1 (%2%)").arg(formatByteSize(part), QString::number(pct, 'f', 1));
+}
+
+/// One of MFC's group boxes: right-aligned labels, and a second label/value
+/// pair on the right where MFC puts one.
+class DetailGroup {
+public:
+    DetailGroup(const QString& title, QBoxLayout* into)
+        : m_box(new QGroupBox(title))
+        , m_grid(new QGridLayout(m_box))
+    {
+        m_grid->setColumnStretch(1, 1);
+        m_grid->setColumnStretch(3, 1);
+        m_grid->setHorizontalSpacing(8);
+        m_grid->setVerticalSpacing(4);   // MFC's rows sit close
+        into->addWidget(m_box);
+    }
+
+    /// A row with the value over the whole width (name, path, hashes)
+    QLabel* wide(const QString& label, const QString& value)
+    {
+        auto* v = detailValueLabel(value);
+        m_grid->addWidget(caption(label), m_row, 0);
+        m_grid->addWidget(v, m_row++, 1, 1, 3);
+        return v;
+    }
+
+    /// A row with up to two pairs; an empty @p rightLabel leaves the right free
+    QLabel* pair(const QString& label, const QString& value,
+                 const QString& rightLabel = {}, const QString& rightValue = {})
+    {
+        auto* v = shortValue(value);
+        m_grid->addWidget(caption(label), m_row, 0);
+        m_grid->addWidget(v, m_row, 1);
+        if (!rightLabel.isEmpty()) {
+            m_grid->addWidget(caption(rightLabel), m_row, 2);
+            m_grid->addWidget(shortValue(rightValue), m_row, 3);
+        }
+        ++m_row;
+        return v;
+    }
+
+private:
+    static QLabel* caption(const QString& label)
+    {
+        auto* l = new QLabel(label + QLatin1Char(':'));
+        l->setAlignment(Qt::AlignRight | Qt::AlignTop);
+        return l;
+    }
+
+    static QLabel* shortValue(const QString& text)
+    {
+        auto* l = new QLabel(text);
+        l->setTextInteractionFlags(Qt::TextSelectableByMouse);
+        return l;
+    }
+
+    QGroupBox*   m_box;
+    QGridLayout* m_grid;
+    int          m_row = 0;
+};
 
 } // anonymous namespace
 
@@ -197,6 +279,14 @@ void FileDetailDialog::buildTabs(const QCborMap& details, int tabToSelect)
 
 QWidget* FileDetailDialog::createGeneralTab(const QCborMap& d)
 {
+    // Downloads get MFC's grouped page; a shared file keeps this flat one
+    // (MFC's shared file sheet has no General page at all)
+    const bool download = d.contains(QLatin1StringView("multiCount"))
+        ? d.value(QLatin1StringView("isDownload")).toBool()
+        : d.contains(QLatin1StringView("downTransferred"));
+    if (download)
+        return createDownloadGeneralTab(d);
+
     auto* page = new QWidget;
     auto* form = new QFormLayout(page);
     form->setFieldGrowthPolicy(QFormLayout::ExpandingFieldsGrow);
@@ -248,6 +338,18 @@ QWidget* FileDetailDialog::createGeneralTab(const QCborMap& d)
     if (!aich.isEmpty())
         addRow(tr("AICH Hash"), aich);
 
+    // A file shared on ed3k too: its BLAKE3 root (hashed here) and what is published
+    if (d.value(QLatin1StringView("ed3kEnabled")).toBool()) {
+        const QString root = str(d, QLatin1StringView("ed3kRoot"));
+        addRow(tr("BLAKE3 Hash"), root.isEmpty() ? tr("Not hashed yet") : root);
+        QStringList published;
+        if (d.value(QLatin1StringView("ed3kAliasPublished")).toBool())
+            published << tr("eD2K alias");
+        if (d.value(QLatin1StringView("ed3kKeywordsPublished")).toBool())
+            published << tr("Keywords");
+        addRow(tr("Published on ed3k"), published.isEmpty() ? tr("No") : published.join(QStringLiteral(", ")));
+    }
+
     const qint64 fileSize = num(d, QLatin1StringView("fileSize"));
     // MFC FileDetailDialogInfo.cpp:280 — "734.53 MB  (770,215,936 Bytes)"
     addRow(tr("File Size"), tr("%1 (%2 Bytes)")
@@ -276,6 +378,175 @@ QWidget* FileDetailDialog::createGeneralTab(const QCborMap& d)
 
     form->addItem(new QSpacerItem(0, 0, QSizePolicy::Minimum, QSizePolicy::Expanding));
     return page;
+}
+
+// MFC FileDetailDialogInfo: General / Transfer / Dates. Several files: per-file
+// rows read "-", the rest add up (ibid. :228-327). Rows only for the advanced
+// mode are behind "Show more controls".
+QWidget* FileDetailDialog::createDownloadGeneralTab(const QCborMap& d)
+{
+    // Scrolls only where the screen is too short for all three boxes (issue #36)
+    auto* page = new QWidget;
+    auto* layout = new QVBoxLayout(page);
+    DialogSizing::enableHeightForWidth(page);
+    auto* area = new ContentScrollArea;
+    area->setFrameShape(QFrame::NoFrame);
+    area->setWidget(page);
+
+    const bool multi = d.contains(QLatin1StringView("multiCount"));
+    const bool ext = thePrefs.showExtControls();
+    const QString na = QStringLiteral("-");
+    const auto value = [&](const QString& single) { return multi ? na : single; };
+    const auto flag = [&](const char* key) { return d.value(QLatin1StringView(key)).toBool(); };
+    const auto count = [&](const char* key) { return num(d, QLatin1StringView(key)); };
+
+    const qint64 fileSize   = count("fileSize");
+    const qint64 completed  = count("completedSize");
+    const qint64 xferred    = count("downTransferred");
+    const QString fileName  = str(d, QLatin1StringView("fileName"));
+
+    // ── General
+    DetailGroup general(tr("General"), layout);
+    general.wide(tr("Name"), value(fileName));
+    // The .part, not MFC's .part.met — issue #56
+    QString filePath = str(d, QLatin1StringView("dataPath"));
+    if (filePath.isEmpty())
+        filePath = str(d, QLatin1StringView("filePath"));
+    general.wide(tr("File Path"), value(filePath));
+    general.wide(tr("Hash"), value(str(d, QLatin1StringView("hash"))));
+    const QString aich = str(d, QLatin1StringView("aichHash"));
+    general.wide(tr("AICH Hash"), value(aich.isEmpty() ? tr("Unknown") : aich));
+
+    general.pair(tr("Size"), tr("%1 (%2 Bytes); Size on disk: %3")
+        .arg(formatByteSize(fileSize), QLocale().toString(fileSize),
+             formatByteSize(count("sizeOnDisk"))));
+
+    // Type: what the first bytes are, against what the extension says (ibid. :196-227)
+    QString type = na;
+    bool typeWarning = false;
+    if (!multi) {
+        const QString suffix = QFileInfo(fileName).suffix().toUpper();
+        const QString actual = str(d, QLatin1StringView("containerActual"));
+        switch (count("containerVerdict")) {
+        case 1:   // Matches
+            type = tr("%1 (Verified)").arg(actual.isEmpty() ? suffix : actual);
+            break;
+        case 2:   // WrongContainer
+            type = tr("%1 (Verified)").arg(actual) + QStringLiteral(" - ")
+                 + tr("Invalid file extension: %1").arg(suffix);
+            typeWarning = true;
+            break;
+        case 3:   // NoKnownContainer
+            type = tr("%1 (Unverified)").arg(suffix) + QStringLiteral(" - ")
+                 + tr("Invalid file extension: %1").arg(suffix);
+            typeWarning = true;
+            break;
+        default:
+            type = suffix.isEmpty() ? tr("Unknown") : tr("%1 (Unverified)").arg(suffix);
+            break;
+        }
+    }
+    QLabel* typeLabel = general.pair(tr("Type"), type);
+    if (typeWarning) {
+        QPalette pal = typeLabel->palette();
+        pal.setColor(QPalette::WindowText, QColor(Qt::red));
+        typeLabel->setPalette(pal);
+    }
+
+    if (ext) {
+        const qint64 parts = count("partCount");
+        const qint64 avail = count("availablePartCount");
+        general.pair(tr("Parts"), value(tr("%1; available: %2 (%3%)")
+            .arg(parts).arg(avail)
+            .arg(QString::number(parts > 0 ? 100.0 * static_cast<double>(avail) / static_cast<double>(parts) : 0.0, 'f', 1))));
+    }
+
+    const qint64 transferring = count("transferringSrcCount");
+    const QString status = transferring > 0
+        ? tr("Downloading (from %n source(s))", nullptr, static_cast<int>(transferring))
+        : str(d, QLatin1StringView("status"));
+    if (ext) {
+        // ibid. :283-298 — several files: "Yes" only when all have both
+        QString hashset;
+        if (multi) {
+            const qint64 md4 = count("md4HashsetAvailableCount");
+            const qint64 aichSets = count("aichHashsetAvailableCount");
+            const qint64 files = count("multiCount");
+            if (md4 == 0 && aichSets == 0)
+                hashset = tr("No");
+            else if (md4 == files && aichSets == files)
+                hashset = tr("Yes") + QStringLiteral(" (eD2K + AICH)");
+        } else {
+            const bool md4 = flag("md4HashsetAvailable");
+            const bool aichSet = flag("aichHashsetAvailable");
+            if (md4 && aichSet)
+                hashset = tr("Yes") + QStringLiteral(" (eD2K + AICH)");
+            else if (aichSet)
+                hashset = tr("Yes") + QStringLiteral(" (AICH)");
+            else if (md4)
+                hashset = tr("Yes") + QStringLiteral(" (eD2K)");
+            else
+                hashset = tr("No");
+        }
+        general.pair(tr("Status"), value(status), tr("Hashset available"), hashset);
+    } else {
+        general.pair(tr("Status"), value(status));
+    }
+
+    // ── Transfer
+    DetailGroup transfer(tr("Transfer"), layout);
+    const qint64 sources = count("sourceCount");
+    transfer.pair(tr("Sources"), ext
+        ? tr("%1 (Useful: %2, NNP: %3); A4AF: %4")
+              .arg(sources).arg(count("validSourceCount"))
+              .arg(count("nnpSourceCount")).arg(count("a4afSourceCount"))
+        : QString::number(sources));
+    // Priority is not on MFC's page; kept beside the rate
+    transfer.pair(tr("Datarate"), formatByteRate(count("datarate")),
+                  tr("Priority"), value(str(d, QLatin1StringView("downPriority"))));
+    const qint64 remaining = std::max<qint64>(0, fileSize - completed);
+    if (ext) {
+        transfer.pair(tr("Transferred"), formatByteSize(xferred),
+                      tr("Compression"), sizeAndShare(count("compressionGain"), xferred));
+        transfer.pair(tr("Completed"), sizeAndShare(completed, fileSize),
+                      tr("Corrupted"), sizeAndShare(count("corruptionLoss"), xferred));
+        transfer.pair(tr("Remaining"), sizeAndShare(remaining, fileSize),
+                      tr("Recovered"), tr("%n Part(s)", nullptr, static_cast<int>(count("recoveredParts"))));
+    } else {
+        transfer.pair(tr("Transferred"), formatByteSize(xferred));
+        transfer.pair(tr("Completed"), sizeAndShare(completed, fileSize));
+        transfer.pair(tr("Remaining"), sizeAndShare(remaining, fileSize));
+    }
+
+    // ── Dates
+    DetailGroup dates(tr("Dates"), layout);
+    dates.pair(tr("Download added"), value(fmtTimeAgo(count("addedOn"), tr("Unknown"))));
+    const qint64 active = count("dlActiveTime");
+    dates.pair(tr("Download time"), value(active > 0 ? formatSecondsLongHM(active) : tr("Unknown")));
+    dates.pair(tr("Seen complete"), value(fmtTimeAgo(count("lastSeenComplete"), tr("Never"))));
+    dates.pair(tr("Last reception"), value(fmtTimeAgo(count("lastReception"), tr("Never"))));
+
+    // ── ed3k: the eD2K download joined from ed3k (§14.2), not on MFC's page
+    if (multi ? count("ed3kEnabledCount") > 0 : flag("ed3kEnabled")) {
+        DetailGroup ed3k(tr("ed3k"), layout);
+        QString root;
+        const QString hex = str(d, QLatin1StringView("ed3kRoot"));
+        if (!hex.isEmpty())
+            root = count("ed3kPair") == 1 ? tr("%1 (Trusted)").arg(hex) : tr("%1 (Unverified)").arg(hex);
+        else if (flag("ed3kSearching"))
+            root = tr("Searching...");
+        else if (flag("ed3kTracked"))
+            root = tr("Not found");
+        else
+            root = tr("Unknown");
+        ed3k.wide(tr("BLAKE3 Hash"), value(root));
+        ed3k.pair(tr("Sources"), tr("%1 (transferring %2)")
+            .arg(count("ed3kSources")).arg(count("ed3kTransferring")));
+        ed3k.pair(tr("Transferred"), sizeAndShare(count("ed3kBytes"), fileSize));
+    }
+
+    layout->addStretch(1);
+    return area;
 }
 
 // ── File Names tab ─────────────────────────────────────────────────────
@@ -447,6 +718,30 @@ void FileDetailDialog::applyDetails(const QCborMap& details)
     populateFileNames(details);
     if (m_commentsPanel)
         m_commentsPanel->setDetails(details);
+}
+
+void FileDetailDialog::refreshLive(const QCborMap& details)
+{
+    // MFC's timer is the info page's: nothing to do while another page is on top
+    if (!m_tabs || m_tabs->currentIndex() != General)
+        return;
+    QWidget* shown = m_tabs->widget(General);
+    std::unique_ptr<QWidget> fresh(createGeneralTab(details));
+    if (copyValueTexts(shown, fresh.get()))
+        return;
+
+    // Rows came or went (ext controls, ed3k): swap the page, keep the scroll position
+    const auto* oldArea = qobject_cast<QAbstractScrollArea*>(shown);
+    const int scroll = oldArea ? oldArea->verticalScrollBar()->value() : 0;
+    const QIcon icon = m_tabs->tabIcon(General);
+    const QString text = m_tabs->tabText(General);
+    QWidget* page = fresh.release();
+    m_tabs->removeTab(General);
+    m_tabs->insertTab(General, page, icon, text);
+    m_tabs->setCurrentIndex(General);
+    delete shown;
+    if (auto* area = qobject_cast<QAbstractScrollArea*>(page))
+        area->verticalScrollBar()->setValue(scroll);
 }
 
 // ── Media Info tab ─────────────────────────────────────────────────────
@@ -668,6 +963,51 @@ void connectEd2kLinkRequests(FileDetailDialog* dialog, IpcClient* ipc)
                         dlgPtr->applyEd2kLink(link, result.at(1).toBool());
                 });
         });
+}
+
+void connectDownloadDetailsRefresh(FileDetailDialog* dialog, IpcClient* ipc, const QStringList& hashes)
+{
+    constexpr int kRefreshMs = 5000;   // MFC FileDetailDialogInfo.cpp:88
+    const auto request = [](const QString& hash) {
+        Ipc::IpcMessage req(Ipc::IpcMsgType::GetDownloadDetails);
+        req.append(hash);
+        req.append(true);   // generalOnly
+        return req;
+    };
+    if (!dialog || !ipc || hashes.isEmpty())
+        return;
+    if (hashes.size() == 1) {
+        connectLiveRefresh(dialog, ipc, request, kRefreshMs);
+        return;
+    }
+
+    // Several files: all of them again, merged once the last answer is in
+    QPointer<FileDetailDialog> dlgPtr(dialog);
+    auto* timer = new QTimer(dialog);
+    auto pending = std::make_shared<bool>(false);
+    QObject::connect(timer, &QTimer::timeout, dialog, [ipc, dlgPtr, pending, hashes, request] {
+        if (!dlgPtr || *pending || !ipc->isConnected() || !dlgPtr->isVisible() || dlgPtr->isMinimized())
+            return;
+        *pending = true;
+        struct Round {
+            QList<QCborMap> files;
+            qsizetype outstanding = 0;
+        };
+        auto round = std::make_shared<Round>();
+        round->outstanding = hashes.size();
+        for (const QString& hash : hashes) {
+            ipc->sendRequest(request(hash), [dlgPtr, pending, round](const Ipc::IpcMessage& r) {
+                if (r.isValid() && r.fieldBool(0))
+                    round->files.append(r.field(1).toMap());
+                if (--round->outstanding > 0)
+                    return;
+                *pending = false;
+                if (dlgPtr && round->files.size() > 1)
+                    dlgPtr->refreshLive(mergeFileDetails(round->files));
+            });
+        }
+    });
+    timer->start(kRefreshMs);
 }
 
 } // namespace eMule

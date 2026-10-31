@@ -109,6 +109,37 @@ QString sniffContainer(const QByteArray& head)
     return {};
 }
 
+bool oggHasVideo(const QByteArray& head)
+{
+    // Every stream opens with a BOS page, and all of them come before any data page.
+    // Page: "OggS", version, flags (0x02 = BOS), 20 bytes, segment count, lacing table.
+    constexpr qsizetype kPageHeader = 27;
+    constexpr quint8 kBos = 0x02;
+    qsizetype pos = 0;
+    while (pos + kPageHeader <= head.size()) {
+        const auto u8 = [&head](qsizetype i) { return static_cast<quint8>(head.at(i)); };
+        if (head.mid(pos, 4) != "OggS" || !(u8(pos + 5) & kBos))
+            return false;
+        const int segments = u8(pos + 26);
+        const qsizetype payload = pos + kPageHeader + segments;
+        if (payload > head.size())
+            return false;
+        qsizetype body = 0;
+        for (int i = 0; i < segments; ++i)
+            body += u8(pos + kPageHeader + i);
+
+        const QByteArray id = head.mid(payload, 8);
+        for (const QByteArrayView sig : {QByteArrayView("\x80" "theora"), QByteArrayView("\x01" "video"),
+                                         QByteArrayView("OVP80"), QByteArrayView("BBCD\0", 5),
+                                         QByteArrayView("\x80" "daala")}) {
+            if (id.startsWith(sig))
+                return true;
+        }
+        pos = payload + body;
+    }
+    return false;
+}
+
 ForeignHead sniffForeignHead(const QByteArray& head)
 {
     if (head.startsWith("MZ") || head.startsWith("\x7F" "ELF"))
@@ -163,6 +194,7 @@ ContainerCheck checkHead(const QByteArray& head, const QString& fileName)
         return result;   // Unchecked: we made no promise about this extension.
 
     const QString actual = sniffContainer(head);
+    result.hasVideo = actual == QLatin1StringView("Ogg") && oggHasVideo(head);
     if (actual == result.expected) {
         result.verdict = ContainerVerdict::Matches;
         return result;
@@ -194,7 +226,7 @@ ContainerCheck checkFile(const QString& absPath, const QString& fileName)
     if (!file.open(QIODevice::ReadOnly))
         return {};
 
-    return checkHead(file.read(kContainerHeadBytes), fileName);
+    return checkHead(file.read(kContainerProbeBytes), fileName);
 }
 
 QString containerWarningText(const ContainerCheck& check, const QString& fileName)

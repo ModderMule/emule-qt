@@ -67,6 +67,8 @@ private slots:
     void chunkSelection_rarestFirst();
     void chunkSelection_shortLastPartNotFavoured();
     void chunkSelection_previewBeatsVeryRare();
+    void chunkSelection_previewBeatsCurrentChunk();
+    void chunkSelection_previewTailFormats();
     void emptyBlock_alignsToEmBlockSize();
     void endPhase_followsWhatIsLeft();
     void lateDownload_healthyHolderKeepsItsBlock();
@@ -545,6 +547,59 @@ void tst_PartFile::chunkSelection_previewBeatsVeryRare()
         std::ranges::fill(freq, uint16{2});
         freq[7] = 1;
     }), 7u);
+}
+
+void tst_PartFile::chunkSelection_previewBeatsCurrentChunk()
+{
+    // Issue #96: part 0 done, the source is mid-way through part 7. The last part
+    // comes next instead of after part 7 is finished.
+    const bool oldPrio = thePrefs.previewPrio();
+    const auto restore = qScopeGuard([oldPrio] { thePrefs.setPreviewPrio(oldPrio); });
+
+    auto pick = [](bool prio) {
+        thePrefs.setPreviewPrio(prio);
+        PartFile pf;
+        pf.setFileName(QStringLiteral("movie.mp4"));
+        pf.setFileSize(PARTSIZE * 20);
+        uint8 hash[16] = {1};
+        pf.setFileHash(hash);
+        pf.fillGap(0, PARTSIZE - 1);                    // part 0 complete
+        pf.fillGap(PARTSIZE * 7, PARTSIZE * 7 + PARTSIZE / 2);  // part 7 half done
+
+        UpDownClient client;
+        client.setCompleteSource(true);
+        client.setClientSoft(ClientSoftware::eMule);
+        client.setClientVersion(makeClientVersion(0, 50, 0));
+        client.setLastPartAsked(7);
+        Requested_Block_Struct* blocks[1] = {};
+        int count = 1;
+        if (!pf.getNextRequestedBlock(&client, blocks, count))
+            return UINT64_MAX;
+        return blocks[0]->startOffset / PARTSIZE;
+    };
+    QCOMPARE(pick(true), uint64{19});
+    QCOMPARE(pick(false), uint64{7});   // without preview the chunk is finished first
+}
+
+void tst_PartFile::chunkSelection_previewTailFormats()
+{
+    auto needsTail = [](const QString& name) {
+        PartFile pf;
+        pf.setFileName(name);
+        return pf.previewNeedsLastPart();
+    };
+    QVERIFY(needsTail(QStringLiteral("a.mkv")));
+    QVERIFY(needsTail(QStringLiteral("a.ZIP")));
+    QVERIFY(needsTail(QStringLiteral("a.iso")));
+    QVERIFY(needsTail(QStringLiteral("a.m4a")));
+    QVERIFY(needsTail(QStringLiteral("a.pdf")));
+    QVERIFY(needsTail(QStringLiteral("a.docx")));
+    QVERIFY(needsTail(QStringLiteral("a.dmg")));
+    QVERIFY(needsTail(QStringLiteral("a.ogg")));   // #96: duration in last page
+    QVERIFY(needsTail(QStringLiteral("a.OPUS")));
+    QVERIFY(!needsTail(QStringLiteral("a.mp3")));
+    QVERIFY(!needsTail(QStringLiteral("a.exe")));
+    QVERIFY(!needsTail(QStringLiteral("a.txt")));
 }
 
 void tst_PartFile::emptyBlock_alignsToEmBlockSize()
@@ -1181,10 +1236,12 @@ void tst_PartFile::containerCheckWaitsForTheFirstBytes()
     // MPEG frame sync. Not the ASF a .wmv has to be.
     static const char kJunk[] = "\xFF\xFB\x10\xC0\x0B\x0A\x07\x05"
                                 "\x00\x07\x07\x0A";
-    std::vector<uint8> head(kJunk, kJunk + 12);
-    pf.writeToBuffer(12, head.data(), 0, 11, nullptr);
+    // The whole probe: the check waits for kContainerProbeBytes, not just the signature
+    std::vector<uint8> head(kContainerProbeBytes, 0);
+    std::copy_n(kJunk, 12, head.begin());
+    pf.writeToBuffer(kContainerProbeBytes, head.data(), 0, kContainerProbeBytes - 1, nullptr);
     pf.flushBuffer();
-    QVERIFY(pf.isComplete(0, 11));
+    QVERIFY(pf.isComplete(0, kContainerProbeBytes - 1));
 
     // Now there is something to judge, and the earlier Unchecked did not stick.
     QCOMPARE(pf.containerCheck().verdict, ContainerVerdict::NoKnownContainer);
@@ -1206,8 +1263,10 @@ void tst_PartFile::containerCheckReadsTheDataFile()
 
     // A real AVI head. Read from the .part.met instead, this came back as a fake.
     static const char kAvi[] = "RIFF\x00\x10\x00\x00" "AVI ";
-    std::vector<uint8> head(kAvi, kAvi + 12);
-    pf.writeToBuffer(12, head.data(), 0, 11, nullptr);
+    // The whole probe: the check waits for kContainerProbeBytes, not just the signature
+    std::vector<uint8> head(kContainerProbeBytes, 0);
+    std::copy_n(kAvi, 12, head.begin());
+    pf.writeToBuffer(kContainerProbeBytes, head.data(), 0, kContainerProbeBytes - 1, nullptr);
     pf.flushBuffer();
 
     QCOMPARE(pf.containerCheck().verdict, ContainerVerdict::Matches);
@@ -1257,8 +1316,10 @@ void tst_PartFile::fakeVerdictFollowsTheFirstBytesAndNames()
 
     // The first bytes land and are a Windows program: no waiting for the cache to age
     static const char kExe[] = "MZ\x90\x00\x03\x00\x00\x00\x04\x00\x00\x00";
-    std::vector<uint8> head(kExe, kExe + 12);
-    pf.writeToBuffer(12, head.data(), 0, 11, nullptr);
+    // The whole probe: the check waits for kContainerProbeBytes, not just the signature
+    std::vector<uint8> head(kContainerProbeBytes, 0);
+    std::copy_n(kExe, 12, head.begin());
+    pf.writeToBuffer(kContainerProbeBytes, head.data(), 0, kContainerProbeBytes - 1, nullptr);
     pf.flushBuffer();
     const FakeFileVerdict& verdict = pf.fakeVerdict();
     QVERIFY(verdict.has(FakeReason::HeaderExtensionMismatch));

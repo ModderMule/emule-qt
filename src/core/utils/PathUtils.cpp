@@ -16,6 +16,7 @@
 #include <winioctl.h>
 #else
 #include <fcntl.h>
+#include <sys/stat.h>
 #include <unistd.h>
 #endif
 
@@ -158,6 +159,25 @@ std::optional<std::uint64_t> tryFreeDiskSpace(const QString& path)
         probe = parent;
     }
     return std::nullopt;
+}
+
+std::uint64_t diskFileSize(const QString& path)
+{
+    if (path.isEmpty())
+        return 0;
+#if defined(Q_OS_WIN)
+    DWORD high = 0;
+    const DWORD low = GetCompressedFileSizeW(
+        reinterpret_cast<LPCWSTR>(QDir::toNativeSeparators(path).utf16()), &high);
+    if (low != INVALID_FILE_SIZE || GetLastError() == NO_ERROR)
+        return (static_cast<std::uint64_t>(high) << 32) | low;
+    return static_cast<std::uint64_t>(std::max<qint64>(0, QFileInfo(path).size()));
+#else
+    struct stat st{};
+    if (::stat(QFile::encodeName(path).constData(), &st) != 0)
+        return 0;
+    return static_cast<std::uint64_t>(st.st_blocks) * 512u;   // st_blocks is 512-byte units
+#endif
 }
 
 bool isDiskFullError(const QFileDevice& file)

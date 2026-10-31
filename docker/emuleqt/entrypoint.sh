@@ -46,6 +46,10 @@ if [ ! -f "$PREFS" ]; then
         log "WARNING: EMULEQT_WEB_PASSWORD not set - web UI login is denied until a password is set"
     fi
 
+    # one port for eD2K TCP, eD2K/Kad UDP and ed3k (ed3k Protocol.md §14.1) unless set apart
+    TCP_PORT="${EMULEQT_TCP_PORT:-4662}"
+    UDP_PORT="${EMULEQT_UDP_PORT:-$TCP_PORT}"
+
     NICK_LINE=""
     [ -z "${EMULEQT_NICK:-}" ] || NICK_LINE="  nick: \"${EMULEQT_NICK}\""
 
@@ -55,8 +59,11 @@ general:
 ${NICK_LINE}
 
 network:
-  port: ${EMULEQT_TCP_PORT:-4662}
-  udpPort: ${EMULEQT_UDP_PORT:-4672}
+  port: ${TCP_PORT}
+  udpPort: ${UDP_PORT}
+
+ed3k:
+  udpPort: ${TCP_PORT}
 
 upnp:
   enableUPnP: false

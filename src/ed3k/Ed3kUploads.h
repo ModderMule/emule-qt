@@ -22,6 +22,7 @@
 
 #include <cstdint>
 #include <functional>
+#include <array>
 #include <map>
 #include <optional>
 #include <vector>
@@ -63,6 +64,8 @@ public:
     /// Oldest first; place set.
     [[nodiscard]] std::vector<Row> waiting() const;
     [[nodiscard]] std::size_t size() const { return m_rows.size(); }
+    /// A node whose ID starts with @p prefix waits or holds a slot (ed3k §14.2 hint).
+    [[nodiscard]] bool hasNodeStarting(const std::array<std::uint8_t, 12>& prefix) const;
 
 signals:
     /// A row was added, changed or dropped.

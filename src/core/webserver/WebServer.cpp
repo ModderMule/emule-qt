@@ -370,15 +370,19 @@ bool WebServer::start(const WebServerConfig& config)
     // Initialize template engine
     m_templateEngine = std::make_unique<WebTemplateEngine>();
 
-    // Resolve web data directory (config/webserver/)
+    // Asset roots: the user's overrides (config/webserver/), the shipped ones (bundle)
     const QString configDir = m_preferences ? m_preferences->configDir() : QString();
     if (!configDir.isEmpty())
         m_webDataDir = configDir + QStringLiteral("/webserver");
+    const QString bundleDir = m_bundleDirOverride.value_or(AppConfig::bundledDataDir());
+    m_webBundleDir = bundleDir.isEmpty() ? QString() : bundleDir + QStringLiteral("/webserver");
 
-    // Load template (config/eMule.tmpl by default)
+    // Load template (config/eMule.tmpl by default, else the bundle's)
     QString tmplPath = m_config.templatePath;
     if (tmplPath.isEmpty() && !configDir.isEmpty())
         tmplPath = configDir + QStringLiteral("/eMule.tmpl");
+    if (m_config.templatePath.isEmpty() && !QFile::exists(tmplPath) && !bundleDir.isEmpty())
+        tmplPath = bundleDir + QStringLiteral("/eMule.tmpl");
     if (QFile::exists(tmplPath))
         m_templateEngine->loadTemplate(tmplPath);
 
@@ -1623,9 +1627,9 @@ QString WebServer::resolveWebAsset(const QString& fileName) const
         || fileName == QLatin1String(".") || fileName == QLatin1String(".."))
         return {};
 
-    // Template dir first so a theme can override any single file; the seeded assets
-    // behind it so a theme only has to ship what it changes.
-    for (const QString& root : {m_webAssetOverrideDir, m_webDataDir}) {
+    // Template dir first so a theme can override any single file, then the user's
+    // overrides, the shipped assets last so either only has to hold what it changes.
+    for (const QString& root : {m_webAssetOverrideDir, m_webDataDir, m_webBundleDir}) {
         if (root.isEmpty())
             continue;
         // Canonicalised per request, not once in start(): config/webserver/ may not

@@ -17,8 +17,6 @@ FROM debian:trixie AS builder
 
 ARG QT_VERSION
 ARG TARGETARCH
-# 1: ed3k node locked off (early alpha), read by CMakeLists.txt; docker.yml sets it
-ARG EMULE_ED3K_LOCKED=
 ENV DEBIAN_FRONTEND=noninteractive
 
 RUN apt-get update && apt-get install -y --no-install-recommends \
@@ -134,13 +132,14 @@ RUN chmod +x /usr/local/bin/emuleqt-entrypoint /usr/local/bin/emuleqt-run
 ENV LANG=C.UTF-8 \
     QT_LOGGING_RULES="qt.multimedia.symbolsresolver=false" \
     PUID=1000 PGID=1000 \
-    EMULEQT_TCP_PORT=4662 EMULEQT_UDP_PORT=4672 \
+    EMULEQT_TCP_PORT=4662 \
     EMULEQT_GUI=0
 
 VOLUME ["/config", "/data"]
 
-# eD2K TCP, eD2K/Kad UDP, web UI/REST/MCP, GUI IPC, noVNC, raw VNC
-EXPOSE 4662/tcp 4672/udp 4711/tcp 4712/tcp 5800/tcp 5900/tcp
+# eD2K TCP + eD2K/Kad UDP on one port (EMULEQT_UDP_PORT unset), web UI/REST/MCP, GUI IPC,
+# noVNC, raw VNC
+EXPOSE 4662/tcp 4662/udp 4711/tcp 4712/tcp 5800/tcp 5900/tcp
 
 # IPC port 4712 (0x1268) in LISTEN; a connect probe would log as an IPC client
 HEALTHCHECK --interval=30s --timeout=5s --start-period=60s \

@@ -3,8 +3,8 @@ run-name: Release ${{ inputs.tag || github.ref_name }}
 
 # Fires when scripts/publish-release.sh pushes a vX.Y.Z tag. Builds all
 # platforms by calling the per-OS workflows as reusable workflows, then publishes
-# a GitHub Release with their archives attached -- the page that the update
-# manifest's "releaseNotes" URL points at (see scripts/publish-release.sh).
+# a GitHub Release with their archives attached, then the `manifest` job writes
+# the update manifest (scripts/update-manifest.sh) over SSH.
 #
 # Two runs per release. The tag push only runs the `dispatch` job, which starts
 # this workflow again on main with the tag as input; that second run does the
@@ -441,5 +441,100 @@ jobs:
             echo
             echo '```'
             cat dist/SHA256SUMS.txt
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
+
+  # Update manifest (https://emule-qt.org/pub/emuleqt-version.json): announces the
+  # version only now that the assets exist. scripts/update-manifest.sh sets
+  # latest, downloads, specialdlp, hosterResolver and geoip in one write.
+  # Not in any needs: a failed upload never holds back the release; re-run this
+  # job, or scripts/publish-release.sh --publish-only locally.
+  manifest:
+    name: Publish update manifest
+    needs: [guard, geoip, release]
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    env:
+      TAG: ${{ needs.guard.outputs.tag }}
+      VERSION: ${{ needs.guard.outputs.version }}
+      HAS_PUBLISH_SECRETS: ${{ secrets.PUBLISH_SSH_USER != '' && secrets.PUBLISH_SSH_PASS != '' && secrets.PUBLISH_SSH_HOST != '' && secrets.PUBLISH_REMOTE_PATH != '' && secrets.PUBLISH_SSH_KNOWN_HOSTS != '' }}
+    steps:
+      - name: Check secrets
+        if: env.HAS_PUBLISH_SECRETS != 'true'
+        run: echo "::warning::PUBLISH_SSH_* secrets not set -- manifest not updated. Run scripts/publish-release.sh --publish-only locally."
+
+      # specialdlp versions come from the tag's submodule
+      - name: Checkout
+        if: env.HAS_PUBLISH_SECRETS == 'true'
+        uses: actions/checkout@v5
+        with:
+          ref: refs/tags/${{ needs.guard.outputs.tag }}
+          fetch-depth: 1
+          submodules: true
+
+      - name: Download release assets
+        if: env.HAS_PUBLISH_SECRETS == 'true'
+        uses: actions/download-artifact@v8
+        with:
+          path: dist
+          pattern: eMuleQt-v*
+          merge-multiple: true
+
+      - name: Download GeoLite2 database
+        if: env.HAS_PUBLISH_SECRETS == 'true'
+        uses: actions/download-artifact@v8
+        with:
+          name: geoip-db
+          path: geoip
+
+      - name: Download hoster resolver
+        if: env.HAS_PUBLISH_SECRETS == 'true' && needs.geoip.outputs.resolver == 'true'
+        uses: actions/download-artifact@v8
+        with:
+          name: resolver-zip
+          path: resolver
+
+      - name: Set up ssh
+        if: env.HAS_PUBLISH_SECRETS == 'true'
+        env:
+          KNOWN_HOSTS: ${{ secrets.PUBLISH_SSH_KNOWN_HOSTS }}
+        run: |
+          set -euo pipefail
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq sshpass
+          # pinned host key: the password never goes to an unverified host
+          install -d -m 700 ~/.ssh
+          printf '%s\n' "$KNOWN_HOSTS" > ~/.ssh/known_hosts
+          chmod 600 ~/.ssh/known_hosts
+
+      - name: Update and upload the manifest
+        if: env.HAS_PUBLISH_SECRETS == 'true'
+        env:
+          SSHPASS: ${{ secrets.PUBLISH_SSH_PASS }}
+          SSH_USER: ${{ secrets.PUBLISH_SSH_USER }}
+          SSH_HOST: ${{ secrets.PUBLISH_SSH_HOST }}
+          REMOTE_PATH: ${{ secrets.PUBLISH_REMOTE_PATH }}
+        run: |
+          set -euo pipefail
+          (cd dist && sha256sum eMuleQt-v* > SHA256SUMS.txt)
+          ssh_cmd='sshpass -e ssh -o StrictHostKeyChecking=yes'
+          remote="${SSH_USER}@${SSH_HOST}:${REMOTE_PATH%/}/emuleqt-version.json"
+
+          # over ssh, not https: Cloudflare may serve a stale copy
+          rsync -e "$ssh_cmd" "$remote" emuleqt-version.json
+
+          args=(--manifest emuleqt-version.json --version "$VERSION" --slug "$GITHUB_REPOSITORY"
+                --assets dist --geoip geoip/GeoLite2-Country.mmdb)
+          [ -f resolver/resolver.zip ] && args+=(--resolver resolver/resolver.zip)
+          scripts/update-manifest.sh "${args[@]}"
+
+          rsync -e "$ssh_cmd" emuleqt-version.json "$remote"
+
+          {
+            echo "### Update manifest"
+            echo
+            echo '```json'
+            cat emuleqt-version.json
             echo '```'
           } >> "$GITHUB_STEP_SUMMARY"

@@ -4,7 +4,7 @@
 <context>
     <name>ContainerSniffer</name>
     <message>
-        <location filename="../src/core/media/ContainerSniffer.cpp" line="+210"/>
+        <location filename="../src/core/media/ContainerSniffer.cpp" line="+242"/>
         <source>Named .%1 but matches no media container we recognise — very likely a fake.</source>
         <translation type="unfinished"></translation>
     </message>
@@ -737,7 +737,7 @@ Has comments</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../src/gui/app/main.cpp" line="+493"/>
+        <location filename="../src/gui/app/main.cpp" line="+500"/>
         <source>eMule Qt</source>
         <translation type="unfinished"></translation>
     </message>
@@ -749,7 +749,7 @@ Start it with --new-instance or --config &lt;dir&gt; to open another window.</so
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location line="+201"/>
+        <location line="+202"/>
         <source>Core Certificate Changed</source>
         <translation type="unfinished"></translation>
     </message>
@@ -764,7 +764,7 @@ Trust the new certificate?</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location line="+301"/>
+        <location line="+307"/>
         <source>Download Added</source>
         <translation type="unfinished"></translation>
     </message>
@@ -964,7 +964,7 @@ Download it again?</source>
     <name>Units</name>
     <message>
         <location filename="../src/core/utils/StringUtils.cpp" line="+72"/>
-        <location filename="../src/core/webserver/WebServer.cpp" line="+4083"/>
+        <location filename="../src/core/webserver/WebServer.cpp" line="+4087"/>
         <source>Bytes</source>
         <translation type="unfinished"></translation>
     </message>
@@ -2051,8 +2051,8 @@ Its downloads keep their files and move to All.</source>
 <context>
     <name>eMule::ClientDetailDialog</name>
     <message>
-        <location filename="../src/gui/dialogs/ClientDetailDialog.cpp" line="+125"/>
-        <location line="+30"/>
+        <location filename="../src/gui/dialogs/ClientDetailDialog.cpp" line="+93"/>
+        <location line="+20"/>
         <source>Client Details: %1</source>
         <translation type="unfinished"></translation>
     </message>
@@ -2476,7 +2476,12 @@ Its downloads keep their files and move to All.</source>
 <context>
     <name>eMule::ClientState</name>
     <message>
-        <location filename="../src/gui/utils/ClientStateText.h" line="+68"/>
+        <location filename="../src/gui/utils/ClientStateText.h" line="+33"/>
+        <source>Via ed3k</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <location line="+37"/>
         <source>Unknown</source>
         <translation type="unfinished"></translation>
     </message>
@@ -2984,7 +2989,7 @@ Enter the address and authentication token of a remote core.</source>
 <context>
     <name>eMule::DetailDialog</name>
     <message>
-        <location filename="../src/gui/dialogs/DetailDialog.cpp" line="+202"/>
+        <location filename="../src/gui/dialogs/DetailDialog.cpp" line="+204"/>
         <source>Rename</source>
         <translation type="unfinished"></translation>
     </message>
@@ -3005,7 +3010,7 @@ Enter the address and authentication token of a remote core.</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location line="+126"/>
+        <location line="+203"/>
         <source>Comments</source>
         <translation type="unfinished"></translation>
     </message>
@@ -3023,7 +3028,7 @@ Enter the address and authentication token of a remote core.</source>
 <context>
     <name>eMule::DownloadListModel</name>
     <message>
-        <location filename="../src/gui/controls/DownloadListModel.cpp" line="+816"/>
+        <location filename="../src/gui/controls/DownloadListModel.cpp" line="+817"/>
         <source>Downloading</source>
         <translation type="unfinished"></translation>
     </message>
@@ -3763,9 +3768,9 @@ Its names are then resolved after the lists you already follow.</source>
 <context>
     <name>eMule::Ed3kOptionsPages</name>
     <message>
-        <location filename="../src/gui/dialogs/Ed3kOptionsPages.cpp" line="+348"/>
+        <location filename="../src/gui/dialogs/Ed3kOptionsPages.cpp" line="+352"/>
         <location line="+11"/>
-        <location line="+502"/>
+        <location line="+498"/>
         <location line="+11"/>
         <location line="+23"/>
         <location line="+19"/>
@@ -3776,7 +3781,7 @@ Its names are then resolved after the lists you already follow.</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location line="-613"/>
+        <location line="-609"/>
         <source>The ledger contract is an address: 0x and 40 hexadecimal digits.</source>
         <translation type="unfinished"></translation>
     </message>
@@ -3791,7 +3796,7 @@ Its names are then resolved after the lists you already follow.</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location line="+18"/>
+        <location line="+7"/>
         <source>Sharing</source>
         <translation type="unfinished"></translation>
     </message>
@@ -3811,7 +3816,7 @@ Its names are then resolved after the lists you already follow.</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location line="+53"/>
+        <location line="+60"/>
         <source>Ports</source>
         <translation type="unfinished"></translation>
     </message>
@@ -3922,13 +3927,13 @@ Its names are then resolved after the lists you already follow.</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location line="+219"/>
+        <location line="+223"/>
         <source>Runs the ed3k node (packmule) in the core, on the eD2K UDP port or one of its own. It finds other nodes over Kad and serves the shared files.</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location line="+27"/>
-        <location line="+685"/>
+        <location line="+16"/>
+        <location line="+692"/>
         <location line="+6"/>
         <location line="+9"/>
         <location line="+13"/>
@@ -3938,7 +3943,7 @@ Its names are then resolved after the lists you already follow.</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location line="-723"/>
+        <location line="-728"/>
         <source>One port for eD2K and ed3k, and a user hash that tells eD2K peers this client also speaks ed3k.</source>
         <translation type="unfinished"></translation>
     </message>
@@ -3950,6 +3955,16 @@ Its names are then resolved after the lists you already follow.</source>
     <message>
         <location line="+1"/>
         <source>Shows the changes for this configuration and asks before making them.</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <location line="+4"/>
+        <source>Download eD2K files from ed3k peers too</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <location line="+1"/>
+        <source>Finds the ed3k copy of each eD2K download by its eD2K hash and fetches the missing parts there too. A source that also speaks ed3k is used over ed3k.</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
@@ -4000,12 +4015,12 @@ Its names are then resolved after the lists you already follow.</source>
     <message>
         <location line="+5"/>
         <location line="+10"/>
-        <location line="+988"/>
+        <location line="+980"/>
         <source> credits/MiB</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location line="-997"/>
+        <location line="-989"/>
         <source>Never pay (receipts only)</source>
         <translation type="unfinished"></translation>
     </message>
@@ -4161,12 +4176,12 @@ Its names are then resolved after the lists you already follow.</source>
     <message>
         <location line="+1"/>
         <location line="+6"/>
-        <location line="+583"/>
+        <location line="+585"/>
         <source>Remove</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location line="-579"/>
+        <location line="-581"/>
         <source>Followed name lists (the first one wins)</source>
         <translation type="unfinished"></translation>
     </message>
@@ -4248,12 +4263,12 @@ Its names are then resolved after the lists you already follow.</source>
     </message>
     <message>
         <location line="+0"/>
-        <location line="+832"/>
+        <location line="+824"/>
         <source>not read yet</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location line="-830"/>
+        <location line="-822"/>
         <source>The account is overdrawn: a new credit key is the way on.</source>
         <translation type="unfinished"></translation>
     </message>
@@ -4487,7 +4502,17 @@ Export?</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location line="+430"/>
+        <location line="+90"/>
+        <source>Lets the resolver open hoster pages, wait out their timers, show their puzzles and use the accounts below. On by default; needs the ed3k node.</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <location line="+3"/>
+        <source>Hoster downloads need the ed3k node (Options, ed3k, General).</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <location line="+329"/>
         <source>Autostart highspeed download</source>
         <translation type="unfinished"></translation>
     </message>
@@ -4542,8 +4567,7 @@ Export?</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location line="-1262"/>
-        <location line="+772"/>
+        <location line="-482"/>
         <source>ed3k</source>
         <translation type="unfinished"></translation>
     </message>
@@ -4564,22 +4588,16 @@ Export?</source>
     </message>
     <message>
         <location line="+13"/>
-        <location line="+215"/>
         <source>Downloads from file hosters</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location line="-213"/>
+        <location line="+2"/>
         <source>Allow downloads from file hosters</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location line="+1"/>
-        <source>Lets the resolver open hoster pages, wait out their timers, show their puzzles and use the accounts below. Off by default.</source>
-        <translation type="unfinished"></translation>
-    </message>
-    <message>
-        <location line="+10"/>
+        <location line="+13"/>
         <source>Hoster downloads at once. Never more than one per hoster and account.</source>
         <translation type="unfinished"></translation>
     </message>
@@ -4655,32 +4673,27 @@ Export?</source>
     </message>
     <message>
         <location line="+2"/>
-        <location line="+153"/>
+        <location line="+143"/>
         <source>Publish hoster links</source>
         <translation>Publish hoster links</translation>
     </message>
     <message>
-        <location line="-151"/>
+        <location line="-141"/>
         <source>A downloaded file is shared either way. Published, its link is found in ed3k and handed to other nodes: a link is often all that protects a file at a hoster.</source>
         <translation>A downloaded file is shared either way. Published, its link is found in ed3k and handed to other nodes: a link is often all that protects a file at a hoster.</translation>
     </message>
     <message>
-        <location line="+147"/>
+        <location line="+137"/>
         <source>&lt;p&gt;Sharing hoster links means: once a file from a link is downloaded and verified, its link is published in ed3k and handed to other nodes that download the same file.&lt;/p&gt;&lt;p&gt;A link is often all that keeps a file at a hoster private. Whoever knows the link can find the file in ed3k, and anyone can find the link of a file you share.&lt;/p&gt;&lt;p&gt;Publish hoster links?&lt;/p&gt;</source>
         <translation>&lt;p&gt;Sharing hoster links means: once a file from a link is downloaded and verified, its link is published in ed3k and handed to other nodes that download the same file.&lt;/p&gt;&lt;p&gt;A link is often all that keeps a file at a hoster private. Whoever knows the link can find the file in ed3k, and anyone can find the link of a file you share.&lt;/p&gt;&lt;p&gt;Publish hoster links?&lt;/p&gt;</translation>
     </message>
     <message>
-        <location line="-142"/>
+        <location line="-132"/>
         <source>Accounts</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location line="-937"/>
-        <source>This network is early alpha, experimental and not for live use yet. Please come back later.</source>
-        <translation type="unfinished"></translation>
-    </message>
-    <message>
-        <location line="+84"/>
+        <location line="-855"/>
         <source>Open Router</source>
         <translation type="unfinished"></translation>
     </message>
@@ -4695,7 +4708,7 @@ Export?</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location line="+767"/>
+        <location line="+769"/>
         <source>Check hoster links on search automatically</source>
         <translation type="unfinished"></translation>
     </message>
@@ -4745,7 +4758,7 @@ Export?</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location line="+56"/>
+        <location line="+54"/>
         <source>This build has no hoster resolver: hoster links are stored and passed on, but not downloaded.</source>
         <translation type="unfinished"></translation>
     </message>
@@ -4805,12 +4818,7 @@ Export?</source>
         <translation>Allow downloads from file hosters and apply first.</translation>
     </message>
     <message>
-        <location line="+12"/>
-        <source>&lt;p&gt;Downloads from file hosters run JDownloader&apos;s hoster plugins on this computer, in a program of their own.&lt;/p&gt;&lt;ul&gt;&lt;li&gt;The hoster sees your address and which file you fetch; with an account, also who you are to it.&lt;/li&gt;&lt;li&gt;Their pages may show puzzles and timers; eMuleQt shows image puzzles and waits out timers for you.&lt;/li&gt;&lt;li&gt;Fetching by program is against the terms of many hosters. That is between you and the hoster.&lt;/li&gt;&lt;li&gt;Every block that ed3k knows is verified; a file ed3k does not know is checked as a whole when complete.&lt;/li&gt;&lt;/ul&gt;&lt;p&gt;Allow downloads from file hosters?&lt;/p&gt;</source>
-        <translation type="unfinished"></translation>
-    </message>
-    <message>
-        <location line="+28"/>
+        <location line="+32"/>
         <source>Add hoster account</source>
         <translation type="unfinished"></translation>
     </message>
@@ -5942,7 +5950,7 @@ Its files go to the incoming folder, below a folder of the set&apos;s own; new v
 <context>
     <name>eMule::FileDetailDialog</name>
     <message>
-        <location filename="../src/gui/dialogs/FileDetailDialog.cpp" line="+150"/>
+        <location filename="../src/gui/dialogs/FileDetailDialog.cpp" line="+232"/>
         <source>File Details: %1</source>
         <translation type="unfinished"></translation>
     </message>
@@ -5950,11 +5958,12 @@ Its files go to the incoming folder, below a folder of the set&apos;s own; new v
         <location line="-38"/>
         <location line="+49"/>
         <location line="+7"/>
+        <location line="+159"/>
         <source>General</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location line="-6"/>
+        <location line="-165"/>
         <location line="+7"/>
         <source>File Names</source>
         <translation type="unfinished"></translation>
@@ -5993,73 +6002,87 @@ Its files go to the incoming folder, below a folder of the set&apos;s own; new v
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location line="+29"/>
+        <location line="+37"/>
         <location line="+20"/>
-        <location line="+56"/>
+        <location line="+237"/>
         <source>File Name</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location line="-75"/>
+        <location line="-256"/>
         <location line="+30"/>
         <source>Hash (MD4)</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
         <location line="+4"/>
+        <location line="+79"/>
         <source>AICH Hash</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location line="-33"/>
-        <location line="+37"/>
+        <location line="-112"/>
+        <location line="+49"/>
         <source>File Size</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location line="-37"/>
-        <location line="+37"/>
+        <location line="-49"/>
+        <location line="+49"/>
         <source>%1 (%2 Bytes)</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location line="-36"/>
-        <location line="+41"/>
+        <location line="-48"/>
+        <location line="+53"/>
+        <location line="+151"/>
+        <location line="+6"/>
         <source>Completed</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location line="-37"/>
-        <location line="+43"/>
+        <location line="-206"/>
+        <location line="+55"/>
+        <location line="+125"/>
+        <location line="+2"/>
         <source>Status</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location line="-42"/>
-        <location line="+43"/>
+        <location line="-181"/>
+        <location line="+55"/>
+        <location line="+139"/>
         <source>Priority</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location line="-42"/>
-        <location line="+47"/>
-        <location line="+20"/>
+        <location line="-193"/>
+        <location line="+59"/>
+        <location line="+127"/>
+        <location line="+44"/>
+        <location line="+18"/>
         <source>Sources</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location line="-47"/>
+        <location line="-228"/>
+        <location line="+82"/>
         <source>File Path</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location line="-16"/>
-        <location line="+46"/>
+        <location line="-98"/>
+        <location line="+58"/>
         <source>Created</source>
         <translation type="unfinished"></translation>
     </message>
+    <message>
+        <location line="-295"/>
+        <source>%1   (%2 ago)</source>
+        <translation type="unfinished"></translation>
+    </message>
     <message numerus="yes">
-        <location line="-175"/>
+        <location line="+100"/>
         <source>File Details: %n files</source>
         <translation type="unfinished">
             <numerusform></numerusform>
@@ -6067,25 +6090,245 @@ Its files go to the incoming folder, below a folder of the set&apos;s own; new v
         </translation>
     </message>
     <message>
-        <location line="+122"/>
-        <location line="+43"/>
+        <location line="+130"/>
+        <location line="+55"/>
+        <location line="+144"/>
+        <location line="+7"/>
+        <location line="+29"/>
         <source>Transferred</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location line="-35"/>
-        <location line="+46"/>
+        <location line="-227"/>
+        <location line="+58"/>
         <source>Last Seen Complete</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location line="-45"/>
-        <location line="+46"/>
+        <location line="-57"/>
+        <location line="+58"/>
         <source>Last Reception</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location line="+25"/>
+        <location line="+33"/>
+        <source>Name</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <location line="+6"/>
+        <source>Hash</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <location line="+2"/>
+        <location line="+27"/>
+        <location line="+78"/>
+        <location line="+2"/>
+        <location line="+16"/>
+        <source>Unknown</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <location line="-121"/>
+        <source>Size</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <location line="+0"/>
+        <source>%1 (%2 Bytes); Size on disk: %3</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <location line="+12"/>
+        <location line="+3"/>
+        <source>%1 (Verified)</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <location line="+1"/>
+        <location line="+5"/>
+        <source>Invalid file extension: %1</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <location line="-1"/>
+        <location line="+5"/>
+        <location line="+90"/>
+        <source>%1 (Unverified)</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <location line="-86"/>
+        <source>Type</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <location line="+10"/>
+        <source>Parts</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <location line="+0"/>
+        <source>%1; available: %2 (%3%)</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message numerus="yes">
+        <location line="+7"/>
+        <source>Downloading (from %n source(s))</source>
+        <translation type="unfinished">
+            <numerusform></numerusform>
+            <numerusform></numerusform>
+        </translation>
+    </message>
+    <message>
+        <location line="-116"/>
+        <location line="+126"/>
+        <location line="+13"/>
+        <source>No</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <location line="-145"/>
+        <location line="+198"/>
+        <source>BLAKE3 Hash</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <location line="-198"/>
+        <source>Not hashed yet</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <location line="+3"/>
+        <source>eD2K alias</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <location line="+2"/>
+        <source>Keywords</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <location line="+1"/>
+        <source>Published on ed3k</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <location line="+128"/>
+        <location line="+5"/>
+        <location line="+2"/>
+        <location line="+2"/>
+        <source>Yes</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <location line="+4"/>
+        <source>Hashset available</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <location line="+6"/>
+        <source>Transfer</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <location line="+3"/>
+        <source>%1 (Useful: %2, NNP: %3); A4AF: %4</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <location line="+5"/>
+        <source>Datarate</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <location line="+5"/>
+        <source>Compression</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <location line="+2"/>
+        <source>Corrupted</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <location line="+1"/>
+        <location line="+5"/>
+        <source>Remaining</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <location line="-4"/>
+        <source>Recovered</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message numerus="yes">
+        <location line="+0"/>
+        <source>%n Part(s)</source>
+        <translation type="unfinished">
+            <numerusform></numerusform>
+            <numerusform></numerusform>
+        </translation>
+    </message>
+    <message>
+        <location line="+8"/>
+        <source>Dates</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <location line="+1"/>
+        <source>Download added</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <location line="+2"/>
+        <source>Download time</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <location line="+1"/>
+        <source>Seen complete</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <location line="+0"/>
+        <location line="+1"/>
+        <source>Never</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <location line="+0"/>
+        <source>Last reception</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <location line="+4"/>
+        <source>ed3k</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <location line="+4"/>
+        <source>%1 (Trusted)</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <location line="+2"/>
+        <source>Searching...</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <location line="+2"/>
+        <source>Not found</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <location line="+4"/>
+        <source>%1 (transferring %2)</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <location line="+28"/>
         <source>No alternative file names reported by sources. Use “Search Kad” to look them up.</source>
         <translation type="unfinished"></translation>
     </message>
@@ -6120,7 +6363,7 @@ Its files go to the incoming folder, below a folder of the set&apos;s own; new v
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location line="+92"/>
+        <location line="+116"/>
         <source>No media information available.</source>
         <translation type="unfinished"></translation>
     </message>
@@ -7182,7 +7425,7 @@ Its files go to the incoming folder, below a folder of the set&apos;s own; new v
 <context>
     <name>eMule::IpcClient</name>
     <message>
-        <location filename="../src/gui/app/IpcClient.cpp" line="+1029"/>
+        <location filename="../src/gui/app/IpcClient.cpp" line="+1034"/>
         <source>The core&apos;s certificate changed</source>
         <translation type="unfinished"></translation>
     </message>
@@ -8225,7 +8468,7 @@ Other members see your nick and posts; your node takes part in passing the room&
     <name>eMule::MainWindow</name>
     <message>
         <location filename="../src/gui/app/MainWindow.cpp" line="+107"/>
-        <location line="+611"/>
+        <location line="+616"/>
         <source>eMule Qt v%1</source>
         <translation type="unfinished"></translation>
     </message>
@@ -8252,12 +8495,12 @@ Other members see your nick and posts; your node takes part in passing the room&
     </message>
     <message>
         <location line="+8"/>
-        <location line="+1420"/>
+        <location line="+1426"/>
         <source>eD2K: Disconnected</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location line="-1362"/>
+        <location line="-1368"/>
         <source>Kad: Connected</source>
         <translation type="unfinished"></translation>
     </message>
@@ -8273,12 +8516,12 @@ Other members see your nick and posts; your node takes part in passing the room&
     </message>
     <message>
         <location line="+4"/>
-        <location line="+1354"/>
+        <location line="+1360"/>
         <source>Kad: Disconnected</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location line="-1302"/>
+        <location line="-1308"/>
         <source>Users: %1 | Files: %2</source>
         <translation type="unfinished"></translation>
     </message>
@@ -8330,12 +8573,12 @@ Other members see your nick and posts; your node takes part in passing the room&
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location line="-980"/>
+        <location line="-985"/>
         <source>Quit eMule Qt</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location line="+41"/>
+        <location line="+46"/>
         <source>eMule Qt %1 has been released.</source>
         <translation type="unfinished"></translation>
     </message>
@@ -8740,7 +8983,7 @@ Enable it under Options → Web Interface, then try again.</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location line="+33"/>
+        <location line="+39"/>
         <source>Disconnect</source>
         <translation type="unfinished"></translation>
     </message>
@@ -9618,7 +9861,7 @@ Download it again?</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location line="+39"/>
+        <location line="+41"/>
         <location line="+87"/>
         <source>Could not download &quot;%1&quot;: %2</source>
         <translation type="unfinished"></translation>
@@ -9664,7 +9907,12 @@ Download it again?</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location line="+86"/>
+        <location line="+23"/>
+        <source>Login cancelled: the file was not fetched.</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <location line="+70"/>
         <source>Search</source>
         <translation type="unfinished"></translation>
     </message>
@@ -20451,82 +20699,82 @@ Clicking &apos;Restore Stats&apos; again will reload your current statistics.</s
         <location line="-706"/>
         <location line="+291"/>
         <location line="+457"/>
-        <location line="+1392"/>
+        <location line="+1397"/>
         <source>Pause</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location line="-2190"/>
+        <location line="-2195"/>
         <location line="+341"/>
         <source>Priority (Download)</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
         <location line="-312"/>
-        <location line="+2147"/>
+        <location line="+2152"/>
         <location line="+177"/>
         <source>Low</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location line="-2323"/>
-        <location line="+2146"/>
+        <location line="-2328"/>
+        <location line="+2151"/>
         <location line="+178"/>
         <source>Normal</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location line="-2323"/>
-        <location line="+2145"/>
+        <location line="-2328"/>
+        <location line="+2150"/>
         <location line="+179"/>
         <source>High</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location line="-2320"/>
-        <location line="+2324"/>
+        <location line="-2325"/>
+        <location line="+2329"/>
         <source>Very Low</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location line="-2322"/>
-        <location line="+2324"/>
+        <location line="-2327"/>
+        <location line="+2329"/>
         <source>Very High</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location line="-2322"/>
-        <location line="+2325"/>
+        <location line="-2327"/>
+        <location line="+2330"/>
         <source>Auto</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location line="-2305"/>
+        <location line="-2310"/>
         <location line="+282"/>
         <location line="+463"/>
-        <location line="+1388"/>
+        <location line="+1393"/>
         <source>Stop</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location line="-2124"/>
+        <location line="-2129"/>
         <location line="+273"/>
         <location line="+469"/>
-        <location line="+1384"/>
+        <location line="+1389"/>
         <source>Resume</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location line="-2113"/>
+        <location line="-2118"/>
         <location line="+260"/>
         <location line="+475"/>
-        <location line="+1380"/>
+        <location line="+1385"/>
         <location line="+4"/>
         <source>Cancel</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location line="-2086"/>
+        <location line="-2091"/>
         <source>Preview with</source>
         <translation type="unfinished"></translation>
     </message>
@@ -20651,7 +20899,7 @@ Clicking &apos;Restore Stats&apos; again will reload your current statistics.</s
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location line="+603"/>
+        <location line="+608"/>
         <source>Download In Alphabetical Order</source>
         <translation type="unfinished"></translation>
     </message>
@@ -20712,7 +20960,7 @@ Clicking &apos;Restore Stats&apos; again will reload your current statistics.</s
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location line="-2732"/>
+        <location line="-2737"/>
         <location line="+245"/>
         <location line="+481"/>
         <location line="+637"/>
@@ -20729,13 +20977,13 @@ Clicking &apos;Restore Stats&apos; again will reload your current statistics.</s
     </message>
     <message>
         <location line="-1372"/>
-        <location line="+2267"/>
+        <location line="+2272"/>
         <location line="+118"/>
         <source>Details...</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location line="-2376"/>
+        <location line="-2381"/>
         <source>Comments...</source>
         <translation type="unfinished"></translation>
     </message>
@@ -20760,14 +21008,14 @@ Clicking &apos;Restore Stats&apos; again will reload your current statistics.</s
     <message>
         <location line="-64"/>
         <location line="+64"/>
-        <location line="+2058"/>
+        <location line="+2063"/>
         <location line="+113"/>
         <location line="+72"/>
         <source>Find...</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location line="-2299"/>
+        <location line="-2304"/>
         <source>Search Related Files</source>
         <translation type="unfinished"></translation>
     </message>
@@ -20784,7 +21032,7 @@ Clicking &apos;Restore Stats&apos; again will reload your current statistics.</s
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location line="+1235"/>
+        <location line="+1240"/>
         <source>Uploading</source>
         <translation type="unfinished"></translation>
     </message>
@@ -20804,13 +21052,13 @@ Clicking &apos;Restore Stats&apos; again will reload your current statistics.</s
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location line="-1314"/>
-        <location line="+1381"/>
+        <location line="-1319"/>
+        <location line="+1386"/>
         <source>Priority</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location line="-1858"/>
+        <location line="-1863"/>
         <location line="+560"/>
         <source>(Unassign)</source>
         <translation type="unfinished"></translation>
@@ -20846,7 +21094,7 @@ Clicking &apos;Restore Stats&apos; again will reload your current statistics.</s
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location line="+1226"/>
+        <location line="+1231"/>
         <location line="+7"/>
         <source>Downloads (%1)</source>
         <translation type="unfinished"></translation>
@@ -20885,7 +21133,7 @@ Clicking &apos;Restore Stats&apos; again will reload your current statistics.</s
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location line="-617"/>
+        <location line="-622"/>
         <location line="+23"/>
         <source>Preview not available — web server is not running or stream token not received.</source>
         <translation type="unfinished"></translation>
@@ -20896,7 +21144,7 @@ Clicking &apos;Restore Stats&apos; again will reload your current statistics.</s
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location line="+444"/>
+        <location line="+449"/>
         <source>Downloading (%1)</source>
         <translation type="unfinished"></translation>
     </message>
@@ -21585,24 +21833,6 @@ A password is set for this release.</source>
     <message>
         <location line="+1"/>
         <source>Category</source>
-        <translation type="unfinished"></translation>
-    </message>
-</context>
-<context>
-    <name>eMule::VersionChecker</name>
-    <message>
-        <location filename="../src/gui/app/VersionChecker.cpp" line="+100"/>
-        <source>the version manifest is not a JSON object</source>
-        <translation type="unfinished"></translation>
-    </message>
-    <message>
-        <location line="+1"/>
-        <source>invalid JSON response: %1</source>
-        <translation type="unfinished"></translation>
-    </message>
-    <message>
-        <location line="+7"/>
-        <source>the version manifest has no &apos;latest&apos; field</source>
         <translation type="unfinished"></translation>
     </message>
 </context>

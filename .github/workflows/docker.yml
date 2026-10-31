@@ -106,7 +106,6 @@ jobs:
           platforms: ${{ matrix.platform }}
           build-args: |
             VERSION=${{ inputs.version || 'edge' }}
-            EMULE_ED3K_LOCKED=1
           outputs: type=image,name=${{ env.IMAGE }},push-by-digest=true,name-canonical=true,push=true
           cache-from: type=gha,scope=docker-${{ matrix.arch }}
           cache-to: type=gha,scope=docker-${{ matrix.arch }},mode=max

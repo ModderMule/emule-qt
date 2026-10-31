@@ -1423,7 +1423,9 @@ void ServerList::noteObservedIPv4(const Server& server, const Endpoint& from, ui
                    .arg(observed.toString()));
         return;
     }
-    if (observed == server.ipAddress()) {
+    // ed2k-server puts its own IP here for everyone; it is ours only behind its NAT
+    // (hairpin), and then Kad or the login already says so. Same rule as OP_IDCHANGE.
+    if (!ServerConnect::acceptReportedIP(raw, from.address(), &server, theApp.publicIP())) {
         reject(QStringLiteral("reflected IPv4 %1 is the server's own address — ignored")
                    .arg(observed.toString()));
         return;

@@ -4,6 +4,7 @@
 #include "CommandLineExec.h"
 #include <QFileInfo>
 #include <QFile>
+#include "AutoUpdater.h"
 #include "CliIpcClient.h"
 
 #include "IpcMessage.h"
@@ -35,8 +36,10 @@ void CommandLineExec::parse(QCoreApplication& app)
     m_parser.addOption(m_disconnectKadOption);
     m_parser.addOption(m_configOption);
     m_parser.addOption(m_holdConnectOption);
+    m_parser.addOption(m_autoUpdateOption);
+    m_parser.addOption(m_autoUpdateHoursOption);
 
-    processCommandLine(m_parser, app);
+    processCommandLine(m_parser, app, AutoUpdater::normalizeArgs(app.arguments()));
 }
 
 bool CommandLineExec::hasCommand() const
@@ -186,6 +189,16 @@ QString CommandLineExec::configOverride() const
 bool CommandLineExec::holdConnect() const
 {
     return m_parser.isSet(m_holdConnectOption);
+}
+
+bool CommandLineExec::autoUpdate() const
+{
+    return m_parser.isSet(m_autoUpdateOption);
+}
+
+int CommandLineExec::autoUpdateHours() const
+{
+    return m_parser.isSet(m_autoUpdateHoursOption) ? m_parser.value(m_autoUpdateHoursOption).toInt() : 0;
 }
 
 } // namespace eMule

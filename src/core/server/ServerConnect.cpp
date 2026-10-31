@@ -22,6 +22,7 @@
 #include "utils/Log.h"
 #include "utils/TimeUtils.h"
 
+#include <QDateTime>
 #include <QHostAddress>
 #include <QNetworkInterface>
 #include <QTime>
@@ -826,6 +827,10 @@ bool ServerConnect::isLowID() const
 
 void ServerConnect::setClientID(uint32 newid)
 {
+    if (newid == 0)
+        m_loginAtMs = 0;
+    else if (m_clientID == 0)
+        m_loginAtMs = QDateTime::currentMSecsSinceEpoch();
     m_clientID = newid;
 
     // MFC: CServerConnect::SetClientID() — sockets.cpp:562. A HighID *is* our
@@ -849,6 +854,21 @@ Address ServerConnect::sessionAddress() const
     if (m_connected && m_connectedSocket)
         return m_connectedSocket->sessionAddress();
     return {};
+}
+
+// The field is the IP the server sees us on (eMule, eNode-go, ed2k-server >= 0.9.77).
+// ed2k-server <= 0.9.76 sent its own IP to everyone; newer ones still do for a client
+// behind the server's own NAT (hairpin), where that IS our IP. Both look the same from
+// here, so the server's own address needs a second source. A server reached by its LAN
+// address reports a different (public) one and is taken as is.
+bool ServerConnect::acceptReportedIP(uint32 reportedIP, const Address& session,
+                                     const Server* server, uint32 knownIP)
+{
+    if (reportedIP == 0)
+        return false;
+    const Address reported = Address::fromNetworkOrder(reportedIP);
+    const bool serversOwn = reported == session || (server && server->hasAddress(reported));
+    return !serversOwn || reportedIP == knownIP;
 }
 
 bool ServerConnect::isLocalServer(uint32 ip, uint16 port) const
@@ -1165,16 +1185,13 @@ void ServerConnect::onLoginReceived(ServerSocket* socket, uint32 clientID, uint3
     // (m_clientid set, then SetConnectionState(CS_CONNECTED), then SetClientID).
     setClientID(clientID);
 
-    // ed2k-server (Rust) puts its OWN configured IP here, not ours. Adopting it would
-    // make us claim the server's address. Same rung as ServerList::noteObservedIPv4().
-    if (serverReportedIP != 0) {
-        const Address reported = Address::fromNetworkOrder(serverReportedIP);
-        const Server* cur = socket->currentServer();
-        if (reported == socket->sessionAddress() || (cur && cur->hasAddress(reported))) {
-            logServerVerbose(QStringLiteral("OP_IDCHANGE: reported IP %1 is the server's own address — ignored")
-                                 .arg(reported.toString()));
-            serverReportedIP = 0;
-        }
+    // Old ed2k-server reports its own IP here; hairpin clients get it from new ones too.
+    if (serverReportedIP != 0
+        && !acceptReportedIP(serverReportedIP, socket->sessionAddress(), socket->currentServer(),
+                             theApp.publicIP())) {
+        logServerVerbose(QStringLiteral("OP_IDCHANGE: reported IP %1 is the server's own address — ignored")
+                             .arg(Address::fromNetworkOrder(serverReportedIP).toString()));
+        serverReportedIP = 0;
     }
     if (eMule::isLowID(clientID) && serverReportedIP != 0)
         theApp.setPublicIP(serverReportedIP);

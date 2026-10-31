@@ -88,6 +88,7 @@ private slots:
     void observedIPv4_adoptedAfterThresholdDistinctServers();
     void observedIPv4_needsExactly44Bytes();
     void observedIPv4_rejectsImplausibleValues();
+    void observedIPv4_ownAddressCountsWhenKnown();
     void observedIPv4_shadowedByEd2kSession();
     void observedIPv4_stickyWhenNoNewWinner();
     void observedIPv4_expiresServerUDPKeys();
@@ -1829,6 +1830,17 @@ void tst_ServerList::observedIPv4_rejectsImplausibleValues()
                                udpSenderFor(0x08080808, 4661));
     QCOMPARE(s->users(), 77u);
     QCOMPARE(s->serverKeyUDPRaw(), 0xCAFEBABEu);
+}
+
+void tst_ServerList::observedIPv4_ownAddressCountsWhenKnown()
+{
+    ServerCorroborationGuard corr(2, 900);
+    // hairpin: the login already put us at the server's address
+    PublicIPGuard guard(0x08080808);
+    ServerList list;
+    feedObservedIP(list, 0x08080808, 0x08080808);   // own address, now a vote
+    feedObservedIP(list, 0x09090909, 0x08080808);
+    QCOMPARE(theApp.serverCorroboratedIP(), uint32{0x08080808});
 }
 
 void tst_ServerList::observedIPv4_shadowedByEd2kSession()

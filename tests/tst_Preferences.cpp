@@ -387,13 +387,33 @@ private slots:
         QVERIFY(!Preferences::applyEd3kCreditKey(k, QStringLiteral("ed3kLan"), QCborValue(true)));
     }
 
+    void hosterDownloadsOn_needsBothSwitches()
+    {
+        // hosters run on the ed3k node: the Hoster tab, the resolver unpack and the Java
+        // fetch follow both switches (#88)
+        Preferences p;
+        Ed3kHosterPrefs h = p.ed3kHoster();
+        for (const bool node : {false, true})
+            for (const bool hoster : {false, true}) {
+                p.setEd3kEnabled(node);
+                h.enabled = hoster;
+                p.setEd3kHoster(h);
+                QCOMPARE(p.hosterDownloadsOn(), node && hoster);
+            }
+    }
+
     void ed3kHoster_roundTrip()
     {
-        // hoster.md §3: downloads off by default; vouched links published by default (user's choice)
-        const Ed3kHosterPrefs none = Preferences().ed3kHoster();
-        QVERIFY(!none.enabled);
+        // hoster downloads on by default, like the ed3k node they run on (#88); vouched links
+        // published by default (user's choice)
+        const Preferences defaults;
+        const Ed3kHosterPrefs none = defaults.ed3kHoster();
+        QVERIFY(none.enabled);
+        QVERIFY(defaults.ed3kEnabled());
+        QVERIFY(defaults.hosterDownloadsOn());
         QVERIFY(none.publishLinks);
         QVERIFY(none.accounts.isEmpty());
+        QVERIFY(none.sharedPluginDir.isEmpty());   // per instance
 
         TempDir tmp;
         const auto file = tmp.filePath(QStringLiteral("hoster.yaml"));
@@ -405,6 +425,7 @@ private slots:
         h.askPuzzles = false;
         h.publishLinks = false;
         h.fromPeers = false;
+        h.sharedPluginDir = QStringLiteral("/srv/emuleqt/resolver");
         h.accounts = {{QStringLiteral("rapidgator.net"), QStringLiteral("me"), QStringLiteral("s3cret")}};
         {
             Preferences prefs;

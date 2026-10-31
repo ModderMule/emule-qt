@@ -222,7 +222,7 @@ inline void insertFakeVerdict(QCborMap& m, const FakeFileVerdict& verdict)
         {QStringLiteral("hashsetNeeded"),       f.partCount() > 1 && f.isMD4HashsetNeeded()},
         {QStringLiteral("lastReception"),       static_cast<qint64>(f.lastReceptionDate())},
         {QStringLiteral("addedOn"),             static_cast<qint64>(f.createdDate())},
-        {QStringLiteral("fileType"),            f.fileType()},
+        {QStringLiteral("fileType"),            f.displayFileType()},
         {QStringLiteral("requests"),            static_cast<qint64>(f.statistic.allTimeRequests())},
         {QStringLiteral("acceptedReqs"),        static_cast<qint64>(f.statistic.allTimeAccepts())},
         {QStringLiteral("upTransferred"),       static_cast<qint64>(f.statistic.allTimeTransferred())},

@@ -63,7 +63,7 @@ QCborMap sharedFileRow(KnownFile* kf, const SharedFileList::ShareRules& rules,
     m.insert(QStringLiteral("hash"), hash);
     m.insert(QStringLiteral("fileName"), kf->fileName());
     m.insert(QStringLiteral("fileSize"), static_cast<qint64>(kf->fileSize()));
-    m.insert(QStringLiteral("fileType"), kf->fileType());
+    m.insert(QStringLiteral("fileType"), kf->displayFileType());
     // Comment/rating marks, same shape as the download rows.
     m.insert(QStringLiteral("hasComment"), kf->hasComment());
     m.insert(QStringLiteral("userRating"), static_cast<int>(kf->userRating(true)));

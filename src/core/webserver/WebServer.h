@@ -170,6 +170,9 @@ public:
     /// instead. Optional: without it the page renders empty axes.
     void setStatsHistory(StatsHistory* history);
     void setPreferences(Preferences* prefs);
+    /// The bundled config dir assets and the default template come from (tests);
+    /// unset: AppConfig::bundledDataDir(). Read by start().
+    void setBundleDir(const QString& dir) { m_bundleDirOverride = dir; }
     void setLogProvider(std::function<QString()> provider) { m_logProvider = std::move(provider); }
 
     /// Resolve one file of one Usenet queue item for streaming. Optional:
@@ -380,10 +383,10 @@ private:
     /// Absolute path to the static asset named @p fileName, or empty if there is
     /// none that may be served.
     ///
-    /// Two roots, tried in order: the directory of a custom templatePath, then the
-    /// seeded config/webserver/. Per file, not per theme — a theme that overrides
-    /// only sprites.css still gets the shipped PNGs. With no custom template there
-    /// is one root and the behaviour is what it always was.
+    /// Three roots, tried in order: the directory of a custom templatePath, then the
+    /// user's overrides in config/webserver/, then the bundle's webserver/. Per file,
+    /// not per theme — a theme that overrides only sprites.css still gets the shipped
+    /// PNGs.
     ///
     /// Guarded like resolveIncomingPath(): canonicalise, then require containment,
     /// which is also what stops a symlink in a theme directory from reading outside
@@ -397,7 +400,7 @@ private:
     /// no sprite sheet and no template to lean on.
     /// The rating/fake sprite sheet as one inline `data:` URI plus its nine cell
     /// rules, so the incoming pages can draw exactly the marks the rest of the UI
-    /// draws. The sheet is 410 bytes and is seeded to config/webserver/ whether or
+    /// draws. The sheet is 410 bytes and ships in the bundle's webserver/ whether or
     /// not the web UI is enabled, unlike the static route that normally serves it.
     /// Resolved through resolveWebAsset(), so a custom template may override it.
     /// Empty when it cannot be read; callers fall back to the CSS-drawn mark.
@@ -529,8 +532,10 @@ private:
     // Template engine & session manager
     std::unique_ptr<class WebTemplateEngine> m_templateEngine;
     std::unique_ptr<class WebSessionManager> m_sessionManager;
-    QString m_webDataDir;            // config/webserver/ — the seeded assets
+    QString m_webDataDir;            // config/webserver/ — the user's overrides
+    QString m_webBundleDir;          // <bundle>/webserver/ — the shipped assets
     QString m_webAssetOverrideDir;   // dir holding a custom template, empty when none
+    std::optional<QString> m_bundleDirOverride;   ///< setBundleDir()
 
     /// ratingSpriteCss(), built once. Empty string means "read and failed"; unset
     /// means "not looked yet", so a missing sheet is not re-read on every request.

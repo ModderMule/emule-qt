@@ -36,6 +36,9 @@ public:
     /// Whether --new-instance was given: skip the one-GUI-per-profile guard.
     [[nodiscard]] bool newInstance() const { return m_newInstance; }
 
+    /// Hidden --after-update: started by emuleqt-updater, the core comes back by itself.
+    [[nodiscard]] bool afterUpdate() const { return m_afterUpdate; }
+
     /// The ed2k links and .nzb files given on the command line, as typed.
     [[nodiscard]] const QStringList& positionalArgs() const { return m_positionalArgs; }
 
@@ -124,6 +127,10 @@ private:
         QStringLiteral("Open another window even if one already runs for this "
                        "install and config dir.")};
 
+    QCommandLineOption m_afterUpdateOption{
+        QStringLiteral("after-update"),
+        QStringLiteral("Started by the updater: wait for the core, never start one.")};
+
     QCommandLineOption m_registerTypesOption{
         QStringLiteral("register-file-types"),
         QStringLiteral("Claim .nzb, .torrent and magnet: links for this executable, then exit.")};
@@ -135,6 +142,7 @@ private:
     // Cached parsed values
     bool m_screenshotMode = false;
     bool m_newInstance = false;
+    bool m_afterUpdate = false;
     QString m_screenshotPath;
     int m_screenshotDelay = 3000;
     int m_optionsPage = -1;

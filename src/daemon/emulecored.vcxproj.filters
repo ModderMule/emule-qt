@@ -54,6 +54,9 @@
     <ClCompile Include="WinShutdownHandler.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
+    <ClCompile Include="AutoUpdater.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
     <ClCompile Include="PowerManager.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
@@ -134,6 +137,9 @@
     <QtMoc Include="IpcServer.h">
       <Filter>Header Files</Filter>
     </QtMoc>
+    <QtMoc Include="AutoUpdater.h">
+      <Filter>Header Files</Filter>
+    </QtMoc>
     <QtMoc Include="PowerManager.h">
       <Filter>Header Files</Filter>
     </QtMoc>
@@ -156,6 +162,9 @@
       <Filter>Header Files</Filter>
     </ClInclude>
     <ClInclude Include="Ed3kBridge.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="Ed3kOffGate.h">
       <Filter>Header Files</Filter>
     </ClInclude>
     <ClInclude Include="Ed3kFriendsBridge.h">

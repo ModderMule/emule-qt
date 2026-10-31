@@ -194,6 +194,7 @@ cargo build --release -p packmule-ffi --manifest-path ..\..\libs\packmule\Cargo.
     <ClCompile Include="Ed3kSiteCache.cpp" />
     <ClCompile Include="Ed3kSiteServer.cpp" />
     <ClCompile Include="Ed3kStore.cpp" />
+    <ClCompile Include="Ed3kEd2kJoin.cpp" />
     <ClCompile Include="Ed3kTorrentJoin.cpp" />
     <ClCompile Include="Ed3kUsenetJoin.cpp" />
   </ItemGroup>
@@ -230,6 +231,7 @@ cargo build --release -p packmule-ffi --manifest-path ..\..\libs\packmule\Cargo.
     <QtMoc Include="Ed3kSession.h" />
     <QtMoc Include="Ed3kShared.h" />
     <QtMoc Include="Ed3kSiteServer.h" />
+    <QtMoc Include="Ed3kEd2kJoin.h" />
     <QtMoc Include="Ed3kTorrentJoin.h" />
     <QtMoc Include="Ed3kUsenetJoin.h" />
   </ItemGroup>

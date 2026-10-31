@@ -13,6 +13,7 @@
 #include "net/natt/KadBuddyNatPath.h"
 #include "utils/OtherFunctions.h"
 
+#include <QDateTime>
 #include <QSignalSpy>
 #include <QTest>
 #include <QtEndian>
@@ -178,6 +179,7 @@ private slots:
     void foreign_answerHashWithoutFlag();
     void foreign_noFlagFails();
     void foreign_target_noReciprocalRequest();
+    void foreign_target_plainBurstWithoutKey();
     void foreign_target_requestersKeptApart();
     void foreign_hashlessSourceFailsOnce();
     void foreign_requesterDialsTcpAtOnce();
@@ -1523,6 +1525,49 @@ void tst_NatRendezvousPaths::foreign_target_waitsToBeDialled()
     for (int i = 0; i < 20; ++i)
         g.advance(1000);
     QVERIFY(g.env->dials.empty());
+}
+
+void tst_NatRendezvousPaths::foreign_target_plainBurstWithoutKey()
+{
+    // A LowID on ed2k-server may not know its public IP (the server reports its own),
+    // so a key from an earlier session is hidden. The burst still goes out, plain.
+    HubFixture f;
+    logInLugdunum(f);
+    theApp.setPublicIP(0);
+    f.env->server->setServerKeyUDP(kServerKey);
+    f.env->sessionStartMs = QDateTime::currentMSecsSinceEpoch() + 60000;
+    QCOMPARE(f.env->serverUdpCrypt().key, 0u);
+    QVERIFY(f.hub->handleServerTcp(OP_NAT_CALLBACKREQUESTED, notice(kPeerIP, kPeerUdp, 0, 0)));
+    for (int i = 0; i < 3; ++i) {
+        f.env->clock += Ed2kServerHolePunchPath::kBurstStepMs;
+        f.hub->processFast();
+    }
+    const auto ka = f.env->udpWith(OP_EDONKEYPROT, OP_SERVER_NATT_KEEPALIVE);
+    QCOMPARE(ka.size(), size_t{3});
+    for (const auto& k : ka) {
+        QCOMPARE(k.serverKey, 0u);
+        QCOMPARE(k.to, Endpoint(kServerIP, static_cast<uint16>(kServerPort + 4)));
+        QVERIFY(k.payload == hashBytes(f.env->hash));
+    }
+
+    // a key received in this session, stamped for no IP: obfuscated
+    HubFixture g;
+    logInLugdunum(g);
+    theApp.setPublicIP(0);
+    g.env->sessionStartMs = QDateTime::currentMSecsSinceEpoch() - 1000;
+    g.env->server->setServerKeyUDP(kServerKey);
+    QVERIFY(g.hub->handleServerTcp(OP_NAT_CALLBACKREQUESTED, notice(kPeerIP, kPeerUdp, 0, 0)));
+    for (int i = 0; i < 3; ++i) {
+        g.env->clock += Ed2kServerHolePunchPath::kBurstStepMs;
+        g.hub->processFast();
+    }
+    const auto kb = g.env->udpWith(OP_EDONKEYPROT, OP_SERVER_NATT_KEEPALIVE);
+    QCOMPARE(kb.size(), size_t{3});
+    for (const auto& k : kb) {
+        QCOMPARE(k.serverKey, kServerKey);
+        QCOMPARE(k.to, Endpoint(kServerIP, kObfPort));
+    }
+    theApp.setPublicIP(kOurIP.toNetworkUint32());
 }
 
 QTEST_GUILESS_MAIN(tst_NatRendezvousPaths)

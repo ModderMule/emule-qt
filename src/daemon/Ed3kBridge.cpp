@@ -22,7 +22,9 @@
 
 #ifdef EMULE_HAVE_ED3K
 #include "Ed3kBootstrap.h"
+#include "Ed3kEd2kJoin.h"
 #include "Ed3kSession.h"
+#include "Ed3kShared.h"
 #endif
 
 namespace eMule::Ed3kBridge {
@@ -34,6 +36,8 @@ namespace {
 
 ed3k::Ed3kSession* s_session = nullptr;
 ed3k::Ed3kBootstrap* s_bootstrap = nullptr;
+ed3k::Ed3kEd2kJoin* s_ed2kJoin = nullptr;
+ed3k::Ed3kShared* s_shared = nullptr;
 
 /// OpenEd3kNodesLink, AnswerEd3kBootstrapAsk (1030-1031). False: not one of them.
 bool handleBootstrap(const IpcMessage& msg, const std::function<void(const IpcMessage&)>& reply)
@@ -98,6 +102,53 @@ ed3k::Ed3kSession* session()
 void setBootstrap(ed3k::Ed3kBootstrap* bootstrap)
 {
     s_bootstrap = bootstrap;
+}
+
+void setEd2kJoin(ed3k::Ed3kEd2kJoin* join)
+{
+    s_ed2kJoin = join;
+}
+
+void setShared(ed3k::Ed3kShared* shared)
+{
+    s_shared = shared;
+}
+
+void appendDownloadInfo([[maybe_unused]] QCborMap& details, [[maybe_unused]] const QByteArray& md4)
+{
+#ifdef EMULE_HAVE_ED3K
+    if (!s_ed2kJoin)
+        return;
+    details.insert(QLatin1StringView("ed3kEnabled"), s_ed2kJoin->isEnabled());
+    const auto info = s_ed2kJoin->isEnabled() ? s_ed2kJoin->infoOf(md4) : std::nullopt;
+    if (!info)
+        return;
+    details.insert(QLatin1StringView("ed3kTracked"), true);
+    details.insert(QLatin1StringView("ed3kSearching"), info->searching);
+    if (info->root)
+        details.insert(QLatin1StringView("ed3kRoot"), QString::fromLatin1(
+            QByteArray(reinterpret_cast<const char*>(info->root->bytes.data()), qsizetype(info->root->bytes.size())).toHex()));
+    details.insert(QLatin1StringView("ed3kPair"), static_cast<int>(info->pair));
+    details.insert(QLatin1StringView("ed3kBytes"), static_cast<qint64>(info->bytes));
+    details.insert(QLatin1StringView("ed3kSources"), info->sources);
+    details.insert(QLatin1StringView("ed3kTransferring"), info->transferring);
+#endif
+}
+
+void appendSharedInfo([[maybe_unused]] QCborMap& details, [[maybe_unused]] const QByteArray& md4)
+{
+#ifdef EMULE_HAVE_ED3K
+    if (!s_shared)
+        return;
+    details.insert(QLatin1StringView("ed3kEnabled"), s_shared->isEnabled());
+    if (!s_shared->isEnabled())
+        return;
+    if (const auto root = s_shared->rootOf(md4))
+        details.insert(QLatin1StringView("ed3kRoot"), QString::fromLatin1(
+            QByteArray(reinterpret_cast<const char*>(root->bytes.data()), qsizetype(root->bytes.size())).toHex()));
+    details.insert(QLatin1StringView("ed3kAliasPublished"), s_shared->aliasPublished(md4));
+    details.insert(QLatin1StringView("ed3kKeywordsPublished"), s_shared->keywordsPublished(md4));
+#endif
 }
 
 bool available()

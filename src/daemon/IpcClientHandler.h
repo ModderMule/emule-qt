@@ -16,6 +16,7 @@
 
 #include <QHash>
 #include <QObject>
+#include <QStringList>
 
 #include <memory>
 
@@ -45,6 +46,18 @@ public:
 
     /// Returns true if handshake has completed.
     [[nodiscard]] bool isHandshaked() const;
+
+    /// A local GUI that named itself in the handshake (fields 2-4).
+    [[nodiscard]] bool isLocalGui() const { return m_handshaked && m_isLocal && m_isGui; }
+    /// A local GUI the auto-updater can wait for and start again.
+    [[nodiscard]] bool isReopenableGui() const
+    {
+        return isLocalGui() && m_guiPid > 0 && !m_guiRelaunch.isEmpty();
+    }
+    /// The GUI's pid, 0 when not sent.
+    [[nodiscard]] qint64 guiPid() const { return m_guiPid; }
+    /// How to start the GUI again: [exe, args...]; empty when not sent.
+    [[nodiscard]] QStringList guiRelaunch() const { return m_guiRelaunch; }
 
     /// The core has finished loading: answer what was held back, in arrival order.
     void replayDeferred();
@@ -326,6 +339,9 @@ private:
     std::unique_ptr<Ipc::IpcConnection> m_connection;
     bool m_isLocal = true;
     bool m_handshaked = false;
+    bool m_isGui = false;
+    qint64 m_guiPid = 0;
+    QStringList m_guiRelaunch;
     /// Requests that arrived while theApp.loading and need the file lists.
     Ipc::DeferredRequests m_deferred;
     /// NZB downloads this connection has in flight. Bounded so a paste of a

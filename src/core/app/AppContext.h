@@ -57,6 +57,8 @@ class StatsHistory;
 class Scheduler;
 class LastCommonRouteFinder;
 class PartFileWriteThread;
+class PartFile;
+class UpDownClient;
 class PortMapper;
 class UploadBandwidthThrottler;
 class UpDownClient;
@@ -275,6 +277,17 @@ struct AppContext {
     /// eD2K UDP is about to bind this port: an ed3k node on its own socket there lets go
     /// first (it comes back on the shared socket, §14.1). Set by the daemon.
     std::function<void(uint16 port)> yieldEd3kUdpPort;
+
+    /// eD2K compat (ed3k Protocol.md §14.2): asked before a download source is dialled or
+    /// asked again. @p wait: the eD2K dial would wait for the ed3k attempt. Started: the
+    /// client hears back via setEd3kRoute(); NoHint: no derived user hash, never ed3k.
+    enum class Ed3kHint : uint8 { Off, NoHint, Started };
+    std::function<Ed3kHint(UpDownClient& client, bool wait)> ed3kHint;
+    /// eD2K part @p part of @p file passed (true) or failed its MD4 hash (§14.4 pair trust).
+    std::function<void(PartFile& file, uint32 part, bool ok)> partVerdict;
+    /// The peer of eD2K user hash @p hash waits or holds a slot on ed3k already (§14.4: a
+    /// dual peer is served over ed3k only).
+    std::function<bool(const uint8* hash)> isEd3kUploadPeer;
 
     /// Tier 1: the egress IPv6 a server observed us on (CT_MOD_YOUR_IP in OP_SERVERIDENT).
     /// Callers must only pass this for a session that actually connected over IPv6; the

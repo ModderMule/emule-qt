@@ -26,6 +26,12 @@ class FileDetailDialog;
 /// A stale reply (the user toggled another box meanwhile) is discarded.
 void connectEd2kLinkRequests(FileDetailDialog* dialog, IpcClient* ipc);
 
+/// Refresh the General page of a download sheet every 5 s, as MFC's
+/// CFileDetailDialogInfo does: GetDownloadDetails with generalOnly, for the one file on
+/// display (follows the walker) or for each of @p hashes, merged.
+void connectDownloadDetailsRefresh(FileDetailDialog* dialog, IpcClient* ipc,
+                                   const QStringList& hashes);
+
 /// Tabbed property dialog for a download file, matching the original MFC
 /// FileDetailDialog. Shows General info, Source File Names, Comments,
 /// Media Info, Metadata (ED2K tags), ED2K Link, and Archive Preview.
@@ -76,6 +82,10 @@ public slots:
     /// restart the archive scan and throw away the trees' scroll position.
     void applyDetails(const QCborMap& details) override;
 
+    /// Timer refresh: the General page's values, while it is the page on display.
+    /// Copied into the shown labels; the page is rebuilt only when its rows changed.
+    void refreshLive(const QCborMap& details) override;
+
     /// Show a link built by the daemon in response to requestEd2kLink().
     /// @param sourceHintAvailable  whether we have anything to advertise as a source.
     void applyEd2kLink(const QString& link, bool sourceHintAvailable);
@@ -85,6 +95,7 @@ private:
     void buildMultiTabs(const QCborMap& merged, Tab tabToSelect);
 
     QWidget* createGeneralTab(const QCborMap& details);
+    QWidget* createDownloadGeneralTab(const QCborMap& details);
     QWidget* createFileNamesTab(const QCborMap& details);
     QWidget* createCommentsTab(const QCborMap& details);
     QWidget* createMediaInfoTab(const QCborMap& details);

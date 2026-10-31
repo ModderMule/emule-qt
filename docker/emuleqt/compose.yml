@@ -13,8 +13,8 @@ services:
     environment:
       PUID: "1000"
       PGID: "1000"
-      EMULEQT_TCP_PORT: "4662"
-      EMULEQT_UDP_PORT: "4672"
+      EMULEQT_TCP_PORT: "4662"     # TCP and UDP (one port)
+      # EMULEQT_UDP_PORT: "4672"   # a separate UDP port; map it below instead of 4662/udp
       EMULEQT_WEB_PASSWORD: "change-me"
       # EMULEQT_IPC_TOKEN: "set-a-long-random-token"   # else generated, see `docker logs`
       # EMULEQT_REST: "1"
@@ -29,7 +29,7 @@ services:
     ports:
       # P2P: container and host port must match, peers are told this port
       - "4662:4662/tcp"
-      - "4672:4672/udp"
+      - "4662:4662/udp"
       - "4711:4711/tcp"   # web UI, REST API, MCP
       - "4712:4712/tcp"   # GUI IPC (token + TLS, fingerprint pinned on first connect)
       # - "5800:5800/tcp" # GUI via noVNC (EMULEQT_GUI=1)

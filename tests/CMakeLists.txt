@@ -556,6 +556,9 @@ if(EMULE_ED3K)
     # eMule shared files over ed3k: a fake share list, two nodes on loopback
     emule_add_test(tst_Ed3kShared FOLDER "Ed3k" LIBRARIES eMule::Ed3k)
     set_tests_properties(tst_Ed3kShared PROPERTIES TIMEOUT 180)
+    # eD2K compat (§14.2, §14.4): an eD2K part file fed from ed3k, pair trust, hinted sources
+    emule_add_test(tst_Ed3kEd2kJoin FOLDER "Ed3k" LIBRARIES eMule::Ed3k)
+    set_tests_properties(tst_Ed3kEd2kJoin PROPERTIES TIMEOUT 300)
     # prefs → node: extensions, IPv6 source, filter state, LAN discovery, node list asks
     emule_add_test(tst_Ed3kPlumbing FOLDER "Ed3k" LIBRARIES eMule::Ed3k)
     set_tests_properties(tst_Ed3kPlumbing PROPERTIES TIMEOUT 180)
@@ -1415,6 +1418,23 @@ target_include_directories(tst_VersionChecker PRIVATE
     "${CMAKE_SOURCE_DIR}/src/gui"
     "${CMAKE_CURRENT_SOURCE_DIR}/stubs")
 target_link_libraries(tst_VersionChecker PRIVATE Qt6::Network Qt6::Widgets)
+
+# core/app/VersionManifest: download entries (url, sha256, size) for the auto-updater
+emule_add_test(tst_VersionManifest FOLDER "Ipc")
+
+# emulecored --autoupdate: args, schedule, download + hand-over against a local server.
+# Compiles the daemon source standalone.
+emule_add_test(tst_AutoUpdater FOLDER "Daemon"
+    SOURCES tst_AutoUpdater.cpp "${CMAKE_SOURCE_DIR}/src/daemon/AutoUpdater.cpp")
+target_include_directories(tst_AutoUpdater PRIVATE "${CMAKE_SOURCE_DIR}/src/daemon")
+target_link_libraries(tst_AutoUpdater PRIVATE Qt6::Network)
+
+# emuleqt-updater (no Qt itself): archive overlay + rollback, pid wait, dmg swap,
+# usage. Runs the built exe; EMULEQT_UPDATER env overrides the path.
+emule_add_test(tst_Updater FOLDER "Daemon")
+add_dependencies(tst_Updater emuleqt-updater)
+target_compile_definitions(tst_Updater PRIVATE EMULEQT_UPDATER_PATH=$<TARGET_FILE:emuleqt-updater>)
+set_tests_properties(tst_Updater PROPERTIES TIMEOUT 180)
 
 # Live network integration tests (requires real network connectivity)
 #

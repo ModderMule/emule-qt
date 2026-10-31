@@ -188,8 +188,10 @@ void WebServer::registerDocsRoutes()
             const bool script = name == L("swagger-ui-bundle.js");
             if (!script && name != L("swagger-ui.css"))
                 return QHttpServerResponse(QHttpServerResponse::StatusCode::NotFound);
-            QFile file(m_webDataDir + u'/' + name);
-            if (m_webDataDir.isEmpty() || !file.open(QIODevice::ReadOnly))
+            // overridable like every web asset; shipped in the bundle
+            const QString path = resolveWebAsset(name);
+            QFile file(path);
+            if (path.isEmpty() || !file.open(QIODevice::ReadOnly))
                 return QHttpServerResponse(QHttpServerResponse::StatusCode::NotFound);
             QHttpServerResponse response = textResponse(
                 script ? QByteArrayLiteral("application/javascript; charset=utf-8")

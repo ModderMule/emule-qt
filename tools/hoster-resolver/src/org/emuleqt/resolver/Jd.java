@@ -45,6 +45,7 @@ final class Jd {
             System.setProperty("java.net.preferIPv6Addresses", "system");
         }
         org.appwork.utils.Application.setApplication(".emuleqt_resolver");
+        clearCaptchas();
         try {
             java.security.Security.setProperty("networkaddress.cache.negative.ttl", "0");
         } catch (final Throwable ignore) {
@@ -60,6 +61,34 @@ final class Jd {
         Browser.setGlobalConnectTimeout(30000);
         HostPluginController.getInstance().ensureLoaded();
         CrawlerPluginController.getInstance().ensureLoaded();
+    }
+
+    /** Application.IS_JARED is private and set on first use: false before anything asks. */
+    static void notJared() {
+        try {
+            final java.lang.reflect.Field f = org.appwork.utils.Application.class.getDeclaredField("IS_JARED");
+            f.setAccessible(true);
+            f.set(null, Boolean.FALSE);
+        } catch (final Throwable e) {
+            Out.log("jar mode not set: " + e.getClass().getSimpleName());
+        }
+    }
+
+    /** Puzzle images JD saved in an earlier run (ROOT/captchas): nobody reads them again. */
+    static void clearCaptchas() {
+        final String root = System.getProperty("ROOT");
+        if (root == null) {
+            return;
+        }
+        final java.nio.file.Path dir = java.nio.file.Paths.get(root, "captchas");
+        if (!java.nio.file.Files.isDirectory(dir)) {
+            return;
+        }
+        try (java.util.stream.Stream<java.nio.file.Path> all = java.nio.file.Files.walk(dir)) {
+            all.sorted(java.util.Comparator.reverseOrder()).forEach(p -> p.toFile().delete());
+        } catch (final java.io.IOException | RuntimeException e) {
+            Out.log("old puzzles not cleared: " + e.getClass().getSimpleName());
+        }
     }
 
     /** null = direct. "http://host:port", "socks5://user:pass@host:port". */

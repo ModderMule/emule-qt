@@ -29,6 +29,8 @@ namespace eMule {
     if (token == QLatin1String("Error"))           return text("Error");
     if (token == QLatin1String("WaitCallbackKad")) return text("Wait Callback Kad");
     if (token == QLatin1String("TooManyConnsKad")) return text("Too Many Kad Lookups");
+    if (token == QLatin1String("ViaEd3k"))
+        return QCoreApplication::translate("eMule::ClientState", "Via ed3k");
     return {};
 }
 

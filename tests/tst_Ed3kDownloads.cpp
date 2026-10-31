@@ -13,6 +13,7 @@
 #include "utils/BlockRuns.h"
 
 #include <QCborArray>
+#include <QDataStream>
 #include <QDir>
 #include <QFile>
 #include <QSignalSpy>
@@ -138,6 +139,8 @@ private slots:
     void aFileIsDownloadedVerifiedAndShared();
     void pauseAndResume();
     void aPartFileIsTakenUpAfterARestart();
+    void aCopiedPartFileGoesOnElsewhere();
+    void anOldStateFileMovesToMetFiles();
     void theIpcListsAndControls();
     void downloadsOfOneSourceTakeTurns();
     void aHigherPriorityGetsMoreBlocks();
@@ -247,7 +250,7 @@ void tst_Ed3kDownloads::aPartFileIsTakenUpAfterARestart()
         QVERIFY(QFile::exists(d.info(a.root)->partPath));
         d.stop();
     }
-    QVERIFY(QFile::exists(QDir(stateDir(db.path())).filePath(QStringLiteral("downloads.dat"))));
+    QCOMPARE(QDir(temp).entryList({QStringLiteral("*.ed3k.part.met")}, QDir::Files).size(), 1);
     Ed3kDownloads d(b, db.path());
     d.setSearchEnabled(false);
     d.setDirs(temp, in);
@@ -265,6 +268,107 @@ void tst_Ed3kDownloads::aPartFileIsTakenUpAfterARestart()
     QVERIFY(std::uint64_t(progress.count()) < (std::uint64_t(data.size()) + kBlock - 1) / kBlock);
     QVERIFY(readFile(d.info(a.root)->path) == data);
     d.stop();
+}
+
+void tst_Ed3kDownloads::aCopiedPartFileGoesOnElsewhere()
+{
+    // the .ed3k.part + .ed3k.part.met of one profile copied into the temp dir of another
+    const QByteArray data = payload(int(10 * kBlock + 7), 5);
+    Seeder a;
+    QVERIFY(a.start(data, QStringLiteral("c.bin")));
+    QTemporaryDir first;
+    QString part;
+    std::uint64_t held = 0;
+    {
+        Ed3kSession b;
+        QVERIFY(b.start(loopback(first.path())));
+        Ed3kDownloads d(b, first.path());
+        d.setSearchEnabled(false);
+        d.setDirs(QDir(first.path()).filePath(QStringLiteral("temp")), QDir(first.path()).filePath(QStringLiteral("in")));
+        d.start();
+        connect(&d, &Ed3kDownloads::progress, &d, [&d](const ::ed3k::Root& root, std::uint64_t) { d.pause(root); });
+        QVERIFY(d.add(Ed3kDownloadSpec{a.root, std::uint64_t(data.size()), QStringLiteral("c.bin"), {}, {}, 0, false, 1}).has_value());
+        d.addSourceTo(a.root, sourceOf(a.session));
+        QTRY_VERIFY_WITH_TIMEOUT(d.info(a.root)->state == Ed3kDownloadInfo::State::Paused, 60000);
+        held = d.info(a.root)->done;
+        part = d.info(a.root)->partPath;
+        d.stop();
+    }
+    QTemporaryDir second;
+    const QString temp2 = QDir(second.path()).filePath(QStringLiteral("other temp"));
+    const QString in2 = QDir(second.path()).filePath(QStringLiteral("in"));
+    QVERIFY(QDir().mkpath(temp2));
+    const QString name = QFileInfo(part).fileName();
+    QVERIFY(QFile::copy(part, QDir(temp2).filePath(name)));
+    QVERIFY(QFile::copy(part + QStringLiteral(".met"), QDir(temp2).filePath(name + QStringLiteral(".met"))));
+
+    Ed3kSession b;
+    QVERIFY(b.start(loopback(second.path())));
+    Ed3kDownloads d(b, second.path());
+    d.setSearchEnabled(false);
+    QVERIFY(!d.contains(a.root));
+    // the second temp dir holds it
+    d.setDirs(QStringList{QDir(second.path()).filePath(QStringLiteral("temp")), temp2}, in2);
+    const auto loaded = d.info(a.root);
+    QVERIFY(loaded);
+    QCOMPARE(loaded->state, Ed3kDownloadInfo::State::Paused);
+    QCOMPARE(loaded->done, held);
+    QCOMPARE(loaded->name, QStringLiteral("c.bin"));
+    QCOMPARE(loaded->partPath, QDir(temp2).filePath(name));
+    d.start();
+    QSignalSpy done(&d, &Ed3kDownloads::completed);
+    QVERIFY(d.resume(a.root));
+    d.addSourceTo(a.root, sourceOf(a.session));
+    QTRY_COMPARE_WITH_TIMEOUT(done.count(), 1, 60000);
+    QCOMPARE(QFileInfo(d.info(a.root)->path).absolutePath(), QFileInfo(in2).absoluteFilePath());
+    QVERIFY(readFile(d.info(a.root)->path) == data);
+    QVERIFY(!QFile::exists(QDir(temp2).filePath(name + QStringLiteral(".met"))));
+    d.stop();
+}
+
+void tst_Ed3kDownloads::anOldStateFileMovesToMetFiles()
+{
+    // downloads.dat version 1 held the unfinished rows too
+    QTemporaryDir db;
+    const QString temp = QDir(db.path()).filePath(QStringLiteral("temp"));
+    const QString in = QDir(db.path()).filePath(QStringLiteral("in"));
+    QVERIFY(QDir().mkpath(temp));
+    const QByteArray root(32, '\x5a');
+    const QString part = QDir(temp).filePath(QStringLiteral("old.ed3k.part"));
+    QByteArray raw;
+    {
+        QDataStream out(&raw, QIODevice::WriteOnly);
+        out.setVersion(QDataStream::Qt_6_0);
+        out << quint32(0x4533444c) << quint32(1) << qint32(5) << quint32(1);
+        out << root << quint64(3 * kBlock) << QStringLiteral("old.bin") << QStringLiteral("dl") << qint32(0) << qint32(2)
+            << qint32(1) << part << QDir(in).filePath(QStringLiteral("sub/old.bin")) << part << QByteArray(1, '\x01')
+            << qint64(7) << qint64(0) << false << QString() << qint32(4);
+    }
+    QVERIFY(QDir().mkpath(stateDir(db.path())));
+    QVERIFY(writeBlob(QDir(stateDir(db.path())).filePath(QStringLiteral("downloads.dat")), std::as_bytes(std::span{raw.constData(), std::size_t(raw.size())})));
+    Ed3kSession b;
+    {
+        Ed3kDownloads d(b, db.path());
+        d.setDirs(temp, in);
+        QVERIFY(QFile::exists(part + QStringLiteral(".met")));
+    }
+    // the .met alone carries it now
+    QTemporaryDir other;
+    const QString temp2 = QDir(other.path()).filePath(QStringLiteral("t"));
+    const QString in2 = QDir(other.path()).filePath(QStringLiteral("i"));
+    QVERIFY(QDir().mkpath(temp2));
+    QVERIFY(QFile::copy(part + QStringLiteral(".met"), QDir(temp2).filePath(QStringLiteral("old.ed3k.part.met"))));
+    Ed3kDownloads d(b, other.path());
+    d.setDirs(temp2, in2);
+    QCOMPARE(d.list().size(), std::size_t(1));
+    const auto i = d.list().front();
+    QCOMPARE(i.name, QStringLiteral("old.bin"));
+    QCOMPARE(i.priority, 2);
+    QCOMPARE(i.state, Ed3kDownloadInfo::State::Paused);
+    QCOMPARE(i.done, kBlock);
+    // the target under the incoming dir follows the incoming dir of this profile
+    QCOMPARE(i.targetPath, QDir(in2).filePath(QStringLiteral("sub/old.bin")));
+    QCOMPARE(i.partPath, QDir(temp2).filePath(QStringLiteral("old.ed3k.part")));
 }
 
 void tst_Ed3kDownloads::theIpcListsAndControls()

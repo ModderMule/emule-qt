@@ -55,6 +55,8 @@ public:
     [[nodiscard]] QString loadStage() const { return m_loadStage; }
     /// The connected core's process id, from the handshake; 0 = not known.
     [[nodiscard]] qint64 corePid() const { return m_corePid; }
+    /// The core runs with --autoupdate: it installs new releases by itself.
+    [[nodiscard]] bool coreAutoUpdates() const { return m_coreAutoUpdate; }
     /// Why the core refused the handshake (CoreLink::Refused).
     [[nodiscard]] QString refusalText() const { return m_refusalText; }
 
@@ -292,6 +294,10 @@ signals:
     /// Emitted on connection failure.
     void connectionFailed(const QString& error);
 
+    /// The core installs @p version and restarts (PushCoreUpdating). @p reopened:
+    /// the updater starts this GUI again, so quit.
+    void coreUpdating(const QString& version, bool reopened);
+
     /// coreLink(), connectAttempts() or loadStage() changed.
     void coreLinkChanged();
 
@@ -502,6 +508,8 @@ private:
     void failPendingRequests();
     /// The core restarts itself: a dropped link is expected, not a lost core.
     void expectRestart();
+    /// [exe, args...] that starts this GUI again (auto-update)
+    [[nodiscard]] static QStringList relaunchCommand();
 
     std::unique_ptr<Ipc::IpcConnection> m_connection;
     QSslSocket* m_socket = nullptr;  // Owned by IpcConnection after handoff
@@ -553,6 +561,7 @@ private:
     int m_connectAttempts = 0;
     QString m_loadStage;
     qint64 m_corePid = 0;
+    bool m_coreAutoUpdate = false;
     QString m_refusalText;
 
     int m_startGraceMs         = 30'000;

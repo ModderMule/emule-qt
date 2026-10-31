@@ -716,6 +716,13 @@ UploadQueue::QueueAdmission UploadQueue::checkWaitingListAdmission(UpDownClient*
         return QueueAdmission::Rejected;
     }
 
+    // ed3k §14.4: a dual peer already waiting or served on ed3k gets no 2nd place here
+    if (theApp.isEd3kUploadPeer && client->hasValidHash() && theApp.isEd3kUploadPeer(client->userHash())) {
+        logDebug(QStringLiteral("%1: rejected %2 — queued over ed3k already")
+                     .arg(QLatin1String(context), client->userName()));
+        return QueueAdmission::Rejected;
+    }
+
     // Check for duplicates and IP limits
     uint16 sameIPCount = 0;
     for (size_t i = 0; i < m_waitingList.size(); ) {

@@ -20,6 +20,8 @@ joins.
 | `src/ed3k/Ed3kJoinBase.{h,cpp}` | what both joins share on the ed3k side: member downloads (sources, streams, block requests), manifests fetched into memory (`fetchBlob`), serving shared roots, sharing blobs, hashing on a worker, debounced saving |
 | `src/ed3k/Ed3kTorrentJoin.{h,cpp}` | `eMule::ed3k::Ed3kTorrentJoin`: a torrent joined with ed3k (see "Torrent join" below); only with `EMULE_HAVE_BITTORRENT`, links `eMule::Bt` |
 | `src/ed3k/Ed3kShared.{h,cpp}` | `eMule::ed3k::Ed3kShared`: eMule's shared files served over ed3k (see "Shared files" below), derived from `Ed3kJoinBase` |
+| `src/ed3k/Ed3kEd2kJoin.{h,cpp}` | `eMule::ed3k::Ed3kEd2kJoin`: eD2K part files fed from ed3k too (root by `ed2k` ALIAS), hinted eD2K sources over ed3k first, pair trust (Protocol.md §14.2, §14.4; `docs/ed2k-compat.md`) |
+| `tests/tst_Ed3kEd2kJoin.cpp` | three loopback nodes: an eD2K part file filled over ed3k and trusted, false pairs (part / FileStatus), hinted sources preferred or falling back |
 | `tests/tst_Ed3kShared.cpp` | the `ed2k` alias bytes, a file of a fake share list fetched by its root from a second node, the hash cache across a restart, move/remove/pref off, keywords published (not while holding back), an unreadable file hashed again |
 | `src/ed3k/Ed3kPlumbing.{h,cpp}` | pure helpers: extension names → `ED3K_EXT_*` (`extOffBits`), `ed3k:nodes` links (`parseNodesLink`, `nodesLink`, base32), the advertised IPv6 source, address conversions |
 | `src/ed3k/Ed3kLan.{h,cpp}` | LAN discovery of mode A (see "LAN discovery" below); owned by the session |
@@ -106,6 +108,7 @@ The `ed3k:` block in `preferences.yml`, with IPC/REST keys `ed3kEnabled` and `ed
 | `creditRpc` | `[]` | IPC/REST `ed3kCreditRpc` (URLs separated by spaces): JSON-RPC endpoints of the credit ledger; empty = calls answered failed |
 | `chaintubeRpc` | `[]` | IPC/REST `ed3kChaintubeRpc`: the same for chaintube's chain reads and writes |
 | `chain:` | | chaintube.md §4.2, no defaults: `chainId` (0 = none), `content`, `comment`, `vote` (0x + 40 hex; empty = none), `forwarder` (empty = none); IPC/REST `ed3kChainId` (decimal text), `ed3kChainContent`, `ed3kChainComment`, `ed3kChainVote`, `ed3kChainForwarder` (`Preferences::applyEd3kChainKey`). `Ed3kChain` calls `chainConfigure` at each node start and when they or `chaintubeRpc` change (no restart): only with a chain ID and the three contracts; providers per read 0 without endpoints, 1 when every endpoint is a local node, else 2 (held to the endpoints there are). One remote endpoint only (`Ed3kChain::singleRemote`): the §4.3 SHOULD of two agreeing providers can't be met, said once in the log and as a note under the endpoints (batch 12 #8). GUI: Options → ed3k → Connection → Chaintube |
+| `jointDownloads` | `true` | IPC `ed3kJointDownloads`: eD2K downloads also fetch from ed3k, dual peers over ed3k (`Ed3kEd2kJoin`) |
 | `shareFiles` | `true` | IPC/REST `ed3kShareFiles`: serve the shared files over ed3k (`Ed3kShared`); only while the node runs |
 | `sitePort` | `0` | IPC/REST `ed3kSitePort`: TCP port of the website server (name.md §6.2); 0 = a random free port, picked once at load and saved (it is part of every site's origin) |
 | `extOff` | `[]` | IPC/REST `ed3kExtOff` (names separated by spaces): optional extensions turned off (`Preferences::ed3kExtensionNames()`: the names of `extensions/*.md`, `lan` = `lan-discovery`) → `Config::extOff`; unknown names are logged and ignored. A change restarts the node |
@@ -602,10 +605,17 @@ downloads them with `AddEd3kDownload`.
 **Downloads:** `Ed3kDownloads` (owner `dl`, member = a stable id per download; made by
 `DaemonApp` after `Ed3kShared`):
 
-- `<temp>/<root hex>.ed3k.part` (first temp dir) while it runs; each verified block is written
-  there and marked in a bitmap; `Config/ed3k/downloads.dat` (versioned `QDataStream`: root,
-  size, name, owner, category, priority, state, paths, bitmap, dates) 5 s after a change and at
-  stop. Pieces (4 MiB) held are shared from the part file once the block values came.
+- `<temp>/<root hex>.ed3k.part` (first temp dir) while it runs: the plain file, each verified
+  block written at its offset (sparse). Progress beside it in `<root hex>.ed3k.part.met`
+  (`QDataStream` Qt_6_0, magic `E3PM`, v1: root, size, name, owner, category, priority, state,
+  target kind + target, block bitmap, added, error), 5 s after a change and at stop. No absolute
+  paths: the part file is the one beside the `.met`; a target under the incoming dir is stored
+  relative. Every temp dir is scanned (`setDirs`, `start`): the two files copied into another
+  machine's temp dir are that download there. A target folder that cannot be made → incoming dir;
+  a set member of a set not followed there → plain download (`Ed3kSets::releaseOrphan`).
+  `Config/ed3k/downloads.dat` (v2) keeps only the complete rows; a v1 file (every row) is
+  migrated to `.met` files at the first `setDirs`. Pieces (4 MiB) held are shared from the part
+  file once the block values came.
 - Complete: hashed on a worker (root and size must agree, else downloaded again), moved to the
   target (the category's incoming dir, else `incomingDir`; a free name when taken), shared
   (`Publish::Both`, `Source` while holding back) and kept (`keepMember`). `DaemonApp`'s hook
@@ -615,8 +625,9 @@ downloads them with `AddEd3kDownload`.
 - Pause (streams and the download closed, part file kept), resume, cancel (part file deleted; a
   complete row only leaves the list), priority (was: kept and shown only, ToDo (done: see
   Priority below)), category, clear
-  completed. Restart: the list is loaded at construction; at start the downloads run again
-  from their part files and the complete ones are shared again.
+  completed. Restart: complete rows are loaded at construction, unfinished ones from the temp
+  dirs; at start the downloads run again from their part files and the complete ones are shared
+  again.
 - IPC (1140-1143, push 1180; 1100-1109 / 1150-1154 were taken by the hoster links):
   `GetEd3kDownloads`, `AddEd3kDownload` (root, size, name, category, paused),
   `AddEd3kDownloadLink` (`ed3k:file` without `bt=`, `parseFileLink`), `Ed3kDownloadControl`;

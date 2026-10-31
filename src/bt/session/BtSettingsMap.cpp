@@ -24,6 +24,9 @@ lt::settings_pack BtSettingsMap::toPack(const BtSettings& s)
 
     p.set_int(lt::settings_pack::download_rate_limit, rateBytes(s.maxDownloadKb));
     p.set_int(lt::settings_pack::upload_rate_limit, rateBytes(s.maxUploadKb));
+    // limits count protocol bytes only, as eD2K's do: with overhead on, a fast download's
+    // TCP ACKs ate the whole upload share and nothing was uploaded (#87)
+    p.set_bool(lt::settings_pack::rate_limit_ip_overhead, false);
     p.set_int(lt::settings_pack::active_downloads, std::max(1, s.maxActiveDownloads));
     p.set_int(lt::settings_pack::active_seeds, std::max(0, s.maxActiveSeeds));
     p.set_int(lt::settings_pack::active_limit, std::max(1, s.maxActiveDownloads) + std::max(0, s.maxActiveSeeds));

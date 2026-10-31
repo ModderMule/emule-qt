@@ -848,12 +848,41 @@ bool PartFile::getNextRequestedBlock(UpDownClient* sender,
         }
     };
 
+    // Preview chunks: first + last — for every file, or for this one in advanced mode
+    // (MFC PartFile.cpp:4680-4682). Unlike MFC they come before very rare parts too:
+    // with few sources nearly every part is very rare, so MFC's option did nothing
+    // (issue #34)
+    const bool isPreviewEnable =
+        (thePrefs.previewPrio() || (m_previewPrio && thePrefs.showExtControls()))
+        && fs > 2 * PARTSIZE && previewNeedsLastPart();
+    // A tiny last part pulls in the one before
+    auto isPreviewPart = [&](uint32 p) {
+        if (!isPreviewEnable)
+            return false;
+        const uint64 partEnd = std::min(static_cast<uint64>(p) * PARTSIZE + PARTSIZE, fs) - 1;
+        return p == 0 || p == pc - 1u || (p == pc - 2u && fs - partEnd < PARTSIZE / 3);
+    };
+
     // Continue the previous chunk; MFC does so only for eMule >= 0.43.1
     uint16 lastPart = sender->lastPartAsked();
     if (lastPart != UINT16_MAX
         && (sender->clientSoft() != ClientSoftware::eMule
             || sender->clientVersion() < makeClientVersion(0, 43, 1)))
         lastPart = UINT16_MAX;
+    // Unlike MFC a preview part still open on this source comes before finishing a
+    // mid-file chunk; a slow source otherwise sat on it for half an hour (issue #96)
+    if (lastPart < pc && !isPreviewPart(lastPart)) {
+        for (uint32 p = 0; p < pc; ++p) {
+            uint64 probeFrom = 0;
+            uint64 probeStart = 0;
+            uint64 probeEnd = 0;
+            if (isPreviewPart(p) && senderHasPart(p)
+                && nextFreeBlock(p, probeFrom, probeStart, probeEnd)) {
+                lastPart = UINT16_MAX;
+                break;
+            }
+        }
+    }
     if (lastPart < pc && senderHasPart(lastPart)) {
         allocateFromPart(lastPart);
         if (blocksFound >= count) {
@@ -878,14 +907,6 @@ bool PartFile::getNextRequestedBlock(UpDownClient* sender,
     const uint16 almostRareBound = static_cast<uint16>(4 * veryRareBound);
     const bool a4afHeavy = srcCount <= static_cast<int>(m_a4afSrcList.size());
 
-    // Preview chunks: first + last — for every file, or for this one in advanced mode
-    // (MFC PartFile.cpp:4680-4682). Unlike MFC they come before very rare parts too:
-    // with few sources nearly every part is very rare, so MFC's option did nothing
-    // (issue #34)
-    const bool isPreviewEnable =
-        (thePrefs.previewPrio() || (m_previewPrio && thePrefs.showExtControls()))
-        && fs > 2 * PARTSIZE && isPreviewableFileType();
-
     static thread_local std::mt19937 rng(std::random_device{}());
 
     for (uint32 p = 0; p < pc; ++p) {
@@ -903,9 +924,8 @@ bool PartFile::getNextRequestedBlock(UpDownClient* sender,
         const uint64 partStart = static_cast<uint64>(p) * PARTSIZE;
         const uint64 partEnd = std::min(partStart + PARTSIZE, fs) - 1;
 
-        // Criterion 2: preview parts; a tiny last part pulls in the one before
-        const bool critPreview = isPreviewEnable
-            && (p == 0 || p == pc - 1u || (p == pc - 2u && fs - partEnd < PARTSIZE / 3));
+        // Criterion 2: preview parts
+        const bool critPreview = isPreviewPart(p);
 
         // Criterion 3+4: completion, requested blocks counted as downloaded
         uint64 partSize = (partEnd - partStart + 1) - totalGapSizeInPart(p);
@@ -1673,6 +1693,21 @@ int PartFile::validSourcesCount() const
     }));
 }
 
+int PartFile::nnpSourceCount() const
+{
+    return static_cast<int>(std::ranges::count_if(m_srcList, [](const UpDownClient* client) {
+        return client->downloadState() == DownloadState::NoNeededParts;
+    }));
+}
+
+uint32 PartFile::availablePartCount() const
+{
+    if (m_status == PartFileStatus::Complete || m_status == PartFileStatus::Completing)
+        return partCount();
+    return static_cast<uint32>(std::ranges::count_if(m_srcPartFrequency,
+                                                     [](uint16 n) { return n > 0; }));
+}
+
 uint32 PartFile::maxSources() const
 {
     // A limit set in advanced mode is not applied outside it: it could be neither
@@ -1695,8 +1730,27 @@ uint32 PartFile::maxSourcePerFileUDP() const
 bool PartFile::isPreviewableFileType() const
 {
     const ED2KFileType type = getED2KFileTypeID(fileName());
+    // .ogg is Audio by name; an Ogg film is a video (#96)
     return type == ED2KFileType::Video || type == ED2KFileType::Archive
-        || fileName().endsWith(QStringLiteral(".iso"), Qt::CaseInsensitive);
+        || fileName().endsWith(QStringLiteral(".iso"), Qt::CaseInsensitive)
+        || containerCheckIfResolved().hasVideo;
+}
+
+bool PartFile::previewNeedsLastPart() const
+{
+    if (isPreviewableFileType())
+        return true;
+    // Index, central directory or trailer at the end; Ogg keeps duration in its last page (#96)
+    static constexpr std::array tailExts = {
+        u".ogg", u".oga", u".ogv", u".ogm", u".ogx", u".opus", u".spx",
+        u".m4a", u".m4b", u".m4p", u".m4r", u".mka", u".wma", u".3g2", u".f4v", u".mts",
+        u".m2ts", u".pdf", u".docx", u".xlsx", u".pptx", u".odt", u".ods", u".odp",
+        u".epub", u".cbz", u".cbr", u".cb7", u".apk", u".jar", u".xpi", u".dmg"
+    };
+    const QString name = fileName().toLower();
+    return std::ranges::any_of(tailExts, [&name](const char16_t* e) {
+        return name.endsWith(QStringView(e));
+    });
 }
 
 bool PartFile::isPausingOnPreview() const
@@ -3244,14 +3298,16 @@ bool PartFile::readContainerHead(QByteArray& head) const
     // and an open here would hand back a hole full of zeroes, which reads as a
     // fake. Saying "not yet" is the honest answer until the bytes are real.
     // BDSafe: a filled gap may still sit in the write buffer, not on disk yet.
-    if (!isCompleteBDSafe(0, static_cast<uint64>(kContainerHeadBytes) - 1))
+    // The whole probe, not just the signature: zeroes past it would hide an Ogg's video stream.
+    const uint64 probe = std::min(static_cast<uint64>(fileSize()), static_cast<uint64>(kContainerProbeBytes));
+    if (probe < static_cast<uint64>(kContainerHeadBytes) || !isCompleteBDSafe(0, probe - 1))
         return false;
 
     // The data file: m_fullName is the .part.met, whose first bytes are never a container
     QFile file(partFilePath());
     if (!file.open(QIODevice::ReadOnly))
         return false;
-    head = file.read(kContainerHeadBytes);
+    head = file.read(static_cast<qint64>(probe));
     return true;
 }
 
@@ -4470,11 +4526,20 @@ void PartFile::verifyChangedParts(bool forceICH, bool noAICH,
                     std::memcpy(hash.data(), fileHash(), 16);
                     theApp.httpCache->reportPartVerified(hash, p);
                 }
+                // ed3k §14.4 pair trust: MD4 really checked (one part: the file hash)
+                if (theApp.partVerdict
+                    && (partCount() > 1 || fileSize() == PARTSIZE
+                            ? fileIdentifier().getMD4PartHash(p) != nullptr
+                            : fileIdentifier().hasExpectedMD4HashCount()))
+                    theApp.partVerdict(*this, p, true);
                 continue;
             }
 
             logWarning(QStringLiteral("PartFile: hash mismatch for part %1 of '%2' — re-downloading")
                            .arg(p).arg(fileName()));
+            // ed3k §14.4: the bytes are still on disk behind the gap, read for the check
+            if (theApp.partVerdict)
+                theApp.partVerdict(*this, p, false);
             addGap(partStart, partEnd);
 
             // Add part to corrupted list, if not already there
@@ -4536,6 +4601,7 @@ void PartFile::verifyChangedParts(bool forceICH, bool noAICH,
             addToSharedFiles();
 
             m_corruptionLoss = (m_corruptionLoss >= recovered) ? m_corruptionLoss - recovered : 0;
+            ++m_ichPartsSaved;
             if (theApp.statistics) {
                 theApp.statistics->subCorruptionLoss(recovered);
                 theApp.statistics->addIchPartSaved();

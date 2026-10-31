@@ -33,7 +33,9 @@ enum class NotifierEvent : int {
 enum class IpcMsgType : int {
     // -- Requests (GUI -> Core) -----------------------------------------------
 
-    Handshake            = 100,  ///< [version: string]
+    /// [version, token ("" = none), clientKind ("gui"), pid, relaunch: [exe, args...]]
+    /// Fields 2-4 optional: a GUI names itself so the auto-updater can restart it.
+    Handshake            = 100,
     Ping                 = 101,  ///< [] — keepalive probe; daemon responds with Result(true)
     GetDownloads         = 110,
     GetDownload          = 111,  ///< [hash: string]
@@ -138,7 +140,7 @@ enum class IpcMsgType : int {
     DeleteSharedFile     = 246,  ///< [hash: string] — delete file from disk + shared list
     UnshareFile          = 247,  ///< [hash: string] — remove from shared list (keep on disk)
     SetDownloadCategory  = 248,  ///< [hash: string, category: int]
-    GetDownloadDetails   = 249,  ///< [hash: string] → extended info (filePath, comments)
+    GetDownloadDetails   = 249,  ///< [hash: string, generalOnly?: bool] → extended info (filePath, comments); generalOnly: General page fields only (live refresh)
     PreviewDownload      = 250,  ///< [hash: string] — preview partial file on daemon
     RequestClientSharedFiles = 251, ///< [clientHash: string] — ask client for shared list
     GetClientDetails     = 252, ///< [clientHash: string] → extended client info for detail dialog
@@ -1035,7 +1037,7 @@ enum class IpcMsgType : int {
 
     // -- Responses (Core -> GUI) ---------------------------------------------
 
-    HandshakeOk          = 300,  ///< [version, motd, sessionToken, loading: bool, loadStage: string]
+    HandshakeOk          = 300,  ///< [version, motd, sessionToken, loading: bool, loadStage: string, pid, autoUpdate: bool]
     Result               = 301,  ///< [success, data]
     Error                = 302,  ///< [code, message]
 
@@ -1067,6 +1069,10 @@ enum class IpcMsgType : int {
     /// [] — the core is about to restart itself (REST API or another GUI asked).
     /// The connection drops; wait for it to come back instead of launching one.
     PushCoreRestarting   = 441,
+    /// [version, reopened: bool] — the core installs an update and restarts
+    /// (--autoupdate). reopened: a local GUI the updater starts again; it quits
+    /// without stopping the core. Others stay and reconnect.
+    PushCoreUpdating     = 442,
     PushLogMessage       = 450,  ///< [logId, category, severity: QtMsgType, message, timestamp: unix s]
     /// [entries: array of [logId, category, severity, message, timestamp]] — every
     /// line of one relay flush in a single frame, same entry shape as SyncLogs.

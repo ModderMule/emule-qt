@@ -66,6 +66,10 @@ enum class AppDir {
 /// full, and only the caller knows which way it wants to be wrong.
 [[nodiscard]] std::optional<std::uint64_t> tryFreeDiskSpace(const QString& path);
 
+/// Bytes @p path actually takes on disk: a sparse .part counts only its written
+/// blocks (MFC GetDiskFileSize). 0 when it cannot be read.
+[[nodiscard]] std::uint64_t diskFileSize(const QString& path);
+
 /// True when the write that just failed on @p file ran out of room. Qt says so
 /// (ResourceError) on Unix only; on Windows a full disk is a plain WriteError.
 [[nodiscard]] bool isDiskFullError(const QFileDevice& file);

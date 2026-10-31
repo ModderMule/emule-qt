@@ -6,9 +6,11 @@
 #
 # Defaults: $JD_DIR (environment, else the project .env) or /Volumes/MySSD/Coding/Java,
 # and build/hoster-resolver.
-# Output:   <out>/resolver/{classes/, libs/, revision.txt, LICENSE} and <out>/resolver.zip,
-#           which the bundle scripts ship and emulecored unpacks into its config dir.
-# Plugins stay loose .class files: JD's plugin scanner lists the directory, not a jar.
+# Output:   <out>/resolver/{Core.jar, jd/plugins/{hoster,decrypter}/, libs/, revision.txt, LICENSE}
+#           and <out>/resolver.zip, which the bundle scripts ship and emulecored unpacks
+#           into its config dir.
+# Plugins stay loose .class files: JD's plugin scanner lists the directory next to the jar
+# holding jd.SecondLevelLaunch, not a jar. All other classes go into Core.jar (#88: 12k files).
 set -e
 
 HERE=$(cd "$(dirname "$0")" && pwd)
@@ -40,7 +42,7 @@ fi
 WORK="$OUT/work"
 RES="$OUT/resolver"
 rm -rf "$WORK" "$RES" "$OUT/resolver.zip"
-mkdir -p "$WORK" "$RES/classes" "$RES/libs"
+mkdir -p "$WORK/classes" "$RES/jd/plugins" "$RES/libs"
 
 SRC="$JD/JDownloader/src"
 # compile against every jar; ship only what a headless resolver loads (see is_dropped)
@@ -68,19 +70,26 @@ REV=$(svn info --show-item revision "$JD/JDownloader" 2>/dev/null || echo "?")
 echo "== compiling $(wc -l < "$WORK/files.txt" | tr -d ' ') sources, JDownloader r$REV, $("$JDK/bin/javac" -version 2>&1)"
 "$JDK/bin/javac" -J-Xmx8g --release 17 -nowarn -proc:none -encoding UTF-8 -Xmaxerrs 200 -implicit:class \
     -sourcepath "$SRC:$JD/AppWorkUtils/src:$JD/JDBrowser/src:$JD/MyJDownloaderClient/src" \
-    -cp "$CP" -d "$RES/classes" @"$WORK/files.txt" > "$WORK/compile.log" 2>&1 \
+    -cp "$CP" -d "$WORK/classes" @"$WORK/files.txt" > "$WORK/compile.log" 2>&1 \
     || { tail -40 "$WORK/compile.log" >&2; echo "build-hoster-resolver: compile failed, see $WORK/compile.log" >&2; exit 1; }
 
 # non-class resources JD reads from its source roots (translations, json defaults)
 for s in "$SRC" "$JD/AppWorkUtils/src" "$JD/JDBrowser/src"; do
     (cd "$s" && find . -type f ! -name "*.java" ! -path "*/.svn/*" \( -name "*.json" -o -name "*.properties" -o -name "*.lng" -o -name "*.dat" \) \
-        -exec sh -c 'mkdir -p "$0/$(dirname "$1")" && cp "$1" "$0/$1"' "$RES/classes" {} \;)
+        -exec sh -c 'mkdir -p "$0/$(dirname "$1")" && cp "$1" "$0/$1"' "$WORK/classes" {} \;)
 done
+
+# plugins loose next to Core.jar, the rest packed
+mv "$WORK/classes/jd/plugins/hoster" "$WORK/classes/jd/plugins/decrypter" "$RES/jd/plugins/"
+"$JDK/bin/jar" --create --file "$RES/Core.jar" -C "$WORK/classes" .
 
 is_dropped() {
     case "$(basename "$1")" in
         synthetica*|flatlaf*|svnkit*|sqljet*|sequence-library*|antlr-runtime*|irclib*|jsyntaxpane*|\
         sevenzipjbinding*|zip4j*|AppleJavaExtensions*|libdbus*|unix.jar|hexdump.jar|debug-disable.jar) return 0 ;;
+        # UPnP reconnect / MyJD direct server only (cling, its seamless http/xml), SVG icons,
+        # and JD's copy of jna-platform.jar under another name
+        cling-*|seamless-http*|seamless-xml*|jsvg*|jna_platform.jar) return 0 ;;
     esac
     return 1
 }
@@ -91,4 +100,4 @@ done < "$WORK/jars.txt"
 echo "$REV" > "$RES/revision.txt"
 cp "$ROOT/tools/hoster-resolver/LICENSE" "$RES/LICENSE"
 (cd "$OUT" && rm -f resolver.zip && zip -qr -X resolver.zip resolver)
-echo "== $(find "$RES/classes" -name '*.class' | wc -l | tr -d ' ') classes, $(ls "$RES/libs" | wc -l | tr -d ' ') jars, $(du -sh "$OUT/resolver.zip" | cut -f1) zip -> $OUT/resolver.zip"
+echo "== $(unzip -l "$RES/Core.jar" | grep -c '\.class$') core + $(find "$RES/jd" -name '*.class' | wc -l | tr -d ' ') plugin classes, $(ls "$RES/libs" | wc -l | tr -d ' ') jars, $(du -sh "$OUT/resolver.zip" | cut -f1) zip -> $OUT/resolver.zip"

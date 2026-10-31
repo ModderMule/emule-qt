@@ -216,6 +216,7 @@ int main(int argc, char* argv[])
     daemon.setTranslationRouter(&translations);
     daemon.setConnectHold(cli.holdConnect());
     daemon.setIpcPortOverride(ipcPort);
+    daemon.setAutoUpdate(cli.autoUpdate(), cli.autoUpdateHours());
     if (!daemon.start()) {
         eMule::logError(QStringLiteral("Failed to start daemon"));
         // IpcServer logged the reason already

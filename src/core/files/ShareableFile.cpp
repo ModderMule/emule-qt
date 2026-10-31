@@ -5,6 +5,7 @@
 #include "files/ShareableFile.h"
 
 #include "prefs/Preferences.h"
+#include "utils/Opcodes.h"
 #include "utils/Log.h"
 
 namespace eMule {
@@ -14,6 +15,26 @@ ShareableFile::ShareableFile() = default;
 void ShareableFile::updateFileRatingCommentAvail(bool /*forceUpdate*/)
 {
     // Default no-op — subclasses (KnownFile) override when Kademlia is available.
+}
+
+void ShareableFile::setFileName(const QString& name,
+                                bool replaceInvalidChars,
+                                bool autoSetFileType,
+                                bool removeControlChars)
+{
+    const QString oldName = fileName();
+    AbstractFile::setFileName(name, replaceInvalidChars, autoSetFileType, removeControlChars);
+    // Renamed from .avi to .ogg: the old "only the extension is wrong" no longer holds (#95)
+    if (fileName() != oldName)
+        m_containerCheck.reset();
+}
+
+QString ShareableFile::displayFileType() const
+{
+    const QString type = fileType();
+    if (type == QLatin1StringView(ED2KFTSTR_AUDIO) && containerCheckIfResolved().hasVideo)
+        return QStringLiteral(ED2KFTSTR_VIDEO);
+    return type;
 }
 
 const QString& ShareableFile::sharedDirectory() const
@@ -77,7 +98,7 @@ bool ShareableFile::readContainerHead(QByteArray& head) const
     QFile file(m_filePath);
     if (!file.open(QIODevice::ReadOnly))
         return false;
-    head = file.read(kContainerHeadBytes);
+    head = file.read(kContainerProbeBytes);
     return true;
 }
 

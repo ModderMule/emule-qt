@@ -8,6 +8,7 @@
 
 #include "app/AppConfig.h"
 
+#include <QCryptographicHash>
 #include <QDir>
 #include <QFile>
 #include <QTemporaryDir>
@@ -57,6 +58,10 @@ private slots:
     void installerOnlyFilesAreNeverSeeded();
     void theShippedBundleLayoutsAllResolve();
     void theShippedLangLayoutsAllResolve();
+    void webserverAssetsAreNotSeeded();
+    void seededWebAssetsArePrunedButEditsStayAsOverrides();
+    void theWebOverrideReadmeIsWrittenOnce();
+    void noReadmeWhenTheBundleIsTheConfigDir();
 
 private:
     QTemporaryDir m_bundleDir;
@@ -67,12 +72,12 @@ private:
     [[nodiscard]] QString live(const QString& rel) const
     { return m_configDir.path() + QLatin1Char('/') + rel; }
 
-    /// A bundle shaped like the real one: a template, a webserver asset, and a
-    /// data file the app owns.
+    /// A bundle shaped like the real one: a template, an asset in a folder, and a
+    /// data file the app owns. (webserver/ is served from the bundle, not seeded.)
     void makeBundle()
     {
         writeFile(bundle(QStringLiteral("eMule.tmpl")), QByteArrayLiteral("template v1"));
-        writeFile(bundle(QStringLiteral("webserver/sprites.css")), QByteArrayLiteral("css v1"));
+        writeFile(bundle(QStringLiteral("skins/sprites.css")), QByteArrayLiteral("css v1"));
         writeFile(bundle(QStringLiteral("server.met")), QByteArrayLiteral("servers v1"));
     }
 };
@@ -98,7 +103,7 @@ void TestConfigSeeding::seedsAFreshConfigDirAndSkipsDotFiles()
     QCOMPARE(report.seeded, 3);
     QCOMPARE(report.refreshed, 0);
     QCOMPARE(readFile(live(QStringLiteral("eMule.tmpl"))), QByteArrayLiteral("template v1"));
-    QCOMPARE(readFile(live(QStringLiteral("webserver/sprites.css"))), QByteArrayLiteral("css v1"));
+    QCOMPARE(readFile(live(QStringLiteral("skins/sprites.css"))), QByteArrayLiteral("css v1"));
     QVERIFY(QFile::exists(live(QLatin1StringView(kManifest))));
 
     // Build-machine litter must not be shipped into a user's config dir.
@@ -208,12 +213,12 @@ void TestConfigSeeding::aDeletedFileIsSeededAgain()
 {
     makeBundle();
     AppConfig::seedFrom(m_bundleDir.path(), m_configDir.path());
-    QVERIFY(QFile::remove(live(QStringLiteral("webserver/sprites.css"))));
+    QVERIFY(QFile::remove(live(QStringLiteral("skins/sprites.css"))));
 
     const auto report = AppConfig::seedFrom(m_bundleDir.path(), m_configDir.path());
 
     QCOMPARE(report.seeded, 1);
-    QCOMPARE(readFile(live(QStringLiteral("webserver/sprites.css"))), QByteArrayLiteral("css v1"));
+    QCOMPARE(readFile(live(QStringLiteral("skins/sprites.css"))), QByteArrayLiteral("css v1"));
 }
 
 void TestConfigSeeding::aPreManifestInstallIsAdoptedWithABackup()
@@ -233,20 +238,20 @@ void TestConfigSeeding::aPreManifestInstallIsAdoptedWithABackup()
 void TestConfigSeeding::aFileDroppedFromTheBundleIsPruned()
 {
     makeBundle();
-    writeFile(bundle(QStringLiteral("webserver/old.gif")), QByteArrayLiteral("gif"));
-    writeFile(bundle(QStringLiteral("webserver/edited.gif")), QByteArrayLiteral("gif2"));
+    writeFile(bundle(QStringLiteral("skins/old.gif")), QByteArrayLiteral("gif"));
+    writeFile(bundle(QStringLiteral("skins/edited.gif")), QByteArrayLiteral("gif2"));
     AppConfig::seedFrom(m_bundleDir.path(), m_configDir.path());
 
     // One drops out untouched, one the user changed.
-    QVERIFY(QFile::remove(bundle(QStringLiteral("webserver/old.gif"))));
-    QVERIFY(QFile::remove(bundle(QStringLiteral("webserver/edited.gif"))));
-    writeFile(live(QStringLiteral("webserver/edited.gif")), QByteArrayLiteral("mine"));
+    QVERIFY(QFile::remove(bundle(QStringLiteral("skins/old.gif"))));
+    QVERIFY(QFile::remove(bundle(QStringLiteral("skins/edited.gif"))));
+    writeFile(live(QStringLiteral("skins/edited.gif")), QByteArrayLiteral("mine"));
 
     const auto report = AppConfig::seedFrom(m_bundleDir.path(), m_configDir.path());
 
     QCOMPARE(report.pruned, 1);
-    QVERIFY(!QFile::exists(live(QStringLiteral("webserver/old.gif"))));
-    QCOMPARE(readFile(live(QStringLiteral("webserver/edited.gif"))), QByteArrayLiteral("mine"));
+    QVERIFY(!QFile::exists(live(QStringLiteral("skins/old.gif"))));
+    QCOMPARE(readFile(live(QStringLiteral("skins/edited.gif"))), QByteArrayLiteral("mine"));
 }
 
 void TestConfigSeeding::aTruncatedBundleDoesNotTriggerPruning()
@@ -254,18 +259,18 @@ void TestConfigSeeding::aTruncatedBundleDoesNotTriggerPruning()
     // A packaging accident must not become "delete the user's working assets".
     makeBundle();
     for (int i = 0; i < 8; ++i)
-        writeFile(bundle(QStringLiteral("webserver/a%1.gif").arg(i)), QByteArrayLiteral("gif"));
+        writeFile(bundle(QStringLiteral("skins/a%1.gif").arg(i)), QByteArrayLiteral("gif"));
     AppConfig::seedFrom(m_bundleDir.path(), m_configDir.path());
 
     for (int i = 0; i < 8; ++i)
-        QVERIFY(QFile::remove(bundle(QStringLiteral("webserver/a%1.gif").arg(i))));
-    QVERIFY(QFile::remove(bundle(QStringLiteral("webserver/sprites.css"))));
+        QVERIFY(QFile::remove(bundle(QStringLiteral("skins/a%1.gif").arg(i))));
+    QVERIFY(QFile::remove(bundle(QStringLiteral("skins/sprites.css"))));
 
     const auto report = AppConfig::seedFrom(m_bundleDir.path(), m_configDir.path());
 
     QCOMPARE(report.pruned, 0);
-    QVERIFY(QFile::exists(live(QStringLiteral("webserver/a0.gif"))));
-    QVERIFY(QFile::exists(live(QStringLiteral("webserver/sprites.css"))));
+    QVERIFY(QFile::exists(live(QStringLiteral("skins/a0.gif"))));
+    QVERIFY(QFile::exists(live(QStringLiteral("skins/sprites.css"))));
 }
 
 void TestConfigSeeding::aBundleThatIsTheConfigDirIsANoOp()
@@ -313,6 +318,10 @@ void TestConfigSeeding::theShippedBundleLayoutsAllResolve()
         QVERIFY2(c.contains(stageRoot + QStringLiteral("/config")), qPrintable(stageRoot));
     }
 
+    // bin/ + share/: the daemon image (docker/daemon.Dockerfile)
+    QVERIFY(AppConfig::bundleCandidates(QStringLiteral("/usr/local/bin"))
+                .contains(QStringLiteral("/usr/local/bin/../share/emuleqt/config")));
+
     // The source tree is a fallback, never a winner over a real bundle.
     const QStringList any = AppConfig::bundleCandidates(QStringLiteral("/A"));
     if (any.size() > 2)
@@ -342,6 +351,71 @@ void TestConfigSeeding::theShippedLangLayoutsAllResolve()
         QCOMPARE(any.indexOf(QStringLiteral("/A/lang")), 0);
         QVERIFY(!any.last().startsWith(QStringLiteral("/A/")));
     }
+}
+
+void TestConfigSeeding::webserverAssetsAreNotSeeded()
+{
+    makeBundle();
+    writeFile(bundle(QStringLiteral("webserver/sprites.css")), QByteArrayLiteral("css v1"));
+    writeFile(bundle(QStringLiteral("webserver/favicon.ico")), QByteArrayLiteral("ico"));
+
+    const auto report = AppConfig::seedFrom(m_bundleDir.path(), m_configDir.path());
+
+    QCOMPARE(report.seeded, 3);   // the three of makeBundle()
+    QVERIFY(!QFile::exists(live(QStringLiteral("webserver/sprites.css"))));
+    QVERIFY(!QFile::exists(live(QStringLiteral("webserver/favicon.ico"))));
+    QVERIFY(!readFile(live(QLatin1StringView(kManifest))).contains("webserver/"));
+    // the folder holds only the README
+    const QStringList left = QDir(live(QStringLiteral("webserver"))).entryList(QDir::Files);
+    QCOMPARE(left, QStringList{QStringLiteral("README.txt")});
+}
+
+void TestConfigSeeding::seededWebAssetsArePrunedButEditsStayAsOverrides()
+{
+    // An older version seeded webserver/ and recorded it; the user edited one file
+    makeBundle();
+    writeFile(bundle(QStringLiteral("webserver/a.gif")), QByteArrayLiteral("gif"));
+    writeFile(bundle(QStringLiteral("webserver/sprites.css")), QByteArrayLiteral("css v1"));
+    AppConfig::seedFrom(m_bundleDir.path(), m_configDir.path());
+    writeFile(live(QStringLiteral("webserver/a.gif")), QByteArrayLiteral("gif"));
+    writeFile(live(QStringLiteral("webserver/sprites.css")), QByteArrayLiteral("my css"));
+    const auto sha = [](const QByteArray& b) { return QCryptographicHash::hash(b, QCryptographicHash::Sha256).toHex(); };
+    QByteArray manifest = readFile(live(QLatin1StringView(kManifest)));
+    QVERIFY(manifest.contains("files:"));
+    const QByteArray oldEntries = "files:\n  webserver/a.gif:\n    sha256: " + sha("gif") + "\n"
+                                  "  webserver/sprites.css:\n    sha256: " + sha("css v1") + "\n";
+    manifest.replace(QByteArrayLiteral("files:\n"), oldEntries);
+    writeFile(live(QLatin1StringView(kManifest)), manifest);
+
+    const auto report = AppConfig::seedFrom(m_bundleDir.path(), m_configDir.path());
+
+    QCOMPARE(report.pruned, 1);
+    QVERIFY(!QFile::exists(live(QStringLiteral("webserver/a.gif"))));
+    QCOMPARE(readFile(live(QStringLiteral("webserver/sprites.css"))), QByteArrayLiteral("my css"));
+    // the seedable files are all there: the old webserver entries do not count as truncation
+    QVERIFY(QFile::exists(live(QStringLiteral("eMule.tmpl"))));
+}
+
+void TestConfigSeeding::theWebOverrideReadmeIsWrittenOnce()
+{
+    makeBundle();
+    AppConfig::seedFrom(m_bundleDir.path(), m_configDir.path());
+    const QByteArray text = readFile(live(QStringLiteral("webserver/README.txt")));
+    QVERIFY(text.contains("same name"));
+    QVERIFY(text.contains(QDir::toNativeSeparators(m_bundleDir.path() + QStringLiteral("/webserver")).toUtf8()));
+
+    // the user's edit stays
+    writeFile(live(QStringLiteral("webserver/README.txt")), QByteArrayLiteral("my notes"));
+    AppConfig::seedFrom(m_bundleDir.path(), m_configDir.path());
+    QCOMPARE(readFile(live(QStringLiteral("webserver/README.txt"))), QByteArrayLiteral("my notes"));
+}
+
+void TestConfigSeeding::noReadmeWhenTheBundleIsTheConfigDir()
+{
+    // Windows portable: config/webserver is the shipped folder itself
+    makeBundle();
+    AppConfig::seedFrom(m_bundleDir.path(), m_bundleDir.path());
+    QVERIFY(!QFile::exists(bundle(QStringLiteral("webserver/README.txt"))));
 }
 
 QTEST_MAIN(TestConfigSeeding)

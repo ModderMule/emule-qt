@@ -28,6 +28,8 @@
 #ifndef Q_OS_WIN
 #include <cerrno>
 #include <csignal>
+#include <cstdio>
+#include <cstdlib>
 #include <optional>
 #include <sys/socket.h>
 #include <unistd.h>
@@ -320,6 +322,18 @@ bool processAlive(qint64 pid)
 #endif
 }
 
+/// Quit with no Confirm Exit box (a signal, a core update). Quitting from inside a
+/// modal loop crashes AppKit: close the boxes, then quit once their loops returned.
+void quitWithoutPrompt()
+{
+    eMule::MainWindow::quitWithoutPrompt();
+    for (QWidget* w : QApplication::topLevelWidgets()) {
+        if (auto* dlg = qobject_cast<QDialog*>(w); dlg && dlg->isVisible())
+            dlg->reject();
+    }
+    QTimer::singleShot(0, qApp, &QCoreApplication::quit);
+}
+
 /// Stop a core we started and cannot reach over IPC: busy enough to miss a
 /// keepalive, it would otherwise outlive the GUI and greet the next one already
 /// connected. The port still being held tells it from a core that is gone.
@@ -399,14 +413,7 @@ int main(int argc, char* argv[])
             return;   // a repeat while we wind down
         quitting = true;
         eMule::logInfo(QStringLiteral("Signal received — shutting down gracefully..."));
-        eMule::MainWindow::quitWithoutPrompt();
-        // Quitting from inside a modal loop crashes AppKit: close the boxes, then
-        // quit once their loops have returned
-        for (QWidget* w : QApplication::topLevelWidgets()) {
-            if (auto* dlg = qobject_cast<QDialog*>(w); dlg && dlg->isVisible())
-                dlg->reject();
-        }
-        QTimer::singleShot(0, &app, &QCoreApplication::quit);
+        quitWithoutPrompt();
     });
     std::signal(SIGTERM, unixSignalHandler);
     std::signal(SIGINT,  unixSignalHandler);
@@ -523,7 +530,8 @@ int main(int argc, char* argv[])
         const bool ownsCore = !earlyPath.isEmpty() && earlyPath != QStringLiteral("local");
         if (ownsCore)
             claimFreePorts(configDir, !eMule::theUiState.firstStartWizardDone());
-        if (ownsCore
+        // After an update the updater has just started the core: it may not listen yet
+        if (ownsCore && !cli.afterUpdate()
             && ipcPortFree(eMule::thePrefs.ipcListenAddress(), eMule::thePrefs.ipcPort())) {
             const bool hold = !cli.screenshotMode() && !eMule::theUiState.firstStartWizardDone();
             *weOwnDaemon = launchDaemon(earlyPath, hold, *daemonPid);
@@ -862,7 +870,7 @@ int main(int argc, char* argv[])
                 mainWindow.sharedFilesPanel()->refreshSharedDirs();
                 // ed3k search method follows the daemon's ed3kEnabled
                 mainWindow.searchPanel()->setEd3kMethodVisible(eMule::thePrefs.ed3kEnabled());
-                // Torrents / Hoster tabs follow btEnabled / ed3kEnabled
+                // Torrents / Hoster tabs follow btEnabled / hosterDownloadsOn
                 mainWindow.applyFeatureTabs();
                 // The lists were built on the local prefs file's showExtControls
                 mainWindow.sharedFilesPanel()->applyDisplayOptions();
@@ -880,8 +888,14 @@ int main(int argc, char* argv[])
 
         // On first connection failure, try launching the daemon binary (local path only).
         // IpcClient auto-reconnects with exponential backoff regardless.
-        if (*weOwnDaemon)
+        if (*weOwnDaemon) {
             ipcClient.expectDaemonStart();
+        } else if (cli.afterUpdate()) {
+            // The updated core loads (or rolls back) meanwhile; only then is one launched
+            constexpr int kAfterUpdateGraceMs = 120'000;
+            ipcClient.setStartGraceMs(kAfterUpdateGraceMs);
+            ipcClient.expectDaemonStart();
+        }
         if (!isRemote && daemonPath == QStringLiteral("local")) {
             // "local" mode: daemon should already be running; show dialog on failure
             auto dialogShown = std::make_shared<bool>(false);
@@ -1122,8 +1136,47 @@ int main(int argc, char* argv[])
 
         // When the GUI closes, shut down the daemon only if we launched it.
         // If the daemon was already running independently, leave it alone.
+        // The core installs an update: quit, leave it running; the updater
+        // starts it again and reopens us
+        auto coreUpdating = std::make_shared<bool>(false);
+        QObject::connect(&ipcClient, &eMule::IpcClient::coreUpdating,
+                         &app, [coreUpdating](const QString& version, bool reopened) {
+            if (!reopened) {
+                // Remote, or the updater could not start us again: stay and reconnect
+                eMule::logInfo(QStringLiteral("Core is updating to v%1, waiting for it").arg(version));
+                return;
+            }
+            if (*coreUpdating)
+                return;
+            *coreUpdating = true;
+            eMule::logInfo(QStringLiteral("Core is updating to v%1 — closing, it reopens afterwards").arg(version));
+            quitWithoutPrompt();
+            // The updater waits for this process: never let a box or a modal loop
+            // that ignored the close keep it up. Ask again, then end it hard.
+            auto* watchdog = new QTimer(qApp);
+            auto tries = std::make_shared<int>(0);
+            QObject::connect(watchdog, &QTimer::timeout, qApp, [tries] {
+                constexpr int kMaxTries = 10;   // 2 s each
+                if (++*tries < kMaxTries) {
+                    if (QWidget* popup = QApplication::activePopupWidget())
+                        popup->close();
+                    quitWithoutPrompt();
+                    return;
+                }
+                eMule::logWarning(QStringLiteral("GUI did not close for the core update, exiting now"));
+                eMule::theUiState.save();
+                std::fflush(nullptr);
+                std::_Exit(0);
+            });
+            watchdog->start(2000);
+        });
+
         QObject::connect(&app, &QCoreApplication::aboutToQuit,
-                         &ipcClient, [&ipcClient, weOwnDaemon, daemonPid]() {
+                         &ipcClient, [&ipcClient, weOwnDaemon, daemonPid, coreUpdating]() {
+            if (*coreUpdating) {
+                ipcClient.disconnectFromDaemon();
+                return;
+            }
             if (*weOwnDaemon && ipcClient.isConnected()) {
                 eMule::logInfo(QStringLiteral("Shutting down daemon (we launched it)..."));
                 ipcClient.sendShutdown();

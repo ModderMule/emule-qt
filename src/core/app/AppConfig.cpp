@@ -223,6 +223,41 @@ using ManifestHashes = QHash<QString, QByteArray>;
     });
 }
 
+/// Served from the bundle (AppConfig::kWebDirName), never copied into config
+[[nodiscard]] bool isServedFromBundle(const QString& relPath)
+{
+    return relPath.startsWith(QString(AppConfig::kWebDirName) + u'/');
+}
+
+/// config/webserver/README.txt: what the folder is for. Written once; the user may edit it
+void writeWebReadme(const QString& configDir, const QString& bundleDir)
+{
+    const QString dir = configDir + QLatin1Char('/') + AppConfig::kWebDirName;
+    const QString path = dir + QStringLiteral("/README.txt");
+    if (QFile::exists(path) || !QDir().mkpath(dir))
+        return;
+    QFile f(path);
+    if (!f.open(QIODevice::WriteOnly | QIODevice::Text))
+        return;
+    const QString bundled = QDir::toNativeSeparators(bundleDir + QLatin1Char('/') + AppConfig::kWebDirName);
+    f.write(QStringLiteral(
+                "Web interface overrides\n"
+                "=======================\n"
+                "\n"
+                "The web interface serves its images, styles and scripts from the program folder:\n"
+                "  %1\n"
+                "\n"
+                "A file put into this folder with the same name as one there is served instead.\n"
+                "Served types: .css .js .png .gif .jpg .ico\n"
+                "Example: copy sprites.css from the program folder to here and edit the copy.\n"
+                "Delete a file here to get the shipped one back.\n"
+                "\n"
+                "A whole new look: set Web Interface > Template to a .tmpl file; image files next\n"
+                "to it override these, one by one.\n")
+                .arg(bundled)
+                .toUtf8());
+}
+
 [[nodiscard]] QByteArray hashFile(const QString& path)
 {
     QFile file(path);
@@ -305,6 +340,7 @@ QStringList AppConfig::bundleCandidates(const QString& appDir)
     QStringList candidates{
         appDir + QStringLiteral("/../Resources/config"),   // macOS .app bundle
         appDir + QStringLiteral("/config"),                // Windows zip and Linux tarball
+        appDir + QStringLiteral("/../share/emuleqt/config"), // bin/ + share/ install (daemon image)
     };
     // Local build straight from the source tree. Empty in packaged builds, and
     // always last so a real bundle wins.
@@ -366,9 +402,15 @@ AppConfig::SeedReport AppConfig::seedBundledData(const QString& configDir)
         return {};
 #endif
 
+    const QString bundle = bundledDataDir();
+    return bundle.isEmpty() ? SeedReport{} : seedFrom(bundle, configDir);
+}
+
+QString AppConfig::bundledDataDir()
+{
     for (const QString& c : bundleCandidates(QCoreApplication::applicationDirPath())) {
         if (QDir(c).exists())
-            return seedFrom(c, configDir);
+            return QDir::cleanPath(c);
     }
     return {};
 }
@@ -410,7 +452,7 @@ AppConfig::SeedReport AppConfig::seedFrom(const QString& bundleDir, const QStrin
         // .DS_Store and friends are build-machine litter, not payload.
         if (QFileInfo(relPath).fileName().startsWith(QLatin1Char('.')))
             continue;
-        if (isNeverSeed(relPath))
+        if (isNeverSeed(relPath) || isServedFromBundle(relPath))
             continue;
 
         inBundle.insert(relPath);
@@ -489,10 +531,12 @@ AppConfig::SeedReport AppConfig::seedFrom(const QString& bundleDir, const QStrin
     // Prune what we once seeded and no longer ship -- but only when the bundle
     // looks whole. A truncated bundle is a packaging bug, not an instruction to
     // delete the user's working assets.
-    if (!was.isEmpty() && inBundle.size() * kPruneMinBundleRatio < was.size()) {
+    // webserver/ entries of an older version do not count: no longer seeded on purpose
+    const auto wasSeedable = std::ranges::count_if(was.keys(), [](const QString& p) { return !isServedFromBundle(p); });
+    if (wasSeedable > 0 && inBundle.size() * kPruneMinBundleRatio < wasSeedable) {
         logWarning(QStringLiteral("Bundled data: only %1 of %2 known files found in %3; "
                                   "skipping prune")
-                       .arg(inBundle.size()).arg(was.size()).arg(bundleDir));
+                       .arg(inBundle.size()).arg(wasSeedable).arg(bundleDir));
         for (auto it2 = was.cbegin(); it2 != was.cend(); ++it2)
             if (!now.contains(it2.key()))
                 now.insert(it2.key(), it2.value());
@@ -517,6 +561,7 @@ AppConfig::SeedReport AppConfig::seedFrom(const QString& bundleDir, const QStrin
 
     if (now != was)
         writeManifest(manifestPath, now);
+    writeWebReadme(configDir, bundleDir);
 
     return report;
 }

@@ -8,8 +8,8 @@
 /// without a reply to wait for.
 ///
 /// kRealManifest is the live document from https://emule-qt.org/pub/emuleqt-version.json
-/// verbatim, so the fixture also asserts that this build's platform key is one the
-/// server actually publishes.
+/// verbatim (as written by scripts/update-manifest.sh), so the fixture also asserts
+/// that this build's platform key is one the server actually publishes.
 
 #include "app/VersionChecker.h"
 
@@ -24,7 +24,8 @@ class TestVersionChecker : public QObject {
 
 private slots:
     void realManifestParsesCompletely();
-    void realManifestOffersNoDownloadYet();
+    void realManifestOffersThisPlatformsDownload();
+    void stubManifestOffersNoDownload();
     void platformKeyIsOneTheServerPublishes();
 
     void emptyBodyIsAnError();
@@ -48,8 +49,61 @@ private slots:
 // the link fails on a missing vtable.
 namespace {
 
-/// The manifest as served on 2026-08-06.
+/// The manifest as served on 2026-10-31.
 constexpr auto kRealManifest = R"({
+  "latest": "0.7.1",
+  "date": "2026-10-31T03:10:47Z",
+  "releaseNotes": "https://github.com/ModderMule/emule-qt/releases/tag/v0.7.1",
+  "minVersion": "0.0.1",
+  "downloads": {
+    "windows-x64": {
+      "url": "https://github.com/ModderMule/emule-qt/releases/download/v0.7.1/eMuleQt-v0.7.1-win64.zip",
+      "sha256": "8e601e46250d7fdd176457999b8952a09c25c1eb0520838be5bc0067c365b98e",
+      "size": 111412704
+    },
+    "windows-x64-installer": {
+      "url": "https://github.com/ModderMule/emule-qt/releases/download/v0.7.1/eMuleQt-v0.7.1-win64-setup.exe",
+      "sha256": "acf273b531a6d01a2efb3642bcef3faeccf6c055e4fdb50e3e3a8e4e77691ef2",
+      "size": 96936458
+    },
+    "mac-arm64": {
+      "url": "https://github.com/ModderMule/emule-qt/releases/download/v0.7.1/eMuleQt-v0.7.1-macOS-arm64.dmg",
+      "sha256": "0fcda240ea3bbc32b995921565630f9cdfcf3137c9fc28051827d12692151d46",
+      "size": 123841467
+    },
+    "mac-x64": {
+      "url": "https://github.com/ModderMule/emule-qt/releases/download/v0.7.1/eMuleQt-v0.7.1-macOS-x86_64.dmg",
+      "sha256": "9b436ac7394d934291265d493d1f2a770904e9fc151ca7c0fa82d17997fb5398",
+      "size": 127311160
+    },
+    "linux-x64": {
+      "url": "https://github.com/ModderMule/emule-qt/releases/download/v0.7.1/eMuleQt-v0.7.1-linux-x86_64.tar.gz",
+      "sha256": "74760979906f657169a30134b3ac74030028a48febca179a426dc163c78c9f23",
+      "size": 480094905
+    }
+  },
+  "specialdlp": {
+    "libVersion": "1.0.0",
+    "rulesVersion": 44006,
+    "abi": 1,
+    "downloads": {}
+  },
+  "hosterResolver": {
+    "url": "https://emule-qt.org/pub/resolver.zip",
+    "sha256": "94af025652b87917dc2edc9278abf704aab4ce99ba289b3cfdd3234b4e255800",
+    "size": 39220986,
+    "jdRevision": 53779
+  },
+  "geoip": {
+    "database": "GeoLite2-Country",
+    "buildDate": "2026-10-27T17:52:02Z",
+    "sha256": "54e327d9fe9214e568c5b8f8ce97a7f7e7087b7de10b0560640417695d153797",
+    "size": 3395840
+  }
+})";
+
+/// The manifest as served on 2026-08-06: every download a not-ready:// stub.
+constexpr auto kStubManifest = R"({
   "latest": "0.2.0",
   "date": "2026-07-30T13:37:02Z",
   "releaseNotes": "https://github.com/ModderMule/emule-qt/releases/tag/v0.2.0",
@@ -88,6 +142,13 @@ constexpr auto kRealManifest = R"({
   }
 })";
 
+/// Platforms release.yml builds; windows-arm64 / linux-arm64 have a key but no build.
+bool isBuiltPlatform(const QString& key)
+{
+    return !key.isEmpty() && key != QLatin1StringView("windows-arm64")
+           && key != QLatin1StringView("linux-arm64");
+}
+
 /// A manifest advertising exactly one download, for this build's platform.
 QByteArray manifestWithDownload(const QString& url, qint64 size)
 {
@@ -104,18 +165,29 @@ void TestVersionChecker::realManifestParsesCompletely()
     const auto info = VersionChecker::parse(QByteArray(kRealManifest));
 
     QVERIFY2(info.isValid(), qPrintable(info.error));
-    QCOMPARE(info.latest, QStringLiteral("0.2.0"));
-    QCOMPARE(info.date, QDate(2026, 7, 30));
+    QCOMPARE(info.latest, QStringLiteral("0.7.1"));
+    QCOMPARE(info.date, QDate(2026, 10, 31));
     QCOMPARE(info.minVersion, QStringLiteral("0.0.1"));
-    QVERIFY(info.releaseNotes.contains(QStringLiteral("releases/tag/v0.2.0")));
+    QVERIFY(info.releaseNotes.contains(QStringLiteral("releases/tag/v0.7.1")));
 }
 
-void TestVersionChecker::realManifestOffersNoDownloadYet()
+void TestVersionChecker::realManifestOffersThisPlatformsDownload()
 {
-    // Every entry is a not-ready:// stub with size 0. That is not an error — the
-    // manifest announces a release before the binaries exist — and it is exactly why
-    // the dialog sends people to the website instead of a file.
+    if (!isBuiltPlatform(VersionChecker::platformKey()))
+        QSKIP("no release build for this OS/CPU combination");
+
+    // The dialog still only opens the website; the URL is parsed for later use.
     const auto info = VersionChecker::parse(QByteArray(kRealManifest));
+    QVERIFY(info.isValid());
+    QVERIFY2(info.downloadUrl.startsWith(
+                 QStringLiteral("https://github.com/ModderMule/emule-qt/releases/download/v0.7.1/")),
+             qPrintable(info.downloadUrl));
+}
+
+void TestVersionChecker::stubManifestOffersNoDownload()
+{
+    // not-ready:// stubs with size 0 are not an error -- just no download
+    const auto info = VersionChecker::parse(QByteArray(kStubManifest));
     QVERIFY(info.isValid());
     QVERIFY2(info.downloadUrl.isEmpty(), qPrintable(info.downloadUrl));
 }
@@ -123,8 +195,8 @@ void TestVersionChecker::realManifestOffersNoDownloadYet()
 void TestVersionChecker::platformKeyIsOneTheServerPublishes()
 {
     const QString key = VersionChecker::platformKey();
-    if (key.isEmpty())
-        QSKIP("no manifest entry defined for this OS/CPU combination");
+    if (!isBuiltPlatform(key))
+        QSKIP("no release build for this OS/CPU combination");
 
     // Catches a mapping that drifts away from what the server actually ships: a key
     // of "macos-aarch64" would silently mean "never offer a download" forever.

@@ -275,6 +275,8 @@ public:
     [[nodiscard]] float percentCompleted() const { return m_percentCompleted; }
     [[nodiscard]] uint64 compressionGain() const { return m_compressionGain; }
     [[nodiscard]] uint64 corruptionLoss() const { return m_corruptionLoss; }
+    /// Parts ICH rebuilt this session (MFC GetRecoveredPartsByICH)
+    [[nodiscard]] uint32 ichPartsSaved() const { return m_ichPartsSaved; }
     void updateCompletedInfos();
     [[nodiscard]] const std::list<Gap>& gapList() const { return m_gapList; }
 
@@ -436,6 +438,10 @@ public:
     void setPauseOnPreview(bool on) { m_pauseOnPreview = on; }
     /// A movie or an archive (MFC IsPreviewableFileType).
     [[nodiscard]] bool isPreviewableFileType() const;
+    /// Opening it may need the file's tail: previewable types plus containers that
+    /// keep their index at the end (m4a, pdf, Office/OpenDocument, epub, apk, dmg ...).
+    /// Decides which files get the last part early under preview priority.
+    [[nodiscard]] bool previewNeedsLastPart() const;
     /// When every part last had a source at the same time; 0 = never.
     [[nodiscard]] time_t lastSeenComplete() const { return m_lastSeenComplete; }
 
@@ -496,6 +502,13 @@ public:
     /// RemoteQueueFull. MFC CPartFile::GetValidSourcesCount() (PartFile.cpp:2116);
     /// isSourceRequestAllowed() weighs it against the raw source count.
     [[nodiscard]] int validSourcesCount() const;
+
+    /// Sources that have no part we still need (MFC GetSrcStatisticsValue(DS_NONEEDEDPARTS)).
+    [[nodiscard]] int nnpSourceCount() const;
+
+    /// Parts at least one source has; all of them once complete
+    /// (MFC CPartFile::GetAvailablePartCount).
+    [[nodiscard]] uint32 availablePartCount() const;
     /// Would start a Kad source search now, were it this file's turn.
     [[nodiscard]] bool wantsKadSourceSearch(uint64 curTick) const;
 
@@ -752,6 +765,7 @@ private:
     uint64 m_transferred = 0;
     uint64 m_corruptionLoss = 0;
     uint64 m_compressionGain = 0;
+    uint32 m_ichPartsSaved = 0;
     uint32 m_datarate = 0;
 
     // Status

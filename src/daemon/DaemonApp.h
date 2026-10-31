@@ -32,10 +32,11 @@ class WebServer;
 class IpcServer;
 class CoreNotifierBridge;
 class PowerManager;
+class AutoUpdater;
 
 namespace usenet { class UsenetSession; }
 namespace bt { class BtSession; }
-namespace ed3k { class Ed3kSession; class Ed3kUsenetJoin; class UsenetJoinQueue; class Ed3kTorrentJoin; class Ed3kShared; class SharedFileSource; class Ed3kFriends; class Ed3kRooms; class Ed3kBootstrap; class Ed3kNames; class Ed3kSiteServer; class Ed3kCredit; class Ed3kUploads; class Ed3kFilters; class Ed3kChain; class Ed3kHosterJoin; class Ed3kJdResolver; class Ed3kJavaRuntime; class Ed3kDownloads; class Ed3kSearch; class Ed3kSets; class Ed3kLive; class Ed3kLiveBroadcast; class Ed3kPaid; }
+namespace ed3k { class Ed3kSession; class Ed3kUsenetJoin; class UsenetJoinQueue; class Ed3kTorrentJoin; class Ed3kEd2kJoin; class Ed3kShared; class SharedFileSource; class Ed3kFriends; class Ed3kRooms; class Ed3kBootstrap; class Ed3kNames; class Ed3kSiteServer; class Ed3kCredit; class Ed3kUploads; class Ed3kFilters; class Ed3kChain; class Ed3kHosterJoin; class Ed3kJdResolver; class Ed3kJavaRuntime; class Ed3kDownloads; class Ed3kSearch; class Ed3kSets; class Ed3kLive; class Ed3kLiveBroadcast; class Ed3kPaid; }
 namespace indexer { class IndexerFeedList; class IndexerSearchList; }
 
 class DaemonApp : public QObject {
@@ -53,6 +54,10 @@ public:
     void setConnectHold(bool hold) { m_connectHold = hold; }
     /// IPC port from --port, not saved to prefs; 0 = prefs. Before start().
     void setIpcPortOverride(quint16 port) { m_ipcPortOverride = port; }
+    /// --autoupdate[=hours]; @p hours 0 = version-check interval. Before start().
+    void setAutoUpdate(bool on, int hours) { m_autoUpdateOn = on; m_autoUpdateHours = hours; }
+    /// --autoupdate given and not in a container (the updater starts once loaded).
+    [[nodiscard]] static bool autoUpdateEnabled();
 
     /// Quit, then have main() start the daemon again (new ports, same arguments).
     static void requestRestart();
@@ -121,6 +126,8 @@ public:
 private:
     /// CoreSession::loaded: start what had to wait for the file lists.
     void onCoreLoaded();
+    /// --autoupdate: create and start the AutoUpdater.
+    void startAutoUpdater();
     /// Tell every GUI whether the core is still reading its files, and which.
     void broadcastCoreLoading(bool loading);
     void startWebServer();
@@ -218,6 +225,8 @@ private:
     /// through MetaSearchService); die before the session
     std::unique_ptr<ed3k::Ed3kDownloads> m_ed3kDownloads;
     std::unique_ptr<ed3k::Ed3kSearch> m_ed3kSearch;
+    /// eD2K downloads fed from ed3k too (§14.4); dies before the session
+    std::unique_ptr<ed3k::Ed3kEd2kJoin> m_ed2kJoin;
     /// followed sets (their members through m_ed3kDownloads) and live streams (on the website
     /// server's port, Ed3kSetsBridge); die before the downloads and the website server
     /// paid subscriptions (Ed3kPaidBridge); the sets follow paid sets there: dies after them
@@ -253,6 +262,9 @@ private:
     std::unique_ptr<indexer::IndexerSearchList> m_indexerSearches;
     std::unique_ptr<indexer::IndexerFeedList> m_indexerFeeds;
     std::unique_ptr<PowerManager> m_powerManager;
+    bool m_autoUpdateOn = false;
+    int m_autoUpdateHours = 0;
+    std::unique_ptr<AutoUpdater> m_autoUpdater;
     TranslationRouter* m_translations = nullptr;
     bool m_running = false;
     QString m_startError;

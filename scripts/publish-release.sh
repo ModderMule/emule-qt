@@ -10,10 +10,11 @@ set -euo pipefail
 # else derives its version from those), then creates a release commit +
 # annotated git tag and pushes both.
 #
-# Finally it updates the update manifest that shipped clients poll
-# (src/gui/app/VersionChecker.cpp fetches https://emule-qt.org/pub/emuleqt-version.json)
-# -- setting "latest", "date" and pointing "releaseNotes" at the GitHub release
-# page for the tag just created -- and rsyncs it to the webserver.
+# The update manifest that shipped clients poll (src/gui/app/VersionChecker.cpp
+# fetches https://emule-qt.org/pub/emuleqt-version.json) is NOT written here: the
+# `manifest` job of release.yml runs scripts/update-manifest.sh once the GitHub
+# Release has its assets, so a version is only announced when it can be
+# downloaded. It needs the PUBLISH_SSH_* repo secrets (see update-manifest.sh).
 #
 # Before tagging it also downloads the GeoLite2-Country database via
 # scripts/fetch-geoip.sh (MAXMIND_ACCOUNT_ID / MAXMIND_LICENSE_KEY in .env) and
@@ -38,7 +39,7 @@ set -euo pipefail
 #   PUBLISH_SSH_PASS     ssh password (fed to sshpass via the environment)
 #   PUBLISH_SSH_HOST     webserver hostname
 #   PUBLISH_REMOTE_PATH  remote directory that serves /pub/
-#   PUBLISH_LOCAL_JSON   local path of emuleqt-version.json
+#   PUBLISH_LOCAL_JSON   local copy of emuleqt-version.json (--publish-only)
 # and optionally
 #   JD_DIR               dir holding the JDownloader, AppWorkUtils, JDBrowser and
 #                        MyJDownloaderClient SVN trees (an environment JD_DIR wins)
@@ -48,16 +49,18 @@ set -euo pipefail
 # on main (a build there shares its caches with the next release), verifies the
 # tag matches CMakeLists.txt, builds Linux/macOS/Windows (by calling the per-OS
 # workflows) and publishes the GitHub Release -- with the platform archives and a
-# SHA256SUMS.txt attached -- that the releaseNotes URL below points at.
+# SHA256SUMS.txt attached -- and then publishes the update manifest.
 # Nothing needs to be started by hand.
 #
 # Usage: scripts/publish-release.sh [--publish-only]
 #
 #   --publish-only   Skip the whole git side (no bump, no commit, no tag, no push)
-#                    and just rewrite + upload the manifest for the version already
-#                    in CMakeLists.txt. Its tag must already exist, otherwise the
-#                    releaseNotes link would 404. Useful to re-run a failed upload
-#                    or to refresh a manifest that has drifted behind the tags.
+#                    and do what CI's manifest job does, for the version already in
+#                    CMakeLists.txt: pull the live manifest, fill it from the GitHub
+#                    release of that tag (must be published already) plus the
+#                    GeoLite2/resolver files on /pub/ (checked against the tag) and
+#                    upload it. The fallback when the CI secrets are missing or the
+#                    job failed.
 
 # --- arguments --------------------------------------------------------------
 PUBLISH_ONLY=0
@@ -135,16 +138,6 @@ if [[ "$PUBLISH_ONLY" -eq 0 ]]; then
     echo "  push it first:  git -C ${PM_DIR} push origin HEAD:main" >&2
     exit 1
   fi
-fi
-
-# Versions the manifest advertises for the future library auto-update
-# (docs/specialdlp-auto-update.local.md)
-DLP_LIB_VERSION="$(sed -n 's/^project(specialdlp VERSION \([0-9.]*\).*/\1/p' "$DLP_DIR/CMakeLists.txt")"
-DLP_RULES_VERSION="$(sed -n 's/^#define DLPVERSION[[:space:]]*\([0-9]*\).*/\1/p' "$DLP_DIR/specialdlp/specialdlp/antiLeech.h" | head -1)"
-DLP_ABI="$(sed -n 's/^#define SDLP_ABI_VERSION[[:space:]]*\([0-9]*\).*/\1/p' "$DLP_DIR/include/specialdlp.h")"
-if [[ -z "$DLP_LIB_VERSION" || -z "$DLP_RULES_VERSION" || -z "$DLP_ABI" ]]; then
-  echo "error: could not read the specialdlp versions from ${DLP_DIR}" >&2
-  exit 1
 fi
 
 BRANCH="$(git rev-parse --abbrev-ref HEAD)"
@@ -290,7 +283,6 @@ else
 fi
 
 RELEASE_URL="https://github.com/${SLUG}/releases/tag/${TAG}"
-RELEASE_DATE="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
 
 # --- bump version files if a new version was chosen -------------------------
 BUMPED=0
@@ -330,11 +322,13 @@ else
   echo "  tag      : ${TAG}  (annotated, carries the GeoLite2 + resolver SHA-256)"
   echo "  push     : ${REMOTE} ${BRANCH}  and  ${REMOTE} ${TAG}"
 fi
-echo "  manifest : ${PUBLISH_LOCAL_JSON}"
-echo "             latest=${NEW}  date=${RELEASE_DATE}"
-echo "             releaseNotes=${RELEASE_URL}"
-echo "             specialdlp=${DLP_LIB_VERSION} (DLP v${DLP_RULES_VERSION}, ABI ${DLP_ABI})"
-echo "  publish  : rsync -> ${PUBLISH_SSH_USER}@${PUBLISH_SSH_HOST}:${PUBLISH_REMOTE_PATH}"
+if [[ "$PUBLISH_ONLY" -eq 1 ]]; then
+  echo "  manifest : pull ${PUBLISH_SSH_HOST}:${PUBLISH_REMOTE_PATH} -> ${PUBLISH_LOCAL_JSON}"
+  echo "             fill from ${RELEASE_URL} + /pub/ GeoLite2 + resolver"
+  echo "  publish  : rsync -> ${PUBLISH_SSH_USER}@${PUBLISH_SSH_HOST}:${PUBLISH_REMOTE_PATH}"
+else
+  echo "  manifest : (by CI after the build -- release.yml job 'manifest')"
+fi
 echo
 read -r -p "Proceed? [y/N]: " CONFIRM
 if [[ ! "$CONFIRM" =~ ^[Yy]$ ]]; then
@@ -412,53 +406,72 @@ Hoster-Resolver-SHA256: ${RESOLVER_SHA}"
   echo "Released ${TAG}."
 fi
 
-# --- update the version manifest --------------------------------------------
-# Only latest/date/releaseNotes are touched; the whole "downloads" object is
-# passed through untouched.
-#
-# ToDo: once the GitHub workflows publish real artifacts, also update
-# .downloads[*].url / .sha256 / .size from the release assets. Until then those
-# entries keep their placeholder not-ready:// URLs, empty hashes and zero sizes.
-#
-# "specialdlp" carries the versions of the bundled anti-leecher library. Its
-# "downloads" (signed per-platform builds from ModderMule/specialdlp releases) are
-# passed through untouched -- ToDo with the library auto-update,
-# see docs/specialdlp-auto-update.local.md.
-echo "Updating ${PUBLISH_LOCAL_JSON} ..."
-MANIFEST_TMP="$(mktemp)"
-trap 'rm -f "$MANIFEST_TMP"' EXIT
-
-if ! jq --arg v "$NEW" --arg d "$RELEASE_DATE" --arg r "$RELEASE_URL" \
-        --arg dlv "$DLP_LIB_VERSION" --argjson drv "$DLP_RULES_VERSION" --argjson dabi "$DLP_ABI" \
-        '.latest = $v | .date = $d | .releaseNotes = $r
-         | .specialdlp = ((.specialdlp // {}) + {libVersion: $dlv, rulesVersion: $drv, abi: $dabi})
-         | .specialdlp.downloads = (.specialdlp.downloads // {})' \
-        "$PUBLISH_LOCAL_JSON" > "$MANIFEST_TMP"; then
-  echo "error: failed to rewrite ${PUBLISH_LOCAL_JSON}" >&2
-  echo "  tag ${TAG} IS already pushed -- update and upload the manifest by hand." >&2
-  exit 1
-fi
-cat "$MANIFEST_TMP" > "$PUBLISH_LOCAL_JSON"
-
-# --- publish the manifest ---------------------------------------------------
-echo "Publishing to ${PUBLISH_SSH_USER}@${PUBLISH_SSH_HOST}:${PUBLISH_REMOTE_PATH} ..."
-if ! SSHPASS="$PUBLISH_SSH_PASS" rsync -avz \
-       -e 'sshpass -e ssh -o StrictHostKeyChecking=accept-new' \
-       "$PUBLISH_LOCAL_JSON" \
-       "${PUBLISH_SSH_USER}@${PUBLISH_SSH_HOST}:${PUBLISH_REMOTE_PATH}"; then
-  echo >&2
-  echo "warning: rsync failed -- tag ${TAG} IS pushed and the local manifest IS updated." >&2
-  echo "  Re-run just the upload once the server is reachable (reads .env itself):" >&2
-  echo "    scripts/publish-release.sh --publish-only" >&2
-  exit 1
-fi
-
-echo
-echo "Published manifest: latest=${NEW}  ->  ${RELEASE_URL}"
+# --- update manifest ----------------------------------------------------------
+# A normal release stops here: release.yml's manifest job announces the version
+# once the assets exist.
 if [[ "$PUBLISH_ONLY" -eq 0 ]]; then
   echo
   echo "The tag push started the release build for all platforms (a short dispatch"
   echo "run on the tag, then the build as a second 'Release ${TAG}' run on main):"
   echo "  https://github.com/${SLUG}/actions/workflows/release.yml"
-  echo "It publishes the release (with assets) at ${RELEASE_URL} when it finishes."
+  echo "It publishes the release (with assets) at ${RELEASE_URL} and then the"
+  echo "update manifest. Without the PUBLISH_SSH_* repo secrets that last job only"
+  echo "warns -- run: scripts/publish-release.sh --publish-only"
+  exit 0
 fi
+
+# --publish-only: the same as CI's manifest job, from local tools
+SSH_CMD='sshpass -e ssh -o StrictHostKeyChecking=accept-new'
+REMOTE_JSON="${PUBLISH_SSH_USER}@${PUBLISH_SSH_HOST}:${PUBLISH_REMOTE_PATH%/}/emuleqt-version.json"
+WORK="$(mktemp -d)"
+trap 'rm -rf "$WORK"' EXIT
+
+# Pull first: the live copy may carry entries CI wrote since the last local run.
+echo "Pulling the live manifest ..."
+SSHPASS="$PUBLISH_SSH_PASS" rsync -az -e "$SSH_CMD" "$REMOTE_JSON" "$WORK/manifest.json" \
+  || { echo "error: could not download ${REMOTE_JSON}" >&2; exit 1; }
+
+# GeoLite2 + resolver as served on /pub/, checked against the SHA lines of the tag
+# (git cat-file keeps the annotated message; same lines release.yml reads)
+TAG_MSG="$(git cat-file tag "${TAG}" 2>/dev/null || true)"
+fetch_checked() {   # <url> <out> <tag line prefix>
+  local want got
+  want="$(sed -n "s/^$3: *\([0-9a-f]\{64\}\) *$/\1/p" <<< "$TAG_MSG" | head -n1)"
+  [[ -n "$want" ]] || return 1
+  curl -fsSL --retry 3 --retry-delay 5 -o "$2" "$1?t=$(date +%s)" || return 1
+  got="$(shasum -a 256 "$2" | awk '{print $1}')"
+  if [[ "$got" != "$want" ]]; then
+    echo "warning: $1 is not the file tagged in ${TAG} -- its manifest entry is left as is" >&2
+    return 1
+  fi
+}
+EXTRA=()
+if fetch_checked https://emule-qt.org/pub/GeoLite2-Country.mmdb "$WORK/GeoLite2-Country.mmdb" GeoLite2-Country-SHA256; then
+  EXTRA+=(--geoip "$WORK/GeoLite2-Country.mmdb")
+fi
+if fetch_checked https://emule-qt.org/pub/resolver.zip "$WORK/resolver.zip" Hoster-Resolver-SHA256; then
+  EXTRA+=(--resolver "$WORK/resolver.zip")
+fi
+
+# specialdlp versions as bundled in the tag (its recorded submodule commit),
+# not whatever the working tree has checked out now
+DLP_ROOT="$WORK/tagtree"
+DLP_COMMIT="$(git rev-parse "${TAG}:${DLP_DIR}")"
+mkdir -p "$DLP_ROOT/$DLP_DIR/specialdlp/specialdlp" "$DLP_ROOT/$DLP_DIR/include"
+for f in CMakeLists.txt specialdlp/specialdlp/antiLeech.h include/specialdlp.h; do
+  git -C "$DLP_DIR" show "${DLP_COMMIT}:${f}" > "$DLP_ROOT/$DLP_DIR/${f}" \
+    || { echo "error: specialdlp commit ${DLP_COMMIT:0:12} not available locally" >&2; exit 1; }
+done
+
+scripts/update-manifest.sh --manifest "$WORK/manifest.json" --version "$NEW" --slug "$SLUG" \
+  --from-github --repo-root "$DLP_ROOT" ${EXTRA[@]+"${EXTRA[@]}"} \
+  || { echo "error: manifest not updated" >&2; exit 1; }
+cat "$WORK/manifest.json" > "$PUBLISH_LOCAL_JSON"
+
+echo "Publishing to ${PUBLISH_SSH_USER}@${PUBLISH_SSH_HOST}:${PUBLISH_REMOTE_PATH} ..."
+if ! SSHPASS="$PUBLISH_SSH_PASS" rsync -avz -e "$SSH_CMD" "$PUBLISH_LOCAL_JSON" "$REMOTE_JSON"; then
+  echo "error: upload failed -- the local manifest IS updated; re-run --publish-only" >&2
+  exit 1
+fi
+echo
+echo "Published manifest: latest=${NEW}  ->  ${RELEASE_URL}"

@@ -3,6 +3,8 @@
 
 #include "Ed3kHosterBridge.h"
 
+#include "Ed3kBridge.h"
+#include "Ed3kOffGate.h"
 #include "PushCoalescer.h"
 #include "app/AppContext.h"
 #include "prefs/Preferences.h"
@@ -154,6 +156,9 @@ bool handleRequest(const IpcMessage& msg, const std::function<void(const IpcMess
 {
     if (!isHosterRequest(msg.type()))
         return false;
+    // ed3k off: nothing under config/ed3k is written
+    if (Ed3kBridge::refuseWhileOff(msg, {IpcMsgType::GetHosterItems, IpcMsgType::GetHosterStats}, reply))
+        return true;
     const int seq = msg.seqId();
 #ifdef EMULE_HAVE_ED3K
     if (!s_join) {
@@ -342,7 +347,7 @@ QCborMap statusToCbor()
 #else
     out.insert(QStringLiteral("compiled"), false);
 #endif
-    out.insert(QStringLiteral("enabled"), thePrefs.ed3kHoster().enabled);
+    out.insert(QStringLiteral("enabled"), thePrefs.hosterDownloadsOn());
     if (s_resolver)
         out.insert(QStringLiteral("resolver"), QCborMap{{QStringLiteral("available"), s_resolver->available()},
                                                         {QStringLiteral("reason"), s_resolver->unavailableReason()},

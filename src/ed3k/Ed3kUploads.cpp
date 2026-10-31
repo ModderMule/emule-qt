@@ -28,6 +28,15 @@ Ed3kUploads::Ed3kUploads(Ed3kSession& session, QObject* parent)
 
 Ed3kUploads::~Ed3kUploads() = default;
 
+bool Ed3kUploads::hasNodeStarting(const std::array<std::uint8_t, 12>& prefix) const
+{
+    // map order: the first node not below the prefix is the only candidate
+    ::ed3k::NodeId low{};
+    std::copy(prefix.begin(), prefix.end(), low.bytes.begin());
+    const auto it = m_rows.lower_bound(low);
+    return it != m_rows.end() && std::equal(prefix.begin(), prefix.end(), it->first.bytes.begin());
+}
+
 std::vector<Ed3kUploads::Row> Ed3kUploads::uploading() const
 {
     std::vector<Row> out;

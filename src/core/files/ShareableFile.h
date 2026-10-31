@@ -23,6 +23,16 @@ public:
 
     void updateFileRatingCommentAvail(bool forceUpdate = false) override;
 
+    /// Drops the cached head check: it judged the bytes against the old name.
+    void setFileName(const QString& name,
+                     bool replaceInvalidChars = false,
+                     bool autoSetFileType = true,
+                     bool removeControlChars = false) override;
+
+    /// Type for the lists: fileType(), except "Video" for an .ogg whose bytes hold video.
+    /// Never published; peers still get the name-based type, as in MFC.
+    [[nodiscard]] QString displayFileType() const;
+
     [[nodiscard]] FileType verifiedFileType() const { return m_verifiedFileType; }
     void setVerifiedFileType(FileType type) { m_verifiedFileType = type; }
 
@@ -59,7 +69,7 @@ public:
     [[nodiscard]] bool containerCheckResolved() const { return m_containerCheck.has_value(); }
 
 protected:
-    /// The first kContainerHeadBytes to judge the name against. False when they
+    /// Up to kContainerProbeBytes (at least kContainerHeadBytes) to judge the name against. False when they
     /// are not available yet, which is not a verdict -- ask again later.
     [[nodiscard]] virtual bool readContainerHead(QByteArray& head) const;
 

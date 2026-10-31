@@ -159,6 +159,8 @@ public:
     /// Every server was tried; waiting out the pause before the next pass.
     [[nodiscard]] bool isRetryPending() const  { return m_retryTimer.isActive(); }
     [[nodiscard]] uint32 clientID() const      { return m_clientID; }
+    /// When the current session got its ID (epoch ms), 0 while logged out.
+    [[nodiscard]] qint64 loginAtMs() const     { return m_loginAtMs; }
 
     [[nodiscard]] bool isLowID() const;
     void setClientID(uint32 newid);
@@ -167,6 +169,10 @@ public:
     [[nodiscard]] Server* currentServer() const;
     /// The address the live session dialed (a dual-stack server has two); null when offline.
     [[nodiscard]] Address sessionAddress() const;
+    /// OP_IDCHANGE bytes 12-15 may become our public IP. The server's own address counts
+    /// only when @p knownIP (Kad / server votes) already says so: see the definition.
+    [[nodiscard]] static bool acceptReportedIP(uint32 reportedIP, const Address& session,
+                                               const Server* server, uint32 knownIP);
     /// Connected to @p server, or a single connect to it is under way.
     [[nodiscard]] bool isConnectedOrConnectingTo(const Server* server) const;
 
@@ -328,6 +334,7 @@ private:
 
     size_t m_startAutoConnectPos = 0;
     uint32 m_clientID = 0;
+    qint64 m_loginAtMs = 0;
     uint32 m_localIP = 0;
     uint8 m_maxSimCons = 2;
 

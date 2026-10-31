@@ -207,6 +207,7 @@ using Kind = PrefSpec::Kind;
     t << flag("ed3kEnabled", "Enable the ed3k node (packmule).");
     t << number("ed3kUdpPort", 1, 65535, "", "UDP port of the ed3k node. Equal to the eD2K UDP port: one shared socket (ed3k Protocol.md §14.1).");
     t << flag("ed3kShareFiles", "Serve the shared files over ed3k too (while the ed3k node runs).");
+    t << flag("ed3kJointDownloads", "eD2K downloads also fetch from ed3k peers (found by the ed2k hash); a source with a derived user hash is asked over ed3k first.");
     t << flag("ed3kHoldBackPosts", "Hold Usenet posts back on ed3k: share the files, but not the article "
                                    "lists, post sets or nzb records (usenet.md §6).");
     t << advanced(text("ed3kCreditRpc", 4096, "JSON-RPC endpoints of the credit ledger (https URLs, separated by "
@@ -242,7 +243,7 @@ using Kind = PrefSpec::Kind;
     t << advanced(text("ed3kChainVote", 42, "Address of the chaintube vote contract (0x + 40 hex digits)."));
     t << advanced(text("ed3kChainForwarder", 42, "Address of the forwarder of requests a site sends (0x + 40 hex "
                                                  "digits). Empty = none."));
-    // hoster links (hoster.md): downloads off by default (§3), vouched links published by default (§4.1).
+    // hoster links (hoster.md): downloads on by default, vouched links published by default (§4.1).
     // ed3kHosterAccounts is a list of {host, user, password}: not in the schema, never sent with a password
     t << flag("ed3kHosterEnabled", "Allow downloads from file hosters: the resolver may open hoster pages, wait out "
                                    "their timers, show their puzzles and use the accounts given (hoster.md §3).");

@@ -182,8 +182,9 @@ Ed3kOptionsPages::~Ed3kOptionsPages() = default;
 void Ed3kOptionsPages::load(const QCborMap& p)
 {
     m_loading = true;
-    m_enabledCheck->setChecked(p.value(QStringLiteral("ed3kEnabled")).toBool(false));
+    m_enabledCheck->setChecked(p.value(QStringLiteral("ed3kEnabled")).toBool(true));
     m_shareFilesCheck->setChecked(p.value(QStringLiteral("ed3kShareFiles")).toBool(true));
+    m_jointDownloadsCheck->setChecked(p.value(QStringLiteral("ed3kJointDownloads")).toBool(true));
     m_holdBackCheck->setChecked(p.value(QStringLiteral("ed3kHoldBackPosts")).toBool(false));
     const QStringList off = Preferences::rpcUrlList(p.value(QStringLiteral("ed3kExtOff")));
     for (QCheckBox* box : m_extChecks)
@@ -239,6 +240,7 @@ void Ed3kOptionsPages::load(const QCborMap& p)
         Preferences::applyEd3kHosterKey(h, it.key().toString(), it.value());
     m_hosterEnabledCheck->setChecked(h.enabled);
     updateJavaButtons();
+    updateHosterNodeHint();
     m_hosterStreamsSpin->setValue(int(h.maxStreams));
     m_hosterPuzzlesCheck->setChecked(h.askPuzzles);
     m_hosterPeersCheck->setChecked(h.fromPeers);
@@ -261,6 +263,7 @@ void Ed3kOptionsPages::appendTo(IpcMessage& req) const
     };
     put("ed3kEnabled", m_enabledCheck->isChecked());
     put("ed3kShareFiles", m_shareFilesCheck->isChecked());
+    put("ed3kJointDownloads", m_jointDownloadsCheck->isChecked());
     put("ed3kHoldBackPosts", m_holdBackCheck->isChecked());
     put("ed3kExtOff", extOff().join(QLatin1Char(' ')));
     if (!m_portJoined)   // joined: the Connection page sends it
@@ -315,6 +318,7 @@ void Ed3kOptionsPages::saveLocal() const
 {
     thePrefs.setEd3kEnabled(m_enabledCheck->isChecked());
     thePrefs.setEd3kShareFiles(m_shareFilesCheck->isChecked());
+    thePrefs.setEd3kJointDownloads(m_jointDownloadsCheck->isChecked());
     thePrefs.setEd3kHoldBackPosts(m_holdBackCheck->isChecked());
     thePrefs.setEd3kExtOff(extOff());
     if (!m_portJoined && m_udpPortSpin->value() > 0)
@@ -387,17 +391,6 @@ QWidget* Ed3kOptionsPages::buildGeneral(QWidget* parent)
     m_enabledCheck->setToolTip(tr("Runs the ed3k node (packmule) in the core, on the eD2K UDP port or one of its own. "
                                   "It finds other nodes over Kad and serves the shared files."));
     layout->addWidget(m_enabledCheck);
-#ifdef EMULE_ED3K_LOCKED
-    // early alpha: CI builds keep the node off (CMakeLists.txt EMULE_ED3K_LOCKED)
-    connect(m_enabledCheck, &QCheckBox::clicked, this, [this](bool on) {
-        if (!on)
-            return;
-        m_enabledCheck->setChecked(false);
-        QMessageBox::information(m_parent, tr("ed3k"),
-                                 tr("This network is early alpha, experimental and not for live use yet. "
-                                    "Please come back later."));
-    });
-#endif
     m_runningLabel = noteLabel(QString(), page);
     layout->addWidget(m_runningLabel);
 
@@ -412,7 +405,9 @@ QWidget* Ed3kOptionsPages::buildGeneral(QWidget* parent)
 
     // eD2K compat (Protocol.md §14): derived user hash, one port for eD2K and ed3k
     auto* compatGroup = new QGroupBox(tr("eD2K compatibility"), page);
-    auto* compatLayout = new QHBoxLayout(compatGroup);
+    auto* compatOuter = new QVBoxLayout(compatGroup);
+    auto* compatLayout = new QHBoxLayout;
+    compatOuter->addLayout(compatLayout);
     m_compatLabel = noteLabel(tr("One port for eD2K and ed3k, and a user hash that tells eD2K peers this client "
                                  "also speaks ed3k."), compatGroup);
     compatLayout->addWidget(m_compatLabel, 1);
@@ -420,6 +415,11 @@ QWidget* Ed3kOptionsPages::buildGeneral(QWidget* parent)
     m_compatBtn->setToolTip(tr("Shows the changes for this configuration and asks before making them."));
     connect(m_compatBtn, &QPushButton::clicked, this, &Ed3kOptionsPages::migrateEd2kCompat);
     compatLayout->addWidget(m_compatBtn, 0, Qt::AlignTop);
+    // §14.4: one download from both networks
+    m_jointDownloadsCheck = new QCheckBox(tr("Download eD2K files from ed3k peers too"), compatGroup);
+    m_jointDownloadsCheck->setToolTip(tr("Finds the ed3k copy of each eD2K download by its eD2K hash and fetches the "
+                                         "missing parts there too. A source that also speaks ed3k is used over ed3k."));
+    compatOuter->addWidget(m_jointDownloadsCheck);
     layout->addWidget(compatGroup);
 
     // ToDo: decide which extensions the user can switch. Until then none are shown:
@@ -440,7 +440,7 @@ QWidget* Ed3kOptionsPages::buildGeneral(QWidget* parent)
     // layout->addWidget(extGroup);
     layout->addStretch();
 
-    for (QCheckBox* box : {m_enabledCheck, m_shareFilesCheck, m_holdBackCheck})
+    for (QCheckBox* box : {m_enabledCheck, m_shareFilesCheck, m_holdBackCheck, m_jointDownloadsCheck})
         connect(box, &QCheckBox::toggled, this, [this] {
             if (!m_loading)
                 emit changed();
@@ -1254,8 +1254,10 @@ QWidget* Ed3kOptionsPages::buildHoster(QWidget* parent)
     auto* dlLayout = new QVBoxLayout(dlGroup);
     m_hosterEnabledCheck = new QCheckBox(tr("Allow downloads from file hosters"), dlGroup);
     m_hosterEnabledCheck->setToolTip(tr("Lets the resolver open hoster pages, wait out their timers, show their "
-                                        "puzzles and use the accounts below. Off by default."));
+                                        "puzzles and use the accounts below. On by default; needs the ed3k node."));
     dlLayout->addWidget(m_hosterEnabledCheck);
+    m_hosterNodeLabel = noteLabel(tr("Hoster downloads need the ed3k node (Options, ed3k, General)."), dlGroup);
+    dlLayout->addWidget(m_hosterNodeLabel);
     m_resolverLabel = noteLabel(QString(), dlGroup);
     dlLayout->addWidget(m_resolverLabel);
     auto* dlForm = new QFormLayout;
@@ -1367,18 +1369,16 @@ QWidget* Ed3kOptionsPages::buildHoster(QWidget* parent)
     });
     connect(checkBtn, &QPushButton::clicked, this, &Ed3kOptionsPages::checkAccount);
 
-    connect(m_hosterEnabledCheck, &QCheckBox::toggled, this, [this](bool on) {
+    connect(m_hosterEnabledCheck, &QCheckBox::toggled, this, [this] {
         if (m_loading)
             return;
-        if (on && !confirmHoster()) {
-            const QSignalBlocker block(m_hosterEnabledCheck);
-            m_hosterEnabledCheck->setChecked(false);
-            updateJavaButtons();
-            return;
-        }
         updateJavaButtons();
+        updateHosterNodeHint();
         emit changed();
     });
+    // the hoster runs on the ed3k node: say so while the node is unticked
+    connect(m_enabledCheck, &QCheckBox::toggled, this, [this] { updateHosterNodeHint(); });
+    updateHosterNodeHint();
     connect(m_publishLinksCheck, &QCheckBox::toggled, this, [this](bool on) {
         if (m_loading)
             return;
@@ -1456,18 +1456,10 @@ void Ed3kOptionsPages::updateJavaButtons()
     }
 }
 
-bool Ed3kOptionsPages::confirmHoster()
+void Ed3kOptionsPages::updateHosterNodeHint()
 {
-    const QString text =
-        tr("<p>Downloads from file hosters run JDownloader's hoster plugins on this computer, in a program of their own.</p>"
-           "<ul><li>The hoster sees your address and which file you fetch; with an account, also who you are to it.</li>"
-           "<li>Their pages may show puzzles and timers; eMuleQt shows image puzzles and waits out timers for you.</li>"
-           "<li>Fetching by program is against the terms of many hosters. That is between you and the hoster.</li>"
-           "<li>Every block that ed3k knows is verified; a file ed3k does not know is checked as a whole when complete.</li></ul>"
-           "<p>Allow downloads from file hosters?</p>");
-    return QMessageBox::question(m_parent, tr("Downloads from file hosters"), text,
-                                 QMessageBox::Yes | QMessageBox::No, QMessageBox::No)
-           == QMessageBox::Yes;
+    if (m_hosterNodeLabel && m_enabledCheck && m_hosterEnabledCheck)
+        m_hosterNodeLabel->setVisible(m_hosterEnabledCheck->isChecked() && !m_enabledCheck->isChecked());
 }
 
 bool Ed3kOptionsPages::confirmShareLinks()

@@ -171,6 +171,7 @@
     <ClCompile Include="crypto\AICHSyncThread.cpp" />
     <ClCompile Include="files\AbstractFile.cpp" />
     <ClCompile Include="app\AppConfig.cpp" />
+    <ClCompile Include="app\VersionManifest.cpp" />
     <ClCompile Include="app\InstallerCopy.cpp" />
     <ClCompile Include="app\TranslationRouter.cpp" />
     <ClCompile Include="app\AppContext.cpp" />
@@ -202,6 +203,7 @@
     <ClCompile Include="client\FruitlessSessionLedger.cpp" />
     <ClCompile Include="client\RepeatChunkGuard.cpp" />
     <ClCompile Include="net\GuardedNetworkAccessManager.cpp" />
+    <ClCompile Include="net\HttpStreamDownload.cpp" />
     <ClCompile Include="net\InterfacePin.cpp" />
     <ClCompile Include="net\ListenConflict.cpp" />
     <ClCompile Include="search\FakeFileDetector.cpp" />
@@ -412,6 +414,7 @@
     <QtMoc Include="crypto\AICHSyncThread.h" />
     <ClInclude Include="files\AbstractFile.h" />
     <ClInclude Include="app\AppConfig.h" />
+    <ClInclude Include="app\VersionManifest.h" />
     <ClInclude Include="app\InstallerCopy.h" />
     <ClInclude Include="app\TranslationRouter.h" />
     <ClInclude Include="app\AppContext.h" />
@@ -607,6 +610,7 @@
     <QtMoc Include="server\ServerConnect.h" />
     <QtMoc Include="server\ServerList.h" />
     <QtMoc Include="net\GuardedNetworkAccessManager.h" />
+    <QtMoc Include="net\HttpStreamDownload.h" />
     <QtMoc Include="search\SeenFileIndex.h" />
     <QtMoc Include="search\SearchQueue.h" />
     <QtMoc Include="net\ServerSocket.h" />

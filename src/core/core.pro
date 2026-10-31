@@ -70,6 +70,7 @@ macx {
 
 SOURCES += \
     app/AppConfig.cpp \
+    app/VersionManifest.cpp \
     app/InstallerCopy.cpp \
     app/TranslationRouter.cpp \
     app/AppContext.cpp \
@@ -154,6 +155,8 @@ SOURCES += \
     httpcache/HttpCachePublisher.cpp \
     httpcache/HttpCacheServerProbe.cpp \
     net/HttpFileDownload.cpp \
+    net/HttpStreamDownload.cpp \
+
     net/MetaFileCache.cpp \
     net/PortTestApi.cpp \
     net/LastCommonRouteFinder.cpp \
@@ -229,6 +232,7 @@ SOURCES += \
 
 HEADERS += \
     app/AppConfig.h \
+    app/VersionManifest.h \
     app/InstallerCopy.h \
     app/TranslationRouter.h \
     app/AppContext.h \
@@ -321,6 +325,7 @@ HEADERS += \
     httpcache/HttpCacheTypes.h \
     net/HttpDefaults.h \
     net/HttpFileDownload.h \
+    net/HttpStreamDownload.h \
     net/MetaFileCache.h \
     net/PortTestApi.h \
     net/LastCommonRouteFinder.h \

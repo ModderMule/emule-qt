@@ -258,7 +258,12 @@ MainWindow::MainWindow(QWidget* parent)
     // Version checker
     m_versionChecker = new VersionChecker(this);
     connect(m_versionChecker, &VersionChecker::newVersionAvailable,
-            this, [this](const VersionChecker::Manifest& info, bool /*manual*/) {
+            this, [this](const VersionChecker::Manifest& info, bool manual) {
+        // A core with --autoupdate installs it by itself: only the menu item asks
+        if (!manual && m_ipc && m_ipc->coreAutoUpdates()) {
+            logInfo(QStringLiteral("eMule Qt %1 is out, the core auto-updates to it").arg(info.latest));
+            return;
+        }
         // Announced for both the menu item and the interval check — a new release is
         // worth interrupting for either way.
         if (thePrefs.notifyOnNewVersion())
@@ -1821,6 +1826,12 @@ void MainWindow::onToolbarContextMenu(const QPoint& pos)
 
 void MainWindow::updateConnectButton()
 {
+    // Connect can be removed via Customize Toolbar (#93)
+    if (!m_connectAction) {
+        updateTrayIcon();
+        return;
+    }
+
     const bool anyConnected = m_ed2kConnected || m_kadRunning;
     const bool useOriginal = thePrefs.useOriginalIcons();
     if (anyConnected) {
@@ -2542,9 +2553,14 @@ bool MainWindow::isTabHidden(int tab)
 {
     if (tab == TabTorrents)
         return !thePrefs.btEnabled();
-    // hoster downloads run on the ed3k node
-    if (tab == TabHoster)
-        return !thePrefs.ed3kEnabled();
+    // hoster downloads run on the ed3k node: shown while both are on
+    if (tab == TabHoster) {
+#ifdef EMULE_HAVE_ED3K
+        return !thePrefs.hosterDownloadsOn();
+#else
+        return true;
+#endif
+    }
     return false;
 }
 

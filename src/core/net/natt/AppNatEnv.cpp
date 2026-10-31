@@ -242,7 +242,8 @@ ServerUdpCrypt AppNatEnv::serverUdpCrypt() const
     const Server* listed = theApp.serverList
         ? theApp.serverList->findByIPTcp(cur->ipAddress(), cur->port()) : nullptr;
     const Server& s = listed ? *listed : *cur;
-    return {s.serverKeyUDP(), s.obfuscationPortUDP()};
+    const qint64 loginAt = theApp.serverConnect ? theApp.serverConnect->loginAtMs() : 0;
+    return {s.sessionKeyUDP(loginAt), s.obfuscationPortUDP()};
 }
 
 void AppNatEnv::refreshServerKey()

@@ -7,8 +7,8 @@
 /// - A process of its own, started at the first task and stopped after kIdleStopMs without
 ///   one. JSON lines over stdin/stdout; it ends when stdin closes, so it dies with the daemon.
 /// - The plugins come as resolver.zip (scripts/build-hoster-resolver.sh), shipped with the
-///   application and unpacked into <dataDir>/plugins when it changed. JD writes its caches
-///   next to the plugin classes, so they must live in a writable folder.
+///   application and unpacked into <dataDir>/plugins when it changed. JD never writes there
+///   (its state goes to <dataDir>/jd), so instances can share one unpacked copy: sharedDir.
 /// - It gets its data folder and a scratch folder per task, nothing else: no key, no shared
 ///   folder, no IPC token (note §8). Its stderr is JD's log: only the driver's own lines
 ///   ("resolver: ...") are logged, as debug.
@@ -32,10 +32,16 @@ namespace eMule::ed3k {
 
 struct JdResolverConfig {
     QString java;          ///< the java program; empty: not available
-    QString dataDir;       ///< JD's root (cfg/, tmp/, logs/) and plugins/
+    QString dataDir;       ///< JD's root (jd/: cfg, tmp, logs, captchas) and plugins/
+    /// YAML only: plugins unpacked once for several instances, in <sharedDir>/<zip hash>/;
+    /// empty: <dataDir>/plugins per instance. JD's state stays in <dataDir>/jd either way.
+    QString sharedDir;
     QString zip;           ///< resolver.zip to install from; empty: use what is installed
     QString proxy;         ///< for every request; empty = direct
     bool askPuzzles = true;
+    /// hoster downloads on: plugins unpacked, sidecar may start. Off: nothing is created and
+    /// the unpacked plugins are removed (derived from zip; unpacked again when switched on)
+    bool enabled = true;
 };
 
 class Ed3kJdResolver : public Ed3kResolver {
@@ -44,6 +50,8 @@ class Ed3kJdResolver : public Ed3kResolver {
 public:
     static constexpr int kProtocol = 1;
     static constexpr int kIdleStopMs = 5 * 60 * 1000;
+    static constexpr int kSharedKeepDays = 30;
+    static constexpr int kSharedLockWaitMs = 3 * 60 * 1000;
 
     explicit Ed3kJdResolver(QObject* parent = nullptr);
     ~Ed3kJdResolver() override;
@@ -57,6 +65,14 @@ public:
     /// Unpacks @p zip into @p dataDir/plugins when it differs from what is there. False:
     /// failed (@p error).
     static bool install(const QString& zip, const QString& dataDir, QString* error);
+    /// Unpacks @p zip into @p sharedDir/<hash of zip> unless there; locked against other
+    /// instances. Returns the resolver root, empty: failed (@p error). Prunes versions no
+    /// instance started for kSharedKeepDays.
+    static QString installShared(const QString& zip, const QString& sharedDir, QString* error);
+    /// Removes what install() unpacked (@p dataDir/plugins and a left-over plugins.tmp)
+    static void removePlugins(const QString& dataDir);
+    /// The unpacked resolver folder in use (Core.jar, jd/plugins, libs); empty: none
+    [[nodiscard]] QString pluginRoot() const { return m_root; }
     /// The command line the sidecar runs with (tests).
     [[nodiscard]] QStringList arguments() const;
 
@@ -84,6 +100,8 @@ private:
     /// Sends @p req with a new id; starts the sidecar first.
     TaskId request(QJsonObject req, bool task);
     void send(const QJsonObject& req);
+    /// Unpacks the plugins per m_config; sets m_root and m_installError
+    void installPlugins();
     bool ensureStarted();
     void stop();
     void onStdout();
@@ -100,6 +118,7 @@ private:
     QByteArray m_errBuf;
     QString m_description;
     QString m_installError;
+    QString m_root;
     TaskId m_nextId = 1;
     /// open tasks; pure requests (hello, setProxy) are not counted
     std::map<TaskId, bool> m_pending;

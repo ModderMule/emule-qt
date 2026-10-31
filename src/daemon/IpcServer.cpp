@@ -131,6 +131,37 @@ int IpcServer::clientCount() const
     return static_cast<int>(m_clients.size());
 }
 
+std::vector<IpcServer::LocalGui> IpcServer::localGuis() const
+{
+    std::vector<LocalGui> out;
+    for (const auto& h : m_clients) {
+        if (h->isReopenableGui())
+            out.push_back({h->guiPid(), h->guiRelaunch()});
+    }
+    return out;
+}
+
+void IpcServer::notifyCoreUpdating(const QString& version)
+{
+    const auto make = [&version](bool reopened) {
+        Ipc::IpcMessage msg(Ipc::IpcMsgType::PushCoreUpdating, 0);
+        msg.append(version);
+        msg.append(reopened);
+        return msg;
+    };
+    if (m_pushTap)
+        m_pushTap(make(false));
+    // A snapshot, as in sendToClients()
+    std::vector<IpcClientHandler*> clients;
+    clients.reserve(m_clients.size());
+    for (const auto& handler : m_clients)
+        clients.push_back(handler.get());
+    for (auto* handler : clients) {
+        if (handler->isHandshaked())
+            handler->sendPush(make(handler->isReopenableGui()));
+    }
+}
+
 void IpcServer::notifyCategoriesChanged()
 {
     broadcast(Ipc::IpcMessage(Ipc::IpcMsgType::PushCategoriesChanged));

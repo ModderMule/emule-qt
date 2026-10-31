@@ -6,12 +6,16 @@
 #include "utils/Log.h"
 
 #include <QCoreApplication>
+#include <QCryptographicHash>
+#include <QDateTime>
 #include <QDir>
 #include <QFile>
 #include <QFileInfo>
 #include <QJsonArray>
 #include <QJsonDocument>
 #include <QJsonObject>
+#include <QLockFile>
+#include <QRegularExpression>
 #include <QProcess>
 
 namespace eMule::ed3k {
@@ -20,9 +24,70 @@ namespace {
 
 constexpr qsizetype kMaxLine = 16 * 1024 * 1024;   // a puzzle image is the largest event
 
-QString pluginRoot(const QString& dataDir)
+QString instanceRoot(const QString& dataDir)
 {
     return QDir(dataDir).filePath(QStringLiteral("plugins/resolver"));
+}
+
+/// JD's core packed, the plugins loose beside it (scripts/build-hoster-resolver.sh)
+bool layoutOk(const QString& root)
+{
+    const QDir d(root);
+    return QFileInfo(d.filePath(QStringLiteral("Core.jar"))).isFile()
+           && QFileInfo(d.filePath(QStringLiteral("jd/plugins/hoster"))).isDir();
+}
+
+constexpr auto kLastUsed = ".lastused";
+
+/// a version's folder name in the shared dir: the zip's content, not its path or mtime
+QString zipKey(const QString& zip)
+{
+    QFile f(zip);
+    QCryptographicHash h(QCryptographicHash::Sha1);
+    if (!f.open(QIODevice::ReadOnly) || !h.addData(&f))
+        return {};
+    return QString::fromLatin1(h.result().toHex().left(12));
+}
+
+void touchUsed(const QString& versionDir)
+{
+    QFile f(QDir(versionDir).filePath(QLatin1StringView(kLastUsed)));
+    if (f.open(QIODevice::WriteOnly | QIODevice::Truncate))
+        f.write(QDateTime::currentDateTimeUtc().toString(Qt::ISODate).toLatin1());
+}
+
+/// the shared version last used, for a config without a zip
+QString newestShared(const QString& sharedDir)
+{
+    QString best;
+    QDateTime bestAt;
+    const QDir dir(sharedDir);
+    for (const QString& v : dir.entryList(QDir::Dirs | QDir::NoDotAndDotDot)) {
+        const QString root = dir.filePath(v + QStringLiteral("/resolver"));
+        const QDateTime at = QFileInfo(dir.filePath(v + u'/' + QLatin1StringView(kLastUsed))).lastModified();
+        if (layoutOk(root) && (best.isEmpty() || at > bestAt)) {
+            best = root;
+            bestAt = at;
+        }
+    }
+    return best;
+}
+
+/// under the install lock: left-over tmp dirs, and versions nobody started for a while
+void pruneShared(const QString& sharedDir, const QString& keep, int days)
+{
+    static const QRegularExpression version(QStringLiteral("^[0-9a-f]{12}(\\.tmp)?$"));
+    const QDir dir(sharedDir);
+    const QDateTime cutoff = QDateTime::currentDateTimeUtc().addDays(-days);
+    for (const QString& v : dir.entryList(QDir::Dirs | QDir::NoDotAndDotDot)) {
+        if (v == keep || !version.match(v).hasMatch())
+            continue;
+        const QFileInfo used(dir.filePath(v + u'/' + QLatin1StringView(kLastUsed)));
+        if (v.endsWith(QStringLiteral(".tmp")) || !used.exists() || used.lastModified() < cutoff) {
+            QDir(dir.filePath(v)).removeRecursively();
+            logEd3k(QStringLiteral("hoster: shared resolver plugins %1 removed (unused)").arg(v));
+        }
+    }
 }
 
 QString zipStamp(const QString& zip)
@@ -62,15 +127,14 @@ Ed3kJdResolver::~Ed3kJdResolver()
 
 void Ed3kJdResolver::setConfig(const JdResolverConfig& config)
 {
-    const bool restart = config.java != m_config.java || config.zip != m_config.zip || config.dataDir != m_config.dataDir;
+    const bool restart = config.enabled != m_config.enabled || config.java != m_config.java || config.zip != m_config.zip
+                         || config.dataDir != m_config.dataDir || config.sharedDir != m_config.sharedDir;
     const bool proxy = config.proxy != m_config.proxy;
     const bool puzzles = config.askPuzzles != m_config.askPuzzles;
     m_config = config;
     if (restart) {
         stop();
-        m_installError.clear();
-        if (!m_config.zip.isEmpty() && !m_config.dataDir.isEmpty() && !install(m_config.zip, m_config.dataDir, &m_installError))
-            logEd3kWarning(QStringLiteral("hoster: resolver plugins not installed: %1").arg(m_installError));
+        installPlugins();
         emit stateChanged();
         return;
     }
@@ -108,7 +172,7 @@ bool Ed3kJdResolver::install(const QString& zip, const QString& dataDir, QString
     const QString stampFile = QDir(plugins).filePath(QStringLiteral(".zipstamp"));
     QFile stamp(stampFile);
     if (stamp.open(QIODevice::ReadOnly) && QString::fromUtf8(stamp.readAll()) == zipStamp(zip)
-        && QFileInfo(QDir(pluginRoot(dataDir)).filePath(QStringLiteral("classes"))).isDir())
+        && layoutOk(instanceRoot(dataDir)))
         return true;
     stamp.close();
     const QString tmp = plugins + QStringLiteral(".tmp");
@@ -121,7 +185,7 @@ bool Ed3kJdResolver::install(const QString& zip, const QString& dataDir, QString
         QDir(tmp).removeRecursively();
         return false;
     }
-    if (!QFileInfo(QDir(tmp).filePath(QStringLiteral("resolver/classes/org/emuleqt/resolver/ResolverMain.class"))).isFile()) {
+    if (!layoutOk(QDir(tmp).filePath(QStringLiteral("resolver")))) {
         if (error)
             *error = QStringLiteral("not a resolver archive");
         QDir(tmp).removeRecursively();
@@ -140,14 +204,75 @@ bool Ed3kJdResolver::install(const QString& zip, const QString& dataDir, QString
     return true;
 }
 
+QString Ed3kJdResolver::installShared(const QString& zip, const QString& sharedDir, QString* error)
+{
+    const auto fail = [error](const QString& why) {
+        if (error)
+            *error = why;
+        return QString();
+    };
+    const QString key = zipKey(zip);
+    if (key.isEmpty())
+        return fail(QStringLiteral("cannot read %1").arg(zip));
+    const QDir dir(sharedDir);
+    const QString version = dir.filePath(key);
+    const QString root = version + QStringLiteral("/resolver");
+    if (layoutOk(root)) {
+        touchUsed(version);
+        return root;
+    }
+    if (!QDir().mkpath(sharedDir))
+        return fail(QStringLiteral("cannot create %1").arg(sharedDir));
+    // several instances start at once: one unpacks, the others wait and take it
+    QLockFile lock(dir.filePath(QStringLiteral(".install.lock")));
+    lock.setStaleLockTime(kSharedLockWaitMs);
+    if (!lock.tryLock(kSharedLockWaitMs))
+        return fail(QStringLiteral("%1 is locked by another instance").arg(sharedDir));
+    if (layoutOk(root)) {
+        touchUsed(version);
+        return root;
+    }
+    const QString tmp = version + QStringLiteral(".tmp");
+    QDir(tmp).removeRecursively();
+    QDir().mkpath(tmp);
+    ArchiveReader reader;
+    if (!reader.open(zip) || !reader.extractAll(tmp)) {
+        QDir(tmp).removeRecursively();
+        return fail(reader.lastError());
+    }
+    if (!layoutOk(QDir(tmp).filePath(QStringLiteral("resolver")))) {
+        QDir(tmp).removeRecursively();
+        return fail(QStringLiteral("not a resolver archive"));
+    }
+    QDir(version).removeRecursively();
+    if (!QDir().rename(tmp, version))
+        return fail(QStringLiteral("cannot move %1").arg(tmp));
+    touchUsed(version);
+    pruneShared(sharedDir, key, kSharedKeepDays);
+    logEd3k(QStringLiteral("hoster: shared resolver plugins installed into %1").arg(version));
+    return root;
+}
+
+void Ed3kJdResolver::removePlugins(const QString& dataDir)
+{
+    if (dataDir.isEmpty())
+        return;
+    const QString plugins = QDir(dataDir).filePath(QStringLiteral("plugins"));
+    QDir(plugins + QStringLiteral(".tmp")).removeRecursively();
+    if (QFileInfo(plugins).isDir() && QDir(plugins).removeRecursively())
+        logEd3k(QStringLiteral("hoster: resolver plugins removed (hoster downloads off)"));
+}
+
 QStringList Ed3kJdResolver::arguments() const
 {
-    const QDir root(pluginRoot(m_config.dataDir));
+    const QDir root(m_root);
     QFile revFile(root.filePath(QStringLiteral("revision.txt")));
     QString rev = QStringLiteral("?");
     if (revFile.open(QIODevice::ReadOnly))
         rev = QString::fromUtf8(revFile.readAll()).trimmed();
-    const QString cp = root.filePath(QStringLiteral("classes")) + QDir::listSeparator() + root.filePath(QStringLiteral("libs/*"));
+    // the root itself for the loose jd/plugins classes
+    const QString cp = root.filePath(QStringLiteral("Core.jar")) + QDir::listSeparator() + root.path() + QDir::listSeparator()
+                       + root.filePath(QStringLiteral("libs/*"));
     return {QStringLiteral("-Xmx768m"),
             QStringLiteral("-Djava.awt.headless=true"),
             QStringLiteral("-Dfile.encoding=UTF-8"),
@@ -165,12 +290,13 @@ bool Ed3kJdResolver::available() const
 
 QString Ed3kJdResolver::unavailableReason() const
 {
+    if (!m_config.enabled)
+        return tr("Hoster downloads are off");
     if (m_config.java.isEmpty())
         return tr("No Java runtime");
     if (!m_installError.isEmpty())
         return tr("Resolver plugins not installed: %1").arg(m_installError);
-    if (m_config.dataDir.isEmpty()
-        || !QFileInfo(QDir(pluginRoot(m_config.dataDir)).filePath(QStringLiteral("classes"))).isDir())
+    if (m_config.dataDir.isEmpty() || m_root.isEmpty() || !layoutOk(m_root))
         return tr("Resolver plugins missing");
     return {};
 }
@@ -345,12 +471,43 @@ void Ed3kJdResolver::send(const QJsonObject& req)
     m_proc->write(QJsonDocument(req).toJson(QJsonDocument::Compact) + '\n');
 }
 
+void Ed3kJdResolver::installPlugins()
+{
+    m_installError.clear();
+    m_root.clear();
+    if (!m_config.enabled) {
+        // a shared copy stays: other instances may run from it
+        if (m_config.sharedDir.isEmpty())
+            removePlugins(m_config.dataDir);
+        return;
+    }
+    if (m_config.dataDir.isEmpty())
+        return;
+    if (m_config.sharedDir.isEmpty()) {
+        if (!m_config.zip.isEmpty() && !install(m_config.zip, m_config.dataDir, &m_installError))
+            logEd3kWarning(QStringLiteral("hoster: resolver plugins not installed: %1").arg(m_installError));
+        m_root = instanceRoot(m_config.dataDir);
+        return;
+    }
+    // a per-instance copy of before is not needed any more
+    removePlugins(m_config.dataDir);
+    if (m_config.zip.isEmpty())
+        m_root = newestShared(m_config.sharedDir);
+    else if (m_root = installShared(m_config.zip, m_config.sharedDir, &m_installError); m_root.isEmpty())
+        logEd3kWarning(QStringLiteral("hoster: shared resolver plugins not installed: %1").arg(m_installError));
+}
+
 bool Ed3kJdResolver::ensureStarted()
 {
     if (running())
         return true;
+    // a shared version pruned while this instance idled: unpack it again
+    if (m_config.enabled && !m_config.sharedDir.isEmpty() && !layoutOk(m_root))
+        installPlugins();
     if (!available())
         return false;
+    if (!m_config.sharedDir.isEmpty())
+        touchUsed(QFileInfo(m_root).path());
     auto* p = new QProcess(this);
     m_proc = p;
     m_outBuf.clear();

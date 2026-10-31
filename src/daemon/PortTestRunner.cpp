@@ -31,6 +31,9 @@ constexpr int kTransferTimeoutMs = 45'000;
 /// ed3k: how long the node is asked after the reply whether the PROBE arrived.
 constexpr int kSeenWaitMs = 3'000;
 constexpr int kSeenPollMs = 250;
+/// How long a test waits for the public IPv4 (server/Kad) before going without it.
+constexpr int kIpv4WaitMs = 15'000;
+constexpr int kIpv4PollMs = 500;
 
 QNetworkAccessManager* nam()
 {
@@ -75,6 +78,42 @@ void awaitProbe(const PortTestApi::Request& req, quint64 nonce, const QCborArray
     timer->start(kSeenPollMs);
 }
 
+/// Sends the test to the website and hands its answer (ed3k: after the node checked) to @p done.
+void send(PortTestApi::Request req, quint64 nonce, const Done& done)
+{
+    // the server sees one family; our address of the other one goes along
+    if (theApp.publicIP() != 0)
+        req.ip4 = ipstr(theApp.publicIP());
+    req.ip6 = theApp.publicIPv6().toString();
+
+    QNetworkRequest httpReq = Http::makeRequest(PortTestApi::url(req));
+    httpReq.setTransferTimeout(kTransferTimeoutMs);
+    QNetworkReply* reply = nam()->get(httpReq);
+    logInfo(QStringLiteral("Port test: %1 port %2 via %3")
+                .arg(req.network == PortTestApi::Network::BitTorrent ? QStringLiteral("BitTorrent") : QStringLiteral("ed3k"))
+                .arg(req.udpPort)
+                .arg(QLatin1String(kWebsiteUrl)));
+
+    QObject::connect(reply, &QNetworkReply::finished, reply, [reply, req, nonce, done] {
+        reply->deleteLater();
+        const int status = reply->attribute(QNetworkRequest::HttpStatusCodeAttribute).toInt();
+        const QByteArray body = reply->readAll();
+        if (reply->error() != QNetworkReply::NoError && body.isEmpty()) {
+            done(false, {}, int(PortTestApi::Failure::NoAnswer), reply->errorString());
+            return;
+        }
+        const PortTestApi::Reply parsed = PortTestApi::parseReply(body, status, req.network);
+        if (!parsed.ok) {
+            done(false, {}, int(parsed.failure), parsed.error);
+            return;
+        }
+        if (req.network == PortTestApi::Network::Ed3k)
+            awaitProbe(req, nonce, parsed.targets, done);
+        else
+            done(true, resultMap(req, parsed.targets), 0, {});
+    });
+}
+
 } // namespace
 
 void run(int network, Done done)
@@ -111,37 +150,23 @@ void run(int network, Done done)
         return;
     }
 
-    // the server sees one family; our address of the other one goes along
-    if (theApp.publicIP() != 0)
-        req.ip4 = ipstr(theApp.publicIP());
-    req.ip6 = theApp.publicIPv6().toString();
-
-    QNetworkRequest httpReq = Http::makeRequest(PortTestApi::url(req));
-    httpReq.setTransferTimeout(kTransferTimeoutMs);
-    QNetworkReply* reply = nam()->get(httpReq);
-    logInfo(QStringLiteral("Port test: %1 port %2 via %3")
-                .arg(req.network == PortTestApi::Network::BitTorrent ? QStringLiteral("BitTorrent") : QStringLiteral("ed3k"))
-                .arg(req.udpPort)
-                .arg(QLatin1String(kWebsiteUrl)));
-
-    QObject::connect(reply, &QNetworkReply::finished, reply, [reply, req, nonce, done] {
-        reply->deleteLater();
-        const int status = reply->attribute(QNetworkRequest::HttpStatusCodeAttribute).toInt();
-        const QByteArray body = reply->readAll();
-        if (reply->error() != QNetworkReply::NoError && body.isEmpty()) {
-            done(false, {}, int(PortTestApi::Failure::NoAnswer), reply->errorString());
+    if (theApp.publicIP() != 0) {
+        send(std::move(req), nonce, std::move(done));
+        return;
+    }
+    // right after start the public IPv4 is not known yet: a request leaving over IPv6
+    // would then test no IPv4 at all
+    auto* timer = new QTimer(QCoreApplication::instance());
+    auto clock = std::make_shared<QElapsedTimer>();
+    clock->start();
+    QObject::connect(timer, &QTimer::timeout, timer, [timer, clock, req, nonce, done] {
+        if (theApp.publicIP() == 0 && clock->elapsed() < kIpv4WaitMs)
             return;
-        }
-        const PortTestApi::Reply parsed = PortTestApi::parseReply(body, status, req.network);
-        if (!parsed.ok) {
-            done(false, {}, int(parsed.failure), parsed.error);
-            return;
-        }
-        if (req.network == PortTestApi::Network::Ed3k)
-            awaitProbe(req, nonce, parsed.targets, done);
-        else
-            done(true, resultMap(req, parsed.targets), 0, {});
+        timer->stop();
+        timer->deleteLater();
+        send(req, nonce, done);
     });
+    timer->start(kIpv4PollMs);
 }
 
 } // namespace eMule::PortTestRunner

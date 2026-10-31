@@ -23,7 +23,13 @@ namespace eMule::ed3k {
 namespace {
 
 constexpr quint32 kStateMagic = 0x4533444c;   // "E3DL"
-constexpr quint32 kStateVersion = 1;
+/// 1: every row; 2: the complete rows (the others are in the .met files)
+constexpr quint32 kStateVersion = 2;
+constexpr quint32 kMetMagic = 0x4533504d;     // "E3PM"
+constexpr quint32 kMetVersion = 1;
+const QString kMetSuffix = QStringLiteral(".ed3k.part.met");
+/// .met target: none (incoming + name), relative to the incoming dir, absolute
+enum class TargetKind : quint8 { None = 0, Incoming = 1, Absolute = 2 };
 /// a piece of the Have bitmap (Protocol.md §12.5): 4 MiB = 16 blocks
 constexpr std::size_t kPieceBlocks = 16;
 constexpr int kTickMs = 1000;
@@ -95,6 +101,7 @@ void Ed3kDownloads::start()
     if (m_started || !m_session.isRunning())
         return;
     beginStart();
+    scanTempDirs();   // .met files copied in meanwhile
     for (auto& [root, e] : m_entries) {
         if (e.info.state == Ed3kDownloadInfo::State::Downloading)
             openEntry(e);
@@ -122,10 +129,17 @@ void Ed3kDownloads::stop()
     markChanged();
 }
 
-void Ed3kDownloads::setDirs(const QString& tempDir, const QString& incomingDir)
+void Ed3kDownloads::setDirs(const QStringList& tempDirs, const QString& incomingDir)
 {
-    m_tempDir = tempDir;
+    m_tempDirs.clear();
+    for (const QString& d : tempDirs)
+        if (!d.isEmpty() && !m_tempDirs.contains(d))
+            m_tempDirs.append(d);
     m_incomingDir = incomingDir;
+    scanTempDirs();
+    // rows of a version 1 downloads.dat: their .met files now
+    if (std::ranges::any_of(m_entries, [](const auto& kv) { return kv.second.metDirty; }))
+        saveNow();
 }
 
 std::expected<void, QString> Ed3kDownloads::add(const Ed3kDownloadSpec& spec)
@@ -139,7 +153,7 @@ std::expected<void, QString> Ed3kDownloads::add(const Ed3kDownloadSpec& spec)
         name = hexOf(spec.root.bytes);
     if (spec.targetPath.isEmpty() && m_incomingDir.isEmpty())
         return std::unexpected(tr("No incoming directory for ed3k downloads."));
-    if (m_tempDir.isEmpty())
+    if (m_tempDirs.isEmpty())
         return std::unexpected(tr("No temporary directory for ed3k downloads."));
 
     Entry e;
@@ -156,8 +170,10 @@ std::expected<void, QString> Ed3kDownloads::add(const Ed3kDownloadSpec& spec)
     e.info.path = e.info.partPath;
     e.info.addedOn = QDateTime::currentSecsSinceEpoch();
     e.have.assign(std::size_t(blockCount(spec.size)), false);
+    e.metDirty = true;
     // an earlier part file of this root (cancelled, list lost) is not trusted
     QFile::remove(e.info.partPath);
+    QFile::remove(metPathOf(e));
     auto [it, inserted] = m_entries.emplace(spec.root, std::move(e));
     logInfo(QStringLiteral("download of \"%1\" (%2 B) added as %3").arg(name).arg(spec.size).arg(hexOf(spec.root.bytes)));
     if (it->second.info.state == Ed3kDownloadInfo::State::Downloading)
@@ -198,7 +214,7 @@ bool Ed3kDownloads::pause(const ffi::Root& root)
     stopDownload(root);
     e->info.state = Ed3kDownloadInfo::State::Paused;
     e->info.rate = 0;
-    scheduleSave(e->info.owner);
+    touch(*e);
     markChanged();
     return true;
 }
@@ -211,7 +227,7 @@ bool Ed3kDownloads::resume(const ffi::Root& root)
     e->info.state = Ed3kDownloadInfo::State::Downloading;
     e->info.error.clear();
     openEntry(*e);
-    scheduleSave(e->info.owner);
+    touch(*e);
     markChanged();
     pumpSession();
     return true;
@@ -228,6 +244,7 @@ bool Ed3kDownloads::cancel(const ffi::Root& root)
         if (isShared(root))
             unshare(root);
         QFile::remove(e.info.partPath);
+        QFile::remove(metPathOf(e));
         logInfo(QStringLiteral("download of \"%1\" cancelled").arg(e.info.name));
     } else if (isShared(root)) {
         // a complete file leaves the own share (its reads name the row); the share list
@@ -250,7 +267,7 @@ bool Ed3kDownloads::setPriority(const ffi::Root& root, int priority)
     e->info.priority = std::clamp(priority, 0, 4);
     // the turns at shared sources, the depth and the stream cap follow it
     priorityChanged(root);
-    scheduleSave(e->info.owner);
+    touch(*e);
     markChanged();
     return true;
 }
@@ -261,8 +278,32 @@ bool Ed3kDownloads::setCategory(const ffi::Root& root, int category)
     if (!e)
         return false;
     e->info.category = std::max(0, category);
-    scheduleSave(e->info.owner);
+    touch(*e);
     markChanged();
+    return true;
+}
+
+bool Ed3kDownloads::setOwner(const ffi::Root& root, const QString& owner)
+{
+    Entry* e = entryOf(root);
+    if (!e || owner.isEmpty() || e->info.state == Ed3kDownloadInfo::State::Complete)
+        return false;
+    if (e->info.owner == owner)
+        return true;
+    // the base keys streams and shares by owner: closed, opened again under the new one
+    const bool running = downloading(root);
+    if (running)
+        stopDownload(root);
+    if (isShared(root))
+        unshare(root);
+    e->info.owner = owner;
+    if (running)
+        openEntry(*e);
+    else
+        sharePieces(*e);
+    touch(*e);
+    markChanged();
+    pumpSession();
     return true;
 }
 
@@ -315,7 +356,7 @@ void Ed3kDownloads::releaseShare(const ffi::Root& root)
     if (!e->sharedByList) {
         e->sharedByList = true;
         logDebug(QStringLiteral("\"%1\" is served by the share list now").arg(e->info.name));
-        scheduleSave(e->info.owner);
+        touch(*e);
     }
 }
 
@@ -330,8 +371,12 @@ void Ed3kDownloads::saveNow()
     {
         QDataStream out(&raw, QIODevice::WriteOnly);
         out.setVersion(QDataStream::Qt_6_0);
-        out << kStateMagic << kStateVersion << qint32(m_nextId) << quint32(m_entries.size());
+        const auto complete = std::ranges::count_if(
+            m_entries, [](const auto& kv) { return kv.second.info.state == Ed3kDownloadInfo::State::Complete; });
+        out << kStateMagic << kStateVersion << qint32(m_nextId) << quint32(complete);
         for (const auto& [root, e] : m_entries) {
+            if (e.info.state != Ed3kDownloadInfo::State::Complete)
+                continue;
             const auto& i = e.info;
             out << rootBytes(root) << quint64(i.size) << i.name << i.owner << qint32(i.category) << qint32(i.priority)
                 << qint32(int(i.state)) << i.partPath << i.targetPath << i.path << packBits(e.have) << qint64(i.addedOn)
@@ -341,6 +386,9 @@ void Ed3kDownloads::saveNow()
     QDir().mkpath(stateDir(m_configDir));
     if (!writeBlob(statePath(), spanOf(raw)))
         logWarning(QStringLiteral("cannot write %1").arg(statePath()));
+    for (auto& [root, e] : m_entries)
+        if (e.metDirty && e.info.state != Ed3kDownloadInfo::State::Complete)
+            writeMet(e);
 }
 
 // ---------------------------------------------------------------------------
@@ -381,6 +429,7 @@ void Ed3kDownloads::onFileBlock(const Download& d, const ffi::event::Block& b)
     e->received += std::uint64_t(b.data.size());
     emit progress(e->info.root, e->info.done);
     markChanged();
+    touch(*e);
     if (std::ranges::all_of(e->have, [](bool h) { return h; })) {
         verify(*e);
         return;
@@ -388,7 +437,6 @@ void Ed3kDownloads::onFileBlock(const Download& d, const ffi::event::Block& b)
     // a piece just completed: tell the engine (served from the part file)
     if (index / kPieceBlocks != (index + 1) / kPieceBlocks || index + 1 == e->have.size())
         sharePieces(*e);
-    scheduleSave(e->info.owner);
 }
 
 void Ed3kDownloads::onBlobFetched(const QString& owner, int member, const ffi::Root& root, const QByteArray& data)
@@ -534,7 +582,7 @@ void Ed3kDownloads::verified(const ffi::Root& root, const std::optional<FileHash
         QFile::remove(e->info.partPath);
         e->info.state = Ed3kDownloadInfo::State::Downloading;
         openEntry(*e);
-        scheduleSave(e->info.owner);
+        touch(*e);
         markChanged();
         pumpSession();
         return;
@@ -548,6 +596,7 @@ void Ed3kDownloads::verified(const ffi::Root& root, const std::optional<FileHash
     e->info.path = path;
     e->info.state = Ed3kDownloadInfo::State::Complete;
     e->info.completedOn = QDateTime::currentSecsSinceEpoch();
+    QFile::remove(metPathOf(*e));
     shareComplete(*e, std::span{hashed->hashes});
     saveNow();
     logInfo(QStringLiteral("\"%1\" complete: %2").arg(e->info.name, path));
@@ -566,7 +615,12 @@ QString Ed3kDownloads::moveToTarget(const Entry& e, QString* error)
         const QString dir = e.info.category > 0 && m_categoryDir ? m_categoryDir(e.info.category) : QString();
         target = QDir(dir.isEmpty() ? m_incomingDir : dir).filePath(e.info.name);
     }
-    QDir().mkpath(QFileInfo(target).absolutePath());
+    // a target of another machine (an imported .met) that cannot be made here: the incoming dir
+    if (!QDir().mkpath(QFileInfo(target).absolutePath()) && !m_incomingDir.isEmpty()) {
+        logWarning(QStringLiteral("cannot create the folder of %1: \"%2\" goes to the incoming dir").arg(target, e.info.name));
+        target = QDir(m_incomingDir).filePath(e.info.name);
+        QDir().mkpath(m_incomingDir);
+    }
     target = freePath(target);
     if (QFile::rename(e.info.partPath, target))
         return target;
@@ -632,7 +686,7 @@ void Ed3kDownloads::fail(Entry& e, const QString& error)
     e.info.state = Ed3kDownloadInfo::State::Failed;
     e.info.error = error;
     e.info.rate = 0;
-    scheduleSave(e.info.owner);
+    touch(e);
     markChanged();
     emit failed(e.info.root, error);
 }
@@ -640,6 +694,12 @@ void Ed3kDownloads::fail(Entry& e, const QString& error)
 void Ed3kDownloads::markChanged()
 {
     m_changed = true;
+}
+
+void Ed3kDownloads::touch(Entry& e)
+{
+    e.metDirty = true;
+    scheduleSave(e.info.owner);
 }
 
 void Ed3kDownloads::onTick()
@@ -668,11 +728,12 @@ void Ed3kDownloads::load()
     quint32 magic = 0, version = 0, count = 0;
     qint32 nextId = 0;
     in >> magic >> version >> nextId >> count;
-    if (in.status() != QDataStream::Ok || magic != kStateMagic || version != kStateVersion) {
+    if (in.status() != QDataStream::Ok || magic != kStateMagic || version < 1 || version > kStateVersion) {
         logWarning(QStringLiteral("%1 does not parse: dropped").arg(statePath()));
         return;
     }
     m_nextId = std::max(0, int(nextId));
+    bool migrated = false;
     for (quint32 n = 0; n < count && in.status() == QDataStream::Ok; ++n) {
         QByteArray root, have;
         quint64 size = 0;
@@ -706,13 +767,138 @@ void Ed3kDownloads::load()
                 if (e.have[i])
                     e.info.done += std::min<std::uint64_t>(kBlock, size - std::uint64_t(i) * kBlock);
         }
+        // version 1 kept every row here: an unfinished one gets its .met beside the part file
+        if (e.info.state != Ed3kDownloadInfo::State::Complete) {
+            e.metDirty = true;
+            migrated = true;
+        }
         m_entries.emplace(*r, std::move(e));
     }
+    // written by setDirs (targets relative to the incoming dir)
+    if (migrated)
+        logInfo(QStringLiteral("%1: unfinished downloads move to .ed3k.part.met files").arg(statePath()));
+}
+
+void Ed3kDownloads::scanTempDirs()
+{
+    for (const QString& dir : std::as_const(m_tempDirs)) {
+        const QDir d(dir);
+        for (const QString& name : d.entryList({QStringLiteral("*") + kMetSuffix}, QDir::Files)) {
+            const QString metPath = d.filePath(name);
+            auto e = readMet(metPath);
+            if (!e) {
+                logWarning(QStringLiteral("%1 does not parse: left alone").arg(metPath));
+                continue;
+            }
+            if (const Entry* known = entryOf(e->info.root)) {
+                if (QFileInfo(metPathOf(*known)) != QFileInfo(metPath))
+                    logWarning(QStringLiteral("%1: \"%2\" is in the list already (%3)").arg(metPath, known->info.name, known->info.partPath));
+                continue;
+            }
+            e->id = m_nextId++;
+            const ffi::Root root = e->info.root;
+            logInfo(QStringLiteral("download of \"%1\" taken up from %2 (%3 of %4 B)")
+                        .arg(e->info.name, metPath).arg(e->info.done).arg(e->info.size));
+            auto [it, inserted] = m_entries.emplace(root, std::move(*e));
+            emit added(root);
+            markChanged();
+            if (m_started) {
+                if (it->second.info.state == Ed3kDownloadInfo::State::Downloading)
+                    openEntry(it->second);
+                else if (it->second.info.state == Ed3kDownloadInfo::State::Paused)
+                    sharePieces(it->second);
+                pumpSession();
+            }
+        }
+    }
+}
+
+std::optional<Ed3kDownloads::Entry> Ed3kDownloads::readMet(const QString& metPath) const
+{
+    const QByteArray raw = readBlob(metPath);
+    if (raw.isEmpty())
+        return std::nullopt;
+    QDataStream in(raw);
+    in.setVersion(QDataStream::Qt_6_0);
+    quint32 magic = 0, version = 0;
+    in >> magic >> version;
+    if (in.status() != QDataStream::Ok || magic != kMetMagic || version != kMetVersion)
+        return std::nullopt;
+    QByteArray root, have;
+    quint64 size = 0;
+    qint32 category = 0, priority = 1, state = 0;
+    quint8 targetKind = 0;
+    QString target;
+    qint64 addedOn = 0;
+    Entry e;
+    in >> root >> size >> e.info.name >> e.info.owner >> category >> priority >> state >> targetKind >> target >> have
+        >> addedOn >> e.info.error;
+    const auto r = rootFrom(root);
+    if (in.status() != QDataStream::Ok || !r || size == 0 || state < 0 || state > int(Ed3kDownloadInfo::State::Failed)
+        || Ed3kDownloadInfo::State(state) == Ed3kDownloadInfo::State::Complete)
+        return std::nullopt;
+    e.info.root = *r;
+    e.info.size = size;
+    e.info.name = safeName(e.info.name);
+    if (e.info.name.isEmpty())
+        e.info.name = hexOf(r->bytes);
+    if (e.info.owner.isEmpty())
+        e.info.owner = kOwner;
+    e.info.category = std::max(0, int(category));
+    e.info.priority = std::clamp(int(priority), 0, 4);
+    e.info.state = Ed3kDownloadInfo::State(state);
+    if (e.info.state == Ed3kDownloadInfo::State::Verifying)
+        e.info.state = Ed3kDownloadInfo::State::Downloading;
+    if (TargetKind(targetKind) == TargetKind::Incoming && !target.isEmpty() && !m_incomingDir.isEmpty())
+        e.info.targetPath = QDir::cleanPath(QDir(m_incomingDir).filePath(target));
+    else if (TargetKind(targetKind) == TargetKind::Absolute)
+        e.info.targetPath = target;
+    // the part file is beside the .met, wherever it was copied to
+    e.info.partPath = metPath.chopped(4);
+    e.info.path = e.info.partPath;
+    e.info.addedOn = addedOn;
+    e.have = unpackBits(have, std::size_t(blockCount(size)));
+    for (std::size_t i = 0; i < e.have.size(); ++i)
+        if (e.have[i])
+            e.info.done += std::min<std::uint64_t>(kBlock, size - std::uint64_t(i) * kBlock);
+    return e;
+}
+
+void Ed3kDownloads::writeMet(Entry& e)
+{
+    // a target under the incoming dir stays relative (another machine has another one)
+    TargetKind kind = TargetKind::None;
+    QString target;
+    if (!e.info.targetPath.isEmpty()) {
+        const QString rel = m_incomingDir.isEmpty() ? QString() : QDir(m_incomingDir).relativeFilePath(e.info.targetPath);
+        if (!rel.isEmpty() && !QDir::isAbsolutePath(rel) && !rel.startsWith(QLatin1String(".."))) {
+            kind = TargetKind::Incoming;
+            target = rel;
+        } else {
+            kind = TargetKind::Absolute;
+            target = e.info.targetPath;
+        }
+    }
+    const auto state = e.info.state == Ed3kDownloadInfo::State::Verifying ? Ed3kDownloadInfo::State::Downloading : e.info.state;
+    QByteArray raw;
+    {
+        QDataStream out(&raw, QIODevice::WriteOnly);
+        out.setVersion(QDataStream::Qt_6_0);
+        out << kMetMagic << kMetVersion << rootBytes(e.info.root) << quint64(e.info.size) << e.info.name << e.info.owner
+            << qint32(e.info.category) << qint32(e.info.priority) << qint32(int(state)) << quint8(kind) << target
+            << packBits(e.have) << qint64(e.info.addedOn) << e.info.error;
+    }
+    const QString path = metPathOf(e);
+    QDir().mkpath(QFileInfo(path).absolutePath());
+    if (writeBlob(path, spanOf(raw)))
+        e.metDirty = false;
+    else
+        logWarning(QStringLiteral("cannot write %1").arg(path));
 }
 
 QString Ed3kDownloads::partPathOf(const ffi::Root& root) const
 {
-    return QDir(m_tempDir).filePath(hexOf(root.bytes) + QStringLiteral(".ed3k.part"));
+    return QDir(m_tempDirs.value(0)).filePath(hexOf(root.bytes) + QStringLiteral(".ed3k.part"));
 }
 
 QString Ed3kDownloads::freePath(const QString& path)

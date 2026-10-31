@@ -2,6 +2,7 @@
 /// @brief Orchestrator for the headless core daemon — implementation.
 
 #include "DaemonApp.h"
+#include "AutoUpdater.h"
 #include "net/GuardedNetworkAccessManager.h"
 #include "CoreNotifierBridge.h"
 #include "ApiEventFeeder.h"
@@ -70,9 +71,11 @@
 #include "Ed3kSiteServer.h"
 #include "Ed3kUsenetJoin.h"
 #include "Ed3kTorrentJoin.h"
+#include "Ed3kEd2kJoin.h"
 #include "Ed3kHosterJoin.h"
 #ifdef EMULE_HAVE_HOSTER_JD
 #include "Ed3kJavaRuntime.h"
+#include "Ed3kStore.h"
 #include "Ed3kJdResolver.h"
 #endif
 #endif
@@ -350,6 +353,7 @@ bool DaemonApp::start()
         m_ed3kSharedSource = ed3k::Ed3kShared::listAdapter(*theApp.sharedFileList);
         m_ed3kShared = std::make_unique<ed3k::Ed3kShared>(*m_ed3kSession, *m_ed3kSharedSource, thePrefs.configDir());
         m_ed3kShared->connectList(*theApp.sharedFileList);
+        Ed3kBridge::setShared(m_ed3kShared.get());
         // a completed download stays the same object: no fileAdded
         if (theApp.downloadQueue)
             connect(theApp.downloadQueue, &DownloadQueue::fileCompleted, m_ed3kShared.get(), [s = m_ed3kShared.get()](PartFile* f) {
@@ -449,7 +453,7 @@ bool DaemonApp::start()
     m_ed3kDownloads = std::make_unique<ed3k::Ed3kDownloads>(*m_ed3kSession, thePrefs.configDir());
     {
         const QStringList temps = thePrefs.tempDirs();
-        m_ed3kDownloads->setDirs(temps.isEmpty() ? thePrefs.incomingDir() : temps.first(), thePrefs.incomingDir());
+        m_ed3kDownloads->setDirs(temps.isEmpty() ? QStringList{thePrefs.incomingDir()} : temps, thePrefs.incomingDir());
     }
     m_ed3kDownloads->setCategoryDir([](int category) { return thePrefs.incomingDirForCategory(category); });
     m_ed3kDownloads->setCompletedHook([](const ed3k::Ed3kDownloadInfo& done) {
@@ -498,6 +502,32 @@ bool DaemonApp::start()
     // ed3k keyword search: SearchType::Ed3k through the Meta search runner
     m_ed3kSearch = std::make_unique<ed3k::Ed3kSearch>(*m_ed3kSession);
     MetaSearchService::instance().setEd3kRunner(m_ed3kSearch.get());
+    // eD2K compat (§14.2, §14.4): eD2K downloads from ed3k too, hinted sources over ed3k
+    // first; attaches on statusChanged
+    if (theApp.downloadQueue) {
+        m_ed2kJoin = std::make_unique<ed3k::Ed3kEd2kJoin>(*m_ed3kSession, *theApp.downloadQueue, thePrefs.configDir());
+        m_ed2kJoin->setEnabled(thePrefs.ed3kJointDownloads());
+        Ed3kBridge::setEd2kJoin(m_ed2kJoin.get());
+        m_ed2kJoin->setRootTaken([d = m_ed3kDownloads.get()](const ::ed3k::Root& root) { return d && d->contains(root); });
+        theApp.ed3kHint = [j = m_ed2kJoin.get()](UpDownClient& client, bool wait) { return j->offerHint(client, wait); };
+        // queued: the verdict may come from a part file being destroyed
+        theApp.partVerdict = [j = QPointer<ed3k::Ed3kEd2kJoin>(m_ed2kJoin.get())](PartFile& file, uint32 part, bool ok) {
+            const QByteArray md4(reinterpret_cast<const char*>(file.fileHash()), 16);
+            QMetaObject::invokeMethod(
+                j.data(), [j, md4, part, ok] {
+                    if (j)
+                        j->onPartVerdict(md4, part, ok);
+                },
+                Qt::QueuedConnection);
+        };
+    }
+    // §14.4: a dual peer queued on ed3k gets no 2nd place in the eD2K upload queue
+    theApp.isEd3kUploadPeer = [u = m_ed3kUploads.get()](const uint8* hash) {
+        ::ed3k::Ed2kHash h{};
+        std::memcpy(h.data(), hash, h.size());
+        const auto hint = ::ed3k::userHashHint(h);
+        return u && hint && u->hasNodeStarting(*hint);
+    };
     // filter lists (filter-list.md §3): mark judged rows, drop them only when a list hides
     m_ed3kSearch->setJudge([this](const ::ed3k::FoundFile& f) {
         using J = ed3k::Ed3kSearch::Judged;
@@ -537,14 +567,17 @@ bool DaemonApp::start()
         ed3k::Ed3kJavaRuntime* java = nullptr;
 #ifdef EMULE_HAVE_HOSTER_JD
         m_jdResolver = std::make_unique<ed3k::Ed3kJdResolver>();
-        m_javaRuntime = std::make_unique<ed3k::Ed3kJavaRuntime>(QFileInfo(thePrefs.configDir()).absolutePath());
+        // one folder for ed3k: config/ed3k/java; older versions fetched it to <eMuleQt>/runtime
+        m_javaRuntime = std::make_unique<ed3k::Ed3kJavaRuntime>(
+            ed3k::stateDir(thePrefs.configDir()),
+            QDir(QFileInfo(thePrefs.configDir()).absolutePath()).filePath(QStringLiteral("runtime/jre")));
         resolver = m_jdResolver.get();
         java = m_javaRuntime.get();
         connect(m_jdResolver.get(), &ed3k::Ed3kResolver::stateChanged, this, pushStatus);
         connect(m_javaRuntime.get(), &ed3k::Ed3kJavaRuntime::stateChanged, this, [this, pushStatus] {
             const auto h = thePrefs.ed3kHoster();
             // none found: fetch one when the user allows that
-            if (m_javaRuntime->state() == ed3k::Ed3kJavaRuntime::State::Missing && h.enabled && h.autoJava)
+            if (m_javaRuntime->state() == ed3k::Ed3kJavaRuntime::State::Missing && thePrefs.hosterDownloadsOn() && h.autoJava)
                 m_javaRuntime->download();
             applyHosterConfig();
             pushStatus();
@@ -657,6 +690,8 @@ void DaemonApp::stop()
         thePrefs.save();
     }
 
+    m_autoUpdater.reset();
+
     // First: its predicate reads the Usenet session and core queues.
     m_powerManager.reset();
 
@@ -683,6 +718,13 @@ void DaemonApp::stop()
 
 #ifdef EMULE_HAVE_ED3K
     // the joins first: save themselves and close their downloads while the engines run
+    theApp.ed3kHint = {};
+    theApp.partVerdict = {};
+    theApp.isEd3kUploadPeer = {};
+    Ed3kBridge::setEd2kJoin(nullptr);
+    if (m_ed2kJoin)
+        m_ed2kJoin->stop();
+    m_ed2kJoin.reset();
 #ifdef EMULE_HAVE_BITTORRENT
     if (m_torrentJoin)
         m_torrentJoin->stop();
@@ -707,6 +749,7 @@ void DaemonApp::stop()
     m_ed3kDownloads.reset();
     if (m_ed3kShared)
         m_ed3kShared->stop();
+    Ed3kBridge::setShared(nullptr);
     m_ed3kShared.reset();
     m_ed3kSharedSource.reset();
     Ed3kFriendsBridge::setFriends(nullptr);
@@ -1109,6 +1152,9 @@ void DaemonApp::applyEd3kConfig()
     // ed3kShareFiles: on/off while the node runs (starts with it otherwise)
     if (m_ed3kShared)
         m_ed3kShared->setEnabled(thePrefs.ed3kShareFiles());
+    // ed3kJointDownloads: on/off while the node runs
+    if (m_ed2kJoin)
+        m_ed2kJoin->setEnabled(thePrefs.ed3kJointDownloads());
     // ed3kHoldBackPosts: a change restarts the usenet join (kept lists and records follow)
     if (m_usenetJoin)
         m_usenetJoin->setHoldBack(thePrefs.ed3kHoldBackPosts());
@@ -1126,6 +1172,8 @@ void DaemonApp::stopEd3kNode()
         return;
     if (m_usenetJoin)
         m_usenetJoin->stop();   // restarted on statusChanged
+    if (m_ed2kJoin)
+        m_ed2kJoin->stop();   // its clients go back to eD2K
     if (m_ed3kDownloads)
         m_ed3kDownloads->stop();
     if (m_ed3kShared)
@@ -1151,12 +1199,14 @@ void DaemonApp::applyHosterConfig()
 #ifdef EMULE_HAVE_HOSTER_JD
     if (!m_javaRuntime || !m_jdResolver)
         return;
-    // nothing is fetched unless the user switched hoster downloads on; off stops a fetch
-    m_javaRuntime->setAllowed(h.enabled);
-    if (!h.enabled)
+    // nothing is fetched or unpacked unless hoster downloads are on (and so is the ed3k node
+    // they run on); off stops a fetch and creates nothing under config/ed3k
+    const bool on = thePrefs.hosterDownloadsOn();
+    m_javaRuntime->setAllowed(on);
+    if (!on)
         m_javaLookedFor = QStringLiteral("\x01");
     // the runtime is looked for once the user switched hosters on, and again for a new path
-    if (h.enabled && m_javaLookedFor != h.java) {
+    if (on && m_javaLookedFor != h.java) {
         m_javaLookedFor = h.java;
         m_javaRuntime->locate(h.java);
     }
@@ -1177,9 +1227,12 @@ void DaemonApp::applyHosterConfig()
     if (const auto rt = m_javaRuntime->runtime())
         cfg.java = rt->java;
     cfg.dataDir = QDir(thePrefs.configDir()).filePath(QStringLiteral("ed3k/resolver"));
+    if (!h.sharedPluginDir.isEmpty())   // relative: to the config folder
+        cfg.sharedDir = QDir::cleanPath(QDir(thePrefs.configDir()).absoluteFilePath(h.sharedPluginDir));
     cfg.zip = ed3k::Ed3kJdResolver::findBundledZip();
     cfg.proxy = proxy;
     cfg.askPuzzles = h.askPuzzles;
+    cfg.enabled = on;
     m_jdResolver->setConfig(cfg);
 #endif
 #endif
@@ -1336,6 +1389,40 @@ void DaemonApp::onCoreLoaded()
     // the eD2K UDP socket is open now: an ed3k node sharing it starts
     applyEd3kConfig();
 #endif
+    startAutoUpdater();
+}
+
+bool DaemonApp::autoUpdateEnabled()
+{
+    return s_instance && s_instance->m_autoUpdateOn && !AutoUpdater::inContainer();
+}
+
+void DaemonApp::startAutoUpdater()
+{
+    if (!m_autoUpdateOn || m_autoUpdater)
+        return;
+    if (AutoUpdater::inContainer()) {
+        logWarning(QStringLiteral("Auto-update is off in a container: pull the new image instead"));
+        return;
+    }
+    m_autoUpdater = std::make_unique<AutoUpdater>(
+        QDir(thePrefs.configDir()).filePath(QStringLiteral("update")), m_autoUpdateHours);
+    AutoUpdater::Hooks hooks;
+    hooks.localGuis = [this] {
+        std::vector<AutoUpdater::Gui> out;
+        if (m_ipcServer) {
+            for (const auto& g : m_ipcServer->localGuis())
+                out.push_back({g.pid, g.relaunch});
+        }
+        return out;
+    };
+    hooks.announce = [this](const QString& version) {
+        if (!m_ipcServer)
+            return;
+        m_ipcServer->notifyCoreUpdating(version);
+    };
+    m_autoUpdater->setHooks(std::move(hooks));
+    m_autoUpdater->start();
 }
 
 void DaemonApp::broadcastCoreLoading(bool loading)

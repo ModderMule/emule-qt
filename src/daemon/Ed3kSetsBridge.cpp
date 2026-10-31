@@ -2,6 +2,7 @@
 /// @brief Followed ed3k sets and live streams over IPC — implementation.
 
 #include "Ed3kSetsBridge.h"
+#include "Ed3kOffGate.h"
 
 #include <QCborArray>
 #include <QCborMap>
@@ -291,6 +292,9 @@ bool handleRequest(const IpcMessage& msg, const std::function<void(const IpcMess
 {
     if (!isSetsRequest(msg.type()))
         return false;
+    // ed3k off: nothing under config/ed3k is written
+    if (Ed3kBridge::refuseWhileOff(msg, {IpcMsgType::GetEd3kSets, IpcMsgType::GetEd3kLive, IpcMsgType::GetEd3kSetSite}, reply))
+        return true;
 #ifdef EMULE_HAVE_ED3K
     if (s_sets) {
         answer(msg, reply);

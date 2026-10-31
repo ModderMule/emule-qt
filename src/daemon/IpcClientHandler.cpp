@@ -105,6 +105,7 @@
 #include "transfer/DownloadQueue.h"
 #include "transfer/Scheduler.h"
 #include "transfer/UploadQueue.h"
+#include "utils/PathUtils.h"
 #include "utils/Log.h"
 #include "utils/TimeUtils.h"
 
@@ -566,6 +567,12 @@ void IpcClientHandler::handleHandshake(const IpcMessage& msg)
     }
 
     m_handshaked = true;
+    // Fields 2-4: a GUI names itself, so the auto-updater can start it again
+    m_isGui = msg.fieldString(2) == QStringLiteral("gui");
+    m_guiPid = msg.fieldInt(3);
+    m_guiRelaunch.clear();
+    for (const QCborValue& v : msg.fieldArray(4))
+        m_guiRelaunch.append(v.toString());
 
     IpcMessage reply(IpcMsgType::HandshakeOk, msg.seqId());
     reply.append(QString::fromLatin1(ProtocolVersion));
@@ -580,6 +587,8 @@ void IpcClientHandler::handleHandshake(const IpcMessage& msg)
     // Field 5: our pid. A restart on Windows is a new process, and the GUI that
     // launched us watches the pid to tell a crash from a slow start.
     reply.append(QCoreApplication::applicationPid());
+    // Field 6: --autoupdate is on; the GUI then skips its "new version" box
+    reply.append(DaemonApp::autoUpdateEnabled());
     sendMessage(reply);
     emit handshakeCompleted();
 }
@@ -3374,12 +3383,15 @@ void IpcClientHandler::handleGetDownloadDetails(const IpcMessage& msg)
         sendMessage(IpcMessage::makeError(msg.seqId(), 404, QStringLiteral("Download not found")));
         return;
     }
+    // Field 1: the General page's live refresh, which needs no names, comments, link or tags
+    const bool generalOnly = msg.fieldCount() > 1 && msg.fieldBool(1);
 
     // The archive preview reads the .part: a range counts as there as soon as it is
     // buffered, so what is buffered goes to disk first.
     if (const QString type = pf->fileType();
-        type.compare(QLatin1StringView("Arc"), Qt::CaseInsensitive) == 0
-        || type.compare(QLatin1StringView("Iso"), Qt::CaseInsensitive) == 0)
+        !generalOnly
+        && (type.compare(QLatin1StringView("Arc"), Qt::CaseInsensitive) == 0
+            || type.compare(QLatin1StringView("Iso"), Qt::CaseInsensitive) == 0))
         pf->flushBuffer();
 
     QCborMap details = toCbor(*pf);
@@ -3391,8 +3403,32 @@ void IpcClientHandler::handleGetDownloadDetails(const IpcMessage& msg)
     details.insert(QLatin1StringView("dataPath"),
         pf->filePath().isEmpty() ? pf->partDataPath() : pf->filePath());
     details.insert(QLatin1StringView("a4afSourceCount"), static_cast<qint64>(pf->a4afSourceCount()));
+    // The rest of MFC's General page (FileDetailDialogInfo.cpp:132-320)
+    details.insert(QLatin1StringView("sizeOnDisk"),
+        static_cast<qint64>(diskFileSize(pf->filePath().isEmpty() ? pf->partDataPath() : pf->filePath())));
+    details.insert(QLatin1StringView("partCount"),          static_cast<qint64>(pf->partCount()));
+    details.insert(QLatin1StringView("availablePartCount"), static_cast<qint64>(pf->availablePartCount()));
+    details.insert(QLatin1StringView("md4HashsetAvailable"),  pf->fileIdentifier().hasExpectedMD4HashCount());
+    details.insert(QLatin1StringView("aichHashsetAvailable"), pf->fileIdentifier().hasExpectedAICHHashCount());
+    details.insert(QLatin1StringView("validSourceCount"),   static_cast<qint64>(pf->validSourcesCount()));
+    details.insert(QLatin1StringView("nnpSourceCount"),     static_cast<qint64>(pf->nnpSourceCount()));
+    details.insert(QLatin1StringView("compressionGain"),    static_cast<qint64>(pf->compressionGain()));
+    details.insert(QLatin1StringView("corruptionLoss"),     static_cast<qint64>(pf->corruptionLoss()));
+    details.insert(QLatin1StringView("recoveredParts"),     static_cast<qint64>(pf->ichPartsSaved()));
+    details.insert(QLatin1StringView("dlActiveTime"),       static_cast<qint64>(pf->dlActiveTime()));
+    details.insert(QLatin1StringView("containerVerdict"),
+        static_cast<int>(pf->containerCheck().verdict));
     details.insert(QLatin1StringView("isComplete"),
         pf->status() == PartFileStatus::Complete);
+    Ed3kBridge::appendDownloadInfo(details, QByteArray(reinterpret_cast<const char*>(pf->fileHash()), 16));
+    if (pf->aichRecoveryHashSet().hasValidMasterHash())
+        details.insert(QLatin1StringView("aichHash"),
+            pf->aichRecoveryHashSet().getMasterHash().getString());
+    if (generalOnly) {
+        sendMessage(IpcMessage::makeResult(msg.seqId(), true, QCborValue(details)));
+        return;
+    }
+
     // The archive preview: the exact missing ranges (the bar's "gaps" are merged past
     // a cap), and whether "Create preview file" has anything to work with
     // (MFC ArchivePreviewDlg.cpp:1003-1005).
@@ -3410,11 +3446,6 @@ void IpcClientHandler::handleGetDownloadDetails(const IpcMessage& msg)
     // What ops::renameDownload accepts (MFC CFileDetailDialogName::CanRenameFile)
     details.insert(QLatin1StringView("canRename"),
         pf->status() != PartFileStatus::Complete && pf->status() != PartFileStatus::Completing);
-
-    // AICH hash (if available)
-    if (pf->aichRecoveryHashSet().hasValidMasterHash())
-        details.insert(QLatin1StringView("aichHash"),
-            pf->aichRecoveryHashSet().getMasterHash().getString());
 
     // Source names: unique filenames with count, from live sources...
     std::unordered_map<QString, int> nameMap;
@@ -3671,6 +3702,7 @@ void IpcClientHandler::handleGetSharedFileDetails(const IpcMessage& msg)
         details.insert(QLatin1StringView("archiveGaps"), exact);
     } else {
         details.insert(QLatin1StringView("dataPath"), kf->filePath());
+        Ed3kBridge::appendSharedInfo(details, QByteArray(reinterpret_cast<const char*>(kf->fileHash()), 16));
     }
     details.insert(QLatin1StringView("path"), QFileInfo(kf->filePath()).absolutePath());
 
@@ -4528,6 +4560,8 @@ bool IpcClientHandler::applyPreferenceEd3k(const QString& key, const QCborValue&
         thePrefs.setEd3kEnabled(val.toBool());
     else if (key == QStringLiteral("ed3kShareFiles"))
         thePrefs.setEd3kShareFiles(val.toBool());
+    else if (key == QStringLiteral("ed3kJointDownloads"))
+        thePrefs.setEd3kJointDownloads(val.toBool());
     else if (key == QStringLiteral("ed3kHoldBackPosts"))
         thePrefs.setEd3kHoldBackPosts(val.toBool());
     else if (key == QStringLiteral("ed3kUdpPort"))

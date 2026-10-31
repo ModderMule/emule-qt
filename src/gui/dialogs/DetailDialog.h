@@ -80,6 +80,16 @@ void connectKadNotesSearch(DetailDialog* dialog, IpcClient* ipc,
 void connectKadNotesSearch(DetailDialog* dialog, IpcClient* ipc,
                            Ipc::IpcMsgType detailsRequest);
 
+/// Re-fetch the details every @p intervalMs while the dialog is shown and hand them to
+/// refreshLive() — MFC refreshes its info pages on a timer. One request in flight at a
+/// time; a reply for an item the walker has left is dropped.
+void connectLiveRefresh(DetailDialog* dialog, IpcClient* ipc, DetailRequestFactory makeRequest,
+                        int intervalMs);
+
+/// Copy every caption/value text (and a value's own palette) of @p fresh onto @p shown,
+/// the same page built again off-screen. False, nothing copied: the rows differ.
+bool copyValueTexts(QWidget* shown, const QWidget* fresh);
+
 /// Fetch GetClientDetails for @p clientHash and show a ClientDetailDialog for it,
 /// parented to @p parent. Shared because more than one panel opens that dialog from
 /// nothing but a user hash, and the exchange is the same every time.
@@ -142,6 +152,10 @@ public:
     /// override this to avoid tearing down tabs the user is scrolled into; the
     /// default is a full rebuild.
     virtual void applyDetails(const QCborMap& details) { setDetails(details); }
+
+    /// The same item, from connectLiveRefresh()'s timer: only values that change by
+    /// themselves. The default is applyDetails().
+    virtual void refreshLive(const QCborMap& details) { applyDetails(details); }
 
     /// Identity of the item currently on display (file hash / user hash). Late
     /// arrivals compare against it to avoid painting a file the user has already

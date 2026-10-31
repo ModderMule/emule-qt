@@ -1,6 +1,6 @@
 # eD2K compat mode (ed3k Protocol.md §14)
 
-State 2026-10-28. Spec: `docs/ed3k-spec/Protocol.md` §14, optional tags `docs/ed3k-spec/docs/ed2k-tags.md`.
+State 2026-10-31. Spec: `docs/ed3k-spec/Protocol.md` §14, optional tags `docs/ed3k-spec/docs/ed2k-tags.md`.
 
 ## Done
 
@@ -16,25 +16,34 @@ State 2026-10-28. Spec: `docs/ed3k-spec/Protocol.md` §14, optional tags `docs/e
 | One port mapping when shared | `CoreSession::buildPortMapRequests` |
 | Own shared files published under their eD2K hash (`ed2k` ALIAS) | `Ed3kShared` |
 | Search rows carry the root/ed2k pair (display only) | `SearchFile::setEd3k` |
+| **Hint dialing (§14.2):** a download source with a derived user hash is asked over ed3k first, at its address and TCP port number (§14.1); `WRONG_PEER` is the engine's (`Expect::ObfId`) | `UpDownClient::askForDownload` → `AppContext::ed3kHint` → `Ed3kEd2kJoin::offerHint`; `ConnectingState::Ed3kHint`, `Ed3kRoute` |
+| **Fallback (MUST):** no answer in 30 s, stream refused / unreachable / not found → eD2K dial; the source is never dropped | `UpDownClient::setEd3kRoute`, `Ed3kEd2kJoin::releaseHint` |
+| **One download from both networks (§14.4):** each running eD2K part file looks up its root (`ed2k` ALIAS md4 ‖ size), fetches the blocks it misses into the part file (BLAKE3 verified, no sender blamed), skips what eD2K asks right now | `Ed3kEd2kJoin` (`wantedBlocks`, `onFileBlock` → `PartFile::writeToBuffer`) |
+| Availability as byte ranges: the part file's gap list is the one store; eD2K part map and ed3k piece bitmap are read from it | `Ed3kEd2kJoin::shareVerified`, `blockServable` |
+| Partial eD2K download served over ed3k: pieces whole from ed3k, or eD2K bytes in MD4-verified parts once the pair is trusted | `Ed3kEd2kJoin::sharedRead` |
+| **Pair trust (§14.4):** trusted once a part with ed3k bytes passes MD4; a failing part whose blocks pass under the root → `CLAIM_FALSE` → pair false, root dropped, next candidate; a `FileStatus` naming another ed2k hash → pair false | `AppContext::partVerdict` (`PartFile::verifyChangedParts`), `Ed3kEd2kJoin::onPartVerdict`, `onStreamStatus`; FFI wrapper `aliasEd2kPartBlocks` |
+| **Prefer ed3k for a dual peer (§14.4):** a client answered over ed3k is not asked over eD2K (state "Via ed3k"); its eD2K upload-queue request is refused while it waits / holds a slot on ed3k | `Ed3kRoute::Preferred`; `AppContext::isEd3kUploadPeer` → `Ed3kUploads::hasNodeStarting` in `UploadQueue::checkWaitingListAdmission` |
+| Option "Download eD2K files from ed3k peers too" (pref `ed3k.jointDownloads`, default on) | `Ed3kOptionsPages`, `Preferences::ed3kJointDownloads` |
+| File Details → General of a download: "ed3k" box (BLAKE3 root + Trusted/Unverified, Searching / Not found, ed3k sources, bytes from ed3k); Shared Files: BLAKE3 root, alias/keywords published | `Ed3kEd2kJoin::infoOf`, `Ed3kBridge::appendDownloadInfo` / `appendSharedInfo` → `GetDownloadDetails` / `GetSharedFileDetails` keys `ed3k*`; `FileDetailDialog` |
+| Docker: one port 4662 for TCP and UDP (new containers; `EMULEQT_UDP_PORT` still splits) | `docker/emuleqt/{Dockerfile,entrypoint.sh,compose.yml}`, `docs/docker.md` |
 
 Existing configs keep their hash and ports until the user migrates. An MFC identity import
 (`LegacyIdentityImport`) keeps the imported hash on purpose (credits).
 
-## Missing
+Tests: `tests/tst_Ed3kEd2kJoin.cpp` (three loopback nodes: fed download + trust, false pair by
+part, false pair by FileStatus, hinted source preferred, unanswered hint, client wait/fallback).
 
-1. **Hint on eD2K sources (§14.2):** `userHashHint` has no caller. Kad source results, SX v2-4,
-   ext SX `CT_EMULE_USERHASH`, `OP_FOUNDSOURCES_OBFU` (0x80), `OP_CALLBACKREQUESTED` are not
-   checked; no ed3k dial (`ED3K_SOURCE_HINT`), no `WRONG_PEER` check on the hinted ID, no
-   fallback-to-eD2K bookkeeping.
-2. **One download from both networks (§14.4):** an eD2K `PartFile` never looks up the `ed2k`
-   alias on ed3k; ed3k downloads are their own list and part files (`*.ed3k.part`). Availability
-   as shared byte ranges (eD2K part map + ed3k pieces) not there.
-3. **Pair trust (§14.4):** `ed2k` of `FileInfo` / `FileStatus` is ignored
-   (`Ed3kJoinBase` reads only `have`/`usable`); no "verified under both hashes" step, no dropping
-   a false pair.
-4. **Prefer ed3k for a dual peer (§14.4):** peers are never matched across networks; eD2K and
-   ed3k slots are counted apart.
-5. **Explicit tags (optional, ed2k-tags.md):** `CT_ED3K` / `ST_ED3K` in hello, ext SX, login,
-   server ident; server rendezvous as ed3k punch signal (§5). Proposal only.
-6. **Remote UIs:** the web UI / REST have no migrate action and still show two port fields.
-7. **Docker image:** keeps 4662/tcp + 4672/udp (ed3k locked off there); not one port.
+## Skipped
+
+1. **Explicit tags (ed2k-tags.md):** `CT_ED3K` / `ST_ED3K` in hello, ext SX, login, server ident;
+   server rendezvous as ed3k punch signal (§5). Proposal only; a dual client works without them.
+2. **Remote UIs:** web UI / REST have no migrate action, no joint-download option, and still
+   show two port fields.
+
+## Approximate
+
+- eD2K bytes are not checked block by block under BLAKE3 before the pair is trusted (the FFI has
+  no such call); the check is per part, only when MD4 fails (`aliasSearchPartFailed`).
+- An ed3k download of the same root through `Ed3kDownloads` (ed3k link) wins: the joint
+  download leaves that root alone (`setRootTaken`).
+- A client is matched to an ed3k node only by the hint prefix (12 bytes) of its user hash.

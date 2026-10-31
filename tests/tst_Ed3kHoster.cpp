@@ -13,17 +13,20 @@
 #ifdef EMULE_HAVE_HOSTER_JD
 #include "Ed3kJavaRuntime.h"
 #include "Ed3kJdResolver.h"
+#include "archive/ArchiveReader.h"
 #endif
 
 #include <QDir>
 #include <QDateTime>
 #include <QDirIterator>
+#include <QElapsedTimer>
 #include <QFile>
 #include <QJsonArray>
 #include <QJsonDocument>
 #include <QJsonObject>
 #include <QFileInfo>
 #include <QHash>
+#include <QLockFile>
 #include <QSet>
 #include <QSignalSpy>
 #include <QTemporaryDir>
@@ -32,6 +35,11 @@
 #include <QUrl>
 
 #include <functional>
+
+#ifdef EMULE_HAVE_HOSTER_JD
+#include <archive.h>
+#include <archive_entry.h>
+#endif
 
 using namespace eMule;
 using namespace eMule::ed3k;
@@ -312,6 +320,42 @@ struct Rig {
     }
 };
 
+#ifdef EMULE_HAVE_HOSTER_JD
+/// A zip of @p members (name, data), as resolver.zip is
+bool writeZip(const QString& path, const QList<QPair<QString, QByteArray>>& members)
+{
+    auto* a = archive_write_new();
+    archive_write_set_format_zip(a);
+    if (archive_write_open_filename(a, path.toUtf8().constData()) != ARCHIVE_OK) {
+        archive_write_free(a);
+        return false;
+    }
+    bool ok = true;
+    for (const auto& [name, data] : members) {
+        auto* entry = archive_entry_new();
+        archive_entry_set_pathname(entry, name.toUtf8().constData());
+        archive_entry_set_size(entry, data.size());
+        archive_entry_set_filetype(entry, AE_IFREG);
+        archive_entry_set_perm(entry, 0644);
+        ok = ok && archive_write_header(a, entry) == ARCHIVE_OK
+             && archive_write_data(a, data.constData(), size_t(data.size())) == data.size();
+        archive_entry_free(entry);
+    }
+    archive_write_close(a);
+    archive_write_free(a);
+    return ok;
+}
+
+/// A resolver.zip of the shipped layout, with stand-in contents
+bool writeResolverZip(const QString& path)
+{
+    return writeZip(path, {{QStringLiteral("resolver/Core.jar"), "PK"},
+                           {QStringLiteral("resolver/jd/plugins/hoster/ArchiveOrg.class"), "cafe"},
+                           {QStringLiteral("resolver/libs/js.jar"), "PK"},
+                           {QStringLiteral("resolver/revision.txt"), "53779"}});
+}
+#endif
+
 /// A saved link last checked 100 h ago: past the default 72 h.
 /// A downloader @p node in site 10.0.@p site.0/24 reports @p code for @p url, handed out with
 /// item @p id's file; site 0: none (a virtual connection).
@@ -391,6 +435,22 @@ private slots:
         QCOMPARE(r.resolver.opens, 1);
         // the same link again is not a second item
         QVERIFY(r.join->addLinks(QStringLiteral("https://fake.example/f/1")).isEmpty());
+    }
+
+    /// the ed3k network never finds a peer: no ALIAS lookup, straight to the hoster (#88)
+    void noPeers_skipsLookupAndCompletes()
+    {
+        Rig r;
+        QVERIFY(r.start(true));
+        QCOMPARE(r.session.contactCount(), std::uint64_t{0});
+        QSet<int> seen;
+        QObject::connect(r.join.get(), &Ed3kHosterJoin::itemChanged, r.join.get(),
+                         [&](quint32 id) { seen.insert(int(r.state(id))); });
+        const auto ids = r.join->addLinks(QStringLiteral("https://fake.example/f/np"));
+        QCOMPARE(ids.size(), 1);
+        QTRY_COMPARE_WITH_TIMEOUT(r.state(ids[0]), Ed3kHosterJoin::State::Complete, 60000);
+        QVERIFY(!seen.contains(int(Ed3kHosterJoin::State::Looking)));
+        QVERIFY(!r.join->item(ids[0])->rootHex.isEmpty());
     }
 
     /// §3: no puzzle, timer or account without the user's switch: nothing is opened
@@ -1114,6 +1174,286 @@ private slots:
         QCOMPARE(spy.at(0).at(1).value<ResolverEvent>().kind, ResolverEvent::Kind::Failed);
     }
 
+    /// #88: the 48 MB of plugins only while hoster downloads are on; off removes them
+    void jdResolver_installsOnlyWhenEnabled()
+    {
+        QTemporaryDir tmp;
+        const QString zip = tmp.filePath(QStringLiteral("resolver.zip"));
+        QVERIFY(writeResolverZip(zip));
+        const QString cfgDir = tmp.filePath(QStringLiteral("cfg"));
+        const QString data = cfgDir + QStringLiteral("/ed3k/resolver");
+        Ed3kJdResolver r;
+        JdResolverConfig cfg;
+        cfg.dataDir = data;
+        cfg.zip = zip;
+        cfg.java = QStringLiteral("/usr/bin/java");
+        cfg.enabled = false;
+        r.setConfig(cfg);
+        QVERIFY(!QFileInfo::exists(cfgDir));
+        QVERIFY(!r.available());
+
+        cfg.enabled = true;
+        r.setConfig(cfg);
+        QVERIFY(QFileInfo(data + QStringLiteral("/plugins")).isDir());
+        QVERIFY(r.available());
+
+        cfg.enabled = false;
+        r.setConfig(cfg);
+        QVERIFY(!QFileInfo::exists(data + QStringLiteral("/plugins")));
+        QVERIFY(!r.available());
+    }
+
+    /// #88: an archive of the old loose-classes layout is not taken
+    void jdResolver_rejectsLooseClassesLayout()
+    {
+        QTemporaryDir tmp;
+        const QString zip = tmp.filePath(QStringLiteral("resolver.zip"));
+        QVERIFY(writeZip(zip, {{QStringLiteral("resolver/classes/org/emuleqt/resolver/ResolverMain.class"), "cafe"},
+                               {QStringLiteral("resolver/revision.txt"), "1"}}));
+        const QString data = tmp.filePath(QStringLiteral("resolver"));
+        QString error;
+        QVERIFY(!Ed3kJdResolver::install(zip, data, &error));
+        QCOMPARE(error, QStringLiteral("not a resolver archive"));
+        QVERIFY(!QFileInfo::exists(data + QStringLiteral("/plugins")));
+        QVERIFY(!QFileInfo::exists(data + QStringLiteral("/plugins.tmp")));
+    }
+
+    /// Core.jar first, then the root (JD finds jd/plugins beside the jar), then the libs
+    void jdResolver_classpathCoreJarPluginsLibs()
+    {
+        QTemporaryDir tmp;
+        const QString zip = tmp.filePath(QStringLiteral("resolver.zip"));
+        QVERIFY(writeResolverZip(zip));
+        Ed3kJdResolver r;
+        JdResolverConfig cfg;
+        cfg.dataDir = tmp.filePath(QStringLiteral("resolver"));
+        cfg.zip = zip;
+        cfg.java = QStringLiteral("/usr/bin/java");
+        cfg.enabled = true;
+        r.setConfig(cfg);
+        QVERIFY2(r.available(), qPrintable(r.unavailableReason()));
+        const QStringList args = r.arguments();
+        const qsizetype at = args.indexOf(QStringLiteral("-cp"));
+        QVERIFY(at >= 0 && at + 1 < args.size());
+        const QString root = QDir(cfg.dataDir).filePath(QStringLiteral("plugins/resolver"));
+        QCOMPARE(args.at(at + 1).split(QDir::listSeparator()),
+                 (QStringList{root + QStringLiteral("/Core.jar"), root, root + QStringLiteral("/libs/*")}));
+        QVERIFY(args.contains(QStringLiteral("-Demuleqt.jdRevision=53779")));
+
+        // a lost Core.jar: missing, not started on a broken classpath
+        QVERIFY(QFile::remove(root + QStringLiteral("/Core.jar")));
+        QVERIFY(!r.available());
+    }
+
+    /// #88: instances with one sharedDir unpack the plugins once; JD's state stays per instance
+    void jdResolver_sharedDirInstallsOnce()
+    {
+        QTemporaryDir tmp;
+        const QString zip = tmp.filePath(QStringLiteral("resolver.zip"));
+        QVERIFY(writeResolverZip(zip));
+        const QString shared = tmp.filePath(QStringLiteral("shared"));
+        const auto config = [&](const QString& name) {
+            JdResolverConfig cfg;
+            cfg.dataDir = tmp.filePath(name + QStringLiteral("/ed3k/resolver"));
+            cfg.sharedDir = shared;
+            cfg.zip = zip;
+            cfg.java = QStringLiteral("/usr/bin/java");
+            return cfg;
+        };
+        Ed3kJdResolver a;
+        Ed3kJdResolver b;
+        JdResolverConfig ca = config(QStringLiteral("a"));
+        a.setConfig(ca);
+        b.setConfig(config(QStringLiteral("b")));
+        QVERIFY2(a.available(), qPrintable(a.unavailableReason()));
+        QVERIFY2(b.available(), qPrintable(b.unavailableReason()));
+        QCOMPARE(QDir(shared).entryList(QDir::Dirs | QDir::NoDotAndDotDot).size(), 1);
+        QCOMPARE(a.pluginRoot(), b.pluginRoot());
+        QVERIFY(a.pluginRoot().startsWith(shared + u'/'));
+        QVERIFY(QFileInfo::exists(QFileInfo(a.pluginRoot()).path() + QStringLiteral("/.lastused")));
+        QVERIFY(!QFileInfo::exists(ca.dataDir + QStringLiteral("/plugins")));
+
+        const QString root = a.pluginRoot();
+        const QStringList args = a.arguments();
+        QCOMPARE(args.at(args.indexOf(QStringLiteral("-cp")) + 1).split(QDir::listSeparator()),
+                 (QStringList{root + QStringLiteral("/Core.jar"), root, root + QStringLiteral("/libs/*")}));
+        QVERIFY(args.contains(QStringLiteral("-DROOT=") + QDir(ca.dataDir).filePath(QStringLiteral("jd"))));
+        QVERIFY(b.arguments().contains(QStringLiteral("-DROOT=") + QDir(config(QStringLiteral("b")).dataDir).filePath(QStringLiteral("jd"))));
+
+        // one instance off: the shared copy stays for the other
+        ca.enabled = false;
+        a.setConfig(ca);
+        QVERIFY(!a.available());
+        QVERIFY(b.available());
+        QVERIFY(QFileInfo(root).isDir());
+
+        // no zip (a test build): takes what is in the shared folder
+        Ed3kJdResolver c;
+        JdResolverConfig cc = config(QStringLiteral("c"));
+        cc.zip.clear();
+        c.setConfig(cc);
+        QCOMPARE(c.pluginRoot(), root);
+    }
+
+    /// an installed version is taken while another instance holds the install lock
+    void jdResolver_sharedDirInstalledIgnoresLock()
+    {
+        QTemporaryDir tmp;
+        const QString zip = tmp.filePath(QStringLiteral("resolver.zip"));
+        QVERIFY(writeResolverZip(zip));
+        const QString shared = tmp.filePath(QStringLiteral("shared"));
+        QString error;
+        const QString root = Ed3kJdResolver::installShared(zip, shared, &error);
+        QVERIFY2(!root.isEmpty(), qPrintable(error));
+        QLockFile other(shared + QStringLiteral("/.install.lock"));
+        QVERIFY(other.tryLock(0));
+        QElapsedTimer t;
+        t.start();
+        QCOMPARE(Ed3kJdResolver::installShared(zip, shared, &error), root);
+        QVERIFY(t.elapsed() < 2000);
+    }
+
+    /// each zip gets its own folder (mixed app versions don't unpack over each other);
+    /// a version nobody started for kSharedKeepDays and left-over tmp dirs go
+    void jdResolver_sharedDirVersionsAndPrune()
+    {
+        QTemporaryDir tmp;
+        const QString shared = tmp.filePath(QStringLiteral("shared"));
+        const QString zip1 = tmp.filePath(QStringLiteral("r1.zip"));
+        const QString zip2 = tmp.filePath(QStringLiteral("r2.zip"));
+        const QString zip3 = tmp.filePath(QStringLiteral("r3.zip"));
+        QVERIFY(writeResolverZip(zip1));
+        const auto other = [](const QString& path, const QByteArray& rev) {
+            return writeZip(path, {{QStringLiteral("resolver/Core.jar"), "PK"},
+                                   {QStringLiteral("resolver/jd/plugins/hoster/ArchiveOrg.class"), "cafe"},
+                                   {QStringLiteral("resolver/revision.txt"), rev}});
+        };
+        QVERIFY(other(zip2, "53780"));
+        QVERIFY(other(zip3, "53781"));
+        QString error;
+        const QString root1 = Ed3kJdResolver::installShared(zip1, shared, &error);
+        const QString root2 = Ed3kJdResolver::installShared(zip2, shared, &error);
+        QVERIFY(!root1.isEmpty() && !root2.isEmpty() && root1 != root2);
+        QVERIFY(QFileInfo(root1).isDir());   // still in use
+
+        // version 1 unused for long, a crashed install's tmp dir
+        QFile used(QFileInfo(root1).path() + QStringLiteral("/.lastused"));
+        QVERIFY(used.open(QIODevice::ReadWrite));
+        QVERIFY(used.setFileTime(QDateTime::currentDateTime().addDays(-(Ed3kJdResolver::kSharedKeepDays + 1)),
+                                 QFileDevice::FileModificationTime));
+        used.close();
+        const QString stale = shared + QStringLiteral("/0123456789ab.tmp");
+        QVERIFY(QDir().mkpath(stale));
+        const QString foreign = shared + QStringLiteral("/notes");
+        QVERIFY(QDir().mkpath(foreign));
+
+        const QString root3 = Ed3kJdResolver::installShared(zip3, shared, &error);
+        QVERIFY2(!root3.isEmpty(), qPrintable(error));
+        QVERIFY(!QFileInfo::exists(root1));
+        QVERIFY(QFileInfo(root2).isDir());
+        QVERIFY(!QFileInfo::exists(stale));
+        QVERIFY(QFileInfo(foreign).isDir());   // not ours: kept
+
+        QVERIFY(Ed3kJdResolver::installShared(tmp.filePath(QStringLiteral("missing.zip")), shared, &error).isEmpty());
+    }
+
+    /// switching to a shared folder drops the per-instance copy of before
+    void jdResolver_sharedDirReplacesInstanceCopy()
+    {
+        QTemporaryDir tmp;
+        const QString zip = tmp.filePath(QStringLiteral("resolver.zip"));
+        QVERIFY(writeResolverZip(zip));
+        Ed3kJdResolver r;
+        JdResolverConfig cfg;
+        cfg.dataDir = tmp.filePath(QStringLiteral("resolver"));
+        cfg.zip = zip;
+        cfg.java = QStringLiteral("/usr/bin/java");
+        r.setConfig(cfg);
+        QVERIFY(QFileInfo(cfg.dataDir + QStringLiteral("/plugins")).isDir());
+        cfg.sharedDir = tmp.filePath(QStringLiteral("shared"));
+        r.setConfig(cfg);
+        QVERIFY(r.available());
+        QVERIFY(!QFileInfo::exists(cfg.dataDir + QStringLiteral("/plugins")));
+        QVERIFY(r.pluginRoot().startsWith(cfg.sharedDir));
+    }
+
+    /// #88: the built resolver.zip packs JD's core; only plugins are loose files and the
+    /// jars a headless resolver never loads stay out. Skips without a built zip.
+    void bundledZip_layout()
+    {
+        const QString zip = Ed3kJdResolver::findBundledZip();
+        if (zip.isEmpty())
+            QSKIP("no resolver.zip: run scripts/build-hoster-resolver.sh");
+        ArchiveReader reader;
+        QVERIFY2(reader.open(zip), qPrintable(reader.lastError()));
+        const QStringList names = reader.entryNames();
+        QVERIFY(names.contains(QStringLiteral("resolver/Core.jar")));
+        QVERIFY(names.contains(QStringLiteral("resolver/revision.txt")));
+        QVERIFY(names.contains(QStringLiteral("resolver/jd/plugins/hoster/ArchiveOrg.class")));
+        QVERIFY(names.contains(QStringLiteral("resolver/libs/seamless-util.jar")));   // ArchiveOrg uses it
+        QVERIFY(names.contains(QStringLiteral("resolver/libs/bcprov-jdk15on.jar")));
+        qsizetype files = 0;
+        for (const QString& n : names) {
+            QVERIFY2(!n.startsWith(QStringLiteral("resolver/classes/")), qPrintable(n));
+            const QString base = n.section(u'/', -1);
+            for (const auto* dropped : {"cling-", "seamless-http", "seamless-xml", "jsvg", "jna_platform.jar"})
+                QVERIFY2(!(n.startsWith(QStringLiteral("resolver/libs/")) && base.startsWith(QLatin1StringView(dropped))), qPrintable(n));
+            if (!n.endsWith(u'/'))
+                ++files;
+            if (n.endsWith(QStringLiteral(".class")))
+                QVERIFY2(n.startsWith(QStringLiteral("resolver/jd/plugins/hoster/"))
+                             || n.startsWith(QStringLiteral("resolver/jd/plugins/decrypter/")),
+                         qPrintable(n));
+        }
+        QVERIFY2(files < 4000, qPrintable(QString::number(files)));
+    }
+
+    /// off: a request fails at once and creates no JD folder
+    void jdResolver_offCreatesNoJdDir()
+    {
+        QTemporaryDir tmp;
+        const QString data = tmp.filePath(QStringLiteral("cfg/ed3k/resolver"));
+        Ed3kJdResolver r;
+        JdResolverConfig cfg;
+        cfg.dataDir = data;
+        cfg.java = QStringLiteral("/usr/bin/java");
+        cfg.enabled = false;
+        r.setConfig(cfg);
+        QSignalSpy spy(&r, &Ed3kResolver::taskEvent);
+        r.match(QStringLiteral("https://x.example/"));
+        QTRY_COMPARE(spy.size(), 1);
+        QCOMPARE(spy.at(0).at(1).value<ResolverEvent>().kind, ResolverEvent::Kind::Failed);
+        QVERIFY(!QFileInfo::exists(tmp.filePath(QStringLiteral("cfg"))));
+    }
+
+    /// one folder for ed3k: the runtime under config/ed3k/java
+    void javaRuntime_livesUnderEd3kDir()
+    {
+        QTemporaryDir tmp;
+        const QString ed3kDir = tmp.filePath(QStringLiteral("Config/ed3k"));
+        Ed3kJavaRuntime java(ed3kDir);
+        QCOMPARE(java.runtimeDir(), ed3kDir + QStringLiteral("/java/jre"));
+    }
+
+    /// a runtime an older version fetched to <eMuleQt>/runtime/jre is moved in, not fetched again
+    void javaRuntime_oldRuntimeDirIsMoved()
+    {
+        QTemporaryDir tmp;
+        const QString legacy = tmp.filePath(QStringLiteral("runtime/jre"));
+        QVERIFY(QDir().mkpath(legacy + QStringLiteral("/bin")));
+        {
+            QFile f(legacy + QStringLiteral("/release"));
+            QVERIFY(f.open(QIODevice::WriteOnly));
+            f.write("JAVA_VERSION=\"21\"");
+        }
+        const QString ed3kDir = tmp.filePath(QStringLiteral("Config/ed3k"));
+        Ed3kJavaRuntime java(ed3kDir, legacy);
+        java.locate(QString());
+        QVERIFY(QFileInfo::exists(ed3kDir + QStringLiteral("/java/jre/release")));
+        QVERIFY(!QFileInfo::exists(legacy));
+        QVERIFY(!QFileInfo::exists(tmp.filePath(QStringLiteral("runtime"))));
+    }
+
     /// nothing is fetched until hoster downloads are switched on
     void javaRuntime_downloadNeedsHosters()
     {
@@ -1195,6 +1535,13 @@ private slots:
         cfg.zip = zip;
         resolver.setConfig(cfg);
         QVERIFY2(resolver.available(), qPrintable(resolver.unavailableReason()));
+        // a puzzle image of an earlier run: cleared when the sidecar starts
+        const QString oldPuzzle = tmp.filePath(QStringLiteral("resolver/jd/captchas/k2s.cc/old.jpg"));
+        QVERIFY(QDir().mkpath(QFileInfo(oldPuzzle).path()));
+        QFile f(oldPuzzle);
+        QVERIFY(f.open(QIODevice::WriteOnly));
+        f.write("jpg");
+        f.close();
 
         Ed3kSession session;
         QVERIFY(session.start(loopback(tmp.filePath(QStringLiteral("cfg")))));
@@ -1214,6 +1561,7 @@ private slots:
         QCOMPARE(item.name, QStringLiteral("mpthreetest.mp3"));
         QCOMPARE(QFileInfo(item.file).size(), qint64(198658));
         QVERIFY(!item.rootHex.isEmpty());
+        QVERIFY(!QFileInfo::exists(oldPuzzle));
     }
 
     /// Resume through the real sidecar: the front of the file in data.part, JD goes on from

@@ -79,10 +79,10 @@ public:
     /// MFC: CSearchResultsWnd::LocalEd2kSearchEnd — srchybrid/SearchResultsWnd.cpp:455-470.
     void onLocalAnswerReceived();
 
-    /// Wired to SearchList::tabHeaderUpdated. MFC gives up on the rest of the server
-    /// list once a search has collected more than MAX_RESULTS hits, on the grounds
-    /// that the query was too broad to be worth flooding every server with.
-    /// MFC: CSearchResultsWnd::AddEd2kSearchResults — srchybrid/SearchResultsWnd.cpp:1552-1556.
+    /// Wired to SearchList::tabHeaderUpdated. Gives up on the rest of the server list
+    /// once a search holds 400 files: the query is too broad to flood every server.
+    /// MFC stops past 100 sources (CSearchResultsWnd::AddEd2kSearchResults,
+    /// srchybrid/SearchResultsWnd.cpp:1552-1556), which one server's answer always hit (#92).
     void onResultCountChanged(uint32 searchID);
 
 signals:

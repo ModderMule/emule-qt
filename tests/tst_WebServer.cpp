@@ -592,6 +592,10 @@ private slots:
     void incomingListingDrawsTheSameMarksAsEveryOtherList();
     void everySpriteTokenTheTemplateAsksForExists();
     void aCustomTemplateOverridesAssetsOneFileAtATime();
+    void assetsComeFromTheBundleWhenConfigIsEmpty();
+    void aConfigFileOverridesTheBundledAsset();
+    void swaggerIsServedFromTheBundle();
+    void templateFallsBackToTheBundle();
     void theTemplateRowsAskForPerFileIcons();
     void theTemplateLeavesSizeAndRateUnitsToTheValue();
 
@@ -783,6 +787,8 @@ void tst_WebServer::initTestCase()
     m_webServer->setSharedFileList(m_sharedFiles.get());
     m_webServer->setSearchList(m_searchList.get());
     m_webServer->setPreferences(m_preferences.get());
+    // no bundle: what is served comes from the fixture's config dir only
+    m_webServer->setBundleDir(QString());
 
     // The actions go through the shared core operations, which work on theApp.
     theApp.downloadQueue = m_downloadQueue.get();
@@ -1397,6 +1403,7 @@ std::unique_ptr<WebServer> tst_WebServer::startServer(
     server->setSharedFileList(m_sharedFiles.get());
     server->setSearchList(m_searchList.get());
     server->setPreferences(m_preferences.get());
+    server->setBundleDir(QString());   // a test that wants one sets it in tweak
 
     WebServerConfig config;
     config.enabled = true;
@@ -2851,6 +2858,102 @@ void tst_WebServer::aCustomTemplateOverridesAssetsOneFileAtATime()
     if (eMule::testing::makeSymlink(secret, themeDir.filePath(QStringLiteral("leak.css"))))
         QCOMPARE(rawGetStatus(p, QStringLiteral("/leak.css"), /*withKey*/ false), 404);
 
+    server->stop();
+    m_preferences->setConfigDir(prevCfg);
+}
+
+void tst_WebServer::assetsComeFromTheBundleWhenConfigIsEmpty()
+{
+    // #88: config/webserver holds only overrides; the shipped files are served from
+    // the program folder
+    eMule::testing::TempDir cfgDir;
+    eMule::testing::TempDir bundleDir;
+    QVERIFY(QDir().mkpath(bundleDir.filePath(QStringLiteral("webserver"))));
+    {
+        QFile f(bundleDir.filePath(QStringLiteral("webserver/sprites.css")));
+        QVERIFY(f.open(QIODevice::WriteOnly));
+        f.write("BUNDLED");
+    }
+    const QString prevCfg = m_preferences->configDir();
+    m_preferences->setConfigDir(cfgDir.path());
+
+    auto server = startServer(true, false, {}, [&](WebServer& ws, WebServerConfig&) { ws.setBundleDir(bundleDir.path()); });
+    QCOMPARE(rawGetBody(server->port(), QStringLiteral("/sprites.css")).trimmed(), QStringLiteral("BUNDLED"));
+    QCOMPARE(rawGetStatus(server->port(), QStringLiteral("/missing.css"), false), 404);
+    // traversal out of the bundle root fails like for the other roots
+    QCOMPARE(rawGetStatus(server->port(), QStringLiteral("/..css"), false), 404);
+
+    server->stop();
+    m_preferences->setConfigDir(prevCfg);
+}
+
+void tst_WebServer::aConfigFileOverridesTheBundledAsset()
+{
+    eMule::testing::TempDir cfgDir;
+    eMule::testing::TempDir bundleDir;
+    const auto write = [](const QString& path, const QByteArray& body) {
+        QDir().mkpath(QFileInfo(path).absolutePath());
+        QFile f(path);
+        QVERIFY(f.open(QIODevice::WriteOnly));
+        f.write(body);
+    };
+    write(bundleDir.filePath(QStringLiteral("webserver/sprites.css")), "BUNDLED");
+    write(bundleDir.filePath(QStringLiteral("webserver/favicon.ico")), "BUNDLED-ICO");
+    write(cfgDir.filePath(QStringLiteral("webserver/sprites.css")), "MINE");
+    const QString prevCfg = m_preferences->configDir();
+    m_preferences->setConfigDir(cfgDir.path());
+
+    auto server = startServer(true, false, {}, [&](WebServer& ws, WebServerConfig&) { ws.setBundleDir(bundleDir.path()); });
+    // the user's copy wins; what it does not override still comes from the bundle
+    QCOMPARE(rawGetBody(server->port(), QStringLiteral("/sprites.css")).trimmed(), QStringLiteral("MINE"));
+    QCOMPARE(rawGetBody(server->port(), QStringLiteral("/favicon.ico")).trimmed(), QStringLiteral("BUNDLED-ICO"));
+
+    // deleting the override brings the shipped one back
+    QVERIFY(QFile::remove(cfgDir.filePath(QStringLiteral("webserver/sprites.css"))));
+    QCOMPARE(rawGetBody(server->port(), QStringLiteral("/sprites.css")).trimmed(), QStringLiteral("BUNDLED"));
+
+    server->stop();
+    m_preferences->setConfigDir(prevCfg);
+}
+
+void tst_WebServer::swaggerIsServedFromTheBundle()
+{
+    eMule::testing::TempDir cfgDir;
+    eMule::testing::TempDir bundleDir;
+    QVERIFY(QDir().mkpath(bundleDir.filePath(QStringLiteral("webserver"))));
+    {
+        QFile f(bundleDir.filePath(QStringLiteral("webserver/swagger-ui.css")));
+        QVERIFY(f.open(QIODevice::WriteOnly));
+        f.write("/* swagger css */");
+    }
+    Preferences prefs;
+    prefs.setConfigDir(cfgDir.path());
+    auto server = startServer(false, true, {}, [&](WebServer& ws, WebServerConfig&) {
+        ws.setPreferences(&prefs);
+        ws.setBundleDir(bundleDir.path());
+    });
+    const Response r = sendRaw(server->port(), "GET", QStringLiteral("/api/v1/docs/swagger-ui.css"));
+    QCOMPARE(r.statusCode, 200);
+    QCOMPARE(r.rawBody, QByteArrayLiteral("/* swagger css */"));
+    server->stop();
+}
+
+void tst_WebServer::templateFallsBackToTheBundle()
+{
+    // no config/eMule.tmpl and no custom template: the shipped one
+    eMule::testing::TempDir cfgDir;
+    const QString prevCfg = m_preferences->configDir();
+    m_preferences->setConfigDir(cfgDir.path());
+
+    auto bare = startServer(true, false);
+    const QString without = rawGetBody(bare->port(), QStringLiteral("/"));
+    bare->stop();
+    QVERIFY(!without.contains(QStringLiteral("name=\"p\"")));
+
+    auto server = startServer(true, false, {}, [](WebServer& ws, WebServerConfig&) {
+        ws.setBundleDir(eMule::testing::projectDataDir() + QStringLiteral("/config"));
+    });
+    QVERIFY(rawGetBody(server->port(), QStringLiteral("/")).contains(QStringLiteral("name=\"p\"")));   // the login form
     server->stop();
     m_preferences->setConfigDir(prevCfg);
 }

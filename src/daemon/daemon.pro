@@ -114,6 +114,7 @@ SOURCES += \
     IpcTlsIdentity.cpp \
     main.cpp \
     MetaSearchService.cpp \
+    AutoUpdater.cpp \
     PowerManager.cpp \
     UsenetBridge.cpp \
     BandwidthCoordinator.cpp \
@@ -127,6 +128,7 @@ HEADERS += \
     ApiEventFeeder.h \
     BtBridge.h \
     Ed3kBridge.h \
+    Ed3kOffGate.h \
     Ed3kFriendsBridge.h \
     Ed3kRoomsBridge.h \
     Ed3kNamesBridge.h \
@@ -145,6 +147,7 @@ HEADERS += \
     IpcServer.h \
     IpcTlsIdentity.h \
     MetaSearchService.h \
+    AutoUpdater.h \
     PowerManager.h \
     UsenetBridge.h \
     BandwidthCoordinator.h \

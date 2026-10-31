@@ -3,9 +3,9 @@
 #ifdef EMULE_HAVE_HOSTER_JD
 
 #include "net/HttpDefaults.h"
+#include "net/HttpStreamDownload.h"
 #include "utils/Log.h"
 
-#include <QCryptographicHash>
 #include <QDir>
 #include <QDirIterator>
 #include <QFile>
@@ -41,9 +41,10 @@ QString exe(const QString& name)
 
 } // namespace
 
-Ed3kJavaRuntime::Ed3kJavaRuntime(QString baseDir, QObject* parent)
+Ed3kJavaRuntime::Ed3kJavaRuntime(QString baseDir, QString legacyDir, QObject* parent)
     : QObject(parent)
     , m_baseDir(std::move(baseDir))
+    , m_legacyDir(std::move(legacyDir))
 {
 }
 
@@ -58,13 +59,14 @@ Ed3kJavaRuntime::~Ed3kJavaRuntime()
 
 QString Ed3kJavaRuntime::runtimeDir() const
 {
-    return QDir(m_baseDir).filePath(QStringLiteral("runtime/jre"));
+    return QDir(m_baseDir).filePath(QStringLiteral("java/jre"));
 }
 
 void Ed3kJavaRuntime::locate(const QString& prefPath)
 {
     if (m_state == State::Probing || m_state == State::Downloading || m_state == State::Unpacking)
         return;
+    adoptLegacy();
     m_info.reset();
     m_queue = candidates(prefPath);
     setState(State::Probing);
@@ -293,17 +295,9 @@ void Ed3kJavaRuntime::onMetadata()
         return;
     }
     m_package = *pkg;
-    QDir().mkpath(QDir(m_baseDir).filePath(QStringLiteral("runtime")));
-    m_file = std::make_unique<QFile>(QDir(m_baseDir).filePath(QStringLiteral("runtime/") + m_package.name + QStringLiteral(".part")));
-    if (!m_file->open(QIODevice::WriteOnly | QIODevice::Truncate)) {
-        setState(State::Failed, m_file->errorString());
-        m_file.reset();
-        return;
-    }
-    m_sha = std::make_unique<QCryptographicHash>(QCryptographicHash::Sha256);
-    m_reply = m_nam->get(Http::makeRequest(QUrl(m_package.link)));
-    connect(m_reply, &QNetworkReply::readyRead, this, &Ed3kJavaRuntime::onPackageData);
-    connect(m_reply, &QNetworkReply::downloadProgress, this, [this](qint64 got, qint64 total) {
+    QDir().mkpath(QDir(m_baseDir).filePath(QStringLiteral("java")));
+    m_dl = std::make_unique<HttpStreamDownload>(m_nam.get());
+    connect(m_dl.get(), &HttpStreamDownload::progress, this, [this](qint64 got, qint64 total) {
         const qint64 all = total > 0 ? total : m_package.size;
         const int pct = all > 0 ? int(std::min<qint64>(100, got * 100 / all)) : 0;
         if (pct != m_progress) {
@@ -311,49 +305,52 @@ void Ed3kJavaRuntime::onMetadata()
             emit stateChanged();
         }
     });
-    connect(m_reply, &QNetworkReply::finished, this, &Ed3kJavaRuntime::onPackageDone);
+    connect(m_dl.get(), &HttpStreamDownload::finished, this, &Ed3kJavaRuntime::onPackageDone);
+    const QString archive = QDir(m_baseDir).filePath(QStringLiteral("java/") + m_package.name);
+    if (!m_dl->start(QUrl(m_package.link), archive, {kMaxPackage, m_package.checksum, 0})) {
+        const QString err = m_dl->errorString();
+        m_dl.reset();
+        setState(State::Failed, err);
+    }
 }
 
-void Ed3kJavaRuntime::onPackageData()
+void Ed3kJavaRuntime::onPackageDone(bool ok)
 {
-    if (!m_reply || !m_file)
+    if (!m_dl)
         return;
-    const QByteArray chunk = m_reply->readAll();
-    if (m_file->size() + chunk.size() > kMaxPackage || m_file->write(chunk) != chunk.size()) {
-        abortTransfer();
-        setState(State::Failed, tr("Could not write the Java runtime"));
+    const HttpStreamDownload::Error err = m_dl->error();
+    const QString errText = m_dl->errorString();
+    m_dl.release()->deleteLater();   // we are inside its signal
+    if (!ok) {
+        switch (err) {
+        case HttpStreamDownload::Error::HashMismatch:
+            setState(State::Failed, tr("The Java runtime download is damaged (SHA-256 mismatch)"));
+            break;
+        case HttpStreamDownload::Error::Network:
+            setState(State::Failed, errText);
+            break;
+        default:
+            setState(State::Failed, tr("Could not write the Java runtime"));
+            break;
+        }
         return;
     }
-    m_sha->addData(chunk);
+    unpack(QDir(m_baseDir).filePath(QStringLiteral("java/") + m_package.name));
 }
 
-void Ed3kJavaRuntime::onPackageDone()
+void Ed3kJavaRuntime::adoptLegacy()
 {
-    QNetworkReply* r = m_reply;
-    if (!r || !m_file)
+    if (m_legacyDir.isEmpty() || !QFileInfo(m_legacyDir).isDir() || QFileInfo::exists(runtimeDir()))
         return;
-    onPackageData();
-    if (!m_file)
-        return;
-    r->deleteLater();
-    m_reply = nullptr;
-    const QString part = m_file->fileName();
-    m_file->close();
-    m_file.reset();
-    if (r->error() != QNetworkReply::NoError) {
-        QFile::remove(part);
-        setState(State::Failed, r->errorString());
+    QDir().mkpath(QFileInfo(runtimeDir()).absolutePath());
+    if (!QDir().rename(m_legacyDir, runtimeDir())) {
+        logEd3kWarning(QStringLiteral("hoster: cannot move the Java runtime %1 to %2").arg(m_legacyDir, runtimeDir()));
         return;
     }
-    if (QString::fromLatin1(m_sha->result().toHex()) != m_package.checksum) {
-        QFile::remove(part);
-        setState(State::Failed, tr("The Java runtime download is damaged (SHA-256 mismatch)"));
-        return;
-    }
-    const QString archive = part.chopped(5);
-    QFile::remove(archive);
-    QFile::rename(part, archive);
-    unpack(archive);
+    logEd3k(QStringLiteral("hoster: Java runtime moved to %1").arg(runtimeDir()));
+    // <eMuleQt>/runtime: gone once nothing else is left in it
+    const QString parent = QFileInfo(m_legacyDir).absolutePath();
+    QDir().rmdir(parent);
 }
 
 void Ed3kJavaRuntime::unpack(const QString& archive)
@@ -442,11 +439,7 @@ void Ed3kJavaRuntime::abortTransfer()
         r->abort();
         r->deleteLater();
     }
-    if (m_file) {
-        const QString part = m_file->fileName();
-        m_file.reset();
-        QFile::remove(part);
-    }
+    m_dl.reset();   // removes the part file
 }
 
 } // namespace eMule::ed3k

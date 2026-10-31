@@ -89,11 +89,17 @@ void showTimedMessageBox(const QString& text, bool isError)
 
 void processCommandLine(QCommandLineParser& parser, const QCoreApplication& app)
 {
+    processCommandLine(parser, app, app.arguments());
+}
+
+void processCommandLine(QCommandLineParser& parser, const QCoreApplication& app, const QStringList& args)
+{
+    Q_UNUSED(app);
 #ifdef Q_OS_WIN
     if (wouldShowMessageBox()) {
         QString text;
         bool isError = false;
-        if (!parser.parse(app.arguments())) {
+        if (!parser.parse(args)) {
             text = parser.errorText();
             isError = true;
         } else {
@@ -111,7 +117,7 @@ void processCommandLine(QCommandLineParser& parser, const QCoreApplication& app)
         std::exit(isError ? EXIT_FAILURE : EXIT_SUCCESS);
     }
 #endif
-    parser.process(app);
+    parser.process(args);
 }
 
 } // namespace eMule

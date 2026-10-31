@@ -27,6 +27,8 @@ EMULEUSENET_GUID = "{1BDD4987-DC42-5349-9E57-C6E045319FE7}"
 EMULEINDEXER_GUID = "{3F2A6C41-9D18-4B77-A5E4-6B0C1D2E8A73}"
 EMULEBT_GUID = "{EFB1FFAF-37F7-57F7-B433-11426F819533}"
 EMULEED3K_GUID = "{1C170FEE-EBD2-54F0-9048-AA6C9F7FE73A}"
+EMULEQT_MCP_GUID = "{3F250015-8D8C-5B5A-9D6F-9DBA63092320}"
+EMULEQT_UPDATER_GUID = "{0F06CD43-CBCD-4E5D-A90A-B3A4028B2A92}"
 VS_CPP_PROJECT_TYPE = "{8BC9CEB8-8B4A-11D0-8D11-00A0C91BC942}"
 VS_FOLDER_TYPE = "{2150E333-8FDC-42A3-9474-1A3956D46DE8}"
 TESTS_FOLDER_GUID = "{E0A0B5F0-0001-0001-0001-000000000001}"
@@ -318,6 +320,12 @@ ED3K_EXTRAS = TestExtras(
     deps=(EMULEBT_GUID, EMULEED3K_GUID), folder="Ed3k")
 
 TEST_EXTRAS: dict[str, TestExtras] = {
+    # runs the built updater exe; relative to the bin\<Config> run dir like the data dirs
+    "tst_Updater": TestExtras(defines="EMULEQT_UPDATER_PATH=../../bin/$(Configuration)/emuleqt-updater.exe;",
+                              deps=(EMULEQT_UPDATER_GUID,), folder="Daemon"),
+    # compiles the daemon source standalone (tests/CMakeLists.txt)
+    "tst_AutoUpdater": TestExtras(includes=("src/daemon",), sources=("src/daemon/AutoUpdater.cpp",),
+                                  folder="Daemon"),
     "tst_BtSmoke": TestExtras(includes=BT_INCLUDES, defines=BT_DEFINES, libs=BT_LIBS,
                               deps=(EMULEBT_GUID,), folder="BitTorrent"),
     "tst_BtLocalSwarm": TestExtras(includes=BT_INCLUDES, defines=BT_DEFINES, libs=BT_LIBS,
@@ -706,6 +714,9 @@ def generate_sln(test_names: list[str]) -> str:
         ("emulecored", "daemon\\emulecored.vcxproj", "{4ECEE8D7-03DE-3DE1-A2C6-C56B3BD68584}",
          [EMULECORE_GUID, EMULEIPC_GUID, EMULEINDEXER_GUID, EMULEUSENET_GUID, EMULEBT_GUID,
           EMULEED3K_GUID]),
+        ("emuleqt-mcp", "mcpbridge\\emuleqt-mcp.vcxproj", EMULEQT_MCP_GUID,
+         [EMULECORE_GUID, EMULEIPC_GUID, EMULEINDEXER_GUID, EMULEUSENET_GUID]),
+        ("emuleqt-updater", "updater\\emuleqt-updater.vcxproj", EMULEQT_UPDATER_GUID, []),
         ("emuleqt", "gui\\emuleqt.vcxproj", "{CEA0CD5B-F0C0-3EB9-8BEA-C9CEDA11C838}",
          [EMULECORE_GUID, EMULEIPC_GUID, EMULEBT_GUID]),
     ]

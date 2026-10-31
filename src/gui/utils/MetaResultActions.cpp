@@ -235,7 +235,8 @@ void MetaResultActions::sendDownload(quint32 searchID, const Row& row, int categ
 
 void MetaResultActions::fetchMeta(quint32 searchID, const Row& row, const QString& failText,
                                   std::function<void(const QCborMap& data)> onData,
-                                  std::function<bool(const QString& reason)> onFail, bool inspect)
+                                  std::function<bool(const QString& reason)> onFail, bool inspect,
+                                  std::function<void()> onCancel)
 {
     if (!m_ipc || !m_ipc->isConnected())
         return;
@@ -247,16 +248,17 @@ void MetaResultActions::fetchMeta(quint32 searchID, const Row& row, const QStrin
     msg.append(inspect);
 
     QPointer<MetaResultActions> self(this);
-    m_ipc->sendRequest(std::move(msg), [self, searchID, row, failText, onData, onFail, inspect](const IpcMessage& resp) {
+    m_ipc->sendRequest(std::move(msg), [self, searchID, row, failText, onData, onFail, inspect,
+                                        onCancel](const IpcMessage& resp) {
         if (!self || !resp.isValid())
             return;
         if (!resp.fieldBool(0)) {
-            const auto retry = [self, searchID, row, failText, onData, onFail, inspect] {
+            const auto retry = [self, searchID, row, failText, onData, onFail, inspect, onCancel] {
                 if (self)
-                    self->fetchMeta(searchID, row, failText, onData, onFail, inspect);
+                    self->fetchMeta(searchID, row, failText, onData, onFail, inspect, onCancel);
             };
             const QString reason = resp.fieldString(1);
-            if (!self->handleAuth(resp.fieldMap(2), retry) && !(onFail && onFail(reason)))
+            if (!self->handleAuth(resp.fieldMap(2), retry, onCancel) && !(onFail && onFail(reason)))
                 self->warn(failText.arg(row.name, reason));
             return;
         }
@@ -383,7 +385,10 @@ void MetaResultActions::showDetails(quint32 searchID, const Row& row,
         if (dlg)
             dlg->setError(reason);
         return true;
-    }, true);
+    }, true, [dlg] {
+        if (dlg)
+            dlg->setError(tr("Login cancelled: the file was not fetched."));
+    });
 }
 
 void MetaResultActions::showIndexerDetails(quint32 searchID, const QString& resultId,
@@ -407,7 +412,8 @@ void MetaResultActions::showIndexerDetails(quint32 searchID, const QString& resu
     });
 }
 
-bool MetaResultActions::handleAuth(const QCborMap& meta, std::function<void()> retry)
+bool MetaResultActions::handleAuth(const QCborMap& meta, std::function<void()> retry,
+                                   std::function<void()> onCancel)
 {
     const auto status = static_cast<MetaStatus>(meta.value(QStringLiteral("status")).toInteger());
     if (status != MetaStatus::AuthRequired && status != MetaStatus::AccountInactive)
@@ -416,7 +422,7 @@ bool MetaResultActions::handleAuth(const QCborMap& meta, std::function<void()> r
     if (server.isEmpty())
         return false;
 
-    m_retries[server].append(std::move(retry));
+    m_retries[server].append({std::move(retry), std::move(onCancel)});
     if (auto dlg = m_dialogs.value(server)) {
         dlg->updateMeta(meta);
         return true;
@@ -435,9 +441,12 @@ bool MetaResultActions::handleAuth(const QCborMap& meta, std::function<void()> r
                 return;
             self->m_dialogs.remove(server);
             const auto retries = self->m_retries.take(server);
-            if (result == QDialog::Accepted)
-                for (const auto& r : retries)
-                    r();
+            for (const auto& r : retries) {
+                if (result == QDialog::Accepted)
+                    r.retry();
+                else if (r.onCancel)
+                    r.onCancel();
+            }
         });
         dlg->open();
     });

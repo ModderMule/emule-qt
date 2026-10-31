@@ -31,11 +31,26 @@ namespace eMule {
     merged.insert(QLatin1StringView("multiCount"), files.size());
 
     for (const char* key : {"fileSize", "completedSize", "downTransferred", "sourceCount",
-                            "transferringSrcCount", "a4afSourceCount", "mediaLength"}) {
+                            "transferringSrcCount", "a4afSourceCount", "mediaLength",
+                            "sizeOnDisk", "datarate", "validSourceCount", "nnpSourceCount",
+                            "compressionGain", "corruptionLoss", "recoveredParts",
+                            "ed3kBytes", "ed3kSources", "ed3kTransferring"}) {
         qint64 sum = 0;
         for (const QCborMap& f : files)
             sum += num(f, key);
         merged.insert(QLatin1StringView(key), sum);
+    }
+    // Downloads get the grouped General page; shared files keep the flat one
+    merged.insert(QLatin1StringView("isDownload"),
+                  !files.isEmpty() && std::ranges::all_of(files, [](const QCborMap& f) {
+                      return f.contains(QLatin1StringView("downTransferred"));
+                  }));
+    // How many files have each hashset (MFC FileDetailDialogInfo.cpp:268-298)
+    for (const char* key : {"md4HashsetAvailable", "aichHashsetAvailable", "ed3kEnabled"}) {
+        merged.insert(QString(QString::fromLatin1(key) + QStringLiteral("Count")),
+                      static_cast<qint64>(std::ranges::count_if(files, [key](const QCborMap& f) {
+                          return f.value(QLatin1StringView(key)).toBool();
+                      })));
     }
     const qint64 size = num(merged, "fileSize");
     merged.insert(QLatin1StringView("percentCompleted"),

@@ -18,6 +18,7 @@
 #       emuleqt          GUI executable
 #       emulecored       daemon executable
 #       emuleqt-mcp      MCP stdio bridge for AI clients
+#       emuleqt-updater  auto-update installer (no Qt, no launcher)
 #       lib/             Qt libraries (only with deploy-qt)
 #       plugins/         Qt plugins  (only with deploy-qt)
 #       config/          default config data (nodes.dat, eMule.tmpl, …)
@@ -53,6 +54,7 @@ esac
 GUI_BIN="$BUILD_DIR/src/gui/emuleqt"
 DAEMON_BIN="$BUILD_DIR/src/daemon/emulecored"
 MCP_BIN="$BUILD_DIR/src/mcpbridge/emuleqt-mcp"
+UPDATER_BIN="$BUILD_DIR/src/updater/emuleqt-updater"
 
 # -- Sanity checks -----------------------------------------------------------
 
@@ -74,6 +76,12 @@ if [ ! -f "$MCP_BIN" ]; then
     exit 1
 fi
 
+if [ ! -f "$UPDATER_BIN" ]; then
+    echo "Error: updater binary not found at $UPDATER_BIN"
+    echo "Build it first:  cmake --build $BUILD_DIR --target emuleqt-updater"
+    exit 1
+fi
+
 # -- Assemble staging directory ----------------------------------------------
 
 STAGE_DIR="$BUILD_DIR/stage/eMuleQt"
@@ -86,9 +94,13 @@ cp "$GUI_BIN" "$STAGE_DIR/emuleqt"
 cp "$DAEMON_BIN" "$STAGE_DIR/emulecored"
 cp "$MCP_BIN" "$STAGE_DIR/emuleqt-mcp"
 chmod +x "$STAGE_DIR/emuleqt" "$STAGE_DIR/emulecored" "$STAGE_DIR/emuleqt-mcp"
+# no wrap_launcher: no Qt deps, and it runs from <configDir>/update without lib/
+cp "$UPDATER_BIN" "$STAGE_DIR/emuleqt-updater"
+chmod +x "$STAGE_DIR/emuleqt-updater"
 echo "  emuleqt"
 echo "  emulecored"
 echo "  emuleqt-mcp"
+echo "  emuleqt-updater"
 # Hoster resolver (scripts/build-hoster-resolver.sh): next to the daemon, optional
 RESOLVER_ZIP="${EMULE_RESOLVER_ZIP:-$BUILD_DIR/hoster-resolver/resolver.zip}"
 if [ -f "$RESOLVER_ZIP" ]; then
@@ -404,7 +416,8 @@ echo "=== Auditing direct dependencies ==="
 BASE_SONAMES=" libc.so.6 libm.so.6 libstdc++.so.6 libgcc_s.so.1 $LD_SONAME \
 libpthread.so.0 libdl.so.2 librt.so.1 libGL.so.1 libEGL.so.1 "
 UNBUNDLED=0
-for bin in "$STAGE_DIR/emuleqt.bin" "$STAGE_DIR/emulecored.bin" "$STAGE_DIR/emuleqt-mcp.bin"; do
+for bin in "$STAGE_DIR/emuleqt.bin" "$STAGE_DIR/emulecored.bin" "$STAGE_DIR/emuleqt-mcp.bin" \
+           "$STAGE_DIR/emuleqt-updater"; do
     [ -f "$bin" ] || continue
     for soname in $(readelf -d "$bin" | awk '/\(NEEDED\)/ { gsub(/[][]/, "", $NF); print $NF }'); do
         [ -f "$STAGE_DIR/lib/$soname" ] && continue
@@ -440,7 +453,7 @@ if [ -n "${GLIBC_MAX:-}" ]; then
             echo "  ${elf#"$STAGE_DIR"/} needs GLIBC_$need" >&2
             TOO_NEW=1
         fi
-    done < <(find "$STAGE_DIR" -type f \( -name '*.bin' -o -name '*.so*' \) -print0)
+    done < <(find "$STAGE_DIR" -type f \( -name '*.bin' -o -name '*.so*' -o -name emuleqt-updater \) -print0)
     if [ "$TOO_NEW" -ne 0 ]; then
         echo "Error: bundle needs a newer glibc than $GLIBC_MAX (build on an older runner)." >&2
         exit 1
@@ -452,7 +465,7 @@ fi
 # A file that fails to reach the tarball is otherwise found by a user.
 
 MISSING=0
-for rel in emuleqt emulecored emuleqt-mcp lib/libspecialdlp.so \
+for rel in emuleqt emulecored emuleqt-mcp emuleqt-updater lib/libspecialdlp.so \
            config/eMule.tmpl config/FakeFileFilter.dat config/webserver/swagger-ui-bundle.js \
            config/webserver/swagger-ui.css config/webserver/swagger-ui.LICENSE.txt \
            doc/openapi.json doc/rest-api.md; do

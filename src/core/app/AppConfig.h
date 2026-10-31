@@ -4,8 +4,8 @@
 /// @brief Application config directory helpers.
 ///
 /// Centralises platform-specific config directory resolution and
-/// first-run seeding of bundled data files (nodes.dat, webserver assets,
-/// eMule.tmpl, etc.).
+/// first-run seeding of bundled data files (nodes.dat, eMule.tmpl, etc.).
+/// Web UI assets are served from the bundle; config/webserver only holds overrides.
 
 #include "utils/Types.h"   // pulls in generated config.h (EMULE_VERSION_STRING)
 
@@ -109,9 +109,19 @@ public:
     /// delegates to seedFrom(). Does nothing when there is no bundle.
     static SeedReport seedBundledData(const QString& configDir);
 
+    /// The bundled config directory next to the running binary (first of
+    /// bundleCandidates() that exists); empty without one.
+    [[nodiscard]] static QString bundledDataDir();
+
+    /// Bundle folder that is served from the bundle and never seeded: config/webserver
+    /// holds only the user's overrides (and a README saying so).
+    static constexpr QLatin1StringView kWebDirName{"webserver"};
+
     /// Sync @p configDir against @p bundleDir.
     ///
-    /// Managed assets (eMule.tmpl, webserver/*) track the bundle; the files in
+    /// Managed assets (eMule.tmpl, ...) track the bundle; webserver/ is not seeded
+    /// (served from the bundle; seeded copies of an older version are pruned unless
+    /// edited, an edited one stays as an override) and gets a README; the files in
     /// kSeedOnce are live data the app rewrites and are only ever copied when
     /// missing. Staleness is decided on SHA-256, three ways, against the
     /// manifest written by the last pass -- never on mtime, which git does not

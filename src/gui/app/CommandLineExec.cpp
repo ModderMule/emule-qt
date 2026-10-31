@@ -46,6 +46,8 @@ void CommandLineExec::parse(QApplication& app)
     m_parser.addOption(m_clientDetailsOption);
     m_parser.addOption(m_configOption);
     m_parser.addOption(m_newInstanceOption);
+    m_afterUpdateOption.setFlags(QCommandLineOption::HiddenFromHelp);
+    m_parser.addOption(m_afterUpdateOption);
     m_parser.addOption(m_registerTypesOption);
     m_parser.addOption(m_unregisterTypesOption);
 
@@ -60,6 +62,7 @@ void CommandLineExec::parse(QApplication& app)
     m_screenshotMode = m_parser.isSet(m_screenshotOption);
     m_screenshotPath = m_parser.value(m_screenshotOption);
     m_newInstance = m_parser.isSet(m_newInstanceOption);
+    m_afterUpdate = m_parser.isSet(m_afterUpdateOption);
     m_screenshotDelay = m_parser.value(m_delayOption).toInt();
     m_clientDetailsHash = m_parser.value(m_clientDetailsOption);
     m_positionalArgs = m_parser.positionalArguments();

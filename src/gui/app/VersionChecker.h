@@ -3,6 +3,8 @@
 /// @file VersionChecker.h
 /// @brief HTTP-based version checker — fetches latest version from emule-qt.org.
 
+#include "app/VersionManifest.h"   // src/core
+
 #include <QDate>
 #include <QObject>
 #include <QString>
@@ -17,38 +19,24 @@ class VersionChecker : public QObject {
     Q_OBJECT
 
 public:
-    /// Everything emuleqt-version.json advertises.
-    ///
-    /// Fields the document omits stay empty; @ref error is the only thing that makes
-    /// the manifest unusable. A missing or placeholder download entry is normal — the
-    /// manifest announces a release before every platform's binary exists.
-    struct Manifest {
-        QString latest;        ///< "latest", e.g. "0.2.0"
-        QDate   date;          ///< "date" (ISO-8601 instant), invalid when absent/malformed
-        QString releaseNotes;  ///< "releaseNotes"
-        QString minVersion;    ///< "minVersion"
-        QString downloadUrl;   ///< this platform's "downloads" entry, empty when unusable
-        QString error;         ///< why the document could not be used; empty on success
-
-        [[nodiscard]] bool isValid() const { return error.isEmpty(); }
-    };
+    /// Everything emuleqt-version.json advertises (core/app/VersionManifest.h).
+    using Manifest = VersionManifestInfo;
 
     /// Parse a manifest document. Pure: no network, no preferences, no widgets.
-    [[nodiscard]] static Manifest parse(const QByteArray& json);
+    [[nodiscard]] static Manifest parse(const QByteArray& json) { return VersionManifest::parse(json); }
 
     /// True when @p remote is a strictly higher version than @p local. Compares
     /// numerically, so 0.10.0 beats 0.9.0; unparseable input is never newer.
-    [[nodiscard]] static bool isNewer(const QString& remote, const QString& local);
+    [[nodiscard]] static bool isNewer(const QString& remote, const QString& local)
+    {
+        return VersionManifest::isNewer(remote, local);
+    }
 
-    /// Key this build looks itself up under in the manifest's "downloads" map —
-    /// "mac-arm64", "windows-x64", … Empty on an OS/CPU combination the manifest
-    /// has no entry for, in which case no download URL is ever offered.
-    [[nodiscard]] static QString platformKey();
+    /// Key this build looks itself up under in the manifest's "downloads" map.
+    [[nodiscard]] static QString platformKey() { return VersionManifest::platformKey(); }
 
-    /// URL the check fetches. Overridable through EMULEQT_VERSION_MANIFEST_URL so the
-    /// dialogs can be exercised against a fixture; it only ever decides which message
-    /// box appears, never what gets downloaded.
-    [[nodiscard]] static QString manifestUrl();
+    /// URL the check fetches; EMULEQT_VERSION_MANIFEST_URL overrides it.
+    [[nodiscard]] static QString manifestUrl() { return VersionManifest::manifestUrl(); }
 
     explicit VersionChecker(QObject* parent = nullptr);
 
@@ -96,4 +84,3 @@ private:
 
 } // namespace eMule
 
-Q_DECLARE_METATYPE(eMule::VersionChecker::Manifest)

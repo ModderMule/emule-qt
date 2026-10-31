@@ -7,7 +7,9 @@
 #include "app/AppContext.h"
 #include "utils/OtherFunctions.h"
 
+#include <QDateTime>
 #include <QSignalSpy>
+#include <algorithm>
 #include <QTest>
 
 using namespace eMule;
@@ -103,6 +105,9 @@ private slots:
     // hole-punch extension (ed2k-server#39)
     void ext_keepaliveObfuscatedOnceKeyKnown();
     void ext_requestCarriesKeepalive();
+    void ext_skipsEvenTargetAndIPv6Session();
+    void ext_keyOutlivesLostPublicIP();
+    void sessionKeyUDP_rules();
     void ext_wakeUp_burstsAndWaitsForInfo();
     void ext_info_roleDecidesDialer();
     void ext_noInfo_fallsBackToLugdunum();
@@ -555,7 +560,7 @@ void tst_NatRendezvous::ext_requestCarriesKeepalive()
     logInExtension(f);
     f.hub->process();
     f.env->udp.clear();
-    QVERIFY(f.hub->start(f.peerOnServer(78)));     // even: ed2k-server path only
+    QVERIFY(f.hub->start(f.peerOnServer(79)));     // odd: 0x1000 target, ed2k-server path first
     QCOMPARE(f.env->tcp.size(), size_t{1});
     auto ka = f.env->udpWith(OP_EDONKEYPROT, OP_SERVER_NATT_KEEPALIVE);
     QCOMPARE(ka.size(), size_t{1});
@@ -626,10 +631,10 @@ void tst_NatRendezvous::ext_info_roleDecidesDialer()
     {
         HubFixture f;
         logInExtension(f);
-        const PeerInfo peer = f.peerOnServer(78);
+        const PeerInfo peer = f.peerOnServer(79);
         QVERIFY(f.hub->start(peer));
-        f.hub->handleServerTcp(OP_LOWID_HOLEPUNCH_INFO, infoExt(peer.hash, 78, 1, CONNECT_OPT_CRYPT_SUPPORTED));
-        const QByteArray h = handoff(peer.hash, 78, kPeerTcp, kPeerV6);
+        f.hub->handleServerTcp(OP_LOWID_HOLEPUNCH_INFO, infoExt(peer.hash, 79, 1, CONNECT_OPT_CRYPT_SUPPORTED));
+        const QByteArray h = handoff(peer.hash, 79, kPeerTcp, kPeerV6);
         f.hub->handleFrame(OP_NATT_FRAME_IPV6HANDOFF, bytes(h), uint32(h.size()), Endpoint(kPeerIP, kPeerUdp), true);
         for (int i = 0; i < 10; ++i)
             f.advance(1000);
@@ -639,10 +644,10 @@ void tst_NatRendezvous::ext_info_roleDecidesDialer()
     {
         HubFixture f;
         logInExtension(f);
-        const PeerInfo peer = f.peerOnServer(78);
+        const PeerInfo peer = f.peerOnServer(79);
         QVERIFY(f.hub->start(peer));
-        f.hub->handleServerTcp(OP_LOWID_HOLEPUNCH_INFO, infoExt(peer.hash, 78, 0, CONNECT_OPT_CRYPT_SUPPORTED));
-        const QByteArray h = handoff(peer.hash, 78, kPeerTcp, kPeerV6, true);
+        f.hub->handleServerTcp(OP_LOWID_HOLEPUNCH_INFO, infoExt(peer.hash, 79, 0, CONNECT_OPT_CRYPT_SUPPORTED));
+        const QByteArray h = handoff(peer.hash, 79, kPeerTcp, kPeerV6, true);
         f.hub->handleFrame(OP_NATT_FRAME_IPV6HANDOFF, bytes(h), uint32(h.size()), Endpoint(kPeerIP, kPeerUdp), true);
         QCOMPARE(f.env->dials.size(), size_t{1});
     }
@@ -742,9 +747,9 @@ void tst_NatRendezvous::ext_peerCrypt_obfuscatesOrFails()
         HubFixture f;
         logInExtension(f);
         f.env->connectOptions = CONNECT_OPT_CRYPT_SUPPORTED | CONNECT_OPT_CRYPT_REQUESTED | CONNECT_OPT_CRYPT_REQUIRED;
-        const PeerInfo peer = f.peerOnServer(78);
+        const PeerInfo peer = f.peerOnServer(79);
         QVERIFY(f.hub->start(peer));
-        f.hub->handleServerTcp(OP_LOWID_HOLEPUNCH_INFO, infoExt(peer.hash, 78, 0, 0));
+        f.hub->handleServerTcp(OP_LOWID_HOLEPUNCH_INFO, infoExt(peer.hash, 79, 0, 0));
         QCOMPARE(f.env->failed.size(), size_t{1});
         QVERIFY(f.env->udpWith(OP_EMULEPROT, OP_HOLEPUNCH).empty());
         // and an unsolicited one starts nothing
@@ -956,6 +961,94 @@ void tst_NatRendezvous::quic_framesGoToTransport()
                        uint8(OP_NATT_FRAME_KEY)})
         f.hub->handleFrame(type, frame, sizeof(frame), Endpoint(kPeerIP, kPeerUdp), true);
     QCOMPARE(f.env->quicFrames.size(), size_t{4});
+}
+
+void tst_NatRendezvous::ext_skipsEvenTargetAndIPv6Session()
+{
+    const auto sent0x60 = [](const HubFixture& f) {
+        return std::ranges::any_of(f.env->tcp, [](const SentTcp& t) { return t.opcode == OP_LOWID_HOLEPUNCH_REQUEST; });
+    };
+    // our LowID is odd: the server hands out Lugdunum's IDs, an even one is a stock client
+    {
+        HubFixture f;
+        logInExtension(f);
+        f.hub->start(f.peerOnServer(78));
+        QVERIFY(!sent0x60(f));
+        QVERIFY(f.hub->start(f.peerOnServer(79)));
+        QVERIFY(sent0x60(f));
+    }
+    // no Lugdunum IDs here: parity says nothing
+    {
+        HubFixture f;
+        theApp.setPublicIP(Address::fromString(QStringLiteral("198.51.100.20")).toNetworkUint32());
+        f.env->logIn(kServerIP, kServerPort, SrvTcpFlag::LowIdHolePunch);
+        QVERIFY(f.hub->start(f.peerOnServer(78)));
+        QVERIFY(sent0x60(f));
+    }
+    // a session over IPv6 has no IPv4 endpoint to hand out (0x62 reason 5)
+    {
+        HubFixture f;
+        logInExtension(f);
+        f.env->sessionAddress = Address::fromString(QStringLiteral("2001:db8::34"));
+        f.hub->start(f.peerOnServer(79));
+        QVERIFY(!sent0x60(f));
+    }
+}
+
+void tst_NatRendezvous::ext_keyOutlivesLostPublicIP()
+{
+    const Address ourIP = Address::fromString(QStringLiteral("198.51.100.20"));
+    HubFixture f;
+    f.env->sessionStartMs = QDateTime::currentMSecsSinceEpoch() - 1000;
+    logInExtension(f);                              // key stamped with ourIP, this session
+    f.hub->process();
+    auto ka = f.env->udpWith(OP_EDONKEYPROT, OP_SERVER_NATT_KEEPALIVE);
+    QCOMPARE(ka.size(), size_t{1});
+    QCOMPARE(ka[0].serverKey, kServerKey);
+
+    // Kad gone, our IP unknown: the session's key still holds
+    theApp.setPublicIP(0);
+    const int refreshes = f.env->keyRefreshes;
+    f.advance(60000);
+    ka = f.env->udpWith(OP_EDONKEYPROT, OP_SERVER_NATT_KEEPALIVE);
+    QCOMPARE(ka.size(), size_t{2});
+    QCOMPARE(ka[1].serverKey, kServerKey);
+    QCOMPARE(ka[1].to, Endpoint(kServerIP, kObfPort));
+    QCOMPARE(f.env->keyRefreshes, refreshes);
+
+    // another known IP contradicts the stamp: skipped, fresh key asked for
+    theApp.setPublicIP(Address::fromString(QStringLiteral("203.0.113.9")).toNetworkUint32());
+    f.advance(60000);
+    QCOMPARE(f.env->udpWith(OP_EDONKEYPROT, OP_SERVER_NATT_KEEPALIVE).size(), size_t{2});
+    QVERIFY(f.env->keyRefreshes > refreshes);
+    theApp.setPublicIP(ourIP.toNetworkUint32());
+}
+
+void tst_NatRendezvous::sessionKeyUDP_rules()
+{
+    const uint32 ipA = Address::fromString(QStringLiteral("198.51.100.20")).toNetworkUint32();
+    const uint32 ipB = Address::fromString(QStringLiteral("203.0.113.9")).toNetworkUint32();
+    const qint64 before = QDateTime::currentMSecsSinceEpoch() - 1000;
+    const qint64 after = QDateTime::currentMSecsSinceEpoch() + 60000;
+    Server s(kServerIP, kServerPort);
+
+    theApp.setPublicIP(0);
+    s.setServerKeyUDP(kServerKey);                  // stamped for no IP
+    QCOMPARE(s.serverKeyUDP(), 0u);
+    QCOMPARE(s.sessionKeyUDP(before), kServerKey);  // received this session
+    QCOMPARE(s.sessionKeyUDP(after), 0u);           // from an earlier session
+    QCOMPARE(s.sessionKeyUDP(0), 0u);               // logged out
+    theApp.setPublicIP(ipA);                        // learned later: no contradiction
+    QCOMPARE(s.sessionKeyUDP(before), kServerKey);
+
+    s.setServerKeyUDP(kServerKey);                  // stamped ipA
+    QCOMPARE(s.sessionKeyUDP(after), kServerKey);   // valid the MFC way, any session
+    theApp.setPublicIP(0);
+    QCOMPARE(s.sessionKeyUDP(before), kServerKey);
+    QCOMPARE(s.sessionKeyUDP(after), 0u);
+    theApp.setPublicIP(ipB);                        // contradiction
+    QCOMPARE(s.sessionKeyUDP(before), 0u);
+    theApp.setPublicIP(ipA);
 }
 
 QTEST_GUILESS_MAIN(tst_NatRendezvous)

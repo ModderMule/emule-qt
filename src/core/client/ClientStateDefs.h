@@ -129,7 +129,16 @@ enum class ConnectingState : uint8 {
     KadCallback,
     ServerCallback,
     Preconditions,
-    NatRendezvous       // LowID<->LowID: waiting for the NAT rendezvous (net/natt)
+    NatRendezvous,      // LowID<->LowID: waiting for the NAT rendezvous (net/natt)
+    Ed3kHint            // derived user hash: ed3k tried first, eD2K after (ed3k §14.2)
+};
+
+/// ed3k for a download source with a derived user hash (ed3k Protocol.md §14.2, §14.4).
+enum class Ed3kRoute : uint8 {
+    Untried,
+    Pending,    // ed3k attempt running
+    Preferred,  // reached over ed3k: no eD2K download from it
+    Failed      // no ed3k (no hint, unanswered): eD2K as before
 };
 
 enum class IdentState : uint8 {

@@ -12,8 +12,12 @@
 ///   / setPriority (eMule's kPr*: 0 low, 1 normal, 2 high, 3 very high, 4 very low) / clearCompleted.
 /// - list() / info(): snapshots (Ed3kDownloadInfo); signals added, changed (coalesced, at
 ///   most once a second), progress (bytes held), completed (final path), failed, removed.
-/// - setDirs(temp, incoming): <temp>/<root hex>.ed3k.part while it runs; the complete file
-///   moves to the target (a free name next to it when taken).
+/// - setDirs(temps, incoming): <first temp>/<root hex>.ed3k.part while it runs, its progress
+///   beside it in <root hex>.ed3k.part.met; the complete file moves to the target (a free name
+///   next to it when taken). Every temp dir is scanned for *.ed3k.part.met (setDirs, start):
+///   the two files copied from another machine are a download here (targets under the incoming
+///   dir are kept relative).
+/// - setOwner: an unfinished row to another owner (Ed3kSets: members of a set not here → kOwner).
 /// - setCompletedHook: called after the move (daemon: SharedFileList adds the file).
 ///   setSharedElsewhere / releaseShare: another sharer (Ed3kShared) holds the root now;
 ///   this class forgets its share without closing it on the engine.
@@ -21,7 +25,7 @@
 /// Mechanics are Ed3kJoinBase's (owner = the spec's owner, member = a stable id per
 /// download): Kad sources, streams, block requests. wantedBlocks = the missing 256 KiB
 /// blocks; each verified block is written into the part file and marked in a bitmap
-/// (saved, debounced: Config/ed3k/downloads.dat). Complete: hashed on a worker (root and
+/// (saved, debounced, into the .met; Config/ed3k/downloads.dat keeps the complete rows). Complete: hashed on a worker (root and
 /// size must agree; else the bitmap is dropped and it downloads again), moved, shared
 /// (Publish::Both, keywords unless holding back) and kept (keepMember) for a restart.
 /// Pieces (4 MiB) held are shared while it runs once the block values are in.
@@ -37,6 +41,7 @@
 
 #include <QDateTime>
 #include <QString>
+#include <QStringList>
 #include <QTimer>
 
 #include <cstdint>
@@ -98,7 +103,8 @@ public:
     /// Owner of the downloads a user started (search rows, links).
     static inline const QString kOwner = QStringLiteral("dl");
 
-    /// @p configDir: the state goes to <configDir>/ed3k/downloads.dat (loaded here).
+    /// @p configDir: complete rows go to <configDir>/ed3k/downloads.dat (loaded here); the
+    /// unfinished ones come from the temp dirs (setDirs).
     Ed3kDownloads(Ed3kSession& session, const QString& configDir, QObject* parent = nullptr);
     ~Ed3kDownloads() override;
 
@@ -108,8 +114,10 @@ public:
     /// Saves and closes every download; the list stays (shown while the node is off).
     void stop() override;
 
-    /// Part files go to @p tempDir, complete files without a target to @p incomingDir.
-    void setDirs(const QString& tempDir, const QString& incomingDir);
+    /// Part files go to the first of @p tempDirs (all are scanned for .met files), complete
+    /// files without a target to @p incomingDir.
+    void setDirs(const QStringList& tempDirs, const QString& incomingDir);
+    void setDirs(const QString& tempDir, const QString& incomingDir) { setDirs(QStringList{tempDir}, incomingDir); }
     /// The incoming dir of a category (eMule's categories); empty: the incoming dir.
     void setCategoryDir(std::function<QString(int)> dirOf) { m_categoryDir = std::move(dirOf); }
     /// After a file was verified and moved (and shared here).
@@ -130,6 +138,8 @@ public:
     bool cancel(const ::ed3k::Root& root);
     bool setPriority(const ::ed3k::Root& root, int priority);
     bool setCategory(const ::ed3k::Root& root, int category);
+    /// An unfinished download to @p owner (Ed3kSets: an imported member of an unknown set).
+    bool setOwner(const ::ed3k::Root& root, const QString& owner);
     /// Complete rows leave the list; their files stay (served on by the share list, if it took them).
     void clearCompleted();
 
@@ -177,6 +187,7 @@ private:
         std::vector<bool> have;          ///< per 256 KiB block
         ::ed3k::Bytes hashes;            ///< block values (event::Hashes), for sharing pieces
         bool sharedByList = false;       ///< complete, served by another sharer
+        bool metDirty = false;           ///< the .met is behind
         std::uint64_t received = 0;      ///< bytes this run (rate)
         std::uint64_t lastReceived = 0;
     };
@@ -196,14 +207,21 @@ private:
     void sharePieces(Entry& e);
     void fail(Entry& e, const QString& error);
     void markChanged();
+    /// The entry changed: its .met is written at the next save.
+    void touch(Entry& e);
     void onTick();
     void load();
+    /// Takes up the *.ed3k.part.met of the temp dirs not in the list yet.
+    void scanTempDirs();
+    [[nodiscard]] std::optional<Entry> readMet(const QString& metPath) const;
+    void writeMet(Entry& e);
+    [[nodiscard]] static QString metPathOf(const Entry& e) { return e.info.partPath + QStringLiteral(".met"); }
     [[nodiscard]] QString partPathOf(const ::ed3k::Root& root) const;
     [[nodiscard]] static QString freePath(const QString& path);
 
     std::map<::ed3k::Root, Entry> m_entries;
     int m_nextId = 0;
-    QString m_tempDir;
+    QStringList m_tempDirs;
     QString m_incomingDir;
     std::function<void(const Ed3kDownloadInfo&)> m_completedHook;
     std::function<bool(const ::ed3k::Root&)> m_sharedElsewhere;

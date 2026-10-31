@@ -6,9 +6,13 @@
 #include "app/KnownCores.h"
 #include "IpcTls.h"
 
+#include "app/AppConfig.h"
 #include "prefs/Preferences.h"
 #include "utils/Log.h"
 
+#include <QCborArray>
+#include <QCoreApplication>
+#include <QDir>
 #include <QPointer>
 #include <QSslConfiguration>
 
@@ -128,6 +132,7 @@ static QString ipcMsgTypeName(Ipc::IpcMsgType type)
     case T::PushLogBatch:         return QStringLiteral("PushLogBatch");
     case T::PushCoreLoading:      return QStringLiteral("PushCoreLoading");
     case T::PushCoreRestarting:   return QStringLiteral("PushCoreRestarting");
+    case T::PushCoreUpdating:     return QStringLiteral("PushCoreUpdating");
     case T::PushSharedFileUpdate: return QStringLiteral("PushSharedFileUpdate");
     case T::PushSharedFileRemoved: return QStringLiteral("PushSharedFileRemoved");
     case T::PushUploadUpdate:     return QStringLiteral("PushUploadUpdate");
@@ -1086,6 +1091,8 @@ void IpcClient::onMessageReceived(const IpcMessage& msg)
         m_loadStage = msg.fieldString(4);
         // Field 5: the core's pid; 0 from an older core
         m_corePid = msg.fieldInt(5);
+        // Field 6: the core runs with --autoupdate
+        m_coreAutoUpdate = msg.fieldBool(6);
         setCoreLink(msg.fieldBool(3) ? CoreLink::Loading : CoreLink::Ready);
         logInfo(QStringLiteral("IPC handshake complete — daemon version: %1")
                     .arg(msg.fieldString(0)));
@@ -1197,8 +1204,14 @@ void IpcClient::performHandshake()
 {
     IpcMessage handshake(IpcMsgType::Handshake, m_nextSeqId++);
     handshake.append(QString::fromLatin1(ProtocolVersion));
-    if (!m_authToken.isEmpty())
-        handshake.append(m_authToken);   // inside TLS whenever set (onSocketConnected)
+    handshake.append(m_authToken);   // "" = none; inside TLS whenever set (onSocketConnected)
+    // Fields 2-4: who we are, so the auto-updater can reopen this GUI
+    handshake.append(QStringLiteral("gui"));
+    handshake.append(QCoreApplication::applicationPid());
+    QCborArray relaunch;
+    for (const QString& word : relaunchCommand())
+        relaunch.append(word);
+    handshake.append(relaunch);
     m_connection->sendMessage(handshake);
 }
 
@@ -1234,6 +1247,10 @@ void IpcClient::dispatchPushEvent(const IpcMessage& msg)
         break;
     case IpcMsgType::PushCoreRestarting:
         expectRestart();
+        break;
+    case IpcMsgType::PushCoreUpdating:
+        expectRestart();
+        emit coreUpdating(msg.fieldString(0), msg.fieldBool(1));
         break;
     case IpcMsgType::PushLogBatch:
         replayLogEntries(msg.fieldArray(0));
@@ -1564,6 +1581,30 @@ bool IpcClient::waitOnBusyCore(bool handshake)
         m_waitingOnBusyCore = true;
     }
     return true;
+}
+
+QStringList IpcClient::relaunchCommand()
+{
+    // --after-update: the core is still starting then, the GUI must not start a second one
+    QStringList args{QStringLiteral("--after-update")};
+    if (const QString dir = AppConfig::configDirOverride(); !dir.isEmpty())
+        args << QStringLiteral("--config") << QDir(dir).absolutePath();
+    const QString appDir = QCoreApplication::applicationDirPath();
+#ifdef Q_OS_MACOS
+    // <X>.app/Contents/MacOS: reopen the bundle so it is a proper app launch
+    const QString bundle = QDir::cleanPath(appDir + QStringLiteral("/../.."));
+    if (bundle.endsWith(QStringLiteral(".app"))) {
+        return QStringList{QStringLiteral("/usr/bin/open"), QStringLiteral("-a"), bundle,
+                           QStringLiteral("--args")} + args;
+    }
+#endif
+#ifdef Q_OS_WIN
+    const QString exe = appDir + QStringLiteral("/emuleqt.exe");
+#else
+    // Linux bundle: the launcher next to emuleqt.bin
+    const QString exe = appDir + QStringLiteral("/emuleqt");
+#endif
+    return QStringList{QDir::toNativeSeparators(exe)} + args;
 }
 
 void IpcClient::expectRestart()

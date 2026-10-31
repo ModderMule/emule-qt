@@ -52,6 +52,7 @@ public:
     uint8 connectOptions = CONNECT_OPT_CRYPT_SUPPORTED;
     std::optional<Server> server;
     Address sessionAddress;
+    qint64 sessionStartMs = 1;        // server login time (epoch ms) for Server::sessionKeyUDP()
     /// foreignServer(): servers by "ip:tcpPort"; probe() moves Unknown ones to Pending.
     std::map<QString, ForeignServer> foreignServers;
     std::vector<QString> foreignProbes;               // foreignServer(..., probe) that pinged
@@ -177,7 +178,7 @@ public:
     }
     [[nodiscard]] ServerUdpCrypt serverUdpCrypt() const override
     {
-        return server ? ServerUdpCrypt{server->serverKeyUDP(), server->obfuscationPortUDP()}
+        return server ? ServerUdpCrypt{server->sessionKeyUDP(sessionStartMs), server->obfuscationPortUDP()}
                       : ServerUdpCrypt{};
     }
     void refreshServerKey() override { ++keyRefreshes; }

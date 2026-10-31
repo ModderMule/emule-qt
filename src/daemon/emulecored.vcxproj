@@ -191,6 +191,7 @@
     <ClCompile Include="IpcTlsIdentity.cpp" />
     <ClCompile Include="main.cpp" />
     <ClCompile Include="MetaSearchService.cpp" />
+    <ClCompile Include="AutoUpdater.cpp" />
     <ClCompile Include="PowerManager.cpp" />
     <ClCompile Include="BtBridge.cpp" />
     <ClCompile Include="Ed3kBridge.cpp" />
@@ -219,6 +220,7 @@
     <QtMoc Include="IpcClientHandler.h" />
     <QtMoc Include="IpcServer.h" />
     <QtMoc Include="MetaSearchService.h" />
+    <QtMoc Include="AutoUpdater.h" />
     <QtMoc Include="PowerManager.h" />
     <ClInclude Include="DaemonApiBackend.h" />
     <ClInclude Include="Ed3kHosterBridge.h" />
@@ -228,6 +230,7 @@
     <ClInclude Include="WinShutdownHandler.h" />
     <ClInclude Include="BtBridge.h" />
     <ClInclude Include="Ed3kBridge.h" />
+    <ClInclude Include="Ed3kOffGate.h" />
     <ClInclude Include="Ed3kFriendsBridge.h" />
     <ClInclude Include="Ed3kRoomsBridge.h" />
     <ClInclude Include="Ed3kNamesBridge.h" />

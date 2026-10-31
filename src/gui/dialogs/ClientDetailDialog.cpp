@@ -41,11 +41,6 @@ double dbl(const QCborMap& m, QLatin1StringView key)
     return m.value(key).toDouble();
 }
 
-struct ValueRow {
-    QString   caption;
-    QLabel*   value = nullptr;   // null for a widget row (country)
-};
-
 /// Bold "label:" caption, right-aligned as in a QFormLayout.
 QLabel* gridCaption(const QString& label)
 {
@@ -65,33 +60,6 @@ void addGridRow(QGridLayout* grid, int row, int col, const QString& label, const
     valueLabel->setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Preferred);
     grid->addWidget(gridCaption(label), row, col);
     grid->addWidget(valueLabel, row, col + 1, 1, span, Qt::AlignTop);
-}
-
-/// Every caption/value pair of @p page in order, forms and grids alike.
-QList<ValueRow> valueRows(const QWidget* page)
-{
-    const auto pair = [](const QLayoutItem* labelItem, const QLayoutItem* fieldItem) {
-        const auto* caption = labelItem ? qobject_cast<QLabel*>(labelItem->widget()) : nullptr;
-        return ValueRow{caption ? caption->text() : QString{},
-                        fieldItem ? qobject_cast<QLabel*>(fieldItem->widget()) : nullptr};
-    };
-    QList<ValueRow> rows;
-    for (const auto* grid : page->findChildren<QGridLayout*>()) {
-        for (int r = 0; r < grid->rowCount(); ++r) {
-            for (int c = 0; c + 1 < grid->columnCount(); c += 2) {
-                const auto* labelItem = grid->itemAtPosition(r, c);
-                // a spanned value covers this cell too: not a caption
-                if (labelItem && (c == 0 || labelItem != grid->itemAtPosition(r, c - 1)))
-                    rows.append(pair(labelItem, grid->itemAtPosition(r, c + 1)));
-            }
-        }
-    }
-    for (const auto* form : page->findChildren<QFormLayout*>()) {
-        for (int i = 0; i < form->rowCount(); ++i)
-            rows.append(pair(form->itemAt(i, QFormLayout::LabelRole),
-                             form->itemAt(i, QFormLayout::FieldRole)));
-    }
-    return rows;
 }
 
 } // anonymous namespace
@@ -138,19 +106,9 @@ void ClientDetailDialog::applyDetails(const QCborMap& d)
 
     // Build off-screen and copy the texts over when the rows line up
     const std::unique_ptr<QWidget> fresh(buildContent(d));
-    const QList<ValueRow> now  = valueRows(m_content);
-    const QList<ValueRow> next = valueRows(fresh.get());
-    const bool sameRows = std::ranges::equal(now, next, [](const ValueRow& a, const ValueRow& b) {
-        return a.caption == b.caption && (a.value == nullptr) == (b.value == nullptr);
-    });
-    if (!sameRows) {
+    if (!copyValueTexts(m_content, fresh.get())) {
         setDetails(d);
         return;
-    }
-
-    for (qsizetype i = 0; i < now.size(); ++i) {
-        if (now[i].value && now[i].value->text() != next[i].value->text())
-            now[i].value->setText(next[i].value->text());
     }
     setWindowTitle(tr("Client Details: %1")
         .arg(str(d, QLatin1StringView("userName"))));

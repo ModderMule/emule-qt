@@ -173,6 +173,7 @@ private slots:
     void disconnect_clearsPublicIP();
     void lowIDLogin_reportedIP_adopted();
     void lowIDLogin_serverOwnReportedIP_notAdopted();
+    void acceptReportedIP_hairpinNeedsSecondSource();
 
     // StopConnectionTry
     void stopConnectionTry_clearsConnecting();
@@ -663,6 +664,28 @@ void tst_ServerConnect::lowIDLogin_serverOwnReportedIP_notAdopted()
 {
     // ed2k-server reports its own IP here; the loopback server's own is 127.0.0.1.
     QCOMPARE(publicIPAfterLowIDLogin(0x0100007F), uint32{0});
+}
+
+void tst_ServerConnect::acceptReportedIP_hairpinNeedsSecondSource()
+{
+    const uint32 pub = 0x070071CB;   // 203.113.0.7 dialed by its public address
+    const Address pubAddr = Address::fromNetworkOrder(pub);
+    const uint32 other = 0x0904020A;  // 10.2.4.9
+    Server srv(pubAddr, 4661);
+
+    // an observed IP that is not the server's own is taken
+    QVERIFY(ServerConnect::acceptReportedIP(other, pubAddr, &srv, 0));
+    QVERIFY(!ServerConnect::acceptReportedIP(0, pubAddr, &srv, 0));
+    // server's own address: old ed2k-server or hairpin — unknown, so dropped
+    QVERIFY(!ServerConnect::acceptReportedIP(pub, pubAddr, &srv, 0));
+    QVERIFY(!ServerConnect::acceptReportedIP(pub, pubAddr, &srv, other));
+    QVERIFY(!ServerConnect::acceptReportedIP(pub, Address(), &srv, 0));   // list entry match
+    // hairpin: Kad / server votes put us there too
+    QVERIFY(ServerConnect::acceptReportedIP(pub, pubAddr, &srv, pub));
+    // server dialed by its LAN address reports the shared public one
+    const Address lan = Address::fromNetworkOrder(0x0501A8C0);   // 192.168.1.5
+    Server lanSrv(lan, 4661);
+    QVERIFY(ServerConnect::acceptReportedIP(pub, lan, &lanSrv, 0));
 }
 
 void tst_ServerConnect::disconnect_whileNotConnected_returnsFalse()

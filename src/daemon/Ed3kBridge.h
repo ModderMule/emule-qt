@@ -18,6 +18,8 @@ namespace eMule {
 namespace ed3k {
 class Ed3kSession;
 class Ed3kBootstrap;
+class Ed3kEd2kJoin;
+class Ed3kShared;
 } // namespace ed3k
 
 namespace Ed3kBridge {
@@ -29,6 +31,19 @@ void setSession(ed3k::Ed3kSession* session);
 /// Node list sources and their asks (OpenEd3kNodesLink, AnswerEd3kBootstrapAsk); set by
 /// DaemonApp, null when absent.
 void setBootstrap(ed3k::Ed3kBootstrap* bootstrap);
+
+/// eD2K downloads joined from ed3k and files shared on ed3k, for File Details; set by
+/// DaemonApp, null when absent.
+void setEd2kJoin(ed3k::Ed3kEd2kJoin* join);
+void setShared(ed3k::Ed3kShared* shared);
+
+/// File Details of an eD2K download (16 B MD4): `ed3kEnabled` (join on); while the file is
+/// tracked also `ed3kTracked`, `ed3kSearching`, `ed3kRoot` (hex), `ed3kPair` (0 unknown,
+/// 1 trusted, 2 false), `ed3kBytes`, `ed3kSources`, `ed3kTransferring`. Nothing without ed3k.
+void appendDownloadInfo(QCborMap& details, const QByteArray& md4);
+/// The same for a shared file: `ed3kEnabled` (sharing on), `ed3kRoot` once hashed,
+/// `ed3kAliasPublished`, `ed3kKeywordsPublished`.
+void appendSharedInfo(QCborMap& details, const QByteArray& md4);
 
 /// Whether the daemon was built with the ed3k module.
 [[nodiscard]] bool available();

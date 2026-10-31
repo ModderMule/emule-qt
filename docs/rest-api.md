@@ -27,8 +27,9 @@ WebServer: MCP endpoint at http://localhost:4711/mcp
   (`EMULE_WRITE_OPENAPI=1 ./tst_WebServer api_checkedInOpenApiIsCurrent` rewrites it).
 - **`GET /api/v1/docs`** — Swagger UI on that document. Press *Authorize*, paste the API key,
   and every route can be tried from the page. The page and its two files are served by the
-  daemon itself (`webserver/swagger-ui-bundle.js`, `swagger-ui.css` in the config directory);
-  nothing is loaded from the internet.
+  daemon itself (`webserver/swagger-ui-bundle.js`, `swagger-ui.css` in the program folder's
+  bundled `config/`; a copy in the config directory's `webserver/` overrides it); nothing is
+  loaded from the internet.
 
 Neither needs a key: a browser cannot send a header for a page load, and they hold no secrets.
 Every call does.

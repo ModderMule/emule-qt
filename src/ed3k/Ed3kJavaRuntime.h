@@ -3,7 +3,7 @@
 /// @file Ed3kJavaRuntime.h
 /// @brief Finds a Java runtime for the hoster resolver, or downloads one (docs/hoster.md).
 ///
-/// Probe order: the pref, the downloaded runtime under <eMuleQt>/runtime/jre, $JAVA_HOME,
+/// Probe order: the pref, the downloaded runtime under <config>/ed3k/java/jre, $JAVA_HOME,
 /// macOS java_home, `java` on PATH, the usual install folders. Each candidate runs
 /// `java -XshowSettings:properties -version`; it must be Java 17 or newer and of the
 /// daemon's CPU architecture. With none found, Eclipse Temurin 21 (JRE) is fetched from
@@ -25,9 +25,9 @@
 
 class QNetworkAccessManager;
 class QNetworkReply;
-class QFile;
-class QCryptographicHash;
 class QProcess;
+
+namespace eMule { class HttpStreamDownload; }
 
 namespace eMule::ed3k {
 
@@ -47,13 +47,14 @@ public:
 
     enum class State { Unknown, Probing, Ready, Missing, Downloading, Unpacking, Failed };
 
-    /// @p baseDir: the eMuleQt folder; the runtime goes to <baseDir>/runtime/jre.
-    explicit Ed3kJavaRuntime(QString baseDir, QObject* parent = nullptr);
+    /// @p baseDir: the ed3k state dir; the runtime goes to <baseDir>/java/jre. @p legacyDir: a
+    /// runtime fetched by an older version (<eMuleQt>/runtime/jre), moved in by locate()
+    explicit Ed3kJavaRuntime(QString baseDir, QString legacyDir = {}, QObject* parent = nullptr);
     ~Ed3kJavaRuntime() override;
 
     /// Probes in order (async); stateChanged() when done. @p prefPath first when set.
     void locate(const QString& prefPath);
-    /// Fetches Temurin into <baseDir>/runtime/jre, then probes it. Refused (false) while
+    /// Fetches Temurin into <baseDir>/java/jre, then probes it. Refused (false) while
     /// not allowed: only a user who switched hoster downloads on gets a runtime fetched.
     bool download();
     /// Off: download() is refused and a running one is stopped (its files removed).
@@ -98,15 +99,17 @@ private:
     void probeFinished(const QString& java, const QByteArray& out);
     void setState(State s, const QString& error = {});
     void onMetadata();
-    void onPackageData();
-    void onPackageDone();
+    void onPackageDone(bool ok);
     void unpack(const QString& archive);
     void unpackDone(int exitCode);
+    /// The legacy runtime moved to runtimeDir() when there is none yet; its empty parent removed
+    void adoptLegacy();
     /// java under an unpacked JDK/JRE tree (Contents/Home on macOS).
     [[nodiscard]] static QString javaIn(const QString& home);
     void abortTransfer();
 
     QString m_baseDir;
+    QString m_legacyDir;
     bool m_allowed = false;
     State m_state = State::Unknown;
     std::optional<JavaInfo> m_info;
@@ -117,8 +120,7 @@ private:
     QNetworkProxy m_proxy{QNetworkProxy::DefaultProxy};
     std::unique_ptr<QNetworkAccessManager> m_nam;
     QPointer<QNetworkReply> m_reply;
-    std::unique_ptr<QFile> m_file;
-    std::unique_ptr<QCryptographicHash> m_sha;
+    std::unique_ptr<HttpStreamDownload> m_dl;
     Package m_package;
     QPointer<QProcess> m_tar;
 };

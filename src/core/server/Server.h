@@ -299,6 +299,12 @@ public:
     /// MFC: CServer::SetServerKeyUDP() — Server.cpp:329.
     void setServerKeyUDP(uint32 key);
 
+    /// NAT-T: serverKeyUDP(), or else a key received since @p sessionStartMs (epoch ms)
+    /// while nothing contradicts it. The server derived it from the address our UDP
+    /// reached it from, and while the TCP session lives that address is unchanged, also
+    /// when our public IP became unknown (Kad gone; ed2k-server never reports a LowID's).
+    [[nodiscard]] uint32 sessionKeyUDP(qint64 sessionStartMs) const;
+
     [[nodiscard]] uint32 serverKeyUDPIP() const         { return m_serverKeyUDPIP; }
     void setServerKeyUDPIP(uint32 ip)                   { m_serverKeyUDPIP = ip; }
 
@@ -432,6 +438,7 @@ private:
     uint32  m_loginCaps = 0;          // transient, never saved
     uint32  m_serverKeyUDP = 0;
     uint32  m_serverKeyUDPIP = 0;
+    qint64  m_serverKeyUDPAtMs = 0;   // transient: when setServerKeyUDP() ran
     bool    m_cryptPingReplyPending = false;
     bool    m_triedCryptOnce = false;
     bool    m_preferIPv6Session = false;   // transient, never saved

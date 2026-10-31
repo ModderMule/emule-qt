@@ -9,6 +9,7 @@
 #include "utils/Log.h"
 #include "utils/OtherFunctions.h"
 
+#include <QDateTime>
 #include <QUrl>
 
 namespace eMule {
@@ -81,6 +82,7 @@ Server::Server(const Server& other)
     , m_loginCaps(other.m_loginCaps)
     , m_serverKeyUDP(other.m_serverKeyUDP)
     , m_serverKeyUDPIP(other.m_serverKeyUDPIP)
+    , m_serverKeyUDPAtMs(other.m_serverKeyUDPAtMs)
     , m_cryptPingReplyPending(other.m_cryptPingReplyPending)
     , m_triedCryptOnce(other.m_triedCryptOnce)
     , m_auxPortsList(other.m_auxPortsList)
@@ -211,6 +213,18 @@ void Server::setServerKeyUDP(uint32 key)
     // the wrong IP.
     m_serverKeyUDP = key;
     m_serverKeyUDPIP = theApp.publicIP();
+    m_serverKeyUDPAtMs = QDateTime::currentMSecsSinceEpoch();
+}
+
+uint32 Server::sessionKeyUDP(qint64 sessionStartMs) const
+{
+    if (const uint32 key = serverKeyUDP())
+        return key;
+    if (m_serverKeyUDP == 0 || sessionStartMs <= 0 || m_serverKeyUDPAtMs < sessionStartMs)
+        return 0;
+    // hidden only by a known IP other than the one it was stamped with
+    const uint32 ip = theApp.publicIP();
+    return ip == 0 || m_serverKeyUDPIP == 0 || m_serverKeyUDPIP == ip ? m_serverKeyUDP : 0;
 }
 
 bool Server::isMetaApiUrl(const QString& url)

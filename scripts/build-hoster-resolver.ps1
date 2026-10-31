@@ -3,6 +3,7 @@
 #   build-hoster-resolver.ps1 [-JdDir <dir holding JDownloader, AppWorkUtils, JDBrowser, MyJDownloaderClient>] [-OutDir <out>]
 #
 # Needs a JDK 17 or newer (JAVA_HOME or javac on PATH). Output: <out>\resolver\ and <out>\resolver.zip.
+# Layout: Core.jar, loose jd\plugins\{hoster,decrypter}, libs\ (see the .sh).
 param(
     [string]$JdDir = '',
     [string]$OutDir = (Join-Path (Split-Path -Parent $PSScriptRoot) 'build\hoster-resolver')
@@ -24,12 +25,14 @@ foreach ($p in 'JDownloader', 'AppWorkUtils', 'JDBrowser', 'MyJDownloaderClient'
     if (-not (Test-Path (Join-Path $JdDir "$p\src"))) { throw "build-hoster-resolver: $JdDir\$p\src missing" }
 }
 $javac = if ($env:JAVA_HOME) { Join-Path $env:JAVA_HOME 'bin\javac.exe' } else { (Get-Command javac).Source }
+$jarTool = Join-Path (Split-Path -Parent $javac) 'jar.exe'
 if (-not (Test-Path $javac)) { throw 'build-hoster-resolver: need a JDK 17 or newer (set JAVA_HOME)' }
 
 $work = Join-Path $OutDir 'work'
 $res = Join-Path $OutDir 'resolver'
 Remove-Item -Recurse -Force $work, $res, (Join-Path $OutDir 'resolver.zip') -ErrorAction SilentlyContinue
-New-Item -ItemType Directory -Force -Path $work, (Join-Path $res 'classes'), (Join-Path $res 'libs') | Out-Null
+$classes = Join-Path $work 'classes'
+New-Item -ItemType Directory -Force -Path $classes, (Join-Path $res 'jd\plugins'), (Join-Path $res 'libs') | Out-Null
 
 $src = Join-Path $JdDir 'JDownloader\src'
 $jarDirs = 'JDownloader\ressourcen\libs', 'JDownloader\ressourcen\libs_ext', 'AppWorkUtils\libs', 'AppWorkUtils\dev_libs', 'JDBrowser\libs', 'MyJDownloaderClient\libs'
@@ -53,19 +56,23 @@ $rev = try { (& svn info --show-item revision (Join-Path $JdDir 'JDownloader')).
 Write-Host "== compiling $($files.Count) sources, JDownloader r$rev"
 $sp = @($src, (Join-Path $JdDir 'AppWorkUtils\src'), (Join-Path $JdDir 'JDBrowser\src'), (Join-Path $JdDir 'MyJDownloaderClient\src')) -join ';'
 & $javac -J-Xmx8g --release 17 -nowarn -proc:none -encoding UTF-8 -Xmaxerrs 200 -implicit:class -sourcepath $sp -cp $cp `
-    -d (Join-Path $res 'classes') "@$(Join-Path $work 'files.txt')" *> (Join-Path $work 'compile.log')
+    -d $classes "@$(Join-Path $work 'files.txt')" *> (Join-Path $work 'compile.log')
 if ($LASTEXITCODE -ne 0) { Get-Content (Join-Path $work 'compile.log') -Tail 40; throw 'build-hoster-resolver: compile failed' }
 
-$dropped = '^(synthetica|flatlaf|svnkit|sqljet|sequence-library|antlr-runtime|irclib|jsyntaxpane|sevenzipjbinding|zip4j|AppleJavaExtensions|libdbus|unix\.jar|hexdump\.jar|debug-disable\.jar)'
+$dropped = '^(synthetica|flatlaf|svnkit|sqljet|sequence-library|antlr-runtime|irclib|jsyntaxpane|sevenzipjbinding|zip4j|AppleJavaExtensions|libdbus|unix\.jar|hexdump\.jar|debug-disable\.jar|cling-|seamless-http|seamless-xml|jsvg|jna_platform\.jar)'
 foreach ($j in $jars) { if ($j.Name -notmatch $dropped) { Copy-Item $j.FullName (Join-Path $res 'libs') -Force } }
 foreach ($s in $src, (Join-Path $JdDir 'AppWorkUtils\src'), (Join-Path $JdDir 'JDBrowser\src')) {
     Get-ChildItem $s -Recurse -Include *.json, *.properties, *.lng, *.dat | Where-Object { $_.FullName -notmatch '\\\.svn\\' } | ForEach-Object {
         $rel = $_.FullName.Substring($s.Length + 1)
-        $dst = Join-Path (Join-Path $res 'classes') $rel
+        $dst = Join-Path $classes $rel
         New-Item -ItemType Directory -Force -Path (Split-Path $dst) | Out-Null
         Copy-Item $_.FullName $dst -Force
     }
 }
+# plugins loose next to Core.jar, the rest packed
+Move-Item (Join-Path $classes 'jd\plugins\hoster'), (Join-Path $classes 'jd\plugins\decrypter') (Join-Path $res 'jd\plugins')
+& $jarTool --create --file (Join-Path $res 'Core.jar') -C $classes .
+if ($LASTEXITCODE -ne 0) { throw 'build-hoster-resolver: jar failed' }
 Set-Content -Encoding ASCII (Join-Path $res 'revision.txt') $rev
 Copy-Item (Join-Path $root 'tools\hoster-resolver\LICENSE') (Join-Path $res 'LICENSE') -Force
 # tar.exe (bsdtar, Windows 10+): forward slashes in the zip, which Compress-Archive of PowerShell 5 does not write

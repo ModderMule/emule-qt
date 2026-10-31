@@ -18,6 +18,7 @@
 #include <QDesktopServices>
 #include <QEvent>
 #include <QFormLayout>
+#include <QGridLayout>
 #include <QLabel>
 #include <QKeySequence>
 #include <QPointer>
@@ -26,6 +27,7 @@
 #include <QTimer>
 #include <QToolButton>
 
+#include <algorithm>
 #include <memory>
 #include <utility>
 
@@ -275,6 +277,98 @@ void connectKadNotesSearch(DetailDialog* dialog, IpcClient* ipc,
     });
 }
 
+// ── live refresh ───────────────────────────────────────────────────────
+
+void connectLiveRefresh(DetailDialog* dialog, IpcClient* ipc, DetailRequestFactory makeRequest,
+                        int intervalMs)
+{
+    if (!dialog || !ipc || !makeRequest)
+        return;
+    QPointer<DetailDialog> dlgPtr(dialog);
+    auto* timer = new QTimer(dialog);
+    auto pending = std::make_shared<bool>(false);
+    QObject::connect(timer, &QTimer::timeout, dialog,
+        [ipc, dlgPtr, pending, makeRequest = std::move(makeRequest)] {
+            if (!dlgPtr || *pending || !ipc->isConnected() || !dlgPtr->isVisible() || dlgPtr->isMinimized())
+                return;
+            const QString key = dlgPtr->subjectKey();
+            if (key.isEmpty())
+                return;
+            *pending = true;
+            ipc->sendRequest(makeRequest(key), [dlgPtr, pending, key](const Ipc::IpcMessage& r) {
+                *pending = false;
+                if (dlgPtr && dlgPtr->subjectKey() == key && r.fieldBool(0))
+                    dlgPtr->refreshLive(r.field(1).toMap());
+            });
+        });
+    timer->start(intervalMs);
+}
+
+namespace {
+
+struct ValueRow {
+    QString caption;
+    QLabel* value = nullptr;   // null for a widget row (country)
+};
+
+/// Every caption/value pair of @p page in order, forms and grids alike.
+QList<ValueRow> valueRows(const QWidget* page)
+{
+    const auto pair = [](const QLayoutItem* labelItem, const QLayoutItem* fieldItem) {
+        const auto* caption = labelItem ? qobject_cast<QLabel*>(labelItem->widget()) : nullptr;
+        return ValueRow{caption ? caption->text() : QString{},
+                        fieldItem ? qobject_cast<QLabel*>(fieldItem->widget()) : nullptr};
+    };
+    QList<ValueRow> rows;
+    for (const auto* grid : page->findChildren<QGridLayout*>()) {
+        for (int r = 0; r < grid->rowCount(); ++r) {
+            for (int c = 0; c + 1 < grid->columnCount(); c += 2) {
+                const auto* labelItem = grid->itemAtPosition(r, c);
+                // a spanned value covers this cell too: not a caption
+                if (labelItem && (c == 0 || labelItem != grid->itemAtPosition(r, c - 1)))
+                    rows.append(pair(labelItem, grid->itemAtPosition(r, c + 1)));
+            }
+        }
+    }
+    for (const auto* form : page->findChildren<QFormLayout*>()) {
+        for (int i = 0; i < form->rowCount(); ++i)
+            rows.append(pair(form->itemAt(i, QFormLayout::LabelRole),
+                             form->itemAt(i, QFormLayout::FieldRole)));
+    }
+    return rows;
+}
+
+} // namespace
+
+bool copyValueTexts(QWidget* shown, const QWidget* fresh)
+{
+    if (!shown || !fresh)
+        return false;
+    const QList<ValueRow> now  = valueRows(shown);
+    const QList<ValueRow> next = valueRows(fresh);
+    const bool sameRows = std::ranges::equal(now, next, [](const ValueRow& a, const ValueRow& b) {
+        return a.caption == b.caption && (a.value == nullptr) == (b.value == nullptr);
+    });
+    if (!sameRows)
+        return false;
+    for (qsizetype i = 0; i < now.size(); ++i) {
+        QLabel* to = now[i].value;
+        const QLabel* from = next[i].value;
+        if (!to)
+            continue;
+        if (to->text() != from->text())
+            to->setText(from->text());
+        // a warning colour comes and goes (Type: invalid extension)
+        if (from->testAttribute(Qt::WA_SetPalette))
+            to->setPalette(from->palette());
+        else if (to->testAttribute(Qt::WA_SetPalette)) {
+            to->setPalette(QPalette());
+            to->setAttribute(Qt::WA_SetPalette, false);
+        }
+    }
+    return true;
+}
+
 // ── shared client-detail dialog ────────────────────────────────────────
 
 void showClientDetails(QWidget* parent, IpcClient* ipc, const QString& clientHash,
@@ -304,27 +398,12 @@ void showClientDetails(QWidget* parent, IpcClient* ipc, const QString& clientHas
                 connectDetailNavigation(dlg, ipc, Ipc::IpcMsgType::GetClientDetails);
             }
 
-            // Live values while open (MFC fills the sheet once). One request in flight at
-            // a time, and a reply for a client the walker has left is dropped.
-            QPointer<DetailDialog> dlgPtr(dlg);
-            auto* timer = new QTimer(dlg);
-            auto pending = std::make_shared<bool>(false);
-            QObject::connect(timer, &QTimer::timeout, dlg, [ipc, dlgPtr, pending] {
-                if (!dlgPtr || *pending || !ipc->isConnected())
-                    return;
-                const QString key = dlgPtr->subjectKey();
-                if (key.isEmpty())
-                    return;
-                *pending = true;
+            // Live values while open (MFC fills the sheet once)
+            connectLiveRefresh(dlg, ipc, [](const QString& key) {
                 Ipc::IpcMessage req(Ipc::IpcMsgType::GetClientDetails);
                 req.append(key);
-                ipc->sendRequest(std::move(req), [dlgPtr, pending, key](const Ipc::IpcMessage& r) {
-                    *pending = false;
-                    if (dlgPtr && dlgPtr->subjectKey() == key && r.fieldBool(0))
-                        dlgPtr->applyDetails(r.field(1).toMap());
-                });
-            });
-            timer->start(1000);
+                return req;
+            }, 1000);
 
             dlg->show();
         });

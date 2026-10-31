@@ -21,6 +21,7 @@
 #         emuleqt          <- GUI executable
 #         emulecored       <- daemon executable
 #         emuleqt-mcp      <- MCP stdio bridge for AI clients
+#         emuleqt-updater  <- auto-update installer (no Qt)
 #       Frameworks/        <- Qt frameworks (if macdeployqt runs)
 #       Resources/
 #         config/          <- default config files (nodes.dat, eMule.tmpl, …)
@@ -84,6 +85,19 @@ cp "$MCP_BIN" "$MACOS_DIR/emuleqt-mcp"
 chmod +x "$MACOS_DIR/emuleqt-mcp"
 HELPERS=("$MACOS_DIR/emulecored" "$MACOS_DIR/emuleqt-mcp")
 echo "  -> $MACOS_DIR/emuleqt-mcp"
+
+# Auto-update installer. No Qt, system libs only: kept out of HELPERS so
+# macdeployqt/rpath fixes skip it; only signed below.
+UPDATER_BIN="$BUILD_DIR/src/updater/emuleqt-updater"
+if [ ! -f "$UPDATER_BIN" ]; then
+    echo "Error: updater binary not found at $UPDATER_BIN"
+    echo "Build it first:  cmake --build $BUILD_DIR --target emuleqt-updater"
+    exit 1
+fi
+rm -f "$MACOS_DIR/emuleqt-updater"
+cp "$UPDATER_BIN" "$MACOS_DIR/emuleqt-updater"
+chmod +x "$MACOS_DIR/emuleqt-updater"
+echo "  -> $MACOS_DIR/emuleqt-updater"
 
 # -- Copy default config data into bundle ------------------------------------
 
@@ -276,7 +290,8 @@ done
 # -- Check the bundle is complete --------------------------------------------
 
 MISSING=0
-for rel in MacOS/emuleqt MacOS/emulecored MacOS/emuleqt-mcp Frameworks/libspecialdlp.dylib \
+for rel in MacOS/emuleqt MacOS/emulecored MacOS/emuleqt-mcp MacOS/emuleqt-updater \
+           Frameworks/libspecialdlp.dylib \
            Resources/config/eMule.tmpl Resources/config/FakeFileFilter.dat \
            Resources/config/webserver/swagger-ui-bundle.js \
            Resources/config/webserver/swagger-ui.css \
@@ -365,7 +380,7 @@ for fw in "$FRAMEWORKS_DIR"/*.framework; do
     [ -d "$fw" ] && adhoc_sign "$fw"
 done
 
-for helper in "${HELPERS[@]}"; do
+for helper in "${HELPERS[@]}" "$MACOS_DIR/emuleqt-updater"; do
     adhoc_sign "$helper"
 done
 adhoc_sign "$APP_BUNDLE"

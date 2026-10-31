@@ -126,8 +126,8 @@ private:
     void applyHosterStatus(const QCborMap& h);
     /// The Java buttons: only while hoster downloads are on, ticked and applied.
     void updateJavaButtons();
-    /// The user ticked "Allow downloads from file hosters": what it means; false: not agreed.
-    [[nodiscard]] bool confirmHoster();
+    /// "Hoster downloads need the ed3k node": shown while hosters are ticked and the node is not.
+    void updateHosterNodeHint();
     /// Holding links back switched off: what sharing a link means (hoster.md §8); false: kept on.
     [[nodiscard]] bool confirmShareLinks();
     void editAccount(int row);
@@ -154,6 +154,7 @@ private:
     QLabel* m_runningLabel = nullptr;
     QCheckBox* m_enabledCheck = nullptr;
     QCheckBox* m_shareFilesCheck = nullptr;
+    QCheckBox* m_jointDownloadsCheck = nullptr;
     QCheckBox* m_holdBackCheck = nullptr;
     QList<QCheckBox*> m_extChecks;   ///< text = the extension name
     QLabel* m_compatLabel = nullptr;
@@ -218,6 +219,7 @@ private:
         QString status;
     };
     QCheckBox* m_hosterEnabledCheck = nullptr;
+    QLabel* m_hosterNodeLabel = nullptr;
     QLabel* m_resolverLabel = nullptr;
     QSpinBox* m_hosterStreamsSpin = nullptr;
     QCheckBox* m_hosterPuzzlesCheck = nullptr;

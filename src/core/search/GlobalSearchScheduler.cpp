@@ -29,6 +29,11 @@ constexpr int kSweepIntervalMs = 750;
 /// MFC: SetTimer(TimerServerTimeout, SEC2MS(50), NULL) — srchybrid/SearchResultsWnd.cpp:1259.
 constexpr int kLocalAnswerTimeoutMs = 50 * 1000;
 
+/// Sweep stops once this many distinct files are in. MFC stops past 100 sources
+/// (MAX_RESULTS, SearchResultsWnd.cpp:473), so one server's 300-file answer ends
+/// it before a 2nd server is asked (#92). 400 > a server's 300 cap: always ask on.
+constexpr uint32 kSweepMaxFiles = 400;
+
 } // namespace
 
 // ---------------------------------------------------------------------------
@@ -151,11 +156,11 @@ void GlobalSearchScheduler::onResultCountChanged(uint32 searchID)
     if (m_searchID == 0 || searchID != m_searchID || !theApp.searchList)
         return;
 
-    // MFC counts availability (sources), not files: SearchResultsWnd.cpp:473
-    if (theApp.searchList->foundSources(searchID) > MAX_RESULTS) {
+    // Port change: counts files, not MFC's sources (see kSweepMaxFiles)
+    if (theApp.searchList->foundFiles(searchID) >= kSweepMaxFiles) {
         logServerVerbose(QStringLiteral("Global search: stopping the UDP sweep after %1 "
-                                        "sources — the query is too broad")
-                             .arg(theApp.searchList->foundSources(searchID)));
+                                        "files — the query is too broad")
+                             .arg(theApp.searchList->foundFiles(searchID)));
         cancel();
     }
 }

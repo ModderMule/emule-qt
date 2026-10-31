@@ -2,6 +2,7 @@
 /// @brief ed3k paid subscriptions over IPC — implementation.
 
 #include "Ed3kPaidBridge.h"
+#include "Ed3kOffGate.h"
 
 #include <QCborArray>
 #include <QCoreApplication>
@@ -110,6 +111,9 @@ bool handleRequest(const IpcMessage& msg, const std::function<void(const IpcMess
 {
     if (!isPaidRequest(msg.type()))
         return false;
+    // ed3k off: nothing under config/ed3k is written
+    if (Ed3kBridge::refuseWhileOff(msg, {IpcMsgType::GetEd3kPaid}, reply))
+        return true;
 #ifdef EMULE_HAVE_ED3K
     if (s_paid) {
         answer(msg, reply);
