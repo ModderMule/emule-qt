@@ -58,6 +58,7 @@ struct Resolution {
     QHostAddress v4;                ///< interface's first IPv4, may be null
     bool hasGlobalIPv6 = false;
     PinProbe pin;                   ///< a family that cannot be pinned is not used
+    bool noInternetRoute = false;   ///< no default route on it (split-tunnel VPN): only its subnets reachable
     QString reason;                 ///< why Blocked
 
     [[nodiscard]] bool wholeInterface() const { return state == State::Bound && literal.isNull(); }

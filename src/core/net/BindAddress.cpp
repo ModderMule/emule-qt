@@ -3,6 +3,7 @@
 /// @brief The "bind address" preference applied to every socket the client opens.
 
 #include "net/BindAddress.h"
+#include "net/DefaultGateway.h"
 #include "net/InterfacePin.h"
 #include "prefs/Preferences.h"
 #include "utils/Log.h"
@@ -143,6 +144,11 @@ void report(const Resolution& r)
         if (!r.pin.v4)
             logWarning(QStringLiteral("Network interface %1 refuses the IPv4 pin (error %2): "
                                       "IPv6 only").arg(r.name).arg(r.pin.v4Error));
+        if (r.noInternetRoute)
+            logWarning(QStringLiteral("Network interface %1 has no default route (split-tunnel "
+                                      "VPN?): servers and peers outside its subnets are "
+                                      "unreachable. Route all traffic through it or choose "
+                                      "another interface.").arg(r.friendlyName.isEmpty() ? r.name : r.friendlyName));
         break;
     case State::Blocked:
         logError(QStringLiteral("Network interface: %1 — no connection is opened until it "
@@ -156,6 +162,9 @@ bool resolveLocked(const QString& text)
 {
     Resolution next = resolve(text, s_source ? s_source() : systemInterfaces());
     probePin(next);
+    // test interfaces: their indexes are not real
+    if (next.state == State::Bound && !s_source)
+        next.noInternetRoute = interfaceCoversInternet(next.index) == false;
     const bool changed = !s_resolved || next != s_cache;
     s_resolved = true;
     if (changed) {

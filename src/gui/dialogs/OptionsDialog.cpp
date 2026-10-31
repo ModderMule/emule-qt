@@ -102,6 +102,7 @@ namespace eMule {
 
 // Bind combo: the OS interface id beside the stored adapter name
 constexpr int kRawNameRole = Qt::UserRole + 1;
+constexpr int kNoRouteRole = Qt::UserRole + 2;   ///< bind entry: interface has no default route
 
 // ---------------------------------------------------------------------------
 // Construction
@@ -264,6 +265,8 @@ OptionsDialog::OptionsDialog(IpcClient* ipc, StatisticsPanel* statsPanel,
     connect(m_tcpPortSpin, &QSpinBox::valueChanged, this, &OptionsDialog::markDirty);
     connect(m_udpPortSpin, &QSpinBox::valueChanged, this, &OptionsDialog::markDirty);
     connect(m_bindInterfaceCombo, &QComboBox::currentTextChanged, this, &OptionsDialog::markDirty);
+    connect(m_bindInterfaceCombo, &QComboBox::activated, this, [this] { showTextStart(m_bindInterfaceCombo); });
+    connect(m_bindInterfaceCombo, &QComboBox::currentTextChanged, this, &OptionsDialog::updateBindHint);
     connect(m_randomPortsCheck, &QCheckBox::toggled, this, &OptionsDialog::markDirty);
     connect(m_randomPortMinSpin, &QSpinBox::valueChanged, this, &OptionsDialog::markDirty);
     connect(m_randomPortMaxSpin, &QSpinBox::valueChanged, this, &OptionsDialog::markDirty);
@@ -1418,12 +1421,10 @@ QWidget* OptionsDialog::createConnectionPage()
            "list, or type an IP address or a subnet such as 10.64.0.0/10 (the interface "
            "holding an address in it). Connections through a proxy are not bound."));
     portLayout->addWidget(m_bindInterfaceCombo, 3, 1, 1, 3);
-    auto* bindHint = new QLabel(
-        tr("While the selected interface is not available, all P2P, Usenet and update "
-           "connections stay closed."), portGroup);
-    bindHint->setWordWrap(true);
-    bindHint->setEnabled(false);
-    portLayout->addWidget(bindHint, 4, 1, 1, 3);
+    m_bindHint = new QLabel(portGroup);
+    m_bindHint->setWordWrap(true);
+    portLayout->addWidget(m_bindHint, 4, 1, 1, 3);
+    updateBindHint();
 
     layout->addWidget(portGroup);
 
@@ -8643,6 +8644,35 @@ void OptionsDialog::showComboSelection(QComboBox* combo, const QString& selectio
         combo->setCurrentIndex(index);
     else
         combo->setEditText(selection);   // address, subnet or an absent interface
+    showTextStart(combo);
+}
+
+// A split-tunnel VPN adapter has no default route: pinned sockets reach only its
+// subnets, so servers and peers fail with "network unreachable"
+void OptionsDialog::updateBindHint()
+{
+    const QComboBox* combo = m_bindInterfaceCombo;
+    const int index = combo->currentIndex();
+    const bool noRoute = index > 0 && combo->currentText() == combo->itemText(index)
+                         && combo->itemData(index, kNoRouteRole).toBool();
+    if (noRoute) {
+        m_bindHint->setText(tr("This interface has no default route (split-tunnel VPN?): servers "
+                               "and peers outside its subnets are unreachable. Route all traffic "
+                               "through it, or choose another interface."));
+        m_bindHint->setStyleSheet(QStringLiteral("color: %1;").arg(roleColorName(TextRole::Error)));
+    } else {
+        m_bindHint->setText(tr("While the selected interface is not available, all P2P, Usenet and "
+                               "update connections stay closed."));
+        m_bindHint->setStyleSheet(QString());
+    }
+    m_bindHint->setEnabled(noRoute);
+}
+
+// a long entry would show its tail in the edit field, hiding the name
+void OptionsDialog::showTextStart(QComboBox* combo)
+{
+    if (QLineEdit* edit = combo->lineEdit())
+        edit->setCursorPosition(0);
 }
 
 void OptionsDialog::requestPortMapStatus()
@@ -8681,7 +8711,7 @@ void OptionsDialog::requestNetworkInterfaces()
         // OS order follows bring-up order and changes per boot (#52): loopback
         // first, then natural sort by label (tun2 before tun10)
         // rawName: OS id an older config may still hold
-        struct Entry { QString label; QString data; bool loopback = false; QString rawName; };
+        struct Entry { QString label; QString data; bool loopback = false; QString rawName; QString tip; bool noRoute = false; };
         std::vector<Entry> bindEntries;
         std::vector<Entry> webEntries;   // one per address, web server binds one
         const QCborArray list = resp.fieldArray(1);
@@ -8692,12 +8722,20 @@ void OptionsDialog::requestNetworkInterfaces()
             const QString label = (friendly.isEmpty() || friendly == name)
                 ? name : QStringLiteral("%1 (%2)").arg(friendly, name);
             QStringList addresses;
+            QStringList shown;    // label: IPv4s and one routable IPv6, the rest in the tooltip
+            bool hasV6 = false;
             bool loopback = false;
             for (const QCborValue& a : nif.value(QStringLiteral("addresses")).toArray()) {
                 const QString address = a.toString();
                 const QHostAddress host(address);
                 addresses << address;
                 loopback = loopback || host.isLoopback();
+                if (host.protocol() == QAbstractSocket::IPv4Protocol) {
+                    shown << address;
+                } else if (!hasV6 && !host.isNull() && !host.isLinkLocal()) {
+                    shown << address;
+                    hasV6 = true;
+                }
                 // link-local v6 needs a scope to bind, skip it
                 if (!host.isNull() && !(host.protocol() == QAbstractSocket::IPv6Protocol && host.isLinkLocal()))
                     webEntries.push_back({QStringLiteral("%1 — %2").arg(label, address), address,
@@ -8708,8 +8746,12 @@ void OptionsDialog::requestNetworkInterfaces()
             // Windows id "iftype53_32774" changes when a VPN client recreates its adapter
             // on reconnect (#67); the adapter name ("Ethernet 2") stays, resolver takes both
             const QString stored = friendly.isEmpty() ? name : friendly;
-            bindEntries.push_back({QStringLiteral("%1 — %2").arg(label, addresses.join(QStringLiteral(", "))),
-                                   stored, loopback, name});
+            if (shown.isEmpty())
+                shown << addresses.first();
+            // absent = the core cannot tell (not Windows)
+            const bool noRoute = nif.value(QStringLiteral("internetRoute")).isFalse();
+            bindEntries.push_back({QStringLiteral("%1 — %2").arg(label, shown.join(QStringLiteral(", "))),
+                                   stored, loopback, name, addresses.join(u'\n'), noRoute});
         }
         QCollator collator;
         collator.setNumericMode(true);
@@ -8727,11 +8769,16 @@ void OptionsDialog::requestNetworkInterfaces()
                 combo->addItem(e.label, e.data);
                 if (!e.rawName.isEmpty())
                     combo->setItemData(combo->count() - 1, e.rawName, kRawNameRole);
+                if (!e.tip.isEmpty())
+                    combo->setItemData(combo->count() - 1, e.tip, Qt::ToolTipRole);
+                if (e.noRoute)
+                    combo->setItemData(combo->count() - 1, true, kNoRouteRole);
             }
             showComboSelection(combo, selection);
         };
         fill(m_bindInterfaceCombo, bindEntries, bindSel);
         showBindSelection(bindSel);
+        updateBindHint();
         fill(m_webListenCombo, webEntries, webSel);
     });
 }
@@ -9140,6 +9187,7 @@ void OptionsDialog::showBindSelection(const QString& selection)
     // saved as the OS id by an older version: select the entry, Apply stores the name
     if (const int index = combo->findData(selection, kRawNameRole, Qt::MatchFixedString); index >= 0) {
         combo->setCurrentIndex(index);
+        showTextStart(combo);
         return;
     }
     // address or subnet: free text, nothing to list
@@ -9148,6 +9196,7 @@ void OptionsDialog::showBindSelection(const QString& selection)
     // an interface that is gone blocks all traffic: show it, not a bare id
     combo->addItem(tr("%1 — not available").arg(selection), selection);
     combo->setCurrentIndex(combo->count() - 1);
+    showTextStart(combo);
 }
 
 } // namespace eMule

@@ -3,6 +3,7 @@
 
 #include "AutoUpdater.h"
 
+#include "app/AppConfig.h"
 #include "app/VersionManifest.h"
 #include "net/GuardedNetworkAccessManager.h"
 #include "net/HttpDefaults.h"
@@ -178,6 +179,36 @@ QString AutoUpdater::installRoot(const QString& appDir)
     return QDir::cleanPath(dir.absolutePath());
 }
 
+QStringList AutoUpdater::configKeepArgs(const QString& root, const QStringList& configDirs,
+                                        const QStringList& userFiles)
+{
+#ifdef Q_OS_WIN
+    constexpr auto cs = Qt::CaseInsensitive;
+#else
+    constexpr auto cs = Qt::CaseSensitive;
+#endif
+    const QString base = QDir::cleanPath(QFileInfo(root).absoluteFilePath());
+    const QString bundle = base + QStringLiteral("/config");
+    QStringList out, seen;
+    for (const QString& d : configDirs) {
+        if (d.isEmpty())
+            continue;
+        const QString dir = QDir::cleanPath(QFileInfo(d).absoluteFilePath());
+        if (seen.contains(dir, cs) || !dir.startsWith(base + QLatin1Char('/'), cs))
+            continue;
+        seen << dir;
+        const QString rel = dir.mid(base.size() + 1);
+        if (dir.compare(bundle, cs) == 0) {
+            out << QStringLiteral("--keep-edited") << rel;
+            for (const QString& f : userFiles)
+                out << QStringLiteral("--keep-existing") << rel + QLatin1Char('/') + f;
+        } else {
+            out << QStringLiteral("--keep-existing") << rel;
+        }
+    }
+    return out;
+}
+
 bool AutoUpdater::inContainer()
 {
 #ifdef Q_OS_LINUX
@@ -332,10 +363,9 @@ void AutoUpdater::handOver()
         if (g.pid > 0)
             args << QStringLiteral("--wait-pid") << QString::number(g.pid);
     }
-    // portable config inside the install dir: never overwrite the user's files
-    const QString cfg = QDir::cleanPath(QFileInfo(thePrefs.configDir()).absoluteFilePath());
-    if (cfg.startsWith(root + QLatin1Char('/')))
-        args << QStringLiteral("--keep-existing") << QDir(root).relativeFilePath(cfg);
+    // portable config inside the install dir: never overwrite the user's files.
+    // Both dirs: a moved portable folder leaves a stale absolute path in the prefs
+    args << configKeepArgs(root, {thePrefs.configDir(), AppConfig::configDir()}, AppConfig::userDataFiles());
 
     // the core first (same arguments, so --autoupdate stays), then the GUIs
     args << QStringLiteral("--launch") << QDir(m_appDir).filePath(exeName(QStringLiteral("emulecored")))

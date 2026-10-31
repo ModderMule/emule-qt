@@ -914,7 +914,7 @@ Has comments</source>
         <translation type="vanished">%1 Bytes</translation>
     </message>
     <message>
-        <location filename="../src/gui/dialogs/OptionsDialog.cpp" line="+3423"/>
+        <location filename="../src/gui/dialogs/OptionsDialog.cpp" line="+3424"/>
         <source>Test</source>
         <translation>测试</translation>
     </message>
@@ -11408,8 +11408,8 @@ Download it again?</source>
         <translation>帮助</translation>
     </message>
     <message>
-        <location line="+270"/>
-        <location line="+2214"/>
+        <location line="+272"/>
+        <location line="+2212"/>
         <location line="+59"/>
         <location line="+6"/>
         <location line="+4"/>
@@ -11421,7 +11421,7 @@ Download it again?</source>
         <translation>IP 过滤器</translation>
     </message>
     <message>
-        <location line="-2328"/>
+        <location line="-2326"/>
         <source>IP filter reloaded: %1 entries.</source>
         <translation>IP 过滤器已重新加载：%1 条目。</translation>
     </message>
@@ -11431,12 +11431,12 @@ Download it again?</source>
         <translation>选项 -&gt; %1 -&gt; %2</translation>
     </message>
     <message>
-        <location line="+5218"/>
+        <location line="+5216"/>
         <source>Bandwidth</source>
         <translation>带宽</translation>
     </message>
     <message>
-        <location line="-5010"/>
+        <location line="-5008"/>
         <source>General options</source>
         <translation>常规选项</translation>
     </message>
@@ -11457,18 +11457,18 @@ Download it again?</source>
     </message>
     <message>
         <location line="+8"/>
-        <location line="+6094"/>
+        <location line="+6092"/>
         <source>Language</source>
         <translation>语言</translation>
     </message>
     <message>
-        <location line="-6091"/>
+        <location line="-6089"/>
         <source>System Default</source>
         <translation>系统默认</translation>
     </message>
     <message>
         <location line="+14"/>
-        <location line="+804"/>
+        <location line="+802"/>
         <location line="+384"/>
         <location line="+475"/>
         <location line="+298"/>
@@ -11476,7 +11476,7 @@ Download it again?</source>
         <translation>其他</translation>
     </message>
     <message>
-        <location line="-1958"/>
+        <location line="-1956"/>
         <source>Bring to front on link click</source>
         <translation>点击链接时置前</translation>
     </message>
@@ -11571,25 +11571,25 @@ Download it again?</source>
     <message>
         <location line="+8"/>
         <location line="+18"/>
-        <location line="+6006"/>
+        <location line="+6004"/>
         <source>Core</source>
         <translation>核心</translation>
     </message>
     <message>
-        <location line="-6019"/>
+        <location line="-6017"/>
         <source>Address:</source>
         <translation>地址：</translation>
     </message>
     <message>
         <location line="+4"/>
-        <location line="+1379"/>
+        <location line="+1377"/>
         <location line="+774"/>
         <location line="+427"/>
         <source>Port:</source>
         <translation>端口：</translation>
     </message>
     <message>
-        <location line="-2577"/>
+        <location line="-2575"/>
         <source>authentication token</source>
         <translation>认证令牌</translation>
     </message>
@@ -11754,7 +11754,7 @@ Are you sure you want to continue?</source>
     </message>
     <message>
         <location line="+2"/>
-        <location line="+1866"/>
+        <location line="+1864"/>
         <location line="+133"/>
         <location line="+296"/>
         <location line="+1032"/>
@@ -11766,7 +11766,7 @@ Are you sure you want to continue?</source>
         <translation>已启用</translation>
     </message>
     <message>
-        <location line="-5115"/>
+        <location line="-5113"/>
         <source>Reset</source>
         <translation>重置</translation>
     </message>
@@ -11783,13 +11783,13 @@ Are you sure you want to continue?</source>
     <message>
         <location line="+3"/>
         <location line="+6"/>
-        <location line="+4507"/>
+        <location line="+4505"/>
         <location line="+334"/>
         <source> KB/s</source>
         <translation> KB/s</translation>
     </message>
     <message>
-        <location line="-4844"/>
+        <location line="-4842"/>
         <source>Upload</source>
         <translation>上传</translation>
     </message>
@@ -11820,18 +11820,18 @@ Are you sure you want to continue?</source>
     </message>
     <message>
         <location line="+23"/>
-        <location line="+4347"/>
+        <location line="+4345"/>
         <source>Client Port</source>
         <translation>客户端端口</translation>
     </message>
     <message>
-        <location line="-4344"/>
-        <location line="+7744"/>
+        <location line="-4342"/>
+        <location line="+7788"/>
         <source>TCP</source>
         <translation>TCP</translation>
     </message>
     <message>
-        <location line="-7738"/>
+        <location line="-7782"/>
         <source>UDP</source>
         <translation>UDP</translation>
     </message>
@@ -11841,24 +11841,24 @@ Are you sure you want to continue?</source>
     </message>
     <message>
         <location line="+6"/>
-        <location line="+4347"/>
+        <location line="+4345"/>
         <source>Test Ports</source>
         <translation>测试端口</translation>
     </message>
     <message>
-        <location line="-4343"/>
-        <location line="+4351"/>
+        <location line="-4341"/>
+        <location line="+4349"/>
         <source>Open Router</source>
         <translation>打开路由器</translation>
     </message>
     <message>
-        <location line="-4350"/>
-        <location line="+4351"/>
+        <location line="-4348"/>
+        <location line="+4349"/>
         <source>Opens the web page of this computer&apos;s router, where ports are forwarded</source>
         <translation>打开此计算机路由器的网页，可在其中设置端口转发</translation>
     </message>
     <message>
-        <location line="-4347"/>
+        <location line="-4345"/>
         <source>Use UPnP to Setup Ports</source>
         <translation>使用 UPnP 设置端口</translation>
     </message>
@@ -11884,23 +11884,23 @@ Are you sure you want to continue?</source>
     </message>
     <message>
         <location line="+4"/>
-        <location line="+1735"/>
-        <location line="+5575"/>
+        <location line="+1733"/>
+        <location line="+5616"/>
         <source>Any</source>
         <translation>任意</translation>
     </message>
     <message>
-        <location line="-7308"/>
+        <location line="-7347"/>
         <source>Use only this network interface, for example a VPN tunnel. Pick one from the list, or type an IP address or a subnet such as 10.64.0.0/10 (the interface holding an address in it). Connections through a proxy are not bound.</source>
         <translation>仅使用此网络接口，例如 VPN 隧道。可从列表中选择，或输入 IP 地址或子网（如 10.64.0.0/10，即拥有该范围内地址的接口）。通过代理的连接不会被绑定。</translation>
     </message>
     <message>
-        <location line="+5"/>
+        <location line="+7244"/>
         <source>While the selected interface is not available, all P2P, Usenet and update connections stay closed.</source>
         <translation>所选接口不可用期间，所有 P2P、Usenet 和更新连接都保持关闭。</translation>
     </message>
     <message>
-        <location line="+11"/>
+        <location line="-7230"/>
         <source>Max. Sources/File</source>
         <translation>最大来源/文件</translation>
     </message>
@@ -12821,7 +12821,7 @@ Each rule replaces a regex pattern with a replacement string.</source>
         <translation>上传位（无开销）</translation>
     </message>
     <message>
-        <location line="-1812"/>
+        <location line="-1810"/>
         <source>Country flags (IP2Country)</source>
         <translation>国旗 (IP2Country)</translation>
     </message>
@@ -12871,7 +12871,7 @@ Each rule replaces a regex pattern with a replacement string.</source>
         <translation type="vanished">需要免费的 &lt;a href=&quot;https://www.maxmind.com/en/geolite2/signup&quot;&gt;MaxMind GeoLite2&lt;/a&gt; 账户。本产品包含由 MaxMind 创建的 GeoLite2 数据。</translation>
     </message>
     <message>
-        <location line="+415"/>
+        <location line="+413"/>
         <source>Use for news servers</source>
         <translation>同时用于新闻服务器</translation>
     </message>
@@ -12905,9 +12905,9 @@ Every Usenet connection then passes through the proxy, so its speed caps the dow
         <translation>在本地记录搜索中出现过的文件及其当时的名称，以便之后的搜索能显示您以前见过的内容。</translation>
     </message>
     <message>
-        <location line="-1435"/>
+        <location line="-1433"/>
         <location line="+5"/>
-        <location line="+1650"/>
+        <location line="+1648"/>
         <source>Connection</source>
         <translation>连接</translation>
     </message>
@@ -13375,13 +13375,13 @@ Every Usenet connection then passes through the proxy, so its speed caps the dow
         <translation>严格</translation>
     </message>
     <message>
-        <location line="-2874"/>
-        <location line="+8373"/>
+        <location line="-2872"/>
+        <location line="+8417"/>
         <source>BitTorrent</source>
         <translation>BitTorrent</translation>
     </message>
     <message>
-        <location line="-7988"/>
+        <location line="-8032"/>
         <source>Show download progress on the Dock icon</source>
         <translation>在程序坞图标上显示下载进度</translation>
     </message>
@@ -13436,7 +13436,7 @@ Every Usenet connection then passes through the proxy, so its speed caps the dow
         <translation>列表、菜单和对话框的文字大小。重启后生效。</translation>
     </message>
     <message>
-        <location line="+499"/>
+        <location line="+497"/>
         <source>Connect Low ID to Low ID through server or Kad buddy (NAT traversal)</source>
         <translation>通过服务器或 Kad 伙伴连接 Low ID 与 Low ID (NAT 穿透)</translation>
     </message>
@@ -14437,7 +14437,12 @@ Adding one later does not fetch its back catalogue: a new indexer gets its own f
         <translation>启用 BitTorrent</translation>
     </message>
     <message>
-        <location line="+3502"/>
+        <location line="+3073"/>
+        <source>This interface has no default route (split-tunnel VPN?): servers and peers outside its subnets are unreachable. Route all traffic through it, or choose another interface.</source>
+        <translation>此接口没有默认路由（分离隧道 VPN？）：其子网以外的服务器和节点无法访问。请让所有流量经过此接口，或选择其他接口。</translation>
+    </message>
+    <message>
+        <location line="+475"/>
         <source>TCP/UDP</source>
         <translation>TCP/UDP</translation>
     </message>
@@ -14447,7 +14452,7 @@ Adding one later does not fetch its back catalogue: a new indexer gets its own f
         <translation>eD2K TCP 与 UDP、Kad 和 ed3k 共用一个端口</translation>
     </message>
     <message>
-        <location line="+61"/>
+        <location line="+62"/>
         <source>%1 — not available</source>
         <translation>%1 — 不可用</translation>
     </message>
@@ -14456,7 +14461,7 @@ Adding one later does not fetch its back catalogue: a new indexer gets its own f
         <translation type="vanished">随守护进程启动 BitTorrent 引擎。关闭时不下载也不做种任何种子。</translation>
     </message>
     <message>
-        <location line="-48"/>
+        <location line="-49"/>
         <source>unlimited</source>
         <translation>无限制</translation>
     </message>
@@ -14495,7 +14500,7 @@ Adding one later does not fetch its back catalogue: a new indexer gets its own f
         <translation type="vanished">同时用于 TCP 和 UDP。必须与 eD2K 端口不同。</translation>
     </message>
     <message>
-        <location line="-3412"/>
+        <location line="-3458"/>
         <source>Listen port (TCP/UDP):</source>
         <translation>监听端口 (TCP/UDP)：</translation>
     </message>
@@ -14643,7 +14648,7 @@ Adding one later does not fetch its back catalogue: a new indexer gets its own f
         <translation>无法更新文件关联：%1</translation>
     </message>
     <message>
-        <location line="+937"/>
+        <location line="+983"/>
         <location line="+16"/>
         <location line="+6"/>
         <location line="+3"/>
@@ -14792,7 +14797,7 @@ Create it?</source>
 %1</translation>
     </message>
     <message>
-        <location line="-3152"/>
+        <location line="-3198"/>
         <source>Disabled</source>
         <translation>已禁用</translation>
     </message>
@@ -14827,7 +14832,7 @@ Create it?</source>
         <translation>未找到 specialdlp 库，检查未启用</translation>
     </message>
     <message>
-        <location line="+770"/>
+        <location line="+816"/>
         <source>Automatic</source>
         <translation>自动</translation>
     </message>
@@ -14841,7 +14846,7 @@ Create it?</source>
         <translation type="vanished">仅在运行时自动接受 eD2K 链接</translation>
     </message>
     <message>
-        <location line="-3044"/>
+        <location line="-3090"/>
         <source>Use credit system (reward uploaders)</source>
         <translation>使用信用系统（奖励上传者）</translation>
     </message>
@@ -14865,7 +14870,7 @@ Create it?</source>
         <translation>过滤服务器和客户端局域网 IP</translation>
     </message>
     <message>
-        <location line="-4790"/>
+        <location line="-4788"/>
         <source>Show more controls (advanced mode controls)</source>
         <translation>显示更多控件（高级模式控件）</translation>
     </message>
@@ -14926,7 +14931,7 @@ Create it?</source>
         <translation>受信任的核心:</translation>
     </message>
     <message>
-        <location line="+1123"/>
+        <location line="+1121"/>
         <source>Rehash All Files...</source>
         <translation>重新计算所有文件的哈希...</translation>
     </message>
@@ -15332,12 +15337,12 @@ News server connections switch over immediately.</source>
         <translation type="vanished">无法更新 .nzb 文件关联：%1</translation>
     </message>
     <message>
-        <location line="+680"/>
+        <location line="+709"/>
         <source>Port forwarding: %1</source>
         <translation>端口转发：%1</translation>
     </message>
     <message>
-        <location line="+88"/>
+        <location line="+105"/>
         <source>Database: not connected to the core</source>
         <translation>数据库：未连接到核心</translation>
     </message>
@@ -15387,18 +15392,18 @@ News server connections switch over immediately.</source>
         <translation>恢复默认值</translation>
     </message>
     <message>
-        <location line="-7888"/>
-        <location line="+2522"/>
+        <location line="-7932"/>
+        <location line="+2520"/>
         <location line="+1035"/>
         <location line="+154"/>
         <location line="+1627"/>
         <location line="+316"/>
-        <location line="+2232"/>
+        <location line="+2278"/>
         <source>Remove</source>
         <translation>删除</translation>
     </message>
     <message>
-        <location line="-6599"/>
+        <location line="-6645"/>
         <source>New eMule Qt version detected</source>
         <translation>检测到新的 eMule Qt 版本</translation>
     </message>
@@ -15475,12 +15480,12 @@ News server connections switch over immediately.</source>
         <translation> 秒</translation>
     </message>
     <message>
-        <location line="-5121"/>
+        <location line="-5119"/>
         <source>Downloads that are receiving data, and the sources sending it, are drawn in bold. A source listed under another file (A4AF) is bold too while it transfers. The connected server and the selected category tab are bold as well.</source>
         <translation>正在接收数据的下载及发送数据的来源以粗体显示。列在其他文件下的来源 (A4AF) 在传输时也以粗体显示。已连接的服务器和选中的分类标签页同样以粗体显示。</translation>
     </message>
     <message>
-        <location line="+1014"/>
+        <location line="+1012"/>
         <source>Rename downloads to the name most sources use</source>
         <translation>将下载重命名为大多数来源使用的名称</translation>
     </message>
@@ -15739,7 +15744,7 @@ Set it slightly under your plan. The figure is measured here, so it reads a few 
         <location line="+1035"/>
         <location line="+154"/>
         <location line="+1900"/>
-        <location line="+2270"/>
+        <location line="+2316"/>
         <source>Add</source>
         <translation>添加</translation>
     </message>
@@ -15752,7 +15757,7 @@ Set it slightly under your plan. The figure is measured here, so it reads a few 
         <translation type="vanished">输入值：</translation>
     </message>
     <message>
-        <location line="-2233"/>
+        <location line="-2279"/>
         <source>Edit Value</source>
         <translation>编辑值</translation>
     </message>

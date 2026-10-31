@@ -265,6 +265,8 @@ private:
 
     [[nodiscard]] static QString comboSelection(const QComboBox* combo);
     static void showComboSelection(QComboBox* combo, const QString& selection);
+    static void showTextStart(QComboBox* combo);
+    void updateBindHint();
     void requestNetworkInterfaces();
     /// Select the saved bind interface in the filled list: matches the old Windows id
     /// too, and adds a "not available" entry for one that is gone (#67).
@@ -376,6 +378,7 @@ private:
     QCheckBox* m_upnpCheck = nullptr;
     QLabel*    m_portMapStatusLabel = nullptr;
     QComboBox* m_bindInterfaceCombo = nullptr;
+    QLabel* m_bindHint = nullptr;   ///< fail-closed note, or the no-default-route warning
     QSpinBox*  m_maxSourcesSpin = nullptr;
     QSpinBox*  m_maxConnectionsSpin = nullptr;
     QCheckBox* m_autoConnectCheck = nullptr;

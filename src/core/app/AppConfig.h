@@ -113,6 +113,10 @@ public:
     /// bundleCandidates() that exists); empty without one.
     [[nodiscard]] static QString bundledDataDir();
 
+    /// Bundle files that become the user's data once in a config dir (server list,
+    /// Kad contacts, rules, preferences): an update never replaces them there.
+    [[nodiscard]] static QStringList userDataFiles();
+
     /// Bundle folder that is served from the bundle and never seeded: config/webserver
     /// holds only the user's overrides (and a README saying so).
     static constexpr QLatin1StringView kWebDirName{"webserver"};

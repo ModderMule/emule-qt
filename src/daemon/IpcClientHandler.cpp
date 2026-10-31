@@ -84,6 +84,7 @@
 #include "net/LocalIPv6.h"
 #include "net/ProxySettings.h"
 #include "net/BindAddress.h"
+#include "net/DefaultGateway.h"
 #include "prefs/PreferenceSchema.h"
 #include "prefs/Preferences.h"
 #include "net/Packet.h"
@@ -2468,6 +2469,8 @@ void IpcClientHandler::handleGetNetworkInterfaces(const IpcMessage& msg)
         for (const QHostAddress& a : nif.addresses)
             addresses.append(a.toString());
         m.insert(QStringLiteral("addresses"), addresses);
+        if (const auto covers = interfaceCoversInternet(nif.index))
+            m.insert(QStringLiteral("internetRoute"), *covers);
         list.append(m);
     }
     sendMessage(IpcMessage::makeResult(msg.seqId(), true, QCborValue(list)));

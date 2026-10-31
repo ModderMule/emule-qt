@@ -240,6 +240,12 @@ namespace {
     entry.metric = row.Metric;
     entry.prefixLength = row.DestinationPrefix.PrefixLength;
 
+    const SOCKADDR_INET& dst = row.DestinationPrefix.Prefix;
+    if (dst.si_family == AF_INET6)
+        entry.destination = Address::fromIPv6Bytes(reinterpret_cast<const uint8*>(&dst.Ipv6.sin6_addr));
+    else if (dst.si_family == AF_INET)
+        entry.destination = Address::fromNetworkOrder(dst.Ipv4.sin_addr.S_un.S_addr);
+
     if (row.NextHop.si_family == AF_INET6) {
         entry.gateway = Address::fromIPv6Bytes(
             reinterpret_cast<const uint8*>(&row.NextHop.Ipv6.sin6_addr));
@@ -302,6 +308,20 @@ std::vector<GatewayCandidate> allDefaultGateways(Address::Family family)
     return selectDefaultGateways(routes, family);
 }
 
+std::optional<bool> interfaceCoversInternet(int index)
+{
+    PMIB_IPFORWARD_TABLE2 table = nullptr;
+    if (index <= 0 || GetIpForwardTable2(AF_UNSPEC, &table) != NO_ERROR || table == nullptr)
+        return std::nullopt;
+    std::vector<RouteEntry> routes;
+    for (ULONG i = 0; i < table->NumEntries; ++i) {
+        if (table->Table[i].InterfaceIndex == static_cast<NET_IFINDEX>(index))
+            routes.push_back(routeEntryFromRow(table->Table[i]));
+    }
+    FreeMibTable(table);
+    return routesCoverInternet(routes, QString::number(index));
+}
+
 // ============================================================================
 // Platform backend — Linux and everything else (/proc/net)
 // ============================================================================
@@ -334,6 +354,11 @@ std::vector<GatewayCandidate> defaultGateways(Address::Family family)
 std::vector<GatewayCandidate> allDefaultGateways(Address::Family family)
 {
     return defaultGateways(family);
+}
+
+std::optional<bool> interfaceCoversInternet(int /*index*/)
+{
+    return std::nullopt;
 }
 #endif
 
@@ -505,6 +530,24 @@ std::vector<GatewayCandidate> selectDefaultGateways(const std::vector<RouteEntry
                          return a.metric < b.metric;
                      });
     return candidates;
+}
+
+bool routesCoverInternet(const std::vector<RouteEntry>& routes, const QString& interfaceName)
+{
+    unsigned halves4 = 0, halves6 = 0;   // bit 0: lower half seen, bit 1: upper half
+    for (const RouteEntry& r : routes) {
+        if (r.interfaceName != interfaceName)
+            continue;
+        if (r.prefixLength == 0)
+            return true;
+        if (r.prefixLength != 1)
+            continue;
+        if (r.destination.isIPv6())
+            halves6 |= (r.destination.ipv6Bytes()[0] & 0x80) ? 2u : 1u;
+        else   // 0.0.0.0 is a null Address
+            halves4 |= (r.destination.toUint32() & 0x80000000u) ? 2u : 1u;
+    }
+    return halves4 == 3 || halves6 == 3;
 }
 
 } // namespace eMule

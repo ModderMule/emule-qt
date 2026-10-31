@@ -32,6 +32,9 @@ struct Options {
     std::vector<std::int64_t> waitPids;
     int waitTimeoutSec = 120;
     std::vector<std::filesystem::path> keepExisting;
+    // Existing files here are replaced only while unedited (hash recorded by the
+    // previous update); edited ones are kept and get a <name>.new beside them
+    std::vector<std::filesystem::path> keepEdited;
     std::filesystem::path logFile;
     std::filesystem::path resultFile;
     std::vector<std::vector<std::string>> launches;
@@ -50,6 +53,12 @@ public:
     static std::string parseArgs(const std::vector<std::string>& args, Options& opts);
     static std::string jsonEscape(const std::string& s);
     static bool isUnder(const std::filesystem::path& rel, const std::filesystem::path& base);
+    // FNV-1a 64 of the file content as 16 hex chars; empty when unreadable
+    static std::string fileHash(const std::filesystem::path& file);
+
+    // Per --keep-edited dir: file hashes the last update installed, keyed by the
+    // generic path relative to that dir
+    static constexpr const char* kManifestName = ".update-manifest";
 
 private:
     bool install();
@@ -60,6 +69,7 @@ private:
     void writeResult(bool ok);
     void runLaunches();
     void fail(const std::string& error);
+    const std::filesystem::path* editedDirFor(const std::filesystem::path& rel) const;
 
     Options m_opts;
     Logger m_log;

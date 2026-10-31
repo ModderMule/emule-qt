@@ -77,6 +77,7 @@ private slots:
     void isDue();
     void packageKeyAndFormat();
     void installRoot();
+    void configKeepArgs();
     void downloadsVerifiesAndHandsOver();
     void hashMismatchLaunchesNothing();
     void repeatedFailureSkipsVersion();
@@ -168,6 +169,21 @@ void TestAutoUpdater::installRoot()
              QStringLiteral("/Applications/eMule Qt.app"));
 #endif
     QCOMPARE(AutoUpdater::installRoot(u"/opt/eMuleQt"_s), QStringLiteral("/opt/eMuleQt"));
+}
+
+void TestAutoUpdater::configKeepArgs()
+{
+    const QStringList user{u"server.met"_s, u"preferences.yml"_s};
+    // portable: bundle config follows the release unless edited, user data kept
+    QCOMPARE(AutoUpdater::configKeepArgs(u"/opt/e"_s, {u"/opt/e/config"_s, u"/opt/e/config/"_s}, user),
+             (QStringList{u"--keep-edited"_s, u"config"_s, u"--keep-existing"_s, u"config/server.met"_s,
+                          u"--keep-existing"_s, u"config/preferences.yml"_s}));
+    // stale path from a moved folder plus the real one: the real one still protected
+    QCOMPARE(AutoUpdater::configKeepArgs(u"/opt/e"_s, {u"/old/place/config"_s, u"/opt/e/config"_s}, {}),
+             (QStringList{u"--keep-edited"_s, u"config"_s}));
+    // another dir inside the install: kept whole; outside or the root itself: nothing
+    QCOMPARE(AutoUpdater::configKeepArgs(u"/opt/e"_s, {u"/opt/e/my cfg"_s, u"/home/u/cfg"_s, u"/opt/e"_s}, user),
+             (QStringList{u"--keep-existing"_s, u"my cfg"_s}));
 }
 
 void TestAutoUpdater::downloadsVerifiesAndHandsOver()

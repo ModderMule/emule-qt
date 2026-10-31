@@ -415,6 +415,16 @@ QString AppConfig::bundledDataDir()
     return {};
 }
 
+QStringList AppConfig::userDataFiles()
+{
+    QStringList out;
+    for (const char* name : kSeedOnce)
+        out << QString::fromLatin1(name);
+    for (const char* name : kNeverSeed)
+        out << QString::fromLatin1(name);
+    return out;
+}
+
 AppConfig::SeedReport AppConfig::seedFrom(const QString& bundleDir, const QString& configDir)
 {
     SeedReport report;

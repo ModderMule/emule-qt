@@ -920,7 +920,7 @@ Tem comentários</translation>
         <translation type="vanished">%1 Bytes</translation>
     </message>
     <message>
-        <location filename="../src/gui/dialogs/OptionsDialog.cpp" line="+3423"/>
+        <location filename="../src/gui/dialogs/OptionsDialog.cpp" line="+3424"/>
         <source>Test</source>
         <translation>Testar</translation>
     </message>
@@ -11437,8 +11437,8 @@ Baixar novamente?</translation>
         <translation>Ajuda</translation>
     </message>
     <message>
-        <location line="+270"/>
-        <location line="+2214"/>
+        <location line="+272"/>
+        <location line="+2212"/>
         <location line="+59"/>
         <location line="+6"/>
         <location line="+4"/>
@@ -11450,7 +11450,7 @@ Baixar novamente?</translation>
         <translation>Filtro IP</translation>
     </message>
     <message>
-        <location line="-2328"/>
+        <location line="-2326"/>
         <source>IP filter reloaded: %1 entries.</source>
         <translation>Filtro IP recarregado: %1 entradas.</translation>
     </message>
@@ -11460,12 +11460,12 @@ Baixar novamente?</translation>
         <translation>Opções -&gt; %1 -&gt; %2</translation>
     </message>
     <message>
-        <location line="+5218"/>
+        <location line="+5216"/>
         <source>Bandwidth</source>
         <translation>Largura de banda</translation>
     </message>
     <message>
-        <location line="-5010"/>
+        <location line="-5008"/>
         <source>General options</source>
         <translation>Opções gerais</translation>
     </message>
@@ -11486,18 +11486,18 @@ Baixar novamente?</translation>
     </message>
     <message>
         <location line="+8"/>
-        <location line="+6094"/>
+        <location line="+6092"/>
         <source>Language</source>
         <translation>Idioma</translation>
     </message>
     <message>
-        <location line="-6091"/>
+        <location line="-6089"/>
         <source>System Default</source>
         <translation>Padrão do sistema</translation>
     </message>
     <message>
         <location line="+14"/>
-        <location line="+804"/>
+        <location line="+802"/>
         <location line="+384"/>
         <location line="+475"/>
         <location line="+298"/>
@@ -11505,7 +11505,7 @@ Baixar novamente?</translation>
         <translation>Diversos</translation>
     </message>
     <message>
-        <location line="-1958"/>
+        <location line="-1956"/>
         <source>Bring to front on link click</source>
         <translation>Trazer para frente ao clicar no link</translation>
     </message>
@@ -11600,25 +11600,25 @@ Baixar novamente?</translation>
     <message>
         <location line="+8"/>
         <location line="+18"/>
-        <location line="+6006"/>
+        <location line="+6004"/>
         <source>Core</source>
         <translation>Núcleo</translation>
     </message>
     <message>
-        <location line="-6019"/>
+        <location line="-6017"/>
         <source>Address:</source>
         <translation>Endereço:</translation>
     </message>
     <message>
         <location line="+4"/>
-        <location line="+1379"/>
+        <location line="+1377"/>
         <location line="+774"/>
         <location line="+427"/>
         <source>Port:</source>
         <translation>Porta:</translation>
     </message>
     <message>
-        <location line="-2577"/>
+        <location line="-2575"/>
         <source>authentication token</source>
         <translation>token de autenticação</translation>
     </message>
@@ -11783,7 +11783,7 @@ Tem certeza de que deseja continuar?</translation>
     </message>
     <message>
         <location line="+2"/>
-        <location line="+1866"/>
+        <location line="+1864"/>
         <location line="+133"/>
         <location line="+296"/>
         <location line="+1032"/>
@@ -11795,7 +11795,7 @@ Tem certeza de que deseja continuar?</translation>
         <translation>Ativado</translation>
     </message>
     <message>
-        <location line="-5115"/>
+        <location line="-5113"/>
         <source>Reset</source>
         <translation>Redefinir</translation>
     </message>
@@ -11812,13 +11812,13 @@ Tem certeza de que deseja continuar?</translation>
     <message>
         <location line="+3"/>
         <location line="+6"/>
-        <location line="+4507"/>
+        <location line="+4505"/>
         <location line="+334"/>
         <source> KB/s</source>
         <translation> KB/s</translation>
     </message>
     <message>
-        <location line="-4844"/>
+        <location line="-4842"/>
         <source>Upload</source>
         <translation>Upload</translation>
     </message>
@@ -11849,18 +11849,18 @@ Tem certeza de que deseja continuar?</translation>
     </message>
     <message>
         <location line="+23"/>
-        <location line="+4347"/>
+        <location line="+4345"/>
         <source>Client Port</source>
         <translation>Porta do cliente</translation>
     </message>
     <message>
-        <location line="-4344"/>
-        <location line="+7744"/>
+        <location line="-4342"/>
+        <location line="+7788"/>
         <source>TCP</source>
         <translation>TCP</translation>
     </message>
     <message>
-        <location line="-7738"/>
+        <location line="-7782"/>
         <source>UDP</source>
         <translation>UDP</translation>
     </message>
@@ -11870,24 +11870,24 @@ Tem certeza de que deseja continuar?</translation>
     </message>
     <message>
         <location line="+6"/>
-        <location line="+4347"/>
+        <location line="+4345"/>
         <source>Test Ports</source>
         <translation>Testar portas</translation>
     </message>
     <message>
-        <location line="-4343"/>
-        <location line="+4351"/>
+        <location line="-4341"/>
+        <location line="+4349"/>
         <source>Open Router</source>
         <translation>Abrir roteador</translation>
     </message>
     <message>
-        <location line="-4350"/>
-        <location line="+4351"/>
+        <location line="-4348"/>
+        <location line="+4349"/>
         <source>Opens the web page of this computer&apos;s router, where ports are forwarded</source>
         <translation>Abre a página web do roteador deste computador, onde as portas são redirecionadas</translation>
     </message>
     <message>
-        <location line="-4347"/>
+        <location line="-4345"/>
         <source>Use UPnP to Setup Ports</source>
         <translation>Usar UPnP para configurar portas</translation>
     </message>
@@ -11913,23 +11913,23 @@ Tem certeza de que deseja continuar?</translation>
     </message>
     <message>
         <location line="+4"/>
-        <location line="+1735"/>
-        <location line="+5575"/>
+        <location line="+1733"/>
+        <location line="+5616"/>
         <source>Any</source>
         <translation>Qualquer</translation>
     </message>
     <message>
-        <location line="-7308"/>
+        <location line="-7347"/>
         <source>Use only this network interface, for example a VPN tunnel. Pick one from the list, or type an IP address or a subnet such as 10.64.0.0/10 (the interface holding an address in it). Connections through a proxy are not bound.</source>
         <translation>Usar somente esta interface de rede, por exemplo um túnel VPN. Escolha uma na lista ou digite um endereço IP ou uma sub-rede como 10.64.0.0/10 (a interface que possui um endereço nela). Conexões por meio de um proxy não são vinculadas.</translation>
     </message>
     <message>
-        <location line="+5"/>
+        <location line="+7244"/>
         <source>While the selected interface is not available, all P2P, Usenet and update connections stay closed.</source>
         <translation>Enquanto a interface selecionada não estiver disponível, todas as conexões P2P, Usenet e de atualização permanecem fechadas.</translation>
     </message>
     <message>
-        <location line="+11"/>
+        <location line="-7230"/>
         <source>Max. Sources/File</source>
         <translation>Máx. fontes/arquivo</translation>
     </message>
@@ -12850,7 +12850,7 @@ Cada regra substitui um padrão regex por uma string de substituição.</transla
         <translation>Vagas de upload (sem overhead)</translation>
     </message>
     <message>
-        <location line="-1812"/>
+        <location line="-1810"/>
         <source>Country flags (IP2Country)</source>
         <translation>Bandeiras de país (IP2Country)</translation>
     </message>
@@ -12900,7 +12900,7 @@ Cada regra substitui um padrão regex por uma string de substituição.</transla
         <translation type="vanished">Requer uma conta gratuita do &lt;a href=&quot;https://www.maxmind.com/en/geolite2/signup&quot;&gt;MaxMind GeoLite2&lt;/a&gt;. Este produto inclui dados GeoLite2 criados pela MaxMind.</translation>
     </message>
     <message>
-        <location line="+415"/>
+        <location line="+413"/>
         <source>Use for news servers</source>
         <translation>Usar para servidores de notícias</translation>
     </message>
@@ -12934,9 +12934,9 @@ Toda conexão Usenet passa então pelo proxy, de modo que a velocidade dele limi
         <translation>Mantém um registro local dos arquivos que apareceram nas suas buscas e dos nomes que tinham, para que buscas posteriores mostrem o que você já viu.</translation>
     </message>
     <message>
-        <location line="-1435"/>
+        <location line="-1433"/>
         <location line="+5"/>
-        <location line="+1650"/>
+        <location line="+1648"/>
         <source>Connection</source>
         <translation>Conexão</translation>
     </message>
@@ -13404,13 +13404,13 @@ Toda conexão Usenet passa então pelo proxy, de modo que a velocidade dele limi
         <translation>Estrita</translation>
     </message>
     <message>
-        <location line="-2874"/>
-        <location line="+8373"/>
+        <location line="-2872"/>
+        <location line="+8417"/>
         <source>BitTorrent</source>
         <translation>BitTorrent</translation>
     </message>
     <message>
-        <location line="-7988"/>
+        <location line="-8032"/>
         <source>Show download progress on the Dock icon</source>
         <translation>Mostrar o progresso dos downloads no ícone do Dock</translation>
     </message>
@@ -13465,7 +13465,7 @@ Toda conexão Usenet passa então pelo proxy, de modo que a velocidade dele limi
         <translation>Tamanho do texto de listas, menus e caixas de diálogo. Entra em vigor após reiniciar.</translation>
     </message>
     <message>
-        <location line="+499"/>
+        <location line="+497"/>
         <source>Connect Low ID to Low ID through server or Kad buddy (NAT traversal)</source>
         <translation>Conectar Low ID a Low ID via servidor ou Kad buddy (travessia de NAT)</translation>
     </message>
@@ -14466,7 +14466,12 @@ Adicionar um depois não busca o acervo antigo dele: um indexador novo tem sua p
         <translation>Ativar BitTorrent</translation>
     </message>
     <message>
-        <location line="+3502"/>
+        <location line="+3073"/>
+        <source>This interface has no default route (split-tunnel VPN?): servers and peers outside its subnets are unreachable. Route all traffic through it, or choose another interface.</source>
+        <translation>Esta interface não tem rota padrão (VPN com túnel dividido?): servidores e pares fora das suas sub-redes ficam inacessíveis. Encaminhe todo o tráfego por ela ou escolha outra interface.</translation>
+    </message>
+    <message>
+        <location line="+475"/>
         <source>TCP/UDP</source>
         <translation>TCP/UDP</translation>
     </message>
@@ -14476,7 +14481,7 @@ Adicionar um depois não busca o acervo antigo dele: um indexador novo tem sua p
         <translation>Uma porta para TCP e UDP do eD2K, Kad e ed3k</translation>
     </message>
     <message>
-        <location line="+61"/>
+        <location line="+62"/>
         <source>%1 — not available</source>
         <translation>%1 — indisponível</translation>
     </message>
@@ -14485,7 +14490,7 @@ Adicionar um depois não busca o acervo antigo dele: um indexador novo tem sua p
         <translation type="vanished">Inicia o mecanismo BitTorrent junto com o daemon. Desativado, nenhum torrent é baixado ou semeado.</translation>
     </message>
     <message>
-        <location line="-48"/>
+        <location line="-49"/>
         <source>unlimited</source>
         <translation>ilimitado</translation>
     </message>
@@ -14524,7 +14529,7 @@ Adicionar um depois não busca o acervo antigo dele: um indexador novo tem sua p
         <translation type="vanished">Usada para TCP e UDP. Deve ser diferente das portas eD2K.</translation>
     </message>
     <message>
-        <location line="-3412"/>
+        <location line="-3458"/>
         <source>Listen port (TCP/UDP):</source>
         <translation>Porta de escuta (TCP/UDP):</translation>
     </message>
@@ -14672,7 +14677,7 @@ Adicionar um depois não busca o acervo antigo dele: um indexador novo tem sua p
         <translation>Não foi possível atualizar as associações de arquivos: %1</translation>
     </message>
     <message>
-        <location line="+937"/>
+        <location line="+983"/>
         <location line="+16"/>
         <location line="+6"/>
         <location line="+3"/>
@@ -14822,7 +14827,7 @@ Criá-la?</translation>
 %1</translation>
     </message>
     <message>
-        <location line="-3152"/>
+        <location line="-3198"/>
         <source>Disabled</source>
         <translation>Desativado</translation>
     </message>
@@ -14857,7 +14862,7 @@ Criá-la?</translation>
         <translation>Biblioteca specialdlp não encontrada, as verificações estão inativas</translation>
     </message>
     <message>
-        <location line="+770"/>
+        <location line="+816"/>
         <source>Automatic</source>
         <translation>Automático</translation>
     </message>
@@ -14871,7 +14876,7 @@ Criá-la?</translation>
         <translation type="vanished">Aceitar links eD2K automaticamente apenas durante execução</translation>
     </message>
     <message>
-        <location line="-3044"/>
+        <location line="-3090"/>
         <source>Use credit system (reward uploaders)</source>
         <translation>Usar sistema de créditos (recompensar uploaders)</translation>
     </message>
@@ -14895,7 +14900,7 @@ Criá-la?</translation>
         <translation>Filtrar IPs de LAN de servidores e clientes</translation>
     </message>
     <message>
-        <location line="-4790"/>
+        <location line="-4788"/>
         <source>Show more controls (advanced mode controls)</source>
         <translation>Mostrar mais controles (controles de modo avançado)</translation>
     </message>
@@ -14956,7 +14961,7 @@ Criá-la?</translation>
         <translation>Núcleos confiáveis:</translation>
     </message>
     <message>
-        <location line="+1123"/>
+        <location line="+1121"/>
         <source>Rehash All Files...</source>
         <translation>Refazer o hash de todos os arquivos...</translation>
     </message>
@@ -15362,12 +15367,12 @@ As conexões com servidores de notícias mudam imediatamente.</translation>
         <translation type="vanished">Não foi possível atualizar a associação do arquivo .nzb: %1</translation>
     </message>
     <message>
-        <location line="+680"/>
+        <location line="+709"/>
         <source>Port forwarding: %1</source>
         <translation>Redirecionamento de portas: %1</translation>
     </message>
     <message>
-        <location line="+88"/>
+        <location line="+105"/>
         <source>Database: not connected to the core</source>
         <translation>Banco de dados: não conectado ao núcleo</translation>
     </message>
@@ -15417,18 +15422,18 @@ As conexões com servidores de notícias mudam imediatamente.</translation>
         <translation>Restaurar padrão</translation>
     </message>
     <message>
-        <location line="-7888"/>
-        <location line="+2522"/>
+        <location line="-7932"/>
+        <location line="+2520"/>
         <location line="+1035"/>
         <location line="+154"/>
         <location line="+1627"/>
         <location line="+316"/>
-        <location line="+2232"/>
+        <location line="+2278"/>
         <source>Remove</source>
         <translation>Remover</translation>
     </message>
     <message>
-        <location line="-6599"/>
+        <location line="-6645"/>
         <source>New eMule Qt version detected</source>
         <translation>Nova versão do eMule Qt detectada</translation>
     </message>
@@ -15505,12 +15510,12 @@ As conexões com servidores de notícias mudam imediatamente.</translation>
         <translation> s</translation>
     </message>
     <message>
-        <location line="-5121"/>
+        <location line="-5119"/>
         <source>Downloads that are receiving data, and the sources sending it, are drawn in bold. A source listed under another file (A4AF) is bold too while it transfers. The connected server and the selected category tab are bold as well.</source>
         <translation>Downloads que estão recebendo dados, e as fontes que os enviam, aparecem em negrito. Uma fonte listada sob outro arquivo (A4AF) também fica em negrito enquanto transfere. O servidor conectado e a aba de categoria selecionada também ficam em negrito.</translation>
     </message>
     <message>
-        <location line="+1014"/>
+        <location line="+1012"/>
         <source>Rename downloads to the name most sources use</source>
         <translation>Renomear downloads para o nome usado pela maioria das fontes</translation>
     </message>
@@ -15770,7 +15775,7 @@ Defina um valor um pouco abaixo do seu plano. O volume é medido aqui, então fi
         <location line="+1035"/>
         <location line="+154"/>
         <location line="+1900"/>
-        <location line="+2270"/>
+        <location line="+2316"/>
         <source>Add</source>
         <translation>Adicionar</translation>
     </message>
@@ -15783,7 +15788,7 @@ Defina um valor um pouco abaixo do seu plano. O volume é medido aqui, então fi
         <translation type="vanished">Inserir valor:</translation>
     </message>
     <message>
-        <location line="-2233"/>
+        <location line="-2279"/>
         <source>Edit Value</source>
         <translation>Editar valor</translation>
     </message>

@@ -754,7 +754,7 @@ Trust the new certificate?</source>
         <translation>普通</translation>
     </message>
     <message>
-        <location filename="../src/gui/dialogs/OptionsDialog.cpp" line="+3423"/>
+        <location filename="../src/gui/dialogs/OptionsDialog.cpp" line="+3424"/>
         <source>Test</source>
         <translation>測試</translation>
     </message>
@@ -11000,8 +11000,8 @@ Download it again?</source>
         <translation>說明</translation>
     </message>
     <message>
-        <location line="+270"/>
-        <location line="+2214"/>
+        <location line="+272"/>
+        <location line="+2212"/>
         <location line="+59"/>
         <location line="+6"/>
         <location line="+4"/>
@@ -11013,7 +11013,7 @@ Download it again?</source>
         <translation>IP 過濾器</translation>
     </message>
     <message>
-        <location line="-2328"/>
+        <location line="-2326"/>
         <source>IP filter reloaded: %1 entries.</source>
         <translation>IP 過濾器已重新載入：%1 個項目。</translation>
     </message>
@@ -11039,29 +11039,29 @@ Download it again?</source>
     </message>
     <message>
         <location line="+2"/>
-        <location line="+8373"/>
+        <location line="+8417"/>
         <source>BitTorrent</source>
         <translation>BitTorrent</translation>
     </message>
     <message>
-        <location line="-8262"/>
+        <location line="-8306"/>
         <source>User Name</source>
         <translation>使用者名稱</translation>
     </message>
     <message>
         <location line="+8"/>
-        <location line="+6094"/>
+        <location line="+6092"/>
         <source>Language</source>
         <translation>語言</translation>
     </message>
     <message>
-        <location line="-6091"/>
+        <location line="-6089"/>
         <source>System Default</source>
         <translation>系統預設</translation>
     </message>
     <message>
         <location line="+14"/>
-        <location line="+804"/>
+        <location line="+802"/>
         <location line="+384"/>
         <location line="+475"/>
         <location line="+298"/>
@@ -11069,7 +11069,7 @@ Download it again?</source>
         <translation>其他</translation>
     </message>
     <message>
-        <location line="-1958"/>
+        <location line="-1956"/>
         <source>Bring to front on link click</source>
         <translation>點選連結時將視窗移至最前</translation>
     </message>
@@ -11156,25 +11156,25 @@ Download it again?</source>
     <message>
         <location line="+8"/>
         <location line="+18"/>
-        <location line="+6006"/>
+        <location line="+6004"/>
         <source>Core</source>
         <translation>核心</translation>
     </message>
     <message>
-        <location line="-6019"/>
+        <location line="-6017"/>
         <source>Address:</source>
         <translation>位址：</translation>
     </message>
     <message>
         <location line="+4"/>
-        <location line="+1379"/>
+        <location line="+1377"/>
         <location line="+774"/>
         <location line="+427"/>
         <source>Port:</source>
         <translation>連接埠：</translation>
     </message>
     <message>
-        <location line="-2577"/>
+        <location line="-2575"/>
         <source>authentication token</source>
         <translation>驗證權杖</translation>
     </message>
@@ -11429,7 +11429,7 @@ Are you sure you want to continue?</source>
     </message>
     <message>
         <location line="+2"/>
-        <location line="+1866"/>
+        <location line="+1864"/>
         <location line="+133"/>
         <location line="+296"/>
         <location line="+1032"/>
@@ -11441,7 +11441,7 @@ Are you sure you want to continue?</source>
         <translation>已啟用</translation>
     </message>
     <message>
-        <location line="-5115"/>
+        <location line="-5113"/>
         <source>Reset</source>
         <translation>重置</translation>
     </message>
@@ -11458,13 +11458,13 @@ Are you sure you want to continue?</source>
     <message>
         <location line="+3"/>
         <location line="+6"/>
-        <location line="+4507"/>
+        <location line="+4505"/>
         <location line="+334"/>
         <source> KB/s</source>
         <translation> KB/s</translation>
     </message>
     <message>
-        <location line="-4844"/>
+        <location line="-4842"/>
         <source>Upload</source>
         <translation>上傳</translation>
     </message>
@@ -11495,18 +11495,18 @@ Are you sure you want to continue?</source>
     </message>
     <message>
         <location line="+23"/>
-        <location line="+4347"/>
+        <location line="+4345"/>
         <source>Client Port</source>
         <translation>客戶端連接埠</translation>
     </message>
     <message>
-        <location line="-4344"/>
-        <location line="+7744"/>
+        <location line="-4342"/>
+        <location line="+7788"/>
         <source>TCP</source>
         <translation>TCP</translation>
     </message>
     <message>
-        <location line="-7738"/>
+        <location line="-7782"/>
         <source>UDP</source>
         <translation>UDP</translation>
     </message>
@@ -11516,12 +11516,12 @@ Are you sure you want to continue?</source>
     </message>
     <message>
         <location line="+6"/>
-        <location line="+4347"/>
+        <location line="+4345"/>
         <source>Test Ports</source>
         <translation>測試連接埠</translation>
     </message>
     <message>
-        <location line="-4338"/>
+        <location line="-4336"/>
         <source>Use UPnP to Setup Ports</source>
         <translation>使用 UPnP 設定連接埠</translation>
     </message>
@@ -11537,23 +11537,23 @@ Are you sure you want to continue?</source>
     </message>
     <message>
         <location line="+4"/>
-        <location line="+1735"/>
-        <location line="+5575"/>
+        <location line="+1733"/>
+        <location line="+5616"/>
         <source>Any</source>
         <translation>任何</translation>
     </message>
     <message>
-        <location line="-7308"/>
+        <location line="-7347"/>
         <source>Use only this network interface, for example a VPN tunnel. Pick one from the list, or type an IP address or a subnet such as 10.64.0.0/10 (the interface holding an address in it). Connections through a proxy are not bound.</source>
         <translation>只使用這個網路介面，例如 VPN 通道。可從清單中選擇，或輸入 IP 位址或子網路，例如 10.64.0.0/10（即擁有該範圍內位址的介面）。透過代理的連線不會被綁定。</translation>
     </message>
     <message>
-        <location line="+5"/>
+        <location line="+7244"/>
         <source>While the selected interface is not available, all P2P, Usenet and update connections stay closed.</source>
         <translation>在選取的介面無法使用期間，所有 P2P、Usenet 和更新連線都會保持關閉。</translation>
     </message>
     <message>
-        <location line="+11"/>
+        <location line="-7230"/>
         <source>Max. Sources/File</source>
         <translation>每個檔案最大來源數</translation>
     </message>
@@ -12097,14 +12097,14 @@ Every Usenet connection then passes through the proxy, so its speed caps the dow
         <translation>SMTP 伺服器設定</translation>
     </message>
     <message>
-        <location line="-1652"/>
+        <location line="-1650"/>
         <location line="+5"/>
-        <location line="+1650"/>
+        <location line="+1648"/>
         <source>Connection</source>
         <translation>連線</translation>
     </message>
     <message>
-        <location line="-1651"/>
+        <location line="-1649"/>
         <location line="+53"/>
         <source>ed3k</source>
         <translation>ed3k</translation>
@@ -12160,7 +12160,7 @@ Every Usenet connection then passes through the proxy, so its speed caps the dow
         <translation>受信任的核心:</translation>
     </message>
     <message>
-        <location line="+1342"/>
+        <location line="+1340"/>
         <source>Server:</source>
         <translation>伺服器：</translation>
     </message>
@@ -12912,23 +12912,23 @@ Every Usenet connection then passes through the proxy, so its speed caps the dow
         <location line="+1035"/>
         <location line="+154"/>
         <location line="+1900"/>
-        <location line="+2270"/>
+        <location line="+2316"/>
         <source>Add</source>
         <translation>加入</translation>
     </message>
     <message>
-        <location line="-7880"/>
-        <location line="+2522"/>
+        <location line="-7924"/>
+        <location line="+2520"/>
         <location line="+1035"/>
         <location line="+154"/>
         <location line="+1627"/>
         <location line="+316"/>
-        <location line="+2232"/>
+        <location line="+2278"/>
         <source>Remove</source>
         <translation>移除</translation>
     </message>
     <message>
-        <location line="-5343"/>
+        <location line="-5389"/>
         <source>Display name (optional)</source>
         <translation>顯示名稱（選填）</translation>
     </message>
@@ -13006,7 +13006,7 @@ Every Usenet connection then passes through the proxy, so its speed caps the dow
         <translation>頻寬</translation>
     </message>
     <message>
-        <location line="-4655"/>
+        <location line="-4653"/>
         <source>Downloads that are receiving data, and the sources sending it, are drawn in bold. A source listed under another file (A4AF) is bold too while it transfers. The connected server and the selected category tab are bold as well.</source>
         <translation>正在接收資料的下載及傳送資料的來源以粗體顯示。列在其他檔案下的來源 (A4AF) 在傳輸時也以粗體顯示。已連線的伺服器和選取的分類分頁同樣以粗體顯示。</translation>
     </message>
@@ -13020,18 +13020,18 @@ Every Usenet connection then passes through the proxy, so its speed caps the dow
     </message>
     <message>
         <location line="+255"/>
-        <location line="+4351"/>
+        <location line="+4349"/>
         <source>Open Router</source>
         <translation>開啟路由器</translation>
     </message>
     <message>
-        <location line="-4350"/>
-        <location line="+4351"/>
+        <location line="-4348"/>
+        <location line="+4349"/>
         <source>Opens the web page of this computer&apos;s router, where ports are forwarded</source>
         <translation>開啟此電腦路由器的網頁，可在其中設定連接埠轉送</translation>
     </message>
     <message>
-        <location line="-4340"/>
+        <location line="-4338"/>
         <source>Randomize ports at startup, range</source>
         <translation>啟動時隨機選擇連接埠，範圍</translation>
     </message>
@@ -13041,7 +13041,7 @@ Every Usenet connection then passes through the proxy, so its speed caps the dow
         <translation>每次啟動時從此範圍選擇新的空閒連接埠：TCP、UDP（除非已停用），以及啟用 BitTorrent 時的 BitTorrent 連接埠。請搭配 UPnP 使用，或在路由器中轉送整個範圍。</translation>
     </message>
     <message>
-        <location line="+745"/>
+        <location line="+743"/>
         <source>Rename downloads to the name most sources use</source>
         <translation>將下載重新命名為大多數來源使用的名稱</translation>
     </message>
@@ -14086,7 +14086,12 @@ Adding one later does not fetch its back catalogue: a new indexer gets its own f
         <translation>啟用 BitTorrent</translation>
     </message>
     <message>
-        <location line="+3502"/>
+        <location line="+3073"/>
+        <source>This interface has no default route (split-tunnel VPN?): servers and peers outside its subnets are unreachable. Route all traffic through it, or choose another interface.</source>
+        <translation>此介面沒有預設路由（分割通道 VPN？）：其子網路以外的伺服器和節點無法連線。請讓所有流量經過此介面，或選擇其他介面。</translation>
+    </message>
+    <message>
+        <location line="+475"/>
         <source>TCP/UDP</source>
         <translation>TCP/UDP</translation>
     </message>
@@ -14096,7 +14101,7 @@ Adding one later does not fetch its back catalogue: a new indexer gets its own f
         <translation>eD2K TCP 與 UDP、Kad 和 ed3k 共用一個連接埠</translation>
     </message>
     <message>
-        <location line="+61"/>
+        <location line="+62"/>
         <source>%1 — not available</source>
         <translation>%1 — 無法使用</translation>
     </message>
@@ -14105,7 +14110,7 @@ Adding one later does not fetch its back catalogue: a new indexer gets its own f
         <translation type="vanished">隨背景程式啟動 BitTorrent 引擎。關閉時不下載也不做種任何種子。</translation>
     </message>
     <message>
-        <location line="-48"/>
+        <location line="-49"/>
         <source>unlimited</source>
         <translation>無限制</translation>
     </message>
@@ -14144,7 +14149,7 @@ Adding one later does not fetch its back catalogue: a new indexer gets its own f
         <translation type="vanished">同時用於 TCP 和 UDP。必須與 eD2K 連接埠不同。</translation>
     </message>
     <message>
-        <location line="-3412"/>
+        <location line="-3458"/>
         <source>Listen port (TCP/UDP):</source>
         <translation>監聽連接埠 (TCP/UDP)：</translation>
     </message>
@@ -14292,7 +14297,7 @@ Adding one later does not fetch its back catalogue: a new indexer gets its own f
         <translation>無法更新檔案關聯：%1</translation>
     </message>
     <message>
-        <location line="+1080"/>
+        <location line="+1126"/>
         <source>UDP is disabled in the config file (udpPort: 0)</source>
         <translation>UDP 已在設定檔中停用 (udpPort: 0)</translation>
     </message>
@@ -14397,7 +14402,7 @@ Create it?</source>
 %1</translation>
     </message>
     <message>
-        <location line="-3152"/>
+        <location line="-3198"/>
         <source>Disabled</source>
         <translation>已停用</translation>
     </message>
@@ -15168,12 +15173,12 @@ News server connections switch over immediately.</source>
         <translation>找不到 specialdlp 程式庫，檢查未啟用</translation>
     </message>
     <message>
-        <location line="+473"/>
+        <location line="+502"/>
         <source>Port forwarding: %1</source>
         <translation>連接埠轉送：%1</translation>
     </message>
     <message>
-        <location line="+88"/>
+        <location line="+105"/>
         <source>Database: not connected to the core</source>
         <translation>資料庫：未連線到核心</translation>
     </message>

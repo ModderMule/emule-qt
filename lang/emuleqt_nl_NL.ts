@@ -760,7 +760,7 @@ Het nieuwe certificaat vertrouwen?</translation>
         <translation>Normaal</translation>
     </message>
     <message>
-        <location filename="../src/gui/dialogs/OptionsDialog.cpp" line="+3423"/>
+        <location filename="../src/gui/dialogs/OptionsDialog.cpp" line="+3424"/>
         <source>Test</source>
         <translation>Testen</translation>
     </message>
@@ -11028,8 +11028,8 @@ Opnieuw downloaden?</translation>
         <translation>Help</translation>
     </message>
     <message>
-        <location line="+270"/>
-        <location line="+2214"/>
+        <location line="+272"/>
+        <location line="+2212"/>
         <location line="+59"/>
         <location line="+6"/>
         <location line="+4"/>
@@ -11041,7 +11041,7 @@ Opnieuw downloaden?</translation>
         <translation>IP-filter</translation>
     </message>
     <message>
-        <location line="-2328"/>
+        <location line="-2326"/>
         <source>IP filter reloaded: %1 entries.</source>
         <translation>IP-filter opnieuw geladen: %1 regels.</translation>
     </message>
@@ -11067,29 +11067,29 @@ Opnieuw downloaden?</translation>
     </message>
     <message>
         <location line="+2"/>
-        <location line="+8373"/>
+        <location line="+8417"/>
         <source>BitTorrent</source>
         <translation>BitTorrent</translation>
     </message>
     <message>
-        <location line="-8262"/>
+        <location line="-8306"/>
         <source>User Name</source>
         <translation>Gebruikersnaam</translation>
     </message>
     <message>
         <location line="+8"/>
-        <location line="+6094"/>
+        <location line="+6092"/>
         <source>Language</source>
         <translation>Taal</translation>
     </message>
     <message>
-        <location line="-6091"/>
+        <location line="-6089"/>
         <source>System Default</source>
         <translation>Systeemstandaard</translation>
     </message>
     <message>
         <location line="+14"/>
-        <location line="+804"/>
+        <location line="+802"/>
         <location line="+384"/>
         <location line="+475"/>
         <location line="+298"/>
@@ -11097,7 +11097,7 @@ Opnieuw downloaden?</translation>
         <translation>Diversen</translation>
     </message>
     <message>
-        <location line="-1958"/>
+        <location line="-1956"/>
         <source>Bring to front on link click</source>
         <translation>Naar voren brengen bij klik op verwijzing</translation>
     </message>
@@ -11184,25 +11184,25 @@ Opnieuw downloaden?</translation>
     <message>
         <location line="+8"/>
         <location line="+18"/>
-        <location line="+6006"/>
+        <location line="+6004"/>
         <source>Core</source>
         <translation>Kern</translation>
     </message>
     <message>
-        <location line="-6019"/>
+        <location line="-6017"/>
         <source>Address:</source>
         <translation>Adres:</translation>
     </message>
     <message>
         <location line="+4"/>
-        <location line="+1379"/>
+        <location line="+1377"/>
         <location line="+774"/>
         <location line="+427"/>
         <source>Port:</source>
         <translation>Poort:</translation>
     </message>
     <message>
-        <location line="-2577"/>
+        <location line="-2575"/>
         <source>authentication token</source>
         <translation>authenticatietoken</translation>
     </message>
@@ -11457,7 +11457,7 @@ Weet u zeker dat u wilt doorgaan?</translation>
     </message>
     <message>
         <location line="+2"/>
-        <location line="+1866"/>
+        <location line="+1864"/>
         <location line="+133"/>
         <location line="+296"/>
         <location line="+1032"/>
@@ -11469,7 +11469,7 @@ Weet u zeker dat u wilt doorgaan?</translation>
         <translation>Ingeschakeld</translation>
     </message>
     <message>
-        <location line="-5115"/>
+        <location line="-5113"/>
         <source>Reset</source>
         <translation>Herstellen</translation>
     </message>
@@ -11486,13 +11486,13 @@ Weet u zeker dat u wilt doorgaan?</translation>
     <message>
         <location line="+3"/>
         <location line="+6"/>
-        <location line="+4507"/>
+        <location line="+4505"/>
         <location line="+334"/>
         <source> KB/s</source>
         <translation> KB/s</translation>
     </message>
     <message>
-        <location line="-4844"/>
+        <location line="-4842"/>
         <source>Upload</source>
         <translation>Upload</translation>
     </message>
@@ -11523,18 +11523,18 @@ Weet u zeker dat u wilt doorgaan?</translation>
     </message>
     <message>
         <location line="+23"/>
-        <location line="+4347"/>
+        <location line="+4345"/>
         <source>Client Port</source>
         <translation>Cliëntpoort</translation>
     </message>
     <message>
-        <location line="-4344"/>
-        <location line="+7744"/>
+        <location line="-4342"/>
+        <location line="+7788"/>
         <source>TCP</source>
         <translation>TCP</translation>
     </message>
     <message>
-        <location line="-7738"/>
+        <location line="-7782"/>
         <source>UDP</source>
         <translation>UDP</translation>
     </message>
@@ -11544,12 +11544,12 @@ Weet u zeker dat u wilt doorgaan?</translation>
     </message>
     <message>
         <location line="+6"/>
-        <location line="+4347"/>
+        <location line="+4345"/>
         <source>Test Ports</source>
         <translation>Poorten testen</translation>
     </message>
     <message>
-        <location line="-4338"/>
+        <location line="-4336"/>
         <source>Use UPnP to Setup Ports</source>
         <translation>UPnP gebruiken om poorten in te stellen</translation>
     </message>
@@ -11565,23 +11565,23 @@ Weet u zeker dat u wilt doorgaan?</translation>
     </message>
     <message>
         <location line="+4"/>
-        <location line="+1735"/>
-        <location line="+5575"/>
+        <location line="+1733"/>
+        <location line="+5616"/>
         <source>Any</source>
         <translation>Alle</translation>
     </message>
     <message>
-        <location line="-7308"/>
+        <location line="-7347"/>
         <source>Use only this network interface, for example a VPN tunnel. Pick one from the list, or type an IP address or a subnet such as 10.64.0.0/10 (the interface holding an address in it). Connections through a proxy are not bound.</source>
         <translation>Alleen deze netwerkinterface gebruiken, bijvoorbeeld een VPN-tunnel. Kies er een uit de lijst, of typ een IP-adres of een subnet zoals 10.64.0.0/10 (de interface met een adres daarbinnen). Verbindingen via een proxy worden niet gebonden.</translation>
     </message>
     <message>
-        <location line="+5"/>
+        <location line="+7244"/>
         <source>While the selected interface is not available, all P2P, Usenet and update connections stay closed.</source>
         <translation>Zolang de geselecteerde interface niet beschikbaar is, blijven alle P2P-, Usenet- en updateverbindingen gesloten.</translation>
     </message>
     <message>
-        <location line="+11"/>
+        <location line="-7230"/>
         <source>Max. Sources/File</source>
         <translation>Max. bronnen/bestand</translation>
     </message>
@@ -12125,14 +12125,14 @@ Elke Usenet-verbinding loopt dan via de proxy, dus de snelheid ervan begrenst de
         <translation>SMTP-serverinstellingen</translation>
     </message>
     <message>
-        <location line="-1652"/>
+        <location line="-1650"/>
         <location line="+5"/>
-        <location line="+1650"/>
+        <location line="+1648"/>
         <source>Connection</source>
         <translation>Verbinding</translation>
     </message>
     <message>
-        <location line="-1651"/>
+        <location line="-1649"/>
         <location line="+53"/>
         <source>ed3k</source>
         <translation>ed3k</translation>
@@ -12188,7 +12188,7 @@ Elke Usenet-verbinding loopt dan via de proxy, dus de snelheid ervan begrenst de
         <translation>Vertrouwde cores:</translation>
     </message>
     <message>
-        <location line="+1342"/>
+        <location line="+1340"/>
         <source>Server:</source>
         <translation>Server:</translation>
     </message>
@@ -12940,23 +12940,23 @@ Elke Usenet-verbinding loopt dan via de proxy, dus de snelheid ervan begrenst de
         <location line="+1035"/>
         <location line="+154"/>
         <location line="+1900"/>
-        <location line="+2270"/>
+        <location line="+2316"/>
         <source>Add</source>
         <translation>Toevoegen</translation>
     </message>
     <message>
-        <location line="-7880"/>
-        <location line="+2522"/>
+        <location line="-7924"/>
+        <location line="+2520"/>
         <location line="+1035"/>
         <location line="+154"/>
         <location line="+1627"/>
         <location line="+316"/>
-        <location line="+2232"/>
+        <location line="+2278"/>
         <source>Remove</source>
         <translation>Verwijderen</translation>
     </message>
     <message>
-        <location line="-5343"/>
+        <location line="-5389"/>
         <source>Display name (optional)</source>
         <translation>Weergavenaam (optioneel)</translation>
     </message>
@@ -13034,7 +13034,7 @@ Elke Usenet-verbinding loopt dan via de proxy, dus de snelheid ervan begrenst de
         <translation>Bandbreedte</translation>
     </message>
     <message>
-        <location line="-4655"/>
+        <location line="-4653"/>
         <source>Downloads that are receiving data, and the sources sending it, are drawn in bold. A source listed under another file (A4AF) is bold too while it transfers. The connected server and the selected category tab are bold as well.</source>
         <translation>Downloads die gegevens ontvangen, en de bronnen die ze sturen, worden vet weergegeven. Een bron onder een ander bestand (A4AF) is ook vet zolang hij overdraagt. De verbonden server en het gekozen categorietabblad zijn ook vet.</translation>
     </message>
@@ -13048,18 +13048,18 @@ Elke Usenet-verbinding loopt dan via de proxy, dus de snelheid ervan begrenst de
     </message>
     <message>
         <location line="+255"/>
-        <location line="+4351"/>
+        <location line="+4349"/>
         <source>Open Router</source>
         <translation>Router openen</translation>
     </message>
     <message>
-        <location line="-4350"/>
-        <location line="+4351"/>
+        <location line="-4348"/>
+        <location line="+4349"/>
         <source>Opens the web page of this computer&apos;s router, where ports are forwarded</source>
         <translation>Opent de webpagina van de router van deze computer, waar poorten worden doorgestuurd</translation>
     </message>
     <message>
-        <location line="-4340"/>
+        <location line="-4338"/>
         <source>Randomize ports at startup, range</source>
         <translation>Poorten bij start willekeurig kiezen, bereik</translation>
     </message>
@@ -13069,7 +13069,7 @@ Elke Usenet-verbinding loopt dan via de proxy, dus de snelheid ervan begrenst de
         <translation>Kiest bij elke start nieuwe vrije poorten uit dit bereik: TCP, UDP tenzij uitgeschakeld, en de BitTorrent-poort als BitTorrent is ingeschakeld. Gebruik het met UPnP, of stuur het hele bereik door in je router.</translation>
     </message>
     <message>
-        <location line="+745"/>
+        <location line="+743"/>
         <source>Rename downloads to the name most sources use</source>
         <translation>Downloads hernoemen naar de naam die de meeste bronnen gebruiken</translation>
     </message>
@@ -14115,7 +14115,12 @@ Een later toegevoegde indexer haalt zijn oudere aanbod niet op: een nieuwe index
         <translation>BitTorrent inschakelen</translation>
     </message>
     <message>
-        <location line="+3502"/>
+        <location line="+3073"/>
+        <source>This interface has no default route (split-tunnel VPN?): servers and peers outside its subnets are unreachable. Route all traffic through it, or choose another interface.</source>
+        <translation>Deze interface heeft geen standaardroute (split-tunnel-VPN?): servers en peers buiten de subnetten zijn onbereikbaar. Leid al het verkeer erdoor of kies een andere interface.</translation>
+    </message>
+    <message>
+        <location line="+475"/>
         <source>TCP/UDP</source>
         <translation>TCP/UDP</translation>
     </message>
@@ -14125,7 +14130,7 @@ Een later toegevoegde indexer haalt zijn oudere aanbod niet op: een nieuwe index
         <translation>Eén poort voor eD2K-TCP en -UDP, Kad en ed3k</translation>
     </message>
     <message>
-        <location line="+61"/>
+        <location line="+62"/>
         <source>%1 — not available</source>
         <translation>%1 — niet beschikbaar</translation>
     </message>
@@ -14134,7 +14139,7 @@ Een later toegevoegde indexer haalt zijn oudere aanbod niet op: een nieuwe index
         <translation type="vanished">Start de BitTorrent-engine samen met de daemon. Uitgeschakeld wordt er geen torrent gedownload of geseed.</translation>
     </message>
     <message>
-        <location line="-48"/>
+        <location line="-49"/>
         <source>unlimited</source>
         <translation>onbeperkt</translation>
     </message>
@@ -14173,7 +14178,7 @@ Een later toegevoegde indexer haalt zijn oudere aanbod niet op: een nieuwe index
         <translation type="vanished">Gebruikt voor zowel TCP als UDP. Moet verschillen van de eD2K-poorten.</translation>
     </message>
     <message>
-        <location line="-3412"/>
+        <location line="-3458"/>
         <source>Listen port (TCP/UDP):</source>
         <translation>Luisterpoort (TCP/UDP):</translation>
     </message>
@@ -14321,7 +14326,7 @@ Een later toegevoegde indexer haalt zijn oudere aanbod niet op: een nieuwe index
         <translation>De bestandskoppelingen konden niet worden bijgewerkt: %1</translation>
     </message>
     <message>
-        <location line="+1080"/>
+        <location line="+1126"/>
         <source>UDP is disabled in the config file (udpPort: 0)</source>
         <translation>UDP is uitgeschakeld in het configuratiebestand (udpPort: 0)</translation>
     </message>
@@ -14426,7 +14431,7 @@ Aanmaken?</translation>
 %1</translation>
     </message>
     <message>
-        <location line="-3152"/>
+        <location line="-3198"/>
         <source>Disabled</source>
         <translation>Uitgeschakeld</translation>
     </message>
@@ -15197,12 +15202,12 @@ Verbindingen met nieuwsservers schakelen direct om.</translation>
         <translation>specialdlp-bibliotheek niet gevonden, controles zijn inactief</translation>
     </message>
     <message>
-        <location line="+473"/>
+        <location line="+502"/>
         <source>Port forwarding: %1</source>
         <translation>Poortdoorverwijzing: %1</translation>
     </message>
     <message>
-        <location line="+88"/>
+        <location line="+105"/>
         <source>Database: not connected to the core</source>
         <translation>Database: niet verbonden met de kern</translation>
     </message>
