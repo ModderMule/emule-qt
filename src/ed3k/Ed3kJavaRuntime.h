@@ -4,12 +4,13 @@
 /// @brief Finds a Java runtime for the hoster resolver, or downloads one (docs/hoster.md).
 ///
 /// Probe order: the pref, the downloaded runtime under <config>/ed3k/java/jre, $JAVA_HOME,
-/// macOS java_home, `java` on PATH, the usual install folders. Each candidate runs
-/// `java -XshowSettings:properties -version`; it must be Java 17 or newer and of the
-/// daemon's CPU architecture. With none found, Eclipse Temurin 21 (JRE) is fetched from
-/// api.adoptium.net through the user's proxy, its SHA-256 checked, and unpacked with the
-/// system `tar` (bsdtar on macOS and Windows 10+, GNU tar on Linux), which keeps exec bits
-/// and links.
+/// macOS java_home, `java` on PATH, the usual install folders (Windows: also the registry).
+/// Each candidate runs `java -XshowSettings:properties -version`; it must be Java 17 or newer
+/// and of the daemon's CPU architecture. With none found, Eclipse Temurin 21 (JRE) is fetched
+/// from api.adoptium.net through the user's proxy, its SHA-256 checked, and unpacked: the
+/// Windows zip in-process (ArchiveReader), the tar.gz elsewhere with the system `tar`, which
+/// keeps exec bits and links. The fresh runtime alone is probed then; failing, the state is
+/// Failed (not Missing), so it is not fetched again and again.
 
 #ifdef EMULE_HAVE_HOSTER_JD
 
@@ -26,6 +27,7 @@
 class QNetworkAccessManager;
 class QNetworkReply;
 class QProcess;
+class QThread;
 
 namespace eMule { class HttpStreamDownload; }
 
@@ -53,7 +55,8 @@ public:
     ~Ed3kJavaRuntime() override;
 
     /// Probes in order (async); stateChanged() when done. @p prefPath first when set.
-    void locate(const QString& prefPath);
+    /// False (nothing done) while a probe, download or unpack runs.
+    bool locate(const QString& prefPath);
     /// Fetches Temurin into <baseDir>/java/jre, then probes it. Refused (false) while
     /// not allowed: only a user who switched hoster downloads on gets a runtime fetched.
     bool download();
@@ -101,7 +104,10 @@ private:
     void onMetadata();
     void onPackageDone(bool ok);
     void unpack(const QString& archive);
-    void unpackDone(int exitCode);
+    void unpackDone(bool ok);
+    /// <tmp>/<home> moved to runtimeDir(); an old runtime moved aside first, so a locked one
+    /// (in use on Windows) stays whole. False: Failed set
+    bool installTree(const QString& home);
     /// The legacy runtime moved to runtimeDir() when there is none yet; its empty parent removed
     void adoptLegacy();
     /// java under an unpacked JDK/JRE tree (Contents/Home on macOS).
@@ -123,6 +129,9 @@ private:
     std::unique_ptr<HttpStreamDownload> m_dl;
     Package m_package;
     QPointer<QProcess> m_tar;
+    QPointer<QThread> m_unpackThread;   ///< Windows: the zip read in-process
+    QString m_archive;                  ///< while Unpacking
+    bool m_verifyInstall = false;       ///< probing our own fresh install only
 };
 
 } // namespace eMule::ed3k
