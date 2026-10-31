@@ -2,7 +2,7 @@
 
 /// @file LogWidget.h
 /// @brief Tabbed log display matching the MFC "Server Info | Log | Verbose" tabs,
-/// plus Leecher, Usenet, Kad, the three ed3k tabs and IPC.
+/// plus Leecher, Usenet, Torrent, Hoster, Kad, the three ed3k tabs and IPC.
 ///
 /// Installs a Qt message handler to capture qCInfo/qCWarning/qCDebug output
 /// from the core logging categories and routes them to the appropriate tabs.
@@ -22,9 +22,10 @@ namespace eMule {
 
 class LogTextView;
 
-/// Tabbed log widget with Server Info, Log, Verbose, Leecher, Usenet, Kad, ed3k, ed3k Verbose,
-/// ed3k Kad and IPC tabs. Captures Qt logging category output from the core layer.
-/// The Leecher tab follows antiLeecher, the Usenet tab showUsenetLog, the ed3k tabs ed3kEnabled, the IPC tab enableIpcLog.
+/// Tabbed log widget with Server Info, Log, Verbose, Leecher, Usenet, Torrent, Hoster, Kad,
+/// ed3k, ed3k Verbose, ed3k Kad and IPC tabs. Captures Qt logging category output from the core layer.
+/// The Leecher tab follows antiLeecher, the Usenet tab usenetEnabled + showUsenetLog, the Torrent
+/// tab btEnabled, the Hoster tab hosterDownloadsOn, the ed3k tabs ed3kEnabled, the IPC tab enableIpcLog.
 class LogWidget : public QWidget {
     Q_OBJECT
 
@@ -69,10 +70,26 @@ public:
     /// Append a message to the Usenet tab.
     void appendUsenet(const QString& msg, const QString& ts = {}, qint64 seqId = 0);
 
-    /// Route one emule.usenet line: to the Usenet tab when it is shown, else
-    /// to Log/Verbose by severity as before the tab existed. Debug lines are
-    /// dropped when hidden, they would flood Verbose.
+    /// Route one emule.usenet line: to the Usenet tab when shown, else to
+    /// Log/Verbose by severity. Debug lines are dropped when hidden, they would
+    /// flood Verbose.
     void routeUsenet(QtMsgType type, const QString& colored,
+                     const QString& ts = {}, qint64 seqId = 0);
+
+    /// Append a message to the Torrent tab (libtorrent alerts).
+    void appendTorrent(const QString& msg, const QString& ts = {}, qint64 seqId = 0);
+
+    /// Route one emule.torrent line: to the Torrent tab when shown, else like
+    /// routeUsenet().
+    void routeTorrent(QtMsgType type, const QString& colored,
+                      const QString& ts = {}, qint64 seqId = 0);
+
+    /// Append a message to the Hoster tab.
+    void appendHoster(const QString& msg, const QString& ts = {}, qint64 seqId = 0);
+
+    /// Route one emule.hoster line: to the Hoster tab when shown, else to
+    /// Log/Verbose by severity.
+    void routeHoster(QtMsgType type, const QString& colored,
                      const QString& ts = {}, qint64 seqId = 0);
 
     /// The ed3k tabs: emule.ed3k (debug lines in ed3k Verbose) and emule.ed3k.kad.
@@ -95,6 +112,12 @@ public:
     /// Show or hide the Usenet tab.
     void setUsenetTabVisible(bool visible);
 
+    /// Show or hide the Torrent tab.
+    void setTorrentTabVisible(bool visible);
+
+    /// Show or hide the Hoster tab.
+    void setHosterTabVisible(bool visible);
+
     /// Show or hide the Leecher tab (follows antiLeecher).
     void setLeecherTabVisible(bool visible);
 
@@ -110,6 +133,8 @@ public:
     [[nodiscard]] QString leecherText() const;
     [[nodiscard]] QString kadText() const;
     [[nodiscard]] QString usenetText() const;
+    [[nodiscard]] QString torrentText() const;
+    [[nodiscard]] QString hosterText() const;
     [[nodiscard]] QString ed3kText() const;
     [[nodiscard]] QString ed3kVerboseText() const;
     [[nodiscard]] QString ed3kKadText() const;
@@ -124,7 +149,7 @@ public:
     void removeMessageHandler();
 
     /// Open or close the GUI's own log files (emuleqt.log, emuleqt_Verbose.log,
-    /// emuleqt_Kad.log, _Usenet, _Ed3k and _Ed3kKad in the config directory) to match the logToDiskGui
+    /// emuleqt_Kad.log, _Usenet, _Ed3k, _Ed3kKad, _Hoster, _Torrent and _Leecher in the config directory) to match the logToDiskGui
     /// pref. The daemon runs DaemonApp::applyLogFileSettings() for its own set
     /// — one switch per process. Safe to call at startup and whenever the pref
     /// changes at runtime.
@@ -178,12 +203,18 @@ private:
     LogTextView* m_leecherBrowser = nullptr;
     LogTextView* m_kadBrowser = nullptr;
     LogTextView* m_usenetBrowser = nullptr;
+    LogTextView* m_torrentBrowser = nullptr;
+    LogTextView* m_hosterBrowser = nullptr;
     LogTextView* m_ed3kBrowser = nullptr;
     LogTextView* m_ed3kVerboseBrowser = nullptr;
     LogTextView* m_ed3kKadBrowser = nullptr;
     LogTextView* m_ipcLogBrowser = nullptr;
     int m_ipcTabIndex = -1;
     int m_usenetTabIndex = -1;
+    int m_torrentTabIndex = -1;
+    bool m_torrentTabVisible = true;
+    int m_hosterTabIndex = -1;
+    bool m_hosterTabVisible = true;
     int m_leecherTabIndex = -1;
     bool m_leecherTabVisible = true;
     bool m_usenetTabVisible = true;
@@ -199,6 +230,8 @@ private:
     QList<qint64> m_leecherSeqIds;
     QList<qint64> m_kadSeqIds;
     QList<qint64> m_usenetSeqIds;
+    QList<qint64> m_torrentSeqIds;
+    QList<qint64> m_hosterSeqIds;
     QList<qint64> m_ed3kSeqIds;
     QList<qint64> m_ed3kVerboseSeqIds;
     QList<qint64> m_ed3kKadSeqIds;

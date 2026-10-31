@@ -97,7 +97,7 @@ void pruneShared(const QString& sharedDir, const QString& keep, int days)
         const QFileInfo used(dir.filePath(v + u'/' + QLatin1StringView(kLastUsed)));
         if (v.endsWith(QStringLiteral(".tmp")) || !used.exists() || used.lastModified() < cutoff) {
             QDir(dir.filePath(v)).removeRecursively();
-            logEd3k(QStringLiteral("hoster: shared resolver plugins %1 removed (unused)").arg(v));
+            logHoster(QStringLiteral("hoster: shared resolver plugins %1 removed (unused)").arg(v));
         }
     }
 }
@@ -212,7 +212,7 @@ bool Ed3kJdResolver::install(const QString& zip, const QString& dataDir, QString
     QFile out(stampFile);
     if (out.open(QIODevice::WriteOnly | QIODevice::Truncate))
         out.write(zipStamp(zip).toUtf8());
-    logEd3k(QStringLiteral("hoster: resolver plugins installed from %1").arg(zip));
+    logHoster(QStringLiteral("hoster: resolver plugins installed from %1").arg(zip));
     return true;
 }
 
@@ -261,7 +261,7 @@ QString Ed3kJdResolver::installShared(const QString& zip, const QString& sharedD
         return fail(QStringLiteral("cannot move %1").arg(tmp));
     touchUsed(version);
     pruneShared(sharedDir, key, kSharedKeepDays);
-    logEd3k(QStringLiteral("hoster: shared resolver plugins installed into %1").arg(version));
+    logHoster(QStringLiteral("hoster: shared resolver plugins installed into %1").arg(version));
     return root;
 }
 
@@ -272,7 +272,7 @@ void Ed3kJdResolver::removePlugins(const QString& dataDir)
     const QString plugins = QDir(dataDir).filePath(QStringLiteral("plugins"));
     QDir(plugins + QStringLiteral(".tmp")).removeRecursively();
     if (QFileInfo(plugins).isDir() && QDir(plugins).removeRecursively())
-        logEd3k(QStringLiteral("hoster: resolver plugins removed (hoster downloads off)"));
+        logHoster(QStringLiteral("hoster: resolver plugins removed (hoster downloads off)"));
 }
 
 QStringList Ed3kJdResolver::arguments() const
@@ -405,7 +405,8 @@ std::optional<std::pair<Ed3kResolver::TaskId, ResolverEvent>> Ed3kJdResolver::pa
         {QStringLiteral("puzzle"), K::Puzzle},       {QStringLiteral("done"), K::Done},
         {QStringLiteral("gone"), K::Gone},           {QStringLiteral("needsUser"), K::NeedsUser},
         {QStringLiteral("error"), K::Failed},        {QStringLiteral("cancelled"), K::Cancelled},
-        {QStringLiteral("account"), K::Account},    {QStringLiteral("sites"), K::Sites}};
+        {QStringLiteral("account"), K::Account},    {QStringLiteral("sites"), K::Sites},
+        {QStringLiteral("status"), K::Status}};
     const auto k = kinds.find(ev);
     if (k == kinds.end())
         return std::nullopt;
@@ -495,7 +496,7 @@ void Ed3kJdResolver::installPlugins()
         return;
     if (m_config.sharedDir.isEmpty()) {
         if (!m_config.zip.isEmpty() && !install(m_config.zip, m_config.dataDir, &m_installError))
-            logEd3kWarning(QStringLiteral("hoster: resolver plugins not installed: %1").arg(m_installError));
+            logHosterWarning(QStringLiteral("hoster: resolver plugins not installed: %1").arg(m_installError));
         m_root = instanceRoot(m_config.dataDir);
         m_revision = readRevision(m_root);
         return;
@@ -505,7 +506,7 @@ void Ed3kJdResolver::installPlugins()
     if (m_config.zip.isEmpty())
         m_root = newestShared(m_config.sharedDir);
     else if (m_root = installShared(m_config.zip, m_config.sharedDir, &m_installError); m_root.isEmpty())
-        logEd3kWarning(QStringLiteral("hoster: shared resolver plugins not installed: %1").arg(m_installError));
+        logHosterWarning(QStringLiteral("hoster: shared resolver plugins not installed: %1").arg(m_installError));
     m_revision = readRevision(m_root);
 }
 
@@ -531,12 +532,12 @@ bool Ed3kJdResolver::ensureStarted()
     connect(p, &QProcess::finished, this, &Ed3kJdResolver::onFinished);
     connect(p, &QProcess::errorOccurred, this, [this](QProcess::ProcessError e) {
         if (e == QProcess::FailedToStart) {
-            logEd3kWarning(QStringLiteral("hoster: resolver did not start: %1").arg(m_config.java));
+            logHosterWarning(QStringLiteral("hoster: resolver did not start: %1").arg(m_config.java));
             onFinished();
         }
     });
     p->start(m_config.java, arguments());
-    logEd3kDebug(QStringLiteral("hoster: resolver starting"));
+    logHosterDebug(QStringLiteral("hoster: resolver starting"));
     m_stopping = false;
     request({{QStringLiteral("op"), QStringLiteral("hello")}}, false);
     if (!m_config.proxy.isEmpty())
@@ -569,7 +570,7 @@ void Ed3kJdResolver::onStdout()
         handleLine(line);
     }
     if (m_outBuf.size() > kMaxLine) {
-        logEd3kWarning(QStringLiteral("hoster: resolver line too long, stopping it"));
+        logHosterWarning(QStringLiteral("hoster: resolver line too long, stopping it"));
         m_outBuf.clear();
         stop();
     }
@@ -586,7 +587,7 @@ void Ed3kJdResolver::onStderr()
         m_errBuf.remove(0, nl + 1);
         // JD's own log may hold page content: only the driver's lines
         if (line.startsWith("resolver: "))
-            logEd3kDebug(QStringLiteral("hoster: ") + QString::fromUtf8(line.mid(10)));
+            logHosterDebug(QStringLiteral("hoster: ") + QString::fromUtf8(line.mid(10)));
     }
     if (m_errBuf.size() > 64 * 1024)
         m_errBuf.clear();
@@ -601,7 +602,7 @@ void Ed3kJdResolver::onFinished()
     m_proc = nullptr;
     m_stopping = false;
     if (!expected)
-        logEd3kWarning(QStringLiteral("hoster: resolver ended"));
+        logHosterWarning(QStringLiteral("hoster: resolver ended"));
     failPending(QStringLiteral("io"));
     emit stateChanged();
 }
@@ -609,7 +610,7 @@ void Ed3kJdResolver::onFinished()
 void Ed3kJdResolver::onIdle()
 {
     if (m_pending.empty()) {
-        logEd3kDebug(QStringLiteral("hoster: resolver idle, stopping it"));
+        logHosterDebug(QStringLiteral("hoster: resolver idle, stopping it"));
         stop();
     }
 }
@@ -631,7 +632,7 @@ void Ed3kJdResolver::handleLine(const QByteArray& line)
     if (o.value(QStringLiteral("ev")).toString() == QLatin1StringView("hello")) {
         const int proto = o.value(QStringLiteral("protocol")).toInt();
         if (proto != kProtocol) {
-            logEd3kWarning(QStringLiteral("hoster: resolver speaks protocol %1, not %2").arg(proto).arg(kProtocol));
+            logHosterWarning(QStringLiteral("hoster: resolver speaks protocol %1, not %2").arg(proto).arg(kProtocol));
             m_installError = tr("Resolver plugins of another version");
             stop();
             return;

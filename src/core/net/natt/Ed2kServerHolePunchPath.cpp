@@ -93,11 +93,29 @@ void Ed2kServerHolePunchPath::tick()
         m_session = session;
         m_sessionID = env().ourClientID();
         m_sentObfuscated = false;
+        m_splitAddress = false;
         // A key from an earlier session does not count: fetch one for this session.
         if (server->supportsHolePunchExtension() && session.address().isIPv4() && env().serverUdpCrypt().key == 0)
             env().refreshServerKey();
     }
-    if (fresh || env().now() - m_lastKeepaliveMs >= kKeepaliveMs)
+    if (!fresh && env().now() - m_lastKeepaliveMs < kKeepaliveMs)
+        return;
+    // Carrier NAT with one public IPv4 for TCP and another for UDP: the server drops
+    // every 0x9F from an address other than the session's (ed2k-server#40), so the
+    // periodic one is wasted. The ones with 0x60 and after 0x37 still go out.
+    const bool split = addressSplit();
+    if (split != m_splitAddress) {
+        m_splitAddress = split;
+        if (split)
+            log(QStringLiteral("0x9F keepalive paused: server sees TCP from %1, Kad sees UDP from %2")
+                    .arg(Address::fromNetworkOrder(env().serverSeenIPv4()).toString(),
+                         Address::fromNetworkOrder(env().udpSeenIPv4()).toString()));
+        else
+            log(QStringLiteral("0x9F keepalive resumed: TCP and UDP addresses agree"));
+    }
+    if (split)
+        m_lastKeepaliveMs = env().now();       // look again in 60 s
+    else
         sendKeepalive(*server);
 }
 
@@ -150,6 +168,15 @@ bool Ed2kServerHolePunchPath::sendKeepalive(const Server& server, bool foreignWa
         env().sendServerUdp(std::move(packet), Endpoint(address, static_cast<uint16>(server.port() + 4)), 0);
     }
     return true;
+}
+
+bool Ed2kServerHolePunchPath::addressSplit() const
+{
+    if (!env().serverSessionAddress().isIPv4())
+        return false;
+    const uint32 tcp = env().serverSeenIPv4();
+    const uint32 udp = env().udpSeenIPv4();
+    return tcp != 0 && udp != 0 && tcp != udp;
 }
 
 bool Ed2kServerHolePunchPath::extensionActive() const

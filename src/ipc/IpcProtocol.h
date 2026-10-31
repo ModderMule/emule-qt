@@ -183,11 +183,12 @@ enum class IpcMsgType : int {
     /// through SetPreferences → restartWebServer().
     ReloadWebTemplate       = 272,
 
-    /// [] → {loaded, buildDate (secs), lastCheck (secs), updating} — GeoLite2 state
-    /// for the Options page.
+    /// [] → {loaded, buildDate (secs), type (mmdb database_type), source (GeoIpSource),
+    /// lastCheck (secs), updating} — IP2Country state for the Options page.
     GetGeoIpStatus          = 273,
-    /// [] → [ok: bool, message: string, status: map as GetGeoIpStatus]. Downloads
-    /// GeoLite2-Country now with the stored MaxMind credentials; answers when done.
+    /// [] → [ok: bool, message: string, status: map as GetGeoIpStatus]. Downloads the
+    /// selected source now (GeoLite2 with the stored MaxMind credentials, or DB-IP
+    /// Country Lite); answers when done.
     UpdateGeoIpDatabase     = 274,
     /// [hosts: string[]] → {host: cc}. Resolves each hostname daemon-side and maps
     /// the address to a country; "" when unknown. Used by the news-server list.

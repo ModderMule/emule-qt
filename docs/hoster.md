@@ -256,12 +256,28 @@ The Hoster tab shows only while ed3k is on (`ed3k: enabled`); the Torrents tab l
   (fine-grained PAT, Contents: read). No secret (forks, `windows-3rd.yml`): no checkout, ed3k off.
   `publish-release.sh` refuses an unpushed packmule HEAD and commits the new pin with the release.
 
+## Logging
+
+Hoster lines (join, resolver, Java runtime) go to `emule.hoster` (`logHoster*`, `Ed3kHosterJoin::logCategory`),
+not `emule.ed3k`: the GUI's **Hoster** log tab after Torrent, shown while `hosterDownloadsOn()`, and the
+`_Hoster.log` file. Tab hidden: info/errors to Log, warnings/debug to Verbose. Debug follows `verbose`.
+
 ## Tests
 
 - `tst_Ed3kHoster`: the join on a real engine with a fake resolver (mirrors, link checks `probe_*`,
   order `rank_*`); the JD resolver's event parser; the Java probe and Adoptium parsing.
 - Live, opt-in: `EMULE_HOSTER_LIVE=1` downloads a small archive.org file through the real sidecar;
   `EMULE_HOSTER_LIVE_JAVA=1` fetches Temurin into a temp folder.
+
+## Status column
+
+While an item downloads without bytes yet, the sidecar's `status` event says what the plugin does
+(`Reason::HosterStep`): opening the link, talking to the hoster (with an account: logging in), solving a
+captcha, connecting; `transfer` clears it. An image puzzle shows as *Puzzle* with its dialog; a browser
+captcha ends as *Needs you*.
+
+JD's `CaptchaAPISolver` is switched off at sidecar start: headless, its `isEnabled()` starts MyJDownloader,
+which asks for logins on the console, i.e. reads stdin, the daemon's request pipe (a captcha hung there).
 
 ## Open (ToDo in code)
 

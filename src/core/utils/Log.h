@@ -127,6 +127,17 @@ void logEd3kKad(const QString& msg);
 void logEd3kKadWarning(const QString& msg);
 void logEd3kKadDebug(const QString& msg);
 
+/// Hoster downloads: emule.hoster, the Hoster tab and the _Hoster file.
+void logHoster(const QString& msg);
+void logHosterWarning(const QString& msg);
+void logHosterError(const QString& msg);
+void logHosterDebug(const QString& msg);
+
+/// libtorrent output: emule.torrent, the Torrent tab and the _Torrent file.
+void logTorrent(const QString& msg);
+void logTorrentWarning(const QString& msg);
+void logTorrentDebug(const QString& msg);
+
 /// Bans and anti-leecher hits: emule.leecher, the GUI's Leecher tab and the _Leecher file.
 /// One line per event (Xtreme Anti-Leecher-Log).
 void logLeecher(const QString& msg);
@@ -159,13 +170,13 @@ void installConsoleMessagePattern(const QString& processTag);
 // Rotating log file sink
 // ---------------------------------------------------------------------------
 //
-// Seven files per process — `<baseName>.log`, `<baseName>_Verbose.log`,
+// Nine files per process — `<baseName>.log`, `<baseName>_Verbose.log`,
 // `<baseName>_Kad.log`, `<baseName>_Usenet.log`, `<baseName>_Ed3k.log`,
-// `<baseName>_Ed3kKad.log` and `<baseName>_Leecher.log` — mirroring the reference's
-// theLog / theVerboseLog plus dedicated Kad, Usenet, ed3k and leecher logs. Both message
+// `<baseName>_Ed3kKad.log`, `<baseName>_Hoster.log`, `<baseName>_Torrent.log` and `<baseName>_Leecher.log` —
+// mirroring the reference's theLog / theVerboseLog plus dedicated Kad, Usenet, ed3k, hoster, torrent and leecher logs. Both message
 // handlers feed it, so what lands on disk is what the GUI log tabs show.
 
-/// Open (or with @p enabled false, close) this process's seven log files in
+/// Open (or with @p enabled false, close) this process's nine log files in
 /// @p dir. Safe to call repeatedly — the settings are user-togglable.
 /// Reports an open failure via logError() and leaves the sink closed.
 void applyLogFileSink(const QString& dir, const QString& baseName,
@@ -173,7 +184,7 @@ void applyLogFileSink(const QString& dir, const QString& baseName,
 
 /// Append one line to the sink, or do nothing if it is closed. Thread-safe.
 /// emule.kad goes to the _Kad file, emule.usenet to _Usenet, emule.ed3k to _Ed3k and
-/// emule.ed3k.kad to _Ed3kKad and emule.leecher to _Leecher whatever the severity; of the rest,
+/// emule.ed3k.kad to _Ed3kKad, emule.hoster to _Hoster, emule.torrent to _Torrent and emule.leecher to _Leecher whatever the severity; of the rest,
 /// QtDebugMsg goes to the _Verbose file and every other severity to the main one.
 void writeToLogFileSink(QtMsgType type, const char* category, const QString& msg);
 
@@ -183,7 +194,7 @@ void writeToLogFileSink(QtMsgType type, const char* category, const QString& msg
 /// LogWidget exist, which their own handlers necessarily miss.
 void installLogFileMessageHandler();
 
-/// Close all seven files.
+/// Close all nine files.
 void closeLogFileSink();
 
 // ---------------------------------------------------------------------------

@@ -100,6 +100,7 @@ private slots:
     void notice_bannedEndpoint_dropped();
     void fail_0x62_endsRequest();
     void keepalive_0x9F_every60s();
+    void keepalive_pausedWhileUdpAddressDiffers();
     void connected_finishesAttempt();
     void info_repeatAfterConnect_ignored();
     // hole-punch extension (ed2k-server#39)
@@ -469,6 +470,32 @@ void tst_NatRendezvous::keepalive_0x9F_every60s()
     g.env->logIn(kServerIP, kServerPort, 0);
     g.hub->process();
     QVERIFY(g.env->udpWith(OP_EDONKEYPROT, OP_SERVER_NATT_KEEPALIVE).empty());
+}
+
+// Carrier NAT: TCP and UDP leave from different public IPv4s, the server drops every 0x9F
+// (ed2k-server#40); the periodic one pauses, the one with 0x60 still goes.
+void tst_NatRendezvous::keepalive_pausedWhileUdpAddressDiffers()
+{
+    const auto ip = [](const char* s) { return Address::fromString(QString::fromLatin1(s)).toNetworkUint32(); };
+    const auto count = [](HubFixture& f) { return f.env->udpWith(OP_EDONKEYPROT, OP_SERVER_NATT_KEEPALIVE).size(); };
+    HubFixture f;
+    f.env->serverSeenIP = ip("194.30.55.134");
+    f.env->udpSeenIP = ip("195.16.154.198");
+    f.env->logIn(kServerIP, kServerPort, SrvTcpFlag::LowIdHolePunch);
+    f.hub->process();
+    QCOMPARE(count(f), size_t{0});
+    f.advance(120000);
+    QCOMPARE(count(f), size_t{0});
+
+    // only one side known: keep sending
+    f.env->udpSeenIP = 0;
+    f.advance(60000);
+    QCOMPARE(count(f), size_t{1});
+
+    // the addresses agree again
+    f.env->udpSeenIP = f.env->serverSeenIP;
+    f.advance(60000);
+    QCOMPARE(count(f), size_t{2});
 }
 
 void tst_NatRendezvous::connected_finishesAttempt()

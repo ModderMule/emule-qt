@@ -75,6 +75,22 @@ QString stateText(int state)
     }
 }
 
+/// Reason::HosterStep: what the resolver does before bytes flow
+QString stepText(const QString& step)
+{
+    if (step == u"link")
+        return HosterPanel::tr("Opening the link");
+    if (step == u"hoster")
+        return HosterPanel::tr("Talking to the hoster");
+    if (step == u"hosterAccount")
+        return HosterPanel::tr("Logging in, talking to the hoster");
+    if (step == u"puzzle")
+        return HosterPanel::tr("Solving a captcha");
+    if (step == u"connect")
+        return HosterPanel::tr("Connecting for the transfer");
+    return step;
+}
+
 /// Ed3kHosterJoin::Reason; @p arg is technical and shown as it is.
 QString reasonText(int reason, const QString& arg)
 {
@@ -103,6 +119,7 @@ QString reasonText(int reason, const QString& arg)
     case 22: return HosterPanel::tr("Folder: %n link(s)", nullptr, arg.toInt());
     case 23: return HosterPanel::tr("From a link a peer named (%1)").arg(arg);
     case 24: return HosterPanel::tr("The hoster link is offline, no longer published");
+    case 25: return stepText(arg);
     default: return {};
     }
 }

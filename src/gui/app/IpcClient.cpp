@@ -1110,6 +1110,7 @@ void IpcClient::onMessageReceived(const IpcMessage& msg)
         if (newToken != m_daemonToken) {
             m_lastKadId = m_lastUsenetId = m_lastServerId = m_lastLogId = m_lastVerboseId = 0;
             m_lastEd3kId = m_lastEd3kVerboseId = m_lastEd3kKadId = m_lastLeecherId = 0;
+            m_lastTorrentId = m_lastHosterId = 0;
             m_lastServerMsgId = 0;
             m_daemonToken = newToken;
         }
@@ -1344,7 +1345,8 @@ void IpcClient::requestLogSync()
     //  - Reconnect within session: min of per-type IDs → only missed events fetched.
     const int64_t fromId = std::min({m_lastKadId, m_lastUsenetId, m_lastServerId,
                                      m_lastLogId,  m_lastVerboseId, m_lastEd3kId,
-                                     m_lastEd3kVerboseId, m_lastEd3kKadId, m_lastLeecherId});
+                                     m_lastEd3kVerboseId, m_lastEd3kKadId, m_lastLeecherId,
+                                     m_lastTorrentId, m_lastHosterId});
     IpcMessage req(IpcMsgType::SyncLogs);
     req.append(static_cast<qint64>(fromId));
 
@@ -1620,6 +1622,10 @@ int64_t& IpcClient::lastLogId(const QString& cat, QtMsgType severity)
         return m_lastKadId;
     if (cat == QStringLiteral("emule.usenet"))
         return m_lastUsenetId;
+    if (cat == QStringLiteral("emule.torrent"))
+        return m_lastTorrentId;
+    if (cat == QStringLiteral("emule.hoster"))
+        return m_lastHosterId;
     if (cat == QStringLiteral("emule.server"))
         return m_lastServerId;
     if (cat == QStringLiteral("emule.ed3k.kad"))

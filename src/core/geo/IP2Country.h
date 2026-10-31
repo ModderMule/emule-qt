@@ -1,14 +1,15 @@
 #pragma once
 
 /// @file IP2Country.h
-/// @brief IP → ISO country code via a MaxMind GeoLite2-Country database.
+/// @brief IP → ISO country code via a GeoLite2-Country or DB-IP Country Lite database.
 ///
 /// Port of MorphXT/EastShare CIP2Country, but backed by an .mmdb instead of the
 /// GeoIPCountryWhois.csv range table. The daemon resolves; the GUI only ever sees
 /// the two-letter code ("cc" on the IPC rows) and maps it to a flag and a name.
 ///
 /// Releases bundle a copy in config/ (GeoIpUpdater adopts it when newer); with the
-/// user's MaxMind credentials GeoIpUpdater keeps it current. A file dropped into the
+/// user's MaxMind credentials GeoIpUpdater keeps it current. DB-IP Country Lite (same
+/// MMDB layout, no account) is the alternative source (#100). A file dropped into the
 /// config dir by hand works too.
 
 #include "net/Address.h"
@@ -25,6 +26,13 @@
 namespace eMule {
 
 inline constexpr auto kGeoIpDatabaseFilename = "GeoLite2-Country.mmdb";
+inline constexpr auto kDbIpDatabaseFilename = "dbip-country-lite.mmdb";
+
+/// Where GeoIpUpdater downloads from; stored as int pref geoIpSource.
+enum class GeoIpSource : int {
+    MaxMind = 0,   ///< GeoLite2-Country, needs account ID + license key (default)
+    DbIp = 1,      ///< DB-IP Country Lite, free, no account
+};
 
 class IP2Country {
 public:
@@ -43,6 +51,9 @@ public:
 
     /// Build date stamped into the database metadata, invalid when none is loaded.
     [[nodiscard]] QDateTime buildDate() const;
+
+    /// metadata.database_type, e.g. "GeoLite2-Country" or "DBIP-Country-Lite".
+    [[nodiscard]] QString databaseType() const;
 
     /// Upper-case ISO 3166-1 alpha-2 code, empty for LAN/unknown/no database.
     [[nodiscard]] QString countryCode(const QHostAddress& addr) const;

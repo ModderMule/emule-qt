@@ -34,6 +34,8 @@
 #include <string_view>
 #include <vector>
 
+class QLoggingCategory;
+
 namespace eMule::ed3k {
 
 namespace ffi = ::ed3k;
@@ -304,6 +306,9 @@ protected:
     void logDebug(const QString& msg) const;
     void logWarning(const QString& msg) const;
     void logInfo(const QString& msg) const;
+    /// Category of the log*() lines: emule.ed3k unless a join has its own tab (hoster)
+    using LogCategory = const QLoggingCategory& (*)();
+    [[nodiscard]] virtual LogCategory logCategory() const;
 
     static QString hexOf(std::span<const std::uint8_t> bytes);
     static QString errorName(ffi::Error e);
@@ -322,6 +327,8 @@ protected:
     bool m_readsNow = false;
 
 private:
+    /// "ed3k <tag>: ", or "<tag>: " in a join's own category
+    [[nodiscard]] QString logPrefix() const;
     struct SetTry;
     struct Kept;
     /// Per session: the download holding each source node, and those waiting for it.

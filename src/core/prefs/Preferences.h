@@ -1936,7 +1936,11 @@ public:
     [[nodiscard]] bool useOriginalIcons() const;
     void setUseOriginalIcons(bool val);
 
-    // -- IP2Country (MaxMind GeoLite2 download) --------------------------------
+    // -- IP2Country (MaxMind GeoLite2 / DB-IP download) -------------------------
+
+    /// GeoIpSource as int: 0 = MaxMind GeoLite2 (default), 1 = DB-IP Country Lite
+    [[nodiscard]] int geoIpSource() const;
+    void setGeoIpSource(int val);
 
     [[nodiscard]] QString geoIpAccountId() const;
     void setGeoIpAccountId(const QString& val);

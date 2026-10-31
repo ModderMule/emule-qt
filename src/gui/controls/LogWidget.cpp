@@ -113,17 +113,17 @@ LogWidget::LogWidget(QWidget* parent)
     m_leecherTabIndex = addLogTab(m_leecherBrowser, QStringLiteral(":/icons/Log.ico"), tr("Leecher"));
     setLeecherTabVisible(thePrefs.antiLeecher());
 
-    // Usenet tab (shown only when showUsenetLog is true)
-    m_usenetBrowser = new LogTextView;
-    m_usenetBrowser->setReadOnly(true);
-    m_usenetBrowser->setFont(QFont(QStringLiteral("Helvetica"), scaledPointSize(9)));
-    m_usenetTabIndex = m_tabBar->count();
-    if (thePrefs.useOriginalIcons())
-        m_tabBar->addTab(QIcon(QStringLiteral(":/icons/Usenet.ico")), tr("Usenet"));
-    else
-        m_tabBar->addTab(tr("Usenet"));
-    m_stack->addWidget(m_usenetBrowser);
-    setUsenetTabVisible(thePrefs.showUsenetLog());
+    // Usenet tab (shown while Usenet is on and showUsenetLog)
+    m_usenetTabIndex = addLogTab(m_usenetBrowser, QStringLiteral(":/icons/Usenet.ico"), tr("Usenet"));
+    setUsenetTabVisible(thePrefs.usenetEnabled() && thePrefs.showUsenetLog());
+
+    // Torrent tab: libtorrent's alerts (shown while BitTorrent is on)
+    m_torrentTabIndex = addLogTab(m_torrentBrowser, QStringLiteral(":/icons/Torrent.ico"), tr("Torrent"));
+    setTorrentTabVisible(thePrefs.btEnabled());
+
+    // Hoster tab (shown while hoster downloads are on)
+    m_hosterTabIndex = addLogTab(m_hosterBrowser, QStringLiteral(":/icons/Hoster.ico"), tr("Hoster"));
+    setHosterTabVisible(thePrefs.hosterDownloadsOn());
 
     // Kad tab
     m_kadBrowser = new LogTextView;
@@ -276,14 +276,17 @@ void LogWidget::appendKad(const QString& msg, const QString& ts, qint64 seqId)
 
 void LogWidget::appendUsenet(const QString& msg, const QString& ts, qint64 seqId)
 {
-    const QString timestamp = ts.isEmpty()
-        ? QDateTime::currentDateTime().toString(QStringLiteral("HH:mm:ss"))
-        : ts;
-    if (seqId == 0)
-        seqId = QDateTime::currentDateTime().toSecsSinceEpoch();
-    const QString html = QStringLiteral("<font color='gray'>%1</font> %2").arg(timestamp, msg);
-    insertSorted(m_usenetBrowser, m_usenetSeqIds, seqId, html);
-    trimToLimit(m_usenetBrowser, m_usenetSeqIds);
+    appendTo(m_usenetBrowser, m_usenetSeqIds, msg, ts, seqId);
+}
+
+void LogWidget::appendTorrent(const QString& msg, const QString& ts, qint64 seqId)
+{
+    appendTo(m_torrentBrowser, m_torrentSeqIds, msg, ts, seqId);
+}
+
+void LogWidget::appendHoster(const QString& msg, const QString& ts, qint64 seqId)
+{
+    appendTo(m_hosterBrowser, m_hosterSeqIds, msg, ts, seqId);
 }
 
 void LogWidget::appendEd3k(const QString& msg, const QString& ts, qint64 seqId)
@@ -325,6 +328,28 @@ void LogWidget::routeUsenet(QtMsgType type, const QString& colored,
     else if (type == QtWarningMsg)
         appendVerbose(colored, ts, seqId);
     else if (type != QtDebugMsg)
+        appendLog(colored, ts, seqId);
+}
+
+void LogWidget::routeTorrent(QtMsgType type, const QString& colored,
+                             const QString& ts, qint64 seqId)
+{
+    if (m_torrentTabVisible)
+        appendTorrent(colored, ts, seqId);
+    else if (type == QtWarningMsg)
+        appendVerbose(colored, ts, seqId);
+    else if (type != QtDebugMsg)
+        appendLog(colored, ts, seqId);
+}
+
+void LogWidget::routeHoster(QtMsgType type, const QString& colored,
+                            const QString& ts, qint64 seqId)
+{
+    if (m_hosterTabVisible)
+        appendHoster(colored, ts, seqId);
+    else if (type == QtWarningMsg || type == QtDebugMsg)
+        appendVerbose(colored, ts, seqId);
+    else
         appendLog(colored, ts, seqId);
 }
 
@@ -401,6 +426,20 @@ void LogWidget::setUsenetTabVisible(bool visible)
         m_tabBar->setTabVisible(m_usenetTabIndex, visible);
 }
 
+void LogWidget::setTorrentTabVisible(bool visible)
+{
+    m_torrentTabVisible = visible;
+    if (m_torrentTabIndex >= 0)
+        m_tabBar->setTabVisible(m_torrentTabIndex, visible);
+}
+
+void LogWidget::setHosterTabVisible(bool visible)
+{
+    m_hosterTabVisible = visible;
+    if (m_hosterTabIndex >= 0)
+        m_tabBar->setTabVisible(m_hosterTabIndex, visible);
+}
+
 void LogWidget::setLeecherTabVisible(bool visible)
 {
     m_leecherTabVisible = visible;
@@ -423,6 +462,8 @@ void LogWidget::clearAll()
     m_leecherBrowser->clear();
     m_kadBrowser->clear();
     m_usenetBrowser->clear();
+    m_torrentBrowser->clear();
+    m_hosterBrowser->clear();
     m_ed3kBrowser->clear();
     m_ed3kVerboseBrowser->clear();
     m_ed3kKadBrowser->clear();
@@ -432,6 +473,8 @@ void LogWidget::clearAll()
     m_leecherSeqIds.clear();
     m_kadSeqIds.clear();
     m_usenetSeqIds.clear();
+    m_torrentSeqIds.clear();
+    m_hosterSeqIds.clear();
     m_ed3kSeqIds.clear();
     m_ed3kVerboseSeqIds.clear();
     m_ed3kKadSeqIds.clear();
@@ -447,6 +490,8 @@ QString LogWidget::verboseText() const { return m_verboseBrowser->toPlainText();
 QString LogWidget::leecherText() const { return m_leecherBrowser->toPlainText(); }
 QString LogWidget::kadText() const { return m_kadBrowser->toPlainText(); }
 QString LogWidget::usenetText() const { return m_usenetBrowser->toPlainText(); }
+QString LogWidget::torrentText() const { return m_torrentBrowser->toPlainText(); }
+QString LogWidget::hosterText() const { return m_hosterBrowser->toPlainText(); }
 QString LogWidget::ed3kText() const { return m_ed3kBrowser->toPlainText(); }
 QString LogWidget::ed3kVerboseText() const { return m_ed3kVerboseBrowser->toPlainText(); }
 QString LogWidget::ed3kKadText() const { return m_ed3kKadBrowser->toPlainText(); }
@@ -454,7 +499,7 @@ QString LogWidget::ed3kKadText() const { return m_ed3kKadBrowser->toPlainText();
 void LogWidget::setCustomFont(const QFont& font)
 {
     for (auto* browser : {m_serverInfoBrowser, m_logBrowser, m_verboseBrowser, m_leecherBrowser,
-                          m_usenetBrowser, m_kadBrowser, m_ed3kBrowser, m_ed3kVerboseBrowser,
+                          m_usenetBrowser, m_torrentBrowser, m_hosterBrowser, m_kadBrowser, m_ed3kBrowser, m_ed3kVerboseBrowser,
                           m_ed3kKadBrowser, m_ipcLogBrowser})
         if (browser) browser->setFont(font);
 }
@@ -560,6 +605,20 @@ void LogWidget::messageHandler(QtMsgType type, const QMessageLogContext& context
         return;
     }
 
+    if (std::strcmp(cat, "emule.torrent") == 0) {
+        QMetaObject::invokeMethod(s_instance, [type, colored]() {
+            if (s_instance) s_instance->routeTorrent(type, colored);
+        }, Qt::QueuedConnection);
+        return;
+    }
+
+    if (std::strcmp(cat, "emule.hoster") == 0) {
+        QMetaObject::invokeMethod(s_instance, [type, colored]() {
+            if (s_instance) s_instance->routeHoster(type, colored);
+        }, Qt::QueuedConnection);
+        return;
+    }
+
     if (std::strncmp(cat, "emule.ed3k", 10) == 0 && (cat[10] == '\0' || cat[10] == '.')) {
         const bool kad = std::strcmp(cat, "emule.ed3k.kad") == 0;
         QMetaObject::invokeMethod(s_instance, [kad, type, colored]() {
@@ -598,7 +657,7 @@ void LogWidget::noteAppended(QTextBrowser* browser)
 {
     // MFC highlights the tab when the pane it feeds is not the visible one
     // (StatusSelector.HighlightItem — srchybrid/EmuleDlg.cpp:916-918, 926-928,
-    // 969-971). The Usenet, Kad and IPC tabs follow the same rule.
+    // 969-971). The Usenet, Torrent, Hoster, Kad and IPC tabs follow the same rule.
     const int index = m_stack->indexOf(browser);
     if (index < 0 || index == m_tabBar->currentIndex())
         return;

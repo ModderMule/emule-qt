@@ -145,6 +145,15 @@ seed ratio and seed time override the global ones from `<config>/BT/torrent-opti
 does not rate-limit peers on the local network. Trackers: 811 add (last tier, no duplicates),
 812 remove.
 
+## Logging
+
+`BtSession::drainAlerts()` forwards libtorrent's own alert lines (`what: message`) to `emule.torrent`
+(`logTorrent*`): the GUI's **Torrent** log tab after Usenet, shown while `btEnabled`, and the `_Torrent.log`
+file. Severity by alert category: error / performance_warning → warning, dht / ip_block → debug (follows
+`verbose`), rest → info. Skipped as a firehose: `piece_progress` alerts, `session_stats`, `state_update`,
+`dht_stats`, incoming `dht_get_peers` / `dht_announce`. eMule's own summaries ("BitTorrent: added …",
+errors) stay in Log. Tab hidden: info/errors to Log, warnings to Verbose, debug dropped.
+
 ## Statistics
 
 `BtCounters` (`core/stats/NetworkCounters.h`) follow the Kad pattern: the session half lives in

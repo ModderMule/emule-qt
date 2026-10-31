@@ -16,6 +16,7 @@ import jd.plugins.PluginForHost;
 import jd.plugins.PluginProgress;
 import jd.plugins.download.DownloadInterface;
 
+import org.jdownloader.plugins.CaptchaStepProgress;
 import org.jdownloader.plugins.SleepPluginProgress;
 
 /**
@@ -33,6 +34,7 @@ final class OpenTask extends Task {
     private static final Map<DownloadLink, Long> BY_LINK = new java.util.concurrent.ConcurrentHashMap<DownloadLink, Long>();
     private volatile Driver driver;
     private volatile DownloadLink link;
+    private String lastStatus;
 
     /** The open task that downloads @p dl, for a puzzle it raises. */
     static Long taskOfLink(final DownloadLink dl) {
@@ -55,6 +57,7 @@ final class OpenTask extends Task {
 
     @Override
     void run() throws Throwable {
+        status("link");
         final List<DownloadLink> links = Jd.crawl(url);
         if (cancelled.get()) {
             Out.send(id, "cancelled");
@@ -149,6 +152,9 @@ final class OpenTask extends Task {
                 Out.send(m);
             }
             lastWait = wait;
+            if (wait == null) {
+                status(step(pp, di, acc != null, bytes));
+            }
         }
         link.setDownloadLinkController(null);
         if (cancelled.get()) {
@@ -173,6 +179,31 @@ final class OpenTask extends Task {
             m.put("from", d.resumedHere ? have : 0L);
         }
         CheckTask.putHash(m, link.getHashInfo());
+        Out.send(m);
+    }
+
+    /**
+     * What the plugin does before bytes flow, for the GUI's status: "hoster", "hosterAccount" (pages,
+     * a login), "puzzle", "connect" (the transfer opens), "transfer" (bytes come).
+     */
+    private String step(final PluginProgress pp, final DownloadInterface di, final boolean account, final long bytes) {
+        if (pp instanceof CaptchaStepProgress) {
+            return "puzzle";
+        }
+        if (di == null) {
+            return account ? "hosterAccount" : "hoster";
+        }
+        return bytes > have ? "transfer" : "connect";
+    }
+
+    /** Sends a status when it changed. */
+    private void status(final String text) {
+        if (text.equals(lastStatus)) {
+            return;
+        }
+        lastStatus = text;
+        final Map<String, Object> m = Out.event(id, "status");
+        m.put("text", text);
         Out.send(m);
     }
 

@@ -629,6 +629,11 @@ void Ed3kHosterJoin::saveOwner(const QString&)
     save();
 }
 
+Ed3kJoinBase::LogCategory Ed3kHosterJoin::logCategory() const
+{
+    return &lcEmuleHoster;
+}
+
 // -- private ------------------------------------------------------------------
 
 Ed3kHosterJoin::Entry* Ed3kHosterJoin::find(quint32 id) const
@@ -1136,6 +1141,18 @@ void Ed3kHosterJoin::onResolverEvent(Ed3kResolver::TaskId task, const ResolverEv
         final();
         break;
     }
+    case K::Status:
+        // the step before bytes flow, for the status column; a peer's link keeps its own reason
+        if (e && e->task == task && e->item.reason != Reason::PeerLink
+            && (e->item.state == State::Downloading
+                || (e->item.state == State::Waiting && e->item.reason == Reason::HosterTimer)
+                || (e->item.state == State::Puzzle && ev.text != QLatin1StringView("puzzle")))) {
+            if (ev.text == QLatin1StringView("transfer"))
+                setState(*e, State::Downloading);
+            else
+                setState(*e, State::Downloading, Reason::HosterStep, ev.text);
+        }
+        break;
     case K::Progress:
         a.onDisk = std::max(a.onDisk, ev.bytes);
         if (!ev.path.isEmpty())
