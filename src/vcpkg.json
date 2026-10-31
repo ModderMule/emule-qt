@@ -1,6 +1,6 @@
 {
   "name": "emuleqt",
-  "version-string": "0.7.1",
+  "version-string": "0.7.2",
   "builtin-baseline": "15b12b99a227d51e21c86dffd40385439eac87a0",
   "dependencies": [
     "libarchive",
