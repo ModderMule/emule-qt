@@ -252,8 +252,10 @@ bool handleRequest(const IpcMessage& msg, const std::function<void(const IpcMess
                 reply(failure(seq, QStringLiteral("hoster downloads are off")));
                 break;
             }
-        } else
-            s_java->locate(thePrefs.ed3kHoster().java);
+        } else if (!s_java->locate(thePrefs.ed3kHoster().java)) {
+            reply(failure(seq, QStringLiteral("Java is being looked for or downloaded already")));
+            break;
+        }
         reply(IpcMessage::makeResult(seq, true, QCborValue{}));
 #else
         reply(failure(seq, QStringLiteral("built without the hoster resolver")));

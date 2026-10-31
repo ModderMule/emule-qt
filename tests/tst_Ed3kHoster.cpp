@@ -28,6 +28,7 @@
 #include <QHash>
 #include <QLockFile>
 #include <QSet>
+#include <QSettings>
 #include <QSignalSpy>
 #include <QTemporaryDir>
 #include <QTest>
@@ -1649,6 +1650,64 @@ private slots:
         QVERIFY(!c.isEmpty());
         QCOMPARE(c.first(), QDir::cleanPath(fake));
         QCOMPARE(c.count(QDir::cleanPath(fake)), 1);
+    }
+
+    /// Per-user installs are looked for: %LOCALAPPDATA%\Programs\<vendor> on Windows,
+    /// ~/.sdkman elsewhere.
+    void javaRuntime_candidatesHavePerUserInstalls()
+    {
+        QTemporaryDir tmp;
+#ifdef Q_OS_WIN
+        const char* var = "LOCALAPPDATA";
+        const QString home = tmp.filePath(QStringLiteral("Programs/Eclipse Adoptium/jdk-21.0.5.11-hotspot"));
+        const QString exe = QStringLiteral("bin/java.exe");
+#else
+        const char* var = "HOME";
+        const QString home = tmp.filePath(QStringLiteral(".sdkman/candidates/java/21.0.5-tem"));
+        const QString exe = QStringLiteral("bin/java");
+#endif
+        QVERIFY(QDir().mkpath(QDir(home).filePath(QStringLiteral("bin"))));
+        QFile f(QDir(home).filePath(exe));
+        QVERIFY(f.open(QIODevice::WriteOnly));
+        f.close();
+        const QByteArray saved = qgetenv(var);
+        qputenv(var, tmp.path().toLocal8Bit());
+        Ed3kJavaRuntime rt(tmp.filePath(QStringLiteral("ed3k")));
+        const QStringList c = rt.candidates({});
+        qputenv(var, saved);
+        QVERIFY2(c.contains(QDir::cleanPath(f.fileName())), qPrintable(c.join(u'\n')));
+    }
+
+    /// Windows: a JDK found by its installer's registry key alone (no PATH, JAVA_HOME or
+    /// Program Files). Skipped without one installed.
+    void javaRuntime_candidatesReadRegistry()
+    {
+#ifndef Q_OS_WIN
+        QSKIP("Windows only");
+#else
+        QStringList homes;
+        for (const char* key : {"Microsoft\\JDK", "Eclipse Adoptium\\JDK", "Eclipse Adoptium\\JRE"}) {
+            QSettings reg(QStringLiteral("HKEY_LOCAL_MACHINE\\SOFTWARE\\") + QString::fromLatin1(key), QSettings::Registry64Format);
+            for (const QString& v : reg.childGroups())
+                homes << reg.value(v + QStringLiteral("/hotspot/MSI/Path")).toString();
+        }
+        homes.removeAll(QString());
+        if (homes.isEmpty())
+            QSKIP("no Temurin or Microsoft JDK installed");
+        const QString java = QDir::cleanPath(QDir(homes.first()).filePath(QStringLiteral("bin/java.exe")));
+        const char* vars[] = {"JAVA_HOME", "PATH", "ProgramFiles", "ProgramW6432", "LOCALAPPDATA"};
+        QList<QByteArray> saved;
+        for (const char* v : vars) {
+            saved << qgetenv(v);
+            qunsetenv(v);
+        }
+        QTemporaryDir tmp;
+        Ed3kJavaRuntime rt(tmp.path());
+        const QStringList c = rt.candidates({});
+        for (int i = 0; i < int(std::size(vars)); ++i)
+            qputenv(vars[i], saved[i]);
+        QVERIFY2(c.contains(java), qPrintable(c.join(u'\n')));
+#endif
     }
 
     /// The real thing: a Java found on this machine, resolver.zip installed, JDownloader's
