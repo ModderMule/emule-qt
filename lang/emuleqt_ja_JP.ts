@@ -914,7 +914,7 @@ Has comments</source>
         <translation type="vanished">%1 Bytes</translation>
     </message>
     <message>
-        <location filename="../src/gui/dialogs/OptionsDialog.cpp" line="+3418"/>
+        <location filename="../src/gui/dialogs/OptionsDialog.cpp" line="+3423"/>
         <source>Test</source>
         <translation>テスト</translation>
     </message>
@@ -4907,12 +4907,11 @@ Export?</source>
         <translation>ed3k はオフです: この設定は効果がありません。</translation>
     </message>
     <message>
-        <location line="+5"/>
         <source>Needs ed3k credits in use with ledger endpoints.</source>
-        <translation>台帳エンドポイント付きで ed3k クレジットが使用中である必要があります。</translation>
+        <translation type="vanished">台帳エンドポイント付きで ed3k クレジットが使用中である必要があります。</translation>
     </message>
     <message>
-        <location line="+4"/>
+        <location line="+9"/>
         <source>The account is overdrawn: nothing is bid.</source>
         <translation>口座が赤字です: 入札は行われません。</translation>
     </message>
@@ -6107,12 +6106,11 @@ Go on?</source>
         <translation>更新</translation>
     </message>
     <message>
-        <location line="+37"/>
         <source>Stake tokens need credits in use with ledger endpoints.</source>
-        <translation>ステークトークンには台帳エンドポイントで使用中のクレジットが必要です。</translation>
+        <translation type="vanished">ステークトークンには台帳エンドポイントで使用中のクレジットが必要です。</translation>
     </message>
     <message>
-        <location line="+2"/>
+        <location line="+39"/>
         <source>The stake rate is not read yet.</source>
         <translation>ステークレートはまだ読み込まれていません。</translation>
     </message>
@@ -11072,36 +11070,36 @@ Download it again?</source>
 <context>
     <name>eMule::OptionsDialog</name>
     <message>
-        <location filename="../src/gui/dialogs/OptionsDialog.cpp" line="-3305"/>
+        <location filename="../src/gui/dialogs/OptionsDialog.cpp" line="-3307"/>
         <source>Options</source>
         <translation>オプション</translation>
     </message>
     <message>
         <location line="+61"/>
-        <location line="+2215"/>
+        <location line="+2217"/>
         <source>OK</source>
         <translation>OK</translation>
     </message>
     <message>
-        <location line="-2214"/>
-        <location line="+2215"/>
+        <location line="-2216"/>
+        <location line="+2217"/>
         <source>Cancel</source>
         <translation>キャンセル</translation>
     </message>
     <message>
-        <location line="-2214"/>
-        <location line="+6224"/>
+        <location line="-2216"/>
+        <location line="+6226"/>
         <source>Apply</source>
         <translation>適用</translation>
     </message>
     <message>
-        <location line="-6223"/>
+        <location line="-6225"/>
         <source>Help</source>
         <translation>ヘルプ</translation>
     </message>
     <message>
         <location line="+270"/>
-        <location line="+2212"/>
+        <location line="+2214"/>
         <location line="+59"/>
         <location line="+6"/>
         <location line="+4"/>
@@ -11113,7 +11111,7 @@ Download it again?</source>
         <translation>IP フィルター</translation>
     </message>
     <message>
-        <location line="-2326"/>
+        <location line="-2328"/>
         <source>IP filter reloaded: %1 entries.</source>
         <translation>IP フィルターを再読み込み：%1 エントリ。</translation>
     </message>
@@ -11123,12 +11121,12 @@ Download it again?</source>
         <translation>オプション -&gt; %1 -&gt; %2</translation>
     </message>
     <message>
-        <location line="+5205"/>
+        <location line="+5207"/>
         <source>Bandwidth</source>
         <translation>帯域幅</translation>
     </message>
     <message>
-        <location line="-4997"/>
+        <location line="-4999"/>
         <source>General options</source>
         <translation>全般オプション</translation>
     </message>
@@ -11149,18 +11147,18 @@ Download it again?</source>
     </message>
     <message>
         <location line="+8"/>
-        <location line="+6081"/>
+        <location line="+6083"/>
         <source>Language</source>
         <translation>言語</translation>
     </message>
     <message>
-        <location line="-6078"/>
+        <location line="-6080"/>
         <source>System Default</source>
         <translation>システム既定</translation>
     </message>
     <message>
         <location line="+14"/>
-        <location line="+802"/>
+        <location line="+804"/>
         <location line="+384"/>
         <location line="+475"/>
         <location line="+298"/>
@@ -11168,7 +11166,7 @@ Download it again?</source>
         <translation>その他</translation>
     </message>
     <message>
-        <location line="-1956"/>
+        <location line="-1958"/>
         <source>Bring to front on link click</source>
         <translation>リンクのクリック時に前面に表示</translation>
     </message>
@@ -11263,25 +11261,25 @@ Download it again?</source>
     <message>
         <location line="+8"/>
         <location line="+18"/>
-        <location line="+5993"/>
+        <location line="+5995"/>
         <source>Core</source>
         <translation>コア</translation>
     </message>
     <message>
-        <location line="-6006"/>
+        <location line="-6008"/>
         <source>Address:</source>
         <translation>アドレス：</translation>
     </message>
     <message>
         <location line="+4"/>
-        <location line="+1377"/>
+        <location line="+1379"/>
         <location line="+774"/>
         <location line="+427"/>
         <source>Port:</source>
         <translation>ポート：</translation>
     </message>
     <message>
-        <location line="-2575"/>
+        <location line="-2577"/>
         <source>authentication token</source>
         <translation>認証トークン</translation>
     </message>
@@ -11446,7 +11444,7 @@ Are you sure you want to continue?</source>
     </message>
     <message>
         <location line="+2"/>
-        <location line="+1864"/>
+        <location line="+1866"/>
         <location line="+133"/>
         <location line="+296"/>
         <location line="+1021"/>
@@ -11458,7 +11456,7 @@ Are you sure you want to continue?</source>
         <translation>有効</translation>
     </message>
     <message>
-        <location line="-5102"/>
+        <location line="-5104"/>
         <source>Reset</source>
         <translation>リセット</translation>
     </message>
@@ -11475,13 +11473,13 @@ Are you sure you want to continue?</source>
     <message>
         <location line="+3"/>
         <location line="+6"/>
-        <location line="+4494"/>
+        <location line="+4496"/>
         <location line="+334"/>
         <source> KB/s</source>
         <translation> KB/s</translation>
     </message>
     <message>
-        <location line="-4831"/>
+        <location line="-4833"/>
         <source>Upload</source>
         <translation>アップロード</translation>
     </message>
@@ -11512,18 +11510,18 @@ Are you sure you want to continue?</source>
     </message>
     <message>
         <location line="+23"/>
-        <location line="+4334"/>
+        <location line="+4336"/>
         <source>Client Port</source>
         <translation>クライアントポート</translation>
     </message>
     <message>
-        <location line="-4331"/>
-        <location line="+7708"/>
+        <location line="-4333"/>
+        <location line="+7718"/>
         <source>TCP</source>
         <translation>TCP</translation>
     </message>
     <message>
-        <location line="-7702"/>
+        <location line="-7712"/>
         <source>UDP</source>
         <translation>UDP</translation>
     </message>
@@ -11533,24 +11531,24 @@ Are you sure you want to continue?</source>
     </message>
     <message>
         <location line="+6"/>
-        <location line="+4334"/>
+        <location line="+4336"/>
         <source>Test Ports</source>
         <translation>ポートテスト</translation>
     </message>
     <message>
-        <location line="-4330"/>
-        <location line="+4338"/>
+        <location line="-4332"/>
+        <location line="+4340"/>
         <source>Open Router</source>
         <translation>ルーターを開く</translation>
     </message>
     <message>
-        <location line="-4337"/>
-        <location line="+4338"/>
+        <location line="-4339"/>
+        <location line="+4340"/>
         <source>Opens the web page of this computer&apos;s router, where ports are forwarded</source>
         <translation>このコンピューターのルーターのWebページを開きます。ポート転送はここで設定します</translation>
     </message>
     <message>
-        <location line="-4334"/>
+        <location line="-4336"/>
         <source>Use UPnP to Setup Ports</source>
         <translation>UPnP でポートを設定</translation>
     </message>
@@ -11570,19 +11568,19 @@ Are you sure you want to continue?</source>
         <translation>ポートフォワーディング: 不明</translation>
     </message>
     <message>
-        <location line="+11"/>
+        <location line="+13"/>
         <source>Network interface</source>
         <translation>ネットワークインターフェース</translation>
     </message>
     <message>
         <location line="+4"/>
         <location line="+1735"/>
-        <location line="+5545"/>
+        <location line="+5549"/>
         <source>Any</source>
         <translation>すべて</translation>
     </message>
     <message>
-        <location line="-7278"/>
+        <location line="-7282"/>
         <source>Use only this network interface, for example a VPN tunnel. Pick one from the list, or type an IP address or a subnet such as 10.64.0.0/10 (the interface holding an address in it). Connections through a proxy are not bound.</source>
         <translation>このネットワークインターフェース（VPN トンネルなど）のみを使用します。一覧から選ぶか、IP アドレスまたは 10.64.0.0/10 のようなサブネット（その範囲のアドレスを持つインターフェース）を入力してください。プロキシ経由の接続はバインドされません。</translation>
     </message>
@@ -12513,7 +12511,7 @@ Each rule replaces a regex pattern with a replacement string.</source>
         <translation>アップロードスロット（オーバーヘッドなし）</translation>
     </message>
     <message>
-        <location line="-1810"/>
+        <location line="-1812"/>
         <source>Country flags (IP2Country)</source>
         <translation>国旗 (IP2Country)</translation>
     </message>
@@ -12563,7 +12561,7 @@ Each rule replaces a regex pattern with a replacement string.</source>
         <translation type="vanished">無料の &lt;a href=&quot;https://www.maxmind.com/en/geolite2/signup&quot;&gt;MaxMind GeoLite2&lt;/a&gt; アカウントが必要です。この製品には MaxMind が作成した GeoLite2 データが含まれています。</translation>
     </message>
     <message>
-        <location line="+413"/>
+        <location line="+415"/>
         <source>Use for news servers</source>
         <translation>ニュースサーバーにも使用する</translation>
     </message>
@@ -12597,9 +12595,9 @@ Every Usenet connection then passes through the proxy, so its speed caps the dow
         <translation>検索に現れたファイルとそのときの名前をローカルに記録し、以後の検索で以前に見たものを表示できるようにします。</translation>
     </message>
     <message>
-        <location line="-1433"/>
+        <location line="-1435"/>
         <location line="+5"/>
-        <location line="+1648"/>
+        <location line="+1650"/>
         <source>Connection</source>
         <translation>接続</translation>
     </message>
@@ -13067,13 +13065,13 @@ Every Usenet connection then passes through the proxy, so its speed caps the dow
         <translation>厳格</translation>
     </message>
     <message>
-        <location line="-2872"/>
-        <location line="+8337"/>
+        <location line="-2874"/>
+        <location line="+8347"/>
         <source>BitTorrent</source>
         <translation>BitTorrent</translation>
     </message>
     <message>
-        <location line="-7952"/>
+        <location line="-7962"/>
         <source>Show download progress on the Dock icon</source>
         <translation>Dock アイコンにダウンロードの進捗を表示</translation>
     </message>
@@ -13128,7 +13126,7 @@ Every Usenet connection then passes through the proxy, so its speed caps the dow
         <translation>リスト、メニュー、ダイアログの文字サイズ。再起動後に反映されます。</translation>
     </message>
     <message>
-        <location line="+497"/>
+        <location line="+499"/>
         <source>Connect Low ID to Low ID through server or Kad buddy (NAT traversal)</source>
         <translation>サーバーまたは Kad バディ経由で Low ID 同士を接続 (NAT 越え)</translation>
     </message>
@@ -14111,7 +14109,7 @@ Adding one later does not fetch its back catalogue: a new indexer gets its own f
         <translation>BitTorrent を有効にする</translation>
     </message>
     <message>
-        <location line="+3479"/>
+        <location line="+3487"/>
         <source>TCP/UDP</source>
         <translation>TCP/UDP</translation>
     </message>
@@ -14121,11 +14119,16 @@ Adding one later does not fetch its back catalogue: a new indexer gets its own f
         <translation>eD2K の TCP と UDP、Kad、ed3k 共通の 1 ポート</translation>
     </message>
     <message>
+        <location line="+61"/>
+        <source>%1 — not available</source>
+        <translation>%1 — 利用不可</translation>
+    </message>
+    <message>
         <source>Starts the BitTorrent engine with the daemon. Off, no torrent is downloaded or seeded.</source>
         <translation type="vanished">デーモンと共に BitTorrent エンジンを起動します。オフの場合、Torrent のダウンロードもシードも行いません。</translation>
     </message>
     <message>
-        <location line="+13"/>
+        <location line="-48"/>
         <source>unlimited</source>
         <translation>無制限</translation>
     </message>
@@ -14164,7 +14167,7 @@ Adding one later does not fetch its back catalogue: a new indexer gets its own f
         <translation type="vanished">TCP と UDP の両方で使用します。eD2K のポートとは異なる必要があります。</translation>
     </message>
     <message>
-        <location line="-3389"/>
+        <location line="-3397"/>
         <source>Listen port (TCP/UDP):</source>
         <translation>待ち受けポート (TCP/UDP):</translation>
     </message>
@@ -14312,7 +14315,7 @@ Adding one later does not fetch its back catalogue: a new indexer gets its own f
         <translation>ファイルの関連付けを更新できませんでした: %1</translation>
     </message>
     <message>
-        <location line="+925"/>
+        <location line="+933"/>
         <location line="+16"/>
         <location line="+6"/>
         <location line="+3"/>
@@ -14461,7 +14464,7 @@ Create it?</source>
 %1</translation>
     </message>
     <message>
-        <location line="-3129"/>
+        <location line="-3137"/>
         <source>Disabled</source>
         <translation>無効</translation>
     </message>
@@ -14496,7 +14499,7 @@ Create it?</source>
         <translation>specialdlp ライブラリが見つかりません。チェックは無効です</translation>
     </message>
     <message>
-        <location line="+758"/>
+        <location line="+766"/>
         <source>Automatic</source>
         <translation>自動</translation>
     </message>
@@ -14510,7 +14513,7 @@ Create it?</source>
         <translation type="vanished">実行中のみ eD2K リンクを自動取得</translation>
     </message>
     <message>
-        <location line="-3021"/>
+        <location line="-3029"/>
         <source>Use credit system (reward uploaders)</source>
         <translation>クレジットシステムを使用（アップロード者を報酬）</translation>
     </message>
@@ -14534,7 +14537,7 @@ Create it?</source>
         <translation>サーバーとクライアントの LAN IP をフィルター</translation>
     </message>
     <message>
-        <location line="-4777"/>
+        <location line="-4779"/>
         <source>Show more controls (advanced mode controls)</source>
         <translation>詳細コントロールを表示（詳細モード）</translation>
     </message>
@@ -14595,7 +14598,7 @@ Create it?</source>
         <translation>信頼済みコア:</translation>
     </message>
     <message>
-        <location line="+1121"/>
+        <location line="+1123"/>
         <source>Rehash All Files...</source>
         <translation>全ファイルを再ハッシュ...</translation>
     </message>
@@ -15006,7 +15009,7 @@ News server connections switch over immediately.</source>
         <translation>ポート転送: %1</translation>
     </message>
     <message>
-        <location line="+80"/>
+        <location line="+88"/>
         <source>Database: not connected to the core</source>
         <translation>データベース: コアに未接続</translation>
     </message>
@@ -15056,18 +15059,18 @@ News server connections switch over immediately.</source>
         <translation>既定値に戻す</translation>
     </message>
     <message>
-        <location line="-7852"/>
-        <location line="+2520"/>
+        <location line="-7862"/>
+        <location line="+2522"/>
         <location line="+1024"/>
         <location line="+154"/>
         <location line="+1627"/>
         <location line="+316"/>
-        <location line="+2209"/>
+        <location line="+2217"/>
         <source>Remove</source>
         <translation>削除</translation>
     </message>
     <message>
-        <location line="-6565"/>
+        <location line="-6573"/>
         <source>New eMule Qt version detected</source>
         <translation>新しい eMule Qt バージョンを検出しました</translation>
     </message>
@@ -15144,12 +15147,12 @@ News server connections switch over immediately.</source>
         <translation> 秒</translation>
     </message>
     <message>
-        <location line="-5108"/>
+        <location line="-5110"/>
         <source>Downloads that are receiving data, and the sources sending it, are drawn in bold. A source listed under another file (A4AF) is bold too while it transfers. The connected server and the selected category tab are bold as well.</source>
         <translation>データを受信中のダウンロードと、それを送信しているソースを太字で表示します。別のファイルの下にあるソース (A4AF) も転送中は太字になります。接続中のサーバーと選択中のカテゴリタブも太字になります。</translation>
     </message>
     <message>
-        <location line="+1012"/>
+        <location line="+1014"/>
         <source>Rename downloads to the name most sources use</source>
         <translation>ダウンロードを最も多くのソースが使う名前に変更する</translation>
     </message>
@@ -15408,7 +15411,7 @@ Set it slightly under your plan. The figure is measured here, so it reads a few 
         <location line="+1024"/>
         <location line="+154"/>
         <location line="+1900"/>
-        <location line="+2247"/>
+        <location line="+2255"/>
         <source>Add</source>
         <translation>追加</translation>
     </message>
@@ -15421,7 +15424,7 @@ Set it slightly under your plan. The figure is measured here, so it reads a few 
         <translation type="vanished">値を入力：</translation>
     </message>
     <message>
-        <location line="-2210"/>
+        <location line="-2218"/>
         <source>Edit Value</source>
         <translation>値を編集</translation>
     </message>

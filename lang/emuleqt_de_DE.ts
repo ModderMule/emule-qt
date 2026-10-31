@@ -920,7 +920,7 @@ Hat Kommentare</translation>
         <translation type="vanished">%1 Bytes</translation>
     </message>
     <message>
-        <location filename="../src/gui/dialogs/OptionsDialog.cpp" line="+3418"/>
+        <location filename="../src/gui/dialogs/OptionsDialog.cpp" line="+3423"/>
         <source>Test</source>
         <translation>Test</translation>
     </message>
@@ -4921,12 +4921,11 @@ Exportieren?</translation>
         <translation>ed3k ist aus: Dies hat keine Wirkung.</translation>
     </message>
     <message>
-        <location line="+5"/>
         <source>Needs ed3k credits in use with ledger endpoints.</source>
-        <translation>Erfordert aktive ed3k-Credits mit Ledger-Endpunkten.</translation>
+        <translation type="vanished">Erfordert aktive ed3k-Credits mit Ledger-Endpunkten.</translation>
     </message>
     <message>
-        <location line="+4"/>
+        <location line="+9"/>
         <source>The account is overdrawn: nothing is bid.</source>
         <translation>Das Konto ist überzogen: Es wird nichts geboten.</translation>
     </message>
@@ -6124,12 +6123,11 @@ Fortfahren?</translation>
         <translation>Aktualisieren</translation>
     </message>
     <message>
-        <location line="+37"/>
         <source>Stake tokens need credits in use with ledger endpoints.</source>
-        <translation>Stake-Token erfordern aktive Credits mit Ledger-Endpunkten.</translation>
+        <translation type="vanished">Stake-Token erfordern aktive Credits mit Ledger-Endpunkten.</translation>
     </message>
     <message>
-        <location line="+2"/>
+        <location line="+39"/>
         <source>The stake rate is not read yet.</source>
         <translation>Der Stake-Kurs wurde noch nicht gelesen.</translation>
     </message>
@@ -11099,36 +11097,36 @@ Erneut herunterladen?</translation>
 <context>
     <name>eMule::OptionsDialog</name>
     <message>
-        <location filename="../src/gui/dialogs/OptionsDialog.cpp" line="-3305"/>
+        <location filename="../src/gui/dialogs/OptionsDialog.cpp" line="-3307"/>
         <source>Options</source>
         <translation>Optionen</translation>
     </message>
     <message>
         <location line="+61"/>
-        <location line="+2215"/>
+        <location line="+2217"/>
         <source>OK</source>
         <translation>OK</translation>
     </message>
     <message>
-        <location line="-2214"/>
-        <location line="+2215"/>
+        <location line="-2216"/>
+        <location line="+2217"/>
         <source>Cancel</source>
         <translation>Abbrechen</translation>
     </message>
     <message>
-        <location line="-2214"/>
-        <location line="+6224"/>
+        <location line="-2216"/>
+        <location line="+6226"/>
         <source>Apply</source>
         <translation>Übernehmen</translation>
     </message>
     <message>
-        <location line="-6223"/>
+        <location line="-6225"/>
         <source>Help</source>
         <translation>Hilfe</translation>
     </message>
     <message>
         <location line="+270"/>
-        <location line="+2212"/>
+        <location line="+2214"/>
         <location line="+59"/>
         <location line="+6"/>
         <location line="+4"/>
@@ -11140,7 +11138,7 @@ Erneut herunterladen?</translation>
         <translation>IP-Filter</translation>
     </message>
     <message>
-        <location line="-2326"/>
+        <location line="-2328"/>
         <source>IP filter reloaded: %1 entries.</source>
         <translation>IP-Filter neu geladen: %1 Einträge.</translation>
     </message>
@@ -11150,12 +11148,12 @@ Erneut herunterladen?</translation>
         <translation>Optionen -&gt; %1 -&gt; %2</translation>
     </message>
     <message>
-        <location line="+5205"/>
+        <location line="+5207"/>
         <source>Bandwidth</source>
         <translation>Bandbreite</translation>
     </message>
     <message>
-        <location line="-4997"/>
+        <location line="-4999"/>
         <source>General options</source>
         <translation>Allgemeine Optionen</translation>
     </message>
@@ -11176,18 +11174,18 @@ Erneut herunterladen?</translation>
     </message>
     <message>
         <location line="+8"/>
-        <location line="+6081"/>
+        <location line="+6083"/>
         <source>Language</source>
         <translation>Sprache</translation>
     </message>
     <message>
-        <location line="-6078"/>
+        <location line="-6080"/>
         <source>System Default</source>
         <translation>Systemstandard</translation>
     </message>
     <message>
         <location line="+14"/>
-        <location line="+802"/>
+        <location line="+804"/>
         <location line="+384"/>
         <location line="+475"/>
         <location line="+298"/>
@@ -11195,7 +11193,7 @@ Erneut herunterladen?</translation>
         <translation>Verschiedenes</translation>
     </message>
     <message>
-        <location line="-1956"/>
+        <location line="-1958"/>
         <source>Bring to front on link click</source>
         <translation>Bei Linkklick in den Vordergrund</translation>
     </message>
@@ -11290,25 +11288,25 @@ Erneut herunterladen?</translation>
     <message>
         <location line="+8"/>
         <location line="+18"/>
-        <location line="+5993"/>
+        <location line="+5995"/>
         <source>Core</source>
         <translation>Kern</translation>
     </message>
     <message>
-        <location line="-6006"/>
+        <location line="-6008"/>
         <source>Address:</source>
         <translation>Adresse:</translation>
     </message>
     <message>
         <location line="+4"/>
-        <location line="+1377"/>
+        <location line="+1379"/>
         <location line="+774"/>
         <location line="+427"/>
         <source>Port:</source>
         <translation>Port:</translation>
     </message>
     <message>
-        <location line="-2575"/>
+        <location line="-2577"/>
         <source>authentication token</source>
         <translation>Authentifizierungstoken</translation>
     </message>
@@ -11473,7 +11471,7 @@ Möchten Sie wirklich fortfahren?</translation>
     </message>
     <message>
         <location line="+2"/>
-        <location line="+1864"/>
+        <location line="+1866"/>
         <location line="+133"/>
         <location line="+296"/>
         <location line="+1021"/>
@@ -11485,7 +11483,7 @@ Möchten Sie wirklich fortfahren?</translation>
         <translation>Aktiviert</translation>
     </message>
     <message>
-        <location line="-5102"/>
+        <location line="-5104"/>
         <source>Reset</source>
         <translation>Zurücksetzen</translation>
     </message>
@@ -11502,13 +11500,13 @@ Möchten Sie wirklich fortfahren?</translation>
     <message>
         <location line="+3"/>
         <location line="+6"/>
-        <location line="+4494"/>
+        <location line="+4496"/>
         <location line="+334"/>
         <source> KB/s</source>
         <translation> KB/s</translation>
     </message>
     <message>
-        <location line="-4831"/>
+        <location line="-4833"/>
         <source>Upload</source>
         <translation>Upload</translation>
     </message>
@@ -11539,18 +11537,18 @@ Möchten Sie wirklich fortfahren?</translation>
     </message>
     <message>
         <location line="+23"/>
-        <location line="+4334"/>
+        <location line="+4336"/>
         <source>Client Port</source>
         <translation>Client-Port</translation>
     </message>
     <message>
-        <location line="-4331"/>
-        <location line="+7708"/>
+        <location line="-4333"/>
+        <location line="+7718"/>
         <source>TCP</source>
         <translation>TCP</translation>
     </message>
     <message>
-        <location line="-7702"/>
+        <location line="-7712"/>
         <source>UDP</source>
         <translation>UDP</translation>
     </message>
@@ -11560,24 +11558,24 @@ Möchten Sie wirklich fortfahren?</translation>
     </message>
     <message>
         <location line="+6"/>
-        <location line="+4334"/>
+        <location line="+4336"/>
         <source>Test Ports</source>
         <translation>Ports testen</translation>
     </message>
     <message>
-        <location line="-4330"/>
-        <location line="+4338"/>
+        <location line="-4332"/>
+        <location line="+4340"/>
         <source>Open Router</source>
         <translation>Router öffnen</translation>
     </message>
     <message>
-        <location line="-4337"/>
-        <location line="+4338"/>
+        <location line="-4339"/>
+        <location line="+4340"/>
         <source>Opens the web page of this computer&apos;s router, where ports are forwarded</source>
         <translation>Öffnet die Webseite des Routers dieses Computers, auf der Ports weitergeleitet werden</translation>
     </message>
     <message>
-        <location line="-4334"/>
+        <location line="-4336"/>
         <source>Use UPnP to Setup Ports</source>
         <translation>UPnP zur Porteinrichtung verwenden</translation>
     </message>
@@ -11597,19 +11595,19 @@ Möchten Sie wirklich fortfahren?</translation>
         <translation>Portweiterleitung: unbekannt</translation>
     </message>
     <message>
-        <location line="+11"/>
+        <location line="+13"/>
         <source>Network interface</source>
         <translation>Netzwerkschnittstelle</translation>
     </message>
     <message>
         <location line="+4"/>
         <location line="+1735"/>
-        <location line="+5545"/>
+        <location line="+5549"/>
         <source>Any</source>
         <translation>Alle</translation>
     </message>
     <message>
-        <location line="-7278"/>
+        <location line="-7282"/>
         <source>Use only this network interface, for example a VPN tunnel. Pick one from the list, or type an IP address or a subnet such as 10.64.0.0/10 (the interface holding an address in it). Connections through a proxy are not bound.</source>
         <translation>Nur diese Netzwerkschnittstelle verwenden, zum Beispiel einen VPN-Tunnel. Wählen Sie eine aus der Liste oder geben Sie eine IP-Adresse oder ein Subnetz wie 10.64.0.0/10 ein (die Schnittstelle, die eine Adresse daraus besitzt). Verbindungen über einen Proxy werden nicht gebunden.</translation>
     </message>
@@ -12540,7 +12538,7 @@ Jede Regel ersetzt ein Regex-Muster durch eine Ersetzungszeichenkette.</translat
         <translation>Upload-Plätze (ohne Overhead)</translation>
     </message>
     <message>
-        <location line="-1810"/>
+        <location line="-1812"/>
         <source>Country flags (IP2Country)</source>
         <translation>Landesflaggen (IP2Country)</translation>
     </message>
@@ -12590,7 +12588,7 @@ Jede Regel ersetzt ein Regex-Muster durch eine Ersetzungszeichenkette.</translat
         <translation type="vanished">Benötigt ein kostenloses &lt;a href=&quot;https://www.maxmind.com/en/geolite2/signup&quot;&gt;MaxMind-GeoLite2&lt;/a&gt;-Konto. Dieses Produkt enthält GeoLite2-Daten von MaxMind.</translation>
     </message>
     <message>
-        <location line="+413"/>
+        <location line="+415"/>
         <source>Use for news servers</source>
         <translation>Für News-Server verwenden</translation>
     </message>
@@ -12624,9 +12622,9 @@ Jede Usenet-Verbindung läuft dann über den Proxy, seine Geschwindigkeit begren
         <translation>Führt lokal Buch über die Dateien, die in Ihren Suchen aufgetaucht sind, und über ihre Namen, damit spätere Suchen zeigen können, was Sie schon gesehen haben.</translation>
     </message>
     <message>
-        <location line="-1433"/>
+        <location line="-1435"/>
         <location line="+5"/>
-        <location line="+1648"/>
+        <location line="+1650"/>
         <source>Connection</source>
         <translation>Verbindung</translation>
     </message>
@@ -13094,13 +13092,13 @@ Jede Usenet-Verbindung läuft dann über den Proxy, seine Geschwindigkeit begren
         <translation>Streng</translation>
     </message>
     <message>
-        <location line="-2872"/>
-        <location line="+8337"/>
+        <location line="-2874"/>
+        <location line="+8347"/>
         <source>BitTorrent</source>
         <translation>BitTorrent</translation>
     </message>
     <message>
-        <location line="-7952"/>
+        <location line="-7962"/>
         <source>Show download progress on the Dock icon</source>
         <translation>Downloadfortschritt auf dem Dock-Symbol anzeigen</translation>
     </message>
@@ -13155,7 +13153,7 @@ Jede Usenet-Verbindung läuft dann über den Proxy, seine Geschwindigkeit begren
         <translation>Textgröße von Listen, Menüs und Dialogen. Wirkt nach einem Neustart.</translation>
     </message>
     <message>
-        <location line="+497"/>
+        <location line="+499"/>
         <source>Connect Low ID to Low ID through server or Kad buddy (NAT traversal)</source>
         <translation>Low-ID mit Low-ID über Server oder Kad-Buddy verbinden (NAT-Traversal)</translation>
     </message>
@@ -14138,7 +14136,7 @@ Einen später hinzuzufügen holt nicht dessen Bestand: ein neuer Indexer bekommt
         <translation>BitTorrent aktivieren</translation>
     </message>
     <message>
-        <location line="+3479"/>
+        <location line="+3487"/>
         <source>TCP/UDP</source>
         <translation>TCP/UDP</translation>
     </message>
@@ -14148,11 +14146,16 @@ Einen später hinzuzufügen holt nicht dessen Bestand: ein neuer Indexer bekommt
         <translation>Ein Port für eD2K-TCP und -UDP, Kad und ed3k</translation>
     </message>
     <message>
+        <location line="+61"/>
+        <source>%1 — not available</source>
+        <translation>%1 — nicht verfügbar</translation>
+    </message>
+    <message>
         <source>Starts the BitTorrent engine with the daemon. Off, no torrent is downloaded or seeded.</source>
         <translation type="vanished">Startet die BitTorrent-Engine mit dem Daemon. Wenn aus, wird kein Torrent heruntergeladen oder geseedet.</translation>
     </message>
     <message>
-        <location line="+13"/>
+        <location line="-48"/>
         <source>unlimited</source>
         <translation>unbegrenzt</translation>
     </message>
@@ -14191,7 +14194,7 @@ Einen später hinzuzufügen holt nicht dessen Bestand: ein neuer Indexer bekommt
         <translation type="vanished">Wird für TCP und UDP verwendet. Muss sich von den eD2K-Ports unterscheiden.</translation>
     </message>
     <message>
-        <location line="-3389"/>
+        <location line="-3397"/>
         <source>Listen port (TCP/UDP):</source>
         <translation>Port (TCP/UDP):</translation>
     </message>
@@ -14339,7 +14342,7 @@ Einen später hinzuzufügen holt nicht dessen Bestand: ein neuer Indexer bekommt
         <translation>Die Dateizuordnungen konnten nicht aktualisiert werden: %1</translation>
     </message>
     <message>
-        <location line="+925"/>
+        <location line="+933"/>
         <location line="+16"/>
         <location line="+6"/>
         <location line="+3"/>
@@ -14489,7 +14492,7 @@ Jetzt anlegen?</translation>
 %1</translation>
     </message>
     <message>
-        <location line="-3129"/>
+        <location line="-3137"/>
         <source>Disabled</source>
         <translation>Deaktiviert</translation>
     </message>
@@ -14524,7 +14527,7 @@ Jetzt anlegen?</translation>
         <translation>specialdlp-Bibliothek nicht gefunden, Prüfungen sind inaktiv</translation>
     </message>
     <message>
-        <location line="+758"/>
+        <location line="+766"/>
         <source>Automatic</source>
         <translation>Automatisch</translation>
     </message>
@@ -14538,7 +14541,7 @@ Jetzt anlegen?</translation>
         <translation type="vanished">eD2K-Links nur während der Laufzeit automatisch übernehmen</translation>
     </message>
     <message>
-        <location line="-3021"/>
+        <location line="-3029"/>
         <source>Use credit system (reward uploaders)</source>
         <translation>Kreditsystem verwenden (Uploader belohnen)</translation>
     </message>
@@ -14562,7 +14565,7 @@ Jetzt anlegen?</translation>
         <translation>Server- und Client-LAN-IPs filtern</translation>
     </message>
     <message>
-        <location line="-4777"/>
+        <location line="-4779"/>
         <source>Show more controls (advanced mode controls)</source>
         <translation>Mehr Steuerelemente anzeigen (erweiterte Steuerelemente)</translation>
     </message>
@@ -14623,7 +14626,7 @@ Jetzt anlegen?</translation>
         <translation>Vertraute Kerne:</translation>
     </message>
     <message>
-        <location line="+1121"/>
+        <location line="+1123"/>
         <source>Rehash All Files...</source>
         <translation>Alle Dateien neu hashen...</translation>
     </message>
@@ -15034,7 +15037,7 @@ Verbindungen zu News-Servern wechseln sofort.</translation>
         <translation>Portweiterleitung: %1</translation>
     </message>
     <message>
-        <location line="+80"/>
+        <location line="+88"/>
         <source>Database: not connected to the core</source>
         <translation>Datenbank: nicht mit dem Kern verbunden</translation>
     </message>
@@ -15084,18 +15087,18 @@ Verbindungen zu News-Servern wechseln sofort.</translation>
         <translation>Auf Standard zurücksetzen</translation>
     </message>
     <message>
-        <location line="-7852"/>
-        <location line="+2520"/>
+        <location line="-7862"/>
+        <location line="+2522"/>
         <location line="+1024"/>
         <location line="+154"/>
         <location line="+1627"/>
         <location line="+316"/>
-        <location line="+2209"/>
+        <location line="+2217"/>
         <source>Remove</source>
         <translation>Entfernen</translation>
     </message>
     <message>
-        <location line="-6565"/>
+        <location line="-6573"/>
         <source>New eMule Qt version detected</source>
         <translation>Neue eMule-Qt-Version erkannt</translation>
     </message>
@@ -15172,12 +15175,12 @@ Verbindungen zu News-Servern wechseln sofort.</translation>
         <translation> s</translation>
     </message>
     <message>
-        <location line="-5108"/>
+        <location line="-5110"/>
         <source>Downloads that are receiving data, and the sources sending it, are drawn in bold. A source listed under another file (A4AF) is bold too while it transfers. The connected server and the selected category tab are bold as well.</source>
         <translation>Downloads, die Daten empfangen, und die Quellen, die sie senden, werden fett dargestellt. Eine Quelle unter einer anderen Datei (A4AF) ist ebenfalls fett, solange sie überträgt. Auch der verbundene Server und der gewählte Kategorie-Tab sind fett.</translation>
     </message>
     <message>
-        <location line="+1012"/>
+        <location line="+1014"/>
         <source>Rename downloads to the name most sources use</source>
         <translation>Downloads nach dem Namen der meisten Quellen umbenennen</translation>
     </message>
@@ -15437,7 +15440,7 @@ Stellen Sie den Wert etwas unter Ihren Tarif. Die Menge wird hier gemessen und l
         <location line="+1024"/>
         <location line="+154"/>
         <location line="+1900"/>
-        <location line="+2247"/>
+        <location line="+2255"/>
         <source>Add</source>
         <translation>Hinzufügen</translation>
     </message>
@@ -15450,7 +15453,7 @@ Stellen Sie den Wert etwas unter Ihren Tarif. Die Menge wird hier gemessen und l
         <translation type="vanished">Wert eingeben:</translation>
     </message>
     <message>
-        <location line="-2210"/>
+        <location line="-2218"/>
         <source>Edit Value</source>
         <translation>Wert bearbeiten</translation>
     </message>

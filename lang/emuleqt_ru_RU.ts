@@ -766,7 +766,7 @@ Trust the new certificate?</source>
         <translation>Нормальный</translation>
     </message>
     <message>
-        <location filename="../src/gui/dialogs/OptionsDialog.cpp" line="+3418"/>
+        <location filename="../src/gui/dialogs/OptionsDialog.cpp" line="+3423"/>
         <source>Test</source>
         <translation>Проверить</translation>
     </message>
@@ -4653,12 +4653,11 @@ Export?</source>
         <translation>ed3k выключен: это не действует.</translation>
     </message>
     <message>
-        <location line="+5"/>
         <source>Needs ed3k credits in use with ledger endpoints.</source>
-        <translation>Нужны используемые кредиты ed3k с конечными точками реестра.</translation>
+        <translation type="vanished">Нужны используемые кредиты ed3k с конечными точками реестра.</translation>
     </message>
     <message>
-        <location line="+4"/>
+        <location line="+9"/>
         <source>The account is overdrawn: nothing is bid.</source>
         <translation>Счёт в минусе: ставки не делаются.</translation>
     </message>
@@ -5859,12 +5858,11 @@ Go on?</source>
         <translation>Обновить</translation>
     </message>
     <message>
-        <location line="+37"/>
         <source>Stake tokens need credits in use with ledger endpoints.</source>
-        <translation>Стейк-токенам нужны используемые кредиты с конечными точками реестра.</translation>
+        <translation type="vanished">Стейк-токенам нужны используемые кредиты с конечными точками реестра.</translation>
     </message>
     <message>
-        <location line="+2"/>
+        <location line="+39"/>
         <source>The stake rate is not read yet.</source>
         <translation>Курс стейка ещё не прочитан.</translation>
     </message>
@@ -10716,36 +10714,36 @@ Download it again?</source>
 <context>
     <name>eMule::OptionsDialog</name>
     <message>
-        <location filename="../src/gui/dialogs/OptionsDialog.cpp" line="-3305"/>
+        <location filename="../src/gui/dialogs/OptionsDialog.cpp" line="-3307"/>
         <source>Options</source>
         <translation>Настройки</translation>
     </message>
     <message>
         <location line="+61"/>
-        <location line="+2215"/>
+        <location line="+2217"/>
         <source>OK</source>
         <translation>OK</translation>
     </message>
     <message>
-        <location line="-2214"/>
-        <location line="+2215"/>
+        <location line="-2216"/>
+        <location line="+2217"/>
         <source>Cancel</source>
         <translation>Отмена</translation>
     </message>
     <message>
-        <location line="-2214"/>
-        <location line="+6224"/>
+        <location line="-2216"/>
+        <location line="+6226"/>
         <source>Apply</source>
         <translation>Применить</translation>
     </message>
     <message>
-        <location line="-6223"/>
+        <location line="-6225"/>
         <source>Help</source>
         <translation>Помощь</translation>
     </message>
     <message>
         <location line="+270"/>
-        <location line="+2212"/>
+        <location line="+2214"/>
         <location line="+59"/>
         <location line="+6"/>
         <location line="+4"/>
@@ -10757,7 +10755,7 @@ Download it again?</source>
         <translation>IP фильтр</translation>
     </message>
     <message>
-        <location line="-2326"/>
+        <location line="-2328"/>
         <source>IP filter reloaded: %1 entries.</source>
         <translation>IP фильтр перезагружен: %1 записей.</translation>
     </message>
@@ -10783,29 +10781,29 @@ Download it again?</source>
     </message>
     <message>
         <location line="+2"/>
-        <location line="+8337"/>
+        <location line="+8347"/>
         <source>BitTorrent</source>
         <translation>BitTorrent</translation>
     </message>
     <message>
-        <location line="-8226"/>
+        <location line="-8236"/>
         <source>User Name</source>
         <translation>Имя клиента</translation>
     </message>
     <message>
         <location line="+8"/>
-        <location line="+6081"/>
+        <location line="+6083"/>
         <source>Language</source>
         <translation>Язык</translation>
     </message>
     <message>
-        <location line="-6078"/>
+        <location line="-6080"/>
         <source>System Default</source>
         <translation>Системный</translation>
     </message>
     <message>
         <location line="+14"/>
-        <location line="+802"/>
+        <location line="+804"/>
         <location line="+384"/>
         <location line="+475"/>
         <location line="+298"/>
@@ -10813,7 +10811,7 @@ Download it again?</source>
         <translation>Разное</translation>
     </message>
     <message>
-        <location line="-1956"/>
+        <location line="-1958"/>
         <source>Bring to front on link click</source>
         <translation>Выводить на передний план при щелчке по ссылке</translation>
     </message>
@@ -10900,25 +10898,25 @@ Download it again?</source>
     <message>
         <location line="+8"/>
         <location line="+18"/>
-        <location line="+5993"/>
+        <location line="+5995"/>
         <source>Core</source>
         <translation>Ядро</translation>
     </message>
     <message>
-        <location line="-6006"/>
+        <location line="-6008"/>
         <source>Address:</source>
         <translation>Адрес:</translation>
     </message>
     <message>
         <location line="+4"/>
-        <location line="+1377"/>
+        <location line="+1379"/>
         <location line="+774"/>
         <location line="+427"/>
         <source>Port:</source>
         <translation>Порт:</translation>
     </message>
     <message>
-        <location line="-2575"/>
+        <location line="-2577"/>
         <source>authentication token</source>
         <translation>токен аутентификации</translation>
     </message>
@@ -11173,7 +11171,7 @@ Are you sure you want to continue?</source>
     </message>
     <message>
         <location line="+2"/>
-        <location line="+1864"/>
+        <location line="+1866"/>
         <location line="+133"/>
         <location line="+296"/>
         <location line="+1021"/>
@@ -11185,7 +11183,7 @@ Are you sure you want to continue?</source>
         <translation>Включено</translation>
     </message>
     <message>
-        <location line="-5102"/>
+        <location line="-5104"/>
         <source>Reset</source>
         <translation>Сбросить</translation>
     </message>
@@ -11202,13 +11200,13 @@ Are you sure you want to continue?</source>
     <message>
         <location line="+3"/>
         <location line="+6"/>
-        <location line="+4494"/>
+        <location line="+4496"/>
         <location line="+334"/>
         <source> KB/s</source>
         <translation> KB/s</translation>
     </message>
     <message>
-        <location line="-4831"/>
+        <location line="-4833"/>
         <source>Upload</source>
         <translation>Отдача</translation>
     </message>
@@ -11239,18 +11237,18 @@ Are you sure you want to continue?</source>
     </message>
     <message>
         <location line="+23"/>
-        <location line="+4334"/>
+        <location line="+4336"/>
         <source>Client Port</source>
         <translation>Порт клиента</translation>
     </message>
     <message>
-        <location line="-4331"/>
-        <location line="+7708"/>
+        <location line="-4333"/>
+        <location line="+7718"/>
         <source>TCP</source>
         <translation>TCP</translation>
     </message>
     <message>
-        <location line="-7702"/>
+        <location line="-7712"/>
         <source>UDP</source>
         <translation>UDP</translation>
     </message>
@@ -11260,12 +11258,12 @@ Are you sure you want to continue?</source>
     </message>
     <message>
         <location line="+6"/>
-        <location line="+4334"/>
+        <location line="+4336"/>
         <source>Test Ports</source>
         <translation>Проверить порты</translation>
     </message>
     <message>
-        <location line="-4325"/>
+        <location line="-4327"/>
         <source>Use UPnP to Setup Ports</source>
         <translation>Настроить порты через UPnP</translation>
     </message>
@@ -11275,19 +11273,19 @@ Are you sure you want to continue?</source>
         <translation>Проброс портов: неизвестно</translation>
     </message>
     <message>
-        <location line="+11"/>
+        <location line="+13"/>
         <source>Network interface</source>
         <translation>Сетевой интерфейс</translation>
     </message>
     <message>
         <location line="+4"/>
         <location line="+1735"/>
-        <location line="+5545"/>
+        <location line="+5549"/>
         <source>Any</source>
         <translation>Любой</translation>
     </message>
     <message>
-        <location line="-7278"/>
+        <location line="-7282"/>
         <source>Use only this network interface, for example a VPN tunnel. Pick one from the list, or type an IP address or a subnet such as 10.64.0.0/10 (the interface holding an address in it). Connections through a proxy are not bound.</source>
         <translation>Использовать только этот сетевой интерфейс, например VPN-туннель. Выберите из списка или введите IP-адрес либо подсеть, например 10.64.0.0/10 (интерфейс с адресом из неё). Соединения через прокси не привязываются.</translation>
     </message>
@@ -11841,14 +11839,14 @@ Every Usenet connection then passes through the proxy, so its speed caps the dow
         <translation>Настройки сервера SMTP</translation>
     </message>
     <message>
-        <location line="-1650"/>
+        <location line="-1652"/>
         <location line="+5"/>
-        <location line="+1648"/>
+        <location line="+1650"/>
         <source>Connection</source>
         <translation>Соединение</translation>
     </message>
     <message>
-        <location line="-1649"/>
+        <location line="-1651"/>
         <location line="+53"/>
         <source>ed3k</source>
         <translation>ed3k</translation>
@@ -11904,7 +11902,7 @@ Every Usenet connection then passes through the proxy, so its speed caps the dow
         <translation>Доверенные ядра:</translation>
     </message>
     <message>
-        <location line="+1340"/>
+        <location line="+1342"/>
         <source>Server:</source>
         <translation>Сервер:</translation>
     </message>
@@ -12656,23 +12654,23 @@ Every Usenet connection then passes through the proxy, so its speed caps the dow
         <location line="+1024"/>
         <location line="+154"/>
         <location line="+1900"/>
-        <location line="+2247"/>
+        <location line="+2255"/>
         <source>Add</source>
         <translation>Добавить</translation>
     </message>
     <message>
-        <location line="-7844"/>
-        <location line="+2520"/>
+        <location line="-7854"/>
+        <location line="+2522"/>
         <location line="+1024"/>
         <location line="+154"/>
         <location line="+1627"/>
         <location line="+316"/>
-        <location line="+2209"/>
+        <location line="+2217"/>
         <source>Remove</source>
         <translation>Удалить</translation>
     </message>
     <message>
-        <location line="-5309"/>
+        <location line="-5317"/>
         <source>Display name (optional)</source>
         <translation>Отображаемое имя (необязательно)</translation>
     </message>
@@ -12750,7 +12748,7 @@ Every Usenet connection then passes through the proxy, so its speed caps the dow
         <translation>Пропускная способность</translation>
     </message>
     <message>
-        <location line="-4642"/>
+        <location line="-4644"/>
         <source>Downloads that are receiving data, and the sources sending it, are drawn in bold. A source listed under another file (A4AF) is bold too while it transfers. The connected server and the selected category tab are bold as well.</source>
         <translation>Загрузки, получающие данные, и источники, которые их отправляют, выделяются жирным. Источник под другим файлом (A4AF) тоже выделяется жирным во время передачи. Подключённый сервер и выбранная вкладка категории также выделяются жирным.</translation>
     </message>
@@ -12764,18 +12762,18 @@ Every Usenet connection then passes through the proxy, so its speed caps the dow
     </message>
     <message>
         <location line="+255"/>
-        <location line="+4338"/>
+        <location line="+4340"/>
         <source>Open Router</source>
         <translation>Открыть роутер</translation>
     </message>
     <message>
-        <location line="-4337"/>
-        <location line="+4338"/>
+        <location line="-4339"/>
+        <location line="+4340"/>
         <source>Opens the web page of this computer&apos;s router, where ports are forwarded</source>
         <translation>Открывает веб-страницу роутера этого компьютера, где настраивается проброс портов</translation>
     </message>
     <message>
-        <location line="-4327"/>
+        <location line="-4329"/>
         <source>Randomize ports at startup, range</source>
         <translation>Случайные порты при запуске, диапазон</translation>
     </message>
@@ -12785,7 +12783,7 @@ Every Usenet connection then passes through the proxy, so its speed caps the dow
         <translation>При каждом запуске выбирает новые свободные порты из этого диапазона: TCP, UDP, если он не отключён, и порт BitTorrent, если BitTorrent включён. Используйте с UPnP или пробросьте весь диапазон в роутере.</translation>
     </message>
     <message>
-        <location line="+743"/>
+        <location line="+745"/>
         <source>Rename downloads to the name most sources use</source>
         <translation>Переименовывать загрузки по имени, которое используют большинство источников</translation>
     </message>
@@ -13814,7 +13812,7 @@ Adding one later does not fetch its back catalogue: a new indexer gets its own f
         <translation>Включить BitTorrent</translation>
     </message>
     <message>
-        <location line="+3479"/>
+        <location line="+3487"/>
         <source>TCP/UDP</source>
         <translation>TCP/UDP</translation>
     </message>
@@ -13824,11 +13822,16 @@ Adding one later does not fetch its back catalogue: a new indexer gets its own f
         <translation>Один порт для TCP и UDP eD2K, Kad и ed3k</translation>
     </message>
     <message>
+        <location line="+61"/>
+        <source>%1 — not available</source>
+        <translation>%1 — недоступен</translation>
+    </message>
+    <message>
         <source>Starts the BitTorrent engine with the daemon. Off, no torrent is downloaded or seeded.</source>
         <translation type="vanished">Запускает движок BitTorrent вместе с демоном. Если выключено, торренты не принимаются и не раздаются.</translation>
     </message>
     <message>
-        <location line="+13"/>
+        <location line="-48"/>
         <source>unlimited</source>
         <translation>без ограничений</translation>
     </message>
@@ -13867,7 +13870,7 @@ Adding one later does not fetch its back catalogue: a new indexer gets its own f
         <translation type="vanished">Используется для TCP и UDP. Должен отличаться от портов eD2K.</translation>
     </message>
     <message>
-        <location line="-3389"/>
+        <location line="-3397"/>
         <source>Listen port (TCP/UDP):</source>
         <translation>Порт (TCP/UDP):</translation>
     </message>
@@ -14015,7 +14018,7 @@ Adding one later does not fetch its back catalogue: a new indexer gets its own f
         <translation>Не удалось обновить связи файлов: %1</translation>
     </message>
     <message>
-        <location line="+1068"/>
+        <location line="+1076"/>
         <source>UDP is disabled in the config file (udpPort: 0)</source>
         <translation>UDP отключён в файле конфигурации (udpPort: 0)</translation>
     </message>
@@ -14120,7 +14123,7 @@ Create it?</source>
 %1</translation>
     </message>
     <message>
-        <location line="-3129"/>
+        <location line="-3137"/>
         <source>Disabled</source>
         <translation>Отключено</translation>
     </message>
@@ -14896,7 +14899,7 @@ News server connections switch over immediately.</source>
         <translation>Проброс портов: %1</translation>
     </message>
     <message>
-        <location line="+80"/>
+        <location line="+88"/>
         <source>Database: not connected to the core</source>
         <translation>База данных: нет соединения с ядром</translation>
     </message>

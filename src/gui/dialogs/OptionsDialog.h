@@ -266,6 +266,9 @@ private:
     [[nodiscard]] static QString comboSelection(const QComboBox* combo);
     static void showComboSelection(QComboBox* combo, const QString& selection);
     void requestNetworkInterfaces();
+    /// Select the saved bind interface in the filled list: matches the old Windows id
+    /// too, and adds a "not available" entry for one that is gone (#67).
+    void showBindSelection(const QString& selection);
     void requestPortMapStatus();
     void showPortMapStatus(const QCborMap& info);
 

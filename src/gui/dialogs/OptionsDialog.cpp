@@ -100,6 +100,9 @@
 
 namespace eMule {
 
+// Bind combo: the OS interface id beside the stored adapter name
+constexpr int kRawNameRole = Qt::UserRole + 1;
+
 // ---------------------------------------------------------------------------
 // Construction
 // ---------------------------------------------------------------------------
@@ -1399,6 +1402,8 @@ QWidget* OptionsDialog::createConnectionPage()
         connect(m_ipc, &IpcClient::portMapStatusChanged, this, [this](const Ipc::IpcMessage& msg) {
             showPortMapStatus(msg.fieldMap(0));
         });
+        // opened while the core was busy or reconnecting: the list never arrived (#67)
+        connect(m_ipc, &IpcClient::connected, this, &OptionsDialog::requestNetworkInterfaces);
     }
 
     // Bind selection: an interface of the daemon's host, or free text for an
@@ -8649,7 +8654,8 @@ void OptionsDialog::requestNetworkInterfaces()
         const QString webSel = comboSelection(m_webListenCombo);
         // OS order follows bring-up order and changes per boot (#52): loopback
         // first, then natural sort by label (tun2 before tun10)
-        struct Entry { QString label; QString data; bool loopback = false; };
+        // rawName: OS id an older config may still hold
+        struct Entry { QString label; QString data; bool loopback = false; QString rawName; };
         std::vector<Entry> bindEntries;
         std::vector<Entry> webEntries;   // one per address, web server binds one
         const QCborArray list = resp.fieldArray(1);
@@ -8673,8 +8679,11 @@ void OptionsDialog::requestNetworkInterfaces()
             }
             if (addresses.isEmpty())
                 continue;
+            // Windows id "iftype53_32774" changes when a VPN client recreates its adapter
+            // on reconnect (#67); the adapter name ("Ethernet 2") stays, resolver takes both
+            const QString stored = friendly.isEmpty() ? name : friendly;
             bindEntries.push_back({QStringLiteral("%1 — %2").arg(label, addresses.join(QStringLiteral(", "))),
-                                   name, loopback});
+                                   stored, loopback, name});
         }
         QCollator collator;
         collator.setNumericMode(true);
@@ -8688,11 +8697,15 @@ void OptionsDialog::requestNetworkInterfaces()
             const QSignalBlocker blocker(combo);
             combo->clear();
             combo->addItem(tr("Any"), QString());
-            for (const Entry& e : entries)
+            for (const Entry& e : entries) {
                 combo->addItem(e.label, e.data);
+                if (!e.rawName.isEmpty())
+                    combo->setItemData(combo->count() - 1, e.rawName, kRawNameRole);
+            }
             showComboSelection(combo, selection);
         };
         fill(m_bindInterfaceCombo, bindEntries, bindSel);
+        showBindSelection(bindSel);
         fill(m_webListenCombo, webEntries, webSel);
     });
 }
@@ -9091,5 +9104,24 @@ bool OptionsDialog::validateBtPort()
     return true;
 }
 #endif
+
+void OptionsDialog::showBindSelection(const QString& selection)
+{
+    QComboBox* combo = m_bindInterfaceCombo;
+    if (selection.isEmpty() || combo->findData(selection, Qt::UserRole, Qt::MatchFixedString) >= 0)
+        return;
+    const QSignalBlocker blocker(combo);
+    // saved as the OS id by an older version: select the entry, Apply stores the name
+    if (const int index = combo->findData(selection, kRawNameRole, Qt::MatchFixedString); index >= 0) {
+        combo->setCurrentIndex(index);
+        return;
+    }
+    // address or subnet: free text, nothing to list
+    if (!QHostAddress(selection).isNull() || selection.contains(u'/'))
+        return;
+    // an interface that is gone blocks all traffic: show it, not a bare id
+    combo->addItem(tr("%1 — not available").arg(selection), selection);
+    combo->setCurrentIndex(combo->count() - 1);
+}
 
 } // namespace eMule
