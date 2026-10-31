@@ -11,7 +11,7 @@ Cross-platform. Fully compatible with the existing eMule network.
 Website: [emule-qt.org](https://emule-qt.org/)
 
 <p align="center">
-  <img src="docs/screens/emuleqt-gui.png" alt="eMule Qt main window" width="800">
+  <img src="docs/screens/transfers-window.png" alt="eMule Qt transfers window" width="800">
 </p>
 
 ## Features
