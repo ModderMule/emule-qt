@@ -90,9 +90,16 @@ public:
     std::uint64_t lastHave = 0;
     QByteArray lastPrefill;   ///< the front of the part file a resumed open found
 
-    bool available() const override { return true; }
-    QString unavailableReason() const override { return {}; }
+    bool ready = true;           ///< false: like JD before the Java probe ends
+
+    bool available() const override { return ready; }
+    QString unavailableReason() const override { return ready ? QString() : QStringLiteral("No Java runtime"); }
     QString description() const override { return QStringLiteral("fake"); }
+    void setReady(bool r)
+    {
+        ready = r;
+        emit stateChanged();
+    }
 
     TaskId match(const QString& url) override
     {
@@ -500,6 +507,36 @@ private slots:
         // switched on: it goes on by itself
         r.prefs.enabled = true;
         r.join->setConfig(r.prefs, r.tmp.filePath(QStringLiteral("temp")), r.tmp.filePath(QStringLiteral("incoming")));
+        QTRY_COMPARE_WITH_TIMEOUT(r.state(ids[0]), Ed3kHosterJoin::State::Complete, 60000);
+    }
+
+    /// resolver not ready yet (Java still probed): the item goes on once it is, also after a restart
+    void resolverNotReady_retriedWhenReady()
+    {
+        Rig r;
+        r.resolver.ready = false;
+        QVERIFY(r.start(true));
+        const auto ids = r.join->addLinks(QStringLiteral("https://fake.example/f/nr"));
+        QCOMPARE(r.state(ids[0]), Ed3kHosterJoin::State::NoResolver);
+        QCOMPARE(r.join->item(ids[0])->reason, Ed3kHosterJoin::Reason::ResolverNotReady);
+        // a signal while still not ready changes nothing
+        r.resolver.setReady(false);
+        QCOMPARE(r.state(ids[0]), Ed3kHosterJoin::State::NoResolver);
+        r.resolver.setReady(true);
+        QTRY_COMPARE_WITH_TIMEOUT(r.state(ids[0]), Ed3kHosterJoin::State::Complete, 60000);
+    }
+
+    /// saved as not ready, the resolver ready by the next start: start() takes it up
+    void resolverNotReady_retriedOnStart()
+    {
+        Rig r;
+        r.resolver.ready = false;
+        QVERIFY(r.start(true));
+        const auto ids = r.join->addLinks(QStringLiteral("https://fake.example/f/nr2"));
+        QCOMPARE(r.join->item(ids[0])->reason, Ed3kHosterJoin::Reason::ResolverNotReady);
+        r.join->stop();
+        r.resolver.ready = true;   // no signal: ready before the join starts
+        r.join->start();
         QTRY_COMPARE_WITH_TIMEOUT(r.state(ids[0]), Ed3kHosterJoin::State::Complete, 60000);
     }
 

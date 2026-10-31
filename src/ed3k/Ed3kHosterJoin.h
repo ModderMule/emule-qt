@@ -314,6 +314,8 @@ private:
     /// The core asks the resolver.
     void onResolve(const ::ed3k::event::LinkResolve& r);
     void onResolverEvent(Ed3kResolver::TaskId task, const ResolverEvent& ev);
+    /// Resolver became ready: NoResolver/ResolverNotReady items start again.
+    void retryNotReady();
     void answer(std::uint64_t link, std::uint32_t kind, const QString& text = {}, std::optional<std::uint64_t> value = {});
     /// Resume: the first @p offset bytes of @p from go to the task's part file in the
     /// background, then the resolver opens from there (prefilled()).
@@ -426,6 +428,7 @@ private:
     std::map<quint64, quint32> m_puzzles;
     QTimer m_tick;
     HosterCounters* m_counters = nullptr;
+    bool m_resolverReady = false;   ///< last resolver available(), for retryNotReady
 };
 
 } // namespace eMule::ed3k

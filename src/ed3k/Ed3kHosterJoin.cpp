@@ -160,8 +160,12 @@ void Ed3kHosterJoin::setResolver(Ed3kResolver* resolver)
     if (m_resolver)
         m_resolver->disconnect(this);
     m_resolver = resolver;
-    if (m_resolver)
+    m_resolverReady = m_resolver && m_resolver->available();
+    if (m_resolver) {
         connect(m_resolver, &Ed3kResolver::taskEvent, this, &Ed3kHosterJoin::onResolverEvent);
+        // items that came before the resolver (Java probe, plugin unpack) go on once it is ready
+        connect(m_resolver, &Ed3kResolver::stateChanged, this, &Ed3kHosterJoin::retryNotReady);
+    }
 }
 
 void Ed3kHosterJoin::setConfig(const Ed3kHosterPrefs& prefs, const QStringList& tempDirs, const QString& incomingDir)
@@ -215,7 +219,11 @@ void Ed3kHosterJoin::start()
         case State::Paused:
         case State::Gone:
         case State::Failed:
+            break;
         case State::NoResolver:
+            // not ready last run (e.g. Java not found yet): try again
+            if (e->item.reason == Reason::ResolverNotReady)
+                begin(*e);
             break;
         default:
             begin(*e);
@@ -2540,6 +2548,24 @@ QString Ed3kHosterJoin::partPathFor(const QString& key) const
 QString Ed3kHosterJoin::metPathOf(const Entry& e)
 {
     return e.item.file + QStringLiteral(".met");
+}
+
+void Ed3kHosterJoin::retryNotReady()
+{
+    // only on the flip to ready: a sidecar that dies also signals, and must not respawn in a loop
+    const bool ready = m_resolver && m_resolver->available();
+    const bool flipped = ready && !m_resolverReady;
+    m_resolverReady = ready;
+    if (!m_started || !flipped)
+        return;
+    bool any = false;
+    for (auto& [id, e] : m_items)
+        if (e->item.state == State::NoResolver && e->item.reason == Reason::ResolverNotReady) {
+            begin(*e);
+            any = true;
+        }
+    if (any)
+        pumpSession();
 }
 
 } // namespace eMule::ed3k
