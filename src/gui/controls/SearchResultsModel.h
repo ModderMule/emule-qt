@@ -108,6 +108,17 @@ struct SearchResultRow {
     [[nodiscard]] bool isEd3k() const { return metaKind == 7; }
     /// A torrent with no .torrent to fetch: its magnet is all there is.
     [[nodiscard]] bool isMagnetOnly() const { return isTorrent() && (metaFlags & 0x08) != 0; }
+    /// Usenet row: meta-hash bytes 6..15, the same for every row of one NZB
+    /// (enodemeta.md: the digest covers the release, never the file). Empty otherwise.
+    [[nodiscard]] QString usenetReleaseKey() const
+    {
+        return isUsenet() && hash.size() == 32 ? hash.mid(12).toUpper() : QString();
+    }
+    /// Usenet row standing for the whole NZB (file index 0xFFFF), not one file in it.
+    [[nodiscard]] bool isUsenetWholeSet() const
+    {
+        return isUsenet() && hash.size() == 32 && hash.mid(8, 4).compare(u"FFFF", Qt::CaseInsensitive) == 0;
+    }
 
     /// ed2k:// link; empty for meta rows (their hash is not an MD4).
     /// @p name stands in for the file's own name (a name row).
@@ -213,6 +224,16 @@ public:
 
     /// Batch-update knownType by hash. Map: hash → knownType.
     void updateKnownTypes(const QHash<QString, int>& typesByHash);
+
+    /// Set @p knownType on every row of the NZB @p hash belongs to: a file row
+    /// queues the whole NZB, so all its rows share one state.
+    void setUsenetReleaseKnownType(const QString& hash, int knownType);
+
+    /// Release key → whole-set row name, for the Usenet queue's title lookup.
+    [[nodiscard]] QHash<QString, QString> usenetReleaseTitles() const;
+
+    /// Batch-update Usenet rows by release key (see usenetReleaseKey()).
+    void updateUsenetKnownTypes(const QHash<QString, int>& typesByRelease);
 
 private:
     [[nodiscard]] QVariant childData(const SearchResultRow& r, const SearchChildRow& c,

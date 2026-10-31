@@ -1164,6 +1164,11 @@ public:
     [[nodiscard]] bool usenetAutoAddPaused() const;
     void setUsenetAutoAddPaused(bool val);
 
+    /// A meta search file row (one file of an NZB) queues only that file, plus
+    /// its archive set; the rest of the NZB is skipped. Off: the whole NZB.
+    [[nodiscard]] bool usenetMetaSelectedFileOnly() const;
+    void setUsenetMetaSelectedFileOnly(bool val);
+
     /// The whole Usenet engine is paused: nothing new starts, item states are
     /// untouched. Set through SetUsenetPaused only — deliberately not in the
     /// SetPreferences chain, so an Options dialog left open cannot undo it.
@@ -1381,10 +1386,10 @@ public:
     [[nodiscard]] bool ed3kJointDownloads() const;
     void setEd3kJointDownloads(bool val);
 
-    /// Holding Usenet posts back (usenet.md §6): no article list, post set or nzb/nzb-file
-    /// ALIAS records go out; the members are shared all the same. Default off.
-    [[nodiscard]] bool ed3kHoldBackPosts() const;
-    void setEd3kHoldBackPosts(bool val);
+    /// Share Usenet posts over ed3k. Off holds them back (usenet.md §6): no article list,
+    /// post set or nzb/nzb-file ALIAS records go out; the members are shared all the same. Default on.
+    [[nodiscard]] bool ed3kShareUsenetPosts() const;
+    void setEd3kShareUsenetPosts(bool val);
 
     /// JSON-RPC endpoints of the credit ledger / the chaintube chain (https, or http to
     /// a loopback node); operator n of a call is the n-th. Empty = calls answered failed.

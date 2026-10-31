@@ -79,6 +79,10 @@ public:
     [[nodiscard]] bool available() const override;
     [[nodiscard]] QString unavailableReason() const override;
     [[nodiscard]] QString description() const override { return m_description; }
+    [[nodiscard]] QString engineVersion() const override
+    {
+        return m_revision.isEmpty() ? QString() : QStringLiteral("r") + m_revision;
+    }
     [[nodiscard]] bool running() const;
 
     TaskId match(const QString& url) override;
@@ -119,6 +123,7 @@ private:
     QString m_description;
     QString m_installError;
     QString m_root;
+    QString m_revision;   ///< JD revision number: the root's revision.txt or the sidecar's hello
     TaskId m_nextId = 1;
     /// open tasks; pure requests (hello, setProxy) are not counted
     std::map<TaskId, bool> m_pending;

@@ -74,6 +74,8 @@ public:
     /// True when Kad is connected AND has received enough responses for searches to be useful.
     [[nodiscard]] bool isKadReady() const;
     [[nodiscard]] bool isFirewalled() const;
+    /// Firewalled and the TCP check finished: not just the default while rechecking.
+    [[nodiscard]] bool isFirewalledVerified() const;
     /// Starts a firewall re-check. At most one NodeFwCheckUDP lookup may run at
     /// a time; a request made while one is in flight is rejected rather than
     /// stacking another lookup.

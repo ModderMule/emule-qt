@@ -937,6 +937,7 @@ emule_add_test(tst_MetaResultDetailDialog FOLDER "Gui"
     SOURCES tst_MetaResultDetailDialog.cpp
             "${CMAKE_SOURCE_DIR}/src/gui/dialogs/MetaResultDetailDialog.cpp"
             "${CMAKE_SOURCE_DIR}/src/gui/controls/TorrentFileTree.cpp"
+            "${CMAKE_SOURCE_DIR}/src/gui/controls/UsenetFileCheckList.cpp"
             "${CMAKE_SOURCE_DIR}/src/gui/dialogs/DetailDialog.cpp"
             # DetailDialog opens client sheets and reports IPC failures
             "${CMAKE_SOURCE_DIR}/src/gui/dialogs/ClientDetailDialog.cpp"

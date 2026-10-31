@@ -483,7 +483,6 @@ void TorrentListsPane::applyFiles(const QCborArray& files)
     m_files->setSortingEnabled(false);
     QSet<QTreeWidgetItem*> usedFolders;
     QSet<int> seen;
-    const bool firstFill = m_files->topLevelItemCount() == 0;
     for (const auto& v : files) {
         const QCborMap f = v.toMap();
         const int index = int(f.value(QStringLiteral("index")).toInteger());
@@ -534,9 +533,7 @@ void TorrentListsPane::applyFiles(const QCborArray& files)
             delete folder;
     sumFolders();
     m_files->setSortingEnabled(true);
-    m_updating = false;
-    if (firstFill && m_files->topLevelItemCount() == 1)
-        m_files->expandToDepth(0);   // the torrent's own folder
+    m_updating = false;   // folders start collapsed
 
     int count = 0;
     for (const int i : std::as_const(seen))

@@ -568,6 +568,43 @@ void SearchResultsModel::updateKnownTypes(const QHash<QString, int>& typesByHash
     }
 }
 
+void SearchResultsModel::setUsenetReleaseKnownType(const QString& hash, int knownType)
+{
+    SearchResultRow probe;
+    probe.hash = hash;
+    probe.metaKind = 3;
+    const QString key = probe.usenetReleaseKey();
+    if (key.isEmpty()) {
+        updateKnownTypes({{hash, knownType}});
+        return;
+    }
+    updateUsenetKnownTypes({{key, knownType}});
+}
+
+QHash<QString, QString> SearchResultsModel::usenetReleaseTitles() const
+{
+    QHash<QString, QString> titles;
+    for (const auto& r : m_rows)
+        if (r.isUsenetWholeSet())
+            titles.insert(r.usenetReleaseKey(), r.fileName);
+    return titles;
+}
+
+void SearchResultsModel::updateUsenetKnownTypes(const QHash<QString, int>& typesByRelease)
+{
+    for (int i = 0; i < static_cast<int>(m_rows.size()); ++i) {
+        auto& r = m_rows[static_cast<size_t>(i)];
+        const QString key = r.usenetReleaseKey();
+        if (key.isEmpty())
+            continue;
+        const auto it = typesByRelease.find(key);
+        if (it != typesByRelease.end() && r.knownType != it.value()) {
+            r.knownType = it.value();
+            emit dataChanged(index(i, 0), index(i, ColCount - 1));
+        }
+    }
+}
+
 void SearchResultsModel::setResults(std::vector<SearchResultRow> incoming)
 {
     // Incremental, not a reset: the list is refetched while a search runs, and a

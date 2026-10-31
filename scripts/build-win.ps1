@@ -616,7 +616,9 @@ function Invoke-EMuleBuild {
         [switch]$NoBuild,
         [switch]$Clean,
         [switch]$BootstrapVcpkg,
-        [switch]$NoVcpkg
+        [switch]$NoVcpkg,
+        # Build only these targets; empty builds all, tests too
+        [string[]]$Target
     )
 
     $projectDir = Get-ProjectDir
@@ -753,8 +755,15 @@ function Invoke-EMuleBuild {
     # -- Build ---------------------------------------------------------------
 
     Write-Host ''
-    Write-Host '=== Building ==='
-    & $cmake --build $BuildDir --config $Config --parallel
+    $targetArgs = @()
+    if ($Target) {
+        $targetArgs = @('--target') + $Target
+        Write-Host "=== Building targets: $($Target -join ' ') ==="
+    }
+    else {
+        Write-Host '=== Building ==='
+    }
+    & $cmake --build $BuildDir --config $Config --parallel @targetArgs
     if ($LASTEXITCODE -ne 0) { throw 'Build failed.' }
 
     Write-Host 'Build complete.'

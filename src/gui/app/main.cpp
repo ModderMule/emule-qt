@@ -840,7 +840,8 @@ int main(int argc, char* argv[])
                 mainWindow.setKadStatus(
                     info.value(QStringLiteral("running")).toBool(),
                     info.value(QStringLiteral("connected")).toBool(),
-                    info.value(QStringLiteral("firewalled")).toBool());
+                    info.value(QStringLiteral("firewalled")).toBool(),
+                    info.value(QStringLiteral("firewalledVerified")).toBool());
             });
 
             // Sync GUI thePrefs with daemon's live values so OptionsDialog
@@ -997,7 +998,8 @@ int main(int argc, char* argv[])
             mainWindow.setKadStatus(
                 info.value(QStringLiteral("running")).toBool(),
                 info.value(QStringLiteral("connected")).toBool(),
-                info.value(QStringLiteral("firewalled")).toBool());
+                info.value(QStringLiteral("firewalled")).toBool(),
+                info.value(QStringLiteral("firewalledVerified")).toBool());
             mainWindow.setNetworkStats(
                 static_cast<quint32>(info.value(QStringLiteral("users")).toInteger()),
                 static_cast<quint32>(info.value(QStringLiteral("files")).toInteger()));

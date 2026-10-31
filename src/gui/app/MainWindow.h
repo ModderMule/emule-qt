@@ -179,7 +179,8 @@ public:
     void setNetworkBlocked(bool blocked, const QString& reason);
 
     /// Update the Kad status label in the footer.
-    void setKadStatus(bool running, bool kadConnected, bool firewalled);
+    void setKadStatus(bool running, bool kadConnected, bool firewalled,
+                      bool firewalledVerified = false);
 
     /// The ed3k label next to Kad's (GetEd3kStatus / PushEd3kStatus map). Hidden while
     /// the node does not run: ed3k is opt-in and has no MFC original.
@@ -303,6 +304,9 @@ private:
     void cycleTab(int direction);
     /// Tab of a switched-off feature (Torrents without btEnabled, Hoster without hosterDownloadsOn)
     [[nodiscard]] static bool isTabHidden(int tab);
+    /// Puts a feature button back into a customized toolbar order when its feature
+    /// was just switched on. True when the order changed (caller rebuilds).
+    bool restoreToolbarButton(ToolbarButtonId id);
     void loadToolbarSkin(const QString& path);
     void clearToolbarSkin();
     QString skinsDir() const;
@@ -423,6 +427,7 @@ private:
     bool m_kadRunning = false;
     bool m_kadConnected = false;
     bool m_kadFirewalled = false;
+    bool m_kadFirewalledVerified = false; ///< TCP check finished, not the startup default
     bool m_lowIdHintShown = false;   ///< once per session
     QTimer* m_lowIdHintTimer = nullptr;
 

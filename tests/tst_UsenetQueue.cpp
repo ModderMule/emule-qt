@@ -310,6 +310,9 @@ private slots:
     void aSkipIsWidenedToItsArchiveSetAndNeverTouchesPar2();
     void aSkipSurvivesARestartAndAnOldSidecarDownloadsEverything();
     void aSkippedFileIsNeverFetchedOrPublished();
+    void keptFilesKeepTheirArchiveSet();
+    void keptFilesWithNothingUsableKeepAll();
+    void keptFilesJoinTheQueuedRelease();
     void aPausedEngineStartsNothingAndChangesNoStatus();
     void anInFlightArticleOfASkippedFileCannotRecreateIt();
     void unskipResumesFromThePartialFile();
@@ -5562,6 +5565,84 @@ void tst_UsenetQueue::theUsenetJoinFieldsSurviveTheRoundTrip()
     QVERIFY(got.emptyIdSegments.at(0).messageId.isEmpty());
     // Nothing about the download itself moved.
     QCOMPARE(loaded.files.at(0).done.size(), 2);
+}
+
+namespace {
+/// Set "a" (two volumes), a loose file and the par2 index.
+const QStringList kKeptNames = {QStringLiteral("a.part1.rar"), QStringLiteral("a.part2.rar"),
+                                QStringLiteral("b.mkv"), QStringLiteral("rel.par2")};
+} // namespace
+
+void tst_UsenetQueue::keptFilesKeepTheirArchiveSet()
+{
+    eMule::testing::TempDir tmp;
+    const auto restore = useScratchPrefs(tmp);
+    UsenetQueue queue;
+
+    UsenetAddOptions options;
+    options.paused = true;
+    options.keptFiles = {1};   // a.part2.rar: the whole set "a" stays
+    QString error;
+    const QString id = queue.addNzb(makeNamedFilesNzb(kKeptNames, 2), QStringLiteral("kept"), error, options);
+    QVERIFY2(!id.isEmpty(), qPrintable(error));
+    const UsenetQueueItem* item = queue.findItem(id);
+    QVERIFY(!item->files.at(0).skipped);
+    QVERIFY(!item->files.at(1).skipped);
+    QVERIFY(item->files.at(2).skipped);
+    QVERIFY(!item->files.at(3).skipped);   // par2 never skipped
+}
+
+void tst_UsenetQueue::keptFilesWithNothingUsableKeepAll()
+{
+    eMule::testing::TempDir tmp;
+    const auto restore = useScratchPrefs(tmp);
+    UsenetQueue queue;
+
+    for (const QList<int>& kept : {QList<int>{3}, QList<int>{99}}) {
+        UsenetAddOptions options;
+        options.paused = true;
+        options.force = true;
+        options.keptFiles = kept;
+        QString error;
+        const QString id = queue.addNzb(makeNamedFilesNzb(kKeptNames, 2),
+                                        QStringLiteral("all%1").arg(kept.first()), error, options);
+        QVERIFY2(!id.isEmpty(), qPrintable(error));
+        for (const auto& file : queue.findItem(id)->files)
+            QVERIFY(!file.skipped);
+        QVERIFY(queue.removeItem(id, true));
+    }
+}
+
+void tst_UsenetQueue::keptFilesJoinTheQueuedRelease()
+{
+    eMule::testing::TempDir tmp;
+    const auto restore = useScratchPrefs(tmp);
+    UsenetQueue queue;
+    const QByteArray nzb = makeNamedFilesNzb(kKeptNames, 2);
+
+    UsenetAddOptions first;
+    first.paused = true;
+    first.keptFiles = {2};
+    QString error;
+    const QString id = queue.addNzb(nzb, QStringLiteral("b.mkv"), error, first);
+    QVERIFY2(!id.isEmpty(), qPrintable(error));
+    QVERIFY(queue.findItem(id)->files.at(0).skipped);
+
+    // another file row of the same NZB: joins, no second item
+    UsenetAddOptions second;
+    second.keptFiles = {0};
+    UsenetAddOutcome outcome = UsenetAddOutcome::Failed;
+    QCOMPARE(queue.addNzb(nzb, QStringLiteral("a.part1.rar"), error, second, &outcome), id);
+    QCOMPARE(outcome, UsenetAddOutcome::Added);
+    QCOMPARE(queue.items().size(), 1);
+    QVERIFY(!queue.findItem(id)->files.at(0).skipped);
+    QVERIFY(!queue.findItem(id)->files.at(1).skipped);
+
+    // the same files again, or no choice at all: already in the queue
+    QVERIFY(queue.addNzb(nzb, QStringLiteral("again"), error, second, &outcome).isEmpty());
+    QCOMPARE(outcome, UsenetAddOutcome::Duplicate);
+    QVERIFY(queue.addNzb(nzb, QStringLiteral("whole"), error, {}, &outcome).isEmpty());
+    QCOMPARE(outcome, UsenetAddOutcome::Duplicate);
 }
 
 #include "tst_UsenetQueue.moc"

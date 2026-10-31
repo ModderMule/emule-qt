@@ -249,6 +249,40 @@ private:
     }
 };
 
+/// The item of @p url; 0: none.
+quint32 idOf(const Ed3kHosterJoin& join, const QString& url)
+{
+    for (const auto& it : join.items())
+        if (it.url == url)
+            return it.id;
+    return 0;
+}
+
+/// An unfinished rooted item as a stopped node leaves it: the first @p blocks blocks of
+/// @p data in <dir>/<key>.hoster.part, its state beside it.
+bool writeHeld(const QString& dir, const QString& key, const QString& url, const QByteArray& data, int blocks,
+               bool paused = false)
+{
+    QDir().mkpath(dir);
+    QFile part(QDir(dir).filePath(key + QStringLiteral(".hoster.part")));
+    if (!part.open(QIODevice::WriteOnly) || part.write(data.left(blocks * 256 * 1024)) < 0)
+        return false;
+    part.close();
+    const QJsonObject o{{QStringLiteral("format"), QStringLiteral("ed3k-hoster-met")},
+                        {QStringLiteral("v"), 1},
+                        {QStringLiteral("url"), url},
+                        {QStringLiteral("host"), QStringLiteral("fake.example")},
+                        {QStringLiteral("name"), QStringLiteral("held.bin")},
+                        {QStringLiteral("size"), qint64(data.size())},
+                        {QStringLiteral("root"), QString(64, QLatin1Char('a'))},
+                        {QStringLiteral("state"), int(paused ? Ed3kHosterJoin::State::Paused : Ed3kHosterJoin::State::Downloading)},
+                        {QStringLiteral("mirrors"), QJsonArray{QString(url + QStringLiteral("-mirror"))}},
+                        {QStringLiteral("pkgName"), QStringLiteral("Pack")},
+                        {QStringLiteral("have"), QJsonArray{QJsonArray{0, blocks}}}};
+    QFile met(part.fileName() + QStringLiteral(".met"));
+    return met.open(QIODevice::WriteOnly) && met.write(QJsonDocument(o).toJson()) > 0;
+}
+
 struct Rig {
     QTemporaryDir tmp;
     Ed3kSession session;
@@ -433,6 +467,8 @@ private slots:
         QCOMPARE(f.readAll(), r.resolver.data);
         QCOMPARE(r.resolver.checks, 1);
         QCOMPARE(r.resolver.opens, 1);
+        // done: nothing of it left in Temp
+        QTRY_VERIFY(QDir(r.tmp.filePath(QStringLiteral("temp"))).entryList({QStringLiteral("*.hoster.part*")}, QDir::Files).isEmpty());
         // the same link again is not a second item
         QVERIFY(r.join->addLinks(QStringLiteral("https://fake.example/f/1")).isEmpty());
     }
@@ -798,6 +834,8 @@ private slots:
         QCOMPARE(r.join->item(ids[0])->mirrorNo, 0);   // hosters off is no reason to switch
         r.join->stop();
         Ed3kHosterJoin again(r.session, r.tmp.filePath(QStringLiteral("cfg")));
+        // unfinished: taken up from its .met in Temp
+        again.setConfig(r.prefs, r.tmp.filePath(QStringLiteral("temp")), r.tmp.filePath(QStringLiteral("incoming")));
         QCOMPARE(again.items().size(), 1);
         QCOMPARE(again.items().first().url, urls[0]);
         QCOMPARE(again.items().first().mirrors, urls.mid(1));
@@ -1082,48 +1120,69 @@ private slots:
     void resume_rooted_afterBlocksHeld()
     {
         Rig r;
-        QVERIFY(r.start(true));
-        const auto ids = r.join->addLinks(QStringLiteral("https://fake.example/f/r3"));
-        QTRY_COMPARE_WITH_TIMEOUT(r.state(ids[0]), Ed3kHosterJoin::State::Complete, 60000);
-        r.join->stop();
-        r.join.reset();
-        QString itemsPath;
-        for (QDirIterator it(r.tmp.path(), {QStringLiteral("items.json")}, QDir::Files, QDirIterator::Subdirectories); it.hasNext();)
-            itemsPath = it.next();
-        QVERIFY(!itemsPath.isEmpty());
-        // as if stopped with 6 blocks of 256 KiB held under the root
+        // as if stopped with 6 blocks of 256 KiB held under the root: part file and .met in Temp
         const QByteArray data = content(3 * 1024 * 1024 + 77);
-        const QString part = r.tmp.filePath(QStringLiteral("held.part"));
-        {
-            QFile f(part);
-            QVERIFY(f.open(QIODevice::WriteOnly));
-            f.write(data.left(6 * 256 * 1024));
-        }
-        QFile items(itemsPath);
-        QVERIFY(items.open(QIODevice::ReadOnly));
-        QJsonArray list = QJsonDocument::fromJson(items.readAll()).array();
-        items.close();
-        QJsonObject o = list.at(0).toObject();
-        o[QStringLiteral("state")] = int(Ed3kHosterJoin::State::Downloading);
-        o[QStringLiteral("root")] = QString(64, QLatin1Char('a'));
-        o[QStringLiteral("size")] = qint64(data.size());
-        o[QStringLiteral("file")] = part;
-        o[QStringLiteral("have")] = QJsonArray{QJsonArray{0, 6}};
-        list[0] = o;
-        QVERIFY(items.open(QIODevice::WriteOnly | QIODevice::Truncate));
-        items.write(QJsonDocument(list).toJson());
-        items.close();
-
-        r.resolver.opens = 0;
-        r.join = std::make_unique<Ed3kHosterJoin>(r.session, r.tmp.filePath(QStringLiteral("cfg")));
-        QCOMPARE(r.join->item(ids[0])->done, std::uint64_t(6 * 256 * 1024));
-        r.join->setResolver(&r.resolver);
-        r.join->setConfig(r.prefs, r.tmp.filePath(QStringLiteral("temp")), r.tmp.filePath(QStringLiteral("incoming")));
-        r.join->start();
+        const QString url = QStringLiteral("https://fake.example/f/r3");
+        QVERIFY(writeHeld(r.tmp.filePath(QStringLiteral("temp")), QStringLiteral("00000000000000a3"), url, data, 6));
+        QVERIFY(r.start(true));
+        const quint32 id = idOf(*r.join, url);
+        QVERIFY(id != 0);
+        QCOMPARE(r.join->item(id)->done, std::uint64_t(6 * 256 * 1024));
         QTRY_COMPARE_WITH_TIMEOUT(r.resolver.opens, 1, 20000);
         QCOMPARE(r.resolver.lastHave, std::uint64_t(6 * 256 * 1024));
         QCOMPARE(r.resolver.lastPrefill, data.left(6 * 256 * 1024));
-        QVERIFY(r.join->item(ids[0])->verified);
+        QVERIFY(r.join->item(id)->verified);
+    }
+
+    /// an unfinished item is its part file and .met in Temp: copied to another node's temp dir
+    /// (any of them) it goes on there; removed, both go
+    void copiedItem_goesOnElsewhere()
+    {
+        const QByteArray data = content(3 * 1024 * 1024 + 77);
+        const QString url = QStringLiteral("https://fake.example/f/cp");
+        Rig a;
+        QVERIFY(writeHeld(a.tmp.filePath(QStringLiteral("temp")), QStringLiteral("00000000000000c1"), url, data, 6, true));
+        QVERIFY(a.start(true));
+        const quint32 id = idOf(*a.join, url);
+        QVERIFY(id != 0);
+        QCOMPARE(a.state(id), Ed3kHosterJoin::State::Paused);
+        a.join->stop();
+        const QString part = a.join->item(id)->file;
+        QVERIFY(part.endsWith(QStringLiteral("00000000000000c1.hoster.part")));
+        QVERIFY(QFileInfo::exists(part + QStringLiteral(".met")));
+
+        Rig b;
+        const QString temp2 = b.tmp.filePath(QStringLiteral("temp2"));
+        QVERIFY(QDir().mkpath(temp2));
+        QVERIFY(QFile::copy(part, QDir(temp2).filePath(QFileInfo(part).fileName())));
+        QVERIFY(QFile::copy(part + QStringLiteral(".met"), QDir(temp2).filePath(QFileInfo(part).fileName() + QStringLiteral(".met"))));
+        QVERIFY(b.session.start(loopback(b.tmp.filePath(QStringLiteral("cfg")))));
+        b.join = std::make_unique<Ed3kHosterJoin>(b.session, b.tmp.filePath(QStringLiteral("cfg")));
+        b.join->setResolver(&b.resolver);
+        b.prefs.enabled = true;
+        b.join->setConfig(b.prefs, QStringList{b.tmp.filePath(QStringLiteral("temp")), temp2},
+                          b.tmp.filePath(QStringLiteral("incoming")));
+        b.join->start();
+        const quint32 bid = idOf(*b.join, url);
+        QVERIFY(bid != 0);
+        const auto it = *b.join->item(bid);
+        QCOMPARE(it.state, Ed3kHosterJoin::State::Paused);
+        QCOMPARE(it.done, std::uint64_t(6 * 256 * 1024));
+        QCOMPARE(it.name, QStringLiteral("held.bin"));
+        QCOMPARE(it.mirrors, QStringList{QStringLiteral("https://fake.example/f/cp-mirror")});
+        QCOMPARE(it.package, QStringLiteral("Pack"));
+        QVERIFY(it.packageId != 0);
+        QCOMPARE(it.file, QDir(temp2).filePath(QFileInfo(part).fileName()));
+        b.join->resume(bid);
+        QTRY_COMPARE_WITH_TIMEOUT(b.resolver.opens, 1, 20000);
+        QCOMPARE(b.resolver.lastHave, std::uint64_t(6 * 256 * 1024));
+        // a copy already taken up is not a second item
+        b.join->setConfig(b.prefs, QStringList{b.tmp.filePath(QStringLiteral("temp")), temp2},
+                          b.tmp.filePath(QStringLiteral("incoming")));
+        QCOMPARE(b.join->items().size(), 1);
+        b.join->remove(bid, false);
+        QVERIFY(!QFileInfo::exists(it.file));
+        QVERIFY(!QFileInfo::exists(it.file + QStringLiteral(".met")));
     }
 
     /// no resolver at all (EMULE_HOSTER_JD off): the item says so
@@ -1562,6 +1621,65 @@ private slots:
         QCOMPARE(QFileInfo(item.file).size(), qint64(198658));
         QVERIFY(!item.rootHex.isEmpty());
         QVERIFY(!QFileInfo::exists(oldPuzzle));
+    }
+
+    /// #88: two sidecars at once from one shared copy; JD writes nothing into it
+    void live_jdResolverSharedDir()
+    {
+        if (qEnvironmentVariable("EMULE_HOSTER_LIVE") != QLatin1StringView("1"))
+            QSKIP("live: set EMULE_HOSTER_LIVE=1");
+        const QString zip = Ed3kJdResolver::findBundledZip();
+        if (zip.isEmpty())
+            QSKIP("no resolver.zip: run scripts/build-hoster-resolver.sh");
+        QTemporaryDir tmp;
+        Ed3kJavaRuntime java(tmp.path());
+        java.locate({});
+        QTRY_VERIFY_WITH_TIMEOUT(java.state() != Ed3kJavaRuntime::State::Probing, 60000);
+        if (!java.runtime())
+            QSKIP("no Java 17+ on this machine");
+        const QString shared = tmp.filePath(QStringLiteral("shared"));
+        Ed3kJdResolver a;
+        Ed3kJdResolver b;
+        for (auto [r, name] : {std::pair{&a, "a"}, std::pair{&b, "b"}}) {
+            JdResolverConfig cfg;
+            cfg.java = java.runtime()->java;
+            cfg.dataDir = tmp.filePath(QLatin1StringView(name) + QStringLiteral("/resolver"));
+            cfg.sharedDir = shared;
+            cfg.zip = zip;
+            r->setConfig(cfg);
+            QVERIFY2(r->available(), qPrintable(r->unavailableReason()));
+        }
+        QCOMPARE(a.pluginRoot(), b.pluginRoot());
+        const QDateTime installed = QDateTime::currentDateTime();
+
+        const QString url = QStringLiteral("https://archive.org/download/testmp3testfile/mpthreetest.mp3");
+        std::optional<ResolverEvent> ra;
+        std::optional<ResolverEvent> rb;
+        connect(&a, &Ed3kResolver::taskEvent, this, [&ra](Ed3kResolver::TaskId, const ResolverEvent& e) {
+            if (e.isFinal())
+                ra = e;
+        });
+        connect(&b, &Ed3kResolver::taskEvent, this, [&rb](Ed3kResolver::TaskId, const ResolverEvent& e) {
+            if (e.isFinal())
+                rb = e;
+        });
+        a.check(url, std::nullopt);
+        b.check(url, std::nullopt);
+        QTRY_VERIFY_WITH_TIMEOUT(ra && rb, 180000);
+        QVERIFY2(ra->kind == ResolverEvent::Kind::Found, qPrintable(ra->code + u' ' + ra->text));
+        QVERIFY2(rb->kind == ResolverEvent::Kind::Found, qPrintable(rb->code + u' ' + rb->text));
+        QCOMPARE(ra->size, quint64(198658));
+        QCOMPARE(rb->size, quint64(198658));
+
+        // JD's state went to each instance's jd/, not the shared plugins
+        QVERIFY(QFileInfo(tmp.filePath(QStringLiteral("a/resolver/jd/cfg"))).isDir());
+        QVERIFY(QFileInfo(tmp.filePath(QStringLiteral("b/resolver/jd/cfg"))).isDir());
+        QDirIterator it(a.pluginRoot(), QDir::AllEntries | QDir::NoDotAndDotDot | QDir::Hidden, QDirIterator::Subdirectories);
+        while (it.hasNext()) {
+            it.next();
+            if (it.fileInfo().isFile())
+                QVERIFY2(it.fileInfo().lastModified() < installed, qPrintable(it.filePath()));
+        }
     }
 
     /// Resume through the real sidecar: the front of the file in data.part, JD goes on from

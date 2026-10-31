@@ -313,6 +313,11 @@ public:
                                                    const QList<int>& requested, bool skipped,
                                                    QSet<int>& out);
 
+    /// @p requested plus every volume of the archive sets they belong to. Par2
+    /// files and indices out of range are dropped.
+    [[nodiscard]] static QSet<int> widenToArchiveSets(const UsenetQueueItem& item,
+                                                      const QList<int>& requested);
+
     /// What one file is doing, for the GUI's icon and bar.
     struct FileView {
         UsenetFileWireState state = UsenetFileWireState::Queued;
@@ -1172,7 +1177,13 @@ private:
     [[nodiscard]] UsenetAddOutcome findDuplicate(const NzbInfo& nzb,
                                                  const QString& name,
                                                  bool force,
-                                                 QString& why) const;
+                                                 QString& why,
+                                                 QString* inFlightId = nullptr) const;
+
+    /// keptFiles of an add whose release is still arriving: bring those files
+    /// back into item @p id. Empty when applied, else why not.
+    [[nodiscard]] QString joinKeptFiles(const QString& id, const NzbInfo& nzb,
+                                        const QList<int>& keptFiles);
 
     [[nodiscard]] int lowestUntriedRung(const QStringList& tried, qint64 date, int floorRung,
                                         bool respectRetention, bool respectQuota) const;

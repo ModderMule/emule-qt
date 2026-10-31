@@ -5,8 +5,10 @@
 
 #include "dialogs/MetaResultDetailDialog.h"
 
+#include "controls/AbstractListView.h"
 #include "controls/SortableItems.h"
 #include "controls/TorrentFileTree.h"
+#include "controls/UsenetFileCheckList.h"
 #include "utils/StringUtils.h"
 
 #include <QCborArray>
@@ -16,6 +18,7 @@
 #include <QHeaderView>
 #include <QLabel>
 #include <QLocale>
+#include <QMessageBox>
 #include <QPushButton>
 #include <QStackedWidget>
 #include <QTabWidget>
@@ -26,16 +29,18 @@ namespace eMule {
 
 namespace {
 
-QTreeWidget* makeTree(QWidget* parent, const QStringList& headers)
+/// Columns the user sizes, remembered under @p stateKey.
+QTreeWidget* makeTree(QWidget* parent, const QStringList& headers, const QString& stateKey,
+                      std::initializer_list<int> widths)
 {
-    auto* tree = new QTreeWidget(parent);
+    auto* tree = new ListTreeWidget(parent);
     tree->setColumnCount(int(headers.size()));
     tree->setHeaderLabels(headers);
     tree->setAlternatingRowColors(true);
     tree->setUniformRowHeights(true);
     tree->setSortingEnabled(true);
-    tree->header()->setStretchLastSection(false);
-    tree->header()->setSectionResizeMode(0, QHeaderView::Stretch);
+    tree->header()->setStretchLastSection(true);
+    tree->bindColumns(stateKey, widths);
     return tree;
 }
 
@@ -70,10 +75,32 @@ MetaResultDetailDialog::MetaResultDetailDialog(const RowInfo& row, QWidget* pare
     m_tabs = new QTabWidget(m_stack);
     m_general = new QWidget(m_tabs);
     m_tabs->addTab(m_general, tr("General"));
-    m_files = row.torrent ? makeTree(m_tabs, {tr("Name"), tr("Size")})
-                          : makeTree(m_tabs, {tr("Name"), tr("Size"), tr("Articles"), tr("Type")});
-    m_tabs->addTab(m_files, tr("Files"));
-    m_trackers = makeTree(m_tabs, {tr("URL"), tr("Tier")});
+    m_files = row.torrent
+                  ? makeTree(m_tabs, {tr("Name"), tr("Size")},
+                             QStringLiteral("metaDetailTorrentFiles"), {440, 90})
+                  : makeTree(m_tabs, {tr("Name"), tr("Size"), tr("Articles"), tr("Type")},
+                             QStringLiteral("metaDetailNzbFiles"), {360, 80, 110, 50});
+    if (row.chooseFiles && !row.torrent) {
+        // the Files tab: hint + Select All / None / Invert above the tree
+        auto* page = new QWidget(m_tabs);
+        auto* pageLayout = new QVBoxLayout(page);
+        pageLayout->setContentsMargins(0, 0, 0, 0);
+        auto* hint = new QLabel(tr("Unchecked files are not downloaded. The volumes of one archive "
+                                   "are checked together, and PAR2 files are fetched only when a "
+                                   "repair needs them."),
+                                page);
+        hint->setWordWrap(true);
+        pageLayout->addWidget(hint);
+        m_checks = new UsenetFileCheckList(m_files, NzbName);
+        pageLayout->addWidget(m_checks->createButtonRow(page));
+        m_files->setParent(page);
+        pageLayout->addWidget(m_files, 1);
+        m_tabs->addTab(page, tr("Files"));
+    } else {
+        m_tabs->addTab(m_files, tr("Files"));
+    }
+    m_trackers = makeTree(m_tabs, {tr("URL"), tr("Tier")},
+                          QStringLiteral("metaDetailTrackers"), {440, 60});
     m_trackers->setRootIsDecorated(false);
     m_tabs->addTab(m_trackers, tr("Trackers"));
     m_tabs->setTabVisible(TabTrackers, row.torrent);
@@ -82,10 +109,7 @@ MetaResultDetailDialog::MetaResultDetailDialog(const RowInfo& row, QWidget* pare
 
     m_download = buttonBox()->addButton(tr("Download"), QDialogButtonBox::AcceptRole);
     m_download->setEnabled(false);   // once the file is there
-    connect(m_download, &QPushButton::clicked, this, [this] {
-        emit downloadRequested();
-        close();
-    });
+    connect(m_download, &QPushButton::clicked, this, &MetaResultDetailDialog::onDownload);
 
     fitToContent();
 }
@@ -108,7 +132,7 @@ void MetaResultDetailDialog::setDetails(const QCborMap& details)
     if (torrent)
         buildTorrentFiles(inspection);
     else
-        buildNzbFiles(inspection);
+        buildNzbFiles(inspection, int(details.value(QStringLiteral("rowFileIndex")).toInteger(-1)));
     m_tabs->setTabVisible(TabTrackers, torrent);
     if (torrent)
         buildTrackers(inspection);
@@ -129,6 +153,21 @@ void MetaResultDetailDialog::setError(const QString& error)
 // ---------------------------------------------------------------------------
 // private
 // ---------------------------------------------------------------------------
+
+void MetaResultDetailDialog::onDownload()
+{
+    QList<int> unchecked;
+    if (m_checks) {
+        unchecked = m_checks->uncheckedIndices();
+        // the daemon would refuse it; keep the choice open instead
+        if (!unchecked.isEmpty() && !m_checks->anyUnlockedChecked()) {
+            QMessageBox::warning(this, windowTitle(), tr("Keep at least one file of \"%1\".").arg(m_row.name));
+            return;
+        }
+    }
+    emit downloadRequested(unchecked);
+    close();
+}
 
 void MetaResultDetailDialog::buildGeneral(const QCborMap& inspection, bool torrent)
 {
@@ -212,17 +251,29 @@ void MetaResultDetailDialog::buildTorrentFiles(const QCborMap& inspection)
 {
     const int count = TorrentFileTree::fill(m_files, inspection.value(QStringLiteral("files")).toArray(),
                                             TorrentName, TorrentSize);
-    m_files->header()->setSectionResizeMode(TorrentSize, QHeaderView::ResizeToContents);
     m_tabs->setTabText(TabFiles, tr("Files (%1)").arg(count));
 }
 
-void MetaResultDetailDialog::buildNzbFiles(const QCborMap& inspection)
+void MetaResultDetailDialog::buildNzbFiles(const QCborMap& inspection, int rowFileIndex)
 {
     m_files->setSortingEnabled(false);
     m_files->clear();
     m_files->setRootIsDecorated(false);
+
+    // usenetMetaSelectedFileOnly: only the row's file and its archive set start checked
+    const QCborArray files = inspection.value(QStringLiteral("files")).toArray();
+    const bool onlyRowFile = m_checks && m_row.selectedFileOnly && rowFileIndex >= 0;
+    QString rowSetKey;
+    if (onlyRowFile) {
+        for (const auto& v : files) {
+            const QCborMap f = v.toMap();
+            if (f.value(QStringLiteral("index")).toInteger(-1) == rowFileIndex)
+                rowSetKey = f.value(QStringLiteral("setKey")).toString();
+        }
+    }
+
     int count = 0;
-    for (const auto& v : inspection.value(QStringLiteral("files")).toArray()) {
+    for (const auto& v : files) {
         const QCborMap f = v.toMap();
         auto* item = new SortableTreeItem(m_files);
         const qint64 size = f.value(QStringLiteral("size")).toInteger();
@@ -237,13 +288,21 @@ void MetaResultDetailDialog::buildNzbFiles(const QCborMap& inspection)
                                                : QString::number(segments));
         item->setData(NzbArticles, SortRole, QVariant::fromValue(segments));
         item->setTextAlignment(NzbArticles, Qt::AlignRight | Qt::AlignVCenter);
-        item->setText(NzbType, f.value(QStringLiteral("isPar2")).toBool() ? tr("PAR2") : QString());
+        const bool isPar2 = f.value(QStringLiteral("isPar2")).toBool();
+        item->setText(NzbType, isPar2 ? tr("PAR2") : QString());
+        if (m_checks) {
+            const int index = int(f.value(QStringLiteral("index")).toInteger(-1));
+            const QString setKey = f.value(QStringLiteral("setKey")).toString();
+            const bool checked = !onlyRowFile || isPar2 || index == rowFileIndex
+                                 || (!setKey.isEmpty() && setKey == rowSetKey);
+            m_checks->bindRow(item, index, checked, isPar2, setKey);
+            if (isPar2)
+                item->setToolTip(NzbName, tr("PAR2 files are fetched when a repair needs them."));
+        }
         ++count;
     }
     m_files->setSortingEnabled(true);
     m_files->sortByColumn(NzbName, Qt::AscendingOrder);
-    for (int c = NzbSize; c < NzbColCount; ++c)
-        m_files->header()->setSectionResizeMode(c, QHeaderView::ResizeToContents);
     m_tabs->setTabText(TabFiles, tr("Files (%1)").arg(count));
 }
 
@@ -270,7 +329,6 @@ void MetaResultDetailDialog::buildTrackers(const QCborMap& inspection)
     }
     m_trackers->setSortingEnabled(true);
     m_trackers->sortByColumn(1, Qt::AscendingOrder);
-    m_trackers->header()->setSectionResizeMode(1, QHeaderView::ResizeToContents);
     m_tabs->setTabText(TabTrackers, tr("Trackers (%1)").arg(count));
 }
 

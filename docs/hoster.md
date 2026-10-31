@@ -33,12 +33,28 @@ Downloads from links at file hosters, verified under ed3k roots. Spec:
    root computed at the end.
 5. The core asks the resolver (`LinkResolve`); the sidecar writes `<temp>/ed3k-hoster/<id>/jd-<link>/data.part`;
    the join reads it as it grows and hands it in with `linkData`, in order, then `linkEnd`.
+   That folder is scratch of one run (removed at start).
 6. Complete: the file moves to the incoming folder; eMule's shared files take it from there.
+
+## Files
+
+- Unfinished item: `<temp>/<key>.hoster.part` (bytes at their offsets) and
+  `<temp>/<key>.hoster.part.met` (JSON: `format` `ed3k-hoster-met`, `v` 1, url, host, name,
+  size, added, root, state, reason, mirrors, mirrorNo, pkgName, `have` runs, links). key = 16
+  random hex, fixed for the item's life. No item id, no absolute path, no account data.
+- New items go to the first temp dir; every temp dir is scanned for `*.hoster.part.met` at
+  `setConfig` and `start()`. Copying both files into a temp dir of another node carries the
+  download over (part file = the one beside the .met; package joined by name). A key or link
+  already an item is skipped.
+- Rooted items go on from `have`; without the part file they start over. Rootless ones always
+  start over after a restart (the core's hash is not kept).
+- Complete and removed items: the .met goes. `Config/ed3k/hoster/items.json` keeps only complete
+  items; unfinished rows of older versions are not taken over.
 
 ## Mirrors
 
 A web search row's file can have several links (`AddHosterLinks` field 1: `[[url, mirror…]]`).
-One item per file; `Item::mirrors` holds the links not tried yet (saved in `items.json`).
+One item per file; `Item::mirrors` holds the links not tried yet (saved with the item).
 The tick moves to the next one (`mirrorDue`) when the current link is:
 
 - hard failed: *Gone*, *No resolver* (no plugin), *Failed* (not a disk error)
@@ -106,7 +122,7 @@ A stream that breaks goes on from where it stood instead of starting over:
 
 - **Rootless** (§4.1): the core keeps its hash and asks to open at the bytes it took
   (`LinkResolve.offset`). **Rooted**: the join asks from the first block not held from 0, also
-  after a restart (`items.json` keeps the verified blocks as `have` runs).
+  after a restart (the .met keeps the verified blocks as `have` runs).
 - The join copies the first `offset` bytes of the item's file into the task's `data.part` (a
   clone where the file system can), and the sidecar opens with `have`. JD resumes from its part
   file (`chunksProgress`); the real bytes are there because JD checks the file's hash at the end.
@@ -172,6 +188,7 @@ A stream that breaks goes on from where it stood instead of starting over:
 | `checkMaxPerHost` | — (YAML only) | 5 | 1-64: of them at one hoster |
 | `recheckHours` | — (YAML only) | 72 | 0-8760: a published link is checked again after this; 0 = never |
 | `reportRecheckHours` | — (YAML only) | 6 | 0-8760: 3 dead-link reports check a published link at once, at most this often; 0 = reports never check |
+| `sharedPluginDir` | — (YAML only) | empty | resolver plugins unpacked once for several instances (see "Shared plugins" below); relative = to the config folder; empty = per instance |
 | `accounts` | `ed3kHosterAccounts` | empty | `{host, user, passwordEncrypted}`; IPC never carries a password out |
 
 ## Java
@@ -208,8 +225,18 @@ server), `jsvg` (icons), `jna_platform.jar` (same file as `jna-platform.jar`). `
 (archive.org plugin, image puzzles); `miglayout`, `image4j`, `Filters` stay because plugin and
 puzzle classes link them. GUI classes stay in `Core.jar`: plugins link them. The bundle scripts copy it next to the daemon (macOS:
 `Contents/Resources`); `emulecored` unpacks it into `Config/ed3k/resolver/plugins` when it changed and
-hoster downloads are on, because JD writes caches next to the plugin classes. Switched off, the
-unpacked plugins are removed again (48 MB, 2.4k files; 89 MB and 12k files before Core.jar, #88). `EMULE_RESOLVER_ZIP` points at another zip.
+hoster downloads are on. Switched off, the unpacked plugins are removed again (48 MB, 2.4k files;
+89 MB and 12k files before Core.jar, #88). `EMULE_RESOLVER_ZIP` points at another zip.
+
+Shared plugins (`sharedPluginDir`, YAML only; #88, many instances on one host): JD never writes
+into the unpacked plugins (its cfg, tmp, logs, captchas go to `-DROOT` = `Config/ed3k/resolver/jd`,
+still per instance), so one copy serves all. Layout `<sharedPluginDir>/<12 hex of zip SHA-1>/resolver/`
++ `.lastused`: one folder per zip content, so mixed app versions don't unpack over each other.
+Install under `.install.lock` (QLockFile, wait ≤3 min): the first instance unpacks, the others take
+it; an installed version is used without the lock (read-only share works). Pruned on install:
+`*.tmp` left-overs and versions whose `.lastused` (touched at each sidecar start) is >30 days old;
+an instance whose version went is unpacked again at its next start. Switching off leaves the shared
+copy; switching to shared removes the instance's own `plugins/`.
 
 Compile-time switch: CMake `-DEMULE_HOSTER_JD=OFF`, qmake `CONFIG+=no_emule_hoster_jd`, MSBuild
 `/p:EmuleHosterJd=false`. Off: no resolver, no Java lookup, no Hoster tab; ed3k still stores, passes

@@ -17,6 +17,7 @@
 #include <QObject>
 #include <QSet>
 #include <QString>
+#include <QStringList>
 #include <QTimer>
 
 #include <atomic>
@@ -307,6 +308,10 @@ protected:
     static QString hexOf(std::span<const std::uint8_t> bytes);
     static QString errorName(ffi::Error e);
     static std::span<const std::byte> spanOf(const QByteArray& b);
+    /// A plain file name for one directory, never a path; @p fallback when nothing is left.
+    static QString safeName(QString name, const QString& fallback = {});
+    /// Every file ending in @p suffix in @p dirs (each dir once), absolute paths.
+    static QStringList metFilesIn(const QStringList& dirs, QStringView suffix);
 
     Ed3kSession& m_session;
     QString m_configDir;

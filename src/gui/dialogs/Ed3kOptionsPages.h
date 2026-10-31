@@ -155,7 +155,7 @@ private:
     QCheckBox* m_enabledCheck = nullptr;
     QCheckBox* m_shareFilesCheck = nullptr;
     QCheckBox* m_jointDownloadsCheck = nullptr;
-    QCheckBox* m_holdBackCheck = nullptr;
+    QCheckBox* m_shareUsenetCheck = nullptr;
     QList<QCheckBox*> m_extChecks;   ///< text = the extension name
     QLabel* m_compatLabel = nullptr;
     QPushButton* m_compatBtn = nullptr;
@@ -227,6 +227,7 @@ private:
     QCheckBox* m_hosterCheckLinksCheck = nullptr;
     QCheckBox* m_publishLinksCheck = nullptr;
     QLabel* m_javaLabel = nullptr;
+    QLabel* m_jdVersionLabel = nullptr;   ///< the resolver engine's JD revision
     QLineEdit* m_javaEdit = nullptr;
     QCheckBox* m_autoJavaCheck = nullptr;
     QPushButton* m_javaDownloadBtn = nullptr;

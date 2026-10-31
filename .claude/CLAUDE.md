@@ -29,7 +29,7 @@
 - when writing protocol spec: be token efficient and relax on grammar
 
 ## Testing
-- open ports: TCP + UDP `5662` for ed2k, `6881` for BitTorrent
+- open ports: TCP + UDP `5662` for ed2k, `6588` for BitTorrent
 - kill `emulecored` after testing
 - never disable UDP or TCP encryption as it is required by most peers to connect
 - start the GUI with  `--screenshot` cmd arg to take screenshots

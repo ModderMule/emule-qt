@@ -14,7 +14,9 @@ fi
 
 # Run, don't source: build.sh parses "$@", so sourcing hands it this script's GUI
 # arguments and the first one becomes its build directory ("cmake -B --tab").
-scripts/build.sh
+# Only what this script runs: skips the ~290 test binaries. Updater and
+# specialdlp come along as dependencies. Full build: scripts/build.sh or ctest.
+scripts/build.sh --target emuleqt --target emulecored --target emuleqt-updater
 
 # A bundle-macos.sh run leaves deployed Qt in the dev bundle; after a relink the
 # binary uses ~/Qt again, so the bundled qcocoa loads a 2nd QtGui and aborts.

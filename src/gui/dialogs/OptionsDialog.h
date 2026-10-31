@@ -515,6 +515,7 @@ private:
     QComboBox*    m_usenetHealthCombo = nullptr;
     QSpinBox*     m_usenetHealthMinSpin = nullptr;
     QCheckBox*    m_usenetAutoPausedCheck = nullptr;
+    QCheckBox*    m_usenetSelectedFileOnlyCheck = nullptr;
     QLineEdit*    m_usenetWatchDirEdit = nullptr;
     QPushButton*  m_usenetWatchDirBrowse = nullptr;
     QCheckBox*    m_associateNzbCheck = nullptr;

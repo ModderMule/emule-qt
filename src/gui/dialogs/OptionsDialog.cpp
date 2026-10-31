@@ -3772,6 +3772,16 @@ QWidget* OptionsDialog::createUsenetPage()
            "normally either way."));
     addLayout->addWidget(m_usenetAutoPausedCheck);
 
+    m_usenetSelectedFileOnlyCheck =
+        new QCheckBox(tr("Download only the selected file of an NZB search result"), addGroup);
+    m_usenetSelectedFileOnlyCheck->setToolTip(
+        tr("Search results list an NZB once as a whole and once per file in it.\n\n"
+           "With this on, downloading one file's row fetches only that file (with "
+           "the rest of its archive set) and skips the others. Picking another file "
+           "of the same NZB later adds it to the queued download.\n\n"
+           "The Details window lets you choose the files either way."));
+    addLayout->addWidget(m_usenetSelectedFileOnlyCheck);
+
     advancedLayout->addWidget(addGroup);
 
     // -- Watch folder -------------------------------------------------------
@@ -3826,6 +3836,7 @@ QWidget* OptionsDialog::createUsenetPage()
     }
 
     connect(m_usenetAutoPausedCheck, &QCheckBox::toggled, this, &OptionsDialog::markDirty);
+    connect(m_usenetSelectedFileOnlyCheck, &QCheckBox::toggled, this, &OptionsDialog::markDirty);
     connect(m_usenetWatchDirEdit, &QLineEdit::textEdited, this, &OptionsDialog::markDirty);
     connect(m_usenetWatchDirBrowse, &QPushButton::clicked, this, [this] {
         const QString dir = QFileDialog::getExistingDirectory(
@@ -7357,6 +7368,8 @@ void OptionsDialog::saveSettings()
         req.append(static_cast<qint64>(m_usenetHealthMinSpin->value()));
         req.append(QStringLiteral("usenetAutoAddPaused"));
         req.append(m_usenetAutoPausedCheck->isChecked());
+        req.append(QStringLiteral("usenetMetaSelectedFileOnly"));
+        req.append(m_usenetSelectedFileOnlyCheck->isChecked());
         req.append(QStringLiteral("usenetWatchDir"));
         req.append(m_usenetWatchDirEdit->text().trimmed());
 
@@ -7731,6 +7744,15 @@ void OptionsDialog::saveSettings()
                                      if (ipc)
                                          ipc->sendRestart();
                                  });
+            // Mirror the daemon's values: the daemon-side keys above only went over
+            // IPC, so GUI checks like the preview-parts menu item read stale copies (#96)
+            if (!ipc || !resp.isValid() || !resp.fieldBool(0))
+                return;
+            Ipc::IpcMessage get(Ipc::IpcMsgType::GetPreferences);
+            ipc->sendRequest(std::move(get), [](const Ipc::IpcMessage& prefs) {
+                if (prefs.isValid() && prefs.fieldBool(0))
+                    thePrefs.updateFromCbor(prefs.fieldMap(1));
+            });
         });
     } else {
         // Fallback: save locally
@@ -8223,6 +8245,10 @@ void OptionsDialog::fillDaemonSettings(const QCborMap& prefs)
     if (m_usenetAutoPausedCheck) {
         m_usenetAutoPausedCheck->setChecked(
             prefs.value(QStringLiteral("usenetAutoAddPaused")).toBool(false));
+    }
+    if (m_usenetSelectedFileOnlyCheck) {
+        m_usenetSelectedFileOnlyCheck->setChecked(
+            prefs.value(QStringLiteral("usenetMetaSelectedFileOnly")).toBool(false));
     }
     if (m_usenetWatchDirEdit)
         m_usenetWatchDirEdit->setText(prefs.value(QStringLiteral("usenetWatchDir")).toString());

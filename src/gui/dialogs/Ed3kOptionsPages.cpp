@@ -185,7 +185,7 @@ void Ed3kOptionsPages::load(const QCborMap& p)
     m_enabledCheck->setChecked(p.value(QStringLiteral("ed3kEnabled")).toBool(true));
     m_shareFilesCheck->setChecked(p.value(QStringLiteral("ed3kShareFiles")).toBool(true));
     m_jointDownloadsCheck->setChecked(p.value(QStringLiteral("ed3kJointDownloads")).toBool(true));
-    m_holdBackCheck->setChecked(p.value(QStringLiteral("ed3kHoldBackPosts")).toBool(false));
+    m_shareUsenetCheck->setChecked(p.value(QStringLiteral("ed3kShareUsenetPosts")).toBool(true));
     const QStringList off = Preferences::rpcUrlList(p.value(QStringLiteral("ed3kExtOff")));
     for (QCheckBox* box : m_extChecks)
         box->setChecked(!off.contains(box->text()));
@@ -264,7 +264,7 @@ void Ed3kOptionsPages::appendTo(IpcMessage& req) const
     put("ed3kEnabled", m_enabledCheck->isChecked());
     put("ed3kShareFiles", m_shareFilesCheck->isChecked());
     put("ed3kJointDownloads", m_jointDownloadsCheck->isChecked());
-    put("ed3kHoldBackPosts", m_holdBackCheck->isChecked());
+    put("ed3kShareUsenetPosts", m_shareUsenetCheck->isChecked());
     put("ed3kExtOff", extOff().join(QLatin1Char(' ')));
     if (!m_portJoined)   // joined: the Connection page sends it
         put("ed3kUdpPort", qint64(m_udpPortSpin->value()));
@@ -319,7 +319,7 @@ void Ed3kOptionsPages::saveLocal() const
     thePrefs.setEd3kEnabled(m_enabledCheck->isChecked());
     thePrefs.setEd3kShareFiles(m_shareFilesCheck->isChecked());
     thePrefs.setEd3kJointDownloads(m_jointDownloadsCheck->isChecked());
-    thePrefs.setEd3kHoldBackPosts(m_holdBackCheck->isChecked());
+    thePrefs.setEd3kShareUsenetPosts(m_shareUsenetCheck->isChecked());
     thePrefs.setEd3kExtOff(extOff());
     if (!m_portJoined && m_udpPortSpin->value() > 0)
         thePrefs.setEd3kUdpPort(uint16(m_udpPortSpin->value()));
@@ -398,9 +398,10 @@ QWidget* Ed3kOptionsPages::buildGeneral(QWidget* parent)
     auto* shareLayout = new QVBoxLayout(shareGroup);
     m_shareFilesCheck = new QCheckBox(tr("Share the shared files over ed3k too"), shareGroup);
     shareLayout->addWidget(m_shareFilesCheck);
-    m_holdBackCheck = new QCheckBox(tr("Hold Usenet posts back"), shareGroup);
-    m_holdBackCheck->setToolTip(tr("Share the files of Usenet downloads, but not their article lists, post sets or nzb records."));
-    shareLayout->addWidget(m_holdBackCheck);
+    m_shareUsenetCheck = new QCheckBox(tr("Share Usenet posts over ed3k too"), shareGroup);
+    m_shareUsenetCheck->setToolTip(tr("Off: the files of Usenet downloads are still shared, but not their article "
+                                      "lists, post sets or nzb records."));
+    shareLayout->addWidget(m_shareUsenetCheck);
     layout->addWidget(shareGroup);
 
     // eD2K compat (Protocol.md §14): derived user hash, one port for eD2K and ed3k
@@ -440,7 +441,7 @@ QWidget* Ed3kOptionsPages::buildGeneral(QWidget* parent)
     // layout->addWidget(extGroup);
     layout->addStretch();
 
-    for (QCheckBox* box : {m_enabledCheck, m_shareFilesCheck, m_holdBackCheck, m_jointDownloadsCheck})
+    for (QCheckBox* box : {m_enabledCheck, m_shareFilesCheck, m_shareUsenetCheck, m_jointDownloadsCheck})
         connect(box, &QCheckBox::toggled, this, [this] {
             if (!m_loading)
                 emit changed();
@@ -1286,6 +1287,8 @@ QWidget* Ed3kOptionsPages::buildHoster(QWidget* parent)
                                     javaGroup));
     m_javaLabel = noteLabel(QString(), javaGroup);
     javaLayout->addWidget(m_javaLabel);
+    m_jdVersionLabel = noteLabel(QString(), javaGroup);
+    javaLayout->addWidget(m_jdVersionLabel);
     auto* pathRow = new QHBoxLayout;
     m_javaEdit = new QLineEdit(javaGroup);
     m_javaEdit->setPlaceholderText(tr("Find automatically"));
@@ -1417,6 +1420,9 @@ void Ed3kOptionsPages::applyHosterStatus(const QCborMap& h)
         m_resolverLabel->setText(description.isEmpty() ? tr("The resolver is ready.") : tr("Resolver: %1").arg(description));
     else
         m_resolverLabel->setText(tr("The resolver is not ready: %1").arg(reason));
+    const QString version = r.value(QStringLiteral("version")).toString();
+    m_jdVersionLabel->setText(version.isEmpty() ? tr("JDownloader: not installed")
+                                                : tr("JDownloader version: %1").arg(version));
 
     const QCborMap j = h.value(QStringLiteral("java")).toMap();
     // Ed3kJavaRuntime::State: Unknown, Probing, Ready, Missing, Downloading, Unpacking, Failed

@@ -288,6 +288,9 @@ private:
     /// The same question for indexer tabs, over GetUsenetKnownTypes. A separate
     /// pass because an indexer row has no hash to ask about — only a title.
     void refreshUsenetKnownTypes();
+    /// eNode Usenet rows of an eD2K-model tab: asked by the whole-set row's name,
+    /// the answer applied to every row of that NZB.
+    void refreshMetaUsenetKnownTypes(const SearchTab& tab);
 
     /// Open the MFC-style search-result detail sheet for @p hash in tab @p searchID.
     /// Open the result sheet for @p index (proxy coordinates) — the Alt+Enter action.

@@ -66,19 +66,6 @@ std::vector<bool> unpackBits(const QByteArray& packed, std::size_t count)
     return bits;
 }
 
-/// A file name of a link or a search row as a plain name in one directory.
-QString safeName(QString name)
-{
-    name = QFileInfo(name.replace(QLatin1Char('\\'), QLatin1Char('/'))).fileName();
-    static const QString bad = QStringLiteral("<>:\"|?*");
-    for (QChar& c : name)
-        if (c.unicode() < 0x20 || bad.contains(c))
-            c = QLatin1Char('_');
-    if (name == QLatin1String(".") || name == QLatin1String(".."))
-        name.clear();
-    return name.trimmed();
-}
-
 } // namespace
 
 Ed3kDownloads::Ed3kDownloads(Ed3kSession& session, const QString& configDir, QObject* parent)
@@ -781,34 +768,30 @@ void Ed3kDownloads::load()
 
 void Ed3kDownloads::scanTempDirs()
 {
-    for (const QString& dir : std::as_const(m_tempDirs)) {
-        const QDir d(dir);
-        for (const QString& name : d.entryList({QStringLiteral("*") + kMetSuffix}, QDir::Files)) {
-            const QString metPath = d.filePath(name);
-            auto e = readMet(metPath);
-            if (!e) {
-                logWarning(QStringLiteral("%1 does not parse: left alone").arg(metPath));
-                continue;
-            }
-            if (const Entry* known = entryOf(e->info.root)) {
-                if (QFileInfo(metPathOf(*known)) != QFileInfo(metPath))
-                    logWarning(QStringLiteral("%1: \"%2\" is in the list already (%3)").arg(metPath, known->info.name, known->info.partPath));
-                continue;
-            }
-            e->id = m_nextId++;
-            const ffi::Root root = e->info.root;
-            logInfo(QStringLiteral("download of \"%1\" taken up from %2 (%3 of %4 B)")
-                        .arg(e->info.name, metPath).arg(e->info.done).arg(e->info.size));
-            auto [it, inserted] = m_entries.emplace(root, std::move(*e));
-            emit added(root);
-            markChanged();
-            if (m_started) {
-                if (it->second.info.state == Ed3kDownloadInfo::State::Downloading)
-                    openEntry(it->second);
-                else if (it->second.info.state == Ed3kDownloadInfo::State::Paused)
-                    sharePieces(it->second);
-                pumpSession();
-            }
+    for (const QString& metPath : metFilesIn(m_tempDirs, kMetSuffix)) {
+        auto e = readMet(metPath);
+        if (!e) {
+            logWarning(QStringLiteral("%1 does not parse: left alone").arg(metPath));
+            continue;
+        }
+        if (const Entry* known = entryOf(e->info.root)) {
+            if (QFileInfo(metPathOf(*known)) != QFileInfo(metPath))
+                logWarning(QStringLiteral("%1: \"%2\" is in the list already (%3)").arg(metPath, known->info.name, known->info.partPath));
+            continue;
+        }
+        e->id = m_nextId++;
+        const ffi::Root root = e->info.root;
+        logInfo(QStringLiteral("download of \"%1\" taken up from %2 (%3 of %4 B)")
+                    .arg(e->info.name, metPath).arg(e->info.done).arg(e->info.size));
+        auto [it, inserted] = m_entries.emplace(root, std::move(*e));
+        emit added(root);
+        markChanged();
+        if (m_started) {
+            if (it->second.info.state == Ed3kDownloadInfo::State::Downloading)
+                openEntry(it->second);
+            else if (it->second.info.state == Ed3kDownloadInfo::State::Paused)
+                sharePieces(it->second);
+            pumpSession();
         }
     }
 }

@@ -9,7 +9,9 @@
 
 #include <QAbstractItemView>
 #include <QPalette>
+#include <QPointer>
 #include <QProxyStyle>
+#include <QStyleFactory>
 #include <QStyleOption>
 
 #include <algorithm>
@@ -96,6 +98,37 @@ public:
         QProxyStyle::drawControl(element, option, painter, widget);
     }
 
+    // macOS draws an item check as a bare tick: an unchecked row shows nothing at all.
+    // Draw a box there, Fusion's; a row the user can't toggle gets it greyed.
+    void drawPrimitive(PrimitiveElement element, const QStyleOption* option, QPainter* painter,
+                       const QWidget* widget = nullptr) const override
+    {
+        if (element == PE_IndicatorItemViewItemCheck && isMacStyle()) {
+            if (!m_checkStyle) {
+                m_checkStyle = QStyleFactory::create(QStringLiteral("Fusion"));
+                if (m_checkStyle)
+                    m_checkStyle->setParent(const_cast<TooltipDelayStyle*>(this));
+            }
+            if (m_checkStyle) {
+                QStyleOptionViewItem box;
+                if (const auto* vopt = qstyleoption_cast<const QStyleOptionViewItem*>(option))
+                    box = *vopt;
+                else
+                    box.QStyleOption::operator=(*option);
+                if (box.index.isValid() && !(box.index.flags() & Qt::ItemIsUserCheckable)) {
+                    box.state &= ~State_Enabled;
+                    box.palette.setBrush(QPalette::All, QPalette::Text,
+                                         box.palette.brush(QPalette::Disabled, QPalette::Text));
+                    box.palette.setBrush(QPalette::All, QPalette::Base,
+                                         box.palette.brush(QPalette::Window));
+                }
+                m_checkStyle->drawPrimitive(element, &box, painter, widget);
+                return;
+            }
+        }
+        QProxyStyle::drawPrimitive(element, option, painter, widget);
+    }
+
 private:
     [[nodiscard]] bool isWindows11() const
     {
@@ -103,6 +136,16 @@ private:
         return base && base->name().compare(QLatin1StringView("windows11"),
                                             Qt::CaseInsensitive) == 0;
     }
+
+    [[nodiscard]] bool isMacStyle() const
+    {
+        const QStyle* base = baseStyle();
+        return base && base->name().compare(QLatin1StringView("macos"),
+                                            Qt::CaseInsensitive) == 0;
+    }
+
+    /// Draws item check boxes under the macOS style; owned by this.
+    mutable QPointer<QStyle> m_checkStyle;
 };
 
 } // namespace eMule

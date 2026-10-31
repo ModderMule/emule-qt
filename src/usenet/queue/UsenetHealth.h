@@ -104,6 +104,12 @@ struct UsenetAddOptions {
     /// Widened to whole archive sets; a list skipping a par2 file or every
     /// payload file refuses the add.
     QList<int> skippedFiles;
+
+    /// NZB file indices to keep, every other payload file skipped (a meta search
+    /// file row). Widened to whole archive sets; par2 files and bad indices are
+    /// ignored, and nothing left means the whole release. Empty = all files.
+    /// With the release still arriving, the kept files join that item instead.
+    QList<int> keptFiles;
 };
 
 /// How hard to ask before spending anything. Mirrors the integer stored in

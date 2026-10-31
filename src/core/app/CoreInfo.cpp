@@ -315,6 +315,7 @@ QCborMap kadStatus()
     status.insert(QStringLiteral("running"), kad && kad->isRunning());
     status.insert(QStringLiteral("connected"), kad && kad->isConnected());
     status.insert(QStringLiteral("firewalled"), kad && kad->isFirewalled());
+    status.insert(QStringLiteral("firewalledVerified"), kad && kad->isFirewalledVerified());
 
     if (kad && kad->isRunning()) {
         auto* zone = kad->getRoutingZone();

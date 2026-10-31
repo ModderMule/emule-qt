@@ -621,6 +621,7 @@ IpcMessage CoreNotifierBridge::buildKadUpdate()
     info.insert(QStringLiteral("running"),    kadRunning);
     info.insert(QStringLiteral("connected"),  kadConnected);
     info.insert(QStringLiteral("firewalled"), kad && kad->isFirewalled());
+    info.insert(QStringLiteral("firewalledVerified"), kad && kad->isFirewalledVerified());
     info.insert(QStringLiteral("users"),  static_cast<qint64>(kad ? kad->getKademliaUsers() : 0));
     info.insert(QStringLiteral("files"),  static_cast<qint64>(kad ? kad->getKademliaFiles() : 0));
     if (kadConnected && kad) {

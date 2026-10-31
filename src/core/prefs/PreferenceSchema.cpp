@@ -173,6 +173,7 @@ using Kind = PrefSpec::Kind;
     t << flag("usenetUnpack", "Unpack archives after a Usenet download.");
     t << flag("usenetCleanupAfterUnpack", "Delete archives and PAR2 files after a good unpack.");
     t << flag("usenetAutoAddPaused", "Add automatically grabbed releases paused.");
+    t << flag("usenetMetaSelectedFileOnly", "A search result row for one file of an NZB downloads only that file.");
     t << number("usenetDownloadSharePercent", 1, 99, "%", "Share of the download limit Usenet may "
                 "use while eD2K is downloading too.");
 
@@ -208,8 +209,8 @@ using Kind = PrefSpec::Kind;
     t << number("ed3kUdpPort", 1, 65535, "", "UDP port of the ed3k node. Equal to the eD2K UDP port: one shared socket (ed3k Protocol.md §14.1).");
     t << flag("ed3kShareFiles", "Serve the shared files over ed3k too (while the ed3k node runs).");
     t << flag("ed3kJointDownloads", "eD2K downloads also fetch from ed3k peers (found by the ed2k hash); a source with a derived user hash is asked over ed3k first.");
-    t << flag("ed3kHoldBackPosts", "Hold Usenet posts back on ed3k: share the files, but not the article "
-                                   "lists, post sets or nzb records (usenet.md §6).");
+    t << flag("ed3kShareUsenetPosts", "Share Usenet posts over ed3k too. Off: the files are still shared, but "
+                                      "not their article lists, post sets or nzb records (usenet.md §6).");
     t << advanced(text("ed3kCreditRpc", 4096, "JSON-RPC endpoints of the credit ledger (https URLs, separated by "
                                               "spaces; operator n = the n-th). Empty = off."));
     t << advanced(text("ed3kChaintubeRpc", 4096, "JSON-RPC endpoints of the chaintube chain (https URLs, or http to "

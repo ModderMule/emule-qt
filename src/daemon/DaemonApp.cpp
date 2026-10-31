@@ -346,7 +346,7 @@ bool DaemonApp::start()
         m_usenetJoinQueue = ed3k::Ed3kUsenetJoin::queueAdapter(*queue);
         m_usenetJoin = std::make_unique<ed3k::Ed3kUsenetJoin>(*m_ed3kSession, *m_usenetJoinQueue, thePrefs.configDir());
         m_usenetJoin->connectQueue(*queue);
-        m_usenetJoin->setHoldBack(thePrefs.ed3kHoldBackPosts());
+        m_usenetJoin->setHoldBack(!thePrefs.ed3kShareUsenetPosts());
     }
     // the share list over ed3k; also attaches on statusChanged
     if (theApp.sharedFileList) {
@@ -1155,9 +1155,9 @@ void DaemonApp::applyEd3kConfig()
     // ed3kJointDownloads: on/off while the node runs
     if (m_ed2kJoin)
         m_ed2kJoin->setEnabled(thePrefs.ed3kJointDownloads());
-    // ed3kHoldBackPosts: a change restarts the usenet join (kept lists and records follow)
+    // ed3kShareUsenetPosts: a change restarts the usenet join (kept lists and records follow)
     if (m_usenetJoin)
-        m_usenetJoin->setHoldBack(thePrefs.ed3kHoldBackPosts());
+        m_usenetJoin->setHoldBack(!thePrefs.ed3kShareUsenetPosts());
     // ed3kHoster*: no restart
     applyHosterConfig();
     if (m_coreSession)
@@ -1195,7 +1195,7 @@ void DaemonApp::applyHosterConfig()
         return;
     const Ed3kHosterPrefs h = thePrefs.ed3kHoster();
     const QStringList temps = thePrefs.tempDirs();
-    m_hosterJoin->setConfig(h, temps.isEmpty() ? QString() : temps.first(), thePrefs.incomingDir());
+    m_hosterJoin->setConfig(h, temps, thePrefs.incomingDir());
 #ifdef EMULE_HAVE_HOSTER_JD
     if (!m_javaRuntime || !m_jdResolver)
         return;

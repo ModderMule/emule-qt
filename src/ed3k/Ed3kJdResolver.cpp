@@ -49,6 +49,18 @@ QString zipKey(const QString& zip)
     return QString::fromLatin1(h.result().toHex().left(12));
 }
 
+/// the JD revision from revision.txt that build-hoster-resolver.sh writes; empty: none
+QString readRevision(const QString& root)
+{
+    if (root.isEmpty())
+        return {};
+    QFile f(QDir(root).filePath(QStringLiteral("revision.txt")));
+    if (!f.open(QIODevice::ReadOnly))
+        return {};
+    const QString rev = QString::fromUtf8(f.readLine(64)).trimmed();
+    return rev == u'?' ? QString() : rev;
+}
+
 void touchUsed(const QString& versionDir)
 {
     QFile f(QDir(versionDir).filePath(QLatin1StringView(kLastUsed)));
@@ -266,10 +278,7 @@ void Ed3kJdResolver::removePlugins(const QString& dataDir)
 QStringList Ed3kJdResolver::arguments() const
 {
     const QDir root(m_root);
-    QFile revFile(root.filePath(QStringLiteral("revision.txt")));
-    QString rev = QStringLiteral("?");
-    if (revFile.open(QIODevice::ReadOnly))
-        rev = QString::fromUtf8(revFile.readAll()).trimmed();
+    const QString rev = m_revision.isEmpty() ? QStringLiteral("?") : m_revision;
     // the root itself for the loose jd/plugins classes
     const QString cp = root.filePath(QStringLiteral("Core.jar")) + QDir::listSeparator() + root.path() + QDir::listSeparator()
                        + root.filePath(QStringLiteral("libs/*"));
@@ -475,6 +484,7 @@ void Ed3kJdResolver::installPlugins()
 {
     m_installError.clear();
     m_root.clear();
+    m_revision.clear();
     if (!m_config.enabled) {
         // a shared copy stays: other instances may run from it
         if (m_config.sharedDir.isEmpty())
@@ -487,6 +497,7 @@ void Ed3kJdResolver::installPlugins()
         if (!m_config.zip.isEmpty() && !install(m_config.zip, m_config.dataDir, &m_installError))
             logEd3kWarning(QStringLiteral("hoster: resolver plugins not installed: %1").arg(m_installError));
         m_root = instanceRoot(m_config.dataDir);
+        m_revision = readRevision(m_root);
         return;
     }
     // a per-instance copy of before is not needed any more
@@ -495,6 +506,7 @@ void Ed3kJdResolver::installPlugins()
         m_root = newestShared(m_config.sharedDir);
     else if (m_root = installShared(m_config.zip, m_config.sharedDir, &m_installError); m_root.isEmpty())
         logEd3kWarning(QStringLiteral("hoster: shared resolver plugins not installed: %1").arg(m_installError));
+    m_revision = readRevision(m_root);
 }
 
 bool Ed3kJdResolver::ensureStarted()
@@ -624,6 +636,8 @@ void Ed3kJdResolver::handleLine(const QByteArray& line)
             stop();
             return;
         }
+        if (const QString rev = o.value(QStringLiteral("jdRevision")).toString(); !rev.isEmpty() && rev != u'?')
+            m_revision = rev;
         m_description = tr("JDownloader r%1, %2 hosters, %3 decrypters")
                             .arg(o.value(QStringLiteral("jdRevision")).toString())
                             .arg(o.value(QStringLiteral("hosts")).toInt())

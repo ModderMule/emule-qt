@@ -1680,13 +1680,22 @@ void SearchPanel::showMetaRowDetails(uint32_t searchID, const SearchResultRow& r
     info.size = result.fileSize;
     info.source = result.metaIndexer;
     info.ageDays = result.metaAgeDays > 0 ? int(result.metaAgeDays) : -1;
+    info.chooseFiles = result.isUsenet();
+    info.selectedFileOnly = thePrefs.usenetMetaSelectedFileOnly();
     QPointer<SearchPanel> self(this);
-    metaActions()->showDetails(searchID, row, info, [self, searchID, row, model] {
+    metaActions()->showDetails(searchID, row, info, [self, searchID, row, model](const QList<int>& unchecked) {
         if (!self)
             return;
         // the daemon still has the file: no second fetch
-        if (row.isNzb())
-            self->metaActions()->downloadUsenet(searchID, {row}, 0, model);
+        if (row.isNzb()) {
+            MetaResultActions::Row chosen = row;
+            chosen.unchecked = unchecked;   // the check boxes decide, not the option
+            // MFC DownloadSelected → GetSelectedCat, as downloadResults()
+            const int category = self->m_categoryTabs->count() > 1
+                                     ? std::max(self->m_categoryTabs->currentIndex(), 0)
+                                     : 0;
+            self->metaActions()->downloadUsenet(searchID, {chosen}, category, model);
+        }
         else if (Ed2kLinkImporter::torrentsReady())
             self->metaActions()->addTorrents(searchID, {row});
         else
@@ -1707,7 +1716,7 @@ void SearchPanel::showIndexerRowDetails(uint32_t searchID, const IndexerResultRo
     info.ageDays = result.ageDays;
     info.category = result.category;
     QPointer<SearchPanel> self(this);
-    metaActions()->showIndexerDetails(searchID, result.id, info, [self, searchID, result, model] {
+    metaActions()->showIndexerDetails(searchID, result.id, info, [self, searchID, result, model](const QList<int>&) {
         if (self)
             self->grabIndexerResult(searchID, result, model, false);
     });
@@ -2801,12 +2810,16 @@ void SearchPanel::refreshKnownTypes()
 
         // The reply is one type per hash *sent*. Pair it with this list, never with
         // the model's rows at reply time — a result push resets them in between.
+        // Usenet rows skipped: their hash is no MD4, the daemon would answer
+        // Unknown and wipe the queue's answer (refreshUsenetKnownTypes()).
         QStringList sent;
         sent.reserve(count);
         for (int r = 0; r < count; ++r) {
-            if (const auto* row = tab.model->resultAt(r))
+            if (const auto* row = tab.model->resultAt(r); row && !row->isUsenet())
                 sent.append(row->hash);
         }
+        if (sent.isEmpty())
+            continue;
 
         IpcMessage msg(IpcMsgType::GetKnownTypes);
         msg.append(QCborValue(QCborArray::fromStringList(sent)));
@@ -2833,8 +2846,10 @@ void SearchPanel::refreshUsenetKnownTypes()
         return;
 
     for (const SearchTab& tab : m_tabs) {
-        if (!tab.isIndexer())
+        if (!tab.isIndexer()) {
+            refreshMetaUsenetKnownTypes(tab);
             continue;
+        }
         const int count = tab.indexerModel->resultCount();
         if (count == 0)
             continue;
@@ -3309,6 +3324,38 @@ void SearchPanel::addEd3kFilterMenu(SearchTab& tab)
             }
         if (const auto* cur = currentTab())
             m_statusLabel->setText(tabStatusText(*cur));
+    });
+}
+
+
+void SearchPanel::refreshMetaUsenetKnownTypes(const SearchTab& tab)
+{
+    if (!tab.model)
+        return;
+    const QHash<QString, QString> titles = tab.model->usenetReleaseTitles();
+    if (titles.isEmpty())
+        return;
+
+    QStringList keys;
+    QStringList sent;
+    for (auto it = titles.cbegin(); it != titles.cend(); ++it) {
+        keys.append(it.key());
+        sent.append(it.value());
+    }
+
+    IpcMessage msg(IpcMsgType::GetUsenetKnownTypes);
+    msg.append(QCborValue(QCborArray::fromStringList(sent)));
+
+    const QPointer<SearchResultsModel> model(tab.model);
+    m_ipc->sendRequest(std::move(msg), [model, keys](const IpcMessage& resp) {
+        if (!resp.fieldBool(0) || !model)
+            return;
+        const auto types = resp.fieldArray(1);
+        const qsizetype n = std::min(types.size(), keys.size());
+        QHash<QString, int> typesByRelease;
+        for (qsizetype i = 0; i < n; ++i)
+            typesByRelease.insert(keys.at(i), static_cast<int>(types.at(i).toInteger()));
+        model->updateUsenetKnownTypes(typesByRelease);
     });
 }
 

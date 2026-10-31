@@ -47,9 +47,6 @@ public:
     /// Hoster downloads on (ed3kHosterEnabled), as the core last reported.
     [[nodiscard]] bool hostersEnabled() const { return m_enabled; }
 
-signals:
-    void optionsRequested();
-
 private:
     void refresh();
     void upsert(const QCborMap& item);

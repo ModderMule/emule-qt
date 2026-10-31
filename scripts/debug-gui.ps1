@@ -252,7 +252,10 @@ function Get-RequiredBinary {
 
 if (-not $BuildDir) { $BuildDir = Get-DefaultBuildDir }
 
-Invoke-EMuleBuild -Config $Config -QtDir $QtDir -BuildDir $BuildDir -NoBuild:$NoBuild
+# Only what this script runs: skips the ~290 test binaries. specialdlp comes
+# along as a daemon dependency. Full build: build-win.ps1 or ctest.
+Invoke-EMuleBuild -Config $Config -QtDir $QtDir -BuildDir $BuildDir -NoBuild:$NoBuild `
+    -Target 'emuleqt', 'emulecored', 'emuleqt-updater'
 
 # ---------------------------------------------------------------------------
 # Locate binaries

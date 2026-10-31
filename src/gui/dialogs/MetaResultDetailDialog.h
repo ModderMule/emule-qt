@@ -13,6 +13,7 @@
 #include "DetailDialog.h"
 
 #include <QCborMap>
+#include <QList>
 #include <QString>
 
 class QFormLayout;
@@ -23,6 +24,8 @@ class QTabWidget;
 class QTreeWidget;
 
 namespace eMule {
+
+class UsenetFileCheckList;
 
 class MetaResultDetailDialog : public DetailDialog {
     Q_OBJECT
@@ -42,6 +45,11 @@ public:
         int peers = -1;
         int ageDays = -1;
         QString category;
+        /// NZB: check boxes pick the files Download queues (eNode rows, not indexer grabs).
+        bool chooseFiles = false;
+        /// With chooseFiles: pre-check only the file the row stands for
+        /// (usenetMetaSelectedFileOnly), when the daemon names one (rowFileIndex).
+        bool selectedFileOnly = false;
     };
 
     explicit MetaResultDetailDialog(const RowInfo& row, QWidget* parent = nullptr);
@@ -56,17 +64,20 @@ public:
     [[nodiscard]] QTreeWidget* trackersTree() const { return m_trackers; }
     [[nodiscard]] QLabel* noteLabel() const { return m_note; }
     [[nodiscard]] QPushButton* downloadButton() const { return m_download; }
+    [[nodiscard]] UsenetFileCheckList* fileChecks() const { return m_checks; }
 
 signals:
     /// Download pressed: the panel adds the row as its own Download would.
-    void downloadRequested();
+    /// @p unchecked: NZB file indices left out (chooseFiles), else empty.
+    void downloadRequested(const QList<int>& unchecked);
 
 private:
     void buildGeneral(const QCborMap& inspection, bool torrent);
     void buildTorrentFiles(const QCborMap& inspection);
-    void buildNzbFiles(const QCborMap& inspection);
+    void buildNzbFiles(const QCborMap& inspection, int rowFileIndex);
     void buildTrackers(const QCborMap& inspection);
     void addRowFacts(QFormLayout* form) const;
+    void onDownload();
 
     RowInfo m_row;
     QStackedWidget* m_stack = nullptr;
@@ -76,6 +87,7 @@ private:
     QTreeWidget* m_files = nullptr;
     QTreeWidget* m_trackers = nullptr;
     QPushButton* m_download = nullptr;
+    UsenetFileCheckList* m_checks = nullptr;
 };
 
 } // namespace eMule

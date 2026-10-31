@@ -871,6 +871,35 @@ std::span<const std::byte> Ed3kJoinBase::spanOf(const QByteArray& b)
     return {reinterpret_cast<const std::byte*>(b.constData()), std::size_t(b.size())};
 }
 
+QString Ed3kJoinBase::safeName(QString name, const QString& fallback)
+{
+    name = QFileInfo(name.replace(QLatin1Char('\\'), QLatin1Char('/'))).fileName();
+    static const QString bad = QStringLiteral("<>:\"|?*");
+    for (QChar& c : name)
+        if (c.unicode() < 0x20 || bad.contains(c))
+            c = QLatin1Char('_');
+    name = name.trimmed();
+    while (name.startsWith(QLatin1Char('.')))
+        name.remove(0, 1);
+    return name.isEmpty() ? fallback : name.left(200);
+}
+
+QStringList Ed3kJoinBase::metFilesIn(const QStringList& dirs, QStringView suffix)
+{
+    QStringList out;
+    QStringList seen;
+    for (const QString& dir : dirs) {
+        const QString abs = QDir(dir).absolutePath();
+        if (dir.isEmpty() || seen.contains(abs))
+            continue;
+        seen << abs;
+        const QDir d(abs);
+        for (const QString& name : d.entryList({QStringLiteral("*") + suffix}, QDir::Files, QDir::Name))
+            out << d.filePath(name);
+    }
+    return out;
+}
+
 // ---------------------------------------------------------------------------
 // private
 // ---------------------------------------------------------------------------

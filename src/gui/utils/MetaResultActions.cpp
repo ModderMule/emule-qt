@@ -13,11 +13,13 @@
 #include "dialogs/MetaAccountDialog.h"
 #include "dialogs/WebLinksDialog.h"
 #include "enodemeta/LinkContainer.h"
+#include "prefs/Preferences.h"
 #include "utils/Ed2kLinkImporter.h"
 #include "utils/NzbAdd.h"
 #include "utils/StatusBarNotifier.h"
 
 #include <QApplication>
+#include <QCborArray>
 #include <QCborMap>
 #include <QDir>
 #include <QFile>
@@ -87,9 +89,26 @@ MetaResultActions::MetaResultActions(IpcClient* ipc, QWidget* parentWidget)
 void MetaResultActions::downloadUsenet(quint32 searchID, const QList<Row>& rows, int category,
                                        QPointer<SearchResultsModel> model)
 {
-    for (const Row& row : rows)
-        if (row.isNzb())
-            sendDownload(searchID, row, category, /*force*/ false, model);
+    // one request per NZB: a second one for the same release would only be refused
+    QList<Row> requests;
+    QHash<QString, qsizetype> byRelease;
+    for (const Row& row : rows) {
+        if (!row.isNzb())
+            continue;
+        SearchResultRow probe;
+        probe.hash = row.hash;
+        probe.metaKind = row.kind;
+        const QString release = probe.usenetReleaseKey();
+        if (release.isEmpty() || !byRelease.contains(release)) {
+            if (!release.isEmpty())
+                byRelease.insert(release, requests.size());
+            requests.append(row);
+            continue;
+        }
+        requests[byRelease.value(release)].siblingHashes.append(row.hash);
+    }
+    for (const Row& row : std::as_const(requests))
+        sendDownload(searchID, row, category, /*force*/ false, model);
 }
 
 void MetaResultActions::saveMetaFiles(quint32 searchID, const QList<Row>& rows)
@@ -194,6 +213,13 @@ void MetaResultActions::sendDownload(quint32 searchID, const Row& row, int categ
     msg.append(qint64(0));   // priority: normal
     msg.append(false);       // paused
     msg.append(row.ref);
+    msg.append(QCborValue(QCborArray::fromStringList(row.siblingHashes)));
+    if (row.unchecked) {
+        QCborArray unchecked;
+        for (const int f : *row.unchecked)
+            unchecked.append(f);
+        msg.append(QCborValue(unchecked));
+    }
 
     QPointer<MetaResultActions> self(this);
     m_ipc->sendRequest(std::move(msg), [self, searchID, row, category, model](const IpcMessage& resp) {
@@ -201,8 +227,23 @@ void MetaResultActions::sendDownload(quint32 searchID, const Row& row, int categ
             return;
         if (resp.fieldBool(0)) {
             StatusBarNotifier::post(tr("Queued \"%1\" for Usenet download.").arg(row.name));
-            if (model)
-                model->updateKnownTypes({{row.hash, 2}});   // Downloading
+            if (model) {
+                // part of the NZB queued: only the picked rows are downloading
+                SearchResultRow probe;
+                probe.hash = row.hash;
+                probe.metaKind = row.kind;
+                const bool part = (row.unchecked && !row.unchecked->isEmpty())
+                                  || (!row.unchecked && thePrefs.usenetMetaSelectedFileOnly()
+                                      && !probe.isUsenetWholeSet());
+                if (part) {
+                    QHash<QString, int> picked{{row.hash, 2}};
+                    for (const QString& h : row.siblingHashes)
+                        picked.insert(h, 2);
+                    model->updateKnownTypes(picked);
+                } else {
+                    model->setUsenetReleaseKnownType(row.hash, 2);   // Downloading, every row of the NZB
+                }
+            }
             return;
         }
 
@@ -216,6 +257,10 @@ void MetaResultActions::sendDownload(quint32 searchID, const Row& row, int categ
 
         const auto outcome = static_cast<gui::NzbAddOutcome>(resp.fieldInt(2));
         const QString reason = resp.fieldString(1);
+        // in the queue already: mark the NZB's rows, or the clicked one stays plain.
+        // AlreadyDownloaded is left alone, it may be a cancel as well (3 vs 4).
+        if (model && outcome == gui::NzbAddOutcome::Duplicate)
+            model->setUsenetReleaseKnownType(row.hash, 2);
         // one event-loop turn: never a modal inside the reply's own stack
         QTimer::singleShot(0, self, [self, searchID, row, category, model, outcome, reason] {
             if (!self)
@@ -370,7 +415,7 @@ void MetaResultActions::fetchAndAddTorrent(quint32 searchID, const Row& row)
 
 void MetaResultActions::showDetails(quint32 searchID, const Row& row,
                                     const MetaResultDetailDialog::RowInfo& info,
-                                    std::function<void()> onDownload)
+                                    DetailsDownload onDownload)
 {
     if (!m_ipc || !m_ipc->isConnected())
         return;
@@ -393,7 +438,7 @@ void MetaResultActions::showDetails(quint32 searchID, const Row& row,
 
 void MetaResultActions::showIndexerDetails(quint32 searchID, const QString& resultId,
                                            const MetaResultDetailDialog::RowInfo& info,
-                                           std::function<void()> onDownload)
+                                           DetailsDownload onDownload)
 {
     if (!m_ipc || !m_ipc->isConnected())
         return;
@@ -462,7 +507,7 @@ void MetaResultActions::warn(const QString& text)
 }
 
 MetaResultDetailDialog* MetaResultActions::openDetails(const MetaResultDetailDialog::RowInfo& info,
-                                                       std::function<void()> onDownload)
+                                                       DetailsDownload onDownload)
 {
     auto* dlg = new MetaResultDetailDialog(info, m_parent);
     dlg->setAttribute(Qt::WA_DeleteOnClose);

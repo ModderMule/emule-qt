@@ -115,7 +115,7 @@ The `ed3k:` block in `preferences.yml`, with IPC/REST keys `ed3kEnabled` and `ed
 | `lan` | `true` | IPC/REST `ed3kLan`: LAN discovery (`Ed3kLan`). A change restarts the node |
 | `nodeLists` | `[]` | IPC/REST `ed3kNodeLists` (links separated by spaces): node list sources as `ed3k:nodes?url=…&key=…` links (`Ed3kBootstrap`); a source the user said yes to is added. No restart |
 | `credit:` | | `enabled` (`false`, §9), `chainId` (0 = none), `contract` (empty = none; no defaults, §7.1), `quorum` (2, held to 1..endpoints), `bidMaxPrice` (µ/MiB per download, 0 = receipts only), `sell` (`false`), `sellFloor` (µ/MiB), `sellSlots` (0 = the queue's); IPC/REST `ed3kCreditEnabled`, `ed3kCreditChainId` (decimal text: a u64), `ed3kCreditContract`, `ed3kCreditQuorum`, `ed3kCreditBidMaxPrice`, `ed3kCreditSell`, `ed3kCreditSellFloor`, `ed3kCreditSellSlots` (`Preferences::applyEd3kCreditKey`). No restart |
-| `holdBackPosts` | `false` | IPC/REST `ed3kHoldBackPosts`: hold Usenet posts back (usenet.md §6): no article lists, post sets or `nzb`/`nzb-file` records; the members are shared all the same. A change restarts the usenet join; switching on withdraws the kept `ALIAS` records (`unpublishAlias`) |
+| `shareUsenetPosts` | `true` | IPC/REST `ed3kShareUsenetPosts`, Options "Share Usenet posts over ed3k too". Off holds Usenet posts back (usenet.md §6): no article lists, post sets or `nzb`/`nzb-file` records; the members are shared all the same. A change restarts the usenet join; switching off withdraws the kept `ALIAS` records (`unpublishAlias`) |
 
 The port is mapped as `PortMapPurpose::Ed3kUdp` while `ed3kEnabled`.
 
@@ -351,7 +351,7 @@ ToDo (usenet join):
 - was: `articleDecoded` gives the part number, not mᵢ: a number listed twice with two IDs is
   reported under the first ID (done: the queue hands the message ID; an article fetched under
   a second ID of its number is not reported).
-- was: a preference for holding posts back (§6) (done: `holdBackPosts`), and an ed3k upload
+- was: a preference for holding posts back (§6) (done: `shareUsenetPosts`), and an ed3k upload
   queue with slots (done: see "Upload queue").
 - was: block reads on the daemon thread (done: `readInBackground`, both joins and serving).
 
@@ -615,7 +615,8 @@ downloads them with `AddEd3kDownload`.
   a set member of a set not followed there → plain download (`Ed3kSets::releaseOrphan`).
   `Config/ed3k/downloads.dat` (v2) keeps only the complete rows; a v1 file (every row) is
   migrated to `.met` files at the first `setDirs`. Pieces (4 MiB) held are shared from the part
-  file once the block values came.
+  file once the block values came. Hoster downloads do the same with
+  `<key>.hoster.part(.met)` (JSON; `docs/hoster.md` "Files").
 - Complete: hashed on a worker (root and size must agree, else downloaded again), moved to the
   target (the category's incoming dir, else `incomingDir`; a free name when taken), shared
   (`Publish::Both`, `Source` while holding back) and kept (`keepMember`). `DaemonApp`'s hook

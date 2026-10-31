@@ -4110,6 +4110,8 @@ bool IpcClientHandler::applyPreferenceA(const QString& key, const QCborValue& va
         thePrefs.setUsenetHealthMinPercent(int(val.toInteger()));
     else if (key == QStringLiteral("usenetAutoAddPaused"))
         thePrefs.setUsenetAutoAddPaused(val.toBool());
+    else if (key == QStringLiteral("usenetMetaSelectedFileOnly"))
+        thePrefs.setUsenetMetaSelectedFileOnly(val.toBool());
     else if (key == QStringLiteral("usenetWatchDir"))
         thePrefs.setUsenetWatchDir(val.toString());
     else if (key == QStringLiteral("indexerResultLimit"))
@@ -4562,8 +4564,8 @@ bool IpcClientHandler::applyPreferenceEd3k(const QString& key, const QCborValue&
         thePrefs.setEd3kShareFiles(val.toBool());
     else if (key == QStringLiteral("ed3kJointDownloads"))
         thePrefs.setEd3kJointDownloads(val.toBool());
-    else if (key == QStringLiteral("ed3kHoldBackPosts"))
-        thePrefs.setEd3kHoldBackPosts(val.toBool());
+    else if (key == QStringLiteral("ed3kShareUsenetPosts"))
+        thePrefs.setEd3kShareUsenetPosts(val.toBool());
     else if (key == QStringLiteral("ed3kUdpPort"))
         thePrefs.setEd3kUdpPort(static_cast<uint16>(std::clamp<qint64>(val.toInteger(), 1, 65535)));
     else if (key == QStringLiteral("ed3kCreditRpc"))

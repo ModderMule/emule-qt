@@ -78,6 +78,8 @@ inline constexpr ToolbarButtonDef kAllButtons[] = {
 /// ids into an existing order, so a button added here reaches a customized install
 /// only through Customize Toolbar. That is deliberate — the alternative re-adds a
 /// button the user deliberately removed, on every restart.
+/// Exception: switching Torrents or Hoster on in Options puts its button back
+/// (MainWindow::restoreToolbarButton), since that is a deliberate ask for it.
 inline const QList<int> kDefaultToolbarOrder = {
     0, 1, 10, 11, 12, 13, 14, 15, 16, 18,
 #ifdef EMULE_HAVE_BITTORRENT

@@ -382,7 +382,21 @@ QString UsenetQueue::addNzb(const QByteArray& data, const QString& name, QString
 
     // Before anything is created on disk: the preallocation loop below does not
     // clean up after itself, so a refusal must happen ahead of it.
-    const UsenetAddOutcome verdict = findDuplicate(nzb, displayName, options.force, error);
+    QString inFlightId;
+    const UsenetAddOutcome verdict =
+        findDuplicate(nzb, displayName, options.force, error, &inFlightId);
+    // another file of a release still arriving: it joins that item
+    if (verdict == UsenetAddOutcome::Duplicate && !options.keptFiles.isEmpty()
+        && !inFlightId.isEmpty()) {
+        if (const QString why = joinKeptFiles(inFlightId, nzb, options.keptFiles); !why.isEmpty()) {
+            error = why;
+        } else {
+            logUsenet(QStringLiteral("Usenet: \"%1\" joined its queued release").arg(displayName));
+            error.clear();
+            report(UsenetAddOutcome::Added);
+            return inFlightId;
+        }
+    }
     if (verdict != UsenetAddOutcome::Added) {
         logUsenet(QStringLiteral("Usenet: not adding \"%1\": %2").arg(displayName, error));
         report(verdict);
@@ -419,6 +433,18 @@ QString UsenetQueue::addNzb(const QByteArray& data, const QString& name, QString
     item->articleDigest = nzbArticleDigest(item->nzb);
     item->releaseKey = nzbReleaseKey(item->name, item->nzb.totalEncodedBytes());
     item->initFileStates(thePrefs.usenetTempDir());
+
+    // Files the caller kept (a meta search file row): every other payload file
+    // skipped. Nothing usable kept = the whole release, never a refusal.
+    if (!options.keptFiles.isEmpty()) {
+        const QSet<int> kept = widenToArchiveSets(*item, options.keptFiles);
+        if (!kept.isEmpty()) {
+            const int count = int(std::min(item->files.size(), item->nzb.files.size()));
+            for (int f = 0; f < count; ++f)
+                if (!item->nzb.files.at(f).isPar2() && !kept.contains(f))
+                    item->files[f].skipped = true;
+        }
+    }
 
     // Files the caller unchecked, widened to whole archive sets. Refused rather
     // than trimmed: a list that skips a par2 file or every payload file is a
@@ -1029,33 +1055,15 @@ QString UsenetQueue::expandSkipRequest(const UsenetQueueItem& item, const QList<
 {
     const int count = int(std::min(item.files.size(), item.nzb.files.size()));
 
-    // The name a set is recognised by: the one on disk once sealed, else the best guess.
-    const auto setOf = [&item](int f) {
-        const UsenetFileState& st = item.files.at(f);
-        return UsenetUnpacker::volumePositionOf(st.finalized ? QFileInfo(st.tempPath).fileName()
-                                                             : item.bestFileName(f));
-    };
-
     for (const int f : requested) {
         if (f < 0 || f >= count)
             return tr("That file is not part of this release");
         // The index is what verify and naming read; volumes come on demand.
         if (item.nzb.files.at(f).isPar2())
             return tr("PAR2 files are fetched when a repair needs them and cannot be skipped");
-        out.insert(f);
-
-        // All or nothing: one volume short fails the whole unpack.
-        const auto position = setOf(f);
-        if (position.index < 0)
-            continue;
-        for (int g = 0; g < count; ++g) {
-            if (g == f || item.nzb.files.at(g).isPar2())
-                continue;
-            const auto other = setOf(g);
-            if (other.index >= 0 && other.baseName == position.baseName)
-                out.insert(g);
-        }
     }
+    // All or nothing: one volume short fails the whole unpack.
+    out.unite(widenToArchiveSets(item, requested));
 
     // Only what changes.
     QList<int> unchanged;
@@ -4813,8 +4821,58 @@ qint64 UsenetQueue::probeWeight(const ItemRuntime& rt, int fileIndex, int segInd
     return info.encodedBytes();
 }
 
+QSet<int> UsenetQueue::widenToArchiveSets(const UsenetQueueItem& item, const QList<int>& requested)
+{
+    const int count = int(std::min(item.files.size(), item.nzb.files.size()));
+
+    // The name a set is recognised by: the one on disk once sealed, else the best guess.
+    const auto setOf = [&item](int f) {
+        const UsenetFileState& st = item.files.at(f);
+        return UsenetUnpacker::volumePositionOf(st.finalized ? QFileInfo(st.tempPath).fileName()
+                                                             : item.bestFileName(f));
+    };
+
+    QSet<int> out;
+    for (const int f : requested) {
+        if (f < 0 || f >= count || item.nzb.files.at(f).isPar2())
+            continue;
+        out.insert(f);
+
+        const auto position = setOf(f);
+        if (position.index < 0)
+            continue;
+        for (int g = 0; g < count; ++g) {
+            if (g == f || item.nzb.files.at(g).isPar2())
+                continue;
+            const auto other = setOf(g);
+            if (other.index >= 0 && other.baseName == position.baseName)
+                out.insert(g);
+        }
+    }
+    return out;
+}
+
+QString UsenetQueue::joinKeptFiles(const QString& id, const NzbInfo& nzb, const QList<int>& keptFiles)
+{
+    const ItemRuntime* rt = runtimeFor(id);
+    if (!rt)
+        return tr("Queue item not found");
+    // same articles, but indices only mean the same file in the same document
+    if (rt->item->nzb.files.size() != nzb.files.size())
+        return tr("\"%1\" is already in the Usenet queue.").arg(rt->item->name);
+
+    const QSet<int> kept = widenToArchiveSets(*rt->item, keptFiles);
+    QList<int> back;
+    for (const int f : kept)
+        if (rt->item->files.at(f).skipped)
+            back.append(f);
+    if (back.isEmpty())
+        return tr("\"%1\" is already in the Usenet queue.").arg(rt->item->name);
+    return setFilesSkipped(id, back, false);
+}
+
 UsenetAddOutcome UsenetQueue::findDuplicate(const NzbInfo& nzb, const QString& name,
-                                            bool force, QString& why) const
+                                            bool force, QString& why, QString* inFlightId) const
 {
     const QString digest = nzbArticleDigest(nzb);
     if (digest.isEmpty())
@@ -4857,7 +4915,9 @@ UsenetAddOutcome UsenetQueue::findDuplicate(const NzbInfo& nzb, const QString& n
     // No em dash in either sentence: AddNzbUrlDialog splits its failure lines
     // on " — " to recover the URL.
     if (inFlight != nullptr) {
-        why = tr("\"%1\" is already in the queue.").arg(inFlight->name);
+        why = tr("\"%1\" is already in the Usenet queue.").arg(inFlight->name);
+        if (inFlightId)
+            *inFlightId = inFlight->id;
         return UsenetAddOutcome::Duplicate;
     }
     if (finished != nullptr && !force) {

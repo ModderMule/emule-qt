@@ -248,6 +248,11 @@ bool Kademlia::isFirewalled() const
     return m_prefs->firewalled();
 }
 
+bool Kademlia::isFirewalledVerified() const
+{
+    return m_running && m_prefs && isFirewalled() && !m_prefs->recheckIP();
+}
+
 RecheckFirewallResult Kademlia::recheckFirewalled()
 {
     if (!m_running || !m_prefs)

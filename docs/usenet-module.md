@@ -286,6 +286,7 @@ usenet:
   healthCheck: 1            # 0 off, 1 sample one article per file, 2 every article
   healthMinPercent: 95      # below this a release is queued *paused*, never failed
   autoAddPaused: false      # queue automatic adds paused, so a feed proposes
+  selectedFileOnly: false   # an NZB search result's file row queues only that file
   useProxy: true            # news servers through the Proxy page's proxy
   sfvCheck: true            # verify against an .sfv when PAR2 did not run
   unrepairableAction: 1     # provably unrepairable: 0 keep going, 1 pause, 2 fail
@@ -1496,6 +1497,33 @@ every present and future intake path gets it by construction.
 failed line as `"<url> — <reason>"` and recovers the URL with
 `section(" — ", 0, 0)`, so an em-dash-space inside the reason silently truncates
 its retry list. `aRefusalSentenceCarriesNoEmDash` is the guard.
+
+### One file of an NZB search result
+
+eNode meta search lists an NZB as a whole-set row (meta hash file index `0xFFFF`)
+plus one row per `<file>`. `usenetMetaSelectedFileOnly` (YAML `selectedFileOnly`,
+default off) makes a file row queue only its file.
+
+- **`UsenetAddOptions::keptFiles`**: every non-PAR2 file outside the kept files'
+  archive sets is skipped (`widenToArchiveSets()`, the same set key as
+  `expandSkipRequest()`). A kept `part03.rar` keeps the whole set. PAR2 files
+  stay in, verify/repair as for any skipped file. Nothing usable kept (a PAR2
+  row, a bad index) = the whole release, never a refusal.
+- **Which file**: the daemon (`resolveNzbFile()`, IpcClientHandlerMeta.cpp)
+  matches `FT_META_FILEPATH` against the `<file>` subject first — an NZB hash is
+  always path-authoritative — then the index (`FT_META_FILEINDEX`, or hash bytes
+  4..5 for a restored tab). Both sides number files in surviving document order.
+- **Several rows of one NZB** go as one `DownloadMetaResult`, the others as
+  field 7 (sibling hashes). A whole-set row among them = everything.
+- **Details window**: an NZB row's Files tab has check boxes
+  (`UsenetFileCheckList`), pre-checked per the option (`rowFileIndex` in the
+  FetchMetaFile reply). Its unchecked indices go as field 8 and override the
+  option; the daemon turns them into `keptFiles`.
+- **Joining**: the one exception to "`Duplicate` overrides nothing". An add with
+  `keptFiles` whose release is still arriving un-skips those sets in the queued
+  item (`joinKeptFiles()`) and answers `Added` with that item's id. Nothing to
+  un-skip, or no `keptFiles` → `Duplicate` as before. Finished →
+  `AlreadyDownloaded`, and a forced add is a new item with only those files.
 
 ### What survives leaving the queue
 

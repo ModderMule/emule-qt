@@ -692,9 +692,13 @@ enum class IpcMsgType : int {
     /// is used when the search is gone (a tab restored after a restart).
     FetchMetaFile           = 750,
 
-    /// [searchID, hash, force, category, priority, paused, (row)] -> the AddNzb
-    /// reply ([ok, itemId|error, outcome]) plus meta as field 3. Usenet rows
-    /// only: the daemon fetches, verifies and queues the NZB. `row` as above.
+    /// [searchID, hash, force, category, priority, paused, (row), (siblings),
+    /// (unchecked)] -> the AddNzb reply ([ok, itemId|error, outcome]) plus meta as
+    /// field 3. Usenet rows only: the daemon fetches, verifies and queues the NZB.
+    /// `row` as above. `siblings`: hashes of the other picked rows of the same
+    /// NZB (usenetMetaSelectedFileOnly). `unchecked`: NZB file indices unchecked
+    /// in the Details window, overriding that option (empty = all); absent = not
+    /// chosen there.
     DownloadMetaResult      = 751,
 
     /// [serverAddr] -> [true, {meta keys + loggedIn, username, state,

@@ -669,6 +669,7 @@ struct Preferences::Data {
     int usenetHealthCheck = 1;         // 0 off, 1 sample, 2 full
     int usenetHealthMinPercent = 95;
     bool usenetAutoAddPaused = false;
+    bool usenetMetaSelectedFileOnly = false;
     bool usenetPaused = false;
     bool usenetUseProxy = true;
     bool usenetSfvCheck = true;
@@ -711,7 +712,7 @@ struct Preferences::Data {
     uint16 ed3kUdpPort = 0;            // 0 = random, resolved at load
     bool ed3kShareFiles = true;        // eMule's shared files over ed3k
     bool ed3kJointDownloads = true;    // eD2K downloads from ed3k too (§14.4)
-    bool ed3kHoldBackPosts = false;    // usenet.md §6
+    bool ed3kShareUsenetPosts = true;  // off = hold back, usenet.md §6
     QStringList ed3kCreditRpc;         // JSON-RPC endpoints; empty = off
     QStringList ed3kChaintubeRpc;
     QStringList ed3kExtOff;            // extension names off at start
@@ -2016,6 +2017,16 @@ void Preferences::setUsenetAutoAddPaused(bool val)
     set(&Data::usenetAutoAddPaused, val);
 }
 
+bool Preferences::usenetMetaSelectedFileOnly() const
+{
+    return get(&Data::usenetMetaSelectedFileOnly);
+}
+
+void Preferences::setUsenetMetaSelectedFileOnly(bool val)
+{
+    set(&Data::usenetMetaSelectedFileOnly, val);
+}
+
 bool Preferences::usenetPaused() const
 {
     return get(&Data::usenetPaused);
@@ -2323,8 +2334,8 @@ bool Preferences::ed3kShareFiles() const { return get(&Data::ed3kShareFiles); }
 void Preferences::setEd3kShareFiles(bool val) { set(&Data::ed3kShareFiles, val); }
 bool Preferences::ed3kJointDownloads() const { return get(&Data::ed3kJointDownloads); }
 void Preferences::setEd3kJointDownloads(bool val) { set(&Data::ed3kJointDownloads, val); }
-bool Preferences::ed3kHoldBackPosts() const { return get(&Data::ed3kHoldBackPosts); }
-void Preferences::setEd3kHoldBackPosts(bool val) { set(&Data::ed3kHoldBackPosts, val); }
+bool Preferences::ed3kShareUsenetPosts() const { return get(&Data::ed3kShareUsenetPosts); }
+void Preferences::setEd3kShareUsenetPosts(bool val) { set(&Data::ed3kShareUsenetPosts, val); }
 
 QStringList Preferences::ed3kCreditRpc() const { return get(&Data::ed3kCreditRpc); }
 void Preferences::setEd3kCreditRpc(const QStringList& urls) { set(&Data::ed3kCreditRpc, urls); }
@@ -3565,6 +3576,7 @@ QCborMap Preferences::toIpcMap() const
     prefs.insert(QStringLiteral("usenetHealthMinPercent"),
                  static_cast<qint64>(usenetHealthMinPercent()));
     prefs.insert(QStringLiteral("usenetAutoAddPaused"), usenetAutoAddPaused());
+    prefs.insert(QStringLiteral("usenetMetaSelectedFileOnly"), usenetMetaSelectedFileOnly());
     // GUI writes it with SetUsenetPaused; REST through SetPreferences
     prefs.insert(QStringLiteral("usenetPaused"), usenetPaused());
     prefs.insert(QStringLiteral("usenetUseProxy"), usenetUseProxy());
@@ -3616,7 +3628,7 @@ QCborMap Preferences::toIpcMap() const
     prefs.insert(QStringLiteral("ed3kUdpPort"), static_cast<qint64>(ed3kUdpPort()));
     prefs.insert(QStringLiteral("ed3kShareFiles"), ed3kShareFiles());
     prefs.insert(QStringLiteral("ed3kJointDownloads"), ed3kJointDownloads());
-    prefs.insert(QStringLiteral("ed3kHoldBackPosts"), ed3kHoldBackPosts());
+    prefs.insert(QStringLiteral("ed3kShareUsenetPosts"), ed3kShareUsenetPosts());
     prefs.insert(QStringLiteral("ed3kCreditRpc"), ed3kCreditRpc().join(QLatin1Char(' ')));
     prefs.insert(QStringLiteral("ed3kChaintubeRpc"), ed3kChaintubeRpc().join(QLatin1Char(' ')));
     prefs.insert(QStringLiteral("ed3kExtOff"), ed3kExtOff().join(QLatin1Char(' ')));
@@ -3890,6 +3902,8 @@ void Preferences::updateFromCbor(const QCborMap& p)
     m_data->usenetEnabled             = p.value(QStringLiteral("usenetEnabled")).toBool();
     m_data->usenetRetryIntervalSeconds =
         int(p.value(QStringLiteral("usenetRetryIntervalSeconds")).toInteger(60));
+    m_data->usenetMetaSelectedFileOnly =
+        p.value(QStringLiteral("usenetMetaSelectedFileOnly")).toBool(false);
 
     // BitTorrent. Defaults for a key an older daemon does not send.
     {
@@ -3930,7 +3944,7 @@ void Preferences::updateFromCbor(const QCborMap& p)
         std::clamp<qint64>(p.value(QStringLiteral("ed3kUdpPort")).toInteger(0), 0, 65535));
     m_data->ed3kShareFiles = p.value(QStringLiteral("ed3kShareFiles")).toBool(true);
     m_data->ed3kJointDownloads = p.value(QStringLiteral("ed3kJointDownloads")).toBool(true);
-    m_data->ed3kHoldBackPosts = p.value(QStringLiteral("ed3kHoldBackPosts")).toBool(false);
+    m_data->ed3kShareUsenetPosts = p.value(QStringLiteral("ed3kShareUsenetPosts")).toBool(true);
     m_data->ed3kCreditRpc = rpcUrlList(p.value(QStringLiteral("ed3kCreditRpc")));
     m_data->ed3kChaintubeRpc = rpcUrlList(p.value(QStringLiteral("ed3kChaintubeRpc")));
     m_data->ed3kExtOff = rpcUrlList(p.value(QStringLiteral("ed3kExtOff")));
@@ -4942,6 +4956,8 @@ bool Preferences::load(const QString& filePath)
                 un["healthMinPercent"].as<int>(m_data->usenetHealthMinPercent), 0, 100);
             m_data->usenetAutoAddPaused =
                 un["autoAddPaused"].as<bool>(m_data->usenetAutoAddPaused);
+            m_data->usenetMetaSelectedFileOnly =
+                un["selectedFileOnly"].as<bool>(m_data->usenetMetaSelectedFileOnly);
             m_data->usenetPaused = un["paused"].as<bool>(m_data->usenetPaused);
             m_data->usenetUseProxy = un["useProxy"].as<bool>(m_data->usenetUseProxy);
             m_data->usenetSfvCheck = un["sfvCheck"].as<bool>(m_data->usenetSfvCheck);
@@ -5116,7 +5132,7 @@ bool Preferences::load(const QString& filePath)
             m_data->ed3kUdpPort = (port >= 0 && port <= 65535) ? static_cast<uint16>(port) : 0;
             m_data->ed3kShareFiles = e3["shareFiles"].as<bool>(m_data->ed3kShareFiles);
             m_data->ed3kJointDownloads = e3["jointDownloads"].as<bool>(m_data->ed3kJointDownloads);
-            m_data->ed3kHoldBackPosts = e3["holdBackPosts"].as<bool>(m_data->ed3kHoldBackPosts);
+            m_data->ed3kShareUsenetPosts = e3["shareUsenetPosts"].as<bool>(m_data->ed3kShareUsenetPosts);
             const auto urls = [](const YAML::Node& n) {
                 QStringList out;
                 if (n && n.IsSequence())
@@ -6269,6 +6285,7 @@ bool Preferences::saveImpl(const QString& filePath) const
     out << YAML::Key << "healthCheck" << YAML::Value << m_data->usenetHealthCheck;
     out << YAML::Key << "healthMinPercent" << YAML::Value << m_data->usenetHealthMinPercent;
     out << YAML::Key << "autoAddPaused" << YAML::Value << m_data->usenetAutoAddPaused;
+    out << YAML::Key << "selectedFileOnly" << YAML::Value << m_data->usenetMetaSelectedFileOnly;
     out << YAML::Key << "paused" << YAML::Value << m_data->usenetPaused;
     out << YAML::Key << "useProxy" << YAML::Value << m_data->usenetUseProxy;
     out << YAML::Key << "sfvCheck" << YAML::Value << m_data->usenetSfvCheck;
@@ -6373,7 +6390,7 @@ bool Preferences::saveImpl(const QString& filePath) const
     out << YAML::Key << "enabled" << YAML::Value << m_data->ed3kEnabled;
     out << YAML::Key << "shareFiles" << YAML::Value << m_data->ed3kShareFiles;
     out << YAML::Key << "jointDownloads" << YAML::Value << m_data->ed3kJointDownloads;
-    out << YAML::Key << "holdBackPosts" << YAML::Value << m_data->ed3kHoldBackPosts;
+    out << YAML::Key << "shareUsenetPosts" << YAML::Value << m_data->ed3kShareUsenetPosts;
     out << YAML::Key << "udpPort" << YAML::Value << static_cast<int>(m_data->ed3kUdpPort);
     out << YAML::Key << "lan" << YAML::Value << m_data->ed3kLan;
     out << YAML::Key << "sitePort" << YAML::Value << static_cast<int>(m_data->ed3kSitePort);

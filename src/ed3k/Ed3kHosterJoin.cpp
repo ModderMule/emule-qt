@@ -1,6 +1,7 @@
 #include "Ed3kHosterJoin.h"
 
 #include "Ed3kSession.h"
+#include "Ed3kStore.h"
 #include "utils/Log.h"
 
 #include <QDateTime>
@@ -12,6 +13,7 @@
 #include <QJsonObject>
 #include <QRegularExpression>
 #include <QPointer>
+#include <QRandomGenerator>
 #include <QSaveFile>
 #include <QThreadPool>
 #include <QUrl>
@@ -60,22 +62,23 @@ constexpr qint64 kAliasWaitMs = 2 * 3600 * 1000;
 /// ALIAS records of a root per scheme the core keeps (alias.md §3); links linkShare takes
 constexpr int kMaxAliasLinks = 4;
 constexpr int kMaxShareLinks = 8;
+/// an unfinished item in Temp: <key>.hoster.part and its state <key>.hoster.part.met (JSON)
+const QString kPartSuffix = QStringLiteral(".hoster.part");
+const QString kMetSuffix = QStringLiteral(".hoster.part.met");
+const QString kMetFormat = QStringLiteral("ed3k-hoster-met");
+constexpr int kMetVersion = 1;
+/// a link's file with no usable name
+const QString kNoName = QStringLiteral("download");
 
 qint64 nowMs()
 {
     return QDateTime::currentMSecsSinceEpoch();
 }
 
-/// A name a file system can hold, never a path.
-QString safeName(QString name)
+/// a new item's file name; its part file and .met in Temp
+QString newKey()
 {
-    name = QFileInfo(name).fileName();
-    static const QRegularExpression bad(QStringLiteral(R"([\\/:*?"<>|\x00-\x1f])"));
-    name.replace(bad, QStringLiteral("_"));
-    name = name.trimmed();
-    while (name.startsWith(QLatin1Char('.')))
-        name.remove(0, 1);
-    return name.isEmpty() ? QStringLiteral("download") : name.left(200);
+    return QStringLiteral("%1").arg(QRandomGenerator::system()->generate64(), 16, 16, QLatin1Char('0'));
 }
 
 /// The first @p len bytes of @p from into @p to (a new file); for the background.
@@ -126,6 +129,8 @@ struct Ed3kHosterJoin::Entry {
     QStringList sharedOut;               ///< what linkShare was given last
     std::uint64_t lastDone = 0;          ///< for the speed
     bool expandAfterCheck = false;
+    QString key;                         ///< unfinished: <key>.hoster.part(.met) in Temp
+    bool metDirty = false;               ///< the .met is to be written
 };
 
 Ed3kHosterJoin::Ed3kHosterJoin(Ed3kSession& session, const QString& configDir, QObject* parent)
@@ -159,15 +164,19 @@ void Ed3kHosterJoin::setResolver(Ed3kResolver* resolver)
         connect(m_resolver, &Ed3kResolver::taskEvent, this, &Ed3kHosterJoin::onResolverEvent);
 }
 
-void Ed3kHosterJoin::setConfig(const Ed3kHosterPrefs& prefs, const QString& tempDir, const QString& incomingDir)
+void Ed3kHosterJoin::setConfig(const Ed3kHosterPrefs& prefs, const QStringList& tempDirs, const QString& incomingDir)
 {
     const bool allowed = prefs.enabled != m_prefs.enabled;
     const bool publishChanged = prefs.publishLinks != m_prefs.publishLinks || prefs.recheckHours != m_prefs.recheckHours
                              || prefs.reportRecheckHours != m_prefs.reportRecheckHours;
     const bool accountsChanged = prefs.accounts != m_prefs.accounts;
     m_prefs = prefs;
-    m_tempDir = tempDir;
+    m_tempDirs.clear();
+    for (const QString& d : tempDirs)
+        if (!d.isEmpty() && !m_tempDirs.contains(d))
+            m_tempDirs << d;
     m_incomingDir = incomingDir;
+    scanTempDirs();   // .met files copied in meanwhile
     if (m_resolver)
         m_resolver->setAskPuzzles(prefs.askPuzzles);
     if (allowed && m_started) {
@@ -194,6 +203,9 @@ void Ed3kHosterJoin::start()
     if (m_started)
         return;
     beginStart();
+    // the resolver's scratch of the last run; nothing of it is used again
+    QDir(QFileInfo(workDir(0)).path()).removeRecursively();
+    scanTempDirs();
     if (auto* e = m_session.engine())
         (void)e->linkAllow(m_prefs.enabled);
     m_tick.start();
@@ -290,7 +302,7 @@ QList<quint32> Ed3kHosterJoin::addMirrored(const QList<QStringList>& files, cons
     if (packageId == 0 && !package.trimmed().isEmpty()) {
         // a folder name: "AC/DC" stays one name, not "DC"
         packageName = safeName(QString(package.trimmed()).replace(QLatin1Char('/'), QLatin1Char('_'))
-                                                         .replace(QLatin1Char('\\'), QLatin1Char('_')));
+                                                         .replace(QLatin1Char('\\'), QLatin1Char('_')), kNoName);
         packageId = m_nextPackageId++;
     }
 
@@ -317,10 +329,13 @@ QList<quint32> Ed3kHosterJoin::addMirrored(const QList<QStringList>& files, cons
         e->item.url = url;
         e->item.mirrors = urls;
         e->item.host = QUrl(url).host();
-        e->item.name = safeName(QUrl(url).fileName());
+        e->item.name = safeName(QUrl(url).fileName(), kNoName);
         e->item.added = nowMs();
         e->item.packageId = packageId;
         e->item.package = packageName;
+        e->key = newKey();
+        e->item.file = partPathFor(e->key);
+        e->metDirty = true;
         Entry& ref = *e;
         m_items.emplace(ref.item.id, std::move(e));
         ids << ref.item.id;
@@ -372,6 +387,8 @@ void Ed3kHosterJoin::remove(quint32 id, bool deleteFile)
     publishShared(*e);
     m_aliasPending.erase(id);
     release(*e, false);
+    if (!complete)
+        QFile::remove(metPathOf(*e));
     if (!complete || deleteFile) {
         QFile::remove(e->item.file);
         // a package folder goes with its last file (rmdir only takes an empty one)
@@ -537,6 +554,7 @@ void Ed3kHosterJoin::onFileBlock(const Download& d, const ev::Block& b)
         return;
     e->have.insert(b.offset);
     e->item.done += b.data.size();
+    touch(*e);
     count(&HosterCounters::peerBytes, b.data.size());
     checkComplete(*e);
 }
@@ -560,7 +578,7 @@ void Ed3kHosterJoin::onOtherEvent(const ffi::Event& event)
         // §4.1: name and size known, the rootless link is opened
         if (Entry* e = byLink(ck->link); e && !e->root && e->item.state == State::Checking) {
             if (!ck->name.empty())
-                e->item.name = safeName(QString::fromStdString(ck->name));
+                e->item.name = safeName(QString::fromStdString(ck->name), kNoName);
             if (ck->size)
                 e->item.size = *ck->size;
             askOpen(*e);
@@ -678,7 +696,7 @@ void Ed3kHosterJoin::setState(Entry& e, State s, Reason why, const QString& arg)
         if (const auto ic = itemCheck(e.item.url); ic && ic->status != LinkStatus::Checking)
             setCheck(e.item.url, *ic);
     changed(e);
-    scheduleSave(ownerOf(e.item.id));
+    touch(e);
 }
 
 void Ed3kHosterJoin::changed(const Entry& e)
@@ -822,16 +840,17 @@ void Ed3kHosterJoin::startRooted(Entry& e, const ffi::Root& root, std::uint64_t 
     e.item.verified = true;
     e.item.rootHex = hexOf(root.bytes);
     if (!name.isEmpty())
-        e.item.name = safeName(name);
+        e.item.name = safeName(name, kNoName);
     if (publisher)
         (void)eng->linkClaim(e.link, *publisher, true);
-    QDir().mkpath(workDir(e.item.id));
-    if (e.have.empty() || e.item.file.isEmpty()) {
-        e.have.clear();
+    if (e.item.file.isEmpty())
+        e.item.file = partPathFor(e.key);
+    QDir().mkpath(QFileInfo(e.item.file).path());
+    if (e.have.empty()) {
         e.item.done = 0;
-        e.item.file = QDir(workDir(e.item.id)).filePath(e.item.name + QStringLiteral(".part"));
         QFile::remove(e.item.file);
     }
+    touch(e);
     logInfo(QStringLiteral("%1 is known in ed3k, downloading from peers and the link").arg(e.item.host));
     openDownload(root, size, ownerOf(e.item.id), 0);
     askOpen(e);
@@ -848,9 +867,11 @@ void Ed3kHosterJoin::startRootless(Entry& e)
         return;
     }
     e.link = *link;
-    QDir().mkpath(workDir(e.item.id));
-    e.item.file = QDir(workDir(e.item.id)).filePath(e.item.name + QStringLiteral(".part"));
-    QFile::remove(e.item.file);
+    if (e.item.file.isEmpty())
+        e.item.file = partPathFor(e.key);
+    QDir().mkpath(QFileInfo(e.item.file).path());
+    QFile::remove(e.item.file);   // a rootless link starts over: the core's hash is not kept
+    touch(e);
     // the core gave back a link a links dialog checks: the item goes on from it
     if (const auto p = m_probes.find(*link); p != m_probes.end()) {
         if (p->second.pending) {
@@ -1070,7 +1091,7 @@ void Ed3kHosterJoin::onResolverEvent(Ed3kResolver::TaskId task, const ResolverEv
     case K::Found:
         if (e) {
             if (!ev.name.isEmpty() && !e->item.verified)
-                e->item.name = safeName(ev.name);
+                e->item.name = safeName(ev.name, kNoName);
             if (ev.size && !e->item.verified)
                 e->item.size = ev.size;
             changed(*e);
@@ -1366,6 +1387,7 @@ void Ed3kHosterJoin::onLinkBlock(std::uint64_t link, const ffi::Root& root, std:
         return;
     e->have.insert(offset);
     e->item.done += data.size();
+    touch(*e);
     count(&HosterCounters::hosterBytes, data.size());
     checkComplete(*e);
 }
@@ -1483,6 +1505,7 @@ void Ed3kHosterJoin::onLinkClaim(std::uint64_t link, const ffi::Root& root, bool
     e->item.verified = false;
     e->item.rootHex.clear();
     QFile::remove(e->item.file);
+    touch(*e);
     changed(*e);
 }
 
@@ -1512,7 +1535,7 @@ void Ed3kHosterJoin::onLinkVouched(std::uint64_t link, const ffi::Root& root)
         e->shared.append(l);
     if (!e->root)
         e->root = root;
-    scheduleSave(ownerOf(e->item.id));
+    touch(*e);
     publishShared(*e);
 }
 
@@ -1573,7 +1596,7 @@ void Ed3kHosterJoin::nextMirror(Entry& e)
     e.nextAskAt = 0;
     logInfo(QStringLiteral("trying mirror %1 at %2").arg(e.item.mirrorNo + 1).arg(e.item.host));
     begin(e);
-    scheduleSave(ownerOf(e.item.id));
+    touch(e);
 }
 
 bool Ed3kHosterJoin::tryPeerLink(Entry& e)
@@ -1648,6 +1671,7 @@ void Ed3kHosterJoin::finish(Entry& e)
         return;
     }
     QDir(workDir(e.item.id)).removeRecursively();
+    QFile::remove(metPathOf(e));
     e.item.file = to;
     e.item.done = e.item.size;
     logInfo(QStringLiteral("completed %1 from %2").arg(QFileInfo(to).fileName(), e.item.host));
@@ -2110,7 +2134,7 @@ void Ed3kHosterJoin::queueRechecks(qint64 now)
                 // checked now whether or not anyone can: the reports wait for the next turn
                 l.reporters.clear();
                 l.reportCheckAt = now;
-                scheduleSave(ownerOf(e.item.id));
+                touch(e);
             }
             if (!canCheck) {
                 // stale and nobody to ask: kept as unknown, asked again later
@@ -2188,7 +2212,7 @@ void Ed3kHosterJoin::onRechecked(quint32 item, const QString& url, LinkStatus st
             changed(*e);
         }
     }
-    scheduleSave(ownerOf(item));
+    touch(*e);
     publishShared(*e);
 }
 
@@ -2248,6 +2272,7 @@ bool Ed3kHosterJoin::reportDue(const SharedLink& l, qint64 now) const
 
 void Ed3kHosterJoin::load()
 {
+    // complete items; an unfinished one is in its .met in Temp (scanTempDirs)
     QFile f(itemsFile());
     if (!f.open(QIODevice::ReadOnly))
         return;
@@ -2255,59 +2280,23 @@ void Ed3kHosterJoin::load()
     for (const QJsonValue& v : list) {
         const QJsonObject o = v.toObject();
         auto e = std::make_unique<Entry>();
+        fromJson(o, *e);
         Item& it = e->item;
         it.id = quint32(o.value(QStringLiteral("id")).toInteger());
-        it.url = o.value(QStringLiteral("url")).toString();
-        if (it.id == 0 || it.url.isEmpty() || m_items.contains(it.id))
+        if (it.id == 0 || it.url.isEmpty() || it.state != State::Complete || m_items.contains(it.id))
             continue;
-        it.host = o.value(QStringLiteral("host")).toString();
-        it.name = safeName(o.value(QStringLiteral("name")).toString());
-        it.size = std::uint64_t(o.value(QStringLiteral("size")).toInteger());
         it.file = o.value(QStringLiteral("file")).toString();
-        it.added = o.value(QStringLiteral("added")).toInteger();
-        it.rootHex = o.value(QStringLiteral("root")).toString();
-        it.state = State(std::clamp<qint64>(o.value(QStringLiteral("state")).toInteger(), 0, int(State::Failed)));
-        it.reason = Reason(std::clamp<qint64>(o.value(QStringLiteral("reason")).toInteger(), 0, int(Reason::LinkOffline)));
-        for (const QJsonValue& m : o.value(QStringLiteral("mirrors")).toArray())
-            if (const QString url = m.toString(); !url.isEmpty())
-                it.mirrors << url;
-        it.mirrorNo = int(o.value(QStringLiteral("mirrorNo")).toInteger());
-        it.reasonArg = o.value(QStringLiteral("reasonArg")).toString();
-        it.packageId = quint32(o.value(QStringLiteral("pkg")).toInteger());
-        if (it.packageId != 0)
-            it.package = safeName(o.value(QStringLiteral("pkgName")).toString());
+        it.packageId = it.package.isEmpty() ? 0 : quint32(o.value(QStringLiteral("pkg")).toInteger());
+        if (it.packageId == 0)
+            it.package.clear();
         m_nextPackageId = std::max(m_nextPackageId, it.packageId + 1);
-        for (const QJsonValue& lv : o.value(QStringLiteral("links")).toArray()) {
-            const QJsonObject lo = lv.toObject();
-            SharedLink l;
-            l.url = lo.value(QStringLiteral("url")).toString();
-            l.checkedAt = lo.value(QStringLiteral("checkedAt")).toInteger();
-            l.offline = lo.value(QStringLiteral("offline")).toBool();
-            l.reportCheckAt = lo.value(QStringLiteral("reportCheckAt")).toInteger();
-            if (!l.url.isEmpty())
-                e->shared << l;
-        }
         // before the links list: the item's own link, vouched for now
         if (e->shared.isEmpty() && o.value(QStringLiteral("vouched")).toBool())
             e->shared << SharedLink{it.url, nowMs()};
-        if (it.state == State::Complete) {
-            it.done = it.size;
-            e->root = rootFromHex(it.rootHex);
-            it.verified = e->root.has_value();
-        } else if (const auto root = rootFromHex(it.rootHex); root && it.size > 0 && QFileInfo(it.file).isFile()) {
-            // a rooted item goes on from its verified blocks: [first offset, count] runs
-            e->root = root;
-            it.verified = true;
-            for (const QJsonValue& run : o.value(QStringLiteral("have")).toArray()) {
-                const QJsonArray r = run.toArray();
-                const auto first = std::uint64_t(r.at(0).toInteger());
-                const auto count = std::uint64_t(r.at(1).toInteger());
-                for (std::uint64_t i = 0; i < count && first + i * kBlock < it.size; ++i)
-                    e->have.insert(first + i * kBlock);
-            }
-            for (const std::uint64_t off : e->have)
-                it.done += std::min<std::uint64_t>(kBlock, it.size - off);
-        }
+        e->have.clear();
+        it.done = it.size;
+        e->root = rootFromHex(it.rootHex);
+        it.verified = e->root.has_value();
         m_nextId = std::max(m_nextId, it.id + 1);
         m_items.emplace(it.id, std::move(e));
     }
@@ -2318,41 +2307,13 @@ void Ed3kHosterJoin::save()
     QJsonArray list;
     for (const auto& [id, e] : m_items) {
         const Item& it = e->item;
-        QJsonArray have;
-        for (auto b = e->have.begin(); b != e->have.end();) {
-            const std::uint64_t first = *b;
-            std::uint64_t count = 0;
-            while (b != e->have.end() && *b == first + count * kBlock) {
-                ++count;
-                ++b;
-            }
-            have.append(QJsonArray{qint64(first), qint64(count)});
-        }
-        QJsonArray links;
-        for (const SharedLink& l : e->shared)
-            links.append(QJsonObject{{QStringLiteral("url"), l.url},
-                                     {QStringLiteral("checkedAt"), l.checkedAt},
-                                     {QStringLiteral("offline"), l.offline},
-                                     {QStringLiteral("reportCheckAt"), l.reportCheckAt}});
-        QJsonObject o{{QStringLiteral("id"), qint64(it.id)},
-                                {QStringLiteral("links"), links},
-                                {QStringLiteral("have"), have},
-                                {QStringLiteral("url"), it.url},
-                                {QStringLiteral("host"), it.host},
-                                {QStringLiteral("name"), it.name},
-                                {QStringLiteral("size"), qint64(it.size)},
-                                {QStringLiteral("file"), it.file},
-                                {QStringLiteral("added"), it.added},
-                                {QStringLiteral("root"), it.rootHex},
-                                {QStringLiteral("state"), int(it.state)},
-                                {QStringLiteral("reason"), int(it.reason)},
-                                {QStringLiteral("reasonArg"), it.reasonArg},
-                                {QStringLiteral("mirrors"), QJsonArray::fromStringList(it.mirrors)},
-                                {QStringLiteral("mirrorNo"), it.mirrorNo}};
-        if (it.packageId != 0) {
+        if (it.state != State::Complete)
+            continue;
+        QJsonObject o = toJson(*e);
+        o.insert(QStringLiteral("id"), qint64(it.id));
+        o.insert(QStringLiteral("file"), it.file);
+        if (it.packageId != 0)
             o.insert(QStringLiteral("pkg"), qint64(it.packageId));
-            o.insert(QStringLiteral("pkgName"), it.package);
-        }
         list.append(o);
     }
     QDir().mkpath(QFileInfo(itemsFile()).absolutePath());
@@ -2361,6 +2322,9 @@ void Ed3kHosterJoin::save()
         f.write(QJsonDocument(list).toJson(QJsonDocument::Indented));
         f.commit();
     }
+    for (auto& [id, e] : m_items)
+        if (e->metDirty && e->item.state != State::Complete)
+            writeMet(*e);
 }
 
 QString Ed3kHosterJoin::itemsFile() const
@@ -2370,7 +2334,7 @@ QString Ed3kHosterJoin::itemsFile() const
 
 QString Ed3kHosterJoin::workDir(quint32 id) const
 {
-    return QDir(m_tempDir.isEmpty() ? joinDir(QStringLiteral("hoster")) : m_tempDir)
+    return QDir(m_tempDirs.isEmpty() ? joinDir(QStringLiteral("hoster")) : m_tempDirs.first())
         .filePath(QStringLiteral("ed3k-hoster/%1").arg(id));
 }
 
@@ -2393,6 +2357,189 @@ void Ed3kHosterJoin::dropProbe(const QString& url)
             ++it;
         }
     }
+}
+
+void Ed3kHosterJoin::touch(Entry& e)
+{
+    e.metDirty = true;
+    scheduleSave(ownerOf(e.item.id));
+}
+
+void Ed3kHosterJoin::scanTempDirs()
+{
+    for (const QString& metPath : metFilesIn(m_tempDirs, kMetSuffix)) {
+        const QString key = QFileInfo(metPath).fileName().chopped(kMetSuffix.size());
+        if (std::ranges::any_of(m_items, [&key](const auto& p) { return p.second->key == key; }))
+            continue;
+        auto e = readMet(metPath);
+        if (!e) {
+            logWarning(QStringLiteral("%1 does not parse: left alone").arg(metPath));
+            continue;
+        }
+        e->key = key;
+        Item& it = e->item;
+        if (const auto same = std::ranges::find_if(m_items, [&it](const auto& p) {
+                return p.second->item.state != State::Failed && p.second->item.url == it.url;
+            }); same != m_items.end()) {
+            logWarning(QStringLiteral("%1: the link is an item already (%2)").arg(metPath, same->second->item.file));
+            continue;
+        }
+        if (m_items.size() >= kMaxItems)
+            break;
+        it.id = m_nextId++;
+        // a package by its name: the one of that name here, else a new one
+        if (!it.package.isEmpty()) {
+            const auto pkg = std::ranges::find_if(m_items, [&it](const auto& p) {
+                return p.second->item.packageId != 0 && p.second->item.package == it.package;
+            });
+            it.packageId = pkg != m_items.end() ? pkg->second->item.packageId : m_nextPackageId++;
+        }
+        Entry& ref = *e;
+        m_items.emplace(it.id, std::move(e));
+        logInfo(QStringLiteral("%1 taken up from %2 (%3 of %4 B)")
+                    .arg(ref.item.name, metPath).arg(ref.item.done).arg(ref.item.size));
+        changed(ref);
+        switch (ref.item.state) {
+        case State::Paused:
+        case State::Gone:
+        case State::Failed:
+        case State::NoResolver:
+            break;
+        default:
+            if (m_started)
+                begin(ref);
+            else
+                setState(ref, State::Queued, Reason::WaitingForNode);
+        }
+        if (m_started)
+            pumpSession();
+    }
+}
+
+QJsonObject Ed3kHosterJoin::toJson(const Entry& e) const
+{
+    const Item& it = e.item;
+    QJsonArray have;
+    for (auto b = e.have.begin(); b != e.have.end();) {
+        const std::uint64_t first = *b;
+        std::uint64_t count = 0;
+        while (b != e.have.end() && *b == first + count * kBlock) {
+            ++count;
+            ++b;
+        }
+        have.append(QJsonArray{qint64(first), qint64(count)});
+    }
+    QJsonArray links;
+    for (const SharedLink& l : e.shared)
+        links.append(QJsonObject{{QStringLiteral("url"), l.url},
+                                 {QStringLiteral("checkedAt"), l.checkedAt},
+                                 {QStringLiteral("offline"), l.offline},
+                                 {QStringLiteral("reportCheckAt"), l.reportCheckAt}});
+    QJsonObject o{{QStringLiteral("links"), links},
+                  {QStringLiteral("have"), have},
+                  {QStringLiteral("url"), it.url},
+                  {QStringLiteral("host"), it.host},
+                  {QStringLiteral("name"), it.name},
+                  {QStringLiteral("size"), qint64(it.size)},
+                  {QStringLiteral("added"), it.added},
+                  {QStringLiteral("root"), it.rootHex},
+                  {QStringLiteral("state"), int(it.state)},
+                  {QStringLiteral("reason"), int(it.reason)},
+                  {QStringLiteral("reasonArg"), it.reasonArg},
+                  {QStringLiteral("mirrors"), QJsonArray::fromStringList(it.mirrors)},
+                  {QStringLiteral("mirrorNo"), it.mirrorNo}};
+    if (it.packageId != 0)
+        o.insert(QStringLiteral("pkgName"), it.package);
+    return o;
+}
+
+void Ed3kHosterJoin::fromJson(const QJsonObject& o, Entry& e) const
+{
+    Item& it = e.item;
+    it.url = o.value(QStringLiteral("url")).toString();
+    it.host = o.value(QStringLiteral("host")).toString();
+    it.name = safeName(o.value(QStringLiteral("name")).toString(), kNoName);
+    it.size = std::uint64_t(o.value(QStringLiteral("size")).toInteger());
+    it.added = o.value(QStringLiteral("added")).toInteger();
+    it.rootHex = o.value(QStringLiteral("root")).toString();
+    it.state = State(std::clamp<qint64>(o.value(QStringLiteral("state")).toInteger(), 0, int(State::Failed)));
+    it.reason = Reason(std::clamp<qint64>(o.value(QStringLiteral("reason")).toInteger(), 0, int(Reason::LinkOffline)));
+    it.reasonArg = o.value(QStringLiteral("reasonArg")).toString();
+    for (const QJsonValue& m : o.value(QStringLiteral("mirrors")).toArray())
+        if (const QString url = m.toString(); !url.isEmpty())
+            it.mirrors << url;
+    it.mirrorNo = int(o.value(QStringLiteral("mirrorNo")).toInteger());
+    if (const QString pkg = o.value(QStringLiteral("pkgName")).toString(); !pkg.isEmpty())
+        it.package = safeName(pkg, kNoName);
+    for (const QJsonValue& lv : o.value(QStringLiteral("links")).toArray()) {
+        const QJsonObject lo = lv.toObject();
+        SharedLink l;
+        l.url = lo.value(QStringLiteral("url")).toString();
+        l.checkedAt = lo.value(QStringLiteral("checkedAt")).toInteger();
+        l.offline = lo.value(QStringLiteral("offline")).toBool();
+        l.reportCheckAt = lo.value(QStringLiteral("reportCheckAt")).toInteger();
+        if (!l.url.isEmpty())
+            e.shared << l;
+    }
+    // verified blocks: [first offset, count] runs
+    for (const QJsonValue& run : o.value(QStringLiteral("have")).toArray()) {
+        const QJsonArray r = run.toArray();
+        const auto first = std::uint64_t(r.at(0).toInteger());
+        const auto count = std::uint64_t(r.at(1).toInteger());
+        for (std::uint64_t i = 0; i < count && first % kBlock == 0 && first + i * kBlock < it.size; ++i)
+            e.have.insert(first + i * kBlock);
+    }
+}
+
+std::unique_ptr<Ed3kHosterJoin::Entry> Ed3kHosterJoin::readMet(const QString& metPath) const
+{
+    const QByteArray raw = readBlob(metPath);
+    const QJsonObject o = QJsonDocument::fromJson(raw).object();
+    if (o.value(QStringLiteral("format")).toString() != kMetFormat || o.value(QStringLiteral("v")).toInt() != kMetVersion)
+        return nullptr;
+    auto e = std::make_unique<Entry>();
+    fromJson(o, *e);
+    Item& it = e->item;
+    if (it.url.isEmpty() || it.state == State::Complete)
+        return nullptr;
+    it.file = metPath.chopped(4);   // the part file is the one beside it
+    // a rooted item goes on from its verified blocks; else it starts over
+    if (const auto root = rootFromHex(it.rootHex); root && it.size > 0 && QFileInfo(it.file).isFile()) {
+        e->root = root;
+        it.verified = true;
+        for (const std::uint64_t off : e->have)
+            it.done += std::min<std::uint64_t>(kBlock, it.size - off);
+    } else {
+        if (!e->have.empty())
+            logWarning(QStringLiteral("%1: no part file beside it, the download starts over").arg(metPath));
+        e->have.clear();
+    }
+    return e;
+}
+
+void Ed3kHosterJoin::writeMet(Entry& e)
+{
+    if (e.item.file.isEmpty())
+        return;
+    QJsonObject o = toJson(e);
+    o.insert(QStringLiteral("format"), kMetFormat);
+    o.insert(QStringLiteral("v"), kMetVersion);
+    const QString path = metPathOf(e);
+    QDir().mkpath(QFileInfo(path).path());
+    if (writeBlob(path, spanOf(QJsonDocument(o).toJson(QJsonDocument::Indented))))
+        e.metDirty = false;
+    else
+        logWarning(QStringLiteral("cannot write %1").arg(path));
+}
+
+QString Ed3kHosterJoin::partPathFor(const QString& key) const
+{
+    return QDir(m_tempDirs.isEmpty() ? joinDir(QStringLiteral("hoster")) : m_tempDirs.first()).filePath(key + kPartSuffix);
+}
+
+QString Ed3kHosterJoin::metPathOf(const Entry& e)
+{
+    return e.item.file + QStringLiteral(".met");
 }
 
 } // namespace eMule::ed3k

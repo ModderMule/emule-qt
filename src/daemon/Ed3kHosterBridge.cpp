@@ -351,7 +351,8 @@ QCborMap statusToCbor()
     if (s_resolver)
         out.insert(QStringLiteral("resolver"), QCborMap{{QStringLiteral("available"), s_resolver->available()},
                                                         {QStringLiteral("reason"), s_resolver->unavailableReason()},
-                                                        {QStringLiteral("description"), s_resolver->description()}});
+                                                        {QStringLiteral("description"), s_resolver->description()},
+                                                        {QStringLiteral("version"), s_resolver->engineVersion()}});
 #ifdef EMULE_HAVE_HOSTER_JD
     if (s_java) {
         QCborMap j{{QStringLiteral("state"), int(s_java->state())},

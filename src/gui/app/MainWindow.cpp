@@ -460,8 +460,17 @@ void MainWindow::showOptionsDialog(int page)
     const bool hadPartDetail = thePrefs.showPartProgressDetail();
     const bool hadActiveBold = thePrefs.showActiveDownloadsBold();
     const int hadDepth3D = thePrefs.depth3D();
+    const bool hadTorrents = !isTabHidden(TabTorrents);
+    const bool hadHoster = !isTabHidden(TabHoster);
 
     dlg.exec();
+
+    // a feature switched on brings its button back, even one removed from a customized toolbar
+    bool toolbarChanged = false;
+    if (!hadTorrents && !isTabHidden(TabTorrents))
+        toolbarChanged |= restoreToolbarButton(ToolbarButtonId::Torrents);
+    if (!hadHoster && !isTabHidden(TabHoster))
+        toolbarChanged |= restoreToolbarButton(ToolbarButtonId::Hoster);
 
     // Progress bars read the prefs at paint; paused rows get no push to repaint them
     if (thePrefs.showDwlPercentage() != hadDwlPercentage
@@ -470,8 +479,8 @@ void MainWindow::showOptionsDialog(int page)
         || thePrefs.depth3D() != hadDepth3D)
         update();
 
-    // Rebuild toolbar if speed graph visibility changed
-    if (thePrefs.showSpeedGraph() != hadSpeedGraph)
+    // Rebuild toolbar if speed graph visibility or the button order changed
+    if (toolbarChanged || thePrefs.showSpeedGraph() != hadSpeedGraph)
         rebuildToolbar();
     else if (m_speedGraph)
         m_speedGraph->setTimeRangeMinutes(
@@ -590,11 +599,13 @@ void MainWindow::setNetworkBlocked(bool blocked, const QString& reason)
     m_netBlockReason = reason;
 }
 
-void MainWindow::setKadStatus(bool running, bool kadConnected, bool firewalled)
+void MainWindow::setKadStatus(bool running, bool kadConnected, bool firewalled,
+                              bool firewalledVerified)
 {
     m_kadRunning = running;
     m_kadConnected = kadConnected;
     m_kadFirewalled = firewalled;
+    m_kadFirewalledVerified = firewalledVerified;
     if (m_transferPanel)
         m_transferPanel->setKadStatus(running, kadConnected);
 
@@ -2117,8 +2128,6 @@ void MainWindow::setupPages()
     // Tab 10: Hoster downloads (hoster.md)
     m_hosterPanel = new HosterPanel(this);
     addPage(m_hosterPanel);
-    connect(m_hosterPanel, &HosterPanel::optionsRequested, this,
-            [this] { showOptionsDialog(OptionsDialog::PageEd3kHoster); });
     connect(m_hosterPanel->addLinksAction(), &QAction::triggered, this,
             [this] { switchToTab(TabHoster); });
 #endif
@@ -2499,7 +2508,9 @@ bool MainWindow::lowIdHintDue() const
 {
     return m_firstStartWizardAllowed && !m_lowIdHintShown && !theUiState.lowIdHintDisabled()
         && theUiState.startCount() >= 3
-        && m_ed2kConnected && m_ed2kLowID && m_kadConnected && m_kadFirewalled;
+        && m_kadConnected && m_kadFirewalled
+        // eD2K Low ID, or no server and Kad's firewall check came back negative
+        && (m_ed2kConnected ? m_ed2kLowID : m_kadFirewalledVerified);
 }
 
 void MainWindow::scheduleLowIdHint()
@@ -2526,16 +2537,27 @@ void MainWindow::scheduleLowIdHint()
 void MainWindow::showLowIdHint()
 {
     m_lowIdHintShown = true;
+    const QString cause = m_ed2kConnected
+        ? tr("Other clients cannot connect to you: eD2K gives you a Low ID and Kad "
+             "reports you as firewalled.")
+        : tr("Other clients cannot connect to you: Kad's firewall check reports you "
+             "as firewalled.");
     QMessageBox box(QMessageBox::Information, tr("Low ID"),
-                    tr("Other clients cannot connect to you: eD2K gives you a Low ID and Kad "
-                       "reports you as firewalled.\n\n"
-                       "You get fewer sources and slower downloads, and two Low ID clients "
-                       "can rarely exchange data. Usually your router or firewall does not "
-                       "forward your ports. UPnP or a port forwarding rule in your router "
-                       "fixes it in most cases."),
+                    cause + QStringLiteral("\n\n")
+                        + tr("You get fewer sources and slower downloads, and two Low ID "
+                             "clients can rarely exchange data. Usually your router or "
+                             "firewall does not forward your ports. UPnP or a port "
+                             "forwarding rule in your router fixes it in most cases."),
                     QMessageBox::Close, this);
+    // native macOS alert closes on every button: keep the Qt box so More Info stays open
+    box.setOption(QMessageBox::Option::DontUseNativeDialog);
     auto* settingsBtn = box.addButton(tr("Open Connection Settings"), QMessageBox::AcceptRole);
     auto* infoBtn = box.addButton(tr("More Info"), QMessageBox::HelpRole);
+    // website button keeps the box open: drop the button box's close hook
+    QObject::disconnect(infoBtn, &QAbstractButton::clicked, nullptr, nullptr);
+    connect(infoBtn, &QAbstractButton::clicked, &box, [] {
+        QDesktopServices::openUrl(QUrl(QString(kWebsiteUrl) + QStringLiteral("/help/low-id/")));
+    });
     box.setDefaultButton(settingsBtn);
     auto* dontShow = new QCheckBox(tr("Don't show this again"), &box);
     box.setCheckBox(dontShow);
@@ -2545,8 +2567,6 @@ void MainWindow::showLowIdHint()
         theUiState.setLowIdHintDisabled(true);
     if (box.clickedButton() == settingsBtn)
         showOptionsDialog(OptionsDialog::PageConnection);
-    else if (box.clickedButton() == infoBtn)
-        QDesktopServices::openUrl(QUrl(QString(kWebsiteUrl) + QStringLiteral("/help/low-id/")));
 }
 
 bool MainWindow::isTabHidden(int tab)
@@ -2562,6 +2582,30 @@ bool MainWindow::isTabHidden(int tab)
 #endif
     }
     return false;
+}
+
+bool MainWindow::restoreToolbarButton(ToolbarButtonId id)
+{
+    if (!findButtonDef(id))
+        return false;   // not in this build
+    QList<int> order = theUiState.toolbarButtonOrder();
+    if (order.isEmpty() || order.contains(int(id)))
+        return false;   // default order or already there
+    // after its feature neighbours (Usenet, Torrents), else before Statistics, else at the end
+    qsizetype pos = -1;
+    for (const auto anchor : {ToolbarButtonId::Usenet, ToolbarButtonId::Torrents}) {
+        if (anchor == id)
+            break;
+        if (const qsizetype i = order.indexOf(int(anchor)); i >= 0)
+            pos = i + 1;
+    }
+    if (pos < 0)
+        pos = order.indexOf(int(ToolbarButtonId::Statistics));
+    if (pos < 0)
+        pos = order.size();
+    order.insert(pos, int(id));
+    theUiState.setToolbarButtonOrder(order);
+    return true;
 }
 
 } // namespace eMule

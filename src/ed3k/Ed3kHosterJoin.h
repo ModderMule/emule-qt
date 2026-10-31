@@ -18,7 +18,9 @@
 ///
 /// Links peers name (event::Links) are used for roots this join downloads when the user
 /// allows it. Everything runs on the daemon thread; the file reads on the session's pool.
-/// The items are saved in Config/ed3k/hoster/items.json; account data never is.
+/// An unfinished item lives in Temp: <key>.hoster.part and <key>.hoster.part.met (its state,
+/// JSON); both copied into any temp dir of another node carry the download over. Complete items
+/// are saved in Config/ed3k/hoster/items.json; account data never is.
 
 #include "Ed3kJoinBase.h"
 #include "Ed3kResolver.h"
@@ -27,6 +29,7 @@
 
 #include <QElapsedTimer>
 #include <QHash>
+#include <QJsonObject>
 #include <QList>
 #include <QPointer>
 #include <QString>
@@ -156,8 +159,13 @@ public:
     /// nullptr: no resolver (EMULE_HOSTER_JD off, or none yet); every ask is NO_RESOLVER.
     void setResolver(Ed3kResolver* resolver);
     [[nodiscard]] Ed3kResolver* resolver() const { return m_resolver; }
-    /// The user's prefs; @p tempDir: parts and the resolver's scratch; @p incomingDir: done files.
-    void setConfig(const Ed3kHosterPrefs& prefs, const QString& tempDir, const QString& incomingDir);
+    /// The user's prefs; @p tempDirs: parts in the first, .met files taken up from all, the
+    /// resolver's scratch in the first; @p incomingDir: done files.
+    void setConfig(const Ed3kHosterPrefs& prefs, const QStringList& tempDirs, const QString& incomingDir);
+    void setConfig(const Ed3kHosterPrefs& prefs, const QString& tempDir, const QString& incomingDir)
+    {
+        setConfig(prefs, tempDir.isEmpty() ? QStringList{} : QStringList{tempDir}, incomingDir);
+    }
     /// Statistics' session counters; null: not counted (tests). Same thread as the join.
     void setCounters(HosterCounters* counters) { m_counters = counters; }
 
@@ -362,13 +370,25 @@ private:
     void onTick();
     void load();
     void save();
+    /// The .met of @p e is to be written (debounced).
+    void touch(Entry& e);
+    /// Items of .met files in the temp dirs not known yet (copied in) are taken up.
+    void scanTempDirs();
+    [[nodiscard]] QJsonObject toJson(const Entry& e) const;
+    /// Fields toJson() wrote; id, file and package id are the caller's.
+    void fromJson(const QJsonObject& o, Entry& e) const;
+    [[nodiscard]] std::unique_ptr<Entry> readMet(const QString& metPath) const;
+    void writeMet(Entry& e);
+    /// The part file of a new item: <first temp dir>/<key>.hoster.part.
+    [[nodiscard]] QString partPathFor(const QString& key) const;
+    [[nodiscard]] static QString metPathOf(const Entry& e);
     void count(uint64 HosterCounters::* field, uint64 n = 1);
     [[nodiscard]] QString itemsFile() const;
     [[nodiscard]] QString workDir(quint32 id) const;
 
     QPointer<Ed3kResolver> m_resolver;
     Ed3kHosterPrefs m_prefs;
-    QString m_tempDir;
+    QStringList m_tempDirs;
     QString m_incomingDir;
     std::map<quint32, std::unique_ptr<Entry>> m_items;
     quint32 m_nextId = 1;

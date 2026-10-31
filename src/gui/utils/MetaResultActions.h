@@ -23,6 +23,7 @@
 #include <QString>
 
 #include <functional>
+#include <optional>
 
 class QWidget;
 
@@ -43,6 +44,10 @@ public:
         int kind = 0;   ///< enodemeta::Kind
         QCborMap ref;   ///< SearchResultRow::metaRef(), for a row whose search is gone
         QString magnet;
+        /// NZB: hashes of the other picked rows of the same NZB (DownloadMetaResult field 7)
+        QStringList siblingHashes;
+        /// NZB: files unchecked in the Details window; nullopt = not chosen there
+        std::optional<QList<int>> unchecked;
 
         [[nodiscard]] bool isNzb() const { return kind == 3; }
         [[nodiscard]] bool isContainer() const { return kind == 6; }
@@ -50,9 +55,13 @@ public:
 
     MetaResultActions(IpcClient* ipc, QWidget* parentWidget);
 
-    /// Queue Usenet rows in eMuleQt's Usenet downloader.
+    /// Queue Usenet rows in eMuleQt's Usenet downloader: one request per NZB,
+    /// its other picked rows as siblings (usenetMetaSelectedFileOnly keeps those files).
     void downloadUsenet(quint32 searchID, const QList<Row>& rows, int category,
                         QPointer<SearchResultsModel> model);
+
+    /// Download pressed in a Details window; @p unchecked as downloadRequested() gives it.
+    using DetailsDownload = std::function<void(const QList<int>& unchecked)>;
 
     /// Save the .torrent/.nzb/.dlc behind @p rows: a file dialog for one, a folder for several.
     void saveMetaFiles(quint32 searchID, const QList<Row>& rows);
@@ -78,11 +87,11 @@ public:
     /// and parses the file, a MetaResultDetailDialog shows it. Its Download runs
     /// @p onDownload; the daemon still has the file then.
     void showDetails(quint32 searchID, const Row& row, const MetaResultDetailDialog::RowInfo& info,
-                     std::function<void()> onDownload);
+                     DetailsDownload onDownload);
 
     /// The same for an indexer row (InspectIndexerResult).
     void showIndexerDetails(quint32 searchID, const QString& resultId,
-                            const MetaResultDetailDialog::RowInfo& info, std::function<void()> onDownload);
+                            const MetaResultDetailDialog::RowInfo& info, DetailsDownload onDownload);
 
     /// Account status / log out for a server (server list).
     void manageAccount(const QString& serverAddr, const QString& serverName);
@@ -110,7 +119,7 @@ private:
     void warn(const QString& text);
     /// A Details dialog, shown, its Download wired to @p onDownload.
     MetaResultDetailDialog* openDetails(const MetaResultDetailDialog::RowInfo& info,
-                                        std::function<void()> onDownload);
+                                        DetailsDownload onDownload);
 
     IpcClient* m_ipc;
     QPointer<QWidget> m_parent;

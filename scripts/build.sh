@@ -3,12 +3,13 @@
 # build.sh — build eMule Qt
 #
 # Usage:
-#   ./scripts/build.sh [clean] [bundle] [build-dir]
+#   ./scripts/build.sh [clean] [bundle] [--target NAME]... [build-dir]
 #
-#   clean       Remove build directory before building
-#   bundle      Run platform-specific bundling after build (e.g. macdeployqt)
-#   deploy-qt   Bundle Qt libraries (Linux only, requires bundle)
-#   build-dir   Path to the CMake build directory (default: ./build)
+#   clean        Remove build directory before building
+#   bundle       Run platform-specific bundling after build (e.g. macdeployqt)
+#   deploy-qt    Bundle Qt libraries (Linux only, requires bundle)
+#   --target N   Build only target N (repeatable); default builds all, tests too
+#   build-dir    Path to the CMake build directory (default: ./build)
 # ---------------------------------------------------------------------------
 
 set -euo pipefail
@@ -20,14 +21,21 @@ CLEAN=false
 BUNDLE=false
 DEPLOY_QT=false
 BUILD_DIR=""
+TARGETS=()
 
-for arg in "$@"; do
+while [ $# -gt 0 ]; do
+    arg="$1"
+    shift
     if [ "$arg" = "clean" ]; then
         CLEAN=true
     elif [ "$arg" = "bundle" ]; then
         BUNDLE=true
     elif [ "$arg" = "deploy-qt" ]; then
         DEPLOY_QT=true
+    elif [ "$arg" = "--target" ]; then
+        [ $# -gt 0 ] || { echo "--target needs a name" >&2; exit 1; }
+        TARGETS+=("$1")
+        shift
     elif [ -z "$BUILD_DIR" ]; then
         BUILD_DIR="$arg"
     fi
@@ -47,8 +55,14 @@ fi
 echo "Configuring..."
 cmake -S "$PROJECT_DIR" -B "$BUILD_DIR" -DCMAKE_BUILD_TYPE=Release -DEMULE_BITTORRENT=ON -DEMULE_HOSTER_JD=ON
 
-echo "Building..."
-cmake --build "$BUILD_DIR" --parallel "$(nproc 2>/dev/null || sysctl -n hw.ncpu)"
+TARGET_ARGS=()
+if [ ${#TARGETS[@]} -gt 0 ]; then
+    TARGET_ARGS=(--target "${TARGETS[@]}")
+    echo "Building targets: ${TARGETS[*]}"
+else
+    echo "Building..."
+fi
+cmake --build "$BUILD_DIR" --parallel "$(nproc 2>/dev/null || sysctl -n hw.ncpu)" ${TARGET_ARGS[@]+"${TARGET_ARGS[@]}"}
 
 echo "Build complete."
 

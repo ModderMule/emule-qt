@@ -97,6 +97,8 @@ public:
     [[nodiscard]] virtual QString unavailableReason() const = 0;
     /// The plugin set, e.g. "JDownloader r53779, 3528 hosters"; empty before the first start.
     [[nodiscard]] virtual QString description() const = 0;
+    /// The plugin engine's version, e.g. "r53779", known without a start; empty: none installed
+    [[nodiscard]] virtual QString engineVersion() const { return {}; }
 
     /// Which plugin takes @p url, without network access.
     virtual TaskId match(const QString& url) = 0;

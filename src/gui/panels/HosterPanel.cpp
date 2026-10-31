@@ -139,9 +139,7 @@ HosterPanel::HosterPanel(QWidget* parent)
     m_statusLabel = new QLabel(this);
     bar->addWidget(m_statusLabel, 1);
     auto* addBtn = new QPushButton(tr("Add links..."), this);
-    auto* optBtn = new QPushButton(tr("Options..."), this);
     bar->addWidget(addBtn);
-    bar->addWidget(optBtn);
     layout->addLayout(bar);
 
     m_tree = new QTreeWidget(this);
@@ -154,15 +152,16 @@ HosterPanel::HosterPanel(QWidget* parent)
     m_tree->sortByColumn(ColName, Qt::AscendingOrder);
     m_tree->setSelectionMode(QAbstractItemView::ExtendedSelection);
     m_tree->setContextMenuPolicy(Qt::CustomContextMenu);
-    m_tree->header()->setStretchLastSection(false);
-    m_tree->header()->setSectionResizeMode(ColName, QHeaderView::Stretch);
+    m_tree->header()->resizeSection(ColName, 320);
     layout->addWidget(m_tree, 1);
     theUiState.bindHeaderView(m_tree->header(), QStringLiteral("hosterList"));
+    // After the restore: an older saved state pinned the name column to Stretch
+    m_tree->header()->setSectionResizeMode(QHeaderView::Interactive);
+    m_tree->header()->setStretchLastSection(true);
 
     m_addAction = new QAction(menuIcon("Hoster.ico"), tr("Add hoster links..."), this);
     connect(m_addAction, &QAction::triggered, this, [this] { promptAddLinks(); });
     connect(addBtn, &QPushButton::clicked, this, [this] { promptAddLinks(); });
-    connect(optBtn, &QPushButton::clicked, this, &HosterPanel::optionsRequested);
     connect(m_tree, &QTreeWidget::customContextMenuRequested, this, &HosterPanel::showContextMenu);
     connect(m_tree, &QTreeWidget::itemDoubleClicked, this, &HosterPanel::openRow);
 
@@ -343,8 +342,7 @@ QTreeWidgetItem* HosterPanel::packageRow(qint64 id, const QString& name)
     row->setText(ColName, name);
     static const QIcon folder(QStringLiteral(":/icons/FolderOpen.ico"));
     row->setIcon(ColName, folder);
-    row->setToolTip(ColName, name);
-    row->setExpanded(true);
+    row->setToolTip(ColName, name);   // starts collapsed
     m_packages[id] = row;
     return row;
 }
@@ -597,8 +595,10 @@ void HosterPanel::applyStatus(const QCborMap& st)
         text = tr("Downloads from hosters are off (Options, ed3k, Hoster).");
     else if (const QCborMap r = h.value(QStringLiteral("resolver")).toMap(); !r.value(QStringLiteral("available")).toBool())
         text = tr("Resolver not ready: %1").arg(r.value(QStringLiteral("reason")).toString());
-    else
-        text = r.value(QStringLiteral("description")).toString();
+    else if (text = r.value(QStringLiteral("description")).toString(); text.isEmpty())
+        // the sidecar not started yet: the installed engine's version
+        if (const QString v = r.value(QStringLiteral("version")).toString(); !v.isEmpty())
+            text = tr("JDownloader %1").arg(v);
     m_statusLabel->setText(text);
 }
 
