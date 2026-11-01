@@ -4,7 +4,7 @@
 
 [![Release](https://img.shields.io/github/v/release/ModderMule/emule-qt)](https://github.com/ModderMule/emule-qt/releases/latest) [![Downloads](https://img.shields.io/github/downloads/ModderMule/emule-qt/total)](https://github.com/ModderMule/emule-qt/releases) [![Docker](https://ghcr-badge.egpl.dev/moddermule/emuleqt/latest_tag?label=docker)](https://github.com/ModderMule/emule-qt/pkgs/container/emuleqt) [![License](https://img.shields.io/github/license/ModderMule/emule-qt)](https://github.com/ModderMule/emule-qt/blob/main/LICENSE) ![Platforms](https://img.shields.io/badge/platform-Windows%20%7C%20macOS%20%7C%20Linux-blue) ![Qt 6](https://img.shields.io/badge/Qt-6-41CD52?logo=qt&logoColor=white) ![C++23](https://img.shields.io/badge/C%2B%2B-23-00599C?logo=cplusplus&logoColor=white)
 
-**eMule Qt** is a free, open-source file sharing client for the **ED2K** and **Kademlia** networks, with a full **Usenet** engine built in — rebuilt from the ground up with **Qt 6** and **modern C++23**.
+**eMule Qt** is a free, open-source file sharing client for the **ED2K** and **Kademlia** networks that also downloads **BitTorrent**, **Usenet** and **file hoster** links — all from one client, rebuilt from the ground up with **Qt 6** and **modern C++23**.
 
 Cross-platform. Fully compatible with the existing eMule network.
 
@@ -32,8 +32,10 @@ Website: [emule-qt.org](https://emule-qt.org/)
 
 *Not found in the original eMule.*
 
+- **BitTorrent Downloads** — Torrents and magnet links in their own Torrents tab, powered by libtorrent: DHT, PEX, local peer discovery, encryption, per-file selection, seeding limits by ratio or time, and torrent results from Torznab indexers and eD2K servers in the same Search tab ([details](https://emule-qt.org/features/bittorrent/))
+- **File Hoster Downloads** — Paste links from more than a thousand one-click hosters and link sites; the daemon resolves them with JDownloader's plugins (Java is fetched for you), shows image captchas, uses your premium accounts, falls back to mirrors, resumes broken transfers and groups files into packages ([details](https://emule-qt.org/features/file-hosters/))
 - **Usenet Downloads** — A complete NNTP engine in the daemon: up to 16 providers on a priority and failover ladder, TLS, allowance tracking, PAR2 repair, and unpacking that finishes as the download does ([details](docs/usenet-module.md))
-- **Indexer Search** — newznab indexers queried in parallel from the same Search tab and de-duplicated, with the grab done daemon-side so the GUI never holds an API key or a download URL
+- **Indexer Search** — newznab and Torznab indexers queried in parallel from the same Search tab and de-duplicated, with the grab done daemon-side so the GUI never holds an API key or a download URL
 - **Auto-Download Feeds** — A saved indexer query or an RSS URL polled on a schedule, filtered by regex, size and age, and queued into the category you chose
 - **Cross-Platform** — One codebase running natively on Windows, macOS, and Linux; the original is MFC and Windows-only
 - **Daemon/GUI Split** — Headless `emulecored` + `emuleqt` GUI over a CBOR IPC link (TLS with a pinned certificate when remote); run the core on a server or NAS and attach the GUI locally or remotely
@@ -42,7 +44,7 @@ Website: [emule-qt.org](https://emule-qt.org/)
 - **PCP & NAT-PMP Port Mapping** — Three backends raced at startup — PCP, NAT-PMP, and UPnP IGD1/IGD2 with IPv6 pinholes — graded on whether the exact port was actually granted ([details](docs/port-mapping.md))
 - **NAT Traversal for LowID Clients** — Two LowID peers can now transfer to each other (IPv6 fallback, QUIC): a server or Kad buddy introduces them, both punch their NATs, and the link runs over direct TCP/IPv6 when both have it, else over an obfuscated QUIC stream compatible with eMuleAI and aMule ([details](https://emule-qt.org/features/nat-traversal/))
 - **REST API** — A JSON `/api/v1/*` interface with API-key auth alongside the classic web UI, for scripts and dashboards; browser apps on another origin are opted in with `webserver.corsAllowedOrigins` in `preferences.yml`
-- **CLI Control** — Drive a running daemon from the shell: `--add-link`, `--add-nzb`, `--connect`, `--disconnect`, `--connect-kad`
+- **CLI Control** — Drive a running daemon from the shell: `--add-link`, `--add-nzb`, `--add-torrent`, `--connect`, `--disconnect`, `--connect-kad`
 - **MCP Server for AI Assistants** — A Model Context Protocol endpoint at `/mcp` on the web server's port, so an assistant can search, queue and manage downloads through 51 tools that share the REST API's validation and code; read-only switch, API-key auth, and an `emuleqt-mcp` stdio bridge for clients that only start a local program ([details](docs/rest-api.md#mcp))
 - **Extended Source Exchange** — Source exchange widened with each source's server endpoint, user hash, and obfuscation options, negotiated per peer
 - **Save/Load Sources** — Each part file's best sources are written to disk and re-injected on restart, so a download resumes at speed instead of rebuilding its source list
@@ -96,7 +98,9 @@ To create a distributable app bundle, use the platform-specific scripts: `script
 emuleqt (GUI)  ←—  IPC/CBOR over TCP  —→  emulecored (Daemon)
                                               ├── ED2K Protocol
                                               ├── Kademlia DHT
+                                              ├── BitTorrent (libtorrent)
                                               ├── Usenet (NNTP / NZB)
+                                              ├── File Hosters (JDownloader plugins)
                                               ├── Indexer Search & Feeds
                                               ├── Web Server / REST API
                                               └── File Management
