@@ -95,6 +95,10 @@ public:
     bool ready = true;           ///< false: like JD before the Java probe ends
     QStringList openSteps;       ///< open() sends these status events first
     bool holdAfterSteps = false; ///< open() stops after its steps (a plugin stuck on a captcha)
+    QSet<QString> puzzleUrls;    ///< open() asks an image puzzle; no answer ends needsUser{skipped}
+    std::map<std::uint64_t, TaskId> puzzles;   ///< asked, not answered yet
+    std::uint64_t nextPuzzle = 100;
+    int puzzlesAsked = 0;
 
     bool available() const override { return ready; }
     QString unavailableReason() const override { return ready ? QString() : QStringLiteral("No Java runtime"); }
@@ -163,6 +167,18 @@ public:
         ++opens;
         opened << url;
         const TaskId t = next++;
+        if (puzzleUrls.contains(url)) {
+            ++puzzlesAsked;
+            ResolverEvent pz;
+            pz.kind = ResolverEvent::Kind::Puzzle;
+            pz.puzzle = nextPuzzle++;
+            pz.host = QUrl(url).host();
+            pz.image = QByteArray("img");
+            pz.timeoutS = 300;
+            puzzles[pz.puzzle] = t;
+            later(t, pz);
+            return t;
+        }
         if (quotaUrls.contains(url)) {
             ResolverEvent w;
             w.kind = ResolverEvent::Kind::Wait;
@@ -204,7 +220,17 @@ public:
         later(t, e);
         return t;
     }
-    void answerPuzzle(std::uint64_t, const QString&) override {}
+    void answerPuzzle(std::uint64_t puzzle, const QString& text) override
+    {
+        const auto it = puzzles.find(puzzle);
+        if (it == puzzles.end())
+            return;
+        ResolverEvent e;
+        e.kind = ResolverEvent::Kind::NeedsUser;
+        e.text = text.isEmpty() ? QStringLiteral("skipped") : QStringLiteral("wrong");
+        later(it->second, e);
+        puzzles.erase(it);
+    }
     void cancel(TaskId) override {}
     void setAskPuzzles(bool) override {}
     void setProxy(const QString&) override {}
@@ -899,6 +925,70 @@ private slots:
         QVERIFY(r.join->item(ids[0])->mirrors.isEmpty());
         QCOMPARE(r.join->items().size(), 1);
         QCOMPARE(r.resolver.opens, 0);
+    }
+
+    /// Skip ends as PuzzleSkipped and the next mirror asks; "Skip hoster" ends the last one as
+    /// HosterSkipped; retry() starts at the first link and asks again
+    void puzzle_skipMirrorsThenRetry()
+    {
+        Rig r;
+        r.resolver.hosts << QStringLiteral("other.example");
+        const QStringList urls{QStringLiteral("https://fake.example/pz/1"), QStringLiteral("https://other.example/pz/1")};
+        r.resolver.puzzleUrls = {urls[0], urls[1]};
+        QVERIFY(r.start(true));
+        QList<quint64> asked;
+        connect(r.join.get(), &Ed3kHosterJoin::puzzleAsked, r.join.get(),
+                [&asked](quint32, quint64 p, const QByteArray&, const QString&, const QString&, int) { asked << p; });
+        const auto ids = r.join->addMirrored({urls});
+        QTRY_COMPARE_WITH_TIMEOUT(asked.size(), 1, 10000);
+        QCOMPARE(r.state(ids[0]), Ed3kHosterJoin::State::Puzzle);
+        r.join->answerPuzzle(asked[0], {});
+        // the next mirror asks its own
+        QTRY_COMPARE_WITH_TIMEOUT(asked.size(), 2, 10000);
+        QCOMPARE(r.join->item(ids[0])->mirrorNo, 1);
+        QCOMPARE(r.join->item(ids[0])->tried, QStringList{urls[0]});
+        r.join->answerPuzzle(asked[1], {}, true);
+        QTRY_COMPARE_WITH_TIMEOUT(r.state(ids[0]), Ed3kHosterJoin::State::NeedsUser, 10000);
+        QCOMPARE(r.join->item(ids[0])->reason, Ed3kHosterJoin::Reason::HosterSkipped);
+        QCOMPARE(r.join->item(ids[0])->reasonArg, QStringLiteral("other.example"));
+        r.join->retry(ids[0]);
+        QTRY_COMPARE_WITH_TIMEOUT(asked.size(), 3, 10000);
+        QCOMPARE(r.join->item(ids[0])->url, urls[0]);
+        QCOMPARE(r.join->item(ids[0])->mirrors, QStringList{urls[1]});
+        QCOMPARE(r.join->item(ids[0])->mirrorNo, 0);
+        QVERIFY(r.join->item(ids[0])->tried.isEmpty());
+        // a wrong answer, then the skipped hoster asks again after the retry
+        r.join->answerPuzzle(asked[2], QStringLiteral("abc"));
+        QTRY_COMPARE_WITH_TIMEOUT(asked.size(), 4, 10000);
+        r.join->answerPuzzle(asked[3], QStringLiteral("abc"));
+        QTRY_COMPARE_WITH_TIMEOUT(r.state(ids[0]), Ed3kHosterJoin::State::NeedsUser, 10000);
+        QCOMPARE(r.join->item(ids[0])->reason, Ed3kHosterJoin::Reason::PuzzleWrong);
+    }
+
+    /// after "Skip hoster" a later puzzle of that hoster is not shown, until a retry
+    void puzzle_skipHosterSilencesLaterOnes()
+    {
+        Rig r;
+        r.resolver.puzzleUrls = {QStringLiteral("https://fake.example/pz/a"), QStringLiteral("https://fake.example/pz/b")};
+        QVERIFY(r.start(true));
+        QList<quint64> asked;
+        connect(r.join.get(), &Ed3kHosterJoin::puzzleAsked, r.join.get(),
+                [&asked](quint32, quint64 p, const QByteArray&, const QString&, const QString&, int) { asked << p; });
+        const auto a = r.join->addLinks(QStringLiteral("https://fake.example/pz/a"));
+        QTRY_COMPARE_WITH_TIMEOUT(asked.size(), 1, 10000);
+        r.join->answerPuzzle(asked[0], {}, true);
+        QTRY_COMPARE_WITH_TIMEOUT(r.state(a[0]), Ed3kHosterJoin::State::NeedsUser, 10000);
+        QCOMPARE(r.join->item(a[0])->reason, Ed3kHosterJoin::Reason::HosterSkipped);
+        const auto b = r.join->addLinks(QStringLiteral("https://fake.example/pz/b"));
+        QTRY_COMPARE_WITH_TIMEOUT(r.state(b[0]), Ed3kHosterJoin::State::NeedsUser, 10000);
+        QCOMPARE(r.join->item(b[0])->reason, Ed3kHosterJoin::Reason::HosterSkipped);
+        QCOMPARE(asked.size(), 1);
+        QCOMPARE(r.resolver.puzzlesAsked, 2);
+        r.join->retry(b[0]);
+        QTRY_COMPARE_WITH_TIMEOUT(asked.size(), 2, 10000);
+        r.join->answerPuzzle(asked[1], {});
+        QTRY_COMPARE_WITH_TIMEOUT(r.state(b[0]), Ed3kHosterJoin::State::NeedsUser, 10000);
+        QCOMPARE(r.join->item(b[0])->reason, Ed3kHosterJoin::Reason::PuzzleSkipped);
     }
 
     /// the mirrors not tried yet survive a restart

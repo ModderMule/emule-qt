@@ -16,6 +16,7 @@ import jd.plugins.PluginForHost;
 import jd.plugins.PluginProgress;
 import jd.plugins.download.DownloadInterface;
 
+import org.jdownloader.captcha.blacklist.CaptchaBlackList;
 import org.jdownloader.plugins.CaptchaStepProgress;
 import org.jdownloader.plugins.SleepPluginProgress;
 
@@ -72,6 +73,10 @@ final class OpenTask extends Task {
             return;
         }
         link = links.get(0);
+        // JD clears its captcha blacklist only when its download watchdog stops, which never runs
+        // here: a browser puzzle (BLOCK_HOSTER) would skip every later puzzle of that hoster. The
+        // daemon decides what to skip, so each open starts without it.
+        CaptchaBlackList.getInstance().onDownloadWatchdogStateIsStopped();
         BY_LINK.put(link, id);
         try {
             download();

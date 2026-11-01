@@ -383,6 +383,36 @@ void Ed3kHosterJoin::resume(quint32 id)
     pumpSession();
 }
 
+void Ed3kHosterJoin::retry(quint32 id)
+{
+    Entry* e = find(id);
+    if (!e || e->item.state == State::Complete)
+        return;
+    QStringList all = e->item.tried;
+    all << e->item.url << e->item.mirrors;
+    // puzzles of its hosters are asked again
+    m_skipSites.remove(siteOf(e->item.host));
+    for (const QString& u : std::as_const(all))
+        m_skipSites.remove(siteOf(QUrl(u).host()));
+    if (!e->item.tried.isEmpty()) {
+        // back to the first link; verified blocks stay (begin())
+        release(*e, true);
+        e->item.url = all.takeFirst();
+        e->item.mirrors = all;
+        e->item.tried.clear();
+        e->item.host = QUrl(e->item.url).host();
+        e->item.mirrorNo = 0;
+        touch(*e);
+    }
+    e->tries = 0;
+    e->nextAskAt = 0;
+    logInfo(QStringLiteral("retry of %1 from %2").arg(e->item.name, e->item.host));
+    if (m_started)
+        begin(*e);
+    save();
+    pumpSession();
+}
+
 void Ed3kHosterJoin::remove(quint32 id, bool deleteFile)
 {
     Entry* e = find(id);
@@ -410,17 +440,30 @@ void Ed3kHosterJoin::remove(quint32 id, bool deleteFile)
     pumpSession();
 }
 
-void Ed3kHosterJoin::answerPuzzle(quint64 puzzle, const QString& text)
+void Ed3kHosterJoin::answerPuzzle(quint64 puzzle, const QString& text, bool skipHoster)
 {
     if (m_resolver)
         m_resolver->answerPuzzle(puzzle, text);
     if (!text.isEmpty())
         count(&HosterCounters::puzzlesAnswered);
-    if (const auto it = m_puzzles.find(puzzle); it != m_puzzles.end()) {
-        if (Entry* e = find(it->second); e && e->item.state == State::Puzzle)
-            setState(*e, State::Downloading);
-        m_puzzles.erase(it);
-    }
+    const auto it = m_puzzles.find(puzzle);
+    if (it == m_puzzles.end())
+        return;
+    const AskedPuzzle asked = it->second;
+    m_puzzles.erase(it);
+    if (Entry* e = find(asked.item); e && e->item.state == State::Puzzle)
+        setState(*e, State::Downloading);
+    if (!skipHoster || !text.isEmpty() || asked.site.isEmpty())
+        return;
+    m_skipSites.insert(asked.site);
+    logInfo(QStringLiteral("puzzles of %1 are skipped until a retry").arg(asked.site));
+    // the hoster's other puzzles open now go too
+    QList<quint64> others;
+    for (const auto& [p, a] : m_puzzles)
+        if (a.site == asked.site)
+            others << p;
+    for (const quint64 p : std::as_const(others))
+        answerPuzzle(p, {});
 }
 
 void Ed3kHosterJoin::checkAccount(const QString& host, const QString& user, const QString& password)
@@ -1028,9 +1071,17 @@ void Ed3kHosterJoin::onResolverEvent(Ed3kResolver::TaskId task, const ResolverEv
                 return;
             }
         }
-        if (Entry* e = find(id))
+        Entry* e = find(id);
+        const QString site = siteOf(!ev.host.isEmpty() ? ev.host : e ? e->item.host : QString());
+        // the user skips this hoster's puzzles: not shown, ends as HosterSkipped
+        if (!site.isEmpty() && m_skipSites.contains(site)) {
+            if (m_resolver)
+                m_resolver->answerPuzzle(ev.puzzle, {});
+            return;
+        }
+        if (e)
             setState(*e, State::Puzzle);
-        m_puzzles[ev.puzzle] = id;
+        m_puzzles[ev.puzzle] = {id, site};
         count(&HosterCounters::puzzlesAsked);
         emit puzzleAsked(id, ev.puzzle, ev.image, ev.host, ev.text, ev.timeoutS);
         return;
@@ -1213,9 +1264,23 @@ void Ed3kHosterJoin::onResolverEvent(Ed3kResolver::TaskId task, const ResolverEv
         break;
     case K::NeedsUser:
         fail(ED3K_RESOLVER_NEEDS_USER);
-        if (e)
-            setState(*e, State::NeedsUser,
-                     ev.text == QLatin1StringView("login") ? Reason::NeedsLogin : Reason::NeedsBrowserPuzzle);
+        if (e) {
+            Reason why = Reason::NeedsBrowserPuzzle;
+            QString arg;
+            if (ev.text == QLatin1StringView("login")) {
+                why = Reason::NeedsLogin;
+            } else if (ev.text == QLatin1StringView("skipped")) {
+                arg = siteOf(e->item.host);
+                why = m_skipSites.contains(arg) ? Reason::HosterSkipped : Reason::PuzzleSkipped;
+                if (why == Reason::PuzzleSkipped)
+                    arg.clear();
+            } else if (ev.text == QLatin1StringView("wrong")) {
+                why = Reason::PuzzleWrong;
+            } else if (!m_prefs.askPuzzles) {
+                why = Reason::PuzzlesOff;   // no solver asked: not a browser puzzle for sure
+            }
+            setState(*e, State::NeedsUser, why, arg);
+        }
         final();
         break;
     case K::Failed:
@@ -1603,7 +1668,8 @@ bool Ed3kHosterJoin::mirrorDue(const Item& it)
         return it.reason != Reason::WriteFailed && it.reason != Reason::MoveFailed;
     case State::NeedsUser:
         return it.reason == Reason::NeedsLogin || it.reason == Reason::NeedsBrowserPuzzle
-            || it.reason == Reason::Blocked;
+            || it.reason == Reason::Blocked || it.reason == Reason::PuzzleSkipped || it.reason == Reason::PuzzleWrong
+            || it.reason == Reason::HosterSkipped || it.reason == Reason::PuzzlesOff;
     case State::Waiting:
         return it.waitUntil - nowMs() > kLongWaitMs;
     default:
@@ -1614,6 +1680,7 @@ bool Ed3kHosterJoin::mirrorDue(const Item& it)
 void Ed3kHosterJoin::nextMirror(Entry& e)
 {
     release(e, true);
+    e.item.tried << e.item.url;
     e.item.url = e.item.mirrors.takeFirst();
     e.item.host = QUrl(e.item.url).host();
     ++e.item.mirrorNo;
@@ -2475,7 +2542,8 @@ QJsonObject Ed3kHosterJoin::toJson(const Entry& e) const
                   {QStringLiteral("reason"), int(it.reason)},
                   {QStringLiteral("reasonArg"), it.reasonArg},
                   {QStringLiteral("mirrors"), QJsonArray::fromStringList(it.mirrors)},
-                  {QStringLiteral("mirrorNo"), it.mirrorNo}};
+                  {QStringLiteral("mirrorNo"), it.mirrorNo},
+                  {QStringLiteral("tried"), QJsonArray::fromStringList(it.tried)}};
     if (it.packageId != 0)
         o.insert(QStringLiteral("pkgName"), it.package);
     return o;
@@ -2491,12 +2559,15 @@ void Ed3kHosterJoin::fromJson(const QJsonObject& o, Entry& e) const
     it.added = o.value(QStringLiteral("added")).toInteger();
     it.rootHex = o.value(QStringLiteral("root")).toString();
     it.state = State(std::clamp<qint64>(o.value(QStringLiteral("state")).toInteger(), 0, int(State::Failed)));
-    it.reason = Reason(std::clamp<qint64>(o.value(QStringLiteral("reason")).toInteger(), 0, int(Reason::LinkOffline)));
+    it.reason = Reason(std::clamp<qint64>(o.value(QStringLiteral("reason")).toInteger(), 0, int(Reason::PuzzlesOff)));
     it.reasonArg = o.value(QStringLiteral("reasonArg")).toString();
     for (const QJsonValue& m : o.value(QStringLiteral("mirrors")).toArray())
         if (const QString url = m.toString(); !url.isEmpty())
             it.mirrors << url;
     it.mirrorNo = int(o.value(QStringLiteral("mirrorNo")).toInteger());
+    for (const QJsonValue& m : o.value(QStringLiteral("tried")).toArray())
+        if (const QString url = m.toString(); !url.isEmpty())
+            it.tried << url;
     if (const QString pkg = o.value(QStringLiteral("pkgName")).toString(); !pkg.isEmpty())
         it.package = safeName(pkg, kNoName);
     for (const QJsonValue& lv : o.value(QStringLiteral("links")).toArray()) {

@@ -4280,12 +4280,12 @@ De namen ervan worden dan omgezet na de lijsten die u al volgt.</translation>
     <message>
         <location line="+5"/>
         <location line="+10"/>
-        <location line="+990"/>
+        <location line="+991"/>
         <source> credits/MiB</source>
         <translation> credits/MiB</translation>
     </message>
     <message>
-        <location line="-999"/>
+        <location line="-1000"/>
         <source>Never pay (receipts only)</source>
         <translation>Nooit betalen (alleen ontvangstbewijzen)</translation>
     </message>
@@ -4441,12 +4441,12 @@ De namen ervan worden dan omgezet na de lijsten die u al volgt.</translation>
     <message>
         <location line="+1"/>
         <location line="+6"/>
-        <location line="+592"/>
+        <location line="+593"/>
         <source>Remove</source>
         <translation>Verwijderen</translation>
     </message>
     <message>
-        <location line="-588"/>
+        <location line="-589"/>
         <source>Followed name lists (the first one wins)</source>
         <translation>Gevolgde namenlijsten (de eerste wint)</translation>
     </message>
@@ -4533,12 +4533,12 @@ De namen ervan worden dan omgezet na de lijsten die u al volgt.</translation>
     </message>
     <message>
         <location line="+0"/>
-        <location line="+829"/>
+        <location line="+830"/>
         <source>not read yet</source>
         <translation>nog niet uitgelezen</translation>
     </message>
     <message>
-        <location line="-827"/>
+        <location line="-828"/>
         <source>The account is overdrawn: a new credit key is the way on.</source>
         <translation>Het account staat rood: een nieuwe creditsleutel is de weg verder.</translation>
     </message>
@@ -4788,7 +4788,12 @@ Exporteren?</translation>
         <translation>Hosterdownloads hebben de ed3k-node nodig (Opties, ed3k, Algemeen).</translation>
     </message>
     <message>
-        <location line="+18"/>
+        <location line="+13"/>
+        <source>Off: a link that asks for a puzzle is skipped and shows &quot;Needs you&quot;; another link of the file is tried. Retry asks again.</source>
+        <translation>Uit: een link die om een puzzel vraagt wordt overgeslagen en toont &quot;Actie vereist&quot;; een andere link van het bestand wordt geprobeerd. Opnieuw vraagt opnieuw.</translation>
+    </message>
+    <message>
+        <location line="+6"/>
         <source>Check hoster links on search automatically</source>
         <translation>Hosterlinks bij zoeken automatisch controleren</translation>
     </message>
@@ -4872,7 +4877,7 @@ Exporteren?</translation>
         <translation>Snelle download loopt niet. Saldo: %1</translation>
     </message>
     <message>
-        <location line="-487"/>
+        <location line="-488"/>
         <source>ed3k</source>
         <translation>ed3k</translation>
     </message>
@@ -4996,12 +5001,11 @@ Exporteren?</translation>
         <translation>Beeldpuzzels (captcha&apos;s) tonen</translation>
     </message>
     <message>
-        <location line="+1"/>
         <source>Off: a link that asks for a puzzle waits instead.</source>
-        <translation>Uit: een link die om een puzzel vraagt, wacht in plaats daarvan.</translation>
+        <translation type="vanished">Uit: een link die om een puzzel vraagt, wacht in plaats daarvan.</translation>
     </message>
     <message>
-        <location line="+2"/>
+        <location line="+4"/>
         <source>Use hoster links that other ed3k nodes name</source>
         <translation>Hosterlinks gebruiken die andere ed3k-nodes noemen</translation>
     </message>
@@ -7902,18 +7906,43 @@ De bestanden gaan naar de map met binnenkomende bestanden, in een eigen map van 
         <translation>De hosterlink is offline en wordt niet meer gepubliceerd</translation>
     </message>
     <message>
-        <location line="+30"/>
+        <location line="+2"/>
+        <source>Puzzle skipped (Retry asks again)</source>
+        <translation>Puzzel overgeslagen (Opnieuw vraagt opnieuw)</translation>
+    </message>
+    <message>
+        <location line="+1"/>
+        <source>The hoster refused the puzzle answer (Retry asks again)</source>
+        <translation>De hoster weigerde het puzzelantwoord (Opnieuw vraagt opnieuw)</translation>
+    </message>
+    <message>
+        <location line="+1"/>
+        <source>Puzzles of %1 are skipped (Retry asks again)</source>
+        <translation>Puzzels van %1 worden overgeslagen (Opnieuw vraagt opnieuw)</translation>
+    </message>
+    <message>
+        <location line="+1"/>
+        <source>The hoster wants a puzzle; puzzles are off (Options, ed3k, Hoster)</source>
+        <translation>De hoster vraagt om een puzzel; puzzels staan uit (Opties, ed3k, Hoster)</translation>
+    </message>
+    <message>
+        <location line="+29"/>
         <source>Hoster downloads</source>
         <translation>Hosterdownloads</translation>
     </message>
     <message>
         <location line="+7"/>
-        <location line="+310"/>
+        <location line="+312"/>
         <source>Add links...</source>
         <translation>Links toevoegen...</translation>
     </message>
     <message>
-        <location line="+150"/>
+        <location line="-8"/>
+        <source>Retry</source>
+        <translation>Opnieuw</translation>
+    </message>
+    <message>
+        <location line="+175"/>
         <source>JDownloader %1</source>
         <translation>JDownloader %1</translation>
     </message>
@@ -7922,7 +7951,7 @@ De bestanden gaan naar de map met binnenkomende bestanden, in een eigen map van 
         <translation type="vanished">Opties...</translation>
     </message>
     <message>
-        <location line="-454"/>
+        <location line="-473"/>
         <source>File Name</source>
         <translation>Bestandsnaam</translation>
     </message>
@@ -8055,18 +8084,18 @@ De bestanden gaan naar de map met binnenkomende bestanden, in een eigen map van 
     </message>
     <message>
         <location line="-269"/>
-        <location line="+271"/>
+        <location line="+273"/>
         <source>Remove</source>
         <translation>Verwijderen</translation>
     </message>
     <message>
         <location line="+1"/>
-        <location line="+35"/>
+        <location line="+42"/>
         <source>Remove and delete file</source>
         <translation>Verwijderen en bestand wissen</translation>
     </message>
     <message>
-        <location line="-33"/>
+        <location line="-40"/>
         <source>Copy link</source>
         <translation>Link kopiëren</translation>
     </message>
@@ -8081,12 +8110,12 @@ De bestanden gaan naar de map met binnenkomende bestanden, in een eigen map van 
         <translation>Links plakken</translation>
     </message>
     <message>
-        <location line="+27"/>
+        <location line="+34"/>
         <source>Delete the selected files from disk?</source>
         <translation>De geselecteerde bestanden van schijf wissen?</translation>
     </message>
     <message>
-        <location line="+61"/>
+        <location line="+71"/>
         <source>Links of a folder</source>
         <translation>Links van een map</translation>
     </message>
@@ -8129,7 +8158,7 @@ De bestanden gaan naar de map met binnenkomende bestanden, in een eigen map van 
 <context>
     <name>eMule::HosterPuzzleDialog</name>
     <message>
-        <location filename="../src/gui/dialogs/HosterPuzzleDialog.cpp" line="+22"/>
+        <location filename="../src/gui/dialogs/HosterPuzzleDialog.cpp" line="+23"/>
         <source>Puzzle from %1</source>
         <translation>Puzzel van %1</translation>
     </message>
@@ -8153,8 +8182,23 @@ De bestanden gaan naar de map met binnenkomende bestanden, in een eigen map van 
         <source>Skip</source>
         <translation>Overslaan</translation>
     </message>
+    <message>
+        <location line="+1"/>
+        <source>Skip this puzzle; another link of the file is tried. Retry asks again.</source>
+        <translation>Deze puzzel overslaan; een andere link van het bestand wordt geprobeerd. Opnieuw vraagt opnieuw.</translation>
+    </message>
+    <message>
+        <location line="+1"/>
+        <source>Skip hoster</source>
+        <translation>Hoster overslaan</translation>
+    </message>
+    <message>
+        <location line="+1"/>
+        <source>Skip every puzzle of %1 until you retry a download there</source>
+        <translation>Elke puzzel van %1 overslaan tot je daar een download opnieuw probeert</translation>
+    </message>
     <message numerus="yes">
-        <location line="+24"/>
+        <location line="+25"/>
         <source>%n second(s) left</source>
         <translation>
             <numerusform>Nog %n seconde</numerusform>

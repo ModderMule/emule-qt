@@ -4547,12 +4547,12 @@ Its names are then resolved after the lists you already follow.</source>
     <message>
         <location line="+5"/>
         <location line="+10"/>
-        <location line="+990"/>
+        <location line="+991"/>
         <source> credits/MiB</source>
         <translation> 크레딧/MiB</translation>
     </message>
     <message>
-        <location line="-999"/>
+        <location line="-1000"/>
         <source>Never pay (receipts only)</source>
         <translation>지불 안 함(영수증만)</translation>
     </message>
@@ -4708,12 +4708,12 @@ Its names are then resolved after the lists you already follow.</source>
     <message>
         <location line="+1"/>
         <location line="+6"/>
-        <location line="+592"/>
+        <location line="+593"/>
         <source>Remove</source>
         <translation>제거</translation>
     </message>
     <message>
-        <location line="-588"/>
+        <location line="-589"/>
         <source>Followed name lists (the first one wins)</source>
         <translation>팔로우 중인 이름 목록(첫 번째가 우선)</translation>
     </message>
@@ -4800,12 +4800,12 @@ Its names are then resolved after the lists you already follow.</source>
     </message>
     <message>
         <location line="+0"/>
-        <location line="+829"/>
+        <location line="+830"/>
         <source>not read yet</source>
         <translation>아직 읽지 않음</translation>
     </message>
     <message>
-        <location line="-827"/>
+        <location line="-828"/>
         <source>The account is overdrawn: a new credit key is the way on.</source>
         <translation>계정이 초과 인출 상태입니다. 계속하려면 새 크레딧 키가 필요합니다.</translation>
     </message>
@@ -5055,7 +5055,12 @@ Export?</source>
         <translation>호스터 다운로드에는 ed3k 노드가 필요합니다 (옵션, ed3k, 일반).</translation>
     </message>
     <message>
-        <location line="+18"/>
+        <location line="+13"/>
+        <source>Off: a link that asks for a puzzle is skipped and shows &quot;Needs you&quot;; another link of the file is tried. Retry asks again.</source>
+        <translation>끔: 퍼즐을 요구하는 링크는 건너뛰고 &quot;사용자 조치 필요&quot;로 표시됩니다. 파일의 다른 링크를 시도합니다. 다시 시도하면 다시 묻습니다.</translation>
+    </message>
+    <message>
+        <location line="+6"/>
         <source>Check hoster links on search automatically</source>
         <translation>검색 시 호스터 링크 자동 확인</translation>
     </message>
@@ -5139,7 +5144,7 @@ Export?</source>
         <translation>고속 다운로드가 실행 중이 아닙니다. 잔액: %1</translation>
     </message>
     <message>
-        <location line="-487"/>
+        <location line="-488"/>
         <source>ed3k</source>
         <translation>ed3k</translation>
     </message>
@@ -5263,12 +5268,11 @@ Export?</source>
         <translation>이미지 인증(캡차) 표시</translation>
     </message>
     <message>
-        <location line="+1"/>
         <source>Off: a link that asks for a puzzle waits instead.</source>
-        <translation>끄기: 인증을 요구하는 링크는 대기합니다.</translation>
+        <translation type="vanished">끄기: 인증을 요구하는 링크는 대기합니다.</translation>
     </message>
     <message>
-        <location line="+2"/>
+        <location line="+4"/>
         <source>Use hoster links that other ed3k nodes name</source>
         <translation>다른 ed3k 노드가 알려준 호스터 링크 사용</translation>
     </message>
@@ -8252,18 +8256,43 @@ ISP가 eMule을 제한하거나 차단하려는 경우, 난독화를 켜면 그�
         <translation>호스터 링크가 오프라인이므로 더 이상 게시되지 않습니다</translation>
     </message>
     <message>
-        <location line="+30"/>
+        <location line="+2"/>
+        <source>Puzzle skipped (Retry asks again)</source>
+        <translation>퍼즐 건너뜀 (다시 시도하면 다시 묻습니다)</translation>
+    </message>
+    <message>
+        <location line="+1"/>
+        <source>The hoster refused the puzzle answer (Retry asks again)</source>
+        <translation>호스터가 퍼즐 답을 거부했습니다 (다시 시도하면 다시 묻습니다)</translation>
+    </message>
+    <message>
+        <location line="+1"/>
+        <source>Puzzles of %1 are skipped (Retry asks again)</source>
+        <translation>%1의 퍼즐은 건너뜁니다 (다시 시도하면 다시 묻습니다)</translation>
+    </message>
+    <message>
+        <location line="+1"/>
+        <source>The hoster wants a puzzle; puzzles are off (Options, ed3k, Hoster)</source>
+        <translation>호스터가 퍼즐을 요구합니다. 퍼즐이 꺼져 있습니다 (옵션, ed3k, Hoster)</translation>
+    </message>
+    <message>
+        <location line="+29"/>
         <source>Hoster downloads</source>
         <translation>호스터 다운로드</translation>
     </message>
     <message>
         <location line="+7"/>
-        <location line="+310"/>
+        <location line="+312"/>
         <source>Add links...</source>
         <translation>링크 추가...</translation>
     </message>
     <message>
-        <location line="+150"/>
+        <location line="-8"/>
+        <source>Retry</source>
+        <translation>다시 시도</translation>
+    </message>
+    <message>
+        <location line="+175"/>
         <source>JDownloader %1</source>
         <translation>JDownloader %1</translation>
     </message>
@@ -8272,7 +8301,7 @@ ISP가 eMule을 제한하거나 차단하려는 경우, 난독화를 켜면 그�
         <translation type="vanished">옵션...</translation>
     </message>
     <message>
-        <location line="-454"/>
+        <location line="-473"/>
         <source>File Name</source>
         <translation>파일 이름</translation>
     </message>
@@ -8403,18 +8432,18 @@ ISP가 eMule을 제한하거나 차단하려는 경우, 난독화를 켜면 그�
     </message>
     <message>
         <location line="-269"/>
-        <location line="+271"/>
+        <location line="+273"/>
         <source>Remove</source>
         <translation>제거</translation>
     </message>
     <message>
         <location line="+1"/>
-        <location line="+35"/>
+        <location line="+42"/>
         <source>Remove and delete file</source>
         <translation>제거 및 파일 삭제</translation>
     </message>
     <message>
-        <location line="-33"/>
+        <location line="-40"/>
         <source>Copy link</source>
         <translation>링크 복사</translation>
     </message>
@@ -8429,12 +8458,12 @@ ISP가 eMule을 제한하거나 차단하려는 경우, 난독화를 켜면 그�
         <translation>링크 붙여넣기</translation>
     </message>
     <message>
-        <location line="+27"/>
+        <location line="+34"/>
         <source>Delete the selected files from disk?</source>
         <translation>선택한 파일을 디스크에서 삭제하시겠습니까?</translation>
     </message>
     <message>
-        <location line="+61"/>
+        <location line="+71"/>
         <source>Links of a folder</source>
         <translation>폴더의 링크</translation>
     </message>
@@ -8477,7 +8506,7 @@ ISP가 eMule을 제한하거나 차단하려는 경우, 난독화를 켜면 그�
 <context>
     <name>eMule::HosterPuzzleDialog</name>
     <message>
-        <location filename="../src/gui/dialogs/HosterPuzzleDialog.cpp" line="+22"/>
+        <location filename="../src/gui/dialogs/HosterPuzzleDialog.cpp" line="+23"/>
         <source>Puzzle from %1</source>
         <translation>%1의 인증</translation>
     </message>
@@ -8501,8 +8530,23 @@ ISP가 eMule을 제한하거나 차단하려는 경우, 난독화를 켜면 그�
         <source>Skip</source>
         <translation>건너뛰기</translation>
     </message>
+    <message>
+        <location line="+1"/>
+        <source>Skip this puzzle; another link of the file is tried. Retry asks again.</source>
+        <translation>이 퍼즐을 건너뜁니다. 파일의 다른 링크를 시도합니다. 다시 시도하면 다시 묻습니다.</translation>
+    </message>
+    <message>
+        <location line="+1"/>
+        <source>Skip hoster</source>
+        <translation>호스터 건너뛰기</translation>
+    </message>
+    <message>
+        <location line="+1"/>
+        <source>Skip every puzzle of %1 until you retry a download there</source>
+        <translation>그곳의 다운로드를 다시 시도할 때까지 %1의 모든 퍼즐을 건너뜁니다</translation>
+    </message>
     <message numerus="yes">
-        <location line="+24"/>
+        <location line="+25"/>
         <source>%n second(s) left</source>
         <translation>
             <numerusform>%n초 남음</numerusform>

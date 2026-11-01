@@ -3,11 +3,13 @@
 # build.sh — build eMule Qt
 #
 # Usage:
-#   ./scripts/build.sh [clean] [bundle] [--target NAME]... [build-dir]
+#   ./scripts/build.sh [clean] [bundle] [--no-tests] [--target NAME]... [build-dir]
 #
 #   clean        Remove build directory before building
 #   bundle       Run platform-specific bundling after build (e.g. macdeployqt)
 #   deploy-qt    Bundle Qt libraries (Linux only, requires bundle)
+#   --no-tests   Configure without the ~290 test binaries (EMULE_BUILD_TESTS=OFF);
+#                without it tests are switched back on, so the cache never sticks
 #   --target N   Build only target N (repeatable); default builds all, tests too
 #   build-dir    Path to the CMake build directory (default: ./build)
 # ---------------------------------------------------------------------------
@@ -20,6 +22,7 @@ PROJECT_DIR="$(dirname "$SCRIPT_DIR")"
 CLEAN=false
 BUNDLE=false
 DEPLOY_QT=false
+BUILD_TESTS=ON
 BUILD_DIR=""
 TARGETS=()
 
@@ -32,6 +35,8 @@ while [ $# -gt 0 ]; do
         BUNDLE=true
     elif [ "$arg" = "deploy-qt" ]; then
         DEPLOY_QT=true
+    elif [ "$arg" = "--no-tests" ]; then
+        BUILD_TESTS=OFF
     elif [ "$arg" = "--target" ]; then
         [ $# -gt 0 ] || { echo "--target needs a name" >&2; exit 1; }
         TARGETS+=("$1")
@@ -53,7 +58,8 @@ fi
 # -- Configure & Build -------------------------------------------------------
 
 echo "Configuring..."
-cmake -S "$PROJECT_DIR" -B "$BUILD_DIR" -DCMAKE_BUILD_TYPE=Release -DEMULE_BITTORRENT=ON -DEMULE_HOSTER_JD=ON
+cmake -S "$PROJECT_DIR" -B "$BUILD_DIR" -DCMAKE_BUILD_TYPE=Release -DEMULE_BITTORRENT=ON -DEMULE_HOSTER_JD=ON \
+    -DEMULE_BUILD_TESTS="$BUILD_TESTS"
 
 TARGET_ARGS=()
 if [ ${#TARGETS[@]} -gt 0 ]; then

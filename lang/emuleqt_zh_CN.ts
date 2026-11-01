@@ -4547,12 +4547,12 @@ Its names are then resolved after the lists you already follow.</source>
     <message>
         <location line="+5"/>
         <location line="+10"/>
-        <location line="+990"/>
+        <location line="+991"/>
         <source> credits/MiB</source>
         <translation> 信用/MiB</translation>
     </message>
     <message>
-        <location line="-999"/>
+        <location line="-1000"/>
         <source>Never pay (receipts only)</source>
         <translation>从不支付（仅收据）</translation>
     </message>
@@ -4708,12 +4708,12 @@ Its names are then resolved after the lists you already follow.</source>
     <message>
         <location line="+1"/>
         <location line="+6"/>
-        <location line="+592"/>
+        <location line="+593"/>
         <source>Remove</source>
         <translation>删除</translation>
     </message>
     <message>
-        <location line="-588"/>
+        <location line="-589"/>
         <source>Followed name lists (the first one wins)</source>
         <translation>已关注的名称列表（第一个优先）</translation>
     </message>
@@ -4800,12 +4800,12 @@ Its names are then resolved after the lists you already follow.</source>
     </message>
     <message>
         <location line="+0"/>
-        <location line="+829"/>
+        <location line="+830"/>
         <source>not read yet</source>
         <translation>尚未读取</translation>
     </message>
     <message>
-        <location line="-827"/>
+        <location line="-828"/>
         <source>The account is overdrawn: a new credit key is the way on.</source>
         <translation>账户已透支：唯一的出路是新的信用密钥。</translation>
     </message>
@@ -5055,7 +5055,12 @@ Export?</source>
         <translation>网盘下载需要 ed3k 节点（选项、ed3k、常规）。</translation>
     </message>
     <message>
-        <location line="+18"/>
+        <location line="+13"/>
+        <source>Off: a link that asks for a puzzle is skipped and shows &quot;Needs you&quot;; another link of the file is tried. Retry asks again.</source>
+        <translation>关闭：需要验证码的链接将被跳过并显示“需要操作”；会尝试该文件的其他链接。重试会再次询问。</translation>
+    </message>
+    <message>
+        <location line="+6"/>
         <source>Check hoster links on search automatically</source>
         <translation>搜索时自动检查网盘链接</translation>
     </message>
@@ -5139,7 +5144,7 @@ Export?</source>
         <translation>高速下载未运行。余额：%1</translation>
     </message>
     <message>
-        <location line="-487"/>
+        <location line="-488"/>
         <source>ed3k</source>
         <translation>ed3k</translation>
     </message>
@@ -5263,12 +5268,11 @@ Export?</source>
         <translation>显示图片验证码</translation>
     </message>
     <message>
-        <location line="+1"/>
         <source>Off: a link that asks for a puzzle waits instead.</source>
-        <translation>关闭:需要验证码的链接将等待。</translation>
+        <translation type="vanished">关闭:需要验证码的链接将等待。</translation>
     </message>
     <message>
-        <location line="+2"/>
+        <location line="+4"/>
         <source>Use hoster links that other ed3k nodes name</source>
         <translation>使用其他 ed3k 节点提供的网盘链接</translation>
     </message>
@@ -8252,18 +8256,43 @@ If your ISP tries throttle or block eMule, enabling obfuscation will help to cir
         <translation>托管链接已离线，不再发布</translation>
     </message>
     <message>
-        <location line="+30"/>
+        <location line="+2"/>
+        <source>Puzzle skipped (Retry asks again)</source>
+        <translation>已跳过验证码（重试会再次询问）</translation>
+    </message>
+    <message>
+        <location line="+1"/>
+        <source>The hoster refused the puzzle answer (Retry asks again)</source>
+        <translation>网盘拒绝了验证码答案（重试会再次询问）</translation>
+    </message>
+    <message>
+        <location line="+1"/>
+        <source>Puzzles of %1 are skipped (Retry asks again)</source>
+        <translation>%1 的验证码将被跳过（重试会再次询问）</translation>
+    </message>
+    <message>
+        <location line="+1"/>
+        <source>The hoster wants a puzzle; puzzles are off (Options, ed3k, Hoster)</source>
+        <translation>网盘需要验证码；验证码已关闭（选项、ed3k、Hoster）</translation>
+    </message>
+    <message>
+        <location line="+29"/>
         <source>Hoster downloads</source>
         <translation>网盘下载</translation>
     </message>
     <message>
         <location line="+7"/>
-        <location line="+310"/>
+        <location line="+312"/>
         <source>Add links...</source>
         <translation>添加链接...</translation>
     </message>
     <message>
-        <location line="+150"/>
+        <location line="-8"/>
+        <source>Retry</source>
+        <translation>重试</translation>
+    </message>
+    <message>
+        <location line="+175"/>
         <source>JDownloader %1</source>
         <translation>JDownloader %1</translation>
     </message>
@@ -8272,7 +8301,7 @@ If your ISP tries throttle or block eMule, enabling obfuscation will help to cir
         <translation type="vanished">选项...</translation>
     </message>
     <message>
-        <location line="-454"/>
+        <location line="-473"/>
         <source>File Name</source>
         <translation>文件名</translation>
     </message>
@@ -8403,18 +8432,18 @@ If your ISP tries throttle or block eMule, enabling obfuscation will help to cir
     </message>
     <message>
         <location line="-269"/>
-        <location line="+271"/>
+        <location line="+273"/>
         <source>Remove</source>
         <translation>删除</translation>
     </message>
     <message>
         <location line="+1"/>
-        <location line="+35"/>
+        <location line="+42"/>
         <source>Remove and delete file</source>
         <translation>移除并删除文件</translation>
     </message>
     <message>
-        <location line="-33"/>
+        <location line="-40"/>
         <source>Copy link</source>
         <translation>复制链接</translation>
     </message>
@@ -8429,12 +8458,12 @@ If your ISP tries throttle or block eMule, enabling obfuscation will help to cir
         <translation>粘贴链接</translation>
     </message>
     <message>
-        <location line="+27"/>
+        <location line="+34"/>
         <source>Delete the selected files from disk?</source>
         <translation>要从磁盘删除所选文件吗?</translation>
     </message>
     <message>
-        <location line="+61"/>
+        <location line="+71"/>
         <source>Links of a folder</source>
         <translation>文件夹中的链接</translation>
     </message>
@@ -8477,7 +8506,7 @@ If your ISP tries throttle or block eMule, enabling obfuscation will help to cir
 <context>
     <name>eMule::HosterPuzzleDialog</name>
     <message>
-        <location filename="../src/gui/dialogs/HosterPuzzleDialog.cpp" line="+22"/>
+        <location filename="../src/gui/dialogs/HosterPuzzleDialog.cpp" line="+23"/>
         <source>Puzzle from %1</source>
         <translation>来自 %1 的验证码</translation>
     </message>
@@ -8501,8 +8530,23 @@ If your ISP tries throttle or block eMule, enabling obfuscation will help to cir
         <source>Skip</source>
         <translation>跳过</translation>
     </message>
+    <message>
+        <location line="+1"/>
+        <source>Skip this puzzle; another link of the file is tried. Retry asks again.</source>
+        <translation>跳过此验证码；会尝试该文件的其他链接。重试会再次询问。</translation>
+    </message>
+    <message>
+        <location line="+1"/>
+        <source>Skip hoster</source>
+        <translation>跳过此网盘</translation>
+    </message>
+    <message>
+        <location line="+1"/>
+        <source>Skip every puzzle of %1 until you retry a download there</source>
+        <translation>跳过 %1 的所有验证码，直到你在那里重试下载</translation>
+    </message>
     <message numerus="yes">
-        <location line="+24"/>
+        <location line="+25"/>
         <source>%n second(s) left</source>
         <translation>
             <numerusform>剩余 %n 秒</numerusform>

@@ -4293,12 +4293,12 @@ Its names are then resolved after the lists you already follow.</source>
     <message>
         <location line="+5"/>
         <location line="+10"/>
-        <location line="+990"/>
+        <location line="+991"/>
         <source> credits/MiB</source>
         <translation> кредитов/MiB</translation>
     </message>
     <message>
-        <location line="-999"/>
+        <location line="-1000"/>
         <source>Never pay (receipts only)</source>
         <translation>Никогда не платить (только квитанции)</translation>
     </message>
@@ -4454,12 +4454,12 @@ Its names are then resolved after the lists you already follow.</source>
     <message>
         <location line="+1"/>
         <location line="+6"/>
-        <location line="+592"/>
+        <location line="+593"/>
         <source>Remove</source>
         <translation>Удалить</translation>
     </message>
     <message>
-        <location line="-588"/>
+        <location line="-589"/>
         <source>Followed name lists (the first one wins)</source>
         <translation>Подписанные списки имён (побеждает первый)</translation>
     </message>
@@ -4546,12 +4546,12 @@ Its names are then resolved after the lists you already follow.</source>
     </message>
     <message>
         <location line="+0"/>
-        <location line="+829"/>
+        <location line="+830"/>
         <source>not read yet</source>
         <translation>ещё не прочитано</translation>
     </message>
     <message>
-        <location line="-827"/>
+        <location line="-828"/>
         <source>The account is overdrawn: a new credit key is the way on.</source>
         <translation>Счёт в минусе: выход — новый кредитный ключ.</translation>
     </message>
@@ -4801,7 +4801,12 @@ Export?</source>
         <translation>Загрузкам с хостингов нужен узел ed3k (Параметры, ed3k, Общие).</translation>
     </message>
     <message>
-        <location line="+18"/>
+        <location line="+13"/>
+        <source>Off: a link that asks for a puzzle is skipped and shows &quot;Needs you&quot;; another link of the file is tried. Retry asks again.</source>
+        <translation>Выкл.: ссылка, требующая капчу, пропускается и показывает «Требуется действие»; пробуется другая ссылка файла. «Повторить» спросит снова.</translation>
+    </message>
+    <message>
+        <location line="+6"/>
         <source>Check hoster links on search automatically</source>
         <translation>Автоматически проверять ссылки хостеров при поиске</translation>
     </message>
@@ -4885,7 +4890,7 @@ Export?</source>
         <translation>Скоростная загрузка не работает. Баланс: %1</translation>
     </message>
     <message>
-        <location line="-487"/>
+        <location line="-488"/>
         <source>ed3k</source>
         <translation>ed3k</translation>
     </message>
@@ -5009,12 +5014,11 @@ Export?</source>
         <translation>Показывать графические головоломки (капчи)</translation>
     </message>
     <message>
-        <location line="+1"/>
         <source>Off: a link that asks for a puzzle waits instead.</source>
-        <translation>Выкл.: ссылка, требующая головоломку, будет ждать.</translation>
+        <translation type="vanished">Выкл.: ссылка, требующая головоломку, будет ждать.</translation>
     </message>
     <message>
-        <location line="+2"/>
+        <location line="+4"/>
         <source>Use hoster links that other ed3k nodes name</source>
         <translation>Использовать ссылки хостеров, указанные другими узлами ed3k</translation>
     </message>
@@ -7928,18 +7932,43 @@ Its files go to the incoming folder, below a folder of the set&apos;s own; new v
         <translation>Ссылка хостера недоступна и больше не публикуется</translation>
     </message>
     <message>
-        <location line="+30"/>
+        <location line="+2"/>
+        <source>Puzzle skipped (Retry asks again)</source>
+        <translation>Капча пропущена («Повторить» спросит снова)</translation>
+    </message>
+    <message>
+        <location line="+1"/>
+        <source>The hoster refused the puzzle answer (Retry asks again)</source>
+        <translation>Хостер отклонил ответ на капчу («Повторить» спросит снова)</translation>
+    </message>
+    <message>
+        <location line="+1"/>
+        <source>Puzzles of %1 are skipped (Retry asks again)</source>
+        <translation>Капчи %1 пропускаются («Повторить» спросит снова)</translation>
+    </message>
+    <message>
+        <location line="+1"/>
+        <source>The hoster wants a puzzle; puzzles are off (Options, ed3k, Hoster)</source>
+        <translation>Хостер требует капчу; капчи выключены (Параметры, ed3k, Hoster)</translation>
+    </message>
+    <message>
+        <location line="+29"/>
         <source>Hoster downloads</source>
         <translation>Загрузки с хостеров</translation>
     </message>
     <message>
         <location line="+7"/>
-        <location line="+310"/>
+        <location line="+312"/>
         <source>Add links...</source>
         <translation>Добавить ссылки...</translation>
     </message>
     <message>
-        <location line="+150"/>
+        <location line="-8"/>
+        <source>Retry</source>
+        <translation>Повторить</translation>
+    </message>
+    <message>
+        <location line="+175"/>
         <source>JDownloader %1</source>
         <translation>JDownloader %1</translation>
     </message>
@@ -7948,7 +7977,7 @@ Its files go to the incoming folder, below a folder of the set&apos;s own; new v
         <translation type="vanished">Параметры...</translation>
     </message>
     <message>
-        <location line="-454"/>
+        <location line="-473"/>
         <source>File Name</source>
         <translation>Имя файла</translation>
     </message>
@@ -8083,18 +8112,18 @@ Its files go to the incoming folder, below a folder of the set&apos;s own; new v
     </message>
     <message>
         <location line="-269"/>
-        <location line="+271"/>
+        <location line="+273"/>
         <source>Remove</source>
         <translation>Удалить</translation>
     </message>
     <message>
         <location line="+1"/>
-        <location line="+35"/>
+        <location line="+42"/>
         <source>Remove and delete file</source>
         <translation>Удалить вместе с файлом</translation>
     </message>
     <message>
-        <location line="-33"/>
+        <location line="-40"/>
         <source>Copy link</source>
         <translation>Копировать ссылку</translation>
     </message>
@@ -8109,12 +8138,12 @@ Its files go to the incoming folder, below a folder of the set&apos;s own; new v
         <translation>Вставить ссылки</translation>
     </message>
     <message>
-        <location line="+27"/>
+        <location line="+34"/>
         <source>Delete the selected files from disk?</source>
         <translation>Удалить выбранные файлы с диска?</translation>
     </message>
     <message>
-        <location line="+61"/>
+        <location line="+71"/>
         <source>Links of a folder</source>
         <translation>Ссылки папки</translation>
     </message>
@@ -8157,7 +8186,7 @@ Its files go to the incoming folder, below a folder of the set&apos;s own; new v
 <context>
     <name>eMule::HosterPuzzleDialog</name>
     <message>
-        <location filename="../src/gui/dialogs/HosterPuzzleDialog.cpp" line="+22"/>
+        <location filename="../src/gui/dialogs/HosterPuzzleDialog.cpp" line="+23"/>
         <source>Puzzle from %1</source>
         <translation>Капча от %1</translation>
     </message>
@@ -8181,8 +8210,23 @@ Its files go to the incoming folder, below a folder of the set&apos;s own; new v
         <source>Skip</source>
         <translation>Пропустить</translation>
     </message>
+    <message>
+        <location line="+1"/>
+        <source>Skip this puzzle; another link of the file is tried. Retry asks again.</source>
+        <translation>Пропустить эту капчу; пробуется другая ссылка файла. «Повторить» спросит снова.</translation>
+    </message>
+    <message>
+        <location line="+1"/>
+        <source>Skip hoster</source>
+        <translation>Пропустить хостер</translation>
+    </message>
+    <message>
+        <location line="+1"/>
+        <source>Skip every puzzle of %1 until you retry a download there</source>
+        <translation>Пропускать все капчи %1, пока вы не повторите там загрузку</translation>
+    </message>
     <message numerus="yes">
-        <location line="+24"/>
+        <location line="+25"/>
         <source>%n second(s) left</source>
         <translation>
             <numerusform>Осталась %n секунда</numerusform>

@@ -207,6 +207,8 @@ bool handleRequest(const IpcMessage& msg, const std::function<void(const IpcMess
             s_join->pause(id);
         else if (op == QLatin1StringView("resume"))
             s_join->resume(id);
+        else if (op == QLatin1StringView("retry"))
+            s_join->retry(id);
         else if (op == QLatin1StringView("remove") || op == QLatin1StringView("delete"))
             s_join->remove(id, op == QLatin1StringView("delete"));
         else {
@@ -217,7 +219,7 @@ bool handleRequest(const IpcMessage& msg, const std::function<void(const IpcMess
         break;
     }
     case IpcMsgType::AnswerHosterPuzzle:
-        s_join->answerPuzzle(quint64(msg.field(0).toInteger()), msg.fieldString(1));
+        s_join->answerPuzzle(quint64(msg.field(0).toInteger()), msg.fieldString(1), msg.field(2).toBool());
         reply(IpcMessage::makeResult(seq, true, QCborValue{}));
         break;
     case IpcMsgType::CheckHosterLinks: {

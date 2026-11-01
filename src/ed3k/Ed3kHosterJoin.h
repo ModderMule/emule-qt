@@ -32,6 +32,7 @@
 #include <QJsonObject>
 #include <QList>
 #include <QPointer>
+#include <QSet>
 #include <QString>
 #include <QStringList>
 #include <QTimer>
@@ -93,6 +94,10 @@ public:
         PeerLink,            ///< downloading from a link a peer named; arg: its host
         LinkOffline,         ///< Complete: its link's recheck found it gone, no longer published
         HosterStep,          ///< Downloading, no bytes yet; arg: the resolver's status ("hoster", "puzzle", ...)
+        PuzzleSkipped,       ///< the user skipped the image puzzle, or let it time out
+        PuzzleWrong,         ///< the hoster refused the answer
+        HosterSkipped,       ///< arg: the hoster whose puzzles the user skips until Retry
+        PuzzlesOff,          ///< the puzzle switch is off (Options)
     };
 
     /// One download from a hoster link, as the GUI shows it.
@@ -114,6 +119,7 @@ public:
         QString rootHex;
         qint64 added = 0;
         QStringList mirrors;         ///< other links of the same file, not tried yet
+        QStringList tried;           ///< the file's links before url, in order (retry() starts over)
         int mirrorNo = 0;            ///< which of the file's links url is (0: the first)
         quint32 packageId = 0;       ///< 0: no package; else the group it was added in
         QString package;             ///< the package's name; its folder under incoming
@@ -184,9 +190,13 @@ public:
                                quint32 packageId = 0);
     void pause(quint32 id);
     void resume(quint32 id);
+    /// Starts @p id over from its first link; puzzles of its hosters are asked again.
+    void retry(quint32 id);
     /// Removes the item; its unfinished file always, a complete one only with @p deleteFile.
     void remove(quint32 id, bool deleteFile);
-    void answerPuzzle(quint64 puzzle, const QString& text);
+    /// Empty @p text skips; @p skipHoster also skips every later puzzle of that hoster until
+    /// retry() of an item with a link there.
+    void answerPuzzle(quint64 puzzle, const QString& text, bool skipHoster = false);
     /// Checks a login with the resolver; accountChecked() follows.
     void checkAccount(const QString& host, const QString& user, const QString& password);
     /// Checks @p urls through the core, as an item's own check goes: linkChecked() for each,
@@ -426,8 +436,14 @@ private:
     std::map<std::uint64_t, PeerLink> m_peerLinks;
     /// opens waiting for their part file to be prefilled, by link
     std::map<std::uint64_t, Ask> m_preparing;
-    /// puzzle → item, to clear the state on answer
-    std::map<quint64, quint32> m_puzzles;
+    /// puzzle → item and siteOf(host), to clear the state on answer
+    struct AskedPuzzle {
+        quint32 item = 0;
+        QString site;
+    };
+    std::map<quint64, AskedPuzzle> m_puzzles;
+    /// siteOf() of hosters whose puzzles the user skips (this run only)
+    QSet<QString> m_skipSites;
     QTimer m_tick;
     HosterCounters* m_counters = nullptr;
     bool m_resolverReady = false;   ///< last resolver available(), for retryNotReady

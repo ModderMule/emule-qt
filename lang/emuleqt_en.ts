@@ -4190,12 +4190,12 @@ Its names are then resolved after the lists you already follow.</source>
     <message>
         <location line="+5"/>
         <location line="+10"/>
-        <location line="+990"/>
+        <location line="+991"/>
         <source> credits/MiB</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location line="-999"/>
+        <location line="-1000"/>
         <source>Never pay (receipts only)</source>
         <translation type="unfinished"></translation>
     </message>
@@ -4351,12 +4351,12 @@ Its names are then resolved after the lists you already follow.</source>
     <message>
         <location line="+1"/>
         <location line="+6"/>
-        <location line="+592"/>
+        <location line="+593"/>
         <source>Remove</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location line="-588"/>
+        <location line="-589"/>
         <source>Followed name lists (the first one wins)</source>
         <translation type="unfinished"></translation>
     </message>
@@ -4443,12 +4443,12 @@ Its names are then resolved after the lists you already follow.</source>
     </message>
     <message>
         <location line="+0"/>
-        <location line="+829"/>
+        <location line="+830"/>
         <source>not read yet</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location line="-827"/>
+        <location line="-828"/>
         <source>The account is overdrawn: a new credit key is the way on.</source>
         <translation type="unfinished"></translation>
     </message>
@@ -4692,7 +4692,12 @@ Export?</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location line="+164"/>
+        <location line="+13"/>
+        <source>Off: a link that asks for a puzzle is skipped and shows &quot;Needs you&quot;; another link of the file is tried. Retry asks again.</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <location line="+152"/>
         <source>JDownloader: not installed</source>
         <translation type="unfinished"></translation>
     </message>
@@ -4757,7 +4762,7 @@ Export?</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location line="-487"/>
+        <location line="-488"/>
         <source>ed3k</source>
         <translation type="unfinished"></translation>
     </message>
@@ -4802,12 +4807,7 @@ Export?</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location line="+1"/>
-        <source>Off: a link that asks for a puzzle waits instead.</source>
-        <translation type="unfinished"></translation>
-    </message>
-    <message>
-        <location line="+2"/>
+        <location line="+4"/>
         <source>Use hoster links that other ed3k nodes name</source>
         <translation type="unfinished"></translation>
     </message>
@@ -4883,7 +4883,7 @@ Export?</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location line="-862"/>
+        <location line="-863"/>
         <source>Open Router</source>
         <translation type="unfinished"></translation>
     </message>
@@ -4898,7 +4898,7 @@ Export?</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location line="+774"/>
+        <location line="+775"/>
         <source>Check hoster links on search automatically</source>
         <translation type="unfinished"></translation>
     </message>
@@ -7669,23 +7669,48 @@ Its files go to the incoming folder, below a folder of the set&apos;s own; new v
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location line="+30"/>
+        <location line="+2"/>
+        <source>Puzzle skipped (Retry asks again)</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <location line="+1"/>
+        <source>The hoster refused the puzzle answer (Retry asks again)</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <location line="+1"/>
+        <source>Puzzles of %1 are skipped (Retry asks again)</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <location line="+1"/>
+        <source>The hoster wants a puzzle; puzzles are off (Options, ed3k, Hoster)</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <location line="+29"/>
         <source>Hoster downloads</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
         <location line="+7"/>
-        <location line="+310"/>
+        <location line="+312"/>
         <source>Add links...</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location line="+150"/>
+        <location line="-8"/>
+        <source>Retry</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <location line="+175"/>
         <source>JDownloader %1</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location line="-454"/>
+        <location line="-473"/>
         <source>File Name</source>
         <translation type="unfinished"></translation>
     </message>
@@ -7818,18 +7843,18 @@ Its files go to the incoming folder, below a folder of the set&apos;s own; new v
     </message>
     <message>
         <location line="-269"/>
-        <location line="+271"/>
+        <location line="+273"/>
         <source>Remove</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
         <location line="+1"/>
-        <location line="+35"/>
+        <location line="+42"/>
         <source>Remove and delete file</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location line="-33"/>
+        <location line="-40"/>
         <source>Copy link</source>
         <translation type="unfinished"></translation>
     </message>
@@ -7844,12 +7869,12 @@ Its files go to the incoming folder, below a folder of the set&apos;s own; new v
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location line="+27"/>
+        <location line="+34"/>
         <source>Delete the selected files from disk?</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location line="+61"/>
+        <location line="+71"/>
         <source>Links of a folder</source>
         <translation type="unfinished"></translation>
     </message>
@@ -7892,7 +7917,7 @@ Its files go to the incoming folder, below a folder of the set&apos;s own; new v
 <context>
     <name>eMule::HosterPuzzleDialog</name>
     <message>
-        <location filename="../src/gui/dialogs/HosterPuzzleDialog.cpp" line="+22"/>
+        <location filename="../src/gui/dialogs/HosterPuzzleDialog.cpp" line="+23"/>
         <source>Puzzle from %1</source>
         <translation type="unfinished"></translation>
     </message>
@@ -7916,8 +7941,23 @@ Its files go to the incoming folder, below a folder of the set&apos;s own; new v
         <source>Skip</source>
         <translation type="unfinished"></translation>
     </message>
+    <message>
+        <location line="+1"/>
+        <source>Skip this puzzle; another link of the file is tried. Retry asks again.</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <location line="+1"/>
+        <source>Skip hoster</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <location line="+1"/>
+        <source>Skip every puzzle of %1 until you retry a download there</source>
+        <translation type="unfinished"></translation>
+    </message>
     <message numerus="yes">
-        <location line="+24"/>
+        <location line="+25"/>
         <source>%n second(s) left</source>
         <translation type="unfinished">
             <numerusform></numerusform>

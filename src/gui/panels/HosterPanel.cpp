@@ -120,6 +120,10 @@ QString reasonText(int reason, const QString& arg)
     case 23: return HosterPanel::tr("From a link a peer named (%1)").arg(arg);
     case 24: return HosterPanel::tr("The hoster link is offline, no longer published");
     case 25: return stepText(arg);
+    case 26: return HosterPanel::tr("Puzzle skipped (Retry asks again)");
+    case 27: return HosterPanel::tr("The hoster refused the puzzle answer (Retry asks again)");
+    case 28: return HosterPanel::tr("Puzzles of %1 are skipped (Retry asks again)").arg(arg);
+    case 29: return HosterPanel::tr("The hoster wants a puzzle; puzzles are off (Options, ed3k, Hoster)");
     default: return {};
     }
 }
@@ -458,6 +462,8 @@ void HosterPanel::showContextMenu(const QPoint& pos)
     QMenu menu(this);
     QAction* pause = menu.addAction(menuIcon("Pause.ico"), tr("Pause"));
     QAction* resume = menu.addAction(menuIcon("Start.ico"), tr("Resume"));
+    // from the first link again; skipped puzzles are asked again
+    QAction* retry = menu.addAction(menuIcon("Restore.ico"), tr("Retry"));
     menu.addSeparator();
     QAction* remove = menu.addAction(menuIcon("ListRemove.ico"), tr("Remove"));
     QAction* del = menu.addAction(menuIcon("Delete.ico"), tr("Remove and delete file"));
@@ -482,6 +488,11 @@ void HosterPanel::showContextMenu(const QPoint& pos)
         }
     }
     folder->setEnabled(!folderFile.isEmpty());
+    // Waiting, Gone, Needs you, No resolver, Failed
+    retry->setEnabled(std::ranges::any_of(ids, [this](qint64 id) {
+        const auto s = m_items.value(id).value(QStringLiteral("state")).toInteger();
+        return s == 4 || s >= 9;
+    }));
     if (ids.size() == 1) {
         const int state = int(m_items.value(ids.first()).value(QStringLiteral("state")).toInteger());
         pause->setEnabled(state != kStateComplete && state != kStatePaused);
@@ -492,6 +503,8 @@ void HosterPanel::showContextMenu(const QPoint& pos)
         act(QStringLiteral("pause"));
     else if (chosen == resume)
         act(QStringLiteral("resume"));
+    else if (chosen == retry)
+        act(QStringLiteral("retry"));
     else if (chosen == remove)
         act(QStringLiteral("remove"));
     else if (chosen == del) {
@@ -530,14 +543,24 @@ void HosterPanel::onPuzzle(const IpcMessage& msg)
     auto* dlg = new HosterPuzzleDialog(image, msg.fieldString(3), name, msg.fieldString(4), int(msg.field(5).toInteger()),
                                        window());
     dlg->setAttribute(Qt::WA_DeleteOnClose);
-    connect(dlg, &HosterPuzzleDialog::answered, this, [this, puzzle](const QString& text) {
+    connect(dlg, &HosterPuzzleDialog::answered, this, [this, puzzle, dlg](const QString& text, bool skipHoster) {
+        m_puzzleDialogs.removeAll(dlg);
+        if (skipHoster) {
+            // the core skips the hoster's other open puzzles; their dialogs go too
+            for (const QPointer<HosterPuzzleDialog>& other : std::as_const(m_puzzleDialogs))
+                if (other && other->host() == dlg->host())
+                    QMetaObject::invokeMethod(other.data(), &QDialog::reject, Qt::QueuedConnection);
+        }
         if (!m_ipc)
             return;
         IpcMessage req(IpcMsgType::AnswerHosterPuzzle);
         req.append(qint64(puzzle));
         req.append(text);
+        req.append(skipHoster);
         m_ipc->sendRequest(std::move(req));
     });
+    m_puzzleDialogs.removeAll(nullptr);
+    m_puzzleDialogs << dlg;
     dlg->show();
     dlg->raise();
     dlg->activateWindow();

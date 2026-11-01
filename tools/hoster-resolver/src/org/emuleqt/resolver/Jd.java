@@ -222,7 +222,7 @@ final class Jd {
         if (e instanceof SkipReasonException) {
             final SkipReason r = ((SkipReasonException) e).getSkipReason();
             if (r == SkipReason.CAPTCHA) {
-                return needsUser(id, "puzzle");
+                return needsUser(id, puzzleKind(id));
             }
             if (r == SkipReason.NO_ACCOUNT) {
                 return needsUser(id, "login");
@@ -236,7 +236,7 @@ final class Jd {
             case LinkStatus.ERROR_FILE_NOT_FOUND:
                 return Out.event(id, "gone");
             case LinkStatus.ERROR_CAPTCHA:
-                return needsUser(id, "puzzle");
+                return needsUser(id, puzzleKind(id));
             case LinkStatus.ERROR_PREMIUM:
                 return needsUser(id, "login");
             case LinkStatus.ERROR_IP_BLOCKED:
@@ -272,6 +272,12 @@ final class Jd {
         return n.equals("http links") || n.equals("directhttp") || n.equals("ftp") || n.equals("updaterequired")
                 || n.equals("offline") || n.equals("generichttpdirectoryindex") || n.equals("generic autocontainer")
                 || n.startsWith("generic");
+    }
+
+    /** "skipped" or "wrong" after an image puzzle the user saw; else "puzzle" (one no solver takes). */
+    private static String puzzleKind(final long id) {
+        final String o = PuzzleSolver.outcome(id);
+        return o != null ? o : "puzzle";
     }
 
     private static Map<String, Object> needsUser(final long id, final String kind) {

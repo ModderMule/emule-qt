@@ -25,7 +25,7 @@ set -euo pipefail
 # The hoster resolver (resolver.zip) goes the same way: built here by
 # scripts/build-hoster-resolver.sh from the JDownloader sources (JD_DIR in .env or
 # the environment, default /Volumes/MySSD/Coding/Java), rsynced to /pub/ and its
-# SHA-256 put in the tag.
+# SHA-256 put in the tag. Every JD SVN tree found there is svn-updated first.
 # CI has no JD sources.
 #
 # The ed3k core (libs/packmule, the private ModderMule/packmule) is pinned for CI
@@ -52,7 +52,7 @@ set -euo pipefail
 # SHA256SUMS.txt attached -- and then publishes the update manifest.
 # Nothing needs to be started by hand.
 #
-# Usage: scripts/publish-release.sh [--publish-only]
+# Usage: scripts/publish-release.sh [--publish-only] [--no-build]
 #
 #   --publish-only   Skip the whole git side (no bump, no commit, no tag, no push)
 #                    and do what CI's manifest job does, for the version already in
@@ -61,17 +61,19 @@ set -euo pipefail
 #                    GeoLite2/resolver files on /pub/ (checked against the tag) and
 #                    upload it. The fallback when the CI secrets are missing or the
 #                    job failed.
+#   --no-build       Skip the JD svn update and the resolver compile; hash and upload
+#                    the resolver.zip left in build/hoster-resolver by the last build.
 
 # --- arguments --------------------------------------------------------------
 PUBLISH_ONLY=0
-if [[ $# -gt 0 ]]; then
-  if [[ $# -eq 1 && "$1" == "--publish-only" ]]; then
-    PUBLISH_ONLY=1
-  else
-    echo "usage: $0 [--publish-only]" >&2
-    exit 1
-  fi
-fi
+NO_BUILD=0
+for arg in "$@"; do
+  case "$arg" in
+    --publish-only) PUBLISH_ONLY=1 ;;
+    --no-build)     NO_BUILD=1 ;;
+    *) echo "usage: $0 [--publish-only] [--no-build]" >&2; exit 1 ;;
+  esac
+done
 
 # --- locate repo root -------------------------------------------------------
 if ! ROOT="$(git rev-parse --show-toplevel 2>/dev/null)"; then
@@ -199,8 +201,22 @@ fi
 
 # hoster resolver sources (scripts/build-hoster-resolver.sh)
 JD_SRC="${JD_DIR_ENV:-${JD_DIR:-/Volumes/MySSD/Coding/Java}}"
-if [[ "$PUBLISH_ONLY" -eq 0 && ! -d "$JD_SRC/JDownloader/src" ]]; then
+JD_REPOS=()
+for p in JDownloader AppWorkUtils JDBrowser MyJDownloaderClient; do
+  [[ -d "$JD_SRC/$p/.svn" ]] && JD_REPOS+=("$JD_SRC/$p")
+done
+RESOLVER_ZIP="$ROOT/build/hoster-resolver/resolver.zip"
+if [[ "$PUBLISH_ONLY" -eq 0 && "$NO_BUILD" -eq 1 && ! -f "$RESOLVER_ZIP" ]]; then
+  echo "error: --no-build needs an existing ${RESOLVER_ZIP} (run scripts/build-hoster-resolver.sh)" >&2
+  exit 1
+fi
+if [[ "$PUBLISH_ONLY" -eq 0 && "$NO_BUILD" -eq 0 && ( ${#JD_REPOS[@]} -eq 0 || ! -d "$JD_SRC/JDownloader/src" ) ]]; then
   echo "error: JDownloader sources not found at ${JD_SRC} (set JD_DIR in .env)" >&2
+  exit 1
+fi
+if [[ "$PUBLISH_ONLY" -eq 0 && "$NO_BUILD" -eq 0 ]] && ! command -v svn >/dev/null 2>&1; then
+  echo "error: svn not installed (needed to update the JD sources)" >&2
+  echo "  brew install subversion" >&2
   exit 1
 fi
 
@@ -317,7 +333,12 @@ else
     echo "  commit   : (none -- tagging existing HEAD at version ${CURRENT})"
   fi
   echo "  geoip    : scripts/fetch-geoip.sh -> rsync to ${PUBLISH_REMOTE_PATH}"
-  echo "  resolver : scripts/build-hoster-resolver.sh (${JD_SRC}) -> rsync to ${PUBLISH_REMOTE_PATH}"
+  if [[ "$NO_BUILD" -eq 1 ]]; then
+    echo "  resolver : existing ${RESOLVER_ZIP#"$ROOT"/} ($(date -r "$RESOLVER_ZIP" '+%Y-%m-%d %H:%M'), --no-build) -> rsync to ${PUBLISH_REMOTE_PATH}"
+  else
+    echo "  jd svn   : svn update ${JD_REPOS[*]##*/}"
+    echo "  resolver : scripts/build-hoster-resolver.sh (${JD_SRC}) -> rsync to ${PUBLISH_REMOTE_PATH}"
+  fi
   echo "  packmule : ${PM_COMMIT:0:12} (CI checks out ${PM_REF_FILE})"
   echo "  tag      : ${TAG}  (annotated, carries the GeoLite2 + resolver SHA-256)"
   echo "  push     : ${REMOTE} ${BRANCH}  and  ${REMOTE} ${TAG}"
@@ -371,11 +392,21 @@ fi
 # --- hoster resolver ----------------------------------------------------------
 # Built here because CI has no JD sources; same upload-then-tag order as GeoLite2.
 RESOLVER_SHA=""
-if [[ "$PUBLISH_ONLY" -eq 0 ]]; then
-  RESOLVER_ZIP="$ROOT/build/hoster-resolver/resolver.zip"
+if [[ "$PUBLISH_ONLY" -eq 0 && "$NO_BUILD" -eq 0 ]]; then
+  for repo in "${JD_REPOS[@]}"; do
+    echo "svn update ${repo} ..."
+    svn update --non-interactive --accept postpone "$repo" || abort_before_tag "svn update failed for ${repo}"
+    # conflicts are postponed with exit 0: text (col 1), property (col 2), tree (col 7)
+    if svn status "$repo" | grep -qE '^(C|.C|.{6}C)'; then
+      svn status "$repo" | grep -E '^(C|.C|.{6}C)' >&2
+      abort_before_tag "svn update left conflicts in ${repo} (resolve them first)"
+    fi
+  done
   echo "Building the hoster resolver from ${JD_SRC} ..."
   scripts/build-hoster-resolver.sh "$JD_SRC" "$ROOT/build/hoster-resolver" \
     || abort_before_tag "hoster resolver build failed"
+fi
+if [[ "$PUBLISH_ONLY" -eq 0 ]]; then
   RESOLVER_SHA="$(shasum -a 256 "$RESOLVER_ZIP" | awk '{print $1}')"
   [[ "$RESOLVER_SHA" =~ ^[0-9a-f]{64}$ ]] || abort_before_tag "could not hash ${RESOLVER_ZIP}"
 

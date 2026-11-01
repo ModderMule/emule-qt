@@ -27,13 +27,16 @@ import org.jdownloader.captcha.v2.solverjob.SolverJob;
 /**
  * Image puzzles go to the daemon as a `puzzle` event and wait for `answer`.
  * reCAPTCHA, hCaptcha and Turnstile need a browser; no solver takes them, so JD skips and
- * the task ends as needsUser{puzzle}.
+ * the task ends as needsUser{puzzle}. An image puzzle left unanswered ends as needsUser{skipped},
+ * one answered and refused as needsUser{wrong}.
  */
 final class PuzzleSolver extends ChallengeSolver<String> {
     private static final PuzzleSolver INSTANCE = new PuzzleSolver();
     /** Wait for the user at most this long; the GUI shows the same countdown. */
     private static final long ANSWER_TIMEOUT_S = 300;
     private static final Map<Long, CompletableFuture<String>> PENDING = new ConcurrentHashMap<Long, CompletableFuture<String>>();
+    /** task → how its last image puzzle ended: "skipped" (no answer) or "wrong" (answered) */
+    private static final Map<Long, String> OUTCOME = new ConcurrentHashMap<Long, String>();
     private static volatile boolean ask = true;
 
     private PuzzleSolver() {
@@ -62,6 +65,16 @@ final class PuzzleSolver extends ChallengeSolver<String> {
         ask = on;
     }
 
+    /** How the last image puzzle of @p task ended, for needsUser{kind}; null: none was shown. */
+    static String outcome(final long task) {
+        return OUTCOME.get(task);
+    }
+
+    /** The task ended. */
+    static void forget(final long task) {
+        OUTCOME.remove(task);
+    }
+
     static void answer(final long puzzle, final String text) {
         final CompletableFuture<String> f = PENDING.get(puzzle);
         if (f != null) {
@@ -87,11 +100,13 @@ final class PuzzleSolver extends ChallengeSolver<String> {
         }
         final BasicCaptchaChallenge bc = (BasicCaptchaChallenge) c;
         final long pid = c.getId().getID();
+        final long task = taskOf(c);
         final CompletableFuture<String> f = new CompletableFuture<String>();
         PENDING.put(pid, f);
+        OUTCOME.put(task, "skipped");
         try {
             final byte[] img = Files.readAllBytes(bc.getImageFile().toPath());
-            final Map<String, Object> m = Out.event(taskOf(c), "puzzle");
+            final Map<String, Object> m = Out.event(task, "puzzle");
             m.put("puzzle", pid);
             m.put("kind", "image");
             m.put("image", Base64.getEncoder().encodeToString(img));
@@ -103,6 +118,8 @@ final class PuzzleSolver extends ChallengeSolver<String> {
             Out.send(m);
             final String text = f.get(ANSWER_TIMEOUT_S, TimeUnit.SECONDS);
             if (!text.isEmpty()) {
+                // a captcha error after this: the hoster took the answer as wrong
+                OUTCOME.put(task, "wrong");
                 job.addAnswer(new CaptchaResponse(bc, this, text));
             }
         } catch (final TimeoutException | java.util.concurrent.ExecutionException | java.io.IOException e) {

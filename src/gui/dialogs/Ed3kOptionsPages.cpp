@@ -1282,7 +1282,8 @@ QWidget* Ed3kOptionsPages::buildHoster(QWidget* parent)
     dlForm->addRow(tr("Downloads at once:"), m_hosterStreamsSpin);
     dlLayout->addLayout(dlForm);
     m_hosterPuzzlesCheck = new QCheckBox(tr("Show image puzzles (captchas)"), dlGroup);
-    m_hosterPuzzlesCheck->setToolTip(tr("Off: a link that asks for a puzzle waits instead."));
+    m_hosterPuzzlesCheck->setToolTip(tr("Off: a link that asks for a puzzle is skipped and shows \"Needs you\"; "
+                                       "another link of the file is tried. Retry asks again."));
     dlLayout->addWidget(m_hosterPuzzlesCheck);
     m_hosterPeersCheck = new QCheckBox(tr("Use hoster links that other ed3k nodes name"), dlGroup);
     m_hosterPeersCheck->setVisible(thePrefs.showExtControls());

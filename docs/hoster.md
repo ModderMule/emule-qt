@@ -58,11 +58,15 @@ One item per file; `Item::mirrors` holds the links not tried yet (saved with the
 The tick moves to the next one (`mirrorDue`) when the current link is:
 
 - hard failed: *Gone*, *No resolver* (no plugin), *Failed* (not a disk error)
-- stuck: *Needs you* for a login, a browser puzzle or a block; a hoster wait over 5 min
+- stuck: *Needs you* for a login, a puzzle (browser, skipped, wrong answer, puzzles off) or a
+  block; a hoster wait over 5 min
 
 Never for a cause no mirror changes (hosters off, no/unready resolver, no node), never Paused
 or Queued. Verified blocks under a root stay, so the next mirror is checked against the same
-root. The last mirror keeps its state; Resume retries it. Host column tooltip: *Mirror n of m*.
+root. The last mirror keeps its state; Resume retries it. `Item::tried` keeps the links already
+left (saved). **Retry** (context menu, `HosterAction` op `retry`, `Ed3kHosterJoin::retry`) starts over
+from the first link and drops the skip of its hosters, so their puzzles show again. Enabled for
+Waiting, File removed, Needs you, No resolver, Failed. Host column tooltip: *Mirror n of m*.
 
 **Order** (`rankMirrors`, in `addMirrored`; stable): offline links last, then the account tier
 (2 premium with traffic left and not expired, 1 any other account, 0 none; `accountTier`), then
@@ -278,6 +282,19 @@ While an item downloads without bytes yet, the sidecar's `status` event says wha
 (`Reason::HosterStep`): opening the link, talking to the hoster (with an account: logging in), solving a
 captcha, connecting; `transfer` clears it. An image puzzle shows as *Puzzle* with its dialog; a browser
 captcha ends as *Needs you*.
+
+**Skipping puzzles** (as JD: a skipped link is not retried by itself, no pause). The dialog has
+*Skip* and *Skip hoster*; closing it or its timeout (300 s) is *Skip*. The sidecar tells how a
+puzzle ended in `needsUser{kind}`: `skipped` (no answer), `wrong` (answered, the hoster refused),
+`puzzle` (no solver: a browser captcha). Reasons: `PuzzleSkipped`, `PuzzleWrong`,
+`NeedsBrowserPuzzle`, `PuzzlesOff` (`puzzle` while the switch is off). All move on to the next mirror.
+*Skip hoster* (`AnswerHosterPuzzle` field 2) puts the hoster's `siteOf()` in `m_skipSites` for this
+run: its open puzzles are answered empty, later ones never reach the GUI, and those links end as
+`HosterSkipped`. JD's own skip variants (package, all, stop downloads) are not offered.
+
+JD clears its `CaptchaBlackList` only when its download watchdog stops, which never runs in the sidecar:
+a browser captcha (`BLOCK_HOSTER`, "no solver") would skip every later puzzle of that hoster. Each
+`open` clears it (`OpenTask`); what to skip is the daemon's call.
 
 JD's `CaptchaAPISolver` is switched off at sidecar start: headless, its `isEnabled()` starts MyJDownloader,
 which asks for logins on the console. That once read the request pipe and hung; since protocol 2 requests

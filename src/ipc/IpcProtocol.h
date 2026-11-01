@@ -888,9 +888,11 @@ enum class IpcMsgType : int {
     /// stuck, text ignored. package: the items form a new package (a folder under incoming);
     /// packageId != 0: they join that package instead. PushHosterItem follows each
     AddHosterLinks          = 1101,
-    /// [id: int, op: "pause"|"resume"|"remove"|"delete"] -> [ok]; delete also removes a complete file
+    /// [id: int, op: "pause"|"resume"|"retry"|"remove"|"delete"] -> [ok]; delete also removes a complete
+    /// file; retry starts over from the first link and asks the puzzles of its hosters again
     HosterAction            = 1102,
-    /// [puzzle: int, text: string] -> [ok]; empty text skips the puzzle
+    /// [puzzle: int, text: string, skipHoster?: bool] -> [ok]; empty text skips the puzzle;
+    /// skipHoster: also every later puzzle of that hoster, until a retry
     AnswerHosterPuzzle      = 1103,
     /// [host, user, password] -> [ok]; PushHosterAccount follows. Local clients only (a password)
     CheckHosterAccount      = 1104,

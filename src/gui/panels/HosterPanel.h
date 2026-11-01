@@ -21,6 +21,7 @@ class QTreeWidgetItem;
 
 namespace eMule {
 
+class HosterPuzzleDialog;
 class IpcClient;
 
 namespace Ipc {
@@ -72,6 +73,7 @@ private:
     QTreeWidget* m_tree = nullptr;
     QLabel* m_statusLabel = nullptr;
     QAction* m_addAction = nullptr;
+    QList<QPointer<HosterPuzzleDialog>> m_puzzleDialogs;   ///< open ones, for "Skip hoster"
     bool m_enabled = false;
     QMap<qint64, QTreeWidgetItem*> m_rows;
     QMap<qint64, QTreeWidgetItem*> m_packages;   ///< package id -> its row

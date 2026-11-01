@@ -17,6 +17,7 @@ namespace eMule {
 HosterPuzzleDialog::HosterPuzzleDialog(const QByteArray& image, const QString& host, const QString& fileName,
                                        const QString& explain, int timeoutS, QWidget* parent)
     : QDialog(parent)
+    , m_host(host)
     , m_left(timeoutS > 0 ? timeoutS : 300)
 {
     setWindowTitle(tr("Puzzle from %1").arg(host));
@@ -51,7 +52,10 @@ HosterPuzzleDialog::HosterPuzzleDialog(const QByteArray& image, const QString& h
     layout->addWidget(m_countdown);
     auto* buttons = new QDialogButtonBox(QDialogButtonBox::Ok, this);
     auto* skip = buttons->addButton(tr("Skip"), QDialogButtonBox::RejectRole);
-    Q_UNUSED(skip)
+    skip->setToolTip(tr("Skip this puzzle; another link of the file is tried. Retry asks again."));
+    auto* skipHoster = buttons->addButton(tr("Skip hoster"), QDialogButtonBox::RejectRole);
+    skipHoster->setToolTip(tr("Skip every puzzle of %1 until you retry a download there").arg(host));
+    connect(skipHoster, &QPushButton::clicked, this, [this] { m_skipHoster = true; });
     connect(buttons, &QDialogButtonBox::accepted, this, &QDialog::accept);
     connect(buttons, &QDialogButtonBox::rejected, this, &QDialog::reject);
     layout->addWidget(buttons);
@@ -67,7 +71,8 @@ void HosterPuzzleDialog::done(int result)
     if (!m_sent) {
         m_sent = true;
         m_timer.stop();
-        emit answered(result == QDialog::Accepted ? m_edit->text().trimmed() : QString());
+        const bool accepted = result == QDialog::Accepted;
+        emit answered(accepted ? m_edit->text().trimmed() : QString(), !accepted && m_skipHoster);
     }
     QDialog::done(result);
 }

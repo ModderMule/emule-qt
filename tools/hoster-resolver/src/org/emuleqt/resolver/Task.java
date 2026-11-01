@@ -26,6 +26,7 @@ abstract class Task {
             } catch (final Throwable e) {
                 Out.send(cancelled.get() ? Out.event(id, "cancelled") : Jd.failure(id, e));
             } finally {
+                PuzzleSolver.forget(id);
                 ResolverMain.TASKS.remove(id);
             }
         });
