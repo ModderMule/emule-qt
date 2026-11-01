@@ -153,7 +153,7 @@ BindApplyReport CoreSession::applyBindSelection()
     BindAddress::refresh();
     const BindAddress::Resolution now = BindAddress::current();
     const bool allowed = now.state != BindAddress::State::Blocked;
-    if (now == m_appliedBind && m_netSuspended != allowed)   // nothing new: still fine, or still waiting
+    if (BindAddress::sameBinding(now, m_appliedBind) && m_netSuspended != allowed)   // nothing new: still fine, or still waiting
         return {allowed ? BindApplyResult::Unchanged : BindApplyResult::Waiting};
     m_appliedBind = now;
     const uint16 tcpBefore = m_appliedTcpPort;

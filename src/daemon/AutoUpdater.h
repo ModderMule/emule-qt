@@ -78,6 +78,11 @@ public:
     [[nodiscard]] static QString packageFormat(const QString& fileName);
     /// The .app bundle on macOS, else the program dir.
     [[nodiscard]] static QString installRoot(const QString& appDir);
+    /// Updater args protecting config dirs inside @p root: the bundle's config/
+    /// follows the release unless edited (@p userFiles in it never replaced),
+    /// any other config dir there is kept as is.
+    [[nodiscard]] static QStringList configKeepArgs(const QString& root, const QStringList& configDirs,
+                                                    const QStringList& userFiles);
     /// Running inside Docker/Podman: update by pulling the image instead.
     [[nodiscard]] static bool inContainer();
     /// emuleqt-updater[.exe]

@@ -766,7 +766,7 @@ Zaufać nowemu certyfikatowi?</translation>
         <translation>Normalny</translation>
     </message>
     <message>
-        <location filename="../src/gui/dialogs/OptionsDialog.cpp" line="+3454"/>
+        <location filename="../src/gui/dialogs/OptionsDialog.cpp" line="+3455"/>
         <source>Test</source>
         <translation>Test</translation>
     </message>
@@ -9426,7 +9426,7 @@ Inni członkowie widzą Twój nick i wpisy; Twój węzeł uczestniczy w przekazy
 <context>
     <name>eMule::LogWidget</name>
     <message>
-        <location filename="../src/gui/controls/LogWidget.cpp" line="+87"/>
+        <location filename="../src/gui/controls/LogWidget.cpp" line="+88"/>
         <location line="+2"/>
         <source>Server Info</source>
         <translation>Info o serwerze</translation>
@@ -11852,8 +11852,8 @@ Pobrać ponownie?</translation>
         <translation>Pomoc</translation>
     </message>
     <message>
-        <location line="+273"/>
-        <location line="+2241"/>
+        <location line="+275"/>
+        <location line="+2239"/>
         <location line="+59"/>
         <location line="+6"/>
         <location line="+4"/>
@@ -11865,7 +11865,7 @@ Pobrać ponownie?</translation>
         <translation>Filtr IP</translation>
     </message>
     <message>
-        <location line="-2355"/>
+        <location line="-2353"/>
         <source>IP filter reloaded: %1 entries.</source>
         <translation>Przeładowano filtr IP: %1 wpisów.</translation>
     </message>
@@ -11891,29 +11891,29 @@ Pobrać ponownie?</translation>
     </message>
     <message>
         <location line="+2"/>
-        <location line="+8445"/>
+        <location line="+8489"/>
         <source>BitTorrent</source>
         <translation>BitTorrent</translation>
     </message>
     <message>
-        <location line="-8333"/>
+        <location line="-8377"/>
         <source>User Name</source>
         <translation>Nazwa użytkownika</translation>
     </message>
     <message>
         <location line="+8"/>
-        <location line="+6136"/>
+        <location line="+6134"/>
         <source>Language</source>
         <translation>Język</translation>
     </message>
     <message>
-        <location line="-6133"/>
+        <location line="-6131"/>
         <source>System Default</source>
         <translation>Domyślny systemowy</translation>
     </message>
     <message>
         <location line="+14"/>
-        <location line="+833"/>
+        <location line="+831"/>
         <location line="+384"/>
         <location line="+475"/>
         <location line="+298"/>
@@ -11921,7 +11921,7 @@ Pobrać ponownie?</translation>
         <translation>Inne opcje</translation>
     </message>
     <message>
-        <location line="-1987"/>
+        <location line="-1985"/>
         <source>Bring to front on link click</source>
         <translation>Przywróć po kliknięciu na link</translation>
     </message>
@@ -12008,25 +12008,25 @@ Pobrać ponownie?</translation>
     <message>
         <location line="+8"/>
         <location line="+40"/>
-        <location line="+6026"/>
+        <location line="+6024"/>
         <source>Core</source>
         <translation>Rdzeń</translation>
     </message>
     <message>
-        <location line="-6039"/>
+        <location line="-6037"/>
         <source>Address:</source>
         <translation>Adres:</translation>
     </message>
     <message>
         <location line="+4"/>
-        <location line="+1386"/>
+        <location line="+1384"/>
         <location line="+774"/>
         <location line="+427"/>
         <source>Port:</source>
         <translation>Port:</translation>
     </message>
     <message>
-        <location line="-2584"/>
+        <location line="-2582"/>
         <source>authentication token</source>
         <translation>token uwierzytelniający</translation>
     </message>
@@ -12200,12 +12200,12 @@ Czy na pewno chcesz kontynuować?</translation>
         <translation>Aktualizuj teraz</translation>
     </message>
     <message>
-        <location line="+8033"/>
+        <location line="+8079"/>
         <source>A database ships with each release. An optional free &lt;a href=&quot;https://www.maxmind.com/en/geolite2/signup&quot;&gt;MaxMind GeoLite2&lt;/a&gt; account keeps it current in between. This product includes GeoLite2 data created by MaxMind.</source>
         <translation>Baza danych jest dołączona do każdego wydania. Opcjonalne darmowe konto &lt;a href=&quot;https://www.maxmind.com/en/geolite2/signup&quot;&gt;MaxMind GeoLite2&lt;/a&gt; pozwala ją aktualizować pomiędzy wydaniami. Ten produkt zawiera dane GeoLite2 stworzone przez MaxMind.</translation>
     </message>
     <message>
-        <location line="-8013"/>
+        <location line="-8059"/>
         <source>Save CPU &amp;&amp; Memory Usage</source>
         <translation>Oszczędzaj procesor &amp;&amp; pamięć</translation>
     </message>
@@ -12281,7 +12281,7 @@ Czy na pewno chcesz kontynuować?</translation>
     </message>
     <message>
         <location line="+2"/>
-        <location line="+1866"/>
+        <location line="+1864"/>
         <location line="+133"/>
         <location line="+296"/>
         <location line="+1032"/>
@@ -12293,7 +12293,7 @@ Czy na pewno chcesz kontynuować?</translation>
         <translation>Włączone</translation>
     </message>
     <message>
-        <location line="-5128"/>
+        <location line="-5126"/>
         <source>Reset</source>
         <translation>Resetuj</translation>
     </message>
@@ -12310,13 +12310,13 @@ Czy na pewno chcesz kontynuować?</translation>
     <message>
         <location line="+3"/>
         <location line="+6"/>
-        <location line="+4507"/>
+        <location line="+4505"/>
         <location line="+347"/>
         <source> KB/s</source>
         <translation> KB/s</translation>
     </message>
     <message>
-        <location line="-4857"/>
+        <location line="-4855"/>
         <source>Upload</source>
         <translation>Wysyłanie</translation>
     </message>
@@ -12347,18 +12347,18 @@ Czy na pewno chcesz kontynuować?</translation>
     </message>
     <message>
         <location line="+23"/>
-        <location line="+4347"/>
+        <location line="+4345"/>
         <source>Client Port</source>
         <translation>Port klienta</translation>
     </message>
     <message>
-        <location line="-4344"/>
-        <location line="+7786"/>
+        <location line="-4342"/>
+        <location line="+7830"/>
         <source>TCP</source>
         <translation>TCP</translation>
     </message>
     <message>
-        <location line="-7780"/>
+        <location line="-7824"/>
         <source>UDP</source>
         <translation>UDP</translation>
     </message>
@@ -12368,12 +12368,12 @@ Czy na pewno chcesz kontynuować?</translation>
     </message>
     <message>
         <location line="+6"/>
-        <location line="+4347"/>
+        <location line="+4345"/>
         <source>Test Ports</source>
         <translation>Testuj porty</translation>
     </message>
     <message>
-        <location line="-4338"/>
+        <location line="-4336"/>
         <source>Use UPnP to Setup Ports</source>
         <translation>Użyj UPnP do konfiguracji portów</translation>
     </message>
@@ -12389,23 +12389,23 @@ Czy na pewno chcesz kontynuować?</translation>
     </message>
     <message>
         <location line="+4"/>
-        <location line="+1735"/>
-        <location line="+5607"/>
+        <location line="+1733"/>
+        <location line="+5648"/>
         <source>Any</source>
         <translation>Dowolny</translation>
     </message>
     <message>
-        <location line="-7340"/>
+        <location line="-7379"/>
         <source>Use only this network interface, for example a VPN tunnel. Pick one from the list, or type an IP address or a subnet such as 10.64.0.0/10 (the interface holding an address in it). Connections through a proxy are not bound.</source>
         <translation>Używaj tylko tego interfejsu sieciowego, np. tunelu VPN. Wybierz go z listy lub wpisz adres IP albo podsieć, np. 10.64.0.0/10 (interfejs posiadający adres z tej podsieci). Połączenia przez proxy nie są wiązane.</translation>
     </message>
     <message>
-        <location line="+5"/>
+        <location line="+7276"/>
         <source>While the selected interface is not available, all P2P, Usenet and update connections stay closed.</source>
         <translation>Dopóki wybrany interfejs jest niedostępny, wszystkie połączenia P2P, Usenet i aktualizacji pozostają zamknięte.</translation>
     </message>
     <message>
-        <location line="+11"/>
+        <location line="-7262"/>
         <source>Max. Sources/File</source>
         <translation>Maks. źródeł/plik</translation>
     </message>
@@ -12949,14 +12949,14 @@ Każde połączenie Usenet przechodzi wtedy przez proxy, więc jego prędkość 
         <translation>Ustawienia serwera SMTP</translation>
     </message>
     <message>
-        <location line="-1683"/>
+        <location line="-1681"/>
         <location line="+5"/>
-        <location line="+1681"/>
+        <location line="+1679"/>
         <source>Connection</source>
         <translation>Połączenie</translation>
     </message>
     <message>
-        <location line="-1682"/>
+        <location line="-1680"/>
         <location line="+54"/>
         <source>ed3k</source>
         <translation>ed3k</translation>
@@ -13057,7 +13057,7 @@ Każde połączenie Usenet przechodzi wtedy przez proxy, więc jego prędkość 
         <translation>DB-IP Country Lite (bez konta)</translation>
     </message>
     <message>
-        <location line="+1204"/>
+        <location line="+1202"/>
         <source>Server:</source>
         <translation>Serwer:</translation>
     </message>
@@ -13809,23 +13809,23 @@ Każde połączenie Usenet przechodzi wtedy przez proxy, więc jego prędkość 
         <location line="+1035"/>
         <location line="+154"/>
         <location line="+1913"/>
-        <location line="+2299"/>
+        <location line="+2345"/>
         <source>Add</source>
         <translation>Dodaj</translation>
     </message>
     <message>
-        <location line="-7929"/>
-        <location line="+2529"/>
+        <location line="-7973"/>
+        <location line="+2527"/>
         <location line="+1035"/>
         <location line="+154"/>
         <location line="+1640"/>
         <location line="+316"/>
-        <location line="+2261"/>
+        <location line="+2307"/>
         <source>Remove</source>
         <translation>Usuń</translation>
     </message>
     <message>
-        <location line="-5385"/>
+        <location line="-5431"/>
         <source>Display name (optional)</source>
         <translation>Nazwa wyświetlana (opcjonalnie)</translation>
     </message>
@@ -13903,7 +13903,7 @@ Każde połączenie Usenet przechodzi wtedy przez proxy, więc jego prędkość 
         <translation>Przepustowość</translation>
     </message>
     <message>
-        <location line="-4662"/>
+        <location line="-4660"/>
         <source>Downloads that are receiving data, and the sources sending it, are drawn in bold. A source listed under another file (A4AF) is bold too while it transfers. The connected server and the selected category tab are bold as well.</source>
         <translation>Pobierania, które odbierają dane, i źródła, które je wysyłają, są pogrubione. Źródło widoczne pod innym plikiem (A4AF) też jest pogrubione podczas przesyłania. Pogrubione są również połączony serwer i wybrana karta kategorii.</translation>
     </message>
@@ -13917,18 +13917,18 @@ Każde połączenie Usenet przechodzi wtedy przez proxy, więc jego prędkość 
     </message>
     <message>
         <location line="+262"/>
-        <location line="+4351"/>
+        <location line="+4349"/>
         <source>Open Router</source>
         <translation>Otwórz router</translation>
     </message>
     <message>
-        <location line="-4350"/>
-        <location line="+4351"/>
+        <location line="-4348"/>
+        <location line="+4349"/>
         <source>Opens the web page of this computer&apos;s router, where ports are forwarded</source>
         <translation>Otwiera stronę WWW routera tego komputera, na której przekierowuje się porty</translation>
     </message>
     <message>
-        <location line="-4340"/>
+        <location line="-4338"/>
         <source>Randomize ports at startup, range</source>
         <translation>Losowe porty przy starcie, zakres</translation>
     </message>
@@ -13938,7 +13938,7 @@ Każde połączenie Usenet przechodzi wtedy przez proxy, więc jego prędkość 
         <translation>Przy każdym starcie wybiera nowe wolne porty z tego zakresu: TCP, UDP o ile nie jest wyłączony, oraz port BitTorrenta, gdy BitTorrent jest włączony. Używaj z UPnP albo przekieruj cały zakres w routerze.</translation>
     </message>
     <message>
-        <location line="+745"/>
+        <location line="+743"/>
         <source>Rename downloads to the name most sources use</source>
         <translation>Zmieniaj nazwę pobieranych plików na nazwę używaną przez większość źródeł</translation>
     </message>
@@ -15015,7 +15015,12 @@ Dodanie indeksera później nie pobiera jego archiwum: nowy indekser dostaje wł
         <translation>Wyjście debugowania węzła ed3k. Karta jest widoczna, gdy ed3k jest włączony.</translation>
     </message>
     <message>
-        <location line="+2745"/>
+        <location line="+2618"/>
+        <source>This interface has no default route (split-tunnel VPN?): servers and peers outside its subnets are unreachable. Route all traffic through it, or choose another interface.</source>
+        <translation>Ten interfejs nie ma trasy domyślnej (VPN z podzielonym tunelem?): serwery i peery spoza jego podsieci są nieosiągalne. Kieruj przez niego cały ruch albo wybierz inny interfejs.</translation>
+    </message>
+    <message>
+        <location line="+173"/>
         <source>Downloading the DB-IP country database...</source>
         <translation>Pobieranie bazy krajów DB-IP...</translation>
     </message>
@@ -15040,12 +15045,12 @@ Dodanie indeksera później nie pobiera jego archiwum: nowy indekser dostaje wł
         <translation>Jeden port dla TCP i UDP eD2K, Kad i ed3k</translation>
     </message>
     <message>
-        <location line="+61"/>
+        <location line="+62"/>
         <source>%1 — not available</source>
         <translation>%1 — niedostępny</translation>
     </message>
     <message>
-        <location line="+16"/>
+        <location line="+17"/>
         <source>DB-IP Country Lite is free and needs no account; it is updated monthly. &lt;a href=&quot;https://db-ip.com&quot;&gt;IP Geolocation by DB-IP&lt;/a&gt; (CC BY 4.0).</source>
         <translation>DB-IP Country Lite jest darmowa, nie wymaga konta i jest aktualizowana co miesiąc. &lt;a href=&quot;https://db-ip.com&quot;&gt;IP Geolocation by DB-IP&lt;/a&gt; (CC BY 4.0).</translation>
     </message>
@@ -15054,7 +15059,7 @@ Dodanie indeksera później nie pobiera jego archiwum: nowy indekser dostaje wł
         <translation type="vanished">Uruchamia silnik BitTorrent razem z demonem. Gdy wyłączony, żaden torrent nie jest pobierany ani wysyłany.</translation>
     </message>
     <message>
-        <location line="-64"/>
+        <location line="-66"/>
         <source>unlimited</source>
         <translation>bez limitu</translation>
     </message>
@@ -15093,7 +15098,7 @@ Dodanie indeksera później nie pobiera jego archiwum: nowy indekser dostaje wł
         <translation type="vanished">Używany dla TCP i UDP. Musi się różnić od portów eD2K.</translation>
     </message>
     <message>
-        <location line="-3454"/>
+        <location line="-3500"/>
         <source>Listen port (TCP/UDP):</source>
         <translation>Port nasłuchu (TCP/UDP):</translation>
     </message>
@@ -15241,7 +15246,7 @@ Dodanie indeksera później nie pobiera jego archiwum: nowy indekser dostaje wł
         <translation>Nie można zaktualizować skojarzeń plików: %1</translation>
     </message>
     <message>
-        <location line="+1097"/>
+        <location line="+1143"/>
         <source>UDP is disabled in the config file (udpPort: 0)</source>
         <translation>UDP jest wyłączone w pliku konfiguracyjnym (udpPort: 0)</translation>
     </message>
@@ -15346,7 +15351,7 @@ Utworzyć go?</translation>
 %1</translation>
     </message>
     <message>
-        <location line="-3194"/>
+        <location line="-3240"/>
         <source>Disabled</source>
         <translation>Wyłączony</translation>
     </message>
@@ -16117,12 +16122,12 @@ Połączenia z serwerami news przełączają się natychmiast.</translation>
         <translation>Nie znaleziono biblioteki specialdlp, sprawdzanie nieaktywne</translation>
     </message>
     <message>
-        <location line="+480"/>
+        <location line="+509"/>
         <source>Port forwarding: %1</source>
         <translation>Przekierowanie portów: %1</translation>
     </message>
     <message>
-        <location line="+88"/>
+        <location line="+105"/>
         <source>Database: not connected to the core</source>
         <translation>Baza danych: brak połączenia z rdzeniem</translation>
     </message>

@@ -754,7 +754,7 @@ Trust the new certificate?</source>
         <translation>普通</translation>
     </message>
     <message>
-        <location filename="../src/gui/dialogs/OptionsDialog.cpp" line="+3454"/>
+        <location filename="../src/gui/dialogs/OptionsDialog.cpp" line="+3455"/>
         <source>Test</source>
         <translation>測試</translation>
     </message>
@@ -9368,7 +9368,7 @@ Other members see your nick and posts; your node takes part in passing the room&
 <context>
     <name>eMule::LogWidget</name>
     <message>
-        <location filename="../src/gui/controls/LogWidget.cpp" line="+87"/>
+        <location filename="../src/gui/controls/LogWidget.cpp" line="+88"/>
         <location line="+2"/>
         <source>Server Info</source>
         <translation>伺服器資訊</translation>
@@ -11784,8 +11784,8 @@ Download it again?</source>
         <translation>說明</translation>
     </message>
     <message>
-        <location line="+273"/>
-        <location line="+2241"/>
+        <location line="+275"/>
+        <location line="+2239"/>
         <location line="+59"/>
         <location line="+6"/>
         <location line="+4"/>
@@ -11797,7 +11797,7 @@ Download it again?</source>
         <translation>IP 過濾器</translation>
     </message>
     <message>
-        <location line="-2355"/>
+        <location line="-2353"/>
         <source>IP filter reloaded: %1 entries.</source>
         <translation>IP 過濾器已重新載入：%1 個項目。</translation>
     </message>
@@ -11823,29 +11823,29 @@ Download it again?</source>
     </message>
     <message>
         <location line="+2"/>
-        <location line="+8445"/>
+        <location line="+8489"/>
         <source>BitTorrent</source>
         <translation>BitTorrent</translation>
     </message>
     <message>
-        <location line="-8333"/>
+        <location line="-8377"/>
         <source>User Name</source>
         <translation>使用者名稱</translation>
     </message>
     <message>
         <location line="+8"/>
-        <location line="+6136"/>
+        <location line="+6134"/>
         <source>Language</source>
         <translation>語言</translation>
     </message>
     <message>
-        <location line="-6133"/>
+        <location line="-6131"/>
         <source>System Default</source>
         <translation>系統預設</translation>
     </message>
     <message>
         <location line="+14"/>
-        <location line="+833"/>
+        <location line="+831"/>
         <location line="+384"/>
         <location line="+475"/>
         <location line="+298"/>
@@ -11853,7 +11853,7 @@ Download it again?</source>
         <translation>其他</translation>
     </message>
     <message>
-        <location line="-1987"/>
+        <location line="-1985"/>
         <source>Bring to front on link click</source>
         <translation>點選連結時將視窗移至最前</translation>
     </message>
@@ -11940,25 +11940,25 @@ Download it again?</source>
     <message>
         <location line="+8"/>
         <location line="+40"/>
-        <location line="+6026"/>
+        <location line="+6024"/>
         <source>Core</source>
         <translation>核心</translation>
     </message>
     <message>
-        <location line="-6039"/>
+        <location line="-6037"/>
         <source>Address:</source>
         <translation>位址：</translation>
     </message>
     <message>
         <location line="+4"/>
-        <location line="+1386"/>
+        <location line="+1384"/>
         <location line="+774"/>
         <location line="+427"/>
         <source>Port:</source>
         <translation>連接埠：</translation>
     </message>
     <message>
-        <location line="-2584"/>
+        <location line="-2582"/>
         <source>authentication token</source>
         <translation>驗證權杖</translation>
     </message>
@@ -12132,12 +12132,12 @@ Are you sure you want to continue?</source>
         <translation>立即更新</translation>
     </message>
     <message>
-        <location line="+8033"/>
+        <location line="+8079"/>
         <source>A database ships with each release. An optional free &lt;a href=&quot;https://www.maxmind.com/en/geolite2/signup&quot;&gt;MaxMind GeoLite2&lt;/a&gt; account keeps it current in between. This product includes GeoLite2 data created by MaxMind.</source>
         <translation>每個版本都附帶一個資料庫。可選用的免費 &lt;a href=&quot;https://www.maxmind.com/en/geolite2/signup&quot;&gt;MaxMind GeoLite2&lt;/a&gt; 帳號能在版本之間保持資料庫為最新。本產品包含由 MaxMind 建立的 GeoLite2 資料。</translation>
     </message>
     <message>
-        <location line="-8013"/>
+        <location line="-8059"/>
         <source>Save CPU &amp;&amp; Memory Usage</source>
         <translation>節省 CPU &amp;&amp; 記憶體用量</translation>
     </message>
@@ -12213,7 +12213,7 @@ Are you sure you want to continue?</source>
     </message>
     <message>
         <location line="+2"/>
-        <location line="+1866"/>
+        <location line="+1864"/>
         <location line="+133"/>
         <location line="+296"/>
         <location line="+1032"/>
@@ -12225,7 +12225,7 @@ Are you sure you want to continue?</source>
         <translation>已啟用</translation>
     </message>
     <message>
-        <location line="-5128"/>
+        <location line="-5126"/>
         <source>Reset</source>
         <translation>重置</translation>
     </message>
@@ -12242,13 +12242,13 @@ Are you sure you want to continue?</source>
     <message>
         <location line="+3"/>
         <location line="+6"/>
-        <location line="+4507"/>
+        <location line="+4505"/>
         <location line="+347"/>
         <source> KB/s</source>
         <translation> KB/s</translation>
     </message>
     <message>
-        <location line="-4857"/>
+        <location line="-4855"/>
         <source>Upload</source>
         <translation>上傳</translation>
     </message>
@@ -12279,18 +12279,18 @@ Are you sure you want to continue?</source>
     </message>
     <message>
         <location line="+23"/>
-        <location line="+4347"/>
+        <location line="+4345"/>
         <source>Client Port</source>
         <translation>客戶端連接埠</translation>
     </message>
     <message>
-        <location line="-4344"/>
-        <location line="+7786"/>
+        <location line="-4342"/>
+        <location line="+7830"/>
         <source>TCP</source>
         <translation>TCP</translation>
     </message>
     <message>
-        <location line="-7780"/>
+        <location line="-7824"/>
         <source>UDP</source>
         <translation>UDP</translation>
     </message>
@@ -12300,12 +12300,12 @@ Are you sure you want to continue?</source>
     </message>
     <message>
         <location line="+6"/>
-        <location line="+4347"/>
+        <location line="+4345"/>
         <source>Test Ports</source>
         <translation>測試連接埠</translation>
     </message>
     <message>
-        <location line="-4338"/>
+        <location line="-4336"/>
         <source>Use UPnP to Setup Ports</source>
         <translation>使用 UPnP 設定連接埠</translation>
     </message>
@@ -12321,23 +12321,23 @@ Are you sure you want to continue?</source>
     </message>
     <message>
         <location line="+4"/>
-        <location line="+1735"/>
-        <location line="+5607"/>
+        <location line="+1733"/>
+        <location line="+5648"/>
         <source>Any</source>
         <translation>任何</translation>
     </message>
     <message>
-        <location line="-7340"/>
+        <location line="-7379"/>
         <source>Use only this network interface, for example a VPN tunnel. Pick one from the list, or type an IP address or a subnet such as 10.64.0.0/10 (the interface holding an address in it). Connections through a proxy are not bound.</source>
         <translation>只使用這個網路介面，例如 VPN 通道。可從清單中選擇，或輸入 IP 位址或子網路，例如 10.64.0.0/10（即擁有該範圍內位址的介面）。透過代理的連線不會被綁定。</translation>
     </message>
     <message>
-        <location line="+5"/>
+        <location line="+7276"/>
         <source>While the selected interface is not available, all P2P, Usenet and update connections stay closed.</source>
         <translation>在選取的介面無法使用期間，所有 P2P、Usenet 和更新連線都會保持關閉。</translation>
     </message>
     <message>
-        <location line="+11"/>
+        <location line="-7262"/>
         <source>Max. Sources/File</source>
         <translation>每個檔案最大來源數</translation>
     </message>
@@ -12881,14 +12881,14 @@ Every Usenet connection then passes through the proxy, so its speed caps the dow
         <translation>SMTP 伺服器設定</translation>
     </message>
     <message>
-        <location line="-1683"/>
+        <location line="-1681"/>
         <location line="+5"/>
-        <location line="+1681"/>
+        <location line="+1679"/>
         <source>Connection</source>
         <translation>連線</translation>
     </message>
     <message>
-        <location line="-1682"/>
+        <location line="-1680"/>
         <location line="+54"/>
         <source>ed3k</source>
         <translation>ed3k</translation>
@@ -12989,7 +12989,7 @@ Every Usenet connection then passes through the proxy, so its speed caps the dow
         <translation>DB-IP Country Lite（無需帳戶）</translation>
     </message>
     <message>
-        <location line="+1204"/>
+        <location line="+1202"/>
         <source>Server:</source>
         <translation>伺服器：</translation>
     </message>
@@ -13741,23 +13741,23 @@ Every Usenet connection then passes through the proxy, so its speed caps the dow
         <location line="+1035"/>
         <location line="+154"/>
         <location line="+1913"/>
-        <location line="+2299"/>
+        <location line="+2345"/>
         <source>Add</source>
         <translation>加入</translation>
     </message>
     <message>
-        <location line="-7929"/>
-        <location line="+2529"/>
+        <location line="-7973"/>
+        <location line="+2527"/>
         <location line="+1035"/>
         <location line="+154"/>
         <location line="+1640"/>
         <location line="+316"/>
-        <location line="+2261"/>
+        <location line="+2307"/>
         <source>Remove</source>
         <translation>移除</translation>
     </message>
     <message>
-        <location line="-5385"/>
+        <location line="-5431"/>
         <source>Display name (optional)</source>
         <translation>顯示名稱（選填）</translation>
     </message>
@@ -13835,7 +13835,7 @@ Every Usenet connection then passes through the proxy, so its speed caps the dow
         <translation>頻寬</translation>
     </message>
     <message>
-        <location line="-4662"/>
+        <location line="-4660"/>
         <source>Downloads that are receiving data, and the sources sending it, are drawn in bold. A source listed under another file (A4AF) is bold too while it transfers. The connected server and the selected category tab are bold as well.</source>
         <translation>正在接收資料的下載及傳送資料的來源以粗體顯示。列在其他檔案下的來源 (A4AF) 在傳輸時也以粗體顯示。已連線的伺服器和選取的分類分頁同樣以粗體顯示。</translation>
     </message>
@@ -13849,18 +13849,18 @@ Every Usenet connection then passes through the proxy, so its speed caps the dow
     </message>
     <message>
         <location line="+262"/>
-        <location line="+4351"/>
+        <location line="+4349"/>
         <source>Open Router</source>
         <translation>開啟路由器</translation>
     </message>
     <message>
-        <location line="-4350"/>
-        <location line="+4351"/>
+        <location line="-4348"/>
+        <location line="+4349"/>
         <source>Opens the web page of this computer&apos;s router, where ports are forwarded</source>
         <translation>開啟此電腦路由器的網頁，可在其中設定連接埠轉送</translation>
     </message>
     <message>
-        <location line="-4340"/>
+        <location line="-4338"/>
         <source>Randomize ports at startup, range</source>
         <translation>啟動時隨機選擇連接埠，範圍</translation>
     </message>
@@ -13870,7 +13870,7 @@ Every Usenet connection then passes through the proxy, so its speed caps the dow
         <translation>每次啟動時從此範圍選擇新的空閒連接埠：TCP、UDP（除非已停用），以及啟用 BitTorrent 時的 BitTorrent 連接埠。請搭配 UPnP 使用，或在路由器中轉送整個範圍。</translation>
     </message>
     <message>
-        <location line="+745"/>
+        <location line="+743"/>
         <source>Rename downloads to the name most sources use</source>
         <translation>將下載重新命名為大多數來源使用的名稱</translation>
     </message>
@@ -14945,7 +14945,12 @@ Adding one later does not fetch its back catalogue: a new indexer gets its own f
         <translation>ed3k 節點的偵錯輸出。ed3k 開啟時顯示此分頁。</translation>
     </message>
     <message>
-        <location line="+2745"/>
+        <location line="+2618"/>
+        <source>This interface has no default route (split-tunnel VPN?): servers and peers outside its subnets are unreachable. Route all traffic through it, or choose another interface.</source>
+        <translation>此介面沒有預設路由（分割通道 VPN？）：其子網路以外的伺服器和節點無法連線。請讓所有流量經過此介面，或選擇其他介面。</translation>
+    </message>
+    <message>
+        <location line="+173"/>
         <source>Downloading the DB-IP country database...</source>
         <translation>正在下載 DB-IP 國家資料庫...</translation>
     </message>
@@ -14970,12 +14975,12 @@ Adding one later does not fetch its back catalogue: a new indexer gets its own f
         <translation>eD2K TCP 與 UDP、Kad 和 ed3k 共用一個連接埠</translation>
     </message>
     <message>
-        <location line="+61"/>
+        <location line="+62"/>
         <source>%1 — not available</source>
         <translation>%1 — 無法使用</translation>
     </message>
     <message>
-        <location line="+16"/>
+        <location line="+17"/>
         <source>DB-IP Country Lite is free and needs no account; it is updated monthly. &lt;a href=&quot;https://db-ip.com&quot;&gt;IP Geolocation by DB-IP&lt;/a&gt; (CC BY 4.0).</source>
         <translation>DB-IP Country Lite 免費且無需帳戶，每月更新。&lt;a href=&quot;https://db-ip.com&quot;&gt;IP Geolocation by DB-IP&lt;/a&gt; (CC BY 4.0).</translation>
     </message>
@@ -14984,7 +14989,7 @@ Adding one later does not fetch its back catalogue: a new indexer gets its own f
         <translation type="vanished">隨背景程式啟動 BitTorrent 引擎。關閉時不下載也不做種任何種子。</translation>
     </message>
     <message>
-        <location line="-64"/>
+        <location line="-66"/>
         <source>unlimited</source>
         <translation>無限制</translation>
     </message>
@@ -15023,7 +15028,7 @@ Adding one later does not fetch its back catalogue: a new indexer gets its own f
         <translation type="vanished">同時用於 TCP 和 UDP。必須與 eD2K 連接埠不同。</translation>
     </message>
     <message>
-        <location line="-3454"/>
+        <location line="-3500"/>
         <source>Listen port (TCP/UDP):</source>
         <translation>監聽連接埠 (TCP/UDP)：</translation>
     </message>
@@ -15171,7 +15176,7 @@ Adding one later does not fetch its back catalogue: a new indexer gets its own f
         <translation>無法更新檔案關聯：%1</translation>
     </message>
     <message>
-        <location line="+1097"/>
+        <location line="+1143"/>
         <source>UDP is disabled in the config file (udpPort: 0)</source>
         <translation>UDP 已在設定檔中停用 (udpPort: 0)</translation>
     </message>
@@ -15276,7 +15281,7 @@ Create it?</source>
 %1</translation>
     </message>
     <message>
-        <location line="-3194"/>
+        <location line="-3240"/>
         <source>Disabled</source>
         <translation>已停用</translation>
     </message>
@@ -16047,12 +16052,12 @@ News server connections switch over immediately.</source>
         <translation>找不到 specialdlp 程式庫，檢查未啟用</translation>
     </message>
     <message>
-        <location line="+480"/>
+        <location line="+509"/>
         <source>Port forwarding: %1</source>
         <translation>連接埠轉送：%1</translation>
     </message>
     <message>
-        <location line="+88"/>
+        <location line="+105"/>
         <source>Database: not connected to the core</source>
         <translation>資料庫：未連線到核心</translation>
     </message>

@@ -1,10 +1,12 @@
 #include "Updater.h"
 #include "Platform.h"
 
+#include <algorithm>
 #include <cstdio>
 #include <ctime>
 #include <fstream>
 #include <iostream>
+#include <map>
 #include <thread>
 
 namespace fs = std::filesystem;
@@ -42,6 +44,38 @@ bool parseInt(const std::string& s, std::int64_t& out)
     }
 }
 
+using Manifest = std::map<std::string, std::string>;
+
+Manifest readManifest(const fs::path& file)
+{
+    Manifest m;
+    std::ifstream f(file, std::ios::binary);
+    std::string line;
+    while (std::getline(f, line)) {
+        if (!line.empty() && line.back() == '\r')
+            line.pop_back();
+        if (line.size() > 17 && line[16] == ' ')
+            m[line.substr(17)] = line.substr(0, 16);
+    }
+    return m;
+}
+
+bool writeManifest(const fs::path& file, const Manifest& m)
+{
+    const fs::path tmp = platform::toPath(platform::fromPath(file) + ".tmp");
+    {
+        std::ofstream f(tmp, std::ios::binary | std::ios::trunc);
+        for (const auto& [key, hash] : m)
+            f << hash << ' ' << key << '\n';
+        f.flush();
+        if (!f)
+            return false;
+    }
+    std::error_code ec;
+    fs::rename(tmp, file, ec);
+    return !ec;
+}
+
 std::string quoteForLog(const std::vector<std::string>& argv)
 {
     std::string s;
@@ -59,7 +93,8 @@ std::string quoteForLog(const std::vector<std::string>& argv)
 const char* kUsage =
     "usage: emuleqt-updater --package <file> --format dmg|archive|inno --target <dir>\n"
     "  [--version X.Y.Z] [--wait-pid <pid>]... [--wait-timeout <sec>]\n"
-    "  [--keep-existing <relpath>]... [--log <file>] [--result <file>]\n"
+    "  [--keep-existing <relpath>]... [--keep-edited <relpath>]...\n"
+    "  [--log <file>] [--result <file>]\n"
     "  [--launch <exe> [args...] --end]...\n";
 
 } // namespace
@@ -154,6 +189,7 @@ std::string Updater::parseArgs(const std::vector<std::string>& args, Options& op
         }
         if (a != "--package" && a != "--format" && a != "--target" && a != "--version"
             && a != "--wait-pid" && a != "--wait-timeout" && a != "--keep-existing"
+            && a != "--keep-edited"
             && a != "--log" && a != "--result")
             return "unknown argument '" + a + "'";
         if (!value(v))
@@ -183,11 +219,11 @@ std::string Updater::parseArgs(const std::vector<std::string>& args, Options& op
             if (!parseInt(v, sec) || sec < 0 || sec > 86400)
                 return "bad timeout '" + v + "'";
             opts.waitTimeoutSec = static_cast<int>(sec);
-        } else if (a == "--keep-existing") {
+        } else if (a == "--keep-existing" || a == "--keep-edited") {
             fs::path p = platform::toPath(v).lexically_normal();
             if (p.is_absolute() || p.empty() || *p.begin() == "..")
-                return "bad --keep-existing '" + v + "'";
-            opts.keepExisting.push_back(std::move(p));
+                return "bad " + a + " '" + v + "'";
+            (a == "--keep-existing" ? opts.keepExisting : opts.keepEdited).push_back(std::move(p));
         } else if (a == "--log") {
             opts.logFile = platform::toPath(v);
         } else if (a == "--result") {
@@ -238,6 +274,27 @@ bool Updater::isUnder(const fs::path& rel, const fs::path& base)
         ++r;
     }
     return true;
+}
+
+std::string Updater::fileHash(const fs::path& file)
+{
+    std::ifstream f(file, std::ios::binary);
+    if (!f)
+        return {};
+    std::uint64_t h = 0xcbf29ce484222325ull;
+    std::vector<char> buf(65536);
+    while (f) {
+        f.read(buf.data(), static_cast<std::streamsize>(buf.size()));
+        for (std::streamsize i = 0; i < f.gcount(); ++i) {
+            h ^= static_cast<unsigned char>(buf[static_cast<std::size_t>(i)]);
+            h *= 0x100000001b3ull;
+        }
+    }
+    if (f.bad())
+        return {};
+    char out[17];
+    std::snprintf(out, sizeof out, "%016llx", static_cast<unsigned long long>(h));
+    return out;
 }
 
 // ---------------------------------------------------------------------------
@@ -426,8 +483,17 @@ bool Updater::overlay(const fs::path& from)
     };
     std::vector<Change> changes;
     std::vector<fs::path> newDirs;
-    int replaced = 0, added = 0, kept = 0;
+    int replaced = 0, added = 0, kept = 0, edited = 0;
     bool ok = true;
+
+    // --keep-edited: what the last update installed vs. what this one does
+    std::map<fs::path, Manifest> oldManifests, newManifests;
+    for (const auto& dir : m_opts.keepEdited) {
+        oldManifests[dir] = readManifest(target / dir / kManifestName);
+        newManifests[dir];
+    }
+    enum class Sidecar { Bak, New };
+    std::vector<std::pair<fs::path, Sidecar>> sidecars;
 
     auto keptPath = [this](const fs::path& rel) {
         for (const auto& k : m_opts.keepExisting)
@@ -484,6 +550,32 @@ bool Updater::overlay(const fs::path& from)
             ++kept;
             continue;
         }
+        // unedited files are ours to replace; edits stay, the update goes to .new
+        const fs::path* edDir = fs::is_regular_file(st) ? editedDirFor(rel) : nullptr;
+        std::string edKey, srcHash;
+        if (edDir) {
+            edKey = platform::fromPath(rel.lexically_relative(*edDir));
+            std::ranges::replace(edKey, '\\', '/');
+            srcHash = fileHash(src);
+            if (dstExists && fs::is_regular_file(dstSt)) {
+                const std::string live = fileHash(dst);
+                const Manifest& old = oldManifests[*edDir];
+                const auto rec = old.find(edKey);
+                if (!live.empty() && live == srcHash) {
+                    newManifests[*edDir][edKey] = srcHash;
+                    ++kept;
+                    continue;
+                }
+                if (rec != old.end() && rec->second != live) {
+                    newManifests[*edDir][edKey] = rec->second;
+                    sidecars.emplace_back(rel, Sidecar::New);
+                    ++edited;
+                    continue;
+                }
+                if (rec == old.end())   // no record (older version): adopt, theirs to .bak
+                    sidecars.emplace_back(rel, Sidecar::Bak);
+            }
+        }
         bool backedUp = false;
         if (dstExists) {
             if (fs::is_directory(dstSt)) {
@@ -516,11 +608,31 @@ bool Updater::overlay(const fs::path& from)
             break;
         }
         backedUp ? ++replaced : ++added;
+        if (edDir && !srcHash.empty())
+            newManifests[*edDir][edKey] = srcHash;
     }
 
     if (ok) {
+        // best effort from here: the install itself succeeded
+        for (const auto& [rel, kind] : sidecars) {
+            const bool isNew = kind == Sidecar::New;
+            const fs::path side = platform::toPath(platform::fromPath(target / rel) + (isNew ? ".new" : ".bak"));
+            fs::copy_file(isNew ? from / rel : backup / rel, side, fs::copy_options::overwrite_existing, ec);
+            if (ec)
+                m_log.line("cannot write " + platform::fromPath(side) + ": " + ec.message());
+            else if (isNew)
+                m_log.line(platform::fromPath(rel) + " has local edits, kept; update is in .new");
+            else
+                m_log.line(platform::fromPath(rel) + " replaced, previous copy in .bak");
+        }
+        for (const auto& [dir, m] : newManifests) {
+            const fs::path file = target / dir / kManifestName;
+            if (fs::is_directory(target / dir, ec) && !writeManifest(file, m))
+                m_log.line("cannot write " + platform::fromPath(file));
+        }
         m_log.line("overlay: " + std::to_string(replaced) + " replaced, " + std::to_string(added)
-                   + " added, " + std::to_string(kept) + " kept");
+                   + " added, " + std::to_string(kept) + " kept"
+                   + (edited ? ", " + std::to_string(edited) + " edited kept" : std::string()));
         fs::remove_all(backup, ec);
         return true;
     }
@@ -582,6 +694,14 @@ void Updater::runLaunches()
         else
             m_log.line("launch failed: " + quoteForLog(cmd) + ": " + error);
     }
+}
+
+const fs::path* Updater::editedDirFor(const fs::path& rel) const
+{
+    for (const auto& d : m_opts.keepEdited)
+        if (isUnder(rel, d))
+            return &d;
+    return nullptr;
 }
 
 void Updater::fail(const std::string& error)

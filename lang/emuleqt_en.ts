@@ -825,7 +825,7 @@ Trust the new certificate?</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../src/gui/dialogs/OptionsDialog.cpp" line="+3454"/>
+        <location filename="../src/gui/dialogs/OptionsDialog.cpp" line="+3455"/>
         <source>Test</source>
         <translation type="unfinished"></translation>
     </message>
@@ -9144,7 +9144,7 @@ Other members see your nick and posts; your node takes part in passing the room&
 <context>
     <name>eMule::LogWidget</name>
     <message>
-        <location filename="../src/gui/controls/LogWidget.cpp" line="+87"/>
+        <location filename="../src/gui/controls/LogWidget.cpp" line="+88"/>
         <location line="+2"/>
         <source>Server Info</source>
         <translation type="unfinished"></translation>
@@ -11519,8 +11519,8 @@ Download it again?</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location line="+273"/>
-        <location line="+2241"/>
+        <location line="+275"/>
+        <location line="+2239"/>
         <location line="+59"/>
         <location line="+6"/>
         <location line="+4"/>
@@ -11532,7 +11532,7 @@ Download it again?</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location line="-2355"/>
+        <location line="-2353"/>
         <source>IP filter reloaded: %1 entries.</source>
         <translation type="unfinished"></translation>
     </message>
@@ -11542,12 +11542,12 @@ Download it again?</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location line="+5249"/>
+        <location line="+5247"/>
         <source>Bandwidth</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location line="-5040"/>
+        <location line="-5038"/>
         <source>General options</source>
         <translation type="unfinished"></translation>
     </message>
@@ -11589,29 +11589,29 @@ Download it again?</source>
     </message>
     <message>
         <location line="+2"/>
-        <location line="+8445"/>
+        <location line="+8489"/>
         <source>BitTorrent</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location line="-8333"/>
+        <location line="-8377"/>
         <source>User Name</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
         <location line="+8"/>
-        <location line="+6136"/>
+        <location line="+6134"/>
         <source>Language</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location line="-6133"/>
+        <location line="-6131"/>
         <source>System Default</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
         <location line="+14"/>
-        <location line="+833"/>
+        <location line="+831"/>
         <location line="+384"/>
         <location line="+475"/>
         <location line="+298"/>
@@ -11619,7 +11619,7 @@ Download it again?</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location line="-1987"/>
+        <location line="-1985"/>
         <source>Bring to front on link click</source>
         <translation type="unfinished"></translation>
     </message>
@@ -11711,25 +11711,25 @@ Download it again?</source>
     <message>
         <location line="+8"/>
         <location line="+40"/>
-        <location line="+6026"/>
+        <location line="+6024"/>
         <source>Core</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location line="-6039"/>
+        <location line="-6037"/>
         <source>Address:</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
         <location line="+4"/>
-        <location line="+1386"/>
+        <location line="+1384"/>
         <location line="+774"/>
         <location line="+427"/>
         <source>Port:</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location line="-2584"/>
+        <location line="-2582"/>
         <source>authentication token</source>
         <translation type="unfinished"></translation>
     </message>
@@ -11867,12 +11867,12 @@ Are you sure you want to continue?</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location line="+8061"/>
+        <location line="+8107"/>
         <source>A database ships with each release. An optional free &lt;a href=&quot;https://www.maxmind.com/en/geolite2/signup&quot;&gt;MaxMind GeoLite2&lt;/a&gt; account keeps it current in between. This product includes GeoLite2 data created by MaxMind.</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location line="-8013"/>
+        <location line="-8059"/>
         <source>Save CPU &amp;&amp; Memory Usage</source>
         <translation type="unfinished"></translation>
     </message>
@@ -11948,7 +11948,7 @@ Are you sure you want to continue?</source>
     </message>
     <message>
         <location line="+2"/>
-        <location line="+1866"/>
+        <location line="+1864"/>
         <location line="+133"/>
         <location line="+296"/>
         <location line="+1032"/>
@@ -11960,7 +11960,7 @@ Are you sure you want to continue?</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location line="-5128"/>
+        <location line="-5126"/>
         <source>Reset</source>
         <translation type="unfinished"></translation>
     </message>
@@ -11977,13 +11977,13 @@ Are you sure you want to continue?</source>
     <message>
         <location line="+3"/>
         <location line="+6"/>
-        <location line="+4507"/>
+        <location line="+4505"/>
         <location line="+347"/>
         <source> KB/s</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location line="-4857"/>
+        <location line="-4855"/>
         <source>Upload</source>
         <translation type="unfinished"></translation>
     </message>
@@ -12004,41 +12004,41 @@ Are you sure you want to continue?</source>
     </message>
     <message>
         <location line="+36"/>
-        <location line="+4347"/>
+        <location line="+4345"/>
         <source>Client Port</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location line="-4344"/>
-        <location line="+7786"/>
+        <location line="-4342"/>
+        <location line="+7830"/>
         <source>TCP</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location line="-7780"/>
+        <location line="-7824"/>
         <source>UDP</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
         <location line="+6"/>
-        <location line="+4347"/>
+        <location line="+4345"/>
         <source>Test Ports</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location line="-4343"/>
-        <location line="+4351"/>
+        <location line="-4341"/>
+        <location line="+4349"/>
         <source>Open Router</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location line="-4350"/>
-        <location line="+4351"/>
+        <location line="-4348"/>
+        <location line="+4349"/>
         <source>Opens the web page of this computer&apos;s router, where ports are forwarded</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location line="-4347"/>
+        <location line="-4345"/>
         <source>Use UPnP to Setup Ports</source>
         <translation type="unfinished"></translation>
     </message>
@@ -12048,7 +12048,7 @@ Are you sure you want to continue?</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location line="+35"/>
+        <location line="+33"/>
         <source>Max. Sources/File</source>
         <translation type="unfinished"></translation>
     </message>
@@ -12793,7 +12793,7 @@ The Details window lets you choose the files either way.</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location line="+2997"/>
+        <location line="+3043"/>
         <source>Downloading the DB-IP country database...</source>
         <translation type="unfinished"></translation>
     </message>
@@ -12808,12 +12808,12 @@ The Details window lets you choose the files either way.</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location line="+305"/>
+        <location line="+306"/>
         <source>%1 — not available</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location line="-3428"/>
+        <location line="-3475"/>
         <source>Set on the Connection page.</source>
         <translation type="unfinished"></translation>
     </message>
@@ -12854,7 +12854,7 @@ The Details window lets you choose the files either way.</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location line="+1030"/>
+        <location line="+1076"/>
         <location line="+52"/>
         <source>Directories</source>
         <translation type="unfinished"></translation>
@@ -12960,7 +12960,7 @@ Create it?</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location line="-6737"/>
+        <location line="-6783"/>
         <source>Connect to help channel</source>
         <translation type="unfinished"></translation>
     </message>
@@ -13268,7 +13268,7 @@ Create it?</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location line="-1877"/>
+        <location line="-1875"/>
         <source>Show downloaded data of unfinished parts and part boundaries</source>
         <translation type="unfinished"></translation>
     </message>
@@ -13324,23 +13324,23 @@ Create it?</source>
     </message>
     <message>
         <location line="+4"/>
-        <location line="+1735"/>
-        <location line="+5607"/>
+        <location line="+1733"/>
+        <location line="+5648"/>
         <source>Any</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location line="-7340"/>
+        <location line="-7379"/>
         <source>Use only this network interface, for example a VPN tunnel. Pick one from the list, or type an IP address or a subnet such as 10.64.0.0/10 (the interface holding an address in it). Connections through a proxy are not bound.</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location line="+5"/>
+        <location line="+7276"/>
         <source>While the selected interface is not available, all P2P, Usenet and update connections stay closed.</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location line="+68"/>
+        <location line="-7205"/>
         <source>Use IPv6 privacy address</source>
         <translation type="unfinished"></translation>
     </message>
@@ -13382,9 +13382,9 @@ Every Usenet connection then passes through the proxy, so its speed caps the dow
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location line="-1466"/>
+        <location line="-1464"/>
         <location line="+5"/>
-        <location line="+1681"/>
+        <location line="+1679"/>
         <source>Connection</source>
         <translation type="unfinished"></translation>
     </message>
@@ -13824,7 +13824,7 @@ Every Usenet connection then passes through the proxy, so its speed caps the dow
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location line="-2947"/>
+        <location line="-2945"/>
         <source>Selling</source>
         <translation type="unfinished"></translation>
     </message>
@@ -13894,7 +13894,7 @@ Every Usenet connection then passes through the proxy, so its speed caps the dow
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location line="+339"/>
+        <location line="+337"/>
         <source>Lets two Low ID clients find each other&apos;s address through a server that supports it or a Kad buddy, then connect over IPv6 or QUIC</source>
         <translation type="unfinished"></translation>
     </message>
@@ -14901,12 +14901,17 @@ Adding one later does not fetch its back catalogue: a new indexer gets its own f
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location line="+3135"/>
+        <location line="+2618"/>
+        <source>This interface has no default route (split-tunnel VPN?): servers and peers outside its subnets are unreachable. Route all traffic through it, or choose another interface.</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <location line="+565"/>
         <source>DB-IP Country Lite is free and needs no account; it is updated monthly. &lt;a href=&quot;https://db-ip.com&quot;&gt;IP Geolocation by DB-IP&lt;/a&gt; (CC BY 4.0).</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location line="-3598"/>
+        <location line="-3646"/>
         <source>Active downloads:</source>
         <translation type="unfinished"></translation>
     </message>
@@ -14986,7 +14991,7 @@ Adding one later does not fetch its back catalogue: a new indexer gets its own f
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location line="+3208"/>
+        <location line="+3254"/>
         <source>UDP is disabled in the config file (udpPort: 0)</source>
         <translation type="unfinished"></translation>
     </message>
@@ -14996,7 +15001,7 @@ Adding one later does not fetch its back catalogue: a new indexer gets its own f
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location line="-3208"/>
+        <location line="-3254"/>
         <source>Disabled</source>
         <translation type="unfinished"></translation>
     </message>
@@ -15031,12 +15036,12 @@ Adding one later does not fetch its back catalogue: a new indexer gets its own f
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location line="-4797"/>
+        <location line="-4795"/>
         <source>Show more controls (advanced mode controls)</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location line="+4800"/>
+        <location line="+4798"/>
         <source>Disable A4AF checks to save CPU</source>
         <translation type="unfinished"></translation>
     </message>
@@ -15371,12 +15376,12 @@ News server connections switch over immediately.</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location line="+480"/>
+        <location line="+509"/>
         <source>Port forwarding: %1</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location line="+88"/>
+        <location line="+105"/>
         <source>Database: not connected to the core</source>
         <translation type="unfinished"></translation>
     </message>
@@ -15472,18 +15477,18 @@ Rehash all shared files now?</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location line="-8019"/>
-        <location line="+2529"/>
+        <location line="-8063"/>
+        <location line="+2527"/>
         <location line="+1035"/>
         <location line="+154"/>
         <location line="+1640"/>
         <location line="+316"/>
-        <location line="+2261"/>
+        <location line="+2307"/>
         <source>Remove</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location line="-6641"/>
+        <location line="-6687"/>
         <source>New eMule Qt version detected</source>
         <translation type="unfinished"></translation>
     </message>
@@ -15679,12 +15684,12 @@ Set it slightly under your plan. The figure is measured here, so it reads a few 
         <location line="+1035"/>
         <location line="+154"/>
         <location line="+1913"/>
-        <location line="+2299"/>
+        <location line="+2345"/>
         <source>Add</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location line="-2262"/>
+        <location line="-2308"/>
         <source>Edit Value</source>
         <translation type="unfinished"></translation>
     </message>

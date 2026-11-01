@@ -117,7 +117,7 @@ enum class IpcMsgType : int {
     RecheckFirewall      = 219,  ///< [] — restart TCP + UDP firewall checks
     ReloadIPFilter       = 220,  ///< [] — reload IP filter from ipfilter.dat
     GetSchedules         = 221,  ///< [] — returns schedulerEnabled + full schedule list
-    GetNetworkInterfaces = 223,  ///< [] → CborArray of {name, friendlyName, index, addresses[]} — the daemon's active interfaces, for the bind selection
+    GetNetworkInterfaces = 223,  ///< [] → CborArray of {name, friendlyName, index, addresses[], internetRoute?} — the daemon's active interfaces, for the bind selection
     /// [network: int (1 BitTorrent, 2 ed3k)] → [ok, {network, tcpPort?, udpPort,
     /// targets: [{family: 4|6, ip, tcp?: {open, reason}, udp?: {open, reason}}]}] or an
     /// Error [PortTestApi::Failure, English detail].

@@ -21,6 +21,7 @@ class tst_Updater : public QObject {
 private slots:
     void init();
     void archiveOverlay();
+    void keepEditedConfig();
     void corruptPackageLeavesTargetAndLaunches();
     void failedCopyRollsBack();
     void waitPidTimeout();
@@ -36,6 +37,7 @@ private:
     static QByteArray readFile(const QString& file);
     void makeTarget();
     void makePackage();
+    void tarPackage();
     int runUpdater(const QStringList& args) const;
     QJsonObject result() const;
     QStringList baseArgs() const;
@@ -98,6 +100,49 @@ void tst_Updater::archiveOverlay()
     QCOMPARE(r.value(QStringLiteral("rolledBack")).toBool(), false);
     QTRY_VERIFY_WITH_TIMEOUT(QFileInfo::exists(path(QStringLiteral("marker"))), 5000);
     QVERIFY(QFileInfo(path(QStringLiteral("updater.log"))).size() > 0);
+}
+
+// --keep-edited: unedited files follow the release, edits stay (update to .new)
+void tst_Updater::keepEditedConfig()
+{
+    makeTarget();
+    const QString cfg = path(QStringLiteral("app/config/"));
+    const QString pkg = path(QStringLiteral("pkgsrc/eMuleQt/config/"));
+    writeFile(cfg + QStringLiteral("eMule.tmpl"), "tmpl v1");
+    writeFile(cfg + QStringLiteral("web/skin.css"), "css v1");
+    makePackage();
+    writeFile(pkg + QStringLiteral("eMule.tmpl"), "tmpl v2");
+    writeFile(pkg + QStringLiteral("web/skin.css"), "css v1");
+    tarPackage();
+    const QStringList keep{QStringLiteral("--keep-edited"), QStringLiteral("config"),
+                           QStringLiteral("--keep-existing"), QStringLiteral("config/preferences.yml")};
+    QCOMPARE(runUpdater(baseArgs() + keep), 0);
+
+    // no record yet: adopted, the old copy to .bak; identical files untouched
+    QCOMPARE(readFile(cfg + QStringLiteral("eMule.tmpl")), QByteArray("tmpl v2"));
+    QCOMPARE(readFile(cfg + QStringLiteral("eMule.tmpl.bak")), QByteArray("tmpl v1"));
+    QCOMPARE(readFile(cfg + QStringLiteral("web/skin.css")), QByteArray("css v1"));
+    QVERIFY(!QFileInfo::exists(cfg + QStringLiteral("web/skin.css.bak")));
+    QCOMPARE(readFile(cfg + QStringLiteral("preferences.yml")), QByteArray("user prefs"));
+    QCOMPARE(readFile(cfg + QStringLiteral("new.dat")), QByteArray("new dat"));
+    QVERIFY(QFileInfo::exists(cfg + QStringLiteral(".update-manifest")));
+
+    // the user edits the css; the next release changes everything
+    QFile::remove(cfg + QStringLiteral("eMule.tmpl.bak"));
+    writeFile(cfg + QStringLiteral("web/skin.css"), "css mine");
+    writeFile(pkg + QStringLiteral("eMule.tmpl"), "tmpl v3");
+    writeFile(pkg + QStringLiteral("web/skin.css"), "css v3");
+    writeFile(pkg + QStringLiteral("new.dat"), "new dat v3");
+    tarPackage();
+    QCOMPARE(runUpdater(baseArgs() + keep), 0);
+
+    QCOMPARE(readFile(cfg + QStringLiteral("eMule.tmpl")), QByteArray("tmpl v3"));
+    QVERIFY(!QFileInfo::exists(cfg + QStringLiteral("eMule.tmpl.bak")));
+    QCOMPARE(readFile(cfg + QStringLiteral("new.dat")), QByteArray("new dat v3"));
+    QCOMPARE(readFile(cfg + QStringLiteral("web/skin.css")), QByteArray("css mine"));
+    QCOMPARE(readFile(cfg + QStringLiteral("web/skin.css.new")), QByteArray("css v3"));
+    QCOMPARE(readFile(cfg + QStringLiteral("preferences.yml")), QByteArray("user prefs"));
+    QCOMPARE(result().value(QStringLiteral("ok")).toBool(), true);
 }
 
 void tst_Updater::corruptPackageLeavesTargetAndLaunches()
@@ -286,6 +331,11 @@ void tst_Updater::makePackage()
 #ifndef Q_OS_WIN
     QVERIFY(QFile::link(QStringLiteral("libfoo.so.1"), root + QStringLiteral("lib/libfoo.so")));
 #endif
+    tarPackage();
+}
+
+void tst_Updater::tarPackage()
+{
     QDir().mkpath(path(QStringLiteral("update")));
     QProcess tar;
     tar.start(QStringLiteral("tar"), {QStringLiteral("-czf"), path(QStringLiteral("update/pkg.tar.gz")),

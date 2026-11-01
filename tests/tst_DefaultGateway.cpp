@@ -90,6 +90,7 @@ private slots:
     void select_rejectsLinkLocalWithoutInterfaceName();
     void select_keepsGlobalIPv6WithoutInterfaceName();
     void select_deduplicates();
+    void coverInternet_defaultOrBothHalves();
     void select_emptyInputYieldsNoGuess();
     void select_endToEndFromProcFixtures();
 
@@ -461,4 +462,27 @@ void tst_DefaultGateway::platform_allGatewaysIncludeBestRoute()
 }
 
 QTEST_MAIN(tst_DefaultGateway)
+// split-tunnel VPN adapters carry only their own subnets
+void tst_DefaultGateway::coverInternet_defaultOrBothHalves()
+{
+    const auto route = [](const char* dst, uint8 len, const char* ifName) {
+        RouteEntry r;
+        // "::" parses to a null Address; the Windows backend builds it from bytes
+        const QHostAddress host(QString::fromLatin1(dst));
+        r.destination = host.protocol() == QAbstractSocket::IPv6Protocol
+            ? Address::fromIPv6Bytes(host.toIPv6Address().c)
+            : Address::fromString(QString::fromLatin1(dst));
+        r.prefixLength = len;
+        r.interfaceName = QString::fromLatin1(ifName);
+        return r;
+    };
+    const QString vpn = QStringLiteral("40");
+    QVERIFY(routesCoverInternet({route("0.0.0.0", 0, "40")}, vpn));
+    QVERIFY(routesCoverInternet({route("0.0.0.0", 1, "40"), route("128.0.0.0", 1, "40")}, vpn));
+    QVERIFY(routesCoverInternet({route("::", 1, "40"), route("8000::", 1, "40")}, vpn));
+    QVERIFY(!routesCoverInternet({route("10.128.0.0", 10, "40"), route("10.128.0.1", 32, "40")}, vpn));
+    QVERIFY(!routesCoverInternet({route("0.0.0.0", 1, "40"), route("::", 1, "40")}, vpn));
+    QVERIFY(!routesCoverInternet({route("0.0.0.0", 0, "11")}, vpn));
+}
+
 #include "tst_DefaultGateway.moc"

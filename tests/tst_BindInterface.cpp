@@ -45,6 +45,7 @@ private slots:
     void blocked_opensNothing_thenResumes();
     void udpSocket_isPinned();
     void ipv6Scan_followsTheInterface();
+    void sameBinding_ignoresRoutes();
 
 private:
     QNetworkInterface m_loopback;
@@ -361,6 +362,18 @@ void tst_BindInterface::ipv6Scan_followsTheInterface()
 
     thePrefs.setBindAddress(QStringLiteral("vpn-not-there0"));
     QVERIFY(scanBoundIPv6().addresses.empty());
+}
+
+// VPN routes appear after the adapter: no reopen for that alone (#67)
+void tst_BindInterface::sameBinding_ignoresRoutes()
+{
+    const BindAddress::Resolution a = BindAddress::resolve(QStringLiteral("utun4"), sample());
+    BindAddress::Resolution b = a;
+    b.noInternetRoute = true;
+    QVERIFY(a != b);
+    QVERIFY(BindAddress::sameBinding(a, b));
+    b.index = 12;   // adapter recreated under a new index
+    QVERIFY(!BindAddress::sameBinding(a, b));
 }
 
 QTEST_MAIN(tst_BindInterface)

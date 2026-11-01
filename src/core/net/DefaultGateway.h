@@ -24,6 +24,7 @@
 #include <QHostAddress>
 #include <QString>
 
+#include <optional>
 #include <vector>
 
 namespace eMule {
@@ -71,6 +72,13 @@ struct RouteEntry {
 /// defaultGateways() except on Windows, where that one returns the best route only.
 [[nodiscard]] std::vector<GatewayCandidate> allDefaultGateways(Address::Family family);
 
+/// Whether interface @p index (OS index) routes the whole internet of a family. A
+/// split-tunnel VPN adapter does not, and a socket pinned to it reaches nothing past
+/// the tunnel's own subnets. nullopt when the platform cannot tell: only Windows
+/// answers; Linux policy routing (wg-quick) keeps a tunnel's default route out of
+/// the main table.
+[[nodiscard]] std::optional<bool> interfaceCoversInternet(int index);
+
 // -- Exposed for unit tests ---------------------------------------------------
 // Defined on every platform, not just Linux, so the parsers and the selection
 // rule stay testable everywhere (same arrangement as LocalIPv6's parsers).
@@ -92,5 +100,9 @@ struct RouteEntry {
 /// name an interface rather than a router).
 [[nodiscard]] std::vector<GatewayCandidate> selectDefaultGateways(
     const std::vector<RouteEntry>& routes, Address::Family family);
+
+/// True when the routes of @p interfaceName include a default route, or both /1
+/// halves of one (0/1 + 128/1, ::/1 + 8000::/1) as VPN clients install them.
+[[nodiscard]] bool routesCoverInternet(const std::vector<RouteEntry>& routes, const QString& interfaceName);
 
 } // namespace eMule

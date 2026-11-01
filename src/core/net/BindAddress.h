@@ -58,11 +58,20 @@ struct Resolution {
     QHostAddress v4;                ///< interface's first IPv4, may be null
     bool hasGlobalIPv6 = false;
     PinProbe pin;                   ///< a family that cannot be pinned is not used
+    bool noInternetRoute = false;   ///< no default route on it (split-tunnel VPN): only its subnets reachable
     QString reason;                 ///< why Blocked
 
     [[nodiscard]] bool wholeInterface() const { return state == State::Bound && literal.isNull(); }
     friend bool operator==(const Resolution&, const Resolution&) = default;
 };
+
+/// Sockets opened under @p a are still right under @p b. Routes do not count: a VPN
+/// adds its routes after the adapter is up, pinned sockets stay valid meanwhile.
+[[nodiscard]] inline bool sameBinding(Resolution a, Resolution b)
+{
+    a.noInternetRoute = b.noInternetRoute = false;
+    return a == b;
+}
 
 /// Pure: resolve @p selector against @p interfaces.
 [[nodiscard]] Resolution resolve(const QString& selector, const QList<LocalInterface>& interfaces);
