@@ -351,7 +351,7 @@ private:
     int m_nzbUrlFetchesInFlight = 0;
     static constexpr int kMaxNzbUrlFetches = 4;
 
-    int m_subscriptionMask = 0;
+    int m_subscriptionMask = Ipc::PushGroupAll;   ///< until the client subscribes
 };
 
 } // namespace eMule

@@ -13,6 +13,7 @@ class tst_IpcProtocol : public QObject {
     Q_OBJECT
 
 private slots:
+    void pushGroupOf_masksOnlyRowUpdates();
     void encodeFrame_producesCorrectHeader();
     void encodeFrame_cborArrayOverload();
     void tryDecodeFrame_roundTrip();
@@ -184,6 +185,26 @@ void tst_IpcProtocol::msgTypeEnum_values()
     // ed3k (1000-1049) and its pushes (1050-1099)
     QCOMPARE(static_cast<int>(IpcMsgType::GetEd3kStatus), 1000);
     QCOMPARE(static_cast<int>(IpcMsgType::PushEd3kStatus), 1050);
+}
+
+void tst_IpcProtocol::pushGroupOf_masksOnlyRowUpdates()
+{
+    // Row churn of one list: skipped while that list is off screen
+    QCOMPARE(pushGroupOf(IpcMsgType::PushDownloadUpdate), int(PushGroupTransfers));
+    QCOMPARE(pushGroupOf(IpcMsgType::PushEd3kDownloads), int(PushGroupTransfers));
+    QCOMPARE(pushGroupOf(IpcMsgType::PushSharedFileRemoved), int(PushGroupShared));
+    QCOMPARE(pushGroupOf(IpcMsgType::PushTorrentUpdate), int(PushGroupTorrents));
+    QCOMPARE(pushGroupOf(IpcMsgType::PushUsenetQueueItem), int(PushGroupUsenet));
+    // What the tray, notifications and log need is never masked
+    for (const auto type : {IpcMsgType::PushServerState, IpcMsgType::PushKadUpdate,
+                            IpcMsgType::PushStatsUpdate, IpcMsgType::PushNotifierEvent,
+                            IpcMsgType::PushLogMessage, IpcMsgType::PushLogBatch,
+                            IpcMsgType::PushChatMessage, IpcMsgType::PushDownloadAdded,
+                            IpcMsgType::PushTorrentFinished, IpcMsgType::PushUsenetItemFinished,
+                            IpcMsgType::PushCoreRestarting})
+        QCOMPARE(pushGroupOf(type), 0);
+    // Older clients subscribe with 0xFFFF: still everything
+    QVERIFY((0xFFFF & PushGroupUsenet) && PushGroupAll == 0xFFFF);
 }
 
 QTEST_GUILESS_MAIN(tst_IpcProtocol)

@@ -3,6 +3,8 @@
 #include <QStyle>
 #include <QStyleOptionTab>
 
+#include <algorithm>
+
 namespace eMule {
 
 FitTextTabBar::FitTextTabBar(QWidget* parent)
@@ -13,9 +15,16 @@ FitTextTabBar::FitTextTabBar(QWidget* parent)
     setExpanding(false);
 }
 
+void FitTextTabBar::setMinimumTabWidth(int width)
+{
+    m_minTabWidth = width;
+    updateGeometry();
+}
+
 QSize FitTextTabBar::tabSizeHint(int index) const
 {
     QSize hint = QTabBar::tabSizeHint(index);
+    hint.setWidth(std::max(hint.width(), m_minTabWidth));
 
     // Ask the style how much text room a tab of this size really gets
     QStyleOptionTab opt;
@@ -26,6 +35,14 @@ QSize FitTextTabBar::tabSizeHint(int index) const
     if (textWidth > textRoom)
         hint.rwidth() += textWidth - textRoom;
     return hint;
+}
+
+void FitTextTabBar::tabLayoutChange()
+{
+    QTabBar::tabLayoutChange();
+    // setTabVisible() on a hidden bar skips updateGeometry(); the layout then
+    // keeps the old, wider hint and macOS centers the tabs in it
+    updateGeometry();
 }
 
 } // namespace eMule

@@ -1,6 +1,7 @@
 # LowID-to-LowID rendezvous (NAT traversal signalling)
 
 Status 2026-10-26 (direct UDP path, Kad `nat` tag, LowID source exchange; foreign callback added, `PR_NAT` cross-server sweep retired, ed2k-server#40;
+`0x9F` session token and crypt "require" on the foreign path 2026-11-01, ed2k-server 0.9.87;
 QUIC data path since 2026-10-25): implemented in `src/core/net/natt/`. Two LowID peers learn each other's
 public UDP endpoint from an introducer, open their NAT mappings with `OP_HOLEPUNCH`, and swap
 IPv6 addresses over the opened path. With IPv6 on both sides the target then dials the
@@ -68,6 +69,18 @@ together. Any other pair gets the plain flow above.
   (as `0xA6`) once we hold the key; plain until then. After the first obfuscated one the
   server ignores plain ones for the session, so we never go back to plain: without a key the
   keepalive is skipped and a new key requested.
+- Session token (0.9.87): each session that may send `0x9F` (`0x100000`, `0x1000`, or a UDP
+  port in `0xF9`) gets 16 random bytes in `OP_SERVERIDENT`, tag `ST_NATT_TOKEN` (`0xAC`, hash
+  type), new on every login; a `0x100000` session gets that ident at login. We then send
+  `0x9F <user hash 16><token 16>` (plain or obfuscated as above), which the server believes
+  from any address: its source endpoint is what peers get in `0x61`/`0xA7`. A wrong token is
+  ignored; without one nothing changes. So:
+  - carrier NAT with TCP and UDP on different public IPv4s: the periodic `0x9F` goes on. Only
+    without a token is it paused while Kad sees our UDP on another IPv4 than the server
+    reports for the TCP session (the server would drop each one).
+  - IPv6 session: the token `0x9F` goes plain to the server's IPv4 (TCP + 4; the UDP key
+    belongs to an IPv4 session), so we may send `0x60` and get no `0x62` reason 5. Needs the
+    server's IPv4 (dual-stack row); without it, or without a token, no `0x60` as before.
 - Requester: one `0x9F` right before each `0x60`, so the server has our fresh port.
 - Target: the server wakes us with Lugdunum's `0x37`, byte-identical. We punch towards its
   endpoint at once, send `0x9F` at 0, 0.5 and 1 s (100 ms timer) and do not dial yet.
@@ -174,8 +187,13 @@ endpoint only to someone who already knows `server + LowID`, as on one server to
   no hash. Only to a target whose login carried `0x1000 | 0x100000` (it answers with the
   `0x9F` burst), so Lugdunum-only clients (NeoMule, NeoLoader) are never woken for this.
   ed2k-server also wakes those; they dial as on Lugdunum and the requester gets no `0xA7`.
-  With our `crypt` byte the server applies the one-server crypt rule (mismatch: dropped) and
-  puts the result in the `0x37`; without it, crypt 0.
+  With our `crypt` byte the server applies the one-server crypt rule and puts the result in
+  the `0x37`; without it, crypt 0 (counted as no crypt layer). Since 0.9.87 that rule is
+  refused only when one side requires the crypt layer and the other has none: a client set
+  to "require" on either side uses this path too, since the requester dials obfuscated with
+  the hash from the `0xA7`. Our own check (`cryptCompatible`) is the same rule. Before 0.9.87,
+  and for Lugdunum-only targets (they dial from the `0x37`, with no requester hash), any
+  "require" was refused.
 - **Target.** Sends no `0xA6`. Punches the requester's endpoint at once and sends `0x9F`
   (obfuscated with its server's key) at 0, 0.5 and 1 s, so the server learns its fresh port.
   The attempt is keyed by the requester's address (it has no ID or hash yet); a repeat `0x37`
@@ -193,7 +211,8 @@ endpoint only to someone who already knows `server + LowID`, as on one server to
   sides the target dials TCP/IPv6 as on any path.
 - **Server → requester.** On the target's first `0x9F`: UDP `0xA7 <target ip 4><udp port 2>
   <target id 4><crypt 1>[<hash 16>]`, obfuscated with the requester's key, from the server's
-  UDP port. The hash (flag `0x80`) comes only when both sides use the crypt layer. No `0x9F`
+  UDP port. 0.9.86+ always appends the hash, with flag `0x80` meaning only "use the crypt
+  layer"; we read it by length. No `0x9F`
   within 3 s: the same `0xA7` with the last port the server knows for the target (its recent
   `0xA6` or `0x9F`), or nothing when it knows none. The requester reads it only obfuscated,
   only from that server's IP, and matches it by target ID.

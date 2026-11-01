@@ -105,6 +105,8 @@ QString sniffContainer(const QByteArray& head)
     if (at(0, {'I','D','3'}))                                     return QStringLiteral("MPEG audio");
     if (at(0, {0x00, 0x00, 0x01, 0xBA}) || at(0, {0x00, 0x00, 0x01, 0xB3}))
         return QStringLiteral("MPEG program stream");
+    // Video CD track (.dat, often renamed .mpg): MPEG-1 PS in raw CD sectors, RIFF/CDXA wrapped
+    if (at(0, {'R','I','F','F'}) && at(8, {'C','D','X','A'}))     return QStringLiteral("MPEG program stream");
 
     return {};
 }

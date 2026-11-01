@@ -3,7 +3,7 @@
 /// @file BugReportDialog.h
 /// @brief "Submit Bug Report" dialog for posting reports to the eMule Qt website.
 
-#include <QDialog>
+#include "dialogs/RememberedSizeDialog.h"
 
 class QComboBox;
 class QDialogButtonBox;
@@ -19,7 +19,7 @@ namespace eMule {
 
 class LogWidget;
 
-class BugReportDialog : public QDialog {
+class BugReportDialog : public RememberedSizeDialog {
     Q_OBJECT
 
 public:

@@ -12,7 +12,8 @@
 ///   in the log (batch 12 ruling #8), and the options page notes it.
 /// - Refused (batch 12 #6): a chain read or write every provider answered with the same
 ///   JSON-RPC error (ED3K_CHAIN_REFUSED, e.g. "insufficient funds"), or a site's request the
-///   forwarder's `verify` refused (ED3K_CHAIN_BAD_REQUEST): logged, kept as lastRefusal() for
+///   forwarder's `verify` refused (ED3K_CHAIN_BAD_REQUEST), or one whose gas is below the
+///   estimate (ED3K_CHAIN_GAS_LOW, batch 14): logged, kept as lastRefusal() for
 ///   the status (GetEd3kStatus "chain"); the node's text is plain text from strangers.
 
 #include "Ed3kFfi.h"

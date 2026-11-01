@@ -61,7 +61,7 @@ void addDetailRow(QFormLayout* form, const QString& label, const QString& value)
 // ── construction ───────────────────────────────────────────────────────
 
 DetailDialog::DetailDialog(QWidget* parent, ContentScroll scroll)
-    : QDialog(parent)
+    : RememberedSizeDialog(parent)
 {
     auto* mainLayout = new QVBoxLayout(this);
 

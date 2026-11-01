@@ -213,14 +213,14 @@ SearchDispatch dispatchMetaSearch(uint32 searchID, SearchType type, const Search
 }
 
 // ed3k keyword search (Protocol.md §10.3): the daemon's ed3k node through the runner
-// (MetaSearchService hands SearchType::Ed3k to Ed3kSearch); no request, no candidates.
-SearchDispatch dispatchEd3kSearch(uint32 searchID, const SearchParams& params)
+// (MetaSearchService hands SearchType::Ed3k and Ed3kLive to Ed3kSearch); no request, no candidates.
+SearchDispatch dispatchEd3kSearch(uint32 searchID, SearchType type, const SearchParams& params)
 {
     if (!theApp.metaSearch) {
         return refusedDispatch(QCoreApplication::translate(
             "eMule::IpcClientHandler", "ed3k search is not available here."));
     }
-    theApp.metaSearch->startMetaSearch(searchID, SearchType::Ed3k, params, {}, {});
+    theApp.metaSearch->startMetaSearch(searchID, type, params, {}, {});
     SearchDispatch out;
     out.outcome = SearchDispatch::Outcome::Sent;
     out.awaitsMeta = true;
@@ -271,7 +271,7 @@ SearchQueueBackend defaultSearchQueueBackend(SearchList& list)
             if (const auto request = buildMetaSearchRequest(params, params.type); !request)
                 return request.error();
         }
-        if (params.type == SearchType::Ed3k && params.expression.trimmed().isEmpty())
+        if (isEd3kSearchType(params.type) && params.expression.trimmed().isEmpty())
             return QCoreApplication::translate("eMule::IpcClientHandler", "The search expression contains nothing to search for.");
         return {};
     };
@@ -291,7 +291,7 @@ SearchQueueBackend defaultSearchQueueBackend(SearchList& list)
         if (type == SearchType::Kademlia)
             return kadUp ? QString() : QString::fromLatin1(SearchWait::Kad);
         // the ed3k node answers itself (not running: the runner says so)
-        if (type == SearchType::Ed3k)
+        if (isEd3kSearchType(type))
             return {};
 
         // Asked over HTTP of a server we know, connected or not. With none known it
@@ -311,7 +311,12 @@ SearchQueueBackend defaultSearchQueueBackend(SearchList& list)
 
     // Ids come from the counter Kad uses too, so the id handed back now is the one a
     // Kad search started later runs — and reports its results — under.
-    backend.create = [&list](const SearchParams&) -> uint32 { return list.reserveSearch(); };
+    backend.create = [&list](const SearchParams& params) -> uint32 {
+        const uint32 searchID = list.reserveSearch();
+        if (params.internal)
+            list.markInternal(searchID);   // before the first state signal
+        return searchID;
+    };
 
     backend.discard = [&list](uint32 searchID) { list.removeResults(searchID); };
 
@@ -322,9 +327,9 @@ SearchQueueBackend defaultSearchQueueBackend(SearchList& list)
             list.setSearchExpression(searchID, params.expression);
             return dispatchMetaSearch(searchID, type, params);
         }
-        if (type == SearchType::Ed3k) {
+        if (isEd3kSearchType(type)) {
             list.setSearchExpression(searchID, params.expression);
-            return dispatchEd3kSearch(searchID, params);
+            return dispatchEd3kSearch(searchID, type, params);
         }
         return dispatchEd2kSearch(list, searchID, type, params);
     };

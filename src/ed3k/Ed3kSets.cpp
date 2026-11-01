@@ -6,6 +6,7 @@
 #include "Ed3kDownloads.h"
 #include "Ed3kPaid.h"
 #include "Ed3kPlumbing.h"
+#include "Ed3kSealedOpener.h"
 #include "Ed3kSession.h"
 #include "Ed3kStore.h"
 
@@ -77,8 +78,11 @@ Ed3kSets::Ed3kSets(Ed3kSession& session, Ed3kDownloads& downloads, const QString
     , m_session(session)
     , m_downloads(downloads)
     , m_configDir(configDir)
+    , m_opener(std::make_unique<Ed3kSealedOpener>())
 {
     load();
+    // a sealed member opened: the list shows it complete
+    connect(m_opener.get(), &Ed3kSealedOpener::opened, this, [this](const QString&, bool) { markChanged(); });
     connect(&m_session, &Ed3kSession::eventPolled, this, &Ed3kSets::onEventPolled, Qt::DirectConnection);
     connect(&m_session, &Ed3kSession::statusChanged, this, &Ed3kSets::onSessionStatus);
     // member progress shows in the list; a member's end gives the next its turn
@@ -89,7 +93,15 @@ Ed3kSets::Ed3kSets(Ed3kSession& session, Ed3kDownloads& downloads, const QString
             pumpQueue(s);
         markChanged();
     });
-    connect(&m_downloads, &Ed3kDownloads::completed, this, [this](const ffi::Root& root, const QString&) { pumpOwnerOf(root); });
+    // connect(&m_downloads, &Ed3kDownloads::completed, this, [this](const ffi::Root& root, const QString&) { pumpOwnerOf(root); });
+    connect(&m_downloads, &Ed3kDownloads::completed, this, [this](const ffi::Root& root, const QString&) {
+        pumpOwnerOf(root);
+        // a sealed member downloaded: opened (subscription.md §8.1)
+        const auto d = m_downloads.info(root);
+        for (auto& [id, s] : m_sets)
+            if (d && d->owner == ownerOf(id))
+                openSealed(s);
+    });
     connect(&m_downloads, &Ed3kDownloads::failed, this, [this](const ffi::Root& root, const QString&) { pumpOwnerOf(root); });
     connect(&m_downloads, &Ed3kDownloads::removed, this, [this](const ffi::Root&) {
         for (auto& [id, s] : m_sets)
@@ -592,12 +604,21 @@ void Ed3kSets::download(Set& s)
         if (m.isSet || isSkipped(s.skipped, m.path))
             continue;
         const QString local = ed3kSetLocalPath(s.dir, m.path);
+        if (m.isSealed()) {
+            // §8.1: downloaded and shared sealed, opened into `local` (never over a file there)
+            const QString sealed = sealedPathOf(s, m);
+            if (!local.isEmpty() && !sealed.isEmpty() && !QFileInfo::exists(local) && addMember(s, m.root, m.size, sealed))
+                ++added;
+            continue;
+        }
         if (!local.isEmpty() && addMember(s, m.root, m.size, local))
             ++added;
     }
     if (added > 0)
         logEd3k(QStringLiteral("ed3k: set %1: %2 member download(s) added").arg(s.id).arg(added));
     pumpQueue(s);
+    // the sealed ones here already
+    openSealed(s);
 }
 
 bool Ed3kSets::addMember(Set& s, const ffi::Root& root, std::uint64_t size, const QString& local)
@@ -728,6 +749,27 @@ Ed3kSets::Info Ed3kSets::infoOf(const Set& s) const
         out.local = ed3kSetLocalPath(i.dir, m.path);
         i.totalSize += m.size;
         const bool queued = std::ranges::find(s.queued, m.root) != s.queued.end();
+        if (m.isSealed()) {
+            // §8.1: the plain file is there (12 bytes less), else the sealed one waits for its key
+            const auto d = m_downloads.info(m.root);
+            using S = Ed3kDownloadInfo::State;
+            const QFileInfo plain(out.local);
+            const QFileInfo sealed(sealedPathOf(s, m));
+            if (!out.local.isEmpty() && plain.exists() && m.size >= 12 && plain.size() == qint64(m.size - 12)) {
+                out.state = MemberState::Complete;
+                out.done = m.size;
+            } else if (d && !queued && d->state != S::Complete) {
+                out.done = d->done;
+                out.state = d->state == S::Failed ? MemberState::Failed : d->state == S::Paused ? MemberState::Paused : MemberState::Downloading;
+            } else if ((d && d->state == S::Complete) || (sealed.exists() && sealed.size() == qint64(m.size))) {
+                out.state = MemberState::Locked;
+                out.done = m.size;
+            } else if (out.skipped) {
+                out.state = MemberState::Skipped;
+            }
+            i.members.push_back(std::move(out));
+            continue;
+        }
         if (const auto d = m_downloads.info(m.root); d && !queued) {
             using S = Ed3kDownloadInfo::State;
             out.done = d->done;
@@ -976,6 +1018,11 @@ void Ed3kSets::onPaidKeys(const ffi::Scope& scope)
             (void)followOnEngine(s);
         logEd3kDebug(QStringLiteral("ed3k: set %1: keys arrived, followed again").arg(id));
     }
+    // §8.1: the sealed members waiting for these keys
+    m_keysAsked.erase(scope);
+    for (auto& [id, s] : m_sets)
+        if (s.applied && paidScopeOf(s) == scope)
+            openSealed(s);
     markChanged();
 }
 
@@ -1017,6 +1064,84 @@ void Ed3kSets::followPaid(const Set& s)
     std::memcpy(key.data(), m->key.constData(), key.size());
     m_paid->follow(key, *scope, Ed3kPaid::Kind::Set, title);
     (void)m_paid->setOffer(*scope, m->offer);
+}
+
+void Ed3kSets::openSealed(Set& s)
+{
+    if (!s.applied)
+        return;
+    const QString dir = s.dir.isEmpty() ? setDir(s) : s.dir;
+    for (const Ed3kSetEntry& m : flatten(s, s.applied->file)) {
+        if (m.isSet || !m.isSealed() || isSkipped(s.skipped, m.path))
+            continue;
+        const QString local = ed3kSetLocalPath(dir, m.path);
+        const QString sealed = sealedPathOf(s, m);
+        if (local.isEmpty() || sealed.isEmpty() || QFileInfo::exists(local))
+            continue;
+        // only once the sealed file is whole (its download verified it)
+        const QFileInfo fi(sealed);
+        const auto d = m_downloads.info(m.root);
+        if (!fi.exists() || fi.size() != qint64(m.size) || (d && d->state != Ed3kDownloadInfo::State::Complete))
+            continue;
+        (void)openMember(s, m, sealed, local);
+    }
+}
+
+bool Ed3kSets::openMember(Set& s, const Ed3kSetEntry& m, const QString& sealedPath, const QString& local)
+{
+    auto* e = m_session.engine();
+    if (!e)
+        return false;
+    std::optional<ffi::Key32> kData;
+    if (m.epoch) {
+        // subscription.md §8.1: k_data of the member's epoch from the key held
+        const auto scope = paidScopeOf(s);
+        if (!scope)
+            return false;
+        bool anon = false;
+        if (m_paid)
+            if (const auto i = m_paid->info(Ed3kPaid::hexOf(*scope)))
+                anon = i->anon;
+        auto got = e->paidMemberKey(m_session.now(), *scope, *m.epoch, anon);
+        if (!got) {
+            logEd3kDebug(QStringLiteral("ed3k: set %1: no member key (error %2)").arg(s.id).arg(int(got.error())));
+            return false;
+        }
+        if (!*got) {
+            // no key covering the epoch yet: asked for, opened on PAID_KEYS (onPaidKeys)
+            if (m_keysAsked.insert(*scope).second) {
+                (void)e->paidWantKeys(m_session.now(), *scope);
+                m_session.pump();
+                logEd3kDebug(QStringLiteral("ed3k: set %1: a sealed member waits for the key of epoch %2").arg(s.id).arg(*m.epoch));
+            }
+            return false;
+        }
+        kData = **got;
+        wipe(std::span<std::uint8_t>{**got});
+    } else if (s.parsed.hidden && !s.parsed.paid) {
+        // hidden-set.md §4.2: k_data of the link (a credential: never logged)
+        const QByteArray utf8 = s.link.toUtf8();
+        auto keys = ffi::hiddenLinkParse(std::string_view(utf8.constData(), std::size_t(utf8.size())));
+        if (!keys)
+            return false;
+        kData = keys->kData;
+        wipe(std::span<std::uint8_t>{keys->kData});
+    } else {
+        return false;   // `sealed` outside a hidden set: nothing opens it
+    }
+    const Secret key(*kData);
+    wipe(std::span<std::uint8_t>{*kData});
+    return m_opener->open(sealedPath, local, key.expose());
+}
+
+QString Ed3kSets::sealedPathOf(const Set& s, const Ed3kSetEntry& m) const
+{
+    // the wire name (hidden-set.md §4.3): what others see of it, nothing of the member's name
+    const auto name = ffi::sealedName(m.root);
+    if (!name)
+        return {};
+    const QString dir = s.dir.isEmpty() ? setDir(s) : s.dir;
+    return QDir(QDir(dir).filePath(QStringLiteral(".sealed"))).filePath(QString::fromStdString(*name));
 }
 
 } // namespace eMule::ed3k

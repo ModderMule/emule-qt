@@ -178,6 +178,7 @@
   <ItemGroup>
     <ClCompile Include="..\tst_MassRenameDialog.cpp" />
     <ClCompile Include="..\..\src\gui\dialogs\MassRenameDialog.cpp" />
+    <ClCompile Include="..\..\src\gui\dialogs\RememberedSizeDialog.cpp" />
     <ClCompile Include="..\..\src\gui\dialogs\SimpleCleanupDialog.cpp" />
     <ClCompile Include="..\..\src\gui\utils\DialogSizing.cpp" />
     <ClCompile Include="..\..\src\gui\controls\ContentScrollArea.cpp" />
@@ -187,6 +188,9 @@
   </ItemGroup>
   <ItemGroup>
     <QtMoc Include="..\..\src\gui\dialogs\MassRenameDialog.h">
+      <QtMocFileName>moc_%(Filename).cpp</QtMocFileName>
+    </QtMoc>
+    <QtMoc Include="..\..\src\gui\dialogs\RememberedSizeDialog.h">
       <QtMocFileName>moc_%(Filename).cpp</QtMocFileName>
     </QtMoc>
     <QtMoc Include="..\..\src\gui\dialogs\SimpleCleanupDialog.h">

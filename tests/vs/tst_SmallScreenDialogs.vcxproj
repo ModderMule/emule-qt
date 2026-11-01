@@ -181,11 +181,14 @@
     <ClCompile Include="..\..\src\gui\dialogs\AddSourceDialog.cpp" />
     <ClCompile Include="..\..\src\gui\dialogs\ArchivePreviewPanel.cpp" />
     <ClCompile Include="..\..\src\gui\dialogs\BugReportDialog.cpp" />
+    <ClCompile Include="..\..\src\gui\dialogs\RememberedSizeDialog.cpp" />
     <ClCompile Include="..\..\src\gui\dialogs\FirstStartWizard.cpp" />
     <ClCompile Include="..\..\src\gui\dialogs\MetaAccountDialog.cpp" />
     <ClCompile Include="..\..\src\gui\dialogs\OptionsDialog.cpp" />
     <ClCompile Include="..\..\src\gui\dialogs\Ed3kOptionsPages.cpp" />
     <ClCompile Include="..\..\src\gui\dialogs\Ed3kFilterPage.cpp" />
+    <ClCompile Include="..\..\src\gui\dialogs\Ed3kSellPage.cpp" />
+    <ClCompile Include="..\..\src\gui\dialogs\Ed3kSellDialogs.cpp" />
     <ClCompile Include="..\..\src\gui\dialogs\Ed3kStakeGroup.cpp" />
     <ClCompile Include="..\..\src\gui\app\Ed3kNameOpener.cpp" />
     <ClCompile Include="..\..\src\gui\dialogs\ToolbarCustomizeDialog.cpp" />
@@ -246,6 +249,9 @@
     <QtMoc Include="..\..\src\gui\dialogs\AddFriendDialog.h">
       <QtMocFileName>moc_%(Filename).cpp</QtMocFileName>
     </QtMoc>
+    <QtMoc Include="..\..\src\gui\dialogs\RememberedSizeDialog.h">
+      <QtMocFileName>moc_%(Filename).cpp</QtMocFileName>
+    </QtMoc>
     <QtMoc Include="..\..\src\gui\dialogs\AddSourceDialog.h">
       <QtMocFileName>moc_%(Filename).cpp</QtMocFileName>
     </QtMoc>
@@ -268,6 +274,12 @@
       <QtMocFileName>moc_%(Filename).cpp</QtMocFileName>
     </QtMoc>
     <QtMoc Include="..\..\src\gui\dialogs\Ed3kFilterPage.h">
+      <QtMocFileName>moc_%(Filename).cpp</QtMocFileName>
+    </QtMoc>
+    <QtMoc Include="..\..\src\gui\dialogs\Ed3kSellPage.h">
+      <QtMocFileName>moc_%(Filename).cpp</QtMocFileName>
+    </QtMoc>
+    <QtMoc Include="..\..\src\gui\dialogs\Ed3kSellDialogs.h">
       <QtMocFileName>moc_%(Filename).cpp</QtMocFileName>
     </QtMoc>
     <QtMoc Include="..\..\src\gui\dialogs\Ed3kStakeGroup.h">

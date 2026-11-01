@@ -3,6 +3,7 @@
 
 #include "Ed3kStore.h"
 #include "Ed3kFfi.h"
+#include "Ed3kKeyFile.h"
 
 #include <QDir>
 #include <QFile>
@@ -57,7 +58,8 @@ bool createKeyFile(const QString& path, const Seed& seed, QString* error)
     }
     return true;
 #else
-    // ToDo: owner-only DACL on Windows (SetNamedSecurityInfoW, as packmule-node disk.rs)
+    // was: ToDo: owner-only DACL on Windows (SetNamedSecurityInfoW, as packmule-node disk.rs)
+    // (done: ownerOnly, set on the empty file before the seed is written)
     QFile f(path);
     if (!f.open(QIODevice::WriteOnly | QIODevice::NewOnly)) {
         if (error)
@@ -65,6 +67,11 @@ bool createKeyFile(const QString& path, const Seed& seed, QString* error)
         return false;
     }
     f.setPermissions(kOwnerOnly);
+    if (!ownerOnly(path, error)) {
+        f.close();
+        f.remove();
+        return false;
+    }
     const qint64 n = f.write(reinterpret_cast<const char*>(seed.data()), qint64(seed.size()));
     const bool ok = n == qint64(seed.size()) && f.flush();
     f.close();
@@ -127,6 +134,11 @@ std::optional<Seed> loadOrCreateSecret(const QString& dir, const QString& name,
                 *error = QStringLiteral("%1 is not 32 bytes; not replaced").arg(path);
             return std::nullopt;
         }
+#ifdef Q_OS_WIN
+        // one made before the DACL was set (or copied in): owner-only from now on
+        f.close();
+        (void)ownerOnly(path);
+#endif
         return seed;
     }
     // a few tries: a credit key must be below the order of the curve (all but ~2^-128)
@@ -177,7 +189,7 @@ bool replaceSecret(const QString& dir, const QString& name, const Seed& secret, 
         return false;
     }
     // QSaveFile: a temporary file made owner-only before the first byte, then renamed
-    // ToDo: owner-only DACL on Windows (as createKeyFile)
+    // was: ToDo: owner-only DACL on Windows (as createKeyFile) (done: writeBlob → ownerOnly)
     const QString path = QDir(dir).filePath(name);
     if (!writeBlob(path, std::as_bytes(std::span{secret}))) {
         if (error)
@@ -205,7 +217,15 @@ bool writeBlob(const QString& path, std::span<const std::byte> data)
         f.cancelWriting();
         return false;
     }
-    return f.commit();
+    // return f.commit();
+    if (!f.commit())
+        return false;
+#ifdef Q_OS_WIN
+    // the renamed file has its folder's ACL: owner-only from here on (0600 elsewhere already)
+    if (!ownerOnly(path))
+        return false;
+#endif
+    return true;
 }
 
 void wipe(std::span<std::uint8_t> buf)

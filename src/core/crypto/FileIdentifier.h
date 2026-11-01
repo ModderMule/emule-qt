@@ -86,6 +86,13 @@ public:
         return getTheoreticalMD4PartHashCount() == getAvailableMD4PartHashCount();
     }
     [[nodiscard]] std::vector<std::array<uint8, 16>>& getRawMD4HashSet() { return m_md4HashSet; }
+    // Part-aligned size whose last part hash isn't MD4(""): the hashset is for a bigger
+    // file, real size is in (size, size + PARTSIZE). Same hash count, so nothing else sees it.
+    [[nodiscard]] bool md4TailContradictsSize() const;
+    // MD4 of empty input — the last part hash of a part-aligned file
+    static constexpr std::array<uint8, 16> kEmptyMD4{
+        0x31, 0xD6, 0xCF, 0xE0, 0xD1, 0x6A, 0xE9, 0x31,
+        0xB7, 0x3C, 0x59, 0xD7, 0xE0, 0xC0, 0x89, 0xC0};
 
     // AICH
     bool loadAICHHashsetFromFile(FileDataIO& file, bool verify = true);

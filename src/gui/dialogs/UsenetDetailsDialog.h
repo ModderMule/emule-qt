@@ -17,7 +17,7 @@
 /// apply to the whole release, over a table of its files.
 
 #include <QCborMap>
-#include <QDialog>
+#include "dialogs/RememberedSizeDialog.h"
 #include <QString>
 
 class QLabel;
@@ -30,7 +30,7 @@ namespace eMule {
 class IpcClient;
 class UsenetFileCheckList;
 
-class UsenetDetailsDialog : public QDialog {
+class UsenetDetailsDialog : public RememberedSizeDialog {
     Q_OBJECT
 
 public:

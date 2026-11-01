@@ -33,6 +33,7 @@
 #include "search/SearchParams.h"
 
 #include "IpcMessage.h"
+#include "app/Ed3kLiveWatch.h"
 
 #include <set>
 #include <QMouseEvent>
@@ -183,17 +184,22 @@ void SearchPanel::setIpcClient(IpcClient* client)
 
 void SearchPanel::setEd3kMethodVisible(bool visible)
 {
-    constexpr int kEd3k = static_cast<int>(SearchType::Ed3k);
-    const int idx = m_methodCombo->findData(kEd3k);
-    if (visible && idx < 0) {
-        m_methodCombo->addItem(QIcon(QStringLiteral(":/icons/Ed3k.ico")), tr("ed3k"), kEd3k);
-        // daemon prefs land after the restore in the ctor
-        if (theUiState.searchLastMethod(0) == kEd3k)
-            m_methodCombo->setCurrentIndex(m_methodCombo->count() - 1);
-    } else if (!visible && idx >= 0) {
-        if (m_methodCombo->currentIndex() == idx)
-            m_methodCombo->setCurrentIndex(m_methodCombo->findData(static_cast<int>(SearchType::Kademlia)));
-        m_methodCombo->removeItem(idx);
+    // ed3k and its live channel search (batch 14: SearchType::Ed3kLive) come and go together
+    // constexpr int kEd3k = static_cast<int>(SearchType::Ed3k);   (was: the one entry)
+    const std::pair<int, QString> entries[] = {{static_cast<int>(SearchType::Ed3k), tr("ed3k")},
+                                               {static_cast<int>(SearchType::Ed3kLive), tr("ed3k Channel (live)")}};
+    for (const auto& [kEd3k, text] : entries) {
+        const int idx = m_methodCombo->findData(kEd3k);
+        if (visible && idx < 0) {
+            m_methodCombo->addItem(QIcon(QStringLiteral(":/icons/Ed3k.ico")), text, kEd3k);
+            // daemon prefs land after the restore in the ctor
+            if (theUiState.searchLastMethod(0) == kEd3k)
+                m_methodCombo->setCurrentIndex(m_methodCombo->count() - 1);
+        } else if (!visible && idx >= 0) {
+            if (m_methodCombo->currentIndex() == idx)
+                m_methodCombo->setCurrentIndex(m_methodCombo->findData(static_cast<int>(SearchType::Kademlia)));
+            m_methodCombo->removeItem(idx);
+        }
     }
 }
 
@@ -1368,6 +1374,14 @@ void SearchPanel::onResultContextMenu(const QPoint& pos)
                         ext ? std::optional<bool>(false) : std::nullopt);
     });
     QAction* defaultAction = downloadAction->isEnabled() ? downloadAction : nullptr;
+    // ed3k channel rows (SearchType::Ed3kLive, batch 14): watched, the default
+    if (tab && tab->method == static_cast<int>(SearchType::Ed3kLive)) {
+        auto* watchAction = m_contextMenu->addAction(QIcon(QStringLiteral(":/icons/Ed3k.ico")), tr("Watch"));
+        watchAction->setEnabled(hasSelection);
+        connect(watchAction, &QAction::triggered, this,
+                [this] { watchEd3kLiveResults(m_resultView->selectionModel()->selectedRows()); });
+        defaultAction = watchAction;
+    }
     if (ext && anyEd2k) {
         auto* pausedAction = m_contextMenu->addAction(
             menuIcon("Download.ico"), tr("%1 (%2)").arg(tr("Download"), tr("Paused")));
@@ -1724,6 +1738,11 @@ void SearchPanel::showIndexerRowDetails(uint32_t searchID, const IndexerResultRo
 
 void SearchPanel::onResultDoubleClicked(const QModelIndex& index)
 {
+    // an ed3k channel row (SearchType::Ed3kLive) is watched (batch 14)
+    if (const auto* tab = currentTab(); index.isValid() && tab && tab->method == static_cast<int>(SearchType::Ed3kLive)) {
+        watchEd3kLiveResults({index});
+        return;
+    }
     if (index.isValid())
         downloadResults({index});
 }
@@ -3157,6 +3176,7 @@ QIcon SearchPanel::tabIcon(const SearchTab& tab)
     case 7:  return QIcon(QStringLiteral(":/icons/Torrent.ico"));     // Torrent (Server)
     case 8:  return QIcon(QStringLiteral(":/icons/Web.ico"));         // Web (Server)
     case 9:  return QIcon(QStringLiteral(":/icons/Ed3k.ico"));        // ed3k
+    case 10: return QIcon(QStringLiteral(":/icons/Ed3k.ico"));        // ed3k Channel (live)
     default: return QIcon(QStringLiteral(":/icons/KadServer.ico"));   // Automatic
     }
 }
@@ -3252,7 +3272,7 @@ void SearchPanel::addEd3kFilterMenu(SearchTab& tab)
             anyShown |= r->ed3kShown;
             anyAuthor |= r->ed3kAuthor.size() == 32;
         }
-    const bool ed3kTab = tab.method == static_cast<int>(SearchType::Ed3k) || !rows.empty();
+    const bool ed3kTab = isEd3kSearchType(static_cast<SearchType>(tab.method)) || !rows.empty();
     if (!ed3kTab || !m_ipc)
         return;
     QMenu* menu = m_contextMenu->addMenu(QIcon(QStringLiteral(":/icons/Ed3k.ico")), tr("ed3k Filter"));
@@ -3357,6 +3377,15 @@ void SearchPanel::refreshMetaUsenetKnownTypes(const SearchTab& tab)
             typesByRelease.insert(keys.at(i), static_cast<int>(types.at(i).toInteger()));
         model->updateUsenetKnownTypes(typesByRelease);
     });
+}
+
+void SearchPanel::watchEd3kLiveResults(const QModelIndexList& rows)
+{
+    for (const QModelIndex& idx : rows) {
+        const auto* r = refAt(idx).row;
+        if (r && r->isEd3k() && r->ed3kRoot.size() == 64)
+            Ed3kLiveWatch::watchFound(window(), m_ipc, r->ed3kRoot, quint64(r->fileSize));
+    }
 }
 
 } // namespace eMule

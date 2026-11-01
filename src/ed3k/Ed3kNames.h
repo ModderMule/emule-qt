@@ -17,6 +17,11 @@
 ///   memory) and their members fetched into memory (cap per member and in all), shared
 ///   while kept (§6.4). Manifests and members are also kept on disk across restarts
 ///   (Ed3kSiteCache, 2 GiB, LRU); one read back from disk is shared again from memory.
+/// - §6.1 (batch 13 #13): a site's head is followed while the site is shown (a request within
+///   kSiteShownMs = 10 min) or held (its manifest in the disk cache), then unfollowed; that is
+///   no set the user follows. The sets the user follows (Ed3kSets, keepUserSets) are never
+///   evicted from the cache (§6.4) nor unfollowed here (the core has one follow per set).
+///   A site held at start is followed once it is shown again (literal: "only while").
 ///
 /// Petnames and pins never leave the node but as §4.3 says; nothing here is a secret.
 
@@ -28,6 +33,7 @@
 #include <QPointer>
 #include <QString>
 #include <QStringList>
+#include <QTimer>
 
 #include <cstdint>
 #include <functional>
@@ -40,6 +46,7 @@
 namespace eMule::ed3k {
 
 class Ed3kSession;
+class Ed3kSets;
 
 class Ed3kNames : public Ed3kJoinBase {
     Q_OBJECT
@@ -113,6 +120,8 @@ public:
     static constexpr std::uint64_t kSiteDiskMax = Ed3kSiteCache::kDefaultMax;
     /// A name list file at most (§4.5).
     static constexpr std::uint64_t kListFileMax = 4ULL * 1024 * 1024;
+    /// §6.1: a site counts as shown this long after its last request (local choice).
+    static constexpr qint64 kSiteShownMs = 10LL * 60 * 1000;
 
     Ed3kNames(Ed3kSession& session, const QString& configDir, QObject* parent = nullptr);
     ~Ed3kNames() override;
@@ -159,6 +168,15 @@ public:
     [[nodiscard]] bool siteFollowed(const ::ed3k::Key32& key, const QByteArray& id) const;
     /// Follows the set for its website (only for the user, §6.2). false: refused.
     bool followSite(const ::ed3k::Key32& key, const QByteArray& id);
+    /// A request for the site came (§6.1 "shown"): it stays followed kSiteShownMs from now.
+    void siteShown(const ::ed3k::Key32& key, const QByteArray& id);
+    /// How long a site counts as shown (tests shorten it).
+    void setSiteShownMs(qint64 ms);
+    /// Unfollows the sites neither shown nor held, nor followed by the user (runs on a timer).
+    void expireSites();
+    /// The sets the user follows: their manifests and members stay in the cache (§6.4) and
+    /// they are not unfollowed here. null: none.
+    void keepUserSets(Ed3kSets* sets);
     /// A manifest held of a set (tests; a version kept): siteChanged() follows.
     void setSiteManifest(const ::ed3k::Key32& key, const QByteArray& id, const QByteArray& manifest);
     /// The bytes of a website member when kept (in memory, else on disk); nullopt: not here.
@@ -191,6 +209,10 @@ signals:
     void siteChanged(const QByteArray& key, const QByteArray& id);
     /// A website member is in (siteMember()).
     void siteMemberReady(const QByteArray& root);
+    /// A block of a website member being fetched is in, verified (siteMemberRange()).
+    void siteMemberBlock(const QByteArray& root);
+    /// A block of a website member being fetched did not verify (the core asks again).
+    void siteMemberBad(const QByteArray& root);
 
 protected:
     [[nodiscard]] std::vector<std::uint64_t> wantedBlocks(const Download& d) const override;
@@ -206,6 +228,7 @@ private:
         QByteArray id;
         std::optional<::ed3k::Topic> topic;
         QByteArray manifest;
+        qint64 shownAt = 0;   ///< ms since the epoch of the last request (§6.1)
     };
 
     void onNameEvent(const ::ed3k::Event& event, bool* handled);
@@ -216,6 +239,8 @@ private:
     /// Keeps a member in memory (and on disk unless @p fromDisk) and shares it.
     void keepMember(const ::ed3k::Root& root, const QByteArray& data, bool fromDisk = false);
     [[nodiscard]] static QString siteKey(const ::ed3k::Key32& key, const QByteArray& id);
+    /// The manifests and members of the sets the user follows (Ed3kSiteCache::Keep).
+    [[nodiscard]] Ed3kSiteCache::Keep userKeep() const;
     void loadLocal();
     void saveLists() const;
     void savePetnames() const;
@@ -236,6 +261,10 @@ private:
     std::unique_ptr<Ed3kSiteCache> m_cache;
     /// lookups of this run (the guard of their late answers)
     std::shared_ptr<int> m_dnsGen;
+    /// §6.1: shown sites expire (expireSites)
+    qint64 m_siteShownMs = kSiteShownMs;
+    QTimer m_siteTimer;
+    QPointer<Ed3kSets> m_userSets;
 };
 
 } // namespace eMule::ed3k

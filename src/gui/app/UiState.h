@@ -130,9 +130,10 @@ public:
     [[nodiscard]] int optionsLastPage() const { return m_optionsLastPage; }
     void setOptionsLastPage(int page) { m_optionsLastPage = page; }
 
-    /// Size the user left the options dialog at; invalid when never resized.
-    [[nodiscard]] QSize optionsDialogSize() const;
-    void setOptionsDialogSize(QSize size);
+    /// Size the user left dialog @p key at; invalid when never resized.
+    /// See RememberedSizeDialog -- the key is its class name.
+    [[nodiscard]] QSize dialogSize(const QString& key) const { return m_dialogSizes.value(key); }
+    void setDialogSize(const QString& key, QSize size);
 
     /// Epoch seconds of the last completed version check; 0 when none ever ran.
     ///
@@ -413,8 +414,6 @@ private:
     int  m_windowHeight    = 0;
     bool m_windowMaximized = false;
     int  m_optionsLastPage = 0;
-    int  m_optionsWidth    = 0;
-    int  m_optionsHeight   = 0;
     int64_t m_lastVersionCheck = 0;
     bool m_associateNzbFiles = true;
     bool m_associateTorrentFiles = true;
@@ -445,6 +444,7 @@ private:
     std::array<QColor, kStatsColorCount> m_statsColors = defaultStatsColors();
     QMap<QString, QByteArray> m_headerStates;
     QMap<QString, bool> m_sortValues;
+    QMap<QString, QSize> m_dialogSizes;
     QSet<QString> m_statsTreeExpanded;
     QString m_configDir;   ///< Remembered by load() so save() can run without it.
     std::unique_ptr<QTimer> m_saveTimer;   ///< Debounce for scheduleSave().

@@ -75,6 +75,7 @@ CoreNotifierBridge::CoreNotifierBridge(IpcServer* ipcServer, QObject* parent)
     connect(m_ipcServer, &IpcServer::clientReady, this, [this] {
         for (const IpcMessage& msg : std::exchange(m_heldEvents, {}))
             m_ipcServer->sendToClients(msg);
+        m_sharedHashingSent = -1;   // the new client learns the count at the next tick
     });
 
     m_sharedFlushTimer.setSingleShot(true);
@@ -85,7 +86,18 @@ CoreNotifierBridge::CoreNotifierBridge(IpcServer* ipcServer, QObject* parent)
     // every block and have no signal; only the handful of files in upload slots do.
     m_sharedRatesTimer.setInterval(1000);
     connect(&m_sharedRatesTimer, &QTimer::timeout, this, [this] {
-        if (m_ipcServer->clientCount() == 0 || !theApp.uploadQueue)
+        if (m_ipcServer->clientCount() == 0)
+            return;
+        // Hashing count for the Shared Files header; the hash queue has no signal
+        if (theApp.sharedFileList) {
+            if (const int hashing = theApp.sharedFileList->getHashingCount(); hashing != m_sharedHashingSent) {
+                m_sharedHashingSent = hashing;
+                IpcMessage msg(IpcMsgType::PushSharedHashing, 0);
+                msg.append(static_cast<qint64>(hashing));
+                m_ipcServer->broadcast(msg);
+            }
+        }
+        if (!theApp.uploadQueue)
             return;
         theApp.uploadQueue->forEachUploading([this](UpDownClient* c) {
             onSharedFileChanged(QByteArray(reinterpret_cast<const char*>(c->reqUpFileId()), 16));
@@ -456,6 +468,8 @@ void CoreNotifierBridge::onSearchResultAdded(SearchFile* file)
     // existing row is another event. Keyed by search so a busy tab cannot suppress
     // a quiet one running beside it.
     const auto searchID = file ? file->searchID() : 0u;
+    if (theApp.searchList && theApp.searchList->isInternal(searchID))
+        return;   // the core's own size lookup
     m_pushes->post(IpcMsgType::PushSearchResult, [searchID] {
         IpcMessage msg(IpcMsgType::PushSearchResult, 0);
         if (searchID != 0)
@@ -466,6 +480,8 @@ void CoreNotifierBridge::onSearchResultAdded(SearchFile* file)
 
 void CoreNotifierBridge::onSearchStateChanged(const SearchStatus& status)
 {
+    if (theApp.searchList && theApp.searchList->isInternal(status.searchID))
+        return;   // the core's own size lookup
     // Keyed by search: when two changes fall into one window the newer is the one
     // sent, and that is the one that still holds.
     m_pushes->post(IpcMsgType::PushSearchState, [status] {

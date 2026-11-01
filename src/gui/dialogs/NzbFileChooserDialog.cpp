@@ -34,7 +34,7 @@ constexpr int kInspectedRole = Qt::UserRole + 2;
 NzbFileChooserDialog::NzbFileChooserDialog(IpcClient* ipc, const QStringList& paths,
                                            const QHash<QString, QList<int>>& skipped,
                                            QWidget* parent)
-    : QDialog(parent)
+    : RememberedSizeDialog(parent)
     , m_ipc(ipc)
     , m_initial(skipped)
     , m_result(skipped)

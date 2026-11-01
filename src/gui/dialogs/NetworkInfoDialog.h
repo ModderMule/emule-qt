@@ -8,7 +8,7 @@
 /// on the status bar connection area.
 
 #include <QCborMap>
-#include <QDialog>
+#include "dialogs/RememberedSizeDialog.h"
 
 class QTextBrowser;
 
@@ -16,7 +16,7 @@ namespace eMule {
 
 class IpcClient;
 
-class NetworkInfoDialog : public QDialog {
+class NetworkInfoDialog : public RememberedSizeDialog {
     Q_OBJECT
 
 public:

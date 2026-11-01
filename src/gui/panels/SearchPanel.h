@@ -346,6 +346,8 @@ private:
     void applyNetworkFilter(SearchTab& tab);
     /// The "ed3k Filter" submenu of the result menu (filter-list.md §2, §3).
     void addEd3kFilterMenu(SearchTab& tab);
+    /// Watches ed3k channel rows (SearchType::Ed3kLive, live.md §1.2) through the core.
+    void watchEd3kLiveResults(const QModelIndexList& rows);
     /// Push the filter box's text to every tab and refresh the tab counts.
     void applyTextFilter();
     /// "title (count)", or "title (shown/total)" while the filter box hides rows.

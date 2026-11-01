@@ -88,6 +88,8 @@ Server::Server(const Server& other)
     , m_auxPortsList(other.m_auxPortsList)
     , m_serverHash(other.m_serverHash)
     , m_hasServerHash(other.m_hasServerHash)
+    , m_natToken(other.m_natToken)
+    , m_hasNatToken(other.m_hasNatToken)
     , m_metaApiUrl(other.m_metaApiUrl)
     , m_metaApiPin(other.m_metaApiPin)
     , m_metaNetworks(other.m_metaNetworks)
@@ -155,6 +157,14 @@ void Server::setServerHash(const uint8* hash)
         return;
     std::copy_n(hash, m_serverHash.size(), m_serverHash.begin());
     m_hasServerHash = true;
+}
+
+void Server::setNatToken(const uint8* token)
+{
+    if (!token)
+        return;
+    std::copy_n(token, m_natToken.size(), m_natToken.begin());
+    m_hasNatToken = true;
 }
 
 // ---------------------------------------------------------------------------

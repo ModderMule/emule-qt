@@ -5,7 +5,7 @@
 
 #include "app/MainWindow.h"
 
-#include <QDialog>
+#include "dialogs/RememberedSizeDialog.h"
 #include <QList>
 
 class QListWidget;
@@ -13,7 +13,7 @@ class QPushButton;
 
 namespace eMule {
 
-class ToolbarCustomizeDialog : public QDialog {
+class ToolbarCustomizeDialog : public RememberedSizeDialog {
     Q_OBJECT
 
 public:

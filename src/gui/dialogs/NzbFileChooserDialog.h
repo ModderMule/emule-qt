@@ -12,7 +12,7 @@
 /// replies it waits on only fill the table, guarded by a QPointer.
 
 #include <QCborMap>
-#include <QDialog>
+#include "dialogs/RememberedSizeDialog.h"
 #include <QHash>
 #include <QList>
 #include <QStringList>
@@ -25,7 +25,7 @@ namespace eMule {
 class IpcClient;
 class UsenetFileCheckList;
 
-class NzbFileChooserDialog : public QDialog {
+class NzbFileChooserDialog : public RememberedSizeDialog {
     Q_OBJECT
 
 public:

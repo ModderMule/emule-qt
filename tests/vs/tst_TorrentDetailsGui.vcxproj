@@ -185,6 +185,7 @@
     <ClCompile Include="..\..\src\gui\controls\TorrentPieceGrid.cpp" />
     <ClCompile Include="..\..\src\gui\dialogs\TorrentDetailsDialog.cpp" />
     <ClCompile Include="..\..\src\gui\dialogs\DetailDialog.cpp" />
+    <ClCompile Include="..\..\src\gui\dialogs\RememberedSizeDialog.cpp" />
     <ClCompile Include="..\..\src\gui\dialogs\ClientDetailDialog.cpp" />
     <ClCompile Include="..\..\src\gui\utils\IpcFeedback.cpp" />
     <ClCompile Include="..\..\src\gui\utils\CountryFlags.cpp" />
@@ -213,6 +214,9 @@
       <QtMocFileName>moc_%(Filename).cpp</QtMocFileName>
     </QtMoc>
     <QtMoc Include="..\..\src\gui\dialogs\TorrentDetailsDialog.h">
+      <QtMocFileName>moc_%(Filename).cpp</QtMocFileName>
+    </QtMoc>
+    <QtMoc Include="..\..\src\gui\dialogs\RememberedSizeDialog.h">
       <QtMocFileName>moc_%(Filename).cpp</QtMocFileName>
     </QtMoc>
     <QtMoc Include="..\..\src\gui\dialogs\DetailDialog.h">

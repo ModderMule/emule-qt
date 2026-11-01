@@ -3,6 +3,7 @@
 
 #include "Ed3kCredit.h"
 
+#include "Ed3kKeyFile.h"
 #include "Ed3kSession.h"
 #include "Ed3kStore.h"
 
@@ -28,6 +29,14 @@ namespace {
 const QString kKeyFile = QStringLiteral("credit.key");
 /// the claims of own burns (§6.7): ids, to, amounts; public on the chain, not a secret
 const QString kClaimsFile = QStringLiteral("stake-claims.json");
+/// §9.1: the anonymous credit key (a secret) and the anonymous node ID it belongs to (hex)
+const QString kAnonKeyFile = QStringLiteral("credit-anon.key");
+const QString kAnonNodeFile = QStringLiteral("credit-anon.node");
+
+bool creditKeyOk(const Seed& s)
+{
+    return ::ed3k::creditAddress(s).has_value();
+}
 
 QString hexOf(std::span<const std::uint8_t> bytes)
 {
@@ -47,6 +56,7 @@ Ed3kCredit::Ed3kCredit(Ed3kSession& session, const QString& configDir, QObject* 
     connect(&m_session, &Ed3kSession::eventPolled, this, &Ed3kCredit::onEventPolled, Qt::DirectConnection);
     connect(&m_session, &Ed3kSession::statusChanged, this, &Ed3kCredit::onSessionStatus);
     readAddress();
+    readAnonAddress(false);
     loadClaims();
 }
 
@@ -75,6 +85,8 @@ Ed3kCredit::Status Ed3kCredit::status() const
     st.configured = m_configured;
     st.endpoints = m_configured ? m_endpoints : 0;
     st.address = m_address;
+    st.anonAddress = m_anonRaw ? addressText(*m_anonRaw) : QString();
+    st.anonSet = m_anonSet;
     st.problem = m_problem;
     st.autoActive = m_auto.active;
     return st;
@@ -83,19 +95,9 @@ Ed3kCredit::Status Ed3kCredit::status() const
 std::optional<QString> Ed3kCredit::newKey(QString* error)
 {
     // a fresh key from the CSPRNG that is a key (§2), written over the old file
+    // (moved to renewKey, shared with the anonymous key: tmp file, loadOrCreateSecret, replaceSecret)
     QString err;
-    const QString tmpName = kKeyFile + QStringLiteral(".new");
-    QFile::remove(QDir(m_dir).filePath(tmpName));
-    auto key = loadOrCreateSecret(m_dir, tmpName, [](const Seed& s) { return ffi::creditAddress(s).has_value(); }, &err);
-    QFile::remove(QDir(m_dir).filePath(tmpName));
-    if (!key) {
-        if (error)
-            *error = err;
-        return std::nullopt;
-    }
-    const bool ok = replaceSecret(m_dir, kKeyFile, *key, &err);
-    wipe(std::span<std::uint8_t>{*key});
-    if (!ok) {
+    if (!renewKey(kKeyFile, &err)) {
         if (error)
             *error = err;
         return std::nullopt;
@@ -177,13 +179,63 @@ QString Ed3kCredit::claimsFileName()
     return kClaimsFile;
 }
 
+QString Ed3kCredit::anonKeyFileName()
+{
+    return kAnonKeyFile;
+}
+
+ffi::Result<> Ed3kCredit::applyAnonKey()
+{
+    auto* engine = m_session.engine();
+    if (!engine || !m_configured)
+        return std::unexpected(ffi::Error::State);
+    const auto anon = engine->anonId();
+    if (!anon || !*anon)
+        return std::unexpected(ffi::Error::State);   // not hiding
+    const QByteArray node = QByteArray(reinterpret_cast<const char*>((*anon)->bytes.data()), qsizetype((*anon)->bytes.size())).toHex();
+    const QString nodePath = QDir(m_dir).filePath(kAnonNodeFile);
+    const QByteArray bound = readBlob(nodePath).trimmed();
+    QString err;
+    // §9.1: replaced when the anonymous key is, not more often
+    if (!bound.isEmpty() && bound != node && QFile::exists(QDir(m_dir).filePath(kAnonKeyFile))) {
+        if (!renewKey(kAnonKeyFile, &err)) {
+            logEd3kWarning(QStringLiteral("ed3k: credits: no new anonymous credit key (%1)").arg(err));
+            return std::unexpected(ffi::Error::Io);
+        }
+        logEd3k(QStringLiteral("ed3k: credits: a new anonymous key, a new anonymous credit key"));
+    }
+    auto key = loadOrCreateSecret(m_dir, kAnonKeyFile, creditKeyOk, &err);
+    if (!key) {
+        logEd3kWarning(QStringLiteral("ed3k: credits: no anonymous credit key (%1)").arg(err));
+        return std::unexpected(ffi::Error::Io);
+    }
+    (void)ownerOnly(QDir(m_dir).filePath(kAnonKeyFile));
+    if (bound != node && !writeBlob(nodePath, std::as_bytes(std::span{node.constData(), std::size_t(node.size())})))
+        logEd3kWarning(QStringLiteral("ed3k: %1 not written").arg(kAnonNodeFile));
+    auto ok = engine->creditAnonKey(m_session.now(), *key);
+    wipe(std::span<std::uint8_t>{*key});
+    m_anonSet = ok.has_value();
+    if (!ok)
+        logEd3kWarning(QStringLiteral("ed3k: credits: the anonymous credit key was not taken (error %1)").arg(int(ok.error())));
+    readAnonAddress(false);
+    m_session.pump();
+    changed(true);
+    return ok;
+}
+
 ffi::Result<> Ed3kCredit::burnForStake(std::uint64_t micro, const ffi::event::CreditAddress& to)
 {
     auto* engine = m_session.engine();
     if (!engine || !m_configured)
         return std::unexpected(ffi::Error::State);
-    // §9.1 "No burn": the main key only (anon false); no anonymous credit address exists here
-    // (ToDo of the anonymous key), so no `to` can name one
+    // §9.1 "No burn": the main key only (anon false)
+    // was: ToDo of the anonymous key: no anonymous credit address exists here, so no `to` can
+    // name one (done: credit-anon.key; a `to` naming it is refused here, the core knows it
+    // only while hiding)
+    if (isAnon(to)) {
+        logEd3kWarning(QStringLiteral("ed3k: stake: a burn to the anonymous credit address is refused (credit.md §9.1)"));
+        return std::unexpected(ffi::Error::Config);
+    }
     auto ok = engine->creditBurnForStake(m_session.now(), false, micro, to);
     if (ok)
         logEd3k(QStringLiteral("ed3k: stake: burning %1 µ for %2").arg(micro).arg(addressText(to)));
@@ -208,6 +260,9 @@ ffi::Result<> Ed3kCredit::claimStake(std::uint64_t id)
         return std::unexpected(ffi::Error::State);
     if (c && c->state == ClaimState::Paid)
         return std::unexpected(ffi::Error::State);
+    // §9.1: no claimStake for the anonymous address
+    if ((c && isAnon(c->to)) || (!c && isAnon(looked->second.to)))
+        return std::unexpected(ffi::Error::Config);
     // the core refuses an anonymous `to` and an id neither own nor freshly read (State): a kept
     // one not read in this run (after a restart) is read first and claimed on the answer
     if (c && !m_fresh.contains(id)) {
@@ -350,6 +405,7 @@ void Ed3kCredit::onEventPolled(const ffi::Event& ev, bool* handled)
 void Ed3kCredit::onSessionStatus()
 {
     if (!m_session.isRunning()) {
+        m_anonSet = false;   // set again after the next anonStart
         if (m_configured) {
             m_configured = false;
             m_configuredAs.clear();
@@ -421,6 +477,11 @@ void Ed3kCredit::apply()
     if (endpoints > 0)
         (void)engine->creditStakeParams(m_session.now());
     refreshClaims();
+    // §9.1: the anonymous credit key exists from here on; the hiding node gets it
+    readAnonAddress(true);
+    m_anonSet = false;   // a new configuration: given again
+    if (const auto anon = engine->anonId(); anon && *anon)
+        (void)applyAnonKey();
     m_session.pump();
 }
 
@@ -459,6 +520,7 @@ void Ed3kCredit::unconfigure(const QString& why)
     m_configured = false;
     m_configuredAs.clear();
     m_auto.active = false;
+    m_anonSet = false;   // credits off takes it away in the core
     logEd3k(why.isEmpty() ? QStringLiteral("ed3k: credits off") : QStringLiteral("ed3k: credits off: %1").arg(why));
     m_session.pump();
 }
@@ -469,12 +531,13 @@ std::optional<ffi::Key32> Ed3kCredit::loadKey(bool create, QString* error) const
                                      : loadSecret(m_dir, kKeyFile);
     if (!key)
         return std::nullopt;
-#ifdef Q_OS_UNIX
-    // as private as the node key (§2): owner-only even when it came from elsewhere
-    QFile f(QDir(m_dir).filePath(kKeyFile));
-    if (f.permissions() & (QFileDevice::ReadGroup | QFileDevice::ReadOther | QFileDevice::WriteGroup | QFileDevice::WriteOther))
-        f.setPermissions(QFileDevice::ReadOwner | QFileDevice::WriteOwner);
-#endif
+    // #ifdef Q_OS_UNIX
+    // QFile f(QDir(m_dir).filePath(kKeyFile));
+    // if (f.permissions() & (QFileDevice::ReadGroup | ...)) f.setPermissions(ReadOwner | WriteOwner);
+    // #endif
+    // as private as the node key (§2): owner-only even when it came from elsewhere (0600, or
+    // the owner-only DACL on Windows)
+    (void)ownerOnly(QDir(m_dir).filePath(kKeyFile));
     if (!ffi::creditAddress(*key)) {
         wipe(std::span<std::uint8_t>{*key});
         if (error)
@@ -493,6 +556,41 @@ void Ed3kCredit::readAddress()
     if (const auto addr = ffi::creditAddress(*key))
         m_address = addressText(*addr);
     wipe(std::span<std::uint8_t>{*key});
+}
+
+void Ed3kCredit::readAnonAddress(bool create)
+{
+    m_anonRaw.reset();
+    QString err;
+    auto key = create ? loadOrCreateSecret(m_dir, kAnonKeyFile, creditKeyOk, &err) : loadSecret(m_dir, kAnonKeyFile);
+    if (!key) {
+        if (create)
+            logEd3kWarning(QStringLiteral("ed3k: credits: no anonymous credit key (%1)").arg(err));
+        return;
+    }
+    (void)ownerOnly(QDir(m_dir).filePath(kAnonKeyFile));
+    if (const auto addr = ffi::creditAddress(*key))
+        m_anonRaw = *addr;
+    wipe(std::span<std::uint8_t>{*key});
+}
+
+bool Ed3kCredit::isAnon(const ffi::event::CreditAddress& to) const
+{
+    return m_anonRaw && *m_anonRaw == to;
+}
+
+bool Ed3kCredit::renewKey(const QString& name, QString* error)
+{
+    // a fresh key from the CSPRNG that is a key (§2), written over the old file
+    const QString tmpName = name + QStringLiteral(".new");
+    QFile::remove(QDir(m_dir).filePath(tmpName));
+    auto key = loadOrCreateSecret(m_dir, tmpName, creditKeyOk, error);
+    QFile::remove(QDir(m_dir).filePath(tmpName));
+    if (!key)
+        return false;
+    const bool ok = replaceSecret(m_dir, name, *key, error);
+    wipe(std::span<std::uint8_t>{*key});
+    return ok;
 }
 
 void Ed3kCredit::changed(bool now)

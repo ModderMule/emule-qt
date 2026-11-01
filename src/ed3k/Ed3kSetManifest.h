@@ -30,6 +30,12 @@ struct Ed3kSetEntry {
     bool mount = false;       ///< a directory another set fills (multi-author-set.md §2)
     std::uint32_t setFiles = 0;
     std::uint64_t setSize = 0;
+    /// a sealed member: root and size are the sealed file's (nonce ‖ cipher, 12 bytes more):
+    /// with the epoch key of a paid set (subscription.md §8.1 `epoch`), or k_data of a hidden
+    /// set's link (hidden-set.md §4.2 `sealed`)
+    std::optional<std::uint64_t> epoch;
+    bool sealed = false;
+    [[nodiscard]] bool isSealed() const { return epoch.has_value() || sealed; }
 };
 
 struct Ed3kSetManifest {

@@ -4,13 +4,17 @@
 /// a set whose page node A serves and node B's website server sends over loopback HTTP, the
 /// gate (421, 405, 403), the redirect of a readable host, and the IPC (Ed3kNamesBridge).
 /// Range requests (206/416) from verified blocks; websites kept on disk across restarts (LRU).
+/// Batch 14: a member streamed without Range (chunked, cut on a bad block, 504 with no first
+/// byte); a site unfollowed once neither shown nor held; a set the user follows not evicted.
 
 #include "Ed3kBridge.h"
+#include "Ed3kDownloads.h"
 #include "Ed3kJoinBase.h"
 #include "Ed3kNames.h"
 #include "Ed3kNamesBridge.h"
 #include "Ed3kPlumbing.h"
 #include "Ed3kSession.h"
+#include "Ed3kSets.h"
 #include "Ed3kSiteCache.h"
 #include "Ed3kSiteServer.h"
 #include "Ed3kStore.h"
@@ -107,6 +111,42 @@ protected:
     void saveOwner(const QString&) override {}
 };
 
+/// Node A's side for a bad block: serves a member under its true root and hashes, read from
+/// a file whose last block is wrong (the uploader does not check what it reads).
+class BadSharer final : public Ed3kJoinBase {
+public:
+    BadSharer(Ed3kSession& s, const QString& dir) : Ed3kJoinBase(s, dir, QStringLiteral("bad"), nullptr) {}
+    void start() override { beginStart(); }
+    void stop() override { closeAll(); }
+    bool share(const QByteArray& good, const QString& path)
+    {
+        m_path = path;
+        ::ed3k::Hasher h;
+        if (!h.update({reinterpret_cast<const std::byte*>(good.constData()), std::size_t(good.size())}))
+            return false;
+        auto done = h.finish();
+        if (!done)
+            return false;
+        const ::ed3k::SharedFile f{done->root, done->size, "index.html", std::nullopt, std::nullopt, ::ed3k::Have::complete(),
+                                   done->hashes.bytes()};
+        return shareMember(f, QStringLiteral("bad"), 0);
+    }
+
+protected:
+    std::vector<std::uint64_t> wantedBlocks(const Download&) const override { return {}; }
+    void onFileBlock(const Download&, const ::ed3k::event::Block&) override {}
+    void onBlobFetched(const QString&, int, const ::ed3k::Root&, const QByteArray&) override {}
+    std::optional<FileRead> sharedRead(const Shared&, std::uint64_t offset, std::uint32_t len) const override
+    {
+        return FileRead{m_path, offset, len};
+    }
+    bool hasOwner(const QString& owner) const override { return owner == QLatin1String("bad"); }
+    void saveOwner(const QString&) override {}
+
+private:
+    QString m_path;
+};
+
 /// A TXT resolver by hand: answers @p records for every question, asynchronously.
 struct FakeDns {
     QStringList asked;
@@ -132,7 +172,34 @@ struct Http {
     int status = 0;
     QByteArray headers;
     QByteArray body;
+    bool chunked = false;    ///< Transfer-Encoding: chunked (body decoded)
+    bool complete = false;   ///< chunked: its last chunk came (else cut)
 };
+
+/// The chunks of a chunked body so far; @p last: the last chunk came.
+QByteArray dechunk(const QByteArray& raw, bool* last)
+{
+    QByteArray out;
+    *last = false;
+    qsizetype at = 0;
+    while (true) {
+        const qsizetype eol = raw.indexOf("\r\n", at);
+        if (eol < 0)
+            return out;
+        bool ok = false;
+        const qsizetype n = raw.mid(at, eol - at).split(';').front().trimmed().toLongLong(&ok, 16);
+        if (!ok)
+            return out;
+        if (n == 0) {
+            *last = raw.indexOf("\r\n", eol + 2) >= 0;
+            return out;
+        }
+        if (raw.size() < eol + 2 + n + 2)
+            return out;
+        out += raw.mid(eol + 2, n);
+        at = eol + 2 + n + 2;
+    }
+}
 
 /// One HTTP/1.1 request to 127.0.0.1:@p port with @p host as Host.
 Http request(std::uint16_t port, const QByteArray& host, const QByteArray& path, const QByteArray& extra,
@@ -162,6 +229,17 @@ Http request(std::uint16_t port, const QByteArray& host, const QByteArray& path,
             if (line.toLower().startsWith("content-length:"))
                 length = line.mid(15).trimmed().toLongLong();
         out.body = raw.mid(end + 4);
+        out.chunked = out.headers.toLower().contains("transfer-encoding: chunked");
+        if (out.chunked && method != "HEAD") {
+            // until the last chunk, or the connection is cut
+            const QByteArray chunks = out.body;
+            out.body = dechunk(chunks, &out.complete);
+            if (out.complete)
+                return out;
+            if (s.state() == QAbstractSocket::UnconnectedState)
+                break;
+            continue;
+        }
         if (method == "HEAD" || out.body.size() >= length)
             return out;
         if (s.state() == QAbstractSocket::UnconnectedState)
@@ -191,6 +269,10 @@ private slots:
     void rangesComeFromVerifiedBlocks();
     void websitesAreKeptAcrossRestarts();
     void theSiteCacheDropsTheOldestAndBrokenFiles();
+    void aMemberIsStreamedWithoutRange();
+    void aBadBlockCutsTheStream();
+    void aSiteIsUnfollowedOnceNeitherShownNorHeld();
+    void aSetTheUserFollowsIsNotEvicted();
     void theIpcAnswersNamesAndPetnames();
     void cleanup();
 };
@@ -504,6 +586,189 @@ void tst_Ed3kNames::theSiteCacheDropsTheOldestAndBrokenFiles()
     QVERIFY(!again.hasMember(rootOf(m3)));
     again.setMax(0);
     QCOMPARE(again.bytes(), std::uint64_t(0));
+}
+
+// batch 13 #12: a GET without Range of a member not held is streamed in file order as its
+// blocks verify (chunked, complete); a member whose blocks never come: 504 (no first byte)
+void tst_Ed3kNames::aMemberIsStreamedWithoutRange()
+{
+    QTemporaryDir da, db;
+    QVERIFY(da.isValid() && db.isValid());
+    Ed3kSession a, b;
+    QVERIFY(a.start(loopback(da.path())));
+    QVERIFY(b.start(loopback(db.path())));
+    QByteArray big;   // 3 blocks of 256 KiB, not repeating
+    for (int i = 0; big.size() < 700 * 1024; ++i)
+        big += QByteArray::number(i * 104729) + ' ';
+    Sharer share(a, da.path());
+    share.start();
+    const auto root = share.share(big);
+    QVERIFY(root);
+    Ed3kNames names(b, db.path());
+    names.setSearchEnabled(false);
+    ::ed3k::Key32 key{};
+    key.fill(9);
+    names.setSiteManifest(key, "stream", manifestOf(QStringLiteral("index.html"), big));
+    Ed3kSiteServer sites(b, names);
+    QTRY_VERIFY_WITH_TIMEOUT(sites.isListening(), 5000);
+    const std::uint16_t port = sites.port();
+    const QByteArray host = QUrl(sites.originUrl(key, "stream")).host().toLatin1() + ':' + QByteArray::number(port);
+
+    QTimer feed;
+    connect(&feed, &QTimer::timeout, &names, [&] { names.addSiteSource(*root, sourceOf(a)); });
+    feed.start(100);
+    const Http got = request(port, host, "/", kUser);
+    feed.stop();
+    QCOMPARE(got.status, 200);
+    QVERIFY2(got.chunked, got.headers.constData());   // streamed, not sent whole
+    QVERIFY(got.complete);
+    QCOMPARE(got.body.size(), big.size());
+    QVERIFY(got.body == big);
+    QVERIFY(got.headers.toLower().contains("x-content-type-options: nosniff"));
+    // held now: sent whole, with its length
+    const Http again = request(port, host, "/", "Sec-Fetch-Site: same-origin\r\n");
+    QCOMPARE(again.status, 200);
+    QVERIFY(!again.chunked);
+    QVERIFY(again.body == big);
+
+    // no first byte within the wait: 504
+    sites.setWaitMs(1500);
+    names.setSiteManifest(key, "never", manifestOf(QStringLiteral("index.html"), QByteArray(5000, 'n')));
+    const QByteArray neverHost = QUrl(sites.originUrl(key, "never")).host().toLatin1() + ':' + QByteArray::number(port);
+    QCOMPARE(request(port, neverHost, "/", "Sec-Fetch-Site: same-origin\r\n").status, 504);
+    names.stop();
+    share.stop();
+}
+
+// batch 13 #12: a stream under way is cut when a block of its member does not verify (no
+// last chunk, the connection closed); only verified bytes were sent before
+void tst_Ed3kNames::aBadBlockCutsTheStream()
+{
+    QTemporaryDir da, db;
+    QVERIFY(da.isValid() && db.isValid());
+    Ed3kSession a, b;
+    QVERIFY(a.start(loopback(da.path())));
+    QVERIFY(b.start(loopback(db.path())));
+    QByteArray good;
+    for (int i = 0; good.size() < 700 * 1024; ++i)
+        good += QByteArray::number(i * 7907) + ' ';
+    // the file A reads from: its last block wrong
+    QByteArray bad = good;
+    for (qsizetype i = 2 * 256 * 1024; i < bad.size(); ++i)
+        bad[i] = 'x';
+    const QString badPath = da.filePath(QStringLiteral("bad.bin"));
+    {
+        QFile f(badPath);
+        QVERIFY(f.open(QIODevice::WriteOnly));
+        QCOMPARE(f.write(bad), bad.size());
+    }
+    BadSharer share(a, da.path());
+    share.start();
+    QVERIFY(share.share(good, badPath));
+    const auto root = rootOf(good);
+    Ed3kNames names(b, db.path());
+    names.setSearchEnabled(false);
+    ::ed3k::Key32 key{};
+    key.fill(10);
+    names.setSiteManifest(key, "bad", manifestOf(QStringLiteral("index.html"), good));
+    Ed3kSiteServer sites(b, names);
+    sites.setWaitMs(20000);
+    QTRY_VERIFY_WITH_TIMEOUT(sites.isListening(), 5000);
+    const std::uint16_t port = sites.port();
+    const QByteArray host = QUrl(sites.originUrl(key, "bad")).host().toLatin1() + ':' + QByteArray::number(port);
+    QSignalSpy bads(&names, &Ed3kNames::siteMemberBad);
+
+    QTimer feed;
+    connect(&feed, &QTimer::timeout, &names, [&] { names.addSiteSource(root, sourceOf(a)); });
+    feed.start(100);
+    const Http got = request(port, host, "/", kUser, "GET", 30000);
+    feed.stop();
+    QVERIFY(bads.count() > 0);
+    QCOMPARE(got.status, 200);
+    QVERIFY(got.chunked);
+    QVERIFY(!got.complete);   // cut
+    QVERIFY(got.body.size() < good.size());
+    QVERIFY(good.startsWith(got.body));   // what came was verified
+    QVERIFY(!names.siteCache().hasMember(root));
+    names.stop();
+    share.stop();
+}
+
+// §6.1, batch 13 #13: a site's head is followed while shown or held, then unfollowed
+void tst_Ed3kNames::aSiteIsUnfollowedOnceNeitherShownNorHeld()
+{
+    QTemporaryDir d;
+    QVERIFY(d.isValid());
+    Ed3kSession s;
+    QVERIFY(s.start(loopback(d.path())));
+    Ed3kNames names(s, d.path());
+    names.setSiteShownMs(300);
+    ::ed3k::Key32 key{};
+    key.fill(11);
+    // followed first (an unsigned manifest is no version the core takes as held), then held
+    QVERIFY(names.followSite(key, "site"));
+    names.setSiteManifest(key, "site", manifestOf(QStringLiteral("index.html"), "x"));   // held (on disk)
+    QVERIFY(names.siteFollowed(key, "site"));
+    QTest::qWait(500);
+    names.expireSites();
+    QVERIFY(names.siteFollowed(key, "site"));   // not shown any more, still held
+    names.siteShown(key, "site");
+    names.siteCache().setMax(0);   // no longer held
+    names.expireSites();
+    QVERIFY(names.siteFollowed(key, "site"));   // shown a moment ago
+    QTRY_VERIFY_WITH_TIMEOUT(!names.siteFollowed(key, "site"), 5000);   // the timer, after 300 ms
+    // shown again (a request for the user): followed again
+    QVERIFY(names.followSite(key, "site"));
+    QVERIFY(names.siteFollowed(key, "site"));
+    names.stop();
+    s.stop();
+}
+
+// §6.4: a set the user chose to follow goes only when the user removes it: not evicted, not
+// unfollowed; any other site's files are LRU
+void tst_Ed3kNames::aSetTheUserFollowsIsNotEvicted()
+{
+    // the cache alone: what Keep names stays, the rest goes oldest first
+    {
+        QTemporaryDir d;
+        QVERIFY(d.isValid());
+        Ed3kSiteCache cache(d.filePath(QStringLiteral("c")), 1000);
+        const QByteArray m1(100, '1'), m2(100, '2');
+        cache.putMember(rootOf(m1), m1);
+        QTest::qWait(30);
+        cache.putMember(rootOf(m2), m2);
+        cache.putManifest(QStringLiteral("aa.bb"), "manifest");
+        cache.setKeep([&] { return Ed3kSiteCache::Keep{{QStringLiteral("aa.bb")}, {rootOf(m1)}}; });
+        cache.setMax(0);
+        QVERIFY(cache.hasMember(rootOf(m1)));   // the oldest, but kept
+        QVERIFY(!cache.hasMember(rootOf(m2)));
+        QVERIFY(cache.hasManifest(QStringLiteral("aa.bb")));
+    }
+    QTemporaryDir d;
+    QVERIFY(d.isValid());
+    Ed3kSession s;
+    QVERIFY(s.start(loopback(d.path())));
+    Ed3kDownloads dl(s, d.path());
+    Ed3kSets sets(s, dl, d.path());
+    Ed3kNames names(s, d.path());
+    names.keepUserSets(&sets);
+    names.setSiteShownMs(100);
+    ::ed3k::Key32 key{};
+    key.fill(12);
+    QVERIFY(sets.follow(setLink(key, "mine"), Ed3kSets::Policy::Ask).has_value());
+    QVERIFY(names.followSite(key, "mine"));
+    names.setSiteManifest(key, "mine", manifestOf(QStringLiteral("index.html"), "m"));
+    names.setSiteManifest(key, "other", manifestOf(QStringLiteral("index.html"), "o"));
+    names.siteCache().setMax(0);
+    QVERIFY(!names.siteManifest(key, "mine").isEmpty());
+    const auto site = [&](const QByteArray& id) { return QString::fromLatin1(Ed3kNames::toBytes(key).toHex() + '.' + id.toHex()); };
+    QVERIFY(names.siteCache().hasManifest(site("mine")));
+    QVERIFY(!names.siteCache().hasManifest(site("other")));
+    QTest::qWait(300);
+    names.expireSites();
+    QVERIFY(names.siteFollowed(key, "mine"));   // the user's set: not unfollowed here
+    names.stop();
+    s.stop();
 }
 
 // Ed3kNamesBridge through Ed3kBridge: GetEd3kNames, a petname, a resolve, an unknown open

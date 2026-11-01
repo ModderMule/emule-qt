@@ -357,6 +357,7 @@ TEST_EXTRAS: dict[str, TestExtras] = {
                                        "src/daemon/Ed3kDownloadsBridge.cpp",
                                        "src/daemon/Ed3kSetsBridge.cpp",
                                        "src/daemon/Ed3kPaidBridge.cpp",
+                                       "src/daemon/Ed3kPaidSellerBridge.cpp",
                                        "src/daemon/BandwidthCoordinator.cpp")),
     # friends and chat: Ed3kFriends + its IPC (Ed3kFriendsBridge, through Ed3kBridge)
     "tst_Ed3kFriends": replace(ED3K_EXTRAS, includes=("src/daemon",) + ED3K_EXTRAS.includes,
@@ -370,6 +371,7 @@ TEST_EXTRAS: dict[str, TestExtras] = {
                                         "src/daemon/Ed3kDownloadsBridge.cpp",
                                         "src/daemon/Ed3kSetsBridge.cpp",
                                         "src/daemon/Ed3kPaidBridge.cpp",
+                                        "src/daemon/Ed3kPaidSellerBridge.cpp",
                                         "src/daemon/BandwidthCoordinator.cpp")),
     # names and websites: Ed3kNames, Ed3kSiteServer + their IPC (Ed3kNamesBridge, through Ed3kBridge)
     "tst_Ed3kNames": replace(ED3K_EXTRAS, includes=("src/daemon",) + ED3K_EXTRAS.includes,
@@ -383,6 +385,7 @@ TEST_EXTRAS: dict[str, TestExtras] = {
                                       "src/daemon/Ed3kDownloadsBridge.cpp",
                                       "src/daemon/Ed3kSetsBridge.cpp",
                                       "src/daemon/Ed3kPaidBridge.cpp",
+                                      "src/daemon/Ed3kPaidSellerBridge.cpp",
                                       "src/daemon/BandwidthCoordinator.cpp")),
     # credits: Ed3kCredit (key file, ledger config) + its IPC (Ed3kCreditBridge, through Ed3kBridge)
     "tst_Ed3kCredit": replace(ED3K_EXTRAS, includes=("src/daemon",) + ED3K_EXTRAS.includes,
@@ -396,6 +399,7 @@ TEST_EXTRAS: dict[str, TestExtras] = {
                                        "src/daemon/Ed3kDownloadsBridge.cpp",
                                        "src/daemon/Ed3kSetsBridge.cpp",
                                        "src/daemon/Ed3kPaidBridge.cpp",
+                                       "src/daemon/Ed3kPaidSellerBridge.cpp",
                                        "src/daemon/BandwidthCoordinator.cpp")),
     # ed3k keyword search (Ed3kSearch)
     "tst_Ed3kSearch": ED3K_EXTRAS,
@@ -409,6 +413,9 @@ TEST_EXTRAS: dict[str, TestExtras] = {
     # paid subscriptions: Ed3kPaid + its IPC (Ed3kPaidBridge, asked directly); OpenSSL signs
     "tst_Ed3kPaid": replace(ED3K_EXTRAS, includes=("src/daemon",) + ED3K_EXTRAS.includes,
                             sources=("src/daemon/Ed3kPaidBridge.cpp",)),
+    # selling: Ed3kPaidSeller + its IPC (Ed3kPaidSellerBridge, asked directly)
+    "tst_Ed3kPaidSeller": replace(ED3K_EXTRAS, includes=("src/daemon",) + ED3K_EXTRAS.includes,
+                                  sources=("src/daemon/Ed3kPaidSellerBridge.cpp",)),
     # rooms: Ed3kRooms + its IPC (Ed3kRoomsBridge, asked directly)
     "tst_Ed3kRooms": replace(ED3K_EXTRAS, includes=("src/daemon", "src/gui") + ED3K_EXTRAS.includes, widgets=True,
                              sources=("src/daemon/Ed3kRoomsBridge.cpp",
@@ -427,6 +434,7 @@ TEST_EXTRAS: dict[str, TestExtras] = {
                                        "src/daemon/Ed3kDownloadsBridge.cpp",
                                        "src/daemon/Ed3kSetsBridge.cpp",
                                        "src/daemon/Ed3kPaidBridge.cpp",
+                                       "src/daemon/Ed3kPaidSellerBridge.cpp",
                                        "src/daemon/Ed3kHosterBridge.cpp",
                                        "src/daemon/BandwidthCoordinator.cpp")),
     # the upload queue view: Ed3kUploads + its GetUploads rows (Ed3kUploadsBridge)
@@ -444,6 +452,7 @@ TEST_EXTRAS: dict[str, TestExtras] = {
                                        "src/daemon/Ed3kDownloadsBridge.cpp",
                                        "src/daemon/Ed3kSetsBridge.cpp",
                                        "src/daemon/Ed3kPaidBridge.cpp",
+                                       "src/daemon/Ed3kPaidSellerBridge.cpp",
                                        "src/daemon/Ed3kHosterBridge.cpp",
                                        "src/daemon/BandwidthCoordinator.cpp")),
     # GUI sources against the stub pch; include order as in CMake picks the pch.h
@@ -466,7 +475,7 @@ TEST_EXTRAS: dict[str, TestExtras] = {
                                                 "src/gui/utils/RatingIcons.cpp",
                                                 "src/gui/utils/FileTypeIcons.cpp")),
     "tst_Ed3kSetsDialog": TestExtras(includes=GUI_INCLUDES, widgets=True,
-                                     sources=("src/gui/dialogs/Ed3kSetsDialog.cpp", "src/gui/app/IpcClient.cpp", "src/gui/app/KnownCores.cpp")),
+                                     sources=("src/gui/dialogs/Ed3kSetsDialog.cpp", "src/gui/dialogs/Ed3kSellDialogs.cpp", "src/gui/app/IpcClient.cpp", "src/gui/app/KnownCores.cpp")),
     "tst_IpcTls": TestExtras(includes=GUI_INCLUDES + ("src/daemon",), widgets=True,
                              sources=("src/gui/app/IpcClient.cpp", "src/gui/app/KnownCores.cpp",
                                       "src/daemon/IpcTlsIdentity.cpp")),
@@ -542,6 +551,8 @@ TEST_EXTRAS: dict[str, TestExtras] = {
                                                    "src/gui/dialogs/OptionsDialog.cpp",
                                                    "src/gui/dialogs/Ed3kOptionsPages.cpp",
                                                    "src/gui/dialogs/Ed3kFilterPage.cpp",
+                                                   "src/gui/dialogs/Ed3kSellPage.cpp",
+                                                   "src/gui/dialogs/Ed3kSellDialogs.cpp",
                                                    "src/gui/dialogs/Ed3kStakeGroup.cpp",
                                                    "src/gui/app/Ed3kNameOpener.cpp",
                                                    "src/gui/dialogs/ToolbarCustomizeDialog.cpp",

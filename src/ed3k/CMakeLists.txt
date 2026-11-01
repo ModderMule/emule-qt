@@ -42,6 +42,11 @@ if(TARGET eMule::Bt)
     target_link_libraries(emuleed3k PUBLIC eMule::Bt)
 endif()
 
+# Ed3kKeyFile: the owner-only DACL of secret files (SetNamedSecurityInfoW)
+if(WIN32)
+    target_link_libraries(emuleed3k PRIVATE advapi32)
+endif()
+
 # ed3k.hpp's templates push Ed3kSession.cpp over MSVC's 2^16 sections (C1128)
 if(MSVC)
     target_compile_options(emuleed3k PRIVATE /bigobj)

@@ -31,7 +31,7 @@ static QString labelForButton(ToolbarButtonId id)
 
 ToolbarCustomizeDialog::ToolbarCustomizeDialog(
     const QList<ToolbarButtonId>& currentOrder, QWidget* parent)
-    : QDialog(parent)
+    : RememberedSizeDialog(parent)
     , m_order(currentOrder)
     , m_initialOrder(currentOrder)
 {

@@ -3,6 +3,7 @@
 package org.emuleqt.resolver;
 
 import java.io.BufferedReader;
+import java.io.ByteArrayInputStream;
 import java.io.InputStreamReader;
 import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
@@ -17,12 +18,13 @@ import org.appwork.storage.TypeRef;
 import org.jdownloader.plugins.controller.host.LazyHostPlugin;
 
 /**
- * Entry point. Reads one JSON request per line from stdin, answers with events on stdout
- * (hoster-resolver.local.md §4). Ends when stdin closes, so it dies with the daemon.
+ * Entry point. Reads the auth token from stdin, connects to the daemon's loopback port
+ * (-Demuleqt.port), then reads one JSON request per line and answers with events there
+ * (hoster-resolver.local.md §4). Ends when the socket closes, so it dies with the daemon.
  */
 public final class ResolverMain {
     /** Bumped when a request or event changes shape. */
-    static final int PROTOCOL = 1;
+    static final int PROTOCOL = 2;
 
     /** Running tasks by request id, for cancel and answer. */
     static final Map<Long, Task> TASKS = new ConcurrentHashMap<Long, Task>();
@@ -31,7 +33,15 @@ public final class ResolverMain {
     }
 
     public static void main(final String[] args) throws Exception {
-        Out.claimStdout();
+        // token first, then stdin is empty: JD code reading the console gets EOF, never a request
+        final String token = new BufferedReader(new InputStreamReader(System.in, StandardCharsets.UTF_8)).readLine();
+        System.setIn(new ByteArrayInputStream(new byte[0]));
+        final Integer port = Integer.getInteger("emuleqt.port");
+        if (token == null || token.isBlank() || port == null) {
+            Out.log("no daemon port or token, protocol " + PROTOCOL + " needs both");
+            System.exit(2);
+        }
+        Out.connect(port, token.trim());
         // JD runs outside its updater install here, which AppWorkUtils takes for an IDE: that would pick
         // the new HTTPDownloader (no resume from chunksProgress) and IDE-only checks. Be the
         // release build. Must run before BrowserAdapter loads (its NEW_CORE is final).
@@ -42,7 +52,7 @@ public final class ResolverMain {
         Jd.init();
         PuzzleSolver.install();
         Out.log("ready, " + Jd.hostPluginCount() + " host and " + Jd.crawlerPluginCount() + " crawler plugins");
-        final BufferedReader in = new BufferedReader(new InputStreamReader(System.in, StandardCharsets.UTF_8));
+        final BufferedReader in = Out.input();
         String line;
         while ((line = in.readLine()) != null) {
             if (line.isBlank()) {

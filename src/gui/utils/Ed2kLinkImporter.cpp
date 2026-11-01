@@ -51,6 +51,7 @@ Ed2kLinkImporter::TorrentFileHandler s_torrentFileHandler;
 std::function<bool()> s_torrentsReady;
 Ed2kLinkImporter::HosterLinkHandler s_hosterLinkHandler;
 std::function<bool()> s_hosterReady;
+Ed2kLinkImporter::Ed3kPassLinkHandler s_ed3kPassLinkHandler;
 
 /// Files @p link under its kind; false when it is none of the non-download kinds.
 bool collectOther(const ED2KLink& link, Ed2kLinkImporter::OtherLinks& others)
@@ -70,11 +71,17 @@ bool collectOther(const ED2KLink& link, Ed2kLinkImporter::OtherLinks& others)
 
 std::vector<ParsedLink> parseLines(const QString& text, QStringList& invalid,
                                    std::vector<ED2KHttpCacheLink>& configs,
-                                   Ed2kLinkImporter::OtherLinks& others, QStringList& torrents)
+                                   Ed2kLinkImporter::OtherLinks& others, QStringList& torrents,
+                                   QStringList& passLinks)
 {
     std::vector<ParsedLink> links;
 
     for (const QString& candidate : Ed2kLinkImporter::splitLinks(text)) {
+        // subscription.md §9.3: a credential, never in the invalid list (logged and shown)
+        if (candidate.startsWith(QStringLiteral("ed3k:pass?"), Qt::CaseInsensitive)) {
+            passLinks << candidate;
+            continue;
+        }
         // A BitTorrent magnet is not an eD2K link, but not an invalid line either
         if (gui::isBitTorrentMagnet(candidate)) {
             torrents << candidate;
@@ -320,6 +327,11 @@ bool Ed2kLinkImporter::torrentsReady()
     return s_torrentLinkHandler && s_torrentFileHandler && (!s_torrentsReady || s_torrentsReady());
 }
 
+void Ed2kLinkImporter::setEd3kPassLinkHandler(Ed3kPassLinkHandler handler)
+{
+    s_ed3kPassLinkHandler = std::move(handler);
+}
+
 void Ed2kLinkImporter::setHosterLinkHandler(HosterLinkHandler handler, std::function<bool()> ready)
 {
     s_hosterLinkHandler = std::move(handler);
@@ -394,7 +406,16 @@ void Ed2kLinkImporter::importLinks(const QString& text, IpcClient* ipc, QWidget*
     std::vector<ED2KHttpCacheLink> configs;
     OtherLinks others;
     QStringList torrents;
-    std::vector<ParsedLink> links = parseLines(text, result.invalid, configs, others, torrents);
+    QStringList passLinks;
+    std::vector<ParsedLink> links = parseLines(text, result.invalid, configs, others, torrents, passLinks);
+
+    // ed3k:pass links: manual only (a voucher on the clipboard may be meant for someone else)
+    if (!passLinks.isEmpty() && source == Source::Manual && s_ed3kPassLinkHandler) {
+        result.ed3kPassLinks = static_cast<int>(passLinks.size());
+        if (beforePrompt)
+            beforePrompt();
+        s_ed3kPassLinkHandler(passLinks, parent);
+    }
 
     // BitTorrent magnets in the same paste: to the Torrents tab, manual only.
     // No handler = built without BitTorrent: say so rather than drop them.

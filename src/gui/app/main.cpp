@@ -45,6 +45,7 @@ static void unixSignalHandler(int)
 
 #include "app/AppConfig.h"
 #include "app/CommandLineExec.h"
+#include "app/CoreAttachment.h"
 #include "app/CoreStartWatch.h"
 #include "app/Ed2kSchemeHandler.h"
 #include "app/ExternalLinkHandler.h"
@@ -535,6 +536,8 @@ int main(int argc, char* argv[])
             && ipcPortFree(eMule::thePrefs.ipcListenAddress(), eMule::thePrefs.ipcPort())) {
             const bool hold = !cli.screenshotMode() && !eMule::theUiState.firstStartWizardDone();
             *weOwnDaemon = launchDaemon(earlyPath, hold, *daemonPid);
+            if (*weOwnDaemon)
+                eMule::CoreAttachment::instance().noteLaunched();
         }
     }
 
@@ -670,6 +673,7 @@ int main(int argc, char* argv[])
 
         eMule::logInfo(QStringLiteral("Connecting to daemon at %1:%2...")
                            .arg(connectHost).arg(port));
+        eMule::CoreAttachment::instance().setTarget(connectHost, port, isRemote);
 
         // Wire IPC client to main window and panels
         mainWindow.setIpcClient(&ipcClient);
@@ -918,6 +922,8 @@ int main(int argc, char* argv[])
                 QObject::connect(dlg, &QDialog::accepted, &mainWindow, [dlg, &ipcClient] {
                     eMule::thePrefs.setIpcListenAddress(dlg->address());
                     eMule::thePrefs.setIpcPort(dlg->port());
+                    eMule::CoreAttachment::instance().setTarget(dlg->address(), dlg->port(),
+                                                          isRemoteCoreAddress(dlg->address()));
                     ipcClient.setAuthToken(dlg->token());
                     if (dlg->saveToken())
                         eMule::thePrefs.setIpcTokens({dlg->token()});
@@ -950,6 +956,7 @@ int main(int argc, char* argv[])
                 if (launchDaemon(daemonPath, hold, *daemonPid)) {
                     *weOwnDaemon = true;
                     *daemonLost = false;
+                    eMule::CoreAttachment::instance().noteLaunched();
                     ipcClient.expectDaemonStart();
                 }
             });
@@ -967,7 +974,9 @@ int main(int argc, char* argv[])
                 *daemonLost = false;
                 // The pid we launched goes stale on a Windows restart (a new
                 // process), and is unknown from a console start: take the core's own
-                if (*weOwnDaemon && ipcClient.corePid() > 0)
+                // Also for an attached core, so exit can stop it when unreachable
+                if ((*weOwnDaemon || eMule::CoreAttachment::instance().stopsOnExit())
+                    && ipcClient.corePid() > 0)
                     *daemonPid = ipcClient.corePid();
             });
         } else {
@@ -1183,14 +1192,18 @@ int main(int argc, char* argv[])
                 ipcClient.disconnectFromDaemon();
                 return;
             }
-            if (*weOwnDaemon && ipcClient.isConnected()) {
-                eMule::logInfo(QStringLiteral("Shutting down daemon (we launched it)..."));
+            // Attached (launched by us, or by the user's choice) stops the core
+            const bool stopCore = eMule::CoreAttachment::instance().stopsOnExit();
+            if (stopCore && ipcClient.isConnected()) {
+                eMule::logInfo(QStringLiteral("Shutting down daemon (attached)..."));
                 ipcClient.sendShutdown();
             } else {
                 ipcClient.disconnectFromDaemon();
-                // Ours, but the connection is down: there is nobody to ask
-                if (*weOwnDaemon)
+                // Attached, but the connection is down: there is nobody to ask
+                if (stopCore)
                     terminateUnreachableDaemon(*daemonPid);
+                else if (*weOwnDaemon)
+                    eMule::logInfo(QStringLiteral("Core detached, left running"));
             }
         });
 
@@ -1226,6 +1239,7 @@ int main(int argc, char* argv[])
                     && launchDaemon(daemonPath, false, *daemonPid)) {
                     *weOwnDaemon = true;
                     *daemonLost = false;
+                    eMule::CoreAttachment::instance().noteLaunched();
                     ipcClient.expectDaemonStart();
                 }
                 ipcClient.connectToDaemon(ipcClient.daemonHost(), ipcClient.daemonPort());

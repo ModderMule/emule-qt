@@ -101,6 +101,8 @@ private slots:
     void fail_0x62_endsRequest();
     void keepalive_0x9F_every60s();
     void keepalive_pausedWhileUdpAddressDiffers();
+    void keepalive_tokenSentWhileUdpAddressDiffers();
+    void ext_ipv6SessionWithToken_punchesOverIPv4();
     void connected_finishesAttempt();
     void info_repeatAfterConnect_ignored();
     // hole-punch extension (ed2k-server#39)
@@ -496,6 +498,69 @@ void tst_NatRendezvous::keepalive_pausedWhileUdpAddressDiffers()
     f.env->udpSeenIP = f.env->serverSeenIP;
     f.advance(60000);
     QCOMPARE(count(f), size_t{2});
+}
+
+void tst_NatRendezvous::keepalive_tokenSentWhileUdpAddressDiffers()
+{
+    const auto ip = [](const char* s) { return Address::fromString(QString::fromLatin1(s)).toNetworkUint32(); };
+    std::array<uint8, 16> token{};
+    for (size_t i = 0; i < token.size(); ++i)
+        token[i] = static_cast<uint8>(0x30 + i);
+    HubFixture f;
+    f.env->serverSeenIP = ip("194.30.55.134");
+    f.env->udpSeenIP = ip("195.16.154.198");
+    Server& s = logInExtension(f);
+    s.setNatToken(token.data());
+    f.hub->process();
+    // ed2k-server 0.9.87 believes a token 0x9F from any address: no pause
+    auto ka = f.env->udpWith(OP_EDONKEYPROT, OP_SERVER_NATT_KEEPALIVE);
+    QCOMPARE(ka.size(), size_t{1});
+    QCOMPARE(ka[0].serverKey, kServerKey);
+    QCOMPARE(ka[0].payload.size(), 32);
+    QCOMPARE(QByteArray(ka[0].payload.constData(), 16),
+             QByteArray(reinterpret_cast<const char*>(f.env->hash.data()), 16));
+    QCOMPARE(ka[0].payload.mid(16), QByteArray(reinterpret_cast<const char*>(token.data()), 16));
+    f.advance(60000);
+    QCOMPARE(f.env->udpWith(OP_EDONKEYPROT, OP_SERVER_NATT_KEEPALIVE).size(), size_t{2});
+
+    // no token: 16 bytes, as before
+    HubFixture g;
+    logInExtension(g);
+    g.hub->process();
+    ka = g.env->udpWith(OP_EDONKEYPROT, OP_SERVER_NATT_KEEPALIVE);
+    QCOMPARE(ka.size(), size_t{1});
+    QCOMPARE(ka[0].payload.size(), 16);
+}
+
+void tst_NatRendezvous::ext_ipv6SessionWithToken_punchesOverIPv4()
+{
+    const auto sent0x60 = [](HubFixture& f) {
+        return std::ranges::any_of(f.env->tcp, [](const SentTcp& t) { return t.opcode == OP_LOWID_HOLEPUNCH_REQUEST; });
+    };
+    const Address v6 = Address::fromString(QStringLiteral("2001:db8::34"));
+    std::array<uint8, 16> token{};
+    token.fill(0x5A);
+    HubFixture f;
+    Server& s = logInExtension(f);
+    QVERIFY(s.addAddress(v6));
+    f.env->sessionAddress = v6;
+    s.setNatToken(token.data());
+    QVERIFY(f.hub->start(f.peerOnServer(79)));
+    QVERIFY(sent0x60(f));
+    // plain to the server's IPv4: the key is no good for an IPv6 session
+    const auto ka = f.env->udpWith(OP_EDONKEYPROT, OP_SERVER_NATT_KEEPALIVE);
+    QVERIFY(!ka.empty());
+    QCOMPARE(ka.back().to, Endpoint(kServerIP, kServerPort + 4));
+    QCOMPARE(ka.back().serverKey, 0u);
+    QCOMPARE(ka.back().payload.mid(16), QByteArray(16, '\x5A'));
+
+    // no IPv4 known for the server: still no 0x60
+    HubFixture g;
+    Server& t = g.env->logIn(v6, kServerPort,
+                             SrvTcpFlag::LowIdHolePunch | SrvTcpFlag::LugdunumNat | SrvTcpFlag::HolePunchExtension);
+    t.setNatToken(token.data());
+    g.hub->start(g.peerOnServer(79));
+    QVERIFY(!sent0x60(g));
 }
 
 void tst_NatRendezvous::connected_finishesAttempt()

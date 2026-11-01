@@ -13,7 +13,7 @@ Downloads from links at file hosters, verified under ed3k roots. Spec:
 | `ed3k_link_share` | `libs/packmule/crates/packmule-ffi/src/links.rs` | §2/§4.1: the links of a shared root go with its `SOURCE` record and to downloaders (`FileStatus.links`); empty stops |
 | `Ed3kHosterJoin` | `src/ed3k/` | the host side: items, §4 lookup, answers to `LinkResolve`, feeds the resolver's part file in, writes verified blocks, moves the file to incoming |
 | `Ed3kResolver` | `src/ed3k/Ed3kResolver.h` | the interface: match, check, open, expand, accountCheck, sites, puzzles |
-| `Ed3kJdResolver` | `src/ed3k/` | the JDownloader sidecar over stdin/stdout JSON lines; installs `resolver.zip` |
+| `Ed3kJdResolver` | `src/ed3k/` | the JDownloader sidecar: JSON lines over a loopback socket (token via stdin, then stdin closed); installs `resolver.zip` |
 | `Ed3kJavaRuntime` | `src/ed3k/` | finds Java 17+, else downloads Temurin 21 into `Config/ed3k/java/jre` (an older `<eMuleQt>/runtime/jre` is moved there) |
 | sidecar driver | `tools/hoster-resolver/` | Java, GPL v3+: JD's plugins unmodified, `SingleDownloadController` subclass, puzzle solver |
 | IPC | `src/daemon/Ed3kHosterBridge.*` | requests 1100-1108 (1107 GetHosterStats, Statistics branch; 1108 CheckHosterLinks), pushes 1150-1154 and 1159 (PushHosterLinkCheck), `hoster` map in `GetEd3kStatus` |
@@ -243,7 +243,10 @@ Compile-time switch: CMake `-DEMULE_HOSTER_JD=OFF`, qmake `CONFIG+=no_emule_host
 on and looks up links and answers `NO_RESOLVER`.
 
 The Hoster tab shows only while ed3k is on (`ed3k: enabled`); the Torrents tab likewise follows
-`bittorrent: enabled`.
+`bittorrent: enabled`. The **Hoster Verbose** log tab holds `emule.hoster` debug lines while hoster
+downloads are on and `hosterVerboseLog` is set (Options › Extended › Verbose): the resolver's start,
+connect and auth, each request (`-> op task host`, never url path, account or proxy credentials)
+and each event (`<- task id ev: fields`, progress once in 10 s per task). Off: dropped.
 
 ### Release builds
 
@@ -277,7 +280,8 @@ captcha, connecting; `transfer` clears it. An image puzzle shows as *Puzzle* wit
 captcha ends as *Needs you*.
 
 JD's `CaptchaAPISolver` is switched off at sidecar start: headless, its `isEnabled()` starts MyJDownloader,
-which asks for logins on the console, i.e. reads stdin, the daemon's request pipe (a captcha hung there).
+which asks for logins on the console. That once read the request pipe and hung; since protocol 2 requests
+go over a loopback socket and stdin is empty, so any console read gets EOF.
 
 ## Open (ToDo in code)
 

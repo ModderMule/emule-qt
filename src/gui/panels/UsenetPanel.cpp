@@ -76,6 +76,8 @@ void UsenetPanel::setStreamToken(const QString& token)
 void UsenetPanel::setIpcClient(IpcClient* ipc)
 {
     m_ipc = ipc;
+    // row-update pushes only while this list is on screen
+    m_poller->setOnScreenHook(ipc ? ipc->pushGroupHold(Ipc::PushGroupUsenet) : nullptr);
     m_categoryTabBar->setIpcClient(ipc);
     if (!m_ipc)
         return;

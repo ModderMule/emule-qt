@@ -5,12 +5,14 @@
 /// (docs/ed3k-spec/docs/hoster-resolver.local.md, tools/hoster-resolver).
 ///
 /// - A process of its own, started at the first task and stopped after kIdleStopMs without
-///   one. JSON lines over stdin/stdout; it ends when stdin closes, so it dies with the daemon.
+///   one. JSON lines over a loopback socket the daemon listens on; stdin carries only the
+///   auth token and is closed then, so JD code reading the console gets EOF, not our requests.
+///   It ends when the socket closes, so it dies with the daemon.
 /// - The plugins come as resolver.zip (scripts/build-hoster-resolver.sh), shipped with the
 ///   application and unpacked into <dataDir>/plugins when it changed. JD never writes there
 ///   (its state goes to <dataDir>/jd), so instances can share one unpacked copy: sharedDir.
 /// - It gets its data folder and a scratch folder per task, nothing else: no key, no shared
-///   folder, no IPC token (note §8). Its stderr is JD's log: only the driver's own lines
+///   folder, no IPC token (note §8). Its stdout+stderr are JD's log: only the driver's own lines
 ///   ("resolver: ...") are logged, as debug.
 /// - Account data goes in with a request and never comes back out.
 
@@ -19,6 +21,7 @@
 #include "Ed3kResolver.h"
 
 #include <QByteArray>
+#include <QElapsedTimer>
 #include <QPointer>
 #include <QString>
 #include <QTimer>
@@ -26,6 +29,8 @@
 #include <map>
 
 class QProcess;
+class QTcpServer;
+class QTcpSocket;
 class QJsonObject;
 
 namespace eMule::ed3k {
@@ -48,7 +53,8 @@ class Ed3kJdResolver : public Ed3kResolver {
     Q_OBJECT
 
 public:
-    static constexpr int kProtocol = 1;
+    static constexpr int kProtocol = 2;
+    static constexpr int kConnectTimeoutMs = 60 * 1000;
     static constexpr int kIdleStopMs = 5 * 60 * 1000;
     static constexpr int kSharedKeepDays = 30;
     static constexpr int kSharedLockWaitMs = 3 * 60 * 1000;
@@ -73,7 +79,7 @@ public:
     static void removePlugins(const QString& dataDir);
     /// The unpacked resolver folder in use (Core.jar, jd/plugins, libs); empty: none
     [[nodiscard]] QString pluginRoot() const { return m_root; }
-    /// The command line the sidecar runs with (tests).
+    /// The command line the sidecar runs with (tests). Holds -Demuleqt.port while listening.
     [[nodiscard]] QStringList arguments() const;
 
     [[nodiscard]] bool available() const override;
@@ -108,18 +114,33 @@ private:
     void installPlugins();
     bool ensureStarted();
     void stop();
-    void onStdout();
-    void onStderr();
+    /// Closes socket and server; queued requests are dropped
+    void closeChannel();
+    void onLog();
     void onFinished();
     void onIdle();
+    void onNewConnection();
+    void onSocketRead();
+    void onSocketGone();
+    void onConnectTimeout();
     /// Ends every open task with Failed (the sidecar died or was stopped).
     void failPending(const QString& code);
     void handleLine(const QByteArray& line);
+    /// Hoster Verbose: what a request asks, without url path, account or credentials
+    static QString describeRequest(const QJsonObject& req);
+    /// Hoster Verbose: one received event, its safe fields
+    void logEvent(TaskId id, const QString& ev, const ResolverEvent& e);
 
     JdResolverConfig m_config;
     QPointer<QProcess> m_proc;
-    QByteArray m_outBuf;
-    QByteArray m_errBuf;
+    QPointer<QTcpServer> m_server;
+    QPointer<QTcpSocket> m_sock;
+    QByteArray m_token;       ///< per start; the sidecar's first line must carry it
+    QByteArray m_sendQueue;   ///< requests made before the sidecar authenticated
+    bool m_authed = false;
+    QTimer m_connectTimer;
+    QByteArray m_outBuf;      ///< socket read buffer
+    QByteArray m_errBuf;      ///< merged stdout+stderr log buffer
     QString m_description;
     QString m_installError;
     QString m_root;
@@ -127,6 +148,8 @@ private:
     TaskId m_nextId = 1;
     /// open tasks; pure requests (hello, setProxy) are not counted
     std::map<TaskId, bool> m_pending;
+    std::map<TaskId, qint64> m_progressLogged;   ///< task: last progress line (ms of m_startedAt)
+    QElapsedTimer m_startedAt;                   ///< the sidecar's start
     QTimer m_idle;
     bool m_stopping = false;
 };

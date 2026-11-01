@@ -76,6 +76,8 @@ TorrentPanel::~TorrentPanel() = default;
 void TorrentPanel::setIpcClient(IpcClient* ipc)
 {
     m_ipc = ipc;
+    // row-update pushes only while this list is on screen
+    m_poller->setOnScreenHook(ipc ? ipc->pushGroupHold(Ipc::PushGroupTorrents) : nullptr);
     m_pane->setIpcClient(ipc);
     if (!m_ipc)
         return;

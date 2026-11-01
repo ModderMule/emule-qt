@@ -106,6 +106,8 @@ private:
     void onSharedFileRemovedPush(const Ipc::IpcMessage& msg);
     /// Totals, header and the detail tabs, after the listed rows changed.
     void afterSharedRowsChanged();
+    /// "Shared Files (N)" or "Shared Files (N, Hashing M)" — MFC ShowFilesCount().
+    void showFilesCount(int files);
     /// Ask the daemon to share or unshare one file, then refetch.
     void sendSetFileShared(const QString& filePath, bool shared);
     void sendSetPriorityBatch(const QStringList& hashes, int priority, bool isAuto);

@@ -19,17 +19,24 @@
 /// - Persisted: Config/ed3k/paid.json (scopes, offers, passes, polls; owner-only) and the
 ///   holder seeds in Config/ed3k/paid/<scope hex>.holder (Secret files, 0600, never logged).
 ///
-/// ToDo: selling (offers, seasons, signing passes: ed3k_paid_publish*, _new_season) is not
-/// offered; only buying.
-/// ToDo: `ed3k:pass` links (§9.3 by hand, vouchers) are not taken.
+/// was: ToDo: selling (offers, seasons, signing passes: ed3k_paid_publish*, _new_season) is not
+/// offered; only buying. (done: Ed3kPaidSeller, the seller's side)
+/// was: ToDo: `ed3k:pass` links (§9.3 by hand, vouchers) are not taken. (done: addPassLink;
+/// a voucher's key is a holder file like a bought one, its pass taken once: `vouchers` in
+/// paid.json; a pass for a scope not followed yet waits there until it is)
+/// - §5.1 (ruling #10): a pass of more than one scope is not shown before the user's word
+///   (State::ScopesWarn, scopesWarning → answerScopes); declined: kept unused, asked again
+///   from the UI; the scopes taken are kept, a renewal of the same scopes asks no more.
 /// - Offers: from a catalogue's manifest, the pass answer, and the core (paidOffer on
 ///   PAID_OFFER: a hidden set's from a pass holder's KEY_NO_PASS answer, §6.2).
-/// ToDo: a paid live channel (subscription.md §7) is not followed here.
+/// was: ToDo: a paid live channel (subscription.md §7) is not followed here. (done:
+/// followChannel from Ed3kLive while watched; the live mesh asks for keys itself)
 
 #include "Ed3kFfi.h"
 
 #include <QByteArray>
 #include <QObject>
+#include <QSet>
 #include <QString>
 #include <QStringList>
 
@@ -82,6 +89,7 @@ public:
         Refused = 3,      ///< 410: no pass will come for this holder key
         GaveUp = 4,       ///< no answer other than 404 within 7 days, or a URL refused
         AnonWarning = 5,  ///< waits for the user's word on the anonymous key (§5.1)
+        ScopesWarn = 6,   ///< a pass of several scopes waits for the user's word (§5.1); declined: unused
     };
 
     struct Info {
@@ -96,6 +104,21 @@ public:
         bool renewalEnded = false;   ///< the seller answered 410 to a renewal
         std::uint64_t newestEpoch = 0;   ///< of the keys held; 0 none
         bool keys = false;
+        int passScopes = 0;       ///< scopes of the pass waiting (ScopesWarn), else of the one held
+        bool scopesDeclined = false;   ///< ScopesWarn: the user said no (asked again from the UI)
+    };
+    /// What addPassLink took.
+    struct PassTaken {
+        QString scope;            ///< of a followed subscription when the pass covers one
+        QString title;
+        int scopes = 1;
+        bool voucher = false;
+        bool waits = false;       ///< ScopesWarn: ask the user, then answerScopes
+    };
+    /// The publisher and scope of a paid `ed3k:live` link (§7: `paid=1`).
+    struct ChannelLink {
+        ::ed3k::Key32 key{};
+        ::ed3k::Scope scope;
     };
 
     /// @p configDir: Config/ (ed3k/paid.json and ed3k/paid/ below it), loaded here.
@@ -116,6 +139,18 @@ public:
     /// §5.1: the user was told the seller sees an address: the waiting poll goes ahead. The
     /// pay link when it was a purchase (open it now), else empty; nullopt: nothing waits.
     std::optional<QString> confirmAnon(const QString& scopeHex);
+    /// §9.3: an `ed3k:pass` link (a credential: never logged). Without `k` the holder key must
+    /// be one of ours; with `k` (a voucher) it is stored like a bought one and the pass taken
+    /// once. The error is user-visible.
+    std::expected<PassTaken, QString> addPassLink(const QString& link);
+    /// §5.1: the user's word on a pass of several scopes (every subscription it came to).
+    /// false: nothing waits.
+    bool answerScopes(const QString& scopeHex, bool use);
+    /// §7: a paid channel watched (Ed3kLive); followed while watched only.
+    void followChannel(const ::ed3k::Key32& key, const ::ed3k::Scope& scope, const QString& title);
+    void leaveChannel(const ::ed3k::Scope& scope);
+    /// nullopt: no paid live link (no `paid=1`, or not one).
+    [[nodiscard]] static std::optional<ChannelLink> channelOfLink(const QString& link);
     /// §5.3: share reports on or off (kept).
     void setReports(bool on);
     [[nodiscard]] bool reports() const { return m_reports; }
@@ -142,6 +177,8 @@ signals:
     void anonWarning(const QString& scopeHex, const QString& title);
     /// A pass came (or a renewal).
     void passArrived(const QString& scopeHex, const QString& title, quint64 until);
+    /// §5.1: a bought pass covers @p others more scopes: ask before it is shown (answerScopes).
+    void scopesWarning(const QString& scopeHex, const QString& title, int others);
 
 private:
     struct Sub {
@@ -164,6 +201,12 @@ private:
         bool onEngine = false;
         bool anonWait = false;    ///< §5.1: the core waits for the user's word
         bool anonResume = false;  ///< the poll that waits is a resumed one
+        bool known = true;        ///< publisher known (false: a pass link's scope not followed yet)
+        QByteArray waitingPass;   ///< §5.1: several scopes, not shown before the user's word
+        std::uint64_t waitingUntil = 0;
+        bool scopesDeclined = false;
+        QStringList scopesOk;     ///< scopes (hex) the user took a pass of; within them no new word
+        bool watching = false;    ///< a channel: watched now (Ed3kLive)
     };
 
     void onEventPolled(const ::ed3k::Event& event, bool* handled);
@@ -173,6 +216,14 @@ private:
     bool startPoll(Sub& s, bool resume, QString* error = nullptr);
     void startRenewal(Sub& s);
     void onPass(Sub& s, const ::ed3k::event::PassBought& p);
+    /// The pass to every scope it covers (new subscriptions not followed yet for the others),
+    /// the holder seed copied where needed; @p first takes it in any case. True: it waits for
+    /// the user's word (§5.1).
+    bool spreadPass(Sub& first, const QByteArray& pass, std::uint64_t until, const std::vector<::ed3k::Scope>& scopes,
+                    const ::ed3k::Key32& holder, const ::ed3k::Key32& seed);
+    /// a pass to @p s: used, or kept for the user's word; true: waits
+    bool takePass(Sub& s, const QByteArray& pass, std::uint64_t until, const std::vector<::ed3k::Scope>& scopes);
+    void usePass(Sub& s, const QByteArray& pass, std::uint64_t until);
     /// the pay link of @p s (§9.1 step 2); empty without a pay_url
     [[nodiscard]] QString payLinkOf(const Sub& s) const;
     void setPassOnEngine(Sub& s);
@@ -190,6 +241,8 @@ private:
     Ed3kSession& m_session;
     QString m_configDir;
     std::map<::ed3k::Scope, Sub> m_subs;
+    /// §9.3: SHA-256 (hex) of the passes of vouchers taken: each once
+    QSet<QString> m_vouchers;
     bool m_reports = true;
     bool m_attached = false;
     bool m_changePending = false;

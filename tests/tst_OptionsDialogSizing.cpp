@@ -86,6 +86,9 @@ constexpr bool listed(int page)
 /// precisely the failure this file was written for.
 constexpr int kDialogBudget = 700;
 
+/// uistate.yml key of the options dialog size (RememberedSizeDialog)
+const QString kSizeKey = QStringLiteral("OptionsDialog");
+
 const char* pageName(int page)
 {
     static const char* names[] = {
@@ -143,6 +146,7 @@ private slots:
     void theWizardHasTwoPages();
     void theWizardTicksKadWhileUdpIsOn();
     void theWizardSetsAdvancedControls();
+    void theWizardSwitchesEveryNetwork();
     void theWizardReportsTheRealPortMappingResult();
     void theWizardDoesNotWaitWithoutACore();
     void aPortChangeIsReportedAsItWasApplied();
@@ -243,7 +247,7 @@ void TestOptionsDialogSizing::outOfRangeStoredPageFallsBackToGeneral()
 /// button row opened under the taskbar. The default has to fit like the minimum does.
 void TestOptionsDialogSizing::defaultSizeFitsTheScreen()
 {
-    theUiState.setOptionsDialogSize({});
+    theUiState.setDialogSize(kSizeKey, {});
     OptionsDialog dlg(nullptr, nullptr);
 
     const QSize available = dlg.screen()->availableGeometry().size();
@@ -263,44 +267,48 @@ void TestOptionsDialogSizing::storedSizeIsRestored()
                  && wanted.height() < probe.screen()->availableGeometry().height() - 60,
              "test screen too small to tell a restored size from a clamped one");
 
-    theUiState.setOptionsDialogSize(wanted);
+    theUiState.setDialogSize(kSizeKey, wanted);
     OptionsDialog dlg(nullptr, nullptr);
+    dlg.show();   // restored on the first show
     QCOMPARE(dlg.size(), wanted);
-    theUiState.setOptionsDialogSize({});
+    theUiState.setDialogSize(kSizeKey, {});
 }
 
 /// A size remembered on a big monitor must not follow the user to a small one.
 void TestOptionsDialogSizing::oversizedStoredSizeIsClampedToTheScreen()
 {
-    theUiState.setOptionsDialogSize(QSize(5000, 5000));
+    theUiState.setDialogSize(kSizeKey, QSize(5000, 5000));
     OptionsDialog dlg(nullptr, nullptr);
+    dlg.show();
 
     const QSize available = dlg.screen()->availableGeometry().size();
     QVERIFY2(dlg.width() < available.width() && dlg.height() < available.height(),
              qPrintable(QStringLiteral("opens at %1x%2").arg(dlg.width()).arg(dlg.height())));
-    theUiState.setOptionsDialogSize({});
+    theUiState.setDialogSize(kSizeKey, {});
 }
 
 void TestOptionsDialogSizing::undersizedStoredSizeGrowsToTheMinimum()
 {
-    theUiState.setOptionsDialogSize(QSize(100, 100));
+    theUiState.setDialogSize(kSizeKey, QSize(100, 100));
     OptionsDialog dlg(nullptr, nullptr);
+    dlg.show();
     QCOMPARE(dlg.size(), dlg.minimumSize());
-    theUiState.setOptionsDialogSize({});
+    theUiState.setDialogSize(kSizeKey, {});
 }
 
 void TestOptionsDialogSizing::sizeIsRememberedOnClose()
 {
-    theUiState.setOptionsDialogSize({});
-    QVERIFY(!theUiState.optionsDialogSize().isValid());
+    theUiState.setDialogSize(kSizeKey, {});
+    QVERIFY(!theUiState.dialogSize(kSizeKey).isValid());
 
     OptionsDialog dlg(nullptr, nullptr);
+    dlg.show();
     const QSize wanted = dlg.minimumSize() + QSize(8, 12);
     dlg.resize(wanted);
     dlg.reject();   // Cancel: the size is the user's even if the edits are not
 
-    QCOMPARE(theUiState.optionsDialogSize(), wanted);
-    theUiState.setOptionsDialogSize({});
+    QCOMPARE(theUiState.dialogSize(kSizeKey), wanted);
+    theUiState.setDialogSize(kSizeKey, {});
 }
 
 /// MorphXT's "Options -> Advanced options -> IRC" (PreferencesDlg.cpp:582).
@@ -600,9 +608,17 @@ struct WizardPrefsGuard {
     bool kad = thePrefs.kadEnabled();
     bool ed2k = thePrefs.networkED2K();
     bool extControls = thePrefs.showExtControls();
+    bool usenet = thePrefs.usenetEnabled();
+    bool bt = thePrefs.btEnabled();
+    bool ed3k = thePrefs.ed3kEnabled();
+    Ed3kHosterPrefs hoster = thePrefs.ed3kHoster();
 
     ~WizardPrefsGuard()
     {
+        thePrefs.setUsenetEnabled(usenet);
+        thePrefs.setBtEnabled(bt);
+        thePrefs.setEd3kEnabled(ed3k);
+        thePrefs.setEd3kHoster(hoster);
         thePrefs.setMaxGraphDownloadRate(capDown);
         thePrefs.setMaxGraphUploadRate(capUp);
         thePrefs.setMaxDownload(maxDown);
@@ -887,6 +903,46 @@ void TestOptionsDialogSizing::theWizardSetsAdvancedControls()
     QVERIFY(!thePrefs.showExtControls());
 }
 
+/// #103: Usenet, BitTorrent, ed3k and hosters are picked on the first page too.
+void TestOptionsDialogSizing::theWizardSwitchesEveryNetwork()
+{
+    const WizardPrefsGuard guard;
+    thePrefs.setKadEnabled(true);
+    thePrefs.setNetworkED2K(true);
+    thePrefs.setUsenetEnabled(false);
+    thePrefs.setBtEnabled(true);
+    thePrefs.setEd3kEnabled(true);
+    Ed3kHosterPrefs h = thePrefs.ed3kHoster();
+    h.enabled = true;
+    thePrefs.setEd3kHoster(h);
+
+    FirstStartWizard wizard(nullptr);
+    auto* usenet = wizard.findChild<QCheckBox*>(QStringLiteral("wizardUsenet"));
+    auto* bt = wizard.findChild<QCheckBox*>(QStringLiteral("wizardBt"));
+    auto* ed3k = wizard.findChild<QCheckBox*>(QStringLiteral("wizardEd3k"));
+    auto* hoster = wizard.findChild<QCheckBox*>(QStringLiteral("wizardHoster"));
+    QVERIFY(usenet && bt && ed3k && hoster);
+    QVERIFY(!usenet->isChecked() && bt->isChecked() && ed3k->isChecked() && hoster->isChecked());
+    QVERIFY(hoster->isEnabled());
+
+    // hosters run on ed3k: greyed with it
+    ed3k->setChecked(false);
+    QVERIFY(!hoster->isEnabled());
+    hoster->setChecked(false);
+    bt->setChecked(false);
+    usenet->setChecked(true);
+
+    walkToLastPage(wizard);
+    wizardButton(wizard, QStringLiteral("Finish"))->click();
+    const QCborMap applied = wizard.appliedSettings();
+    QCOMPARE(applied.value(QStringLiteral("usenetEnabled")).toBool(false), true);
+    QCOMPARE(applied.value(QStringLiteral("btEnabled")).toBool(true), false);
+    QCOMPARE(applied.value(QStringLiteral("ed3kEnabled")).toBool(true), false);
+    QCOMPARE(applied.value(QStringLiteral("ed3kHosterEnabled")).toBool(true), false);
+    QVERIFY(thePrefs.usenetEnabled() && !thePrefs.btEnabled() && !thePrefs.ed3kEnabled());
+    QVERIFY(!thePrefs.ed3kHoster().enabled);
+}
+
 /// G47, the other direction: with UDP on, Kad is free and follows its setting. UDP off is
 /// config-file only (udpPort: 0), so the wizard has no switch for it.
 void TestOptionsDialogSizing::theWizardTicksKadWhileUdpIsOn()
@@ -923,6 +979,9 @@ void TestOptionsDialogSizing::theWizardNeedsANetwork()
     const WizardPrefsGuard guard;
     thePrefs.setKadEnabled(false);
     thePrefs.setNetworkED2K(false);
+    thePrefs.setUsenetEnabled(false);
+    thePrefs.setBtEnabled(false);
+    thePrefs.setEd3kEnabled(false);
 
     FirstStartWizard wizard(nullptr, nullptr, FirstStartWizard::StartPage::Speed);
 
@@ -1117,7 +1176,7 @@ void TestOptionsDialogSizing::defaultWidthShowsEveryTabTitle()
 /// does it, so the check asks what QWidgetWindow asks before correcting.
 void TestOptionsDialogSizing::windowsDoesNotForceTheContentHeight()
 {
-    theUiState.setOptionsDialogSize({});
+    theUiState.setDialogSize(kSizeKey, {});
     OptionsDialog dlg(nullptr, nullptr);
 
     const QWidget* window = &dlg;   // through the base: that is how Qt calls it

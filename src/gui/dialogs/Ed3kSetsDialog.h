@@ -14,11 +14,14 @@
 /// - Paid sets (subscription.md, IPC 1035-1038, pushes 1064-1066): the price, terms and seller
 ///   of the offer, the pass (until, renewal) in the info; Buy Pass… (the pay page in the
 ///   browser), the warning for the anonymous key (§5.1), Share reports (§5.3).
+/// - Batch 14: Enter Pass… (an `ed3k:pass` link or voucher, §9.3, IPC 1028), the word on a pass
+///   of several scopes (§5.1, ruling #10: Use Pass… while it waits, IPC 1029, push 1057), Buy
+///   Pass… of a paid live channel on the Live page (§7).
 /// - One dialog (showDialog), non-modal; also from ExternalLinkHandler (ed3k:set, ed3k:live).
 
 #include <QCborArray>
 #include <QCborMap>
-#include <QDialog>
+#include "dialogs/RememberedSizeDialog.h"
 #include <QMap>
 #include <QPointer>
 #include <QString>
@@ -35,7 +38,7 @@ namespace eMule {
 
 class IpcClient;
 
-class Ed3kSetsDialog : public QDialog {
+class Ed3kSetsDialog : public RememberedSizeDialog {
     Q_OBJECT
 
 public:
@@ -60,6 +63,14 @@ public:
     [[nodiscard]] static QString liveStateText(int state);
     [[nodiscard]] static QString paidStateText(int state);
 
+    /// §9.3: hands an `ed3k:pass` link (a credential) to the core, then tells the user (a
+    /// voucher: one pass for one person; several scopes: askPassScopes).
+    static void addPassLink(QWidget* parent, IpcClient* ipc, const QString& link);
+    /// §5.1: a pass that covers @p others more subscriptions: used on yes, kept unused on no.
+    static void askPassScopes(QWidget* parent, IpcClient* ipc, const QString& scope, const QString& title, int others);
+    /// "Enter Pass…": a link or voucher typed or pasted.
+    static void enterPass(QWidget* parent, IpcClient* ipc);
+
 private:
     void refresh();
     void onSetChanged();
@@ -78,7 +89,15 @@ private:
     void leaveStream();
     void broadcast();
     void copyLink();
+    /// Sell… a broadcast of ours (subscription.md §7, SellEd3k): the terms, then paid on air
+    void sellChannel();
     void buyPass();
+    /// Buy Pass… or, while a pass of several scopes waits, Use Pass… (§5.1)
+    void paidAction(const QCborMap& p);
+    void buyPassFor(const QCborMap& p);
+    [[nodiscard]] bool paidActionEnabled(const QCborMap& p, bool connected) const;
+    /// the subscription of the current live row, empty when not paid
+    [[nodiscard]] QCborMap currentLivePaid() const;
     /// §5.1: the seller sees an address; on yes ConfirmEd3kPaidAnon, then the pay page
     void onAnonWarn(const QString& scope, const QString& title);
     void openPayLink(const QString& link);
@@ -100,9 +119,14 @@ private:
     QPushButton* m_download = nullptr;
     QPushButton* m_parts = nullptr;
     QPushButton* m_buy = nullptr;
+    QPushButton* m_enterPass = nullptr;
+    QPushButton* m_liveBuy = nullptr;
+    /// the last GetEd3kLive map (the paid rows refill it)
+    QCborMap m_liveMap;
     QCheckBox* m_reports = nullptr;
     QPushButton* m_broadcast = nullptr;
     QPushButton* m_copyLink = nullptr;
+    QPushButton* m_sell = nullptr;
     /// GetEd3kPaid rows by scope
     QMap<QString, QCborMap> m_paidRows;
     QTreeWidget* m_live = nullptr;

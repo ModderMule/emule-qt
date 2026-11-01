@@ -34,7 +34,7 @@ using namespace Ipc;
 // ---------------------------------------------------------------------------
 
 ImportDownloadsDialog::ImportDownloadsDialog(IpcClient* ipc, QWidget* parent)
-    : QDialog(parent)
+    : RememberedSizeDialog(parent)
     , m_ipc(ipc)
 {
     setWindowTitle(tr("Convert Part Files"));

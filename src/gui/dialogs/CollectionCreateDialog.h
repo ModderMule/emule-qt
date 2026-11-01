@@ -6,7 +6,7 @@
 /// Port of MFC CCollectionCreateDialog (srchybrid/CollectionCreateDialog.cpp).
 /// Dual-pane layout: available shared files (left) and collection files (right).
 
-#include <QDialog>
+#include "dialogs/RememberedSizeDialog.h"
 
 class QCheckBox;
 class QLabel;
@@ -19,7 +19,7 @@ namespace eMule {
 
 class IpcClient;
 
-class CollectionCreateDialog : public QDialog {
+class CollectionCreateDialog : public RememberedSizeDialog {
     Q_OBJECT
 
 public:

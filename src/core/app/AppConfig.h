@@ -61,6 +61,10 @@ public:
     ///   macOS, Linux: ~/eMuleQt;  Windows: see configDir(), program-dir = <exe-dir>
     [[nodiscard]] static QString baseDir();
 
+    /// Root of the default Incoming/ and Temp/: the --config dir when set (one
+    /// self-contained profile, #104), baseDir() otherwise. Creates nothing.
+    [[nodiscard]] static QString dataBaseDir();
+
     /// Override the config directory. Must be called before configDir().
     static void setConfigDirOverride(const QString& path);
 

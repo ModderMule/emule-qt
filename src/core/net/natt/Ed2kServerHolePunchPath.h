@@ -18,8 +18,11 @@
 /// (plain while we hold no valid key) so the server passes our endpoint on, punch, and
 /// send no 0xA6. No 0x60 from an IPv6 session (0x62 reason 5).
 ///
-/// Periodic 0x9F paused while Kad sees our UDP on another IPv4 than the server sees our
-/// TCP on (carrier NAT): the server only takes 0x9F from the session's address.
+/// Session token (ed2k-server 0.9.87, ST_NATT_TOKEN in OP_SERVERIDENT, new per login):
+/// 0x9F = <user hash 16><token 16>, believed from any address. Without one the periodic
+/// 0x9F is paused while Kad sees our UDP on another IPv4 than the server sees our TCP on
+/// (carrier NAT): the server then only takes 0x9F from the session's address. An IPv6
+/// session with a token sends 0x9F plain to the server's IPv4 and may send 0x60.
 
 #include "net/natt/NatPath.h"
 
@@ -55,6 +58,9 @@ private:
     void onFail(const uint8* data, uint32 size);
     void onCallbackNotice(const uint8* data, uint32 size);
     [[nodiscard]] bool extensionActive() const;
+    /// Server IPv4 the 0x9F goes to: the session's, else (IPv6 session with a token) the
+    /// server's other address; null = the server can hand out no IPv4 endpoint of ours.
+    [[nodiscard]] Address keepaliveAddress(const Server& server) const;
     /// IPv4 session whose TCP and UDP leave from different public addresses (Kad's view).
     [[nodiscard]] bool addressSplit() const;
 

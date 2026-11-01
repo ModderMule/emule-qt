@@ -72,7 +72,7 @@ QString aggregate(const QStringList& values)
 
 UsenetDetailsDialog::UsenetDetailsDialog(IpcClient* ipc, QString itemId, QString streamToken,
                                          QWidget* parent)
-    : QDialog(parent)
+    : RememberedSizeDialog(parent)
     , m_ipc(ipc)
     , m_itemId(std::move(itemId))
     , m_streamToken(std::move(streamToken))

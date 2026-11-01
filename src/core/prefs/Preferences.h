@@ -519,6 +519,14 @@ public:
     [[nodiscard]] bool serverVerboseLog() const;
     void setServerVerboseLog(bool val);
 
+    /// Debug lines of BitTorrent, hoster and ed3k: own Verbose tabs, independent of verbose()
+    [[nodiscard]] bool btVerboseLog() const;
+    void setBtVerboseLog(bool val);
+    [[nodiscard]] bool hosterVerboseLog() const;
+    void setHosterVerboseLog(bool val);
+    [[nodiscard]] bool ed3kVerboseLog() const;
+    void setEd3kVerboseLog(bool val);
+
     [[nodiscard]] uint32 maxLogLines() const;
     void setMaxLogLines(uint32 val);
 

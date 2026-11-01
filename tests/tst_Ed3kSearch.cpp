@@ -59,6 +59,7 @@ private slots:
     void theFilterTakesSizeExtensionAndSources();
     void aSharedFileIsFound();
     void withoutANodeTheSearchEnds();
+    void aChannelSearchTakesChannelFilesOnly();
 };
 
 void tst_Ed3kSearch::aFoundFileIsAnEd3kRow()
@@ -191,6 +192,29 @@ void tst_Ed3kSearch::withoutANodeTheSearchEnds()
     QVERIFY(!ended);   // never before returning
     QTRY_VERIFY(ended.has_value());
     QVERIFY(!ended->isEmpty());
+}
+
+void tst_Ed3kSearch::aChannelSearchTakesChannelFilesOnly()
+{
+    // SearchType::Ed3kLive (live.md §1.2): a channel file's name ends in .ed3klive, ≤ 64 KiB
+    ::ed3k::FoundFile f;
+    f.size = 900;
+    f.name = "Harbour Cam.ed3klive";
+    QVERIFY(Ed3kSearch::isChannelFile(f));
+    f.name = "Harbour Cam.ED3KLIVE";
+    QVERIFY(Ed3kSearch::isChannelFile(f));
+    f.size = 64 * 1024 + 1;
+    QVERIFY(!Ed3kSearch::isChannelFile(f));
+    f.size = 900;
+    f.name = "Harbour Cam.mkv";
+    QVERIFY(!Ed3kSearch::isChannelFile(f));
+    // without a fetcher the row shows what its name says
+    f.name = "Harbour Cam.ed3klive";
+    auto row = Ed3kSearch::toSearchFile(f);
+    QVERIFY(row);
+    Ed3kSearch::applyChannel(*row, nullptr);
+    QCOMPARE(row->getStrTagValue(FT_MEDIA_TITLE), QStringLiteral("Harbour Cam"));
+    QVERIFY(row->getStrTagValue(FT_MEDIA_CODEC).isEmpty());
 }
 
 QTEST_GUILESS_MAIN(tst_Ed3kSearch)

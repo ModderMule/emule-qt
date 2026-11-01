@@ -46,6 +46,13 @@ struct Ed3kSiteServer::Pending {
     // a set not held: waiting for its manifest (siteSetStatus), since parkedAt (ms)
     bool setWait = false;
     qint64 parkedAt = 0;
+    // a GET without Range streamed as its blocks verify (§6.3, batch 13 #12): chunked
+    bool stream = false;
+    bool started = false;     ///< the status line and headers are out
+    int status = 200;
+    QByteArray headerLines;
+    std::uint64_t size = 0;
+    std::uint64_t sent = 0;   ///< bytes out, in file order
 };
 
 namespace {
@@ -108,6 +115,9 @@ QString fetchKey(const ::ed3k::Key32& key, const QByteArray& id)
 {
     return QString::fromLatin1(QByteArray(reinterpret_cast<const char*>(key.data()), qsizetype(key.size())).toHex() + '/' + id.toHex());
 }
+
+/// what a stream sends at once at most: one block (each verified under the root)
+constexpr std::uint64_t kStreamBlock = 256 * 1024;
 
 const QByteArray kPlain = "Content-Type: text/plain; charset=utf-8\r\nX-Content-Type-Options: nosniff\r\nCache-Control: no-store\r\n";
 
@@ -172,6 +182,9 @@ Ed3kSiteServer::Ed3kSiteServer(Ed3kSession& session, Ed3kNames& names, QObject* 
     connect(&m_names, &Ed3kNames::siteMemberReady, this, &Ed3kSiteServer::onMemberReady);
     connect(&m_names, &Ed3kNames::resolved, this, &Ed3kSiteServer::onResolved);
     connect(&m_names, &Ed3kNames::failed, this, &Ed3kSiteServer::onFailed);
+    // told from inside the engine's poll: answered after it
+    connect(&m_names, &Ed3kNames::siteMemberBlock, this, &Ed3kSiteServer::onMemberBlock, Qt::QueuedConnection);
+    connect(&m_names, &Ed3kNames::siteMemberBad, this, &Ed3kSiteServer::onMemberBad, Qt::QueuedConnection);
     m_tick.setInterval(500);
     connect(&m_tick, &QTimer::timeout, this, &Ed3kSiteServer::onTick);
     onSessionStatus();
@@ -258,7 +271,8 @@ void Ed3kSiteServer::close()
 {
     m_tick.stop();
     for (auto& p : m_pending)
-        answer(p->responder, 503, "ed3k stopped\n", kPlain, p->head);
+        if (!p->started)   // a stream under way is cut (destroyed below)
+            answer(p->responder, 503, "ed3k stopped\n", kPlain, p->head);
     m_pending.clear();
     m_server.reset();
     m_port = 0;
@@ -317,6 +331,7 @@ void Ed3kSiteServer::onRequest(const QHttpServerRequest& req, QHttpServerRespond
     }
     p->key = host->key;
     p->id = QByteArray(host->text.data(), qsizetype(host->text.size()));
+    m_names.siteShown(p->key, p->id);   // §6.1: followed while shown (or held)
     const QByteArray manifest = m_names.siteManifest(p->key, p->id);
     if (!manifest.isEmpty()) {
         // one kept from an earlier run: followed for the user, for a newer version (§6.2)
@@ -394,6 +409,16 @@ void Ed3kSiteServer::servePage(std::unique_ptr<Pending> p, const QByteArray& man
     // a range waits for its blocks, the whole member for all (onTick, onMemberReady; 504 after 60 s)
     p->manifest = manifest;
     p->member = page->root;
+    // was: ToDo: a GET without Range waits for the whole member (done: streamed in file order
+    // as the blocks verify, chunked; 504 when no first byte within 60 s, cut on a bad block)
+    if (ask.kind != RangeAsk::One && !p->head) {
+        p->stream = true;
+        p->status = page->status;
+        p->headerLines = member;
+        p->size = page->size;
+        if (pumpStream(*p))
+            return;
+    }
     park(std::move(p));
 }
 
@@ -412,10 +437,27 @@ void Ed3kSiteServer::onSiteChanged(const QByteArray& key, const QByteArray& id)
 
 void Ed3kSiteServer::onMemberReady(const QByteArray& root)
 {
-    for (auto& p : take([&](const Pending& x) { return x.member && Ed3kNames::toBytes(x.member->bytes) == root; })) {
+    pumpStreams(root);   // the rest of a stream from the member held now
+    // for (auto& p : take([&](const Pending& x) { return x.member && Ed3kNames::toBytes(x.member->bytes) == root; })) {
+    for (auto& p : take([&](const Pending& x) { return !x.stream && x.member && Ed3kNames::toBytes(x.member->bytes) == root; })) {
         const QByteArray manifest = p->manifest;
         p->member.reset();
         servePage(std::move(p), manifest);   // the member is held now
+    }
+}
+
+void Ed3kSiteServer::onMemberBlock(const QByteArray& root)
+{
+    pumpStreams(root);
+}
+
+void Ed3kSiteServer::onMemberBad(const QByteArray& root)
+{
+    // a stream under way is cut: its client must not take what comes as the member (batch 13
+    // #12); one not started yet waits on (the core asks again; 504 after 60 s)
+    for (auto& p : take([&](const Pending& x) { return x.stream && x.started && x.member && Ed3kNames::toBytes(x.member->bytes) == root; })) {
+        logEd3kDebug(QStringLiteral("ed3k: a website member had a bad block: its stream is cut at %1 of %2 B").arg(p->sent).arg(p->size));
+        cut(std::move(p));
     }
 }
 
@@ -459,10 +501,16 @@ void Ed3kSiteServer::onTick()
         p->member.reset();
         servePage(std::move(p), manifest);
     }
+    // streams: what came meanwhile (the events of blocks come too, this misses none)
+    for (auto it = m_pending.begin(); it != m_pending.end();)
+        it = (*it)->stream && pumpStream(**it) ? m_pending.erase(it) : std::next(it);
     const qint64 now = nowMs();
     for (auto& p : take([&](const Pending& x) { return x.deadline <= now; })) {
+        // a stream with no block for the whole wait is cut; no first byte: 504 (§6.3)
+        if (p->started)
+            cut(std::move(p));
         // a set's manifest: asked again (504 once the core or the local wait says so)
-        if (p->setWait && p->manifest.isEmpty())
+        else if (p->setWait && p->manifest.isEmpty())
             waitForSet(std::move(p));
         else
             answer(p->responder, 504, {}, kPlain, p->head);
@@ -491,6 +539,46 @@ void Ed3kSiteServer::waitForSet(std::unique_ptr<Pending> p)
     park(std::move(p));
 }
 
+bool Ed3kSiteServer::pumpStream(Pending& p)
+{
+    if (!p.member)
+        return false;
+    // verified blocks only, in file order (§6.3)
+    while (p.sent < p.size) {
+        const std::uint64_t len = std::min(kStreamBlock, p.size - p.sent);
+        const auto bytes = m_names.siteMemberRange(*p.member, p.sent, len);
+        if (!bytes)
+            break;
+        if (!p.started) {
+            p.responder.writeBeginChunked(headersOf(p.headerLines), static_cast<QHttpServerResponder::StatusCode>(p.status));
+            p.started = true;
+        }
+        p.responder.writeChunk(*bytes);
+        p.sent += len;
+        p.deadline = nowMs() + m_waitMs;   // from now on: the wait for the next block
+    }
+    if (!p.started || p.sent < p.size)
+        return false;
+    p.responder.writeEndChunked({});
+    return true;
+}
+
+void Ed3kSiteServer::pumpStreams(const QByteArray& root)
+{
+    for (auto it = m_pending.begin(); it != m_pending.end();) {
+        Pending& p = **it;
+        const bool ours = p.stream && p.member && Ed3kNames::toBytes(p.member->bytes) == root;
+        it = ours && pumpStream(p) ? m_pending.erase(it) : std::next(it);
+    }
+}
+
+void Ed3kSiteServer::cut(std::unique_ptr<Pending> p)
+{
+    // no last chunk: the responder goes unfinished, QHttpServer closes the connection; the
+    // client sees the body end early (tested: tst_Ed3kNames aBadBlockCutsTheStream)
+    p.reset();
+}
+
 void Ed3kSiteServer::park(std::unique_ptr<Pending> p)
 {
     m_pending.push_back(std::move(p));
@@ -512,6 +600,18 @@ std::vector<std::unique_ptr<Ed3kSiteServer::Pending>> Ed3kSiteServer::take(const
 
 void Ed3kSiteServer::answer(QHttpServerResponder& r, int status, const QByteArray& body, const QByteArray& headerLines, bool head)
 {
+    // QHttpHeaders h; for (line : headerLines.split('\n')) h.append(name, value);   (moved to headersOf)
+    const QHttpHeaders h = headersOf(headerLines);
+    const auto code = static_cast<QHttpServerResponder::StatusCode>(status);
+    // never a CORS header (§6.2); HEAD: the headers alone
+    if (head || status == 304 || body.isEmpty())
+        r.write(h, code);
+    else
+        r.write(body, h, code);
+}
+
+QHttpHeaders Ed3kSiteServer::headersOf(const QByteArray& headerLines)
+{
     QHttpHeaders h;
     for (const QByteArray& line : headerLines.split('\n')) {
         const QByteArray l = line.trimmed();
@@ -519,12 +619,7 @@ void Ed3kSiteServer::answer(QHttpServerResponder& r, int status, const QByteArra
         if (colon > 0)
             h.append(QByteArrayView(l.left(colon).trimmed()), QByteArrayView(l.mid(colon + 1).trimmed()));
     }
-    const auto code = static_cast<QHttpServerResponder::StatusCode>(status);
-    // never a CORS header (§6.2); HEAD: the headers alone
-    if (head || status == 304 || body.isEmpty())
-        r.write(h, code);
-    else
-        r.write(body, h, code);
+    return h;
 }
 
 } // namespace eMule::ed3k

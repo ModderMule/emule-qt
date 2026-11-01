@@ -105,6 +105,11 @@ QString AppConfig::baseDir()
 #endif
 }
 
+QString AppConfig::dataBaseDir()
+{
+    return s_configDirOverride.isEmpty() ? baseDir() : s_configDirOverride;
+}
+
 QString AppConfig::defaultConfigDir()
 {
 #ifdef Q_OS_WIN

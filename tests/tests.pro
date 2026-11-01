@@ -163,6 +163,7 @@ SOURCES += \
     tst_SHA.cpp \
     tst_SharedFileData.cpp \
     tst_SharedFileList.cpp \
+    tst_SizeContradiction.cpp \
     tst_Smoke.cpp \
     tst_StatisticFile.cpp \
     tst_CardinalitySketch.cpp \

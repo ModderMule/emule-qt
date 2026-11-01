@@ -118,6 +118,8 @@ Torrent features implemented thanks to [libtorrent](https://www.libtorrent.org/)
 
 File hoster downloads use a custom process extension implemented via [JDownloader](https://jdownloader.org/).
 
+GeoLite2 country data by [MaxMind](https://www.maxmind.com).
+
 ---
 
 [emule-qt.org](https://emule-qt.org/)

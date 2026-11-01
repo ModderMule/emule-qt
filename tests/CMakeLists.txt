@@ -264,6 +264,7 @@ set_tests_properties(tst_SharedFileStress PROPERTIES TIMEOUT 3600)
 emule_add_test(tst_PartFileSharing  FOLDER "Files")
 emule_add_test(tst_PartFileWriteThread FOLDER "Files")
 emule_add_test(tst_PartFileConvert     FOLDER "Files")
+emule_add_test(tst_SizeContradiction  FOLDER "Files")
 emule_add_test(tst_ArchiveReader       FOLDER "Archive")
 emule_add_test(tst_ArchiveRecovery     FOLDER "Archive")
 emule_add_test(tst_ArchiveScan         FOLDER "Archive")
@@ -405,6 +406,7 @@ if(EMULE_ED3K)
                 "${CMAKE_SOURCE_DIR}/src/daemon/Ed3kDownloadsBridge.cpp"
                 "${CMAKE_SOURCE_DIR}/src/daemon/Ed3kSetsBridge.cpp"
                 "${CMAKE_SOURCE_DIR}/src/daemon/Ed3kPaidBridge.cpp"
+                "${CMAKE_SOURCE_DIR}/src/daemon/Ed3kPaidSellerBridge.cpp"
                 "${CMAKE_SOURCE_DIR}/src/daemon/BandwidthCoordinator.cpp"
         LIBRARIES eMule::Ed3k eMule::Ipc)
     target_include_directories(tst_Ed3kBridge PRIVATE "${CMAKE_SOURCE_DIR}/src/daemon")
@@ -422,6 +424,7 @@ if(EMULE_ED3K)
                 "${CMAKE_SOURCE_DIR}/src/daemon/Ed3kDownloadsBridge.cpp"
                 "${CMAKE_SOURCE_DIR}/src/daemon/Ed3kSetsBridge.cpp"
                 "${CMAKE_SOURCE_DIR}/src/daemon/Ed3kPaidBridge.cpp"
+                "${CMAKE_SOURCE_DIR}/src/daemon/Ed3kPaidSellerBridge.cpp"
                 "${CMAKE_SOURCE_DIR}/src/daemon/BandwidthCoordinator.cpp"
         LIBRARIES eMule::Ed3k eMule::Ipc)
     target_include_directories(tst_Ed3kFriends PRIVATE "${CMAKE_SOURCE_DIR}/src/daemon")
@@ -440,6 +443,7 @@ if(EMULE_ED3K)
                 "${CMAKE_SOURCE_DIR}/src/daemon/Ed3kDownloadsBridge.cpp"
                 "${CMAKE_SOURCE_DIR}/src/daemon/Ed3kSetsBridge.cpp"
                 "${CMAKE_SOURCE_DIR}/src/daemon/Ed3kPaidBridge.cpp"
+                "${CMAKE_SOURCE_DIR}/src/daemon/Ed3kPaidSellerBridge.cpp"
                 "${CMAKE_SOURCE_DIR}/src/daemon/BandwidthCoordinator.cpp"
         LIBRARIES eMule::Ed3k eMule::Ipc)
     target_include_directories(tst_Ed3kNames PRIVATE "${CMAKE_SOURCE_DIR}/src/daemon")
@@ -458,6 +462,7 @@ if(EMULE_ED3K)
                 "${CMAKE_SOURCE_DIR}/src/daemon/Ed3kDownloadsBridge.cpp"
                 "${CMAKE_SOURCE_DIR}/src/daemon/Ed3kSetsBridge.cpp"
                 "${CMAKE_SOURCE_DIR}/src/daemon/Ed3kPaidBridge.cpp"
+                "${CMAKE_SOURCE_DIR}/src/daemon/Ed3kPaidSellerBridge.cpp"
                 "${CMAKE_SOURCE_DIR}/src/daemon/BandwidthCoordinator.cpp"
         LIBRARIES eMule::Ed3k eMule::Ipc)
     target_include_directories(tst_Ed3kCredit PRIVATE "${CMAKE_SOURCE_DIR}/src/daemon")
@@ -476,6 +481,7 @@ if(EMULE_ED3K)
                 "${CMAKE_SOURCE_DIR}/src/daemon/Ed3kDownloadsBridge.cpp"
                 "${CMAKE_SOURCE_DIR}/src/daemon/Ed3kSetsBridge.cpp"
                 "${CMAKE_SOURCE_DIR}/src/daemon/Ed3kPaidBridge.cpp"
+                "${CMAKE_SOURCE_DIR}/src/daemon/Ed3kPaidSellerBridge.cpp"
                 "${CMAKE_SOURCE_DIR}/src/daemon/Ed3kHosterBridge.cpp"
                 "${CMAKE_SOURCE_DIR}/src/daemon/BandwidthCoordinator.cpp"
         LIBRARIES eMule::Ed3k eMule::Ipc)
@@ -501,6 +507,7 @@ if(EMULE_ED3K)
                 "${CMAKE_SOURCE_DIR}/src/daemon/Ed3kDownloadsBridge.cpp"
                 "${CMAKE_SOURCE_DIR}/src/daemon/Ed3kSetsBridge.cpp"
                 "${CMAKE_SOURCE_DIR}/src/daemon/Ed3kPaidBridge.cpp"
+                "${CMAKE_SOURCE_DIR}/src/daemon/Ed3kPaidSellerBridge.cpp"
                 "${CMAKE_SOURCE_DIR}/src/daemon/Ed3kHosterBridge.cpp"
                 "${CMAKE_SOURCE_DIR}/src/daemon/BandwidthCoordinator.cpp"
         LIBRARIES eMule::Ed3k eMule::Ipc)
@@ -547,6 +554,15 @@ if(EMULE_ED3K)
         LIBRARIES eMule::Ed3k eMule::Ipc OpenSSL::Crypto)
     target_include_directories(tst_Ed3kPaid PRIVATE "${CMAKE_SOURCE_DIR}/src/daemon")
     set_tests_properties(tst_Ed3kPaid PROPERTIES TIMEOUT 240)
+    # paid subscriptions, the seller's side (Ed3kPaidSeller, Ed3kPaidSellerBridge): an offer
+    # sold, a buyer on loopback takes an issued pass link, keys, a sealed member opens; a paid
+    # broadcast, a season after a leak, kept across a restart
+    emule_add_test(tst_Ed3kPaidSeller FOLDER "Ed3k"
+        SOURCES tst_Ed3kPaidSeller.cpp
+                "${CMAKE_SOURCE_DIR}/src/daemon/Ed3kPaidSellerBridge.cpp"
+        LIBRARIES eMule::Ed3k eMule::Ipc)
+    target_include_directories(tst_Ed3kPaidSeller PRIVATE "${CMAKE_SOURCE_DIR}/src/daemon")
+    set_tests_properties(tst_Ed3kPaidSeller PROPERTIES TIMEOUT 240)
     # usenet join: a fake news server, a fake queue, two nodes on loopback
     emule_add_test(tst_Ed3kUsenetJoin FOLDER "Ed3k" LIBRARIES eMule::Ed3k eMule::Usenet)
     set_tests_properties(tst_Ed3kUsenetJoin PROPERTIES TIMEOUT 180)
@@ -684,6 +700,7 @@ target_link_libraries(tst_ViewNavigation PRIVATE Qt6::Widgets)
 emule_add_test(tst_UsenetArchiveEntryDialog FOLDER "Gui"
     SOURCES tst_UsenetArchiveEntryDialog.cpp
             "${CMAKE_SOURCE_DIR}/src/gui/dialogs/UsenetArchiveEntryDialog.cpp"
+            "${CMAKE_SOURCE_DIR}/src/gui/dialogs/RememberedSizeDialog.cpp"
             "${CMAKE_SOURCE_DIR}/src/gui/utils/FileTypeIcons.cpp"
             "${CMAKE_SOURCE_DIR}/src/gui/utils/DialogSizing.cpp"
             "${CMAKE_SOURCE_DIR}/src/gui/controls/ContentScrollArea.cpp"
@@ -700,6 +717,7 @@ target_link_libraries(tst_UsenetArchiveEntryDialog PRIVATE
 emule_add_test(tst_MassRenameDialog FOLDER "Gui"
     SOURCES tst_MassRenameDialog.cpp
             "${CMAKE_SOURCE_DIR}/src/gui/dialogs/MassRenameDialog.cpp"
+            "${CMAKE_SOURCE_DIR}/src/gui/dialogs/RememberedSizeDialog.cpp"
             "${CMAKE_SOURCE_DIR}/src/gui/dialogs/SimpleCleanupDialog.cpp"
             "${CMAKE_SOURCE_DIR}/src/gui/utils/DialogSizing.cpp"
             "${CMAKE_SOURCE_DIR}/src/gui/controls/ContentScrollArea.cpp"
@@ -716,6 +734,11 @@ target_link_libraries(tst_MassRenameDialog PRIVATE
 emule_add_test(tst_Ed3kSetsDialog FOLDER "Gui"
     SOURCES tst_Ed3kSetsDialog.cpp
             "${CMAKE_SOURCE_DIR}/src/gui/dialogs/Ed3kSetsDialog.cpp"
+            "${CMAKE_SOURCE_DIR}/src/gui/dialogs/Ed3kSellDialogs.cpp"
+            "${CMAKE_SOURCE_DIR}/src/gui/dialogs/RememberedSizeDialog.cpp"
+            "${CMAKE_SOURCE_DIR}/src/gui/app/UiState.cpp"
+            "${CMAKE_SOURCE_DIR}/src/gui/utils/DialogSizing.cpp"
+            "${CMAKE_SOURCE_DIR}/src/gui/controls/ContentScrollArea.cpp"
             "${CMAKE_SOURCE_DIR}/src/gui/app/IpcClient.cpp"
             "${CMAKE_SOURCE_DIR}/src/gui/app/KnownCores.cpp")
 target_include_directories(tst_Ed3kSetsDialog PRIVATE
@@ -741,6 +764,7 @@ emule_add_test(tst_UsenetDetailsDialog FOLDER "Gui"
     SOURCES tst_UsenetDetailsDialog.cpp
             "${CMAKE_SOURCE_DIR}/src/gui/utils/Appearance.cpp"
             "${CMAKE_SOURCE_DIR}/src/gui/dialogs/UsenetDetailsDialog.cpp"
+            "${CMAKE_SOURCE_DIR}/src/gui/dialogs/RememberedSizeDialog.cpp"
             "${CMAKE_SOURCE_DIR}/src/gui/controls/UsenetQueueModel.cpp"
             "${CMAKE_SOURCE_DIR}/src/gui/controls/UsenetFileCheckList.cpp"
             "${CMAKE_SOURCE_DIR}/src/gui/controls/UsenetProgressDelegate.cpp"
@@ -803,6 +827,7 @@ if(EMULE_BITTORRENT)
                 "${CMAKE_SOURCE_DIR}/src/gui/controls/TorrentPieceGrid.cpp"
                 "${CMAKE_SOURCE_DIR}/src/gui/dialogs/TorrentDetailsDialog.cpp"
                 "${CMAKE_SOURCE_DIR}/src/gui/dialogs/DetailDialog.cpp"
+                "${CMAKE_SOURCE_DIR}/src/gui/dialogs/RememberedSizeDialog.cpp"
                 # DetailDialog opens client sheets and reports IPC failures
                 "${CMAKE_SOURCE_DIR}/src/gui/dialogs/ClientDetailDialog.cpp"
                 "${CMAKE_SOURCE_DIR}/src/gui/utils/IpcFeedback.cpp"
@@ -939,6 +964,7 @@ emule_add_test(tst_MetaResultDetailDialog FOLDER "Gui"
             "${CMAKE_SOURCE_DIR}/src/gui/controls/TorrentFileTree.cpp"
             "${CMAKE_SOURCE_DIR}/src/gui/controls/UsenetFileCheckList.cpp"
             "${CMAKE_SOURCE_DIR}/src/gui/dialogs/DetailDialog.cpp"
+            "${CMAKE_SOURCE_DIR}/src/gui/dialogs/RememberedSizeDialog.cpp"
             # DetailDialog opens client sheets and reports IPC failures
             "${CMAKE_SOURCE_DIR}/src/gui/dialogs/ClientDetailDialog.cpp"
             "${CMAKE_SOURCE_DIR}/src/gui/utils/IpcFeedback.cpp"
@@ -963,6 +989,7 @@ emule_add_test(tst_MetaSearchGui FOLDER "Gui"
     SOURCES tst_MetaSearchGui.cpp
             "${CMAKE_SOURCE_DIR}/src/gui/utils/Appearance.cpp"
             "${CMAKE_SOURCE_DIR}/src/gui/dialogs/WebLinksDialog.cpp"
+            "${CMAKE_SOURCE_DIR}/src/gui/dialogs/RememberedSizeDialog.cpp"
             "${CMAKE_SOURCE_DIR}/src/gui/utils/Ed2kLinkImporter.cpp"
             "${CMAKE_SOURCE_DIR}/src/gui/utils/TorrentLinks.cpp"
             "${CMAKE_SOURCE_DIR}/src/gui/utils/HttpCacheLinkImporter.cpp"
@@ -1020,6 +1047,7 @@ emule_add_test(tst_CategoryDialog FOLDER "Gui"
             # the Add Friend dialog rides along: same shape, same dependencies
             "${CMAKE_SOURCE_DIR}/src/gui/dialogs/AddFriendDialog.cpp"
             "${CMAKE_SOURCE_DIR}/src/gui/dialogs/NetworkInfoDialog.cpp"
+            "${CMAKE_SOURCE_DIR}/src/gui/dialogs/RememberedSizeDialog.cpp"
             "${CMAKE_SOURCE_DIR}/src/gui/app/IpcClient.cpp"
             "${CMAKE_SOURCE_DIR}/src/gui/app/KnownCores.cpp"
             "${CMAKE_SOURCE_DIR}/src/gui/utils/DialogSizing.cpp"
@@ -1040,8 +1068,11 @@ emule_add_test(tst_OptionsDialogSizing FOLDER "Gui"
     SOURCES tst_OptionsDialogSizing.cpp
             "${CMAKE_SOURCE_DIR}/src/gui/utils/Appearance.cpp"
             "${CMAKE_SOURCE_DIR}/src/gui/dialogs/OptionsDialog.cpp"
+            "${CMAKE_SOURCE_DIR}/src/gui/dialogs/RememberedSizeDialog.cpp"
             "${CMAKE_SOURCE_DIR}/src/gui/dialogs/Ed3kOptionsPages.cpp"
             "${CMAKE_SOURCE_DIR}/src/gui/dialogs/Ed3kFilterPage.cpp"
+            "${CMAKE_SOURCE_DIR}/src/gui/dialogs/Ed3kSellPage.cpp"
+            "${CMAKE_SOURCE_DIR}/src/gui/dialogs/Ed3kSellDialogs.cpp"
             "${CMAKE_SOURCE_DIR}/src/gui/dialogs/Ed3kStakeGroup.cpp"
             "${CMAKE_SOURCE_DIR}/src/gui/app/Ed3kNameOpener.cpp"
             "${CMAKE_SOURCE_DIR}/src/gui/utils/CountryFlags.cpp"
@@ -1244,6 +1275,7 @@ emule_add_test(tst_FileDetailDialog FOLDER "Gui"
     SOURCES tst_FileDetailDialog.cpp
             "${CMAKE_SOURCE_DIR}/src/gui/dialogs/FileDetailDialog.cpp"
             "${CMAKE_SOURCE_DIR}/src/gui/dialogs/DetailDialog.cpp"
+            "${CMAKE_SOURCE_DIR}/src/gui/dialogs/RememberedSizeDialog.cpp"
             "${CMAKE_SOURCE_DIR}/src/gui/dialogs/ClientDetailDialog.cpp"
             "${CMAKE_SOURCE_DIR}/src/gui/dialogs/CommentsPanel.cpp"
             "${CMAKE_SOURCE_DIR}/src/gui/dialogs/CommentEditPanel.cpp"
@@ -1277,11 +1309,14 @@ emule_add_test(tst_SmallScreenDialogs FOLDER "Gui"
             "${CMAKE_SOURCE_DIR}/src/gui/dialogs/AddSourceDialog.cpp"
             "${CMAKE_SOURCE_DIR}/src/gui/dialogs/ArchivePreviewPanel.cpp"
             "${CMAKE_SOURCE_DIR}/src/gui/dialogs/BugReportDialog.cpp"
+            "${CMAKE_SOURCE_DIR}/src/gui/dialogs/RememberedSizeDialog.cpp"
             "${CMAKE_SOURCE_DIR}/src/gui/dialogs/FirstStartWizard.cpp"
             "${CMAKE_SOURCE_DIR}/src/gui/dialogs/MetaAccountDialog.cpp"
             "${CMAKE_SOURCE_DIR}/src/gui/dialogs/OptionsDialog.cpp"
             "${CMAKE_SOURCE_DIR}/src/gui/dialogs/Ed3kOptionsPages.cpp"
             "${CMAKE_SOURCE_DIR}/src/gui/dialogs/Ed3kFilterPage.cpp"
+            "${CMAKE_SOURCE_DIR}/src/gui/dialogs/Ed3kSellPage.cpp"
+            "${CMAKE_SOURCE_DIR}/src/gui/dialogs/Ed3kSellDialogs.cpp"
             "${CMAKE_SOURCE_DIR}/src/gui/dialogs/Ed3kStakeGroup.cpp"
             "${CMAKE_SOURCE_DIR}/src/gui/app/Ed3kNameOpener.cpp"
             "${CMAKE_SOURCE_DIR}/src/gui/dialogs/ToolbarCustomizeDialog.cpp"

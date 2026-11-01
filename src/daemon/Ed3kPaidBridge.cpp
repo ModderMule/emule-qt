@@ -45,6 +45,8 @@ QCborMap toCbor(const ed3k::Ed3kPaid::Info& i)
         {QStringLiteral("keys"), i.keys},
         {QStringLiteral("newestEpoch"), qint64(i.newestEpoch)},
         {QStringLiteral("hasOffer"), i.offer.has_value()},
+        {QStringLiteral("passScopes"), i.passScopes},
+        {QStringLiteral("scopesDeclined"), i.scopesDeclined},
     };
     if (i.offer) {
         // what the user is shown before buying (§3: for display); the seller's host
@@ -83,6 +85,23 @@ void answer(const IpcMessage& msg, const std::function<void(const IpcMessage&)>&
         paid.setReports(msg.fieldBool(0));
         ok();
         break;
+    case IpcMsgType::AddEd3kPassLink:
+        // §9.3: the link is a credential: never logged
+        if (auto r = paid.addPassLink(msg.fieldString(0)))
+            ok(QCborMap{{QStringLiteral("scope"), r->scope},
+                        {QStringLiteral("title"), r->title},
+                        {QStringLiteral("scopes"), r->scopes},
+                        {QStringLiteral("voucher"), r->voucher},
+                        {QStringLiteral("waits"), r->waits}});
+        else
+            reply(failure(seq, r.error()));
+        break;
+    case IpcMsgType::AnswerEd3kPaidScopes:
+        if (paid.answerScopes(msg.fieldString(0), msg.fieldBool(1)))
+            ok();
+        else
+            reply(failure(seq, QCoreApplication::translate("eMule::Ed3kPaidBridge", "Nothing waits for this subscription.")));
+        break;
     default:
         reply(IpcMessage::makeError(seq, 400, QStringLiteral("Unknown ed3k request")));
         break;
@@ -104,7 +123,9 @@ void setPaid(ed3k::Ed3kPaid* paid)
 bool isPaidRequest(IpcMsgType type)
 {
     const int t = static_cast<int>(type);
-    return t >= static_cast<int>(IpcMsgType::GetEd3kPaid) && t <= static_cast<int>(IpcMsgType::SetEd3kPassReports);
+    // return t >= static_cast<int>(IpcMsgType::GetEd3kPaid) && t <= static_cast<int>(IpcMsgType::SetEd3kPassReports);
+    return (t >= static_cast<int>(IpcMsgType::GetEd3kPaid) && t <= static_cast<int>(IpcMsgType::SetEd3kPassReports))
+           || type == IpcMsgType::AddEd3kPassLink || type == IpcMsgType::AnswerEd3kPaidScopes;
 }
 
 bool handleRequest(const IpcMessage& msg, const std::function<void(const IpcMessage&)>& reply)
@@ -162,6 +183,13 @@ void connectPushes(ed3k::Ed3kPaid& paid, std::function<void(const IpcMessage&)> 
         m.append(scope);
         m.append(title);
         m.append(qint64(until));
+        broadcast(m);
+    });
+    QObject::connect(&paid, &ed3k::Ed3kPaid::scopesWarning, &paid, [broadcast](const QString& scope, const QString& title, int others) {
+        IpcMessage m(IpcMsgType::PushEd3kPaidScopesWarn, 0);
+        m.append(scope);
+        m.append(title);
+        m.append(qint64(others));
         broadcast(m);
     });
 #else

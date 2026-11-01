@@ -175,7 +175,7 @@ int main(int argc, char* argv[])
     }
 
     // Enable debug-level output per logging pref (verbose / kadVerboseLog /
-    // serverVerboseLog) so the corresponding logDebug()/logKad()/logServerVerbose()
+    // serverVerboseLog / bt-, hoster-, ed3kVerboseLog) so the corresponding logDebug()/logKad()/logServerVerbose()
     // lines reach the message handler and are forwarded to the GUI.
     eMule::DaemonApp::applyLogFilterRules();
     eMule::DaemonApp::applyLogFileSettings();

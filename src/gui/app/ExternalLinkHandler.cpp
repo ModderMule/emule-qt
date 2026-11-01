@@ -8,6 +8,7 @@
 #include "app/ExternalLinkHandler.h"
 
 #include "app/AppConfig.h"
+#include "app/Ed3kLiveWatch.h"
 #include "app/Ed3kNameOpener.h"
 #include "dialogs/Ed3kSetsDialog.h"
 #include "app/IpcClient.h"
@@ -58,6 +59,15 @@ void ExternalLinkHandler::setIpcClient(IpcClient* ipc)
         connect(ipc, &IpcClient::ed3kSetOffered, this, &ExternalLinkHandler::onEd3kSetOffered,
                 Qt::UniqueConnection);
         connect(ipc, &IpcClient::ed3kSetVersion, this, &ExternalLinkHandler::tellEd3kSetVersion, Qt::UniqueConnection);
+        // subscription.md §5.1: a bought pass of several scopes waits for the user's word
+        connect(ipc, &IpcClient::ed3kPaidScopesWarn, this, &ExternalLinkHandler::askEd3kPassScopes, Qt::UniqueConnection);
+        // §9.3: ed3k:pass links pasted by hand (Paste Links, Transfers) come here too
+        Ed2kLinkImporter::setEd3kPassLinkHandler([self = QPointer(this)](const QStringList& links, QWidget* parent) {
+            if (!self)
+                return;
+            for (const QString& l : links)
+                Ed3kSetsDialog::addPassLink(parent ? parent : self->m_mainWindow.data(), self->m_ipc, l);
+        });
         // ed3k:name links and names typed in the browser (name.md); its links come back here
         if (!m_names) {
             m_names = new Ed3kNameOpener(ipc, [this](const QString& link) { open(link); }, this);
@@ -246,6 +256,17 @@ void ExternalLinkHandler::openNow(const QString& link)
         watchEd3kLive(link);
         return;
     }
+    if (ed3k && link.startsWith(QStringLiteral("ed3k:pass?"), Qt::CaseInsensitive)) {
+        // a pass by hand or a voucher (subscription.md §9.3): a credential, never logged
+        if (!m_ipc) {
+            logWarning(QStringLiteral("Cannot open the ed3k pass link, no core connection"));
+            return;
+        }
+        if (m_mainWindow && thePrefs.bringToFrontOnLinkClick())
+            m_mainWindow->restoreWindow();
+        Ed3kSetsDialog::addPassLink(m_mainWindow, m_ipc, link);
+        return;
+    }
     if (ed3k) {
         // ToDo: open the other ed3k links (friend, nodes by hand, ...); was: room (done: IrcPanel);
         // was: file without bt= (done: Ed3kDownloads above); was: set and live (done: Ed3kSetsDialog,
@@ -418,25 +439,22 @@ void ExternalLinkHandler::watchEd3kLive(const QString& link)
     }
     QPointer<MainWindow> window = m_mainWindow;
     IpcClient* ipc = m_ipc;
-    m_ipc->watchEd3kLive(link, [window, ipc](const Ipc::IpcMessage& reply) {
-        if (!reply.fieldBool(0)) {
-            const QString why = reply.fieldMap(1).value(QStringLiteral("error")).toString();
-            if (window)
-                QMessageBox::warning(window, tr("ed3k live stream"), why.isEmpty() ? tr("The stream could not be watched.") : why);
-            return;
-        }
-        // the stream is served on the core's loopback: a remote GUI only lists it
-        const QString url = reply.fieldMap(1).value(QStringLiteral("url")).toString();
-        if (!url.isEmpty() && ipc && ipc->isLocalConnection())
-            QDesktopServices::openUrl(QUrl(url));
-        if (window)
-            Ed3kSetsDialog::showDialog(window, ipc, Ed3kSetsDialog::TabLive);
-    });
+    // shown as a channel file's watch is (Ed3kLiveWatch, batch 14); was inline:
+    //     if (!reply.fieldBool(0)) { QMessageBox::warning(window, tr("ed3k live stream"), why or
+    //         tr("The stream could not be watched.")); return; }
+    //     if (!url.isEmpty() && ipc && ipc->isLocalConnection()) QDesktopServices::openUrl(QUrl(url));
+    //     if (window) Ed3kSetsDialog::showDialog(window, ipc, Ed3kSetsDialog::TabLive);
+    m_ipc->watchEd3kLive(link, [window, ipc](const Ipc::IpcMessage& reply) { Ed3kLiveWatch::showReply(window, ipc, reply); });
 }
 
 void ExternalLinkHandler::onEd3kSetOffered(const Ipc::IpcMessage& msg)
 {
     openEd3kSet(msg.fieldString(0), true);
+}
+
+void ExternalLinkHandler::askEd3kPassScopes(const Ipc::IpcMessage& msg)
+{
+    Ed3kSetsDialog::askPassScopes(m_mainWindow, m_ipc, msg.fieldString(0), msg.fieldString(1), int(msg.fieldInt(2)));
 }
 
 void ExternalLinkHandler::tellEd3kSetVersion(const Ipc::IpcMessage& msg)

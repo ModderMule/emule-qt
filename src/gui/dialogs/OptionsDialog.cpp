@@ -9,6 +9,7 @@
 
 #include "app/AppConfig.h"
 #include "app/AutoStart.h"
+#include "app/CoreAttachment.h"
 #include "app/UiState.h"
 #include "app/Ed2kSchemeHandler.h"
 #include "app/IpcClient.h"
@@ -109,7 +110,7 @@ constexpr int kRawNameRole = Qt::UserRole + 1;
 
 OptionsDialog::OptionsDialog(IpcClient* ipc, StatisticsPanel* statsPanel,
                              QWidget* parent)
-    : QDialog(parent)
+    : RememberedSizeDialog(parent)
     , m_ipc(ipc)
     , m_statsPanel(statsPanel)
 {
@@ -394,6 +395,8 @@ OptionsDialog::OptionsDialog(IpcClient* ipc, StatisticsPanel* statsPanel,
     connect(m_verboseCheck, &QCheckBox::toggled, this, &OptionsDialog::markDirty);
     connect(m_logSourceExchangeCheck, &QCheckBox::toggled, this, &OptionsDialog::markDirty);
     connect(m_serverVerboseCheck, &QCheckBox::toggled, this, &OptionsDialog::markDirty);
+    for (auto* c : {m_btVerboseCheck, m_hosterVerboseCheck, m_ed3kVerboseCheck})
+        connect(c, &QCheckBox::toggled, this, &OptionsDialog::markDirty);
     connect(m_logBannedClientsCheck, &QCheckBox::toggled, this, &OptionsDialog::markDirty);
     connect(m_logRatingDescCheck, &QCheckBox::toggled, this, &OptionsDialog::markDirty);
     connect(m_logSecureIdentCheck, &QCheckBox::toggled, this, &OptionsDialog::markDirty);
@@ -496,10 +499,8 @@ OptionsDialog::OptionsDialog(IpcClient* ipc, StatisticsPanel* statsPanel,
     // where the scrollbar stops appearing on the ordinary ones (General 665, Web
     // Interface 674). The three list pages -- Usenet, Feeds, Indexers -- scroll, which is
     // what the scroll areas are for. First-run default only: the size the user left the
-    // dialog at wins, and applySize() cuts either one to the screen.
-    const QSize stored = theUiState.optionsDialogSize();
-    DialogSizing::applySize(this, QSize(720, 520),
-                            stored.isValid() ? stored : QSize(800, 700),
+    // dialog at wins (RememberedSizeDialog), cut to the screen.
+    DialogSizing::applySize(this, QSize(720, 520), QSize(800, 700),
                             DialogSizing::Fit::Layout);
 }
 
@@ -513,13 +514,11 @@ void OptionsDialog::selectPage(int page)
 
 void OptionsDialog::done(int result)
 {
-    // Remember the page and size across every close path — OK, Cancel, Esc and the
-    // window close button all route through QDialog::done().
+    // Remember the page across every close path — OK, Cancel, Esc and the window
+    // close button all route through QDialog::done(). The size: RememberedSizeDialog.
     const int page = m_sidebar->currentItemId();
     if (hasPage(page))
         theUiState.setOptionsLastPage(page);
-    if (!isMaximized() && !isFullScreen())
-        theUiState.setOptionsDialogSize(size());
 
     QDialog::done(result);
 }
@@ -709,6 +708,7 @@ void OptionsDialog::setupSidebar()
         {PageEd3kHoster,     QT_TR_NOOP("Hoster"),     QStyle::SP_ArrowDown,             "Hoster.ico"},
         {PageEd3kNames,      QT_TR_NOOP("Names"),      QStyle::SP_FileDialogContentsView, "Friends1.ico"},
         {PageEd3kFilters,    QT_TR_NOOP("Filters"),    QStyle::SP_MessageBoxWarning,     "IPFilter.ico"},
+        {PageEd3kSelling,    QT_TR_NOOP("Selling"),    QStyle::SP_ArrowUp,               "Upload.ico"},
     };
 
     // A page added to the enum and to setupPages() but forgotten here would simply be
@@ -828,6 +828,7 @@ void OptionsDialog::setupPages()
     addPage(PageEd3kNames,      m_ed3kPages->namesPage());
     addPage(PageEd3kFilters,    m_ed3kPages->filtersPage());
     addPage(PageEd3kAutoCredits, m_ed3kPages->autoCreditsPage());
+    addPage(PageEd3kSelling,    m_ed3kPages->sellingPage());
     connect(m_ed3kPages, &Ed3kOptionsPages::changed, this, &OptionsDialog::markDirty);
     connect(m_ed3kPages, &Ed3kOptionsPages::portsJoined, this, [this](int port) {
         // applied by the core already: the fields follow
@@ -976,6 +977,28 @@ QWidget* OptionsDialog::createGeneralPage()
     // --- Core group ---
     auto* coreGroup = new QGroupBox(tr("Core"), page);
     auto* coreLayout = new QFormLayout(coreGroup);
+
+    // The core this GUI uses now, and whether it stops with the GUI (#106).
+    // Acts at once, like Shutdown below: runtime state, not a preference.
+    auto* attachLabel = new QLabel(coreGroup);
+    attachLabel->setTextInteractionFlags(Qt::TextSelectableByMouse);
+    auto* attachBtn = new QPushButton(coreGroup);
+    auto* attachRow = new QHBoxLayout;
+    attachRow->addWidget(attachLabel, 1);
+    attachRow->addWidget(attachBtn, 0, Qt::AlignTop);
+    coreLayout->addRow(tr("Running:"), attachRow);
+    const auto refreshAttach = [attachLabel, attachBtn] {
+        const auto& attach = CoreAttachment::instance();
+        attachLabel->setText(attach.locationText() + u'\n' + attach.exitText());
+        attachBtn->setText(attach.stopsOnExit() ? tr("Detach") : tr("Attach"));
+        attachBtn->setToolTip(attach.stopsOnExit()
+            ? tr("Keep the core running when the GUI closes")
+            : tr("Stop the core when the GUI closes"));
+        attachBtn->setVisible(attach.canToggle());
+    };
+    refreshAttach();
+    connect(&CoreAttachment::instance(), &CoreAttachment::changed, attachLabel, refreshAttach);
+    connect(attachBtn, &QPushButton::clicked, this, [] { CoreAttachment::instance().toggle(); });
 
     m_coreAddressEdit = new QLineEdit(coreGroup);
     m_coreAddressEdit->setPlaceholderText(QStringLiteral("127.0.0.1"));
@@ -6067,6 +6090,19 @@ QWidget* OptionsDialog::createExtendedPage()
         tr("Log server connection && search details (TCP/UDP handshake)"), verboseGroup);
     verboseLayout->addWidget(m_serverVerboseCheck);
 
+    // Independent too: each feeds its own Verbose tab, shown while that network is on
+    m_btVerboseCheck = new QCheckBox(tr("Log BitTorrent details (Torrent Verbose tab)"), verboseGroup);
+    m_btVerboseCheck->setToolTip(tr("libtorrent's DHT, IP filter and performance notes. "
+                                    "The tab shows while BitTorrent is on."));
+    verboseLayout->addWidget(m_btVerboseCheck);
+    m_hosterVerboseCheck = new QCheckBox(tr("Log hoster resolver details (Hoster Verbose tab)"), verboseGroup);
+    m_hosterVerboseCheck->setToolTip(tr("Requests to and answers from the hoster resolver. "
+                                        "The tab shows while hoster downloads are on."));
+    verboseLayout->addWidget(m_hosterVerboseCheck);
+    m_ed3kVerboseCheck = new QCheckBox(tr("Log ed3k node details (ed3k Verbose tab)"), verboseGroup);
+    m_ed3kVerboseCheck->setToolTip(tr("The ed3k node's debug output. The tab shows while ed3k is on."));
+    verboseLayout->addWidget(m_ed3kVerboseCheck);
+
     m_logBannedClientsCheck = new QCheckBox(tr("Log banned clients"), verboseGroup);
     verboseLayout->addWidget(m_logBannedClientsCheck);
 
@@ -7562,6 +7598,12 @@ void OptionsDialog::saveSettings()
         req.append(m_logSourceExchangeCheck->isChecked());
         req.append(QStringLiteral("serverVerboseLog"));
         req.append(m_serverVerboseCheck->isChecked());
+        req.append(QStringLiteral("btVerboseLog"));
+        req.append(m_btVerboseCheck->isChecked());
+        req.append(QStringLiteral("hosterVerboseLog"));
+        req.append(m_hosterVerboseCheck->isChecked());
+        req.append(QStringLiteral("ed3kVerboseLog"));
+        req.append(m_ed3kVerboseCheck->isChecked());
         req.append(QStringLiteral("logBannedClients"));
         req.append(m_logBannedClientsCheck->isChecked());
         req.append(QStringLiteral("logRatingDescReceived"));
@@ -7921,6 +7963,9 @@ void OptionsDialog::saveSettings()
         thePrefs.setExtractMetaData(m_extractMetaDataGroup->checkedId());
         thePrefs.setLogSourceExchange(m_logSourceExchangeCheck->isChecked());
         thePrefs.setServerVerboseLog(m_serverVerboseCheck->isChecked());
+        thePrefs.setBtVerboseLog(m_btVerboseCheck->isChecked());
+        thePrefs.setHosterVerboseLog(m_hosterVerboseCheck->isChecked());
+        thePrefs.setEd3kVerboseLog(m_ed3kVerboseCheck->isChecked());
         thePrefs.setLogBannedClients(m_logBannedClientsCheck->isChecked());
         thePrefs.setLogRatingDescReceived(m_logRatingDescCheck->isChecked());
         thePrefs.setLogSecureIdent(m_logSecureIdentCheck->isChecked());
@@ -8404,6 +8449,9 @@ void OptionsDialog::fillDaemonSettings(const QCborMap& prefs)
     m_logSourceExchangeCheck->setEnabled(verboseOn);
     // Independent channel — stays enabled regardless of the verbose master toggle.
     m_serverVerboseCheck->setChecked(prefs.value(QStringLiteral("serverVerboseLog")).toBool());
+    m_btVerboseCheck->setChecked(prefs.value(QStringLiteral("btVerboseLog")).toBool());
+    m_hosterVerboseCheck->setChecked(prefs.value(QStringLiteral("hosterVerboseLog")).toBool());
+    m_ed3kVerboseCheck->setChecked(prefs.value(QStringLiteral("ed3kVerboseLog")).toBool());
     m_logBannedClientsCheck->setChecked(prefs.value(QStringLiteral("logBannedClients")).toBool(true));
     m_logBannedClientsCheck->setEnabled(verboseOn);
     m_logRatingDescCheck->setChecked(prefs.value(QStringLiteral("logRatingDescReceived")).toBool(true));

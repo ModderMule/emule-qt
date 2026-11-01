@@ -111,6 +111,10 @@ public:
     /// True while @p searchID has a result list.
     [[nodiscard]] bool hasSearch(uint32 searchID) const { return findEntry(searchID) != nullptr; }
 
+    /// A search of the core itself (size lookup): the GUI never hears of it.
+    void markInternal(uint32 searchID) { m_internalSearches.insert(searchID); }
+    [[nodiscard]] bool isInternal(uint32 searchID) const { return m_internalSearches.contains(searchID); }
+
     /// Clear all searches.
     void clear();
 
@@ -357,6 +361,7 @@ private:
     /// The newest *ED2K* search — server answers (TCP and UDP) are filed under this,
     /// not under m_currentSearchID, which a Kad search started meanwhile would own.
     uint32 m_currentEd2kSearchID = 0;
+    QSet<uint32> m_internalSearches;
     SearchQueue* m_queue = nullptr;
 };
 

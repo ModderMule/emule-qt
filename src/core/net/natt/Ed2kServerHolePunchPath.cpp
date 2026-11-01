@@ -21,9 +21,10 @@ namespace eMule::natt {
 bool Ed2kServerHolePunchPath::canServe(const PeerInfo& peer) const
 {
     const Server* server = env().currentServer();
-    // An IPv6 session has no IPv4 endpoint to hand out: the server answers 0x62 reason 5.
+    // An IPv6 session has no IPv4 endpoint to hand out (0x62 reason 5), unless our token
+    // 0x9F goes to the server's IPv4 (ed2k-server 0.9.87).
     if (!server || !server->supportsLowIdHolePunch() || env().ourUdpPort() == 0
-        || !env().serverSessionAddress().isIPv4() || !peerOnOurServer(peer))
+        || keepaliveAddress(*server).isNull() || !peerOnOurServer(peer))
         return false;
     // Lugdunum's ID scheme (our own LowID odd): only 0x1000 clients get odd LowIDs, an even
     // one is a stock client that cannot punch (0x62 reason 4).
@@ -103,7 +104,8 @@ void Ed2kServerHolePunchPath::tick()
     // Carrier NAT with one public IPv4 for TCP and another for UDP: the server drops
     // every 0x9F from an address other than the session's (ed2k-server#40), so the
     // periodic one is wasted. The ones with 0x60 and after 0x37 still go out.
-    const bool split = addressSplit();
+    // A token 0x9F counts from any address: never paused.
+    const bool split = !server->hasNatToken() && addressSplit();
     if (split != m_splitAddress) {
         m_splitAddress = split;
         if (split)
@@ -148,9 +150,13 @@ bool Ed2kServerHolePunchPath::sendKeepalive(const Server& server, bool foreignWa
     // the others get it plain, to the server's UDP port (TCP + 4). Plain also while we
     // hold no valid key (a LowID on ed2k-server may not know its IP): the server takes
     // plain ones until it has read an obfuscated one.
-    const Address address = env().serverSessionAddress();
+    // With the session token (ed2k-server 0.9.87) an IPv6 session sends it plain to the
+    // server's IPv4: that hands peers our IPv4 endpoint.
+    const Address session = env().serverSessionAddress();
+    const Address v4 = keepaliveAddress(server);
+    const Address address = v4.isNull() ? session : v4;
     const ServerUdpCrypt crypt = env().serverUdpCrypt();
-    const bool obfuscate = (server.supportsHolePunchExtension() || foreignWake) && address.isIPv4()
+    const bool obfuscate = (server.supportsHolePunchExtension() || foreignWake) && session.isIPv4()
         && crypt.key != 0 && crypt.port != 0 && (env().ourConnectOptions() & CONNECT_OPT_CRYPT_SUPPORTED);
     if (!obfuscate && m_sentObfuscated) {
         // The server ignores plain ones now; they would not refresh our port.
@@ -158,9 +164,13 @@ bool Ed2kServerHolePunchPath::sendKeepalive(const Server& server, bool foreignWa
         log(QStringLiteral("0x9F skipped: no server key"));
         return false;
     }
-    auto packet = std::make_unique<Packet>(OP_SERVER_NATT_KEEPALIVE, 16, OP_EDONKEYPROT);
+    // <user hash 16>[<token 16>]
+    const bool token = server.hasNatToken();
+    auto packet = std::make_unique<Packet>(OP_SERVER_NATT_KEEPALIVE, token ? 32 : 16, OP_EDONKEYPROT);
     const Hash16 hash = env().ourHash();
     std::memcpy(packet->pBuffer, hash.data(), 16);
+    if (token)
+        std::memcpy(packet->pBuffer + 16, server.natToken().data(), 16);
     if (obfuscate) {
         m_sentObfuscated = true;
         env().sendServerUdp(std::move(packet), Endpoint(address, crypt.port), crypt.key);
@@ -168,6 +178,14 @@ bool Ed2kServerHolePunchPath::sendKeepalive(const Server& server, bool foreignWa
         env().sendServerUdp(std::move(packet), Endpoint(address, static_cast<uint16>(server.port() + 4)), 0);
     }
     return true;
+}
+
+Address Ed2kServerHolePunchPath::keepaliveAddress(const Server& server) const
+{
+    const Address session = env().serverSessionAddress();
+    if (session.isIPv4())
+        return session;
+    return server.hasNatToken() ? server.otherFamilyAddress(session) : Address();
 }
 
 bool Ed2kServerHolePunchPath::addressSplit() const

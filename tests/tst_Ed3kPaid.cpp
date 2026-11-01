@@ -7,12 +7,19 @@
 ///
 /// The test signs as the publisher (OpenSSL Ed25519) and derives the chain's anchor with a
 /// small BLAKE3 derive_key (single block: every input here is under 64 bytes).
+///
+/// Batch 14: `ed3k:pass` links by hand and vouchers (§9.3: a voucher taken once, also after a
+/// restart), a pass of several scopes held back for the user's word (§5.1, ruling #10: declined
+/// kept unused, accepted used; a bought one too), a paid live channel followed while watched (§7).
 
+#include "Ed3kLive.h"
+#include "Ed3kNames.h"
 #include "Ed3kPaid.h"
 #include "Ed3kPaidBridge.h"
 #include "Ed3kPlumbing.h"
 #include "Ed3kProto.h"
 #include "Ed3kSession.h"
+#include "Ed3kSiteServer.h"
 #include "Ed3kStore.h"
 
 #include "IpcMessage.h"
@@ -194,6 +201,22 @@ QByteArray makeOffer(const Signer& pub, const Season& season, std::uint64_t issu
     return Ed3kProtoWriter().bytes(1, offer).bytes(2, pub.signature(QByteArray("ed3k v1 paid offer") + offer)).data();
 }
 
+/// a pass of several scopes (§5: 1 to 16)
+QByteArray makePassOf(const Signer& pub, const QList<QByteArray>& scopes, const QByteArray& holder, std::uint64_t issued, std::uint64_t until)
+{
+    Ed3kProtoWriter w;
+    for (const QByteArray& sc : scopes)
+        w.bytes(1, sc);
+    const QByteArray pass = w.bytes(2, holder).varint(3, until).varint(5, issued).data();
+    return Ed3kProtoWriter().bytes(1, pass).bytes(2, pub.publicKey()).bytes(3, pub.signature(QByteArray("ed3k v1 paid pass") + pass)).data();
+}
+
+QString passLinkOf(const QByteArray& pass, const std::optional<::ed3k::Key32>& seed = {})
+{
+    const auto link = ::ed3k::passLink(spanOf(pass), seed);
+    return link ? QString::fromStdString(*link) : QString();
+}
+
 QByteArray makePass(const Signer& pub, const QByteArray& scope, const QByteArray& holder, std::uint64_t issued, std::uint64_t until)
 {
     const QByteArray pass = Ed3kProtoWriter().bytes(1, scope).bytes(2, holder).varint(3, until).varint(5, issued).data();
@@ -284,6 +307,9 @@ private slots:
     void theHashIsBlake3DeriveKey();
     void offersAndPassesAreRead();
     void anOfferThenAPassThenKeys();
+    void aPassLinkAndAVoucherTakenOnce();
+    void aPassOfSeveralScopesWaitsForTheUser();
+    void aPaidChannelIsFollowedWhileWatched();
     void cleanup() { QTest::qWait(10); }
 };
 
@@ -448,6 +474,249 @@ void tst_Ed3kPaid::anOfferThenAPassThenKeys()
     paid.reset();
     b.stop();
     p.stop();
+}
+
+// §9.3: a pass by hand (holder key ours) and a voucher (k: its key stored like a bought one,
+// the pass taken once, also after a restart); the keys come with it
+void tst_Ed3kPaid::aPassLinkAndAVoucherTakenOnce()
+{
+    QTemporaryDir dp, db;
+    Ed3kSession p, b;
+    QVERIFY(p.start(loopback(dp.path())));
+    QVERIFY(b.start(loopback(db.path())));
+    Signer pub;
+    pub.seed.fill(0x32);
+    const auto scope = ::ed3k::paidScope(3, pub.key(), {});
+    QVERIFY(scope);
+    const QByteArray scopeRaw = raw(scope->bytes);
+    const std::uint64_t now = p.now().unixS;
+    const std::uint32_t period = 3600;
+    const std::uint64_t t0 = now - 10 * period;
+    const std::uint64_t epoch = (now - t0) / period;
+    const Season season = makeSeason(pub, scopeRaw, epoch, 24);
+    const std::uint64_t until = now + 7 * 86400;
+    const QByteArray offer = makeOffer(pub, season, now - 60, t0, period, QStringLiteral("https://shop.example/pay"),
+                                       QStringLiteral("https://shop.example/pass"));
+    QVERIFY(p.engine()->paidFollow(pub.key(), *scope));
+    QVERIFY(p.engine()->paidSetOffer(p.now(), *scope, spanOf(offer)));
+    QVERIFY(p.engine()->paidPublish(*scope, spanOf(season.signedChain), season.seed));
+    Signer pHolder;
+    pHolder.seed.fill(0x42);
+    QVERIFY(p.engine()->paidSetPass(p.now(), *scope, spanOf(makePass(pub, scopeRaw, pHolder.publicKey(), now - 60, until)), pHolder.seed));
+    p.pump();
+
+    auto paid = std::make_unique<Ed3kPaid>(b, db.path());
+    paid->follow(pub.key(), *scope, Ed3kPaid::Kind::HiddenSet, QStringLiteral("Gift"));
+    QVERIFY(paid->setOffer(*scope, offer));
+    const QString scopeHex = Ed3kPaid::hexOf(*scope);
+
+    // refused: no pass link; a pass for a key not held here
+    QVERIFY(!paid->addPassLink(QStringLiteral("ed3k:pass?p=nothing")));
+    Signer stranger;
+    stranger.seed.fill(0x61);
+    const QByteArray strangers = makePass(pub, scopeRaw, stranger.publicKey(), now - 60, until);
+    QVERIFY(!paid->addPassLink(passLinkOf(strangers)));
+    QVERIFY(!paid->holdsPass(*scope));
+
+    // a voucher: whoever has it holds the pass
+    Signer voucher;
+    voucher.seed.fill(0x71);
+    const QByteArray pass = makePass(pub, scopeRaw, voucher.publicKey(), now - 60, until);
+    const QString link = passLinkOf(pass, voucher.seed);
+    QVERIFY(link.startsWith(QStringLiteral("ed3k:pass?p=")) && link.contains(QStringLiteral("&k=")));
+    QSignalSpy arrived(paid.get(), &Ed3kPaid::passArrived);
+    const auto taken = paid->addPassLink(link);
+    QVERIFY2(taken, taken ? "" : taken.error().toUtf8().constData());
+    QCOMPARE(taken->scope, scopeHex);
+    QVERIFY(taken->voucher);
+    QVERIFY(!taken->waits);
+    QCOMPARE(arrived.count(), 1);
+    auto info = paid->info(scopeHex);
+    QCOMPARE(info->state, Ed3kPaid::State::Held);
+    QCOMPARE(info->until, until);
+    QVERIFY(!info->renewing);   // a pass by hand: no pass_url polls (§9.2 is the shop's)
+    QVERIFY(paid->holdsPass(*scope));
+    // its key: a Secret file like a bought one; neither the link nor the key in paid.json
+    const QString holderFile = QDir(stateDir(db.path())).filePath(QStringLiteral("paid/%1.holder").arg(scopeHex));
+    QCOMPARE(readBlob(holderFile), raw(voucher.seed));
+#ifndef Q_OS_WIN
+    QCOMPARE(QFile::permissions(holderFile) & (QFileDevice::ReadGroup | QFileDevice::ReadOther), QFileDevice::Permissions{});
+#endif
+    const QByteArray json = readBlob(paid->statePath());
+    QVERIFY(!json.contains(raw(voucher.seed).toHex()) && !json.contains(raw(voucher.seed).toBase64()) && !json.contains(link.toLatin1()));
+
+    // taken once (§9.3)
+    QVERIFY(!paid->addPassLink(link));
+    // the same pass without k: the holder key is ours now, that is no second person
+    QVERIFY(paid->addPassLink(passLinkOf(pass)));
+
+    // the keys (§6.1)
+    QSignalSpy keys(paid.get(), &Ed3kPaid::keysArrived);
+    QVERIFY(paid->requestKeys(scopeHex, sourceOf(p)));
+    QTRY_VERIFY_WITH_TIMEOUT(keys.count() > 0, 30000);
+    QCOMPARE(paid->info(scopeHex)->newestEpoch, epoch);
+
+    // over IPC, after a restart: still taken once
+    paid.reset();
+    b.stop();
+    QVERIFY(b.start(loopback(db.path())));
+    paid = std::make_unique<Ed3kPaid>(b, db.path());
+    QVERIFY(paid->holdsPass(*scope));
+    Ed3kPaidBridge::setPaid(paid.get());
+    std::vector<Ipc::IpcMessage> replies;
+    const auto reply = [&](const Ipc::IpcMessage& m) { replies.push_back(m); };
+    Ipc::IpcMessage again(Ipc::IpcMsgType::AddEd3kPassLink, 7);
+    again.append(link);
+    QVERIFY(Ed3kPaidBridge::handleRequest(again, reply));
+    QVERIFY(!replies.back().fieldBool(0));
+    QVERIFY(!replies.back().fieldMap(1).value(QStringLiteral("error")).toString().isEmpty());
+    Ed3kPaidBridge::setPaid(nullptr);
+    paid.reset();
+    b.stop();
+    p.stop();
+}
+
+// §5.1, ruling #10: a pass of more than one scope is not shown before the user's word; no:
+// kept unused (also across a restart), yes: used for every scope; a bought one asks too
+void tst_Ed3kPaid::aPassOfSeveralScopesWaitsForTheUser()
+{
+    QTemporaryDir db;
+    Ed3kSession b;
+    QVERIFY(b.start(loopback(db.path())));
+    Signer pub;
+    pub.seed.fill(0x33);
+    const QByteArray idA("a"), idB("b"), idC("c"), idD("d");
+    const auto scopeA = ::ed3k::paidScope(2, pub.key(), spanOf(idA));
+    const auto scopeB = ::ed3k::paidScope(2, pub.key(), spanOf(idB));
+    const auto scopeC = ::ed3k::paidScope(2, pub.key(), spanOf(idC));
+    const auto scopeD = ::ed3k::paidScope(2, pub.key(), spanOf(idD));
+    QVERIFY(scopeA && scopeB && scopeC && scopeD);
+    const std::uint64_t now = b.now().unixS;
+    const std::uint64_t until = now + 7 * 86400;
+
+    auto paid = std::make_unique<Ed3kPaid>(b, db.path());
+    paid->follow(pub.key(), *scopeA, Ed3kPaid::Kind::Set, QStringLiteral("Season A"));
+    const QString hexA = Ed3kPaid::hexOf(*scopeA);
+    const QString hexB = Ed3kPaid::hexOf(*scopeB);
+
+    Signer voucher;
+    voucher.seed.fill(0x72);
+    const QByteArray pass = makePassOf(pub, {raw(scopeA->bytes), raw(scopeB->bytes)}, voucher.publicKey(), now - 60, until);
+    QSignalSpy arrived(paid.get(), &Ed3kPaid::passArrived);
+    const auto taken = paid->addPassLink(passLinkOf(pass, voucher.seed));
+    QVERIFY2(taken, taken ? "" : taken.error().toUtf8().constData());
+    QCOMPARE(taken->scope, hexA);   // the followed one
+    QCOMPARE(taken->scopes, 2);
+    QVERIFY(taken->waits);
+    QCOMPARE(arrived.count(), 0);
+    QCOMPARE(paid->info(hexA)->state, Ed3kPaid::State::ScopesWarn);
+    QCOMPARE(paid->info(hexA)->passScopes, 2);
+    QVERIFY(!paid->holdsPass(*scopeA));
+    // the other scope waits too, for its publisher (not followed yet)
+    QCOMPARE(paid->info(hexB)->state, Ed3kPaid::State::ScopesWarn);
+
+    // no: kept unused, also after a restart
+    QVERIFY(paid->answerScopes(hexA, false));
+    QCOMPARE(paid->info(hexA)->state, Ed3kPaid::State::ScopesWarn);
+    QVERIFY(paid->info(hexA)->scopesDeclined);
+    QVERIFY(!paid->holdsPass(*scopeA) && !paid->holdsPass(*scopeB));
+    paid.reset();
+    paid = std::make_unique<Ed3kPaid>(b, db.path());
+    QCOMPARE(paid->info(hexA)->state, Ed3kPaid::State::ScopesWarn);
+    QVERIFY(paid->info(hexA)->scopesDeclined);
+    QVERIFY(!paid->holdsPass(*scopeA));
+
+    // asked again from the UI: yes, used for both
+    QSignalSpy arrived2(paid.get(), &Ed3kPaid::passArrived);
+    QVERIFY(paid->answerScopes(hexA, true));
+    QCOMPARE(arrived2.count(), 1);
+    QCOMPARE(paid->info(hexA)->state, Ed3kPaid::State::Held);
+    QVERIFY(paid->holdsPass(*scopeA) && paid->holdsPass(*scopeB));
+    QVERIFY(!paid->answerScopes(hexA, true));   // nothing waits now
+    // a later pass of the same scopes asks no more
+    const QByteArray later = makePassOf(pub, {raw(scopeA->bytes), raw(scopeB->bytes)}, voucher.publicKey(), now - 30, until + 86400);
+    const auto renewed = paid->addPassLink(passLinkOf(later));
+    QVERIFY(renewed && !renewed->waits);
+    QCOMPARE(paid->info(hexA)->until, until + 86400);
+    // B followed later: its pass is set then
+    paid->follow(pub.key(), *scopeB, Ed3kPaid::Kind::Set, QStringLiteral("Season B"));
+    QCOMPARE(paid->info(hexB)->state, Ed3kPaid::State::Held);
+
+    // bought: the seller's pass covers C and D: the user is asked first (scopesWarning)
+    FakeSeller seller([&](const QByteArray& holder) { return makePassOf(pub, {raw(scopeC->bytes), raw(scopeD->bytes)}, holder, now - 60, until); });
+    QVERIFY(seller.port() > 0);
+    const QString base = QStringLiteral("https://127.0.0.1:%1").arg(seller.port());
+    const Season season = makeSeason(pub, raw(scopeC->bytes), 0, 24);
+    const QByteArray offerC = makeOffer(pub, season, now - 60, now - 3600, 3600, base + QStringLiteral("/pay"), base + QStringLiteral("/pass"));
+    paid->follow(pub.key(), *scopeC, Ed3kPaid::Kind::Set, QStringLiteral("Season C"));
+    QVERIFY(paid->setOffer(*scopeC, offerC));
+    const QString hexC = Ed3kPaid::hexOf(*scopeC);
+    QSignalSpy warned(paid.get(), &Ed3kPaid::scopesWarning);
+    QVERIFY(paid->buy(hexC));
+    QTRY_VERIFY_WITH_TIMEOUT(warned.count() == 1, 60000);
+    QCOMPARE(warned.at(0).at(0).toString(), hexC);
+    QCOMPARE(warned.at(0).at(2).toInt(), 1);
+    QCOMPARE(paid->info(hexC)->state, Ed3kPaid::State::ScopesWarn);
+    QVERIFY(!paid->holdsPass(*scopeC));
+    QVERIFY(paid->answerScopes(hexC, true));
+    QCOMPARE(paid->info(hexC)->state, Ed3kPaid::State::Held);
+    QVERIFY(paid->holdsPass(*scopeC) && paid->holdsPass(*scopeD));
+    paid.reset();
+    b.stop();
+}
+
+// §7: a paid ed3k:live link watched is followed in Ed3kPaid (kind 1) while watched; its pass
+// comes like a set's
+void tst_Ed3kPaid::aPaidChannelIsFollowedWhileWatched()
+{
+    QTemporaryDir db;
+    Ed3kSession b;
+    QVERIFY(b.start(loopback(db.path())));
+    Signer channel;
+    channel.seed.fill(0x34);
+    const QByteArray id("tv");
+    const auto scope = ::ed3k::paidScope(1, channel.key(), spanOf(id));
+    QVERIFY(scope);
+    const QString link = QStringLiteral("ed3k:live?key=%1&id=%2&paid=1&dn=Paid%20TV")
+                             .arg(base32(channel.key()), base32(std::span<const std::uint8_t>(reinterpret_cast<const std::uint8_t*>(id.constData()), 2)));
+    const auto parsed = Ed3kPaid::channelOfLink(link);
+    QVERIFY(parsed);
+    QCOMPARE(parsed->scope, *scope);
+    QVERIFY(!Ed3kPaid::channelOfLink(QString(link).remove(QStringLiteral("&paid=1"))));
+
+    auto paid = std::make_unique<Ed3kPaid>(b, db.path());
+    Ed3kNames names(b, db.path());
+    names.start();
+    Ed3kSiteServer sites(b, names);
+    Ed3kLive live(b, sites);
+    live.setPaid(paid.get());
+    const QString hex = Ed3kPaid::hexOf(*scope);
+    const auto watched = live.watch(link);
+    QVERIFY2(watched, watched ? "" : watched.error().toUtf8().constData());
+    auto info = paid->info(hex);
+    QVERIFY(info);
+    QCOMPARE(info->kind, Ed3kPaid::Kind::Channel);
+    QCOMPARE(info->title, QStringLiteral("Paid TV"));
+    QCOMPARE(live.info(*watched)->paidScope, hex);
+    // followed on the engine: an offer of the channel is taken
+    const std::uint64_t now = b.now().unixS;
+    const Season season = makeSeason(channel, raw(scope->bytes), 0, 24);
+    const QByteArray offer = makeOffer(channel, season, now - 60, now - 3600, 3600, QStringLiteral("https://shop.example/pay"),
+                                       QStringLiteral("https://shop.example/pass"));
+    QVERIFY(paid->setOffer(*scope, offer));
+    QVERIFY(b.engine()->paidOffer(*scope).value_or(std::nullopt).has_value());
+    // a voucher for it
+    Signer voucher;
+    voucher.seed.fill(0x73);
+    QVERIFY(paid->addPassLink(passLinkOf(makePass(channel, raw(scope->bytes), voucher.publicKey(), now - 60, now + 86400), voucher.seed)));
+    QCOMPARE(paid->info(hex)->state, Ed3kPaid::State::Held);
+    // left: the pass stays (its key), the channel is no longer followed
+    QVERIFY(live.leave(*watched));
+    QVERIFY(paid->holdsPass(*scope));
+    QVERIFY(!b.engine()->paidOffer(*scope).value_or(std::nullopt).has_value());   // not on the engine now
+    live.setPaid(nullptr);
+    paid.reset();
+    b.stop();
 }
 
 QTEST_GUILESS_MAIN(tst_Ed3kPaid)

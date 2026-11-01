@@ -18,7 +18,7 @@
 namespace eMule {
 
 PasteTextDialog::PasteTextDialog(const Chrome& chrome, QWidget* parent)
-    : QDialog(parent)
+    : RememberedSizeDialog(parent)
     , m_acceptText(chrome.acceptText)
     , m_readOnlyText(chrome.readOnlyText)
 {

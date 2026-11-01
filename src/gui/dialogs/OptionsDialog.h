@@ -10,7 +10,7 @@
 #include "utils/FileAssociation.h"
 
 #include <QColor>
-#include <QDialog>
+#include "dialogs/RememberedSizeDialog.h"
 #include <QHash>
 #include <QSet>
 #include <QIcon>
@@ -44,7 +44,7 @@ class Ed3kOptionsPages;
 class IpcClient;
 class StatisticsPanel;
 
-class OptionsDialog : public QDialog {
+class OptionsDialog : public RememberedSizeDialog {
     Q_OBJECT
 
 public:
@@ -94,6 +94,7 @@ public:
         PageEd3kNames,
         PageEd3kFilters,    // filter lists (Ed3kFilterPage)
         PageEd3kAutoCredits, // "Credits" in the sidebar: autostart highspeed download
+        PageEd3kSelling,    // selling paid subscriptions (Ed3kSellPage, batch 14)
         PageCount
     };
 
@@ -696,6 +697,9 @@ private:
     QCheckBox*    m_verboseCheck = nullptr;
     QCheckBox*    m_logSourceExchangeCheck = nullptr;
     QCheckBox*    m_serverVerboseCheck = nullptr;
+    QCheckBox*    m_btVerboseCheck = nullptr;
+    QCheckBox*    m_hosterVerboseCheck = nullptr;
+    QCheckBox*    m_ed3kVerboseCheck = nullptr;
     QCheckBox*    m_logBannedClientsCheck = nullptr;
     QCheckBox*    m_logRatingDescCheck = nullptr;
     QCheckBox*    m_logSecureIdentCheck = nullptr;

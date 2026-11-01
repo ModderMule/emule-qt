@@ -67,6 +67,14 @@ joins.
 | `src/ed3k/Ed3kLive.{h,cpp}` | `eMule::ed3k::Ed3kLive`: live streams watched (live.md), served as a progressive HTTP stream on the website server's port; restarts on a gap, new init or broadcast (#15) |
 | `src/ed3k/Ed3kLiveBroadcast.{h,cpp}` | `eMule::ed3k::Ed3kLiveBroadcast`: broadcasting from an HLS fMP4 folder (live.md §4), the channel keys; `Ed3kHlsPlaylist` reads a media playlist |
 | `src/ed3k/Ed3kPaid.{h,cpp}` | `eMule::ed3k::Ed3kPaid`: paid subscriptions, buying passes (subscription.md §5, §6, §9): offers, the holder keys, pass polls and renewals, the anonymous warning, share reports; `Ed3kPaidOffer`/`Ed3kPaidPass` read them |
+| `src/ed3k/Ed3kPaidSeller.{h,cpp}` | `eMule::ed3k::Ed3kPaidSeller`: selling (subscription.md §3-§5, §7): offers, seasons (planned in a season's last epoch, a new one after a leak), the own pass, passes issued as `ed3k:pass` links (batch 14) |
+| `src/ed3k/Ed3kSealedOpener.{h,cpp}` | opens a downloaded sealed member (§8.1 `epoch`, hidden-set §4.2) with `sealedReadAt` into `<plain>.part`, then renames (batch 14) |
+| `src/ed3k/Ed3kLiveFiles.{h,cpp}` | `eMule::ed3k::Ed3kLiveFiles` (an `Ed3kJoinBase`): channel files (live.md §1.2) shared from memory and published under their keywords; fetched by root for a channel search (batch 14) |
+| `src/ed3k/Ed3kKeyFile.{h,cpp}` | `ownerOnly(path)`: an owner-only DACL on Windows, 0600 elsewhere, for every secret file (batch 14) |
+| `src/daemon/Ed3kPaidSellerBridge.{h,cpp}` | IPC 1033, 1034, 1040, 1041 / pushes 1067-1068 of selling, reached through `Ed3kBridge` |
+| `src/gui/dialogs/Ed3kSellPage.{h,cpp}`, `Ed3kSellDialogs.{h,cpp}` | GUI: Options → ed3k → Selling (sales, Issue Pass…, Change Terms…, New Season after a Leak…, issued passes, defaults); the terms, issue-pass and link dialogs |
+| `src/gui/app/Ed3kLiveWatch.{h,cpp}` | GUI: the outcome of watching a channel (link or search row) shown and opened |
+| `tests/tst_Ed3kPaidSeller.cpp` | a set sold, a member sealed; a buyer on loopback takes a voucher and opens the member; seed files owner-only; seasons planned, after a leak, new terms, a restart; a paid broadcast; a private channel refused |
 | `src/ed3k/Ed3kProto.h` | protobuf wire reader/writer of the host's reads (lifted from `Ed3kSetManifest.cpp`) |
 | `src/daemon/Ed3kSetsBridge.{h,cpp}` | IPC 1110-1119, 1144, 1039 / pushes 1155-1158 of sets, live streams and broadcasts, reached through `Ed3kBridge` |
 | `src/daemon/Ed3kPaidBridge.{h,cpp}` | IPC 1035-1038 / pushes 1064-1066 of paid subscriptions, reached through `Ed3kBridge` |
@@ -123,7 +131,7 @@ The port is mapped as `PortMapPurpose::Ed3kUdp` while `ed3kEnabled`.
 
 | File | Slot | Written |
 |---|---|---|
-| `node.key` | 32-byte seed | once; 0600 on Unix (ToDo: owner-only DACL on Windows); never logged |
+| `node.key` | 32-byte seed | once; 0600 on Unix, owner-only DACL on Windows (`Ed3kKeyFile` `ownerOnly`, batch 14); never logged |
 | `credit.key` | 32-byte secp256k1 key (credit.md §2) | when credits are first configured, or by a new key / an import (replaced atomically, 0600); never logged |
 | `kad.dat` | `ED3K_STATE_KAD` | on `StateChanged` and at stop (only with contacts) |
 | `bad.dat` | `ED3K_STATE_BAD` | at most once a minute after `StateChanged`, and at stop |
@@ -149,6 +157,8 @@ The port is mapped as `PortMapPurpose::Ed3kUdp` while `ed3kEnabled`.
 | `sets/<root hex>.manifest` | the manifests of those versions, inner sets and mounts (the root the core named; a hidden set's: the sealed file's) | when one arrives |
 | `paid.json` | the paid subscriptions (`Ed3kPaid`): scope, publisher, kind, title, anonymous key or not, offer, pass, holder key (public), until, the purchase begun, state; owner-only | on follow, an offer, a purchase, a pass, a poll's end |
 | `paid/<scope hex>.holder` | 32-byte seed of the holder key of a subscription (subscription.md §5.1: one per subscription, kept for renewals); 0600, never logged | on the first purchase |
+| `sell/sell.json` | the sales (`Ed3kPaidSeller`): scope, kind, title, terms, seasons, issued passes (no voucher links), defaults; no secrets | on change |
+| `sell/seller.key`, `sell/<scope>.publisher`, `.holder`, `<scope>-<base>.season` | 32-byte seeds: the seller (issuer) key, a sale's publisher key, its own pass's holder key, a season seed; owner-only, never logged | when made |
 | `live/channels.json`, `live/<id hex>.key`, `.secret` | the broadcast channels by title (`Ed3kLiveBroadcast`: channel `id`, private); the seed of each channel key and `s` of a private one (0600, never logged; the link of a private channel is a credential) | on the first broadcast of a title |
 | `filter-own.dat` | the own filter verdicts mirrored (`subject<TAB>id hex<TAB>verdict<TAB>reason`, a `mode` line, a `publish<TAB>set id hex<TAB>title` line when published; the core lists none, it keeps them in `filter.dat`); not a credential | on a change |
 | `filter-own.key`, `filter-own.ed3kflt`, `filter-own.ed3kset` | the key the own list's set is signed with (32-byte seed, 0600, never logged); the list file and manifest published last (shared again at start) | on publish |
@@ -228,9 +238,11 @@ Logging uses the categories `emule.ed3k` (`logEd3k`, `logEd3kWarning`, `logEd3kE
 `logEd3kDebug`) and `emule.ed3k.kad` (`logEd3kKad`, `logEd3kKadWarning`, `logEd3kKadDebug`).
 The GUI shows them in three tabs of the log pane while `ed3kEnabled`: **ed3k** (emule.ed3k
 info, warnings, errors), **ed3k Verbose** (its debug lines) and **ed3k Kad**; hidden, they
-fall back to Log/Verbose and debug lines are dropped (`LogWidget::routeEd3k`). Files:
+fall back to Log/Verbose and debug lines are dropped (`LogWidget::routeEd3k`). ed3k Verbose
+also needs `ed3kVerboseLog` (Options › Extended › Verbose, independent of `verbose`). Files:
 `<base>_Ed3k.log` and `<base>_Ed3kKad.log`. Filter rules: `emule.ed3k.debug` follows
-`verbose`, `emule.ed3k.kad.debug` follows `verbose` or `kadVerboseLog`.
+`ed3kVerboseLog` only (packmule's level follows it on the next tick), `emule.ed3k.kad.debug`
+follows `verbose` or `kadVerboseLog`.
 
 ## Status and bandwidth
 
@@ -565,7 +577,8 @@ node start:
   reads `to` = 0 (`claimed`).
 - **Chain refusals** (batch 12 #6): `ChainFailed` / `ChainTxFailed` with `ED3K_CHAIN_REFUSED`
   (15, the same JSON-RPC error at every provider, the node's text in `message`) or
-  `_BAD_REQUEST` (16, the forwarder's `verify` false) are logged by `Ed3kChain` and shown as
+  `_BAD_REQUEST` (16, the forwarder's `verify` false) or, batch 14, `_GAS_LOW` (17, a site request's
+  gas below the estimate, not handed over) are logged by `Ed3kChain` and shown as
   plain text under the chaintube endpoints (GetEd3kStatus `chain`: `configured`,
   `singleRemote`, `refused`; a `PushEd3kStatus` follows).
 
@@ -585,8 +598,13 @@ ToDo (credits):
 - was: Burning for stake and claiming (`creditBurnForStake`, `creditClaimStake`) from the GUI, and
   the claims kept across restarts (only counted in memory now) (done: "Stake" above,
   `stake-claims.json`, `Ed3kStakeGroup`).
-- The anonymous credit key (`creditAnonKey`, §9.1) once the app hides (`anonStart`).
-- An owner-only DACL for `credit.key` on Windows (as `node.key`).
+- was: The anonymous credit key (`creditAnonKey`, §9.1) once the app hides (`anonStart`) (done, batch 14:
+  `credit-anon.key`, a secret made when credits are configured, its anonymous node ID in `credit-anon.node`;
+  `Ed3kCredit::applyAnonKey` hands it to the hiding node and replaces it when the anonymous key changed; its
+  address is `anonAddress` in GetEd3kStatus `credit` and GetEd3kStakeClaims, shown under the credit address;
+  a burn or claim naming it as `to` is refused with `CONFIG`, §9.1 "No burn").
+- The app does not hide yet: whoever calls `anonStart` calls `Ed3kCredit::applyAnonKey()` after it.
+- was: An owner-only DACL for `credit.key` on Windows (as `node.key`) (done: `ownerOnly`, as every secret file).
 
 ## Downloads and search
 
@@ -722,6 +740,47 @@ init data (≤ 256 KiB; segments ≤ 4 MiB, larger ones skipped). It begins at t
 "Stop" (`LeaveEd3kLive` of a broadcast) → `liveEnd`. The live list shows broadcasts with
 `broadcast: true` ("On air", Copy Link).
 
+**Pass links and vouchers** (subscription.md §9.3, batch 14): `ed3k:pass?p=…[&k=…]` from a
+clicked/OS link, Paste Links (never from the clipboard watcher, so a voucher copied to give away
+is not used up) or "Enter Pass..." → `AddEd3kPassLink` (1028) → `Ed3kPaid::addPassLink`
+(`parsePassLink`). A voucher's seed goes to `paid/<scope>.holder`; each voucher pass is taken
+once (its hash in `paid.json` `vouchers`). A pass for a scope not followed waits in a
+placeholder until `follow` names the publisher. A pass by hand is not renewed over `pass_url`.
+**A pass of several scopes** (§5.1, batch 13 ruling #10): held unused (`State::ScopesWarn` 6,
+`PushEd3kPaidScopesWarn` 1057) until the user answers (`AnswerEd3kPaidScopes` 1029); declined
+it stays unused across restarts ("Use Pass..." asks again), accepted it is used for all its
+scopes; asked once per set of scopes.
+**Sealed members** (§8.1): downloaded to `<set>/.sealed/<wire name>` and kept shared; once
+complete opened with `paidMemberKey` (`NONE` → `paidWantKeys` once, retried on `PAID_KEYS`;
+`MemberState::Locked` 6 meanwhile) by `Ed3kSealedOpener` into the member's path. A hidden
+set's `sealed` members are opened the same way with the link's `k_data`.
+**Paid live channels** (§7): a `paid=1` link or a channel file whose scope has an offer is
+followed through `Ed3kPaid` while watched (`followChannel` / `leaveChannel`); the Live tab has
+"Buy Pass..." / "Use Pass...".
+**Selling** (`Ed3kPaidSeller`, batch 14; subscription.md §3-§5, §7): "Sell..." on a broadcast
+channel (Live tab) or `SellEd3k` (1034) for a set: scope → `paidChainNew` → `paidOfferSign`
+(issuer = the seller key) → `paidFollow`, `paidSetOffer`, `paidPublish`, the own pass
+(`paidSignPass` for a fresh holder key → `paidSetPass`); all set again at each start. The next
+season is made and published in a season's last epoch and named by a new offer once it
+begins; "New Season after a Leak..." → `paidNewSeason`. "Issue Pass..." (1040): the buyer's
+holder key or a voucher (fresh seed, never kept), the scopes, the end → `paidSignPass`
+(publisher-signed for one publisher, else by the seller key) → `passLink`, copied once.
+A sold channel restarts paid (`&paid=1`), its channel file carries the offer.
+**Channel files and search** (live.md §1.2, batch 14): a public channel on air shares its
+`<title>.ed3klive` (`liveChannelFile`, `Ed3kLiveFiles`) under its keywords; a changed
+description (`DescribeEd3kLive` 1046: comment, lang, kbps) is a new file with a later
+`created`, the old one withdrawn. Search method "ed3k Channel (live)" (`SearchType::Ed3kLive`
+10, shown with "ed3k"): an ed3k search for `ed3klive` files ≤ 64 KiB, each fetched (20 s) and
+checked for the magic; rows show title, kbps, "media codecs [lang]". Double-click / "Watch" →
+`WatchEd3kLiveFile` (1045, push 1070 when pending).
+**Resume** (§4): `live/channels.json` `onAir` keeps folder, start, the next seq and the cut;
+a start within 10 min of the cut resumes `{start, seq}` (the first segment carries `gap`). A
+session stop or quitting is a cut (no end record); only "Stop" sends `liveEnd`.
+**Formats** (§2.3): `Ed3kLive::canPlay` checks container and RFC 6381 codecs against
+QMediaFormat; a channel the backend can't play is not joined (`State::Unsupported` 5, 410);
+unknown codecs are left to the player. An init over 256 KiB skips its segment once and the
+next carries `gap` (batch 13 ruling #11).
+
 **Live streams** (`Ed3kLive`, DaemonApp after `Ed3kSiteServer`; live.md): `WatchEd3kLive` →
 `liveWatchLink`; the website server hands requests of `live-<stream hex>.localhost:<sitePort>`
 to it (`Ed3kSiteServer::setHostHandler`, loopback only like the sites). A response is chunked:
@@ -757,19 +816,25 @@ Download / Choose Files… / Open as Website / Cancel), `ed3k:live` is watched a
 ToDo (sets and live):
 - was: Paid subscriptions: buying passes (subscription.md, `ed3k_paid_*`, `ed3k_pass_*`) is out
   of scope (done: `Ed3kPaid`, batch 13).
-- Selling paid channels and sets (offers, seasons, horizon keys, signing passes:
+- was: Selling paid channels and sets (offers, seasons, horizon keys, signing passes:
   `ed3k_paid_publish*`, `_new_season`) is not offered; nor `ed3k:pass` links (§9.3 by hand,
-  vouchers), nor a paid live channel (§7).
-- The sealed members of a paid catalogue (§8.1 `epoch`) download sealed; they are not opened
-  with the epoch key.
+  vouchers), nor a paid live channel (§7). (done, batch 14: `Ed3kPaidSeller`, pass links, paid
+  channels.) Still ToDo: the automatic HTTPS pass server (a web project), horizon keys from an
+  offline key store, private paid channels, a GUI to sell an own set (no own-set GUI; IPC only).
+- was: The sealed members of a paid catalogue (§8.1 `epoch`) download sealed; they are not opened
+  with the epoch key. (done, batch 14: `Ed3kSealedOpener`.) The plain copy lands in the set's
+  folder; if that is under a folder eMule shares, ed2k shares it plainly on a rescan.
 - was: Live broadcasting (`liveBroadcast`, `livePushSegment`, the channel key) is out of scope
-  (done: `Ed3kLiveBroadcast`, batch 13). Not resumed after a restart; no channel file (§1.2).
+  (done: `Ed3kLiveBroadcast`, batch 13). was: Not resumed after a restart; no channel file (§1.2)
+  (done, batch 14: resume, `Ed3kLiveFiles`). The broadcast dialog has no fields for comment,
+  lang, kbps yet (IPC `DescribeEd3kLive` only).
 - was: A hidden set's version held is not handed in after a restart (done: the plain manifest
   with its sealed root is handed to `setFollowHidden`, packmule batch 13; a paid hidden set
   still takes none: its newest is fetched again, members there are not downloaded again).
 - was: A mount's new version under *ask* is downloaded on the next "Download Selected" (done:
   it waits in `pendingMounts` and is offered, batch 13).
-- §2.3 of live.md: a viewer that cannot play `media`/`codecs` should say so; the player decides.
+- was: §2.3 of live.md: a viewer that cannot play `media`/`codecs` should say so; the player decides
+  (done, batch 14: `Ed3kLive::canPlay`).
 - was: Qt warns "Chunk must have length > 0" when a live response ends (done: the last chunk is
   a `free` box / null TS packet / EBML Void, batch 13).
 
@@ -871,8 +936,11 @@ the IPC of `Ed3kRoomsBridge`:
   answered with a 302 to the set's origin; one that needs the user's yes is pushed to the GUI
   (`viaSite`) and answered 403. A set's origin: the newest manifest held (`setFollow` for the
   user; others wait only when it is followed) → `sitePage` → the member from memory, else
-  fetched first (`fetchBlob`, at most 64 MiB, 256 MiB kept, the oldest go) and sent when in;
-  504 after 60 s. `If-None-Match` of the `ETag` → 304. Members kept are shared from memory
+  fetched (`fetchBlob`, at most 64 MiB, 256 MiB kept, the oldest go). A GET without Range is
+  streamed (batch 13 #12): chunked, the verified blocks in file order as they come
+  (`siteMemberBlock`); 504 when no first byte within 60 s; cut (no last chunk, the connection
+  closed) on a bad block of it (`siteMemberBad`) or 60 s without the next block. HEAD waits for
+  the whole member; a member held goes whole with its length. `If-None-Match` of the `ETag` → 304. Members kept are shared from memory
   (§6.4).
 - **A set not held** (§6.3, batch 11 ruling #9): `siteSetStatus(held, fetchingSince, now)`:
   a set fetched for the user waits for its manifest (asked again, at most `ED3K_SITE_SET_WAIT_S`
@@ -892,10 +960,15 @@ the IPC of `Ed3kRoomsBridge`:
   touched on each use). A member read back is checked against its root (else removed) and put
   in memory, shared from there again. A manifest kept is served at once, followed for the
   user's request and named as held to `setFollow` (only newer heads are fetched).
+- **Following a site** (§6.1, batch 13 #13): its head is followed while the site is shown (a
+  request within `Ed3kNames::kSiteShownMs` = 10 min) or held (its manifest in the cache), then
+  unfollowed (`expireSites`, on a timer); no set the user follows. The sets the user follows
+  (`Ed3kSets`, `keepUserSets`) are never evicted from the cache (their manifests and members,
+  §6.4) nor unfollowed by `Ed3kNames`. A site held at start is followed when shown again.
 
 ToDo (names and websites):
 - was: Range requests from verified blocks, and sending a member as its blocks arrive (§6.3) (done: ranges, see
-  "Range requests" above; still ToDo: a whole member is sent once all its blocks are in, not as they arrive).
+  "Range requests" above; and, batch 14, a GET without Range streamed as its blocks arrive, see "Website server").
 - was: Keep website manifests and members across restarts, 2 GiB, longest-unviewed first (§6.4) (done:
   `Ed3kSiteCache`, see "Kept across restarts" above).
 - was: A set that is no website: offer it for download in the GUI (§6.1) (done: `setOffered`, "Sets and live").
@@ -970,5 +1043,6 @@ on ed3k search rows (done: batch 13, "Publishing", "Search rows" above).
 - Bandwidth: a share of its own for ed3k (it uses eD2K's); upload slots of the throttler (`ed3k_grant_upload`) instead of `setLimits`.
 - was: the stable IPv6 source address (`IPv6SourcePin`) as `local6`; the `bindAddress` pref for the socket (done: "The socket").
 - was: one preference per optional extension (`Config::extOff`); nick; filter and hops state (done: `ed3k.extOff`, nick, `filter.dat`/`hops.dat`). (done: the options pages, Options → ed3k.)
-- An owner-only DACL for `node.key` on Windows.
+- was: An owner-only DACL for `node.key` on Windows (done, batch 14: `Ed3kKeyFile` `ownerOnly`, a protected DACL
+  for the current user, used by `Ed3kStore` for every secret file and state blob; not compiled here, read only).
 - `tests/vs` projects: every ed3k test has one (`Tests\Ed3k`, `tst_Ed3kTorrentJoin` in `Tests\BitTorrent`). A new test: add a `TEST_EXTRAS` entry in `scripts/generate_test_vcxprojs.py` if it needs more than the core libs and run it with `--only`, which leaves `specialdlp` and `emuleqt-mcp` in the `.sln` (a run without `--only` drops them).

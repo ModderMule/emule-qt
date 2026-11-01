@@ -13,6 +13,7 @@
 #include "Ed3kRoomsBridge.h"
 #include "Ed3kSetsBridge.h"
 #include "Ed3kPaidBridge.h"
+#include "Ed3kPaidSellerBridge.h"
 #include "app/AppContext.h"
 #include "stats/NetworkCounters.h"
 #include "stats/Statistics.h"
@@ -177,6 +178,12 @@ bool handleRequest(const IpcMessage& msg, const std::function<void(const IpcMess
     // readable names and websites: 1010-1019
     if (Ed3kNamesBridge::handleRequest(msg, reply))
         return true;
+    // paid subscriptions: 1035-1038 (batch 13), 1028-1029 (batch 14: inside the credits' block, so first)
+    if (Ed3kPaidBridge::handleRequest(msg, reply))
+        return true;
+    // selling: 1033, 1034, 1040, 1041 (batch 14)
+    if (Ed3kPaidSellerBridge::handleRequest(msg, reply))
+        return true;
     // credits: 1020-1029
     if (Ed3kCreditBridge::handleRequest(msg, reply))
         return true;
@@ -186,9 +193,9 @@ bool handleRequest(const IpcMessage& msg, const std::function<void(const IpcMess
     // node list sources: 1030-1031
     if (handleBootstrap(msg, reply))
         return true;
-    // paid subscriptions: 1035-1038 (batch 13)
-    if (Ed3kPaidBridge::handleRequest(msg, reply))
-        return true;
+    // paid subscriptions: 1035-1038 (batch 13); was here, now before the credits (1028-1029)
+    // if (Ed3kPaidBridge::handleRequest(msg, reply))
+    //     return true;
     // hoster links: 1100-1109
     if (Ed3kHosterBridge::handleRequest(msg, reply))
         return true;

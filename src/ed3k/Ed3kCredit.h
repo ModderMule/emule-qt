@@ -26,7 +26,12 @@
 ///   again and claimed again while unpaid; a paid one reads `to` = 0.
 /// - A typed id (not an own burn, batch 12 #9, §9.1): readClaim (stakeClaims) → stakeLookup()
 ///   → claimStake; then it is kept like an own one. A `to` that is the anonymous address is
-///   refused by the core (no anonymous credit key here anyway).
+///   refused (here, and by the core while it hides).
+/// - The anonymous credit key (§9.1) is Config/ed3k/credit-anon.key, a secret like credit.key,
+///   made when credits are configured; credit-anon.node names the anonymous node ID it belongs
+///   to (bound at the first applyAnonKey; a new anonymous key gets a new one, not more often).
+///   Set on the core (creditAnonKey) by applyAnonKey() while the node hides. Its address is in
+///   the status (anonAddress); no burn names it as `to`, no claim is sent for it (§9.1 "No burn").
 
 #include "Ed3kFfi.h"
 
@@ -72,6 +77,8 @@ public:
         bool configured = false;   ///< creditConfigure took it on the running node
         int endpoints = 0;         ///< ledger endpoint classes configured
         QString address;           ///< 0x + 40 hex of credit.key; empty: no key yet
+        QString anonAddress;       ///< 0x + 40 hex of credit-anon.key (§9.1); empty: none yet
+        bool anonSet = false;      ///< the core has it (the node hides)
         QString problem;           ///< why it is not configured (English, for the log/tooltip)
         std::optional<std::uint64_t> balance;   ///< µ, as last read
         bool mature = false;
@@ -153,6 +160,16 @@ public:
     [[nodiscard]] static QString keyFileName();
     /// The stake claims' file in Config/ed3k.
     [[nodiscard]] static QString claimsFileName();
+    /// The anonymous credit key's file in Config/ed3k (§9.1).
+    [[nodiscard]] static QString anonKeyFileName();
+
+    /// §9.1: hands credit-anon.key to the core while the node hides (call after each anonStart;
+    /// made when missing, replaced when the anonymous key changed). State: not hiding, credits
+    /// off or not configured.
+    // ToDo: eMuleQt does not hide yet (no anonStart caller); whoever starts it calls this after.
+    ::ed3k::Result<> applyAnonKey();
+    /// The anonymous credit address; nullopt: no key yet.
+    [[nodiscard]] std::optional<::ed3k::event::CreditAddress> anonAddress() const { return m_anonRaw; }
 
     // -- stake token (§6.7) -------------------------------------------------
 
@@ -194,6 +211,12 @@ private:
     /// Reads credit.key, making it when @p create; nullopt when missing or not a key.
     [[nodiscard]] std::optional<::ed3k::Key32> loadKey(bool create, QString* error) const;
     void readAddress();
+    /// Makes credit-anon.key when missing (credits configured) and reads its address.
+    void readAnonAddress(bool create);
+    /// Whether @p to is the anonymous credit address (§9.1: never a burn's or claim's `to`).
+    [[nodiscard]] bool isAnon(const ::ed3k::event::CreditAddress& to) const;
+    /// Writes a fresh credit key over @p name (credit.key, credit-anon.key).
+    bool renewKey(const QString& name, QString* error);
     void changed(bool now = false);
     void onStakeEvent(const ::ed3k::Event& event);
     void loadClaims();
@@ -210,6 +233,8 @@ private:
     QString m_configuredAs;
     QString m_problem;
     QString m_address;
+    std::optional<::ed3k::event::CreditAddress> m_anonRaw;   ///< of credit-anon.key
+    bool m_anonSet = false;   ///< creditAnonKey taken by the hiding node
     Status m_status;
     std::set<::ed3k::Root> m_roots;   ///< ed3k downloads seen (bidMaxPrice)
     AutoBid m_auto;

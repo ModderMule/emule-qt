@@ -366,6 +366,9 @@
     <ClCompile Include="files\PartFileConvert.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
+    <ClCompile Include="files\PartFileSizeLookup.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
     <ClCompile Include="files\PartFileWriteThread.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
@@ -1062,6 +1065,9 @@
       <Filter>Header Files</Filter>
     </QtMoc>
     <QtMoc Include="files\PartFileConvert.h">
+      <Filter>Header Files</Filter>
+    </QtMoc>
+    <QtMoc Include="files\PartFileSizeLookup.h">
       <Filter>Header Files</Filter>
     </QtMoc>
     <QtMoc Include="files\PartFileWriteThread.h">

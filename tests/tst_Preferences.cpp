@@ -4,6 +4,7 @@
 #include "TestHelpers.h"
 
 #include "app/AppConfig.h"
+#include "app/CoreSession.h"
 #include "prefs/PreferenceSchema.h"
 #include "prefs/Preferences.h"
 #include "net/EMSocket.h"
@@ -14,6 +15,8 @@
 #include <QCoreApplication>
 #include <QDir>
 #include <QFile>
+#include <QFileInfo>
+#include <QScopeGuard>
 #include <QTcpServer>
 #include <QTest>
 #include <QTextStream>
@@ -147,6 +150,52 @@ private slots:
         Preferences p2;
         p2.load(file);
         QCOMPARE(p2.configDir(), realDir);
+    }
+
+    // #104: --config is one self-contained profile. Its default Incoming/Temp go
+    // inside the override dir, and loading prefs creates neither: the GUI loads
+    // them too, and it must not leave empty folders under $HOME.
+    void configOverride_dataDirsInsideAndNotCreated()
+    {
+        TempDir tmp;
+        const QString sandbox = tmp.filePath(QStringLiteral("profile"));
+        AppConfig::setConfigDirOverride(sandbox);
+        const auto restore = qScopeGuard([] { AppConfig::setConfigDirOverride(QString()); });
+
+        QCOMPARE(AppConfig::dataBaseDir(), sandbox);
+
+        // Fresh profile: first-run defaults
+        Preferences fresh;
+        fresh.load(sandbox + QStringLiteral("/preferences.yml"));
+        QCOMPARE(fresh.incomingDir(), sandbox + QStringLiteral("/Incoming"));
+        QCOMPARE(fresh.tempDirs(), QStringList{sandbox + QStringLiteral("/Temp")});
+        QCOMPARE(fresh.configDir(), sandbox);
+        QVERIFY(QFile::exists(sandbox + QStringLiteral("/preferences.yml")));
+        QVERIFY(!QFileInfo::exists(sandbox + QStringLiteral("/Incoming")));
+        QVERIFY(!QFileInfo::exists(sandbox + QStringLiteral("/Temp")));
+
+        // Existing file naming no dirs: same defaults
+        const QString file = tmp.filePath(QStringLiteral("seed.yml"));
+        QFile seed(file);
+        QVERIFY(seed.open(QIODevice::WriteOnly));
+        seed.write("general:\n  nick: probe\n");
+        seed.close();
+        Preferences loaded;
+        loaded.load(file);
+        QCOMPARE(loaded.incomingDir(), sandbox + QStringLiteral("/Incoming"));
+        QCOMPARE(loaded.tempDirs(), QStringList{sandbox + QStringLiteral("/Temp")});
+
+        // The core creates them
+        QVERIFY(CoreSession::ensureDataDirectories(fresh.incomingDir(), fresh.tempDirs()));
+        QVERIFY(QFileInfo(sandbox + QStringLiteral("/Incoming")).isDir());
+        QVERIFY(QFileInfo(sandbox + QStringLiteral("/Temp")).isDir());
+    }
+
+    // Without --config the data root stays baseDir()
+    void dataBaseDir_defaultsToBaseDir()
+    {
+        QVERIFY(AppConfig::configDirOverride().isEmpty());
+        QCOMPARE(AppConfig::dataBaseDir(), AppConfig::baseDir());
     }
 
     // GUI and daemon carry different application names. A path built from

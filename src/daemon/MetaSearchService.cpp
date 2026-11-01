@@ -244,8 +244,8 @@ void MetaSearchService::startMetaSearch(uint32 searchID, SearchType type, const 
                                         const pb::SearchRequest& request,
                                         std::vector<MetaSearchCandidate> candidates)
 {
-    if (type == SearchType::Ed3k) {
-        // the ed3k node answers it (Ed3kSearch)
+    if (isEd3kSearchType(type)) {
+        // the ed3k node answers it (Ed3kSearch), Ed3kLive too
         if (!m_ed3kRunner) {
             QTimer::singleShot(0, this, [searchID] {
                 if (theApp.searchList)

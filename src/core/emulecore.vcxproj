@@ -289,6 +289,7 @@
     <ClCompile Include="net\PeerVetting.cpp" />
     <ClCompile Include="files\PartFile.cpp" />
     <ClCompile Include="files\PartFileConvert.cpp" />
+    <ClCompile Include="files\PartFileSizeLookup.cpp" />
     <ClCompile Include="files\PartFileWriteThread.cpp" />
     <ClCompile Include="files\SourceIndex.cpp" />
     <ClCompile Include="utils\DiskLoadLimiter.cpp" />
@@ -561,6 +562,7 @@
     <ClInclude Include="net\PeerVetting.h" />
     <QtMoc Include="files\PartFile.h" />
     <QtMoc Include="files\PartFileConvert.h" />
+    <QtMoc Include="files\PartFileSizeLookup.h" />
     <QtMoc Include="files\PartFileWriteThread.h" />
     <ClInclude Include="utils\DiskLoadLimiter.h" />
     <ClInclude Include="utils\FileDate.h" />

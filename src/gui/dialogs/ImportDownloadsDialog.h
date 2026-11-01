@@ -6,7 +6,7 @@
 /// Matches the MFC CPartFileConvertDlg layout: current job progress,
 /// a job queue list, and Add/Retry/Remove/Close buttons.
 
-#include <QDialog>
+#include "dialogs/RememberedSizeDialog.h"
 
 class QLabel;
 class QProgressBar;
@@ -19,7 +19,7 @@ namespace eMule {
 
 class IpcClient;
 
-class ImportDownloadsDialog : public QDialog {
+class ImportDownloadsDialog : public RememberedSizeDialog {
     Q_OBJECT
 
 public:

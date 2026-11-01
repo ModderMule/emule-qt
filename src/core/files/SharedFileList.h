@@ -347,6 +347,9 @@ signals:
     void partFileRehashApplied(const QByteArray& fileHash, const QByteArray& partOk);
 
 private:
+    /// A file whose hashset proves its size wrong: offering it would spread that size
+    [[nodiscard]] static bool hasWrongSize(const KnownFile* file);
+
     /// Pick the files to put in the next OP_OFFERFILES, honouring the server's large
     /// file support and its GetSoftFiles() limit, and mark them published. Split out of
     /// sendListToServer() so both rules can be tested without a live server socket.

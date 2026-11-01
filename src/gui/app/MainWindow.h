@@ -312,6 +312,7 @@ private:
     QString skinsDir() const;
     void applySkinProfile(const QString& path);
     void setupStatusBar();
+    void updateAttachIndicator();   ///< status bar core attach/detach icon
     /// GetEd3kStatus once per connection; pushes keep it current.
     void requestEd3kStatus();
     void setupPages();
@@ -391,6 +392,7 @@ private:
     QLabel* m_statusKad = nullptr;
     QLabel* m_statusEd3k = nullptr;   ///< ed3k node, hidden while off
     QLabel* m_statusChat = nullptr;   ///< unread-message icon, MFC SBarChatMsg
+    QLabel* m_statusAttach = nullptr;   ///< core attached/detached (#106)
     ConnectionStatusWidget* m_connStatus = nullptr;
 
     // Version checker

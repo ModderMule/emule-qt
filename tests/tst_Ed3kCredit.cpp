@@ -346,6 +346,8 @@ void tst_Ed3kCredit::aRefusedChainAnswerIsShown()
         QStringLiteral("insufficient funds")));
     QVERIFY(!Ed3kChain::refusalText(ED3K_CHAIN_REFUSED, {}).isEmpty());
     QVERIFY(!Ed3kChain::refusalText(ED3K_CHAIN_BAD_REQUEST, {}).isEmpty());
+    // batch 14: a site request below the gas estimate is shown with the refusals
+    QVERIFY(Ed3kChain::refusalText(ED3K_CHAIN_GAS_LOW, {}).contains(QStringLiteral("gas")));
     QVERIFY(Ed3kChain::refusalText(ED3K_CHAIN_UNREACHABLE, QStringLiteral("x")).isEmpty());
     // a stranger's text: one line, kept short
     const QString t = Ed3kChain::refusalText(ED3K_CHAIN_REFUSED, QString(500, QLatin1Char('a')) + QStringLiteral("\nb"));

@@ -22,6 +22,7 @@
 #include "Ed3kDownloadsBridge.h"
 #include "Ed3kSetsBridge.h"
 #include "Ed3kPaidBridge.h"
+#include "Ed3kPaidSellerBridge.h"
 #include "Ed3kHosterBridge.h"
 #include "Ed3kFriendsBridge.h"
 #include "Ed3kRoomsBridge.h"
@@ -64,6 +65,7 @@
 #include "Ed3kLive.h"
 #include "Ed3kLiveBroadcast.h"
 #include "Ed3kPaid.h"
+#include "Ed3kPaidSeller.h"
 #include "Ed3kNames.h"
 #include "Ed3kPlumbing.h"
 #include "Ed3kSession.h"
@@ -158,6 +160,9 @@ bool DaemonApp::start()
 
     // Start core session
     m_coreSession = std::make_unique<CoreSession>(this);
+    // the wizard picks the networks: ed3k, BT, Usenet and hosters wait for it too (#103, #105)
+    m_enginesHeld = m_connectHold;
+    connect(m_coreSession.get(), &CoreSession::connectHoldReleased, this, &DaemonApp::releaseEngines);
     if (m_connectHold) {
         logInfo(QStringLiteral("Auto-connect held until the first start wizard is done"));
         m_coreSession->setConnectHold(true);
@@ -320,7 +325,7 @@ bool DaemonApp::start()
                        : 0.0f;
         });
     }
-    if (thePrefs.usenetEnabled())
+    if (thePrefs.usenetEnabled() && !m_enginesHeld)
         m_usenetSession->start();
 
     // ed3k (packmule): after Usenet (E2's usenet join uses both). Its own UDP port,
@@ -486,9 +491,21 @@ bool DaemonApp::start()
     m_ed3kSets = std::make_unique<ed3k::Ed3kSets>(*m_ed3kSession, *m_ed3kDownloads, thePrefs.configDir());
     m_ed3kSets->setIncomingDir(thePrefs.incomingDir());
     m_ed3kSets->setPaid(m_ed3kPaid.get());
+    // name.md §6.4: a set the user follows stays in the website cache, followed (batch 14)
+    m_ed3kNames->keepUserSets(m_ed3kSets.get());
     m_ed3kLive = std::make_unique<ed3k::Ed3kLive>(*m_ed3kSession, *m_ed3kSites);
+    m_ed3kLive->setPaid(m_ed3kPaid.get());   // paid channels watched (batch 14)
+    // selling (batch 14): before the broadcast, so its scopes are on the engine when a paid
+    // channel goes on air at an ed3k start
+    m_ed3kSeller = std::make_unique<ed3k::Ed3kPaidSeller>(*m_ed3kSession, thePrefs.configDir());
+    Ed3kPaidSellerBridge::connectPushes(*m_ed3kSeller, [this](const IpcMessage& msg) {
+        if (m_ipcServer)
+            m_ipcServer->broadcast(msg);
+    });
     // live broadcasting from an HLS folder (batch 13)
     m_ed3kLiveBroadcast = std::make_unique<ed3k::Ed3kLiveBroadcast>(*m_ed3kSession, thePrefs.configDir());
+    m_ed3kSeller->serve(*m_ed3kLiveBroadcast);
+    Ed3kPaidSellerBridge::setSeller(m_ed3kSeller.get(), m_ed3kLiveBroadcast.get());
     Ed3kSetsBridge::setBroadcast(m_ed3kLiveBroadcast.get());
     Ed3kSetsBridge::connectBroadcastPushes(*m_ed3kLiveBroadcast, [this](const IpcMessage& msg) {
         if (m_ipcServer)
@@ -502,6 +519,10 @@ bool DaemonApp::start()
     // ed3k keyword search: SearchType::Ed3k through the Meta search runner
     m_ed3kSearch = std::make_unique<ed3k::Ed3kSearch>(*m_ed3kSession);
     MetaSearchService::instance().setEd3kRunner(m_ed3kSearch.get());
+    // SearchType::Ed3kLive (batch 14): channel files fetched by the viewer's fetcher (kept for a watch)
+    m_ed3kSearch->setLiveFetch([live = m_ed3kLive.get()](const ::ed3k::Root& root, std::uint64_t size, ed3k::Ed3kLiveFiles::Fetched done) {
+        live->files().fetch(root, size, std::move(done), ed3k::Ed3kSearch::kLiveFetchMs);
+    });
     // eD2K compat (§14.2, §14.4): eD2K downloads from ed3k too, hinted sources over ed3k
     // first; attaches on statusChanged
     if (theApp.downloadQueue) {
@@ -577,7 +598,8 @@ bool DaemonApp::start()
         connect(m_javaRuntime.get(), &ed3k::Ed3kJavaRuntime::stateChanged, this, [this, pushStatus] {
             const auto h = thePrefs.ed3kHoster();
             // none found: fetch one when the user allows that
-            if (m_javaRuntime->state() == ed3k::Ed3kJavaRuntime::State::Missing && thePrefs.hosterDownloadsOn() && h.autoJava)
+            if (m_javaRuntime->state() == ed3k::Ed3kJavaRuntime::State::Missing && thePrefs.hosterDownloadsOn()
+                && !m_enginesHeld && h.autoJava)
                 m_javaRuntime->download();
             applyHosterConfig();
             pushStatus();
@@ -611,7 +633,7 @@ bool DaemonApp::start()
         connect(theApp.ipFilter, &IPFilter::filterLoaded, this, [] { BtBridge::applyIpFilter(); });
         connect(theApp.ipFilter, &IPFilter::filterCleared, this, [] { BtBridge::applyIpFilter(); });
     }
-    if (thePrefs.btEnabled())
+    if (thePrefs.btEnabled() && !m_enginesHeld)
         m_btSession->start(BtBridge::settingsFromPrefs());
 #endif
 #if defined(EMULE_HAVE_ED3K) && defined(EMULE_HAVE_BITTORRENT)
@@ -738,7 +760,9 @@ void DaemonApp::stop()
     m_ed3kSearch.reset();
     Ed3kSetsBridge::setSets(nullptr, nullptr, nullptr);
     Ed3kSetsBridge::setBroadcast(nullptr);
+    Ed3kPaidSellerBridge::setSeller(nullptr, nullptr);
     m_ed3kLiveBroadcast.reset();
+    m_ed3kSeller.reset();
     m_ed3kLive.reset();
     m_ed3kSets.reset();
     Ed3kPaidBridge::setPaid(nullptr);
@@ -1066,7 +1090,7 @@ void DaemonApp::applyBtConfig()
     if (!m_btSession)
         return;
     const bt::BtSettings settings = BtBridge::settingsFromPrefs();
-    const bool enabled = thePrefs.btEnabled();
+    const bool enabled = thePrefs.btEnabled() && !m_enginesHeld;
     if (enabled && !m_btSession->isRunning())
         m_btSession->start(settings);
     else if (!enabled && m_btSession->isRunning())
@@ -1085,7 +1109,7 @@ void DaemonApp::applyEd3kConfig()
 #ifdef EMULE_HAVE_ED3K
     if (!m_ed3kSession)
         return;
-    const bool enabled = thePrefs.ed3kEnabled();
+    const bool enabled = thePrefs.ed3kEnabled() && !m_enginesHeld;
     const uint16 port = thePrefs.ed3kUdpPort();
     // was: ToDo: the bindAddress pref (interface selection) for the ed3k socket (done: its
     // listen address; a selected interface pins the socket in Ed3kSession::start)
@@ -1201,7 +1225,7 @@ void DaemonApp::applyHosterConfig()
         return;
     // nothing is fetched or unpacked unless hoster downloads are on (and so is the ed3k node
     // they run on); off stops a fetch and creates nothing under config/ed3k
-    const bool on = thePrefs.hosterDownloadsOn();
+    const bool on = thePrefs.hosterDownloadsOn() && !m_enginesHeld;
     m_javaRuntime->setAllowed(on);
     if (!on)
         m_javaLookedFor = QStringLiteral("\x01");
@@ -1246,9 +1270,10 @@ void DaemonApp::applyUsenetServers()
     m_usenetSession->applyPreferences();
 
     // The enable switch can flip in the same save that changed the servers.
-    if (thePrefs.usenetEnabled() && !m_usenetSession->isRunning())
+    const bool enabled = thePrefs.usenetEnabled() && !m_enginesHeld;
+    if (enabled && !m_usenetSession->isRunning())
         m_usenetSession->start();
-    else if (!thePrefs.usenetEnabled() && m_usenetSession->isRunning())
+    else if (!enabled && m_usenetSession->isRunning())
         m_usenetSession->stop();
 }
 
@@ -1553,11 +1578,17 @@ void DaemonApp::applyLogFilterRules()
     // Usenet debug lines are rate-bounded (no per-article lines) and have their
     // own tab and file, so they are always on.
     rules << QStringLiteral("emule.usenet.debug=true");
-    // ed3k: emule.ed3k.debug (ed3k Verbose tab) follows verbose above; its Kad's debug
-    // lines follow the Kad switch, like eD2K's Kad
+    // ed3k's Kad debug lines follow the Kad switch, like eD2K's Kad
     if (thePrefs.kadVerboseLog())
         rules << QStringLiteral("emule.ed3k.kad.debug=true");
-    // emule.hoster.debug and emule.torrent.debug (DHT, IP filter alerts) follow verbose above
+    // own switches, whatever verbose says: Torrent / Hoster / ed3k Verbose tabs
+    // (exact categories, so emule.ed3k.kad keeps the rule above)
+    const auto own = [&rules](const char* cat, bool on) {
+        rules << QString::fromLatin1(cat) + (on ? QStringLiteral(".debug=true") : QStringLiteral(".debug=false"));
+    };
+    own("emule.torrent", thePrefs.btVerboseLog());
+    own("emule.hoster", thePrefs.hosterVerboseLog());
+    own("emule.ed3k", thePrefs.ed3kVerboseLog());
 
     QLoggingCategory::setFilterRules(rules.join(QLatin1Char('\n')));
 }
@@ -1580,5 +1611,18 @@ void DaemonApp::applyEd3kChatOptions()
     m_ed3kFriends->setChatOptions(o);
 }
 #endif
+
+void DaemonApp::releaseEngines()
+{
+    if (!m_enginesHeld)
+        return;
+    m_enginesHeld = false;
+    logInfo(QStringLiteral("First start wizard done — starting the chosen networks"));
+    if (m_usenetSession)
+        applyUsenetServers();
+    applyBtConfig();
+    // waits for the eD2K UDP socket while the core loads (onCoreLoaded comes back); hosters too
+    applyEd3kConfig();
+}
 
 } // namespace eMule

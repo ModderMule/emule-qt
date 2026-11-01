@@ -18,7 +18,7 @@
 
 #include <QByteArray>
 #include <QCborMap>
-#include <QDialog>
+#include "dialogs/RememberedSizeDialog.h"
 #include <QString>
 #include <QStringList>
 
@@ -33,7 +33,7 @@ namespace eMule {
 
 class IpcClient;
 
-class WebLinksDialog : public QDialog {
+class WebLinksDialog : public RememberedSizeDialog {
     Q_OBJECT
 
 public:

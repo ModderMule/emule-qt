@@ -92,7 +92,9 @@ bool anyHasPrio(const std::vector<const DownloadRow*>& rows, QStringView prio)
 }
 
 /// Parse a CBOR map into a ClientRow — shared by uploads, download clients, known clients.
-ClientRow parseClient(const QCborMap& m)
+/// downloadSide: File column is the file we get from the peer (MFC DownloadClientsCtrl
+/// GetRequestFile), not the one they ask from us (#90)
+ClientRow parseClient(const QCborMap& m, bool downloadSide = false)
 {
     ClientRow row;
     row.userName        = m.value(QStringLiteral("userName")).toString();
@@ -175,10 +177,12 @@ ClientRow parseClient(const QCborMap& m)
     }
     row.upStatus.greyed = m.value(QStringLiteral("upBarGreyed")).toBool();
 
-    // Pick best file name from reqFileName or uploadFileName or fileName
-    row.fileName = m.value(QStringLiteral("uploadFileName")).toString();
+    // Upload lists: their requested file first; Downloading list: our requested file first
+    const QString upName  = m.value(QStringLiteral("uploadFileName")).toString();
+    const QString reqName = m.value(QStringLiteral("reqFileName")).toString();
+    row.fileName = downloadSide ? reqName : upName;
     if (row.fileName.isEmpty())
-        row.fileName = m.value(QStringLiteral("reqFileName")).toString();
+        row.fileName = downloadSide ? upName : reqName;
     if (row.fileName.isEmpty())
         row.fileName = m.value(QStringLiteral("fileName")).toString();
     return row;
@@ -227,6 +231,8 @@ void TransferPanel::setStreamToken(const QString& token)
 void TransferPanel::setIpcClient(IpcClient* client)
 {
     m_ipc = client;
+    // row-update pushes only while this list is on screen
+    m_poller->setOnScreenHook(client ? client->pushGroupHold(Ipc::PushGroupTransfers) : nullptr);
     m_categoryTabBar->setIpcClient(client);
 
     auto clearAll = [this] {
@@ -1628,7 +1634,7 @@ void TransferPanel::requestDownloadClients()
         rows.reserve(static_cast<size_t>(arr.size()));
 
         for (const auto& val : arr)
-            rows.push_back(parseClient(val.toMap()));
+            rows.push_back(parseClient(val.toMap(), true));
 
         applyClients(Downloading, std::move(rows));
         updateToolbarLabels();

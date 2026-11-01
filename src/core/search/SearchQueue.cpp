@@ -342,7 +342,8 @@ QString SearchQueue::dedupKeyFor(const SearchParams& p)
          + QString::number(p.availability) + sep + p.extension.toLower() + sep
          + QString::number(p.completeSources) + sep + p.codec.toLower() + sep
          + QString::number(p.minBitrate) + sep + QString::number(p.minLength) + sep
-         + p.title.toLower() + sep + p.album.toLower() + sep + p.artist.toLower();
+         + p.title.toLower() + sep + p.album.toLower() + sep + p.artist.toLower()
+         + (p.internal ? QStringLiteral("\x1Finternal") : QString());   // never merged with a user's
 }
 
 bool SearchQueue::isServerType(SearchType type)

@@ -99,7 +99,7 @@ void MassRenameMaskEdit::snapshot()
 // ---------------------------------------------------------------------------
 
 MassRenameDialog::MassRenameDialog(QList<Item> items, IpcClient* ipc, QWidget* parent)
-    : QDialog(parent)
+    : RememberedSizeDialog(parent)
     , m_items(std::move(items))
     , m_ipc(ipc)
 {

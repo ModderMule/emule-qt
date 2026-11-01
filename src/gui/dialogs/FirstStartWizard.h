@@ -3,7 +3,7 @@
 /// @file FirstStartWizard.h
 /// @brief First Runtime Wizard dialog matching the MFC eMule wizard.
 ///
-/// Two pages: ports + network selection, then connection speed (MFC's separate
+/// Two pages: ports + network selection (all six networks), then connection speed (MFC's separate
 /// connection wizard, with 2026 line types). Shown once on first start and
 /// accessible via Tools > "eMule First Runtime Wizard...".
 
@@ -111,6 +111,10 @@ private:
     // Network controls
     QCheckBox* m_kadCheck = nullptr;
     QCheckBox* m_ed2kCheck = nullptr;
+    QCheckBox* m_usenetCheck = nullptr;
+    QCheckBox* m_btCheck = nullptr;
+    QCheckBox* m_ed3kCheck = nullptr;
+    QCheckBox* m_hosterCheck = nullptr;   ///< ed3kHosterEnabled; runs on the ed3k node
     QCheckBox* m_extControlsCheck = nullptr;
 
     QPushButton* m_portTestBtn = nullptr;

@@ -99,6 +99,11 @@ bool Ed3kSiteCache::hasMember(const ffi::Root& root) const
     return QFileInfo::exists(path(memberName(root)));
 }
 
+bool Ed3kSiteCache::hasManifest(const QString& site) const
+{
+    return !site.isEmpty() && QFileInfo::exists(path(manifestName(site)));
+}
+
 // ---------------------------------------------------------------------------
 // Private
 // ---------------------------------------------------------------------------
@@ -156,10 +161,18 @@ void Ed3kSiteCache::evict(const QString& keep)
         return;
     // the sites viewed longest ago first: every file is touched when used
     QFileInfoList files = QDir(m_dir).entryInfoList(QDir::Files | QDir::NoDotAndDotDot, QDir::Time | QDir::Reversed);
+    // §6.4 (batch 13 #13): a set the user chose to follow goes only when the user removes it
+    const Keep spare = m_keep ? m_keep() : Keep{};
+    QSet<QString> spared;
+    for (const QString& site : spare.sites)
+        spared.insert(manifestName(site));
+    for (const ffi::Root& root : spare.members)
+        spared.insert(memberName(root));
     for (const QFileInfo& fi : files) {
         if (m_bytes <= m_max)
             break;
-        if (!ours(fi.fileName()) || fi.fileName() == keep)
+        // if (!ours(fi.fileName()) || fi.fileName() == keep)
+        if (!ours(fi.fileName()) || fi.fileName() == keep || spared.contains(fi.fileName()))
             continue;
         remove(fi.fileName());
     }

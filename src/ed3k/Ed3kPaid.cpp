@@ -10,6 +10,7 @@
 
 #include "utils/Log.h"
 
+#include <QCryptographicHash>
 #include <QDir>
 #include <QFile>
 #include <QFileInfo>
@@ -18,6 +19,7 @@
 #include <QJsonObject>
 #include <QTimer>
 #include <QUrl>
+#include <QUrlQuery>
 
 #include <algorithm>
 #include <cstring>
@@ -53,6 +55,31 @@ std::optional<std::array<std::uint8_t, N>> arrayOf(const QString& h)
         return std::nullopt;
     std::array<std::uint8_t, N> out{};
     std::memcpy(out.data(), raw.constData(), N);
+    return out;
+}
+
+QByteArray bytesOf(std::span<const std::byte> b)
+{
+    return QByteArray(reinterpret_cast<const char*>(b.data()), qsizetype(b.size()));
+}
+
+/// §9.3: a voucher's pass is taken once (its hash kept, never the link)
+QString passHash(const QByteArray& pass)
+{
+    return QString::fromLatin1(QCryptographicHash::hash(pass, QCryptographicHash::Sha256).toHex());
+}
+
+/// the scopes a serialised SignedPass names
+std::vector<ffi::Scope> scopesOfPass(const QByteArray& signedPass)
+{
+    std::vector<ffi::Scope> out;
+    if (const auto p = Ed3kPaidPass::parse(signedPass))
+        for (const QByteArray& b : p->scopes)
+            if (b.size() == 16) {
+                ffi::Scope s{};
+                std::memcpy(s.bytes.data(), b.constData(), 16);
+                out.push_back(s);
+            }
     return out;
 }
 
@@ -183,8 +210,10 @@ void Ed3kPaid::follow(const ffi::Key32& publisher, const ffi::Scope& scope, Kind
     s.kind = kind;
     if (!title.isEmpty())
         s.title = title;
-    const bool was = s.followed;
+    const bool was = s.followed && s.known;
     s.followed = true;
+    // a pass link's subscription waited for this (its publisher)
+    s.known = true;
     if (inserted || !was) {
         logEd3k(QStringLiteral("ed3k: paid scope %1 followed").arg(hexOf(scope)));
         save();
@@ -303,6 +332,140 @@ std::optional<QString> Ed3kPaid::confirmAnon(const QString& scopeHex)
     save();
     markChanged();
     return purchase ? payLinkOf(*s) : QString();
+}
+
+std::expected<Ed3kPaid::PassTaken, QString> Ed3kPaid::addPassLink(const QString& link)
+{
+    // §9.3: a credential: never in a log line
+    QByteArray utf8 = link.trimmed().toUtf8();
+    auto parsed = ffi::parsePassLink(std::string_view(utf8.constData(), std::size_t(utf8.size())));
+    wipe(utf8);
+    if (!parsed)
+        return std::unexpected(parsed.error() == ffi::Error::Crypto ? tr("The key in this pass link does not belong to its pass.")
+                                                                    : tr("This is not a valid ed3k pass link."));
+    const QByteArray pass = bytesOf(parsed->pass);
+    const bool voucher = parsed->holderSeed.has_value();
+    const QString hash = passHash(pass);
+    std::optional<Secret> seed;
+    if (voucher) {
+        seed.emplace(*parsed->holderSeed);
+        wipe(std::span<std::uint8_t>{*parsed->holderSeed});
+        // §9.3 SHOULD: a voucher is taken once (twice: one pass for two people)
+        if (m_vouchers.contains(hash))
+            return std::unexpected(tr("This voucher was taken already. A voucher used twice is one pass for two people."));
+    } else {
+        // the holder key must be ours: one of a purchase or an earlier voucher
+        for (const auto& [sc, s] : m_subs)
+            if (s.holder == parsed->holder)
+                if (auto held = loadSecret(paidDir(), QFileInfo(holderFile(s)).fileName())) {
+                    seed.emplace(*held);
+                    wipe(std::span<std::uint8_t>{*held});
+                    break;
+                }
+        if (!seed)
+            return std::unexpected(tr("This pass is for a key this computer does not hold. Ask the seller for a voucher."));
+    }
+    if (parsed->scopes.empty())
+        return std::unexpected(tr("This is not a valid ed3k pass link."));
+    // the subscription the pass is shown for: a followed one first
+    const auto first = std::ranges::find_if(parsed->scopes, [this](const ffi::Scope& sc) {
+        const Sub* s = find(sc);
+        return s && s->known;
+    });
+    const ffi::Scope main = first != parsed->scopes.end() ? *first : parsed->scopes.front();
+    auto [it, inserted] = m_subs.try_emplace(main);
+    Sub& s = it->second;
+    if (inserted) {
+        s.scope = main;
+        s.known = false;
+        s.followed = false;
+    }
+    const bool waits = spreadPass(s, pass, parsed->until, parsed->scopes, parsed->holder, seed->expose());
+    if (voucher)
+        m_vouchers.insert(hash);
+    m_session.pump();
+    save();
+    markChanged();
+    logEd3k(QStringLiteral("ed3k: paid scope %1: a pass by hand%2 until %3")
+                .arg(hexOf(main), voucher ? QStringLiteral(" (voucher)") : QString())
+                .arg(parsed->until));
+    if (!waits)
+        emit passArrived(hexOf(main), s.title, parsed->until);
+    return PassTaken{hexOf(main), s.title, int(parsed->scopes.size()), voucher, waits};
+}
+
+bool Ed3kPaid::answerScopes(const QString& scopeHex, bool use)
+{
+    const auto scope = scopeOf(scopeHex);
+    Sub* s = scope ? find(*scope) : nullptr;
+    if (!s || s->waitingPass.isEmpty())
+        return false;
+    const QByteArray pass = s->waitingPass;
+    const auto scopes = scopesOfPass(pass);
+    // every subscription the pass came to: one word for the pass
+    for (auto& [sc, t] : m_subs) {
+        if (t.waitingPass != pass)
+            continue;
+        if (use) {
+            t.scopesOk.clear();
+            for (const auto& x : scopes)
+                t.scopesOk << hexOf(x);
+            const std::uint64_t until = t.waitingUntil;
+            t.waitingPass.clear();
+            t.waitingUntil = 0;
+            t.scopesDeclined = false;
+            usePass(t, pass, until);
+        } else {
+            // kept unused (§5.1); offered again from the UI
+            t.scopesDeclined = true;
+        }
+    }
+    m_session.pump();
+    logEd3k(QStringLiteral("ed3k: paid scope %1: a pass of %2 scopes %3").arg(hexOf(s->scope)).arg(scopes.size()).arg(use ? QStringLiteral("taken") : QStringLiteral("kept unused")));
+    save();
+    markChanged();
+    if (use)
+        emit passArrived(hexOf(s->scope), s->title, s->until);
+    return true;
+}
+
+void Ed3kPaid::followChannel(const ffi::Key32& key, const ffi::Scope& scope, const QString& title)
+{
+    // attached while watched only: a private channel's key requests prove its secret, which
+    // only the live watch gives the core (paidFollowPrivate there)
+    m_subs[scope].watching = true;
+    follow(key, scope, Kind::Channel, title);
+}
+
+void Ed3kPaid::leaveChannel(const ffi::Scope& scope)
+{
+    if (Sub* s = find(scope)) {
+        s->watching = false;
+        unfollow(scope);
+    }
+}
+
+std::optional<Ed3kPaid::ChannelLink> Ed3kPaid::channelOfLink(const QString& link)
+{
+    static const QString kPrefix = QStringLiteral("ed3k:live?");
+    const QString text = link.trimmed();
+    if (!text.startsWith(kPrefix, Qt::CaseInsensitive))
+        return std::nullopt;
+    const QUrlQuery q(text.mid(kPrefix.size()));
+    if (q.queryItemValue(QStringLiteral("paid")) != QLatin1String("1"))
+        return std::nullopt;
+    const auto key = fromBase32(q.queryItemValue(QStringLiteral("key")));
+    const auto id = fromBase32(q.queryItemValue(QStringLiteral("id")));
+    if (!key || key->size() != 32 || !id || id->isEmpty())
+        return std::nullopt;
+    ChannelLink out;
+    std::memcpy(out.key.data(), key->constData(), out.key.size());
+    // §7: kind 1, the channel key and id (a private channel's too)
+    const auto scope = ffi::paidScope(1, out.key, spanOf(*id));
+    if (!scope)
+        return std::nullopt;
+    out.scope = *scope;
+    return out;
 }
 
 void Ed3kPaid::setReports(bool on)
@@ -461,6 +624,9 @@ void Ed3kPaid::attach(Sub& s)
     auto* e = m_session.engine();
     if (!e || s.onEngine)
         return;
+    // a pass link's scope not followed yet (no publisher); a channel while watched only
+    if (!s.known || (s.kind == Kind::Channel && !s.watching))
+        return;
     const auto t = m_session.now();
     const auto ok = s.anon ? e->paidAnonFollow(t, s.publisher, s.scope) : e->paidFollow(s.publisher, s.scope);
     if (!ok && ok.error() != ffi::Error::State) {
@@ -472,8 +638,9 @@ void Ed3kPaid::attach(Sub& s)
         (void)(s.anon ? e->paidAnonSetOffer(t, s.scope, spanOf(s.offer)) : e->paidSetOffer(t, s.scope, spanOf(s.offer)));
     readOffer(s);
     setPassOnEngine(s);
-    // without an offer: KeyRequests without a pass give it (§6.2); with a pass: the keys
-    if (s.followed && (s.offer.isEmpty() || !s.pass.isEmpty()))
+    // without an offer: KeyRequests without a pass give it (§6.2); with a pass: the keys. A
+    // channel's come from its mesh (§7)
+    if (s.followed && s.kind != Kind::Channel && (s.offer.isEmpty() || !s.pass.isEmpty()))
         (void)e->paidWantKeys(t, s.scope);
     // §9.1 "at each start": a purchase polled again; §9.2: the renewal
     if (s.state == State::Buying)
@@ -518,7 +685,8 @@ void Ed3kPaid::startRenewal(Sub& s)
 {
     auto* e = m_session.engine();
     const auto offer = Ed3kPaidOffer::parse(s.offer);
-    if (!e || !offer || !s.holder || s.until == 0 || offer->passUrl.isEmpty())
+    // a pass by hand (§9.3, began 0) is not renewed over pass_url
+    if (!e || !offer || !s.holder || s.until == 0 || offer->passUrl.isEmpty() || s.began == 0)
         return;
     const QByteArray url = offer->passUrl.toUtf8();
     // §9.2: the core polls in the last 48 h before `until`, every 6 h
@@ -534,8 +702,10 @@ void Ed3kPaid::startRenewal(Sub& s)
 
 void Ed3kPaid::onPass(Sub& s, const ffi::event::PassBought& p)
 {
-    s.pass = QByteArray(reinterpret_cast<const char*>(p.pass.data()), qsizetype(p.pass.size()));
-    s.until = p.until;
+    // was: set here at once (now usePass, or the user's word first: §5.1, ruling #10)
+    // s.pass = QByteArray(reinterpret_cast<const char*>(p.pass.data()), qsizetype(p.pass.size()));
+    // s.until = p.until;
+    const QByteArray pass(reinterpret_cast<const char*>(p.pass.data()), qsizetype(p.pass.size()));
     if (!p.offer.empty()) {
         const QByteArray o(reinterpret_cast<const char*>(p.offer.data()), qsizetype(p.offer.size()));
         const auto held = Ed3kPaidOffer::parse(s.offer);
@@ -543,21 +713,105 @@ void Ed3kPaid::onPass(Sub& s, const ffi::event::PassBought& p)
         if (got && (!held || got->issued >= held->issued))
             s.offer = o;
     }
-    s.state = State::Held;
-    s.renewing = false;
-    s.renewalEnded = false;
+    // s.state = State::Held;
+    // s.renewing = false;
+    // s.renewalEnded = false;
     if (auto* e = m_session.engine()) {
         const auto t = m_session.now();
         if (!s.offer.isEmpty())
             (void)(s.anon ? e->paidAnonSetOffer(t, s.scope, spanOf(s.offer)) : e->paidSetOffer(t, s.scope, spanOf(s.offer)));
+        // setPassOnEngine(s);
+        // (void)e->paidWantKeys(t, s.scope);
+    }
+    // startRenewal(s);
+    // every scope of the pass (§5: up to 16), the polled one at least
+    std::vector<ffi::Scope> scopes = p.scopes;
+    if (std::ranges::find(scopes, s.scope) == scopes.end())
+        scopes.push_back(s.scope);
+    bool waits = false;
+    if (auto seed = loadSecret(paidDir(), QFileInfo(holderFile(s)).fileName()); seed && s.holder) {
+        const Secret seedS(*seed);
+        wipe(std::span<std::uint8_t>{*seed});
+        waits = spreadPass(s, pass, p.until, scopes, *s.holder, seedS.expose());
+    } else {
+        waits = takePass(s, pass, p.until, scopes);
+    }
+    if (waits && s.state == State::Buying)
+        s.state = State::NoPass;   // the purchase is done; the pass waits (ScopesWarn)
+    logEd3k(QStringLiteral("ed3k: paid scope %1: a pass until %2%3").arg(hexOf(s.scope)).arg(p.until).arg(waits ? QStringLiteral(" (waits for the user: several scopes)") : QString()));
+    save();
+    if (waits)
+        emit scopesWarning(hexOf(s.scope), s.title, int(scopes.size()) - 1);
+    else
+        emit passArrived(hexOf(s.scope), s.title, p.until);
+    markChanged();
+}
+
+bool Ed3kPaid::spreadPass(Sub& first, const QByteArray& pass, std::uint64_t until, const std::vector<ffi::Scope>& scopes,
+                          const ffi::Key32& holder, const ffi::Key32& seed)
+{
+    bool waits = false;
+    for (const ffi::Scope& sc : scopes) {
+        const bool isFirst = sc == first.scope;
+        // std::map: the references stay valid while others are added
+        auto [it, inserted] = m_subs.try_emplace(sc);
+        Sub& t = it->second;
+        if (inserted) {
+            // another scope of the pass, not followed yet: it waits for its publisher (follow)
+            t.scope = sc;
+            t.known = false;
+            t.followed = false;
+        }
+        // a pass or purchase of its own under another holder key stays
+        if (!isFirst && t.holder && *t.holder != holder && ((!t.pass.isEmpty() && t.until >= until) || t.state == State::Buying))
+            continue;
+        if (t.holder != holder) {
+            QDir().mkpath(paidDir());
+            // the same key as a bought one: a Secret file, owner-only (§5.1 "like a password")
+            if (!replaceSecret(paidDir(), QFileInfo(holderFile(t)).fileName(), seed)) {
+                logEd3kWarning(QStringLiteral("ed3k: paid scope %1: the holder key was not stored").arg(hexOf(sc)));
+                continue;
+            }
+            t.holder = holder;
+        }
+        if (takePass(t, pass, until, scopes))
+            waits = true;
+    }
+    return waits;
+}
+
+bool Ed3kPaid::takePass(Sub& s, const QByteArray& pass, std::uint64_t until, const std::vector<ffi::Scope>& scopes)
+{
+    // §5.1 SHOULD, ruling #10: a pass of several scopes shows them all; the user is told first
+    const bool known = std::ranges::all_of(scopes, [&s](const ffi::Scope& sc) { return s.scopesOk.contains(hexOf(sc)); });
+    if (scopes.size() > 1 && !known) {
+        if (s.waitingPass != pass) {
+            s.waitingPass = pass;
+            s.waitingUntil = until;
+            s.scopesDeclined = false;
+        }
+        return true;
+    }
+    s.waitingPass.clear();
+    s.waitingUntil = 0;
+    s.scopesDeclined = false;
+    usePass(s, pass, until);
+    return false;
+}
+
+void Ed3kPaid::usePass(Sub& s, const QByteArray& pass, std::uint64_t until)
+{
+    s.pass = pass;
+    s.until = until;
+    s.state = State::Held;
+    s.renewing = false;
+    s.renewalEnded = false;
+    if (auto* e = m_session.engine(); e && s.onEngine) {
         setPassOnEngine(s);
-        (void)e->paidWantKeys(t, s.scope);
+        if (s.kind != Kind::Channel)
+            (void)e->paidWantKeys(m_session.now(), s.scope);
     }
     startRenewal(s);
-    logEd3k(QStringLiteral("ed3k: paid scope %1: a pass until %2").arg(hexOf(s.scope)).arg(p.until));
-    save();
-    emit passArrived(hexOf(s.scope), s.title, p.until);
-    markChanged();
 }
 
 QString Ed3kPaid::payLinkOf(const Sub& s) const
@@ -624,7 +878,10 @@ Ed3kPaid::Info Ed3kPaid::infoOf(const Sub& s) const
     i.title = s.title;
     i.anon = s.anon;
     i.offer = Ed3kPaidOffer::parse(s.offer);
-    i.state = s.anonWait ? State::AnonWarning : s.state;
+    // i.state = s.anonWait ? State::AnonWarning : s.state;
+    i.state = s.anonWait ? State::AnonWarning : !s.waitingPass.isEmpty() ? State::ScopesWarn : s.state;
+    i.passScopes = int(scopesOfPass(s.waitingPass.isEmpty() ? s.pass : s.waitingPass).size());
+    i.scopesDeclined = s.scopesDeclined;
     i.until = s.until;
     i.renewing = s.renewing;
     i.renewalEnded = s.renewalEnded;
@@ -679,8 +936,16 @@ void Ed3kPaid::load()
         s.began = o.value(QStringLiteral("began")).toString().toULongLong();
         s.state = State(std::clamp(o.value(QStringLiteral("state")).toInt(), 0, 4));
         s.renewalEnded = o.value(QStringLiteral("renewalEnded")).toBool();
+        s.known = o.value(QStringLiteral("known")).toBool(true);
+        s.waitingPass = QByteArray::fromBase64(o.value(QStringLiteral("waitingPass")).toString().toLatin1());
+        s.waitingUntil = o.value(QStringLiteral("waitingUntil")).toString().toULongLong();
+        s.scopesDeclined = o.value(QStringLiteral("scopesDeclined")).toBool();
+        for (const QJsonValue& x : o.value(QStringLiteral("scopesOk")).toArray())
+            s.scopesOk << x.toString();
         m_subs.emplace(s.scope, std::move(s));
     }
+    for (const QJsonValue& v : root.value(QStringLiteral("vouchers")).toArray())
+        m_vouchers.insert(v.toString());
 }
 
 void Ed3kPaid::save() const
@@ -701,9 +966,20 @@ void Ed3kPaid::save() const
             {QStringLiteral("began"), QString::number(s.began)},
             {QStringLiteral("state"), int(s.state)},
             {QStringLiteral("renewalEnded"), s.renewalEnded},
+            {QStringLiteral("known"), s.known},
+            {QStringLiteral("waitingPass"), QString::fromLatin1(s.waitingPass.toBase64())},
+            {QStringLiteral("waitingUntil"), QString::number(s.waitingUntil)},
+            {QStringLiteral("scopesDeclined"), s.scopesDeclined},
+            {QStringLiteral("scopesOk"), QJsonArray::fromStringList(s.scopesOk)},
         });
-    const QByteArray out = QJsonDocument(QJsonObject{{QStringLiteral("reports"), m_reports}, {QStringLiteral("subs"), subs}})
-                               .toJson(QJsonDocument::Compact);
+    QJsonArray vouchers;
+    for (const QString& h : m_vouchers)
+        vouchers.append(h);
+    // const QByteArray out = QJsonDocument(QJsonObject{{QStringLiteral("reports"), m_reports}, {QStringLiteral("subs"), subs}})
+    //                            .toJson(QJsonDocument::Compact);
+    const QByteArray out =
+        QJsonDocument(QJsonObject{{QStringLiteral("reports"), m_reports}, {QStringLiteral("subs"), subs}, {QStringLiteral("vouchers"), vouchers}})
+            .toJson(QJsonDocument::Compact);
     QDir().mkpath(stateDir(m_configDir));
     // a pass is no credential without its holder key (a file of its own); owner-only all the same
     if (!writeBlob(statePath(), spanOf(out)))

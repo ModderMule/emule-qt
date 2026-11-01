@@ -23,7 +23,7 @@
 
 #include <QCborMap>
 #include <QDeadlineTimer>
-#include <QDialog>
+#include "dialogs/RememberedSizeDialog.h"
 #include <QString>
 
 class QLabel;
@@ -36,7 +36,7 @@ namespace eMule {
 
 class IpcClient;
 
-class UsenetArchiveEntryDialog : public QDialog {
+class UsenetArchiveEntryDialog : public RememberedSizeDialog {
     Q_OBJECT
 
 public:

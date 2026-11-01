@@ -22,10 +22,12 @@ namespace eMule {
 
 class LogTextView;
 
-/// Tabbed log widget with Server Info, Log, Verbose, Leecher, Usenet, Torrent, Hoster, Kad,
-/// ed3k, ed3k Verbose, ed3k Kad and IPC tabs. Captures Qt logging category output from the core layer.
-/// The Leecher tab follows antiLeecher, the Usenet tab usenetEnabled + showUsenetLog, the Torrent
-/// tab btEnabled, the Hoster tab hosterDownloadsOn, the ed3k tabs ed3kEnabled, the IPC tab enableIpcLog.
+/// Tabbed log widget with Server Info, Log, Verbose, Leecher, Usenet, Torrent, Torrent Verbose,
+/// Hoster, Hoster Verbose, Kad, ed3k, ed3k Verbose, ed3k Kad and IPC tabs. Captures Qt logging
+/// category output from the core layer. The Leecher tab follows antiLeecher, the Usenet tab
+/// usenetEnabled + showUsenetLog, the Torrent tab btEnabled, the Hoster tab hosterDownloadsOn, the
+/// ed3k tabs ed3kEnabled, the IPC tab enableIpcLog. A network's Verbose tab also needs its switch
+/// (btVerboseLog, hosterVerboseLog, ed3kVerboseLog); debug lines are dropped while it is hidden.
 class LogWidget : public QWidget {
     Q_OBJECT
 
@@ -79,16 +81,22 @@ public:
     /// Append a message to the Torrent tab (libtorrent alerts).
     void appendTorrent(const QString& msg, const QString& ts = {}, qint64 seqId = 0);
 
-    /// Route one emule.torrent line: to the Torrent tab when shown, else like
-    /// routeUsenet().
+    /// Append a debug line to the Torrent Verbose tab.
+    void appendTorrentVerbose(const QString& msg, const QString& ts = {}, qint64 seqId = 0);
+
+    /// Route one emule.torrent line: debug to Torrent Verbose (or dropped), the rest to the
+    /// Torrent tab when shown, else like routeUsenet().
     void routeTorrent(QtMsgType type, const QString& colored,
                       const QString& ts = {}, qint64 seqId = 0);
 
     /// Append a message to the Hoster tab.
     void appendHoster(const QString& msg, const QString& ts = {}, qint64 seqId = 0);
 
-    /// Route one emule.hoster line: to the Hoster tab when shown, else to
-    /// Log/Verbose by severity.
+    /// Append a debug line to the Hoster Verbose tab.
+    void appendHosterVerbose(const QString& msg, const QString& ts = {}, qint64 seqId = 0);
+
+    /// Route one emule.hoster line: debug to Hoster Verbose (or dropped), the rest to the
+    /// Hoster tab when shown, else to Log/Verbose by severity.
     void routeHoster(QtMsgType type, const QString& colored,
                      const QString& ts = {}, qint64 seqId = 0);
 
@@ -112,17 +120,17 @@ public:
     /// Show or hide the Usenet tab.
     void setUsenetTabVisible(bool visible);
 
-    /// Show or hide the Torrent tab.
-    void setTorrentTabVisible(bool visible);
+    /// Show or hide the Torrent tab; Torrent Verbose needs @p verbose too.
+    void setTorrentTabVisible(bool visible, bool verbose);
 
-    /// Show or hide the Hoster tab.
-    void setHosterTabVisible(bool visible);
+    /// Show or hide the Hoster tab; Hoster Verbose needs @p verbose too.
+    void setHosterTabVisible(bool visible, bool verbose);
 
     /// Show or hide the Leecher tab (follows antiLeecher).
     void setLeecherTabVisible(bool visible);
 
-    /// Show or hide the three ed3k tabs.
-    void setEd3kTabsVisible(bool visible);
+    /// Show or hide the three ed3k tabs; ed3k Verbose needs @p verbose too.
+    void setEd3kTabsVisible(bool visible, bool verbose);
 
     /// Clear all tabs.
     void clearAll();
@@ -134,7 +142,9 @@ public:
     [[nodiscard]] QString kadText() const;
     [[nodiscard]] QString usenetText() const;
     [[nodiscard]] QString torrentText() const;
+    [[nodiscard]] QString torrentVerboseText() const;
     [[nodiscard]] QString hosterText() const;
+    [[nodiscard]] QString hosterVerboseText() const;
     [[nodiscard]] QString ed3kText() const;
     [[nodiscard]] QString ed3kVerboseText() const;
     [[nodiscard]] QString ed3kKadText() const;
@@ -204,7 +214,9 @@ private:
     LogTextView* m_kadBrowser = nullptr;
     LogTextView* m_usenetBrowser = nullptr;
     LogTextView* m_torrentBrowser = nullptr;
+    LogTextView* m_torrentVerboseBrowser = nullptr;
     LogTextView* m_hosterBrowser = nullptr;
+    LogTextView* m_hosterVerboseBrowser = nullptr;
     LogTextView* m_ed3kBrowser = nullptr;
     LogTextView* m_ed3kVerboseBrowser = nullptr;
     LogTextView* m_ed3kKadBrowser = nullptr;
@@ -213,13 +225,20 @@ private:
     int m_usenetTabIndex = -1;
     int m_torrentTabIndex = -1;
     bool m_torrentTabVisible = true;
+    int m_torrentVerboseTabIndex = -1;
+    bool m_torrentVerboseVisible = false;
     int m_hosterTabIndex = -1;
     bool m_hosterTabVisible = true;
+    int m_hosterVerboseTabIndex = -1;
+    bool m_hosterVerboseVisible = false;
     int m_leecherTabIndex = -1;
     bool m_leecherTabVisible = true;
     bool m_usenetTabVisible = true;
-    int m_ed3kTabIndex = -1;   ///< the first of the three
+    int m_ed3kTabIndex = -1;
+    int m_ed3kVerboseTabIndex = -1;
+    int m_ed3kKadTabIndex = -1;
     bool m_ed3kTabsVisible = true;
+    bool m_ed3kVerboseVisible = false;
 
     /// Tabs with text the user has not looked at yet — the highlighted ones.
     QSet<int> m_unseenTabs;
@@ -231,7 +250,9 @@ private:
     QList<qint64> m_kadSeqIds;
     QList<qint64> m_usenetSeqIds;
     QList<qint64> m_torrentSeqIds;
+    QList<qint64> m_torrentVerboseSeqIds;
     QList<qint64> m_hosterSeqIds;
+    QList<qint64> m_hosterVerboseSeqIds;
     QList<qint64> m_ed3kSeqIds;
     QList<qint64> m_ed3kVerboseSeqIds;
     QList<qint64> m_ed3kKadSeqIds;

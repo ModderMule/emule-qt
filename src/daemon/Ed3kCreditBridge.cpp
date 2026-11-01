@@ -209,6 +209,9 @@ QCborMap statusToCbor()
         {QStringLiteral("configured"), st.configured},
         {QStringLiteral("endpoints"), st.endpoints},
         {QStringLiteral("address"), st.address},
+        // batch 14, §9.1: the anonymous credit address (used only under the anonymous key)
+        {QStringLiteral("anonAddress"), st.anonAddress},
+        {QStringLiteral("anonSet"), st.anonSet},
         {QStringLiteral("problem"), st.problem},
         {QStringLiteral("balance"), st.balance ? i64(*st.balance) : qint64(-1)},
         {QStringLiteral("mature"), st.mature},
@@ -244,6 +247,7 @@ QCborMap stakeToCbor()
                     {QStringLiteral("rate"), st.stakeRate ? hexOf(*st.stakeRate) : QString()},
                     {QStringLiteral("delay"), qint64(std::min<std::uint64_t>(st.stakeDelay, INT64_MAX))},
                     {QStringLiteral("address"), st.address},
+                    {QStringLiteral("anonAddress"), st.anonAddress},   // never a burn's `to` (§9.1)
                     {QStringLiteral("configured"), st.configured}};
 #else
     return {};

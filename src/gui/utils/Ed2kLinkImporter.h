@@ -61,6 +61,9 @@ public:
         /// BitTorrent magnets (btih/btmh, no eD2K hash) handed to the torrent
         /// handler — or silently dropped by an automatic import. Never invalid.
         int torrentLinks = 0;
+        /// ed3k:pass links (batch 14) handed to their handler (manual only). Never invalid:
+        /// a voucher is a credential, the invalid list is logged and shown.
+        int ed3kPassLinks = 0;
     };
 
     /// The link kinds that start no download (MFC CemuleDlg::ProcessED2KLink,
@@ -106,6 +109,10 @@ public:
     using HosterLinkHandler = std::function<void(const QList<QStringList>& files,
                                                  const QString& package, QWidget* parent)>;
     static void setHosterLinkHandler(HosterLinkHandler handler, std::function<bool()> ready);
+    /// ed3k:pass links (subscription.md §9.3) pasted by hand go here; an automatic import (the
+    /// clipboard watcher) drops them: a voucher copied to be handed on must not be used up.
+    using Ed3kPassLinkHandler = std::function<void(const QStringList& links, QWidget* parent)>;
+    static void setEd3kPassLinkHandler(Ed3kPassLinkHandler handler);
     /// Whether hoster links have somewhere to go now.
     [[nodiscard]] static bool hosterReady();
     /// Hand @p files to the Hoster tab, as a package named @p package (empty: none).

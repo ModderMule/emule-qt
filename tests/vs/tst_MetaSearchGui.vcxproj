@@ -179,6 +179,7 @@
     <ClCompile Include="..\tst_MetaSearchGui.cpp" />
     <ClCompile Include="..\..\src\gui\utils\Appearance.cpp" />
     <ClCompile Include="..\..\src\gui\dialogs\WebLinksDialog.cpp" />
+    <ClCompile Include="..\..\src\gui\dialogs\RememberedSizeDialog.cpp" />
     <ClCompile Include="..\..\src\gui\utils\Ed2kLinkImporter.cpp" />
     <ClCompile Include="..\..\src\gui\utils\TorrentLinks.cpp" />
     <ClCompile Include="..\..\src\gui\utils\HttpCacheLinkImporter.cpp" />
@@ -200,6 +201,9 @@
   </ItemGroup>
   <ItemGroup>
     <QtMoc Include="..\..\src\gui\dialogs\WebLinksDialog.h">
+      <QtMocFileName>moc_%(Filename).cpp</QtMocFileName>
+    </QtMoc>
+    <QtMoc Include="..\..\src\gui\dialogs\RememberedSizeDialog.h">
       <QtMocFileName>moc_%(Filename).cpp</QtMocFileName>
     </QtMoc>
     <QtMoc Include="..\..\src\gui\controls\ContentScrollArea.h">

@@ -9,8 +9,13 @@
 /// - A KadFound of another lookup is left alone (the joins' source searches).
 /// - One answer per lookup; a search without one ends after kTimeoutMs.
 /// - The rows and the end go to sinks: the daemon's SearchList by default, tests set their own.
+/// - SearchType::Ed3kLive (live.md §1.2): the same search, only channel files (name ends in
+///   `.ed3klive`, ≤ 64 KiB); each is fetched (setLiveFetch) and kept only with the magic, its
+///   title, kbps, media/codecs and lang in the row; one not fetched in kLiveFetchMs shows what
+///   its name says.
 
 #include "Ed3kFfi.h"
+#include "Ed3kLiveFiles.h"
 
 #include "search/MetaSearchRunner.h"
 
@@ -21,6 +26,7 @@
 #include <functional>
 #include <map>
 #include <memory>
+#include <optional>
 
 #include "search/SearchFile.h"
 
@@ -33,6 +39,8 @@ class Ed3kSearch : public QObject, public MetaSearchRunner {
 
 public:
     static constexpr int kTimeoutMs = 90 * 1000;
+    /// a channel file of an Ed3kLive search fetched within this, else shown from its name
+    static constexpr int kLiveFetchMs = 20 * 1000;
 
     using ResultSink = std::function<void(uint32 searchID, std::unique_ptr<SearchFile> file)>;
     using FinishSink = std::function<void(uint32 searchID, const QString& error)>;
@@ -42,6 +50,10 @@ public:
 
     /// Where rows and ends go; unset: theApp.searchList and its queue.
     void setSinks(ResultSink results, FinishSink finished);
+    /// Ed3kLive rows: fetches a channel file (Ed3kLiveFiles::fetch: empty = not one, nullopt =
+    /// not fetched). Unset: rows from the name alone.
+    using LiveFetch = std::function<void(const ::ed3k::Root& root, std::uint64_t size, Ed3kLiveFiles::Fetched done)>;
+    void setLiveFetch(LiveFetch fetch) { m_liveFetch = std::move(fetch); }
 
     /// Filter lists (filter-list.md §3, Ed3kFilters::judge): Mark shows the row as spam, Hide
     /// keeps it hidden (only when the user set the list to hide; the GUI shows it on request).
@@ -67,6 +79,11 @@ public:
     [[nodiscard]] static std::unique_ptr<SearchFile> toSearchFile(const ::ed3k::FoundFile& found);
     /// The search's filters as the engine takes them.
     [[nodiscard]] static ::ed3k::Filter filterOf(const SearchParams& params);
+    /// A found file that may be a channel file (Ed3kLive): name and size (§1.2).
+    [[nodiscard]] static bool isChannelFile(const ::ed3k::FoundFile& found);
+    /// A channel row: title (from @p info or the name), kbps as bitrate, media, codecs and
+    /// lang as the codec.
+    static void applyChannel(SearchFile& file, const Ed3kLiveChannelInfo* info);
 
     // -- MetaSearchRunner --
 
@@ -81,6 +98,9 @@ private:
     struct Run {
         std::uint64_t lookup = 0;
         std::unique_ptr<QTimer> timeout;
+        bool live = false;       ///< Ed3kLive: channel files only
+        int fetching = 0;        ///< channel files still fetched
+        bool answered = false;   ///< the lookup's KadFound came
     };
 
     void onEventPolled(const ::ed3k::Event& event, bool* handled);
@@ -88,6 +108,10 @@ private:
     /// Reported after the call returns (the queue is still sending the search).
     void finishLater(uint32 searchID, const QString& error);
     void addResult(uint32 searchID, std::unique_ptr<SearchFile> file);
+    /// The KadFound of an Ed3kLive search: channel files fetched, rows when they are there.
+    void onLiveFound(uint32 searchID, Run& run, const ::ed3k::event::KadFound& found);
+    /// An Ed3kLive row's channel file arrived (or not).
+    void onChannelFile(uint32 searchID, std::unique_ptr<SearchFile> row, const std::optional<QByteArray>& file);
 
     Ed3kSession& m_session;
     std::map<uint32, Run> m_runs;
@@ -95,6 +119,7 @@ private:
     ResultSink m_results;
     FinishSink m_finished;
     Judge m_judge;
+    LiveFetch m_liveFetch;
 };
 
 } // namespace eMule::ed3k

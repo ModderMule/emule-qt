@@ -49,7 +49,7 @@ enum Column { ColName = 0, ColSize, ColStatus, ColCount };
 
 UsenetArchiveEntryDialog::UsenetArchiveEntryDialog(IpcClient* ipc, QString itemId, int fileIndex,
                                                    QWidget* parent)
-    : QDialog(parent)
+    : RememberedSizeDialog(parent)
     , m_ipc(ipc)
     , m_itemId(std::move(itemId))
     , m_fileIndex(fileIndex)

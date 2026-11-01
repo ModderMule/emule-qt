@@ -34,8 +34,11 @@
 ///
 /// was: ToDo: paid sets (`paid=1`) need a pass (subscription.md), out of scope; followed like a
 /// hidden set, nothing opens without the pass. (done: Ed3kPaid)
-/// ToDo: the sealed members of a paid catalogue (§8.1 `epoch`) are downloaded sealed; they are
-/// not opened with the epoch key yet.
+/// was: ToDo: the sealed members of a paid catalogue (§8.1 `epoch`) are downloaded sealed; they are
+/// not opened with the epoch key yet. (done: downloaded sealed into <set>/.sealed/<wire name>,
+/// kept and shared there; opened into the member's path with Engine::paidMemberKey and
+/// ed3k_sealed_read_at (Ed3kSealedOpener); no key yet: paidWantKeys, again on the keys. A
+/// hidden set's `sealed` members (hidden-set.md §4.2) the same with k_data of its link)
 /// was: ToDo: a hidden set's version held is not handed in after a restart (the core wants the
 /// sealed manifest, SetManifest gives the plain one): the newest is fetched again, members
 /// already there are not downloaded again. (done: the plain file with the sealed root is
@@ -53,7 +56,9 @@
 #include <cstdint>
 #include <expected>
 #include <map>
+#include <memory>
 #include <optional>
+#include <set>
 #include <vector>
 
 namespace eMule::ed3k {
@@ -61,6 +66,7 @@ namespace eMule::ed3k {
 class Ed3kSession;
 class Ed3kDownloads;
 class Ed3kPaid;
+class Ed3kSealedOpener;
 
 class Ed3kSets : public QObject {
     Q_OBJECT
@@ -68,7 +74,8 @@ class Ed3kSets : public QObject {
 public:
     enum class Policy : int { Ask = 0, Download = 1 };
     /// What a member of the shown version is here.
-    enum class MemberState : int { Skipped = 0, Waiting = 1, Downloading = 2, Complete = 3, Failed = 4, Paused = 5 };
+    /// Locked: a sealed member downloaded, waiting for the key to open it (subscription.md §8.1)
+    enum class MemberState : int { Skipped = 0, Waiting = 1, Downloading = 2, Complete = 3, Failed = 4, Paused = 5, Locked = 6 };
 
     struct Member {
         QString path;             ///< in the set, "/" between components
@@ -195,6 +202,13 @@ private:
     [[nodiscard]] std::optional<::ed3k::Scope> paidScopeOf(const Set& s) const;
     /// tells Ed3kPaid of a paid set (its scope and offer)
     void followPaid(const Set& s);
+    /// The sealed members of the applied version that are here sealed and not plain: opened,
+    /// or the keys asked for (subscription.md §8.1, hidden-set.md §4.2).
+    void openSealed(Set& s);
+    /// false: not now (no key yet: asked for; opened already)
+    bool openMember(Set& s, const Ed3kSetEntry& m, const QString& sealedPath, const QString& local);
+    /// <set dir>/.sealed/<wire name> (hidden-set.md §4.3); empty: none
+    [[nodiscard]] QString sealedPathOf(const Set& s, const Ed3kSetEntry& m) const;
     void attach();
     bool followOnEngine(Set& s);
     Set* setOfTopic(const ::ed3k::Topic& topic, QString* mountPath = nullptr);
@@ -237,6 +251,9 @@ private:
     bool m_attached = false;
     bool m_changePending = false;
     Ed3kPaid* m_paid = nullptr;
+    std::unique_ptr<Ed3kSealedOpener> m_opener;
+    /// paid scopes whose keys were asked for since the last keys came
+    std::set<::ed3k::Scope> m_keysAsked;
 };
 
 } // namespace eMule::ed3k

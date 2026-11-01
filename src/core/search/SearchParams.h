@@ -46,7 +46,16 @@ enum class SearchType : uint8 {
     /// ed3k keyword search (packmule, Protocol.md §10.3), answered by the daemon's ed3k
     /// node (Ed3kSearch) through the Meta search runner (MetaSearchService forwards it).
     Ed3k        = 9,
+    /// ed3k live channels (live.md §1.2): the ed3k keyword search filtered to channel files
+    /// (`.ed3klive`), on the same path as Ed3k; a row is watched, not downloaded.
+    Ed3kLive    = 10,
 };
+
+/// A search the daemon's ed3k node answers (Ed3kSearch through MetaSearchService).
+[[nodiscard]] constexpr bool isEd3kSearchType(SearchType type)
+{
+    return type == SearchType::Ed3k || type == SearchType::Ed3kLive;
+}
 
 /// A search an eD2K server's Meta API answers.
 [[nodiscard]] constexpr bool isMetaSearchType(SearchType type)
@@ -134,6 +143,8 @@ struct SearchParams {
     // Flags
     bool clientSharedFiles = false;
     bool matchKeywords = false;
+    /// Core's own search (download size lookup): never shown in the GUI. Not persisted.
+    bool internal = false;
 };
 
 } // namespace eMule

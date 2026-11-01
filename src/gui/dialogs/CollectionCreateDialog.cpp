@@ -37,7 +37,7 @@ namespace eMule {
 CollectionCreateDialog::CollectionCreateDialog(IpcClient* ipc,
                                                const QStringList& selectedHashes,
                                                QWidget* parent)
-    : QDialog(parent)
+    : RememberedSizeDialog(parent)
     , m_ipc(ipc)
     , m_preselectedHashes(selectedHashes)
 {

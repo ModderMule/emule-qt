@@ -103,6 +103,9 @@
     <ClCompile Include="dialogs\DetailDialog.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
+    <ClCompile Include="dialogs\RememberedSizeDialog.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
     <ClCompile Include="dialogs\FileDetailDialog.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
@@ -136,7 +139,13 @@
     <ClCompile Include="app\KnownCores.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
+    <ClCompile Include="app\Ed3kLiveWatch.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
     <ClCompile Include="app\Ed3kNameOpener.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="app\CoreAttachment.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
     <ClCompile Include="app\CoreStartWatch.cpp">
@@ -278,6 +287,12 @@
       <Filter>Source Files</Filter>
     </ClCompile>
     <ClCompile Include="dialogs\Ed3kFilterPage.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="dialogs\Ed3kSellDialogs.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="dialogs\Ed3kSellPage.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
     <ClCompile Include="dialogs\Ed3kStakeGroup.cpp">
@@ -534,6 +549,9 @@
     <ClInclude Include="utils\IpcFeedback.h">
       <Filter>Header Files</Filter>
     </ClInclude>
+    <ClInclude Include="app\Ed3kLiveWatch.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
     <ClInclude Include="utils\AsyncMessageBox.h">
       <Filter>Header Files</Filter>
     </ClInclude>
@@ -633,6 +651,9 @@
     <QtMoc Include="dialogs\DetailDialog.h">
       <Filter>Header Files</Filter>
     </QtMoc>
+    <QtMoc Include="dialogs\RememberedSizeDialog.h">
+      <Filter>Header Files</Filter>
+    </QtMoc>
     <QtMoc Include="dialogs\FileDetailDialog.h">
       <Filter>Header Files</Filter>
     </QtMoc>
@@ -655,6 +676,9 @@
       <Filter>Header Files</Filter>
     </QtMoc>
     <QtMoc Include="app\Ed3kNameOpener.h">
+      <Filter>Header Files</Filter>
+    </QtMoc>
+    <QtMoc Include="app\CoreAttachment.h">
       <Filter>Header Files</Filter>
     </QtMoc>
     <QtMoc Include="app\CoreStartWatch.h">
@@ -715,6 +739,12 @@
       <Filter>Header Files</Filter>
     </QtMoc>
     <QtMoc Include="dialogs\Ed3kFilterPage.h">
+      <Filter>Header Files</Filter>
+    </QtMoc>
+    <QtMoc Include="dialogs\Ed3kSellDialogs.h">
+      <Filter>Header Files</Filter>
+    </QtMoc>
+    <QtMoc Include="dialogs\Ed3kSellPage.h">
       <Filter>Header Files</Filter>
     </QtMoc>
     <QtMoc Include="dialogs\Ed3kStakeGroup.h">

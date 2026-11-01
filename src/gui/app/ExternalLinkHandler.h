@@ -91,6 +91,8 @@ private:
     void watchEd3kLive(const QString& link);
     /// PushEd3kSetVersion: a new version of a set with policy ask waits for the user.
     void tellEd3kSetVersion(const Ipc::IpcMessage& msg);
+    /// PushEd3kPaidScopesWarn: a bought pass covers more subscriptions (subscription.md §5.1).
+    void askEd3kPassScopes(const Ipc::IpcMessage& msg);
     void openFileNow(const QString& path);
     void flushPending();
     /// Whether there is both a window to show something on and a daemon to ask.

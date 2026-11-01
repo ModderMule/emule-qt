@@ -45,7 +45,7 @@ namespace {
 } // namespace
 
 SimpleCleanupDialog::SimpleCleanupDialog(const SimpleCleanupOptions& opt, QWidget* parent)
-    : QDialog(parent)
+    : RememberedSizeDialog(parent)
 {
     setWindowTitle(tr("Simple cleanup"));
     auto* root = new QVBoxLayout(this);

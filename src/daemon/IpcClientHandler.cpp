@@ -260,6 +260,9 @@ void IpcClientHandler::sendMessage(const IpcMessage& msg)
 
 void IpcClientHandler::sendPush(const IpcMessage& msg)
 {
+    // Row updates of a list the client is not showing: it refetches on show
+    if (const int group = pushGroupOf(msg.type()); group && !(m_subscriptionMask & group))
+        return;
     m_connection->sendPush(msg);
 }
 
@@ -2286,10 +2289,8 @@ IpcClientHandler::PrefApplyOutcome IpcClientHandler::applyPreferenceChanges(cons
 
 void IpcClientHandler::handleSubscribe(const IpcMessage& msg)
 {
-    // ToDo: honour the mask. It is recorded but never read — IpcServer::broadcast
-    // sends every push to every handshaked client regardless of what was requested.
-    // It reads like a working filter and is not, so a client that subscribes
-    // narrowly still pays for everything.
+    // PushGroup bits, applied in sendPush(). The GUI narrows it to the lists on
+    // screen — none while it sits in the tray.
     m_subscriptionMask = static_cast<int>(msg.fieldInt(0));
     sendMessage(IpcMessage::makeResult(msg.seqId(), true));
 }
@@ -4177,6 +4178,19 @@ bool IpcClientHandler::applyPreferenceB(const QString& key, const QCborValue& va
     }
     else if (key == QStringLiteral("serverVerboseLog")) {
         thePrefs.setServerVerboseLog(val.toBool());
+        DaemonApp::applyLogFilterRules();
+    }
+    else if (key == QStringLiteral("btVerboseLog")) {
+        thePrefs.setBtVerboseLog(val.toBool());
+        DaemonApp::applyLogFilterRules();
+    }
+    else if (key == QStringLiteral("hosterVerboseLog")) {
+        thePrefs.setHosterVerboseLog(val.toBool());
+        DaemonApp::applyLogFilterRules();
+    }
+    else if (key == QStringLiteral("ed3kVerboseLog")) {
+        // the node's own level follows on its next tick (Ed3kSession::applyLogLevel)
+        thePrefs.setEd3kVerboseLog(val.toBool());
         DaemonApp::applyLogFilterRules();
     }
     else if (key == QStringLiteral("logPublicIP"))

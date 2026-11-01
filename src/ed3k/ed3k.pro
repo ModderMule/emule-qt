@@ -39,13 +39,17 @@ SOURCES += \
     Ed3kFriends.cpp \
     Ed3kRooms.cpp \
     Ed3kSets.cpp \
+    Ed3kSealedOpener.cpp \
     Ed3kSetManifest.cpp \
     Ed3kLive.cpp \
     Ed3kLiveBroadcast.cpp \
+    Ed3kLiveFiles.cpp \
     Ed3kPaid.cpp \
+    Ed3kPaidSeller.cpp \
     Ed3kHosterJoin.cpp \
     Ed3kHttp.cpp \
     Ed3kJoinBase.cpp \
+    Ed3kKeyFile.cpp \
     Ed3kLan.cpp \
     Ed3kNames.cpp \
     Ed3kPlumbing.cpp \
@@ -69,14 +73,18 @@ HEADERS += \
     Ed3kFriends.h \
     Ed3kRooms.h \
     Ed3kSets.h \
+    Ed3kSealedOpener.h \
     Ed3kSetManifest.h \
     Ed3kLive.h \
     Ed3kLiveBroadcast.h \
+    Ed3kLiveFiles.h \
     Ed3kPaid.h \
+    Ed3kPaidSeller.h \
     Ed3kProto.h \
     Ed3kHosterJoin.h \
     Ed3kHttp.h \
     Ed3kJoinBase.h \
+    Ed3kKeyFile.h \
     Ed3kLan.h \
     Ed3kNames.h \
     Ed3kPlumbing.h \

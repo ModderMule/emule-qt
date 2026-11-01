@@ -57,6 +57,7 @@ class StatsHistory;
 class Scheduler;
 class LastCommonRouteFinder;
 class PartFileWriteThread;
+class PartFileSizeLookup;
 class PartFile;
 class UpDownClient;
 class PortMapper;
@@ -104,6 +105,9 @@ struct AppContext {
     /// Download writes and part hashing off the main thread. Null: PartFile does
     /// both inline (unit tests).
     PartFileWriteThread* partFileWriter = nullptr;
+    /// Looks up the real size of downloads whose hashset proves theirs wrong. Null in
+    /// unit tests: such a file just stays held.
+    PartFileSizeLookup* partFileSizeLookup = nullptr;
     /// LowID<->LowID rendezvous (net/natt). Null in most unit tests.
     natt::NatRendezvous* natRendezvous = nullptr;
 

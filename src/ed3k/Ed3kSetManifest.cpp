@@ -117,10 +117,14 @@ std::optional<RawMember> parseMember(QByteArrayView data)
             } else {
                 m.entry.mount = true;
             }
-        } else if (wire == 0 && (field == 2 || field == 4 || field == 6 || field == 7 || field == 8)) {
+        } else if (wire == 0 && (field == 2 || field == 4 || field == 6 || field == 7 || field == 8 || field == 9 || field == 12)) {
             if (!r.varint(v))
                 return std::nullopt;
-            if (field == 2)
+            if (field == 9)
+                m.entry.sealed = v != 0;   // hidden-set.md §4.2
+            else if (field == 12)
+                m.entry.epoch = v;         // subscription.md §8.1
+            else if (field == 2)
                 m.entry.size = v;
             else if (field == 4)
                 m.dir = std::uint32_t(v);

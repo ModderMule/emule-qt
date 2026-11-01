@@ -1,8 +1,8 @@
 #pragma once
 
 /// @file Ed3kPaidBridge.h
-/// @brief ed3k paid subscriptions over IPC (requests 1035-1038, pushes 1064-1066), for
-/// Ed3kBridge. Free of the ed3k module like Ed3kBridge.h: without it the list is empty and
+/// @brief ed3k paid subscriptions over IPC (requests 1035-1038, 1028-1029, pushes 1064-1066,
+/// 1057), for Ed3kBridge. Free of the ed3k module like Ed3kBridge.h: without it the list is empty and
 /// every other request answers [false, {error}].
 
 #include "IpcMessage.h"
@@ -22,7 +22,7 @@ namespace Ed3kPaidBridge {
 /// Set by DaemonApp, null when absent.
 void setPaid(ed3k::Ed3kPaid* paid);
 
-/// Whether an opcode is one of 1035-1038.
+/// Whether an opcode is one of 1035-1038, 1028-1029.
 [[nodiscard]] bool isPaidRequest(Ipc::IpcMsgType type);
 
 /// Answers a paid request through `reply`. False: not one of them.

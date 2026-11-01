@@ -5,10 +5,12 @@
 
 #include "Ed3kPlumbing.h"
 #include "Ed3kSession.h"
+#include "Ed3kSets.h"
 #include "Ed3kStore.h"
 
 #include "utils/Log.h"
 
+#include <QDateTime>
 #include <QDir>
 #include <QDnsLookup>
 #include <QTimer>
@@ -69,6 +71,10 @@ Ed3kNames::Ed3kNames(Ed3kSession& session, const QString& configDir, QObject* pa
     // the base takes blocks and streams; the names events are taken here
     connect(&m_session, &Ed3kSession::eventPolled, this, &Ed3kNames::onNameEvent, Qt::DirectConnection);
     m_cache = std::make_unique<Ed3kSiteCache>(joinDir(kSiteCacheDir), kSiteDiskMax);
+    m_cache->setKeep([this] { return userKeep(); });
+    // §6.1: sites neither shown nor held are unfollowed
+    m_siteTimer.setInterval(int(std::clamp<qint64>(m_siteShownMs / 2, 100, 60'000)));
+    connect(&m_siteTimer, &QTimer::timeout, this, &Ed3kNames::expireSites);
     loadLocal();
     if (m_session.isRunning())
         start();
@@ -82,15 +88,20 @@ void Ed3kNames::start()
         return;
     beginStart();
     m_dnsGen = std::make_shared<int>(0);
+    m_siteTimer.start();
 }
 
 void Ed3kNames::stop()
 {
     if (!m_started)
         return;
+    m_siteTimer.stop();
+    // a set the user follows stays followed (Ed3kSets has the same topic)
+    const Ed3kSiteCache::Keep user = userKeep();
     if (auto* e = m_session.engine())
         for (const auto& [topic, key] : m_siteTopics)
-            (void)e->setUnfollow(topic);
+            if (!user.sites.contains(key))
+                (void)e->setUnfollow(topic);
     closeAll();
     m_dnsGen.reset();   // late DNS answers of this run are dropped
     m_resolved.clear();
@@ -374,6 +385,7 @@ bool Ed3kNames::followSite(const ffi::Key32& key, const QByteArray& id)
     Site& s = m_sites[k];
     s.key = key;
     s.id = id;
+    s.shownAt = QDateTime::currentMSecsSinceEpoch();   // §6.1: followed while shown or held
     if (s.topic)
         return true;
     // was: nothing held is named: the manifests live in memory for this run (ToDo §6.4 in keepMember)
@@ -397,6 +409,43 @@ bool Ed3kNames::followSite(const ffi::Key32& key, const QByteArray& id)
     m_siteTopics[*topic] = k;
     pumpSession();
     return true;
+}
+
+void Ed3kNames::siteShown(const ffi::Key32& key, const QByteArray& id)
+{
+    if (const auto it = m_sites.find(siteKey(key, id)); it != m_sites.end())
+        it->second.shownAt = QDateTime::currentMSecsSinceEpoch();
+}
+
+void Ed3kNames::setSiteShownMs(qint64 ms)
+{
+    m_siteShownMs = std::max<qint64>(ms, 1);
+    m_siteTimer.setInterval(int(std::clamp<qint64>(m_siteShownMs / 2, 100, 60'000)));
+}
+
+void Ed3kNames::expireSites()
+{
+    auto* e = m_session.engine();
+    if (!e || !m_started)
+        return;
+    const qint64 now = QDateTime::currentMSecsSinceEpoch();
+    const Ed3kSiteCache::Keep user = userKeep();
+    for (auto& [k, s] : m_sites) {
+        // §6.1: followed while shown or held; a set the user follows is Ed3kSets' (§6.4)
+        if (!s.topic || now - s.shownAt < m_siteShownMs || m_cache->hasManifest(k) || user.sites.contains(k))
+            continue;
+        (void)e->setUnfollow(*s.topic);
+        m_siteTopics.erase(*s.topic);
+        s.topic.reset();
+        s.manifest.clear();   // neither followed nor held: fetched again when shown again
+        logEd3kDebug(QStringLiteral("ed3k: website set no longer shown nor held, unfollowed"));
+    }
+    pumpSession();
+}
+
+void Ed3kNames::keepUserSets(Ed3kSets* sets)
+{
+    m_userSets = sets;
 }
 
 void Ed3kNames::setSiteManifest(const ffi::Key32& key, const QByteArray& id, const QByteArray& manifest)
@@ -581,6 +630,14 @@ void Ed3kNames::onNameEvent(const ffi::Event& ev, bool* handled)
             *handled = true;
             logEd3kDebug(QStringLiteral("ed3k: a website manifest was refused (%1)").arg(int(sr->why)));
         }
+    } else if (const auto* b = std::get_if<e::Block>(&ev)) {
+        // not handled: the base took it before (its handler runs first); a member of a site
+        // being fetched streams from here (§6.3, batch 13 #12)
+        if (const Download* d = downloadOf(b->root); d && d->inMemory && d->owner == kSiteOwner)
+            emit siteMemberBlock(toBytes(b->root.bytes));
+    } else if (const auto* bf = std::get_if<e::BlockFailed>(&ev)) {
+        if (const Download* d = downloadOf(bf->root); d && d->inMemory && d->owner == kSiteOwner)
+            emit siteMemberBad(toBytes(bf->root.bytes));
     } else if (const auto* sc = std::get_if<e::StateChanged>(&ev); sc && sc->slot == ffi::State::Names) {
         emit namesChanged();   // the session saves the slot
     }
@@ -681,6 +738,23 @@ void Ed3kNames::keepMember(const ffi::Root& root, const QByteArray& data, bool f
 QString Ed3kNames::siteKey(const ffi::Key32& key, const QByteArray& id)
 {
     return QString::fromLatin1(toBytes(key).toHex()) + QLatin1Char('.') + QString::fromLatin1(id.toHex());
+}
+
+Ed3kSiteCache::Keep Ed3kNames::userKeep() const
+{
+    Ed3kSiteCache::Keep keep;
+    if (!m_userSets)
+        return keep;
+    // a hidden set has no link here (a credential) and is no website (parseSetLink)
+    for (const Ed3kSets::Info& info : m_userSets->list()) {
+        const auto ref = parseSetLink(info.link);
+        if (!ref)
+            continue;
+        keep.sites.insert(siteKey(ref->key, ref->id));
+        for (const Ed3kSets::Member& m : info.members)
+            keep.members.insert(m.root);
+    }
+    return keep;
 }
 
 void Ed3kNames::loadLocal()

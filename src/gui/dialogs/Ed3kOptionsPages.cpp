@@ -7,6 +7,7 @@
 #include "app/Ed3kNameOpener.h"
 #include "app/IpcClient.h"
 #include "dialogs/Ed3kFilterPage.h"
+#include "dialogs/Ed3kSellPage.h"
 #include "dialogs/Ed3kStakeGroup.h"
 #include "dialogs/PortTest.h"
 #include "dialogs/RouterPage.h"
@@ -150,6 +151,7 @@ Ed3kOptionsPages::Ed3kOptionsPages(IpcClient* ipc, QWidget* parent)
     m_autoCredits = buildAutoCredits(parent);
     m_names = buildNames(parent);
     m_filters = new Ed3kFilterPage(ipc, parent);   // acts at once over IPC (filter-list.md)
+    m_selling = new Ed3kSellPage(ipc, parent);     // acts at once over IPC (subscription.md, batch 14)
     m_hoster = buildHoster(parent);
     if (m_ipc) {
         connect(m_ipc, &IpcClient::hosterAccountChecked, this, [this](const IpcMessage& msg) {
@@ -379,6 +381,11 @@ bool Ed3kOptionsPages::validate()
 QWidget* Ed3kOptionsPages::filtersPage() const
 {
     return m_filters;
+}
+
+QWidget* Ed3kOptionsPages::sellingPage() const
+{
+    return m_selling;
 }
 
 QWidget* Ed3kOptionsPages::buildGeneral(QWidget* parent)
@@ -806,8 +813,13 @@ void Ed3kOptionsPages::applyStatus(const QCborMap& st)
     m_creditStatus = c;
     updateAutoCredits();
     const QString address = c.value(QStringLiteral("address")).toString();
-    m_addressLabel->setText(address.isEmpty() ? tr("No credit key yet: one is made when credits are switched on.")
-                                              : tr("Credit address: %1").arg(address));
+    // m_addressLabel->setText(address.isEmpty() ? tr("No credit key yet: ...") : tr("Credit address: %1").arg(address));
+    QString addressText = address.isEmpty() ? tr("No credit key yet: one is made when credits are switched on.")
+                                            : tr("Credit address: %1").arg(address);
+    // batch 14, credit.md §9.1: the address used only under the anonymous key
+    if (const QString anon = c.value(QStringLiteral("anonAddress")).toString(); !anon.isEmpty())
+        addressText += QLatin1Char('\n') + tr("Anonymous credit address (only while hiding): %1").arg(anon);
+    m_addressLabel->setText(addressText);
     m_exportKeyBtn->setEnabled(keyActionsAllowed() && !address.isEmpty());
 
     if (c.isEmpty() || !c.value(QStringLiteral("enabled")).toBool()) {

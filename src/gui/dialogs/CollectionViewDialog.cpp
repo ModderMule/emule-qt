@@ -36,7 +36,7 @@ namespace eMule {
 CollectionViewDialog::CollectionViewDialog(const Collection& collection,
                                             IpcClient* ipc,
                                             QWidget* parent)
-    : QDialog(parent)
+    : RememberedSizeDialog(parent)
     , m_collection(collection)
     , m_ipc(ipc)
 {

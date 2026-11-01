@@ -5,7 +5,7 @@
 
 #include "utils/MassRename.h"
 
-#include <QDialog>
+#include "dialogs/RememberedSizeDialog.h"
 
 class QCheckBox;
 class QLineEdit;
@@ -16,7 +16,7 @@ namespace eMule {
 
 class IpcClient;
 
-class SimpleCleanupDialog : public QDialog {
+class SimpleCleanupDialog : public RememberedSizeDialog {
     Q_OBJECT
 
 public:

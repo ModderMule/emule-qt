@@ -178,11 +178,25 @@
   <ItemGroup>
     <ClCompile Include="..\tst_Ed3kSetsDialog.cpp" />
     <ClCompile Include="..\..\src\gui\dialogs\Ed3kSetsDialog.cpp" />
+    <ClCompile Include="..\..\src\gui\dialogs\Ed3kSellDialogs.cpp" />
+    <ClCompile Include="..\..\src\gui\dialogs\RememberedSizeDialog.cpp" />
+    <ClCompile Include="..\..\src\gui\app\UiState.cpp" />
+    <ClCompile Include="..\..\src\gui\utils\DialogSizing.cpp" />
+    <ClCompile Include="..\..\src\gui\controls\ContentScrollArea.cpp" />
     <ClCompile Include="..\..\src\gui\app\IpcClient.cpp" />
     <ClCompile Include="..\..\src\gui\app\KnownCores.cpp" />
   </ItemGroup>
   <ItemGroup>
     <QtMoc Include="..\..\src\gui\dialogs\Ed3kSetsDialog.h">
+      <QtMocFileName>moc_%(Filename).cpp</QtMocFileName>
+    </QtMoc>
+    <QtMoc Include="..\..\src\gui\dialogs\Ed3kSellDialogs.h">
+      <QtMocFileName>moc_%(Filename).cpp</QtMocFileName>
+    </QtMoc>
+    <QtMoc Include="..\..\src\gui\dialogs\RememberedSizeDialog.h">
+      <QtMocFileName>moc_%(Filename).cpp</QtMocFileName>
+    </QtMoc>
+    <QtMoc Include="..\..\src\gui\controls\ContentScrollArea.h">
       <QtMocFileName>moc_%(Filename).cpp</QtMocFileName>
     </QtMoc>
     <QtMoc Include="..\..\src\gui\app\IpcClient.h">

@@ -181,6 +181,7 @@
     <ClCompile Include="..\..\src\gui\controls\TorrentFileTree.cpp" />
     <ClCompile Include="..\..\src\gui\controls\UsenetFileCheckList.cpp" />
     <ClCompile Include="..\..\src\gui\dialogs\DetailDialog.cpp" />
+    <ClCompile Include="..\..\src\gui\dialogs\RememberedSizeDialog.cpp" />
     <ClCompile Include="..\..\src\gui\dialogs\ClientDetailDialog.cpp" />
     <ClCompile Include="..\..\src\gui\utils\IpcFeedback.cpp" />
     <ClCompile Include="..\..\src\gui\utils\CountryFlags.cpp" />
@@ -195,6 +196,9 @@
   </ItemGroup>
   <ItemGroup>
     <QtMoc Include="..\..\src\gui\dialogs\MetaResultDetailDialog.h">
+      <QtMocFileName>moc_%(Filename).cpp</QtMocFileName>
+    </QtMoc>
+    <QtMoc Include="..\..\src\gui\dialogs\RememberedSizeDialog.h">
       <QtMocFileName>moc_%(Filename).cpp</QtMocFileName>
     </QtMoc>
     <QtMoc Include="..\..\src\gui\controls\UsenetFileCheckList.h">

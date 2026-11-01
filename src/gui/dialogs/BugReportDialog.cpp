@@ -48,7 +48,7 @@ static constexpr auto kBaseUrl = "https://emule-qt.org";
 static constexpr auto kBugReportWebUrl = "https://emule-qt.org/submit-bug-report/";
 
 BugReportDialog::BugReportDialog(LogWidget* logWidget, QWidget* parent)
-    : QDialog(parent)
+    : RememberedSizeDialog(parent)
     , m_nam(new QNetworkAccessManager(this))
     , m_logWidget(logWidget)
 {

@@ -4,6 +4,8 @@
 /// claim recorded, kept in stake-claims.json, loaded again and read again, claimed; the IPC.
 /// Batch 13: a typed id read first, then claimed; the tx hashes kept; a claim sent before a
 /// restart sent again while unpaid.
+/// Batch 14 (§9.1): the anonymous credit key: made, shown, never a burn's `to`, handed to the
+/// hiding node and replaced with the anonymous key only.
 
 #include "Ed3kBridge.h"
 #include "Ed3kCredit.h"
@@ -185,6 +187,7 @@ private slots:
     void ipcRefusesBadInputAndListsClaims();
     void aTypedIdIsReadThenClaimed();
     void aClaimSentBeforeARestartIsSentAgain();
+    void theAnonymousCreditKeyIsNeverABurnsTo();
 
 private:
     static Ed3kSettings loopback(const QString& dir);
@@ -431,6 +434,68 @@ Ed3kCreditPrefs tst_Ed3kStake::testChain()
     p.contract = kLedger;
     p.quorum = 1;
     return p;
+}
+
+// §9.1 "No burn": no address the node controls names the anonymous credit address as `to`;
+// the key is a secret file like credit.key, given to the node while it hides, and replaced
+// when the anonymous key is (not more often)
+void tst_Ed3kStake::theAnonymousCreditKeyIsNeverABurnsTo()
+{
+    QTemporaryDir dir;
+    QVERIFY(dir.isValid());
+    Ed3kSession s;
+    FakeLedger l(s);
+    Ed3kCredit c(s, dir.path());
+    configure(s, c, l, dir.path());
+    const QString anon = c.status().anonAddress;
+    QVERIFY(Ed3kCredit::parseAddress(anon).has_value());
+    QVERIFY(anon != c.status().address);
+    const QString keyPath = QDir(eMule::ed3k::stateDir(dir.path())).filePath(Ed3kCredit::anonKeyFileName());
+    QFile key(keyPath);
+    QCOMPARE(key.size(), qint64(32));
+#ifdef Q_OS_UNIX
+    QCOMPARE(key.permissions() & (QFileDevice::ReadGroup | QFileDevice::ReadOther | QFileDevice::WriteGroup | QFileDevice::WriteOther),
+             QFileDevice::Permissions{});
+#endif
+    // in the IPC status beside the credit address
+    Ed3kCreditBridge::setCredit(&c);
+    QCOMPARE(Ed3kCreditBridge::statusToCbor().value(QStringLiteral("anonAddress")).toString(), anon);
+
+    QTRY_VERIFY_WITH_TIMEOUT(c.status().stakeRate.has_value(), 10000);
+    const int sent = int(l.methods.count(QStringLiteral("eth_sendRawTransaction")));
+    const auto burn = c.burnForStake(2'000'000, *c.anonAddress());
+    QVERIFY(!burn);
+    QCOMPARE(burn.error(), ::ed3k::Error::Config);
+    // the same over IPC
+    IpcMessage last;
+    IpcMessage toAnon(IpcMsgType::BurnEd3kStake, 7);
+    toAnon.append(qint64(2'000'000));
+    toAnon.append(anon);
+    QVERIFY(Ed3kBridge::handleRequest(toAnon, [&](const IpcMessage& r) { last = r; }));
+    QVERIFY(!last.fieldBool(0));
+    QTest::qWait(300);
+    QCOMPARE(int(l.methods.count(QStringLiteral("eth_sendRawTransaction"))), sent);
+    QVERIFY(c.claims().empty());
+
+    // given to the node only while it hides
+    QCOMPARE(c.applyAnonKey().error(), ::ed3k::Error::State);
+    ::ed3k::Key32 seed{};
+    seed.fill(0x42);
+    QVERIFY(s.engine()->anonStart(s.now(), seed));
+    QVERIFY2(c.applyAnonKey(), "creditAnonKey refused");
+    QVERIFY(c.status().anonSet);
+    QCOMPARE(c.status().anonAddress, anon);   // bound to this anonymous key now
+    QVERIFY(c.applyAnonKey());
+    QCOMPARE(c.status().anonAddress, anon);   // the same anonymous key: not replaced
+    // the core refuses it too while it knows it
+    QVERIFY(!c.burnForStake(2'000'000, *c.anonAddress()));
+    // a new anonymous key: a new anonymous credit address
+    seed.fill(0x43);
+    QVERIFY(s.engine()->anonStart(s.now(), seed));
+    QVERIFY(c.applyAnonKey());
+    QVERIFY(c.status().anonAddress != anon);
+    QVERIFY(Ed3kCredit::parseAddress(c.status().anonAddress).has_value());
+    s.stop();
 }
 
 void tst_Ed3kStake::configure(Ed3kSession& s, Ed3kCredit& c, FakeLedger& l, const QString& dir)

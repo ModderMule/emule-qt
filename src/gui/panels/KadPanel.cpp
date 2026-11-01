@@ -84,6 +84,8 @@ void KadPanel::switchToSubTab(int index)
 void KadPanel::setIpcClient(IpcClient* client)
 {
     m_ipc = client;
+    // row-update pushes only while this list is on screen
+    m_poller->setOnScreenHook(client ? client->pushGroupHold(Ipc::PushGroupKad) : nullptr);
 
     if (m_ipc) {
         connect(m_ipc, &IpcClient::kadSearchesChanged, this, [this]() {

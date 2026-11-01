@@ -4,7 +4,8 @@
 /// @brief Files of the ed3k node under Config/ed3k/: the key file and the state blobs.
 ///
 /// The key file (node.key) is 32 random bytes, created once with owner-only
-/// permissions and never overwritten. State blobs are written atomically.
+/// permissions and never overwritten. State blobs are written atomically. Owner-only is
+/// 0600, or on Windows a protected DACL for the current user (Ed3kKeyFile ownerOnly).
 
 #include <QByteArray>
 #include <QString>

@@ -12,7 +12,7 @@
 /// getters on purpose: the base builds its UI in its own constructor, and a
 /// virtual call from there still dispatches to the base.
 
-#include <QDialog>
+#include "dialogs/RememberedSizeDialog.h"
 #include <QSize>
 #include <QString>
 #include <QStringList>
@@ -26,7 +26,7 @@ class QPushButton;
 
 namespace eMule {
 
-class PasteTextDialog : public QDialog {
+class PasteTextDialog : public RememberedSizeDialog {
     Q_OBJECT
 
 public:

@@ -610,7 +610,8 @@ QString UpDownClient::upSlotDebugInfo() const
     const EMSocket* sock = getFileUploadSocket();
     const QString unacked = sock ? QString::number(sock->sendBacklog()) : QStringLiteral("n/a");
 
-    return QStringLiteral("slot %1 s, payload sent %2 B, in buffer %3 B, unacked %4 B (no ack %12 s), "
+    // Wire = payload + 30 B framing per data packet; it is what the Upload column shows (#110).
+    return QStringLiteral("slot %1 s, payload sent %2 B (wire %13 B), in buffer %3 B, unacked %4 B (no ack %12 s), "
                           "requests asked %5 accepted %6 served %7 pending %8, "
                           "last request %9, last block queued %10, rate %11 B/s")
         .arg(getUpStartTimeDelay() / 1000)
@@ -623,7 +624,8 @@ QString UpDownClient::upSlotDebugInfo() const
         .arg(m_blockRequests.size())
         .arg(age(m_slotLastRequestTick), age(m_slotLastServedTick))
         .arg(m_upDatarate)
-        .arg(m_slotUnackedStuckMs / 1000);
+        .arg(m_slotUnackedStuckMs / 1000)
+        .arg(sessionUp());
 }
 
 void UpDownClient::noteSendBacklog(uint64 curTick)

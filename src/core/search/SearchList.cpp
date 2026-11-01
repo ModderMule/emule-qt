@@ -164,6 +164,7 @@ void SearchList::removeResults(uint32 searchID)
         emit resultAboutToBeRemoved(file.get());
 
     m_fileLists.erase(it);
+    m_internalSearches.remove(searchID);
     m_foundFilesCount.erase(searchID);
     m_foundSourcesCount.erase(searchID);
 }

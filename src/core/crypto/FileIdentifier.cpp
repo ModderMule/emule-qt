@@ -209,6 +209,14 @@ uint16 FileIdentifier::getTheoreticalMD4PartHashCount() const
     return result + static_cast<uint16>(result > 0);
 }
 
+bool FileIdentifier::md4TailContradictsSize() const
+{
+    const auto size = static_cast<uint64>(m_fileSize);
+    if (size == 0 || size % PARTSIZE != 0 || !hasExpectedMD4HashCount() || m_md4HashSet.empty())
+        return false;
+    return m_md4HashSet.back() != kEmptyMD4;
+}
+
 void FileIdentifier::writeHashSetsToPacket(FileDataIO& file, bool md4, bool aich) const
 {
     uint8 byOptions = 0;

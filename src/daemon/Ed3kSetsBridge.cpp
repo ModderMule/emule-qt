@@ -18,7 +18,12 @@
 
 #include <QObject>
 
+#include <algorithm>
 #include <cstring>
+#include <expected>
+#include <functional>
+#include <memory>
+#include <optional>
 #endif
 
 namespace eMule::Ed3kSetsBridge {
@@ -33,6 +38,8 @@ ed3k::Ed3kSets* s_sets = nullptr;
 ed3k::Ed3kLive* s_live = nullptr;
 ed3k::Ed3kSiteServer* s_sites = nullptr;
 ed3k::Ed3kLiveBroadcast* s_broadcast = nullptr;
+/// the pushes' sender (connectPushes): PushEd3kLiveFileWatched (batch 14)
+std::function<void(const IpcMessage&)> s_push;
 #endif
 
 IpcMessage failure(int seqId, const QString& error)
@@ -116,6 +123,8 @@ QCborMap toCbor(const ed3k::Ed3kLive::Info& i)
         {QStringLiteral("viewers"), i.viewers},
         {QStringLiteral("restarts"), qint64(i.restarts)},
         {QStringLiteral("url"), i.url},
+        {QStringLiteral("paidScope"), i.paidScope},   // batch 14: a paid channel (GetEd3kPaid row)
+        {QStringLiteral("error"), i.error},           // batch 14: why not played (state 5)
     };
 }
 
@@ -133,8 +142,21 @@ QCborMap toCbor(const ed3k::Ed3kLiveBroadcast::Info& i)
         {QStringLiteral("link"), i.link},
         {QStringLiteral("folder"), i.folder},
         {QStringLiteral("private"), i.isPrivate},
+        {QStringLiteral("paid"), i.paid},   // sold (Ed3kPaidSeller, batch 14)
         {QStringLiteral("error"), i.error},
+        // batch 14: segments not sent, went on after a cut, the channel file shared
+        {QStringLiteral("skipped"), qint64(i.skipped)},
+        {QStringLiteral("resumed"), i.resumed},
+        {QStringLiteral("channelFile"), i.channelFile},
     };
+}
+
+/// a watch of a channel file: {id, url} or {error}
+QCborMap watchedToCbor(const std::expected<QString, QString>& r)
+{
+    if (!r)
+        return QCborMap{{QStringLiteral("error"), r.error()}};
+    return QCborMap{{QStringLiteral("id"), *r}, {QStringLiteral("url"), s_live ? s_live->urlOf(*r) : QString()}};
 }
 
 ed3k::Ed3kSets::Policy policyOf(qint64 v)
@@ -222,8 +244,59 @@ void answer(const IpcMessage& msg, const std::function<void(const IpcMessage&)>&
         o.isPrivate = msg.fieldBool(2);
         o.playlist = msg.fieldString(3);
         o.codecs = msg.fieldString(4);
+        // batch 14: the channel file's description (§1.2)
+        o.comment = msg.fieldString(5);
+        o.lang = msg.fieldString(6);
+        o.kbps = std::uint32_t(std::clamp<qint64>(msg.fieldInt(7), 0, UINT32_MAX));
         if (auto r = s_broadcast->start(o))
             ok(QCborMap{{QStringLiteral("id"), r->id}, {QStringLiteral("link"), r->link}});
+        else
+            reply(failure(seq, r.error()));
+        break;
+    }
+    case IpcMsgType::WatchEd3kLiveFile: {
+        // a channel file found by an ed3k channel search (live.md §1.2): fetched, then watched
+        const QByteArray raw = QByteArray::fromHex(msg.fieldString(0).toLatin1());
+        if (!s_live || raw.size() != 32) {
+            reply(failure(seq, QCoreApplication::translate("eMule::Ed3kSetsBridge", "Unknown ed3k channel file.")));
+            break;
+        }
+        ffi::Root root;
+        std::memcpy(root.bytes.data(), raw.constData(), root.bytes.size());
+        const QString rootHex = msg.fieldString(0).toLower();
+        // answered at once when fetched before (the search did), else pushed when it is there
+        auto inCall = std::make_shared<bool>(true);
+        auto atOnce = std::make_shared<std::optional<std::expected<QString, QString>>>();
+        s_live->watchFound(root, std::uint64_t(std::max<qint64>(0, msg.fieldInt(1))), [inCall, atOnce, rootHex](std::expected<QString, QString> r) {
+            if (*inCall) {
+                *atOnce = std::move(r);
+                return;
+            }
+            if (!s_push)
+                return;
+            IpcMessage m(IpcMsgType::PushEd3kLiveFileWatched, 0);
+            m.append(rootHex);
+            m.append(r.has_value());
+            m.append(watchedToCbor(r));
+            s_push(m);
+        });
+        *inCall = false;
+        if (!*atOnce)
+            ok(QCborMap{{QStringLiteral("pending"), true}});
+        else if (atOnce->value())
+            ok(watchedToCbor(atOnce->value()));
+        else
+            reply(failure(seq, atOnce->value().error()));
+        break;
+    }
+    case IpcMsgType::DescribeEd3kLive: {
+        if (!s_broadcast) {
+            reply(failure(seq, QCoreApplication::translate("eMule::Ed3kSetsBridge", "ed3k is not available.")));
+            break;
+        }
+        if (auto r = s_broadcast->describe(msg.fieldString(0), msg.fieldString(1), msg.fieldString(2),
+                                           std::uint32_t(std::clamp<qint64>(msg.fieldInt(3), 0, UINT32_MAX))))
+            ok();
         else
             reply(failure(seq, r.error()));
         break;
@@ -285,7 +358,8 @@ void setSets(ed3k::Ed3kSets* sets, ed3k::Ed3kLive* live, ed3k::Ed3kSiteServer* s
 bool isSetsRequest(IpcMsgType type)
 {
     const int t = static_cast<int>(type);
-    return (t >= 1110 && t <= 1119) || t == 1144 || t == static_cast<int>(IpcMsgType::BroadcastEd3kLive);
+    return (t >= 1110 && t <= 1119) || t == 1144 || t == static_cast<int>(IpcMsgType::BroadcastEd3kLive)
+           || t == static_cast<int>(IpcMsgType::WatchEd3kLiveFile) || t == static_cast<int>(IpcMsgType::DescribeEd3kLive);
 }
 
 bool handleRequest(const IpcMessage& msg, const std::function<void(const IpcMessage&)>& reply)
@@ -345,6 +419,7 @@ void connectPushes(ed3k::Ed3kSets& sets, ed3k::Ed3kLive& live, ed3k::Ed3kSiteSer
                    std::function<void(const IpcMessage&)> broadcast)
 {
 #ifdef EMULE_HAVE_ED3K
+    s_push = broadcast;
     QObject::connect(&sets, &ed3k::Ed3kSets::changed, &sets, [broadcast] {
         IpcMessage m(IpcMsgType::PushEd3kSetsChanged, 0);
         m.append(setsToCbor());

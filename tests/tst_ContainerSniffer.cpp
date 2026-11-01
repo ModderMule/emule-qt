@@ -27,6 +27,8 @@ const char kMp4Magic[] = "\x00\x00\x00\x18" "ftypmp42\x00\x00\x00\x00";
 const char kMkvMagic[] = "\x1A\x45\xDF\xA3\x01\x00\x00\x00\x00\x00\x00\x23";
 const char kAviMagic[] = "RIFF\x00\x10\x00\x00" "AVI ";
 const char kWavMagic[] = "RIFF\x00\x10\x00\x00" "WAVE";
+/// Video CD track, first bytes of the file in issue #108
+const char kCdxaMagic[] = "RIFF\xB4\xEB\x23\x24" "CDXA";
 
 /// The first twelve bytes of the real fake. Random padding whose first two bytes
 /// happen to form an MPEG frame sync -- exactly what talks file(1) into calling
@@ -66,6 +68,7 @@ private slots:
     void sameKindOfMediaIsOnlyMislabelled();
     void anOggFilmIsVideoNotMusic();
     void aRenameDropsTheCachedVerdict();
+    void aVideoCdTrackIsMpeg();
 
 private:
     [[nodiscard]] QString write(const QString& name, const char* bytes, int len);
@@ -280,6 +283,20 @@ void tst_ContainerSniffer::aRenameDropsTheCachedVerdict()
     QCOMPARE(file.containerCheck().verdict, ContainerVerdict::Matches);
     QCOMPARE(file.fileType(), QStringLiteral("Audio"));         // what peers are told
     QCOMPARE(file.displayFileType(), QStringLiteral("Video"));  // what the lists draw
+}
+
+
+void tst_ContainerSniffer::aVideoCdTrackIsMpeg()
+{
+    // Issue #108: a VCD .dat renamed .mpg drew the fake mark
+    const QString path = write(QStringLiteral("004.mpg"), kCdxaMagic, 12);
+    const ContainerCheck c = checkFile(path, QStringLiteral("004.mpg"));
+    QCOMPARE(c.verdict, ContainerVerdict::Matches);
+    QCOMPARE(c.mark(), ContainerMark::None);
+
+    // Under another video name it is only mislabelled
+    const QString avi = write(QStringLiteral("004.avi"), kCdxaMagic, 12);
+    QCOMPARE(checkFile(avi, QStringLiteral("004.avi")).mark(), ContainerMark::Mislabelled);
 }
 
 QTEST_MAIN(tst_ContainerSniffer)

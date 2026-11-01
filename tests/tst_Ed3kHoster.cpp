@@ -30,6 +30,7 @@
 #include <QSet>
 #include <QSettings>
 #include <QSignalSpy>
+#include <QTcpSocket>
 #include <QTemporaryDir>
 #include <QTest>
 #include <QTimer>
@@ -1386,6 +1387,83 @@ private slots:
         QVERIFY(!r.available());
     }
 
+    /// Protocol 2: requests over a loopback socket, stdin only carries the token. A fake "java"
+    /// writes token and port to files; the test plays the sidecar.
+    void jdResolver_socketNeedsToken()
+    {
+#ifdef Q_OS_WIN
+        QSKIP("fake java is a shell script");
+#else
+        QTemporaryDir tmp;
+        const QString zip = tmp.filePath(QStringLiteral("resolver.zip"));
+        QVERIFY(writeResolverZip(zip));
+        const QString java = tmp.filePath(QStringLiteral("java"));
+        {
+            QFile f(java);
+            QVERIFY(f.open(QIODevice::WriteOnly));
+            f.write("#!/bin/sh\n"
+                    "read t\n"
+                    "for a in \"$@\"; do case \"$a\" in -Demuleqt.port=*) printf '%s' \"${a#-Demuleqt.port=}\" > port;; esac; done\n"
+                    "printf '%s' \"$t\" > token.tmp && mv token.tmp token\n"
+                    "exec sleep 30\n");
+            f.close();
+            QVERIFY(f.setPermissions(f.permissions() | QFileDevice::ExeOwner));
+        }
+        Ed3kJdResolver r;
+        JdResolverConfig cfg;
+        cfg.dataDir = tmp.filePath(QStringLiteral("resolver"));
+        cfg.zip = zip;
+        cfg.java = java;
+        r.setConfig(cfg);
+        QVERIFY2(r.available(), qPrintable(r.unavailableReason()));
+        QSignalSpy events(&r, &Ed3kResolver::taskEvent);
+        const auto id = r.match(QStringLiteral("https://x.example/f"));
+        const QString tokenFile = QDir(cfg.dataDir).filePath(QStringLiteral("token"));
+        QTRY_VERIFY_WITH_TIMEOUT(QFileInfo::exists(tokenFile), 10000);
+        const auto slurp = [](const QString& path) {
+            QFile f(path);
+            return f.open(QIODevice::ReadOnly) ? f.readAll() : QByteArray();
+        };
+        const QByteArray token = slurp(tokenFile);
+        const quint16 port = slurp(QDir(cfg.dataDir).filePath(QStringLiteral("port"))).toUShort();
+        QCOMPARE(token.size(), 64);
+        QVERIFY(port != 0);
+        QVERIFY(!r.arguments().join(u' ').contains(QString::fromLatin1(token)));   // not on the command line
+
+        const auto auth = [](const QByteArray& t) {
+            return QJsonDocument(QJsonObject{{QStringLiteral("ev"), QStringLiteral("auth")}, {QStringLiteral("token"), QString::fromLatin1(t)}})
+                       .toJson(QJsonDocument::Compact)
+                   + '\n';
+        };
+        // a wrong token is dropped, the listener stays
+        QTcpSocket bad;
+        bad.connectToHost(QHostAddress::LocalHost, port);
+        QVERIFY(bad.waitForConnected(5000));
+        bad.write(auth("00"));
+        QTRY_COMPARE_WITH_TIMEOUT(bad.state(), QAbstractSocket::UnconnectedState, 5000);
+
+        QTcpSocket good;
+        good.connectToHost(QHostAddress::LocalHost, port);
+        QVERIFY(good.waitForConnected(5000));
+        good.write(auth(token));
+        QStringList ops;
+        const auto readOps = [&] {
+            while (good.canReadLine())
+                ops << QJsonDocument::fromJson(good.readLine()).object().value(QStringLiteral("op")).toString();
+            return ops.contains(QStringLiteral("match"));
+        };
+        QTRY_VERIFY2_WITH_TIMEOUT(readOps(), qPrintable(ops.join(u',')), 5000);
+        QCOMPARE(ops.first(), QStringLiteral("hello"));   // queued before auth, sent in order
+
+        // the sidecar closing its end ends the open task
+        good.disconnectFromHost();
+        QTRY_VERIFY_WITH_TIMEOUT(!events.isEmpty(), 10000);
+        QCOMPARE(events.first().at(0).value<Ed3kResolver::TaskId>(), id);
+        QCOMPARE(events.first().at(1).value<ResolverEvent>().kind, ResolverEvent::Kind::Failed);
+        QTRY_VERIFY_WITH_TIMEOUT(!r.running(), 10000);
+#endif
+    }
+
     /// #88: instances with one sharedDir unpack the plugins once; JD's state stays per instance
     void jdResolver_sharedDirInstallsOnce()
     {
@@ -1852,7 +1930,7 @@ private slots:
                 [&seen](Ed3kResolver::TaskId t, const ResolverEvent& e) { seen[t].push_back(e); });
         const auto done = [&seen](Ed3kResolver::TaskId t) -> const ResolverEvent* {
             for (const ResolverEvent& e : seen[t])
-                if (e.kind != ResolverEvent::Kind::Progress && e.kind != ResolverEvent::Kind::Wait)
+                if (e.isFinal())
                     return &e;
             return nullptr;
         };

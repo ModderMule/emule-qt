@@ -184,12 +184,14 @@ void SharedFilesPanel::setIpcClient(IpcClient* client)
     if (m_ipc)
         disconnect(m_ipc, nullptr, this, nullptr);
     m_ipc = client;
+    // row-update pushes only while this list is on screen
+    m_poller->setOnScreenHook(client ? client->pushGroupHold(Ipc::PushGroupShared) : nullptr);
     m_haveSnapshot = false;
 
     if (!m_ipc) {
         m_poller->setEnabled(false);
         m_model->clear();
-        m_headerLabel->setText(tr("Shared Files (0)"));
+        showFilesCount(0);
         return;
     }
 
@@ -205,10 +207,14 @@ void SharedFilesPanel::setIpcClient(IpcClient* client)
         m_poller->setEnabled(false);
         m_haveSnapshot = false;
         m_model->clear();
-        m_headerLabel->setText(tr("Shared Files (0)"));
+        showFilesCount(0);
     });
     connect(m_ipc, &IpcClient::sharedFileUpdated, this, &SharedFilesPanel::onSharedFilesPushed);
     connect(m_ipc, &IpcClient::sharedFileRemoved, this, &SharedFilesPanel::onSharedFileRemovedPush);
+    connect(m_ipc, &IpcClient::sharedHashingChanged, this, [this] {
+        if (m_browseDir.isEmpty())   // a browsed folder has its own header
+            showFilesCount(m_haveSnapshot ? m_model->fileCount() : 0);
+    });
 
     m_poller->setEnabled(m_ipc->isConnected());
     if (m_ipc->isConnected())
@@ -1345,10 +1351,18 @@ void SharedFilesPanel::afterSharedRowsChanged()
         m_totalAllTimeTransferred += f->allTimeTransferred;
     }
 
-    m_headerLabel->setText(tr("Shared Files (%1)").arg(m_model->fileCount()));
+    showFilesCount(m_model->fileCount());
     updateStatsTab();
     updateContentTab();
     updateEd2kTab();
+}
+
+void SharedFilesPanel::showFilesCount(int files)
+{
+    const int hashing = m_ipc ? m_ipc->sharedHashingCount() : 0;
+    m_headerLabel->setText(hashing > 0
+        ? tr("Shared Files (%1, Hashing %2)").arg(files).arg(hashing)
+        : tr("Shared Files (%1)").arg(files));
 }
 
 void SharedFilesPanel::requestBrowseDirectory(const QString& dirPath)
@@ -1365,7 +1379,7 @@ void SharedFilesPanel::requestBrowseDirectory(const QString& dirPath)
 
         if (resp.type() != IpcMsgType::Result || !resp.fieldBool(0)) {
             m_model->clear();
-            m_headerLabel->setText(tr("Shared Files (0)"));
+            showFilesCount(0);
             return;
         }
 

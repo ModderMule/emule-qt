@@ -247,6 +247,9 @@ struct Preferences::Data {
     bool logFakeCheckShared = false;
     bool kadVerboseLog = true;
     bool serverVerboseLog = false;  // Gated server TCP/UDP/search handshake logging
+    bool btVerboseLog = false;      // Torrent Verbose tab: emule.torrent debug lines
+    bool hosterVerboseLog = false;  // Hoster Verbose tab: emule.hoster debug lines
+    bool ed3kVerboseLog = false;    // ed3k Verbose tab: emule.ed3k debug lines, packmule Verbose level
     uint32 maxLogLines = 5000;  // Max lines kept per log tab in the GUI
     bool logSourceExchange = false;
     bool logBannedClients = true;
@@ -1232,6 +1235,18 @@ void Preferences::setKadVerboseLog(bool val) { set(&Data::kadVerboseLog, val); }
 bool Preferences::serverVerboseLog() const { return get(&Data::serverVerboseLog); }
 
 void Preferences::setServerVerboseLog(bool val) { set(&Data::serverVerboseLog, val); }
+
+bool Preferences::btVerboseLog() const { return get(&Data::btVerboseLog); }
+
+void Preferences::setBtVerboseLog(bool val) { set(&Data::btVerboseLog, val); }
+
+bool Preferences::hosterVerboseLog() const { return get(&Data::hosterVerboseLog); }
+
+void Preferences::setHosterVerboseLog(bool val) { set(&Data::hosterVerboseLog, val); }
+
+bool Preferences::ed3kVerboseLog() const { return get(&Data::ed3kVerboseLog); }
+
+void Preferences::setEd3kVerboseLog(bool val) { set(&Data::ed3kVerboseLog, val); }
 
 uint32 Preferences::maxLogLines() const { return get(&Data::maxLogLines); }
 
@@ -3702,6 +3717,9 @@ QCborMap Preferences::toIpcMap() const
     prefs.insert(QStringLiteral("logToDiskGui"), logToDiskGui());
     prefs.insert(QStringLiteral("verbose"), verbose());
     prefs.insert(QStringLiteral("serverVerboseLog"), serverVerboseLog());
+    prefs.insert(QStringLiteral("btVerboseLog"), btVerboseLog());
+    prefs.insert(QStringLiteral("hosterVerboseLog"), hosterVerboseLog());
+    prefs.insert(QStringLiteral("ed3kVerboseLog"), ed3kVerboseLog());
     prefs.insert(QStringLiteral("logPublicIP"), logPublicIP());
     prefs.insert(QStringLiteral("logFakeCheckShared"), logFakeCheckShared());
     prefs.insert(QStringLiteral("closeUPnPOnExit"), closeUPnPOnExit());
@@ -3999,6 +4017,9 @@ void Preferences::updateFromCbor(const QCborMap& p)
     m_data->logPublicIP                 = p.value(QStringLiteral("logPublicIP")).toBool();
     m_data->logFakeCheckShared          = p.value(QStringLiteral("logFakeCheckShared")).toBool();
     m_data->serverVerboseLog            = p.value(QStringLiteral("serverVerboseLog")).toBool();
+    m_data->btVerboseLog                = p.value(QStringLiteral("btVerboseLog")).toBool();
+    m_data->hosterVerboseLog            = p.value(QStringLiteral("hosterVerboseLog")).toBool();
+    m_data->ed3kVerboseLog              = p.value(QStringLiteral("ed3kVerboseLog")).toBool();
     m_data->closeUPnPOnExit             = p.value(QStringLiteral("closeUPnPOnExit")).toBool();
     m_data->fileBufferSize              = static_cast<uint32>(p.value(QStringLiteral("fileBufferSize")).toInteger());
     m_data->useCreditSystem             = p.value(QStringLiteral("useCreditSystem")).toBool();
@@ -4185,9 +4206,11 @@ void Preferences::resolveDefaultDirectories()
 {
     // AppConfig owns the platform layout, so the GUI and the daemon agree on it
     const QString baseDir = AppConfig::baseDir();
+    // --config keeps Incoming/ and Temp/ inside its dir, nothing under $HOME (#104)
+    const QString dataDir = AppConfig::dataBaseDir();
 
     if (m_data->incomingDir.isEmpty())
-        m_data->incomingDir = baseDir + QStringLiteral("/Incoming");
+        m_data->incomingDir = dataDir + QStringLiteral("/Incoming");
 
     if (m_data->configDir.isEmpty()) {
 #ifdef Q_OS_WIN
@@ -4200,7 +4223,7 @@ void Preferences::resolveDefaultDirectories()
     }
 
     if (m_data->tempDirs.isEmpty())
-        m_data->tempDirs.append(baseDir + QStringLiteral("/Temp"));
+        m_data->tempDirs.append(dataDir + QStringLiteral("/Temp"));
 }
 
 void Preferences::resolveDefaultVideoPlayer()
@@ -4248,11 +4271,9 @@ bool Preferences::load(const QString& filePath)
         m_data->startVersion = kCurrentPrefsVersion;  // fresh config, nothing to migrate
         m_data->webServerApiKey = generateApiKey();
 
-        // Create directories and persist initial preferences
-        QDir().mkpath(m_data->configDir);
-        QDir().mkpath(m_data->incomingDir);
-        for (const auto& td : m_data->tempDirs)
-            QDir().mkpath(td);
+        // Only the file's own dir: Incoming/Temp are the core's (GUI loads prefs too,
+        // #104), and the stored configDir is unused while --config overrides it.
+        QDir().mkpath(QFileInfo(filePath).absolutePath());
         saveImpl(filePath);
         return true;
     }
@@ -4457,6 +4478,9 @@ bool Preferences::load(const QString& filePath)
             m_data->logFakeCheckShared = l["logFakeCheckShared"].as<bool>(m_data->logFakeCheckShared);
             m_data->kadVerboseLog = l["kadVerboseLog"].as<bool>(m_data->kadVerboseLog);
             m_data->serverVerboseLog = l["serverVerboseLog"].as<bool>(m_data->serverVerboseLog);
+            m_data->btVerboseLog = l["btVerboseLog"].as<bool>(m_data->btVerboseLog);
+            m_data->hosterVerboseLog = l["hosterVerboseLog"].as<bool>(m_data->hosterVerboseLog);
+            m_data->ed3kVerboseLog = l["ed3kVerboseLog"].as<bool>(m_data->ed3kVerboseLog);
             m_data->maxLogLines = l["maxLogLines"].as<uint32>(m_data->maxLogLines);
             m_data->logSourceExchange = l["logSourceExchange"].as<bool>(m_data->logSourceExchange);
             m_data->logBannedClients = l["logBannedClients"].as<bool>(m_data->logBannedClients);
@@ -5811,6 +5835,9 @@ bool Preferences::saveImpl(const QString& filePath) const
     out << YAML::Key << "logFakeCheckShared" << YAML::Value << m_data->logFakeCheckShared;
     out << YAML::Key << "kadVerboseLog" << YAML::Value << m_data->kadVerboseLog;
     out << YAML::Key << "serverVerboseLog" << YAML::Value << m_data->serverVerboseLog;
+    out << YAML::Key << "btVerboseLog" << YAML::Value << m_data->btVerboseLog;
+    out << YAML::Key << "hosterVerboseLog" << YAML::Value << m_data->hosterVerboseLog;
+    out << YAML::Key << "ed3kVerboseLog" << YAML::Value << m_data->ed3kVerboseLog;
     out << YAML::Key << "maxLogLines" << YAML::Value << m_data->maxLogLines;
     out << YAML::Key << "logSourceExchange" << YAML::Value << m_data->logSourceExchange;
     out << YAML::Key << "logBannedClients" << YAML::Value << m_data->logBannedClients;

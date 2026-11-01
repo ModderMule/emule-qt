@@ -18,7 +18,7 @@
 namespace eMule {
 
 CoreConnectDialog::CoreConnectDialog(QWidget* parent)
-    : QDialog(parent)
+    : RememberedSizeDialog(parent)
 {
     setWindowTitle(tr("Connect to Core"));
     setWindowFlags(Qt::Dialog | Qt::WindowTitleHint | Qt::WindowCloseButtonHint);

@@ -392,8 +392,6 @@ jobs:
             echo '```'
             echo
             echo "</details>"
-            echo
-            echo "This release includes GeoLite2 data created by MaxMind, available from https://www.maxmind.com."
           } > release-notes.md
 
           cat release-notes.md

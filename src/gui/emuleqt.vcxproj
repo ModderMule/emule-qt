@@ -207,6 +207,7 @@
     <ClCompile Include="dialogs\ArchivePreviewPanel.cpp" />
     <ClCompile Include="dialogs\MediaInfoPanel.cpp" />
     <ClCompile Include="dialogs\BugReportDialog.cpp" />
+    <ClCompile Include="dialogs\RememberedSizeDialog.cpp" />
     <ClCompile Include="app\AutoStart.cpp" />
     <ClCompile Include="dialogs\ClientDetailDialog.cpp" />
     <ClCompile Include="dialogs\UsenetArchiveEntryDialog.cpp" />
@@ -237,6 +238,7 @@
     <ClCompile Include="utils\CountryFlags.cpp" />
     <ClCompile Include="controls\ClientListModel.cpp" />
     <ClCompile Include="app\CommandLineExec.cpp" />
+    <ClCompile Include="app\Ed3kLiveWatch.cpp" />
     <ClCompile Include="app\Ed3kNameOpener.cpp" />
     <ClCompile Include="app\ExternalLinkHandler.cpp" />
     <ClCompile Include="controls\ContactsGraph.cpp" />
@@ -269,6 +271,7 @@
     <ClCompile Include="dialogs\ImportDownloadsDialog.cpp" />
     <ClCompile Include="app\IpcClient.cpp" />
     <ClCompile Include="app\KnownCores.cpp" />
+    <ClCompile Include="app\CoreAttachment.cpp" />
     <ClCompile Include="app\CoreStartWatch.cpp" />
     <ClCompile Include="app\SingleInstance.cpp" />
     <ClCompile Include="panels\IrcPanel.cpp" />
@@ -291,6 +294,8 @@
     <ClCompile Include="dialogs\OptionsDialog.cpp" />
     <ClCompile Include="dialogs\Ed3kOptionsPages.cpp" />
     <ClCompile Include="dialogs\Ed3kFilterPage.cpp" />
+    <ClCompile Include="dialogs\Ed3kSellDialogs.cpp" />
+    <ClCompile Include="dialogs\Ed3kSellPage.cpp" />
     <ClCompile Include="dialogs\Ed3kStakeGroup.cpp" />
     <ClCompile Include="dialogs\Ed3kSetsDialog.cpp" />
     <ClCompile Include="dialogs\AddNzbFilesDialog.cpp" />
@@ -395,6 +400,7 @@
     <ClInclude Include="dialogs\MetadataPage.h" />
     <ClInclude Include="utils\Clipboard.h" />
     <ClInclude Include="utils\IpcFeedback.h" />
+    <ClInclude Include="app\Ed3kLiveWatch.h" />
     <ClInclude Include="utils\MassRenameAction.h" />
     <ClInclude Include="utils\AsyncMessageBox.h" />
     <ClInclude Include="utils\InputHistory.h" />
@@ -414,6 +420,7 @@
     <ClInclude Include="utils\WebServices.h" />
     <ClInclude Include="app\SkinEngine.h" />
     <QtMoc Include="dialogs\AddFriendDialog.h" />
+    <QtMoc Include="dialogs\RememberedSizeDialog.h" />
     <QtMoc Include="dialogs\CategoryDialog.h" />
     <QtMoc Include="dialogs\AddSourceDialog.h" />
     <QtMoc Include="dialogs\ArchivePreviewPanel.h" />
@@ -452,6 +459,7 @@
     <QtMoc Include="app\Ed3kNameOpener.h" />
     <QtMoc Include="app\ExternalLinkHandler.h" />
     <QtMoc Include="app\IpcClient.h" />
+    <QtMoc Include="app\CoreAttachment.h" />
     <QtMoc Include="app\CoreStartWatch.h" />
     <QtMoc Include="app\SingleInstance.h" />
     <QtMoc Include="panels\IrcPanel.h" />
@@ -472,6 +480,8 @@
     <QtMoc Include="dialogs\OptionsDialog.h" />
     <QtMoc Include="dialogs\Ed3kOptionsPages.h" />
     <QtMoc Include="dialogs\Ed3kFilterPage.h" />
+    <QtMoc Include="dialogs\Ed3kSellDialogs.h" />
+    <QtMoc Include="dialogs\Ed3kSellPage.h" />
     <QtMoc Include="dialogs\Ed3kStakeGroup.h" />
     <QtMoc Include="dialogs\Ed3kSetsDialog.h" />
     <QtMoc Include="dialogs\AddNzbFilesDialog.h" />

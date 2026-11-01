@@ -131,7 +131,9 @@ void HashingThread::run()
             continue;
         }
 
-        logDebug(QStringLiteral("Hashing: %1/%2").arg(job.directory, job.filename));
+        // Info level as in MFC (SharedFileList.cpp: Log IDS_HASHINGFILE)
+        logInfo(QStringLiteral("Hashing file: \"%1\"")
+                    .arg(QDir::toNativeSeparators(QDir(job.directory).filePath(job.filename))));
 
         auto* kf = new KnownFile();
         const KnownFile::FileStamp scanned{job.scannedSize, job.scannedMtime};
@@ -297,7 +299,7 @@ bool SharedFileList::safeAddKFile(KnownFile* file, bool onlyAdd)
     // -> onEntityAdded under it, then releases. Everything below runs unlocked,
     // matching MFC, which drops its own lock at srchybrid/SharedFileList.cpp:699
     // before exactly this work: collection parsing (disk I/O), keywords, last-seen.
-    if (!addEntity(file))
+    if (hasWrongSize(file) || !addEntity(file))
         return false;
 
     detectCollection(file);
@@ -2505,6 +2507,31 @@ SharedFileList::PublishBudget SharedFileList::publishBudget(int units, time_t re
     budget.maxSearches = std::clamp(static_cast<uint32>((work + perSlot - 1) / perSlot),
                                     minSearches, kMaxSlots);
     return budget;
+}
+
+bool SharedFileList::hasWrongSize(const KnownFile* file)
+{
+    if (!file)
+        return false;
+    // A download logs its own case and looks the size up
+    if (file->isPartFile())
+        return static_cast<const PartFile*>(file)->isSizeContradicted();
+    // A finished one is a truncated download from before the check
+    if (!file->fileIdentifier().md4TailContradictsSize())
+        return false;
+    static QMutex mutex;
+    static QSet<QByteArray> warned;
+    const QByteArray hash(reinterpret_cast<const char*>(file->fileHash()), 16);
+    {
+        QMutexLocker lock(&mutex);
+        if (warned.contains(hash))
+            return true;
+        warned.insert(hash);
+    }
+    logWarning(QStringLiteral("Not sharing \"%1\": it is incomplete — its hashset is for a "
+                              "larger file than its %2 bytes. Delete it and download it again.")
+                   .arg(file->fileName()).arg(static_cast<uint64>(file->fileSize())));
+    return true;
 }
 
 } // namespace eMule

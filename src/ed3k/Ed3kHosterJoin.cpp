@@ -2341,11 +2341,14 @@ void Ed3kHosterJoin::save()
             o.insert(QStringLiteral("pkg"), qint64(it.packageId));
         list.append(o);
     }
-    QDir().mkpath(QFileInfo(itemsFile()).absolutePath());
-    QSaveFile f(itemsFile());
-    if (f.open(QIODevice::WriteOnly)) {
-        f.write(QJsonDocument(list).toJson(QJsonDocument::Indented));
-        f.commit();
+    // none kept and no file yet: create nothing under config/ed3k (#105)
+    if (!list.isEmpty() || QFileInfo::exists(itemsFile())) {
+        QDir().mkpath(QFileInfo(itemsFile()).absolutePath());
+        QSaveFile f(itemsFile());
+        if (f.open(QIODevice::WriteOnly)) {
+            f.write(QJsonDocument(list).toJson(QJsonDocument::Indented));
+            f.commit();
+        }
     }
     for (auto& [id, e] : m_items)
         if (e->metDirty && e->item.state != State::Complete)

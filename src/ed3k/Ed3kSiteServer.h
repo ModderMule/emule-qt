@@ -11,12 +11,16 @@
 /// kSiteMemberMax) and answered 504 after 60 s (§6.3). Listens only while the node runs.
 /// Range (RFC 9110): one range of a GET → 206 from the blocks verified so far (it waits for
 /// them within the same 60 s), 416 beyond the end; several ranges → the whole member (200).
+/// A GET without Range of a member not held is streamed (batch 13 #12): chunked, its verified
+/// blocks in file order as they come; 504 when no first byte within 60 s, cut (no last chunk,
+/// connection closed) on a bad block of it or 60 s without the next one. HEAD waits for all.
 /// A set not held: siteSetStatus (§6.3, batch 12) says wait for its manifest, 504 or 503.
 /// A set that is no website is offered for download (setOffered, §6.1). Other hosts of the
 /// port (live streams, Ed3kLive) go to a host handler first.
 
 #include "Ed3kNames.h"
 
+#include <QHttpHeaders>
 #include <QHttpServerResponder>
 #include <QObject>
 #include <QString>
@@ -82,16 +86,24 @@ private:
     void servePage(std::unique_ptr<Pending> p, const QByteArray& manifest);
     void onSiteChanged(const QByteArray& key, const QByteArray& id);
     void onMemberReady(const QByteArray& root);
+    void onMemberBlock(const QByteArray& root);
+    void onMemberBad(const QByteArray& root);
     void onResolved(const Ed3kNames::Resolved& r);
     void onFailed(quint64 id, const QString& name, int why, const QList<QByteArray>& ties);
     void onTick();
     /// A set not held (§6.3): wait for its manifest, or answer siteSetStatus's 504 / 503.
     void waitForSet(std::unique_ptr<Pending> p);
+    /// Sends what verified blocks follow; true: the stream is done (the last chunk out).
+    bool pumpStream(Pending& p);
+    void pumpStreams(const QByteArray& root);
+    /// Ends a stream under way without its last chunk: the client sees a cut body.
+    void cut(std::unique_ptr<Pending> p);
     void park(std::unique_ptr<Pending> p);
     /// Takes every parked request @p match accepts.
     std::vector<std::unique_ptr<Pending>> take(const std::function<bool(const Pending&)>& match);
     static void answer(QHttpServerResponder& r, int status, const QByteArray& body = {}, const QByteArray& headerLines = {},
                        bool head = false);
+    [[nodiscard]] static QHttpHeaders headersOf(const QByteArray& headerLines);
 
     Ed3kSession& m_session;
     Ed3kNames& m_names;

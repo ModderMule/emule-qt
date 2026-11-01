@@ -5,7 +5,7 @@
 ///
 /// Port of MFC CCollectionViewDialog (srchybrid/CollectionViewDialog.cpp).
 
-#include <QDialog>
+#include "dialogs/RememberedSizeDialog.h"
 
 class QCheckBox;
 class QLineEdit;
@@ -16,7 +16,7 @@ namespace eMule {
 class Collection;
 class IpcClient;
 
-class CollectionViewDialog : public QDialog {
+class CollectionViewDialog : public RememberedSizeDialog {
     Q_OBJECT
 
 public:

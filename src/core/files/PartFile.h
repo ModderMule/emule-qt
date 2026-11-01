@@ -310,6 +310,20 @@ public:
     /// A hashset arrived: verify the parts that completed while we had none.
     void hashsetReceived();
 
+    // -- Wrong size (hashset for a bigger file) ---------------------------------
+
+    /// After a hashset is installed: if it proves the size wrong
+    /// (FileIdentifier::md4TailContradictsSize), hold the file and look the size up.
+    /// True while the size is in doubt.
+    bool checkSizeAgainstHashset();
+    [[nodiscard]] bool isSizeContradicted() const { return m_sizeContradicted; }
+    /// Lookup answer: grow to @p realSize. Parts already done stay valid, they are full
+    /// parts in both sizes. @p from names the network, for the log.
+    void applyCorrectedSize(uint64 realSize, const QString& from);
+    /// No network knew the size: Error + paused, with the reasons in the log and status
+    /// bar. Resuming looks again.
+    void failSizeLookup(const QString& serverReason, const QString& kadReason);
+
     // -- Block selection ------------------------------------------------------
 
     bool getNextRequestedBlock(UpDownClient* sender,
@@ -692,6 +706,8 @@ private:
     void resumeIdleSources();
     /// completeFile(), unless a changed part could not be read back for its check.
     void completeIfVerified();
+    /// Ask PartFileSizeLookup for the real size (in (size, size + PARTSIZE)).
+    void requestSizeLookup();
     /// Flag the parts [start, end] touches for the next verification pass.
     void markChangedParts(uint64 start, uint64 end);
     /// MD4/AICH/ICH check of the changed parts only (MFC FlushBuffer's part loop).
@@ -785,6 +801,10 @@ private:
     bool m_completionError = false;
     bool m_writeError = false;              ///< a write failed; Error until resumed
     PartFileStatus m_statusBeforeWriteError = PartFileStatus::Empty;
+    /// Hashset proves the size wrong: not shared, never completed, no Kad source search
+    bool m_sizeContradicted = false;
+    bool m_sizeLookupFailed = false;        ///< Error + paused until resumed
+    PartFileStatus m_statusBeforeSizeFix = PartFileStatus::Empty;
     bool m_completionRunning = false;   // verify + move in flight
     QPointer<FileMoveThread> m_moveThread;
     QByteArray m_completedAICHMaster;   // root of the set the move thread stored

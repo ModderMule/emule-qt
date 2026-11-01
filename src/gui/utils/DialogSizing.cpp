@@ -22,21 +22,6 @@ namespace eMule::DialogSizing {
 
 namespace {
 
-/// How large a window may grow before it stops fitting on the screen it opens on.
-/// A minimum taller than this would push the button row under the dock or off the
-/// bottom edge, which is worse than a scrollbar.
-QSize screenBudget(const QWidget* dialog)
-{
-    const QScreen* screen = dialog->screen();
-    if (!screen)
-        screen = QGuiApplication::primaryScreen();
-    if (!screen)
-        return {QWIDGETSIZE_MAX, QWIDGETSIZE_MAX};
-
-    const QRect avail = screen->availableGeometry();
-    return {std::max(320, avail.width() - 40), std::max(240, avail.height() - 60)};
-}
-
 /// The screen the hand-picked sizes were made for. Smaller screens scale them down.
 constexpr QSize kDesignedScreen{1024, 768};
 
@@ -151,6 +136,20 @@ int tabPagesHeight(const QTabWidget* tabs, int width)
 } // anonymous namespace
 
 // ── public API ─────────────────────────────────────────────────────────
+
+/// A minimum taller than the budget would push the button row under the dock or off the
+/// bottom edge, which is worse than a scrollbar.
+QSize screenBudget(const QWidget* dialog)
+{
+    const QScreen* screen = dialog->screen();
+    if (!screen)
+        screen = QGuiApplication::primaryScreen();
+    if (!screen)
+        return {QWIDGETSIZE_MAX, QWIDGETSIZE_MAX};
+
+    const QRect avail = screen->availableGeometry();
+    return {std::max(320, avail.width() - 40), std::max(240, avail.height() - 60)};
+}
 
 /// How tall @p layout has to be at @p width for nothing inside it to be clipped.
 ///

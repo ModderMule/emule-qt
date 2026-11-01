@@ -209,6 +209,7 @@ private slots:
     void link_reportsARefusedHandshake();
     void link_reportsALaunchedCoreAsStarting();
     void link_takesTheCorePidFromTheHandshake();
+    void subscribe_followsTheListsOnScreen();
     void link_launchedCoreBusyLoadingIsWaitedForOnOneConnection();
     void keepalive_loadingCoreIsWaitedFor();
 
@@ -737,6 +738,46 @@ void tst_IpcBusyStates::link_takesTheCorePidFromTheHandshake()
     QTRY_VERIFY_WITH_TIMEOUT(client2.isConnected(), 3000);
     QCOMPARE(client2.corePid(), qint64(0));
     client2.disconnectFromDaemon();
+}
+
+void tst_IpcBusyStates::subscribe_followsTheListsOnScreen()
+{
+    MockCore core;
+    QVERIFY(core.listen());
+    IpcClient client;
+    auto mask = [&core] { return core.last(IpcMsgType::Subscribe).fieldInt(0); };
+
+    // No list has taken part yet: everything, as before
+    client.connectToDaemon(QHostAddress(QHostAddress::LocalHost), core.port());
+    QTRY_VERIFY_WITH_TIMEOUT(client.isConnected(), 3000);
+    QTRY_COMPARE_WITH_TIMEOUT(core.count(IpcMsgType::Subscribe), 1, 3000);
+    QCOMPARE(mask(), qint64(PushGroupAll));
+
+    // Transfers on screen, then a tab switch to Torrents
+    const auto transfers = client.pushGroupHold(PushGroupTransfers);
+    const auto torrents = client.pushGroupHold(PushGroupTorrents);
+    transfers(true);
+    QTRY_COMPARE_WITH_TIMEOUT(mask(), qint64(PushGroupTransfers), 3000);
+    torrents(true);
+    transfers(false);
+    QTRY_COMPARE_WITH_TIMEOUT(mask(), qint64(PushGroupTorrents), 3000);
+
+    // To the tray: only the pushes outside every group are left
+    torrents(false);
+    QTRY_COMPARE_WITH_TIMEOUT(mask(), qint64(0), 3000);
+    const int sent = core.count(IpcMsgType::Subscribe);
+    torrents(false);   // no change, nothing sent; the count never goes below 0
+    torrents(true);
+    QTRY_COMPARE_WITH_TIMEOUT(mask(), qint64(PushGroupTorrents), 3000);
+    QCOMPARE(core.count(IpcMsgType::Subscribe), sent + 1);
+
+    // A reconnect hands the new link the current mask, not "everything"
+    core.dropClient();
+    QTRY_COMPARE_WITH_TIMEOUT(core.connections, 2, 15000);
+    QTRY_VERIFY_WITH_TIMEOUT(client.isConnected(), 3000);
+    QTRY_COMPARE_WITH_TIMEOUT(core.count(IpcMsgType::Subscribe), sent + 2, 3000);
+    QCOMPARE(mask(), qint64(PushGroupTorrents));
+    client.disconnectFromDaemon();
 }
 
 void tst_IpcBusyStates::deferred_identicalReadsCollapseToTheNewest()

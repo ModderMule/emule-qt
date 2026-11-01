@@ -54,6 +54,7 @@
 #include "net/LastCommonRouteFinder.h"
 #include "transfer/UploadBandwidthThrottler.h"
 #include "transfer/UploadDiskIOThread.h"
+#include "files/PartFileSizeLookup.h"
 #include "files/PartFileWriteThread.h"
 #include "httpcache/HttpCacheManager.h"
 #include "transfer/UploadQueue.h"
@@ -131,6 +132,8 @@ void CoreSession::start()
     // before that is done: a peer asking for a file not loaded yet would be told
     // we do not have it.
     theApp.loading = true;
+    // set now: a wizard may finish while the files load (finishStart then connects)
+    theApp.releaseConnectHold = [this] { releaseConnectHold(); };
     m_loadStage = LoadStage::IpFilter;
     QTimer::singleShot(0, this, &CoreSession::loadStep);
 }
@@ -1033,6 +1036,12 @@ void CoreSession::initDownloadQueue()
     m_downloadQueue = std::make_unique<DownloadQueue>(this);
     theApp.downloadQueue = m_downloadQueue.get();
 
+    // Before the .part files load: one found with a wrong size asks it at once
+    if (!m_partFileSizeLookup) {
+        m_partFileSizeLookup = std::make_unique<PartFileSizeLookup>();
+        theApp.partFileSizeLookup = m_partFileSizeLookup.get();
+    }
+
     // Wire dependencies
     m_downloadQueue->setSharedFileList(theApp.sharedFileList);
     m_downloadQueue->setKnownFileList(theApp.knownFileList);
@@ -1044,6 +1053,9 @@ void CoreSession::initDownloadQueue()
     // The "Source Lists" subfolder must exist before the first save (MorphXT does this in
     // CPreferences::Init, Preferences.cpp:1084-1092). A category can still point a download
     // at some other directory, which is why SourceListFile::write() also creates it.
+    // The core owns the data dirs; Preferences::load() no longer creates them (#104)
+    ensureDataDirectories(thePrefs.incomingDir(), thePrefs.tempDirs());
+
     if (thePrefs.useSaveLoadSources())
         SourceSaver::ensureDirectories(thePrefs.tempDirs());
 
@@ -1071,6 +1083,11 @@ void CoreSession::shutdownDownloadQueue()
             }
         }
     }
+
+    // Before the queue: its lookups find files through it
+    if (theApp.partFileSizeLookup == m_partFileSizeLookup.get())
+        theApp.partFileSizeLookup = nullptr;
+    m_partFileSizeLookup.reset();
 
     if (m_downloadQueue && theApp.downloadQueue == m_downloadQueue.get())
         theApp.downloadQueue = nullptr;
@@ -1831,6 +1848,7 @@ void CoreSession::releaseConnectHold()
     if (!m_connectHold)
         return;
     m_connectHold = false;
+    emit connectHoldReleased();
     if (theApp.loading)
         return;   // finishStart() does the connecting
 
@@ -1977,6 +1995,24 @@ void CoreSession::markPeersForIPChange(const Address& effective)
     if (marked > 0)
         logInfo(QStringLiteral("IPv6: queued IP-change notice for %1 connected peer(s)")
                     .arg(marked));
+}
+
+// ---------------------------------------------------------------------------
+// ensureDataDirectories — Incoming + Temp, created by the core only
+// ---------------------------------------------------------------------------
+
+bool CoreSession::ensureDataDirectories(const QString& incomingDir, const QStringList& tempDirs)
+{
+    bool ok = true;
+    QStringList dirs = tempDirs;
+    dirs.prepend(incomingDir);
+    for (const QString& dir : std::as_const(dirs)) {
+        if (dir.isEmpty() || QDir().mkpath(dir))
+            continue;
+        logWarning(QStringLiteral("Cannot create directory %1").arg(dir));
+        ok = false;
+    }
+    return ok;
 }
 
 // ---------------------------------------------------------------------------
@@ -2227,7 +2263,6 @@ void CoreSession::finishStart()
     rememberAppliedPorts();
     theApp.onBindSelectionChanged = [this] { return applyBindSelection(); };
     theApp.applyListenPorts = [this] { return applyListenPorts(); };
-    theApp.releaseConnectHold = [this] { releaseConnectHold(); };
     m_tickCounter = 0;
     m_timer.start();
 }

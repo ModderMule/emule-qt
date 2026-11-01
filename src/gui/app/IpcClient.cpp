@@ -135,6 +135,7 @@ static QString ipcMsgTypeName(Ipc::IpcMsgType type)
     case T::PushCoreUpdating:     return QStringLiteral("PushCoreUpdating");
     case T::PushSharedFileUpdate: return QStringLiteral("PushSharedFileUpdate");
     case T::PushSharedFileRemoved: return QStringLiteral("PushSharedFileRemoved");
+    case T::PushSharedHashing:    return QStringLiteral("PushSharedHashing");
     case T::PushUploadUpdate:     return QStringLiteral("PushUploadUpdate");
     case T::PushKadUpdate:        return QStringLiteral("PushKadUpdate");
     case T::PushKadSearchesChanged: return QStringLiteral("PushKadSearchesChanged");
@@ -274,15 +275,27 @@ static QString ipcMsgTypeName(Ipc::IpcMsgType type)
     case T::PushEd3kSetsChanged:  return QStringLiteral("PushEd3kSetsChanged");
     case T::PushEd3kSetVersion:   return QStringLiteral("PushEd3kSetVersion");
     case T::PushEd3kLiveChanged:  return QStringLiteral("PushEd3kLiveChanged");
+    case T::WatchEd3kLiveFile:    return QStringLiteral("WatchEd3kLiveFile");
+    case T::DescribeEd3kLive:     return QStringLiteral("DescribeEd3kLive");
+    case T::PushEd3kLiveFileWatched: return QStringLiteral("PushEd3kLiveFileWatched");
     case T::PushEd3kSetOffer:     return QStringLiteral("PushEd3kSetOffer");
     case T::GetEd3kPaid:          return QStringLiteral("GetEd3kPaid");
     case T::BuyEd3kPass:          return QStringLiteral("BuyEd3kPass");
     case T::ConfirmEd3kPaidAnon:  return QStringLiteral("ConfirmEd3kPaidAnon");
     case T::SetEd3kPassReports:   return QStringLiteral("SetEd3kPassReports");
+    case T::AddEd3kPassLink:      return QStringLiteral("AddEd3kPassLink");
+    case T::AnswerEd3kPaidScopes: return QStringLiteral("AnswerEd3kPaidScopes");
     case T::BroadcastEd3kLive:    return QStringLiteral("BroadcastEd3kLive");
     case T::PushEd3kPaidChanged:  return QStringLiteral("PushEd3kPaidChanged");
     case T::PushEd3kPaidAnonWarn: return QStringLiteral("PushEd3kPaidAnonWarn");
     case T::PushEd3kPassArrived:  return QStringLiteral("PushEd3kPassArrived");
+    case T::PushEd3kPaidScopesWarn: return QStringLiteral("PushEd3kPaidScopesWarn");
+    case T::GetEd3kSelling:       return QStringLiteral("GetEd3kSelling");
+    case T::SellEd3k:             return QStringLiteral("SellEd3k");
+    case T::IssueEd3kPass:        return QStringLiteral("IssueEd3kPass");
+    case T::Ed3kSellControl:      return QStringLiteral("Ed3kSellControl");
+    case T::PushEd3kSellingChanged: return QStringLiteral("PushEd3kSellingChanged");
+    case T::PushEd3kSeasonStarted: return QStringLiteral("PushEd3kSeasonStarted");
     case T::BurnEd3kStake:        return QStringLiteral("BurnEd3kStake");
     case T::ClaimEd3kStake:       return QStringLiteral("ClaimEd3kStake");
     case T::GetEd3kStakeClaims:   return QStringLiteral("GetEd3kStakeClaims");
@@ -436,6 +449,7 @@ void IpcClient::disconnectFromDaemon()
     m_reconnectTimer.stop();
 
     m_handshaked = false;
+    m_sharedHashing = 0;
     failPendingRequests();
 
     dropConnection();
@@ -456,6 +470,37 @@ bool IpcClient::isLocalConnection() const
 int IpcClient::pollingInterval() const
 {
     return isLocalConnection() ? LocalPollingMs : m_remotePollingMs;
+}
+
+void IpcClient::holdPushGroup(int group, bool on)
+{
+    m_pushGroupsHeld = true;
+    for (int bit = 0; bit < static_cast<int>(m_pushGroupHolds.size()); ++bit) {
+        if (group & (1 << bit))
+            m_pushGroupHolds[bit] = std::max(0, m_pushGroupHolds[bit] + (on ? 1 : -1));
+    }
+    sendSubscription();
+}
+
+std::function<void(bool)> IpcClient::pushGroupHold(int group)
+{
+    return [client = QPointer<IpcClient>(this), group](bool on) {
+        if (client)
+            client->holdPushGroup(group, on);
+    };
+}
+
+int IpcClient::subscriptionMask() const
+{
+    // Nothing takes part (tests, tools): keep the old "everything"
+    if (!m_pushGroupsHeld)
+        return Ipc::PushGroupAll;
+    int mask = 0;
+    for (int bit = 0; bit < static_cast<int>(m_pushGroupHolds.size()); ++bit) {
+        if (m_pushGroupHolds[bit] > 0)
+            mask |= 1 << bit;
+    }
+    return mask;
 }
 
 void IpcClient::setRemotePollingMs(int ms)
@@ -823,6 +868,14 @@ int IpcClient::watchEd3kLive(const QString& link, ResponseCallback callback)
     return sendRequest(std::move(msg), std::move(callback));
 }
 
+int IpcClient::watchEd3kLiveFile(const QString& root, quint64 size, ResponseCallback callback)
+{
+    IpcMessage msg(IpcMsgType::WatchEd3kLiveFile);
+    msg.append(root);
+    msg.append(static_cast<qint64>(size));
+    return sendRequest(std::move(msg), std::move(callback));
+}
+
 int IpcClient::leaveEd3kLive(const QString& id, ResponseCallback callback)
 {
     IpcMessage msg(IpcMsgType::LeaveEd3kLive);
@@ -871,6 +924,21 @@ int IpcClient::setEd3kPassReports(bool on, ResponseCallback callback)
 {
     IpcMessage msg(IpcMsgType::SetEd3kPassReports);
     msg.append(on);
+    return sendRequest(std::move(msg), std::move(callback));
+}
+
+int IpcClient::addEd3kPassLink(const QString& link, ResponseCallback callback)
+{
+    IpcMessage msg(IpcMsgType::AddEd3kPassLink);
+    msg.append(link);
+    return sendRequest(std::move(msg), std::move(callback));
+}
+
+int IpcClient::answerEd3kPaidScopes(const QString& scope, bool use, ResponseCallback callback)
+{
+    IpcMessage msg(IpcMsgType::AnswerEd3kPaidScopes);
+    msg.append(scope);
+    msg.append(use);
     return sendRequest(std::move(msg), std::move(callback));
 }
 
@@ -1097,10 +1165,9 @@ void IpcClient::onMessageReceived(const IpcMessage& msg)
         logInfo(QStringLiteral("IPC handshake complete — daemon version: %1")
                     .arg(msg.fieldString(0)));
 
-        // Subscribe to all events
-        IpcMessage sub(IpcMsgType::Subscribe, m_nextSeqId++);
-        sub.append(qint64(0xFFFF));  // Subscribe to all event types
-        m_connection->sendMessage(sub);
+        // Only the pushes of lists on screen; a new core starts at all of them
+        m_sentMask = -1;
+        sendSubscription();
 
         // Field 2: daemon session token.
         // On token change (GUI restart or daemon restart), reset per-type IDs to 0
@@ -1110,7 +1177,7 @@ void IpcClient::onMessageReceived(const IpcMessage& msg)
         if (newToken != m_daemonToken) {
             m_lastKadId = m_lastUsenetId = m_lastServerId = m_lastLogId = m_lastVerboseId = 0;
             m_lastEd3kId = m_lastEd3kVerboseId = m_lastEd3kKadId = m_lastLeecherId = 0;
-            m_lastTorrentId = m_lastHosterId = 0;
+            m_lastTorrentId = m_lastHosterId = m_lastTorrentVerboseId = m_lastHosterVerboseId = 0;
             m_lastServerMsgId = 0;
             m_daemonToken = newToken;
         }
@@ -1168,6 +1235,7 @@ void IpcClient::onConnectionLost()
     m_keepaliveTimer.stop();
     m_keepaliveTimeoutTimer.stop();
     m_handshaked = false;
+    m_sharedHashing = 0;
     failPendingRequests();
     // The core went away on its own; a timeout or a refusal has set its state already
     if (m_coreLink == CoreLink::Ready || m_coreLink == CoreLink::Loading
@@ -1304,9 +1372,13 @@ void IpcClient::dispatchPushEvent(const IpcMessage& msg)
     case IpcMsgType::PushEd3kSetsChanged:  emit ed3kSetsChanged(msg); break;
     case IpcMsgType::PushEd3kSetVersion:   emit ed3kSetVersion(msg); break;
     case IpcMsgType::PushEd3kLiveChanged:  emit ed3kLiveChanged(msg); break;
+    case IpcMsgType::PushEd3kLiveFileWatched: emit ed3kLiveFileWatched(msg); break;
     case IpcMsgType::PushEd3kPaidChanged:  emit ed3kPaidChanged(msg); break;
     case IpcMsgType::PushEd3kPaidAnonWarn: emit ed3kPaidAnonWarn(msg); break;
     case IpcMsgType::PushEd3kPassArrived:  emit ed3kPassArrived(msg); break;
+    case IpcMsgType::PushEd3kPaidScopesWarn: emit ed3kPaidScopesWarn(msg); break;
+    case IpcMsgType::PushEd3kSellingChanged: emit ed3kSellingChanged(msg); break;
+    case IpcMsgType::PushEd3kSeasonStarted: emit ed3kSeasonStarted(msg); break;
     case IpcMsgType::PushEd3kSetOffer:     emit ed3kSetOffered(msg); break;
     case IpcMsgType::PushEd3kStakeClaims:  emit ed3kStakeClaimsChanged(msg); break;
     case IpcMsgType::PushEd3kStakeTx:      emit ed3kStakeTx(msg); break;
@@ -1320,6 +1392,10 @@ void IpcClient::dispatchPushEvent(const IpcMessage& msg)
     case IpcMsgType::PushHosterLinkCheck:  emit hosterLinkChecked(msg); break;
     case IpcMsgType::PushSharedFileUpdate: emit sharedFileUpdated(msg); break;
     case IpcMsgType::PushSharedFileRemoved: emit sharedFileRemoved(msg); break;
+    case IpcMsgType::PushSharedHashing:
+        m_sharedHashing = static_cast<int>(msg.fieldInt(0));
+        emit sharedHashingChanged(m_sharedHashing);
+        break;
     case IpcMsgType::PushUploadUpdate:     emit uploadUpdated(msg); break;
     case IpcMsgType::PushKadUpdate:        emit kadUpdated(msg); break;
     case IpcMsgType::PushKadSearchesChanged: emit kadSearchesChanged(msg); break;
@@ -1337,6 +1413,19 @@ void IpcClient::dispatchPushEvent(const IpcMessage& msg)
     }
 }
 
+void IpcClient::sendSubscription()
+{
+    if (!m_handshaked || !m_connection)
+        return;
+    const int mask = subscriptionMask();
+    if (mask == m_sentMask)
+        return;
+    m_sentMask = mask;
+    IpcMessage sub(IpcMsgType::Subscribe, m_nextSeqId++);
+    sub.append(qint64(mask));
+    m_connection->sendMessage(sub);
+}
+
 void IpcClient::requestLogSync()
 {
     // Request from the minimum of all per-type IDs:
@@ -1346,7 +1435,8 @@ void IpcClient::requestLogSync()
     const int64_t fromId = std::min({m_lastKadId, m_lastUsenetId, m_lastServerId,
                                      m_lastLogId,  m_lastVerboseId, m_lastEd3kId,
                                      m_lastEd3kVerboseId, m_lastEd3kKadId, m_lastLeecherId,
-                                     m_lastTorrentId, m_lastHosterId});
+                                     m_lastTorrentId, m_lastHosterId,
+                                     m_lastTorrentVerboseId, m_lastHosterVerboseId});
     IpcMessage req(IpcMsgType::SyncLogs);
     req.append(static_cast<qint64>(fromId));
 
@@ -1493,6 +1583,7 @@ void IpcClient::resetConnection()
     m_keepaliveTimer.stop();
     m_keepaliveTimeoutTimer.stop();
     m_handshaked = false;
+    m_sharedHashing = 0;
     failPendingRequests();
 
     dropConnection();
@@ -1623,9 +1714,9 @@ int64_t& IpcClient::lastLogId(const QString& cat, QtMsgType severity)
     if (cat == QStringLiteral("emule.usenet"))
         return m_lastUsenetId;
     if (cat == QStringLiteral("emule.torrent"))
-        return m_lastTorrentId;
+        return severity == QtDebugMsg ? m_lastTorrentVerboseId : m_lastTorrentId;
     if (cat == QStringLiteral("emule.hoster"))
-        return m_lastHosterId;
+        return severity == QtDebugMsg ? m_lastHosterVerboseId : m_lastHosterId;
     if (cat == QStringLiteral("emule.server"))
         return m_lastServerId;
     if (cat == QStringLiteral("emule.ed3k.kad"))

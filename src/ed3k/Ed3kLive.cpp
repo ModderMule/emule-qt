@@ -3,6 +3,8 @@
 
 #include "Ed3kLive.h"
 
+#include "Ed3kLiveFiles.h"
+#include "Ed3kPaid.h"
 #include "Ed3kSession.h"
 #include "Ed3kSiteServer.h"
 
@@ -10,6 +12,8 @@
 
 #include <QHttpHeaders>
 #include <QHttpServerRequest>
+#include <QMediaFormat>
+#include <QPointer>
 #include <QTimer>
 #include <QUrl>
 #include <QUrlQuery>
@@ -77,12 +81,80 @@ QByteArray fillerOf(const QString& media)
     return QByteArray("\x00\x00\x00\x08" "free", 8);
 }
 
+/// the container of a media type (§1.2 `media`); nullopt: not one QMediaFormat names
+std::optional<QMediaFormat::FileFormat> containerOf(const QString& media)
+{
+    const QString m = media.trimmed().toLower();
+    if (m == QLatin1String("video/mp4"))
+        return QMediaFormat::MPEG4;
+    if (m == QLatin1String("audio/mp4"))
+        return QMediaFormat::Mpeg4Audio;
+    if (m.endsWith(QLatin1String("/webm")))
+        return QMediaFormat::WebM;
+    if (m.endsWith(QLatin1String("/x-matroska")))
+        return QMediaFormat::Matroska;
+    if (m.endsWith(QLatin1String("/ogg")))
+        return QMediaFormat::Ogg;
+    if (m == QLatin1String("video/quicktime"))
+        return QMediaFormat::QuickTime;
+    if (m == QLatin1String("audio/mpeg"))
+        return QMediaFormat::MP3;
+    if (m == QLatin1String("audio/aac"))
+        return QMediaFormat::AAC;
+    if (m == QLatin1String("audio/flac"))
+        return QMediaFormat::FLAC;
+    return std::nullopt;   // video/mp2t among others: the player decides
+}
+
+/// an RFC 6381 codec as QMediaFormat names it; neither: unknown here
+struct CodecOf {
+    std::optional<QMediaFormat::VideoCodec> video;
+    std::optional<QMediaFormat::AudioCodec> audio;
+};
+
+CodecOf codecOf(const QString& token)
+{
+    const QString t = token.trimmed().toLower();
+    const auto is = [&](const char* p) { return t == QLatin1String(p) || t.startsWith(QLatin1String(p) + QLatin1Char('.')); };
+    using V = QMediaFormat::VideoCodec;
+    using A = QMediaFormat::AudioCodec;
+    if (is("avc1") || is("avc3"))
+        return {V::H264, {}};
+    if (is("hev1") || is("hvc1"))
+        return {V::H265, {}};
+    if (is("av01"))
+        return {V::AV1, {}};
+    if (is("vp09") || is("vp9"))
+        return {V::VP9, {}};
+    if (is("vp08") || is("vp8"))
+        return {V::VP8, {}};
+    if (is("theora"))
+        return {V::Theora, {}};
+    // mp4a.40.34 / mp4a.6b: MP3 in MP4; the other mp4a.40.x: AAC
+    if (t == QLatin1String("mp4a.40.34") || t == QLatin1String("mp4a.6b") || t == QLatin1String("mp3"))
+        return {{}, A::MP3};
+    if (is("mp4a"))
+        return {{}, A::AAC};
+    if (is("opus"))
+        return {{}, A::Opus};
+    if (is("flac"))
+        return {{}, A::FLAC};
+    if (is("vorbis"))
+        return {{}, A::Vorbis};
+    if (is("ac-3"))
+        return {{}, A::AC3};
+    if (is("ec-3"))
+        return {{}, A::EAC3};
+    return {};
+}
+
 } // namespace
 
 Ed3kLive::Ed3kLive(Ed3kSession& session, Ed3kSiteServer& sites, QObject* parent)
     : QObject(parent)
     , m_session(session)
     , m_sites(sites)
+    , m_files(std::make_unique<Ed3kLiveFiles>(session, QString(), QStringLiteral("live files")))
 {
     connect(&m_session, &Ed3kSession::eventPolled, this, &Ed3kLive::onEventPolled, Qt::DirectConnection);
     connect(&m_session, &Ed3kSession::statusChanged, this, &Ed3kLive::onSessionStatus);
@@ -115,9 +187,88 @@ std::expected<QString, QString> Ed3kLive::watch(const QString& link)
         const qsizetype q = link.indexOf(QLatin1Char('?'));
         w.title = q < 0 ? QString() : QUrlQuery(link.mid(q + 1)).queryItemValue(QStringLiteral("dn"), QUrl::FullyDecoded);
     }
+    // subscription.md §7: `paid=1` (the core follows the scope; the pass comes through Ed3kPaid)
+    if (const auto paid = Ed3kPaid::channelOfLink(link))
+        followPaid(w, paid->key, paid->scope);
     logEd3k(QStringLiteral("ed3k: watching live stream %1").arg(idOf(*stream)));
     markChanged();
     return idOf(*stream);
+}
+
+std::expected<QString, QString> Ed3kLive::watchFile(const QByteArray& file)
+{
+    auto* e = m_session.engine();
+    if (!e)
+        return std::unexpected(tr("ed3k is not running."));
+    const auto info = Ed3kLiveFiles::parse(file);
+    if (!info)
+        return std::unexpected(tr("This is not an ed3k channel file."));
+    // §2.3: what this viewer can't play is not joined
+    const QString media = info->media.isEmpty() ? QStringLiteral("video/mp4") : info->media;
+    if (const QString why = m_playCheck ? m_playCheck(media, info->codecs) : canPlay(media, info->codecs); !why.isEmpty())
+        return std::unexpected(why);
+    auto stream = e->liveWatchFile(m_session.now(), std::span<const std::byte>(reinterpret_cast<const std::byte*>(file.constData()),
+                                                                              std::size_t(file.size())));
+    m_session.pump();
+    if (!stream) {
+        if (stream.error() == ffi::Error::Unsupported)
+            return std::unexpected(tr("Live streams are turned off for ed3k."));
+        return std::unexpected(tr("This ed3k channel file was refused (error %1).").arg(int(stream.error())));
+    }
+    Watched& w = m_streams[*stream];
+    w.stream = *stream;
+    w.title = info->title;
+    w.media = media;
+    w.codecs = info->codecs;
+    // §7: a channel file with an offer: the core followed its scope with that offer
+    if (info->key.size() == 32 && !info->id.isEmpty()) {
+        ffi::Key32 key{};
+        std::memcpy(key.data(), info->key.constData(), key.size());
+        const auto scope = ffi::paidScope(1, key, std::span<const std::byte>(reinterpret_cast<const std::byte*>(info->id.constData()),
+                                                                             std::size_t(info->id.size())));
+        if (scope)
+            if (const auto offer = e->paidOffer(*scope); offer && *offer)
+                followPaid(w, key, *scope);
+    }
+    logEd3k(QStringLiteral("ed3k: watching live stream %1 (channel file)").arg(idOf(*stream)));
+    markChanged();
+    return idOf(*stream);
+}
+
+void Ed3kLive::watchFound(const ffi::Root& root, std::uint64_t size, WatchDone done)
+{
+    QPointer<Ed3kLive> self(this);
+    m_files->fetch(root, size, [self, done = std::move(done)](std::optional<QByteArray> file) {
+        if (!self)
+            return;
+        if (!file)
+            done(std::unexpected(tr("The channel file could not be fetched.")));
+        else
+            done(self->watchFile(*file));
+    });
+}
+
+QString Ed3kLive::canPlay(const QString& media, const QString& codecs)
+{
+    QMediaFormat any;
+    const auto decodable = any.supportedFileFormats(QMediaFormat::Decode);
+    if (decodable.isEmpty())
+        return {};   // no backend says: the player decides
+    auto container = containerOf(media);
+    // audio/mp4 is an MPEG-4 file: what plays one plays the other
+    if (container == QMediaFormat::Mpeg4Audio && !decodable.contains(*container) && decodable.contains(QMediaFormat::MPEG4))
+        container = QMediaFormat::MPEG4;
+    if (container && !decodable.contains(*container))
+        return tr("This player can't play %1 streams.").arg(media);
+    QMediaFormat fmt(container.value_or(QMediaFormat::UnspecifiedFormat));
+    const auto video = fmt.supportedVideoCodecs(QMediaFormat::Decode);
+    const auto audio = fmt.supportedAudioCodecs(QMediaFormat::Decode);
+    for (const QString& token : codecs.split(QLatin1Char(','), Qt::SkipEmptyParts)) {
+        const CodecOf c = codecOf(token);
+        if ((c.video && !video.contains(*c.video)) || (c.audio && !audio.contains(*c.audio)))
+            return tr("This player can't play %1 (%2).").arg(media, token.trimmed());
+    }
+    return {};
 }
 
 bool Ed3kLive::leave(const QString& id)
@@ -131,6 +282,8 @@ bool Ed3kLive::leave(const QString& id)
     if (auto* e = m_session.engine(); e && !it->second.left)
         (void)e->liveLeave(m_session.now(), *s);
     endViewers(it->second);
+    if (m_paid && it->second.paidScope)
+        m_paid->leaveChannel(*it->second.paidScope);
     m_streams.erase(it);
     m_session.pump();
     logEd3k(QStringLiteral("ed3k: left live stream %1").arg(id));
@@ -190,7 +343,8 @@ void Ed3kLive::onEventPolled(const ffi::Event& event, bool* handled)
         if (Watched* w = find(g->stream)) {
             *handled = true;
             w->neighbours.erase(g->node);
-            if (w->neighbours.empty() && w->state != State::Ended)
+            // an ended or refused (§2.3, left) stream keeps its state
+            if (w->neighbours.empty() && w->state != State::Ended && w->state != State::Unsupported)
                 w->state = State::NoPeers;
             markChanged();
         }
@@ -205,6 +359,13 @@ void Ed3kLive::onEventPolled(const ffi::Event& event, bool* handled)
             if (!c->media.empty())
                 w->media = QString::fromStdString(c->media);
             w->codecs = QString::fromStdString(c->codecs);
+            // §2.3: what can't be played here is left (from the event loop, not in the pump)
+            const QString why = m_playCheck ? m_playCheck(w->media, w->codecs) : canPlay(w->media, w->codecs);
+            if (!why.isEmpty())
+                QTimer::singleShot(0, this, [this, stream = c->stream, why] {
+                    if (Watched* again = find(stream))
+                        refuse(*again, why);
+                });
             markChanged();
         }
     } else if (const auto* i = std::get_if<e::LiveInit>(&event)) {
@@ -234,7 +395,7 @@ void Ed3kLive::onEventPolled(const ffi::Event& event, bool* handled)
     } else if (const auto* in = std::get_if<e::LiveInterrupted>(&event)) {
         if (Watched* w = find(in->stream)) {
             *handled = true;
-            if (w->state != State::Ended)
+            if (w->state != State::Ended && w->state != State::Unsupported)
                 w->state = State::Interrupted;
             markChanged();
         }
@@ -243,7 +404,8 @@ void Ed3kLive::onEventPolled(const ffi::Event& event, bool* handled)
             *handled = true;
             // the engine left it (after its end): shown as ended until the user leaves it
             endViewers(*w);
-            w->state = State::Ended;
+            if (w->state != State::Unsupported)
+                w->state = State::Ended;
             w->left = true;
             markChanged();
         }
@@ -289,8 +451,9 @@ bool Ed3kLive::onRequest(const QHttpServerRequest& req, QHttpServerResponder& re
         return true;
     }
     Watched& w = it->second;
-    if (w.state == State::Ended) {
-        answerPlain(resp, QHttpServerResponder::StatusCode::Gone, "the broadcast ended\n");
+    if (w.state == State::Ended || w.state == State::Unsupported) {
+        answerPlain(resp, QHttpServerResponder::StatusCode::Gone,
+                    w.state == State::Ended ? QByteArray("the broadcast ended\n") : QByteArray("not played here (codecs)\n"));
         return true;
     }
     // a browser at / gets the player page; the stream is at /stream (and / for players)
@@ -340,7 +503,7 @@ void Ed3kLive::onSegment(Watched& w, const ffi::event::LiveSegment& s)
         w.window.pop_front();
     ++w.segments;
     w.bytes += std::uint64_t(data.size());
-    if (w.state != State::Ended)
+    if (w.state != State::Ended && w.state != State::Unsupported)
         w.state = State::Playing;
     for (auto& v : w.viewers) {
         if (!v->begun)
@@ -349,6 +512,30 @@ void Ed3kLive::onSegment(Watched& w, const ffi::event::LiveSegment& s)
             v->responder.writeChunk(data);
     }
     markChanged();
+}
+
+void Ed3kLive::refuse(Watched& w, const QString& why)
+{
+    if (w.state == State::Unsupported)
+        return;
+    if (auto* e = m_session.engine(); e && !w.left)
+        (void)e->liveLeave(m_session.now(), w.stream);
+    endViewers(w);
+    w.left = true;
+    w.state = State::Unsupported;
+    w.error = why;
+    if (m_paid && w.paidScope)
+        m_paid->leaveChannel(*w.paidScope);
+    m_session.pump();
+    logEd3k(QStringLiteral("ed3k: live stream %1 not played: %2 %3").arg(idOf(w.stream), w.media, w.codecs));
+    markChanged();
+}
+
+void Ed3kLive::followPaid(Watched& w, const ffi::Key32& key, const ffi::Scope& scope)
+{
+    w.paidScope = scope;
+    if (m_paid)
+        m_paid->followChannel(key, scope, w.title);
 }
 
 void Ed3kLive::begin(Watched& w, Viewer& v)
@@ -466,6 +653,9 @@ Ed3kLive::Info Ed3kLive::infoOf(const Watched& w) const
     i.viewers = int(w.viewers.size());
     i.restarts = w.restarts;
     i.url = urlOf(i.id);
+    if (w.paidScope)
+        i.paidScope = Ed3kPaid::hexOf(*w.paidScope);
+    i.error = w.error;
     return i;
 }
 

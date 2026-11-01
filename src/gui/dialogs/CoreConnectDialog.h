@@ -4,7 +4,7 @@
 /// @brief Last-resort dialog for connecting to a remote eMule daemon
 ///        when no local emulecored binary is found.
 
-#include <QDialog>
+#include "dialogs/RememberedSizeDialog.h"
 #include <QString>
 
 class QLineEdit;
@@ -14,7 +14,7 @@ class QPushButton;
 
 namespace eMule {
 
-class CoreConnectDialog : public QDialog {
+class CoreConnectDialog : public RememberedSizeDialog {
     Q_OBJECT
 
 public:

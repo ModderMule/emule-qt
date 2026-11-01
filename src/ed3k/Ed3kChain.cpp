@@ -85,6 +85,9 @@ QString Ed3kChain::refusalText(std::uint32_t why, const QString& message)
         return text.isEmpty() ? tr("The chain node refused it.") : tr("The chain node refused it: %1").arg(text);
     if (why == ED3K_CHAIN_BAD_REQUEST)
         return tr("The forwarder refused the site's request (its signature or nonce does not verify); it was not sent.");
+    // batch 14: a site's request with less gas than its estimate would revert in execute
+    if (why == ED3K_CHAIN_GAS_LOW)
+        return tr("The site's request has less gas than the estimate (it would fail on the chain); it was not sent.");
     return {};
 }
 

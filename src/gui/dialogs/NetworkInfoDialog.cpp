@@ -51,7 +51,7 @@ QString ipFromEd2k(qint64 ip)
 // ---------------------------------------------------------------------------
 
 NetworkInfoDialog::NetworkInfoDialog(IpcClient* ipc, QWidget* parent)
-    : QDialog(parent)
+    : RememberedSizeDialog(parent)
     , m_ipc(ipc)
 {
     setWindowTitle(tr("Network Information"));

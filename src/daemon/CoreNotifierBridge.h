@@ -160,6 +160,7 @@ private:
     std::unordered_set<MD4Key> m_dirtySharedFiles;
     QTimer m_sharedFlushTimer;
     QTimer m_sharedRatesTimer;
+    int m_sharedHashingSent = -1;   ///< last PushSharedHashing count; -1 = send again
 };
 
 } // namespace eMule

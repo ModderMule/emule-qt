@@ -5,6 +5,8 @@
 /// set's folder, node D only the part it chose; a new version under "ask" waits for the user,
 /// under "download" comes at once, both across a restart. Also the website server's answers
 /// for a set not held (name.md §6.3: wait, 504, 503) and a set that is no website (§6.1).
+/// Batch 14: a paid catalogue's sealed member (subscription.md §8.1 `epoch`) downloaded sealed,
+/// opened with the epoch key once a voucher's pass got it (Ed3kPaid), the sealed copy kept.
 
 #include "Ed3kDownloads.h"
 #include "Ed3kNames.h"
@@ -160,7 +162,8 @@ struct Author {
 
 /// "ed3kset" ‖ 0x01 ‖ SetFile{body = FileSet{title, dirs, files, id, seq}, key, sigs}
 QByteArray signedManifest(const Author& a, const QString& title, const QStringList& dirs, const std::vector<MemberSpec>& members,
-                          const QByteArray& id, std::uint64_t seq)
+                          const QByteArray& id, std::uint64_t seq, const QByteArray& offer = {},
+                          std::optional<std::uint64_t> epoch = {})
 {
     QByteArray set;
     bytesField(set, 1, title.toUtf8());
@@ -173,10 +176,15 @@ QByteArray signedManifest(const Author& a, const QString& title, const QStringLi
         bytesField(member, 3, m.name.toUtf8());
         if (m.dir != 0)
             varintField(member, 4, m.dir);
+        // subscription.md §8.1: every member sealed with this epoch's key (data: the sealed file)
+        if (epoch)
+            varintField(member, 12, *epoch);
         bytesField(set, 3, member);
     }
     bytesField(set, 6, id);
     varintField(set, 7, seq);
+    if (!offer.isEmpty())
+        bytesField(set, 12, offer);   // subscription.md §3: a paid catalogue
     QByteArray sig;
     varintField(sig, 1, 1);   // Ed25519
     bytesField(sig, 2, a.sign(QByteArray("ed3k v1 set manifest") + set));
@@ -251,6 +259,7 @@ struct Follower {
     std::unique_ptr<Ed3kSession> session;
     std::unique_ptr<Ed3kDownloads> downloads;
     std::unique_ptr<Ed3kSets> sets;
+    std::unique_ptr<Ed3kPaid> paid;   // paid sets only (setPaid)
     ::ed3k::Source seeder;
     /// the topic the engine follows the set under (from its first SetManifest)
     std::optional<::ed3k::Topic> topic;
@@ -291,6 +300,7 @@ struct Follower {
     void stop()
     {
         sets.reset();
+        paid.reset();
         if (downloads)
             downloads->stop();
         downloads.reset();
@@ -317,13 +327,14 @@ private slots:
     void theIpcListsAndFollows();
     void aSetNotHeldWaitsThen504Or503();
     void aSetThatIsNoWebsiteIsOffered();
+    void aSealedMemberOfAPaidCatalogueIsOpened();
     void cleanupTestCase();
     void cleanup() { QTest::qWait(10); }
 
 private:
     bool publish(const QByteArray& manifest);
 
-    QTemporaryDir m_da, m_db, m_dc, m_dd;
+    QTemporaryDir m_da, m_db, m_dc, m_dd, m_de;
     Ed3kSession m_a, m_b;
     FakeSource m_src;
     std::unique_ptr<Ed3kShared> m_shared;
@@ -727,6 +738,117 @@ void tst_Ed3kSets::aSetThatIsNoWebsiteIsOffered()
     QCOMPARE(offered.count(), 1);
     names.stop();
     s.stop();
+}
+
+// subscription.md §8.1: a sealed member is downloaded and shared sealed, opened with k_data of
+// its epoch once the pass (a voucher, §9.3) got the key; the plain file in the member's path
+void tst_Ed3kSets::aSealedMemberOfAPaidCatalogueIsOpened()
+{
+    const QByteArray id("paid season");
+    const auto scope = ::ed3k::paidScope(2, m_author.key(), {reinterpret_cast<const std::byte*>(id.constData()), std::size_t(id.size())});
+    QVERIFY(scope);
+    const std::uint64_t now = m_a.now().unixS;
+    const std::uint32_t period = 3600;
+    const std::uint64_t t0 = now - 10 * period;
+    const std::uint64_t epoch = (now - t0) / period;
+    ::ed3k::Key32 seasonSeed{};
+    seasonSeed.fill(0x5A);
+    auto chain = ::ed3k::paidChainNew(m_author.seed, *scope, epoch, 24, seasonSeed);
+    QVERIFY(chain);
+    ::ed3k::PaidOfferFields f;
+    f.scope = *scope;
+    f.issued = now - 60;
+    f.t0 = t0;
+    f.period = period;
+    f.chain.assign(chain->bytes().begin(), chain->bytes().end());
+    f.price = "1 EUR";
+    f.payUrl = "https://shop.example/pay";
+    f.passUrl = "https://shop.example/pass";
+    auto offer = ::ed3k::paidOfferSign(m_author.seed, f);
+    QVERIFY(offer);
+    const QByteArray offerBytes(reinterpret_cast<const char*>(offer->bytes().data()), qsizetype(offer->bytes().size()));
+    const std::uint64_t until = now + 7 * 86400;
+
+    // A: the publisher's node, a key holder (its own pass, §5)
+    ::ed3k::Key32 aHolder{};
+    aHolder.fill(0x4A);
+    std::optional<::ed3k::Key32> kEpoch;
+    m_a.post([&](::ed3k::Engine& e, ::ed3k::Now n) {
+        (void)e.paidFollow(m_author.key(), *scope);
+        (void)e.paidSetOffer(n, *scope, offer->bytes());
+        (void)e.paidPublish(*scope, chain->bytes(), seasonSeed);
+        const auto pass = ::ed3k::paidSignPass(m_author.seed, std::span<const ::ed3k::Scope>{&*scope, 1}, *::ed3k::keyPublic(aHolder), n.unixS - 60, until);
+        if (pass)
+            (void)e.paidSetPass(n, *scope, pass->bytes(), aHolder);
+        if (const auto k = e.paidKey(*scope, epoch); k && *k)
+            kEpoch = **k;
+    });
+    QVERIFY(kEpoch);
+    // the member sealed with k_data of the epoch: nonce ‖ ChaCha20 (subscription.md §8.1)
+    const auto kData = ::ed3k::paidDataKey(*scope, *kEpoch);
+    QVERIFY(kData);
+    const QByteArray plain = payload(150 * 1024 + 7, 9);
+    QByteArray cipher = plain;
+    std::array<std::uint8_t, 12> nonce{};
+    nonce.fill(0x0C);
+    QVERIFY(::ed3k::sealedReadAt(*kData, nonce, 0, {reinterpret_cast<std::byte*>(cipher.data()), std::size_t(cipher.size())}));
+    const QByteArray sealed = QByteArray(reinterpret_cast<const char*>(nonce.data()), 12) + cipher;
+    QVERIFY(cipher != plain);
+    const QByteArray manifest = signedManifest(m_author, QStringLiteral("Paid season"), {}, {MemberSpec{QStringLiteral("e.bin"), 0, sealed}}, id, 1,
+                                               offerBytes, epoch);
+    QCOMPARE(Ed3kSetManifest::parse(manifest)->files.at(0).epoch, std::optional<std::uint64_t>(epoch));
+    QCOMPARE(Ed3kSetManifest::parse(manifest)->offer, offerBytes);
+    // A shares the sealed file and the manifest, publishes the head
+    QSignalSpy shared(m_shared.get(), &Ed3kShared::fileShared);
+    int n = 0;
+    for (const auto& [name, data] : {std::pair{QStringLiteral("sealed.bin"), sealed}, std::pair{QStringLiteral("paid.ed3kset"), manifest}}) {
+        const QString path = QDir(m_da.path()).filePath(QStringLiteral("share/") + name);
+        QVERIFY(writeFile(path, data));
+        const SharedEntry entry{QByteArray(16, char(0x50 + n++)), path, name, std::uint64_t(data.size())};
+        m_src.entries.push_back(entry);
+        m_shared->onFileAdded(entry);
+    }
+    QTRY_COMPARE_WITH_TIMEOUT(shared.count(), 2, 30000);
+    const ::ed3k::Root root = rootOf(manifest);
+    bool published = false;
+    const ::ed3k::Key32 seed = m_author.seed;
+    m_a.post([&](::ed3k::Engine& e, ::ed3k::Now n2) {
+        const auto r = e.setPublish(n2, {reinterpret_cast<const std::byte*>(manifest.constData()), std::size_t(manifest.size())}, root,
+                                    "Paid season.ed3kset", ::ed3k::SetSigner::Seed, &seed);
+        published = r.has_value() && r->has_value();
+    });
+    QVERIFY(published);
+
+    // E: a voucher first (its scope not followed yet: it waits), then the catalogue's link
+    Follower e;
+    QVERIFY(e.start(m_de.path(), nodeOf(m_b), sourceOf(m_a)));
+    e.paid = std::make_unique<Ed3kPaid>(*e.session, e.dir);
+    e.sets->setPaid(e.paid.get());
+    QTRY_VERIFY_WITH_TIMEOUT(e.session->contactCount() > 0, 20000);
+    ::ed3k::Key32 voucher{};
+    voucher.fill(0x7E);
+    const auto pass = ::ed3k::paidSignPass(m_author.seed, std::span<const ::ed3k::Scope>{&*scope, 1}, *::ed3k::keyPublic(voucher), now - 60, until);
+    QVERIFY(pass);
+    const auto passLink = ::ed3k::passLink(pass->bytes(), voucher);
+    QVERIFY(passLink);
+    QVERIFY(e.paid->addPassLink(QString::fromStdString(*passLink)));
+    const auto setId = e.sets->follow(Ed3kSets::setLink(m_author.key(), id, QStringLiteral("Paid season")), Ed3kSets::Policy::Download);
+    QVERIFY(setId);
+    QTRY_VERIFY_WITH_TIMEOUT(e.sets->info(*setId)->seq == std::uint64_t(1), 90000);
+    const QString hex = Ed3kPaid::hexOf(*scope);
+    QCOMPARE(e.sets->info(*setId)->paidScope, hex);
+    QTRY_VERIFY_WITH_TIMEOUT(e.paid->holdsPass(*scope), 5000);
+    // the keys from A (the core asks the manifest's sources as well)
+    QVERIFY(e.paid->requestKeys(hex, sourceOf(m_a)));
+    const QString dir = e.sets->info(*setId)->dir;
+    const QString plainPath = QDir(dir).filePath(QStringLiteral("e.bin"));
+    QTRY_VERIFY_WITH_TIMEOUT(readFile(plainPath) == plain, 120000);
+    QTRY_VERIFY_WITH_TIMEOUT(e.sets->info(*setId)->members.at(0).state == Ed3kSets::MemberState::Complete, 10000);
+    // the sealed copy stays, under its wire name, shared as downloaded (§8.1 "anyone may seed")
+    const auto wire = ::ed3k::sealedName(rootOf(sealed));
+    QVERIFY(wire);
+    QCOMPARE(readFile(QDir(dir).filePath(QStringLiteral(".sealed/") + QString::fromStdString(*wire))), sealed);
+    e.stop();
 }
 
 QTEST_GUILESS_MAIN(tst_Ed3kSets)

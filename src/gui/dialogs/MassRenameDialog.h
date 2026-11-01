@@ -6,7 +6,7 @@
 
 #include "utils/MassRename.h"
 
-#include <QDialog>
+#include "dialogs/RememberedSizeDialog.h"
 #include <QLineEdit>
 #include <QList>
 
@@ -46,7 +46,7 @@ private:
     qsizetype m_selEnd = 0;
 };
 
-class MassRenameDialog : public QDialog {
+class MassRenameDialog : public RememberedSizeDialog {
     Q_OBJECT
 
 public:

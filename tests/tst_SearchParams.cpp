@@ -83,6 +83,18 @@ void tst_SearchParams::searchType_values()
     QCOMPARE(static_cast<uint8>(SearchType::MetaTorrent), uint8{7});
     QVERIFY(isMetaSearchType(SearchType::MetaUsenet) && isMetaSearchType(SearchType::MetaTorrent));
     QVERIFY(!isMetaSearchType(SearchType::UsenetIndexer) && !isMetaSearchType(SearchType::Automatic));
+    // the ed3k node's searches (batch 14: the live channel search next to ed3k)
+    QCOMPARE(static_cast<uint8>(SearchType::Ed3k), uint8{9});
+    QCOMPARE(static_cast<uint8>(SearchType::Ed3kLive), uint8{10});
+    QVERIFY(isEd3kSearchType(SearchType::Ed3k) && isEd3kSearchType(SearchType::Ed3kLive));
+    QVERIFY(!isEd3kSearchType(SearchType::MetaWeb) && !isMetaSearchType(SearchType::Ed3kLive));
+    // a saved search keeps it (searches.met)
+    SearchParams live;
+    live.type = SearchType::Ed3kLive;
+    SafeMemFile mem;
+    live.storePartially(mem);
+    mem.seek(0, 0);
+    QCOMPARE(SearchParams(mem).type, SearchType::Ed3kLive);
 }
 
 void tst_SearchParams::fields_initialValues()

@@ -34,6 +34,10 @@ enum class Fit {
     Layout,
 };
 
+/// How large @p dialog may grow before it stops fitting on its screen -- the available
+/// area less room for the window frame.
+[[nodiscard]] QSize screenBudget(const QWidget* dialog);
+
 /// Give @p dialog a minimum size that shows all of its content, and a default size at
 /// least that large. Both are clamped to what the screen can actually display.
 /// Fit::Content taller than the screen opens at the screen's height but may shrink to

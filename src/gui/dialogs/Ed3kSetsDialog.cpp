@@ -3,6 +3,7 @@
 
 #include "pch.h"
 #include "dialogs/Ed3kSetsDialog.h"
+#include "dialogs/Ed3kSellDialogs.h"
 
 #include "app/IpcClient.h"
 #include "IpcMessage.h"
@@ -53,6 +54,9 @@ enum LiveCol { LiveName = 0, LiveState, LivePeers, LiveSegments, LiveReceived, L
 constexpr int kPathRole = Qt::UserRole + 1;
 constexpr int kIdRole = Qt::UserRole + 2;
 constexpr int kLinkRole = Qt::UserRole + 3;
+constexpr int kScopeRole = Qt::UserRole + 4;
+/// a broadcast of ours: 1 open (may be sold), 2 sold (paid), 0 none or private
+constexpr int kSellRole = Qt::UserRole + 20;
 
 QTreeWidget* makeList(const QStringList& headers, QWidget* parent)
 {
@@ -89,7 +93,7 @@ Ed3kSetsDialog* Ed3kSetsDialog::showDialog(QWidget* parent, IpcClient* ipc, Tab 
 }
 
 Ed3kSetsDialog::Ed3kSetsDialog(IpcClient* ipc, QWidget* parent)
-    : QDialog(parent)
+    : RememberedSizeDialog(parent)
     , m_ipc(ipc)
 {
     setWindowTitle(tr("ed3k Sets"));
@@ -130,6 +134,9 @@ Ed3kSetsDialog::Ed3kSetsDialog(IpcClient* ipc, QWidget* parent)
     m_parts = button(tr("Download Parts"), setsPage);
     m_buy = button(tr("Buy Pass..."), setsPage);
     m_buy->setObjectName(QStringLiteral("ed3kBuyPass"));
+    m_enterPass = button(tr("Enter Pass..."), setsPage);
+    m_enterPass->setObjectName(QStringLiteral("ed3kEnterPass"));
+    m_enterPass->setToolTip(tr("An ed3k:pass link or voucher the seller gave you (subscription.md §9.3)."));
     m_reports = new QCheckBox(tr("Share reports"), setsPage);
     m_reports->setToolTip(tr("Report a pass key seen at more computers than the seller allows (subscription.md §5.3). "
                              "The report shows the seller the node IDs that used the key."));
@@ -149,6 +156,7 @@ Ed3kSetsDialog::Ed3kSetsDialog(IpcClient* ipc, QWidget* parent)
     side->addWidget(m_parts);
     side->addSpacing(12);
     side->addWidget(m_buy);
+    side->addWidget(m_enterPass);
     side->addWidget(m_reports);
     side->addSpacing(12);
     side->addWidget(m_info);
@@ -169,12 +177,19 @@ Ed3kSetsDialog::Ed3kSetsDialog(IpcClient* ipc, QWidget* parent)
     m_leave = button(tr("Stop"), livePage);
     m_broadcast = button(tr("Broadcast..."), livePage);
     m_copyLink = button(tr("Copy Link"), livePage);
+    m_sell = button(tr("Sell..."), livePage);
+    m_sell->setToolTip(tr("Sells this channel as a paid subscription: every segment is sealed, viewers need a pass."));
+    m_liveBuy = button(tr("Buy Pass..."), livePage);
+    m_liveBuy->setObjectName(QStringLiteral("ed3kLiveBuyPass"));
     liveSide->addWidget(m_watch);
     liveSide->addWidget(m_open);
     liveSide->addWidget(m_leave);
     liveSide->addSpacing(12);
     liveSide->addWidget(m_broadcast);
     liveSide->addWidget(m_copyLink);
+    liveSide->addWidget(m_sell);
+    liveSide->addSpacing(12);
+    liveSide->addWidget(m_liveBuy);
     liveSide->addStretch(1);
     liveLayout->addLayout(liveSide);
     m_tabs->addTab(livePage, tr("Live Streams"));
@@ -196,7 +211,10 @@ Ed3kSetsDialog::Ed3kSetsDialog(IpcClient* ipc, QWidget* parent)
     connect(m_live, &QTreeWidget::currentItemChanged, this, &Ed3kSetsDialog::updateButtons);
     connect(m_broadcast, &QPushButton::clicked, this, &Ed3kSetsDialog::broadcast);
     connect(m_copyLink, &QPushButton::clicked, this, &Ed3kSetsDialog::copyLink);
+    connect(m_sell, &QPushButton::clicked, this, &Ed3kSetsDialog::sellChannel);
     connect(m_buy, &QPushButton::clicked, this, &Ed3kSetsDialog::buyPass);
+    connect(m_enterPass, &QPushButton::clicked, this, [this] { enterPass(this, m_ipc); });
+    connect(m_liveBuy, &QPushButton::clicked, this, [this] { paidAction(currentLivePaid()); });
     connect(m_reports, &QCheckBox::clicked, this, [this](bool on) {
         if (m_ipc)
             m_ipc->setEd3kPassReports(on);
@@ -279,6 +297,7 @@ void Ed3kSetsDialog::fillSets(const QCborMap& sets)
 
 void Ed3kSetsDialog::fillLive(const QCborMap& live)
 {
+    m_liveMap = live;
     const QString keep = currentStream();
     m_live->clear();
     for (const auto& v : live.value(QStringLiteral("streams")).toArray()) {
@@ -295,6 +314,13 @@ void Ed3kSetsDialog::fillLive(const QCborMap& live)
         item->setText(LiveSegments, QString::number(s.value(QStringLiteral("segments")).toInteger()));
         item->setText(LiveReceived, formatByteSize(s.value(QStringLiteral("bytes")).toInteger()));
         item->setText(LiveViewers, QString::number(s.value(QStringLiteral("viewers")).toInteger()));
+        // a paid channel (subscription.md §7): the pass state until one is held
+        if (const QString scope = s.value(QStringLiteral("paidScope")).toString(); !scope.isEmpty()) {
+            item->setData(LiveName, kScopeRole, scope);
+            const int paidState = int(m_paidRows.value(scope).value(QStringLiteral("state")).toInteger());
+            if (paidState != 2)
+                item->setText(LiveState, paidStateText(paidState));
+        }
         if (s.value(QStringLiteral("broadcast")).toBool()) {
             // our own broadcast: on air, its link to copy (a private one's is a secret: not shown)
             item->setData(LiveName, kLinkRole, s.value(QStringLiteral("link")).toString());
@@ -303,6 +329,10 @@ void Ed3kSetsDialog::fillLive(const QCborMap& live)
             item->setToolTip(LiveName, s.value(QStringLiteral("folder")).toString());
             item->setText(LiveReceived, formatByteSize(s.value(QStringLiteral("bytes")).toInteger()));
             item->setText(LiveViewers, QStringLiteral("-"));
+            const bool sold = s.value(QStringLiteral("paid")).toBool();
+            item->setData(LiveName, kSellRole, s.value(QStringLiteral("private")).toBool() ? 0 : sold ? 2 : 1);
+            if (sold)
+                item->setText(LiveState, item->text(LiveState) + tr(", paid"));
         }
         if (id == keep)
             m_live->setCurrentItem(item);
@@ -322,6 +352,9 @@ void Ed3kSetsDialog::fillPaid(const QCborMap& paid)
     QCborMap sets;
     sets.insert(QStringLiteral("sets"), m_setRows);
     fillSets(sets);
+    // and the paid channels'
+    if (!m_liveMap.isEmpty())
+        fillLive(QCborMap(m_liveMap));
 }
 
 void Ed3kSetsDialog::selectSet(qint64 id)
@@ -345,6 +378,7 @@ QString Ed3kSetsDialog::memberStateText(int state)
     case 3: return tr("Complete");
     case 4: return tr("Failed");
     case 5: return tr("Paused");
+    case 6: return tr("Waiting for the key");
     default: return {};
     }
 }
@@ -370,8 +404,69 @@ QString Ed3kSetsDialog::paidStateText(int state)
     case 3: return tr("Pass refused");
     case 4: return tr("No pass came");
     case 5: return tr("Waiting for your answer");
+    case 6: return tr("Pass waits for your answer");
     default: return {};
     }
+}
+
+void Ed3kSetsDialog::addPassLink(QWidget* parent, IpcClient* ipc, const QString& link)
+{
+    if (!ipc)
+        return;
+    // §9.3: a credential: never logged
+    QPointer<QWidget> where = parent;
+    QPointer<IpcClient> client = ipc;
+    ipc->addEd3kPassLink(link, [where, client](const IpcMessage& r) {
+        const QCborMap m = r.fieldMap(1);
+        if (r.type() != IpcMsgType::Result || !r.fieldBool(0)) {
+            const QString why = m.value(QStringLiteral("error")).toString();
+            QMessageBox::warning(where, tr("ed3k Pass"), why.isEmpty() ? tr("The pass link could not be taken.") : why);
+            return;
+        }
+        const QString scope = m.value(QStringLiteral("scope")).toString();
+        const QString title = m.value(QStringLiteral("title")).toString();
+        const int scopes = int(m.value(QStringLiteral("scopes")).toInteger(1));
+        if (m.value(QStringLiteral("waits")).toBool()) {
+            askPassScopes(where, client, scope, title, scopes - 1);
+            return;
+        }
+        QString text = title.isEmpty() ? tr("The pass was taken.") : tr("The pass for \"%1\" was taken.").arg(title);
+        // §9.3 SHOULD: a voucher used twice is one pass for two people
+        if (m.value(QStringLiteral("voucher")).toBool())
+            text += QStringLiteral("\n\n") + tr("This was a voucher: whoever has the link holds the pass. Don't hand it on; "
+                                               "a voucher used twice is one pass for two people.");
+        QMessageBox::information(where, tr("ed3k Pass"), text);
+    });
+}
+
+void Ed3kSetsDialog::askPassScopes(QWidget* parent, IpcClient* ipc, const QString& scope, const QString& title, int others)
+{
+    if (!ipc)
+        return;
+    // subscription.md §5.1, ruling #10: told before the pass is first shown; no: kept unused
+    const QString name = title.isEmpty() ? tr("this subscription") : QStringLiteral("\"%1\"").arg(title);
+    const auto answer = QMessageBox::question(
+        parent, tr("ed3k Pass for Several Subscriptions"),
+        tr("The pass for %1 also covers %n other subscription(s). Every node it is shown to sees all of them, "
+           "so they can tell which other subscriptions you pay for.\n\nUse this pass? If not, it is kept unused; "
+           "you can use it later with \"Use Pass...\".",
+           nullptr, others)
+            .arg(name),
+        QMessageBox::Yes | QMessageBox::No, QMessageBox::No);
+    ipc->answerEd3kPaidScopes(scope, answer == QMessageBox::Yes);
+}
+
+void Ed3kSetsDialog::enterPass(QWidget* parent, IpcClient* ipc)
+{
+    if (!ipc)
+        return;
+    const QString clip = QApplication::clipboard()->text().trimmed();
+    bool ok = false;
+    const QString link = QInputDialog::getText(parent, tr("Enter ed3k Pass"), tr("ed3k:pass link or voucher:"), QLineEdit::Normal,
+                                               clip.startsWith(QStringLiteral("ed3k:pass?"), Qt::CaseInsensitive) ? clip : QString(), &ok)
+                             .trimmed();
+    if (ok && !link.isEmpty())
+        addPassLink(parent, ipc, link);
 }
 
 // ---------------------------------------------------------------------------
@@ -506,8 +601,15 @@ void Ed3kSetsDialog::updateButtons()
     const int paidState = paid.isEmpty() ? -1 : int(paid.value(QStringLiteral("state")).toInteger());
     // a pass is bought with a known offer, and again when it ended or none came
     m_buy->setVisible(!paid.isEmpty());
-    m_buy->setEnabled(connected && paid.value(QStringLiteral("hasOffer")).toBool() && paidState != 1 && paidState != 5
-                      && !(paidState == 2 && paid.value(QStringLiteral("until")).toInteger() > QDateTime::currentSecsSinceEpoch()));
+    // m_buy->setEnabled(connected && paid.value(QStringLiteral("hasOffer")).toBool() && paidState != 1 && paidState != 5
+    //                   && !(paidState == 2 && paid.value(QStringLiteral("until")).toInteger() > QDateTime::currentSecsSinceEpoch()));
+    m_buy->setText(paidState == 6 ? tr("Use Pass...") : tr("Buy Pass..."));
+    m_buy->setEnabled(paidActionEnabled(paid, connected));
+    m_enterPass->setEnabled(connected);
+    const QCborMap livePaid = currentLivePaid();
+    m_liveBuy->setVisible(!livePaid.isEmpty());
+    m_liveBuy->setText(livePaid.value(QStringLiteral("state")).toInteger() == 6 ? tr("Use Pass...") : tr("Buy Pass..."));
+    m_liveBuy->setEnabled(paidActionEnabled(livePaid, connected));
     m_reports->setVisible(!m_paidRows.isEmpty());
     m_reports->setEnabled(connected);
     m_parts->setEnabled(connected && !s.value(QStringLiteral("parts")).toArray().isEmpty());
@@ -519,6 +621,7 @@ void Ed3kSetsDialog::updateButtons()
                        && !m_live->currentItem()->data(LiveName, kPathRole).toString().isEmpty());
     m_broadcast->setEnabled(connected);
     m_copyLink->setEnabled(stream && m_live->currentItem() && !m_live->currentItem()->data(LiveName, kLinkRole).toString().isEmpty());
+    m_sell->setEnabled(connected && stream && m_live->currentItem() && m_live->currentItem()->data(LiveName, kSellRole).toInt() == 1);
 }
 
 QCborMap Ed3kSetsDialog::currentSet() const
@@ -728,9 +831,65 @@ void Ed3kSetsDialog::copyLink()
         QApplication::clipboard()->setText(item->data(LiveName, kLinkRole).toString());
 }
 
+void Ed3kSetsDialog::sellChannel()
+{
+    const QString id = currentStream();
+    const QTreeWidgetItem* item = m_live->currentItem();
+    if (id.isEmpty() || !item || !m_ipc)
+        return;
+    const QString title = item->text(LiveName);
+    // the defaults of a new offer first (GetEd3kSelling), then the terms, then SellEd3k
+    m_ipc->sendRequest(IpcMessage(IpcMsgType::GetEd3kSelling), [self = QPointer(this), id, title](const IpcMessage& r) {
+        if (!self || !self->m_ipc)
+            return;
+        const QCborMap defaults = r.fieldBool(0) ? r.fieldMap(1).value(QStringLiteral("defaults")).toMap() : QCborMap{};
+        const auto terms = Ed3kSellTermsDialog::ask(self, Ed3kSellTermsDialog::Mode::NewChannel, defaults, tr("Sell \"%1\"").arg(title));
+        if (!terms)
+            return;
+        IpcMessage req(IpcMsgType::SellEd3k);
+        req.append(qint64(1));
+        req.append(id);
+        req.append(title);
+        req.append(*terms);
+        self->m_ipc->sendRequest(std::move(req), [self](const IpcMessage& a) {
+            if (!self)
+                return;
+            if (!a.fieldBool(0)) {
+                self->showError(tr("The channel could not be sold."), a.fieldMap(1));
+                return;
+            }
+            const QString link = a.fieldMap(1).value(QStringLiteral("link")).toString();
+            QApplication::clipboard()->setText(link);
+            QMessageBox::information(self, tr("ed3k Live Stream"),
+                                     tr("The channel is on air as a paid one now; viewers need a pass. Issue passes in "
+                                        "Options → ed3k → Selling. The link was copied to the clipboard:\n%1")
+                                         .arg(link));
+            self->refresh();
+        });
+    });
+}
+
 void Ed3kSetsDialog::buyPass()
 {
-    const QCborMap p = paidOf(currentSet());
+    paidAction(paidOf(currentSet()));
+}
+
+void Ed3kSetsDialog::paidAction(const QCborMap& p)
+{
+    if (p.isEmpty() || !m_ipc)
+        return;
+    // §5.1: a pass of several scopes waits (declined before): asked again
+    if (p.value(QStringLiteral("state")).toInteger() == 6) {
+        askPassScopes(this, m_ipc, p.value(QStringLiteral("scope")).toString(), p.value(QStringLiteral("title")).toString(),
+                      int(p.value(QStringLiteral("passScopes")).toInteger(2)) - 1);
+        return;
+    }
+    buyPassFor(p);
+}
+
+void Ed3kSetsDialog::buyPassFor(const QCborMap& p)
+{
+    // const QCborMap p = paidOf(currentSet());
     if (p.isEmpty() || !m_ipc)
         return;
     const QString scope = p.value(QStringLiteral("scope")).toString();
@@ -798,6 +957,26 @@ void Ed3kSetsDialog::openPayLink(const QString& link)
         QApplication::clipboard()->setText(link);
 }
 
+bool Ed3kSetsDialog::paidActionEnabled(const QCborMap& p, bool connected) const
+{
+    if (p.isEmpty() || !connected)
+        return false;
+    const int state = int(p.value(QStringLiteral("state")).toInteger());
+    if (state == 6)
+        return true;
+    return p.value(QStringLiteral("hasOffer")).toBool() && state != 1 && state != 5
+           && !(state == 2 && p.value(QStringLiteral("until")).toInteger() > QDateTime::currentSecsSinceEpoch());
+}
+
+QCborMap Ed3kSetsDialog::currentLivePaid() const
+{
+    const QTreeWidgetItem* item = m_live->currentItem();
+    const QString scope = item ? item->data(LiveName, kScopeRole).toString() : QString();
+    if (scope.isEmpty())
+        return {};
+    return m_paidRows.value(scope, QCborMap{{QStringLiteral("scope"), scope}, {QStringLiteral("state"), 0}});
+}
+
 QCborMap Ed3kSetsDialog::paidOf(const QCborMap& s) const
 {
     const QString scope = s.value(QStringLiteral("paidScope")).toString();
@@ -827,6 +1006,12 @@ QStringList Ed3kSetsDialog::paidLines(const QCborMap& p) const
             lines << tr("Renewed from the seller in its last 48 hours.");
     } else if (state == 2) {
         lines << tr("The pass ended on %1; what it opened stays open.").arg(end);
+    } else if (state == 6) {
+        // §5.1: not shown before the user's word
+        lines << tr("A pass came that also covers %n other subscription(s); it is not used before you say so.", nullptr,
+                    int(p.value(QStringLiteral("passScopes")).toInteger(2)) - 1);
+        if (p.value(QStringLiteral("scopesDeclined")).toBool())
+            lines << tr("You chose not to use it.");
     } else {
         lines << paidStateText(state) + QLatin1Char('.');
     }

@@ -112,7 +112,7 @@ QIcon premiumIcon()
 
 WebLinksDialog::WebLinksDialog(const QString& rowName, const QCborMap& links, const QByteArray& content,
                                const QString& fileName, IpcClient* ipc, QWidget* parent)
-    : QDialog(parent)
+    : RememberedSizeDialog(parent)
     , m_content(content)
     , m_fileName(fileName)
     , m_rowName(rowName)

@@ -34,6 +34,12 @@ PanelPoller::PanelPoller(QWidget* panel, std::function<void()> refresh)
         m_panel->installEventFilter(this);
 }
 
+PanelPoller::~PanelPoller()
+{
+    if (m_onScreen && m_onScreenHook)
+        m_onScreenHook(false);
+}
+
 void PanelPoller::setInterval(int ms)
 {
     if (ms <= 0 || ms == m_timer->interval())
@@ -92,6 +98,15 @@ void PanelPoller::refreshNow()
     m_refresh();
 }
 
+void PanelPoller::setOnScreenHook(std::function<void(bool)> hook)
+{
+    if (m_onScreen && m_onScreenHook)
+        m_onScreenHook(false);
+    m_onScreen = false;
+    m_onScreenHook = std::move(hook);
+    applyOnScreen();
+}
+
 // ---------------------------------------------------------------------------
 // Private
 // ---------------------------------------------------------------------------
@@ -116,6 +131,9 @@ bool PanelPoller::eventFilter(QObject* watched, QEvent* event)
 
 void PanelPoller::applyState()
 {
+    // First, so on show the core sends the rows again before the refetch goes out
+    applyOnScreen();
+
     const bool shouldPoll = m_enabled && m_panel && m_panel->isVisible();
     if (shouldPoll) {
         if (!m_timer->isActive())
@@ -123,6 +141,17 @@ void PanelPoller::applyState()
     } else {
         m_timer->stop();
     }
+}
+
+void PanelPoller::applyOnScreen()
+{
+    // Visibility only, not m_enabled: a dropped link keeps the hold, and the
+    // handshake resends it
+    const bool onScreen = m_onScreenHook && m_panel && m_panel->isVisible();
+    if (onScreen == m_onScreen)
+        return;
+    m_onScreen = onScreen;
+    m_onScreenHook(onScreen);
 }
 
 } // namespace eMule

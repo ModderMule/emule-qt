@@ -43,6 +43,7 @@ private slots:
 
     void otherLinksGoToTheHandlerForManualImportsOnly();
     void bitTorrentMagnetsGoToTheTorrentHandler();
+    void ed3kPassLinksGoToTheirHandlerNeverInvalid();
     void searchRowMagnetsGoToTheTorrentHandler();
     void searchRowTorrentFilesGoToTheTorrentHandler();
     void searchRowWebLinksGoToTheHosterHandler();
@@ -377,6 +378,28 @@ void TestEd2kLinkImporter::bitTorrentMagnetsGoToTheTorrentHandler()
                                   Ed2kLinkImporter::Prompt::Silent, keep);
     QCOMPARE(result.torrentLinks, 0);
     QCOMPARE(result.invalid, QStringList{bt});
+}
+
+// subscription.md §9.3 (batch 14): a pass link is a credential: handed over when pasted by hand,
+// dropped by the clipboard watcher (a voucher meant for someone else), never in `invalid`
+void TestEd2kLinkImporter::ed3kPassLinksGoToTheirHandlerNeverInvalid()
+{
+    const QString pass = QStringLiteral("ed3k:pass?p=abcdef&k=secretsecret");
+    QStringList seen;
+    Ed2kLinkImporter::setEd3kPassLinkHandler([&seen](const QStringList& links, QWidget*) { seen += links; });
+    const auto reset = qScopeGuard([] { Ed2kLinkImporter::setEd3kPassLinkHandler({}); });
+    Ed2kLinkImporter::Result result;
+    const auto keep = [&result](const Ed2kLinkImporter::Result& r) { result = r; };
+    Ed2kLinkImporter::importLinks(pass, nullptr, nullptr, Ed2kLinkImporter::Source::Manual, Ed2kLinkImporter::Prompt::Silent, keep);
+    QCOMPARE(seen, QStringList{pass});
+    QCOMPARE(result.ed3kPassLinks, 1);
+    QVERIFY(result.invalid.isEmpty());
+    seen.clear();
+    result = {};
+    Ed2kLinkImporter::importLinks(pass, nullptr, nullptr, Ed2kLinkImporter::Source::Automatic, Ed2kLinkImporter::Prompt::Ask, keep);
+    QVERIFY(seen.isEmpty());
+    QCOMPARE(result.ed3kPassLinks, 0);
+    QVERIFY(result.invalid.isEmpty());
 }
 
 // magnet-only search rows: sendTorrentLinks reuses the paste handler, false without one

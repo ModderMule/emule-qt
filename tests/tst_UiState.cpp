@@ -27,6 +27,8 @@ private slots:
     void legacyStore_importedThenRemoved();
     void legacyStore_yamlValueWins();
     void headerState_newColumnsStayMovable();
+    void dialogSizes_roundTripAndClear();
+    void dialogSizes_legacyOptionsKeysImported();
 
 private:
     QTemporaryDir m_legacyDir;   ///< stands in for ~/.config
@@ -94,6 +96,46 @@ void tst_UiState::language_roundTripAndFallback()
     UiState r;
     r.load(cfg.path());
     QCOMPARE(r.language(prefsLang), QString());
+}
+
+// #107: every resizable dialog reopens at the size it was left at
+void tst_UiState::dialogSizes_roundTripAndClear()
+{
+    QTemporaryDir cfg;
+    {
+        UiState s;
+        s.load(cfg.path());
+        QVERIFY(!s.dialogSize(QStringLiteral("FileDetailDialog")).isValid());
+        s.setDialogSize(QStringLiteral("FileDetailDialog"), QSize(640, 480));
+        s.setDialogSize(QStringLiteral("SearchDetailDialog"), QSize(500, 300));
+        s.save();
+    }
+    {
+        UiState r;
+        r.load(cfg.path());
+        QCOMPARE(r.dialogSize(QStringLiteral("FileDetailDialog")), QSize(640, 480));
+        QCOMPARE(r.dialogSize(QStringLiteral("SearchDetailDialog")), QSize(500, 300));
+        r.setDialogSize(QStringLiteral("SearchDetailDialog"), {});   // back to the default
+        r.save();
+    }
+    UiState r;
+    r.load(cfg.path());
+    QCOMPARE(r.dialogSize(QStringLiteral("FileDetailDialog")), QSize(640, 480));
+    QVERIFY(!r.dialogSize(QStringLiteral("SearchDetailDialog")).isValid());
+}
+
+// Older builds wrote optionsWidth/optionsHeight
+void tst_UiState::dialogSizes_legacyOptionsKeysImported()
+{
+    QTemporaryDir cfg;
+    {
+        QFile f(cfg.filePath(QStringLiteral("uistate.yml")));
+        QVERIFY(f.open(QIODevice::WriteOnly));
+        f.write("optionsWidth: 900\noptionsHeight: 650\n");
+    }
+    UiState s;
+    s.load(cfg.path());
+    QCOMPARE(s.dialogSize(QStringLiteral("OptionsDialog")), QSize(900, 650));
 }
 
 void tst_UiState::legacyStore_importedThenRemoved()

@@ -104,7 +104,7 @@ enum class IpcMsgType : int {
     GetStats             = 180,
     GetPreferences       = 190,
     SetPreferences       = 191,  ///< [key, value, ...]
-    Subscribe            = 200,  ///< [eventMask: int]
+    Subscribe            = 200,  ///< [eventMask: int] — PushGroup bits; pushes outside a group always go
     GetKadContacts       = 210,
     GetKadStatus         = 211,
     BootstrapKad         = 212,  ///< [ip: string, port: int]  (empty = from nodes.dat)
@@ -993,7 +993,7 @@ enum class IpcMsgType : int {
     // pinned, followed, policy (0 ask, 1 download), seq / pendingSeq (-1 none), added, changed,
     // removed (paths of the pending version), dir, error, totalSize, members: [{path, root,
     // size, skipped, state (0 skipped, 1 waiting, 2 downloading, 3 complete, 4 failed,
-    // 5 paused), done}], parts: [{author, seq, dir, name, files, size}]}. A stream: {id,
+    // 5 paused, 6 sealed: downloaded, waits for the key (batch 14)), done}], parts: [{author, seq, dir, name, files, size}]}. A stream: {id,
     // title, media, codecs, state (0 joining, 1 playing, 2 interrupted, 3 no peers, 4 ended),
     // neighbours, segments, bytes, viewers, url}. Failure: [false, {error: string (localized)}].
     /// [] -> [ok, {running, sets: [set]}]
@@ -1037,8 +1037,47 @@ enum class IpcMsgType : int {
     ConfirmEd3kPaidAnon     = 1037,
     /// [on: bool] -> [ok] — share reports (§5.3)
     SetEd3kPassReports      = 1038,
-    /// [folder, title, private: bool, playlist ("" = the newest .m3u8), codecs] -> [ok, {id, link}]
+    /// [folder, title, private: bool, playlist ("" = the newest .m3u8), codecs, comment, lang,
+    /// kbps] -> [ok, {id, link}] (batch 14: the last three describe the channel file, §1.2)
     BroadcastEd3kLive       = 1039,
+
+    // -- ed3k paid passes by hand (batch 14): subscription.md §9.3, §5.1, Ed3kPaidBridge.cpp.
+    // A subscription (GetEd3kPaid) also has state 6 (a pass of several scopes waits for the
+    // user's word), passScopes (scopes of that pass, else of the one held), scopesDeclined.
+    /// [link] -> [ok, {scope, title, scopes, voucher: bool, waits: bool}] — an ed3k:pass link (a
+    /// credential: never logged); waits: ask the user (scopes − 1 other subscriptions), then
+    /// AnswerEd3kPaidScopes
+    AddEd3kPassLink         = 1028,
+    /// [scope, use: bool] -> [ok] — §5.1: the user's word on a pass of several scopes; no: kept unused
+    AnswerEd3kPaidScopes    = 1029,
+
+    // -- ed3k selling (batch 14): subscription.md §3, §4, §5, §9.3, Ed3kPaidSellerBridge.cpp.
+    // Terms: {price, payUrl, passUrl, reportUrl, terms, freeAfter, devices, period (s),
+    // seasonLength (epochs), passDays}; a key left out keeps its value. A sale: the terms and
+    // {scope, kind (1 channel, 2 set), title, publisher, target (channel id / FileSet.id hex),
+    // link, t0, epoch, seasonBase, seasonEpochs, offerIssued, planned, ownUntil, running,
+    // issued: [{scopes, holder (hex), issued, until, voucher, note, link ("" for a voucher)}]}.
+    /// [] -> [ok, {running, defaults: {terms}, sales: [sale]}]
+    GetEd3kSelling          = 1033,
+    /// [kind, target (1: stream id of a broadcast on air; 2: "" a new set, else its scope),
+    /// title, {terms}] -> [ok, {scope, link}]
+    SellEd3k                = 1034,
+    /// [scopes: [hex], holder (base32 or hex; "" = a voucher), until (Unix s), note] -> [ok, {link,
+    /// voucher}] — the ed3k:pass link; a voucher's is a credential (§9.3): show it once, never log
+    IssueEd3kPass           = 1040,
+    /// [action (1 new season after a leak, 2 new terms of scope, 3 the defaults), scope, {terms}] -> [ok]
+    Ed3kSellControl         = 1041,
+
+    // -- ed3k live polish (batch 14): live.md §1.2, §2.3, §4, Ed3kSetsBridge.cpp. A stream row
+    // (GetEd3kLive) also has state 5 (§2.3: this viewer can't play its media/codecs; left) with
+    // `error`; a broadcast row has skipped, resumed, channelFile (root hex, "" none).
+    /// [root (hex, 64), size] -> [ok, {id, url}] or [ok, {pending: true}] — watch a channel file
+    /// found by an ed3k channel search (SearchType::Ed3kLive); pending: it is fetched, the answer
+    /// comes as PushEd3kLiveFileWatched. Failure (not playable here, refused): [false, {error}]
+    WatchEd3kLiveFile       = 1045,
+    /// [id, comment, lang, kbps] -> [ok] — a new description of a broadcast on air: a new channel
+    /// file (later `created`), the old one withdrawn
+    DescribeEd3kLive        = 1046,
 
     // -- Responses (Core -> GUI) ---------------------------------------------
 
@@ -1086,6 +1125,7 @@ enum class IpcMsgType : int {
     /// a GetSharedFiles row. Batched; a file is sent at most a few times a second.
     PushSharedFileUpdate = 460,
     PushSharedFileRemoved = 461,  ///< [hash] — no longer shared
+    PushSharedHashing    = 462,  ///< [count] — files waiting for or in the hasher; sent on change
     PushUploadUpdate     = 470,
     PushKadUpdate        = 480,
     PushKadSearchesChanged = 481,
@@ -1254,6 +1294,18 @@ enum class IpcMsgType : int {
     PushEd3kPaidAnonWarn   = 1065,
     /// [scope, title, until] — a pass arrived (bought or renewed)
     PushEd3kPassArrived    = 1066,
+    // -- ed3k paid passes by hand (batch 14), see AddEd3kPassLink
+    /// [scope, title, others] — §5.1: a bought pass covers `others` more subscriptions: ask,
+    /// then AnswerEd3kPaidScopes
+    PushEd3kPaidScopesWarn = 1057,
+    // -- ed3k selling (batch 14), see GetEd3kSelling
+    /// [{...GetEd3kSelling...}] — a sale, offer, season or pass issued changed (a state push)
+    PushEd3kSellingChanged = 1067,
+    /// [scope, title, base] — a season began (planned, or after a leak)
+    PushEd3kSeasonStarted  = 1068,
+    // -- ed3k live polish (batch 14), see WatchEd3kLiveFile
+    /// [root (hex), ok: bool, {id, url} | {error}] — a channel file fetched for a watch
+    PushEd3kLiveFileWatched = 1070,
 };
 
 /// What SetCategoryStatus should do to every download in the category.
@@ -1309,6 +1361,36 @@ inline constexpr int MaxEd2kLinkBatch = 1000;
 /// AddServer Error code: the address is LAN/loopback and filterLANIPs is on. Distinct
 /// from a duplicate (Result false), so the GUI can tell the user instead of staying quiet.
 inline constexpr int ErrServerLanFiltered = 422;
+
+/// Subscribe mask bits. A group covers the row-update pushes of one list, which a
+/// client only needs while that list is on screen: it refetches the whole list when
+/// it shows it again. Every push outside a group always goes out — status, tray,
+/// notifications, chat, log, and rare add/remove/finish events.
+enum PushGroup : int {
+    PushGroupTransfers = 1 << 0,  ///< downloads, uploads, known clients, ed3k downloads
+    PushGroupShared    = 1 << 1,  ///< shared file rows
+    PushGroupKad       = 1 << 2,  ///< Kad search list
+    PushGroupTorrents  = 1 << 3,  ///< torrent rows
+    PushGroupUsenet    = 1 << 4,  ///< Usenet queue rows
+    PushGroupAll       = 0xFFFF,  ///< default, and what older clients send
+};
+
+/// The group a push belongs to; 0 = not maskable, always sent.
+[[nodiscard]] constexpr int pushGroupOf(IpcMsgType type)
+{
+    switch (type) {
+    case IpcMsgType::PushDownloadUpdate:
+    case IpcMsgType::PushUploadUpdate:
+    case IpcMsgType::PushKnownClientsChanged:
+    case IpcMsgType::PushEd3kDownloads:      return PushGroupTransfers;
+    case IpcMsgType::PushSharedFileUpdate:
+    case IpcMsgType::PushSharedFileRemoved:  return PushGroupShared;
+    case IpcMsgType::PushKadSearchesChanged: return PushGroupKad;
+    case IpcMsgType::PushTorrentUpdate:      return PushGroupTorrents;
+    case IpcMsgType::PushUsenetQueueItem:    return PushGroupUsenet;
+    default:                                 return 0;
+    }
+}
 
 /// Unsent bytes towards one client above which state pushes are held back (1 MiB).
 inline constexpr qint64 PushHoldBacklog = 1024 * 1024;

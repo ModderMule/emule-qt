@@ -119,8 +119,10 @@ wrap_launcher() {
     local name="$1"
     mv "$STAGE_DIR/$name" "$STAGE_DIR/$name.bin"
     cat > "$STAGE_DIR/$name" <<LAUNCHER
-#!/usr/bin/env bash
-SCRIPT_DIR="\$(cd "\$(dirname "\$0")" && pwd)"
+#!/bin/sh -
+# "sh -" and "readlink -f --": safe for paths starting with '-'; follows a symlink in PATH (#109)
+SELF="\$(readlink -f -- "\$0")"
+SCRIPT_DIR="\${SELF%/*}"
 export EMULEQT_BUNDLE_LIBS="\$SCRIPT_DIR/lib"
 export EMULEQT_ORIG_LD_LIBRARY_PATH="\${LD_LIBRARY_PATH-}"
 export LD_LIBRARY_PATH="\$SCRIPT_DIR/lib\${LD_LIBRARY_PATH:+:\$LD_LIBRARY_PATH}"

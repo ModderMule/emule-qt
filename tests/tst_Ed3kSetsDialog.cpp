@@ -178,6 +178,29 @@ void tst_Ed3kSetsDialog::aPaidSetAndAWaitingMount()
     dlg.fillLive(QCborMap{{QStringLiteral("streams"), QCborArray{b}}});
     auto* live = dlg.findChild<QTreeWidget*>(QStringLiteral("ed3kLive"));
     QCOMPARE(live->topLevelItem(0)->text(1), QStringLiteral("On air"));
+
+    // batch 14, subscription.md §5.1: a pass of several scopes waits: "Use Pass...", the info says why
+    auto* enter = dlg.findChild<QPushButton*>(QStringLiteral("ed3kEnterPass"));
+    QVERIFY(enter && !enter->isHidden());
+    dlg.fillPaid(QCborMap{{QStringLiteral("subs"), QCborArray{QCborMap{{QStringLiteral("scope"), scope},
+                                                                       {QStringLiteral("title"), QStringLiteral("Private photos")},
+                                                                       {QStringLiteral("state"), 6},
+                                                                       {QStringLiteral("passScopes"), 3},
+                                                                       {QStringLiteral("scopesDeclined"), true}}}}});
+    list->setCurrentItem(list->topLevelItem(1));
+    QCOMPARE(buy->text(), QStringLiteral("Use Pass..."));
+    const QString waits = dlg.findChild<QLabel*>(QStringLiteral("ed3kSetInfo"))->text();
+    QVERIFY2(waits.contains(QStringLiteral("2")), qPrintable(waits));
+    QCOMPARE(list->topLevelItem(1)->text(6), Ed3kSetsDialog::paidStateText(6));
+    // §7: a paid channel watched: its pass state, Buy Pass on the Live page
+    const QCborMap tv{{QStringLiteral("id"), QString(32, QLatin1Char('e'))}, {QStringLiteral("title"), QStringLiteral("Paid TV")},
+                      {QStringLiteral("state"), 0}, {QStringLiteral("paidScope"), QString(32, QLatin1Char('7'))}};
+    dlg.fillLive(QCborMap{{QStringLiteral("streams"), QCborArray{tv}}});
+    live->setCurrentItem(live->topLevelItem(0));
+    auto* liveBuy = dlg.findChild<QPushButton*>(QStringLiteral("ed3kLiveBuyPass"));
+    QVERIFY(liveBuy && !liveBuy->isHidden());
+    QCOMPARE(live->topLevelItem(0)->text(1), Ed3kSetsDialog::paidStateText(0));
+    QCOMPARE(Ed3kSetsDialog::memberStateText(6), QStringLiteral("Waiting for the key"));
 }
 
 QTEST_MAIN(tst_Ed3kSetsDialog)

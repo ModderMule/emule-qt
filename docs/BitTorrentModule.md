@@ -83,7 +83,7 @@ save it). Applied at start, on `IPFilter::filterLoaded`, on the new `filterClear
 reload, and a reload that finds no file, which emits no `filterLoaded`), and when an options
 save changes `ipFilterLevel` (that key also raises `btConfigChanged`). Each blocked peer
 (`peer_blocked_alert`, category `ip_block`) is counted (`blockedPeers()`) and logged at debug
-level. Torrents keep libtorrent's default `apply_ip_filter`.
+level (Torrent Verbose). Torrents keep libtorrent's default `apply_ip_filter`.
 
 ## ed3k join (torrent.md §4, Part C)
 
@@ -149,10 +149,18 @@ does not rate-limit peers on the local network. Trackers: 811 add (last tier, no
 
 `BtSession::drainAlerts()` forwards libtorrent's own alert lines (`what: message`) to `emule.torrent`
 (`logTorrent*`): the GUI's **Torrent** log tab after Usenet, shown while `btEnabled`, and the `_Torrent.log`
-file. Severity by alert category: error / performance_warning → warning, dht / ip_block → debug (follows
-`verbose`), rest → info. Skipped as a firehose: `piece_progress` alerts, `session_stats`, `state_update`,
-`dht_stats`, incoming `dht_get_peers` / `dht_announce`. eMule's own summaries ("BitTorrent: added …",
-errors) stay in Log. Tab hidden: info/errors to Log, warnings to Verbose, debug dropped.
+file. Severity by alert category: error → warning, dht / ip_block → debug, rest → info.
+`performance_alert`: once a minute per torrent and kind; `upload_limit_too_low` /
+`download_limit_too_low` → warning (a setting to fix, #87), the rest → debug (a fast peer). Debug lines go
+to the **Torrent Verbose** tab, shown while `btEnabled` and `btVerboseLog` (Options › Extended › Verbose,
+independent of `verbose`; filter rule `emule.torrent.debug`), else dropped. Skipped as a firehose:
+`piece_progress` alerts, `session_stats`, `state_update`, `dht_stats`, incoming `dht_get_peers` /
+`dht_announce`. eMule's own summaries ("BitTorrent: added …", errors) stay in Log. Tab hidden:
+info/errors to Log, warnings to Verbose.
+
+`max_out_request_queue` = 1500 (libtorrent 500): most 16 KiB block requests in flight to one peer. The
+queue is sized to rate × `request_queue_time` (3 s), so 500 capped a peer at ~2.7 MB/s and posted
+`outstanding_request_limit_reached` each second; 1500 ≈ 8 MB/s.
 
 ## Statistics
 

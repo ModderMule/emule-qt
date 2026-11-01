@@ -104,6 +104,7 @@ SOURCES += \
     files/KnownFileList.cpp \
     files/PartFile.cpp \
     files/PartFileConvert.cpp \
+    files/PartFileSizeLookup.cpp \
     files/PartFileWriteThread.cpp \
     files/PublishKeywordList.cpp \
     files/ShareableFile.cpp \
@@ -267,6 +268,7 @@ HEADERS += \
     files/KnownFileList.h \
     files/PartFile.h \
     files/PartFileConvert.h \
+    files/PartFileSizeLookup.h \
     files/PartFileWriteThread.h \
     files/PublishKeywordList.h \
     files/ShareableFile.h \

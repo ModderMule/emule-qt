@@ -36,7 +36,7 @@ class AutoUpdater;
 
 namespace usenet { class UsenetSession; }
 namespace bt { class BtSession; }
-namespace ed3k { class Ed3kSession; class Ed3kUsenetJoin; class UsenetJoinQueue; class Ed3kTorrentJoin; class Ed3kEd2kJoin; class Ed3kShared; class SharedFileSource; class Ed3kFriends; class Ed3kRooms; class Ed3kBootstrap; class Ed3kNames; class Ed3kSiteServer; class Ed3kCredit; class Ed3kUploads; class Ed3kFilters; class Ed3kChain; class Ed3kHosterJoin; class Ed3kJdResolver; class Ed3kJavaRuntime; class Ed3kDownloads; class Ed3kSearch; class Ed3kSets; class Ed3kLive; class Ed3kLiveBroadcast; class Ed3kPaid; }
+namespace ed3k { class Ed3kSession; class Ed3kUsenetJoin; class UsenetJoinQueue; class Ed3kTorrentJoin; class Ed3kEd2kJoin; class Ed3kShared; class SharedFileSource; class Ed3kFriends; class Ed3kRooms; class Ed3kBootstrap; class Ed3kNames; class Ed3kSiteServer; class Ed3kCredit; class Ed3kUploads; class Ed3kFilters; class Ed3kChain; class Ed3kHosterJoin; class Ed3kJdResolver; class Ed3kJavaRuntime; class Ed3kDownloads; class Ed3kSearch; class Ed3kSets; class Ed3kLive; class Ed3kLiveBroadcast; class Ed3kPaid; class Ed3kPaidSeller; }
 namespace indexer { class IndexerFeedList; class IndexerSearchList; }
 
 class DaemonApp : public QObject {
@@ -109,7 +109,7 @@ public:
     [[nodiscard]] static QString loadStage();
 
     /// (Re)compose the Qt logging filter rules from the current logging prefs
-    /// (verbose / kadVerboseLog / serverVerboseLog) and apply them. Each debug
+    /// (verbose / kadVerboseLog / serverVerboseLog / bt-, hoster-, ed3kVerboseLog) and apply them. Each debug
     /// subsystem is enabled independently so a single toggle can surface its
     /// channel without turning on the global verbose firehose. Also refreshes
     /// the per-subsystem emit-site gates (setServerVerboseLogging). Safe to call
@@ -126,6 +126,8 @@ public:
 private:
     /// CoreSession::loaded: start what had to wait for the file lists.
     void onCoreLoaded();
+    /// The first start wizard is done: start ed3k, BT, Usenet and hosters as it chose.
+    void releaseEngines();
     /// --autoupdate: create and start the AutoUpdater.
     void startAutoUpdater();
     /// Tell every GUI whether the core is still reading its files, and which.
@@ -179,6 +181,8 @@ private:
 
     std::unique_ptr<CoreSession> m_coreSession;
     bool m_connectHold = false;
+    /// --hold-connect: ed3k, BT, Usenet and hosters not started until the wizard is done
+    bool m_enginesHeld = false;
     quint16 m_ipcPortOverride = 0;
     std::unique_ptr<IpcServer> m_ipcServer;
     std::unique_ptr<CoreNotifierBridge> m_notifierBridge;
@@ -233,6 +237,8 @@ private:
     std::unique_ptr<ed3k::Ed3kPaid> m_ed3kPaid;
     std::unique_ptr<ed3k::Ed3kSets> m_ed3kSets;
     std::unique_ptr<ed3k::Ed3kLive> m_ed3kLive;
+    /// selling paid scopes (Ed3kPaidSellerBridge); the broadcast asks it for offers: dies after it
+    std::unique_ptr<ed3k::Ed3kPaidSeller> m_ed3kSeller;
     /// live broadcasting from an HLS folder (Ed3kSetsBridge)
     std::unique_ptr<ed3k::Ed3kLiveBroadcast> m_ed3kLiveBroadcast;
     /// downloads from hoster links (hoster.md, Ed3kHosterBridge, prefs ed3kHoster*); dies before the session

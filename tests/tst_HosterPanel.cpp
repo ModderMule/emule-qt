@@ -95,7 +95,7 @@ private slots:
         QVERIFY(pkg);
         QCOMPARE(pkg->text(0), QStringLiteral("Release"));
         QCOMPARE(pkg->childCount(), 2);
-        QVERIFY(pkg->isExpanded());
+        QVERIFY(!pkg->isExpanded());   // packages start collapsed
         QVERIFY(!pkg->icon(0).isNull());
         QVERIFY(!pkg->child(0)->icon(0).isNull());   // the file's type, as the Transfer window
         QCOMPARE(pkg->text(1), formatByteSize(200));

@@ -13,6 +13,8 @@
 #include "utils/Log.h"
 #include "utils/Opcodes.h"
 
+#include <QPointer>
+
 #include <algorithm>
 
 namespace eMule::ed3k {
@@ -123,17 +125,56 @@ int Ed3kSearch::rejudge()
     return f;
 }
 
+bool Ed3kSearch::isChannelFile(const ::ed3k::FoundFile& found)
+{
+    const QString name = QString::fromUtf8(found.name.data(), qsizetype(found.name.size()));
+    return found.size > 0 && found.size <= Ed3kLiveFiles::kFileMax && name.endsWith(Ed3kLiveFiles::kSuffix, Qt::CaseInsensitive);
+}
+
+void Ed3kSearch::applyChannel(SearchFile& file, const Ed3kLiveChannelInfo* info)
+{
+    QString title = info ? info->title.trimmed() : QString();
+    if (title.isEmpty()) {
+        title = file.fileName();
+        if (title.endsWith(Ed3kLiveFiles::kSuffix, Qt::CaseInsensitive))
+            title.chop(Ed3kLiveFiles::kSuffix.size());
+    }
+    file.addTagUnique(Tag(FT_MEDIA_TITLE, title));
+    if (!info)
+        return;
+    if (info->kbps != 0)
+        file.addTagUnique(Tag(FT_MEDIA_BITRATE, uint32(info->kbps)));
+    // the codec column: media and codecs, the language after them
+    QStringList codec;
+    if (!info->media.isEmpty())
+        codec << info->media;
+    if (!info->codecs.isEmpty())
+        codec << info->codecs;
+    QString shown = codec.join(QLatin1Char(' '));
+    if (!info->lang.isEmpty())
+        shown += QStringLiteral(" [%1]").arg(info->lang);
+    if (!shown.isEmpty())
+        file.addTagUnique(Tag(FT_MEDIA_CODEC, shown.trimmed()));
+}
+
 void Ed3kSearch::startMetaSearch(uint32 searchID, SearchType type, const SearchParams& params,
                                  const enodemeta::pb::SearchRequest& request, std::vector<MetaSearchCandidate> candidates)
 {
-    Q_UNUSED(type) Q_UNUSED(request) Q_UNUSED(candidates)
+    Q_UNUSED(request) Q_UNUSED(candidates)
     auto* e = m_session.engine();
     if (!e) {
         finishLater(searchID, tr("ed3k is not running."));
         return;
     }
     const QByteArray query = params.expression.trimmed().toUtf8();
-    auto lookup = e->search(m_session.now(), std::string_view(query.constData(), std::size_t(query.size())), filterOf(params));
+    const bool live = type == SearchType::Ed3kLive;
+    auto filter = filterOf(params);
+    if (live) {
+        // channel files only (§1.2): their extension, at most 64 KiB
+        filter.ext = "ed3klive";
+        filter.maxSize = filter.maxSize == 0 ? Ed3kLiveFiles::kFileMax : std::min<std::uint64_t>(filter.maxSize, Ed3kLiveFiles::kFileMax);
+    }
+    auto lookup = e->search(m_session.now(), std::string_view(query.constData(), std::size_t(query.size())), filter);
     if (!lookup) {
         logEd3kDebug(QStringLiteral("ed3k search %1 refused (error %2)").arg(searchID).arg(int(lookup.error())));
         finishLater(searchID, tr("ed3k refused the search (no keyword of at least 3 characters?)."));
@@ -141,6 +182,7 @@ void Ed3kSearch::startMetaSearch(uint32 searchID, SearchType type, const SearchP
     }
     Run run;
     run.lookup = *lookup;
+    run.live = live;
     run.timeout = std::make_unique<QTimer>();
     run.timeout->setSingleShot(true);
     connect(run.timeout.get(), &QTimer::timeout, this, [this, searchID] { finish(searchID, {}); });
@@ -183,6 +225,12 @@ void Ed3kSearch::onEventPolled(const ::ed3k::Event& event, bool* handled)
     if (it == m_lookups.end())
         return;
     const uint32 searchID = it->second;
+    const auto run = m_runs.find(searchID);
+    if (run != m_runs.end() && run->second.live) {
+        onLiveFound(searchID, run->second, *found);
+        m_lookups.erase(it);
+        return;
+    }
     int added = 0;
     for (const auto& f : found->files) {
         // filter lists (batch 12, G): marked rows shown as spam, hidden ones kept hidden
@@ -197,8 +245,47 @@ void Ed3kSearch::onEventPolled(const ::ed3k::Event& event, bool* handled)
     logEd3kDebug(QStringLiteral("<<< ed3k search %1: %2 file(s) from %3 node(s)").arg(searchID).arg(added).arg(found->nodes));
     // the lookup is over; reported from the event loop, not inside the pump
     m_lookups.erase(it);
-    if (const auto run = m_runs.find(searchID); run != m_runs.end())
+    if (run != m_runs.end())
         run->second.timeout->stop();
+    QTimer::singleShot(0, this, [this, searchID] { finish(searchID, {}); });
+}
+
+void Ed3kSearch::onLiveFound(uint32 searchID, Run& run, const ::ed3k::event::KadFound& found)
+{
+    int candidates = 0;
+    for (const auto& f : found.files) {
+        if (!isChannelFile(f))
+            continue;
+        auto row = toSearchFile(f);
+        if (!row)
+            continue;
+        (void)applyVerdict(*row, m_judge ? m_judge(f) : Verdict{});
+        ++candidates;
+        if (!m_liveFetch) {
+            applyChannel(*row, nullptr);
+            addResult(searchID, std::move(row));
+            continue;
+        }
+        // the channel file decides (magic) and fills the row; std::function wants a copyable hold
+        ++run.fetching;
+        auto held = std::make_shared<std::unique_ptr<SearchFile>>(std::move(row));
+        QPointer<Ed3kSearch> self(this);
+        m_liveFetch(f.root, f.size, [self, searchID, held](std::optional<QByteArray> file) {
+            if (self)
+                self->onChannelFile(searchID, std::move(*held), file);
+        });
+    }
+    logEd3kDebug(QStringLiteral("<<< ed3k channel search %1: %2 channel file(s) from %3 node(s)").arg(searchID).arg(candidates).arg(found.nodes));
+    // the run may be gone (a fetch answered at once and it ended): looked up again
+    const auto again = m_runs.find(searchID);
+    if (again == m_runs.end())
+        return;
+    again->second.answered = true;
+    if (again->second.fetching > 0) {
+        again->second.timeout->start(kLiveFetchMs + 5000);   // the fetches end before
+        return;
+    }
+    again->second.timeout->stop();
     QTimer::singleShot(0, this, [this, searchID] { finish(searchID, {}); });
 }
 
@@ -223,6 +310,27 @@ void Ed3kSearch::finishLater(uint32 searchID, const QString& error)
         else if (theApp.searchList)
             theApp.searchList->queue().onMetaSearchFinished(searchID, error);
     });
+}
+
+void Ed3kSearch::onChannelFile(uint32 searchID, std::unique_ptr<SearchFile> row, const std::optional<QByteArray>& file)
+{
+    const auto it = m_runs.find(searchID);
+    if (it == m_runs.end())
+        return;   // cancelled or timed out
+    --it->second.fetching;
+    if (!file) {
+        applyChannel(*row, nullptr);   // not fetched: what its name says
+        addResult(searchID, std::move(row));
+    } else if (const auto info = Ed3kLiveFiles::parse(*file)) {
+        applyChannel(*row, &*info);
+        addResult(searchID, std::move(row));
+    } else {
+        logEd3kDebug(QStringLiteral("ed3k channel search %1: %2 is no channel file").arg(searchID).arg(row->fileName()));
+    }
+    if (it->second.answered && it->second.fetching <= 0) {
+        it->second.timeout->stop();
+        QTimer::singleShot(0, this, [this, searchID] { finish(searchID, {}); });
+    }
 }
 
 void Ed3kSearch::addResult(uint32 searchID, std::unique_ptr<SearchFile> file)

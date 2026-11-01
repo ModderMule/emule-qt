@@ -20,7 +20,7 @@
 #include "IpcProtocol.h"
 
 #include <QCborMap>
-#include <QDialog>
+#include "dialogs/RememberedSizeDialog.h"
 #include <QSize>
 #include <QString>
 
@@ -125,7 +125,7 @@ void addDetailRow(QFormLayout* form, const QString& label, const QString& value)
 
 /// Base for the detail dialogs: subclass content on top, and a bottom row with
 /// the Prev/Next walker buttons immediately left of Close.
-class DetailDialog : public QDialog {
+class DetailDialog : public RememberedSizeDialog {
     Q_OBJECT
 
 public:

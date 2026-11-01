@@ -39,6 +39,7 @@ private slots:
     void nudge_pushesTheNextTickOutAFullInterval();
     void nudge_whileHiddenIsIgnored();
     void setInterval_takesEffect();
+    void onScreenHook_followsTheWindowToTheTray();
 };
 
 void tst_PanelPoller::hiddenPanel_neverRefreshes()
@@ -198,6 +199,32 @@ void tst_PanelPoller::setInterval_takesEffect()
     QVERIFY2(refreshes >= before + 2,
              qPrintable(QStringLiteral("expected several ticks at %1 ms, got %2")
                             .arg(kIntervalMs).arg(refreshes - before)));
+}
+
+void tst_PanelPoller::onScreenHook_followsTheWindowToTheTray()
+{
+    // The panel is a page inside the main window; going to the tray hides the window
+    QWidget window;
+    auto* panel = new QWidget(&window);
+    QList<bool> calls;
+    auto* poller = new PanelPoller(panel, [] {});
+    poller->setOnScreenHook([&calls](bool on) { calls.append(on); });
+    QVERIFY(calls.isEmpty());   // not on screen yet, nothing to release
+
+    window.show();
+    QVERIFY(QTest::qWaitForWindowExposed(&window));
+    QCOMPARE(calls, (QList<bool>{true}));
+
+    window.hide();
+    QCOMPARE(calls, (QList<bool>{true, false}));
+
+    window.show();
+    QVERIFY(QTest::qWaitForWindowExposed(&window));
+    QCOMPARE(calls, (QList<bool>{true, false, true}));
+
+    // A poller that goes away while on screen must give its hold back
+    delete poller;
+    QCOMPARE(calls, (QList<bool>{true, false, true, false}));
 }
 
 QTEST_MAIN(tst_PanelPoller)

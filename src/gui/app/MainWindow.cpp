@@ -5,6 +5,7 @@
 #include "app/MiniMuleWidget.h"
 #endif
 #include "app/AppConfig.h"
+#include "app/CoreAttachment.h"
 #include "app/IpcClient.h"
 #include "app/TrayMenuManager.h"
 #include "app/VersionChecker.h"
@@ -342,9 +343,9 @@ void MainWindow::applyFeatureTabs()
     if (m_serverPanel) {
         LogWidget* log = m_serverPanel->logWidget();
         log->setUsenetTabVisible(thePrefs.usenetEnabled() && thePrefs.showUsenetLog());
-        log->setTorrentTabVisible(thePrefs.btEnabled());
-        log->setHosterTabVisible(thePrefs.hosterDownloadsOn());
-        log->setEd3kTabsVisible(thePrefs.ed3kEnabled());
+        log->setTorrentTabVisible(thePrefs.btEnabled(), thePrefs.btVerboseLog());
+        log->setHosterTabVisible(thePrefs.hosterDownloadsOn(), thePrefs.hosterVerboseLog());
+        log->setEd3kTabsVisible(thePrefs.ed3kEnabled(), thePrefs.ed3kVerboseLog());
     }
 }
 
@@ -833,10 +834,17 @@ void MainWindow::closeEvent(QCloseEvent* event)
         if (!isVisible() || isMinimized()) {
             restoreWindow();
         }
+        // Says whether the core goes down too (#106)
+        const auto& attach = CoreAttachment::instance();
+        const QString question = attach.stopsOnExit()
+            ? tr("Are you sure you want to exit eMule?\n\nThe core is attached: it stops "
+                 "with the GUI, and so do all downloads and uploads.")
+            : tr("Are you sure you want to exit eMule?\n\nThe core is detached: it keeps "
+                 "running with all downloads and uploads. Open eMule again to reconnect.");
         auto result = QMessageBox::question(
             this,
             tr("Confirm Exit"),
-            tr("Are you sure you want to exit eMule?"),
+            question,
             QMessageBox::Yes | QMessageBox::No,
             QMessageBox::No);
         if (result != QMessageBox::Yes) {
@@ -994,6 +1002,7 @@ void MainWindow::changeEvent(QEvent* event)
             if (const QVariant role = label ? label->property("textRole") : QVariant{}; role.isValid())
                 setStatusRole(label, role.toInt());
         }
+        updateAttachIndicator();   // drawn in the text colour
         return;
     }
     // MFC CTrayDialog::OnSysCommand (TrayDialog.cpp:255-268): with the preference on,
@@ -1081,6 +1090,10 @@ bool MainWindow::eventFilter(QObject* obj, QEvent* event)
         }
         if (obj == m_statusUss) {
             showOptionsDialog(OptionsDialog::PageExtended);
+            return true;
+        }
+        if (obj == m_statusAttach) {
+            CoreAttachment::instance().toggle();
             return true;
         }
     }
@@ -1976,6 +1989,15 @@ void MainWindow::setupStatusBar()
     m_statusUpDownWidget->installEventFilter(this);
     sb->addPermanentWidget(m_statusUpDownWidget);
 
+    // Core attached (stops with the GUI) or detached (keeps running), #106
+    m_statusAttach = new QLabel(this);
+    m_statusAttach->setFixedSize(16, 16);
+    m_statusAttach->installEventFilter(this);
+    sb->addPermanentWidget(m_statusAttach);
+    connect(&CoreAttachment::instance(), &CoreAttachment::changed,
+            this, &MainWindow::updateAttachIndicator);
+    updateAttachIndicator();
+
     // World icon with eD2K/Kad connection arrows
     m_connStatus = new ConnectionStatusWidget(this);
     m_connStatus->setFixedSize(16, 16);
@@ -2612,6 +2634,15 @@ bool MainWindow::restoreToolbarButton(ToolbarButtonId id)
     order.insert(pos, int(id));
     theUiState.setToolbarButtonOrder(order);
     return true;
+}
+
+void MainWindow::updateAttachIndicator()
+{
+    if (!m_statusAttach)
+        return;
+    const auto& attach = CoreAttachment::instance();
+    m_statusAttach->setPixmap(attach.icon(palette().color(QPalette::WindowText)).pixmap(16, 16));
+    m_statusAttach->setToolTip(attach.toolTip());
 }
 
 } // namespace eMule

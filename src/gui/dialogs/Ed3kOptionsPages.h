@@ -18,6 +18,8 @@
 /// - Hoster (hoster.md): downloads from hosters are off by default; switching them on shows
 ///   what it means (§3, §8, §9). Vouched links are published by default (§4.1). Accounts are sent
 ///   with their password only when it was typed here; the daemon never sends one back.
+/// - Selling (Ed3kSellPage, subscription.md): paid subscriptions sold, passes issued; acts at
+///   once over IPC (1033, 1034, 1040, 1041), not on OK.
 
 #include <QCborMap>
 #include <QList>
@@ -43,6 +45,7 @@ class IpcClient;
 struct Ed3kCreditPrefs;
 struct Ed3kChainPrefs;
 class Ed3kFilterPage;
+class Ed3kSellPage;
 struct Ed3kHosterPrefs;
 
 namespace Ipc {
@@ -63,6 +66,8 @@ public:
     [[nodiscard]] QWidget* autoCreditsPage() const { return m_autoCredits; }
     [[nodiscard]] QWidget* namesPage() const { return m_names; }
     [[nodiscard]] QWidget* filtersPage() const;
+    /// Selling paid subscriptions (Ed3kSellPage): acts at once over IPC.
+    [[nodiscard]] QWidget* sellingPage() const;
     [[nodiscard]] QWidget* hosterPage() const { return m_hoster; }
 
     /// From the GetPreferences map (keys ed3k*, nick). Signals stay quiet meanwhile.
@@ -148,6 +153,7 @@ private:
     QWidget* m_autoCredits = nullptr;
     QWidget* m_names = nullptr;
     Ed3kFilterPage* m_filters = nullptr;
+    Ed3kSellPage* m_selling = nullptr;
     QWidget* m_hoster = nullptr;
 
     // General

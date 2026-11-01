@@ -95,8 +95,20 @@ void UiState::load(const QString& configDir)
         m_windowHeight     = root["windowHeight"].as<int>(m_windowHeight);
         m_windowMaximized  = root["windowMaximized"].as<bool>(m_windowMaximized);
         m_optionsLastPage  = root["optionsLastPage"].as<int>(m_optionsLastPage);
-        m_optionsWidth     = root["optionsWidth"].as<int>(m_optionsWidth);
-        m_optionsHeight    = root["optionsHeight"].as<int>(m_optionsHeight);
+        if (auto ds = root["dialogSizes"]; ds && ds.IsMap()) {
+            for (const auto& pair : ds) {
+                const auto& v = pair.second;
+                if (!v.IsSequence() || v.size() != 2)
+                    continue;
+                const QSize size(v[0].as<int>(0), v[1].as<int>(0));
+                if (size.width() > 0 && size.height() > 0)
+                    m_dialogSizes[QString::fromStdString(pair.first.as<std::string>())] = size;
+            }
+        }
+        // Older builds kept only the options dialog's size, under keys of its own
+        if (const QSize legacy(root["optionsWidth"].as<int>(0), root["optionsHeight"].as<int>(0));
+            legacy.width() > 0 && legacy.height() > 0 && !m_dialogSizes.contains(QStringLiteral("OptionsDialog")))
+            m_dialogSizes.insert(QStringLiteral("OptionsDialog"), legacy);
         m_lastVersionCheck = root["lastVersionCheck"].as<int64_t>(m_lastVersionCheck);
         m_associateNzbFiles = root["associateNzbFiles"].as<bool>(m_associateNzbFiles);
         m_associateTorrentFiles = root["associateTorrentFiles"].as<bool>(m_associateTorrentFiles);
@@ -219,8 +231,6 @@ void UiState::save(const QString& configDir)
     out << YAML::Key << "windowHeight"     << YAML::Value << m_windowHeight;
     out << YAML::Key << "windowMaximized"  << YAML::Value << m_windowMaximized;
     out << YAML::Key << "optionsLastPage"  << YAML::Value << m_optionsLastPage;
-    out << YAML::Key << "optionsWidth"     << YAML::Value << m_optionsWidth;
-    out << YAML::Key << "optionsHeight"    << YAML::Value << m_optionsHeight;
     out << YAML::Key << "lastVersionCheck" << YAML::Value << m_lastVersionCheck;
     out << YAML::Key << "associateNzbFiles" << YAML::Value << m_associateNzbFiles;
     out << YAML::Key << "associateTorrentFiles" << YAML::Value << m_associateTorrentFiles;
@@ -278,6 +288,14 @@ void UiState::save(const QString& configDir)
         for (auto it = m_headerStates.cbegin(); it != m_headerStates.cend(); ++it)
             out << YAML::Key << it.key().toStdString()
                 << YAML::Value << it.value().toBase64().toStdString();
+        out << YAML::EndMap;
+    }
+
+    if (!m_dialogSizes.isEmpty()) {
+        out << YAML::Key << "dialogSizes" << YAML::Value << YAML::BeginMap;
+        for (auto it = m_dialogSizes.cbegin(); it != m_dialogSizes.cend(); ++it)
+            out << YAML::Key << it.key().toStdString() << YAML::Value << YAML::Flow
+                << YAML::BeginSeq << it.value().width() << it.value().height() << YAML::EndSeq;
         out << YAML::EndMap;
     }
 
@@ -501,21 +519,18 @@ void UiState::captureMainWindow(QMainWindow* window)
     // When maximized, keep the last saved normal size so it restores correctly.
 }
 
-QSize UiState::optionsDialogSize() const
-{
-    return (m_optionsWidth > 0 && m_optionsHeight > 0)
-               ? QSize(m_optionsWidth, m_optionsHeight) : QSize();
-}
-
-void UiState::setOptionsDialogSize(QSize size)
+void UiState::setDialogSize(const QString& key, QSize size)
 {
     // An invalid size clears it -- back to the designed default.
-    const QSize wanted = size.isValid() ? size : QSize(0, 0);
-    if (wanted == QSize(m_optionsWidth, m_optionsHeight))
+    if (!size.isValid() || size.isEmpty()) {
+        if (m_dialogSizes.remove(key) > 0)
+            scheduleSave();
+        return;
+    }
+    if (m_dialogSizes.value(key) == size)
         return;
 
-    m_optionsWidth  = wanted.width();
-    m_optionsHeight = wanted.height();
+    m_dialogSizes[key] = size;
     scheduleSave();   // the dialog closes long before the main window does
 }
 

@@ -13,6 +13,8 @@
 #include <QDeadlineTimer>
 #include <QHostAddress>
 #include <QObject>
+
+#include <array>
 #include <QStringList>
 #include <QSslSocket>
 #include <QTcpSocket>
@@ -57,6 +59,17 @@ public:
     [[nodiscard]] qint64 corePid() const { return m_corePid; }
     /// The core runs with --autoupdate: it installs new releases by itself.
     [[nodiscard]] bool coreAutoUpdates() const { return m_coreAutoUpdate; }
+    /// A list that needs the row-update pushes of @p group (Ipc::PushGroup bits) came
+    /// on screen (@p on) or left it. The core sends a group while anyone holds it;
+    /// once any list has called this, a group nobody holds is dropped — the tray
+    /// leaves only the pushes outside every group.
+    void holdPushGroup(int group, bool on);
+    /// holdPushGroup() for @p group as a PanelPoller on-screen hook; safe to outlive
+    /// this client.
+    [[nodiscard]] std::function<void(bool)> pushGroupHold(int group);
+    /// The mask sent with Subscribe: every group until a list holds one.
+    [[nodiscard]] int subscriptionMask() const;
+
     /// Why the core refused the handshake (CoreLink::Refused).
     [[nodiscard]] QString refusalText() const { return m_refusalText; }
 
@@ -79,6 +92,9 @@ public:
 
     /// Returns true if connected and handshake is complete.
     [[nodiscard]] bool isConnected() const;
+
+    /// Files the core is hashing or has queued, as last pushed (0 while disconnected).
+    [[nodiscard]] int sharedHashingCount() const { return m_sharedHashing; }
 
     /// Returns true if connected to a loopback address (localhost).
     [[nodiscard]] bool isLocalConnection() const;
@@ -243,6 +259,9 @@ public:
     int requestEd3kSetSite(const QString& link, ResponseCallback callback);
     /// An ed3k:live link -> {id, url}
     int watchEd3kLive(const QString& link, ResponseCallback callback = nullptr);
+    /// A channel file found by an ed3k channel search (root hex, size) -> {id, url} or
+    /// {pending: true} (then ed3kLiveFileWatched)
+    int watchEd3kLiveFile(const QString& root, quint64 size, ResponseCallback callback = nullptr);
     int leaveEd3kLive(const QString& id, ResponseCallback callback = nullptr);
     /// -> {running, streams: [{id, title, media, codecs, state, neighbours, segments, bytes, viewers, url}]}
     void requestEd3kLive(const QObject* owner, ResponseCallback callback);
@@ -256,6 +275,10 @@ public:
     /// -> {payLink}
     int confirmEd3kPaidAnon(const QString& scope, ResponseCallback callback = nullptr);
     int setEd3kPassReports(bool on, ResponseCallback callback = nullptr);
+    /// ed3k:pass link (a credential) -> {scope, title, scopes, voucher, waits}
+    int addEd3kPassLink(const QString& link, ResponseCallback callback = nullptr);
+    /// §5.1: the user's word on a pass of several scopes
+    int answerEd3kPaidScopes(const QString& scope, bool use, ResponseCallback callback = nullptr);
 
     /// Send a Shutdown request to the daemon, then disconnect.
     /// Use this when the GUI launched the daemon and is about to close.
@@ -332,6 +355,7 @@ signals:
     void logMessageReceived(const Ipc::IpcMessage& msg);
     void sharedFileUpdated(const Ipc::IpcMessage& msg);
     void sharedFileRemoved(const Ipc::IpcMessage& msg);
+    void sharedHashingChanged(int count);
     void uploadUpdated(const Ipc::IpcMessage& msg);
     void kadUpdated(const Ipc::IpcMessage& msg);
     void kadSearchesChanged(const Ipc::IpcMessage& msg);
@@ -405,12 +429,20 @@ signals:
     void ed3kSetVersion(const Ipc::IpcMessage& msg);
     /// [{...GetEd3kLive...}] — an ed3k live stream changed.
     void ed3kLiveChanged(const Ipc::IpcMessage& msg);
+    /// [root, ok, {id, url} | {error}] — a channel file fetched for watchEd3kLiveFile.
+    void ed3kLiveFileWatched(const Ipc::IpcMessage& msg);
     /// [{...GetEd3kPaid...}] — ed3k paid subscriptions changed.
     void ed3kPaidChanged(const Ipc::IpcMessage& msg);
     /// [scope, title] — tell the user the seller sees an address, then confirmEd3kPaidAnon.
     void ed3kPaidAnonWarn(const Ipc::IpcMessage& msg);
     /// [scope, title, until] — a pass arrived.
     void ed3kPassArrived(const Ipc::IpcMessage& msg);
+    /// [scope, title, others] — a bought pass covers more subscriptions: ask, then answerEd3kPaidScopes.
+    void ed3kPaidScopesWarn(const Ipc::IpcMessage& msg);
+    /// [{...GetEd3kSelling...}] — what this node sells changed (batch 14).
+    void ed3kSellingChanged(const Ipc::IpcMessage& msg);
+    /// [scope, title, base] — a season of a scope sold began.
+    void ed3kSeasonStarted(const Ipc::IpcMessage& msg);
     /// [link] — a set opened as a website is no website: offer it for download.
     void ed3kSetOffered(const Ipc::IpcMessage& msg);
     /// [room, {id, author, authorId, nick, moderator, sent, text, replyTo}] — a post.
@@ -470,6 +502,8 @@ private:
     void performHandshake();
     void dispatchPushEvent(const Ipc::IpcMessage& msg);
     void requestLogSync();
+    /// Send Subscribe if the mask changed since the last one the core got.
+    void sendSubscription();
     /// The last line id shown of the tab a log line of @p cat / @p severity goes to.
     int64_t& lastLogId(const QString& cat, QtMsgType severity);
 
@@ -523,6 +557,7 @@ private:
     int m_nextSeqId = 1;
     int m_reconnectDelayMs = 1000;
     bool m_handshaked = false;
+    int m_sharedHashing = 0;
     bool m_usenetEnginePaused = false;
     bool m_autoReconnect = false;
     bool m_waitingOnBusyCore = false;   // this connection outlived a reply timer
@@ -532,6 +567,8 @@ private:
     int64_t m_lastUsenetId  = 0;
     int64_t m_lastTorrentId = 0;   // Torrent tab
     int64_t m_lastHosterId  = 0;    // Hoster tab
+    int64_t m_lastTorrentVerboseId = 0;   // Torrent Verbose / Hoster Verbose tabs
+    int64_t m_lastHosterVerboseId = 0;
     int64_t m_lastServerId  = 0;
     int64_t m_lastLogId     = 0;  // Log tab
     int64_t m_lastVerboseId = 0;
@@ -564,6 +601,9 @@ private:
     QString m_loadStage;
     qint64 m_corePid = 0;
     bool m_coreAutoUpdate = false;
+    std::array<int, 16> m_pushGroupHolds{};   ///< per PushGroup bit
+    bool m_pushGroupsHeld = false;            ///< a list has taken part
+    int m_sentMask = -1;                      ///< -1 = nothing sent on this link
     QString m_refusalText;
 
     int m_startGraceMs         = 30'000;

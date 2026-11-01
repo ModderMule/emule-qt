@@ -35,6 +35,7 @@ public:
     /// @param panel    the widget whose visibility gates the polling. Also the parent.
     /// @param refresh  the panel's existing refresh routine.
     PanelPoller(QWidget* panel, std::function<void()> refresh);
+    ~PanelPoller() override;
 
     /// Polling period in milliseconds. Takes effect on the next tick.
     void setInterval(int ms);
@@ -57,17 +58,25 @@ public:
     /// Refresh now (if visible and enabled) and restart the period.
     void refreshNow();
 
+    /// Called with true when the panel comes on screen, false when it leaves (or the
+    /// poller goes). Panels pass IpcClient::pushGroupHold() so the core skips their
+    /// row-update pushes while they are hidden.
+    void setOnScreenHook(std::function<void(bool)> hook);
+
 protected:
     bool eventFilter(QObject* watched, QEvent* event) override;
 
 private:
     void applyState();
+    void applyOnScreen();
 
     QWidget* m_panel = nullptr;
     std::function<void()> m_refresh;
     QTimer* m_timer = nullptr;
     bool m_enabled = false;
     bool m_nudgeQueued = false;
+    std::function<void(bool)> m_onScreenHook;
+    bool m_onScreen = false;   ///< last state told to the hook
 };
 
 } // namespace eMule

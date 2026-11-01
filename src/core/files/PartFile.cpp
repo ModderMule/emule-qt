@@ -6,6 +6,7 @@
 /// status machine, priority, block selection, persistence, source tracking.
 
 #include "files/PartFile.h"
+#include "files/PartFileSizeLookup.h"
 #include "files/PartFileWriteThread.h"
 #include "app/AppContext.h"
 #include "search/ConfidenceText.h"
@@ -42,6 +43,7 @@
 
 
 #include <QScopeGuard>
+#include <QTimer>
 #include <QtEndian>
 #include <QDir>
 #include <QFileInfo>
@@ -732,6 +734,7 @@ void PartFile::hashsetReceived()
     // MFC has no equivalent and leaves such parts unverified
     if (m_status == PartFileStatus::Completing || m_status == PartFileStatus::Complete)
         return;
+    checkSizeAgainstHashset();
 
     bool any = false;
     for (uint32 p = 0; p < m_partsAwaitingHashset.size() && p < partCount(); ++p) {
@@ -747,6 +750,103 @@ void PartFile::hashsetReceived()
 
     // Persist the new hashset
     savePartFile();
+}
+
+// ===========================================================================
+// Wrong size — a part-aligned size with the hashset of a bigger file (ed2k-server #40)
+// ===========================================================================
+
+bool PartFile::checkSizeAgainstHashset()
+{
+    // Only a hashset whose root matches the file hash proves anything about the size
+    // (a .part.met load doesn't check the root)
+    if (m_sizeContradicted || !fileIdentifier().md4TailContradictsSize()
+        || !fileIdentifier().calculateMD4HashByHashSet(/*verifyOnly*/ true,
+                                                       /*deleteOnVerifyFail*/ false))
+        return m_sizeContradicted;
+
+    m_sizeContradicted = true;
+    const auto size = static_cast<uint64>(fileSize());
+    logWarning(QStringLiteral("Wrong size for \"%1\": %2 bytes, but its hashset is for a file "
+                              "of %3 to %4 bytes — looking the real size up")
+                   .arg(fileName()).arg(size).arg(size + 1).arg(size + PARTSIZE - 1));
+
+    // Hold: frees the Kad target for the size probe, and nothing carries the bad size
+    if (kadFileSearchID()) {
+        kad::SearchManager::stopSearch(kadFileSearchID(), true);
+        setKadFileSearchID(0);
+    }
+    if (theApp.sharedFileList)
+        theApp.sharedFileList->removeFile(this);
+    requestSizeLookup();
+    return true;
+}
+
+void PartFile::applyCorrectedSize(uint64 realSize, const QString& from)
+{
+    const auto oldSize = static_cast<uint64>(fileSize());
+    if (!m_sizeContradicted || realSize <= oldSize || realSize >= oldSize + PARTSIZE
+        || realSize > MAX_EMULE_FILE_SIZE)
+        return;
+    // A write still on the disk worker lands first
+    if (isFlushPending()) {
+        QTimer::singleShot(200, &m_partNotifier, [this, realSize, from] {
+            applyCorrectedSize(realSize, from);
+        });
+        return;
+    }
+    flushBuffer();
+
+    setFileSize(realSize);   // part count, frequency, black box, AICH sizes
+    addGap(oldSize, realSize - 1);
+    if (m_partFileHandle.isOpen() && m_partFileHandle.size() >= static_cast<qint64>(oldSize))
+        m_partFileHandle.resize(static_cast<qint64>(realSize));
+    if (!m_changedParts.empty())
+        m_changedParts.resize(partCount(), false);
+    if (!m_partsAwaitingHashset.empty())
+        m_partsAwaitingHashset.resize(partCount(), false);
+    m_md4HashsetNeeded = !fileIdentifier().hasExpectedMD4HashCount();
+
+    // Their part maps are for the old count, and peers with the real file never
+    // answered the old size: find them again
+    removeAllSources(false);
+    m_lastSearchTimeServer = 0;
+    m_lastSearchTimeKad = 0;
+
+    m_sizeContradicted = false;
+    if (m_sizeLookupFailed) {
+        m_sizeLookupFailed = false;
+        setStatus(m_statusBeforeSizeFix);
+    }
+    if (m_status == PartFileStatus::Completing || m_status == PartFileStatus::Complete)
+        setStatus(PartFileStatus::Empty);
+    if (m_status == PartFileStatus::Empty)
+        addToSharedFiles();   // promotes to Ready when a part is complete
+    else if (m_status == PartFileStatus::Ready && theApp.sharedFileList)
+        theApp.sharedFileList->safeAddKFile(this);
+    updateCompletedInfos();
+    savePartFile();
+    emit m_partNotifier.statusChanged(status());
+
+    logStatusInfo(QStringLiteral("Size of \"%1\" corrected from %2 to %3 bytes (from %4)")
+                      .arg(fileName()).arg(oldSize).arg(realSize).arg(from));
+}
+
+void PartFile::failSizeLookup(const QString& serverReason, const QString& kadReason)
+{
+    if (!m_sizeContradicted)
+        return;
+    if (!m_sizeLookupFailed) {
+        m_sizeLookupFailed = true;
+        m_statusBeforeSizeFix = m_status;
+        setStatus(PartFileStatus::Error);
+    }
+    pauseFile();
+    logStatusWarning(QStringLiteral("Real size of \"%1\" unknown, download paused — eD2K: %2; "
+                                    "Kad: %3")
+                         .arg(fileName(), serverReason, kadReason));
+    logWarning(QStringLiteral("Another server might know the size of \"%1\": connect to a "
+                              "different server and resume the download.").arg(fileName()));
 }
 
 // ===========================================================================
@@ -1446,6 +1546,13 @@ void PartFile::resumeFile()
         m_writeError = false;
         setStatus(m_statusBeforeWriteError);
     }
+    // Resuming after a failed size lookup is the retry, maybe on another server
+    if (m_sizeLookupFailed) {
+        m_sizeLookupFailed = false;
+        setStatus(m_statusBeforeSizeFix);
+    }
+    if (m_sizeContradicted)
+        requestSizeLookup();
     setActive(theApp.isConnected());
 
     // Nothing to re-derive: dropping the flags is what un-pauses it, and the stored
@@ -2389,6 +2496,10 @@ PartFileLoadResult PartFile::loadPartFile(const QString& directory,
     // MFC LoadPartFile: final hashset-needed check based on actual hash counts
     m_md4HashsetNeeded = !fileIdentifier().hasExpectedMD4HashCount();
 
+    // Downloads already stuck with a wrong size (not when only probing the format)
+    if (!checkFormat)
+        checkSizeAgainstHashset();
+
     // Parts finished in an earlier session without a hashset were never checked
     if (m_md4HashsetNeeded) {
         m_partsAwaitingHashset.assign(partCount(), false);
@@ -3006,6 +3117,8 @@ uint32 PartFile::process(uint32 reduceDownload, uint32 counter)
             skipReason = "no kad responses yet";
         else if (m_stopped)
             skipReason = "file stopped";
+        else if (m_sizeContradicted)
+            skipReason = "size lookup running";
         else if (kadFileSearchID())
             // Before the reask timer: that is stamped when a search starts, so a search
             // still walking would read as one cut short and waiting an hour.
@@ -4447,7 +4560,8 @@ PartDigestRequest PartFile::digestRequest(uint32 partNumber)
 
 void PartFile::completeIfVerified()
 {
-    if (!m_gapList.empty() || m_destroying)
+    // Wrong size: finishing would deliver a truncated file
+    if (!m_gapList.empty() || m_destroying || m_sizeContradicted)
         return;
 
     if (std::ranges::find(m_changedParts, true) != m_changedParts.end()) {
@@ -4916,5 +5030,14 @@ PartFileLoadResult PartFile::importShareazaTempFile(const QString& directory,
     return loadPartFile(directory, filename);
 }
 
+
+void PartFile::requestSizeLookup()
+{
+    if (!theApp.partFileSizeLookup)
+        return;   // unit tests without one: the file just stays held
+    const auto size = static_cast<uint64>(fileSize());
+    theApp.partFileSizeLookup->request(
+        QByteArray(reinterpret_cast<const char*>(fileHash()), 16), size, size + PARTSIZE);
+}
 
 } // namespace eMule

@@ -55,6 +55,7 @@ struct PortMapRequest;
 class UploadBandwidthThrottler;
 class UploadDiskIOThread;
 class PartFileWriteThread;
+class PartFileSizeLookup;
 class AICHSyncThread;
 class HttpCacheManager;
 class UploadQueue;
@@ -131,6 +132,9 @@ public:
     /// AppContext::onPublicIPv6Changed.
     static void markPeersForIPChange(const Address& effective);
 
+    /// mkpath Incoming + Temp dirs. The core's job, never the GUI's (#104). False if one failed.
+    static bool ensureDataDirectories(const QString& incomingDir, const QStringList& tempDirs);
+
 signals:
     /// Port-mapping status, whichever mapper instance is alive. Disabled when the
     /// pref switches it off.
@@ -146,6 +150,9 @@ signals:
     /// "part-files" or "network". Emitted before the stage runs.
     void loadStageChanged(const QString& stage);
 
+    /// The first start wizard is done: the daemon starts the engines it held back.
+    void connectHoldReleased();
+
 private slots:
     void onTimer();
     /// One slice of the deferred load; re-posts itself until the last.
@@ -154,6 +161,7 @@ private slots:
 private:
     /// `<ConfigDir>/uploadqueue.met` — the Upload Queue Storage file.
     [[nodiscard]] static QString uploadQueuePath();
+
     /// Force-write the upload queue. Must run before any shutdownXxx(): shutdownClientInfra()
     /// destroys the ClientCredits objects the waiting clients read their wait times from.
     static void saveUploadQueueStore();
@@ -246,6 +254,7 @@ private:
     std::unique_ptr<UploadBandwidthThrottler> m_uploadThrottler;
     std::unique_ptr<UploadDiskIOThread> m_uploadDiskIO;
     std::unique_ptr<PartFileWriteThread> m_partFileWriter;
+    std::unique_ptr<PartFileSizeLookup> m_partFileSizeLookup;
     std::unique_ptr<AICHSyncThread> m_aichSync;
     std::unique_ptr<kad::Kademlia> m_kademlia;
     std::unique_ptr<ClientUDPSocket> m_clientUDP;

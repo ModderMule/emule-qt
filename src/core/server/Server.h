@@ -330,6 +330,13 @@ public:
     [[nodiscard]] const std::array<uint8, 16>& serverHash() const { return m_serverHash; }
     void setServerHash(const uint8* hash);
 
+    /// ed2k-server 0.9.87 ST_NATT_TOKEN from OP_SERVERIDENT: appended to each 0x9F, which the
+    /// server then believes from any address. New on every login: runtime only, the
+    /// session's own copy of the server holds it.
+    [[nodiscard]] bool hasNatToken() const              { return m_hasNatToken; }
+    [[nodiscard]] const std::array<uint8, 16>& natToken() const { return m_natToken; }
+    void setNatToken(const uint8* token);
+
     // -- Aux --------------------------------------------------------------
 
     [[nodiscard]] const QString& auxPortsList() const   { return m_auxPortsList; }
@@ -450,6 +457,8 @@ private:
     // Ident hash
     std::array<uint8, 16> m_serverHash{};
     bool    m_hasServerHash = false;
+    std::array<uint8, 16> m_natToken{};   // transient, never saved
+    bool    m_hasNatToken = false;
 
     // eNode Meta API
     QString m_metaApiUrl;

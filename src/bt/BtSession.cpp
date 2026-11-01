@@ -34,6 +34,7 @@
 #include <QTimer>
 
 #include <atomic>
+#include <chrono>
 #include <deque>
 #include <map>
 #include <optional>
@@ -120,6 +121,20 @@ QString message(const lt::alert* a)
     return QString::fromStdString(a->message());
 }
 
+/// A performance warning repeats each second while it holds: once a minute per torrent and kind.
+bool performanceDue(const lt::performance_alert* pa)
+{
+    using Clock = std::chrono::steady_clock;
+    constexpr auto kEvery = std::chrono::minutes(1);
+    static std::map<std::pair<QString, int>, Clock::time_point> last;   // alert loop: one thread
+    const auto now = Clock::now();
+    auto [it, fresh] = last.try_emplace({BtTorrentView::idOf(pa->handle.info_hashes()), int(pa->warning_code)}, now);
+    if (!fresh && now - it->second < kEvery)
+        return false;
+    it->second = now;
+    return true;
+}
+
 /// libtorrent's own line of @p a to the Torrent tab. Skips the per-piece/block,
 /// stats and incoming-DHT alerts: a firehose, and polled anyway.
 void forwardAlert(const lt::alert* a)
@@ -132,7 +147,16 @@ void forwardAlert(const lt::alert* a)
     if (cat & lt::alert_category::piece_progress)
         return;
     const QString line = QString::fromLatin1(a->what()) + QStringLiteral(": ") + message(a);
-    if (cat & (lt::alert_category::error | lt::alert_category::performance_warning))
+    if (const auto* pa = lt::alert_cast<lt::performance_alert>(a)) {
+        if (!performanceDue(pa))
+            return;
+        // limits too low: a setting to fix (#87); the rest only say a peer is fast
+        using W = lt::performance_alert::performance_warning_t;
+        if (pa->warning_code == W::upload_limit_too_low || pa->warning_code == W::download_limit_too_low)
+            logTorrentWarning(line);
+        else
+            logTorrentDebug(line);
+    } else if (cat & (lt::alert_category::error | lt::alert_category::performance_warning))
         logTorrentWarning(line);
     else if (cat & (lt::alert_category::dht | lt::alert_category::ip_block))
         logTorrentDebug(line);
@@ -470,7 +494,7 @@ void BtSession::setIpFilter(const std::vector<BtIpRange4>& v4, const std::vector
     d->ipFilter = std::move(f);
     if (d->ses)
         d->ses->set_ip_filter(d->ipFilter);
-    logDebug(QStringLiteral("BitTorrent: IP filter of %1 range(s)").arg(v4.size() + v6.size()));
+    logTorrentDebug(QStringLiteral("BitTorrent: IP filter of %1 range(s)").arg(v4.size() + v6.size()));
 }
 
 quint64 BtSession::blockedPeers() const
@@ -929,21 +953,16 @@ void BtSession::drainAlerts()
             logWarning(QStringLiteral("BitTorrent: %1").arg(message(lf)));
             emit statusChanged();
         } else if (auto* pb = lt::alert_cast<lt::peer_blocked_alert>(a)) {
-            if (pb->reason == lt::peer_blocked_alert::ip_filter) {
+            // its line went to Torrent Verbose (forwardAlert, ip_block)
+            if (pb->reason == lt::peer_blocked_alert::ip_filter)
                 ++d->blockedPeers;
-                // ep: `endpoint` is gone at ABI 4 (Linux static build)
-                const auto* blocked = std::get_if<lt::aux::noexcept_movable<lt::tcp::endpoint>>(&pb->ep);
-                logDebug(QStringLiteral("BitTorrent: IP filter blocked %1")
-                               .arg(blocked ? QString::fromStdString(blocked->address().to_string())
-                                            : QStringLiteral("i2p peer")));
-            }
         } else if (auto* ds = lt::alert_cast<lt::dht_stats_alert>(a)) {
             int nodes = 0;
             for (const auto& bucket : ds->routing_table)
                 nodes += bucket.num_nodes;
             d->dhtNodes = nodes;
-        } else if (lt::alert_cast<lt::torrent_error_alert>(a) || lt::alert_cast<lt::file_error_alert>(a)
-                   || lt::alert_cast<lt::performance_alert>(a)) {
+        } else if (lt::alert_cast<lt::torrent_error_alert>(a) || lt::alert_cast<lt::file_error_alert>(a)) {
+            // performance alerts: Torrent tab only (forwardAlert), they repeat each second
             logWarning(QStringLiteral("BitTorrent: %1").arg(message(a)));
         } else if (lt::alert_cast<lt::tracker_error_alert>(a) || lt::alert_cast<lt::hash_failed_alert>(a)) {
             if (auto* hf = lt::alert_cast<lt::hash_failed_alert>(a)) {

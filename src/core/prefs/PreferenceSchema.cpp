@@ -259,6 +259,9 @@ using Kind = PrefSpec::Kind;
 
     // --- Logging ---
     t << flag("verbose", "Write verbose (debug) log lines.");
+    t << advanced(flag("btVerboseLog", "Log BitTorrent details (Torrent Verbose tab)."));
+    t << advanced(flag("hosterVerboseLog", "Log hoster resolver details (Hoster Verbose tab)."));
+    t << advanced(flag("ed3kVerboseLog", "Log ed3k node details (ed3k Verbose tab)."));
     t << flag("logToDiskCore", "Write the core log to a file.");
     t << advanced(flag("logWebServer", "Log web server requests."));
 

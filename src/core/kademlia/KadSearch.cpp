@@ -64,6 +64,19 @@ void Search::noteSearchIDUsed(uint32 searchID)
 
 Search::~Search()
 {
+    // A size probe that ran out without two agreeing sources: the most common size
+    if (m_sizeProbeDone) {
+        uint64 best = 0;
+        uint32 bestVotes = 0;
+        for (const auto& [size, votes] : m_sizeVotes) {
+            if (votes > bestVotes) {
+                best = size;
+                bestVotes = votes;
+            }
+        }
+        finishSizeProbe(best);
+    }
+
     // Feed the experimental user estimate with the closest node that answered us.
     // Only lookups that converge on a target count. MFC Search.cpp:96-111.
     switch (m_type) {
@@ -773,6 +786,11 @@ void Search::processResult(const UInt128& answer, TagList& info, uint32 fromIP, 
 
 void Search::processResultFile(const UInt128& answer, TagList& info)
 {
+    if (isSizeProbe()) {
+        processSizeProbeResult(answer, info);
+        return;
+    }
+
     // Extract source information from tags (MFC Search.cpp:915-948)
     uint32 sourceIP = 0;
     uint16 sourcePort = 0;
@@ -1386,6 +1404,13 @@ void Search::prepareToStop()
     storePacket(true);
 }
 
+void Search::setSizeProbe(uint64 low, uint64 high, SizeProbeDone done)
+{
+    m_sizeProbeLow = low;
+    m_sizeProbeHigh = high;
+    m_sizeProbeDone = std::move(done);
+}
+
 void Search::retryUnstoredSource() const
 {
     // Not MFC, which counts the attempt as published for KADEMLIAREPUBLISHTIMES.
@@ -1478,10 +1503,11 @@ void Search::storePacket(bool flushRemaining)
             m_target.toByteArray(hash);
             auto* partFile = theApp.downloadQueue
                 ? theApp.downloadQueue->fileByID(hash) : nullptr;
-            if (!partFile)
+            if (!partFile && !isSizeProbe())
                 break;
             packet.writeUInt16(0); // start position
-            packet.writeUInt64(static_cast<uint64>(partFile->fileSize()));
+            // Size 0: storing nodes serve every record, whatever size it was published with
+            packet.writeUInt64(isSizeProbe() ? uint64{0} : static_cast<uint64>(partFile->fileSize()));
             {
                 UInt128 clientID = contact->getClientID();
                 udpListener->sendPacket(packet, KADEMLIA2_SEARCH_SOURCE_REQ,
@@ -1811,6 +1837,43 @@ uint32 Search::getLifetime() const
     case SearchType::NodeFwCheckUDP: return kSearchNodeLifetime;
     }
     return kSearchLifetime;
+}
+
+void Search::processSizeProbeResult(const UInt128& answer, const TagList& info)
+{
+    if (!m_sizeProbeDone)
+        return;   // already decided, the lookup is winding down
+    uint64 size = 0;
+    for (const auto& tag : info) {
+        if (tag.nameId() == FT_FILESIZE) {
+            if (tag.isInt())
+                size = tag.intValue();
+            else if (tag.isInt64(false))
+                size = tag.int64Value();
+        } else if (tag.nameId() == FT_FILESIZE_HI && tag.isInt()) {
+            size |= static_cast<uint64>(tag.intValue()) << 32;
+        }
+    }
+    ++m_answers;
+    // One vote per source, however many nodes store its record
+    if (size <= m_sizeProbeLow || size >= m_sizeProbeHigh || !m_sizeVoters.insert(answer).second)
+        return;
+    const uint32 votes = ++m_sizeVotes[size];
+    logKad(QStringLiteral("Kad search %1: size probe — source %2 reports %3 (%4 votes)")
+               .arg(m_searchID).arg(answer.toHexString()).arg(size).arg(votes));
+    if (votes >= 2) {
+        finishSizeProbe(size);
+        prepareToStop();
+    }
+}
+
+void Search::finishSizeProbe(uint64 size)
+{
+    // Moved out first: the callback may stop this search
+    SizeProbeDone done = std::move(m_sizeProbeDone);
+    m_sizeProbeDone = nullptr;
+    if (done)
+        done(size);
 }
 
 } // namespace eMule::kad

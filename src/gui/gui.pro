@@ -84,10 +84,12 @@ SOURCES += \
     app/AutoStart.cpp \
     app/CommandLineExec.cpp \
     app/Ed2kSchemeHandler.cpp \
+    app/CoreAttachment.cpp \
     app/CoreStartWatch.cpp \
     app/SingleInstance.cpp \
     app/IpcClient.cpp \
     app/KnownCores.cpp \
+    app/Ed3kLiveWatch.cpp \
     app/Ed3kNameOpener.cpp \
     app/main.cpp \
     app/MainWindow.cpp \
@@ -128,6 +130,7 @@ SOURCES += \
     dialogs/CommentsPanel.cpp \
     dialogs/CoreConnectDialog.cpp \
     dialogs/DetailDialog.cpp \
+    dialogs/RememberedSizeDialog.cpp \
     dialogs/FileDetailDialog.cpp \
     dialogs/FindInListDialog.cpp \
     dialogs/FirstStartWizard.cpp \
@@ -137,6 +140,8 @@ SOURCES += \
     dialogs/OptionsDialog.cpp \
     dialogs/Ed3kOptionsPages.cpp \
     dialogs/Ed3kFilterPage.cpp \
+    dialogs/Ed3kSellDialogs.cpp \
+    dialogs/Ed3kSellPage.cpp \
     dialogs/Ed3kStakeGroup.cpp \
     dialogs/Ed3kSetsDialog.cpp \
     dialogs/AddNzbFilesDialog.cpp \
@@ -181,10 +186,12 @@ HEADERS += \
     app/AutoStart.h \
     app/CommandLineExec.h \
     app/Ed2kSchemeHandler.h \
+    app/CoreAttachment.h \
     app/CoreStartWatch.h \
     app/SingleInstance.h \
     app/IpcClient.h \
     app/KnownCores.h \
+    app/Ed3kLiveWatch.h \
     app/Ed3kNameOpener.h \
     app/MainWindow.h \
     app/MiniMuleWidget.h \
@@ -232,6 +239,7 @@ HEADERS += \
     dialogs/CommentsPanel.h \
     dialogs/CoreConnectDialog.h \
     dialogs/DetailDialog.h \
+    dialogs/RememberedSizeDialog.h \
     dialogs/FileDetailDialog.h \
     dialogs/FindInListDialog.h \
     dialogs/ConnectionPresets.h \
@@ -244,6 +252,8 @@ HEADERS += \
     dialogs/OptionsDialog.h \
     dialogs/Ed3kOptionsPages.h \
     dialogs/Ed3kFilterPage.h \
+    dialogs/Ed3kSellDialogs.h \
+    dialogs/Ed3kSellPage.h \
     dialogs/Ed3kStakeGroup.h \
     dialogs/Ed3kSetsDialog.h \
     dialogs/AddNzbFilesDialog.h \

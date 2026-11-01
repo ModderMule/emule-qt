@@ -17,14 +17,17 @@
 #include <chrono>
 #include <cstdint>
 #include <ctime>
+#include <functional>
 #include <map>
 #include <memory>
+#include <set>
 
 namespace eMule {
 class KnownFile;
 } // namespace eMule
 
 class tst_KadSearch;
+class tst_SizeContradiction;
 
 namespace eMule::kad {
 
@@ -36,6 +39,7 @@ class KadClientSearcher;
 class Search {
     friend class SearchManager;
     friend class ::tst_KadSearch;   // drives the walk without the 3 s jump-start clock
+    friend class ::tst_SizeContradiction;   // feeds size-probe results
 
 public:
     Search();
@@ -124,6 +128,14 @@ public:
     [[nodiscard]] bool stopping() const { return m_stopping; }
     /// A source publish no node acknowledged leaves its file due again.
     void retryUnstoredSource() const;
+
+    /// Size probe for a download with a wrong size: a File lookup that asks with size 0,
+    /// so storing nodes serve every record, and counts the FT_FILESIZE of each source in
+    /// (low, high) instead of adding sources. @p done gets the size (0 = none) once two
+    /// sources agree or the lookup ends. Set before the first action packet.
+    using SizeProbeDone = std::function<void(uint64 size)>;
+    void setSizeProbe(uint64 low, uint64 high, SizeProbeDone done);
+    [[nodiscard]] bool isSizeProbe() const { return m_sizeProbeLow != 0; }
     /// This search sent its action packet (search / store request) to that node, so a
     /// result from it is one we asked for.
     [[nodiscard]] bool sentActionTo(uint32 ip, uint16 udpPort) const;
@@ -158,6 +170,8 @@ private:
     void processResultFile(const UInt128& answer, TagList& info);
     void processResultKeyword(const UInt128& answer, TagList& info, uint32 fromIP, uint16 fromPort);
     void processResultNotes(const UInt128& answer, TagList& info);
+    void processSizeProbeResult(const UInt128& answer, const TagList& info);
+    void finishSizeProbe(uint64 size);
     void jumpStart();
     /// Pin routing-zone contacts fetched with setInUse=true into m_inUse so the
     /// zone cannot free them mid-search. Drops the extra reference when a
@@ -196,6 +210,12 @@ private:
     time_t m_created = 0;
     SearchType m_type = SearchType::Node;
     uint32 m_answers = 0;
+    // Size probe: range bounds (exclusive), votes per size, sources already counted
+    uint64 m_sizeProbeLow = 0;
+    uint64 m_sizeProbeHigh = 0;
+    SizeProbeDone m_sizeProbeDone;
+    std::map<uint64, uint32> m_sizeVotes;
+    std::set<UInt128> m_sizeVoters;
     uint32 m_totalRequestAnswers = 0;
     uint32 m_kadPacketSent = 0;
     uint32 m_totalLoad = 0;

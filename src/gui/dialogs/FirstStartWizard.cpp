@@ -250,16 +250,38 @@ QWidget* FirstStartWizard::setupPortPage()
     pageLayout->addWidget(separator);
 
     auto* group = new QGroupBox(tr("Choose which Network(s) you want to use"), page);
-    auto* groupLayout = new QHBoxLayout(group);
+    auto* groupLayout = new QGridLayout(group);
     groupLayout->setContentsMargins(16, 8, 16, 8);
+    groupLayout->setHorizontalSpacing(40);
 
+    // MFC has Kad and eD2K; the others start on their own otherwise (#103)
     m_kadCheck = new QCheckBox(tr("Kad"), group);
     m_ed2kCheck = new QCheckBox(tr("eD2K"), group);
+    m_usenetCheck = new QCheckBox(tr("Usenet"), group);
+    m_usenetCheck->setToolTip(tr("Downloads from news servers (NZB); needs a Usenet provider account"));
+    m_btCheck = new QCheckBox(tr("BitTorrent"), group);
+    m_ed3kCheck = new QCheckBox(tr("ed3k"), group);
+    m_ed3kCheck->setToolTip(tr("The ed3k network; also finds more sources for eD2K and BitTorrent downloads"));
+    m_hosterCheck = new QCheckBox(tr("Hoster"), group);
+    m_hosterCheck->setToolTip(
+        tr("Downloads from file hoster links; runs on ed3k and fetches a Java runtime when none is found"));
+    m_kadCheck->setObjectName(QStringLiteral("wizardKad"));
+    m_ed2kCheck->setObjectName(QStringLiteral("wizardEd2k"));
+    m_usenetCheck->setObjectName(QStringLiteral("wizardUsenet"));
+    m_btCheck->setObjectName(QStringLiteral("wizardBt"));
+    m_ed3kCheck->setObjectName(QStringLiteral("wizardEd3k"));
+    m_hosterCheck->setObjectName(QStringLiteral("wizardHoster"));
 
-    groupLayout->addWidget(m_kadCheck);
-    groupLayout->addSpacing(40);
-    groupLayout->addWidget(m_ed2kCheck);
-    groupLayout->addStretch();
+    groupLayout->addWidget(m_kadCheck, 0, 0);
+    groupLayout->addWidget(m_ed2kCheck, 0, 1);
+    groupLayout->addWidget(m_usenetCheck, 0, 2);
+    groupLayout->addWidget(m_btCheck, 1, 0);
+    groupLayout->addWidget(m_ed3kCheck, 1, 1);
+    groupLayout->addWidget(m_hosterCheck, 1, 2);
+    groupLayout->setColumnStretch(3, 1);
+
+    // hosters run on the ed3k node: no ed3k, no hosters
+    connect(m_ed3kCheck, &QCheckBox::toggled, m_hosterCheck, &QWidget::setEnabled);
 
     auto* wrapper = new QWidget(page);
     auto* wrapperLayout = new QVBoxLayout(wrapper);
@@ -467,6 +489,11 @@ void FirstStartWizard::fillFromSettings(const QCborMap& prefs)
     m_kadCheck->setToolTip(m_udpOff ? tr("Kad needs UDP, which is disabled in the config file")
                                     : QString());
     m_ed2kCheck->setChecked(prefs.value(QLatin1StringView("networkED2K")).toBool());
+    m_usenetCheck->setChecked(prefs.value(QLatin1StringView("usenetEnabled")).toBool(false));
+    m_btCheck->setChecked(prefs.value(QLatin1StringView("btEnabled")).toBool(true));
+    m_ed3kCheck->setChecked(prefs.value(QLatin1StringView("ed3kEnabled")).toBool(true));
+    m_hosterCheck->setChecked(prefs.value(QLatin1StringView("ed3kHosterEnabled")).toBool(true));
+    m_hosterCheck->setEnabled(m_ed3kCheck->isChecked());
     m_extControlsCheck->setChecked(prefs.value(QLatin1StringView("showExtControls")).toBool(true));
 
     m_current = {number(QLatin1StringView("maxGraphDownloadRate")),
@@ -690,12 +717,13 @@ void FirstStartWizard::onHelp()
 
 bool FirstStartWizard::networksValid()
 {
-    if (m_kadCheck->isChecked() || m_ed2kCheck->isChecked())
+    // hosters alone do not count: they need ed3k
+    if (m_kadCheck->isChecked() || m_ed2kCheck->isChecked() || m_usenetCheck->isChecked()
+        || m_btCheck->isChecked() || m_ed3kCheck->isChecked())
         return true;
 
     showPage(kPagePorts);
-    QMessageBox::warning(this, tr("Network"),
-        tr("You must enable at least one network (Kad or eD2K)."));
+    QMessageBox::warning(this, tr("Network"), tr("You must enable at least one network."));
     return false;
 }
 
@@ -742,6 +770,10 @@ void FirstStartWizard::finish()
     const auto udpPort = static_cast<uint16>(udpPortValue());
     const bool kadEnabled = m_kadCheck->isChecked();
     const bool ed2kEnabled = m_ed2kCheck->isChecked();
+    const bool usenetEnabled = m_usenetCheck->isChecked();
+    const bool btEnabled = m_btCheck->isChecked();
+    const bool ed3kEnabled = m_ed3kCheck->isChecked();
+    const bool hosterEnabled = m_hosterCheck->isChecked();
     const bool extControls = m_extControlsCheck->isChecked();
     const auto bandwidth = chosenBandwidth();
 
@@ -752,6 +784,10 @@ void FirstStartWizard::finish()
         m_applied.insert(QStringLiteral("ed3kUdpPort"), tcpPort);
     m_applied.insert(QStringLiteral("kadEnabled"), kadEnabled);
     m_applied.insert(QStringLiteral("networkED2K"), ed2kEnabled);
+    m_applied.insert(QStringLiteral("usenetEnabled"), usenetEnabled);
+    m_applied.insert(QStringLiteral("btEnabled"), btEnabled);
+    m_applied.insert(QStringLiteral("ed3kEnabled"), ed3kEnabled);
+    m_applied.insert(QStringLiteral("ed3kHosterEnabled"), hosterEnabled);
     m_applied.insert(QStringLiteral("showExtControls"), extControls);
     if (m_upnpRequested)
         m_applied.insert(QStringLiteral("enableUPnP"), true);
@@ -770,6 +806,14 @@ void FirstStartWizard::finish()
         thePrefs.setEd3kUdpPort(tcpPort);
     thePrefs.setKadEnabled(kadEnabled);
     thePrefs.setNetworkED2K(ed2kEnabled);
+    thePrefs.setUsenetEnabled(usenetEnabled);
+    thePrefs.setBtEnabled(btEnabled);
+    thePrefs.setEd3kEnabled(ed3kEnabled);
+    {
+        Ed3kHosterPrefs hoster = thePrefs.ed3kHoster();
+        hoster.enabled = hosterEnabled;
+        thePrefs.setEd3kHoster(hoster);
+    }
     thePrefs.setShowExtControls(extControls);
     if (bandwidth) {
         thePrefs.setMaxGraphDownloadRate(bandwidth->capDown);
@@ -792,6 +836,14 @@ void FirstStartWizard::finish()
         req.append(kadEnabled);
         req.append(QStringLiteral("networkED2K"));
         req.append(ed2kEnabled);
+        req.append(QStringLiteral("usenetEnabled"));
+        req.append(usenetEnabled);
+        req.append(QStringLiteral("btEnabled"));
+        req.append(btEnabled);
+        req.append(QStringLiteral("ed3kEnabled"));
+        req.append(ed3kEnabled);
+        req.append(QStringLiteral("ed3kHosterEnabled"));
+        req.append(hosterEnabled);
         req.append(QStringLiteral("showExtControls"));
         req.append(extControls);
         if (bandwidth) {

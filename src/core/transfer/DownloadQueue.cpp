@@ -87,8 +87,14 @@ QStringList DownloadQueue::partMetFiles(const QStringList& tempDirs)
 
         QDirIterator it(tempDir, {QStringLiteral("*.part.met")},
                         QDir::Files, QDirIterator::NoIteratorFlags);
-        while (it.hasNext())
-            files.append(it.next());
+        while (it.hasNext()) {
+            const QString path = it.next();
+            // ed3k and hoster joins keep their own JSON .met files in Temp
+            if (path.endsWith(QStringLiteral(".ed3k.part.met"), Qt::CaseInsensitive)
+                || path.endsWith(QStringLiteral(".hoster.part.met"), Qt::CaseInsensitive))
+                continue;
+            files.append(path);
+        }
     }
     return files;
 }
@@ -888,6 +894,8 @@ bool DownloadQueue::addDownloadFromED2KLink(const QString& link, const QString& 
     }
 
     addDownload(partFile, paused);
+    // A p= hashset can prove the link's size wrong (part-aligned, hashset of a bigger file)
+    partFile->checkSizeAgainstHashset();
 
     // After addDownload: the file must be queued before sources are attached.
     addLinkSources(partFile, fileLink->hostnameSources);
