@@ -691,6 +691,24 @@ std::optional<ED2KLink> parseED2KLink(const QString& rawUri)
 
 QString redactLinkSecret(const QString& uri)
 {
+    // ed3k links: the credentials s (set, room, live, friend), p and k (pass, subscription.md
+    // §9.3) and the upload key of an ed3k:cache link (http-source.md §4.1)
+    if (uri.startsWith(QStringLiteral("ed3k:"), Qt::CaseInsensitive)) {
+        const qsizetype q = uri.indexOf(QChar(u'?'));
+        if (q < 0)
+            return uri;
+        const bool cache = uri.left(q).compare(QStringLiteral("ed3k:cache"), Qt::CaseInsensitive) == 0;
+        QStringList params = uri.mid(q + 1).split(QChar(u'&'));
+        for (QString& param : params) {
+            const qsizetype eq = param.indexOf(QChar(u'='));
+            const QString name = eq < 0 ? param : param.left(eq);
+            const bool secret = name == QLatin1String("s") || name == QLatin1String("p") || name == QLatin1String("k")
+                                || (cache && name == QLatin1String("key"));
+            if (secret && eq >= 0 && eq + 1 < param.size())
+                param = name + QStringLiteral("=…");
+        }
+        return uri.left(q + 1) + params.join(QChar(u'&'));
+    }
     const QString prefix = QStringLiteral("ed2k://|");
     if (!uri.startsWith(prefix, Qt::CaseInsensitive))
         return uri;

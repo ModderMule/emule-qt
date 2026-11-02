@@ -25,7 +25,9 @@ namespace eMule {
 class IpcClient;
 
 /// The terms of an offer: price, shop addresses, terms text, devices, released epochs; for a
-/// new sale also the epoch and season length, for the defaults the days of a pass.
+/// new sale also the epoch and season length, for the defaults the days of a pass. A terms
+/// map with `private` true (a private channel): the note that the shop's pass address must
+/// send the offer (subscription.md §9.1 Ed3k-Offer: there is no channel file).
 class Ed3kSellTermsDialog : public QDialog {
     Q_OBJECT
 
@@ -71,8 +73,9 @@ public:
 
     /// Asks, sends IssueEd3kPass and shows the link (copied to the clipboard).
     static void run(QWidget* parent, IpcClient* ipc, const QCborArray& sales, const QString& scope, int passDays);
-    /// The ed3k:pass link given, copied; a voucher's is a credential, shown once.
-    static void showLink(QWidget* parent, const QString& link, bool voucher);
+    /// The ed3k:pass link given, copied; a voucher's is a credential, shown once. @p channelLinks:
+    /// the private channels' links of the pass (live.md §10: credentials too), for the buyer.
+    static void showLink(QWidget* parent, const QString& link, bool voucher, const QStringList& channelLinks = {});
 
 private:
     void accept() override;

@@ -22,6 +22,7 @@
 #include <QTemporaryDir>
 #include <QTest>
 
+#include <array>
 #include <cstring>
 #include <memory>
 
@@ -123,10 +124,14 @@ private slots:
     void aHintedSourceIsUsedOverEd3k();
     void anUnansweredHintFallsBackToEd2k();
     void aClientWaitsForEd3kThenFallsBack();
+    void aContradictedSizeIsNotJoinedAndACorrectedOneIsLookedUpAgain();
 
 private:
     /// B's eD2K part file for @p md4 of @p size (owned by the queue).
     PartFile* addPartFile(const QByteArray& md4, std::uint64_t size, const QString& name);
+    /// B's part file of PARTSIZE bytes for @p real (PARTSIZE + tail bytes): the link's wrong
+    /// size, with the real file's MD4 hashset (wrong-download-size.md).
+    PartFile* addWrongSizePartFile(const QByteArray& real, const QString& name);
     /// The verdict hook as the daemon has it (queued).
     void hookVerdicts(Ed3kEd2kJoin& join);
     /// Flushes B's part files until @p done (verification runs on a flush).
@@ -424,6 +429,69 @@ void tst_Ed3kEd2kJoin::aClientWaitsForEd3kThenFallsBack()
     viaEd3k->setReqFile(nullptr);
 }
 
+// wrong-download-size.md: a file whose size is in doubt is not joined; once corrected, the
+// ed2k alias is looked up under the new md4 ‖ size (dropped first, or seen changed on a tick)
+void tst_Ed3kEd2kJoin::aContradictedSizeIsNotJoinedAndACorrectedOneIsLookedUpAgain()
+{
+    World w;
+    QVERIFY(w.up());
+    constexpr int kReal = int(PARTSIZE) + 1000;
+    FakeSource src;
+    std::array<QByteArray, 2> data{payload(kReal, 21), payload(kReal, 22)};
+    std::array<QByteArray, 2> md4s;
+    for (std::size_t i = 0; i < data.size(); ++i) {
+        const QByteArray parts = md4Of(data[i].left(int(PARTSIZE))) + md4Of(data[i].mid(int(PARTSIZE)));
+        md4s[i] = md4Of(parts);
+        const QString name = QStringLiteral("real%1.bin").arg(i);
+        const QString path = QDir(w.da.path()).filePath(name);
+        QVERIFY(writeFile(path, data[i]));
+        src.entries.push_back(SharedEntry{md4s[i], path, name, std::uint64_t(kReal)});
+    }
+    Ed3kShared shared(w.a, src, w.da.path());
+    QSignalSpy sharedSpy(&shared, &Ed3kShared::fileShared);
+    shared.start();
+    QTRY_COMPARE_WITH_TIMEOUT(sharedSpy.count(), 2, 30000);
+    QVERIFY(shared.aliasPublished(md4s[0]) && shared.aliasPublished(md4s[1]));
+
+    PartFile* held = addWrongSizePartFile(data[0], QStringLiteral("held.bin"));
+    PartFile* quick = addWrongSizePartFile(data[1], QStringLiteral("quick.bin"));
+    QVERIFY(held && quick);
+    IdleJoin join(w.b, *m_queue, w.db.path());
+    join.setSearchGap(1000);
+    join.start();
+    // both looked up under the wrong size first (nothing proves it wrong yet)
+    for (const auto& md4 : md4s) {
+        const auto info = join.infoOf(md4);
+        QVERIFY(info);
+        QCOMPARE(info->size, std::uint64_t(PARTSIZE));
+    }
+
+    // held: contradicted, the join drops it and does not take it while in doubt
+    QVERIFY(held->checkSizeAgainstHashset());
+    join.sync();
+    QVERIFY(!join.infoOf(md4s[0]).has_value());
+    join.sync();
+    QVERIFY(!join.infoOf(md4s[0]).has_value());
+    held->applyCorrectedSize(std::uint64_t(kReal), QStringLiteral("test"));
+    join.sync();
+    QVERIFY(join.infoOf(md4s[0]).has_value());
+    QCOMPARE(join.infoOf(md4s[0])->size, std::uint64_t(kReal));
+
+    // quick: contradicted and corrected between two syncs, the changed size is seen
+    QVERIFY(quick->checkSizeAgainstHashset());
+    quick->applyCorrectedSize(std::uint64_t(kReal), QStringLiteral("test"));
+    QCOMPARE(uint64(quick->fileSize()), std::uint64_t(kReal));
+    join.sync();
+    QCOMPARE(join.infoOf(md4s[1])->size, std::uint64_t(kReal));
+
+    // the new md4 ‖ size finds A's roots
+    QTRY_VERIFY_WITH_TIMEOUT(join.rootOf(md4s[0]).has_value() && join.rootOf(md4s[1]).has_value(), 30000);
+    QCOMPARE(*join.rootOf(md4s[0]), *shared.rootOf(md4s[0]));
+    QCOMPARE(*join.rootOf(md4s[1]), *shared.rootOf(md4s[1]));
+    join.stop();
+    shared.stop();
+}
+
 // ---------------------------------------------------------------------------
 
 PartFile* tst_Ed3kEd2kJoin::addPartFile(const QByteArray& md4, std::uint64_t size, const QString& name)
@@ -435,6 +503,30 @@ PartFile* tst_Ed3kEd2kJoin::addPartFile(const QByteArray& md4, std::uint64_t siz
     file->setTmpPath(temp);
     file->setFileHash(reinterpret_cast<const uint8*>(md4.constData()));
     if (!file->createPartFile(temp))
+        return nullptr;
+    PartFile* raw = file.release();
+    m_queue->addDownload(raw);
+    return raw;
+}
+
+PartFile* tst_Ed3kEd2kJoin::addWrongSizePartFile(const QByteArray& real, const QString& name)
+{
+    std::vector<std::array<uint8, 16>> parts(2);
+    for (std::size_t i = 0; i < parts.size(); ++i) {
+        const QByteArray h = md4Of(i == 0 ? real.left(int(PARTSIZE)) : real.mid(int(PARTSIZE)));
+        std::memcpy(parts[i].data(), h.constData(), 16);
+    }
+    QByteArray rootIn;
+    for (const auto& p : parts)
+        rootIn.append(reinterpret_cast<const char*>(p.data()), 16);
+    const QByteArray md4 = md4Of(rootIn);
+    auto file = std::make_unique<PartFile>();
+    const QString temp = m_dir.filePath(QStringLiteral("temp"));
+    file->setFileName(QStringLiteral("%1-%2").arg(++m_serial).arg(name));
+    file->setFileSize(EMFileSize(uint64(PARTSIZE)));
+    file->setTmpPath(temp);
+    file->setFileHash(reinterpret_cast<const uint8*>(md4.constData()));
+    if (!file->fileIdentifier().setMD4HashSet(parts) || !file->createPartFile(temp))
         return nullptr;
     PartFile* raw = file.release();
     m_queue->addDownload(raw);

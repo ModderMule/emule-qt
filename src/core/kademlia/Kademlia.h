@@ -213,6 +213,8 @@ private:
     void askRememberedBuddies(time_t now, bool ignoreReask = false);
     /// Record this session's firewall verdict once a check gave a final answer.
     void updateSessionVerdict();
+    /// Emit firewallStatusChanged when the TCP/UDP firewall state changed.
+    void notifyFirewallStateChange();
     /// Went offline: undo contact aging since the silence began.
     void enterOffline(time_t now);
     /// Recheck every contact and refresh every zone within kCatchUpSpread.
@@ -248,6 +250,8 @@ private:
     bool m_lanMode = false;
     bool m_bootstrapping = false;
     bool m_wasConnected = false;
+    static constexpr uint8 kFirewallStateUnknown = 0xFF;
+    uint8 m_lastFirewallState = kFirewallStateUnknown;   ///< bits: tcpFW, udpFW, udpVerified, tcpVerified
     bool m_ownsPrefs = false;
     std::list<uint32> m_statsEstUsersProbes;
 

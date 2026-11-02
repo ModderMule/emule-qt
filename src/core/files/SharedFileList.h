@@ -218,6 +218,11 @@ public:
     [[nodiscard]] ShareRules shareRules() const;
     [[nodiscard]] bool shouldBeShared(const ShareRules& rules, const QString& dirPath,
                                       const QString& filePath, bool mustBeShared) const;
+    /// Files never shared, whatever the directories: ed3k (batch 15 #12) opened plain
+    /// copies of sealed set members (hidden-set.md §4.2 MUST). Shared ones go now.
+    void setNeverShared(std::function<bool(const QString& filePath)> check);
+    /// Drops the shared files setNeverShared names (one more came).
+    void dropNeverShared();
 
     /// Cleaned and case-folded: two spellings of one path give one key (MFC compares
     /// with CompareNoCase).
@@ -496,6 +501,7 @@ private:
     /// (that is what sharedfiles.dat keeps). Main thread only.
     QHash<QString, QString> m_singleSharedFiles;
     QHash<QString, QString> m_singleExcludedFiles;
+    std::function<bool(const QString&)> m_neverShared;   ///< setNeverShared
 
     /// Pseudo name -> directory, as last sent to a browsing client. Main thread only.
     QHash<QString, QString> m_pseudoDirNames;

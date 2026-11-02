@@ -8,11 +8,15 @@
 #include "app/ExternalLinkHandler.h"
 
 #include "app/AppConfig.h"
+#include "app/Ed3kLinkActions.h"
 #include "app/Ed3kLiveWatch.h"
 #include "app/Ed3kNameOpener.h"
 #include "dialogs/Ed3kSetsDialog.h"
 #include "app/IpcClient.h"
 #include "app/MainWindow.h"
+#include "app/UiState.h"
+#include "panels/MessagesPanel.h"
+#include "protocol/ED2KLink.h"
 #include "prefs/Preferences.h"
 #include "utils/Ed2kLinkImporter.h"
 #include "utils/Log.h"
@@ -31,6 +35,20 @@
 #include <utility>
 
 namespace eMule {
+
+namespace {
+
+/// The query of an ed3k link (after '?')
+QUrlQuery ed3kQuery(const QString& link)
+{
+    const qsizetype q = link.indexOf(QLatin1Char('?'));
+    return QUrlQuery(q < 0 ? QString() : link.mid(q + 1));
+}
+
+using Ed3kLinkActions::errorText;
+using Ed3kLinkActions::replyError;
+
+} // namespace
 
 ExternalLinkHandler::ExternalLinkHandler(QObject* parent)
     : QObject(parent)
@@ -68,6 +86,11 @@ void ExternalLinkHandler::setIpcClient(IpcClient* ipc)
                 return;
             for (const QString& l : links)
                 Ed3kSetsDialog::addPassLink(parent ? parent : self->m_mainWindow.data(), self->m_ipc, l);
+        });
+        // batch 15: the other ed3k links pasted by hand (friend, node, cache, set, …) come here
+        Ed2kLinkImporter::setEd3kLinkHandler([self = QPointer(this)](const QString& link, QWidget*) {
+            if (self)
+                self->open(link);
         });
         // ed3k:name links and names typed in the browser (name.md); its links come back here
         if (!m_names) {
@@ -129,7 +152,7 @@ bool ExternalLinkHandler::eventFilter(QObject* watched, QEvent* event)
         // file(), never url() — an ed2k link comes back empty through url(), and
         // this code path has been bitten by that before.
         const QString path = static_cast<QFileOpenEvent*>(event)->file();
-        if ((path.endsWith(QStringLiteral(".nzb"), Qt::CaseInsensitive)
+        if ((path.endsWith(QStringLiteral(".nzb"), Qt::CaseInsensitive) || Ed3kLinkActions::isNodeListPath(path)
              || (gui::kBitTorrentBuilt && gui::isTorrentFilePath(path)))
             && QFileInfo(path).isFile()) {
             // Off the Apple Event's call stack, then through the same queue a link
@@ -190,14 +213,14 @@ void ExternalLinkHandler::openNow(const QString& link)
     if (ed3k && link.startsWith(QStringLiteral("ed3k:nodes?"), Qt::CaseInsensitive)) {
         // a node list source (bootstrap.md §3): the daemon asks back (askBootstrapSource)
         if (!m_ipc) {
-            logWarning(QStringLiteral("Cannot open the ed3k link, no core connection: %1").arg(link));
+            logWarning(QStringLiteral("Cannot open the ed3k link, no core connection: %1").arg(redactLinkSecret(link)));
             return;
         }
         Ipc::IpcMessage msg(Ipc::IpcMsgType::OpenEd3kNodesLink);
         msg.append(link);
         m_ipc->sendRequest(std::move(msg), [link](const Ipc::IpcMessage& reply) {
             if (reply.type() == Ipc::IpcMsgType::Error)
-                logWarning(QStringLiteral("ed3k node list link not taken (%1): %2").arg(reply.fieldString(1), link));
+                logWarning(QStringLiteral("ed3k node list link not taken (%1): %2").arg(reply.fieldString(1), redactLinkSecret(link)));
         });
         return;
     }
@@ -206,7 +229,7 @@ void ExternalLinkHandler::openNow(const QString& link)
         if (m_names)
             m_names->open(link);
         else
-            logWarning(QStringLiteral("Cannot open the ed3k link, no core connection: %1").arg(link));
+            logWarning(QStringLiteral("Cannot open the ed3k link, no core connection: %1").arg(redactLinkSecret(link)));
         return;
     }
     if (ed3k && link.startsWith(QStringLiteral("ed3k:room?"), Qt::CaseInsensitive)) {
@@ -227,14 +250,14 @@ void ExternalLinkHandler::openNow(const QString& link)
         // a plain file (the bt= ones went to the Torrents tab above): the daemon parses it
         // (parseFileLink) and downloads it (Ed3kDownloads), shown in Transfers
         if (!m_ipc) {
-            logWarning(QStringLiteral("Cannot open the ed3k link, no core connection: %1").arg(link));
+            logWarning(QStringLiteral("Cannot open the ed3k link, no core connection: %1").arg(redactLinkSecret(link)));
             return;
         }
         MainWindow* window = m_mainWindow;
         m_ipc->addEd3kDownloadLink(link, 0, thePrefs.addNewFilesPaused(), [window, link](const Ipc::IpcMessage& reply) {
             if (reply.type() != Ipc::IpcMsgType::Result || !reply.fieldBool(0)) {
                 const QString why = reply.fieldMap(1).value(QStringLiteral("error")).toString();
-                logWarning(QStringLiteral("ed3k file link not taken (%1): %2").arg(why, link));
+                logWarning(QStringLiteral("ed3k file link not taken (%1): %2").arg(why, redactLinkSecret(link)));
                 if (window)
                     QMessageBox::warning(window, tr("ed3k link"), why.isEmpty() ? tr("The ed3k link could not be added.") : why);
                 return;
@@ -268,11 +291,25 @@ void ExternalLinkHandler::openNow(const QString& link)
         Ed3kSetsDialog::addPassLink(m_mainWindow, m_ipc, link);
         return;
     }
+    if (ed3k && link.startsWith(QStringLiteral("ed3k:friend?"), Qt::CaseInsensitive)) {
+        openEd3kFriend(link);
+        return;
+    }
+    if (ed3k && link.startsWith(QStringLiteral("ed3k:node?"), Qt::CaseInsensitive)) {
+        openEd3kNode(link);
+        return;
+    }
+    if (ed3k && link.startsWith(QStringLiteral("ed3k:cache?"), Qt::CaseInsensitive)) {
+        addEd3kCache(link);
+        return;
+    }
     if (ed3k) {
-        // ToDo: open the other ed3k links (friend, nodes by hand, ...); was: room (done: IrcPanel);
+        // was: ToDo: open the other ed3k links (friend, nodes by hand, ...) (done, batch 15:
+        // friend, node, cache above, a node list file in openFileNow); was: room (done: IrcPanel);
         // was: file without bt= (done: Ed3kDownloads above); was: set and live (done: Ed3kSetsDialog,
         // openEd3kSet, watchEd3kLive)
-        logWarning(QStringLiteral("Cannot open this ed3k link yet: %1").arg(link));
+        // logWarning(QStringLiteral("Cannot open this ed3k link yet: %1").arg(link));   (was: a secret in the log)
+        logWarning(QStringLiteral("Cannot open this ed3k link: %1").arg(redactLinkSecret(link)));
         return;
     }
 
@@ -282,7 +319,7 @@ void ExternalLinkHandler::openNow(const QString& link)
     Ed2kLinkImporter::importLinks(
         link, m_ipc, window,
         Ed2kLinkImporter::Source::Manual,
-        Ed2kLinkImporter::Prompt::Ask,
+        theUiState.addLinksWithoutConfirm() ? Ed2kLinkImporter::Prompt::Silent : Ed2kLinkImporter::Prompt::Ask,
         [window](const Ed2kLinkImporter::Result& result) {
             // A clicked link that does not parse: say so, never drop it silently (#116).
             // Already redacted by the importer
@@ -292,8 +329,12 @@ void ExternalLinkHandler::openNow(const QString& link)
                 StatusBarNotifier::post(tr("%n eD2K link(s) could not be parsed — see the log",
                                            nullptr, static_cast<int>(result.invalid.size())));
             }
-            if (window && result.added > 0)
+            if (window && result.added > 0) {
                 window->switchToTab(MainWindow::TabTransfers);
+                // no box was shown, so the pre-prompt raise below never ran
+                if (theUiState.addLinksWithoutConfirm() && thePrefs.bringToFrontOnLinkClick())
+                    window->restoreWindow();
+            }
         },
         [window] {
             if (window && thePrefs.bringToFrontOnLinkClick()) {
@@ -304,6 +345,13 @@ void ExternalLinkHandler::openNow(const QString& link)
 
 void ExternalLinkHandler::openFileNow(const QString& path)
 {
+    // bootstrap.md §3 "By hand": a node list file opened
+    if (Ed3kLinkActions::isNodeListPath(path)) {
+        if (m_mainWindow && thePrefs.bringToFrontOnLinkClick())
+            m_mainWindow->restoreWindow();
+        Ed3kLinkActions::sendNodeListFile(m_mainWindow, m_ipc, path);
+        return;
+    }
 #ifndef EMULE_HAVE_BITTORRENT
     if (gui::isTorrentFilePath(path)) {
         logError(QStringLiteral("Built without BitTorrent support, cannot add %1").arg(path));
@@ -491,6 +539,89 @@ void ExternalLinkHandler::tellEd3kSetVersion(const Ipc::IpcMessage& msg)
             Ed3kSetsDialog::showDialog(window, ipc)->selectSet(id);
     });
     box->open();
+}
+
+void ExternalLinkHandler::openEd3kFriend(const QString& link)
+{
+    // friend.md §3: never added without the user; §2: an `s` link is a credential (not logged)
+    MessagesPanel* panel = m_mainWindow ? m_mainWindow->messagesPanel() : nullptr;
+    if (!panel || !m_ipc) {
+        logWarning(QStringLiteral("No Messages panel to add an ed3k friend link to"));
+        return;
+    }
+    m_mainWindow->switchToTab(MainWindow::TabMessages);
+    if (thePrefs.bringToFrontOnLinkClick())
+        m_mainWindow->restoreWindow();
+    panel->addEd3kFriendLink(link);
+}
+
+void ExternalLinkHandler::openEd3kNode(const QString& link)
+{
+    if (!m_ipc) {
+        logWarning(QStringLiteral("Cannot open the ed3k node link, no core connection"));
+        return;
+    }
+    // Protocol.md §13.2: id (32 hex) and one ep per family; the core checks them
+    const QUrlQuery q = ed3kQuery(link);
+    const QString id = q.queryItemValue(QStringLiteral("id"));
+    const QStringList eps = q.allQueryItemValues(QStringLiteral("ep"), QUrl::FullyDecoded);
+    if (id.isEmpty() || eps.isEmpty()) {
+        QMessageBox::warning(m_mainWindow, tr("ed3k node"), errorText(-10));
+        return;
+    }
+    if (QMessageBox::question(m_mainWindow, tr("ed3k node"),
+                              tr("Use node %1 at %2 to find ed3k nodes?").arg(id.left(8), eps.join(QStringLiteral(", "))),
+                              QMessageBox::Yes | QMessageBox::No, QMessageBox::Yes)
+            != QMessageBox::Yes
+        || !m_ipc)
+        return;
+    Ipc::IpcMessage msg(Ipc::IpcMsgType::OpenEd3kNodeLink);
+    msg.append(link);
+    QPointer<MainWindow> window = m_mainWindow;
+    m_ipc->sendRequest(std::move(msg), [window](const Ipc::IpcMessage& reply) {
+        if (reply.type() == Ipc::IpcMsgType::Result && reply.fieldBool(0))
+            return;
+        QMessageBox::warning(window, tr("ed3k node"), tr("The node was not used.\n\n%1").arg(replyError(reply)));
+    });
+}
+
+void ExternalLinkHandler::addEd3kCache(const QString& link)
+{
+    if (!m_ipc) {
+        logWarning(QStringLiteral("Cannot open the ed3k cache link, no core connection"));
+        return;
+    }
+    // http-source.md §4.1: MUST ask, shown the server; the key is never shown nor logged
+    const QUrlQuery q = ed3kQuery(link);
+    const QUrl url(q.queryItemValue(QStringLiteral("url"), QUrl::FullyDecoded));
+    const QString dn = q.queryItemValue(QStringLiteral("dn"), QUrl::FullyDecoded);
+    const QString kid = q.queryItemValue(QStringLiteral("kid"), QUrl::FullyDecoded);
+    if (!url.isValid() || url.host().isEmpty()) {
+        QMessageBox::warning(m_mainWindow, tr("ed3k cache server"), errorText(-10));
+        return;
+    }
+    QString what = url.host();
+    if (!dn.isEmpty())
+        what = QStringLiteral("%1 (%2)").arg(dn, what);
+    QString text = tr("A link wants to add an ed3k cache server:\n\n%1").arg(what);
+    if (!kid.isEmpty())
+        text += QLatin1Char('\n') + tr("Upload key: %1").arg(kid);
+    text += QStringLiteral("\n\n") + tr("Parts of the files you share may be uploaded there with this key. Add this cache server?");
+    if (QMessageBox::question(m_mainWindow, tr("ed3k cache server"), text, QMessageBox::Yes | QMessageBox::No, QMessageBox::No)
+            != QMessageBox::Yes
+        || !m_ipc)
+        return;
+    Ipc::IpcMessage msg(Ipc::IpcMsgType::AddEd3kCacheLink);
+    msg.append(link);
+    QPointer<MainWindow> window = m_mainWindow;
+    const QString host = url.host();
+    m_ipc->sendRequest(std::move(msg), [window, host](const Ipc::IpcMessage& reply) {
+        if (reply.type() == Ipc::IpcMsgType::Result && reply.fieldBool(0)) {
+            logInfo(QStringLiteral("ed3k cache server %1 added").arg(host));
+            return;
+        }
+        QMessageBox::warning(window, tr("ed3k cache server"), tr("The cache server was not added.\n\n%1").arg(replyError(reply)));
+    });
 }
 
 } // namespace eMule

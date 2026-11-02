@@ -81,6 +81,7 @@ void ServerSocket::connectTo(const Server& server, bool noCrypt, const Address& 
     m_familyFallback = !dialAddress.isNull() && !m_ipv6Switch;
     m_tcpConnected = false;
     m_startNewMessageLog = true;
+    m_loginRejectReason.clear();
 
     setConnectionState(ServerConnState::Connecting);
 
@@ -204,6 +205,8 @@ bool ServerSocket::processPacket(const uint8* packet, uint32 size, uint8 opcode)
         // The reference only Debug()s here — the message text belongs in the Server Info
         // pane, not the log. Keeping it on the verbose channel preserves diagnostics.
         logServerVerbose(QStringLiteral("<<< OP_SERVERMESSAGE (%1 bytes): %2").arg(msgLen).arg(msg));
+        if (m_connectionState == ServerConnState::WaitForLogin)
+            rememberLoginRejectReason(msg);
         emit serverMessage(msg);
         break;
     }
@@ -906,6 +909,32 @@ void ServerSocket::dialResolved(const Address& resolved)
     logInfo(QStringLiteral("Connecting to server %1 (%2), resolved from %3")
                 .arg(m_curServer->name(), Endpoint(resolved, port).toString(), m_curServer->dynIP()));
     connectToPeer(resolved, port);
+}
+
+
+// Keep the last line of a message seen before the login answer: if the server then
+// closes, that line is its reason (eNode: "ERROR : You are temporarily banned...",
+// "Already connected from another session.").
+void ServerSocket::rememberLoginRejectReason(const QString& message)
+{
+    QString normalised = message;
+    normalised.replace(QLatin1Char('\r'), QLatin1Char('\n'));
+    const QStringList lines = normalised.split(QLatin1Char('\n'), Qt::SkipEmptyParts);
+    for (auto it = lines.crbegin(); it != lines.crend(); ++it) {
+        QString line = it->trimmed();
+        for (const auto prefix : {QLatin1String("ERROR"), QLatin1String("WARNING")}) {
+            if (line.startsWith(prefix)) {
+                line.remove(0, prefix.size());
+                break;
+            }
+        }
+        while (!line.isEmpty() && (line.front() == QLatin1Char(':') || line.front().isSpace()))
+            line.remove(0, 1);
+        if (!line.isEmpty()) {
+            m_loginRejectReason = line;
+            return;
+        }
+    }
 }
 
 } // namespace eMule

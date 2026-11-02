@@ -8,6 +8,7 @@
 #include "Ed3kUploadsBridge.h"
 #include "Ed3kCreditBridge.h"
 #include "Ed3kHosterBridge.h"
+#include "Ed3kHideBridge.h"
 #include "PortTestRunner.h"
 #include "UsenetBridge.h"
 #include "CoreNotifierBridge.h"
@@ -369,6 +370,9 @@ void IpcClientHandler::onMessageReceived(const IpcMessage& msg)
         sendMessage(IpcMessage::makeError(msg.seqId(), 403, QStringLiteral("A hoster password is not taken from a remote client")));
         return;
     }
+    // hiding (1047-1048, batch 15): before the rest of the ed3k block
+    if (Ed3kHideBridge::handleRequest(msg, [this](const IpcMessage& reply) { sendMessage(reply); }))
+        return;
     if (Ed3kBridge::handleRequest(msg, [this](const IpcMessage& reply) { sendMessage(reply); }))
         return;
 
@@ -1550,6 +1554,9 @@ void IpcClientHandler::handleMigrateEd2kCompat(const IpcMessage& msg)
         emit ed3kConfigChanged();
     logInfo(QStringLiteral("eD2K compat: TCP, UDP and ed3k on port %1 (UDP was %2, ed3k %3)")
                 .arg(port).arg(udpFrom).arg(ed3kFrom));
+    // no restart of our own: the sockets may wait for one (connected), the GUI offers it
+    if (!restart)
+        insertPortResult(plan, outcome);
     sendMessage(IpcMessage::makeResult(msg.seqId(), true, plan));
     // the new user hash from the start of every session (server login, Kad, obfuscation keys)
     if (restart)
@@ -2180,17 +2187,22 @@ void IpcClientHandler::handleSetPreferences(const IpcMessage& msg)
     if (outcome.standbyChanged)
         emit standbyConfigChanged();
 
-    // What became of a port change, and where the sockets are now
     QCborMap result;
-    result.insert(QStringLiteral("ports"), static_cast<int>(outcome.ports));
-    result.insert(QStringLiteral("network"), static_cast<int>(outcome.network));
-    result.insert(QStringLiteral("tcpPort"),
-                  theApp.listenSocket && theApp.listenSocket->isListening()
-                      ? theApp.listenSocket->connectedPort() : 0);
-    result.insert(QStringLiteral("udpPort"),
-                  theApp.clientUDP && theApp.clientUDP->isBound()
-                      ? theApp.clientUDP->connectedPort() : 0);
+    insertPortResult(result, outcome);
     sendMessage(IpcMessage::makeResult(msg.seqId(), true, result));
+}
+
+void IpcClientHandler::insertPortResult(QCborMap& map, const PrefApplyOutcome& outcome)
+{
+    // What became of a port change, and where the sockets are now
+    map.insert(QStringLiteral("ports"), static_cast<int>(outcome.ports));
+    map.insert(QStringLiteral("network"), static_cast<int>(outcome.network));
+    map.insert(QStringLiteral("tcpPort"),
+               theApp.listenSocket && theApp.listenSocket->isListening()
+                   ? theApp.listenSocket->connectedPort() : 0);
+    map.insert(QStringLiteral("udpPort"),
+               theApp.clientUDP && theApp.clientUDP->isBound()
+                   ? theApp.clientUDP->connectedPort() : 0);
 }
 
 IpcClientHandler::PrefApplyOutcome IpcClientHandler::applyPreferenceChanges(const PrefChanges& changes)
@@ -2285,6 +2297,9 @@ IpcClientHandler::PrefApplyOutcome IpcClientHandler::applyPreferenceChanges(cons
         if (rest != PortApplyResult::Unchanged)
             outcome.ports = rest;
     }
+    // eD2K UDP moved (or failed to after ed3k let go): ed3k starts again, shared or its own
+    if (outcome.ports == PortApplyResult::Applied || outcome.ports == PortApplyResult::BindFailed)
+        outcome.ed3kChanged = true;
 
     // Propagate config changes to running ServerConnect
     if (theApp.serverConnect) {
@@ -4637,6 +4652,14 @@ bool IpcClientHandler::applyPreferenceEd3k(const QString& key, const QCborValue&
         thePrefs.setEd3kExtOff(Preferences::rpcUrlList(val));
     else if (key == QStringLiteral("ed3kLan"))
         thePrefs.setEd3kLan(val.toBool());
+    else if (key == QStringLiteral("ed3kHide"))
+        thePrefs.setEd3kHide(val.toBool());
+    else if (key == QStringLiteral("ed3kHops"))
+        thePrefs.setEd3kHops(static_cast<int>(std::clamp<qint64>(val.toInteger(), 1, 3)));
+    else if (key == QStringLiteral("ed3kHopping"))
+        thePrefs.setEd3kHopping(val.toBool());
+    else if (key == QStringLiteral("ed3kHopShare"))
+        thePrefs.setEd3kHopShare(static_cast<int>(std::clamp<qint64>(val.toInteger(), 1, 100)));
     else if (key == QStringLiteral("ed3kNodeLists"))
         thePrefs.setEd3kNodeLists(Preferences::rpcUrlList(val));
     else if (key == QStringLiteral("ed3kSitePort"))

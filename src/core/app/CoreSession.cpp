@@ -1872,6 +1872,10 @@ PortApplyResult CoreSession::applyListenPorts()
         return PortApplyResult::RestartRequired;
     }
 
+    // ed3k waited on its own socket on this port (§14.1): it lets go, comes back shared
+    if (udpChanged && theApp.yieldEd3kUdpPort)
+        theApp.yieldEd3kUdpPort(udp);
+
     bool ok = true;
     if (tcpChanged && !m_listenSocket->rebind(tcp)) {
         ok = false;

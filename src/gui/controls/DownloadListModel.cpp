@@ -11,6 +11,7 @@
 #include "utils/ClientIcons.h"
 #include "utils/ClientStateText.h"
 #include "utils/CountryFlags.h"
+#include "utils/Ed3kKeyText.h"
 #include "utils/CompleteSourcesText.h"
 #include "utils/FileTypeText.h"
 #include "utils/OtherFunctions.h"
@@ -506,6 +507,8 @@ QVariant DownloadListModel::data(const QModelIndex& index, int role) const
             return confidenceText(d.confidence, d.fakeScore);
         case ColTransferred:
             return formatByteSize(d.downTransferred);
+        case ColEd3kKey:
+            return ed3kKeyText(d.ed3kKey);
         default: break;
         }
     }
@@ -575,6 +578,7 @@ QVariant DownloadListModel::data(const QModelIndex& index, int role) const
         case ColAddedOn:    return QVariant::fromValue(d.addedOn);
         case ColConfidence: return confidenceSortKey(d.confidence, d.fakeScore);
         case ColTransferred: return QVariant::fromValue(d.downTransferred);
+        case ColEd3kKey:    return d.ed3kKey;
         default: break;
         }
     }
@@ -640,6 +644,7 @@ QVariant DownloadListModel::headerData(int section, Qt::Orientation orientation,
     case ColAddedOn:        return tr("Added On");
     case ColConfidence:     return tr("Confidence");
     case ColTransferred:    return tr("Transferred");
+    case ColEd3kKey:        return tr("ed3k Key");
     default:                return {};
     }
 }

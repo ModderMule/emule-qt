@@ -68,7 +68,11 @@ joins.
 | `src/ed3k/Ed3kLiveBroadcast.{h,cpp}` | `eMule::ed3k::Ed3kLiveBroadcast`: broadcasting from an HLS fMP4 folder (live.md §4), the channel keys; `Ed3kHlsPlaylist` reads a media playlist |
 | `src/ed3k/Ed3kPaid.{h,cpp}` | `eMule::ed3k::Ed3kPaid`: paid subscriptions, buying passes (subscription.md §5, §6, §9): offers, the holder keys, pass polls and renewals, the anonymous warning, share reports; `Ed3kPaidOffer`/`Ed3kPaidPass` read them |
 | `src/ed3k/Ed3kPaidSeller.{h,cpp}` | `eMule::ed3k::Ed3kPaidSeller`: selling (subscription.md §3-§5, §7): offers, seasons (planned in a season's last epoch, a new one after a leak), the own pass, passes issued as `ed3k:pass` links (batch 14) |
-| `src/ed3k/Ed3kSealedOpener.{h,cpp}` | opens a downloaded sealed member (§8.1 `epoch`, hidden-set §4.2) with `sealedReadAt` into `<plain>.part`, then renames (batch 14) |
+| `src/ed3k/Ed3kSealedOpener.{h,cpp}` | opens a downloaded sealed member (§8.1 `epoch`, hidden-set §4.2) with `sealedReadAt` into `<plain>.part`, then renames (batch 14); batch 15: `Ed3kSealedCipher` (the chunk loop) with `Ed3kSealedOpener` and `Ed3kSealedSealer` (seals a plain file with a random nonce, own sets) |
+| `src/ed3k/Ed3kOwnSets.{h,cpp}` | `eMule::ed3k::Ed3kOwnSets` (an `Ed3kJoinBase`, "ownsets"): My ed3k Sets (batch 15): a folder or files published as an open, hidden or paid set under a key of its own; versions (`setManifestWrite` → `shareBlob` → `setPublish` / `setPublishHidden`), sealed members, republished at start, `setUnpublish` |
+| `src/daemon/Ed3kOwnSetsBridge.{h,cpp}` | IPC 1145-1148 / push 1165 of own sets, reached through `Ed3kBridge`; `SellEd3k` kind 2 with an own set's id goes to `Ed3kOwnSets::sell` (`Ed3kPaidSellerBridge`) |
+| `src/gui/panels/Ed3kOwnSetsView.{h,cpp}`, `src/gui/dialogs/Ed3kOwnSetDialog.{h,cpp}` | GUI: "My ed3k Sets" node of Shared Files (rows, row menu), "Create ed3k Set…" / "Publish as ed3k Set…" (MFC Create Collection layout) |
+| `tests/tst_Ed3kOwnSets.cpp`, `tests/tst_Ed3kOwnSetDialog.cpp` | a folder published and followed on loopback, a new version, a restart, a hidden set (link only by 1148, a follower opens it), a paid catalogue sealed and opened by a voucher holder, stop/resume as new versions, IPC, unpublish; the dialog and the row menu |
 | `src/ed3k/Ed3kLiveFiles.{h,cpp}` | `eMule::ed3k::Ed3kLiveFiles` (an `Ed3kJoinBase`): channel files (live.md §1.2) shared from memory and published under their keywords; fetched by root for a channel search (batch 14) |
 | `src/ed3k/Ed3kKeyFile.{h,cpp}` | `ownerOnly(path)`: an owner-only DACL on Windows, 0600 elsewhere, for every secret file (batch 14) |
 | `src/daemon/Ed3kPaidSellerBridge.{h,cpp}` | IPC 1033, 1034, 1040, 1041 / pushes 1067-1068 of selling, reached through `Ed3kBridge` |
@@ -157,6 +161,8 @@ The port is mapped as `PortMapPurpose::Ed3kUdp` while `ed3kEnabled`.
 | `sets/<root hex>.manifest` | the manifests of those versions, inner sets and mounts (the root the core named; a hidden set's: the sealed file's) | when one arrives |
 | `paid.json` | the paid subscriptions (`Ed3kPaid`): scope, publisher, kind, title, anonymous key or not, offer, pass, holder key (public), until, the purchase begun, state; owner-only | on follow, an offer, a purchase, a pass, a poll's end |
 | `paid/<scope hex>.holder` | 32-byte seed of the holder key of a subscription (subscription.md §5.1: one per subscription, kept for renewals); 0600, never logged | on the first purchase |
+| `own-sets.json` | My ed3k Sets (`Ed3kOwnSets`): id, title, folder or files, kind, seq, created, scope and offer of a sold one, published, members (path, file, size, mtime, root, epoch, sealed copy); owner-only, no secrets | on change |
+| `own-sets/<id hex>.key`, `.secret`, `.manifest`, `<id hex>/.sealed/` | the set key (32-byte seed) and a hidden set's link secret (0600, never logged; the hidden link is a credential); the version published (sealed for a hidden set); sealed members under their wire names | when made / on a version |
 | `sell/sell.json` | the sales (`Ed3kPaidSeller`): scope, kind, title, terms, seasons, issued passes (no voucher links), defaults; no secrets | on change |
 | `sell/seller.key`, `sell/<scope>.publisher`, `.holder`, `<scope>-<base>.season` | 32-byte seeds: the seller (issuer) key, a sale's publisher key, its own pass's holder key, a season seed; owner-only, never logged | when made |
 | `live/channels.json`, `live/<id hex>.key`, `.secret` | the broadcast channels by title (`Ed3kLiveBroadcast`: channel `id`, private); the seed of each channel key and `s` of a private one (0600, never logged; the link of a private channel is a credential) | on the first broadcast of a title |
@@ -603,8 +609,56 @@ ToDo (credits):
   `Ed3kCredit::applyAnonKey` hands it to the hiding node and replaces it when the anonymous key changed; its
   address is `anonAddress` in GetEd3kStatus `credit` and GetEd3kStakeClaims, shown under the credit address;
   a burn or claim naming it as `to` is refused with `CONFIG`, §9.1 "No burn").
-- The app does not hide yet: whoever calls `anonStart` calls `Ed3kCredit::applyAnonKey()` after it.
+- was: The app does not hide yet: whoever calls `anonStart` calls `Ed3kCredit::applyAnonKey()` after it
+  (done, batch 15: `applyAnonKey()` on each `Ed3kHide::started`, see "Hiding").
 - was: An owner-only DACL for `credit.key` on Windows (as `node.key`) (done: `ownerOnly`, as every secret file).
+
+## Hiding
+
+`Ed3kHide` (hops.md, batch 15), made by `Ed3kSession`; `applyHide()` runs after `applyLogLevel`
+(entry hops from `hops.dat` loaded first) and on every pref change, live, no restart.
+
+- **Prefs:** `ed3kHide` (off), `ed3kHops` 1–3 (1): one hop count for every use, handed as
+  `HideCfg::uniform(hops)` (packmule takes one per use, 0 = per direction; gates at the core
+  default); `ed3kHopping` (on, forward for others), `ed3kHopShare` 25 %.
+- **Keys:** the seed is `anon.key` (owner-only secret). While hiding, new ed3k keyword
+  searches, downloads and new shares use the anonymous key (`ed3k_anon_*`); existing files keep
+  theirs, kept in `keys.json`. A file is never under both keys. "Move to Anonymous/Node ed3k
+  Key..." (Shared Files, Transfers) asks first (hops §1), IPC 1048. "New anonymous key..." asks
+  (queue places lost), 1047. Hiding off: anonymous files are not served and wait for it.
+- **Events:** the pump uses `pollKeyedEvent`; `eventPolled` gets node-key events only,
+  `keyedEventPolled` all; only `Ed3kShared` and `Ed3kDownloads` (`anonCapable()`) handle the
+  anonymous key (an anonymous `FILE_REQUESTED` → `anonQueueSet`).
+- **Never anonymous:** HTTP, hoster, eD2K, LAN; no ed2k `ALIAS` or MD4 for an anonymous file.
+  eD2K still shares the file itself (question 11 of batch 15).
+- **Status:** GetEd3kStatus `hide {on, running, nodeId, hops, paths, built, waitingForHops,
+  anonFiles}` and `kadOffline`; push 1081; status-bar tooltip "hidden (n/m paths)".
+- **GUI:** Options → ed3k → General, "Hiding" (`Ed3kHidingGroup`): the switch, Hops, forwarding
+  and share, a new key, the §6 notes. An "ed3k Key" column in Shared Files and Transfers.
+- `Ed3kCredit::applyAnonKey()` runs on each `Ed3kHide::started`.
+
+ToDo (hiding): topics, live, rooms and paid under the anonymous key (no FFI routing for live and
+topics; they stay on the node key); turns at a source node (§12.5) for anonymous downloads; the
+anonymous node's uploads in the upload list; live and channel searches under the anonymous key.
+
+**Kad offline** (Protocol.md §10 "Own network down", in packmule): `ED3K_EV_KAD_OFFLINE` is
+logged and refreshes the status (`kadOffline` bits, "Kad offline (IPv4/IPv6)" in the tooltip).
+Not fed to the core's `ConnectionChecker`, which takes eD2K Kad state only.
+
+## Other ed3k links
+
+`Ed3kLinksBridge` (batch 15), dispatched first by `Ed3kBridge::handleRequest`:
+
+- `ed3k:friend` → Messages, `AddFriendDialog::setEd3kLink`; the user confirms (friend §3), also
+  for friend links from names (`Ed3kNameOpener`). A link with `s` is shown masked.
+- `ed3k:node` → asked, then `bootstrap()` (1032 `OpenEd3kNodeLink`).
+- `ed3k:cache` → asked with host, `dn`, `kid` (never the key), then pref `ed3kCacheServers`
+  (encrypted at rest) and `cacheConfigure(all)` (1049 `AddEd3kCacheLink`); applied at every
+  session start.
+- `.ed3knod` files (OS open, Options → ed3k → Connection "Open Node List File...") →
+  `bootstrapOpenFile` (1137).
+- Paste Links hands `ed3k:` lines (manual only) to the link handler; `redactLinkSecret` hides
+  `s`, `p`, `k` and the cache `key` in logs and in the Invalid Links box.
 
 ## Downloads and search
 
@@ -821,9 +875,19 @@ ToDo (sets and live):
   vouchers), nor a paid live channel (§7). (done, batch 14: `Ed3kPaidSeller`, pass links, paid
   channels.) Still ToDo: the automatic HTTPS pass server (a web project), horizon keys from an
   offline key store, private paid channels, a GUI to sell an own set (no own-set GUI; IPC only).
+  (done, batch 15: private paid channels (S2); own sets: `Ed3kOwnSets`, My ed3k Sets in Shared
+  Files, Sell… on a row → `SellEd3k` kind 2 with the set id.) Still ToDo: a paid hidden set
+  (kind 3, `paid=1`) of the user's own; own sets are not watched (a changed folder needs
+  "Publish New Version").
 - was: The sealed members of a paid catalogue (§8.1 `epoch`) download sealed; they are not opened
   with the epoch key. (done, batch 14: `Ed3kSealedOpener`.) The plain copy lands in the set's
-  folder; if that is under a folder eMule shares, ed2k shares it plainly on a rescan.
+  folder; if that is under a folder eMule shares, ed2k shares it plainly on a rescan. (done,
+  batch 15 #12: `Ed3kPlainCopies`, Config/ed3k/plain.json; `SharedFileList::setNeverShared`,
+  `Ed3kShared::setNeverShared` and the completed-download hook refuse it.)
+- batch 15 (S2): private paid channels sold (`sellBroadcast`, `paidFollowPrivate`, link with
+  `s`, IPC 1138 `GetEd3kSaleLink`); Stop/Resume selling (1041 actions 4/5); buyer: scope sets
+  accepted kept globally (#9), per-scope pass check states 7/8 (#10), by-hand passes renewed
+  only on "Renew Pass Now" (`BuyEd3kPass` renew, #11).
 - was: Live broadcasting (`liveBroadcast`, `livePushSegment`, the channel key) is out of scope
   (done: `Ed3kLiveBroadcast`, batch 13). was: Not resumed after a restart; no channel file (§1.2)
   (done, batch 14: resume, `Ed3kLiveFiles`). The broadcast dialog has no fields for comment,

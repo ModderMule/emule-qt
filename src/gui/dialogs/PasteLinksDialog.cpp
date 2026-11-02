@@ -67,7 +67,9 @@ void PasteLinksDialog::onAccepted()
             // box reads as though the paste failed.
             // BitTorrent magnets went to the Torrents tab: done here too.
             // if (result.added > 0 || result.httpCacheConfigs > 0 || result.torrentLinks > 0)
-            if (result.added > 0 || result.httpCacheConfigs > 0 || result.torrentLinks > 0 || result.ed3kPassLinks > 0)
+            // if (result.added > 0 || result.httpCacheConfigs > 0 || result.torrentLinks > 0 || result.ed3kPassLinks > 0)
+            if (result.added > 0 || result.httpCacheConfigs > 0 || result.torrentLinks > 0 || result.ed3kPassLinks > 0
+                || result.ed3kLinks > 0)
                 self->accept();
         },
         {}, queueCategory());

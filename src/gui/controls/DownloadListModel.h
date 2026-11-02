@@ -155,6 +155,7 @@ struct DownloadRow {
     int network = 0;
     [[nodiscard]] bool isEd3k() const { return network == 1; }
     QString ed3kPath;   ///< ed3k: the part file, or the file once complete (a local GUI opens it)
+    QString ed3kKey;    ///< ed3k: "Node" / "Anonymous" (hops.md §1); eD2K rows: empty
 
     /// A completed download (green 100% bar). Completed files have no live
     /// sources, so they are never expandable in the tree.
@@ -200,6 +201,7 @@ public:
         ColCountry,          ///< source rows only (MorphXT IP2Country)
         ColConfidence,       ///< file rows only: fake-file verdict
         ColTransferred,      ///< MFC column 2; appended so saved layouts keep their indexes
+        ColEd3kKey,          ///< batch 15: ed3k rows' key (hops.md §1); appended
         ColCount
     };
 

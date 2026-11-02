@@ -141,8 +141,10 @@ Ed3kLiveBroadcast::Ed3kLiveBroadcast(Ed3kSession& session, const QString& config
     connect(&m_session, &Ed3kSession::statusChanged, this, &Ed3kLiveBroadcast::onSessionStatus);
     m_timer.setInterval(500);
     connect(&m_timer, &QTimer::timeout, this, &Ed3kLiveBroadcast::scan);
-    if (m_session.isRunning())
+    if (m_session.isRunning()) {
         resumeSaved();
+        publishSaved();   // §1.2: the channel files kept, on air or not
+    }
 }
 
 Ed3kLiveBroadcast::~Ed3kLiveBroadcast()
@@ -246,7 +248,9 @@ std::expected<Ed3kLiveBroadcast::Info, QString> Ed3kLiveBroadcast::start(const O
     // the link of a private channel is a credential: never in a log line
     logEd3k(QStringLiteral("ed3k: broadcasting live channel %1 (%2) from %3%4")
                 .arg(idOf(*stream), title, o.folder, it->second.resumed ? QStringLiteral(", resumed at %1").arg(it->second.nextSeq) : QString()));
-    publishChannelFile(it->second, b);
+    // publishChannelFile(it->second, b);
+    if (!it->second.options.isPrivate)
+        publishChannelFile(it->second.channelId, it->second.options, b);
     saveOnAir(it->second);
     scanOne(it->second);
     if (!m_timer.isActive())
@@ -263,9 +267,10 @@ bool Ed3kLiveBroadcast::stop(const QString& id)
         return false;
     if (auto* e = m_session.engine())
         (void)e->liveEnd(m_session.now(), it->first);
-    // ended: not resumed; its channel file no longer shared
-    if (it->second.channelFile)
-        m_files->withdraw(*it->second.channelFile);
+    // ended: not resumed; its channel file stays shared while the channel is kept (§1.2,
+    // batch 15 #5; deleteChannel() withdraws it)
+    // if (it->second.channelFile)
+    //     m_files->withdraw(*it->second.channelFile);
     (void)editChannel(it->second.channelId, [](QJsonObject& c) { c.remove(QStringLiteral("onAir")); });
     m_running.erase(it);
     if (m_running.empty())
@@ -294,9 +299,10 @@ std::expected<void, QString> Ed3kLiveBroadcast::describe(const QString& id, cons
     const WipeChannel wiper{b};
     if (!loadChannel(Channel{r.channelId, r.options.isPrivate}, r.options, b))
         return std::unexpected(tr("The channel key could not be made."));
-    publishChannelFile(r, b);
+    // publishChannelFile(r, b);
+    publishChannelFile(r.channelId, r.options, b);
     markChanged();
-    if (!r.channelFile)
+    if (!channelFileOf(r.channelId))
         return std::unexpected(tr("The channel file could not be shared."));
     return {};
 }
@@ -330,6 +336,102 @@ void Ed3kLiveBroadcast::resumeSaved()
             (void)editChannel(id, [](QJsonObject& e) { e.remove(QStringLiteral("onAir")); });
         }
     }
+}
+
+void Ed3kLiveBroadcast::publishSaved()
+{
+    if (!m_session.engine())
+        return;
+    for (const QJsonValue& v : readChannels()) {
+        const QJsonObject c = v.toObject();
+        const QJsonObject d = c.value(QStringLiteral("desc")).toObject();
+        const QByteArray id = QByteArray::fromHex(c.value(QStringLiteral("id")).toString().toLatin1());
+        if (d.isEmpty() || id.size() != 16 || c.value(QStringLiteral("private")).toBool())
+            continue;   // §10: a private channel has none; never on air: no description yet
+        if (std::ranges::any_of(m_running, [&](const auto& kv) { return kv.second.channelId == id; }))
+            continue;   // on air: start() published it
+        if (!m_offerSource && !d.value(QStringLiteral("offer")).toString().isEmpty())
+            continue;   // sold: waits for setOfferSource (else a file without the offer, a new created)
+        Options o;
+        o.title = d.value(QStringLiteral("title")).toString();
+        if (o.title.isEmpty())
+            o.title = c.value(QStringLiteral("title")).toString();
+        o.comment = d.value(QStringLiteral("comment")).toString();
+        o.lang = d.value(QStringLiteral("lang")).toString();
+        o.media = d.value(QStringLiteral("media")).toString();
+        o.codecs = d.value(QStringLiteral("codecs")).toString();
+        o.kbps = std::uint32_t(std::min<std::uint64_t>(u64Of(d.value(QStringLiteral("kbps"))), UINT32_MAX));
+        o.segmentMs = std::uint32_t(std::min<std::uint64_t>(u64Of(d.value(QStringLiteral("segmentMs"))), UINT32_MAX));
+        publishChannelFile(id, o);
+    }
+    markChanged();
+}
+
+std::expected<void, QString> Ed3kLiveBroadcast::deleteChannel(const QString& channel)
+{
+    const QByteArray id = QByteArray::fromHex(channel.toLatin1());
+    QJsonArray all = readChannels();
+    qsizetype at = -1;
+    for (qsizetype i = 0; i < all.size() && id.size() == 16; ++i)
+        if (QByteArray::fromHex(all.at(i).toObject().value(QStringLiteral("id")).toString().toLatin1()) == id)
+            at = i;
+    if (at < 0)
+        return std::unexpected(tr("Unknown ed3k live channel."));
+    // on air: the user's stop, the end record (§2.2)
+    for (const auto& [stream, r] : m_running)
+        if (r.channelId == id) {
+            (void)stop(idOf(stream));
+            break;
+        }
+    // its channel file no longer shared nor published (§1.2)
+    if (const auto f = m_channelFiles.find(id); f != m_channelFiles.end()) {
+        m_files->withdraw(f->second.root);
+        m_channelFiles.erase(f);
+    }
+    all = readChannels();   // stop() edited it
+    for (qsizetype i = all.size() - 1; i >= 0; --i)
+        if (QByteArray::fromHex(all.at(i).toObject().value(QStringLiteral("id")).toString().toLatin1()) == id)
+            all.removeAt(i);
+    const QByteArray out = QJsonDocument(all).toJson(QJsonDocument::Compact);
+    if (!writeBlob(QDir(liveDir()).filePath(kChannelsFile), spanOf(out)))
+        return std::unexpected(tr("The list of live channels could not be saved."));
+    // the channel key and secret (credentials) go with it
+    const QString base = QString::fromLatin1(id.toHex());
+    QFile::remove(QDir(liveDir()).filePath(base + QStringLiteral(".key")));
+    QFile::remove(QDir(liveDir()).filePath(base + QStringLiteral(".secret")));
+    logEd3k(QStringLiteral("ed3k: live channel %1 deleted").arg(base));
+    markChanged();
+    return {};
+}
+
+std::vector<Ed3kLiveBroadcast::ChannelInfo> Ed3kLiveBroadcast::channels() const
+{
+    std::vector<ChannelInfo> out;
+    for (const QJsonValue& v : readChannels()) {
+        const QJsonObject c = v.toObject();
+        const QByteArray id = QByteArray::fromHex(c.value(QStringLiteral("id")).toString().toLatin1());
+        if (id.size() != 16)
+            continue;
+        ChannelInfo i;
+        i.channel = QString::fromLatin1(id.toHex());
+        i.title = c.value(QStringLiteral("title")).toString();
+        i.isPrivate = c.value(QStringLiteral("private")).toBool();
+        for (const auto& [stream, r] : m_running)
+            if (r.channelId == id)
+                i.stream = idOf(stream);
+        if (const auto f = channelFileOf(id))
+            i.channelFile = QString::fromLatin1(QByteArray(reinterpret_cast<const char*>(f->bytes.data()), 32).toHex());
+        out.push_back(std::move(i));
+    }
+    return out;
+}
+
+void Ed3kLiveBroadcast::setOfferSource(OfferSource source)
+{
+    m_offerSource = std::move(source);
+    // a channel sold: its file off air carries the offer too (subscription.md §7); unchanged
+    // ones are not shared again (publishChannelFile)
+    publishSaved();
 }
 
 bool Ed3kLiveBroadcast::isBroadcast(const QString& id) const
@@ -368,6 +470,23 @@ std::optional<ffi::Key32> Ed3kLiveBroadcast::channelSeed(const QString& id, QByt
     if (channelId)
         *channelId = it->second.channelId;
     return loadSecret(liveDir(), QString::fromLatin1(it->second.channelId.toHex()) + QStringLiteral(".key"));
+}
+
+std::optional<ffi::Key32> Ed3kLiveBroadcast::channelSecret(const QString& id) const
+{
+    const auto s = streamOf(id);
+    const auto it = s ? m_running.find(*s) : m_running.end();
+    if (it == m_running.end() || !it->second.options.isPrivate)
+        return std::nullopt;
+    return channelSecretOf(m_configDir, it->second.channelId);
+}
+
+std::optional<ffi::Key32> Ed3kLiveBroadcast::channelSecretOf(const QString& configDir, const QByteArray& channelId)
+{
+    if (channelId.size() != 16)
+        return std::nullopt;
+    const QString dir = QDir(stateDir(configDir)).filePath(QStringLiteral("live"));
+    return loadSecret(dir, QString::fromLatin1(channelId.toHex()) + QStringLiteral(".secret"));
 }
 
 std::optional<Ed3kLiveBroadcast::Options> Ed3kLiveBroadcast::optionsOf(const QString& id) const
@@ -411,6 +530,8 @@ void Ed3kLiveBroadcast::onSessionStatus()
         // ed3k (again): what was on air goes on (§4)
         if (m_running.empty())
             resumeSaved();
+        // §1.2: the channel files kept (Ed3kLiveFiles shares again what it had; new ones here)
+        publishSaved();
         return;
     }
     if (m_running.empty())
@@ -548,10 +669,12 @@ Ed3kLiveBroadcast::Info Ed3kLiveBroadcast::infoOf(const Running& r) const
     i.bytes = r.bytes;
     i.skipped = r.skipped;
     i.resumed = r.resumed;
-    if (r.channelFile)
-        i.channelFile = QString::fromLatin1(QByteArray(reinterpret_cast<const char*>(r.channelFile->bytes.data()), 32).toHex());
+    // if (r.channelFile)
+    if (const auto f = channelFileOf(r.channelId))
+        i.channelFile = QString::fromLatin1(QByteArray(reinterpret_cast<const char*>(f->bytes.data()), 32).toHex());
     i.error = r.error;
     i.paid = r.paid;
+    i.channel = QString::fromLatin1(r.channelId.toHex());
     return i;
 }
 
@@ -616,9 +739,11 @@ bool Ed3kLiveBroadcast::loadChannel(const Channel& ch, const Options& o, ffi::Li
     b.media = o.media.isEmpty() ? std::string("video/mp4") : o.media.toStdString();
     b.codecs = o.codecs.toStdString();
     // subscription.md §7: a channel sold (Ed3kPaidSeller) is paid, its offer in the channel file
+    // (a private one has none: the offer goes with the core's key answers, §9.1 Ed3k-Offer)
     b.paid = false;
     b.offer.clear();
-    if (m_offerSource && !ch.isPrivate) {
+    // if (m_offerSource && !ch.isPrivate) {   (was: a private channel was not sold)
+    if (m_offerSource) {
         if (const auto key = ffi::keyPublic(b.seed)) {
             const QByteArray offer = m_offerSource(*key, ch.id);
             b.paid = !offer.isEmpty();
@@ -629,11 +754,25 @@ bool Ed3kLiveBroadcast::loadChannel(const Channel& ch, const Options& o, ffi::Li
     return true;
 }
 
-void Ed3kLiveBroadcast::publishChannelFile(Running& r, const ffi::LiveBroadcast& b)
+void Ed3kLiveBroadcast::publishChannelFile(const QByteArray& channelId, const Options& o)
 {
-    if (r.options.isPrivate || !m_files)
+    if (o.isPrivate || !m_files)
         return;   // §10: a private channel has none
-    Desc d = descOf(r.options);
+    ffi::LiveBroadcast b;
+    const WipeChannel wiper{b};
+    if (!loadChannel(Channel{channelId, false}, o, b)) {
+        logEd3kWarning(QStringLiteral("ed3k: no channel key for live channel %1").arg(QString::fromLatin1(channelId.toHex())));
+        return;
+    }
+    publishChannelFile(channelId, o, b);
+}
+
+void Ed3kLiveBroadcast::publishChannelFile(const QByteArray& channelId, const Options& o, const ffi::LiveBroadcast& b)
+{
+    if (o.isPrivate || !m_files)
+        return;   // §10: a private channel has none
+    const QString idHex = QString::fromLatin1(channelId.toHex());
+    Desc d = descOf(o);
     // a changed offer (subscription.md §7, field 11) is a changed file too
     if (!b.offer.empty())
         d.offer = QString::fromLatin1(
@@ -643,7 +782,7 @@ void Ed3kLiveBroadcast::publishChannelFile(Running& r, const ffi::LiveBroadcast&
     // the description as before: the same file (the same created); else a later created
     QJsonObject saved;
     for (const QJsonValue& v : readChannels())
-        if (QByteArray::fromHex(v.toObject().value(QStringLiteral("id")).toString().toLatin1()) == r.channelId)
+        if (QByteArray::fromHex(v.toObject().value(QStringLiteral("id")).toString().toLatin1()) == channelId)
             saved = v.toObject().value(QStringLiteral("desc")).toObject();
     const Desc old{saved.value(QStringLiteral("title")).toString(),
                    saved.value(QStringLiteral("comment")).toString(),
@@ -660,20 +799,27 @@ void Ed3kLiveBroadcast::publishChannelFile(Running& r, const ffi::LiveBroadcast&
     const ffi::LiveDesc desc{d.title.toStdString(), d.comment.toStdString(), d.lang.toStdString(), d.kbps, d.segmentMs, created};
     auto file = ffi::liveChannelFile(b, desc);
     if (!file) {
-        logEd3kWarning(QStringLiteral("ed3k: no channel file for live channel %1 (error %2)").arg(idOf(r.stream)).arg(int(file.error())));
+        logEd3kWarning(QStringLiteral("ed3k: no channel file for live channel %1 (error %2)").arg(idHex).arg(int(file.error())));
         return;
     }
     const QByteArray bytes(reinterpret_cast<const char*>(file->bytes().data()), qsizetype(file->size()));
+    // the same file shared already (an ed3k start again: Ed3kLiveFiles shares it again itself)
+    const auto had = m_channelFiles.find(channelId);
+    if (had != m_channelFiles.end() && had->second.bytes == bytes && m_files->isPublished(had->second.root))
+        return;
     const auto root = m_files->publish(bytes, Ed3kLiveFiles::fileNameOf(d.title));
     if (!root) {
-        logEd3kWarning(QStringLiteral("ed3k: the channel file of live channel %1 is not shared").arg(idOf(r.stream)));
+        logEd3kWarning(QStringLiteral("ed3k: the channel file of live channel %1 is not shared").arg(idHex));
         return;
     }
     // a changed description: the file before is withdrawn (§1.2, readers take the later created)
-    if (r.channelFile && *r.channelFile != *root)
-        m_files->withdraw(*r.channelFile);
-    r.channelFile = root;
-    (void)editChannel(r.channelId, [&](QJsonObject& c) {
+    // if (r.channelFile && *r.channelFile != *root)
+    //     m_files->withdraw(*r.channelFile);
+    // r.channelFile = root;
+    if (had != m_channelFiles.end() && had->second.root != *root)
+        m_files->withdraw(had->second.root);
+    m_channelFiles[channelId] = ChannelFile{*root, bytes};
+    (void)editChannel(channelId, [&](QJsonObject& c) {
         c.insert(QStringLiteral("desc"), QJsonObject{{QStringLiteral("title"), d.title},
                                                      {QStringLiteral("comment"), d.comment},
                                                      {QStringLiteral("lang"), d.lang},
@@ -684,6 +830,12 @@ void Ed3kLiveBroadcast::publishChannelFile(Running& r, const ffi::LiveBroadcast&
                                                      {QStringLiteral("offer"), d.offer},
                                                      {QStringLiteral("created"), qint64(created)}});
     });
+}
+
+std::optional<ffi::Root> Ed3kLiveBroadcast::channelFileOf(const QByteArray& channelId) const
+{
+    const auto it = m_channelFiles.find(channelId);
+    return it == m_channelFiles.end() ? std::nullopt : std::optional(it->second.root);
 }
 
 QJsonArray Ed3kLiveBroadcast::readChannels() const

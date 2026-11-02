@@ -537,6 +537,7 @@ private:
     QCheckBox*    m_associateNzbCheck = nullptr;
     QCheckBox*    m_associateTorrentCheck = nullptr;
     QCheckBox*    m_associateEd2kCheck = nullptr;   // macOS only
+    QCheckBox*    m_addLinksDirectCheck = nullptr;
     gui::FileAssociation::FileTypes m_claimedTypes;  // macOS: what the dialog was loaded with
     QCheckBox*    m_usenetCleanupCheck = nullptr;
     QCheckBox*    m_usenetSfvCheck = nullptr;

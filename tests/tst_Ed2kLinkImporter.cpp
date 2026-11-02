@@ -44,6 +44,7 @@ private slots:
     void otherLinksGoToTheHandlerForManualImportsOnly();
     void bitTorrentMagnetsGoToTheTorrentHandler();
     void ed3kPassLinksGoToTheirHandlerNeverInvalid();
+    void ed3kLinksGoToTheLinkHandlerNeverInvalid();
     void searchRowMagnetsGoToTheTorrentHandler();
     void searchRowTorrentFilesGoToTheTorrentHandler();
     void searchRowWebLinksGoToTheHosterHandler();
@@ -400,6 +401,42 @@ void TestEd2kLinkImporter::ed3kPassLinksGoToTheirHandlerNeverInvalid()
     QVERIFY(seen.isEmpty());
     QCOMPARE(result.ed3kPassLinks, 0);
     QVERIFY(result.invalid.isEmpty());
+}
+
+// batch 15: the other ed3k links pasted by hand go one by one to the link handler (manual
+// only); without one they are invalid, redacted (s, k, p, a cache key)
+void TestEd2kLinkImporter::ed3kLinksGoToTheLinkHandlerNeverInvalid()
+{
+    const QString secret = QStringLiteral("q7secretq7secretq7");
+    const QStringList links{QStringLiteral("ed3k:friend?key=abc&s=%1").arg(secret), QStringLiteral("ed3k:node?id=00112233&ep=1.2.3.4:5662"),
+                            QStringLiteral("ed3k:cache?url=https%3A%2F%2Fc.example&key=%1").arg(secret),
+                            QStringLiteral("ED3K:set?key=abc&id=x")};
+    const QString text = links.join(QLatin1Char('\n'));
+    QStringList seen;
+    Ed2kLinkImporter::setEd3kLinkHandler([&seen](const QString& l, QWidget*) { seen << l; });
+    Ed2kLinkImporter::Result result;
+    const auto keep = [&result](const Ed2kLinkImporter::Result& r) { result = r; };
+    Ed2kLinkImporter::importLinks(text, nullptr, nullptr, Ed2kLinkImporter::Source::Manual, Ed2kLinkImporter::Prompt::Silent, keep);
+    QCOMPARE(seen, links);
+    QCOMPARE(result.ed3kLinks, 4);
+    QVERIFY(result.invalid.isEmpty());
+    // the clipboard watcher: nothing
+    seen.clear();
+    result = {};
+    Ed2kLinkImporter::importLinks(text, nullptr, nullptr, Ed2kLinkImporter::Source::Automatic, Ed2kLinkImporter::Prompt::Ask, keep);
+    QVERIFY(seen.isEmpty());
+    QCOMPARE(result.ed3kLinks, 0);
+    QVERIFY(result.invalid.isEmpty());
+    // no handler: invalid, and no secret in the list (logged and shown)
+    Ed2kLinkImporter::setEd3kLinkHandler({});
+    result = {};
+    Ed2kLinkImporter::importLinks(text, nullptr, nullptr, Ed2kLinkImporter::Source::Manual, Ed2kLinkImporter::Prompt::Silent, keep);
+    QCOMPARE(result.invalid.size(), 4);
+    for (const QString& bad : result.invalid)
+        QVERIFY2(!bad.contains(secret), qPrintable(bad));
+    // "Paste eD2K Links" is enabled for ed3k text
+    QVERIFY(Ed2kLinkImporter::linkKindsIn(text).testFlag(Ed2kLinkImporter::LinkKind::Ed3k));
+    QVERIFY(!Ed2kLinkImporter::linkKindsIn(QStringLiteral("ed2k://|server|1.2.3.4|4661|/")).testFlag(Ed2kLinkImporter::LinkKind::Ed3k));
 }
 
 // magnet-only search rows: sendTorrentLinks reuses the paste handler, false without one

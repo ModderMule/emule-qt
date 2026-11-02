@@ -103,8 +103,8 @@ public:
     /// The channel files fetched (Ed3kSearch fills its rows from them).
     [[nodiscard]] Ed3kLiveFiles& files() { return *m_files; }
 
-    /// §2.3 check of QMediaFormat (Decode): an unknown container or codec is left to the player;
-    /// no multimedia backend: every one.
+    /// §2.3 check of QMediaFormat (Decode): an unknown container or codec is left to the player,
+    /// as are no codecs named (can't tell, a known container too); no multimedia backend: every one.
     [[nodiscard]] static QString canPlay(const QString& media, const QString& codecs);
     /// Tests: another check than canPlay().
     void setPlayCheck(PlayCheck check) { m_playCheck = std::move(check); }

@@ -3,6 +3,8 @@
 
 #include "SharedFileRows.h"
 
+#include "Ed3kHideBridge.h"
+
 #include "app/AppContext.h"
 #include "client/UpDownClient.h"
 #include "files/Collection.h"
@@ -97,6 +99,10 @@ QCborMap sharedFileRow(KnownFile* kf, const SharedFileList::ShareRules& rules,
     m.insert(QStringLiteral("completeSourcesLo"), static_cast<int>(kf->completeSourcesCountLo()));
     m.insert(QStringLiteral("completeSourcesHi"), static_cast<int>(kf->completeSourcesCountHi()));
     m.insert(QStringLiteral("kadPublished"), kf->isSharedInKad());
+    // batch 15: the ed3k key it is shared under (hops.md §1 MUST: shown to the user)
+    if (const QString key = Ed3kHideBridge::sharedKey(QByteArray(reinterpret_cast<const char*>(kf->fileHash()), 16));
+        !key.isEmpty())
+        m.insert(QStringLiteral("ed3kKey"), key);
     // Media columns; absent keys read as empty / 0 in the GUI
     if (const QString& v = kf->getStrTagValue(FT_MEDIA_ARTIST); !v.isEmpty())
         m.insert(QStringLiteral("artist"), v);

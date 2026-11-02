@@ -71,6 +71,10 @@ public:
     /// Set a custom font on the chat browser.
     void setCustomFont(const QFont& font);
 
+    /// An `ed3k:friend` link opened from outside (friend.md §2, §3): the Add dialog filled
+    /// in, added only on the user's Add (never without the user).
+    void addEd3kFriendLink(const QString& link);
+
 signals:
     /// A link in the chat was clicked. Carries the link as PLAIN TEXT, not a QUrl:
     /// an eD2K link is not a representable QUrl, and one built from it stringifies
@@ -124,6 +128,8 @@ private:
     void restoreSelection(const QString& key);
 
     void showAddFriendDialog();
+    /// The Add dialog; @p ed3kLink filled in when not empty.
+    void runAddFriendDialog(const QString& ed3kLink);
     void showFindDialog();
     void removeSelectedFriend();   ///< MP_REMOVEFRIEND — menu and Del/⌫
 

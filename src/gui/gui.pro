@@ -140,9 +140,11 @@ SOURCES += \
     dialogs/OptionsDialog.cpp \
     dialogs/Ed3kOptionsPages.cpp \
     dialogs/Ed3kFilterPage.cpp \
+    dialogs/Ed3kOwnSetDialog.cpp \
     dialogs/Ed3kSellDialogs.cpp \
     dialogs/Ed3kSellPage.cpp \
     dialogs/Ed3kStakeGroup.cpp \
+    dialogs/Ed3kHidingGroup.cpp \
     dialogs/Ed3kSetsDialog.cpp \
     dialogs/AddNzbFilesDialog.cpp \
     dialogs/NzbFileChooserDialog.cpp \
@@ -171,6 +173,7 @@ SOURCES += \
     panels/IrcPanel.cpp \
     panels/IrcPanelEd3k.cpp \
     panels/ChatChannelView.cpp \
+    panels/Ed3kOwnSetsView.cpp \
     panels/Ed3kRoomTab.cpp \
     panels/Ed3kRoomList.cpp \
     panels/KadPanel.cpp \
@@ -252,9 +255,11 @@ HEADERS += \
     dialogs/OptionsDialog.h \
     dialogs/Ed3kOptionsPages.h \
     dialogs/Ed3kFilterPage.h \
+    dialogs/Ed3kOwnSetDialog.h \
     dialogs/Ed3kSellDialogs.h \
     dialogs/Ed3kSellPage.h \
     dialogs/Ed3kStakeGroup.h \
+    dialogs/Ed3kHidingGroup.h \
     dialogs/Ed3kSetsDialog.h \
     dialogs/AddNzbFilesDialog.h \
     dialogs/NzbFileChooserDialog.h \
@@ -282,6 +287,7 @@ HEADERS += \
     dialogs/UsenetDetailsDialog.h \
     panels/IrcPanel.h \
     panels/ChatChannelView.h \
+    panels/Ed3kOwnSetsView.h \
     panels/Ed3kRoomTab.h \
     panels/Ed3kRoomList.h \
     panels/KadPanel.h \

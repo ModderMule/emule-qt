@@ -178,6 +178,14 @@ public:
         scheduleSave();
     }
 
+    /// Clicked eD2K links go straight to Transfers, no "Do you want to download…" (#116)
+    [[nodiscard]] bool addLinksWithoutConfirm() const { return m_addLinksWithoutConfirm; }
+    void setAddLinksWithoutConfirm(bool on)
+    {
+        m_addLinksWithoutConfirm = on;
+        scheduleSave();
+    }
+
     /// GUI language code, "" = system default. GUI-only: a core with its own
     /// config dir (Docker, remote) keeps preferences.yml out of reach (#75).
     /// Unset until first chosen here; then @p fallback (preferences.yml) applies.
@@ -427,6 +435,7 @@ private:
     bool m_associateNzbFiles = true;
     bool m_associateTorrentFiles = true;
     std::optional<bool> m_associateEd2kLinks;
+    bool m_addLinksWithoutConfirm = false;
     bool m_miniMuleAutoClose = false;
     bool m_firstStartWizardDone = false;
     std::optional<QString> m_language;   // unset = take preferences.yml's

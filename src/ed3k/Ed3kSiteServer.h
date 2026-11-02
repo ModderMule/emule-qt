@@ -6,7 +6,10 @@
 ///
 /// Per request: siteHost → siteGate (421, 405, 403) → a readable host is resolved and
 /// answered with a 302 only; a set's origin is looked up with sitePage over the newest
-/// manifest held (followed for the user only) and its member sent with sitePage's headers.
+/// manifest held and its member sent with sitePage's headers. A held site not followed is
+/// followed on any request and the request waits for its head check (name.md §6.1, batch 15
+/// #16; Ed3kNames::siteHeadPending): the held manifest after `SetHeadChecked`, a newer one when
+/// it comes, 504 after 60 s. (was: served at once, followed for the user only)
 /// Only verified bytes go out: members not held are fetched first (Ed3kNames, whole, at most
 /// kSiteMemberMax) and answered 504 after 60 s (§6.3). Listens only while the node runs.
 /// Range (RFC 9110): one range of a GET → 206 from the blocks verified so far (it waits for
@@ -85,6 +88,8 @@ private:
     /// A set's request with its manifest: the page, or a member fetch to wait for.
     void servePage(std::unique_ptr<Pending> p, const QByteArray& manifest);
     void onSiteChanged(const QByteArray& key, const QByteArray& id);
+    /// §6.1: the requests parked for a held site's head check are served (the held manifest)
+    void onHeadChecked(const QByteArray& key, const QByteArray& id, bool newer);
     void onMemberReady(const QByteArray& root);
     void onMemberBlock(const QByteArray& root);
     void onMemberBad(const QByteArray& root);

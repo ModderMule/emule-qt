@@ -123,6 +123,15 @@ Ed3kSellTermsDialog::Ed3kSellTermsDialog(Mode mode, const QCborMap& t, QWidget* 
                             this);
     note->setWordWrap(true);
     form->addRow(note);
+    if (t.value(QStringLiteral("private")).toBool()) {
+        // subscription.md §9.1, live.md §10: a private channel has no channel file
+        auto* priv = new QLabel(tr("A private channel: buyers learn its offer only from your shop. The pass address must "
+                                   "answer with the offer in the header Ed3k-Offer. Give each buyer the private link with "
+                                   "the pass; whoever has the link finds the channel."),
+                                this);
+        priv->setWordWrap(true);
+        form->addRow(priv);
+    }
     auto* buttons = new QDialogButtonBox(QDialogButtonBox::Ok | QDialogButtonBox::Cancel, this);
     if (mode == Mode::NewChannel || mode == Mode::NewSet)
         buttons->button(QDialogButtonBox::Ok)->setText(tr("Sell"));
@@ -197,7 +206,10 @@ Ed3kIssuePassDialog::Ed3kIssuePassDialog(const QCborArray& sales, const QString&
         const QCborMap s = v.toMap();
         auto* it = new QTreeWidgetItem(m_scopes);
         it->setText(0, s.value(QStringLiteral("title")).toString());
-        it->setText(1, s.value(QStringLiteral("kind")).toInteger() == 1 ? tr("Live channel") : tr("Set"));
+        // it->setText(1, s.value(QStringLiteral("kind")).toInteger() == 1 ? tr("Live channel") : tr("Set"));
+        it->setText(1, s.value(QStringLiteral("kind")).toInteger() != 1           ? tr("Set")
+                       : s.value(QStringLiteral("private")).toBool() ? tr("Private live channel")
+                                                                     : tr("Live channel"));
         it->setText(2, s.value(QStringLiteral("price")).toString());
         it->setData(0, Qt::UserRole, s.value(QStringLiteral("scope")).toString());
         it->setCheckState(0, s.value(QStringLiteral("scope")).toString() == scope ? Qt::Checked : Qt::Unchecked);
@@ -280,13 +292,19 @@ void Ed3kIssuePassDialog::run(QWidget* parent, IpcClient* ipc, const QCborArray&
             return;
         }
         const QCborMap m = r.fieldMap(1);
-        showLink(p, m.value(QStringLiteral("link")).toString(), m.value(QStringLiteral("voucher")).toBool());
+        QStringList channels;
+        for (const auto& v : m.value(QStringLiteral("channelLinks")).toArray())
+            channels << v.toString();
+        showLink(p, m.value(QStringLiteral("link")).toString(), m.value(QStringLiteral("voucher")).toBool(), channels);
     });
 }
 
-void Ed3kIssuePassDialog::showLink(QWidget* parent, const QString& link, bool voucher)
+void Ed3kIssuePassDialog::showLink(QWidget* parent, const QString& link, bool voucher, const QStringList& channelLinks)
 {
-    QApplication::clipboard()->setText(link);
+    // QApplication::clipboard()->setText(link);
+    // the pass and the private channels' links (live.md §10: the buyer needs both)
+    const QString all = channelLinks.isEmpty() ? link : link + QLatin1Char('\n') + channelLinks.join(QLatin1Char('\n'));
+    QApplication::clipboard()->setText(all);
     QDialog d(parent);
     d.setWindowTitle(tr("ed3k Pass"));
     auto* layout = new QVBoxLayout(&d);
@@ -297,13 +315,21 @@ void Ed3kIssuePassDialog::showLink(QWidget* parent, const QString& link, bool vo
                             &d);
     text->setWordWrap(true);
     layout->addWidget(text);
-    auto* edit = new QPlainTextEdit(link, &d);
+    if (!channelLinks.isEmpty()) {
+        auto* priv = new QLabel(tr("Below the pass: the link of each private channel it covers (private: whoever has it finds "
+                                   "the channel). The buyer needs both."),
+                                &d);
+        priv->setWordWrap(true);
+        layout->addWidget(priv);
+    }
+    // auto* edit = new QPlainTextEdit(link, &d);
+    auto* edit = new QPlainTextEdit(all, &d);
     edit->setReadOnly(true);
     edit->setFixedHeight(edit->fontMetrics().lineSpacing() * 5 + 10);
     layout->addWidget(edit);
     auto* buttons = new QDialogButtonBox(QDialogButtonBox::Close, &d);
     auto* copy = buttons->addButton(tr("Copy"), QDialogButtonBox::ActionRole);
-    QObject::connect(copy, &QPushButton::clicked, &d, [link] { QApplication::clipboard()->setText(link); });
+    QObject::connect(copy, &QPushButton::clicked, &d, [all] { QApplication::clipboard()->setText(all); });
     QObject::connect(buttons, &QDialogButtonBox::rejected, &d, &QDialog::reject);
     layout->addWidget(buttons);
     d.setMinimumWidth(480);

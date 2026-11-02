@@ -978,6 +978,20 @@ void tst_ED2KLink::redactLinkSecret_hidesTheSecret()
     const QString file = QStringLiteral("ed2k://|file|movie.avi|123|%1|/").arg(kTestHash);
     QCOMPARE(redactLinkSecret(file), file);
     QCOMPARE(redactLinkSecret(QStringLiteral("not a link")), QStringLiteral("not a link"));
+
+    // batch 15: ed3k credentials — s (set, room, live, friend), p and k (pass), the key of a
+    // cache link; the public keys and the rest stay
+    const QString s3 = QStringLiteral("ed3k:friend?key=pubkey&s=%1&dn=Bob").arg(secret);
+    QCOMPARE(redactLinkSecret(s3), QStringLiteral("ed3k:friend?key=pubkey&s=…&dn=Bob"));
+    const QString pass = QStringLiteral("ed3k:pass?p=%1&k=%1").arg(secret);
+    QVERIFY(!redactLinkSecret(pass).contains(secret));
+    const QString cache = QStringLiteral("ed3k:cache?url=https%3A%2F%2Fc.example&key=%1&kid=main").arg(secret);
+    QCOMPARE(redactLinkSecret(cache), QStringLiteral("ed3k:cache?url=https%3A%2F%2Fc.example&key=…&kid=main"));
+    const QString live = QStringLiteral("ED3K:live?key=chan&id=x&s=%1").arg(secret);
+    QVERIFY(!redactLinkSecret(live).contains(secret));
+    QVERIFY(redactLinkSecret(live).contains(QStringLiteral("key=chan")));
+    const QString open = QStringLiteral("ed3k:set?key=k1&id=x");
+    QCOMPARE(redactLinkSecret(open), open);
 }
 
 // ---------------------------------------------------------------------------

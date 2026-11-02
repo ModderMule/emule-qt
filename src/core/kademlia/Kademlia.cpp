@@ -153,6 +153,7 @@ void Kademlia::start(KadPrefs* prefs)
     m_processTimer->start();
 
     m_running = true;
+    m_lastFirewallState = kFirewallStateUnknown;
     // We are actively bootstrapping only if readFile queued shipped bootstrap
     // contacts to probe (fresh install). A normal saved nodes.dat populates the
     // routing table directly and connects via the HELLO flow, so bootstrapping
@@ -649,6 +650,7 @@ void Kademlia::process()
     // Not MFC: firewalled last session, so likely again. Ask the remembered buddies now
     // rather than at the first buddy search (+5 min). Dropped once we turn out open.
     updateSessionVerdict();
+    notifyFirewallStateChange();
     if (m_askBuddiesOnConnect && m_sessionVerdict == BuddyStore::SessionVerdict::Open)
         m_askBuddiesOnConnect = false;
     if (m_askBuddiesOnConnect && needsBuddy && !thePrefs.cryptLayerRequired()
@@ -885,6 +887,24 @@ void Kademlia::updateSessionVerdict()
         m_sessionVerdict = BuddyStore::SessionVerdict::Open;
     else if (!m_prefs->recheckIP())
         m_sessionVerdict = BuddyStore::SessionVerdict::Firewalled;
+}
+
+void Kademlia::notifyFirewallStateChange()
+{
+    // TCP/UDP verdicts change deep inside the testers with no signal of their own.
+    // Compare once per tick so the GUI hears of it now, not at the 60 s stats push.
+    const bool connected = isConnected();
+    const bool tcpFW = isFirewalled();
+    const bool udpFW = connected && UDPFirewallTester::isFirewalledUDP(true);
+    const bool udpVerified = connected && UDPFirewallTester::isVerified();
+    const uint8 state = static_cast<uint8>((tcpFW ? 1 : 0) | (udpFW ? 2 : 0)
+                                           | (udpVerified ? 4 : 0) | (isFirewalledVerified() ? 8 : 0));
+    if (state == m_lastFirewallState)
+        return;
+    const bool first = m_lastFirewallState == kFirewallStateUnknown;
+    m_lastFirewallState = state;
+    if (!first)
+        emit firewallStatusChanged(tcpFW);
 }
 
 } // namespace eMule::kad

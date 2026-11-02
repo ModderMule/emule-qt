@@ -150,6 +150,11 @@ public:
     /// Another sharer (Ed3kShared) took @p root: forget the own share, do not close it.
     void releaseShare(const ::ed3k::Root& root);
 
+    /// The key @p root is downloaded or shared under (hops.md §1, shown to the user).
+    [[nodiscard]] ::ed3k::KeyKind keyOfRoot(const ::ed3k::Root& root) const { return keyOf(root); }
+    /// Moves a running download to @p key (the user was asked). false: none running, same key.
+    bool moveKey(const ::ed3k::Root& root, ::ed3k::KeyKind key) { return moveDownloadKey(root, key); }
+
     // -- tests -----------------------------------------------------------------
 
     /// A source by hand (tests switch Kad searches off).
@@ -179,6 +184,8 @@ protected:
     void saveOwner(const QString& owner) override;
     /// eMule's kPr* as the turn order at a source shared by several downloads.
     [[nodiscard]] int downloadPriority(const Download& d) const override;
+    /// Plain ed3k downloads follow the hiding switch (hops.md §1).
+    [[nodiscard]] bool anonCapable() const override { return true; }
 
 private:
     struct Entry {

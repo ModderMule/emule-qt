@@ -74,12 +74,22 @@ Ed3kSellPage::Ed3kSellPage(IpcClient* ipc, QWidget* parent)
     m_season->setToolTip(tr("A leaked key or a broken-into computer: from the next epoch on everything is sealed with a "
                             "new season (subscription.md §4.5)."));
     m_copyLink = new QPushButton(tr("Copy link"), saleGroup);
+    m_stop = new QPushButton(tr("Stop Selling"), saleGroup);
+    m_stop->setToolTip(tr("No new passes: the offer then has no price and no shop. Passes held still work until they "
+                          "end; Resume Selling sells it again on the same epochs."));
+    // two rows: five buttons in one are too wide for an 800 px screen
     saleRow->addWidget(m_issue);
     saleRow->addWidget(m_terms);
-    saleRow->addWidget(m_season);
+    // saleRow->addWidget(m_season);
+    // saleRow->addWidget(m_stop);
     saleRow->addStretch();
     saleRow->addWidget(m_copyLink);
     saleLayout->addLayout(saleRow);
+    auto* saleRow2 = new QHBoxLayout;
+    saleRow2->addWidget(m_stop);
+    saleRow2->addWidget(m_season);
+    saleRow2->addStretch();
+    saleLayout->addLayout(saleRow2);
     layout->addWidget(saleGroup);
 
     // -- passes issued by hand (§9.3) of the selected subscription
@@ -111,11 +121,13 @@ Ed3kSellPage::Ed3kSellPage(IpcClient* ipc, QWidget* parent)
     connect(m_issue, &QPushButton::clicked, this, &Ed3kSellPage::issuePass);
     connect(m_terms, &QPushButton::clicked, this, &Ed3kSellPage::changeTerms);
     connect(m_season, &QPushButton::clicked, this, &Ed3kSellPage::newSeason);
+    connect(m_stop, &QPushButton::clicked, this, &Ed3kSellPage::stopOrResume);
     connect(defBtn, &QPushButton::clicked, this, &Ed3kSellPage::editDefaults);
-    connect(m_copyLink, &QPushButton::clicked, this, [this] {
-        if (const QString link = currentSale().value(QStringLiteral("link")).toString(); !link.isEmpty())
-            QApplication::clipboard()->setText(link);
-    });
+    // connect(m_copyLink, &QPushButton::clicked, this, [this] {
+    //     if (const QString link = currentSale().value(QStringLiteral("link")).toString(); !link.isEmpty())
+    //         QApplication::clipboard()->setText(link);
+    // });
+    connect(m_copyLink, &QPushButton::clicked, this, &Ed3kSellPage::copyLink);
     connect(m_copyPass, &QPushButton::clicked, this, [this] {
         const auto items = m_issued->selectedItems();
         if (!items.isEmpty() && !items.first()->data(0, Qt::UserRole).toString().isEmpty())
@@ -145,12 +157,19 @@ void Ed3kSellPage::fill(const QCborMap& selling)
         auto* it = new QTreeWidgetItem(m_sales);
         const QString scope = s.value(QStringLiteral("scope")).toString();
         it->setText(0, s.value(QStringLiteral("title")).toString());
-        it->setText(1, s.value(QStringLiteral("kind")).toInteger() == 1 ? tr("Live channel") : tr("Set"));
-        it->setText(2, s.value(QStringLiteral("price")).toString());
+        // it->setText(1, s.value(QStringLiteral("kind")).toInteger() == 1 ? tr("Live channel") : tr("Set"));
+        const bool isPrivate = s.value(QStringLiteral("private")).toBool();
+        it->setText(1, s.value(QStringLiteral("kind")).toInteger() != 1 ? tr("Set") : isPrivate ? tr("Private live channel") : tr("Live channel"));
+        // it->setText(2, s.value(QStringLiteral("price")).toString());
+        const bool stopped = s.value(QStringLiteral("stopped")).toBool();
+        it->setText(2, stopped ? tr("%1 (not sold now)").arg(s.value(QStringLiteral("price")).toString()) : s.value(QStringLiteral("price")).toString());
         it->setText(3, seasonText(s));
         it->setText(4, QString::number(s.value(QStringLiteral("issued")).toArray().size()));
         it->setText(5, dateText(s.value(QStringLiteral("ownUntil")).toInteger()));
-        it->setToolTip(0, s.value(QStringLiteral("link")).toString());
+        // it->setToolTip(0, s.value(QStringLiteral("link")).toString());
+        // live.md §10: a private channel's link is a credential: not shown, marked private
+        it->setToolTip(0, isPrivate ? tr("Private channel: its link is the key to it. Give it to buyers only, with their pass.")
+                                    : s.value(QStringLiteral("link")).toString());
         it->setData(0, Qt::UserRole, scope);
         if (scope == keep)
             m_sales->setCurrentItem(it);
@@ -252,6 +271,55 @@ void Ed3kSellPage::newSeason()
     });
 }
 
+void Ed3kSellPage::stopOrResume()
+{
+    const QCborMap s = currentSale();
+    if (s.isEmpty() || !m_ipc)
+        return;
+    const bool stopped = s.value(QStringLiteral("stopped")).toBool();
+    const QString title = s.value(QStringLiteral("title")).toString();
+    // subscription.md §3: a stop is a newer offer without price and shop; t0 and period stay
+    if (!stopped
+        && QMessageBox::question(this, tr("Stop Selling"),
+                                 tr("Stop selling \"%1\"?\n\nBuyers see it is no longer sold. Passes held still work until they end, "
+                                    "and you can sell it again later.")
+                                     .arg(title))
+               != QMessageBox::Yes)
+        return;
+    IpcMessage req(IpcMsgType::Ed3kSellControl);
+    req.append(qint64(stopped ? 5 : 4));
+    req.append(s.value(QStringLiteral("scope")).toString());
+    req.append(QCborMap{});
+    m_ipc->sendRequest(std::move(req), [self = QPointer(this), stopped](const IpcMessage& r) {
+        if (self && !r.fieldBool(0))
+            self->showFailure(stopped ? tr("It could not be sold again.") : tr("The sale could not be stopped."), r.fieldMap(1));
+    });
+}
+
+void Ed3kSellPage::copyLink()
+{
+    const QCborMap s = currentSale();
+    if (s.isEmpty() || !m_ipc)
+        return;
+    // GetEd3kSaleLink: a private channel's link (with `s`) is a credential, never logged
+    IpcMessage req(IpcMsgType::GetEd3kSaleLink);
+    req.append(s.value(QStringLiteral("scope")).toString());
+    m_ipc->sendRequest(std::move(req), [self = QPointer(this)](const IpcMessage& r) {
+        if (!self)
+            return;
+        if (!r.fieldBool(0)) {
+            self->showFailure(tr("The link is not known."), r.fieldMap(1));
+            return;
+        }
+        const QCborMap m = r.fieldMap(1);
+        QApplication::clipboard()->setText(m.value(QStringLiteral("link")).toString());
+        if (m.value(QStringLiteral("private")).toBool())
+            QMessageBox::information(self, tr("Private Channel Link"),
+                                     tr("The private link was copied to the clipboard. Whoever has it can find the channel: "
+                                        "give it to buyers only, with their pass."));
+    });
+}
+
 void Ed3kSellPage::editDefaults()
 {
     if (!m_ipc)
@@ -279,7 +347,12 @@ void Ed3kSellPage::updateButtons()
     m_issue->setEnabled(connected && sale);
     m_terms->setEnabled(connected && sale);
     m_season->setEnabled(connected && sale);
-    m_copyLink->setEnabled(sale);
+    // m_copyLink->setEnabled(sale);   (was: the row's link; now GetEd3kSaleLink)
+    m_copyLink->setEnabled(connected && sale);
+    const bool stopped = currentSale().value(QStringLiteral("stopped")).toBool();
+    m_stop->setText(stopped ? tr("Resume Selling") : tr("Stop Selling"));
+    m_stop->setEnabled(connected && sale);
+    m_terms->setEnabled(connected && sale && !stopped);
     const auto items = m_issued->selectedItems();
     m_copyPass->setEnabled(!items.isEmpty() && !items.first()->data(0, Qt::UserRole).toString().isEmpty());
 }

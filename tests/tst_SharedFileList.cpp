@@ -68,6 +68,7 @@ private slots:
     void scan_winSkipsSystemAndTemporarySharesHidden();
     void scan_winShellLinkFollowsTheOption();
     void pathRules_matchOtherSpellingsByKey();
+    void neverShared_anOpenedPlainCopyStaysOut();
     void directoryIndex_followsAddRemoveAndMove();
     void pseudoDirNames_hideThePathAboveTheShare();
     void browseRecord_isTheClientVariant();
@@ -446,6 +447,43 @@ void tst_SharedFileList::pathRules_matchOtherSpellingsByKey()
     // un-excluding by yet another spelling
     QVERIFY(shared.addSingleSharedFile(path.toLower()));
     QVERIFY(shared.shouldBeShared(shareDir, path, false));
+}
+
+// ed3k batch 15 #12 (hidden-set.md §4.2 MUST): the opened plain copy of a sealed set member
+// is never shared, also inside a shared directory: dropped, refused, not scanned in again
+void tst_SharedFileList::neverShared_anOpenedPlainCopyStaysOut()
+{
+    eMule::testing::TempDir tmp;
+    const QString shareDir = tmp.filePath(QStringLiteral("share"));
+    const QString otherPath = writeFile(shareDir, QStringLiteral("other.bin"), QByteArray(512, 'k'));
+    QVERIFY(!otherPath.isEmpty());
+
+    thePrefs.setConfigDir(tmp.path());
+    thePrefs.setIncomingDir(tmp.filePath(QStringLiteral("incoming")));
+    thePrefs.setSharedDirs({shareDir});
+
+    KnownFileList knownFiles;
+    SharedFileList shared(&knownFiles);
+    // shared before the rule came (e.g. opened by an older version)
+    KnownFile* plain = makeFileOnDisk(knownFiles, shared, 0x6E, shareDir, QStringLiteral("e.bin"), QByteArray(600, 'p'));
+    const QString plainPath = plain->filePath();
+    QCOMPARE(shared.getCount(), 1);
+    QVERIFY(shared.shouldBeShared(shareDir, plainPath, false));
+
+    shared.setNeverShared([&](const QString& p) { return SharedFileList::pathKey(p) == SharedFileList::pathKey(plainPath); });
+    QCOMPARE(shared.getCount(), 0);
+    QVERIFY(!shared.shouldBeShared(shareDir, plainPath, false));
+    QVERIFY(!shared.shouldBeShared(shareDir, plainPath.toUpper(), false));   // any spelling (pathKey)
+    QVERIFY2(shared.shouldBeShared(shareDir, otherPath, false), "the rule names one file, not its directory");
+
+    // a rescan does not bring it back
+    shared.reload();
+    bool sawPlain = false;
+    shared.forEachFile([&](KnownFile* f) {
+        if (SharedFileList::pathKey(f->filePath()) == SharedFileList::pathKey(plainPath))
+            sawPlain = true;
+    });
+    QVERIFY(!sawPlain);
 }
 
 // C73: a browsing client is given names, not paths (MFC GetPseudoDirName):

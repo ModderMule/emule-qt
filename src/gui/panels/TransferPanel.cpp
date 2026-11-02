@@ -277,6 +277,8 @@ void TransferPanel::setIpcClient(IpcClient* client)
     connect(m_ipc, &IpcClient::ed3kDownloadsChanged, this, [this](const IpcMessage& msg) {
         takeEd3kDownloads(msg.fieldMap(0));
     });
+    // batch 15: a download moved key, or hiding moved (the ed3k Key column)
+    connect(m_ipc, &IpcClient::ed3kHideChanged, this, [this] { requestEd3kDownloads(); });
 
     // Another GUI — or this one's own edit — changed the list.
     connect(m_ipc, &IpcClient::categoriesChanged, this,
@@ -651,7 +653,7 @@ void TransferPanel::onDownloadContextMenu(const QPoint& pos)
         const bool hasImportableLink =
             Ed2kLinkImporter::linkKindsIn(clipText)
             & (Ed2kLinkImporter::LinkKind::File | Ed2kLinkImporter::LinkKind::HttpCache
-               | Ed2kLinkImporter::LinkKind::Other);
+               | Ed2kLinkImporter::LinkKind::Other | Ed2kLinkImporter::LinkKind::Ed3k);
         pasteAct->setEnabled(hasImportableLink && m_ipc && m_ipc->isConnected());
         connect(pasteAct, &QAction::triggered, this, &TransferPanel::pasteDownloadLinks);
     }
@@ -732,6 +734,19 @@ void TransferPanel::onDownloadContextMenu(const QPoint& pos)
         for (QAction* act : m_downloadMenu->actions())
             if (!act->isSeparator() && !ed3kActions.contains(act->text()))
                 act->setEnabled(false);
+        // batch 15, hops.md §1: a running download to the other key (asks first)
+        const QString key = selectedDls.front()->ed3kKey;
+        const bool same = !key.isEmpty() && std::ranges::all_of(selectedDls, [&key](const DownloadRow* d) {
+            return d->ed3kKey == key && !d->isComplete();
+        });
+        const bool toAnon = key != QLatin1String("Anonymous");
+        m_downloadMenu->addSeparator();
+        QStringList roots;
+        for (const DownloadRow* d : selectedDls)
+            roots << d->hash;
+        auto* move = m_downloadMenu->addAction(toAnon ? tr("Move to Anonymous ed3k Key...") : tr("Move to Node ed3k Key..."),
+                                               this, [this, roots, toAnon] { moveEd3kKey(roots, toAnon); });
+        move->setEnabled(same && m_ipc && m_ipc->isConnected());
     }
 
     m_downloadMenu->popup(m_downloadView->viewport()->mapToGlobal(pos));
@@ -1005,7 +1020,8 @@ QWidget* TransferPanel::createDownloadsSection()
     // Confidence, Transferred. Hidden by default as in MFC: Transferred, Last Seen
     // Complete, Last Reception, Category.
     downloadView->bindColumns(QStringLiteral("downloads"),
-        {220, 65, 65, 65, 170 /* MFC DFLT_PARTSTATUS_COL_WIDTH */, 65, 70, 65, 80, 80, 80, 60, 120, 100, 100, 65},
+        // + ed3k Key (batch 15, hops.md §1)
+        {220, 65, 65, 65, 170 /* MFC DFLT_PARTSTATUS_COL_WIDTH */, 65, 70, 65, 80, 80, 80, 60, 120, 100, 100, 65, 80},
         {DownloadListModel::ColSeenComplete, DownloadListModel::ColLastReception,
          DownloadListModel::ColCategory, DownloadListModel::ColCountry,
          DownloadListModel::ColTransferred});
@@ -1403,6 +1419,34 @@ void TransferPanel::sendEd3kControl(const QStringList& roots, int action, qint64
                 StatusBarNotifier::post(reply.fieldMap(1).value(QStringLiteral("error")).toString(), 5000);
             self->requestEd3kDownloads();
         });
+}
+
+void TransferPanel::moveEd3kKey(const QStringList& roots, bool toAnon)
+{
+    if (!m_ipc || roots.isEmpty())
+        return;
+    // hops.md §1 MUST: ask before a file moves from one key to the other
+    const QString text = toAnon
+        ? tr("Download %n file(s) under the anonymous ed3k key from now on?\n\nThe sources are asked again "
+             "through other nodes; queue places are lost.", nullptr, int(roots.size()))
+        : tr("Download %n file(s) under the node ed3k key from now on?\n\nThe sources then see this node's "
+             "address; queue places are lost.", nullptr, int(roots.size()));
+    if (QMessageBox::question(this, tr("ed3k Key"), text, QMessageBox::Yes | QMessageBox::No, QMessageBox::No)
+        != QMessageBox::Yes)
+        return;
+    QPointer<TransferPanel> self(this);
+    for (const QString& root : roots) {
+        IpcMessage msg(IpcMsgType::MoveEd3kFileKey);
+        msg.append(root);
+        msg.append(toAnon);
+        m_ipc->sendRequest(std::move(msg), [self](const IpcMessage& reply) {
+            if (!self)
+                return;
+            if (reply.type() == IpcMsgType::Result && !reply.fieldBool(0))
+                StatusBarNotifier::post(reply.fieldMap(1).value(QStringLiteral("error")).toString(), 5000);
+            self->requestEd3kDownloads();
+        });
+    }
 }
 
 void TransferPanel::requestDownloads()

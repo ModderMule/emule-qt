@@ -64,6 +64,9 @@ public:
         /// ed3k:pass links (batch 14) handed to their handler (manual only). Never invalid:
         /// a voucher is a credential, the invalid list is logged and shown.
         int ed3kPassLinks = 0;
+        /// Other ed3k: links (batch 15: friend, node, cache, set, live, …) handed one by one to
+        /// the ed3k link handler (manual only). Never invalid: they may carry credentials.
+        int ed3kLinks = 0;
     };
 
     /// The link kinds that start no download (MFC CemuleDlg::ProcessED2KLink,
@@ -113,6 +116,11 @@ public:
     /// clipboard watcher) drops them: a voucher copied to be handed on must not be used up.
     using Ed3kPassLinkHandler = std::function<void(const QStringList& links, QWidget* parent)>;
     static void setEd3kPassLinkHandler(Ed3kPassLinkHandler handler);
+    /// Every other ed3k: link pasted by hand goes here, one at a time (ExternalLinkHandler,
+    /// which asks where the link wants it); an automatic import drops them. Unset: invalid
+    /// (redacted).
+    using Ed3kLinkHandler = std::function<void(const QString& link, QWidget* parent)>;
+    static void setEd3kLinkHandler(Ed3kLinkHandler handler);
     /// Whether hoster links have somewhere to go now.
     [[nodiscard]] static bool hosterReady();
     /// Hand @p files to the Hoster tab, as a package named @p package (empty: none).
@@ -179,6 +187,7 @@ public:
         HttpCache = 0x2,  ///< ed2k://|httpcache| — a configuration link, not a download
         Server    = 0x4,  ///< ed2k://|server| (not serverlist)
         Other     = 0x8,  ///< serverlist, nodeslist, search — acted on for manual imports
+        Ed3k      = 0x10, ///< an ed3k: link (batch 15) — manual imports only
     };
     Q_DECLARE_FLAGS(LinkKinds, LinkKind)
 

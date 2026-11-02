@@ -54,7 +54,8 @@ signals:
     void overflow();
 
 private:
-    void onDirectoryEvent(const QString& dir);
+    /// False when the event overflowed (overflow() was emitted).
+    bool onDirectoryEvent(const QString& dir);
     void flush();
     void poll();
 

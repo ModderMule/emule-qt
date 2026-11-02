@@ -6,6 +6,8 @@
 /// Range requests (206/416) from verified blocks; websites kept on disk across restarts (LRU).
 /// Batch 14: a member streamed without Range (chunked, cut on a bad block, 504 with no first
 /// byte); a site unfollowed once neither shown nor held; a set the user follows not evicted.
+/// Batch 15 (#16): a held site not followed is followed on any request, which waits for its
+/// head check (SetHeadChecked) or a newer manifest; 504 when neither comes in time.
 
 #include "Ed3kBridge.h"
 #include "Ed3kDownloads.h"
@@ -22,7 +24,10 @@
 #include "IpcProtocol.h"
 
 #include <QCborArray>
+#include <QDateTime>
 #include <QDeadlineTimer>
+#include <QTimer>
+#include <QUrl>
 #include <QSignalSpy>
 #include <QTcpSocket>
 #include <QTemporaryDir>
@@ -92,6 +97,25 @@ QByteArray manifestOf(const QString& name, const QByteArray& data)
     QByteArray file("ed3kset\x01", 8);
     bytesField(file, 1, set);
     return file;
+}
+
+/// A manifest signed by the key of @p seed (file-set.md §2, §5): index.html of @p page, version @p seq
+QByteArray signedManifestOf(const ::ed3k::Key32& seed, const QByteArray& id, std::uint64_t seq, const QByteArray& page)
+{
+    ::ed3k::SetFields f;
+    f.title = "site";
+    f.created = 1'700'000'000;
+    for (char ch : id)
+        f.id.push_back(std::byte(ch));
+    f.seq = seq;
+    ::ed3k::SetMemberIn m;
+    m.root = rootOf(page);
+    m.size = std::uint64_t(page.size());
+    m.path = "index.html";
+    auto file = ::ed3k::setManifestWrite(std::uint64_t(QDateTime::currentSecsSinceEpoch()), seed, f, std::span(&m, 1));
+    if (!file)
+        return {};
+    return QByteArray(reinterpret_cast<const char*>(file->bytes().data()), qsizetype(file->size()));
 }
 
 /// Node A's side: serves blobs from memory.
@@ -273,6 +297,7 @@ private slots:
     void aBadBlockCutsTheStream();
     void aSiteIsUnfollowedOnceNeitherShownNorHeld();
     void aSetTheUserFollowsIsNotEvicted();
+    void aHeldSiteIsServedAfterItsHeadCheck();
     void theIpcAnswersNamesAndPetnames();
     void cleanup();
 };
@@ -827,6 +852,113 @@ void tst_Ed3kNames::theIpcAnswersNamesAndPetnames()
     QVERIFY(!call(res).fieldBool(0));
     names.stop();
     s.stop();
+}
+
+
+// name.md §6.1 (#16): a site held and not followed (an earlier run) is followed on any request
+// (not only the user's), and no member is served before its head was checked: the held
+// version after SetHeadChecked, a newer manifest when one comes meanwhile, 504 when neither
+void tst_Ed3kNames::aHeldSiteIsServedAfterItsHeadCheck()
+{
+    QTemporaryDir db, dc;
+    QVERIFY(db.isValid() && dc.isValid());
+    ::ed3k::Key32 seed{};
+    seed.fill(0x2b);
+    const auto key = ::ed3k::keyPublic(seed);
+    QVERIFY(key);
+    const QByteArray page1 = "<!doctype html><p>one</p>\n";
+    const QByteArray page2 = "<!doctype html><p>two</p>\n";
+    const QByteArray v1 = signedManifestOf(seed, "held", 1, page1);
+    const QByteArray v2 = signedManifestOf(seed, "held", 2, page2);
+    QVERIFY(!v1.isEmpty() && !v2.isEmpty());
+    const QByteArray sub = "Sec-Fetch-Site: same-origin\r\nSec-Fetch-Mode: no-cors\r\n";   // a page's own request
+
+    Ed3kSession b;
+    QVERIFY(b.start(loopback(db.path())));
+    // a contact that is gone: B's head search waits for it (with none it ends at once)
+    const auto deadContact = [&] {
+        QTemporaryDir dd;
+        Ed3kSession d;
+        if (!d.start(loopback(dd.path())))
+            return false;
+        const ::ed3k::Node node{*d.nodeId(), ::ed3k::Address::v4(127, 0, 0, 1, d.udpPort())};
+        const auto before = b.contactCount();
+        b.post([&](::ed3k::Engine& e, ::ed3k::Now now) { (void)e.bootstrap(now, std::span<const ::ed3k::Node>{&node, 1}); });
+        QDeadlineTimer until(20000);
+        while (b.contactCount() <= before && !until.hasExpired())
+            QTest::qWait(20);
+        d.stop();
+        return b.contactCount() > before;
+    };
+    {
+        QVERIFY(deadContact());
+        // B holds v1; no head check within the wait: 504 (was: v1 served at once)
+        Ed3kNames names(b, db.path());
+        names.setSearchEnabled(false);
+        names.setSiteManifest(*key, "held", v1);
+        names.siteCache().putMember(rootOf(page1), page1);
+        names.siteCache().putMember(rootOf(page2), page2);
+        Ed3kSiteServer sites(b, names);
+        sites.setWaitMs(1000);
+        QTRY_VERIFY_WITH_TIMEOUT(sites.isListening(), 5000);
+        const QByteArray host = QUrl(sites.originUrl(*key, "held")).host().toLatin1() + ':' + QByteArray::number(sites.port());
+        QVERIFY(!names.siteFollowed(*key, "held"));
+        QSignalSpy checked(&names, &Ed3kNames::siteHeadChecked);
+        const Http late = request(sites.port(), host, "/", kUser);
+        QVERIFY(checked.isEmpty());
+        QCOMPARE(late.status, 504);
+        QVERIFY(names.siteFollowed(*key, "held"));
+        QVERIFY(names.siteHeadPending(*key, "held"));
+        names.stop();
+    }
+    {
+        QVERIFY(deadContact());
+        // B again (a restart): a newer manifest while a page's request waits: that one is served
+        Ed3kNames names(b, db.path());
+        names.setSearchEnabled(false);
+        Ed3kSiteServer sites(b, names);
+        QTRY_VERIFY_WITH_TIMEOUT(sites.isListening(), 5000);
+        QCOMPARE(names.siteManifest(*key, "held"), v1);
+        QVERIFY(!names.siteFollowed(*key, "held"));
+        const QByteArray host = QUrl(sites.originUrl(*key, "held")).host().toLatin1() + ':' + QByteArray::number(sites.port());
+        bool pending = false;
+        QTimer::singleShot(400, &names, [&] {
+            pending = names.siteHeadPending(*key, "held");
+            names.setSiteManifest(*key, "held", v2);
+        });
+        const Http newer = request(sites.port(), host, "/", sub);
+        QVERIFY(pending);
+        QCOMPARE(newer.status, 200);
+        QCOMPARE(newer.body, page2);
+        QVERIFY(names.siteFollowed(*key, "held"));   // followed for a page's request too (was: the user's only)
+        QVERIFY(!names.siteHeadPending(*key, "held"));
+        names.stop();
+    }
+    {
+        // B knows a live C: the head search ends (no newer head anywhere), the held one is served
+        Ed3kSession c;
+        QVERIFY(c.start(loopback(dc.path())));
+        const ::ed3k::Node cNode{*c.nodeId(), ::ed3k::Address::v4(127, 0, 0, 1, c.udpPort())};
+        b.post([&](::ed3k::Engine& e, ::ed3k::Now now) { (void)e.bootstrap(now, std::span<const ::ed3k::Node>{&cNode, 1}); });
+        QTRY_VERIFY_WITH_TIMEOUT(c.contactCount() > 0, 20000);
+        Ed3kNames names(b, db.path());
+        names.setSearchEnabled(false);
+        Ed3kSiteServer sites(b, names);
+        QTRY_VERIFY_WITH_TIMEOUT(sites.isListening(), 5000);
+        QSignalSpy checked(&names, &Ed3kNames::siteHeadChecked);
+        const QByteArray host = QUrl(sites.originUrl(*key, "held")).host().toLatin1() + ':' + QByteArray::number(sites.port());
+        const Http got = request(sites.port(), host, "/", sub);
+        QCOMPARE(got.status, 200);
+        QCOMPARE(got.body, page2);
+        QVERIFY(!checked.isEmpty());   // it came before the answer
+        QCOMPARE(checked.first().at(2).toBool(), false);
+        QVERIFY(!names.siteHeadPending(*key, "held"));
+        // shown again, followed: served at once
+        QCOMPARE(request(sites.port(), host, "/", sub).body, page2);
+        names.stop();
+        c.stop();
+    }
+    b.stop();
 }
 
 QTEST_GUILESS_MAIN(tst_Ed3kNames)

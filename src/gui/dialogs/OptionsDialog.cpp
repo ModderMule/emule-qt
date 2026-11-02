@@ -942,6 +942,15 @@ QWidget* OptionsDialog::createGeneralPage()
 #endif
     miscBtnLayout->addStretch();
     miscLayout->addLayout(miscBtnLayout);
+    // #116: skip the confirmation for clicked links; only matters while eMule Qt takes them
+    m_addLinksDirectCheck = new QCheckBox(tr("Add clicked eD2K links without asking"), miscGroup);
+    m_addLinksDirectCheck->setToolTip(
+        tr("Adds a clicked ed2k:// link to the downloads at once, without the confirmation window."));
+    miscLayout->addWidget(m_addLinksDirectCheck);
+    connect(m_addLinksDirectCheck, &QCheckBox::toggled, this, &OptionsDialog::markDirty);
+#ifdef Q_OS_MACOS
+    connect(m_associateEd2kCheck, &QCheckBox::toggled, m_addLinksDirectCheck, &QWidget::setEnabled);
+#endif
 
     layout->addWidget(miscGroup);
 
@@ -8111,6 +8120,7 @@ void OptionsDialog::saveSettings()
         }
     }
 #endif
+    theUiState.setAddLinksWithoutConfirm(m_addLinksDirectCheck->isChecked());
 
     saveIndexers();
     saveFeeds();
@@ -8389,12 +8399,14 @@ void OptionsDialog::fillDaemonSettings(const QCborMap& prefs)
         m_associateTorrentCheck->setChecked(m_claimedTypes.torrent);
     if (m_associateEd2kCheck)
         m_associateEd2kCheck->setChecked(m_claimedTypes.ed2k);
+    m_addLinksDirectCheck->setEnabled(m_claimedTypes.ed2k);
 #else
     if (m_associateNzbCheck)
         m_associateNzbCheck->setChecked(theUiState.associateNzbFiles());
     if (m_associateTorrentCheck)
         m_associateTorrentCheck->setChecked(theUiState.associateTorrentFiles());
 #endif
+    m_addLinksDirectCheck->setChecked(theUiState.addLinksWithoutConfirm());
     m_usenetHealthMinSpin->setEnabled(m_usenetHealthCombo->currentIndex() > 0);
     m_usenetCleanupCheck->setEnabled(m_usenetUnpackCheck->isChecked());
     m_usenetDirectUnpackCheck->setEnabled(m_usenetUnpackCheck->isChecked());

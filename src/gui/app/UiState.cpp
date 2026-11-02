@@ -114,6 +114,7 @@ void UiState::load(const QString& configDir)
         m_associateTorrentFiles = root["associateTorrentFiles"].as<bool>(m_associateTorrentFiles);
         if (const auto ed2k = root["associateEd2kLinks"]; ed2k && ed2k.IsScalar())
             m_associateEd2kLinks = ed2k.as<bool>();
+        m_addLinksWithoutConfirm = root["addLinksWithoutConfirm"].as<bool>(m_addLinksWithoutConfirm);
         m_miniMuleAutoClose = root["miniMuleAutoClose"].as<bool>(m_miniMuleAutoClose);
         m_firstStartWizardDone = root["firstStartWizardDone"].as<bool>(m_firstStartWizardDone);
         if (const auto lang = root["language"]; lang && lang.IsScalar())
@@ -238,6 +239,7 @@ void UiState::save(const QString& configDir)
     out << YAML::Key << "associateTorrentFiles" << YAML::Value << m_associateTorrentFiles;
     if (m_associateEd2kLinks)
         out << YAML::Key << "associateEd2kLinks" << YAML::Value << *m_associateEd2kLinks;
+    out << YAML::Key << "addLinksWithoutConfirm" << YAML::Value << m_addLinksWithoutConfirm;
     out << YAML::Key << "miniMuleAutoClose" << YAML::Value << m_miniMuleAutoClose;
     out << YAML::Key << "firstStartWizardDone" << YAML::Value << m_firstStartWizardDone;
     if (m_language)

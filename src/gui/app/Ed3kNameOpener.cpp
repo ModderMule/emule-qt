@@ -202,13 +202,15 @@ void Ed3kNameOpener::openResolved(qint64 id)
             const QString link = l.toString();
             if (link.startsWith(QLatin1String("ed3k:name"), Qt::CaseInsensitive))
                 continue;   // the core followed it already
-            if (link.startsWith(QLatin1String("ed3k:friend?"), Qt::CaseInsensitive) && self->m_ipc) {
-                Ipc::IpcMessage add(Ipc::IpcMsgType::AddEd3kFriend);
-                add.append(link);
-                add.append(QString());
-                self->m_ipc->sendRequest(std::move(add));
-                continue;
-            }
+            // was: an ed3k:friend link added at once; friend.md §3: never without the user, so it
+            // goes the link handler's way (the Add dialog filled in, the user confirms)
+            // if (link.startsWith(QLatin1String("ed3k:friend?"), Qt::CaseInsensitive) && self->m_ipc) {
+            //     Ipc::IpcMessage add(Ipc::IpcMsgType::AddEd3kFriend);
+            //     add.append(link);
+            //     add.append(QString());
+            //     self->m_ipc->sendRequest(std::move(add));
+            //     continue;
+            // }
             if (self->m_openLink)
                 self->m_openLink(link);
         }

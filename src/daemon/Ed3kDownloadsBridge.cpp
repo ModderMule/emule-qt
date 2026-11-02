@@ -80,6 +80,8 @@ QCborMap toCbor(const ed3k::Ed3kDownloadInfo& i)
         {QStringLiteral("addedOn"), i.addedOn},
         {QStringLiteral("completedOn"), i.completedOn},
         {QStringLiteral("error"), i.error},
+        // batch 15: "Node" / "Anonymous" (hops.md §1)
+        {QStringLiteral("key"), s_downloads ? ed3k::Ed3kHide::keyName(s_downloads->keyOfRoot(i.root)) : QString()},
     };
     // the progress bar: held blocks as runs (BlockRuns.h), those asked for, sources per piece
     m.insert(QStringLiteral("blockSize"), qint64(kBarBlock));

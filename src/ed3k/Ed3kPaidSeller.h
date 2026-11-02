@@ -30,16 +30,28 @@
 /// offered; that belongs to the seller's web shop. Passes are issued by hand here.
 /// ToDo: §4.4 the season seeds stay on this online node (paidPublish); an offline key store
 /// handing over horizon keys (paidPublishHorizon) is not offered.
-/// - Not offered: stopping a sale (t0 and period of a scope never change, §3: the scope stays).
-/// ToDo: a private paid channel (§7, live.md §10: paidFollowPrivate with `s`) is not sold.
-/// ToDo: eMuleQt publishes no sets of the user's own yet: a set is sold through IPC or code
+/// was: Not offered: stopping a sale (t0 and period of a scope never change, §3: the scope
+/// stays). (done: stopSale(), batch 15 #15: a newer offer without pay_url, pass_url and price,
+/// t0 and period kept; resumeSale() / sell() again: a later offer, same t0 and period, a new
+/// season by tick() if the old one ran out. Seasons and the own pass go on while stopped: the
+/// passes held still get their keys)
+/// was: ToDo: a private paid channel (§7, live.md §10: paidFollowPrivate with `s`) is not sold.
+/// (done: sellBroadcast takes it; its secret stays in Config/ed3k/live/<id>.secret
+/// (Ed3kLiveBroadcast::channelSecretOf), attach() follows with paidFollowPrivate, linkOf()
+/// carries `s`: a credential, never logged nor in sell.json. No channel file: the shop's
+/// pass_url must send the offer in Ed3k-Offer, §9.1)
+/// was: ToDo: eMuleQt publishes no sets of the user's own yet: a set is sold through IPC or code
 /// (newSet, the offer for FileSet.offer, sealKey); no GUI and no manifest written here.
+/// (done, batch 15: Ed3kOwnSets ("My ed3k Sets") sells an own set with its key as the
+/// publisher, writes each version's manifest with offerOf() and seals new members with
+/// sealKey(); SellEd3k kind 2 target = the own set's id)
 
 #include "Ed3kFfi.h"
 #include "Ed3kStore.h"
 
 #include <QByteArray>
 #include <QObject>
+#include <QPointer>
 #include <QString>
 #include <QStringList>
 #include <QTimer>
@@ -103,6 +115,8 @@ public:
         std::uint64_t ownUntil = 0;   ///< the node's own pass
         bool onEngine = false;
         std::vector<Issued> issued;
+        bool isPrivate = false;   ///< a private channel (live.md §10): `link` carries `s`
+        bool stopped = false;     ///< §3: the sale stopped (the offer has no price nor URLs)
     };
 
     /// @p configDir: Config/ (ed3k/sell/ below it), loaded here.
@@ -112,18 +126,29 @@ public:
     /// Sells the scope of @p publisherSeed (a channel key or set author key, a secret) and
     /// @p id (channel id, FileSet.id); the scope (hex). Again for a scope sold: its terms
     /// change (a new offer, same t0 and period: §3). The error is user-visible.
+    /// @p isPrivate: a private channel (its secret is the broadcast's, live.md §10).
     std::expected<QString, QString> sell(Kind kind, const Seed& publisherSeed, const QByteArray& id, const QString& title,
-                                         const Terms& terms);
+                                         const Terms& terms, bool isPrivate = false);
     /// A set of its own: a fresh publisher key and FileSet.id (16 random bytes), then sell().
     std::expected<QString, QString> newSet(const QString& title, const Terms& terms);
-    /// New terms of a scope sold (the season and t0 stay).
+    /// New terms of a scope sold (the season and t0 stay); a stopped sale is sold again.
     std::expected<QString, QString> setTerms(const QString& scopeHex, const Terms& terms);
+    /// §3 (#15): stops selling: a newer offer without pay_url, pass_url and price; t0, period,
+    /// the seasons and the passes held stay. The terms are kept for resumeSale().
+    std::expected<void, QString> stopSale(const QString& scopeHex);
+    /// Sells a stopped scope again with its terms (setTerms: a later offer, same t0, period).
+    std::expected<void, QString> resumeSale(const QString& scopeHex);
+    /// The link of a scope sold; a private channel's carries `s` (a credential: never log
+    /// it). Empty: not sold.
+    [[nodiscard]] QString saleLink(const QString& scopeHex) const;
     /// §4.5: a new season from the next epoch, its offer pushed to the neighbours at once.
     std::expected<void, QString> newSeasonAfterLeak(const QString& scopeHex);
-    /// Sells the open channel of the broadcast @p streamId (its channel key is the publisher);
-    /// a broadcast not paid yet starts again as a paid one (§7: every segment sealed). The scope.
+    /// Sells the channel of the broadcast @p streamId (its channel key is the publisher; a
+    /// private one with its secret, §7); a broadcast not paid yet starts again as a paid one
+    /// (§7: every segment sealed). The scope.
     std::expected<QString, QString> sellBroadcast(Ed3kLiveBroadcast& broadcast, const QString& streamId, const Terms& terms);
-    /// Hands the offers of the channels sold to @p broadcast (setOfferSource) for its starts.
+    /// Hands the offers of the channels sold to @p broadcast (setOfferSource) for its starts;
+    /// a changed offer of an open channel on air (new terms, stop, resume) is a new channel file.
     void serve(Ed3kLiveBroadcast& broadcast);
 
     /// §9.3: a pass for @p holder (nullopt: a voucher, a fresh holder key in the link) of
@@ -186,6 +211,8 @@ private:
         std::uint64_t ownUntil = 0;
         std::vector<Issued> issued;
         bool onEngine = false;
+        bool isPrivate = false;   ///< a private channel: the secret is the broadcast's file
+        bool stopped = false;     ///< §3: offers signed without price, pay_url, pass_url
     };
 
     void onEventPolled(const ::ed3k::Event& event, bool* handled);
@@ -212,6 +239,9 @@ private:
     [[nodiscard]] QString linkOf(const Sale& s) const;
     [[nodiscard]] QString fileOf(const Sale& s, const QString& suffix) const;
     void removeFiles(const Sale& s);
+    /// the offer held on the engine (when attached) and in the channel file of an open
+    /// channel on air
+    void pushOffer(Sale& s);
     void markChanged();
     void load();
     void save() const;
@@ -219,6 +249,7 @@ private:
     Ed3kSession& m_session;
     QString m_configDir;
     std::map<::ed3k::Scope, Sale> m_sales;
+    QPointer<Ed3kLiveBroadcast> m_broadcast;   ///< of serve(): channel files of channels sold
     Terms m_defaults;
     QTimer m_timer;
     bool m_attached = false;

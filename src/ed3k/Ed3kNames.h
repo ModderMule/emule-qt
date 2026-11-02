@@ -17,11 +17,15 @@
 ///   memory) and their members fetched into memory (cap per member and in all), shared
 ///   while kept (§6.4). Manifests and members are also kept on disk across restarts
 ///   (Ed3kSiteCache, 2 GiB, LRU); one read back from disk is shared again from memory.
-/// - §6.1 (batch 13 #13): a site's head is followed while the site is shown (a request within
-///   kSiteShownMs = 10 min) or held (its manifest in the disk cache), then unfollowed; that is
-///   no set the user follows. The sets the user follows (Ed3kSets, keepUserSets) are never
-///   evicted from the cache (§6.4) nor unfollowed here (the core has one follow per set).
-///   A site held at start is followed once it is shown again (literal: "only while").
+/// - §6.1 (batch 13 #13, batch 15 #16): a site's head MUST be followed while the site is shown
+///   (a request within kSiteShownMs = 10 min) and MAY while held (its manifest in the disk
+///   cache): a site followed stays followed while held, then unfollowed; that is no set the user
+///   follows. A held site not followed (at start, or unfollowed) is followed on any request for
+///   it, and its head is checked (siteHeadPending() until `SetHeadChecked`, siteHeadChecked())
+///   before a member is served (Ed3kSiteServer parks the request; a newer head: its manifest).
+///   The sets the user follows (Ed3kSets, keepUserSets) are never evicted from the cache (§6.4)
+///   nor unfollowed here (the core has one follow per set).
+///   (was: a site held at start is followed once the user shows it again)
 ///
 /// Petnames and pins never leave the node but as §4.3 says; nothing here is a secret.
 
@@ -166,8 +170,11 @@ public:
     [[nodiscard]] QByteArray siteManifest(const ::ed3k::Key32& key, const QByteArray& id) const;
     /// Whether the set is followed (its manifest is coming).
     [[nodiscard]] bool siteFollowed(const ::ed3k::Key32& key, const QByteArray& id) const;
-    /// Follows the set for its website (only for the user, §6.2). false: refused.
+    /// Follows the set for its website (a set not held only for the user, §6.2). false: refused.
     bool followSite(const ::ed3k::Key32& key, const QByteArray& id);
+    /// §6.1: a held site followed anew whose head is not checked yet (nor its newer manifest in):
+    /// no member is served meanwhile.
+    [[nodiscard]] bool siteHeadPending(const ::ed3k::Key32& key, const QByteArray& id) const;
     /// A request for the site came (§6.1 "shown"): it stays followed kSiteShownMs from now.
     void siteShown(const ::ed3k::Key32& key, const QByteArray& id);
     /// How long a site counts as shown (tests shorten it).
@@ -207,6 +214,9 @@ signals:
     void friendListOffered(const QByteArray& node, const QString& link);
     /// A manifest of a website set arrived.
     void siteChanged(const QByteArray& key, const QByteArray& id);
+    /// §6.1: the head of a site followed was checked; @p newer: a newer manifest comes
+    /// (siteChanged), else the one held is the newest.
+    void siteHeadChecked(const QByteArray& key, const QByteArray& id, bool newer);
     /// A website member is in (siteMember()).
     void siteMemberReady(const QByteArray& root);
     /// A block of a website member being fetched is in, verified (siteMemberRange()).
@@ -229,6 +239,7 @@ private:
         std::optional<::ed3k::Topic> topic;
         QByteArray manifest;
         qint64 shownAt = 0;   ///< ms since the epoch of the last request (§6.1)
+        bool headPending = false;   ///< §6.1: held, followed anew, its head not checked yet
     };
 
     void onNameEvent(const ::ed3k::Event& event, bool* handled);

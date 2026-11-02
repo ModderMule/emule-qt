@@ -10,6 +10,7 @@
 
 #include "controls/FilterEdit.h"
 #include "utils/CompleteSourcesText.h"
+#include "utils/Ed3kKeyText.h"
 #include "utils/FileTypeText.h"
 #include "utils/OtherFunctions.h"
 #include "utils/PriorityText.h"
@@ -167,6 +168,8 @@ QVariant SharedFilesModel::data(const QModelIndex& index, int role) const
             return f.lastRequested > 0
                 ? QLocale().toString(QDateTime::fromSecsSinceEpoch(f.lastRequested), QLocale::ShortFormat)
                 : QString();
+        case ColEd3kKey:
+            return ed3kKeyText(f.ed3kKey);
         default: break;
         }
     }
@@ -235,6 +238,7 @@ QVariant SharedFilesModel::data(const QModelIndex& index, int role) const
         case ColRatio:           return shareRatio(f.allTimeTransferred, f.fileSize);
         case ColSessionRatio:    return shareRatio(f.transferred, f.fileSize);
         case ColLastRequest:     return QVariant::fromValue(f.lastRequested);
+        case ColEd3kKey:         return f.ed3kKey;
         default: break;
         }
     }
@@ -332,6 +336,7 @@ QVariant SharedFilesModel::headerData(int section, Qt::Orientation orientation, 
     case ColRatio:           return tr("Ratio");
     case ColSessionRatio:    return tr("Session Ratio");
     case ColLastRequest:     return tr("Last Request");
+    case ColEd3kKey:         return tr("ed3k Key");
     default:                 return {};
     }
 }

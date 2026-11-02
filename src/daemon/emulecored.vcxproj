@@ -204,9 +204,12 @@
     <ClCompile Include="Ed3kSetsBridge.cpp" />
     <ClCompile Include="Ed3kPaidBridge.cpp" />
     <ClCompile Include="Ed3kPaidSellerBridge.cpp" />
+    <ClCompile Include="Ed3kOwnSetsBridge.cpp" />
     <ClCompile Include="Ed3kFiltersBridge.cpp" />
     <ClCompile Include="Ed3kUploadsBridge.cpp" />
+    <ClCompile Include="Ed3kHideBridge.cpp" />
     <ClCompile Include="Ed3kHosterBridge.cpp" />
+    <ClCompile Include="Ed3kLinksBridge.cpp" />
     <ClCompile Include="UsenetBridge.cpp" />
     <ClCompile Include="BandwidthCoordinator.cpp" />
     <ClCompile Include="WinShutdownHandler.cpp" />
@@ -225,6 +228,7 @@
     <QtMoc Include="PowerManager.h" />
     <ClInclude Include="DaemonApiBackend.h" />
     <ClInclude Include="Ed3kHosterBridge.h" />
+    <ClInclude Include="Ed3kLinksBridge.h" />
     <ClInclude Include="DaemonTorrentWebBackend.h" />
     <ClInclude Include="DaemonUsenetWebBackend.h" />
     <ClInclude Include="SharedFileRows.h" />
@@ -241,8 +245,10 @@
     <ClInclude Include="Ed3kSetsBridge.h" />
     <ClInclude Include="Ed3kPaidBridge.h" />
     <ClInclude Include="Ed3kPaidSellerBridge.h" />
+    <ClInclude Include="Ed3kOwnSetsBridge.h" />
     <ClInclude Include="Ed3kFiltersBridge.h" />
     <ClInclude Include="Ed3kUploadsBridge.h" />
+    <ClInclude Include="Ed3kHideBridge.h" />
     <ClInclude Include="UsenetBridge.h" />
     <ClInclude Include="BandwidthCoordinator.h" />
   </ItemGroup>

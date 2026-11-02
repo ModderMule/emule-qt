@@ -9,6 +9,7 @@
 
 #ifdef EMULE_HAVE_ED3K
 #include "Ed3kLiveBroadcast.h"
+#include "Ed3kOwnSets.h"
 #include "Ed3kPaidSeller.h"
 
 #include <QObject>
@@ -24,6 +25,8 @@ namespace {
 #ifdef EMULE_HAVE_ED3K
 ed3k::Ed3kPaidSeller* s_seller = nullptr;
 ed3k::Ed3kLiveBroadcast* s_broadcast = nullptr;
+/// My ed3k Sets (batch 15): SellEd3k kind 2 with an own set's id
+ed3k::Ed3kOwnSets* s_ownSets = nullptr;
 #endif
 
 IpcMessage failure(int seqId, const QString& error)
@@ -104,6 +107,9 @@ QCborMap toCbor(const ed3k::Ed3kPaidSeller::Info& i)
     m.insert(QStringLiteral("ownUntil"), qint64(i.ownUntil));
     m.insert(QStringLiteral("running"), i.onEngine);
     m.insert(QStringLiteral("issued"), issued);
+    // live.md §10: a private channel's link carries `s` (a credential: never logged)
+    m.insert(QStringLiteral("private"), i.isPrivate);
+    m.insert(QStringLiteral("stopped"), i.stopped);
     return m;
 }
 
@@ -125,8 +131,14 @@ void answer(const IpcMessage& msg, const std::function<void(const IpcMessage&)>&
         if (kind == int(ed3k::Ed3kPaidSeller::Kind::Channel)) {
             r = s_broadcast ? seller.sellBroadcast(*s_broadcast, target, terms) : std::unexpected(QCoreApplication::translate("eMule::Ed3kPaidSellerBridge", "Live streams are not available."));
         } else if (kind == int(ed3k::Ed3kPaidSeller::Kind::Set)) {
-            // ToDo (Ed3kPaidSeller.h): a set of the user's own; a new one only for now
-            r = target.isEmpty() ? seller.newSet(title, terms) : seller.setTerms(target, terms);
+            // was: ToDo (Ed3kPaidSeller.h): a set of the user's own; a new one only for now
+            // (done, batch 15: target an own set's id sells that set, Ed3kOwnSets::sell: its key
+            // the publisher, its members sealed in its next version)
+            // r = target.isEmpty() ? seller.newSet(title, terms) : seller.setTerms(target, terms);
+            if (s_ownSets && !target.isEmpty() && s_ownSets->has(target))
+                r = s_ownSets->sell(target, terms);
+            else
+                r = target.isEmpty() ? seller.newSet(title, terms) : seller.setTerms(target, terms);
         }
         if (!r) {
             reply(failure(seq, r.error()));
@@ -150,10 +162,31 @@ void answer(const IpcMessage& msg, const std::function<void(const IpcMessage&)>&
             }
         }
         // a voucher's link is a credential: in this answer only, never logged
-        if (auto r = seller.issuePass(scopes, holder, std::uint64_t(std::max<qint64>(msg.fieldInt(2), 0)), msg.fieldString(3)))
-            ok(QCborMap{{QStringLiteral("link"), *r}, {QStringLiteral("voucher"), !holder.has_value()}});
-        else
+        // if (auto r = seller.issuePass(...))
+        //     ok(QCborMap{{QStringLiteral("link"), *r}, {QStringLiteral("voucher"), !holder.has_value()}});
+        auto r = seller.issuePass(scopes, holder, std::uint64_t(std::max<qint64>(msg.fieldInt(2), 0)), msg.fieldString(3));
+        if (!r) {
             reply(failure(seq, r.error()));
+            break;
+        }
+        // live.md §10: a private channel needs its link too (with `s`, a credential)
+        QCborArray channelLinks;
+        for (const QString& sc : scopes)
+            if (const auto i = seller.info(sc); i && i->isPrivate)
+                if (const QString link = seller.saleLink(sc); !link.isEmpty() && !channelLinks.contains(link))
+                    channelLinks.append(link);
+        ok(QCborMap{{QStringLiteral("link"), *r}, {QStringLiteral("voucher"), !holder.has_value()}, {QStringLiteral("channelLinks"), channelLinks}});
+        break;
+    }
+    case IpcMsgType::GetEd3kSaleLink: {
+        // a private channel's link is a credential: in this answer only, never logged
+        const QString scope = msg.fieldString(0);
+        const auto i = seller.info(scope);
+        if (!i) {
+            reply(failure(seq, QCoreApplication::translate("eMule::Ed3kPaidSellerBridge", "This scope is not sold here.")));
+            break;
+        }
+        ok(QCborMap{{QStringLiteral("link"), seller.saleLink(scope)}, {QStringLiteral("private"), i->isPrivate}});
         break;
     }
     case IpcMsgType::Ed3kSellControl: {
@@ -181,6 +214,20 @@ void answer(const IpcMessage& msg, const std::function<void(const IpcMessage&)>&
             seller.setDefaults(termsOf(msg.fieldMap(2), seller.defaults()));
             ok();
             break;
+        case 4:
+            // §3 (#15): stop selling (an offer without price and shop URLs)
+            if (auto r = seller.stopSale(scope))
+                ok();
+            else
+                reply(failure(seq, r.error()));
+            break;
+        case 5:
+            // sold again with its terms: same t0 and period
+            if (auto r = seller.resumeSale(scope))
+                ok();
+            else
+                reply(failure(seq, r.error()));
+            break;
         default:
             reply(failure(seq, QCoreApplication::translate("eMule::Ed3kPaidSellerBridge", "Unknown action.")));
             break;
@@ -207,10 +254,19 @@ void setSeller(ed3k::Ed3kPaidSeller* seller, ed3k::Ed3kLiveBroadcast* broadcast)
 #endif
 }
 
+void setOwnSets(ed3k::Ed3kOwnSets* sets)
+{
+#ifdef EMULE_HAVE_ED3K
+    s_ownSets = sets;
+#else
+    (void)sets;
+#endif
+}
+
 bool isSellerRequest(IpcMsgType type)
 {
     return type == IpcMsgType::GetEd3kSelling || type == IpcMsgType::SellEd3k || type == IpcMsgType::IssueEd3kPass
-           || type == IpcMsgType::Ed3kSellControl;
+           || type == IpcMsgType::Ed3kSellControl || type == IpcMsgType::GetEd3kSaleLink;
 }
 
 bool handleRequest(const IpcMessage& msg, const std::function<void(const IpcMessage&)>& reply)

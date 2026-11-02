@@ -33,6 +33,7 @@
 #include <QTreeWidget>
 #include <QTreeWidgetItemIterator>
 #include <QUrl>
+#include <QUrlQuery>
 #include <QVBoxLayout>
 
 #include <map>
@@ -55,8 +56,12 @@ constexpr int kPathRole = Qt::UserRole + 1;
 constexpr int kIdRole = Qt::UserRole + 2;
 constexpr int kLinkRole = Qt::UserRole + 3;
 constexpr int kScopeRole = Qt::UserRole + 4;
-/// a broadcast of ours: 1 open (may be sold), 2 sold (paid), 0 none or private
+/// a broadcast of ours: 1 open (may be sold), 2 sold (paid), 0 none (was: or private)
 constexpr int kSellRole = Qt::UserRole + 20;
+/// a broadcast of ours is private (live.md §10: its link is a credential)
+constexpr int kPrivateRole = Qt::UserRole + 21;
+/// a channel of ours (its id hex), on air or not: Delete Channel… (batch 15 #5)
+constexpr int kChannelRole = Qt::UserRole + 22;
 
 QTreeWidget* makeList(const QStringList& headers, QWidget* parent)
 {
@@ -177,6 +182,9 @@ Ed3kSetsDialog::Ed3kSetsDialog(IpcClient* ipc, QWidget* parent)
     m_leave = button(tr("Stop"), livePage);
     m_broadcast = button(tr("Broadcast..."), livePage);
     m_copyLink = button(tr("Copy Link"), livePage);
+    m_deleteChannel = button(tr("Delete Channel..."), livePage);
+    m_deleteChannel->setObjectName(QStringLiteral("ed3kDeleteChannel"));
+    m_deleteChannel->setToolTip(tr("Deletes this channel of yours: its channel file is no longer shared, its link stops working."));
     m_sell = button(tr("Sell..."), livePage);
     m_sell->setToolTip(tr("Sells this channel as a paid subscription: every segment is sealed, viewers need a pass."));
     m_liveBuy = button(tr("Buy Pass..."), livePage);
@@ -188,6 +196,7 @@ Ed3kSetsDialog::Ed3kSetsDialog(IpcClient* ipc, QWidget* parent)
     liveSide->addWidget(m_broadcast);
     liveSide->addWidget(m_copyLink);
     liveSide->addWidget(m_sell);
+    liveSide->addWidget(m_deleteChannel);
     liveSide->addSpacing(12);
     liveSide->addWidget(m_liveBuy);
     liveSide->addStretch(1);
@@ -212,6 +221,7 @@ Ed3kSetsDialog::Ed3kSetsDialog(IpcClient* ipc, QWidget* parent)
     connect(m_broadcast, &QPushButton::clicked, this, &Ed3kSetsDialog::broadcast);
     connect(m_copyLink, &QPushButton::clicked, this, &Ed3kSetsDialog::copyLink);
     connect(m_sell, &QPushButton::clicked, this, &Ed3kSetsDialog::sellChannel);
+    connect(m_deleteChannel, &QPushButton::clicked, this, &Ed3kSetsDialog::deleteChannel);
     connect(m_buy, &QPushButton::clicked, this, &Ed3kSetsDialog::buyPass);
     connect(m_enterPass, &QPushButton::clicked, this, [this] { enterPass(this, m_ipc); });
     connect(m_liveBuy, &QPushButton::clicked, this, [this] { paidAction(currentLivePaid()); });
@@ -223,6 +233,10 @@ Ed3kSetsDialog::Ed3kSetsDialog(IpcClient* ipc, QWidget* parent)
         connect(m_ipc, &IpcClient::ed3kSetsChanged, this, [this](const IpcMessage& msg) { fillSets(msg.fieldMap(0)); });
         connect(m_ipc, &IpcClient::ed3kLiveChanged, this, [this](const IpcMessage& msg) { fillLive(msg.fieldMap(0)); });
         connect(m_ipc, &IpcClient::ed3kPaidChanged, this, [this](const IpcMessage& msg) { fillPaid(msg.fieldMap(0)); });
+        connect(m_ipc, &IpcClient::ed3kSellingChanged, this, [this](const IpcMessage& msg) {
+            m_saleRows = msg.fieldMap(0).value(QStringLiteral("sales")).toArray();
+            updateButtons();
+        });
         connect(m_ipc, &IpcClient::ed3kPaidAnonWarn, this,
                 [this](const IpcMessage& msg) { onAnonWarn(msg.fieldString(0), msg.fieldString(1)); });
         connect(m_ipc, &IpcClient::connected, this, &Ed3kSetsDialog::refresh);
@@ -330,12 +344,31 @@ void Ed3kSetsDialog::fillLive(const QCborMap& live)
             item->setText(LiveReceived, formatByteSize(s.value(QStringLiteral("bytes")).toInteger()));
             item->setText(LiveViewers, QStringLiteral("-"));
             const bool sold = s.value(QStringLiteral("paid")).toBool();
-            item->setData(LiveName, kSellRole, s.value(QStringLiteral("private")).toBool() ? 0 : sold ? 2 : 1);
+            // item->setData(LiveName, kSellRole, s.value(QStringLiteral("private")).toBool() ? 0 : sold ? 2 : 1);
+            // batch 15: a private channel is sold too (subscription.md §7)
+            const bool isPrivate = s.value(QStringLiteral("private")).toBool();
+            item->setData(LiveName, kSellRole, sold ? 2 : 1);
+            item->setData(LiveName, kPrivateRole, isPrivate);
+            item->setData(LiveName, kChannelRole, s.value(QStringLiteral("channel")).toString());
+            if (isPrivate)
+                item->setText(LiveState, item->text(LiveState) + tr(", private"));
             if (sold)
                 item->setText(LiveState, item->text(LiveState) + tr(", paid"));
         }
         if (id == keep)
             m_live->setCurrentItem(item);
+    }
+    // batch 15 (#5): our channels off air (their channel files stay shared, §1.2)
+    for (const auto& v : live.value(QStringLiteral("channels")).toArray()) {
+        const QCborMap c = v.toMap();
+        if (!c.value(QStringLiteral("stream")).toString().isEmpty())
+            continue;   // on air: its broadcast row above
+        auto* item = new QTreeWidgetItem(m_live);
+        item->setData(LiveName, kChannelRole, c.value(QStringLiteral("channel")).toString());
+        item->setText(LiveName, c.value(QStringLiteral("title")).toString());
+        item->setText(LiveState, c.value(QStringLiteral("private")).toBool() ? tr("Off air, private") : tr("Off air"));
+        for (int col : {LivePeers, LiveSegments, LiveReceived, LiveViewers})
+            item->setText(col, QStringLiteral("-"));
     }
     if (!m_live->currentItem() && m_live->topLevelItemCount() > 0)
         m_live->setCurrentItem(m_live->topLevelItem(0));
@@ -405,6 +438,8 @@ QString Ed3kSetsDialog::paidStateText(int state)
     case 4: return tr("No pass came");
     case 5: return tr("Waiting for your answer");
     case 6: return tr("Pass waits for your answer");
+    case 7: return tr("Pass not checked yet");
+    case 8: return tr("Pass not valid here");
     default: return {};
     }
 }
@@ -488,6 +523,12 @@ void Ed3kSetsDialog::refresh()
     m_ipc->requestEd3kPaid(this, [self = QPointer(this)](const IpcMessage& r) {
         if (self && r.fieldBool(0))
             self->fillPaid(r.fieldMap(1));
+    });
+    m_ipc->sendRequest(IpcMessage(IpcMsgType::GetEd3kSelling), [self = QPointer(this)](const IpcMessage& r) {
+        if (!self || !r.fieldBool(0))
+            return;
+        self->m_saleRows = r.fieldMap(1).value(QStringLiteral("sales")).toArray();
+        self->updateButtons();
     });
 }
 
@@ -603,12 +644,23 @@ void Ed3kSetsDialog::updateButtons()
     m_buy->setVisible(!paid.isEmpty());
     // m_buy->setEnabled(connected && paid.value(QStringLiteral("hasOffer")).toBool() && paidState != 1 && paidState != 5
     //                   && !(paidState == 2 && paid.value(QStringLiteral("until")).toInteger() > QDateTime::currentSecsSinceEpoch()));
-    m_buy->setText(paidState == 6 ? tr("Use Pass...") : tr("Buy Pass..."));
+    // m_buy->setText(paidState == 6 ? tr("Use Pass...") : tr("Buy Pass..."));
+    const auto actionText = [this](const QCborMap& p) {
+        const int st = int(p.value(QStringLiteral("state")).toInteger());
+        if (st == 6)
+            return tr("Use Pass...");
+        // §9.2 (#11): a pass by hand is renewed on the user's word
+        if (st == 2 && p.value(QStringLiteral("byHand")).toBool() && p.value(QStringLiteral("renewable")).toBool())
+            return tr("Renew Pass Now");
+        return tr("Buy Pass...");
+    };
+    m_buy->setText(actionText(paid));
     m_buy->setEnabled(paidActionEnabled(paid, connected));
     m_enterPass->setEnabled(connected);
     const QCborMap livePaid = currentLivePaid();
     m_liveBuy->setVisible(!livePaid.isEmpty());
-    m_liveBuy->setText(livePaid.value(QStringLiteral("state")).toInteger() == 6 ? tr("Use Pass...") : tr("Buy Pass..."));
+    // m_liveBuy->setText(livePaid.value(QStringLiteral("state")).toInteger() == 6 ? tr("Use Pass...") : tr("Buy Pass..."));
+    m_liveBuy->setText(actionText(livePaid));
     m_liveBuy->setEnabled(paidActionEnabled(livePaid, connected));
     m_reports->setVisible(!m_paidRows.isEmpty());
     m_reports->setEnabled(connected);
@@ -621,7 +673,14 @@ void Ed3kSetsDialog::updateButtons()
                        && !m_live->currentItem()->data(LiveName, kPathRole).toString().isEmpty());
     m_broadcast->setEnabled(connected);
     m_copyLink->setEnabled(stream && m_live->currentItem() && !m_live->currentItem()->data(LiveName, kLinkRole).toString().isEmpty());
-    m_sell->setEnabled(connected && stream && m_live->currentItem() && m_live->currentItem()->data(LiveName, kSellRole).toInt() == 1);
+    // m_sell->setEnabled(connected && stream && m_live->currentItem() && m_live->currentItem()->data(LiveName, kSellRole).toInt() == 1);
+    // a channel sold: Stop Selling / Resume Selling (#15)
+    const int sellRole = stream && m_live->currentItem() ? m_live->currentItem()->data(LiveName, kSellRole).toInt() : 0;
+    const QCborMap sale = sellRole == 2 ? saleOfLink(m_live->currentItem()->data(LiveName, kLinkRole).toString()) : QCborMap{};
+    m_sell->setText(sellRole != 2 ? tr("Sell...") : sale.value(QStringLiteral("stopped")).toBool() ? tr("Resume Selling") : tr("Stop Selling"));
+    m_sell->setEnabled(connected && (sellRole == 1 || (sellRole == 2 && !sale.isEmpty())));
+    m_deleteChannel->setEnabled(connected && m_live->currentItem()
+                                && !m_live->currentItem()->data(LiveName, kChannelRole).toString().isEmpty());
 }
 
 QCborMap Ed3kSetsDialog::currentSet() const
@@ -824,6 +883,31 @@ void Ed3kSetsDialog::broadcast()
                              });
 }
 
+void Ed3kSetsDialog::deleteChannel()
+{
+    const QTreeWidgetItem* item = m_live->currentItem();
+    const QString channel = item ? item->data(LiveName, kChannelRole).toString() : QString();
+    if (channel.isEmpty() || !m_ipc)
+        return;
+    if (QMessageBox::question(this, tr("Delete Channel"),
+                              tr("Delete the channel \"%1\"?\n\nIt goes off air, its channel file is no longer shared and "
+                                 "its link stops working for good.")
+                                  .arg(item->text(LiveName)),
+                              QMessageBox::Yes | QMessageBox::No, QMessageBox::No)
+        != QMessageBox::Yes)
+        return;
+    IpcMessage req(IpcMsgType::LeaveEd3kLive);
+    req.append(channel);
+    req.append(true);
+    m_ipc->sendRequest(std::move(req), [self = QPointer(this)](const IpcMessage& a) {
+        if (!self)
+            return;
+        if (!a.fieldBool(0))
+            self->showError(tr("The channel could not be deleted."), a.fieldMap(1));
+        self->refresh();
+    });
+}
+
 void Ed3kSetsDialog::copyLink()
 {
     const QTreeWidgetItem* item = m_live->currentItem();
@@ -838,11 +922,39 @@ void Ed3kSetsDialog::sellChannel()
     if (id.isEmpty() || !item || !m_ipc)
         return;
     const QString title = item->text(LiveName);
+    const bool isPrivate = item->data(LiveName, kPrivateRole).toBool();
+    if (item->data(LiveName, kSellRole).toInt() == 2) {
+        // §3 (#15): stop selling (a newer offer without price and shop) or sell again
+        const QCborMap sale = saleOfLink(item->data(LiveName, kLinkRole).toString());
+        if (sale.isEmpty())
+            return;
+        const bool stopped = sale.value(QStringLiteral("stopped")).toBool();
+        if (!stopped
+            && QMessageBox::question(this, tr("Stop Selling"),
+                                     tr("Stop selling \"%1\"?\n\nViewers see it is no longer sold; passes held still work until "
+                                        "they end. The channel stays paid on air.")
+                                         .arg(title))
+                   != QMessageBox::Yes)
+            return;
+        IpcMessage req(IpcMsgType::Ed3kSellControl);
+        req.append(qint64(stopped ? 5 : 4));
+        req.append(sale.value(QStringLiteral("scope")).toString());
+        req.append(QCborMap{});
+        m_ipc->sendRequest(std::move(req), [self = QPointer(this), stopped](const IpcMessage& a) {
+            if (self && !a.fieldBool(0))
+                self->showError(stopped ? tr("It could not be sold again.") : tr("The sale could not be stopped."), a.fieldMap(1));
+        });
+        return;
+    }
     // the defaults of a new offer first (GetEd3kSelling), then the terms, then SellEd3k
-    m_ipc->sendRequest(IpcMessage(IpcMsgType::GetEd3kSelling), [self = QPointer(this), id, title](const IpcMessage& r) {
+    m_ipc->sendRequest(IpcMessage(IpcMsgType::GetEd3kSelling), [self = QPointer(this), id, title, isPrivate](const IpcMessage& r) {
         if (!self || !self->m_ipc)
             return;
-        const QCborMap defaults = r.fieldBool(0) ? r.fieldMap(1).value(QStringLiteral("defaults")).toMap() : QCborMap{};
+        // const QCborMap defaults = r.fieldBool(0) ? r.fieldMap(1).value(QStringLiteral("defaults")).toMap() : QCborMap{};
+        QCborMap defaults = r.fieldBool(0) ? r.fieldMap(1).value(QStringLiteral("defaults")).toMap() : QCborMap{};
+        // a private channel: the note on Ed3k-Offer in the terms dialog
+        if (isPrivate)
+            defaults.insert(QStringLiteral("private"), true);
         const auto terms = Ed3kSellTermsDialog::ask(self, Ed3kSellTermsDialog::Mode::NewChannel, defaults, tr("Sell \"%1\"").arg(title));
         if (!terms)
             return;
@@ -851,7 +963,7 @@ void Ed3kSetsDialog::sellChannel()
         req.append(id);
         req.append(title);
         req.append(*terms);
-        self->m_ipc->sendRequest(std::move(req), [self](const IpcMessage& a) {
+        self->m_ipc->sendRequest(std::move(req), [self, isPrivate](const IpcMessage& a) {
             if (!self)
                 return;
             if (!a.fieldBool(0)) {
@@ -860,12 +972,59 @@ void Ed3kSetsDialog::sellChannel()
             }
             const QString link = a.fieldMap(1).value(QStringLiteral("link")).toString();
             QApplication::clipboard()->setText(link);
-            QMessageBox::information(self, tr("ed3k Live Stream"),
-                                     tr("The channel is on air as a paid one now; viewers need a pass. Issue passes in "
-                                        "Options → ed3k → Selling. The link was copied to the clipboard:\n%1")
-                                         .arg(link));
+            // live.md §10: a private link is a credential: not shown, marked private
+            if (isPrivate)
+                QMessageBox::information(self, tr("ed3k Live Stream"),
+                                         tr("The private channel is on air as a paid one now; viewers need a pass and its "
+                                            "private link. Issue passes in Options → ed3k → Selling. The private link was "
+                                            "copied to the clipboard: give it to buyers only."));
+            else
+                QMessageBox::information(self, tr("ed3k Live Stream"),
+                                         tr("The channel is on air as a paid one now; viewers need a pass. Issue passes in "
+                                            "Options → ed3k → Selling. The link was copied to the clipboard:\n%1")
+                                             .arg(link));
             self->refresh();
         });
+    });
+}
+
+QCborMap Ed3kSetsDialog::saleOfLink(const QString& link) const
+{
+    // ed3k:live?key=…&id=…: the channel key and id name the sale
+    const auto keyId = [](const QString& l) {
+        const qsizetype q = l.indexOf(QLatin1Char('?'));
+        const QUrlQuery query(q < 0 ? QString() : l.mid(q + 1));
+        return std::pair{query.queryItemValue(QStringLiteral("key")), query.queryItemValue(QStringLiteral("id"))};
+    };
+    const auto want = keyId(link);
+    if (want.first.isEmpty() || want.second.isEmpty())
+        return {};
+    for (const auto& v : m_saleRows) {
+        const QCborMap sale = v.toMap();
+        if (sale.value(QStringLiteral("kind")).toInteger() == 1 && keyId(sale.value(QStringLiteral("link")).toString()) == want)
+            return sale;
+    }
+    return {};
+}
+
+void Ed3kSetsDialog::renewPass(const QCborMap& p)
+{
+    if (p.isEmpty() || !m_ipc)
+        return;
+    // §9.2: polling the seller's pass address shows an address of this computer to the seller
+    if (QMessageBox::question(this, tr("Renew ed3k Pass"),
+                              tr("Ask the seller of \"%1\" for a renewed pass now? The seller's pass address is asked over "
+                                 "the web and sees an address of this computer.")
+                                  .arg(p.value(QStringLiteral("title")).toString()))
+        != QMessageBox::Yes)
+        return;
+    IpcMessage req(IpcMsgType::BuyEd3kPass);
+    req.append(p.value(QStringLiteral("scope")).toString());
+    req.append(p.value(QStringLiteral("anon")).toBool());
+    req.append(true);
+    m_ipc->sendRequest(std::move(req), [self = QPointer(this)](const IpcMessage& r) {
+        if (self && !r.fieldBool(0))
+            self->showError(tr("The pass could not be renewed."), r.fieldMap(1));
     });
 }
 
@@ -882,6 +1041,11 @@ void Ed3kSetsDialog::paidAction(const QCborMap& p)
     if (p.value(QStringLiteral("state")).toInteger() == 6) {
         askPassScopes(this, m_ipc, p.value(QStringLiteral("scope")).toString(), p.value(QStringLiteral("title")).toString(),
                       int(p.value(QStringLiteral("passScopes")).toInteger(2)) - 1);
+        return;
+    }
+    if (p.value(QStringLiteral("state")).toInteger() == 2 && p.value(QStringLiteral("byHand")).toBool()
+        && p.value(QStringLiteral("renewable")).toBool()) {
+        renewPass(p);
         return;
     }
     buyPassFor(p);
@@ -964,8 +1128,14 @@ bool Ed3kSetsDialog::paidActionEnabled(const QCborMap& p, bool connected) const
     const int state = int(p.value(QStringLiteral("state")).toInteger());
     if (state == 6)
         return true;
-    return p.value(QStringLiteral("hasOffer")).toBool() && state != 1 && state != 5
-           && !(state == 2 && p.value(QStringLiteral("until")).toInteger() > QDateTime::currentSecsSinceEpoch());
+    // §9.2 (#11): a pass by hand: Renew Pass Now
+    if (state == 2 && p.value(QStringLiteral("byHand")).toBool() && p.value(QStringLiteral("renewable")).toBool())
+        return true;
+    // return p.value(QStringLiteral("hasOffer")).toBool() && state != 1 && state != 5
+    //        && !(state == 2 && p.value(QStringLiteral("until")).toInteger() > QDateTime::currentSecsSinceEpoch());
+    // #15: an offer without price is no longer sold; 7: a pass waits for its check
+    return p.value(QStringLiteral("hasOffer")).toBool() && !p.value(QStringLiteral("price")).toString().isEmpty() && state != 1 && state != 5
+           && state != 7 && !(state == 2 && p.value(QStringLiteral("until")).toInteger() > QDateTime::currentSecsSinceEpoch());
 }
 
 QCborMap Ed3kSetsDialog::currentLivePaid() const
@@ -991,7 +1161,10 @@ QStringList Ed3kSetsDialog::paidLines(const QCborMap& p) const
     if (p.isEmpty())
         return {};
     QStringList lines;
-    if (p.value(QStringLiteral("hasOffer")).toBool())
+    // if (p.value(QStringLiteral("hasOffer")).toBool())
+    if (p.value(QStringLiteral("hasOffer")).toBool() && p.value(QStringLiteral("price")).toString().isEmpty())
+        lines << tr("Paid; no longer sold. A pass held works until it ends.");   // §3: a stopped sale
+    else if (p.value(QStringLiteral("hasOffer")).toBool())
         lines << tr("Paid: %1").arg(p.value(QStringLiteral("price")).toString());
     else
         lines << tr("Paid; the price is not known yet.");
@@ -1004,6 +1177,13 @@ QStringList Ed3kSetsDialog::paidLines(const QCborMap& p) const
             lines << tr("The seller does not renew it.");
         else if (p.value(QStringLiteral("renewing")).toBool())
             lines << tr("Renewed from the seller in its last 48 hours.");
+        else if (p.value(QStringLiteral("byHand")).toBool())
+            lines << tr("A pass by hand: renewed only when you ask.");
+    } else if (state == 7) {
+        // §9.3: the scope's publisher (or the offer of the pass's issuer) is not known yet
+        lines << tr("A pass is held; it is checked for this subscription once its offer is known.");
+    } else if (state == 8) {
+        lines << tr("The pass held is not valid for this subscription.");
     } else if (state == 2) {
         lines << tr("The pass ended on %1; what it opened stays open.").arg(end);
     } else if (state == 6) {

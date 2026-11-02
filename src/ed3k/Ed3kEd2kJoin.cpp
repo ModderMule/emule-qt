@@ -243,7 +243,8 @@ std::optional<Ed3kEd2kJoin::FileInfo> Ed3kEd2kJoin::infoOf(const QByteArray& md4
     if (it == m_files.end())
         return std::nullopt;
     const File& f = it->second;
-    FileInfo i{.root = f.root, .pair = f.pair, .searching = f.searching && !f.root, .bytes = f.bytes};
+    // was: FileInfo i{.root = f.root, .pair = f.pair, .searching = f.searching && !f.root, .bytes = f.bytes};
+    FileInfo i{.root = f.root, .pair = f.pair, .searching = f.searching && !f.root, .bytes = f.bytes, .size = f.size};
     if (f.root) {
         if (const Download* d = downloadOf(*f.root)) {
             i.sources = int(d->streams.size());
@@ -473,7 +474,9 @@ PartFile* Ed3kEd2kJoin::partFile(const QByteArray& md4) const
 
 bool Ed3kEd2kJoin::eligible(const PartFile* f)
 {
-    if (!f || f->isStopped() || f->isPaused() || uint64(f->fileSize()) == 0)
+    // a size in doubt (wrong-download-size.md): no md4 ‖ size to look up until corrected
+    // was: if (!f || f->isStopped() || f->isPaused() || uint64(f->fileSize()) == 0)
+    if (!f || f->isStopped() || f->isPaused() || uint64(f->fileSize()) == 0 || f->isSizeContradicted())
         return false;
     const auto st = f->status();
     return st != PartFileStatus::Complete && st != PartFileStatus::Completing && st != PartFileStatus::Error;
@@ -504,6 +507,13 @@ Ed3kEd2kJoin::File* Ed3kEd2kJoin::ensureFile(PartFile& pf)
     if (!m_started || !eligible(&pf))
         return nullptr;
     const QByteArray md4(reinterpret_cast<const char*>(pf.fileHash()), 16);
+    // size corrected (PartFile::applyCorrectedSize): alias id and candidates were for the
+    // old size, so start over under the new md4 ‖ size
+    if (const auto old = m_files.find(md4); old != m_files.end() && old->second.size != uint64(pf.fileSize())) {
+        logInfo(QStringLiteral("\"%1\": size changed from %2 to %3 bytes, ed3k looked up again")
+                    .arg(old->second.name).arg(old->second.size).arg(uint64(pf.fileSize())));
+        forget(md4);
+    }
     auto [it, added] = m_files.try_emplace(md4);
     File& f = it->second;
     if (added) {

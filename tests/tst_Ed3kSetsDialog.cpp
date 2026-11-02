@@ -178,6 +178,22 @@ void tst_Ed3kSetsDialog::aPaidSetAndAWaitingMount()
     dlg.fillLive(QCborMap{{QStringLiteral("streams"), QCborArray{b}}});
     auto* live = dlg.findChild<QTreeWidget*>(QStringLiteral("ed3kLive"));
     QCOMPARE(live->topLevelItem(0)->text(1), QStringLiteral("On air"));
+    // batch 15 (#5): our channels off air are listed too (their files stay shared); Delete Channel
+    QCborMap onAir = b;
+    onAir.insert(QStringLiteral("channel"), QString(32, QLatin1Char('1')));
+    const QCborArray channels{QCborMap{{QStringLiteral("channel"), QString(32, QLatin1Char('1'))}, {QStringLiteral("title"), QStringLiteral("My TV")},
+                                       {QStringLiteral("stream"), QString(32, QLatin1Char('d'))}},
+                              QCborMap{{QStringLiteral("channel"), QString(32, QLatin1Char('2'))}, {QStringLiteral("title"), QStringLiteral("Old TV")},
+                                       {QStringLiteral("stream"), QString()}, {QStringLiteral("private"), false}}};
+    dlg.fillLive(QCborMap{{QStringLiteral("streams"), QCborArray{onAir}}, {QStringLiteral("channels"), channels}});
+    QCOMPARE(live->topLevelItemCount(), 2);
+    QCOMPARE(live->topLevelItem(1)->text(0), QStringLiteral("Old TV"));
+    QCOMPARE(live->topLevelItem(1)->text(1), QStringLiteral("Off air"));
+    auto* del = dlg.findChild<QPushButton*>(QStringLiteral("ed3kDeleteChannel"));
+    QVERIFY(del);
+    live->setCurrentItem(live->topLevelItem(1));
+    QVERIFY(!del->isEnabled());   // no core here
+    dlg.fillLive(QCborMap{{QStringLiteral("streams"), QCborArray{b}}});
 
     // batch 14, subscription.md §5.1: a pass of several scopes waits: "Use Pass...", the info says why
     auto* enter = dlg.findChild<QPushButton*>(QStringLiteral("ed3kEnterPass"));

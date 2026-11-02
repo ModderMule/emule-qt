@@ -222,6 +222,11 @@ using Kind = PrefSpec::Kind;
     t << advanced(text("ed3kExtOff", 1024, "Optional ed3k extensions turned off (names of their documents, e.g. "
                                            "lan-discovery chat, separated by spaces). Restarts the node."));
     t << flag("ed3kLan", "Find ed3k nodes in the local network (LAN discovery). Restarts the node.");
+    t << flag("ed3kHide", "Hide this node (ed3k hops.md §1): new ed3k searches, downloads and shares go under the "
+                          "anonymous key, through paths of other nodes. Files keep the key they have.");
+    t << number("ed3kHops", 1, 3, "", "Hops of every path while hiding (1 = a relay that sees everything, not anonymity).");
+    t << flag("ed3kHopping", "While hiding, forward traffic for other hiding nodes (hops.md §5).");
+    t << number("ed3kHopShare", 1, 100, "%", "Share of the upload limit given to the paths of others.");
     t << advanced(number("ed3kSitePort", 1, 65535, "", "TCP port of the local ed3k website server (loopback only). "
                                                       "Part of every site's address: a change loses what sites stored."));
     t << advanced(text("ed3kNodeLists", 8192, "Node list sources for the first ed3k contact (ed3k:nodes?url=...&key=... "

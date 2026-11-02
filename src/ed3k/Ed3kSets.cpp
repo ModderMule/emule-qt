@@ -6,6 +6,7 @@
 #include "Ed3kDownloads.h"
 #include "Ed3kPaid.h"
 #include "Ed3kPlumbing.h"
+#include "Ed3kPlainCopies.h"
 #include "Ed3kSealedOpener.h"
 #include "Ed3kSession.h"
 #include "Ed3kStore.h"
@@ -79,8 +80,12 @@ Ed3kSets::Ed3kSets(Ed3kSession& session, Ed3kDownloads& downloads, const QString
     , m_downloads(downloads)
     , m_configDir(configDir)
     , m_opener(std::make_unique<Ed3kSealedOpener>())
+    , m_plain(std::make_unique<Ed3kPlainCopies>(configDir))
 {
     load();
+    // #12: plain copies opened before the registry existed are never shared either
+    for (auto& [id, s] : m_sets)
+        notePlainCopies(s);
     // a sealed member opened: the list shows it complete
     connect(m_opener.get(), &Ed3kSealedOpener::opened, this, [this](const QString&, bool) { markChanged(); });
     connect(&m_session, &Ed3kSession::eventPolled, this, &Ed3kSets::onEventPolled, Qt::DirectConnection);
@@ -1071,6 +1076,7 @@ void Ed3kSets::openSealed(Set& s)
     if (!s.applied)
         return;
     const QString dir = s.dir.isEmpty() ? setDir(s) : s.dir;
+    notePlainCopies(s);
     for (const Ed3kSetEntry& m : flatten(s, s.applied->file)) {
         if (m.isSet || !m.isSealed() || isSkipped(s.skipped, m.path))
             continue;
@@ -1131,7 +1137,27 @@ bool Ed3kSets::openMember(Set& s, const Ed3kSetEntry& m, const QString& sealedPa
     }
     const Secret key(*kData);
     wipe(std::span<std::uint8_t>{*kData});
+    // #12 MUST: never shared, known before the first byte is written
+    if (!m_opener->busy(local) && !QFileInfo::exists(local))
+        m_plain->add(local);
     return m_opener->open(sealedPath, local, key.expose());
+}
+
+void Ed3kSets::notePlainCopies(const Set& s)
+{
+    if (!s.applied)
+        return;
+    const QString dir = s.dir.isEmpty() ? setDir(s) : s.dir;
+    for (const Ed3kSetEntry& m : flatten(s, s.applied->file)) {
+        if (m.isSet || !m.isSealed() || m.size < 12)
+            continue;
+        // an opened one: the plain file (12 bytes less) next to its sealed file
+        const QString local = ed3kSetLocalPath(dir, m.path);
+        const QFileInfo plain(local);
+        const QFileInfo sealed(sealedPathOf(s, m));
+        if (!local.isEmpty() && plain.exists() && sealed.exists() && plain.size() == qint64(m.size - 12))
+            m_plain->add(local);
+    }
 }
 
 QString Ed3kSets::sealedPathOf(const Set& s, const Ed3kSetEntry& m) const

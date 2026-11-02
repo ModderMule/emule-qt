@@ -67,6 +67,7 @@ std::span<const std::byte> spanOf(const QByteArray& b)
 
 Ed3kSession::Ed3kSession(QObject* parent)
     : QObject(parent)
+    , m_hide(std::make_unique<Ed3kHide>(*this))
 {
     m_readPool.setMaxThreadCount(2);
     m_timer.setSingleShot(true);
@@ -243,6 +244,9 @@ bool Ed3kSession::start(const Ed3kSettings& settings)
     applyUploadSlots();
     m_logLevel = -1;
     applyLogLevel();
+    // hiding (hops.md §1): after hops.dat (loadState), live from the prefs
+    m_hide->attach();
+    applyHide();
 
     if (m_ownSocket)
         connect(m_ownSocket.get(), &QUdpSocket::readyRead, this, &Ed3kSession::onReadyRead);
@@ -285,6 +289,7 @@ void Ed3kSession::stop()
     m_socket.clear();
     m_engine.reset();
     m_port = 0;
+    m_hide->detach();
     logEd3k(QStringLiteral("ed3k node stopped"));
     emit statusChanged();
 }
@@ -353,7 +358,9 @@ Ed3kStatus Ed3kSession::status() const
         st.class4 = s->class4;
         st.class6 = s->class6;
         st.router = s->router != 0;
+        st.kadOffline = s->kad_offline;
     }
+    st.hide = m_hide->status();
     return st;
 }
 
@@ -462,7 +469,8 @@ void Ed3kSession::pump()
                 writeDatagram(reinterpret_cast<const char*>(buf.data()), qint64(dg.len), dg.to);
             }
             while (m_engine) {
-                auto ev = m_engine->pollEvent();
+                // was: auto ev = m_engine->pollEvent(); (drops which node had it)
+                auto ev = m_engine->pollKeyedEvent();
                 if (!ev) {
                     die(ev.error());
                     break;
@@ -470,7 +478,7 @@ void Ed3kSession::pump()
                 if (!*ev)
                     break;
                 busy = true;
-                dispatch(**ev);
+                dispatch((*ev)->event, (*ev)->key);
             }
             while (m_engine && !m_posted.empty()) {
                 auto cmds = std::move(m_posted);
@@ -553,9 +561,10 @@ void Ed3kSession::onTimer()
     pump();
 }
 
-void Ed3kSession::dispatch(ffi::Event& ev)
+void Ed3kSession::dispatch(ffi::Event& ev, ffi::KeyKind key)
 {
     namespace e = ffi::event;
+    m_eventKey = key;
     if (const auto* s = std::get_if<e::StateChanged>(&ev)) {
         switch (s->slot) {
         case ffi::State::BadBlocks:
@@ -615,10 +624,22 @@ void Ed3kSession::dispatch(ffi::Event& ev)
     } else if (const auto* r = std::get_if<e::Router>(&ev)) {
         logEd3kDebug(QStringLiteral("ed3k: router %1").arg(r->on ? 1 : 0));
         emit statusChanged();
+    } else if (const auto* ko = std::get_if<e::KadOffline>(&ev)) {
+        // Protocol.md §10 "Own network down": no store, no answer from Kad of that family
+        logEd3kKad(ko->offline ? QStringLiteral("ed3k: Kad (IPv%1) offline: own network down").arg(ko->family)
+                               : QStringLiteral("ed3k: Kad (IPv%1) online again").arg(ko->family));
+        emit statusChanged();
+    } else if (std::holds_alternative<e::HopsPathBuilt>(ev) || std::holds_alternative<e::HopsPathFailed>(ev)
+               || std::holds_alternative<e::HopsPathClosed>(ev)) {
+        m_hide->onEvent(ev);
     }
 
     bool handled = false;
-    emit eventPolled(ev, &handled);
+    emit keyedEventPolled(ev, key, &handled);
+    // a slot of eventPolled knows the node key only (hops.md §1: never mixed up)
+    if (key == ffi::KeyKind::Node)
+        emit eventPolled(ev, &handled);
+    m_eventKey = ffi::KeyKind::Node;
     if (!handled && m_engine)
         answerUnhandled(ev);
 }
@@ -655,6 +676,11 @@ void Ed3kSession::applyUploadSlots()
         return;
     if (auto ok = m_engine->queueAuto(now(), true, m_uploadSlots); !ok)
         logEd3kWarning(QStringLiteral("ed3k: upload queue not set (error %1)").arg(errorName(ok.error())));
+}
+
+void Ed3kSession::applyHide()
+{
+    m_hide->apply();
 }
 
 void Ed3kSession::applyLogLevel()
@@ -867,6 +893,7 @@ void Ed3kSession::die(ffi::Error error)
     m_trafficBase = traffic();   // if the dead engine still reads
     m_engine.reset();
     m_port = 0;
+    m_hide->detach();
     emit statusChanged();
 }
 

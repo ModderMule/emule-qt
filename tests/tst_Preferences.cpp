@@ -922,6 +922,33 @@ private slots:
             {{}, QStringLiteral("http://s0.example"), QStringLiteral("new"), {}, true}));
     }
 
+    // batch 15: ed3k:cache links hold an upload key (http-source.md §4.1): encrypted in the
+    // file, never over IPC
+    void ed3kCacheServers_roundTripEncrypted()
+    {
+        TempDir tmp;
+        const auto file = tmp.filePath(QStringLiteral("e3c.yaml"));
+        const QString key = QStringLiteral("upl0adk3y-0123456789");
+        const QStringList links{QStringLiteral("ed3k:cache?url=https%3A%2F%2Fc.example&key=%1&kid=main").arg(key)};
+        {
+            Preferences p1;
+            QVERIFY(p1.ed3kCacheServers().isEmpty());
+            p1.setEd3kCacheServers(links);
+            QVERIFY(p1.saveTo(file));
+        }
+        QFile f(file);
+        QVERIFY(f.open(QIODevice::ReadOnly));
+        const QByteArray raw = f.readAll();
+        QVERIFY2(!raw.contains(key.toUtf8()), "cache key written in the clear");
+        QVERIFY(raw.contains("cacheServersEnc"));
+        Preferences p2;
+        QVERIFY(p2.load(file));
+        QCOMPARE(p2.ed3kCacheServers(), links);
+        const QCborMap ipc = p2.toIpcMap();
+        for (auto it = ipc.constBegin(); it != ipc.constEnd(); ++it)
+            QVERIFY2(!it.value().toVariant().toString().contains(key), qPrintable(it.key().toString()));
+    }
+
     void httpCache_roundTripsAndEncryptsTheApiKey()
     {
         TempDir tmp;

@@ -5,10 +5,13 @@
 #include "dialogs/Ed3kOptionsPages.h"
 
 #include "app/Ed3kNameOpener.h"
+#include "app/Ed3kLinkActions.h"
 #include "app/IpcClient.h"
 #include "dialogs/Ed3kFilterPage.h"
+#include "dialogs/Ed3kHidingGroup.h"
 #include "dialogs/Ed3kSellPage.h"
 #include "dialogs/Ed3kStakeGroup.h"
+#include "dialogs/PortChangeNotice.h"
 #include "dialogs/PortTest.h"
 #include "dialogs/RouterPage.h"
 #include "prefs/Preferences.h"
@@ -203,6 +206,7 @@ void Ed3kOptionsPages::load(const QCborMap& p)
         requestCompatPlan();
     }
     m_lanCheck->setChecked(p.value(QStringLiteral("ed3kLan")).toBool(true));
+    m_hiding->load(p);
     m_sitePortSpin->setValue(int(p.value(QStringLiteral("ed3kSitePort")).toInteger(0)));
     m_nodeListsEdit->setPlainText(linesText(p.value(QStringLiteral("ed3kNodeLists"))));
     m_chaintubeRpcEdit->setPlainText(linesText(p.value(QStringLiteral("ed3kChaintubeRpc"))));
@@ -271,6 +275,7 @@ void Ed3kOptionsPages::appendTo(IpcMessage& req) const
     if (!m_portJoined)   // joined: the Connection page sends it
         put("ed3kUdpPort", qint64(m_udpPortSpin->value()));
     put("ed3kLan", m_lanCheck->isChecked());
+    m_hiding->appendTo(req);
     put("ed3kSitePort", qint64(m_sitePortSpin->value()));
     put("ed3kNodeLists", linesOf(m_nodeListsEdit).join(QLatin1Char(' ')));
     put("ed3kChaintubeRpc", linesOf(m_chaintubeRpcEdit).join(QLatin1Char(' ')));
@@ -326,6 +331,7 @@ void Ed3kOptionsPages::saveLocal() const
     if (!m_portJoined && m_udpPortSpin->value() > 0)
         thePrefs.setEd3kUdpPort(uint16(m_udpPortSpin->value()));
     thePrefs.setEd3kLan(m_lanCheck->isChecked());
+    m_hiding->saveLocal();
     if (m_sitePortSpin->value() > 0)
         thePrefs.setEd3kSitePort(uint16(m_sitePortSpin->value()));
     thePrefs.setEd3kNodeLists(linesOf(m_nodeListsEdit));
@@ -410,6 +416,15 @@ QWidget* Ed3kOptionsPages::buildGeneral(QWidget* parent)
                                       "lists, post sets or nzb records."));
     shareLayout->addWidget(m_shareUsenetCheck);
     layout->addWidget(shareGroup);
+
+    // batch 15, hops.md §1: the global switch, one hop count for every use
+    m_hiding = new Ed3kHidingGroup(m_ipc, page);
+    connect(m_hiding, &Ed3kHidingGroup::changed, this, [this] {
+        if (!m_loading)
+            emit changed();
+    });
+    connect(m_hiding, &Ed3kHidingGroup::keyChanged, this, &Ed3kOptionsPages::requestStatus);
+    layout->addWidget(m_hiding);
 
     // eD2K compat (Protocol.md §14): derived user hash, one port for eD2K and ed3k
     auto* compatGroup = new QGroupBox(tr("eD2K compatibility"), page);
@@ -509,6 +524,21 @@ QWidget* Ed3kOptionsPages::buildConnection(QWidget* parent)
     m_nodeListsEdit->setPlaceholderText(QStringLiteral("ed3k:nodes?url=…&key=…"));
     m_nodeListsEdit->setFixedHeight(m_nodeListsEdit->fontMetrics().lineSpacing() * 5 + 12);
     findLayout->addWidget(m_nodeListsEdit);
+    // bootstrap.md §3 "By hand": a node list file a user handed on (batch 15)
+    auto* openListBtn = new QPushButton(tr("Open Node List File..."), findGroup);
+    openListBtn->setObjectName(QStringLiteral("ed3kOpenNodeList"));
+    openListBtn->setToolTip(tr("Uses the nodes of an ed3k node list file (.ed3knod) someone gave you to find ed3k nodes. "
+                               "Open only a file of someone you trust."));
+    connect(openListBtn, &QPushButton::clicked, this, [this] {
+        const QString path = QFileDialog::getOpenFileName(m_parent, tr("Open ed3k Node List"), QString(),
+                                                          tr("ed3k node lists (*.ed3knod);;All files (*)"));
+        if (!path.isEmpty())
+            Ed3kLinkActions::sendNodeListFile(m_parent, m_ipc, path);
+    });
+    auto* openListRow = new QHBoxLayout;
+    openListRow->addWidget(openListBtn);
+    openListRow->addStretch();
+    findLayout->addLayout(openListRow);
     layout->addWidget(findGroup);
 
     auto* chainGroup = new QGroupBox(tr("Chaintube"), page);
@@ -804,6 +834,7 @@ void Ed3kOptionsPages::applyStatus(const QCborMap& st)
         m_runningLabel->setText(tr("The node is not running."));
 
     applyHosterStatus(st.value(QStringLiteral("hoster")).toMap());
+    m_hiding->applyStatus(running ? st.value(QStringLiteral("hide")).toMap() : QCborMap{});
     // batch 13: the last chain read/write the node refused (its text is plain text of a stranger)
     const QString chainRefused = st.value(QStringLiteral("chain")).toMap().value(QStringLiteral("refused")).toString();
     m_chainRefusedLabel->setText(chainRefused);
@@ -1162,6 +1193,12 @@ void Ed3kOptionsPages::migrateEd2kCompat()
             self->setJoinedPort(joined);
             self->m_compatBtn->setEnabled(false);
             emit self->portsJoined(joined);
+            // core connected: eD2K UDP and ed3k move on a restart; same notice as the Options OK
+            if (!result.value(QStringLiteral("restart")).toBool())
+                showPortChangeResult(self->m_parent, done, [ipc = QPointer<IpcClient>(self->m_ipc)] {
+                    if (ipc)
+                        ipc->sendRestart();
+                });
         });
     });
 }

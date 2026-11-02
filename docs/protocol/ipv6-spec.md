@@ -864,10 +864,11 @@ online at once — and the same server is dialled over IPv6 in the background (a
 4. A failed IPv6 dial keeps the IPv4 session. A failure after the IPv4 session is gone
    reconnects over IPv4 and keeps the LowID.
 
-A successful handover is remembered for that server until the client restarts: the next connect
-dials IPv6 first. A HighID over IPv4 clears it. Note that both eNode-go and ed2k-server give an
-IPv6 session a LowID (its ID is the packed IPv4, which is 0), so the handover never upgrades the
-ID itself.
+A handover is not remembered: every connect dials IPv4 first again. Both eNode-go and ed2k-server
+give an IPv6 session a LowID without testing the IPv4 port (its ID is the packed IPv4, which is 0),
+so a client that went straight to IPv6 would keep its LowID after opening its port. Only an IPv4
+login lets the server see the port is open now and hand out a HighID; a LowID again just repeats
+the handover.
 
 No IPv6 branch exists anywhere in ID handling; a LowID obtained over an IPv6 session is accepted
 normally, and remains usable because IPv6 peers are dialled directly regardless of eD2K ID.

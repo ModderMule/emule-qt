@@ -46,6 +46,8 @@ struct Ed3kSiteServer::Pending {
     // a set not held: waiting for its manifest (siteSetStatus), since parkedAt (ms)
     bool setWait = false;
     qint64 parkedAt = 0;
+    // a held site followed anew: waits for its head check (name.md §6.1, batch 15 #16)
+    bool headWait = false;
     // a GET without Range streamed as its blocks verify (§6.3, batch 13 #12): chunked
     bool stream = false;
     bool started = false;     ///< the status line and headers are out
@@ -179,6 +181,7 @@ Ed3kSiteServer::Ed3kSiteServer(Ed3kSession& session, Ed3kNames& names, QObject* 
 {
     connect(&m_session, &Ed3kSession::statusChanged, this, &Ed3kSiteServer::onSessionStatus);
     connect(&m_names, &Ed3kNames::siteChanged, this, &Ed3kSiteServer::onSiteChanged);
+    connect(&m_names, &Ed3kNames::siteHeadChecked, this, &Ed3kSiteServer::onHeadChecked, Qt::QueuedConnection);
     connect(&m_names, &Ed3kNames::siteMemberReady, this, &Ed3kSiteServer::onMemberReady);
     connect(&m_names, &Ed3kNames::resolved, this, &Ed3kSiteServer::onResolved);
     connect(&m_names, &Ed3kNames::failed, this, &Ed3kSiteServer::onFailed);
@@ -335,8 +338,17 @@ void Ed3kSiteServer::onRequest(const QHttpServerRequest& req, QHttpServerRespond
     const QByteArray manifest = m_names.siteManifest(p->key, p->id);
     if (!manifest.isEmpty()) {
         // one kept from an earlier run: followed for the user, for a newer version (§6.2)
-        if (p->user && !m_names.siteFollowed(p->key, p->id))
+        // if (p->user && !m_names.siteFollowed(p->key, p->id))
+        //     (void)m_names.followSite(p->key, p->id);
+        // §6.1 (#16): MUST follow while shown, so on any request; a held site not followed has
+        // its head checked before a member is served (60 s, then 504)
+        if (!m_names.siteFollowed(p->key, p->id))
             (void)m_names.followSite(p->key, p->id);
+        if (m_names.siteHeadPending(p->key, p->id)) {
+            p->headWait = true;
+            park(std::move(p));
+            return;
+        }
         servePage(std::move(p), manifest);
         return;
     }
@@ -431,8 +443,27 @@ void Ed3kSiteServer::onSiteChanged(const QByteArray& key, const QByteArray& id)
     if (manifest.isEmpty())
         return;
     m_fetching.erase(fetchKey(*k, id));
-    for (auto& p : take([&](const Pending& x) { return !x.resolve && x.manifest.isEmpty() && x.key == *k && x.id == id; }))
+    for (auto& p : take([&](const Pending& x) { return !x.resolve && x.manifest.isEmpty() && x.key == *k && x.id == id; })) {
+        p->headWait = false;   // a newer manifest after a head check (§6.1)
         servePage(std::move(p), manifest);
+    }
+}
+
+void Ed3kSiteServer::onHeadChecked(const QByteArray& key, const QByteArray& id, bool newer)
+{
+    if (newer)
+        return;   // its manifest comes: onSiteChanged serves them
+    const auto k = Ed3kNames::keyFrom(key);
+    if (!k)
+        return;
+    const QByteArray manifest = m_names.siteManifest(*k, id);
+    for (auto& p : take([&](const Pending& x) { return x.headWait && x.key == *k && x.id == id; })) {
+        p->headWait = false;
+        if (manifest.isEmpty())
+            answer(p->responder, 503, {}, kPlain, p->head);
+        else
+            servePage(std::move(p), manifest);
+    }
 }
 
 void Ed3kSiteServer::onMemberReady(const QByteArray& root)

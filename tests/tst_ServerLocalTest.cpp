@@ -2707,7 +2707,6 @@ void tst_ServerLocalTest::ipv6HandoverKeepsSessionOnline()
     QCOMPARE(disconnected.count(), 0);
     QCOMPARE(handedOver.count(), 1);
     QVERIFY2(longestOffline < 1000, "The handover went offline for the IPv6 login");
-    QVERIFY(entry->preferIPv6Session());
     QVERIFY(!entry->ipv6SwitchFailed());
 
     // The server took the session over instead of refusing the second one

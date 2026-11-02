@@ -47,6 +47,8 @@ QCborMap toCbor(const ed3k::Ed3kPaid::Info& i)
         {QStringLiteral("hasOffer"), i.offer.has_value()},
         {QStringLiteral("passScopes"), i.passScopes},
         {QStringLiteral("scopesDeclined"), i.scopesDeclined},
+        {QStringLiteral("byHand"), i.byHand},
+        {QStringLiteral("renewable"), i.renewable},
     };
     if (i.offer) {
         // what the user is shown before buying (§3: for display); the seller's host
@@ -70,6 +72,14 @@ void answer(const IpcMessage& msg, const std::function<void(const IpcMessage&)>&
         ok(paidToCbor());
         break;
     case IpcMsgType::BuyEd3kPass:
+        // batch 15 (#11): renew: "Renew now" of the pass held (§9.2 on the user's word)
+        if (msg.fieldBool(2)) {
+            if (auto r = paid.renewNow(msg.fieldString(0)))
+                ok(QCborMap{{QStringLiteral("payLink"), QString()}});
+            else
+                reply(failure(seq, r.error()));
+            break;
+        }
         if (auto r = paid.buy(msg.fieldString(0), msg.fieldBool(1)))
             ok(QCborMap{{QStringLiteral("payLink"), *r}});
         else

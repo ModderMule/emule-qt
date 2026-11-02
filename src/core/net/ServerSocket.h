@@ -113,6 +113,11 @@ public:
     [[nodiscard]] bool startNewMessageLog() const { return m_startNewMessageLog; }
     void clearStartNewMessageLog() { m_startNewMessageLog = false; }
 
+    /// Last server message line received while waiting for the login answer, with any
+    /// ERROR/WARNING prefix stripped. A server that refuses a login usually says why
+    /// before it closes; empty when it said nothing.
+    [[nodiscard]] const QString& loginRejectReason() const { return m_loginRejectReason; }
+
     // Override to track last transmission time
     void sendPacket(std::unique_ptr<Packet> packet, bool controlPacket = true,
                     uint32 actualPayloadSize = 0, bool forceImmediateSend = false) override;
@@ -209,6 +214,7 @@ protected:
 
 private:
     bool processPacket(const uint8* packet, uint32 size, uint8 opcode);
+    void rememberLoginRejectReason(const QString& message);
     void setConnectionState(ServerConnState newState);
     /// Record the failure, then move to @p newState (which reports it).
     void failWith(ServerConnState newState, ServerFailure failure);
@@ -236,6 +242,7 @@ private:
     uint64 m_lastTransmission = 0;
     bool m_manualSingleConnect = false;
     bool m_startNewMessageLog = true;
+    QString m_loginRejectReason;
     bool m_isDeleting = false;
     bool m_noCrypt = false;
     bool m_pendingLogin = false;

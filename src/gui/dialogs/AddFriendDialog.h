@@ -56,6 +56,14 @@ public:
 
     [[nodiscard]] QString ed3kLink() const;
     [[nodiscard]] QString ed3kText() const;
+    /// An `ed3k:friend` link opened from outside (friend.md §2, §3): filled in, the user
+    /// confirms with Add; the request text only with `r` (and no `s`). An open link (`s`) is a
+    /// credential: hidden in the field, never logged. The eD2K fields are hidden.
+    void setEd3kLink(const QString& link);
+    /// Whether @p link carries the secret `s` of an open link (friend.md §2).
+    [[nodiscard]] static bool isOpenFriendLink(const QString& link);
+    /// Whether @p link carries a request value `r` (friend.md §3).
+    [[nodiscard]] static bool hasFriendRequest(const QString& link);
 
 private slots:
     void onAddClicked();
@@ -73,6 +81,8 @@ private:
     QPushButton* m_addButton = nullptr;
     QPushButton* m_cancelButton = nullptr;
     QLabel*    m_ipLabel = nullptr;
+    QWidget*   m_requiredGroup = nullptr;
+    QWidget*   m_additionalGroup = nullptr;
     Submitter  m_submitter;
     QWidget*   m_ed3kGroup = nullptr;
     QLineEdit* m_ed3kLinkEdit = nullptr;

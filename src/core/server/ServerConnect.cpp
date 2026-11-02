@@ -236,13 +236,9 @@ void ServerConnect::connectToServer(Server* server, bool multiconnect, bool noCr
     m_singleConnecting = !multiconnect;
     emit stateChanged();
 
-    // IPv4 gave a LowID here earlier this run: go straight to IPv6
-    Address dial = dialAddress;
-    const bool ipv6Switch = dial.isNull() && m_config.preferIPv6OnLowID
-        && server->preferIPv6Session() && server->hasBothFamilies();
-    if (ipv6Switch)
-        dial = server->ipv6Address();
-
+    // Always IPv4 first, even after an earlier LowID handover to IPv6: only an IPv4
+    // session lets the server re-test the port, so a port opened since then turns
+    // into a HighID. A LowID again just repeats the handover without going offline.
     auto* socket = createServerSocket(m_singleConnecting);
 
     logServerVerbose(QStringLiteral("connectToServer: %1 (%2) multiconnect=%3 noCrypt=%4 openSockets=%5")
@@ -258,7 +254,7 @@ void ServerConnect::connectToServer(Server* server, bool multiconnect, bool noCr
     m_connectionAttempts[timestamp] = socket;
 
     socket->initProxySupport(thePrefs.proxySettings());
-    socket->connectTo(*server, noCrypt, dial, ipv6Switch, std::move(nextAddresses));
+    socket->connectTo(*server, noCrypt, dialAddress, false, std::move(nextAddresses));
 }
 
 bool ServerConnect::isConnectedOrConnectingTo(const Server* server) const
@@ -423,9 +419,13 @@ void ServerConnect::connectionEstablished(ServerSocket* sender)
 void ServerConnect::connectionFailed(ServerSocket* sender)
 {
     if (sender == m_handoverSocket) {
-        failIPv6Handover(sender, sender->connectionState() == ServerConnState::ServerFull
-                                     ? QStringLiteral("closed by the server")
-                                     : QStringLiteral("connection failed"));
+        QString why = QStringLiteral("connection failed");
+        if (sender->connectionState() == ServerConnState::ServerFull) {
+            why = sender->loginRejectReason().isEmpty()
+                ? QStringLiteral("closed by the server")
+                : QStringLiteral("refused by the server: %1").arg(sender->loginRejectReason());
+        }
+        failIPv6Handover(sender, why);
         return;
     }
 
@@ -455,12 +455,6 @@ void ServerConnect::connectionFailed(ServerSocket* sender)
 
     const Server* cserver = sender->currentServer();
     Server* listServer = cserver ? listEntryFor(cserver) : nullptr;
-
-    // The IPv6 dial after an IPv4 LowID did not work out: back to IPv4, keep the LowID
-    if (!lostLiveConnection && sender->isIPv6Switch() && listServer) {
-        listServer->setPreferIPv6Session(false);
-        listServer->setIPv6SwitchFailed(true);
-    }
 
     // Dual-stack: a server unreachable on one family gets one attempt on the other
     // before the failure counts against it; a dynIP name every address it resolved to.
@@ -505,8 +499,13 @@ void ServerConnect::connectionFailed(ServerSocket* sender)
 
     case ServerConnState::ServerFull:
         if (cserver) {
-            logInfo(QStringLiteral("Server %1 (%2) is full")
-                        .arg(cserver->name(), Endpoint(sender->sessionAddress(), cserver->port()).toString()));
+            // eMule reads any close before the login answer as "full"; show the
+            // server's own reason when it sent one.
+            const QString endpoint = Endpoint(sender->sessionAddress(), cserver->port()).toString();
+            if (const QString& reason = sender->loginRejectReason(); !reason.isEmpty())
+                logInfo(QStringLiteral("Server %1 (%2) refused the login: %3").arg(cserver->name(), endpoint, reason));
+            else
+                logInfo(QStringLiteral("Server %1 (%2) is full").arg(cserver->name(), endpoint));
         }
         break;
 
@@ -741,10 +740,6 @@ void ServerConnect::checkForTimeout()
             }
 
             Server* listServer = cserver ? listEntryFor(cserver) : nullptr;
-            if (socket->isIPv6Switch() && listServer) {
-                listServer->setPreferIPv6Session(false);
-                listServer->setIPv6SwitchFailed(true);
-            }
             NextDial next = nextDialFor(socket, listServer);
             const Address otherFamily = next.address;
             const Address tried = socket->sessionAddress();
@@ -1176,10 +1171,8 @@ void ServerConnect::onLoginReceived(ServerSocket* socket, uint32 clientID, uint3
     // connected (startIPv6Handover). Committing first keeps us online meanwhile.
     if (Server* entry = listEntryFor(socket->currentServer()); entry && !handover) {
         if (!eMule::isLowID(clientID)) {
-            if (socket->sessionAddress().isIPv4()) {
-                entry->setPreferIPv6Session(false);
+            if (socket->sessionAddress().isIPv4())
                 entry->setIPv6SwitchFailed(false);
-            }
         } else if (wantsIPv6Switch(socket, entry)) {
             logWarning(QStringLiteral("You have a Low ID over IPv4 on %1 — moving to its IPv6 address in the background.")
                            .arg(entry->name()));
@@ -1328,7 +1321,6 @@ void ServerConnect::finishIPv6Handover(ServerSocket* socket)
         emit sessionHandedOver();
     }
     if (entry) {
-        entry->setPreferIPv6Session(true);   // next connect dials IPv6 straight away
         entry->setIPv6SwitchFailed(false);
     }
     logInfo(QStringLiteral("IPv6 handover to %1 complete%2")
@@ -1369,7 +1361,6 @@ void ServerConnect::failIPv6Handover(ServerSocket* socket, const QString& reason
     }
     logWarning(QStringLiteral("IPv6 handover to %1 failed (%2) — reconnecting over IPv4")
                    .arg(entry->name(), reason));
-    entry->setPreferIPv6Session(false);
     entry->setIPv6SwitchFailed(true);
     connectToServer(entry);
 }

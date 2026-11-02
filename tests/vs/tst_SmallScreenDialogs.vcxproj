@@ -190,7 +190,9 @@
     <ClCompile Include="..\..\src\gui\dialogs\Ed3kSellPage.cpp" />
     <ClCompile Include="..\..\src\gui\dialogs\Ed3kSellDialogs.cpp" />
     <ClCompile Include="..\..\src\gui\dialogs\Ed3kStakeGroup.cpp" />
+    <ClCompile Include="..\..\src\gui\dialogs\Ed3kHidingGroup.cpp" />
     <ClCompile Include="..\..\src\gui\app\Ed3kNameOpener.cpp" />
+    <ClCompile Include="..\..\src\gui\app\Ed3kLinkActions.cpp" />
     <ClCompile Include="..\..\src\gui\dialogs\ToolbarCustomizeDialog.cpp" />
     <ClCompile Include="..\..\src\gui\controls\AccordionSidebar.cpp" />
     <ClCompile Include="..\..\src\gui\controls\LogTextView.cpp" />
@@ -283,6 +285,9 @@
       <QtMocFileName>moc_%(Filename).cpp</QtMocFileName>
     </QtMoc>
     <QtMoc Include="..\..\src\gui\dialogs\Ed3kStakeGroup.h">
+      <QtMocFileName>moc_%(Filename).cpp</QtMocFileName>
+    </QtMoc>
+    <QtMoc Include="..\..\src\gui\dialogs\Ed3kHidingGroup.h">
       <QtMocFileName>moc_%(Filename).cpp</QtMocFileName>
     </QtMoc>
     <QtMoc Include="..\..\src\gui\app\Ed3kNameOpener.h">

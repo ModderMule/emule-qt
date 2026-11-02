@@ -5,6 +5,10 @@
 /// loopback takes the `ed3k:pass` link, gets the keys from S and opens the sealed member. Also
 /// a pass for a buyer's key, a season after a leak, a planned season, a paid broadcast, the
 /// owner-only files, a restart and the IPC.
+///
+/// Batch 15: a private paid channel sold (its link with `s`, the buyer with that link and a
+/// pass gets the keys); stopping a sale (an offer without price and shop, t0/period kept) and
+/// selling it again.
 
 #include "Ed3kLiveBroadcast.h"
 #include "Ed3kPaid.h"
@@ -18,6 +22,7 @@
 
 #include <QCborArray>
 #include <QDir>
+#include <QUrlQuery>
 #include <QFile>
 #include <QFileInfo>
 #include <QSignalSpy>
@@ -116,6 +121,8 @@ private slots:
     void aSetSoldAVoucherTakenKeysTheMemberOpens();
     void seasonsAndARestart();
     void aBroadcastIsSoldAndGoesOnPaid();
+    void aPrivateChannelIsSoldAndAPassHolderGetsKeys();
+    void aSaleIsStoppedAndSoldAgain();
     void cleanup() { QTest::qWait(10); }
 };
 
@@ -398,15 +405,200 @@ void tst_Ed3kPaidSeller::aBroadcastIsSoldAndGoesOnPaid()
     QCOMPARE(raw(*key).toHex(), info->publisher.toLatin1());
     QVERIFY(!seller.offerOf(*key, id).isEmpty());
     QCOMPARE(seller.offerOf(*key, id), seller.offerOf(*scopeHex));
-    // a private channel is not sold (ToDo)
-    Ed3kLiveBroadcast::Options p = o;
-    p.title = QStringLiteral("Private Show");
-    p.isPrivate = true;
-    const auto priv = live.start(p);
-    QVERIFY(priv);
-    QVERIFY(!seller.sellBroadcast(live, priv->id, shopTerms()));
-    (void)live.stop(priv->id);
+    // was: a private channel is not sold (ToDo); batch 15: it is (aPrivateChannelIsSold…)
+    // Ed3kLiveBroadcast::Options p = o;
+    // p.title = QStringLiteral("Private Show");
+    // p.isPrivate = true;
+    // const auto priv = live.start(p);
+    // QVERIFY(priv);
+    // QVERIFY(!seller.sellBroadcast(live, priv->id, shopTerms()));
+    // (void)live.stop(priv->id);
     (void)live.stop(list.front().id);
+    s.stop();
+}
+
+// subscription.md §7, live.md §10: a private paid channel: its link carries `s` (a credential,
+// not in sell.json), the seller follows it privately; a buyer with that link and a pass gets
+// the keys (every key request proves the secret)
+void tst_Ed3kPaidSeller::aPrivateChannelIsSoldAndAPassHolderGetsKeys()
+{
+    QTemporaryDir ds, db;
+    Ed3kSession s, b;
+    QVERIFY(s.start(loopback(ds.path())));
+    QVERIFY(b.start(loopback(db.path())));
+    Ed3kPaidSeller seller(s, ds.path());
+    Ed3kLiveBroadcast live(s, ds.path());
+    seller.serve(live);
+    const QString folder = QDir(ds.path()).filePath(QStringLiteral("hls"));
+    QVERIFY(QDir().mkpath(folder));
+    Ed3kLiveBroadcast::Options o;
+    o.folder = folder;
+    o.title = QStringLiteral("Private Show");
+    o.isPrivate = true;
+    const auto on = live.start(o);
+    QVERIFY2(on, on ? "" : on.error().toUtf8().constData());
+    QVERIFY(on->isPrivate && !on->paid);
+    const auto secret = live.channelSecret(on->id);
+    QVERIFY(secret);
+    const QString secret32 = base32(*secret);
+
+    const auto scopeHex = seller.sellBroadcast(live, on->id, shopTerms());
+    QVERIFY2(scopeHex, scopeHex ? "" : scopeHex.error().toUtf8().constData());
+    // on air again, paid and private: the same link as the broadcast's (paid=1 and s)
+    const auto list = live.list();
+    QCOMPARE(list.size(), std::size_t(1));
+    QVERIFY(list.front().paid && list.front().isPrivate);
+    const auto info = seller.info(*scopeHex);
+    QVERIFY(info && info->isPrivate && info->onEngine);
+    QVERIFY(info->link.contains(QStringLiteral("&paid=1")));
+    QVERIFY(info->link.contains(QStringLiteral("&s=") + secret32));
+    QCOMPARE(info->link, list.front().link);
+    QCOMPARE(seller.saleLink(*scopeHex), info->link);
+    // the secret stays the broadcast's file: never in sell.json
+    const QByteArray json = readBlob(seller.statePath());
+    QVERIFY(!json.contains(secret32.toLatin1()) && !json.contains(raw(*secret).toHex()) && !json.contains(raw(*secret).toBase64()));
+    QVERIFY(json.contains("\"private\":true"));
+
+    // a voucher; the IPC gives the private link with it
+    const std::uint64_t until = s.now().unixS + 7 * 86400;
+    Ed3kPaidSellerBridge::setSeller(&seller, &live);
+    Ipc::IpcMessage req(Ipc::IpcMsgType::IssueEd3kPass, 3);
+    req.append(QCborArray{*scopeHex});
+    req.append(QString());
+    req.append(qint64(until));
+    req.append(QStringLiteral("private gift"));
+    QString voucher;
+    QStringList channelLinks;
+    QVERIFY(Ed3kPaidSellerBridge::handleRequest(req, [&](const Ipc::IpcMessage& r) {
+        QVERIFY(r.fieldBool(0));
+        voucher = r.fieldMap(1).value(QStringLiteral("link")).toString();
+        for (const auto& v : r.fieldMap(1).value(QStringLiteral("channelLinks")).toArray())
+            channelLinks << v.toString();
+    }));
+    QVERIFY(voucher.contains(QStringLiteral("&k=")));
+    QCOMPARE(channelLinks, QStringList{info->link});
+    Ipc::IpcMessage get(Ipc::IpcMsgType::GetEd3kSaleLink, 4);
+    get.append(*scopeHex);
+    QVERIFY(Ed3kPaidSellerBridge::handleRequest(get, [&](const Ipc::IpcMessage& r) {
+        QVERIFY(r.fieldBool(0));
+        QCOMPARE(r.fieldMap(1).value(QStringLiteral("link")).toString(), info->link);
+        QVERIFY(r.fieldMap(1).value(QStringLiteral("private")).toBool());
+    }));
+    QVERIFY(Ed3kPaidSellerBridge::sellingToCbor().value(QStringLiteral("sales")).toArray().at(0).toMap().value(QStringLiteral("private")).toBool());
+    Ed3kPaidSellerBridge::setSeller(nullptr, nullptr);
+
+    // B: the private link (as Ed3kLive's watch gives the core: paidFollowPrivate) and the voucher
+    const QUrlQuery q(info->link.mid(info->link.indexOf(QLatin1Char('?')) + 1));
+    const auto key = fromBase32(q.queryItemValue(QStringLiteral("key")));
+    const auto id = fromBase32(q.queryItemValue(QStringLiteral("id")));
+    const auto s32 = fromBase32(q.queryItemValue(QStringLiteral("s")));
+    QVERIFY(key && id && s32 && key->size() == 32 && s32->size() == 32);
+    ::ed3k::Key32 channelKey{}, sec{};
+    std::memcpy(channelKey.data(), key->constData(), 32);
+    std::memcpy(sec.data(), s32->constData(), 32);
+    const auto scope = b.engine()->paidFollowPrivate(channelKey, spanOf(*id), sec);
+    QVERIFY(scope);
+    QCOMPARE(Ed3kPaid::hexOf(*scope), *scopeHex);
+    Ed3kPaid paid(b, db.path());
+    paid.followChannel(channelKey, *scope, QStringLiteral("Private Show"));
+    QVERIFY(paid.addPassLink(voucher));
+    QCOMPARE(paid.info(*scopeHex)->state, Ed3kPaid::State::Held);
+    QSignalSpy keys(&paid, &Ed3kPaid::keysArrived);
+    QVERIFY(paid.requestKeys(*scopeHex, sourceOf(s)));
+    QTRY_VERIFY_WITH_TIMEOUT(keys.count() > 0, 30000);
+    const auto epoch = info->epoch;
+    const auto kB = b.engine()->paidKey(*scope, epoch);
+    const auto kS = s.engine()->paidKey(*scope, epoch);
+    QVERIFY(kB && kB->has_value() && kS && kS->has_value());
+    QVERIFY(**kB == **kS);
+
+    paid.leaveChannel(*scope);
+    (void)live.stop(list.front().id);
+    b.stop();
+    s.stop();
+}
+
+// subscription.md §3 (#15): a stop is a newer offer without pay_url, pass_url and price, t0 and
+// period kept; the buyer is told it is no longer sold; selling again: same t0 and period
+void tst_Ed3kPaidSeller::aSaleIsStoppedAndSoldAgain()
+{
+    QTemporaryDir ds, db;
+    Ed3kSession s, b;
+    QVERIFY(s.start(loopback(ds.path())));
+    QVERIFY(b.start(loopback(db.path())));
+    auto seller = std::make_unique<Ed3kPaidSeller>(s, ds.path());
+    Ed3kPaidSeller::Terms terms = shopTerms();
+    terms.payUrl = QStringLiteral("https://shop.example/pay");
+    terms.passUrl = QStringLiteral("https://shop.example/pass");
+    const auto scopeHex = seller->newSet(QStringLiteral("Stoppable"), terms);
+    QVERIFY(scopeHex);
+    const auto o1 = Ed3kPaidOffer::parse(seller->offerOf(*scopeHex));
+    QVERIFY(o1 && !o1->price.isEmpty() && !o1->payUrl.isEmpty());
+    const auto info = seller->info(*scopeHex);
+    QVERIFY(info && !info->stopped);
+
+    // stopped (over the IPC, action 4)
+    Ed3kPaidSellerBridge::setSeller(seller.get(), nullptr);
+    const auto control = [&](qint64 action) {
+        Ipc::IpcMessage m(Ipc::IpcMsgType::Ed3kSellControl, 5);
+        m.append(action);
+        m.append(*scopeHex);
+        m.append(QCborMap{});
+        bool ok = false;
+        (void)Ed3kPaidSellerBridge::handleRequest(m, [&](const Ipc::IpcMessage& r) { ok = r.fieldBool(0); });
+        return ok;
+    };
+    QVERIFY(control(4));
+    const auto o2 = Ed3kPaidOffer::parse(seller->offerOf(*scopeHex));
+    QVERIFY(o2);
+    QVERIFY(o2->issued > o1->issued);
+    QVERIFY(o2->price.isEmpty() && o2->payUrl.isEmpty() && o2->passUrl.isEmpty());
+    QCOMPARE(o2->t0, o1->t0);
+    QCOMPARE(o2->period, o1->period);
+    QCOMPARE(o2->terms, o1->terms);   // the rest stays
+    QVERIFY(seller->info(*scopeHex)->stopped);
+    QCOMPARE(seller->info(*scopeHex)->terms.price, terms.price);   // kept for selling again
+    QVERIFY(Ed3kPaidSellerBridge::sellingToCbor().value(QStringLiteral("sales")).toArray().at(0).toMap().value(QStringLiteral("stopped")).toBool());
+    // the core takes it as the newer offer
+    const auto scope = Ed3kPaid::scopeOf(*scopeHex);
+    QVERIFY(scope);
+    const auto held = s.engine()->paidOffer(*scope);
+    QVERIFY(held && *held);
+    QCOMPARE(QByteArray(reinterpret_cast<const char*>((*held)->bytes().data()), qsizetype((*held)->bytes().size())), seller->offerOf(*scopeHex));
+
+    // the buyer: no longer sold (an offer without price), not "by hand"
+    Ed3kPaid paid(b, db.path());
+    paid.follow(key32(info->publisher), *scope, Ed3kPaid::Kind::Set, QStringLiteral("Stoppable"));
+    QVERIFY(paid.setOffer(*scope, seller->offerOf(*scopeHex)));
+    const auto bought = paid.buy(*scopeHex);
+    QVERIFY(!bought);
+    QCOMPARE(bought.error(), Ed3kPaid::tr("This subscription is no longer sold."));
+
+    // kept across a restart
+    Ed3kPaidSellerBridge::setSeller(nullptr, nullptr);
+    seller.reset();
+    seller = std::make_unique<Ed3kPaidSeller>(s, ds.path());
+    QVERIFY(seller->info(*scopeHex)->stopped);
+    Ed3kPaidSellerBridge::setSeller(seller.get(), nullptr);
+
+    // sold again (action 5): a later offer, the same t0 and period, the price and shop back
+    QVERIFY(control(5));
+    const auto o3 = Ed3kPaidOffer::parse(seller->offerOf(*scopeHex));
+    QVERIFY(o3 && o3->issued > o2->issued);
+    QCOMPARE(o3->price, terms.price);
+    QCOMPARE(o3->payUrl, terms.payUrl);
+    QCOMPARE(o3->passUrl, terms.passUrl);
+    QCOMPARE(o3->t0, o1->t0);
+    QCOMPARE(o3->period, o1->period);
+    QVERIFY(!seller->info(*scopeHex)->stopped);
+    QVERIFY(paid.setOffer(*scope, seller->offerOf(*scopeHex)));
+    QVERIFY(paid.info(*scopeHex)->offer->price == terms.price);
+    // stopping twice, selling twice: nothing new
+    QVERIFY(control(5));
+    QCOMPARE(Ed3kPaidOffer::parse(seller->offerOf(*scopeHex))->issued, o3->issued);
+    Ed3kPaidSellerBridge::setSeller(nullptr, nullptr);
+    seller.reset();
+    b.stop();
     s.stop();
 }
 

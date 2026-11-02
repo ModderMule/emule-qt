@@ -10,11 +10,15 @@
 ///   endpoint is a local node, else 2 (two independent providers), held to the endpoints there are.
 ///   One remote endpoint only: the §4.3 SHOULD (two providers agree) can't be met; said once
 ///   in the log (batch 12 ruling #8), and the options page notes it.
-/// - Refused (batch 12 #6): a chain read or write every provider answered with the same
-///   JSON-RPC error (ED3K_CHAIN_REFUSED, e.g. "insufficient funds"), or a site's request the
-///   forwarder's `verify` refused (ED3K_CHAIN_BAD_REQUEST), or one whose gas is below the
-///   estimate (ED3K_CHAIN_GAS_LOW, batch 14): logged, kept as lastRefusal() for
-///   the status (GetEd3kStatus "chain"); the node's text is plain text from strangers.
+/// - Refused: before a write is sent (eth_chainId, the checks, the estimate, verify), a
+///   revert, a verify false or a JSON-RPC error at any one provider refuses it at once
+///   (ED3K_CHAIN_REFUSED with the node's text, or the check's reason such as
+///   ED3K_CHAIN_REVERTS / _BAD_REQUEST); after it is sent, its polls are reads where a
+///   provider's error only means no answer yet, so a sent write never ends as REFUSED or
+///   UNREACHABLE (chaintube §4.4, batch 14 #1/#2). A gas below the estimate:
+///   ED3K_CHAIN_GAS_LOW. Logged, kept as lastRefusal() for the status (GetEd3kStatus
+///   "chain"); the node's text is plain text from strangers.
+///   was (batch 12 #6): refused only when every provider answered with the same JSON-RPC error.
 
 #include "Ed3kFfi.h"
 

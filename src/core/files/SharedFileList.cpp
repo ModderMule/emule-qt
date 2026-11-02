@@ -593,6 +593,25 @@ SharedFileList::ShareRules SharedFileList::shareRules() const
     return rules;
 }
 
+void SharedFileList::setNeverShared(std::function<bool(const QString&)> check)
+{
+    m_neverShared = std::move(check);
+    dropNeverShared();
+}
+
+void SharedFileList::dropNeverShared()
+{
+    if (!m_neverShared)
+        return;
+    std::vector<KnownFile*> drop;
+    forEach([&](KnownFile* file) {
+        if (file && !file->isPartFile() && !file->filePath().isEmpty() && m_neverShared(file->filePath()))
+            drop.push_back(file);
+    });
+    for (KnownFile* file : drop)
+        removeFile(file);
+}
+
 bool SharedFileList::shouldBeShared(const QString& dirPath, const QString& filePath,
                                     bool mustBeShared) const
 {
@@ -614,6 +633,9 @@ bool SharedFileList::shouldBeShared(const ShareRules& rules, const QString& dirP
         if (key == rules.usenetTempRoot || key.startsWith(rules.usenetTempRoot + QLatin1Char('/')))
             return false;
     }
+    // ed3k: an opened plain copy of a sealed set member is never shared (setNeverShared)
+    if (m_neverShared && !filePath.isEmpty() && m_neverShared(filePath))
+        return false;
 
     const QString dirKey = pathKey(dirPath);
 
@@ -1536,6 +1558,9 @@ void SharedFileList::listDirectory(const QString& dir, QHash<QString, DiskEntry>
         }
 #endif
         if (!isShareableFile(fi))
+            continue;
+        // ed3k: an opened plain copy (setNeverShared): a known file would join unasked
+        if (m_neverShared && m_neverShared(fi.absoluteFilePath()))
             continue;
 
         const QString filename = fi.fileName();

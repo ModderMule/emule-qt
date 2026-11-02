@@ -19,10 +19,12 @@
 #include "Ed3kCreditBridge.h"
 #include "Ed3kFiltersBridge.h"
 #include "Ed3kUploadsBridge.h"
+#include "Ed3kHideBridge.h"
 #include "Ed3kDownloadsBridge.h"
 #include "Ed3kSetsBridge.h"
 #include "Ed3kPaidBridge.h"
 #include "Ed3kPaidSellerBridge.h"
+#include "Ed3kOwnSetsBridge.h"
 #include "Ed3kHosterBridge.h"
 #include "Ed3kFriendsBridge.h"
 #include "Ed3kRoomsBridge.h"
@@ -61,11 +63,13 @@
 #include "Ed3kFriends.h"
 #include "Ed3kRooms.h"
 #include "Ed3kSearch.h"
+#include "Ed3kPlainCopies.h"
 #include "Ed3kSets.h"
 #include "Ed3kLive.h"
 #include "Ed3kLiveBroadcast.h"
 #include "Ed3kPaid.h"
 #include "Ed3kPaidSeller.h"
+#include "Ed3kOwnSets.h"
 #include "Ed3kNames.h"
 #include "Ed3kPlumbing.h"
 #include "Ed3kSession.h"
@@ -469,7 +473,10 @@ bool DaemonApp::start()
         m_ed3kDownloads->setDirs(temps.isEmpty() ? QStringList{thePrefs.incomingDir()} : temps, thePrefs.incomingDir());
     }
     m_ed3kDownloads->setCategoryDir([](int category) { return thePrefs.incomingDirForCategory(category); });
-    m_ed3kDownloads->setCompletedHook([](const ed3k::Ed3kDownloadInfo& done) {
+    m_ed3kDownloads->setCompletedHook([this](const ed3k::Ed3kDownloadInfo& done) {
+        // batch 15 #12: an opened plain copy of a sealed member is never shared
+        if (m_ed3kSets && m_ed3kSets->plainCopies().contains(done.path))
+            return;
         // the incoming dir is shared: eD2K hashes it, Ed3kShared then serves it (releaseShare)
         if (theApp.sharedFileList && !theApp.sharedFileList->addFileInSharedLocation(done.path))
             logDebug(QStringLiteral("ed3k: %1 is not in a shared location").arg(done.path));
@@ -483,6 +490,12 @@ bool DaemonApp::start()
                 });
     }
     Ed3kDownloadsBridge::setDownloads(m_ed3kDownloads.get());
+    // hiding (batch 15): new key, moving a file's key, the Key columns, PushEd3kHideChanged
+    Ed3kHideBridge::setTargets(m_ed3kSession.get(), m_ed3kShared.get(), m_ed3kDownloads.get());
+    Ed3kHideBridge::connectPushes(*m_ed3kSession, [this](const IpcMessage& msg) {
+        if (m_ipcServer)
+            m_ipcServer->broadcast(msg);
+    });
     Ed3kDownloadsBridge::connectPushes(*m_ed3kDownloads, [this](const IpcMessage& msg) {
         if (m_ipcServer)
             m_ipcServer->broadcast(msg);
@@ -499,6 +512,21 @@ bool DaemonApp::start()
     m_ed3kSets = std::make_unique<ed3k::Ed3kSets>(*m_ed3kSession, *m_ed3kDownloads, thePrefs.configDir());
     m_ed3kSets->setIncomingDir(thePrefs.incomingDir());
     m_ed3kSets->setPaid(m_ed3kPaid.get());
+    // batch 15 #12 (hidden-set.md §4.2 MUST): opened plain copies of sealed members are never
+    // shared, by eD2K nor ed3k; the sealed copy is
+    {
+        const QPointer<ed3k::Ed3kPlainCopies> plain(&m_ed3kSets->plainCopies());
+        const auto neverShared = [plain](const QString& path) { return plain && plain->contains(path); };
+        if (theApp.sharedFileList) {
+            theApp.sharedFileList->setNeverShared(neverShared);
+            connect(plain, &ed3k::Ed3kPlainCopies::added, this, [] {
+                if (theApp.sharedFileList)
+                    theApp.sharedFileList->dropNeverShared();
+            });
+        }
+        if (m_ed3kShared)
+            m_ed3kShared->setNeverShared(neverShared);
+    }
     // name.md §6.4: a set the user follows stays in the website cache, followed (batch 14)
     m_ed3kNames->keepUserSets(m_ed3kSets.get());
     m_ed3kLive = std::make_unique<ed3k::Ed3kLive>(*m_ed3kSession, *m_ed3kSites);
@@ -514,6 +542,17 @@ bool DaemonApp::start()
     m_ed3kLiveBroadcast = std::make_unique<ed3k::Ed3kLiveBroadcast>(*m_ed3kSession, thePrefs.configDir());
     m_ed3kSeller->serve(*m_ed3kLiveBroadcast);
     Ed3kPaidSellerBridge::setSeller(m_ed3kSeller.get(), m_ed3kLiveBroadcast.get());
+    // My ed3k Sets (batch 15): published again at each ed3k start; sold through the seller
+    m_ed3kOwnSets = std::make_unique<ed3k::Ed3kOwnSets>(*m_ed3kSession, thePrefs.configDir());
+    m_ed3kOwnSets->setSeller(m_ed3kSeller.get());
+    if (m_ed3kShared)
+        m_ed3kOwnSets->setSharedElsewhere([s = m_ed3kShared.get()](const ::ed3k::Root& root) { return s->sharesRoot(root); });
+    Ed3kOwnSetsBridge::setOwnSets(m_ed3kOwnSets.get());
+    Ed3kPaidSellerBridge::setOwnSets(m_ed3kOwnSets.get());
+    Ed3kOwnSetsBridge::connectPushes(*m_ed3kOwnSets, [this](const IpcMessage& msg) {
+        if (m_ipcServer)
+            m_ipcServer->broadcast(msg);
+    });
     Ed3kSetsBridge::setBroadcast(m_ed3kLiveBroadcast.get());
     Ed3kSetsBridge::connectBroadcastPushes(*m_ed3kLiveBroadcast, [this](const IpcMessage& msg) {
         if (m_ipcServer)
@@ -768,6 +807,11 @@ void DaemonApp::stop()
     m_ed3kSearch.reset();
     Ed3kSetsBridge::setSets(nullptr, nullptr, nullptr);
     Ed3kSetsBridge::setBroadcast(nullptr);
+    Ed3kPaidSellerBridge::setOwnSets(nullptr);
+    Ed3kOwnSetsBridge::setOwnSets(nullptr);
+    if (m_ed3kOwnSets)
+        m_ed3kOwnSets->stop();
+    m_ed3kOwnSets.reset();
     Ed3kPaidSellerBridge::setSeller(nullptr, nullptr);
     m_ed3kLiveBroadcast.reset();
     m_ed3kSeller.reset();
@@ -776,6 +820,7 @@ void DaemonApp::stop()
     Ed3kPaidBridge::setPaid(nullptr);
     m_ed3kPaid.reset();
     Ed3kDownloadsBridge::setDownloads(nullptr);
+    Ed3kHideBridge::setTargets(nullptr, nullptr, nullptr);
     if (m_ed3kDownloads)
         m_ed3kDownloads->stop();
     m_ed3kDownloads.reset();
@@ -1118,6 +1163,9 @@ void DaemonApp::applyEd3kConfig()
 #ifdef EMULE_HAVE_ED3K
     if (!m_ed3kSession)
         return;
+    // hiding (hops.md §1): live, no restart; applied at start too
+    m_ed3kSession->setHideSettings(
+        {thePrefs.ed3kHide(), thePrefs.ed3kHops(), thePrefs.ed3kHopping(), thePrefs.ed3kHopShare()});
     const bool enabled = thePrefs.ed3kEnabled() && !m_enginesHeld;
     const uint16 port = thePrefs.ed3kUdpPort();
     // was: ToDo: the bindAddress pref (interface selection) for the ed3k socket (done: its
@@ -1131,9 +1179,16 @@ void DaemonApp::applyEd3kConfig()
     // extensions, LAN discovery and the bind address (read once at start)
     // ed3k on the eD2K UDP port: one socket, eD2K's (§14.1); else its own
     const bool wantShared = port != 0 && port == thePrefs.udpPort();
+    // eD2K UDP still on its old port, the move waits for a restart: ed3k stays where it is
+    const bool udpMovePending = wantShared && theApp.clientUDP && theApp.clientUDP->isBound()
+                                && theApp.clientUDP->connectedPort() != port;
+    const bool holdNode = udpMovePending && enabled && m_ed3kSession->isRunning();
+    if (holdNode)
+        logEd3kDebug(QStringLiteral("ed3k: stays on UDP port %1 until eD2K UDP moves to %2")
+                         .arg(m_ed3kSession->udpPort()).arg(port));
     QUdpSocket* shared = nullptr;
     if (theApp.clientUDP) {
-        if (wantShared)
+        if (wantShared && !udpMovePending)
             shared = &theApp.clientUDP->socket();
         theApp.clientUDP->setForeignHandler([session = QPointer<ed3k::Ed3kSession>(m_ed3kSession.get())](
                                                 const QNetworkDatagram& d) { return session && session->offerDatagram(d); });
@@ -1143,7 +1198,8 @@ void DaemonApp::applyEd3kConfig()
                               && (running.extOff != extOff || running.lan != thePrefs.ed3kLan()
                                   || (bind && running.bindAddress != *bind)
                                   || running.sharedSocket.data() != shared);
-    if (m_ed3kSession->isRunning() && (!enabled || !bind || startChanged || (port != 0 && m_ed3kSession->udpPort() != port)))
+    if (m_ed3kSession->isRunning() && !holdNode
+        && (!enabled || !bind || startChanged || (port != 0 && m_ed3kSession->udpPort() != port)))
         stopEd3kNode();
     if (enabled && !m_ed3kSession->isRunning() && wantShared && !shared) {
         // the eD2K socket opens once the core is loaded (onCoreLoaded comes back here)

@@ -74,6 +74,7 @@ public:
         std::uint64_t bytes = 0;
         int sources = 0;          ///< ed3k streams of the root
         int transferring = 0;     ///< of them holding a slot
+        std::uint64_t size = 0;   ///< size of the ed2k alias (md4 ‖ size) looked up
     };
     /// nullopt: not tracked (paused, stopped, complete, join off).
     [[nodiscard]] std::optional<FileInfo> infoOf(const QByteArray& md4) const;
@@ -81,7 +82,9 @@ public:
     void setSearchGap(int ms) { m_searchGapMs = ms; }
     /// How long an eD2K dial waits for the ed3k answer of a hinted source.
     void setHintTimeout(int ms) { m_hintTimeoutMs = ms; }
-    /// Files of the queue taken / dropped, searches and hints due (also on a timer).
+    /// Files of the queue taken / dropped, searches and hints due (also on a timer). A file
+    /// whose size is in doubt (PartFile::isSizeContradicted) is dropped; one whose size was
+    /// corrected is looked up again under the new md4 ‖ size.
     void sync();
 
 signals:

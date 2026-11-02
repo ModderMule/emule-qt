@@ -8,6 +8,8 @@
 /// Batch 14: its channel file is found by an ed3k channel search (SearchType::Ed3kLive) and
 /// watched; a broadcast goes on after a restart within 10 min (§4); an oversized init is
 /// skipped once and the next segment has gap (#11); what can't be played is not joined (§2.3).
+/// Batch 15: the channel file is kept shared off air and after a restart (the same bytes), and
+/// Delete Channel withdraws it (#5); no codecs named is left to the player (#7).
 
 #include "Ed3kLive.h"
 #include "Ed3kLiveBroadcast.h"
@@ -165,6 +167,7 @@ private slots:
     void aBroadcastGoesOnAfterARestart();
     void anOversizedInitIsSkippedOnceWithAGap();
     void whatCannotBePlayedIsNotJoined();
+    void theChannelFileIsKeptOffAirAndAfterARestart();
     void cleanup() { QTest::qWait(10); }
 };
 
@@ -773,9 +776,91 @@ void tst_Ed3kLive::whatCannotBePlayedIsNotJoined()
     QVERIFY(live.leave(*id));
     // the check itself: an unknown container or codec is left to the player
     QVERIFY(Ed3kLive::canPlay(QStringLiteral("video/mp2t"), QStringLiteral("x-unknown")).isEmpty());
+    // #7: a known container without codecs named: can't tell, the player decides
+    for (const char* media : {"video/mp4", "audio/mp4", "video/webm", "video/mp2t", "audio/mpeg"})
+        QVERIFY2(Ed3kLive::canPlay(QString::fromLatin1(media), QString()).isEmpty(), media);
+    QVERIFY(Ed3kLive::canPlay(QStringLiteral("video/webm"), QStringLiteral("  ")).isEmpty());
     (void)a.engine()->liveEnd(a.now(), *stream);
     a.pump();
     names.stop();
+}
+
+// live.md §1.2 (#5): the channel file describes the channel: shared while it is kept, on air
+// or not, at each start with the same created (the same bytes, the same root); Delete Channel
+// withdraws it and drops the channel with its keys
+void tst_Ed3kLive::theChannelFileIsKeptOffAirAndAfterARestart()
+{
+    QTemporaryDir da, hls;
+    QVERIFY(da.isValid() && hls.isValid());
+    Ed3kSession a;
+    QVERIFY(a.start(loopback(da.path())));
+    HlsFolder folder(hls.path());
+    folder.add();
+    Ed3kLiveBroadcast::Options o;
+    o.folder = hls.path();
+    o.title = QStringLiteral("Off Air TV");
+    o.codecs = QStringLiteral("avc1.64001f");
+    o.comment = QStringLiteral("evenings");
+    QString root;
+    QString channel;
+    qint64 created = 0;
+    {
+        Ed3kLiveBroadcast caster(a, da.path());
+        QVERIFY(caster.channels().empty());
+        const auto started = caster.start(o);
+        QVERIFY2(started, started ? "" : started.error().toUtf8().constData());
+        root = started->channelFile;
+        channel = started->channel;
+        QCOMPARE(root.size(), 64);
+        QCOMPARE(channel.size(), 32);
+        created = channelsOf(da.path()).at(0).toObject().value(QStringLiteral("desc")).toObject().value(QStringLiteral("created")).toInteger();
+        // the user stops it: off air, the file stays shared (was: withdrawn)
+        QVERIFY(caster.stop(started->id));
+        const auto off = caster.channels();
+        QCOMPARE(off.size(), std::size_t(1));
+        QVERIFY(off.front().stream.isEmpty());
+        QCOMPARE(off.front().channel, channel);
+        QCOMPARE(off.front().channelFile, root);
+        QCOMPARE(off.front().title, o.title);
+    }
+    // the daemon again (a new broadcaster, the same Config): published at start, off air,
+    // the same created, so the same bytes and root
+    {
+        Ed3kLiveBroadcast caster(a, da.path());
+        QVERIFY(caster.list().empty());
+        QCOMPARE(caster.channels().size(), std::size_t(1));
+        QCOMPARE(caster.channels().front().channelFile, root);
+        QCOMPARE(channelsOf(da.path()).at(0).toObject().value(QStringLiteral("desc")).toObject().value(QStringLiteral("created")).toInteger(),
+                 created);
+        // ed3k stops and starts: still the same
+        a.stop();
+        QVERIFY(a.start(loopback(da.path())));
+        QTRY_VERIFY_WITH_TIMEOUT(caster.channels().front().channelFile == root, 5000);
+    }
+    // a process that starts without ed3k running: published once ed3k is up
+    a.stop();
+    Ed3kLiveBroadcast caster(a, da.path());
+    QVERIFY(caster.channels().front().channelFile.isEmpty());
+    QVERIFY(a.start(loopback(da.path())));
+    QTRY_COMPARE_WITH_TIMEOUT(caster.channels().front().channelFile, root, 5000);
+    // on air again with the same description: the same file
+    const auto again = caster.start(o);
+    QVERIFY(again);
+    QCOMPARE(again->channelFile, root);
+    QCOMPARE(caster.channels().front().stream, again->id);
+    // Delete Channel (on air: ended first): withdrawn, dropped, the keys gone
+    const QString keyFile = QDir(stateDir(da.path())).filePath(QStringLiteral("live/%1.key").arg(channel));
+    QVERIFY(QFileInfo::exists(keyFile));
+    QVERIFY(caster.deleteChannel(channel));
+    QVERIFY(caster.list().empty());
+    QVERIFY(caster.channels().empty());
+    QVERIFY(channelsOf(da.path()).isEmpty());
+    QVERIFY(!QFileInfo::exists(keyFile));
+    QVERIFY(!caster.deleteChannel(channel));
+    QVERIFY(!caster.deleteChannel(QStringLiteral("zz")));
+    // not published at the next start
+    Ed3kLiveBroadcast later(a, da.path());
+    QVERIFY(later.channels().empty());
 }
 
 QTEST_GUILESS_MAIN(tst_Ed3kLive)

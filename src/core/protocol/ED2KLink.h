@@ -131,7 +131,9 @@ using ED2KLink = std::variant<ED2KFileLink, ED2KServerLink,
 [[nodiscard]] ED2KLinkType linkType(const ED2KLink& link);
 
 /// @p uri with an HTTP Cache secret replaced by an ellipsis, for a log line, an
-/// error message or anything else a user might paste onward. Any other link — and
+/// error message or anything else a user might paste onward. An `ed3k:` link has the
+/// values of its credentials replaced the same way: `s`, `p`, `k`, and `key` of an
+/// `ed3k:cache` link (batch 15; other `key`s are public). Any other link — and
 /// anything unparseable — comes back unchanged, so this is safe to wrap around
 /// every place that reports link text back.
 ///

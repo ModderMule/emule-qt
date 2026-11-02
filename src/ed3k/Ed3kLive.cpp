@@ -254,6 +254,9 @@ QString Ed3kLive::canPlay(const QString& media, const QString& codecs)
     const auto decodable = any.supportedFileFormats(QMediaFormat::Decode);
     if (decodable.isEmpty())
         return {};   // no backend says: the player decides
+    // §2.3 (#7): no codecs named, even with a known container: can't tell, the player decides
+    if (codecs.trimmed().isEmpty())
+        return {};
     auto container = containerOf(media);
     // audio/mp4 is an MPEG-4 file: what plays one plays the other
     if (container == QMediaFormat::Mpeg4Audio && !decodable.contains(*container) && decodable.contains(QMediaFormat::MPEG4))

@@ -13,6 +13,7 @@
 #include "Ed3kPlumbing.h"
 #include "Ed3kSession.h"
 #include "Ed3kSetManifest.h"
+#include "Ed3kPlainCopies.h"
 #include "Ed3kSets.h"
 #include "Ed3kSetsBridge.h"
 #include "Ed3kShared.h"
@@ -867,6 +868,25 @@ void tst_Ed3kSets::aSealedMemberOfAPaidCatalogueIsOpened()
     const auto wire = ::ed3k::sealedName(rootOf(sealed));
     QVERIFY(wire);
     QCOMPARE(readFile(QDir(dir).filePath(QStringLiteral(".sealed/") + QString::fromStdString(*wire))), sealed);
+    // batch 15 #12 (hidden-set.md §4.2 MUST): the opened plain copy is never shared; the sealed one is
+    const QString sealedPath = QDir(dir).filePath(QStringLiteral(".sealed/") + QString::fromStdString(*wire));
+    QVERIFY(e.sets->plainCopies().contains(plainPath));
+    QVERIFY(!e.sets->plainCopies().contains(sealedPath));
+    {
+        Ed3kPlainCopies again(e.dir);   // kept in plain.json (owner-only)
+        QVERIFY(again.contains(plainPath));
+#ifndef Q_OS_WIN
+        QCOMPARE(QFile::permissions(again.statePath()) & (QFileDevice::ReadGroup | QFileDevice::ReadOther), QFileDevice::Permissions{});
+#endif
+    }
+    // Ed3kShared refuses it, even when a share list names it (a shared incoming dir)
+    m_shared->setNeverShared([&e](const QString& p) { return e.sets->plainCopies().contains(p); });
+    const SharedEntry plainEntry{QByteArray(16, char(0x6E)), plainPath, QStringLiteral("e.bin"), std::uint64_t(plain.size())};
+    m_src.entries.push_back(plainEntry);
+    m_shared->onFileAdded(plainEntry);
+    QTest::qWait(1500);
+    QVERIFY(!m_shared->rootOf(plainEntry.md4));
+    m_shared->setNeverShared({});
     e.stop();
 }
 

@@ -166,7 +166,8 @@ public:
     /// §9.1: hands credit-anon.key to the core while the node hides (call after each anonStart;
     /// made when missing, replaced when the anonymous key changed). State: not hiding, credits
     /// off or not configured.
-    // ToDo: eMuleQt does not hide yet (no anonStart caller); whoever starts it calls this after.
+    // was: ToDo: eMuleQt does not hide yet (no anonStart caller); whoever starts it calls this
+    // after (done: Ed3kHide::started, batch 15)
     ::ed3k::Result<> applyAnonKey();
     /// The anonymous credit address; nullopt: no key yet.
     [[nodiscard]] std::optional<::ed3k::event::CreditAddress> anonAddress() const { return m_anonRaw; }

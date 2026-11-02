@@ -240,6 +240,7 @@
     <ClCompile Include="app\CommandLineExec.cpp" />
     <ClCompile Include="app\Ed3kLiveWatch.cpp" />
     <ClCompile Include="app\Ed3kNameOpener.cpp" />
+    <ClCompile Include="app\Ed3kLinkActions.cpp" />
     <ClCompile Include="app\ExternalLinkHandler.cpp" />
     <ClCompile Include="controls\ContactsGraph.cpp" />
     <ClCompile Include="controls\AccordionSidebar.cpp" />
@@ -277,6 +278,7 @@
     <ClCompile Include="panels\IrcPanel.cpp" />
     <ClCompile Include="panels\IrcPanelEd3k.cpp" />
     <ClCompile Include="panels\ChatChannelView.cpp" />
+    <ClCompile Include="panels\Ed3kOwnSetsView.cpp" />
     <ClCompile Include="panels\Ed3kRoomTab.cpp" />
     <ClCompile Include="panels\Ed3kRoomList.cpp" />
     <ClCompile Include="controls\KadContactHistogram.cpp" />
@@ -294,9 +296,11 @@
     <ClCompile Include="dialogs\OptionsDialog.cpp" />
     <ClCompile Include="dialogs\Ed3kOptionsPages.cpp" />
     <ClCompile Include="dialogs\Ed3kFilterPage.cpp" />
+    <ClCompile Include="dialogs\Ed3kOwnSetDialog.cpp" />
     <ClCompile Include="dialogs\Ed3kSellDialogs.cpp" />
     <ClCompile Include="dialogs\Ed3kSellPage.cpp" />
     <ClCompile Include="dialogs\Ed3kStakeGroup.cpp" />
+    <ClCompile Include="dialogs\Ed3kHidingGroup.cpp" />
     <ClCompile Include="dialogs\Ed3kSetsDialog.cpp" />
     <ClCompile Include="dialogs\AddNzbFilesDialog.cpp" />
     <ClCompile Include="dialogs\NzbFileChooserDialog.cpp" />
@@ -387,6 +391,7 @@
     <ClInclude Include="controls\TorrentFileTree.h" />
     <ClInclude Include="utils\TorrentAdd.h" Condition="'$(EmuleBitTorrent)'=='true'" />
     <ClInclude Include="utils\PriorityText.h" />
+    <ClInclude Include="utils\Ed3kKeyText.h" />
     <ClInclude Include="utils\ClientStateText.h" />
     <ClInclude Include="utils\CompleteSourcesText.h" />
     <ClInclude Include="utils\FileTypeText.h" />
@@ -404,6 +409,7 @@
     <ClInclude Include="utils\Clipboard.h" />
     <ClInclude Include="utils\IpcFeedback.h" />
     <ClInclude Include="app\Ed3kLiveWatch.h" />
+    <ClInclude Include="app\Ed3kLinkActions.h" />
     <ClInclude Include="utils\MassRenameAction.h" />
     <ClInclude Include="utils\AsyncMessageBox.h" />
     <ClInclude Include="utils\InputHistory.h" />
@@ -469,6 +475,7 @@
     <QtMoc Include="app\SingleInstance.h" />
     <QtMoc Include="panels\IrcPanel.h" />
     <QtMoc Include="panels\ChatChannelView.h" />
+    <QtMoc Include="panels\Ed3kOwnSetsView.h" />
     <QtMoc Include="panels\Ed3kRoomTab.h" />
     <QtMoc Include="panels\Ed3kRoomList.h" />
     <QtMoc Include="controls\KadContactHistogram.h" />
@@ -485,9 +492,11 @@
     <QtMoc Include="dialogs\OptionsDialog.h" />
     <QtMoc Include="dialogs\Ed3kOptionsPages.h" />
     <QtMoc Include="dialogs\Ed3kFilterPage.h" />
+    <QtMoc Include="dialogs\Ed3kOwnSetDialog.h" />
     <QtMoc Include="dialogs\Ed3kSellDialogs.h" />
     <QtMoc Include="dialogs\Ed3kSellPage.h" />
     <QtMoc Include="dialogs\Ed3kStakeGroup.h" />
+    <QtMoc Include="dialogs\Ed3kHidingGroup.h" />
     <QtMoc Include="dialogs\Ed3kSetsDialog.h" />
     <QtMoc Include="dialogs\AddNzbFilesDialog.h" />
     <QtMoc Include="dialogs\NzbFileChooserDialog.h" />

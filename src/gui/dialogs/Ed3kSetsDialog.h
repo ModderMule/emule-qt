@@ -10,7 +10,8 @@
 ///   (the members ticked; takes a pending version), "Download parts" (open parts).
 /// - Live: watched streams with their state; Watch link…, Open (the local stream URL in the
 ///   system's player or browser; local core only), Stop; Broadcast… (an HLS fMP4 folder of
-///   the core's machine, live.md §4) and Copy Link of a broadcast.
+///   the core's machine, live.md §4) and Copy Link of a broadcast; our channels off air too
+///   (their channel files stay shared, §1.2) and Delete Channel… (batch 15).
 /// - Paid sets (subscription.md, IPC 1035-1038, pushes 1064-1066): the price, terms and seller
 ///   of the offer, the pass (until, renewal) in the info; Buy Pass… (the pay page in the
 ///   browser), the warning for the anonymous key (§5.1), Share reports (§5.3).
@@ -89,8 +90,15 @@ private:
     void leaveStream();
     void broadcast();
     void copyLink();
-    /// Sell… a broadcast of ours (subscription.md §7, SellEd3k): the terms, then paid on air
+    /// Delete Channel… of ours, on air or not (batch 15 #5): asks, then LeaveEd3kLive delete
+    void deleteChannel();
+    /// Sell… a broadcast of ours (subscription.md §7, SellEd3k): the terms, then paid on air;
+    /// one sold: Stop Selling / Resume Selling (§3, Ed3kSellControl 4/5, batch 15 #15)
     void sellChannel();
+    /// the sale (GetEd3kSelling row) of the broadcast with @p link (its key and id); empty: none
+    [[nodiscard]] QCborMap saleOfLink(const QString& link) const;
+    /// §9.2 (#11): Renew Pass Now (BuyEd3kPass renew) of a by-hand pass
+    void renewPass(const QCborMap& p);
     void buyPass();
     /// Buy Pass… or, while a pass of several scopes waits, Use Pass… (§5.1)
     void paidAction(const QCborMap& p);
@@ -127,8 +135,11 @@ private:
     QPushButton* m_broadcast = nullptr;
     QPushButton* m_copyLink = nullptr;
     QPushButton* m_sell = nullptr;
+    QPushButton* m_deleteChannel = nullptr;
     /// GetEd3kPaid rows by scope
     QMap<QString, QCborMap> m_paidRows;
+    /// GetEd3kSelling rows (the sales of our broadcasts)
+    QCborArray m_saleRows;
     QTreeWidget* m_live = nullptr;
     QPushButton* m_watch = nullptr;
     QPushButton* m_open = nullptr;

@@ -875,6 +875,15 @@ enum class IpcMsgType : int {
     OpenEd3kNodesLink       = 1030,
     /// [ask: int, yes: bool] -> [ok]; yes adds the source to ed3kNodeLists
     AnswerEd3kBootstrapAsk  = 1031,
+    // -- ed3k other links (batch 15), src/daemon/Ed3kLinksBridge.cpp. The GUI asks the user
+    // first. Failure: [false, {error}] (0 no node, else ed3k::Error)
+    /// [link (ed3k:node, Protocol.md §13.2)] -> [ok, {lookups}] — its endpoints bootstrapped
+    OpenEd3kNodeLink        = 1032,
+    /// [link (ed3k:cache, http-source.md §4.1: a credential, never logged)] -> [ok, {servers}]
+    /// — configured with the others, kept in ed3kCacheServers
+    AddEd3kCacheLink        = 1049,
+    /// [file: bytes] -> [ok, {nodes}] — a node list file opened by hand (bootstrap.md §3)
+    OpenEd3kNodeListFile    = 1137,
 
     // hoster links (1100-1109, hoster.md), Ed3kHosterBridge.cpp. An item: {id, url, host,
     // name, size, done, speed, state (Ed3kHosterJoin::State), reason (Ed3kHosterJoin::Reason, the
@@ -1015,8 +1024,12 @@ enum class IpcMsgType : int {
     /// [link (ed3k:live)] -> [ok, {id, url}]
     WatchEd3kLive           = 1117,
     /// [id] -> [ok]
+    /// batch 15 (#5): [channel (hex id), delete: true] -> [ok] — a channel of ours deleted: ended
+    /// if on air, its channel file withdrawn, dropped with its keys
     LeaveEd3kLive           = 1118,
     /// [] -> [ok, {running, streams: [stream]}]
+    /// batch 15: + channels: [{channel, title, private, stream ("" off air), channelFile}] (ours);
+    /// a broadcast row has channel too
     GetEd3kLive             = 1119,
     /// [link (ed3k:set)] -> [ok, {url}] — the set's website origin (name.md §6.2; "" while
     /// the website server does not listen)
@@ -1033,6 +1046,8 @@ enum class IpcMsgType : int {
     GetEd3kPaid             = 1035,
     /// [scope, anon: bool] -> [ok, {payLink}] — open payLink in the browser; "" = the user must
     /// be told first (PushEd3kPaidAnonWarn, then ConfirmEd3kPaidAnon)
+    /// batch 15 (#11): [scope, anon, renew: true] -> [ok, {payLink: ""}] — "Renew now": the pass
+    /// held (a by-hand one too, §9.2 only when the user asks) polled at pass_url now
     BuyEd3kPass             = 1036,
     /// [scope] -> [ok, {payLink}] — the user was told the seller sees an address (§5.1);
     /// payLink of a purchase ("" for a renewal or resumed poll)
@@ -1046,6 +1061,9 @@ enum class IpcMsgType : int {
     // -- ed3k paid passes by hand (batch 14): subscription.md §9.3, §5.1, Ed3kPaidBridge.cpp.
     // A subscription (GetEd3kPaid) also has state 6 (a pass of several scopes waits for the
     // user's word), passScopes (scopes of that pass, else of the one held), scopesDeclined.
+    // batch 15: state 7 (a pass held, not checked yet for this scope: its publisher or the
+    // offer of an issuer-signed pass not known, §9.3), 8 (the pass fails for this scope: not
+    // used there); byHand (a pass link or voucher: renewed only on BuyEd3kPass renew).
     /// [link] -> [ok, {scope, title, scopes, voucher: bool, waits: bool}] — an ed3k:pass link (a
     /// credential: never logged); waits: ask the user (scopes − 1 other subscriptions), then
     /// AnswerEd3kPaidScopes
@@ -1059,16 +1077,43 @@ enum class IpcMsgType : int {
     // {scope, kind (1 channel, 2 set), title, publisher, target (channel id / FileSet.id hex),
     // link, t0, epoch, seasonBase, seasonEpochs, offerIssued, planned, ownUntil, running,
     // issued: [{scopes, holder (hex), issued, until, voucher, note, link ("" for a voucher)}]}.
+    // batch 15: private (a private channel, live.md §10: `link` carries `s`, a credential:
+    // never logged, marked private in the GUI), stopped (#15: the offer has no price/URLs).
     /// [] -> [ok, {running, defaults: {terms}, sales: [sale]}]
     GetEd3kSelling          = 1033,
     /// [kind, target (1: stream id of a broadcast on air; 2: "" a new set, else its scope),
     /// title, {terms}] -> [ok, {scope, link}]
+    /// batch 15: kind 2 target an own set's id (GetEd3kOwnSets): that set sold, its members
+    /// sealed in its next version
     SellEd3k                = 1034,
     /// [scopes: [hex], holder (base32 or hex; "" = a voucher), until (Unix s), note] -> [ok, {link,
     /// voucher}] — the ed3k:pass link; a voucher's is a credential (§9.3): show it once, never log
+    /// batch 15: + channelLinks: [the ed3k:live link with `s` of each private channel of the pass]
     IssueEd3kPass           = 1040,
     /// [action (1 new season after a leak, 2 new terms of scope, 3 the defaults), scope, {terms}] -> [ok]
+    /// batch 15 (#15): action 4 stop selling scope (a newer offer without price, pay_url,
+    /// pass_url; t0/period kept), 5 sell it again with its terms ({terms} unused)
     Ed3kSellControl         = 1041,
+    /// batch 15: [scope] -> [ok, {link, private}] — the link of a sale; a private channel's
+    /// carries `s` (a credential: never logged)
+    GetEd3kSaleLink         = 1138,
+
+    // -- My ed3k Sets (batch 15): the user's own sets, file-set.md §5, hidden-set.md,
+    // subscription.md §8.2; src/daemon/Ed3kOwnSetsBridge.cpp. An id: FileSet.id, 32 hex digits.
+    // A kind: 1 open, 2 hidden, 3 paid (a catalogue; published once sold: SellEd3k kind 2 with
+    // target = the set id). A set: {id, title, folder ("" a list of files), files, size, seq (0
+    // none yet), kind, published, building, scope (paid, "" not sold), sold, stopped, link (open
+    // and paid only: a hidden set's link is a credential, GetEd3kOwnSetLink), error}.
+    /// [] -> [ok, {running, sets: [set]}]
+    GetEd3kOwnSets          = 1145,
+    /// [folder ("" = files), files: [path], title, kind] -> [ok, {id, link}] — published at once
+    /// (a paid one waits for SellEd3k); link "" for a hidden set
+    PublishEd3kOwnSet       = 1146,
+    /// [action (1 publish a new version: folder scanned again, seq + 1; 2 unpublish; 3 retitle),
+    /// id, title (3)] -> [ok]
+    Ed3kOwnSetControl       = 1147,
+    /// [id] -> [ok, {link, hidden}] — a hidden set's carries `s` (a credential: never logged)
+    GetEd3kOwnSetLink       = 1148,
 
     // -- ed3k live polish (batch 14): live.md §1.2, §2.3, §4, Ed3kSetsBridge.cpp. A stream row
     // (GetEd3kLive) also has state 5 (§2.3: this viewer can't play its media/codecs; left) with
@@ -1080,6 +1125,18 @@ enum class IpcMsgType : int {
     /// [id, comment, lang, kbps] -> [ok] — a new description of a broadcast on air: a new channel
     /// file (later `created`), the old one withdrawn
     DescribeEd3kLive        = 1046,
+
+    // -- ed3k hiding (batch 15, hops.md §1), Ed3kHideBridge.cpp. Status: GetEd3kStatus "hide"
+    // {on, running, nodeId (8 hex), hops, paths, built, waitingForHops, anonFiles}
+    /// [] -> [ok] — a new anonymous key (the GUI asked: queue places are lost, §1); the
+    /// anonymous node restarts under it while hiding. PushEd3kHideChanged follows
+    NewEd3kAnonKey          = 1047,
+    /// [root (hex, 32 B) or the MD4 of a shared file (hex, 16 B), toAnon: bool] -> [ok, {key:
+    /// "Node"|"Anonymous"}] — moves a shared file or a
+    /// running ed3k download to the other key (the GUI asked first, §1 MUST): closed under one
+    /// key, opened under the other. Failure: not shared/downloading over ed3k, already there,
+    /// hiding off for toAnon
+    MoveEd3kFileKey         = 1048,
 
     // -- Responses (Core -> GUI) ---------------------------------------------
 
@@ -1242,6 +1299,9 @@ enum class IpcMsgType : int {
     ///   failed), to, amount (uint256 hex), readyAt, kept}] — show it; ClaimEd3kStake when found and ready
     PushEd3kStakeLookup    = 1078,
     PushEd3kBootstrapAsk   = 1080,
+    /// [{...GetEd3kStatus "hide"...}] — hiding started or stopped, paths built or lost, or a
+    /// file moved key (a state push): the status, Shared Files and ed3k transfers' Key column
+    PushEd3kHideChanged    = 1081,
 
     // hoster links (1150-1159)
     /// [item] — added or changed; coalesced on the id
@@ -1278,6 +1338,10 @@ enum class IpcMsgType : int {
     PushEd3kRoomPresence   = 1163,
     /// [room, kind (Ed3kRooms::Notice), value, flag: bool, who (node hex, member key base32, "")]
     PushEd3kRoomNotice     = 1164,
+
+    // -- My ed3k Sets (batch 15), see GetEd3kOwnSets
+    /// [{...GetEd3kOwnSets...}] — own sets, their versions or sales changed (a state push)
+    PushEd3kOwnSetsChanged = 1165,
 
     // -- ed3k sets and live (batch 12), see GetEd3kSets / GetEd3kLive
     /// [{...GetEd3kSets...}] — followed sets, versions or member states changed (a state push)

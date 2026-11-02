@@ -36,6 +36,8 @@
 #include "utils/WebServices.h"
 #include "dialogs/CollectionCreateDialog.h"
 #include "dialogs/CollectionViewDialog.h"
+#include "dialogs/Ed3kOwnSetDialog.h"
+#include "panels/Ed3kOwnSetsView.h"
 
 #include "search/SearchParams.h"
 #include "utils/Opcodes.h"
@@ -189,6 +191,7 @@ void SharedFilesPanel::setIpcClient(IpcClient* client)
     if (m_ipc)
         disconnect(m_ipc, nullptr, this, nullptr);
     m_ipc = client;
+    m_ownSetsView->setIpcClient(client);
     // row-update pushes only while this list is on screen
     m_poller->setOnScreenHook(client ? client->pushGroupHold(Ipc::PushGroupShared) : nullptr);
     m_haveSnapshot = false;
@@ -215,6 +218,8 @@ void SharedFilesPanel::setIpcClient(IpcClient* client)
         showFilesCount(0);
     });
     connect(m_ipc, &IpcClient::sharedFileUpdated, this, &SharedFilesPanel::onSharedFilesPushed);
+    // batch 15: a file moved key, or hiding moved: the ed3k Key column again
+    connect(m_ipc, &IpcClient::ed3kHideChanged, this, [this] { requestSharedFiles(); });
     connect(m_ipc, &IpcClient::sharedFileRemoved, this, &SharedFilesPanel::onSharedFileRemovedPush);
     connect(m_ipc, &IpcClient::sharedHashingChanged, this, [this] {
         if (m_browseDir.isEmpty())   // a browsed folder has its own header
@@ -359,6 +364,14 @@ void SharedFilesPanel::onFolderSelectionChanged()
         return;
 
     auto* item = items.first();
+
+    // My ed3k Sets: its rows in place of the file list
+    const bool ownSets = item == m_ownSetsItem;
+    m_listStack->setCurrentWidget(ownSets ? static_cast<QWidget*>(m_ownSetsView) : m_fileView);
+    if (ownSets) {
+        m_ownSetsView->refresh();
+        return;
+    }
 
     // Determine filter type from item data
     const int filterType = item->data(0, Qt::UserRole).toInt();
@@ -544,6 +557,21 @@ void SharedFilesPanel::onFileContextMenu(const QPoint& pos)
         });
         createAct->setEnabled(hasSel);
 
+        // My ed3k Sets (batch 15): a set of the selected files, a new version of one
+        auto* ed3kCreateAct = collMenu->addAction(tr("Create ed3k Set..."), this, [this, hashes]() {
+            QStringList paths;
+            for (const SharedFileRow* r : rowsForHashes(hashes))
+                if (r && !r->isPartFile && !r->filePath.isEmpty())
+                    paths << r->filePath;
+            Ed3kOwnSetDialog::run(m_ipc, this, paths);
+        });
+        ed3kCreateAct->setEnabled(hasSel && m_ipc && m_ipc->isConnected());
+        auto* ed3kVersionAct = collMenu->addAction(tr("Publish New Version..."), this, [this]() {
+            m_ownSetsView->choosePublishNewVersion(this);
+        });
+        ed3kVersionAct->setEnabled(m_ipc && m_ipc->isConnected());
+        collMenu->addSeparator();
+
         // Modify Collection...
         auto* modifyAct = collMenu->addAction(tr("Modify Collection..."), this, [this, hash]() {
             Ipc::IpcMessage msg(Ipc::IpcMsgType::GetCollectionInfo);
@@ -645,6 +673,16 @@ void SharedFilesPanel::onFileContextMenu(const QPoint& pos)
             fetchAndShowSharedFileDetails(hashes, FileDetailDialog::Ed2kLink);
         });
         act->setEnabled(hasSel);
+    }
+    // batch 15, hops.md §1: move to the other ed3k key (asks first); all selected under one key
+    {
+        const QString key = sel.empty() ? QString() : sel.front()->ed3kKey;
+        const bool same = !key.isEmpty()
+                          && std::ranges::all_of(sel, [&key](const SharedFileRow* f) { return f->ed3kKey == key; });
+        const bool toAnon = key != QLatin1String("Anonymous");
+        auto* act = m_contextMenu->addAction(toAnon ? tr("Move to Anonymous ed3k Key...") : tr("Move to Node ed3k Key..."),
+                                             this, [this, hashes, toAnon]() { moveEd3kKey(hashes, toAnon); });
+        act->setEnabled(same);
     }
 
     // The link the IRC nick menu's "Send this to friend" offers (MFC Irc_SetSendLink,
@@ -788,6 +826,11 @@ QWidget* SharedFilesPanel::createTopSection()
     m_sharedDirsItem->setData(0, Qt::UserRole, static_cast<int>(SharedFilterType::SharedDirs));
     m_sharedDirsItem->setIcon(0, skinIcon(QStringLiteral(":/icons/FolderOpen.ico")));
 
+    // My ed3k Sets (batch 15): the user's own sets, listed in place of the files
+    m_ownSetsItem = new QTreeWidgetItem(m_allSharedItem, {tr("My ed3k Sets")});
+    m_ownSetsItem->setData(0, Qt::UserRole, static_cast<int>(SharedFilterType::AllShared));
+    m_ownSetsItem->setIcon(0, skinIcon(QStringLiteral(":/icons/SharedFilesList.ico")));
+
     m_allDirsItem = new QTreeWidgetItem(m_folderTree, {tr("All Directories")});
     m_allDirsItem->setData(0, Qt::UserRole, static_cast<int>(SharedFilterType::AllShared));
     m_allDirsItem->setData(0, kRoleFsItem, true);
@@ -928,7 +971,8 @@ QWidget* SharedFilesPanel::createTopSection()
     // Sources, Shared eD2K|Kad, Folder, File ID, Accepted Requests, Artist, Album,
     // Title, Length, Bitrate, Codec, Ratio, Session Ratio, Last Request. Hidden by default as in MFC.
     fileView->bindColumns(QStringLiteral("sharedfiles"),
-        {260, 65, 60, 60, 100, 120, 170, 60, 100, 260, 220, 100, 100, 100, 100, 50, 65, 50, 50, 80, 120},
+        // + ed3k Key (batch 15, shown by default: hops.md §1 MUST)
+        {260, 65, 60, 60, 100, 120, 170, 60, 100, 260, 220, 100, 100, 100, 100, 50, 65, 50, 50, 80, 120, 80},
         {SharedFilesModel::ColFolder, SharedFilesModel::ColFileId, SharedFilesModel::ColAccepted,
          SharedFilesModel::ColArtist, SharedFilesModel::ColAlbum, SharedFilesModel::ColTitle,
          SharedFilesModel::ColLength, SharedFilesModel::ColBitrate, SharedFilesModel::ColCodec,
@@ -970,7 +1014,13 @@ QWidget* SharedFilesPanel::createTopSection()
     m_fileView->setItemDelegateForColumn(SharedFilesModel::ColFileName,
                                          new FlagDecorationDelegate(m_fileView));
 
-    rightLayout->addWidget(m_fileView, 1);
+    // rightLayout->addWidget(m_fileView, 1);   (was: the file list alone)
+    // the file list, or the rows of My ed3k Sets while that node is selected
+    m_listStack = new QStackedWidget;
+    m_listStack->addWidget(m_fileView);
+    m_ownSetsView = new Ed3kOwnSetsView;
+    m_listStack->addWidget(m_ownSetsView);
+    rightLayout->addWidget(m_listStack, 1);
     m_horzSplitter->addWidget(rightWidget);
 
     // Set default splitter proportions (tree ~25%, files ~75%)
@@ -1241,6 +1291,7 @@ SharedFileRow sharedRowFromCbor(const QCborMap& m)
     row.codec             = m.value(QStringLiteral("codec")).toString();
     row.publishedED2K     = m.value(QStringLiteral("publishedED2K")).toBool();
     row.kadPublished      = m.value(QStringLiteral("kadPublished")).toBool();
+    row.ed3kKey           = m.value(QStringLiteral("ed3kKey")).toString();   // batch 15
     row.path              = m.value(QStringLiteral("path")).toString();
     row.filePath          = m.value(QStringLiteral("filePath")).toString();
     row.shareToggleable   = m.value(QStringLiteral("canUnshare")).toBool();
@@ -1948,6 +1999,18 @@ void SharedFilesPanel::onFolderContextMenu(const QPoint& pos)
         return;
     }
 
+    // My ed3k Sets (batch 15)
+    if (item == m_ownSetsItem) {
+        m_folderTree->setCurrentItem(item);
+        QMenu menu(this);
+        menu.addAction(tr("Create ed3k Set..."), this, [this] { Ed3kOwnSetDialog::run(m_ipc, this, {}); })
+            ->setEnabled(m_ipc && m_ipc->isConnected());
+        menu.addAction(tr("Publish New Version..."), this, [this] { m_ownSetsView->choosePublishNewVersion(this); })
+            ->setEnabled(m_ipc && m_ipc->isConnected());
+        menu.exec(m_folderTree->viewport()->mapToGlobal(pos));
+        return;
+    }
+
     if (!item->data(0, kRoleFsItem).toBool())
         return;
 
@@ -2013,6 +2076,11 @@ void SharedFilesPanel::onFolderContextMenu(const QPoint& pos)
         sendShareDirsUpdate(SharedDirState::withoutDir(thePrefs.sharedDirs(), path, true));
     });
     unshareSubAct->setEnabled(isShared || hasSharedSub);
+
+    // My ed3k Sets (batch 15): every file below the folder as one set
+    menu.addSeparator();
+    menu.addAction(tr("Publish as ed3k Set..."), this, [this, path] { Ed3kOwnSetDialog::run(m_ipc, this, {}, path); })
+        ->setEnabled(m_ipc && m_ipc->isConnected());
 
     menu.exec(m_folderTree->viewport()->mapToGlobal(pos));
 }
@@ -2532,6 +2600,13 @@ void SharedFilesPanel::showSharedDirMenu(QTreeWidgetItem* item, const QPoint& gl
     });
     unshareSubAct->setEnabled(connected && (isRoot ? item->childCount() > 0 : isDirNode));
 
+    // My ed3k Sets (batch 15): a shared folder as one set
+    if (isDirNode && !path.isEmpty()) {
+        menu.addSeparator();
+        menu.addAction(tr("Publish as ed3k Set..."), this, [this, path] { Ed3kOwnSetDialog::run(m_ipc, this, {}, path); })
+            ->setEnabled(connected);
+    }
+
     menu.exec(globalPos);
 }
 
@@ -2586,6 +2661,38 @@ void SharedFilesPanel::deleteSelectedFiles()
     }
     if (!complete.isEmpty())
         sendDeleteFilesBatch(complete);
+}
+
+void SharedFilesPanel::moveEd3kKey(const QStringList& hashes, bool toAnon)
+{
+    if (!m_ipc || hashes.isEmpty())
+        return;
+    // hops.md §1 MUST: ask before a file moves from one key to the other
+    const QString text = toAnon
+        ? tr("Share %n file(s) under the anonymous ed3k key from now on?\n\nThey are unpublished under the node "
+             "key first; what the network stored of them there runs out. Other nodes may still remember that "
+             "this node had them.", nullptr, int(hashes.size()))
+        : tr("Share %n file(s) under the node ed3k key from now on?\n\nThey are then published with this "
+             "node's address: anyone can see that this node shares them.", nullptr, int(hashes.size()));
+    if (QMessageBox::question(this, tr("ed3k Key"), text, QMessageBox::Yes | QMessageBox::No, QMessageBox::No)
+        != QMessageBox::Yes)
+        return;
+    for (const QString& hash : hashes) {
+        IpcMessage msg(IpcMsgType::MoveEd3kFileKey);
+        msg.append(hash);   // the MD4 of a shared file (IpcProtocol.h)
+        msg.append(toAnon);
+        m_ipc->sendRequest(std::move(msg), [self = QPointer<SharedFilesPanel>(this)](const IpcMessage& r) {
+            if (!self)
+                return;
+            if (r.type() == IpcMsgType::Result && r.fieldBool(0)) {
+                self->requestSharedFiles();
+                return;
+            }
+            const QString why = r.type() == IpcMsgType::Result ? r.fieldMap(1).value(QStringLiteral("error")).toString()
+                                                               : r.fieldString(1);
+            AsyncMessageBox::warning(self, tr("ed3k Key"), tr("The file was not moved: %1").arg(why));
+        });
+    }
 }
 
 } // namespace eMule

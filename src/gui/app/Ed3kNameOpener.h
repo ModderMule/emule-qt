@@ -5,7 +5,8 @@
 /// shown how it was resolved with its warnings and ties, asked before the first open
 /// (§4.4 confirm, §5.3 DNS unverified), then opened (OpenEd3kName): a website in the
 /// browser at its local origin, a torrent link through the existing path, a friend link
-/// added as a friend. Also answers the website server's names typed in the browser that
+/// through the link handler (the Add dialog, the user confirms: friend.md §3; was: added at
+/// once). Also answers the website server's names typed in the browser that
 /// need the user's yes (PushEd3kNameResolved with viaSite).
 
 #include <QCborMap>

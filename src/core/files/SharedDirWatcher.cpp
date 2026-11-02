@@ -90,10 +90,10 @@ void SharedDirWatcher::setTimings(int settleMs, int maxHoldMs, int pollMs)
 // Private
 // ---------------------------------------------------------------------------
 
-void SharedDirWatcher::onDirectoryEvent(const QString& dir)
+bool SharedDirWatcher::onDirectoryEvent(const QString& dir)
 {
     if (!m_roots.contains(dir))
-        return;
+        return true;
 
     const qint64 now = QDateTime::currentMSecsSinceEpoch();
     auto it = m_pending.find(dir);
@@ -106,10 +106,11 @@ void SharedDirWatcher::onDirectoryEvent(const QString& dir)
         m_pending.clear();
         m_flushTimer.stop();
         emit overflow();
-        return;
+        return false;
     }
     if (!m_flushTimer.isActive())
         m_flushTimer.start();
+    return true;
 }
 
 void SharedDirWatcher::flush()
@@ -140,16 +141,22 @@ void SharedDirWatcher::flush()
 
 void SharedDirWatcher::poll()
 {
+    // Keys first: a report can overflow, and the reload behind it replaces
+    // m_roots under a live iterator (#117).
+    QStringList due;
     for (auto it = m_roots.begin(); it != m_roots.end(); ++it) {
         if (it->watched && !it->remote)
             continue;
         // try the watch again: the directory may exist now, or the volume be back
         if (!it->watched && m_watcher->addPath(it.key()))
             it->watched = true;
-        // Reported every time: the directory's own date does not move when a file
-        // is rewritten in place, and the rescan this leads to only stats.
-        onDirectoryEvent(it.key());
+        due.append(it.key());
     }
+    // Reported every time: the directory's own date does not move when a file
+    // is rewritten in place, and the rescan this leads to only stats.
+    for (const QString& dir : due)
+        if (!onDirectoryEvent(dir))
+            break;   // overflow: the full rescan covers the rest
 }
 
 bool SharedDirWatcher::isOnNetworkShare(const QString& dir)

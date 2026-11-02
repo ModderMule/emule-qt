@@ -21,6 +21,7 @@ private slots:
     void otherDirectoriesAreNotReported();
     void aMissingRootIsPolledAndThenWatched();
     void tooManyDirectoriesAtOnceIsAnOverflow();
+    void aPollOverflowMayResetTheRoots();
     void aNetworkRootIsPolledEvenWhenWatched();
     void aMoveReportsBothDirectories();
 };
@@ -140,6 +141,30 @@ void tst_SharedDirWatcher::tooManyDirectoriesAtOnceIsAnOverflow()
     QTRY_COMPARE_WITH_TIMEOUT(overflow.count(), 1, 10000);
     QTest::qWait(300);
     QCOMPARE(changed.count(), 0);
+}
+
+// More polled roots than kMaxPending overflow inside the poll; the owner's reload
+// then resets the roots while the poll is still walking them (#117).
+void tst_SharedDirWatcher::aPollOverflowMayResetTheRoots()
+{
+    eMule::testing::TempDir tmp;
+    QStringList dirs;
+    for (int i = 0; i <= SharedDirWatcher::kMaxPending + 10; ++i)
+        dirs.append(tmp.filePath(QStringLiteral("missing%1").arg(i)));
+
+    SharedDirWatcher watcher;
+    watcher.setTimings(100, 1000, 50);
+    watcher.setRoots(dirs);
+    QCOMPARE(watcher.polledRoots().size(), dirs.size());
+    int overflows = 0;
+    connect(&watcher, &SharedDirWatcher::overflow, &watcher, [&] {
+        ++overflows;
+        watcher.setRoots({});        // what SharedFileList::reload() may do
+        watcher.setRoots(dirs);
+    });
+
+    QTRY_VERIFY_WITH_TIMEOUT(overflows >= 2, 5000);
+    QCOMPARE(watcher.polledRoots().size(), dirs.size());
 }
 
 // A watch on a network share is accepted and then tells little; such a root is

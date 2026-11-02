@@ -20,6 +20,7 @@
 #include "prefs/Preferences.h"
 
 #include <QDeadlineTimer>
+#include <QScopeGuard>
 #include <QFileInfo>
 #include <QTemporaryDir>
 #include <QTest>
@@ -41,6 +42,7 @@ private slots:
     void onlyTheEd3kBlockIsAnswered();
     void coordinatorLimitsAndCountsTheNode();
     void coordinatorSizesEd3kSlotsFromTheShare();
+    void theOtherLinksReachTheNode();
 
 private:
     static Ed3kSettings loopback(const QString& dir);
@@ -183,9 +185,13 @@ void tst_Ed3kBridge::onlyTheEd3kBlockIsAnswered()
     QVERIFY(!Ed3kBridge::handleRequest(IpcMessage(IpcMsgType::PushEd3kStatus, 0), reply));
     QCOMPARE(replies, 0);
     // a number of the block not known (yet): an error, not silence
-    QVERIFY(Ed3kBridge::handleRequest(IpcMessage(static_cast<IpcMsgType>(1049), 2), reply));
+    // QVERIFY(Ed3kBridge::handleRequest(IpcMessage(static_cast<IpcMsgType>(1049), 2), reply));
+    // (was 1049: AddEd3kCacheLink since batch 15; every free number is inside a sub-block now,
+    // whose bridge answers a failure: 1149 of the downloads')
+    QVERIFY(Ed3kBridge::handleRequest(IpcMessage(static_cast<IpcMsgType>(1149), 2), reply));
     QCOMPARE(replies, 1);
-    QCOMPARE(last.type(), IpcMsgType::Error);
+    // QCOMPARE(last.type(), IpcMsgType::Error);
+    QVERIFY(last.type() == IpcMsgType::Error || (last.type() == IpcMsgType::Result && !last.fieldBool(0)));
 }
 
 void tst_Ed3kBridge::coordinatorLimitsAndCountsTheNode()
@@ -277,6 +283,60 @@ void tst_Ed3kBridge::coordinatorSizesEd3kSlotsFromTheShare()
 // ---------------------------------------------------------------------------
 // private
 // ---------------------------------------------------------------------------
+
+// batch 15 (Ed3kLinksBridge): an ed3k:node link bootstraps, a node list file that is none is
+// refused, an ed3k:cache link is configured and kept in the pref (or refused, pref unchanged);
+// the pref's links go to the node at its next start
+void tst_Ed3kBridge::theOtherLinksReachTheNode()
+{
+    const auto ask = [](IpcMsgType t, const QCborValue& arg) {
+        IpcMessage m(t, 7);
+        m.append(arg);
+        IpcMessage out;
+        if (!Ed3kBridge::handleRequest(m, [&out](const IpcMessage& r) { out = r; }))
+            out = IpcMessage(IpcMsgType::GetBtStatus, 0);   // not taken
+        return out;
+    };
+    const QStringList cacheBefore = thePrefs.ed3kCacheServers();
+    thePrefs.setEd3kCacheServers({});
+    const auto restore = qScopeGuard([&] { thePrefs.setEd3kCacheServers(cacheBefore); });
+    // no node: failure 0
+    IpcMessage none = ask(IpcMsgType::OpenEd3kNodeLink, QStringLiteral("ed3k:node?id=00&ep=1.2.3.4:5"));
+    QCOMPARE(none.type(), IpcMsgType::Result);
+    QVERIFY(!none.fieldBool(0));
+    QCOMPARE(none.fieldMap(1).value(QStringLiteral("error")).toInteger(), 0);
+
+    QTemporaryDir da, db;
+    QVERIFY(da.isValid() && db.isValid());
+    Ed3kSession a, b;
+    QVERIFY(a.start(loopback(da.path())));
+    QVERIFY(b.start(loopback(db.path())));
+    Ed3kBridge::setSession(&a);
+    QCOMPARE(a.contactCount(), 0u);
+    const QString link = QStringLiteral("ed3k:node?id=%1&ep=127.0.0.1:%2").arg(b.nodeIdHex().toLower()).arg(b.udpPort());
+    const IpcMessage node = ask(IpcMsgType::OpenEd3kNodeLink, link);
+    QVERIFY2(node.fieldBool(0), qPrintable(QString::number(node.fieldMap(1).value(QStringLiteral("error")).toInteger())));
+    QTRY_VERIFY_WITH_TIMEOUT(a.contactCount() > 0, 20000);
+    QVERIFY(!ask(IpcMsgType::OpenEd3kNodeLink, QStringLiteral("ed3k:node?id=zz")).fieldBool(0));
+    // bootstrap.md §3 "By hand": not a node list
+    const IpcMessage file = ask(IpcMsgType::OpenEd3kNodeListFile, QCborValue(QByteArray("not a node list")));
+    QCOMPARE(file.type(), IpcMsgType::Result);
+    QVERIFY(!file.fieldBool(0));
+    QVERIFY(file.fieldMap(1).value(QStringLiteral("error")).toInteger() < 0);
+    // http-source.md §4.1: configured with the others and kept, or refused and not kept
+    const QString cache = QStringLiteral("ed3k:cache?url=https%3A%2F%2Fcache.example.com&key=k3yk3y&kid=main");
+    const IpcMessage added = ask(IpcMsgType::AddEd3kCacheLink, cache);
+    QCOMPARE(added.type(), IpcMsgType::Result);
+    if (added.fieldBool(0))
+        QCOMPARE(thePrefs.ed3kCacheServers(), QStringList{cache});
+    else
+        QVERIFY(thePrefs.ed3kCacheServers().isEmpty());
+    const IpcMessage bad = ask(IpcMsgType::AddEd3kCacheLink, QStringLiteral("ed3k:cache?url=ftp%3A%2F%2Fx&key="));
+    QVERIFY(!bad.fieldBool(0));
+    QCOMPARE(thePrefs.ed3kCacheServers().size(), added.fieldBool(0) ? 1 : 0);
+    a.stop();
+    b.stop();
+}
 
 Ed3kSettings tst_Ed3kBridge::loopback(const QString& dir)
 {

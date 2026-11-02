@@ -52,6 +52,7 @@ struct SharedFileRow {
     QString codec;              // display name
     bool    publishedED2K = false;
     bool    kadPublished = false;
+    QString ed3kKey;            ///< "Node" / "Anonymous" (hops.md §1); empty: not over ed3k
     QString path;               // directory
     QString filePath;           // full path
     QString ed2kLink;
@@ -119,6 +120,8 @@ public:
         ColSessionRatio,
         // Time of the last upload request, "Show more controls" only
         ColLastRequest,
+        // batch 15: the ed3k key a file is shared under (hops.md §1 MUST: shown to the user)
+        ColEd3kKey,
         ColCount
     };
 

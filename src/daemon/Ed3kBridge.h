@@ -64,6 +64,9 @@ bool handleRequest(const Ipc::IpcMessage& msg, const std::function<void(const Ip
 /// GetEd3kStatus, also what PushEd3kStatus carries (keys in IpcProtocol.h). Rates come
 /// from the running BandwidthCoordinator (0 without one).
 [[nodiscard]] QCborMap statusToCbor();
+/// GetEd3kStatus "hide" (batch 15, hops.md §1): {on, running, nodeId (8 hex), hops, paths,
+/// built, waitingForHops, anonFiles}; empty without a session.
+[[nodiscard]] QCborMap hideToCbor();
 
 /// Add what the node did since the last call to Statistics::ed3kSession (cumulative stats).
 /// Called once a second by the daemon, and once more before the node stops.

@@ -76,6 +76,8 @@ public:
         bool ed3kChanged = false;     ///< an ed3k* value moved: the ed3k node restarts or stops
     };
     static PrefApplyOutcome applyPreferenceChanges(const PrefChanges& changes);
+    /// {ports, network, tcpPort, udpPort}: what became of a port change (PortChangeNotice)
+    static void insertPortResult(QCborMap& map, const PrefApplyOutcome& outcome);
     [[nodiscard]] static QCborArray categoryList();
     /// Replaces the category list. An entry with `oldIndex` is an existing one.
     static ops::Status storeCategories(const QCborArray& incoming);

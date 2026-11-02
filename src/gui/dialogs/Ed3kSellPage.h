@@ -3,8 +3,9 @@
 /// @file Ed3kSellPage.h
 /// @brief Options → ed3k → Selling (subscription.md §3, §4, §5, §9.3): what this node sells
 /// (live channels, sets), their seasons and own pass, the passes issued by hand, and the
-/// defaults of a new offer. Acts at once over IPC (1033, 1034, 1040, 1041; push 1067), not
-/// on OK. A channel is sold from "ed3k Sets" → Live Streams → Sell….
+/// defaults of a new offer. Acts at once over IPC (1033, 1034, 1040, 1041, 1138; push 1067),
+/// not on OK. A channel is sold from "ed3k Sets" → Live Streams → Sell…. Batch 15: Stop /
+/// Resume Selling (1041 actions 4, 5); a private channel's link is marked private (live.md §10).
 
 #include <QCborArray>
 #include <QCborMap>
@@ -38,6 +39,9 @@ private:
     void issuePass();
     void changeTerms();
     void newSeason();
+    /// #15: stop selling the sale chosen, or sell it again
+    void stopOrResume();
+    void copyLink();
     void editDefaults();
     void updateButtons();
     [[nodiscard]] QCborMap currentSale() const;
@@ -51,6 +55,7 @@ private:
     QPushButton* m_issue = nullptr;
     QPushButton* m_terms = nullptr;
     QPushButton* m_season = nullptr;
+    QPushButton* m_stop = nullptr;
     QPushButton* m_copyLink = nullptr;
     QPushButton* m_copyPass = nullptr;
     QCborArray m_rows;

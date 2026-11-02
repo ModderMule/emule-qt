@@ -103,7 +103,10 @@ private:
         bool answered = false;   ///< the lookup's KadFound came
     };
 
-    void onEventPolled(const ::ed3k::Event& event, bool* handled);
+    // was: void onEventPolled(const ::ed3k::Event& event, bool* handled);
+    void onEventPolled(const ::ed3k::Event& event, ::ed3k::KeyKind key, bool* handled);
+    /// m_lookups key: the anonymous node's lookup ids get bit 63 (both nodes count from 1).
+    [[nodiscard]] static std::uint64_t lookupKey(std::uint64_t lookup, ::ed3k::KeyKind key);
     void finish(uint32 searchID, const QString& error);
     /// Reported after the call returns (the queue is still sending the search).
     void finishLater(uint32 searchID, const QString& error);
@@ -115,7 +118,7 @@ private:
 
     Ed3kSession& m_session;
     std::map<uint32, Run> m_runs;
-    std::map<std::uint64_t, uint32> m_lookups;
+    std::map<std::uint64_t, uint32> m_lookups;   ///< by lookupKey()
     ResultSink m_results;
     FinishSink m_finished;
     Judge m_judge;

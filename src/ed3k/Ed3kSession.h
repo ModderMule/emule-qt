@@ -10,7 +10,7 @@
 /// Threading and the pump (libs/packmule/docs/ffi.md "The loop"):
 /// - Every call is on the thread of this object. The engine is not thread-safe.
 /// - A datagram, the timer or a command enters the engine; then pump() drains
-///   datagramOut (written at once, in order) and pollEvent until both are empty, and
+///   datagramOut (written at once, in order) and pollKeyedEvent until both are empty, and
 ///   re-arms the timer to nextTimeout().
 /// - eventPolled() is emitted synchronously inside the pump. A slot may call engine
 ///   commands directly (they only queue work; the running pump picks it up) but must
@@ -20,6 +20,7 @@
 ///   then pump().
 
 #include "Ed3kFfi.h"
+#include "Ed3kHide.h"
 #include "Ed3kLan.h"
 
 #include <QByteArray>
@@ -77,6 +78,9 @@ struct Ed3kStatus {
     std::uint32_t class6 = 0;
     bool router = false;
     ::ed3k::Stats stats{};       ///< the engine's counters (size 0 while not running)
+    /// Kad's own network offline (Protocol.md §10 "Own network down"): bit 0 IPv4, bit 1 IPv6
+    std::uint32_t kadOffline = 0;
+    Ed3kHideStatus hide;         ///< hiding (hops.md §1)
 };
 
 /// Datagram payload bytes since this object was made (wire_sent / wire_recv of ed3k_stats,
@@ -162,6 +166,14 @@ public:
     /// Saves ED3K_STATE_PAID now (after paidAnonConfirm, subscription.md §5.1).
     void savePaidState();
 
+    /// Hiding (hops.md §1): the anonymous node and the key of each file. Lives as long as this.
+    [[nodiscard]] Ed3kHide& hide() { return *m_hide; }
+    [[nodiscard]] const Ed3kHide& hide() const { return *m_hide; }
+    /// The hiding prefs; applied live (no restart).
+    void setHideSettings(const Ed3kHideSettings& settings) { m_hide->setSettings(settings); }
+    /// Which node had the event being dispatched (valid inside eventPolled / keyedEventPolled).
+    [[nodiscard]] ::ed3k::KeyKind eventKey() const { return m_eventKey; }
+
 signals:
     /// Running, port, contacts, address class changed.
     void statusChanged();
@@ -169,11 +181,17 @@ signals:
     /// answered an event that needs an answer (WantBlock ...); else the session answers
     /// it with a failure so the core does not wait.
     void eventPolled(const ::ed3k::Event& event, bool* handled);
+    /// Every polled event with the node that had it (KeyKind::Anon: the anonymous node), before
+    /// eventPolled. eventPolled gets the node key's events only: a slot that does not know the
+    /// anonymous key never takes its events for the node key's (hops.md §1).
+    void keyedEventPolled(const ::ed3k::Event& event, ::ed3k::KeyKind key, bool* handled);
 
 private:
     void onReadyRead();
     void onTimer();
-    void dispatch(::ed3k::Event& ev);
+    void dispatch(::ed3k::Event& ev, ::ed3k::KeyKind key);
+    /// Starts or stops the anonymous node as the prefs say (after applyLogLevel and on a change).
+    void applyHide();
     /// RpcRequest to the configured endpoint; false: none for its class and operator.
     bool startRpc(const ::ed3k::event::RpcRequest& r);
     void applyLimits();
@@ -225,6 +243,8 @@ private:
     std::uint32_t m_uploadSlots = 0;
     int m_logLevel = -1;   ///< ed3k::LogLevel set on this engine; -1 = none yet
     Ed3kTraffic m_trafficBase;   ///< of the engines before this one
+    std::unique_ptr<Ed3kHide> m_hide;
+    ::ed3k::KeyKind m_eventKey = ::ed3k::KeyKind::Node;
 };
 
 } // namespace eMule::ed3k

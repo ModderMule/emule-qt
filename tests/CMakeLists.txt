@@ -407,6 +407,8 @@ if(EMULE_ED3K)
     emule_add_test(tst_Ed3kBridge FOLDER "Ed3k"
         SOURCES tst_Ed3kBridge.cpp
                 "${CMAKE_SOURCE_DIR}/src/daemon/Ed3kBridge.cpp"
+                "${CMAKE_SOURCE_DIR}/src/daemon/Ed3kOwnSetsBridge.cpp"
+                "${CMAKE_SOURCE_DIR}/src/daemon/Ed3kLinksBridge.cpp"
                 "${CMAKE_SOURCE_DIR}/src/daemon/Ed3kFriendsBridge.cpp"
                 "${CMAKE_SOURCE_DIR}/src/daemon/Ed3kNamesBridge.cpp"
                 "${CMAKE_SOURCE_DIR}/src/daemon/Ed3kRoomsBridge.cpp"
@@ -425,6 +427,8 @@ if(EMULE_ED3K)
     emule_add_test(tst_Ed3kFriends FOLDER "Ed3k"
         SOURCES tst_Ed3kFriends.cpp
                 "${CMAKE_SOURCE_DIR}/src/daemon/Ed3kBridge.cpp"
+                "${CMAKE_SOURCE_DIR}/src/daemon/Ed3kOwnSetsBridge.cpp"
+                "${CMAKE_SOURCE_DIR}/src/daemon/Ed3kLinksBridge.cpp"
                 "${CMAKE_SOURCE_DIR}/src/daemon/Ed3kFriendsBridge.cpp"
                 "${CMAKE_SOURCE_DIR}/src/daemon/Ed3kNamesBridge.cpp"
                 "${CMAKE_SOURCE_DIR}/src/daemon/Ed3kRoomsBridge.cpp"
@@ -444,6 +448,8 @@ if(EMULE_ED3K)
     emule_add_test(tst_Ed3kNames FOLDER "Ed3k"
         SOURCES tst_Ed3kNames.cpp
                 "${CMAKE_SOURCE_DIR}/src/daemon/Ed3kBridge.cpp"
+                "${CMAKE_SOURCE_DIR}/src/daemon/Ed3kOwnSetsBridge.cpp"
+                "${CMAKE_SOURCE_DIR}/src/daemon/Ed3kLinksBridge.cpp"
                 "${CMAKE_SOURCE_DIR}/src/daemon/Ed3kFriendsBridge.cpp"
                 "${CMAKE_SOURCE_DIR}/src/daemon/Ed3kNamesBridge.cpp"
                 "${CMAKE_SOURCE_DIR}/src/daemon/Ed3kRoomsBridge.cpp"
@@ -463,6 +469,8 @@ if(EMULE_ED3K)
     emule_add_test(tst_Ed3kCredit FOLDER "Ed3k"
         SOURCES tst_Ed3kCredit.cpp
                 "${CMAKE_SOURCE_DIR}/src/daemon/Ed3kBridge.cpp"
+                "${CMAKE_SOURCE_DIR}/src/daemon/Ed3kOwnSetsBridge.cpp"
+                "${CMAKE_SOURCE_DIR}/src/daemon/Ed3kLinksBridge.cpp"
                 "${CMAKE_SOURCE_DIR}/src/daemon/Ed3kFriendsBridge.cpp"
                 "${CMAKE_SOURCE_DIR}/src/daemon/Ed3kNamesBridge.cpp"
                 "${CMAKE_SOURCE_DIR}/src/daemon/Ed3kRoomsBridge.cpp"
@@ -482,6 +490,8 @@ if(EMULE_ED3K)
     emule_add_test(tst_Ed3kStake FOLDER "Ed3k"
         SOURCES tst_Ed3kStake.cpp
                 "${CMAKE_SOURCE_DIR}/src/daemon/Ed3kBridge.cpp"
+                "${CMAKE_SOURCE_DIR}/src/daemon/Ed3kOwnSetsBridge.cpp"
+                "${CMAKE_SOURCE_DIR}/src/daemon/Ed3kLinksBridge.cpp"
                 "${CMAKE_SOURCE_DIR}/src/daemon/Ed3kFriendsBridge.cpp"
                 "${CMAKE_SOURCE_DIR}/src/daemon/Ed3kNamesBridge.cpp"
                 "${CMAKE_SOURCE_DIR}/src/daemon/Ed3kRoomsBridge.cpp"
@@ -497,6 +507,28 @@ if(EMULE_ED3K)
         LIBRARIES eMule::Ed3k eMule::Ipc)
     target_include_directories(tst_Ed3kStake PRIVATE "${CMAKE_SOURCE_DIR}/src/daemon")
     set_tests_properties(tst_Ed3kStake PROPERTIES TIMEOUT 240)
+    # hiding (batch 15, hops.md §1): the global switch (Ed3kHide), keyed events, keys of files,
+    # moving a file's key and the status over IPC (Ed3kHideBridge)
+    emule_add_test(tst_Ed3kHide FOLDER "Ed3k"
+        SOURCES tst_Ed3kHide.cpp
+                "${CMAKE_SOURCE_DIR}/src/daemon/Ed3kHideBridge.cpp"
+                "${CMAKE_SOURCE_DIR}/src/daemon/Ed3kBridge.cpp"
+                "${CMAKE_SOURCE_DIR}/src/daemon/Ed3kOwnSetsBridge.cpp"
+                "${CMAKE_SOURCE_DIR}/src/daemon/Ed3kLinksBridge.cpp"
+                "${CMAKE_SOURCE_DIR}/src/daemon/Ed3kFriendsBridge.cpp"
+                "${CMAKE_SOURCE_DIR}/src/daemon/Ed3kNamesBridge.cpp"
+                "${CMAKE_SOURCE_DIR}/src/daemon/Ed3kRoomsBridge.cpp"
+                "${CMAKE_SOURCE_DIR}/src/daemon/Ed3kCreditBridge.cpp"
+                "${CMAKE_SOURCE_DIR}/src/daemon/Ed3kHosterBridge.cpp"
+                "${CMAKE_SOURCE_DIR}/src/daemon/Ed3kFiltersBridge.cpp"
+                "${CMAKE_SOURCE_DIR}/src/daemon/Ed3kDownloadsBridge.cpp"
+                "${CMAKE_SOURCE_DIR}/src/daemon/Ed3kSetsBridge.cpp"
+                "${CMAKE_SOURCE_DIR}/src/daemon/Ed3kPaidBridge.cpp"
+                "${CMAKE_SOURCE_DIR}/src/daemon/Ed3kPaidSellerBridge.cpp"
+                "${CMAKE_SOURCE_DIR}/src/daemon/BandwidthCoordinator.cpp"
+        LIBRARIES eMule::Ed3k eMule::Ipc)
+    target_include_directories(tst_Ed3kHide PRIVATE "${CMAKE_SOURCE_DIR}/src/daemon")
+    set_tests_properties(tst_Ed3kHide PROPERTIES TIMEOUT 240)
     # the upload queue view (Ed3kUploads) and its GetUploads rows (Ed3kUploadsBridge)
     emule_add_test(tst_Ed3kUploads FOLDER "Ed3k"
         SOURCES tst_Ed3kUploads.cpp
@@ -508,6 +540,8 @@ if(EMULE_ED3K)
     emule_add_test(tst_Ed3kFilters FOLDER "Ed3k"
         SOURCES tst_Ed3kFilters.cpp
                 "${CMAKE_SOURCE_DIR}/src/daemon/Ed3kBridge.cpp"
+                "${CMAKE_SOURCE_DIR}/src/daemon/Ed3kOwnSetsBridge.cpp"
+                "${CMAKE_SOURCE_DIR}/src/daemon/Ed3kLinksBridge.cpp"
                 "${CMAKE_SOURCE_DIR}/src/daemon/Ed3kFriendsBridge.cpp"
                 "${CMAKE_SOURCE_DIR}/src/daemon/Ed3kNamesBridge.cpp"
                 "${CMAKE_SOURCE_DIR}/src/daemon/Ed3kRoomsBridge.cpp"
@@ -573,6 +607,16 @@ if(EMULE_ED3K)
         LIBRARIES eMule::Ed3k eMule::Ipc)
     target_include_directories(tst_Ed3kPaidSeller PRIVATE "${CMAKE_SOURCE_DIR}/src/daemon")
     set_tests_properties(tst_Ed3kPaidSeller PROPERTIES TIMEOUT 240)
+    # My ed3k Sets (Ed3kOwnSets) and their IPC (Ed3kOwnSetsBridge; SellEd3k kind 2 through
+    # Ed3kPaidSellerBridge): a folder published and followed on loopback, a new version, a
+    # hidden set's link, a paid catalogue sealed and opened by a voucher holder, unpublish
+    emule_add_test(tst_Ed3kOwnSets FOLDER "Ed3k"
+        SOURCES tst_Ed3kOwnSets.cpp
+                "${CMAKE_SOURCE_DIR}/src/daemon/Ed3kOwnSetsBridge.cpp"
+                "${CMAKE_SOURCE_DIR}/src/daemon/Ed3kPaidSellerBridge.cpp"
+        LIBRARIES eMule::Ed3k eMule::Ipc)
+    target_include_directories(tst_Ed3kOwnSets PRIVATE "${CMAKE_SOURCE_DIR}/src/daemon")
+    set_tests_properties(tst_Ed3kOwnSets PROPERTIES TIMEOUT 600)
     # usenet join: a fake news server, a fake queue, two nodes on loopback
     emule_add_test(tst_Ed3kUsenetJoin FOLDER "Ed3k" LIBRARIES eMule::Ed3k eMule::Usenet)
     set_tests_properties(tst_Ed3kUsenetJoin PROPERTIES TIMEOUT 180)
@@ -769,6 +813,28 @@ target_include_directories(tst_Ed3kSetsDialog PRIVATE
     "${CMAKE_SOURCE_DIR}/src/gui"
     "${CMAKE_CURRENT_SOURCE_DIR}/stubs")
 target_link_libraries(tst_Ed3kSetsDialog PRIVATE
+    eMule::Core eMule::Ipc Qt6::Widgets)
+
+# My ed3k Sets in the GUI (batch 15): the Create ed3k Set dialog and the set rows with their menu
+emule_add_test(tst_Ed3kOwnSetDialog FOLDER "Gui"
+    SOURCES tst_Ed3kOwnSetDialog.cpp
+            "${CMAKE_SOURCE_DIR}/src/gui/dialogs/Ed3kOwnSetDialog.cpp"
+            "${CMAKE_SOURCE_DIR}/src/gui/panels/Ed3kOwnSetsView.cpp"
+            "${CMAKE_SOURCE_DIR}/src/gui/app/SkinColors.cpp"
+            "${CMAKE_SOURCE_DIR}/src/gui/utils/Appearance.cpp"
+            "${CMAKE_SOURCE_DIR}/src/gui/dialogs/Ed3kSellDialogs.cpp"
+            "${CMAKE_SOURCE_DIR}/src/gui/dialogs/RememberedSizeDialog.cpp"
+            "${CMAKE_SOURCE_DIR}/src/gui/app/UiState.cpp"
+            "${CMAKE_SOURCE_DIR}/src/gui/utils/DialogSizing.cpp"
+            "${CMAKE_SOURCE_DIR}/src/gui/utils/MenuUtils.cpp"
+            "${CMAKE_SOURCE_DIR}/src/gui/utils/SharedFilesFetch.cpp"
+            "${CMAKE_SOURCE_DIR}/src/gui/controls/ContentScrollArea.cpp"
+            "${CMAKE_SOURCE_DIR}/src/gui/app/IpcClient.cpp"
+            "${CMAKE_SOURCE_DIR}/src/gui/app/KnownCores.cpp")
+target_include_directories(tst_Ed3kOwnSetDialog PRIVATE
+    "${CMAKE_SOURCE_DIR}/src/gui"
+    "${CMAKE_CURRENT_SOURCE_DIR}/stubs")
+target_link_libraries(tst_Ed3kOwnSetDialog PRIVATE
     eMule::Core eMule::Ipc Qt6::Widgets)
 
 # The nodes.dat / server.met URL inputs: empty falls back to the default.
@@ -1106,7 +1172,9 @@ emule_add_test(tst_OptionsDialogSizing FOLDER "Gui"
             "${CMAKE_SOURCE_DIR}/src/gui/dialogs/Ed3kSellPage.cpp"
             "${CMAKE_SOURCE_DIR}/src/gui/dialogs/Ed3kSellDialogs.cpp"
             "${CMAKE_SOURCE_DIR}/src/gui/dialogs/Ed3kStakeGroup.cpp"
+            "${CMAKE_SOURCE_DIR}/src/gui/dialogs/Ed3kHidingGroup.cpp"
             "${CMAKE_SOURCE_DIR}/src/gui/app/Ed3kNameOpener.cpp"
+            "${CMAKE_SOURCE_DIR}/src/gui/app/Ed3kLinkActions.cpp"
             "${CMAKE_SOURCE_DIR}/src/gui/utils/CountryFlags.cpp"
             "${CMAKE_SOURCE_DIR}/src/gui/dialogs/FirstStartWizard.cpp"
             "${CMAKE_SOURCE_DIR}/src/gui/panels/StatisticsPanel.cpp"
@@ -1355,7 +1423,9 @@ emule_add_test(tst_SmallScreenDialogs FOLDER "Gui"
             "${CMAKE_SOURCE_DIR}/src/gui/dialogs/Ed3kSellPage.cpp"
             "${CMAKE_SOURCE_DIR}/src/gui/dialogs/Ed3kSellDialogs.cpp"
             "${CMAKE_SOURCE_DIR}/src/gui/dialogs/Ed3kStakeGroup.cpp"
+            "${CMAKE_SOURCE_DIR}/src/gui/dialogs/Ed3kHidingGroup.cpp"
             "${CMAKE_SOURCE_DIR}/src/gui/app/Ed3kNameOpener.cpp"
+            "${CMAKE_SOURCE_DIR}/src/gui/app/Ed3kLinkActions.cpp"
             "${CMAKE_SOURCE_DIR}/src/gui/dialogs/ToolbarCustomizeDialog.cpp"
             "${CMAKE_SOURCE_DIR}/src/gui/controls/AccordionSidebar.cpp"
             "${CMAKE_SOURCE_DIR}/src/gui/controls/LogTextView.cpp"

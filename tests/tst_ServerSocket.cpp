@@ -26,6 +26,8 @@ private slots:
     void constructionDefaults();
     void connectionStateSignal();
     void processServerMessage();
+    void closeAtLogin_keepsServerReason_data();
+    void closeAtLogin_keepsServerReason();
     void processIdChange();
     void processIdChangeExtended();
     void processIdChangeExtendedRejectsLowIDReport();
@@ -149,6 +151,50 @@ void tst_ServerSocket::processServerMessage()
 
     serverSide->close();
     clientSocket.close();
+}
+
+// A server that refuses a login says why, then closes: the reason must survive so
+// the log shows it instead of "is full". No message → empty reason (still "full").
+void tst_ServerSocket::closeAtLogin_keepsServerReason_data()
+{
+    QTest::addColumn<QByteArray>("message");
+    QTest::addColumn<QString>("reason");
+    QTest::newRow("banned") << QByteArray("ERROR : You are temporarily banned from this server.")
+                            << QStringLiteral("You are temporarily banned from this server.");
+    QTest::newRow("duplicate") << QByteArray("Already connected from another session.")
+                               << QStringLiteral("Already connected from another session.");
+    QTest::newRow("no message") << QByteArray() << QString();
+}
+
+void tst_ServerSocket::closeAtLogin_keepsServerReason()
+{
+    QFETCH(QByteArray, message);
+    QFETCH(QString, reason);
+
+    QTcpServer server;
+    QVERIFY(server.listen(QHostAddress::LocalHost, 0));
+    ServerSocket clientSocket;
+    Server srv(htonl(0x7F000001), server.serverPort());
+    clientSocket.connectTo(srv);
+    QVERIFY(server.waitForNewConnection(5000));
+    auto* serverSide = server.nextPendingConnection();
+    QVERIFY(serverSide != nullptr);
+    QTRY_COMPARE_WITH_TIMEOUT(clientSocket.connectionState(), ServerConnState::WaitForLogin, 3000);
+
+    if (!message.isEmpty()) {
+        QSignalSpy msgSpy(&clientSocket, &ServerSocket::serverMessage);
+        QByteArray payload(2, '\0');
+        const auto len = static_cast<uint16>(message.size());
+        std::memcpy(payload.data(), &len, 2);
+        payload += message;
+        writeRawPacket(serverSide, OP_EDONKEYPROT, OP_SERVERMESSAGE, payload.constData(),
+                       static_cast<uint32>(payload.size()));
+        QTRY_COMPARE_WITH_TIMEOUT(msgSpy.count(), 1, 3000);
+    }
+    serverSide->close();
+
+    QTRY_COMPARE_WITH_TIMEOUT(clientSocket.connectionState(), ServerConnState::ServerFull, 3000);
+    QCOMPARE(clientSocket.loginRejectReason(), reason);
 }
 
 // ---------------------------------------------------------------------------

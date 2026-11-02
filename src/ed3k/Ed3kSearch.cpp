@@ -32,7 +32,17 @@ Ed3kSearch::Ed3kSearch(Ed3kSession& session, QObject* parent)
     : QObject(parent)
     , m_session(session)
 {
-    connect(&m_session, &Ed3kSession::eventPolled, this, &Ed3kSearch::onEventPolled, Qt::DirectConnection);
+    // was: connect(&m_session, &Ed3kSession::eventPolled, this, &Ed3kSearch::onEventPolled, Qt::DirectConnection);
+    // node key's events as before, the anonymous node's from keyedEventPolled: each once
+    connect(&m_session, &Ed3kSession::eventPolled, this,
+            [this](const ::ed3k::Event& ev, bool* handled) { onEventPolled(ev, ::ed3k::KeyKind::Node, handled); },
+            Qt::DirectConnection);
+    connect(&m_session, &Ed3kSession::keyedEventPolled, this,
+            [this](const ::ed3k::Event& ev, ::ed3k::KeyKind key, bool* handled) {
+                if (key == ::ed3k::KeyKind::Anon)
+                    onEventPolled(ev, key, handled);
+            },
+            Qt::DirectConnection);
 }
 
 Ed3kSearch::~Ed3kSearch() = default;
@@ -174,22 +184,31 @@ void Ed3kSearch::startMetaSearch(uint32 searchID, SearchType type, const SearchP
         filter.ext = "ed3klive";
         filter.maxSize = filter.maxSize == 0 ? Ed3kLiveFiles::kFileMax : std::min<std::uint64_t>(filter.maxSize, Ed3kLiveFiles::kFileMax);
     }
-    auto lookup = e->search(m_session.now(), std::string_view(query.constData(), std::size_t(query.size())), filter);
+    // hops.md §1 global switch: while hiding the anonymous node searches (through a last hop).
+    // ToDo: channel searches under the anonymous key (live has no anonymous FFI): node key
+    const bool anon = !live && m_session.hide().hiding();
+    const std::string_view text(query.constData(), std::size_t(query.size()));
+    // was: auto lookup = e->search(m_session.now(), text, filter);
+    auto lookup = anon ? e->anonSearch(m_session.now(), text, filter) : e->search(m_session.now(), text, filter);
     if (!lookup) {
         logEd3kDebug(QStringLiteral("ed3k search %1 refused (error %2)").arg(searchID).arg(int(lookup.error())));
         finishLater(searchID, tr("ed3k refused the search (no keyword of at least 3 characters?)."));
         return;
     }
+    const std::uint64_t keyed = lookupKey(*lookup, anon ? ::ed3k::KeyKind::Anon : ::ed3k::KeyKind::Node);
     Run run;
-    run.lookup = *lookup;
+    // was: run.lookup = *lookup;
+    run.lookup = keyed;
     run.live = live;
     run.timeout = std::make_unique<QTimer>();
     run.timeout->setSingleShot(true);
     connect(run.timeout.get(), &QTimer::timeout, this, [this, searchID] { finish(searchID, {}); });
     run.timeout->start(kTimeoutMs);
-    m_lookups[*lookup] = searchID;
+    // was: m_lookups[*lookup] = searchID;
+    m_lookups[keyed] = searchID;
     m_runs[searchID] = std::move(run);
-    logEd3kDebug(QStringLiteral(">>> ed3k search %1: \"%2\" (lookup %3)").arg(searchID).arg(params.expression).arg(*lookup));
+    logEd3kDebug(QStringLiteral(">>> ed3k search %1: \"%2\" (lookup %3%4)").arg(searchID).arg(params.expression).arg(*lookup)
+                     .arg(anon ? QStringLiteral(", anonymous") : QString()));
     // from outside the pump: send it now
     QTimer::singleShot(0, this, [this] {
         if (m_session.isRunning())
@@ -215,13 +234,14 @@ void Ed3kSearch::cancelMetaSearch(uint32 searchID)
 // private
 // ---------------------------------------------------------------------------
 
-void Ed3kSearch::onEventPolled(const ::ed3k::Event& event, bool* handled)
+void Ed3kSearch::onEventPolled(const ::ed3k::Event& event, ::ed3k::KeyKind key, bool* handled)
 {
     Q_UNUSED(handled)   // KadFound needs no answer; others' lookups stay theirs
     const auto* found = std::get_if<::ed3k::event::KadFound>(&event);
     if (!found)
         return;
-    const auto it = m_lookups.find(found->lookup);
+    // was: const auto it = m_lookups.find(found->lookup);
+    const auto it = m_lookups.find(lookupKey(found->lookup, key));
     if (it == m_lookups.end())
         return;
     const uint32 searchID = it->second;
@@ -287,6 +307,11 @@ void Ed3kSearch::onLiveFound(uint32 searchID, Run& run, const ::ed3k::event::Kad
     }
     again->second.timeout->stop();
     QTimer::singleShot(0, this, [this, searchID] { finish(searchID, {}); });
+}
+
+std::uint64_t Ed3kSearch::lookupKey(std::uint64_t lookup, ::ed3k::KeyKind key)
+{
+    return key == ::ed3k::KeyKind::Anon ? (lookup | (std::uint64_t{1} << 63)) : lookup;
 }
 
 void Ed3kSearch::finish(uint32 searchID, const QString& error)

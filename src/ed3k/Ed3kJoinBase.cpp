@@ -189,8 +189,21 @@ Ed3kJoinBase::Ed3kJoinBase(Ed3kSession& session, const QString& configDir, QStri
     connect(&m_saveTimer, &QTimer::timeout, this, &Ed3kJoinBase::saveDirty);
     m_researchTimer.setInterval(kResearchMs);
     connect(&m_researchTimer, &QTimer::timeout, this, &Ed3kJoinBase::onResearchTimer);
-    connect(&m_session, &Ed3kSession::eventPolled, this, &Ed3kJoinBase::onEventPolled, Qt::DirectConnection);
+    // was: connect(&m_session, &Ed3kSession::eventPolled, this, &Ed3kJoinBase::onEventPolled, Qt::DirectConnection);
+    // the node key's events as before; the anonymous node's from keyedEventPolled (only an
+    // anonCapable() join takes them): each event once
+    connect(&m_session, &Ed3kSession::eventPolled, this,
+            [this](const ffi::Event& ev, bool* handled) { onEventPolled(ev, ffi::KeyKind::Node, handled); },
+            Qt::DirectConnection);
+    connect(&m_session, &Ed3kSession::keyedEventPolled, this,
+            [this](const ffi::Event& ev, ffi::KeyKind key, bool* handled) {
+                if (key == ffi::KeyKind::Anon)
+                    onEventPolled(ev, key, handled);
+            },
+            Qt::DirectConnection);
     connect(&m_session, &Ed3kSession::statusChanged, this, &Ed3kJoinBase::onSessionStatus);
+    connect(&m_session.hide(), &Ed3kHide::started, this, [this] { hideChanged(true); });
+    connect(&m_session.hide(), &Ed3kHide::stopped, this, [this] { hideChanged(false); });
     ++turns().users;
     turns().joins.insert(this);
 }
@@ -287,6 +300,13 @@ void Ed3kJoinBase::addSource(const ffi::Root& root, const ffi::Source& source)
     if (!e || it == m_downloads.end())
         return;
     Download& d = *it->second;
+    if (d.key == ffi::KeyKind::Anon) {
+        // ToDo: turns at a source node (§12.5) for the anonymous node's downloads; each asks
+        // on its own for now (a second file to the same node replaces the stream at the core)
+        if (d.streams.size() < streamCap(d) && !d.asked.contains(source.id))
+            (void)openStream(root, source);
+        return;
+    }
     // a node streaming this file already: e.g. a leaf with new relays since it was asked
     if (refreshStream(root, source))
         return;
@@ -465,10 +485,20 @@ bool Ed3kJoinBase::shareMember(const ffi::SharedFile& file, const QString& owner
         (void)e->fileHave(t, file.root, file.have);
         return true;
     }
-    if (auto ok = e->fileOpen(t, file); !ok) {
+    // hops.md §1: under the key it is held under; a new one as the hiding switch says
+    const ffi::KeyKind key = keyOf(file.root);
+    if (key == ffi::KeyKind::Anon && !m_session.hide().hiding()) {
+        logDebug(QStringLiteral("member %1 of %2 is held under the anonymous key: not shared while hiding is off")
+                     .arg(member).arg(owner));
+        return false;
+    }
+    // was: if (auto ok = e->fileOpen(t, file); !ok) {
+    if (auto ok = key == ffi::KeyKind::Anon ? e->anonFileOpen(t, file) : e->fileOpen(t, file); !ok) {
         logDebug(QStringLiteral("member %1 of %2 not shared (error %3)").arg(member).arg(owner, errorName(ok.error())));
         return false;
     }
+    if (anonCapable())
+        m_session.hide().record(file.root, key);
     m_shared[file.root] = Shared{owner, member, file.size, {}};
     // the engine's queue policy ranks its downloaders by it (eMule's score)
     (void)e->uploadPriority(file.root, uploadPriority(m_shared[file.root]));
@@ -514,17 +544,66 @@ std::expected<ffi::Publish, ffi::Error> Ed3kJoinBase::publishShared(const ffi::F
         return std::unexpected(ffi::Error::State);
     const auto t = m_session.now();
     const auto mode = m_holdBack ? ffi::Publish::Source : ffi::Publish::Both;
-    auto ok = e->publish(t, info, mode);
+    // under the anonymous key: its ANON record and keywords through a last hop (hops.md §1)
+    const bool anon = keyOf(info.root) == ffi::KeyKind::Anon;
+    const auto publish = [&](ffi::Publish what) { return anon ? e->anonPublish(t, info, what) : e->publish(t, info, what); };
+    // was: auto ok = e->publish(t, info, mode);
+    auto ok = publish(mode);
     if (ok)
         return mode;
     // a name without a keyword: the engine refuses Both before it takes the source record
     // (packmule-ffi ed3k_publish), so the file would not be found by its root either
     if (mode == ffi::Publish::Both && ok.error() == ffi::Error::Malformed) {
-        if (auto src = e->publish(t, info, ffi::Publish::Source); !src)
+        // was: if (auto src = e->publish(t, info, ffi::Publish::Source); !src)
+        if (auto src = publish(ffi::Publish::Source); !src)
             return std::unexpected(src.error());
         return ffi::Publish::Source;
     }
     return std::unexpected(ok.error());
+}
+
+void Ed3kJoinBase::unpublishShared(const ffi::Root& root, ffi::Publish mode)
+{
+    auto* e = m_session.engine();
+    if (!e)
+        return;
+    const auto t = m_session.now();
+    if (keyOf(root) == ffi::KeyKind::Anon) {
+        (void)e->anonUnshare(t, root);
+        (void)e->anonUnpublish(t, root);
+    } else {
+        (void)e->unpublish(t, root, mode);
+    }
+}
+
+ffi::KeyKind Ed3kJoinBase::keyFor(const ffi::Root& root) const
+{
+    return anonCapable() ? m_session.hide().keyFor(root) : ffi::KeyKind::Node;
+}
+
+ffi::KeyKind Ed3kJoinBase::keyOf(const ffi::Root& root) const
+{
+    if (auto* e = m_session.engine())
+        if (const auto k = e->fileKey(root); k && *k)
+            return **k;
+    return keyFor(root);
+}
+
+bool Ed3kJoinBase::moveDownloadKey(const ffi::Root& root, ffi::KeyKind key)
+{
+    const auto it = m_downloads.find(root);
+    if (!anonCapable() || it == m_downloads.end() || it->second->key == key)
+        return false;
+    const QString owner = it->second->owner;
+    const int member = it->second->member;
+    const std::uint64_t size = it->second->size;
+    const bool inMemory = it->second->inMemory;
+    // closed under one key, then opened under the other (ffi.md "never under both keys")
+    stopDownload(root);
+    m_session.hide().record(root, key);
+    const bool ok = open(root, size, owner, member, inMemory);
+    pumpSession();
+    return ok;
 }
 
 void Ed3kJoinBase::hashInBackground(const QString& path, std::function<void(std::optional<FileHash>)> done)
@@ -909,10 +988,14 @@ QStringList Ed3kJoinBase::metFilesIn(const QStringList& dirs, QStringView suffix
 // private
 // ---------------------------------------------------------------------------
 
-void Ed3kJoinBase::onEventPolled(const ffi::Event& event, bool* handled)
+void Ed3kJoinBase::onEventPolled(const ffi::Event& event, ffi::KeyKind key, bool* handled)
 {
     namespace ev = ffi::event;
     if (!m_started)
+        return;
+    const bool anon = key == ffi::KeyKind::Anon;
+    // hops.md §1: a join of the node key never takes the anonymous node's events for its own
+    if (anon && !anonCapable())
         return;
     if (const auto* w = std::get_if<ev::WantBlock>(&event)) {
         if (answerBlock(w->id, w->root, w->offset, w->len) && handled)
@@ -925,8 +1008,10 @@ void Ed3kJoinBase::onEventPolled(const ffi::Event& event, bool* handled)
             // was: ToDo: an upload queue and slots for ed3k (bandwidth, fairness); every
             // downloader of a joined member gets a slot at once for now (done: the engine's
             // queue policy, ed3k_queue_auto, answers it; a slot at once only without it)
+            // the anonymous node's downloader is answered there (by node ID, ffi.md hiding)
             if (r->first && !r->autoAnswered)
-                (void)m_session.engine()->queueSet(m_session.now(), r->node, 0, 0);
+                (void)(anon ? m_session.engine()->anonQueueSet(m_session.now(), r->node, 0, 0)
+                            : m_session.engine()->queueSet(m_session.now(), r->node, 0, 0));
             if (handled)
                 *handled = true;
         }
@@ -1000,10 +1085,11 @@ void Ed3kJoinBase::onEventPolled(const ffi::Event& event, bool* handled)
             onStreamClosed(*sc);
         }
     } else if (const auto* kf = std::get_if<ev::KadFound>(&event)) {
-        onKadFound(*kf);
-    } else if (const auto* af = std::get_if<ev::AliasFound>(&event); af && m_setSearches.contains(af->search)) {
+        onKadFound(*kf, key);
+    } else if (const auto* af = std::get_if<ev::AliasFound>(&event); af && !anon && m_setSearches.contains(af->search)) {
         onSetAliasFound(*af);
-    } else {
+    } else if (!anon) {
+        // the joins' own events are of the node key (sets, aliases, ...)
         onOtherEvent(event);
     }
 }
@@ -1014,6 +1100,41 @@ void Ed3kJoinBase::onSessionStatus()
         start();
     else if (!m_session.isRunning() && m_started)
         stop();
+}
+
+void Ed3kJoinBase::hideChanged(bool hiding)
+{
+    if (!m_started || !anonCapable())
+        return;
+    if (!hiding) {
+        // the anonymous node ended with its downloads and shares (ffi.md hiding): forgotten
+        // here; they wait for hiding to come back, never go to the node key
+        for (auto it = m_shared.begin(); it != m_shared.end();)
+            it = m_session.hide().recorded(it->first) == ffi::KeyKind::Anon ? m_shared.erase(it) : std::next(it);
+        for (auto& [root, d] : m_downloads) {
+            if (d->key != ffi::KeyKind::Anon)
+                continue;
+            for (const auto& [stream, slot] : d->streams)
+                m_streams.erase(stream);
+            d->streams.clear();
+            d->outstanding.clear();
+            d->sourceHave.clear();
+            d->asked.clear();
+            d->anonOpened = false;
+        }
+        std::erase_if(m_sourceLookups, [](const auto& l) { return (l.first >> 63) != 0; });
+    } else {
+        for (const auto& [root, d] : m_downloads)
+            if (d->key == ffi::KeyKind::Anon)
+                searchSourcesAgain(root, true);
+    }
+    onHideChanged(hiding);
+    pumpSession();
+}
+
+std::uint64_t Ed3kJoinBase::lookupKey(std::uint64_t lookup, ffi::KeyKind key)
+{
+    return key == ffi::KeyKind::Anon ? (lookup | (std::uint64_t{1} << 63)) : lookup;
 }
 
 bool Ed3kJoinBase::answerBlock(std::uint64_t id, const ffi::Root& root, std::uint64_t offset, std::optional<std::uint32_t> len)
@@ -1151,14 +1272,20 @@ void Ed3kJoinBase::onBlock(const ffi::event::Block& b)
     onBlobFetched(owner, member, root, data);
 }
 
-void Ed3kJoinBase::onKadFound(const ffi::event::KadFound& found)
+void Ed3kJoinBase::onKadFound(const ffi::event::KadFound& found, ffi::KeyKind key)
 {
-    const auto it = m_sourceLookups.find(found.lookup);
+    // was: const auto it = m_sourceLookups.find(found.lookup);
+    const auto it = m_sourceLookups.find(lookupKey(found.lookup, key));
     if (it == m_sourceLookups.end())
         return;
     const ffi::Root root = it->second;
     for (const auto& s : found.sources)
         addSource(root, s);
+    // anonymous sources (hops.md §4): the ID alone, reached through their gates; only the
+    // anonymous node asks them (ffi.md: ed3k_anon_file_request)
+    if (key == ffi::KeyKind::Anon)
+        for (const auto& id : found.anon)
+            addSource(root, ffi::Source{id, false, std::nullopt, std::nullopt, {}});
 }
 
 bool Ed3kJoinBase::open(const ffi::Root& root, std::uint64_t size, const QString& owner, int member, bool inMemory)
@@ -1167,9 +1294,17 @@ bool Ed3kJoinBase::open(const ffi::Root& root, std::uint64_t size, const QString
     if (!e || size == 0 || m_downloads.contains(root))
         return false;
     const auto t = m_session.now();
-    if (auto ok = e->downloadOpen(t, root, size); !ok)
-        logDebug(QStringLiteral("download of %1 not opened (error %2)").arg(hexOf(root.bytes), errorName(ok.error())));
+    // hops.md §1: the key it is held under, a new one as the hiding switch says
+    const ffi::KeyKind key = anonCapable() ? keyOf(root) : ffi::KeyKind::Node;
+    if (anonCapable())
+        m_session.hide().record(root, key);
+    // the anonymous key opens it with the first anonFileRequest (downloadOpen here would hold
+    // it for the node key)
+    if (key == ffi::KeyKind::Node)
+        if (auto ok = e->downloadOpen(t, root, size); !ok)
+            logDebug(QStringLiteral("download of %1 not opened (error %2)").arg(hexOf(root.bytes), errorName(ok.error())));
     auto d = std::make_unique<Download>();
+    d->key = key;
     d->owner = owner;
     d->member = member;
     d->size = size;
@@ -1202,9 +1337,18 @@ void Ed3kJoinBase::searchSourcesAgain(const ffi::Root& root, bool force)
     // nodes asked before may have it now (none of them streams any more)
     if (d.streams.empty())
         d.asked.clear();
+    if (d.key == ffi::KeyKind::Anon) {
+        // the anonymous node searches through a last hop (hops.md §4.1); nothing while it is off
+        if (!m_session.hide().hiding())
+            return;
+        ++m_sourceSearches;
+        if (auto lookup = e->anonSearchSources(m_session.now(), root))
+            m_sourceLookups[lookupKey(*lookup, ffi::KeyKind::Anon)] = root;
+        return;
+    }
     ++m_sourceSearches;
     if (auto lookup = e->searchSources(m_session.now(), root))
-        m_sourceLookups[*lookup] = root;
+        m_sourceLookups[lookupKey(*lookup, ffi::KeyKind::Node)] = root;
 }
 
 void Ed3kJoinBase::onResearchTimer()
@@ -1454,15 +1598,27 @@ bool Ed3kJoinBase::openStream(const ffi::Root& root, const ffi::Source& source)
     if (!e || it == m_downloads.end())
         return false;
     Download& d = *it->second;
-    auto stream = e->fileRequest(m_session.now(), source, ffi::Request{root, d.size, ffi::Have{}, 0, false, false});
+    const bool anon = d.key == ffi::KeyKind::Anon;
+    if (anon && !m_session.hide().hiding())
+        return false;
+    const ffi::Request req{root, d.size, ffi::Have{}, 0, false, false};
+    // was: auto stream = e->fileRequest(m_session.now(), source, req);
+    auto stream = anon ? e->anonFileRequest(m_session.now(), source, req) : e->fileRequest(m_session.now(), source, req);
     if (!stream) {
         logDebug(QStringLiteral("source refused (error %1)").arg(errorName(stream.error())));
         return false;
     }
+    // the anonymous node holds the root now: downloadOpen goes there (ffi.md hiding)
+    if (anon && !d.anonOpened) {
+        if (auto ok = e->downloadOpen(m_session.now(), root, d.size); !ok)
+            logDebug(QStringLiteral("anonymous download of %1 not opened (error %2)").arg(hexOf(root.bytes), errorName(ok.error())));
+        d.anonOpened = true;
+    }
     d.asked.insert(source.id);
     d.streams[*stream] = false;
     m_streams[*stream] = root;
-    turns().holders[source.id] = NodeTurns::Holder{this, root, *stream, source};
+    if (!anon)
+        turns().holders[source.id] = NodeTurns::Holder{this, root, *stream, source};
     onStreamOpened(root, *stream, source);
     pumpSession();
     return true;

@@ -406,9 +406,16 @@ bool Ed3kNames::followSite(const ffi::Key32& key, const QByteArray& id)
         return false;
     }
     s.topic = *topic;
+    s.headPending = heldRoot.has_value();   // §6.1: checked before a member is served
     m_siteTopics[*topic] = k;
     pumpSession();
     return true;
+}
+
+bool Ed3kNames::siteHeadPending(const ffi::Key32& key, const QByteArray& id) const
+{
+    const auto it = m_sites.find(siteKey(key, id));
+    return it != m_sites.end() && it->second.topic && it->second.headPending;
 }
 
 void Ed3kNames::siteShown(const ffi::Key32& key, const QByteArray& id)
@@ -454,6 +461,7 @@ void Ed3kNames::setSiteManifest(const ffi::Key32& key, const QByteArray& id, con
     s.key = key;
     s.id = id;
     s.manifest = manifest;
+    s.headPending = false;   // a manifest came (as onSiteManifest)
     m_cache->putManifest(siteKey(key, id), manifest);
     emit siteChanged(toBytes(key), id);
 }
@@ -629,6 +637,22 @@ void Ed3kNames::onNameEvent(const ffi::Event& ev, bool* handled)
         if (m_siteTopics.contains(sr->set)) {
             *handled = true;
             logEd3kDebug(QStringLiteral("ed3k: a website manifest was refused (%1)").arg(int(sr->why)));
+            // a newer one refused: the one held is served (its head was checked)
+            const auto it = m_sites.find(m_siteTopics.at(sr->set));
+            if (it != m_sites.end() && it->second.headPending) {
+                it->second.headPending = false;
+                emit siteHeadChecked(toBytes(it->second.key), it->second.id, false);
+            }
+        }
+    } else if (const auto* hc = std::get_if<e::SetHeadChecked>(&ev)) {
+        // §6.1 (#16): a held site shown again is served once its head is checked
+        if (const auto t = m_siteTopics.find(hc->set); t != m_siteTopics.end()) {
+            *handled = true;
+            if (const auto it = m_sites.find(t->second); it != m_sites.end()) {
+                if (!hc->newer)
+                    it->second.headPending = false;   // newer: until its manifest is in
+                emit siteHeadChecked(toBytes(it->second.key), it->second.id, hc->newer);
+            }
         }
     } else if (const auto* b = std::get_if<e::Block>(&ev)) {
         // not handled: the base took it before (its handler runs first); a member of a site
@@ -711,6 +735,7 @@ void Ed3kNames::onSiteManifest(const ffi::Topic& topic, const ffi::Bytes& file)
         return;
     // §6.3: a new version is served from the first request after its manifest is complete
     it->second.manifest = QByteArray(reinterpret_cast<const char*>(file.data()), qsizetype(file.size()));
+    it->second.headPending = false;
     m_cache->putManifest(t->second, it->second.manifest);
     emit siteChanged(toBytes(it->second.key), it->second.id);
 }

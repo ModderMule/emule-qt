@@ -198,7 +198,7 @@ Ed3kPaidSeller::Ed3kPaidSeller(Ed3kSession& session, const QString& configDir, Q
 Ed3kPaidSeller::~Ed3kPaidSeller() = default;
 
 std::expected<QString, QString> Ed3kPaidSeller::sell(Kind kind, const Seed& publisherSeed, const QByteArray& id, const QString& title,
-                                                     const Terms& terms)
+                                                     const Terms& terms, bool isPrivate)
 {
     if (const QString p = termsProblem(terms); !p.isEmpty())
         return std::unexpected(p);
@@ -218,7 +218,8 @@ std::expected<QString, QString> Ed3kPaidSeller::sell(Kind kind, const Seed& publ
     if (Sale* held = find(*scope)) {
         if (!title.isEmpty())
             held->title = title;
-        return setTerms(scopeHex, terms);
+        held->isPrivate = held->isPrivate || isPrivate;
+        return setTerms(scopeHex, terms);   // a stopped sale too: sold again (§3)
     }
     QDir().mkpath(sellDir());
     Sale s;
@@ -228,6 +229,7 @@ std::expected<QString, QString> Ed3kPaidSeller::sell(Kind kind, const Seed& publ
     s.id = id;
     s.title = title;
     s.terms = terms;
+    s.isPrivate = kind == Kind::Channel && isPrivate;
     const std::uint32_t period = periodOf(s);
     s.terms.period = period;
     s.terms.seasonLength = lengthOf(s);
@@ -275,25 +277,75 @@ std::expected<QString, QString> Ed3kPaidSeller::setTerms(const QString& scopeHex
         return std::unexpected(tr("The key of this scope is missing."));
     const Secret pub(*seed);
     wipe(std::span<std::uint8_t>{*seed});
-    // §3: t0, period and the season stay
+    // §3: t0, period and the season stay; a stopped sale is sold again (#15)
     const Terms old = s->terms;
+    const bool wasStopped = s->stopped;
     s->terms = terms;
     s->terms.period = old.period;
     s->terms.seasonLength = old.seasonLength;
+    s->stopped = false;
     const Season* season = offerSeason(*s);
     QString error;
     if (!season || !signOffer(*s, *season, pub, &error)) {
         s->terms = old;
+        s->stopped = wasStopped;
         return std::unexpected(error.isEmpty() ? tr("The offer could not be signed.") : error);
     }
-    if (auto* e = m_session.engine(); e && s->onEngine) {
-        (void)e->paidSetOffer(m_session.now(), s->scope, spanOf(s->offer));
-        m_session.pump();
-    }
-    logEd3k(QStringLiteral("ed3k: paid scope %1: a new offer").arg(scopeHex));
+    // if (auto* e = m_session.engine(); e && s->onEngine) {
+    //     (void)e->paidSetOffer(m_session.now(), s->scope, spanOf(s->offer));
+    //     m_session.pump();
+    // }
+    pushOffer(*s);
+    logEd3k(QStringLiteral("ed3k: paid scope %1: a new offer%2").arg(scopeHex, wasStopped ? QStringLiteral(" (sold again)") : QString()));
     save();
     markChanged();
     return scopeHex;
+}
+
+std::expected<void, QString> Ed3kPaidSeller::stopSale(const QString& scopeHex)
+{
+    Sale* s = find(scopeHex);
+    if (!s)
+        return std::unexpected(tr("This scope is not sold here."));
+    if (s->stopped)
+        return {};
+    auto seed = publisherSeed(*s);
+    if (!seed)
+        return std::unexpected(tr("The key of this scope is missing."));
+    const Secret pub(*seed);
+    wipe(std::span<std::uint8_t>{*seed});
+    // §3: no termsProblem (no price is the point); t0, period, the season stay
+    s->stopped = true;
+    const Season* season = offerSeason(*s);
+    QString error;
+    if (!season || !signOffer(*s, *season, pub, &error)) {
+        s->stopped = false;
+        return std::unexpected(error.isEmpty() ? tr("The offer could not be signed.") : error);
+    }
+    pushOffer(*s);
+    logEd3k(QStringLiteral("ed3k: paid scope %1: no longer sold").arg(scopeHex));
+    save();
+    markChanged();
+    return {};
+}
+
+std::expected<void, QString> Ed3kPaidSeller::resumeSale(const QString& scopeHex)
+{
+    const Sale* s = find(scopeHex);
+    if (!s)
+        return std::unexpected(tr("This scope is not sold here."));
+    if (!s->stopped)
+        return {};
+    auto r = setTerms(scopeHex, s->terms);
+    if (!r)
+        return std::unexpected(r.error());
+    return {};
+}
+
+QString Ed3kPaidSeller::saleLink(const QString& scopeHex) const
+{
+    const Sale* s = find(scopeHex);
+    return s ? linkOf(*s) : QString();
 }
 
 std::expected<void, QString> Ed3kPaidSeller::newSeasonAfterLeak(const QString& scopeHex)
@@ -357,15 +409,22 @@ std::expected<QString, QString> Ed3kPaidSeller::sellBroadcast(Ed3kLiveBroadcast&
     const auto on = broadcast.info(streamId);
     if (!on)
         return std::unexpected(tr("This channel is not on air."));
-    // ToDo (header): a private paid channel needs paidFollowPrivate with its secret
-    if (on->isPrivate)
-        return std::unexpected(tr("A private channel cannot be sold yet."));
+    // was: ToDo (header): a private paid channel needs paidFollowPrivate with its secret
+    // if (on->isPrivate)
+    //     return std::unexpected(tr("A private channel cannot be sold yet."));
+    // (done: its secret stays the broadcast's, attach() follows with paidFollowPrivate)
+    if (on->isPrivate) {
+        auto secret = broadcast.channelSecret(streamId);
+        if (!secret)
+            return std::unexpected(tr("The secret of the private channel could not be read."));
+        wipe(std::span<std::uint8_t>{*secret});
+    }
     QByteArray id;
     auto seed = broadcast.channelSeed(streamId, &id);
     if (!seed)
         return std::unexpected(tr("The channel key could not be read."));
     serve(broadcast);
-    auto r = sell(Kind::Channel, *seed, id, on->title, terms);
+    auto r = sell(Kind::Channel, *seed, id, on->title, terms, on->isPrivate);
     wipe(std::span<std::uint8_t>{*seed});
     if (!r || on->paid)
         return r;
@@ -381,12 +440,14 @@ std::expected<QString, QString> Ed3kPaidSeller::sellBroadcast(Ed3kLiveBroadcast&
 
 void Ed3kPaidSeller::serve(Ed3kLiveBroadcast& broadcast)
 {
+    m_broadcast = &broadcast;
     broadcast.setOfferSource([self = QPointer(this)](const ffi::Key32& key, const QByteArray& id) {
         return self ? self->offerOf(key, id) : QByteArray();
     });
     // a channel sold that went on air open (resumed before this): again as a paid one
     for (const auto& on : broadcast.list()) {
-        if (on.paid || on.isPrivate)
+        // if (on.paid || on.isPrivate)   (was: a private channel was not sold)
+        if (on.paid)
             continue;
         QByteArray id;
         auto seed = broadcast.channelSeed(on.id, &id);
@@ -621,7 +682,21 @@ void Ed3kPaidSeller::attach(Sale& s)
         return;
     const QString scopeHex = Ed3kPaid::hexOf(s.scope);
     const auto t = m_session.now();
-    if (const auto ok = e->paidFollow(s.publisher, s.scope); !ok && ok.error() != ffi::Error::State) {
+    if (s.isPrivate) {
+        // live.md §10, subscription.md §6.1: every key request and answer proves the secret
+        auto secret = Ed3kLiveBroadcast::channelSecretOf(m_configDir, s.id);
+        if (!secret) {
+            logEd3kWarning(QStringLiteral("ed3k: paid scope %1 not sold: the secret of the private channel is missing").arg(scopeHex));
+            return;
+        }
+        const Secret sec(*secret);
+        wipe(std::span<std::uint8_t>{*secret});
+        const auto ok = e->paidFollowPrivate(s.publisher, spanOf(s.id), sec.expose());
+        if (!ok || *ok != s.scope) {
+            logEd3kWarning(QStringLiteral("ed3k: paid scope %1 not sold (error %2)").arg(scopeHex).arg(ok ? -1 : int(ok.error())));
+            return;
+        }
+    } else if (const auto ok = e->paidFollow(s.publisher, s.scope); !ok && ok.error() != ffi::Error::State) {
         logEd3kWarning(QStringLiteral("ed3k: paid scope %1 not sold (error %2)").arg(scopeHex).arg(int(ok.error())));
         return;
     }
@@ -663,9 +738,12 @@ bool Ed3kPaidSeller::signOffer(Sale& s, const Season& season, const Secret& pub,
         if (const auto k = ffi::keyPublic(sk.expose()); k && *k != s.publisher)
             f.issuers.push_back(*k);
     }
-    f.price = s.terms.price.toStdString();
-    f.payUrl = s.terms.payUrl.toStdString();
-    f.passUrl = s.terms.passUrl.toStdString();
+    // §3 (#15): a stopped sale's offer has no price, pay_url, pass_url
+    if (!s.stopped) {
+        f.price = s.terms.price.toStdString();
+        f.payUrl = s.terms.payUrl.toStdString();
+        f.passUrl = s.terms.passUrl.toStdString();
+    }
     f.terms = s.terms.terms.toStdString();
     f.reportUrl = s.terms.reportUrl.toStdString();
     f.freeAfter = s.terms.freeAfter;
@@ -889,6 +967,8 @@ Ed3kPaidSeller::Info Ed3kPaidSeller::infoOf(const Sale& s) const
     i.ownUntil = s.ownUntil;
     i.onEngine = s.onEngine;
     i.issued = s.issued;
+    i.isPrivate = s.isPrivate;
+    i.stopped = s.stopped;
     return i;
 }
 
@@ -896,8 +976,15 @@ QString Ed3kPaidSeller::linkOf(const Sale& s) const
 {
     const auto idSpan = std::span<const std::uint8_t>(reinterpret_cast<const std::uint8_t*>(s.id.constData()), std::size_t(s.id.size()));
     if (s.kind == Kind::Channel) {
-        // §7: ed3k:live?key&id&paid=1[&dn]
+        // §7: ed3k:live?key&id&paid=1[&s][&dn]
         QString link = QStringLiteral("ed3k:live?key=%1&id=%2&paid=1").arg(base32(s.publisher), base32(idSpan));
+        if (s.isPrivate) {
+            // live.md §10: the link is the credential (never logged, not in sell.json)
+            if (auto secret = Ed3kLiveBroadcast::channelSecretOf(m_configDir, s.id)) {
+                link += QStringLiteral("&s=") + base32(*secret);
+                wipe(std::span<std::uint8_t>{*secret});
+            }
+        }
         if (!s.title.isEmpty())
             link += QStringLiteral("&dn=") + QString::fromLatin1(QUrl::toPercentEncoding(s.title));
         return link;
@@ -918,6 +1005,31 @@ void Ed3kPaidSeller::removeFiles(const Sale& s)
     const QString prefix = Ed3kPaid::hexOf(s.scope) + QLatin1Char('-');
     for (const QString& f : QDir(sellDir()).entryList({prefix + QStringLiteral("*.season")}, QDir::Files))
         QFile::remove(QDir(sellDir()).filePath(f));
+}
+
+void Ed3kPaidSeller::pushOffer(Sale& s)
+{
+    if (auto* e = m_session.engine(); e && s.onEngine) {
+        (void)e->paidSetOffer(m_session.now(), s.scope, spanOf(s.offer));
+        m_session.pump();
+    }
+    // §7: the offer of an open channel is in its channel file: a changed one is a new file
+    // ToDo: off air the channel file is not shared yet (live #5, Ed3kLiveFiles): then at its start
+    if (!m_broadcast || s.kind != Kind::Channel || s.isPrivate)
+        return;
+    for (const auto& on : m_broadcast->list()) {
+        QByteArray id;
+        auto seed = m_broadcast->channelSeed(on.id, &id);
+        if (!seed)
+            continue;
+        const auto key = ffi::keyPublic(*seed);
+        wipe(std::span<std::uint8_t>{*seed});
+        const auto o = m_broadcast->optionsOf(on.id);
+        if (!key || *key != s.publisher || id != s.id || !o)
+            continue;
+        if (auto r = m_broadcast->describe(on.id, o->comment, o->lang, o->kbps); !r)
+            logEd3kWarning(QStringLiteral("ed3k: paid channel %1: the channel file was not renewed: %2").arg(on.title, r.error()));
+    }
 }
 
 void Ed3kPaidSeller::markChanged()
@@ -954,6 +1066,8 @@ void Ed3kPaidSeller::load()
         s.offerIssued = o.value(QStringLiteral("offerIssued")).toString().toULongLong();
         s.ownPass = QByteArray::fromBase64(o.value(QStringLiteral("ownPass")).toString().toLatin1());
         s.ownUntil = o.value(QStringLiteral("ownUntil")).toString().toULongLong();
+        s.isPrivate = s.kind == Kind::Channel && o.value(QStringLiteral("private")).toBool();
+        s.stopped = o.value(QStringLiteral("stopped")).toBool();
         for (const QJsonValue& sv : o.value(QStringLiteral("seasons")).toArray()) {
             const QJsonObject so = sv.toObject();
             const QByteArray chain = QByteArray::fromBase64(so.value(QStringLiteral("chain")).toString().toLatin1());
@@ -1014,6 +1128,9 @@ void Ed3kPaidSeller::save() const
             {QStringLiteral("ownUntil"), QString::number(s.ownUntil)},
             {QStringLiteral("seasons"), seasons},
             {QStringLiteral("issued"), issued},
+            // the secret of a private channel is not here (the broadcast's file, owner-only)
+            {QStringLiteral("private"), s.isPrivate},
+            {QStringLiteral("stopped"), s.stopped},
         });
     }
     const QByteArray out = QJsonDocument(QJsonObject{{QStringLiteral("defaults"), termsToJson(m_defaults)}, {QStringLiteral("sales"), sales}})

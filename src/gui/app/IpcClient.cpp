@@ -209,6 +209,9 @@ static QString ipcMsgTypeName(Ipc::IpcMsgType type)
     case T::PushEd3kStatus:       return QStringLiteral("PushEd3kStatus");
     case T::OpenEd3kNodesLink:    return QStringLiteral("OpenEd3kNodesLink");
     case T::AnswerEd3kBootstrapAsk: return QStringLiteral("AnswerEd3kBootstrapAsk");
+    case T::OpenEd3kNodeLink:     return QStringLiteral("OpenEd3kNodeLink");
+    case T::AddEd3kCacheLink:     return QStringLiteral("AddEd3kCacheLink");
+    case T::OpenEd3kNodeListFile: return QStringLiteral("OpenEd3kNodeListFile");
     case T::PushEd3kBootstrapAsk: return QStringLiteral("PushEd3kBootstrapAsk");
     case T::GetEd3kFriends:       return QStringLiteral("GetEd3kFriends");
     case T::AddEd3kFriend:        return QStringLiteral("AddEd3kFriend");
@@ -277,6 +280,9 @@ static QString ipcMsgTypeName(Ipc::IpcMsgType type)
     case T::PushEd3kLiveChanged:  return QStringLiteral("PushEd3kLiveChanged");
     case T::WatchEd3kLiveFile:    return QStringLiteral("WatchEd3kLiveFile");
     case T::DescribeEd3kLive:     return QStringLiteral("DescribeEd3kLive");
+    case T::NewEd3kAnonKey:       return QStringLiteral("NewEd3kAnonKey");
+    case T::MoveEd3kFileKey:      return QStringLiteral("MoveEd3kFileKey");
+    case T::PushEd3kHideChanged:  return QStringLiteral("PushEd3kHideChanged");
     case T::PushEd3kLiveFileWatched: return QStringLiteral("PushEd3kLiveFileWatched");
     case T::PushEd3kSetOffer:     return QStringLiteral("PushEd3kSetOffer");
     case T::GetEd3kPaid:          return QStringLiteral("GetEd3kPaid");
@@ -294,8 +300,14 @@ static QString ipcMsgTypeName(Ipc::IpcMsgType type)
     case T::SellEd3k:             return QStringLiteral("SellEd3k");
     case T::IssueEd3kPass:        return QStringLiteral("IssueEd3kPass");
     case T::Ed3kSellControl:      return QStringLiteral("Ed3kSellControl");
+    case T::GetEd3kSaleLink:      return QStringLiteral("GetEd3kSaleLink");
     case T::PushEd3kSellingChanged: return QStringLiteral("PushEd3kSellingChanged");
     case T::PushEd3kSeasonStarted: return QStringLiteral("PushEd3kSeasonStarted");
+    case T::GetEd3kOwnSets:       return QStringLiteral("GetEd3kOwnSets");
+    case T::PublishEd3kOwnSet:    return QStringLiteral("PublishEd3kOwnSet");
+    case T::Ed3kOwnSetControl:    return QStringLiteral("Ed3kOwnSetControl");
+    case T::GetEd3kOwnSetLink:    return QStringLiteral("GetEd3kOwnSetLink");
+    case T::PushEd3kOwnSetsChanged: return QStringLiteral("PushEd3kOwnSetsChanged");
     case T::BurnEd3kStake:        return QStringLiteral("BurnEd3kStake");
     case T::ClaimEd3kStake:       return QStringLiteral("ClaimEd3kStake");
     case T::GetEd3kStakeClaims:   return QStringLiteral("GetEd3kStakeClaims");
@@ -1031,6 +1043,39 @@ int IpcClient::muteEd3kRoomMember(const QString& room, const QString& memberId, 
     return sendRequest(std::move(msg), std::move(callback));
 }
 
+int IpcClient::requestEd3kOwnSets(ResponseCallback callback)
+{
+    return sendRequest(IpcMessage(IpcMsgType::GetEd3kOwnSets), std::move(callback));
+}
+
+int IpcClient::publishEd3kOwnSet(const QString& folder, const QStringList& files, const QString& title, int kind,
+                                 ResponseCallback callback)
+{
+    IpcMessage msg(IpcMsgType::PublishEd3kOwnSet);
+    msg.append(folder);
+    msg.append(QCborArray::fromStringList(files));
+    msg.append(title);
+    msg.append(qint64(kind));
+    return sendRequest(std::move(msg), std::move(callback));
+}
+
+int IpcClient::controlEd3kOwnSet(int action, const QString& id, const QString& title, ResponseCallback callback)
+{
+    IpcMessage msg(IpcMsgType::Ed3kOwnSetControl);
+    msg.append(qint64(action));
+    msg.append(id);
+    msg.append(title);
+    return sendRequest(std::move(msg), std::move(callback));
+}
+
+int IpcClient::requestEd3kOwnSetLink(const QString& id, ResponseCallback callback)
+{
+    // the answer of a hidden set is a credential: never logged
+    IpcMessage msg(IpcMsgType::GetEd3kOwnSetLink);
+    msg.append(id);
+    return sendRequest(std::move(msg), std::move(callback));
+}
+
 // ---------------------------------------------------------------------------
 // Private slots
 // ---------------------------------------------------------------------------
@@ -1372,6 +1417,7 @@ void IpcClient::dispatchPushEvent(const IpcMessage& msg)
     case IpcMsgType::PushEd3kSetsChanged:  emit ed3kSetsChanged(msg); break;
     case IpcMsgType::PushEd3kSetVersion:   emit ed3kSetVersion(msg); break;
     case IpcMsgType::PushEd3kLiveChanged:  emit ed3kLiveChanged(msg); break;
+    case IpcMsgType::PushEd3kHideChanged:  emit ed3kHideChanged(msg); break;
     case IpcMsgType::PushEd3kLiveFileWatched: emit ed3kLiveFileWatched(msg); break;
     case IpcMsgType::PushEd3kPaidChanged:  emit ed3kPaidChanged(msg); break;
     case IpcMsgType::PushEd3kPaidAnonWarn: emit ed3kPaidAnonWarn(msg); break;
@@ -1379,6 +1425,7 @@ void IpcClient::dispatchPushEvent(const IpcMessage& msg)
     case IpcMsgType::PushEd3kPaidScopesWarn: emit ed3kPaidScopesWarn(msg); break;
     case IpcMsgType::PushEd3kSellingChanged: emit ed3kSellingChanged(msg); break;
     case IpcMsgType::PushEd3kSeasonStarted: emit ed3kSeasonStarted(msg); break;
+    case IpcMsgType::PushEd3kOwnSetsChanged: emit ed3kOwnSetsChanged(msg); break;
     case IpcMsgType::PushEd3kSetOffer:     emit ed3kSetOffered(msg); break;
     case IpcMsgType::PushEd3kStakeClaims:  emit ed3kStakeClaimsChanged(msg); break;
     case IpcMsgType::PushEd3kStakeTx:      emit ed3kStakeTx(msg); break;

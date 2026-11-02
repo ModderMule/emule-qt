@@ -43,6 +43,9 @@
 /// sealed manifest, SetManifest gives the plain one): the newest is fetched again, members
 /// already there are not downloaded again. (done: the plain file with the sealed root is
 /// taken since packmule batch 13; a paid hidden set still takes none)
+/// - Batch 15 #12 (hidden-set.md §4.2, subscription.md §8.1 MUST): the opened plain copy of a
+///   sealed member is never shared: its path goes to plainCopies() (Config/ed3k/plain.json)
+///   before it is written; the share list, Ed3kShared and the completed-download hook refuse it.
 
 #include "Ed3kFfi.h"
 #include "Ed3kSetManifest.h"
@@ -67,6 +70,7 @@ class Ed3kSession;
 class Ed3kDownloads;
 class Ed3kPaid;
 class Ed3kSealedOpener;
+class Ed3kPlainCopies;
 
 class Ed3kSets : public QObject {
     Q_OBJECT
@@ -143,6 +147,9 @@ public:
     [[nodiscard]] std::optional<::ed3k::Key32> authorOfManifest(const ::ed3k::Root& root) const;
     [[nodiscard]] bool isRunning() const;
 
+    /// #12: the opened plain copies, never shared.
+    [[nodiscard]] Ed3kPlainCopies& plainCopies() const { return *m_plain; }
+
     /// The owner tag of a set's member downloads.
     [[nodiscard]] static QString ownerOf(std::uint32_t id);
     /// `ed3k:set?key=…&id=…` of a set (base32, file-set.md §5.4).
@@ -207,6 +214,8 @@ private:
     void openSealed(Set& s);
     /// false: not now (no key yet: asked for; opened already)
     bool openMember(Set& s, const Ed3kSetEntry& m, const QString& sealedPath, const QString& local);
+    /// #12: the opened sealed members of the applied version into plainCopies()
+    void notePlainCopies(const Set& s);
     /// <set dir>/.sealed/<wire name> (hidden-set.md §4.3); empty: none
     [[nodiscard]] QString sealedPathOf(const Set& s, const Ed3kSetEntry& m) const;
     void attach();
@@ -252,6 +261,7 @@ private:
     bool m_changePending = false;
     Ed3kPaid* m_paid = nullptr;
     std::unique_ptr<Ed3kSealedOpener> m_opener;
+    std::unique_ptr<Ed3kPlainCopies> m_plain;
     /// paid scopes whose keys were asked for since the last keys came
     std::set<::ed3k::Scope> m_keysAsked;
 };

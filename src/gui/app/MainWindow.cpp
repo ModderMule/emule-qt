@@ -692,12 +692,29 @@ void MainWindow::setEd3kStatus(const QCborMap& status)
         }
     };
     const QString nodeId = status.value(QStringLiteral("nodeId")).toString();
-    m_statusEd3k->setToolTip(
-        tr("ed3k node %1\nUDP port: %2\nContacts: %3\nIPv4: %4\nIPv6: %5\nRouter: %6")
-            .arg(nodeId.left(8).toUpper())
-            .arg(status.value(QStringLiteral("udpPort")).toInteger())
-            .arg(contacts)
-            .arg(className(class4), className(class6), router ? tr("yes") : tr("no")));
+    // was: m_statusEd3k->setToolTip(tr("ed3k node %1\nUDP port: ...").arg(...));
+    QString tip = tr("ed3k node %1\nUDP port: %2\nContacts: %3\nIPv4: %4\nIPv6: %5\nRouter: %6")
+                      .arg(nodeId.left(8).toUpper())
+                      .arg(status.value(QStringLiteral("udpPort")).toInteger())
+                      .arg(contacts)
+                      .arg(className(class4), className(class6), router ? tr("yes") : tr("no"));
+    // batch 15: Kad's own network down (Protocol.md §10), bit 0 IPv4, bit 1 IPv6
+    const qint64 kadOffline = status.value(QStringLiteral("kadOffline")).toInteger();
+    if (kadOffline != 0) {
+        QStringList families;
+        if (kadOffline & 1)
+            families << QStringLiteral("IPv4");
+        if (kadOffline & 2)
+            families << QStringLiteral("IPv6");
+        tip += QLatin1Char('\n') + tr("Kad offline (%1)").arg(families.join(QLatin1Char('/')));
+    }
+    // hiding (hops.md §1)
+    const QCborMap hide = status.value(QStringLiteral("hide")).toMap();
+    if (hide.value(QStringLiteral("running")).toBool())
+        tip += QLatin1Char('\n') + tr("hidden (%1/%2 paths)")
+                                       .arg(hide.value(QStringLiteral("built")).toInteger())
+                                       .arg(hide.value(QStringLiteral("paths")).toInteger());
+    m_statusEd3k->setToolTip(tip);
     m_statusEd3k->show();
 }
 

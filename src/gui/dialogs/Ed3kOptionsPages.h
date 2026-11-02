@@ -46,6 +46,7 @@ struct Ed3kCreditPrefs;
 struct Ed3kChainPrefs;
 class Ed3kFilterPage;
 class Ed3kSellPage;
+class Ed3kHidingGroup;
 struct Ed3kHosterPrefs;
 
 namespace Ipc {
@@ -162,6 +163,7 @@ private:
     QCheckBox* m_shareFilesCheck = nullptr;
     QCheckBox* m_jointDownloadsCheck = nullptr;
     QCheckBox* m_shareUsenetCheck = nullptr;
+    Ed3kHidingGroup* m_hiding = nullptr;   ///< batch 15: hops.md §1
     QList<QCheckBox*> m_extChecks;   ///< text = the extension name
     QLabel* m_compatLabel = nullptr;
     QPushButton* m_compatBtn = nullptr;

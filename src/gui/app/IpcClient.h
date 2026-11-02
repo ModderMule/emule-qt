@@ -225,6 +225,20 @@ public:
     /// Mutes a member ID of a room here alone (room.md §6); false unmutes.
     int muteEd3kRoomMember(const QString& room, const QString& memberId, bool on, ResponseCallback callback = nullptr);
 
+    // -- My ed3k Sets (the user's own sets, IPC 1145-1148, batch 15) -------------
+    // Ids: FileSet.id as 32 hex digits; kinds 1 open, 2 hidden, 3 paid. Failure: [false, {error}].
+
+    /// -> {running, sets: [{id, title, folder, files, size, seq, kind, published, building,
+    ///     scope, sold, stopped, link, error}]}
+    int requestEd3kOwnSets(ResponseCallback callback);
+    /// @p folder (every file below it) or @p files -> {id, link} (a paid one: SellEd3k next)
+    int publishEd3kOwnSet(const QString& folder, const QStringList& files, const QString& title, int kind,
+                          ResponseCallback callback = nullptr);
+    /// action 1 new version, 2 unpublish, 3 retitle (@p title)
+    int controlEd3kOwnSet(int action, const QString& id, const QString& title = {}, ResponseCallback callback = nullptr);
+    /// -> {link, hidden}: a hidden set's link is a credential (never log it)
+    int requestEd3kOwnSetLink(const QString& id, ResponseCallback callback);
+
     // -- ed3k downloads (plain files, IPC 1140-1143) ---------------------------
     // Roots as 64 hex digits. Failure: [false, {error: localized text}].
 
@@ -429,6 +443,8 @@ signals:
     void ed3kSetVersion(const Ipc::IpcMessage& msg);
     /// [{...GetEd3kLive...}] — an ed3k live stream changed.
     void ed3kLiveChanged(const Ipc::IpcMessage& msg);
+    /// [{...GetEd3kStatus "hide"...}] — hiding moved or a file changed key (batch 15).
+    void ed3kHideChanged(const Ipc::IpcMessage& msg);
     /// [root, ok, {id, url} | {error}] — a channel file fetched for watchEd3kLiveFile.
     void ed3kLiveFileWatched(const Ipc::IpcMessage& msg);
     /// [{...GetEd3kPaid...}] — ed3k paid subscriptions changed.
@@ -443,6 +459,8 @@ signals:
     void ed3kSellingChanged(const Ipc::IpcMessage& msg);
     /// [scope, title, base] — a season of a scope sold began.
     void ed3kSeasonStarted(const Ipc::IpcMessage& msg);
+    /// [{...GetEd3kOwnSets...}] — the user's own sets changed (batch 15).
+    void ed3kOwnSetsChanged(const Ipc::IpcMessage& msg);
     /// [link] — a set opened as a website is no website: offer it for download.
     void ed3kSetOffered(const Ipc::IpcMessage& msg);
     /// [room, {id, author, authorId, nick, moderator, sent, text, replyTo}] — a post.

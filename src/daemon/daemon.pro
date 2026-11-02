@@ -103,8 +103,10 @@ SOURCES += \
     Ed3kSetsBridge.cpp \
     Ed3kPaidBridge.cpp \
     Ed3kPaidSellerBridge.cpp \
+    Ed3kOwnSetsBridge.cpp \
     Ed3kFiltersBridge.cpp \
     Ed3kUploadsBridge.cpp \
+    Ed3kHideBridge.cpp \
     Ed3kHosterBridge.cpp \
     DaemonApiBackend.cpp \
     DaemonTorrentWebBackend.cpp \
@@ -139,8 +141,10 @@ HEADERS += \
     Ed3kSetsBridge.h \
     Ed3kPaidBridge.h \
     Ed3kPaidSellerBridge.h \
+    Ed3kOwnSetsBridge.h \
     Ed3kFiltersBridge.h \
     Ed3kUploadsBridge.h \
+    Ed3kHideBridge.h \
     Ed3kHosterBridge.h \
     DaemonApiBackend.h \
     DaemonTorrentWebBackend.h \

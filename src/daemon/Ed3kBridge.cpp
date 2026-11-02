@@ -8,8 +8,10 @@
 #include "Ed3kFiltersBridge.h"
 #include "Ed3kDownloadsBridge.h"
 #include "Ed3kHosterBridge.h"
+#include "Ed3kLinksBridge.h"
 #include "Ed3kFriendsBridge.h"
 #include "Ed3kNamesBridge.h"
+#include "Ed3kOwnSetsBridge.h"
 #include "Ed3kRoomsBridge.h"
 #include "Ed3kSetsBridge.h"
 #include "Ed3kPaidBridge.h"
@@ -93,6 +95,7 @@ QCborMap statsToCbor(const ::ed3k::Stats& s)
 void setSession(ed3k::Ed3kSession* session)
 {
     s_session = session;
+    Ed3kLinksBridge::setSession(session);   // its cache servers (batch 15)
 }
 
 ed3k::Ed3kSession* session()
@@ -172,6 +175,9 @@ bool handleRequest(const IpcMessage& msg, const std::function<void(const IpcMess
 {
     if (!isEd3kRequest(msg.type()))
         return false;
+    // other links (batch 15): 1032, 1049, 1137 (first: 1137 is inside the filter lists' block)
+    if (Ed3kLinksBridge::handleRequest(msg, reply))
+        return true;
     // friends and chat: 1001-1009
     if (Ed3kFriendsBridge::handleRequest(msg, reply))
         return true;
@@ -193,6 +199,7 @@ bool handleRequest(const IpcMessage& msg, const std::function<void(const IpcMess
     // node list sources: 1030-1031
     if (handleBootstrap(msg, reply))
         return true;
+    // hiding: 1047-1048 (batch 15) are Ed3kHideBridge's, called before this (IpcClientHandler)
     // paid subscriptions: 1035-1038 (batch 13); was here, now before the credits (1028-1029)
     // if (Ed3kPaidBridge::handleRequest(msg, reply))
     //     return true;
@@ -201,6 +208,9 @@ bool handleRequest(const IpcMessage& msg, const std::function<void(const IpcMess
         return true;
     // rooms: 1120-1129
     if (Ed3kRoomsBridge::handleRequest(msg, reply))
+        return true;
+    // My ed3k Sets: 1145-1148 (batch 15; before the downloads' 1140-1149)
+    if (Ed3kOwnSetsBridge::handleRequest(msg, reply))
         return true;
     // sets and live: 1110-1119, 1144 (before the downloads' 1140-1149)
     if (Ed3kSetsBridge::handleRequest(msg, reply))
@@ -279,6 +289,25 @@ void sampleCounters()
 #endif
 }
 
+QCborMap hideToCbor()
+{
+#ifdef EMULE_HAVE_ED3K
+    if (!s_session)
+        return {};
+    const ed3k::Ed3kHideStatus h = s_session->hide().status();
+    return QCborMap{{QStringLiteral("on"), h.on},
+                    {QStringLiteral("running"), h.running},
+                    {QStringLiteral("nodeId"), h.nodeId},
+                    {QStringLiteral("hops"), h.hops},
+                    {QStringLiteral("paths"), h.paths},
+                    {QStringLiteral("built"), h.built},
+                    {QStringLiteral("waitingForHops"), h.waitingForHops},
+                    {QStringLiteral("anonFiles"), h.anonFiles}};
+#else
+    return {};
+#endif
+}
+
 QCborMap statusToCbor()
 {
     QCborMap out{{QStringLiteral("available"), available()}, {QStringLiteral("running"), false}};
@@ -304,6 +333,10 @@ QCborMap statusToCbor()
     out.insert(QStringLiteral("limitDownKb"), qint64(limits.down / 1024));
     if (st.running)
         out.insert(QStringLiteral("stats"), statsToCbor(st.stats));
+    // batch 15: Kad's own network down (bit 0 IPv4, bit 1 IPv6) and hiding (hops.md §1)
+    out.insert(QStringLiteral("kadOffline"), qint64(st.kadOffline));
+    if (const QCborMap hide = hideToCbor(); !hide.isEmpty())
+        out.insert(QStringLiteral("hide"), hide);
     if (const Statistics* stats = theApp.statistics) {
         out.insert(QStringLiteral("session"), countersToCbor(stats->ed3kSession()));
         out.insert(QStringLiteral("cumulative"), countersToCbor(stats->cumulativeEd3k()));

@@ -1434,10 +1434,28 @@ public:
     /// the node. IPC/REST key `ed3kLan`.
     [[nodiscard]] bool ed3kLan() const;
     void setEd3kLan(bool val);
+    /// Hiding (hops.md §1), the global switch: new ed3k searches, downloads and shares go under
+    /// the anonymous key while on; files keep their key. Default off; live. IPC/REST `ed3kHide`.
+    [[nodiscard]] bool ed3kHide() const;
+    void setEd3kHide(bool val);
+    /// Hops 1 to 3 for every connection and lookup type while hiding. Default 1. `ed3kHops`.
+    [[nodiscard]] int ed3kHops() const;
+    void setEd3kHops(int val);
+    /// Forward for others' paths while hiding (hops.md §5). Default on. `ed3kHopping`.
+    [[nodiscard]] bool ed3kHopping() const;
+    void setEd3kHopping(bool val);
+    /// Share of the upload limit for others' paths, 1 to 100 %. Default 25. `ed3kHopShare`.
+    [[nodiscard]] int ed3kHopShare() const;
+    void setEd3kHopShare(int val);
     /// Node list sources for the first contact (bootstrap.md §3) as `ed3k:nodes?url=…&key=…`
     /// links. IPC/REST key `ed3kNodeLists`: links separated by spaces. Default: none.
     [[nodiscard]] QStringList ed3kNodeLists() const;
     void setEd3kNodeLists(const QStringList& links);
+    /// Cache servers (http-source.md §4.1) as the `ed3k:cache?url=…&key=…` links the user
+    /// agreed to: credentials (the upload key), AES-encrypted in the YAML like the other
+    /// secrets, never logged nor sent over IPC/REST. Default: none.
+    [[nodiscard]] QStringList ed3kCacheServers() const;
+    void setEd3kCacheServers(const QStringList& links);
     /// TCP port of the local ed3k website server (name.md §6.2, 127.0.0.1 and ::1 only). It
     /// is part of every site's origin: 0 in the file = a random free port, picked once at
     /// load and saved. IPC/REST key `ed3kSitePort`; a change rebinds the server.

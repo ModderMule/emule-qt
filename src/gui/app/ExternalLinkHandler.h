@@ -67,7 +67,8 @@ public:
     /// hands anything else to the desktop's browser.
     void open(const QString& link);
 
-    /// Queue @p path, a .nzb (Usenet panel) or .torrent (Torrents panel) file —
+    /// Queue @p path, a .nzb (Usenet panel), .torrent (Torrents panel) or .ed3knod (ed3k node
+    /// list opened by hand, bootstrap.md §3; batch 15) file —
     /// waiting for the daemon the same way a link does, and unconditionally, since
     /// there is no version of adding either that does not go through it.
     ///
@@ -94,6 +95,14 @@ private:
     /// PushEd3kPaidScopesWarn: a bought pass covers more subscriptions (subscription.md §5.1).
     void askEd3kPassScopes(const Ipc::IpcMessage& msg);
     void openFileNow(const QString& path);
+    /// An ed3k:friend link (friend.md §2, §3): the Add dialog of the Messages tab, filled in;
+    /// added on the user's Add only. An `s` link is a credential: never logged.
+    void openEd3kFriend(const QString& link);
+    /// An ed3k:node link (Protocol.md §13.2, bootstrap.md §1 source 3): asked, then bootstrapped.
+    void openEd3kNode(const QString& link);
+    /// An ed3k:cache link (http-source.md §4.1): asked (host, dn, kid; never the key), then
+    /// configured and kept (AddEd3kCacheLink).
+    void addEd3kCache(const QString& link);
     void flushPending();
     /// Whether there is both a window to show something on and a daemon to ask.
     [[nodiscard]] bool canOpenNow() const;

@@ -27,6 +27,15 @@
 /// - §5.1 (ruling #10): a pass of more than one scope is not shown before the user's word
 ///   (State::ScopesWarn, scopesWarning → answerScopes); declined: kept unused, asked again
 ///   from the UI; the scopes taken are kept, a renewal of the same scopes asks no more.
+///   Batch 15 #9: every set of scopes accepted is kept (paid.json `scopeSets`, for all
+///   subscriptions); a pass whose scopes are a subset of one asks nothing, a new combination asks.
+/// - Batch 15 #10 (§9.3): a pass is checked per scope once its publisher (and, issuer-signed,
+///   its offer) is known: paidSetPass NOT_FOUND = not checked yet (State::PassUnchecked, set
+///   again when an offer comes: setOffer, PAID_OFFER), another error = fails there
+///   (State::PassFailed, not used). No keys asked for, no renewal, until checked.
+/// - Batch 15 #11 (§9.2): a pass of an `ed3k:pass` link or voucher is by hand: not renewed
+///   over pass_url by itself; renewNow() polls pass_url on the user's word.
+/// - Batch 15 #15: an offer without price is a sale stopped: buy() says no longer sold.
 /// - Offers: from a catalogue's manifest, the pass answer, and the core (paidOffer on
 ///   PAID_OFFER: a hidden set's from a pass holder's KEY_NO_PASS answer, §6.2).
 /// was: ToDo: a paid live channel (subscription.md §7) is not followed here. (done:
@@ -90,6 +99,8 @@ public:
         GaveUp = 4,       ///< no answer other than 404 within 7 days, or a URL refused
         AnonWarning = 5,  ///< waits for the user's word on the anonymous key (§5.1)
         ScopesWarn = 6,   ///< a pass of several scopes waits for the user's word (§5.1); declined: unused
+        PassUnchecked = 7,   ///< a pass held, not checked for this scope yet (§9.3: publisher/offer unknown)
+        PassFailed = 8,   ///< the pass fails for this scope (§9.3): not used here
     };
 
     struct Info {
@@ -106,6 +117,8 @@ public:
         bool keys = false;
         int passScopes = 0;       ///< scopes of the pass waiting (ScopesWarn), else of the one held
         bool scopesDeclined = false;   ///< ScopesWarn: the user said no (asked again from the UI)
+        bool byHand = false;      ///< §9.2: a link/voucher pass, renewed only by renewNow()
+        bool renewable = false;   ///< a pass held and a pass_url in the offer: renewNow() can poll
     };
     /// What addPassLink took.
     struct PassTaken {
@@ -146,6 +159,9 @@ public:
     /// §5.1: the user's word on a pass of several scopes (every subscription it came to).
     /// false: nothing waits.
     bool answerScopes(const QString& scopeHex, bool use);
+    /// §9.2 (#11): polls pass_url of the offer for the pass held now (a by-hand one too: the
+    /// user asked; it shows an address to the seller). The error is user-visible.
+    std::expected<void, QString> renewNow(const QString& scopeHex);
     /// §7: a paid channel watched (Ed3kLive); followed while watched only.
     void followChannel(const ::ed3k::Key32& key, const ::ed3k::Scope& scope, const QString& title);
     void leaveChannel(const ::ed3k::Scope& scope);
@@ -181,6 +197,8 @@ signals:
     void scopesWarning(const QString& scopeHex, const QString& title, int others);
 
 private:
+    /// §9.3 (#10): what paidSetPass said of the pass held, per scope
+    enum class Check : int { Unchecked = 0, Ok = 1, Failed = 2 };
     struct Sub {
         ::ed3k::Scope scope;
         ::ed3k::Key32 publisher{};
@@ -205,8 +223,12 @@ private:
         QByteArray waitingPass;   ///< §5.1: several scopes, not shown before the user's word
         std::uint64_t waitingUntil = 0;
         bool scopesDeclined = false;
-        QStringList scopesOk;     ///< scopes (hex) the user took a pass of; within them no new word
+        QStringList scopesOk;     ///< was: scopes (hex) the user took a pass of (now m_scopeSets; read for old files)
         bool watching = false;    ///< a channel: watched now (Ed3kLive)
+        bool byHand = false;      ///< §9.2: the pass held came by link/voucher (#11)
+        bool waitingByHand = false;   ///< of waitingPass
+        Check check = Check::Unchecked;   ///< §9.3: the pass held for this scope (#10)
+        bool renewAsked = false;  ///< renewNow() waits for the anonymous warning
     };
 
     void onEventPolled(const ::ed3k::Event& event, bool* handled);
@@ -220,15 +242,22 @@ private:
     /// the holder seed copied where needed; @p first takes it in any case. True: it waits for
     /// the user's word (§5.1).
     bool spreadPass(Sub& first, const QByteArray& pass, std::uint64_t until, const std::vector<::ed3k::Scope>& scopes,
-                    const ::ed3k::Key32& holder, const ::ed3k::Key32& seed);
-    /// a pass to @p s: used, or kept for the user's word; true: waits
-    bool takePass(Sub& s, const QByteArray& pass, std::uint64_t until, const std::vector<::ed3k::Scope>& scopes);
+                    const ::ed3k::Key32& holder, const ::ed3k::Key32& seed, bool byHand = false);
+    /// a pass to @p s: used, or kept for the user's word; true: waits. @p byHand: a link/voucher's
+    bool takePass(Sub& s, const QByteArray& pass, std::uint64_t until, const std::vector<::ed3k::Scope>& scopes, bool byHand = false);
     void usePass(Sub& s, const QByteArray& pass, std::uint64_t until);
+    /// §9.3 (#10): the pass held set on the engine; checked: keys and renewal (not while
+    /// attaching: attach() does those)
+    void checkPass(Sub& s, bool attaching = false);
+    /// §5.1 (#9): @p scopes within a set the user accepted (one scope: always)
+    [[nodiscard]] bool scopesAccepted(const std::vector<::ed3k::Scope>& scopes) const;
+    void acceptScopes(const std::vector<::ed3k::Scope>& scopes);
     /// the pay link of @p s (§9.1 step 2); empty without a pay_url
     [[nodiscard]] QString payLinkOf(const Sub& s) const;
-    void setPassOnEngine(Sub& s);
-    /// the offer the core holds, when newer
-    void readOffer(Sub& s);
+    /// was: void; now what the core said of the pass (§9.3)
+    Check setPassOnEngine(Sub& s);
+    /// the offer the core holds, when newer (true); a pass not checked yet is set again
+    bool readOffer(Sub& s);
     Sub* find(const ::ed3k::Scope& scope);
     const Sub* find(const ::ed3k::Scope& scope) const;
     [[nodiscard]] Info infoOf(const Sub& s) const;
@@ -243,6 +272,8 @@ private:
     std::map<::ed3k::Scope, Sub> m_subs;
     /// §9.3: SHA-256 (hex) of the passes of vouchers taken: each once
     QSet<QString> m_vouchers;
+    /// §5.1 (#9): every set of scopes (hex, sorted) the user accepted a pass of
+    std::vector<QStringList> m_scopeSets;
     bool m_reports = true;
     bool m_attached = false;
     bool m_changePending = false;

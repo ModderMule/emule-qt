@@ -35,6 +35,7 @@ class QTreeWidgetItem;
 namespace eMule {
 
 class ArchivePreviewPanel;
+class Ed3kOwnSetsView;
 class FilterEdit;
 class IpcClient;
 class PanelPoller;
@@ -245,6 +246,10 @@ private:
     QTreeWidgetItem* m_incompleteItem = nullptr;
     QTreeWidgetItem* m_sharedDirsItem = nullptr;
     QTreeWidgetItem* m_allDirsItem = nullptr;
+    /// My ed3k Sets (batch 15): the node, its rows, the stack that shows them for the files
+    QTreeWidgetItem* m_ownSetsItem = nullptr;
+    Ed3kOwnSetsView* m_ownSetsView = nullptr;
+    QStackedWidget* m_listStack = nullptr;
 
     // IPC
     IpcClient* m_ipc = nullptr;
@@ -294,6 +299,8 @@ private:
                             const QString& displayName);
     [[nodiscard]] static bool hasSubdirectories(const QString& path);
     void initFilesystemRoot();
+    /// MoveEd3kFileKey of each file (hops.md §1: asks first).
+    void moveEd3kKey(const QStringList& hashes, bool toAnon);
 };
 
 } // namespace eMule

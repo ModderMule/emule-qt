@@ -22,6 +22,8 @@ Ed3kUploads::Ed3kUploads(Ed3kSession& session, QObject* parent)
     , m_session(session)
 {
     // observe only: the joins and the queue policy answer these events
+    // ToDo: the anonymous node's uploads (hops.md §1; keyedEventPolled, no queueList of that
+    // node in the FFI): eventPolled has the node key's only, so they are not shown yet
     connect(&m_session, &Ed3kSession::eventPolled, this, &Ed3kUploads::onEventPolled, Qt::DirectConnection);
     connect(&m_session, &Ed3kSession::statusChanged, this, &Ed3kUploads::onSessionStatus);
 }

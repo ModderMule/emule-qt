@@ -314,9 +314,6 @@ public:
     [[nodiscard]] bool triedCrypt() const               { return m_triedCryptOnce; }
     void setTriedCrypt(bool v)                          { m_triedCryptOnce = v; }
 
-    /// IPv4 gave a LowID here: dial IPv6 for the rest of the run (serverPreferIPv6).
-    [[nodiscard]] bool preferIPv6Session() const        { return m_preferIPv6Session; }
-    void setPreferIPv6Session(bool v)                   { m_preferIPv6Session = v; }
     /// The IPv6 dial that followed failed: keep the IPv4 LowID.
     [[nodiscard]] bool ipv6SwitchFailed() const         { return m_ipv6SwitchFailed; }
     void setIPv6SwitchFailed(bool v)                    { m_ipv6SwitchFailed = v; }
@@ -448,7 +445,6 @@ private:
     qint64  m_serverKeyUDPAtMs = 0;   // transient: when setServerKeyUDP() ran
     bool    m_cryptPingReplyPending = false;
     bool    m_triedCryptOnce = false;
-    bool    m_preferIPv6Session = false;   // transient, never saved
     bool    m_ipv6SwitchFailed = false;    // transient, never saved
 
     // Aux

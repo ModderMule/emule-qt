@@ -135,6 +135,8 @@ private:
     /// Splits the ed3k rows' hashes (roots) out of @p hashes.
     [[nodiscard]] QStringList takeEd3kHashes(QStringList& hashes) const;
     void sendEd3kControl(const QStringList& roots, int action, qint64 value = 0);
+    /// MoveEd3kFileKey of each ed3k download (hops.md §1: asks first).
+    void moveEd3kKey(const QStringList& roots, bool toAnon);
     void requestDownloadSources(const QString& hash);
     void requestUploads();
     void requestDownloadClients();

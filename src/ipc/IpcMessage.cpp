@@ -192,6 +192,7 @@ quint64 snapshotPushKey(const IpcMessage& msg)
     case IpcMsgType::PushEd3kDownloads:        // ed3k downloads (batch 12)
     case IpcMsgType::PushEd3kSetsChanged:      // ed3k sets (batch 12)
     case IpcMsgType::PushEd3kLiveChanged:      // ed3k live (batch 12)
+    case IpcMsgType::PushEd3kHideChanged:      // ed3k hiding (batch 15)
         break;
     // One state per search: field 0 is the search id
     case IpcMsgType::PushSearchResult:

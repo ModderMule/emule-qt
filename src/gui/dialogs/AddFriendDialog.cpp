@@ -18,6 +18,7 @@
 #include <QLocale>
 #include <QMessageBox>
 #include <QPushButton>
+#include <QUrlQuery>
 #include <QVBoxLayout>
 
 namespace eMule {
@@ -44,6 +45,7 @@ AddFriendDialog::AddFriendDialog(QWidget* parent)
     reqLayout->addRow(tr("Port:"), m_portEdit);
 
     mainLayout->addWidget(requiredGroup);
+    m_requiredGroup = requiredGroup;
 
     // Additional Information group
     auto* additionalGroup = new QGroupBox(tr("Additional Information"), this);
@@ -60,6 +62,7 @@ AddFriendDialog::AddFriendDialog(QWidget* parent)
     addLayout->addRow(tr("KadID:"), m_kadIdLabel);
 
     mainLayout->addWidget(additionalGroup);
+    m_additionalGroup = additionalGroup;
 
     // ed3k (no MFC original): an ed3k:friend link instead of address and port
     auto* ed3kGroup = new QGroupBox(tr("ed3k"), this);
@@ -115,7 +118,38 @@ QString AddFriendDialog::ed3kLink() const
 
 QString AddFriendDialog::ed3kText() const
 {
-    return m_ed3kTextEdit->text().trimmed();
+    // friend.md §2: an open link carries no request
+    return isOpenFriendLink(ed3kLink()) ? QString() : m_ed3kTextEdit->text().trimmed();
+}
+
+void AddFriendDialog::setEd3kLink(const QString& link)
+{
+    setWindowTitle(tr("Add ed3k Friend"));
+    m_ed3kLinkEdit->setText(link.trimmed());
+    m_ed3kLinkEdit->setReadOnly(true);
+    // §2: the secret of an open link is a credential: not shown
+    if (isOpenFriendLink(link))
+        m_ed3kLinkEdit->setEchoMode(QLineEdit::Password);
+    // §3: request text only when the link can ask (r, no s)
+    const bool asks = hasFriendRequest(link) && !isOpenFriendLink(link);
+    m_ed3kTextEdit->setEnabled(asks);
+    m_ed3kTextEdit->setPlaceholderText(asks ? tr("Request text (optional)") : tr("This link carries no request"));
+    m_requiredGroup->hide();
+    m_additionalGroup->hide();
+    m_ed3kGroup->setVisible(true);
+    (asks ? static_cast<QWidget*>(m_ed3kTextEdit) : m_addButton)->setFocus();
+}
+
+bool AddFriendDialog::isOpenFriendLink(const QString& link)
+{
+    const qsizetype q = link.indexOf(QLatin1Char('?'));
+    return q >= 0 && QUrlQuery(link.mid(q + 1)).hasQueryItem(QStringLiteral("s"));
+}
+
+bool AddFriendDialog::hasFriendRequest(const QString& link)
+{
+    const qsizetype q = link.indexOf(QLatin1Char('?'));
+    return q >= 0 && QUrlQuery(link.mid(q + 1)).hasQueryItem(QStringLiteral("r"));
 }
 
 bool AddFriendDialog::parseEndpoint(const QString& ipText, const QString& portText,
@@ -217,7 +251,8 @@ void AddFriendDialog::showFriend(const QString& name, const QString& hash, const
 void AddFriendDialog::onAddClicked()
 {
     // an ed3k link wins: the address fields are eD2K's
-    if (m_ed3kGroup->isVisible() && !ed3kLink().isEmpty()) {
+    // if (m_ed3kGroup->isVisible() && !ed3kLink().isEmpty()) {   (was; isHidden: also before shown)
+    if (!m_ed3kGroup->isHidden() && !ed3kLink().isEmpty()) {
         submitEd3k();
         return;
     }

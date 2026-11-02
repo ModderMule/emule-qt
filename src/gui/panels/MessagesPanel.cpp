@@ -893,6 +893,16 @@ void MessagesPanel::restoreSelection(const QString& key)
 
 void MessagesPanel::showAddFriendDialog()
 {
+    runAddFriendDialog({});
+}
+
+void MessagesPanel::addEd3kFriendLink(const QString& link)
+{
+    runAddFriendDialog(link);
+}
+
+void MessagesPanel::runAddFriendDialog(const QString& ed3kLink)
+{
     if (!m_ipc || !m_ipc->isConnected())
         return;
 
@@ -929,6 +939,8 @@ void MessagesPanel::showAddFriendDialog()
         });
     });
     dlg.setEd3kAvailable(m_ed3kRunning);
+    if (!ed3kLink.isEmpty())
+        dlg.setEd3kLink(ed3kLink);   // friend.md §3: the user confirms
     if (dlg.exec() == QDialog::Accepted)
         requestFriendList();
 }

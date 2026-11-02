@@ -55,6 +55,11 @@ Ed3kCredit::Ed3kCredit(Ed3kSession& session, const QString& configDir, QObject* 
     connect(&m_changed, &QTimer::timeout, this, &Ed3kCredit::statusChanged);
     connect(&m_session, &Ed3kSession::eventPolled, this, &Ed3kCredit::onEventPolled, Qt::DirectConnection);
     connect(&m_session, &Ed3kSession::statusChanged, this, &Ed3kCredit::onSessionStatus);
+    // §9.1: after each anonStart (also under a new anonymous key)
+    connect(&m_session.hide(), &Ed3kHide::started, this, [this] {
+        if (m_configured)
+            (void)applyAnonKey();
+    });
     readAddress();
     readAnonAddress(false);
     loadClaims();

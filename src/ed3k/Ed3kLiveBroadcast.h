@@ -12,13 +12,18 @@
 ///   goes to livePushSegment with its EXTINF in ms, `gap` after `EXT-X-DISCONTINUITY`, a
 ///   changed `EXT-X-MAP` or a playlist that started over; its init data with it. At the start
 ///   only the newest segment goes out (a live stream, not a recording).
-/// - stop(): liveEnd (the `end` record, §2.2).
+/// - stop(): liveEnd (the `end` record, §2.2), the user's stop: the only end. A quit of the
+///   daemon or a stopped session is a cut, no `end` (§4, ruling #4): resumed below.
 /// - A segment over 4 MiB or init data over 256 KiB (or missing) is skipped, the next one
 ///   carries `gap` (§4, #11); a changed init goes with `gap` too.
-/// - The channel file (§1.2) of a public channel is shared as "<title>.ed3klive" and published
-///   under its keywords while on air (Ed3kLiveFiles); a changed description (start with other
-///   media/codecs/comment/lang/kbps, describe()) is a new file with a later `created`, the old
-///   one is withdrawn.
+/// - The channel file (§1.2) of a public channel describes the channel, not a broadcast: shared
+///   as "<title>.ed3klive" and published under its keywords (Ed3kLiveFiles) while the channel is
+///   kept, on air or not (batch 15 #5): at each start of ed3k every channel of channels.json with
+///   a description, with its `created` kept (the same bytes, the same root); a paid one with the
+///   offer of the offer source. A changed description (start with other media/codecs/comment/
+///   lang/kbps, describe(), another offer) is a new file with a later `created`, the old one is
+///   withdrawn. deleteChannel() withdraws it and drops the channel.
+///   (was: shared while on air only, withdrawn by stop())
 /// - Resumed after a restart (§4): channels.json keeps what is on air (folder, start, next
 ///   seq, the time of the cut); back within kResumeS of the cut it goes on at the next seq of
 ///   the same start (the core sets `gap`), later as a new broadcast. Only stop() ends it.
@@ -26,9 +31,10 @@
 /// was: (Not resumed after a restart of the daemon: the user starts again.)
 /// was: ToDo: a paid channel (subscription.md §7: offer, passes for its own nodes) is not offered.
 /// (done: an open channel sold in Ed3kPaidSeller: setOfferSource, `paid` + offer, `paid=1` in
-/// the link, the offer in the channel file; a private paid channel: ToDo in Ed3kPaidSeller.h)
+/// the link, the offer in the channel file; a private paid channel too (batch 15): `paid` +
+/// offer + secret, no channel file, channelSecret() for the seller's link and paidFollowPrivate)
 /// was: ToDo: the channel file (§1.2, keywords) is not published; the link is how viewers come.
-/// (done: Ed3kLiveFiles, shared while on air)
+/// (done: Ed3kLiveFiles, shared while the channel is kept, batch 15)
 
 #include "Ed3kFfi.h"
 
@@ -102,6 +108,15 @@ public:
         QString channelFile;      ///< root (hex) of the channel file shared; empty: none
         QString error;            ///< the last problem, localized; empty = none
         bool paid = false;        ///< subscription.md §7: sealed, an offer (Ed3kPaidSeller)
+        QString channel;          ///< the channel `id` (hex, 32), deleteChannel()
+    };
+    /// A channel kept here (channels.json), on air or not.
+    struct ChannelInfo {
+        QString channel;          ///< the channel `id` (hex, 32)
+        QString title;
+        bool isPrivate = false;
+        QString stream;           ///< the broadcast on air (Info::id); empty: off air
+        QString channelFile;      ///< root (hex) of the channel file shared; empty: none
     };
     /// What channels.json keeps of a channel on air (resumed after a restart).
     struct OnAir {
@@ -133,6 +148,14 @@ public:
     std::expected<void, QString> describe(const QString& id, const QString& comment, const QString& lang, std::uint32_t kbps);
     /// Starts again what was on air before (channels.json); at start and when ed3k starts.
     void resumeSaved();
+    /// §1.2: shares and publishes the channel file of every public channel kept (channels.json
+    /// with a description), on air or not, the same `created`; at start and when ed3k starts.
+    void publishSaved();
+    /// Ends the channel @p channel (hex id) if on air, withdraws its channel file and drops it
+    /// (its keys too: the link no longer works). The error is user-visible.
+    std::expected<void, QString> deleteChannel(const QString& channel);
+    /// Every channel kept here, on air or not.
+    [[nodiscard]] std::vector<ChannelInfo> channels() const;
     [[nodiscard]] bool isBroadcast(const QString& id) const;
     [[nodiscard]] std::vector<Info> list() const;
     [[nodiscard]] std::optional<Info> info(const QString& id) const;
@@ -142,11 +165,19 @@ public:
 
     /// subscription.md §7: the SignedOffer of a channel sold (channel key, id); empty = open.
     using OfferSource = std::function<QByteArray(const ::ed3k::Key32& channelKey, const QByteArray& id)>;
-    /// Asked at each start(): a channel with an offer broadcasts paid (Ed3kPaidSeller).
-    void setOfferSource(OfferSource source) { m_offerSource = std::move(source); }
+    /// Asked at each start(): a channel with an offer broadcasts paid (Ed3kPaidSeller); the
+    /// channel files kept are published again with their offers.
+    // void setOfferSource(OfferSource source) { m_offerSource = std::move(source); }
+    void setOfferSource(OfferSource source);
     /// The seed of the channel key of the broadcast @p id (a secret: the caller wipes it) and
     /// its channel `id` in @p channelId; nullopt: not on air here.
     [[nodiscard]] std::optional<::ed3k::Key32> channelSeed(const QString& id, QByteArray* channelId) const;
+    /// The secret `s` of the private channel on air @p id (live.md §10: a credential, the
+    /// caller wipes it, never logged); nullopt: open or not on air here.
+    [[nodiscard]] std::optional<::ed3k::Key32> channelSecret(const QString& id) const;
+    /// The secret of private channel @p channelId kept under @p configDir (Config/ed3k/live/
+    /// <id hex>.secret, owner-only); nullopt: none. For a sale while off air (Ed3kPaidSeller).
+    [[nodiscard]] static std::optional<::ed3k::Key32> channelSecretOf(const QString& configDir, const QByteArray& channelId);
     /// What the broadcast @p id was started with (to start it again).
     [[nodiscard]] std::optional<Options> optionsOf(const QString& id) const;
 
@@ -172,7 +203,7 @@ private:
         std::uint64_t nextSeq = 0;
         bool resumed = false;
         QByteArray channelId;                ///< 16 B
-        std::optional<::ed3k::Root> channelFile;
+        // std::optional<::ed3k::Root> channelFile;   (was; now m_channelFiles, kept off air)
         bool paid = false;                   ///< broadcast with an offer (subscription.md §7)
     };
     struct Channel {
@@ -200,9 +231,14 @@ private:
     [[nodiscard]] QString liveDir() const;
     /// The seed (and secret) of channel @p ch and the options' media into @p b; false: no key.
     bool loadChannel(const Channel& ch, const Options& o, ::ed3k::LiveBroadcast& b);
-    /// Shares the channel file of @p r (the channel @p b) for the description of its options;
-    /// a changed one gets a later `created`, the one before is withdrawn.
-    void publishChannelFile(Running& r, const ::ed3k::LiveBroadcast& b);
+    /// Shares the channel file of channel @p channelId (the channel @p b) for the description
+    /// of @p o; a changed one gets a later `created`, the one before is withdrawn.
+    // void publishChannelFile(Running& r, const ::ed3k::LiveBroadcast& b);   (was: on air only)
+    void publishChannelFile(const QByteArray& channelId, const Options& o, const ::ed3k::LiveBroadcast& b);
+    /// The same, the channel loaded (loadChannel) from @p channelId and @p o.
+    void publishChannelFile(const QByteArray& channelId, const Options& o);
+    /// The root of the channel file shared of @p channelId; nullopt: none.
+    [[nodiscard]] std::optional<::ed3k::Root> channelFileOf(const QByteArray& channelId) const;
     /// channels.json: every entry; @p edit changes the one of @p channelId and it is saved.
     [[nodiscard]] QJsonArray readChannels() const;
     bool editChannel(const QByteArray& channelId, const std::function<void(QJsonObject&)>& edit);
@@ -216,6 +252,12 @@ private:
     /// the start of the last broadcast of a stream here (a later one starts later, §1.1)
     std::map<::ed3k::Stream, std::uint64_t> m_lastStart;
     std::unique_ptr<Ed3kLiveFiles> m_files;
+    /// the channel file shared of each channel (by its `id`), on air or not (§1.2)
+    struct ChannelFile {
+        ::ed3k::Root root;
+        QByteArray bytes;
+    };
+    std::map<QByteArray, ChannelFile> m_channelFiles;
     OfferSource m_offerSource;
     QTimer m_timer;
     bool m_changePending = false;

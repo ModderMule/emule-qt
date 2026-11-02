@@ -69,6 +69,7 @@ private slots:
     void addFriend_takesThePortFromTheAddressField();
     void addFriend_staysOpenUntilTheFriendIsAdded();
     void addFriend_detailsSheetIsWordedAsMfc();
+    void addFriend_anEd3kLinkIsConfirmedByTheUser();
 
     // --- CollectionViewDialog's category rule --------------------------------
     void collection_findsOrAddsItsCategory();
@@ -305,6 +306,53 @@ void tst_CategoryDialog::addFriend_staysOpenUntilTheFriendIsAdded()
 
     answer(true);
     QCOMPARE(dlg.result(), int(QDialog::Accepted));
+}
+
+// friend.md §2, §3 (batch 15): a link opened from outside fills the dialog, Add sends it; an
+// open link (s) is hidden and carries no request text; one with r may ask
+void tst_CategoryDialog::addFriend_anEd3kLinkIsConfirmedByTheUser()
+{
+    for (const bool open : {true, false}) {
+        AddFriendDialog dlg;
+        QString sentLink, sentText;
+        std::function<void(int)> answer;
+        dlg.setEd3kSubmitter([&](const QString& link, const QString& text, std::function<void(int)> done) {
+            sentLink = link;
+            sentText = text;
+            answer = std::move(done);
+        });
+        dlg.setEd3kAvailable(true);
+        const QString link = open ? QStringLiteral("ed3k:friend?key=abc&s=secretsecret&dn=Bob")
+                                  : QStringLiteral("ed3k:friend?key=abc&r=mfrggzdf&dn=Bob");
+        dlg.setEd3kLink(link);
+        QCOMPARE(AddFriendDialog::isOpenFriendLink(link), open);
+        QCOMPARE(AddFriendDialog::hasFriendRequest(link), !open);
+        QLineEdit* linkEdit = nullptr;
+        QLineEdit* textEdit = nullptr;
+        for (QLineEdit* e : dlg.findChildren<QLineEdit*>()) {
+            if (e->text() == link)
+                linkEdit = e;
+            else if (e->maxLength() == 96)
+                textEdit = e;
+        }
+        QVERIFY(linkEdit && textEdit);
+        QVERIFY(linkEdit->isReadOnly());
+        QCOMPARE(linkEdit->echoMode(), open ? QLineEdit::Password : QLineEdit::Normal);   // §2: a credential
+        QCOMPARE(textEdit->isEnabled(), !open);
+        textEdit->setText(QStringLiteral("hi, it's me"));
+        QVERIFY(sentLink.isEmpty());   // nothing before the user's Add
+        QPushButton* add = nullptr;
+        for (QPushButton* b : dlg.findChildren<QPushButton*>())
+            if (b->text() == QStringLiteral("Add"))
+                add = b;
+        QVERIFY(add);
+        add->click();
+        QCOMPARE(sentLink, link);
+        QCOMPARE(sentText, open ? QString() : QStringLiteral("hi, it's me"));
+        QVERIFY(answer);
+        answer(AddFriendDialog::kEd3kAdded);
+        QCOMPARE(dlg.result(), int(QDialog::Accepted));
+    }
 }
 
 // MFC AddFriend.cpp:87, 96, 105

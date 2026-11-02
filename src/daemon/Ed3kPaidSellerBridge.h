@@ -16,12 +16,15 @@ namespace eMule {
 namespace ed3k {
 class Ed3kPaidSeller;
 class Ed3kLiveBroadcast;
+class Ed3kOwnSets;
 } // namespace ed3k
 
 namespace Ed3kPaidSellerBridge {
 
 /// Set by DaemonApp, null when absent; @p broadcast sells channels on air.
 void setSeller(ed3k::Ed3kPaidSeller* seller, ed3k::Ed3kLiveBroadcast* broadcast);
+/// My ed3k Sets (batch 15): SellEd3k kind 2 with an own set's id sells that set; null: none.
+void setOwnSets(ed3k::Ed3kOwnSets* sets);
 
 /// Whether an opcode is one of 1033, 1034, 1040, 1041.
 [[nodiscard]] bool isSellerRequest(Ipc::IpcMsgType type);

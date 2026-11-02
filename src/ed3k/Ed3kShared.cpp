@@ -187,8 +187,9 @@ void Ed3kShared::stop()
                 continue;
             if (!f.alias.empty())
                 (void)e->unpublishAlias(t, std::span{&f.alias, 1});
+            // was: (void)e->unpublish(t, c->second.root, ...) (now under its key)
             if (const auto c = m_cache.find(md4); c != m_cache.end())
-                (void)e->unpublish(t, c->second.root, f.keywords ? ffi::Publish::Both : ffi::Publish::Source);
+                unpublishShared(c->second.root, f.keywords ? ffi::Publish::Both : ffi::Publish::Source);
         }
     }
     closeAll();
@@ -242,6 +243,62 @@ bool Ed3kShared::keywordsPublished(const QByteArray& md4) const
 {
     const auto f = m_files.find(md4);
     return f != m_files.end() && f->second.shared && f->second.keywords;
+}
+
+std::optional<ffi::KeyKind> Ed3kShared::keyOfFile(const QByteArray& md4) const
+{
+    const auto root = hashedRootOf(md4);
+    return root ? std::optional(keyOf(*root)) : std::nullopt;
+}
+
+std::optional<ffi::Root> Ed3kShared::hashedRootOf(const QByteArray& md4) const
+{
+    const auto c = m_cache.find(md4);
+    if (!m_files.contains(md4) || c == m_cache.end())
+        return std::nullopt;
+    return c->second.root;
+}
+
+bool Ed3kShared::moveFileKey(const ffi::Root& root, ffi::KeyKind key)
+{
+    for (auto& [md4, f] : m_files) {
+        const auto c = m_cache.find(md4);
+        if (c == m_cache.end() || !(c->second.root == root))
+            continue;
+        if (keyOf(root) == key)
+            return false;
+        // hops.md §1: closed under one key (records taken back), then opened under the other
+        if (f.shared) {
+            if (auto* e = m_session.engine(); e && !f.alias.empty())
+                (void)e->unpublishAlias(m_session.now(), std::span{&f.alias, 1});
+            unpublishShared(root, f.keywords ? ffi::Publish::Both : ffi::Publish::Source);
+            unshare(root);
+            f.shared = false;
+            f.keywords = false;
+            f.alias.clear();
+        }
+        m_session.hide().record(root, key);
+        share(f, c->second);
+        pumpSession();
+        return true;
+    }
+    return false;
+}
+
+void Ed3kShared::onHideChanged(bool hiding)
+{
+    for (auto& [md4, f] : m_files) {
+        const auto c = m_cache.find(md4);
+        if (c == m_cache.end() || m_session.hide().recorded(c->second.root) != ffi::KeyKind::Anon)
+            continue;
+        if (!hiding) {
+            // gone with the anonymous node (the base forgot the share)
+            f.shared = false;
+            f.keywords = false;
+        } else if (!f.shared && !f.queued) {
+            share(f, c->second);
+        }
+    }
 }
 
 QString Ed3kShared::cachePath() const
@@ -384,6 +441,9 @@ void Ed3kShared::add(const SharedEntry& entry)
 {
     if (entry.md4.size() != 16 || entry.size == 0 || entry.path.isEmpty())
         return;
+    // #12 MUST: an opened plain copy is not served (its sealed copy is)
+    if (m_neverShared && m_neverShared(entry.path))
+        return;
     if (const auto it = m_files.find(entry.md4); it != m_files.end()) {
         if (it->second.entry.path != entry.path)
             onFileRelocated(entry);
@@ -418,7 +478,8 @@ void Ed3kShared::remove(const QByteArray& md4)
                 const auto t = m_session.now();
                 if (!f.alias.empty())
                     (void)e->unpublishAlias(t, std::span{&f.alias, 1});
-                (void)e->unpublish(t, c->second.root, f.keywords ? ffi::Publish::Both : ffi::Publish::Source);
+                // was: (void)e->unpublish(t, c->second.root, ...) (now under its key)
+                unpublishShared(c->second.root, f.keywords ? ffi::Publish::Both : ffi::Publish::Source);
             }
             unshare(c->second.root);
         }
@@ -434,7 +495,10 @@ void Ed3kShared::share(File& f, const Hashed& h)
     if (!e)
         return;
     const std::string name = utf8(f.entry.name);
-    const auto ed2k = ed2kOf(f.entry.md4);
+    // hops.md §1: under the anonymous key nothing names it for eD2K (no MD4, no ALIAS)
+    const bool anon = keyOf(h.root) == ffi::KeyKind::Anon;
+    // was: const auto ed2k = ed2kOf(f.entry.md4);
+    const auto ed2k = anon ? std::nullopt : ed2kOf(f.entry.md4);
     // the MD4 is eMule's of the same file (the share list checks size and date)
     if (!shareMember(ffi::SharedFile{h.root, h.size, name, ed2k, std::nullopt, ffi::Have::complete(), std::span{h.hashes}}, kOwner,
                      f.member)) {
@@ -454,8 +518,10 @@ void Ed3kShared::share(File& f, const Hashed& h)
         logDebug(QStringLiteral("publish of \"%1\" failed (error %2)").arg(f.entry.name, errorName(ok.error())));
     else
         f.keywords = *ok == ffi::Publish::Both;
-    // alias.md §3: the root is shared here and both names come from these bytes
-    if (!m_holdBack) {
+    // alias.md §3: the root is shared here and both names come from these bytes; never for a
+    // file of the anonymous key (ffi.md: eD2K is never anonymous)
+    // was: if (!m_holdBack) {
+    if (!m_holdBack && !anon) {
         f.alias = ed2kAlias(f.entry.md4, h.size, h.root, f.entry.name);
         if (auto ok = e->publishAlias(t, std::span{&f.alias, 1}); !ok) {
             logDebug(QStringLiteral("ed2k record of \"%1\" not published (error %2)").arg(f.entry.name, errorName(ok.error())));

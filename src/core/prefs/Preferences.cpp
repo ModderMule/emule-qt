@@ -732,7 +732,12 @@ struct Preferences::Data {
     QStringList ed3kChaintubeRpc;
     QStringList ed3kExtOff;            // extension names off at start
     bool ed3kLan = true;               // LAN discovery
+    bool ed3kHide = false;             // hiding (hops.md §1): new searches, downloads, shares anonymous
+    int ed3kHops = 1;                  // 1 to 3, every connection and lookup type
+    bool ed3kHopping = true;           // forward for others while hiding (§1 "Recommended")
+    int ed3kHopShare = 25;             // % of the upload limit for others' paths (§5)
     QStringList ed3kNodeLists;         // ed3k:nodes links (bootstrap.md §3)
+    QStringList ed3kCacheServers;      // ed3k:cache links (http-source.md §4.1): credentials, encrypted in YAML
     uint16 ed3kSitePort = 0;           // website server (name.md §6.2); 0 = random, resolved at load
     Ed3kCreditPrefs ed3kCredit;        // credit.md; off by default (§9)
     Ed3kChainPrefs ed3kChain;          // chaintube.md §4.2; none set by default
@@ -2388,8 +2393,18 @@ QStringList Preferences::ed3kExtOff() const { return get(&Data::ed3kExtOff); }
 void Preferences::setEd3kExtOff(const QStringList& names) { set(&Data::ed3kExtOff, names); }
 bool Preferences::ed3kLan() const { return get(&Data::ed3kLan); }
 void Preferences::setEd3kLan(bool val) { set(&Data::ed3kLan, val); }
+bool Preferences::ed3kHide() const { return get(&Data::ed3kHide); }
+void Preferences::setEd3kHide(bool val) { set(&Data::ed3kHide, val); }
+int Preferences::ed3kHops() const { return get(&Data::ed3kHops); }
+void Preferences::setEd3kHops(int val) { set(&Data::ed3kHops, std::clamp(val, 1, 3)); }
+bool Preferences::ed3kHopping() const { return get(&Data::ed3kHopping); }
+void Preferences::setEd3kHopping(bool val) { set(&Data::ed3kHopping, val); }
+int Preferences::ed3kHopShare() const { return get(&Data::ed3kHopShare); }
+void Preferences::setEd3kHopShare(int val) { set(&Data::ed3kHopShare, std::clamp(val, 1, 100)); }
 QStringList Preferences::ed3kNodeLists() const { return get(&Data::ed3kNodeLists); }
 void Preferences::setEd3kNodeLists(const QStringList& links) { set(&Data::ed3kNodeLists, links); }
+QStringList Preferences::ed3kCacheServers() const { return get(&Data::ed3kCacheServers); }
+void Preferences::setEd3kCacheServers(const QStringList& links) { set(&Data::ed3kCacheServers, links); }
 uint16 Preferences::ed3kSitePort() const { return get(&Data::ed3kSitePort); }
 void Preferences::setEd3kSitePort(uint16 val) { set(&Data::ed3kSitePort, val); }
 Ed3kCreditPrefs Preferences::ed3kCredit() const { return get(&Data::ed3kCredit); }
@@ -3709,6 +3724,10 @@ QCborMap Preferences::toIpcMap() const
     prefs.insert(QStringLiteral("ed3kChaintubeRpc"), ed3kChaintubeRpc().join(QLatin1Char(' ')));
     prefs.insert(QStringLiteral("ed3kExtOff"), ed3kExtOff().join(QLatin1Char(' ')));
     prefs.insert(QStringLiteral("ed3kLan"), ed3kLan());
+    prefs.insert(QStringLiteral("ed3kHide"), ed3kHide());
+    prefs.insert(QStringLiteral("ed3kHops"), static_cast<qint64>(ed3kHops()));
+    prefs.insert(QStringLiteral("ed3kHopping"), ed3kHopping());
+    prefs.insert(QStringLiteral("ed3kHopShare"), static_cast<qint64>(ed3kHopShare()));
     prefs.insert(QStringLiteral("ed3kNodeLists"), ed3kNodeLists().join(QLatin1Char(' ')));
     prefs.insert(QStringLiteral("ed3kSitePort"), static_cast<qint64>(ed3kSitePort()));
     {
@@ -4033,6 +4052,10 @@ void Preferences::updateFromCbor(const QCborMap& p)
     m_data->ed3kChaintubeRpc = rpcUrlList(p.value(QStringLiteral("ed3kChaintubeRpc")));
     m_data->ed3kExtOff = rpcUrlList(p.value(QStringLiteral("ed3kExtOff")));
     m_data->ed3kLan = p.value(QStringLiteral("ed3kLan")).toBool(true);
+    m_data->ed3kHide = p.value(QStringLiteral("ed3kHide")).toBool(false);
+    m_data->ed3kHops = static_cast<int>(std::clamp<qint64>(p.value(QStringLiteral("ed3kHops")).toInteger(1), 1, 3));
+    m_data->ed3kHopping = p.value(QStringLiteral("ed3kHopping")).toBool(true);
+    m_data->ed3kHopShare = static_cast<int>(std::clamp<qint64>(p.value(QStringLiteral("ed3kHopShare")).toInteger(25), 1, 100));
     m_data->ed3kNodeLists = rpcUrlList(p.value(QStringLiteral("ed3kNodeLists")));
     m_data->ed3kSitePort = static_cast<uint16>(
         std::clamp<qint64>(p.value(QStringLiteral("ed3kSitePort")).toInteger(0), 0, 65535));
@@ -5265,7 +5288,18 @@ bool Preferences::load(const QString& filePath)
             m_data->ed3kChaintubeRpc = urls(e3["chaintubeRpc"]);
             m_data->ed3kExtOff = urls(e3["extOff"]);
             m_data->ed3kLan = e3["lan"].as<bool>(m_data->ed3kLan);
+            m_data->ed3kHide = e3["hide"].as<bool>(m_data->ed3kHide);
+            m_data->ed3kHops = std::clamp(e3["hops"].as<int>(m_data->ed3kHops), 1, 3);
+            m_data->ed3kHopping = e3["hopping"].as<bool>(m_data->ed3kHopping);
+            m_data->ed3kHopShare = std::clamp(e3["hopShare"].as<int>(m_data->ed3kHopShare), 1, 100);
             m_data->ed3kNodeLists = urls(e3["nodeLists"]);
+            // ed3k:cache links hold an upload key: stored encrypted (no key: dropped)
+            m_data->ed3kCacheServers.clear();
+            if (auto cs = e3["cacheServersEnc"]; cs && cs.IsSequence() && !m_data->notifyEmailEncKey.isEmpty())
+                for (const auto& item : cs)
+                    if (const QString l = aesDecryptFromBase64(QString::fromStdString(item.as<std::string>("")), m_data->notifyEmailEncKey).trimmed();
+                        !l.isEmpty())
+                        m_data->ed3kCacheServers << l;
             const int sitePort = e3["sitePort"].as<int>(m_data->ed3kSitePort);
             m_data->ed3kSitePort = (sitePort >= 0 && sitePort <= 65535) ? static_cast<uint16>(sitePort) : 0;
             if (auto cr = e3["credit"]) {
@@ -6352,9 +6386,11 @@ bool Preferences::saveImpl(const QString& filePath) const
                                                         [](const Ed3kHosterAccount& a) {
                                                             return !a.password.isEmpty();
                                                         });
+    // ed3k:cache links carry an upload key (http-source.md §4.1)
+    const bool haveEd3kCacheLink = !m_data->ed3kCacheServers.isEmpty();
     if (encKey.isEmpty() && (!m_data->notifyEmailSmtpPassword.isEmpty() || haveCacheKey
                              || haveUsenetPassword || haveIndexerKey || haveFeedUrl
-                             || haveHosterPassword)) {
+                             || haveHosterPassword || haveEd3kCacheLink)) {
         encKey = aesRandomKey();
         m_data->notifyEmailEncKey = encKey;
     }
@@ -6534,6 +6570,10 @@ bool Preferences::saveImpl(const QString& filePath) const
     out << YAML::Key << "shareUsenetPosts" << YAML::Value << m_data->ed3kShareUsenetPosts;
     out << YAML::Key << "udpPort" << YAML::Value << static_cast<int>(m_data->ed3kUdpPort);
     out << YAML::Key << "lan" << YAML::Value << m_data->ed3kLan;
+    out << YAML::Key << "hide" << YAML::Value << m_data->ed3kHide;
+    out << YAML::Key << "hops" << YAML::Value << m_data->ed3kHops;
+    out << YAML::Key << "hopping" << YAML::Value << m_data->ed3kHopping;
+    out << YAML::Key << "hopShare" << YAML::Value << m_data->ed3kHopShare;
     out << YAML::Key << "sitePort" << YAML::Value << static_cast<int>(m_data->ed3kSitePort);
     for (const auto& [key, list] : {std::pair{"creditRpc", &m_data->ed3kCreditRpc},
                                     std::pair{"chaintubeRpc", &m_data->ed3kChaintubeRpc},
@@ -6542,6 +6582,13 @@ bool Preferences::saveImpl(const QString& filePath) const
         out << YAML::Key << key << YAML::Value << YAML::BeginSeq;
         for (const QString& u : *list)
             out << u.toStdString();
+        out << YAML::EndSeq;
+    }
+    // credentials: encrypted, never in clear (no key: dropped)
+    if (!encKey.isEmpty() && !m_data->ed3kCacheServers.isEmpty()) {
+        out << YAML::Key << "cacheServersEnc" << YAML::Value << YAML::BeginSeq;
+        for (const QString& l : m_data->ed3kCacheServers)
+            out << aesEncryptToBase64(l, encKey).toStdString();
         out << YAML::EndSeq;
     }
     {

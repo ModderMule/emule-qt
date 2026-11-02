@@ -105,6 +105,10 @@ protected:
         qint64 searchedAt = 0;
         /// stream → the uploader's piece bitmap as FileStatus told it (missing bits held)
         std::map<std::uint64_t, std::vector<std::uint8_t>> sourceHave;
+        /// the key it is downloaded under (hops.md §1; Ed3kHide::keyFor at open)
+        ffi::KeyKind key = ffi::KeyKind::Node;
+        /// anonymous key: downloadOpen done (after the first anonFileRequest held the root there)
+        bool anonOpened = false;
     };
 
     /// A file read for a worker. size, mtimeMs >= 0: the file must still have them.
@@ -184,6 +188,13 @@ protected:
     }
     /// Kept blobs are shared (again); false while they are held back (usenet §6).
     [[nodiscard]] virtual bool shareKeptBlobs() const { return true; }
+    /// Whether this join's downloads and member shares follow the hiding switch (Ed3kHide):
+    /// plain downloads and the share list. Joins of other networks stay on the node key
+    /// (eD2K, BT, usenet, hoster never anonymous, ffi.md). Default off.
+    [[nodiscard]] virtual bool anonCapable() const { return false; }
+    /// Hiding started (true) or stopped (false; the anonymous node took its downloads and
+    /// shares along, the base dropped them). Default: nothing.
+    virtual void onHideChanged(bool hiding) { Q_UNUSED(hiding) }
     [[nodiscard]] virtual bool hasOwner(const QString& owner) const = 0;
     virtual void saveOwner(const QString& owner) = 0;
 
@@ -231,6 +242,17 @@ protected:
     /// The mode taken, or the engine's error.
     std::expected<ffi::Publish, ffi::Error> publishShared(const ffi::FileInfo& info);
     [[nodiscard]] bool isShared(const ffi::Root& root) const { return m_shared.contains(root); }
+    /// Takes back what publishShared published (unpublish, or anonUnshare + anonUnpublish
+    /// under the anonymous key).
+    void unpublishShared(const ffi::Root& root, ffi::Publish mode);
+    /// The key a member of this join is opened under: Ed3kHide::keyFor when anonCapable(),
+    /// else the node key.
+    [[nodiscard]] ffi::KeyKind keyFor(const ffi::Root& root) const;
+    /// The key @p root is held under now (fileKey), else what keyFor would take.
+    [[nodiscard]] ffi::KeyKind keyOf(const ffi::Root& root) const;
+    /// Moves an open download to @p key (hops.md §1: the user was asked): closed under its key,
+    /// opened again under the other. false: no such download, or the key is the same.
+    bool moveDownloadKey(const ffi::Root& root, ffi::KeyKind key);
 
     // -- hashing -----------------------------------------------------------
 
@@ -342,8 +364,14 @@ private:
         bool busy = false;
     };
 
-    void onEventPolled(const ffi::Event& event, bool* handled);
+    // was: void onEventPolled(const ffi::Event& event, bool* handled);
+    void onEventPolled(const ffi::Event& event, ffi::KeyKind key, bool* handled);
     void onSessionStatus();
+    /// Ed3kHide started / stopped: anonymous streams and lookups dropped or searched again.
+    void hideChanged(bool hiding);
+    /// m_sourceLookups key: a lookup id of the anonymous node gets bit 63 (ids of both nodes
+    /// may be the same).
+    [[nodiscard]] static std::uint64_t lookupKey(std::uint64_t lookup, ffi::KeyKind key);
     bool answerBlock(std::uint64_t id, const ffi::Root& root, std::uint64_t offset, std::optional<std::uint32_t> len);
     /// The bytes of a WantBlock / VerifyBlock (nullopt: blockFail, and a gone file unshared).
     void finishBlock(std::uint64_t id, const ffi::Root& root, std::optional<QByteArray> data);
@@ -351,7 +379,8 @@ private:
     void runReads(const QString& owner);
     void readsDone(const QString& owner, ReadResults results);
     void onBlock(const ffi::event::Block& b);
-    void onKadFound(const ffi::event::KadFound& found);
+    // was: void onKadFound(const ffi::event::KadFound& found);
+    void onKadFound(const ffi::event::KadFound& found, ffi::KeyKind key);
     bool open(const ffi::Root& root, std::uint64_t size, const QString& owner, int member, bool inMemory);
     void saveDirty();
     /// Kad sources of a download again (when allowed by the gap).
@@ -417,7 +446,7 @@ private:
     std::map<ffi::Root, std::unique_ptr<Download>> m_downloads;
     /// download streams → root; Kad source lookups → root
     std::map<std::uint64_t, ffi::Root> m_streams;
-    std::map<std::uint64_t, ffi::Root> m_sourceLookups;
+    std::map<std::uint64_t, ffi::Root> m_sourceLookups;   ///< by lookupKey()
     /// set searches → (owner, roots found); per owner the set tried
     std::map<std::uint32_t, std::pair<QString, bool>> m_setSearches;
     std::map<QString, std::unique_ptr<SetTry>> m_setTries;

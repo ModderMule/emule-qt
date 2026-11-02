@@ -1681,14 +1681,21 @@ void tst_ServerConnect::lowIdOnIPv4_handsOverWithoutGoingOffline()
     QCOMPARE(lost.count(), 0);
     QCOMPARE(disconnected.count(), 0);
     QCOMPARE(handedOver.count(), 1);
-    QVERIFY(rig.dual.v4.entry->preferIPv6Session());
 
-    // The next connect goes straight to IPv6
+    // The next connect dials IPv4 again, so the server can re-test the port: one
+    // opened since the handover must turn into a HighID
     rig.conn.disconnect();
     rig.conn.connectToServer(rig.dual.v4.entry, false, true);
-    QVERIFY(acceptOn(rig.dual.v6));
+    QTcpSocket* again4 = acceptOn(rig.dual.v4.listener);
+    QVERIFY(again4);
+    QVERIFY(loginArrives(again4));
+    again4->readAll();
+    writeIdChange(again4, 0x0100007f);   // HighID 127.0.0.1
+    QVERIFY(QTest::qWaitFor([&] { return rig.conn.isConnected(); }, 5000));
+    QVERIFY(rig.conn.sessionAddress().isIPv4());
+    QVERIFY(!rig.conn.isLowID());
     QTest::qWait(300);
-    QVERIFY(!rig.dual.v4.listener.hasPendingConnections());
+    QVERIFY(!rig.dual.v6.hasPendingConnections());   // no handover for a HighID
     rig.conn.disconnect();
 }
 
@@ -1769,7 +1776,6 @@ void tst_ServerConnect::lowIdOnIPv4_staysWithoutThePref()
     writeIdChange(side4, 0x00000042);
     QVERIFY(QTest::qWaitFor([&] { return conn.isConnected(); }, 5000));
     QVERIFY(conn.sessionAddress().isIPv4());
-    QVERIFY(!entry->preferIPv6Session());
     QTest::qWait(300);
     QVERIFY(!dual.v6.hasPendingConnections());
     conn.disconnect();
@@ -1802,7 +1808,6 @@ void tst_ServerConnect::lowIdOnIPv4_staysOnIPv4WhenIPv6IsDead()
     QVERIFY(QTest::qWaitFor([&] { return entry->ipv6SwitchFailed(); }, 10000));
     QVERIFY(conn.isConnected());
     QVERIFY(conn.sessionAddress().isIPv4());
-    QVERIFY(!entry->preferIPv6Session());
     QTest::qWait(200);
     QVERIFY(!dual.v4.listener.hasPendingConnections());
     QCOMPARE(lost.count(), 0);

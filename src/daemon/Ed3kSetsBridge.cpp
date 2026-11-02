@@ -148,6 +148,18 @@ QCborMap toCbor(const ed3k::Ed3kLiveBroadcast::Info& i)
         {QStringLiteral("skipped"), qint64(i.skipped)},
         {QStringLiteral("resumed"), i.resumed},
         {QStringLiteral("channelFile"), i.channelFile},
+        {QStringLiteral("channel"), i.channel},   // batch 15: the channel id (delete)
+    };
+}
+
+QCborMap toCbor(const ed3k::Ed3kLiveBroadcast::ChannelInfo& c)
+{
+    return QCborMap{
+        {QStringLiteral("channel"), c.channel},
+        {QStringLiteral("title"), c.title},
+        {QStringLiteral("private"), c.isPrivate},
+        {QStringLiteral("stream"), c.stream},
+        {QStringLiteral("channelFile"), c.channelFile},
     };
 }
 
@@ -222,6 +234,16 @@ void answer(const IpcMessage& msg, const std::function<void(const IpcMessage&)>&
         break;
     }
     case IpcMsgType::LeaveEd3kLive:
+        // batch 15 (#5): [channel, delete: true] deletes a channel of ours (its file withdrawn)
+        if (msg.fieldCount() > 1 && msg.fieldBool(1)) {
+            if (!s_broadcast)
+                reply(failure(seq, QCoreApplication::translate("eMule::Ed3kSetsBridge", "ed3k is not available.")));
+            else if (auto r = s_broadcast->deleteChannel(msg.fieldString(0)))
+                ok();
+            else
+                reply(failure(seq, r.error()));
+            break;
+        }
         // a broadcast of ours ends (liveEnd), a watched stream is left
         if (s_broadcast && s_broadcast->stop(msg.fieldString(0)))
             ok();
@@ -401,6 +423,7 @@ QCborMap setsToCbor()
 QCborMap liveToCbor()
 {
     QCborArray list;
+    QCborArray channels;   // outside the ed3k block: also answered without ed3k
     bool running = false;
 #ifdef EMULE_HAVE_ED3K
     if (s_live) {
@@ -408,11 +431,14 @@ QCborMap liveToCbor()
         for (const auto& i : s_live->list())
             list.append(toCbor(i));
     }
-    if (s_broadcast)
+    if (s_broadcast) {
         for (const auto& i : s_broadcast->list())
             list.append(toCbor(i));
+        for (const auto& c : s_broadcast->channels())
+            channels.append(toCbor(c));
+    }
 #endif
-    return QCborMap{{QStringLiteral("running"), running}, {QStringLiteral("streams"), list}};
+    return QCborMap{{QStringLiteral("running"), running}, {QStringLiteral("streams"), list}, {QStringLiteral("channels"), channels}};
 }
 
 void connectPushes(ed3k::Ed3kSets& sets, ed3k::Ed3kLive& live, ed3k::Ed3kSiteServer* sites,

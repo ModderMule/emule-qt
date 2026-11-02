@@ -21,6 +21,7 @@
 
 #include <cstdint>
 #include <deque>
+#include <functional>
 #include <map>
 #include <memory>
 #include <optional>
@@ -92,6 +93,17 @@ public:
     /// @p md4 is published with its keywords (Publish::Both: found by ed3k search), not only
     /// as a source; not while holding back.
     [[nodiscard]] bool keywordsPublished(const QByteArray& md4) const;
+    /// Batch 15 #12: @p check true = never shared (an opened plain copy of a sealed set
+    /// member, hidden-set.md §4.2: Ed3kPlainCopies); asked as files come.
+    void setNeverShared(std::function<bool(const QString& path)> check) { m_neverShared = std::move(check); }
+    /// The key @p md4 is shared under (hops.md §1, shown to the user); nullopt: not hashed yet.
+    [[nodiscard]] std::optional<::ed3k::KeyKind> keyOfFile(const QByteArray& md4) const;
+    /// The root @p md4 was hashed to, shared or not (a file of the anonymous key waits while
+    /// hiding is off); nullopt: not hashed yet.
+    [[nodiscard]] std::optional<::ed3k::Root> hashedRootOf(const QByteArray& md4) const;
+    /// Moves a shared file to @p key (the user was asked, hops.md §1): unpublished and closed
+    /// under its key, shared under the other. false: not shared here, or the same key.
+    bool moveFileKey(const ::ed3k::Root& root, ::ed3k::KeyKind key);
     /// Tests: an unreadable file is hashed again after @p ms (default kRehashMs).
     void setRehashDelay(int ms) { m_rehashMs = ms; }
     /// Files hashed since construction (cache misses).
@@ -122,6 +134,9 @@ protected:
     [[nodiscard]] ::ed3k::UploadPriority uploadPriority(const Shared& s) const override;
     [[nodiscard]] bool hasOwner(const QString& owner) const override;
     void saveOwner(const QString& owner) override;
+    /// The share list follows the hiding switch (no eD2K ALIAS under the anonymous key).
+    [[nodiscard]] bool anonCapable() const override { return true; }
+    void onHideChanged(bool hiding) override;
 
 private:
     /// What was hashed: the cache entry of one file.
@@ -177,6 +192,7 @@ private:
     mutable std::set<QByteArray> m_suspects;
     mutable QTimer m_recheckTimer;
     QTimer m_priorityTimer;
+    std::function<bool(const QString&)> m_neverShared;
 };
 
 } // namespace eMule::ed3k
