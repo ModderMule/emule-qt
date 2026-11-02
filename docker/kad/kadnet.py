@@ -442,8 +442,9 @@ def ed2k_hash(path: str) -> str:
 def nat_test(args) -> int:
     """Node N-1 shares behind a NAT and a v6 firewall, node N downloads behind a NAT.
 
-    N's direct IPv6 dial to the source is refused, so it falls back to the source's
-    Kad buddy, which introduces the two (docs/protocol/natt-rendezvous.md).
+    The source's v6 is never proven reachable (firewall), so the IPv6 peer gate keeps it
+    out of the Kad publish and N goes straight to the source's Kad buddy, which
+    introduces the two (docs/protocol/natt-rendezvous.md).
     """
     src, dst = args.nodes - 1, args.nodes
     network6 = ipaddress.IPv6Network(SUBNET6)
@@ -472,12 +473,20 @@ def nat_test(args) -> int:
     stamp(f"{args.nodes} nodes up; node-{src} shares {NAT_TEST_FILE}, node-{dst} will download it")
     stamp("waiting for the source's Kad buddy (first search ~5 min after start)")
 
+    file_hash = ed2k_hash(test_file)
+
     def buddy_published():
+        # Test file's own publish (not testfile*.txt), buddy type, stored by a node
         kad = node_file(src, "emulecored_Kad.log")
         at = kad.rfind("Kad: buddy set")
         if at < 0:
             return None
-        return "yes" if re.search(r"PUBLISH_SOURCE_REQ .*srcType=[35]", kad[at:]) else None
+        tail = kad[at:]
+        for sid in re.findall(rf"Started StoreFile search (\d+) for {file_hash}", tail):
+            if (re.search(rf"search {sid}: PUBLISH_SOURCE_REQ .*srcType=[35]", tail)
+                    and f"target={file_hash}" in tail):
+                return "yes"
+        return None
 
     if not wait_until("buddy + source publish", buddy_published, args.buddy_timeout):
         return nat_fail(args, "the source never published with a buddy")
@@ -504,7 +513,8 @@ def nat_test(args) -> int:
     for i in (src, dst):
         stamp(f"node-{i} NAT-T log:")
         for line in sorted({ln for ln in logs[i].splitlines()
-                            if "NAT-T:" in ln or "IPv6 dial to LowID" in ln}):
+                            if "NAT-T:" in ln or "IPv6 dial to LowID" in ln
+                            or "advertising it to peers" in ln}):
             print("    " + line)
     if outcome != "complete":
         return nat_fail(args, outcome or f"no transfer within {args.timeout}s")
@@ -512,7 +522,10 @@ def nat_test(args) -> int:
     md5 = subprocess.run(["docker", "exec", f"kadnet-node-{dst}", "md5sum", target],
                          capture_output=True, text=True).stdout.split()[:1]
     checks = {
-        "IPv6 dial refused, LowID fallback": "IPv6 dial to LowID source" in logs[dst],
+        # Peer gate: unproven v6 is not advertised, so no direct v6 dial is tried
+        "IPv6 gate keeps source v6 unadvertised":
+            "now advertising it to peers" not in logs[src]
+            and "IPv6 dial to LowID source" not in logs[dst],
         "rendezvous via Kad buddy": "via Kad buddy for" in logs[dst],
         "IPv6 handoff dial": bool(re.search(r"NAT-T: #\d+ dialing \[", logs[src] + logs[dst])),
         "MD5 match": md5 == [expected_md5],

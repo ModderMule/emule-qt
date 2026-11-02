@@ -54,9 +54,11 @@ python3 docker/kad/kadnet.py --nat-test --build --keep
   firewall (inbound v6 TCP refused), node N downloads it behind a NAT. The rest are open.
 - The script waits for node N-1's buddy and its source publish with it (~5.5 min; the first
   buddy search starts 5 min after Kad start), then adds the link on node N.
-- Node N's direct IPv6 dial is refused, it falls back to the source's buddy, the buddy
-  introduces the two, node N-1 dials node N over IPv6 (handoff) and uploads.
-- Checks: fallback line, `via Kad buddy`, the handoff dial and the MD5. Prints PASS/FAIL.
+- Node N-1's v6 is never proven reachable, so the IPv6 peer gate keeps it out of the Kad
+  publish. Node N goes straight to the source's buddy, the buddy introduces the two, node
+  N-1 dials node N over IPv6 (handoff) and uploads.
+- Checks: no v6 advertised by N-1 and no direct v6 dial by N, `via Kad buddy`, the handoff
+  dial and the MD5. Prints PASS/FAIL.
   Passed with 20 and 32 nodes: ~5.5 s from adding the link to the verified file.
 - Not fewer than 20 nodes: in a smaller LAN every node knows every other, every UDP firewall
   check ends "cancelled", and an unverified node refuses buddy requests (10 nodes: no buddy).
