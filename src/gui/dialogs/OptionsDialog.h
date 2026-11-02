@@ -94,7 +94,7 @@ public:
         PageEd3kNames,
         PageEd3kFilters,    // filter lists (Ed3kFilterPage)
         PageEd3kAutoCredits, // "Credits" in the sidebar: autostart highspeed download
-        PageEd3kSelling,    // selling paid subscriptions (Ed3kSellPage, batch 14)
+        PageEd3kSelling,    // selling paid subscriptions (Ed3kSellPage), not in the sidebar for now (hasPage)
         PageCount
     };
 

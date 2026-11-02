@@ -1729,8 +1729,17 @@ void CoreSession::initPortMapper()
         static_cast<PortMapMethod>(thePrefs.portMapMethod()));
 
     connect(m_portMapper.get(), &PortMapper::statusChanged, this,
-            [](PortMapStatus status) {
-                logInfo(QStringLiteral("Port mapping: %1").arg(portMapStatusName(status)));
+            [lastShown = PortMapStatus::Unknown](PortMapStatus status) mutable {
+                // Probing/Unknown are transitions; a repeated result (e.g. a re-probe
+                // after a Smart-LowID bounce landing on "Not forwarded" again) is noise.
+                const QString line = QStringLiteral("Port mapping: %1").arg(portMapStatusName(status));
+                if (status == PortMapStatus::Probing || status == PortMapStatus::Unknown
+                    || status == lastShown) {
+                    logDebug(line);
+                } else {
+                    logInfo(line);
+                    lastShown = status;
+                }
                 // stop()/clearActive() drop mappings without a mappingChanged(false).
                 if (status == PortMapStatus::Unknown || status == PortMapStatus::Disabled
                     || status == PortMapStatus::NotMapped || status == PortMapStatus::Failed)

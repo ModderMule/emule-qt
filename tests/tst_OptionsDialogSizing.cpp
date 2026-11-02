@@ -65,14 +65,14 @@ constexpr int kPageBudget = 460;
 /// empty and not in the sidebar. ed3k Credits is built but hidden for now (OptionsDialog hasPage)
 constexpr int kBuiltPages = int(OptionsDialog::PageCount);
 #ifdef EMULE_HAVE_BITTORRENT
-constexpr int kSidebarPages = kBuiltPages - 1;
+constexpr int kSidebarPages = kBuiltPages - 2;   // ed3k Credits + Selling hidden
 #else
-constexpr int kSidebarPages = kBuiltPages - 3;
+constexpr int kSidebarPages = kBuiltPages - 4;
 #endif
 /// A page the sidebar lists in this build.
 constexpr bool listed(int page)
 {
-    if (page == OptionsDialog::PageEd3kCredits)
+    if (page == OptionsDialog::PageEd3kCredits || page == OptionsDialog::PageEd3kSelling)
         return false;
 #ifdef EMULE_HAVE_BITTORRENT
     return true;

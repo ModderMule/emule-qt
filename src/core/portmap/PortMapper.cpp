@@ -184,7 +184,7 @@ void PortMapper::reprobe()
 {
     if (m_state == State::Stopped || m_backends.empty())
         return;
-    logInfo(QStringLiteral("PortMap: re-probing port-mapping protocols"));
+    logDebug(QStringLiteral("PortMap: re-probing port-mapping protocols"));
     releaseAll();
     clearActive();
     m_reprobeBackoff.stop();

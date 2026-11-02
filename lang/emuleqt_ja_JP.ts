@@ -991,7 +991,7 @@ Has comments</source>
         <translation type="vanished">%1 Bytes</translation>
     </message>
     <message>
-        <location filename="../src/gui/dialogs/OptionsDialog.cpp" line="+3501"/>
+        <location filename="../src/gui/dialogs/OptionsDialog.cpp" line="+3503"/>
         <source>Test</source>
         <translation>テスト</translation>
     </message>
@@ -4345,7 +4345,7 @@ Make a new anonymous key?</source>
 <context>
     <name>eMule::Ed3kKey</name>
     <message>
-        <location filename="../src/gui/utils/Ed3kKeyText.h" line="+16"/>
+        <location filename="../src/gui/utils/Ed3kKeyText.h" line="+18"/>
         <source>Anonymous</source>
         <translation>匿名</translation>
     </message>
@@ -4353,6 +4353,16 @@ Make a new anonymous key?</source>
         <location line="+2"/>
         <source>Node</source>
         <translation>ノード</translation>
+    </message>
+    <message>
+        <location line="+15"/>
+        <source>ed3k is not running.</source>
+        <translation>ed3k は実行されていません。</translation>
+    </message>
+    <message>
+        <location line="+2"/>
+        <source>Hiding is off: turn on &quot;Hide my node&quot; in Options &gt; ed3k first.</source>
+        <translation>秘匿がオフです: 先に オプション &gt; ed3k で「自分のノードを秘匿する」をオンにしてください。</translation>
     </message>
 </context>
 <context>
@@ -4528,7 +4538,7 @@ Its names are then resolved after the lists you already follow.</source>
         <translation type="vanished">ed3k ノードは「全般」ページのニックネームを使用します: %1</translation>
     </message>
     <message>
-        <location filename="../src/gui/dialogs/Ed3kOptionsPages.cpp" line="+359"/>
+        <location filename="../src/gui/dialogs/Ed3kOptionsPages.cpp" line="+360"/>
         <location line="+11"/>
         <location line="+534"/>
         <location line="+11"/>
@@ -4807,12 +4817,12 @@ Its names are then resolved after the lists you already follow.</source>
     <message>
         <location line="+5"/>
         <location line="+10"/>
-        <location line="+992"/>
+        <location line="+998"/>
         <source> credits/MiB</source>
         <translation> クレジット/MiB</translation>
     </message>
     <message>
-        <location line="-1001"/>
+        <location line="-1007"/>
         <source>Never pay (receipts only)</source>
         <translation>支払わない（受領証のみ）</translation>
     </message>
@@ -4968,12 +4978,12 @@ Its names are then resolved after the lists you already follow.</source>
     <message>
         <location line="+1"/>
         <location line="+6"/>
-        <location line="+594"/>
+        <location line="+600"/>
         <source>Remove</source>
         <translation>削除</translation>
     </message>
     <message>
-        <location line="-590"/>
+        <location line="-596"/>
         <source>Followed name lists (the first one wins)</source>
         <translation>フォロー中の名前リスト（最初のものが優先）</translation>
     </message>
@@ -5060,12 +5070,12 @@ Its names are then resolved after the lists you already follow.</source>
     </message>
     <message>
         <location line="+0"/>
-        <location line="+830"/>
+        <location line="+836"/>
         <source>not read yet</source>
         <translation>未読み取り</translation>
     </message>
     <message>
-        <location line="-828"/>
+        <location line="-834"/>
         <source>The account is overdrawn: a new credit key is the way on.</source>
         <translation>アカウントが残高不足（マイナス）です。続けるには新しいクレジットキーが必要です。</translation>
     </message>
@@ -5290,7 +5300,7 @@ Export?</source>
         <translation>eD2K 互換に切り替えますか？</translation>
     </message>
     <message>
-        <location line="+34"/>
+        <location line="+40"/>
         <source>the ed3k node is not running</source>
         <translation>ed3k ノードは実行されていません</translation>
     </message>
@@ -5409,7 +5419,7 @@ Export?</source>
         <translation>ed3k</translation>
     </message>
     <message>
-        <location line="-808"/>
+        <location line="-814"/>
         <source>Runs the ed3k node (packmule) in the core, on the eD2K UDP port or one of its own. It finds other nodes over Kad and serves the shared files.</source>
         <translation>コアで ed3k ノード（packmule）を eD2K UDP ポートまたは専用ポートで実行します。Kad で他のノードを見つけ、共有ファイルを提供します。</translation>
     </message>
@@ -5484,7 +5494,7 @@ Export?</source>
         <translation>リモートエンドポイントが 1 つだけです。その応答を検証するものがありません。独立したプロバイダーの 2 つのエンドポイント、またはこのコンピューター上のチェーンノードを推奨します。</translation>
     </message>
     <message>
-        <location line="+659"/>
+        <location line="+665"/>
         <source>%1 failed: %2</source>
         <translation>%1 に失敗しました: %2</translation>
     </message>
@@ -5786,12 +5796,12 @@ Export?</source>
     </message>
     <message>
         <location line="+7"/>
-        <location line="+163"/>
+        <location line="+165"/>
         <source>Shared (%1)</source>
         <translation>共有 (%1)</translation>
     </message>
     <message>
-        <location line="-159"/>
+        <location line="-161"/>
         <location line="+30"/>
         <source>File Name</source>
         <translation>ファイル名</translation>
@@ -5821,12 +5831,12 @@ Export?</source>
     </message>
     <message>
         <location line="+7"/>
-        <location line="+135"/>
+        <location line="+137"/>
         <source>ed3k Set (%1)</source>
         <translation>ed3k セット (%1)</translation>
     </message>
     <message>
-        <location line="-113"/>
+        <location line="-115"/>
         <source>Every file below this folder is in the set; hidden files are left out. &quot;Publish New Version&quot; takes the folder as it is then.</source>
         <translation>このフォルダー以下のすべてのファイルがセットに含まれます。隠しファイルは除外されます。「新しいバージョンを公開」はその時点のフォルダーの状態を使います。</translation>
     </message>
@@ -5861,7 +5871,7 @@ Export?</source>
         <translation>隠し</translation>
     </message>
     <message>
-        <location line="+1"/>
+        <location line="+2"/>
         <source>Paid</source>
         <translation>支払済み</translation>
     </message>
@@ -5871,7 +5881,7 @@ Export?</source>
         <translation>条件...</translation>
     </message>
     <message>
-        <location line="+13"/>
+        <location line="+14"/>
         <source>Save</source>
         <translation>保存</translation>
     </message>
@@ -6019,17 +6029,17 @@ Sell it from My ed3k Sets.</source>
     </message>
     <message>
         <location line="+15"/>
-        <location line="+106"/>
+        <location line="+108"/>
         <source>Copy Link</source>
         <translation>リンクをコピー</translation>
     </message>
     <message>
-        <location line="-105"/>
+        <location line="-107"/>
         <source>Rename...</source>
         <translation>名前変更...</translation>
     </message>
     <message>
-        <location line="+4"/>
+        <location line="+5"/>
         <source>Change Terms...</source>
         <translation>条件を変更...</translation>
     </message>
@@ -6045,7 +6055,7 @@ Sell it from My ed3k Sets.</source>
     </message>
     <message>
         <location line="+0"/>
-        <location line="+162"/>
+        <location line="+163"/>
         <source>Stop Selling</source>
         <translation>販売を停止</translation>
     </message>
@@ -6843,12 +6853,12 @@ Buyers see it is no longer sold. Passes held still work until they end, and you 
     <name>eMule::Ed3kSetsDialog</name>
     <message>
         <location filename="../src/gui/dialogs/Ed3kSetsDialog.cpp" line="+104"/>
-        <location line="+1111"/>
+        <location line="+1112"/>
         <source>ed3k Sets</source>
         <translation>ed3k セット</translation>
     </message>
     <message>
-        <location line="-1101"/>
+        <location line="-1102"/>
         <source>Name</source>
         <translation>名前</translation>
     </message>
@@ -6917,13 +6927,13 @@ Buyers see it is no longer sold. Passes held still work until they end, and you 
     </message>
     <message>
         <location line="+1"/>
-        <location line="+50"/>
+        <location line="+51"/>
         <location line="+465"/>
         <source>Buy Pass...</source>
         <translation>パスを購入...</translation>
     </message>
     <message>
-        <location line="-513"/>
+        <location line="-514"/>
         <source>Enter Pass...</source>
         <translation>パスを入力...</translation>
     </message>
@@ -7009,17 +7019,17 @@ Buyers see it is no longer sold. Passes held still work until they end, and you 
     </message>
     <message>
         <location line="+1"/>
-        <location line="+492"/>
+        <location line="+493"/>
         <source>Sell...</source>
         <translation>販売...</translation>
     </message>
     <message>
-        <location line="-491"/>
+        <location line="-492"/>
         <source>Sells this channel as a paid subscription: every segment is sealed, viewers need a pass.</source>
         <translation>このチャンネルを有料サブスクリプションとして販売します: すべてのセグメントが封印され、視聴者にはパスが必要です。</translation>
     </message>
     <message>
-        <location line="+15"/>
+        <location line="+16"/>
         <source>Live Streams</source>
         <translation>ライブストリーム</translation>
     </message>
@@ -10863,12 +10873,12 @@ Other members see your nick and posts; your node takes part in passing the room&
     <name>eMule::MainWindow</name>
     <message>
         <location filename="../src/gui/app/MainWindow.cpp" line="+112"/>
-        <location line="+668"/>
+        <location line="+675"/>
         <source>eMule Qt v%1</source>
         <translation>eMule Qt v%1</translation>
     </message>
     <message>
-        <location line="-500"/>
+        <location line="-507"/>
         <location line="+9"/>
         <source>New Version Available</source>
         <translation>新しいバージョンが利用可能</translation>
@@ -10890,12 +10900,12 @@ Other members see your nick and posts; your node takes part in passing the room&
     </message>
     <message>
         <location line="+12"/>
-        <location line="+1497"/>
+        <location line="+1504"/>
         <source>eD2K: Disconnected</source>
         <translation>eD2K：未接続</translation>
     </message>
     <message>
-        <location line="-1429"/>
+        <location line="-1436"/>
         <source>Kad: Connected</source>
         <translation>Kad：接続済み</translation>
     </message>
@@ -10911,7 +10921,7 @@ Other members see your nick and posts; your node takes part in passing the room&
     </message>
     <message>
         <location line="+4"/>
-        <location line="+1421"/>
+        <location line="+1428"/>
         <source>Kad: Disconnected</source>
         <translation>Kad：未接続</translation>
     </message>
@@ -10961,14 +10971,14 @@ Other members see your nick and posts; your node takes part in passing the room&
         <translation>機能</translation>
     </message>
     <message>
-        <location line="-975"/>
+        <location line="-982"/>
         <location line="+7"/>
-        <location line="+971"/>
+        <location line="+978"/>
         <source>Version Check</source>
         <translation>バージョン確認</translation>
     </message>
     <message>
-        <location line="-1044"/>
+        <location line="-1051"/>
         <source>Quit eMule Qt</source>
         <translation>eMule Qt を終了</translation>
     </message>
@@ -11060,7 +11070,7 @@ Enable at least one under Options → Connection to connect.</source>
         <translation>エラー！</translation>
     </message>
     <message>
-        <location line="+68"/>
+        <location line="+75"/>
         <source>ed3k: Connected</source>
         <translation>ed3k：接続済み</translation>
     </message>
@@ -13187,36 +13197,36 @@ Download it again?</source>
 <context>
     <name>eMule::OptionsDialog</name>
     <message>
-        <location filename="../src/gui/dialogs/OptionsDialog.cpp" line="-3382"/>
+        <location filename="../src/gui/dialogs/OptionsDialog.cpp" line="-3384"/>
         <source>Options</source>
         <translation>オプション</translation>
     </message>
     <message>
         <location line="+61"/>
-        <location line="+2291"/>
+        <location line="+2293"/>
         <source>OK</source>
         <translation>OK</translation>
     </message>
     <message>
-        <location line="-2290"/>
-        <location line="+2291"/>
+        <location line="-2292"/>
+        <location line="+2293"/>
         <source>Cancel</source>
         <translation>キャンセル</translation>
     </message>
     <message>
-        <location line="-2290"/>
-        <location line="+6327"/>
+        <location line="-2292"/>
+        <location line="+6329"/>
         <source>Apply</source>
         <translation>適用</translation>
     </message>
     <message>
-        <location line="-6326"/>
+        <location line="-6328"/>
         <source>Help</source>
         <translation>ヘルプ</translation>
     </message>
     <message>
         <location line="+277"/>
-        <location line="+2281"/>
+        <location line="+2283"/>
         <location line="+59"/>
         <location line="+6"/>
         <location line="+4"/>
@@ -13228,7 +13238,7 @@ Download it again?</source>
         <translation>IP フィルター</translation>
     </message>
     <message>
-        <location line="-2396"/>
+        <location line="-2398"/>
         <source>IP filter reloaded: %1 entries.</source>
         <translation>IP フィルターを再読み込み：%1 エントリ。</translation>
     </message>
@@ -13238,7 +13248,7 @@ Download it again?</source>
         <translation>オプション -&gt; %1 -&gt; %2</translation>
     </message>
     <message>
-        <location line="+5290"/>
+        <location line="+5292"/>
         <source>Bandwidth</source>
         <translation>帯域幅</translation>
     </message>
@@ -13520,12 +13530,12 @@ Are you sure you want to continue?</source>
         <translation>オリジナルの eMule アイコンを使用</translation>
     </message>
     <message>
-        <location line="+8179"/>
+        <location line="+8182"/>
         <source>A database ships with each release. An optional free &lt;a href=&quot;https://www.maxmind.com/en/geolite2/signup&quot;&gt;MaxMind GeoLite2&lt;/a&gt; account keeps it current in between. This product includes GeoLite2 data created by MaxMind.</source>
         <translation>各リリースにはデータベースが同梱されています。任意の無料 &lt;a href=&quot;https://www.maxmind.com/en/geolite2/signup&quot;&gt;MaxMind GeoLite2&lt;/a&gt; アカウントを使うと、リリースの間も最新の状態に保たれます。この製品には MaxMind が作成した GeoLite2 データが含まれています。</translation>
     </message>
     <message>
-        <location line="-8126"/>
+        <location line="-8129"/>
         <source>Save CPU &amp;&amp; Memory Usage</source>
         <translation>CPU &amp;&amp; メモリ使用量を節約</translation>
     </message>
@@ -13633,12 +13643,12 @@ Are you sure you want to continue?</source>
     </message>
     <message>
         <location line="-4376"/>
-        <location line="+7897"/>
+        <location line="+7900"/>
         <source>TCP</source>
         <translation>TCP</translation>
     </message>
     <message>
-        <location line="-7891"/>
+        <location line="-7894"/>
         <source>UDP</source>
         <translation>UDP</translation>
     </message>
@@ -14742,9 +14752,9 @@ Every Usenet connection then passes through the proxy, so its speed caps the dow
         <translation>検索に現れたファイルとそのときの名前をローカルに記録し、以後の検索で以前に見たものを表示できるようにします。</translation>
     </message>
     <message>
-        <location line="-1506"/>
+        <location line="-1508"/>
         <location line="+5"/>
-        <location line="+1721"/>
+        <location line="+1723"/>
         <source>Connection</source>
         <translation>接続</translation>
     </message>
@@ -15213,12 +15223,12 @@ Every Usenet connection then passes through the proxy, so its speed caps the dow
     </message>
     <message>
         <location line="-2945"/>
-        <location line="+8565"/>
+        <location line="+8568"/>
         <source>BitTorrent</source>
         <translation>BitTorrent</translation>
     </message>
     <message>
-        <location line="-8148"/>
+        <location line="-8151"/>
         <source>Show download progress on the Dock icon</source>
         <translation>Dock アイコンにダウンロードの進捗を表示</translation>
     </message>
@@ -16324,7 +16334,7 @@ Adding one later does not fetch its back catalogue: a new indexer gets its own f
         <translation>データベース: なし — 「今すぐ更新」をクリックしてダウンロード</translation>
     </message>
     <message>
-        <location line="+243"/>
+        <location line="+246"/>
         <source>TCP/UDP</source>
         <translation>TCP/UDP</translation>
     </message>
@@ -16387,7 +16397,7 @@ Adding one later does not fetch its back catalogue: a new indexer gets its own f
         <translation type="vanished">TCP と UDP の両方で使用します。eD2K のポートとは異なる必要があります。</translation>
     </message>
     <message>
-        <location line="-3533"/>
+        <location line="-3536"/>
         <source>Listen port (TCP/UDP):</source>
         <translation>待ち受けポート (TCP/UDP):</translation>
     </message>
@@ -16579,7 +16589,7 @@ Rehash all shared files now?</source>
         </translation>
     </message>
     <message>
-        <location line="+114"/>
+        <location line="+117"/>
         <source>UDP is disabled in the config file (udpPort: 0)</source>
         <translation>UDP は設定ファイルで無効になっています (udpPort: 0)</translation>
     </message>
@@ -16684,7 +16694,7 @@ Create it?</source>
 %1</translation>
     </message>
     <message>
-        <location line="-3273"/>
+        <location line="-3276"/>
         <source>Disabled</source>
         <translation>無効</translation>
     </message>
@@ -16762,13 +16772,13 @@ Create it?</source>
         <translation>詳細コントロールを表示（詳細モード）</translation>
     </message>
     <message>
-        <location line="-477"/>
-        <location line="+54"/>
+        <location line="-479"/>
+        <location line="+56"/>
         <source>ed3k</source>
         <translation>ed3k</translation>
     </message>
     <message>
-        <location line="-50"/>
+        <location line="-52"/>
         <source>Credits</source>
         <translation>クレジット</translation>
     </message>
@@ -16788,12 +16798,11 @@ Create it?</source>
         <translation>フィルター</translation>
     </message>
     <message>
-        <location line="+1"/>
         <source>Selling</source>
-        <translation>販売</translation>
+        <translation type="vanished">販売</translation>
     </message>
     <message>
-        <location line="+212"/>
+        <location line="+215"/>
         <source>Open eD2K and ed3k links with eMule Qt</source>
         <translation>eD2K リンクと ed3k リンクを eMule Qt で開く</translation>
     </message>

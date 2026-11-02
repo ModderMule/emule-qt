@@ -4,6 +4,7 @@
 /// a refresh, the live list, a paid set (Buy Pass, the pass in the info), a mount's waiting
 /// version, a broadcast of ours. EMULE_SCREENSHOT_DIR set: a picture of each tab is saved there.
 
+#include "dialogs/Ed3kSellDialogs.h"
 #include "dialogs/Ed3kSetsDialog.h"
 
 #include <QCborArray>
@@ -163,7 +164,7 @@ void tst_Ed3kSetsDialog::aPaidSetAndAWaitingMount()
                                                                        {QStringLiteral("hasOffer"), true},
                                                                        {QStringLiteral("price"), QStringLiteral("4.99 EUR / month")}}}}});
     list->setCurrentItem(list->topLevelItem(1));
-    QVERIFY(!buy->isHidden());
+    QCOMPARE(buy->isHidden(), !kEd3kSellingShown);   // hidden while selling is
     QVERIFY(!buy->isEnabled());   // a pass is held
     const QString info = dlg.findChild<QLabel*>(QStringLiteral("ed3kSetInfo"))->text();
     QVERIFY2(info.contains(QStringLiteral("4.99 EUR / month")), qPrintable(info));
@@ -197,7 +198,8 @@ void tst_Ed3kSetsDialog::aPaidSetAndAWaitingMount()
 
     // batch 14, subscription.md §5.1: a pass of several scopes waits: "Use Pass...", the info says why
     auto* enter = dlg.findChild<QPushButton*>(QStringLiteral("ed3kEnterPass"));
-    QVERIFY(enter && !enter->isHidden());
+    QVERIFY(enter);
+    QCOMPARE(enter->isHidden(), !kEd3kSellingShown);
     dlg.fillPaid(QCborMap{{QStringLiteral("subs"), QCborArray{QCborMap{{QStringLiteral("scope"), scope},
                                                                        {QStringLiteral("title"), QStringLiteral("Private photos")},
                                                                        {QStringLiteral("state"), 6},
@@ -214,7 +216,8 @@ void tst_Ed3kSetsDialog::aPaidSetAndAWaitingMount()
     dlg.fillLive(QCborMap{{QStringLiteral("streams"), QCborArray{tv}}});
     live->setCurrentItem(live->topLevelItem(0));
     auto* liveBuy = dlg.findChild<QPushButton*>(QStringLiteral("ed3kLiveBuyPass"));
-    QVERIFY(liveBuy && !liveBuy->isHidden());
+    QVERIFY(liveBuy);
+    QCOMPARE(liveBuy->isHidden(), !kEd3kSellingShown);
     QCOMPARE(live->topLevelItem(0)->text(1), Ed3kSetsDialog::paidStateText(0));
     QCOMPARE(Ed3kSetsDialog::memberStateText(6), QStringLiteral("Waiting for the key"));
 }

@@ -845,7 +845,7 @@ Zaufać nowemu certyfikatowi?</translation>
         <translation>Normalny</translation>
     </message>
     <message>
-        <location filename="../src/gui/dialogs/OptionsDialog.cpp" line="+3501"/>
+        <location filename="../src/gui/dialogs/OptionsDialog.cpp" line="+3503"/>
         <source>Test</source>
         <translation>Test</translation>
     </message>
@@ -4095,7 +4095,7 @@ Utworzyć nowy klucz anonimowy?</translation>
 <context>
     <name>eMule::Ed3kKey</name>
     <message>
-        <location filename="../src/gui/utils/Ed3kKeyText.h" line="+16"/>
+        <location filename="../src/gui/utils/Ed3kKeyText.h" line="+18"/>
         <source>Anonymous</source>
         <translation>Anonimowy</translation>
     </message>
@@ -4103,6 +4103,16 @@ Utworzyć nowy klucz anonimowy?</translation>
         <location line="+2"/>
         <source>Node</source>
         <translation>Węzeł</translation>
+    </message>
+    <message>
+        <location line="+15"/>
+        <source>ed3k is not running.</source>
+        <translation>ed3k nie działa.</translation>
+    </message>
+    <message>
+        <location line="+2"/>
+        <source>Hiding is off: turn on &quot;Hide my node&quot; in Options &gt; ed3k first.</source>
+        <translation>Ukrywanie jest wyłączone: najpierw włącz „Ukryj mój węzeł” w Opcje &gt; ed3k.</translation>
     </message>
 </context>
 <context>
@@ -4278,7 +4288,7 @@ Jej nazwy będą wtedy rozwiązywane po listach, które już obserwujesz.</trans
         <translation type="vanished">Węzeł ed3k używa nicka ze strony Ogólne: %1</translation>
     </message>
     <message>
-        <location filename="../src/gui/dialogs/Ed3kOptionsPages.cpp" line="+359"/>
+        <location filename="../src/gui/dialogs/Ed3kOptionsPages.cpp" line="+360"/>
         <location line="+11"/>
         <location line="+534"/>
         <location line="+11"/>
@@ -4557,12 +4567,12 @@ Jej nazwy będą wtedy rozwiązywane po listach, które już obserwujesz.</trans
     <message>
         <location line="+5"/>
         <location line="+10"/>
-        <location line="+992"/>
+        <location line="+998"/>
         <source> credits/MiB</source>
         <translation> kredytów/MiB</translation>
     </message>
     <message>
-        <location line="-1001"/>
+        <location line="-1007"/>
         <source>Never pay (receipts only)</source>
         <translation>Nigdy nie płać (tylko pokwitowania)</translation>
     </message>
@@ -4718,12 +4728,12 @@ Jej nazwy będą wtedy rozwiązywane po listach, które już obserwujesz.</trans
     <message>
         <location line="+1"/>
         <location line="+6"/>
-        <location line="+594"/>
+        <location line="+600"/>
         <source>Remove</source>
         <translation>Usuń</translation>
     </message>
     <message>
-        <location line="-590"/>
+        <location line="-596"/>
         <source>Followed name lists (the first one wins)</source>
         <translation>Obserwowane listy nazw (wygrywa pierwsza)</translation>
     </message>
@@ -4810,12 +4820,12 @@ Jej nazwy będą wtedy rozwiązywane po listach, które już obserwujesz.</trans
     </message>
     <message>
         <location line="+0"/>
-        <location line="+830"/>
+        <location line="+836"/>
         <source>not read yet</source>
         <translation>jeszcze nie odczytano</translation>
     </message>
     <message>
-        <location line="-828"/>
+        <location line="-834"/>
         <source>The account is overdrawn: a new credit key is the way on.</source>
         <translation>Konto ma debet: dalsza droga to nowy klucz kredytowy.</translation>
     </message>
@@ -5040,7 +5050,7 @@ Eksportować?</translation>
         <translation>Przełączyć na zgodność z eD2K?</translation>
     </message>
     <message>
-        <location line="+34"/>
+        <location line="+40"/>
         <source>the ed3k node is not running</source>
         <translation>węzeł ed3k nie działa</translation>
     </message>
@@ -5159,7 +5169,7 @@ Eksportować?</translation>
         <translation>ed3k</translation>
     </message>
     <message>
-        <location line="-808"/>
+        <location line="-814"/>
         <source>Runs the ed3k node (packmule) in the core, on the eD2K UDP port or one of its own. It finds other nodes over Kad and serves the shared files.</source>
         <translation>Uruchamia węzeł ed3k (packmule) w rdzeniu, na porcie UDP eD2K lub na własnym. Znajduje inne węzły przez Kad i udostępnia współdzielone pliki.</translation>
     </message>
@@ -5234,7 +5244,7 @@ Eksportować?</translation>
         <translation>Tylko jeden zdalny punkt końcowy: nic nie sprawdza jego odpowiedzi. Zalecane są dwa punkty końcowe niezależnych dostawców lub węzeł łańcucha na tym komputerze.</translation>
     </message>
     <message>
-        <location line="+659"/>
+        <location line="+665"/>
         <source>%1 failed: %2</source>
         <translation>%1 nie powiodło się: %2</translation>
     </message>
@@ -5536,12 +5546,12 @@ Eksportować?</translation>
     </message>
     <message>
         <location line="+7"/>
-        <location line="+163"/>
+        <location line="+165"/>
         <source>Shared (%1)</source>
         <translation>Udostępnione (%1)</translation>
     </message>
     <message>
-        <location line="-159"/>
+        <location line="-161"/>
         <location line="+30"/>
         <source>File Name</source>
         <translation>Nazwa pliku</translation>
@@ -5571,12 +5581,12 @@ Eksportować?</translation>
     </message>
     <message>
         <location line="+7"/>
-        <location line="+135"/>
+        <location line="+137"/>
         <source>ed3k Set (%1)</source>
         <translation>Zestaw ed3k (%1)</translation>
     </message>
     <message>
-        <location line="-113"/>
+        <location line="-115"/>
         <source>Every file below this folder is in the set; hidden files are left out. &quot;Publish New Version&quot; takes the folder as it is then.</source>
         <translation>Każdy plik w tym folderze należy do zestawu; ukryte pliki są pomijane. &quot;Opublikuj nową wersję&quot; bierze folder w jego ówczesnym stanie.</translation>
     </message>
@@ -5611,7 +5621,7 @@ Eksportować?</translation>
         <translation>Ukryty</translation>
     </message>
     <message>
-        <location line="+1"/>
+        <location line="+2"/>
         <source>Paid</source>
         <translation>Wypłacono</translation>
     </message>
@@ -5621,7 +5631,7 @@ Eksportować?</translation>
         <translation>Warunki...</translation>
     </message>
     <message>
-        <location line="+13"/>
+        <location line="+14"/>
         <source>Save</source>
         <translation>Zapisz</translation>
     </message>
@@ -5769,17 +5779,17 @@ Sprzedaj go z Moje zestawy ed3k.</translation>
     </message>
     <message>
         <location line="+15"/>
-        <location line="+106"/>
+        <location line="+108"/>
         <source>Copy Link</source>
         <translation>Kopiuj link</translation>
     </message>
     <message>
-        <location line="-105"/>
+        <location line="-107"/>
         <source>Rename...</source>
         <translation>Zmień nazwę...</translation>
     </message>
     <message>
-        <location line="+4"/>
+        <location line="+5"/>
         <source>Change Terms...</source>
         <translation>Zmień warunki...</translation>
     </message>
@@ -5795,7 +5805,7 @@ Sprzedaj go z Moje zestawy ed3k.</translation>
     </message>
     <message>
         <location line="+0"/>
-        <location line="+162"/>
+        <location line="+163"/>
         <source>Stop Selling</source>
         <translation>Zatrzymaj sprzedaż</translation>
     </message>
@@ -6599,12 +6609,12 @@ Kupujący zobaczą, że nie jest już w sprzedaży. Posiadane przepustki działa
     <name>eMule::Ed3kSetsDialog</name>
     <message>
         <location filename="../src/gui/dialogs/Ed3kSetsDialog.cpp" line="+104"/>
-        <location line="+1111"/>
+        <location line="+1112"/>
         <source>ed3k Sets</source>
         <translation>Zestawy ed3k</translation>
     </message>
     <message>
-        <location line="-1101"/>
+        <location line="-1102"/>
         <source>Name</source>
         <translation>Nazwa</translation>
     </message>
@@ -6673,13 +6683,13 @@ Kupujący zobaczą, że nie jest już w sprzedaży. Posiadane przepustki działa
     </message>
     <message>
         <location line="+1"/>
-        <location line="+50"/>
+        <location line="+51"/>
         <location line="+465"/>
         <source>Buy Pass...</source>
         <translation>Kup przepustkę...</translation>
     </message>
     <message>
-        <location line="-513"/>
+        <location line="-514"/>
         <source>Enter Pass...</source>
         <translation>Wprowadź przepustkę...</translation>
     </message>
@@ -6765,17 +6775,17 @@ Kupujący zobaczą, że nie jest już w sprzedaży. Posiadane przepustki działa
     </message>
     <message>
         <location line="+1"/>
-        <location line="+492"/>
+        <location line="+493"/>
         <source>Sell...</source>
         <translation>Sprzedaj...</translation>
     </message>
     <message>
-        <location line="-491"/>
+        <location line="-492"/>
         <source>Sells this channel as a paid subscription: every segment is sealed, viewers need a pass.</source>
         <translation>Sprzedaje ten kanał jako płatną subskrypcję: każdy segment jest pieczętowany, widzowie potrzebują przepustki.</translation>
     </message>
     <message>
-        <location line="+15"/>
+        <location line="+16"/>
         <source>Live Streams</source>
         <translation>Transmisje na żywo</translation>
     </message>
@@ -10523,12 +10533,12 @@ Inni członkowie widzą Twój nick i wpisy; Twój węzeł uczestniczy w przekazy
     <name>eMule::MainWindow</name>
     <message>
         <location filename="../src/gui/app/MainWindow.cpp" line="+112"/>
-        <location line="+668"/>
+        <location line="+675"/>
         <source>eMule Qt v%1</source>
         <translation>eMule Qt v%1</translation>
     </message>
     <message>
-        <location line="-545"/>
+        <location line="-552"/>
         <source>Quit eMule Qt</source>
         <translation>Zakończ eMule Qt</translation>
     </message>
@@ -10565,12 +10575,12 @@ Używasz wersji %2. Otworzyć stronę eMule Qt?</translation>
     <message>
         <location line="+11"/>
         <location line="+7"/>
-        <location line="+971"/>
+        <location line="+978"/>
         <source>Version Check</source>
         <translation>Sprawdzanie wersji</translation>
     </message>
     <message>
-        <location line="-977"/>
+        <location line="-984"/>
         <source>You are running the latest version of eMule Qt (v%1).</source>
         <translation>Używasz najnowszej wersji eMule Qt (v%1).</translation>
     </message>
@@ -10629,12 +10639,12 @@ Włącz co najmniej jedną w Opcje → Połączenie, aby się połączyć.</tran
     </message>
     <message>
         <location line="+4"/>
-        <location line="+1497"/>
+        <location line="+1504"/>
         <source>eD2K: Disconnected</source>
         <translation>eD2K: Rozłączony</translation>
     </message>
     <message>
-        <location line="-1488"/>
+        <location line="-1495"/>
         <source>eD2K Server: %1  (%2 Users)</source>
         <translation>Serwer eD2K: %1  (%2 użytkowników)</translation>
     </message>
@@ -10670,7 +10680,7 @@ Włącz co najmniej jedną w Opcje → Połączenie, aby się połączyć.</tran
     </message>
     <message>
         <location line="+4"/>
-        <location line="+1421"/>
+        <location line="+1428"/>
         <source>Kad: Disconnected</source>
         <translation>Kad: Rozłączony</translation>
     </message>
@@ -12853,36 +12863,36 @@ Pobrać ponownie?</translation>
 <context>
     <name>eMule::OptionsDialog</name>
     <message>
-        <location filename="../src/gui/dialogs/OptionsDialog.cpp" line="-3382"/>
+        <location filename="../src/gui/dialogs/OptionsDialog.cpp" line="-3384"/>
         <source>Options</source>
         <translation>Opcje</translation>
     </message>
     <message>
         <location line="+61"/>
-        <location line="+2291"/>
+        <location line="+2293"/>
         <source>OK</source>
         <translation>OK</translation>
     </message>
     <message>
-        <location line="-2290"/>
-        <location line="+2291"/>
+        <location line="-2292"/>
+        <location line="+2293"/>
         <source>Cancel</source>
         <translation>Anuluj</translation>
     </message>
     <message>
-        <location line="-2290"/>
-        <location line="+6327"/>
+        <location line="-2292"/>
+        <location line="+6329"/>
         <source>Apply</source>
         <translation>Zatwierdź</translation>
     </message>
     <message>
-        <location line="-6326"/>
+        <location line="-6328"/>
         <source>Help</source>
         <translation>Pomoc</translation>
     </message>
     <message>
         <location line="+277"/>
-        <location line="+2281"/>
+        <location line="+2283"/>
         <location line="+59"/>
         <location line="+6"/>
         <location line="+4"/>
@@ -12894,7 +12904,7 @@ Pobrać ponownie?</translation>
         <translation>Filtr IP</translation>
     </message>
     <message>
-        <location line="-2396"/>
+        <location line="-2398"/>
         <source>IP filter reloaded: %1 entries.</source>
         <translation>Przeładowano filtr IP: %1 wpisów.</translation>
     </message>
@@ -12904,7 +12914,7 @@ Pobrać ponownie?</translation>
         <translation>Opcje -&gt; %1 -&gt; %2</translation>
     </message>
     <message>
-        <location line="+209"/>
+        <location line="+211"/>
         <source>General options</source>
         <translation>Opcje ogólne</translation>
     </message>
@@ -12920,12 +12930,12 @@ Pobrać ponownie?</translation>
     </message>
     <message>
         <location line="+2"/>
-        <location line="+8565"/>
+        <location line="+8568"/>
         <source>BitTorrent</source>
         <translation>BitTorrent</translation>
     </message>
     <message>
-        <location line="-8453"/>
+        <location line="-8456"/>
         <source>User Name</source>
         <translation>Nazwa użytkownika</translation>
     </message>
@@ -13229,12 +13239,12 @@ Czy na pewno chcesz kontynuować?</translation>
         <translation>Aktualizuj teraz</translation>
     </message>
     <message>
-        <location line="+8146"/>
+        <location line="+8149"/>
         <source>A database ships with each release. An optional free &lt;a href=&quot;https://www.maxmind.com/en/geolite2/signup&quot;&gt;MaxMind GeoLite2&lt;/a&gt; account keeps it current in between. This product includes GeoLite2 data created by MaxMind.</source>
         <translation>Baza danych jest dołączona do każdego wydania. Opcjonalne darmowe konto &lt;a href=&quot;https://www.maxmind.com/en/geolite2/signup&quot;&gt;MaxMind GeoLite2&lt;/a&gt; pozwala ją aktualizować pomiędzy wydaniami. Ten produkt zawiera dane GeoLite2 stworzone przez MaxMind.</translation>
     </message>
     <message>
-        <location line="-8126"/>
+        <location line="-8129"/>
         <source>Save CPU &amp;&amp; Memory Usage</source>
         <translation>Oszczędzaj procesor &amp;&amp; pamięć</translation>
     </message>
@@ -13382,12 +13392,12 @@ Czy na pewno chcesz kontynuować?</translation>
     </message>
     <message>
         <location line="-4376"/>
-        <location line="+7897"/>
+        <location line="+7900"/>
         <source>TCP</source>
         <translation>TCP</translation>
     </message>
     <message>
-        <location line="-7891"/>
+        <location line="-7894"/>
         <source>UDP</source>
         <translation>UDP</translation>
     </message>
@@ -13978,20 +13988,20 @@ Każde połączenie Usenet przechodzi wtedy przez proxy, więc jego prędkość 
         <translation>Ustawienia serwera SMTP</translation>
     </message>
     <message>
-        <location line="-1723"/>
+        <location line="-1725"/>
         <location line="+5"/>
-        <location line="+1721"/>
+        <location line="+1723"/>
         <source>Connection</source>
         <translation>Połączenie</translation>
     </message>
     <message>
-        <location line="-1722"/>
-        <location line="+54"/>
+        <location line="-1724"/>
+        <location line="+56"/>
         <source>ed3k</source>
         <translation>ed3k</translation>
     </message>
     <message>
-        <location line="-50"/>
+        <location line="-52"/>
         <source>Credits</source>
         <translation>Kredyty</translation>
     </message>
@@ -14011,12 +14021,11 @@ Każde połączenie Usenet przechodzi wtedy przez proxy, więc jego prędkość 
         <translation>Filtry</translation>
     </message>
     <message>
-        <location line="+1"/>
         <source>Selling</source>
-        <translation>Sprzedaż</translation>
+        <translation type="vanished">Sprzedaż</translation>
     </message>
     <message>
-        <location line="+212"/>
+        <location line="+215"/>
         <source>Open eD2K and ed3k links with eMule Qt</source>
         <translation>Otwieraj linki eD2K i ed3k w eMule Qt</translation>
     </message>
@@ -16094,7 +16103,7 @@ Dodanie indeksera później nie pobiera jego archiwum: nowy indekser dostaje wł
         <translation>Baza danych: brak — kliknij &quot;Aktualizuj teraz&quot;, aby pobrać</translation>
     </message>
     <message>
-        <location line="+243"/>
+        <location line="+246"/>
         <source>TCP/UDP</source>
         <translation>TCP/UDP</translation>
     </message>
@@ -16157,7 +16166,7 @@ Dodanie indeksera później nie pobiera jego archiwum: nowy indekser dostaje wł
         <translation type="vanished">Używany dla TCP i UDP. Musi się różnić od portów eD2K.</translation>
     </message>
     <message>
-        <location line="-3533"/>
+        <location line="-3536"/>
         <source>Listen port (TCP/UDP):</source>
         <translation>Port nasłuchu (TCP/UDP):</translation>
     </message>
@@ -16305,7 +16314,7 @@ Dodanie indeksera później nie pobiera jego archiwum: nowy indekser dostaje wł
         <translation>Nie można zaktualizować skojarzeń plików: %1</translation>
     </message>
     <message>
-        <location line="+1148"/>
+        <location line="+1151"/>
         <source>UDP is disabled in the config file (udpPort: 0)</source>
         <translation>UDP jest wyłączone w pliku konfiguracyjnym (udpPort: 0)</translation>
     </message>
@@ -16410,7 +16419,7 @@ Utworzyć go?</translation>
 %1</translation>
     </message>
     <message>
-        <location line="-3273"/>
+        <location line="-3276"/>
         <source>Disabled</source>
         <translation>Wyłączony</translation>
     </message>

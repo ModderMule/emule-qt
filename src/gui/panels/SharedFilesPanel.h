@@ -15,6 +15,7 @@
 #include <vector>
 
 #include "dialogs/DetailDialog.h"
+#include "utils/Ed3kKeyText.h"
 #include "utils/ViewSelection.h"
 
 class QCheckBox;
@@ -82,6 +83,8 @@ signals:
 public slots:
     /// IRC logged in or gone; the menu entry above is greyed without it.
     void setIrcConnected(bool connected) { m_ircConnected = connected; }
+    /// ed3k node / anonymous key running; "Move to ... ed3k Key" is greyed without them.
+    void setEd3kKeyState(const Ed3kKeyState& st) { m_ed3kKeyState = st; }
 
 protected:
     bool eventFilter(QObject* watched, QEvent* event) override;
@@ -174,6 +177,7 @@ private:
     QTreeWidget* m_folderTree = nullptr;
     FilterEdit* m_filterEdit = nullptr;
     bool m_ircConnected = false;
+    Ed3kKeyState m_ed3kKeyState;
 
     // Header
     QLabel* m_headerLabel = nullptr;

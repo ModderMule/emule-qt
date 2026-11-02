@@ -831,7 +831,7 @@ Trust the new certificate?</source>
         <translation>普通</translation>
     </message>
     <message>
-        <location filename="../src/gui/dialogs/OptionsDialog.cpp" line="+3501"/>
+        <location filename="../src/gui/dialogs/OptionsDialog.cpp" line="+3503"/>
         <source>Test</source>
         <translation>測試</translation>
     </message>
@@ -4065,7 +4065,7 @@ Make a new anonymous key?</source>
 <context>
     <name>eMule::Ed3kKey</name>
     <message>
-        <location filename="../src/gui/utils/Ed3kKeyText.h" line="+16"/>
+        <location filename="../src/gui/utils/Ed3kKeyText.h" line="+18"/>
         <source>Anonymous</source>
         <translation>匿名</translation>
     </message>
@@ -4073,6 +4073,16 @@ Make a new anonymous key?</source>
         <location line="+2"/>
         <source>Node</source>
         <translation>節點</translation>
+    </message>
+    <message>
+        <location line="+15"/>
+        <source>ed3k is not running.</source>
+        <translation>ed3k 未執行。</translation>
+    </message>
+    <message>
+        <location line="+2"/>
+        <source>Hiding is off: turn on &quot;Hide my node&quot; in Options &gt; ed3k first.</source>
+        <translation>隱匿已關閉：請先在 選項 &gt; ed3k 中開啟「隱匿我的節點」。</translation>
     </message>
 </context>
 <context>
@@ -4248,7 +4258,7 @@ Its names are then resolved after the lists you already follow.</source>
         <translation type="vanished">ed3k 節點使用「一般」頁面中的暱稱：%1</translation>
     </message>
     <message>
-        <location filename="../src/gui/dialogs/Ed3kOptionsPages.cpp" line="+359"/>
+        <location filename="../src/gui/dialogs/Ed3kOptionsPages.cpp" line="+360"/>
         <location line="+11"/>
         <location line="+534"/>
         <location line="+11"/>
@@ -4527,12 +4537,12 @@ Its names are then resolved after the lists you already follow.</source>
     <message>
         <location line="+5"/>
         <location line="+10"/>
-        <location line="+992"/>
+        <location line="+998"/>
         <source> credits/MiB</source>
         <translation> 額度/MiB</translation>
     </message>
     <message>
-        <location line="-1001"/>
+        <location line="-1007"/>
         <source>Never pay (receipts only)</source>
         <translation>從不支付（僅收據）</translation>
     </message>
@@ -4688,12 +4698,12 @@ Its names are then resolved after the lists you already follow.</source>
     <message>
         <location line="+1"/>
         <location line="+6"/>
-        <location line="+594"/>
+        <location line="+600"/>
         <source>Remove</source>
         <translation>移除</translation>
     </message>
     <message>
-        <location line="-590"/>
+        <location line="-596"/>
         <source>Followed name lists (the first one wins)</source>
         <translation>已關注的名稱清單（第一個優先）</translation>
     </message>
@@ -4780,12 +4790,12 @@ Its names are then resolved after the lists you already follow.</source>
     </message>
     <message>
         <location line="+0"/>
-        <location line="+830"/>
+        <location line="+836"/>
         <source>not read yet</source>
         <translation>尚未讀取</translation>
     </message>
     <message>
-        <location line="-828"/>
+        <location line="-834"/>
         <source>The account is overdrawn: a new credit key is the way on.</source>
         <translation>帳戶已透支：唯一的出路是新的額度金鑰。</translation>
     </message>
@@ -5010,7 +5020,7 @@ Export?</source>
         <translation>切換到 eD2K 相容模式？</translation>
     </message>
     <message>
-        <location line="+34"/>
+        <location line="+40"/>
         <source>the ed3k node is not running</source>
         <translation>ed3k 節點未執行</translation>
     </message>
@@ -5129,7 +5139,7 @@ Export?</source>
         <translation>ed3k</translation>
     </message>
     <message>
-        <location line="-808"/>
+        <location line="-814"/>
         <source>Runs the ed3k node (packmule) in the core, on the eD2K UDP port or one of its own. It finds other nodes over Kad and serves the shared files.</source>
         <translation>在核心中執行 ed3k 節點（packmule），使用 eD2K UDP 連接埠或獨立連接埠。它透過 Kad 尋找其他節點並提供共享檔案。</translation>
     </message>
@@ -5204,7 +5214,7 @@ Export?</source>
         <translation>只有一個遠端端點：沒有任何東西校驗其回應。建議使用兩個獨立供應商的端點，或在本機執行鏈節點。</translation>
     </message>
     <message>
-        <location line="+659"/>
+        <location line="+665"/>
         <source>%1 failed: %2</source>
         <translation>%1 失敗：%2</translation>
     </message>
@@ -5506,12 +5516,12 @@ Export?</source>
     </message>
     <message>
         <location line="+7"/>
-        <location line="+163"/>
+        <location line="+165"/>
         <source>Shared (%1)</source>
         <translation>已分享 (%1)</translation>
     </message>
     <message>
-        <location line="-159"/>
+        <location line="-161"/>
         <location line="+30"/>
         <source>File Name</source>
         <translation>檔案名稱</translation>
@@ -5541,12 +5551,12 @@ Export?</source>
     </message>
     <message>
         <location line="+7"/>
-        <location line="+135"/>
+        <location line="+137"/>
         <source>ed3k Set (%1)</source>
         <translation>ed3k 集合 (%1)</translation>
     </message>
     <message>
-        <location line="-113"/>
+        <location line="-115"/>
         <source>Every file below this folder is in the set; hidden files are left out. &quot;Publish New Version&quot; takes the folder as it is then.</source>
         <translation>此資料夾下的所有檔案都在集合中；隱藏檔案除外。「發布新版本」會採用當時的資料夾內容。</translation>
     </message>
@@ -5581,7 +5591,7 @@ Export?</source>
         <translation>隱藏</translation>
     </message>
     <message>
-        <location line="+1"/>
+        <location line="+2"/>
         <source>Paid</source>
         <translation>已支付</translation>
     </message>
@@ -5591,7 +5601,7 @@ Export?</source>
         <translation>條款...</translation>
     </message>
     <message>
-        <location line="+13"/>
+        <location line="+14"/>
         <source>Save</source>
         <translation>儲存</translation>
     </message>
@@ -5739,17 +5749,17 @@ Sell it from My ed3k Sets.</source>
     </message>
     <message>
         <location line="+15"/>
-        <location line="+106"/>
+        <location line="+108"/>
         <source>Copy Link</source>
         <translation>複製連結</translation>
     </message>
     <message>
-        <location line="-105"/>
+        <location line="-107"/>
         <source>Rename...</source>
         <translation>重新命名...</translation>
     </message>
     <message>
-        <location line="+4"/>
+        <location line="+5"/>
         <source>Change Terms...</source>
         <translation>變更條款...</translation>
     </message>
@@ -5765,7 +5775,7 @@ Sell it from My ed3k Sets.</source>
     </message>
     <message>
         <location line="+0"/>
-        <location line="+162"/>
+        <location line="+163"/>
         <source>Stop Selling</source>
         <translation>停止出售</translation>
     </message>
@@ -6563,12 +6573,12 @@ Buyers see it is no longer sold. Passes held still work until they end, and you 
     <name>eMule::Ed3kSetsDialog</name>
     <message>
         <location filename="../src/gui/dialogs/Ed3kSetsDialog.cpp" line="+104"/>
-        <location line="+1111"/>
+        <location line="+1112"/>
         <source>ed3k Sets</source>
         <translation>ed3k 集合</translation>
     </message>
     <message>
-        <location line="-1101"/>
+        <location line="-1102"/>
         <source>Name</source>
         <translation>名稱</translation>
     </message>
@@ -6637,13 +6647,13 @@ Buyers see it is no longer sold. Passes held still work until they end, and you 
     </message>
     <message>
         <location line="+1"/>
-        <location line="+50"/>
+        <location line="+51"/>
         <location line="+465"/>
         <source>Buy Pass...</source>
         <translation>購買通行證...</translation>
     </message>
     <message>
-        <location line="-513"/>
+        <location line="-514"/>
         <source>Enter Pass...</source>
         <translation>輸入通行證...</translation>
     </message>
@@ -6729,17 +6739,17 @@ Buyers see it is no longer sold. Passes held still work until they end, and you 
     </message>
     <message>
         <location line="+1"/>
-        <location line="+492"/>
+        <location line="+493"/>
         <source>Sell...</source>
         <translation>出售...</translation>
     </message>
     <message>
-        <location line="-491"/>
+        <location line="-492"/>
         <source>Sells this channel as a paid subscription: every segment is sealed, viewers need a pass.</source>
         <translation>將此頻道作為付費訂閱出售：每個片段都會加密，觀眾需要通行證。</translation>
     </message>
     <message>
-        <location line="+15"/>
+        <location line="+16"/>
         <source>Live Streams</source>
         <translation>直播串流</translation>
     </message>
@@ -10459,12 +10469,12 @@ Other members see your nick and posts; your node takes part in passing the room&
     <name>eMule::MainWindow</name>
     <message>
         <location filename="../src/gui/app/MainWindow.cpp" line="+112"/>
-        <location line="+668"/>
+        <location line="+675"/>
         <source>eMule Qt v%1</source>
         <translation>eMule Qt v%1</translation>
     </message>
     <message>
-        <location line="-545"/>
+        <location line="-552"/>
         <source>Quit eMule Qt</source>
         <translation>結束 eMule Qt</translation>
     </message>
@@ -10501,12 +10511,12 @@ You are running %2. Open the eMule Qt website?</source>
     <message>
         <location line="+11"/>
         <location line="+7"/>
-        <location line="+971"/>
+        <location line="+978"/>
         <source>Version Check</source>
         <translation>版本檢查</translation>
     </message>
     <message>
-        <location line="-977"/>
+        <location line="-984"/>
         <source>You are running the latest version of eMule Qt (v%1).</source>
         <translation>您正在執行最新版本的 eMule Qt (v%1)。</translation>
     </message>
@@ -10565,12 +10575,12 @@ Enable at least one under Options → Connection to connect.</source>
     </message>
     <message>
         <location line="+4"/>
-        <location line="+1497"/>
+        <location line="+1504"/>
         <source>eD2K: Disconnected</source>
         <translation>eD2K：已中斷連線</translation>
     </message>
     <message>
-        <location line="-1488"/>
+        <location line="-1495"/>
         <source>eD2K Server: %1  (%2 Users)</source>
         <translation>eD2K 伺服器：%1  (%2 位使用者)</translation>
     </message>
@@ -10606,7 +10616,7 @@ Enable at least one under Options → Connection to connect.</source>
     </message>
     <message>
         <location line="+4"/>
-        <location line="+1421"/>
+        <location line="+1428"/>
         <source>Kad: Disconnected</source>
         <translation>Kad：已中斷連線</translation>
     </message>
@@ -12779,36 +12789,36 @@ Download it again?</source>
 <context>
     <name>eMule::OptionsDialog</name>
     <message>
-        <location filename="../src/gui/dialogs/OptionsDialog.cpp" line="-3382"/>
+        <location filename="../src/gui/dialogs/OptionsDialog.cpp" line="-3384"/>
         <source>Options</source>
         <translation>選項</translation>
     </message>
     <message>
         <location line="+61"/>
-        <location line="+2291"/>
+        <location line="+2293"/>
         <source>OK</source>
         <translation>確定</translation>
     </message>
     <message>
-        <location line="-2290"/>
-        <location line="+2291"/>
+        <location line="-2292"/>
+        <location line="+2293"/>
         <source>Cancel</source>
         <translation>取消</translation>
     </message>
     <message>
-        <location line="-2290"/>
-        <location line="+6327"/>
+        <location line="-2292"/>
+        <location line="+6329"/>
         <source>Apply</source>
         <translation>套用</translation>
     </message>
     <message>
-        <location line="-6326"/>
+        <location line="-6328"/>
         <source>Help</source>
         <translation>說明</translation>
     </message>
     <message>
         <location line="+277"/>
-        <location line="+2281"/>
+        <location line="+2283"/>
         <location line="+59"/>
         <location line="+6"/>
         <location line="+4"/>
@@ -12820,7 +12830,7 @@ Download it again?</source>
         <translation>IP 過濾器</translation>
     </message>
     <message>
-        <location line="-2396"/>
+        <location line="-2398"/>
         <source>IP filter reloaded: %1 entries.</source>
         <translation>IP 過濾器已重新載入：%1 個項目。</translation>
     </message>
@@ -12830,7 +12840,7 @@ Download it again?</source>
         <translation>選項 -&gt; %1 -&gt; %2</translation>
     </message>
     <message>
-        <location line="+209"/>
+        <location line="+211"/>
         <source>General options</source>
         <translation>一般選項</translation>
     </message>
@@ -12846,12 +12856,12 @@ Download it again?</source>
     </message>
     <message>
         <location line="+2"/>
-        <location line="+8565"/>
+        <location line="+8568"/>
         <source>BitTorrent</source>
         <translation>BitTorrent</translation>
     </message>
     <message>
-        <location line="-8453"/>
+        <location line="-8456"/>
         <source>User Name</source>
         <translation>使用者名稱</translation>
     </message>
@@ -13155,12 +13165,12 @@ Are you sure you want to continue?</source>
         <translation>立即更新</translation>
     </message>
     <message>
-        <location line="+8146"/>
+        <location line="+8149"/>
         <source>A database ships with each release. An optional free &lt;a href=&quot;https://www.maxmind.com/en/geolite2/signup&quot;&gt;MaxMind GeoLite2&lt;/a&gt; account keeps it current in between. This product includes GeoLite2 data created by MaxMind.</source>
         <translation>每個版本都附帶一個資料庫。可選用的免費 &lt;a href=&quot;https://www.maxmind.com/en/geolite2/signup&quot;&gt;MaxMind GeoLite2&lt;/a&gt; 帳號能在版本之間保持資料庫為最新。本產品包含由 MaxMind 建立的 GeoLite2 資料。</translation>
     </message>
     <message>
-        <location line="-8126"/>
+        <location line="-8129"/>
         <source>Save CPU &amp;&amp; Memory Usage</source>
         <translation>節省 CPU &amp;&amp; 記憶體用量</translation>
     </message>
@@ -13308,12 +13318,12 @@ Are you sure you want to continue?</source>
     </message>
     <message>
         <location line="-4376"/>
-        <location line="+7897"/>
+        <location line="+7900"/>
         <source>TCP</source>
         <translation>TCP</translation>
     </message>
     <message>
-        <location line="-7891"/>
+        <location line="-7894"/>
         <source>UDP</source>
         <translation>UDP</translation>
     </message>
@@ -13904,20 +13914,20 @@ Every Usenet connection then passes through the proxy, so its speed caps the dow
         <translation>SMTP 伺服器設定</translation>
     </message>
     <message>
-        <location line="-1723"/>
+        <location line="-1725"/>
         <location line="+5"/>
-        <location line="+1721"/>
+        <location line="+1723"/>
         <source>Connection</source>
         <translation>連線</translation>
     </message>
     <message>
-        <location line="-1722"/>
-        <location line="+54"/>
+        <location line="-1724"/>
+        <location line="+56"/>
         <source>ed3k</source>
         <translation>ed3k</translation>
     </message>
     <message>
-        <location line="-50"/>
+        <location line="-52"/>
         <source>Credits</source>
         <translation>額度</translation>
     </message>
@@ -13937,12 +13947,11 @@ Every Usenet connection then passes through the proxy, so its speed caps the dow
         <translation>過濾器</translation>
     </message>
     <message>
-        <location line="+1"/>
         <source>Selling</source>
-        <translation>出售</translation>
+        <translation type="vanished">出售</translation>
     </message>
     <message>
-        <location line="+212"/>
+        <location line="+215"/>
         <source>Open eD2K and ed3k links with eMule Qt</source>
         <translation>使用 eMule Qt 開啟 eD2K 和 ed3k 連結</translation>
     </message>
@@ -16018,7 +16027,7 @@ Adding one later does not fetch its back catalogue: a new indexer gets its own f
         <translation>資料庫：無 — 點擊「立即更新」下載</translation>
     </message>
     <message>
-        <location line="+243"/>
+        <location line="+246"/>
         <source>TCP/UDP</source>
         <translation>TCP/UDP</translation>
     </message>
@@ -16081,7 +16090,7 @@ Adding one later does not fetch its back catalogue: a new indexer gets its own f
         <translation type="vanished">同時用於 TCP 和 UDP。必須與 eD2K 連接埠不同。</translation>
     </message>
     <message>
-        <location line="-3533"/>
+        <location line="-3536"/>
         <source>Listen port (TCP/UDP):</source>
         <translation>監聽連接埠 (TCP/UDP)：</translation>
     </message>
@@ -16229,7 +16238,7 @@ Adding one later does not fetch its back catalogue: a new indexer gets its own f
         <translation>無法更新檔案關聯：%1</translation>
     </message>
     <message>
-        <location line="+1148"/>
+        <location line="+1151"/>
         <source>UDP is disabled in the config file (udpPort: 0)</source>
         <translation>UDP 已在設定檔中停用 (udpPort: 0)</translation>
     </message>
@@ -16334,7 +16343,7 @@ Create it?</source>
 %1</translation>
     </message>
     <message>
-        <location line="-3273"/>
+        <location line="-3276"/>
         <source>Disabled</source>
         <translation>已停用</translation>
     </message>

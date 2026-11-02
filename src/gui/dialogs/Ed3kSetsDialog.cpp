@@ -142,6 +142,7 @@ Ed3kSetsDialog::Ed3kSetsDialog(IpcClient* ipc, QWidget* parent)
     m_enterPass = button(tr("Enter Pass..."), setsPage);
     m_enterPass->setObjectName(QStringLiteral("ed3kEnterPass"));
     m_enterPass->setToolTip(tr("An ed3k:pass link or voucher the seller gave you (subscription.md §9.3)."));
+    m_enterPass->setVisible(kEd3kSellingShown);
     m_reports = new QCheckBox(tr("Share reports"), setsPage);
     m_reports->setToolTip(tr("Report a pass key seen at more computers than the seller allows (subscription.md §5.3). "
                              "The report shows the seller the node IDs that used the key."));
@@ -187,6 +188,7 @@ Ed3kSetsDialog::Ed3kSetsDialog(IpcClient* ipc, QWidget* parent)
     m_deleteChannel->setToolTip(tr("Deletes this channel of yours: its channel file is no longer shared, its link stops working."));
     m_sell = button(tr("Sell..."), livePage);
     m_sell->setToolTip(tr("Sells this channel as a paid subscription: every segment is sealed, viewers need a pass."));
+    m_sell->setVisible(kEd3kSellingShown);
     m_liveBuy = button(tr("Buy Pass..."), livePage);
     m_liveBuy->setObjectName(QStringLiteral("ed3kLiveBuyPass"));
     liveSide->addWidget(m_watch);
@@ -641,7 +643,7 @@ void Ed3kSetsDialog::updateButtons()
     const QCborMap paid = paidOf(s);
     const int paidState = paid.isEmpty() ? -1 : int(paid.value(QStringLiteral("state")).toInteger());
     // a pass is bought with a known offer, and again when it ended or none came
-    m_buy->setVisible(!paid.isEmpty());
+    m_buy->setVisible(kEd3kSellingShown && !paid.isEmpty());
     // m_buy->setEnabled(connected && paid.value(QStringLiteral("hasOffer")).toBool() && paidState != 1 && paidState != 5
     //                   && !(paidState == 2 && paid.value(QStringLiteral("until")).toInteger() > QDateTime::currentSecsSinceEpoch()));
     // m_buy->setText(paidState == 6 ? tr("Use Pass...") : tr("Buy Pass..."));
@@ -658,7 +660,7 @@ void Ed3kSetsDialog::updateButtons()
     m_buy->setEnabled(paidActionEnabled(paid, connected));
     m_enterPass->setEnabled(connected);
     const QCborMap livePaid = currentLivePaid();
-    m_liveBuy->setVisible(!livePaid.isEmpty());
+    m_liveBuy->setVisible(kEd3kSellingShown && !livePaid.isEmpty());
     // m_liveBuy->setText(livePaid.value(QStringLiteral("state")).toInteger() == 6 ? tr("Use Pass...") : tr("Buy Pass..."));
     m_liveBuy->setText(actionText(livePaid));
     m_liveBuy->setEnabled(paidActionEnabled(livePaid, connected));

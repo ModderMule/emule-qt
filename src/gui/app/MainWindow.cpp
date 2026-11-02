@@ -661,6 +661,13 @@ void MainWindow::setKadStatus(bool running, bool kadConnected, bool firewalled,
 
 void MainWindow::setEd3kStatus(const QCborMap& status)
 {
+    // the "Move to ... ed3k Key" entries follow the node and its anonymous key
+    const Ed3kKeyState keyState{status.value(QStringLiteral("running")).toBool(),
+                                status.value(QStringLiteral("hide")).toMap().value(QStringLiteral("running")).toBool()};
+    if (m_transferPanel)
+        m_transferPanel->setEd3kKeyState(keyState);
+    if (m_sharedFilesPanel)
+        m_sharedFilesPanel->setEd3kKeyState(keyState);
     if (!m_statusEd3k)
         return;
     if (!status.value(QStringLiteral("running")).toBool()) {

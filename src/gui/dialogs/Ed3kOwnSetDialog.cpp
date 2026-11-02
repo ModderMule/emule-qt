@@ -178,11 +178,13 @@ void Ed3kOwnSetDialog::setupUi()
     m_kind = new QComboBox;
     m_kind->addItem(tr("Open"), int(Open));
     m_kind->addItem(tr("Hidden"), int(Hidden));
-    m_kind->addItem(tr("Paid"), int(Paid));
+    if constexpr (kEd3kSellingShown)
+        m_kind->addItem(tr("Paid"), int(Paid));
     kindRow->addWidget(m_kind, 1);
     m_termsButton = new QPushButton(tr("Terms..."));
     connect(m_termsButton, &QPushButton::clicked, this, [this] { (void)askTerms(); });
     kindRow->addWidget(m_termsButton);
+    m_termsButton->setVisible(kEd3kSellingShown);
     kindLayout->addLayout(kindRow);
     m_kindNote = new QLabel;
     m_kindNote->setWordWrap(true);

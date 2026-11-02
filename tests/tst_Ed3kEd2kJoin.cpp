@@ -150,6 +150,9 @@ void tst_Ed3kEd2kJoin::initTestCase()
     thePrefs.setConfigDir(m_dir.path());
     QDir().mkpath(m_dir.filePath(QStringLiteral("temp")));
     thePrefs.setTempDirs({m_dir.filePath(QStringLiteral("temp"))});
+    // finished test downloads must not land in the real ~/eMuleQt/Incoming
+    QDir().mkpath(m_dir.filePath(QStringLiteral("incoming")));
+    thePrefs.setIncomingDir(m_dir.filePath(QStringLiteral("incoming")));
 }
 
 void tst_Ed3kEd2kJoin::init()

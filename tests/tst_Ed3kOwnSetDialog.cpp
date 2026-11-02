@@ -5,6 +5,7 @@
 /// not for a paid set before it is sold). With ED3K_OWNSETS_SHOTS set, both are grabbed there.
 
 #include "dialogs/Ed3kOwnSetDialog.h"
+#include "dialogs/Ed3kSellDialogs.h"
 #include "panels/Ed3kOwnSetsView.h"
 
 #include <QAction>
@@ -84,6 +85,13 @@ void tst_Ed3kOwnSetDialog::aFolderSetListsNoFiles()
             terms = b;
     QVERIFY(terms);
     QVERIFY(!terms->isEnabled());
+    if constexpr (!kEd3kSellingShown) {
+        // selling hidden for now: no Paid kind, no Terms…
+        QCOMPARE(kind->findData(int(Ed3kOwnSetDialog::Paid)), -1);
+        QVERIFY(terms->isHidden());
+        shoot(&dlg, QStringLiteral("ed3k-own-set-folder-dialog.png"));
+        return;
+    }
     kind->setCurrentIndex(kind->findData(int(Ed3kOwnSetDialog::Paid)));
     QCOMPARE(dlg.kind(), int(Ed3kOwnSetDialog::Paid));
     QVERIFY(terms->isEnabled());
@@ -117,6 +125,18 @@ void tst_Ed3kOwnSetDialog::rowsAndTheirMenu()
     QCOMPARE(list->topLevelItemCount(), 4);
     QCOMPARE(view.rows().size(), 4);
 
+    if constexpr (!kEd3kSellingShown) {
+        // selling hidden for now: no sell actions
+        for (const QString id : {QStringLiteral("01"), QStringLiteral("04")}) {
+            QMenu m;
+            view.addSetActions(&m, id);
+            QVERIFY(!actionNamed(m, Ed3kOwnSetsView::tr("Sell...")));
+            QVERIFY(!actionNamed(m, Ed3kOwnSetsView::tr("Change Terms...")));
+            QVERIFY(!actionNamed(m, Ed3kOwnSetsView::tr("Resume Selling")));
+            QVERIFY(!actionNamed(m, Ed3kOwnSetsView::tr("Stop Selling")));
+        }
+        return;
+    }
     {
         QMenu m;
         view.addSetActions(&m, QStringLiteral("01"));

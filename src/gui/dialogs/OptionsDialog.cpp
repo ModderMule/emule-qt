@@ -714,7 +714,8 @@ void OptionsDialog::setupSidebar()
         {PageEd3kHoster,     QT_TR_NOOP("Hoster"),     QStyle::SP_ArrowDown,             "Hoster.ico"},
         {PageEd3kNames,      QT_TR_NOOP("Names"),      QStyle::SP_FileDialogContentsView, "Friends1.ico"},
         {PageEd3kFilters,    QT_TR_NOOP("Filters"),    QStyle::SP_MessageBoxWarning,     "IPFilter.ico"},
-        {PageEd3kSelling,    QT_TR_NOOP("Selling"),    QStyle::SP_ArrowUp,               "Upload.ico"},
+        // ToDo: decide if/how selling is used; the page is built but hidden (hasPage)
+        // {PageEd3kSelling,    QT_TR_NOOP("Selling"),    QStyle::SP_ArrowUp,               "Upload.ico"},
     };
 
     // A page added to the enum and to setupPages() but forgotten here would simply be
@@ -726,14 +727,15 @@ void OptionsDialog::setupSidebar()
             mask |= 1u << unsigned(def.id);
         return mask;
     };
-    // + 1: PageEd3kCredits, hidden for now
+    // + 2: PageEd3kCredits, PageEd3kSelling, hidden for now
     static_assert(std::size(kGeneralPages) + std::size(kAdvancedPages)
                           + std::size(kUsenetPages) + std::size(kBitTorrentPages)
-                          + std::size(kEd3kPages) + 1
+                          + std::size(kEd3kPages) + 2
                       == std::size_t(PageCount),
                   "every Page must appear in a sidebar group");
     static_assert((idMask(kGeneralPages) | idMask(kAdvancedPages) | idMask(kUsenetPages)
-                   | idMask(kBitTorrentPages) | idMask(kEd3kPages) | (1u << unsigned(PageEd3kCredits)))
+                   | idMask(kBitTorrentPages) | idMask(kEd3kPages) | (1u << unsigned(PageEd3kCredits))
+                   | (1u << unsigned(PageEd3kSelling)))
                       == (1u << unsigned(PageCount)) - 1u,
                   "every Page must appear in exactly one sidebar group");
 
@@ -834,7 +836,7 @@ void OptionsDialog::setupPages()
     addPage(PageEd3kNames,      m_ed3kPages->namesPage());
     addPage(PageEd3kFilters,    m_ed3kPages->filtersPage());
     addPage(PageEd3kAutoCredits, m_ed3kPages->autoCreditsPage());
-    addPage(PageEd3kSelling,    m_ed3kPages->sellingPage());
+    addPage(PageEd3kSelling,    m_ed3kPages->sellingPage());   // not in the sidebar (hasPage)
     connect(m_ed3kPages, &Ed3kOptionsPages::changed, this, &OptionsDialog::markDirty);
     connect(m_ed3kPages, &Ed3kOptionsPages::portsJoined, this, [this](int port) {
         // applied by the core already: the fields follow
@@ -9182,6 +9184,9 @@ bool OptionsDialog::hasPage(int page) const
 #endif
     // ToDo: credits page hidden until it is decided how credits are used
     if (page == PageEd3kCredits)
+        return false;
+    // ToDo: selling page hidden until it is decided if/how selling is used
+    if (page == PageEd3kSelling)
         return false;
     return page >= 0 && page < m_pages->count();
 }

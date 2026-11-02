@@ -746,7 +746,7 @@ void TransferPanel::onDownloadContextMenu(const QPoint& pos)
             roots << d->hash;
         auto* move = m_downloadMenu->addAction(toAnon ? tr("Move to Anonymous ed3k Key...") : tr("Move to Node ed3k Key..."),
                                                this, [this, roots, toAnon] { moveEd3kKey(roots, toAnon); });
-        move->setEnabled(same && m_ipc && m_ipc->isConnected());
+        gateEd3kKeyMove(move, m_downloadMenu, toAnon, m_ed3kKeyState, same && m_ipc && m_ipc->isConnected());
     }
 
     m_downloadMenu->popup(m_downloadView->viewport()->mapToGlobal(pos));

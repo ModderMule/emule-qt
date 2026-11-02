@@ -125,11 +125,13 @@ void Ed3kOwnSetsView::addSetActions(QMenu* menu, const QString& id)
     menu->addAction(tr("Publish New Version"), this, [this, id] { control(1, id); })->setEnabled(have && (!paid || sold));
     menu->addAction(menuIcon("eD2kLink.ico"), tr("Copy Link"), this, [this, id] { copyLink(id); })->setEnabled(have && (!paid || sold));
     menu->addAction(tr("Rename..."), this, [this, id] { rename(id); })->setEnabled(have);
-    menu->addSeparator();
-    // a hidden set is not sold (paid hidden sets are not offered)
-    const bool sellable = have && row.value(QStringLiteral("kind")).toInteger() != 2;
-    menu->addAction(sold ? tr("Change Terms...") : tr("Sell..."), this, [this, id] { sell(id); })->setEnabled(sellable);
-    menu->addAction(stopped ? tr("Resume Selling") : tr("Stop Selling"), this, [this, id] { stopOrResume(id); })->setEnabled(sold);
+    if constexpr (kEd3kSellingShown) {
+        menu->addSeparator();
+        // a hidden set is not sold (paid hidden sets are not offered)
+        const bool sellable = have && row.value(QStringLiteral("kind")).toInteger() != 2;
+        menu->addAction(sold ? tr("Change Terms...") : tr("Sell..."), this, [this, id] { sell(id); })->setEnabled(sellable);
+        menu->addAction(stopped ? tr("Resume Selling") : tr("Stop Selling"), this, [this, id] { stopOrResume(id); })->setEnabled(sold);
+    }
     menu->addSeparator();
     menu->addAction(menuIcon("Delete.ico"), tr("Unpublish..."), this, [this, id] { unpublish(id); })->setEnabled(have && published);
 }

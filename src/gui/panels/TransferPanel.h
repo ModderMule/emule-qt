@@ -24,6 +24,7 @@
 #include "controls/DownloadListModel.h"
 #include "dialogs/FileDetailDialog.h"
 #include "prefs/DownloadCategory.h"
+#include "utils/Ed3kKeyText.h"
 
 class QAction;
 class QLabel;
@@ -57,6 +58,9 @@ public:
 
     /// Connect this panel to the IPC client for data updates.
     void setIpcClient(IpcClient* client);
+
+    /// ed3k node / anonymous key running; "Move to ... ed3k Key" is greyed without them.
+    void setEd3kKeyState(const Ed3kKeyState& st) { m_ed3kKeyState = st; }
 
     /// Switch the bottom pane by index (0=Uploading, 1=Downloading, 2=On Queue, 3=Known).
     void switchToSubTab(int index);
@@ -345,6 +349,7 @@ private:
     bool m_relatedSearchSupported = false;
     bool m_kadRunning = false;
     bool m_kadConnected = false;
+    Ed3kKeyState m_ed3kKeyState;
 };
 
 } // namespace eMule

@@ -682,7 +682,7 @@ void SharedFilesPanel::onFileContextMenu(const QPoint& pos)
         const bool toAnon = key != QLatin1String("Anonymous");
         auto* act = m_contextMenu->addAction(toAnon ? tr("Move to Anonymous ed3k Key...") : tr("Move to Node ed3k Key..."),
                                              this, [this, hashes, toAnon]() { moveEd3kKey(hashes, toAnon); });
-        act->setEnabled(same);
+        gateEd3kKeyMove(act, m_contextMenu, toAnon, m_ed3kKeyState, same);
     }
 
     // The link the IRC nick menu's "Send this to friend" offers (MFC Irc_SetSendLink,

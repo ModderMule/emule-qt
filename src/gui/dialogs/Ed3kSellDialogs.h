@@ -24,6 +24,12 @@ namespace eMule {
 
 class IpcClient;
 
+/// ToDo: selling hidden in the GUI until it is decided if/how it is used. Gates Sell… /
+/// Stop Selling (My ed3k Sets), the Paid kind + Terms… (new set), Sell…, Buy Pass… and
+/// Enter Pass… (sets, channels).
+/// The Options page is hidden in OptionsDialog (hasPage).
+inline constexpr bool kEd3kSellingShown = false;
+
 /// The terms of an offer: price, shop addresses, terms text, devices, released epochs; for a
 /// new sale also the epoch and season length, for the defaults the days of a pass. A terms
 /// map with `private` true (a private channel): the note that the shop's pass address must
