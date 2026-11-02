@@ -13,6 +13,7 @@
 #include "utils/StatusBarNotifier.h"
 #include "utils/StringUtils.h"
 #include "utils/TorrentLinks.h"
+#include "app/SkinIcons.h"
 
 #include <QApplication>
 #include <QButtonGroup>
@@ -104,7 +105,7 @@ TorrentDetailsDialog::TorrentDetailsDialog(IpcClient* ipc, const TorrentListMode
     , m_model(model)
 {
     setAttribute(Qt::WA_DeleteOnClose);
-    setWindowIcon(QIcon(QStringLiteral(":/icons/Torrent.ico")));
+    setWindowIcon(skinIcon(QStringLiteral(":/icons/Torrent.ico")));
     setDesignedSize(QSize(640, 420), QSize(760, 460));
 
     // Header: icon, name, "N files, size"

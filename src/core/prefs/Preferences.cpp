@@ -9,6 +9,7 @@
 #include "app/AppConfig.h"
 #include "client/BuddyRelayBudget.h"
 #include "crypto/AesCbc.h"
+#include "crypto/SecretCompare.h"
 #include "net/EMSocket.h"
 #include "net/ListenConflict.h"
 #include "utils/Log.h"
@@ -156,6 +157,9 @@ struct Preferences::Data {
     bool randomizePortsAtStart = false;
     uint16 randomPortMin = 50000;
     uint16 randomPortMax = 60000;
+    bool connectionChecker = false;
+    QString connectionCheckerUrl;          // empty = Kad only
+    uint32 connectionCheckInterval = 30;   // s, YAML only
     bool udpPortFromFile = false;   // not saved: a stored 0 means "UDP off"
     uint16 serverUDPPort = 65535; // 65535 = random, 0 = disabled
     uint16 maxConnections = 500;
@@ -438,8 +442,8 @@ struct Preferences::Data {
     bool useFastKad = true;
     QString ipFilterUpdateUrl = Preferences::kDefaultIpFilterUpdateUrl;
     bool ipFilterAutoUpdate = false;
-    int ipFilterUpdateDays = 7;
-    qint64 ipFilterLastUpdate = 0;         // secs since epoch, last successful download
+    int ipFilterUpdateDays = 1;
+    qint64 ipFilterLastUpdate = 0;         // secs since epoch, last successful check
     QString appToken;
     QString bugReportApiKey;
     QString bugReportDomain;
@@ -493,10 +497,10 @@ struct Preferences::Data {
     bool webServerHttpsEnabled = false;
     QString webServerCertPath;
     QString webServerKeyPath;
-    QString webServerAdminPassword;     // SHA-256 hex hash
+    QString webServerAdminPassword;     // pbkdf2$… of the SHA-256 hex
     bool webServerAdminAllowHiLevFunc = false;
     bool webServerGuestEnabled = false;
-    QString webServerGuestPassword;     // SHA-256 hex hash
+    QString webServerGuestPassword;     // pbkdf2$… of the SHA-256 hex
 
     // Scheduler
     bool schedulerEnabled = false;
@@ -600,6 +604,13 @@ struct Preferences::Data {
     QString geoIpLicenseKey;
     bool geoIpAutoUpdate = true;
     qint64 geoIpLastCheck = 0;             // secs since epoch, last successful check
+
+    // Server validators of the last automatic download, by purpose ("ipfilter", ...)
+    struct StoredValidators {
+        QString url;
+        HttpValidators validators;
+    };
+    QMap<QString, StoredValidators> downloadValidators;
 
     // GUI (Files page)
     bool watchClipboard4ED2KLinks = true;
@@ -873,6 +884,22 @@ void Preferences::setRandomPortMin(uint16 val) { set(&Data::randomPortMin, std::
 uint16 Preferences::randomPortMax() const { return get(&Data::randomPortMax); }
 
 void Preferences::setRandomPortMax(uint16 val) { set(&Data::randomPortMax, std::max(val, kRandomPortFloor)); }
+
+bool Preferences::connectionChecker() const { return get(&Data::connectionChecker); }
+
+void Preferences::setConnectionChecker(bool val) { set(&Data::connectionChecker, val); }
+
+QString Preferences::connectionCheckerUrl() const { return get(&Data::connectionCheckerUrl); }
+
+void Preferences::setConnectionCheckerUrl(const QString& val) { set(&Data::connectionCheckerUrl, val.trimmed()); }
+
+uint32 Preferences::connectionCheckInterval() const { return get(&Data::connectionCheckInterval); }
+
+void Preferences::setConnectionCheckInterval(uint32 val)
+{
+    set(&Data::connectionCheckInterval,
+        std::clamp(val, kConnectionCheckIntervalMin, kConnectionCheckIntervalMax));
+}
 
 void Preferences::setUdpPort(uint16 val) { set(&Data::udpPort, val); }
 
@@ -2915,7 +2942,11 @@ void Preferences::setWebServerKeyPath(const QString& val) { set(&Data::webServer
 
 QString Preferences::webServerAdminPassword() const { return get(&Data::webServerAdminPassword); }
 
-void Preferences::setWebServerAdminPassword(const QString& val) { set(&Data::webServerAdminPassword, val); }
+// A bare SHA-256 hex (what the GUI sends) is stored as PBKDF2 of it.
+void Preferences::setWebServerAdminPassword(const QString& val)
+{
+    set(&Data::webServerAdminPassword, upgradeWebPasswordHash(val));
+}
 
 bool Preferences::webServerAdminAllowHiLevFunc() const { return get(&Data::webServerAdminAllowHiLevFunc); }
 
@@ -2927,7 +2958,10 @@ void Preferences::setWebServerGuestEnabled(bool val) { set(&Data::webServerGuest
 
 QString Preferences::webServerGuestPassword() const { return get(&Data::webServerGuestPassword); }
 
-void Preferences::setWebServerGuestPassword(const QString& val) { set(&Data::webServerGuestPassword, val); }
+void Preferences::setWebServerGuestPassword(const QString& val)
+{
+    set(&Data::webServerGuestPassword, upgradeWebPasswordHash(val));
+}
 
 // ---------------------------------------------------------------------------
 // Getters / setters — Scheduler
@@ -3334,6 +3368,25 @@ qint64 Preferences::geoIpLastCheck() const { return get(&Data::geoIpLastCheck); 
 
 void Preferences::setGeoIpLastCheck(qint64 val) { set(&Data::geoIpLastCheck, val); }
 
+HttpValidators Preferences::downloadValidators(const QString& key, const QString& url) const
+{
+    QReadLocker lock(&m_lock);
+    const auto it = m_data->downloadValidators.constFind(key);
+    if (it == m_data->downloadValidators.cend() || it->url != url)
+        return {};
+    return it->validators;
+}
+
+void Preferences::setDownloadValidators(const QString& key, const QString& url,
+                                        const HttpValidators& validators)
+{
+    QWriteLocker lock(&m_lock);
+    if (validators.isEmpty())
+        m_data->downloadValidators.remove(key);
+    else
+        m_data->downloadValidators.insert(key, {url, validators});
+}
+
 QString Preferences::logFont() const { return get(&Data::logFont); }
 
 void Preferences::setLogFont(const QString& val) { set(&Data::logFont, val); }
@@ -3470,6 +3523,8 @@ QCborMap Preferences::toIpcMap() const
     prefs.insert(QStringLiteral("randomizePortsAtStart"), randomizePortsAtStart());
     prefs.insert(QStringLiteral("randomPortMin"), randomPortMin());
     prefs.insert(QStringLiteral("randomPortMax"), randomPortMax());
+    prefs.insert(QStringLiteral("connectionChecker"), connectionChecker());
+    prefs.insert(QStringLiteral("connectionCheckerUrl"), connectionCheckerUrl());
     prefs.insert(QStringLiteral("bindAddress"), bindAddress());
     prefs.insert(QStringLiteral("maxUpload"), static_cast<qint64>(configuredMaxUpload()));
     prefs.insert(QStringLiteral("maxDownload"), static_cast<qint64>(configuredMaxDownload()));
@@ -3792,10 +3847,11 @@ QCborMap Preferences::toIpcMap() const
     prefs.insert(QStringLiteral("webServerHttpsEnabled"), webServerHttpsEnabled());
     prefs.insert(QStringLiteral("webServerCertPath"), webServerCertPath());
     prefs.insert(QStringLiteral("webServerKeyPath"), webServerKeyPath());
-    prefs.insert(QStringLiteral("webServerAdminPassword"), webServerAdminPassword());
+    // Password hashes never leave the core; only whether one is set.
+    prefs.insert(QStringLiteral("webServerAdminPasswordSet"), !webServerAdminPassword().isEmpty());
     prefs.insert(QStringLiteral("webServerAdminAllowHiLevFunc"), webServerAdminAllowHiLevFunc());
     prefs.insert(QStringLiteral("webServerGuestEnabled"), webServerGuestEnabled());
-    prefs.insert(QStringLiteral("webServerGuestPassword"), webServerGuestPassword());
+    prefs.insert(QStringLiteral("webServerGuestPasswordSet"), !webServerGuestPassword().isEmpty());
     return prefs;
 }
 
@@ -3809,6 +3865,8 @@ void Preferences::updateFromCbor(const QCborMap& p)
     m_data->randomizePortsAtStart = p.value(QStringLiteral("randomizePortsAtStart")).toBool(false);
     m_data->randomPortMin    = static_cast<uint16>(p.value(QStringLiteral("randomPortMin")).toInteger(50000));
     m_data->randomPortMax    = static_cast<uint16>(p.value(QStringLiteral("randomPortMax")).toInteger(60000));
+    m_data->connectionChecker = p.value(QStringLiteral("connectionChecker")).toBool(false);
+    m_data->connectionCheckerUrl = p.value(QStringLiteral("connectionCheckerUrl")).toString();
     m_data->bindAddress      = p.value(QStringLiteral("bindAddress")).toString();
     m_data->maxUpload        = static_cast<uint32>(p.value(QStringLiteral("maxUpload")).toInteger());
     m_data->maxDownload      = static_cast<uint32>(p.value(QStringLiteral("maxDownload")).toInteger());
@@ -3916,7 +3974,7 @@ void Preferences::updateFromCbor(const QCborMap& p)
                                                      kDefaultIpFilterUpdateUrl);
     m_data->ipFilterAutoUpdate        = p.value(QStringLiteral("ipFilterAutoUpdate")).toBool(false);
     m_data->ipFilterUpdateDays        = std::clamp(static_cast<int>(
-        p.value(QStringLiteral("ipFilterUpdateDays")).toInteger(7)), 1, 365);
+        p.value(QStringLiteral("ipFilterUpdateDays")).toInteger(1)), 1, 365);
     m_data->ipFilterLastUpdate        = p.value(QStringLiteral("ipFilterLastUpdate")).toInteger();
     m_data->geoIpSource               = std::clamp(static_cast<int>(
         p.value(QStringLiteral("geoIpSource")).toInteger(0)), 0, 1);
@@ -4096,10 +4154,13 @@ void Preferences::updateFromCbor(const QCborMap& p)
     m_data->webServerHttpsEnabled         = p.value(QStringLiteral("webServerHttpsEnabled")).toBool();
     m_data->webServerCertPath             = p.value(QStringLiteral("webServerCertPath")).toString();
     m_data->webServerKeyPath              = p.value(QStringLiteral("webServerKeyPath")).toString();
-    m_data->webServerAdminPassword        = p.value(QStringLiteral("webServerAdminPassword")).toString();
+    // Absent from toIpcMap() on purpose: keep what is stored
+    if (const QCborValue v = p.value(QStringLiteral("webServerAdminPassword")); v.isString())
+        m_data->webServerAdminPassword = upgradeWebPasswordHash(v.toString());
     m_data->webServerAdminAllowHiLevFunc  = p.value(QStringLiteral("webServerAdminAllowHiLevFunc")).toBool();
     m_data->webServerGuestEnabled         = p.value(QStringLiteral("webServerGuestEnabled")).toBool();
-    m_data->webServerGuestPassword        = p.value(QStringLiteral("webServerGuestPassword")).toString();
+    if (const QCborValue v = p.value(QStringLiteral("webServerGuestPassword")); v.isString())
+        m_data->webServerGuestPassword = upgradeWebPasswordHash(v.toString());
 }
 
 // ---------------------------------------------------------------------------
@@ -4123,6 +4184,10 @@ void Preferences::validate()
     m_data->randomPortMax = std::max(m_data->randomPortMax, kRandomPortFloor);
     if (m_data->randomPortMin > m_data->randomPortMax)
         std::swap(m_data->randomPortMin, m_data->randomPortMax);
+    m_data->connectionCheckInterval = std::clamp(m_data->connectionCheckInterval,
+                                                 kConnectionCheckIntervalMin,
+                                                 kConnectionCheckIntervalMax);
+    m_data->connectionCheckerUrl = m_data->connectionCheckerUrl.trimmed();
 
     // A limit above the line's capacity cannot be meant: 4/5 of it for upload, 9/10
     // for download (MFC Preferences.cpp:1931-1937). 0 = unlimited, left alone.
@@ -4344,6 +4409,10 @@ bool Preferences::load(const QString& filePath)
             m_data->randomizePortsAtStart = n["randomizePortsAtStart"].as<bool>(m_data->randomizePortsAtStart);
             m_data->randomPortMin = static_cast<uint16>(n["randomPortMin"].as<int>(m_data->randomPortMin));
             m_data->randomPortMax = static_cast<uint16>(n["randomPortMax"].as<int>(m_data->randomPortMax));
+            m_data->connectionChecker = n["connectionChecker"].as<bool>(m_data->connectionChecker);
+            m_data->connectionCheckerUrl = QString::fromStdString(
+                n["connectionCheckerUrl"].as<std::string>(m_data->connectionCheckerUrl.toStdString()));
+            m_data->connectionCheckInterval = n["connectionCheckInterval"].as<uint32>(m_data->connectionCheckInterval);
             m_data->serverUDPPort = static_cast<uint16>(n["serverUDPPort"].as<int>(m_data->serverUDPPort));
             m_data->maxConnections = static_cast<uint16>(n["maxConnections"].as<int>(m_data->maxConnections));
             m_data->maxHalfConnections = static_cast<uint16>(n["maxHalfConnections"].as<int>(m_data->maxHalfConnections));
@@ -4695,6 +4764,23 @@ bool Preferences::load(const QString& filePath)
             m_data->geoIpLastCheck = geo["lastCheck"].as<qint64>(m_data->geoIpLastCheck);
         }
 
+        // Validators of automatic downloads
+        if (auto dv = root["downloadValidators"]; dv && dv.IsMap()) {
+            for (const auto& entry : dv) {
+                const YAML::Node v = entry.second;
+                if (!v.IsMap())
+                    continue;
+                Data::StoredValidators stored;
+                stored.url = QString::fromStdString(v["url"].as<std::string>(""));
+                stored.validators.etag = QByteArray::fromStdString(v["etag"].as<std::string>(""));
+                stored.validators.lastModified =
+                    QByteArray::fromStdString(v["lastModified"].as<std::string>(""));
+                if (!stored.url.isEmpty() && !stored.validators.isEmpty())
+                    m_data->downloadValidators.insert(
+                        QString::fromStdString(entry.first.as<std::string>()), stored);
+            }
+        }
+
         // IRC
         if (auto irc = root["irc"]) {
             m_data->ircServer = QString::fromStdString(irc["server"].as<std::string>(m_data->ircServer.toStdString()));
@@ -4775,10 +4861,11 @@ bool Preferences::load(const QString& filePath)
             m_data->webServerHttpsEnabled = ws["httpsEnabled"].as<bool>(m_data->webServerHttpsEnabled);
             m_data->webServerCertPath = QString::fromStdString(ws["certPath"].as<std::string>(m_data->webServerCertPath.toStdString()));
             m_data->webServerKeyPath = QString::fromStdString(ws["keyPath"].as<std::string>(m_data->webServerKeyPath.toStdString()));
-            m_data->webServerAdminPassword = QString::fromStdString(ws["adminPassword"].as<std::string>(m_data->webServerAdminPassword.toStdString()));
+            // A legacy SHA-256 hex is wrapped here; the next save writes pbkdf2$…
+            m_data->webServerAdminPassword = upgradeWebPasswordHash(QString::fromStdString(ws["adminPassword"].as<std::string>(m_data->webServerAdminPassword.toStdString())));
             m_data->webServerAdminAllowHiLevFunc = ws["adminAllowHiLevFunc"].as<bool>(m_data->webServerAdminAllowHiLevFunc);
             m_data->webServerGuestEnabled = ws["guestEnabled"].as<bool>(m_data->webServerGuestEnabled);
-            m_data->webServerGuestPassword = QString::fromStdString(ws["guestPassword"].as<std::string>(m_data->webServerGuestPassword.toStdString()));
+            m_data->webServerGuestPassword = upgradeWebPasswordHash(QString::fromStdString(ws["guestPassword"].as<std::string>(m_data->webServerGuestPassword.toStdString())));
         }
 
         // Kademlia
@@ -5709,6 +5796,9 @@ bool Preferences::saveImpl(const QString& filePath) const
     out << YAML::Key << "randomizePortsAtStart" << YAML::Value << m_data->randomizePortsAtStart;
     out << YAML::Key << "randomPortMin" << YAML::Value << static_cast<int>(m_data->randomPortMin);
     out << YAML::Key << "randomPortMax" << YAML::Value << static_cast<int>(m_data->randomPortMax);
+    out << YAML::Key << "connectionChecker" << YAML::Value << m_data->connectionChecker;
+    out << YAML::Key << "connectionCheckerUrl" << YAML::Value << m_data->connectionCheckerUrl.toStdString();
+    out << YAML::Key << "connectionCheckInterval" << YAML::Value << m_data->connectionCheckInterval;
     out << YAML::Key << "serverUDPPort" << YAML::Value << static_cast<int>(m_data->serverUDPPort);
     out << YAML::Key << "maxConnections" << YAML::Value << static_cast<int>(m_data->maxConnections);
     out << YAML::Key << "maxHalfConnections" << YAML::Value << static_cast<int>(m_data->maxHalfConnections);
@@ -6054,6 +6144,20 @@ bool Preferences::saveImpl(const QString& filePath) const
     out << YAML::Key << "autoUpdate" << YAML::Value << m_data->geoIpAutoUpdate;
     out << YAML::Key << "lastCheck" << YAML::Value << m_data->geoIpLastCheck;
     out << YAML::EndMap;
+
+    // Validators of automatic downloads
+    if (!m_data->downloadValidators.isEmpty()) {
+        out << YAML::Key << "downloadValidators" << YAML::Value << YAML::BeginMap;
+        for (auto it = m_data->downloadValidators.cbegin(); it != m_data->downloadValidators.cend(); ++it) {
+            out << YAML::Key << it.key().toStdString() << YAML::Value << YAML::BeginMap;
+            out << YAML::Key << "url" << YAML::Value << it->url.toStdString();
+            out << YAML::Key << "etag" << YAML::Value << it->validators.etag.toStdString();
+            out << YAML::Key << "lastModified" << YAML::Value
+                << it->validators.lastModified.toStdString();
+            out << YAML::EndMap;
+        }
+        out << YAML::EndMap;
+    }
 
     // IRC
     out << YAML::Key << "irc" << YAML::Value << YAML::BeginMap;

@@ -11,6 +11,7 @@
 #include "webserver/WebTemplateEngine.h"
 
 #include "app/AppConfig.h"
+#include "crypto/SecretCompare.h"
 #include "app/TranslationRouter.h"
 #include "client/UpDownClient.h"
 #include "files/KnownFile.h"
@@ -50,9 +51,11 @@
 #include <QFile>
 #include <QFileInfo>
 #include <QHttpServer>
+#include <QHttpServerConfiguration>
 #include <QHttpServerRequest>
 #include <QHttpServerResponder>
 #include <QHttpServerResponse>
+#include <QHttpServerRouterRule>
 #include <QJsonArray>
 #include <QJsonDocument>
 #include <QJsonObject>
@@ -266,7 +269,6 @@ QFuture<QHttpServerResponse> finishedResponse(QHttpServerResponse&& response)
 
 WebServer::WebServer(QObject* parent)
     : QObject(parent)
-    , m_streamToken(QUuid::createUuid().toString(QUuid::WithoutBraces).remove(QLatin1Char('-')))
 {
     buildApiTable();
 }
@@ -296,6 +298,48 @@ bool WebServer::isSecretHeader(QStringView name)
 }
 
 namespace {
+
+/// Stream token scope of a web session.
+[[nodiscard]] QString webTokenScope(const QString& sessionId)
+{
+    return QStringLiteral("web:") + sessionId;
+}
+
+/// A page token idles out after this; the GUI's never does.
+constexpr std::chrono::minutes kPageTokenIdle{30};
+
+/// Wrong stream tokens forgiven before the back-off starts. More than for a
+/// password: a player retries a stale URL a few times on its own.
+constexpr int kFreeStreamTokenTries = 10;
+
+/// Request bodies: what anyone may send, and what a session or API key may.
+constexpr qint64 kAnonBodyCap = 64 * 1024;
+constexpr qint64 kAuthBodyCap = 64 * 1024 * 1024;
+
+/// 429 with Retry-After, for a client that keeps guessing.
+[[nodiscard]] QHttpServerResponse tooManyTries(int waitSeconds, const QString& message)
+{
+    QHttpServerResponse resp = jsonError(429, message);
+    QHttpHeaders hdrs = resp.headers();
+    hdrs.append(QHttpHeaders::WellKnownHeader::RetryAfter, QByteArray::number(waitSeconds));
+    resp.setHeaders(std::move(hdrs));
+    return resp;
+}
+
+/// First rule of the router: matches any request whose body is over its cap,
+/// so nothing behind it ever parses one. Qt has no body limit of its own.
+class BodyCapRule : public QHttpServerRouterRule {
+public:
+    using QHttpServerRouterRule::QHttpServerRouterRule;
+
+    std::function<bool(const QHttpServerRequest&)> tooLarge;
+
+protected:
+    bool matches(const QHttpServerRequest& request, QRegularExpressionMatch* match) const override
+    {
+        return tooLarge && tooLarge(request) && QHttpServerRouterRule::matches(request, match);
+    }
+};
 
 /// Load certificate and private key. @return empty on success, else what is wrong.
 QString loadTlsIdentity(const QString& certPath, const QString& keyPath, QSslConfiguration& out)
@@ -367,6 +411,13 @@ bool WebServer::start(const WebServerConfig& config)
     // Initialize session manager
     m_sessionManager = std::make_unique<WebSessionManager>(m_config.sessionTimeout);
 
+    // Tokens rotate with every start; a session's go with it.
+    m_streamTokens.clear();
+    m_guiStreamToken = m_streamTokens.mint(QStringLiteral("gui"), std::chrono::milliseconds::zero());
+    m_sessionManager->setSessionEndedHandler([this](const QString& sessionId) {
+        m_streamTokens.revokeScope(webTokenScope(sessionId));
+    });
+
     // Initialize template engine
     m_templateEngine = std::make_unique<WebTemplateEngine>();
 
@@ -405,6 +456,11 @@ bool WebServer::start(const WebServerConfig& config)
     m_ratingSpriteCss.reset();
 
     m_server = std::make_unique<QHttpServer>(this);
+
+    // Per client address; Qt answers 429 itself
+    QHttpServerConfiguration serverConfig;
+    serverConfig.setRateLimitPerSecond(m_config.rateLimitPerSecond);
+    m_server->setConfiguration(serverConfig);
 
     registerRoutes();
 
@@ -568,6 +624,7 @@ void WebServer::stop()
     m_tcpServer = nullptr;
     m_sessionManager.reset();
     m_templateEngine.reset();
+    m_streamTokens.clear();
 
     logInfo(QStringLiteral("WebServer: stopped"));
     emit stopped();
@@ -616,6 +673,16 @@ void WebServer::setPreferences(Preferences* prefs)    { m_preferences = prefs; }
 
 void WebServer::registerRoutes()
 {
+    // Body cap — first, so it is tried before every other rule.
+    if (auto* cap = m_server->route<BodyCapRule>(QStringLiteral("/.*"),
+            QHttpServerRequest::Method::AnyKnown, [](const QHttpServerRequest&) {
+                return jsonError(413, QStringLiteral("Request body too large"));
+            })) {
+        cap->tooLarge = [this](const QHttpServerRequest& req) { return requestBodyTooLarge(req); };
+    } else {
+        logError(QStringLiteral("WebServer: body size rule not registered"));
+    }
+
     // OPTIONS catch-all for CORS preflight — always registered.
     m_server->route(QStringLiteral("/<arg>"), QHttpServerRequest::Method::Options,
         [](const QUrl&) {
@@ -741,12 +808,37 @@ void WebServer::registerRoutes()
 // Auth
 // ---------------------------------------------------------------------------
 
-WebServer::AuthResult WebServer::checkAuth(const QHttpHeaders& headers) const
+WebServer::AuthResult WebServer::checkAuth(const QHttpServerRequest& req)
 {
     // No key configured means nobody gets in, not everybody.
     if (m_config.apiKey.isEmpty())
         return {false, jsonError(401, QStringLiteral("Unauthorized: no API key is configured"))};
 
+    // A client that keeps guessing waits; its key is not even looked at.
+    const QString client = QStringLiteral("api:") + req.remoteAddress().toString();
+    const qint64 now = QDateTime::currentMSecsSinceEpoch();
+    if (m_sessionManager) {
+        if (const int wait = m_sessionManager->loginWaitSeconds(client, now); wait > 0)
+            return {false, tooManyTries(wait, QStringLiteral("Too many wrong API keys; try again later"))};
+    }
+
+    const QByteArray key = requestApiKey(req.headers());
+    if (key.isEmpty() || !apiKeyMatches(req.headers())) {
+        // Only a key that was sent counts as a guess
+        if (!key.isEmpty() && m_sessionManager) {
+            m_sessionManager->noteLoginFailure(client, now);
+            logWarning(QStringLiteral("WebServer: wrong API key from %1").arg(req.remoteAddress().toString()));
+        }
+        return {false, jsonError(401, QStringLiteral("Unauthorized: invalid or missing API key"))};
+    }
+
+    if (m_sessionManager)
+        m_sessionManager->noteLoginSuccess(client);
+    return {true, QHttpServerResponse(QHttpServerResponse::StatusCode::Ok)};
+}
+
+QByteArray WebServer::requestApiKey(const QHttpHeaders& headers)
+{
     // X-Api-Key, or the Bearer form MCP clients send
     QByteArray key = headers.combinedValue(QByteArrayLiteral("X-Api-Key"));
     if (key.isEmpty()) {
@@ -754,10 +846,32 @@ WebServer::AuthResult WebServer::checkAuth(const QHttpHeaders& headers) const
         if (bearer.left(7).toLower() == "bearer ")
             key = bearer.mid(7).trimmed();
     }
-    if (key.isEmpty() || QString::fromUtf8(key) != m_config.apiKey)
-        return {false, jsonError(401, QStringLiteral("Unauthorized: invalid or missing API key"))};
+    return key;
+}
 
-    return {true, QHttpServerResponse(QHttpServerResponse::StatusCode::Ok)};
+bool WebServer::apiKeyMatches(const QHttpHeaders& headers) const
+{
+    if (m_config.apiKey.isEmpty())
+        return false;
+    const QByteArray key = requestApiKey(headers);
+    return !key.isEmpty() && constantTimeEquals(key, m_config.apiKey.toUtf8());
+}
+
+bool WebServer::requestBodyTooLarge(const QHttpServerRequest& req)
+{
+    bool ok = false;
+    const qint64 declared = req.headers().value(QHttpHeaders::WellKnownHeader::ContentLength)
+                                .toLongLong(&ok);
+    const qint64 size = std::max(ok ? declared : 0, static_cast<qint64>(req.body().size()));
+    if (size <= kAnonBodyCap)
+        return false;
+    const bool tooLarge = size > kAuthBodyCap
+        || !(apiKeyMatches(req.headers()) || webSession(req).valid);
+    if (tooLarge) {
+        logWarning(QStringLiteral("WebServer: 413 — %1 byte body from %2 to %3")
+                       .arg(size).arg(req.remoteAddress().toString(), req.url().path()));
+    }
+    return tooLarge;
 }
 
 // ---------------------------------------------------------------------------
@@ -780,12 +894,8 @@ QHttpServerResponse WebServer::handlePreviewStream(const QString& hash, const QH
     }
 
     // Authenticate via stream token query parameter
-    const QUrlQuery query(req.query());
-    const QString token = query.queryItemValue(QStringLiteral("token"));
-    if (token.isEmpty() || token != m_streamToken) {
-        logWarning(QStringLiteral("Preview: 401 — invalid or missing stream token"));
-        return jsonError(401, QStringLiteral("Invalid or missing stream token"));
-    }
+    if (auto refusal = streamTokenRefusal(req, u"Preview"))
+        return std::move(*refusal);
 
     if (!m_downloadQueue) {
         logWarning(QStringLiteral("Preview: 500 — download queue not available"));
@@ -844,15 +954,12 @@ QHttpServerResponse WebServer::handlePreviewStream(const QString& hash, const QH
 QFuture<QHttpServerResponse> WebServer::handleUsenetPreviewStream(
     const QString& itemId, const QString& fileIndexText, const QHttpServerRequest& req)
 {
-    // Same gate as the ED2K route: a per-process random token, not the REST API
-    // key. Preview is served even with both web surfaces switched off, so it
-    // cannot lean on either one's authentication.
+    // Same gate as the ED2K route: a stream token, not the REST API key.
+    // Preview is served even with both web surfaces switched off, so it cannot
+    // lean on either one's authentication.
+    if (auto refusal = streamTokenRefusal(req, u"Usenet preview"))
+        return finishedResponse(std::move(*refusal));
     const QUrlQuery query(req.query());
-    const QString token = query.queryItemValue(QStringLiteral("token"));
-    if (token.isEmpty() || token != m_streamToken) {
-        logWarning(QStringLiteral("Usenet preview: 401 — invalid or missing stream token"));
-        return finishedResponse(jsonError(401, QStringLiteral("Invalid or missing stream token")));
-    }
 
     if (!m_usenetStreamResolver)
         return finishedResponse(jsonError(503, QStringLiteral("Usenet engine unavailable")));
@@ -1336,10 +1443,8 @@ QString pageHead(const QString& title, const QString& extraCss = {})
 
 QHttpServerResponse WebServer::handleIncomingListing(const QHttpServerRequest& req)
 {
-    if (!hasStreamToken(req)) {
-        logWarning(QStringLiteral("Incoming: 401 — invalid or missing stream token"));
-        return jsonError(401, QStringLiteral("Invalid or missing stream token"));
-    }
+    if (auto refusal = streamTokenRefusal(req, u"Incoming"))
+        return std::move(*refusal);
 
     const QUrlQuery query(req.query());
     const QString token = query.queryItemValue(QStringLiteral("token"));
@@ -1383,9 +1488,8 @@ QHttpServerResponse WebServer::handleIncomingListing(const QHttpServerRequest& r
 void WebServer::handleIncomingStream(const QHttpServerRequest& req,
                                     QHttpServerResponder& responder)
 {
-    if (!hasStreamToken(req)) {
-        logWarning(QStringLiteral("Incoming: 401 — invalid or missing stream token"));
-        responder.sendResponse(jsonError(401, QStringLiteral("Invalid or missing stream token")));
+    if (auto refusal = streamTokenRefusal(req, u"Incoming")) {
+        responder.sendResponse(std::move(*refusal));
         return;
     }
 
@@ -1494,9 +1598,8 @@ void WebServer::handleIncomingStream(const QHttpServerRequest& req,
 void WebServer::handleIncomingDownload(const QHttpServerRequest& req,
                                        QHttpServerResponder& responder)
 {
-    if (!hasStreamToken(req)) {
-        logWarning(QStringLiteral("Incoming: 401 — invalid or missing stream token"));
-        responder.sendResponse(jsonError(401, QStringLiteral("Invalid or missing stream token")));
+    if (auto refusal = streamTokenRefusal(req, u"Incoming")) {
+        responder.sendResponse(std::move(*refusal));
         return;
     }
 
@@ -1537,11 +1640,40 @@ void WebServer::handleIncomingDownload(const QHttpServerRequest& req,
     responder.write(file, headers, QHttpServerResponse::StatusCode::Ok);
 }
 
-bool WebServer::hasStreamToken(const QHttpServerRequest& req) const
+bool WebServer::streamTokenValid(const QHttpServerRequest& req)
 {
     const QUrlQuery query(req.query());
-    const QString token = query.queryItemValue(QStringLiteral("token"));
-    return !token.isEmpty() && token == m_streamToken;
+    return m_streamTokens.check(query.queryItemValue(QStringLiteral("token"))).has_value();
+}
+
+std::optional<QHttpServerResponse> WebServer::streamTokenRefusal(const QHttpServerRequest& req,
+                                                                 QStringView what)
+{
+    const QString address = req.remoteAddress().toString();
+    const QString client = QStringLiteral("stream:") + address;
+    const qint64 now = QDateTime::currentMSecsSinceEpoch();
+
+    // While backing off the token is not even looked at.
+    if (m_sessionManager) {
+        if (const int wait = m_sessionManager->loginWaitSeconds(client, now, kFreeStreamTokenTries);
+            wait > 0) {
+            logWarning(QStringLiteral("%1: 429 — too many wrong stream tokens from %2").arg(what, address));
+            return tooManyTries(wait, QStringLiteral("Too many wrong stream tokens; try again later"));
+        }
+    }
+
+    if (streamTokenValid(req)) {
+        if (m_sessionManager)
+            m_sessionManager->noteLoginSuccess(client);
+        return std::nullopt;
+    }
+
+    // Only a token that was sent counts as a guess
+    const bool sent = !QUrlQuery(req.query()).queryItemValue(QStringLiteral("token")).isEmpty();
+    if (sent && m_sessionManager)
+        m_sessionManager->noteLoginFailure(client, now);
+    logWarning(QStringLiteral("%1: 401 — invalid or missing stream token").arg(what));
+    return jsonError(401, QStringLiteral("Invalid or missing stream token"));
 }
 
 QString WebServer::incomingRoot() const
@@ -2096,6 +2228,8 @@ QHttpServerResponse WebServer::handlePage(const QHttpServerRequest& request)
     if (activePage == QStringLiteral("usenet")) {
         const QString part = query.queryItemValue(QStringLiteral("part"));
         if (part == QStringLiteral("list")) {
+            // The page polls this while open: keep its stream tokens alive
+            m_streamTokens.touchScope(webTokenScope(ses));
             return QHttpServerResponse(QByteArrayLiteral("text/html"),
                                        buildUsenetList(ses, query).toUtf8());
         }
@@ -4033,6 +4167,13 @@ QHttpServerResponse WebServer::handleWebUsenetEntries(const QHttpServerRequest& 
 
 // --- Page ------------------------------------------------------------------------
 
+QString WebServer::mintPageStreamToken(const QString& sessionId)
+{
+    // Guests too: they may preview and browse Incoming.
+    return sessionId.isEmpty() ? QString()
+                               : m_streamTokens.mint(webTokenScope(sessionId), kPageTokenIdle);
+}
+
 QString WebServer::buildUsenetPage(bool isAdmin, const QString& sessionId, const QUrlQuery& query)
 {
     if (!usenetAvailable())
@@ -4079,7 +4220,7 @@ QString WebServer::buildUsenetPage(bool isAdmin, const QString& sessionId, const
         sort.clear();
 
     QHash<QString, QString> vars;
-    vars[QStringLiteral("StreamToken")] = m_streamToken;
+    vars[QStringLiteral("StreamToken")] = mintPageStreamToken(sessionId);
     // Passed on to the incoming pages, which have no session of their own.
     vars[QStringLiteral("WebLang")] = WebTemplateEngine::jsEscape(webLanguage(sessionId));
     // The page script formats archive entry sizes itself, in formatByteSize's units.

@@ -476,6 +476,28 @@ void tst_ArchiveRecovery::recoverZip_stepsOverHolesAndJunk()
     const QByteArray rebuilt = outFile.readAll();
     QVERIFY(rebuilt.startsWith(QByteArray(first + second)));   // both members, then the directory
     QCOMPARE(rebuilt.count(QByteArray::fromHex("504b0102")), 2);
+
+    // Central dir offsets must point into the OUTPUT, at a local header each
+    const auto rd16 = [&rebuilt](qsizetype at) { quint16 v = 0; std::memcpy(&v, rebuilt.constData() + at, 2); return v; };
+    const auto rd32 = [&rebuilt](qsizetype at) { quint32 v = 0; std::memcpy(&v, rebuilt.constData() + at, 4); return v; };
+    QVERIFY(rebuilt.size() >= 22);
+    const qsizetype eocd = rebuilt.size() - 22;
+    QCOMPARE(rd32(eocd), quint32(0x06054b50));
+    QCOMPARE(rd16(eocd + 10), quint16(2));
+    qsizetype cd = static_cast<qsizetype>(rd32(eocd + 16));
+    std::vector<quint32> offsets;
+    for (int i = 0; i < 2; ++i) {
+        QVERIFY(cd + 46 <= eocd);
+        QCOMPARE(rd32(cd), quint32(0x02014b50));
+        offsets.push_back(rd32(cd + 42));
+        cd += 46 + rd16(cd + 28) + rd16(cd + 30) + rd16(cd + 32);
+    }
+    QCOMPARE(offsets[0], quint32(0));
+    QCOMPARE(offsets[1], quint32(first.size()));
+    for (quint32 off : offsets) {
+        QVERIFY(qsizetype(off) + 4 <= rebuilt.size());
+        QCOMPARE(rebuilt.mid(off, 4), QByteArray("PK\x03\x04", 4));
+    }
 }
 
 QTEST_MAIN(tst_ArchiveRecovery)

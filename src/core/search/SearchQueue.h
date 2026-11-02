@@ -118,6 +118,8 @@ public:
     static constexpr qint64 kMaxWaitMs = 10 * 60 * 1000;
     /// A server that got the request and says nothing is given this long.
     static constexpr qint64 kAnswerTimeoutMs = 30 * 1000;
+    /// Answer size of servers that cap without the "more" flag (ed2k-rust, #92).
+    static constexpr uint32 kServerResultCap = 300;
     /// A sweep reports its own end; this only catches one that never does.
     static constexpr qint64 kSweepTimeoutMs = 15 * 60 * 1000;
     /// Same for a Meta API search (a few servers, one page, 30 s a call).
@@ -145,8 +147,9 @@ public:
     /// The session a waiting answer was due on is gone.
     void onServerDisconnected();
     /// The connected server answered the search in flight. @p moreResults: it
-    /// holds back further matches, kept for more().
-    void onServerAnswer(bool moreResults = false);
+    /// holds back further matches, kept for more(). @p results / @p newFiles: records
+    /// in the answer and how many were new files (cap without flag, see kServerResultCap).
+    void onServerAnswer(bool moreResults = false, uint32 results = 0, uint32 newFiles = 0);
     void onSweepFinished(uint32 searchID);
     /// A Meta API search has its page, or gave up (@p error says why).
     /// @p hasMore: the server has a further page, kept for more().

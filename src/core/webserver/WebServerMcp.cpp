@@ -239,7 +239,7 @@ void WebServer::registerEventRoute()
 
 void WebServer::handleEventStream(const QHttpServerRequest& req, QHttpServerResponder& responder)
 {
-    if (auto auth = checkAuth(req.headers()); !auth.ok) {
+    if (auto auth = checkAuth(req); !auth.ok) {
         responder.sendResponse(std::move(auth.response));
         return;
     }
@@ -373,7 +373,7 @@ void WebServer::registerMcpRoute()
             // A page of another site must not be able to drive this (DNS rebinding).
             if (!originAllowed(req))
                 return finished(toResponse(error(403, QStringLiteral("Origin not allowed"))));
-            if (auto auth = checkAuth(req.headers()); !auth.ok)
+            if (auto auth = checkAuth(req); !auth.ok)
                 return finished(std::move(auth.response));
 
             QJsonParseError parseError;

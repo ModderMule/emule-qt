@@ -204,9 +204,9 @@ inline void insertFakeVerdict(QCborMap& m, const FakeFileVerdict& verdict)
         {QStringLiteral("isPaused"),             f.isPaused()},
         {QStringLiteral("isStopped"),            f.isStopped()},
         // Both feed the GUI's status column, which reproduces MFC's getPartfileStatus():
-        // a file op relabels "Completing", and a completion error relabels "Error".
+        // a file op relabels "Completing", and a completion error says why (CompletionFailure).
         {QStringLiteral("fileOp"),               static_cast<int>(f.fileOp())},
-        {QStringLiteral("completionError"),      f.completionError()},
+        {QStringLiteral("completionError"),      static_cast<int>(f.completionFailure())},
         {QStringLiteral("category"),             static_cast<qint64>(f.category())},
         {QStringLiteral("lastSeenComplete"),    static_cast<qint64>(f.lastSeenComplete())},
         // MFC appends the complete-source range to Seen Complete

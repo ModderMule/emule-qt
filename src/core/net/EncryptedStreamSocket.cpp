@@ -185,7 +185,7 @@ void EncryptedStreamSocket::setConnectionEncryption(bool enabled, const uint8* t
         m_streamCryptState = StreamCryptState::Pending;
 
         // Create obfuscation keys
-        m_randomKeyPart = getRandomUInt32();
+        m_randomKeyPart = secureRandomUInt32();
 
         uint8 keyData[21];
         md4cpy(keyData, targetClientHash);
@@ -422,9 +422,8 @@ void EncryptedStreamSocket::startNegotiation(bool outgoing)
         const uint8 marker = getSemiRandomNotProtocolMarker();
         fileRequest.writeUInt8(marker);
 
-        // Generate random 128-bit exponent a
-        for (auto& byte : m_dhExponentA)
-            byte = static_cast<uint8>(getRandomUInt16() & 0xFF);
+        // Random 128-bit exponent a (CSPRNG)
+        secureRandomBytes(m_dhExponentA.data(), m_dhExponentA.size());
 
         // Compute g^a mod p using OpenSSL BIGNUM
         BN_CTX* ctx = BN_CTX_new();

@@ -9,6 +9,7 @@
 
 #include "app/CoreStartWatch.h"
 #include "app/SkinEngine.h"
+#include "app/ToolbarSkin.h"
 #include "app/ToolbarButtons.h"
 
 #include "utils/Ed2kLinkImporter.h"
@@ -177,6 +178,8 @@ public:
     /// Shown in place of "Disconnected", with @p reason as the tooltip. Call before
     /// setEd2kStatus(), which redraws the label.
     void setNetworkBlocked(bool blocked, const QString& reason);
+    /// Connection checker (#115): internet down, the daemon holds eD2K.
+    void setConnectionOffline(bool offline, const QString& reason);
 
     /// Update the Kad status label in the footer.
     void setKadStatus(bool running, bool kadConnected, bool firewalled,
@@ -308,6 +311,10 @@ private:
     /// was just switched on. True when the order changed (caller rebuilds).
     bool restoreToolbarButton(ToolbarButtonId id);
     void loadToolbarSkin(const QString& path);
+    /// Skinned icon of @p tile, else the built-in one of @p def.
+    [[nodiscard]] QIcon toolbarIcon(std::optional<ToolbarTile> tile, const ToolbarButtonDef& def) const;
+    /// [Bitmaps] MainToolBarBk of the skin profile, or the style's own background.
+    void applyToolbarBackground();
     void clearToolbarSkin();
     QString skinsDir() const;
     void applySkinProfile(const QString& path);
@@ -318,6 +325,10 @@ private:
     void setupPages();
     void addPage(QWidget* page);
     void updateConnectButton();
+    /// MFC ShowConnectionState: Disconnect when eD2K or Kad is connected, Cancel while
+    /// either connects, else Connect. Other networks don't count yet.
+    enum class ConnectButtonState { Connect, Cancel, Disconnect };
+    [[nodiscard]] ConnectButtonState connectButtonState() const;
 
     /// Low ID on eD2K and firewalled on Kad: from the third start on, offer help once
     /// per session after the state held for a while.
@@ -346,6 +357,9 @@ private:
     /// "Show transfer rates on title".
     void updateWindowTitle();
     void updateTransferStateIcon(bool uploading, bool downloading);
+    /// Skin profile [Icons] changed: redraw what holds a copy of an icon.
+    void refreshSkinIcons();
+    void showChatState(int state);
 
     /// Ask the daemon for toolbar-graph samples newer than m_speedSeq.
     void pollSpeedHistory();
@@ -360,7 +374,6 @@ private:
     IpcClient* m_ipc = nullptr;
     QMenu* m_toolsMenu = nullptr;
     QMap<ToolbarButtonId, QAction*> m_toolbarActions;
-    QMap<ToolbarButtonId, QIcon> m_skinIcons;
     QString m_streamToken;
 
     // Tab panels
@@ -392,6 +405,7 @@ private:
     QLabel* m_statusKad = nullptr;
     QLabel* m_statusEd3k = nullptr;   ///< ed3k node, hidden while off
     QLabel* m_statusChat = nullptr;   ///< unread-message icon, MFC SBarChatMsg
+    int m_statusChatState = 0;        ///< 0 none, 1 new, 2 pending (blink)
     QLabel* m_statusAttach = nullptr;   ///< core attached/detached (#106)
     ConnectionStatusWidget* m_connStatus = nullptr;
 
@@ -422,10 +436,13 @@ private:
 
     // Cached status for world icon
     bool m_ed2kConnected = false;
+    bool m_ed2kConnecting = false;
     bool m_ed2kFirewalled = false;   ///< combined ed2k+kad firewall state (tray icon)
     bool m_ed2kLowID = false;        ///< eD2K-only LowID
     bool m_netBlocked = false;       ///< daemon's bound interface is missing
     QString m_netBlockReason;
+    bool m_connOffline = false;      ///< connection checker: internet down
+    QString m_connOfflineReason;
     bool m_kadRunning = false;
     bool m_kadConnected = false;
     bool m_kadFirewalled = false;
@@ -433,8 +450,9 @@ private:
     bool m_lowIdHintShown = false;   ///< once per session
     QTimer* m_lowIdHintTimer = nullptr;
 
-    // Skin engine
+    // Skin profile (*.eMuleSkin.ini) and toolbar strip (*.eMuleToolbar.kad02.*)
     SkinEngine m_skinEngine;
+    ToolbarSkin m_toolbarSkin;
 
     // Cached stats for MiniMule popup
     double m_cachedUpKBs = 0.0;

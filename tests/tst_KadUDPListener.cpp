@@ -8,6 +8,7 @@
 #include "client/ClientList.h"
 #include "client/UpDownClient.h"
 #include "kademlia/Kademlia.h"
+#include "kademlia/KadContact.h"
 #include "kademlia/KadEntry.h"
 #include "kademlia/KadIndexed.h"
 #include "kademlia/KadIO.h"
@@ -27,6 +28,8 @@
 #include <QScopeGuard>
 #include <QTest>
 #include <QtEndian>
+
+#include <algorithm>
 
 using namespace eMule;
 using namespace eMule::kad;
@@ -57,6 +60,13 @@ private slots:
     void publishSource_countsReachabilityPerSourceType();
     void searchSourceReq_pagingCountsBeforeTheSizeFilter();
     void publishNotes_rejectedNoteGetsNoAnswer();
+    void publishNotes_unknownTagsDropped();
+    void publishSource_injectedSourceIpTagIsDropped();
+    void searchKeyReq_brokenExpressionIsNotAnswered();
+
+    // Bootstrap
+    void bootstrapRes_contactsStartUnverified();
+    void bootstrapRes_sendsHelloToEachContact();
 
     // Statistics
     void helloReq_firewalledNodeIsSeenButNotAdded();
@@ -403,6 +413,39 @@ QByteArray publishRequest(uint8 opcode, const UInt128& fileID, const UInt128& so
     return io.buffer();
 }
 
+/// Tag lists of every result in the SEARCH_RES packets sent while alive.
+struct ResultTagSpy {
+    std::vector<std::vector<Tag>> results;
+    QMetaObject::Connection conn;
+
+    ResultTagSpy()
+    {
+        conn = QObject::connect(Kademlia::getInstanceUDPListener(),
+                                &KademliaUDPListener::packetToSend,
+                                [this](const QByteArray& data) {
+            if (data.size() < 35 || uint8(data[0]) != KADEMLIA2_SEARCH_RES)
+                return;
+            SafeMemFile io(data.mid(33));   // past opcode, sender ID, key ID
+            for (uint16 n = io.readUInt16(); n > 0; --n) {
+                io::readUInt128(io);         // answer
+                results.push_back(io::readKadTagList(io));
+            }
+        });
+    }
+    ~ResultTagSpy() { QObject::disconnect(conn); }
+};
+
+int countTags(const std::vector<Tag>& tags, uint8 id)
+{
+    return static_cast<int>(std::ranges::count_if(tags, [id](const Tag& t) { return t.nameId() == id; }));
+}
+
+const Tag* findTag(const std::vector<Tag>& tags, uint8 id)
+{
+    const auto it = std::ranges::find_if(tags, [id](const Tag& t) { return t.nameId() == id; });
+    return it == tags.end() ? nullptr : &*it;
+}
+
 QByteArray sourceRequest(const UInt128& fileID, uint16 start, uint64 size)
 {
     SafeMemFile io;
@@ -529,6 +572,179 @@ void tst_KadUDPListener::publishNotes_rejectedNoteGetsNoAnswer()
     io.writeUInt64(2000);
     deliver(io.buffer(), kNodeIP);
     QCOMPARE(spy.results, 0);
+}
+
+// A note keeps name, size, rating and a capped comment; any other tag is dropped.
+void tst_KadUDPListener::publishNotes_unknownTagsDropped()
+{
+    eMule::testing::KadFixture kadFixture;
+    QTRY_VERIFY(Kademlia::getInstanceIndexed()->isLoaded());
+    const UInt128 fileID(uint32{0x0707E7});
+    SentSpy spy;
+
+    deliver(publishRequest(KADEMLIA2_PUBLISH_NOTES_REQ, fileID, UInt128(uint32{0x61}),
+                           {Tag(uint8{FT_FILENAME}, QStringLiteral("a.avi")),
+                            Tag(uint8{FT_FILESIZE}, uint32{1000}),
+                            Tag(uint8{FT_FILERATING}, uint32{4}),
+                            Tag(uint8{FT_DESCRIPTION}, QString(600, u'x')),
+                            Tag(uint8{FT_MEDIA_ARTIST}, QStringLiteral("junk")),
+                            Tag(QByteArrayLiteral("spam"), QStringLiteral("junk"))}),
+            kLanIP);
+    QCOMPARE(spy.publishAnswers, 1);
+
+    ResultTagSpy tags;
+    SafeMemFile io;
+    io.writeUInt8(KADEMLIA2_SEARCH_NOTES_REQ);
+    io::writeUInt128(io, fileID);
+    io.writeUInt64(1000);
+    deliver(io.buffer(), kNodeIP);
+    QCOMPARE(tags.results.size(), size_t{1});
+    const std::vector<Tag>& note = tags.results.front();
+    QCOMPARE(note.size(), size_t{4});   // name, size, rating, comment
+    QVERIFY(findTag(note, FT_FILERATING) != nullptr);
+    const Tag* comment = findTag(note, FT_DESCRIPTION);
+    QVERIFY(comment != nullptr);
+    QCOMPARE(comment->strValue().size(), qsizetype{512});
+    QVERIFY(findTag(note, FT_MEDIA_ARTIST) == nullptr);
+}
+
+// The stored source IP is the packet's; one the publisher sends would win on
+// serving and on reload, pointing searchers at any host.
+void tst_KadUDPListener::publishSource_injectedSourceIpTagIsDropped()
+{
+    eMule::testing::KadFixture kadFixture;
+    QTRY_VERIFY(Kademlia::getInstanceIndexed()->isLoaded());
+    const UInt128 fileID(uint32{0x51C0FFE3});
+    SentSpy spy;
+
+    deliver(publishRequest(KADEMLIA2_PUBLISH_SOURCE_REQ, fileID, UInt128(uint32{0x52}),
+                           {Tag(uint8{FT_SOURCEIP}, uint32{0x01020304}),   // before ours
+                            Tag(uint8{FT_SOURCETYPE}, uint32{1}),
+                            Tag(uint8{FT_SOURCEPORT}, uint32{4662}),
+                            Tag(uint8{FT_SOURCEIP}, uint32{0x05060708})}), // after ours
+            kLanIP);
+    QCOMPARE(spy.publishAnswers, 1);
+
+    ResultTagSpy tags;
+    deliver(sourceRequest(fileID, 0, 0), kNodeIP);
+    QCOMPARE(tags.results.size(), size_t{1});
+    const std::vector<Tag>& source = tags.results.front();
+    QCOMPARE(countTags(source, FT_SOURCEIP), 1);
+    QCOMPARE(findTag(source, FT_SOURCEIP)->intValue(), kLanIP);
+}
+
+// A restrictive request whose expression does not parse must not be served as
+// "everything for this keyword". MFC throws "Invalid search expression".
+void tst_KadUDPListener::searchKeyReq_brokenExpressionIsNotAnswered()
+{
+    eMule::testing::KadFixture kadFixture;
+    auto* indexed = Kademlia::getInstanceIndexed();
+    QTRY_VERIFY(indexed->isLoaded());
+    const UInt128 keyID(uint32{0x4B3E1});
+    auto* entry = new KeyEntry();
+    entry->m_address = Address::fromHostOrder(0x4D0A0B0C);
+    entry->setFileName(QStringLiteral("ubuntu.iso"));
+    entry->m_size = 1024;
+    uint8 load = 0;
+    QVERIFY(indexed->addKeyword(keyID, UInt128(uint32{0x70}), entry, load));
+
+    const auto request = [&](uint16 startPos, const QByteArray& expr) {
+        SafeMemFile io;
+        io.writeUInt8(KADEMLIA2_SEARCH_KEY_REQ);
+        io::writeUInt128(io, keyID);
+        io.writeUInt16(startPos);
+        if (!expr.isEmpty())
+            io.write(expr.constData(), expr.size());
+        return io.buffer();
+    };
+
+    SentSpy spy;
+    deliver(request(0x8000, QByteArray(1, char(0x07))), kNodeIP);   // unknown operator
+    deliver(request(0x8000, {}), kNodeIP + 0x100);                  // flag, no expression
+    QCOMPARE(spy.results, 0);
+
+    deliver(request(0, {}), kNodeIP + 0x200);                       // plain: answered
+    QCOMPARE(spy.results, 1);
+}
+
+namespace {
+
+constexpr uint32 kBootstrapIP = 0x4E010101;   // 78.1.1.1
+
+struct ListedContact {
+    UInt128 id;
+    uint32 ip;
+    uint8 version;
+};
+
+/// BOOTSTRAP_RES from kBootstrapIP listing @p contacts. Asks for it first, so it
+/// passes the out-track check.
+void bootstrapAnswer(const std::vector<ListedContact>& contacts)
+{
+    Kademlia::getInstanceUDPListener()->sendNullPacket(KADEMLIA2_BOOTSTRAP_REQ, kBootstrapIP,
+                                                       kNodeUdp, KadUDPKey(0), nullptr);
+    SafeMemFile io;
+    io.writeUInt8(KADEMLIA2_BOOTSTRAP_RES);
+    io::writeUInt128(io, UInt128(uint32{0xB007}));
+    io.writeUInt16(kNodeTcp);
+    io.writeUInt8(KADEMLIA_VERSION);
+    io.writeUInt16(static_cast<uint16>(contacts.size()));
+    for (const auto& c : contacts) {
+        io::writeUInt128(io, c.id);
+        io.writeUInt32(c.ip);
+        io.writeUInt16(kNodeUdp);
+        io.writeUInt16(kNodeTcp);
+        io.writeUInt8(c.version);
+    }
+    deliver(io.buffer(), kBootstrapIP);
+}
+
+const std::vector<ListedContact> kListed = {
+    {UInt128(uint32{0xC0A1}), 0x4D020001, KADEMLIA_VERSION},        // 77.2.0.1
+    {UInt128(uint32{0xC0A2}), 0x4F030001, KADEMLIA_VERSION8_49b},   // 79.3.0.1
+    {UInt128(uint32{0xC0A3}), 0x50040001, KADEMLIA_VERSION5_48a},   // 80.4.0.1, legacy
+};
+
+} // namespace
+
+// Cold start used to take every listed contact as IP-verified (MFC does), so one
+// forged answer could seed the table that lookups draw from.
+void tst_KadUDPListener::bootstrapRes_contactsStartUnverified()
+{
+    eMule::testing::KadFixture kadFixture;
+    auto* zone = Kademlia::getInstanceRoutingZone();
+    QCOMPARE(zone->getNumContacts(), uint32{0});
+
+    bootstrapAnswer(kListed);
+    for (const auto& c : kListed) {
+        const Contact* contact = zone->getContact(c.id);
+        QVERIFY(contact != nullptr);
+        QVERIFY(!contact->isIpVerified());
+    }
+}
+
+// Each new listed contact gets a HELLO right away; its answer verifies it.
+void tst_KadUDPListener::bootstrapRes_sendsHelloToEachContact()
+{
+    eMule::testing::KadFixture kadFixture;
+    std::vector<uint32> helloTo;
+    const auto conn = QObject::connect(Kademlia::getInstanceUDPListener(),
+                                       &KademliaUDPListener::packetToSend,
+                                       [&helloTo](const QByteArray& data, uint32 destIP) {
+        if (!data.isEmpty() && uint8(data[0]) == KADEMLIA2_HELLO_REQ)
+            helloTo.push_back(destIP);
+    });
+    const auto guard = qScopeGuard([&] { QObject::disconnect(conn); });
+
+    bootstrapAnswer(kListed);
+    QCOMPARE(helloTo.size(), kListed.size());
+    for (const auto& c : kListed)
+        QVERIFY(std::ranges::contains(helloTo, c.ip));
+
+    // Already known: listed again, no update and no second HELLO.
+    helloTo.clear();
+    bootstrapAnswer(kListed);
+    QVERIFY(helloTo.empty());
 }
 
 // A notes request is 24 bytes (MFC KademliaUDPListener.cpp:1457-1464).

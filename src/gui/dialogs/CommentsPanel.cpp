@@ -10,6 +10,7 @@
 #include "controls/SortableItems.h"
 #include "prefs/Preferences.h"
 #include "utils/RatingIcons.h"
+#include "app/SkinIcons.h"
 
 #include <QCborArray>
 #include <QGuiApplication>
@@ -129,7 +130,7 @@ void CommentsPanel::buildUi(const QString& stateKey)
 
     m_searchKadBtn = new QPushButton(tr("Search Kad"));
     if (thePrefs.useOriginalIcons())
-        m_searchKadBtn->setIcon(QIcon(QStringLiteral(":/icons/KadFileSearch.ico")));
+        m_searchKadBtn->setIcon(skinIcon(QStringLiteral(":/icons/KadFileSearch.ico")));
     connect(m_searchKadBtn, &QPushButton::clicked, this, [this]() {
         emit searchKadNotes(m_fileHash, m_fileName);
     });

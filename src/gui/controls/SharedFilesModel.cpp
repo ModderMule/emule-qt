@@ -3,6 +3,7 @@
 /// @brief Table model for the Shared Files list — implementation.
 
 #include "controls/SharedFilesModel.h"
+#include "app/SkinIcons.h"
 
 #include <QDir>
 #include <QSet>
@@ -56,15 +57,18 @@ QVariant networkIcons(bool ed2k, bool kad)
     if (!ed2k && !kad)
         return {};
     static QPixmap cache[4];
+    static quint64 skinSeen = 0;
+    if (SkinIcons::instance().changedSince(skinSeen))
+        std::ranges::fill(cache, QPixmap());
     QPixmap& pm = cache[(ed2k ? 1 : 0) | (kad ? 2 : 0)];
     if (pm.isNull()) {
         pm = QPixmap(36, 16);
         pm.fill(Qt::transparent);
         QPainter p(&pm);
         if (ed2k)
-            QIcon(QStringLiteral(":/icons/FileSharedServer.ico")).paint(&p, 0, 0, 16, 16);
+            skinIcon(QStringLiteral(":/icons/FileSharedServer.ico")).paint(&p, 0, 0, 16, 16);
         if (kad)
-            QIcon(QStringLiteral(":/icons/FileSharedKad.ico")).paint(&p, 20, 0, 16, 16);
+            skinIcon(QStringLiteral(":/icons/FileSharedKad.ico")).paint(&p, 20, 0, 16, 16);
     }
     return pm;
 }

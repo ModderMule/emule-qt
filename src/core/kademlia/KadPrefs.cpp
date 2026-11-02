@@ -96,8 +96,13 @@ void KadPrefs::setIPAddress(uint32 ip)
     // value here changes our effective public IP and invalidates every server
     // UDP key — and nothing calls AppContext::setPublicIP() to notice. Fired only
     // once the two-step check above has actually committed a new address.
-    if (m_ip != previous && m_ip != 0)
+    if (m_ip != previous && m_ip != 0) {
         theApp.onEffectivePublicIPChanged(m_ip);
+        // a real change, not the first address: NAT mappings and peers' view of us moved
+        if (previous != 0)
+            if (auto* kad = Kademlia::instance())
+                kad->onAddressChanged();
+    }
 }
 
 // ---------------------------------------------------------------------------

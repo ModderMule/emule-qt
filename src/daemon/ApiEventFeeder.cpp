@@ -53,7 +53,7 @@ void ApiEventFeeder::onPush(const Ipc::IpcMessage& msg)
     case IpcMsgType::PushServerState:
         state(QStringLiteral("connection.changed"),
               pick(msg.fieldMap(0), {"connected", "connecting", "lowID", "firewalled", "netBlocked",
-                                     "netBlockReason", "serverName", "serverAddress", "serverPort"}));
+                                     "netBlockReason", "offline", "offlineReason", "serverName", "serverAddress", "serverPort"}));
         break;
     case IpcMsgType::PushSearchResult:
         hint(QStringLiteral("search.results"));

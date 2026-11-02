@@ -6,6 +6,7 @@
 #include "net/quic/QuicNatEndpoint.h"
 #include "net/quic/QuicTls.h"
 #include "utils/Log.h"
+#include "utils/OtherFunctions.h"
 
 #include <ngtcp2/ngtcp2_crypto_ossl.h>
 #include <openssl/rand.h>
@@ -46,12 +47,10 @@ ngtcp2_conn* getConn(ngtcp2_crypto_conn_ref* ref)
     return static_cast<QuicNatConnection*>(ref->user_data)->conn();
 }
 
+// ngtcp2 rand callback returns void: CSPRNG with OS fallback, never std::rand()
 void randomBytes(uint8* dest, size_t len)
 {
-    if (RAND_bytes(dest, static_cast<int>(len)) != 1) {
-        for (size_t i = 0; i < len; ++i)
-            dest[i] = static_cast<uint8>(std::rand());
-    }
+    secureRandomBytes(dest, len);
 }
 
 void toSockaddr(const Endpoint& ep, sockaddr_storage& ss, ngtcp2_addr& out)

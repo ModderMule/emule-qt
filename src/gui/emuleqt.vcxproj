@@ -330,6 +330,9 @@
     <ClCompile Include="app\UiState.cpp" />
     <ClCompile Include="app\VersionChecker.cpp" />
     <ClCompile Include="app\SkinEngine.cpp" />
+    <ClCompile Include="app\SkinColors.cpp" />
+    <ClCompile Include="app\SkinIcons.cpp" />
+    <ClCompile Include="app\ToolbarSkin.cpp" />
     <ClCompile Include="app\main.cpp" />
     <ClCompile Include="utils\DialogSizing.cpp" />
     <ClCompile Include="utils\Ed2kLinkImporter.cpp" />
@@ -419,6 +422,8 @@
     <ClInclude Include="utils\StatusBarNotifier.h" />
     <ClInclude Include="utils\WebServices.h" />
     <ClInclude Include="app\SkinEngine.h" />
+    <QtMoc Include="app\SkinIcons.h" />
+    <ClInclude Include="app\ToolbarSkin.h" />
     <QtMoc Include="dialogs\AddFriendDialog.h" />
     <QtMoc Include="dialogs\RememberedSizeDialog.h" />
     <QtMoc Include="dialogs\CategoryDialog.h" />
@@ -523,6 +528,7 @@
     <QtMoc Include="panels\TransferPanel.h" />
     <QtMoc Include="controls\TransferToolbar.h" />
     <ClInclude Include="app\UiState.h" />
+    <QtMoc Include="app\SkinColors.h" />
     <QtMoc Include="app\VersionChecker.h" />
   </ItemGroup>
   <ItemGroup>

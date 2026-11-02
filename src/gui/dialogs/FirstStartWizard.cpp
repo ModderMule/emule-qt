@@ -6,12 +6,16 @@
 #include "dialogs/RouterPage.h"
 #include "dialogs/PortMapStatusText.h"
 
+#include "app/Ed2kSchemeHandler.h"
 #include "app/IpcClient.h"
+#include "app/UiState.h"
 #include "IpcMessage.h"
 #include "prefs/Preferences.h"
 #include "utils/DialogSizing.h"
 #include "utils/StringUtils.h"
 #include "utils/Appearance.h"
+#include "utils/Log.h"
+#include "app/SkinIcons.h"
 
 #include <QCheckBox>
 #include <QDesktopServices>
@@ -60,7 +64,7 @@ FirstStartWizard::FirstStartWizard(IpcClient* ipc, QWidget* parent, StartPage st
     , m_ipc(ipc)
 {
     setWindowTitle(tr("eMule First Runtime Wizard"));
-    setWindowIcon(QIcon(QStringLiteral(":/icons/Wizard.ico")));
+    setWindowIcon(skinIcon(QStringLiteral(":/icons/Wizard.ico")));
 
     auto* mainLayout = new QVBoxLayout(this);
     mainLayout->setContentsMargins(0, 0, 0, 8);
@@ -287,6 +291,7 @@ QWidget* FirstStartWizard::setupPortPage()
     auto* wrapperLayout = new QVBoxLayout(wrapper);
     wrapperLayout->setContentsMargins(16, 8, 16, 0);
     wrapperLayout->addWidget(group);
+    wrapperLayout->addWidget(setupDesktopRow(wrapper));
 
     // Same switch as Options > Display
     m_extControlsCheck = new QCheckBox(tr("Show more controls (advanced mode controls)"), wrapper);
@@ -298,6 +303,48 @@ QWidget* FirstStartWizard::setupPortPage()
     pageLayout->addWidget(wrapper);
     pageLayout->addStretch();
     return page;
+}
+
+// Asked here, before anything is claimed: the desktop is told on close (#111).
+// Same switches as Options (General, BitTorrent, Usenet).
+// One row, no frame: the wizard has to fit an 800x600 screen.
+QWidget* FirstStartWizard::setupDesktopRow(QWidget* parent)
+{
+    auto* group = new QWidget(parent);
+    auto* layout = new QHBoxLayout(group);
+    layout->setContentsMargins(0, 6, 0, 0);
+    layout->setSpacing(16);
+    layout->addWidget(new QLabel(tr("Open with eMule Qt:"), group));
+
+    m_assocEd2kCheck = new QCheckBox(tr("eD2K/ed3k links"), group);
+    m_assocEd2kCheck->setToolTip(tr("ed2k:// and ed3k: links in the browser"));
+    m_assocTorrentCheck = new QCheckBox(tr("Torrents"), group);
+    m_assocTorrentCheck->setToolTip(tr(".torrent files and magnet: links"));
+    m_assocNzbCheck = new QCheckBox(tr("NZB files"), group);
+    m_assocNzbCheck->setToolTip(tr(".nzb files for Usenet"));
+    m_assocEd2kCheck->setObjectName(QStringLiteral("wizardAssocEd2k"));
+    m_assocTorrentCheck->setObjectName(QStringLiteral("wizardAssocTorrent"));
+    m_assocNzbCheck->setObjectName(QStringLiteral("wizardAssocNzb"));
+
+    layout->addWidget(m_assocEd2kCheck);
+    layout->addWidget(m_assocTorrentCheck);
+    layout->addWidget(m_assocNzbCheck);
+    layout->addStretch();
+
+#ifdef Q_OS_MACOS
+    // the live default app: the system keeps the choice
+    m_claimedTypes = gui::FileAssociation::claimedTypes();
+    const gui::FileAssociation::FileTypes shown = m_claimedTypes;
+#else
+    gui::FileAssociation::FileTypes shown = savedFileTypes();
+    // never chosen: on, as for the other two
+    if (!theUiState.firstStartWizardDone())
+        shown.ed2k = theUiState.associateEd2kLinks().value_or(true);
+#endif
+    m_assocEd2kCheck->setChecked(shown.ed2k);
+    m_assocTorrentCheck->setChecked(shown.torrent);
+    m_assocNzbCheck->setChecked(shown.nzb);
+    return group;
 }
 
 // ---------------------------------------------------------------------------
@@ -865,8 +912,31 @@ void FirstStartWizard::finish()
         thePrefs.save();
     }
 
+    applyFileTypes();
+
     m_portsBefore = {};   // finished: nothing to take back
     accept();
+}
+
+void FirstStartWizard::applyFileTypes()
+{
+    const gui::FileAssociation::FileTypes wanted{.nzb = m_assocNzbCheck->isChecked(),
+                                                 .torrent = m_assocTorrentCheck->isChecked(),
+                                                 .ed2k = m_assocEd2kCheck->isChecked()};
+#ifdef Q_OS_MACOS
+    // only a change: LaunchServices may ask the user about each one
+    if (wanted.nzb == m_claimedTypes.nzb && wanted.torrent == m_claimedTypes.torrent
+        && wanted.ed2k == m_claimedTypes.ed2k)
+        return;
+    QString error;
+    if (!gui::FileAssociation::applyFileTypes(wanted, error))
+        logWarning(QStringLiteral("Could not update the file associations: %1").arg(error));
+#else
+    // stored only; MainWindow applies it once the wizard is closed
+    theUiState.setAssociateNzbFiles(wanted.nzb);
+    theUiState.setAssociateTorrentFiles(wanted.torrent);
+    theUiState.setAssociateEd2kLinks(wanted.ed2k);
+#endif
 }
 
 void FirstStartWizard::requestPortMapStatus()

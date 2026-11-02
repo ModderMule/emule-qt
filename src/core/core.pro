@@ -95,6 +95,7 @@ SOURCES += \
     crypto/FileIdentifier.cpp \
     crypto/MD4Hash.cpp \
     crypto/AesCbc.cpp \
+    crypto/SecretCompare.cpp \
     crypto/SelfSignedCert.cpp \
     crypto/MD5Hash.cpp \
     crypto/SHAHash.cpp \
@@ -119,6 +120,7 @@ SOURCES += \
     geo/HostCountryResolver.cpp \
     geo/IP2Country.cpp \
     kademlia/Kademlia.cpp \
+    kademlia/KadNetworkWatch.cpp \
     kademlia/KadContact.cpp \
     kademlia/KadEntry.cpp \
     kademlia/KadFirewallTester.cpp \
@@ -155,7 +157,9 @@ SOURCES += \
     httpcache/HttpCacheOffer.cpp \
     httpcache/HttpCachePublisher.cpp \
     httpcache/HttpCacheServerProbe.cpp \
+    net/ConnectionChecker.cpp \
     net/HttpFileDownload.cpp \
+    net/ScheduledUpdater.cpp \
     net/HttpStreamDownload.cpp \
 
     net/MetaFileCache.cpp \
@@ -228,6 +232,7 @@ SOURCES += \
     webserver/WebServerApi.cpp \
     webserver/WebServerMcp.cpp \
     webserver/WebServerTorrents.cpp \
+    webserver/StreamTokenStore.cpp \
     webserver/WebSessionManager.cpp \
     webserver/WebTemplateEngine.cpp
 
@@ -259,6 +264,7 @@ HEADERS += \
     crypto/FileIdentifier.h \
     crypto/MD4Hash.h \
     crypto/AesCbc.h \
+    crypto/SecretCompare.h \
     crypto/SelfSignedCert.h \
     crypto/MD5Hash.h \
     crypto/SHAHash.h \
@@ -284,6 +290,7 @@ HEADERS += \
     geo/HostCountryResolver.h \
     geo/IP2Country.h \
     kademlia/Kademlia.h \
+    kademlia/KadNetworkWatch.h \
     kademlia/KadClientSearcher.h \
     kademlia/KadContact.h \
     kademlia/KadEntry.h \
@@ -326,7 +333,10 @@ HEADERS += \
     httpcache/HttpCacheServerProbe.h \
     httpcache/HttpCacheTypes.h \
     net/HttpDefaults.h \
+    net/ConnectionChecker.h \
     net/HttpFileDownload.h \
+    net/HttpValidators.h \
+    net/ScheduledUpdater.h \
     net/HttpStreamDownload.h \
     net/MetaFileCache.h \
     net/PortTestApi.h \
@@ -420,6 +430,7 @@ HEADERS += \
     webserver/UsenetWebBackend.h \
     webserver/WebTemplateStrings.h \
     webserver/WebServer.h \
+    webserver/StreamTokenStore.h \
     webserver/WebSessionManager.h \
     webserver/WebTemplateEngine.h
 

@@ -6,6 +6,7 @@
 
 #include "app/IpcClient.h"
 #include "app/UiState.h"
+#include "app/SkinColors.h"
 #include "controls/StatsGraph.h"
 #include "prefs/NewsServer.h"
 #include "prefs/Preferences.h"
@@ -17,6 +18,7 @@
 #include "utils/StringUtils.h"
 
 #include "IpcMessage.h"
+#include "app/SkinIcons.h"
 
 #include <QApplication>
 #include <QBuffer>
@@ -277,6 +279,8 @@ void StatisticsPanel::setupUi()
     // column layout to persist. Its expansion state is kept by bindStatsTree().
     m_tree = new QTreeWidget(treeContainer);
     m_tree->setHeaderHidden(true);
+    // MFC StatisticsDlg.cpp:133: StatisticsTv*, else DefLv*
+    SkinColors::bind(m_tree, {QStringLiteral("StatisticsTv"), QStringLiteral("DefLv")});
     m_tree->setColumnCount(1);
     m_tree->setRootIsDecorated(true);
     m_tree->setIndentation(16);
@@ -363,13 +367,13 @@ void StatisticsPanel::buildTree()
 {
     m_tree->clear();
 
-    const auto detailIcon = QIcon(QStringLiteral(":/icons/StatisticsDetail.ico"));
+    const auto detailIcon = skinIcon(QStringLiteral(":/icons/StatisticsDetail.ico"));
     // MFC keeps a separate icon for every Cumulative node (StatisticsDlg.cpp:106-128).
-    const auto cumulativeIcon = QIcon(QStringLiteral(":/icons/StatsCumulative.ico"));
+    const auto cumulativeIcon = skinIcon(QStringLiteral(":/icons/StatsCumulative.ico"));
 
     // ===== Transfer =====
     auto* transfer = new QTreeWidgetItem(m_tree, {tr("Transfer")});
-    transfer->setIcon(0, QIcon(QStringLiteral(":/icons/TransferUpDown.ico")));
+    transfer->setIcon(0, skinIcon(QStringLiteral(":/icons/TransferUpDown.ico")));
 
     const QString waiting = tr("Waiting...");
     m_itemSessionUlDlRatio = new QTreeWidgetItem(transfer, {tr("Session UL:DL Ratio: %1").arg(waiting)});
@@ -379,7 +383,7 @@ void StatisticsPanel::buildTree()
 
     // --- Uploads ---
     auto* uploads = new QTreeWidgetItem(transfer, {tr("Uploads")});
-    uploads->setIcon(0, QIcon(QStringLiteral(":/icons/Upload.ico")));
+    uploads->setIcon(0, skinIcon(QStringLiteral(":/icons/Upload.ico")));
 
     // Uploads > Session
     auto* upSession = new QTreeWidgetItem(uploads, {tr("Session")});
@@ -446,7 +450,7 @@ void StatisticsPanel::buildTree()
 
     // --- Downloads ---
     auto* downloads = new QTreeWidgetItem(transfer, {tr("Downloads")});
-    downloads->setIcon(0, QIcon(QStringLiteral(":/icons/Download.ico")));
+    downloads->setIcon(0, skinIcon(QStringLiteral(":/icons/Download.ico")));
 
     // Downloads > Session
     auto* downSession = new QTreeWidgetItem(downloads, {tr("Session")});
@@ -529,14 +533,14 @@ void StatisticsPanel::buildTree()
 
     // ===== Connection =====
     auto* connection = new QTreeWidgetItem(m_tree, {tr("Connection")});
-    connection->setIcon(0, QIcon(QStringLiteral(":/icons/Connection.ico")));
+    connection->setIcon(0, skinIcon(QStringLiteral(":/icons/Connection.ico")));
 
     // Connection > Session
     auto* connSession = new QTreeWidgetItem(connection, {tr("Session")});
     connSession->setIcon(0, detailIcon);
 
     auto* connSesGen = new QTreeWidgetItem(connSession, {tr("General")});
-    connSesGen->setIcon(0, QIcon(QStringLiteral(":/icons/TransferUpDown.ico")));
+    connSesGen->setIcon(0, skinIcon(QStringLiteral(":/icons/TransferUpDown.ico")));
     m_itemConnReconnects = new QTreeWidgetItem(connSesGen, {tr("Reconnects: %1").arg(0)});
     m_itemConnActive = new QTreeWidgetItem(connSesGen);
     m_itemConnAverage = new QTreeWidgetItem(connSesGen);
@@ -544,14 +548,14 @@ void StatisticsPanel::buildTree()
     m_itemConnMaxReached = new QTreeWidgetItem(connSesGen);
 
     auto* connSesUp = new QTreeWidgetItem(connSession, {tr("Uploads")});
-    connSesUp->setIcon(0, QIcon(QStringLiteral(":/icons/Upload.ico")));
+    connSesUp->setIcon(0, skinIcon(QStringLiteral(":/icons/Upload.ico")));
     m_itemConnSesUpSpeed = new QTreeWidgetItem(connSesUp, {tr("Upload Speed: 0 KB/s")});
     m_itemConnSesAvgUp = new QTreeWidgetItem(connSesUp);
     m_itemConnSesMaxUp = new QTreeWidgetItem(connSesUp, {tr("Max Upload Rate: 0 KB/s")});
     m_itemConnSesMaxAvgUp = new QTreeWidgetItem(connSesUp, {tr("Max Average Upload Rate: 0 KB/s")});
 
     auto* connSesDown = new QTreeWidgetItem(connSession, {tr("Downloads")});
-    connSesDown->setIcon(0, QIcon(QStringLiteral(":/icons/Download.ico")));
+    connSesDown->setIcon(0, skinIcon(QStringLiteral(":/icons/Download.ico")));
     m_itemConnSesDownSpeed = new QTreeWidgetItem(connSesDown, {tr("Download Speed: 0 KB/s")});
     m_itemConnSesAvgDown = new QTreeWidgetItem(connSesDown);
     m_itemConnSesMaxDown = new QTreeWidgetItem(connSesDown, {tr("Max Download Rate: 0 KB/s")});
@@ -562,27 +566,27 @@ void StatisticsPanel::buildTree()
     connCum->setIcon(0, cumulativeIcon);
 
     auto* connCumGen = new QTreeWidgetItem(connCum, {tr("General")});
-    connCumGen->setIcon(0, QIcon(QStringLiteral(":/icons/TransferUpDown.ico")));
+    connCumGen->setIcon(0, skinIcon(QStringLiteral(":/icons/TransferUpDown.ico")));
     m_itemConnCumReconnects = new QTreeWidgetItem(connCumGen, {tr("Reconnects: %1").arg(0)});
     m_itemConnCumAverage = new QTreeWidgetItem(connCumGen);
     m_itemConnCumPeak = new QTreeWidgetItem(connCumGen);
     m_itemConnCumMaxReached = new QTreeWidgetItem(connCumGen);
 
     auto* connCumUp = new QTreeWidgetItem(connCum, {tr("Uploads")});
-    connCumUp->setIcon(0, QIcon(QStringLiteral(":/icons/Upload.ico")));
+    connCumUp->setIcon(0, skinIcon(QStringLiteral(":/icons/Upload.ico")));
     m_itemConnCumAvgUp = new QTreeWidgetItem(connCumUp, {tr("Average Upload Rate: 0 KB/s")});
     m_itemConnCumMaxUp = new QTreeWidgetItem(connCumUp, {tr("Max Upload Rate: 0 KB/s")});
     m_itemConnCumMaxAvgUp = new QTreeWidgetItem(connCumUp, {tr("Max Average Upload Rate: 0 KB/s")});
 
     auto* connCumDown = new QTreeWidgetItem(connCum, {tr("Downloads")});
-    connCumDown->setIcon(0, QIcon(QStringLiteral(":/icons/Download.ico")));
+    connCumDown->setIcon(0, skinIcon(QStringLiteral(":/icons/Download.ico")));
     m_itemConnCumAvgDown = new QTreeWidgetItem(connCumDown, {tr("Average Download Rate: 0 KB/s")});
     m_itemConnCumMaxDown = new QTreeWidgetItem(connCumDown, {tr("Max Download Rate: 0 KB/s")});
     m_itemConnCumMaxAvgDown = new QTreeWidgetItem(connCumDown, {tr("Max Average Download Rate: 0 KB/s")});
 
     // ===== Time Statistics =====
     m_itemTimeHeader = new QTreeWidgetItem(m_tree, {tr("Time Statistics")});
-    m_itemTimeHeader->setIcon(0, QIcon(QStringLiteral(":/icons/StatsTime.ico")));
+    m_itemTimeHeader->setIcon(0, skinIcon(QStringLiteral(":/icons/StatsTime.ico")));
     m_itemStatsLastReset = new QTreeWidgetItem(m_itemTimeHeader,
                                                {tr("Statistics Last Reset: %1").arg(tr("Unknown"))});
     m_itemTimeSinceReset = new QTreeWidgetItem(m_itemTimeHeader,
@@ -611,7 +615,7 @@ void StatisticsPanel::buildTree()
 
     // ===== Clients =====
     auto* clients = new QTreeWidgetItem(m_tree, {tr("Clients")});
-    clients->setIcon(0, QIcon(QStringLiteral(":/icons/User.ico")));
+    clients->setIcon(0, skinIcon(QStringLiteral(":/icons/User.ico")));
     m_itemKnownClients = new QTreeWidgetItem(clients, {tr("Known Clients: 0")});
     m_itemClientSoftware = new QTreeWidgetItem(clients, {tr("Client Software")});
     // MFC order (StatisticsDlg.cpp:2732-2751): Software, Network, Port, [Firewalled —
@@ -651,7 +655,7 @@ void StatisticsPanel::buildTree()
 
     // ===== Servers =====
     auto* servers = new QTreeWidgetItem(m_tree, {tr("Servers")});
-    servers->setIcon(0, QIcon(QStringLiteral(":/icons/Server.ico")));
+    servers->setIcon(0, skinIcon(QStringLiteral(":/icons/Server.ico")));
     m_itemSrvWorking = new QTreeWidgetItem(servers, {tr("Working Servers: 0")});
     m_itemSrvWorkUsers = new QTreeWidgetItem(m_itemSrvWorking);
     m_itemSrvWorkFiles = new QTreeWidgetItem(m_itemSrvWorking);
@@ -663,21 +667,21 @@ void StatisticsPanel::buildTree()
     m_itemSrvFiles = new QTreeWidgetItem(servers, {tr("Total Files: 0")});
 
     auto* srvRecords = new QTreeWidgetItem(servers, {tr("Records")});
-    srvRecords->setIcon(0, QIcon(QStringLiteral(":/icons/Records.ico")));
+    srvRecords->setIcon(0, skinIcon(QStringLiteral(":/icons/Records.ico")));
     m_itemSrvRecWorking = new QTreeWidgetItem(srvRecords, {tr("Most Working Servers: 0")});
     m_itemSrvRecUsers = new QTreeWidgetItem(srvRecords, {tr("Most Users Online: 0")});
     m_itemSrvRecFiles = new QTreeWidgetItem(srvRecords, {tr("Most Files Available: 0")});
 
     // ===== Shared Files =====
     auto* shared = new QTreeWidgetItem(m_tree, {tr("Shared Files")});
-    shared->setIcon(0, QIcon(QStringLiteral(":/icons/SharedFiles.ico")));
+    shared->setIcon(0, skinIcon(QStringLiteral(":/icons/SharedFiles.ico")));
     m_itemSharedCount = new QTreeWidgetItem(shared, {tr("Number of Shared Files: %1").arg(0)});
     m_itemSharedAvgSize = new QTreeWidgetItem(shared);
     m_itemSharedLargest = new QTreeWidgetItem(shared);
     m_itemSharedSize = new QTreeWidgetItem(shared);
 
     auto* sharedRecords = new QTreeWidgetItem(shared, {tr("Records")});
-    sharedRecords->setIcon(0, QIcon(QStringLiteral(":/icons/Records.ico")));
+    sharedRecords->setIcon(0, skinIcon(QStringLiteral(":/icons/Records.ico")));
     m_itemSharedRecCount = new QTreeWidgetItem(sharedRecords);
     m_itemSharedRecAvg = new QTreeWidgetItem(sharedRecords);
     m_itemSharedRecLargest = new QTreeWidgetItem(sharedRecords);
@@ -685,7 +689,7 @@ void StatisticsPanel::buildTree()
 
     // ===== Disk Space ===== (MFC IDS_DWTOT, StatisticsDlg.cpp:2412-2437)
     auto* totalDown = new QTreeWidgetItem(m_tree, {tr("Disk Space")});
-    totalDown->setIcon(0, QIcon(QStringLiteral(":/icons/HardDisk.ico")));   // as MFC
+    totalDown->setIcon(0, skinIcon(QStringLiteral(":/icons/HardDisk.ico")));   // as MFC
     m_itemTotalDownCount = new QTreeWidgetItem(totalDown);
     m_itemTotalDownSize = new QTreeWidgetItem(totalDown);
     m_itemTotalDownDone = new QTreeWidgetItem(totalDown);
@@ -916,7 +920,7 @@ double StatisticsPanel::projected(qint64 value, qint64 period, qint64 sinceReset
 void StatisticsPanel::buildProjectedAverages()
 {
     auto* root = new QTreeWidgetItem(m_itemTimeHeader, {tr("Projected Averages")});
-    root->setIcon(0, QIcon(QStringLiteral(":/icons/StatsProjected.ico")));
+    root->setIcon(0, skinIcon(QStringLiteral(":/icons/StatsProjected.ico")));
 
     const std::array<QString, 3> periodNames = {tr("Daily"), tr("Monthly"), tr("Yearly")};
     const std::array<const char*, 3> periodIcons = {"StatsDay.ico", "StatsMonth.ico", "StatsYear.ico"};
@@ -925,7 +929,7 @@ void StatisticsPanel::buildProjectedAverages()
     for (std::size_t p = 0; p < m_projectedRows.size(); ++p) {
         auto& rows = m_projectedRows[p];
         auto* period = new QTreeWidgetItem(root, {periodNames[p]});
-        period->setIcon(0, QIcon(QStringLiteral(":/icons/") + QLatin1StringView(periodIcons[p])));
+        period->setIcon(0, skinIcon(QStringLiteral(":/icons/") + QLatin1StringView(periodIcons[p])));
 
         const auto add = [&rows](QTreeWidgetItem* parent, Row::Kind kind, const QString& label,
                                  const QStringList& keys, const QString& second = {}) {
@@ -967,7 +971,7 @@ void StatisticsPanel::buildProjectedAverages()
 
         // Uploads
         auto* up = new QTreeWidgetItem(period, {tr("Uploads")});
-        up->setIcon(0, QIcon(QStringLiteral(":/icons/Upload.ico")));
+        up->setIcon(0, skinIcon(QStringLiteral(":/icons/Upload.ico")));
         const QString totalUp = QStringLiteral("cumTotalUp");
         auto* upData = add(up, Row::Bytes, tr("Uploaded Data"), {totalUp});
         addClients(upData, QStringLiteral("cumUp"), kUpClientLabels, totalUp);
@@ -982,7 +986,7 @@ void StatisticsPanel::buildProjectedAverages()
 
         // Downloads
         auto* down = new QTreeWidgetItem(period, {tr("Downloads")});
-        down->setIcon(0, QIcon(QStringLiteral(":/icons/Download.ico")));
+        down->setIcon(0, skinIcon(QStringLiteral(":/icons/Download.ico")));
         const QString totalDown = QStringLiteral("cumTotalDown");
         auto* downData = add(down, Row::Bytes, tr("Downloaded Data"), {totalDown});
         addClients(downData, QStringLiteral("cumDown"), kDownClientLabels, totalDown);
@@ -2012,7 +2016,7 @@ QMenu* StatisticsPanel::buildStatsMenu()
     menu->addSeparator();
 
     // MFC's "HTML Features" submenu (srchybrid/StatisticsTree.cpp:144-151), advanced mode only
-    QMenu* html = menu->addMenu(QIcon(QStringLiteral(":/icons/Web.ico")), tr("HTML Features"));
+    QMenu* html = menu->addMenu(skinIcon(QStringLiteral(":/icons/Web.ico")), tr("HTML Features"));
     html->addAction(tr("Copy Branch"), this, [this] { copyHtml(true, true); });
     html->addAction(tr("Copy All Visible"), this, [this] { copyHtml(true, false); });
     html->addAction(tr("Copy All Statistics"), this, [this] { copyHtml(false, false); });
@@ -2411,7 +2415,7 @@ void StatisticsPanel::buildBtBranch(const QIcon& detailIcon, const QIcon& cumula
 {
     // Fixed text down to depth 1, as in the Usenet branch
     m_itemBt = new QTreeWidgetItem(m_tree, {tr("BitTorrent")});
-    m_itemBt->setIcon(0, QIcon(QStringLiteral(":/icons/Torrent.ico")));
+    m_itemBt->setIcon(0, skinIcon(QStringLiteral(":/icons/Torrent.ico")));
 
     auto* session = new QTreeWidgetItem(m_itemBt, {tr("Session")});
     session->setIcon(0, detailIcon);
@@ -2424,7 +2428,7 @@ void StatisticsPanel::buildBtBranch(const QIcon& detailIcon, const QIcon& cumula
     buildCounterRows(cumulative, btCounterRows(), false, m_btCumulativeRows);
 
     auto* torrents = new QTreeWidgetItem(m_itemBt, {tr("Torrents")});
-    torrents->setIcon(0, QIcon(QStringLiteral(":/icons/Download.ico")));
+    torrents->setIcon(0, skinIcon(QStringLiteral(":/icons/Download.ico")));
     m_btTorrentRows.clear();
     buildCounterRows(torrents, btTorrentRows(), true, m_btTorrentRows);
 
@@ -2501,7 +2505,7 @@ void StatisticsPanel::buildHosterBranch(const QIcon& detailIcon, const QIcon& cu
 {
     // Fixed text down to depth 1, as in the BitTorrent branch
     m_itemHoster = new QTreeWidgetItem(m_tree, {tr("Hoster")});
-    m_itemHoster->setIcon(0, QIcon(QStringLiteral(":/icons/Hoster.ico")));
+    m_itemHoster->setIcon(0, skinIcon(QStringLiteral(":/icons/Hoster.ico")));
 
     auto* session = new QTreeWidgetItem(m_itemHoster, {tr("Session")});
     session->setIcon(0, detailIcon);
@@ -2514,7 +2518,7 @@ void StatisticsPanel::buildHosterBranch(const QIcon& detailIcon, const QIcon& cu
     buildCounterRows(cumulative, hosterCounterRows(), false, m_hosterCumulativeRows);
 
     auto* links = new QTreeWidgetItem(m_itemHoster, {tr("Links")});
-    links->setIcon(0, QIcon(QStringLiteral(":/icons/Download.ico")));
+    links->setIcon(0, skinIcon(QStringLiteral(":/icons/Download.ico")));
     m_hosterItemRows.clear();
     buildCounterRows(links, hosterItemRows(), true, m_hosterItemRows);
 
@@ -2573,7 +2577,7 @@ std::span<const StatisticsPanel::CounterRow> StatisticsPanel::ed3kCounterRows()
 void StatisticsPanel::buildEd3kBranch(const QIcon& detailIcon, const QIcon& cumulativeIcon)
 {
     m_itemEd3k = new QTreeWidgetItem(m_tree, {tr("ed3k")});
-    m_itemEd3k->setIcon(0, QIcon(QStringLiteral(":/icons/Ed3k.ico")));
+    m_itemEd3k->setIcon(0, skinIcon(QStringLiteral(":/icons/Ed3k.ico")));
     m_itemEd3kStatus = new QTreeWidgetItem(m_itemEd3k);
     m_itemEd3kNode = new QTreeWidgetItem(m_itemEd3k);
     m_itemEd3kClass = new QTreeWidgetItem(m_itemEd3k);
@@ -2590,7 +2594,7 @@ void StatisticsPanel::buildEd3kBranch(const QIcon& detailIcon, const QIcon& cumu
     buildCounterRows(cumulative, ed3kCounterRows(), false, m_ed3kCumulativeRows);
 
     m_itemEd3kCredit = new QTreeWidgetItem(m_itemEd3k, {tr("Credits")});
-    m_itemEd3kCredit->setIcon(0, QIcon(QStringLiteral(":/icons/Rating.ico")));
+    m_itemEd3kCredit->setIcon(0, skinIcon(QStringLiteral(":/icons/Rating.ico")));
     for (auto& item : m_ed3kCreditItems)
         item = new QTreeWidgetItem(m_itemEd3kCredit);
 
@@ -2706,7 +2710,7 @@ void StatisticsPanel::buildUsenetBranch(const QIcon& detailIcon, const QIcon& cu
     // Every label down to depth 1 is fixed text: UiState remembers expansion by
     // it, so a value in one of these would forget the state on every update.
     m_itemUsenet = new QTreeWidgetItem(m_tree, {tr("Usenet")});
-    m_itemUsenet->setIcon(0, QIcon(QStringLiteral(":/icons/Usenet.ico")));
+    m_itemUsenet->setIcon(0, skinIcon(QStringLiteral(":/icons/Usenet.ico")));
 
     auto* session = new QTreeWidgetItem(m_itemUsenet, {tr("Session")});
     session->setIcon(0, detailIcon);
@@ -2720,10 +2724,10 @@ void StatisticsPanel::buildUsenetBranch(const QIcon& detailIcon, const QIcon& cu
 
     // Filled per reply, one child per account (updateNewsServers()).
     m_itemUsenetServers = new QTreeWidgetItem(m_itemUsenet, {tr("News Servers")});
-    m_itemUsenetServers->setIcon(0, QIcon(QStringLiteral(":/icons/Server.ico")));
+    m_itemUsenetServers->setIcon(0, skinIcon(QStringLiteral(":/icons/Server.ico")));
 
     auto* queue = new QTreeWidgetItem(m_itemUsenet, {tr("Queue")});
-    queue->setIcon(0, QIcon(QStringLiteral(":/icons/Download.ico")));
+    queue->setIcon(0, skinIcon(QStringLiteral(":/icons/Download.ico")));
     m_usenetQueueRows.clear();
     buildCounterRows(queue, usenetQueueRows(), true, m_usenetQueueRows);
 
@@ -2822,7 +2826,7 @@ void StatisticsPanel::buildKademliaBranch(const QIcon& detailIcon, const QIcon& 
 {
     // Fixed text down to depth 1, as in the Usenet branch.
     m_itemKad = new QTreeWidgetItem(m_tree, {tr("Kademlia")});
-    m_itemKad->setIcon(0, QIcon(QStringLiteral(":/icons/Kad.ico")));
+    m_itemKad->setIcon(0, skinIcon(QStringLiteral(":/icons/Kad.ico")));
 
     const QString estimate =
         tr("Different nodes, counted by node ID. An estimate, accurate to about 2%.");
@@ -2837,13 +2841,13 @@ void StatisticsPanel::buildKademliaBranch(const QIcon& detailIcon, const QIcon& 
             m_itemKadStatus = new QTreeWidgetItem(scope);
 
         auto* table = new QTreeWidgetItem(scope, {tr("Routing Table")});
-        table->setIcon(0, QIcon(QStringLiteral(":/icons/KadContactList.ico")));
+        table->setIcon(0, skinIcon(QStringLiteral(":/icons/KadContactList.ico")));
         buildCounterRows(table, kadTableRows(), live, rows);
         if (live)
             m_itemKadVersions = new QTreeWidgetItem(table, {tr("By Version")});
 
         auto* nodes = new QTreeWidgetItem(scope, {tr("Nodes")});
-        nodes->setIcon(0, QIcon(QStringLiteral(":/icons/Contact0.ico")));
+        nodes->setIcon(0, skinIcon(QStringLiteral(":/icons/Contact0.ico")));
         buildCounterRows(nodes, kadNodeRows(), live, rows);
         countries = new QTreeWidgetItem(nodes, {tr("By Country")});
         countries->setToolTip(0, tr("Nodes that sent us a packet, by the country of the "
@@ -2851,12 +2855,12 @@ void StatisticsPanel::buildKademliaBranch(const QIcon& detailIcon, const QIcon& 
 
         if (live) {
             auto* network = new QTreeWidgetItem(scope, {tr("Network")});
-            network->setIcon(0, QIcon(QStringLiteral(":/icons/KadServer.ico")));
+            network->setIcon(0, skinIcon(QStringLiteral(":/icons/KadServer.ico")));
             buildCounterRows(network, kadNetworkRows(), live, rows);
         }
 
         auto* activity = new QTreeWidgetItem(scope, {tr("Activity")});
-        activity->setIcon(0, QIcon(QStringLiteral(":/icons/KadCurrentSearches.ico")));
+        activity->setIcon(0, skinIcon(QStringLiteral(":/icons/KadCurrentSearches.ico")));
         buildCounterRows(activity, kadActivityRows(), live, rows);
 
         for (const auto& [row, item] : rows) {
@@ -2991,7 +2995,7 @@ void StatisticsPanel::buildHttpCacheBranch(QTreeWidgetItem* transfer, const QIco
     // are split the way Transfer itself is, arrows included: publishing and
     // fetching share nothing but the cache server.
     auto* httpCache = new QTreeWidgetItem(transfer, {tr("HTTP Cache")});
-    httpCache->setIcon(0, QIcon(QStringLiteral(":/icons/TransferUpDown.ico")));
+    httpCache->setIcon(0, skinIcon(QStringLiteral(":/icons/TransferUpDown.ico")));
 
     const auto buildScopes = [&](QTreeWidgetItem* parent, std::span<const CounterRow> rows,
                                  QList<CounterItem>& sessionOut, QList<CounterItem>& cumOut) {
@@ -3007,11 +3011,11 @@ void StatisticsPanel::buildHttpCacheBranch(QTreeWidgetItem* transfer, const QIco
     };
 
     auto* uploads = new QTreeWidgetItem(httpCache, {tr("Uploads")});
-    uploads->setIcon(0, QIcon(QStringLiteral(":/icons/Upload.ico")));
+    uploads->setIcon(0, skinIcon(QStringLiteral(":/icons/Upload.ico")));
     buildScopes(uploads, httpCacheUploadRows(), m_hcUpSessionRows, m_hcUpCumulativeRows);
 
     auto* downloads = new QTreeWidgetItem(httpCache, {tr("Downloads")});
-    downloads->setIcon(0, QIcon(QStringLiteral(":/icons/Download.ico")));
+    downloads->setIcon(0, skinIcon(QStringLiteral(":/icons/Download.ico")));
     buildScopes(downloads, httpCacheDownloadRows(), m_hcDownSessionRows, m_hcDownCumulativeRows);
 
     const QHash<QString, qint64> zeros;

@@ -53,9 +53,13 @@ HosterPuzzleDialog::HosterPuzzleDialog(const QByteArray& image, const QString& h
     auto* buttons = new QDialogButtonBox(QDialogButtonBox::Ok, this);
     auto* skip = buttons->addButton(tr("Skip"), QDialogButtonBox::RejectRole);
     skip->setToolTip(tr("Skip this puzzle; another link of the file is tried. Retry asks again."));
-    auto* skipHoster = buttons->addButton(tr("Skip hoster"), QDialogButtonBox::RejectRole);
+    // ActionRole: a RejectRole button's box handler runs before ours and rejects with the flag unset
+    auto* skipHoster = buttons->addButton(tr("Skip hoster"), QDialogButtonBox::ActionRole);
     skipHoster->setToolTip(tr("Skip every puzzle of %1 until you retry a download there").arg(host));
-    connect(skipHoster, &QPushButton::clicked, this, [this] { m_skipHoster = true; });
+    connect(skipHoster, &QPushButton::clicked, this, [this] {
+        m_skipHoster = true;
+        reject();
+    });
     connect(buttons, &QDialogButtonBox::accepted, this, &QDialog::accept);
     connect(buttons, &QDialogButtonBox::rejected, this, &QDialog::reject);
     layout->addWidget(buttons);

@@ -133,6 +133,7 @@ private slots:
     void unrequestedChallenge_isIgnored();
     void challengeAfterOurMessage_isShownAndAnswered();
     void oversizedChallenge_isIgnored();
+    void hugeDeclaredDimensionsAreRejectedBeforeDecode();
     void message_lengthMustMatchThePacket();
     void message_isCutAtTheClientLimit();
 
@@ -296,6 +297,29 @@ void tst_ChatCaptcha::oversizedChallenge_isIgnored()
 
     QCOMPARE(request.count(), 0);
     QCOMPARE(p.client.chatCaptchaState(), ChatCaptchaState::Accepting);
+}
+
+void tst_ChatCaptcha::hugeDeclaredDimensionsAreRejectedBeforeDecode()
+{
+    ChatPeer p;
+    QSignalSpy request(&p.client, &UpDownClient::captchaRequestReceived);
+    p.client.sendChatMessage(QStringLiteral("hi"));
+
+    // Few bytes on the wire, but the BMP info header claims 30000x30000
+    QByteArray wire = stockCaptchaRequest();
+    QVERIFY(wire.size() < 4096);
+    QVERIFY(wire.size() > 1 + 26);
+    const qint32 huge = 30000;
+    std::memcpy(wire.data() + 1 + 18, &huge, 4);   // biWidth
+    std::memcpy(wire.data() + 1 + 22, &huge, 4);   // biHeight
+    QVERIFY(p.sock.deliver(OP_EMULEPROT, OP_CHATCAPTCHAREQ, wire));
+
+    QCOMPARE(request.count(), 0);
+    QCOMPARE(p.client.chatCaptchaState(), ChatCaptchaState::Accepting);
+
+    // Still accepting: the stock-shaped one goes through afterwards
+    QVERIFY(p.sock.deliver(OP_EMULEPROT, OP_CHATCAPTCHAREQ, stockCaptchaRequest()));
+    QCOMPARE(request.count(), 1);
 }
 
 void tst_ChatCaptcha::message_lengthMustMatchThePacket()

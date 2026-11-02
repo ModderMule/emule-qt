@@ -15,6 +15,7 @@
 #include <QStringList>
 
 #include <cstdint>
+#include <functional>
 #include <vector>
 
 namespace eMule {
@@ -48,6 +49,7 @@ struct SearchResultRow {
     int64_t length = 0;
     int64_t bitrate = 0;
     int knownType = 0;
+    QString localFolder;        ///< where this host keeps the file (ext controls column)
     bool seenBefore = false;    ///< on record before this search (daemon seen-files index)
     int seenNames = 0;          ///< names it has been seen under
     int64_t firstSeen = 0;      ///< unix seconds; 0 = not on record
@@ -173,6 +175,7 @@ public:
         ColFileID,
         ColFolder,
         ColAichHash,
+        ColLocalFolder,  ///< not MFC: our copy's folder, ext controls only (#114)
         ColCount
     };
 
@@ -225,6 +228,9 @@ public:
     /// Batch-update knownType by hash. Map: hash → knownType.
     void updateKnownTypes(const QHash<QString, int>& typesByHash);
 
+    /// Batch-update the local folder by hash. Map: hash → folder (empty = none).
+    void updateLocalFolders(const QHash<QString, QString>& foldersByHash);
+
     /// Set @p knownType on every row of the NZB @p hash belongs to: a file row
     /// queues the whole NZB, so all its rows share one state.
     void setUsenetReleaseKnownType(const QString& hash, int knownType);
@@ -235,6 +241,10 @@ public:
     /// Batch-update Usenet rows by release key (see usenetReleaseKey()).
     void updateUsenetKnownTypes(const QHash<QString, int>& typesByRelease);
 
+    /// hash → is that download paused or stopped (MFC Fg_DownloadStopped). Empty = never.
+    using PausedLookup = std::function<bool(const QString& hash)>;
+    void setPausedLookup(PausedLookup lookup);
+
 private:
     [[nodiscard]] QVariant childData(const SearchResultRow& r, const SearchChildRow& c,
                                      int column, int role) const;
@@ -244,6 +254,7 @@ private:
     void updateHasMeta();
     [[nodiscard]] int rowOfUid(quintptr uid) const { return m_rowByUid.value(uid, -1); }
     void reindexRows();
+    [[nodiscard]] bool isDownloadPaused(const SearchResultRow& r) const;
 
     std::vector<SearchResultRow> m_rows;
     QHash<quintptr, int> m_rowByUid;
@@ -251,6 +262,8 @@ private:
 
     /// Any torrent/Usenet row: eD2K rows then reserve the network badge slot.
     bool m_hasMeta = false;
+
+    PausedLookup m_isPaused;
 };
 
 } // namespace eMule

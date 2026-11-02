@@ -544,6 +544,9 @@ bt::BtSettings settingsFromPrefs()
     bt::BtSettings s;
     s.listenPort = thePrefs.btListenPort();
     applyBindSelection(s);
+    // internet down (ConnectionChecker): pause the session like a lost interface
+    if (theApp.connectionOffline)
+        s.networkBlocked = true;
     s.downloadDir = thePrefs.btDownloadDir().isEmpty() ? thePrefs.incomingDir() : thePrefs.btDownloadDir();
     s.stateDir = QDir(thePrefs.configDir()).filePath(QStringLiteral("BT"));
     s.maxDownloadKb = thePrefs.btMaxDownloadKb();

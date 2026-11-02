@@ -569,7 +569,7 @@ bool Indexed::addSourceEntry(SrcHashMap& index, uint32& counter, uint32 perFileM
         return true;
     }
 
-    if (bucketCount > perFileMax) {
+    if (bucketCount >= perFileMax) {   // at most perFileMax buckets
         // Full: recycle the least recently inserted bucket rather than refusing.
         // Refusing (as this port used to) freezes the list forever, since
         // clean() is never called and nothing expires — the first N publishers
@@ -683,9 +683,8 @@ void Indexed::loadKeyFile(const QString& path)
                     } else if (tag.nameId() == FT_FILESIZE) {
                         entry->m_size = tag.isInt() ? tag.intValue()
                                       : tag.isInt64(false) ? tag.int64Value() : 0;
-                    } else {
-                        mirrorAddressTag(*entry, tag);
-                        entry->addTag(std::move(tag));
+                    } else if (entry->addTag(tag)) {
+                        mirrorAddressTag(*entry, tag);   // only what was kept
                     }
                 }
 
@@ -719,9 +718,9 @@ void Indexed::loadSourceFile(const QString& path)
                 entry->m_sourceID = sourceID;
                 entry->m_source = true;
                 entry->m_lifetime = static_cast<time_t>(sf.readUInt32());
-                for (auto& tag : io::readKadTagList(sf)) {
-                    mirrorAddressTag(*entry, tag);
-                    entry->addTag(std::move(tag));
+                for (const auto& tag : io::readKadTagList(sf)) {
+                    if (entry->addTag(tag))
+                        mirrorAddressTag(*entry, tag);   // a refused 2nd source IP must not win
                 }
 
                 uint8 load = 0;

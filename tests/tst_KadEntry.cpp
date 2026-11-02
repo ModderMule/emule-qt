@@ -13,6 +13,9 @@
 
 #include <QTest>
 
+#include <algorithm>
+#include <memory>
+
 using namespace eMule;
 using namespace eMule::kad;
 
@@ -43,6 +46,11 @@ private slots:
     void aich_refcountsAndKeepsIndicesStable();
     void merge_fastRefreshDoesNotBumpPopularity();
     void metaTag_matchesOnEqualityNotSubstring();
+    void merge_fileNamesCappedDropsLeastPopular();
+    void load_fileNamesCapped();
+    void addTag_refusesSecondSourceIP();
+    void aich_popularitySaturates();
+    void aich_expiredPublisherReleasesItsHash();
 };
 
 void tst_KadEntry::construct_default()
@@ -182,6 +190,32 @@ void publishFrom(KeyEntry& entry, uint32 ip, KeyEntry* replaces = nullptr)
 {
     entry.m_address = Address::fromHostOrder(ip);
     entry.mergeIPsAndFilenames(replaces);
+}
+
+/// What writePublishTrackingDataToFile() stores: AICH hash count and names.
+struct TrackingData {
+    uint16 aichCount = 0;
+    std::vector<std::pair<QString, uint32>> names;
+};
+
+TrackingData trackingDataOf(KeyEntry& entry)
+{
+    SafeMemFile out;
+    entry.writePublishTrackingDataToFile(out);
+    SafeMemFile in(out.buffer().left(static_cast<qsizetype>(out.length())));
+    TrackingData td;
+    td.aichCount = in.readUInt16();
+    in.seek(qint64{td.aichCount} * 20, SEEK_CUR);
+    for (uint32 n = in.readUInt32(); n > 0; --n) {
+        QString name = io::readStringUTF8(in);
+        td.names.emplace_back(std::move(name), in.readUInt32());
+    }
+    return td;
+}
+
+bool hasName(const TrackingData& td, const QString& name)
+{
+    return std::ranges::any_of(td.names, [&](const auto& n) { return n.first == name; });
 }
 } // namespace
 
@@ -384,6 +418,99 @@ void tst_KadEntry::metaTag_matchesOnEqualityNotSubstring()
     substr.type = SearchTerm::Type::MetaTag;
     substr.tag = Tag(static_cast<uint8>(FT_MEDIA_ARTIST), QStringLiteral("foo"));
     QVERIFY(!e.startSearchTermsMatch(substr));
+}
+
+void tst_KadEntry::merge_fileNamesCappedDropsLeastPopular()
+{
+    // Distinct names from distinct publishers stay bounded; a new one pushes out
+    // the least popular, never a popular one and never itself.
+    auto current = std::make_unique<KeyEntry>();
+    current->setFileName(QStringLiteral("popular.iso"));
+    publishFrom(*current, 0x0A000001);
+    uint32 ip = 0x0A000001;
+    auto publish = [&](const QString& name) {
+        auto next = std::make_unique<KeyEntry>();
+        next->setFileName(name);
+        ip += 0x100;
+        publishFrom(*next, ip, current.get());
+        current = std::move(next);
+    };
+    publish(QStringLiteral("popular.iso"));
+    publish(QStringLiteral("popular.iso"));
+    for (int i = 0; i < KADEMLIAMAXFILENAMESPERKEY - 1; ++i)
+        publish(QStringLiteral("n_%1.iso").arg(i));
+    QCOMPARE(trackingDataOf(*current).names.size(), size_t{KADEMLIAMAXFILENAMESPERKEY});
+
+    publish(QStringLiteral("newest.iso"));
+    const TrackingData td = trackingDataOf(*current);
+    QCOMPARE(td.names.size(), size_t{KADEMLIAMAXFILENAMESPERKEY});
+    QVERIFY(hasName(td, QStringLiteral("popular.iso")));
+    QVERIFY(hasName(td, QStringLiteral("newest.iso")));
+    QVERIFY(!hasName(td, QStringLiteral("n_0.iso")));   // least popular, oldest
+    QCOMPARE(current->getCommonFileName(), QStringLiteral("popular.iso"));
+}
+
+void tst_KadEntry::load_fileNamesCapped()
+{
+    // key_index.dat may hold more names than the cap: all are read so the stream
+    // stays aligned, only the most popular are kept.
+    constexpr uint32 kNames = KADEMLIAMAXFILENAMESPERKEY + 8;
+    constexpr uint32 kSentinel = 0xC0FFEE42;
+    SafeMemFile out;
+    out.writeUInt32(kNames);
+    for (uint32 i = 1; i <= kNames; ++i) {
+        io::writeStringUTF8(out, QStringLiteral("name_%1").arg(i));
+        out.writeUInt32(i);   // popularity
+    }
+    out.writeUInt32(0);   // publishers
+    out.writeUInt32(kSentinel);
+
+    SafeMemFile in(out.buffer().left(static_cast<qsizetype>(out.length())));
+    KeyEntry e;
+    e.readPublishTrackingDataFromFile(in, false);
+    QCOMPARE(in.readUInt32(), kSentinel);
+
+    const TrackingData td = trackingDataOf(e);
+    QCOMPARE(td.names.size(), size_t{KADEMLIAMAXFILENAMESPERKEY});
+    const auto least = std::ranges::min(td.names, {}, &std::pair<QString, uint32>::second);
+    QCOMPARE(least.second, kNames - KADEMLIAMAXFILENAMESPERKEY + 1);
+    QCOMPARE(e.getCommonFileName(), QStringLiteral("name_%1").arg(kNames));
+}
+
+void tst_KadEntry::addTag_refusesSecondSourceIP()
+{
+    // Our FT_SOURCEIP comes first; a second one (old src_index.dat with a
+    // publisher-injected tag) must not be stored, nor reported as kept.
+    Entry e;
+    QVERIFY(e.addTag(Tag(uint8{FT_SOURCEIP}, uint32{0x0A000001})));
+    QVERIFY(!e.addTag(Tag(uint8{FT_SOURCEIP}, uint32{0x0B000001})));
+    QCOMPARE(e.getTagCount(), uint32{1});
+    QCOMPARE(e.getIntTagValue(QByteArrayLiteral(TAG_SOURCEIP)), uint64{0x0A000001});
+}
+
+void tst_KadEntry::aich_popularitySaturates()
+{
+    // uint8 popularity: 256 adds wrapped to 0, which made the hash look unused.
+    KeyEntry e;
+    const QByteArray hash(20, '\xAA');
+    for (int i = 0; i < 256; ++i)
+        e.addRemoveAICHHash(hash, true);
+    QCOMPARE(trackingDataOf(e).aichCount, uint16{1});
+}
+
+void tst_KadEntry::aich_expiredPublisherReleasesItsHash()
+{
+    // An expired publisher drops its AICH ref, as the 100-publisher cap does.
+    const time_t now = time(nullptr);
+    KeyEntry e;
+    e.addRemoveAICHHash(QByteArray(20, '\xAA'), true);   // what the publish reported
+    publishFrom(e, 0x0A000001);
+    QCOMPARE(trackingDataOf(e).aichCount, uint16{1});
+
+    e.cleanUpTrackedPublishers(now + HR2S(23));
+    QCOMPARE(trackingDataOf(e).aichCount, uint16{1});
+    e.cleanUpTrackedPublishers(now + HR2S(25));
+    QCOMPARE(trackingDataOf(e).aichCount, uint16{0});
 }
 
 QTEST_GUILESS_MAIN(tst_KadEntry)

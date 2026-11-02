@@ -33,7 +33,7 @@ Website: [emule-qt.org](https://emule-qt.org/)
 *Not found in the original eMule.*
 
 - **BitTorrent Downloads** — Torrents and magnet links in their own Torrents tab, powered by libtorrent: DHT, PEX, local peer discovery, encryption, per-file selection, seeding limits by ratio or time, and torrent results from Torznab indexers and eD2K servers in the same Search tab ([details](https://emule-qt.org/features/bittorrent/))
-- **File Hoster Downloads** — Paste links from more than a thousand one-click hosters and link sites; the daemon resolves them with JDownloader's plugins (Java is fetched for you), shows image captchas, uses your premium accounts, falls back to mirrors, resumes broken transfers and groups files into packages ([details](https://emule-qt.org/features/file-hosters/))
+- **File Hoster Downloads** — Paste links from more than 3,500 one-click hosters and 1,000 link sites; the daemon resolves them with JDownloader's plugins (Java is fetched for you), shows image captchas, uses your premium accounts, falls back to mirrors, resumes broken transfers and groups files into packages ([details](https://emule-qt.org/features/file-hosters/))
 - **Usenet Downloads** — A complete NNTP engine in the daemon: up to 16 providers on a priority and failover ladder, TLS, allowance tracking, PAR2 repair, and unpacking that finishes as the download does ([details](docs/usenet-module.md))
 - **Indexer Search** — newznab and Torznab indexers queried in parallel from the same Search tab and de-duplicated, with the grab done daemon-side so the GUI never holds an API key or a download URL
 - **Auto-Download Feeds** — A saved indexer query or an RSS URL polled on a schedule, filtered by regex, size and age, and queued into the category you chose

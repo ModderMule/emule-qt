@@ -4,6 +4,8 @@
 
 #include "webserver/WebSessionManager.h"
 
+#include "crypto/SecretCompare.h"
+
 #include <QRandomGenerator>
 
 #include <algorithm>
@@ -33,9 +35,9 @@ QString WebSessionManager::login(const QString& passwordHash,
 
     bool isAdmin = false;
 
-    if (!adminHash.isEmpty() && passwordHash == adminHash) {
+    if (verifyWebPassword(passwordHash, adminHash)) {
         isAdmin = true;
-    } else if (guestEnabled && !guestHash.isEmpty() && passwordHash == guestHash) {
+    } else if (guestEnabled && verifyWebPassword(passwordHash, guestHash)) {
         isAdmin = false;
     } else {
         return {};
@@ -81,16 +83,20 @@ const WebSession* WebSessionManager::session(const QString& sessionId) const
 
 void WebSessionManager::logout(const QString& sessionId)
 {
-    m_sessions.remove(sessionId);
+    if (m_sessions.remove(sessionId) && m_onSessionEnded)
+        m_onSessionEnded(sessionId);
 }
 
 void WebSessionManager::purgeExpired()
 {
     const auto now = QDateTime::currentDateTime();
     for (auto it = m_sessions.begin(); it != m_sessions.end(); ) {
-        if (it->lastAccess.secsTo(now) > m_timeoutMinutes * 60)
+        if (it->lastAccess.secsTo(now) > m_timeoutMinutes * 60) {
+            const QString id = it.key();
             it = m_sessions.erase(it);
-        else
+            if (m_onSessionEnded)
+                m_onSessionEnded(id);
+        } else
             ++it;
     }
 }
@@ -123,28 +129,27 @@ QString WebSessionManager::generateSessionId() const
 
 namespace {
 
-constexpr int kFreeLoginTries = 3;
 constexpr qint64 kFirstLoginWaitMs = 5 * 1000;
 constexpr qint64 kMaxLoginWaitMs = 15 * 60 * 1000;
 constexpr qint64 kForgetFailuresMs = 60 * 60 * 1000;
 constexpr qsizetype kMaxTrackedClients = 4096;
 
-qint64 loginWaitMs(int failures)
+qint64 loginWaitMs(int failures, int freeTries)
 {
-    if (failures < kFreeLoginTries)
+    if (failures < freeTries)
         return 0;
-    const int doublings = std::min(failures - kFreeLoginTries, 16);
+    const int doublings = std::min(failures - freeTries, 16);
     return std::min(kFirstLoginWaitMs << doublings, kMaxLoginWaitMs);
 }
 
 } // namespace
 
-int WebSessionManager::loginWaitSeconds(const QString& client, qint64 nowMs) const
+int WebSessionManager::loginWaitSeconds(const QString& client, qint64 nowMs, int freeTries) const
 {
     const auto it = m_failedLogins.constFind(client);
     if (it == m_failedLogins.constEnd())
         return 0;
-    const qint64 left = it->lastMs + loginWaitMs(it->count) - nowMs;
+    const qint64 left = it->lastMs + loginWaitMs(it->count, freeTries) - nowMs;
     return left > 0 ? static_cast<int>((left + 999) / 1000) : 0;
 }
 
@@ -157,7 +162,7 @@ void WebSessionManager::noteLoginFailure(const QString& client, qint64 nowMs)
         });
         if (m_failedLogins.size() >= kMaxTrackedClients) {
             erase_if(m_failedLogins, [](const auto& entry) {
-                return entry.value().count < kFreeLoginTries;
+                return entry.value().count < WebSessionManager::kFreeLoginTries;
             });
         }
     }

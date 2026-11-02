@@ -426,11 +426,6 @@ int main(int argc, char* argv[])
     eMule::CommandLineExec cli;
     cli.parse(app);
 
-    // Icons into the hicolor theme, and a launcher entry if there is none: the
-    // only things a Linux desktop takes a taskbar icon from.
-    if (!cli.screenshotMode())
-        eMule::gui::FileAssociation::installLauncher();
-
     // Load preferences early so language setting is available for translators
     if (!cli.configOverride().isEmpty())
         eMule::AppConfig::setConfigDirOverride(cli.configOverride());
@@ -541,22 +536,10 @@ int main(int argc, char* argv[])
         }
     }
 
-    // Applied at every start, not only the first: idempotent, so it takes the
-    // association back from an application that took it away, and removes it
-    // promptly when the user turns the setting off.
-    if (eMule::gui::FileAssociation::isRuntimeRegistration()) {
-        QString assocError;
-        const bool assocOk = eMule::gui::FileAssociation::applyFileTypes(
-            {eMule::theUiState.associateNzbFiles(), eMule::theUiState.associateTorrentFiles(),
-             eMule::isEd2kSchemeRegistered()},
-            assocError);
-        if (!assocOk) {
-            // Never fatal, and never a dialog: a desktop that will not take the
-            // association is not a reason to refuse to start.
-            eMule::logWarning(QStringLiteral("Could not update the file associations: %1")
-                                  .arg(assocError));
-        }
-    }
+    // Launcher, icons and file types at every start, but only once the first start
+    // wizard ran: it asks first (#111). Its close does it the first time.
+    if (!cli.screenshotMode() && eMule::theUiState.firstStartWizardDone())
+        eMule::applyDesktopIntegration();
 
     // "Tooltip delay" (Options > Display)
     app.setStyle(new eMule::TooltipDelayStyle);
@@ -828,6 +811,8 @@ int main(int argc, char* argv[])
                 const QCborMap info = resp.fieldMap(1);
                 mainWindow.setNetworkBlocked(info.value(QStringLiteral("netBlocked")).toBool(),
                                              info.value(QStringLiteral("netBlockReason")).toString());
+                mainWindow.setConnectionOffline(info.value(QStringLiteral("offline")).toBool(),
+                                                 info.value(QStringLiteral("offlineReason")).toString());
                 mainWindow.setEd2kServer(info.value(QStringLiteral("serverName")).toString(),
                                          info.value(QStringLiteral("serverUsers")).toInteger());
                 mainWindow.setEd2kStatus(
@@ -884,6 +869,7 @@ int main(int argc, char* argv[])
                 // The lists were built on the local prefs file's showExtControls
                 mainWindow.sharedFilesPanel()->applyDisplayOptions();
                 mainWindow.transferPanel()->applyExtColumns();
+                mainWindow.searchPanel()->applyDisplayOptions();
             });
 
             // Automatic version check: one now if the interval has elapsed, then
@@ -992,6 +978,8 @@ int main(int argc, char* argv[])
             const QCborMap info = msg.fieldMap(0);
             mainWindow.setNetworkBlocked(info.value(QStringLiteral("netBlocked")).toBool(),
                                          info.value(QStringLiteral("netBlockReason")).toString());
+            mainWindow.setConnectionOffline(info.value(QStringLiteral("offline")).toBool(),
+                                             info.value(QStringLiteral("offlineReason")).toString());
             mainWindow.setEd2kServer(info.value(QStringLiteral("serverName")).toString(),
                                      info.value(QStringLiteral("serverUsers")).toInteger());
             mainWindow.setEd2kStatus(

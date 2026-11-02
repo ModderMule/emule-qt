@@ -17,6 +17,9 @@
 #include <QList>
 #include <QStyle>
 
+#include <iterator>
+#include <optional>
+
 namespace eMule {
 
 /// Identifies each toolbar button for customization persistence.
@@ -98,6 +101,74 @@ inline const QList<int> kDefaultToolbarOrder = {
             return &def;
     }
     return nullptr;
+}
+
+// ---------------------------------------------------------------------------
+// Skin tiles
+// ---------------------------------------------------------------------------
+
+/// Position of an icon in a toolbar bitmap strip (`*.eMuleToolbar.kad02.bmp`).
+///
+/// The first 14 are MFC's layout (srchybrid/MuleToolBarCtrl.cpp:548, NUM_BUTTON_BITMAPS)
+/// and may never move. Ours are appended and optional: a strip may end anywhere from
+/// Help on, and the missing tiles fall back to the profile or built-in icons.
+enum class ToolbarTile : int {
+    Connect, Disconnect, StopConnecting,
+    Kad, Servers, Transfers, Search, SharedFiles, Messages, IRC, Statistics,
+    Options, Tools, Help,
+    // eMule Qt only
+    Usenet, Torrents, Hoster, DownloadsFolder,
+};
+
+struct ToolbarTileDef {
+    ToolbarTile tile;
+    ToolbarButtonId button;
+    const char* skinKey; ///< [Icons] key in *.eMuleSkin.ini (MFC resource name)
+};
+
+/// Strip order. Official eMule refuses a strip wider than 14 tiles, so a skin made
+/// for both clients puts our icons in the profile's [Icons] section instead.
+inline constexpr ToolbarTileDef kToolbarTiles[] = {
+    {ToolbarTile::Connect,         ToolbarButtonId::Connect,         "CONNECT"},
+    {ToolbarTile::Disconnect,      ToolbarButtonId::Connect,         "DISCONNECT"},
+    {ToolbarTile::StopConnecting,  ToolbarButtonId::Connect,         "STOPCONNECTING"},
+    {ToolbarTile::Kad,             ToolbarButtonId::Kad,             "KADEMLIA"},
+    {ToolbarTile::Servers,         ToolbarButtonId::Servers,         "SERVER"},
+    {ToolbarTile::Transfers,       ToolbarButtonId::Transfers,       "TRANSFER"},
+    {ToolbarTile::Search,          ToolbarButtonId::Search,          "SEARCH"},
+    {ToolbarTile::SharedFiles,     ToolbarButtonId::SharedFiles,     "SharedFiles"},
+    {ToolbarTile::Messages,        ToolbarButtonId::Messages,        "MESSAGES"},
+    {ToolbarTile::IRC,             ToolbarButtonId::IRC,             "IRC"},
+    {ToolbarTile::Statistics,      ToolbarButtonId::Statistics,      "STATISTICS"},
+    {ToolbarTile::Options,         ToolbarButtonId::Options,         "PREFERENCES"},
+    {ToolbarTile::Tools,           ToolbarButtonId::Tools,           "TOOLS"},
+    {ToolbarTile::Help,            ToolbarButtonId::Help,            "HELP"},
+    {ToolbarTile::Usenet,          ToolbarButtonId::Usenet,          "USENET"},
+    {ToolbarTile::Torrents,        ToolbarButtonId::Torrents,        "TORRENT"},
+    {ToolbarTile::Hoster,          ToolbarButtonId::Hoster,          "HOSTER"},
+    {ToolbarTile::DownloadsFolder, ToolbarButtonId::DownloadsFolder, "DOWNLOADSFOLDER"},
+};
+
+inline constexpr int kOfficialToolbarTiles = 14;
+inline constexpr int kToolbarTileCount = static_cast<int>(std::size(kToolbarTiles));
+
+static_assert([] {
+    for (int i = 0; i < kToolbarTileCount; ++i) {
+        if (static_cast<int>(kToolbarTiles[i].tile) != i)
+            return false;
+    }
+    return true;
+}(), "kToolbarTiles must be indexed by ToolbarTile");
+
+/// Tile a button shows; Connect gets its disconnected state (the caller swaps it).
+/// The first match wins, which for Connect is ToolbarTile::Connect.
+[[nodiscard]] inline std::optional<ToolbarTile> tileForButton(ToolbarButtonId id)
+{
+    for (const auto& def : kToolbarTiles) {
+        if (def.button == id)
+            return def.tile;
+    }
+    return std::nullopt;
 }
 
 } // namespace eMule

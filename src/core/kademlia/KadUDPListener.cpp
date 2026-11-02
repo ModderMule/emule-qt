@@ -238,6 +238,8 @@ void KademliaUDPListener::processPacket(const uint8* data, uint32 len, uint32 ip
     auto* prefs = Kademlia::getInstancePrefs();
     if (prefs)
         prefs->setLastContact();
+    if (auto* kad = Kademlia::instance())
+        kad->notePacketReceived(ip);
     //UDPFirewallTester::connected();
 
     uint8 opcode = data[0];
@@ -300,7 +302,8 @@ void KademliaUDPListener::processPacket(const uint8* data, uint32 len, uint32 ip
         process_KADEMLIA2_PUBLISH_KEY_REQ(payload, payloadLen, ip, udpPort, senderKey);
         break;
     case KADEMLIA2_PUBLISH_SOURCE_REQ:
-        process_KADEMLIA2_PUBLISH_SOURCE_REQ(payload, payloadLen, ip, udpPort, senderKey);
+        process_KADEMLIA2_PUBLISH_SOURCE_REQ(payload, payloadLen, ip, udpPort, senderKey,
+                                             validReceiverKey);
         break;
     case KADEMLIA2_PUBLISH_RES:
         process_KADEMLIA2_PUBLISH_RES(payload, payloadLen, ip, udpPort, senderKey);
@@ -393,8 +396,11 @@ void KademliaUDPListener::sendPacket(const uint8* data, uint32 len, uint8 opcode
     // meant a PUBLISH_RES out-track guard would have rejected every legitimate
     // publish response. firewalledCheck() still tracks its own opcode — it folds
     // FIREWALLED and FIREWALLED2 onto one key.
-    if (isTrackedOutListRequestPacket(opcode))
+    if (isTrackedOutListRequestPacket(opcode)) {
         addTrackedOutPacket(destIP, opcode);
+        if (auto* kad = Kademlia::instance())
+            kad->noteRequestSent(destIP);
+    }
 
     sendPacket(reinterpret_cast<const uint8*>(fullPacket.constData()),
                static_cast<uint32>(fullPacket.size()),
@@ -603,6 +609,12 @@ void KademliaUDPListener::sendLegacyChallenge(uint32 ip, uint16 udpPort, const U
 
 namespace {
 
+/// Contacts read from one BOOTSTRAP_RES; the answer lists at most 20 (BOOTSTRAP_REQ).
+constexpr uint16 kMaxBootstrapContacts = 20;
+
+/// Longest note comment we store (chars).
+constexpr qsizetype kMaxNoteDescriptionLen = 512;
+
 /// Should we accept a publish request for @p keyID from @p ip?
 ///
 /// Two guards, applied identically by all three PUBLISH_*_REQ handlers in MFC
@@ -785,26 +797,21 @@ void KademliaUDPListener::process_KADEMLIA2_BOOTSTRAP_RES(const uint8* data, uin
     uint16 numContacts = io.readUInt16();
     // Add bootstrapper itself to routing zone
     if (auto* rz = Kademlia::getInstanceRoutingZone()) {
-        // If we know no contacts at all we are cold-starting, and getClosestTo()
-        // hands out only IP-verified contacts — so without this we could never
-        // issue the first lookup. Assume the bootstrap answer is genuine just
-        // this once. MFC KademliaUDPListener.cpp:542-546: "the attack vectors to
-        // exploit this are very small with no major effects, so that's a good
-        // trade-off".
-        const bool assumeVerified = rz->getNumContacts() == 0;
-
         // While still probing the shipped bootstrap list, don't fold each
         // bootstrap responder into the routing table — just harvest the contacts
         // it returns. Once the list is exhausted (normal operation) it is added.
-        // MFC KademliaUDPListener.cpp:547.
+        // Verified only by a valid receiver key, as MFC. MFC KademliaUDPListener.cpp:547.
         if (Kademlia::s_bootstrapList.empty()) {
             rz->addOrUpdateContact(bootstrapID, ip, udpPort, bootstrapTCP,
-                                   bootstrapVersion, senderKey,
-                                   validReceiverKey || assumeVerified);
+                                   bootstrapVersion, senderKey, validReceiverKey);
         }
 
-        // Add all received contacts to routing zone
-        for (uint16 i = 0; i < numContacts && io.position() < io.length(); ++i) {
+        // Listed contacts start unverified — not MFC, which assumes them verified
+        // on a cold start, so one forged answer could seed the whole table. Each
+        // new one gets a HELLO at once; its answer verifies it (HELLO_RES with a
+        // valid receiver key, or the legacy challenge for pre-v7).
+        const uint16 handled = std::min<uint16>(numContacts, kMaxBootstrapContacts);
+        for (uint16 i = 0; i < handled && io.position() < io.length(); ++i) {
             UInt128 contactID = io::readUInt128(io);
             uint32 contactIP = io.readUInt32();
             uint16 contactUDP = io.readUInt16();
@@ -814,9 +821,10 @@ void KademliaUDPListener::process_KADEMLIA2_BOOTSTRAP_RES(const uint8* data, uin
             if (contactVersion > KADEMLIA_VERSION1_46c && theApp.kadNodeCensus)
                 theApp.kadNodeCensus->noteListed(contactID);
 
-            rz->add(contactID, contactIP, contactUDP, contactTCP,
-                    contactVersion, KadUDPKey(0), assumeVerified,
-                    true /*update*/, false /*fromHello*/, false /*fromNodesDat*/);
+            if (rz->add(contactID, contactIP, contactUDP, contactTCP,
+                        contactVersion, KadUDPKey(0), false /*ipVerified*/,
+                        false /*update*/, false /*fromHello*/, false /*fromNodesDat*/))
+                sendVerifyHello(contactID, contactIP, contactUDP, contactVersion);
         }
     }
 
@@ -1139,7 +1147,7 @@ void KademliaUDPListener::process_KADEMLIA2_REQ(const uint8* data, uint32 len, u
 }
 
 void KademliaUDPListener::process_KADEMLIA2_RES(const uint8* data, uint32 len, uint32 ip,
-                                                  uint16 udpPort, const KadUDPKey& /*senderKey*/)
+                                                  uint16 udpPort, const KadUDPKey& senderKey)
 {
     if (!isOnOutTrackList(ip, KADEMLIA2_REQ)) {
         logKad(QStringLiteral("Kad: KADEMLIA2_RES from %1:%2 dropped — not on track list")
@@ -1321,7 +1329,7 @@ void KademliaUDPListener::process_KADEMLIA2_RES(const uint8* data, uint32 len, u
 
     // MFC :838 calls ProcessResponse unconditionally. Outside LAN mode `results`
     // is empty for a FW check search — that crippled search is exactly the point.
-    SearchManager::processResponse(target, ip, udpPort, results);
+    SearchManager::processResponse(target, ip, udpPort, results, senderKey);
 }
 
 // ---------------------------------------------------------------------------
@@ -1347,6 +1355,13 @@ void KademliaUDPListener::process_KADEMLIA2_SEARCH_KEY_REQ(const uint8* data, ui
     std::unique_ptr<SearchTerm> searchTerms;
     if (restrictive && io.position() < io.length())
         searchTerms = createSearchExpressionTree(io, 0);
+    // A broken or missing expression must not widen to "every entry for the
+    // keyword". MFC throws "Invalid search expression" (KademliaUDPListener.cpp).
+    if (restrictive && !searchTerms) {
+        logKad(QStringLiteral("Kad: SEARCH_KEY_REQ from %1:%2 — invalid search expression, not answered")
+                   .arg(ipToString(ip)).arg(udpPort));
+        return;
+    }
 
     // Serve keyword results from local index
     if (auto* indexed = Kademlia::getInstanceIndexed()) {
@@ -1499,10 +1514,18 @@ void KademliaUDPListener::process_KADEMLIA2_PUBLISH_KEY_REQ(const uint8* data, u
 
 void KademliaUDPListener::process_KADEMLIA2_PUBLISH_SOURCE_REQ(const uint8* data, uint32 len,
                                                                 uint32 ip, uint16 udpPort,
-                                                                const KadUDPKey& senderKey)
+                                                                const KadUDPKey& senderKey,
+                                                                bool validReceiverKey)
 {
     if (len < 32)
         return;
+
+    // ToDo: refuse without a valid receiver key (audit 9c) once most publishers
+    // echo our key. Stock clients send key 0 to RES-learned nodes; logged to
+    // measure the share.
+    logKad(QStringLiteral("Kad: PUBLISH_SOURCE_REQ from %1:%2 — receiver key %3")
+               .arg(ipToString(ip)).arg(udpPort)
+               .arg(validReceiverKey ? QStringLiteral("valid") : QStringLiteral("missing")));
 
     SafeMemFile io(data, len);
     uint8 load = 0;
@@ -1536,7 +1559,8 @@ void KademliaUDPListener::process_KADEMLIA2_PUBLISH_SOURCE_REQ(const uint8* data
                         // A source result is useless without an address, and the
                         // publisher never sends its own — so we synthesise it
                         // from the address the packet actually came from. This
-                        // also means a spoofed TAG_SOURCEIP cannot be stored.
+                        // also means a spoofed TAG_SOURCEIP cannot be stored
+                        // (publisher-sent ones are dropped below).
                         entry->addTag(Tag(FT_SOURCEIP, entry->m_address.toUint32()));
                         entry->addTag(std::move(tag));
                         entry->m_source = true;
@@ -1591,6 +1615,10 @@ void KademliaUDPListener::process_KADEMLIA2_PUBLISH_SOURCE_REQ(const uint8* data
                     if (entry->m_size == 0)
                         entry->m_size = tag.isInt() ? tag.intValue()
                                       : tag.isInt64(false) ? tag.int64Value() : 0;
+                    break;
+                case FT_SOURCEIP:
+                    // Ours comes from the packet address; a publisher's own would win
+                    // on serving and on reload, pointing searchers anywhere.
                     break;
                 default:
                     entry->addTag(std::move(tag));
@@ -1721,9 +1749,14 @@ void KademliaUDPListener::process_KADEMLIA2_PUBLISH_NOTES_REQ(const uint8* data,
                     if (entry->m_size == 0)
                         entry->m_size = tag.isInt() ? tag.intValue()
                                       : tag.isInt64(false) ? tag.int64Value() : 0;
-                } else {
+                } else if (tag.nameId() == FT_DESCRIPTION && tag.isStr()) {
+                    // Capped: we store and serve it to every searcher.
+                    entry->addTag(Tag(uint8{FT_DESCRIPTION},
+                                      tag.strValue().left(kMaxNoteDescriptionLen)));
+                } else if (tag.nameId() == FT_FILERATING && tag.isInt()) {
                     entry->addTag(std::move(tag));
                 }
+                // Anything else is dropped: a note is name, size, rating, comment.
             }
             // A rejected note gets no answer (MFC :1564-1574).
             if (!indexed->addNotes(keyID, sourceID, entry, load)) {
@@ -2136,6 +2169,18 @@ bool KademliaUDPListener::isOwnKadAddress(uint32 ip, uint16 udpPort) const
 
     return udpPort == prefs->internKadPort()
         || (prefs->externalKadPort() != 0 && udpPort == prefs->externalKadPort());
+}
+
+void KademliaUDPListener::sendVerifyHello(const UInt128& contactID, uint32 ip, uint16 udpPort,
+                                          uint8 version)
+{
+    // Same shapes as the routing zone's liveness HELLO (MFC RoutingZone.cpp:829-853):
+    // v6+ encrypt to the node ID, v2-v5 get no key and no ID. sendPacket() out-tracks
+    // the HELLO_REQ so the answer is accepted.
+    if (version >= KADEMLIA_VERSION6_49aBETA)
+        sendMyDetails(KADEMLIA2_HELLO_REQ, ip, udpPort, version, KadUDPKey(), &contactID, false);
+    else if (version >= KADEMLIA_VERSION2_47a)
+        sendMyDetails(KADEMLIA2_HELLO_REQ, ip, udpPort, version, KadUDPKey(), nullptr, false);
 }
 
 } // namespace eMule::kad

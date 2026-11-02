@@ -55,6 +55,9 @@ public:
     /// are on the old route. New ones bind to the current selection or wait.
     void onNetworkRouteChanged();
 
+    /// Internet connection down / back (ConnectionChecker): hold the queue, not the pref.
+    void setNetworkHold(bool held);
+
     /// Renumber every stored category index after the category list changed.
     ///
     /// Two paths, because the queue only loads its sidecars in `start()`: the

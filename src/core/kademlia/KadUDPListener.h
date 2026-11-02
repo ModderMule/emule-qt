@@ -100,6 +100,8 @@ private:
     void sendLegacyChallenge(uint32 ip, uint16 udpPort, const UInt128& contactID);
     /// True if ip:udpPort is our own Kad endpoint, as far as we know our address.
     [[nodiscard]] bool isOwnKadAddress(uint32 ip, uint16 udpPort) const;
+    /// HELLO_REQ to an unverified contact; its HELLO_RES (or legacy challenge) verifies it.
+    void sendVerifyHello(const UInt128& contactID, uint32 ip, uint16 udpPort, uint8 version);
 
     void process_KADEMLIA2_BOOTSTRAP_REQ(uint32 ip, uint16 udpPort, const KadUDPKey& senderKey);
     void process_KADEMLIA2_BOOTSTRAP_RES(const uint8* data, uint32 len, uint32 ip, uint16 udpPort,
@@ -122,7 +124,7 @@ private:
     void process_KADEMLIA2_PUBLISH_KEY_REQ(const uint8* data, uint32 len, uint32 ip, uint16 udpPort,
                                             const KadUDPKey& senderKey);
     void process_KADEMLIA2_PUBLISH_SOURCE_REQ(const uint8* data, uint32 len, uint32 ip, uint16 udpPort,
-                                               const KadUDPKey& senderKey);
+                                               const KadUDPKey& senderKey, bool validReceiverKey);
     void process_KADEMLIA2_PUBLISH_RES(const uint8* data, uint32 len, uint32 ip, uint16 udpPort,
                                         const KadUDPKey& senderKey);
     void process_KADEMLIA2_SEARCH_NOTES_REQ(const uint8* data, uint32 len, uint32 ip, uint16 udpPort,

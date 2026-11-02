@@ -22,6 +22,7 @@
 #include <QSet>
 
 #include <cstdint>
+#include <functional>
 #include <vector>
 
 class QCheckBox;
@@ -153,6 +154,9 @@ public:
     /// The "ed3k" search method only while the ed3k node is enabled.
     void setEd3kMethodVisible(bool visible);
 
+    /// Re-apply "Show more controls" to the result columns (Local Folder).
+    void applyDisplayOptions();
+
     /// Show a peer's shared file list in its own tab, creating it on first use and
     /// selecting it. MFC CSearchList::ProcessSearchAnswer(…, sender, …).
     void showClientSharedFiles(uint32_t searchID, const QString& userName);
@@ -160,8 +164,9 @@ public:
     /// Set the stream token for preview streaming (received from daemon GetStats).
     void setStreamToken(const QString& token) { m_streamToken = token; }
 
-    /// Set the download model for preview-eligibility checks.
-    void setDownloadModel(DownloadListModel* model) { m_downloadModel = model; }
+    /// Set the download model for preview-eligibility checks and the paused-download
+    /// colour (skin Fg_DownloadStopped).
+    void setDownloadModel(DownloadListModel* model);
 
     /// Write every search tab to StoredSearches.json (or remove it when off/empty).
     /// Called on close, not only from the destructor: a killed GUI never gets there.
@@ -264,6 +269,8 @@ private:
     void switchToTab(int index);
     void updateDownloadButton();
     [[nodiscard]] SearchTab* currentTab();
+    /// Paused/stopped check over the download model for the result colours.
+    [[nodiscard]] std::function<bool(const QString&)> pausedLookup() const;
     /// Keyed by hash (indexer rows: result id), every selected row.
     [[nodiscard]] ViewSelection saveSelection() const;
     void restoreSelection(const ViewSelection& state);

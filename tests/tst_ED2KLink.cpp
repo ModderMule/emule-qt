@@ -17,6 +17,7 @@ class tst_ED2KLink : public QObject {
 private slots:
     // File links
     void fileLink_basic();
+    void fileLink_percentEncodedPipes();
     void fileLink_withPartHashes();
     void fileLink_withAICHHash();
     void fileLink_withHostnameSources();
@@ -129,6 +130,22 @@ void tst_ED2KLink::fileLink_basic()
     QVERIFY(md4equ(link.hash.data(), kTestHashBytes.data()));
     QVERIFY(!link.hasValidAICHHash);
     QVERIFY(link.hostnameSources.empty());
+}
+
+void tst_ED2KLink::fileLink_percentEncodedPipes()
+{
+    // what a browser hands the handler: '|' as %7C (either case), like MFC ProcessED2KLink
+    const QString uri = QStringLiteral("ed2k://%7Cfile%7Ctest%20a.mp3%7c12345%7C%1%7C/").arg(kTestHash);
+    auto result = parseED2KLink(uri);
+    QVERIFY(result.has_value());
+    const auto& link = std::get<ED2KFileLink>(*result);
+    QCOMPARE(link.name, QStringLiteral("test a.mp3"));
+    QCOMPARE(link.size, uint64{12345});
+
+    // a raw-pipe link keeps an encoded '|' inside its name
+    QCOMPARE(normalizeEd2kLink(QStringLiteral("ed2k://|file|a%7Cb|1|/")),
+             QStringLiteral("ed2k://|file|a%7Cb|1|/"));
+    QVERIFY(parseED2KLink(QStringLiteral("ed2k://%7Cserver%7C1.2.3.4%7C4661%7C/")).has_value());
 }
 
 void tst_ED2KLink::fileLinkHelper_encodesTheName()

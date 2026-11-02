@@ -534,7 +534,8 @@ void Search::go(uint32 maxToSend)
     }
 }
 
-void Search::processResponse(uint32 fromIP, uint16 fromPort, const ContactArray& results)
+void Search::processResponse(uint32 fromIP, uint16 fromPort, const ContactArray& results,
+                             const KadUDPKey& senderKey)
 {
     // Take ownership of every contact the UDP listener allocated for us, before
     // any early return can drop them. They are freed in the destructor.
@@ -575,6 +576,14 @@ void Search::processResponse(uint32 fromIP, uint16 fromPort, const ContactArray&
             return;
         }
     }
+
+    // Keep the responder's key for us. RES-learned contacts start with key 0,
+    // so without this our publishes reach them unverified (audit 9c). Only fills
+    // a missing key (routing-table contacts are shared, HELLO key wins). A
+    // forged key just reads as invalid, same as key 0. Not in MFC.
+    if (pFromContact && !senderKey.isEmpty()
+        && pFromContact->getUDPKey().getKeyValue(senderKey.ip()) == 0)
+        pFromContact->setUDPKey(senderKey);
 
     // SafeKad: validate responding contact and record response time
     if (pFromContact) {
@@ -764,6 +773,11 @@ void Search::processResponse(uint32 fromIP, uint16 fromPort, const ContactArray&
 
 void Search::processResult(const UInt128& answer, TagList& info, uint32 fromIP, uint16 fromPort)
 {
+    // A keyword search that hit its total keeps getting answers until it is
+    // deleted; drop them so a flood can't push past the cap. Not MFC.
+    if (m_type == SearchType::Keyword && m_stopping && m_answers >= kSearchKeywordTotal)
+        return;
+
     const uint32 answersBefore = m_answers;
     switch (m_type) {
     case SearchType::File:

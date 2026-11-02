@@ -2,6 +2,7 @@
 #include "controls/KadContactsModel.h"
 #include "utils/Appearance.h"
 #include "utils/CountryFlags.h"
+#include "app/SkinIcons.h"
 
 #include <QFont>
 
@@ -14,8 +15,8 @@ KadContactsModel::KadContactsModel(QObject* parent)
 {
     // MFC SetAllIcons (KadContactListCtrl.cpp:79-92); SrcUnknown is res\Client4.ico (emule.rc:1413)
     for (int i = 0; i < 5; ++i)
-        m_icons[static_cast<size_t>(i)] = QIcon(QStringLiteral(":/icons/Contact%1.ico").arg(i));
-    m_icons[5] = QIcon(QStringLiteral(":/icons/Client4.ico"));
+        m_icons[static_cast<size_t>(i)] = skinIcon(QStringLiteral(":/icons/Contact%1.ico").arg(i));
+    m_icons[5] = skinIcon(QStringLiteral(":/icons/Client4.ico"));
 }
 
 QVariant KadContactsModel::data(const QModelIndex& index, int role) const

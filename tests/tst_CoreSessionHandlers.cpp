@@ -104,6 +104,8 @@ private slots:
     void directCallbackReq_ipv6Sender_newClient_setsUserIPv6();
     void directCallbackReq_deliveredThroughClientUDPSocket();
     void directCallbackReq_quicBit_armsQuicNoTcpDial();
+    void directCallbackReq_globalCapStopsBurst();
+    void directCallbackReq_hashKnownAtOtherIp_isIgnored();
 
     // -- Public-IPv6 change hook --
     void markPeersForIPChange_marksOnlyConnectedIPv6Peers();
@@ -132,6 +134,7 @@ void tst_CoreSessionHandlers::init()
 
     m_clientList = new ClientList();
     theApp.clientList = m_clientList;
+    CoreSession::resetDirectCallbackBudget();   // the global window outlives a test
 }
 
 void tst_CoreSessionHandlers::cleanup()
@@ -651,6 +654,73 @@ void tst_CoreSessionHandlers::directCallbackReq_quicBit_armsQuicNoTcpDial()
     QCOMPARE(hub.hub->attempts().front()->path, natt::PathKind::DirectUdp);
     QCOMPARE(hub.hub->attempts().front()->peerUdp, Endpoint(kSender, kSenderUdpPort));
     QCOMPARE(hub.env->quicArms.size(), size_t{1});
+}
+
+void tst_CoreSessionHandlers::directCallbackReq_globalCapStopsBurst()
+{
+    KadFixture fx;
+
+    // Many senders, each within its own per-address limit: only the global cap stops them
+    constexpr int kBurst = static_cast<int>(CoreSession::kDirectCallbackGlobalMax) + 5;
+    for (int i = 0; i < kBurst; ++i) {
+        const Address sender = Address::fromString(QStringLiteral("198.51.100.%1").arg(10 + i));
+        feedDirectCallback(Endpoint(sender, kSenderUdpPort),
+                           makeDirectCallbackPayload(kTcpPort, uint8(0x10 + i), 0x03));
+    }
+    QCOMPARE(m_clientList->clientCount(), int(CoreSession::kDirectCallbackGlobalMax));
+
+    // The QUIC branch sits behind the same cap
+    natt::test::HubFixture hub;
+    hub.env->quic = true;
+    theApp.natRendezvous = hub.hub.get();
+    const auto restore = qScopeGuard([] { theApp.natRendezvous = nullptr; });
+    feedDirectCallback(Endpoint(Address::fromString(QStringLiteral("198.51.100.200")), kSenderUdpPort),
+                       makeDirectCallbackPayload(kTcpPort, 0x55, 0x01 | CONNECT_OPT_NATT_QUIC));
+    QCOMPARE(hub.hub->attempts().size(), size_t{0});
+
+    // A fresh window lets the next one through
+    CoreSession::resetDirectCallbackBudget();
+    feedDirectCallback(Endpoint(Address::fromString(QStringLiteral("198.51.100.201")), kSenderUdpPort),
+                       makeDirectCallbackPayload(kTcpPort, 0x56, 0x01 | CONNECT_OPT_NATT_QUIC));
+    QCOMPARE(hub.hub->attempts().size(), size_t{1});
+}
+
+void tst_CoreSessionHandlers::directCallbackReq_hashKnownAtOtherIp_isIgnored()
+{
+    LabModeGuard lab{true};   // ::1 below
+    KadFixture fx;
+
+    const Address otherIp = Address::fromString(QStringLiteral("198.51.100.99"));
+    uint8 hash[16];
+    std::memset(hash, kHashByte, sizeof(hash));
+    auto* known = new UpDownClient();
+    known->setUserAddress(otherIp);
+    known->setUserPort(kTcpPort);
+    known->setUserHash(hash);
+    known->setConnectingState(ConnectingState::DirectTCP);
+    m_clientList->addClient(known);
+
+    // Same hash, claimed from another address: ignored, nothing created or redirected
+    feedDirectCallback(Endpoint(kSender, kSenderUdpPort),
+                       makeDirectCallbackPayload(kTcpPort, kHashByte, 0x03));
+    QCOMPARE(m_clientList->clientCount(), 1);
+    QCOMPARE(known->connectAddress(), otherIp);
+    QVERIFY(m_clientList->findByAddress(kSender, kTcpPort) == nullptr);
+
+    // Dual-stack: the known client's IPv6 is the sender, so it is the same peer
+    QTcpServer server;
+    QVERIFY(server.listen(QHostAddress::LocalHostIPv6, 0));
+    const Address v6 = Address::fromString(QStringLiteral("::1"));
+    known->setUserIPv6(v6);
+    feedDirectCallback(Endpoint(v6, kSenderUdpPort),
+                       makeDirectCallbackPayload(server.serverPort(), kHashByte, 0x03));
+    QCOMPARE(m_clientList->clientCount(), 2);
+    QVERIFY(m_clientList->findByAddress(v6, server.serverPort()) != nullptr);
+    if (server.waitForNewConnection(2000)) {
+        if (QTcpSocket* peer = server.nextPendingConnection())
+            peer->close();
+    }
+    QCoreApplication::processEvents();
 }
 
 #include "tst_CoreSessionHandlers.moc"

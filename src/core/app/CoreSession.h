@@ -23,6 +23,7 @@ namespace eMule {
 
 class Address;
 class ClientCreditsList;
+class ConnectionChecker;
 class ClientList;
 class ClientUDPSocket;
 class CollectionKeys;
@@ -110,6 +111,9 @@ public:
     BindApplyReport applyBindSelection();
     [[nodiscard]] bool isNetworkSuspended() const { return m_netSuspended; }
 
+    /// Internet down per the connection checker (#115); nullptr before finishStart().
+    [[nodiscard]] const ConnectionChecker* connectionChecker() const { return m_connChecker.get(); }
+
     /// Listen ports that did not open at start(): portBindFailed fires before anyone
     /// can be connected to it.
     [[nodiscard]] const QList<int>& failedBindPorts() const { return m_failedBindPorts; }
@@ -121,9 +125,15 @@ public:
     /// OP_DIRECTCALLBACKREQ receive handler: a firewalled peer asks us to open the
     /// TCP connection. Guards on Kad running + us firewalled, the 19-byte minimum
     /// and the sender passing isGoodIP / ban / IP-filter, then creates or refreshes
-    /// the client and dials it. Wired to ClientUDPSocket::directCallbackReceived.
+    /// the client and dials it. Also drops a hash known at another IP and caps dials
+    /// globally (kDirectCallbackGlobalMax per window). Wired to ClientUDPSocket::directCallbackReceived.
     static void handleDirectCallbackRequest(const Endpoint& senderEP,
                                             const uint8* data, uint32 size);
+    /// Direct-callback dials across all senders: at most this many per window.
+    static constexpr size_t kDirectCallbackGlobalMax = 10;
+    static constexpr uint64 kDirectCallbackWindowMs = 60'000;
+    /// Forget the global direct-callback window (tests fire many requests).
+    static void resetDirectCallbackBudget();
 
     /// Our effective public IPv6 changed: queue an OP_CHANGE_CLIENT_IP for every
     /// connected peer that can use it. Marks only — the packet goes out when the
@@ -216,6 +226,10 @@ private:
     void finishStart();
     void suspendNetworking();
     void resumeNetworking();
+    /// Prefs and Kad state into the connection checker; every second and on Kad events.
+    void syncConnectionChecker();
+    /// Internet down: hold eD2K (and, via theApp, BitTorrent + Usenet). Kad untouched.
+    void onConnectionOfflineChanged(bool offline);
     /// No server, no Kad, no peer socket.
     [[nodiscard]] bool isNetworkIdle() const;
     void rememberAppliedPorts();
@@ -227,6 +241,7 @@ private:
     bool m_resumeEd2k = false;   ///< reconnect to a server on resume
     bool m_resumeKad = false;    ///< restart Kad on resume
     bool m_connectHold = false;  ///< auto-connect deferred until releaseConnectHold()
+    bool m_offlineResumeEd2k = false;   ///< reconnect eD2K when the internet is back
 
     enum class LoadStage { IpFilter, Credits, KnownFiles, SharedFiles, PartFiles, Network, Done };
     LoadStage m_loadStage = LoadStage::Done;
@@ -278,6 +293,7 @@ private:
     std::unique_ptr<Statistics> m_statistics;
     std::unique_ptr<StatsHistory> m_statsHistory;
     std::unique_ptr<PortMapper> m_portMapper;
+    std::unique_ptr<ConnectionChecker> m_connChecker;
     std::unique_ptr<CollectionKeys> m_collectionKeys;
 };
 

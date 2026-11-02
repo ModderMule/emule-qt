@@ -893,7 +893,14 @@ QString DownloadListModel::statusText(const DownloadRow& d) const
         return tr("Insufficient disk space");
 
     if (d.status == QLatin1String("error"))
-        return d.completionError ? tr("Insufficient disk space") : tr("Error");
+        switch (d.completionError) {
+        case 0:  return tr("Error");
+        case 2:  return tr("Insufficient disk space");
+        case 3:  return tr("Error (%1)").arg(tr("file name too long"));
+        case 4:  return tr("Error (%1)").arg(tr("cannot write to folder"));
+        case 5:  return tr("Error (%1)").arg(tr("cannot read file"));
+        default: return tr("Error (%1)").arg(tr("could not complete"));
+        }
 
     // Ready and Empty both land here: what the user cares about is not which of the
     // two the core latched, but whether anything is actually arriving.

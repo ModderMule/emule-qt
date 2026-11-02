@@ -1,6 +1,7 @@
 #include "pch.h"
 #include "dialogs/PasteTextDialog.h"
 
+#include "app/SkinIcons.h"
 #include "controls/UsenetQueueModel.h"
 
 #include "utils/DialogSizing.h"
@@ -24,7 +25,7 @@ PasteTextDialog::PasteTextDialog(const Chrome& chrome, QWidget* parent)
 {
     setWindowTitle(chrome.title);
     if (!chrome.iconPath.isEmpty())
-        setWindowIcon(QIcon(chrome.iconPath));
+        setWindowIcon(skinIcon(chrome.iconPath));
 
     auto* layout = new QVBoxLayout(this);
 

@@ -19,41 +19,33 @@
 /// successful check is a week old. A failure blocks automatic retries for 6 h —
 /// GeoLite2 caps downloads per account per day.
 
-#include <QDateTime>
-#include <QObject>
-#include <QPointer>
 #include <QString>
-#include <QTimer>
 #include <QUrl>
 
 #include "geo/IP2Country.h"
+#include "net/ScheduledUpdater.h"
 
 #include <functional>
 #include <optional>
-
-class QNetworkAccessManager;
-class QNetworkReply;
+#include <vector>
 
 namespace eMule {
 
-class GeoIpUpdater : public QObject {
+class GeoIpUpdater : public ScheduledUpdater {
     Q_OBJECT
 
 public:
     using Callback = std::function<void(bool ok, const QString& message)>;
 
     GeoIpUpdater(IP2Country* ip2Country, const QString& configDir, QObject* parent = nullptr);
-    ~GeoIpUpdater() override;
 
     /// Adopt a newer bundled database, open the database and arm the schedule.
-    void start();
-    void stop();
+    void start() override;
 
     /// Force a download now, ignoring the schedule and the failure back-off.
     /// @p done fires once with the outcome (also when no credentials are set).
     void updateNow(Callback done = {});
 
-    [[nodiscard]] bool isRunning() const { return m_reply != nullptr; }
     /// File of the selected source.
     [[nodiscard]] QString databasePath() const;
     [[nodiscard]] QString databasePathFor(GeoIpSource source) const;
@@ -73,7 +65,7 @@ public:
     void setBundleDir(const QString& dir) { m_bundleDir = dir; }
 
     /// Update if due (missing db / week-old check) and not backing off.
-    void checkSchedule();
+    void checkSchedule() override;
 
 signals:
     /// A new database was installed and is now active.
@@ -85,9 +77,9 @@ private:
     bool openDatabase(const QString& path);
     [[nodiscard]] bool selectedLoaded() const;
     [[nodiscard]] QUrl dbIpUrl(int monthsBack) const;
-    void startRequest(const QUrl& url, bool withCredentials, bool conditional);
+    void startRequest(const QUrl& url);
+    void onDownloaded(const HttpFileDownload::Result& r);
     void finish(bool ok, const QString& message);
-    void onReplyFinished();
     [[nodiscard]] bool installDatabase(const QByteArray& mmdb, QString& error);
 
     IP2Country* m_ip2Country = nullptr;
@@ -95,15 +87,9 @@ private:
     std::optional<QString> m_bundleDir;
     QUrl m_url;
     QString m_dbIpUrlTemplate;
-    QUrl m_requestUrl;                           ///< first hop of the running download
     GeoIpSource m_activeSource = GeoIpSource::MaxMind;   ///< source of the running download
     int m_dbIpMonthsBack = 0;
-    QTimer m_timer;
-    QNetworkAccessManager* m_nam = nullptr;
-    QPointer<QNetworkReply> m_reply;
     std::vector<Callback> m_waiting;
-    QDateTime m_lastFailure;
-    int m_redirects = 0;
 };
 
 } // namespace eMule

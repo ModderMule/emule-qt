@@ -75,7 +75,7 @@ public:
 
     /// Fetch @p url and hand the bytes to @p done.
     ///
-    /// @p context owns the callback's lifetime exactly as HttpFileDownload::get
+    /// @p context owns the callback's lifetime exactly as HttpFileDownload::fetch
     /// does: destroy it before the reply arrives and @p done is never invoked.
     ///
     /// Deliberately does not parse. Turning bytes into a queue item is

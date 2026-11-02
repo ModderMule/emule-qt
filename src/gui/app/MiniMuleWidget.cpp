@@ -3,6 +3,7 @@
 
 #include "app/MiniMuleWidget.h"
 
+#include "app/SkinIcons.h"
 #include "app/UiState.h"
 #include "utils/StringUtils.h"
 
@@ -37,7 +38,7 @@ QLabel* makeStatRow(QBoxLayout* layout, const QString& iconPath,
     auto* icon = new QLabel;
     icon->setFixedSize(16, 16);
     icon->setScaledContents(true);
-    icon->setPixmap(QIcon(iconPath).pixmap(16, 16));
+    setSkinPixmap(icon, iconPath);
     row->addWidget(icon);
 
     auto* nameLabel = new QLabel(name);
@@ -217,7 +218,7 @@ void MiniMuleWidget::setupUi()
     auto makeBtn = [&](const QString& iconPath, const QString& tooltip) {
         auto* btn = new QPushButton;
         btn->setFixedSize(28, 28);
-        btn->setIcon(QIcon(iconPath));
+        btn->setIcon(skinIcon(iconPath));
         btn->setIconSize(QSize(20, 20));
         btn->setToolTip(tooltip);
         btn->setFlat(true);

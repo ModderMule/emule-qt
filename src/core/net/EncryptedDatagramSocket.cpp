@@ -220,7 +220,7 @@ uint32 EncryptedDatagramSocket::encryptSendClient(
     // Kad keeps its fixed layout; the length field holds 0-15
     padding = isKad ? 0 : static_cast<uint8>(padding & 0x0F);
     uint8 kadRecKeyUsed = 0; // NodeID marker
-    const uint16 randomKeyPart = getRandomUInt16();
+    const uint16 randomKeyPart = secureRandomUInt16();
     MD5Hasher md5;
 
     if (isKad) {
@@ -368,7 +368,7 @@ DecryptResult EncryptedDatagramSocket::decryptReceivedServer(
 
 uint32 EncryptedDatagramSocket::encryptSendServer(uint8* buf, uint32 len, uint32 baseKey)
 {
-    const uint16 randomKeyPart = getRandomUInt16();
+    const uint16 randomKeyPart = secureRandomUInt16();
 
     uint8 keyData[7];
     pokeUInt32(keyData, baseKey);

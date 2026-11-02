@@ -10,6 +10,7 @@
 #include "media/ContainerSniffer.h"
 
 #include "prefs/Preferences.h"
+#include "app/SkinIcons.h"
 
 #include <QHash>
 #include <QPainter>
@@ -70,7 +71,7 @@ QIcon ratingIcon(int rating)
 {
     if (rating < 0 || rating > 5 || !thePrefs.useOriginalIcons())
         return {};
-    return QIcon(QStringLiteral(":/icons/FileRating%1.ico").arg(rating));
+    return skinIcon(QStringLiteral(":/icons/FileRating%1.ico").arg(rating));
 }
 
 FileMark ratingMark(bool hasComment, int userRating)
@@ -111,6 +112,9 @@ QIcon fileMarksIcon(const QIcon& base, const QString& baseKey, ContainerMark con
                       + QString::number(static_cast<int>(mark));
 
     static QHash<QString, QIcon> cache;
+    static quint64 skinSeen = 0;
+    if (SkinIcons::instance().changedSince(skinSeen))
+        cache.clear();
     if (const auto it = cache.constFind(key); it != cache.constEnd())
         return *it;
 
@@ -138,14 +142,13 @@ QIcon fileMarksIcon(const QIcon& base, const QString& baseKey, ContainerMark con
         if (ownComment) {
             // Over the type icon, not beside it: MFC draws this one as an image-list
             // overlay (INDEXTOOVERLAYMASK(1)), so it never costs the row any width.
-            static const QPixmap overlay =
-                QIcon(QStringLiteral(":/icons/FileCommentsOvl.ico")).pixmap(kMarkPx, kMarkPx);
-            painter.drawPixmap(QRect(0, 0, kMarkPx, kMarkPx), overlay);
+            painter.drawPixmap(QRect(0, 0, kMarkPx, kMarkPx),
+                               skinIcon(QStringLiteral(":/icons/FileCommentsOvl.ico")).pixmap(kMarkPx, kMarkPx));
         }
         int x = kMarkPx;
         for (const QString& path : marks) {
             x += kGapPx;
-            drawInto(painter, path == kEmptyBadge ? QIcon() : QIcon(path), x, kDpr);
+            drawInto(painter, path == kEmptyBadge ? QIcon() : skinIcon(path), x, kDpr);
             x += kMarkPx;
         }
     }

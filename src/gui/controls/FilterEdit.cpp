@@ -3,6 +3,7 @@
 /// @brief List filter box — port of MFC CEditDelayed.
 
 #include "controls/FilterEdit.h"
+#include "app/SkinIcons.h"
 
 #include <QAction>
 #include <QHeaderView>
@@ -16,7 +17,7 @@ FilterEdit::FilterEdit(QWidget* parent)
 {
     setClearButtonEnabled(true);
 
-    auto* columnAction = addAction(QIcon(QStringLiteral(":/icons/SearchEdit.ico")),
+    auto* columnAction = addAction(skinIcon(QStringLiteral(":/icons/SearchEdit.ico")),
                                    QLineEdit::LeadingPosition);
     connect(columnAction, &QAction::triggered, this, &FilterEdit::showColumnMenu);
 

@@ -276,8 +276,9 @@ QStringList Ed2kLinkImporter::splitLinks(const QString& text)
     return candidates;
 }
 
-Ed2kLinkImporter::LinkKinds Ed2kLinkImporter::linkKindsIn(const QString& text)
+Ed2kLinkImporter::LinkKinds Ed2kLinkImporter::linkKindsIn(const QString& rawText)
 {
+    const QString text = normalizeEd2kLink(rawText);
     LinkKinds kinds;
     if (text.contains(QStringLiteral("ed2k://|file|"), Qt::CaseInsensitive))
         kinds |= LinkKind::File;

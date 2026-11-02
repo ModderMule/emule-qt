@@ -46,6 +46,7 @@
 #include <QTimer>
 #include <QtEndian>
 #include <QDir>
+#include <QStorageInfo>
 #include <QFileInfo>
 
 
@@ -1478,7 +1479,7 @@ void PartFile::setActive(bool active)
     }
 }
 
-void PartFile::pauseFile(bool insufficient)
+void PartFile::pauseFile(bool insufficient, bool quiet)
 {
     const bool wasPaused = m_paused;
 
@@ -1521,7 +1522,7 @@ void PartFile::pauseFile(bool insufficient)
 
     // m_stopped is already set when stopFile() routes through here — it logs its own
     // line, so don't announce the intermediate pause.
-    if (!wasPaused && !m_stopped) {
+    if (!wasPaused && !m_stopped && !quiet) {
         logInfo(insufficient
                     ? QStringLiteral("Download paused (insufficient disk space): %1").arg(fileName())
                     : QStringLiteral("Download paused: %1").arg(fileName()));
@@ -1530,7 +1531,7 @@ void PartFile::pauseFile(bool insufficient)
     savePartFile();
 }
 
-void PartFile::resumeFile()
+void PartFile::resumeFile(bool quiet)
 {
     // m_insufficient too: an out-of-space file has m_paused false (see pauseFile), and
     // would otherwise be unresumable.
@@ -1559,10 +1560,11 @@ void PartFile::resumeFile()
     // status has been carrying the real state all along.
     emit m_partNotifier.statusChanged(status());
 
-    logInfo(QStringLiteral("Download resumed: %1 — status=%2 gaps=%3")
-                .arg(fileName())
-                .arg(static_cast<int>(status()))
-                .arg(m_gapList.size()));
+    if (!quiet)
+        logInfo(QStringLiteral("Download resumed: %1 — status=%2 gaps=%3")
+                    .arg(fileName())
+                    .arg(static_cast<int>(status()))
+                    .arg(m_gapList.size()));
 
     // If we had a completion error but no gaps, retry completion
     if (m_completionError && m_gapList.empty()) {
@@ -3507,18 +3509,43 @@ void FileMoveThread::run()
     // Try rename first (instant on same filesystem)
     if (QFile::rename(m_srcPath, finalDest)) {
         m_destPath = finalDest;
-        emit moveFinished(true, finalDest);
+        emit moveFinished(true, finalDest, static_cast<int>(CompletionFailure::None));
         return;
     }
 
     // Rename failed (cross-filesystem)
+    const qint64 bytes = QFileInfo(m_srcPath).size();
     const bool ok = copyThenRename(m_srcPath, finalDest,
                                    [this] { return !isInterruptionRequested(); });
     if (!ok && isInterruptionRequested())
         return;
     if (ok)
         m_destPath = finalDest;
-    emit moveFinished(ok, finalDest);
+    const auto failure = ok ? CompletionFailure::None : QFile::exists(m_srcPath)
+        ? classifyFailure(finalDest, bytes) : CompletionFailure::Unreadable;
+    emit moveFinished(ok, finalDest, static_cast<int>(failure));
+}
+
+CompletionFailure FileMoveThread::classifyFailure(const QString& destPath, qint64 bytes)
+{
+    // NAME_MAX is 255 bytes on APFS/ext4, 255 UTF-16 units on NTFS
+    const QString name = QFileInfo(destPath).fileName();
+#ifdef Q_OS_WIN
+    if (name.size() > 255)
+#else
+    if (name.toUtf8().size() > 255)
+#endif
+        return CompletionFailure::NameTooLong;
+
+    const QFileInfo dir(QFileInfo(destPath).absolutePath());
+    if (!dir.isDir() || !dir.isWritable())
+        return CompletionFailure::CannotWrite;
+
+    // Not volume.isReadOnly(): macOS reports the sealed root for firmlinked dirs
+    const QStorageInfo volume(dir.absoluteFilePath());
+    if (volume.isValid() && volume.bytesAvailable() >= 0 && volume.bytesAvailable() < bytes)
+        return CompletionFailure::NoSpace;
+    return CompletionFailure::Other;
 }
 
 QString FileMoveThread::uniqueDestination(const QString& path,
@@ -3644,13 +3671,14 @@ void PartFile::performFileMove(const QString& srcPath, const QString& destPath, 
             logError(QStringLiteral("Final check of '%1' could not read the file — not "
                                     "delivered, resume to try again").arg(fileName()));
             m_completionError = true;
+            m_completionFailure = CompletionFailure::Unreadable;
             setStatus(PartFileStatus::Error);
         }
         emit m_partNotifier.fileMoveFinished(false);
     });
 
     QObject::connect(thread, &FileMoveThread::moveFinished,
-                     &m_partNotifier, [this](bool success, const QString& finalPath) {
+                     &m_partNotifier, [this](bool success, const QString& finalPath, int failure) {
         m_completionRunning = false;
         m_fileOp = PartFileOp::None;
         if (success) {
@@ -3687,8 +3715,14 @@ void PartFile::performFileMove(const QString& srcPath, const QString& destPath, 
             // via the downloadCompleted() signal connection
             emit m_partNotifier.downloadCompleted();
         } else {
-            logError(QStringLiteral("PartFile::completeFile: file move failed %1 → %2")
-                         .arg(m_fullName, finalPath));
+            m_completionFailure = static_cast<CompletionFailure>(failure);
+            static constexpr const char* kWhy[] = {
+                "", "", "not enough disk space", "file name too long",
+                "cannot write to the destination folder", "cannot read the temp file"};
+            const auto why = static_cast<size_t>(failure) < std::size(kWhy) ? kWhy[failure] : "";
+            logError(QStringLiteral("PartFile::completeFile: file move failed %1 → %2%3")
+                         .arg(m_fullName, finalPath,
+                              *why ? QStringLiteral(" (%1)").arg(QLatin1String(why)) : QString()));
             m_completionError = true;
             setStatus(PartFileStatus::Error);
         }
@@ -4568,6 +4602,7 @@ void PartFile::completeIfVerified()
         logError(QStringLiteral("PartFile: '%1' is fully downloaded but could not be read back "
                                 "to verify it — resume to try again").arg(fileName()));
         m_completionError = true;
+        m_completionFailure = CompletionFailure::Unreadable;
         setStatus(PartFileStatus::Error);
         return;
     }

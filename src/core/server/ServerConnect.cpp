@@ -605,7 +605,7 @@ void ServerConnect::connectionFailed(ServerSocket* sender)
     // 30-second retry-timer path above, matching MFC — autoretry is false for a live
     // connection, so a fatal error deliberately leaves us disconnected.
     if (lostLiveConnection && failState == ServerConnState::Disconnected
-        && m_config.reconnectOnDisconnect && !m_connecting) {
+        && m_config.reconnectOnDisconnect && !m_connecting && !m_offlineHold) {
         connectToAnyServer();
     }
 }
@@ -675,12 +675,19 @@ bool ServerConnect::disconnect()
 // RetryTimer
 // ---------------------------------------------------------------------------
 
+void ServerConnect::setOfflineHold(bool held)
+{
+    m_offlineHold = held;
+    if (held)
+        m_retryTimer.stop();
+}
+
 void ServerConnect::onRetryTimer()
 {
     logServerVerbose(QStringLiteral("Retry timer fired — re-attempting auto-connect from position %1")
                          .arg(m_startAutoConnectPos));
     stopConnectionTry();
-    if (isConnected())
+    if (isConnected() || m_offlineHold)
         return;
     if (m_startAutoConnectPos >= m_serverList.serverCount())
         m_startAutoConnectPos = 0;

@@ -23,6 +23,7 @@
 
 #include "net/HttpFileDownload.h"
 #include "prefs/Preferences.h"
+#include "app/SkinIcons.h"
 
 
 #include <QButtonGroup>
@@ -332,7 +333,7 @@ void KadPanel::setupUi()
     m_topTabWidget->setDocumentMode(true);
     if (thePrefs.useOriginalIcons()) {
         m_topTabWidget->addTab(createContactsPanel(),
-            QIcon(QStringLiteral(":/icons/KadContactList.ico")), tr("\u25B8 Contacts (0)"));
+            skinIcon(QStringLiteral(":/icons/KadContactList.ico")), tr("\u25B8 Contacts (0)"));
     } else {
         m_topTabWidget->addTab(createContactsPanel(), tr("\u25B8 Contacts (0)"));
     }
@@ -342,7 +343,7 @@ void KadPanel::setupUi()
     m_lookupGraph->setAutoShowLookups(theUiState.kadAutoShowLookups());
     if (thePrefs.useOriginalIcons()) {
         m_topTabWidget->addTab(m_lookupGraph,
-            QIcon(QStringLiteral(":/icons/FriendSlot.ico")), tr("\u25B8 Search Details"));
+            skinIcon(QStringLiteral(":/icons/FriendSlot.ico")), tr("\u25B8 Search Details"));
     } else {
         m_topTabWidget->addTab(m_lookupGraph, tr("\u25B8 Search Details"));
     }
@@ -497,7 +498,7 @@ QWidget* KadPanel::createControlsPanel()
     // Bootstrap button — right-aligned, disabled until valid input
     m_bootstrapBtn = new QPushButton(tr("Bootstrap"));
     if (thePrefs.useOriginalIcons())
-        m_bootstrapBtn->setIcon(QIcon(QStringLiteral(":/icons/KadBootstrap.ico")));
+        m_bootstrapBtn->setIcon(skinIcon(QStringLiteral(":/icons/KadBootstrap.ico")));
     m_bootstrapBtn->setEnabled(false);
     auto* bsBtnRow = new QHBoxLayout;
     bsBtnRow->addStretch();
@@ -543,7 +544,7 @@ QWidget* KadPanel::createSearchesPanel()
     searchesHeader->setSpacing(4);
     if (thePrefs.useOriginalIcons()) {
         auto* searchIcon = new QLabel;
-        searchIcon->setPixmap(QIcon(QStringLiteral(":/icons/KadCurrentSearches.ico")).pixmap(16, 16));
+        setSkinPixmap(searchIcon, QStringLiteral(":/icons/KadCurrentSearches.ico"));
         searchesHeader->addWidget(searchIcon);
     }
     m_searchesLabel = new QLabel(tr("\u25B8 Current Searches (0)"));

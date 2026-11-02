@@ -60,7 +60,13 @@
     <ClCompile Include="archive\ArchiveUnpack.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
+    <ClCompile Include="net\ConnectionChecker.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
     <ClCompile Include="net\HttpFileDownload.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="net\ScheduledUpdater.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
     <ClCompile Include="net\MetaFileCache.cpp">
@@ -88,6 +94,9 @@
       <Filter>Source Files</Filter>
     </ClCompile>
     <ClCompile Include="crypto\AesCbc.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="crypto\SecretCompare.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
     <ClCompile Include="crypto\SelfSignedCert.cpp">
@@ -534,6 +543,9 @@
     <ClCompile Include="client\DlpLoader.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
+    <ClCompile Include="kademlia\KadNetworkWatch.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
     <ClCompile Include="kademlia\KadNodeCensus.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
@@ -630,6 +642,9 @@
     <ClCompile Include="webserver\WebServerTorrents.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
+    <ClCompile Include="webserver\StreamTokenStore.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
     <ClCompile Include="webserver\WebSessionManager.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
@@ -713,7 +728,13 @@
     <ClInclude Include="net\HttpDefaults.h">
       <Filter>Header Files</Filter>
     </ClInclude>
+    <ClInclude Include="net\ConnectionChecker.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
     <ClInclude Include="net\HttpFileDownload.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="net\HttpValidators.h">
       <Filter>Header Files</Filter>
     </ClInclude>
     <ClInclude Include="net\MetaFileCache.h">
@@ -849,6 +870,9 @@
       <Filter>Header Files</Filter>
     </QtMoc>
     <QtMoc Include="ipfilter\IpFilterUpdater.h">
+      <Filter>Header Files</Filter>
+    </QtMoc>
+    <QtMoc Include="net\ScheduledUpdater.h">
       <Filter>Header Files</Filter>
     </QtMoc>
     <QtMoc Include="geo\GeoIpUpdater.h">
@@ -1259,6 +1283,9 @@
     <ClInclude Include="client\DlpLoader.h">
       <Filter>Header Files</Filter>
     </ClInclude>
+    <ClInclude Include="kademlia\KadNetworkWatch.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
     <ClInclude Include="kademlia\KadNodeCensus.h">
       <Filter>Header Files</Filter>
     </ClInclude>
@@ -1349,6 +1376,9 @@
     <ClInclude Include="crypto\AesCbc.h">
       <Filter>Header Files</Filter>
     </ClInclude>
+    <ClInclude Include="crypto\SecretCompare.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
     <ClInclude Include="crypto\SelfSignedCert.h">
       <Filter>Header Files</Filter>
     </ClInclude>
@@ -1370,6 +1400,9 @@
     <QtMoc Include="webserver\WebServer.h">
       <Filter>Header Files</Filter>
     </QtMoc>
+    <ClInclude Include="webserver\StreamTokenStore.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
     <ClInclude Include="webserver\WebSessionManager.h">
       <Filter>Header Files</Filter>
     </ClInclude>

@@ -20,13 +20,13 @@ namespace eMule::kad {
 // ---------------------------------------------------------------------------
 
 struct TrackedPacket {
-    uint32 insertedTime = 0;
+    uint64 insertedTime = 0; // getTickCount() ms
     uint32 ip = 0;
     uint8 opcode = 0;
 };
 
 struct TrackedChallenge {
-    uint32 insertedTime = 0;
+    uint64 insertedTime = 0; // getTickCount() ms
     uint32 ip = 0;
     UInt128 contactID;
     UInt128 challenge;

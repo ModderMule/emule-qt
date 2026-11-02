@@ -74,7 +74,7 @@ enum class IpcMsgType : int {
     /// [searchID: int] → bool. Next page of a finished Usenet / torrent (Server)
     /// search whose PushSearchState said hasMore; false when it has none.
     SearchMore           = 157,
-    GetKnownTypes        = 156,  ///< [hashes: QCborArray of strings] → [types: QCborArray of ints]
+    GetKnownTypes        = 156,  ///< [hashes: QCborArray of strings] → [types: QCborArray of ints, localFolders: QCborArray of strings]
     /// [afterHash?, limit?] -> {files: [row], more, total}. Rows in hash order behind
     /// afterHash; no fields = all rows in one reply (may not fit a frame for a large share).
     GetSharedFiles       = 160,

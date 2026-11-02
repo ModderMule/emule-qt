@@ -263,6 +263,8 @@ bool applyCurrentScheme(bool allowFallback)
     QApplication::setStyle(new TooltipDelayStyle(fusion));
     QApplication::setPalette(wantsDark ? darkPalette() : fusion->standardPalette());
     s_fusionFallback = true;
+    // List headers own a style; still on the native one, they'd stay light (report #17)
+    TooltipDelayStyle::rebaseWidgetStyles();
     logInfo(styleRefusesDark
                 ? QStringLiteral("Theme: native style cannot draw dark, using Fusion")
                 : QStringLiteral("Theme: platform ignored the colour scheme, using Fusion"));

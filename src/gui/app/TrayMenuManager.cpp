@@ -4,6 +4,7 @@
 #include "app/IpcClient.h"
 #include "IpcMessage.h"
 #include "prefs/Preferences.h"
+#include "app/SkinIcons.h"
 
 #include <QGridLayout>
 #include <QIcon>
@@ -82,7 +83,7 @@ void TrayMenuManager::updateState(bool ed2kConnected, bool kadRunning, bool ipcC
 void TrayMenuManager::buildMenu()
 {
     // Header: Speed.ico, "eMule Speed", bold, disabled (matches MFC)
-    auto* header = addAction(QIcon(QStringLiteral(":/icons/Speed.ico")),
+    auto* header = addAction(skinIcon(QStringLiteral(":/icons/Speed.ico")),
                              tr("eMule Speed"));
     header->setEnabled(false);
     auto headerFont = header->font();
@@ -98,7 +99,7 @@ void TrayMenuManager::buildMenu()
 
     // Download row first (matches MFC order)
     auto* downIcon = new QLabel;
-    downIcon->setPixmap(QIcon(QStringLiteral(":/icons/Download.ico")).pixmap(16, 16));
+    setSkinPixmap(downIcon, QStringLiteral(":/icons/Download.ico"));
     auto* downLabel = new QLabel(tr("Download:"));
     m_downSlider = new QSlider(Qt::Horizontal);
     m_downSlider->setMinimumWidth(120);
@@ -113,7 +114,7 @@ void TrayMenuManager::buildMenu()
 
     // Upload row second
     auto* upIcon = new QLabel;
-    upIcon->setPixmap(QIcon(QStringLiteral(":/icons/Upload.ico")).pixmap(16, 16));
+    setSkinPixmap(upIcon, QStringLiteral(":/icons/Upload.ico"));
     auto* upLabel = new QLabel(tr("Upload:"));
     m_upSlider = new QSlider(Qt::Horizontal);
     m_upSlider->setMinimumWidth(120);
@@ -148,7 +149,7 @@ void TrayMenuManager::buildMenu()
 
     // Set Full Up/Down-Speed: restore both to capacity max
     auto* setFullAction = addAction(
-        QIcon(QStringLiteral(":/icons/SpeedMax.ico")), tr("Set Full Up/Down-Speed"));
+        skinIcon(QStringLiteral(":/icons/SpeedMax.ico")), tr("Set Full Up/Down-Speed"));
     connect(setFullAction, &QAction::triggered, this, [this]() {
         const int maxUp = static_cast<int>(thePrefs.maxGraphUploadRate());
         const int maxDown = static_cast<int>(thePrefs.maxGraphDownloadRate());
@@ -167,7 +168,7 @@ void TrayMenuManager::buildMenu()
 
     // Throttle Up/Down-Speed: set both to 1 KB/s
     auto* throttleAction = addAction(
-        QIcon(QStringLiteral(":/icons/SpeedMin.ico")), tr("Throttle Up/Down-Speed"));
+        skinIcon(QStringLiteral(":/icons/SpeedMin.ico")), tr("Throttle Up/Down-Speed"));
     connect(throttleAction, &QAction::triggered, this, [this]() {
         {
             QSignalBlocker b1(m_upSlider), b2(m_upSpin);
@@ -187,7 +188,7 @@ void TrayMenuManager::buildMenu()
     // The whole Usenet engine, checked while paused. triggered(), not toggled():
     // the state follows the daemon's push, and only a click should send.
     m_usenetPauseAction = addAction(
-        QIcon(QStringLiteral(":/icons/Pause.ico")), tr("Pause Usenet"));
+        skinIcon(QStringLiteral(":/icons/Pause.ico")), tr("Pause Usenet"));
     m_usenetPauseAction->setCheckable(true);
     connect(m_usenetPauseAction, &QAction::triggered, this, [this](bool checked) {
         if (!m_ipc || !m_ipc->isConnected())
@@ -201,13 +202,13 @@ void TrayMenuManager::buildMenu()
 
     // Connect (enabled when disconnected)
     m_connectAction = addAction(
-        QIcon(QStringLiteral(":/icons/ConnectDo.ico")), tr("Connect"));
+        skinIcon(QStringLiteral(":/icons/ConnectDo.ico")), tr("Connect"));
     connect(m_connectAction, &QAction::triggered,
             this, &TrayMenuManager::connectRequested);
 
     // Disconnect (enabled when connected)
     m_disconnectAction = addAction(
-        QIcon(QStringLiteral(":/icons/ConnectDrop.ico")), tr("Disconnect"));
+        skinIcon(QStringLiteral(":/icons/ConnectDrop.ico")), tr("Disconnect"));
     connect(m_disconnectAction, &QAction::triggered,
             this, &TrayMenuManager::disconnectRequested);
 
@@ -215,14 +216,14 @@ void TrayMenuManager::buildMenu()
 
     // Options
     auto* optionsAction = addAction(
-        QIcon(QStringLiteral(":/icons/Preferences.ico")), tr("Options"));
+        skinIcon(QStringLiteral(":/icons/Preferences.ico")), tr("Options"));
     connect(optionsAction, &QAction::triggered, this, &TrayMenuManager::optionsRequested);
 
     addSeparator();
 
     // Restore (bold, matches MFC)
     auto* restoreAction = addAction(
-        QIcon(QStringLiteral(":/icons/Display.ico")), tr("Restore"));
+        skinIcon(QStringLiteral(":/icons/Display.ico")), tr("Restore"));
     auto restoreFont = restoreAction->font();
     restoreFont.setBold(true);
     restoreAction->setFont(restoreFont);
@@ -230,7 +231,7 @@ void TrayMenuManager::buildMenu()
 
     // Exit
     auto* exitAction = addAction(
-        QIcon(QStringLiteral(":/icons/Exit.ico")), tr("Exit"));
+        skinIcon(QStringLiteral(":/icons/Exit.ico")), tr("Exit"));
     connect(exitAction, &QAction::triggered, this, &TrayMenuManager::exitRequested);
 }
 

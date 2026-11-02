@@ -99,6 +99,7 @@
 #define KADEMLIAMAXENTRIES          60000
 #define KADEMLIAMAXSOURCEPERFILE    1000
 #define KADEMLIAMAXNOTESPERFILE     150
+#define KADEMLIAMAXFILENAMESPERKEY  32          // alt names kept per keyword entry (not MFC)
 #define KADEMLIAFIREWALLCHECKS      4
 
 #define ED2KREPUBLISHTIME           MIN2MS(1)   //1 min

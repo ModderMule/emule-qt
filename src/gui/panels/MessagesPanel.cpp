@@ -4,6 +4,7 @@
 
 #include "panels/MessagesPanel.h"
 #include "panels/ChatNetwork.h"
+#include "app/SkinColors.h"
 
 #include "prefs/Preferences.h"
 
@@ -23,6 +24,7 @@
 #include "utils/PanelPoller.h"
 #include "utils/Smileys.h"
 #include "utils/TextLinks.h"
+#include "app/SkinIcons.h"
 
 
 #include <QAction>
@@ -305,7 +307,7 @@ void MessagesPanel::setupUi()
     // Friends header with icon
     auto* friendsHeader = new QHBoxLayout;
     auto* friendsIcon = new QLabel(leftWidget);
-    friendsIcon->setPixmap(QIcon(QStringLiteral(":/icons/User.ico")).pixmap(16, 16));
+    setSkinPixmap(friendsIcon, QStringLiteral(":/icons/User.ico"));
     friendsHeader->addWidget(friendsIcon);
     m_friendsLabel = new QLabel(tr("Friends (0)"), leftWidget);
     auto headerFont = m_friendsLabel->font();
@@ -319,6 +321,7 @@ void MessagesPanel::setupUi()
     m_friendModel = new FriendListModel(this);
     m_friendListView = new QListView(leftWidget);
     m_friendListView->setModel(m_friendModel);
+    SkinColors::bind(m_friendListView, {QStringLiteral("FriendsLv"), QStringLiteral("DefLv")}, true);
     m_friendListView->setSelectionMode(QAbstractItemView::SingleSelection);
     m_friendListView->setContextMenuPolicy(Qt::CustomContextMenu);
     CountryFlags::bindFlagColumn(m_friendListView);
@@ -382,7 +385,7 @@ void MessagesPanel::setupUi()
     // "Messages" static header with icon (matching MFC style)
     auto* messagesHeader = new QHBoxLayout;
     auto* messagesIcon = new QLabel(rightWidget);
-    messagesIcon->setPixmap(QIcon(QStringLiteral(":/icons/Messages.ico")).pixmap(16, 16));
+    setSkinPixmap(messagesIcon, QStringLiteral(":/icons/Messages.ico"));
     messagesHeader->addWidget(messagesIcon);
     auto* messagesLabel = new QLabel(tr("Messages"), rightWidget);
     auto msgFont = messagesLabel->font();
@@ -408,6 +411,7 @@ void MessagesPanel::setupUi()
     // Chat browser
     m_chatBrowser = new LogTextView(rightWidget);
     m_chatBrowser->setReadOnly(true);
+    SkinColors::bind(m_chatBrowser, {QStringLiteral("Chat")});
     // A friend's ed2k:// link has to reach the importer, not the OS.
     TextLinks::wireLinkClicks(m_chatBrowser, this,
                               [this](const QString& link) { emit linkActivated(link); });
@@ -417,7 +421,7 @@ void MessagesPanel::setupUi()
     auto* inputLayout = new QHBoxLayout;
 
     m_smileyBtn = new QToolButton(rightWidget);
-    m_smileyBtn->setIcon(QIcon(QStringLiteral(":/smileys/Smiley_Smile.ico")));
+    m_smileyBtn->setIcon(skinIcon(QStringLiteral(":/smileys/Smiley_Smile.ico")));
     m_smileyBtn->setIconSize(QSize(20, 20));
     m_smileyBtn->setAutoRaise(true);
     m_smileyBtn->setToolTip(tr("Smileys"));
@@ -453,17 +457,17 @@ void MessagesPanel::setupUi()
     // MFC CFriendListCtrl::OnContextMenu (FriendListCtrl.cpp:143-169): "Details..."
     // leads, only with a selection; no separators.
     auto* detailsAction = m_contextMenu->addAction(
-        QIcon(QStringLiteral(":/icons/UserDetails.ico")), tr("&Details..."));
+        skinIcon(QStringLiteral(":/icons/UserDetails.ico")), tr("&Details..."));
     connect(detailsAction, &QAction::triggered, this,
             [this] { showFriendDetails(m_friendListView->currentIndex()); });
 
-    auto* addAction = m_contextMenu->addAction(QIcon(QStringLiteral(":/icons/UserAdd.ico")), tr("Add..."));
+    auto* addAction = m_contextMenu->addAction(skinIcon(QStringLiteral(":/icons/UserAdd.ico")), tr("Add..."));
     connect(addAction, &QAction::triggered, this, &MessagesPanel::showAddFriendDialog);
 
-    auto* removeAction = m_contextMenu->addAction(QIcon(QStringLiteral(":/icons/UserDelete.ico")), tr("Remove"));
+    auto* removeAction = m_contextMenu->addAction(skinIcon(QStringLiteral(":/icons/UserDelete.ico")), tr("Remove"));
     connect(removeAction, &QAction::triggered, this, &MessagesPanel::removeSelectedFriend);
 
-    auto* sendMsgAction = m_contextMenu->addAction(QIcon(QStringLiteral(":/icons/UserMessage.ico")), tr("Send Message"));
+    auto* sendMsgAction = m_contextMenu->addAction(skinIcon(QStringLiteral(":/icons/UserMessage.ico")), tr("Send Message"));
     connect(sendMsgAction, &QAction::triggered, this, [this]() {
         if (const FriendRow* row = m_friendModel->rowAt(m_friendListView->currentIndex().row()))
             startSession(row->hash, row->network == FriendNetwork::Ed3k && row->name.isEmpty()
@@ -471,7 +475,7 @@ void MessagesPanel::setupUi()
                                         : row->name);
     });
 
-    auto* viewSharedAction = m_contextMenu->addAction(QIcon(QStringLiteral(":/icons/SharedFilesList.ico")), tr("View Shared Files"));
+    auto* viewSharedAction = m_contextMenu->addAction(skinIcon(QStringLiteral(":/icons/SharedFilesList.ico")), tr("View Shared Files"));
     connect(viewSharedAction, &QAction::triggered, this, [this]() {
         if (!IpcFeedback::requireConnection(m_ipc, tr("cannot view shared files.")))
             return;
@@ -487,7 +491,7 @@ void MessagesPanel::setupUi()
         m_ipc->sendRequest(std::move(msg));
     });
 
-    auto* friendSlotAction = m_contextMenu->addAction(QIcon(QStringLiteral(":/icons/FriendSlot.ico")), tr("Establish Friend Slot"));
+    auto* friendSlotAction = m_contextMenu->addAction(skinIcon(QStringLiteral(":/icons/FriendSlot.ico")), tr("Establish Friend Slot"));
     friendSlotAction->setCheckable(true);
     connect(friendSlotAction, &QAction::triggered, this, [this, friendSlotAction]() {
         if (!m_ipc || !m_ipc->isConnected())
@@ -507,11 +511,11 @@ void MessagesPanel::setupUi()
         });
     });
 
-    auto* findAction = m_contextMenu->addAction(QIcon(QStringLiteral(":/icons/Search.ico")), tr("Find..."));
+    auto* findAction = m_contextMenu->addAction(skinIcon(QStringLiteral(":/icons/Search.ico")), tr("Find..."));
     connect(findAction, &QAction::triggered, this, &MessagesPanel::showFindDialog);
 
     // ed3k (no MFC original): this node's friend link with a request value, to hand out
-    auto* copyEd3kLinkAction = m_contextMenu->addAction(QIcon(QStringLiteral(":/icons/Copy.ico")),
+    auto* copyEd3kLinkAction = m_contextMenu->addAction(skinIcon(QStringLiteral(":/icons/Copy.ico")),
                                                         tr("Copy my ed3k friend link"));
     connect(copyEd3kLinkAction, &QAction::triggered, this, &MessagesPanel::copyMyEd3kLink);
 
@@ -681,14 +685,14 @@ void MessagesPanel::onChatTabContextMenu(const QPoint& pos)
 
     QMenu menu(this);
     if (ed2k)
-        menu.addAction(QIcon(QStringLiteral(":/icons/UserDetails.ico")), tr("&Details..."), this,
+        menu.addAction(skinIcon(QStringLiteral(":/icons/UserDetails.ico")), tr("&Details..."), this,
                        [this, hash] { showClientDetails(this, m_ipc, hash); });
     else if (isFriend)
-        menu.addAction(QIcon(QStringLiteral(":/icons/UserDetails.ico")), tr("&Details..."), this,
+        menu.addAction(skinIcon(QStringLiteral(":/icons/UserDetails.ico")), tr("&Details..."), this,
                        [this, friendRow] { showFriendDetails(m_friendModel->index(friendRow)); });
     // an ed3k stranger has no key to add: only a link makes a friend (friend.md §1)
     if (!isFriend && ed2k) {
-        menu.addAction(QIcon(QStringLiteral(":/icons/UserAdd.ico")), tr("Add to friends list"),
+        menu.addAction(skinIcon(QStringLiteral(":/icons/UserAdd.ico")), tr("Add to friends list"),
                        this, [this, hash, name = m_chatTabBar->tabText(tab)] {
             if (!m_ipc || !m_ipc->isConnected())
                 return;
@@ -705,7 +709,7 @@ void MessagesPanel::onChatTabContextMenu(const QPoint& pos)
             });
         });
     } else if (isFriend) {
-        menu.addAction(QIcon(QStringLiteral(":/icons/UserDelete.ico")), tr("Remove"),
+        menu.addAction(skinIcon(QStringLiteral(":/icons/UserDelete.ico")), tr("Remove"),
                        this, [this, hash] {
             // was: IpcMessage(RemoveFriend) with the hash; now per network
             const FriendRow* row = m_friendModel->rowAt(m_friendModel->findByHash(hash));
@@ -992,7 +996,7 @@ void MessagesPanel::openChatTab(const QString& friendHash, const QString& friend
     // currentChanged, and onChatTabChanged reads it.
     const QSignalBlocker block(m_chatTabBar);
     const int idx = m_chatTabBar->addTab(
-        QIcon(QStringLiteral(":/icons/Chat.ico")), friendName);
+        skinIcon(QStringLiteral(":/icons/Chat.ico")), friendName);
     m_chatTabBar->setTabData(idx, QVariant(friendHash));
     updateTabBarVisibility();
     if (activate || m_chatTabBar->count() == 1) {
@@ -1078,7 +1082,7 @@ void MessagesPanel::showSmileySelector()
     for (int i = 0; i < static_cast<int>(smileys.size()); ++i) {
         const auto& smiley = smileys[static_cast<size_t>(i)];
         auto* btn = new QToolButton(gridWidget);
-        btn->setIcon(QIcon(QStringLiteral(":/smileys/%1.ico").arg(QLatin1StringView(smiley.icon))));
+        btn->setIcon(skinIcon(QStringLiteral(":/smileys/%1.ico").arg(QLatin1StringView(smiley.icon))));
         btn->setIconSize(QSize(24, 24));
         btn->setFixedSize(28, 28);
         btn->setAutoRaise(true);
@@ -1145,7 +1149,7 @@ void MessagesPanel::refreshNotifyCues()
         const QString icon = !notify  ? QStringLiteral(":/icons/Chat.ico")
                              : m_blinkOn ? QStringLiteral(":/icons/Message.ico")
                                          : QStringLiteral(":/icons/MessagePending.ico");
-        m_chatTabBar->setTabIcon(i, QIcon(icon));
+        m_chatTabBar->setTabIcon(i, skinIcon(icon));
         // The same cue IrcPanel gives an inactive channel with new lines
         m_chatTabBar->setTabTextColor(i, notify ? QColor(Qt::red) : QColor());
     }

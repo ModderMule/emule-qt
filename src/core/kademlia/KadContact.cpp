@@ -136,15 +136,32 @@ void Contact::updateType()
         m_expires = now + HR2S(2);
         break;
     }
+    m_checkStart = 0;
+    m_recheckAt = 0;
 }
 
-void Contact::checkingType()
+void Contact::checkingType(time_t now)
 {
-    if (time(nullptr) - m_lastTypeSet >= 10 && m_type < 4) {
-        m_lastTypeSet = time(nullptr);
+    if (now - m_lastTypeSet >= 10 && m_type < 4) {
+        m_lastTypeSet = now;
         m_expires = m_lastTypeSet + MIN2S(2);
+        if (m_checkStart == 0) {
+            m_checkStart = m_lastTypeSet;
+            m_typeBeforeCheck = m_type;
+        }
         ++m_type;
+        m_recheckAt = 0;
     }
+}
+
+void Contact::voidChecksSince(time_t since, time_t now)
+{
+    // raises that began before the silence stay: the contact was failing already
+    if (m_checkStart == 0 || m_checkStart < since)
+        return;
+    m_type = m_typeBeforeCheck;
+    m_checkStart = 0;
+    m_expires = now;
 }
 
 time_t Contact::getLastSeen() const
@@ -191,6 +208,9 @@ void Contact::copy(const Contact& from)
     m_distance           = from.m_distance;
     m_udpKey             = from.m_udpKey;
     m_lastTypeSet        = from.m_lastTypeSet;
+    m_checkStart         = from.m_checkStart;
+    m_recheckAt          = from.m_recheckAt;
+    m_typeBeforeCheck    = from.m_typeBeforeCheck;
     m_expires            = from.m_expires;
     m_created            = from.m_created;
     m_inUse              = from.m_inUse;

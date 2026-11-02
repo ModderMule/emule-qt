@@ -6,6 +6,7 @@
 
 #include "controls/AbstractListView.h"
 #include "controls/SortableItems.h"
+#include "app/SkinIcons.h"
 
 #include <QCborMap>
 #include <QHBoxLayout>
@@ -64,7 +65,7 @@ void Ed3kRoomList::setRooms(const QCborArray& rooms)
         const QString room = r.value(QStringLiteral("room")).toString();
         const QString title = r.value(QStringLiteral("title")).toString();
         item->setText(0, title.isEmpty() ? room.left(16) : title);
-        item->setIcon(0, QIcon(QStringLiteral(":/icons/IRC.ico")));
+        item->setIcon(0, skinIcon(QStringLiteral(":/icons/IRC.ico")));
         item->setData(0, Qt::UserRole, room);
         item->setText(1, r.value(QStringLiteral("nick")).toString());
         const int members = int(r.value(QStringLiteral("members")).toArray().size());

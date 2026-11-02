@@ -154,6 +154,11 @@ picks it up — on `QClipboard::dataChanged`, on the application becoming active
 connection coming up, so a link already on the clipboard at startup is not missed. This is what
 eMuleQt ships, and §2–§4 are the argument for it.
 
+**Encoded pipes.** A page that writes its links as `ed2k://%7Cfile%7C…%7C/` parses (an encoded
+`|` is legal in an opaque host), so browsers *do* dispatch it, and hand the encoded string to the
+handler. `parseED2KLink()` turns `%7C` back into `|` first (`normalizeEd2kLink()`), as MFC
+`CemuleDlg::ProcessED2KLink` does. Until 2026-11-01 eMuleQt rejected these as invalid.
+
 The OS-dispatch routes are still worth having. They serve Safari, `Ed2kSchemeHandler`-registered
 launches, scripted senders, and any future client of the scheme that hands over the raw string.
 They are simply not a Chrome fix.

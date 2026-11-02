@@ -8,6 +8,7 @@
 #include "panels/Ed3kRoomTab.h"
 
 #include "app/UiState.h"
+#include "app/SkinColors.h"
 #include "controls/AbstractListView.h"
 #include "controls/LogTextView.h"
 #include "utils/Appearance.h"
@@ -21,6 +22,7 @@
 #include "prefs/Preferences.h"
 #include "utils/Smileys.h"
 #include "utils/TextLinks.h"
+#include "app/SkinIcons.h"
 
 #include <QApplication>
 #include <QAudioOutput>
@@ -270,6 +272,10 @@ void IrcPanel::onIrcLoggedIn()
 void IrcPanel::onIrcDisconnected()
 {
     m_connectBtn->setText(tr("Connect"));
+    // Nicks and hosts mean nothing on the next connection
+    m_linkGate.clear();
+    m_verify = 0;
+    m_verifyNick.clear();
 
     // MFC CIrcWnd::SetConnectStatus(false) (IrcWnd.cpp:894-911): every chat is detached
     // and says so; the channel list stays as it is.
@@ -451,6 +457,7 @@ void IrcPanel::onUserParted(const QString& channel, const QString& nick,
 
     if (auto it = m_channels.find(key); it != m_channels.end())
         it->nicks.remove(nick);
+    forgetNickIfGone(nick);
 
     if (!thePrefs.ircIgnorePartMessages())
         appendInfo(key, tr("* %1 has parted %2 (%3)").arg(nick, channel, reason));
@@ -468,6 +475,7 @@ void IrcPanel::onUserQuit(const QString& nick, const QString& reason)
         if (it->nicks.remove(nick) && !thePrefs.ircIgnoreQuitMessages())
             appendInfo(it.key(), tr("* %1 has quit (%2)").arg(nick, reason), IrcRouting::LineColor::Quit);
     }
+    m_linkGate.forgetNick(nick);
     updateNickList();
 }
 
@@ -489,6 +497,7 @@ void IrcPanel::onUserKicked(const QString& channel, const QString& nick,
 
     if (auto it = m_channels.find(key); it != m_channels.end())
         it->nicks.remove(nick);
+    forgetNickIfGone(nick);
     if (!thePrefs.ircIgnoreMiscInfoMessages())
         appendInfo(key, line);
     if (activeChannelName() == key)
@@ -501,6 +510,9 @@ void IrcPanel::onNickChanged(const QString& oldNick, const QString& newNick)
     // (MFC IrcMain.cpp:418-422).
     if (newNick.compare(m_irc->currentNick(), Qt::CaseInsensitive) == 0)
         thePrefs.setIrcNick(newNick);
+    m_linkGate.renameNick(oldNick, newNick);
+    if (m_verifyNick.compare(oldNick, Qt::CaseInsensitive) == 0)
+        m_verifyNick = newNick;
 
     for (auto it = m_channels.begin(); it != m_channels.end(); ++it) {
         if (it->isEd3k())
@@ -585,7 +597,7 @@ void IrcPanel::onChannelListed(const QString& channel, int userCount,
     item->setData(1, SortRole, userCount);
     item->setTextAlignment(1, Qt::AlignRight | Qt::AlignVCenter);
     item->setText(2, IrcRouting::stripMircCodes(topic));   // IrcChannelListCtrl.cpp:199
-    item->setIcon(0, QIcon(QStringLiteral(":/icons/IRC.ico")));
+    item->setIcon(0, skinIcon(QStringLiteral(":/icons/IRC.ico")));
     item->setData(0, Qt::UserRole, channel);
 }
 
@@ -696,6 +708,7 @@ void IrcPanel::setupUi()
     // Nick list view
     m_nickModel = new QStringListModel(this);
     m_nickListView = new QListView(leftWidget);
+    SkinColors::bind(m_nickListView, {QStringLiteral("IRCNicksLv"), QStringLiteral("DefLv")}, true);
     m_nickListView->setModel(m_nickModel);
     m_nickListView->setSelectionMode(QAbstractItemView::SingleSelection);
     m_nickListView->setEditTriggers(QAbstractItemView::NoEditTriggers);
@@ -751,7 +764,7 @@ void IrcPanel::setupUi()
     statusCh.log = m_statusBrowser;
     m_channels[m_statusKey] = statusCh;
 
-    m_tabWidget->addTab(m_statusBrowser, QIcon(QStringLiteral(":/icons/IRC.ico")),
+    m_tabWidget->addTab(m_statusBrowser, skinIcon(QStringLiteral(":/icons/IRC.ico")),
                         tr("Status"));
     // Remove close button from Status tab
     m_tabWidget->tabBar()->setTabButton(0, QTabBar::RightSide, nullptr);
@@ -777,7 +790,7 @@ void IrcPanel::setupUi()
 
     // Format toolbar
     m_smileyBtn = new QToolButton(this);
-    m_smileyBtn->setIcon(QIcon(QStringLiteral(":/smileys/Smiley_Smile.ico")));
+    m_smileyBtn->setIcon(skinIcon(QStringLiteral(":/smileys/Smiley_Smile.ico")));
     m_smileyBtn->setIconSize(QSize(20, 20));
     m_smileyBtn->setAutoRaise(true);
     m_smileyBtn->setToolTip(tr("Smileys"));
@@ -786,7 +799,7 @@ void IrcPanel::setupUi()
 
     m_boldBtn = new QToolButton(this);
     if (thePrefs.useOriginalIcons()) {
-        m_boldBtn->setIcon(QIcon(QStringLiteral(":/icons/bold.ico")));
+        m_boldBtn->setIcon(skinIcon(QStringLiteral(":/icons/bold.ico")));
         m_boldBtn->setIconSize(QSize(20, 20));
     } else {
         m_boldBtn->setText(QStringLiteral("B"));
@@ -804,7 +817,7 @@ void IrcPanel::setupUi()
 
     m_italicBtn = new QToolButton(this);
     if (thePrefs.useOriginalIcons()) {
-        m_italicBtn->setIcon(QIcon(QStringLiteral(":/icons/italic.ico")));
+        m_italicBtn->setIcon(skinIcon(QStringLiteral(":/icons/italic.ico")));
         m_italicBtn->setIconSize(QSize(20, 20));
     } else {
         m_italicBtn->setText(QStringLiteral("I"));
@@ -822,7 +835,7 @@ void IrcPanel::setupUi()
 
     m_underlineBtn = new QToolButton(this);
     if (thePrefs.useOriginalIcons()) {
-        m_underlineBtn->setIcon(QIcon(QStringLiteral(":/icons/underline.ico")));
+        m_underlineBtn->setIcon(skinIcon(QStringLiteral(":/icons/underline.ico")));
         m_underlineBtn->setIconSize(QSize(20, 20));
     } else {
         m_underlineBtn->setText(QStringLiteral("U"));
@@ -840,7 +853,7 @@ void IrcPanel::setupUi()
 
     m_colorBtn = new QToolButton(this);
     if (thePrefs.useOriginalIcons()) {
-        m_colorBtn->setIcon(QIcon(QStringLiteral(":/icons/colour.ico")));
+        m_colorBtn->setIcon(skinIcon(QStringLiteral(":/icons/colour.ico")));
         m_colorBtn->setIconSize(QSize(20, 20));
     } else {
         m_colorBtn->setText(QStringLiteral("\u25A0"));
@@ -853,7 +866,7 @@ void IrcPanel::setupUi()
 
     m_resetBtn = new QToolButton(this);
     if (thePrefs.useOriginalIcons()) {
-        m_resetBtn->setIcon(QIcon(QStringLiteral(":/icons/resetformat.ico")));
+        m_resetBtn->setIcon(skinIcon(QStringLiteral(":/icons/resetformat.ico")));
         m_resetBtn->setIconSize(QSize(20, 20));
     } else {
         m_resetBtn->setText(QStringLiteral("F"));
@@ -977,7 +990,7 @@ int IrcPanel::ensureChannelTab(const QString& name, IrcChannel::Type type)
 
         // right after Status: the ed3k rooms tabs may be there already (batch 12)
         const int idx = m_tabWidget->insertTab(1, tree,
-            QIcon(QStringLiteral(":/icons/IRC.ico")), tr("Channels"));
+            skinIcon(QStringLiteral(":/icons/IRC.ico")), tr("Channels"));
         // Non-closeable
         m_tabWidget->tabBar()->setTabButton(idx, QTabBar::RightSide, nullptr);
         m_tabWidget->tabBar()->setTabButton(idx, QTabBar::LeftSide, nullptr);
@@ -1033,7 +1046,7 @@ int IrcPanel::ensureChannelTab(const QString& name, IrcChannel::Type type)
     // }
 
     const int idx = m_tabWidget->addTab(ch.widget,
-        QIcon(QStringLiteral(":/icons/IRC.ico")), name);
+        skinIcon(QStringLiteral(":/icons/IRC.ico")), name);
 
     m_channels[key] = ch;
     return idx;
@@ -1404,6 +1417,7 @@ void IrcPanel::requestFriend(const QString& nick)
     do {
         m_verify = QRandomGenerator::global()->generate();
     } while (m_verify == 0);
+    m_verifyNick = nick;
     m_irc->sendRaw(QStringLiteral("PRIVMSG %1 :\001%2\001")
                        .arg(nick, IrcEmuleProto::friendRequest(m_verify)));
 }
@@ -1432,7 +1446,7 @@ void IrcPanel::protoNotice(const QString& text)
               .arg(ircActionColor(), text.toHtmlEscaped()));
 }
 
-void IrcPanel::onEmuleProto(const QString& nick, const QString& body)
+void IrcPanel::onEmuleProto(const QString& nick, const QString& body, const QString& userHost)
 {
     // Someone asks for what it takes to add us as a friend
     if (const auto verify = IrcEmuleProto::parseFriendRequest(body)) {
@@ -1450,6 +1464,11 @@ void IrcPanel::onEmuleProto(const QString& nick, const QString& body)
         if (m_verify == 0 || reply->verify != m_verify)
             return;   // not asked for
         m_verify = 0;
+        // Our nonce came back from the nick we asked: bind its hash to that nick + host
+        // for friends-only links. The only place the gate is filled.
+        if (nick.compare(m_verifyNick, Qt::CaseInsensitive) == 0)
+            m_linkGate.noteVerifiedFriend(nick, userHost, reply->userHashHex);
+        m_verifyNick.clear();
         if (!m_ipc || !m_ipc->isConnected())
             return;
         // The client ID as the last known address, 0 for a firewalled peer
@@ -1484,11 +1503,24 @@ void IrcPanel::onEmuleProto(const QString& nick, const QString& body)
         accept();
         return;
     }
+    const auto refuse = [this, nick, quiet] {
+        if (!quiet) {
+            protoNotice(tr("%1 attempted to send you a file. If you wanted to accept the "
+                           "files from this person, add him as a friend or change your "
+                           "IRC Preferences.").arg(nick));
+        }
+    };
+    // The hash in SENDLINK is the sender's claim: it counts only for the nick + host
+    // that gave it in our own friend handshake (not MFC, which trusts it)
+    if (!m_linkGate.allows(nick, userHost, link->userHashHex)) {
+        refuse();
+        return;
+    }
     if (!m_ipc || !m_ipc->isConnected())
         return;
     // Friends only: is the sender's user hash one of ours?
     m_ipc->sendRequest(Ipc::IpcMessage(Ipc::IpcMsgType::GetFriends),
-        [self = QPointer<IrcPanel>(this), nick, quiet, accept,
+        [self = QPointer<IrcPanel>(this), accept, refuse,
          hash = link->userHashHex](const Ipc::IpcMessage& resp) {
             if (!self || !resp.isValid() || !resp.fieldBool(0))
                 return;
@@ -1499,11 +1531,7 @@ void IrcPanel::onEmuleProto(const QString& nick, const QString& body)
                     return;
                 }
             }
-            if (!quiet) {
-                self->protoNotice(tr("%1 attempted to send you a file. If you wanted to accept the "
-                                     "files from this person, add him as a friend or change your "
-                                     "IRC Preferences.").arg(nick));
-            }
+            refuse();
         });
 }
 
@@ -1701,7 +1729,7 @@ void IrcPanel::showSmileySelector()
     for (int i = 0; i < static_cast<int>(smileys.size()); ++i) {
         const auto& smiley = smileys[static_cast<size_t>(i)];
         auto* btn = new QToolButton(gridWidget);
-        btn->setIcon(QIcon(QStringLiteral(":/smileys/%1.ico").arg(QLatin1StringView(smiley.icon))));
+        btn->setIcon(skinIcon(QStringLiteral(":/smileys/%1.ico").arg(QLatin1StringView(smiley.icon))));
         btn->setIconSize(QSize(24, 24));
         btn->setFixedSize(28, 28);
         btn->setAutoRaise(true);
@@ -1734,6 +1762,16 @@ void IrcPanel::showSmileySelector()
     menu->addAction(widgetAction);
 
     menu->popup(m_smileyBtn->mapToGlobal(QPoint(0, -menu->sizeHint().height())));
+}
+
+void IrcPanel::forgetNickIfGone(const QString& nick)
+{
+    // Out of every channel we share: we no longer see who holds the nick
+    for (const auto& ch : std::as_const(m_channels)) {
+        if (!ch.isEd3k() && ch.nicks.contains(nick))
+            return;
+    }
+    m_linkGate.forgetNick(nick);
 }
 
 } // namespace eMule

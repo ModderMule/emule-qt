@@ -192,11 +192,15 @@ void SearchQueue::onServerDisconnected()
     pump();
 }
 
-void SearchQueue::onServerAnswer(bool moreResults)
+void SearchQueue::onServerAnswer(bool moreResults, uint32 results, uint32 newFiles)
 {
     Entry* entry = find(m_inFlight);
     if (!entry)
         return;
+    // Port change (#92): some servers (ed2k-rust) stop at their cap without the flag.
+    // Try one page, then go on only while a page brings a full cap of new files.
+    if (!moreResults && results == kServerResultCap)
+        moreResults = entry->moreRequests == 0 || newFiles == kServerResultCap;
     // MFC CSearchResultsWnd::LocalEd2kSearchEnd (srchybrid/SearchResultsWnd.cpp:470)
     entry->serverPage = moreResults && entry->moreRequests < MAX_MORE_SEARCH_REQ;
     if (entry->awaitsSweep)

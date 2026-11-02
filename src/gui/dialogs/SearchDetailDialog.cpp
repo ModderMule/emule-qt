@@ -6,6 +6,7 @@
 
 #include "MetadataPage.h"
 #include "prefs/Preferences.h"
+#include "app/SkinIcons.h"
 
 #include <QTabWidget>
 
@@ -58,7 +59,7 @@ void SearchDetailDialog::buildPages(const QCborMap& details, Page pageToSelect)
     if (thePrefs.showExtControls()) {
         metadataPage = createMetadataPage(details, QStringLiteral("searchDetailTags"));
         if (useIcons)
-            m_tabs->addTab(metadataPage, QIcon(QStringLiteral(":/icons/MetaData.ico")), tr("Metadata"));
+            m_tabs->addTab(metadataPage, skinIcon(QStringLiteral(":/icons/MetaData.ico")), tr("Metadata"));
         else
             m_tabs->addTab(metadataPage, tr("Metadata"));
     }
@@ -71,7 +72,7 @@ void SearchDetailDialog::buildPages(const QCborMap& details, Page pageToSelect)
     m_commentsPanel->setDetails(details);
 
     if (useIcons)
-        m_tabs->addTab(m_commentsPanel, QIcon(QStringLiteral(":/icons/FileComments.ico")), tr("Comments"));
+        m_tabs->addTab(m_commentsPanel, skinIcon(QStringLiteral(":/icons/FileComments.ico")), tr("Comments"));
     else
         m_tabs->addTab(m_commentsPanel, tr("Comments"));
 

@@ -180,7 +180,9 @@
     <ClCompile Include="archive\ArchiveRecovery.cpp" />
     <ClCompile Include="archive\ArchiveScan.cpp" />
     <ClCompile Include="archive\ArchiveUnpack.cpp" />
+    <ClCompile Include="net\ConnectionChecker.cpp" />
     <ClCompile Include="net\HttpFileDownload.cpp" />
+    <ClCompile Include="net\ScheduledUpdater.cpp" />
     <ClCompile Include="net\MetaFileCache.cpp" />
     <ClCompile Include="net\PortTestApi.cpp" />
     <ClCompile Include="httpcache\HttpCacheClient.cpp" />
@@ -250,6 +252,7 @@
     <ClCompile Include="kademlia\KadPrefs.cpp" />
     <ClCompile Include="kademlia\KadRoutingBin.cpp" />
     <ClCompile Include="kademlia\KadRoutingZone.cpp" />
+    <ClCompile Include="kademlia\KadNetworkWatch.cpp" />
     <ClCompile Include="kademlia\KadNodeCensus.cpp" />
     <ClCompile Include="kademlia\KadSafeKad.cpp" />
     <ClCompile Include="kademlia\KadSearch.cpp" />
@@ -278,6 +281,7 @@
     <ClCompile Include="utils\Log.cpp" />
     <ClCompile Include="crypto\MD4Hash.cpp" />
     <ClCompile Include="crypto\AesCbc.cpp" />
+    <ClCompile Include="crypto\SecretCompare.cpp" />
     <ClCompile Include="crypto\SelfSignedCert.cpp" />
     <ClCompile Include="crypto\MD5Hash.cpp" />
     <ClCompile Include="media\MediaContainers.cpp" />
@@ -394,6 +398,7 @@
     <ClCompile Include="webserver\WebServerApi.cpp" />
     <ClCompile Include="webserver\WebServerMcp.cpp" />
     <ClCompile Include="webserver\WebServerTorrents.cpp" />
+    <ClCompile Include="webserver\StreamTokenStore.cpp" />
     <ClCompile Include="webserver\WebSessionManager.cpp" />
     <ClCompile Include="webserver\WebTemplateEngine.cpp" />
   </ItemGroup>
@@ -425,7 +430,9 @@
     <ClInclude Include="archive\ArchiveScan.h" />
     <ClInclude Include="archive\ArchiveUnpack.h" />
     <ClInclude Include="net\HttpDefaults.h" />
+    <ClInclude Include="net\ConnectionChecker.h" />
     <ClInclude Include="net\HttpFileDownload.h" />
+    <ClInclude Include="net\HttpValidators.h" />
     <ClInclude Include="net\MetaFileCache.h" />
     <ClInclude Include="net\PortTestApi.h" />
     <ClInclude Include="httpcache\HttpCacheOffer.h" />
@@ -480,6 +487,7 @@
     <QtMoc Include="net\HttpClientReqSocket.h" />
     <QtMoc Include="ipfilter\IPFilter.h" />
     <QtMoc Include="ipfilter\IpFilterUpdater.h" />
+    <QtMoc Include="net\ScheduledUpdater.h" />
     <QtMoc Include="geo\GeoIpUpdater.h" />
     <ClInclude Include="geo\HostCountryResolver.h" />
     <ClInclude Include="geo\IP2Country.h" />
@@ -521,6 +529,7 @@
     <ClInclude Include="kademlia\KadResultPacketWriter.h" />
     <ClInclude Include="kademlia\KadRoutingBin.h" />
     <QtMoc Include="kademlia\KadRoutingZone.h" />
+    <ClInclude Include="kademlia\KadNetworkWatch.h" />
     <ClInclude Include="kademlia\KadNodeCensus.h" />
     <ClInclude Include="kademlia\KadSafeKad.h" />
     <ClInclude Include="kademlia\KadStats.h" />
@@ -541,6 +550,7 @@
     <ClInclude Include="utils\Log.h" />
     <ClInclude Include="crypto\MD4Hash.h" />
     <ClInclude Include="crypto\AesCbc.h" />
+    <ClInclude Include="crypto\SecretCompare.h" />
     <ClInclude Include="crypto\SelfSignedCert.h" />
     <ClInclude Include="crypto\MD5Hash.h" />
     <ClInclude Include="utils\MapKey.h" />
@@ -657,6 +667,7 @@
     <QtMoc Include="transfer\UploadQueue.h" />
     <QtMoc Include="webserver\ApiEventHub.h" />
     <QtMoc Include="webserver\WebServer.h" />
+    <ClInclude Include="webserver\StreamTokenStore.h" />
     <ClInclude Include="webserver\WebSessionManager.h" />
     <ClInclude Include="webserver\WebTemplateEngine.h" />
     <ClInclude Include="utils\WinCompat.h" />

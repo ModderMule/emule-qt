@@ -275,15 +275,15 @@ void SearchList::addKadKeywordResult(uint32 searchID, const uint8* fileHash,
 // Result processing — TCP
 // ---------------------------------------------------------------------------
 
-bool SearchList::processSearchAnswer(const uint8* packet, uint32 size,
-                                     bool optUTF8, const Endpoint& server)
+SearchList::TcpSearchAnswer SearchList::processSearchAnswer(const uint8* packet, uint32 size,
+                                                            bool optUTF8, const Endpoint& server)
 {
     // SearchFile keeps the ed2k (IPv4) form; an IPv6 server records 0 there.
     // The search this answers is over (or was closed): the results are nobody's.
     if (m_currentEd2kSearchID == 0) {
         logServerVerbose(QStringLiteral("TCP search answer from %1 dropped — no server "
                                         "search is waiting for one").arg(server.toString()));
-        return false;
+        return {};
     }
 
     const uint32 serverIP = server.address().toNetworkUint32();
@@ -295,6 +295,7 @@ bool SearchList::processSearchAnswer(const uint8* packet, uint32 size,
     uint32 resultCount = 0;
     uint32 parsed = 0;
     bool moreResults = false;
+    const uint32 filesBefore = foundFiles(m_currentEd2kSearchID);
     try {
         resultCount = data.readUInt32();
         for (; parsed < resultCount; ++parsed) {
@@ -322,7 +323,7 @@ bool SearchList::processSearchAnswer(const uint8* packet, uint32 size,
                          .arg(server.toString()).arg(parsed).arg(moreResults));
 
     emit tabHeaderUpdated(m_currentEd2kSearchID);
-    return moreResults;
+    return {moreResults, parsed, foundFiles(m_currentEd2kSearchID) - filesBefore};
 }
 
 // ---------------------------------------------------------------------------
@@ -499,15 +500,28 @@ void SearchList::addToList(SearchFile* rawFile, bool clientResponse,
         entry = &m_fileLists.back();
     }
 
-    // Look for existing parent with same hash
+    // Look for existing parent with same hash; count top-level rows for the cap
     SearchFile* parent = nullptr;
+    uint32 topLevelRows = 0;
     for (auto& existing : entry->files) {
-        if (existing->listParent() == nullptr &&
-            md4equ(existing->fileHash(), fileOwner->fileHash()))
-        {
+        if (existing->listParent() != nullptr)
+            continue;
+        if (md4equ(existing->fileHash(), fileOwner->fileHash())) {
             parent = existing.get();
             break;
         }
+        ++topLevelRows;
+    }
+
+    // Per-search cap on distinct files: flood guard, known files still merge
+    const uint32 cap = m_maxResultsPerSearch ? m_maxResultsPerSearch : kMaxResultsPerSearch;
+    if (!parent && topLevelRows >= cap) {
+        if (!entry->capLogged) {
+            entry->capLogged = true;
+            logDebug(QStringLiteral("Search #%1 reached %2 distinct files — further new files ignored")
+                         .arg(searchID).arg(cap));
+        }
+        return;
     }
 
     if (parent) {

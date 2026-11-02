@@ -258,6 +258,14 @@ bool DaemonApp::start()
         if (m_notifierBridge)
             m_notifierBridge->pushNetworkState();
     };
+    // Internet down / back (connection checker): BT and Usenet follow eD2K, Kad runs on
+    theApp.onConnectionOfflineChanged = [this](bool offline) {
+        if (m_usenetSession)
+            m_usenetSession->setNetworkHold(offline);
+        applyBtConfig();
+        if (m_notifierBridge)
+            m_notifierBridge->pushNetworkState();
+    };
 
     // Events for the REST stream: the pushes the GUIs get, plus two the GUIs have
     // no use for as events (they refetch rows) but an API client waits on.
@@ -845,6 +853,7 @@ void DaemonApp::stop()
         flushCumulativeStats(thePrefs);
 
     theApp.onNetworkSuspended = nullptr;
+    theApp.onConnectionOfflineChanged = nullptr;
     m_notifierBridge.reset();
 
     if (m_ipcServer)

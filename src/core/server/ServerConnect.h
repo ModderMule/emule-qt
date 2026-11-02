@@ -138,6 +138,10 @@ public:
     /// Disconnect from the current server.
     bool disconnect();
 
+    /// Internet down (ConnectionChecker): no retry timer and no reconnect after a
+    /// drop while held. A manual connect still goes through.
+    void setOfflineHold(bool held);
+
     // -- Packet sending -------------------------------------------------------
 
     /// Send a TCP packet to the connected server (or a specific socket).
@@ -340,6 +344,7 @@ private:
 
     bool m_connecting = false;
     bool m_singleConnecting = false;
+    bool m_offlineHold = false;
     bool m_connected = false;
     bool m_tryObfuscated = false;
     uint8 m_smartIdState = 0;  // 0=idle, 1=got HighID once, 2=retrying after LowID

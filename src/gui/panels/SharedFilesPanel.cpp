@@ -10,6 +10,7 @@
 
 #include "app/IpcClient.h"
 #include "app/UiState.h"
+#include "app/SkinColors.h"
 #include "controls/AbstractListView.h"
 #include "controls/FilterEdit.h"
 #include "controls/SharedFilesModel.h"
@@ -41,6 +42,7 @@
 #include "utils/OtherFunctions.h"
 
 #include "IpcMessage.h"
+#include "app/SkinIcons.h"
 
 #include <QApplication>
 #include <QCborArray>
@@ -120,10 +122,13 @@ QString folderLabel(const QString& dir, bool topFolder)
 QIcon folderIcon(const QString& overlayPath = {})
 {
     static QHash<QString, QIcon> cache;
+    static quint64 skinSeen = 0;
+    if (SkinIcons::instance().changedSince(skinSeen))
+        cache.clear();
     if (const auto it = cache.constFind(overlayPath); it != cache.constEnd())
         return *it;
 
-    const QIcon base(QStringLiteral(":/icons/FolderOpen.ico"));
+    const QIcon base = skinIcon(QStringLiteral(":/icons/FolderOpen.ico"));
     QIcon icon = base;
     if (!overlayPath.isEmpty()) {
         constexpr int kPx = 16;
@@ -135,7 +140,7 @@ QIcon folderIcon(const QString& overlayPath = {})
             QPainter painter(&canvas);
             const QRect cell(0, 0, kPx, kPx);
             painter.drawPixmap(cell, base.pixmap(kPx, kPx));
-            painter.drawPixmap(cell, QIcon(overlayPath).pixmap(kPx, kPx));
+            painter.drawPixmap(cell, skinIcon(overlayPath).pixmap(kPx, kPx));
         }
         icon = QIcon(canvas);
     }
@@ -329,7 +334,7 @@ void SharedFilesPanel::rebuildCategoryNodes(const QList<std::pair<QString, QStri
         item->setData(0, Qt::UserRole, static_cast<int>(SharedFilterType::IncompleteCategory));
         item->setData(0, kRolePath, QString::number(index));
         item->setData(0, kRoleCategoryNode, 2);
-        item->setIcon(0, QIcon(QStringLiteral(":/icons/FolderOpen.ico")));
+        item->setIcon(0, skinIcon(QStringLiteral(":/icons/FolderOpen.ico")));
         if (keptKind == 2 && keptPath == QString::number(index))
             reselect = item;
     }
@@ -721,7 +726,7 @@ QWidget* SharedFilesPanel::createTopSection()
     auto* icon = new QLabel;
     icon->setFixedSize(16, 16);
     icon->setScaledContents(true);
-    icon->setPixmap(QIcon(QStringLiteral(":/icons/SharedFilesList.ico")).pixmap(16, 16));
+    setSkinPixmap(icon, QStringLiteral(":/icons/SharedFilesList.ico"));
     headerRow->addWidget(icon);
 
     m_headerLabel = new QLabel(tr("Shared Files (0)"));
@@ -763,28 +768,30 @@ QWidget* SharedFilesPanel::createTopSection()
     // MFC's tree has no header; the filter box sits above it (emule.rc:417-430)
     m_folderTree->setHeaderHidden(true);
     m_folderTree->setIndentation(16);
+    // MFC SharedDirsTreeCtrl.cpp:180: SharedDirsTv*, else SharedFilesLv*
+    SkinColors::bind(m_folderTree, {QStringLiteral("SharedDirsTv"), QStringLiteral("SharedFilesLv")});
 
     // Build tree structure matching MFC
     m_allSharedItem = new QTreeWidgetItem(m_folderTree, {tr("All Shared Files")});
     m_allSharedItem->setData(0, Qt::UserRole, static_cast<int>(SharedFilterType::AllShared));
-    m_allSharedItem->setIcon(0, QIcon(QStringLiteral(":/icons/SharedFilesList.ico")));
+    m_allSharedItem->setIcon(0, skinIcon(QStringLiteral(":/icons/SharedFilesList.ico")));
 
     m_incomingItem = new QTreeWidgetItem(m_allSharedItem, {tr("Incoming Files")});
     m_incomingItem->setData(0, Qt::UserRole, static_cast<int>(SharedFilterType::Incoming));
-    m_incomingItem->setIcon(0, QIcon(QStringLiteral(":/icons/FolderOpen.ico")));
+    m_incomingItem->setIcon(0, skinIcon(QStringLiteral(":/icons/FolderOpen.ico")));
 
     m_incompleteItem = new QTreeWidgetItem(m_allSharedItem, {tr("Incomplete Files")});
     m_incompleteItem->setData(0, Qt::UserRole, static_cast<int>(SharedFilterType::Incomplete));
-    m_incompleteItem->setIcon(0, QIcon(QStringLiteral(":/icons/FolderOpen.ico")));
+    m_incompleteItem->setIcon(0, skinIcon(QStringLiteral(":/icons/FolderOpen.ico")));
 
     m_sharedDirsItem = new QTreeWidgetItem(m_allSharedItem, {tr("Shared Directories")});
     m_sharedDirsItem->setData(0, Qt::UserRole, static_cast<int>(SharedFilterType::SharedDirs));
-    m_sharedDirsItem->setIcon(0, QIcon(QStringLiteral(":/icons/FolderOpen.ico")));
+    m_sharedDirsItem->setIcon(0, skinIcon(QStringLiteral(":/icons/FolderOpen.ico")));
 
     m_allDirsItem = new QTreeWidgetItem(m_folderTree, {tr("All Directories")});
     m_allDirsItem->setData(0, Qt::UserRole, static_cast<int>(SharedFilterType::AllShared));
     m_allDirsItem->setData(0, kRoleFsItem, true);
-    m_allDirsItem->setIcon(0, QIcon(QStringLiteral(":/icons/HardDisk.ico")));
+    m_allDirsItem->setIcon(0, skinIcon(QStringLiteral(":/icons/HardDisk.ico")));
 
     m_allDirsItem->setChildIndicatorPolicy(QTreeWidgetItem::ShowIndicator);
 
@@ -1105,7 +1112,7 @@ QWidget* SharedFilesPanel::createBottomTabs()
     grid->setColumnStretch(2, 1); // bars stretch
     grid->setColumnMinimumWidth(1, 60);
 
-    m_bottomTabs->addTab(scrolled(statsWidget), QIcon(QStringLiteral(":/icons/FileInfo.ico")),
+    m_bottomTabs->addTab(scrolled(statsWidget), skinIcon(QStringLiteral(":/icons/FileInfo.ico")),
                          tr("Statistics"));
 
     // --- Content tab (archive preview / media info) ---
@@ -1114,7 +1121,7 @@ QWidget* SharedFilesPanel::createBottomTabs()
     m_archivePreview = new ArchivePreviewPanel;
     m_contentStack->addWidget(m_mediaInfoPanel);   // index 0
     m_contentStack->addWidget(m_archivePreview);   // index 1
-    m_bottomTabs->addTab(scrolled(m_contentStack), QIcon(QStringLiteral(":/icons/FileInfo.ico")),
+    m_bottomTabs->addTab(scrolled(m_contentStack), skinIcon(QStringLiteral(":/icons/FileInfo.ico")),
                          tr("Content"));
 
     // --- eD2K Links tab (matching MFC CED2kLinkDlg layout) ---
@@ -1181,7 +1188,7 @@ QWidget* SharedFilesPanel::createBottomTabs()
         tr("Requires a hostname configured in Preferences, or a public IPv6"));
 
     m_ed2kTabIndex = m_bottomTabs->addTab(scrolled(ed2kWidget),
-                                          QIcon(QStringLiteral(":/icons/eD2kLink.ico")),
+                                          skinIcon(QStringLiteral(":/icons/eD2kLink.ico")),
                                           tr("eD2K Links"));
 
     // Links are only built while this tab is on screen, so build them when it comes up.
@@ -1951,7 +1958,7 @@ void SharedFilesPanel::onFolderContextMenu(const QPoint& pos)
     QMenu menu(this);
 
     // Open Folder (local only)
-    auto* openAct = menu.addAction(QIcon(QStringLiteral(":/icons/FolderOpen.ico")),
+    auto* openAct = menu.addAction(skinIcon(QStringLiteral(":/icons/FolderOpen.ico")),
                                     tr("Open Folder"), this, [path]() {
         QDesktopServices::openUrl(QUrl::fromLocalFile(path));
     });
@@ -2455,7 +2462,7 @@ void SharedFilesPanel::showSharedDirMenu(QTreeWidgetItem* item, const QPoint& gl
 
     QMenu menu(this);
 
-    auto* openAct = menu.addAction(QIcon(QStringLiteral(":/icons/FolderOpen.ico")),
+    auto* openAct = menu.addAction(skinIcon(QStringLiteral(":/icons/FolderOpen.ico")),
                                    tr("Open Folder"), this, [path]() {
         QDesktopServices::openUrl(QUrl::fromLocalFile(path));
     });

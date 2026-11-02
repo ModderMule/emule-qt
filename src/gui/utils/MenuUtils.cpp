@@ -5,6 +5,7 @@
 #include "utils/MenuUtils.h"
 
 #include "prefs/Preferences.h"
+#include "app/SkinIcons.h"
 
 #include <QAction>
 #include <QFont>
@@ -18,7 +19,7 @@ QIcon menuIcon(const char* resource)
 {
     if (!resource || !thePrefs.useOriginalIcons())
         return {};
-    return QIcon(QStringLiteral(":/icons/") + QLatin1String(resource));
+    return skinIcon(QStringLiteral(":/icons/") + QLatin1String(resource));
 }
 
 void setMenuDefaultAction(QMenu* menu, QAction* action)

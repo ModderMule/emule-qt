@@ -1,5 +1,6 @@
 #include "pch.h"
 #include "controls/KadSearchesModel.h"
+#include "app/SkinIcons.h"
 
 #include <QIcon>
 
@@ -59,7 +60,7 @@ QVariant KadSearchesModel::data(const QModelIndex& index, int role) const
 
     if (role == Qt::DecorationRole && index.column() == ColNumber) {
         const QString name = typeIconName(s.typeId);
-        return name.isEmpty() ? QVariant() : QIcon(QStringLiteral(":/icons/") + name);
+        return name.isEmpty() ? QVariant() : skinIcon(QStringLiteral(":/icons/") + name);
     }
 
     // MFC: LVCFMT_LEFT for every column

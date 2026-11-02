@@ -5,6 +5,7 @@
 #include "controls/SearchResultsModel.h"
 #include "controls/ConfidenceStyle.h"
 #include "controls/KnownTypeStyle.h"
+#include "app/SkinColors.h"
 
 #include "media/MediaInfo.h"
 #include "prefs/Preferences.h"
@@ -86,8 +87,13 @@ QColor availabilityShade(int64_t sources)
         return {};
     const bool dark = isDarkScheme();
     const QPalette pal = QGuiApplication::palette();
-    const QColor base = dark ? pal.color(QPalette::Link) : QColor(0, 0, 255);
-    return blend(pal.color(QPalette::Text), base,
+    const SkinColors& skin = SkinColors::instance();
+    const QColor base = skin.color(QStringLiteral("SearchResultsLvFg_AvblyBase"))
+                            .value_or(dark ? pal.color(QPalette::Link) : QColor(0, 0, 255));
+    // from the list's own text colour, as MFC (GetTextColor)
+    const QColor text = skin.listColor(QStringLiteral("searchResults"), u"Fg")
+                            .value_or(pal.color(QPalette::Text));
+    return blend(text, base,
                  static_cast<qreal>(step) / static_cast<qreal>(kShades));
 }
 
@@ -315,7 +321,7 @@ QVariant SearchResultsModel::foreground(const SearchResultRow& r, int64_t source
         if (const QColor c = confidenceColor(r.confidence); c.isValid())
             return c;
     }
-    if (const QColor c = knownTypeColor(r.knownType); c.isValid())
+    if (const QColor c = knownTypeColor(r.knownType, isDownloadPaused(r)); c.isValid())
         return c;
     if (r.isSpam && thePrefs.enableSearchResultFilter())
         return dimmedText(0.5);   // COLOR_GRAYTEXT
@@ -413,10 +419,13 @@ QVariant SearchResultsModel::data(const QModelIndex& index, int role) const
         case ColFileID:       return r.isMeta() ? QString{} : r.hash;
         case ColFolder:       return r.directory;
         case ColAichHash:     return r.aichHash;
+        case ColLocalFolder:  return r.localFolder;
         default: break;
         }
     }
 
+    if (role == Qt::ToolTipRole && index.column() == ColLocalFolder && !r.localFolder.isEmpty())
+        return r.localFolder;
     if (role == Qt::ToolTipRole && r.isEd3k() && (r.ed3kVerdict != 0 || r.ed3kHidden)
         && (index.column() == ColConfidence || index.column() == ColFileName))
         return ed3kVerdictTooltip(r);
@@ -481,6 +490,7 @@ QVariant SearchResultsModel::data(const QModelIndex& index, int role) const
         case ColFileID:       return r.hash;
         case ColFolder:       return r.directory;
         case ColAichHash:     return r.aichHash;
+        case ColLocalFolder:  return r.localFolder;
         default: break;
         }
     }
@@ -524,6 +534,7 @@ QVariant SearchResultsModel::headerData(int section, Qt::Orientation orientation
     case ColFileID:       return tr("File ID");
     case ColFolder:       return tr("Folder");
     case ColAichHash:     return tr("AICH Hash");
+    case ColLocalFolder:  return tr("Local Folder");
     default:              return {};
     }
 }
@@ -568,6 +579,19 @@ void SearchResultsModel::updateKnownTypes(const QHash<QString, int>& typesByHash
     }
 }
 
+void SearchResultsModel::updateLocalFolders(const QHash<QString, QString>& foldersByHash)
+{
+    for (int i = 0; i < static_cast<int>(m_rows.size()); ++i) {
+        auto& r = m_rows[static_cast<size_t>(i)];
+        const auto it = foldersByHash.constFind(r.hash);
+        if (it != foldersByHash.cend() && r.localFolder != it.value()) {
+            r.localFolder = it.value();
+            const QModelIndex cell = index(i, ColLocalFolder);
+            emit dataChanged(cell, cell);
+        }
+    }
+}
+
 void SearchResultsModel::setUsenetReleaseKnownType(const QString& hash, int knownType)
 {
     SearchResultRow probe;
@@ -603,6 +627,11 @@ void SearchResultsModel::updateUsenetKnownTypes(const QHash<QString, int>& types
             emit dataChanged(index(i, 0), index(i, ColCount - 1));
         }
     }
+}
+
+void SearchResultsModel::setPausedLookup(PausedLookup lookup)
+{
+    m_isPaused = std::move(lookup);
 }
 
 void SearchResultsModel::setResults(std::vector<SearchResultRow> incoming)
@@ -804,6 +833,14 @@ void SearchResultsModel::updateHasMeta()
     if (!m_rows.empty())
         emit dataChanged(index(0, ColFileName), index(resultCount() - 1, ColFileName),
                          {Qt::DecorationRole});
+}
+
+/// MFC GetSearchItemColor: a part file in PS_PAUSED.
+bool SearchResultsModel::isDownloadPaused(const SearchResultRow& r) const
+{
+    if (r.knownType != 2 || !m_isPaused)   // 2 = Downloading
+        return false;
+    return m_isPaused(r.isEd3k() ? r.ed3kRoot : r.hash);
 }
 
 } // namespace eMule

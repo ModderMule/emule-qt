@@ -43,7 +43,8 @@ public:
     bool getIntTagValue(const QByteArray& tagName, uint64& outValue, bool includeVirtual = true) const;
     bool getFloatTagValue(const QByteArray& tagName, float& outValue) const;
     QString getStrTagValue(const QByteArray& tagName) const;
-    void addTag(Tag tag);
+    /// @return false when the tag was filtered out
+    bool addTag(Tag tag);
     uint32 getTagCount() const;
     void writeTagList(FileDataIO& data) const;
 
@@ -66,6 +67,10 @@ protected:
         uint32 popularityIndex = 0;
     };
     void writeTagListInc(FileDataIO& data, uint32 increaseTagNumber = 0) const;
+    /// Append @p name, capped at KADEMLIAMAXFILENAMESPERKEY. When full the least
+    /// popular stored name goes; with @p force false the new one is dropped instead
+    /// unless it is more popular than that.
+    void addFileNameCapped(FileNameEntry name, bool force);
     std::list<FileNameEntry> m_fileNames;
     TagList m_tags;
 };

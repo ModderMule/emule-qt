@@ -426,6 +426,7 @@ void tst_IrcClient::emuleProto_arrivesWholeAndCaseKept()
     QTRY_COMPARE(proto.count(), 1);
     QCOMPARE(proto[0][0].toString(), QStringLiteral("Alice"));
     QCOMPARE(proto[0][1].toString(), body);
+    QCOMPARE(proto[0][2].toString(), QStringLiteral("a@h"));   // for the friends-only link gate
     QCOMPARE(generic.count(), 0);
 
     fix.client.disconnect();

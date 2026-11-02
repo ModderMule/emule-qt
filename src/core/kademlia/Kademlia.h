@@ -9,6 +9,7 @@
 #include "httpcache/HttpCacheOffer.h"
 #include "kademlia/KadBuddyStore.h"
 #include "kademlia/KadFastKad.h"
+#include "kademlia/KadNetworkWatch.h"
 #include "kademlia/KadSafeKad.h"
 #include "kademlia/KadTypes.h"
 #include "kademlia/KadUDPKey.h"
@@ -99,6 +100,16 @@ public:
     void removeEvent(RoutingZone* zone);
 
     void storeClosestDistance(const UInt128& distance);
+
+    /// Own network down detection, not MFC (KadNetworkWatch). @p ip host order.
+    void notePacketReceived(uint32 ip);
+    void noteRequestSent(uint32 ip);
+    /// Kad's external IP changed: every contact rechecked soon.
+    void onAddressChanged();
+    [[nodiscard]] bool isNetworkOffline() const { return m_netWatch.isOffline(); }
+    /// Kad got a counted packet this run (NetworkWatch::hasEvidence()).
+    [[nodiscard]] bool hasNetworkEvidence() const { return m_netWatch.hasEvidence(); }
+
     [[nodiscard]] bool isRunningInLANMode() const;
     [[nodiscard]] static bool shouldSkipFirewallChecks();
 
@@ -190,6 +201,8 @@ signals:
     void firewallStatusChanged(bool firewalled);
     void statsUpdated(uint32 users, uint32 files);
     void searchesChanged();
+    /// Own network down / back (KadNetworkWatch). false also on stop() while offline.
+    void networkOfflineChanged(bool offline);
 
 private:
     void process();
@@ -200,6 +213,10 @@ private:
     void askRememberedBuddies(time_t now, bool ignoreReask = false);
     /// Record this session's firewall verdict once a check gave a final answer.
     void updateSessionVerdict();
+    /// Went offline: undo contact aging since the silence began.
+    void enterOffline(time_t now);
+    /// Recheck every contact and refresh every zone within kCatchUpSpread.
+    void startCatchUp(time_t now, const QString& why);
 
     KadPrefs* m_prefs = nullptr;
     RoutingZone* m_routingZone = nullptr;
@@ -223,6 +240,9 @@ private:
     time_t m_externPortLookup = 0;
     time_t m_bootstrap = 0;
     time_t m_lanModeCheck = 0;
+    NetworkWatch m_netWatch;
+    time_t m_lastProcess = 0;    ///< 0 = no tick yet; a late tick shows sleep
+    time_t m_catchUpUntil = 0;   ///< small timers run at kCatchUpSmallTimer until then
     std::chrono::steady_clock::time_point m_statsTick{};  ///< last connected tick, {} = not connected
     bool m_running = false;
     bool m_lanMode = false;

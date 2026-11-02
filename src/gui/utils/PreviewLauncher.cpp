@@ -202,6 +202,8 @@ QString daemonStreamUrl(const IpcClient* ipc, const QString& fileHash,
     if (!ipc || !ipc->isConnected() || fileHash.isEmpty() || streamToken.isEmpty())
         return {};
 
+    // ToDo: each GUI preview should mint its own short-lived token via IPC
+    // instead of handing the one long-lived "gui" token to every player.
     return QStringLiteral("%1://%2:%3/api/v1/downloads/%4/preview?token=%5")
         .arg(daemonWebScheme(), ipc->daemonHost())
         .arg(thePrefs.webServerPort())

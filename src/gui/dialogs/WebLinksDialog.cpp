@@ -13,6 +13,7 @@
 #include "utils/MenuUtils.h"
 #include "utils/StatusBarNotifier.h"
 #include "utils/StringUtils.h"
+#include "app/SkinIcons.h"
 
 #include <QApplication>
 #include <QCborArray>
@@ -120,7 +121,7 @@ WebLinksDialog::WebLinksDialog(const QString& rowName, const QCborMap& links, co
 {
     const QString title = links.value(QStringLiteral("title")).toString();
     setWindowTitle(tr("Links: %1").arg(title.isEmpty() ? rowName : title));
-    setWindowIcon(QIcon(QStringLiteral(":/icons/Web.ico")));
+    setWindowIcon(skinIcon(QStringLiteral(":/icons/Web.ico")));
 
     auto* layout = new QVBoxLayout(this);
     if (links.value(QStringLiteral("protected")).toBool()) {
@@ -169,16 +170,16 @@ WebLinksDialog::WebLinksDialog(const QString& rowName, const QCborMap& links, co
     // as Usenet and torrent rows: Download while the Hoster tab takes links, saving beside it
     if (Ed2kLinkImporter::hosterReady()) {
         m_downloadBtn = buttons->addButton(tr("Download"), QDialogButtonBox::AcceptRole);
-        m_downloadBtn->setIcon(QIcon(QStringLiteral(":/icons/Download.ico")));
+        m_downloadBtn->setIcon(skinIcon(QStringLiteral(":/icons/Download.ico")));
         m_downloadBtn->setDefault(true);
         connect(m_downloadBtn, &QPushButton::clicked, this, &WebLinksDialog::downloadLinks);
         connect(m_list, &QTreeWidget::itemSelectionChanged, this, &WebLinksDialog::updateDownloadLabel);
         updateDownloadLabel();
     }
     auto* copyBtn = buttons->addButton(tr("Copy Links"), QDialogButtonBox::ActionRole);
-    copyBtn->setIcon(QIcon(QStringLiteral(":/icons/Copy.ico")));
+    copyBtn->setIcon(skinIcon(QStringLiteral(":/icons/Copy.ico")));
     m_openBtn = buttons->addButton(tr("Open in Browser"), QDialogButtonBox::ActionRole);
-    m_openBtn->setIcon(QIcon(QStringLiteral(":/icons/Web.ico")));
+    m_openBtn->setIcon(skinIcon(QStringLiteral(":/icons/Web.ico")));
     auto* saveBtn = buttons->addButton(tr("Save List..."), QDialogButtonBox::ActionRole);
     connect(copyBtn, &QPushButton::clicked, this, &WebLinksDialog::copyLinks);
     connect(m_openBtn, &QPushButton::clicked, this, &WebLinksDialog::openLinks);

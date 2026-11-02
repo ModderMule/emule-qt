@@ -6,6 +6,7 @@
 #include "httpcache/HttpCacheOffer.h"
 #include "kademlia/KadDefines.h"
 #include "kademlia/KadSearchDefs.h"
+#include "kademlia/KadUDPKey.h"
 #include "kademlia/KadTypes.h"
 #include "kademlia/KadUInt128.h"
 #include "utils/SafeFile.h"
@@ -165,7 +166,8 @@ private:
                                          const std::vector<eMule::HttpCacheOffer>& chunks);
 
     void go(uint32 maxToSend = kAlphaQuery);
-    void processResponse(uint32 fromIP, uint16 fromPort, const ContactArray& results);
+    void processResponse(uint32 fromIP, uint16 fromPort, const ContactArray& results,
+                         const KadUDPKey& senderKey = KadUDPKey(0));
     void processResult(const UInt128& answer, TagList& info, uint32 fromIP, uint16 fromPort);
     void processResultFile(const UInt128& answer, TagList& info);
     void processResultKeyword(const UInt128& answer, TagList& info, uint32 fromIP, uint16 fromPort);

@@ -2,6 +2,7 @@
 #include "dialogs/ToolbarCustomizeDialog.h"
 #include "app/ToolbarButtons.h"
 #include "utils/DialogSizing.h"
+#include "app/SkinIcons.h"
 
 #include <QHBoxLayout>
 #include <QLabel>
@@ -16,7 +17,7 @@ static QIcon iconForButton(ToolbarButtonId id)
     if (id == ToolbarButtonId::Separator)
         return {};
     if (const auto* m = findButtonDef(id))
-        return QIcon(QStringLiteral(":/icons/") + QLatin1String(m->iconResource));
+        return skinIcon(QStringLiteral(":/icons/") + QLatin1String(m->iconResource));
     return {};
 }
 

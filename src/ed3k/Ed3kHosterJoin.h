@@ -308,6 +308,8 @@ private:
     /// The hoster @p host belongs to: its plugin's main domain once the resolver named its
     /// aliases (rg.to → rapidgator.net); else @p host, lower case, without "www.".
     [[nodiscard]] QString siteOf(const QString& host) const;
+    /// @p site (from siteOf()) is in m_skipSites, also under a name learnt later
+    [[nodiscard]] bool isSkippedSite(const QString& site) const;
     /// @p sites: one hoster's domains, main first.
     void learnSites(const QStringList& sites);
 

@@ -6,7 +6,9 @@
 #endif
 #include "app/AppConfig.h"
 #include "app/CoreAttachment.h"
+#include "app/Ed2kSchemeHandler.h"
 #include "app/IpcClient.h"
+#include "app/SkinColors.h"
 #include "app/TrayMenuManager.h"
 #include "app/VersionChecker.h"
 #include "app/UiState.h"
@@ -53,6 +55,7 @@
 
 #include "dialogs/PasteLinksDialog.h"
 #include "dialogs/ToolbarCustomizeDialog.h"
+#include "app/SkinIcons.h"
 
 #include <QAction>
 #include <QMimeData>
@@ -95,6 +98,7 @@
 
 #include <algorithm>
 #include <cmath>
+#include <utility>
 
 namespace eMule {
 
@@ -153,6 +157,11 @@ MainWindow::MainWindow(QWidget* parent)
         });
 #endif
 
+    // before the pages, so their lists bind to the skin colours right away
+    if (const QString& profile = theUiState.skinProfilePath(); !profile.isEmpty())
+        m_skinEngine.loadProfile(profile);
+    SkinColors::instance().setColors(m_skinEngine.colors(), m_skinEngine.listImages());
+    SkinIcons::instance().setFiles(m_skinEngine.iconFiles());
     setupPages();
     rebuildToolbar();
     setupStatusBar();
@@ -361,11 +370,10 @@ void MainWindow::onConnectToggle()
     if (!m_ipc || !m_ipc->isConnected())
         return;
 
-    const bool anyConnected = m_ed2kConnected || m_kadRunning;
-
-    if (anyConnected) {
-        // Disconnect only what is actually connected
-        if (m_ed2kConnected) {
+    // MFC OnBnClickedConnect: Cancel and Disconnect both close the connection
+    if (connectButtonState() != ConnectButtonState::Connect) {
+        // Disconnect only what is connected or connecting
+        if (m_ed2kConnected || m_ed2kConnecting) {
             Ipc::IpcMessage req(Ipc::IpcMsgType::DisconnectFromServer);
             m_ipc->sendRequest(std::move(req));
         }
@@ -502,6 +510,7 @@ void MainWindow::showOptionsDialog(int page)
         m_usenetPanel->applyDisplayOptions();
     m_sharedFilesPanel->applyDisplayOptions();
     m_serverPanel->applyDisplayOptions();
+    m_searchPanel->applyDisplayOptions();
     m_sharedFilesPanel->refreshSharedDirs();   // Directories page edits the share
     updateWindowTitle();
 
@@ -535,6 +544,7 @@ void MainWindow::setEd2kStatus(bool connected, bool connecting, bool firewalled,
                                bool lowID)
 {
     m_ed2kConnected = connected;
+    m_ed2kConnecting = connecting && !connected;
     m_ed2kFirewalled = firewalled;
     m_ed2kLowID = lowID;
 
@@ -556,6 +566,10 @@ void MainWindow::setEd2kStatus(bool connected, bool connecting, bool firewalled,
         m_statusEd2k->setText(tr("Blocked: network interface not available"));
         setStatusRole(m_statusEd2k, static_cast<int>(TextRole::Error));
         m_connStatus->setEd2kState(ConnectionStatusWidget::Disconnected);
+    } else if (m_connOffline) {
+        m_statusEd2k->setText(tr("eD2K: Offline (no internet connection)"));
+        setStatusRole(m_statusEd2k, static_cast<int>(TextRole::Error));
+        m_connStatus->setEd2kState(ConnectionStatusWidget::Disconnected);
     } else {
         m_statusEd2k->setText(tr("eD2K: Disconnected"));
         setStatusRole(m_statusEd2k, -1);
@@ -563,6 +577,8 @@ void MainWindow::setEd2kStatus(bool connected, bool connecting, bool firewalled,
     }
     // MFC CMuleStatusBarCtrl::GetPaneToolTipText (MuleStatusBarCtrl.cpp:86-105)
     QString tip = m_netBlocked ? m_netBlockReason : QString();
+    if (tip.isEmpty() && m_connOffline && !connected && !connecting)
+        tip = m_connOfflineReason;
     if (tip.isEmpty() && connected && !m_ed2kServerName.isEmpty()) {
         tip = tr("eD2K Server: %1  (%2 Users)")
                   .arg(m_ed2kServerName, QLocale().toString(m_ed2kServerUsers));
@@ -604,6 +620,12 @@ void MainWindow::setNetworkBlocked(bool blocked, const QString& reason)
 {
     m_netBlocked = blocked;
     m_netBlockReason = reason;
+}
+
+void MainWindow::setConnectionOffline(bool offline, const QString& reason)
+{
+    m_connOffline = offline;
+    m_connOfflineReason = reason;
 }
 
 void MainWindow::setKadStatus(bool running, bool kadConnected, bool firewalled,
@@ -1167,7 +1189,7 @@ void MainWindow::buildToolsMenu()
     m_toolsMenu->clear();
 
     m_toolsMenu->addAction(
-        QIcon(QStringLiteral(":/icons/Incoming.ico")),
+        skinIcon(QStringLiteral(":/icons/Incoming.ico")),
         tr("Open Incoming Folder..."),
         this, &MainWindow::onOpenIncomingFolder);
 
@@ -1175,27 +1197,27 @@ void MainWindow::buildToolsMenu()
     // every category folder and offers play/download links the file manager has
     // no equivalent for, so it is worth reaching even with a local core.
     m_toolsMenu->addAction(
-        QIcon(QStringLiteral(":/icons/DownloadsFolder.ico")),
+        skinIcon(QStringLiteral(":/icons/DownloadsFolder.ico")),
         tr("Open Downloads Folder in Browser"),
         this, &MainWindow::onOpenDownloadsFolderInBrowser);
 
     m_toolsMenu->addAction(
-        QIcon(QStringLiteral(":/icons/Convert.ico")),
+        skinIcon(QStringLiteral(":/icons/Convert.ico")),
         tr("Import Downloads (eM,eD,ON)..."),
         this, &MainWindow::onImportDownloads);
 
     m_toolsMenu->addAction(
-        QIcon(QStringLiteral(":/icons/Wizard.ico")),
+        skinIcon(QStringLiteral(":/icons/Wizard.ico")),
         tr("eMule First Runtime Wizard..."),
         this, &MainWindow::onFirstTimeWizard);
 
     m_toolsMenu->addAction(
-        QIcon(QStringLiteral(":/icons/IPFilter.ico")),
+        skinIcon(QStringLiteral(":/icons/IPFilter.ico")),
         tr("IP Filter..."),
         this, &MainWindow::onIPFilter);
 
     m_toolsMenu->addAction(
-        QIcon(QStringLiteral(":/icons/eD2kLinkPaste.ico")),
+        skinIcon(QStringLiteral(":/icons/eD2kLinkPaste.ico")),
         tr("Paste eD2K Links..."),
         this, &MainWindow::onPasteLinks);
 
@@ -1217,12 +1239,12 @@ void MainWindow::buildToolsMenu()
     m_toolsMenu->addSeparator();
 
     m_toolsMenu->addAction(
-        QIcon(QStringLiteral(":/icons/Web.ico")),
+        skinIcon(QStringLiteral(":/icons/Web.ico")),
         tr("Open WebUI"),
         this, &MainWindow::onOpenWebUi);
 
     m_toolsMenu->addAction(
-        QIcon(QStringLiteral(":/icons/Web.ico")),
+        skinIcon(QStringLiteral(":/icons/Web.ico")),
         tr("Submit Bug Report..."),
         this, &MainWindow::onSubmitBugReport);
 
@@ -1230,7 +1252,7 @@ void MainWindow::buildToolsMenu()
 
     // Links submenu
     auto* linksMenu = m_toolsMenu->addMenu(
-        QIcon(QStringLiteral(":/icons/Web.ico")), tr("Links"));
+        skinIcon(QStringLiteral(":/icons/Web.ico")), tr("Links"));
     linksMenu->addAction(tr("eMule Homepage"), this, [] {
         QDesktopServices::openUrl(QUrl(QString(kWebsiteUrl)));
     });
@@ -1252,7 +1274,7 @@ void MainWindow::buildToolsMenu()
 
     // Scheduler submenu
     auto* schedMenu = m_toolsMenu->addMenu(
-        QIcon(QStringLiteral(":/icons/Scheduler.ico")), tr("Scheduler"));
+        skinIcon(QStringLiteral(":/icons/Scheduler.ico")), tr("Scheduler"));
 
     const bool schedOn = thePrefs.schedulerEnabled();
     schedMenu->addAction(
@@ -1349,10 +1371,14 @@ void MainWindow::onFirstTimeWizard()
     // Once is once: cancelling counts, as in MFC. Tools > wizard reopens it.
     connect(m_firstStartWizard, &QDialog::finished, this, [this](int result) {
         theUiState.setFirstStartWizardDone(true);
+        // Held back until now, so nothing is claimed before the user could say no (#111).
+        // Cancel claims the defaults. Idempotent when reopened from Tools.
+        applyDesktopIntegration();
         // Lists built on the old showExtControls pick up the wizard's choice
         if (result == QDialog::Accepted) {
             m_transferPanel->applyDisplayOptions();
             m_sharedFilesPanel->applyDisplayOptions();
+            m_searchPanel->applyDisplayOptions();
         }
         // A core launched for the wizard waits with its auto-connect. Sent after the
         // wizard's SetPreferences, so the ports are rebound first. No-op otherwise.
@@ -1543,12 +1569,13 @@ void MainWindow::rebuildToolbar()
     m_toolbar->setToolButtonStyle(
         static_cast<Qt::ToolButtonStyle>(theUiState.toolbarButtonStyle()));
 
-    // Load skin if configured
+    // A strip that cannot be read leaves the tiles empty: built-in icons, as in MFC
     const QString& skinPath = theUiState.toolbarSkinPath();
-    if (!skinPath.isEmpty() && m_skinIcons.isEmpty())
+    if (skinPath.isEmpty())
+        clearToolbarSkin();
+    else
         loadToolbarSkin(skinPath);
-
-    const bool useOriginal = thePrefs.useOriginalIcons();
+    applyToolbarBackground();
 
     for (int rawId : order) {
         auto id = static_cast<ToolbarButtonId>(rawId);
@@ -1562,16 +1589,7 @@ void MainWindow::rebuildToolbar()
         if (!def)
             continue;
 
-        // Determine icon: skin > resource > fallback
-        QIcon icon;
-        if (m_skinIcons.contains(id)) {
-            icon = m_skinIcons[id];
-        } else if (useOriginal) {
-            icon = QIcon(QStringLiteral(":/icons/") + QLatin1String(def->iconResource));
-        } else {
-            icon = style()->standardIcon(def->fallback);
-        }
-
+        const QIcon icon = toolbarIcon(tileForButton(id), *def);
         auto* action = m_toolbar->addAction(icon, tr(def->label));
         m_toolbarActions[id] = action;
 
@@ -1635,43 +1653,45 @@ void MainWindow::rebuildToolbar()
 
 void MainWindow::loadToolbarSkin(const QString& path)
 {
-    QPixmap strip(path);
-    if (strip.isNull())
+    // runs on every rebuild: read and report a strip once
+    if (path == m_toolbarSkin.stripPath())
         return;
-
-    m_skinIcons.clear();
-
-    // Skin strip: 32px-wide tiles in fixed order.
-    //
-    // Deliberately NOT kAllButtons: this is the tile layout of legacy eMule
-    // toolbar bitmaps, which have exactly these twelve tiles in this MFC order.
-    // A button added to kAllButtons must be *appended* here or not listed at all
-    // — inserting one shifts every icon in every existing skin. The loop stops at
-    // the strip's width, so a trailing entry a skin does not cover simply falls
-    // back to the resource icon.
-    static constexpr ToolbarButtonId kSkinOrder[] = {
-        ToolbarButtonId::Connect, ToolbarButtonId::Kad, ToolbarButtonId::Servers,
-        ToolbarButtonId::Transfers, ToolbarButtonId::Search, ToolbarButtonId::SharedFiles,
-        ToolbarButtonId::Messages, ToolbarButtonId::IRC, ToolbarButtonId::Statistics,
-        ToolbarButtonId::Options, ToolbarButtonId::Tools, ToolbarButtonId::Help,
-    };
-
-    const int tileW = 32;
-    const int h = strip.height();
-
-    for (int i = 0; i < static_cast<int>(std::size(kSkinOrder)); ++i) {
-        if (i * tileW >= strip.width())
-            break;
-        QPixmap tile = strip.copy(i * tileW, 0, tileW, h);
-        if (h != 32)
-            tile = tile.scaled(32, 32, Qt::IgnoreAspectRatio, Qt::SmoothTransformation);
-        m_skinIcons[kSkinOrder[i]] = QIcon(tile);
+    if (!m_toolbarSkin.loadStrip(path)) {
+        logWarning(QStringLiteral("Toolbar bitmap %1 is not a strip of %2 or more square tiles, "
+                                  "using the default icons").arg(path).arg(kOfficialToolbarTiles));
     }
 }
 
 void MainWindow::clearToolbarSkin()
 {
-    m_skinIcons.clear();
+    m_toolbarSkin.clearStrip();
+}
+
+QIcon MainWindow::toolbarIcon(std::optional<ToolbarTile> tile, const ToolbarButtonDef& def) const
+{
+    // strip > skin profile > built-in, as CTempIconLoader under a skin profile in MFC
+    if (tile) {
+        if (QIcon skinned = m_toolbarSkin.icon(*tile, m_skinEngine); !skinned.isNull())
+            return skinned;
+    }
+    if (thePrefs.useOriginalIcons())
+        return skinIcon(QStringLiteral(":/icons/") + QLatin1String(def.iconResource));
+    return style()->standardIcon(def.fallback);
+}
+
+void MainWindow::applyToolbarBackground()
+{
+    // MFC CMuleToolbarCtrl::UpdateBackground: the profile's MainToolBarBk, tiled.
+    // A style sheet, as QMacStyle paints its own toolbar gradient over the palette.
+    QString path = m_skinEngine.bitmapPath(QStringLiteral("MainToolBarBk"));
+    if (path.isEmpty()) {
+        m_toolbar->setStyleSheet(QString{});
+        return;
+    }
+    path.replace(QLatin1Char('"'), QStringLiteral("\\\""));
+    m_toolbar->setStyleSheet(
+        QStringLiteral("QToolBar#MainToolbar { background-image: url(\"%1\"); border: none; }")
+            .arg(path));
 }
 
 void MainWindow::onToolbarContextMenu(const QPoint& pos)
@@ -1684,7 +1704,7 @@ void MainWindow::onToolbarContextMenu(const QPoint& pos)
     skinsMenu->addAction(tr("Select Toolbar Bitmap..."), this, [this]() {
         const QString path = QFileDialog::getOpenFileName(
             this, tr("Select Toolbar Bitmap"),
-            QString{},
+            skinsDir(),
             tr("Images (*.bmp *.png *.jpg);;All Files (*)"));
         if (path.isEmpty())
             return;
@@ -1862,21 +1882,46 @@ void MainWindow::updateConnectButton()
         return;
     }
 
-    const bool anyConnected = m_ed2kConnected || m_kadRunning;
     const bool useOriginal = thePrefs.useOriginalIcons();
-    if (anyConnected) {
+    QIcon icon;
+    switch (connectButtonState()) {
+    case ConnectButtonState::Disconnect:
         m_connectAction->setText(tr("Disconnect"));
-        m_connectAction->setIcon(
-            useOriginal ? QIcon(QStringLiteral(":/icons/ConnectDrop.ico"))
-                        : style()->standardIcon(QStyle::SP_MediaStop));
-    } else {
+        icon = m_toolbarSkin.icon(ToolbarTile::Disconnect, m_skinEngine);
+        if (icon.isNull()) {
+            icon = useOriginal ? skinIcon(QStringLiteral(":/icons/ConnectDrop.ico"))
+                               : style()->standardIcon(QStyle::SP_MediaStop);
+        }
+        break;
+    case ConnectButtonState::Cancel:
+        m_connectAction->setText(tr("Cancel"));
+        icon = m_toolbarSkin.icon(ToolbarTile::StopConnecting, m_skinEngine);
+        if (icon.isNull()) {
+            icon = useOriginal ? skinIcon(QStringLiteral(":/icons/ConnectStop.ico"))
+                               : style()->standardIcon(QStyle::SP_BrowserStop);
+        }
+        break;
+    case ConnectButtonState::Connect:
         m_connectAction->setText(tr("Connect"));
-        m_connectAction->setIcon(
-            useOriginal ? QIcon(QStringLiteral(":/icons/ConnectDo.ico"))
-                        : style()->standardIcon(QStyle::SP_MediaPlay));
+        icon = m_toolbarSkin.icon(ToolbarTile::Connect, m_skinEngine);
+        if (icon.isNull()) {
+            icon = useOriginal ? skinIcon(QStringLiteral(":/icons/ConnectDo.ico"))
+                               : style()->standardIcon(QStyle::SP_MediaPlay);
+        }
+        break;
     }
+    m_connectAction->setIcon(icon);
 
     updateTrayIcon();
+}
+
+MainWindow::ConnectButtonState MainWindow::connectButtonState() const
+{
+    if (m_ed2kConnected || m_kadConnected)
+        return ConnectButtonState::Disconnect;
+    if (m_ed2kConnecting || m_kadRunning)
+        return ConnectButtonState::Cancel;
+    return ConnectButtonState::Connect;
 }
 
 QColor MainWindow::trayMeterColor() const
@@ -1928,7 +1973,7 @@ void MainWindow::updateTrayIcon(bool force)
     m_trayIconPath = iconPath;
     m_trayMeterColor = barColor;
 
-    m_trayIcon->setIcon(QIcon(TrayMeterIcon::render(QIcon(iconPath), percent, barColor)));
+    m_trayIcon->setIcon(QIcon(TrayMeterIcon::render(skinIcon(iconPath), percent, barColor)));
 }
 
 void MainWindow::showNetworkInfo()
@@ -1956,7 +2001,7 @@ void MainWindow::setupStatusBar()
     auto* usersIcon = new QLabel;
     usersIcon->setFixedSize(16, 16);
     usersIcon->setScaledContents(true);
-    usersIcon->setPixmap(QIcon(QStringLiteral(":/icons/User.ico")).pixmap(16, 16));
+    setSkinPixmap(usersIcon, QStringLiteral(":/icons/User.ico"));
     usersLayout->addWidget(usersIcon);
 
     m_statusUsersLabel = new QLabel(tr("Users: 0 | Files: 0"));
@@ -2032,14 +2077,7 @@ void MainWindow::setupStatusBar()
     m_statusChat->setScaledContents(true);
     m_statusChat->installEventFilter(this);
     sb->addPermanentWidget(m_statusChat);
-    connect(m_messagesPanel, &MessagesPanel::messageStateChanged, this, [this](int state) {
-        m_statusChat->setPixmap(
-            state == 0 ? QPixmap()
-                       : QIcon(state == 1 ? QStringLiteral(":/icons/Message.ico")
-                                          : QStringLiteral(":/icons/MessagePending.ico"))
-                             .pixmap(16, 16));
-        m_statusChat->setToolTip(state == 0 ? QString() : tr("New message — double-click to read"));
-    });
+    connect(m_messagesPanel, &MessagesPanel::messageStateChanged, this, &MainWindow::showChatState);
 }
 
 void MainWindow::requestEd3kStatus()
@@ -2213,7 +2251,7 @@ void ConnectionStatusWidget::paintEvent(QPaintEvent* /*event*/)
         };
         const QString iconName = QStringLiteral(":/icons/Connected%1%2.ico")
             .arg(stateTag(m_ed2kState)).arg(stateTag(m_kadState));
-        const QPixmap px = QIcon(iconName).pixmap(size());
+        const QPixmap px = skinIcon(iconName).pixmap(size());
         QPainter p(this);
         p.drawPixmap(rect(), px);
         return;
@@ -2273,7 +2311,9 @@ void MainWindow::applySkinProfile(const QString& path)
         m_skinEngine.loadProfile(path);
     }
 
-    // Re-apply toolbar icons from skin overrides
+    SkinColors::instance().setColors(m_skinEngine.colors(), m_skinEngine.listImages());
+    if (SkinIcons::instance().setFiles(m_skinEngine.iconFiles()))
+        refreshSkinIcons();
     rebuildToolbar();
 }
 
@@ -2529,7 +2569,7 @@ void MainWindow::updateTransferStateIcon(bool uploading, bool downloading)
         return;
     m_transferStateIcon = idx;
     m_statusUpDownIcon->setPixmap(
-        QIcon(QString::fromLatin1(kIcons[idx])).pixmap(16, 16));
+        skinIcon(QString::fromLatin1(kIcons[idx])).pixmap(16, 16));
 }
 
 bool MainWindow::lowIdHintDue() const
@@ -2643,6 +2683,29 @@ void MainWindow::updateAttachIndicator()
     const auto& attach = CoreAttachment::instance();
     m_statusAttach->setPixmap(attach.icon(palette().color(QPalette::WindowText)).pixmap(16, 16));
     m_statusAttach->setToolTip(attach.toolTip());
+}
+
+void MainWindow::refreshSkinIcons()
+{
+    // MFC ApplySkin → OnSysColorChange: every window reloads its icons. Ours resolve
+    // the skin when painted; only copies taken as pixmaps need setting again.
+    updateTrayIcon(true);
+    if (const int shown = std::exchange(m_transferStateIcon, -1); shown >= 0)
+        updateTransferStateIcon(shown & 2, shown & 1);
+    showChatState(m_statusChatState);
+    for (QWidget* widget : QApplication::allWidgets())
+        widget->update();
+}
+
+void MainWindow::showChatState(int state)
+{
+    m_statusChatState = state;
+    m_statusChat->setPixmap(
+        state == 0 ? QPixmap()
+                   : skinIcon(state == 1 ? QStringLiteral(":/icons/Message.ico")
+                                         : QStringLiteral(":/icons/MessagePending.ico"))
+                         .pixmap(16, 16));
+    m_statusChat->setToolTip(state == 0 ? QString() : tr("New message — double-click to read"));
 }
 
 } // namespace eMule

@@ -194,6 +194,26 @@ SearchFile::KnownType determineKnownType(const uint8* hash)
     return SearchFile::KnownType::Unknown;
 }
 
+/// Folder that holds the file on this host, empty if none. Same order as
+/// determineKnownType(). known.met keeps no path: a file no longer shared only has
+/// one while this session still knows where it was.
+QString localFolderOf(const uint8* hash)
+{
+    if (theApp.downloadQueue) {
+        if (const PartFile* pf = theApp.downloadQueue->fileByID(hash))
+            return pf->tmpPath();
+    }
+    if (theApp.sharedFileList) {
+        if (const KnownFile* kf = theApp.sharedFileList->getFileByID(hash))
+            return kf->path();
+    }
+    if (theApp.knownFileList) {
+        if (const KnownFile* kf = theApp.knownFileList->findKnownFileByID(hash))
+            return kf->path();
+    }
+    return {};
+}
+
 /// Helper: decode a hex hash string to a 16-byte array, returns false on error.
 bool hexToHash(const QString& hex, uint8* out)
 {
@@ -1157,6 +1177,7 @@ void IpcClientHandler::handleGetSearchResults(const IpcMessage& msg)
         QCborMap m = toCbor(*sf);
         m.insert(QStringLiteral("knownType"),
                  static_cast<int>(determineKnownType(sf->fileHash())));
+        m.insert(QStringLiteral("localFolder"), localFolderOf(sf->fileHash()));
         results.append(m);
     });
     // total lets the client notice a row that left: a delta cannot say so
@@ -1350,16 +1371,22 @@ void IpcClientHandler::handleGetKnownTypes(const IpcMessage& msg)
 {
     const auto hashes = msg.fieldArray(0);
     QCborArray types;
+    QCborArray folders;
     uint8 hashBuf[16]{};
 
     for (const auto& val : hashes) {
         const QString hashStr = val.toString();
-        if (hexToHash(hashStr, hashBuf))
+        if (hexToHash(hashStr, hashBuf)) {
             types.append(static_cast<int>(determineKnownType(hashBuf)));
-        else
+            folders.append(localFolderOf(hashBuf));
+        } else {
             types.append(0);
+            folders.append(QString());
+        }
     }
-    sendMessage(IpcMessage::makeResult(msg.seqId(), true, QCborValue(types)));
+    IpcMessage reply = IpcMessage::makeResult(msg.seqId(), true, QCborValue(types));
+    reply.append(QCborValue(folders));
+    sendMessage(reply);
 }
 
 void IpcClientHandler::handleGetSharedFiles(const IpcMessage& msg)
@@ -3858,6 +3885,10 @@ bool IpcClientHandler::applyPreferenceA(const QString& key, const QCborValue& va
         thePrefs.setUdpPort(static_cast<uint16>(val.toInteger()));
     else if (key == QStringLiteral("randomizePortsAtStart"))
         thePrefs.setRandomizePortsAtStart(val.toBool());
+    else if (key == QStringLiteral("connectionChecker"))
+        thePrefs.setConnectionChecker(val.toBool());   // CoreSession's tick picks it up
+    else if (key == QStringLiteral("connectionCheckerUrl"))
+        thePrefs.setConnectionCheckerUrl(val.toString());
     else if (key == QStringLiteral("randomPortMin"))
         thePrefs.setRandomPortMin(static_cast<uint16>(std::clamp<qint64>(val.toInteger(), 0, 65535)));
     else if (key == QStringLiteral("randomPortMax"))

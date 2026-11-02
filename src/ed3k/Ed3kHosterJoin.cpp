@@ -391,9 +391,10 @@ void Ed3kHosterJoin::retry(quint32 id)
     QStringList all = e->item.tried;
     all << e->item.url << e->item.mirrors;
     // puzzles of its hosters are asked again
-    m_skipSites.remove(siteOf(e->item.host));
+    QSet<QString> sites{siteOf(e->item.host)};
     for (const QString& u : std::as_const(all))
-        m_skipSites.remove(siteOf(QUrl(u).host()));
+        sites.insert(siteOf(QUrl(u).host()));
+    m_skipSites.removeIf([&sites, this](const QString& s) { return sites.contains(siteOf(s)); });
     if (!e->item.tried.isEmpty()) {
         // back to the first link; verified blocks stay (begin())
         release(*e, true);
@@ -1074,7 +1075,7 @@ void Ed3kHosterJoin::onResolverEvent(Ed3kResolver::TaskId task, const ResolverEv
         Entry* e = find(id);
         const QString site = siteOf(!ev.host.isEmpty() ? ev.host : e ? e->item.host : QString());
         // the user skips this hoster's puzzles: not shown, ends as HosterSkipped
-        if (!site.isEmpty() && m_skipSites.contains(site)) {
+        if (isSkippedSite(site)) {
             if (m_resolver)
                 m_resolver->answerPuzzle(ev.puzzle, {});
             return;
@@ -1271,7 +1272,7 @@ void Ed3kHosterJoin::onResolverEvent(Ed3kResolver::TaskId task, const ResolverEv
                 why = Reason::NeedsLogin;
             } else if (ev.text == QLatin1StringView("skipped")) {
                 arg = siteOf(e->item.host);
-                why = m_skipSites.contains(arg) ? Reason::HosterSkipped : Reason::PuzzleSkipped;
+                why = isSkippedSite(arg) ? Reason::HosterSkipped : Reason::PuzzleSkipped;
                 if (why == Reason::PuzzleSkipped)
                     arg.clear();
             } else if (ev.text == QLatin1StringView("wrong")) {
@@ -2117,6 +2118,14 @@ QString Ed3kHosterJoin::siteOf(const QString& host) const
         if (const auto it = m_siteOf.constFind(d.toString()); it != m_siteOf.cend())
             return *it;
     return h;
+}
+
+bool Ed3kHosterJoin::isSkippedSite(const QString& site) const
+{
+    // a skip stored before the hoster's other domains were known still matches (JD: by plugin host)
+    return !site.isEmpty()
+        && (m_skipSites.contains(site)
+            || std::ranges::any_of(m_skipSites, [&site, this](const QString& s) { return siteOf(s) == site; }));
 }
 
 void Ed3kHosterJoin::learnSites(const QStringList& sites)

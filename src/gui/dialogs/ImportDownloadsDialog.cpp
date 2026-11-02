@@ -9,6 +9,7 @@
 #include "prefs/Preferences.h"
 #include "utils/DialogSizing.h"
 #include "utils/StringUtils.h"
+#include "app/SkinIcons.h"
 
 #include <QCborArray>
 #include <QPointer>
@@ -38,7 +39,7 @@ ImportDownloadsDialog::ImportDownloadsDialog(IpcClient* ipc, QWidget* parent)
     , m_ipc(ipc)
 {
     setWindowTitle(tr("Convert Part Files"));
-    setWindowIcon(QIcon(QStringLiteral(":/icons/Convert.ico")));
+    setWindowIcon(skinIcon(QStringLiteral(":/icons/Convert.ico")));
 
     auto* mainLayout = new QVBoxLayout(this);
 

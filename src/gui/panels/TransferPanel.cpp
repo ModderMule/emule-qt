@@ -44,6 +44,7 @@
 #include "protocol/ED2KLink.h"
 #include "utils/Log.h"
 #include "utils/OtherFunctions.h"
+#include "app/SkinIcons.h"
 
 #include <QApplication>
 #include <QCborArray>
@@ -805,9 +806,9 @@ QWidget* TransferPanel::createDownloadsSection()
     // Same switcher widget and icons as the bottom pane, with the download list added
     // in front — MFC's m_btnWnd1 offers the download list on top of wnd2's four.
     m_toolbar1 = new TransferToolbar;
-    m_toolbar1->addButton(QIcon(QStringLiteral(":/icons/DownloadFiles.ico")), tr("Downloads"));
+    m_toolbar1->addButton(skinIcon(QStringLiteral(":/icons/DownloadFiles.ico")), tr("Downloads"));
     for (int v = 0; v < ClientViewCount; ++v)
-        m_toolbar1->addButton(QIcon(QString::fromLatin1(clientSlot(v).icon)), clientViewName(v));
+        m_toolbar1->addButton(skinIcon(QString::fromLatin1(clientSlot(v).icon)), clientViewName(v));
 
     connect(m_toolbar1, &TransferToolbar::buttonClicked, this, [this](int id) {
         setTopView(id);
@@ -1041,7 +1042,7 @@ QWidget* TransferPanel::createBottomPane()
     // Downloads, which the top pane keeps to itself.
     m_toolbar2 = new TransferToolbar;
     for (int v = 0; v < ClientViewCount; ++v)
-        m_toolbar2->addButton(QIcon(QString::fromLatin1(clientSlot(v).icon)), clientViewName(v));
+        m_toolbar2->addButton(skinIcon(QString::fromLatin1(clientSlot(v).icon)), clientViewName(v));
 
     connect(m_toolbar2, &TransferToolbar::buttonClicked, this, [this](int id) {
         setBottomView(id);
@@ -1177,72 +1178,72 @@ QToolBar* TransferPanel::createActionToolbar()
 
     // Group 1: Priority / Pause / Stop / Resume / Cancel
     auto* actPriority = toolbar->addAction(
-        QIcon(QStringLiteral(":/icons/FilePriority.ico")), tr("Priority"));
+        skinIcon(QStringLiteral(":/icons/FilePriority.ico")), tr("Priority"));
     connect(actPriority, &QAction::triggered, this, &TransferPanel::showPriorityMenu);
     m_selectionActions.append(actPriority);
 
     m_actPause = toolbar->addAction(
-        QIcon(QStringLiteral(":/icons/Pause.ico")), tr("Pause"));
+        skinIcon(QStringLiteral(":/icons/Pause.ico")), tr("Pause"));
     connect(m_actPause, &QAction::triggered, this, [this]() {
         sendDownloadActionBatch(saveDownloadSelectionMulti(), 0);
     });
 
     m_actStop = toolbar->addAction(
-        QIcon(QStringLiteral(":/icons/Stop.ico")), tr("Stop"));
+        skinIcon(QStringLiteral(":/icons/Stop.ico")), tr("Stop"));
     connect(m_actStop, &QAction::triggered, this, [this]() {
         sendStopDownloadBatch(saveDownloadSelectionMulti());
     });
 
     m_actResume = toolbar->addAction(
-        QIcon(QStringLiteral(":/icons/Start.ico")), tr("Resume"));
+        skinIcon(QStringLiteral(":/icons/Start.ico")), tr("Resume"));
     connect(m_actResume, &QAction::triggered, this, [this]() {
         sendDownloadActionBatch(saveDownloadSelectionMulti(), 1);
     });
 
     m_actCancel = toolbar->addAction(
-        QIcon(QStringLiteral(":/icons/Delete.ico")), tr("Cancel"));
+        skinIcon(QStringLiteral(":/icons/Delete.ico")), tr("Cancel"));
     connect(m_actCancel, &QAction::triggered, this, &TransferPanel::cancelSelectedDownloads);
 
     toolbar->addSeparator();
 
     // Group 2: Open File / Open Folder / Preview / Details / Comments / eD2K Links
     auto* actOpenFile = toolbar->addAction(
-        QIcon(QStringLiteral(":/icons/FileOpen.ico")), tr("Open File"));
+        skinIcon(QStringLiteral(":/icons/FileOpen.ico")), tr("Open File"));
     connect(actOpenFile, &QAction::triggered, this, [this]() {
         openDownload(saveDownloadSelection());
     });
     m_selectionActions.append(actOpenFile);
 
     auto* actOpenFolder = toolbar->addAction(
-        QIcon(QStringLiteral(":/icons/FolderOpen.ico")), tr("Open Folder"));
+        skinIcon(QStringLiteral(":/icons/FolderOpen.ico")), tr("Open Folder"));
     connect(actOpenFolder, &QAction::triggered, this, [this]() {
         sendOpenFolder(saveDownloadSelection());
     });
     m_selectionActions.append(actOpenFolder);
 
     auto* actPreview = toolbar->addAction(
-        QIcon(QStringLiteral(":/icons/Preview.ico")), tr("Preview"));
+        skinIcon(QStringLiteral(":/icons/Preview.ico")), tr("Preview"));
     connect(actPreview, &QAction::triggered, this, [this]() {
         sendPreview(saveDownloadSelection());
     });
     m_selectionActions.append(actPreview);
 
     auto* actDetails = toolbar->addAction(
-        QIcon(QStringLiteral(":/icons/FileInfo.ico")), tr("Details"));
+        skinIcon(QStringLiteral(":/icons/FileInfo.ico")), tr("Details"));
     connect(actDetails, &QAction::triggered, this, [this]() {
         showDownloadDetails(saveDownloadSelection());
     });
     m_selectionActions.append(actDetails);
 
     auto* actComments = toolbar->addAction(
-        QIcon(QStringLiteral(":/icons/FileComments.ico")), tr("Comments"));
+        skinIcon(QStringLiteral(":/icons/FileComments.ico")), tr("Comments"));
     connect(actComments, &QAction::triggered, this, [this]() {
         showComments(saveDownloadSelection());
     });
     m_selectionActions.append(actComments);
 
     auto* actEd2kLinks = toolbar->addAction(
-        QIcon(QStringLiteral(":/icons/eD2kLink.ico")), tr("eD2K Links"),
+        skinIcon(QStringLiteral(":/icons/eD2kLink.ico")), tr("eD2K Links"),
         this, [this]() {
             // Opens the link page, as MFC's toolbar MP_SHOWED2KLINK (DownloadListCtrl.cpp:2617)
             fetchAndShowFileDetails(saveDownloadSelectionMulti(), FileDetailDialog::Ed2kLink);
@@ -1253,7 +1254,7 @@ QToolBar* TransferPanel::createActionToolbar()
 
     // Group 3: Assign To Category / Clear Completed / Search Related
     auto* actCategory = toolbar->addAction(
-        QIcon(QStringLiteral(":/icons/Category.ico")), tr("Assign To Category"));
+        skinIcon(QStringLiteral(":/icons/Category.ico")), tr("Assign To Category"));
     connect(actCategory, &QAction::triggered, this, [this]() {
         const QStringList hashes = saveDownloadSelectionMulti();
         if (hashes.isEmpty())
@@ -1272,12 +1273,12 @@ QToolBar* TransferPanel::createActionToolbar()
 
     // Clear Completed — greyed out when no completed downloads exist
     m_clearCompletedAction = toolbar->addAction(
-        QIcon(QStringLiteral(":/icons/DeleteAll.ico")), tr("Clear Completed"),
+        skinIcon(QStringLiteral(":/icons/DeleteAll.ico")), tr("Clear Completed"),
         this, [this]() { sendClearCompleted(); });
     m_clearCompletedAction->setEnabled(false);
 
     auto* actSearchRelated = toolbar->addAction(
-        QIcon(QStringLiteral(":/icons/KadFileSearch.ico")), tr("Search Related"));
+        skinIcon(QStringLiteral(":/icons/KadFileSearch.ico")), tr("Search Related"));
     connect(actSearchRelated, &QAction::triggered, this, [this]() {
         QStringList names;
         const QStringList hashes = saveDownloadSelectionMulti();
@@ -1294,7 +1295,7 @@ QToolBar* TransferPanel::createActionToolbar()
 
     // Group 4: Find — NOT selection-dependent
     toolbar->addAction(
-        QIcon(QStringLiteral(":/icons/Search.ico")), tr("Find"),
+        skinIcon(QStringLiteral(":/icons/Search.ico")), tr("Find"),
         this, &TransferPanel::showFindDialog);
 
     // Start with all selection-dependent actions disabled (nothing selected)
@@ -1442,7 +1443,7 @@ void TransferPanel::requestDownloads()
             row.isPaused          = m.value(QStringLiteral("isPaused")).toBool();
             row.isStopped         = m.value(QStringLiteral("isStopped")).toBool();
             row.fileOp            = static_cast<int>(m.value(QStringLiteral("fileOp")).toInteger());
-            row.completionError   = m.value(QStringLiteral("completionError")).toBool();
+            row.completionError   = static_cast<int>(m.value(QStringLiteral("completionError")).toInteger());
             row.category          = m.value(QStringLiteral("category")).toInteger();
             row.lastSeenComplete  = m.value(QStringLiteral("lastSeenComplete")).toInteger();
             row.completeSourcesLo = static_cast<int>(m.value(QStringLiteral("completeSourcesLo")).toInteger());
@@ -2422,11 +2423,11 @@ void TransferPanel::applyViews(int topId, int clientView, Pane priority)
     m_bottomView = clientView;
 
     m_toolbar1->checkButton(topId);
-    m_toolbar1->setLeadingIcon(QIcon(QString::fromLatin1(
+    m_toolbar1->setLeadingIcon(skinIcon(QString::fromLatin1(
         topClient < 0 ? ":/icons/DownloadFiles.ico" : clientSlot(topClient).icon)));
 
     m_toolbar2->checkButton(clientView);
-    m_toolbar2->setLeadingIcon(QIcon(QString::fromLatin1(clientSlot(clientView).icon)));
+    m_toolbar2->setLeadingIcon(skinIcon(QString::fromLatin1(clientSlot(clientView).icon)));
 
     // Grey out the list the top pane is holding, as the MFC toolbar does for a list
     // that is not available. The clash was resolved above, so this never disables the

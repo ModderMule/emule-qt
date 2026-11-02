@@ -612,10 +612,22 @@ static std::optional<ED2KLink> parseMagnetLink(const QString& uri)
 // parseED2KLink — main entry point
 // ---------------------------------------------------------------------------
 
-std::optional<ED2KLink> parseED2KLink(const QString& uri)
+QString normalizeEd2kLink(const QString& text)
 {
-    if (uri.isEmpty())
+    // Only a link whose own separators are encoded: a raw-pipe link keeps "%7C" in a
+    // name for the field decoder, which runs after the split
+    if (!text.contains(QStringLiteral("ed2k://%7C"), Qt::CaseInsensitive))
+        return text;
+    QString out = text;
+    out.replace(QStringLiteral("%7C"), QStringLiteral("|"), Qt::CaseInsensitive);
+    return out;
+}
+
+std::optional<ED2KLink> parseED2KLink(const QString& rawUri)
+{
+    if (rawUri.isEmpty())
         return std::nullopt;
+    const QString uri = normalizeEd2kLink(rawUri.trimmed());
 
     // Handle magnet links
     if (uri.startsWith(QStringLiteral("magnet:"), Qt::CaseInsensitive))

@@ -3,11 +3,12 @@
 /// @file FirstStartWizard.h
 /// @brief First Runtime Wizard dialog matching the MFC eMule wizard.
 ///
-/// Two pages: ports + network selection (all six networks), then connection speed (MFC's separate
+/// Two pages: ports + network selection (all six networks) + what it opens, then connection speed (MFC's separate
 /// connection wizard, with 2026 line types). Shown once on first start and
 /// accessible via Tools > "eMule First Runtime Wizard...".
 
 #include "dialogs/ConnectionPresets.h"
+#include "utils/FileAssociation.h"
 
 #include <QCborMap>
 #include <QDialog>
@@ -85,6 +86,10 @@ private:
     void requestPortMapStatus();
     void endUPnPWait(const QString& text, bool failed);
     void finish();
+    /// The "Open with eMule Qt" switches, under the networks.
+    QWidget* setupDesktopRow(QWidget* parent);
+    /// macOS: claims a changed choice now. Elsewhere: stores it for MainWindow.
+    void applyFileTypes();
 
     IpcClient* m_ipc = nullptr;
 
@@ -116,6 +121,14 @@ private:
     QCheckBox* m_ed3kCheck = nullptr;
     QCheckBox* m_hosterCheck = nullptr;   ///< ed3kHosterEnabled; runs on the ed3k node
     QCheckBox* m_extControlsCheck = nullptr;
+
+    // Desktop: what eMule Qt opens (#111)
+    QCheckBox* m_assocEd2kCheck = nullptr;
+    QCheckBox* m_assocTorrentCheck = nullptr;
+    QCheckBox* m_assocNzbCheck = nullptr;
+#ifdef Q_OS_MACOS
+    gui::FileAssociation::FileTypes m_claimedTypes;   ///< the default app when opened
+#endif
 
     QPushButton* m_portTestBtn = nullptr;
 

@@ -1,5 +1,6 @@
 #include "pch.h"
 #include "controls/KadLookupGraph.h"
+#include "app/SkinIcons.h"
 
 #include <QContextMenuEvent>
 #include <QCursor>
@@ -76,10 +77,10 @@ void drawArrow(QPainter& p, QPointF from, QPointF to, const QColor& color)
 
 KadLookupGraph::KadLookupGraph(QWidget* parent)
     : QWidget(parent)
-    , m_nodeIcons{QIcon(QStringLiteral(":/icons/Contact0.ico")),
-                  QIcon(QStringLiteral(":/icons/Contact1.ico")),
-                  QIcon(QStringLiteral(":/icons/Contact2.ico")),
-                  QIcon(QStringLiteral(":/icons/Contact4.ico"))}
+    , m_nodeIcons{skinIcon(QStringLiteral(":/icons/Contact0.ico")),
+                  skinIcon(QStringLiteral(":/icons/Contact1.ico")),
+                  skinIcon(QStringLiteral(":/icons/Contact2.ico")),
+                  skinIcon(QStringLiteral(":/icons/Contact4.ico"))}
     , m_iconSearch(QStringLiteral(":/icons/emuleCollSearch.ico"))
     , m_iconStoreFile(QStringLiteral(":/icons/KadStoreFile.ico"))
     , m_iconStoreWord(QStringLiteral(":/icons/KadStoreWord.ico"))

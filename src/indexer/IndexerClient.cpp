@@ -221,13 +221,12 @@ void IndexerClient::fetchUrl(const QUrl& url, int timeoutMs, FetchCallback done)
     opts.timeoutMs = timeoutMs;
     opts.maxBytes = kMaxResponseBytes;
 
-    HttpFileDownload::get(this, url, opts,
-                          [done = std::move(done)](bool ok, const QByteArray& data,
-                                                   const QString&, const QString& error) {
+    HttpFileDownload::fetch(this, url, opts,
+                            [done = std::move(done)](const HttpFileDownload::Result& r) {
         countIndexer(&IndexerCounters::nzbFetches);
-        if (!ok)
+        if (!r.ok)
             countIndexer(&IndexerCounters::nzbFetchErrors);
-        done(ok, data, redactApiKey(error));
+        done(r.ok, r.data, redactApiKey(r.error));
     });
 }
 

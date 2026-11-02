@@ -519,7 +519,7 @@ bool RoutingZone::onBigTimer()
     return false;
 }
 
-void RoutingZone::onSmallTimer()
+void RoutingZone::onSmallTimer(bool offline)
 {
     // Non-recursive: called per leaf zone from Kademlia::process().
     if (!isLeaf())
@@ -548,7 +548,7 @@ void RoutingZone::onSmallTimer()
             continue;
         }
         if (c->getType() == 4 && c->getExpireTime() > 0 && c->getExpireTime() <= now) {
-            if (!c->inUse()) {
+            if (!offline && !c->inUse()) {
                 countKad(&KadCounters::contactsExpired);
                 // Pairs with HELLO_REQ/HELLO_RES diag lines — shows the table shrinking (issue #64)
                 logKad(QStringLiteral("Kad: [diag] contact %1:%2 v%3 expired — no HELLO_RES, removed (age %4 min)")
@@ -570,12 +570,18 @@ void RoutingZone::onSmallTimer()
     Contact* oldest = m_bin->getOldest();
     if (!oldest)
         return;
-    if (oldest->getExpireTime() >= now || oldest->getType() == 4) {
+    const bool due = oldest->getExpireTime() < now || oldest->isRecheckDue(now);
+    if (!due || oldest->getType() == 4) {
         m_bin->pushToBottom(oldest);
         return;
     }
 
-    oldest->checkingType();
+    // Offline: HELLO still goes out as a probe for the network coming back, but a
+    // missing answer is not the contact's fault, so no aging. Not MFC.
+    if (offline)
+        oldest->markRecheck(0);
+    else
+        oldest->checkingType();
     m_bin->pushToBottom(oldest);
     auto* udpListener = Kademlia::getInstanceUDPListener();
     if (!udpListener)
@@ -590,7 +596,7 @@ void RoutingZone::onSmallTimer()
         udpListener->sendMyDetails(KADEMLIA2_HELLO_REQ,
             oldest->address().toUint32(), oldest->getUDPPort(),
             oldest->getVersion(), oldest->getUDPKey(), &contactID, false);
-        if (oldest->getVersion() >= KADEMLIA_VERSION8_49b) {
+        if (!offline && oldest->getVersion() >= KADEMLIA_VERSION8_49b) {
             // We won't get a counted HELLO_REQ back from a node we pinged, so record
             // the firewalled-stats sample here instead. MFC :836-846.
             if (auto* prefs = Kademlia::getInstancePrefs()) {
@@ -603,6 +609,27 @@ void RoutingZone::onSmallTimer()
             oldest->address().toUint32(), oldest->getUDPPort(),
             oldest->getVersion(), KadUDPKey(), nullptr, false);
     }
+}
+
+void RoutingZone::voidChecksSince(time_t since)
+{
+    if (!isLeaf())
+        return;
+    const time_t now = time(nullptr);
+    ContactArray entries;
+    m_bin->getEntries(entries);
+    for (auto* c : entries)
+        c->voidChecksSince(since, now);
+}
+
+void RoutingZone::markRecheckAll(time_t now)
+{
+    if (!isLeaf())
+        return;
+    ContactArray entries;
+    m_bin->getEntries(entries);
+    for (auto* c : entries)
+        c->markRecheck(now);
 }
 
 uint32 RoutingZone::estimateCount() const

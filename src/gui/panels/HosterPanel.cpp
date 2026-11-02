@@ -12,6 +12,7 @@
 #include "utils/MenuUtils.h"
 #include "utils/StringUtils.h"
 #include "IpcMessage.h"
+#include "app/SkinIcons.h"
 
 #include <QAction>
 #include <QApplication>
@@ -361,7 +362,7 @@ QTreeWidgetItem* HosterPanel::packageRow(qint64 id, const QString& name)
     row->setData(ColName, kItemIdRole, 0);
     row->setData(ColName, kPackageIdRole, id);
     row->setText(ColName, name);
-    static const QIcon folder(QStringLiteral(":/icons/FolderOpen.ico"));
+    static const QIcon folder = skinIcon(QStringLiteral(":/icons/FolderOpen.ico"));
     row->setIcon(ColName, folder);
     row->setToolTip(ColName, name);   // starts collapsed
     m_packages[id] = row;

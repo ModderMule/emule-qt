@@ -115,6 +115,7 @@ private slots:
     void copyThenRename_deliversAndLeavesNoStagedFile();
     void copyThenRename_interruptedLeavesTheSourceOnly();
     void copyThenRename_missingSourceFails();
+    void classifyFailure_namesTheCause();
     void completion_setsTheKnownFileDate();
     void uniqueDestination_followsMfcsNaming();
     void createPartFile_allocatesInFullWhenAsked();
@@ -2141,6 +2142,23 @@ void tst_PartFile::copyThenRename_missingSourceFails()
     QVERIFY(QDir(dir).isEmpty());
 }
 
+void tst_PartFile::classifyFailure_namesTheCause()
+{
+    const QString dir = m_tempDir.path() + QStringLiteral("/classify");
+    QDir().mkpath(dir);
+
+    // 256 bytes of name: too long on every file system we run on
+    QCOMPARE(FileMoveThread::classifyFailure(dir + u'/' + QString(256, u'a'), 1),
+             CompletionFailure::NameTooLong);
+    QCOMPARE(FileMoveThread::classifyFailure(dir + QStringLiteral("/missing/x.bin"), 1),
+             CompletionFailure::CannotWrite);
+    QCOMPARE(FileMoveThread::classifyFailure(dir + QStringLiteral("/x.bin"),
+                                             std::numeric_limits<qint64>::max()),
+             CompletionFailure::NoSpace);
+    QCOMPARE(FileMoveThread::classifyFailure(dir + QStringLiteral("/x.bin"), 1),
+             CompletionFailure::Other);
+}
+
 // R11: the delivered file's date is what known.met stores and the next scan matches by
 // (KnownFileList::findKnownFile). Left unset, every completed download was rehashed.
 void tst_PartFile::completion_setsTheKnownFileDate()
@@ -2361,6 +2379,7 @@ void tst_PartFile::completion_loadedCompleteFileIsVerifiedAndDelivered()
     QCOMPARE(moved.takeFirst().at(0).toBool(), false);
     QCOMPARE(loaded.status(), PartFileStatus::Error);
     QVERIFY(loaded.completionError());
+    QCOMPARE(loaded.completionFailure(), CompletionFailure::Unreadable);
     QVERIFY(QDir(incoming).isEmpty());
     QCOMPARE(loaded.totalGapSizeInPart(1), uint64{0});   // unread is not corrupt
 

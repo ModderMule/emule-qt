@@ -77,6 +77,25 @@ uint64 nextZipRecord(QFile& input, uint64 from, uint64 last)
     return last + 1;
 }
 
+/// Copy [from, from + len) of @p in to @p out in 256 KiB chunks; false on a short read or write.
+/// Lengths come from the archive, so never one read of the whole range (MFC copies in chunks too).
+bool copyRange(QFile& in, QFile& out, qint64 from, qint64 len)
+{
+    static constexpr qint64 kChunk = 256 * 1024;
+    if (from < 0 || len < 0 || !in.seek(from))
+        return false;
+    QByteArray buf(static_cast<qsizetype>(std::min(kChunk, std::max<qint64>(len, 1))), Qt::Uninitialized);
+    while (len > 0) {
+        const qint64 want = std::min(kChunk, len);
+        if (in.read(buf.data(), want) != want)
+            return false;
+        if (out.write(buf.constData(), want) != want)
+            return false;
+        len -= want;
+    }
+    return true;
+}
+
 } // namespace
 
 // ---------------------------------------------------------------------------
@@ -197,7 +216,7 @@ bool ArchiveRecovery::recoverZip(QFile& input, QFile& output,
                                  const std::vector<Gap>& filled,
                                  uint64 fileSize)
 {
-    std::vector<uint64> centralDirEntries;
+    std::vector<ZipCdEntry> centralDirEntries;
     uint64 pos = 0;
     int entriesRecovered = 0;
 
@@ -246,13 +265,13 @@ bool ArchiveRecovery::recoverZip(QFile& input, QFile& output,
 
             // Check if entire entry is available
             if (isFilled(pos, pos + entryTotalSize - 1, filled)) {
-                // Write this entry to output
-                centralDirEntries.push_back(pos);
+                // Central dir needs the entry's offset in the OUTPUT (MFC: zipOutput->GetPosition())
+                centralDirEntries.push_back({pos, static_cast<uint64>(output.pos())});
 
-                // Copy the entry data
-                input.seek(static_cast<qint64>(pos));
-                QByteArray entryData = input.read(static_cast<qint64>(entryTotalSize));
-                output.write(entryData);
+                if (!copyRange(input, output, static_cast<qint64>(pos), static_cast<qint64>(entryTotalSize))) {
+                    logWarning(QStringLiteral("ZIP recovery: copying entry at %1 failed").arg(pos));
+                    return false;
+                }
 
                 ++entriesRecovered;
                 pos += entryTotalSize;
@@ -282,15 +301,15 @@ bool ArchiveRecovery::recoverZip(QFile& input, QFile& output,
 // ---------------------------------------------------------------------------
 
 void ArchiveRecovery::writeZipCentralDirectory(
-    QFile& output, const std::vector<uint64>& centralDirEntries,
+    QFile& output, const std::vector<ZipCdEntry>& centralDirEntries,
     QFile& input, const std::vector<Gap>& /*filled*/)
 {
     uint64 centralDirStart = static_cast<uint64>(output.pos());
     uint32 centralDirSize = 0;
 
-    for (uint64 localOffset : centralDirEntries) {
+    for (const ZipCdEntry& entry : centralDirEntries) {
         // Read the local file header to build central directory entry
-        input.seek(static_cast<qint64>(localOffset));
+        input.seek(static_cast<qint64>(entry.inputOffset));
         char localHeader[30]{};
         if (input.read(localHeader, 30) != 30)
             continue;
@@ -330,7 +349,7 @@ void ArchiveRecovery::writeZipCentralDirectory(
         std::memcpy(centralEntry + 24, &uncompSize, 4);
         std::memcpy(centralEntry + 28, &fnLen, 2);
         // extra field len, comment len, disk start, internal/external attrs = 0
-        uint32 relOffset = static_cast<uint32>(localOffset);
+        uint32 relOffset = static_cast<uint32>(entry.outputOffset);
         std::memcpy(centralEntry + 42, &relOffset, 4);
 
         output.write(centralEntry, 46);
@@ -449,9 +468,10 @@ bool ArchiveRecovery::recoverRar(QFile& input, QFile& output,
             }
 
             if (isFilled(pos, pos + totalBlockSize - 1, filled)) {
-                input.seek(static_cast<qint64>(pos));
-                QByteArray blockData = input.read(static_cast<qint64>(totalBlockSize));
-                output.write(blockData);
+                if (!copyRange(input, output, static_cast<qint64>(pos), static_cast<qint64>(totalBlockSize))) {
+                    logWarning(QStringLiteral("RAR recovery: copying block at %1 failed").arg(pos));
+                    return false;
+                }
                 ++blocksRecovered;
                 pos += totalBlockSize;
                 continue;
@@ -638,9 +658,10 @@ bool ArchiveRecovery::recoverACE(QFile& input, QFile& output,
 
         if (blockType == kAceFileHeader || blockType == kAceMainHeader) {
             if (isFilled(pos, pos + totalBlockSize - 1, filled)) {
-                input.seek(static_cast<qint64>(pos));
-                QByteArray blockData = input.read(static_cast<qint64>(totalBlockSize));
-                output.write(blockData);
+                if (!copyRange(input, output, static_cast<qint64>(pos), static_cast<qint64>(totalBlockSize))) {
+                    logWarning(QStringLiteral("ACE recovery: copying block at %1 failed").arg(pos));
+                    return false;
+                }
                 ++blocksRecovered;
                 pos += totalBlockSize;
                 continue;

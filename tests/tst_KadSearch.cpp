@@ -62,9 +62,12 @@ private slots:
     void buddyAndCallbackRequests_countAsAnswers();
     void buddyRequest_carriesInvertedKadIdNotTheWalkTarget();
     void actionPackets_areNotCappedWhileTheSearchRuns();
+    void keywordResults_ignoredOnceStoppedPastTheTotal();
 
     // Contact ownership (audit item #2)
     void processResponse_freesAllResultContacts();
+    void processResponse_keepsResponderKeyForActionPackets();
+    void processResponse_doesNotReplaceAKnownKey();
     void processResponse_freesRejectedDuplicates();
 
     // Source publishing (audit item #4)
@@ -536,6 +539,60 @@ void tst_KadSearch::processResponse_freesAllResultContacts()
 
     // Destroying the search must free every contact it was handed.
     QCOMPARE(Contact::liveInstanceCount(), baseline);
+}
+
+// Audit 9c: RES-learned contacts carry key 0. The responder's own sender key
+// goes on our publish so it sees a valid receiver key.
+void tst_KadSearch::processResponse_keepsResponderKeyForActionPackets()
+{
+    eMule::testing::KadFixture kadFixture;
+    constexpr uint32 kOurIP = 0x0A0B0C0Du;
+
+    std::vector<uint32> keys;
+    const auto conn = QObject::connect(
+        Kademlia::getInstanceUDPListener(), &KademliaUDPListener::packetToSend,
+        [&](const QByteArray& data, uint32, uint16, const KadUDPKey& key, const UInt128&) {
+            if (!data.isEmpty() && static_cast<uint8>(data[0]) == KADEMLIA_FINDBUDDY_REQ)
+                keys.push_back(key.getKeyValue(kOurIP));
+        });
+    const auto disconnect = qScopeGuard([&] { QObject::disconnect(conn); });
+
+    Search* search = startWalk(SearchType::FindBuddy, 3);
+    QVERIFY(search != nullptr);
+    ContactArray none;
+    SearchManager::processResponse(walkTarget(), walkIP(1), walkPort(1), none,
+                                   KadUDPKey(0xC0FFEEu, kOurIP));
+    search->storePacket(false);
+
+    QCOMPARE(keys.size(), std::size_t{1});
+    QCOMPARE(keys.front(), 0xC0FFEEu);
+}
+
+void tst_KadSearch::processResponse_doesNotReplaceAKnownKey()
+{
+    eMule::testing::KadFixture kadFixture;
+    constexpr uint32 kOurIP = 0x0A0B0C0Du;
+
+    std::vector<uint32> keys;
+    const auto conn = QObject::connect(
+        Kademlia::getInstanceUDPListener(), &KademliaUDPListener::packetToSend,
+        [&](const QByteArray& data, uint32, uint16, const KadUDPKey& key, const UInt128&) {
+            if (!data.isEmpty() && static_cast<uint8>(data[0]) == KADEMLIA_FINDBUDDY_REQ)
+                keys.push_back(key.getKeyValue(kOurIP));
+        });
+    const auto disconnect = qScopeGuard([&] { QObject::disconnect(conn); });
+
+    Search* search = startWalk(SearchType::FindBuddy, 3);
+    QVERIFY(search != nullptr);
+    ContactArray none;
+    SearchManager::processResponse(walkTarget(), walkIP(1), walkPort(1), none,
+                                   KadUDPKey(0x1111u, kOurIP));
+    SearchManager::processResponse(walkTarget(), walkIP(1), walkPort(1), none,
+                                   KadUDPKey(0x2222u, kOurIP));
+    search->storePacket(false);
+
+    QCOMPARE(keys.size(), std::size_t{1});
+    QCOMPARE(keys.front(), 0x1111u);
 }
 
 void tst_KadSearch::processResponse_freesRejectedDuplicates()
@@ -1218,6 +1275,32 @@ void tst_KadSearch::actionPackets_areNotCappedWhileTheSearchRuns()
     for (uint32 i = 0; i < kNodes + 2; ++i)
         search->storePacket(false);   // one per jump-start
     QCOMPARE(requests, int(kNodes));
+}
+
+// A keyword search that reached its total and is stopping takes no more results;
+// one stopped early (timeout) still takes the late ones.
+void tst_KadSearch::keywordResults_ignoredOnceStoppedPastTheTotal()
+{
+    auto* search = SearchManager::prepareLookup(SearchType::Keyword, false, UInt128(uint32{0x4B3E2}));
+    QVERIFY(search != nullptr);
+    const auto result = [&] {
+        TagList info{Tag(uint8{FT_FILENAME}, QStringLiteral("a.iso")),
+                     Tag(uint8{FT_FILESIZE}, uint32{1000})};
+        search->processResult(UInt128(uint32{0xF11E}), info, 0x4E010101, 4672);
+    };
+
+    search->m_answers = kSearchKeywordTotal;
+    result();   // not stopping yet: jump-start stops it on its next tick
+    QCOMPARE(search->getAnswers(), kSearchKeywordTotal + 1);
+
+    search->m_stopping = true;
+    result();
+    QCOMPARE(search->getAnswers(), kSearchKeywordTotal + 1);
+
+    search->m_answers = 5;
+    result();
+    QCOMPARE(search->getAnswers(), uint32{6});
+    delete search;
 }
 
 QTEST_GUILESS_MAIN(tst_KadSearch)

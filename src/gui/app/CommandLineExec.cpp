@@ -298,8 +298,8 @@ bool CommandLineExec::handleFileTypeRegistration() const
         return false;
 
     QString error;
-    // ed2k/ed3k as they are: they have their own switch (Options → General)
-    const bool ok = wantRegister ? gui::FileAssociation::applyFileTypes({true, true, isEd2kSchemeRegistered()}, error)
+    // ed2k/ed3k as stored: they have their own switch (wizard, Options → General)
+    const bool ok = wantRegister ? gui::FileAssociation::applyFileTypes({true, true, savedFileTypes().ed2k}, error)
                                  : gui::FileAssociation::unregisterFileTypes(error);
     if (ok) {
         logInfo(wantRegister ? QStringLiteral("Registered .nzb, .torrent and magnet: with the desktop")

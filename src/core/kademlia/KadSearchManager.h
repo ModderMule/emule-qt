@@ -5,6 +5,7 @@
 
 #include "kademlia/KadSearchDefs.h"
 #include "kademlia/KadTypes.h"
+#include "kademlia/KadUDPKey.h"
 #include "kademlia/KadUInt128.h"
 #include "utils/Types.h"
 
@@ -65,8 +66,10 @@ public:
                                        uint32 searchID = 0);
     static bool startSearch(Search* search);
 
+    /// @p senderKey: the responder's key for us, echoed on later publishes.
     static void processResponse(const UInt128& target, uint32 fromIP, uint16 fromPort,
-                                ContactArray& results);
+                                ContactArray& results,
+                                const KadUDPKey& senderKey = KadUDPKey(0));
     static uint8 getExpectedResponseContactCount(const UInt128& target);
     static void processResult(const UInt128& target, const UInt128& answer,
                               TagList& info, uint32 fromIP, uint16 fromPort);

@@ -154,6 +154,18 @@
     <ClCompile Include="app\SingleInstance.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
+    <ClCompile Include="app\SkinEngine.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="app\SkinColors.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="app\SkinIcons.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="app\ToolbarSkin.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
     <ClCompile Include="utils\HttpCacheLinkImporter.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
@@ -855,6 +867,18 @@
     <ClInclude Include="app\UiState.h">
       <Filter>Header Files</Filter>
     </ClInclude>
+    <ClInclude Include="app\SkinEngine.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <QtMoc Include="app\SkinIcons.h">
+      <Filter>Header Files</Filter>
+    </QtMoc>
+    <ClInclude Include="app\ToolbarSkin.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <QtMoc Include="app\SkinColors.h">
+      <Filter>Header Files</Filter>
+    </QtMoc>
     <QtMoc Include="app\VersionChecker.h">
       <Filter>Header Files</Filter>
     </QtMoc>

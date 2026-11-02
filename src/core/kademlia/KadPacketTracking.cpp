@@ -25,8 +25,8 @@ namespace {
 // MFC uses SEC2MS(180) for both the out-track list (PacketTracking.cpp:52) and
 // legacy challenges (:245,:267). The port previously used 20s, which would drop
 // a legitimate but slow response — notably a publish answer from a loaded node.
-constexpr uint32 kTrackTimeout = 180;     // seconds for outgoing packet tracking
-constexpr uint32 kChallengeTimeout = 180; // seconds for challenge expiry
+constexpr uint64 kTrackTimeout = SEC2MS(180);     // ms, outgoing packet tracking
+constexpr uint64 kChallengeTimeout = SEC2MS(180); // ms, challenge expiry
 
 // Inbound flood tracking. Tokens are milliseconds of allowance; a budget of N
 // packets/minute costs kTokenBucketMax/N per packet. MFC PacketTracking.cpp:99.
@@ -55,7 +55,7 @@ PacketTracking::~PacketTracking()
 void PacketTracking::addTrackedOutPacket(uint32 ip, uint8 opcode)
 {
     TrackedPacket tp;
-    tp.insertedTime = static_cast<uint32>(time(nullptr));
+    tp.insertedTime = getTickCount();
     tp.ip = ip;
     tp.opcode = opcode;
     m_trackedRequests.push_back(tp);
@@ -63,7 +63,7 @@ void PacketTracking::addTrackedOutPacket(uint32 ip, uint8 opcode)
 
 bool PacketTracking::isOnOutTrackList(uint32 ip, uint8 opcode, bool dontRemove)
 {
-    uint32 now = static_cast<uint32>(time(nullptr));
+    const uint64 now = getTickCount();
 
     // Clean expired entries from front while iterating
     while (!m_trackedRequests.empty() && (now - m_trackedRequests.front().insertedTime) > kTrackTimeout)
@@ -193,6 +193,8 @@ int PacketTracking::inTrackListIsAllowedPacket(uint32 ip, uint8 opcode,
                        .arg(opcode, 2, 16, QChar(u'0'))
                        .arg(dbgOrigOpcode, 2, 16, QChar(u'0'))
                        .arg(ipToString(ip)));
+            // Unencrypted Kad UDP source IPs can be spoofed, so a forged flood
+            // can ban a real node (on eD2K too) for CLIENTBANTIME. Kept like MFC.
             if (theApp.clientList)
                 theApp.clientList->addBannedClient(Address::fromHostOrder(ip));
             return 2; // drop, ban, and let the caller expire the contact
@@ -234,7 +236,7 @@ void PacketTracking::addLegacyChallenge(const UInt128& contactID, const UInt128&
                                          uint32 ip, uint8 opcode)
 {
     TrackedChallenge tc;
-    tc.insertedTime = static_cast<uint32>(time(nullptr));
+    tc.insertedTime = getTickCount();
     tc.ip = ip;
     tc.contactID = contactID;
     tc.challenge = challengeID;
@@ -245,7 +247,7 @@ void PacketTracking::addLegacyChallenge(const UInt128& contactID, const UInt128&
 bool PacketTracking::isLegacyChallenge(const UInt128& challengeID, uint32 ip, uint8 opcode,
                                         UInt128& outContactID)
 {
-    uint32 now = static_cast<uint32>(time(nullptr));
+    const uint64 now = getTickCount();
 
     // Clean expired from front
     while (!m_challengeRequests.empty() && (now - m_challengeRequests.front().insertedTime) > kChallengeTimeout)
@@ -269,7 +271,7 @@ bool PacketTracking::isLegacyChallenge(const UInt128& challengeID, uint32 ip, ui
 
 bool PacketTracking::hasActiveLegacyChallenge(uint32 ip) const
 {
-    uint32 now = static_cast<uint32>(time(nullptr));
+    const uint64 now = getTickCount();
     for (const auto& tc : m_challengeRequests) {
         if (tc.ip == ip && (now - tc.insertedTime) <= kChallengeTimeout)
             return true;

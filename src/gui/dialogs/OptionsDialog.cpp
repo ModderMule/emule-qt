@@ -34,6 +34,7 @@
 #include "utils/UrlPrefField.h"
 
 #include "IpcMessage.h"
+#include "app/SkinIcons.h"
 
 #include <iterator>   // std::size, for the sidebar table asserts
 
@@ -277,6 +278,8 @@ OptionsDialog::OptionsDialog(IpcClient* ipc, StatisticsPanel* statsPanel,
     connect(m_maxConnectionsSpin, &QSpinBox::valueChanged, this, &OptionsDialog::markDirty);
     connect(m_autoConnectCheck, &QCheckBox::toggled, this, &OptionsDialog::markDirty);
     connect(m_reconnectCheck, &QCheckBox::toggled, this, &OptionsDialog::markDirty);
+    connect(m_connCheckerCheck, &QCheckBox::toggled, this, &OptionsDialog::markDirty);
+    connect(m_connCheckerUrlEdit, &QLineEdit::textEdited, this, &OptionsDialog::markDirty);
     connect(m_overheadCheck, &QCheckBox::toggled, this, &OptionsDialog::markDirty);
     connect(m_kadEnabledCheck, &QCheckBox::toggled, this, &OptionsDialog::markDirty);
     connect(m_ed2kEnabledCheck, &QCheckBox::toggled, this, &OptionsDialog::markDirty);
@@ -741,7 +744,7 @@ void OptionsDialog::setupSidebar()
         for (const PageDef& def : table) {
             QIcon qicon;
             if (useOriginal)
-                qicon = QIcon(QStringLiteral(":/icons/") + QLatin1String(def.originalIcon));
+                qicon = skinIcon(QStringLiteral(":/icons/") + QLatin1String(def.originalIcon));
             else if (def.icon == QStyle::SP_CustomBase)
                 qicon = makePadlockIcon();
             else
@@ -1527,6 +1530,39 @@ QWidget* OptionsDialog::createConnectionPage()
     row4->addWidget(netGroup);
 
     layout->addLayout(row4);
+
+    // Advanced mode only: connection checker (#115)
+    auto* checkerRow = new QWidget(page);
+    auto* checkerLayout = new QGridLayout(checkerRow);
+    checkerLayout->setContentsMargins(0, 0, 0, 0);
+    m_connCheckerCheck = new QCheckBox(tr("Pause networks while the internet connection is down"),
+                                       checkerRow);
+    m_connCheckerCheck->setToolTip(
+        tr("Disconnects the eD2K server and pauses BitTorrent and Usenet while the internet is "
+           "down, then reconnects when it is back. Kad keeps running and notices both. "
+           "The optional address confirms Kad, and is the only check while Kad is off."));
+    checkerLayout->addWidget(m_connCheckerCheck, 0, 0, 1, 2);
+    checkerLayout->addWidget(new QLabel(tr("Check URL (optional)"), checkerRow), 1, 0);
+    m_connCheckerUrlEdit = new QLineEdit(checkerRow);
+    m_connCheckerUrlEdit->setPlaceholderText(QStringLiteral("https://example.com"));
+    checkerLayout->addWidget(m_connCheckerUrlEdit, 1, 1);
+    m_connCheckerHint = new QLabel(tr("Kad is off: set a URL, or the check does nothing."),
+                                   checkerRow);
+    m_connCheckerHint->setWordWrap(true);
+    m_connCheckerHint->setStyleSheet(QStringLiteral("color: %1;").arg(roleColorName(TextRole::Caution)));
+    checkerLayout->addWidget(m_connCheckerHint, 2, 0, 1, 2);
+    const auto syncChecker = [this] {
+        const bool on = m_connCheckerCheck->isChecked();
+        m_connCheckerUrlEdit->setEnabled(on);
+        m_connCheckerHint->setVisible(on && !m_kadEnabledCheck->isChecked()
+                                      && m_connCheckerUrlEdit->text().trimmed().isEmpty());
+    };
+    connect(m_connCheckerCheck, &QCheckBox::toggled, this, syncChecker);
+    connect(m_kadEnabledCheck, &QCheckBox::toggled, this, syncChecker);
+    connect(m_connCheckerUrlEdit, &QLineEdit::textChanged, this, syncChecker);
+    syncChecker();
+    checkerRow->setVisible(thePrefs.showExtControls());
+    layout->addWidget(checkerRow);
 
     layout->addStretch();
 
@@ -2776,15 +2812,16 @@ QWidget* OptionsDialog::createSecurityPage()
                                QStringLiteral("guarding.p2p"),
                                QStringLiteral("guardian.p2p")};
 
-        eMule::HttpFileDownload::get(this, QUrl(url), opts,
-            [this, loadBtn](bool ok, const QByteArray& data, const QString& entryName,
-                            const QString& error) {
+        eMule::HttpFileDownload::fetch(this, QUrl(url), opts,
+            [this, loadBtn](const eMule::HttpFileDownload::Result& r) {
                 loadBtn->setEnabled(true);
                 loadBtn->setText(tr("Load"));
 
-                if (!ok) {
+                const QByteArray& data = r.data;
+                const QString& entryName = r.entryName;
+                if (!r.ok) {
                     QMessageBox::warning(this, tr("IP Filter"),
-                        tr("Failed to download IP filter: %1").arg(error));
+                        tr("Failed to download IP filter: %1").arg(r.error));
                     return;
                 }
                 if (data.isEmpty()) {
@@ -2823,7 +2860,7 @@ QWidget* OptionsDialog::createSecurityPage()
     autoRow->addWidget(m_ipFilterAutoUpdateCheck);
     m_ipFilterUpdateDaysSpin = new QSpinBox(ipFilterGroup);
     m_ipFilterUpdateDaysSpin->setRange(1, 365);
-    m_ipFilterUpdateDaysSpin->setValue(7);
+    m_ipFilterUpdateDaysSpin->setValue(1);
     m_ipFilterUpdateDaysSpin->setSuffix(tr(" days"));
     m_ipFilterUpdateDaysSpin->setEnabled(false);
     autoRow->addWidget(m_ipFilterUpdateDaysSpin);
@@ -6382,6 +6419,7 @@ QWidget* OptionsDialog::createSchedulerPage()
     btnRow->addStretch();
     m_schedRemoveBtn = new QPushButton(tr("Remove"), page);
     m_schedNewBtn = new QPushButton(tr("New"), page);
+    m_schedNewBtn->setObjectName(QStringLiteral("schedNew"));
     btnRow->addWidget(m_schedRemoveBtn);
     btnRow->addWidget(m_schedNewBtn);
     mainLayout->addLayout(btnRow);
@@ -6389,6 +6427,7 @@ QWidget* OptionsDialog::createSchedulerPage()
     // Schedule table: Title | Days | Start Time
     auto* schedTable = new ListTreeWidget(page);
     m_schedTable = schedTable;
+    m_schedTable->setObjectName(QStringLiteral("schedTable"));
     m_schedTable->setHeaderLabels({tr("Title"), tr("Days"), tr("Start Time")});
     m_schedTable->setRootIsDecorated(false);
     m_schedTable->setSelectionMode(QAbstractItemView::SingleSelection);
@@ -6615,18 +6654,31 @@ void OptionsDialog::applyScheduleDetails()
         entry.endTime = endDt.toSecsSinceEpoch();
     }
 
-    // Collect actions from table
-    entry.actions.clear();
-    for (int i = 0; i < m_schedActionsTable->topLevelItemCount(); ++i) {
-        auto* item = m_schedActionsTable->topLevelItem(i);
-        SchedUiEntry::Action act;
-        act.type = item->data(0, Qt::UserRole).toInt();
-        act.value = item->text(1);
-        entry.actions.push_back(act);
-    }
+    storeScheduleActions();
 
     refreshScheduleTable();
     m_schedTable->setCurrentItem(m_schedTable->topLevelItem(m_schedSelectedIndex));
+}
+
+void OptionsDialog::storeScheduleActions()
+{
+    if (m_schedSelectedIndex < 0
+        || m_schedSelectedIndex >= static_cast<int>(m_schedEntries.size()))
+        return;
+
+    auto& actions = m_schedEntries[static_cast<size_t>(m_schedSelectedIndex)].actions;
+    actions.clear();
+    for (int i = 0; i < m_schedActionsTable->topLevelItemCount(); ++i) {
+        auto* item = m_schedActionsTable->topLevelItem(i);
+        actions.push_back({.type = item->data(0, Qt::UserRole).toInt(), .value = item->text(1)});
+    }
+}
+
+void OptionsDialog::scheduleActionsEdited()
+{
+    // Action edits stick right away, so switching schedules or OK keeps them (#3)
+    storeScheduleActions();
+    markDirty();
 }
 
 bool OptionsDialog::promptScheduleValue(int action, const QString& label, QString& value)
@@ -6670,6 +6722,7 @@ void OptionsDialog::showScheduleActionsMenu(const QPoint& pos)
             item->setText(1, value);
             item->setData(0, Qt::UserRole, i);
             m_schedActionsTable->setCurrentItem(item);
+            scheduleActionsEdited();
         });
     }
 
@@ -6678,7 +6731,10 @@ void OptionsDialog::showScheduleActionsMenu(const QPoint& pos)
         // -2 "All uncategorized" (only with categories), -1 "All", then each category
         // by its index; the value column holds that number, as in MFC.
         auto* catMenu = menu.addMenu(tr("Select category"));
-        const auto choose = [current](int index) { current->setText(1, QString::number(index)); };
+        const auto choose = [this, current](int index) {
+            current->setText(1, QString::number(index));
+            scheduleActionsEdited();
+        };
         const int rows = m_feedDownloadCategoryCombo ? m_feedDownloadCategoryCombo->count() : 0;
         if (rows > 1)
             catMenu->addAction(tr("All uncategorized"), this, [choose] { choose(-2); });
@@ -6691,13 +6747,16 @@ void OptionsDialog::showScheduleActionsMenu(const QPoint& pos)
     } else if (current) {
         menu.addAction(tr("Edit Value"), this, [this, current]() {
             QString value = current->text(1);
-            if (promptScheduleValue(current->data(0, Qt::UserRole).toInt(), current->text(0), value))
+            if (promptScheduleValue(current->data(0, Qt::UserRole).toInt(), current->text(0), value)) {
                 current->setText(1, value);
+                scheduleActionsEdited();
+            }
         });
     }
     if (current) {
-        menu.addAction(tr("Remove"), this, [current]() {
+        menu.addAction(tr("Remove"), this, [this, current]() {
             delete current;
+            scheduleActionsEdited();
         });
     }
 
@@ -7189,6 +7248,10 @@ void OptionsDialog::saveSettings()
         req.append(m_autoConnectCheck->isChecked());
         req.append(QStringLiteral("reconnect"));
         req.append(m_reconnectCheck->isChecked());
+        req.append(QStringLiteral("connectionChecker"));
+        req.append(m_connCheckerCheck->isChecked());
+        req.append(QStringLiteral("connectionCheckerUrl"));
+        req.append(m_connCheckerUrlEdit->text().trimmed());
         req.append(QStringLiteral("showOverhead"));
         req.append(m_overheadCheck->isChecked());
         req.append(QStringLiteral("kadEnabled"));
@@ -7827,6 +7890,8 @@ void OptionsDialog::saveSettings()
         thePrefs.setMaxConnections(static_cast<uint16>(m_maxConnectionsSpin->value()));
         thePrefs.setAutoConnect(m_autoConnectCheck->isChecked());
         thePrefs.setReconnect(m_reconnectCheck->isChecked());
+        thePrefs.setConnectionChecker(m_connCheckerCheck->isChecked());
+        thePrefs.setConnectionCheckerUrl(m_connCheckerUrlEdit->text());
         thePrefs.setShowOverhead(m_overheadCheck->isChecked());
         thePrefs.setKadEnabled(m_kadEnabledCheck->isChecked());
         thePrefs.setNetworkED2K(m_ed2kEnabledCheck->isChecked());
@@ -8005,6 +8070,7 @@ void OptionsDialog::saveSettings()
             thePrefs.save();
     }
 
+    applyScheduleDetails();   // the open schedule counts without its own Apply (#3)
     saveSchedulerData();
     saveNewsServers();
     // GUI-only, so it never travels over SetPreferences: the daemon owns
@@ -8039,8 +8105,7 @@ void OptionsDialog::saveSettings()
             theUiState.setAssociateTorrentFiles(m_associateTorrentCheck->isChecked());
         QString assocError;
         if (!gui::FileAssociation::applyFileTypes(
-                {theUiState.associateNzbFiles(), theUiState.associateTorrentFiles(), isEd2kSchemeRegistered()},
-                assocError)) {
+                savedFileTypes(), assocError)) {
             QMessageBox::warning(this, tr("File types"),
                                  tr("Could not update the file associations: %1").arg(assocError));
         }
@@ -8114,6 +8179,8 @@ void OptionsDialog::fillDaemonSettings(const QCborMap& prefs)
     m_maxConnectionsSpin->setValue(static_cast<int>(prefs.value(QStringLiteral("maxConnections")).toInteger(500)));
     m_autoConnectCheck->setChecked(prefs.value(QStringLiteral("autoConnect")).toBool());
     m_reconnectCheck->setChecked(prefs.value(QStringLiteral("reconnect")).toBool());
+    m_connCheckerCheck->setChecked(prefs.value(QStringLiteral("connectionChecker")).toBool(false));
+    m_connCheckerUrlEdit->setText(prefs.value(QStringLiteral("connectionCheckerUrl")).toString());
     m_overheadCheck->setChecked(prefs.value(QStringLiteral("showOverhead")).toBool());
     m_kadEnabledCheck->setChecked(prefs.value(QStringLiteral("kadEnabled")).toBool());
     m_ed2kEnabledCheck->setChecked(prefs.value(QStringLiteral("networkED2K")).toBool());
@@ -8257,7 +8324,7 @@ void OptionsDialog::fillDaemonSettings(const QCborMap& prefs)
             url.isEmpty() ? QString(Preferences::kDefaultIpFilterUpdateUrl) : url);
     }
     m_ipFilterAutoUpdateCheck->setChecked(prefs.value(QStringLiteral("ipFilterAutoUpdate")).toBool(false));
-    m_ipFilterUpdateDaysSpin->setValue(static_cast<int>(prefs.value(QStringLiteral("ipFilterUpdateDays")).toInteger(7)));
+    m_ipFilterUpdateDaysSpin->setValue(static_cast<int>(prefs.value(QStringLiteral("ipFilterUpdateDays")).toInteger(1)));
     m_ipFilterUpdateDaysSpin->setEnabled(m_ipFilterAutoUpdateCheck->isChecked());
     if (const int idx = m_geoIpSourceCombo->findData(
             static_cast<int>(prefs.value(QStringLiteral("geoIpSource")).toInteger(0)));

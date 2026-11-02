@@ -36,6 +36,10 @@ void insertBindState(QCborMap& info)
     info.insert(QStringLiteral("netBlockReason"), r.reason);
     info.insert(QStringLiteral("boundInterface"),
                 r.state == BindAddress::State::Bound ? r.name : QString());
+    // connection checker (#115): internet down, eD2K/BT/Usenet held
+    info.insert(QStringLiteral("offline"), theApp.connectionOffline);
+    info.insert(QStringLiteral("offlineReason"), theApp.connectionOfflineReason);
+    info.insert(QStringLiteral("offlineSince"), theApp.connectionOfflineSince);
 }
 
 QCborMap networkInfo()

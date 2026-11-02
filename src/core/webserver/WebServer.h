@@ -9,6 +9,7 @@
 
 #include "utils/Types.h"
 #include "webserver/ApiRegistry.h"
+#include "webserver/StreamTokenStore.h"
 #include "webserver/TorrentWebBackend.h"
 #include "webserver/UsenetWebBackend.h"
 
@@ -76,6 +77,8 @@ struct WebServerConfig {
     bool adminAllowHiLevFunc = false;
     bool guestEnabled = false;
     QString guestPasswordHash;
+    /// Requests per second per client address; 0 = no limit (tests).
+    quint32 rateLimitPerSecond = 50;
 
     bool operator==(const WebServerConfig&) const = default;
 
@@ -234,9 +237,12 @@ public:
     /// Logged-in web UI sessions not yet expired; 0 when stopped.
     [[nodiscard]] int sessionCount() const;
 
-    /// Random token for authenticating preview streaming requests.
-    /// Regenerated every time the web server starts.
-    [[nodiscard]] const QString& streamToken() const { return m_streamToken; }
+    /// The GUI's stream token (scope "gui", no idle expiry). Minted anew on
+    /// every start(); empty before the first one.
+    [[nodiscard]] QString streamToken() const { return m_guiStreamToken; }
+
+    /// The stream tokens: the GUI's and one per web page render (tests).
+    [[nodiscard]] StreamTokenStore& streamTokens() { return m_streamTokens; }
 
     /// Reload the template file (called from "Reload" button in options).
     void reloadTemplate();
@@ -301,7 +307,20 @@ private:
         bool ok = false;
         QHttpServerResponse response{QHttpServerResponse::StatusCode::Ok};
     };
-    [[nodiscard]] AuthResult checkAuth(const QHttpHeaders& headers) const;
+    /// API key check. Wrong keys back off per client ("api:" + address); 429 then.
+    [[nodiscard]] AuthResult checkAuth(const QHttpServerRequest& req);
+    /// The key the request carries (X-Api-Key or Bearer); empty when none.
+    [[nodiscard]] static QByteArray requestApiKey(const QHttpHeaders& headers);
+    /// The request's key equals the configured one. No back-off.
+    [[nodiscard]] bool apiKeyMatches(const QHttpHeaders& headers) const;
+
+    /// True when the body is over the cap: 64 KiB, 64 MiB with a session or key.
+    [[nodiscard]] bool requestBodyTooLarge(const QHttpServerRequest& req);
+
+    /// Stream-token gate of the preview and Incoming routes. Unset = allowed;
+    /// otherwise the 401 or 429 to answer with.
+    [[nodiscard]] std::optional<QHttpServerResponse> streamTokenRefusal(
+        const QHttpServerRequest& req, QStringView what);
 
     // Endpoint handlers — preview
     QHttpServerResponse handlePreviewStream(const QString& hash, const QHttpServerRequest& req);
@@ -347,8 +366,8 @@ private:
                               QHttpServerResponder& responder);
     void handleIncomingDownload(const QHttpServerRequest& req, QHttpServerResponder& responder);
 
-    /// True when the request carries the stream token. The gate all three share.
-    [[nodiscard]] bool hasStreamToken(const QHttpServerRequest& req) const;
+    /// True when the request carries a live stream token. No back-off here.
+    [[nodiscard]] bool streamTokenValid(const QHttpServerRequest& req);
 
     /// The canonical global incoming directory, or empty when there is none.
     [[nodiscard]] QString incomingRoot() const;
@@ -503,6 +522,8 @@ private:
     /// The Usenet page: toolbar, category tabs, the queue and the page script.
     [[nodiscard]] QString buildUsenetPage(bool isAdmin, const QString& sessionId,
                                           const QUrlQuery& query);
+    /// A fresh stream token for one page render of @p sessionId.
+    [[nodiscard]] QString mintPageStreamToken(const QString& sessionId);
     /// The part the page polls: rows plus summary (`part=list`).
     [[nodiscard]] QString buildUsenetList(const QString& sessionId, const QUrlQuery& query);
     /// One release in full (`part=details&id=`).
@@ -590,8 +611,9 @@ private:
     // Web UI languages (injected by DaemonApp; not owned)
     TranslationRouter* m_translations = nullptr;
 
-    // Random token for preview streaming authentication
-    QString m_streamToken;
+    // Stream tokens: the GUI's and the web pages' (see StreamTokenStore)
+    StreamTokenStore m_streamTokens;
+    QString m_guiStreamToken;
 };
 
 } // namespace eMule

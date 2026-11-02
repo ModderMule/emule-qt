@@ -8,6 +8,7 @@
 #include "IpcProtocol.h"
 #include "app/IpcClient.h"
 #include "utils/Appearance.h"
+#include "app/SkinIcons.h"
 
 #include <QCborArray>
 #include <QDateTime>
@@ -46,7 +47,7 @@ MetaAccountDialog::MetaAccountDialog(IpcClient* ipc, const QCborMap& meta, Purpo
     , m_ipc(ipc)
     , m_purpose(purpose)
 {
-    setWindowIcon(QIcon(QStringLiteral(":/icons/Server.ico")));
+    setWindowIcon(skinIcon(QStringLiteral(":/icons/Server.ico")));
     setAttribute(Qt::WA_DeleteOnClose);
 
     auto* layout = new QVBoxLayout(this);

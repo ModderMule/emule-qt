@@ -25,6 +25,12 @@ struct Gap;
 
 class ArchiveRecovery {
 public:
+    /// A recovered ZIP entry: where its local header was read and where it was written.
+    struct ZipCdEntry {
+        uint64 inputOffset = 0;
+        uint64 outputOffset = 0;
+    };
+
     /// Recover valid data from a partial download into a copy.
     /// @param preview, createCopy  kept for the callers; the result is always a
     ///        copy — the download itself is never written.
@@ -82,9 +88,9 @@ private:
     static bool scanForZipMarker(QFile& input, uint32 marker, uint64 searchRange);
     static bool processZipEntry(QFile& input, QFile& output,
                                 uint64 entryOffset, const std::vector<Gap>& filled,
-                                std::vector<uint64>& centralDirEntries);
+                                std::vector<ZipCdEntry>& centralDirEntries);
     static void writeZipCentralDirectory(QFile& output,
-                                         const std::vector<uint64>& centralDirEntries,
+                                         const std::vector<ZipCdEntry>& centralDirEntries,
                                          QFile& input, const std::vector<Gap>& filled);
 
     // RAR helpers

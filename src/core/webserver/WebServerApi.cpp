@@ -309,7 +309,9 @@ void WebServer::buildApiTable()
                             "eD2K server connection",
                             "A LowID means the TCP port is not reachable from outside: fewer "
                             "sources, slower downloads. netBlocked is true while the bound "
-                            "network interface is missing; nothing connects then.");
+                            "network interface is missing; nothing connects then. offline is true while "
+                            "the connection checker finds the internet down: eD2K, BitTorrent "
+                            "and Usenet wait, Kad keeps listening.");
         op.flags = ReadOnly;
         op.mcpTool = s("connection_get");
         op.handler = [this](const Call&) {
@@ -323,6 +325,8 @@ void WebServer::buildApiTable()
                 {s("clientID"), static_cast<qint64>(m_serverConnect->clientID())},
                 {s("netBlocked"), !BindAddress::outboundAllowed()},
                 {s("netBlockReason"), BindAddress::current().reason},
+                {s("offline"), theApp.connectionOffline},
+                {s("offlineReason"), theApp.connectionOfflineReason},
             };
             if (current) {
                 obj[s("currentServer")] = QJsonObject{
@@ -1316,8 +1320,8 @@ void WebServer::buildApiTable()
     {
         Operation op = make("downloads.preview", Method::Get, "/api/v1/downloads/{hash}/preview",
                             "Streams", "Byte-range stream of a download or shared file",
-                            "For media players. Authenticated by ?token=, the per-process "
-                            "stream token, not by the API key.");
+                            "For media players. Authenticated by ?token=, a stream token "
+                            "(the GUI's or a web page's), not by the API key.");
         op.flags = ReadOnly | RawStream;
         op.params = {hashParam(), queryStr(s("token"), s("Stream token.")).req()};
         add(op);
@@ -1612,7 +1616,7 @@ QFuture<QHttpServerResponse> WebServer::runOperation(const Operation& op,
     };
 
     if (!op.is(NoAuth)) {
-        if (auto auth = checkAuth(req.headers()); !auth.ok)
+        if (auto auth = checkAuth(req); !auth.ok)
             return finished(std::move(auth.response));
     }
 
@@ -1672,6 +1676,7 @@ Result WebServer::apiSnapshot()
         {s("uptimeSeconds"), m_statistics ? static_cast<qint64>(m_statistics->uptimeSecs()) : qint64(0)},
         {s("netBlocked"), !BindAddress::outboundAllowed()},
         {s("netBlockReason"), BindAddress::current().reason},
+        {s("offline"), theApp.connectionOffline},
     };
 
     QJsonObject ed2k{{s("connected"), false}, {s("connecting"), false}};

@@ -223,7 +223,7 @@ bool SearchManager::startSearch(Search* search)
 }
 
 void SearchManager::processResponse(const UInt128& target, uint32 fromIP, uint16 fromPort,
-                                     ContactArray& results)
+                                     ContactArray& results, const KadUDPKey& senderKey)
 {
     auto it = s_searches.find(target);
     if (it == s_searches.end()) {
@@ -234,7 +234,7 @@ void SearchManager::processResponse(const UInt128& target, uint32 fromIP, uint16
         return;
     }
 
-    it->second->processResponse(fromIP, fromPort, results);
+    it->second->processResponse(fromIP, fromPort, results, senderKey);
     ++s_totalResponsesReceived;
 }
 

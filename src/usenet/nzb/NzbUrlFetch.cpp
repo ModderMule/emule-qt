@@ -91,11 +91,11 @@ void NzbUrlFetch::fetch(QObject* context, const QUrl& url, Callback done)
     opts.timeoutMs = 30000;
     opts.maxBytes = kMaxNzbBytes;
 
-    HttpFileDownload::get(context, url, opts,
-                          [done = std::move(done), url](bool ok, const QByteArray& data,
-                                                        const QString&, const QString& error) {
-        if (!ok) {
-            done(Result{{}, {}, tr("Could not download the NZB: %1").arg(error)});
+    HttpFileDownload::fetch(context, url, opts,
+                            [done = std::move(done), url](const HttpFileDownload::Result& r) {
+        const QByteArray& data = r.data;
+        if (!r.ok) {
+            done(Result{{}, {}, tr("Could not download the NZB: %1").arg(r.error)});
             return;
         }
         if (data.isEmpty()) {

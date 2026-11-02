@@ -3,19 +3,13 @@
 /// @brief Scheduled GeoLite2-Country / DB-IP Country Lite download.
 
 #include "geo/GeoIpUpdater.h"
-#include "net/GuardedNetworkAccessManager.h"
 #include "geo/IP2Country.h"
 #include "app/AppConfig.h"
-#include "archive/ArchiveUnpack.h"
-#include "net/HttpDefaults.h"
 #include "prefs/Preferences.h"
 #include "utils/Log.h"
 
 #include <QCoreApplication>
 #include <QLocale>
-#include <QNetworkAccessManager>
-#include <QNetworkReply>
-#include <QNetworkRequest>
 #include <QTimeZone>
 
 #include <filesystem>
@@ -29,14 +23,8 @@ namespace {
 constexpr auto kDownloadUrl =
     "https://download.maxmind.com/geoip/databases/GeoLite2-Country/download?suffix=tar.gz";
 constexpr auto kDbIpUrlTemplate = "https://download.db-ip.com/free/dbip-country-lite-%1.mmdb.gz";
-constexpr int kTickMs = 60 * 60 * 1000;
 constexpr qint64 kRefreshSecs = 7 * 24 * 60 * 60;
-constexpr qint64 kFailureBackoffSecs = 6 * 60 * 60;
 constexpr int kTimeoutMs = 120000;
-constexpr int kMaxRedirects = 5;
-
-/// Longest a GeoLite2 tarball has ever been is ~5 MB; this only stops a runaway.
-constexpr qint64 kMaxDownloadBytes = 64ll * 1024 * 1024;
 
 [[nodiscard]] QByteArray httpDate(const QDateTime& dt)
 {
@@ -66,20 +54,12 @@ constexpr qint64 kMaxDownloadBytes = 64ll * 1024 * 1024;
 } // namespace
 
 GeoIpUpdater::GeoIpUpdater(IP2Country* ip2Country, const QString& configDir, QObject* parent)
-    : QObject(parent)
+    : ScheduledUpdater(parent)
     , m_ip2Country(ip2Country)
     , m_configDir(configDir)
     , m_url(QString::fromLatin1(kDownloadUrl))
     , m_dbIpUrlTemplate(QString::fromLatin1(kDbIpUrlTemplate))
 {
-    m_timer.setInterval(kTickMs);
-    connect(&m_timer, &QTimer::timeout, this, &GeoIpUpdater::checkSchedule);
-}
-
-GeoIpUpdater::~GeoIpUpdater()
-{
-    if (m_reply)
-        m_reply->abort();
 }
 
 QString GeoIpUpdater::databasePath() const
@@ -95,7 +75,7 @@ QString GeoIpUpdater::databasePathFor(GeoIpSource source) const
 
 void GeoIpUpdater::reloadForSource()
 {
-    m_lastFailure = {};
+    clearBackoff();
     if (selectedLoaded())
         return;
     const QString path = databasePath();
@@ -114,31 +94,21 @@ void GeoIpUpdater::start()
 {
     adoptBundledDatabase();
     reloadForSource();
-    m_timer.start();
-    QTimer::singleShot(0, this, &GeoIpUpdater::checkSchedule);
-}
-
-void GeoIpUpdater::stop()
-{
-    m_timer.stop();
-    if (m_reply)
-        m_reply->abort();
+    ScheduledUpdater::start();
 }
 
 void GeoIpUpdater::updateNow(Callback done)
 {
     if (done)
         m_waiting.push_back(std::move(done));
-    if (m_reply)
+    if (isRunning())
         return;   // joins the running download
 
     m_activeSource = selectedSource();
-    m_redirects = 0;
     if (m_activeSource == GeoIpSource::DbIp) {
         logInfo(QStringLiteral("IP2Country: checking for a DB-IP Country Lite update"));
         m_dbIpMonthsBack = 0;
-        m_requestUrl = dbIpUrl(0);
-        startRequest(m_requestUrl, false, true);
+        startRequest(dbIpUrl(0));
         return;
     }
 
@@ -147,20 +117,19 @@ void GeoIpUpdater::updateNow(Callback done)
         return;
     }
     logInfo(QStringLiteral("IP2Country: checking for a GeoLite2-Country update"));
-    m_requestUrl = m_url;
-    startRequest(m_requestUrl, true, true);
+    startRequest(m_url);
 }
 
 void GeoIpUpdater::checkSchedule()
 {
-    if (m_reply || !thePrefs.geoIpAutoUpdate())
+    if (isRunning() || !thePrefs.geoIpAutoUpdate())
         return;
     if (selectedSource() == GeoIpSource::MaxMind && !haveCredentials())
         return;
+    if (backingOff())
+        return;
 
     const QDateTime now = QDateTime::currentDateTimeUtc();
-    if (m_lastFailure.isValid() && m_lastFailure.secsTo(now) < kFailureBackoffSecs)
-        return;
 
     const bool haveDb = selectedLoaded();   // the other source's file doesn't count
     const qint64 lastCheck = thePrefs.geoIpLastCheck();
@@ -217,95 +186,59 @@ bool GeoIpUpdater::adoptBundledDatabase()
     return true;
 }
 
-void GeoIpUpdater::startRequest(const QUrl& url, bool withCredentials, bool conditional)
+void GeoIpUpdater::startRequest(const QUrl& url)
 {
-    QNetworkRequest request = Http::makeRequest(url);
-    request.setTransferTimeout(kTimeoutMs);
-    // Redirects by hand, so the Authorization header never follows one off-host
-    request.setAttribute(QNetworkRequest::RedirectPolicyAttribute,
-                         QVariant::fromValue(QNetworkRequest::ManualRedirectPolicy));
-    if (withCredentials) {
+    HttpFileDownload::Options opts;
+    opts.timeoutMs = kTimeoutMs;
+    opts.redactUrls = true;   // presigned storage URLs carry a signature
+    opts.preferredNames = {QString::fromLatin1(
+        m_activeSource == GeoIpSource::DbIp ? kDbIpDatabaseFilename : kGeoIpDatabaseFilename)};
+
+    // Credentials stay with MaxMind: the file itself comes from a presigned storage
+    // URL that refuses any Authorization header (HTTP 400), so it and the
+    // conditional header stay on the first host. DB-IP keeps the condition on every hop.
+    const bool maxMind = m_activeSource == GeoIpSource::MaxMind;
+    if (maxMind) {
         const QString credentials = thePrefs.geoIpAccountId().trimmed() + u':'
                                     + thePrefs.geoIpLicenseKey().trimmed();
-        request.setRawHeader("Authorization", "Basic " + credentials.toUtf8().toBase64());
+        opts.sameHostHeaders.append({"Authorization", "Basic " + credentials.toUtf8().toBase64()});
     }
     // Only skip the download when the file we would replace is the loaded one
     const QString target = databasePathFor(m_activeSource);
-    if (conditional && m_ip2Country->path() == target && QFileInfo::exists(target))
+    if (m_ip2Country->path() == target && QFileInfo::exists(target))
         if (const QDateTime built = m_ip2Country->buildDate(); built.isValid())
-            request.setRawHeader("If-Modified-Since", httpDate(built));
+            (maxMind ? opts.sameHostHeaders : opts.headers)
+                .append({"If-Modified-Since", httpDate(built)});
 
-    if (!m_nam)
-        m_nam = new GuardedNetworkAccessManager(this);
-    m_reply = m_nam->get(request);
-    connect(m_reply, &QNetworkReply::finished, this, &GeoIpUpdater::onReplyFinished);
+    m_job = HttpFileDownload::fetch(this, url, opts,
+        [this](const HttpFileDownload::Result& r) { onDownloaded(r); });
 }
 
-void GeoIpUpdater::onReplyFinished()
+void GeoIpUpdater::onDownloaded(const HttpFileDownload::Result& r)
 {
-    QNetworkReply* reply = m_reply;
-    m_reply = nullptr;
-    if (!reply)
-        return;
-    reply->deleteLater();
-
-    const int status = reply->attribute(QNetworkRequest::HttpStatusCodeAttribute).toInt();
-    if (status == 301 || status == 302 || status == 303 || status == 307 || status == 308) {
-        const QUrl target = reply->url().resolved(
-            reply->attribute(QNetworkRequest::RedirectionTargetAttribute).toUrl());
-        if (++m_redirects > kMaxRedirects || !target.isValid()
-            || (target.scheme() != u"https" && m_requestUrl.scheme() == u"https")) {
-            finish(false, QStringLiteral("bad redirect from the download server (HTTP %1)").arg(status));
-            return;
-        }
-        // Credentials stay with MaxMind: the file itself comes from a presigned
-        // storage URL that refuses any Authorization header (HTTP 400)
-        const bool sameHost = target.host() == m_requestUrl.host();
-        const bool maxMind = m_activeSource == GeoIpSource::MaxMind;
-        startRequest(target, maxMind && sameHost, !maxMind || sameHost);
-        return;
-    }
-    if (status == 304) {
+    if (r.notModified) {
         thePrefs.setGeoIpLastCheck(QDateTime::currentSecsSinceEpoch());
         finish(true, QStringLiteral("%1 is up to date").arg(sourceName(m_activeSource)));
         return;
     }
     // This month's DB-IP file appears a few days in; take last month's meanwhile
-    if (status == 404 && m_activeSource == GeoIpSource::DbIp && m_dbIpMonthsBack == 0) {
+    if (r.httpStatus == 404 && m_activeSource == GeoIpSource::DbIp && m_dbIpMonthsBack == 0) {
         m_dbIpMonthsBack = 1;
-        m_redirects = 0;
-        m_requestUrl = dbIpUrl(1);
-        startRequest(m_requestUrl, false, true);
+        startRequest(dbIpUrl(1));
         return;
     }
-    if (m_activeSource == GeoIpSource::MaxMind && (status == 401 || status == 403)) {
+    if (m_activeSource == GeoIpSource::MaxMind && (r.httpStatus == 401 || r.httpStatus == 403)) {
         finish(false, QStringLiteral("MaxMind rejected the account ID / license key (HTTP %1)")
-                          .arg(status));
+                          .arg(r.httpStatus));
         return;
     }
-    if (reply->error() != QNetworkReply::NoError) {
-        // errorString() quotes the (presigned) URL; the status is what matters
-        finish(false, status > 0 ? QStringLiteral("download failed (HTTP %1)").arg(status)
-                                 : reply->errorString());
-        return;
-    }
-
-    const QByteArray body = reply->readAll();
-    if (body.size() > kMaxDownloadBytes) {
-        finish(false, QStringLiteral("download too large"));
-        return;
-    }
-
-    const UnwrapResult unwrapped = unwrapDownload(
-        body, {QString::fromLatin1(m_activeSource == GeoIpSource::DbIp ? kDbIpDatabaseFilename
-                                                                        : kGeoIpDatabaseFilename)});
-    if (!unwrapped.error.isEmpty()) {
-        finish(false, unwrapped.error);
+    if (!r.ok) {
+        finish(false, QStringLiteral("download failed: %1").arg(r.error));
         return;
     }
 
     QString error;
-    if (!installDatabase(unwrapped.data, error)) {
+    if (!installDatabase(r.data, error)) {
         finish(false, error);
         return;
     }
@@ -359,13 +292,11 @@ bool GeoIpUpdater::installDatabase(const QByteArray& mmdb, QString& error)
 
 void GeoIpUpdater::finish(bool ok, const QString& message)
 {
-    if (ok) {
-        m_lastFailure = {};
+    noteOutcome(ok);
+    if (ok)
         logInfo(QStringLiteral("IP2Country: %1").arg(message));
-    } else {
-        m_lastFailure = QDateTime::currentDateTimeUtc();
+    else
         logWarning(QStringLiteral("IP2Country: update failed: %1").arg(message));
-    }
 
     auto waiting = std::exchange(m_waiting, {});
     for (auto& cb : waiting)

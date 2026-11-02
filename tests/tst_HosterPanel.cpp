@@ -5,6 +5,7 @@
 /// No daemon: items go in as the IpcClient's push signals, as the core would send them.
 
 #include "app/IpcClient.h"
+#include "dialogs/HosterPuzzleDialog.h"
 #include "panels/HosterPanel.h"
 #include "utils/StringUtils.h"
 #include "IpcMessage.h"
@@ -17,6 +18,7 @@
 #include <QDir>
 #include <QKeyEvent>
 #include <QListWidget>
+#include <QPushButton>
 #include <QRadioButton>
 #include <QTest>
 #include <QTimer>
@@ -177,6 +179,29 @@ private slots:
         top.append(QCborArray{QCborMap{{QStringLiteral("url"), QStringLiteral("https://a.test/y")}}});
         emit ipc.hosterLinksExpanded(top);
         QCOMPARE(radios, 0);
+    }
+
+    // the box's own reject ran before the button's slot: "Skip hoster" arrived as a plain skip
+    void puzzleSkipHosterSendsFlag()
+    {
+        for (const QString& label : {QStringLiteral("Skip hoster"), QStringLiteral("Skip")}) {
+            HosterPuzzleDialog dlg({}, QStringLiteral("a.test"), QStringLiteral("f.bin"), {}, 60);
+            int calls = 0;
+            bool skipHoster = false;
+            connect(&dlg, &HosterPuzzleDialog::answered, this, [&](const QString& text, bool flag) {
+                ++calls;
+                skipHoster = flag;
+                QVERIFY(text.isEmpty());
+            });
+            QPushButton* button = nullptr;
+            for (auto* b : dlg.findChildren<QPushButton*>())
+                if (b->text() == label)
+                    button = b;
+            QVERIFY(button);
+            button->click();
+            QCOMPARE(calls, 1);
+            QCOMPARE(skipHoster, label == QLatin1String("Skip hoster"));
+        }
     }
 };
 

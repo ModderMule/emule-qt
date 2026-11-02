@@ -33,6 +33,7 @@
 #include "kademlia/KadUDPListener.h"
 #include "net/Address.h"
 #include "net/ClientUDPSocket.h"
+#include "net/ConnectionChecker.h"
 #include "net/HttpFileDownload.h"
 #include "net/ListenSocket.h"
 #include "net/LocalIPv6.h"
@@ -45,6 +46,7 @@
 #include "utils/Opcodes.h"
 #include "utils/OtherFunctions.h"
 #include "utils/SafeFile.h"
+#include "utils/TimeUtils.h"
 #include "server/ServerConnect.h"
 #include "server/ServerList.h"
 #include "stats/Statistics.h"
@@ -71,9 +73,52 @@
 #include <QSet>
 #include <QTimer>
 
+#include <deque>
 #include <functional>
 
 namespace eMule {
+
+namespace {
+
+/// Key of the startup server.met download in Preferences::downloadValidators().
+constexpr auto kServerMetValidatorKey = "servermet";
+
+/// Ticks of the last direct-callback dials, all senders (sliding window). Main thread only.
+std::deque<uint64> g_directCallbackDials;
+
+/// Room for one more direct-callback dial in the global window? Takes it if so.
+bool takeDirectCallbackBudget()
+{
+    const uint64 now = getTickCount();
+    while (!g_directCallbackDials.empty()
+           && now - g_directCallbackDials.front() >= CoreSession::kDirectCallbackWindowMs)
+        g_directCallbackDials.pop_front();
+    if (g_directCallbackDials.size() >= CoreSession::kDirectCallbackGlobalMax)
+        return false;
+    g_directCallbackDials.push_back(now);
+    return true;
+}
+
+/// Some known client has @p hash but none of its addresses is @p sender.
+/// v4 and v6 both count, so a dual-stack peer asking over its other family is fine.
+bool hashKnownElsewhere(const uint8* hash, const Address& sender)
+{
+    if (isnulmd4(hash))
+        return false;
+    bool elsewhere = false;
+    bool here = false;
+    theApp.clientList->forEachClient([&](UpDownClient* c) {
+        if (here || !c->hasValidHash() || !md4equ(c->userHash(), hash))
+            return;
+        if (c->userAddress() == sender || c->connectAddress() == sender || c->userIPv6() == sender)
+            here = true;
+        else
+            elsewhere = true;
+    });
+    return elsewhere && !here;
+}
+
+} // namespace
 
 CoreSession::CoreSession(QObject* parent)
     : QObject(parent)
@@ -497,6 +542,9 @@ void CoreSession::onTimer()
         if (m_tickCounter % 50 == 0 && (BindAddress::isConfigured() || m_netSuspended))
             applyBindSelection();
 
+        // prefs may change over IPC, REST or MCP: picked up here, a no-op when unchanged
+        syncConnectionChecker();
+
         // Bank the cumulative statistics periodically, so an unclean exit costs at
         // most one interval instead of the whole session. MFC does the same from
         // its upload timer (srchybrid/UploadQueue.cpp:1021). The flush is absolute
@@ -682,7 +730,7 @@ void CoreSession::initServerConnect()
                 if (!theApp.searchList)
                     return;
                 auto* srv = theApp.serverConnect ? theApp.serverConnect->currentServer() : nullptr;
-                const bool more = theApp.searchList->processSearchAnswer(data, size, true,
+                const auto answer = theApp.searchList->processSearchAnswer(data, size, true,
                     srv ? Endpoint(theApp.serverConnect->sessionAddress(), srv->port()) : Endpoint());
 
                 // The local server has answered — a global search may now start
@@ -691,7 +739,8 @@ void CoreSession::initServerConnect()
                 if (theApp.globalSearch)
                     theApp.globalSearch->onLocalAnswerReceived();
                 // ... and a plain server search is done: the next one may go.
-                theApp.searchList->queue().onServerAnswer(more);
+                theApp.searchList->queue().onServerAnswer(answer.moreResults, answer.results,
+                                                          answer.newFiles);
             });
 
     // A search asked for before the server was there goes out now.
@@ -772,7 +821,6 @@ void CoreSession::initServerConnect()
 void CoreSession::autoUpdateServerList()
 {
     const QString url = thePrefs.serverListURL();
-    logInfo(QStringLiteral("Auto-updating server list from %1").arg(url));
 
     // Deliberately blocking, same as MFC's modal download: our caller connects to a
     // server immediately afterwards, so the merge below has to have happened first.
@@ -780,15 +828,24 @@ void CoreSession::autoUpdateServerList()
     HttpFileDownload::Options opts;
     opts.preferredNames = {QStringLiteral("server.met")};
     opts.timeoutMs = 10000;
+    // Unlike MFC, an unchanged list (HTTP 304) is not merged again. Only while the
+    // list it was merged into still holds servers: a wiped server.met fetches in full.
+    if (m_serverList->serverCount() > 0)
+        opts.validators = thePrefs.downloadValidators(QString::fromLatin1(kServerMetValidatorKey), url);
+    logInfo(opts.validators.isEmpty()
+                ? QStringLiteral("Auto-updating server list from %1").arg(url)
+                : QStringLiteral("Checking server list %1 for changes").arg(url));
 
-    QByteArray data;
-    QString entryName;
-    QString error;
-    if (!HttpFileDownload::getBlocking(QUrl(url), opts, data, entryName, error)) {
-        logWarning(QStringLiteral("Failed to download server list: %1").arg(error));
+    const HttpFileDownload::Result r = HttpFileDownload::fetchBlocking(QUrl(url), opts);
+    if (!r.ok) {
+        logWarning(QStringLiteral("Failed to download server list: %1").arg(r.error));
         return;
     }
-
+    if (r.notModified) {
+        logInfo(QStringLiteral("Server list is up to date"));
+        return;
+    }
+    const QByteArray& data = r.data;
     if (data.isEmpty()) {
         logWarning(QStringLiteral("Downloaded server list is empty"));
         return;
@@ -806,9 +863,12 @@ void CoreSession::autoUpdateServerList()
     file.close();
 
     const size_t before = m_serverList->serverCount();
-    m_serverList->addServerMetToList(downloadPath, true);
+    const bool merged = m_serverList->addServerMetToList(downloadPath, true);
     const size_t added = m_serverList->serverCount() - before;
     logInfo(QStringLiteral("Server list updated: %1 new servers added").arg(added));
+    // A list that did not parse must be fetched in full next time
+    thePrefs.setDownloadValidators(QString::fromLatin1(kServerMetValidatorKey), url,
+                                   merged ? r.validators : HttpValidators{});
 
     QFile::remove(downloadPath);
 }
@@ -1297,6 +1357,21 @@ void CoreSession::handleDirectCallbackRequest(const Endpoint& senderEP,
     // the limit a single peer can drive our connect slots.
     if (!theApp.clientList->allowCallbackRequest(senderAddr))
         return;
+
+    // The user hash is self-asserted. One we already know at another IP is someone
+    // else's: don't dial a stranger on behalf of a client we can reach elsewhere.
+    if (hashKnownElsewhere(userHash, senderAddr)) {
+        logDebug(QStringLiteral("Direct callback from %1 ignored: user hash known at another IP")
+                     .arg(senderAddr.toString()));
+        return;
+    }
+
+    // Global cap: many addresses together must not drive our connect slots either.
+    if (!takeDirectCallbackBudget()) {
+        logDebug(QStringLiteral("Direct callback from %1 ignored: global limit reached")
+                     .arg(senderAddr.toString()));
+        return;
+    }
     theApp.clientList->addTrackCallbackRequests(senderAddr);
 
     // Not MFC: a firewalled requester that speaks QUIC NAT-T can't take our TCP dial-back.
@@ -1344,6 +1419,11 @@ void CoreSession::handleDirectCallbackRequest(const Endpoint& senderEP,
     // otherwise have just set the flag from the peer's own options byte.
     client->setDirectUDPCallbackSupport(false);
     client->tryToConnect();
+}
+
+void CoreSession::resetDirectCallbackBudget()
+{
+    g_directCallbackDials.clear();
 }
 
 // ---------------------------------------------------------------------------
@@ -1428,6 +1508,11 @@ void CoreSession::initKademlia()
     // Re-wire UDP↔listener bridges each time Kad starts (including restarts).
     connect(m_kademlia.get(), &kad::Kademlia::started,
             this, &CoreSession::wireKadListener);
+    // Connection checker: Kad is its main source and must see every change
+    connect(m_kademlia.get(), &kad::Kademlia::started, this, &CoreSession::syncConnectionChecker);
+    connect(m_kademlia.get(), &kad::Kademlia::stopped, this, &CoreSession::syncConnectionChecker);
+    connect(m_kademlia.get(), &kad::Kademlia::networkOfflineChanged,
+            this, &CoreSession::syncConnectionChecker);
 
     // Started by finishStart(), once the files are loaded and the UDP socket is open.
 }
@@ -1861,7 +1946,9 @@ void CoreSession::releaseConnectHold()
         return;
     }
     logInfo(QStringLiteral("First start wizard finished — connecting"));
-    if (ed2k && theApp.serverConnect && !theApp.serverConnect->isConnected()
+    if (ed2k && theApp.connectionOffline)
+        m_offlineResumeEd2k = true;   // Kad still starts: it sees the way back
+    else if (ed2k && theApp.serverConnect && !theApp.serverConnect->isConnected()
         && !theApp.serverConnect->isConnecting())
         theApp.serverConnect->connectToAnyServer();
     if (kad && m_kademlia && !m_kademlia->isRunning())
@@ -2079,10 +2166,57 @@ void CoreSession::resumeNetworking()
 
     if (m_connectHold)
         return;   // releaseConnectHold() connects
-    if (m_resumeEd2k && theApp.serverConnect)
+    if (m_resumeEd2k && theApp.connectionOffline)
+        m_offlineResumeEd2k = true;
+    else if (m_resumeEd2k && theApp.serverConnect)
         theApp.serverConnect->connectToAnyServer();
     if (m_resumeKad && m_kademlia)
         m_kademlia->start();
+}
+
+void CoreSession::syncConnectionChecker()
+{
+    if (!m_connChecker || theApp.closing)
+        return;
+    // Kad first: configure() with a stale Kad state would start a URL-only probe
+    const bool kadRunning = m_kademlia && m_kademlia->isRunning();
+    m_connChecker->setKadState(kadRunning, kadRunning && m_kademlia->isNetworkOffline(),
+                               kadRunning && m_kademlia->hasNetworkEvidence());
+    m_connChecker->configure(thePrefs.connectionChecker(), thePrefs.connectionCheckerUrl(),
+                             thePrefs.connectionCheckInterval());
+}
+
+void CoreSession::onConnectionOfflineChanged(bool offline)
+{
+    if (theApp.closing)
+        return;
+    theApp.connectionOffline = offline;
+    theApp.connectionOfflineReason = offline ? m_connChecker->reason() : QString();
+    theApp.connectionOfflineSince = offline ? static_cast<qint64>(m_connChecker->offlineSince()) : 0;
+    ServerConnect* sc = theApp.serverConnect;
+    if (offline) {
+        // stops the dead-server count too: every server fails while the line is down
+        m_offlineResumeEd2k = sc && (sc->isConnected() || sc->isConnecting());
+        if (sc) {
+            sc->setOfflineHold(true);
+            sc->stopConnectionTry();
+            if (sc->disconnect())
+                logInfo(QStringLiteral("Disconnected from the eD2K server until the internet is back"));
+        }
+    } else {
+        if (sc)
+            sc->setOfflineHold(false);
+        const bool reconnect = m_offlineResumeEd2k
+            || (thePrefs.autoConnect() && thePrefs.networkED2K() && thePrefs.reconnect());
+        m_offlineResumeEd2k = false;
+        if (reconnect && sc && !m_connectHold && !m_netSuspended && BindAddress::outboundAllowed()
+            && !sc->isConnected() && !sc->isConnecting()) {
+            logInfo(QStringLiteral("Internet back — reconnecting to an eD2K server"));
+            sc->connectToAnyServer();
+        }
+    }
+    if (theApp.onConnectionOfflineChanged)
+        theApp.onConnectionOfflineChanged(offline);
 }
 
 
@@ -2253,6 +2387,13 @@ void CoreSession::finishStart()
 
     initPortMapper();
     initScheduler();
+
+    // After the auto-connect: it starts online and only Kad or the URL say otherwise
+    m_connChecker = std::make_unique<ConnectionChecker>();
+    connect(m_connChecker.get(), &ConnectionChecker::offlineChanged,
+            this, &CoreSession::onConnectionOfflineChanged);
+    syncConnectionChecker();
+
     if (!BindAddress::outboundAllowed()) {
         // Nothing was opened or dialled; pick up from here when the interface appears.
         m_netSuspended = true;

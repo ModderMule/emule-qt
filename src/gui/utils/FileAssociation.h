@@ -44,9 +44,7 @@ struct FileTypes {
     bool nzb = false;
     /// .torrent (application/x-bittorrent) and the magnet: scheme
     bool torrent = false;
-    /// the ed2k: scheme. Linux keeps it in the shared desktop entry; Ed2kSchemeHandler
-    /// sets it, and it comes along with any other type. The ed3k: scheme goes with it
-    /// (Options → General)
+    /// the ed2k: scheme, and ed3k: with it (wizard, Options → General)
     bool ed2k = false;
 
     [[nodiscard]] bool any() const { return nzb || torrent || ed2k; }
@@ -81,7 +79,7 @@ struct IconFile {
 void installDesktopIcons();
 
 /// installDesktopIcons(), plus the launcher entry when there is none yet. An
-/// existing emuleqt.desktop is left alone: it may carry a registration.
+/// emuleqt.desktop that claims types is left alone; a bare stale one is rewritten.
 void installLauncher();
 
 /// The per-user registry values of @p types for @p exePath, relative to Software\\Classes.

@@ -20,7 +20,7 @@ class tst_FileAssociation : public QObject {
     Q_OBJECT
 
 private slots:
-    void theDesktopFileClaimsNzbAndTheEd2kScheme();
+    void theDesktopFileClaimsNzbAndEd2kOnlyWhenAsked();
     void theDesktopEntryQuotesAnExecPathWithSpaces();
     void theMimeDefinitionDeclaresTheNzbGlob();
     void theRegistryValuesStayUnderHkeyCurrentUser();
@@ -32,6 +32,7 @@ private slots:
     void torrentClaimsTheFileTypeAndTheMagnetScheme();
     void typesSwitchedOffAreLeftOut();
     void theMagnetSchemeIsAUrlProtocol();
+    void theEd2kSwitchClaimsBothLinkSchemes();
 };
 
 namespace {
@@ -50,7 +51,7 @@ QString contentsOf(const QList<FileAssociation::DesktopFile>& files, const QStri
 
 } // namespace
 
-void tst_FileAssociation::theDesktopFileClaimsNzbAndTheEd2kScheme()
+void tst_FileAssociation::theDesktopFileClaimsNzbAndEd2kOnlyWhenAsked()
 {
     const auto files = FileAssociation::desktopFiles(QStringLiteral("/opt/emuleqt"),
                                                      QStringLiteral("/home/u/.local/share"), kNzb);
@@ -60,9 +61,13 @@ void tst_FileAssociation::theDesktopFileClaimsNzbAndTheEd2kScheme()
     QVERIFY(!desktop.isEmpty());
     QVERIFY(desktop.contains(QLatin1String(FileAssociation::kNzbMimeType)));
 
-    // The ed2k scheme comes along for free: the macOS bundle has claimed it
-    // since day one and Linux never has.
-    QVERIFY(desktop.contains(QStringLiteral("x-scheme-handler/ed2k")));
+    // ed2k is a switch of its own (#111): .nzb alone does not take the scheme
+    QVERIFY(!desktop.contains(QStringLiteral("x-scheme-handler/ed2k")));
+    QVERIFY(contentsOf(FileAssociation::desktopFiles(QStringLiteral("/opt/emuleqt"),
+                                                     QStringLiteral("/home/u/.local/share"),
+                                                     {.nzb = true, .ed2k = true}),
+                       QStringLiteral("emuleqt.desktop"))
+                .contains(QStringLiteral("x-scheme-handler/ed2k")));
 
     // %U rather than %f, because a file manager may hand over a file:// URL --
     // which is why CommandLineExec has to resolve one.
@@ -214,7 +219,7 @@ void tst_FileAssociation::torrentClaimsTheFileTypeAndTheMagnetScheme()
     const QString desktop = contentsOf(files, QStringLiteral("emuleqt.desktop"));
     QVERIFY(desktop.contains(QLatin1String(FileAssociation::kTorrentMimeType)));
     QVERIFY(desktop.contains(QStringLiteral("x-scheme-handler/magnet")));
-    QVERIFY(desktop.contains(QStringLiteral("x-scheme-handler/ed2k")));
+    QVERIFY(!desktop.contains(QStringLiteral("x-scheme-handler/ed2k")));
 
     const QString mime = contentsOf(files, QStringLiteral("emuleqt-torrent.xml"));
     QVERIFY(mime.contains(QStringLiteral("*.torrent")));
@@ -273,6 +278,28 @@ void tst_FileAssociation::theMagnetSchemeIsAUrlProtocol()
         return v.key.startsWith(QStringLiteral("ed3k"));
     }));
     QCOMPARE(torrentProgId, QStringLiteral("eMuleQt.torrent"));
+}
+
+void tst_FileAssociation::theEd2kSwitchClaimsBothLinkSchemes()
+{
+    const auto values = FileAssociation::registryValues(
+        QStringLiteral("C:\\Apps\\emuleqt.exe"), {.ed2k = true});
+    for (const QString scheme : {QStringLiteral("ed2k"), QStringLiteral("ed3k")}) {
+        QVERIFY2(std::ranges::any_of(values, [&](const FileAssociation::RegistryValue& v) {
+                     return v.key == scheme && v.name == QStringLiteral("URL Protocol");
+                 }),
+                 qPrintable(scheme));
+        QVERIFY(std::ranges::any_of(values, [&](const FileAssociation::RegistryValue& v) {
+            return v.key == scheme + QStringLiteral("/shell/open/command")
+                   && v.value == QStringLiteral("\"C:\\Apps\\emuleqt.exe\" \"%1\"");
+        }));
+    }
+    // nothing else comes with it
+    QVERIFY(std::ranges::none_of(values, [](const FileAssociation::RegistryValue& v) {
+        return v.key.startsWith(QStringLiteral("magnet")) || v.key.startsWith(QLatin1Char('.'));
+    }));
+    QCOMPARE(FileAssociation::xdgMimeTypes({.ed2k = true}),
+             QStringList({QStringLiteral("x-scheme-handler/ed2k"), QStringLiteral("x-scheme-handler/ed3k")}));
 }
 
 QTEST_MAIN(tst_FileAssociation)

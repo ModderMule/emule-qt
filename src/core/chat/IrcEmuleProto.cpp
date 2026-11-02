@@ -112,3 +112,52 @@ std::optional<Link> parseSendLink(const QString& body)
 }
 
 } // namespace eMule::IrcEmuleProto
+
+namespace eMule {
+
+void IrcLinkGate::noteVerifiedFriend(const QString& nick, const QString& userHost,
+                                     const QString& userHashHex)
+{
+    if (nick.isEmpty() || userHost.isEmpty() || userHashHex.isEmpty())
+        return;
+    m_byNick.insert(nick.toLower(), Entry{userHost.toLower(), userHashHex.toLower()});
+}
+
+bool IrcLinkGate::allows(const QString& nick, const QString& userHost,
+                         const QString& claimedHashHex) const
+{
+    if (nick.isEmpty() || userHost.isEmpty() || claimedHashHex.isEmpty())
+        return false;
+    const auto it = m_byNick.constFind(nick.toLower());
+    if (it == m_byNick.cend())
+        return false;
+    return it->userHost.compare(userHost, Qt::CaseInsensitive) == 0
+        && it->hashHex.compare(claimedHashHex, Qt::CaseInsensitive) == 0;
+}
+
+void IrcLinkGate::forgetNick(const QString& nick)
+{
+    m_byNick.remove(nick.toLower());
+}
+
+void IrcLinkGate::renameNick(const QString& oldNick, const QString& newNick)
+{
+    const QString oldKey = oldNick.toLower();
+    const QString newKey = newNick.toLower();
+    if (oldKey == newKey)
+        return;
+    // Whoever held the new nick before is gone from it
+    m_byNick.remove(newKey);
+    if (auto it = m_byNick.find(oldKey); it != m_byNick.end()) {
+        const Entry e = *it;
+        m_byNick.erase(it);
+        m_byNick.insert(newKey, e);
+    }
+}
+
+void IrcLinkGate::clear()
+{
+    m_byNick.clear();
+}
+
+} // namespace eMule

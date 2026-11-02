@@ -38,6 +38,7 @@
 #include <utility>
 #include <vector>
 
+#include "app/SkinColors.h"
 #include "app/UiState.h"
 #include "controls/ListSortClick.h"
 #include "controls/SortArrowStyle.h"
@@ -101,6 +102,7 @@ public:
         installHeaderMenu();
         m_sortColumn = hdr->sortIndicatorSection();
         restoreSortValues();
+        SkinColors::bindList(this, stateKey);   // MFC CMuleListCtrl::SetColors
     }
 
     /// Columns whose first click sorts descending, as MFC's numeric columns do.

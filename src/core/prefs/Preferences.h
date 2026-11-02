@@ -8,6 +8,7 @@
 /// Factory methods bridge to existing config structs (ObfuscationConfig,
 /// ProxySettings) used by already-ported modules.
 
+#include "net/HttpValidators.h"
 #include "prefs/DownloadCategory.h"
 #include "prefs/IndexerConfig.h"
 #include "prefs/IndexerFeed.h"
@@ -225,6 +226,19 @@ public:
     [[nodiscard]] uint16 randomPortMax() const;
     void setRandomPortMax(uint16 val);
     static constexpr uint16 kRandomPortFloor = 1024;
+
+    /// Connection checker (#115, not MFC): hold eD2K, BitTorrent and Usenet while the
+    /// internet is down. Kad's offline detection decides; connectionCheckerUrl, if set,
+    /// confirms it and is the only check while Kad is off.
+    [[nodiscard]] bool connectionChecker() const;
+    void setConnectionChecker(bool val);
+    [[nodiscard]] QString connectionCheckerUrl() const;
+    void setConnectionCheckerUrl(const QString& val);
+    /// Seconds between URL checks. YAML only (network.connectionCheckInterval), no GUI.
+    [[nodiscard]] uint32 connectionCheckInterval() const;
+    void setConnectionCheckInterval(uint32 val);
+    static constexpr uint32 kConnectionCheckIntervalMin = 10;
+    static constexpr uint32 kConnectionCheckIntervalMax = 3600;
 
     [[nodiscard]] uint16 serverUDPPort() const;
     void setServerUDPPort(uint16 val);
@@ -1516,13 +1530,15 @@ public:
     static constexpr QLatin1StringView kDefaultIpFilterUpdateUrl{
         "https://upd.emule-security.org/ipfilter.zip"};
 
-    /// Download ipfilter.dat from ipFilterUpdateUrl() every ipFilterUpdateDays() days.
+    /// Check ipFilterUpdateUrl() every ipFilterUpdateDays() days; an unchanged list
+    /// (HTTP 304) is not downloaded again.
     [[nodiscard]] bool ipFilterAutoUpdate() const;
     void setIpFilterAutoUpdate(bool val);
-    /// 1..365, default 7.
+    /// 1..365, default 1.
     [[nodiscard]] int ipFilterUpdateDays() const;
     void setIpFilterUpdateDays(int val);
-    /// Secs since epoch of the last successful download, 0 = never. Written by the core.
+    /// Secs since epoch of the last successful check (download or 304), 0 = never.
+    /// Written by the core.
     [[nodiscard]] qint64 ipFilterLastUpdate() const;
     void setIpFilterLastUpdate(qint64 val);
 
@@ -1679,6 +1695,8 @@ public:
     [[nodiscard]] QString webServerKeyPath() const;
     void setWebServerKeyPath(const QString& val);
 
+    /// Stored as `pbkdf2$…` (crypto/SecretCompare.h). The setter takes that or
+    /// the SHA-256 hex the GUI sends, which it wraps. Not in toIpcMap().
     [[nodiscard]] QString webServerAdminPassword() const;
     void setWebServerAdminPassword(const QString& val);
 
@@ -1688,6 +1706,7 @@ public:
     [[nodiscard]] bool webServerGuestEnabled() const;
     void setWebServerGuestEnabled(bool val);
 
+    /// Same format as webServerAdminPassword().
     [[nodiscard]] QString webServerGuestPassword() const;
     void setWebServerGuestPassword(const QString& val);
 
@@ -1961,6 +1980,15 @@ public:
 
     [[nodiscard]] qint64 geoIpLastCheck() const;
     void setGeoIpLastCheck(qint64 val);
+
+    // -- Conditional downloads ------------------------------------------------
+
+    /// ETag / Last-Modified of the last automatic download for @p key ("ipfilter",
+    /// "servermet"); empty when they were stored for a different @p url.
+    [[nodiscard]] HttpValidators downloadValidators(const QString& key, const QString& url) const;
+    /// Empty @p validators forgets the entry.
+    void setDownloadValidators(const QString& key, const QString& url,
+                               const HttpValidators& validators);
 
     [[nodiscard]] QString logFont() const;
     void setLogFont(const QString& val);

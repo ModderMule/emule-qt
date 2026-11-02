@@ -163,6 +163,12 @@ std::mt19937& randomEngine();
 /// Generate a random uint32.
 [[nodiscard]] uint32 getRandomUInt32();
 
+// Secure (CSPRNG) variants for key material, challenges, nonces.
+// OpenSSL RAND_bytes, fallback QRandomGenerator::system(); never mt19937.
+void secureRandomBytes(void* dest, std::size_t len);
+[[nodiscard]] uint32 secureRandomUInt32();
+[[nodiscard]] uint16 secureRandomUInt16();
+
 // ---------------------------------------------------------------------------
 // RC4 encryption
 // ---------------------------------------------------------------------------

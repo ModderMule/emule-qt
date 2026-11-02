@@ -100,7 +100,9 @@ struct DownloadRow {
     bool isStopped = false;
     /// PartFileOp ordinal: 0 none, 1 hashing, 2 copying, 3 uncompressing, 4 importing.
     int fileOp = 0;
-    bool completionError = false;
+    /// CompletionFailure ordinal: 0 none, 1 other, 2 disk space, 3 name too long,
+    /// 4 cannot write, 5 cannot read.
+    int completionError = 0;
     bool isAutoDownPriority = false;
     int64_t category = 0;
     int64_t lastSeenComplete = 0;
@@ -282,6 +284,8 @@ private:
 
 /// Sort proxy of the downloads list: plain column sort, except that A4AF sources
 /// stay below a file's available ones.
+// Deliberated, not done: rows jump when the sort column changes on every refresh
+// (Last Seen Complete, speed); could hold re-sort while hovered or selected (eMule#11)
 class DownloadSortProxy : public SortValueProxy {
 public:
     using SortValueProxy::SortValueProxy;

@@ -8,6 +8,7 @@
 ///   - Right: Tabbed area with Status, Channels, and dynamic channel tabs
 ///   - Bottom: Connect/Close buttons, format toolbar, input field, Send button
 
+#include "chat/IrcEmuleProto.h"
 #include "chat/IrcNickList.h"
 #include "chat/IrcRouting.h"
 #include "utils/InputHistory.h"
@@ -167,7 +168,7 @@ private slots:
     void onServerNumeric(int code, const QString& payload);
     void onPingPong();
     void onSoundReceived(const QString& target, const QString& nick, const QString& params);
-    void onEmuleProto(const QString& nick, const QString& body);
+    void onEmuleProto(const QString& nick, const QString& body, const QString& userHost);
     void onNickContextMenu(const QPoint& pos);
 
 private:
@@ -215,6 +216,8 @@ private:
     void sendLinkTo(const QString& nick);
     void answerFriendRequest(const QString& nick, const QString& verify);
     void protoNotice(const QString& text);
+    /// PART / KICK: drop @p nick from m_linkGate once it is in none of our channels.
+    void forgetNickIfGone(const QString& nick);
 
     // Input processing
     void processInput(const QString& text);
@@ -261,6 +264,8 @@ private:
     IpcClient* m_ipc = nullptr;
     QString m_sendLink;             ///< link "Send this to friend" offers
     quint32 m_verify = 0;           ///< nonce of our pending friend request, 0 = none
+    QString m_verifyNick;           ///< whom that request went to
+    IrcLinkGate m_linkGate;         ///< friends-only SENDLINK: hashes our own handshake bound
     qint64 m_lastProtoRequestMs = 0;   ///< flood guard, as MFC m_dwLastRequest
 
     // Layout widgets

@@ -3,6 +3,7 @@
 /// @brief Client software icons shared by the client lists and download sources.
 
 #include "utils/ClientIcons.h"
+#include "app/SkinIcons.h"
 
 #include <QGuiApplication>
 #include <QHash>
@@ -30,10 +31,13 @@ constexpr int SoftURL            = 53;
 QIcon clientSoftwareIcon(int softwareId, bool hasCredit, bool isFriend)
 {
     static QHash<int, QIcon> cache;
+    static quint64 skinSeen = 0;
+    if (SkinIcons::instance().changedSince(skinSeen))
+        cache.clear();   // friend composites are baked
 
     // URL source → Server icon (MFC index 15)
     if (softwareId == SoftURL) {
-        static QIcon urlIcon(QStringLiteral(":/icons/Server.ico"));
+        static QIcon urlIcon = skinIcon(QStringLiteral(":/icons/Server.ico"));
         return urlIcon;
     }
 
@@ -78,18 +82,16 @@ QIcon clientSoftwareIcon(int softwareId, bool hasCredit, bool isFriend)
     }
 
     if (!isFriend) {
-        QIcon icon(path);
+        QIcon icon = skinIcon(path);
         cache.insert(key, icon);
         return icon;
     }
 
     // Composite: software icon + friend badge at bottom-right
-    QPixmap pixmap = QIcon(path).pixmap(16, 16);
+    QPixmap pixmap = skinIcon(path).pixmap(16, 16);
     {
         QPainter painter(&pixmap);
-        static const QPixmap friendBadge =
-            QIcon(QStringLiteral(":/icons/Friend.ico")).pixmap(10, 10);
-        painter.drawPixmap(6, 6, 10, 10, friendBadge);
+        painter.drawPixmap(6, 6, 10, 10, skinIcon(QStringLiteral(":/icons/Friend.ico")).pixmap(10, 10));
     }
     QIcon composite(pixmap);
     cache.insert(key, composite);
@@ -98,7 +100,7 @@ QIcon clientSoftwareIcon(int softwareId, bool hasCredit, bool isFriend)
 
 QIcon ed3kClientIcon()
 {
-    static const QIcon icon(QStringLiteral(":/icons/ClientEd3k.ico"));
+    static const QIcon icon = skinIcon(QStringLiteral(":/icons/ClientEd3k.ico"));
     return icon;
 }
 
@@ -124,15 +126,18 @@ QIcon sourceStateIcon(SourceStateIcon kind)
     // emule.rc:1409-1413: SrcDownloading Client0, SrcConnecting Client1, SrcOnQueue
     // Client2, SrcNNPQF Client3, SrcUnknown Client4
     static const QIcon icons[] = {
-        QIcon(QStringLiteral(":/icons/Client0.ico")), QIcon(QStringLiteral(":/icons/Client2.ico")),
-        QIcon(QStringLiteral(":/icons/Client1.ico")), QIcon(QStringLiteral(":/icons/Client3.ico")),
-        QIcon(QStringLiteral(":/icons/Client4.ico"))};
+        skinIcon(QStringLiteral(":/icons/Client0.ico")), skinIcon(QStringLiteral(":/icons/Client2.ico")),
+        skinIcon(QStringLiteral(":/icons/Client1.ico")), skinIcon(QStringLiteral(":/icons/Client3.ico")),
+        skinIcon(QStringLiteral(":/icons/Client4.ico"))};
     return icons[static_cast<int>(kind)];
 }
 
 QIcon iconPair(const QIcon& first, const QIcon& second)
 {
     static QHash<QString, QIcon> cache;
+    static quint64 skinSeen = 0;
+    if (SkinIcons::instance().changedSince(skinSeen))
+        cache.clear();
     const QString key = QStringLiteral("%1/%2").arg(first.cacheKey()).arg(second.cacheKey());
     if (const auto it = cache.constFind(key); it != cache.cend())
         return *it;

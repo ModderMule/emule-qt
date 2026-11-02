@@ -6,6 +6,7 @@
 
 #include "utils/FileTypeIcons.h"
 #include "utils/StringUtils.h"
+#include "app/SkinIcons.h"
 
 #include <QColor>
 #include <QCoreApplication>
@@ -249,7 +250,7 @@ QVariant TorrentListModel::data(const QModelIndex& index, int role) const
     case Qt::DecorationRole:
         // as the Transfer window: the file's type; a folder for a multi-file torrent
         if (index.column() == ColName) {
-            static const QIcon folder(QStringLiteral(":/icons/FolderOpen.ico"));
+            static const QIcon folder = skinIcon(QStringLiteral(":/icons/FolderOpen.ico"));
             return r->numFiles > 1 ? folder : fileTypeIconForName(r->name);
         }
         return {};

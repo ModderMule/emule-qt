@@ -3555,6 +3555,9 @@ void tst_UsenetQueue::aDeadOptionalServerCannotStrandAQuotaBlockedArticle()
              "required account was holding, because the allowance hid it");
     QVERIFY2(item->status != UsenetItemStatus::Failed, "the item failed");
 
+    // Slow required account, so the dead block account (no backoff at interval
+    // 0) refuses each retry first. Used to burn the budget and mark it missing.
+    main.setResponseDelay(300);
     // Pay for the required account again and the release lands intact.
     required.quotaBytes = 1000000000;
     queue.applyServers({required, block}, 0);

@@ -6,9 +6,11 @@
 #include "controls/FitTextTabBar.h"
 
 #include "app/AppConfig.h"
+#include "app/SkinColors.h"
 #include "prefs/Preferences.h"
 #include "utils/Log.h"
 #include "utils/TextLinks.h"
+#include "app/SkinIcons.h"
 
 #include <QColor>
 #include <QDateTime>
@@ -85,7 +87,7 @@ LogWidget::LogWidget(QWidget* parent)
     // that share a width in the font then share it on screen at every size.
     m_serverInfoBrowser->document()->setUseDesignMetrics(true);
     if (thePrefs.useOriginalIcons())
-        m_tabBar->addTab(QIcon(QStringLiteral(":/icons/ServerInfo.ico")), tr("Server Info"));
+        m_tabBar->addTab(skinIcon(QStringLiteral(":/icons/ServerInfo.ico")), tr("Server Info"));
     else
         m_tabBar->addTab(tr("Server Info"));
     m_stack->addWidget(m_serverInfoBrowser);
@@ -95,7 +97,7 @@ LogWidget::LogWidget(QWidget* parent)
     m_logBrowser->setReadOnly(true);
     m_logBrowser->setFont(QFont(QStringLiteral("Helvetica"), scaledPointSize(9)));
     if (thePrefs.useOriginalIcons())
-        m_tabBar->addTab(QIcon(QStringLiteral(":/icons/Log.ico")), tr("Log"));
+        m_tabBar->addTab(skinIcon(QStringLiteral(":/icons/Log.ico")), tr("Log"));
     else
         m_tabBar->addTab(tr("Log"));
     m_stack->addWidget(m_logBrowser);
@@ -105,7 +107,7 @@ LogWidget::LogWidget(QWidget* parent)
     m_verboseBrowser->setReadOnly(true);
     m_verboseBrowser->setFont(QFont(QStringLiteral("Helvetica"), scaledPointSize(9)));
     if (thePrefs.useOriginalIcons())
-        m_tabBar->addTab(QIcon(QStringLiteral(":/icons/Log.ico")), tr("Verbose"));
+        m_tabBar->addTab(skinIcon(QStringLiteral(":/icons/Log.ico")), tr("Verbose"));
     else
         m_tabBar->addTab(tr("Verbose"));
     m_stack->addWidget(m_verboseBrowser);
@@ -134,7 +136,7 @@ LogWidget::LogWidget(QWidget* parent)
     m_kadBrowser->setReadOnly(true);
     m_kadBrowser->setFont(QFont(QStringLiteral("Helvetica"), scaledPointSize(9)));
     if (thePrefs.useOriginalIcons())
-        m_tabBar->addTab(QIcon(QStringLiteral(":/icons/Kad.ico")), tr("Kad"));
+        m_tabBar->addTab(skinIcon(QStringLiteral(":/icons/Kad.ico")), tr("Kad"));
     else
         m_tabBar->addTab(tr("Kad"));
     m_stack->addWidget(m_kadBrowser);
@@ -151,11 +153,22 @@ LogWidget::LogWidget(QWidget* parent)
     m_ipcLogBrowser->setFont(QFont(QStringLiteral("Helvetica"), scaledPointSize(9)));
     m_ipcTabIndex = m_tabBar->count();
     if (thePrefs.useOriginalIcons())
-        m_tabBar->addTab(QIcon(QStringLiteral(":/icons/Convert.ico")), tr("IPC"));
+        m_tabBar->addTab(skinIcon(QStringLiteral(":/icons/Convert.ico")), tr("IPC"));
     else
         m_tabBar->addTab(tr("IPC"));
     m_stack->addWidget(m_ipcLogBrowser);
     setIpcTabVisible(thePrefs.enableIpcLog());
+
+    // MFC CServerWnd skin keys; our extra tabs follow Log / VerboseLog
+    const QStringList logKey{QStringLiteral("Log")};
+    const QStringList verboseKey{QStringLiteral("VerboseLog")};
+    SkinColors::bind(m_serverInfoBrowser, {QStringLiteral("ServerInfoLog")});
+    for (LogTextView* view : {m_logBrowser, m_leecherBrowser, m_kadBrowser, m_usenetBrowser,
+                              m_torrentBrowser, m_hosterBrowser, m_ed3kBrowser, m_ed3kKadBrowser})
+        SkinColors::bind(view, logKey);
+    for (LogTextView* view : {m_verboseBrowser, m_torrentVerboseBrowser, m_hosterVerboseBrowser,
+                              m_ed3kVerboseBrowser, m_ipcLogBrowser})
+        SkinColors::bind(view, verboseKey);
 
     // Clear a tab's highlight once the user actually looks at it.
     connect(m_tabBar, &QTabBar::currentChanged, this, [this](int index) {
@@ -732,7 +745,7 @@ int LogWidget::addLogTab(LogTextView*& browser, const QString& icon, const QStri
     browser->setFont(QFont(QStringLiteral("Helvetica"), scaledPointSize(9)));
     const int index = m_tabBar->count();
     if (thePrefs.useOriginalIcons())
-        m_tabBar->addTab(QIcon(icon), title);
+        m_tabBar->addTab(skinIcon(icon), title);
     else
         m_tabBar->addTab(title);
     m_stack->addWidget(browser);

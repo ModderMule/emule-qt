@@ -13,6 +13,7 @@
 #include "panels/Ed3kRoomTab.h"
 #include "IpcMessage.h"
 #include "prefs/Preferences.h"
+#include "app/SkinIcons.h"
 
 #include <QApplication>
 #include <QCheckBox>
@@ -212,7 +213,7 @@ void IrcPanel::onEd3kRooms(const IpcMessage& reply)
         ch.widget = m_roomList;
         const int channels = findTab(QStringLiteral("__channels__"));
         const int idx = m_tabWidget->insertTab(channels >= 0 ? channels + 1 : 1, m_roomList,
-                                               QIcon(QStringLiteral(":/icons/IRC.ico")), ch.name);
+                                               skinIcon(QStringLiteral(":/icons/IRC.ico")), ch.name);
         m_tabWidget->tabBar()->setTabButton(idx, QTabBar::RightSide, nullptr);
         m_tabWidget->tabBar()->setTabButton(idx, QTabBar::LeftSide, nullptr);
         m_channels[kRoomListKey] = ch;
@@ -485,7 +486,7 @@ Ed3kRoomTab* IrcPanel::ensureRoomTab(const QString& room, bool show)
         ch.topicView = tab->topicView();
         ch.room = tab;
         tab->fillNicks(ch.nicks);
-        m_tabWidget->addTab(tab, QIcon(QStringLiteral(":/icons/IRC.ico")), ch.name);
+        m_tabWidget->addTab(tab, skinIcon(QStringLiteral(":/icons/IRC.ico")), ch.name);
         m_channels[Ed3kRoomTab::keyOf(room)] = ch;
         m_roomTabsClosed.removeAll(room);
         if (m_ipc)

@@ -28,6 +28,9 @@ public:
 
     [[nodiscard]] bool isEmpty() const noexcept { return m_key == 0 || m_ip == 0; }
 
+    /// Our public IP the key was issued for.
+    [[nodiscard]] uint32 ip() const noexcept { return m_ip; }
+
     void storeToFile(FileDataIO& file) const
     {
         file.writeUInt32(m_key);

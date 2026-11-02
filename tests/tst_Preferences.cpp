@@ -5,6 +5,7 @@
 
 #include "app/AppConfig.h"
 #include "app/CoreSession.h"
+#include "crypto/SecretCompare.h"
 #include "prefs/PreferenceSchema.h"
 #include "prefs/Preferences.h"
 #include "net/EMSocket.h"
@@ -12,7 +13,9 @@
 #include "utils/Opcodes.h"
 #include "utils/OtherFunctions.h"
 
+#include <QCborMap>
 #include <QCoreApplication>
+#include <QCryptographicHash>
 #include <QDir>
 #include <QFile>
 #include <QFileInfo>
@@ -152,6 +155,44 @@ private slots:
         QCOMPARE(p2.configDir(), realDir);
     }
 
+    // #112: validators of automatic downloads survive a restart and stay tied to
+    // the URL they came from
+    void downloadValidators_roundTripAndUrlBound()
+    {
+        TempDir tmp;
+        const auto file = tmp.filePath(QStringLiteral("prefs.yaml"));
+        const QString url = QStringLiteral("https://upd.example.org/ipfilter.zip");
+        const HttpValidators v{"\"6ae623cb-2d1503\"", "Sat, 31 Oct 2026 17:22:19 GMT"};
+
+        Preferences p;
+        p.load(file);
+        p.setDownloadValidators(QStringLiteral("ipfilter"), url, v);
+        p.setDownloadValidators(QStringLiteral("servermet"), url, {{"\"s\""}, {}});
+        p.save();
+
+        Preferences p2;
+        p2.load(file);
+        QCOMPARE(p2.downloadValidators(QStringLiteral("ipfilter"), url), v);
+        QCOMPARE(p2.downloadValidators(QStringLiteral("servermet"), url).etag, QByteArray("\"s\""));
+        QVERIFY(p2.downloadValidators(QStringLiteral("ipfilter"), url + u'x').isEmpty());
+        QVERIFY(p2.downloadValidators(QStringLiteral("nodes"), url).isEmpty());
+
+        // Empty validators forget the entry
+        p2.setDownloadValidators(QStringLiteral("ipfilter"), url, {});
+        p2.save();
+        Preferences p3;
+        p3.load(file);
+        QVERIFY(p3.downloadValidators(QStringLiteral("ipfilter"), url).isEmpty());
+        QVERIFY(!p3.downloadValidators(QStringLiteral("servermet"), url).isEmpty());
+    }
+
+    // New installs check the IP filter daily (#112)
+    void ipFilterUpdateDays_defaultsToOne()
+    {
+        Preferences p;
+        QCOMPARE(p.ipFilterUpdateDays(), 1);
+    }
+
     // #104: --config is one self-contained profile. Its default Incoming/Temp go
     // inside the override dir, and loading prefs creates neither: the GUI loads
     // them too, and it must not leave empty folders under $HOME.
@@ -265,6 +306,60 @@ private slots:
         QCOMPARE(loaded.uploadSlotTargetRate(), uint32{12});
         QCOMPARE(loaded.deadServerRetries(), uint32{99});
         QCOMPARE(loaded.webServerSessionTimeout(), 1);
+    }
+
+    // A bare SHA-256 web password is wrapped in PBKDF2 on load and saved that way;
+    // the hashes never go out in the IPC map, and a map without them keeps them.
+    void webPassword_legacyShaIsWrappedOnLoad()
+    {
+        const QString adminSha = QString::fromLatin1(
+            QCryptographicHash::hash("admin-pw", QCryptographicHash::Sha256).toHex());
+        const QString guestSha = QString::fromLatin1(
+            QCryptographicHash::hash("guest-pw", QCryptographicHash::Sha256).toHex());
+
+        TempDir tmp;
+        const auto file = tmp.filePath(QStringLiteral("prefs.yaml"));
+        QFile seed(file);
+        QVERIFY(seed.open(QIODevice::WriteOnly));
+        seed.write("webserver:\n  adminPassword: " + adminSha.toLatin1()
+                   + "\n  guestPassword: " + guestSha.toLatin1() + "\n");
+        seed.close();
+
+        Preferences loaded;
+        loaded.load(file);
+        const QString admin = loaded.webServerAdminPassword();
+        QVERIFY(admin.startsWith(QStringLiteral("pbkdf2$")));
+        QVERIFY(verifyWebPassword(adminSha, admin));
+        QVERIFY(!verifyWebPassword(guestSha, admin));
+        QVERIFY(verifyWebPassword(guestSha, loaded.webServerGuestPassword()));
+
+        // The next save writes the wrapped value, which loads unchanged
+        QVERIFY(loaded.saveTo(file));
+        QFile saved(file);
+        QVERIFY(saved.open(QIODevice::ReadOnly));
+        const QByteArray yaml = saved.readAll();
+        QVERIFY(!yaml.contains(adminSha.toLatin1()));
+        QVERIFY(yaml.contains("pbkdf2$"));
+        Preferences again;
+        again.load(file);
+        QCOMPARE(again.webServerAdminPassword(), admin);
+
+        // The setter wraps too; empty stays empty
+        Preferences set;
+        set.setWebServerAdminPassword(adminSha);
+        QVERIFY(verifyWebPassword(adminSha, set.webServerAdminPassword()));
+        QVERIFY(!isLegacyWebPasswordHash(set.webServerAdminPassword()));
+        set.setWebServerGuestPassword(QString());
+        QVERIFY(set.webServerGuestPassword().isEmpty());
+
+        // IPC: only whether one is set; loading such a map keeps what is stored
+        const QCborMap map = loaded.toIpcMap();
+        QVERIFY(!map.contains(QStringLiteral("webServerAdminPassword")));
+        QVERIFY(!map.contains(QStringLiteral("webServerGuestPassword")));
+        QVERIFY(map.value(QStringLiteral("webServerAdminPasswordSet")).toBool());
+        QVERIFY(!Preferences{}.toIpcMap().value(QStringLiteral("webServerAdminPasswordSet")).toBool());
+        loaded.updateFromCbor(map);
+        QCOMPARE(loaded.webServerAdminPassword(), admin);
     }
 
     // 0 = automatic and must survive; a set rate round-trips through YAML and IPC

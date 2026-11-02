@@ -65,6 +65,7 @@ DEFINES += \
     ENODEMETA_TESTDATA=\\\"$$PWD/../external/enodemeta/testdata\\\"
 
 HEADERS += \
+    FakeHttpServer.h \
     TestHelpers.h
 
 SOURCES += \
@@ -102,6 +103,7 @@ SOURCES += \
     tst_ImportParts.cpp \
     tst_IPFilter.cpp \
     tst_IPFilterMatch.cpp \
+    tst_IpFilterUpdater.cpp \
     tst_IpcConnection.cpp \
     tst_IpcMessage.cpp \
     tst_IpcProtocol.cpp \
@@ -116,6 +118,8 @@ SOURCES += \
     tst_KadLookupHistory.cpp \
     tst_KadMiscUtils.cpp \
     tst_KadNodeCensus.cpp \
+    tst_KadNetworkWatch.cpp \
+    tst_ConnectionChecker.cpp \
     tst_KadNodesData.cpp \
     tst_KadPacketTracking.cpp \
     tst_KadPrefs.cpp \
@@ -181,6 +185,7 @@ SOURCES += \
     tst_UploadQueue.cpp \
     tst_UPnPManager.cpp \
     tst_AesCbc.cpp \
+    tst_SecretCompare.cpp \
     tst_HttpCacheOffer.cpp \
     tst_HttpCacheCorruptBan.cpp \
     tst_HttpCacheRelay.cpp \

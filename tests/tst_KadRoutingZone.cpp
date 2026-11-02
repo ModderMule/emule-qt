@@ -101,6 +101,7 @@ private slots:
     void randomLookupTarget_isInOwnZone();
     void counters_nodesDatLoadIsNotAContactLearned();
     void counters_verifyCountsTheTransitionOnce();
+    void smallTimer_offlineKeepsContacts();
 
 private:
     UInt128 m_localId;
@@ -907,6 +908,36 @@ void tst_KadRoutingZone::counters_verifyCountsTheTransitionOnce()
     QVERIFY(zone.verifyContact(id, ip));
     QVERIFY(zone.verifyContact(id, ip));                 // every later HELLO verifies again
     QCOMPARE(stats->kadSession().contactsVerified, uint64{1});
+}
+
+// Own network down (KadNetworkWatch): an offline small timer still probes but
+// neither ages nor removes; the same contact goes once online. Not MFC.
+void tst_KadRoutingZone::smallTimer_offlineKeepsContacts()
+{
+    RoutingZone zone(m_localId, m_tmpDir->filePath(QStringLiteral("nodes.dat")));
+    const UInt128 deadId = makeId(42);
+    const UInt128 dueId = makeId(43);
+    QVERIFY(zone.add(deadId, makePublicIP(1), 4672, 4662, KADEMLIA_VERSION, KadUDPKey(),
+                     true, false, false, false));
+    QVERIFY(zone.add(dueId, makePublicIP(2), 4672, 4662, KADEMLIA_VERSION, KadUDPKey(),
+                     true, false, false, false));
+    Contact* dead = zone.getContact(deadId);
+    Contact* due = zone.getContact(dueId);
+    QVERIFY(dead && due);
+    dead->expire();                      // type 4, removal due
+    due->setExpireTime(1);
+    due->markRecheck(1);
+    const uint8 dueType = due->getType();
+
+    zone.onSmallTimer(/*offline=*/true);
+    zone.onSmallTimer(/*offline=*/true);
+    QCOMPARE(zone.getNumContacts(), uint32{2});
+    QCOMPARE(due->getType(), dueType);
+    QVERIFY(!due->isRecheckDue(time(nullptr)));   // probed, mark consumed
+
+    zone.onSmallTimer(/*offline=*/false);
+    QCOMPARE(zone.getNumContacts(), uint32{1});
+    QVERIFY(!zone.getContact(deadId));
 }
 
 QTEST_MAIN(tst_KadRoutingZone)

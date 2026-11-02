@@ -8,6 +8,7 @@
 #include "utils/ColorUtils.h"
 
 #include <QAbstractItemView>
+#include <QApplication>
 #include <QPalette>
 #include <QPointer>
 #include <QProxyStyle>
@@ -24,6 +25,34 @@ namespace eMule {
 class TooltipDelayStyle : public QProxyStyle {
 public:
     using QProxyStyle::QProxyStyle;
+
+    /// New instance of the style the app style wraps (e.g. Fusion after the dark
+    /// fallback). A bare QProxyStyle() would wrap the desktop style instead (report #17).
+    [[nodiscard]] static QStyle* createAppBaseStyle()
+    {
+        const QStyle* app = QApplication::style();
+        if (const auto* proxy = qobject_cast<const QProxyStyle*>(app))
+            app = proxy->baseStyle();
+        return app ? QStyleFactory::create(app->name()) : nullptr;
+    }
+
+    /// Widgets carrying their own TooltipDelayStyle get the app's base style again.
+    static void rebaseWidgetStyles()
+    {
+        const QStyle* appStyle = QApplication::style();
+        for (QWidget* w : QApplication::allWidgets()) {
+            auto* own = dynamic_cast<TooltipDelayStyle*>(w->style());
+            if (!own || own == appStyle)
+                continue;
+            QStyle* base = createAppBaseStyle();
+            if (!base)
+                continue;
+            own->unpolish(w);
+            own->setBaseStyle(base);
+            own->polish(w);
+            w->update();
+        }
+    }
 
     int styleHint(StyleHint hint, const QStyleOption* option = nullptr,
                   const QWidget* widget = nullptr,

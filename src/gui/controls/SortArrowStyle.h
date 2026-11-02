@@ -20,6 +20,7 @@ public:
 
     /// Wraps the application style; @p parent owns it.
     explicit SortArrowStyle(QObject* parent)
+        : TooltipDelayStyle(createAppBaseStyle())
     {
         setParent(parent);
     }

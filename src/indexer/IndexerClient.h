@@ -7,7 +7,7 @@
 /// core/net/HttpFileDownload, for two reasons that both matter here and neither
 /// of which matters to that class's callers:
 ///
-///   - HttpFileDownload::finishReply() **discards the body on any HTTP error**,
+///   - HttpFileDownload **discards the body on any HTTP error**,
 ///     and a newznab error *is* the body. Losing it turns "Incorrect user
 ///     credentials" into "server replied: Unauthorized".
 ///   - It mints a fresh QNetworkAccessManager per call, so a paged search across

@@ -1501,7 +1501,7 @@ bool UsenetQueue::isOverQuota(const NewsServer& s) const
 bool UsenetQueue::hasActiveDownloads() const
 {
     // A paused engine asks nothing of the line, so eD2K gets all of it.
-    if (m_enginePaused)
+    if (engineHeld())
         return false;
 
     for (const auto& rt : m_items) {
@@ -1566,6 +1566,26 @@ void UsenetQueue::setEnginePaused(bool paused)
     }
 
     emit enginePausedChanged(paused);
+}
+
+void UsenetQueue::setNetworkHold(bool held)
+{
+    if (held == m_networkHold)
+        return;
+    m_networkHold = held;
+
+    if (held) {
+        logUsenet(QStringLiteral("Usenet: internet connection down — nothing new starts"));
+        for (auto& rt : m_items) {
+            if (noteWaitReason(*rt))
+                emit itemChanged(rt->item->id);
+        }
+    } else {
+        logUsenet(QStringLiteral("Usenet: internet connection back — downloads go on"));
+        restoreWaitReasons();
+        unparkQuotaStalls();
+        dispatch();
+    }
 }
 
 int UsenetQueue::activeFetches() const
@@ -1989,8 +2009,9 @@ void UsenetQueue::dispatch()
 
     // The user paused everything. Before the probes too: a check is traffic.
     // Articles already in flight still land through onSegmentFinished().
-    if (m_enginePaused) {
-        noteDispatchPark(QStringLiteral("engine paused"));
+    if (engineHeld()) {
+        noteDispatchPark(m_enginePaused ? QStringLiteral("engine paused")
+                                        : QStringLiteral("internet connection down"));
         return;
     }
 
@@ -2633,6 +2654,18 @@ void UsenetQueue::handleSegmentFailure(ItemRuntime& rt, const UsenetFetchResult&
             attempt.transportRetries += 1;
         if (!quotaNarrowed && attempt.transportRetries > kMaxTransportRetries) {
             if (!attempt.requiredFailure) {
+                // Only optional accounts failed, but a required one was never
+                // asked: it was busy while a dead block account refused over and
+                // over (no backoff at retry interval 0). Drop that account for
+                // this article and ask the required one with a fresh budget.
+                if (requiredCandidateExists(attempt.tried)
+                    && !attempt.tried.contains(result.serverKey)) {
+                    attempt.tried.append(result.serverKey);
+                    attempt.transportRetries = 0;
+                    rt.attempts.insert(key, attempt);
+                    rt.plan.insert(qBound(0, rt.planCursor, int(rt.plan.size())), key);
+                    return;
+                }
                 // Only optional accounts ever failed here, so the article is
                 // simply unavailable rather than the item being broken.
                 markSegmentMissing(rt, result.fileIndex, result.segmentIndex,
@@ -2814,7 +2847,7 @@ void UsenetQueue::checkItemCompletion(ItemRuntime& rt)
 
     // A paused engine starts no post-processing either — a repair is minutes
     // of disk the user asked to have back. onTick() returns here after resume.
-    if (m_enginePaused)
+    if (engineHeld())
         return;
 
     // Paused, failed or checking. pauseItem() does not cancel the articles
@@ -4291,6 +4324,15 @@ bool UsenetQueue::quotaBlockedCandidateExists(const QStringList& tried) const
     return false;
 }
 
+bool UsenetQueue::requiredCandidateExists(const QStringList& tried) const
+{
+    for (const NewsServer& s : m_servers) {
+        if (s.enabled && s.isValid() && !s.optional && !tried.contains(s.key()))
+            return true;
+    }
+    return false;
+}
+
 void UsenetQueue::refreshQuotaState()
 {
     m_overQuota.clear();
@@ -5370,6 +5412,8 @@ bool UsenetQueue::noteWaitReason(ItemRuntime& rt)
     QString text;
     if (m_enginePaused)
         text = enginePausedText();
+    else if (m_networkHold)
+        text = networkHoldText();
     else if (m_diskBlocked)
         text = m_diskStallReason;
     else if (!m_proxyStallReason.isEmpty())
@@ -5401,8 +5445,9 @@ void UsenetQueue::noteWaitReasons()
 void UsenetQueue::restoreWaitReasons()
 {
     const QString paused = enginePausedText();
+    const QString held = networkHoldText();
     for (auto& rt : m_items) {
-        if (rt->item->stalledReason != paused)
+        if (rt->item->stalledReason != paused && rt->item->stalledReason != held)
             continue;
 
         // Cleared first, so an item that is no longer waiting on anything — one
@@ -5417,6 +5462,11 @@ void UsenetQueue::restoreWaitReasons()
 QString UsenetQueue::enginePausedText()
 {
     return tr("all downloads paused");
+}
+
+QString UsenetQueue::networkHoldText()
+{
+    return tr("waiting for the internet connection");
 }
 
 bool UsenetQueue::stopForCheck(ItemRuntime& rt, UsenetStopReason reason, const QString& detail)

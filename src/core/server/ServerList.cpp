@@ -953,7 +953,7 @@ void ServerList::serverStats()
     auto packet = std::make_unique<Packet>(OP_GLOBSERVSTATREQ, 4);
     packet->prot = OP_EDONKEYPROT;
 
-    const uint32 challenge = 0x55AA0000u | (QRandomGenerator::global()->generate() & 0xFFFFu);
+    const uint32 challenge = 0x55AA0000u | secureRandomUInt16();
     pokeUInt32(packet->pBuffer, challenge);
 
     target->setChallenge(challenge);
@@ -1138,7 +1138,7 @@ void ServerList::processStatusResponse(const uint8* data, uint32 size, const End
         // length (0xF0FF) so the server's new-format reply is distinguishable
         // from the legacy <name><desc> answer that shares this opcode.
         const uint32 descChallenge =
-            (static_cast<uint32>(QRandomGenerator::global()->generate() & 0xFFFFu) << 16)
+            (static_cast<uint32>(secureRandomUInt16()) << 16)
             | INV_SERV_DESC_LEN;
         server->setDescReqChallenge(descChallenge);
         pokeUInt32(descPacket->pBuffer, descChallenge);
@@ -1443,7 +1443,7 @@ void ServerList::sendCryptPing(Server& target)
     const uint32 rawLen = 4 + padding;
     std::vector<uint8> raw(rawLen);
 
-    uint32 challenge = rng->generate();
+    uint32 challenge = secureRandomUInt32();
     if (challenge == 0)
         challenge = 1;                                   // must be non-zero
     pokeUInt32(raw.data(), challenge);

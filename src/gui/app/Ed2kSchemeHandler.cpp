@@ -23,7 +23,6 @@
 
 #ifdef Q_OS_WIN
 #include <QSettings>
-#include <utility>
 #endif
 
 namespace eMule {
@@ -81,18 +80,6 @@ static QString desktopFilePath()
     return QDir::homePath() + QStringLiteral("/.local/share/applications/emuleqt.desktop");
 }
 
-void registerEd2kUrlScheme()
-{
-    // the shared desktop entry: written with the other types, so it keeps them
-    QString error;
-    if (!gui::FileAssociation::applyFileTypes(
-            {theUiState.associateNzbFiles(), theUiState.associateTorrentFiles(), true}, error)) {
-        logWarning(QStringLiteral("Cannot register the ed2k:// handler: %1").arg(error));
-        return;
-    }
-    logInfo(QStringLiteral("Registered as ed2k:// handler"));
-}
-
 bool isEd2kSchemeRegistered()
 {
     QFile f(desktopFilePath());
@@ -105,22 +92,6 @@ bool isEd2kSchemeRegistered()
 
 #elif defined(Q_OS_WIN)
 
-void registerEd2kUrlScheme()
-{
-    const QString appPath = QCoreApplication::applicationFilePath().replace(QLatin1Char('/'), QLatin1Char('\\'));
-
-    for (const auto& [scheme, name] : {std::pair{QStringLiteral("ed2k"), QStringLiteral("URL:eD2K Protocol")},
-                                       std::pair{QStringLiteral("ed3k"), QStringLiteral("URL:eD3K Protocol")}}) {
-        QSettings reg(QStringLiteral("HKEY_CURRENT_USER\\Software\\Classes\\") + scheme, QSettings::NativeFormat);
-        reg.setValue(QStringLiteral("Default"), name);
-        reg.setValue(QStringLiteral("URL Protocol"), QString());
-        reg.setValue(QStringLiteral("shell/open/command/Default"),
-                     QStringLiteral("\"%1\" \"%2\"").arg(appPath, QStringLiteral("%1")));
-    }
-
-    logInfo(QStringLiteral("Registered as ed2k:// and ed3k: handler"));
-}
-
 bool isEd2kSchemeRegistered()
 {
     QSettings reg(QStringLiteral("HKEY_CURRENT_USER\\Software\\Classes\\ed2k\\shell\\open\\command"),
@@ -130,16 +101,56 @@ bool isEd2kSchemeRegistered()
 
 #else
 
-void registerEd2kUrlScheme()
-{
-    logWarning(QStringLiteral("ed2k:// URL scheme registration not supported on this platform"));
-}
-
 bool isEd2kSchemeRegistered()
 {
     return false;
 }
 
 #endif
+
+#ifndef Q_OS_MACOS
+
+// Windows, Linux: the stored switch, in the shared entry with the other types
+void registerEd2kUrlScheme()
+{
+    theUiState.setAssociateEd2kLinks(true);
+    QString error;
+    if (!gui::FileAssociation::applyFileTypes(savedFileTypes(), error)) {
+        logWarning(QStringLiteral("Cannot register the ed2k:// handler: %1").arg(error));
+        return;
+    }
+    logInfo(QStringLiteral("Registered as ed2k:// and ed3k: handler"));
+}
+
+#endif
+
+gui::FileAssociation::FileTypes savedFileTypes()
+{
+    const bool nzb = theUiState.associateNzbFiles();
+    const bool torrent = theUiState.associateTorrentFiles();
+    // not stored yet: what the older builds did. Linux claimed ed2k with any
+    // other type, Windows only after the Options button
+#ifdef Q_OS_LINUX
+    const bool legacyEd2k = nzb || torrent;
+#else
+    const bool legacyEd2k = isEd2kSchemeRegistered();
+#endif
+    return {.nzb = nzb, .torrent = torrent, .ed2k = theUiState.associateEd2kLinks().value_or(legacyEd2k)};
+}
+
+void applyDesktopIntegration()
+{
+    gui::FileAssociation::installLauncher();
+
+    // Idempotent: takes an association back from an app that took it, and drops
+    // it promptly once switched off. macOS keeps the choice itself.
+    if (!gui::FileAssociation::isRuntimeRegistration())
+        return;
+    QString error;
+    if (!gui::FileAssociation::applyFileTypes(savedFileTypes(), error)) {
+        // never fatal, never a dialog: a desktop that refuses is no reason not to start
+        logWarning(QStringLiteral("Could not update the file associations: %1").arg(error));
+    }
+}
 
 } // namespace eMule

@@ -136,6 +136,17 @@ signals:
 // FileMoveThread — async file move for completed downloads
 // ---------------------------------------------------------------------------
 
+/// Why a finished download could not be delivered. Shown in the status column, so
+/// a long name is not reported as a full disk. Values travel over IPC.
+enum class CompletionFailure : uint8 {
+    None        = 0,
+    Other       = 1,
+    NoSpace     = 2,   ///< destination volume too full for the copy
+    NameTooLong = 3,   ///< file name longer than the file system allows
+    CannotWrite = 4,   ///< destination folder missing or read-only
+    Unreadable  = 5    ///< the temp file could not be read back
+};
+
 class FileMoveThread : public QThread {
     Q_OBJECT
 public:
@@ -163,6 +174,9 @@ public:
     /// @p path, or the first free "name(N).ext" beside it when @p exists says it is taken.
     [[nodiscard]] static QString uniqueDestination(
         const QString& path, const std::function<bool(const QString&)>& exists);
+
+    /// Best guess why delivering @p bytes to @p destPath failed.
+    [[nodiscard]] static CompletionFailure classifyFailure(const QString& destPath, qint64 bytes);
 signals:
     /// The data does not match its hashes, or could not be read. One
     /// PartFile::PartVerdict per part; nothing was moved.
@@ -170,7 +184,8 @@ signals:
     void moveStarted();
     /// The recovery set is in known2; @p masterHash is its 20-byte root. Before moveFinished.
     void aichHashSetStored(const QByteArray& masterHash);
-    void moveFinished(bool success, const QString& destPath);
+    /// @p failure is a CompletionFailure, None on success.
+    void moveFinished(bool success, const QString& destPath, int failure);
 private:
     QString m_srcPath;
     QString m_destPath;
@@ -417,8 +432,9 @@ public:
         const uint64 done = static_cast<uint64>(m_completedSize);
         return size > done ? size - done : 0;
     }
-    void pauseFile(bool insufficient = false);
-    void resumeFile();
+    /// @p quiet: no per-file log line; the disk sweep logs one line for all files.
+    void pauseFile(bool insufficient = false, bool quiet = false);
+    void resumeFile(bool quiet = false);
     void stopFile(bool cancel = false);
     /// Paused, out of space or errored for an hour: let the sources go. A paused
     /// file becomes stopped; the other two keep their state.
@@ -428,6 +444,9 @@ public:
     /// Start of the idle hour stopPausedFile() measures. Tests.
     void setLastPausePurge(time_t t) { m_lastPausePurge = t; }
     [[nodiscard]] bool completionError() const { return m_completionError; }
+    /// Why the last completion failed; None while there is no completion error.
+    [[nodiscard]] CompletionFailure completionFailure() const
+    { return m_completionError ? m_completionFailure : CompletionFailure::None; }
     /// The long-running operation in progress, if any. Relabels the displayed status —
     /// "Completing (Hashing)" and so on, as MFC's getPartfileStatus does.
     [[nodiscard]] PartFileOp fileOp() const { return m_fileOp; }
@@ -799,6 +818,7 @@ private:
     bool m_stopped = false;
     bool m_insufficient = false;
     bool m_completionError = false;
+    CompletionFailure m_completionFailure = CompletionFailure::None;
     bool m_writeError = false;              ///< a write failed; Error until resumed
     PartFileStatus m_statusBeforeWriteError = PartFileStatus::Empty;
     /// Hashset proves the size wrong: not shared, never completed, no Kad source search

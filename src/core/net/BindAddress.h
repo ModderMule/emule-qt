@@ -67,9 +67,13 @@ struct Resolution {
 
 /// Sockets opened under @p a are still right under @p b. Routes do not count: a VPN
 /// adds its routes after the adapter is up, pinned sockets stay valid meanwhile.
+/// Whole interface: its global IPv6 coming and going (privacy rotation, RA renumber)
+/// does not count either — the device pin holds, the IPv6 scan follows the address (#117).
 [[nodiscard]] inline bool sameBinding(Resolution a, Resolution b)
 {
     a.noInternetRoute = b.noInternetRoute = false;
+    if (a.wholeInterface() && b.wholeInterface())
+        a.hasGlobalIPv6 = b.hasGlobalIPv6 = false;
     return a == b;
 }
 

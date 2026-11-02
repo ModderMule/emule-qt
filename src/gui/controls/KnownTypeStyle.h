@@ -8,6 +8,7 @@
 /// the ED2K side, and GetUsenetKnownTypes reuses it deliberately so this one
 /// helper serves both.
 
+#include "app/SkinColors.h"
 #include "utils/Appearance.h"
 
 #include <QColor>
@@ -31,9 +32,27 @@ namespace eMule {
 
 /// Row colour, matching MFC eMule: red for something we have or are already
 /// getting, green for something we finished or gave up on. An invalid QColor
-/// means "leave the row alone".
-[[nodiscard]] inline QColor knownTypeColor(int knownType)
+/// means "leave the row alone". @p paused: a Downloading file that is paused or stopped.
+[[nodiscard]] inline QColor knownTypeColor(int knownType, bool paused = false)
 {
+    // MFC SearchListCtrl.cpp:1488-1492 skin keys; Cancelled has none
+    const auto skinned = [](const char* key) {
+        return SkinColors::instance().color(QStringLiteral("SearchResultsLv") + QLatin1StringView(key));
+    };
+    std::optional<QColor> skin;
+    // MFC reads Fg_DownloadStopped without the list prefix; the prefixed one is ours
+    if (knownType == 2 && paused)
+        skin = SkinColors::instance().color(QStringList{QStringLiteral("Fg_DownloadStopped"),
+                                                        QStringLiteral("SearchResultsLvFg_DownloadStopped")});
+    switch (skin ? 0 : knownType) {
+    case 1: skin = skinned("Fg_Sharing"); break;
+    case 2: skin = skinned("Fg_Downloading"); break;
+    case 3: skin = skinned("Fg_Known"); break;
+    default: break;
+    }
+    if (skin)
+        return *skin;
+
     switch (knownType) {
     case 1:  return roleColor(TextRole::Error);   // Shared
     case 2:  return roleColor(TextRole::Error);   // Downloading

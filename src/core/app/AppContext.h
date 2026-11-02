@@ -118,6 +118,12 @@ struct AppContext {
     /// lists are incomplete and no P2P socket is open yet.
     bool loading = false;
 
+    /// Internet connection down (ConnectionChecker, not MFC): eD2K, BitTorrent and
+    /// Usenet hold; Kad keeps running to see it come back. Set by CoreSession.
+    bool connectionOffline = false;
+    QString connectionOfflineReason;   ///< empty while online
+    qint64 connectionOfflineSince = 0; ///< epoch s, 0 while online
+
     /// MFC CommitAndClose policy (srchybrid/OtherFunctions.cpp:313): force a saved file
     /// to disk when commitFiles is 2, or 1 while shutting down.
     [[nodiscard]] bool commitFilesNow() const;
@@ -273,6 +279,8 @@ struct AppContext {
     /// Networks went down (true) / came back (false) with the bound interface; for the
     /// parts outside the session (Usenet, IRC, state pushes).
     std::function<void(bool suspended)> onNetworkSuspended;
+    /// connectionOffline changed: the daemon holds BitTorrent and Usenet and pushes state.
+    std::function<void(bool offline)> onConnectionOfflineChanged;
     /// A port preference was saved: rebind when idle. Set by CoreSession.
     std::function<PortApplyResult()> applyListenPorts;
     /// The GUI's first start wizard closed (or its GUI went away): do the deferred

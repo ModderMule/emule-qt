@@ -483,6 +483,11 @@ public:
     void setEnginePaused(bool paused);
     [[nodiscard]] bool isEnginePaused() const { return m_enginePaused; }
 
+    /// Internet connection down (ConnectionChecker): holds the engine like a pause,
+    /// but apart from the user's pause and its pref. Idempotent.
+    void setNetworkHold(bool held);
+    [[nodiscard]] bool isNetworkHeld() const { return m_networkHold; }
+
     /// Per-account byte meters. Read for the IPC report; written only here.
     [[nodiscard]] const UsenetUsageTracker& usage() const { return m_usage; }
 
@@ -905,6 +910,9 @@ private:
     void restoreWaitReasons();
 
     [[nodiscard]] static QString enginePausedText();
+    [[nodiscard]] static QString networkHoldText();
+    /// Paused by the user or held for the network: nothing new starts.
+    [[nodiscard]] bool engineHeld() const { return m_enginePaused || m_networkHold; }
 
     /// A check fired: pause or fail @p rt per the user's setting, from any
     /// status, with @p detail as the reason. False, changing nothing, when the
@@ -1222,6 +1230,11 @@ private:
     /// a missing article or a failed item.
     [[nodiscard]] bool quotaBlockedCandidateExists(const QStringList& tried) const;
 
+    /// Whether an enabled, non-optional account not in @p tried remains. Gates
+    /// the "optional server unavailable" verdict: a dead block account must not
+    /// spend the budget of an article the required one was never asked for.
+    [[nodiscard]] bool requiredCandidateExists(const QStringList& tried) const;
+
     /// Recompute the over-allowance set. Cheap (16 accounts at most) and done
     /// once per dispatch round rather than once per segment, so every segment in
     /// a round sees the same answer.
@@ -1406,6 +1419,8 @@ private:
     /// but is a choice rather than a wait, and the one global reason the others
     /// may not overwrite. Persisted as a preference, not in any sidecar.
     bool m_enginePaused = false;
+    /// Internet down (setNetworkHold); never persisted.
+    bool m_networkHold = false;
 
     bool m_running = false;
 };

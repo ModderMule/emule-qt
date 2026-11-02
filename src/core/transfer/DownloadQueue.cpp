@@ -1478,10 +1478,15 @@ void DownloadQueue::checkDiskspace()
 {
     // Switched off: nothing may stay parked for a floor that no longer applies.
     if (!thePrefs.checkDiskspace()) {
+        int resumed = 0;
         for (auto* file : m_items) {
-            if (file && file->isInsufficient())
-                file->resumeFile();
+            if (file && file->isInsufficient()) {
+                file->resumeFile(/*quiet*/ true);
+                ++resumed;
+            }
         }
+        if (resumed > 0)
+            logInfo(QStringLiteral("Downloads resumed: disk space check off, %1 file(s)").arg(resumed));
         m_diskStallLogged = false;
         return;
     }
@@ -1505,7 +1510,11 @@ void DownloadQueue::checkDiskspace()
             it->parkedNeed += file->neededSpace();
     }
 
+    // One line per pass, not one per file: a big queue logged thousands (SomeSupport/eMule#11)
     bool anyShort = false;
+    int paused = 0;
+    int resumed = 0;
+    QString shortLine;
     for (auto* file : m_items) {
         if (!file || !diskCheckApplies(file))
             continue;
@@ -1525,15 +1534,17 @@ void DownloadQueue::checkDiskspace()
             const bool isShort = need > 0 && (floor > 0 ? free < floor : free < need);
             if (isShort) {
                 anyShort = true;
+                // Deliberated, not done: pause only files receiving data, since sourceless
+                // ones use no space but each pause still rewrites their .part.met (eMule#11)
                 // Idempotent: pauseFile() saves the .met, and a sweep that re-paused
                 // would rewrite every one of them on each pass.
                 if (!file->isPaused() && !file->isStopped()) {
-                    file->pauseFile(/*insufficient*/ true);
-                    if (!m_diskStallLogged)
-                        logWarning(QStringLiteral("Downloads paused: %1 has %2 free, %3 required")
-                                       .arg(file->tmpPath(), formatByteSize(qint64(free)),
-                                            formatByteSize(qint64(floor > 0 ? floor : need))));
-                    m_diskStallLogged = true;
+                    file->pauseFile(/*insufficient*/ true, /*quiet*/ true);
+                    ++paused;
+                    if (shortLine.isEmpty())
+                        shortLine = QStringLiteral("%1 has %2 free, %3 required")
+                                        .arg(file->tmpPath(), formatByteSize(qint64(free)),
+                                             formatByteSize(qint64(floor > 0 ? floor : need)));
                 }
             }
             continue;
@@ -1542,12 +1553,22 @@ void DownloadQueue::checkDiskspace()
         // Back only with room to work in: resumed at the floor itself, the next
         // block written would park it again.
         const uint64 wanted = floor > 0 ? floor + std::min(vol.parkedNeed, kDiskResumeHeadroom) : need;
-        if (free >= wanted)
-            file->resumeFile();   // only files this paused: a user's pause has m_paused set
-        else
+        if (free >= wanted) {
+            file->resumeFile(/*quiet*/ true);   // only files this paused: a user's pause has m_paused set
+            ++resumed;
+        } else {
             anyShort = true;
+        }
     }
 
+    if (paused > 0) {
+        if (!m_diskStallLogged)
+            logWarning(QStringLiteral("Downloads paused for disk space: %1 file(s), %2")
+                           .arg(paused).arg(shortLine));
+        m_diskStallLogged = true;
+    }
+    if (resumed > 0)
+        logInfo(QStringLiteral("Downloads resumed: %1 file(s) have disk space again").arg(resumed));
     if (!anyShort)
         m_diskStallLogged = false;
 }

@@ -169,6 +169,15 @@ public:
         scheduleSave();
     }
 
+    /// Claim ed2k: and ed3k: links (Windows, Linux). Unset in configs from before
+    /// it was stored: savedFileTypes() (Ed2kSchemeHandler) derives it then.
+    [[nodiscard]] std::optional<bool> associateEd2kLinks() const { return m_associateEd2kLinks; }
+    void setAssociateEd2kLinks(bool on)
+    {
+        m_associateEd2kLinks = on;
+        scheduleSave();
+    }
+
     /// GUI language code, "" = system default. GUI-only: a core with its own
     /// config dir (Docker, remote) keeps preferences.yml out of reach (#75).
     /// Unset until first chosen here; then @p fallback (preferences.yml) applies.
@@ -417,6 +426,7 @@ private:
     int64_t m_lastVersionCheck = 0;
     bool m_associateNzbFiles = true;
     bool m_associateTorrentFiles = true;
+    std::optional<bool> m_associateEd2kLinks;
     bool m_miniMuleAutoClose = false;
     bool m_firstStartWizardDone = false;
     std::optional<QString> m_language;   // unset = take preferences.yml's

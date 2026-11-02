@@ -4,7 +4,10 @@
 
 #include "utils/Smileys.h"
 
+#include "app/SkinIcons.h"
+
 #include <QStringView>
+#include <QUrl>
 
 #include <iterator>
 
@@ -122,8 +125,12 @@ QString expand(const QString& html)
             out += c;
             continue;
         }
-        out += QStringLiteral("<img src=\"qrc:/smileys/%1.ico\" width=\"16\" height=\"16\">")
-                   .arg(QLatin1StringView(kAliases[c.unicode() - kPlaceholderBase].icon));
+        // a skin profile's [Icons] SMILEY_* overrides the built-in art
+        const auto name = QLatin1StringView(kAliases[c.unicode() - kPlaceholderBase].icon);
+        const QString skinned = SkinIcons::instance().file(QStringLiteral(":/smileys/%1.ico").arg(name));
+        const QString src = skinned.isEmpty() ? QStringLiteral("qrc:/smileys/%1.ico").arg(name)
+                                              : QUrl::fromLocalFile(skinned).toString().toHtmlEscaped();
+        out += QStringLiteral("<img src=\"%1\" width=\"16\" height=\"16\">").arg(src);
     }
     return out;
 }

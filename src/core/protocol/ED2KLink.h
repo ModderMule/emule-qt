@@ -108,7 +108,13 @@ using ED2KLink = std::variant<ED2KFileLink, ED2KServerLink,
                                ED2KSearchLink, ED2KHttpCacheLink>;
 
 /// Parse an ed2k:// or magnet: URI. Returns std::nullopt on failure.
+/// Accepts the percent-encoded spelling too, see normalizeEd2kLink().
 [[nodiscard]] std::optional<ED2KLink> parseED2KLink(const QString& uri);
+
+/// `ed2k://%7Cfile%7C…%7C/` → `ed2k://|file|…|/`. Browsers dispatch this spelling
+/// (an encoded '|' parses as a URL, a raw one does not); MFC ProcessED2KLink decodes it too.
+/// Any other text is returned unchanged.
+[[nodiscard]] QString normalizeEd2kLink(const QString& text);
 
 /// The source hints this client advertises in its own links: the configured
 /// eD2K hostname (a DNS name or an IPv6 literal) plus our public IPv6 when the

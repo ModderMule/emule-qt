@@ -3524,7 +3524,8 @@ void UpDownClient::sendSecIdentStatePacket()
 
     // MFC always regenerates the challenge: dwRandom = rand() + 1
     // We must do the same to avoid stale challenges from previous connections.
-    m_credits->cryptRndChallengeFor = getRandomUInt32() | 1; // ensure non-zero
+    // Unpredictable: a seeded PRNG challenge could be precomputed by the peer
+    m_credits->cryptRndChallengeFor = QRandomGenerator::system()->generate() | 1; // ensure non-zero
     data.writeUInt32(m_credits->cryptRndChallengeFor);
 
     auto packet = std::make_unique<Packet>(data, OP_EMULEPROT, OP_SECIDENTSTATE);
@@ -3781,8 +3782,20 @@ void UpDownClient::processCaptchaRequest(SafeMemFile& data)
     QByteArray imgData(static_cast<qsizetype>(imgSize), Qt::Uninitialized);
     data.read(imgData.data(), static_cast<uint32>(imgSize));
 
-    QImage captchaImg;
-    if (!captchaImg.loadFromData(imgData, "BMP")
+    // The BMP header says how much memory a decode takes; check dims before decoding.
+    QBuffer buffer(&imgData);
+    buffer.open(QIODevice::ReadOnly);
+    QImageReader reader(&buffer, "BMP");
+    const QSize dims = reader.size();
+    if (!dims.isValid()
+        || dims.height() <= 10 || dims.height() >= 50
+        || dims.width() <= 10 || dims.width() >= 150) {
+        logDebug(QStringLiteral("Captcha from %1: refused image (%2x%3)")
+                     .arg(statusName()).arg(dims.width()).arg(dims.height()));
+        return;
+    }
+    QImage captchaImg = reader.read();
+    if (captchaImg.isNull()
         || captchaImg.height() <= 10 || captchaImg.height() >= 50
         || captchaImg.width() <= 10 || captchaImg.width() >= 150) {
         logDebug(QStringLiteral("Captcha from %1: not a usable image").arg(statusName()));
@@ -4023,7 +4036,7 @@ void UpDownClient::processPreviewAnswer(const uint8* data, uint32 size)
     std::vector<QImage> previewImages;
     for (uint8 i = 0; i < std::min(frameCount, kMaxFrames); ++i) {
         const uint32 imgSize = file.readUInt32();
-        if (imgSize == 0 || imgSize > size) {
+        if (imgSize == 0 || imgSize > static_cast<uint64>(file.length() - file.position())) {
             logDebug(QStringLiteral("processPreviewAnswer: frame %1 size exceeds packet").arg(i));
             break;
         }

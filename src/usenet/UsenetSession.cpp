@@ -72,6 +72,16 @@ void UsenetSession::stop()
     logUsenet(QStringLiteral("Usenet: engine stopped"));
 }
 
+void UsenetSession::setNetworkHold(bool held)
+{
+    if (!m_queue)
+        return;
+    m_queue->setNetworkHold(held);
+    // dead connections from before the drop: open fresh ones when back
+    if (held && m_pool)
+        m_pool->closeIdleConnections();
+}
+
 void UsenetSession::onNetworkRouteChanged()
 {
     if (m_pool)

@@ -23,7 +23,7 @@ class tst_DownloadStatusText : public QObject {
 private slots:
     void readyAndEmptySplitOnActiveSources();
     void pausedReadsStoppedWhenStopped();
-    void errorReadsInsufficientOnACompletionError();
+    void errorSaysWhyACompletionFailed();
     void hashingCoversWaitingForHash();
     void completingNamesTheOperation();
     void rankGroupsTheWayMfcDoes();
@@ -91,17 +91,25 @@ void tst_DownloadStatusText::pausedReadsStoppedWhenStopped()
     QCOMPARE(rankOf(stopped), 6);
 }
 
-void tst_DownloadStatusText::errorReadsInsufficientOnACompletionError()
+void tst_DownloadStatusText::errorSaysWhyACompletionFailed()
 {
     DownloadRow err = rowWith(QStringLiteral("error"));
     QCOMPARE(textOf(err), QStringLiteral("Error"));
 
-    // A completion that ran out of room is not a generic error, and saying so is the
-    // difference between "something broke" and "free some disk space".
+    // A completion that ran out of room says so: "free some disk space"
     DownloadRow noSpace = rowWith(QStringLiteral("error"));
-    noSpace.completionError = true;
+    noSpace.completionError = 2;
     QCOMPARE(textOf(noSpace), QStringLiteral("Insufficient disk space"));
     QCOMPARE(rankOf(noSpace), 8);
+
+    // ...and only then: a long name is no disk space problem (MFC said so for any
+    // failure, SomeSupport/eMule#11)
+    DownloadRow longName = rowWith(QStringLiteral("error"));
+    longName.completionError = 3;
+    QCOMPARE(textOf(longName), QStringLiteral("Error (file name too long)"));
+    DownloadRow other = rowWith(QStringLiteral("error"));
+    other.completionError = 1;
+    QCOMPARE(textOf(other), QStringLiteral("Error (could not complete)"));
 
     QCOMPARE(textOf(rowWith(QStringLiteral("insufficient"))),
              QStringLiteral("Insufficient disk space"));

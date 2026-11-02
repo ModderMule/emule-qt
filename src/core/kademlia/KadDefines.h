@@ -65,6 +65,19 @@ inline constexpr uint32_t kBigTimerPerZone              = 3600; // per-zone repe
 inline constexpr uint32_t kSmallTimerInterval           = 60;   // per-zone small timer (1 minute)
 
 // ---------------------------------------------------------------------------
+// Own network down (not MFC; ed3k Protocol.md §10.2). Offline once nothing
+// arrived for kOfflineSilence while requests to kOfflineSites /24s went
+// unanswered for kOfflineReplyWait. Back online, after an IP change or a tick
+// kSleepGap late: every contact rechecked within kCatchUpSpread.
+// ---------------------------------------------------------------------------
+inline constexpr uint32_t kOfflineSilence               = 120;
+inline constexpr uint32_t kOfflineSites                 = 4;
+inline constexpr uint32_t kOfflineReplyWait             = 10;
+inline constexpr uint32_t kSleepGap                     = 120;
+inline constexpr uint32_t kCatchUpSpread                = 300;
+inline constexpr uint32_t kCatchUpSmallTimer            = 25;   // 12 ticks per spread >= K contacts
+
+// ---------------------------------------------------------------------------
 // External port consensus
 // ---------------------------------------------------------------------------
 inline constexpr uint32_t kExternalPortAskIPs = 3;

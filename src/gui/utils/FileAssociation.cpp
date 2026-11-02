@@ -33,9 +33,19 @@ constexpr auto kDesktopFileName = "emuleqt.desktop";
 constexpr auto kMimeFileName = "emuleqt-nzb.xml";
 constexpr auto kTorrentMimeFileName = "emuleqt-torrent.xml";
 
+/// What the desktop should start. The Linux tarball runs foo.bin through a foo
+/// script that sets LD_LIBRARY_PATH; the bare .bin finds no libraries (#111).
 QString exePath()
 {
-    return QDir::toNativeSeparators(QCoreApplication::applicationFilePath());
+    const QString self = QCoreApplication::applicationFilePath();
+#ifdef Q_OS_LINUX
+    if (self.endsWith(QLatin1String(".bin")) && qEnvironmentVariableIsSet("EMULEQT_BUNDLE_LIBS")) {
+        const QFileInfo script(self.chopped(4));
+        if (script.isFile() && script.isExecutable())
+            return script.absoluteFilePath();
+    }
+#endif
+    return QDir::toNativeSeparators(self);
 }
 
 /// Quote an Exec= path the way the desktop-entry spec wants.
@@ -71,9 +81,8 @@ QStringList xdgMimeTypes(FileTypes types)
         out << QLatin1String(kNzbMimeType);
     if (types.torrent)
         out << QLatin1String(kTorrentMimeType) << QStringLiteral("x-scheme-handler/magnet");
-    // The ed2k scheme, and ed3k with it, comes along with any type. The macOS
-    // bundle has claimed ed2k since day one.
-    if (types.any())
+    // ed3k goes with ed2k; each switch on its own (#111)
+    if (types.ed2k)
         out << QStringLiteral("x-scheme-handler/ed2k") << QStringLiteral("x-scheme-handler/ed3k");
     return out;
 }
@@ -200,8 +209,13 @@ void installLauncher()
         return;
 
     const DesktopFile launcher = launcherDesktopFile(exePath(), dataHome);
-    if (QFile::exists(launcher.path))
-        return;
+    if (QFile existing(launcher.path); existing.open(QIODevice::ReadOnly)) {
+        // one that claims types belongs to applyFileTypes(); a bare one is
+        // rewritten only when stale (Exec= of an old .bin start, #111)
+        const QByteArray contents = existing.readAll();
+        if (contents.contains("MimeType=") || contents == launcher.contents.toUtf8())
+            return;
+    }
 
     QDir().mkpath(QFileInfo(launcher.path).absolutePath());
     QFile file(launcher.path);
@@ -253,6 +267,10 @@ QList<RegistryValue> registryValues(const QString& exePath, FileTypes types)
     if (types.torrent) {
         fileType(QStringLiteral(".torrent"), QLatin1String(kTorrentProgId), QStringLiteral("BitTorrent File"));
         urlScheme(QStringLiteral("magnet"), QStringLiteral("URL:Magnet Link"));
+    }
+    if (types.ed2k) {
+        urlScheme(QStringLiteral("ed2k"), QStringLiteral("URL:eD2K Protocol"));
+        urlScheme(QStringLiteral("ed3k"), QStringLiteral("URL:eD3K Protocol"));
     }
     return out;
 }
@@ -497,6 +515,10 @@ bool applyFileTypes(FileTypes types, QString& error)
     if (!types.torrent) {
         dropFileType(classes, QStringLiteral(".torrent"), QLatin1String(kTorrentProgId));
         dropScheme(classes, QStringLiteral("magnet"));
+    }
+    if (!types.ed2k) {
+        dropScheme(classes, QStringLiteral("ed2k"));
+        dropScheme(classes, QStringLiteral("ed3k"));
     }
     for (const auto& value : registryValues(exePath(), types)) {
         // Pick the leaf first, and keep the join in a QString: with

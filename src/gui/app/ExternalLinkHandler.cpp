@@ -16,6 +16,7 @@
 #include "prefs/Preferences.h"
 #include "utils/Ed2kLinkImporter.h"
 #include "utils/Log.h"
+#include "utils/StatusBarNotifier.h"
 #include "utils/TorrentLinks.h"
 
 #include <QDesktopServices>
@@ -283,6 +284,14 @@ void ExternalLinkHandler::openNow(const QString& link)
         Ed2kLinkImporter::Source::Manual,
         Ed2kLinkImporter::Prompt::Ask,
         [window](const Ed2kLinkImporter::Result& result) {
+            // A clicked link that does not parse: say so, never drop it silently (#116).
+            // Already redacted by the importer
+            for (const QString& bad : result.invalid)
+                logError(tr("Invalid eD2K link, not added: %1").arg(bad));
+            if (!result.invalid.isEmpty()) {
+                StatusBarNotifier::post(tr("%n eD2K link(s) could not be parsed — see the log",
+                                           nullptr, static_cast<int>(result.invalid.size())));
+            }
             if (window && result.added > 0)
                 window->switchToTab(MainWindow::TabTransfers);
         },

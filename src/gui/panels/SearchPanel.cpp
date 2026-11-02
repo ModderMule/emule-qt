@@ -34,6 +34,7 @@
 
 #include "IpcMessage.h"
 #include "app/Ed3kLiveWatch.h"
+#include "app/SkinIcons.h"
 
 #include <set>
 #include <QMouseEvent>
@@ -45,6 +46,7 @@
 #include <QDateTime>
 #include <QCompleter>
 #include <QFile>
+#include <QSaveFile>
 #include <QGridLayout>
 #include <QHBoxLayout>
 #include <QIcon>
@@ -182,6 +184,30 @@ void SearchPanel::setIpcClient(IpcClient* client)
     refreshKnownTypes();
 }
 
+void SearchPanel::setDownloadModel(DownloadListModel* model)
+{
+    if (m_downloadModel)
+        disconnect(m_downloadModel, nullptr, this, nullptr);
+    m_downloadModel = model;
+    for (const SearchTab& tab : m_tabs) {
+        if (tab.model)
+            tab.model->setPausedLookup(pausedLookup());
+    }
+    if (!model)
+        return;
+    // a pause or resume recolours rows (MFC Fg_DownloadStopped); colours are taken at paint
+    const auto repaint = [this] { m_resultView->viewport()->update(); };
+    connect(model, &QAbstractItemModel::dataChanged, this, repaint);
+    connect(model, &QAbstractItemModel::modelReset, this, repaint);
+    connect(model, &QAbstractItemModel::rowsInserted, this, repaint);
+    connect(model, &QAbstractItemModel::rowsRemoved, this, repaint);
+}
+
+void SearchPanel::applyDisplayOptions()
+{
+    m_resultView->applyExtColumns(thePrefs.showExtControls());
+}
+
 void SearchPanel::setEd3kMethodVisible(bool visible)
 {
     // ed3k and its live channel search (batch 14: SearchType::Ed3kLive) come and go together
@@ -191,7 +217,7 @@ void SearchPanel::setEd3kMethodVisible(bool visible)
     for (const auto& [kEd3k, text] : entries) {
         const int idx = m_methodCombo->findData(kEd3k);
         if (visible && idx < 0) {
-            m_methodCombo->addItem(QIcon(QStringLiteral(":/icons/Ed3k.ico")), text, kEd3k);
+            m_methodCombo->addItem(skinIcon(QStringLiteral(":/icons/Ed3k.ico")), text, kEd3k);
             // daemon prefs land after the restore in the ctor
             if (theUiState.searchLastMethod(0) == kEd3k)
                 m_methodCombo->setCurrentIndex(m_methodCombo->count() - 1);
@@ -391,34 +417,34 @@ QWidget* SearchPanel::createSearchBar()
     typeRow->setSpacing(4);
     typeRow->addWidget(new QLabel(tr("Type:"), container));
     m_typeCombo = new QComboBox(container);
-    m_typeCombo->addItem(QIcon(QStringLiteral(":/icons/FileTypeAny.ico")),        tr("Any"),        QString{});
-    m_typeCombo->addItem(QIcon(QStringLiteral(":/icons/FileTypeAudio.ico")),      tr("Audio"),      QStringLiteral("Audio"));
-    m_typeCombo->addItem(QIcon(QStringLiteral(":/icons/FileTypeVideo.ico")),      tr("Video"),      QStringLiteral("Video"));
-    m_typeCombo->addItem(QIcon(QStringLiteral(":/icons/FileTypePicture.ico")),    tr("Image"),      QStringLiteral("Image"));
-    m_typeCombo->addItem(QIcon(QStringLiteral(":/icons/FileTypeDocument.ico")),   tr("Document"),   QStringLiteral("Doc"));
-    m_typeCombo->addItem(QIcon(QStringLiteral(":/icons/FileTypeProgram.ico")),    tr("Program"),    QStringLiteral("Pro"));
-    m_typeCombo->addItem(QIcon(QStringLiteral(":/icons/FileTypeArchive.ico")),    tr("Archive"),    QStringLiteral("Arc"));
-    m_typeCombo->addItem(QIcon(QStringLiteral(":/icons/FileTypeCDImage.ico")),    tr("CD-Image"),   QStringLiteral("Iso"));
-    m_typeCombo->addItem(QIcon(QStringLiteral(":/icons/emuleCollectionFileType.ico")), tr("Collection"), QStringLiteral("EmuleCollection"));
+    m_typeCombo->addItem(skinIcon(QStringLiteral(":/icons/FileTypeAny.ico")),        tr("Any"),        QString{});
+    m_typeCombo->addItem(skinIcon(QStringLiteral(":/icons/FileTypeAudio.ico")),      tr("Audio"),      QStringLiteral("Audio"));
+    m_typeCombo->addItem(skinIcon(QStringLiteral(":/icons/FileTypeVideo.ico")),      tr("Video"),      QStringLiteral("Video"));
+    m_typeCombo->addItem(skinIcon(QStringLiteral(":/icons/FileTypePicture.ico")),    tr("Image"),      QStringLiteral("Image"));
+    m_typeCombo->addItem(skinIcon(QStringLiteral(":/icons/FileTypeDocument.ico")),   tr("Document"),   QStringLiteral("Doc"));
+    m_typeCombo->addItem(skinIcon(QStringLiteral(":/icons/FileTypeProgram.ico")),    tr("Program"),    QStringLiteral("Pro"));
+    m_typeCombo->addItem(skinIcon(QStringLiteral(":/icons/FileTypeArchive.ico")),    tr("Archive"),    QStringLiteral("Arc"));
+    m_typeCombo->addItem(skinIcon(QStringLiteral(":/icons/FileTypeCDImage.ico")),    tr("CD-Image"),   QStringLiteral("Iso"));
+    m_typeCombo->addItem(skinIcon(QStringLiteral(":/icons/emuleCollectionFileType.ico")), tr("Collection"), QStringLiteral("EmuleCollection"));
     typeRow->addWidget(m_typeCombo);
     typeRow->addWidget(new QLabel(tr("Method:"), container));
     m_methodCombo = new QComboBox(container);
-    m_methodCombo->addItem(QIcon(QStringLiteral(":/icons/KadServer.ico")),  tr("Automatic"),    0);  // SearchType::Automatic
-    m_methodCombo->addItem(QIcon(QStringLiteral(":/icons/SearchKad.ico")),  tr("Kad Network"),  3);  // SearchType::Kademlia
-    m_methodCombo->addItem(QIcon(QStringLiteral(":/icons/Server.ico")),     tr("Ed2k Server"),  1);  // SearchType::Ed2kServer
-    m_methodCombo->addItem(QIcon(QStringLiteral(":/icons/Global.ico")),     tr("Ed2k Global"),  2);  // SearchType::Ed2kGlobal
+    m_methodCombo->addItem(skinIcon(QStringLiteral(":/icons/KadServer.ico")),  tr("Automatic"),    0);  // SearchType::Automatic
+    m_methodCombo->addItem(skinIcon(QStringLiteral(":/icons/SearchKad.ico")),  tr("Kad Network"),  3);  // SearchType::Kademlia
+    m_methodCombo->addItem(skinIcon(QStringLiteral(":/icons/Server.ico")),     tr("Ed2k Server"),  1);  // SearchType::Ed2kServer
+    m_methodCombo->addItem(skinIcon(QStringLiteral(":/icons/Global.ico")),     tr("Ed2k Global"),  2);  // SearchType::Ed2kGlobal
     // Not in "Automatic": an indexer search spends a paid quota and hands the
     // query to a third party, so it has to be chosen deliberately. See the note
     // on resolveAutomaticSearchType().
-    m_methodCombo->addItem(QIcon(QStringLiteral(":/icons/UsenetSearch.ico")),
+    m_methodCombo->addItem(skinIcon(QStringLiteral(":/icons/UsenetSearch.ico")),
                            tr("Usenet (Indexer)"), 5);  // SearchType::UsenetIndexer
     // Asked of an eD2K server's catalogue (eNode Meta API): the connected server
     // if it has one, else the best known one. Not in "Automatic" either.
-    m_methodCombo->addItem(QIcon(QStringLiteral(":/icons/Usenet.ico")),
+    m_methodCombo->addItem(skinIcon(QStringLiteral(":/icons/Usenet.ico")),
                            tr("Usenet (Server)"), 6);   // SearchType::MetaUsenet
-    m_methodCombo->addItem(QIcon(QStringLiteral(":/icons/Torrent.ico")),
+    m_methodCombo->addItem(skinIcon(QStringLiteral(":/icons/Torrent.ico")),
                            tr("Torrent (Server)"), 7);  // SearchType::MetaTorrent
-    m_methodCombo->addItem(QIcon(QStringLiteral(":/icons/Web.ico")),
+    m_methodCombo->addItem(skinIcon(QStringLiteral(":/icons/Web.ico")),
                            tr("Web (Server)"), 8);      // SearchType::MetaWeb
     // the ed3k node's keyword search (Protocol.md §10.3); no MFC original. Only while enabled
     setEd3kMethodVisible(thePrefs.ed3kEnabled());
@@ -445,7 +471,7 @@ QWidget* SearchPanel::createSearchBar()
     networkRow->setSpacing(8);
     const auto addNetworkCheck = [&](const QString& text, const QString& icon, bool on) {
         auto* check = new QCheckBox(text, container);
-        check->setIcon(QIcon(icon));
+        check->setIcon(skinIcon(icon));
         check->setChecked(on);
         check->setToolTip(tr("Show results the server found on this network"));
         networkRow->addWidget(check);
@@ -1376,7 +1402,7 @@ void SearchPanel::onResultContextMenu(const QPoint& pos)
     QAction* defaultAction = downloadAction->isEnabled() ? downloadAction : nullptr;
     // ed3k channel rows (SearchType::Ed3kLive, batch 14): watched, the default
     if (tab && tab->method == static_cast<int>(SearchType::Ed3kLive)) {
-        auto* watchAction = m_contextMenu->addAction(QIcon(QStringLiteral(":/icons/Ed3k.ico")), tr("Watch"));
+        auto* watchAction = m_contextMenu->addAction(skinIcon(QStringLiteral(":/icons/Ed3k.ico")), tr("Watch"));
         watchAction->setEnabled(hasSelection);
         connect(watchAction, &QAction::triggered, this,
                 [this] { watchEd3kLiveResults(m_resultView->selectionModel()->selectedRows()); });
@@ -1395,7 +1421,7 @@ void SearchPanel::onResultContextMenu(const QPoint& pos)
 
     // eNode Usenet rows: the .nzb itself
     if (anyUsenet) {
-        auto* nzbAction = m_contextMenu->addAction(QIcon(QStringLiteral(":/icons/Usenet.ico")),
+        auto* nzbAction = m_contextMenu->addAction(skinIcon(QStringLiteral(":/icons/Usenet.ico")),
                                                    tr("Download NZB File..."));
         connect(nzbAction, &QAction::triggered, this, [this] { saveMetaFiles(3); });
     }
@@ -1405,7 +1431,7 @@ void SearchPanel::onResultContextMenu(const QPoint& pos)
     // and this saves the .torrent for another client; off or not built, saving is the default.
     if (anyTorrent) {
         auto* torrentAction = m_contextMenu->addAction(
-            QIcon(QStringLiteral(":/icons/Torrent.ico")),
+            skinIcon(QStringLiteral(":/icons/Torrent.ico")),
             torrentsOn ? tr("Save Torrent File...") : tr("Download Torrent"));
         connect(torrentAction, &QAction::triggered, this, [this] { saveMetaFiles(1); });
         if (onlyOne && !torrentsOn)
@@ -1414,7 +1440,7 @@ void SearchPanel::onResultContextMenu(const QPoint& pos)
     // a magnet-only torrent has no .torrent: its magnet is what there is. With
     // BitTorrent on, Download hands it to the Torrents tab; else copying is the default.
     if (anyMagnetOnly) {
-        auto* copyAction = m_contextMenu->addAction(QIcon(QStringLiteral(":/icons/Torrent.ico")),
+        auto* copyAction = m_contextMenu->addAction(skinIcon(QStringLiteral(":/icons/Torrent.ico")),
                                                     tr("Copy Magnet Link"));
         connect(copyAction, &QAction::triggered, this, [this] {
             QList<MetaResultActions::Row> rows;
@@ -1429,7 +1455,7 @@ void SearchPanel::onResultContextMenu(const QPoint& pos)
     // eNode web rows: the links the page offered. With hoster downloads on,
     // Download starts them in the Hoster tab; off or not built, showing is the default.
     if (anyWeb) {
-        auto* linksAction = m_contextMenu->addAction(QIcon(QStringLiteral(":/icons/Web.ico")),
+        auto* linksAction = m_contextMenu->addAction(skinIcon(QStringLiteral(":/icons/Web.ico")),
                                                      tr("Show Links..."));
         connect(linksAction, &QAction::triggered, this, [this] {
             auto* tab = currentTab();
@@ -1446,7 +1472,7 @@ void SearchPanel::onResultContextMenu(const QPoint& pos)
     }
     // eNode link containers: the .dlc/.ccf/.rsdf as the page served it
     if (anyContainer) {
-        auto* containerAction = m_contextMenu->addAction(QIcon(QStringLiteral(":/icons/Container.ico")),
+        auto* containerAction = m_contextMenu->addAction(skinIcon(QStringLiteral(":/icons/Container.ico")),
                                                          tr("Download Container..."));
         connect(containerAction, &QAction::triggered, this, [this] { saveMetaFiles(6); });
         if (onlyOne)
@@ -1796,6 +1822,7 @@ void SearchPanel::requestSearchResults(uint32_t searchID, bool whole)
             row.inDirectory        = m.value(QStringLiteral("inDirectory")).toBool();
             row.fileType           = m.value(QStringLiteral("fileType")).toString();
             row.knownType          = static_cast<int>(m.value(QStringLiteral("knownType")).toInteger());
+            row.localFolder        = m.value(QStringLiteral("localFolder")).toString();
             row.seenBefore         = m.value(QStringLiteral("seenBefore")).toBool();
             row.seenNames          = static_cast<int>(m.value(QStringLiteral("seenNames")).toInteger());
             row.firstSeen          = m.value(QStringLiteral("firstSeen")).toInteger();
@@ -2564,8 +2591,10 @@ void SearchPanel::saveSearches()
     root[QStringLiteral("version")] = 1;
     root[QStringLiteral("searches")] = searchesArr;
 
-    QFile file(path);
-    if (file.open(QIODevice::WriteOnly) && file.write(QJsonDocument(root).toJson(QJsonDocument::Compact)) >= 0)
+    // QSaveFile: a crash mid-write keeps the previous file, not a truncated one
+    QSaveFile file(path);
+    if (file.open(QIODevice::WriteOnly)
+        && file.write(QJsonDocument(root).toJson(QJsonDocument::Compact)) >= 0 && file.commit())
         logDebug(QStringLiteral("Stored %1 searches to %2").arg(searchesArr.size()).arg(path));
     else
         logWarning(QStringLiteral("Could not store searches to %1: %2").arg(path, file.errorString()));
@@ -2853,6 +2882,12 @@ void SearchPanel::refreshKnownTypes()
             for (qsizetype i = 0; i < n; ++i)
                 typesByHash.insert(sent.at(i), static_cast<int>(types.at(i).toInteger()));
             model->updateKnownTypes(typesByHash);
+            // Folders in the same order, one per hash sent
+            const auto folders = resp.fieldArray(2);
+            QHash<QString, QString> foldersByHash;
+            for (qsizetype i = 0; i < std::min(folders.size(), sent.size()); ++i)
+                foldersByHash.insert(sent.at(i), folders.at(i).toString());
+            model->updateLocalFolders(foldersByHash);
         });
     }
 
@@ -2930,6 +2965,7 @@ void SearchPanel::setupResultHeader(bool forIndexer)
         m_resultView->setColumnHidden(IndexerResultsModel::ColSeeders, true);
         m_resultView->setColumnHidden(IndexerResultsModel::ColPeers, true);
         m_resultView->setLockedColumns({IndexerResultsModel::ColSeeders, IndexerResultsModel::ColPeers});
+        m_resultView->setExtColumns({}, thePrefs.showExtControls());   // eD2K's indexes mean other columns here
         return;
     }
 
@@ -2951,9 +2987,11 @@ void SearchPanel::setupResultHeader(bool forIndexer)
                                       SearchResultsModel::ColComplete});
     m_resultView->setDefaultSort(SearchResultsModel::ColAvailability, Qt::DescendingOrder);
     m_resultView->bindColumns(kSearchHeaderKey,
-        {300, 80, 70, 100, 70, 70, 100, 100, 100, 60, 60, 60, 60, 110, 230, 150, 240},
+        {300, 80, 70, 100, 70, 70, 100, 100, 100, 60, 60, 60, 60, 110, 230, 150, 240, 240},
         {SearchResultsModel::ColFileID, SearchResultsModel::ColFolder,
          SearchResultsModel::ColAichHash});
+    // Not MFC: where we keep the file, advanced mode only (#114)
+    m_resultView->setExtColumns({SearchResultsModel::ColLocalFolder}, thePrefs.showExtControls());
 }
 
 SearchRequest SearchPanel::requestFromUi() const
@@ -3138,6 +3176,8 @@ void SearchPanel::copySelectedEd2kLinks()
 
 int SearchPanel::addResultTab(SearchTab tab)
 {
+    if (tab.model)
+        tab.model->setPausedLookup(pausedLookup());
     tab.proxy = new SearchResultsProxy(this);
     if (tab.isIndexer())
         tab.proxy->setSourceModel(tab.indexerModel);
@@ -3163,21 +3203,21 @@ QIcon SearchPanel::tabIcon(const SearchTab& tab)
     if (!thePrefs.useOriginalIcons())
         return {};
     if (tab.isIndexer())
-        return QIcon(QStringLiteral(":/icons/UsenetSearch.ico"));
+        return skinIcon(QStringLiteral(":/icons/UsenetSearch.ico"));
     // MFC SearchResultsWnd.cpp:1367 — sriClient ("StatsClients" = User.ico)
     if (tab.clientSharedFiles)
-        return QIcon(QStringLiteral(":/icons/User.ico"));
+        return skinIcon(QStringLiteral(":/icons/User.ico"));
 
     switch (tab.method) {
-    case 1:  return QIcon(QStringLiteral(":/icons/Server.ico"));      // Ed2k Server
-    case 2:  return QIcon(QStringLiteral(":/icons/Global.ico"));      // Ed2k Global
-    case 3:  return QIcon(QStringLiteral(":/icons/SearchKad.ico"));   // Kademlia
-    case 6:  return QIcon(QStringLiteral(":/icons/Usenet.ico"));      // Usenet (Server)
-    case 7:  return QIcon(QStringLiteral(":/icons/Torrent.ico"));     // Torrent (Server)
-    case 8:  return QIcon(QStringLiteral(":/icons/Web.ico"));         // Web (Server)
-    case 9:  return QIcon(QStringLiteral(":/icons/Ed3k.ico"));        // ed3k
-    case 10: return QIcon(QStringLiteral(":/icons/Ed3k.ico"));        // ed3k Channel (live)
-    default: return QIcon(QStringLiteral(":/icons/KadServer.ico"));   // Automatic
+    case 1:  return skinIcon(QStringLiteral(":/icons/Server.ico"));      // Ed2k Server
+    case 2:  return skinIcon(QStringLiteral(":/icons/Global.ico"));      // Ed2k Global
+    case 3:  return skinIcon(QStringLiteral(":/icons/SearchKad.ico"));   // Kademlia
+    case 6:  return skinIcon(QStringLiteral(":/icons/Usenet.ico"));      // Usenet (Server)
+    case 7:  return skinIcon(QStringLiteral(":/icons/Torrent.ico"));     // Torrent (Server)
+    case 8:  return skinIcon(QStringLiteral(":/icons/Web.ico"));         // Web (Server)
+    case 9:  return skinIcon(QStringLiteral(":/icons/Ed3k.ico"));        // ed3k
+    case 10: return skinIcon(QStringLiteral(":/icons/Ed3k.ico"));        // ed3k Channel (live)
+    default: return skinIcon(QStringLiteral(":/icons/KadServer.ico"));   // Automatic
     }
 }
 
@@ -3275,7 +3315,7 @@ void SearchPanel::addEd3kFilterMenu(SearchTab& tab)
     const bool ed3kTab = isEd3kSearchType(static_cast<SearchType>(tab.method)) || !rows.empty();
     if (!ed3kTab || !m_ipc)
         return;
-    QMenu* menu = m_contextMenu->addMenu(QIcon(QStringLiteral(":/icons/Ed3k.ico")), tr("ed3k Filter"));
+    QMenu* menu = m_contextMenu->addMenu(skinIcon(QStringLiteral(":/icons/Ed3k.ico")), tr("ed3k Filter"));
     const quint32 searchID = tab.searchID;
     // each sends one request per row; the rows come again once the last one is answered
     const auto send = [this, searchID](std::vector<IpcMessage> msgs, const QString& what) {
@@ -3386,6 +3426,17 @@ void SearchPanel::watchEd3kLiveResults(const QModelIndexList& rows)
         if (r && r->isEd3k() && r->ed3kRoot.size() == 64)
             Ed3kLiveWatch::watchFound(window(), m_ipc, r->ed3kRoot, quint64(r->fileSize));
     }
+}
+
+std::function<bool(const QString&)> SearchPanel::pausedLookup() const
+{
+    if (!m_downloadModel)
+        return {};
+    // MFC PS_PAUSED covers stopped files too
+    return [model = QPointer<DownloadListModel>(m_downloadModel)](const QString& hash) {
+        const DownloadRow* dl = model ? model->findByHash(hash) : nullptr;
+        return dl && (dl->isPaused || dl->isStopped);
+    };
 }
 
 } // namespace eMule

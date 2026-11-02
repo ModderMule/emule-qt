@@ -252,10 +252,6 @@ private:
     /// the java pref the last lookup was for
     QString m_javaLookedFor{QStringLiteral("\x01")};
 #endif
-    /// The hoster prefs into the join, the resolver and the Java lookup
-    void applyHosterConfig();
-    /// Stops the ed3k node and its joins (restart: applyEd3kConfig()).
-    void stopEd3kNode();
     /// The ed3k chat options from the eD2K "Messages and Comments" prefs
     void applyEd3kChatOptions();
 #ifdef EMULE_HAVE_BITTORRENT
@@ -263,6 +259,11 @@ private:
     std::unique_ptr<ed3k::Ed3kTorrentJoin> m_torrentJoin;
 #endif
 #endif
+    // Outside the ed3k guard: callers sit under EMULE_HAVE_HOSTER_JD too; no-ops without ed3k
+    /// The hoster prefs into the join, the resolver and the Java lookup
+    void applyHosterConfig();
+    /// Stops the ed3k node and its joins (restart: applyEd3kConfig()).
+    void stopEd3kNode();
     /// eD2K/Usenet/BitTorrent share of the global limits; after both sessions
     std::unique_ptr<BandwidthCoordinator> m_bandwidth;
     std::unique_ptr<indexer::IndexerSearchList> m_indexerSearches;

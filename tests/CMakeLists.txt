@@ -58,6 +58,12 @@ function(emule_add_test TEST_NAME)
         set(ARG_SOURCES "${CMAKE_CURRENT_SOURCE_DIR}/${TEST_NAME}.cpp")
     endif()
 
+    # GUI sources build their icons with skinIcon()
+    if(ARG_SOURCES MATCHES "/src/gui/" AND NOT ARG_SOURCES MATCHES "SkinIcons\\.cpp")
+        list(APPEND ARG_SOURCES "${CMAKE_SOURCE_DIR}/src/gui/app/SkinIcons.cpp")
+        list(APPEND ARG_LIBRARIES Qt6::Widgets)
+    endif()
+
     qt_add_executable(${TEST_NAME} ${ARG_SOURCES})
 
     target_link_libraries(${TEST_NAME} PRIVATE
@@ -102,6 +108,7 @@ emule_add_test(tst_CorroborationTally FOLDER "Utils")
 
 # Module 29c: Cryptography
 emule_add_test(tst_AesCbc           FOLDER "Crypto")
+emule_add_test(tst_SecretCompare    FOLDER "Crypto")
 emule_add_test(tst_MD4              FOLDER "Crypto")
 emule_add_test(tst_MD5              FOLDER "Crypto")
 emule_add_test(tst_SHA              FOLDER "Crypto")
@@ -114,6 +121,7 @@ emule_add_test(tst_FileIdentifier   FOLDER "Crypto")
 emule_add_test(tst_Address            FOLDER "Net")
 emule_add_test(tst_LocalIPv6         FOLDER "Net")
 emule_add_test(tst_IPv6SourcePin     FOLDER "Net")
+emule_add_test(tst_ConnectionChecker FOLDER "Net")
 emule_add_test(tst_BindInterface     FOLDER "Net")
 emule_add_test(tst_Packet            FOLDER "Net")
 emule_add_test(tst_EncryptedDatagram FOLDER "Net")
@@ -220,6 +228,7 @@ emule_add_test(tst_KadMiscUtils      FOLDER "Kademlia")
 emule_add_test(tst_KadEntry          FOLDER "Kademlia")
 emule_add_test(tst_KadLookupHistory  FOLDER "Kademlia")
 emule_add_test(tst_KadPacketTracking FOLDER "Kademlia")
+emule_add_test(tst_KadNetworkWatch   FOLDER "Kademlia")
 emule_add_test(tst_KadSearch         FOLDER "Kademlia")
 emule_add_test(tst_KadSearchExpr     FOLDER "Kademlia")
 emule_add_test(tst_KadSearchManager  FOLDER "Kademlia")
@@ -306,6 +315,7 @@ emule_add_test(tst_GlobalSearchScheduler FOLDER "Search")
 emule_add_test(tst_IPFilter      FOLDER "IPFilter")
 emule_add_test(tst_IPFilterMatch FOLDER "IPFilter")
 emule_add_test(tst_IP2Country   FOLDER "IPFilter")
+emule_add_test(tst_IpFilterUpdater FOLDER "IPFilter")
 
 # Module 17: Chat & IRC
 emule_add_test(tst_IrcProtocol   FOLDER "Chat")
@@ -658,6 +668,19 @@ emule_add_test(tst_IndexerFeed FOLDER "Indexer" LIBRARIES eMule::Indexer eMule::
 # Source-level GUI checks — no widgets, no linking of the GUI target
 emule_add_test(tst_MenuIcons FOLDER "GUI")
 
+# Toolbar strip + skin profile parsing (MFC *.eMuleToolbar.kad02 / *.eMuleSkin.ini)
+emule_add_test(tst_ToolbarSkin FOLDER "GUI"
+    SOURCES tst_ToolbarSkin.cpp
+            "${CMAKE_SOURCE_DIR}/src/gui/app/SkinEngine.cpp"
+            "${CMAKE_SOURCE_DIR}/src/gui/app/ToolbarSkin.cpp"
+            "${CMAKE_SOURCE_DIR}/src/gui/app/SkinColors.cpp"
+            # knownTypeColor() falls back to the theme's role colours
+            "${CMAKE_SOURCE_DIR}/src/gui/utils/Appearance.cpp"
+            "${CMAKE_SOURCE_DIR}/src/gui/utils/ClientIcons.cpp"
+            "${CMAKE_SOURCE_DIR}/src/gui/utils/Smileys.cpp")
+target_include_directories(tst_ToolbarSkin PRIVATE "${CMAKE_SOURCE_DIR}/src/gui")
+target_link_libraries(tst_ToolbarSkin PRIVATE eMule::Core Qt6::Widgets)
+
 # Data file integration tests — verify real server.met / nodes.dat / .part loading
 emule_add_test(tst_ServerMetData  FOLDER "DataFiles")
 emule_add_test(tst_KadNodesData   FOLDER "DataFiles")
@@ -699,6 +722,7 @@ target_link_libraries(tst_ViewNavigation PRIVATE Qt6::Widgets)
 # applyListing() with hand-built CBOR, so it needs the real dialog but no daemon.
 emule_add_test(tst_UsenetArchiveEntryDialog FOLDER "Gui"
     SOURCES tst_UsenetArchiveEntryDialog.cpp
+            "${CMAKE_SOURCE_DIR}/src/gui/app/SkinColors.cpp"
             "${CMAKE_SOURCE_DIR}/src/gui/dialogs/UsenetArchiveEntryDialog.cpp"
             "${CMAKE_SOURCE_DIR}/src/gui/dialogs/RememberedSizeDialog.cpp"
             "${CMAKE_SOURCE_DIR}/src/gui/utils/FileTypeIcons.cpp"
@@ -762,6 +786,7 @@ target_link_libraries(tst_UrlPrefField PRIVATE
 # applyDetails() with hand-built CBOR, so no daemon and no panel.
 emule_add_test(tst_UsenetDetailsDialog FOLDER "Gui"
     SOURCES tst_UsenetDetailsDialog.cpp
+            "${CMAKE_SOURCE_DIR}/src/gui/app/SkinColors.cpp"
             "${CMAKE_SOURCE_DIR}/src/gui/utils/Appearance.cpp"
             "${CMAKE_SOURCE_DIR}/src/gui/dialogs/UsenetDetailsDialog.cpp"
             "${CMAKE_SOURCE_DIR}/src/gui/dialogs/RememberedSizeDialog.cpp"
@@ -819,6 +844,7 @@ if(EMULE_BITTORRENT)
     # off hand-built GetTorrentDetails maps. No daemon: the IPC client stays null.
     emule_add_test(tst_TorrentDetailsGui FOLDER "Gui"
         SOURCES tst_TorrentDetailsGui.cpp
+                "${CMAKE_SOURCE_DIR}/src/gui/app/SkinColors.cpp"
                 "${CMAKE_SOURCE_DIR}/src/gui/controls/TorrentFilterProxy.cpp"
                 "${CMAKE_SOURCE_DIR}/src/gui/controls/TorrentListModel.cpp"
                 "${CMAKE_SOURCE_DIR}/src/gui/utils/FileTypeIcons.cpp"
@@ -877,6 +903,7 @@ target_link_libraries(tst_CategoryFilterProxy PRIVATE
 # no daemon, no panel.
 emule_add_test(tst_ListSorting FOLDER "Gui"
     SOURCES tst_ListSorting.cpp
+            "${CMAKE_SOURCE_DIR}/src/gui/app/SkinColors.cpp"
             "${CMAKE_SOURCE_DIR}/src/gui/utils/Appearance.cpp"
             "${CMAKE_SOURCE_DIR}/src/gui/controls/UsenetQueueModel.cpp"
             "${CMAKE_SOURCE_DIR}/src/gui/controls/ServerListModel.cpp"
@@ -909,6 +936,7 @@ target_link_libraries(tst_ListSorting PRIVATE
 # plumbing, and saved header layouts surviving an appended column.
 emule_add_test(tst_CountryFlags FOLDER "Gui"
     SOURCES tst_CountryFlags.cpp
+            "${CMAKE_SOURCE_DIR}/src/gui/app/SkinColors.cpp"
             "${CMAKE_SOURCE_DIR}/src/gui/utils/Appearance.cpp"
             "${CMAKE_SOURCE_DIR}/src/gui/controls/ClientListModel.cpp"
             "${CMAKE_SOURCE_DIR}/src/gui/controls/ServerListModel.cpp"
@@ -948,6 +976,7 @@ target_link_libraries(tst_ConnectionPresets PRIVATE eMule::Core)
 # List header column menu (MFC CMuleListCtrl): hide/show, default-hidden, persistence.
 emule_add_test(tst_ListHeaderMenu FOLDER "Gui"
     SOURCES tst_ListHeaderMenu.cpp
+            "${CMAKE_SOURCE_DIR}/src/gui/app/SkinColors.cpp"
             "${CMAKE_SOURCE_DIR}/src/gui/utils/Appearance.cpp"
             "${CMAKE_SOURCE_DIR}/src/gui/app/UiState.cpp")
 target_include_directories(tst_ListHeaderMenu PRIVATE
@@ -960,6 +989,7 @@ target_link_libraries(tst_ListHeaderMenu PRIVATE
 # A torrent/Usenet search result's Details, off hand-built inspection maps.
 emule_add_test(tst_MetaResultDetailDialog FOLDER "Gui"
     SOURCES tst_MetaResultDetailDialog.cpp
+            "${CMAKE_SOURCE_DIR}/src/gui/app/SkinColors.cpp"
             "${CMAKE_SOURCE_DIR}/src/gui/dialogs/MetaResultDetailDialog.cpp"
             "${CMAKE_SOURCE_DIR}/src/gui/controls/TorrentFileTree.cpp"
             "${CMAKE_SOURCE_DIR}/src/gui/controls/UsenetFileCheckList.cpp"
@@ -987,6 +1017,7 @@ target_link_libraries(tst_MetaResultDetailDialog PRIVATE
 # and a web row's links dialog.
 emule_add_test(tst_MetaSearchGui FOLDER "Gui"
     SOURCES tst_MetaSearchGui.cpp
+            "${CMAKE_SOURCE_DIR}/src/gui/app/SkinColors.cpp"
             "${CMAKE_SOURCE_DIR}/src/gui/utils/Appearance.cpp"
             "${CMAKE_SOURCE_DIR}/src/gui/dialogs/WebLinksDialog.cpp"
             "${CMAKE_SOURCE_DIR}/src/gui/dialogs/RememberedSizeDialog.cpp"
@@ -1066,6 +1097,7 @@ target_link_libraries(tst_CategoryDialog PRIVATE
 # makes it the place to check what the offline load path puts on the pages.
 emule_add_test(tst_OptionsDialogSizing FOLDER "Gui"
     SOURCES tst_OptionsDialogSizing.cpp
+            "${CMAKE_SOURCE_DIR}/src/gui/app/SkinColors.cpp"
             "${CMAKE_SOURCE_DIR}/src/gui/utils/Appearance.cpp"
             "${CMAKE_SOURCE_DIR}/src/gui/dialogs/OptionsDialog.cpp"
             "${CMAKE_SOURCE_DIR}/src/gui/dialogs/RememberedSizeDialog.cpp"
@@ -1084,6 +1116,7 @@ emule_add_test(tst_OptionsDialogSizing FOLDER "Gui"
             "${CMAKE_SOURCE_DIR}/src/gui/controls/StatsGraph.cpp"
             "${CMAKE_SOURCE_DIR}/src/gui/utils/DialogSizing.cpp"
             "${CMAKE_SOURCE_DIR}/src/gui/utils/FileAssociation.cpp"
+            "${CMAKE_SOURCE_DIR}/src/gui/app/CoreAttachment.cpp"
             "${CMAKE_SOURCE_DIR}/src/gui/utils/PanelPoller.cpp"
             "${CMAKE_SOURCE_DIR}/src/gui/utils/StatusBarNotifier.cpp"
             "${CMAKE_SOURCE_DIR}/src/gui/utils/WebServices.cpp"
@@ -1105,6 +1138,7 @@ endif()
 # The Statistics window's Usenet branch, fed a GetUsenetStats reply in wire shape.
 emule_add_test(tst_StatisticsPanel FOLDER "Gui"
     SOURCES tst_StatisticsPanel.cpp
+            "${CMAKE_SOURCE_DIR}/src/gui/app/SkinColors.cpp"
             "${CMAKE_SOURCE_DIR}/src/gui/utils/Appearance.cpp"
             "${CMAKE_SOURCE_DIR}/src/gui/panels/StatisticsPanel.cpp"
             "${CMAKE_SOURCE_DIR}/src/gui/utils/CountryFlags.cpp"
@@ -1256,6 +1290,7 @@ target_link_libraries(tst_FileMarks PRIVATE Qt6::Widgets)
 # stub pch, same trick as tst_FileMarks above.
 emule_add_test(tst_CommentsPanel FOLDER "Gui"
     SOURCES tst_CommentsPanel.cpp
+            "${CMAKE_SOURCE_DIR}/src/gui/app/SkinColors.cpp"
             "${CMAKE_SOURCE_DIR}/src/gui/dialogs/CommentsPanel.cpp"
             "${CMAKE_SOURCE_DIR}/src/gui/dialogs/CommentEditPanel.cpp"
             "${CMAKE_SOURCE_DIR}/src/gui/app/UiState.cpp"
@@ -1273,6 +1308,7 @@ target_link_libraries(tst_CommentsPanel PRIVATE Qt6::Widgets)
 # File Details on an 800x600 screen, and the ED2K Link page's HTML format (issue #36).
 emule_add_test(tst_FileDetailDialog FOLDER "Gui"
     SOURCES tst_FileDetailDialog.cpp
+            "${CMAKE_SOURCE_DIR}/src/gui/app/SkinColors.cpp"
             "${CMAKE_SOURCE_DIR}/src/gui/dialogs/FileDetailDialog.cpp"
             "${CMAKE_SOURCE_DIR}/src/gui/dialogs/DetailDialog.cpp"
             "${CMAKE_SOURCE_DIR}/src/gui/dialogs/RememberedSizeDialog.cpp"
@@ -1305,6 +1341,7 @@ target_link_libraries(tst_FileDetailDialog PRIVATE
 # Every dialog on an 800x600 screen: fits, and its minimum is what it needs (issue #36).
 emule_add_test(tst_SmallScreenDialogs FOLDER "Gui"
     SOURCES tst_SmallScreenDialogs.cpp
+            "${CMAKE_SOURCE_DIR}/src/gui/app/SkinColors.cpp"
             "${CMAKE_SOURCE_DIR}/src/gui/dialogs/AddFriendDialog.cpp"
             "${CMAKE_SOURCE_DIR}/src/gui/dialogs/AddSourceDialog.cpp"
             "${CMAKE_SOURCE_DIR}/src/gui/dialogs/ArchivePreviewPanel.cpp"
@@ -1326,6 +1363,8 @@ emule_add_test(tst_SmallScreenDialogs FOLDER "Gui"
             "${CMAKE_SOURCE_DIR}/src/gui/controls/StatsGraph.cpp"
             "${CMAKE_SOURCE_DIR}/src/gui/panels/StatisticsPanel.cpp"
             "${CMAKE_SOURCE_DIR}/src/gui/utils/FileAssociation.cpp"
+            "${CMAKE_SOURCE_DIR}/src/gui/app/CoreAttachment.cpp"
+            "${CMAKE_SOURCE_DIR}/src/gui/controls/FitTextTabBar.cpp"
             "${CMAKE_SOURCE_DIR}/src/gui/utils/PanelPoller.cpp"
             "${CMAKE_SOURCE_DIR}/src/gui/utils/WebServices.cpp"
             "${CMAKE_SOURCE_DIR}/src/gui/app/AutoStart.cpp"
@@ -1385,8 +1424,10 @@ endif()
 # Which tab a log line lands in (the ed3k tabs, their fallback to Log/Verbose).
 emule_add_test(tst_LogWidget FOLDER "Gui"
     SOURCES tst_LogWidget.cpp
+            "${CMAKE_SOURCE_DIR}/src/gui/app/SkinColors.cpp"
             "${CMAKE_SOURCE_DIR}/src/gui/controls/LogWidget.cpp"
             "${CMAKE_SOURCE_DIR}/src/gui/controls/LogTextView.cpp"
+            "${CMAKE_SOURCE_DIR}/src/gui/controls/FitTextTabBar.cpp"
             "${CMAKE_SOURCE_DIR}/src/gui/utils/Appearance.cpp")
 target_include_directories(tst_LogWidget PRIVATE
     "${CMAKE_SOURCE_DIR}/src/gui"

@@ -100,7 +100,13 @@ public:
     /// Process big timer for this leaf zone (non-recursive).
     /// Returns true if a randomLookup was triggered (zone qualifies).
     [[nodiscard]] bool onBigTimer();
-    void onSmallTimer();
+    /// @p offline: own network down (KadNetworkWatch). Contacts are still
+    /// HELLOed as probes but neither aged nor removed.
+    void onSmallTimer(bool offline = false);
+    /// Undo the aging of this leaf's contacts since @p since (went offline).
+    void voidChecksSince(time_t since);
+    /// Mark every contact of this leaf for a recheck at @p now (catch-up).
+    void markRecheckAll(time_t now);
 
     [[nodiscard]] time_t nextBigTimer() const { return m_nextBigTimer; }
     void setNextBigTimer(time_t t) { m_nextBigTimer = t; }

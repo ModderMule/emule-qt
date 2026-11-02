@@ -5,6 +5,7 @@
 
 #include "utils/FileTypeIcons.h"
 
+#include "app/SkinIcons.h"
 #include "utils/OtherFunctions.h"
 
 #include <QHash>
@@ -38,7 +39,7 @@ QIcon fileTypeIcon(const QString& type)
     else
         path = QStringLiteral(":/icons/FileTypeAny.ico");
 
-    QIcon icon(path);
+    QIcon icon = skinIcon(path);
     cache.insert(type, icon);
     return icon;
 }

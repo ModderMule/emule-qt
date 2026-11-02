@@ -46,6 +46,7 @@ private slots:
     void udpSocket_isPinned();
     void ipv6Scan_followsTheInterface();
     void sameBinding_ignoresRoutes();
+    void sameBinding_ignoresIPv6OnWholeInterface();
 
 private:
     QNetworkInterface m_loopback;
@@ -373,6 +374,22 @@ void tst_BindInterface::sameBinding_ignoresRoutes()
     QVERIFY(a != b);
     QVERIFY(BindAddress::sameBinding(a, b));
     b.index = 12;   // adapter recreated under a new index
+    QVERIFY(!BindAddress::sameBinding(a, b));
+}
+
+// Linux privacy addresses expire: whole-interface pin keeps its sockets (#117)
+void tst_BindInterface::sameBinding_ignoresIPv6OnWholeInterface()
+{
+    BindAddress::Resolution a = BindAddress::resolve(QStringLiteral("utun4"), sample());
+    QVERIFY(a.wholeInterface());
+    BindAddress::Resolution b = a;
+    b.hasGlobalIPv6 = !a.hasGlobalIPv6;
+    QVERIFY(BindAddress::sameBinding(a, b));
+
+    // pinned to an IPv6 literal: unchanged behaviour
+    a.literal = QHostAddress(QStringLiteral("2001:db8::1"));
+    b.literal = a.literal;
+    QVERIFY(!a.wholeInterface());
     QVERIFY(!BindAddress::sameBinding(a, b));
 }
 

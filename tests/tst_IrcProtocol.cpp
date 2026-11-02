@@ -29,6 +29,10 @@ private slots:
     void emuleProto_friendReplyRoundTrip();
     void emuleProto_friendReplyRejectsGarbage();
     void emuleProto_sendLinkKeepsTheLinkWhole();
+    void linkGate_allowsAfterHandshake();
+    void linkGate_refusesSpoofedHash();
+    void linkGate_refusesSameNickFromOtherHost();
+    void linkGate_forgetsOnClearAndNickChange();
     void parse_empty();
     void parse_pingNoPrefix();
     void parse_prefixServerOnly();
@@ -367,6 +371,63 @@ void tst_IrcProtocol::emuleProto_sendLinkKeepsTheLinkWhole()
 
     QVERIFY(!IrcEmuleProto::parseSendLink(QStringLiteral("SENDLINK|") + hash + QStringLiteral("|")).has_value());
     QVERIFY(!IrcEmuleProto::parseSendLink(QStringLiteral("SENDLINK")).has_value());
+}
+
+void tst_IrcProtocol::linkGate_allowsAfterHandshake()
+{
+    eMule::IrcLinkGate gate;
+    const QString hash = QStringLiteral("0123456789abcdef0123456789abcdef");
+    QVERIFY(!gate.allows(QStringLiteral("Alice"), QStringLiteral("a@h"), hash));   // no handshake yet
+    gate.noteVerifiedFriend(QStringLiteral("Alice"), QStringLiteral("a@h"), hash);
+    QVERIFY(gate.allows(QStringLiteral("Alice"), QStringLiteral("a@h"), hash));
+    QVERIFY(gate.allows(QStringLiteral("aLICE"), QStringLiteral("A@H"), hash.toUpper()));
+    QVERIFY(!gate.allows(QStringLiteral("Alice"), QString(), hash));
+}
+
+void tst_IrcProtocol::linkGate_refusesSpoofedHash()
+{
+    eMule::IrcLinkGate gate;
+    gate.noteVerifiedFriend(QStringLiteral("Alice"), QStringLiteral("a@h"),
+                            QStringLiteral("0123456789abcdef0123456789abcdef"));
+    // A friend's hash claimed by another nick, or another hash by the verified nick
+    QVERIFY(!gate.allows(QStringLiteral("Mallory"), QStringLiteral("m@evil"),
+                         QStringLiteral("0123456789abcdef0123456789abcdef")));
+    QVERIFY(!gate.allows(QStringLiteral("Alice"), QStringLiteral("a@h"),
+                         QStringLiteral("ffffffffffffffffffffffffffffffff")));
+}
+
+void tst_IrcProtocol::linkGate_refusesSameNickFromOtherHost()
+{
+    eMule::IrcLinkGate gate;
+    const QString hash = QStringLiteral("0123456789abcdef0123456789abcdef");
+    gate.noteVerifiedFriend(QStringLiteral("Alice"), QStringLiteral("a@h"), hash);
+    QVERIFY(!gate.allows(QStringLiteral("Alice"), QStringLiteral("a@other"), hash));
+    QVERIFY(!gate.allows(QStringLiteral("Alice"), QStringLiteral("b@h"), hash));
+}
+
+void tst_IrcProtocol::linkGate_forgetsOnClearAndNickChange()
+{
+    eMule::IrcLinkGate gate;
+    const QString hash = QStringLiteral("0123456789abcdef0123456789abcdef");
+    gate.noteVerifiedFriend(QStringLiteral("Alice"), QStringLiteral("a@h"), hash);
+
+    // NICK change: the binding follows, the old nick no longer counts
+    gate.renameNick(QStringLiteral("Alice"), QStringLiteral("Alice_"));
+    QVERIFY(!gate.allows(QStringLiteral("Alice"), QStringLiteral("a@h"), hash));
+    QVERIFY(gate.allows(QStringLiteral("Alice_"), QStringLiteral("a@h"), hash));
+
+    // Someone renaming onto a verified nick does not inherit it
+    gate.renameNick(QStringLiteral("Mallory"), QStringLiteral("Alice_"));
+    QVERIFY(!gate.allows(QStringLiteral("Alice_"), QStringLiteral("a@h"), hash));
+
+    gate.noteVerifiedFriend(QStringLiteral("Bob"), QStringLiteral("b@h"), hash);
+    gate.forgetNick(QStringLiteral("BOB"));
+    QVERIFY(!gate.allows(QStringLiteral("Bob"), QStringLiteral("b@h"), hash));
+
+    gate.noteVerifiedFriend(QStringLiteral("Carol"), QStringLiteral("c@h"), hash);
+    gate.clear();
+    QVERIFY(gate.isEmpty());
+    QVERIFY(!gate.allows(QStringLiteral("Carol"), QStringLiteral("c@h"), hash));
 }
 
 // MFC IrcMain.cpp:525-565

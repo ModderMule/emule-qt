@@ -252,6 +252,8 @@ private:
     void refreshScheduleTable();
     void populateScheduleDetails(int index);
     void applyScheduleDetails();
+    void storeScheduleActions();
+    void scheduleActionsEdited();
     void showScheduleActionsMenu(const QPoint& pos);
     /// Ask for the value of a non-category action (MFC "Configure Action").
     bool promptScheduleValue(int action, const QString& label, QString& value);
@@ -391,6 +393,9 @@ private:
     QSpinBox*  m_maxConnectionsSpin = nullptr;
     QCheckBox* m_autoConnectCheck = nullptr;
     QCheckBox* m_reconnectCheck = nullptr;
+    QCheckBox* m_connCheckerCheck = nullptr;   ///< ext controls: hold networks while offline
+    QLineEdit* m_connCheckerUrlEdit = nullptr;
+    QLabel*    m_connCheckerHint = nullptr;
     QCheckBox* m_overheadCheck = nullptr;
     QCheckBox* m_kadEnabledCheck = nullptr;
     QCheckBox* m_ed2kEnabledCheck = nullptr;

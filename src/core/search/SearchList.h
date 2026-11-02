@@ -58,6 +58,7 @@ struct SearchListEntry {
     /// The words searched for: in every name the search returns (see countNameGroups).
     QSet<QString> keywords;
     std::list<std::unique_ptr<SearchFile>> files;
+    bool capLogged = false;         ///< result cap hit was logged
 
     SearchListEntry() = default;
     SearchListEntry(SearchListEntry&&) = default;
@@ -126,11 +127,17 @@ public:
 
     // --- Result processing ---
 
+    /// What one OP_SEARCHRESULT held.
+    struct TcpSearchAnswer {
+        bool moreResults = false;   ///< trailing "more results" flag set
+        uint32 results = 0;         ///< records read
+        uint32 newFiles = 0;        ///< of those, files the search did not have yet
+    };
+
     /// Process TCP search results from a server.
-    /// Returns true if "more results available" flag was set.
     /// @param server The answering server's address and TCP port (either family).
-    bool processSearchAnswer(const uint8* packet, uint32 size,
-                             bool optUTF8, const Endpoint& server);
+    TcpSearchAnswer processSearchAnswer(const uint8* packet, uint32 size,
+                                        bool optUTF8, const Endpoint& server);
 
     /// Process a peer's shared file list (MFC ProcessSearchAnswer with sender).
     /// Results go to the sender's own tab, created on first use; returns its ID.
@@ -149,6 +156,12 @@ public:
     /// Takes ownership of the SearchFile pointer.
     void addToList(SearchFile* file, bool clientResponse = false,
                    uint32 fromUDPServerIP = 0);
+
+    /// Distinct files (top-level rows) one search keeps; past it new files are
+    /// dropped, known ones still merge sources.
+    static constexpr uint32 kMaxResultsPerSearch = 5000;
+    /// Tests only: override the cap (0 = kMaxResultsPerSearch).
+    void setMaxResultsPerSearchForTest(uint32 cap) { m_maxResultsPerSearch = cap; }
 
     /// Add a row a server's Meta API returned for @p searchID. The server applied
     /// the type filter itself (a release row stays when one of its files matches),
@@ -330,6 +343,7 @@ private:
     // --- Data ---
     std::vector<SearchListEntry> m_fileLists;
     uint64 m_changeSeq = 0;
+    uint32 m_maxResultsPerSearch = kMaxResultsPerSearch;
     /// Rows of restored tabs, searchID 0, oldest first. In no list: never pushed.
     std::list<std::unique_ptr<SearchFile>> m_restoredFiles;
 

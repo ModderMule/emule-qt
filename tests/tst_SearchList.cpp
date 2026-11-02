@@ -102,6 +102,7 @@ private slots:
     void addToList_relayedCountsAreNotSummed_data();
     void addToList_relayedCountsAreNotSummed();
     void addToList_fileTypeFilter();
+    void addToList_capsDistinctFilesPerSearch();
     void removeResults_clearsSearch();
     void processSearchAnswer_tcp();
     void lateServerAnswer_afterTheSearchEndedIsDropped();
@@ -123,6 +124,7 @@ private slots:
     void queue_metaSearchWaitsForServerInfoAndIsCancelled();
     void queue_metaSearchFetchesTheNextPageOnlyWhenAsked();
     void queue_serverSearchOffersMoreUntilTheNextSearch();
+    void queue_serverCapWithoutFlagTriesMore();
     void startSearch_metaWithoutAServerIsRefused();
     void addMetaSearchResult_skipsTheTypeFilterAndAClosedTab();
 
@@ -687,6 +689,50 @@ void tst_SearchList::addToList_relayedCountsAreNotSummed()
     QCOMPARE(parent->servers().size(), size_t{2});
 }
 
+void tst_SearchList::addToList_capsDistinctFilesPerSearch()
+{
+    // Flood guard: past the cap new hashes are dropped, known ones still merge
+    QCOMPARE(SearchList::kMaxResultsPerSearch, uint32{5000});
+
+    SearchList list;
+    list.setMaxResultsPerSearchForTest(3);
+    SearchParams params;
+    const uint32 id = list.newSearch({}, params);
+    const uint32 other = list.newSearch({}, params);
+
+    const auto answer = [&](uint32 searchID, uint8 hashByte, uint32 sources) {
+        uint8 hash[16];
+        std::memset(hash, hashByte, 16);
+        const QByteArray packet = buildSingleResultPacket(hash, QStringLiteral("f.avi"), 10000, sources);
+        SafeMemFile data(packet);
+        auto* file = new SearchFile(data, true, 0xC0A80001, 4661);
+        file->setSearchID(searchID);
+        list.addToList(file);
+    };
+
+    QSignalSpy addedSpy(&list, &SearchList::resultAdded);
+    for (uint8 i = 1; i <= 5; ++i)
+        answer(id, i, 2);
+    QCOMPARE(list.resultCount(id), uint32{3});
+    QCOMPARE(addedSpy.count(), 3);
+    uint8 dropped[16];
+    std::memset(dropped, 4, 16);
+    QVERIFY(list.searchFileByHash(dropped, id) == nullptr);
+
+    // Known file merges sources despite the cap
+    answer(id, 1, 5);
+    uint8 first[16];
+    std::memset(first, 1, 16);
+    SearchFile* parent = list.searchFileByHash(first, id);
+    QVERIFY(parent != nullptr);
+    QCOMPARE(parent->sourceCount(), uint32{7});
+    QCOMPARE(list.resultCount(id), uint32{3});
+
+    // The cap is per search
+    answer(other, 4, 1);
+    QCOMPARE(list.resultCount(other), uint32{1});
+}
+
 void tst_SearchList::addToList_fileTypeFilter()
 {
     SearchList list;
@@ -777,7 +823,7 @@ void tst_SearchList::processSearchAnswer_truncatedKeepsWhatWasRead()
     try {
         more = list.processSearchAnswer(reinterpret_cast<const uint8*>(packet.constData()),
                                         static_cast<uint32>(packet.size()), true,
-                                        Endpoint::fromHostOrder(0x0A000001, 4661));
+                                        Endpoint::fromHostOrder(0x0A000001, 4661)).moreResults;
     } catch (...) {
         QFAIL("a malformed answer must not throw");
     }
@@ -800,7 +846,7 @@ void tst_SearchList::processSearchAnswer_tcp()
     bool moreResults = list.processSearchAnswer(
         reinterpret_cast<const uint8*>(packet.constData()),
         static_cast<uint32>(packet.size()),
-        true, Endpoint(Address::fromString(QStringLiteral("192.168.0.1")), 4661));
+        true, Endpoint(Address::fromString(QStringLiteral("192.168.0.1")), 4661)).moreResults;
 
     QVERIFY(!moreResults); // no trailing byte
     QCOMPARE(addedSpy.count(), 2);
@@ -1503,6 +1549,50 @@ void tst_SearchList::queue_serverSearchOffersMoreUntilTheNextSearch()
     queue.onServerAnswer(false);   // the page ends with the TCP answer, no sweep
     QCOMPARE(stateOf(queue, global), SearchRunState::Finished);
     QVERIFY(!queue.status(global)->hasMore);
+}
+
+// Port change (#92): a server that stops at its cap without the flag gets one page,
+// then further ones only while a page brings a full cap of new files.
+void tst_SearchList::queue_serverCapWithoutFlagTriesMore()
+{
+    FakeNet net;
+    net.server = true;
+    SearchQueue queue(net.backend());
+    constexpr uint32 cap = SearchQueue::kServerResultCap;
+
+    // below the cap: nothing held back
+    const uint32 small = queue.enqueue(query(QStringLiteral("a one"))).status.searchID;
+    queue.onServerAnswer(false, cap - 1, cap - 1);
+    QVERIFY(!queue.status(small)->hasMore);
+
+    // exactly the cap: one page is tried
+    const uint32 id = queue.enqueue(query(QStringLiteral("b two"))).status.searchID;
+    queue.onServerAnswer(false, cap, cap);
+    QVERIFY(queue.status(id)->hasMore);
+
+    // a page of all new files: another one
+    QVERIFY(queue.more(id));
+    queue.onServerAnswer(false, cap, cap);
+    QVERIFY(queue.status(id)->hasMore);
+
+    // the same files again (or some): over
+    QVERIFY(queue.more(id));
+    queue.onServerAnswer(false, cap, cap - 1);
+    QVERIFY(!queue.status(id)->hasMore);
+
+    // a short page after the first try: over
+    const uint32 shortPage = queue.enqueue(query(QStringLiteral("c three"))).status.searchID;
+    queue.onServerAnswer(false, cap, cap);
+    QVERIFY(queue.more(shortPage));
+    queue.onServerAnswer(false, 12, 12);
+    QVERIFY(!queue.status(shortPage)->hasMore);
+
+    // the server's own flag still wins
+    const uint32 flagged = queue.enqueue(query(QStringLiteral("d four"))).status.searchID;
+    queue.onServerAnswer(true, cap, cap);
+    QVERIFY(queue.more(flagged));
+    queue.onServerAnswer(true, cap, 0);
+    QVERIFY(queue.status(flagged)->hasMore);
 }
 
 void tst_SearchList::startSearch_metaWithoutAServerIsRefused()

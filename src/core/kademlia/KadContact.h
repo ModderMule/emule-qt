@@ -53,8 +53,14 @@ public:
     // -- Type management -----------------------------------------------------
     [[nodiscard]] uint8    getType() const           { return m_type; }
     void updateType();
-    void checkingType();
+    void checkingType(time_t now = time(nullptr));
     void expire();
+    /// Undo checkingType() raises made since @p since: they were the own network's
+    /// fault, not the contact's (KadNetworkWatch). Leaves the contact due.
+    void voidChecksSince(time_t since, time_t now = time(nullptr));
+    /// Recheck by @p at even if not expired (catch-up after offline, sleep, IP change).
+    void markRecheck(time_t at)                      { m_recheckAt = at; }
+    [[nodiscard]] bool isRecheckDue(time_t now) const { return m_recheckAt != 0 && m_recheckAt <= now; }
 
     /// How much this contact has proven itself, for the choice of who leaves a
     /// full bin. A contact fresh off the wire scores low by construction.
@@ -111,6 +117,8 @@ private:
     UInt128    m_distance;
     KadUDPKey  m_udpKey;
     time_t     m_lastTypeSet = 0;
+    time_t     m_checkStart  = 0;   ///< first unanswered checkingType() raise, 0 = none
+    time_t     m_recheckAt   = 0;
     time_t     m_expires     = 0;
     time_t     m_created     = 0;
     uint32     m_inUse       = 0;
@@ -120,6 +128,7 @@ private:
     UInt128    m_clientHash;
     uint8      m_version     = 0;
     uint8      m_type        = 3;
+    uint8      m_typeBeforeCheck = 3;
     uint8      m_connectOptions = 0;
     bool       m_ipVerified  = false;
     bool       m_receivedHelloPacket = false;

@@ -322,7 +322,8 @@ private slots:
     void linksAreCheckedBeforeFollowing();
     void aFollowedSetIsDownloadedWhole();
     void aChosenPartIsDownloaded();
-    void aNewVersionComesByPolicyAcrossARestart();
+    void aNewVersionWaitsUnderAskAcrossARestart();
+    void aNewVersionComesUnderDownloadAcrossARestart();
     void aMountsNewVersionWaitsUnderAsk();
     void theIpcListsAndFollows();
     void aSetNotHeldWaitsThen504Or503();
@@ -333,6 +334,8 @@ private slots:
 
 private:
     bool publish(const QByteArray& manifest);
+    /// Stops C and starts it again under a new node key (see there).
+    bool restartC();
 
     QTemporaryDir m_da, m_db, m_dc, m_dd, m_de;
     Ed3kSession m_a, m_b;
@@ -410,6 +413,23 @@ bool tst_Ed3kSets::publish(const QByteArray& manifest)
         ok = r.has_value() && r->has_value();
     });
     return ok;
+}
+
+bool tst_Ed3kSets::restartC()
+{
+    const auto old = m_c.session->nodeId();
+    m_c.stop();
+    // C comes back under a new node key; its sets.json, downloads and files stay. The same
+    // node would be held off by what A and B still keep of its run before: their connections
+    // to it until IDLE_TIMEOUT_S (30 s; a new one of the same node is closed meanwhile), and
+    // A's upload queue entry of it for QUEUE_ENTRY_GRACE_S (30 min), under which a C asking for
+    // another file again within 30 min is BUSY (§12.5 early return). A 35 s sleep passed only
+    // when A happened to drop the entry first; under a loaded ctest -j8 it ran into the 300 s
+    // watchdog.
+    // QTest::qWait(35000);
+    if (!QFile::remove(QDir(stateDir(m_dc.path())).filePath(QStringLiteral("node.key"))))
+        return false;
+    return m_c.start(m_dc.path(), nodeOf(m_b), sourceOf(m_a)) && m_c.session->nodeId() != old;
 }
 
 // file-set.md §1: the reader of the GUI; §2.2: local names
@@ -532,18 +552,14 @@ void tst_Ed3kSets::aChosenPartIsDownloaded()
     d.stop();
 }
 
-// §5.3: ask keeps a new version until the user takes it; download takes it at once.
-// Across restarts: the followed set, its version and policy come back from sets.json
-void tst_Ed3kSets::aNewVersionComesByPolicyAcrossARestart()
+// §5.3: ask keeps a new version until the user takes it. Across restarts: the followed set,
+// its version and policy come back from sets.json
+void tst_Ed3kSets::aNewVersionWaitsUnderAskAcrossARestart()
 {
     QVERIFY(m_cSet != 0);
     QVERIFY(m_c.sets->setPolicy(m_cSet, Ed3kSets::Policy::Ask));
     QVERIFY(publish(m_v2));
-    m_c.stop();
-    // A's connection to C's run before times out first (a new one of the same node is closed
-    // meanwhile, and an unavailable manifest is tried again only after 30 min)
-    QTest::qWait(35000);
-    QVERIFY(m_c.start(m_dc.path(), nodeOf(m_b), sourceOf(m_a)));
+    QVERIFY(restartC());
     auto info = m_c.sets->info(m_cSet);
     QVERIFY(!info->followed || m_c.session->contactCount() > 0);   // followed once there are contacts
     QVERIFY(info);
@@ -562,15 +578,18 @@ void tst_Ed3kSets::aNewVersionComesByPolicyAcrossARestart()
     QVERIFY(m_c.sets->applyVersion(m_cSet));
     QTRY_VERIFY_WITH_TIMEOUT(readFile(c) == m_members[2].data, 90000);
     QCOMPARE(m_c.sets->info(m_cSet)->seq, std::optional<std::uint64_t>(2));
+}
 
-    // download: version 3 comes without a question
+// §5.3: under download a new version comes at once, across a restart too.
+// Split from the ask case: each restart waits ~30 s, both in one ran into QtTest's 300 s watchdog
+void tst_Ed3kSets::aNewVersionComesUnderDownloadAcrossARestart()
+{
+    QVERIFY(m_cSet != 0);
+    QCOMPARE(m_c.sets->info(m_cSet)->seq, std::optional<std::uint64_t>(2));
+    const auto info = m_c.sets->info(m_cSet);
     QVERIFY(m_c.sets->setPolicy(m_cSet, Ed3kSets::Policy::Download));
     QVERIFY(publish(m_v3));
-    m_c.stop();
-    // A's connection to C's run before times out first (a new one of the same node is closed
-    // meanwhile, and an unavailable manifest is tried again only after 30 min)
-    QTest::qWait(35000);
-    QVERIFY(m_c.start(m_dc.path(), nodeOf(m_b), sourceOf(m_a)));
+    QVERIFY(restartC());
     QSignalSpy asked3(m_c.sets.get(), &Ed3kSets::newVersion);
     const QString d = QDir(info->dir).filePath(QStringLiteral("d.bin"));
     QTRY_VERIFY_WITH_TIMEOUT(readFile(d) == m_members[3].data, 90000);

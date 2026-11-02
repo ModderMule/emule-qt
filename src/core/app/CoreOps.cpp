@@ -498,12 +498,12 @@ void importServerMetFromUrl(const QString& urlText, std::function<void(const Sta
 
     HttpFileDownload::Options opts;
     opts.preferredNames = {QStringLiteral("server.met")};
-    HttpFileDownload::get(QCoreApplication::instance(), url, opts,
-        [done = std::move(done)](bool ok, const QByteArray& data, const QString&,
-                                 const QString& error) {
-            if (!ok || data.isEmpty()) {
-                done(Status::fail(502, ok ? QStringLiteral("Downloaded server.met is empty")
-                                          : error), 0);
+    HttpFileDownload::fetch(QCoreApplication::instance(), url, opts,
+        [done = std::move(done)](const HttpFileDownload::Result& r) {
+            const QByteArray& data = r.data;
+            if (!r.ok || data.isEmpty()) {
+                done(Status::fail(502, r.ok ? QStringLiteral("Downloaded server.met is empty")
+                                            : r.error), 0);
                 return;
             }
             if (!theApp.serverList) {
@@ -571,11 +571,11 @@ void importKadNodesFromUrl(const QString& urlText, std::function<void(const Stat
     // nodes.dat mirrors are commonly gzipped; unwrapping is transparent for a plain one.
     HttpFileDownload::Options opts;
     opts.preferredNames = {QStringLiteral("nodes.dat")};
-    HttpFileDownload::get(QCoreApplication::instance(), url, opts,
-        [done = std::move(done)](bool ok, const QByteArray& data, const QString&,
-                                 const QString& error) {
-            if (!ok || data.isEmpty()) {
-                done(Status::fail(502, ok ? QStringLiteral("Downloaded nodes.dat is empty") : error));
+    HttpFileDownload::fetch(QCoreApplication::instance(), url, opts,
+        [done = std::move(done)](const HttpFileDownload::Result& r) {
+            const QByteArray& data = r.data;
+            if (!r.ok || data.isEmpty()) {
+                done(Status::fail(502, r.ok ? QStringLiteral("Downloaded nodes.dat is empty") : r.error));
                 return;
             }
             auto* kad = kad::Kademlia::instance();

@@ -16,6 +16,7 @@
 #include "utils/DialogSizing.h"
 #include "utils/IpcFeedback.h"
 #include "utils/OtherFunctions.h"
+#include "app/SkinIcons.h"
 
 #include <QCborArray>
 #include <QCheckBox>
@@ -187,7 +188,7 @@ void FileDetailDialog::buildMultiTabs(const QCborMap& merged, Tab tabToSelect)
     const bool icons = thePrefs.useOriginalIcons();
     const auto add = [&](QWidget* page, const char* icon, const QString& title) {
         if (icons)
-            m_tabs->addTab(page, QIcon(QStringLiteral(":/icons/") + QLatin1StringView(icon)), title);
+            m_tabs->addTab(page, skinIcon(QStringLiteral(":/icons/") + QLatin1StringView(icon)), title);
         else
             m_tabs->addTab(page, title);
     };
@@ -240,12 +241,12 @@ void FileDetailDialog::buildTabs(const QCborMap& details, int tabToSelect)
     m_tabs = new QTabWidget;
 
     if (thePrefs.useOriginalIcons()) {
-        m_tabs->addTab(createGeneralTab(details),    QIcon(QStringLiteral(":/icons/FileInfo.ico")),     tr("General"));
-        m_tabs->addTab(createFileNamesTab(details),   QIcon(QStringLiteral(":/icons/FileRename.ico")),   tr("File Names"));
-        m_tabs->addTab(createCommentsTab(details),    QIcon(QStringLiteral(":/icons/FileComments.ico")), tr("Comments"));
-        m_tabs->addTab(createMediaInfoTab(details),   QIcon(QStringLiteral(":/icons/MediaInfo.ico")),    tr("Media Info"));
-        m_tabs->addTab(createMetadataTab(details),    QIcon(QStringLiteral(":/icons/MetaData.ico")),     tr("Metadata"));
-        m_tabs->addTab(createEd2kLinkTab(details),    QIcon(QStringLiteral(":/icons/eD2kLink.ico")),     tr("ED2K Link"));
+        m_tabs->addTab(createGeneralTab(details),    skinIcon(QStringLiteral(":/icons/FileInfo.ico")),     tr("General"));
+        m_tabs->addTab(createFileNamesTab(details),   skinIcon(QStringLiteral(":/icons/FileRename.ico")),   tr("File Names"));
+        m_tabs->addTab(createCommentsTab(details),    skinIcon(QStringLiteral(":/icons/FileComments.ico")), tr("Comments"));
+        m_tabs->addTab(createMediaInfoTab(details),   skinIcon(QStringLiteral(":/icons/MediaInfo.ico")),    tr("Media Info"));
+        m_tabs->addTab(createMetadataTab(details),    skinIcon(QStringLiteral(":/icons/MetaData.ico")),     tr("Metadata"));
+        m_tabs->addTab(createEd2kLinkTab(details),    skinIcon(QStringLiteral(":/icons/eD2kLink.ico")),     tr("ED2K Link"));
     } else {
         m_tabs->addTab(createGeneralTab(details),    tr("General"));
         m_tabs->addTab(createFileNamesTab(details),   tr("File Names"));
@@ -262,7 +263,7 @@ void FileDetailDialog::buildTabs(const QCborMap& details, int tabToSelect)
         || fileType.compare(QLatin1StringView("Iso"), Qt::CaseInsensitive) == 0
         || fileType.compare(QLatin1StringView("CDImage"), Qt::CaseInsensitive) == 0) {
         if (thePrefs.useOriginalIcons())
-            m_tabs->addTab(createArchivePreviewTab(details), QIcon(QStringLiteral(":/icons/ArchivePreview.ico")), tr("Archive Preview"));
+            m_tabs->addTab(createArchivePreviewTab(details), skinIcon(QStringLiteral(":/icons/ArchivePreview.ico")), tr("Archive Preview"));
         else
             m_tabs->addTab(createArchivePreviewTab(details), tr("Archive Preview"));
     }
@@ -648,7 +649,7 @@ QWidget* FileDetailDialog::createFileNamesTab(const QCborMap& d)
     const QString fileHash = d.value(QLatin1StringView("hash")).toString();
     const QString fileName = str(d, QLatin1StringView("fileName"));
     auto* searchKadBtn = new QPushButton(tr("Search Kad"));
-    searchKadBtn->setIcon(QIcon(QStringLiteral(":/icons/KadFileSearch.ico")));
+    searchKadBtn->setIcon(skinIcon(QStringLiteral(":/icons/KadFileSearch.ico")));
     connect(searchKadBtn, &QPushButton::clicked, this, [this, fileHash, fileName]() {
         emit searchKadNotes(fileHash, fileName);
     });

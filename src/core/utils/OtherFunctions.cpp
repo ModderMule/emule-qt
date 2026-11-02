@@ -10,6 +10,8 @@
 #include <QRandomGenerator>
 #include <QUrl>
 
+#include <openssl/rand.h>
+
 #include <array>
 
 
@@ -344,6 +346,36 @@ uint32 getRandomUInt32()
 {
     std::uniform_int_distribution<uint32> dist;
     return dist(randomEngine());
+}
+
+void secureRandomBytes(void* dest, std::size_t len)
+{
+    auto* out = static_cast<unsigned char*>(dest);
+    while (len > 0) {
+        const auto chunk = std::min<std::size_t>(len, 1u << 30);
+        if (RAND_bytes(out, static_cast<int>(chunk)) != 1) {
+            // OS CSPRNG fallback
+            auto* rng = QRandomGenerator::system();
+            for (std::size_t i = 0; i < chunk; ++i)
+                out[i] = static_cast<unsigned char>(rng->generate());
+        }
+        out += chunk;
+        len -= chunk;
+    }
+}
+
+uint32 secureRandomUInt32()
+{
+    uint32 v = 0;
+    secureRandomBytes(&v, sizeof v);
+    return v;
+}
+
+uint16 secureRandomUInt16()
+{
+    uint16 v = 0;
+    secureRandomBytes(&v, sizeof v);
+    return v;
 }
 
 // ---------------------------------------------------------------------------

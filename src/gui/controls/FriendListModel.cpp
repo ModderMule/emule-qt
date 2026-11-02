@@ -5,6 +5,7 @@
 #include "controls/FriendListModel.h"
 #include "prefs/Preferences.h"
 #include "utils/CountryFlags.h"
+#include "app/SkinIcons.h"
 
 #include <QCborMap>
 #include <QIcon>
@@ -109,7 +110,7 @@ QIcon FriendListModel::baseIcon(const FriendRow& row)
     // Cached: withFlag() keys its composite cache on the base icon's cacheKey
     static const QIcon friends1(QStringLiteral(":/icons/Friends1.ico"));
     static const QIcon friends2(QStringLiteral(":/icons/Friends2.ico"));
-    static const QIcon user(QStringLiteral(":/icons/User.ico"));
+    static const QIcon user = skinIcon(QStringLiteral(":/icons/User.ico"));
     if (thePrefs.useOriginalIcons()) {
         // Friends1 = no client, Friends2 = has client info (offline), Friends3 = connected.
         // Test the address string, not row.ip: the numeric form is 0 for an IPv6 friend,

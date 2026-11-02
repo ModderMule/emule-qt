@@ -11,6 +11,7 @@
 #include "webserver/WebServer.h"
 #include "app/AppContext.h"
 #include "prefs/PreferenceSchema.h"
+#include "webserver/StreamTokenStore.h"
 #include "webserver/WebSessionManager.h"
 #include "webserver/WebTemplateEngine.h"
 #include "webserver/WebTemplateStrings.h"
@@ -83,6 +84,14 @@ QString sha256Hex(const QString& text)
 {
     return QString::fromLatin1(
         QCryptographicHash::hash(text.toUtf8(), QCryptographicHash::Sha256).toHex());
+}
+
+/// The stream token the Usenet page script was given; empty when none.
+QString pageStreamToken(const QString& page)
+{
+    static const QRegularExpression rx(QStringLiteral("var UN=\\{token:'([0-9a-f]*)'"));
+    const QRegularExpressionMatch m = rx.match(page);
+    return m.hasMatch() ? m.captured(1) : QString();
 }
 
 QCborMap usenetFileRow(int index, const QString& name, bool par2 = false)
@@ -612,6 +621,14 @@ private slots:
     void usenetPageWithoutBackendSaysUnavailable();
     void webEd2kActionRefusesAMetaHash();
     void webSession_isACookieNotAUrlParameter();
+    void streamToken_differsPerPageRender();
+    void streamToken_guestSessionCanPreview();
+    void streamToken_revokedOnLogout();
+    void streamToken_idleExpiry();
+    void streamToken_guiTokenRotatesOnRestart();
+    void post_oversizedBodyBeforeLoginIs413();
+    void post_largeNzbWithSessionIsAccepted();
+    void apiKey_backsOffAfterFailures();
     void webActions_needAPostFromOurOwnPages();
     void webLogin_backsOffAfterRepeatedFailures();
     void loginBackoff_timeline();
@@ -813,6 +830,7 @@ void tst_WebServer::initTestCase()
     // port another program already listens on at 127.0.0.1, which then gets our requests.
     config.listenAddress = QStringLiteral("127.0.0.1");
     config.apiKey = m_apiKey;
+    config.rateLimitPerSecond = 0;   // tests fire requests back to back
 
     QSignalSpy spy(m_webServer.get(), &WebServer::started);
     QVERIFY(m_webServer->start(config));
@@ -1413,6 +1431,7 @@ std::unique_ptr<WebServer> tst_WebServer::startServer(
     config.listenAddress = QStringLiteral("127.0.0.1");  // see initTestCase
     config.apiKey = m_apiKey;
     config.templatePath = templatePath;  // empty by default — page render is not under test here
+    config.rateLimitPerSecond = 0;       // see initTestCase
     if (tweak)
         tweak(*server, config);
 
@@ -3049,7 +3068,11 @@ void tst_WebServer::usenetPageRendersTheQueueEscaped()
     const QRegularExpressionMatch m = leftover.match(page);
     QVERIFY2(!m.hasMatch(), qPrintable(m.captured(0)));
     QVERIFY(page.contains(QStringLiteral("id=\"usenetmenu\"")));
-    QVERIFY(page.contains(server->streamToken()));
+    // A page token of its own, not the GUI's
+    const QString pageToken = pageStreamToken(page);
+    QVERIFY(!pageToken.isEmpty());
+    QVERIFY(pageToken != server->streamToken());
+    QCOMPARE(server->streamTokens().check(pageToken).value_or(QString()), QStringLiteral("web:") + ses);
 
     // The Qt window's summary, over every tab: one of two is active, half the bytes are in.
     QVERIFY(page.contains(QStringLiteral("2 download(s), 1 active — 50% complete")));
@@ -3266,6 +3289,221 @@ void tst_WebServer::webSession_isACookieNotAUrlParameter()
     QVERIFY(rawGetBody(port, QStringLiteral("/?ses=%1&w=transfer").arg(ses))
                 .contains(QStringLiteral("name=\"login\"")));
 
+    server->stop();
+}
+
+// Every page render hands out a token of its own, scoped to the session.
+void tst_WebServer::streamToken_differsPerPageRender()
+{
+    FakeUsenetBackend fake;
+    auto server = startUsenetUi(&fake);
+    const uint16 port = server->port();
+    const QString ses = webLogin(port, QStringLiteral("admin-pw"));
+    QVERIFY(!ses.isEmpty());
+
+    const QString first = pageStreamToken(rawGetBody(port, QStringLiteral("/?ses=%1&w=usenet").arg(ses)));
+    const QString second = pageStreamToken(rawGetBody(port, QStringLiteral("/?ses=%1&w=usenet").arg(ses)));
+    QCOMPARE(first.size(), 32);
+    QCOMPARE(second.size(), 32);
+    QVERIFY(first != second);
+    QVERIFY(first != server->streamToken());
+
+    // Both open the Incoming folder
+    for (const QString& token : {first, second}) {
+        QCOMPARE(sendRaw(port, "GET", QStringLiteral("/api/v1/incoming?token=") + token).statusCode, 200);
+    }
+    server->stop();
+}
+
+// Guests preview and browse Incoming too.
+void tst_WebServer::streamToken_guestSessionCanPreview()
+{
+    FakeUsenetBackend fake;
+    auto server = startUsenetUi(&fake);
+    const uint16 port = server->port();
+    const QString guest = webLogin(port, QStringLiteral("guest-pw"));
+    QVERIFY(!guest.isEmpty());
+
+    const QString token = pageStreamToken(rawGetBody(port, QStringLiteral("/?ses=%1&w=usenet").arg(guest)));
+    QVERIFY(!token.isEmpty());
+    QCOMPARE(sendRaw(port, "GET", QStringLiteral("/api/v1/incoming?token=") + token).statusCode, 200);
+    QCOMPARE(sendRaw(port, "GET", QStringLiteral("/api/v1/incoming/stream?file=notes.txt&token=") + token)
+                 .statusCode, 200);
+
+    // Past the token gate: the stand-in resolver is asked
+    bool asked = false;
+    server->setUsenetStreamResolver([&asked](const UsenetStreamRequest&) {
+        asked = true;
+        return UsenetStreamSource{};
+    });
+    const int code = sendRaw(port, "GET", QStringLiteral("/api/v1/usenet/item-a/0/preview?token=") + token)
+                         .statusCode;
+    QVERIFY(code != 401 && code != 429);
+    QVERIFY(asked);
+    server->stop();
+}
+
+void tst_WebServer::streamToken_revokedOnLogout()
+{
+    FakeUsenetBackend fake;
+    auto server = startUsenetUi(&fake);
+    const uint16 port = server->port();
+    const QString ses = webLogin(port, QStringLiteral("admin-pw"));
+    QVERIFY(!ses.isEmpty());
+
+    const QString token = pageStreamToken(rawGetBody(port, QStringLiteral("/?ses=%1&w=usenet").arg(ses)));
+    QCOMPARE(sendRaw(port, "GET", QStringLiteral("/api/v1/incoming?token=") + token).statusCode, 200);
+
+    sendRaw(port, "POST", QStringLiteral("/?ses=%1").arg(ses), QByteArrayLiteral("w=logout"),
+            QByteArrayLiteral("application/x-www-form-urlencoded"));
+    QCOMPARE(server->streamTokens().count(QStringLiteral("web:") + ses), 0);
+    QCOMPARE(sendRaw(port, "GET", QStringLiteral("/api/v1/incoming?token=") + token).statusCode, 401);
+    // The GUI's is untouched
+    QCOMPARE(sendRaw(port, "GET", QStringLiteral("/api/v1/incoming?token=") + server->streamToken())
+                 .statusCode, 200);
+    server->stop();
+}
+
+void tst_WebServer::streamToken_idleExpiry()
+{
+    using namespace std::chrono_literals;
+    qint64 now = 1'000'000;
+    StreamTokenStore store([&now] { return now; });
+
+    const QString page = store.mint(QStringLiteral("web:a"), 30min);
+    const QString gui = store.mint(QStringLiteral("gui"), 0ms);
+    QCOMPARE(store.check(page).value_or(QString()), QStringLiteral("web:a"));
+    QCOMPARE(store.check(gui).value_or(QString()), QStringLiteral("gui"));
+
+    // Use keeps it alive
+    now += 29 * 60 * 1000;
+    QVERIFY(store.check(page).has_value());
+    now += 29 * 60 * 1000;
+    QVERIFY(store.check(page).has_value());
+
+    // Idle past 30 min: gone; the GUI's never idles
+    now += 31 * 60 * 1000;
+    QVERIFY(!store.check(page).has_value());
+    now += 24LL * 3600 * 1000;
+    QVERIFY(store.check(gui).has_value());
+
+    // Unknown, empty and near-miss tokens
+    QVERIFY(!store.check(QString()).has_value());
+    QVERIFY(!store.check(QString(gui).replace(0, 1, gui.at(0) == u'a' ? u'b' : u'a')).has_value());
+
+    // At most kMaxPerScope per scope, oldest dropped
+    const QString oldest = store.mint(QStringLiteral("web:b"), 30min);
+    for (qsizetype i = 0; i < StreamTokenStore::kMaxPerScope; ++i)
+        (void)store.mint(QStringLiteral("web:b"), 30min);
+    QCOMPARE(store.count(QStringLiteral("web:b")), StreamTokenStore::kMaxPerScope);
+    QVERIFY(!store.check(oldest).has_value());
+
+    // Touch and revoke
+    const QString kept = store.mint(QStringLiteral("web:c"), 30min);
+    now += 20 * 60 * 1000;
+    store.touchScope(QStringLiteral("web:c"));
+    now += 20 * 60 * 1000;
+    QVERIFY(store.check(kept).has_value());
+    store.revokeScope(QStringLiteral("web:c"));
+    QVERIFY(!store.check(kept).has_value());
+    QVERIFY(store.check(gui).has_value());
+}
+
+void tst_WebServer::streamToken_guiTokenRotatesOnRestart()
+{
+    auto server = startServer(false, false);
+    QVERIFY(server->isRunning());
+    const QString before = server->streamToken();
+    QCOMPARE(before.size(), 32);
+    QCOMPARE(sendRaw(server->port(), "GET", QStringLiteral("/api/v1/incoming?token=") + before).statusCode, 200);
+
+    WebServerConfig config = server->config();
+    QVERIFY(server->start(config));
+    const QString after = server->streamToken();
+    QVERIFY(after != before);
+    QCOMPARE(sendRaw(server->port(), "GET", QStringLiteral("/api/v1/incoming?token=") + before).statusCode, 401);
+    QCOMPARE(sendRaw(server->port(), "GET", QStringLiteral("/api/v1/incoming?token=") + after).statusCode, 200);
+    server->stop();
+}
+
+// Nobody gets to make the server hold a large body without logging in first.
+void tst_WebServer::post_oversizedBodyBeforeLoginIs413()
+{
+    FakeUsenetBackend fake;
+    auto server = startUsenetUi(&fake);
+    const uint16 port = server->port();
+    const QByteArray form = QByteArrayLiteral("application/x-www-form-urlencoded");
+    const QByteArray big = QByteArrayLiteral("p=") + QByteArray(100 * 1024, 'x');
+
+    QCOMPARE(sendRaw(port, "POST", QStringLiteral("/"), big, form).statusCode, 413);
+    QCOMPARE(sendRaw(port, "POST", QStringLiteral("/usenet/add?name=R.nzb"), QByteArray(100 * 1024, 'x'),
+                     QByteArrayLiteral("application/x-nzb")).statusCode, 413);
+    QCOMPARE(sendRaw(port, "POST", QStringLiteral("/api/v1/usenet"), QByteArray(100 * 1024, 'x'),
+                     QByteArrayLiteral("application/x-nzb")).statusCode, 413);
+    QVERIFY(fake.calls.isEmpty());
+
+    // A wrong session or key is no session
+    QCOMPARE(sendRaw(port, "POST", QStringLiteral("/usenet/add?ses=deadbeef&name=R.nzb"),
+                     QByteArray(100 * 1024, 'x'), QByteArrayLiteral("application/x-nzb")).statusCode, 413);
+    QCOMPARE(sendRaw(port, "POST", QStringLiteral("/"), big, form,
+                     {{QByteArrayLiteral("X-Api-Key"), QByteArrayLiteral("wrong")}}).statusCode, 413);
+
+    // Small bodies still log in
+    QVERIFY(!webLogin(port, QStringLiteral("admin-pw")).isEmpty());
+    server->stop();
+}
+
+void tst_WebServer::post_largeNzbWithSessionIsAccepted()
+{
+    FakeUsenetBackend fake;
+    auto server = startUsenetUi(&fake);
+    const uint16 port = server->port();
+    const QString admin = webLogin(port, QStringLiteral("admin-pw"));
+    QVERIFY(!admin.isEmpty());
+
+    fake.nextAdd.itemId = QStringLiteral("big-1");
+    fake.nextAdd.outcome = UsenetWebAddOutcome::Added;
+    const QByteArray nzb = QByteArrayLiteral("<nzb>") + QByteArray(2 * 1024 * 1024, 'x')
+                         + QByteArrayLiteral("</nzb>");
+    const Response r = sendRaw(port, "POST", QStringLiteral("/usenet/add?ses=%1&name=R.nzb").arg(admin),
+                               nzb, QByteArrayLiteral("application/x-nzb"));
+    QCOMPARE(r.statusCode, 200);
+    QCOMPARE(r.json.object().value(QStringLiteral("id")).toString(), QStringLiteral("big-1"));
+    QCOMPARE(fake.lastData.size(), nzb.size());
+    server->stop();
+}
+
+// Wrong API keys back off like passwords do; a right key is not looked at then.
+void tst_WebServer::apiKey_backsOffAfterFailures()
+{
+    auto server = startServer(false, true);
+    const uint16 port = server->port();
+    const auto get = [&](const QByteArray& key) {
+        return sendRaw(port, "GET", QStringLiteral("/api/v1/stats"), {}, {},
+                       {{QByteArrayLiteral("X-Api-Key"), key}});
+    };
+
+    // A missing key is no guess
+    for (int i = 0; i < 5; ++i)
+        QCOMPARE(sendRaw(port, "GET", QStringLiteral("/api/v1/stats")).statusCode, 401);
+    QCOMPARE(get(m_apiKey.toUtf8()).statusCode, 200);
+
+    for (int i = 0; i < WebSessionManager::kFreeLoginTries; ++i)
+        QCOMPARE(get(QByteArrayLiteral("wrong")).statusCode, 401);
+
+    const Response wait = get(QByteArrayLiteral("wrong"));
+    QCOMPARE(wait.statusCode, 429);
+    QVERIFY(wait.headers.value(QStringLiteral("retry-after")).toInt() > 0);
+    QCOMPARE(get(m_apiKey.toUtf8()).statusCode, 429);
+
+    // Bearer goes through the same gate
+    QCOMPARE(sendRaw(port, "GET", QStringLiteral("/api/v1/stats"), {}, {},
+                     {{QByteArrayLiteral("Authorization"), "Bearer " + m_apiKey.toUtf8()}}).statusCode, 429);
+
+    // Web logins count separately
+    auto ui = startUsenetUi(nullptr);
+    QVERIFY(!webLogin(ui->port(), QStringLiteral("admin-pw")).isEmpty());
+    ui->stop();
     server->stop();
 }
 

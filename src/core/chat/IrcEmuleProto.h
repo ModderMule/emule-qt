@@ -9,6 +9,7 @@
 
 #include "utils/Types.h"
 
+#include <QHash>
 #include <QString>
 
 #include <optional>
@@ -54,3 +55,35 @@ struct Link {
 [[nodiscard]] std::optional<Link> parseSendLink(const QString& body);
 
 } // namespace eMule::IrcEmuleProto
+
+namespace eMule {
+
+// ---------------------------------------------------------------------------
+// IrcLinkGate — who may send us links when "friends only" is on.
+// The SENDLINK hash is the sender's own claim (MFC IrcMain.cpp:322-350 trusts it).
+// Here a hash counts only for the nick + user@host that answered OUR friend
+// request with it; filled from that handshake alone.
+// ---------------------------------------------------------------------------
+
+class IrcLinkGate {
+public:
+    /// @p nick at @p userHost answered our verified friend request with @p userHashHex.
+    void noteVerifiedFriend(const QString& nick, const QString& userHost, const QString& userHashHex);
+    /// Same nick, same user@host, same hash as the handshake (case-insensitive).
+    [[nodiscard]] bool allows(const QString& nick, const QString& userHost,
+                              const QString& claimedHashHex) const;
+    void forgetNick(const QString& nick);
+    /// A server-announced NICK change: the binding follows (user@host still checked).
+    void renameNick(const QString& oldNick, const QString& newNick);
+    void clear();
+    [[nodiscard]] bool isEmpty() const { return m_byNick.isEmpty(); }
+
+private:
+    struct Entry {
+        QString userHost;   ///< lower case
+        QString hashHex;    ///< lower case
+    };
+    QHash<QString, Entry> m_byNick;   ///< key: nick, lower case
+};
+
+} // namespace eMule

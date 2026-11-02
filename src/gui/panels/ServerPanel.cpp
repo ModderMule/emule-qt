@@ -26,6 +26,7 @@
 #include "server/Server.h"   // ServerPriority, Address
 
 #include "protocol/ED2KLink.h"
+#include "app/SkinIcons.h"
 
 #include <QActionGroup>
 #include <QApplication>
@@ -217,14 +218,15 @@ void ServerPanel::updateServerMetFromUrl(const QString& urlStr)
     eMule::HttpFileDownload::Options opts;
     opts.preferredNames = {QStringLiteral("server.met")};
 
-    eMule::HttpFileDownload::get(this, url, opts,
-        [this](bool ok, const QByteArray& data, const QString& entryName,
-               const QString& error) {
+    eMule::HttpFileDownload::fetch(this, url, opts,
+        [this](const eMule::HttpFileDownload::Result& r) {
             m_updateBtn->setEnabled(true);
 
-            if (!ok) {
+            const QByteArray& data = r.data;
+            const QString& entryName = r.entryName;
+            if (!r.ok) {
                 m_logWidget->appendServerInfo(
-                    tr("Failed to download server.met: %1").arg(error));
+                    tr("Failed to download server.met: %1").arg(r.error));
                 return;
             }
             if (data.isEmpty()) {
@@ -754,7 +756,7 @@ QWidget* ServerPanel::createControlsPanel()
     updateRow->setSpacing(4);
     auto* updateIcon = new QLabel;
     if (thePrefs.useOriginalIcons()) {
-        updateIcon->setPixmap(QIcon(QStringLiteral(":/icons/ServersUpdate.ico")).pixmap(16, 16));
+        setSkinPixmap(updateIcon, QStringLiteral(":/icons/ServersUpdate.ico"));
     } else {
         updateIcon->setText(QStringLiteral("\u21BB")); // ↻ refresh icon
     }

@@ -142,6 +142,9 @@ void Kademlia::start(KadPrefs* prefs)
     // before probing the bootstrap list, and bootstrap() would ignore every peer that
     // advertises a Kad port in the first 10 seconds.
     m_bootstrap = 0;
+    m_netWatch = NetworkWatch(now);
+    m_lastProcess = 0;
+    m_catchUpUntil = 0;
 
     // Start process timer (1-second interval)
     m_processTimer = new QTimer(this);
@@ -170,6 +173,10 @@ void Kademlia::stop()
 
     m_running = false;
     m_bootstrapping = false;
+    if (m_netWatch.isOffline()) {
+        m_netWatch.reset(time(nullptr));
+        emit networkOfflineChanged(false);
+    }
     // Note: s_instance intentionally NOT cleared here — the object still
     // exists, just isn't running.  Cleared in the destructor so that
     // handleBootstrapKad can call start() on a stopped instance.
@@ -365,6 +372,29 @@ void Kademlia::processPacket(const uint8* data, uint32 len, uint32 ip, uint16 po
         m_udpListener->processPacket(data, len, ip, port, validReceiverKey, senderKey);
 }
 
+void Kademlia::notePacketReceived(uint32 ip)
+{
+    if (!m_running)
+        return;
+    const time_t now = time(nullptr);
+    if (m_netWatch.packetReceived(ip, now) == NetworkWatch::Event::BackOnline) {
+        startCatchUp(now, QStringLiteral("network back"));
+        emit networkOfflineChanged(false);
+    }
+}
+
+void Kademlia::noteRequestSent(uint32 ip)
+{
+    if (m_running)
+        m_netWatch.requestSent(ip, time(nullptr));
+}
+
+void Kademlia::onAddressChanged()
+{
+    if (m_running)
+        startCatchUp(time(nullptr), QStringLiteral("external IP changed"));
+}
+
 void Kademlia::addEvent(RoutingZone* zone)
 {
     if (zone)
@@ -494,6 +524,18 @@ void Kademlia::process()
         return;
 
     time_t now = time(nullptr);
+
+    // Own network down (not MFC). A tick far behind = machine slept: the table is
+    // stale and the network may still be coming up, so start a fresh silence
+    // window and recheck everything.
+    if (m_lastProcess != 0 && now - m_lastProcess > static_cast<time_t>(kSleepGap)) {
+        m_netWatch.reset(now);
+        startCatchUp(now, QStringLiteral("resumed after %1 s pause").arg(now - m_lastProcess));
+    }
+    m_lastProcess = now;
+    m_netWatch.setLanMode(isRunningInLANMode());
+    if (m_netWatch.update(now) == NetworkWatch::Event::WentOffline)
+        enterOffline(now);
 
     countSessionStats();
 
@@ -666,8 +708,9 @@ void Kademlia::process()
             m_bigTimer = now + kBigTimerGlobal;
         }
         if (now >= zone->nextSmallTimer()) {
-            zone->onSmallTimer();
-            zone->setNextSmallTimer(now + kSmallTimerInterval);
+            zone->onSmallTimer(m_netWatch.isOffline());
+            zone->setNextSmallTimer(now + (now < m_catchUpUntil ? kCatchUpSmallTimer
+                                                                : kSmallTimerInterval));
         }
     }
 
@@ -724,6 +767,34 @@ void Kademlia::process()
     //     dedicated timer is needed. MFC Kademlia.cpp:303-304.
     if (m_udpListener)
         m_udpListener->expireClientSearch();
+}
+
+void Kademlia::enterOffline(time_t now)
+{
+    const time_t since = m_netWatch.silenceSince();
+    logKad(QStringLiteral("Kad: no answer for %1 s from %2+ networks — own network down, "
+                          "contacts kept until it is back")
+               .arg(now - since).arg(kOfflineSites));
+    for (auto* zone : m_zoneEvents)
+        zone->voidChecksSince(since);
+    m_catchUpUntil = 0;
+    emit networkOfflineChanged(true);
+}
+
+void Kademlia::startCatchUp(time_t now, const QString& why)
+{
+    logKad(QStringLiteral("Kad: %1 — rechecking all contacts within %2 min")
+               .arg(why).arg(kCatchUpSpread / 60));
+    m_catchUpUntil = now + kCatchUpSpread;
+    const auto zones = static_cast<uint32>(m_zoneEvents.size());
+    uint32 i = 0;
+    for (auto* zone : m_zoneEvents) {
+        zone->markRecheckAll(now);
+        // spread over the window; the 10 s global big-timer gate paces them further
+        zone->setNextBigTimer(now + (zones ? i * kCatchUpSpread / zones : 0));
+        zone->setNextSmallTimer(now + i % kCatchUpSmallTimer);
+        ++i;
+    }
 }
 
 uint32 Kademlia::calculateKadUsersNew() const

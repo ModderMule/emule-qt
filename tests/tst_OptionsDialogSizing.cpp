@@ -134,6 +134,7 @@ private slots:
     void generalPageControlsEnableApply();
     void ussShowsTheLowestAllowedUploadSpeed();
     void schedulerActionsFollowMfc();
+    void schedulerActionsSurviveSwitchingSchedules();
 
     // First start wizard: compiled into this binary anyway, and just as daemon-less.
     void theWizardShowsAllOfItsText();
@@ -464,6 +465,51 @@ void TestOptionsDialogSizing::schedulerActionsFollowMfc()
     }
     openMenu();
     QVERIFY(!addEnabled);
+}
+
+/// SomeSupport/eMule#3: an action added from the menu was kept only by the
+/// schedule's own Apply; picking another schedule threw it away.
+void TestOptionsDialogSizing::schedulerActionsSurviveSwitchingSchedules()
+{
+    OptionsDialog dlg(nullptr, nullptr);
+    auto* schedules = dlg.findChild<QTreeWidget*>(QStringLiteral("schedTable"));
+    auto* actions = dlg.findChild<QTreeWidget*>(QStringLiteral("schedActions"));
+    auto* newBtn = dlg.findChild<QPushButton*>(QStringLiteral("schedNew"));
+    QVERIFY(schedules && actions && newBtn);
+    newBtn->click();
+    newBtn->click();
+    QCOMPARE(schedules->topLevelItemCount(), 2);
+
+    // Add "Stop Category" (no value prompt) to the first schedule
+    dlg.m_schedMenuHook = [](QMenu* menu) {
+        for (QAction* a : menu->actions())
+            if (a->text() == QStringLiteral("Add"))
+                for (QAction* sub : a->menu()->actions())
+                    if (sub->text() == QStringLiteral("Stop Category"))
+                        sub->trigger();
+    };
+    schedules->setCurrentItem(schedules->topLevelItem(0));
+    QCOMPARE(actions->topLevelItemCount(), 0);
+    emit actions->customContextMenuRequested(QPoint(1, 1));
+    QCOMPARE(actions->topLevelItemCount(), 1);
+
+    schedules->setCurrentItem(schedules->topLevelItem(1));
+    QCOMPARE(actions->topLevelItemCount(), 0);
+    schedules->setCurrentItem(schedules->topLevelItem(0));
+    QCOMPARE(actions->topLevelItemCount(), 1);
+    QCOMPARE(actions->topLevelItem(0)->text(0), QStringLiteral("Stop Category"));
+
+    // Remove sticks the same way
+    dlg.m_schedMenuHook = [](QMenu* menu) {
+        for (QAction* a : menu->actions())
+            if (a->text() == QStringLiteral("Remove"))
+                a->trigger();
+    };
+    actions->setCurrentItem(actions->topLevelItem(0));
+    emit actions->customContextMenuRequested(QPoint(1, 1));
+    schedules->setCurrentItem(schedules->topLevelItem(1));
+    schedules->setCurrentItem(schedules->topLevelItem(0));
+    QCOMPARE(actions->topLevelItemCount(), 0);
 }
 
 void TestOptionsDialogSizing::aLargeQueueSizeSurvivesTheSlider()
