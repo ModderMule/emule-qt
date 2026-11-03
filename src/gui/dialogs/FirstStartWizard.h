@@ -127,9 +127,9 @@ private:
     QCheckBox* m_assocEd2kCheck = nullptr;
     QCheckBox* m_assocTorrentCheck = nullptr;
     QCheckBox* m_assocNzbCheck = nullptr;
+    gui::FileAssociation::FileTypes m_shownTypes;     ///< the file type boxes as first shown
 #ifdef Q_OS_MACOS
     gui::FileAssociation::FileTypes m_claimedTypes;   ///< the default app when opened
-    gui::FileAssociation::FileTypes m_shownTypes;     ///< the file type boxes as first shown
 #endif
 
     QPushButton* m_portTestBtn = nullptr;
