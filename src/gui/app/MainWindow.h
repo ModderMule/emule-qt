@@ -78,6 +78,8 @@ public:
     void setEd2kState(State s);
     void setKadState(State s);
 
+    static QColor colorForState(State s);
+
     [[nodiscard]] QSize sizeHint() const override { return {16, 16}; }
     [[nodiscard]] QSize minimumSizeHint() const override { return {16, 16}; }
 
@@ -89,10 +91,33 @@ protected:
     void mouseDoubleClickEvent(QMouseEvent* event) override;
 
 private:
-    static QColor colorForState(State s);
-
     State m_ed2kState = Disconnected;
     State m_kadState  = Disconnected;
+};
+
+/// ed3k globe/donkey icon with one state arrow, same colours as the eD2K/Kad one.
+class Ed3kStatusIcon : public QWidget {
+    Q_OBJECT
+
+public:
+    explicit Ed3kStatusIcon(QWidget* parent = nullptr);
+
+    void setState(ConnectionStatusWidget::State s);
+    void refreshSkin() { m_base = {}; update(); }
+
+    [[nodiscard]] QSize sizeHint() const override { return {16, 16}; }
+    [[nodiscard]] QSize minimumSizeHint() const override { return {16, 16}; }
+
+signals:
+    void doubleClicked();
+
+protected:
+    void paintEvent(QPaintEvent* event) override;
+    void mouseDoubleClickEvent(QMouseEvent* event) override;
+
+private:
+    ConnectionStatusWidget::State m_state = ConnectionStatusWidget::Disconnected;
+    QPixmap m_base;   ///< cached Ed3k.ico at widget size
 };
 
 /// Main application window matching the MFC eMule look & feel.
@@ -404,6 +429,7 @@ private:
     qint64 m_ed2kServerUsers = 0;
     QLabel* m_statusKad = nullptr;
     QLabel* m_statusEd3k = nullptr;   ///< ed3k node, hidden while off
+    Ed3kStatusIcon* m_statusEd3kIcon = nullptr;   ///< globe + arrow in front of m_statusEd3k
     QLabel* m_statusChat = nullptr;   ///< unread-message icon, MFC SBarChatMsg
     int m_statusChatState = 0;        ///< 0 none, 1 new, 2 pending (blink)
     QLabel* m_statusAttach = nullptr;   ///< core attached/detached (#106)
@@ -445,6 +471,8 @@ private:
     QString m_connOfflineReason;
     bool m_kadRunning = false;
     bool m_kadConnected = false;
+    bool m_ed3kRunning = false;     ///< node started (Connect / autoConnect)
+    bool m_ed3kConnected = false;   ///< node has contacts
     bool m_kadFirewalled = false;
     bool m_kadFirewalledVerified = false; ///< TCP check finished, not the startup default
     bool m_lowIdHintShown = false;   ///< once per session

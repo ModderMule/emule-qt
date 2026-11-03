@@ -38,6 +38,8 @@ void CommandLineExec::parse(QCoreApplication& app)
     m_parser.addOption(m_holdConnectOption);
     m_parser.addOption(m_autoUpdateOption);
     m_parser.addOption(m_autoUpdateHoursOption);
+    m_parser.addOption(m_exportEd3kNodesOption);
+    m_parser.addOption(m_exportCommentOption);
 
     processCommandLine(m_parser, app, AutoUpdater::normalizeArgs(app.arguments()));
 }
@@ -199,6 +201,16 @@ bool CommandLineExec::autoUpdate() const
 int CommandLineExec::autoUpdateHours() const
 {
     return m_parser.isSet(m_autoUpdateHoursOption) ? m_parser.value(m_autoUpdateHoursOption).toInt() : 0;
+}
+
+QString CommandLineExec::exportEd3kNodes() const
+{
+    return m_parser.value(m_exportEd3kNodesOption);
+}
+
+QString CommandLineExec::exportComment() const
+{
+    return m_parser.value(m_exportCommentOption);
 }
 
 } // namespace eMule

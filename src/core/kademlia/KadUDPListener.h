@@ -57,8 +57,10 @@ public:
     /// Out-tracked, so the node's FINDBUDDY_RES is accepted. MFC Search.cpp:810-837.
     void sendFindBuddyReq(uint32 ip, uint16 udpPort, const KadUDPKey& targetKey,
                           const UInt128* cryptTargetID);
+    /// receiverKeySent: the peer echoed a non-zero receiver key, valid or not.
     void processPacket(const uint8* data, uint32 len, uint32 ip, uint16 udpPort,
-                       bool validReceiverKey, const KadUDPKey& senderKey);
+                       bool validReceiverKey, const KadUDPKey& senderKey,
+                       bool receiverKeySent = false);
     void sendPacket(const uint8* data, uint32 len, uint32 destIP, uint16 destPort,
                     const KadUDPKey& targetKey, const UInt128* cryptTargetID);
     void sendPacket(const uint8* data, uint32 len, uint8 opcode, uint32 destIP,
@@ -102,6 +104,9 @@ private:
     [[nodiscard]] bool isOwnKadAddress(uint32 ip, uint16 udpPort) const;
     /// HELLO_REQ to an unverified contact; its HELLO_RES (or legacy challenge) verifies it.
     void sendVerifyHello(const UInt128& contactID, uint32 ip, uint16 udpPort, uint8 version);
+    /// Logs whether the current request echoed our key for its IP (audit 9c).
+    /// For requests that trust the source IP; see kad-publish-udp-key.md.
+    void logReceiverKey(const char* request, uint32 ip, uint16 udpPort) const;
 
     void process_KADEMLIA2_BOOTSTRAP_REQ(uint32 ip, uint16 udpPort, const KadUDPKey& senderKey);
     void process_KADEMLIA2_BOOTSTRAP_RES(const uint8* data, uint32 len, uint32 ip, uint16 udpPort,
@@ -124,7 +129,7 @@ private:
     void process_KADEMLIA2_PUBLISH_KEY_REQ(const uint8* data, uint32 len, uint32 ip, uint16 udpPort,
                                             const KadUDPKey& senderKey);
     void process_KADEMLIA2_PUBLISH_SOURCE_REQ(const uint8* data, uint32 len, uint32 ip, uint16 udpPort,
-                                               const KadUDPKey& senderKey, bool validReceiverKey);
+                                               const KadUDPKey& senderKey);
     void process_KADEMLIA2_PUBLISH_RES(const uint8* data, uint32 len, uint32 ip, uint16 udpPort,
                                         const KadUDPKey& senderKey);
     void process_KADEMLIA2_SEARCH_NOTES_REQ(const uint8* data, uint32 len, uint32 ip, uint16 udpPort,
@@ -158,6 +163,10 @@ private:
         KadClientSearcher* requester = nullptr;
     };
     std::list<FetchNodeIDRequest> m_fetchNodeIDRequests;
+    // Receiver key state of the packet in processPacket(), for logReceiverKey()
+    bool m_rxKeyValid = false;
+    bool m_rxKeySent = false;
+    bool m_rxEncrypted = false;
     std::atomic<uint32_t> m_hellosSent{0};      ///< HELLO_REQ packets sent (monotonically increasing).
     std::atomic<uint32_t> m_hellosReceived{0};  ///< HELLO_RES packets received (monotonically increasing).
 };

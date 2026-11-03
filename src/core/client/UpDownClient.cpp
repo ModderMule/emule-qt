@@ -2588,6 +2588,10 @@ void UpDownClient::onHandshakeCompleted()
 
 void UpDownClient::maybeBootstrapKadFromPeer()
 {
+    // ed3k Kad first: its own checks (derived user hash, few contacts) are in the hook
+    if (theApp.ed3kKadSeed && hasValidHash())
+        theApp.ed3kKadSeed(*this);
+
     if (m_kadPort == 0 || m_kadVersion < KADEMLIA_VERSION2_47a)
         return;
 
@@ -5965,6 +5969,7 @@ void UpDownClient::sendKadCallback()
         || theApp.clientList->allowRelayRequest(m_buddyAddress, m_buddyID.data(),
                                                 RelayRequest::KadCallback);
     // MFC FIXME: We don't know which kad version the buddy has, so we need to send unencrypted
+    // Ideally the buddy's Kad UDP key came with the source answer and is used here: unkeyed, the relay can't verify our IP
     if (send && theApp.clientUDP)
         theApp.clientUDP->sendPacket(std::move(packet),
                                      Endpoint(m_buddyAddress, m_buddyPort),

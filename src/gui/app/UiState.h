@@ -49,6 +49,8 @@ public:
     /// Restore a splitter from saved sizes, connect it to auto-update.
     void bindServerSplitter(QSplitter* splitter);
     void bindKadSplitter(QSplitter* splitter);
+    /// The ed3k page of the Kad window: sizes of its own.
+    void bindEd3kKadSplitter(QSplitter* splitter);
     void bindTransferSplitter(QSplitter* splitter);
     void bindSharedHorzSplitter(QSplitter* splitter);
     void bindSharedVertSplitter(QSplitter* splitter);
@@ -175,6 +177,22 @@ public:
     void setAssociateEd2kLinks(bool on)
     {
         m_associateEd2kLinks = on;
+        scheduleSave();
+    }
+
+    /// What applyDesktopIntegration() last claimed, bits 1 nzb, 2 torrent, 4 ed2k.
+    /// Unset = never applied. The desktop is only touched when the wanted set differs (#121).
+    [[nodiscard]] std::optional<int> appliedFileTypes() const { return m_appliedFileTypes; }
+    void setAppliedFileTypes(int bits)
+    {
+        m_appliedFileTypes = bits;
+        scheduleSave();
+    }
+    /// The launcher entry was created once; a missing one is not put back (#121)
+    [[nodiscard]] bool launcherInstalled() const { return m_launcherInstalled; }
+    void setLauncherInstalled(bool on)
+    {
+        m_launcherInstalled = on;
         scheduleSave();
     }
 
@@ -417,6 +435,7 @@ private:
 
     QList<int> m_serverSplitSizes;
     QList<int> m_kadSplitSizes;
+    QList<int> m_ed3kKadSplitSizes;
     QList<int> m_transferSplitSizes;
     QList<int> m_sharedHorzSplitSizes;
     QList<int> m_sharedVertSplitSizes;
@@ -435,6 +454,8 @@ private:
     bool m_associateNzbFiles = true;
     bool m_associateTorrentFiles = true;
     std::optional<bool> m_associateEd2kLinks;
+    std::optional<int> m_appliedFileTypes;
+    bool m_launcherInstalled = false;
     bool m_addLinksWithoutConfirm = false;
     bool m_miniMuleAutoClose = false;
     bool m_firstStartWizardDone = false;

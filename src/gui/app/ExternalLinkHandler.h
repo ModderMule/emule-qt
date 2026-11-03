@@ -103,6 +103,9 @@ private:
     /// An ed3k:cache link (http-source.md §4.1): asked (host, dn, kid; never the key), then
     /// configured and kept (AddEd3kCacheLink).
     void addEd3kCache(const QString& link);
+    /// A clicked download link (magnet, ed3k:file): asked unless "add clicked links without
+    /// asking" is on; the window comes to the front only for the box (#119).
+    [[nodiscard]] bool confirmClickedDownload(const QString& title, const QString& name);
     void flushPending();
     /// Whether there is both a window to show something on and a daemon to ask.
     [[nodiscard]] bool canOpenNow() const;

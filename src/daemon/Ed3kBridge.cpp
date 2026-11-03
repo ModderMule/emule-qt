@@ -8,6 +8,7 @@
 #include "Ed3kFiltersBridge.h"
 #include "Ed3kDownloadsBridge.h"
 #include "Ed3kHosterBridge.h"
+#include "Ed3kKadBridge.h"
 #include "Ed3kLinksBridge.h"
 #include "Ed3kFriendsBridge.h"
 #include "Ed3kNamesBridge.h"
@@ -38,6 +39,7 @@ using Ipc::IpcMsgType;
 namespace {
 
 ed3k::Ed3kSession* s_session = nullptr;
+bool s_connectWanted = false;
 ed3k::Ed3kBootstrap* s_bootstrap = nullptr;
 ed3k::Ed3kEd2kJoin* s_ed2kJoin = nullptr;
 ed3k::Ed3kShared* s_shared = nullptr;
@@ -96,6 +98,7 @@ void setSession(ed3k::Ed3kSession* session)
 {
     s_session = session;
     Ed3kLinksBridge::setSession(session);   // its cache servers (batch 15)
+    Ed3kKadBridge::setSession(session);
 }
 
 ed3k::Ed3kSession* session()
@@ -106,6 +109,7 @@ ed3k::Ed3kSession* session()
 void setBootstrap(ed3k::Ed3kBootstrap* bootstrap)
 {
     s_bootstrap = bootstrap;
+    Ed3kKadBridge::setBootstrap(bootstrap);
 }
 
 void setEd2kJoin(ed3k::Ed3kEd2kJoin* join)
@@ -155,6 +159,16 @@ void appendSharedInfo([[maybe_unused]] QCborMap& details, [[maybe_unused]] const
 #endif
 }
 
+bool connectWanted()
+{
+    return s_connectWanted;
+}
+
+void setConnectWanted(bool on)
+{
+    s_connectWanted = on;
+}
+
 bool available()
 {
 #ifdef EMULE_HAVE_ED3K
@@ -167,8 +181,8 @@ bool available()
 bool isEd3kRequest(IpcMsgType type)
 {
     const int t = static_cast<int>(type);
-    // 1100-1149: second request block (batch 12), the first was full
-    return (t >= 1000 && t <= 1049) || (t >= 1100 && t <= 1149);
+    // 1100-1149: second request block (batch 12), the first was full; 1200-1209: Kad window
+    return (t >= 1000 && t <= 1049) || (t >= 1100 && t <= 1149) || (t >= 1200 && t <= 1209);
 }
 
 bool handleRequest(const IpcMessage& msg, const std::function<void(const IpcMessage&)>& reply)
@@ -177,6 +191,9 @@ bool handleRequest(const IpcMessage& msg, const std::function<void(const IpcMess
         return false;
     // other links (batch 15): 1032, 1049, 1137 (first: 1137 is inside the filter lists' block)
     if (Ed3kLinksBridge::handleRequest(msg, reply))
+        return true;
+    // Kad window: 1200-1205 (1205 in IpcClientHandler, it re-applies the config)
+    if (Ed3kKadBridge::handleRequest(msg, reply))
         return true;
     // friends and chat: 1001-1009
     if (Ed3kFriendsBridge::handleRequest(msg, reply))

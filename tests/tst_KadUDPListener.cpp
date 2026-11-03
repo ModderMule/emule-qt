@@ -12,6 +12,8 @@
 #include "kademlia/KadEntry.h"
 #include "kademlia/KadIndexed.h"
 #include "kademlia/KadIO.h"
+#include "kademlia/KadLog.h"
+#include "kademlia/KadMiscUtils.h"
 #include "kademlia/KadNodeCensus.h"
 #include "kademlia/KadPrefs.h"
 #include "kademlia/KadRoutingZone.h"
@@ -25,6 +27,7 @@
 #include "utils/SafeFile.h"
 
 #include <QFile>
+#include <QLoggingCategory>
 #include <QScopeGuard>
 #include <QTest>
 #include <QtEndian>
@@ -52,6 +55,7 @@ private slots:
     void buddySearch_asksRememberedNodeAfterRestart();
     void firewalledAckRes_countsOnlyAskedNodesOnce();
     void firewalledReq_repeatedMakesOneClient();
+    void ipTrustingRequest_logsReceiverKeyState();
 
     // Search requests we serve
     void searchSourceReq_minimalPacketIsServed();
@@ -332,6 +336,58 @@ void tst_KadUDPListener::firewalledReq_repeatedMakesOneClient()
     clients.deleteAll();
     Kademlia::setClientList(nullptr);
     theApp.clientList = nullptr;
+}
+
+namespace {
+QStringList g_kadLines;
+void captureKad(QtMsgType, const QMessageLogContext& ctx, const QString& msg)
+{
+    if (ctx.category && qstrcmp(ctx.category, "emule.kad") == 0)
+        g_kadLines << msg;
+}
+} // namespace
+
+// Requests that trust the source IP log whether it was proven (audit 9c, aMule #2315).
+// "missing" (key 0) and "wrong" (some other key) are told apart.
+void tst_KadUDPListener::ipTrustingRequest_logsReceiverKeyState()
+{
+    eMule::testing::KadFixture kadFixture;
+    const bool wasOn = isKadLoggingEnabled();
+    setKadLogging(true);
+    QLoggingCategory::setFilterRules(QStringLiteral("emule.kad.debug=true"));
+    g_kadLines.clear();
+    const QtMessageHandler prev = qInstallMessageHandler(captureKad);
+    auto restore = qScopeGuard([&] {
+        qInstallMessageHandler(prev);
+        setKadLogging(wasOn);
+        QLoggingCategory::setFilterRules(QString());
+    });
+
+    SafeMemFile io;   // CALLBACK_REQ: buddyID, fileID, TCP port
+    io.writeUInt8(KADEMLIA_CALLBACK_REQ);
+    io::writeUInt128(io, UInt128(uint32{1}));
+    io::writeUInt128(io, UInt128(uint32{2}));
+    io.writeUInt16(kNodeTcp);
+    const QByteArray packet = io.buffer();
+
+    struct Case { bool valid; uint32 senderKey; bool sent; const char* state; };
+    const Case cases[] = {
+        {true,  0x1234, true,  "valid"},
+        {false, 0x1234, true,  "wrong"},
+        {false, 0x1234, false, "missing"},
+        {false, 0,      false, "unencrypted"},
+    };
+    uint32 ip = 0x0B000001;   // one IP per case, clear of the flood limit
+    for (const Case& c : cases) {
+        g_kadLines.clear();
+        Kademlia::getInstanceUDPListener()->processPacket(
+            reinterpret_cast<const uint8*>(packet.constData()), static_cast<uint32>(packet.size()),
+            ip++, kNodeUdp, c.valid, KadUDPKey(c.senderKey, 0x0A000001), c.sent);
+        const QString want = QStringLiteral("CALLBACK_REQ from %1 — receiver key %2")
+                                 .arg(ipToString(ip - 1), QLatin1StringView(c.state));
+        QVERIFY2(std::ranges::any_of(g_kadLines, [&](const QString& l) { return l.contains(want); }),
+                 qPrintable(want + QStringLiteral(" | got: ") + g_kadLines.join(u'|')));
+    }
 }
 
 // A source request is exactly 26 bytes (MFC KademliaUDPListener.cpp:1093-1101). A

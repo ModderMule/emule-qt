@@ -94,7 +94,8 @@ public:
     void bootstrap(uint32 ip, uint16 port);
     void bootstrap(const QString& host, uint16 port);
     void processPacket(const uint8* data, uint32 len, uint32 ip, uint16 port,
-                       bool validReceiverKey, const KadUDPKey& senderKey);
+                       bool validReceiverKey, const KadUDPKey& senderKey,
+                       bool receiverKeySent = false);
 
     void addEvent(RoutingZone* zone);
     void removeEvent(RoutingZone* zone);

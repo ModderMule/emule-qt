@@ -33,6 +33,10 @@ private slots:
     void typesSwitchedOffAreLeftOut();
     void theMagnetSchemeIsAUrlProtocol();
     void theEd2kSwitchClaimsBothLinkSchemes();
+    void aSwitchedOffNetworkClaimsNothing();
+    void mimeappsLosesOnlyOurHandlerOfDroppedTypes();
+    void mimeappsKeepsOtherHandlersOnTheLine();
+    void mimeappsRemovedAssociationsStayAlone();
 };
 
 namespace {
@@ -300,6 +304,53 @@ void tst_FileAssociation::theEd2kSwitchClaimsBothLinkSchemes()
     }));
     QCOMPARE(FileAssociation::xdgMimeTypes({.ed2k = true}),
              QStringList({QStringLiteral("x-scheme-handler/ed2k"), QStringLiteral("x-scheme-handler/ed3k")}));
+}
+
+void tst_FileAssociation::aSwitchedOffNetworkClaimsNothing()
+{
+    const FileAssociation::FileTypes chosen{.nzb = true, .torrent = true, .ed2k = true};
+    // Usenet off, BitTorrent on, eD2K on (#121)
+    const auto wanted = chosen.masked({.nzb = false, .torrent = true, .ed2k = true});
+    QCOMPARE(wanted, (FileAssociation::FileTypes{.nzb = false, .torrent = true, .ed2k = true}));
+    // never claims what was not chosen, whatever is on
+    QCOMPARE(FileAssociation::FileTypes{}.masked(chosen), FileAssociation::FileTypes{});
+}
+
+void tst_FileAssociation::mimeappsLosesOnlyOurHandlerOfDroppedTypes()
+{
+    // the reporter's file, Usenet and BitTorrent switched off
+    const QString before = QStringLiteral(
+        "[Default Applications]\n"
+        "application/x-nzb=emuleqt.desktop\n"
+        "application/x-bittorrent=emuleqt.desktop\n"
+        "x-scheme-handler/magnet=emuleqt.desktop\n"
+        "x-scheme-handler/ed2k=emuleqt.desktop\n"
+        "text/html=firefox.desktop\n");
+    const QString after = FileAssociation::withoutMimeDefaults(
+        before, FileAssociation::xdgMimeTypes({.nzb = true, .torrent = true}));
+    QCOMPARE(after, QStringLiteral("[Default Applications]\n"
+                                   "x-scheme-handler/ed2k=emuleqt.desktop\n"
+                                   "text/html=firefox.desktop\n"));
+}
+
+void tst_FileAssociation::mimeappsKeepsOtherHandlersOnTheLine()
+{
+    const QString before = QStringLiteral("[Added Associations]\n"
+                                          "x-scheme-handler/magnet=org.qbittorrent.qBittorrent.desktop;emuleqt.desktop;\n");
+    const QString after = FileAssociation::withoutMimeDefaults(before, {QStringLiteral("x-scheme-handler/magnet")});
+    QCOMPARE(after, QStringLiteral("[Added Associations]\n"
+                                   "x-scheme-handler/magnet=org.qbittorrent.qBittorrent.desktop;\n"));
+    // nothing of ours: left byte for byte
+    const QString foreign = QStringLiteral("[Default Applications]\nx-scheme-handler/magnet=other.desktop\n");
+    QCOMPARE(FileAssociation::withoutMimeDefaults(foreign, {QStringLiteral("x-scheme-handler/magnet")}), foreign);
+}
+
+void tst_FileAssociation::mimeappsRemovedAssociationsStayAlone()
+{
+    // the user's own "never open with eMule Qt": dropping that line would undo it
+    const QString before = QStringLiteral("[Removed Associations]\n"
+                                          "application/x-nzb=emuleqt.desktop\n");
+    QCOMPARE(FileAssociation::withoutMimeDefaults(before, {QStringLiteral("application/x-nzb")}), before);
 }
 
 QTEST_MAIN(tst_FileAssociation)

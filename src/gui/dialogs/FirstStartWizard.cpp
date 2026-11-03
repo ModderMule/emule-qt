@@ -344,6 +344,12 @@ QWidget* FirstStartWizard::setupDesktopRow(QWidget* parent)
     m_assocEd2kCheck->setChecked(shown.ed2k);
     m_assocTorrentCheck->setChecked(shown.torrent);
     m_assocNzbCheck->setChecked(shown.nzb);
+    m_shownTypes = shown;
+
+    // a network switched off claims nothing (#121)
+    for (QCheckBox* net : {m_kadCheck, m_ed2kCheck, m_ed3kCheck, m_btCheck, m_usenetCheck})
+        if (net)
+            connect(net, &QCheckBox::toggled, this, &FirstStartWizard::syncFileTypeBoxes);
     return group;
 }
 
@@ -542,6 +548,7 @@ void FirstStartWizard::fillFromSettings(const QCborMap& prefs)
     m_hosterCheck->setChecked(prefs.value(QLatin1StringView("ed3kHosterEnabled")).toBool(true));
     m_hosterCheck->setEnabled(m_ed3kCheck->isChecked());
     m_extControlsCheck->setChecked(prefs.value(QLatin1StringView("showExtControls")).toBool(true));
+    syncFileTypeBoxes();
 
     m_current = {number(QLatin1StringView("maxGraphDownloadRate")),
                  number(QLatin1StringView("maxGraphUploadRate")),
@@ -920,9 +927,11 @@ void FirstStartWizard::finish()
 
 void FirstStartWizard::applyFileTypes()
 {
-    const gui::FileAssociation::FileTypes wanted{.nzb = m_assocNzbCheck->isChecked(),
-                                                 .torrent = m_assocTorrentCheck->isChecked(),
-                                                 .ed2k = m_assocEd2kCheck->isChecked()};
+    // a greyed box (network off) keeps the choice: the network switch gates it (#121)
+    const auto boxOr = [](const QCheckBox* box, bool kept) { return box->isEnabled() ? box->isChecked() : kept; };
+    const gui::FileAssociation::FileTypes wanted{.nzb = boxOr(m_assocNzbCheck, m_shownTypes.nzb),
+                                                 .torrent = boxOr(m_assocTorrentCheck, m_shownTypes.torrent),
+                                                 .ed2k = boxOr(m_assocEd2kCheck, m_shownTypes.ed2k)};
 #ifdef Q_OS_MACOS
     // only a change: LaunchServices may ask the user about each one
     if (wanted.nzb == m_claimedTypes.nzb && wanted.torrent == m_claimedTypes.torrent
@@ -976,6 +985,22 @@ void FirstStartWizard::endUPnPWait(const QString& text, bool failed)
         pal.setColor(QPalette::WindowText, roleColor(TextRole::Error));
     m_upnpStatus->setPalette(pal);
     m_upnpStatus->setText(text);
+}
+
+/// The file type boxes follow the network boxes: greyed and off while their network
+/// is off, back to the first shown choice when it is switched on again (#121).
+void FirstStartWizard::syncFileTypeBoxes()
+{
+    const auto sync = [](QCheckBox* box, bool networkOn, bool chosen) {
+        if (!box || box->isEnabled() == networkOn)
+            return;
+        box->setEnabled(networkOn);
+        box->setChecked(networkOn && chosen);
+    };
+    sync(m_assocNzbCheck, m_usenetCheck->isChecked(), m_shownTypes.nzb);
+    sync(m_assocTorrentCheck, m_btCheck->isChecked(), m_shownTypes.torrent);
+    sync(m_assocEd2kCheck, m_kadCheck->isChecked() || m_ed2kCheck->isChecked() || m_ed3kCheck->isChecked(),
+         m_shownTypes.ed2k);
 }
 
 } // namespace eMule

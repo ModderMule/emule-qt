@@ -1451,6 +1451,18 @@ public:
     /// links. IPC/REST key `ed3kNodeLists`: links separated by spaces. Default: none.
     [[nodiscard]] QStringList ed3kNodeLists() const;
     void setEd3kNodeLists(const QStringList& links);
+    /// Node lists fetched by themselves when too few nodes answer (bootstrap.md §1). Default
+    /// on. IPC/REST key `ed3kNodeListAuto`.
+    [[nodiscard]] bool ed3kNodeListAuto() const;
+    void setEd3kNodeListAuto(bool val);
+    /// Age in days a fetched or opened node list may have (bootstrap.md §2); 0 = no limit.
+    /// The shipped list has none. Default 30. IPC/REST key `ed3kNodeListMaxAgeDays`.
+    [[nodiscard]] int ed3kNodeListMaxAgeDays() const;
+    void setEd3kNodeListMaxAgeDays(int days);
+    /// eD2K peers with a derived user hash seed ed3k Kad while it has < 10 contacts
+    /// (bootstrap.md §1 source 4). Default on. IPC/REST key `ed3kSeedFromEd2k`.
+    [[nodiscard]] bool ed3kSeedFromEd2k() const;
+    void setEd3kSeedFromEd2k(bool val);
     /// Cache servers (http-source.md §4.1) as the `ed3k:cache?url=…&key=…` links the user
     /// agreed to: credentials (the upload key), AES-encrypted in the YAML like the other
     /// secrets, never logged nor sent over IPC/REST. Default: none.

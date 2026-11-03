@@ -210,6 +210,7 @@ private slots:
     void createFromFile_setsDate();
     void createFromFile_refusesAFileThatChangedSinceTheScan();
     void mediaExtractVersion_isStampedStoredAndComparedOnLoad();
+    void containerCheck_isKeptInKnownMet();
     void createFromFile_progressCallback();
     void updatePartsInfo_noClients();
     void updatePartsInfo_usesUploaderStatusAndCompleteCounts();
@@ -1072,6 +1073,53 @@ void tst_KnownFile::mediaExtractVersion_isStampedStoredAndComparedOnLoad()
     QVERIFY(reloaded.loadFromFile(in));
     QCOMPARE(reloaded.mediaExtractVer(), uint32{kMediaExtractVersion});
     QVERIFY(!reloaded.mediaExtractIsStale());
+}
+
+// The fake-file verdict comes back from known.met without opening the file (big shares)
+void tst_KnownFile::containerCheck_isKeptInKnownMet()
+{
+    eMule::testing::TempDir tmpDir;
+    const QString filename = QStringLiteral("fake.wmv");
+    QFile f(tmpDir.filePath(filename));
+    QVERIFY(f.open(QIODevice::WriteOnly));
+    f.write(QByteArray(400, '\x5A'));   // no ASF signature
+    f.close();
+
+    KnownFile judged;
+    QVERIFY(judged.createFromFile(tmpDir.path(), filename));
+    QCOMPARE(judged.containerCheck().verdict, ContainerVerdict::NoKnownContainer);
+
+    SafeMemFile out;
+    QVERIFY(judged.writeToFile(out));
+    QVERIFY(QFile::remove(tmpDir.filePath(filename)));   // a re-read would now say Unchecked
+
+    SafeMemFile in(out.takeBuffer());
+    KnownFile reloaded;
+    QVERIFY(reloaded.loadFromFile(in));
+    QVERIFY(reloaded.containerCheckResolved());
+    QCOMPARE(reloaded.containerCheckIfResolved().verdict, ContainerVerdict::NoKnownContainer);
+    QCOMPARE(reloaded.containerCheckIfResolved().mark(), ContainerMark::Fake);
+    QVERIFY2(reloaded.getTag(FT_CONTAINERCHECK) == nullptr, "not kept as a stray tag");
+
+    // Written again on the next save
+    SafeMemFile out2;
+    QVERIFY(reloaded.writeToFile(out2));
+    SafeMemFile in2(out2.takeBuffer());
+    KnownFile again;
+    QVERIFY(again.loadFromFile(in2));
+    QCOMPARE(again.containerCheckIfResolved().verdict, ContainerVerdict::NoKnownContainer);
+
+    // Unchecked (no promise for .txt) costs no read, so it is not stored
+    KnownFile plain;
+    plain.setFileName(QStringLiteral("notes.txt"));
+    (void)plain.containerCheck();
+    QVERIFY(plain.containerCheckResolved());
+    SafeMemFile out3;
+    QVERIFY(plain.writeToFile(out3));
+    SafeMemFile in3(out3.takeBuffer());
+    KnownFile plainBack;
+    QVERIFY(plainBack.loadFromFile(in3));
+    QVERIFY(!plainBack.containerCheckResolved());
 }
 
 void tst_KnownFile::createFromFile_progressCallback()

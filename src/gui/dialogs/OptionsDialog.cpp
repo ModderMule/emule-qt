@@ -945,13 +945,17 @@ QWidget* OptionsDialog::createGeneralPage()
     miscBtnLayout->addStretch();
     miscLayout->addLayout(miscBtnLayout);
     // #116: skip the confirmation for clicked links; only matters while eMule Qt takes them
-    m_addLinksDirectCheck = new QCheckBox(tr("Add clicked eD2K links without asking"), miscGroup);
+    m_addLinksDirectCheck = new QCheckBox(tr("Add clicked links without asking"), miscGroup);
     m_addLinksDirectCheck->setToolTip(
-        tr("Adds a clicked ed2k:// link to the downloads at once, without the confirmation window."));
+        tr("Adds a clicked ed2k://, ed3k: file or magnet link to the downloads at once, without the "
+           "confirmation window, and leaves eMule Qt in the background."));
     miscLayout->addWidget(m_addLinksDirectCheck);
     connect(m_addLinksDirectCheck, &QCheckBox::toggled, this, &OptionsDialog::markDirty);
 #ifdef Q_OS_MACOS
-    connect(m_associateEd2kCheck, &QCheckBox::toggled, m_addLinksDirectCheck, &QWidget::setEnabled);
+    // was: connect(m_associateEd2kCheck, &QCheckBox::toggled, m_addLinksDirectCheck, &QWidget::setEnabled);
+    connect(m_associateEd2kCheck, &QCheckBox::toggled, this, [this](bool on) {
+        m_addLinksDirectCheck->setEnabled(on || (m_associateTorrentCheck && m_associateTorrentCheck->isChecked()));
+    });
 #endif
 
     layout->addWidget(miscGroup);
@@ -5736,6 +5740,12 @@ QWidget* OptionsDialog::createBitTorrentPage()
         desktopLayout->addWidget(m_associateTorrentCheck);
         mainLayout->addWidget(desktopGroup);
         connect(m_associateTorrentCheck, &QCheckBox::toggled, this, &OptionsDialog::markDirty);
+#ifdef Q_OS_MACOS
+        // the General page's "add clicked links without asking" covers magnets too (#119)
+        connect(m_associateTorrentCheck, &QCheckBox::toggled, this, [this](bool on) {
+            m_addLinksDirectCheck->setEnabled(on || (m_associateEd2kCheck && m_associateEd2kCheck->isChecked()));
+        });
+#endif
     }
     mainLayout->addStretch();
 
@@ -7877,8 +7887,12 @@ void OptionsDialog::saveSettings()
                 return;
             Ipc::IpcMessage get(Ipc::IpcMsgType::GetPreferences);
             ipc->sendRequest(std::move(get), [](const Ipc::IpcMessage& prefs) {
-                if (prefs.isValid() && prefs.fieldBool(0))
-                    thePrefs.updateFromCbor(prefs.fieldMap(1));
+                if (!prefs.isValid() || !prefs.fieldBool(0))
+                    return;
+                thePrefs.updateFromCbor(prefs.fieldMap(1));
+                // a network switched on or off claims or drops its file types (#121)
+                if (theUiState.firstStartWizardDone())
+                    applyDesktopIntegration();
             });
         });
     } else {
@@ -8114,13 +8128,10 @@ void OptionsDialog::saveSettings()
             theUiState.setAssociateNzbFiles(m_associateNzbCheck->isChecked());
         if (torrentChanged)
             theUiState.setAssociateTorrentFiles(m_associateTorrentCheck->isChecked());
-        QString assocError;
-        if (!gui::FileAssociation::applyFileTypes(
-                savedFileTypes(), assocError)) {
-            QMessageBox::warning(this, tr("File types"),
-                                 tr("Could not update the file associations: %1").arg(assocError));
-        }
     }
+    // only what changed, of the enabled networks (#121); again once the core's prefs are mirrored
+    if (theUiState.firstStartWizardDone())
+        applyDesktopIntegration();
 #endif
     theUiState.setAddLinksWithoutConfirm(m_addLinksDirectCheck->isChecked());
 
@@ -8401,7 +8412,7 @@ void OptionsDialog::fillDaemonSettings(const QCborMap& prefs)
         m_associateTorrentCheck->setChecked(m_claimedTypes.torrent);
     if (m_associateEd2kCheck)
         m_associateEd2kCheck->setChecked(m_claimedTypes.ed2k);
-    m_addLinksDirectCheck->setEnabled(m_claimedTypes.ed2k);
+    m_addLinksDirectCheck->setEnabled(m_claimedTypes.ed2k || m_claimedTypes.torrent);
 #else
     if (m_associateNzbCheck)
         m_associateNzbCheck->setChecked(theUiState.associateNzbFiles());

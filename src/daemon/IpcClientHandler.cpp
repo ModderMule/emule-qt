@@ -373,6 +373,18 @@ void IpcClientHandler::onMessageReceived(const IpcMessage& msg)
     // hiding (1047-1048, batch 15): before the rest of the ed3k block
     if (Ed3kHideBridge::handleRequest(msg, [this](const IpcMessage& reply) { sendMessage(reply); }))
         return;
+    // toolbar Connect / Disconnect of the node: the daemon starts or stops it
+    if (msg.type() == IpcMsgType::SetEd3kConnected) {
+        if (!thePrefs.ed3kEnabled() || !Ed3kBridge::available()) {
+            sendMessage(IpcMessage::makeResult(msg.seqId(), false,
+                                               QCborMap{{QStringLiteral("error"), QStringLiteral("ed3k is off.")}}));
+            return;
+        }
+        Ed3kBridge::setConnectWanted(msg.fieldBool(0));
+        emit ed3kConfigChanged();
+        sendMessage(IpcMessage::makeResult(msg.seqId(), true));
+        return;
+    }
     if (Ed3kBridge::handleRequest(msg, [this](const IpcMessage& reply) { sendMessage(reply); }))
         return;
 
@@ -4662,6 +4674,12 @@ bool IpcClientHandler::applyPreferenceEd3k(const QString& key, const QCborValue&
         thePrefs.setEd3kHopShare(static_cast<int>(std::clamp<qint64>(val.toInteger(), 1, 100)));
     else if (key == QStringLiteral("ed3kNodeLists"))
         thePrefs.setEd3kNodeLists(Preferences::rpcUrlList(val));
+    else if (key == QStringLiteral("ed3kNodeListAuto"))
+        thePrefs.setEd3kNodeListAuto(val.toBool());
+    else if (key == QStringLiteral("ed3kNodeListMaxAgeDays"))
+        thePrefs.setEd3kNodeListMaxAgeDays(static_cast<int>(std::clamp<qint64>(val.toInteger(), 0, 3650)));
+    else if (key == QStringLiteral("ed3kSeedFromEd2k"))
+        thePrefs.setEd3kSeedFromEd2k(val.toBool());
     else if (key == QStringLiteral("ed3kSitePort"))
         thePrefs.setEd3kSitePort(static_cast<uint16>(std::clamp<qint64>(val.toInteger(), 1, 65535)));
     else if (Ed3kCreditPrefs c = thePrefs.ed3kCredit(); Preferences::applyEd3kCreditKey(c, key, val))

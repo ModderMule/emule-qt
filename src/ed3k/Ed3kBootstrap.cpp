@@ -7,8 +7,10 @@
 #include "Ed3kSession.h"
 #include "Ed3kStore.h"
 
+#include "prefs/Preferences.h"
 #include "utils/Log.h"
 
+#include <QDateTime>
 #include <QDir>
 #include <QTimer>
 #include <QUrl>
@@ -23,6 +25,11 @@ namespace {
 
 constexpr int kAskTimeoutMs = 5 * 60 * 1000;
 const QString kLastFile = QStringLiteral("bootstrap.dat");
+const QString kShippedName = QStringLiteral("nodes.ed3knod");
+constexpr qint64 kSeedEveryMs = 1000;            // eD2K seeds: one a second
+constexpr qint64 kSeedAgainMs = 10 * 60 * 1000;  // each address once in 10 min
+constexpr std::uint64_t kSeedBelow = 10;         // contacts (packmule ED2K_SEED_BELOW)
+constexpr qsizetype kSeedTriedMax = 4096;
 
 QString errorName(ffi::Error e)
 {
@@ -37,6 +44,8 @@ Ed3kBootstrap::Ed3kBootstrap(Ed3kSession& session, QObject* parent)
 {
     connect(&m_session, &Ed3kSession::eventPolled, this, &Ed3kBootstrap::onEventPolled, Qt::DirectConnection);
     connect(&m_session, &Ed3kSession::statusChanged, this, &Ed3kBootstrap::onStatus);
+    m_shippedPath = QDir(thePrefs.configDir()).filePath(kShippedName);
+    m_seedClock.start();
     onStatus();
 }
 
@@ -84,6 +93,89 @@ bool Ed3kBootstrap::fetchNow()
     const auto ok = e->bootstrapFetch(m_session.now());
     m_session.pump();
     return ok.has_value();
+}
+
+void Ed3kBootstrap::setPolicy(bool autoFetch, int maxAgeDays)
+{
+    maxAgeDays = std::max(0, maxAgeDays);
+    if (autoFetch == m_autoFetch && maxAgeDays == m_maxAgeDays)
+        return;
+    m_autoFetch = autoFetch;
+    m_maxAgeDays = maxAgeDays;
+    if (m_running)
+        configure();
+}
+
+void Ed3kBootstrap::setShippedFile(const QString& path)
+{
+    m_shippedPath = path;
+}
+
+bool Ed3kBootstrap::offerEd2kPeer(const std::array<std::uint8_t, 16>& userHash, const QHostAddress& ip, std::uint16_t tcpPort)
+{
+    auto* e = m_session.engine();
+    if (!m_seedFromEd2k || !e || tcpPort == 0 || ip.isNull())
+        return false;
+    // cheap checks first: most hashes are no hint, most of the time Kad is full
+    const auto hint = ffi::userHashHint(userHash);
+    if (!hint || m_session.contactCount() >= kSeedBelow)
+        return false;
+    const qint64 now = m_seedClock.elapsed();
+    const QString key = ip.toString();
+    if (const auto it = m_seedTried.constFind(key); it != m_seedTried.cend() && now - *it < kSeedAgainMs)
+        return false;
+    if (!m_seedTried.isEmpty() && now - m_lastSeedMs < kSeedEveryMs)
+        return false;
+    if (m_seedTried.size() >= kSeedTriedMax)
+        m_seedTried.clear();
+    m_seedTried.insert(key, now);
+    m_lastSeedMs = now;
+    const auto dialled = e->kadSeedHint(m_session.now(), *hint, toAddress(ip, tcpPort));
+    m_session.pump();
+    if (dialled && *dialled)
+        logEd3kKadDebug(QStringLiteral("ed3k: Kad seed from eD2K peer %1:%2").arg(key).arg(tcpPort));
+    return dialled && *dialled;
+}
+
+std::expected<QByteArray, QString> Ed3kBootstrap::exportList(const QString& comment) const
+{
+    auto* e = m_session.engine();
+    if (!e)
+        return std::unexpected(QStringLiteral("ed3k is not running"));
+    const QByteArray c = comment.toUtf8();
+    auto file = e->bootstrapExport(m_session.now(), std::string_view(c.constData(), std::size_t(c.size())));
+    if (!file) {
+        if (file.error() == ffi::Error::NotFound)
+            return std::unexpected(QStringLiteral("no usable contacts yet"));
+        return std::unexpected(QStringLiteral("export failed (error %1)").arg(errorName(file.error())));
+    }
+    const auto bytes = file->bytes();
+    return QByteArray(reinterpret_cast<const char*>(bytes.data()), qsizetype(bytes.size()));
+}
+
+std::expected<QByteArray, QString> Ed3kBootstrap::exportSaved(const QString& configDir, const QString& comment)
+{
+    const QString dir = stateDir(configDir);
+    auto seed = loadSecret(dir, QStringLiteral("node.key"));
+    if (!seed)
+        return std::unexpected(QStringLiteral("no ed3k node key in %1").arg(dir));
+    const QByteArray state = readBlob(QDir(dir).filePath(QStringLiteral("kad.dat")));
+    if (state.isEmpty()) {
+        wipe(*seed);
+        return std::unexpected(QStringLiteral("no saved ed3k contacts in %1 (run the node first)").arg(dir));
+    }
+    const QByteArray c = comment.toUtf8();
+    auto file = ffi::nodeListFromState(*seed, {}, std::uint64_t(QDateTime::currentSecsSinceEpoch()),
+                                       {reinterpret_cast<const std::byte*>(state.constData()), std::size_t(state.size())},
+                                       std::string_view(c.constData(), std::size_t(c.size())));
+    wipe(*seed);
+    if (!file) {
+        if (file.error() == ffi::Error::NotFound)
+            return std::unexpected(QStringLiteral("the saved contacts hold no usable node"));
+        return std::unexpected(QStringLiteral("export failed (error %1)").arg(errorName(file.error())));
+    }
+    const auto bytes = file->bytes();
+    return QByteArray(reinterpret_cast<const char*>(bytes.data()), qsizetype(bytes.size()));
 }
 
 QString Ed3kBootstrap::lastFile() const
@@ -143,6 +235,7 @@ void Ed3kBootstrap::onStatus()
     if (running) {
         loadLast();
         configure();
+        applyShipped();
     }
 }
 
@@ -161,8 +254,31 @@ void Ed3kBootstrap::configure()
         const QByteArray url = src->url.toUtf8();
         sources.push_back(ffi::Engine::NodesSource{std::string(url.constData(), std::size_t(url.size())), src->key});
     }
-    if (auto ok = e->bootstrapConfigure(sources, true, m_last); !ok)
+    if (auto ok = e->bootstrapConfigure(sources, m_autoFetch, m_last); !ok)
         logEd3kWarning(QStringLiteral("ed3k: node list sources not set (error %1)").arg(errorName(ok.error())));
+    applyPolicy();
+}
+
+void Ed3kBootstrap::applyPolicy()
+{
+    auto* e = m_session.engine();
+    if (!e)
+        return;
+    (void)e->bootstrapMaxAge(std::uint64_t(m_maxAgeDays) * 86'400);
+}
+
+void Ed3kBootstrap::applyShipped()
+{
+    auto* e = m_session.engine();
+    if (!e || m_shippedPath.isEmpty())
+        return;
+    const QByteArray file = readBlob(m_shippedPath);
+    if (file.isEmpty())
+        return;
+    if (auto ok = e->bootstrapShipped({reinterpret_cast<const std::byte*>(file.constData()), std::size_t(file.size())}); !ok)
+        logEd3kWarning(QStringLiteral("ed3k: shipped node list not used (error %1)").arg(errorName(ok.error())));
+    else
+        logEd3kKadDebug(QStringLiteral("ed3k: shipped node list %1 (%2 bytes)").arg(m_shippedPath).arg(file.size()));
 }
 
 void Ed3kBootstrap::loadLast()

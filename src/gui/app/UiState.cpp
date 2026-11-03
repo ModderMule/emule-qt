@@ -80,6 +80,7 @@ void UiState::load(const QString& configDir)
 
         m_serverSplitSizes     = readIntList(root, "serverSplitSizes");
         m_kadSplitSizes        = readIntList(root, "kadSplitSizes");
+        m_ed3kKadSplitSizes    = readIntList(root, "ed3kKadSplitSizes");
         m_transferSplitSizes   = readIntList(root, "transferSplitSizes");
         m_sharedHorzSplitSizes = readIntList(root, "sharedHorzSplitSizes");
         m_sharedVertSplitSizes = readIntList(root, "sharedVertSplitSizes");
@@ -114,6 +115,9 @@ void UiState::load(const QString& configDir)
         m_associateTorrentFiles = root["associateTorrentFiles"].as<bool>(m_associateTorrentFiles);
         if (const auto ed2k = root["associateEd2kLinks"]; ed2k && ed2k.IsScalar())
             m_associateEd2kLinks = ed2k.as<bool>();
+        if (const auto applied = root["appliedFileTypes"]; applied && applied.IsScalar())
+            m_appliedFileTypes = applied.as<int>();
+        m_launcherInstalled = root["launcherInstalled"].as<bool>(m_launcherInstalled);
         m_addLinksWithoutConfirm = root["addLinksWithoutConfirm"].as<bool>(m_addLinksWithoutConfirm);
         m_miniMuleAutoClose = root["miniMuleAutoClose"].as<bool>(m_miniMuleAutoClose);
         m_firstStartWizardDone = root["firstStartWizardDone"].as<bool>(m_firstStartWizardDone);
@@ -219,6 +223,7 @@ void UiState::save(const QString& configDir)
 
     writeIntList(out, "serverSplitSizes",     m_serverSplitSizes);
     writeIntList(out, "kadSplitSizes",        m_kadSplitSizes);
+    writeIntList(out, "ed3kKadSplitSizes",    m_ed3kKadSplitSizes);
     writeIntList(out, "transferSplitSizes",   m_transferSplitSizes);
     writeIntList(out, "sharedHorzSplitSizes", m_sharedHorzSplitSizes);
     writeIntList(out, "sharedVertSplitSizes", m_sharedVertSplitSizes);
@@ -239,6 +244,9 @@ void UiState::save(const QString& configDir)
     out << YAML::Key << "associateTorrentFiles" << YAML::Value << m_associateTorrentFiles;
     if (m_associateEd2kLinks)
         out << YAML::Key << "associateEd2kLinks" << YAML::Value << *m_associateEd2kLinks;
+    if (m_appliedFileTypes)
+        out << YAML::Key << "appliedFileTypes" << YAML::Value << *m_appliedFileTypes;
+    out << YAML::Key << "launcherInstalled" << YAML::Value << m_launcherInstalled;
     out << YAML::Key << "addLinksWithoutConfirm" << YAML::Value << m_addLinksWithoutConfirm;
     out << YAML::Key << "miniMuleAutoClose" << YAML::Value << m_miniMuleAutoClose;
     out << YAML::Key << "firstStartWizardDone" << YAML::Value << m_firstStartWizardDone;
@@ -398,6 +406,11 @@ void UiState::bindServerSplitter(QSplitter* splitter)
 void UiState::bindKadSplitter(QSplitter* splitter)
 {
     bindSplitter(splitter, m_kadSplitSizes);
+}
+
+void UiState::bindEd3kKadSplitter(QSplitter* splitter)
+{
+    bindSplitter(splitter, m_ed3kKadSplitSizes);
 }
 
 void UiState::bindTransferSplitter(QSplitter* splitter)

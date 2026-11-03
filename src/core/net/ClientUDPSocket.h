@@ -161,9 +161,12 @@ signals:
     ///                          the one we minted for its IP — i.e. its IP is proven.
     /// @param senderVerifyKey   The peer's own verify key for us (0 if plaintext). We
     ///                          store it and echo it back on our next packet to them.
+    /// @param receiverKeySent   The peer echoed a non-zero receiver key (valid or not).
+    ///                          Splits "no key" from "wrong key" in the Kad log.
     void kadPacketReceived(uint8 opcode, const uint8* data, uint32 size,
                            const Endpoint& sender,
-                           bool validReceiverKey, uint32 senderVerifyKey);
+                           bool validReceiverKey, uint32 senderVerifyKey,
+                           bool receiverKeySent);
 
 private slots:
     void onReadyRead();

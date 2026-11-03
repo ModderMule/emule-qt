@@ -231,6 +231,10 @@ using Kind = PrefSpec::Kind;
                                                       "Part of every site's address: a change loses what sites stored."));
     t << advanced(text("ed3kNodeLists", 8192, "Node list sources for the first ed3k contact (ed3k:nodes?url=...&key=... "
                                               "links, separated by spaces)."));
+    t << flag("ed3kNodeListAuto", "Fetch ed3k node lists from the sources automatically when too few nodes answer.");
+    t << number("ed3kNodeListMaxAgeDays", 0, 3650, "days", "Refuse fetched or opened ed3k node lists older than this; "
+                                                          "0 = no limit. The shipped list has none.");
+    t << flag("ed3kSeedFromEd2k", "Seed ed3k Kad from eD2K peers that also speak ed3k while it has few contacts.");
     // credits (credit.md): off by default, no default chain or contract (§7.1, §9)
     t << flag("ed3kCreditEnabled", "Use ed3k credits (credit.md). The ledger is public: it shows with whom this "
                                    "node traded, how much and when (§9).");

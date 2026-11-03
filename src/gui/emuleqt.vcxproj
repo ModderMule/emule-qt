@@ -285,6 +285,10 @@
     <ClCompile Include="controls\KadContactsModel.cpp" />
     <ClCompile Include="controls\KadLookupGraph.cpp" />
     <ClCompile Include="panels\KadPanel.cpp" />
+    <ClCompile Include="panels\KadPanelBase.cpp" />
+    <ClCompile Include="panels\Ed2kKadPanel.cpp" />
+    <ClCompile Include="panels\Ed3kKadPanel.cpp" />
+    <ClCompile Include="controls\Ed3kKadModels.cpp" />
     <ClCompile Include="controls\KadSearchesModel.cpp" />
     <ClCompile Include="controls\LogTextView.cpp" />
     <ClCompile Include="controls\LogWidget.cpp" />
@@ -482,6 +486,10 @@
     <QtMoc Include="controls\KadContactsModel.h" />
     <QtMoc Include="controls\KadLookupGraph.h" />
     <QtMoc Include="panels\KadPanel.h" />
+    <QtMoc Include="panels\KadPanelBase.h" />
+    <QtMoc Include="panels\Ed2kKadPanel.h" />
+    <QtMoc Include="panels\Ed3kKadPanel.h" />
+    <QtMoc Include="controls\Ed3kKadModels.h" />
     <QtMoc Include="controls\KadSearchesModel.h" />
     <QtMoc Include="controls\LogTextView.h" />
     <QtMoc Include="controls\LogWidget.h" />

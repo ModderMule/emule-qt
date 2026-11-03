@@ -579,10 +579,12 @@ void Search::processResponse(uint32 fromIP, uint16 fromPort, const ContactArray&
 
     // Keep the responder's key for us. RES-learned contacts start with key 0,
     // so without this our publishes reach them unverified (audit 9c). Only fills
-    // a missing key (routing-table contacts are shared, HELLO key wins). A
-    // forged key just reads as invalid, same as key 0. Not in MFC.
+    // a missing key, and only on contacts this search owns: a keyed routing-table
+    // contact refuses updates without that key, so a spoofed RES could lock out
+    // the real node. A forged key just reads as invalid, same as key 0. Not in MFC.
     if (pFromContact && !senderKey.isEmpty()
-        && pFromContact->getUDPKey().getKeyValue(senderKey.ip()) == 0)
+        && pFromContact->getUDPKey().getKeyValue(senderKey.ip()) == 0
+        && std::ranges::find(m_deleteList, pFromContact) != m_deleteList.end())
         pFromContact->setUDPKey(senderKey);
 
     // SafeKad: validate responding contact and record response time

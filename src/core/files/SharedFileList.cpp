@@ -2178,9 +2178,10 @@ void SharedFileList::warmContainerChecks()
     if (m_containerSweepIdle)
         return;
 
-    // 15 ms of a 1 s tick. A verdict costs one 12-byte read and only for the ~20
-    // media extensions expectedContainer() promises anything about, so a share of a
-    // few thousand settles in the first tick or two and a huge one fills in visibly.
+    // 15 ms of a 1 s tick. A verdict costs one open + 512-byte read, only for the ~20
+    // media extensions expectedContainer() promises anything about, and only once:
+    // known.met keeps it. A share of a few thousand settles in the first tick or two,
+    // a huge one fills in visibly on its first start.
     constexpr qint64 kBudgetMs = 15;
     constexpr size_t kSliceFiles = 512;
 
@@ -2203,6 +2204,9 @@ void SharedFileList::warmContainerChecks()
         // Nothing left, or we stepped past the end of the ones that refuse to answer.
         m_containerSweepIdle = (m_containerSweepSkip == 0);
         m_containerSweepSkip = 0;
+        if (m_containerSweepNewVerdicts && m_knownFiles)
+            m_knownFiles->markDirty();
+        m_containerSweepNewVerdicts = false;
         return;
     }
 
@@ -2213,10 +2217,13 @@ void SharedFileList::warmContainerChecks()
     for (auto* file : pending) {
         file->containerCheck();   // resolves and memoises, or the bytes are not there yet
         ++tried;
-        if (!file->containerCheckResolved())
+        if (!file->containerCheckResolved()) {
             ++stillUnresolved;
-        else
+        } else {
             noteFileChanged(file->fileHash());   // the row carries the verdict
+            if (file->containerCheckIfResolved().verdict != ContainerVerdict::Unchecked)
+                m_containerSweepNewVerdicts = true;
+        }
         if (budget.elapsed() >= kBudgetMs)
             break;
     }

@@ -3,9 +3,9 @@
 /// @file CoreAttachment.h
 /// @brief Which core this GUI talks to, and whether closing the GUI stops it.
 ///
-/// The GUI that launched the core shuts it down on exit; one that found a core
-/// running leaves it alone (issue #106). The user can switch that for a local
-/// core: detach = core keeps running, attach = core stops with the GUI.
+/// A local core is attached by default: it stops when the GUI closes, also one
+/// the GUI found running, e.g. started by the updater (#106, #120). The user can
+/// detach it: the core then keeps running. A remote core never stops with the GUI.
 
 #include <QIcon>
 #include <QObject>
@@ -23,12 +23,12 @@ public:
 
     /// Where the core is. @p remote = another machine.
     void setTarget(const QString& host, uint16_t port, bool remote);
-    /// This GUI started the core: it stops with the GUI, unless the user detached.
+    /// This GUI started the core (shown in the location text)
     void noteLaunched();
 
     [[nodiscard]] bool isRemote() const { return m_remote; }
     [[nodiscard]] bool launchedByGui() const { return m_launched; }
-    [[nodiscard]] bool stopsOnExit() const { return m_stopsOnExit; }
+    [[nodiscard]] bool stopsOnExit() const { return !m_remote && !m_userDetached; }
     /// Only a local core can be attached; a remote one never stops with the GUI.
     [[nodiscard]] bool canToggle() const { return !m_remote; }
     /// "127.0.0.1:4712"; brackets around an IPv6 host
@@ -36,7 +36,7 @@ public:
 
     /// User choice: true = attach (stop core on exit), false = detach.
     void setStopsOnExit(bool stop);
-    void toggle() { setStopsOnExit(!m_stopsOnExit); }
+    void toggle() { setStopsOnExit(!stopsOnExit()); }
 
     /// "Local core at …" / "Remote core at …"
     [[nodiscard]] QString locationText() const;
@@ -57,8 +57,7 @@ private:
     uint16_t m_port = 0;
     bool m_remote = false;
     bool m_launched = false;
-    bool m_stopsOnExit = false;
-    bool m_userChose = false;   ///< a relaunch keeps the user's detach
+    bool m_userDetached = false;   ///< attached by default (#120); kept across relaunch/reconnect
 };
 
 } // namespace eMule

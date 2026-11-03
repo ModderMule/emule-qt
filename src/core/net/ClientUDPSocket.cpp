@@ -457,7 +457,7 @@ void ClientUDPSocket::processDatagram(const QNetworkDatagram& datagram)
         uint8 opcode = buf[1];
         emit kadPacketReceived(opcode, buf + 2,
                                static_cast<uint32>(bufLen - 2), senderEP,
-                               false, 0);
+                               false, 0, false);
     } else if (protoByte == OP_KADEMLIAPACKEDPROT) {
         // Compressed Kademlia packet — decompress before forwarding
         if (auto* stats = theApp.statistics)
@@ -468,7 +468,7 @@ void ClientUDPSocket::processDatagram(const QNetworkDatagram& datagram)
             emit kadPacketReceived(opcode,
                                    reinterpret_cast<const uint8*>(decompressed.constData()),
                                    static_cast<uint32>(decompressed.size()),
-                                   senderEP, false, 0);
+                                   senderEP, false, 0, false);
         }
     } else if (protoByte == OP_UDPRESERVEDPROT1 || protoByte == OP_UDPRESERVEDPROT2) {
         // Reserved UDP protocol headers (0xA3 / 0xB2). Obfuscation-transparent
@@ -518,7 +518,8 @@ void ClientUDPSocket::processDatagram(const QNetworkDatagram& datagram)
                 emit kadPacketReceived(opcode, dr.data + 2,
                                        static_cast<uint32>(dr.length - 2),
                                        senderEP,
-                                       validKey, dr.senderVerifyKey);
+                                       validKey, dr.senderVerifyKey,
+                                       dr.receiverVerifyKey != 0);
             } else if (innerProto == OP_KADEMLIAPACKEDPROT) {
                 if (auto* stats = theApp.statistics)
                     stats->addDownDataOverheadKad(static_cast<uint32>(dr.length)); // decrypted, as MFC
@@ -530,7 +531,8 @@ void ClientUDPSocket::processDatagram(const QNetworkDatagram& datagram)
                                            reinterpret_cast<const uint8*>(decompressed.constData()),
                                            static_cast<uint32>(decompressed.size()),
                                            senderEP,
-                                           validKey, dr.senderVerifyKey);
+                                           validKey, dr.senderVerifyKey,
+                                           dr.receiverVerifyKey != 0);
                 }
             }
         }

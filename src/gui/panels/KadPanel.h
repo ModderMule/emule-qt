@@ -1,40 +1,20 @@
 #pragma once
 
 /// @file KadPanel.h
-/// @brief Kad tab panel replicating the MFC KademliaWnd layout.
-///
-/// Layout (matching Kad.png / Kad Distance.png screenshots):
-///   - Top-left: QTabWidget with "Contacts" tab and "Search Details" tab
-///   - Top-right: Bootstrap/firewall controls + contacts histogram + network graph
-///   - Bottom: Current Searches table
-///   - Vertical splitter between top and bottom sections
+/// @brief Kad tab: one page per network, eD2K (the MFC KademliaWnd, Ed2kKadPanel) and ed3k
+/// (Ed3kKadPanel), as tabs above both. Each page has its own Contacts / Search Details tabs,
+/// controls column and lookups list (KadPanelBase).
 
-#include <QModelIndex>
 #include <QWidget>
 
-#include <cstdint>
-
-class QButtonGroup;
-class QLabel;
-class QLineEdit;
-class QPushButton;
-class QRadioButton;
-class QSplitter;
 class QTabWidget;
-class QTimer;
-class QTreeView;
 
 namespace eMule {
 
-class ContactsGraph;
+class Ed2kKadPanel;
+class Ed3kKadPanel;
 class IpcClient;
-class KadContactHistogram;
-class KadContactsModel;
-class KadLookupGraph;
-class KadSearchesModel;
-class PanelPoller;
 
-/// Full Kad tab page matching the MFC eMule Kad window.
 class KadPanel : public QWidget {
     Q_OBJECT
 
@@ -42,88 +22,26 @@ public:
     explicit KadPanel(QWidget* parent = nullptr);
     ~KadPanel() override;
 
-    /// Connect this panel to the IPC client for data updates.
+    /// Connect both pages to the IPC client.
     void setIpcClient(IpcClient* client);
 
-    /// Reload the nodes.dat URL field after the daemon's preferences landed.
+    /// The daemon's preferences landed: the nodes.dat URL field, the ed3k node list prefs.
     void refreshNodesUrl();
 
-    /// Switch to a sub-tab by index (0 = Contacts, 1 = Search Details).
+    /// 0 = eD2K Contacts, 1 = eD2K Search Details, 2 = ed3k Contacts, 3 = ed3k Search Details.
     void switchToSubTab(int index);
 
-protected:
-    bool eventFilter(QObject* watched, QEvent* event) override;
+    [[nodiscard]] Ed2kKadPanel* ed2kPanel() const { return m_ed2k; }
+    [[nodiscard]] Ed3kKadPanel* ed3kPanel() const { return m_ed3k; }
 
-private slots:
-    void onRefreshTimer();
-    void onGraphTimer();
-    void onBootstrapClicked();
-    void onDisconnectClicked();
-    void onRecheckFirewall();
-    void onBootstrapTypeChanged();
-    void onBootstrapInputChanged();
-    void onSearchSelectionChanged();
-    void onSearchDoubleClicked(const QModelIndex& index);
+signals:
+    /// The ed3k page wants the node list sources edited (Options, ed3k connection).
+    void editEd3kSourcesRequested();
 
 private:
-    void setupUi();
-    QWidget* createContactsPanel();
-    QWidget* createControlsPanel();
-    QWidget* createSearchesPanel();
-    void updateBootstrapButton();
-    void requestContacts();
-    void requestSearches();
-    void requestStatus();
-    void requestLookupHistory();
-    void autoPickLookup();
-    void clearLookupGraph();
-    void setLookupTabTitle(const QString& lookupTitle);
-    uint32_t selectedSearchId() const;
-
-    // Data models
-    KadContactsModel* m_contactsModel = nullptr;
-    KadSearchesModel* m_searchesModel = nullptr;
-
-    // Views
-    QTabWidget* m_topTabWidget = nullptr;
-    QTreeView* m_contactsView = nullptr;
-    QTreeView* m_searchesView = nullptr;
-    QLabel* m_contactsLabel = nullptr;
-    QLabel* m_searchesLabel = nullptr;
-    KadLookupGraph* m_lookupGraph = nullptr;
-    /// Search the graph shows; may outlive its row (MFC keeps the history while shown).
-    uint32_t m_graphSearchId = 0;
-
-    // Right panel controls
-    QPushButton*  m_recheckFwBtn     = nullptr;
-    QPushButton*  m_disconnectBtn    = nullptr;
-    QButtonGroup* m_bootstrapGroup   = nullptr;
-    QRadioButton* m_bootstrapIpRadio = nullptr;
-    QRadioButton* m_bootstrapUrlRadio = nullptr;
-    QRadioButton* m_bootstrapClientsRadio = nullptr;
-    QLineEdit*    m_ipEdit           = nullptr;
-    QLineEdit*    m_portEdit         = nullptr;
-    QLineEdit*    m_urlEdit          = nullptr;
-    QPushButton*  m_bootstrapBtn     = nullptr;
-    ContactsGraph*        m_contactsGraph   = nullptr;
-    KadContactHistogram*  m_kadNetworkGraph = nullptr;
-
-    // Splitters
-    QSplitter* m_vertSplitter = nullptr;
-
-    /// Contacts list + searches + status, suspended while this panel is hidden.
-    PanelPoller* m_poller = nullptr;
-
-    // Graph timer (60 s — responded nodes per minute). Keeps running while hidden:
-    // it accumulates history, so a pause would leave a gap in the trace.
-    QTimer*  m_graphTimer        = nullptr;
-    int64_t  m_lastResponseCount = 0;
-
-    // IPC link
-    IpcClient* m_ipc       = nullptr;
-    bool       m_kadRunning = false;
-    bool       m_kadConnected = false;
-    bool       m_downloadingNodes = false;
+    QTabWidget* m_networkTabs = nullptr;
+    Ed2kKadPanel* m_ed2k = nullptr;
+    Ed3kKadPanel* m_ed3k = nullptr;
 };
 
 } // namespace eMule

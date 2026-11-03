@@ -126,6 +126,9 @@ The `ed3k:` block in `preferences.yml`, with IPC/REST keys `ed3kEnabled` and `ed
 | `extOff` | `[]` | IPC/REST `ed3kExtOff` (names separated by spaces): optional extensions turned off (`Preferences::ed3kExtensionNames()`: the names of `extensions/*.md`, `lan` = `lan-discovery`) → `Config::extOff`; unknown names are logged and ignored. A change restarts the node |
 | `lan` | `true` | IPC/REST `ed3kLan`: LAN discovery (`Ed3kLan`). A change restarts the node |
 | `nodeLists` | `[]` | IPC/REST `ed3kNodeLists` (links separated by spaces): node list sources as `ed3k:nodes?url=…&key=…` links (`Ed3kBootstrap`); a source the user said yes to is added. No restart |
+| `nodeListAuto` | `true` | IPC/REST `ed3kNodeListAuto`: node lists fetched automatically when < 10 nodes answer (bootstrap.md §1). No restart |
+| `nodeListMaxAgeDays` | `30` | IPC/REST `ed3kNodeListMaxAgeDays`: fetched or opened lists older than this are refused (§2 "MAY"); 0 = no limit; the shipped list has none. No restart |
+| `seedFromEd2k` | `true` | IPC/REST `ed3kSeedFromEd2k`: eD2K peers with a derived user hash seed ed3k Kad while it has < 10 contacts (§1 source 4). No restart |
 | `credit:` | | `enabled` (`false`, §9), `chainId` (0 = none), `contract` (empty = none; no defaults, §7.1), `quorum` (2, held to 1..endpoints), `bidMaxPrice` (µ/MiB per download, 0 = receipts only), `sell` (`false`), `sellFloor` (µ/MiB), `sellSlots` (0 = the queue's); IPC/REST `ed3kCreditEnabled`, `ed3kCreditChainId` (decimal text: a u64), `ed3kCreditContract`, `ed3kCreditQuorum`, `ed3kCreditBidMaxPrice`, `ed3kCreditSell`, `ed3kCreditSellFloor`, `ed3kCreditSellSlots` (`Preferences::applyEd3kCreditKey`). No restart |
 | `shareUsenetPosts` | `true` | IPC/REST `ed3kShareUsenetPosts`, Options "Share Usenet posts over ed3k too". Off holds Usenet posts back (usenet.md §6): no article lists, post sets or `nzb`/`nzb-file` records; the members are shared all the same. A change restarts the usenet join; switching off withdraws the kept `ALIAS` records (`unpublishAlias`) |
 
@@ -499,8 +502,21 @@ round at once, bootstrap.md §1). `Ed3kSettings::lan` is off by default: the dae
 
 `Ed3kBootstrap` (bootstrap.md §3, host-io.md "Node lists"), made by `DaemonApp`.
 
-- At each start of the node: `bootstrapConfigure(sources of ed3k.nodeLists, autoFetch on,
-  last start from bootstrap.dat)`. The fetches are the engine's HTTP requests (`Ed3kHttp`).
+- At each start of the node: `bootstrapConfigure(sources of ed3k.nodeLists, nodeListAuto,
+  last start from bootstrap.dat)`, `bootstrapMaxAge(nodeListMaxAgeDays)` and
+  `bootstrapShipped(<config>/nodes.ed3knod)`. The fetches are the engine's HTTP requests (`Ed3kHttp`).
+- **Shipped list** (§1 source 5): `data/config/nodes.ed3knod`, a bundled file refreshed with each
+  build (not seed-once). The engine uses it once, at the point a fetch would start (< 10
+  handshakes), before any request leaves the host; never refused for age. Made by
+  `scripts/export-ed3k-nodes.sh` (`emulecored --export-ed3k-nodes <file> [--export-comment <text>]`,
+  offline: the profile's `kad.dat` + `node.key`, public network, then exit). Needs a profile
+  whose node ran and stopped with contacts.
+- **eD2K seeds** (§1 source 4): `UpDownClient::maybeBootstrapKadFromPeer` → `AppContext::ed3kKadSeed`
+  → `Ed3kBootstrap::offerEd2kPeer`: a derived user hash (§14.2), not LowID IPv4, Kad < 10
+  contacts, one a second, each address once in 10 min → `kadSeedHint` (dial by `obf_id` at the
+  eD2K TCP port, §14.1). The engine keeps its own < 10 and once-per-address rules.
+- **Export** (§3 "By hand"): Kad window, ed3k page, "Export..." → IPC `ExportEd3kNodeList` 1203
+  → `bootstrapExport` (own table, node key).
 - An `ed3k:nodes` link the user opens (GUI `ExternalLinkHandler` → IPC `OpenEd3kNodesLink`
   1030 → `bootstrapLink`) is never used before a yes: `BootstrapAsk` → push
   `PushEd3kBootstrapAsk` 1080 `[ask, host, url]` to the GUI, which asks (localized
@@ -508,6 +524,21 @@ round at once, bootstrap.md §1). `Ed3kSettings::lan` is off by default: the dae
   `bootstrapAnswer`. No GUI connected (`IpcServer::hasReadyClient`): refused at once; not
   answered in 5 min: refused.
 - `BootstrapAdded` → the link is added to `ed3k.nodeLists` (saved).
+
+## Kad window (IPC 1200-1204, `Ed3kKadBridge`)
+
+The GUI's Kad tab has a page per network (`KadPanel` → `Ed2kKadPanel`, `Ed3kKadPanel`, both on
+`KadPanelBase`). The ed3k page polls, while on screen:
+
+| IPC | Engine | What |
+|---|---|---|
+| `GetEd3kKadContacts` 1200 | `kadContacts` | routing table, both families, with country |
+| `GetEd3kKadLookups` 1201 | `kadLookups` | running lookups, then 32 ended |
+| `GetEd3kKadLookupGraph` 1202 `[id]` | `kadLookupGraph` | candidates by distance, who named whom, asked/answered: the Search Details graph |
+| `ExportEd3kNodeList` 1203 `[comment]` | `bootstrapExport` | own contacts as a signed list |
+| `FetchEd3kNodeLists` 1204 | `bootstrapFetch` | node lists now |
+
+Connect/Disconnect on the page switches `ed3kEnabled`. `--subtab 2`/`3` shows the ed3k page.
 
 ## Upload queue
 

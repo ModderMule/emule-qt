@@ -583,6 +583,11 @@ private:
     /// cannot fill every slice forever and starve the rest. Wraps to 0 at the end.
     size_t m_containerSweepSkip = 0;
 
+    /// A verdict known.met keeps (FT_CONTAINERCHECK) was settled since the last save
+    /// request. Asked for once the sweep runs dry, not per slice: a 50k share would
+    /// otherwise rewrite known.met every minute while it fills in.
+    bool m_containerSweepNewVerdicts = false;
+
     /// Files still to visit in a rebuildMetaData() pass, by hash — a file may leave the
     /// share between ticks. Main thread only.
     std::vector<MD4Key> m_metaRebuildQueue;

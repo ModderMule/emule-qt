@@ -177,6 +177,10 @@ SOURCES += \
     panels/Ed3kRoomTab.cpp \
     panels/Ed3kRoomList.cpp \
     panels/KadPanel.cpp \
+    panels/KadPanelBase.cpp \
+    panels/Ed2kKadPanel.cpp \
+    panels/Ed3kKadPanel.cpp \
+    controls/Ed3kKadModels.cpp \
     panels/ChatNetwork.cpp \
     panels/MessagesPanel.cpp \
     panels/SearchPanel.cpp \
@@ -291,6 +295,10 @@ HEADERS += \
     panels/Ed3kRoomTab.h \
     panels/Ed3kRoomList.h \
     panels/KadPanel.h \
+    panels/KadPanelBase.h \
+    panels/Ed2kKadPanel.h \
+    panels/Ed3kKadPanel.h \
+    controls/Ed3kKadModels.h \
     panels/ChatNetwork.h \
     panels/MessagesPanel.h \
     panels/SearchPanel.h \

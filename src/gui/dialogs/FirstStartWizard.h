@@ -90,6 +90,7 @@ private:
     QWidget* setupDesktopRow(QWidget* parent);
     /// macOS: claims a changed choice now. Elsewhere: stores it for MainWindow.
     void applyFileTypes();
+    void syncFileTypeBoxes();
 
     IpcClient* m_ipc = nullptr;
 
@@ -128,6 +129,7 @@ private:
     QCheckBox* m_assocNzbCheck = nullptr;
 #ifdef Q_OS_MACOS
     gui::FileAssociation::FileTypes m_claimedTypes;   ///< the default app when opened
+    gui::FileAssociation::FileTypes m_shownTypes;     ///< the file type boxes as first shown
 #endif
 
     QPushButton* m_portTestBtn = nullptr;

@@ -274,6 +274,18 @@
     <ClCompile Include="panels\KadPanel.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
+    <ClCompile Include="panels\KadPanelBase.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="panels\Ed2kKadPanel.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="panels\Ed3kKadPanel.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="controls\Ed3kKadModels.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
     <ClCompile Include="controls\KadSearchesModel.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
@@ -742,6 +754,18 @@
       <Filter>Header Files</Filter>
     </QtMoc>
     <QtMoc Include="panels\KadPanel.h">
+      <Filter>Header Files</Filter>
+    </QtMoc>
+    <QtMoc Include="panels\KadPanelBase.h">
+      <Filter>Header Files</Filter>
+    </QtMoc>
+    <QtMoc Include="panels\Ed2kKadPanel.h">
+      <Filter>Header Files</Filter>
+    </QtMoc>
+    <QtMoc Include="panels\Ed3kKadPanel.h">
+      <Filter>Header Files</Filter>
+    </QtMoc>
+    <QtMoc Include="controls\Ed3kKadModels.h">
       <Filter>Header Files</Filter>
     </QtMoc>
     <QtMoc Include="controls\KadSearchesModel.h">

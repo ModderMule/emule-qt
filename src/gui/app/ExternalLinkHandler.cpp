@@ -202,9 +202,11 @@ void ExternalLinkHandler::openNow(const QString& link)
             logError(QStringLiteral("No Torrents panel to add a magnet link to"));
             return;
         }
+        // #119: asked as an eD2K link is; added without asking = stays in the background
+        if (!confirmClickedDownload(tr("Magnet Link"), gui::magnetDisplayName(link)))
+            return;
         m_mainWindow->switchToTab(MainWindow::TabTorrents);
-        if (thePrefs.bringToFrontOnLinkClick())
-            m_mainWindow->restoreWindow();
+        // was: if (thePrefs.bringToFrontOnLinkClick()) m_mainWindow->restoreWindow();
         panel->addMagnets({link});
         return;
     }
@@ -253,6 +255,11 @@ void ExternalLinkHandler::openNow(const QString& link)
             logWarning(QStringLiteral("Cannot open the ed3k link, no core connection: %1").arg(redactLinkSecret(link)));
             return;
         }
+        // #119: asked as an eD2K link is
+        const QString dn = QUrlQuery(link.mid(link.indexOf(QLatin1Char('?')) + 1))
+                               .queryItemValue(QStringLiteral("dn"), QUrl::FullyDecoded);
+        if (!confirmClickedDownload(tr("ed3k link"), dn))
+            return;
         MainWindow* window = m_mainWindow;
         m_ipc->addEd3kDownloadLink(link, 0, thePrefs.addNewFilesPaused(), [window, link](const Ipc::IpcMessage& reply) {
             if (reply.type() != Ipc::IpcMsgType::Result || !reply.fieldBool(0)) {
@@ -262,11 +269,10 @@ void ExternalLinkHandler::openNow(const QString& link)
                     QMessageBox::warning(window, tr("ed3k link"), why.isEmpty() ? tr("The ed3k link could not be added.") : why);
                 return;
             }
-            if (window) {
+            // #119: no raise; a confirmation already raised before its box
+            if (window)
                 window->switchToTab(MainWindow::TabTransfers);
-                if (thePrefs.bringToFrontOnLinkClick())
-                    window->restoreWindow();
-            }
+            // was: if (thePrefs.bringToFrontOnLinkClick()) window->restoreWindow();
         });
         return;
     }
@@ -331,9 +337,9 @@ void ExternalLinkHandler::openNow(const QString& link)
             }
             if (window && result.added > 0) {
                 window->switchToTab(MainWindow::TabTransfers);
-                // no box was shown, so the pre-prompt raise below never ran
-                if (theUiState.addLinksWithoutConfirm() && thePrefs.bringToFrontOnLinkClick())
-                    window->restoreWindow();
+                // #119: added without asking = stays in the background; only a box raises (below)
+                // was: if (theUiState.addLinksWithoutConfirm() && thePrefs.bringToFrontOnLinkClick())
+                //          window->restoreWindow();
             }
         },
         [window] {
@@ -622,6 +628,19 @@ void ExternalLinkHandler::addEd3kCache(const QString& link)
         }
         QMessageBox::warning(window, tr("ed3k cache server"), tr("The cache server was not added.\n\n%1").arg(replyError(reply)));
     });
+}
+
+bool ExternalLinkHandler::confirmClickedDownload(const QString& title, const QString& name)
+{
+    if (theUiState.addLinksWithoutConfirm())
+        return true;  // #119: no box, so no raise either
+    if (m_mainWindow && thePrefs.bringToFrontOnLinkClick())
+        m_mainWindow->restoreWindow();
+    const QString what = name.isEmpty() ? tr("(no name)") : name;
+    return QMessageBox::question(m_mainWindow, title,
+                                 tr("Do you want to download the following file(s)?\n\n%1").arg(what),
+                                 QMessageBox::Yes | QMessageBox::No)
+        == QMessageBox::Yes;
 }
 
 } // namespace eMule

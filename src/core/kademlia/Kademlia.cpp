@@ -367,10 +367,12 @@ void Kademlia::bootstrap(const QString& host, uint16 port)
 }
 
 void Kademlia::processPacket(const uint8* data, uint32 len, uint32 ip, uint16 port,
-                              bool validReceiverKey, const KadUDPKey& senderKey)
+                              bool validReceiverKey, const KadUDPKey& senderKey,
+                              bool receiverKeySent)
 {
     if (m_udpListener)
-        m_udpListener->processPacket(data, len, ip, port, validReceiverKey, senderKey);
+        m_udpListener->processPacket(data, len, ip, port, validReceiverKey, senderKey,
+                                     receiverKeySent);
 }
 
 void Kademlia::notePacketReceived(uint32 ip)

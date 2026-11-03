@@ -12,6 +12,8 @@
 #include <QByteArray>
 #include <QString>
 
+#include <optional>
+
 namespace eMule {
 
 /// Enough for every signature below, incl. RIFF's form type at offset 8.
@@ -20,6 +22,10 @@ inline constexpr qint64 kContainerHeadBytes = 12;
 /// What to read when the file has it: room for an Ogg file's first stream headers
 /// (a Skeleton page, then the codec ones), which say whether it is audio or video.
 inline constexpr qint64 kContainerProbeBytes = 512;
+
+/// Bump when checkHead() would judge some head differently, or expectedContainer()
+/// promises a new extension: verdicts kept in known.met by an older one are dropped.
+inline constexpr quint8 kContainerCheckVersion = 1;
 
 enum class ContainerVerdict : quint8 {
     Unchecked,          ///< extension we make no promise about, or bytes not readable yet
@@ -95,6 +101,15 @@ struct ContainerCheck {
 /// Same, reading the head from disk. Unreadable is Unchecked, not suspect --
 /// a locked or vanished file has told us nothing about its contents.
 [[nodiscard]] ContainerCheck checkFile(const QString& absPath, const QString& fileName);
+
+/// A verdict for known.met (FT_CONTAINERCHECK), so a big share is not re-opened at
+/// every start. Only what the bytes said is kept; the rest comes from the name.
+[[nodiscard]] QByteArray packContainerCheck(const ContainerCheck& check);
+
+/// Back from known.met for @p fileName. Nullopt when written by another sniffer
+/// version, malformed, or for an extension we no longer promise anything about.
+[[nodiscard]] std::optional<ContainerCheck> unpackContainerCheck(const QByteArray& blob,
+                                                                 const QString& fileName);
 
 /// One sentence saying why the file is not what its name claims; empty when it is
 /// not suspect. Lives here rather than in each front end because every list that

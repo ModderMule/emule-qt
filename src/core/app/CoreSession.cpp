@@ -1539,7 +1539,8 @@ void CoreSession::wireKadListener()
     connect(udp, &ClientUDPSocket::kadPacketReceived,
         listener, [listener](uint8 opcode, const uint8* data, uint32 size,
                              const Endpoint& sender,
-                             bool validReceiverKey, uint32 senderVerifyKey) {
+                             bool validReceiverKey, uint32 senderVerifyKey,
+                             bool receiverKeySent) {
             uint32 senderIP = sender.address().toUint32();
             uint16 senderPort = sender.port();
             QByteArray buf(1 + static_cast<qsizetype>(size), Qt::Uninitialized);
@@ -1554,7 +1555,8 @@ void CoreSession::wireKadListener()
                                     static_cast<uint32>(buf.size()),
                                     senderIP, senderPort,
                                     validReceiverKey,
-                                    kad::KadUDPKey(senderVerifyKey, theApp.publicIP()));
+                                    kad::KadUDPKey(senderVerifyKey, theApp.publicIP()),
+                                    receiverKeySent);
         });
 
     // Send bridge: KademliaUDPListener → ClientUDPSocket

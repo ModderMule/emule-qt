@@ -295,6 +295,9 @@ struct AppContext {
     /// client hears back via setEd3kRoute(); NoHint: no derived user hash, never ed3k.
     enum class Ed3kHint : uint8 { Off, NoHint, Started };
     std::function<Ed3kHint(UpDownClient& client, bool wait)> ed3kHint;
+    /// A peer's hello arrived (ed3k bootstrap.md §1 source 4): a derived user hash seeds
+    /// ed3k Kad while it has few contacts. Set by the daemon.
+    std::function<void(UpDownClient& client)> ed3kKadSeed;
     /// eD2K part @p part of @p file passed (true) or failed its MD4 hash (§14.4 pair trust).
     std::function<void(PartFile& file, uint32 part, bool ok)> partVerdict;
     /// The peer of eD2K user hash @p hash waits or holds a slot on ed3k already (§14.4: a

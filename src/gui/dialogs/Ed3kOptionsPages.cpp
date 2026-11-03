@@ -209,6 +209,9 @@ void Ed3kOptionsPages::load(const QCborMap& p)
     m_hiding->load(p);
     m_sitePortSpin->setValue(int(p.value(QStringLiteral("ed3kSitePort")).toInteger(0)));
     m_nodeListsEdit->setPlainText(linesText(p.value(QStringLiteral("ed3kNodeLists"))));
+    m_nodeListAutoCheck->setChecked(p.value(QStringLiteral("ed3kNodeListAuto")).toBool(true));
+    m_nodeListAgeSpin->setValue(int(p.value(QStringLiteral("ed3kNodeListMaxAgeDays")).toInteger(30)));
+    m_seedEd2kCheck->setChecked(p.value(QStringLiteral("ed3kSeedFromEd2k")).toBool(true));
     m_chaintubeRpcEdit->setPlainText(linesText(p.value(QStringLiteral("ed3kChaintubeRpc"))));
     updateChainNote();
     // ToDo: decide whether the user may edit the chaintube chain in the UI (see buildConnection)
@@ -278,6 +281,9 @@ void Ed3kOptionsPages::appendTo(IpcMessage& req) const
     m_hiding->appendTo(req);
     put("ed3kSitePort", qint64(m_sitePortSpin->value()));
     put("ed3kNodeLists", linesOf(m_nodeListsEdit).join(QLatin1Char(' ')));
+    put("ed3kNodeListAuto", m_nodeListAutoCheck->isChecked());
+    put("ed3kNodeListMaxAgeDays", qint64(m_nodeListAgeSpin->value()));
+    put("ed3kSeedFromEd2k", m_seedEd2kCheck->isChecked());
     put("ed3kChaintubeRpc", linesOf(m_chaintubeRpcEdit).join(QLatin1Char(' ')));
     // ToDo: chaintube chain not in the UI for now: the daemon keeps what it has
     // {
@@ -524,6 +530,31 @@ QWidget* Ed3kOptionsPages::buildConnection(QWidget* parent)
     m_nodeListsEdit->setPlaceholderText(QStringLiteral("ed3k:nodes?url=…&key=…"));
     m_nodeListsEdit->setFixedHeight(m_nodeListsEdit->fontMetrics().lineSpacing() * 5 + 12);
     findLayout->addWidget(m_nodeListsEdit);
+    // bootstrap.md §1, §2: the automatic fetch, the age a list may have, eD2K peers as seeds.
+    // Hidden, YAML only (defaults on, 30 days); still loaded and saved so the values round-trip.
+    m_nodeListAutoCheck = new QCheckBox(tr("Fetch node lists automatically when few nodes answer"), findGroup);
+    m_nodeListAutoCheck->hide();
+    findLayout->addWidget(m_nodeListAutoCheck);
+    m_nodeListAgeSpin = new QSpinBox(findGroup);
+    m_nodeListAgeSpin->setRange(0, 3650);
+    m_nodeListAgeSpin->setSuffix(tr(" days"));
+    m_nodeListAgeSpin->setSpecialValueText(tr("no limit"));
+    m_nodeListAgeSpin->setToolTip(tr("Fetched or opened node lists older than this are refused. "
+                                     "The node list that comes with eMule Qt has no limit."));
+    auto* ageWidget = new QWidget(findGroup);
+    auto* ageRow = new QHBoxLayout(ageWidget);
+    ageRow->setContentsMargins(0, 0, 0, 0);
+    ageRow->addWidget(new QLabel(tr("Refuse node lists older than:"), ageWidget));
+    m_nodeListAgeSpin->setParent(ageWidget);
+    ageRow->addWidget(m_nodeListAgeSpin);
+    ageRow->addStretch();
+    ageWidget->hide();
+    findLayout->addWidget(ageWidget);
+    m_seedEd2kCheck = new QCheckBox(tr("Seed ed3k Kad from eD2K peers that speak ed3k"), findGroup);
+    m_seedEd2kCheck->setToolTip(tr("While ed3k Kad has fewer than 10 contacts, eD2K peers whose user hash shows "
+                                   "they also run ed3k are asked for ed3k nodes."));
+    m_seedEd2kCheck->hide();
+    findLayout->addWidget(m_seedEd2kCheck);
     // bootstrap.md §3 "By hand": a node list file a user handed on (batch 15)
     auto* openListBtn = new QPushButton(tr("Open Node List File..."), findGroup);
     openListBtn->setObjectName(QStringLiteral("ed3kOpenNodeList"));

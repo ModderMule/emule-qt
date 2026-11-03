@@ -885,6 +885,23 @@ enum class IpcMsgType : int {
     /// [file: bytes] -> [ok, {nodes}] — a node list file opened by hand (bootstrap.md §3)
     OpenEd3kNodeListFile    = 1137,
 
+    // ed3k Kad window (1200-1209), Ed3kKadBridge.cpp. Failure: [false, {error}], 0 = no node.
+    /// [] -> [ok, [{id, ip, port, family (4|6), cc, distance (hex), fails, dialledIn, checkInS}]]
+    GetEd3kKadContacts      = 1200,
+    /// [] -> [ok, [{id, purpose, target (hex), kind, store, answered, asked, candidates,
+    /// ended, endedAgoMs}]] — running lookups, then up to 32 ended, newest first
+    GetEd3kKadLookups       = 1201,
+    /// [lookup id] -> [ok, [{id, distance (hex), from: [index], asked, askedAgoMs, answered,
+    /// failed, closer}]] — candidates by distance for the lookup graph; error NotFound: gone
+    GetEd3kKadLookupGraph   = 1202,
+    /// [comment] -> [ok, {file: bytes}] — own contacts as a signed node list (bootstrap.md §3)
+    ExportEd3kNodeList      = 1203,
+    /// [] -> [ok] — fetch node lists from the sources now (bootstrap.md §3)
+    FetchEd3kNodeLists      = 1204,
+    /// [on: bool] -> [ok] — connect or disconnect the node for this run (toolbar Connect);
+    /// starts as the autoConnect pref, ed3kEnabled still gates it
+    SetEd3kConnected        = 1205,
+
     // hoster links (1100-1109, hoster.md), Ed3kHosterBridge.cpp. An item: {id, url, host,
     // name, size, done, speed, state (Ed3kHosterJoin::State), reason (Ed3kHosterJoin::Reason, the
     // GUI words it), reasonArg (technical, not localized), waitUntil (ms), verified, file, root,

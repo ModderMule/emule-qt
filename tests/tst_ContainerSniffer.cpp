@@ -69,6 +69,8 @@ private slots:
     void anOggFilmIsVideoNotMusic();
     void aRenameDropsTheCachedVerdict();
     void aVideoCdTrackIsMpeg();
+    void aVerdictSurvivesKnownMet();
+    void aStaleOrForeignVerdictIsDropped();
 
 private:
     [[nodiscard]] QString write(const QString& name, const char* bytes, int len);
@@ -297,6 +299,65 @@ void tst_ContainerSniffer::aVideoCdTrackIsMpeg()
     // Under another video name it is only mislabelled
     const QString avi = write(QStringLiteral("004.avi"), kCdxaMagic, 12);
     QCOMPARE(checkFile(avi, QStringLiteral("004.avi")).mark(), ContainerMark::Mislabelled);
+}
+
+void tst_ContainerSniffer::aVerdictSurvivesKnownMet()
+{
+    // Every verdict that took a read comes back the same, rebuilt fields included
+    const QByteArray ogm = oggBosPage(QByteArray("\x01" "video\0\0\0", 9) + QByteArray(44, '\0'));
+    const QByteArray exe = QByteArray("MZ") + QByteArray(62, '\0');
+    const struct {
+        QByteArray head;
+        QString name;
+    } cases[] = {
+        {QByteArray(kAsfMagic, 16), QStringLiteral("real.wmv")},
+        {QByteArray(kMp4Magic, 16), QStringLiteral("film.avi")},    // mislabelled
+        {QByteArray(kWavMagic, 12), QStringLiteral("film.avi")},    // other kind: fake
+        {QByteArray(kJunk, 12), QStringLiteral("fake.wmv")},
+        {exe, QStringLiteral("fake.wmv")},
+        {ogm, QStringLiteral("film.ogg")},                          // matches, hasVideo
+    };
+    for (const auto& [head, name] : cases) {
+        const ContainerCheck want = checkHead(head, name);
+        QVERIFY2(want.verdict != ContainerVerdict::Unchecked, qPrintable(name));
+        const auto got = unpackContainerCheck(packContainerCheck(want), name);
+        QVERIFY2(got.has_value(), qPrintable(name));
+        QCOMPARE(got->verdict, want.verdict);
+        QCOMPARE(got->foreign, want.foreign);
+        QCOMPARE(got->expected, want.expected);
+        QCOMPARE(got->actual, want.actual);
+        QCOMPARE(got->mimeType, want.mimeType);
+        QCOMPARE(got->sameKind, want.sameKind);
+        QCOMPARE(got->hasVideo, want.hasVideo);
+        QCOMPARE(got->mark(), want.mark());
+    }
+}
+
+void tst_ContainerSniffer::aStaleOrForeignVerdictIsDropped()
+{
+    const QByteArray good = packContainerCheck(checkHead(QByteArray(kJunk, 12), QStringLiteral("fake.wmv")));
+    QVERIFY(unpackContainerCheck(good, QStringLiteral("fake.wmv")).has_value());
+
+    // Another sniffer version judged it: read again
+    QByteArray older = good;
+    older[0] = static_cast<char>(kContainerCheckVersion + 1);
+    QVERIFY(!unpackContainerCheck(older, QStringLiteral("fake.wmv")));
+
+    // An extension we promise nothing about has no verdict to restore
+    QVERIFY(!unpackContainerCheck(good, QStringLiteral("fake.txt")));
+
+    // Malformed: short, Unchecked, out-of-range verdict, Matches naming a container
+    QVERIFY(!unpackContainerCheck(good.left(3), QStringLiteral("fake.wmv")));
+    QByteArray unchecked = good;
+    unchecked[1] = 0;
+    QVERIFY(!unpackContainerCheck(unchecked, QStringLiteral("fake.wmv")));
+    QByteArray bogus = good;
+    bogus[1] = 9;
+    QVERIFY(!unpackContainerCheck(bogus, QStringLiteral("fake.wmv")));
+    QByteArray matchesWithName = good;
+    matchesWithName[1] = static_cast<char>(ContainerVerdict::Matches);
+    matchesWithName += "MP4";
+    QVERIFY(!unpackContainerCheck(matchesWithName, QStringLiteral("fake.wmv")));
 }
 
 QTEST_MAIN(tst_ContainerSniffer)

@@ -163,6 +163,7 @@ bool KnownFile::loadTagsFromFile(FileDataIO& file)
 {
     const uint32 tagCount = readTagCount(file, kMaxFileTags);
     bool sawFlags = false;
+    QByteArray containerCheckBlob;
 
     for (uint32 i = 0; i < tagCount; ++i) {
         Tag tag(file, true);
@@ -267,6 +268,11 @@ bool KnownFile::loadTagsFromFile(FileDataIO& file)
             if (tag.isBlob())
                 deserializeKadNotes(tag.blobValue());
             break;
+        case FT_CONTAINERCHECK:
+            // Unpacked after the loop: it needs the file name
+            if (tag.isBlob())
+                containerCheckBlob = tag.blobValue();
+            break;
         default:
             // Dropped, or every save would carry MorphXT's spreadbars on (issue #46)
             if (tag.nameId() == 0 && isMorphSpreadbarTag(tag))
@@ -283,6 +289,11 @@ bool KnownFile::loadTagsFromFile(FileDataIO& file)
         removeMetaDataTags();
     else
         m_metaDataVer = hasMetaDataTags() ? kMetaDataVer : 0;
+
+    // Saves an open + read per media file at every start (big shares, slow disks)
+    if (!containerCheckBlob.isEmpty())
+        if (auto check = unpackContainerCheck(containerCheckBlob, fileName()))
+            m_containerCheck = std::move(*check);
 
     return true;
 }
@@ -345,6 +356,12 @@ bool KnownFile::writeToFile(FileDataIO& file) const
 
     // Cached Kad notes (filenames/comments) — eMuleQt private tag
     if (!m_kadNotes.empty())
+        ++tagCount;
+
+    // Fake-file verdict; only one the bytes gave, Unchecked costs no read to redo
+    const bool writeContainerCheck = m_containerCheck
+                                     && m_containerCheck->verdict != ContainerVerdict::Unchecked;
+    if (writeContainerCheck)
         ++tagCount;
 
     // Extra tags
@@ -434,6 +451,9 @@ bool KnownFile::writeToFile(FileDataIO& file) const
     // Cached Kad notes (filenames/comments) — eMuleQt private blob tag
     if (!m_kadNotes.empty())
         Tag(FT_KADNOTECACHE, serializeKadNotes()).writeNewEd2kTag(file);
+
+    if (writeContainerCheck)
+        Tag(FT_CONTAINERCHECK, packContainerCheck(*m_containerCheck)).writeNewEd2kTag(file);
 
     // Extra tags
     for (const auto& tag : tags())

@@ -43,6 +43,7 @@ private slots:
     void coordinatorLimitsAndCountsTheNode();
     void coordinatorSizesEd3kSlotsFromTheShare();
     void theOtherLinksReachTheNode();
+    void theKadWindowSeesTheNode();
 
 private:
     static Ed3kSettings loopback(const QString& dir);
@@ -347,6 +348,62 @@ Ed3kSettings tst_Ed3kBridge::loopback(const QString& dir)
     s.network = QStringLiteral("ed3k test");
     s.forceOpen = true;
     return s;
+}
+
+// the Kad window (Ed3kKadBridge, 1200-1204): contacts, lookups and their graph, the export
+void tst_Ed3kBridge::theKadWindowSeesTheNode()
+{
+    const auto ask = [](IpcMsgType t, const QList<QCborValue>& args = {}) {
+        IpcMessage m(t, 9);
+        for (const QCborValue& a : args)
+            m.append(a);
+        IpcMessage out;
+        if (!Ed3kBridge::handleRequest(m, [&out](const IpcMessage& r) { out = r; }))
+            out = IpcMessage(IpcMsgType::GetBtStatus, 0);   // not taken
+        return out;
+    };
+    Ed3kBridge::setSession(nullptr);
+    for (IpcMsgType t : {IpcMsgType::GetEd3kKadContacts, IpcMsgType::GetEd3kKadLookups, IpcMsgType::GetEd3kKadLookupGraph,
+                         IpcMsgType::ExportEd3kNodeList, IpcMsgType::FetchEd3kNodeLists}) {
+        const IpcMessage none = ask(t, {0});
+        QCOMPARE(none.type(), IpcMsgType::Result);
+        QVERIFY(!none.fieldBool(0));
+        QCOMPARE(none.fieldMap(1).value(QStringLiteral("error")).toInteger(), 0);
+    }
+
+    QTemporaryDir da, db;
+    QVERIFY(da.isValid() && db.isValid());
+    Ed3kSession a, b;
+    QVERIFY(a.start(loopback(da.path())));
+    QVERIFY(b.start(loopback(db.path())));
+    QVERIFY(connectPair(a, b));
+    Ed3kBridge::setSession(&a);
+    QTRY_VERIFY_WITH_TIMEOUT(a.contactCount() > 0, 20000);
+
+    const IpcMessage contacts = ask(IpcMsgType::GetEd3kKadContacts);
+    QVERIFY(contacts.fieldBool(0));
+    bool sawB = false;
+    for (const auto& v : contacts.fieldArray(1)) {
+        const QCborMap c = v.toMap();
+        sawB |= c.value(QStringLiteral("id")).toString().compare(b.nodeIdHex(), Qt::CaseInsensitive) == 0;
+        QCOMPARE(c.value(QStringLiteral("ip")).toString(), QStringLiteral("127.0.0.1"));
+        QCOMPARE(c.value(QStringLiteral("family")).toInteger(), 4);
+    }
+    QVERIFY(sawB);
+    // the first contact's lookups, and the graph of one of them
+    const IpcMessage lookups = ask(IpcMsgType::GetEd3kKadLookups);
+    QVERIFY(lookups.fieldBool(0));
+    QVERIFY(!lookups.fieldArray(1).isEmpty());
+    const qint64 id = lookups.fieldArray(1).first().toMap().value(QStringLiteral("id")).toInteger();
+    const IpcMessage graph = ask(IpcMsgType::GetEd3kKadLookupGraph, {id});
+    QVERIFY(graph.fieldBool(0));
+    QVERIFY(!graph.fieldArray(1).isEmpty());
+    QVERIFY(!ask(IpcMsgType::GetEd3kKadLookupGraph, {qint64(1) << 60}).fieldBool(0));
+    // no Ed3kBootstrap: export and fetch refused
+    QVERIFY(!ask(IpcMsgType::ExportEd3kNodeList, {QStringLiteral("x")}).fieldBool(0));
+    a.stop();
+    b.stop();
+    Ed3kBridge::setSession(nullptr);
 }
 
 bool tst_Ed3kBridge::connectPair(Ed3kSession& a, Ed3kSession& b)

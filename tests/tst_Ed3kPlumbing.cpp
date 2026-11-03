@@ -19,6 +19,7 @@
 #include <QTest>
 #include <QTimer>
 
+#include <array>
 #include <memory>
 
 using namespace eMule;
@@ -73,6 +74,7 @@ private slots:
     void lanOffWithThePref();
     void nodesLinkRefusedWithoutAGui();
     void nodesLinkAskedAndAnswered();
+    void ed2kPeerSeedsKadAndContactsExport();
     void cleanup();
 };
 
@@ -326,6 +328,50 @@ void tst_Ed3kPlumbing::nodesLinkRefusedWithoutAGui()
     QCOMPARE(boot.pendingAsks(), std::size_t(0));
     QVERIFY(!boot.openLink(QStringLiteral("ed3k:nodes?url=http%3A%2F%2Fa&key=x")));
     s.stop();
+}
+
+// bootstrap.md §1 source 4: an eD2K peer with a derived user hash seeds Kad (each address
+// once, only with the pref on); §3: the contacts found export as a signed list, live and
+// from the saved state
+void tst_Ed3kPlumbing::ed2kPeerSeedsKadAndContactsExport()
+{
+    QTemporaryDir da, db;
+    QVERIFY(da.isValid() && db.isValid());
+    Ed3kSession a, b;
+    QVERIFY(a.start(loopback(da.path())));
+    QVERIFY(b.start(loopback(db.path())));
+    Ed3kBootstrap boot(a);
+    QCOMPARE(a.contactCount(), 0u);
+    // no contacts yet: nothing to export
+    QVERIFY(!boot.exportList(QStringLiteral("x")));
+
+    const auto bId = b.nodeId();
+    QVERIFY(bId);
+    const auto hash = ::ed3k::userHash(*bId);
+    std::array<std::uint8_t, 16> plain{};
+    plain.fill(0x42);
+    // not a derived hash, the pref off: no dial
+    QVERIFY(!boot.offerEd2kPeer(plain, QHostAddress::LocalHost, b.udpPort()));
+    boot.setSeedFromEd2k(false);
+    QVERIFY(!boot.offerEd2kPeer(hash, QHostAddress::LocalHost, b.udpPort()));
+    boot.setSeedFromEd2k(true);
+    // §14.1: the eD2K TCP port is the ed3k UDP port
+    QVERIFY(boot.offerEd2kPeer(hash, QHostAddress::LocalHost, b.udpPort()));
+    QTRY_VERIFY_WITH_TIMEOUT(a.contactCount() > 0, 20000);
+    // the same address again: not dialled
+    QVERIFY(!boot.offerEd2kPeer(hash, QHostAddress::LocalHost, b.udpPort()));
+
+    // the live export of the test network's contacts reads back
+    const auto live = boot.exportList(QStringLiteral("test"));
+    QVERIFY2(live, qPrintable(live ? QString() : live.error()));
+    QVERIFY(live->startsWith(QByteArray("ed3knod\x01", 8)));
+    // the saved state of a profile without a key: refused, no key created
+    QTemporaryDir empty;
+    QVERIFY(empty.isValid());
+    QVERIFY(!Ed3kBootstrap::exportSaved(empty.path(), {}));
+    QVERIFY(!QFile::exists(QDir(stateDir(empty.path())).filePath(QStringLiteral("node.key"))));
+    a.stop();
+    b.stop();
 }
 
 void tst_Ed3kPlumbing::nodesLinkAskedAndAnswered()

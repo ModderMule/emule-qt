@@ -26,22 +26,17 @@ void KadContactHistogram::setContacts(const std::vector<KadContactRow>& contacts
 {
     m_buckets.fill(0);
     m_contactCount = static_cast<uint32_t>(contacts.size());
+    for (const auto& c : contacts)
+        addId(c.clientId);
+    update();
+}
 
-    for (const auto& c : contacts) {
-        // MFC: DWORD dwHighestWord = *(DWORD*)KadUint128.GetData();
-        //      UINT uHistSlot = dwHighestWord >> 20;
-        // The clientId is a 32-char hex string representing 128 bits.
-        // First 8 hex chars = highest 32-bit word.
-        if (c.clientId.size() >= 8) {
-            bool ok = false;
-            const uint32_t highWord = c.clientId.left(8).toUInt(&ok, 16);
-            if (ok) {
-                const uint32_t slot = highWord >> 20;  // top 12 bits → 0..4095
-                m_buckets[slot]++;
-            }
-        }
-    }
-
+void KadContactHistogram::setIds(const QStringList& hexIds)
+{
+    m_buckets.fill(0);
+    m_contactCount = static_cast<uint32_t>(hexIds.size());
+    for (const QString& id : hexIds)
+        addId(id);
     update();
 }
 
@@ -200,6 +195,22 @@ void KadContactHistogram::paintEvent(QPaintEvent* /*event*/)
     p.drawText(rc.right() - xLabelW - 1,
                rc.bottom() - fmBold.descent() - 1,
                xLabel);
+}
+
+// ---------------------------------------------------------------------------
+// private
+// ---------------------------------------------------------------------------
+
+void KadContactHistogram::addId(const QString& hex)
+{
+    // MFC: DWORD dwHighestWord = *(DWORD*)KadUint128.GetData(); uHistSlot = dwHighestWord >> 20
+    // first 8 hex chars = highest 32-bit word
+    if (hex.size() < 8)
+        return;
+    bool ok = false;
+    const uint32_t highWord = hex.left(8).toUInt(&ok, 16);
+    if (ok)
+        m_buckets[highWord >> 20]++;   // top 12 bits → 0..4095
 }
 
 } // namespace eMule

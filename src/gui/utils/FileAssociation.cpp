@@ -87,6 +87,37 @@ QStringList xdgMimeTypes(FileTypes types)
     return out;
 }
 
+QString withoutMimeDefaults(const QString& mimeapps, const QStringList& mimeTypes)
+{
+    const QString ours = QLatin1String(kDesktopFileName);
+    QStringList out;
+    bool removedSection = false;
+    for (const QString& line : mimeapps.split(QLatin1Char('\n'))) {
+        const QString trimmed = line.trimmed();
+        if (trimmed.startsWith(QLatin1Char('['))) {
+            removedSection = trimmed == QLatin1String("[Removed Associations]");
+            out << line;
+            continue;
+        }
+        const qsizetype eq = line.indexOf(QLatin1Char('='));
+        if (removedSection || eq <= 0 || trimmed.startsWith(QLatin1Char('#'))
+            || !mimeTypes.contains(line.left(eq).trimmed())) {
+            out << line;
+            continue;
+        }
+        QStringList ids = line.mid(eq + 1).split(QLatin1Char(';'), Qt::SkipEmptyParts);
+        for (QString& id : ids)
+            id = id.trimmed();
+        if (ids.removeAll(ours) == 0) {
+            out << line;
+            continue;
+        }
+        if (!ids.isEmpty())
+            out << line.left(eq + 1) + ids.join(QLatin1Char(';')) + QLatin1Char(';');
+    }
+    return out.join(QLatin1Char('\n'));
+}
+
 QList<DesktopFile> desktopFiles(const QString& exePath, const QString& dataHome, FileTypes types)
 {
     const QString desktop = QStringLiteral(
@@ -199,10 +230,8 @@ void installDesktopIcons()
     }
 }
 
-void installLauncher()
+void installLauncher(bool createMissing)
 {
-    installDesktopIcons();
-
     const QString dataHome =
         QStandardPaths::writableLocation(QStandardPaths::GenericDataLocation);
     if (dataHome.isEmpty())
@@ -213,10 +242,15 @@ void installLauncher()
         // one that claims types belongs to applyFileTypes(); a bare one is
         // rewritten only when stale (Exec= of an old .bin start, #111)
         const QByteArray contents = existing.readAll();
-        if (contents.contains("MimeType=") || contents == launcher.contents.toUtf8())
+        if (contents.contains("MimeType=") || contents == launcher.contents.toUtf8()) {
+            installDesktopIcons();   // only writes art that changed
             return;
+        }
+    } else if (!createMissing) {
+        return;   // deleted by the user: stays deleted (#121)
     }
 
+    installDesktopIcons();
     QDir().mkpath(QFileInfo(launcher.path).absolutePath());
     QFile file(launcher.path);
     if (!file.open(QIODevice::WriteOnly | QIODevice::Text)) {
@@ -233,7 +267,7 @@ void installLauncher()
 #else
 
 void installDesktopIcons() {}
-void installLauncher() {}
+void installLauncher(bool) {}
 
 #endif
 
@@ -416,7 +450,7 @@ FileTypes claimedTypes()
             .ed2k = ownsAll({.ed2k = true}, ownId)};
 }
 
-bool applyFileTypes(FileTypes types, QString& error)
+bool applyFileTypes(FileTypes types, QString& error, bool /*setDefault*/)
 {
     const QString ownId = ownBundleId();
     if (ownId.isEmpty()) {
@@ -465,6 +499,11 @@ bool applyFileTypes(FileTypes types, QString& error)
 
 #pragma clang diagnostic pop
 
+bool isStale(FileTypes)
+{
+    return false;
+}
+
 bool unregisterFileTypes(QString& error)
 {
     return applyFileTypes({}, error);
@@ -505,7 +544,21 @@ bool finish(QSettings& classes, QString& error)
 
 } // namespace
 
-bool applyFileTypes(FileTypes types, QString& error)
+bool isStale(FileTypes types)
+{
+    QSettings classes(QStringLiteral("HKEY_CURRENT_USER\\Software\\Classes"), QSettings::NativeFormat);
+    for (const auto& value : registryValues(exePath(), types)) {
+        if (!value.key.endsWith(QLatin1String("/shell/open/command")))
+            continue;
+        const QString current = classes.value(value.key + QStringLiteral("/.")).toString();
+        // gone or taken by another app: not ours to rewrite
+        if (!current.isEmpty() && current != value.value && current.contains(QLatin1String("emuleqt"), Qt::CaseInsensitive))
+            return true;
+    }
+    return false;
+}
+
+bool applyFileTypes(FileTypes types, QString& error, bool /*setDefault*/)
 {
     QSettings classes(QStringLiteral("HKEY_CURRENT_USER\\Software\\Classes"),
                       QSettings::NativeFormat);
@@ -550,6 +603,33 @@ QString dataHomeOrError(QString& error)
     return dataHome;
 }
 
+/// Takes us out as handler of @p mimeTypes in the user's mimeapps.list files: a
+/// type switched off must not keep pointing at emuleqt.desktop (#121).
+void dropMimeDefaults(const QString& dataHome, const QStringList& mimeTypes)
+{
+    if (mimeTypes.isEmpty())
+        return;
+    const QString configHome = QStandardPaths::writableLocation(QStandardPaths::GenericConfigLocation);
+    QStringList lists{QDir(dataHome).filePath(QStringLiteral("applications/mimeapps.list"))};
+    if (!configHome.isEmpty())
+        lists.prepend(QDir(configHome).filePath(QStringLiteral("mimeapps.list")));
+    for (const QString& path : lists) {
+        QFile file(path);
+        if (!file.open(QIODevice::ReadOnly | QIODevice::Text))
+            continue;
+        const QString before = QString::fromUtf8(file.readAll());
+        file.close();
+        const QString after = withoutMimeDefaults(before, mimeTypes);
+        if (after == before)
+            continue;
+        if (!file.open(QIODevice::WriteOnly | QIODevice::Truncate | QIODevice::Text)) {
+            logWarning(QStringLiteral("Cannot write %1").arg(path));
+            continue;
+        }
+        file.write(after.toUtf8());
+    }
+}
+
 void refreshDatabases(const QString& dataHome)
 {
     refresh(QStringLiteral("update-mime-database"),
@@ -560,14 +640,34 @@ void refreshDatabases(const QString& dataHome)
 
 } // namespace
 
-bool applyFileTypes(FileTypes types, QString& error)
+bool isStale(FileTypes types)
+{
+    if (!types.any())
+        return false;
+    const QString dataHome = QStandardPaths::writableLocation(QStandardPaths::GenericDataLocation);
+    if (dataHome.isEmpty())
+        return false;
+    const DesktopFile entry = desktopFiles(exePath(), dataHome, types).constFirst();
+    QFile file(entry.path);
+    // gone: deleted by the user, not ours to put back
+    if (!file.open(QIODevice::ReadOnly))
+        return false;
+    return file.readAll() != entry.contents.toUtf8();
+}
+
+bool applyFileTypes(FileTypes types, QString& error, bool setDefault)
 {
     const QString dataHome = dataHomeOrError(error);
     if (dataHome.isEmpty())
         return false;
-    // nothing claimed: drop the entry; installLauncher() writes one that claims nothing
-    if (!types.any())
-        return unregisterFileTypes(error);
+    // nothing claimed: drop the entry, and leave a bare launcher where there was one
+    if (!types.any()) {
+        const bool hadEntry = QFileInfo::exists(desktopFiles(exePath(), dataHome, {}).constFirst().path);
+        const bool ok = unregisterFileTypes(error);
+        if (ok && hadEntry)
+            installLauncher(true);
+        return ok;
+    }
 
     installDesktopIcons();
 
@@ -591,9 +691,14 @@ bool applyFileTypes(FileTypes types, QString& error)
         file.write(entry.contents.toUtf8());
     }
 
+    QStringList dropped = xdgMimeTypes({true, true, true});
+    for (const QString& type : xdgMimeTypes(types))
+        dropped.removeAll(type);
+    dropMimeDefaults(dataHome, dropped);
+
     refreshDatabases(dataHome);
     // the default handler too, or another client keeps magnet: and .torrent
-    if (!QStandardPaths::findExecutable(QStringLiteral("xdg-mime")).isEmpty())
+    if (setDefault && !QStandardPaths::findExecutable(QStringLiteral("xdg-mime")).isEmpty())
         QProcess::execute(QStringLiteral("xdg-mime"),
                           QStringList{QStringLiteral("default"), QLatin1String(kDesktopFileName)} + xdgMimeTypes(types));
     return true;
@@ -607,6 +712,7 @@ bool unregisterFileTypes(QString& error)
 
     for (const auto& entry : desktopFiles(exePath(), dataHome, {true, true, true}))
         QFile::remove(entry.path);
+    dropMimeDefaults(dataHome, xdgMimeTypes({true, true, true}));
 
     refreshDatabases(dataHome);
     return true;

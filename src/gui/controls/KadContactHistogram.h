@@ -6,6 +6,7 @@
 /// Displays 4096 buckets computed from the top 12 bits of 128-bit Kad contact IDs.
 /// The visual style faithfully replicates the original MFC eMule histogram.
 
+#include <QStringList>
 #include <QWidget>
 
 #include <array>
@@ -26,6 +27,9 @@ public:
     /// Recompute histogram from the full contacts list.
     void setContacts(const std::vector<KadContactRow>& contacts);
 
+    /// Same from bare hex ids (ed3k node ids: the top 12 bits as well).
+    void setIds(const QStringList& hexIds);
+
     /// Clear all buckets.
     void clear();
 
@@ -36,6 +40,8 @@ protected:
     void paintEvent(QPaintEvent* event) override;
 
 private:
+    void addId(const QString& hex);
+
     static constexpr int kHistSize = 1 << 12;  // 4096 buckets
     std::array<uint32_t, kHistSize> m_buckets{};
     uint32_t m_contactCount = 0;

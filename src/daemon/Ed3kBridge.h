@@ -48,6 +48,10 @@ void appendSharedInfo(QCborMap& details, const QByteArray& md4);
 /// Whether the daemon was built with the ed3k module.
 [[nodiscard]] bool available();
 
+/// Node connected for this run (toolbar Connect, SetEd3kConnected); starts as autoConnect.
+[[nodiscard]] bool connectWanted();
+void setConnectWanted(bool on);
+
 /// Whether an opcode is one of the ed3k blocks (1000-1049, 1100-1149).
 [[nodiscard]] bool isEd3kRequest(Ipc::IpcMsgType type);
 

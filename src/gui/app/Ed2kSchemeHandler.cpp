@@ -4,6 +4,7 @@
 
 #include "app/Ed2kSchemeHandler.h"
 #include "app/UiState.h"
+#include "prefs/Preferences.h"
 #include "utils/FileAssociation.h"
 #include "utils/Log.h"
 
@@ -26,6 +27,10 @@
 #endif
 
 namespace eMule {
+
+namespace {
+int toBits(gui::FileAssociation::FileTypes t);
+} // namespace
 
 // ---------------------------------------------------------------------------
 // macOS
@@ -110,16 +115,17 @@ bool isEd2kSchemeRegistered()
 
 #ifndef Q_OS_MACOS
 
-// Windows, Linux: the stored switch, in the shared entry with the other types
+// Windows, Linux: the stored switch, in the shared entry with the other types.
+// Asked for: claims the links again even when nothing changed.
 void registerEd2kUrlScheme()
 {
     theUiState.setAssociateEd2kLinks(true);
-    QString error;
-    if (!gui::FileAssociation::applyFileTypes(savedFileTypes(), error)) {
-        logWarning(QStringLiteral("Cannot register the ed2k:// handler: %1").arg(error));
+    if (!wantedFileTypes().ed2k) {
+        logWarning(QStringLiteral("eD2K, Kad and ed3k are all off: ed2k:// links not claimed"));
         return;
     }
-    logInfo(QStringLiteral("Registered as ed2k:// and ed3k: handler"));
+    if (applyFileTypesNow(/*setDefault*/ true))
+        logInfo(QStringLiteral("Registered as ed2k:// and ed3k: handler"));
 }
 
 #endif
@@ -138,19 +144,65 @@ gui::FileAssociation::FileTypes savedFileTypes()
     return {.nzb = nzb, .torrent = torrent, .ed2k = theUiState.associateEd2kLinks().value_or(legacyEd2k)};
 }
 
-void applyDesktopIntegration()
+gui::FileAssociation::FileTypes enabledNetworkTypes()
 {
-    gui::FileAssociation::installLauncher();
+    return {.nzb = thePrefs.usenetEnabled(),
+            .torrent = thePrefs.btEnabled(),
+            .ed2k = thePrefs.networkED2K() || thePrefs.kadEnabled() || thePrefs.ed3kEnabled()};
+}
 
-    // Idempotent: takes an association back from an app that took it, and drops
-    // it promptly once switched off. macOS keeps the choice itself.
+gui::FileAssociation::FileTypes wantedFileTypes()
+{
+    return savedFileTypes().masked(enabledNetworkTypes());
+}
+
+void applyDesktopIntegration(bool createLauncher)
+{
+    if (createLauncher)
+        theUiState.setLauncherInstalled(true);
+    gui::FileAssociation::installLauncher(createLauncher);
+
+    // macOS keeps the choice itself
     if (!gui::FileAssociation::isRuntimeRegistration())
         return;
+    // Only a change is applied: a handler the user picked elsewhere stays (#121)
+    const auto wanted = wantedFileTypes();
+    const auto applied = theUiState.appliedFileTypes();
+    if (!applied || fromBits(*applied) != wanted)
+        applyFileTypesNow(/*setDefault*/ true);
+    else if (gui::FileAssociation::isStale(wanted))
+        applyFileTypesNow(/*setDefault*/ false);   // moved install: new path, same claim
+}
+
+gui::FileAssociation::FileTypes fromBits(int bits)
+{
+    return {.nzb = (bits & 1) != 0, .torrent = (bits & 2) != 0, .ed2k = (bits & 4) != 0};
+}
+
+bool applyFileTypesNow(bool setDefault)
+{
+    const auto wanted = wantedFileTypes();
     QString error;
-    if (!gui::FileAssociation::applyFileTypes(savedFileTypes(), error)) {
+    if (!gui::FileAssociation::applyFileTypes(wanted, error, setDefault)) {
         // never fatal, never a dialog: a desktop that refuses is no reason not to start
         logWarning(QStringLiteral("Could not update the file associations: %1").arg(error));
+        return false;
     }
+    theUiState.setAppliedFileTypes(toBits(wanted));
+    return true;
 }
+
+// ---------------------------------------------------------------------------
+// private
+// ---------------------------------------------------------------------------
+
+namespace {
+
+int toBits(gui::FileAssociation::FileTypes t)
+{
+    return (t.nzb ? 1 : 0) | (t.torrent ? 2 : 0) | (t.ed2k ? 4 : 0);
+}
+
+} // namespace
 
 } // namespace eMule

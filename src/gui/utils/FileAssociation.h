@@ -48,6 +48,12 @@ struct FileTypes {
     bool ed2k = false;
 
     [[nodiscard]] bool any() const { return nzb || torrent || ed2k; }
+    /// Only the types that are in @p allowed too (a network switched off claims nothing, #121)
+    [[nodiscard]] FileTypes masked(FileTypes allowed) const
+    {
+        return {.nzb = nzb && allowed.nzb, .torrent = torrent && allowed.torrent, .ed2k = ed2k && allowed.ed2k};
+    }
+    bool operator==(const FileTypes&) const = default;
 };
 
 /// The XDG desktop entry and the MIME definitions of @p types for @p exePath.
@@ -59,6 +65,10 @@ struct FileTypes {
 
 /// The MIME types an XDG desktop gets told to open with us (`xdg-mime default`).
 [[nodiscard]] QStringList xdgMimeTypes(FileTypes types);
+
+/// @p mimeapps (a mimeapps.list) without emuleqt.desktop as handler of @p mimeTypes.
+/// Other handlers on the same line stay; [Removed Associations] is left alone (#121).
+[[nodiscard]] QString withoutMimeDefaults(const QString& mimeapps, const QStringList& mimeTypes);
 
 /// One icon the Linux launcher needs in the hicolor theme.
 struct IconFile {
@@ -78,27 +88,32 @@ struct IconFile {
 /// Copy the icons into the user's hicolor theme. Linux only, a no-op elsewhere.
 void installDesktopIcons();
 
-/// installDesktopIcons(), plus the launcher entry when there is none yet. An
-/// emuleqt.desktop that claims types is left alone; a bare stale one is rewritten.
-void installLauncher();
+/// The launcher entry and its icons. With @p createMissing false a missing entry
+/// stays missing (the user deleted it, #121); an existing stale bare one is rewritten,
+/// one that claims types is left alone. Linux only.
+void installLauncher(bool createMissing);
 
 /// The per-user registry values of @p types for @p exePath, relative to Software\\Classes.
 [[nodiscard]] QList<RegistryValue> registryValues(const QString& exePath, FileTypes types);
 
-/// Whether the choice is stored and re-applied at every start (Windows, Linux).
-/// False on macOS, where the system keeps the default app and claimedTypes()
-/// reads it back.
+/// Whether the choice is stored and applied by the app when it changes (Windows,
+/// Linux). False on macOS, where the system keeps the default app and
+/// claimedTypes() reads it back.
 [[nodiscard]] bool isRuntimeRegistration();
 
 /// The types this app is the default for right now. macOS only (a type counts
 /// when every extension and scheme in it is ours); {} elsewhere.
 [[nodiscard]] FileTypes claimedTypes();
 
+/// Whether what applyFileTypes(@p types) wrote starts another executable now (moved
+/// or updated install). False when nothing is written, and on macOS.
+[[nodiscard]] bool isStale(FileTypes types);
+
 /// Claims @p types for this executable and gives up the others (only while still
-/// ours). Idempotent, so it can run at every start and take an association back
-/// from an application that took it away. On macOS giving up hands the type to
-/// another app that declares it; with none there, it stays ours.
-bool applyFileTypes(FileTypes types, QString& error);
+/// ours). Idempotent. @p setDefault false rewrites the entries only, without making
+/// us the default app again (Linux `xdg-mime default`). On macOS giving up hands the
+/// type to another app that declares it; with none there, it stays ours.
+bool applyFileTypes(FileTypes types, QString& error, bool setDefault = true);
 
 /// Gives up every type. Idempotent (uninstall, --unregister-file-types).
 bool unregisterFileTypes(QString& error);

@@ -95,6 +95,7 @@
 #include "ipc/PushCoalescer.h"
 #include "webserver/ApiEventHub.h"
 #include "webserver/WebServer.h"
+#include "client/UpDownClient.h"
 #include "files/PartFile.h"
 #include "files/SharedFileList.h"
 #include "utils/OtherFunctions.h"
@@ -114,6 +115,9 @@
 #include <QUuid>
 
 #include <openssl/rand.h>
+
+#include <array>
+#include <cstring>
 
 
 namespace eMule {
@@ -166,6 +170,8 @@ bool DaemonApp::start()
     m_coreSession = std::make_unique<CoreSession>(this);
     // the wizard picks the networks: ed3k, BT, Usenet and hosters wait for it too (#103, #105)
     m_enginesHeld = m_connectHold;
+    // ed3k connects at start like eD2K and Kad: only with autoConnect
+    Ed3kBridge::setConnectWanted(thePrefs.autoConnect());
     connect(m_coreSession.get(), &CoreSession::connectHoldReleased, this, &DaemonApp::releaseEngines);
     if (m_connectHold) {
         logInfo(QStringLiteral("Auto-connect held until the first start wizard is done"));
@@ -397,6 +403,18 @@ bool DaemonApp::start()
     // node lists (bootstrap.md §3); an ed3k:nodes link is asked through the GUI, none refuses it
     m_ed3kBootstrap = std::make_unique<ed3k::Ed3kBootstrap>(*m_ed3kSession);
     m_ed3kBootstrap->setSources(thePrefs.ed3kNodeLists());
+    m_ed3kBootstrap->setPolicy(thePrefs.ed3kNodeListAuto(), thePrefs.ed3kNodeListMaxAgeDays());
+    m_ed3kBootstrap->setSeedFromEd2k(thePrefs.ed3kSeedFromEd2k());
+    // bootstrap.md §1 source 4: eD2K peers with a derived user hash; LowID IPv4 has no
+    // reachable address
+    theApp.ed3kKadSeed = [b = m_ed3kBootstrap.get()](UpDownClient& client) {
+        const Address& ip = client.connectAddress();
+        if (ip.isNull() || (client.hasLowID() && !ip.isIPv6()))
+            return;
+        std::array<std::uint8_t, 16> hash{};
+        std::memcpy(hash.data(), client.userHash(), hash.size());
+        (void)b->offerEd2kPeer(hash, ip.toQHostAddress(), client.userPort());
+    };
     m_ed3kBootstrap->setAsker([this](std::uint64_t ask, const QString& host, const QString& url) {
         if (!m_ipcServer || !m_ipcServer->hasReadyClient())
             return false;
@@ -833,6 +851,7 @@ void DaemonApp::stop()
     m_ed3kFriends.reset();
     Ed3kRoomsBridge::setRooms(nullptr);
     m_ed3kRooms.reset();
+    theApp.ed3kKadSeed = {};
     Ed3kBridge::setBootstrap(nullptr);
     m_ed3kBootstrap.reset();
     Ed3kNamesBridge::setNames(nullptr, nullptr);
@@ -1166,7 +1185,8 @@ void DaemonApp::applyEd3kConfig()
     // hiding (hops.md §1): live, no restart; applied at start too
     m_ed3kSession->setHideSettings(
         {thePrefs.ed3kHide(), thePrefs.ed3kHops(), thePrefs.ed3kHopping(), thePrefs.ed3kHopShare()});
-    const bool enabled = thePrefs.ed3kEnabled() && !m_enginesHeld;
+    // ed3kEnabled = the feature; connectWanted = autoConnect at start, then the Connect button
+    const bool enabled = thePrefs.ed3kEnabled() && Ed3kBridge::connectWanted() && !m_enginesHeld;
     const uint16 port = thePrefs.ed3kUdpPort();
     // was: ToDo: the bindAddress pref (interface selection) for the ed3k socket (done: its
     // listen address; a selected interface pins the socket in Ed3kSession::start)
@@ -1217,6 +1237,9 @@ void DaemonApp::applyEd3kConfig()
         if (bind) {
             settings.bindAddress = *bind;
             m_ed3kSession->start(settings);
+            // a node started later (Connect) brings the hoster downloads back
+            if (m_hosterJoin && m_ed3kSession->isRunning())
+                m_hosterJoin->start();
         } else {
             logWarning(QStringLiteral("ed3k: the bind address %1 does not resolve; the node is not started")
                            .arg(thePrefs.bindAddress()));
@@ -1235,9 +1258,12 @@ void DaemonApp::applyEd3kConfig()
     // ed3kChain*, ed3kChaintubeRpc: no restart; chainConfigure again when they moved
     if (m_ed3kChain)
         m_ed3kChain->setConfig(thePrefs.ed3kChain(), thePrefs.ed3kChaintubeRpc());
-    // ed3kNodeLists: no restart
-    if (m_ed3kBootstrap)
+    // ed3kNodeLists, ed3kNodeListAuto, ed3kNodeListMaxAgeDays, ed3kSeedFromEd2k: no restart
+    if (m_ed3kBootstrap) {
         m_ed3kBootstrap->setSources(thePrefs.ed3kNodeLists());
+        m_ed3kBootstrap->setPolicy(thePrefs.ed3kNodeListAuto(), thePrefs.ed3kNodeListMaxAgeDays());
+        m_ed3kBootstrap->setSeedFromEd2k(thePrefs.ed3kSeedFromEd2k());
+    }
     // ed3kShareFiles: on/off while the node runs (starts with it otherwise)
     if (m_ed3kShared)
         m_ed3kShared->setEnabled(thePrefs.ed3kShareFiles());
@@ -1686,6 +1712,8 @@ void DaemonApp::releaseEngines()
     if (m_usenetSession)
         applyUsenetServers();
     applyBtConfig();
+    // the wizard may have set autoConnect
+    Ed3kBridge::setConnectWanted(thePrefs.autoConnect());
     // waits for the eD2K UDP socket while the core loads (onCoreLoaded comes back); hosters too
     applyEd3kConfig();
 }

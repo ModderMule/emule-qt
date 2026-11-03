@@ -63,8 +63,9 @@ const ContainerCheck& ShareableFile::containerCheck() const
     }
 
     m_containerCheck = checkHead(head, fileName());
-    // Once per file and session: the result is memoised from here on.
-    // Shared files only on request: they are checked again at every start.
+    // Once per file: memoised from here on, and kept in known.met (FT_CONTAINERCHECK)
+    // so a shared file is only read again after a rename or a sniffer version bump.
+    // Shared files logged only on request.
     if (m_containerCheck->isSuspect() && (isPartFile() || thePrefs.logFakeCheckShared()))
         logWarning(QStringLiteral("File header check: %1 — %2")
                        .arg(fileName(), containerWarningText(*m_containerCheck, fileName())));

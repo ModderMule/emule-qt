@@ -381,6 +381,11 @@ void MainWindow::onConnectToggle()
             Ipc::IpcMessage req(Ipc::IpcMsgType::DisconnectKad);
             m_ipc->sendRequest(std::move(req));
         }
+        if (m_ed3kRunning) {
+            Ipc::IpcMessage req(Ipc::IpcMsgType::SetEd3kConnected);
+            req.append(false);
+            m_ipc->sendRequest(std::move(req));
+        }
     } else {
         // The toolbar Connect brings up the networks the user has enabled (its
         // "auto" set). If both are disabled there is nothing to connect — surface
@@ -388,8 +393,16 @@ void MainWindow::onConnectToggle()
         // through other paths and are not gated by these prefs.)
         const bool ed2kEnabled = thePrefs.networkED2K();
         const bool kadEnabled  = thePrefs.kadEnabled();
+        const bool ed3kEnabled = thePrefs.ed3kEnabled();
 
+        if (ed3kEnabled) {
+            Ipc::IpcMessage req(Ipc::IpcMsgType::SetEd3kConnected);
+            req.append(true);
+            m_ipc->sendRequest(std::move(req));
+        }
         if (!ed2kEnabled && !kadEnabled) {
+            if (ed3kEnabled)
+                return;
             QMessageBox::warning(this, tr("Cannot Connect"),
                 tr("Both the eD2K and Kad networks are disabled.\n\n"
                    "Enable at least one under Options → Connection to connect."));
@@ -668,10 +681,18 @@ void MainWindow::setEd3kStatus(const QCborMap& status)
         m_transferPanel->setEd3kKeyState(keyState);
     if (m_sharedFilesPanel)
         m_sharedFilesPanel->setEd3kKeyState(keyState);
+    const bool running = status.value(QStringLiteral("running")).toBool();
+    const bool connected = running && status.value(QStringLiteral("contacts")).toInteger() > 0;
+    if (running != m_ed3kRunning || connected != m_ed3kConnected) {
+        m_ed3kRunning = running;
+        m_ed3kConnected = connected;
+        updateConnectButton();
+    }
     if (!m_statusEd3k)
         return;
-    if (!status.value(QStringLiteral("running")).toBool()) {
+    if (!running) {
         m_statusEd3k->hide();
+        m_statusEd3kIcon->hide();
         return;
     }
     const qint64 contacts = status.value(QStringLiteral("contacts")).toInteger();
@@ -683,12 +704,16 @@ void MainWindow::setEd3kStatus(const QCborMap& status)
     if (contacts > 0 && !firewalled) {
         m_statusEd3k->setText(tr("ed3k: Connected"));
         setStatusRole(m_statusEd3k, static_cast<int>(TextRole::Good));
+        m_statusEd3kIcon->setState(ConnectionStatusWidget::Connected);
     } else if (contacts > 0) {
         m_statusEd3k->setText(tr("ed3k: Connected (Firewalled)"));
         setStatusRole(m_statusEd3k, static_cast<int>(TextRole::Caution));
+        m_statusEd3kIcon->setState(ConnectionStatusWidget::Firewalled);
     } else {
+        // like Kad: connecting shows red, no contacts yet
         m_statusEd3k->setText(tr("ed3k: Connecting..."));
         setStatusRole(m_statusEd3k, static_cast<int>(TextRole::Caution));
+        m_statusEd3kIcon->setState(ConnectionStatusWidget::Disconnected);
     }
     const auto className = [](qint64 c) {
         switch (c) {
@@ -722,6 +747,8 @@ void MainWindow::setEd3kStatus(const QCborMap& status)
                                        .arg(hide.value(QStringLiteral("built")).toInteger())
                                        .arg(hide.value(QStringLiteral("paths")).toInteger());
     m_statusEd3k->setToolTip(tip);
+    m_statusEd3kIcon->setToolTip(tip);
+    m_statusEd3kIcon->show();
     m_statusEd3k->show();
 }
 
@@ -1394,10 +1421,19 @@ void MainWindow::onFirstTimeWizard()
     m_firstStartWizard->setAttribute(Qt::WA_DeleteOnClose);
     // Once is once: cancelling counts, as in MFC. Tools > wizard reopens it.
     connect(m_firstStartWizard, &QDialog::finished, this, [this](int result) {
+        const bool firstRun = !theUiState.firstStartWizardDone();
         theUiState.setFirstStartWizardDone(true);
+#ifndef Q_OS_MACOS
+        // Cancel on the first run claims the types of the enabled networks (#121)
+        if (firstRun && result != QDialog::Accepted) {
+            theUiState.setAssociateNzbFiles(true);
+            theUiState.setAssociateTorrentFiles(true);
+            theUiState.setAssociateEd2kLinks(true);
+        }
+#endif
         // Held back until now, so nothing is claimed before the user could say no (#111).
-        // Cancel claims the defaults. Idempotent when reopened from Tools.
-        applyDesktopIntegration();
+        // A no-op when reopened from Tools and nothing changed.
+        applyDesktopIntegration(firstRun);
         // Lists built on the old showExtControls pick up the wizard's choice
         if (result == QDialog::Accepted) {
             m_transferPanel->applyDisplayOptions();
@@ -1941,9 +1977,9 @@ void MainWindow::updateConnectButton()
 
 MainWindow::ConnectButtonState MainWindow::connectButtonState() const
 {
-    if (m_ed2kConnected || m_kadConnected)
+    if (m_ed2kConnected || m_kadConnected || m_ed3kConnected)
         return ConnectButtonState::Disconnect;
-    if (m_ed2kConnecting || m_kadRunning)
+    if (m_ed2kConnecting || m_kadRunning || m_ed3kRunning)
         return ConnectButtonState::Cancel;
     return ConnectButtonState::Connect;
 }
@@ -2084,6 +2120,11 @@ void MainWindow::setupStatusBar()
     sb->addPermanentWidget(m_statusKad);
 
     // ed3k node: no MFC original; shown like Kad's while it runs
+    m_statusEd3kIcon = new Ed3kStatusIcon(this);
+    m_statusEd3kIcon->hide();
+    connect(m_statusEd3kIcon, &Ed3kStatusIcon::doubleClicked, this, &MainWindow::showNetworkInfo);
+    sb->addPermanentWidget(m_statusEd3kIcon);
+
     m_statusEd3k = new QLabel(this);
     m_statusEd3k->installEventFilter(this);
     m_statusEd3k->hide();
@@ -2126,6 +2167,8 @@ void MainWindow::setupPages()
     // Tab 0: Kad
     m_kadPanel = new KadPanel(this);
     addPage(m_kadPanel);
+    connect(m_kadPanel, &KadPanel::editEd3kSourcesRequested, this,
+            [this] { showOptionsDialog(OptionsDialog::PageEd3kConnection); });
 
     // Tab 1: Servers
     m_serverPanel = new ServerPanel(this);
@@ -2315,6 +2358,48 @@ void ConnectionStatusWidget::paintEvent(QPaintEvent* /*event*/)
 }
 
 void ConnectionStatusWidget::mouseDoubleClickEvent(QMouseEvent* /*event*/)
+{
+    emit doubleClicked();
+}
+
+// ---------------------------------------------------------------------------
+// Ed3kStatusIcon — ed3k globe/donkey with one state arrow
+// ---------------------------------------------------------------------------
+
+Ed3kStatusIcon::Ed3kStatusIcon(QWidget* parent)
+    : QWidget(parent)
+{
+    setSizePolicy(QSizePolicy::Fixed, QSizePolicy::Fixed);
+    setFixedSize(16, 16);
+}
+
+void Ed3kStatusIcon::setState(ConnectionStatusWidget::State s)
+{
+    if (m_state != s) {
+        m_state = s;
+        update();
+    }
+}
+
+void Ed3kStatusIcon::paintEvent(QPaintEvent* /*event*/)
+{
+    const qreal dpr = devicePixelRatioF();
+    if (m_base.isNull() || !qFuzzyCompare(m_base.devicePixelRatio(), dpr))
+        m_base = skinIcon(QStringLiteral(":/icons/Ed3k.ico")).pixmap(size(), dpr);
+
+    QPainter p(this);
+    p.setRenderHint(QPainter::Antialiasing);
+    p.drawPixmap(rect(), m_base);
+
+    // up arrow bottom-left, where ConnectedXY.ico puts the eD2K one; donkey stays visible
+    const QPolygonF arrow{{3.5, 6.0}, {7.5, 10.5}, {5.25, 10.5}, {5.25, 15.0},
+                          {1.75, 15.0}, {1.75, 10.5}, {-0.5, 10.5}};
+    p.setPen(QPen(QColor(0xF4, 0xF4, 0xF4), 1.0));   // light rim: reads on the red globe
+    p.setBrush(ConnectionStatusWidget::colorForState(m_state));
+    p.drawPolygon(arrow.translated(0.5, 0.0));
+}
+
+void Ed3kStatusIcon::mouseDoubleClickEvent(QMouseEvent* /*event*/)
 {
     emit doubleClicked();
 }
@@ -2717,6 +2802,8 @@ void MainWindow::refreshSkinIcons()
     if (const int shown = std::exchange(m_transferStateIcon, -1); shown >= 0)
         updateTransferStateIcon(shown & 2, shown & 1);
     showChatState(m_statusChatState);
+    if (m_statusEd3kIcon)
+        m_statusEd3kIcon->refreshSkin();
     for (QWidget* widget : QApplication::allWidgets())
         widget->update();
 }

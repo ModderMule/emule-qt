@@ -209,6 +209,7 @@
     <ClCompile Include="Ed3kUploadsBridge.cpp" />
     <ClCompile Include="Ed3kHideBridge.cpp" />
     <ClCompile Include="Ed3kHosterBridge.cpp" />
+    <ClCompile Include="Ed3kKadBridge.cpp" />
     <ClCompile Include="Ed3kLinksBridge.cpp" />
     <ClCompile Include="UsenetBridge.cpp" />
     <ClCompile Include="BandwidthCoordinator.cpp" />
@@ -228,6 +229,7 @@
     <QtMoc Include="PowerManager.h" />
     <ClInclude Include="DaemonApiBackend.h" />
     <ClInclude Include="Ed3kHosterBridge.h" />
+    <ClInclude Include="Ed3kKadBridge.h" />
     <ClInclude Include="Ed3kLinksBridge.h" />
     <ClInclude Include="DaemonTorrentWebBackend.h" />
     <ClInclude Include="DaemonUsenetWebBackend.h" />

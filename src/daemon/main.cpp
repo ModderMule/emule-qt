@@ -12,7 +12,10 @@
 #include "app/AppConfig.h"
 #include "app/InstallerCopy.h"
 #ifdef EMULE_HAVE_ED3K
+#include "Ed3kBootstrap.h"
 #include "Ed3kStore.h"
+
+#include <QSaveFile>
 #endif
 #include "app/TranslationRouter.h"
 #include "files/PartFileConvert.h"
@@ -31,6 +34,7 @@
 #include <QLoggingCategory>
 #include <QSocketNotifier>
 
+#include <cstdio>
 #include <vector>
 
 #ifndef Q_OS_WIN
@@ -112,6 +116,27 @@ int main(int argc, char* argv[])
     });
 #endif
     eMule::thePrefs.load(prefsPath);
+
+    // -- offline export of the saved ed3k contacts (bootstrap.md §3), then exit --
+    if (const QString out = cli.exportEd3kNodes(); !out.isEmpty()) {
+#ifdef EMULE_HAVE_ED3K
+        const auto file = eMule::ed3k::Ed3kBootstrap::exportSaved(configDir, cli.exportComment());
+        if (!file) {
+            std::fprintf(stderr, "export failed: %s\n", qPrintable(file.error()));
+            return 1;
+        }
+        QSaveFile f(out);
+        if (!f.open(QIODevice::WriteOnly) || f.write(*file) != file->size() || !f.commit()) {
+            std::fprintf(stderr, "cannot write %s\n", qPrintable(out));
+            return 1;
+        }
+        std::printf("wrote %s (%lld bytes)\n", qPrintable(out), static_cast<long long>(file->size()));
+        return 0;
+#else
+        std::fprintf(stderr, "built without ed3k\n");
+        return 1;
+#endif
+    }
 
     // -- CLI command mode: send to running daemon and exit --------------------
 

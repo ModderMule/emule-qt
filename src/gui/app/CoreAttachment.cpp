@@ -20,18 +20,14 @@ void CoreAttachment::setTarget(const QString& host, uint16_t port, bool remote)
     m_host = h;
     m_port = port;
     m_remote = remote;
-    if (m_remote)
-        m_stopsOnExit = false;
     emit changed();
 }
 
 void CoreAttachment::noteLaunched()
 {
-    const bool stop = m_userChose ? m_stopsOnExit : true;
-    if (m_launched && stop == m_stopsOnExit)
+    if (m_launched)
         return;
     m_launched = true;
-    m_stopsOnExit = stop;
     emit changed();
 }
 
@@ -39,10 +35,9 @@ void CoreAttachment::setStopsOnExit(bool stop)
 {
     if (!canToggle())
         return;
-    m_userChose = true;
-    if (stop == m_stopsOnExit)
+    if (stop == !m_userDetached)
         return;
-    m_stopsOnExit = stop;
+    m_userDetached = !stop;
     emit changed();
 }
 
@@ -64,7 +59,7 @@ QString CoreAttachment::locationText() const
 
 QString CoreAttachment::exitText() const
 {
-    return m_stopsOnExit ? tr("Attached: stops when the GUI closes")
+    return stopsOnExit() ? tr("Attached: stops when the GUI closes")
                          : tr("Detached: keeps running when the GUI closes");
 }
 
@@ -72,7 +67,7 @@ QString CoreAttachment::toolTip() const
 {
     QString tip = locationText() + u'\n' + exitText();
     if (canToggle())
-        tip += u'\n' + (m_stopsOnExit ? tr("Double-click to detach") : tr("Double-click to attach"));
+        tip += u'\n' + (stopsOnExit() ? tr("Double-click to detach") : tr("Double-click to attach"));
     return tip;
 }
 
@@ -90,10 +85,10 @@ QIcon CoreAttachment::icon(const QColor& color) const
         p.setPen(QPen(color, 1.6));
         p.setBrush(Qt::NoBrush);
         // Two chain links; apart with a gap when detached
-        const qreal shift = m_stopsOnExit ? 2.4 : 4.2;
+        const qreal shift = stopsOnExit() ? 2.4 : 4.2;
         p.drawRoundedRect(QRectF(-shift - 3.5, -2.2, 7, 4.4), 2.2, 2.2);
         p.drawRoundedRect(QRectF(shift - 3.5, -2.2, 7, 4.4), 2.2, 2.2);
-        if (!m_stopsOnExit) {
+        if (!stopsOnExit()) {
             p.setPen(QPen(color, 1.0));
             p.drawLine(QPointF(-0.6, -5.0), QPointF(-0.6, -3.4));
             p.drawLine(QPointF(0.6, 3.4), QPointF(0.6, 5.0));

@@ -737,6 +737,9 @@ struct Preferences::Data {
     bool ed3kHopping = true;           // forward for others while hiding (§1 "Recommended")
     int ed3kHopShare = 25;             // % of the upload limit for others' paths (§5)
     QStringList ed3kNodeLists;         // ed3k:nodes links (bootstrap.md §3)
+    bool ed3kNodeListAuto = true;      // fetch lists by themselves (bootstrap.md §1)
+    int ed3kNodeListMaxAgeDays = 30;   // §2 "MAY refuse"; 0 = no limit
+    bool ed3kSeedFromEd2k = true;      // eD2K peers with a derived hash as seeds (§1 source 4)
     QStringList ed3kCacheServers;      // ed3k:cache links (http-source.md §4.1): credentials, encrypted in YAML
     uint16 ed3kSitePort = 0;           // website server (name.md §6.2); 0 = random, resolved at load
     Ed3kCreditPrefs ed3kCredit;        // credit.md; off by default (§9)
@@ -2403,6 +2406,12 @@ int Preferences::ed3kHopShare() const { return get(&Data::ed3kHopShare); }
 void Preferences::setEd3kHopShare(int val) { set(&Data::ed3kHopShare, std::clamp(val, 1, 100)); }
 QStringList Preferences::ed3kNodeLists() const { return get(&Data::ed3kNodeLists); }
 void Preferences::setEd3kNodeLists(const QStringList& links) { set(&Data::ed3kNodeLists, links); }
+bool Preferences::ed3kNodeListAuto() const { return get(&Data::ed3kNodeListAuto); }
+void Preferences::setEd3kNodeListAuto(bool val) { set(&Data::ed3kNodeListAuto, val); }
+int Preferences::ed3kNodeListMaxAgeDays() const { return get(&Data::ed3kNodeListMaxAgeDays); }
+void Preferences::setEd3kNodeListMaxAgeDays(int days) { set(&Data::ed3kNodeListMaxAgeDays, std::clamp(days, 0, 3650)); }
+bool Preferences::ed3kSeedFromEd2k() const { return get(&Data::ed3kSeedFromEd2k); }
+void Preferences::setEd3kSeedFromEd2k(bool val) { set(&Data::ed3kSeedFromEd2k, val); }
 QStringList Preferences::ed3kCacheServers() const { return get(&Data::ed3kCacheServers); }
 void Preferences::setEd3kCacheServers(const QStringList& links) { set(&Data::ed3kCacheServers, links); }
 uint16 Preferences::ed3kSitePort() const { return get(&Data::ed3kSitePort); }
@@ -3729,6 +3738,9 @@ QCborMap Preferences::toIpcMap() const
     prefs.insert(QStringLiteral("ed3kHopping"), ed3kHopping());
     prefs.insert(QStringLiteral("ed3kHopShare"), static_cast<qint64>(ed3kHopShare()));
     prefs.insert(QStringLiteral("ed3kNodeLists"), ed3kNodeLists().join(QLatin1Char(' ')));
+    prefs.insert(QStringLiteral("ed3kNodeListAuto"), ed3kNodeListAuto());
+    prefs.insert(QStringLiteral("ed3kNodeListMaxAgeDays"), static_cast<qint64>(ed3kNodeListMaxAgeDays()));
+    prefs.insert(QStringLiteral("ed3kSeedFromEd2k"), ed3kSeedFromEd2k());
     prefs.insert(QStringLiteral("ed3kSitePort"), static_cast<qint64>(ed3kSitePort()));
     {
         const Ed3kCreditPrefs c = ed3kCredit();
@@ -4057,6 +4069,10 @@ void Preferences::updateFromCbor(const QCborMap& p)
     m_data->ed3kHopping = p.value(QStringLiteral("ed3kHopping")).toBool(true);
     m_data->ed3kHopShare = static_cast<int>(std::clamp<qint64>(p.value(QStringLiteral("ed3kHopShare")).toInteger(25), 1, 100));
     m_data->ed3kNodeLists = rpcUrlList(p.value(QStringLiteral("ed3kNodeLists")));
+    m_data->ed3kNodeListAuto = p.value(QStringLiteral("ed3kNodeListAuto")).toBool(true);
+    m_data->ed3kNodeListMaxAgeDays =
+        static_cast<int>(std::clamp<qint64>(p.value(QStringLiteral("ed3kNodeListMaxAgeDays")).toInteger(30), 0, 3650));
+    m_data->ed3kSeedFromEd2k = p.value(QStringLiteral("ed3kSeedFromEd2k")).toBool(true);
     m_data->ed3kSitePort = static_cast<uint16>(
         std::clamp<qint64>(p.value(QStringLiteral("ed3kSitePort")).toInteger(0), 0, 65535));
     {
@@ -5293,6 +5309,9 @@ bool Preferences::load(const QString& filePath)
             m_data->ed3kHopping = e3["hopping"].as<bool>(m_data->ed3kHopping);
             m_data->ed3kHopShare = std::clamp(e3["hopShare"].as<int>(m_data->ed3kHopShare), 1, 100);
             m_data->ed3kNodeLists = urls(e3["nodeLists"]);
+            m_data->ed3kNodeListAuto = e3["nodeListAuto"].as<bool>(m_data->ed3kNodeListAuto);
+            m_data->ed3kNodeListMaxAgeDays = std::clamp(e3["nodeListMaxAgeDays"].as<int>(m_data->ed3kNodeListMaxAgeDays), 0, 3650);
+            m_data->ed3kSeedFromEd2k = e3["seedFromEd2k"].as<bool>(m_data->ed3kSeedFromEd2k);
             // ed3k:cache links hold an upload key: stored encrypted (no key: dropped)
             m_data->ed3kCacheServers.clear();
             if (auto cs = e3["cacheServersEnc"]; cs && cs.IsSequence() && !m_data->notifyEmailEncKey.isEmpty())
@@ -6574,6 +6593,9 @@ bool Preferences::saveImpl(const QString& filePath) const
     out << YAML::Key << "hops" << YAML::Value << m_data->ed3kHops;
     out << YAML::Key << "hopping" << YAML::Value << m_data->ed3kHopping;
     out << YAML::Key << "hopShare" << YAML::Value << m_data->ed3kHopShare;
+    out << YAML::Key << "nodeListAuto" << YAML::Value << m_data->ed3kNodeListAuto;
+    out << YAML::Key << "nodeListMaxAgeDays" << YAML::Value << m_data->ed3kNodeListMaxAgeDays;
+    out << YAML::Key << "seedFromEd2k" << YAML::Value << m_data->ed3kSeedFromEd2k;
     out << YAML::Key << "sitePort" << YAML::Value << static_cast<int>(m_data->ed3kSitePort);
     for (const auto& [key, list] : {std::pair{"creditRpc", &m_data->ed3kCreditRpc},
                                     std::pair{"chaintubeRpc", &m_data->ed3kChaintubeRpc},

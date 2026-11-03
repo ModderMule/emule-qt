@@ -39,6 +39,12 @@ public:
     /// Hours from --autoupdate=N; 0 = the version-check interval.
     [[nodiscard]] int autoUpdateHours() const;
 
+    /// --export-ed3k-nodes <file>: the ed3k contacts saved by this profile as a signed node
+    /// list file (bootstrap.md §3), then exit. Empty: not set.
+    [[nodiscard]] QString exportEd3kNodes() const;
+    /// --export-comment <text> for that file.
+    [[nodiscard]] QString exportComment() const;
+
 private:
     QCommandLineParser m_parser;
 
@@ -99,6 +105,17 @@ private:
         o.setFlags(QCommandLineOption::HiddenFromHelp);
         return o;
     }();
+
+    QCommandLineOption m_exportEd3kNodesOption{
+        QStringLiteral("export-ed3k-nodes"),
+        QStringLiteral("Write the saved ed3k contacts of this profile as a signed node list file "
+                       "(nodes.ed3knod) and exit. Works while no core runs."),
+        QStringLiteral("file")};
+
+    QCommandLineOption m_exportCommentOption{
+        QStringLiteral("export-comment"),
+        QStringLiteral("Comment stored in the file of --export-ed3k-nodes."),
+        QStringLiteral("text")};
 };
 
 } // namespace eMule

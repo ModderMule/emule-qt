@@ -176,6 +176,9 @@ private:
     QCheckBox* m_lanCheck = nullptr;
     QSpinBox* m_sitePortSpin = nullptr;
     QPlainTextEdit* m_nodeListsEdit = nullptr;
+    QCheckBox* m_nodeListAutoCheck = nullptr;
+    QSpinBox* m_nodeListAgeSpin = nullptr;
+    QCheckBox* m_seedEd2kCheck = nullptr;
     QPlainTextEdit* m_chaintubeRpcEdit = nullptr;
     /// one remote endpoint: no second provider (chaintube.md §4.3, batch 12 #8)
     QLabel* m_chainSingleNote = nullptr;

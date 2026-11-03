@@ -29,6 +29,7 @@
 #include <QTest>
 
 #include <array>
+#include <memory>
 
 using namespace eMule;
 using namespace eMule::kad;
@@ -68,6 +69,7 @@ private slots:
     void processResponse_freesAllResultContacts();
     void processResponse_keepsResponderKeyForActionPackets();
     void processResponse_doesNotReplaceAKnownKey();
+    void processResponse_doesNotKeyARoutingTableContact();
     void processResponse_freesRejectedDuplicates();
 
     // Source publishing (audit item #4)
@@ -593,6 +595,49 @@ void tst_KadSearch::processResponse_doesNotReplaceAKnownKey()
 
     QCOMPARE(keys.size(), std::size_t{1});
     QCOMPARE(keys.front(), 0x1111u);
+}
+
+// A keyed routing-table contact refuses updates without that key, so a spoofed
+// RES must not be able to set one on a contact the search only borrowed.
+void tst_KadSearch::processResponse_doesNotKeyARoutingTableContact()
+{
+    eMule::testing::KadFixture kadFixture;
+    constexpr uint32 kOurIP = 0x0A0B0C0Du;
+
+    std::vector<uint32> keys;
+    const auto conn = QObject::connect(
+        Kademlia::getInstanceUDPListener(), &KademliaUDPListener::packetToSend,
+        [&](const QByteArray& data, uint32, uint16, const KadUDPKey& key, const UInt128&) {
+            if (!data.isEmpty() && static_cast<uint8>(data[0]) == KADEMLIA_FINDBUDDY_REQ)
+                keys.push_back(key.getKeyValue(kOurIP));
+        });
+    const auto disconnect = qScopeGuard([&] { QObject::disconnect(conn); });
+
+    Search* search = startWalk(SearchType::FindBuddy, 3);
+    QVERIFY(search != nullptr);
+    const uint32 searchID = search->getSearchID();
+
+    // Turn rank 1 into a borrowed contact: the search no longer owns it.
+    std::unique_ptr<Contact> borrowed;
+    auto& owned = search->m_deleteList;
+    for (auto it = owned.begin(); it != owned.end(); ++it) {
+        if ((*it)->address().toUint32() == walkIP(1)) {
+            borrowed.reset(*it);
+            owned.erase(it);
+            break;
+        }
+    }
+    QVERIFY(borrowed != nullptr);
+
+    ContactArray none;
+    SearchManager::processResponse(walkTarget(), walkIP(1), walkPort(1), none,
+                                   KadUDPKey(0xC0FFEEu, kOurIP));
+    QCOMPARE(borrowed->getUDPKey().getKeyValue(kOurIP), 0u);
+    search->storePacket(false);
+
+    QCOMPARE(keys.size(), std::size_t{1});
+    QCOMPARE(keys.front(), 0u);
+    SearchManager::stopSearch(searchID, false);   // before the borrowed contact goes
 }
 
 void tst_KadSearch::processResponse_freesRejectedDuplicates()

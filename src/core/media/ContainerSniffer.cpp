@@ -231,6 +231,65 @@ ContainerCheck checkFile(const QString& absPath, const QString& fileName)
     return checkHead(file.read(kContainerProbeBytes), fileName);
 }
 
+QByteArray packContainerCheck(const ContainerCheck& check)
+{
+    // [version][verdict][foreign][flags: bit0 hasVideo][actual, UTF-8]
+    QByteArray blob;
+    blob.reserve(4 + check.actual.size());
+    blob += static_cast<char>(kContainerCheckVersion);
+    blob += static_cast<char>(check.verdict);
+    blob += static_cast<char>(check.foreign);
+    blob += static_cast<char>(check.hasVideo ? 0x01 : 0x00);
+    blob += check.actual.toUtf8();
+    return blob;
+}
+
+std::optional<ContainerCheck> unpackContainerCheck(const QByteArray& blob, const QString& fileName)
+{
+    if (blob.size() < 4 || static_cast<quint8>(blob[0]) != kContainerCheckVersion)
+        return std::nullopt;
+
+    const auto verdict = static_cast<quint8>(blob[1]);
+    const auto foreign = static_cast<quint8>(blob[2]);
+    if (verdict == static_cast<quint8>(ContainerVerdict::Unchecked)
+        || verdict > static_cast<quint8>(ContainerVerdict::NoKnownContainer)
+        || foreign > static_cast<quint8>(ForeignHead::Archive))
+        return std::nullopt;
+
+    const QString ext = QFileInfo(fileName).suffix().toLower();
+    ContainerCheck result;
+    result.expected = expectedContainer(ext);
+    if (result.expected.isEmpty())
+        return std::nullopt;   // a verdict needs a promise to judge against
+
+    result.verdict = static_cast<ContainerVerdict>(verdict);
+    result.hasVideo = (static_cast<quint8>(blob[3]) & 0x01) != 0;
+    const QString actual = QString::fromUtf8(blob.sliced(4));
+
+    // Same shape checkHead() gives, or it is not ours
+    switch (result.verdict) {
+    case ContainerVerdict::Matches:
+        if (!actual.isEmpty() || foreign != 0)
+            return std::nullopt;
+        break;
+    case ContainerVerdict::WrongContainer:
+        if (actual.isEmpty() || actual == result.expected || foreign != 0)
+            return std::nullopt;
+        result.actual = actual;
+        result.mimeType = containerMimeType(actual);
+        result.sameKind = (extensionKind(ext) & containerKinds(actual)) != 0;
+        break;
+    case ContainerVerdict::NoKnownContainer:
+        if (!actual.isEmpty())
+            return std::nullopt;
+        result.foreign = static_cast<ForeignHead>(foreign);
+        break;
+    case ContainerVerdict::Unchecked:
+        return std::nullopt;
+    }
+    return result;
+}
+
 QString containerWarningText(const ContainerCheck& check, const QString& fileName)
 {
     if (!check.isSuspect())

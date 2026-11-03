@@ -2,6 +2,7 @@
 #include "utils/TooltipDelayStyle.h"
 #include "pch.h"
 #include <QApplication>
+#include <algorithm>
 #include <QDialog>
 #include <QDir>
 #include <QFile>
@@ -536,8 +537,9 @@ int main(int argc, char* argv[])
         }
     }
 
-    // Launcher, icons and file types at every start, but only once the first start
-    // wizard ran: it asks first (#111). Its close does it the first time.
+    // Launcher, icons and file types, only once the first start wizard ran: it asks
+    // first (#111). Its close does it the first time. Later starts touch the desktop
+    // only when the wanted types changed (#121).
     if (!cli.screenshotMode() && eMule::theUiState.firstStartWizardDone())
         eMule::applyDesktopIntegration();
 
@@ -1273,7 +1275,17 @@ int main(int argc, char* argv[])
         QObject::connect(singleInstance.get(), &eMule::SingleInstance::activationRequested,
                          &mainWindow, [&mainWindow, &linkHandler](const QStringList& args) {
             QTimer::singleShot(0, &mainWindow, [&mainWindow, &linkHandler, args] {
-                mainWindow.restoreWindow();
+                // #119: a download link added without asking stays in the background; with
+                // the confirmation on, the link handler raises before its box. Other ed3k
+                // links (room, friend, node, ...) always ask, so they still raise here
+                const bool silentAdd = eMule::theUiState.addLinksWithoutConfirm()
+                    && std::ranges::any_of(args, [](const QString& a) {
+                           return a.startsWith(QStringLiteral("ed2k:"), Qt::CaseInsensitive)
+                               || a.startsWith(QStringLiteral("ed3k:file?"), Qt::CaseInsensitive)
+                               || a.startsWith(QStringLiteral("magnet:"), Qt::CaseInsensitive);
+                       });
+                if (!silentAdd)
+                    mainWindow.restoreWindow();
                 eMule::CommandLineExec::openArguments(args, linkHandler);
             });
         });

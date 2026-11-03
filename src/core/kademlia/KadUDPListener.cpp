@@ -222,10 +222,14 @@ void KademliaUDPListener::sendNullPacket(uint8 opcode, uint32 ip, uint16 udpPort
 
 void KademliaUDPListener::processPacket(const uint8* data, uint32 len, uint32 ip,
                                          uint16 udpPort, bool validReceiverKey,
-                                         const KadUDPKey& senderKey)
+                                         const KadUDPKey& senderKey, bool receiverKeySent)
 {
     if (len < 1)
         return;
+
+    m_rxKeyValid = validReceiverKey;
+    m_rxKeySent = receiverKeySent || validReceiverKey;
+    m_rxEncrypted = !senderKey.isEmpty() || m_rxKeySent;
 
     // We do not accept unencrypted incoming packets from port 53 (DNS), to avoid
     // attacks based on DNS protocol confusion. MFC KademliaUDPListener.cpp:223-226.
@@ -302,8 +306,7 @@ void KademliaUDPListener::processPacket(const uint8* data, uint32 len, uint32 ip
         process_KADEMLIA2_PUBLISH_KEY_REQ(payload, payloadLen, ip, udpPort, senderKey);
         break;
     case KADEMLIA2_PUBLISH_SOURCE_REQ:
-        process_KADEMLIA2_PUBLISH_SOURCE_REQ(payload, payloadLen, ip, udpPort, senderKey,
-                                             validReceiverKey);
+        process_KADEMLIA2_PUBLISH_SOURCE_REQ(payload, payloadLen, ip, udpPort, senderKey);
         break;
     case KADEMLIA2_PUBLISH_RES:
         process_KADEMLIA2_PUBLISH_RES(payload, payloadLen, ip, udpPort, senderKey);
@@ -1436,6 +1439,9 @@ void KademliaUDPListener::process_KADEMLIA2_PUBLISH_KEY_REQ(const uint8* data, u
     if (len < 32)
         return;
 
+    // The IP is the publisher's vote: trust value, name popularity, AICH hash.
+    logReceiverKey("PUBLISH_KEY_REQ", ip, udpPort);
+
     SafeMemFile io(data, len);
     UInt128 keyID = io::readUInt128(io);
 
@@ -1514,8 +1520,7 @@ void KademliaUDPListener::process_KADEMLIA2_PUBLISH_KEY_REQ(const uint8* data, u
 
 void KademliaUDPListener::process_KADEMLIA2_PUBLISH_SOURCE_REQ(const uint8* data, uint32 len,
                                                                 uint32 ip, uint16 udpPort,
-                                                                const KadUDPKey& senderKey,
-                                                                bool validReceiverKey)
+                                                                const KadUDPKey& senderKey)
 {
     if (len < 32)
         return;
@@ -1523,9 +1528,7 @@ void KademliaUDPListener::process_KADEMLIA2_PUBLISH_SOURCE_REQ(const uint8* data
     // ToDo: refuse without a valid receiver key (audit 9c) once most publishers
     // echo our key. Stock clients send key 0 to RES-learned nodes; logged to
     // measure the share.
-    logKad(QStringLiteral("Kad: PUBLISH_SOURCE_REQ from %1:%2 — receiver key %3")
-               .arg(ipToString(ip)).arg(udpPort)
-               .arg(validReceiverKey ? QStringLiteral("valid") : QStringLiteral("missing")));
+    logReceiverKey("PUBLISH_SOURCE_REQ", ip, udpPort);
 
     SafeMemFile io(data, len);
     uint8 load = 0;
@@ -1723,6 +1726,9 @@ void KademliaUDPListener::process_KADEMLIA2_PUBLISH_NOTES_REQ(const uint8* data,
     if (len < 32)
         return;
 
+    // Notes collapse per IP: a forged IP replaces that host's note.
+    logReceiverKey("PUBLISH_NOTES_REQ", ip, udpPort);
+
     SafeMemFile io(data, len);
     uint8 load = 0;
     try {
@@ -1806,6 +1812,9 @@ void KademliaUDPListener::process_KADEMLIA_FIREWALLED_REQ(const uint8* data, uin
     if (len < 2)
         return;
 
+    // We dial ip:tcpPort, so a forged IP points our TCP check at a third party.
+    logReceiverKey("FIREWALLED_REQ", ip, udpPort);
+
     SafeMemFile io(data, len);
     uint16 tcpPort = io.readUInt16();
 
@@ -1833,6 +1842,9 @@ void KademliaUDPListener::process_KADEMLIA_FIREWALLED2_REQ(const uint8* data, ui
 {
     if (len < 19) // 2 (TCP) + 16 (hash) + 1 (options)
         return;
+
+    // As FIREWALLED_REQ: the TCP check dials the claimed IP.
+    logReceiverKey("FIREWALLED2_REQ", ip, udpPort);
 
     SafeMemFile io(data, len);
     uint16 tcpPort = io.readUInt16();
@@ -1908,6 +1920,9 @@ void KademliaUDPListener::process_KADEMLIA_FINDBUDDY_REQ(const uint8* data, uint
     // Matches MFC KademliaUDPListener.cpp:1681-1722
     if (len < 34) // 16 (buddyID) + 16 (clientHash) + 2 (tcpPort)
         return;
+
+    // A forged claim takes a pending claim slot (oldest evicted) for the claimed IP.
+    logReceiverKey("FINDBUDDY_REQ", ip, udpPort);
 
     auto* prefs = Kademlia::getInstancePrefs();
     auto* clientList = Kademlia::getClientList();
@@ -2030,6 +2045,9 @@ void KademliaUDPListener::process_KADEMLIA_CALLBACK_REQ(const uint8* data, uint3
     // Matches MFC KademliaUDPListener.cpp:1764-1797.
     if (len < 34) // 16 (checkID) + 16 (fileID) + 2 (tcpPort)
         return;
+
+    // The IP is relayed as the dial target: a forged one makes our buddy dial it.
+    logReceiverKey("CALLBACK_REQ", ip, 0);
 
     auto* clientList = Kademlia::getClientList();
     if (!clientList)
@@ -2181,6 +2199,23 @@ void KademliaUDPListener::sendVerifyHello(const UInt128& contactID, uint32 ip, u
         sendMyDetails(KADEMLIA2_HELLO_REQ, ip, udpPort, version, KadUDPKey(), &contactID, false);
     else if (version >= KADEMLIA_VERSION2_47a)
         sendMyDetails(KADEMLIA2_HELLO_REQ, ip, udpPort, version, KadUDPKey(), nullptr, false);
+}
+
+void KademliaUDPListener::logReceiverKey(const char* request, uint32 ip, uint16 udpPort) const
+{
+    if (!isKadLoggingEnabled())
+        return;
+    // valid: echoed our key for this IP. missing: key 0 (no key for us, e.g. stock
+    // client to a RES-learned node). wrong: a key, not ours for this IP (sender's IP
+    // changed since, or forged). unencrypted: no keys at all (Kad < 6 or plain).
+    const char* state = m_rxKeyValid ? "valid"
+                      : m_rxKeySent  ? "wrong"
+                      : m_rxEncrypted ? "missing"
+                                      : "unencrypted";
+    const QString from = udpPort ? QStringLiteral("%1:%2").arg(ipToString(ip)).arg(udpPort)
+                                 : ipToString(ip);
+    logKad(QStringLiteral("Kad: %1 from %2 — receiver key %3")
+               .arg(QLatin1StringView(request), from, QLatin1StringView(state)));
 }
 
 } // namespace eMule::kad
