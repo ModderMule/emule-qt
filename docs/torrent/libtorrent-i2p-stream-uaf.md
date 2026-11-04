@@ -5,7 +5,9 @@ Found on Windows 11 with emuleqt (vcpkg libtorrent 2.1.2, MSVC Debug, i2pd 0.9.7
 
 Local state:
 - issue 1 patched by overlay port `src/vcpkg-ports/libtorrent` (`fix-i2p-stream-buffer-uaf.patch`).
-  Same code change as upstream 51000e88. Drop the overlay once a release has it
+  Same code change as upstream 51000e88. Drop the overlay once a release has it.
+  The FetchContent v2.1.1 build (Linux/macOS) applies the same file via `cmake/ApplyPatch.cmake`.
+  A Homebrew/distro libtorrent found by `find_package` is not patched
 - issue 2 not patched. Without a SAM bridge, `BtSession::drainAlerts()` drops the `i2p_alert`s.
   libtorrent still retries every second
 - verified 2026-11-04 with the patch, Debug: two cores, each with its own bundled i2pd, 4 MB torrent.

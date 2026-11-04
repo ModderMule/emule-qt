@@ -300,12 +300,16 @@ void tst_BindInterface::boundByName_listensAndDialsBothFamilies()
     QVERIFY(listener.startListening(0));
     QCOMPARE(listener.serverAddress(), QHostAddress(QHostAddress::Any));
 
+    // The accepted side must keep the connection too (Windows: a v4 peer on the
+    // dual-stack listener refused the IPv6 re-pin and was dropped)
+    QTest::failOnWarning(QRegularExpression(QStringLiteral("socket not used")));
     for (const QHostAddress& dest : {QHostAddress(QHostAddress::LocalHost),
                                      QHostAddress(QHostAddress::LocalHostIPv6)}) {
         ClientReqSocket out;
         QSignalSpy connected(&out, &QAbstractSocket::connected);
         out.connectToPeer(Address::fromQHostAddress(dest), listener.serverPort());
         QVERIFY2(connected.wait(3000), qPrintable(dest.toString()));
+        QTest::qWait(100);   // let the listener accept
     }
     listener.stopListening();
 }

@@ -489,7 +489,7 @@ vcpkg, or set BOOST_ROOT) or libtorrent-rasterbar >= 2.1, or pass -DEMULE_BITTOR
             # libtorrent's find_package(Boost) is module mode (FindBoost): hand it the tree
             set(Boost_INCLUDE_DIR "${EMULE_BOOST_INCLUDE_DIR}" CACHE PATH "Boost headers" FORCE)
         endif()
-        message(STATUS "libtorrent-rasterbar: FetchContent v2.1.1 (static)")
+        message(STATUS "libtorrent-rasterbar: FetchContent v2.1.1 (static, i2p patch)")
         # BUILD_SHARED_LIBS is global: off for libtorrent only. A normal variable:
         # it shadows any cache entry (CMP0126) and libtorrent's option() keeps it (CMP0077)
         set(_emule_saved_shared ${BUILD_SHARED_LIBS})
@@ -510,6 +510,10 @@ vcpkg, or set BOOST_ROOT) or libtorrent-rasterbar >= 2.1, or pass -DEMULE_BITTOR
             GIT_SHALLOW    TRUE
             # try_signal is in the library's source list; the other submodules are not needed
             GIT_SUBMODULES deps/try_signal
+            # I2P SAM use-after-free, upstream 51000e88 (docs/torrent/libtorrent-i2p-stream-uaf.md)
+            PATCH_COMMAND ${CMAKE_COMMAND}
+                -DPATCH=${CMAKE_SOURCE_DIR}/src/vcpkg-ports/libtorrent/fix-i2p-stream-buffer-uaf.patch
+                -P ${CMAKE_SOURCE_DIR}/cmake/ApplyPatch.cmake
         )
         FetchContent_MakeAvailable(libtorrent)
         set(BUILD_SHARED_LIBS ${_emule_saved_shared})
