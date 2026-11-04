@@ -90,7 +90,7 @@ enum class AppDir {
 
 /// A file shipped with the app: $@p envVar when it names an existing file, else the
 /// first of @p names relative to the binary's folder (app dir, ../Resources,
-/// ../share/emuleqt, ...), else @p buildTreeRel in a folder up to 6 levels above it.
+/// ../share/emuleqt, ...), else @p buildTreeRel in its folder or one up to 6 levels above.
 /// Empty: none found.
 [[nodiscard]] QString findBundledFile(const char* envVar, const QStringList& names, const QString& buildTreeRel = {});
 

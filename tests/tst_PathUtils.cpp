@@ -152,6 +152,22 @@ private slots:
         const std::uint64_t drift = *space > *ref ? *space - *ref : *ref - *space;
         QVERIFY2(drift < (std::uint64_t{1} << 30), "answered for a different volume");
     }
+
+    /// Windows builds put the binaries in the build root, beside build/i2pd/: the
+    /// build-tree file is looked for in the app dir itself too, not only above it.
+    void bundledFileInTheAppDirsBuildTree()
+    {
+        const QDir app(QCoreApplication::applicationDirPath());
+        QTemporaryDir sub(app.filePath(QStringLiteral("bundled-XXXXXX")));
+        QVERIFY(sub.isValid());
+        const QString file = QDir(sub.path()).filePath(QStringLiteral("helper.bin"));
+        QFile f(file);
+        QVERIFY(f.open(QIODevice::WriteOnly));
+        f.close();
+        const QString rel = QDir(sub.path()).dirName() + QStringLiteral("/helper.bin");
+        QCOMPARE(eMule::findBundledFile("EMULE_TEST_NO_SUCH_VAR", {}, rel), QDir::cleanPath(file));
+        QVERIFY(eMule::findBundledFile("EMULE_TEST_NO_SUCH_VAR", {}, QStringLiteral("no/such/helper.bin")).isEmpty());
+    }
 };
 
 QTEST_MAIN(PathUtilsTest)

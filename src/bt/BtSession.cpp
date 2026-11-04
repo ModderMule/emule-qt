@@ -936,6 +936,10 @@ void BtSession::drainAlerts()
     d->ses->pop_alerts(&alerts);
     // pointers die at the next pop_alerts(): copy what is kept
     for (lt::alert* a : alerts) {
+        // No SAM: the placeholder bridge fails each second (libtorrent 2.1.2 resets its
+        // backoff in update_i2p_bridge), not worth a log line each time
+        if (lt::alert_cast<lt::i2p_alert>(a) && !d->settings.hasSam())
+            continue;
         forwardAlert(a);
         // libtorrent posts nothing when the SAM session comes up: a .i2p tracker that got
         // past "waiting for the acceptor" proves it, so an old bridge error is over

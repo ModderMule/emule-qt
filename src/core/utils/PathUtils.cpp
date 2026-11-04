@@ -270,10 +270,14 @@ QString findBundledFile(const char* envVar, const QStringList& names, const QStr
             return QDir::cleanPath(p);
     if (buildTreeRel.isEmpty())
         return {};
+    // the app dir first: Windows builds put the binaries in the build root
     QDir up = app;
-    for (int i = 0; i < 6 && up.cdUp(); ++i)
+    for (int i = 0; i <= 6; ++i) {
         if (const QString p = up.filePath(buildTreeRel); QFileInfo(p).isFile())
             return QDir::cleanPath(p);
+        if (!up.cdUp())
+            break;
+    }
     return {};
 }
 
