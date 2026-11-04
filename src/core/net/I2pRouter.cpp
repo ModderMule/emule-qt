@@ -90,10 +90,9 @@ QStringList I2pRouter::arguments(const Config& config, quint16 samPort, const QS
         QStringLiteral("--tunnelsdir=") + QDir::toNativeSeparators(data.filePath(QStringLiteral("tunnels.d"))),
         QStringLiteral("--log=stdout"),
         QStringLiteral("--loglevel=warn"),
-        // stay our child: no fork, and on Windows no service. Our Windows build has no tray
-        // window (USE_WIN32_APP=no in ed3k-protocol/i2pd's emuleqt-release.yml)
-        QStringLiteral("--daemon=false"),
-        QStringLiteral("--service=false"),
+        // no --daemon/--service: off by default, and switches without a value (i2pd exits on
+        // "--daemon=false"). Our Windows build has no tray window either (USE_WIN32_APP=no in
+        // ed3k-protocol/i2pd's emuleqt-release.yml)
         QStringLiteral("--port=%1").arg(config.routerPort),
         QStringLiteral("--share=%1").arg(std::clamp(config.share, 0, 100)),
         // the app's PortMapper maps the router port
@@ -189,11 +188,14 @@ void I2pRouter::launch()
         return;
     }
     m_error.clear();
-    setState(State::Starting);
     logTorrent(QStringLiteral("I2P: starting the router, port %1, SAM on 127.0.0.1:%2").arg(m_config.routerPort).arg(m_samPort));
     m_proc.start(m_binary, arguments(m_config, m_samPort, certs), m_config.dataDir);
     m_launchedAt.start();
     m_pollTimer.start();
+    // last: stateChanged re-enters start() (applyBtConfig), which must see it running.
+    // A synchronous failedToStart has set Failed already
+    if (m_proc.running())
+        setState(State::Starting);
 }
 
 void I2pRouter::setState(State s)
@@ -232,7 +234,9 @@ void I2pRouter::poll()
         logTorrent(QStringLiteral("I2P: router ready after %1 s").arg(m_launchedAt.elapsed() / 1000));
         setState(State::Ready);
     };
-    connect(probe, &QTcpSocket::connected, this, [done] { done(true); });
+    // macOS 27 emits connected() for a refused connect too, with no peer: check the port
+    connect(probe, &QTcpSocket::connected, this,
+            [done, probe, port = m_samPort] { done(probe->peerPort() == port); });
     connect(probe, &QTcpSocket::errorOccurred, this, [done] { done(false); });
     probe->connectToHost(QHostAddress::LocalHost, m_samPort);
 }

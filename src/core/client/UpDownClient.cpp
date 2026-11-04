@@ -2903,8 +2903,16 @@ bool UpDownClient::isBanned() const
     // The ban is the 2 h entry in the IP list; the upload state only records that this
     // object earned one, and must not outlive it (MFC BaseClient.cpp:2054). With no
     // address there is no entry to expire, so the state is all there is.
+    // Upload-only (anti-leecher) bans count: this gates the upload side.
     if (m_connectAddress.isNull() || !theApp.clientList)
         return m_uploadState == UploadState::Banned;
+    return theApp.clientList->isUploadBannedClient(m_connectAddress);
+}
+
+bool UpDownClient::isFullyBanned() const
+{
+    if (m_connectAddress.isNull() || !theApp.clientList)
+        return m_uploadState == UploadState::Banned && !m_uploadOnlyBan;
     return theApp.clientList->isBannedClient(m_connectAddress);
 }
 
@@ -5912,8 +5920,10 @@ void UpDownClient::banLeecher(const QString& reason, LeecherCategory category)
         if (reduceScore && thePrefs.logBannedClients())
             logLeecher(QStringLiteral("Reduced score: [DLP] %1; %2").arg(reason, leecherLogInfo()));
     }
+    // Not MFC/Xtreme: a leecher loses uploads only and stays a download source.
+    // Chat spam is no upload matter, so that one stays a full ban.
     if (!reduceScore)
-        ban(QStringLiteral("[DLP] ") + reason);
+        ban(QStringLiteral("[DLP] ") + reason, 0, category != LeecherCategory::Spammer);
 }
 
 void UpDownClient::clearLeecher()

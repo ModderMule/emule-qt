@@ -263,10 +263,14 @@ enum class IpcMsgType : int {
     /// See Ipc::CategoryAction.
     SetCategoryStatus       = 270,
 
-    /// [hash: string, comment: string, rating: int] -> [ok: bool]
-    /// Post the local user's own comment and rating for one file — the write half of
-    /// MFC's CCommentDialog::OnApply (srchybrid/CommentDialog.cpp:166-184). An empty
-    /// comment clears it; rating 0 means "not rated", 1 means fake, 2-5 poor..excellent.
+    /// [hash: string | hashes: array, comment: string, rating: int, keepEmpty?: bool]
+    ///   -> [ok: bool, applied: int]
+    /// Post the local user's own comment and rating for one file or a batch — the write
+    /// half of MFC's CCommentDialog::OnApply (srchybrid/CommentDialog.cpp:166-184). An
+    /// empty comment clears it; rating 0 means "not rated", 1 means fake, 2-5
+    /// poor..excellent. For a batch whose files disagreed (MFC m_bMergedComment):
+    /// rating -1 keeps each file's rating, and keepEmpty makes an empty comment keep
+    /// each file's comment. Unshared files in a batch are skipped; 404 only if all are.
     ///
     /// The file must be in the shared list. eMule never publishes a comment for a file
     /// it is not sharing, which is exactly why the original greys its whole comment page
@@ -340,6 +344,24 @@ enum class IpcMsgType : int {
     /// only; busy = another program holds that UDP port (nothing applied). restart = the
     /// core restarts for the new user hash. Failure: [false, {error}].
     MigrateEd2kCompat       = 293,
+
+    // -- IP Filter dialog (MFC CIPFilterDlg, Tools > IP Filter...) -------------
+
+    /// [] -> [ok, {list: bytes, modified: bool}]. list = qCompress'd UTF-8 lines
+    /// "family\tstart\tend\tlevel\thits\tdesc\n"; v4 bounds decimal host order,
+    /// v6 bounds 32 hex chars. Compressed: a full list would pass MaxPayloadSize.
+    GetIPFilter             = 294,
+
+    /// [all: bool, v4Starts: bytes (4 B big-endian each), v6Starts: bytes (16 B each)]
+    /// -> [ok, {removed: int, entries: int}]. Not saved until SaveIPFilter.
+    RemoveIPFilters         = 295,
+
+    /// [fileName: string, content: bytes] -> [ok, {added: int, entries: int}] or
+    /// [false, error: string]. Appends a list file (format by name, as on load). Not saved.
+    AppendIPFilter          = 296,
+
+    /// [] -> [ok]. Writes the current ranges to ipfilter.dat.
+    SaveIPFilter            = 297,
 
     // -- Indexers (700-719) --------------------------------------------------
     //

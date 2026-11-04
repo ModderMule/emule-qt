@@ -2276,6 +2276,8 @@ private:
     void resolveDefaultDirectories();
     /// A fresh config: user hash (newUserHash) and one port for TCP, UDP and ed3k.
     void newIdentity();
+    /// btI2pRouterPort 0 → a random free port, once; true if it picked one (to save).
+    bool resolveI2pRouterPort();
     /// The user hash source's (setUserHashSource), else a random one.
     [[nodiscard]] static std::array<uint8, 16> newUserHash();
     void resolveDefaultVideoPlayer();

@@ -7,6 +7,7 @@
 #include "app/AppContext.h"
 #include "client/UpDownClient.h"
 #include "enodemeta/MetaHash.h"
+#include "files/KnownFile.h"
 #include "files/PartFile.h"
 #include "files/SharedFileList.h"
 #include "kademlia/KadRoutingZone.h"
@@ -25,6 +26,7 @@
 #include "transfer/UploadQueue.h"
 #include "utils/Log.h"
 #include "utils/MassRename.h"
+#include "utils/Opcodes.h"
 #include "utils/OtherFunctions.h"
 
 #include <QCoreApplication>
@@ -33,6 +35,9 @@
 #include <QFileInfo>
 #include <QTemporaryFile>
 #include <QUrl>
+
+#include <array>
+#include <vector>
 
 namespace eMule::ops {
 
@@ -664,6 +669,49 @@ Status setSharedDirectories(const QStringList& dirsIn)
         return Status::fail(500, QStringLiteral("Could not write preferences.yml"));
     if (theApp.sharedFileList)
         theApp.sharedFileList->reload();
+    return {};
+}
+
+Status setFileComments(const QStringList& hashHexes, const QString& commentIn, qint64 rating,
+                       bool keepEmpty, int* applied)
+{
+    if (applied)
+        *applied = 0;
+    if (!theApp.sharedFileList)
+        return unavailable(QStringLiteral("Shared file list"));
+    if (hashHexes.isEmpty())
+        return Status::fail(400, QStringLiteral("No file"));
+    if (rating < -1 || rating > 5)
+        return Status::fail(400, QStringLiteral("Rating out of range"));
+
+    // All hashes first: a typo must not leave half the batch written
+    std::vector<std::array<uint8, 16>> ids(static_cast<size_t>(hashHexes.size()));
+    for (size_t i = 0; i < ids.size(); ++i)
+        if (!hexToHash(hashHexes[static_cast<qsizetype>(i)], ids[i].data()))
+            return Status::fail(400, QStringLiteral("Invalid hash"));
+
+    // MFC's gate: an unshared file's comment is published nowhere, so OnApply skips
+    // it (CommentDialog.cpp:117-121, 172-179). Its merge guards too: an empty text
+    // over differing comments, and rating -1, leave that field as each file has it.
+    const QString comment = commentIn.left(MAXFILECOMMENTLEN);
+    int count = 0;
+    for (const auto& id : ids) {
+        auto* file = theApp.sharedFileList->getFileByID(id.data());
+        if (!file)
+            continue;
+        if (!comment.isEmpty() || !keepEmpty)
+            file->setFileComment(comment);
+        if (rating >= 0)
+            file->setFileRating(static_cast<uint32>(rating));
+        ++count;
+        logInfo(QStringLiteral("Comment set for \"%1\": rating %2, \"%3\"")
+                    .arg(file->fileName(), QString::number(file->getFileRating()),
+                         file->getFileComment()));
+    }
+    if (applied)
+        *applied = count;
+    if (count == 0)
+        return Status::fail(404, QStringLiteral("File is not shared"));
     return {};
 }
 

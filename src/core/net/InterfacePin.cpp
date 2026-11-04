@@ -7,6 +7,7 @@
 
 #include <QAbstractSocket>
 
+#include <atomic>
 #include <mutex>
 
 #ifdef Q_OS_WIN
@@ -129,7 +130,21 @@ int applyPin(qintptr fd, int family, int index, const QString& name)
                          sizeof(v6idx)) != 0)
             return lastError();
         // Dual-stack: the v4 half has its own setting; absent on a v6-only socket.
-        ::setsockopt(s, IPPROTO_IP, IP_UNICAST_IF, reinterpret_cast<const char*>(&v4idx), sizeof(v4idx));
+        // Not fatal, but IPv4 (Kad) then leaves by the routing table, not the adapter,
+        // and peers see another IP than eD2K's: HighID with Kad firewalled. Say so.
+        DWORD v6only = 1;
+        int len = sizeof(v6only);
+        const bool dual = ::getsockopt(s, IPPROTO_IPV6, IPV6_V6ONLY, reinterpret_cast<char*>(&v6only), &len) == 0
+                          && v6only == 0;
+        if (::setsockopt(s, IPPROTO_IP, IP_UNICAST_IF, reinterpret_cast<const char*>(&v4idx), sizeof(v4idx)) != 0
+            && dual) {
+            const int error = lastError();
+            static std::atomic_bool warned{false};
+            if (!warned.exchange(true))
+                logWarning(QStringLiteral("Cannot pin IPv4 of a dual-stack socket to interface %1 (error %2) — "
+                                          "IPv4 may leave by another interface")
+                               .arg(index).arg(error));
+        }
         return 0;
     }
     if (family == AF_INET)

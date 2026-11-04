@@ -1,15 +1,15 @@
 #pragma once
 
-/// @file BtI2pGroup.h
-/// @brief The "I2P" box of Options > BitTorrent > Connection (issue #118).
+/// @file BtI2pPage.h
+/// @brief Options > BitTorrent > I2P (issue #118).
 ///
 /// Router: off, the bundled i2pd or an external router's SAM bridge. Mixed mode, new
 /// torrents I2P only, ed3k joins of I2P torrents, tunnels and the I2P tracker list.
 /// The router's state comes from GetBtStatus / PushBtStatus. No MFC original.
 
 #include <QCborMap>
-#include <QGroupBox>
 #include <QStringList>
+#include <QWidget>
 
 class QButtonGroup;
 class QCheckBox;
@@ -26,11 +26,11 @@ namespace Ipc {
 class IpcMessage;
 }
 
-class BtI2pGroup : public QGroupBox {
+class BtI2pPage : public QWidget {
     Q_OBJECT
 
 public:
-    BtI2pGroup(IpcClient* ipc, QWidget* parent);
+    BtI2pPage(IpcClient* ipc, QWidget* parent);
 
     /// From the GetPreferences map (btI2p*, ed3kEnabled). Signals stay quiet meanwhile.
     void load(const QCborMap& prefs);

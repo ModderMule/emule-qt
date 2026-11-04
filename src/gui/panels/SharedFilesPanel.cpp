@@ -2056,7 +2056,10 @@ void SharedFilesPanel::onFolderContextMenu(const QPoint& pos)
         });
         sendShareDirsUpdate(dirs);
     });
-    shareSubAct->setEnabled(shareable && hasSubdirectories(path));
+    // Incoming is shared on its own and refused as a list entry, but its subfolders
+    // (torrent / Usenet download folders) can still go on the list (#124)
+    const bool isIncoming = SharedDirState::dirKey(path) == SharedDirState::dirKey(thePrefs.incomingDir());
+    shareSubAct->setEnabled((shareable || isIncoming) && hasSubdirectories(path));
 
     menu.addSeparator();
 
@@ -2115,6 +2118,7 @@ void SharedFilesPanel::fetchAndShowSharedFileDetails(const QStringList& hashes, 
             auto* dlg = new FileDetailDialog(pending->files,
                                              static_cast<FileDetailDialog::Tab>(tab), this);
             connectCommentFilter(dlg, m_ipc);
+            connectCommentPosting(dlg, m_ipc);   // one Apply for all (#123)
             dlg->show();
         });
     }
@@ -2259,9 +2263,10 @@ void SharedFilesPanel::populateFilesystemChildren(QTreeWidgetItem* parentItem)
     if (parentPath.isEmpty())
         return;
 
+    // symlinked folders listed like MFC; the tree loads lazily, so a loop costs nothing
     QDir dir(parentPath);
     const auto entries = dir.entryInfoList(
-        QDir::Dirs | QDir::NoDotAndDotDot | QDir::NoSymLinks,
+        QDir::Dirs | QDir::NoDotAndDotDot,
         QDir::Name | QDir::IgnoreCase);
 
     for (const QFileInfo& fi : entries) {
@@ -2613,8 +2618,7 @@ void SharedFilesPanel::showSharedDirMenu(QTreeWidgetItem* item, const QPoint& gl
 bool SharedFilesPanel::hasSubdirectories(const QString& path)
 {
     QDir dir(path);
-    const auto entries = dir.entryInfoList(
-        QDir::Dirs | QDir::NoDotAndDotDot | QDir::NoSymLinks);
+    const auto entries = dir.entryInfoList(QDir::Dirs | QDir::NoDotAndDotDot);
 
     for (const QFileInfo& fi : entries) {
         if (!fi.fileName().startsWith(u'.') && fi.isReadable())

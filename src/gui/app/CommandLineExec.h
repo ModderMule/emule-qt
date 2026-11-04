@@ -110,7 +110,7 @@ private:
 
     QCommandLineOption m_optionsOption{
         QStringLiteral("options"),
-        QStringLiteral("Open Options dialog at page (general, display, connection, ...)."),
+        QStringLiteral("Open Options dialog at page (general, display, connection, i2p, ...)."),
         QStringLiteral("page")};
 
     QCommandLineOption m_clientDetailsOption{

@@ -2,10 +2,10 @@
 # built by its .github/workflows/emuleqt-release.yml on a tag emuleqt-<version>-<n>.
 # Read by cmake/I2pd.cmake and scripts/bundle-win.ps1.
 #
-# To pin a new one: tag the fork, wait for the release, then copy its SHA256SUMS lines
-# below (format: <asset> <sha256>). "-" = not pinned yet: builds skip the download.
+# To pin a new one: tag the fork, wait for the release, then run scripts/update-i2p.sh
+# (format: <asset> <sha256>). "-" = not pinned yet: builds skip the download.
 tag emuleqt-3.0.0-1
-i2pd-linux-x86_64.tar.gz -
-i2pd-linux-aarch64.tar.gz -
-i2pd-macos-universal.tar.gz -
-i2pd-windows-x64.zip -
+i2pd-linux-x86_64.tar.gz 680656392ca9b535b62051f7d071cce0dc4df209d439f406b813f463bf4e788d
+i2pd-linux-aarch64.tar.gz 906cd1e999d09b5cc519e0b94d72d4b3aa9092083323b8e2f378cc466bb8e6e8
+i2pd-macos-universal.tar.gz aca52fb15a3c2ed1b079607ca6ff81a65f40a0f81e8260fcf7cb7b0a0df474dc
+i2pd-windows-x64.zip 1fb3ee76e95a1020c9832c6ae5c2b965b0e5c97d8e4696de978234c8c201b8ed

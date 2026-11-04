@@ -193,8 +193,13 @@ public:
     void process();
 
     /// Ban for durationMs, 0 = CLIENTBANTIME. Never shortens a longer ban already running.
-    void addBannedClient(const Address& addr, uint64 durationMs = 0);
+    /// uploadOnly: refused uploads only, still a download source (anti-leecher bans).
+    /// A full ban on the same address wins over an upload-only one.
+    void addBannedClient(const Address& addr, uint64 durationMs = 0, bool uploadOnly = false);
+    /// Full ban: no connections, no source. Upload-only bans don't count.
     [[nodiscard]] bool isBannedClient(const Address& addr) const;
+    /// Any ban, upload-only included: no upload queue, no upload slot.
+    [[nodiscard]] bool isUploadBannedClient(const Address& addr) const;
     void removeBannedClient(const Address& addr);
 
     /// An inbound connection from @p addr ended before it said hello. Enough of them
@@ -293,7 +298,11 @@ private:
     std::unordered_map<Address, uint64> m_directCallbackRequests;
     BuddyRelayBudget m_relayBudget;
 
-    std::unordered_map<Address, uint64> m_bannedList;  // Address -> tick the ban ends
+    struct BanEntry {
+        uint64 until = 0;        ///< tick the ban ends
+        bool uploadOnly = false; ///< refuse uploads only, keep as download source
+    };
+    std::unordered_map<Address, BanEntry> m_bannedList;
     std::unordered_map<Address, TrackedClient> m_trackedClients;
     struct HandshakeFailures {
         uint64 windowStart = 0;

@@ -1643,6 +1643,23 @@ private slots:
         QVERIFY(prefs.kadUDPKey() != 0);
     }
 
+    // the bundled I2P router's port is picked on the first run too, and kept
+    void i2pRouterPort_pickedOnFirstRun()
+    {
+        TempDir tmp;
+        const auto file = tmp.filePath(QStringLiteral("nonexistent_i2p.yaml"));
+        quint16 picked = 0;
+        {
+            Preferences prefs;
+            prefs.load(file);
+            picked = prefs.btI2pRouterPort();
+            QVERIFY(picked >= Preferences::kBtI2pRouterPortMin && picked <= Preferences::kBtI2pRouterPortMax);
+        }
+        Preferences again;
+        again.load(file);
+        QCOMPARE(again.btI2pRouterPort(), picked);
+    }
+
     void kademlia_roundTrip()
     {
         TempDir tmp;

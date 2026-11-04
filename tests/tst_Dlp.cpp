@@ -154,6 +154,7 @@ void tst_Dlp::hello_hardModStringBans()
     QCOMPARE(client.leecherCategory(), LeecherCategory::Hard);
     QCOMPARE(client.leecherReason(), QStringLiteral("Bad MODSTRING"));
     QVERIFY(client.isBanned());
+    QVERIFY(!client.isFullyBanned());   // upload-only: still a download source
 }
 
 void tst_Dlp::hello_softModStringReducesScore()

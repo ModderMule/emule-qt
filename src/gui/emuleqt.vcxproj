@@ -225,7 +225,7 @@
     <ClCompile Include="controls\TorrentListsPane.cpp" Condition="'$(EmuleBitTorrent)'=='true'" />
     <ClCompile Include="controls\TorrentPieceGrid.cpp" Condition="'$(EmuleBitTorrent)'=='true'" />
     <ClCompile Include="dialogs\AddTorrentDialog.cpp" Condition="'$(EmuleBitTorrent)'=='true'" />
-    <ClCompile Include="dialogs\BtI2pGroup.cpp" Condition="'$(EmuleBitTorrent)'=='true'" />
+    <ClCompile Include="dialogs\BtI2pPage.cpp" Condition="'$(EmuleBitTorrent)'=='true'" />
     <ClCompile Include="dialogs\TorrentDetailsDialog.cpp" Condition="'$(EmuleBitTorrent)'=='true'" />
     <ClCompile Include="panels\TorrentPanel.cpp" Condition="'$(EmuleBitTorrent)'=='true'" />
     <ClCompile Include="panels\HosterPanel.cpp" Condition="'$(EmuleHosterJd)'=='true'" />
@@ -271,6 +271,7 @@
     <ClCompile Include="dialogs\FirstStartWizard.cpp" />
     <ClCompile Include="controls\FriendListModel.cpp" />
     <ClCompile Include="dialogs\ImportDownloadsDialog.cpp" />
+    <ClCompile Include="dialogs\IPFilterDialog.cpp" />
     <ClCompile Include="app\IpcClient.cpp" />
     <ClCompile Include="app\KnownCores.cpp" />
     <ClCompile Include="app\CoreAttachment.cpp" />
@@ -472,6 +473,7 @@
     <QtMoc Include="dialogs\FirstStartWizard.h" />
     <QtMoc Include="controls\FriendListModel.h" />
     <QtMoc Include="dialogs\ImportDownloadsDialog.h" />
+    <QtMoc Include="dialogs\IPFilterDialog.h" />
     <QtMoc Include="app\Ed3kNameOpener.h" />
     <QtMoc Include="app\ExternalLinkHandler.h" />
     <QtMoc Include="app\IpcClient.h" />
@@ -521,7 +523,7 @@
     <QtMoc Include="controls\TorrentListsPane.h" Condition="'$(EmuleBitTorrent)'=='true'" />
     <QtMoc Include="controls\TorrentPieceGrid.h" Condition="'$(EmuleBitTorrent)'=='true'" />
     <QtMoc Include="dialogs\AddTorrentDialog.h" Condition="'$(EmuleBitTorrent)'=='true'" />
-    <QtMoc Include="dialogs\BtI2pGroup.h" Condition="'$(EmuleBitTorrent)'=='true'" />
+    <QtMoc Include="dialogs\BtI2pPage.h" Condition="'$(EmuleBitTorrent)'=='true'" />
     <QtMoc Include="dialogs\TorrentDetailsDialog.h" Condition="'$(EmuleBitTorrent)'=='true'" />
     <QtMoc Include="panels\TorrentPanel.h" Condition="'$(EmuleBitTorrent)'=='true'" />
     <QtMoc Include="panels\HosterPanel.h" Condition="'$(EmuleHosterJd)'=='true'" />
@@ -779,6 +781,7 @@
     <None Include="..\..\resources\icons\UsenetSearch.ico" />
     <None Include="..\..\resources\icons\Torrent.ico" />
     <None Include="..\..\resources\icons\Hoster.ico" />
+    <None Include="..\..\resources\icons\I2P.ico" />
     <None Include="..\..\resources\icons\User.ico" />
     <None Include="..\..\resources\icons\UserAdd.ico" />
     <None Include="..\..\resources\icons\UserDelete.ico" />

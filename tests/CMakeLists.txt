@@ -102,6 +102,8 @@ emule_add_test(tst_AtomicOps        FOLDER "Platform")
 # Module 29b: Core utility functions
 emule_add_test(tst_OtherFunctions  FOLDER "Utils")
 emule_add_test(tst_MassRename      FOLDER "Utils")
+# Own comment + rating, one file or a batch (#123, IPC SetFileComment)
+emule_add_test(tst_FileComments    FOLDER "Files")
 emule_add_test(tst_SafeFile        FOLDER "Utils")
 emule_add_test(tst_Log             FOLDER "Utils")
 emule_add_test(tst_CorroborationTally FOLDER "Utils")
@@ -923,6 +925,7 @@ if(EMULE_BITTORRENT)
                 "${CMAKE_SOURCE_DIR}/src/gui/controls/TorrentListModel.cpp"
                 "${CMAKE_SOURCE_DIR}/src/gui/utils/FileTypeIcons.cpp"
                 "${CMAKE_SOURCE_DIR}/src/gui/controls/TorrentListsPane.cpp"
+                "${CMAKE_SOURCE_DIR}/src/gui/utils/ClientIcons.cpp"
                 "${CMAKE_SOURCE_DIR}/src/gui/controls/TorrentFileTree.cpp"
                 "${CMAKE_SOURCE_DIR}/src/gui/controls/TorrentPieceGrid.cpp"
                 "${CMAKE_SOURCE_DIR}/src/gui/dialogs/TorrentDetailsDialog.cpp"
@@ -1176,7 +1179,8 @@ emule_add_test(tst_OptionsDialogSizing FOLDER "Gui"
             "${CMAKE_SOURCE_DIR}/src/gui/dialogs/OptionsDialog.cpp"
             "${CMAKE_SOURCE_DIR}/src/gui/dialogs/RememberedSizeDialog.cpp"
             "${CMAKE_SOURCE_DIR}/src/gui/dialogs/Ed3kOptionsPages.cpp"
-            "${CMAKE_SOURCE_DIR}/src/gui/dialogs/BtI2pGroup.cpp"
+            "${CMAKE_SOURCE_DIR}/src/gui/dialogs/BtI2pPage.cpp"
+            "${CMAKE_SOURCE_DIR}/src/gui/utils/ClientIcons.cpp"
             "${CMAKE_SOURCE_DIR}/src/gui/dialogs/Ed3kFilterPage.cpp"
             "${CMAKE_SOURCE_DIR}/src/gui/dialogs/Ed3kSellPage.cpp"
             "${CMAKE_SOURCE_DIR}/src/gui/dialogs/Ed3kSellDialogs.cpp"
@@ -1428,7 +1432,8 @@ emule_add_test(tst_SmallScreenDialogs FOLDER "Gui"
             "${CMAKE_SOURCE_DIR}/src/gui/dialogs/MetaAccountDialog.cpp"
             "${CMAKE_SOURCE_DIR}/src/gui/dialogs/OptionsDialog.cpp"
             "${CMAKE_SOURCE_DIR}/src/gui/dialogs/Ed3kOptionsPages.cpp"
-            "${CMAKE_SOURCE_DIR}/src/gui/dialogs/BtI2pGroup.cpp"
+            "${CMAKE_SOURCE_DIR}/src/gui/dialogs/BtI2pPage.cpp"
+            "${CMAKE_SOURCE_DIR}/src/gui/utils/ClientIcons.cpp"
             "${CMAKE_SOURCE_DIR}/src/gui/dialogs/Ed3kFilterPage.cpp"
             "${CMAKE_SOURCE_DIR}/src/gui/dialogs/Ed3kSellPage.cpp"
             "${CMAKE_SOURCE_DIR}/src/gui/dialogs/Ed3kSellDialogs.cpp"

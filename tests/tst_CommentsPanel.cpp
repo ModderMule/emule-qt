@@ -36,6 +36,8 @@ private slots:
     void anUncommentableFileStillReads();
     void arefreshDoesNotOverwriteTyping();
     void searchKadNeedsKad();
+    void aMultiSelectionPostsToAllAndKeepsWhatDiffers();
+    void resetEndsTheMerge();
 
 private:
     /// A details map of the shape GetSharedFileDetails answers with.
@@ -184,8 +186,11 @@ void tst_CommentsPanel::applyIsOfferedOnlyAfterAnEdit()
     applyBtn->click();
 
     QCOMPARE(spy.count(), 1);
+    QCOMPARE(spy.at(0).at(0).toStringList(),
+             QStringList{QStringLiteral("0123456789ABCDEF0123456789ABCDEF")});
     QCOMPARE(spy.at(0).at(1).toString(), QStringLiteral("re-encoded, looks fine"));
     QCOMPARE(spy.at(0).at(2).toInt(), 5);
+    QVERIFY(!spy.at(0).at(3).toBool());
 
     // Until the daemon confirms, the change is still pending.
     QVERIFY(applyBtn->isEnabled());
@@ -263,6 +268,65 @@ void tst_CommentsPanel::searchKadNeedsKad()
     details.insert(QLatin1StringView("notesSearchRunning"), false);
     panel.setDetails(details);
     QVERIFY(buttonNamed(panel, QStringLiteral("Search Kad"))->isEnabled());
+}
+
+// #123: a multi-file sheet. Disagreeing fields show blank and are left alone on
+// Apply (MFC m_bMergedComment / m_iRating -1); one Apply covers every shared file.
+void tst_CommentsPanel::aMultiSelectionPostsToAllAndKeepsWhatDiffers()
+{
+    CommentEditPanel panel(QStringLiteral("tstCommentsEdit"));
+    QCborMap details = detailsFor(QString{}, -1);
+    details.remove(QLatin1StringView("hash"));
+    details.insert(QLatin1StringView("commentHashes"),
+                   QCborArray{QStringLiteral("aa"), QStringLiteral("bb")});
+    details.insert(QLatin1StringView("mergedComment"), true);
+    panel.setDetails(details);
+
+    auto* edit = panel.findChild<QLineEdit*>();
+    auto* combo = panel.findChild<QComboBox*>();
+    QVERIFY(edit->isEnabled());
+    QCOMPARE(combo->currentIndex(), -1);
+    QVERIFY(!edit->placeholderText().isEmpty());
+
+    // Only the rating set: the comments stay as each file has them
+    QSignalSpy spy(&panel, &CommentEditPanel::postComment);
+    combo->setCurrentIndex(5);
+    buttonNamed(panel, QStringLiteral("Apply"))->click();
+    QCOMPARE(spy.count(), 1);
+    QCOMPARE(spy.at(0).at(0).toStringList(),
+             (QStringList{QStringLiteral("aa"), QStringLiteral("bb")}));
+    QVERIFY(spy.at(0).at(1).toString().isEmpty());
+    QCOMPARE(spy.at(0).at(2).toInt(), 5);
+    QVERIFY(spy.at(0).at(3).toBool());
+    panel.commentApplied(true);
+
+    // A typed text unites them; the rating left blank would have been -1
+    edit->setText(QStringLiteral("part of the same release"));
+    emit edit->textEdited(edit->text());
+    buttonNamed(panel, QStringLiteral("Apply"))->click();
+    QCOMPARE(spy.count(), 2);
+    QCOMPARE(spy.at(1).at(1).toString(), QStringLiteral("part of the same release"));
+    panel.commentApplied(true);
+    QVERIFY(edit->placeholderText().isEmpty());
+}
+
+// MFC OnBnClickedReset clears m_bMergedComment: the empty text then clears them all
+void tst_CommentsPanel::resetEndsTheMerge()
+{
+    CommentEditPanel panel(QStringLiteral("tstCommentsEdit"));
+    QCborMap details = detailsFor(QString{}, -1);
+    details.insert(QLatin1StringView("commentHashes"),
+                   QCborArray{QStringLiteral("aa"), QStringLiteral("bb")});
+    details.insert(QLatin1StringView("mergedComment"), true);
+    panel.setDetails(details);
+
+    QSignalSpy spy(&panel, &CommentEditPanel::postComment);
+    buttonNamed(panel, QStringLiteral("Reset"))->click();
+    buttonNamed(panel, QStringLiteral("Apply"))->click();
+    QCOMPARE(spy.count(), 1);
+    QVERIFY(spy.at(0).at(1).toString().isEmpty());
+    QCOMPARE(spy.at(0).at(2).toInt(), 0);
+    QVERIFY(!spy.at(0).at(3).toBool());
 }
 
 QTEST_MAIN(tst_CommentsPanel)

@@ -21,6 +21,7 @@
 #include <QGridLayout>
 #include <QLabel>
 #include <QKeySequence>
+#include <QCborArray>
 #include <QPointer>
 #include <QShortcut>
 #include <QStyle>
@@ -437,14 +438,25 @@ void connectCommentPosting(DetailDialog* dialog, IpcClient* ipc)
 
     QPointer<DetailDialog> dlgPtr(dialog);
     QObject::connect(dialog, &DetailDialog::postFileComment, dialog,
-        [ipc, dlgPtr](const QString& fileHash, const QString& comment, int rating) {
-            if (!ipc->isConnected())
+        [ipc, dlgPtr](const QStringList& fileHashes, const QString& comment, int rating,
+                      bool keepEmpty) {
+            if (!ipc->isConnected() || fileHashes.isEmpty())
                 return;
             Ipc::IpcMessage req(Ipc::IpcMsgType::SetFileComment);
-            req.append(fileHash);
+            if (fileHashes.size() == 1) {
+                req.append(fileHashes.constFirst());
+            } else {
+                QCborArray list;
+                for (const QString& h : fileHashes)
+                    list.append(h);
+                req.append(list);
+            }
             req.append(comment);
             req.append(static_cast<qint64>(rating));
-            ipc->sendRequest(std::move(req), [dlgPtr, fileHash](const Ipc::IpcMessage& resp) {
+            req.append(keepEmpty);
+            // A multi-file sheet has no walker and keeps its empty key
+            const QString subject = dlgPtr->subjectKey();
+            ipc->sendRequest(std::move(req), [dlgPtr, subject](const Ipc::IpcMessage& resp) {
                 if (!dlgPtr)
                     return;
                 const bool ok = IpcFeedback::checkOrWarn(resp, dlgPtr,
@@ -452,7 +464,7 @@ void connectCommentPosting(DetailDialog* dialog, IpcClient* ipc)
                 // The walker may have stepped onto another file while this was in
                 // flight; only the file the user actually typed against may have its
                 // pending-changes state cleared.
-                if (dlgPtr->subjectKey() == fileHash)
+                if (dlgPtr->subjectKey() == subject)
                     dlgPtr->commentApplied(ok);
             });
         });

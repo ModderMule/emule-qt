@@ -832,7 +832,7 @@ BtStatus BtSession::status() const
     s.listening = d->listening;
     s.dhtNodes = d->dhtNodes;
     s.i2pEnabled = d->settings.i2pEnabled;
-    s.i2pSam = d->settings.i2pEnabled && d->settings.i2pSamPort != 0;
+    s.i2pSam = d->settings.hasSam();
     s.i2pError = d->i2pError;
     s.torrents = static_cast<int>(d->rows.size());
     for (const auto& [id, row] : d->rows) {
@@ -937,6 +937,18 @@ void BtSession::drainAlerts()
     // pointers die at the next pop_alerts(): copy what is kept
     for (lt::alert* a : alerts) {
         forwardAlert(a);
+        // libtorrent posts nothing when the SAM session comes up: a .i2p tracker that got
+        // past "waiting for the acceptor" proves it, so an old bridge error is over
+        if (!d->i2pError.isEmpty()) {
+            const auto* te = lt::alert_cast<lt::tracker_error_alert>(a);
+            const auto* tr = lt::alert_cast<lt::tracker_reply_alert>(a);
+            const lt::tracker_alert* ta = te ? static_cast<const lt::tracker_alert*>(te) : tr;
+            if (ta && BtAddSource::isI2pTracker(ta->tracker_url())
+                && !(te && te->error == lt::errors::no_i2p_endpoint)) {
+                d->i2pError.clear();
+                emit statusChanged();
+            }
+        }
         if (auto* ss = lt::alert_cast<lt::session_stats_alert>(a)) {
             const auto counters = ss->counters();
             if (!d->rateClock.isValid())
@@ -1020,7 +1032,10 @@ void BtSession::drainAlerts()
             logWarning(QStringLiteral("BitTorrent: %1").arg(message(lf)));
             emit statusChanged();
         } else if (auto* ia = lt::alert_cast<lt::i2p_alert>(a)) {
-            // libtorrent retries the SAM bridge itself (session_impl::schedule_i2p_reconnect)
+            // libtorrent retries the SAM bridge itself (session_impl::schedule_i2p_reconnect).
+            // No SAM: the placeholder bridge (BtSettingsMap) fails on purpose
+            if (!d->settings.hasSam())
+                continue;
             const QString err = QString::fromStdString(ia->error.message());
             if (err != d->i2pError)
                 logWarning(QStringLiteral("BitTorrent: I2P SAM bridge %1:%2: %3")

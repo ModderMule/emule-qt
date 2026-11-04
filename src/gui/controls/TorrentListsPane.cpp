@@ -9,6 +9,7 @@
 #include "controls/AbstractListView.h"
 #include "controls/SortableItems.h"
 #include "controls/TorrentFileTree.h"
+#include "utils/ClientIcons.h"
 #include "utils/MenuUtils.h"
 #include "utils/PanelPoller.h"
 #include "utils/StatusBarNotifier.h"
@@ -376,9 +377,13 @@ void TorrentListsPane::applyPeers(const QCborArray& peers)
         const bool encrypted = p.value(QStringLiteral("encrypted")).toBool();
         const QString flags = p.value(QStringLiteral("flags")).toString();
 
-        item->setIcon(PeerLock, encrypted ? lockIcon() : QIcon());
-        item->setData(PeerLock, SortRole, encrypted ? 1 : 0);
-        item->setToolTip(PeerLock, encrypted ? tr("Encrypted connection") : QString());
+        // I2P peers: the I2P icon instead of the lock (encrypted end to end anyway)
+        const bool i2p = p.value(QStringLiteral("i2p")).toBool();
+        item->setIcon(PeerLock, i2p ? i2pIcon() : encrypted ? lockIcon() : QIcon());
+        item->setData(PeerLock, SortRole, i2p ? 2 : encrypted ? 1 : 0);
+        item->setToolTip(PeerLock, i2p         ? tr("I2P peer (anonymous, encrypted)")
+                                   : encrypted ? tr("Encrypted connection")
+                                               : QString());
         setCell(item, PeerUp, rateText(up), QVariant::fromValue(up), true);
         setCell(item, PeerDown, rateText(down), QVariant::fromValue(down), true);
         setCell(item, PeerProgress, percentText(progress), progress, true);

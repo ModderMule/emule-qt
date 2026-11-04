@@ -4473,6 +4473,7 @@ bool Preferences::load(const QString& filePath)
     if (!QFile::exists(filePath)) {
         // First run — user hash from the ed3k node ID, one port for TCP, UDP and ed3k
         newIdentity();
+        resolveI2pRouterPort();
         validate();
         resolveDefaultDirectories();
         resolveDefaultVideoPlayer();
@@ -5653,6 +5654,7 @@ bool Preferences::load(const QString& filePath)
             logWarning(QStringLiteral("Unreadable preferences kept as %1").arg(broken));
         m_data = std::make_unique<Data>();
         newIdentity();
+        resolveI2pRouterPort();
         validate();
         resolveDefaultDirectories();
         return false;
@@ -5695,13 +5697,7 @@ bool Preferences::load(const QString& filePath)
     validate();
     resolveDefaultDirectories();
 
-    // bundled I2P router: picked once and kept, so its router identity stays reachable
-    const bool i2pRouterPortPicked = m_data->btI2pRouterPort == 0;
-    if (i2pRouterPortPicked) {
-        const uint16 btPort = m_data->btListenPort;
-        m_data->btI2pRouterPort = randomPort([btPort](uint16 p) { return p != btPort && tcpPortFree(p) && udpPortFree(p); },
-                                             kBtI2pRouterPortMin, kBtI2pRouterPortMax);
-    }
+    const bool i2pRouterPortPicked = resolveI2pRouterPort();
 
     if ((ed3kPortPicked || ed3kSitePortPicked || i2pRouterPortPicked) && !hashGenerated && !saveImpl(m_filePath))
         logWarning(QStringLiteral("ed3k UDP port could not be saved to %1").arg(m_filePath));
@@ -7081,6 +7077,17 @@ Preferences::sanitizeCategories(const QList<DownloadCategory>& cats, const QStri
         clean.append(DownloadCategory{.title = QStringLiteral("All")});
 
     return clean;
+}
+
+bool Preferences::resolveI2pRouterPort()
+{
+    // bundled I2P router: picked once and kept, so its router identity stays reachable
+    if (m_data->btI2pRouterPort != 0)
+        return false;
+    const uint16 btPort = m_data->btListenPort;
+    m_data->btI2pRouterPort = randomPort([btPort](uint16 p) { return p != btPort && tcpPortFree(p) && udpPortFree(p); },
+                                         kBtI2pRouterPortMin, kBtI2pRouterPortMax);
+    return true;
 }
 
 } // namespace eMule

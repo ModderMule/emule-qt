@@ -104,6 +104,12 @@ QIcon ed3kClientIcon()
     return icon;
 }
 
+QIcon i2pIcon()
+{
+    static const QIcon icon = skinIcon(QStringLiteral(":/icons/I2P.ico"));
+    return icon;
+}
+
 SourceStateIcon sourceStateIconKind(const QString& stateToken, bool remoteQueueFull, bool a4af)
 {
     if (a4af)

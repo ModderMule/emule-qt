@@ -117,6 +117,10 @@ public:
     /// Remove all filter entries.
     void removeAllFilters();
 
+    /// Remove the ranges starting at these bounds (v4 host order, v6 network bytes).
+    /// Ranges are merged, so a start names one entry. Returns how many went.
+    int removeRanges(std::vector<uint32> starts4, std::vector<std::array<uint8, 16>> starts6);
+
     // -- Accessors ------------------------------------------------------------
 
     /// Total across both families — what the UI and the load log report.

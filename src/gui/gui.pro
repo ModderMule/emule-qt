@@ -135,6 +135,7 @@ SOURCES += \
     dialogs/FindInListDialog.cpp \
     dialogs/FirstStartWizard.cpp \
     dialogs/ImportDownloadsDialog.cpp \
+    dialogs/IPFilterDialog.cpp \
     dialogs/MetadataPage.cpp \
     dialogs/NetworkInfoDialog.cpp \
     dialogs/OptionsDialog.cpp \
@@ -254,6 +255,7 @@ HEADERS += \
     dialogs/PortMapStatusText.h \
     dialogs/FirstStartWizard.h \
     dialogs/ImportDownloadsDialog.h \
+    dialogs/IPFilterDialog.h \
     dialogs/MetadataPage.h \
     dialogs/NetworkInfoDialog.h \
     dialogs/OptionsDialog.h \
@@ -318,7 +320,7 @@ HEADERS += \
         controls/TorrentListsPane.cpp \
         controls/TorrentPieceGrid.cpp \
         dialogs/AddTorrentDialog.cpp \
-        dialogs/BtI2pGroup.cpp \
+        dialogs/BtI2pPage.cpp \
         dialogs/TorrentDetailsDialog.cpp \
         panels/TorrentPanel.cpp
     HEADERS += \
@@ -329,7 +331,7 @@ HEADERS += \
         controls/TorrentListsPane.h \
         controls/TorrentPieceGrid.h \
         dialogs/AddTorrentDialog.h \
-        dialogs/BtI2pGroup.h \
+        dialogs/BtI2pPage.h \
         dialogs/TorrentDetailsDialog.h \
         panels/TorrentPanel.h
 }

@@ -119,6 +119,12 @@ Status recheckFirewall();
 Status reloadSharedFiles(bool metaDataOnly = false);
 /// Stores the shared directory list and rescans. Every entry must be an existing directory.
 Status setSharedDirectories(const QStringList& dirs);
+/// The user's own comment and rating on shared files (MFC CCommentDialog::OnApply).
+/// @p rating -1 and an empty @p comment with @p keepEmpty leave each file's own
+/// value (files disagreed on a multi-selection, #123). Unshared files are skipped;
+/// 404 only if every one is. @p applied receives how many were set.
+Status setFileComments(const QStringList& hashHexes, const QString& comment, qint64 rating,
+                       bool keepEmpty, int* applied = nullptr);
 
 } // namespace ops
 } // namespace eMule

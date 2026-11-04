@@ -70,6 +70,7 @@ private slots:
     void findByIP_notFound();
     void addBannedClient();
     void isBannedClient_true();
+    void uploadOnlyBan_keepsDownloadSource();
     void requestBuddy_refusesFirewallCheckAndBannedNodes();
     void kadFirewallAck_oncePerAskedAddress();
     void requestTCP_reusesTheClientAndRefusesRepeats();
@@ -710,6 +711,22 @@ void tst_ClientList::isBannedClient_true()
     list.addBannedClient(Address::fromNetworkOrder(0xC0A80001));
     QVERIFY(list.isBannedClient(Address::fromNetworkOrder(0xC0A80001)));
     QVERIFY(!list.isBannedClient(Address::fromNetworkOrder(0xC0A80002)));
+}
+
+void tst_ClientList::uploadOnlyBan_keepsDownloadSource()
+{
+    ClientList list;
+    const auto addr = Address::fromNetworkOrder(0xC0A80001);
+    list.addBannedClient(addr, 0, true);
+    QVERIFY(!list.isBannedClient(addr));
+    QVERIFY(list.isUploadBannedClient(addr));
+
+    // A full ban wins and stays full
+    list.addBannedClient(addr);
+    QVERIFY(list.isBannedClient(addr));
+    list.addBannedClient(addr, 0, true);
+    QVERIFY(list.isBannedClient(addr));
+    QVERIFY(list.isUploadBannedClient(addr));
 }
 
 void tst_ClientList::removeBannedClient()

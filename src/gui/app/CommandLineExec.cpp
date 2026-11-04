@@ -135,6 +135,7 @@ void CommandLineExec::parse(QApplication& app)
             {QStringLiteral("bittorrent"),   OptionsDialog::PageBitTorrent},
             {QStringLiteral("btconnection"), OptionsDialog::PageBtConnection},
             {QStringLiteral("btbandwidth"),  OptionsDialog::PageBtConnection},
+            {QStringLiteral("i2p"),          OptionsDialog::PageBtI2p},
 #endif
             {QStringLiteral("ed3k"),           OptionsDialog::PageEd3k},
             {QStringLiteral("ed3kconnection"), OptionsDialog::PageEd3kConnection},

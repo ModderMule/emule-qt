@@ -63,6 +63,9 @@ struct BtSettings {
     int i2pTunnelQuantity = 3;
     /// added to I2P torrents, and to all torrents while mixed
     QStringList i2pTrackers;
+
+    /// A SAM bridge to use now: I2P on and the router reachable.
+    [[nodiscard]] bool hasSam() const { return i2pEnabled && i2pSamPort != 0 && !i2pSamHost.isEmpty(); }
 };
 
 /// State of a torrent as the GUI shows it. Values are IPC: append only.

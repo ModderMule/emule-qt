@@ -36,6 +36,7 @@
 
 #include <QtEndian>
 #include <QDir>
+#include <QTemporaryDir>
 #include <QHostInfo>
 
 #include "app/AppContext.h"
@@ -475,6 +476,10 @@ void IpcClientHandler::onMessageReceived(const IpcMessage& msg)
     case IpcMsgType::Shutdown:             handleShutdown(msg); break;
     case IpcMsgType::ReloadIPFilter:       handleReloadIPFilter(msg); break;
     case IpcMsgType::UpdateIpFilterNow:    handleUpdateIpFilterNow(msg); break;
+    case IpcMsgType::GetIPFilter:          handleGetIPFilter(msg); break;
+    case IpcMsgType::RemoveIPFilters:      handleRemoveIPFilters(msg); break;
+    case IpcMsgType::AppendIPFilter:       handleAppendIPFilter(msg); break;
+    case IpcMsgType::SaveIPFilter:         handleSaveIPFilter(msg); break;
     case IpcMsgType::GetSchedules:         handleGetSchedules(msg); break;
     case IpcMsgType::SaveSchedules:        handleSaveSchedules(msg); break;
     case IpcMsgType::ScanImportFolder:     handleScanImportFolder(msg); break;
@@ -1053,48 +1058,22 @@ void IpcClientHandler::handleSearchKadNotes(const IpcMessage& msg)
 
 void IpcClientHandler::handleSetFileComment(const IpcMessage& msg)
 {
-    const QString hash    = msg.fieldString(0);
-    const QString comment = msg.fieldString(1).left(MAXFILECOMMENTLEN);
-    const auto    rating  = msg.fieldInt(2);
-
-    if (!theApp.sharedFileList) {
-        sendMessage(IpcMessage::makeError(msg.seqId(), 503,
-                                          QStringLiteral("Shared file list unavailable")));
-        return;
+    // Field 0 is one hash or a list of them (a multi-selection sheet, #123)
+    QStringList hashes;
+    if (const QCborValue first = msg.field(0); first.isArray()) {
+        for (const QCborValue& v : first.toArray())
+            hashes << v.toString();
+    } else {
+        hashes << first.toString();
     }
+    const bool keepEmpty = msg.fieldCount() > 3 && msg.fieldBool(3);
 
-    uint8 hashBuf[16]{};
-    if (!hexToHash(hash, hashBuf)) {
-        sendMessage(IpcMessage::makeError(msg.seqId(), 400, QStringLiteral("Invalid hash")));
-        return;
-    }
-    if (rating < 0 || rating > 5) {
-        sendMessage(IpcMessage::makeError(msg.seqId(), 400,
-                                          QStringLiteral("Rating out of range")));
-        return;
-    }
-
-    // MFC's gate: an unshared file's comment is published nowhere, so the original
-    // skips exactly these files in OnApply and disables its page for them
-    // (srchybrid/CommentDialog.cpp:117-121, 172-179).
-    auto* file = theApp.sharedFileList->getFileByID(hashBuf);
-    if (!file) {
-        sendMessage(IpcMessage::makeError(msg.seqId(), 404,
-                                          QStringLiteral("File is not shared")));
-        return;
-    }
-
-    // Both always run. MFC guards them with `!strComment.IsEmpty() || !m_bMergedComment`
-    // and `m_iRating >= 0`, but those exist only for its multi-file selection merge —
-    // "the files disagreed, so leave this field alone". The port's detail dialog is
-    // single-file, so there is no merged state to protect.
-    file->setFileComment(comment);
-    file->setFileRating(static_cast<uint32>(rating));
-
-    logInfo(QStringLiteral("Comment set for \"%1\": rating %2, \"%3\"")
-                .arg(file->fileName(), QString::number(rating), comment));
-
-    sendMessage(IpcMessage::makeResult(msg.seqId(), true));
+    int applied = 0;
+    const ops::Status st = ops::setFileComments(hashes, msg.fieldString(1),
+                                                msg.fieldInt(2),
+                                                keepEmpty, &applied);
+    sendMessage(st.ok() ? IpcMessage::makeResult(msg.seqId(), true, applied)
+                        : IpcMessage::makeError(msg.seqId(), st.code, st.message));
 }
 
 void IpcClientHandler::handleConnectToServer(const IpcMessage& msg)
@@ -1662,6 +1641,112 @@ void IpcClientHandler::handleUpdateIpFilterNow(const IpcMessage& msg)
             QCborArray out{ok, static_cast<qint64>(entries), message};
             self->sendMessage(IpcMessage::makeResult(seqId, true, QCborValue(out)));
         });
+}
+
+void IpcClientHandler::handleGetIPFilter(const IpcMessage& msg)
+{
+    QByteArray text;
+    bool modified = false;
+    if (const IPFilter* filter = theApp.ipFilter) {
+        modified = filter->isModified();
+        text.reserve(filter->entryCount() * 48);
+        // Tabs and line breaks would split the row
+        const auto desc = [](const std::string& d) {
+            QByteArray b = QByteArray::fromStdString(d);
+            for (char& ch : b)
+                if (ch == '\t' || ch == '\n' || ch == '\r')
+                    ch = ' ';
+            return b;
+        };
+        for (const auto& e : filter->entries()) {
+            text += "4\t" + QByteArray::number(e.start) + '\t' + QByteArray::number(e.end) + '\t'
+                  + QByteArray::number(e.level) + '\t' + QByteArray::number(e.hits) + '\t'
+                  + desc(e.desc) + '\n';
+        }
+        for (const auto& e : filter->entries6()) {
+            const auto hex = [](const std::array<uint8, 16>& a) {
+                return QByteArray(reinterpret_cast<const char*>(a.data()), 16).toHex();
+            };
+            text += "6\t" + hex(e.start) + '\t' + hex(e.end) + '\t' + QByteArray::number(e.level)
+                  + '\t' + QByteArray::number(e.hits) + '\t' + desc(e.desc) + '\n';
+        }
+    }
+    QCborMap out;
+    out[QStringLiteral("list")] = qCompress(text);
+    out[QStringLiteral("modified")] = modified;
+    sendMessage(IpcMessage::makeResult(msg.seqId(), true, out));
+}
+
+void IpcClientHandler::handleRemoveIPFilters(const IpcMessage& msg)
+{
+    IPFilter* filter = theApp.ipFilter;
+    if (!filter) {
+        sendMessage(IpcMessage::makeError(msg.seqId(), 503, QStringLiteral("IP filter not running")));
+        return;
+    }
+    int removed = 0;
+    if (msg.fieldBool(0)) {
+        removed = filter->entryCount();
+        filter->removeAllFilters();
+    } else {
+        const QByteArray v4 = msg.field(1).toByteArray();
+        const QByteArray v6 = msg.field(2).toByteArray();
+        std::vector<uint32> starts4;
+        starts4.reserve(static_cast<size_t>(v4.size() / 4));
+        for (qsizetype i = 0; i + 4 <= v4.size(); i += 4)
+            starts4.push_back(qFromBigEndian<quint32>(v4.constData() + i));
+        std::vector<std::array<uint8, 16>> starts6;
+        for (qsizetype i = 0; i + 16 <= v6.size(); i += 16) {
+            std::array<uint8, 16> a{};
+            std::memcpy(a.data(), v6.constData() + i, 16);
+            starts6.push_back(a);
+        }
+        removed = filter->removeRanges(std::move(starts4), std::move(starts6));
+    }
+    QCborMap out;
+    out[QStringLiteral("removed")] = removed;
+    out[QStringLiteral("entries")] = filter->entryCount();
+    sendMessage(IpcMessage::makeResult(msg.seqId(), true, out));
+}
+
+void IpcClientHandler::handleAppendIPFilter(const IpcMessage& msg)
+{
+    IPFilter* filter = theApp.ipFilter;
+    const auto fail = [&](const QString& error) {
+        sendMessage(IpcMessage::makeResult(msg.seqId(), false, QCborValue(error)));
+    };
+    if (!filter)
+        return fail(QStringLiteral("IP filter not running"));
+
+    // The format is told by file name, so the copy keeps it
+    const QString name = QFileInfo(msg.fieldString(0)).fileName();
+    const QByteArray content = msg.field(1).toByteArray();
+    if (name.isEmpty() || content.isEmpty())
+        return fail(QStringLiteral("empty file"));
+    QTemporaryDir dir;
+    if (!dir.isValid())
+        return fail(dir.errorString());
+    const QString path = dir.filePath(name);
+    QFile file(path);
+    if (!file.open(QIODevice::WriteOnly) || file.write(content) != content.size())
+        return fail(file.errorString());
+    file.close();
+
+    const int before = filter->entryCount();
+    filter->loadFromFile(path);   // 0 on a bad file, so count again
+    const int after = filter->entryCount();
+    QCborMap out;
+    out[QStringLiteral("added")] = after - before;
+    out[QStringLiteral("entries")] = after;
+    sendMessage(IpcMessage::makeResult(msg.seqId(), true, out));
+}
+
+void IpcClientHandler::handleSaveIPFilter(const IpcMessage& msg)
+{
+    const bool ok = theApp.ipFilter
+        && theApp.ipFilter->saveToFile(QDir(thePrefs.configDir())
+                                           .filePath(QString::fromLatin1(kDefaultIPFilterFilename)));
+    sendMessage(IpcMessage::makeResult(msg.seqId(), ok));
 }
 
 void IpcClientHandler::handleGetFriends(const IpcMessage& msg)

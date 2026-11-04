@@ -182,8 +182,10 @@ signals:
     /// panel pushes it to the daemon.
     void commentFilterChanged(const QString& filter);
 
-    /// The user pressed Apply on the editable Comments page.
-    void postFileComment(const QString& fileHash, const QString& comment, int rating);
+    /// The user pressed Apply on the editable Comments page — one file, or all
+    /// shared files of a multi-file sheet. See CommentEditPanel::postComment.
+    void postFileComment(const QStringList& fileHashes, const QString& comment, int rating,
+                         bool keepEmpty);
 
     /// The Archive Preview page asks for a preview file of the download.
     void archivePreviewFileRequested(const QString& fileHash);

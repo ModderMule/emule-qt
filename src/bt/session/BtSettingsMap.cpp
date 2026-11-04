@@ -53,10 +53,13 @@ lt::settings_pack BtSettingsMap::toPack(const BtSettings& s)
         p.set_str(lt::settings_pack::user_agent, s.userAgent.toStdString() + " libtorrent/" LIBTORRENT_VERSION);
     p.set_str(lt::settings_pack::peer_fingerprint, lt::generate_fingerprint("EQ", s.versionMajor, s.versionMinor, s.versionRevision));
 
-    // I2P: an empty hostname = no SAM session. Mixed only while I2P is on: with it off an
-    // I2P torrent waits rather than going clearnet
-    const bool sam = s.i2pEnabled && s.i2pSamPort != 0 && !s.i2pSamHost.isEmpty();
-    p.set_str(lt::settings_pack::i2p_hostname, sam ? s.i2pSamHost.toStdString() : std::string());
+    // I2P. No SAM yet (router starting or failed, or I2P off): a bridge nothing answers on
+    // loopback port 0, never an empty hostname. Empty, libtorrent fetches .i2p trackers as
+    // plain HTTP: a DNS lookup of the .i2p name, and the announce in clear if anything
+    // resolves it. With a bridge set they wait for it; libtorrent retries it with backoff.
+    // Mixed only while I2P is on: with it off an I2P torrent waits rather than going clearnet
+    const bool sam = s.hasSam();
+    p.set_str(lt::settings_pack::i2p_hostname, sam ? s.i2pSamHost.toStdString() : std::string("127.0.0.1"));
     p.set_int(lt::settings_pack::i2p_port, sam ? s.i2pSamPort : 0);
     p.set_bool(lt::settings_pack::allow_i2p_mixed, s.i2pEnabled && s.i2pMixed);
     const int length = std::clamp(s.i2pTunnelLength, 1, 7);

@@ -733,7 +733,10 @@ public:
     void checkQueueRankFlood();
     void resetFileStatusInfo();
     void onInfoPacketsReceived();
+    /// Any ban, upload-only included: gates the upload queue and slots.
     [[nodiscard]] bool isBanned() const;
+    /// Full ban only: also no download source. Anti-leecher bans are upload-only.
+    [[nodiscard]] bool isFullyBanned() const;
     void checkFailedFileIdReqs(const uint8* fileHash);
     void sendPublicIPRequest();
     void processPublicIPAnswer(const uint8* data, uint32 size);
@@ -901,8 +904,8 @@ public:
     void sendCommentInfo(const KnownFile* file);
     void addRequestCount(const uint8* fileID);
     void unBan();
-    /// durationMs 0 = CLIENTBANTIME (2 h).
-    void ban(const QString& reason = {}, uint64 durationMs = 0);
+    /// durationMs 0 = CLIENTBANTIME (2 h). uploadOnly: no uploads, still a download source.
+    void ban(const QString& reason = {}, uint64 durationMs = 0, bool uploadOnly = false);
     /// Record one abuse strike against this peer's ADDRESS and ban on the second.
     /// Shared by every flood detector; the counter survives this object's destruction,
     /// so reconnecting does not wipe a strike. See ClientList::trackBadRequest.
@@ -1419,6 +1422,7 @@ private:
     bool m_commentDirty = false;
     bool m_gplEvildoer = false;
     LeecherCategory m_leecherCategory = LeecherCategory::None;
+    bool m_uploadOnlyBan = false;   ///< last ban() was upload-only; for isFullyBanned() w/o address
     QString m_leecherReason;
     QString m_dlpCheckedSoftware;   ///< software + mod last checked; recheck on change
     QString m_dlpCheckedName;       ///< user name last checked; recheck on change

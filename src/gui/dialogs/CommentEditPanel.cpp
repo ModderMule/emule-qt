@@ -36,13 +36,25 @@ void CommentEditPanel::setDetails(const QCborMap& details)
     // is halfway through typing — MFC reloads its fields only on m_bDataChanged
     // (CommentDialog.cpp:110-148).
     if (!m_dirty) {
+        // A multi-file sheet names its shared files; a single one is its own hash
+        m_hashes.clear();
+        if (const QCborValue list = details.value(QLatin1StringView("commentHashes"));
+            list.isArray()) {
+            for (const QCborValue& v : list.toArray())
+                m_hashes << v.toString();
+        } else {
+            m_hashes << fileHash();
+        }
         m_baseComment = details.value(QLatin1StringView("myComment")).toString();
         m_baseRating  = static_cast<int>(details.value(QLatin1StringView("myRating")).toInteger());
+        m_merged      = details.value(QLatin1StringView("mergedComment")).toBool();
 
         m_filling = true;
         m_commentEdit->setText(m_baseComment);
-        m_ratingCombo->setCurrentIndex(qBound(0, m_baseRating, 5));
+        // -1 leaves the combo blank, as MFC SetCurSel(-1)
+        m_ratingCombo->setCurrentIndex(qBound(-1, m_baseRating, 5));
         m_filling = false;
+        showMergedHint();
 
         m_applyBtn->setEnabled(false);
     }
@@ -57,7 +69,9 @@ void CommentEditPanel::commentApplied(bool ok)
 
     m_baseComment = m_commentEdit->text();
     m_baseRating  = m_ratingCombo->currentIndex();
+    m_merged      = m_merged && m_baseComment.isEmpty();   // a text now unites them
     m_dirty       = false;
+    showMergedHint();
     m_applyBtn->setEnabled(false);
 }
 
@@ -97,6 +111,8 @@ void CommentEditPanel::buildEditor()
     m_ratingCombo = new QComboBox;
     for (int rating = 0; rating <= 5; ++rating)
         m_ratingCombo->addItem(ratingIcon(rating), ratingLabel(rating));
+    // Shown at index -1: a multi-file sheet whose ratings differ keeps them
+    m_ratingCombo->setPlaceholderText(tr("Different ratings: unchanged"));
     connect(m_ratingCombo, &QComboBox::currentIndexChanged, this, &CommentEditPanel::markDirty);
     ratingLayout->addWidget(m_ratingCombo);
     ratingRow->addWidget(ratingGroup, 1);
@@ -135,17 +151,21 @@ void CommentEditPanel::applyEdits()
 {
     if (!m_applyBtn->isEnabled())
         return;
-    emit postComment(fileHash(), m_commentEdit->text(), m_ratingCombo->currentIndex());
+    emit postComment(m_hashes, m_commentEdit->text(), m_ratingCombo->currentIndex(),
+                     m_merged);
 }
 
 void CommentEditPanel::resetEdits()
 {
     // MFC OnBnClickedReset: blank the text, back to "Not rated". It does not post —
-    // clearing a published comment still takes an Apply.
+    // clearing a published comment still takes an Apply. Ends the merge, so the
+    // empty text clears every file's comment.
     m_filling = true;
     m_commentEdit->clear();
     m_ratingCombo->setCurrentIndex(0);
     m_filling = false;
+    m_merged = false;
+    showMergedHint();
     markDirty();
 }
 
@@ -168,6 +188,13 @@ void CommentEditPanel::setEditingEnabled(bool enabled)
     // because its whole page is the editor. Here a file nobody can comment still has
     // other people's comments worth reading and a Kad lookup worth running, which is
     // precisely what the read-only page offers.
+}
+
+void CommentEditPanel::showMergedHint()
+{
+    m_commentEdit->setPlaceholderText(
+        m_merged ? tr("The files have different comments; leave empty to keep them")
+                 : QString());
 }
 
 } // namespace eMule

@@ -2989,7 +2989,7 @@ uint32 PartFile::process(uint32 reduceDownload, uint32 counter)
                 // eMule info packet.
                 if (client->socket() && client->socket()->isConnected()
                     && client->checkHandshakeFinished()
-                    && client->uploadState() != UploadState::Banned)
+                    && !client->isFullyBanned())   // leecher bans are upload-only
                 {
                     client->setDownloadState(DownloadState::Connected);
                     client->setLastTriedToConnectNow();

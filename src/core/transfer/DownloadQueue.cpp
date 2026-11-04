@@ -2136,7 +2136,7 @@ DownloadQueue::SourceStats DownloadQueue::sourceStats() const
             // Not download states of their own; recoded for the statistics only
             if (state == DownloadState::OnQueue && src->remoteQueueFull())
                 state = DownloadState::RemoteQueueFull;
-            if (src->uploadState() == UploadState::Banned)
+            if (src->uploadState() == UploadState::Banned && src->isFullyBanned())
                 state = DownloadState::Banned;
 
             switch (state) {

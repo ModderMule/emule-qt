@@ -19,11 +19,13 @@ class tst_SharedFilesModel : public QObject {
 
 private slots:
     void mergeFileDetails_sumsAgreesAndLists();
+    void mergeFileDetails_ownCommentMergesLikeMfc();
     void altSort_sessionFiguresAndKadFirst();
     void sharedDirState_matchesWholeFoldersOnly();
     void sharedDirState_unshareWithSubdirs();
     void sharedDirState_nestsUnderNearestSharedParent();
     void sharedDirState_collectsSubdirectoriesFromDisk();
+    void sharedDirState_followsSymlinksOnce();
     void firstListIsAReset();
     void sameListAgainTouchesNothing();
     void newListKeepsSurvivorsInPlace();
@@ -488,6 +490,29 @@ void tst_SharedFilesModel::sharedDirState_collectsSubdirectoriesFromDisk()
                                 root + QStringLiteral("/skip/below")}));
 }
 
+// #124: linked folders are followed like MFC; a loop back up is walked once
+void tst_SharedFilesModel::sharedDirState_followsSymlinksOnce()
+{
+#ifdef Q_OS_WIN
+    QSKIP("QFile::link makes .lnk files on Windows");
+#else
+    using namespace SharedDirState;
+    QTemporaryDir tmp, media;
+    QVERIFY(tmp.isValid() && media.isValid());
+    const QString root = QDir::cleanPath(tmp.path());
+    QVERIFY(QDir(media.path()).mkpath(QStringLiteral("albums")));
+    QVERIFY(QFile::link(media.path(), root + QStringLiteral("/media")));
+    QVERIFY(QFile::link(root, root + QStringLiteral("/media/albums/up")));   // loop
+    QVERIFY(QFile::link(root + QStringLiteral("/gone"), root + QStringLiteral("/dangling")));
+
+    QStringList dirs;
+    collectSubdirectories(root, dirs, [](const QString&) { return true; });
+    std::ranges::sort(dirs);
+    QCOMPARE(dirs, (QStringList{root, root + QStringLiteral("/media"),
+                                root + QStringLiteral("/media/albums")}));
+#endif
+}
+
 // MFC SharedFilesCtrl SortProc: cases 5-7 against 105-107, 11 against 111.
 void tst_SharedFilesModel::altSort_sessionFiguresAndKadFirst()
 {
@@ -555,8 +580,38 @@ void tst_SharedFilesModel::mergeFileDetails_sumsAgreesAndLists()
     QCOMPARE(value("mediaBitrate").toInteger(), 128);
     QCOMPARE(value("comments").toArray().size(), 2);
     QCOMPARE(value("ed2kLink").toString(), QStringLiteral("ed2k://1\ned2k://2"));
-    QVERIFY(!value("canComment").toBool());
+    QVERIFY(value("canComment").toBool());   // shared files: one Apply for all (#123)
     QVERIFY(!merged.contains(QLatin1StringView("hash")));
+}
+
+// #123, MFC CCommentDialog::OnSetActive (CommentDialog.cpp:110-140): the own comment
+// and rating show where all shared files agree; unshared files take no part.
+void tst_SharedFilesModel::mergeFileDetails_ownCommentMergesLikeMfc()
+{
+    const auto file = [](const char* hash, bool shared, const char* comment, int rating) {
+        return QCborMap{{QStringLiteral("hash"), QString::fromLatin1(hash)},
+                        {QStringLiteral("canComment"), shared},
+                        {QStringLiteral("myComment"), QString::fromLatin1(comment)},
+                        {QStringLiteral("myRating"), rating}};
+    };
+    const auto key = [](const QCborMap& m, const char* k) { return m.value(QLatin1StringView(k)); };
+
+    QCborMap m = mergeFileDetails({file("a", true, "ch1", 4), file("b", false, "other", 1),
+                                   file("c", true, "ch1", 4)});
+    QVERIFY(key(m, "canComment").toBool());
+    QCOMPARE(key(m, "commentHashes").toArray(), (QCborArray{QStringLiteral("a"), QStringLiteral("c")}));
+    QCOMPARE(key(m, "myComment").toString(), QStringLiteral("ch1"));
+    QCOMPARE(key(m, "myRating").toInteger(), 4);
+    QVERIFY(!key(m, "mergedComment").toBool());
+
+    m = mergeFileDetails({file("a", true, "ch1", 4), file("c", true, "ch2", 3)});
+    QCOMPARE(key(m, "myComment").toString(), QString());
+    QVERIFY(key(m, "mergedComment").toBool());
+    QCOMPARE(key(m, "myRating").toInteger(), -1);
+
+    m = mergeFileDetails({file("a", false, "", 0), file("b", false, "", 0)});
+    QVERIFY(!key(m, "canComment").toBool());
+    QVERIFY(key(m, "commentHashes").toArray().isEmpty());
 }
 
 // MFC FilterTreeReloadTree (SharedDirsTreeCtrl.cpp:324-368): only with more than one

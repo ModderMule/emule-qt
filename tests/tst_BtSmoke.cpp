@@ -232,13 +232,17 @@ void tst_BtSmoke::inspectTorrentFile()
     QVERIFY(!BtSession::inspectTorrentFile(QByteArray("garbage")).has_value());
 }
 
-// I2P: SAM only with a bridge, mixed only while on, tunnels clamped
+// I2P: SAM only with a bridge, mixed only while on, tunnels clamped. Without a bridge the
+// placeholder 127.0.0.1:0, never an empty hostname (.i2p trackers would go to DNS)
 void tst_BtSmoke::i2pSettingsMap()
 {
     namespace lt = libtorrent;
+    const auto placeholder = [](const lt::settings_pack& p) {
+        return p.get_str(lt::settings_pack::i2p_hostname) == "127.0.0.1" && p.get_int(lt::settings_pack::i2p_port) == 0;
+    };
     BtSettings s;
     lt::settings_pack p = BtSettingsMap::toPack(s);
-    QCOMPARE(p.get_str(lt::settings_pack::i2p_hostname), std::string());
+    QVERIFY(placeholder(p));
     QVERIFY(!p.get_bool(lt::settings_pack::allow_i2p_mixed));
 
     // on, bridge not ready yet (bundled router starting): still no SAM session
@@ -246,7 +250,7 @@ void tst_BtSmoke::i2pSettingsMap()
     s.i2pMixed = true;
     s.i2pSamHost = QStringLiteral("127.0.0.1");
     p = BtSettingsMap::toPack(s);
-    QCOMPARE(p.get_str(lt::settings_pack::i2p_hostname), std::string());
+    QVERIFY(placeholder(p));
     QVERIFY(p.get_bool(lt::settings_pack::allow_i2p_mixed));
 
     s.i2pSamPort = 7656;
@@ -261,7 +265,7 @@ void tst_BtSmoke::i2pSettingsMap()
     // off: an I2P torrent waits instead of going clearnet
     s.i2pEnabled = false;
     p = BtSettingsMap::toPack(s);
-    QCOMPARE(p.get_str(lt::settings_pack::i2p_hostname), std::string());
+    QVERIFY(placeholder(p));
     QVERIFY(!p.get_bool(lt::settings_pack::allow_i2p_mixed));
 }
 

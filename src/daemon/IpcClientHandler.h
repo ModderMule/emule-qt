@@ -174,6 +174,10 @@ private:
     void handleSetDownloadSourceLimit(const Ipc::IpcMessage& msg);
     void handleSwapA4AFToFile(const Ipc::IpcMessage& msg);
     void handleUpdateIpFilterNow(const Ipc::IpcMessage& msg);
+    void handleGetIPFilter(const Ipc::IpcMessage& msg);
+    void handleRemoveIPFilters(const Ipc::IpcMessage& msg);
+    void handleAppendIPFilter(const Ipc::IpcMessage& msg);
+    void handleSaveIPFilter(const Ipc::IpcMessage& msg);
     void handleSetDownloadPreviewFlags(const Ipc::IpcMessage& msg);
     void handleImportDownloadParts(const Ipc::IpcMessage& msg);
     void handleFlushDownload(const Ipc::IpcMessage& msg);

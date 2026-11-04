@@ -6,7 +6,8 @@
 /// MFC's CFileDetailDialog shows a multi-selection in one sheet: what adds up is
 /// summed, media fields survive only where all files agree, comments and links are
 /// listed for all (FileDetailDialogInfo.cpp:228-327, FileInfoDialog.cpp:535-600,
-/// CommentDialogLst.cpp:128-180, ED2kLinkDlg.cpp:122-185).
+/// CommentDialogLst.cpp:128-180, ED2kLinkDlg.cpp:122-185). The own comment and
+/// rating merge as CommentDialog.cpp:110-184 does, so one Apply sets them all.
 
 #include <QCborArray>
 #include <QCborMap>
@@ -89,7 +90,37 @@ namespace eMule {
     merged.insert(QLatin1StringView("ed2kLink"), links.join(QLatin1Char('\n')));
     merged.insert(QLatin1StringView("notesSearchRunning"), searching);
     merged.insert(QLatin1StringView("kadConnected"), kadConnected);
-    merged.insert(QLatin1StringView("canComment"), false);
+
+    // Own comment over the files we may comment (MFC CCommentDialog::OnSetActive,
+    // CommentDialog.cpp:110-140): the text where all agree, else empty + merged;
+    // the rating where all agree, else -1
+    QCborArray commentHashes;
+    QString myComment;
+    qint64 myRating = -1;
+    bool mergedComment = false;
+    for (const QCborMap& f : files) {
+        if (!f.value(QLatin1StringView("canComment")).toBool())
+            continue;
+        const QString text = str(f, "myComment");
+        const qint64 rating = num(f, "myRating");
+        if (commentHashes.isEmpty()) {
+            myComment = text;
+            myRating = rating;
+        } else {
+            if (!mergedComment && text != myComment) {
+                myComment.clear();
+                mergedComment = true;
+            }
+            if (myRating >= 0 && rating != myRating)
+                myRating = -1;
+        }
+        commentHashes.append(str(f, "hash"));
+    }
+    merged.insert(QLatin1StringView("canComment"), !commentHashes.isEmpty());
+    merged.insert(QLatin1StringView("commentHashes"), commentHashes);
+    merged.insert(QLatin1StringView("myComment"), myComment);
+    merged.insert(QLatin1StringView("myRating"), myRating);
+    merged.insert(QLatin1StringView("mergedComment"), mergedComment);
     return merged;
 }
 

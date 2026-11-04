@@ -41,7 +41,7 @@ namespace eMule {
 
 class AccordionSidebar;
 class Ed3kOptionsPages;
-class BtI2pGroup;
+class BtI2pPage;
 class IpcClient;
 class StatisticsPanel;
 
@@ -96,6 +96,7 @@ public:
         PageEd3kFilters,    // filter lists (Ed3kFilterPage)
         PageEd3kAutoCredits, // "Credits" in the sidebar: autostart highspeed download
         PageEd3kSelling,    // selling paid subscriptions (Ed3kSellPage), not in the sidebar for now (hasPage)
+        PageBtI2p,          // BitTorrent over I2P (BtI2pPage); empty slot without EMULE_HAVE_BITTORRENT
         PageCount
     };
 
@@ -582,7 +583,7 @@ private:
     QCheckBox*      m_btDhtCheck = nullptr;
     QCheckBox*      m_btLsdCheck = nullptr;
     QCheckBox*      m_btPexCheck = nullptr;
-    BtI2pGroup*     m_btI2pGroup = nullptr;
+    BtI2pPage*      m_btI2pPage = nullptr;
     QButtonGroup*   m_btEncryptionGroup = nullptr; // id = btEncryption
     QSpinBox*       m_btMaxActiveDownSpin = nullptr;
     QSpinBox*       m_btMaxActiveSeedSpin = nullptr;

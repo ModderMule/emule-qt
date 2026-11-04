@@ -17,6 +17,7 @@
 #include "controls/TrayMeterIcon.h"
 #include "dialogs/NetworkInfoDialog.h"
 #include "dialogs/ImportDownloadsDialog.h"
+#include "dialogs/IPFilterDialog.h"
 #include "dialogs/FirstStartWizard.h"
 #include "dialogs/BugReportDialog.h"
 #include "dialogs/OptionsDialog.h"
@@ -1467,7 +1468,9 @@ void MainWindow::maybeShowFirstStartWizard()
 
 void MainWindow::onIPFilter()
 {
-    showOptionsDialog(OptionsDialog::PageSecurity);
+    // MFC MP_HM_IPFILTER opens CIPFilterDlg, not the options page
+    IPFilterDialog dlg(m_ipc, this);
+    dlg.exec();
 }
 
 void MainWindow::onPasteLinks()

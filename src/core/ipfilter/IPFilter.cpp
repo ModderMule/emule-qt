@@ -615,6 +615,27 @@ void IPFilter::removeAllFilters()
     emit filterCleared();
 }
 
+int IPFilter::removeRanges(std::vector<uint32> starts4, std::vector<std::array<uint8, 16>> starts6)
+{
+    std::ranges::sort(starts4);
+    std::ranges::sort(starts6);
+    const auto before = m_entries.size() + m_entries6.size();
+    std::erase_if(m_entries, [&](const IPFilterEntry& e) {
+        return std::ranges::binary_search(starts4, e.start);
+    });
+    std::erase_if(m_entries6, [&](const IPFilterEntry6& e) {
+        return std::ranges::binary_search(starts6, e.start);
+    });
+    const int removed = static_cast<int>(before - (m_entries.size() + m_entries6.size()));
+    if (removed > 0) {
+        // Erasing moved entries: cached hit pointers dangle
+        m_lastHit = nullptr;
+        m_lastHit6 = nullptr;
+        m_modified = true;
+    }
+    return removed;
+}
+
 void IPFilter::logLastHit(QStringView context) const
 {
     if (!thePrefs.logFilteredIPs())

@@ -25,6 +25,7 @@ class tst_IPFilter : public QObject {
 private slots:
     void construct_default();
     void addIPRange_basic();
+    void removeRanges_byStart();
     void loadFromFile_filterDat();
     void loadFromFile_peerGuardian();
     void loadFromFile_nonexistent();
@@ -60,6 +61,26 @@ void tst_IPFilter::addIPRange_basic()
 
     filter.addIPRange(0x0B000000, 0x0B0000FF, 50, "another range");
     QCOMPARE(filter.entryCount(), 2);
+}
+
+void tst_IPFilter::removeRanges_byStart()
+{
+    IPFilter filter;
+    filter.addIPRange(0x0A000000, 0x0A0000FF, 100, "a");
+    filter.addIPRange(0x0B000000, 0x0B0000FF, 50, "b");
+    filter.addIPRange(0x0C000000, 0x0C0000FF, 50, "c");
+    std::array<uint8, 16> s6{0x20, 0x01, 0x0d, 0xb8};
+    std::array<uint8, 16> e6 = s6;
+    e6[15] = 0xff;
+    filter.addIPRange6(s6, e6, 10, "v6");
+    filter.sortAndMerge();
+    QCOMPARE(filter.entryCount(), 4);
+
+    QCOMPARE(filter.removeRanges({0x0C000000, 0x0A000000, 0x0D000000}, {s6}), 3);
+    QCOMPARE(filter.entryCount(), 1);
+    QCOMPARE(filter.entries().front().start, 0x0B000000u);
+    QVERIFY(filter.isFiltered(htonl(0x0B000001), 127));
+    QVERIFY(!filter.isFiltered(htonl(0x0A000001), 127));
 }
 
 void tst_IPFilter::loadFromFile_filterDat()

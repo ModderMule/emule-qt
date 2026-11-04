@@ -883,21 +883,36 @@ void ClientList::serverCallbackFailed()
 // Banned clients
 // ===========================================================================
 
-void ClientList::addBannedClient(const Address& addr, uint64 durationMs)
+void ClientList::addBannedClient(const Address& addr, uint64 durationMs, bool uploadOnly)
 {
     if (addr.isNull()) return;
-    const uint64 until = getTickCount() + (durationMs ? durationMs : CLIENTBANTIME);
-    uint64& entry = m_bannedList[addr.peerKey()];   // IPv6: the whole /64
-    entry = std::max(entry, until);
+    const uint64 now = getTickCount();
+    const uint64 until = now + (durationMs ? durationMs : CLIENTBANTIME);
+    const auto [it, inserted] = m_bannedList.try_emplace(addr.peerKey());   // IPv6: the whole /64
+    BanEntry& entry = it->second;
+    if (inserted || now >= entry.until)
+        entry.uploadOnly = uploadOnly;   // new or expired: take the new kind
+    else
+        entry.uploadOnly = entry.uploadOnly && uploadOnly;   // full ban wins
+    entry.until = std::max(entry.until, until);
 }
 
 bool ClientList::isBannedClient(const Address& addr) const
 {
     if (addr.isNull()) return false;
     auto it = m_bannedList.find(addr.peerKey());
+    if (it == m_bannedList.end() || it->second.uploadOnly)
+        return false;
+    return getTickCount() < it->second.until;
+}
+
+bool ClientList::isUploadBannedClient(const Address& addr) const
+{
+    if (addr.isNull()) return false;
+    auto it = m_bannedList.find(addr.peerKey());
     if (it == m_bannedList.end())
         return false;
-    return getTickCount() < it->second;
+    return getTickCount() < it->second.until;
 }
 
 void ClientList::removeBannedClient(const Address& addr)
@@ -1066,7 +1081,7 @@ void ClientList::cleanUpBannedList()
 
     m_lastBanCleanUp = now;
     std::erase_if(m_bannedList, [now](const auto& pair) {
-        return now >= pair.second;
+        return now >= pair.second.until;
     });
 
     const uint64 now64 = getTickCount();

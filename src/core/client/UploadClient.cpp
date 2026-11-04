@@ -901,7 +901,7 @@ void UpDownClient::registerBadRequest(const QString& reason)
     }
 }
 
-void UpDownClient::ban(const QString& reason, uint64 durationMs)
+void UpDownClient::ban(const QString& reason, uint64 durationMs, bool uploadOnly)
 {
     if (m_chatState != ChatState::None) {
         m_chatState = ChatState::None;
@@ -915,7 +915,9 @@ void UpDownClient::ban(const QString& reason, uint64 durationMs)
         logLeecher(QStringLiteral("Banned: %1; %2").arg(reason, leecherLogInfo()));
     // Every offence restarts the 2 h — MFC UploadClient.cpp:649.
     if (theApp.clientList)
-        theApp.clientList->addBannedClient(m_connectAddress, durationMs);
+        theApp.clientList->addBannedClient(m_connectAddress, durationMs, uploadOnly);
+    // A full ban already on this object wins, as in the list
+    m_uploadOnlyBan = uploadOnly && (m_uploadState != UploadState::Banned || m_uploadOnlyBan);
     setUploadState(UploadState::Banned);
 }
 
@@ -927,6 +929,7 @@ void UpDownClient::unBan()
     // Unconditional: the IP may be banned without this object being in the state.
     if (theApp.clientList)
         theApp.clientList->removeBannedClient(m_connectAddress);
+    m_uploadOnlyBan = false;
     setUploadState(UploadState::None);
     // A clean slate, as MFC (srchybrid/UploadClient.cpp:628-634)
     clearWaitStartTime();

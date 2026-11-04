@@ -133,6 +133,9 @@
     <ClCompile Include="dialogs\ImportDownloadsDialog.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
+    <ClCompile Include="dialogs\IPFilterDialog.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
     <ClCompile Include="app\IpcClient.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
@@ -238,7 +241,7 @@
     <ClCompile Include="dialogs\AddTorrentDialog.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
-    <ClCompile Include="dialogs\BtI2pGroup.cpp">
+    <ClCompile Include="dialogs\BtI2pPage.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
     <ClCompile Include="dialogs\TorrentDetailsDialog.cpp">
@@ -717,6 +720,9 @@
     <QtMoc Include="dialogs\ImportDownloadsDialog.h">
       <Filter>Header Files</Filter>
     </QtMoc>
+    <QtMoc Include="dialogs\IPFilterDialog.h">
+      <Filter>Header Files</Filter>
+    </QtMoc>
     <QtMoc Include="app\IpcClient.h">
       <Filter>Header Files</Filter>
     </QtMoc>
@@ -861,7 +867,7 @@
     <QtMoc Include="dialogs\AddTorrentDialog.h">
       <Filter>Header Files</Filter>
     </QtMoc>
-    <QtMoc Include="dialogs\BtI2pGroup.h">
+    <QtMoc Include="dialogs\BtI2pPage.h">
       <Filter>Header Files</Filter>
     </QtMoc>
     <QtMoc Include="dialogs\TorrentDetailsDialog.h">
@@ -1585,6 +1591,9 @@
       <Filter>Resource Files</Filter>
     </None>
     <None Include="..\..\resources\icons\Torrent.ico">
+      <Filter>Resource Files</Filter>
+    </None>
+    <None Include="..\..\resources\icons\I2P.ico">
       <Filter>Resource Files</Filter>
     </None>
     <None Include="..\..\resources\icons\User.ico">

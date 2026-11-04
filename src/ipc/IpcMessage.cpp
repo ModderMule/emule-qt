@@ -250,6 +250,7 @@ bool isReadOnlyRequest(IpcMsgType type)
     case IpcMsgType::GetKadStats:
     case IpcMsgType::GetClientStats:
     case IpcMsgType::GetGeoIpStatus:
+    case IpcMsgType::GetIPFilter:
     case IpcMsgType::GetSpeedHistory:
     case IpcMsgType::GetStatsHistory:
     case IpcMsgType::GetCategories:

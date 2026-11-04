@@ -14,6 +14,9 @@ namespace eMule {
 /// ed3k node: the eMule client icon with a Mars-red mane (no MFC original).
 [[nodiscard]] QIcon ed3kClientIcon();
 
+/// The I2P icon: I2P torrent peers, the Options > BitTorrent > I2P page.
+[[nodiscard]] QIcon i2pIcon();
+
 /// MFC's five source state icons, in its image-list order
 /// (DownloadListCtrl.cpp:181-185).
 enum class SourceStateIcon { Downloading, OnQueue, Connecting, NoNeededOrFull, Unknown };

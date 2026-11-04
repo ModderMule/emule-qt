@@ -1,7 +1,8 @@
 #include "pch.h"
 #include "utils/FileAssociation.h"
 #include "dialogs/OptionsDialog.h"
-#include "dialogs/BtI2pGroup.h"
+#include "dialogs/BtI2pPage.h"
+#include "utils/ClientIcons.h"
 #include "dialogs/Ed3kOptionsPages.h"
 #include "dialogs/FirstStartWizard.h"
 #include "dialogs/PortChangeNotice.h"
@@ -704,6 +705,8 @@ void OptionsDialog::setupSidebar()
     static constexpr PageDef kBitTorrentPages[] = {
         {PageBitTorrent,    "BitTorrent",            QStyle::SP_DriveNetIcon,           "Torrent.ico"},
         {PageBtConnection,  QT_TR_NOOP("Connection"), QStyle::SP_DirLinkIcon,           "Connection.ico"},
+        // own icon in both modes (no MFC original, no standard one)
+        {PageBtI2p,         QT_TR_NOOP("I2P"),        QStyle::SP_CustomBase,            "I2P.ico"},
     };
     // no MFC original; icons of the nearest eMule pages
     static constexpr PageDef kEd3kPages[] = {
@@ -746,7 +749,9 @@ void OptionsDialog::setupSidebar()
         const int group = m_sidebar->addGroup(title);
         for (const PageDef& def : table) {
             QIcon qicon;
-            if (useOriginal)
+            if (def.id == PageBtI2p)
+                qicon = i2pIcon();
+            else if (useOriginal)
                 qicon = skinIcon(QStringLiteral(":/icons/") + QLatin1String(def.originalIcon));
             else if (def.icon == QStyle::SP_CustomBase)
                 qicon = makePadlockIcon();
@@ -838,6 +843,14 @@ void OptionsDialog::setupPages()
     addPage(PageEd3kFilters,    m_ed3kPages->filtersPage());
     addPage(PageEd3kAutoCredits, m_ed3kPages->autoCreditsPage());
     addPage(PageEd3kSelling,    m_ed3kPages->sellingPage());   // not in the sidebar (hasPage)
+#ifdef EMULE_HAVE_BITTORRENT
+    // after the ed3k pages: stored indices stay put
+    m_btI2pPage = new BtI2pPage(m_ipc, this);
+    connect(m_btI2pPage, &BtI2pPage::changed, this, &OptionsDialog::markDirty);
+    addPage(PageBtI2p,          m_btI2pPage);
+#else
+    addPage(PageBtI2p,          new QWidget(this));
+#endif
     connect(m_ed3kPages, &Ed3kOptionsPages::changed, this, &OptionsDialog::markDirty);
     connect(m_ed3kPages, &Ed3kOptionsPages::portsJoined, this, [this](int port) {
         // applied by the core already: the fields follow
@@ -5858,11 +5871,6 @@ QWidget* OptionsDialog::createBtConnectionPage()
 
     mainLayout->addWidget(peerGroup);
 
-    // -- I2P (issue #118) ---------------------------------------------------
-    m_btI2pGroup = new BtI2pGroup(m_ipc, page);
-    connect(m_btI2pGroup, &BtI2pGroup::changed, this, &OptionsDialog::markDirty);
-    mainLayout->addWidget(m_btI2pGroup);
-
     // -- Bandwidth ----------------------------------------------------------
     auto* bwGroup = new QGroupBox(tr("Bandwidth"), page);
     auto* bwForm = new QFormLayout(bwGroup);
@@ -7573,7 +7581,7 @@ void OptionsDialog::saveSettings()
         req.append(static_cast<qint64>(m_btDownShareSpin->value()));
         req.append(QStringLiteral("btUploadSharePercent"));
         req.append(static_cast<qint64>(m_btUpShareSpin->value()));
-        m_btI2pGroup->appendTo(req);
+        m_btI2pPage->appendTo(req);
 #endif
 
         // Web Interface page
@@ -8480,7 +8488,7 @@ void OptionsDialog::fillDaemonSettings(const QCborMap& prefs)
     m_btSeedTimeSpin->setValue(
         int(prefs.value(QStringLiteral("btSeedTimeLimitMinutes")).toInteger(0)));
     m_btPortMappingCheck->setChecked(prefs.value(QStringLiteral("btPortMapping")).toBool(true));
-    m_btI2pGroup->load(prefs);
+    m_btI2pPage->load(prefs);
     m_btMaxConnSpin->setValue(int(prefs.value(QStringLiteral("btMaxConnections"))
                                       .toInteger(Preferences::kDefaultBtMaxConnections)));
     m_btMaxConnPerTorrentSpin->setValue(
@@ -9213,7 +9221,7 @@ bool OptionsDialog::hasPage(int page) const
     // The stack, not PageCount: a stored or --options index may name a page this
     // build leaves out
 #ifndef EMULE_HAVE_BITTORRENT
-    if (page == PageBitTorrent || page == PageBtConnection)
+    if (page == PageBitTorrent || page == PageBtConnection || page == PageBtI2p)
         return false;   // empty slots
 #endif
     // ToDo: credits page hidden until it is decided how credits are used

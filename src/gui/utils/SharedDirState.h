@@ -110,33 +110,43 @@ struct FileSetMenuState {
 
 namespace detail {
 
+/// @p walked holds canonical paths already entered: a symlink back up the tree
+/// (or two links to one folder) is walked once, not forever
 template <typename Shareable>
 void collectSubdirectories(const QString& dir, QStringList& dirs, QSet<QString>& listed,
-                           const Shareable& shareable)
+                           QSet<QString>& walked, const Shareable& shareable)
 {
+    const QString canonical = QFileInfo(dir).canonicalFilePath();
+    if (canonical.isEmpty() || walked.contains(canonical))
+        return;   // dangling link or a loop
+    walked.insert(canonical);
+
     if (!listed.contains(dirKey(dir)) && shareable(dir)) {
         dirs.append(dir);
         listed.insert(dirKey(dir));
     }
-    const auto entries = QDir(dir).entryInfoList(
-        QDir::Dirs | QDir::NoDotAndDotDot | QDir::NoSymLinks, QDir::Name | QDir::IgnoreCase);
+    // links followed like MFC, which skips only system folders (DirectoryTreeCtrl.cpp:299)
+    const auto entries = QDir(dir).entryInfoList(QDir::Dirs | QDir::NoDotAndDotDot,
+                                                 QDir::Name | QDir::IgnoreCase);
     for (const QFileInfo& fi : entries)
         if (!fi.fileName().startsWith(u'.') && fi.isReadable())
-            collectSubdirectories(fi.absoluteFilePath(), dirs, listed, shareable);
+            collectSubdirectories(fi.absoluteFilePath(), dirs, listed, walked, shareable);
 }
 
 } // namespace detail
 
 /// Adds @p root and every folder below it to @p dirs, skipping what is listed already,
-/// what @p shareable refuses, hidden folders and symlinks (MFC ShareSubDirTree /
+/// what @p shareable refuses and hidden folders; follows symlinks (MFC ShareSubDirTree /
 /// MarkChildren, srchybrid/DirectoryTreeCtrl.cpp:96, :170). Walks the disk.
+/// @p root itself is skipped when @p shareable refuses it, its subfolders are not.
 template <typename Shareable>
 void collectSubdirectories(const QString& root, QStringList& dirs, const Shareable& shareable)
 {
     QSet<QString> listed;
     for (const QString& d : dirs)
         listed.insert(dirKey(d));
-    detail::collectSubdirectories(root, dirs, listed, shareable);
+    QSet<QString> walked;
+    detail::collectSubdirectories(root, dirs, listed, walked, shareable);
 }
 
 /// For every entry of @p dirs its nearest ancestor that is in @p dirs too, or an empty
