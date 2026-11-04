@@ -339,9 +339,14 @@ void quitWithoutPrompt()
 /// Stop a core we started and cannot reach over IPC: busy enough to miss a
 /// keepalive, it would otherwise outlive the GUI and greet the next one already
 /// connected. The port still being held tells it from a core that is gone.
-void terminateUnreachableDaemon(qint64 pid)
+void terminateUnreachableDaemon(qint64 pid, bool launchedByUs)
 {
-    if (pid <= 0 || ipcPortFree(eMule::thePrefs.ipcListenAddress(), eMule::thePrefs.ipcPort()))
+    if (pid <= 0)
+        return;
+    // A free port: no core, or ours still loading before it listens (#129).
+    // Only then is the pid known to be a core and not a reused one.
+    if (ipcPortFree(eMule::thePrefs.ipcListenAddress(), eMule::thePrefs.ipcPort())
+        && !(launchedByUs && processAlive(pid)))
         return;
 #ifndef Q_OS_WIN
     // The core turns SIGTERM into a graceful stop
@@ -1191,7 +1196,7 @@ int main(int argc, char* argv[])
                 ipcClient.disconnectFromDaemon();
                 // Attached, but the connection is down: there is nobody to ask
                 if (stopCore)
-                    terminateUnreachableDaemon(*daemonPid);
+                    terminateUnreachableDaemon(*daemonPid, *weOwnDaemon);
                 else if (*weOwnDaemon)
                     eMule::logInfo(QStringLiteral("Core detached, left running"));
             }

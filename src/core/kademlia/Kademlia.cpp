@@ -258,7 +258,11 @@ bool Kademlia::isFirewalled() const
 
 bool Kademlia::isFirewalledVerified() const
 {
-    return m_running && m_prefs && isFirewalled() && !m_prefs->recheckIP();
+    // The 4th FIREWALLED_RES ends the recheck, but the TCP connect-backs and their
+    // acks trail it: firewalled() reads true until 2 acks arrive. Not verified before
+    // they had time, or a reachable node shows as firewalled for a moment.
+    static constexpr time_t kAckGraceSecs = 90;
+    return m_running && m_prefs && isFirewalled() && m_prefs->recheckSettled(kAckGraceSecs);
 }
 
 RecheckFirewallResult Kademlia::recheckFirewalled()
@@ -887,7 +891,7 @@ void Kademlia::updateSessionVerdict()
     // check finished without that. A later open result overrides.
     if (!isFirewalled() || UDPFirewallTester::isOpenAndVerified())
         m_sessionVerdict = BuddyStore::SessionVerdict::Open;
-    else if (!m_prefs->recheckIP())
+    else if (isFirewalledVerified())
         m_sessionVerdict = BuddyStore::SessionVerdict::Firewalled;
 }
 

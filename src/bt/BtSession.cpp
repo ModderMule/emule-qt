@@ -1039,9 +1039,7 @@ void BtSession::drainAlerts()
             emit statusChanged();
         } else if (auto* ia = lt::alert_cast<lt::i2p_alert>(a)) {
             // libtorrent retries the SAM bridge itself (session_impl::schedule_i2p_reconnect).
-            // No SAM: the placeholder bridge (BtSettingsMap) fails on purpose
-            if (!d->settings.hasSam())
-                continue;
+            // No SAM: dropped at the top of the loop (placeholder bridge fails on purpose)
             const QString err = QString::fromStdString(ia->error.message());
             if (err != d->i2pError)
                 logWarning(QStringLiteral("BitTorrent: I2P SAM bridge %1:%2: %3")

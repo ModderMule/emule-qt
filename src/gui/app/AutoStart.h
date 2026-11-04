@@ -17,4 +17,8 @@ void setAutoStart(bool enabled);
 /// Check whether the application is currently registered for autostart.
 [[nodiscard]] bool isAutoStartEnabled();
 
+/// Rewrites a stale entry, e.g. one of an older version that started the bare
+/// .bin (#129). Never creates one. Linux only, a no-op elsewhere.
+void refreshAutoStart();
+
 } // namespace eMule

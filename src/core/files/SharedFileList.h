@@ -214,6 +214,11 @@ public:
         QSet<QString> incomingDirs;
         QSet<QString> sharedDirs;
         QString usenetTempRoot;
+        /// shareIncomingSubdirs: roots shared with all their subfolders (incoming dirs,
+        /// BT download dir) and the folders below them that are not (temp, config)
+        QStringList treeRoots;      ///< as on disk, to walk
+        QStringList treeRootKeys;   ///< pathKey of each
+        QStringList treeExcluded;   ///< pathKeys
     };
     [[nodiscard]] ShareRules shareRules() const;
     [[nodiscard]] bool shouldBeShared(const ShareRules& rules, const QString& dirPath,
@@ -221,8 +226,13 @@ public:
     /// Files never shared, whatever the directories: ed3k (batch 15 #12) opened plain
     /// copies of sealed set members (hidden-set.md §4.2 MUST). Shared ones go now.
     void setNeverShared(std::function<bool(const QString& filePath)> check);
-    /// Drops the shared files setNeverShared names (one more came).
+    /// Files another engine is still writing (BitTorrent: an unfinished torrent).
+    /// Kept out like setNeverShared; shared ones go now.
+    void setStillWriting(std::function<bool(const QString& filePath)> check);
+    /// Drops the shared files setNeverShared / setStillWriting name (one more came).
     void dropNeverShared();
+    /// A folder below a tree root (ShareRules::treeRoots), the root itself included.
+    [[nodiscard]] static bool inShareTree(const ShareRules& rules, const QString& dirKey);
 
     /// Cleaned and case-folded: two spellings of one path give one key (MFC compares
     /// with CompareNoCase).
@@ -256,6 +266,11 @@ public:
     /// Returns false when the location is not in fact shared, so a caller cannot
     /// use this to smuggle a file onto the network.
     bool addFileInSharedLocation(const QString& filePath);
+
+    /// A finished download (ed3k, hoster, Usenet): addFileInSharedLocation(), else a single
+    /// shared file. Downloads land in incoming subfolders (sets, packages, jobs), which only
+    /// shareIncomingSubdirs shares; MFC shares every completed download wherever it is.
+    bool shareCompletedFile(const QString& filePath);
 
     /// Does this directory hold any individually-shared file?
     /// Port of srchybrid/SharedFileList.cpp:1420-1427.
@@ -332,6 +347,8 @@ public:
 
     /// Remember given-up hash failures in @p path (loads now, saves as they change).
     void setHashFailureStorePath(const QString& path);
+    /// Remember copies of shared files in @p path (loads now, saves as they change).
+    void setDuplicateStorePath(const QString& path);
 
     // Server connect integration
     void setServerConnect(ServerConnect* sc);
@@ -390,14 +407,23 @@ private:
     /// A record matched a file whose date shifted without the file changing.
     void adoptDiskDate(KnownFile* file, time_t onDisk);
     /// Add to @p scope every root that now holds a file gone from a directory in it.
-    void widenScopeForMoves(QSet<QString>& scope) const;
+    void widenScopeForMoves(QSet<QString>& scope, const QStringList& roots) const;
+    /// A changed folder of a share tree brings its subfolders along: new ones are
+    /// listed, files of removed ones leave.
+    void widenScopeForTrees(QSet<QString>& scope, const ShareRules& rules,
+                            const QStringList& roots) const;
     /// What the watcher looks at: the scan roots plus the directories of files
     /// shared one by one.
     [[nodiscard]] QStringList watchRoots() const;
+    [[nodiscard]] QStringList watchRoots(const QStringList& shareRoots) const;
+    /// setNeverShared or setStillWriting names @p filePath.
+    [[nodiscard]] bool isNeverShared(const QString& filePath) const;
     /// The shareable files of one directory, by path key.
     void listDirectory(const QString& dir, QHash<QString, DiskEntry>& out) const;
     /// Every directory a scan walks: incoming directories first, then shared ones.
+    /// With shareIncomingSubdirs the share trees' subfolders too.
     [[nodiscard]] QStringList shareRoots() const;
+    [[nodiscard]] QStringList shareRoots(const ShareRules& rules) const;
     /// Point a shared file at the name and place it has on disk now.
     void relocateFile(KnownFile* file, const DiskEntry& entry);
     /// Hash retries and held-back directories that have come due.
@@ -422,6 +448,8 @@ private:
     static void orderForHashing(std::vector<UnknownFileEntry>& entries, bool coldStart);
     void loadHashFailures();
     void saveHashFailures();
+    void loadDuplicates();
+    void saveDuplicates();
 
     [[nodiscard]] QString sharedFilesConfigPath() const;
 
@@ -502,6 +530,8 @@ private:
     QHash<QString, QString> m_singleSharedFiles;
     QHash<QString, QString> m_singleExcludedFiles;
     std::function<bool(const QString&)> m_neverShared;   ///< setNeverShared
+    std::function<bool(const QString&)> m_stillWriting;  ///< setStillWriting
+    QSet<QString> m_lastRootKeys;   ///< scan roots of the last rescan (widenScopeForTrees)
 
     /// Pseudo name -> directory, as last sent to a browsing client. Main thread only.
     QHash<QString, QString> m_pseudoDirNames;
@@ -512,6 +542,7 @@ private:
     KadPublishStore m_publishStore;        // keyword due times across restarts
     QString m_publishStorePath;            // empty = not persisted
     QString m_hashFailureStorePath;        // empty = not persisted
+    QString m_duplicateStorePath;          // empty = not persisted
     time_t m_publishStoreSavedAt = 0;
     KnownFileList* m_knownFiles = nullptr;
 
@@ -564,6 +595,18 @@ private:
     size_t m_hashFailuresSaved = 0;     // signature of the given-up set on disk
     time_t m_hashFailuresCheckedAt = 0;
     std::array<int, 3> m_hashRetrySecs{5, 30, 120};
+
+    /// Paths dropped as a copy of a shared file, by path key. Not hashed again while
+    /// unchanged and the original is still shared: every rescan hashed them again
+    /// (#130, AICH "already present" loop). Main thread only.
+    struct DuplicateFile {
+        QString path;
+        uint64 size = 0;
+        time_t mtime = 0;
+        QByteArray fileHash;   // MD4 of the shared original
+    };
+    QHash<QString, DuplicateFile> m_duplicates;
+    size_t m_duplicatesSaved = 0;       // signature of the set on disk
 
     /// Directories with a file too fresh to hash, and when to look again.
     QHash<QString, time_t> m_settleDirs;

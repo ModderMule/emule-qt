@@ -509,20 +509,33 @@ bool sameDir(const QString& a, const QString& b)
     return QDir::cleanPath(a).compare(QDir::cleanPath(b), Qt::CaseInsensitive) == 0;
 }
 
+/// @p dir is @p root or a folder below it
+bool atOrBelow(const QString& dir, const QString& root)
+{
+    if (dir.isEmpty() || root.isEmpty())
+        return false;
+    const QString d = QDir::cleanPath(dir);
+    const QString r = QDir::cleanPath(root);
+    return d.compare(r, Qt::CaseInsensitive) == 0
+        || (d.startsWith(r, Qt::CaseInsensitive) && d.size() > r.size() && d.at(r.size()) == u'/');
+}
+
 } // namespace
 
-void SharedFilesSortProxy::setFolderFilter(SharedFilterType type, const QString& path)
+void SharedFilesSortProxy::setFolderFilter(SharedFilterType type, const QString& path, bool withSubdirs)
 {
-    if (m_filterType == type && m_filterPath == path)
+    if (m_filterType == type && m_filterPath == path && m_withSubdirs == withSubdirs)
         return;
 #if QT_VERSION >= QT_VERSION_CHECK(6, 10, 0)
     beginFilterChange();
     m_filterType = type;
     m_filterPath = path;
+    m_withSubdirs = withSubdirs;
     endFilterChange();
 #else
     m_filterType = type;
     m_filterPath = path;
+    m_withSubdirs = withSubdirs;
     invalidateFilter();
 #endif
 }
@@ -564,11 +577,13 @@ bool SharedFilesSortProxy::filterAcceptsRow(int sourceRow, const QModelIndex& /*
     // main incoming dir only, "Shared Directories" every finished file outside it,
     // category incoming dirs included. m_filterPath holds the main incoming dir.
     case SharedFilterType::Incoming:
-        return !f->isPartFile && sameDir(f->path, m_filterPath);
+        return !f->isPartFile && (m_withSubdirs ? atOrBelow(f->path, m_filterPath)
+                                                : sameDir(f->path, m_filterPath));
     case SharedFilterType::Incomplete:
         return f->isPartFile;
     case SharedFilterType::SharedDirs:
-        return !f->isPartFile && !sameDir(f->path, m_filterPath);
+        return !f->isPartFile && !(m_withSubdirs ? atOrBelow(f->path, m_filterPath)
+                                                 : sameDir(f->path, m_filterPath));
     case SharedFilterType::SpecificDir:
         return sameDir(f->path, m_filterPath);
     case SharedFilterType::IncompleteCategory:

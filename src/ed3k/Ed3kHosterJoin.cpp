@@ -138,6 +138,17 @@ Ed3kHosterJoin::Ed3kHosterJoin(Ed3kSession& session, const QString& configDir, Q
 {
     m_tick.setInterval(kTickMs);
     connect(&m_tick, &QTimer::timeout, this, &Ed3kHosterJoin::onTick);
+    connect(&m_unpack, &Ed3kHosterUnpack::finished, this, &Ed3kHosterJoin::onUnpacked);
+    connect(&m_unpack, &Ed3kHosterUnpack::progress, this, [this](const QString& first, int percent) {
+        const QString arg = QString::number(percent);
+        for (auto& [id, e] : m_items)
+            if (e->item.reason == Reason::Unpacking && e->item.reasonArg != arg
+                && Ed3kHosterUnpack::setKey(e->item.name) == Ed3kHosterUnpack::setKey(QFileInfo(first).fileName())
+                && QFileInfo(e->item.file).absolutePath() == QFileInfo(first).absolutePath()) {
+                e->item.reasonArg = arg;
+                changed(*e);
+            }
+    });
     // the base's onOtherEvent cannot mark an event answered: a LinkResolve is taken here
     connect(&session, &Ed3kSession::eventPolled, this, [this](const ffi::Event& event, bool* handled) {
         if (const auto* r = std::get_if<ev::LinkResolve>(&event); r && m_started) {
@@ -174,6 +185,7 @@ void Ed3kHosterJoin::setConfig(const Ed3kHosterPrefs& prefs, const QStringList& 
     const bool publishChanged = prefs.publishLinks != m_prefs.publishLinks || prefs.recheckHours != m_prefs.recheckHours
                              || prefs.reportRecheckHours != m_prefs.reportRecheckHours;
     const bool accountsChanged = prefs.accounts != m_prefs.accounts;
+    const bool extractOff = m_prefs.extract && !prefs.extract;
     m_prefs = prefs;
     m_tempDirs.clear();
     for (const QString& d : tempDirs)
@@ -200,6 +212,8 @@ void Ed3kHosterJoin::setConfig(const Ed3kHosterPrefs& prefs, const QStringList& 
     }
     if ((accountsChanged || allowed) && m_started)
         refreshAccounts();
+    if (extractOff)
+        releaseArchives();
 }
 
 void Ed3kHosterJoin::start()
@@ -386,6 +400,16 @@ void Ed3kHosterJoin::resume(quint32 id)
 void Ed3kHosterJoin::retry(quint32 id)
 {
     Entry* e = find(id);
+    if (e && e->item.state == State::Complete
+        && (e->item.reason == Reason::UnpackFailed || e->item.reason == Reason::UnpackPassword)) {
+        // the archive's unpack again (a volume put in by hand, an unpacker installed)
+        e->item.reason = Reason::UnpackWaiting;
+        e->item.reasonArg.clear();
+        changed(*e);
+        save();
+        queueUnpacks();
+        return;
+    }
     if (!e || e->item.state == State::Complete)
         return;
     QStringList all = e->item.tried;
@@ -433,6 +457,8 @@ void Ed3kHosterJoin::remove(quint32 id, bool deleteFile)
         // a package folder goes with its last file (rmdir only takes an empty one)
         if (complete && !e->item.package.isEmpty())
             QDir().rmdir(QDir(m_incomingDir).filePath(e->item.package));
+        if (complete)
+            QDir().rmdir(archiveDirOf(e->item));
     }
     QDir(workDir(id)).removeRecursively();
     m_items.erase(id);
@@ -1749,16 +1775,12 @@ void Ed3kHosterJoin::finish(Entry& e)
         return;
     const QString from = e.item.file;
     release(e, true);
-    // the incoming folder (a package's own folder in it), with a name that is free
-    const QString dir = e.item.package.isEmpty() ? m_incomingDir
-                                                 : QDir(m_incomingDir).filePath(e.item.package);
+    // the incoming folder (a package's own folder in it), with a name that is free; an
+    // archive to be unpacked waits in Temp instead: only what it holds goes to incoming
+    const bool archive = m_prefs.extract && Ed3kHosterUnpack::isArchive(e.item.name);
+    const QString dir = archive ? archiveDirOf(e.item) : destDirOf(e.item);
     QDir().mkpath(dir);
-    const QFileInfo base(e.item.name);
-    QString to = QDir(dir).filePath(e.item.name);
-    for (int n = 1; QFileInfo::exists(to) && n < 1000; ++n)
-        to = QDir(dir).filePath(base.completeSuffix().isEmpty()
-                                    ? QStringLiteral("%1 (%2)").arg(base.baseName()).arg(n)
-                                    : QStringLiteral("%1 (%2).%3").arg(base.baseName()).arg(n).arg(base.completeSuffix()));
+    const QString to = freePath(dir, e.item.name);
     if (!QFile::rename(from, to) && !(QFile::copy(from, to) && QFile::remove(from))) {
         setState(e, State::Failed, Reason::MoveFailed, dir);
         return;
@@ -1768,8 +1790,12 @@ void Ed3kHosterJoin::finish(Entry& e)
     e.item.file = to;
     e.item.done = e.item.size;
     logInfo(QStringLiteral("completed %1 from %2").arg(QFileInfo(to).fileName(), e.item.host));
-    setState(e, State::Complete);
+    setState(e, State::Complete, archive ? Reason::UnpackWaiting : Reason::None);
     save();
+    if (archive)
+        queueUnpacks();
+    else
+        published({to});
 }
 
 void Ed3kHosterJoin::release(Entry& e, bool keepFile)
@@ -1877,6 +1903,7 @@ void Ed3kHosterJoin::onTick()
         raiseCounter(m_counters->maxDownRate, totalSpeed);
     }
     expireProbes(now);
+    queueUnpacks();
     // ALIAS records whose root was not shared yet
     for (auto it = m_aliasPending.begin(); it != m_aliasPending.end();) {
         Entry* e = find(it->first);
@@ -2394,6 +2421,10 @@ void Ed3kHosterJoin::load()
         // before the links list: the item's own link, vouched for now
         if (e->shared.isEmpty() && o.value(QStringLiteral("vouched")).toBool())
             e->shared << SharedLink{it.url, nowMs()};
+        if (it.reason == Reason::Unpacking) {   // cut short by a quit: again
+            it.reason = Reason::UnpackWaiting;
+            it.reasonArg.clear();
+        }
         e->have.clear();
         it.done = it.size;
         e->root = rootFromHex(it.rootHex);
@@ -2568,7 +2599,7 @@ void Ed3kHosterJoin::fromJson(const QJsonObject& o, Entry& e) const
     it.added = o.value(QStringLiteral("added")).toInteger();
     it.rootHex = o.value(QStringLiteral("root")).toString();
     it.state = State(std::clamp<qint64>(o.value(QStringLiteral("state")).toInteger(), 0, int(State::Failed)));
-    it.reason = Reason(std::clamp<qint64>(o.value(QStringLiteral("reason")).toInteger(), 0, int(Reason::PuzzlesOff)));
+    it.reason = Reason(std::clamp<qint64>(o.value(QStringLiteral("reason")).toInteger(), 0, int(Reason::UnpackPassword)));
     it.reasonArg = o.value(QStringLiteral("reasonArg")).toString();
     for (const QJsonValue& m : o.value(QStringLiteral("mirrors")).toArray())
         if (const QString url = m.toString(); !url.isEmpty())
@@ -2666,6 +2697,157 @@ void Ed3kHosterJoin::retryNotReady()
         }
     if (any)
         pumpSession();
+}
+
+
+QString Ed3kHosterJoin::freePath(const QString& dir, const QString& name)
+{
+    const QFileInfo base(name);
+    QString to = QDir(dir).filePath(name);
+    for (int n = 1; QFileInfo::exists(to) && n < 1000; ++n)
+        to = QDir(dir).filePath(base.completeSuffix().isEmpty()
+                                    ? QStringLiteral("%1 (%2)").arg(base.baseName()).arg(n)
+                                    : QStringLiteral("%1 (%2).%3").arg(base.baseName()).arg(n).arg(base.completeSuffix()));
+    return to;
+}
+
+QString Ed3kHosterJoin::destDirOf(const Item& it) const
+{
+    return it.package.isEmpty() ? m_incomingDir : QDir(m_incomingDir).filePath(it.package);
+}
+
+QString Ed3kHosterJoin::archiveDirOf(const Item& it) const
+{
+    const QString base = m_tempDirs.isEmpty() ? joinDir(QStringLiteral("hoster")) : m_tempDirs.first();
+    return QDir(base).filePath(QStringLiteral("hoster-archives/%1")
+                                   .arg(it.package.isEmpty() ? QStringLiteral("_") : it.package));
+}
+
+void Ed3kHosterJoin::queueUnpacks()
+{
+    if (m_unpack.busy() || !m_prefs.extract)
+        return;
+    for (auto& [id, ep] : m_items) {
+        Entry& e = *ep;
+        if (e.item.state != State::Complete || e.item.reason != Reason::UnpackWaiting)
+            continue;
+        const QString dir = QFileInfo(e.item.file).absolutePath();
+        const QString key = Ed3kHosterUnpack::setKey(QFileInfo(e.item.file).fileName());
+        // a volume of the set still on its way (same package): wait for it
+        const bool pending = std::ranges::any_of(m_items, [&e, &key](const auto& p) {
+            const Item& o = p.second->item;
+            return o.packageId == e.item.packageId && o.state != State::Complete && o.state != State::Failed
+                && o.state != State::Gone && Ed3kHosterUnpack::setKey(o.name) == key;
+        });
+        if (pending)
+            continue;
+        std::vector<Entry*> members;
+        for (auto& [oid, op] : m_items)
+            if (op->item.state == State::Complete && op->item.reason == Reason::UnpackWaiting
+                && QFileInfo(op->item.file).absolutePath() == dir
+                && Ed3kHosterUnpack::setKey(QFileInfo(op->item.file).fileName()) == key)
+                members.push_back(op.get());
+        const QString file = QFileInfo(e.item.file).absoluteFilePath();
+        const auto sets = Ed3kHosterUnpack::setsIn(dir);
+        const auto set = std::ranges::find_if(sets, [&file](const Ed3kHosterUnpack::Set& s) {
+            return std::ranges::any_of(s.volumes, [&file](const QString& v) { return QFileInfo(v).absoluteFilePath() == file; });
+        });
+        if (set == sets.end() || set->headless) {
+            for (Entry* m : members) {
+                m->item.reason = Reason::UnpackFailed;   // not setState: Complete counted once
+                m->item.reasonArg = set == sets.end() ? QStringLiteral("the archive is gone")
+                                                      : QStringLiteral("the first volume is missing");
+                changed(*m);
+            }
+            save();
+            continue;
+        }
+        HosterUnpackJob job;
+        job.firstVolume = set->firstVolume;
+        job.archiveDir = dir;
+        for (const Ed3kHosterUnpack::Set& s : sets)
+            if (s.firstVolume != set->firstVolume)
+                job.skip.insert(s.firstVolume);
+        job.destDir = destDirOf(e.item);
+        job.scratchDir = QDir(dir).filePath(QStringLiteral(".unpack"));
+        job.externalTool = thePrefs.usenetExternalUnpacker();
+        // ToDo: archive passwords (a package field, asked when UnpackPassword) into job.password
+        if (!m_unpack.start(job))
+            return;
+        for (Entry* m : members) {
+            m->item.reason = Reason::Unpacking;
+            m->item.reasonArg = QStringLiteral("0");
+            changed(*m);
+        }
+        logInfo(QStringLiteral("unpacking %1 into %2").arg(QFileInfo(set->firstVolume).fileName(), job.destDir));
+        save();
+        return;
+    }
+}
+
+void Ed3kHosterJoin::onUnpacked(const HosterUnpackResult& r)
+{
+    const QString dir = QFileInfo(r.firstVolume).absolutePath();
+    const QString key = Ed3kHosterUnpack::setKey(QFileInfo(r.firstVolume).fileName());
+    const bool drop = r.ok && m_prefs.deleteArchives;
+    for (auto& [id, ep] : m_items) {
+        Entry& e = *ep;
+        if (e.item.state != State::Complete || e.item.reason != Reason::Unpacking
+            || QFileInfo(e.item.file).absolutePath() != dir
+            || Ed3kHosterUnpack::setKey(QFileInfo(e.item.file).fileName()) != key)
+            continue;
+        if (r.ok) {
+            e.item.reason = Reason::Unpacked;
+            e.item.reasonArg = destDirOf(e.item);
+        } else {
+            e.item.reason = r.passwordRequired ? Reason::UnpackPassword : Reason::UnpackFailed;
+            e.item.reasonArg = r.error;
+        }
+        changed(e);
+    }
+    if (r.ok) {
+        logInfo(QStringLiteral("unpacked %1: %2 file(s)").arg(QFileInfo(r.firstVolume).fileName()).arg(r.files.size()));
+        if (drop) {
+            for (const QString& v : r.volumes)
+                QFile::remove(v);
+            QDir().rmdir(dir);
+        }
+    } else {
+        logWarning(QStringLiteral("cannot unpack %1: %2").arg(QFileInfo(r.firstVolume).fileName(), r.error));
+    }
+    save();
+    published(r.files);
+    queueUnpacks();
+}
+
+void Ed3kHosterJoin::releaseArchives()
+{
+    for (auto& [id, ep] : m_items) {
+        Entry& e = *ep;
+        if (e.item.state != State::Complete
+            || (e.item.reason != Reason::UnpackWaiting && e.item.reason != Reason::UnpackFailed
+                && e.item.reason != Reason::UnpackPassword))
+            continue;
+        const QString dir = destDirOf(e.item);
+        QDir().mkpath(dir);
+        const QString from = e.item.file;
+        const QString to = freePath(dir, QFileInfo(from).fileName());
+        if (!QFile::rename(from, to) && !(QFile::copy(from, to) && QFile::remove(from)))
+            continue;
+        QDir().rmdir(QFileInfo(from).absolutePath());
+        e.item.file = to;
+        e.item.reason = Reason::None;
+        e.item.reasonArg.clear();
+        changed(e);
+        published({to});
+    }
+    save();
+}
+
+void Ed3kHosterJoin::published(const QStringList& files)
+{
+    if (m_published && !files.isEmpty())
+        m_published(files);
 }
 
 } // namespace eMule::ed3k

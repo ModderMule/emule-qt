@@ -700,8 +700,11 @@ void MainWindow::setEd3kStatus(const QCborMap& status)
     const qint64 class4 = status.value(QStringLiteral("class4")).toInteger();
     const qint64 class6 = status.value(QStringLiteral("class6")).toInteger();
     const bool router = status.value(QStringLiteral("router")).toBool();
-    // behind NAT on every family it knows of, and no router duty
-    const bool firewalled = !router && class4 != 1 && class6 != 1 && (class4 > 1 || class6 > 1);
+    // behind NAT on every family it knows of, and no router duty; not while a reach test
+    // still runs: a cone class shows before the test can prove the port open
+    const bool natChecking = status.value(QStringLiteral("natChecking")).toInteger() != 0;
+    const bool firewalled = !router && !natChecking && class4 != 1 && class6 != 1
+        && (class4 > 1 || class6 > 1);
     if (contacts > 0 && !firewalled) {
         m_statusEd3k->setText(tr("ed3k: Connected"));
         setStatusRole(m_statusEd3k, static_cast<int>(TextRole::Good));
@@ -2689,8 +2692,11 @@ bool MainWindow::lowIdHintDue() const
     return m_firstStartWizardAllowed && !m_lowIdHintShown && !theUiState.lowIdHintDisabled()
         && theUiState.startCount() >= 3
         && m_kadConnected && m_kadFirewalled
-        // eD2K Low ID, or no server and Kad's firewall check came back negative
-        && (m_ed2kConnected ? m_ed2kLowID : m_kadFirewalledVerified);
+        // Kad's firewall check finished, never while one runs: its startup default and
+        // a check awaiting TCP acks both read firewalled
+        && m_kadFirewalledVerified
+        // and eD2K agrees with a Low ID, or no server
+        && (!m_ed2kConnected || m_ed2kLowID);
 }
 
 void MainWindow::scheduleLowIdHint()

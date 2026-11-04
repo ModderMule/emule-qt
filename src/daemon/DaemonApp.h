@@ -6,6 +6,7 @@
 /// Owns CoreSession + IpcServer + CoreNotifierBridge.
 /// Manages startup and shutdown sequence.
 
+#include "BtShareGuard.h"
 #include "LogRelay.h"
 
 #include <QObject>
@@ -202,6 +203,8 @@ private:
     std::unique_ptr<usenet::UsenetSession> m_usenetSession;
 #ifdef EMULE_HAVE_BITTORRENT
     std::unique_ptr<bt::BtSession> m_btSession;
+    /// files of unfinished torrents stay out of the share (#124)
+    BtShareGuard m_btShareGuard;
     /// the bundled i2pd (btI2pMode 1); stopped after the session
     std::unique_ptr<I2pRouter> m_i2pRouter;
 #endif

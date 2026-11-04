@@ -496,9 +496,10 @@ bool DaemonApp::start()
         // batch 15 #12: an opened plain copy of a sealed member is never shared
         if (m_ed3kSets && m_ed3kSets->plainCopies().contains(done.path))
             return;
-        // the incoming dir is shared: eD2K hashes it, Ed3kShared then serves it (releaseShare)
-        if (theApp.sharedFileList && !theApp.sharedFileList->addFileInSharedLocation(done.path))
-            logDebug(QStringLiteral("ed3k: %1 is not in a shared location").arg(done.path));
+        // eD2K hashes it, Ed3kShared then serves it (releaseShare); set members sit in
+        // <incoming>/<set>/, single shared when shareIncomingSubdirs is off
+        if (theApp.sharedFileList && !theApp.sharedFileList->shareCompletedFile(done.path))
+            logDebug(QStringLiteral("ed3k: %1 is not shared").arg(done.path));
     });
     if (m_ed3kShared) {
         m_ed3kDownloads->setSharedElsewhere([s = m_ed3kShared.get()](const ::ed3k::Root& root) { return s->sharesRoot(root); });
@@ -642,6 +643,16 @@ bool DaemonApp::start()
     }
     // hoster links (hoster.md); the resolver is the JDownloader sidecar when built in
     m_hosterJoin = std::make_unique<ed3k::Ed3kHosterJoin>(*m_ed3kSession, thePrefs.configDir());
+    // done files and unpacked ones: eD2K shares them (Ed3kShared serves them on ed3k); a
+    // package's subfolder of incoming is a shared dir with shareIncomingSubdirs, else
+    // those are single shared files
+    m_hosterJoin->setPublishedHook([](const QStringList& files) {
+        if (!theApp.sharedFileList)
+            return;
+        for (const QString& f : files)
+            if (!theApp.sharedFileList->shareCompletedFile(f))
+                logDebug(QStringLiteral("hoster: %1 is not shared").arg(f));
+    });
     {
         const auto pushStatus = [this] {
             if (!m_ipcServer)
@@ -692,6 +703,29 @@ bool DaemonApp::start()
     m_btSession = std::make_unique<bt::BtSession>();
     btSession = m_btSession.get();
     BtBridge::setSession(m_btSession.get());
+    // #124: libtorrent writes under the final names, so an unfinished torrent's files
+    // stay out of the eD2K / ed3k share; a finished one's folder is scanned again
+    if (theApp.sharedFileList)
+        theApp.sharedFileList->setStillWriting([this](const QString& p) { return m_btShareGuard.blocks(p); });
+    {
+        const auto guard = [this](const QString& id) {
+            if (!m_btSession)
+                return;
+            const auto change = m_btShareGuard.update(id, m_btSession->torrent(id),
+                                                      [this, id] { return m_btSession->files(id); });
+            if (!theApp.sharedFileList)
+                return;
+            if (change.blockedMore)
+                theApp.sharedFileList->dropNeverShared();
+            if (!change.released.isEmpty())
+                theApp.sharedFileList->rescanDirectories(change.released);
+        };
+        connect(m_btSession.get(), &bt::BtSession::torrentAdded, this, guard);
+        connect(m_btSession.get(), &bt::BtSession::torrentChanged, this, guard);
+        connect(m_btSession.get(), &bt::BtSession::torrentFinished, this, guard);
+        connect(m_btSession.get(), &bt::BtSession::metadataReceived, this, guard);
+        connect(m_btSession.get(), &bt::BtSession::torrentChecked, this, guard);
+    }
     m_i2pRouter = std::make_unique<I2pRouter>();
     BtBridge::setI2pRouter(m_i2pRouter.get());
     // Ready hands libtorrent the SAM bridge, a crash takes it away
@@ -791,6 +825,8 @@ void DaemonApp::stop()
         thePrefs.save();
     }
 
+    // Each step on record: a hung teardown names where it stopped (#129)
+    logInfo(QStringLiteral("Daemon stopping..."));
     m_autoUpdater.reset();
 
     // First: its predicate reads the Usenet session and core queues.
@@ -818,6 +854,7 @@ void DaemonApp::stop()
     m_bandwidth.reset();
 
 #ifdef EMULE_HAVE_ED3K
+    logInfo(QStringLiteral("Stopping ed3k..."));
     // the joins first: save themselves and close their downloads while the engines run
     theApp.ed3kHint = {};
     theApp.partVerdict = {};
@@ -908,6 +945,7 @@ void DaemonApp::stop()
     m_ed3kSession.reset();
 #endif
 
+    logInfo(QStringLiteral("Stopping Usenet..."));
     if (theApp.statsHistory)
         theApp.statsHistory->setUsenetDownRateSource({});
     usenet::theUsenetSession = nullptr;
@@ -915,6 +953,7 @@ void DaemonApp::stop()
         m_usenetSession->stop();
     m_usenetSession.reset();
 
+    logInfo(QStringLiteral("Stopping BitTorrent..."));
     // saves resume data and the DHT state; before IPC and core go away
     if (theApp.statsHistory)
         theApp.statsHistory->setBtRateSource({});
@@ -922,6 +961,8 @@ void DaemonApp::stop()
 #ifdef EMULE_HAVE_BITTORRENT
     if (m_btSession)
         m_btSession->stop();
+    if (theApp.sharedFileList)
+        theApp.sharedFileList->setStillWriting({});
     m_btSession.reset();
     // after libtorrent: its SAM sessions close first. SIGTERM, then a kill after 2 s
     BtBridge::setI2pRouter(nullptr);
@@ -943,6 +984,7 @@ void DaemonApp::stop()
         m_ipcServer->stop();
     m_ipcServer.reset();
 
+    logInfo(QStringLiteral("Stopping eD2K and Kad..."));
     if (m_coreSession)
         m_coreSession->stop();
     m_coreSession.reset();

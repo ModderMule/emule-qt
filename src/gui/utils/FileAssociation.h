@@ -88,6 +88,10 @@ struct IconFile {
 /// Copy the icons into the user's hicolor theme. Linux only, a no-op elsewhere.
 void installDesktopIcons();
 
+/// What a desktop entry's Exec= starts: this executable, quoted. On the Linux
+/// tarball the launcher script, not the bare .bin (#111).
+[[nodiscard]] QString launcherExec();
+
 /// The launcher entry and its icons. With @p createMissing false a missing entry
 /// stays missing (the user deleted it, #121); an existing stale bare one is rewritten,
 /// one that claims types is left alone. Linux only.

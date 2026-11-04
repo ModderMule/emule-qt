@@ -3,6 +3,7 @@
 /// @brief Platform-specific ed2k:// URL scheme registration, ed3k: with it.
 
 #include "app/Ed2kSchemeHandler.h"
+#include "app/AutoStart.h"
 #include "app/UiState.h"
 #include "prefs/Preferences.h"
 #include "utils/FileAssociation.h"
@@ -161,6 +162,7 @@ void applyDesktopIntegration(bool createLauncher)
     if (createLauncher)
         theUiState.setLauncherInstalled(true);
     gui::FileAssociation::installLauncher(createLauncher);
+    refreshAutoStart();   // an old entry started the bare .bin (#129)
 
     // macOS keeps the choice itself
     if (!gui::FileAssociation::isRuntimeRegistration())

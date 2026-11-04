@@ -124,6 +124,8 @@ struct Ed3kHosterPrefs {
     bool publishLinks = true;      ///< ed3kHosterPublishLinks: publish and hand out vouched links (§4.1)
     bool fromPeers = true;         ///< ed3kHosterFromPeers: use links that peers name
     bool checkSearchLinks = true;  ///< ed3kHosterCheckSearchLinks: a web row's links dialog checks its links
+    bool extract = true;           ///< ed3kHosterExtract: unpack finished archives into incoming/<package>/
+    bool deleteArchives = false;   ///< ed3kHosterDeleteArchives: delete the archives (kept in Temp) after a good unpack
     int checkMaxParallel = 30;     ///< YAML only: those link checks at once
     int checkMaxPerHost = 5;       ///< YAML only: of them at one hoster (its domains count as one)
     int recheckHours = 72;         ///< YAML only: a published link is checked again after this; 0: never
@@ -627,6 +629,11 @@ public:
     /// Pick up files added to shared folders via the OS file watcher. On by default.
     [[nodiscard]] bool watchSharedDirs() const;
     void setWatchSharedDirs(bool val);
+
+    /// Share the subfolders of every incoming dir and of the BT download dir too
+    /// (torrent, Usenet and hoster folders). On by default; MFC shares incoming flat.
+    [[nodiscard]] bool shareIncomingSubdirs() const;
+    void setShareIncomingSubdirs(bool val);
 
     /// Keep a record of the files (and their names) seen in search results.
     [[nodiscard]] bool seenFileIndex() const;

@@ -38,6 +38,8 @@ struct PinProbe {
     bool v6 = true;
     int v4Error = 0;                ///< OS error of the failed IPv4 pin, 0 = none
     int v6Error = 0;
+    bool dual = true;               ///< IPv4 half of a dual-stack socket pinned too (Windows: own option)
+    int dualError = 0;
 
     friend bool operator==(const PinProbe&, const PinProbe&) = default;
 };

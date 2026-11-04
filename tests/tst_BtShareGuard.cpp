@@ -1,0 +1,111 @@
+/// @file tst_BtShareGuard.cpp
+/// @brief Unfinished torrents stay out of the eD2K / ed3k share (#124).
+
+#include "BtShareGuard.h"
+
+#include "TestHelpers.h"
+
+#include <QDir>
+#include <QTest>
+
+using namespace eMule;
+using namespace eMule::bt;
+
+class tst_BtShareGuard : public QObject {
+    Q_OBJECT
+
+private slots:
+    void unfinished_blocksTheWholeContent();
+    void done_releasesTheTreeAndKeepsSkippedFilesOut();
+    void removed_keepsItsBlocks();
+};
+
+namespace {
+
+BtTorrentRow row(const QString& savePath, const QString& name, double progress, BtState state)
+{
+    BtTorrentRow r;
+    r.id = QStringLiteral("bt:v1:AA");
+    r.savePath = savePath;
+    r.name = name;
+    r.progress = progress;
+    r.state = state;
+    return r;
+}
+
+} // namespace
+
+void tst_BtShareGuard::unfinished_blocksTheWholeContent()
+{
+    BtShareGuard guard;
+    int asked = 0;
+    const auto files = [&asked] { ++asked; return QList<BtFileRow>{}; };
+    const auto c = guard.update(QStringLiteral("t"), row(QStringLiteral("/in"), QStringLiteral("Album"), 0.5, BtState::Downloading), files);
+    QVERIFY(c.blockedMore);
+    QVERIFY(c.released.isEmpty());
+    QCOMPARE(asked, 0);
+    QVERIFY(guard.blocks(QStringLiteral("/in/Album/CD1/01.mp3")));
+    QVERIFY(guard.blocks(QStringLiteral("/IN/album/02.mp3")));   // any spelling (pathKey)
+    QVERIFY(!guard.blocks(QStringLiteral("/in/Album 2/01.mp3")));
+    QVERIFY(!guard.blocks(QStringLiteral("/in/other.mkv")));
+    // a done torrent whose data is being checked is not done
+    guard.update(QStringLiteral("t"), row(QStringLiteral("/in"), QStringLiteral("Album"), 1.0, BtState::CheckingFiles), files);
+    QVERIFY(guard.blocks(QStringLiteral("/in/Album/02.mp3")));
+    QCOMPARE(asked, 0);
+}
+
+void tst_BtShareGuard::done_releasesTheTreeAndKeepsSkippedFilesOut()
+{
+    eMule::testing::TempDir tmp;
+    const QString save = tmp.path();
+    QVERIFY(QDir().mkpath(save + QStringLiteral("/Album/CD1")));
+
+    BtShareGuard guard;
+    int asked = 0;
+    const auto files = [&asked] {
+        ++asked;
+        BtFileRow done;
+        done.path = QStringLiteral("Album/CD1/01.mp3");
+        done.size = done.done = 100;
+        BtFileRow skipped;
+        skipped.path = QStringLiteral("Album/extras.zip");
+        skipped.size = 100;
+        skipped.done = 30;
+        skipped.priority = 0;
+        BtFileRow pad;
+        pad.path = QStringLiteral(".pad/50");
+        pad.size = 50;
+        pad.pad = true;
+        return QList<BtFileRow>{done, skipped, pad};
+    };
+    guard.update(QStringLiteral("t"), row(save, QStringLiteral("Album"), 0.9, BtState::Downloading), files);
+    const auto c = guard.update(QStringLiteral("t"), row(save, QStringLiteral("Album"), 1.0, BtState::Seeding), files);
+    QCOMPARE(asked, 1);
+    QVERIFY(c.released.contains(QDir::cleanPath(save + QStringLiteral("/Album"))));
+    QVERIFY2(c.released.contains(QDir::cleanPath(save + QStringLiteral("/Album/CD1"))), "nested folders too");
+    QVERIFY(!guard.blocks(save + QStringLiteral("/Album/CD1/01.mp3")));
+    QVERIFY(guard.blocks(save + QStringLiteral("/Album/extras.zip")));
+
+    // seeding ticks: no file list each time
+    const auto again = guard.update(QStringLiteral("t"), row(save, QStringLiteral("Album"), 1.0, BtState::Seeding), files);
+    QCOMPARE(asked, 1);
+    QVERIFY(again.released.isEmpty() && !again.blockedMore);
+
+    // a skipped file picked again: the whole torrent is out once more
+    const auto back = guard.update(QStringLiteral("t"), row(save, QStringLiteral("Album"), 0.95, BtState::Downloading), files);
+    QVERIFY(back.blockedMore);
+    QVERIFY(guard.blocks(save + QStringLiteral("/Album/CD1/01.mp3")));
+}
+
+void tst_BtShareGuard::removed_keepsItsBlocks()
+{
+    BtShareGuard guard;
+    guard.update(QStringLiteral("t"), row(QStringLiteral("/in"), QStringLiteral("movie.mkv"), 0.2, BtState::Paused), {});
+    QVERIFY(guard.blocks(QStringLiteral("/in/movie.mkv")));
+    const auto c = guard.update(QStringLiteral("t"), std::nullopt, {});
+    QVERIFY(c.released.isEmpty());
+    QVERIFY2(guard.blocks(QStringLiteral("/in/movie.mkv")), "its partial file stays out");
+}
+
+QTEST_GUILESS_MAIN(tst_BtShareGuard)
+#include "tst_BtShareGuard.moc"

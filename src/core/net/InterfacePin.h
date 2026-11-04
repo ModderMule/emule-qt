@@ -23,6 +23,7 @@ namespace eMule::InterfacePin {
 
 /// Try the pin on a throwaway IPv4 and IPv6 socket. Windows refuses the IPv6 pin on an
 /// adapter without IPv6 (VPN adapters), which must not take IPv4 down with it.
+/// With both, also a dual-stack socket: Windows pins its IPv4 half separately.
 [[nodiscard]] BindAddress::PinProbe probe(int index, const QString& name);
 
 /// Pin @p fd to the bound interface. True when nothing is selected (nothing to do) or

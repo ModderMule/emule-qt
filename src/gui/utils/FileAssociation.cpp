@@ -271,6 +271,11 @@ void installLauncher(bool) {}
 
 #endif
 
+QString launcherExec()
+{
+    return quoteExec(exePath());
+}
+
 QList<RegistryValue> registryValues(const QString& exePath, FileTypes types)
 {
     const QString native = QDir::toNativeSeparators(exePath);

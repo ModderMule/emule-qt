@@ -71,6 +71,7 @@ QByteArray content(int size)
 class FakeResolver : public Ed3kResolver {
 public:
     QByteArray data = content(700 * 1024 + 123);
+    QString fileName = QStringLiteral("movie.bin");   ///< the name check() and the done file give
     bool gone = false;
     QSet<QString> goneUrls;      ///< check() says Gone for these
     QSet<QString> quotaUrls;     ///< open() says a quota wait of an hour for these
@@ -139,7 +140,7 @@ public:
         const TaskId t = next++;
         ResolverEvent e;
         e.kind = gone || goneUrls.contains(url) ? ResolverEvent::Kind::Gone : ResolverEvent::Kind::Found;
-        e.name = QStringLiteral("movie.bin");
+        e.name = fileName;
         e.size = std::uint64_t(data.size());
         const QString h = QUrl(url).host();
         maxRunningChecks[h] = std::max(maxRunningChecks.value(h), ++runningChecks[h]);
@@ -288,7 +289,7 @@ private:
             d.kind = ResolverEvent::Kind::Done;
             d.size = std::uint64_t(data.size());
             d.path = done;
-            d.name = QStringLiteral("movie.bin");
+            d.name = fileName;
             emit taskEvent(t, d);
         });
     }
@@ -688,6 +689,93 @@ private slots:
         QVERIFY(QFileInfo::exists(QDir(incoming).filePath(QStringLiteral("Pack_One"))));
         r.join->remove(b[0], true);
         QVERIFY(!QFileInfo::exists(QDir(incoming).filePath(QStringLiteral("Pack_One"))));
+    }
+
+    /// an archive waits in Temp, what it holds goes to incoming/<package>/ and is handed to
+    /// sharing; the archive stays unless deleteArchives
+    void extract_packageArchiveIntoIncoming()
+    {
+        Rig r;
+        const QString zip = r.tmp.filePath(QStringLiteral("src.zip"));
+        QVERIFY(writeZip(zip, {{QStringLiteral("a.txt"), QByteArray("alpha")},
+                               {QStringLiteral("sub/b.bin"), content(300 * 1024)}}));
+        QFile zf(zip);
+        QVERIFY(zf.open(QIODevice::ReadOnly));
+        r.resolver.data = zf.readAll();
+        r.resolver.fileName = QStringLiteral("release.zip");
+        QVERIFY(r.start(true));
+        QStringList shared;
+        r.join->setPublishedHook([&shared](const QStringList& f) { shared << f; });
+        const auto ids = r.join->addLinks(QStringLiteral("https://fake.example/z/1"), QStringLiteral("Rel"));
+        QCOMPARE(ids.size(), 1);
+        QTRY_COMPARE_WITH_TIMEOUT(r.join->item(ids[0])->reason, Ed3kHosterJoin::Reason::Unpacked, 60000);
+        const QString dest = QDir(r.tmp.filePath(QStringLiteral("incoming"))).filePath(QStringLiteral("Rel"));
+        QCOMPARE(r.join->item(ids[0])->reasonArg, dest);
+        QFile a(QDir(dest).filePath(QStringLiteral("a.txt")));
+        QVERIFY(a.open(QIODevice::ReadOnly));
+        QCOMPARE(a.readAll(), QByteArray("alpha"));
+        QVERIFY(QFileInfo::exists(QDir(dest).filePath(QStringLiteral("sub/b.bin"))));
+        QVERIFY(!QFileInfo::exists(QDir(dest).filePath(QStringLiteral("release.zip"))));   // no archive in incoming
+        QCOMPARE(shared.size(), 2);
+        // kept in Temp
+        const QString kept = r.join->item(ids[0])->file;
+        QVERIFY(kept.startsWith(r.tmp.filePath(QStringLiteral("temp"))));
+        QVERIFY(QFileInfo::exists(kept));
+        QVERIFY(!QFileInfo::exists(QDir(QFileInfo(kept).absolutePath()).filePath(QStringLiteral(".unpack"))));
+        // a restart keeps the verdict
+        QVERIFY(r.restart());
+        QCOMPARE(r.join->item(ids[0])->reason, Ed3kHosterJoin::Reason::Unpacked);
+    }
+
+    void extract_deleteArchivesAfterwards()
+    {
+        Rig r;
+        const QString zip = r.tmp.filePath(QStringLiteral("src.zip"));
+        QVERIFY(writeZip(zip, {{QStringLiteral("only.txt"), QByteArray("x")}}));
+        QFile zf(zip);
+        QVERIFY(zf.open(QIODevice::ReadOnly));
+        r.resolver.data = zf.readAll();
+        r.resolver.fileName = QStringLiteral("one.zip");
+        r.prefs.deleteArchives = true;
+        QVERIFY(r.start(true));
+        const auto ids = r.join->addLinks(QStringLiteral("https://fake.example/z/2"));
+        QTRY_COMPARE_WITH_TIMEOUT(r.join->item(ids[0])->reason, Ed3kHosterJoin::Reason::Unpacked, 60000);
+        QVERIFY(QFileInfo::exists(QDir(r.tmp.filePath(QStringLiteral("incoming"))).filePath(QStringLiteral("only.txt"))));
+        QVERIFY(!QFileInfo::exists(r.join->item(ids[0])->file));
+    }
+
+    /// extraction off: the archive goes to incoming as it is; a plain file is always shared
+    void extract_offMovesArchiveToIncoming()
+    {
+        Rig r;
+        r.resolver.fileName = QStringLiteral("raw.zip");   // not a zip inside: never opened
+        r.prefs.extract = false;
+        QVERIFY(r.start(true));
+        QStringList shared;
+        r.join->setPublishedHook([&shared](const QStringList& f) { shared << f; });
+        const auto ids = r.join->addLinks(QStringLiteral("https://fake.example/z/3"), QStringLiteral("P"));
+        QTRY_COMPARE_WITH_TIMEOUT(r.state(ids[0]), Ed3kHosterJoin::State::Complete, 60000);
+        QCOMPARE(r.join->item(ids[0])->reason, Ed3kHosterJoin::Reason::None);
+        const QString file = r.join->item(ids[0])->file;
+        QCOMPARE(QFileInfo(file).absolutePath(),
+                 QDir(r.tmp.filePath(QStringLiteral("incoming"))).filePath(QStringLiteral("P")));
+        QCOMPARE(shared, QStringList{file});
+    }
+
+    /// a broken archive: failed, kept in Temp; switching extraction off releases it to incoming
+    void extract_failedThenReleased()
+    {
+        Rig r;
+        r.resolver.fileName = QStringLiteral("broken.zip");
+        QVERIFY(r.start(true));
+        const auto ids = r.join->addLinks(QStringLiteral("https://fake.example/z/4"));
+        QTRY_COMPARE_WITH_TIMEOUT(r.join->item(ids[0])->reason, Ed3kHosterJoin::Reason::UnpackFailed, 60000);
+        QVERIFY(r.join->item(ids[0])->file.startsWith(r.tmp.filePath(QStringLiteral("temp"))));
+        r.prefs.extract = false;
+        r.join->setConfig(r.prefs, r.tmp.filePath(QStringLiteral("temp")), r.tmp.filePath(QStringLiteral("incoming")));
+        QCOMPARE(r.join->item(ids[0])->reason, Ed3kHosterJoin::Reason::None);
+        QCOMPARE(QFileInfo(r.join->item(ids[0])->file).absolutePath(),
+                 QDir(r.tmp.filePath(QStringLiteral("incoming"))).absolutePath());
     }
 
     /// §4.1: the downloaded link is vouched for, kept with its check time over a restart

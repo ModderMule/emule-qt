@@ -254,6 +254,9 @@ void Ed3kOptionsPages::load(const QCborMap& p)
     m_hosterPuzzlesCheck->setChecked(h.askPuzzles);
     m_hosterPeersCheck->setChecked(h.fromPeers);
     m_hosterCheckLinksCheck->setChecked(h.checkSearchLinks);
+    m_hosterExtractCheck->setChecked(h.extract);
+    m_hosterDeleteArchivesCheck->setChecked(h.deleteArchives);
+    m_hosterDeleteArchivesCheck->setEnabled(h.extract);
     m_publishLinksCheck->setChecked(h.publishLinks);
     m_javaEdit->setText(h.java);
     m_autoJavaCheck->setChecked(h.autoJava);
@@ -316,6 +319,8 @@ void Ed3kOptionsPages::appendTo(IpcMessage& req) const
     put("ed3kHosterPublishLinks", h.publishLinks);
     put("ed3kHosterFromPeers", h.fromPeers);
     put("ed3kHosterCheckSearchLinks", h.checkSearchLinks);
+    put("ed3kHosterExtract", h.extract);
+    put("ed3kHosterDeleteArchives", h.deleteArchives);
     // a password only when typed here: the daemon keeps the stored one otherwise
     QCborArray accounts;
     for (const HosterAccountRow& a : m_accounts) {
@@ -1360,6 +1365,12 @@ QWidget* Ed3kOptionsPages::buildHoster(QWidget* parent)
     m_hosterCheckLinksCheck->setToolTip(tr("The links window of a web search result checks which links are online. "
                                            "Download prefers online links at hosters you have an account at."));
     dlLayout->addWidget(m_hosterCheckLinksCheck);
+    m_hosterExtractCheck = new QCheckBox(tr("Extract archives automatically"), dlGroup);
+    m_hosterExtractCheck->setToolTip(tr("Finished archives wait in the temp folder; what they hold goes to the "
+                                        "package's folder in incoming and is shared."));
+    dlLayout->addWidget(m_hosterExtractCheck);
+    m_hosterDeleteArchivesCheck = new QCheckBox(tr("Delete archives after successful extraction"), dlGroup);
+    dlLayout->addWidget(m_hosterDeleteArchivesCheck);
     layout->addWidget(dlGroup);
 
     auto* javaGroup = new QGroupBox(tr("Java runtime"), page);
@@ -1473,8 +1484,10 @@ QWidget* Ed3kOptionsPages::buildHoster(QWidget* parent)
         }
         emit changed();
     });
-    for (QCheckBox* box : {m_hosterPuzzlesCheck, m_hosterPeersCheck, m_hosterCheckLinksCheck, m_autoJavaCheck})
+    for (QCheckBox* box : {m_hosterPuzzlesCheck, m_hosterPeersCheck, m_hosterCheckLinksCheck, m_autoJavaCheck,
+                           m_hosterExtractCheck, m_hosterDeleteArchivesCheck})
         connect(box, &QCheckBox::toggled, this, edited);
+    connect(m_hosterExtractCheck, &QCheckBox::toggled, m_hosterDeleteArchivesCheck, &QWidget::setEnabled);
     connect(m_hosterStreamsSpin, &QSpinBox::valueChanged, this, edited);
     connect(m_javaEdit, &QLineEdit::textEdited, this, edited);
 #ifndef EMULE_HAVE_HOSTER_JD
@@ -1650,6 +1663,8 @@ Ed3kHosterPrefs Ed3kOptionsPages::hosterPrefs() const
     h.publishLinks = m_publishLinksCheck->isChecked();
     h.fromPeers = m_hosterPeersCheck->isChecked();
     h.checkSearchLinks = m_hosterCheckLinksCheck->isChecked();
+    h.extract = m_hosterExtractCheck->isChecked();
+    h.deleteArchives = m_hosterDeleteArchivesCheck->isChecked();
     for (const HosterAccountRow& a : m_accounts)
         h.accounts.append({a.host, a.user, a.passwordSet ? a.password : QString()});
     return h;

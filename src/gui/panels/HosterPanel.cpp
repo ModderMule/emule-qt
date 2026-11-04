@@ -54,6 +54,10 @@ constexpr int kPackageIdRole = Qt::UserRole + 2;
 constexpr int kStateDownloading = 5;
 constexpr int kStatePaused = 7;
 constexpr int kStateComplete = 8;
+/// Ed3kHosterJoin::Reason
+constexpr int kReasonUnpacked = 32;
+constexpr int kReasonUnpackFailed = 33;
+constexpr int kReasonUnpackPassword = 34;
 
 /// Ed3kHosterJoin::State, worded here: IPC carries no localized text.
 QString stateText(int state)
@@ -125,8 +129,22 @@ QString reasonText(int reason, const QString& arg)
     case 27: return HosterPanel::tr("The hoster refused the puzzle answer (Retry asks again)");
     case 28: return HosterPanel::tr("Puzzles of %1 are skipped (Retry asks again)").arg(arg);
     case 29: return HosterPanel::tr("The hoster wants a puzzle; puzzles are off (Options, ed3k, Hoster)");
+    case 30: return HosterPanel::tr("Waiting for the other parts to extract");
+    case 31: return HosterPanel::tr("Extracting %1%").arg(arg);
+    case 32: return HosterPanel::tr("Extracted to %1").arg(arg);
+    case 33: return HosterPanel::tr("Extraction failed: %1 (Retry tries again)").arg(arg);
+    case 34: return HosterPanel::tr("The archive needs a password");
     default: return {};
     }
+}
+
+/// The folder "Open folder" shows: where an archive was extracted to, else the file's.
+QString folderOf(const QCborMap& it)
+{
+    if (it.value(QStringLiteral("reason")).toInteger() == kReasonUnpacked)
+        if (const QString dir = it.value(QStringLiteral("reasonArg")).toString(); !dir.isEmpty())
+            return dir;
+    return QFileInfo(it.value(QStringLiteral("file")).toString()).absolutePath();
 }
 
 /// Sorts numbers by the value kept in UserRole, text otherwise.
@@ -480,19 +498,22 @@ void HosterPanel::showContextMenu(const QPoint& pos)
     for (QAction* a : {pause, resume, remove, del, copy, folder})
         a->setEnabled(!ids.isEmpty());
     // the folder of the first complete one; a package's is its own folder
-    QString folderFile;
+    QString folderDir;
     for (const qint64 id : ids) {
         const QCborMap it = m_items.value(id);
-        if (it.value(QStringLiteral("state")).toInteger() == kStateComplete) {
-            folderFile = it.value(QStringLiteral("file")).toString();
+        if (it.value(QStringLiteral("state")).toInteger() == kStateComplete
+            && !it.value(QStringLiteral("file")).toString().isEmpty()) {
+            folderDir = folderOf(it);
             break;
         }
     }
-    folder->setEnabled(!folderFile.isEmpty());
-    // Waiting, Gone, Needs you, No resolver, Failed
+    folder->setEnabled(!folderDir.isEmpty());
+    // Waiting, Gone, Needs you, No resolver, Failed; a failed extraction
     retry->setEnabled(std::ranges::any_of(ids, [this](qint64 id) {
-        const auto s = m_items.value(id).value(QStringLiteral("state")).toInteger();
-        return s == 4 || s >= 9;
+        const QCborMap it = m_items.value(id);
+        const auto s = it.value(QStringLiteral("state")).toInteger();
+        const auto r = it.value(QStringLiteral("reason")).toInteger();
+        return s == 4 || s >= 9 || (s == kStateComplete && (r == kReasonUnpackFailed || r == kReasonUnpackPassword));
     }));
     if (ids.size() == 1) {
         const int state = int(m_items.value(ids.first()).value(QStringLiteral("state")).toInteger());
@@ -514,8 +535,8 @@ void HosterPanel::showContextMenu(const QPoint& pos)
             act(QStringLiteral("delete"));
     } else if (chosen == copy) {
         copyLinks();
-    } else if (chosen == folder && !folderFile.isEmpty()) {
-        QDesktopServices::openUrl(QUrl::fromLocalFile(QFileInfo(folderFile).absolutePath()));
+    } else if (chosen == folder && !folderDir.isEmpty()) {
+        QDesktopServices::openUrl(QUrl::fromLocalFile(folderDir));
     } else if (chosen == add) {
         promptAddLinks();
     } else if (chosen == paste) {
@@ -678,7 +699,7 @@ void HosterPanel::openRow(QTreeWidgetItem* row)
         return;
     const QCborMap it = m_items.value(row->data(ColName, kItemIdRole).toLongLong());
     if (it.value(QStringLiteral("state")).toInteger() == kStateComplete)
-        QDesktopServices::openUrl(QUrl::fromLocalFile(QFileInfo(it.value(QStringLiteral("file")).toString()).absolutePath()));
+        QDesktopServices::openUrl(QUrl::fromLocalFile(folderOf(it)));
 }
 
 void HosterPanel::copyLinks()

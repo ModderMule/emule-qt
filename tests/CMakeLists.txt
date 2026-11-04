@@ -400,6 +400,11 @@ if(EMULE_BITTORRENT)
     # two sessions on loopback: no network, so no "live" label
     emule_add_test(tst_BtLocalSwarm FOLDER "BitTorrent" LIBRARIES eMule::Bt)
     set_tests_properties(tst_BtLocalSwarm PROPERTIES TIMEOUT 240)
+    # unfinished torrents kept out of the share (#124)
+    emule_add_test(tst_BtShareGuard FOLDER "BitTorrent"
+        SOURCES tst_BtShareGuard.cpp "${CMAKE_SOURCE_DIR}/src/daemon/BtShareGuard.cpp"
+        LIBRARIES eMule::Bt eMule::Core)
+    target_include_directories(tst_BtShareGuard PRIVATE "${CMAKE_SOURCE_DIR}/src/daemon")
 endif()
 
 # ed3k node (packmule): two nodes on loopback, no network needed

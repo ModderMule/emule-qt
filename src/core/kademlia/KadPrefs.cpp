@@ -120,13 +120,20 @@ void KadPrefs::setRecheckIP()
     setFirewalled(); // snapshots m_lastFirewallState and resets m_firewallCounter
 }
 
-void KadPrefs::incRecheckIP()
+void KadPrefs::incRecheckIP(time_t now)
 {
     // MFC just increments the counter (Prefs.cpp:290-293). The port previously
     // also called setFindBuddy(true) here on a firewalled result, firing a buddy
     // search immediately on a possibly-false firewalled status; buddy acquisition
     // now goes through the normal timer instead.
     ++m_recheckIp;
+    if (m_recheckIp == KADEMLIAFIREWALLCHECKS)
+        m_recheckDoneAt = now;
+}
+
+bool KadPrefs::recheckSettled(time_t graceSecs, time_t now) const
+{
+    return !recheckIP() && now - m_recheckDoneAt >= graceSecs;
 }
 
 // ---------------------------------------------------------------------------

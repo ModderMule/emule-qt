@@ -420,8 +420,34 @@ private slots:
             Preferences loaded;
             QVERIFY(loaded.load(file));
             QCOMPARE(loaded.btEnabled(), version < 3);
-            QCOMPARE(loaded.startVersion(), 3u);
+            QCOMPARE(loaded.startVersion(), 4u);
         }
+    }
+
+    // v4 (#124): incoming shared with its subfolders; a choice made after it is kept
+    void shareIncomingSubdirs_v4SwitchesOn()
+    {
+        TempDir tmp;
+        for (const uint32 version : {3u, 4u}) {
+            const auto file = tmp.filePath(QStringLiteral("v%1.yaml").arg(version));
+            {
+                Preferences prefs;
+                prefs.setStartVersion(version);
+                prefs.setShareIncomingSubdirs(false);
+                QVERIFY(prefs.saveTo(file));
+            }
+            Preferences loaded;
+            QVERIFY(loaded.load(file));
+            QCOMPARE(loaded.shareIncomingSubdirs(), version < 4);
+            QCOMPARE(loaded.startVersion(), 4u);
+        }
+        Preferences fresh;
+        QVERIFY(fresh.shareIncomingSubdirs());
+        // over IPC too
+        fresh.setShareIncomingSubdirs(false);
+        Preferences copy;
+        copy.updateFromCbor(fresh.toIpcMap());
+        QVERIFY(!copy.shareIncomingSubdirs());
     }
 
     // Every key through YAML and the IPC map, non-default values throughout

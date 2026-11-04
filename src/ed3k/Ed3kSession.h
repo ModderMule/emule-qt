@@ -80,6 +80,8 @@ struct Ed3kStatus {
     ::ed3k::Stats stats{};       ///< the engine's counters (size 0 while not running)
     /// Kad's own network offline (Protocol.md §10 "Own network down"): bit 0 IPv4, bit 1 IPv6
     std::uint32_t kadOffline = 0;
+    /// reach test without a verdict yet: bit 0 IPv4, bit 1 IPv6 (class 2/3 may still turn open)
+    std::uint32_t natChecking = 0;
     Ed3kHideStatus hide;         ///< hiding (hops.md §1)
 };
 

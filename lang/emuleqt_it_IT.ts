@@ -2000,13 +2000,13 @@ M	i dati compressi non sono ancora stati scaricati del tutto
         <translation>Scarica i torrent tramite la rete I2P: i peer vedono un indirizzo I2P, mai il tuo IP. Più lento delle connessioni dirette, non serve una porta aperta.</translation>
     </message>
     <message>
-        <location line="+17"/>
-        <location line="+186"/>
+        <location line="+19"/>
+        <location line="+187"/>
         <source>Off</source>
         <translation>Disattivato</translation>
     </message>
     <message>
-        <location line="-186"/>
+        <location line="-187"/>
         <source>Torrents use direct connections only.</source>
         <translation>I torrent usano solo connessioni dirette.</translation>
     </message>
@@ -2017,7 +2017,7 @@ M	i dati compressi non sono ancora stati scaricati del tutto
     </message>
     <message>
         <location line="+1"/>
-        <location line="+144"/>
+        <location line="+145"/>
         <source>eMule runs its own I2P router. The first start takes a few minutes to join the network.</source>
         <translation>eMule avvia un proprio router I2P. Al primo avvio servono alcuni minuti per entrare nella rete.</translation>
     </message>
@@ -2123,12 +2123,12 @@ M	i dati compressi non sono ancora stati scaricati del tutto
         <translation>Stato:</translation>
     </message>
     <message>
-        <location line="-37"/>
+        <location line="-40"/>
         <source>Router</source>
         <translation>Router</translation>
     </message>
     <message>
-        <location line="+41"/>
+        <location line="+44"/>
         <source>Torrents</source>
         <translation>Torrent</translation>
     </message>
@@ -5371,7 +5371,7 @@ I suoi nomi verranno poi risolti dopo le liste che segui già.</translation>
         <translation type="vanished">Il nodo ed3k usa il nickname della pagina Generale: %1</translation>
     </message>
     <message>
-        <location filename="../src/gui/dialogs/Ed3kOptionsPages.cpp" line="+366"/>
+        <location filename="../src/gui/dialogs/Ed3kOptionsPages.cpp" line="+371"/>
         <location line="+11"/>
         <location line="+559"/>
         <location line="+11"/>
@@ -5527,7 +5527,7 @@ I suoi nomi verranno poi risolti dopo le liste che segui già.</translation>
         <translation>Chain ID:</translation>
     </message>
     <message>
-        <location line="-492"/>
+        <location line="-497"/>
         <source>Not valid</source>
         <translation>Non valido</translation>
     </message>
@@ -5588,7 +5588,7 @@ I suoi nomi verranno poi risolti dopo le liste che segui già.</translation>
         <translation type="vanished">Inoltratore:</translation>
     </message>
     <message>
-        <location line="+247"/>
+        <location line="+252"/>
         <source>Share Usenet posts over ed3k too</source>
         <translation>Condividi anche i post Usenet su ed3k</translation>
     </message>
@@ -5680,12 +5680,12 @@ I suoi nomi verranno poi risolti dopo le liste che segui già.</translation>
     <message>
         <location line="+5"/>
         <location line="+10"/>
-        <location line="+998"/>
+        <location line="+1008"/>
         <source> credits/MiB</source>
         <translation> crediti/MiB</translation>
     </message>
     <message>
-        <location line="-1007"/>
+        <location line="-1017"/>
         <source>Never pay (receipts only)</source>
         <translation>Non pagare mai (solo ricevute)</translation>
     </message>
@@ -5841,12 +5841,12 @@ I suoi nomi verranno poi risolti dopo le liste che segui già.</translation>
     <message>
         <location line="+1"/>
         <location line="+6"/>
-        <location line="+600"/>
+        <location line="+606"/>
         <source>Remove</source>
         <translation>Rimuovi</translation>
     </message>
     <message>
-        <location line="-596"/>
+        <location line="-602"/>
         <source>Followed name lists (the first one wins)</source>
         <translation>Liste di nomi seguite (vince la prima)</translation>
     </message>
@@ -5933,12 +5933,12 @@ I suoi nomi verranno poi risolti dopo le liste che segui già.</translation>
     </message>
     <message>
         <location line="+0"/>
-        <location line="+836"/>
+        <location line="+846"/>
         <source>not read yet</source>
         <translation>non ancora letto</translation>
     </message>
     <message>
-        <location line="-834"/>
+        <location line="-844"/>
         <source>The account is overdrawn: a new credit key is the way on.</source>
         <translation>Il conto è scoperto: per continuare serve una nuova chiave dei crediti.</translation>
     </message>
@@ -6203,12 +6203,27 @@ Esportare?</translation>
         <translation>La finestra dei link di un risultato di ricerca web controlla quali link sono online. Scarica preferisce i link online degli hoster su cui hai un account.</translation>
     </message>
     <message>
-        <location line="+7"/>
+        <location line="+3"/>
+        <source>Extract archives automatically</source>
+        <translation>Estrai automaticamente gli archivi</translation>
+    </message>
+    <message>
+        <location line="+1"/>
+        <source>Finished archives wait in the temp folder; what they hold goes to the package&apos;s folder in incoming and is shared.</source>
+        <translation>Gli archivi completati restano nella cartella temporanea; il loro contenuto va nella cartella del pacchetto in Incoming e viene condiviso.</translation>
+    </message>
+    <message>
+        <location line="+3"/>
+        <source>Delete archives after successful extraction</source>
+        <translation>Elimina gli archivi dopo un&apos;estrazione riuscita</translation>
+    </message>
+    <message>
+        <location line="+6"/>
         <source>The resolver runs JDownloader&apos;s hoster plugins in a Java program of its own.</source>
         <translation>Il resolver esegue i plugin degli hoster di JDownloader in un programma Java a parte.</translation>
     </message>
     <message>
-        <location line="+138"/>
+        <location line="+140"/>
         <source>JDownloader: not installed</source>
         <translation>JDownloader: non installato</translation>
     </message>
@@ -6218,7 +6233,7 @@ Esportare?</translation>
         <translation>Versione di JDownloader: %1</translation>
     </message>
     <message>
-        <location line="+169"/>
+        <location line="+171"/>
         <source>Autostart highspeed download</source>
         <translation>Avvio automatico download ad alta velocità</translation>
     </message>
@@ -6277,7 +6292,7 @@ Esportare?</translation>
         <translation>Il download ad alta velocità non è attivo. Saldo: %1</translation>
     </message>
     <message>
-        <location line="-488"/>
+        <location line="-498"/>
         <source>ed3k</source>
         <translation>ed3k</translation>
     </message>
@@ -6415,7 +6430,7 @@ Esportare?</translation>
         <translation>Usa i link degli hoster indicati da altri nodi ed3k</translation>
     </message>
     <message>
-        <location line="+9"/>
+        <location line="+15"/>
         <source>Java runtime</source>
         <translation>Runtime Java</translation>
     </message>
@@ -6470,17 +6485,17 @@ Esportare?</translation>
     </message>
     <message>
         <location line="+2"/>
-        <location line="+146"/>
+        <location line="+148"/>
         <source>Publish hoster links</source>
         <translation>Pubblica i link dei file hoster</translation>
     </message>
     <message>
-        <location line="-144"/>
+        <location line="-146"/>
         <source>A downloaded file is shared either way. Published, its link is found in ed3k and handed to other nodes: a link is often all that protects a file at a hoster.</source>
         <translation>Un file scaricato viene condiviso comunque. Se pubblicato, il suo link si trova in ed3k e viene passato ad altri nodi: spesso il link è tutto ciò che protegge un file su un hoster.</translation>
     </message>
     <message>
-        <location line="+140"/>
+        <location line="+142"/>
         <source>&lt;p&gt;Sharing hoster links means: once a file from a link is downloaded and verified, its link is published in ed3k and handed to other nodes that download the same file.&lt;/p&gt;&lt;p&gt;A link is often all that keeps a file at a hoster private. Whoever knows the link can find the file in ed3k, and anyone can find the link of a file you share.&lt;/p&gt;&lt;p&gt;Publish hoster links?&lt;/p&gt;</source>
         <translation>&lt;p&gt;Condividere i link degli hoster significa: una volta scaricato e verificato un file da un link, il suo link viene pubblicato in ed3k e passato agli altri nodi che scaricano lo stesso file.&lt;/p&gt;&lt;p&gt;Spesso il link è l&apos;unica cosa che mantiene privato un file su un hoster. Chi conosce il link può trovare il file in ed3k, e chiunque può trovare il link di un file che condividi.&lt;/p&gt;&lt;p&gt;Pubblicare i link dei file hoster?&lt;/p&gt;</translation>
     </message>
@@ -6493,7 +6508,7 @@ Esportare?</translation>
         <translation type="vanished">Un file scaricato viene condiviso in ogni caso. Se trattenuto, il suo link non viene pubblicato né passato ad altri nodi: spesso il link è l&apos;unica protezione di un file su un hoster.</translation>
     </message>
     <message>
-        <location line="-135"/>
+        <location line="-137"/>
         <source>Accounts</source>
         <translation>Account</translation>
     </message>
@@ -6533,7 +6548,7 @@ Esportare?</translation>
         <translation>Verifica</translation>
     </message>
     <message>
-        <location line="+54"/>
+        <location line="+56"/>
         <source>This build has no hoster resolver: hoster links are stored and passed on, but not downloaded.</source>
         <translation>Questa build non ha un resolver per hoster: i link degli hoster vengono salvati e inoltrati, ma non scaricati.</translation>
     </message>
@@ -9914,7 +9929,7 @@ Se il provider tenta di limitare o bloccare eMule, l&apos;offuscamento aiuta ad 
 <context>
     <name>eMule::HosterPanel</name>
     <message>
-        <location filename="../src/gui/panels/HosterPanel.cpp" line="+62"/>
+        <location filename="../src/gui/panels/HosterPanel.cpp" line="+66"/>
         <source>Finding a resolver</source>
         <translation>Ricerca di un resolver</translation>
     </message>
@@ -10147,7 +10162,32 @@ Se il provider tenta di limitare o bloccare eMule, l&apos;offuscamento aiuta ad 
         <translation>L&apos;hoster chiede un captcha; i captcha sono disattivati (Opzioni, ed3k, Hoster)</translation>
     </message>
     <message>
-        <location line="+29"/>
+        <location line="+1"/>
+        <source>Waiting for the other parts to extract</source>
+        <translation>In attesa delle altre parti per l&apos;estrazione</translation>
+    </message>
+    <message>
+        <location line="+1"/>
+        <source>Extracting %1%</source>
+        <translation>Estrazione %1%</translation>
+    </message>
+    <message>
+        <location line="+1"/>
+        <source>Extracted to %1</source>
+        <translation>Estratto in %1</translation>
+    </message>
+    <message>
+        <location line="+1"/>
+        <source>Extraction failed: %1 (Retry tries again)</source>
+        <translation>Estrazione non riuscita: %1 (Riprova tenta di nuovo)</translation>
+    </message>
+    <message>
+        <location line="+1"/>
+        <source>The archive needs a password</source>
+        <translation>L&apos;archivio richiede una password</translation>
+    </message>
+    <message>
+        <location line="+38"/>
         <source>Hoster downloads</source>
         <translation>Download dagli hoster</translation>
     </message>
@@ -10163,7 +10203,7 @@ Se il provider tenta di limitare o bloccare eMule, l&apos;offuscamento aiuta ad 
         <translation>Riprova</translation>
     </message>
     <message>
-        <location line="+175"/>
+        <location line="+178"/>
         <source>JDownloader %1</source>
         <translation>JDownloader %1</translation>
     </message>
@@ -10172,7 +10212,7 @@ Se il provider tenta di limitare o bloccare eMule, l&apos;offuscamento aiuta ad 
         <translation type="vanished">Opzioni...</translation>
     </message>
     <message>
-        <location line="-473"/>
+        <location line="-476"/>
         <source>File Name</source>
         <translation>Nome file</translation>
     </message>
@@ -10311,12 +10351,12 @@ Se il provider tenta di limitare o bloccare eMule, l&apos;offuscamento aiuta ad 
     </message>
     <message>
         <location line="+1"/>
-        <location line="+42"/>
+        <location line="+45"/>
         <source>Remove and delete file</source>
         <translation>Rimuovi ed elimina file</translation>
     </message>
     <message>
-        <location line="-40"/>
+        <location line="-43"/>
         <source>Copy link</source>
         <translation>Copia link</translation>
     </message>
@@ -10331,7 +10371,7 @@ Se il provider tenta di limitare o bloccare eMule, l&apos;offuscamento aiuta ad 
         <translation>Incolla link</translation>
     </message>
     <message>
-        <location line="+34"/>
+        <location line="+37"/>
         <source>Delete the selected files from disk?</source>
         <translation>Eliminare dal disco i file selezionati?</translation>
     </message>
@@ -11899,12 +11939,12 @@ Gli altri membri vedono il tuo nick e i tuoi messaggi; il tuo nodo partecipa all
     <name>eMule::MainWindow</name>
     <message>
         <location filename="../src/gui/app/MainWindow.cpp" line="+113"/>
-        <location line="+702"/>
+        <location line="+705"/>
         <source>eMule Qt v%1</source>
         <translation>eMule Qt v%1</translation>
     </message>
     <message>
-        <location line="-534"/>
+        <location line="-537"/>
         <location line="+9"/>
         <source>New Version Available</source>
         <translation>Nuova versione disponibile</translation>
@@ -11926,12 +11966,12 @@ Gli altri membri vedono il tuo nick e i tuoi messaggi; il tuo nodo partecipa all
     </message>
     <message>
         <location line="+12"/>
-        <location line="+1529"/>
+        <location line="+1532"/>
         <source>eD2K: Disconnected</source>
         <translation>eD2K: Disconnesso</translation>
     </message>
     <message>
-        <location line="-1461"/>
+        <location line="-1464"/>
         <source>Kad: Connected</source>
         <translation>Kad: Connesso</translation>
     </message>
@@ -11947,7 +11987,7 @@ Gli altri membri vedono il tuo nick e i tuoi messaggi; il tuo nodo partecipa all
     </message>
     <message>
         <location line="+4"/>
-        <location line="+1453"/>
+        <location line="+1456"/>
         <source>Kad: Disconnected</source>
         <translation>Kad: Disconnesso</translation>
     </message>
@@ -11997,14 +12037,14 @@ Gli altri membri vedono il tuo nick e i tuoi messaggi; il tuo nodo partecipa all
         <translation>Funzionalità</translation>
     </message>
     <message>
-        <location line="-1009"/>
+        <location line="-1012"/>
         <location line="+7"/>
-        <location line="+1005"/>
+        <location line="+1008"/>
         <source>Version Check</source>
         <translation>Controllo versione</translation>
     </message>
     <message>
-        <location line="-1078"/>
+        <location line="-1081"/>
         <source>Quit eMule Qt</source>
         <translation>Esci da eMule Qt</translation>
     </message>
@@ -12096,7 +12136,7 @@ Abilitane almeno una in Opzioni → Connessione per connetterti.</translation>
         <translation>Errore!</translation>
     </message>
     <message>
-        <location line="+83"/>
+        <location line="+86"/>
         <source>ed3k: Connected</source>
         <translation>ed3k: Connesso</translation>
     </message>
@@ -12501,12 +12541,12 @@ Abilitala in Opzioni → Interfaccia web, poi riprova.</translation>
         <translation>Doppio clic per informazioni di rete</translation>
     </message>
     <message>
-        <location line="+710"/>
+        <location line="+713"/>
         <source>New message — double-click to read</source>
         <translation>Nuovo messaggio — doppio clic per leggerlo</translation>
     </message>
     <message>
-        <location line="-292"/>
+        <location line="-295"/>
         <source>eD2K Link</source>
         <translation>Link eD2K</translation>
     </message>
@@ -12598,7 +12638,7 @@ Abilitala in Opzioni → Interfaccia web, poi riprova.</translation>
         <translation>Il core sta caricando i suoi file…</translation>
     </message>
     <message>
-        <location line="+83"/>
+        <location line="+86"/>
         <source>Other clients cannot connect to you: eD2K gives you a Low ID and Kad reports you as firewalled.</source>
         <translation>Gli altri client non possono connettersi a te: eD2K ti assegna un Low ID e Kad ti segnala dietro firewall.</translation>
     </message>
@@ -17931,6 +17971,14 @@ Crearla?</translation>
         <translation>DB-IP Country Lite (senza account)</translation>
     </message>
     <message>
+        <source>Share subfolders of the incoming folder</source>
+        <translation type="vanished">Condividi le sottocartelle della cartella Incoming</translation>
+    </message>
+    <message>
+        <source>Shares the files that torrents, Usenet and hoster downloads put in subfolders of the incoming folder (and of the BitTorrent download folder) on eD2K and ed3k. Torrents are shared once they are complete.</source>
+        <translation type="vanished">Condivide su eD2K ed ed3k i file che i download torrent, Usenet e hoster mettono nelle sottocartelle della cartella Incoming (e della cartella di download BitTorrent). I torrent vengono condivisi quando sono completi.</translation>
+    </message>
+    <message>
         <location line="+1016"/>
         <source>Rehash All Files...</source>
         <translation>Ricalcola l&apos;hash di tutti i file...</translation>
@@ -20519,7 +20567,7 @@ Cartella:	%13</translation>
 <context>
     <name>eMule::SharedFilesPanel</name>
     <message>
-        <location filename="../src/gui/panels/SharedFilesPanel.cpp" line="+770"/>
+        <location filename="../src/gui/panels/SharedFilesPanel.cpp" line="+799"/>
         <source>Shared Files (0)</source>
         <translation>File condivisi (0)</translation>
     </message>
@@ -20531,18 +20579,18 @@ Cartella:	%13</translation>
     <message>
         <location line="+13"/>
         <location line="+1568"/>
-        <location line="+514"/>
+        <location line="+518"/>
         <source>Open Folder</source>
         <translation>Apri cartella</translation>
     </message>
     <message>
-        <location line="-2070"/>
+        <location line="-2074"/>
         <source>Rename...</source>
         <translation>Rinomina...</translation>
     </message>
     <message>
         <location line="+197"/>
-        <location line="+1915"/>
+        <location line="+1919"/>
         <source>Copy eD2K Links</source>
         <translation>Copia link eD2K</translation>
     </message>
@@ -20555,13 +20603,13 @@ Cartella:	%13</translation>
         <translation type="vanished">Nuovo nome file:</translation>
     </message>
     <message>
-        <location line="-2092"/>
-        <location line="+2054"/>
+        <location line="-2096"/>
+        <location line="+2058"/>
         <source>Delete From Disk</source>
         <translation>Elimina dal disco</translation>
     </message>
     <message>
-        <location line="-1006"/>
+        <location line="-1010"/>
         <source>Delete File</source>
         <translation>Elimina file</translation>
     </message>
@@ -20591,31 +20639,31 @@ Il file rimarrà sul disco.</translation>
     </message>
     <message>
         <location line="-1043"/>
-        <location line="+2034"/>
+        <location line="+2038"/>
         <source>Priority (Upload)</source>
         <translation>Priorità (Upload)</translation>
     </message>
     <message>
-        <location line="-2019"/>
-        <location line="+2036"/>
+        <location line="-2023"/>
+        <location line="+2040"/>
         <source>Very Low</source>
         <translation>Molto bassa</translation>
     </message>
     <message>
-        <location line="-2035"/>
-        <location line="+2036"/>
+        <location line="-2039"/>
+        <location line="+2040"/>
         <source>Low</source>
         <translation>Bassa</translation>
     </message>
     <message>
-        <location line="-2035"/>
-        <location line="+2036"/>
+        <location line="-2039"/>
+        <location line="+2040"/>
         <source>Normal</source>
         <translation>Normale</translation>
     </message>
     <message>
-        <location line="-2035"/>
-        <location line="+2036"/>
+        <location line="-2039"/>
+        <location line="+2040"/>
         <source>High</source>
         <translation>Alta</translation>
     </message>
@@ -20624,13 +20672,13 @@ Il file rimarrà sul disco.</translation>
         <translation type="vanished">Molto alta</translation>
     </message>
     <message>
-        <location line="-2033"/>
-        <location line="+2035"/>
+        <location line="-2037"/>
+        <location line="+2039"/>
         <source>Auto</source>
         <translation>Auto</translation>
     </message>
     <message>
-        <location line="-2021"/>
+        <location line="-2025"/>
         <source>Collection</source>
         <translation>Collezione</translation>
     </message>
@@ -20667,24 +20715,24 @@ Il file rimarrà sul disco.</translation>
     </message>
     <message>
         <location line="+19"/>
-        <location line="+1926"/>
+        <location line="+1930"/>
         <source>Details...</source>
         <translation>Dettagli...</translation>
     </message>
     <message>
-        <location line="-1919"/>
-        <location line="+1922"/>
+        <location line="-1923"/>
+        <location line="+1926"/>
         <source>Comments...</source>
         <translation>Commenti...</translation>
     </message>
     <message>
-        <location line="-1907"/>
-        <location line="+1913"/>
+        <location line="-1911"/>
+        <location line="+1917"/>
         <source>eD2K Links...</source>
         <translation>Link eD2K...</translation>
     </message>
     <message>
-        <location line="-1885"/>
+        <location line="-1889"/>
         <source>Find...</source>
         <translation>Cerca...</translation>
     </message>
@@ -20807,7 +20855,7 @@ Il file rimarrà sul disco.</translation>
         <translation>Impossibile annullare la condivisione di quel file</translation>
     </message>
     <message>
-        <location line="+538"/>
+        <location line="+540"/>
         <source>Share Directory</source>
         <translation>Condividi directory</translation>
     </message>
@@ -20817,7 +20865,7 @@ Il file rimarrà sul disco.</translation>
         <translation>Condividi con le sottodirectory</translation>
     </message>
     <message>
-        <location line="+17"/>
+        <location line="+19"/>
         <location line="+523"/>
         <source>Unshare Directory</source>
         <translation>Rimuovi condivisione directory</translation>
@@ -20840,7 +20888,7 @@ Il file rimarrà sul disco.</translation>
         <translation>Apri file non disponibile — il server web non è in esecuzione o il token di streaming non è stato ricevuto.</translation>
     </message>
     <message>
-        <location line="-1003"/>
+        <location line="-1007"/>
         <source>Content</source>
         <translation>Contenuto</translation>
     </message>
@@ -20855,23 +20903,23 @@ Il file rimarrà sul disco.</translation>
         <translation>Copia</translation>
     </message>
     <message>
-        <location line="-884"/>
+        <location line="-885"/>
         <source>All</source>
         <translation>Tutti</translation>
     </message>
     <message>
-        <location line="+138"/>
+        <location line="+139"/>
         <source>Mass Rename...</source>
         <translation>Rinomina multipla...</translation>
     </message>
     <message>
         <location line="+58"/>
-        <location line="+2036"/>
+        <location line="+2040"/>
         <source>Release</source>
         <translation>Release</translation>
     </message>
     <message>
-        <location line="-2009"/>
+        <location line="-2013"/>
         <location line="+1445"/>
         <source>Create ed3k Set...</source>
         <translation>Crea set ed3k...</translation>
@@ -21004,7 +21052,7 @@ I file resteranno sul disco.</numerusform>
         <translation>Vengono mostrati i link eD2K dei primi %1 file su %2 selezionati.</translation>
     </message>
     <message numerus="yes">
-        <location line="+934"/>
+        <location line="+938"/>
         <source>Share %n file(s) under the anonymous ed3k key from now on?
 
 They are unpublished under the node key first; what the network stored of them there runs out. Other nodes may still remember that this node had them.</source>

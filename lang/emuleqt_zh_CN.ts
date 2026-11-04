@@ -1985,13 +1985,13 @@ M	压缩数据尚未完全下载
         <translation>通过 I2P 网络下载种子：节点只看到 I2P 地址，看不到你的 IP。比直接连接慢，无需开放端口。</translation>
     </message>
     <message>
-        <location line="+17"/>
-        <location line="+186"/>
+        <location line="+19"/>
+        <location line="+187"/>
         <source>Off</source>
         <translation>关闭</translation>
     </message>
     <message>
-        <location line="-186"/>
+        <location line="-187"/>
         <source>Torrents use direct connections only.</source>
         <translation>种子仅使用直接连接。</translation>
     </message>
@@ -2002,7 +2002,7 @@ M	压缩数据尚未完全下载
     </message>
     <message>
         <location line="+1"/>
-        <location line="+144"/>
+        <location line="+145"/>
         <source>eMule runs its own I2P router. The first start takes a few minutes to join the network.</source>
         <translation>eMule 运行自己的 I2P 路由器。首次启动需要几分钟加入网络。</translation>
     </message>
@@ -2108,12 +2108,12 @@ M	压缩数据尚未完全下载
         <translation>状态：</translation>
     </message>
     <message>
-        <location line="-37"/>
+        <location line="-40"/>
         <source>Router</source>
         <translation>路由器</translation>
     </message>
     <message>
-        <location line="+41"/>
+        <location line="+44"/>
         <source>Torrents</source>
         <translation>种子</translation>
     </message>
@@ -5353,7 +5353,7 @@ Its names are then resolved after the lists you already follow.</source>
         <translation type="vanished">ed3k 节点使用“常规”页面中的昵称：%1</translation>
     </message>
     <message>
-        <location filename="../src/gui/dialogs/Ed3kOptionsPages.cpp" line="+366"/>
+        <location filename="../src/gui/dialogs/Ed3kOptionsPages.cpp" line="+371"/>
         <location line="+11"/>
         <location line="+559"/>
         <location line="+11"/>
@@ -5509,7 +5509,7 @@ Its names are then resolved after the lists you already follow.</source>
         <translation>Chain ID：</translation>
     </message>
     <message>
-        <location line="-492"/>
+        <location line="-497"/>
         <source>Not valid</source>
         <translation>无效</translation>
     </message>
@@ -5570,7 +5570,7 @@ Its names are then resolved after the lists you already follow.</source>
         <translation type="vanished">转发器：</translation>
     </message>
     <message>
-        <location line="+247"/>
+        <location line="+252"/>
         <source>Share Usenet posts over ed3k too</source>
         <translation>同时通过 ed3k 共享 Usenet 帖子</translation>
     </message>
@@ -5662,12 +5662,12 @@ Its names are then resolved after the lists you already follow.</source>
     <message>
         <location line="+5"/>
         <location line="+10"/>
-        <location line="+998"/>
+        <location line="+1008"/>
         <source> credits/MiB</source>
         <translation> 信用/MiB</translation>
     </message>
     <message>
-        <location line="-1007"/>
+        <location line="-1017"/>
         <source>Never pay (receipts only)</source>
         <translation>从不支付（仅收据）</translation>
     </message>
@@ -5823,12 +5823,12 @@ Its names are then resolved after the lists you already follow.</source>
     <message>
         <location line="+1"/>
         <location line="+6"/>
-        <location line="+600"/>
+        <location line="+606"/>
         <source>Remove</source>
         <translation>删除</translation>
     </message>
     <message>
-        <location line="-596"/>
+        <location line="-602"/>
         <source>Followed name lists (the first one wins)</source>
         <translation>已关注的名称列表（第一个优先）</translation>
     </message>
@@ -5915,12 +5915,12 @@ Its names are then resolved after the lists you already follow.</source>
     </message>
     <message>
         <location line="+0"/>
-        <location line="+836"/>
+        <location line="+846"/>
         <source>not read yet</source>
         <translation>尚未读取</translation>
     </message>
     <message>
-        <location line="-834"/>
+        <location line="-844"/>
         <source>The account is overdrawn: a new credit key is the way on.</source>
         <translation>账户已透支：唯一的出路是新的信用密钥。</translation>
     </message>
@@ -6185,12 +6185,27 @@ Export?</source>
         <translation>网页搜索结果的链接窗口会检查哪些链接在线。下载时优先使用你有账户的网盘的在线链接。</translation>
     </message>
     <message>
-        <location line="+7"/>
+        <location line="+3"/>
+        <source>Extract archives automatically</source>
+        <translation>自动解压压缩包</translation>
+    </message>
+    <message>
+        <location line="+1"/>
+        <source>Finished archives wait in the temp folder; what they hold goes to the package&apos;s folder in incoming and is shared.</source>
+        <translation>完成的压缩包留在临时文件夹中；其内容放入 Incoming 中该包的文件夹并共享。</translation>
+    </message>
+    <message>
+        <location line="+3"/>
+        <source>Delete archives after successful extraction</source>
+        <translation>解压成功后删除压缩包</translation>
+    </message>
+    <message>
+        <location line="+6"/>
         <source>The resolver runs JDownloader&apos;s hoster plugins in a Java program of its own.</source>
         <translation>解析器在独立的 Java 程序中运行 JDownloader 的网盘插件。</translation>
     </message>
     <message>
-        <location line="+138"/>
+        <location line="+140"/>
         <source>JDownloader: not installed</source>
         <translation>JDownloader：未安装</translation>
     </message>
@@ -6200,7 +6215,7 @@ Export?</source>
         <translation>JDownloader 版本：%1</translation>
     </message>
     <message>
-        <location line="+169"/>
+        <location line="+171"/>
         <source>Autostart highspeed download</source>
         <translation>自动开始高速下载</translation>
     </message>
@@ -6259,7 +6274,7 @@ Export?</source>
         <translation>高速下载未运行。余额：%1</translation>
     </message>
     <message>
-        <location line="-488"/>
+        <location line="-498"/>
         <source>ed3k</source>
         <translation>ed3k</translation>
     </message>
@@ -6397,7 +6412,7 @@ Export?</source>
         <translation>使用其他 ed3k 节点提供的网盘链接</translation>
     </message>
     <message>
-        <location line="+9"/>
+        <location line="+15"/>
         <source>Java runtime</source>
         <translation>Java 运行时</translation>
     </message>
@@ -6452,17 +6467,17 @@ Export?</source>
     </message>
     <message>
         <location line="+2"/>
-        <location line="+146"/>
+        <location line="+148"/>
         <source>Publish hoster links</source>
         <translation>发布托管站链接</translation>
     </message>
     <message>
-        <location line="-144"/>
+        <location line="-146"/>
         <source>A downloaded file is shared either way. Published, its link is found in ed3k and handed to other nodes: a link is often all that protects a file at a hoster.</source>
         <translation>下载的文件无论如何都会共享。发布后，其链接可在 ed3k 中找到并交给其他节点：托管站上的文件往往只靠链接保护。</translation>
     </message>
     <message>
-        <location line="+140"/>
+        <location line="+142"/>
         <source>&lt;p&gt;Sharing hoster links means: once a file from a link is downloaded and verified, its link is published in ed3k and handed to other nodes that download the same file.&lt;/p&gt;&lt;p&gt;A link is often all that keeps a file at a hoster private. Whoever knows the link can find the file in ed3k, and anyone can find the link of a file you share.&lt;/p&gt;&lt;p&gt;Publish hoster links?&lt;/p&gt;</source>
         <translation>&lt;p&gt;共享网盘链接是指:链接中的文件下载并校验后,其链接会在 ed3k 中发布,并交给下载同一文件的其他节点。&lt;/p&gt;&lt;p&gt;链接往往是让网盘上的文件保持私密的唯一手段。知道链接的人可以在 ed3k 中找到该文件,任何人也都能找到您共享文件的链接。&lt;/p&gt;&lt;p&gt;发布托管站链接?&lt;/p&gt;</translation>
     </message>
@@ -6475,7 +6490,7 @@ Export?</source>
         <translation type="vanished">下载的文件无论如何都会共享。保留时,其链接不会发布,也不会交给其他节点:链接往往是保护网盘上文件的唯一手段。</translation>
     </message>
     <message>
-        <location line="-135"/>
+        <location line="-137"/>
         <source>Accounts</source>
         <translation>账户</translation>
     </message>
@@ -6515,7 +6530,7 @@ Export?</source>
         <translation>检查</translation>
     </message>
     <message>
-        <location line="+54"/>
+        <location line="+56"/>
         <source>This build has no hoster resolver: hoster links are stored and passed on, but not downloaded.</source>
         <translation>此版本没有网盘解析器:网盘链接会被保存和转发,但不会下载。</translation>
     </message>
@@ -9883,7 +9898,7 @@ If your ISP tries throttle or block eMule, enabling obfuscation will help to cir
 <context>
     <name>eMule::HosterPanel</name>
     <message>
-        <location filename="../src/gui/panels/HosterPanel.cpp" line="+62"/>
+        <location filename="../src/gui/panels/HosterPanel.cpp" line="+66"/>
         <source>Finding a resolver</source>
         <translation>正在查找解析器</translation>
     </message>
@@ -10115,7 +10130,32 @@ If your ISP tries throttle or block eMule, enabling obfuscation will help to cir
         <translation>网盘需要验证码；验证码已关闭（选项、ed3k、Hoster）</translation>
     </message>
     <message>
-        <location line="+29"/>
+        <location line="+1"/>
+        <source>Waiting for the other parts to extract</source>
+        <translation>等待其他分卷以便解压</translation>
+    </message>
+    <message>
+        <location line="+1"/>
+        <source>Extracting %1%</source>
+        <translation>正在解压 %1%</translation>
+    </message>
+    <message>
+        <location line="+1"/>
+        <source>Extracted to %1</source>
+        <translation>已解压到 %1</translation>
+    </message>
+    <message>
+        <location line="+1"/>
+        <source>Extraction failed: %1 (Retry tries again)</source>
+        <translation>解压失败：%1（重试可再次尝试）</translation>
+    </message>
+    <message>
+        <location line="+1"/>
+        <source>The archive needs a password</source>
+        <translation>压缩包需要密码</translation>
+    </message>
+    <message>
+        <location line="+38"/>
         <source>Hoster downloads</source>
         <translation>网盘下载</translation>
     </message>
@@ -10131,7 +10171,7 @@ If your ISP tries throttle or block eMule, enabling obfuscation will help to cir
         <translation>重试</translation>
     </message>
     <message>
-        <location line="+175"/>
+        <location line="+178"/>
         <source>JDownloader %1</source>
         <translation>JDownloader %1</translation>
     </message>
@@ -10140,7 +10180,7 @@ If your ISP tries throttle or block eMule, enabling obfuscation will help to cir
         <translation type="vanished">选项...</translation>
     </message>
     <message>
-        <location line="-473"/>
+        <location line="-476"/>
         <source>File Name</source>
         <translation>文件名</translation>
     </message>
@@ -10277,12 +10317,12 @@ If your ISP tries throttle or block eMule, enabling obfuscation will help to cir
     </message>
     <message>
         <location line="+1"/>
-        <location line="+42"/>
+        <location line="+45"/>
         <source>Remove and delete file</source>
         <translation>移除并删除文件</translation>
     </message>
     <message>
-        <location line="-40"/>
+        <location line="-43"/>
         <source>Copy link</source>
         <translation>复制链接</translation>
     </message>
@@ -10297,7 +10337,7 @@ If your ISP tries throttle or block eMule, enabling obfuscation will help to cir
         <translation>粘贴链接</translation>
     </message>
     <message>
-        <location line="+34"/>
+        <location line="+37"/>
         <source>Delete the selected files from disk?</source>
         <translation>要从磁盘删除所选文件吗?</translation>
     </message>
@@ -11864,12 +11904,12 @@ Other members see your nick and posts; your node takes part in passing the room&
     <name>eMule::MainWindow</name>
     <message>
         <location filename="../src/gui/app/MainWindow.cpp" line="+113"/>
-        <location line="+702"/>
+        <location line="+705"/>
         <source>eMule Qt v%1</source>
         <translation>eMule Qt v%1</translation>
     </message>
     <message>
-        <location line="-534"/>
+        <location line="-537"/>
         <location line="+9"/>
         <source>New Version Available</source>
         <translation>有新版本可用</translation>
@@ -11891,12 +11931,12 @@ Other members see your nick and posts; your node takes part in passing the room&
     </message>
     <message>
         <location line="+12"/>
-        <location line="+1529"/>
+        <location line="+1532"/>
         <source>eD2K: Disconnected</source>
         <translation>eD2K：已断开</translation>
     </message>
     <message>
-        <location line="-1461"/>
+        <location line="-1464"/>
         <source>Kad: Connected</source>
         <translation>Kad：已连接</translation>
     </message>
@@ -11912,7 +11952,7 @@ Other members see your nick and posts; your node takes part in passing the room&
     </message>
     <message>
         <location line="+4"/>
-        <location line="+1453"/>
+        <location line="+1456"/>
         <source>Kad: Disconnected</source>
         <translation>Kad：已断开</translation>
     </message>
@@ -11962,14 +12002,14 @@ Other members see your nick and posts; your node takes part in passing the room&
         <translation>功能</translation>
     </message>
     <message>
-        <location line="-1009"/>
+        <location line="-1012"/>
         <location line="+7"/>
-        <location line="+1005"/>
+        <location line="+1008"/>
         <source>Version Check</source>
         <translation>版本检查</translation>
     </message>
     <message>
-        <location line="-1078"/>
+        <location line="-1081"/>
         <source>Quit eMule Qt</source>
         <translation>退出 eMule Qt</translation>
     </message>
@@ -12061,7 +12101,7 @@ Enable at least one under Options → Connection to connect.</source>
         <translation>错误！</translation>
     </message>
     <message>
-        <location line="+83"/>
+        <location line="+86"/>
         <source>ed3k: Connected</source>
         <translation>ed3k：已连接</translation>
     </message>
@@ -12466,12 +12506,12 @@ Enable it under Options → Web Interface, then try again.</source>
         <translation>双击查看网络信息</translation>
     </message>
     <message>
-        <location line="+710"/>
+        <location line="+713"/>
         <source>New message — double-click to read</source>
         <translation>新消息 — 双击阅读</translation>
     </message>
     <message>
-        <location line="-292"/>
+        <location line="-295"/>
         <source>eD2K Link</source>
         <translation>eD2K 链接</translation>
     </message>
@@ -12563,7 +12603,7 @@ Enable it under Options → Web Interface, then try again.</source>
         <translation>核心正在加载文件…</translation>
     </message>
     <message>
-        <location line="+83"/>
+        <location line="+86"/>
         <source>Other clients cannot connect to you: eD2K gives you a Low ID and Kad reports you as firewalled.</source>
         <translation>其他客户端无法连接到你：eD2K 分配给你 Low ID，Kad 报告你处于防火墙后。</translation>
     </message>
@@ -17890,6 +17930,14 @@ Create it?</source>
         <translation>DB-IP Country Lite（无需账户）</translation>
     </message>
     <message>
+        <source>Share subfolders of the incoming folder</source>
+        <translation type="vanished">共享接收文件夹的子文件夹</translation>
+    </message>
+    <message>
+        <source>Shares the files that torrents, Usenet and hoster downloads put in subfolders of the incoming folder (and of the BitTorrent download folder) on eD2K and ed3k. Torrents are shared once they are complete.</source>
+        <translation type="vanished">在 eD2K 和 ed3k 上共享种子、Usenet 和网盘下载放在接收文件夹（以及 BitTorrent 下载文件夹）子文件夹中的文件。种子下载完成后才会共享。</translation>
+    </message>
+    <message>
         <location line="+1016"/>
         <source>Rehash All Files...</source>
         <translation>重新计算所有文件的哈希...</translation>
@@ -20475,7 +20523,7 @@ ED2K 哈希：	%2
 <context>
     <name>eMule::SharedFilesPanel</name>
     <message>
-        <location filename="../src/gui/panels/SharedFilesPanel.cpp" line="+770"/>
+        <location filename="../src/gui/panels/SharedFilesPanel.cpp" line="+799"/>
         <source>Shared Files (0)</source>
         <translation>共享文件 (0)</translation>
     </message>
@@ -20487,18 +20535,18 @@ ED2K 哈希：	%2
     <message>
         <location line="+13"/>
         <location line="+1568"/>
-        <location line="+514"/>
+        <location line="+518"/>
         <source>Open Folder</source>
         <translation>打开文件夹</translation>
     </message>
     <message>
-        <location line="-2070"/>
+        <location line="-2074"/>
         <source>Rename...</source>
         <translation>重命名...</translation>
     </message>
     <message>
         <location line="+197"/>
-        <location line="+1915"/>
+        <location line="+1919"/>
         <source>Copy eD2K Links</source>
         <translation>复制 eD2K 链接</translation>
     </message>
@@ -20511,13 +20559,13 @@ ED2K 哈希：	%2
         <translation type="vanished">新文件名:</translation>
     </message>
     <message>
-        <location line="-2092"/>
-        <location line="+2054"/>
+        <location line="-2096"/>
+        <location line="+2058"/>
         <source>Delete From Disk</source>
         <translation>从磁盘删除</translation>
     </message>
     <message>
-        <location line="-1006"/>
+        <location line="-1010"/>
         <source>Delete File</source>
         <translation>删除文件</translation>
     </message>
@@ -20547,31 +20595,31 @@ The file will remain on disk.</source>
     </message>
     <message>
         <location line="-1043"/>
-        <location line="+2034"/>
+        <location line="+2038"/>
         <source>Priority (Upload)</source>
         <translation>优先级（上传）</translation>
     </message>
     <message>
-        <location line="-2019"/>
-        <location line="+2036"/>
+        <location line="-2023"/>
+        <location line="+2040"/>
         <source>Very Low</source>
         <translation>非常低</translation>
     </message>
     <message>
-        <location line="-2035"/>
-        <location line="+2036"/>
+        <location line="-2039"/>
+        <location line="+2040"/>
         <source>Low</source>
         <translation>低</translation>
     </message>
     <message>
-        <location line="-2035"/>
-        <location line="+2036"/>
+        <location line="-2039"/>
+        <location line="+2040"/>
         <source>Normal</source>
         <translation>普通</translation>
     </message>
     <message>
-        <location line="-2035"/>
-        <location line="+2036"/>
+        <location line="-2039"/>
+        <location line="+2040"/>
         <source>High</source>
         <translation>高</translation>
     </message>
@@ -20580,13 +20628,13 @@ The file will remain on disk.</source>
         <translation type="vanished">非常高</translation>
     </message>
     <message>
-        <location line="-2033"/>
-        <location line="+2035"/>
+        <location line="-2037"/>
+        <location line="+2039"/>
         <source>Auto</source>
         <translation>自动</translation>
     </message>
     <message>
-        <location line="-2021"/>
+        <location line="-2025"/>
         <source>Collection</source>
         <translation>合集</translation>
     </message>
@@ -20623,24 +20671,24 @@ The file will remain on disk.</source>
     </message>
     <message>
         <location line="+19"/>
-        <location line="+1926"/>
+        <location line="+1930"/>
         <source>Details...</source>
         <translation>详情...</translation>
     </message>
     <message>
-        <location line="-1919"/>
-        <location line="+1922"/>
+        <location line="-1923"/>
+        <location line="+1926"/>
         <source>Comments...</source>
         <translation>评论...</translation>
     </message>
     <message>
-        <location line="-1907"/>
-        <location line="+1913"/>
+        <location line="-1911"/>
+        <location line="+1917"/>
         <source>eD2K Links...</source>
         <translation>eD2K 链接...</translation>
     </message>
     <message>
-        <location line="-1885"/>
+        <location line="-1889"/>
         <source>Find...</source>
         <translation>查找...</translation>
     </message>
@@ -20763,7 +20811,7 @@ The file will remain on disk.</source>
         <translation>无法取消共享该文件</translation>
     </message>
     <message>
-        <location line="+538"/>
+        <location line="+540"/>
         <source>Share Directory</source>
         <translation>共享目录</translation>
     </message>
@@ -20773,7 +20821,7 @@ The file will remain on disk.</source>
         <translation>连同子目录一起共享</translation>
     </message>
     <message>
-        <location line="+17"/>
+        <location line="+19"/>
         <location line="+523"/>
         <source>Unshare Directory</source>
         <translation>取消共享目录</translation>
@@ -20796,7 +20844,7 @@ The file will remain on disk.</source>
         <translation>打开文件不可用 — Web 服务器未运行或未收到流令牌。</translation>
     </message>
     <message>
-        <location line="-1003"/>
+        <location line="-1007"/>
         <source>Content</source>
         <translation>内容</translation>
     </message>
@@ -20811,23 +20859,23 @@ The file will remain on disk.</source>
         <translation>复制</translation>
     </message>
     <message>
-        <location line="-884"/>
+        <location line="-885"/>
         <source>All</source>
         <translation>全部</translation>
     </message>
     <message>
-        <location line="+138"/>
+        <location line="+139"/>
         <source>Mass Rename...</source>
         <translation>批量重命名...</translation>
     </message>
     <message>
         <location line="+58"/>
-        <location line="+2036"/>
+        <location line="+2040"/>
         <source>Release</source>
         <translation>发布</translation>
     </message>
     <message>
-        <location line="-2009"/>
+        <location line="-2013"/>
         <location line="+1445"/>
         <source>Create ed3k Set...</source>
         <translation>创建 ed3k 集合...</translation>
@@ -20955,7 +21003,7 @@ The files will remain on disk.</source>
         <translation>正在显示所选 %2 个文件中前 %1 个的 eD2K 链接。</translation>
     </message>
     <message numerus="yes">
-        <location line="+934"/>
+        <location line="+938"/>
         <source>Share %n file(s) under the anonymous ed3k key from now on?
 
 They are unpublished under the node key first; what the network stored of them there runs out. Other nodes may still remember that this node had them.</source>

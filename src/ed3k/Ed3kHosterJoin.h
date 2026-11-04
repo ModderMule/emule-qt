@@ -22,6 +22,7 @@
 /// JSON); both copied into any temp dir of another node carry the download over. Complete items
 /// are saved in Config/ed3k/hoster/items.json; account data never is.
 
+#include "Ed3kHosterUnpack.h"
 #include "Ed3kJoinBase.h"
 #include "Ed3kResolver.h"
 #include "prefs/Preferences.h"
@@ -38,6 +39,7 @@
 #include <QTimer>
 
 #include <cstdint>
+#include <functional>
 #include <map>
 #include <memory>
 #include <optional>
@@ -98,6 +100,11 @@ public:
         PuzzleWrong,         ///< the hoster refused the answer
         HosterSkipped,       ///< arg: the hoster whose puzzles the user skips until Retry
         PuzzlesOff,          ///< the puzzle switch is off (Options)
+        UnpackWaiting,       ///< Complete: an archive in Temp, waits for the other volumes of its set
+        Unpacking,           ///< Complete: its set is extracted; arg: percent
+        Unpacked,            ///< Complete: its set was extracted; arg: the folder in incoming
+        UnpackFailed,        ///< Complete: its set could not be extracted (archives stay in Temp); arg: why
+        UnpackPassword,      ///< Complete: its set is encrypted and no password opens it
     };
 
     /// One download from a hoster link, as the GUI shows it.
@@ -175,6 +182,9 @@ public:
     }
     /// Statistics' session counters; null: not counted (tests). Same thread as the join.
     void setCounters(HosterCounters* counters) { m_counters = counters; }
+    /// Called with files that landed in incoming (a download or what an archive held): the
+    /// daemon shares them on eD2K (and so ed3k), also in a package's subfolder.
+    void setPublishedHook(std::function<void(const QStringList&)> hook) { m_published = std::move(hook); }
 
     void start() override;
     void stop() override;
@@ -380,6 +390,18 @@ private:
     bool writeAt(Entry& e, std::uint64_t offset, std::span<const std::byte> data);
     void checkComplete(Entry& e);
     void finish(Entry& e);
+    /// @p dir/@p name, or "name (n).ext" when taken
+    [[nodiscard]] static QString freePath(const QString& dir, const QString& name);
+    /// incoming, or incoming/<package>
+    [[nodiscard]] QString destDirOf(const Item& it) const;
+    /// Where archives wait for their unpack: <first temp>/hoster-archives/<package or "_">.
+    [[nodiscard]] QString archiveDirOf(const Item& it) const;
+    /// Starts the next archive set whose volumes are all done (one unpack at a time).
+    void queueUnpacks();
+    void onUnpacked(const HosterUnpackResult& r);
+    /// Extraction switched off: archives waiting in Temp go to incoming as they are.
+    void releaseArchives();
+    void published(const QStringList& files);
     /// Drops the link, the ed3k download and the resolver task of @p e.
     void release(Entry& e, bool keepFile);
     void retryLater(Entry& e, int seconds, Reason why, const QString& arg = {});
@@ -403,6 +425,8 @@ private:
     [[nodiscard]] QString workDir(quint32 id) const;
 
     QPointer<Ed3kResolver> m_resolver;
+    Ed3kHosterUnpack m_unpack;
+    std::function<void(const QStringList&)> m_published;
     Ed3kHosterPrefs m_prefs;
     QStringList m_tempDirs;
     QString m_incomingDir;

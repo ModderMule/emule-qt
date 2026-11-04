@@ -116,6 +116,11 @@ void probePin(Resolution& r)
         block(r, why);
         return;
     }
+    // Windows: IPv4 of a dual-stack socket would leave by the routing table, not the
+    // interface; peers then see another IP than eD2K's (HighID, Kad firewalled).
+    // IPv4 matters more: bind IPv4 only.
+    if (p.v4 && p.v6 && !p.dual)
+        p.v6 = false;
     if (!p.v6)
         r.hasGlobalIPv6 = false;
     if (!p.v4)
@@ -138,7 +143,10 @@ void report(const Resolution& r)
         if (r.literal.protocol() == QAbstractSocket::IPv6Protocol)
             logWarning(QStringLiteral("Bound to IPv6 address %1: IPv4-only servers and peers "
                                       "are unreachable").arg(r.literal.toString()));
-        if (!r.pin.v6)
+        if (!r.pin.dual)
+            logWarning(QStringLiteral("Network interface %1 refuses the IPv4 pin on dual-stack "
+                                      "sockets (error %2): IPv4 only").arg(r.name).arg(r.pin.dualError));
+        else if (!r.pin.v6)
             logWarning(QStringLiteral("Network interface %1 refuses the IPv6 pin (error %2): "
                                       "IPv4 only").arg(r.name).arg(r.pin.v6Error));
         if (!r.pin.v4)

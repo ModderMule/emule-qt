@@ -135,6 +135,8 @@ using Kind = PrefSpec::Kind;
     t << flag("autoRenameToMajorityName", "Rename a download once to the name most of its sources use "
               "(at least 5 sources and 60%; never after a manual rename or for a suspected fake).");
     t << flag("watchSharedDirs", "Pick up files added to shared folders as they appear (OS file watcher).");
+    t << flag("shareIncomingSubdirs", "Share the subfolders of the incoming folders and the BitTorrent "
+              "download folder too (torrents, Usenet jobs, unpacked hoster packages).");
     t << flag("seenFileIndex", "Keep a local index of files seen in search results.");
     t << flag("useSaveLoadSources", "Save the sources of rare files and reload them at start.");
     t << readOnly(text("incomingDir", 4096, "Directory completed downloads are moved to."));
@@ -285,6 +287,9 @@ using Kind = PrefSpec::Kind;
                                         "it goes with the source record and to downloaders (hoster.md §4.1). This can expose "
                                         "a file its uploader meant to keep private. Off = links are held back.");
     t << flag("ed3kHosterFromPeers", "Use hoster links that peers and Kad name for a download.");
+    t << flag("ed3kHosterExtract", "Unpack finished hoster archives into incoming/<package>/ and share the files. "
+                                   "The archives stay in Temp.");
+    t << flag("ed3kHosterDeleteArchives", "Delete hoster archives after a good unpack (only with ed3kHosterExtract).");
 
     // --- Logging ---
     t << flag("verbose", "Write verbose (debug) log lines.");
