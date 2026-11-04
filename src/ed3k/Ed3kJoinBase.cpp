@@ -123,7 +123,8 @@ QString field(QString s)
 
 // The set tried for an owner (§4.2): from which search, and its publishers.
 struct Ed3kJoinBase::SetTry {
-    std::uint32_t search = 0;
+    // was: std::uint32_t search = 0; but the engine's first search is ID 0 (tryNextSet recursed forever)
+    std::optional<std::uint32_t> search;
     std::optional<ffi::Root> root;
     std::vector<ffi::PublisherKey> publishers;
 };
@@ -727,7 +728,7 @@ bool Ed3kJoinBase::refuseSet(const QString& owner, const ffi::Root& root)
         const auto now = m_session.now();
         // §8: the publishers of the records that named it
         if (t.search)
-            (void)e->aliasSearchBlame(now, t.search, root);
+            (void)e->aliasSearchBlame(now, *t.search, root);
         else if (!t.publishers.empty())
             (void)e->aliasBan(now, t.publishers);
     }
@@ -1377,7 +1378,7 @@ void Ed3kJoinBase::onSetAliasFound(const ffi::event::AliasFound& found)
     if (!t)
         t = std::make_unique<SetTry>();
     // the first search with roots is tried; the others wait
-    if (t->search == 0 && !t->root && wantsSet(owner)) {
+    if (!t->search && !t->root && wantsSet(owner)) {
         t->search = found.search;
         (void)tryNextSet(owner);
     }
@@ -1390,9 +1391,9 @@ bool Ed3kJoinBase::tryNextSet(const QString& owner)
     if (!e || it == m_setTries.end())
         return false;
     SetTry& t = *it->second;
-    if (t.search != 0) {
+    if (t.search) {
         for (int tries = 0; tries < kSetCandidates; ++tries) {
-            auto next = e->aliasSearchNext(t.search);
+            auto next = e->aliasSearchNext(*t.search);
             if (!next || !*next)
                 break;
             const auto& c = **next;
@@ -1405,9 +1406,9 @@ bool Ed3kJoinBase::tryNextSet(const QString& owner)
             logInfo(QStringLiteral("trying set %1 of %2 (%3 site(s))").arg(hexOf(c.root.bytes), owner).arg(c.sites));
             return true;
         }
-        (void)e->aliasSearchEnd(t.search);
-        m_setSearches.erase(t.search);
-        t.search = 0;
+        (void)e->aliasSearchEnd(*t.search);
+        m_setSearches.erase(*t.search);
+        t.search.reset();
     }
     // another search of the owner that found roots (a hybrid torrent's second hash)
     for (const auto& [search, s] : m_setSearches) {

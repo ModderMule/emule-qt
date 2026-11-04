@@ -95,7 +95,7 @@ metadata while the ed3k node runs. What BtSession gives it, without libtorrent t
   reads the piece through the inner disk I/O (16 KiB requests) after libtorrent's hash and
   hands the bytes to the hook (`BtJoinHook::pieceHashed(piece, data, done)`).
 - `infoSection(id)`, `layout(id)`: the info dictionary and the files on disk.
-- `addPiece(id, piece, bytes)` (`add_piece`, overwrite) and `raisePieces` (`set_piece_deadline`).
+- `addPiece(id, piece, bytes)` (`add_piece`, no overwrite: blocks a peer gave are kept) and `raisePieces` (`set_piece_deadline`).
 - Signals `metadataReceived(id)` and `pieceResult(id, piece, passed)` (only for torrents with
   a join; needs `alert_category::piece_progress`).
 - `havePieces(id)` (`status(query_pieces).pieces`) and signal `torrentChecked(id)`

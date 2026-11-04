@@ -78,6 +78,9 @@ BtSettings btSettings(const QString& dir)
 {
     BtSettings s;
     s.listenPort = 0;
+    // loopback only: with port 0 each local address gets its own port, and
+    // listen_port() may name another one than 127.0.0.1's (multi-adapter Windows)
+    s.bindAddresses = {QStringLiteral("127.0.0.1")};
     s.dht = false;
     s.lsd = false;
     s.seedRatioPercent = 0;
@@ -132,6 +135,7 @@ private slots:
     void ed3kSkipsPiecesLibtorrentHas();
     void aGoneMemberFailsItsRead();
     void i2pTorrentJoinsOnlyWhenAllowed();
+    void aFirstSetSearchThatFindsNothingEnds();
 
 private:
     QTemporaryDir m_dir;
@@ -501,6 +505,39 @@ void tst_Ed3kTorrentJoin::i2pTorrentJoinsOnlyWhenAllowed()
     join.stop();
     bt.stop();
     node.stop();
+}
+
+// A fresh node numbers its alias searches from 0. A set search with ID 0 that ended
+// (nothing found) was taken for "no search": tryNextSet picked it again and recursed
+// until the stack overflowed
+void tst_Ed3kTorrentJoin::aFirstSetSearchThatFindsNothingEnds()
+{
+    const QString dir = m_dir.filePath(QStringLiteral("search0"));
+    QTemporaryDir peerDir;
+    QVERIFY(peerDir.isValid());
+    Ed3kSession node, peer;
+    QVERIFY(node.start(loopback(dir)) && peer.start(loopback(peerDir.path())));
+    // connected: a lookup is held while the node has no contact, and never ends
+    const ::ed3k::Node peerNode{*peer.nodeId(), ::ed3k::Address::v4(127, 0, 0, 1, peer.udpPort())};
+    node.post([peerNode](::ed3k::Engine& e, ::ed3k::Now now) { (void)e.bootstrap(now, std::span<const ::ed3k::Node>{&peerNode, 1}); });
+    QTRY_VERIFY_WITH_TIMEOUT(node.contactCount() > 0, 20000);
+    BtSession bt;
+    bt.start(btSettings(dir));
+    Ed3kTorrentJoin join(node, bt, dir);
+    join.start();   // search on: the join's set search is the node's first
+
+    const BtAddResult added = bt.addTorrentFile(m_torrent, dir + QStringLiteral("/Incoming"));
+    QCOMPARE(added.outcome, BtAddOutcome::Added);
+    QTRY_VERIFY_WITH_TIMEOUT(join.hasJoin(added.id), kTimeoutMs);
+    // the peer has no records: the lookups end and AliasFound follows
+    QTest::qWait(3000);
+    QVERIFY(join.hasJoin(added.id));
+    QVERIFY(!join.info(added.id)->manifest);
+
+    join.stop();
+    bt.stop();
+    node.stop();
+    peer.stop();
 }
 
 QTEST_GUILESS_MAIN(tst_Ed3kTorrentJoin)

@@ -896,7 +896,9 @@ bool BtSession::addPiece(const QString& id, int piece, const QByteArray& data)
     const auto h = d->handle(id);
     if (!h.is_valid() || data.isEmpty())
         return false;
-    h.add_piece(lt::piece_index_t(piece), std::vector<char>(data.begin(), data.end()), lt::torrent_handle::overwrite_existing);
+    // no overwrite_existing: blocks a peer already gave are skipped. Rewriting them into a piece
+    // libtorrent has hashed but not flushed trips disk_cache.cpp:283 (and the bytes are the same)
+    h.add_piece(lt::piece_index_t(piece), std::vector<char>(data.begin(), data.end()));
     return true;
 }
 

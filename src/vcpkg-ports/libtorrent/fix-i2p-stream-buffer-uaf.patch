@@ -1,0 +1,40 @@
+diff --git a/include/libtorrent/i2p_stream.hpp b/include/libtorrent/i2p_stream.hpp
+index b121b32..61cc9e5 100644
+--- a/include/libtorrent/i2p_stream.hpp
++++ b/include/libtorrent/i2p_stream.hpp
+@@ -265,8 +265,11 @@ private:
+ 			// this is the line containing the destination
+ 			// of the incoming connection in an accept call
+ 			m_dest = &m_buffer[0];
+-			h(e);
++			// release the buffer before calling the handler. The handler may
++			// start a new command, which formats into m_buffer and has an
++			// async_write in flight on it, or it may destroy this stream
+ 			std::vector<char>().swap(m_buffer);
++			h(e);
+ 			return;
+ 		}
+ 
+@@ -387,15 +390,20 @@ private:
+ 				case cmd_none:
+ 				case cmd_name_lookup:
+ 				case cmd_incoming:
+-					std::forward<Handler>(h)(ec);
++					// see above: free m_buffer before the handler can reuse it
+ 					std::vector<char>().swap(m_buffer);
++					std::forward<Handler>(h)(ec);
+ 			}
+ 			break;
+ 		case read_connect_response:
+ 		case read_session_create_response:
+ 		case read_name_lookup_response:
+-			std::forward<Handler>(h)(ec);
++			// the session-create handler sends NAMING LOOKUP ME, and a name
++			// lookup handler sends the next queued lookup, both through
++			// m_buffer. Freeing it after the handler pulls the buffer out from
++			// under that pending async_write (heap use-after-free)
+ 			std::vector<char>().swap(m_buffer);
++			std::forward<Handler>(h)(ec);
+ 			break;
+ 		case read_accept_response:
+ 			// the SAM bridge is waiting for an incoming
