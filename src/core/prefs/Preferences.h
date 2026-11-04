@@ -1334,6 +1334,11 @@ public:
     [[nodiscard]] uint32 btMaxUploadKb() const;
     void setBtMaxUploadKb(uint32 val);
 
+    /// New torrents stop once their file list is known, to pick files first. A magnet
+    /// fetches its metadata, a .torrent is added stopped.
+    [[nodiscard]] bool btStopAfterMetadata() const;
+    void setBtStopAfterMetadata(bool val);
+
     [[nodiscard]] bool btDht() const;
     void setBtDht(bool val);
     /// Local service discovery.
@@ -1378,6 +1383,50 @@ public:
     /// Map the listen port through the app's PortMapper (needs enableUPnP).
     [[nodiscard]] bool btPortMapping() const;
     void setBtPortMapping(bool val);
+
+    // -- I2P for BitTorrent (libtorrent's SAM client). YAML `bittorrent: i2p:`, IPC btI2p*
+
+    /// kBtI2pOff, kBtI2pBundled (our i2pd helper) or kBtI2pExternal (a router of the user's).
+    [[nodiscard]] int btI2pMode() const;
+    void setBtI2pMode(int val);
+    /// SAM bridge of the external router.
+    [[nodiscard]] QString btI2pHost() const;
+    void setBtI2pHost(const QString& val);
+    [[nodiscard]] uint16 btI2pPort() const;
+    void setBtI2pPort(uint16 val);
+    /// I2P torrents may also use clearnet peers, DHT and trackers (allow_i2p_mixed).
+    [[nodiscard]] bool btI2pMixed() const;
+    void setBtI2pMixed(bool val);
+    /// New torrents are added as I2P only.
+    [[nodiscard]] bool btI2pOnlyNew() const;
+    void setBtI2pOnlyNew(bool val);
+    /// I2P torrents may join ed3k (torrent.md §4).
+    [[nodiscard]] bool btI2pEd3kJoin() const;
+    void setBtI2pEd3kJoin(bool val);
+    /// Hops per tunnel 1–7, tunnels each way 1–16.
+    [[nodiscard]] int btI2pTunnelLength() const;
+    void setBtI2pTunnelLength(int val);
+    [[nodiscard]] int btI2pTunnelQuantity() const;
+    void setBtI2pTunnelQuantity(int val);
+    /// Announce URLs added to I2P torrents (and to all while mixed).
+    [[nodiscard]] QStringList btI2pTrackers() const;
+    void setBtI2pTrackers(const QStringList& val);
+    /// NTCP2/SSU2 port of the bundled router: picked once at load, then kept.
+    [[nodiscard]] uint16 btI2pRouterPort() const;
+    void setBtI2pRouterPort(uint16 val);
+    /// Share of the bundled router's bandwidth for others' tunnels, percent 0–100.
+    [[nodiscard]] int btI2pShare() const;
+    void setBtI2pShare(int val);
+    /// The public I2P trackers of issue #118 (http only: no UDP over SAM in libtorrent).
+    [[nodiscard]] static QStringList defaultBtI2pTrackers();
+
+    static constexpr int kBtI2pOff = 0;
+    static constexpr int kBtI2pBundled = 1;
+    static constexpr int kBtI2pExternal = 2;
+    static constexpr uint16 kDefaultBtI2pSamPort = 7656;
+    /// i2pd's own pick range for its router port
+    static constexpr uint16 kBtI2pRouterPortMin = 9111;
+    static constexpr uint16 kBtI2pRouterPortMax = 30777;
 
     static constexpr uint16 kDefaultBtListenPort = 6881;
     static constexpr int kDefaultBtSharePercent = 25;

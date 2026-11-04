@@ -188,6 +188,8 @@ protected:
     }
     /// Kept blobs are shared (again); false while they are held back (usenet §6).
     [[nodiscard]] virtual bool shareKeptBlobs() const { return true; }
+    /// What was kept of @p owner is shared again; false holds it back (kept on disk).
+    [[nodiscard]] virtual bool sharesKeptOwner(const QString& owner) const { Q_UNUSED(owner) return true; }
     /// Whether this join's downloads and member shares follow the hiding switch (Ed3kHide):
     /// plain downloads and the share list. Joins of other networks stay on the node key
     /// (eD2K, BT, usenet, hoster never anonymous, ffi.md). Default off.

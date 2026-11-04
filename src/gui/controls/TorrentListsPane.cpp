@@ -139,6 +139,7 @@ QString torrentPeerFlagsTooltip(const QString& flags)
         case 'H': text = TorrentListsPane::tr("Peer was found through DHT"); break;
         case 'X': text = TorrentListsPane::tr("Peer was found through Peer Exchange (PEX)"); break;
         case 'I': text = TorrentListsPane::tr("Peer is an incoming connection"); break;
+        case 'P': text = TorrentListsPane::tr("Connected over I2P"); break;
         default: continue;
         }
         lines << QStringLiteral("%1: %2").arg(c, text);

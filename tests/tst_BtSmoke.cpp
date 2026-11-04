@@ -5,6 +5,7 @@
 #include "BtSession.h"
 #include "add/BtAddSource.h"
 #include "session/BtSettingsMap.h"
+#include "torrent/BtTorrentView.h"
 
 #include <libtorrent/version.hpp>
 
@@ -27,6 +28,11 @@ private slots:
     void magnets();
     void torrentFiles();
     void inspectTorrentFile();
+    void i2pSettingsMap();
+    void i2pAddPolicy();
+    void stopAfterMetadataPolicy();
+    void i2pPeerAddress();
+    void i2pTorrentIsFlagged();
 };
 
 void tst_BtSmoke::constructs()
@@ -224,6 +230,168 @@ void tst_BtSmoke::inspectTorrentFile()
     QCOMPARE(preview->webSeeds, QList<QString>{QStringLiteral("http://seed.example/")});
 
     QVERIFY(!BtSession::inspectTorrentFile(QByteArray("garbage")).has_value());
+}
+
+// I2P: SAM only with a bridge, mixed only while on, tunnels clamped
+void tst_BtSmoke::i2pSettingsMap()
+{
+    namespace lt = libtorrent;
+    BtSettings s;
+    lt::settings_pack p = BtSettingsMap::toPack(s);
+    QCOMPARE(p.get_str(lt::settings_pack::i2p_hostname), std::string());
+    QVERIFY(!p.get_bool(lt::settings_pack::allow_i2p_mixed));
+
+    // on, bridge not ready yet (bundled router starting): still no SAM session
+    s.i2pEnabled = true;
+    s.i2pMixed = true;
+    s.i2pSamHost = QStringLiteral("127.0.0.1");
+    p = BtSettingsMap::toPack(s);
+    QCOMPARE(p.get_str(lt::settings_pack::i2p_hostname), std::string());
+    QVERIFY(p.get_bool(lt::settings_pack::allow_i2p_mixed));
+
+    s.i2pSamPort = 7656;
+    s.i2pTunnelLength = 9;
+    s.i2pTunnelQuantity = 0;
+    p = BtSettingsMap::toPack(s);
+    QCOMPARE(p.get_str(lt::settings_pack::i2p_hostname), std::string("127.0.0.1"));
+    QCOMPARE(p.get_int(lt::settings_pack::i2p_port), 7656);
+    QCOMPARE(p.get_int(lt::settings_pack::i2p_inbound_length), 7);
+    QCOMPARE(p.get_int(lt::settings_pack::i2p_outbound_quantity), 1);
+
+    // off: an I2P torrent waits instead of going clearnet
+    s.i2pEnabled = false;
+    p = BtSettingsMap::toPack(s);
+    QCOMPARE(p.get_str(lt::settings_pack::i2p_hostname), std::string());
+    QVERIFY(!p.get_bool(lt::settings_pack::allow_i2p_mixed));
+}
+
+void tst_BtSmoke::i2pAddPolicy()
+{
+    namespace lt = libtorrent;
+    const QString magnet = QStringLiteral("magnet:?xt=urn:btih:0123456789abcdef0123456789abcdef01234567&tr=http%3A%2F%2Ftracker.example.org%2Fannounce");
+    const QString i2pTracker = QStringLiteral("http://tracker.example.i2p/a");
+    BtSettings s;
+    s.i2pTrackers = {i2pTracker, QStringLiteral("http://second.example.i2p/announce")};
+
+    // off: nothing changes
+    auto atp = *BtAddSource::fromMagnet(magnet);
+    QVERIFY(!BtAddSource::applyI2p(atp, s, std::nullopt));
+    QVERIFY(!(atp.flags & lt::torrent_flags::i2p_torrent));
+    QCOMPARE(atp.trackers.size(), std::size_t(1));
+
+    // on, not mixed, not asked: a clearnet torrent stays one
+    s.i2pEnabled = true;
+    atp = *BtAddSource::fromMagnet(magnet);
+    QVERIFY(!BtAddSource::applyI2p(atp, s, std::nullopt));
+    QCOMPARE(atp.trackers.size(), std::size_t(1));
+
+    // asked: flagged, the I2P trackers in a tier after the torrent's
+    atp = *BtAddSource::fromMagnet(magnet);
+    QVERIFY(BtAddSource::applyI2p(atp, s, true));
+    QVERIFY(atp.flags & lt::torrent_flags::i2p_torrent);
+    QCOMPARE(atp.trackers.size(), std::size_t(3));
+    QCOMPARE(atp.tracker_tiers.size(), std::size_t(3));
+    QCOMPARE(atp.trackers[1], i2pTracker.toStdString());
+    QVERIFY(atp.tracker_tiers[1] > atp.tracker_tiers[0]);
+
+    // the new-torrent default, and an explicit "no" beating it
+    s.i2pOnlyNew = true;
+    atp = *BtAddSource::fromMagnet(magnet);
+    QVERIFY(BtAddSource::applyI2p(atp, s, std::nullopt));
+    atp = *BtAddSource::fromMagnet(magnet);
+    QVERIFY(!BtAddSource::applyI2p(atp, s, false));
+    s.i2pOnlyNew = false;
+
+    // mixed: a clearnet torrent gets the I2P trackers, unflagged
+    s.i2pMixed = true;
+    atp = *BtAddSource::fromMagnet(magnet);
+    QVERIFY(!BtAddSource::applyI2p(atp, s, std::nullopt));
+    QVERIFY(!(atp.flags & lt::torrent_flags::i2p_torrent));
+    QCOMPARE(atp.trackers.size(), std::size_t(3));
+
+    // an .i2p tracker of its own makes it an I2P torrent, and no tracker is added twice
+    atp = *BtAddSource::fromMagnet(QStringLiteral("magnet:?xt=urn:btih:0123456789abcdef0123456789abcdef01234567&tr=")
+                                   + QString::fromLatin1(QUrl::toPercentEncoding(i2pTracker)));
+    QVERIFY(BtAddSource::applyI2p(atp, s, std::nullopt));
+    QCOMPARE(atp.trackers.size(), std::size_t(2));
+
+    QVERIFY(BtAddSource::isI2pTracker("http://opentracker.dg2.i2p:80/a"));
+    QVERIFY(BtAddSource::isI2pTracker("http://btrackrqkjp6kgelov5a3uxisis77ofxqt5nvy5hvvtoybjpmq4q.b32.i2p/announce"));
+    QVERIFY(!BtAddSource::isI2pTracker("http://tracker.example.org/i2p"));
+}
+
+void tst_BtSmoke::stopAfterMetadataPolicy()
+{
+    namespace lt = libtorrent;
+    const QString magnet = QStringLiteral("magnet:?xt=urn:btih:0123456789abcdef0123456789abcdef01234567");
+    const QByteArray torrent = QByteArray("d4:infod6:lengthi10e4:name1:a12:piece lengthi16384e6:pieces20:")
+                             + QByteArray(20, 'x') + QByteArray("ee");
+    BtSettings s;
+
+    // off, not asked: untouched
+    auto atp = *BtAddSource::fromMagnet(magnet);
+    const auto before = atp.flags;
+    QVERIFY(!BtAddSource::applyStopAfterMetadata(atp, s, std::nullopt));
+    QCOMPARE(atp.flags, before);
+
+    // asked: a magnet skips every file until its metadata is in, the session stops it then
+    atp = *BtAddSource::fromMagnet(magnet);
+    QVERIFY(BtAddSource::applyStopAfterMetadata(atp, s, true));
+    QVERIFY(atp.flags & lt::torrent_flags::default_dont_download);
+    QVERIFY(atp.file_priorities.empty());
+
+    // the default, and an explicit "no" beating it
+    s.stopAfterMetadata = true;
+    atp = *BtAddSource::fromMagnet(magnet);
+    QVERIFY(BtAddSource::applyStopAfterMetadata(atp, s, std::nullopt));
+    atp = *BtAddSource::fromMagnet(magnet);
+    QVERIFY(!BtAddSource::applyStopAfterMetadata(atp, s, false));
+    QVERIFY(!(atp.flags & lt::torrent_flags::default_dont_download));
+
+    // a .torrent has its file list: added paused, nothing left to wait for
+    auto file = BtAddSource::fromTorrentFile(torrent);
+    QVERIFY2(file.has_value(), qPrintable(file.has_value() ? QString() : file.error()));
+    QVERIFY(!BtAddSource::applyStopAfterMetadata(*file, s, std::nullopt));
+    QVERIFY(file->flags & lt::torrent_flags::paused);
+    QVERIFY(!(file->flags & lt::torrent_flags::auto_managed));
+    QVERIFY(!(file->flags & lt::torrent_flags::default_dont_download));
+}
+
+void tst_BtSmoke::i2pPeerAddress()
+{
+    libtorrent::sha256_hash h;
+    h.clear();
+    // 32 zero bytes: 52 'a', the RFC 4648 alphabet in lower case, no padding
+    QCOMPARE(BtTorrentView::i2pAddressOf(h), QString(52, QLatin1Char('a')) + QStringLiteral(".b32.i2p"));
+    h[0] = std::uint8_t(0xff);
+    QVERIFY(BtTorrentView::i2pAddressOf(h).startsWith(QStringLiteral("74")));
+}
+
+// asked at add: the row says so, and libtorrent keeps the flag
+void tst_BtSmoke::i2pTorrentIsFlagged()
+{
+    QTemporaryDir dir;
+    BtSettings s;
+    s.listenPort = 0;
+    s.dht = false;
+    s.lsd = false;
+    s.stateDir = dir.filePath(QStringLiteral("BT"));
+    s.downloadDir = dir.filePath(QStringLiteral("Incoming"));
+    s.i2pEnabled = true;
+    s.i2pTrackers = {QStringLiteral("http://tracker.example.i2p/a")};
+    BtSession session;
+    session.start(s);
+    const auto added = session.addMagnet(QStringLiteral("magnet:?xt=urn:btih:89abcdef0123456789abcdef0123456789abcdef"), {},
+                                         true, true);
+    QCOMPARE(added.outcome, BtAddOutcome::Added);
+    QVERIFY(session.torrent(added.id)->i2p);
+    QCOMPARE(session.trackers(added.id).size(), 1);
+    const auto plain = session.addMagnet(QStringLiteral("magnet:?xt=urn:btih:0123456789abcdef0123456789abcdef01234567"), {},
+                                         true);
+    QVERIFY(!session.torrent(plain.id)->i2p);
+    QVERIFY(session.status().i2pEnabled);
+    QVERIFY(!session.status().i2pSam);
+    session.stop();
 }
 
 QTEST_GUILESS_MAIN(tst_BtSmoke)

@@ -17,6 +17,8 @@
 #include <QString>
 #include <QStringList>
 
+#include <optional>
+
 class QCheckBox;
 class QComboBox;
 class QHBoxLayout;
@@ -65,6 +67,10 @@ public:
 
         /// A lone "Start paused" box, for a dialog without the queue row.
         bool pausedOption = false;
+
+        /// More check boxes under it, top to bottom (the torrent dialogs' "stop after
+        /// metadata" and "I2P only"); empty for none.
+        QStringList optionLabels;
     };
 
 protected:
@@ -87,6 +93,11 @@ protected:
 
     /// Whether to queue the release without starting it.
     [[nodiscard]] bool queuePaused() const;
+
+    /// Box @p index of Chrome::optionLabels; nullopt when there is none or it is disabled.
+    [[nodiscard]] std::optional<bool> option(int index) const;
+    /// Its state, whether it can be changed, and its tooltip.
+    void setOption(int index, bool checked, bool enabled, const QString& toolTip = {});
 
     /// The save-to row, trimmed; empty when there is no row or nothing typed.
     [[nodiscard]] QString savePath() const;
@@ -123,6 +134,7 @@ private:
     QComboBox* m_category = nullptr;
     QComboBox* m_priority = nullptr;
     QCheckBox* m_paused = nullptr;
+    QList<QCheckBox*> m_options;         ///< one per Chrome::optionLabels
     QLineEdit* m_savePath = nullptr;     ///< null unless Chrome::savePathLabel was set
     QPushButton* m_savePathBrowse = nullptr;
     QPushButton* m_acceptBtn = nullptr;

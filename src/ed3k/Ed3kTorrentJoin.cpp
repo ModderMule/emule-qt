@@ -165,6 +165,43 @@ void Ed3kTorrentJoin::stop()
     pumpSession();
 }
 
+void Ed3kTorrentJoin::setI2pJoins(bool allowed)
+{
+    if (allowed == m_i2pJoins)
+        return;
+    m_i2pJoins = allowed;
+    if (!m_started)
+        return;
+    for (const auto& row : m_bt.torrents()) {
+        if (!row.i2p)
+            continue;
+        if (allowed) {
+            (void)ensureJoin(row.id);
+        } else {
+            if (findJoin(row.id)) {
+                saveJoin(row.id);
+                dropJoin(row.id, /*keepBlob*/ true);
+            }
+            // completed members shared before: withdrawn, still kept on disk
+            unshareOwner(row.id);
+        }
+    }
+    pumpSession();
+}
+
+bool Ed3kTorrentJoin::i2pHeld(const QString& id) const
+{
+    if (m_i2pJoins)
+        return false;
+    const auto row = m_bt.torrent(id);
+    return row && row->i2p;
+}
+
+bool Ed3kTorrentJoin::sharesKeptOwner(const QString& owner) const
+{
+    return !i2pHeld(owner);
+}
+
 bool Ed3kTorrentJoin::hasJoin(const QString& id) const
 {
     return m_joins.contains(id);
@@ -449,6 +486,9 @@ Ed3kTorrentJoin::Join* Ed3kTorrentJoin::ensureJoin(const QString& id)
         return j;
     auto* e = m_session.engine();
     if (!m_started || !e || m_noJoin.contains(id))
+        return nullptr;
+    // an I2P torrent's hash stays off ed3k unless allowed; not in m_noJoin: the pref may flip
+    if (i2pHeld(id))
         return nullptr;
     const QByteArray infoDict = m_bt.infoSection(id);
     const auto layout = m_bt.layout(id);

@@ -131,6 +131,7 @@ emule_add_test(tst_HostResolver      FOLDER "Net")
 emule_add_test(tst_DefaultGateway    FOLDER "Net")
 emule_add_test(tst_PortMapWire       FOLDER "PortMap")
 emule_add_test(tst_PortMapper        FOLDER "PortMap")
+emule_add_test(tst_I2pRouter         FOLDER "Net")
 emule_add_test(tst_UdpMappingBackend FOLDER "PortMap")
 
 # Module 5: Remaining networking classes
@@ -1175,6 +1176,7 @@ emule_add_test(tst_OptionsDialogSizing FOLDER "Gui"
             "${CMAKE_SOURCE_DIR}/src/gui/dialogs/OptionsDialog.cpp"
             "${CMAKE_SOURCE_DIR}/src/gui/dialogs/RememberedSizeDialog.cpp"
             "${CMAKE_SOURCE_DIR}/src/gui/dialogs/Ed3kOptionsPages.cpp"
+            "${CMAKE_SOURCE_DIR}/src/gui/dialogs/BtI2pGroup.cpp"
             "${CMAKE_SOURCE_DIR}/src/gui/dialogs/Ed3kFilterPage.cpp"
             "${CMAKE_SOURCE_DIR}/src/gui/dialogs/Ed3kSellPage.cpp"
             "${CMAKE_SOURCE_DIR}/src/gui/dialogs/Ed3kSellDialogs.cpp"
@@ -1426,6 +1428,7 @@ emule_add_test(tst_SmallScreenDialogs FOLDER "Gui"
             "${CMAKE_SOURCE_DIR}/src/gui/dialogs/MetaAccountDialog.cpp"
             "${CMAKE_SOURCE_DIR}/src/gui/dialogs/OptionsDialog.cpp"
             "${CMAKE_SOURCE_DIR}/src/gui/dialogs/Ed3kOptionsPages.cpp"
+            "${CMAKE_SOURCE_DIR}/src/gui/dialogs/BtI2pGroup.cpp"
             "${CMAKE_SOURCE_DIR}/src/gui/dialogs/Ed3kFilterPage.cpp"
             "${CMAKE_SOURCE_DIR}/src/gui/dialogs/Ed3kSellPage.cpp"
             "${CMAKE_SOURCE_DIR}/src/gui/dialogs/Ed3kSellDialogs.cpp"

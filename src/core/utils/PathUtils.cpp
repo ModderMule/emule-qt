@@ -7,6 +7,7 @@
 #include <QCoreApplication>
 #include <QDir>
 #include <QFile>
+#include <QFileInfo>
 #include <QStandardPaths>
 #include <QStorageInfo>
 
@@ -257,6 +258,23 @@ bool markFileSparse(QFile& file)
     Q_UNUSED(file);
     return false;
 #endif
+}
+
+QString findBundledFile(const char* envVar, const QStringList& names, const QString& buildTreeRel)
+{
+    if (const QString env = qEnvironmentVariable(envVar); !env.isEmpty() && QFileInfo(env).isFile())
+        return env;
+    const QDir app(QCoreApplication::applicationDirPath());
+    for (const QString& rel : names)
+        if (const QString p = app.filePath(rel); QFileInfo(p).isFile())
+            return QDir::cleanPath(p);
+    if (buildTreeRel.isEmpty())
+        return {};
+    QDir up = app;
+    for (int i = 0; i < 6 && up.cdUp(); ++i)
+        if (const QString p = up.filePath(buildTreeRel); QFileInfo(p).isFile())
+            return QDir::cleanPath(p);
+    return {};
 }
 
 } // namespace eMule

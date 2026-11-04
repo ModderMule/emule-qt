@@ -16,6 +16,8 @@
 
 namespace eMule {
 
+class I2pRouter;
+
 namespace bt {
 class BtSession;
 struct BtSettings;
@@ -26,6 +28,9 @@ namespace BtBridge {
 /// The engine the requests go to; set by DaemonApp, null when absent.
 void setSession(bt::BtSession* session);
 [[nodiscard]] bt::BtSession* session();
+
+/// The bundled I2P router (btI2pMode 1); set by DaemonApp, null when absent.
+void setI2pRouter(I2pRouter* router);
 
 /// Whether the daemon was built with the BitTorrent module.
 [[nodiscard]] bool available();
@@ -74,6 +79,9 @@ void applyIpFilter(bool onlyIfLevelChanged = false);
 /// The session's settings from Preferences: the download dir resolved, the state dir
 /// under the config dir.
 [[nodiscard]] bt::BtSettings settingsFromPrefs();
+
+/// Whether the bundled I2P router should run for @p s (btI2pMode 1, BT on, network up).
+[[nodiscard]] bool wantsI2pRouter(const bt::BtSettings& s, bool enginesHeld);
 #endif
 
 } // namespace BtBridge

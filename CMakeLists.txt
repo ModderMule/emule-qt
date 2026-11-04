@@ -500,6 +500,8 @@ vcpkg, or set BOOST_ROOT) or libtorrent-rasterbar >= 2.1, or pass -DEMULE_BITTOR
         set(python-bindings OFF CACHE BOOL "" FORCE)
         # WebTorrent needs the libdatachannel submodule; not used
         set(webtorrent OFF CACHE BOOL "" FORCE)
+        # I2P over a SAM bridge (btI2pMode); on by default, pinned so it stays on
+        set(i2p ON CACHE BOOL "" FORCE)
         # TORRENT_ABI_VERSION=100: no deprecated API
         set(deprecated-functions OFF CACHE BOOL "" FORCE)
         FetchContent_Declare(libtorrent
@@ -549,6 +551,14 @@ option(EMULE_HOSTER_JD "Build the JDownloader hoster resolver (ed3k hoster links
 # The one place EMULE_HAVE_HOSTER_JD is set: every target below inherits it
 if(EMULE_HOSTER_JD)
     add_compile_definitions(EMULE_HAVE_HOSTER_JD=1)
+endif()
+
+# ---------------------------------------------------------------------------
+# Bundled I2P router for BitTorrent over I2P: a pinned prebuilt helper (cmake/I2pd.cmake)
+# ---------------------------------------------------------------------------
+option(EMULE_I2PD "Download the bundled I2P router (emuleqt-i2pd, scripts/i2pd.ref)" ON)
+if(EMULE_I2PD AND EMULE_BITTORRENT)
+    include(${CMAKE_SOURCE_DIR}/cmake/I2pd.cmake)
 endif()
 
 # ---------------------------------------------------------------------------

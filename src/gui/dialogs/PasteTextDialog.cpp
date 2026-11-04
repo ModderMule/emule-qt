@@ -96,6 +96,10 @@ PasteTextDialog::PasteTextDialog(const Chrome& chrome, QWidget* parent)
         m_paused = new QCheckBox(tr("Start paused"), this);
         layout->addWidget(m_paused);
     }
+    for (const QString& label : chrome.optionLabels) {
+        m_options.append(new QCheckBox(label, this));
+        layout->addWidget(m_options.back());
+    }
 
     auto* btnLayout = new QHBoxLayout;
     m_buttonRow = btnLayout;
@@ -160,6 +164,24 @@ int PasteTextDialog::queuePriority() const
 bool PasteTextDialog::queuePaused() const
 {
     return m_paused && m_paused->isChecked();
+}
+
+std::optional<bool> PasteTextDialog::option(int index) const
+{
+    const QCheckBox* box = m_options.value(index);
+    if (!box || !box->isEnabled())
+        return std::nullopt;
+    return box->isChecked();
+}
+
+void PasteTextDialog::setOption(int index, bool checked, bool enabled, const QString& toolTip)
+{
+    QCheckBox* box = m_options.value(index);
+    if (!box)
+        return;
+    box->setChecked(checked);
+    box->setEnabled(enabled);
+    box->setToolTip(toolTip);
 }
 
 QString PasteTextDialog::savePath() const

@@ -41,6 +41,7 @@ namespace eMule {
 
 class AccordionSidebar;
 class Ed3kOptionsPages;
+class BtI2pGroup;
 class IpcClient;
 class StatisticsPanel;
 
@@ -574,12 +575,14 @@ private:
     QCheckBox*      m_btEnabledCheck = nullptr;
     QSpinBox*       m_btPortSpin = nullptr;
     QLineEdit*      m_btDownloadDirEdit = nullptr;
+    QCheckBox*      m_btStopAfterMetadataCheck = nullptr;
     QPushButton*    m_btDownloadDirBrowse = nullptr;
     QSpinBox*       m_btMaxDownSpin = nullptr;
     QSpinBox*       m_btMaxUpSpin = nullptr;
     QCheckBox*      m_btDhtCheck = nullptr;
     QCheckBox*      m_btLsdCheck = nullptr;
     QCheckBox*      m_btPexCheck = nullptr;
+    BtI2pGroup*     m_btI2pGroup = nullptr;
     QButtonGroup*   m_btEncryptionGroup = nullptr; // id = btEncryption
     QSpinBox*       m_btMaxActiveDownSpin = nullptr;
     QSpinBox*       m_btMaxActiveSeedSpin = nullptr;

@@ -3,8 +3,8 @@
 /// @file AddTorrentDialog.h
 /// @brief Add BitTorrent magnet links (one per line) or picked .torrent files.
 ///
-/// Both modes share the PasteTextDialog shape plus a "Save to" row and "Start
-/// paused". Files travel as their bytes, never their path: the daemon may run
+/// Both modes share the PasteTextDialog shape plus a "Save to" row, "Start
+/// paused", "Stop after metadata" and "I2P only". Files travel as their bytes, never their path: the daemon may run
 /// on another machine (same rule as UsenetPanel::addNzbFile).
 
 #include "dialogs/PasteTextDialog.h"
@@ -28,6 +28,9 @@ public:
 
     /// Cap per paste, as AddNzbUrlDialog has.
     static constexpr int kMaxItems = 100;
+    /// Chrome::optionLabels indexes
+    static constexpr int kStopOption = 0;
+    static constexpr int kI2pOption = 1;
 
 protected:
     void onAccepted() override;

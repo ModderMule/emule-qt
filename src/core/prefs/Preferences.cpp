@@ -706,6 +706,7 @@ struct Preferences::Data {
     bool btEnabled = true;
     uint16 btListenPort = Preferences::kDefaultBtListenPort;
     QString btDownloadDir;             // empty = incomingDir
+    bool btStopAfterMetadata = false;  // new torrents stop once their file list is known
     uint32 btMaxDownloadKb = 0;        // 0 = unlimited
     uint32 btMaxUploadKb = 0;
     bool btDht = true;
@@ -721,6 +722,17 @@ struct Preferences::Data {
     int btMaxConnections = Preferences::kDefaultBtMaxConnections;
     int btMaxConnectionsPerTorrent = Preferences::kDefaultBtMaxConnectionsPerTorrent;
     bool btPortMapping = true;
+    int btI2pMode = Preferences::kBtI2pOff;
+    QString btI2pHost = QStringLiteral("127.0.0.1");
+    uint16 btI2pPort = Preferences::kDefaultBtI2pSamPort;
+    bool btI2pMixed = false;
+    bool btI2pOnlyNew = false;
+    bool btI2pEd3kJoin = true;
+    int btI2pTunnelLength = 3;
+    int btI2pTunnelQuantity = 3;
+    QStringList btI2pTrackers = Preferences::defaultBtI2pTrackers();
+    uint16 btI2pRouterPort = 0;        // 0 = random, resolved at load
+    int btI2pShare = 50;
 
     // -- ed3k (packmule) ------------------------------------------------------
     bool ed3kEnabled = true;
@@ -2312,6 +2324,8 @@ void Preferences::setBtMaxDownloadKb(uint32 val) { set(&Data::btMaxDownloadKb, v
 uint32 Preferences::btMaxUploadKb() const { return get(&Data::btMaxUploadKb); }
 void Preferences::setBtMaxUploadKb(uint32 val) { set(&Data::btMaxUploadKb, val); }
 
+bool Preferences::btStopAfterMetadata() const { return get(&Data::btStopAfterMetadata); }
+void Preferences::setBtStopAfterMetadata(bool val) { set(&Data::btStopAfterMetadata, val); }
 bool Preferences::btDht() const { return get(&Data::btDht); }
 void Preferences::setBtDht(bool val) { set(&Data::btDht, val); }
 
@@ -2374,6 +2388,71 @@ void Preferences::setBtMaxConnectionsPerTorrent(int val)
 
 bool Preferences::btPortMapping() const { return get(&Data::btPortMapping); }
 void Preferences::setBtPortMapping(bool val) { set(&Data::btPortMapping, val); }
+
+int Preferences::btI2pMode() const { return get(&Data::btI2pMode); }
+void Preferences::setBtI2pMode(int val) { set(&Data::btI2pMode, std::clamp(val, kBtI2pOff, kBtI2pExternal)); }
+
+QString Preferences::btI2pHost() const { return get(&Data::btI2pHost); }
+void Preferences::setBtI2pHost(const QString& val)
+{
+    const QString host = val.trimmed();
+    set(&Data::btI2pHost, host.isEmpty() ? QStringLiteral("127.0.0.1") : host);
+}
+
+uint16 Preferences::btI2pPort() const { return get(&Data::btI2pPort); }
+void Preferences::setBtI2pPort(uint16 val) { set(&Data::btI2pPort, val == 0 ? kDefaultBtI2pSamPort : val); }
+
+bool Preferences::btI2pMixed() const { return get(&Data::btI2pMixed); }
+void Preferences::setBtI2pMixed(bool val) { set(&Data::btI2pMixed, val); }
+
+bool Preferences::btI2pOnlyNew() const { return get(&Data::btI2pOnlyNew); }
+void Preferences::setBtI2pOnlyNew(bool val) { set(&Data::btI2pOnlyNew, val); }
+
+bool Preferences::btI2pEd3kJoin() const { return get(&Data::btI2pEd3kJoin); }
+void Preferences::setBtI2pEd3kJoin(bool val) { set(&Data::btI2pEd3kJoin, val); }
+
+int Preferences::btI2pTunnelLength() const { return get(&Data::btI2pTunnelLength); }
+void Preferences::setBtI2pTunnelLength(int val) { set(&Data::btI2pTunnelLength, std::clamp(val, 1, 7)); }
+
+int Preferences::btI2pTunnelQuantity() const { return get(&Data::btI2pTunnelQuantity); }
+void Preferences::setBtI2pTunnelQuantity(int val) { set(&Data::btI2pTunnelQuantity, std::clamp(val, 1, 16)); }
+
+QStringList Preferences::btI2pTrackers() const { return get(&Data::btI2pTrackers); }
+void Preferences::setBtI2pTrackers(const QStringList& val)
+{
+    QStringList out;
+    for (const QString& u : val)
+        if (const QString t = u.trimmed(); !t.isEmpty() && !out.contains(t))
+            out << t;
+    set(&Data::btI2pTrackers, out);
+}
+
+uint16 Preferences::btI2pRouterPort() const { return get(&Data::btI2pRouterPort); }
+void Preferences::setBtI2pRouterPort(uint16 val) { set(&Data::btI2pRouterPort, val); }
+
+int Preferences::btI2pShare() const { return get(&Data::btI2pShare); }
+void Preferences::setBtI2pShare(int val) { set(&Data::btI2pShare, std::clamp(val, 0, 100)); }
+
+QStringList Preferences::defaultBtI2pTrackers()
+{
+    // ngosang/trackerslist trackers_all_i2p.txt as of 2026-11; udp:// ones left out
+    return {
+        QStringLiteral("http://btrackrqkjp6kgelov5a3uxisis77ofxqt5nvy5hvvtoybjpmq4q.b32.i2p/announce"),
+        QStringLiteral("http://qimlze77z7w32lx2ntnwkuqslrzlsqy7774v3urueuarafyqik5a.b32.i2p:80/a"),
+        QStringLiteral("http://opentracker.dg2.i2p:80/a"),
+        QStringLiteral("http://opentracker.r4sas.i2p:80/a"),
+        QStringLiteral("http://opentracker.simp.i2p:80/a"),
+        QStringLiteral("http://opentracker.skank.i2p:80/a"),
+        QStringLiteral("http://opentracker.eeptorrent.i2p:80/a"),
+        QStringLiteral("http://opentracker.fattydove.i2p:80/a"),
+        QStringLiteral("http://freetracker.i2p:7331/announce"),
+        QStringLiteral("http://nyaaplus.i2p:80/announce"),
+        QStringLiteral("http://sigmatracker.i2p:80/a"),
+        QStringLiteral("http://tracker.insulaocculta.i2p/a"),
+        QStringLiteral("http://tracker.nyaa2p.i2p:80/announce"),
+        QStringLiteral("http://yet-another-public-tracker.i2p/announce"),
+    };
+}
 
 bool Preferences::ed3kEnabled() const { return get(&Data::ed3kEnabled); }
 void Preferences::setEd3kEnabled(bool val) { set(&Data::ed3kEnabled, val); }
@@ -3704,6 +3783,7 @@ QCborMap Preferences::toIpcMap() const
     prefs.insert(QStringLiteral("btDownloadDir"), btDownloadDir());
     prefs.insert(QStringLiteral("btMaxDownloadKb"), static_cast<qint64>(btMaxDownloadKb()));
     prefs.insert(QStringLiteral("btMaxUploadKb"), static_cast<qint64>(btMaxUploadKb()));
+    prefs.insert(QStringLiteral("btStopAfterMetadata"), btStopAfterMetadata());
     prefs.insert(QStringLiteral("btDht"), btDht());
     prefs.insert(QStringLiteral("btLsd"), btLsd());
     prefs.insert(QStringLiteral("btPex"), btPex());
@@ -3722,6 +3802,17 @@ QCborMap Preferences::toIpcMap() const
     prefs.insert(QStringLiteral("btMaxConnectionsPerTorrent"),
                  static_cast<qint64>(btMaxConnectionsPerTorrent()));
     prefs.insert(QStringLiteral("btPortMapping"), btPortMapping());
+    prefs.insert(QStringLiteral("btI2pMode"), static_cast<qint64>(btI2pMode()));
+    prefs.insert(QStringLiteral("btI2pHost"), btI2pHost());
+    prefs.insert(QStringLiteral("btI2pPort"), static_cast<qint64>(btI2pPort()));
+    prefs.insert(QStringLiteral("btI2pMixed"), btI2pMixed());
+    prefs.insert(QStringLiteral("btI2pOnlyNew"), btI2pOnlyNew());
+    prefs.insert(QStringLiteral("btI2pEd3kJoin"), btI2pEd3kJoin());
+    prefs.insert(QStringLiteral("btI2pTunnelLength"), static_cast<qint64>(btI2pTunnelLength()));
+    prefs.insert(QStringLiteral("btI2pTunnelQuantity"), static_cast<qint64>(btI2pTunnelQuantity()));
+    prefs.insert(QStringLiteral("btI2pTrackers"), btI2pTrackers().join(QLatin1Char(' ')));
+    prefs.insert(QStringLiteral("btI2pRouterPort"), static_cast<qint64>(btI2pRouterPort()));
+    prefs.insert(QStringLiteral("btI2pShare"), static_cast<qint64>(btI2pShare()));
 
     // ed3k
     prefs.insert(QStringLiteral("ed3kEnabled"), ed3kEnabled());
@@ -4032,6 +4123,7 @@ void Preferences::updateFromCbor(const QCborMap& p)
         m_data->btDownloadDir = p.value(QStringLiteral("btDownloadDir")).toString();
         m_data->btMaxDownloadKb = static_cast<uint32>(num("btMaxDownloadKb", 0, 0, kMaxU32));
         m_data->btMaxUploadKb   = static_cast<uint32>(num("btMaxUploadKb", 0, 0, kMaxU32));
+        m_data->btStopAfterMetadata = p.value(QStringLiteral("btStopAfterMetadata")).toBool(false);
         m_data->btDht = p.value(QStringLiteral("btDht")).toBool(true);
         m_data->btLsd = p.value(QStringLiteral("btLsd")).toBool(true);
         m_data->btPex = p.value(QStringLiteral("btPex")).toBool(true);
@@ -4051,6 +4143,18 @@ void Preferences::updateFromCbor(const QCborMap& p)
         m_data->btMaxConnectionsPerTorrent = int(num("btMaxConnectionsPerTorrent",
             kDefaultBtMaxConnectionsPerTorrent, 2, kMaxBtConnections));
         m_data->btPortMapping = p.value(QStringLiteral("btPortMapping")).toBool(true);
+        m_data->btI2pMode = int(num("btI2pMode", kBtI2pOff, kBtI2pOff, kBtI2pExternal));
+        m_data->btI2pHost = p.value(QStringLiteral("btI2pHost")).toString(QStringLiteral("127.0.0.1"));
+        m_data->btI2pPort = static_cast<uint16>(num("btI2pPort", kDefaultBtI2pSamPort, 1, 65535));
+        m_data->btI2pMixed = p.value(QStringLiteral("btI2pMixed")).toBool(false);
+        m_data->btI2pOnlyNew = p.value(QStringLiteral("btI2pOnlyNew")).toBool(false);
+        m_data->btI2pEd3kJoin = p.value(QStringLiteral("btI2pEd3kJoin")).toBool(true);
+        m_data->btI2pTunnelLength = int(num("btI2pTunnelLength", 3, 1, 7));
+        m_data->btI2pTunnelQuantity = int(num("btI2pTunnelQuantity", 3, 1, 16));
+        if (p.contains(QStringLiteral("btI2pTrackers")))
+            m_data->btI2pTrackers = rpcUrlList(p.value(QStringLiteral("btI2pTrackers")));
+        m_data->btI2pRouterPort = static_cast<uint16>(num("btI2pRouterPort", 0, 0, 65535));
+        m_data->btI2pShare = int(num("btI2pShare", 50, 0, 100));
     }
 
     // ed3k. Defaults for a key an older daemon does not send.
@@ -5258,6 +5362,7 @@ bool Preferences::load(const QString& filePath)
                 0, bt["maxDownloadKb"].as<long long>(m_data->btMaxDownloadKb)));
             m_data->btMaxUploadKb = static_cast<uint32>(std::max<long long>(
                 0, bt["maxUploadKb"].as<long long>(m_data->btMaxUploadKb)));
+            m_data->btStopAfterMetadata = bt["stopAfterMetadata"].as<bool>(m_data->btStopAfterMetadata);
             m_data->btDht = bt["dht"].as<bool>(m_data->btDht);
             m_data->btLsd = bt["lsd"].as<bool>(m_data->btLsd);
             m_data->btPex = bt["pex"].as<bool>(m_data->btPex);
@@ -5283,6 +5388,28 @@ bool Preferences::load(const QString& filePath)
                 bt["maxConnectionsPerTorrent"].as<int>(m_data->btMaxConnectionsPerTorrent),
                 2, kMaxBtConnections);
             m_data->btPortMapping = bt["portMapping"].as<bool>(m_data->btPortMapping);
+            if (auto i2p = bt["i2p"]) {
+                m_data->btI2pMode = std::clamp(i2p["mode"].as<int>(m_data->btI2pMode), kBtI2pOff, kBtI2pExternal);
+                if (const QString host = QString::fromStdString(i2p["host"].as<std::string>("")).trimmed(); !host.isEmpty())
+                    m_data->btI2pHost = host;
+                const int samPort = i2p["port"].as<int>(m_data->btI2pPort);
+                m_data->btI2pPort = (samPort >= 1 && samPort <= 65535) ? static_cast<uint16>(samPort) : kDefaultBtI2pSamPort;
+                m_data->btI2pMixed = i2p["mixed"].as<bool>(m_data->btI2pMixed);
+                m_data->btI2pOnlyNew = i2p["onlyNew"].as<bool>(m_data->btI2pOnlyNew);
+                m_data->btI2pEd3kJoin = i2p["ed3kJoin"].as<bool>(m_data->btI2pEd3kJoin);
+                m_data->btI2pTunnelLength = std::clamp(i2p["tunnelLength"].as<int>(m_data->btI2pTunnelLength), 1, 7);
+                m_data->btI2pTunnelQuantity = std::clamp(i2p["tunnelQuantity"].as<int>(m_data->btI2pTunnelQuantity), 1, 16);
+                if (auto list = i2p["trackers"]; list && list.IsSequence()) {
+                    QStringList urls;
+                    for (const auto& item : list)
+                        if (const QString u = QString::fromStdString(item.as<std::string>("")).trimmed(); !u.isEmpty())
+                            urls << u;
+                    m_data->btI2pTrackers = urls;
+                }
+                const int routerPort = i2p["routerPort"].as<int>(m_data->btI2pRouterPort);
+                m_data->btI2pRouterPort = (routerPort >= 0 && routerPort <= 65535) ? static_cast<uint16>(routerPort) : 0;
+                m_data->btI2pShare = std::clamp(i2p["share"].as<int>(m_data->btI2pShare), 0, 100);
+            }
         }
 
         if (auto e3 = root["ed3k"]) {
@@ -5568,7 +5695,15 @@ bool Preferences::load(const QString& filePath)
     validate();
     resolveDefaultDirectories();
 
-    if ((ed3kPortPicked || ed3kSitePortPicked) && !hashGenerated && !saveImpl(m_filePath))
+    // bundled I2P router: picked once and kept, so its router identity stays reachable
+    const bool i2pRouterPortPicked = m_data->btI2pRouterPort == 0;
+    if (i2pRouterPortPicked) {
+        const uint16 btPort = m_data->btListenPort;
+        m_data->btI2pRouterPort = randomPort([btPort](uint16 p) { return p != btPort && tcpPortFree(p) && udpPortFree(p); },
+                                             kBtI2pRouterPortMin, kBtI2pRouterPortMax);
+    }
+
+    if ((ed3kPortPicked || ed3kSitePortPicked || i2pRouterPortPicked) && !hashGenerated && !saveImpl(m_filePath))
         logWarning(QStringLiteral("ed3k UDP port could not be saved to %1").arg(m_filePath));
 
     // Persist now: otherwise the file keeps the empty hash until some later save
@@ -6567,6 +6702,7 @@ bool Preferences::saveImpl(const QString& filePath) const
         out << YAML::Key << "downloadDir" << YAML::Value << m_data->btDownloadDir.toStdString();
     out << YAML::Key << "maxDownloadKb" << YAML::Value << m_data->btMaxDownloadKb;
     out << YAML::Key << "maxUploadKb" << YAML::Value << m_data->btMaxUploadKb;
+    out << YAML::Key << "stopAfterMetadata" << YAML::Value << m_data->btStopAfterMetadata;
     out << YAML::Key << "dht" << YAML::Value << m_data->btDht;
     out << YAML::Key << "lsd" << YAML::Value << m_data->btLsd;
     out << YAML::Key << "pex" << YAML::Value << m_data->btPex;
@@ -6580,6 +6716,22 @@ bool Preferences::saveImpl(const QString& filePath) const
     out << YAML::Key << "maxConnections" << YAML::Value << m_data->btMaxConnections;
     out << YAML::Key << "maxConnectionsPerTorrent" << YAML::Value << m_data->btMaxConnectionsPerTorrent;
     out << YAML::Key << "portMapping" << YAML::Value << m_data->btPortMapping;
+    out << YAML::Key << "i2p" << YAML::Value << YAML::BeginMap;
+    out << YAML::Key << "mode" << YAML::Value << m_data->btI2pMode;
+    out << YAML::Key << "host" << YAML::Value << m_data->btI2pHost.toStdString();
+    out << YAML::Key << "port" << YAML::Value << static_cast<int>(m_data->btI2pPort);
+    out << YAML::Key << "mixed" << YAML::Value << m_data->btI2pMixed;
+    out << YAML::Key << "onlyNew" << YAML::Value << m_data->btI2pOnlyNew;
+    out << YAML::Key << "ed3kJoin" << YAML::Value << m_data->btI2pEd3kJoin;
+    out << YAML::Key << "tunnelLength" << YAML::Value << m_data->btI2pTunnelLength;
+    out << YAML::Key << "tunnelQuantity" << YAML::Value << m_data->btI2pTunnelQuantity;
+    out << YAML::Key << "trackers" << YAML::Value << YAML::BeginSeq;
+    for (const QString& u : m_data->btI2pTrackers)
+        out << u.toStdString();
+    out << YAML::EndSeq;
+    out << YAML::Key << "routerPort" << YAML::Value << static_cast<int>(m_data->btI2pRouterPort);
+    out << YAML::Key << "share" << YAML::Value << m_data->btI2pShare;
+    out << YAML::EndMap;
     out << YAML::EndMap;
 
     out << YAML::Key << "ed3k" << YAML::Value << YAML::BeginMap;

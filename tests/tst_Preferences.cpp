@@ -392,6 +392,7 @@ private slots:
         QCOMPARE(prefs.btEnabled(), true);
         QCOMPARE(prefs.btListenPort(), uint16{6881});
         QCOMPARE(prefs.btDownloadDir(), QString());
+        QCOMPARE(prefs.btStopAfterMetadata(), false);
         QCOMPARE(prefs.btMaxDownloadKb(), uint32{0});
         QCOMPARE(prefs.btMaxUploadKb(), uint32{0});
         QCOMPARE(prefs.btDht(), true);
@@ -444,6 +445,19 @@ private slots:
             prefs.setBtMaxActiveSeeds(0);
             prefs.setBtSeedRatioPercent(250);
             prefs.setBtSeedTimeLimitMinutes(1440);
+            prefs.setBtI2pMode(Preferences::kBtI2pExternal);
+            prefs.setBtI2pHost(QStringLiteral("10.0.0.5"));
+            prefs.setBtI2pPort(7660);
+            prefs.setBtI2pMixed(true);
+            prefs.setBtI2pOnlyNew(true);
+            prefs.setBtStopAfterMetadata(true);
+            prefs.setBtI2pEd3kJoin(false);
+            prefs.setBtI2pTunnelLength(2);
+            prefs.setBtI2pTunnelQuantity(5);
+            prefs.setBtI2pTrackers({QStringLiteral("http://a.i2p/a"), QStringLiteral(" http://b.i2p/a "),
+                                    QStringLiteral("http://a.i2p/a")});
+            prefs.setBtI2pRouterPort(23456);
+            prefs.setBtI2pShare(10);
             QVERIFY(prefs.saveTo(file));
         }
         QFile f(file);
@@ -467,6 +481,19 @@ private slots:
             QCOMPARE(p.btMaxActiveSeeds(), 0);
             QCOMPARE(p.btSeedRatioPercent(), 250);
             QCOMPARE(p.btSeedTimeLimitMinutes(), 1440);
+            QCOMPARE(p.btI2pMode(), Preferences::kBtI2pExternal);
+            QCOMPARE(p.btI2pHost(), QStringLiteral("10.0.0.5"));
+            QCOMPARE(p.btI2pPort(), uint16{7660});
+            QCOMPARE(p.btI2pMixed(), true);
+            QCOMPARE(p.btI2pOnlyNew(), true);
+            QCOMPARE(p.btStopAfterMetadata(), true);
+            QCOMPARE(p.btI2pEd3kJoin(), false);
+            QCOMPARE(p.btI2pTunnelLength(), 2);
+            QCOMPARE(p.btI2pTunnelQuantity(), 5);
+            // trimmed, duplicates dropped
+            QCOMPARE(p.btI2pTrackers(), (QStringList{QStringLiteral("http://a.i2p/a"), QStringLiteral("http://b.i2p/a")}));
+            QCOMPARE(p.btI2pRouterPort(), uint16{23456});
+            QCOMPARE(p.btI2pShare(), 10);
         };
         check(loaded);
         if (QTest::currentTestFailed())
@@ -488,6 +515,9 @@ private slots:
         QCOMPARE(gui.btDht(), true);
         QCOMPARE(gui.btMaxActiveDownloads(), 3);
         QCOMPARE(gui.btSeedRatioPercent(), 100);
+        QCOMPARE(gui.btI2pMode(), Preferences::kBtI2pOff);
+        QCOMPARE(gui.btI2pEd3kJoin(), true);
+        QCOMPARE(gui.btI2pTrackers(), Preferences::defaultBtI2pTrackers());
     }
 
     void ed3kCredit_roundTrip()
@@ -648,7 +678,8 @@ private slots:
             QStringLiteral("btMaxUploadKb"), QStringLiteral("btDht"), QStringLiteral("btLsd"),
             QStringLiteral("btPex"), QStringLiteral("btEncryption"),
             QStringLiteral("btMaxActiveDownloads"), QStringLiteral("btMaxActiveSeeds"),
-            QStringLiteral("btSeedRatioPercent"), QStringLiteral("btSeedTimeLimitMinutes")};
+            QStringLiteral("btSeedRatioPercent"), QStringLiteral("btSeedTimeLimitMinutes"),
+            QStringLiteral("btStopAfterMetadata")};
         const QCborMap map = Preferences{}.toIpcMap();
         for (const QString& key : keys) {
             const PrefSpec* spec = findPreferenceSpec(key);

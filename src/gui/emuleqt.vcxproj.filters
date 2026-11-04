@@ -238,6 +238,9 @@
     <ClCompile Include="dialogs\AddTorrentDialog.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
+    <ClCompile Include="dialogs\BtI2pGroup.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
     <ClCompile Include="dialogs\TorrentDetailsDialog.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
@@ -856,6 +859,9 @@
       <Filter>Header Files</Filter>
     </QtMoc>
     <QtMoc Include="dialogs\AddTorrentDialog.h">
+      <Filter>Header Files</Filter>
+    </QtMoc>
+    <QtMoc Include="dialogs\BtI2pGroup.h">
       <Filter>Header Files</Filter>
     </QtMoc>
     <QtMoc Include="dialogs\TorrentDetailsDialog.h">

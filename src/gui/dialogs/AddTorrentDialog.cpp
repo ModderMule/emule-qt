@@ -5,6 +5,7 @@
 #include "dialogs/AddTorrentDialog.h"
 
 #include "app/IpcClient.h"
+#include "prefs/Preferences.h"
 #include "utils/StatusBarNotifier.h"
 #include "utils/TorrentAdd.h"
 #include "utils/TorrentLinks.h"
@@ -39,6 +40,8 @@ PasteTextDialog::Chrome chromeFor(AddTorrentDialog::Mode mode)
     c.readOnlyText = !magnets;
     c.savePathLabel = AddTorrentDialog::tr("Save to:");
     c.pausedOption = true;
+    c.optionLabels = {AddTorrentDialog::tr("Stop after metadata to pick the files"),
+                      AddTorrentDialog::tr("I2P only (anonymous, slower)")};
     return c;
 }
 
@@ -52,6 +55,18 @@ AddTorrentDialog::AddTorrentDialog(IpcClient* ipc, Mode mode, const QStringList&
 {
     // A remote core's folders are not this machine's: type, don't browse
     setSavePathBrowsable(m_ipc && m_ipc->isLocalConnection());
+    // the core's prefs as last synced; off = the box sends nothing (the core's default)
+    setOption(kStopOption, thePrefs.btStopAfterMetadata(), true,
+              m_mode == Mode::Magnets
+                  ? tr("Fetches the file list, then stops before any file downloads. "
+                       "Untick the files to skip in the Files list, then resume.")
+                  : tr("Adds the torrent stopped. Untick the files to skip in the Files list, "
+                       "then resume."));
+    const bool i2pOn = thePrefs.btI2pMode() != Preferences::kBtI2pOff;
+    setOption(kI2pOption, i2pOn && thePrefs.btI2pOnlyNew(), i2pOn,
+              i2pOn ? tr("Peers only over I2P: they see an I2P address, never your IP. No DHT; "
+                         "the I2P trackers are added.")
+                    : tr("Turn on I2P in Options > BitTorrent > Connection first."));
 
     if (m_mode == Mode::Files) {
         m_paths = items;
@@ -125,6 +140,8 @@ void AddTorrentDialog::sendAll(const QStringList& keys, const QHash<QString, QBy
 {
     const QString savePath = this->savePath();
     const bool paused = queuePaused();
+    const std::optional<bool> i2pOnly = option(kI2pOption);
+    const std::optional<bool> stop = option(kStopOption);
     const bool files = m_mode == Mode::Files;
 
     auto added = std::make_shared<int>(0);
@@ -138,9 +155,9 @@ void AddTorrentDialog::sendAll(const QStringList& keys, const QHash<QString, QBy
     setBusy(true);
     m_ipc->sendBatchRequest(
         keys,
-        [files, fileData, savePath, paused](const QString& key) {
-            return files ? gui::torrentFileRequest(fileData.value(key), savePath, paused)
-                         : gui::magnetRequest(key, savePath, paused);
+        [files, fileData, savePath, paused, i2pOnly, stop](const QString& key) {
+            return files ? gui::torrentFileRequest(fileData.value(key), savePath, paused, i2pOnly, stop)
+                         : gui::magnetRequest(key, savePath, paused, i2pOnly, stop);
         },
         this,
         [self, added, problems] {

@@ -131,6 +131,7 @@ private slots:
     void linkJoinFetchesItsSet();
     void ed3kSkipsPiecesLibtorrentHas();
     void aGoneMemberFailsItsRead();
+    void i2pTorrentJoinsOnlyWhenAllowed();
 
 private:
     QTemporaryDir m_dir;
@@ -469,6 +470,37 @@ void tst_Ed3kTorrentJoin::aGoneMemberFailsItsRead()
     leecher.stop();
     node.stop();
     a.stop();
+}
+
+// btI2pEd3kJoin: an I2P torrent joins while allowed; off drops its join, on brings it back
+void tst_Ed3kTorrentJoin::i2pTorrentJoinsOnlyWhenAllowed()
+{
+    const QString dir = m_dir.filePath(QStringLiteral("i2p"));
+    Ed3kSession node;
+    QVERIFY(node.start(loopback(dir)));
+    BtSettings bs = btSettings(dir);
+    bs.i2pEnabled = true;
+    BtSession bt;
+    bt.start(bs);
+    Ed3kTorrentJoin join(node, bt, dir);
+    join.setSearchEnabled(false);
+    join.setI2pJoins(false);
+    join.start();
+
+    const BtAddResult i2p = bt.addTorrentFile(m_torrent, dir + QStringLiteral("/Incoming"), true, true);
+    QCOMPARE(i2p.outcome, BtAddOutcome::Added);
+    QVERIFY(bt.torrent(i2p.id)->i2p);
+    QTest::qWait(200);
+    QVERIFY(!join.hasJoin(i2p.id));
+
+    join.setI2pJoins(true);
+    QTRY_VERIFY_WITH_TIMEOUT(join.hasJoin(i2p.id), kTimeoutMs);
+    join.setI2pJoins(false);
+    QVERIFY(!join.hasJoin(i2p.id));
+
+    join.stop();
+    bt.stop();
+    node.stop();
 }
 
 QTEST_GUILESS_MAIN(tst_Ed3kTorrentJoin)

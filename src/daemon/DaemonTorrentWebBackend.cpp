@@ -39,6 +39,8 @@ QCborMap DaemonTorrentWebBackend::details(const QString& id) const
     return ask(IpcMsgType::GetTorrentDetails, {id}).toMap();
 }
 
+// ToDo: an "I2P only" choice in the web UI's add form (field 3 of AddTorrentFile/AddMagnet);
+// without it the daemon's btI2pOnlyNew default applies
 TorrentWebAddResult DaemonTorrentWebBackend::addTorrentFile(const QByteArray& data,
                                                             const QString& savePath, bool paused)
 {

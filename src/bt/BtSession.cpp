@@ -27,6 +27,7 @@
 #include <QDir>
 #include <QElapsedTimer>
 #include <QFile>
+#include <QJsonArray>
 #include <QJsonDocument>
 #include <QJsonObject>
 #include <QSaveFile>
@@ -64,6 +65,8 @@ const QString kResumeSuffix = QStringLiteral(".fastresume");
 const QString kOptionsFile = QStringLiteral("torrent-options.json");
 /// the ed3k:file links torrents were added with (torrent.md §4.1)
 const QString kLinksFile = QStringLiteral("ed3k-links.json");
+/// magnets to stop once their metadata is in (BtAddSource::applyStopAfterMetadata)
+const QString kStopsFile = QStringLiteral("stop-after-metadata.json");
 
 /// A torrent plugin of libtorrent as a session plugin: the explicit list of extensions.
 struct TorrentPlugin final : lt::plugin {
@@ -223,6 +226,8 @@ struct BtSession::Impl {
     int peersIdx = lt::find_metric_idx("peer.num_peers_connected");
     bool listening = false;
     int dhtNodes = 0;
+    /// last SAM error; cleared when the SAM bridge changes
+    QString i2pError;
     /// ed3k joins by id; attached to each disk I/O the session makes
     std::map<QString, std::shared_ptr<BtJoinSink>> joins;
     /// ed3k:file links by id (kLinksFile)
@@ -252,6 +257,32 @@ struct BtSession::Impl {
         if (!writeAtomic(linksPath(), std::vector<char>(json.begin(), json.end())))
             logWarning(QStringLiteral("BitTorrent: could not write %1").arg(linksPath()));
     }
+    /// ids stopped at metadata (kStopsFile); default_dont_download is not in the resume data
+    QSet<QString> stopAtMeta;
+    /// stopped at metadata, not resumed since: nothing wanted, so a finish is not a download
+    QSet<QString> metaStopped;
+    [[nodiscard]] QString stopsPath() const { return QDir(settings.stateDir).filePath(kStopsFile); }
+    void loadStops()
+    {
+        stopAtMeta.clear();
+        for (const QJsonValue& v : QJsonDocument::fromJson(readAll(stopsPath())).array())
+            stopAtMeta.insert(v.toString());
+    }
+    void saveStops() const
+    {
+        if (stopAtMeta.isEmpty()) {
+            QFile::remove(stopsPath());
+            return;
+        }
+        QJsonArray ids;
+        for (const QString& id : stopAtMeta)
+            ids.append(id);
+        const QByteArray json = QJsonDocument(ids).toJson(QJsonDocument::Compact);
+        if (!writeAtomic(stopsPath(), std::vector<char>(json.begin(), json.end())))
+            logWarning(QStringLiteral("BitTorrent: could not write %1").arg(stopsPath()));
+    }
+    /// at metadata: paused, every file back to normal so the user unticks what to skip
+    void stopAtMetadata(const lt::torrent_handle& h, const QString& id);
     /// the app's filter, set again at each start (session state does not keep it)
     lt::ip_filter ipFilter;
     quint64 blockedPeers = 0;
@@ -272,7 +303,9 @@ struct BtSession::Impl {
     [[nodiscard]] QString optionsPath() const { return QDir(settings.stateDir).filePath(kOptionsFile); }
     void loadSeedLimits();
     void saveSeedLimits() const;
-    BtAddResult add(BtSession& q, lt::add_torrent_params atp, const QString& savePath, bool paused, const QString& link = {});
+    BtAddResult add(BtSession& q, lt::add_torrent_params atp, const QString& savePath, bool paused,
+                    std::optional<bool> i2pOnly, std::optional<bool> stopAfterMetadata,
+                    const QString& link = {});
     void enforceSeedLimits(const lt::torrent_status& st, const BtTorrentRow& row);
     /// settings as a pack, with the setRateLimits() caps over the configured ones
     [[nodiscard]] lt::settings_pack pack(const BtSettings& s) const;
@@ -368,6 +401,8 @@ void BtSession::start(const BtSettings& settings)
 
     d->loadSeedLimits();
     d->loadLinks();
+    d->loadStops();
+    const qsizetype stopsAtLoad = d->stopAtMeta.size();
 
     // the torrents of the last run
     const QDir resumeDir(QDir(settings.stateDir).filePath(kResumeDir));
@@ -382,10 +417,24 @@ void BtSession::start(const BtSettings& settings)
         }
         if (atp.save_path.empty())
             atp.save_path = settings.downloadDir.toStdString();
+        if (const QString id = BtTorrentView::idOf(atp.ti ? atp.ti->info_hashes() : atp.info_hashes);
+            d->stopAtMeta.contains(id)) {
+            if (!atp.ti) {
+                atp.flags |= lt::torrent_flags::default_dont_download;
+            } else {
+                // metadata came in, the stop did not make it to disk
+                atp.flags |= lt::torrent_flags::paused;
+                atp.flags &= ~lt::torrent_flags::auto_managed;
+                atp.file_priorities.assign(static_cast<std::size_t>(atp.ti->num_files()), lt::default_priority);
+                d->stopAtMeta.remove(id);
+            }
+        }
         d->defaultConnections(atp);
         d->ses->async_add_torrent(std::move(atp));
         ++loaded;
     }
+    if (d->stopAtMeta.size() != stopsAtLoad)
+        d->saveStops();
     d->ticks = 0;
     d->timer->start();
     logInfo(QStringLiteral("BitTorrent: libtorrent %1 started, port %2, %3 torrent(s) resumed")
@@ -453,6 +502,9 @@ void BtSession::applySettings(const BtSettings& settings)
 {
     const int oldPerTorrent = d->settings.maxConnectionsPerTorrent;
     const bool wasBlocked = d->settings.networkBlocked;
+    if (d->settings.i2pSamHost != settings.i2pSamHost || d->settings.i2pSamPort != settings.i2pSamPort
+        || d->settings.i2pEnabled != settings.i2pEnabled)
+        d->i2pError.clear();
     d->settings = settings;
     if (!d->ses)
         return;
@@ -526,14 +578,15 @@ BtDemand BtSession::demand()
     return out;
 }
 
-BtAddResult BtSession::addTorrentFile(const QByteArray& data, const QString& savePath, bool paused)
+BtAddResult BtSession::addTorrentFile(const QByteArray& data, const QString& savePath, bool paused, std::optional<bool> i2pOnly,
+                                      std::optional<bool> stopAfterMetadata)
 {
     if (!d->ses)
         return {BtAddOutcome::NotRunning, {}, QStringLiteral("BitTorrent is off")};
     auto atp = BtAddSource::fromTorrentFile(data);
     if (!atp)
         return {BtAddOutcome::Invalid, {}, atp.error()};
-    return d->add(*this, std::move(*atp), savePath, paused);
+    return d->add(*this, std::move(*atp), savePath, paused, i2pOnly, stopAfterMetadata);
 }
 
 std::expected<BtTorrentPreview, QString> BtSession::inspectTorrentFile(const QByteArray& data)
@@ -544,14 +597,15 @@ std::expected<BtTorrentPreview, QString> BtSession::inspectTorrentFile(const QBy
     return BtTorrentView::preview(*atp);
 }
 
-BtAddResult BtSession::addMagnet(const QString& uri, const QString& savePath, bool paused)
+BtAddResult BtSession::addMagnet(const QString& uri, const QString& savePath, bool paused, std::optional<bool> i2pOnly,
+                                 std::optional<bool> stopAfterMetadata)
 {
     if (!d->ses)
         return {BtAddOutcome::NotRunning, {}, QStringLiteral("BitTorrent is off")};
     auto atp = BtAddSource::fromMagnet(uri);
     if (!atp)
         return {BtAddOutcome::Invalid, {}, atp.error()};
-    return d->add(*this, std::move(*atp), savePath, paused, BtAddSource::ed3kLinkOf(uri));
+    return d->add(*this, std::move(*atp), savePath, paused, i2pOnly, stopAfterMetadata, BtAddSource::ed3kLinkOf(uri));
 }
 
 bool BtSession::remove(const QString& id, bool deleteFiles)
@@ -563,8 +617,11 @@ bool BtSession::remove(const QString& id, bool deleteFiles)
     d->handles.erase(id);
     d->rows.erase(id);
     d->limitOverride.remove(id);
+    d->metaStopped.remove(id);
     if (d->links.erase(id) > 0)
         d->saveLinks();
+    if (d->stopAtMeta.remove(id))
+        d->saveStops();
     if (auto* disk = d->io.load(); disk && d->joins.contains(id))
         disk->detach(h.info_hashes());
     d->joins.erase(id);
@@ -593,6 +650,7 @@ bool BtSession::resume(const QString& id)
     // a seed the user resumes keeps seeding past the limits
     if (auto it = d->rows.find(id); it != d->rows.end() && it->second.paused && it->second.size > 0 && it->second.done >= it->second.size)
         d->limitOverride.insert(id);
+    d->metaStopped.remove(id);
     h.set_flags(lt::torrent_flags::auto_managed);
     h.resume();
     return true;
@@ -773,6 +831,9 @@ BtStatus BtSession::status() const
     s.listenPort = d->ses->listen_port();
     s.listening = d->listening;
     s.dhtNodes = d->dhtNodes;
+    s.i2pEnabled = d->settings.i2pEnabled;
+    s.i2pSam = d->settings.i2pEnabled && d->settings.i2pSamPort != 0;
+    s.i2pError = d->i2pError;
     s.torrents = static_cast<int>(d->rows.size());
     for (const auto& [id, row] : d->rows) {
         s.rateDown += row.rateDown;
@@ -925,18 +986,24 @@ void BtSession::drainAlerts()
             d->outstandingResume = std::max(0, d->outstandingResume - 1);
         } else if (auto* tf = lt::alert_cast<lt::torrent_finished_alert>(a)) {
             const QString id = BtTorrentView::idOf(tf->handle.info_hashes());
+            // stopped at metadata: nothing is wanted yet, not a finished download
+            const bool download = !d->metaStopped.contains(id);
             // also posted for a seed loaded at start: only a download counts
-            if (auto it = d->rows.find(id); it != d->rows.end()
+            if (auto it = d->rows.find(id); download && it != d->rows.end()
                 && (it->second.state == BtState::Downloading
                     || it->second.state == BtState::DownloadingMetadata))
                 if (BtCounters* c = Impl::counters())
                     ++c->torrentsCompleted;
-            logInfo(QStringLiteral("BitTorrent: %1").arg(message(tf)));
+            if (download)
+                logInfo(QStringLiteral("BitTorrent: %1").arg(message(tf)));
             d->saveResume(tf->handle);
-            emit torrentFinished(id);
+            if (download)
+                emit torrentFinished(id);
         } else if (auto* md = lt::alert_cast<lt::metadata_received_alert>(a)) {
-            d->saveResume(md->handle);
             const QString id = BtTorrentView::idOf(md->handle.info_hashes());
+            if (d->stopAtMeta.contains(id))
+                d->stopAtMetadata(md->handle, id);
+            d->saveResume(md->handle);
             emit torrentChanged(id);
             emit metadataReceived(id);
         } else if (auto* pf = lt::alert_cast<lt::piece_finished_alert>(a)) {
@@ -951,6 +1018,14 @@ void BtSession::drainAlerts()
             emit statusChanged();
         } else if (auto* lf = lt::alert_cast<lt::listen_failed_alert>(a)) {
             logWarning(QStringLiteral("BitTorrent: %1").arg(message(lf)));
+            emit statusChanged();
+        } else if (auto* ia = lt::alert_cast<lt::i2p_alert>(a)) {
+            // libtorrent retries the SAM bridge itself (session_impl::schedule_i2p_reconnect)
+            const QString err = QString::fromStdString(ia->error.message());
+            if (err != d->i2pError)
+                logWarning(QStringLiteral("BitTorrent: I2P SAM bridge %1:%2: %3")
+                               .arg(d->settings.i2pSamHost).arg(d->settings.i2pSamPort).arg(err));
+            d->i2pError = err;
             emit statusChanged();
         } else if (auto* pb = lt::alert_cast<lt::peer_blocked_alert>(a)) {
             // its line went to Torrent Verbose (forwardAlert, ip_block)
@@ -993,7 +1068,8 @@ void BtSession::tick()
                 d->saveResume(h, lt::torrent_handle::save_info_dict | lt::torrent_handle::only_if_modified);
 }
 
-BtAddResult BtSession::Impl::add(BtSession& q, lt::add_torrent_params atp, const QString& savePath, bool paused, const QString& link)
+BtAddResult BtSession::Impl::add(BtSession& q, lt::add_torrent_params atp, const QString& savePath, bool paused,
+                                 std::optional<bool> i2pOnly, std::optional<bool> stopAfterMetadata, const QString& link)
 {
     const lt::info_hash_t hashes = atp.ti ? atp.ti->info_hashes() : atp.info_hashes;
     if (auto found = ses->find_torrent(hashes.get_best()); found.is_valid())
@@ -1007,6 +1083,8 @@ BtAddResult BtSession::Impl::add(BtSession& q, lt::add_torrent_params atp, const
         atp.flags &= ~lt::torrent_flags::paused;
     }
     defaultConnections(atp);
+    const bool i2p = BtAddSource::applyI2p(atp, settings, i2pOnly);
+    const bool stopAtMetaPending = BtAddSource::applyStopAfterMetadata(atp, settings, stopAfterMetadata);
     const lt::add_torrent_params metaOf = [&atp] {
         lt::add_torrent_params p;
         p.comment = atp.comment;
@@ -1026,13 +1104,32 @@ BtAddResult BtSession::Impl::add(BtSession& q, lt::add_torrent_params atp, const
         links[id] = link;
         saveLinks();
     }
+    if (stopAtMetaPending) {
+        stopAtMeta.insert(id);
+        saveStops();
+    }
     // kept across a restart from now on
     saveResume(h);
-    logInfo(QStringLiteral("BitTorrent: added %1").arg(rows[id].name));
+    logInfo(QStringLiteral("BitTorrent: added %1%2").arg(rows[id].name, i2p ? QStringLiteral(" (I2P only)") : QString()));
     if (BtCounters* c = counters())
         ++c->torrentsAdded;
     emit q.torrentAdded(id);
     return {BtAddOutcome::Added, id, {}};
+}
+
+void BtSession::Impl::stopAtMetadata(const lt::torrent_handle& h, const QString& id)
+{
+    stopAtMeta.remove(id);
+    saveStops();
+    h.unset_flags(lt::torrent_flags::auto_managed);
+    h.pause();
+    const auto ti = h.torrent_file();
+    if (ti)
+        h.prioritize_files(std::vector<lt::download_priority_t>(static_cast<std::size_t>(ti->num_files()),
+                                                                lt::default_priority));
+    metaStopped.insert(id);
+    logInfo(QStringLiteral("BitTorrent: %1 stopped after its metadata: untick the files to skip, then resume")
+                .arg(ti ? QString::fromStdString(ti->name()) : id));
 }
 
 void BtSession::Impl::loadSeedLimits()

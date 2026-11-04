@@ -1,6 +1,7 @@
 #include "pch.h"
 #include "utils/FileAssociation.h"
 #include "dialogs/OptionsDialog.h"
+#include "dialogs/BtI2pGroup.h"
 #include "dialogs/Ed3kOptionsPages.h"
 #include "dialogs/FirstStartWizard.h"
 #include "dialogs/PortChangeNotice.h"
@@ -5684,6 +5685,17 @@ QWidget* OptionsDialog::createBitTorrentPage()
     dirRow->addWidget(m_btDownloadDirBrowse);
     mainLayout->addWidget(dirGroup);
 
+    // -- New torrents -------------------------------------------------------
+    auto* addGroup = new QGroupBox(tr("New torrents"), page);
+    auto* addLayout = new QVBoxLayout(addGroup);
+    m_btStopAfterMetadataCheck = new QCheckBox(tr("Stop after metadata to pick the files"), addGroup);
+    m_btStopAfterMetadataCheck->setToolTip(
+        tr("A magnet link fetches its file list, then stops before any file downloads; "
+           "a .torrent file is added stopped. Untick the files to skip in the Files list, "
+           "then resume. The add dialogs can change it for each torrent."));
+    addLayout->addWidget(m_btStopAfterMetadataCheck);
+    mainLayout->addWidget(addGroup);
+
     // -- Queue --------------------------------------------------------------
     auto* queueGroup = new QGroupBox(tr("Queue"), page);
     auto* queueForm = new QFormLayout(queueGroup);
@@ -5755,6 +5767,7 @@ QWidget* OptionsDialog::createBitTorrentPage()
         connect(box, &QSpinBox::valueChanged, this, &OptionsDialog::markDirty);
     connect(m_btSeedRatioSpin, &QDoubleSpinBox::valueChanged, this, &OptionsDialog::markDirty);
     connect(m_btDownloadDirEdit, &QLineEdit::textEdited, this, &OptionsDialog::markDirty);
+    connect(m_btStopAfterMetadataCheck, &QCheckBox::toggled, this, &OptionsDialog::markDirty);
     connect(m_btDownloadDirBrowse, &QPushButton::clicked, this, [this] {
         const QString dir = QFileDialog::getExistingDirectory(
             this, tr("BitTorrent download folder"), m_btDownloadDirEdit->text());
@@ -5844,6 +5857,11 @@ QWidget* OptionsDialog::createBtConnectionPage()
     peerForm->addRow(m_btPexCheck);
 
     mainLayout->addWidget(peerGroup);
+
+    // -- I2P (issue #118) ---------------------------------------------------
+    m_btI2pGroup = new BtI2pGroup(m_ipc, page);
+    connect(m_btI2pGroup, &BtI2pGroup::changed, this, &OptionsDialog::markDirty);
+    mainLayout->addWidget(m_btI2pGroup);
 
     // -- Bandwidth ----------------------------------------------------------
     auto* bwGroup = new QGroupBox(tr("Bandwidth"), page);
@@ -7523,6 +7541,8 @@ void OptionsDialog::saveSettings()
         req.append(static_cast<qint64>(m_btPortSpin->value()));
         req.append(QStringLiteral("btDownloadDir"));
         req.append(m_btDownloadDirEdit->text().trimmed());
+        req.append(QStringLiteral("btStopAfterMetadata"));
+        req.append(m_btStopAfterMetadataCheck->isChecked());
         req.append(QStringLiteral("btMaxDownloadKb"));
         req.append(static_cast<qint64>(m_btMaxDownSpin->value()));
         req.append(QStringLiteral("btMaxUploadKb"));
@@ -7553,6 +7573,7 @@ void OptionsDialog::saveSettings()
         req.append(static_cast<qint64>(m_btDownShareSpin->value()));
         req.append(QStringLiteral("btUploadSharePercent"));
         req.append(static_cast<qint64>(m_btUpShareSpin->value()));
+        m_btI2pGroup->appendTo(req);
 #endif
 
         // Web Interface page
@@ -8442,6 +8463,7 @@ void OptionsDialog::fillDaemonSettings(const QCborMap& prefs)
     m_btPortSpin->setValue(int(prefs.value(QStringLiteral("btListenPort"))
                                    .toInteger(Preferences::kDefaultBtListenPort)));
     m_btDownloadDirEdit->setText(prefs.value(QStringLiteral("btDownloadDir")).toString());
+    m_btStopAfterMetadataCheck->setChecked(prefs.value(QStringLiteral("btStopAfterMetadata")).toBool(false));
     m_btMaxDownSpin->setValue(int(prefs.value(QStringLiteral("btMaxDownloadKb")).toInteger(0)));
     m_btMaxUpSpin->setValue(int(prefs.value(QStringLiteral("btMaxUploadKb")).toInteger(0)));
     m_btDhtCheck->setChecked(prefs.value(QStringLiteral("btDht")).toBool(true));
@@ -8458,6 +8480,7 @@ void OptionsDialog::fillDaemonSettings(const QCborMap& prefs)
     m_btSeedTimeSpin->setValue(
         int(prefs.value(QStringLiteral("btSeedTimeLimitMinutes")).toInteger(0)));
     m_btPortMappingCheck->setChecked(prefs.value(QStringLiteral("btPortMapping")).toBool(true));
+    m_btI2pGroup->load(prefs);
     m_btMaxConnSpin->setValue(int(prefs.value(QStringLiteral("btMaxConnections"))
                                       .toInteger(Preferences::kDefaultBtMaxConnections)));
     m_btMaxConnPerTorrentSpin->setValue(

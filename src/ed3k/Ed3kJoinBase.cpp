@@ -832,6 +832,8 @@ void Ed3kJoinBase::shareKept()
             QDir(dir.filePath(sub)).removeRecursively();
             continue;
         }
+        if (!sharesKeptOwner(owner))
+            continue;
         const Kept kept = readKept(owner);
         if (shareKeptBlobs()) {
             for (const auto& b : kept.blobs) {

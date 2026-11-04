@@ -13,6 +13,7 @@
 #include <QString>
 
 #include <functional>
+#include <optional>
 
 class QWidget;
 
@@ -48,13 +49,16 @@ struct BtAddReply {
 [[nodiscard]] QString btAddOutcomeText(BtAddOutcome outcome, const QString& title,
                                        const QString& detail = {});
 
-/// AddTorrentFile [data, savePath, paused].
+/// AddTorrentFile [data, savePath, paused, i2pOnly?, stopAfterMetadata?]. A nullopt
+/// choice: the daemon's default.
 [[nodiscard]] Ipc::IpcMessage torrentFileRequest(const QByteArray& data, const QString& savePath,
-                                                 bool paused);
+                                                 bool paused, std::optional<bool> i2pOnly = std::nullopt,
+                                                 std::optional<bool> stopAfterMetadata = std::nullopt);
 
-/// AddMagnet [uri, savePath, paused].
+/// AddMagnet [uri, savePath, paused, i2pOnly?, stopAfterMetadata?].
 [[nodiscard]] Ipc::IpcMessage magnetRequest(const QString& uri, const QString& savePath,
-                                            bool paused);
+                                            bool paused, std::optional<bool> i2pOnly = std::nullopt,
+                                            std::optional<bool> stopAfterMetadata = std::nullopt);
 
 /// Send @p request; Added and Duplicate go to the status bar, the rest to a box
 /// one event-loop turn later (never inside the reply's stack, see NzbAdd.h).

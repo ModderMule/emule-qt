@@ -225,6 +225,7 @@
     <ClCompile Include="controls\TorrentListsPane.cpp" Condition="'$(EmuleBitTorrent)'=='true'" />
     <ClCompile Include="controls\TorrentPieceGrid.cpp" Condition="'$(EmuleBitTorrent)'=='true'" />
     <ClCompile Include="dialogs\AddTorrentDialog.cpp" Condition="'$(EmuleBitTorrent)'=='true'" />
+    <ClCompile Include="dialogs\BtI2pGroup.cpp" Condition="'$(EmuleBitTorrent)'=='true'" />
     <ClCompile Include="dialogs\TorrentDetailsDialog.cpp" Condition="'$(EmuleBitTorrent)'=='true'" />
     <ClCompile Include="panels\TorrentPanel.cpp" Condition="'$(EmuleBitTorrent)'=='true'" />
     <ClCompile Include="panels\HosterPanel.cpp" Condition="'$(EmuleHosterJd)'=='true'" />
@@ -520,6 +521,7 @@
     <QtMoc Include="controls\TorrentListsPane.h" Condition="'$(EmuleBitTorrent)'=='true'" />
     <QtMoc Include="controls\TorrentPieceGrid.h" Condition="'$(EmuleBitTorrent)'=='true'" />
     <QtMoc Include="dialogs\AddTorrentDialog.h" Condition="'$(EmuleBitTorrent)'=='true'" />
+    <QtMoc Include="dialogs\BtI2pGroup.h" Condition="'$(EmuleBitTorrent)'=='true'" />
     <QtMoc Include="dialogs\TorrentDetailsDialog.h" Condition="'$(EmuleBitTorrent)'=='true'" />
     <QtMoc Include="panels\TorrentPanel.h" Condition="'$(EmuleBitTorrent)'=='true'" />
     <QtMoc Include="panels\HosterPanel.h" Condition="'$(EmuleHosterJd)'=='true'" />

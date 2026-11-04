@@ -19,6 +19,7 @@
 #ifdef EMULE_HAVE_HOSTER_JD
 
 #include "Ed3kResolver.h"
+#include "utils/SidecarProcess.h"
 
 #include <QByteArray>
 #include <QElapsedTimer>
@@ -28,7 +29,6 @@
 
 #include <map>
 
-class QProcess;
 class QTcpServer;
 class QTcpSocket;
 class QJsonObject;
@@ -116,8 +116,8 @@ private:
     void stop();
     /// Closes socket and server; queued requests are dropped
     void closeChannel();
-    void onLog();
-    void onFinished();
+    void onLog(const QByteArray& line);
+    void onFinished(int exitCode, bool crashed, bool expected);
     void onIdle();
     void onNewConnection();
     void onSocketRead();
@@ -132,7 +132,7 @@ private:
     void logEvent(TaskId id, const QString& ev, const ResolverEvent& e);
 
     JdResolverConfig m_config;
-    QPointer<QProcess> m_proc;
+    SidecarProcess m_sidecar;
     QPointer<QTcpServer> m_server;
     QPointer<QTcpSocket> m_sock;
     QByteArray m_token;       ///< per start; the sidecar's first line must carry it
@@ -140,7 +140,6 @@ private:
     bool m_authed = false;
     QTimer m_connectTimer;
     QByteArray m_outBuf;      ///< socket read buffer
-    QByteArray m_errBuf;      ///< merged stdout+stderr log buffer
     QString m_description;
     QString m_installError;
     QString m_root;
@@ -148,8 +147,7 @@ private:
     TaskId m_nextId = 1;
     /// open tasks; pure requests (hello, setProxy) are not counted
     std::map<TaskId, bool> m_pending;
-    std::map<TaskId, qint64> m_progressLogged;   ///< task: last progress line (ms of m_startedAt)
-    QElapsedTimer m_startedAt;                   ///< the sidecar's start
+    std::map<TaskId, qint64> m_progressLogged;   ///< task: last progress line (ms of the sidecar's uptime)
     QTimer m_idle;
     bool m_stopping = false;
 };

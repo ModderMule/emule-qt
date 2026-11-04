@@ -9,6 +9,7 @@
 ///   slosh() / unslosh()→ ensureTrailingSeparator / removeTrailingSeparator
 
 #include <QString>
+#include <QStringList>
 
 #include <cstdint>
 #include <optional>
@@ -86,5 +87,11 @@ enum class AppDir {
 
 /// Sanitize a file name by removing or replacing invalid characters.
 [[nodiscard]] QString sanitizeFilename(const QString& name);
+
+/// A file shipped with the app: $@p envVar when it names an existing file, else the
+/// first of @p names relative to the binary's folder (app dir, ../Resources,
+/// ../share/emuleqt, ...), else @p buildTreeRel in a folder up to 6 levels above it.
+/// Empty: none found.
+[[nodiscard]] QString findBundledFile(const char* envVar, const QStringList& names, const QString& buildTreeRel = {});
 
 } // namespace eMule

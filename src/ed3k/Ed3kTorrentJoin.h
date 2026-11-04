@@ -60,6 +60,10 @@ public:
     /// session stops.
     void stop() override;
 
+    /// Whether I2P torrents join too (pref btI2pEd3kJoin): their info hash goes out over
+    /// ed3k. Off drops the joins of I2P torrents (their blobs stay); on adds them.
+    void setI2pJoins(bool allowed);
+
     // -- state, for the daemon and tests -----------------------------------
 
     [[nodiscard]] bool hasJoin(const QString& id) const;
@@ -106,6 +110,10 @@ protected:
     [[nodiscard]] bool wantsSet(const QString& owner) const override;
     void onSetManifest(const QString& owner, const ::ed3k::Root& root, const QByteArray& data) override;
     [[nodiscard]] bool keepsOwner(const QString& owner) const override;
+    /// not an I2P torrent while btI2pEd3kJoin is off
+    [[nodiscard]] bool sharesKeptOwner(const QString& owner) const override;
+    /// An I2P torrent that may not join (setI2pJoins).
+    [[nodiscard]] bool i2pHeld(const QString& id) const;
     [[nodiscard]] QString keptMemberPath(const QString& owner, int member) const override;
     [[nodiscard]] bool hasOwner(const QString& owner) const override;
     void saveOwner(const QString& owner) override;
@@ -156,6 +164,7 @@ private:
     /// the sinks' way back here; closed in the destructor
     std::shared_ptr<Gate> m_gate;
     quint64 m_hashGeneration = 0;
+    bool m_i2pJoins = true;
 };
 
 } // namespace eMule::ed3k

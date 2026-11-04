@@ -318,6 +318,7 @@ HEADERS += \
         controls/TorrentListsPane.cpp \
         controls/TorrentPieceGrid.cpp \
         dialogs/AddTorrentDialog.cpp \
+        dialogs/BtI2pGroup.cpp \
         dialogs/TorrentDetailsDialog.cpp \
         panels/TorrentPanel.cpp
     HEADERS += \
@@ -328,6 +329,7 @@ HEADERS += \
         controls/TorrentListsPane.h \
         controls/TorrentPieceGrid.h \
         dialogs/AddTorrentDialog.h \
+        dialogs/BtI2pGroup.h \
         dialogs/TorrentDetailsDialog.h \
         panels/TorrentPanel.h
 }

@@ -17,6 +17,8 @@ class BtTorrentView {
 public:
     /// The id of a torrent (BtIds).
     static QString idOf(const libtorrent::info_hash_t& hashes);
+    /// "<52 base32 chars>.b32.i2p" of an I2P destination hash.
+    static QString i2pAddressOf(const libtorrent::sha256_hash& destination);
 
     static BtTorrentRow row(const libtorrent::torrent_status& st);
     static QList<BtFileRow> files(const libtorrent::torrent_handle& h);

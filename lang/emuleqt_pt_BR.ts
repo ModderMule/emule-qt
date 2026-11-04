@@ -1016,7 +1016,7 @@ Tem comentários</translation>
         <translation type="vanished">%1 Bytes</translation>
     </message>
     <message>
-        <location filename="../src/gui/dialogs/OptionsDialog.cpp" line="+3507"/>
+        <location filename="../src/gui/dialogs/OptionsDialog.cpp" line="+3508"/>
         <source>Test</source>
         <translation>Testar</translation>
     </message>
@@ -1051,7 +1051,7 @@ Tem comentários</translation>
     </message>
     <message>
         <location filename="../src/gui/utils/NzbAdd.cpp" line="+25"/>
-        <location filename="../src/gui/utils/TorrentAdd.cpp" line="+37"/>
+        <location filename="../src/gui/utils/TorrentAdd.cpp" line="+51"/>
         <source>Could not add &quot;%1&quot;.</source>
         <translation>Não foi possível adicionar &quot;%1&quot;.</translation>
     </message>
@@ -1110,7 +1110,7 @@ Baixar novamente?</translation>
 %2</translation>
     </message>
     <message>
-        <location line="+73"/>
+        <location line="+77"/>
         <source>Add Torrent</source>
         <translation>Adicionar torrent</translation>
     </message>
@@ -1694,7 +1694,7 @@ Já existe um amigo com o mesmo endereço IP e a mesma porta.</translation>
 <context>
     <name>eMule::AddTorrentDialog</name>
     <message>
-        <location filename="../src/gui/dialogs/AddTorrentDialog.cpp" line="+29"/>
+        <location filename="../src/gui/dialogs/AddTorrentDialog.cpp" line="+30"/>
         <source>Add Magnet Links</source>
         <translation>Adicionar links magnet</translation>
     </message>
@@ -1729,7 +1729,37 @@ Já existe um amigo com o mesmo endereço IP e a mesma porta.</translation>
         <translation>Salvar em:</translation>
     </message>
     <message>
-        <location line="+30"/>
+        <location line="+2"/>
+        <source>Stop after metadata to pick the files</source>
+        <translation>Parar após os metadados para escolher os arquivos</translation>
+    </message>
+    <message>
+        <location line="+1"/>
+        <source>I2P only (anonymous, slower)</source>
+        <translation>Somente I2P (anônimo, mais lento)</translation>
+    </message>
+    <message>
+        <location line="+17"/>
+        <source>Fetches the file list, then stops before any file downloads. Untick the files to skip in the Files list, then resume.</source>
+        <translation>Obtém a lista de arquivos e para antes de baixar qualquer arquivo. Desmarque na lista de arquivos os que deseja pular e depois retome.</translation>
+    </message>
+    <message>
+        <location line="+2"/>
+        <source>Adds the torrent stopped. Untick the files to skip in the Files list, then resume.</source>
+        <translation>Adiciona o torrent parado. Desmarque na lista de arquivos os que deseja pular e depois retome.</translation>
+    </message>
+    <message>
+        <location line="+4"/>
+        <source>Peers only over I2P: they see an I2P address, never your IP. No DHT; the I2P trackers are added.</source>
+        <translation>Pares somente via I2P: eles veem um endereço I2P, nunca seu IP. Sem DHT; os trackers I2P são adicionados.</translation>
+    </message>
+    <message>
+        <location line="+2"/>
+        <source>Turn on I2P in Options &gt; BitTorrent &gt; Connection first.</source>
+        <translation>Ative primeiro o I2P em Opções &gt; BitTorrent &gt; Conexão.</translation>
+    </message>
+    <message>
+        <location line="+16"/>
         <source>Not Connected</source>
         <translation>Não conectado</translation>
     </message>
@@ -1762,7 +1792,7 @@ Já existe um amigo com o mesmo endereço IP e a mesma porta.</translation>
         <translation>Adicione no máximo %1 torrents por vez.</translation>
     </message>
     <message numerus="yes">
-        <location line="+39"/>
+        <location line="+41"/>
         <source>Added %n torrent(s).</source>
         <translation>
             <numerusform>%n torrent adicionado.</numerusform>
@@ -1936,6 +1966,206 @@ M	os dados compactados ainda não foram totalmente baixados
         <location line="+161"/>
         <source>Comment</source>
         <translation>Comentário</translation>
+    </message>
+</context>
+<context>
+    <name>eMule::BtI2pGroup</name>
+    <message>
+        <location filename="../src/gui/dialogs/BtI2pGroup.cpp" line="+44"/>
+        <source>I2P Trackers</source>
+        <translation>Trackers I2P</translation>
+    </message>
+    <message>
+        <location line="+3"/>
+        <source>Added to I2P torrents, and to all torrents in mixed mode. One per line:</source>
+        <translation>Adicionados aos torrents I2P e, no modo misto, a todos os torrents. Um por linha:</translation>
+    </message>
+    <message>
+        <location line="+10"/>
+        <source>Defaults</source>
+        <translation>Padrões</translation>
+    </message>
+    <message>
+        <location line="+1"/>
+        <source>The public I2P trackers this version ships with</source>
+        <translation>Os trackers I2P públicos incluídos nesta versão</translation>
+    </message>
+    <message>
+        <location line="+28"/>
+        <source>I2P</source>
+        <translation>I2P</translation>
+    </message>
+    <message>
+        <location line="+6"/>
+        <source>Downloads torrents over the I2P network: peers see an I2P address, never your IP. Slower than direct connections, and needs no open port.</source>
+        <translation>Baixa torrents pela rede I2P: os pares veem um endereço I2P, nunca seu IP. Mais lento que conexões diretas e não precisa de porta aberta.</translation>
+    </message>
+    <message>
+        <location line="+15"/>
+        <location line="+183"/>
+        <source>Off</source>
+        <translation>Desativado</translation>
+    </message>
+    <message>
+        <location line="-183"/>
+        <source>Torrents use direct connections only.</source>
+        <translation>Os torrents usam somente conexões diretas.</translation>
+    </message>
+    <message>
+        <location line="+1"/>
+        <source>Bundled I2P router (i2pd)</source>
+        <translation>Roteador I2P incluído (i2pd)</translation>
+    </message>
+    <message>
+        <location line="+1"/>
+        <location line="+141"/>
+        <source>eMule runs its own I2P router. The first start takes a few minutes to join the network.</source>
+        <translation>O eMule executa seu próprio roteador I2P. Na primeira inicialização, entrar na rede leva alguns minutos.</translation>
+    </message>
+    <message>
+        <location line="-139"/>
+        <source>External I2P router</source>
+        <translation>Roteador I2P externo</translation>
+    </message>
+    <message>
+        <location line="+1"/>
+        <source>A router you run yourself (i2pd or Java I2P) with its SAM bridge on.</source>
+        <translation>Um roteador que você mesmo executa (i2pd ou Java I2P) com a ponte SAM ativada.</translation>
+    </message>
+    <message>
+        <location line="+2"/>
+        <source>Router:</source>
+        <translation>Roteador:</translation>
+    </message>
+    <message>
+        <location line="+4"/>
+        <source>Host of the external router&apos;s SAM bridge</source>
+        <translation>Host da ponte SAM do roteador externo</translation>
+    </message>
+    <message>
+        <location line="+2"/>
+        <source>Port:</source>
+        <translation>Porta:</translation>
+    </message>
+    <message>
+        <location line="+5"/>
+        <source>SAM bridge:</source>
+        <translation>Ponte SAM:</translation>
+    </message>
+    <message>
+        <location line="+4"/>
+        <source>TCP and UDP port of the bundled router. Mapped with UPnP when the BitTorrent port is.</source>
+        <translation>Porta TCP e UDP do roteador incluído. Mapeada via UPnP quando a porta do BitTorrent for.</translation>
+    </message>
+    <message>
+        <location line="+2"/>
+        <source>Router port:</source>
+        <translation>Porta do roteador:</translation>
+    </message>
+    <message>
+        <location line="+6"/>
+        <source>Routers each tunnel passes. More is more anonymous and slower.</source>
+        <translation>Roteadores por onde cada túnel passa. Mais é mais anônimo e mais lento.</translation>
+    </message>
+    <message>
+        <location line="+2"/>
+        <source>hops,</source>
+        <translation>saltos,</translation>
+    </message>
+    <message>
+        <location line="+4"/>
+        <source>Tunnels each way. More is faster and uses more of the router.</source>
+        <translation>Túneis em cada sentido. Mais é mais rápido e usa mais o roteador.</translation>
+    </message>
+    <message>
+        <location line="+2"/>
+        <source>tunnels each way</source>
+        <translation>túneis por sentido</translation>
+    </message>
+    <message>
+        <location line="+2"/>
+        <source>Tunnels:</source>
+        <translation>Túneis:</translation>
+    </message>
+    <message>
+        <location line="+2"/>
+        <source>Mixed mode: I2P torrents also use direct peers (less anonymous)</source>
+        <translation>Modo misto: torrents I2P também usam pares diretos (menos anônimo)</translation>
+    </message>
+    <message>
+        <location line="+1"/>
+        <source>I2P torrents also use the DHT, normal trackers and direct peers, and normal torrents get the I2P trackers too, so both swarms share the files.</source>
+        <translation>Torrents I2P também usam a DHT, trackers normais e pares diretos, e torrents normais também recebem os trackers I2P, então os dois enxames compartilham os arquivos.</translation>
+    </message>
+    <message>
+        <location line="+3"/>
+        <source>Add new torrents as I2P only</source>
+        <translation>Adicionar novos torrents como somente I2P</translation>
+    </message>
+    <message>
+        <location line="+1"/>
+        <source>The default of the &quot;I2P only&quot; box when adding torrents.</source>
+        <translation>O padrão da caixa &quot;Somente I2P&quot; ao adicionar torrents.</translation>
+    </message>
+    <message>
+        <location line="+2"/>
+        <source>I2P torrents may also download over ed3k</source>
+        <translation>Torrents I2P também podem baixar via ed3k</translation>
+    </message>
+    <message>
+        <location line="+1"/>
+        <source>Their info hash then goes out over ed3k. How anonymous that is follows the ed3k hiding settings, not I2P.</source>
+        <translation>O info hash deles é então enviado via ed3k. O anonimato segue as configurações de ocultação do ed3k, não do I2P.</translation>
+    </message>
+    <message>
+        <location line="+5"/>
+        <source>I2P Trackers...</source>
+        <translation>Trackers I2P...</translation>
+    </message>
+    <message>
+        <location line="+10"/>
+        <source>Status:</source>
+        <translation>Status:</translation>
+    </message>
+    <message>
+        <location line="+80"/>
+        <source>This build has no bundled I2P router (emuleqt-i2pd).</source>
+        <translation>Esta versão não inclui o roteador I2P (emuleqt-i2pd).</translation>
+    </message>
+    <message>
+        <location line="+39"/>
+        <source>BitTorrent is off</source>
+        <translation>BitTorrent está desativado</translation>
+    </message>
+    <message>
+        <location line="+6"/>
+        <source>Bundled router starting...</source>
+        <translation>Iniciando roteador incluído...</translation>
+    </message>
+    <message>
+        <location line="+1"/>
+        <source>Bundled router running</source>
+        <translation>Roteador incluído em execução</translation>
+    </message>
+    <message>
+        <location line="+1"/>
+        <source>Bundled router failed: %1</source>
+        <translation>Falha do roteador incluído: %1</translation>
+    </message>
+    <message>
+        <location line="+4"/>
+        <source>waiting for the router</source>
+        <translation>aguardando o roteador</translation>
+    </message>
+    <message>
+        <location line="+1"/>
+        <source>SAM bridge set</source>
+        <translation>Ponte SAM definida</translation>
+    </message>
+    <message>
+        <location line="+1"/>
+        <source>SAM bridge error: %1</source>
+        <translation>Erro da ponte SAM: %1</translation>
     </message>
 </context>
 <context>
@@ -11284,7 +11514,7 @@ Outros membros veem seu nick e suas mensagens; seu nó participa do repasse das 
         <translation type="vanished">▸ Detalhes da busca (%1)</translation>
     </message>
     <message>
-        <location filename="../src/gui/panels/KadPanel.cpp" line="+23"/>
+        <location filename="../src/gui/panels/KadPanel.cpp" line="+24"/>
         <source>eD2K</source>
         <translation>eD2K</translation>
     </message>
@@ -13869,12 +14099,12 @@ Baixar novamente?</translation>
     </message>
     <message>
         <location line="-2296"/>
-        <location line="+6339"/>
+        <location line="+6356"/>
         <source>Apply</source>
         <translation>Aplicar</translation>
     </message>
     <message>
-        <location line="-6338"/>
+        <location line="-6355"/>
         <source>Help</source>
         <translation>Ajuda</translation>
     </message>
@@ -13902,12 +14132,12 @@ Baixar novamente?</translation>
         <translation>Opções -&gt; %1 -&gt; %2</translation>
     </message>
     <message>
-        <location line="+5302"/>
+        <location line="+5319"/>
         <source>Bandwidth</source>
         <translation>Largura de banda</translation>
     </message>
     <message>
-        <location line="-5091"/>
+        <location line="-5108"/>
         <source>General options</source>
         <translation>Opções gerais</translation>
     </message>
@@ -13928,12 +14158,12 @@ Baixar novamente?</translation>
     </message>
     <message>
         <location line="+8"/>
-        <location line="+6209"/>
+        <location line="+6226"/>
         <source>Language</source>
         <translation>Idioma</translation>
     </message>
     <message>
-        <location line="-6206"/>
+        <location line="-6223"/>
         <source>System Default</source>
         <translation>Padrão do sistema</translation>
     </message>
@@ -14042,12 +14272,12 @@ Baixar novamente?</translation>
     <message>
         <location line="+8"/>
         <location line="+40"/>
-        <location line="+6086"/>
+        <location line="+6103"/>
         <source>Core</source>
         <translation>Núcleo</translation>
     </message>
     <message>
-        <location line="-6099"/>
+        <location line="-6116"/>
         <source>Address:</source>
         <translation>Endereço:</translation>
     </message>
@@ -14184,12 +14414,12 @@ Tem certeza de que deseja continuar?</translation>
         <translation>Usar ícones originais do eMule</translation>
     </message>
     <message>
-        <location line="+8189"/>
+        <location line="+8211"/>
         <source>A database ships with each release. An optional free &lt;a href=&quot;https://www.maxmind.com/en/geolite2/signup&quot;&gt;MaxMind GeoLite2&lt;/a&gt; account keeps it current in between. This product includes GeoLite2 data created by MaxMind.</source>
         <translation>Cada versão inclui um banco de dados. Uma conta gratuita opcional do &lt;a href=&quot;https://www.maxmind.com/en/geolite2/signup&quot;&gt;MaxMind GeoLite2&lt;/a&gt; o mantém atualizado entre as versões. Este produto inclui dados GeoLite2 criados pela MaxMind.</translation>
     </message>
     <message>
-        <location line="-8136"/>
+        <location line="-8158"/>
         <source>Save CPU &amp;&amp; Memory Usage</source>
         <translation>Economizar CPU &amp;&amp; memória</translation>
     </message>
@@ -14230,14 +14460,14 @@ Tem certeza de que deseja continuar?</translation>
         <location line="+296"/>
         <location line="+1032"/>
         <location line="+152"/>
-        <location line="+1331"/>
+        <location line="+1348"/>
         <location line="+297"/>
         <location line="+31"/>
         <source>Enabled</source>
         <translation>Ativado</translation>
     </message>
     <message>
-        <location line="-5168"/>
+        <location line="-5185"/>
         <source>Reset</source>
         <translation>Redefinir</translation>
     </message>
@@ -14254,13 +14484,13 @@ Tem certeza de que deseja continuar?</translation>
     <message>
         <location line="+3"/>
         <location line="+6"/>
-        <location line="+4545"/>
+        <location line="+4562"/>
         <location line="+347"/>
         <source> KB/s</source>
         <translation> KB/s</translation>
     </message>
     <message>
-        <location line="-4895"/>
+        <location line="-4912"/>
         <source>Upload</source>
         <translation>Upload</translation>
     </message>
@@ -14291,18 +14521,18 @@ Tem certeza de que deseja continuar?</translation>
     </message>
     <message>
         <location line="+23"/>
-        <location line="+4385"/>
+        <location line="+4397"/>
         <source>Client Port</source>
         <translation>Porta do cliente</translation>
     </message>
     <message>
-        <location line="-4382"/>
-        <location line="+7907"/>
+        <location line="-4394"/>
+        <location line="+7929"/>
         <source>TCP</source>
         <translation>TCP</translation>
     </message>
     <message>
-        <location line="-7901"/>
+        <location line="-7923"/>
         <source>UDP</source>
         <translation>UDP</translation>
     </message>
@@ -14312,24 +14542,24 @@ Tem certeza de que deseja continuar?</translation>
     </message>
     <message>
         <location line="+6"/>
-        <location line="+4385"/>
+        <location line="+4397"/>
         <source>Test Ports</source>
         <translation>Testar portas</translation>
     </message>
     <message>
-        <location line="-4381"/>
-        <location line="+4389"/>
+        <location line="-4393"/>
+        <location line="+4401"/>
         <source>Open Router</source>
         <translation>Abrir roteador</translation>
     </message>
     <message>
-        <location line="-4388"/>
-        <location line="+4389"/>
+        <location line="-4400"/>
+        <location line="+4401"/>
         <source>Opens the web page of this computer&apos;s router, where ports are forwarded</source>
         <translation>Abre a página web do roteador deste computador, onde as portas são redirecionadas</translation>
     </message>
     <message>
-        <location line="-4385"/>
+        <location line="-4397"/>
         <source>Use UPnP to Setup Ports</source>
         <translation>Usar UPnP para configurar portas</translation>
     </message>
@@ -14356,22 +14586,22 @@ Tem certeza de que deseja continuar?</translation>
     <message>
         <location line="+4"/>
         <location line="+1767"/>
-        <location line="+5688"/>
+        <location line="+5710"/>
         <source>Any</source>
         <translation>Qualquer</translation>
     </message>
     <message>
-        <location line="-7453"/>
+        <location line="-7475"/>
         <source>Use only this network interface, for example a VPN tunnel. Pick one from the list, or type an IP address or a subnet such as 10.64.0.0/10 (the interface holding an address in it). Connections through a proxy are not bound.</source>
         <translation>Usar somente esta interface de rede, por exemplo um túnel VPN. Escolha uma na lista ou digite um endereço IP ou uma sub-rede como 10.64.0.0/10 (a interface que possui um endereço nela). Conexões por meio de um proxy não são vinculadas.</translation>
     </message>
     <message>
-        <location line="+7350"/>
+        <location line="+7372"/>
         <source>While the selected interface is not available, all P2P, Usenet and update connections stay closed.</source>
         <translation>Enquanto a interface selecionada não estiver disponível, todas as conexões P2P, Usenet e de atualização permanecem fechadas.</translation>
     </message>
     <message>
-        <location line="-7336"/>
+        <location line="-7358"/>
         <source>Max. Sources/File</source>
         <translation>Máx. fontes/arquivo</translation>
     </message>
@@ -14390,12 +14620,12 @@ Tem certeza de que deseja continuar?</translation>
     </message>
     <message>
         <location line="+6"/>
-        <location line="+4407"/>
+        <location line="+4424"/>
         <source>Connection Limits</source>
         <translation>Limites de conexão</translation>
     </message>
     <message>
-        <location line="-4405"/>
+        <location line="-4422"/>
         <source>Max. connections</source>
         <translation>Máx. conexões</translation>
     </message>
@@ -15875,12 +16105,12 @@ Toda conexão Usenet passa então pelo proxy, de modo que a velocidade dele limi
     </message>
     <message>
         <location line="-2949"/>
-        <location line="+8579"/>
+        <location line="+8601"/>
         <source>BitTorrent</source>
         <translation>BitTorrent</translation>
     </message>
     <message>
-        <location line="-8158"/>
+        <location line="-8180"/>
         <source>Show download progress on the Dock icon</source>
         <translation>Mostrar o progresso dos downloads no ícone do Dock</translation>
     </message>
@@ -16040,14 +16270,14 @@ Toda conexão Usenet passa então pelo proxy, de modo que a velocidade dele limi
     </message>
     <message>
         <location line="+1"/>
-        <location line="+1974"/>
+        <location line="+1985"/>
         <location line="+9"/>
-        <location line="+165"/>
+        <location line="+171"/>
         <source>No limit</source>
         <translation>Sem limite</translation>
     </message>
     <message>
-        <location line="-2140"/>
+        <location line="-2157"/>
         <source>Allowance size:</source>
         <translation>Tamanho da franquia:</translation>
     </message>
@@ -16103,19 +16333,19 @@ Toda conexão Usenet passa então pelo proxy, de modo que a velocidade dele limi
     </message>
     <message>
         <location line="+8"/>
-        <location line="+2082"/>
+        <location line="+2099"/>
         <source>Share of the download limit:</source>
         <translation>Parcela do limite de download:</translation>
     </message>
     <message>
-        <location line="-2079"/>
+        <location line="-2096"/>
         <location line="+42"/>
-        <location line="+2029"/>
+        <location line="+2046"/>
         <source> %</source>
         <translation> %</translation>
     </message>
     <message>
-        <location line="-2069"/>
+        <location line="-2086"/>
         <source>How much of the global download limit Usenet may take while eD2K is also downloading. Whichever engine is idle lends its whole share to the other, so this only applies when both are busy.</source>
         <translation>Quanto do limite global de download o Usenet pode tomar enquanto o eD2K também está baixando. O mecanismo que estiver ocioso empresta toda a sua parte ao outro, então isto só vale quando ambos estão ativos.</translation>
     </message>
@@ -16242,12 +16472,12 @@ Ela não pode estar dentro das suas pastas de temporários, recebidos ou de conf
     </message>
     <message>
         <location line="-1784"/>
-        <location line="+1827"/>
+        <location line="+1838"/>
         <source>Desktop</source>
         <translation>Área de trabalho</translation>
     </message>
     <message>
-        <location line="-1823"/>
+        <location line="-1834"/>
         <source>Open .nzb files with eMule Qt</source>
         <translation>Abrir arquivos .nzb com o eMule Qt</translation>
     </message>
@@ -16936,7 +17166,22 @@ Adicionar um depois não busca o acervo antigo dele: um indexador novo tem sua p
         <translation>Ativar BitTorrent</translation>
     </message>
     <message>
-        <location line="+484"/>
+        <location line="+19"/>
+        <source>New torrents</source>
+        <translation>Novos torrents</translation>
+    </message>
+    <message>
+        <location line="+2"/>
+        <source>Stop after metadata to pick the files</source>
+        <translation>Parar após os metadados para escolher os arquivos</translation>
+    </message>
+    <message>
+        <location line="+2"/>
+        <source>A magnet link fetches its file list, then stops before any file downloads; a .torrent file is added stopped. Untick the files to skip in the Files list, then resume. The add dialogs can change it for each torrent.</source>
+        <translation>Um link magnet obtém sua lista de arquivos e para antes de baixar qualquer arquivo; um arquivo .torrent é adicionado parado. Desmarque na lista de arquivos os que deseja pular e depois retome. As janelas de adição podem alterar isso para cada torrent.</translation>
+    </message>
+    <message>
+        <location line="+478"/>
         <source>Log BitTorrent details (Torrent Verbose tab)</source>
         <translation>Registrar detalhes do BitTorrent (aba Torrent detalhado)</translation>
     </message>
@@ -16966,7 +17211,7 @@ Adicionar um depois não busca o acervo antigo dele: um indexador novo tem sua p
         <translation>Saída de depuração do nó ed3k. A aba aparece enquanto o ed3k está ativado.</translation>
     </message>
     <message>
-        <location line="+2652"/>
+        <location line="+2657"/>
         <source>This interface has no default route (split-tunnel VPN?): servers and peers outside its subnets are unreachable. Route all traffic through it, or choose another interface.</source>
         <translation>Esta interface não tem rota padrão (VPN com túnel dividido?): servidores e pares fora das suas sub-redes ficam inacessíveis. Encaminhe todo o tráfego por ela ou escolha outra interface.</translation>
     </message>
@@ -17049,7 +17294,7 @@ Adicionar um depois não busca o acervo antigo dele: um indexador novo tem sua p
         <translation type="vanished">Usada para TCP e UDP. Deve ser diferente das portas eD2K.</translation>
     </message>
     <message>
-        <location line="-3537"/>
+        <location line="-3547"/>
         <source>Listen port (TCP/UDP):</source>
         <translation>Porta de escuta (TCP/UDP):</translation>
     </message>
@@ -17089,7 +17334,7 @@ Adicionar um depois não busca o acervo antigo dele: um indexador novo tem sua p
         <translation type="vanished">Upload:</translation>
     </message>
     <message>
-        <location line="-150"/>
+        <location line="-151"/>
         <source>Active downloads:</source>
         <translation>Downloads ativos:</translation>
     </message>
@@ -17124,7 +17369,7 @@ Adicionar um depois não busca o acervo antigo dele: um indexador novo tem sua p
         <translation>Parar após semear por:</translation>
     </message>
     <message>
-        <location line="-43"/>
+        <location line="-54"/>
         <source>Download folder</source>
         <translation>Pasta de download</translation>
     </message>
@@ -17151,12 +17396,12 @@ Adicionar um depois não busca o acervo antigo dele: um indexador novo tem sua p
         <translation type="vanished">Reivindicar arquivos .torrent e links magnet: e ed3k: para esta cópia do eMule Qt. A configuração vale só para você e não exige administrador; ela é reaplicada a cada início, então outro programa que tomar a associação não a mantém.</translation>
     </message>
     <message>
-        <location line="+79"/>
+        <location line="+91"/>
         <source>BitTorrent download folder</source>
         <translation>Pasta de download do BitTorrent</translation>
     </message>
     <message>
-        <location line="+190"/>
+        <location line="+195"/>
         <source>Warning: Do not change these settings unless you know what you are doing. Otherwise you can easily make things worse for yourself. eMule will run fine without adjusting any of these settings.</source>
         <translation>Aviso: Não altere estas configurações a menos que saiba o que está fazendo. Caso contrário, você pode facilmente piorar as coisas. O eMule funcionará bem sem ajustar nenhuma dessas configurações.</translation>
     </message>
@@ -17191,12 +17436,12 @@ Adicionar um depois não busca o acervo antigo dele: um indexador novo tem sua p
         <translation>Os downloads são sempre verificados e registrados. Os arquivos compartilhados são verificados novamente a cada início.</translation>
     </message>
     <message>
-        <location line="+1915"/>
+        <location line="+1918"/>
         <source>Could not update the file associations: %1</source>
         <translation>Não foi possível atualizar as associações de arquivos: %1</translation>
     </message>
     <message>
-        <location line="+1021"/>
+        <location line="+1023"/>
         <location line="+16"/>
         <location line="+6"/>
         <location line="+3"/>
@@ -17346,7 +17591,7 @@ Criá-la?</translation>
 %1</translation>
     </message>
     <message>
-        <location line="-3277"/>
+        <location line="-3282"/>
         <source>Disabled</source>
         <translation>Desativado</translation>
     </message>
@@ -17371,7 +17616,7 @@ Criá-la?</translation>
         <translation>A mudança no tamanho da fonte entrará em vigor após reiniciar o aplicativo.</translation>
     </message>
     <message>
-        <location line="+1157"/>
+        <location line="+1160"/>
         <source>specialdlp loaded, DLP v%1</source>
         <translation>specialdlp carregado, DLP v%1</translation>
     </message>
@@ -17381,7 +17626,7 @@ Criá-la?</translation>
         <translation>Biblioteca specialdlp não encontrada, as verificações estão inativas</translation>
     </message>
     <message>
-        <location line="+835"/>
+        <location line="+837"/>
         <source>Automatic</source>
         <translation>Automático</translation>
     </message>
@@ -17395,7 +17640,7 @@ Criá-la?</translation>
         <translation type="vanished">Aceitar links eD2K automaticamente apenas durante execução</translation>
     </message>
     <message>
-        <location line="-3166"/>
+        <location line="-3171"/>
         <source>Use credit system (reward uploaders)</source>
         <translation>Usar sistema de créditos (recompensar uploaders)</translation>
     </message>
@@ -17419,7 +17664,7 @@ Criá-la?</translation>
         <translation>Filtrar IPs de LAN de servidores e clientes</translation>
     </message>
     <message>
-        <location line="-4835"/>
+        <location line="-4852"/>
         <source>Show more controls (advanced mode controls)</source>
         <translation>Mostrar mais controles (controles de modo avançado)</translation>
     </message>
@@ -17549,7 +17794,7 @@ Criá-la?</translation>
         <translation>Executa o mecanismo BitTorrent no núcleo. Desligado, o mecanismo para: nenhum torrent é baixado ou semeado e a porta BitTorrent é fechada. Os torrents continuam na lista e prosseguem quando ele é religado.</translation>
     </message>
     <message>
-        <location line="+58"/>
+        <location line="+69"/>
         <source>Open .torrent files and magnet links with eMule Qt</source>
         <translation>Abrir arquivos .torrent e links magnet com o eMule Qt</translation>
     </message>
@@ -17564,7 +17809,7 @@ Criá-la?</translation>
         <translation>Reivindicar os arquivos .torrent e os links magnet: para esta cópia do eMule Qt. A configuração é só para você e não precisa de administrador; ela é reaplicada a cada início, então outro programa que tome a associação não fica com ela.</translation>
     </message>
     <message>
-        <location line="+58"/>
+        <location line="+59"/>
         <source>Asks emule-qt.org whether the port the core uses now is reachable over TCP and UDP. Apply a changed port first.</source>
         <translation>Pergunta ao emule-qt.org se a porta que o núcleo usa agora está acessível por TCP e UDP. Aplique primeiro uma porta alterada.</translation>
     </message>
@@ -17604,7 +17849,7 @@ Criá-la?</translation>
         <translation>Conecta somente sem criptografia. Pares que a exigem não conseguem se conectar.</translation>
     </message>
     <message>
-        <location line="+23"/>
+        <location line="+28"/>
         <source>Global limits:</source>
         <translation>Limites globais:</translation>
     </message>
@@ -17920,7 +18165,7 @@ Reinicie o eMule para que todas as conexões usem as novas configurações de pr
 As conexões com servidores de notícias mudam imediatamente.</translation>
     </message>
     <message>
-        <location line="+515"/>
+        <location line="+518"/>
         <source>Web Interface</source>
         <translation>Interface web</translation>
     </message>
@@ -17939,7 +18184,7 @@ As conexões com servidores de notícias mudam imediatamente.</translation>
         <translation type="vanished">Não foi possível atualizar a associação do arquivo .nzb: %1</translation>
     </message>
     <message>
-        <location line="+737"/>
+        <location line="+739"/>
         <source>Port forwarding: %1</source>
         <translation>Redirecionamento de portas: %1</translation>
     </message>
@@ -17993,18 +18238,18 @@ As conexões com servidores de notícias mudam imediatamente.</translation>
         <translation>Restaurar padrão</translation>
     </message>
     <message>
-        <location line="-8055"/>
+        <location line="-8077"/>
         <location line="+2561"/>
         <location line="+1035"/>
         <location line="+154"/>
-        <location line="+1646"/>
+        <location line="+1663"/>
         <location line="+337"/>
-        <location line="+2320"/>
+        <location line="+2325"/>
         <source>Remove</source>
         <translation>Remover</translation>
     </message>
     <message>
-        <location line="-6728"/>
+        <location line="-6750"/>
         <source>New eMule Qt version detected</source>
         <translation>Nova versão do eMule Qt detectada</translation>
     </message>
@@ -18014,7 +18259,7 @@ As conexões com servidores de notícias mudam imediatamente.</translation>
         <translation>Atualizar a partir da URL: (formato filter.dat ou PeerGuardian, .gz/.zip aceitos)</translation>
     </message>
     <message>
-        <location line="+3345"/>
+        <location line="+3362"/>
         <source>Write eMule core logs to disk</source>
         <translation>Gravar os logs do núcleo do eMule em disco</translation>
     </message>
@@ -18074,14 +18319,14 @@ As conexões com servidores de notícias mudam imediatamente.</translation>
         <translation>Tempo de concessão solicitado:</translation>
     </message>
     <message>
-        <location line="-2544"/>
+        <location line="-2561"/>
         <location line="+929"/>
-        <location line="+1619"/>
+        <location line="+1636"/>
         <source> s</source>
         <translation> s</translation>
     </message>
     <message>
-        <location line="-5179"/>
+        <location line="-5196"/>
         <source>Downloads that are receiving data, and the sources sending it, are drawn in bold. A source listed under another file (A4AF) is bold too while it transfers. The connected server and the selected category tab are bold as well.</source>
         <translation>Downloads que estão recebendo dados, e as fontes que os enviam, aparecem em negrito. Uma fonte listada sob outro arquivo (A4AF) também fica em negrito enquanto transfere. O servidor conectado e a aba de categoria selecionada também ficam em negrito.</translation>
     </message>
@@ -18133,12 +18378,12 @@ Set it slightly under your plan. The figure is measured here, so it reads a few 
 Defina um valor um pouco abaixo do seu plano. O volume é medido aqui, então fica alguns por cento abaixo do valor do seu provedor, e os artigos já em trânsito quando o limite é atingido ainda são concluídos.</translation>
     </message>
     <message>
-        <location line="+1950"/>
+        <location line="+1961"/>
         <source>Queue</source>
         <translation>Fila</translation>
     </message>
     <message>
-        <location line="+97"/>
+        <location line="+98"/>
         <source>Used for both TCP and UDP. Must differ from the eD2K ports, the web server port and the core port.</source>
         <translation>Usada para TCP e UDP. Deve ser diferente das portas do eD2K, da porta do servidor web e da porta do núcleo.</translation>
     </message>
@@ -18168,7 +18413,7 @@ Defina um valor um pouco abaixo do seu plano. O volume é medido aqui, então fi
         <translation>Pares</translation>
     </message>
     <message>
-        <location line="+68"/>
+        <location line="+73"/>
         <source>Peer connections of all torrents together.</source>
         <translation>Conexões com pares de todos os torrents juntos.</translation>
     </message>
@@ -18342,11 +18587,11 @@ Defina um valor um pouco abaixo do seu plano. O volume é medido aqui, então fi
         <translation>Novo agendamento</translation>
     </message>
     <message>
-        <location line="-2931"/>
+        <location line="-2948"/>
         <location line="+1035"/>
         <location line="+154"/>
-        <location line="+1934"/>
-        <location line="+2364"/>
+        <location line="+1951"/>
+        <location line="+2369"/>
         <source>Add</source>
         <translation>Adicionar</translation>
     </message>
@@ -18359,7 +18604,7 @@ Defina um valor um pouco abaixo do seu plano. O volume é medido aqui, então fi
         <translation type="vanished">Inserir valor:</translation>
     </message>
     <message>
-        <location line="-2323"/>
+        <location line="-2328"/>
         <source>Edit Value</source>
         <translation>Editar valor</translation>
     </message>
@@ -18490,12 +18735,12 @@ Reinicie o eMule para que todas as conexões usem as novas configurações de pr
         <translation>Salvar em</translation>
     </message>
     <message>
-        <location line="+25"/>
+        <location line="+29"/>
         <source>Cancel</source>
         <translation>Cancelar</translation>
     </message>
     <message>
-        <location line="+91"/>
+        <location line="+109"/>
         <source>Working…</source>
         <translation>Trabalhando…</translation>
     </message>
@@ -23691,12 +23936,17 @@ Clicar em &quot;Restaurar estatísticas&quot; novamente recarregará suas estat�
         <translation>Privado para este tracker — DHT e PEX desativados</translation>
     </message>
     <message>
-        <location line="+1"/>
+        <location line="+0"/>
         <source>Public torrent</source>
         <translation>Torrent público</translation>
     </message>
     <message>
         <location line="+2"/>
+        <source>, I2P only (peers over I2P, no DHT unless mixed mode)</source>
+        <translation>, somente I2P (pares via I2P, sem DHT exceto no modo misto)</translation>
+    </message>
+    <message>
+        <location line="+4"/>
         <source>Created by %1 on %2</source>
         <translation>Criado por %1 em %2</translation>
     </message>
@@ -24123,12 +24373,12 @@ Clicar em &quot;Restaurar estatísticas&quot; novamente recarregará suas estat�
     </message>
     <message>
         <location line="+1"/>
-        <location line="+242"/>
+        <location line="+245"/>
         <source>Completed</source>
         <translation>Concluído</translation>
     </message>
     <message>
-        <location line="-241"/>
+        <location line="-244"/>
         <source>Seeding</source>
         <translation>Semeando</translation>
     </message>
@@ -24158,9 +24408,14 @@ Clicar em &quot;Restaurar estatísticas&quot; novamente recarregará suas estat�
         <translation>Desconhecido</translation>
     </message>
     <message>
-        <location line="+211"/>
+        <location line="+212"/>
         <source>Private torrent (no DHT, PEX or LSD)</source>
         <translation>Torrent privado (sem DHT, PEX ou LSD)</translation>
+    </message>
+    <message>
+        <location line="+2"/>
+        <source>I2P only</source>
+        <translation>Somente I2P</translation>
     </message>
     <message>
         <location line="+6"/>
@@ -24261,7 +24516,7 @@ Clicar em &quot;Restaurar estatísticas&quot; novamente recarregará suas estat�
         <translation>Recebidos</translation>
     </message>
     <message>
-        <location filename="../src/gui/controls/TorrentListModel.cpp" line="-539"/>
+        <location filename="../src/gui/controls/TorrentListModel.cpp" line="-542"/>
         <source>Skip</source>
         <translation>Ignorar</translation>
     </message>
@@ -24327,13 +24582,13 @@ Clicar em &quot;Restaurar estatísticas&quot; novamente recarregará suas estat�
     </message>
     <message>
         <location line="+1"/>
-        <location line="+102"/>
+        <location line="+103"/>
         <location line="+141"/>
         <source>Encrypted connection</source>
         <translation>Conexão criptografada</translation>
     </message>
     <message>
-        <location line="-242"/>
+        <location line="-243"/>
         <source>Connected through a holepunch</source>
         <translation>Conectado via holepunch</translation>
     </message>
@@ -24351,6 +24606,11 @@ Clicar em &quot;Restaurar estatísticas&quot; novamente recarregará suas estat�
         <location line="+1"/>
         <source>Peer is an incoming connection</source>
         <translation>O par é uma conexão de entrada</translation>
+    </message>
+    <message>
+        <location line="+1"/>
+        <source>Connected over I2P</source>
+        <translation>Conectado via I2P</translation>
     </message>
     <message>
         <location line="+40"/>

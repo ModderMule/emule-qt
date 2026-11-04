@@ -2032,6 +2032,13 @@ std::vector<PortMapRequest> CoreSession::buildPortMapRequests() const
         add(PortMapPurpose::BtTcp, PortMapProtocol::Tcp, btPort, QStringLiteral("eMule BitTorrent TCP"));
         add(PortMapPurpose::BtUdp, PortMapProtocol::Udp, btPort, QStringLiteral("eMule BitTorrent UDP"));
     }
+    // the bundled I2P router's NTCP2/SSU2 port: reachable routers get faster tunnels
+    if (thePrefs.btEnabled() && thePrefs.btPortMapping() && thePrefs.btI2pMode() == Preferences::kBtI2pBundled
+        && thePrefs.btI2pRouterPort() != 0) {
+        const uint16 i2pPort = thePrefs.btI2pRouterPort();
+        add(PortMapPurpose::I2pTcp, PortMapProtocol::Tcp, i2pPort, QStringLiteral("eMule I2P TCP"));
+        add(PortMapPurpose::I2pUdp, PortMapProtocol::Udp, i2pPort, QStringLiteral("eMule I2P UDP"));
+    }
 #endif
 
 #ifdef EMULE_HAVE_ED3K

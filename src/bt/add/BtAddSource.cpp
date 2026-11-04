@@ -111,4 +111,48 @@ QString BtAddSource::ed3kLinkOf(const QString& uri)
     return {};
 }
 
+bool BtAddSource::applyI2p(lt::add_torrent_params& atp, const BtSettings& s, std::optional<bool> i2pOnly)
+{
+    // load_torrent_buffer moved the .torrent's trackers into atp.trackers
+    const bool hasI2pTracker = std::ranges::any_of(atp.trackers, &BtAddSource::isI2pTracker);
+    const bool i2p = i2pOnly.value_or(s.i2pEnabled && s.i2pOnlyNew) || hasI2pTracker;
+    if (i2p)
+        atp.flags |= lt::torrent_flags::i2p_torrent;
+    const bool isPrivate = atp.ti && atp.ti->priv();
+    if (!s.i2pEnabled || isPrivate || (!i2p && !s.i2pMixed))
+        return i2p;
+    // a tier of their own after the torrent's: tried after its trackers within a tier
+    atp.tracker_tiers.resize(atp.trackers.size(), 0);
+    const int tier = atp.tracker_tiers.empty() ? 0 : std::ranges::max(atp.tracker_tiers) + 1;
+    for (const QString& url : s.i2pTrackers) {
+        const std::string u = url.trimmed().toStdString();
+        if (u.empty() || std::ranges::find(atp.trackers, u) != atp.trackers.end())
+            continue;
+        atp.trackers.push_back(u);
+        atp.tracker_tiers.push_back(tier);
+    }
+    return i2p;
+}
+
+bool BtAddSource::applyStopAfterMetadata(lt::add_torrent_params& atp, const BtSettings& s,
+                                         std::optional<bool> stop)
+{
+    if (!stop.value_or(s.stopAfterMetadata))
+        return false;
+    if (atp.ti) {
+        atp.flags |= lt::torrent_flags::paused;
+        atp.flags &= ~lt::torrent_flags::auto_managed;
+        return false;
+    }
+    atp.file_priorities.clear();
+    atp.flags |= lt::torrent_flags::default_dont_download;
+    return true;
+}
+
+bool BtAddSource::isI2pTracker(const std::string& url)
+{
+    const QString host = QUrl(QString::fromStdString(url)).host();
+    return host.endsWith(QLatin1StringView(".i2p"), Qt::CaseInsensitive);
+}
+
 } // namespace eMule::bt

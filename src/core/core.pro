@@ -144,6 +144,7 @@ SOURCES += \
     media/PreviewApps.cpp \
     media/PreviewThread.cpp \
     net/BindAddress.cpp \
+    net/I2pRouter.cpp \
     net/ClientReqSocket.cpp \
     net/ClientUDPSocket.cpp \
     net/EMSocket.cpp \
@@ -217,6 +218,7 @@ SOURCES += \
     utils/Log.cpp \
     utils/MassRename.cpp \
     utils/OtherFunctions.cpp \
+    utils/SidecarProcess.cpp \
     utils/PathUtils.cpp \
     utils/PerfLog.cpp \
     utils/SafeFile.cpp \
@@ -318,6 +320,7 @@ HEADERS += \
     media/PreviewApps.h \
     media/PreviewThread.h \
     net/BindAddress.h \
+    net/I2pRouter.h \
     net/ClientReqSocket.h \
     net/ClientUDPSocket.h \
     net/EMSocket.h \
@@ -406,6 +409,7 @@ HEADERS += \
     utils/MapKey.h \
     utils/MassRename.h \
     utils/OtherFunctions.h \
+    utils/SidecarProcess.h \
     utils/PathUtils.h \
     utils/PerfLog.h \
     utils/PlatformUtils.h \

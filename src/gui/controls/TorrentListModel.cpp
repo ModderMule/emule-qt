@@ -138,6 +138,7 @@ TorrentRow torrentRowFromCbor(const QCborMap& m)
     r.paused = flag("paused");
     r.hasMetadata = flag("hasMetadata");
     r.isPrivate = flag("private");
+    r.i2p = flag("i2p");
     r.addedAt = i64("addedAt");
     r.completedAt = i64("completedAt");
     r.seedingSeconds = i64("seedingSeconds");
@@ -275,6 +276,8 @@ QVariant TorrentListModel::data(const QModelIndex& index, int role) const
                 tip += QLatin1Char('\n') + r->savePath;
             if (r->isPrivate)
                 tip += QLatin1Char('\n') + tr("Private torrent (no DHT, PEX or LSD)");
+            if (r->i2p)
+                tip += QLatin1Char('\n') + tr("I2P only");
             return tip;
         }
         if (index.column() == ColStatus && !r->error.isEmpty())

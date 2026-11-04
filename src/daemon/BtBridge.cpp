@@ -5,6 +5,7 @@
 #include "app/AppContext.h"
 #include "ipfilter/IPFilter.h"
 #include "net/BindAddress.h"
+#include "net/I2pRouter.h"
 #include "prefs/Preferences.h"
 #include "stats/NetworkCounters.h"
 #include "stats/Statistics.h"
@@ -16,6 +17,7 @@
 #include <algorithm>
 #include <climits>
 #include <optional>
+
 
 #ifdef EMULE_HAVE_BITTORRENT
 #include "BtSession.h"
@@ -30,6 +32,7 @@ using Ipc::IpcMsgType;
 namespace {
 
 bt::BtSession* s_session = nullptr;
+I2pRouter* s_router = nullptr;
 
 IpcMessage unavailable(const IpcMessage& msg)
 {
@@ -66,6 +69,19 @@ void applyBindSelection(bt::BtSettings& s)
     if (s.bindAddresses.isEmpty())
         s.networkBlocked = true;
 }
+
+/// An optional bool field of AddTorrentFile/AddMagnet as picked; absent or null = the default.
+std::optional<bool> optionalBool(const IpcMessage& msg, int index)
+{
+    const QCborValue v = msg.field(index);
+    return v.isBool() ? std::optional(v.toBool()) : std::nullopt;
+}
+
+/// Field 3: "I2P only".
+std::optional<bool> i2pOnlyOf(const IpcMessage& msg) { return optionalBool(msg, 3); }
+
+/// Field 4: stop once the file list is known.
+std::optional<bool> stopAfterMetadataOf(const IpcMessage& msg) { return optionalBool(msg, 4); }
 
 QCborMap toCbor(const bt::BtTorrentRow& r)
 {
@@ -109,6 +125,7 @@ QCborMap toCbor(const bt::BtTorrentRow& r)
         {QStringLiteral("haveBytes"), r.haveBytes},
         {QStringLiteral("totalSize"), r.totalSize},
         {QStringLiteral("availability"), r.availability},
+        {QStringLiteral("i2p"), r.i2p},
     };
 }
 
@@ -193,6 +210,7 @@ QCborMap detailsToCbor(const QString& id)
             {QStringLiteral("utp"), p.utp},
             {QStringLiteral("source"), p.source},
             {QStringLiteral("flags"), p.flags},
+            {QStringLiteral("i2p"), p.i2p},
         });
     QCborArray trackers;
     for (const auto& t : s_session->trackers(id))
@@ -232,6 +250,11 @@ void setSession(bt::BtSession* session)
 bt::BtSession* session()
 {
     return s_session;
+}
+
+void setI2pRouter(I2pRouter* router)
+{
+    s_router = router;
 }
 
 bool available()
@@ -300,12 +323,17 @@ bool handleRequest(const IpcMessage& msg, const std::function<void(const IpcMess
     }
     case IpcMsgType::AddTorrentFile: {
         const QByteArray data = msg.field(0).toByteArray();
-        reply(IpcMessage::makeResult(seq, true, addResultToCbor(s_session->addTorrentFile(data, msg.fieldString(1), msg.fieldBool(2)))));
+        const auto added = s_session->addTorrentFile(data, msg.fieldString(1), msg.fieldBool(2), i2pOnlyOf(msg),
+                                                     stopAfterMetadataOf(msg));
+        reply(IpcMessage::makeResult(seq, true, addResultToCbor(added)));
         break;
     }
-    case IpcMsgType::AddMagnet:
-        reply(IpcMessage::makeResult(seq, true, addResultToCbor(s_session->addMagnet(id, msg.fieldString(1), msg.fieldBool(2)))));
+    case IpcMsgType::AddMagnet: {
+        const auto added = s_session->addMagnet(id, msg.fieldString(1), msg.fieldBool(2), i2pOnlyOf(msg),
+                                                stopAfterMetadataOf(msg));
+        reply(IpcMessage::makeResult(seq, true, addResultToCbor(added)));
         break;
+    }
     case IpcMsgType::RemoveTorrent: boolResult(s_session->remove(id, msg.fieldBool(1))); break;
     case IpcMsgType::PauseTorrent: boolResult(s_session->pause(id)); break;
     case IpcMsgType::ResumeTorrent: boolResult(s_session->resume(id)); break;
@@ -451,7 +479,14 @@ QCborMap statusToCbor()
     out.insert(QStringLiteral("torrents"), s.torrents);
     out.insert(QStringLiteral("rateDown"), s.rateDown);
     out.insert(QStringLiteral("rateUp"), s.rateUp);
+    out.insert(QStringLiteral("i2pEnabled"), s.i2pEnabled);
+    out.insert(QStringLiteral("i2pSam"), s.i2pSam);
+    out.insert(QStringLiteral("i2pError"), s.i2pError);
 #endif
+    // the bundled router, also while the engine is off
+    out.insert(QStringLiteral("i2pBundled"), s_router && s_router->available());
+    out.insert(QStringLiteral("i2pRouter"), s_router ? static_cast<int>(s_router->state()) : 0);
+    out.insert(QStringLiteral("i2pRouterError"), s_router ? s_router->lastError() : QString());
     return out;
 }
 
@@ -561,11 +596,34 @@ bt::BtSettings settingsFromPrefs()
     s.maxConnectionsPerTorrent = thePrefs.btMaxConnectionsPerTorrent();
     s.seedRatioPercent = thePrefs.btSeedRatioPercent();
     s.seedTimeLimitMinutes = thePrefs.btSeedTimeLimitMinutes();
+    s.stopAfterMetadata = thePrefs.btStopAfterMetadata();
     s.userAgent = QStringLiteral("eMuleQt/") + kAppVersion;
     s.versionMajor = EMULE_VERSION_MAJOR;
     s.versionMinor = EMULE_VERSION_MINOR;
     s.versionRevision = EMULE_VERSION_PATCH;
+
+    const int mode = thePrefs.btI2pMode();
+    s.i2pEnabled = mode != Preferences::kBtI2pOff;
+    if (mode == Preferences::kBtI2pExternal) {
+        s.i2pSamHost = thePrefs.btI2pHost();
+        s.i2pSamPort = thePrefs.btI2pPort();
+    } else if (mode == Preferences::kBtI2pBundled && s_router && s_router->state() == I2pRouter::State::Ready) {
+        // SAM only once it answers: else libtorrent logs a failed open per retry
+        s.i2pSamHost = QStringLiteral("127.0.0.1");
+        s.i2pSamPort = s_router->samPort();
+    }
+    s.i2pMixed = thePrefs.btI2pMixed();
+    s.i2pOnlyNew = thePrefs.btI2pOnlyNew();
+    s.i2pTunnelLength = thePrefs.btI2pTunnelLength();
+    s.i2pTunnelQuantity = thePrefs.btI2pTunnelQuantity();
+    s.i2pTrackers = thePrefs.btI2pTrackers();
     return s;
+}
+
+bool wantsI2pRouter(const bt::BtSettings& s, bool enginesHeld)
+{
+    return thePrefs.btI2pMode() == Preferences::kBtI2pBundled && thePrefs.btEnabled() && !enginesHeld
+           && !s.networkBlocked;
 }
 #endif
 

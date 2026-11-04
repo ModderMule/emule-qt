@@ -99,6 +99,19 @@ cp "$UPDATER_BIN" "$MACOS_DIR/emuleqt-updater"
 chmod +x "$MACOS_DIR/emuleqt-updater"
 echo "  -> $MACOS_DIR/emuleqt-updater"
 
+# Bundled I2P router for BitTorrent over I2P (cmake/I2pd.cmake fetches it into build/i2pd).
+# Optional: without it only an external router can be used. No Qt, system libs only:
+# signed like the updater. Universal upstream: thinned to the app's CPU below.
+I2PD_DIR="${EMULE_I2PD_DIR:-$BUILD_DIR/i2pd}"
+rm -f "$MACOS_DIR/emuleqt-i2pd"
+if [ -f "$I2PD_DIR/emuleqt-i2pd" ]; then
+    cp "$I2PD_DIR/emuleqt-i2pd" "$MACOS_DIR/emuleqt-i2pd"
+    chmod +x "$MACOS_DIR/emuleqt-i2pd"
+    echo "  -> $MACOS_DIR/emuleqt-i2pd"
+else
+    echo "Warning: no $I2PD_DIR/emuleqt-i2pd (cmake -DEMULE_I2PD=ON) — bundled I2P router not included."
+fi
+
 # -- Copy default config data into bundle ------------------------------------
 
 REPO_ROOT="$(cd "$(dirname "$0")/.." && pwd)"
@@ -134,6 +147,13 @@ if [ -f "$RESOLVER_ZIP" ]; then
     echo "Copied the hoster resolver into bundle."
 else
     echo "Warning: no resolver.zip (scripts/build-hoster-resolver.sh) — hoster downloads not bundled."
+fi
+
+# -- I2P router data: reseed certificates and its license --------------------
+rm -rf "$RESOURCES_DIR/i2pd-certificates"
+if [ -f "$MACOS_DIR/emuleqt-i2pd" ]; then
+    cp -R "$I2PD_DIR/certificates" "$RESOURCES_DIR/i2pd-certificates"
+    cp "$I2PD_DIR/LICENSE" "$RESOURCES_DIR/i2pd-LICENSE.txt"
 fi
 
 # -- Copy translation files into bundle --------------------------------------
@@ -327,6 +347,15 @@ done < <(find "$APP_BUNDLE/Contents" -type f \( -name '*.dylib' -o -perm -u+x \)
 # libraries) and neither shows up when the app is tried on that machine.
 
 APP_ARCHS="$(lipo -archs "$MACOS_DIR/emuleqt")"
+# the I2P router ships universal: keep only the app's CPU(s)
+if [ -f "$MACOS_DIR/emuleqt-i2pd" ] && [ "$(lipo -archs "$MACOS_DIR/emuleqt-i2pd")" != "$APP_ARCHS" ]; then
+    set -- $APP_ARCHS
+    if [ $# -eq 1 ]; then
+        lipo "$MACOS_DIR/emuleqt-i2pd" -thin "$1" -output "$MACOS_DIR/emuleqt-i2pd.thin"
+        mv "$MACOS_DIR/emuleqt-i2pd.thin" "$MACOS_DIR/emuleqt-i2pd"
+        chmod +x "$MACOS_DIR/emuleqt-i2pd"
+    fi
+fi
 MAX_MINOS="${MACOSX_DEPLOYMENT_TARGET:-}"
 
 # minos_of <file> <arch> — LC_BUILD_VERSION "minos", or the older
@@ -383,6 +412,7 @@ done
 for helper in "${HELPERS[@]}" "$MACOS_DIR/emuleqt-updater"; do
     adhoc_sign "$helper"
 done
+[ -f "$MACOS_DIR/emuleqt-i2pd" ] && adhoc_sign "$MACOS_DIR/emuleqt-i2pd"
 adhoc_sign "$APP_BUNDLE"
 
 # Fail the build rather than ship a bundle that dies in dyld

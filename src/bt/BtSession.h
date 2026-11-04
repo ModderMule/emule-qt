@@ -61,13 +61,19 @@ public:
     /// so call it at a steady pace (the coordinator's tick).
     [[nodiscard]] BtDemand demand();
 
-    /// Adds a .torrent file. `savePath` empty = the download dir.
-    BtAddResult addTorrentFile(const QByteArray& data, const QString& savePath = {}, bool paused = false);
+    /// Adds a .torrent file. `savePath` empty = the download dir. @p i2pOnly: an I2P
+    /// torrent; nullopt = the settings' default (BtAddSource::applyI2p). @p stopAfterMetadata:
+    /// stop once the file list is known; nullopt = the settings' default.
+    BtAddResult addTorrentFile(const QByteArray& data, const QString& savePath = {}, bool paused = false,
+                               std::optional<bool> i2pOnly = std::nullopt,
+                               std::optional<bool> stopAfterMetadata = std::nullopt);
     /// Reads a .torrent without adding it; works with the engine stopped.
     /// Error: an English reason.
     [[nodiscard]] static std::expected<BtTorrentPreview, QString> inspectTorrentFile(const QByteArray& data);
     /// Adds a BitTorrent magnet link.
-    BtAddResult addMagnet(const QString& uri, const QString& savePath = {}, bool paused = false);
+    BtAddResult addMagnet(const QString& uri, const QString& savePath = {}, bool paused = false,
+                          std::optional<bool> i2pOnly = std::nullopt,
+                          std::optional<bool> stopAfterMetadata = std::nullopt);
 
     bool remove(const QString& id, bool deleteFiles);
     bool pause(const QString& id);

@@ -1,6 +1,7 @@
 #include "torrent/BtTorrentView.h"
 
 #include "BtIds.h"
+#include "utils/OtherFunctions.h"
 
 #include <libtorrent/announce_entry.hpp>
 #include <libtorrent/peer_info.hpp>
@@ -105,10 +106,19 @@ QString flagsOf(const lt::peer_info& p)
         f += QLatin1Char('X');
     if (!has(lt::peer_info::outgoing_connection))
         f += QLatin1Char('I');
+    if (has(lt::peer_info::i2p_socket))
+        f += QLatin1Char('P');
     return f;
 }
 
 } // namespace
+
+QString BtTorrentView::i2pAddressOf(const lt::sha256_hash& destination)
+{
+    const auto* bytes = reinterpret_cast<const uint8*>(destination.data());
+    return encodeBase32(std::span<const uint8>(bytes, destination.size())).toLower().remove(QLatin1Char('='))
+           + QStringLiteral(".b32.i2p");
+}
 
 QString BtTorrentView::idOf(const lt::info_hash_t& hashes)
 {
@@ -124,6 +134,7 @@ BtTorrentRow BtTorrentView::row(const lt::torrent_status& st)
 {
     BtTorrentRow r;
     r.id = idOf(st.info_hashes);
+    r.i2p = static_cast<bool>(st.flags & lt::torrent_flags::i2p_torrent);
     r.name = QString::fromStdString(st.name);
     if (r.name.isEmpty())
         r.name = st.info_hashes.has_v1() ? hexOf(st.info_hashes.v1) : hexOf(st.info_hashes.v2);
@@ -214,10 +225,16 @@ QList<BtPeerRow> BtTorrentView::peers(const lt::torrent_handle& h)
         if (p.flags & lt::peer_info::connecting)
             continue;
         BtPeerRow r;
-        const auto ep = p.remote_endpoint();
-        const auto addr = ep.address();
-        r.address = addr.is_v6() ? QStringLiteral("[%1]:%2").arg(QString::fromStdString(addr.to_string())).arg(ep.port())
-                                 : QStringLiteral("%1:%2").arg(QString::fromStdString(addr.to_string())).arg(ep.port());
+        r.i2p = static_cast<bool>(p.flags & lt::peer_info::i2p_socket);
+        if (r.i2p) {
+            // no IP: the destination hash is the address (and the row key in the GUI)
+            r.address = i2pAddressOf(p.i2p_destination());
+        } else {
+            const auto ep = p.remote_endpoint();
+            const auto addr = ep.address();
+            r.address = addr.is_v6() ? QStringLiteral("[%1]:%2").arg(QString::fromStdString(addr.to_string())).arg(ep.port())
+                                     : QStringLiteral("%1:%2").arg(QString::fromStdString(addr.to_string())).arg(ep.port());
+        }
         r.client = QString::fromStdString(p.client);
         r.progress = static_cast<double>(p.progress);
         r.rateDown = p.payload_down_speed;

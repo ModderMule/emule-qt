@@ -849,7 +849,7 @@ Trust the new certificate?</source>
         <translation>普通</translation>
     </message>
     <message>
-        <location filename="../src/gui/dialogs/OptionsDialog.cpp" line="+3507"/>
+        <location filename="../src/gui/dialogs/OptionsDialog.cpp" line="+3508"/>
         <source>Test</source>
         <translation>測試</translation>
     </message>
@@ -933,7 +933,7 @@ Trust the new certificate?</source>
     </message>
     <message>
         <location filename="../src/gui/utils/NzbAdd.cpp" line="+25"/>
-        <location filename="../src/gui/utils/TorrentAdd.cpp" line="+37"/>
+        <location filename="../src/gui/utils/TorrentAdd.cpp" line="+51"/>
         <source>Could not add &quot;%1&quot;.</source>
         <translation>無法加入「%1」。</translation>
     </message>
@@ -1031,7 +1031,7 @@ Has comments</source>
 %2</translation>
     </message>
     <message>
-        <location line="+73"/>
+        <location line="+77"/>
         <source>Add Torrent</source>
         <translation>加入種子</translation>
     </message>
@@ -1551,7 +1551,7 @@ There is already a friend with same IP address and port available.</source>
 <context>
     <name>eMule::AddTorrentDialog</name>
     <message>
-        <location filename="../src/gui/dialogs/AddTorrentDialog.cpp" line="+29"/>
+        <location filename="../src/gui/dialogs/AddTorrentDialog.cpp" line="+30"/>
         <source>Add Magnet Links</source>
         <translation>加入磁力連結</translation>
     </message>
@@ -1586,7 +1586,37 @@ There is already a friend with same IP address and port available.</source>
         <translation>儲存至：</translation>
     </message>
     <message>
-        <location line="+30"/>
+        <location line="+2"/>
+        <source>Stop after metadata to pick the files</source>
+        <translation>取得中繼資料後停止以選擇檔案</translation>
+    </message>
+    <message>
+        <location line="+1"/>
+        <source>I2P only (anonymous, slower)</source>
+        <translation>僅 I2P (匿名，較慢)</translation>
+    </message>
+    <message>
+        <location line="+17"/>
+        <source>Fetches the file list, then stops before any file downloads. Untick the files to skip in the Files list, then resume.</source>
+        <translation>取得檔案清單後，在下載任何檔案之前停止。在檔案清單中取消勾選要略過的檔案，然後繼續。</translation>
+    </message>
+    <message>
+        <location line="+2"/>
+        <source>Adds the torrent stopped. Untick the files to skip in the Files list, then resume.</source>
+        <translation>以停止狀態加入種子。在檔案清單中取消勾選要略過的檔案，然後繼續。</translation>
+    </message>
+    <message>
+        <location line="+4"/>
+        <source>Peers only over I2P: they see an I2P address, never your IP. No DHT; the I2P trackers are added.</source>
+        <translation>僅透過 I2P 連線節點：對方只看到 I2P 位址，看不到你的 IP。不使用 DHT；會加入 I2P tracker。</translation>
+    </message>
+    <message>
+        <location line="+2"/>
+        <source>Turn on I2P in Options &gt; BitTorrent &gt; Connection first.</source>
+        <translation>請先在 選項 &gt; BitTorrent &gt; 連線 中啟用 I2P。</translation>
+    </message>
+    <message>
+        <location line="+16"/>
         <source>Not Connected</source>
         <translation>未連線</translation>
     </message>
@@ -1619,7 +1649,7 @@ There is already a friend with same IP address and port available.</source>
         <translation>每次最多加入 %1 個種子。</translation>
     </message>
     <message numerus="yes">
-        <location line="+39"/>
+        <location line="+41"/>
         <source>Added %n torrent(s).</source>
         <translation>
             <numerusform>已加入 %n 個種子。</numerusform>
@@ -1780,6 +1810,206 @@ M	壓縮資料尚未完全下載
 &lt;	檔案接續自上一分割卷
 &gt;	檔案在下一分割卷繼續
 </translation>
+    </message>
+</context>
+<context>
+    <name>eMule::BtI2pGroup</name>
+    <message>
+        <location filename="../src/gui/dialogs/BtI2pGroup.cpp" line="+44"/>
+        <source>I2P Trackers</source>
+        <translation>I2P Tracker</translation>
+    </message>
+    <message>
+        <location line="+3"/>
+        <source>Added to I2P torrents, and to all torrents in mixed mode. One per line:</source>
+        <translation>加入 I2P 種子，混合模式下加入所有種子。每行一個：</translation>
+    </message>
+    <message>
+        <location line="+10"/>
+        <source>Defaults</source>
+        <translation>預設值</translation>
+    </message>
+    <message>
+        <location line="+1"/>
+        <source>The public I2P trackers this version ships with</source>
+        <translation>此版本內建的公開 I2P Tracker</translation>
+    </message>
+    <message>
+        <location line="+28"/>
+        <source>I2P</source>
+        <translation>I2P</translation>
+    </message>
+    <message>
+        <location line="+6"/>
+        <source>Downloads torrents over the I2P network: peers see an I2P address, never your IP. Slower than direct connections, and needs no open port.</source>
+        <translation>透過 I2P 網路下載種子：節點只看到 I2P 位址，看不到你的 IP。比直接連線慢，無需開放連接埠。</translation>
+    </message>
+    <message>
+        <location line="+15"/>
+        <location line="+183"/>
+        <source>Off</source>
+        <translation>關閉</translation>
+    </message>
+    <message>
+        <location line="-183"/>
+        <source>Torrents use direct connections only.</source>
+        <translation>種子僅使用直接連線。</translation>
+    </message>
+    <message>
+        <location line="+1"/>
+        <source>Bundled I2P router (i2pd)</source>
+        <translation>內建 I2P 路由器 (i2pd)</translation>
+    </message>
+    <message>
+        <location line="+1"/>
+        <location line="+141"/>
+        <source>eMule runs its own I2P router. The first start takes a few minutes to join the network.</source>
+        <translation>eMule 執行自己的 I2P 路由器。首次啟動需要幾分鐘加入網路。</translation>
+    </message>
+    <message>
+        <location line="-139"/>
+        <source>External I2P router</source>
+        <translation>外部 I2P 路由器</translation>
+    </message>
+    <message>
+        <location line="+1"/>
+        <source>A router you run yourself (i2pd or Java I2P) with its SAM bridge on.</source>
+        <translation>你自行執行的路由器 (i2pd 或 Java I2P)，需開啟 SAM 橋接。</translation>
+    </message>
+    <message>
+        <location line="+2"/>
+        <source>Router:</source>
+        <translation>路由器：</translation>
+    </message>
+    <message>
+        <location line="+4"/>
+        <source>Host of the external router&apos;s SAM bridge</source>
+        <translation>外部路由器 SAM 橋接的主機</translation>
+    </message>
+    <message>
+        <location line="+2"/>
+        <source>Port:</source>
+        <translation>連接埠：</translation>
+    </message>
+    <message>
+        <location line="+5"/>
+        <source>SAM bridge:</source>
+        <translation>SAM 橋接：</translation>
+    </message>
+    <message>
+        <location line="+4"/>
+        <source>TCP and UDP port of the bundled router. Mapped with UPnP when the BitTorrent port is.</source>
+        <translation>內建路由器的 TCP 與 UDP 連接埠。BitTorrent 連接埠使用 UPnP 對應時也會一併對應。</translation>
+    </message>
+    <message>
+        <location line="+2"/>
+        <source>Router port:</source>
+        <translation>路由器連接埠：</translation>
+    </message>
+    <message>
+        <location line="+6"/>
+        <source>Routers each tunnel passes. More is more anonymous and slower.</source>
+        <translation>每條通道經過的路由器數。越多越匿名，也越慢。</translation>
+    </message>
+    <message>
+        <location line="+2"/>
+        <source>hops,</source>
+        <translation>跳，</translation>
+    </message>
+    <message>
+        <location line="+4"/>
+        <source>Tunnels each way. More is faster and uses more of the router.</source>
+        <translation>每個方向的通道數。越多越快，佔用路由器資源也越多。</translation>
+    </message>
+    <message>
+        <location line="+2"/>
+        <source>tunnels each way</source>
+        <translation>條通道 (每個方向)</translation>
+    </message>
+    <message>
+        <location line="+2"/>
+        <source>Tunnels:</source>
+        <translation>通道：</translation>
+    </message>
+    <message>
+        <location line="+2"/>
+        <source>Mixed mode: I2P torrents also use direct peers (less anonymous)</source>
+        <translation>混合模式：I2P 種子也使用直接節點 (匿名性較低)</translation>
+    </message>
+    <message>
+        <location line="+1"/>
+        <source>I2P torrents also use the DHT, normal trackers and direct peers, and normal torrents get the I2P trackers too, so both swarms share the files.</source>
+        <translation>I2P 種子也使用 DHT、一般 tracker 和直接節點，一般種子也會加入 I2P tracker，兩個群組共享檔案。</translation>
+    </message>
+    <message>
+        <location line="+3"/>
+        <source>Add new torrents as I2P only</source>
+        <translation>新種子預設僅 I2P</translation>
+    </message>
+    <message>
+        <location line="+1"/>
+        <source>The default of the &quot;I2P only&quot; box when adding torrents.</source>
+        <translation>加入種子時「僅 I2P」核取方塊的預設值。</translation>
+    </message>
+    <message>
+        <location line="+2"/>
+        <source>I2P torrents may also download over ed3k</source>
+        <translation>I2P 種子也可透過 ed3k 下載</translation>
+    </message>
+    <message>
+        <location line="+1"/>
+        <source>Their info hash then goes out over ed3k. How anonymous that is follows the ed3k hiding settings, not I2P.</source>
+        <translation>此時其 info hash 會透過 ed3k 送出。匿名程度取決於 ed3k 的隱藏設定，而非 I2P。</translation>
+    </message>
+    <message>
+        <location line="+5"/>
+        <source>I2P Trackers...</source>
+        <translation>I2P Tracker...</translation>
+    </message>
+    <message>
+        <location line="+10"/>
+        <source>Status:</source>
+        <translation>狀態：</translation>
+    </message>
+    <message>
+        <location line="+80"/>
+        <source>This build has no bundled I2P router (emuleqt-i2pd).</source>
+        <translation>此版本未內建 I2P 路由器 (emuleqt-i2pd)。</translation>
+    </message>
+    <message>
+        <location line="+39"/>
+        <source>BitTorrent is off</source>
+        <translation>BitTorrent 已關閉</translation>
+    </message>
+    <message>
+        <location line="+6"/>
+        <source>Bundled router starting...</source>
+        <translation>內建路由器啟動中...</translation>
+    </message>
+    <message>
+        <location line="+1"/>
+        <source>Bundled router running</source>
+        <translation>內建路由器執行中</translation>
+    </message>
+    <message>
+        <location line="+1"/>
+        <source>Bundled router failed: %1</source>
+        <translation>內建路由器失敗：%1</translation>
+    </message>
+    <message>
+        <location line="+4"/>
+        <source>waiting for the router</source>
+        <translation>等待路由器</translation>
+    </message>
+    <message>
+        <location line="+1"/>
+        <source>SAM bridge set</source>
+        <translation>SAM 橋接已設定</translation>
+    </message>
+    <message>
+        <location line="+1"/>
+        <source>SAM bridge error: %1</source>
+        <translation>SAM 橋接錯誤：%1</translation>
     </message>
 </context>
 <context>
@@ -10849,7 +11079,7 @@ Other members see your nick and posts; your node takes part in passing the room&
         <translation type="vanished">▸ 搜尋詳細資料 (%1)</translation>
     </message>
     <message>
-        <location filename="../src/gui/panels/KadPanel.cpp" line="+23"/>
+        <location filename="../src/gui/panels/KadPanel.cpp" line="+24"/>
         <source>eD2K</source>
         <translation>eD2K</translation>
     </message>
@@ -13421,12 +13651,12 @@ Download it again?</source>
     </message>
     <message>
         <location line="-2296"/>
-        <location line="+6339"/>
+        <location line="+6356"/>
         <source>Apply</source>
         <translation>套用</translation>
     </message>
     <message>
-        <location line="-6338"/>
+        <location line="-6355"/>
         <source>Help</source>
         <translation>說明</translation>
     </message>
@@ -13470,23 +13700,23 @@ Download it again?</source>
     </message>
     <message>
         <location line="+2"/>
-        <location line="+8579"/>
+        <location line="+8601"/>
         <source>BitTorrent</source>
         <translation>BitTorrent</translation>
     </message>
     <message>
-        <location line="-8467"/>
+        <location line="-8489"/>
         <source>User Name</source>
         <translation>使用者名稱</translation>
     </message>
     <message>
         <location line="+8"/>
-        <location line="+6209"/>
+        <location line="+6226"/>
         <source>Language</source>
         <translation>語言</translation>
     </message>
     <message>
-        <location line="-6206"/>
+        <location line="-6223"/>
         <source>System Default</source>
         <translation>系統預設</translation>
     </message>
@@ -13597,12 +13827,12 @@ Download it again?</source>
     <message>
         <location line="+8"/>
         <location line="+40"/>
-        <location line="+6086"/>
+        <location line="+6103"/>
         <source>Core</source>
         <translation>核心</translation>
     </message>
     <message>
-        <location line="-6099"/>
+        <location line="-6116"/>
         <source>Address:</source>
         <translation>位址：</translation>
     </message>
@@ -13789,12 +14019,12 @@ Are you sure you want to continue?</source>
         <translation>立即更新</translation>
     </message>
     <message>
-        <location line="+8156"/>
+        <location line="+8178"/>
         <source>A database ships with each release. An optional free &lt;a href=&quot;https://www.maxmind.com/en/geolite2/signup&quot;&gt;MaxMind GeoLite2&lt;/a&gt; account keeps it current in between. This product includes GeoLite2 data created by MaxMind.</source>
         <translation>每個版本都附帶一個資料庫。可選用的免費 &lt;a href=&quot;https://www.maxmind.com/en/geolite2/signup&quot;&gt;MaxMind GeoLite2&lt;/a&gt; 帳號能在版本之間保持資料庫為最新。本產品包含由 MaxMind 建立的 GeoLite2 資料。</translation>
     </message>
     <message>
-        <location line="-8136"/>
+        <location line="-8158"/>
         <source>Save CPU &amp;&amp; Memory Usage</source>
         <translation>節省 CPU &amp;&amp; 記憶體用量</translation>
     </message>
@@ -13875,14 +14105,14 @@ Are you sure you want to continue?</source>
         <location line="+296"/>
         <location line="+1032"/>
         <location line="+152"/>
-        <location line="+1331"/>
+        <location line="+1348"/>
         <location line="+297"/>
         <location line="+31"/>
         <source>Enabled</source>
         <translation>已啟用</translation>
     </message>
     <message>
-        <location line="-5168"/>
+        <location line="-5185"/>
         <source>Reset</source>
         <translation>重置</translation>
     </message>
@@ -13899,13 +14129,13 @@ Are you sure you want to continue?</source>
     <message>
         <location line="+3"/>
         <location line="+6"/>
-        <location line="+4545"/>
+        <location line="+4562"/>
         <location line="+347"/>
         <source> KB/s</source>
         <translation> KB/s</translation>
     </message>
     <message>
-        <location line="-4895"/>
+        <location line="-4912"/>
         <source>Upload</source>
         <translation>上傳</translation>
     </message>
@@ -13936,18 +14166,18 @@ Are you sure you want to continue?</source>
     </message>
     <message>
         <location line="+23"/>
-        <location line="+4385"/>
+        <location line="+4397"/>
         <source>Client Port</source>
         <translation>客戶端連接埠</translation>
     </message>
     <message>
-        <location line="-4382"/>
-        <location line="+7907"/>
+        <location line="-4394"/>
+        <location line="+7929"/>
         <source>TCP</source>
         <translation>TCP</translation>
     </message>
     <message>
-        <location line="-7901"/>
+        <location line="-7923"/>
         <source>UDP</source>
         <translation>UDP</translation>
     </message>
@@ -13957,12 +14187,12 @@ Are you sure you want to continue?</source>
     </message>
     <message>
         <location line="+6"/>
-        <location line="+4385"/>
+        <location line="+4397"/>
         <source>Test Ports</source>
         <translation>測試連接埠</translation>
     </message>
     <message>
-        <location line="-4376"/>
+        <location line="-4388"/>
         <source>Use UPnP to Setup Ports</source>
         <translation>使用 UPnP 設定連接埠</translation>
     </message>
@@ -13979,22 +14209,22 @@ Are you sure you want to continue?</source>
     <message>
         <location line="+4"/>
         <location line="+1767"/>
-        <location line="+5688"/>
+        <location line="+5710"/>
         <source>Any</source>
         <translation>任何</translation>
     </message>
     <message>
-        <location line="-7453"/>
+        <location line="-7475"/>
         <source>Use only this network interface, for example a VPN tunnel. Pick one from the list, or type an IP address or a subnet such as 10.64.0.0/10 (the interface holding an address in it). Connections through a proxy are not bound.</source>
         <translation>只使用這個網路介面，例如 VPN 通道。可從清單中選擇，或輸入 IP 位址或子網路，例如 10.64.0.0/10（即擁有該範圍內位址的介面）。透過代理的連線不會被綁定。</translation>
     </message>
     <message>
-        <location line="+7350"/>
+        <location line="+7372"/>
         <source>While the selected interface is not available, all P2P, Usenet and update connections stay closed.</source>
         <translation>在選取的介面無法使用期間，所有 P2P、Usenet 和更新連線都會保持關閉。</translation>
     </message>
     <message>
-        <location line="-7336"/>
+        <location line="-7358"/>
         <source>Max. Sources/File</source>
         <translation>每個檔案最大來源數</translation>
     </message>
@@ -14005,12 +14235,12 @@ Are you sure you want to continue?</source>
     </message>
     <message>
         <location line="+6"/>
-        <location line="+4407"/>
+        <location line="+4424"/>
         <source>Connection Limits</source>
         <translation>連線限制</translation>
     </message>
     <message>
-        <location line="-4405"/>
+        <location line="-4422"/>
         <source>Max. connections</source>
         <translation>最大連線數</translation>
     </message>
@@ -15404,24 +15634,24 @@ Every Usenet connection then passes through the proxy, so its speed caps the dow
         <location line="+19"/>
         <location line="+1035"/>
         <location line="+154"/>
-        <location line="+1934"/>
-        <location line="+2364"/>
+        <location line="+1951"/>
+        <location line="+2369"/>
         <source>Add</source>
         <translation>加入</translation>
     </message>
     <message>
-        <location line="-8047"/>
+        <location line="-8069"/>
         <location line="+2561"/>
         <location line="+1035"/>
         <location line="+154"/>
-        <location line="+1646"/>
+        <location line="+1663"/>
         <location line="+337"/>
-        <location line="+2320"/>
+        <location line="+2325"/>
         <source>Remove</source>
         <translation>移除</translation>
     </message>
     <message>
-        <location line="-5471"/>
+        <location line="-5493"/>
         <source>Display name (optional)</source>
         <translation>顯示名稱（選填）</translation>
     </message>
@@ -15494,12 +15724,12 @@ Every Usenet connection then passes through the proxy, so its speed caps the dow
         <translation> 天</translation>
     </message>
     <message>
-        <location line="+970"/>
+        <location line="+987"/>
         <source>Bandwidth</source>
         <translation>頻寬</translation>
     </message>
     <message>
-        <location line="-4700"/>
+        <location line="-4717"/>
         <source>Downloads that are receiving data, and the sources sending it, are drawn in bold. A source listed under another file (A4AF) is bold too while it transfers. The connected server and the selected category tab are bold as well.</source>
         <translation>正在接收資料的下載及傳送資料的來源以粗體顯示。列在其他檔案下的來源 (A4AF) 在傳輸時也以粗體顯示。已連線的伺服器和選取的分類分頁同樣以粗體顯示。</translation>
     </message>
@@ -15513,18 +15743,18 @@ Every Usenet connection then passes through the proxy, so its speed caps the dow
     </message>
     <message>
         <location line="+262"/>
-        <location line="+4389"/>
+        <location line="+4401"/>
         <source>Open Router</source>
         <translation>開啟路由器</translation>
     </message>
     <message>
-        <location line="-4388"/>
-        <location line="+4389"/>
+        <location line="-4400"/>
+        <location line="+4401"/>
         <source>Opens the web page of this computer&apos;s router, where ports are forwarded</source>
         <translation>開啟此電腦路由器的網頁，可在其中設定連接埠轉送</translation>
     </message>
     <message>
-        <location line="-4378"/>
+        <location line="-4390"/>
         <source>Randomize ports at startup, range</source>
         <translation>啟動時隨機選擇連接埠，範圍</translation>
     </message>
@@ -15687,14 +15917,14 @@ Every Usenet connection then passes through the proxy, so its speed caps the dow
     </message>
     <message>
         <location line="+1"/>
-        <location line="+1974"/>
+        <location line="+1985"/>
         <location line="+9"/>
-        <location line="+165"/>
+        <location line="+171"/>
         <source>No limit</source>
         <translation>無限制</translation>
     </message>
     <message>
-        <location line="-2145"/>
+        <location line="-2162"/>
         <source>Decimal GB, because that is what an invoice says — the 1024-based GB used elsewhere in eMule would put a 1000 GB plan 7% over.
 
 Set it slightly under your plan. The figure is measured here, so it reads a few percent below your provider&apos;s, and articles already in flight when the limit is reached still finish.</source>
@@ -15750,12 +15980,12 @@ Set it slightly under your plan. The figure is measured here, so it reads a few 
     <message>
         <location line="+3"/>
         <location line="+929"/>
-        <location line="+1619"/>
+        <location line="+1636"/>
         <source> s</source>
         <translation> 秒</translation>
     </message>
     <message>
-        <location line="-2547"/>
+        <location line="-2564"/>
         <source>Never back off</source>
         <translation>永不退避</translation>
     </message>
@@ -15766,19 +15996,19 @@ Set it slightly under your plan. The figure is measured here, so it reads a few 
     </message>
     <message>
         <location line="+8"/>
-        <location line="+2082"/>
+        <location line="+2099"/>
         <source>Share of the download limit:</source>
         <translation>占下載限制的比例：</translation>
     </message>
     <message>
-        <location line="-2079"/>
+        <location line="-2096"/>
         <location line="+42"/>
-        <location line="+2029"/>
+        <location line="+2046"/>
         <source> %</source>
         <translation> %</translation>
     </message>
     <message>
-        <location line="-2069"/>
+        <location line="-2086"/>
         <source>How much of the global download limit Usenet may take while eD2K is also downloading. Whichever engine is idle lends its whole share to the other, so this only applies when both are busy.</source>
         <translation>當 eD2K 也在下載時，Usenet 可占用全域下載限制的比例。閒置的一方會把自己的全部份額讓給另一方，因此只有在兩者都忙碌時才會套用。</translation>
     </message>
@@ -15905,12 +16135,12 @@ It cannot be inside your temp, incoming or configuration folders: the daemon wri
     </message>
     <message>
         <location line="-1784"/>
-        <location line="+1827"/>
+        <location line="+1838"/>
         <source>Desktop</source>
         <translation>桌面</translation>
     </message>
     <message>
-        <location line="-1823"/>
+        <location line="-1834"/>
         <source>Open .nzb files with eMule Qt</source>
         <translation>使用 eMule Qt 開啟 .nzb 檔案</translation>
     </message>
@@ -16599,7 +16829,22 @@ Adding one later does not fetch its back catalogue: a new indexer gets its own f
         <translation>啟用 BitTorrent</translation>
     </message>
     <message>
-        <location line="+484"/>
+        <location line="+19"/>
+        <source>New torrents</source>
+        <translation>新種子</translation>
+    </message>
+    <message>
+        <location line="+2"/>
+        <source>Stop after metadata to pick the files</source>
+        <translation>取得中繼資料後停止以選擇檔案</translation>
+    </message>
+    <message>
+        <location line="+2"/>
+        <source>A magnet link fetches its file list, then stops before any file downloads; a .torrent file is added stopped. Untick the files to skip in the Files list, then resume. The add dialogs can change it for each torrent.</source>
+        <translation>磁力連結會取得檔案清單，並在下載任何檔案之前停止；.torrent 檔案以停止狀態加入。在檔案清單中取消勾選要略過的檔案，然後繼續。加入對話框可為每個種子個別變更。</translation>
+    </message>
+    <message>
+        <location line="+478"/>
         <source>Log BitTorrent details (Torrent Verbose tab)</source>
         <translation>記錄 BitTorrent 詳細資訊（Torrent 詳細分頁）</translation>
     </message>
@@ -16629,7 +16874,7 @@ Adding one later does not fetch its back catalogue: a new indexer gets its own f
         <translation>ed3k 節點的偵錯輸出。ed3k 開啟時顯示此分頁。</translation>
     </message>
     <message>
-        <location line="+2652"/>
+        <location line="+2657"/>
         <source>This interface has no default route (split-tunnel VPN?): servers and peers outside its subnets are unreachable. Route all traffic through it, or choose another interface.</source>
         <translation>此介面沒有預設路由（分割通道 VPN？）：其子網路以外的伺服器和節點無法連線。請讓所有流量經過此介面，或選擇其他介面。</translation>
     </message>
@@ -16712,7 +16957,7 @@ Adding one later does not fetch its back catalogue: a new indexer gets its own f
         <translation type="vanished">同時用於 TCP 和 UDP。必須與 eD2K 連接埠不同。</translation>
     </message>
     <message>
-        <location line="-3537"/>
+        <location line="-3547"/>
         <source>Listen port (TCP/UDP):</source>
         <translation>監聽連接埠 (TCP/UDP)：</translation>
     </message>
@@ -16752,7 +16997,7 @@ Adding one later does not fetch its back catalogue: a new indexer gets its own f
         <translation type="vanished">上傳：</translation>
     </message>
     <message>
-        <location line="-150"/>
+        <location line="-151"/>
         <source>Active downloads:</source>
         <translation>使用中下載：</translation>
     </message>
@@ -16787,7 +17032,7 @@ Adding one later does not fetch its back catalogue: a new indexer gets its own f
         <translation>做種時間達到後停止：</translation>
     </message>
     <message>
-        <location line="-43"/>
+        <location line="-54"/>
         <source>Download folder</source>
         <translation>下載資料夾</translation>
     </message>
@@ -16814,12 +17059,12 @@ Adding one later does not fetch its back catalogue: a new indexer gets its own f
         <translation type="vanished">為此 eMule Qt 副本關聯 .torrent 檔案以及 magnet: 和 ed3k: 連結。此設定僅對您生效，無需系統管理員權限；每次啟動時都會重新套用，因此其他程式搶走關聯也無法保留。</translation>
     </message>
     <message>
-        <location line="+79"/>
+        <location line="+91"/>
         <source>BitTorrent download folder</source>
         <translation>BitTorrent 下載資料夾</translation>
     </message>
     <message>
-        <location line="+190"/>
+        <location line="+195"/>
         <source>Warning: Do not change these settings unless you know what you are doing. Otherwise you can easily make things worse for yourself. eMule will run fine without adjusting any of these settings.</source>
         <translation>警告：除非您知道您在做什麼，否則請不要更改這些設定。否則很容易使您自己的情況更糟。即使沒有更改這些設定值，eMule 也能執行得很好。</translation>
     </message>
@@ -16854,12 +17099,12 @@ Adding one later does not fetch its back catalogue: a new indexer gets its own f
         <translation>下載一律會檢查並記錄。共用檔案在每次啟動時都會重新檢查。</translation>
     </message>
     <message>
-        <location line="+1915"/>
+        <location line="+1918"/>
         <source>Could not update the file associations: %1</source>
         <translation>無法更新檔案關聯：%1</translation>
     </message>
     <message>
-        <location line="+1167"/>
+        <location line="+1169"/>
         <source>UDP is disabled in the config file (udpPort: 0)</source>
         <translation>UDP 已在設定檔中停用 (udpPort: 0)</translation>
     </message>
@@ -16964,12 +17209,12 @@ Create it?</source>
 %1</translation>
     </message>
     <message>
-        <location line="-3277"/>
+        <location line="-3282"/>
         <source>Disabled</source>
         <translation>已停用</translation>
     </message>
     <message>
-        <location line="-4200"/>
+        <location line="-4217"/>
         <source>Lets two Low ID clients find each other&apos;s address through a server that supports it or a Kad buddy, then connect over IPv6 or QUIC</source>
         <translation>讓兩個 Low ID 用戶端透過支援此功能的伺服器或 Kad 夥伴找到對方位址，然後透過 IPv6 或 QUIC 連線</translation>
     </message>
@@ -16994,7 +17239,7 @@ Create it?</source>
         <translation>在核心中執行 BitTorrent 引擎。關閉時引擎停止：不下載也不做種任何種子，BitTorrent 連接埠關閉。種子保留在清單中，重新開啟後繼續。</translation>
     </message>
     <message>
-        <location line="+17"/>
+        <location line="+28"/>
         <source>Queue</source>
         <translation>佇列</translation>
     </message>
@@ -17014,7 +17259,7 @@ Create it?</source>
         <translation>將 .torrent 檔案和 magnet: 連結關聯到這份 eMule Qt。此設定只對您自己生效，不需要管理員權限；每次啟動都會重新套用，因此其他程式搶走關聯也無法一直保留。</translation>
     </message>
     <message>
-        <location line="+49"/>
+        <location line="+50"/>
         <source>Used for both TCP and UDP. Must differ from the eD2K ports, the web server port and the core port.</source>
         <translation>同時用於 TCP 和 UDP。必須與 eD2K 連接埠、網頁伺服器連接埠和核心連接埠不同。</translation>
     </message>
@@ -17084,7 +17329,7 @@ Create it?</source>
         <translation>同儕數</translation>
     </message>
     <message>
-        <location line="+18"/>
+        <location line="+23"/>
         <source>Global limits:</source>
         <translation>全域限制:</translation>
     </message>
@@ -17705,7 +17950,7 @@ News server connections switch over immediately.</source>
         <translation>字型大小變更將在重新啟動應用程式後生效。</translation>
     </message>
     <message>
-        <location line="+396"/>
+        <location line="+399"/>
         <source>Web Interface</source>
         <translation>Web 介面</translation>
     </message>
@@ -17734,7 +17979,7 @@ News server connections switch over immediately.</source>
         <translation>找不到 specialdlp 程式庫，檢查未啟用</translation>
     </message>
     <message>
-        <location line="+511"/>
+        <location line="+513"/>
         <source>Port forwarding: %1</source>
         <translation>連接埠轉送：%1</translation>
     </message>
@@ -17928,12 +18173,12 @@ Rehash all shared files now?</source>
         <translation>儲存至</translation>
     </message>
     <message>
-        <location line="+25"/>
+        <location line="+29"/>
         <source>Cancel</source>
         <translation>取消</translation>
     </message>
     <message>
-        <location line="+91"/>
+        <location line="+109"/>
         <source>Working…</source>
         <translation>處理中…</translation>
     </message>
@@ -22846,12 +23091,17 @@ Clicking &apos;Restore Stats&apos; again will reload your current statistics.</s
         <translation>僅限此追蹤器 — 已停用 DHT 和 PEX</translation>
     </message>
     <message>
-        <location line="+1"/>
+        <location line="+0"/>
         <source>Public torrent</source>
         <translation>公開 Torrent</translation>
     </message>
     <message>
         <location line="+2"/>
+        <source>, I2P only (peers over I2P, no DHT unless mixed mode)</source>
+        <translation>, 僅 I2P (節點經 I2P，非混合模式時不使用 DHT)</translation>
+    </message>
+    <message>
+        <location line="+4"/>
         <source>Created by %1 on %2</source>
         <translation>由 %1 建立於 %2</translation>
     </message>
@@ -23277,12 +23527,12 @@ Clicking &apos;Restore Stats&apos; again will reload your current statistics.</s
     </message>
     <message>
         <location line="+1"/>
-        <location line="+242"/>
+        <location line="+245"/>
         <source>Completed</source>
         <translation>已完成</translation>
     </message>
     <message>
-        <location line="-241"/>
+        <location line="-244"/>
         <source>Seeding</source>
         <translation>做種中</translation>
     </message>
@@ -23312,9 +23562,14 @@ Clicking &apos;Restore Stats&apos; again will reload your current statistics.</s
         <translation>未知</translation>
     </message>
     <message>
-        <location line="+211"/>
+        <location line="+212"/>
         <source>Private torrent (no DHT, PEX or LSD)</source>
         <translation>私有種子（無 DHT、PEX 或 LSD）</translation>
+    </message>
+    <message>
+        <location line="+2"/>
+        <source>I2P only</source>
+        <translation>僅 I2P</translation>
     </message>
     <message>
         <location line="+6"/>
@@ -23415,7 +23670,7 @@ Clicking &apos;Restore Stats&apos; again will reload your current statistics.</s
         <translation>下載完成資料夾</translation>
     </message>
     <message>
-        <location filename="../src/gui/controls/TorrentListModel.cpp" line="-539"/>
+        <location filename="../src/gui/controls/TorrentListModel.cpp" line="-542"/>
         <source>Skip</source>
         <translation>略過</translation>
     </message>
@@ -23481,13 +23736,13 @@ Clicking &apos;Restore Stats&apos; again will reload your current statistics.</s
     </message>
     <message>
         <location line="+1"/>
-        <location line="+102"/>
+        <location line="+103"/>
         <location line="+141"/>
         <source>Encrypted connection</source>
         <translation>加密連線</translation>
     </message>
     <message>
-        <location line="-242"/>
+        <location line="-243"/>
         <source>Connected through a holepunch</source>
         <translation>透過打洞連線</translation>
     </message>
@@ -23505,6 +23760,11 @@ Clicking &apos;Restore Stats&apos; again will reload your current statistics.</s
         <location line="+1"/>
         <source>Peer is an incoming connection</source>
         <translation>同儕為傳入連線</translation>
+    </message>
+    <message>
+        <location line="+1"/>
+        <source>Connected over I2P</source>
+        <translation>已透過 I2P 連線</translation>
     </message>
     <message>
         <location line="+40"/>

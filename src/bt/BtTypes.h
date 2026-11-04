@@ -46,6 +46,23 @@ struct BtSettings {
     int versionMajor = 0;
     int versionMinor = 0;
     int versionRevision = 0;
+
+    // -- I2P (libtorrent's SAM client) --
+    /// I2P is on (a router mode is picked); torrents follow the I2P policy
+    bool i2pEnabled = false;
+    /// SAM bridge; port 0 = not (yet) reachable, no SAM session
+    QString i2pSamHost;
+    quint16 i2pSamPort = 0;
+    /// I2P torrents may use clearnet peers too (allow_i2p_mixed)
+    bool i2pMixed = false;
+    /// new torrents are I2P only
+    bool i2pOnlyNew = false;
+    /// new torrents stop once their file list is known, to pick files first
+    bool stopAfterMetadata = false;
+    int i2pTunnelLength = 3;
+    int i2pTunnelQuantity = 3;
+    /// added to I2P torrents, and to all torrents while mixed
+    QStringList i2pTrackers;
 };
 
 /// State of a torrent as the GUI shows it. Values are IPC: append only.
@@ -116,6 +133,8 @@ struct BtTorrentRow {
     qint64 totalSize = 0;
     /// copies in the swarm, from the connected peers (distributed_copies); -1 = unknown
     double availability = -1;
+    /// I2P torrent (torrent_flags::i2p_torrent): I2P peers only unless mixed
+    bool i2p = false;
 };
 
 struct BtFileRow {
@@ -130,7 +149,7 @@ struct BtFileRow {
 };
 
 struct BtPeerRow {
-    QString address;  ///< "ip:port"
+    QString address;  ///< "ip:port", or "<52 chars>.b32.i2p" for an I2P peer
     QString client;
     double progress = 0;
     qint64 rateDown = 0;
@@ -142,8 +161,9 @@ struct BtPeerRow {
     bool utp = false;
     /// "tracker", "dht", "pex", "lsd", "resume", "incoming"
     QString source;
-    /// status letters as in Transmission: T O D d U u K ? E h H X I
+    /// status letters as in Transmission: T O D d U u K ? E h H X I, and P = over I2P
     QString flags;
+    bool i2p = false;
 };
 
 struct BtTrackerRow {
@@ -256,6 +276,10 @@ struct BtStatus {
     int torrents = 0;
     qint64 rateDown = 0;
     qint64 rateUp = 0;
+    /// I2P: on in the settings, SAM bridge set, and the last SAM error (empty = none)
+    bool i2pEnabled = false;
+    bool i2pSam = false;
+    QString i2pError;
 };
 
 } // namespace eMule::bt

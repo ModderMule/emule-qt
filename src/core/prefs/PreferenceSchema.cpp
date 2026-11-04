@@ -187,6 +187,7 @@ using Kind = PrefSpec::Kind;
     t << text("btDownloadDir", 4096, "Folder torrents are saved to. Empty = the incoming folder.");
     t << number("btMaxDownloadKb", 0, kMaxU32, "KiB/s", "BitTorrent download limit. 0 = unlimited.");
     t << number("btMaxUploadKb", 0, kMaxU32, "KiB/s", "BitTorrent upload limit. 0 = unlimited.");
+    t << flag("btStopAfterMetadata", "Stop new torrents once their file list is known, to pick files first.");
     t << flag("btDht", "Find BitTorrent peers through the DHT.");
     t << flag("btLsd", "Find BitTorrent peers on the local network (local service discovery).");
     t << flag("btPex", "Exchange BitTorrent peers with connected peers (PEX).");
@@ -207,6 +208,21 @@ using Kind = PrefSpec::Kind;
     t << number("btMaxConnectionsPerTorrent", 2, Preferences::kMaxBtConnections, "",
                 "BitTorrent peer connections per torrent.");
     t << flag("btPortMapping", "Map the BitTorrent port with UPnP/NAT-PMP (needs port mapping on).");
+    t << number("btI2pMode", 0, 2, "", "I2P for BitTorrent: 0 = off, 1 = bundled i2pd router, "
+                "2 = external router (SAM bridge at btI2pHost:btI2pPort).");
+    t << text("btI2pHost", 255, "SAM bridge host of the external I2P router.");
+    t << number("btI2pPort", 1, 65535, "", "SAM bridge port of the external I2P router.");
+    t << flag("btI2pMixed", "Mixed mode: I2P torrents also use clearnet peers, DHT and trackers (less "
+              "anonymous); clearnet torrents get the I2P trackers too.");
+    t << flag("btI2pOnlyNew", "Add new torrents as I2P only.");
+    t << flag("btI2pEd3kJoin", "I2P torrents may join ed3k too (their info hash goes out over ed3k).");
+    t << number("btI2pTunnelLength", 1, 7, "", "Hops per I2P tunnel. More = more anonymous, slower.");
+    t << number("btI2pTunnelQuantity", 1, 16, "", "I2P tunnels each way.");
+    t << text("btI2pTrackers", 16384, "I2P trackers added to I2P torrents (and to all torrents in mixed "
+              "mode), separated by spaces.");
+    t << advanced(number("btI2pRouterPort", 1, 65535, "", "TCP and UDP port of the bundled I2P router."));
+    t << advanced(number("btI2pShare", 0, 100, "%", "Share of the bundled I2P router's bandwidth "
+                         "used for other routers' tunnels."));
 
     // --- ed3k (packmule) ---
     t << flag("ed3kEnabled", "Enable the ed3k node (packmule).");

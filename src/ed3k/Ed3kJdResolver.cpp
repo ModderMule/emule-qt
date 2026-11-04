@@ -4,6 +4,7 @@
 
 #include "archive/ArchiveReader.h"
 #include "utils/Log.h"
+#include "utils/PathUtils.h"
 
 #include <QCoreApplication>
 #include <QCryptographicHash>
@@ -16,7 +17,6 @@
 #include <QJsonObject>
 #include <QLockFile>
 #include <QRegularExpression>
-#include <QProcess>
 #include <QRandomGenerator>
 #include <QTcpServer>
 #include <QTcpSocket>
@@ -130,18 +130,20 @@ Ed3kJdResolver::Ed3kJdResolver(QObject* parent)
     m_connectTimer.setSingleShot(true);
     m_connectTimer.setInterval(kConnectTimeoutMs);
     connect(&m_connectTimer, &QTimer::timeout, this, &Ed3kJdResolver::onConnectTimeout);
+    connect(&m_sidecar, &SidecarProcess::lineRead, this, &Ed3kJdResolver::onLog);
+    connect(&m_sidecar, &SidecarProcess::finished, this, &Ed3kJdResolver::onFinished);
+    connect(&m_sidecar, &SidecarProcess::failedToStart, this, [this] {
+        logHosterWarning(QStringLiteral("hoster: resolver did not start: %1").arg(m_config.java));
+        onFinished(-1, false, false);
+    });
 }
 
 Ed3kJdResolver::~Ed3kJdResolver()
 {
     m_stopping = true;
     closeChannel();
-    if (m_proc) {
-        m_proc->disconnect(this);
-        if (!m_proc->waitForFinished(2000))
-            m_proc->kill();
-        delete m_proc;
-    }
+    // m_sidecar waits for java, then kills it
+    m_sidecar.disconnect(this);
 }
 
 void Ed3kJdResolver::setConfig(const JdResolverConfig& config)
@@ -165,24 +167,11 @@ void Ed3kJdResolver::setConfig(const JdResolverConfig& config)
 
 QString Ed3kJdResolver::findBundledZip()
 {
-    const QString env = qEnvironmentVariable("EMULE_RESOLVER_ZIP");
-    if (!env.isEmpty() && QFileInfo(env).isFile())
-        return env;
-    const QDir app(QCoreApplication::applicationDirPath());
-    for (const QString& rel : {QStringLiteral("resolver.zip"), QStringLiteral("../Resources/resolver.zip"),
-                               QStringLiteral("../share/emuleqt/resolver.zip"), QStringLiteral("resolver/resolver.zip")}) {
-        const QString p = app.filePath(rel);
-        if (QFileInfo(p).isFile())
-            return QDir::cleanPath(p);
-    }
     // a build tree: build/hoster-resolver/resolver.zip above the binary
-    QDir up = app;
-    for (int i = 0; i < 6 && up.cdUp(); ++i) {
-        const QString p = up.filePath(QStringLiteral("hoster-resolver/resolver.zip"));
-        if (QFileInfo(p).isFile())
-            return QDir::cleanPath(p);
-    }
-    return {};
+    return findBundledFile("EMULE_RESOLVER_ZIP",
+                           {QStringLiteral("resolver.zip"), QStringLiteral("../Resources/resolver.zip"),
+                            QStringLiteral("../share/emuleqt/resolver.zip"), QStringLiteral("resolver/resolver.zip")},
+                           QStringLiteral("hoster-resolver/resolver.zip"));
 }
 
 bool Ed3kJdResolver::install(const QString& zip, const QString& dataDir, QString* error)
@@ -320,7 +309,7 @@ QString Ed3kJdResolver::unavailableReason() const
 
 bool Ed3kJdResolver::running() const
 {
-    return m_proc && m_proc->state() != QProcess::NotRunning;
+    return m_sidecar.running();
 }
 
 Ed3kResolver::TaskId Ed3kJdResolver::match(const QString& url)
@@ -483,7 +472,7 @@ Ed3kResolver::TaskId Ed3kJdResolver::request(QJsonObject req, bool task)
 
 void Ed3kJdResolver::send(const QJsonObject& req)
 {
-    if (!m_proc)
+    if (!m_sidecar.running())
         return;
     // never logged whole: it may hold a password
     const QByteArray line = QJsonDocument(req).toJson(QJsonDocument::Compact) + '\n';
@@ -548,32 +537,14 @@ bool Ed3kJdResolver::ensureStarted()
     QByteArray raw(32, Qt::Uninitialized);
     QRandomGenerator::system()->fillRange(reinterpret_cast<quint32*>(raw.data()), raw.size() / 4);
     m_token = raw.toHex();
-    auto* p = new QProcess(this);
-    m_proc = p;
     m_outBuf.clear();
-    m_errBuf.clear();
     QDir().mkpath(QDir(m_config.dataDir).filePath(QStringLiteral("jd")));
-    p->setWorkingDirectory(m_config.dataDir);
     // stdout is no protocol any more: both are JD's log
-    p->setProcessChannelMode(QProcess::MergedChannels);
-#ifdef Q_OS_UNIX
-    // else java inherits the daemon's listen sockets (BT, eD2K) and holds the ports
-    p->setUnixProcessParameters(QProcess::UnixProcessFlag::CloseFileDescriptors);
-#endif
-    connect(p, &QProcess::readyReadStandardOutput, this, &Ed3kJdResolver::onLog);
-    connect(p, &QProcess::finished, this, &Ed3kJdResolver::onFinished);
-    connect(p, &QProcess::errorOccurred, this, [this](QProcess::ProcessError e) {
-        if (e == QProcess::FailedToStart) {
-            logHosterWarning(QStringLiteral("hoster: resolver did not start: %1").arg(m_config.java));
-            onFinished();
-        }
-    });
-    p->start(m_config.java, arguments());
+    m_sidecar.start(m_config.java, arguments(), m_config.dataDir);
     // the token goes in through stdin, then stdin closes: console reads in JD get EOF
-    p->write(m_token + '\n');
-    p->closeWriteChannel();
+    m_sidecar.write(m_token + '\n');
+    m_sidecar.closeWriteChannel();
     m_connectTimer.start();
-    m_startedAt.start();
     m_progressLogged.clear();
     logHosterDebug(QStringLiteral("hoster: resolver starting: %1, plugins %2, listening on 127.0.0.1:%3")
                        .arg(m_config.java, m_revision.isEmpty() ? QStringLiteral("?") : QStringLiteral("r") + m_revision)
@@ -590,43 +561,29 @@ bool Ed3kJdResolver::ensureStarted()
 void Ed3kJdResolver::stop()
 {
     m_idle.stop();
-    if (!m_proc)
+    if (!m_sidecar.running())
         return;
     m_stopping = true;
-    QProcess* p = m_proc;
     closeChannel();
-    QTimer::singleShot(3000, p, [p] { p->kill(); });
+    // closing the channel ends java; killed when it does not
+    m_sidecar.stop(3000, false);
 }
 
-void Ed3kJdResolver::onLog()
+void Ed3kJdResolver::onLog(const QByteArray& line)
 {
-    if (!m_proc)
-        return;
-    m_errBuf += m_proc->readAllStandardOutput();
-    qsizetype nl;
-    while ((nl = m_errBuf.indexOf('\n')) >= 0) {
-        const QByteArray line = m_errBuf.left(nl).trimmed();
-        m_errBuf.remove(0, nl + 1);
-        // JD's own log may hold page content: only the driver's lines
-        if (line.startsWith("resolver: "))
-            logHosterDebug(QStringLiteral("hoster: ") + QString::fromUtf8(line.mid(10)));
-    }
-    if (m_errBuf.size() > 64 * 1024)
-        m_errBuf.clear();
+    // JD's own log may hold page content: only the driver's lines
+    if (line.startsWith("resolver: "))
+        logHosterDebug(QStringLiteral("hoster: ") + QString::fromUtf8(line.mid(10)));
 }
 
-void Ed3kJdResolver::onFinished()
+void Ed3kJdResolver::onFinished(int exitCode, bool crashed, bool stopped)
 {
-    if (!m_proc)
-        return;
-    const bool expected = m_stopping;
+    const bool expected = m_stopping || stopped;
     logHosterDebug(QStringLiteral("hoster: resolver exited, code %1%2, after %3 s")
-                       .arg(m_proc->exitCode())
-                       .arg(m_proc->exitStatus() == QProcess::CrashExit ? QStringLiteral(" (crashed)") : QString())
-                       .arg(m_startedAt.isValid() ? m_startedAt.elapsed() / 1000 : 0));
+                       .arg(exitCode)
+                       .arg(crashed ? QStringLiteral(" (crashed)") : QString())
+                       .arg(m_sidecar.uptimeMs() / 1000));
     closeChannel();
-    m_proc->deleteLater();
-    m_proc = nullptr;
     m_stopping = false;
     if (!expected)
         logHosterWarning(QStringLiteral("hoster: resolver ended"));
@@ -639,7 +596,7 @@ void Ed3kJdResolver::onIdle()
     if (m_pending.empty()) {
         logHosterDebug(QStringLiteral("hoster: resolver idle for %1 min, stopping it (up %2 s)")
                            .arg(kIdleStopMs / 60000)
-                           .arg(m_startedAt.isValid() ? m_startedAt.elapsed() / 1000 : 0));
+                           .arg(m_sidecar.uptimeMs() / 1000));
         stop();
     }
 }
@@ -781,7 +738,7 @@ void Ed3kJdResolver::onSocketRead()
         }
         m_sock->setSocketOption(QAbstractSocket::LowDelayOption, 1);
         logHosterDebug(QStringLiteral("hoster: resolver authenticated after %1 ms, %2 queued request(s) sent")
-                           .arg(m_startedAt.isValid() ? m_startedAt.elapsed() : 0)
+                           .arg(m_sidecar.uptimeMs())
                            .arg(m_sendQueue.count('\n')));
         m_sock->write(std::exchange(m_sendQueue, {}));
     }
@@ -812,7 +769,7 @@ void Ed3kJdResolver::onSocketGone()
 
 void Ed3kJdResolver::onConnectTimeout()
 {
-    if (m_authed || !m_proc)
+    if (m_authed || !m_sidecar.running())
         return;
     logHosterWarning(QStringLiteral("hoster: resolver did not connect"));
     stop();
@@ -851,7 +808,7 @@ void Ed3kJdResolver::logEvent(TaskId id, const QString& ev, const ResolverEvent&
     if (e.kind == K::Progress) {
         // once in 10 s per task
         constexpr qint64 kProgressEveryMs = 10'000;
-        const qint64 now = m_startedAt.isValid() ? m_startedAt.elapsed() : 0;
+        const qint64 now = m_sidecar.uptimeMs();
         auto [it, fresh] = m_progressLogged.try_emplace(id, now);
         if (!fresh && now - it->second < kProgressEveryMs)
             return;

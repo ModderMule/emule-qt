@@ -17,6 +17,20 @@
 
 namespace eMule::gui {
 
+namespace {
+
+/// The optional fields 3 and 4; a null keeps field 3 at the default when only 4 is given.
+void appendChoices(Ipc::IpcMessage& msg, std::optional<bool> i2pOnly, std::optional<bool> stopAfterMetadata)
+{
+    if (!i2pOnly && !stopAfterMetadata)
+        return;
+    msg.append(i2pOnly ? QCborValue(*i2pOnly) : QCborValue(QCborValue::Null));
+    if (stopAfterMetadata)
+        msg.append(*stopAfterMetadata);
+}
+
+} // namespace
+
 QString btAddOutcomeText(BtAddOutcome outcome, const QString& title, const QString& detail)
 {
     switch (outcome) {
@@ -62,21 +76,25 @@ BtAddReply decodeTorrentAddReply(const Ipc::IpcMessage& resp)
     return out;
 }
 
-Ipc::IpcMessage torrentFileRequest(const QByteArray& data, const QString& savePath, bool paused)
+Ipc::IpcMessage torrentFileRequest(const QByteArray& data, const QString& savePath, bool paused,
+                                   std::optional<bool> i2pOnly, std::optional<bool> stopAfterMetadata)
 {
     Ipc::IpcMessage msg(Ipc::IpcMsgType::AddTorrentFile);
     msg.append(QCborValue(data));
     msg.append(savePath);
     msg.append(paused);
+    appendChoices(msg, i2pOnly, stopAfterMetadata);
     return msg;
 }
 
-Ipc::IpcMessage magnetRequest(const QString& uri, const QString& savePath, bool paused)
+Ipc::IpcMessage magnetRequest(const QString& uri, const QString& savePath, bool paused,
+                              std::optional<bool> i2pOnly, std::optional<bool> stopAfterMetadata)
 {
     Ipc::IpcMessage msg(Ipc::IpcMsgType::AddMagnet);
     msg.append(uri);
     msg.append(savePath);
     msg.append(paused);
+    appendChoices(msg, i2pOnly, stopAfterMetadata);
     return msg;
 }
 

@@ -33,9 +33,10 @@ class IpcServer;
 class CoreNotifierBridge;
 class PowerManager;
 class AutoUpdater;
+class I2pRouter;
 
 namespace usenet { class UsenetSession; }
-namespace bt { class BtSession; }
+namespace bt { class BtSession; struct BtSettings; }
 namespace ed3k { class Ed3kSession; class Ed3kUsenetJoin; class UsenetJoinQueue; class Ed3kTorrentJoin; class Ed3kEd2kJoin; class Ed3kShared; class SharedFileSource; class Ed3kFriends; class Ed3kRooms; class Ed3kBootstrap; class Ed3kNames; class Ed3kSiteServer; class Ed3kCredit; class Ed3kUploads; class Ed3kFilters; class Ed3kChain; class Ed3kHosterJoin; class Ed3kJdResolver; class Ed3kJavaRuntime; class Ed3kDownloads; class Ed3kSearch; class Ed3kSets; class Ed3kLive; class Ed3kLiveBroadcast; class Ed3kPaid; class Ed3kPaidSeller; class Ed3kOwnSets; }
 namespace indexer { class IndexerFeedList; class IndexerSearchList; }
 
@@ -144,6 +145,8 @@ private:
     /// Re-apply the BitTorrent settings after an Options save, starting or stopping
     /// the engine. Reached through IpcServer::btConfigChanged.
     void applyBtConfig();
+    /// Starts or stops the bundled I2P router for @p settings' network state.
+    void applyI2pRouter(const bt::BtSettings& settings);
 
     /// Start, stop or restart the ed3k node after an ed3k* preference moved.
     /// Reached through IpcServer::ed3kConfigChanged.
@@ -199,6 +202,8 @@ private:
     std::unique_ptr<usenet::UsenetSession> m_usenetSession;
 #ifdef EMULE_HAVE_BITTORRENT
     std::unique_ptr<bt::BtSession> m_btSession;
+    /// the bundled i2pd (btI2pMode 1); stopped after the session
+    std::unique_ptr<I2pRouter> m_i2pRouter;
 #endif
 #ifdef EMULE_HAVE_ED3K
     /// The ed3k node (packmule); started after Usenet, stopped before it

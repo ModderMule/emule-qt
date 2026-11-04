@@ -209,8 +209,11 @@ void TorrentDetailsDialog::setRow(const TorrentRow& row)
     m_location->setText(row.savePath);
     m_hashV1->setText(row.hashV1.isEmpty() ? na() : row.hashV1);
     m_hashV2->setText(row.hashV2.isEmpty() ? na() : row.hashV2);
-    m_privacy->setText(row.isPrivate ? tr("Private to this tracker — DHT and PEX disabled")
-                                     : tr("Public torrent"));
+    QString privacy = row.isPrivate ? tr("Private to this tracker — DHT and PEX disabled") : tr("Public torrent");
+    if (row.i2p)
+        privacy += tr(", I2P only (peers over I2P, no DHT unless mixed mode)");
+    m_privacy->setText(privacy);
+    // ToDo: a per-torrent I2P only switch (context menu: torrent_handle::set_flags/unset_flags)
     if (!row.creator.isEmpty() && row.createdAt > 0)
         m_origin->setText(tr("Created by %1 on %2").arg(row.creator, dateText(row.createdAt)));
     else if (!row.creator.isEmpty())

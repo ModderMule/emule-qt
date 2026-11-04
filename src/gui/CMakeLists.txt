@@ -35,6 +35,7 @@ if(NOT EMULE_BITTORRENT)
         "controls/TorrentListsPane"
         "controls/TorrentPieceGrid"
         "dialogs/AddTorrentDialog"
+        "dialogs/BtI2pGroup"
         "dialogs/TorrentDetailsDialog"
         "utils/TorrentAdd")
     foreach(_f IN LISTS _emule_bt_gui_files)

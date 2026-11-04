@@ -110,6 +110,7 @@ private slots:
     void resumeAfterRestart();
     void peersTrackersAndOptions();
     void ipFilterBlocksPeer();
+    void stopAfterMetadata();
 
 private:
     void runJoin(bool spoil, bool deferred);
@@ -371,6 +372,54 @@ void tst_BtLocalSwarm::ipFilterBlocksPeer()
     QVERIFY(finished.isEmpty());
     QCOMPARE(leecher.torrent(added.id)->done, 0);
     leecher.stop();
+    seeder.stop();
+}
+
+void tst_BtLocalSwarm::stopAfterMetadata()
+{
+    BtSession seeder;
+    quint16 port = 0;
+    startSeeder(seeder, m_v1, port);
+
+    const BtSettings settings = settingsIn(m_dir, QStringLiteral("leechStop"));
+    const QString stopsFile = QDir(settings.stateDir).filePath(QStringLiteral("stop-after-metadata.json"));
+    QString id;
+    {
+        BtSession leecher;
+        leecher.start(settings);
+        QSignalSpy metadata(&leecher, &BtSession::metadataReceived);
+        QSignalSpy finished(&leecher, &BtSession::torrentFinished);
+        const BtAddResult added = leecher.addMagnet(magnet(m_v1, port), {}, false, std::nullopt, true);
+        QCOMPARE(added.outcome, BtAddOutcome::Added);
+        id = added.id;
+        QVERIFY(QFile::exists(stopsFile));
+
+        QTRY_VERIFY_WITH_TIMEOUT(metadata.count() > 0, kTimeoutMs);
+        QTRY_VERIFY_WITH_TIMEOUT(leecher.torrent(id)->paused, 5000);
+        QVERIFY(!QFile::exists(stopsFile));
+        // the file list is there, every file wanted again, nothing of it downloaded
+        const auto files = leecher.files(id);
+        QCOMPARE(files.size(), 1);
+        QCOMPARE(files.first().priority, 4);
+        QTest::qWait(1000);
+        QCOMPARE(leecher.torrent(id)->haveBytes, 0);
+        // nothing wanted while stopped: not a finished download
+        QCOMPARE(finished.count(), 0);
+        leecher.stop();
+    }
+
+    // still stopped after a restart; resumed, it downloads
+    BtSession again;
+    QSignalSpy added(&again, &BtSession::torrentAdded);
+    again.start(settings);
+    QTRY_VERIFY_WITH_TIMEOUT(added.count() > 0, 10'000);
+    QTRY_VERIFY_WITH_TIMEOUT(again.torrent(id).has_value(), 5000);
+    QVERIFY(again.torrent(id)->paused);
+    QSignalSpy finished(&again, &BtSession::torrentFinished);
+    QVERIFY(again.resume(id));
+    QTRY_VERIFY_WITH_TIMEOUT(finished.count() > 0, kTimeoutMs);
+    QCOMPARE(readDownloaded(again, id), m_payload);
+    again.stop();
     seeder.stop();
 }
 

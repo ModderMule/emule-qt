@@ -4612,6 +4612,8 @@ bool IpcClientHandler::applyPreferenceBt(const QString& key, const QCborValue& v
         thePrefs.setBtMaxDownloadKb(static_cast<uint32>(std::max<qint64>(0, val.toInteger())));
     else if (key == QStringLiteral("btMaxUploadKb"))
         thePrefs.setBtMaxUploadKb(static_cast<uint32>(std::max<qint64>(0, val.toInteger())));
+    else if (key == QStringLiteral("btStopAfterMetadata"))
+        thePrefs.setBtStopAfterMetadata(val.toBool());
     else if (key == QStringLiteral("btDht"))
         thePrefs.setBtDht(val.toBool());
     else if (key == QStringLiteral("btLsd"))
@@ -4638,6 +4640,28 @@ bool IpcClientHandler::applyPreferenceBt(const QString& key, const QCborValue& v
         thePrefs.setBtMaxConnectionsPerTorrent(int(val.toInteger()));
     else if (key == QStringLiteral("btPortMapping"))
         thePrefs.setBtPortMapping(val.toBool());
+    else if (key == QStringLiteral("btI2pMode"))
+        thePrefs.setBtI2pMode(int(val.toInteger()));
+    else if (key == QStringLiteral("btI2pHost"))
+        thePrefs.setBtI2pHost(val.toString());
+    else if (key == QStringLiteral("btI2pPort"))
+        thePrefs.setBtI2pPort(static_cast<uint16>(std::clamp<qint64>(val.toInteger(), 1, 65535)));
+    else if (key == QStringLiteral("btI2pMixed"))
+        thePrefs.setBtI2pMixed(val.toBool());
+    else if (key == QStringLiteral("btI2pOnlyNew"))
+        thePrefs.setBtI2pOnlyNew(val.toBool());
+    else if (key == QStringLiteral("btI2pEd3kJoin"))
+        thePrefs.setBtI2pEd3kJoin(val.toBool());
+    else if (key == QStringLiteral("btI2pTunnelLength"))
+        thePrefs.setBtI2pTunnelLength(int(val.toInteger()));
+    else if (key == QStringLiteral("btI2pTunnelQuantity"))
+        thePrefs.setBtI2pTunnelQuantity(int(val.toInteger()));
+    else if (key == QStringLiteral("btI2pTrackers"))
+        thePrefs.setBtI2pTrackers(Preferences::rpcUrlList(val));
+    else if (key == QStringLiteral("btI2pRouterPort"))
+        thePrefs.setBtI2pRouterPort(static_cast<uint16>(std::clamp<qint64>(val.toInteger(), 1, 65535)));
+    else if (key == QStringLiteral("btI2pShare"))
+        thePrefs.setBtI2pShare(int(val.toInteger()));
     else
         return false;
     return true;

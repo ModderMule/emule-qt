@@ -1,11 +1,15 @@
 #include "session/BtSettingsMap.h"
 
 #include <libtorrent/alert.hpp>
+#include <libtorrent/config.hpp>
 #include <libtorrent/fingerprint.hpp>
 #include <libtorrent/version.hpp>
 
 #include <algorithm>
 #include <limits>
+
+// libtorrent's `i2p` build option; off = the I2P settings below do nothing
+static_assert(TORRENT_USE_I2P, "libtorrent built without I2P");
 
 namespace lt = libtorrent;
 
@@ -48,6 +52,19 @@ lt::settings_pack BtSettingsMap::toPack(const BtSettings& s)
     if (!s.userAgent.isEmpty())
         p.set_str(lt::settings_pack::user_agent, s.userAgent.toStdString() + " libtorrent/" LIBTORRENT_VERSION);
     p.set_str(lt::settings_pack::peer_fingerprint, lt::generate_fingerprint("EQ", s.versionMajor, s.versionMinor, s.versionRevision));
+
+    // I2P: an empty hostname = no SAM session. Mixed only while I2P is on: with it off an
+    // I2P torrent waits rather than going clearnet
+    const bool sam = s.i2pEnabled && s.i2pSamPort != 0 && !s.i2pSamHost.isEmpty();
+    p.set_str(lt::settings_pack::i2p_hostname, sam ? s.i2pSamHost.toStdString() : std::string());
+    p.set_int(lt::settings_pack::i2p_port, sam ? s.i2pSamPort : 0);
+    p.set_bool(lt::settings_pack::allow_i2p_mixed, s.i2pEnabled && s.i2pMixed);
+    const int length = std::clamp(s.i2pTunnelLength, 1, 7);
+    const int quantity = std::clamp(s.i2pTunnelQuantity, 1, 16);
+    p.set_int(lt::settings_pack::i2p_inbound_length, length);
+    p.set_int(lt::settings_pack::i2p_outbound_length, length);
+    p.set_int(lt::settings_pack::i2p_inbound_quantity, quantity);
+    p.set_int(lt::settings_pack::i2p_outbound_quantity, quantity);
 
     // narrow: the log categories are a firehose (research doc §5.2)
     p.set_int(lt::settings_pack::alert_mask,

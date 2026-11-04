@@ -42,6 +42,7 @@
 #include "net/BindAddress.h"
 #include "net/ClientUDPSocket.h"
 #include "net/HttpDefaults.h"
+#include "net/I2pRouter.h"
 #include "prefs/Preferences.h"
 #include "stats/Statistics.h"
 #include "stats/StatsHistory.h"
@@ -691,6 +692,17 @@ bool DaemonApp::start()
     m_btSession = std::make_unique<bt::BtSession>();
     btSession = m_btSession.get();
     BtBridge::setSession(m_btSession.get());
+    m_i2pRouter = std::make_unique<I2pRouter>();
+    BtBridge::setI2pRouter(m_i2pRouter.get());
+    // Ready hands libtorrent the SAM bridge, a crash takes it away
+    connect(m_i2pRouter.get(), &I2pRouter::stateChanged, this, [this] {
+        applyBtConfig();
+        if (!m_ipcServer)
+            return;
+        IpcMessage msg(IpcMsgType::PushBtStatus, 0);
+        msg.append(BtBridge::statusToCbor());
+        m_ipcServer->broadcast(msg);
+    });
     connectBtPushes();
     // the app's IP filter (§7.6): kept by the session across stop/start
     BtBridge::applyIpFilter();
@@ -700,10 +712,12 @@ bool DaemonApp::start()
     }
     if (thePrefs.btEnabled() && !m_enginesHeld)
         m_btSession->start(BtBridge::settingsFromPrefs());
+    applyI2pRouter(BtBridge::settingsFromPrefs());
 #endif
 #if defined(EMULE_HAVE_ED3K) && defined(EMULE_HAVE_BITTORRENT)
     // after both sessions; the node may run already (statusChanged was before this)
     m_torrentJoin = std::make_unique<ed3k::Ed3kTorrentJoin>(*m_ed3kSession, *m_btSession, thePrefs.configDir());
+    m_torrentJoin->setI2pJoins(thePrefs.btI2pEd3kJoin());
     if (m_ed3kSession->isRunning())
         m_torrentJoin->start();
 #endif
@@ -909,6 +923,11 @@ void DaemonApp::stop()
     if (m_btSession)
         m_btSession->stop();
     m_btSession.reset();
+    // after libtorrent: its SAM sessions close first. SIGTERM, then a kill after 2 s
+    BtBridge::setI2pRouter(nullptr);
+    if (m_i2pRouter)
+        m_i2pRouter->disconnect(this);
+    m_i2pRouter.reset();
 #endif
 
     // stopWorkers() delivers its last results after the flush at the top, and
@@ -1170,10 +1189,40 @@ void DaemonApp::applyBtConfig()
         m_btSession->stop();
     else if (enabled)
         m_btSession->applySettings(settings);
+    applyI2pRouter(settings);
+#ifdef EMULE_HAVE_ED3K
+    if (m_torrentJoin)
+        m_torrentJoin->setI2pJoins(thePrefs.btI2pEd3kJoin());
+#endif
     BtBridge::applyIpFilter(true);
     // port, enable switch or btPortMapping may have changed; diff-based, cheap
     if (m_coreSession)
         m_coreSession->updatePortMappings();
+#endif
+}
+
+void DaemonApp::applyI2pRouter(const bt::BtSettings& settings)
+{
+#ifdef EMULE_HAVE_BITTORRENT
+    if (!m_i2pRouter)
+        return;
+    if (!BtBridge::wantsI2pRouter(settings, m_enginesHeld)) {
+        m_i2pRouter->stop();
+        return;
+    }
+    I2pRouter::Config c;
+    c.dataDir = QDir(thePrefs.configDir()).filePath(QStringLiteral("I2P"));
+    c.routerPort = thePrefs.btI2pRouterPort();
+    c.share = thePrefs.btI2pShare();
+    // the bind selection, as libtorrent's: one address per family
+    for (const QString& a : settings.bindAddresses) {
+        QString& slot = a.contains(QLatin1Char(':')) ? c.address6 : c.address4;
+        if (slot.isEmpty())
+            slot = a;
+    }
+    m_i2pRouter->start(c);
+#else
+    Q_UNUSED(settings)
 #endif
 }
 

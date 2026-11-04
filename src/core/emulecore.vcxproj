@@ -289,6 +289,8 @@
     <ClCompile Include="utils\MassRename.cpp" />
     <ClCompile Include="utils\BlockRuns.cpp" />
     <ClCompile Include="utils\OtherFunctions.cpp" />
+    <ClCompile Include="utils\SidecarProcess.cpp" />
+    <ClCompile Include="net\I2pRouter.cpp" />
     <ClCompile Include="net\Packet.cpp" />
     <ClCompile Include="net\PeerVetting.cpp" />
     <ClCompile Include="files\PartFile.cpp" />
@@ -482,6 +484,8 @@
     <QtMoc Include="net\HostResolver.h" />
     <QtMoc Include="portmap\PortMapBackend.h" />
     <QtMoc Include="portmap\PortMapper.h" />
+    <QtMoc Include="utils\SidecarProcess.h" />
+    <QtMoc Include="net\I2pRouter.h" />
     <QtMoc Include="portmap\UPnPBackend.h" />
     <QtMoc Include="portmap\UPnPWorker.h" />
     <QtMoc Include="net\HttpClientReqSocket.h" />

@@ -80,6 +80,8 @@ struct TorrentRow {
     bool paused = false;
     bool hasMetadata = false;
     bool isPrivate = false;
+    /// I2P only (torrent_flags::i2p_torrent)
+    bool i2p = false;
     qint64 addedAt = 0;      ///< Unix seconds
     qint64 completedAt = 0;
     qint64 seedingSeconds = 0;

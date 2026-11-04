@@ -1,0 +1,11 @@
+# The bundled I2P router (emuleqt-i2pd): a release of github.com/ed3k-protocol/i2pd,
+# built by its .github/workflows/emuleqt-release.yml on a tag emuleqt-<version>-<n>.
+# Read by cmake/I2pd.cmake and scripts/bundle-win.ps1.
+#
+# To pin a new one: tag the fork, wait for the release, then copy its SHA256SUMS lines
+# below (format: <asset> <sha256>). "-" = not pinned yet: builds skip the download.
+tag emuleqt-3.0.0-1
+i2pd-linux-x86_64.tar.gz -
+i2pd-linux-aarch64.tar.gz -
+i2pd-macos-universal.tar.gz -
+i2pd-windows-x64.zip -

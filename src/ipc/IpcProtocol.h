@@ -729,11 +729,13 @@ enum class IpcMsgType : int {
     ///         numFiles, eta, comment, creator, createdAt, lastActivity,
     ///         activeSeconds, haveBytes, totalSize, availability}]
     GetTorrents             = 800,
-    /// [data: bytes, savePath: string (empty = BT download dir), paused: bool]
-    /// -> {outcome, id, message}; outcome is BtAddOutcome (0 added, 1 duplicate,
-    /// 2 invalid, 3 not running, 4 failed)
+    /// [data: bytes, savePath: string (empty = BT download dir), paused: bool,
+    ///  i2pOnly: bool?, stopAfterMetadata: bool?] -> {outcome, id, message};
+    /// outcome is BtAddOutcome (0 added, 1 duplicate, 2 invalid, 3 not running,
+    /// 4 failed). An optional field absent or null = the core's default.
     AddTorrentFile          = 801,
-    /// [uri: string, savePath: string, paused: bool] -> {outcome, id, message}
+    /// [uri: string, savePath: string, paused: bool, i2pOnly: bool?,
+    ///  stopAfterMetadata: bool?] -> {outcome, id, message}
     AddMagnet               = 802,
     /// [id: string, deleteFiles: bool] -> bool
     RemoveTorrent           = 803,
