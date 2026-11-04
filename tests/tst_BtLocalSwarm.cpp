@@ -70,6 +70,9 @@ BtSettings settingsIn(const QTemporaryDir& dir, const QString& name)
 {
     BtSettings s;
     s.listenPort = 0;
+    // loopback only: with port 0 each local address gets its own port, and
+    // listen_port() may name another one than 127.0.0.1's (multi-adapter Windows)
+    s.bindAddresses = {QStringLiteral("127.0.0.1")};
     s.dht = false;
     s.lsd = false;
     s.seedRatioPercent = 0;
