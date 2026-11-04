@@ -130,8 +130,8 @@ int applyPin(qintptr fd, int family, int index, const QString& name)
                          sizeof(v6idx)) != 0)
             return lastError();
         // Dual-stack: the v4 half has its own setting; absent on a v6-only socket.
-        // Not fatal, but IPv4 (Kad) then leaves by the routing table, not the adapter,
-        // and peers see another IP than eD2K's: HighID with Kad firewalled. Say so.
+        // probe() binds IPv4 only when it is refused; should it still fail here, IPv4
+        // (Kad) leaves by the routing table, not the adapter. Say so.
         DWORD v6only = 1;
         int len = sizeof(v6only);
         const bool dual = ::getsockopt(s, IPPROTO_IPV6, IPV6_V6ONLY, reinterpret_cast<char*>(&v6only), &len) == 0
@@ -189,6 +189,28 @@ int probeFamily(int family, int index, const QString& name)
     return error;
 }
 
+// Pin the IPv4 half of a fresh dual-stack UDP socket. 0 on success, else the OS error.
+// Only Windows has a separate option; elsewhere the v6 pin covers v4-mapped traffic.
+int probeDualStack(int index)
+{
+#ifdef Q_OS_WIN
+    const SOCKET s = ::socket(AF_INET6, SOCK_DGRAM, IPPROTO_UDP);
+    if (s == INVALID_SOCKET)
+        return lastError();
+    const DWORD off = 0;
+    const DWORD v4idx = htonl(static_cast<DWORD>(index));
+    int error = 0;
+    if (::setsockopt(s, IPPROTO_IPV6, IPV6_V6ONLY, reinterpret_cast<const char*>(&off), sizeof(off)) != 0
+        || ::setsockopt(s, IPPROTO_IP, IP_UNICAST_IF, reinterpret_cast<const char*>(&v4idx), sizeof(v4idx)) != 0)
+        error = lastError();
+    ::closesocket(s);
+    return error;
+#else
+    Q_UNUSED(index);
+    return 0;
+#endif
+}
+
 // One warning per interface and error, not one per socket.
 void warnOnce(const QString& name, int error)
 {
@@ -231,6 +253,10 @@ BindAddress::PinProbe probe(int index, const QString& name)
     p.v6Error = probeFamily(AF_INET6, index, name);
     p.v4 = p.v4Error == 0;
     p.v6 = p.v6Error == 0;
+    if (p.v4 && p.v6) {
+        p.dualError = probeDualStack(index);
+        p.dual = p.dualError == 0;
+    }
     return p;
 }
 

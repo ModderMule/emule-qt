@@ -199,8 +199,12 @@ void tst_Ed3kEd2kJoin::anEd2kDownloadIsFedFromEd3k()
     hookVerdicts(join);
     QSignalSpy pairSpy(&join, &Ed3kEd2kJoin::pairChanged);
     join.start();
-    QTRY_VERIFY_WITH_TIMEOUT(join.rootOf(md4).has_value(), 30000);
-    QCOMPARE(*join.rootOf(md4), *shared.rootOf(md4));
+    // on loopback the whole file may land between two polls: the join then forgets it, so
+    // a trusted pair or a finished download counts as found too
+    const auto done = [&] { return !m_queue->fileByID(reinterpret_cast<const uint8*>(md4.constData())) || pf->isComplete(0); };
+    QTRY_VERIFY_WITH_TIMEOUT(join.rootOf(md4).has_value() || !pairSpy.isEmpty() || done(), 30000);
+    if (const auto root = join.rootOf(md4))
+        QCOMPARE(*root, *shared.rootOf(md4));
     QVERIFY(flushUntil([&] { return join.pairOf(md4) == Ed3kEd2kJoin::Pair::Trusted || !m_queue->fileByID(reinterpret_cast<const uint8*>(md4.constData())) || pf->isComplete(0); }, 60000));
     QTRY_VERIFY_WITH_TIMEOUT(!pairSpy.isEmpty(), 5000);
     QCOMPARE(pairSpy.first().at(1).value<Ed3kEd2kJoin::Pair>(), Ed3kEd2kJoin::Pair::Trusted);

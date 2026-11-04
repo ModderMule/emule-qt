@@ -1,9 +1,12 @@
 #include "pch.h"
 #include "app/AutoStart.h"
 
+#include "utils/FileAssociation.h"
+
 #include <QCoreApplication>
 #include <QDir>
 #include <QFile>
+#include <QFileInfo>
 #include <QStandardPaths>
 #include <QTextStream>
 #ifdef Q_OS_WIN
@@ -60,6 +63,8 @@ bool isAutoStartEnabled()
     return QFile::exists(launchAgentPath());
 }
 
+void refreshAutoStart() {}
+
 #elif defined(Q_OS_LINUX)
 
 static QString desktopFilePath()
@@ -68,33 +73,53 @@ static QString desktopFilePath()
     return configDir + QStringLiteral("/autostart/emuleqt.desktop");
 }
 
+/// The launcher script, not the bare .bin: that one finds no bundled libs (#111, #129)
+static QByteArray desktopFileContents()
+{
+    return QStringLiteral("[Desktop Entry]\n"
+                          "Type=Application\n"
+                          "Name=eMule Qt\n"
+                          "Exec=%1\n"
+                          "Icon=emuleqt\n"
+                          "X-GNOME-Autostart-enabled=true\n")
+        .arg(gui::FileAssociation::launcherExec())
+        .toUtf8();
+}
+
+static void writeDesktopFile(const QString& path)
+{
+    QDir().mkpath(QFileInfo(path).absolutePath());
+    QFile file(path);
+    if (!file.open(QIODevice::WriteOnly | QIODevice::Text))
+        return;
+    file.write(desktopFileContents());
+}
+
 void setAutoStart(bool enabled)
 {
     const QString path = desktopFilePath();
-
     if (!enabled) {
         QFile::remove(path);
         return;
     }
-
-    QDir().mkpath(QFileInfo(path).absolutePath());
-
-    QFile file(path);
-    if (!file.open(QIODevice::WriteOnly | QIODevice::Text))
-        return;
-
-    QTextStream ts(&file);
-    ts << "[Desktop Entry]\n"
-       << "Type=Application\n"
-       << "Name=eMule Qt\n"
-       << "Exec=" << QCoreApplication::applicationFilePath() << "\n"
-       << "Icon=emuleqt\n"
-       << "X-GNOME-Autostart-enabled=true\n";
+    writeDesktopFile(path);
 }
 
 bool isAutoStartEnabled()
 {
     return QFile::exists(desktopFilePath());
+}
+
+void refreshAutoStart()
+{
+    const QString path = desktopFilePath();
+    QFile file(path);
+    if (!file.open(QIODevice::ReadOnly))
+        return;   // off: stays off
+    if (file.readAll() == desktopFileContents())
+        return;
+    file.close();
+    writeDesktopFile(path);
 }
 
 #elif defined(Q_OS_WIN)
@@ -119,11 +144,14 @@ bool isAutoStartEnabled()
     return reg.contains(kValueName);
 }
 
+void refreshAutoStart() {}
+
 #else
 
 // Stub for unsupported platforms
 void setAutoStart(bool) {}
 bool isAutoStartEnabled() { return false; }
+void refreshAutoStart() {}
 
 #endif
 

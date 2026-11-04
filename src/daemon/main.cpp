@@ -34,7 +34,12 @@
 #include <QLoggingCategory>
 #include <QSocketNotifier>
 
+#include <chrono>
+#include <condition_variable>
 #include <cstdio>
+#include <cstdlib>
+#include <mutex>
+#include <thread>
 #include <vector>
 
 #ifndef Q_OS_WIN
@@ -51,6 +56,54 @@ static void unixSignalHandler(int)
     ::write(s_sigFd[1], &a, sizeof(a));
 }
 #endif
+
+namespace {
+
+/// Ends the process when the teardown hangs. A core stuck in it keeps running
+/// with no GUI and burns CPU until killed by hand (#129).
+class ShutdownWatchdog {
+public:
+    explicit ShutdownWatchdog(std::chrono::seconds limit)
+        : m_thread([this, limit] { watch(limit); })
+    {
+    }
+    ~ShutdownWatchdog()
+    {
+        {
+            const std::scoped_lock lock(m_mutex);
+            m_done = true;
+        }
+        m_cv.notify_one();
+        m_thread.join();
+    }
+    ShutdownWatchdog(const ShutdownWatchdog&) = delete;
+    ShutdownWatchdog& operator=(const ShutdownWatchdog&) = delete;
+
+private:
+    void watch(std::chrono::seconds limit)
+    {
+        std::unique_lock lock(m_mutex);
+        if (m_cv.wait_for(lock, limit, [this] { return m_done; }))
+            return;
+        // Log from a thread of its own: the hung one may hold the log's lock
+        std::thread([limit] {
+            eMule::logError(QStringLiteral("Shutdown hung for %1 s, exiting now").arg(limit.count()));
+        }).detach();
+        std::fprintf(stderr, "emulecored: shutdown hung for %lld s, exiting now\n",
+                     static_cast<long long>(limit.count()));
+        if (m_cv.wait_for(lock, std::chrono::seconds(2), [this] { return m_done; }))
+            return;
+        std::fflush(nullptr);
+        std::_Exit(3);
+    }
+
+    std::mutex m_mutex;
+    std::condition_variable m_cv;
+    bool m_done = false;
+    std::thread m_thread;   ///< last: starts once the members above exist
+};
+
+} // namespace
 
 int main(int argc, char* argv[])
 {
@@ -273,6 +326,8 @@ int main(int argc, char* argv[])
         if (stopped)
             return;
         stopped = true;
+        // BT waits 5 s for resume data at most; the rest is quick
+        const ShutdownWatchdog watchdog(std::chrono::seconds(90));
         daemon.stop();
         eMule::thePrefs.save();
     };

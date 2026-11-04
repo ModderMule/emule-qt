@@ -36,6 +36,7 @@ private slots:
     void resolve_wholeInterfaceKeepsBothFamilies();
     void pin_confinesToLoopback();
     void probe_v6RefusedKeepsIPv4();
+    void probe_dualStackV4RefusedBindsIPv4();
     void probe_v4RefusedKeepsIPv6();
     void probe_bothRefusedBlocks();
     void probe_literalNeedsItsFamily();
@@ -211,6 +212,23 @@ void tst_BindInterface::probe_v6RefusedKeepsIPv4()
     QVERIFY(!BindAddress::sourceFor(v6));
     QVERIFY(BindAddress::isIPv4Only());
     QCOMPARE(BindAddress::ipv4Literal(), QStringLiteral("192.168.1.20"));
+}
+
+// Windows: IPv4 half of a dual-stack socket not pinnable -> IPv4-only sockets, else Kad's
+// IPv4 leaves by the default route and peers see another IP (HighID, Kad firewalled)
+void tst_BindInterface::probe_dualStackV4RefusedBindsIPv4()
+{
+    BindAddress::setInterfaceSource(sample);
+    BindAddress::setPinProbe([](int, const QString&) {
+        return BindAddress::PinProbe{.dual = false, .dualError = 10022};
+    });
+    thePrefs.setBindAddress(QStringLiteral("en0"));
+
+    QCOMPARE(int(BindAddress::current().state), int(State::Bound));
+    QCOMPARE(*BindAddress::listenAddress(), QHostAddress(QHostAddress::AnyIPv4));
+    QVERIFY(!BindAddress::current().hasGlobalIPv6);
+    QVERIFY(!BindAddress::sourceFor(Address::fromQHostAddress(QHostAddress(QStringLiteral("2001:db8::1")))));
+    QVERIFY(BindAddress::isIPv4Only());
 }
 
 void tst_BindInterface::probe_v4RefusedKeepsIPv6()

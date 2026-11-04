@@ -825,6 +825,8 @@ void DaemonApp::stop()
         thePrefs.save();
     }
 
+    // Each step on record: a hung teardown names where it stopped (#129)
+    logInfo(QStringLiteral("Daemon stopping..."));
     m_autoUpdater.reset();
 
     // First: its predicate reads the Usenet session and core queues.
@@ -852,6 +854,7 @@ void DaemonApp::stop()
     m_bandwidth.reset();
 
 #ifdef EMULE_HAVE_ED3K
+    logInfo(QStringLiteral("Stopping ed3k..."));
     // the joins first: save themselves and close their downloads while the engines run
     theApp.ed3kHint = {};
     theApp.partVerdict = {};
@@ -942,6 +945,7 @@ void DaemonApp::stop()
     m_ed3kSession.reset();
 #endif
 
+    logInfo(QStringLiteral("Stopping Usenet..."));
     if (theApp.statsHistory)
         theApp.statsHistory->setUsenetDownRateSource({});
     usenet::theUsenetSession = nullptr;
@@ -949,6 +953,7 @@ void DaemonApp::stop()
         m_usenetSession->stop();
     m_usenetSession.reset();
 
+    logInfo(QStringLiteral("Stopping BitTorrent..."));
     // saves resume data and the DHT state; before IPC and core go away
     if (theApp.statsHistory)
         theApp.statsHistory->setBtRateSource({});
@@ -979,6 +984,7 @@ void DaemonApp::stop()
         m_ipcServer->stop();
     m_ipcServer.reset();
 
+    logInfo(QStringLiteral("Stopping eD2K and Kad..."));
     if (m_coreSession)
         m_coreSession->stop();
     m_coreSession.reset();
