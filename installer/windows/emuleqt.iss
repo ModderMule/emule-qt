@@ -140,6 +140,11 @@ Name: "importemule"; Description: "{cm:ImportEmule}"; Flags: unchecked
 [InstallDelete]
 ; Setup copy of the version this one replaces
 Type: filesandordirs; Name: "{app}\setup"
+; OS DLLs older bundles shipped; app-dir copy shadows System32 (icuuc.dll -> missing icu.dll)
+Type: files; Name: "{app}\icu.dll"
+Type: files; Name: "{app}\icuuc.dll"
+Type: files; Name: "{app}\icuin.dll"
+Type: files; Name: "{app}\d3dcompiler_47.dll"
 
 [Files]
 Source: "{#StageDir}\*"; DestDir: "{app}"; Flags: ignoreversion recursesubdirs createallsubdirs

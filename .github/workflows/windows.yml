@@ -312,6 +312,12 @@ jobs:
           Get-ChildItem $app -Recurse -Filter *.dll |
             ForEach-Object { $present[$_.Name.ToLower()] = $true }
 
+          # 0. No OS DLLs: an app-dir copy shadows the target's System32 one
+          # (runner's icuuc.dll forwards to icu.dll, absent on older Win10).
+          $osDlls = @('icu.dll', 'icuuc.dll', 'icuin.dll', 'd3dcompiler_47.dll') |
+            Where-Object { $present.ContainsKey($_) }
+          if ($osDlls) { throw "Bundle ships OS DLL(s) that must come from System32: $($osDlls -join ', ')" }
+
           # 1. Every DLL vcpkg installed must have reached the zip.  This is the
           # check that catches the failure this whole guard exists for -- a
           # triplet or layout change that makes bundle-win.ps1 copy nothing.

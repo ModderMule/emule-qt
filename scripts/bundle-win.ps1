@@ -227,6 +227,19 @@ if (Test-Path $sqlDrivers) {
     Get-ChildItem $sqlDrivers -File | Where-Object { $_.Name -notlike 'qsqlite*' } | Remove-Item -Force
 }
 
+# Drop OS DLLs windeployqt picks up from System32. Qt6Core links Windows' own ICU;
+# a Win11 icuuc.dll is a stub forwarding to icu.dll, which older Win10 lacks
+# -> "icu.dll was not found". Windows ships all of these since Win10 1809.
+# VC runtime DLLs are NOT OS DLLs (need the redist), so they stay.
+$osDlls = 'icu.dll', 'icuuc.dll', 'icuin.dll', 'd3dcompiler_47.dll'
+foreach ($dll in $osDlls) {
+    $path = Join-Path $stageDir $dll
+    if (Test-Path $path) {
+        Write-Host "  Removing OS DLL $dll"
+        Remove-Item $path -Force
+    }
+}
+
 # -- Copy OpenSSL DLLs if present --------------------------------------------
 
 # Qt's network module needs OpenSSL at runtime.  windeployqt does not always
