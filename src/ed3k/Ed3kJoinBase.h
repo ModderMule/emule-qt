@@ -67,6 +67,8 @@ public:
     [[nodiscard]] std::size_t sourceSearches() const { return m_sourceSearches; }
     /// File reads queued or running on a worker (tests).
     [[nodiscard]] std::size_t readsInFlight() const;
+    /// Reads of @p owner queued or running.
+    [[nodiscard]] bool readsPending(const QString& owner) const;
 signals:
     /// The kept set and ALIAS records of @p owner were published again after a start
     /// (@p aliases: records taken; 0 while holding back).

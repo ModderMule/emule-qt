@@ -681,6 +681,12 @@ std::size_t Ed3kJoinBase::readsInFlight() const
     return n;
 }
 
+bool Ed3kJoinBase::readsPending(const QString& owner) const
+{
+    const auto it = m_reads.find(owner);
+    return it != m_reads.end() && (it->second.busy || !it->second.batches.empty());
+}
+
 bool Ed3kJoinBase::startSetSearch(const QString& owner, std::string_view scheme, std::span<const std::uint8_t> id,
                                   std::uint32_t rel)
 {

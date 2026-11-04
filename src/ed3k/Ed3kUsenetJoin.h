@@ -172,6 +172,8 @@ private:
     void onPostComplete(const QString& itemId);
     void reportProblem(const QString& itemId, int fileIndex, const QString& message);
     [[nodiscard]] bool sealHold(const QString& itemId, int fileIndex);
+    /// Seal holds taken for reads of @p itemId released once none is pending.
+    void releaseReadHolds(const QString& itemId);
     /// The file of a member on disk now: tempPath, or finalPath once published.
     [[nodiscard]] QString memberPath(const QString& itemId, int fileIndex) const;
     [[nodiscard]] std::optional<QByteArray> readMember(const QString& itemId, int fileIndex, std::uint64_t offset,

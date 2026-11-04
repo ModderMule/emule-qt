@@ -18,6 +18,7 @@
 #include <QFile>
 #include <QFileInfo>
 #include <QPointer>
+#include <QScopeGuard>
 #include <QThreadPool>
 
 #include <algorithm>
@@ -86,6 +87,7 @@ struct Ed3kUsenetJoin::Post {
         bool hashing = false;
         quint64 generation = 0;
         std::optional<QDeadlineTimer> holdUntil;
+        bool readHeld = false;   ///< sealing waited for reads of the item
         bool claimSearched = false;
         int rehashTries = 0;
         /// ACCEPT_RANGEs merged: they come per block, an article across two blocks is
@@ -154,11 +156,11 @@ void Ed3kUsenetJoin::stop()
     for (const auto& [id, post] : m_posts)
         savePost(id);
 
-    // files held unsealed for ed3k: sealed now
+    // files held unsealed for ed3k or a hash: sealed now
     QList<std::pair<QString, int>> held;
     for (const auto& [id, post] : m_posts)
         for (std::size_t f = 0; f < post->members.size(); ++f)
-            if (post->members[f].holdUntil)
+            if (post->members[f].holdUntil || post->members[f].hashing || post->members[f].readHeld)
                 held.append({id, int(f)});
 
     if (auto* e = m_session.engine())
@@ -650,6 +652,8 @@ void Ed3kUsenetJoin::readBatch(const QString& itemId, std::vector<ffi::TorrentRe
     for (const auto& f : files)
         paths.push_back(f.path);
     readInBackground(itemId, std::move(files), [this, itemId, again, paths = std::move(paths), reads = std::move(reads)](ReadResults bytes) {
+        // runs after any next batch was queued
+        const auto release = qScopeGuard([this, itemId] { releaseReadHolds(itemId); });
         std::vector<ffi::TorrentRead> more;
         for (std::size_t i = 0; i < reads.size() && i < bytes.size(); ++i) {
             const auto post = findPost(itemId);
@@ -965,6 +969,15 @@ bool Ed3kUsenetJoin::sealHold(const QString& itemId, int fileIndex)
     const auto post = findPost(itemId);
     if (!post || fileIndex < 0 || std::size_t(fileIndex) >= post->members.size())
         return false;
+    // hashed in place: sealing renames it and post-processing moves it away mid-hash;
+    // onMemberHashed() releases
+    if (post->members[std::size_t(fileIndex)].hashing)
+        return true;
+    // blocks read in the background: same, the read would find it gone; releaseReadHolds()
+    if (readsPending(itemId)) {
+        post->members[std::size_t(fileIndex)].readHeld = true;
+        return true;
+    }
     const auto m = post->join.member(std::uint64_t(fileIndex));
     if (!m || !m->root || m->status != ffi::MemberStatus::Open)
         return false;
@@ -1272,6 +1285,20 @@ void Ed3kUsenetJoin::savePost(const QString& itemId)
     QDir().mkpath(usenetDir());
     if (!writeBlob(joinPath(itemId), *blob))
         logEd3kWarning(QStringLiteral("ed3k usenet: cannot write %1").arg(joinPath(itemId)));
+}
+
+void Ed3kUsenetJoin::releaseReadHolds(const QString& itemId)
+{
+    const auto post = findPost(itemId);
+    if (!post || readsPending(itemId))
+        return;
+    QList<int> held;
+    for (std::size_t f = 0; f < post->members.size(); ++f)
+        if (std::exchange(post->members[f].readHeld, false))
+            held.append(int(f));
+    // may seal and start post-processing: post not touched after this
+    for (const int f : held)
+        m_queue.releaseSealHold(itemId, f);
 }
 
 QString Ed3kUsenetJoin::usenetDir() const

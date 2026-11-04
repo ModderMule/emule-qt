@@ -498,13 +498,14 @@ void tst_Ed3kUsenetJoin::aFalseClaimDropsItsEd3kBytes()
     QVERIFY(join.fileClaim(id, 0, wrong.root, wrong.size, std::span{&liar, 1}));
     join.addSource(id, 0, ::ed3k::Source{*a.nodeId(), false, ::ed3k::Address::v4(127, 0, 0, 1, a.udpPort()), std::nullopt, {}});
 
-    // the last block of A's file is on disk (held: not accepted)
+    // all of A's file is on disk (held: not accepted); blocks come in any order, and one
+    // written after the articles would overwrite them and leave nothing to compare
     const QString path = queue.item->files.at(0).tempPath;
-    const auto tail = [&] {
+    const auto onDisk = [&] {
         QFile f(path);
-        return f.open(QIODevice::ReadOnly) && f.seek(qint64(2 * kBlock)) ? f.readAll() : QByteArray();
+        return f.open(QIODevice::ReadOnly) ? f.readAll() : QByteArray();
     };
-    QTRY_COMPARE_WITH_TIMEOUT(tail(), other.mid(int(2 * kBlock)), 30000);
+    QTRY_VERIFY_WITH_TIMEOUT(onDisk() == other, 30000);
     QCOMPARE(queue.accepted.size(), 0);
 
     landArticle(join, *queue.item, data, 1, kParts, kPart);
