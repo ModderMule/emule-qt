@@ -4124,6 +4124,12 @@ bool IpcClientHandler::applyPreferenceA(const QString& key, const QCborValue& va
                 theApp.sharedFileList->reload();   // catch what changed while off
         }
     }
+    else if (key == QStringLiteral("shareIncomingSubdirs")) {
+        const bool changed = thePrefs.shareIncomingSubdirs() != val.toBool();
+        thePrefs.setShareIncomingSubdirs(val.toBool());
+        if (changed && theApp.sharedFileList)
+            theApp.sharedFileList->reload();
+    }
     else if (key == QStringLiteral("seenFileIndex")) {
         thePrefs.setSeenFileIndex(val.toBool());
         if (theApp.seenFileIndex)

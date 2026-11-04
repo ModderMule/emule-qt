@@ -359,6 +359,7 @@ Ed3kStatus Ed3kSession::status() const
         st.class6 = s->class6;
         st.router = s->router != 0;
         st.kadOffline = s->kad_offline;
+        st.natChecking = s->nat_checking;
     }
     st.hide = m_hide->status();
     return st;

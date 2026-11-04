@@ -236,6 +236,8 @@ private:
     QCheckBox* m_hosterPuzzlesCheck = nullptr;
     QCheckBox* m_hosterPeersCheck = nullptr;
     QCheckBox* m_hosterCheckLinksCheck = nullptr;
+    QCheckBox* m_hosterExtractCheck = nullptr;
+    QCheckBox* m_hosterDeleteArchivesCheck = nullptr;   ///< greyed out while extraction is off
     QCheckBox* m_publishLinksCheck = nullptr;
     QLabel* m_javaLabel = nullptr;
     QLabel* m_jdVersionLabel = nullptr;   ///< the resolver engine's JD revision

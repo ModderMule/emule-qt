@@ -33,6 +33,7 @@ private slots:
     void firewalled_counterBehavior();
     void firewalled_recheckPreservesLastState();
     void firewalled_recheckAfterAFailedCycleStaysFirewalled();
+    void recheckSettled_waitsForLateAcks();
     void findBuddy_oneShotFlag();
     void setKademliaFiles_minimumAverage();
     void setExternKadPort_consensusCheck();
@@ -188,6 +189,32 @@ void tst_KadPrefs::firewalled_recheckPreservesLastState()
 
     // Done rechecking with 0 confirmations (counter < 2) → firewalled
     QVERIFY(prefs.firewalled());
+}
+
+void tst_KadPrefs::recheckSettled_waitsForLateAcks()
+{
+    TempDir tmp;
+    KadPrefs prefs(tmp.path());
+    const time_t t0 = 1'000'000;
+
+    // still rechecking: never settled
+    for (uint32 i = 0; i + 1 < KADEMLIAFIREWALLCHECKS; ++i)
+        prefs.incRecheckIP(t0);
+    QVERIFY(!prefs.recheckSettled(90, t0 + 1000));
+
+    // last response in: firewalled for now, the acks are still due
+    prefs.incRecheckIP(t0);
+    QVERIFY(prefs.firewalled());
+    QVERIFY(!prefs.recheckSettled(90, t0 + 30));
+    QVERIFY(prefs.recheckSettled(90, t0 + 90));
+
+    // late responses past the 4th do not move the end of the check
+    prefs.incRecheckIP(t0 + 80);
+    QVERIFY(prefs.recheckSettled(90, t0 + 90));
+
+    // a new recheck is unsettled again
+    prefs.setRecheckIP();
+    QVERIFY(!prefs.recheckSettled(90, t0 + 10'000));
 }
 
 // ---------------------------------------------------------------------------

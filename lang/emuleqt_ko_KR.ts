@@ -1985,13 +1985,13 @@ M	압축된 데이터가 아직 모두 다운로드되지 않음
         <translation>I2P 네트워크로 토렌트를 다운로드합니다: 피어에게는 I2P 주소만 보이고 IP는 보이지 않습니다. 직접 연결보다 느리며 포트 개방이 필요 없습니다.</translation>
     </message>
     <message>
-        <location line="+17"/>
-        <location line="+186"/>
+        <location line="+19"/>
+        <location line="+187"/>
         <source>Off</source>
         <translation>꺼짐</translation>
     </message>
     <message>
-        <location line="-186"/>
+        <location line="-187"/>
         <source>Torrents use direct connections only.</source>
         <translation>토렌트는 직접 연결만 사용합니다.</translation>
     </message>
@@ -2002,7 +2002,7 @@ M	압축된 데이터가 아직 모두 다운로드되지 않음
     </message>
     <message>
         <location line="+1"/>
-        <location line="+144"/>
+        <location line="+145"/>
         <source>eMule runs its own I2P router. The first start takes a few minutes to join the network.</source>
         <translation>eMule이 자체 I2P 라우터를 실행합니다. 처음 시작할 때 네트워크 참여에 몇 분이 걸립니다.</translation>
     </message>
@@ -2108,12 +2108,12 @@ M	압축된 데이터가 아직 모두 다운로드되지 않음
         <translation>상태:</translation>
     </message>
     <message>
-        <location line="-37"/>
+        <location line="-40"/>
         <source>Router</source>
         <translation>라우터</translation>
     </message>
     <message>
-        <location line="+41"/>
+        <location line="+44"/>
         <source>Torrents</source>
         <translation>토렌트</translation>
     </message>
@@ -5353,7 +5353,7 @@ Its names are then resolved after the lists you already follow.</source>
         <translation type="vanished">ed3k 노드는 일반 페이지의 닉네임을 사용합니다: %1</translation>
     </message>
     <message>
-        <location filename="../src/gui/dialogs/Ed3kOptionsPages.cpp" line="+366"/>
+        <location filename="../src/gui/dialogs/Ed3kOptionsPages.cpp" line="+371"/>
         <location line="+11"/>
         <location line="+559"/>
         <location line="+11"/>
@@ -5509,7 +5509,7 @@ Its names are then resolved after the lists you already follow.</source>
         <translation>Chain ID:</translation>
     </message>
     <message>
-        <location line="-492"/>
+        <location line="-497"/>
         <source>Not valid</source>
         <translation>유효하지 않음</translation>
     </message>
@@ -5570,7 +5570,7 @@ Its names are then resolved after the lists you already follow.</source>
         <translation type="vanished">포워더:</translation>
     </message>
     <message>
-        <location line="+247"/>
+        <location line="+252"/>
         <source>Share Usenet posts over ed3k too</source>
         <translation>Usenet 게시물도 ed3k로 공유</translation>
     </message>
@@ -5662,12 +5662,12 @@ Its names are then resolved after the lists you already follow.</source>
     <message>
         <location line="+5"/>
         <location line="+10"/>
-        <location line="+998"/>
+        <location line="+1008"/>
         <source> credits/MiB</source>
         <translation> 크레딧/MiB</translation>
     </message>
     <message>
-        <location line="-1007"/>
+        <location line="-1017"/>
         <source>Never pay (receipts only)</source>
         <translation>지불 안 함(영수증만)</translation>
     </message>
@@ -5823,12 +5823,12 @@ Its names are then resolved after the lists you already follow.</source>
     <message>
         <location line="+1"/>
         <location line="+6"/>
-        <location line="+600"/>
+        <location line="+606"/>
         <source>Remove</source>
         <translation>제거</translation>
     </message>
     <message>
-        <location line="-596"/>
+        <location line="-602"/>
         <source>Followed name lists (the first one wins)</source>
         <translation>팔로우 중인 이름 목록(첫 번째가 우선)</translation>
     </message>
@@ -5915,12 +5915,12 @@ Its names are then resolved after the lists you already follow.</source>
     </message>
     <message>
         <location line="+0"/>
-        <location line="+836"/>
+        <location line="+846"/>
         <source>not read yet</source>
         <translation>아직 읽지 않음</translation>
     </message>
     <message>
-        <location line="-834"/>
+        <location line="-844"/>
         <source>The account is overdrawn: a new credit key is the way on.</source>
         <translation>계정이 초과 인출 상태입니다. 계속하려면 새 크레딧 키가 필요합니다.</translation>
     </message>
@@ -6185,12 +6185,27 @@ Export?</source>
         <translation>웹 검색 결과의 링크 창에서 어떤 링크가 온라인인지 확인합니다. 다운로드는 계정이 있는 호스터의 온라인 링크를 우선합니다.</translation>
     </message>
     <message>
-        <location line="+7"/>
+        <location line="+3"/>
+        <source>Extract archives automatically</source>
+        <translation>압축 파일 자동 풀기</translation>
+    </message>
+    <message>
+        <location line="+1"/>
+        <source>Finished archives wait in the temp folder; what they hold goes to the package&apos;s folder in incoming and is shared.</source>
+        <translation>완료된 압축 파일은 임시 폴더에 남고, 그 내용은 Incoming의 패키지 폴더로 옮겨져 공유됩니다.</translation>
+    </message>
+    <message>
+        <location line="+3"/>
+        <source>Delete archives after successful extraction</source>
+        <translation>압축 풀기에 성공하면 압축 파일 삭제</translation>
+    </message>
+    <message>
+        <location line="+6"/>
         <source>The resolver runs JDownloader&apos;s hoster plugins in a Java program of its own.</source>
         <translation>리졸버는 JDownloader의 호스터 플러그인을 별도의 Java 프로그램에서 실행합니다.</translation>
     </message>
     <message>
-        <location line="+138"/>
+        <location line="+140"/>
         <source>JDownloader: not installed</source>
         <translation>JDownloader: 설치되지 않음</translation>
     </message>
@@ -6200,7 +6215,7 @@ Export?</source>
         <translation>JDownloader 버전: %1</translation>
     </message>
     <message>
-        <location line="+169"/>
+        <location line="+171"/>
         <source>Autostart highspeed download</source>
         <translation>고속 다운로드 자동 시작</translation>
     </message>
@@ -6259,7 +6274,7 @@ Export?</source>
         <translation>고속 다운로드가 실행 중이 아닙니다. 잔액: %1</translation>
     </message>
     <message>
-        <location line="-488"/>
+        <location line="-498"/>
         <source>ed3k</source>
         <translation>ed3k</translation>
     </message>
@@ -6397,7 +6412,7 @@ Export?</source>
         <translation>다른 ed3k 노드가 알려준 호스터 링크 사용</translation>
     </message>
     <message>
-        <location line="+9"/>
+        <location line="+15"/>
         <source>Java runtime</source>
         <translation>Java 런타임</translation>
     </message>
@@ -6452,17 +6467,17 @@ Export?</source>
     </message>
     <message>
         <location line="+2"/>
-        <location line="+146"/>
+        <location line="+148"/>
         <source>Publish hoster links</source>
         <translation>호스터 링크 게시</translation>
     </message>
     <message>
-        <location line="-144"/>
+        <location line="-146"/>
         <source>A downloaded file is shared either way. Published, its link is found in ed3k and handed to other nodes: a link is often all that protects a file at a hoster.</source>
         <translation>다운로드한 파일은 어느 쪽이든 공유됩니다. 게시하면 그 링크가 ed3k에서 검색되고 다른 노드에 전달됩니다. 호스터의 파일을 보호하는 것은 링크뿐인 경우가 많습니다.</translation>
     </message>
     <message>
-        <location line="+140"/>
+        <location line="+142"/>
         <source>&lt;p&gt;Sharing hoster links means: once a file from a link is downloaded and verified, its link is published in ed3k and handed to other nodes that download the same file.&lt;/p&gt;&lt;p&gt;A link is often all that keeps a file at a hoster private. Whoever knows the link can find the file in ed3k, and anyone can find the link of a file you share.&lt;/p&gt;&lt;p&gt;Publish hoster links?&lt;/p&gt;</source>
         <translation>&lt;p&gt;호스터 링크 공유란, 링크의 파일을 다운로드하고 검증한 뒤 그 링크를 ed3k에 게시하고 같은 파일을 다운로드하는 다른 노드에 전달하는 것을 뜻합니다.&lt;/p&gt;&lt;p&gt;호스터의 파일을 비공개로 지키는 것은 링크뿐인 경우가 많습니다. 링크를 아는 사람은 ed3k에서 파일을 찾을 수 있고, 누구나 사용자가 공유하는 파일의 링크를 찾을 수 있습니다.&lt;/p&gt;&lt;p&gt;호스터 링크를 게시할까요?&lt;/p&gt;</translation>
     </message>
@@ -6475,7 +6490,7 @@ Export?</source>
         <translation type="vanished">다운로드한 파일은 어느 경우든 공유됩니다. 보류하면 링크가 게시되지 않고 다른 노드에도 전달되지 않습니다. 호스터의 파일을 보호하는 것은 링크뿐인 경우가 많습니다.</translation>
     </message>
     <message>
-        <location line="-135"/>
+        <location line="-137"/>
         <source>Accounts</source>
         <translation>계정</translation>
     </message>
@@ -6515,7 +6530,7 @@ Export?</source>
         <translation>확인</translation>
     </message>
     <message>
-        <location line="+54"/>
+        <location line="+56"/>
         <source>This build has no hoster resolver: hoster links are stored and passed on, but not downloaded.</source>
         <translation>이 빌드에는 호스터 리졸버가 없습니다. 호스터 링크는 저장되고 전달되지만 다운로드되지는 않습니다.</translation>
     </message>
@@ -9883,7 +9898,7 @@ ISP가 eMule을 제한하거나 차단하려는 경우, 난독화를 켜면 그�
 <context>
     <name>eMule::HosterPanel</name>
     <message>
-        <location filename="../src/gui/panels/HosterPanel.cpp" line="+62"/>
+        <location filename="../src/gui/panels/HosterPanel.cpp" line="+66"/>
         <source>Finding a resolver</source>
         <translation>리졸버 찾는 중</translation>
     </message>
@@ -10115,7 +10130,32 @@ ISP가 eMule을 제한하거나 차단하려는 경우, 난독화를 켜면 그�
         <translation>호스터가 퍼즐을 요구합니다. 퍼즐이 꺼져 있습니다 (옵션, ed3k, Hoster)</translation>
     </message>
     <message>
-        <location line="+29"/>
+        <location line="+1"/>
+        <source>Waiting for the other parts to extract</source>
+        <translation>압축 풀기를 위해 나머지 부분을 기다리는 중</translation>
+    </message>
+    <message>
+        <location line="+1"/>
+        <source>Extracting %1%</source>
+        <translation>압축 푸는 중 %1%</translation>
+    </message>
+    <message>
+        <location line="+1"/>
+        <source>Extracted to %1</source>
+        <translation>%1에 압축 풀림</translation>
+    </message>
+    <message>
+        <location line="+1"/>
+        <source>Extraction failed: %1 (Retry tries again)</source>
+        <translation>압축 풀기 실패: %1 (다시 시도로 재시도)</translation>
+    </message>
+    <message>
+        <location line="+1"/>
+        <source>The archive needs a password</source>
+        <translation>압축 파일에 암호가 필요합니다</translation>
+    </message>
+    <message>
+        <location line="+38"/>
         <source>Hoster downloads</source>
         <translation>호스터 다운로드</translation>
     </message>
@@ -10131,7 +10171,7 @@ ISP가 eMule을 제한하거나 차단하려는 경우, 난독화를 켜면 그�
         <translation>다시 시도</translation>
     </message>
     <message>
-        <location line="+175"/>
+        <location line="+178"/>
         <source>JDownloader %1</source>
         <translation>JDownloader %1</translation>
     </message>
@@ -10140,7 +10180,7 @@ ISP가 eMule을 제한하거나 차단하려는 경우, 난독화를 켜면 그�
         <translation type="vanished">옵션...</translation>
     </message>
     <message>
-        <location line="-473"/>
+        <location line="-476"/>
         <source>File Name</source>
         <translation>파일 이름</translation>
     </message>
@@ -10277,12 +10317,12 @@ ISP가 eMule을 제한하거나 차단하려는 경우, 난독화를 켜면 그�
     </message>
     <message>
         <location line="+1"/>
-        <location line="+42"/>
+        <location line="+45"/>
         <source>Remove and delete file</source>
         <translation>제거 및 파일 삭제</translation>
     </message>
     <message>
-        <location line="-40"/>
+        <location line="-43"/>
         <source>Copy link</source>
         <translation>링크 복사</translation>
     </message>
@@ -10297,7 +10337,7 @@ ISP가 eMule을 제한하거나 차단하려는 경우, 난독화를 켜면 그�
         <translation>링크 붙여넣기</translation>
     </message>
     <message>
-        <location line="+34"/>
+        <location line="+37"/>
         <source>Delete the selected files from disk?</source>
         <translation>선택한 파일을 디스크에서 삭제하시겠습니까?</translation>
     </message>
@@ -11864,12 +11904,12 @@ Other members see your nick and posts; your node takes part in passing the room&
     <name>eMule::MainWindow</name>
     <message>
         <location filename="../src/gui/app/MainWindow.cpp" line="+113"/>
-        <location line="+702"/>
+        <location line="+705"/>
         <source>eMule Qt v%1</source>
         <translation>eMule Qt v%1</translation>
     </message>
     <message>
-        <location line="-534"/>
+        <location line="-537"/>
         <location line="+9"/>
         <source>New Version Available</source>
         <translation>새 버전 사용 가능</translation>
@@ -11891,12 +11931,12 @@ Other members see your nick and posts; your node takes part in passing the room&
     </message>
     <message>
         <location line="+12"/>
-        <location line="+1529"/>
+        <location line="+1532"/>
         <source>eD2K: Disconnected</source>
         <translation>eD2K: 연결 해제됨</translation>
     </message>
     <message>
-        <location line="-1461"/>
+        <location line="-1464"/>
         <source>Kad: Connected</source>
         <translation>Kad: 연결됨</translation>
     </message>
@@ -11912,7 +11952,7 @@ Other members see your nick and posts; your node takes part in passing the room&
     </message>
     <message>
         <location line="+4"/>
-        <location line="+1453"/>
+        <location line="+1456"/>
         <source>Kad: Disconnected</source>
         <translation>Kad: 연결 해제됨</translation>
     </message>
@@ -11962,14 +12002,14 @@ Other members see your nick and posts; your node takes part in passing the room&
         <translation>기능</translation>
     </message>
     <message>
-        <location line="-1009"/>
+        <location line="-1012"/>
         <location line="+7"/>
-        <location line="+1005"/>
+        <location line="+1008"/>
         <source>Version Check</source>
         <translation>버전 확인</translation>
     </message>
     <message>
-        <location line="-1078"/>
+        <location line="-1081"/>
         <source>Quit eMule Qt</source>
         <translation>eMule Qt 종료</translation>
     </message>
@@ -12061,7 +12101,7 @@ Enable at least one under Options → Connection to connect.</source>
         <translation>오류!</translation>
     </message>
     <message>
-        <location line="+83"/>
+        <location line="+86"/>
         <source>ed3k: Connected</source>
         <translation>ed3k: 연결됨</translation>
     </message>
@@ -12466,12 +12506,12 @@ Enable it under Options → Web Interface, then try again.</source>
         <translation>네트워크 정보를 보려면 더블 클릭</translation>
     </message>
     <message>
-        <location line="+710"/>
+        <location line="+713"/>
         <source>New message — double-click to read</source>
         <translation>새 메시지 — 두 번 클릭하여 읽기</translation>
     </message>
     <message>
-        <location line="-292"/>
+        <location line="-295"/>
         <source>eD2K Link</source>
         <translation>eD2K 링크</translation>
     </message>
@@ -12563,7 +12603,7 @@ Enable it under Options → Web Interface, then try again.</source>
         <translation>코어가 파일을 불러오는 중…</translation>
     </message>
     <message>
-        <location line="+83"/>
+        <location line="+86"/>
         <source>Other clients cannot connect to you: eD2K gives you a Low ID and Kad reports you as firewalled.</source>
         <translation>다른 클라이언트가 연결할 수 없습니다: eD2K에서 Low ID를 받았고 Kad가 방화벽 뒤에 있다고 보고합니다.</translation>
     </message>
@@ -17890,6 +17930,14 @@ Create it?</source>
         <translation>DB-IP Country Lite (계정 불필요)</translation>
     </message>
     <message>
+        <source>Share subfolders of the incoming folder</source>
+        <translation type="vanished">받은 파일 폴더의 하위 폴더 공유</translation>
+    </message>
+    <message>
+        <source>Shares the files that torrents, Usenet and hoster downloads put in subfolders of the incoming folder (and of the BitTorrent download folder) on eD2K and ed3k. Torrents are shared once they are complete.</source>
+        <translation type="vanished">토렌트, Usenet, 호스터 다운로드가 받은 파일 폴더(및 BitTorrent 다운로드 폴더)의 하위 폴더에 저장한 파일을 eD2K와 ed3k에서 공유합니다. 토렌트는 완료된 후에 공유됩니다.</translation>
+    </message>
+    <message>
         <location line="+1016"/>
         <source>Rehash All Files...</source>
         <translation>모든 파일 다시 해시...</translation>
@@ -20475,7 +20523,7 @@ ED2K 해시:	%2
 <context>
     <name>eMule::SharedFilesPanel</name>
     <message>
-        <location filename="../src/gui/panels/SharedFilesPanel.cpp" line="+770"/>
+        <location filename="../src/gui/panels/SharedFilesPanel.cpp" line="+799"/>
         <source>Shared Files (0)</source>
         <translation>공유 파일 (0)</translation>
     </message>
@@ -20487,18 +20535,18 @@ ED2K 해시:	%2
     <message>
         <location line="+13"/>
         <location line="+1568"/>
-        <location line="+514"/>
+        <location line="+518"/>
         <source>Open Folder</source>
         <translation>폴더 열기</translation>
     </message>
     <message>
-        <location line="-2070"/>
+        <location line="-2074"/>
         <source>Rename...</source>
         <translation>이름 바꾸기...</translation>
     </message>
     <message>
         <location line="+197"/>
-        <location line="+1915"/>
+        <location line="+1919"/>
         <source>Copy eD2K Links</source>
         <translation>eD2K 링크 복사</translation>
     </message>
@@ -20511,13 +20559,13 @@ ED2K 해시:	%2
         <translation type="vanished">새 파일 이름:</translation>
     </message>
     <message>
-        <location line="-2092"/>
-        <location line="+2054"/>
+        <location line="-2096"/>
+        <location line="+2058"/>
         <source>Delete From Disk</source>
         <translation>디스크에서 삭제</translation>
     </message>
     <message>
-        <location line="-1006"/>
+        <location line="-1010"/>
         <source>Delete File</source>
         <translation>파일 삭제</translation>
     </message>
@@ -20547,31 +20595,31 @@ The file will remain on disk.</source>
     </message>
     <message>
         <location line="-1043"/>
-        <location line="+2034"/>
+        <location line="+2038"/>
         <source>Priority (Upload)</source>
         <translation>우선순위(업로드)</translation>
     </message>
     <message>
-        <location line="-2019"/>
-        <location line="+2036"/>
+        <location line="-2023"/>
+        <location line="+2040"/>
         <source>Very Low</source>
         <translation>매우 낮음</translation>
     </message>
     <message>
-        <location line="-2035"/>
-        <location line="+2036"/>
+        <location line="-2039"/>
+        <location line="+2040"/>
         <source>Low</source>
         <translation>낮음</translation>
     </message>
     <message>
-        <location line="-2035"/>
-        <location line="+2036"/>
+        <location line="-2039"/>
+        <location line="+2040"/>
         <source>Normal</source>
         <translation>보통</translation>
     </message>
     <message>
-        <location line="-2035"/>
-        <location line="+2036"/>
+        <location line="-2039"/>
+        <location line="+2040"/>
         <source>High</source>
         <translation>높음</translation>
     </message>
@@ -20580,13 +20628,13 @@ The file will remain on disk.</source>
         <translation type="vanished">매우 높음</translation>
     </message>
     <message>
-        <location line="-2033"/>
-        <location line="+2035"/>
+        <location line="-2037"/>
+        <location line="+2039"/>
         <source>Auto</source>
         <translation>자동</translation>
     </message>
     <message>
-        <location line="-2021"/>
+        <location line="-2025"/>
         <source>Collection</source>
         <translation>컬렉션</translation>
     </message>
@@ -20623,24 +20671,24 @@ The file will remain on disk.</source>
     </message>
     <message>
         <location line="+19"/>
-        <location line="+1926"/>
+        <location line="+1930"/>
         <source>Details...</source>
         <translation>상세...</translation>
     </message>
     <message>
-        <location line="-1919"/>
-        <location line="+1922"/>
+        <location line="-1923"/>
+        <location line="+1926"/>
         <source>Comments...</source>
         <translation>댓글...</translation>
     </message>
     <message>
-        <location line="-1907"/>
-        <location line="+1913"/>
+        <location line="-1911"/>
+        <location line="+1917"/>
         <source>eD2K Links...</source>
         <translation>eD2K 링크...</translation>
     </message>
     <message>
-        <location line="-1885"/>
+        <location line="-1889"/>
         <source>Find...</source>
         <translation>찾기...</translation>
     </message>
@@ -20763,7 +20811,7 @@ The file will remain on disk.</source>
         <translation>해당 파일의 공유를 해제할 수 없습니다</translation>
     </message>
     <message>
-        <location line="+538"/>
+        <location line="+540"/>
         <source>Share Directory</source>
         <translation>디렉터리 공유</translation>
     </message>
@@ -20773,7 +20821,7 @@ The file will remain on disk.</source>
         <translation>하위 디렉터리 포함 공유</translation>
     </message>
     <message>
-        <location line="+17"/>
+        <location line="+19"/>
         <location line="+523"/>
         <source>Unshare Directory</source>
         <translation>디렉터리 공유 해제</translation>
@@ -20796,7 +20844,7 @@ The file will remain on disk.</source>
         <translation>파일 열기를 사용할 수 없습니다 — 웹 서버가 실행 중이 아니거나 스트림 토큰을 받지 못했습니다.</translation>
     </message>
     <message>
-        <location line="-1003"/>
+        <location line="-1007"/>
         <source>Content</source>
         <translation>콘텐츠</translation>
     </message>
@@ -20811,23 +20859,23 @@ The file will remain on disk.</source>
         <translation>복사</translation>
     </message>
     <message>
-        <location line="-884"/>
+        <location line="-885"/>
         <source>All</source>
         <translation>전체</translation>
     </message>
     <message>
-        <location line="+138"/>
+        <location line="+139"/>
         <source>Mass Rename...</source>
         <translation>일괄 이름 변경...</translation>
     </message>
     <message>
         <location line="+58"/>
-        <location line="+2036"/>
+        <location line="+2040"/>
         <source>Release</source>
         <translation>릴리스</translation>
     </message>
     <message>
-        <location line="-2009"/>
+        <location line="-2013"/>
         <location line="+1445"/>
         <source>Create ed3k Set...</source>
         <translation>ed3k 세트 만들기...</translation>
@@ -20955,7 +21003,7 @@ The files will remain on disk.</source>
         <translation>선택한 %2개 파일 중 처음 %1개의 eD2K 링크를 표시합니다.</translation>
     </message>
     <message numerus="yes">
-        <location line="+934"/>
+        <location line="+938"/>
         <source>Share %n file(s) under the anonymous ed3k key from now on?
 
 They are unpublished under the node key first; what the network stored of them there runs out. Other nodes may still remember that this node had them.</source>

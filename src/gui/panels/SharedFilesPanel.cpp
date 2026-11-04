@@ -105,6 +105,34 @@ constexpr int kRolePath = Qt::UserRole + 1;
 /// Marks the category sub-nodes: 1 a category's incoming folder, 2 its part files.
 constexpr int kRoleCategoryNode = Qt::UserRole + 4;
 
+/// shareIncomingSubdirs (#124): a folder strictly below an incoming dir or the BT
+/// download dir is shared by the core without being on the list (SharedFileList::inShareTree)
+bool inIncomingTree(const QString& path)
+{
+    if (!thePrefs.shareIncomingSubdirs())
+        return false;
+    const QString key = SharedDirState::dirKey(path);
+    QStringList roots = thePrefs.allIncomingDirs();
+    roots.append(thePrefs.btDownloadDir());
+    for (const QString& root : std::as_const(roots)) {
+        const QString rootKey = SharedDirState::dirKey(root);
+        if (!SharedDirState::isBelowKey(key, rootKey))
+            continue;
+        if (QStringView(key).mid(rootKey.size()).contains(u"/."))
+            return false;   // hidden: not walked
+        // the app's own folders below the root (with --config incoming is in the config dir)
+        QStringList own = thePrefs.tempDirs();
+        own << thePrefs.configDir() << thePrefs.usenetTempDir() << thePrefs.usenetWatchDir();
+        for (const QString& dir : std::as_const(own)) {
+            const QString k = SharedDirState::dirKey(dir);
+            if (SharedDirState::isBelowKey(k, rootKey) && (key == k || SharedDirState::isBelowKey(key, k)))
+                return false;
+        }
+        return true;
+    }
+    return false;
+}
+
 /// MFC GetFolderLabel (srchybrid/SharedDirsTreeCtrl.cpp:254): a top-level
 /// folder says where it lives, "Name  (parent)"; a drive root is its path.
 QString folderLabel(const QString& dir, bool topFolder)
@@ -392,7 +420,8 @@ void SharedFilesPanel::onFolderSelectionChanged()
     // Both split the share at the main incoming dir
     const auto type = static_cast<SharedFilterType>(filterType);
     const bool byIncoming = type == SharedFilterType::Incoming || type == SharedFilterType::SharedDirs;
-    m_proxy->setFolderFilter(type, byIncoming ? thePrefs.incomingDir() : path);
+    m_proxy->setFolderFilter(type, byIncoming ? thePrefs.incomingDir() : path,
+                             byIncoming && thePrefs.shareIncomingSubdirs());
     requestSharedFiles();
 }
 
@@ -2034,6 +2063,8 @@ void SharedFilesPanel::onFolderContextMenu(const QPoint& pos)
     const bool isShared = SharedDirState::isSharedDir(dirs, path);
     const bool hasSharedSub = SharedDirState::hasSharedSubdir(dirs, path);
     const bool shareable = thePrefs.isShareableDirectory(path);
+    // shared with its subfolders by the core already (#124)
+    const bool inTree = inIncomingTree(path);
 
     // Share Directory
     auto* shareAct = menu.addAction(tr("Share Directory"), this, [this, path]() {
@@ -2044,7 +2075,7 @@ void SharedFilesPanel::onFolderContextMenu(const QPoint& pos)
             dirs.append(path);
         sendShareDirsUpdate(dirs);
     });
-    shareAct->setEnabled(!isShared && shareable);
+    shareAct->setEnabled(!isShared && !inTree && shareable);
 
     // Share with Subdirectories
     auto* shareSubAct = menu.addAction(tr("Share with Subdirectories"), this, [this, path]() {
@@ -2057,9 +2088,11 @@ void SharedFilesPanel::onFolderContextMenu(const QPoint& pos)
         sendShareDirsUpdate(dirs);
     });
     // Incoming is shared on its own and refused as a list entry, but its subfolders
-    // (torrent / Usenet download folders) can still go on the list (#124)
+    // (torrent / Usenet download folders) can still go on the list (#124) — unless
+    // shareIncomingSubdirs shares them anyway
     const bool isIncoming = SharedDirState::dirKey(path) == SharedDirState::dirKey(thePrefs.incomingDir());
-    shareSubAct->setEnabled((shareable || isIncoming) && hasSubdirectories(path));
+    const bool treeCovers = inTree || (isIncoming && thePrefs.shareIncomingSubdirs());
+    shareSubAct->setEnabled((shareable || isIncoming) && !treeCovers && hasSubdirectories(path));
 
     menu.addSeparator();
 
@@ -2391,7 +2424,7 @@ void SharedFilesPanel::applyShareState(QTreeWidgetItem* item)
     // MFC: an overlay on the shared folder itself, bold on it and on every folder
     // above something shared (srchybrid/SharedDirsTreeCtrl.cpp:727, :743).
     const auto dirs = thePrefs.sharedDirs();
-    const bool shared = SharedDirState::isSharedDir(dirs, path);
+    const bool shared = SharedDirState::isSharedDir(dirs, path) || inIncomingTree(path);
     item->setIcon(0, folderIcon(shared ? QStringLiteral(":/icons/SharedFolderOvl.ico")
                                        : QString()));
     setItemBold(item, shared || SharedDirState::hasSharedSubdir(dirs, path)

@@ -224,7 +224,9 @@ class SharedFilesSortProxy : public QSortFilterProxyModel {
 public:
     using QSortFilterProxyModel::QSortFilterProxyModel;
 
-    void setFolderFilter(SharedFilterType type, const QString& path = {});
+    /// @p withSubdirs: Incoming / Shared Directories split at the incoming tree, not
+    /// the folder alone (shareIncomingSubdirs, #124)
+    void setFolderFilter(SharedFilterType type, const QString& path = {}, bool withSubdirs = false);
 
     /// MFC CSharedFilesCtrl::IsFilteredOut: every token must be in the text of
     /// @p column, a "-token" must not. Applied on top of the folder filter.
@@ -240,6 +242,7 @@ protected:
 private:
     SharedFilterType m_filterType = SharedFilterType::AllShared;
     QString m_filterPath;
+    bool m_withSubdirs = false;
     QStringList m_tokens;
     int m_tokenColumn = 0;
     QSet<int> m_altSortColumns;

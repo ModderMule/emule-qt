@@ -1858,13 +1858,13 @@ M	gecomprimeerde gegevens nog niet volledig gedownload
         <translation>Downloadt torrents via het I2P-netwerk: peers zien een I2P-adres, nooit je IP. Trager dan directe verbindingen, geen open poort nodig.</translation>
     </message>
     <message>
-        <location line="+17"/>
-        <location line="+186"/>
+        <location line="+19"/>
+        <location line="+187"/>
         <source>Off</source>
         <translation>Uit</translation>
     </message>
     <message>
-        <location line="-186"/>
+        <location line="-187"/>
         <source>Torrents use direct connections only.</source>
         <translation>Torrents gebruiken alleen directe verbindingen.</translation>
     </message>
@@ -1875,7 +1875,7 @@ M	gecomprimeerde gegevens nog niet volledig gedownload
     </message>
     <message>
         <location line="+1"/>
-        <location line="+144"/>
+        <location line="+145"/>
         <source>eMule runs its own I2P router. The first start takes a few minutes to join the network.</source>
         <translation>eMule draait een eigen I2P-router. Bij de eerste start duurt het enkele minuten om het netwerk te betreden.</translation>
     </message>
@@ -1981,12 +1981,12 @@ M	gecomprimeerde gegevens nog niet volledig gedownload
         <translation>Status:</translation>
     </message>
     <message>
-        <location line="-37"/>
+        <location line="-40"/>
         <source>Router</source>
         <translation>Router</translation>
     </message>
     <message>
-        <location line="+41"/>
+        <location line="+44"/>
         <source>Torrents</source>
         <translation>Torrents</translation>
     </message>
@@ -5090,7 +5090,7 @@ De namen ervan worden dan omgezet na de lijsten die u al volgt.</translation>
         <translation type="vanished">De ed3k-node gebruikt de gebruikersnaam van de pagina Algemeen: %1</translation>
     </message>
     <message>
-        <location filename="../src/gui/dialogs/Ed3kOptionsPages.cpp" line="+366"/>
+        <location filename="../src/gui/dialogs/Ed3kOptionsPages.cpp" line="+371"/>
         <location line="+11"/>
         <location line="+559"/>
         <location line="+11"/>
@@ -5246,7 +5246,7 @@ De namen ervan worden dan omgezet na de lijsten die u al volgt.</translation>
         <translation>Chain ID:</translation>
     </message>
     <message>
-        <location line="-492"/>
+        <location line="-497"/>
         <source>Not valid</source>
         <translation>Ongeldig</translation>
     </message>
@@ -5307,7 +5307,7 @@ De namen ervan worden dan omgezet na de lijsten die u al volgt.</translation>
         <translation type="vanished">Doorstuurder:</translation>
     </message>
     <message>
-        <location line="+247"/>
+        <location line="+252"/>
         <source>Share Usenet posts over ed3k too</source>
         <translation>Usenet-posts ook via ed3k delen</translation>
     </message>
@@ -5399,12 +5399,12 @@ De namen ervan worden dan omgezet na de lijsten die u al volgt.</translation>
     <message>
         <location line="+5"/>
         <location line="+10"/>
-        <location line="+998"/>
+        <location line="+1008"/>
         <source> credits/MiB</source>
         <translation> credits/MiB</translation>
     </message>
     <message>
-        <location line="-1007"/>
+        <location line="-1017"/>
         <source>Never pay (receipts only)</source>
         <translation>Nooit betalen (alleen ontvangstbewijzen)</translation>
     </message>
@@ -5560,12 +5560,12 @@ De namen ervan worden dan omgezet na de lijsten die u al volgt.</translation>
     <message>
         <location line="+1"/>
         <location line="+6"/>
-        <location line="+600"/>
+        <location line="+606"/>
         <source>Remove</source>
         <translation>Verwijderen</translation>
     </message>
     <message>
-        <location line="-596"/>
+        <location line="-602"/>
         <source>Followed name lists (the first one wins)</source>
         <translation>Gevolgde namenlijsten (de eerste wint)</translation>
     </message>
@@ -5652,12 +5652,12 @@ De namen ervan worden dan omgezet na de lijsten die u al volgt.</translation>
     </message>
     <message>
         <location line="+0"/>
-        <location line="+836"/>
+        <location line="+846"/>
         <source>not read yet</source>
         <translation>nog niet uitgelezen</translation>
     </message>
     <message>
-        <location line="-834"/>
+        <location line="-844"/>
         <source>The account is overdrawn: a new credit key is the way on.</source>
         <translation>Het account staat rood: een nieuwe creditsleutel is de weg verder.</translation>
     </message>
@@ -5922,12 +5922,27 @@ Exporteren?</translation>
         <translation>Het linkvenster van een webzoekresultaat controleert welke links online zijn. Downloaden geeft de voorkeur aan online links bij hosters waar u een account hebt.</translation>
     </message>
     <message>
-        <location line="+7"/>
+        <location line="+3"/>
+        <source>Extract archives automatically</source>
+        <translation>Archieven automatisch uitpakken</translation>
+    </message>
+    <message>
+        <location line="+1"/>
+        <source>Finished archives wait in the temp folder; what they hold goes to the package&apos;s folder in incoming and is shared.</source>
+        <translation>Voltooide archieven blijven in de tijdelijke map; hun inhoud gaat naar de map van het pakket in Incoming en wordt gedeeld.</translation>
+    </message>
+    <message>
+        <location line="+3"/>
+        <source>Delete archives after successful extraction</source>
+        <translation>Archieven verwijderen na geslaagd uitpakken</translation>
+    </message>
+    <message>
+        <location line="+6"/>
         <source>The resolver runs JDownloader&apos;s hoster plugins in a Java program of its own.</source>
         <translation>De resolver draait de hosterplugins van JDownloader in een eigen Java-programma.</translation>
     </message>
     <message>
-        <location line="+138"/>
+        <location line="+140"/>
         <source>JDownloader: not installed</source>
         <translation>JDownloader: niet geïnstalleerd</translation>
     </message>
@@ -5937,7 +5952,7 @@ Exporteren?</translation>
         <translation>JDownloader-versie: %1</translation>
     </message>
     <message>
-        <location line="+169"/>
+        <location line="+171"/>
         <source>Autostart highspeed download</source>
         <translation>Snelle download automatisch starten</translation>
     </message>
@@ -5996,7 +6011,7 @@ Exporteren?</translation>
         <translation>Snelle download loopt niet. Saldo: %1</translation>
     </message>
     <message>
-        <location line="-488"/>
+        <location line="-498"/>
         <source>ed3k</source>
         <translation>ed3k</translation>
     </message>
@@ -6134,7 +6149,7 @@ Exporteren?</translation>
         <translation>Hosterlinks gebruiken die andere ed3k-nodes noemen</translation>
     </message>
     <message>
-        <location line="+9"/>
+        <location line="+15"/>
         <source>Java runtime</source>
         <translation>Java-runtime</translation>
     </message>
@@ -6189,17 +6204,17 @@ Exporteren?</translation>
     </message>
     <message>
         <location line="+2"/>
-        <location line="+146"/>
+        <location line="+148"/>
         <source>Publish hoster links</source>
         <translation>Hosterlinks publiceren</translation>
     </message>
     <message>
-        <location line="-144"/>
+        <location line="-146"/>
         <source>A downloaded file is shared either way. Published, its link is found in ed3k and handed to other nodes: a link is often all that protects a file at a hoster.</source>
         <translation>Een gedownload bestand wordt hoe dan ook gedeeld. Gepubliceerd is de link in ed3k te vinden en wordt hij aan andere nodes gegeven: vaak beschermt alleen de link een bestand bij een hoster.</translation>
     </message>
     <message>
-        <location line="+140"/>
+        <location line="+142"/>
         <source>&lt;p&gt;Sharing hoster links means: once a file from a link is downloaded and verified, its link is published in ed3k and handed to other nodes that download the same file.&lt;/p&gt;&lt;p&gt;A link is often all that keeps a file at a hoster private. Whoever knows the link can find the file in ed3k, and anyone can find the link of a file you share.&lt;/p&gt;&lt;p&gt;Publish hoster links?&lt;/p&gt;</source>
         <translation>&lt;p&gt;Hosterlinks delen betekent: zodra een bestand van een link is gedownload en geverifieerd, wordt de link in ed3k gepubliceerd en doorgegeven aan andere nodes die hetzelfde bestand downloaden.&lt;/p&gt;&lt;p&gt;Een link is vaak het enige dat een bestand bij een hoster privé houdt. Wie de link kent, kan het bestand in ed3k vinden, en iedereen kan de link vinden van een bestand dat jij deelt.&lt;/p&gt;&lt;p&gt;Hosterlinks publiceren?&lt;/p&gt;</translation>
     </message>
@@ -6212,7 +6227,7 @@ Exporteren?</translation>
         <translation type="vanished">Een gedownload bestand wordt hoe dan ook gedeeld. Achtergehouden wordt de link niet gepubliceerd en niet aan andere nodes doorgegeven: een link is vaak het enige dat een bestand bij een hoster beschermt.</translation>
     </message>
     <message>
-        <location line="-135"/>
+        <location line="-137"/>
         <source>Accounts</source>
         <translation>Accounts</translation>
     </message>
@@ -6252,7 +6267,7 @@ Exporteren?</translation>
         <translation>Controleren</translation>
     </message>
     <message>
-        <location line="+54"/>
+        <location line="+56"/>
         <source>This build has no hoster resolver: hoster links are stored and passed on, but not downloaded.</source>
         <translation>Deze build heeft geen hosterresolver: hosterlinks worden opgeslagen en doorgegeven, maar niet gedownload.</translation>
     </message>
@@ -9537,7 +9552,7 @@ De bestanden gaan naar de map met binnenkomende bestanden, in een eigen map van 
 <context>
     <name>eMule::HosterPanel</name>
     <message>
-        <location filename="../src/gui/panels/HosterPanel.cpp" line="+62"/>
+        <location filename="../src/gui/panels/HosterPanel.cpp" line="+66"/>
         <source>Finding a resolver</source>
         <translation>Resolver zoeken</translation>
     </message>
@@ -9770,7 +9785,32 @@ De bestanden gaan naar de map met binnenkomende bestanden, in een eigen map van 
         <translation>De hoster vraagt om een puzzel; puzzels staan uit (Opties, ed3k, Hoster)</translation>
     </message>
     <message>
-        <location line="+29"/>
+        <location line="+1"/>
+        <source>Waiting for the other parts to extract</source>
+        <translation>Wacht op de andere delen om uit te pakken</translation>
+    </message>
+    <message>
+        <location line="+1"/>
+        <source>Extracting %1%</source>
+        <translation>Uitpakken %1%</translation>
+    </message>
+    <message>
+        <location line="+1"/>
+        <source>Extracted to %1</source>
+        <translation>Uitgepakt naar %1</translation>
+    </message>
+    <message>
+        <location line="+1"/>
+        <source>Extraction failed: %1 (Retry tries again)</source>
+        <translation>Uitpakken mislukt: %1 (Opnieuw proberen probeert het nog eens)</translation>
+    </message>
+    <message>
+        <location line="+1"/>
+        <source>The archive needs a password</source>
+        <translation>Het archief heeft een wachtwoord nodig</translation>
+    </message>
+    <message>
+        <location line="+38"/>
         <source>Hoster downloads</source>
         <translation>Hosterdownloads</translation>
     </message>
@@ -9786,7 +9826,7 @@ De bestanden gaan naar de map met binnenkomende bestanden, in een eigen map van 
         <translation>Opnieuw</translation>
     </message>
     <message>
-        <location line="+175"/>
+        <location line="+178"/>
         <source>JDownloader %1</source>
         <translation>JDownloader %1</translation>
     </message>
@@ -9795,7 +9835,7 @@ De bestanden gaan naar de map met binnenkomende bestanden, in een eigen map van 
         <translation type="vanished">Opties...</translation>
     </message>
     <message>
-        <location line="-473"/>
+        <location line="-476"/>
         <source>File Name</source>
         <translation>Bestandsnaam</translation>
     </message>
@@ -9934,12 +9974,12 @@ De bestanden gaan naar de map met binnenkomende bestanden, in een eigen map van 
     </message>
     <message>
         <location line="+1"/>
-        <location line="+42"/>
+        <location line="+45"/>
         <source>Remove and delete file</source>
         <translation>Verwijderen en bestand wissen</translation>
     </message>
     <message>
-        <location line="-40"/>
+        <location line="-43"/>
         <source>Copy link</source>
         <translation>Link kopiëren</translation>
     </message>
@@ -9954,7 +9994,7 @@ De bestanden gaan naar de map met binnenkomende bestanden, in een eigen map van 
         <translation>Links plakken</translation>
     </message>
     <message>
-        <location line="+34"/>
+        <location line="+37"/>
         <source>Delete the selected files from disk?</source>
         <translation>De geselecteerde bestanden van schijf wissen?</translation>
     </message>
@@ -11494,12 +11534,12 @@ Andere leden zien uw schuilnaam en berichten; uw node helpt de berichten van de 
     <name>eMule::MainWindow</name>
     <message>
         <location filename="../src/gui/app/MainWindow.cpp" line="+113"/>
-        <location line="+702"/>
+        <location line="+705"/>
         <source>eMule Qt v%1</source>
         <translation>eMule Qt v%1</translation>
     </message>
     <message>
-        <location line="-579"/>
+        <location line="-582"/>
         <source>Quit eMule Qt</source>
         <translation>eMule Qt afsluiten</translation>
     </message>
@@ -11536,12 +11576,12 @@ U gebruikt %2. De website van eMule Qt openen?</translation>
     <message>
         <location line="+11"/>
         <location line="+7"/>
-        <location line="+1005"/>
+        <location line="+1008"/>
         <source>Version Check</source>
         <translation>Versiecontrole</translation>
     </message>
     <message>
-        <location line="-1011"/>
+        <location line="-1014"/>
         <source>You are running the latest version of eMule Qt (v%1).</source>
         <translation>U gebruikt de nieuwste versie van eMule Qt (v%1).</translation>
     </message>
@@ -11600,12 +11640,12 @@ Schakel er minstens één in onder Opties → Verbinding om te verbinden.</trans
     </message>
     <message>
         <location line="+4"/>
-        <location line="+1529"/>
+        <location line="+1532"/>
         <source>eD2K: Disconnected</source>
         <translation>eD2K: verbinding verbroken</translation>
     </message>
     <message>
-        <location line="-1520"/>
+        <location line="-1523"/>
         <source>eD2K Server: %1  (%2 Users)</source>
         <translation>eD2K-server: %1  (%2 gebruikers)</translation>
     </message>
@@ -11641,7 +11681,7 @@ Schakel er minstens één in onder Opties → Verbinding om te verbinden.</trans
     </message>
     <message>
         <location line="+4"/>
-        <location line="+1453"/>
+        <location line="+1456"/>
         <source>Kad: Disconnected</source>
         <translation>Kad: verbinding verbroken</translation>
     </message>
@@ -12096,12 +12136,12 @@ Schakel hem in onder Opties → Webinterface en probeer het opnieuw.</translatio
         <translation>Dubbelklik voor netwerkinformatie</translation>
     </message>
     <message>
-        <location line="+710"/>
+        <location line="+713"/>
         <source>New message — double-click to read</source>
         <translation>Nieuw bericht — dubbelklik om te lezen</translation>
     </message>
     <message>
-        <location line="-292"/>
+        <location line="-295"/>
         <source>eD2K Link</source>
         <translation>eD2K-verwijzing</translation>
     </message>
@@ -12193,7 +12233,7 @@ Schakel hem in onder Opties → Webinterface en probeer het opnieuw.</translatio
         <translation>De core laadt zijn bestanden…</translation>
     </message>
     <message>
-        <location line="+83"/>
+        <location line="+86"/>
         <source>Other clients cannot connect to you: eD2K gives you a Low ID and Kad reports you as firewalled.</source>
         <translation>Andere clients kunnen geen verbinding met je maken: eD2K geeft je een Low ID en Kad meldt je als firewalled.</translation>
     </message>
@@ -15993,6 +16033,14 @@ Elke Usenet-verbinding loopt dan via de proxy, dus de snelheid ervan begrenst de
         <location line="+2"/>
         <source>Shares files added to a shared folder as they appear. When off, new files are only picked up on restart or when you reload the shared files.</source>
         <translation>Deelt bestanden die aan een gedeelde map worden toegevoegd zodra ze verschijnen. Indien uit, worden nieuwe bestanden pas opgemerkt bij een herstart of wanneer je de gedeelde bestanden herlaadt.</translation>
+    </message>
+    <message>
+        <source>Share subfolders of the incoming folder</source>
+        <translation type="vanished">Submappen van de Incoming-map delen</translation>
+    </message>
+    <message>
+        <source>Shares the files that torrents, Usenet and hoster downloads put in subfolders of the incoming folder (and of the BitTorrent download folder) on eD2K and ed3k. Torrents are shared once they are complete.</source>
+        <translation type="vanished">Deelt de bestanden die torrent-, Usenet- en hosterdownloads in submappen van de Incoming-map (en van de BitTorrent-downloadmap) zetten op eD2K en ed3k. Torrents worden gedeeld zodra ze compleet zijn.</translation>
     </message>
     <message>
         <location line="+13"/>
@@ -19986,29 +20034,29 @@ Map:	%13</translation>
 <context>
     <name>eMule::SharedFilesPanel</name>
     <message>
-        <location filename="../src/gui/panels/SharedFilesPanel.cpp" line="+770"/>
+        <location filename="../src/gui/panels/SharedFilesPanel.cpp" line="+799"/>
         <source>Shared Files (0)</source>
         <translation>Gedeelde bestanden (0)</translation>
     </message>
     <message>
-        <location line="-432"/>
+        <location line="-433"/>
         <source>All</source>
         <translation>Alle</translation>
     </message>
     <message>
-        <location line="+106"/>
+        <location line="+107"/>
         <source>Open File</source>
         <translation>Bestand openen</translation>
     </message>
     <message>
         <location line="+13"/>
         <location line="+1568"/>
-        <location line="+514"/>
+        <location line="+518"/>
         <source>Open Folder</source>
         <translation>Map openen</translation>
     </message>
     <message>
-        <location line="-2070"/>
+        <location line="-2074"/>
         <source>Rename...</source>
         <translation>Hernoemen...</translation>
     </message>
@@ -20019,59 +20067,59 @@ Map:	%13</translation>
     </message>
     <message>
         <location line="+13"/>
-        <location line="+2054"/>
+        <location line="+2058"/>
         <source>Delete From Disk</source>
         <translation>Van schijf verwijderen</translation>
     </message>
     <message>
-        <location line="-2039"/>
+        <location line="-2043"/>
         <source>Unshare</source>
         <translation>Niet delen</translation>
     </message>
     <message>
         <location line="+11"/>
-        <location line="+2034"/>
+        <location line="+2038"/>
         <source>Priority (Upload)</source>
         <translation>Prioriteit (upload)</translation>
     </message>
     <message>
-        <location line="-2019"/>
-        <location line="+2036"/>
+        <location line="-2023"/>
+        <location line="+2040"/>
         <source>Very Low</source>
         <translation>Zeer laag</translation>
     </message>
     <message>
-        <location line="-2035"/>
-        <location line="+2036"/>
+        <location line="-2039"/>
+        <location line="+2040"/>
         <source>Low</source>
         <translation>Laag</translation>
     </message>
     <message>
-        <location line="-2035"/>
-        <location line="+2036"/>
+        <location line="-2039"/>
+        <location line="+2040"/>
         <source>Normal</source>
         <translation>Normaal</translation>
     </message>
     <message>
-        <location line="-2035"/>
-        <location line="+2036"/>
+        <location line="-2039"/>
+        <location line="+2040"/>
         <source>High</source>
         <translation>Hoog</translation>
     </message>
     <message>
-        <location line="-2035"/>
-        <location line="+2036"/>
+        <location line="-2039"/>
+        <location line="+2040"/>
         <source>Release</source>
         <translation>Uitgave</translation>
     </message>
     <message>
-        <location line="-2034"/>
-        <location line="+2035"/>
+        <location line="-2038"/>
+        <location line="+2039"/>
         <source>Auto</source>
         <translation>Auto</translation>
     </message>
     <message>
-        <location line="-2021"/>
+        <location line="-2025"/>
         <source>Collection</source>
         <translation>Collectie</translation>
     </message>
@@ -20120,24 +20168,24 @@ Map:	%13</translation>
     </message>
     <message>
         <location line="+19"/>
-        <location line="+1926"/>
+        <location line="+1930"/>
         <source>Details...</source>
         <translation>Details...</translation>
     </message>
     <message>
-        <location line="-1919"/>
-        <location line="+1922"/>
+        <location line="-1923"/>
+        <location line="+1926"/>
         <source>Comments...</source>
         <translation>Commentaar...</translation>
     </message>
     <message>
-        <location line="-1907"/>
-        <location line="+1913"/>
+        <location line="-1911"/>
+        <location line="+1917"/>
         <source>eD2K Links...</source>
         <translation>eD2K-links...</translation>
     </message>
     <message>
-        <location line="-1901"/>
+        <location line="-1905"/>
         <source>Move to Anonymous ed3k Key...</source>
         <translation>Naar anonieme ed3k-sleutel verplaatsen...</translation>
     </message>
@@ -20416,7 +20464,7 @@ De bestanden blijven op de schijf staan.</numerusform>
         <translation>eD2K-links voor de eerste %1 van %2 geselecteerde bestanden worden getoond.</translation>
     </message>
     <message>
-        <location line="+297"/>
+        <location line="+299"/>
         <source>Share Directory</source>
         <translation>Map delen</translation>
     </message>
@@ -20426,7 +20474,7 @@ De bestanden blijven op de schijf staan.</numerusform>
         <translation>Delen incl. submappen</translation>
     </message>
     <message>
-        <location line="+17"/>
+        <location line="+19"/>
         <location line="+523"/>
         <source>Unshare Directory</source>
         <translation>Map delen stoppen</translation>
@@ -20488,8 +20536,8 @@ Ze worden dan gepubliceerd met het adres van deze node: iedereen kan zien dat de
         <translation>Het bestand is niet verplaatst: %1</translation>
     </message>
     <message>
-        <location line="-2031"/>
-        <location line="+1915"/>
+        <location line="-2035"/>
+        <location line="+1919"/>
         <source>Copy eD2K Links</source>
         <translation>eD2K-links kopiëren</translation>
     </message>

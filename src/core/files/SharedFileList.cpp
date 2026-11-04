@@ -197,6 +197,7 @@ SharedFileList::~SharedFileList()
     for (const auto& [item, fresh] : m_fullRehash.changed)
         delete fresh;
     saveHashFailures();
+    saveDuplicates();
     saveKadPublishStore();
     // Note: files in m_map are owned by KnownFileList, not us
 }
@@ -222,9 +223,7 @@ void SharedFileList::saveKadPublishStore()
 
 void SharedFileList::reload()
 {
-    rescan(QStringList{});
-    if (m_watcher)
-        m_watcher->setRoots(watchRoots());
+    rescan(QStringList{});   // also hands the watcher its roots
 }
 
 void SharedFileList::rescanDirectory(const QString& dir)
@@ -241,9 +240,14 @@ void SharedFileList::rescanDirectories(const QStringList& dirs)
 
 QStringList SharedFileList::watchRoots() const
 {
+    return watchRoots(shareRoots());
+}
+
+QStringList SharedFileList::watchRoots(const QStringList& shareRoots) const
+{
     // Files shared one by one live in directories that are not shared; a change to
     // them is only seen if those directories are watched as well.
-    QStringList roots = shareRoots();
+    QStringList roots = shareRoots;
     QSet<QString> seen;
     for (const QString& dir : roots)
         seen.insert(pathKey(dir));
@@ -470,6 +474,7 @@ std::vector<QString> SharedFileList::browseDirectoryNames()
     };
     add(thePrefs.sharedDirs());
     add(thePrefs.allIncomingDirs());
+    add(shareRoots(rules));   // the share trees' subfolders; those named above are skipped
     return names;
 }
 
@@ -533,6 +538,7 @@ void SharedFileList::process()
     if (const time_t now = std::time(nullptr); now >= m_hashFailuresCheckedAt + 60) {
         m_hashFailuresCheckedAt = now;
         saveHashFailures();
+        saveDuplicates();
     }
 }
 
@@ -590,7 +596,58 @@ SharedFileList::ShareRules SharedFileList::shareRules() const
             rules.sharedDirs.insert(pathKey(dir));
     if (const QString root = thePrefs.usenetTempDir(); !root.isEmpty())
         rules.usenetTempRoot = pathKey(QDir(root).absolutePath());
+
+    // #124: downloads land in subfolders (torrents, Usenet jobs, hoster packages)
+    if (thePrefs.shareIncomingSubdirs()) {
+        QStringList trees = thePrefs.allIncomingDirs();
+        trees.append(thePrefs.btDownloadDir());
+        for (const QString& dir : trees) {
+            if (dir.isEmpty())
+                continue;
+            const QString clean = QDir::cleanPath(QDir(dir).absolutePath());
+            if (!rules.treeRootKeys.contains(pathKey(clean))) {
+                rules.treeRoots.append(clean);
+                rules.treeRootKeys.append(pathKey(clean));
+            }
+        }
+        // the app's own folders stay out, wherever they sit
+        QStringList own = thePrefs.tempDirs();
+        own << thePrefs.configDir() << thePrefs.usenetWatchDir();
+        for (const QString& dir : own)
+            if (!dir.isEmpty())
+                rules.treeExcluded.append(pathKey(QDir(dir).absolutePath()));
+    }
     return rules;
+}
+
+bool SharedFileList::inShareTree(const ShareRules& rules, const QString& dirKey)
+{
+    if (dirKey.isEmpty())
+        return false;
+    const auto atOrBelow = [&dirKey](const QString& root) {
+        return dirKey == root || dirKey.startsWith(root + u'/');
+    };
+    const auto root = std::ranges::find_if(rules.treeRootKeys, atOrBelow);
+    if (root == rules.treeRootKeys.end())
+        return false;
+    // only a folder below the root counts: with --config incoming sits in the config dir
+    if (std::ranges::any_of(rules.treeExcluded, [&](const QString& ex) {
+            return ex.startsWith(*root + u'/') && atOrBelow(ex);
+        }))
+        return false;
+    // hidden folders are not walked (shareRoots), so not shared either
+    return !QStringView(dirKey).mid(root->size()).contains(u"/.");
+}
+
+void SharedFileList::setStillWriting(std::function<bool(const QString&)> check)
+{
+    m_stillWriting = std::move(check);
+    dropNeverShared();
+}
+
+bool SharedFileList::isNeverShared(const QString& filePath) const
+{
+    return (m_neverShared && m_neverShared(filePath)) || (m_stillWriting && m_stillWriting(filePath));
 }
 
 void SharedFileList::setNeverShared(std::function<bool(const QString&)> check)
@@ -601,11 +658,11 @@ void SharedFileList::setNeverShared(std::function<bool(const QString&)> check)
 
 void SharedFileList::dropNeverShared()
 {
-    if (!m_neverShared)
+    if (!m_neverShared && !m_stillWriting)
         return;
     std::vector<KnownFile*> drop;
     forEach([&](KnownFile* file) {
-        if (file && !file->isPartFile() && !file->filePath().isEmpty() && m_neverShared(file->filePath()))
+        if (file && !file->isPartFile() && !file->filePath().isEmpty() && isNeverShared(file->filePath()))
             drop.push_back(file);
     });
     for (KnownFile* file : drop)
@@ -633,8 +690,9 @@ bool SharedFileList::shouldBeShared(const ShareRules& rules, const QString& dirP
         if (key == rules.usenetTempRoot || key.startsWith(rules.usenetTempRoot + QLatin1Char('/')))
             return false;
     }
-    // ed3k: an opened plain copy of a sealed set member is never shared (setNeverShared)
-    if (m_neverShared && !filePath.isEmpty() && m_neverShared(filePath))
+    // ed3k: an opened plain copy of a sealed set member is never shared (setNeverShared);
+    // nor a file BT is still writing (setStillWriting)
+    if (!filePath.isEmpty() && isNeverShared(filePath))
         return false;
 
     const QString dirKey = pathKey(dirPath);
@@ -659,7 +717,9 @@ bool SharedFileList::shouldBeShared(const ShareRules& rules, const QString& dirP
             return true;
     }
 
-    return rules.sharedDirs.contains(dirKey);
+    // a subfolder of incoming / the BT dir (#124); unlike incoming itself a file there
+    // can be unshared, so after the single-file rules
+    return rules.sharedDirs.contains(dirKey) || inShareTree(rules, dirKey);
 }
 
 bool SharedFileList::excludeFile(const QString& filePath)
@@ -714,6 +774,11 @@ bool SharedFileList::addFileInSharedLocation(const QString& filePath)
 
     checkAndAddSingleFile(filePath);
     return true;
+}
+
+bool SharedFileList::shareCompletedFile(const QString& filePath)
+{
+    return addFileInSharedLocation(filePath) || addSingleSharedFile(filePath);
 }
 
 bool SharedFileList::addSingleSharedFile(const QString& filePath)
@@ -1320,6 +1385,11 @@ void SharedFileList::onHashingFinished(KnownFile* file, uint64 generation)
     if (const KnownFile* dup = getFileByID(file->fileHash())) {
         logInfo(QStringLiteral("Duplicate file not shared: %1 has the same content as %2")
                     .arg(file->filePath(), dup->filePath()));
+        // Remembered, or the next rescan hashes it again
+        m_duplicates.insert(pathKey(file->filePath()),
+                            {file->filePath(), static_cast<uint64>(file->fileSize()),
+                             file->utcFileDate(),
+                             QByteArray(reinterpret_cast<const char*>(file->fileHash()), 16)});
         delete file;
         QMutexLocker hashLocker(&m_hashMutex);
         hashNextFile();
@@ -1505,11 +1575,57 @@ void SharedFileList::saveHashFailures()
         m_hashFailuresSaved = signature;
 }
 
+void SharedFileList::setDuplicateStorePath(const QString& path)
+{
+    m_duplicateStorePath = path;
+    loadDuplicates();
+}
+
+void SharedFileList::loadDuplicates()
+{
+    for (DuplicateRecord& rec : DuplicateFileStore::read(m_duplicateStorePath))
+        m_duplicates.insert(pathKey(rec.path), {std::move(rec.path), rec.size, rec.mtime,
+                                                std::move(rec.fileHash)});
+    m_duplicatesSaved = 0;
+    m_hashFailuresCheckedAt = 0;   // shared save tick
+}
+
+void SharedFileList::saveDuplicates()
+{
+    if (m_duplicateStorePath.isEmpty())
+        return;
+
+    std::vector<DuplicateRecord> records;
+    records.reserve(m_duplicates.size());
+    for (const DuplicateFile& dup : m_duplicates)
+        records.push_back({dup.path, dup.size, dup.mtime, dup.fileHash});
+    std::ranges::sort(records, {}, &DuplicateRecord::path);
+
+    size_t signature = qHash(records.size()) + 1;   // never 0, the "nothing saved" mark
+    for (const DuplicateRecord& rec : records)
+        signature = qHashMulti(signature, rec.path, rec.size, static_cast<qint64>(rec.mtime),
+                               rec.fileHash);
+    if (signature == m_duplicatesSaved)
+        return;
+    // Nothing on disk and nothing to say: no empty file
+    if (records.empty() && m_duplicatesSaved == 0 && !QFile::exists(m_duplicateStorePath)) {
+        m_duplicatesSaved = signature;
+        return;
+    }
+    if (DuplicateFileStore::write(m_duplicateStorePath, records))
+        m_duplicatesSaved = signature;
+}
+
 // ---------------------------------------------------------------------------
 // rescan — bring the share in line with the disk
 // ---------------------------------------------------------------------------
 
 QStringList SharedFileList::shareRoots() const
+{
+    return shareRoots(shareRules());
+}
+
+QStringList SharedFileList::shareRoots(const ShareRules& rules) const
 {
     QStringList roots;
     QSet<QString> seen;
@@ -1525,6 +1641,38 @@ QStringList SharedFileList::shareRoots() const
         add(dir);
     for (const QString& dir : thePrefs.sharedDirs())
         add(dir);
+
+    // Share trees: every subfolder, flat roots like the rest. Links followed, each
+    // folder once (a loop ends); hidden and the app's own folders skipped.
+    QSet<QString> walked;
+    QString rootKey;   // the tree being walked: only folders below it are excluded
+    const auto excluded = [&rules, &rootKey](const QString& key) {
+        const auto hit = [&](const QString& ex) {
+            return !ex.isEmpty() && ex.startsWith(rootKey + u'/')
+                && (key == ex || key.startsWith(ex + u'/'));
+        };
+        return std::ranges::any_of(rules.treeExcluded, hit) || hit(rules.usenetTempRoot);
+    };
+    std::function<void(const QString&)> walk = [&](const QString& dir) {
+        const QString canonical = QFileInfo(dir).canonicalFilePath();
+        if (canonical.isEmpty() || walked.contains(canonical))
+            return;
+        walked.insert(canonical);
+        for (const QFileInfo& fi : QDir(dir).entryInfoList(QDir::Dirs | QDir::NoDotAndDotDot)) {
+            if (fi.fileName().startsWith(u'.'))
+                continue;
+            const QString path = fi.absoluteFilePath();
+            if (excluded(pathKey(path)))
+                continue;
+            add(path);
+            walk(path);
+        }
+    };
+    for (const QString& tree : rules.treeRoots) {
+        rootKey = pathKey(tree);
+        add(tree);   // the BT dir; incoming ones are in already
+        walk(tree);
+    }
     return roots;
 }
 
@@ -1559,8 +1707,9 @@ void SharedFileList::listDirectory(const QString& dir, QHash<QString, DiskEntry>
 #endif
         if (!isShareableFile(fi))
             continue;
-        // ed3k: an opened plain copy (setNeverShared): a known file would join unasked
-        if (m_neverShared && m_neverShared(fi.absoluteFilePath()))
+        // ed3k: an opened plain copy (setNeverShared): a known file would join unasked;
+        // a torrent still downloading (setStillWriting)
+        if (isNeverShared(fi.absoluteFilePath()))
             continue;
 
         const QString filename = fi.fileName();
@@ -1603,14 +1752,18 @@ void SharedFileList::rescan(const QStringList& onlyDirs)
         if (!dir.isEmpty())
             scope.insert(pathKey(dir));
     bool full = scope.isEmpty();
-    if (!full)
-        widenScopeForMoves(scope);
+    const ShareRules rules = shareRules();
+    const QStringList roots = shareRoots(rules);   // walks the share trees once
+    if (!full) {
+        widenScopeForTrees(scope, rules, roots);
+        widenScopeForMoves(scope, roots);
+    }
     full = scope.isEmpty();
     const time_t now = std::time(nullptr);
 
     // 1. What the disk offers. Deliberately unlocked: this walks the share from disk.
     QHash<QString, DiskEntry> onDisk;
-    for (const QString& dir : shareRoots())
+    for (const QString& dir : roots)
         if (full || scope.contains(pathKey(dir)))
             listDirectory(dir, onDisk);
 
@@ -1687,6 +1840,28 @@ void SharedFileList::rescan(const QStringList& onlyDirs)
     int joined = 0;
     std::vector<UnknownFileEntry> toHash;
     QSet<QString> wantedUnknown;
+    // Not a known file: wanted, and hashed unless it failed before or is still settling
+    const auto considerUnknown = [&](const QString& key, const DiskEntry& entry) {
+        wantedUnknown.insert(key);
+
+        if (const auto failure = m_hashFailures.find(key); failure != m_hashFailures.end()) {
+            const bool same = failure->size == entry.size && failure->mtime == entry.mtime;
+            if (!failure->givenUp || same)
+                return;   // a retry is on its way, or nothing changed since we gave up
+            m_hashFailures.erase(failure);
+        }
+
+        // Written a moment ago, probably still being written: look again later
+        // rather than hash a file that is not all there.
+        if (m_settleSecs > 0 && entry.mtime <= now && now - entry.mtime < m_settleSecs) {
+            m_settleDirs.insert(entry.directory, now + kSettleRecheckSecs);
+            return;
+        }
+
+        toHash.push_back({entry.directory, entry.filename, entry.sharedDirectory, key,
+                          entry.size, entry.mtime, volumeKeyFor(entry.directory)});
+    };
+    std::vector<decltype(onDisk.constBegin())> copies;
     for (auto it = onDisk.constBegin(); it != onDisk.constEnd(); ++it) {
         const QString& key = it.key();
         const DiskEntry& entry = *it;
@@ -1713,24 +1888,26 @@ void SharedFileList::rescan(const QStringList& onlyDirs)
             continue;
         }
 
-        wantedUnknown.insert(key);
-
-        if (const auto failure = m_hashFailures.find(key); failure != m_hashFailures.end()) {
-            const bool same = failure->size == entry.size && failure->mtime == entry.mtime;
-            if (!failure->givenUp || same)
-                continue;   // a retry is on its way, or nothing changed since we gave up
-            m_hashFailures.erase(failure);
+        // A copy of a shared file: judged once every known file has joined, as its
+        // original may come later in this loop (first scan after a restart)
+        if (const auto dup = m_duplicates.constFind(key); dup != m_duplicates.constEnd()) {
+            if (dup->size == entry.size
+                && sameFileDate(dup->mtime, entry.mtime, isLocalTimeVolume(entry.directory))) {
+                copies.push_back(it);
+                continue;
+            }
+            m_duplicates.erase(dup);
         }
 
-        // Written a moment ago, probably still being written: look again later
-        // rather than hash a file that is not all there.
-        if (m_settleSecs > 0 && entry.mtime <= now && now - entry.mtime < m_settleSecs) {
-            m_settleDirs.insert(entry.directory, now + kSettleRecheckSecs);
+        considerUnknown(key, entry);
+    }
+    // Nothing new to learn from a copy while its original stays shared
+    for (const auto& it : copies) {
+        const auto dup = m_duplicates.constFind(it.key());
+        if (getFileByID(reinterpret_cast<const uint8*>(dup->fileHash.constData())))
             continue;
-        }
-
-        toHash.push_back({entry.directory, entry.filename, entry.sharedDirectory, key,
-                          entry.size, entry.mtime, volumeKeyFor(entry.directory)});
+        m_duplicates.erase(dup);
+        considerUnknown(it.key(), *it);
     }
     orderForHashing(toHash, coldStart);
 
@@ -1763,7 +1940,15 @@ void SharedFileList::rescan(const QStringList& onlyDirs)
             theApp.downloadQueue->addPartFilesToShare();
         m_keywords.purgeUnreferencedKeywords();
         m_hashFailures.removeIf([&](const auto& it) { return !present.contains(it.key()); });
+        m_duplicates.removeIf([&](const auto& it) { return !present.contains(it.key()); });
     }
+
+    // a share tree grew or lost a folder
+    m_lastRootKeys.clear();
+    for (const QString& root : roots)
+        m_lastRootKeys.insert(pathKey(root));
+    if (m_watcher)
+        m_watcher->setRoots(watchRoots(roots));
 
     if (joined > 0 || relocated > 0 || !leaving.empty() || !toHash.empty())
         logInfo(QStringLiteral("Shared files%1: %2 joined, %3 left, %4 renamed, %5 to hash")
@@ -1771,7 +1956,38 @@ void SharedFileList::rescan(const QStringList& onlyDirs)
                     .arg(joined).arg(leaving.size()).arg(relocated).arg(toHash.size()));
 }
 
-void SharedFileList::widenScopeForMoves(QSet<QString>& scope) const
+void SharedFileList::widenScopeForTrees(QSet<QString>& scope, const ShareRules& rules,
+                                        const QStringList& roots) const
+{
+    QStringList trees;
+    for (const QString& key : std::as_const(scope))
+        if (inShareTree(rules, key))
+            trees.append(key);
+    if (trees.isEmpty())
+        return;
+    const auto below = [&trees](const QString& key) {
+        return std::ranges::any_of(trees, [&key](const QString& t) { return key.startsWith(t + u'/'); });
+    };
+    // only what moved since the last scan: a new folder is listed, the rest have
+    // their own watch
+    QSet<QString> rootKeys;
+    for (const QString& root : roots) {
+        const QString key = pathKey(root);
+        rootKeys.insert(key);
+        if (below(key) && !m_lastRootKeys.contains(key))
+            scope.insert(key);
+    }
+    // a folder gone from disk: its shared files are judged too, and leave
+    forEach([&](KnownFile* file) {
+        if (!file || file->isPartFile())
+            return;
+        const QString key = pathKey(file->filePath());
+        if (const QString dir = key.left(key.lastIndexOf(u'/')); below(dir) && !rootKeys.contains(dir))
+            scope.insert(dir);
+    });
+}
+
+void SharedFileList::widenScopeForMoves(QSet<QString>& scope, const QStringList& roots) const
 {
     // The two ends of a move are reported apart, sometimes seconds apart. A shared
     // file that is gone from a directory in scope is looked for under its own name
@@ -1796,7 +2012,7 @@ void SharedFileList::widenScopeForMoves(QSet<QString>& scope) const
         return;
 
     QStringList others;
-    for (const QString& root : shareRoots())
+    for (const QString& root : roots)
         if (!scope.contains(pathKey(root)))
             others.append(root);
     if (others.isEmpty())

@@ -93,6 +93,7 @@ SOURCES += \
     DaemonApp.cpp \
     ApiEventFeeder.cpp \
     BtBridge.cpp \
+    BtShareGuard.cpp \
     Ed3kBridge.cpp \
     Ed3kFriendsBridge.cpp \
     Ed3kRoomsBridge.cpp \
@@ -130,6 +131,7 @@ HEADERS += \
     DaemonApp.h \
     ApiEventFeeder.h \
     BtBridge.h \
+    BtShareGuard.h \
     Ed3kBridge.h \
     Ed3kOffGate.h \
     Ed3kFriendsBridge.h \

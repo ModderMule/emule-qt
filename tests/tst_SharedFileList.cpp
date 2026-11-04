@@ -93,11 +93,15 @@ private slots:
     void reload_leavesUnchangedFilesAlone();
     void reload_aShiftedDateOnALocalTimeVolumeIsNotAChangedFile();
     void reload_followsDeleteChangeAndRename();
+    void incomingTree_sharesSubfoldersButNotOwnOnes();
+    void stillWriting_keepsATorrentOutUntilDone();
+    void completedDownload_sharedInAnIncomingSubfolderEitherWay();
     void reload_doesNotHashAFileTwice();
     void hashFailure_isRetriedThenRememberedUntilTheFileChanges();
     void freshFile_isHeldBackWhileWatching();
     void watching_picksUpACopiedInFileWithoutAReload();
     void hashFinished_duplicateContentKeepsTheSharedFile();
+    void rescan_duplicateIsNotHashedAgain();
 
     // OP_OFFERFILES selection (MFC SendListToServer)
     void offer_capIsTheServersSoftFilesLimit();
@@ -1183,6 +1187,113 @@ void tst_SharedFileList::reload_followsDeleteChangeAndRename()
     QCOMPARE(shared.getCount(), 2);
 }
 
+// #124: incoming shared with its subfolders; hidden and the app's own folders not. A
+// rescan of incoming finds a new folder, and a removed one's files leave.
+void tst_SharedFileList::incomingTree_sharesSubfoldersButNotOwnOnes()
+{
+    ShareEnv env;
+    const QString incoming = thePrefs.incomingDir();
+    const QString temp = QDir(incoming).filePath(QStringLiteral("temp"));
+    const QStringList oldTemps = thePrefs.tempDirs();
+    thePrefs.setTempDirs({temp});
+    thePrefs.setShareIncomingSubdirs(true);
+    const QString deep = writeFile(incoming + QStringLiteral("/Torrent/CD1"), QStringLiteral("track.mp3"), QByteArray(700, 't'));
+    const QString hidden = writeFile(incoming + QStringLiteral("/.cache"), QStringLiteral("h.bin"), QByteArray(710, 'h'));
+    const QString inTemp = writeFile(temp + QStringLiteral("/sub"), QStringLiteral("x.bin"), QByteArray(720, 'x'));
+    const QString top = writeFile(incoming, QStringLiteral("top.bin"), QByteArray(730, 'o'));
+
+    KnownFileList knownFiles;
+    SharedFileList shared(&knownFiles);
+    shared.reload();
+    QTRY_VERIFY_WITH_TIMEOUT(sharedAt(shared, deep) && sharedAt(shared, top), 10000);
+    QVERIFY(!sharedAt(shared, hidden));
+    QVERIFY(!sharedAt(shared, inTemp));
+    QCOMPARE(shared.getCount(), 2);
+    // below incoming a file can be unshared, unlike in incoming itself
+    QVERIFY(shared.excludeFile(deep));
+    QVERIFY(!sharedAt(shared, deep));
+    QVERIFY(!shared.excludeFile(top));
+
+    // a new folder: a rescan of incoming alone finds it
+    const QString fresh = writeFile(incoming + QStringLiteral("/Usenet Job/Sample"), QStringLiteral("movie.mkv"), QByteArray(740, 'm'));
+    shared.rescanDirectory(incoming);
+    QTRY_VERIFY_WITH_TIMEOUT(sharedAt(shared, fresh), 10000);
+    // a removed one: its files leave
+    QVERIFY(QDir(incoming + QStringLiteral("/Usenet Job")).removeRecursively());
+    shared.rescanDirectory(incoming);
+    QVERIFY(!sharedAt(shared, fresh));
+
+    // shared again: the exclusion goes
+    QVERIFY(shared.addSingleSharedFile(deep));
+    QTRY_VERIFY_WITH_TIMEOUT(sharedAt(shared, deep), 10000);
+
+    // off: MFC, incoming alone
+    thePrefs.setShareIncomingSubdirs(false);
+    QVERIFY(!shared.shouldBeShared(QFileInfo(deep).absolutePath(), {}, false));
+    shared.reload();
+    QVERIFY(sharedAt(shared, top));
+    QVERIFY(!sharedAt(shared, deep));
+    thePrefs.setShareIncomingSubdirs(true);
+    thePrefs.setTempDirs(oldTemps);
+}
+
+// #124: a torrent's files are not hashed while BitTorrent writes them; once done the
+// folder is scanned again, and a file written again goes at once
+void tst_SharedFileList::stillWriting_keepsATorrentOutUntilDone()
+{
+    ShareEnv env;
+    thePrefs.setShareIncomingSubdirs(true);
+    const QString incoming = thePrefs.incomingDir();
+    const QString file = writeFile(incoming + QStringLiteral("/Some Torrent"), QStringLiteral("a.bin"), QByteArray(900, 'b'));
+    const QString other = writeFile(incoming, QStringLiteral("other.bin"), QByteArray(910, 'c'));
+
+    KnownFileList knownFiles;
+    SharedFileList shared(&knownFiles);
+    bool writing = true;
+    shared.setStillWriting([&](const QString& p) { return writing && p.contains(QStringLiteral("Some Torrent")); });
+    shared.reload();
+    QTRY_VERIFY_WITH_TIMEOUT(sharedAt(shared, other), 10000);
+    QVERIFY(!sharedAt(shared, file));
+    QVERIFY(!shared.addFileInSharedLocation(file));
+
+    writing = false;
+    shared.rescanDirectory(QFileInfo(file).absolutePath());
+    QTRY_VERIFY_WITH_TIMEOUT(sharedAt(shared, file), 10000);
+
+    writing = true;   // e.g. a skipped file picked again
+    shared.dropNeverShared();
+    QVERIFY(!sharedAt(shared, file));
+    QVERIFY(sharedAt(shared, other));
+    shared.setStillWriting({});
+}
+
+// a finished ed3k set member / hoster package / Usenet job in incoming/<folder>/: shared by
+// the tree, and as a single shared file with shareIncomingSubdirs off (MFC shares downloads)
+void tst_SharedFileList::completedDownload_sharedInAnIncomingSubfolderEitherWay()
+{
+    ShareEnv env;
+    const QString incoming = thePrefs.incomingDir();
+    const QString inTree = writeFile(incoming + QStringLiteral("/Some Set"), QStringLiteral("a.bin"), QByteArray(920, 'a'));
+    const QString single = writeFile(incoming + QStringLiteral("/Other Set/CD1"), QStringLiteral("b.bin"), QByteArray(930, 'b'));
+    const QString top = writeFile(incoming, QStringLiteral("c.bin"), QByteArray(940, 'c'));
+
+    KnownFileList knownFiles;
+    SharedFileList shared(&knownFiles);
+    thePrefs.setShareIncomingSubdirs(true);
+    QVERIFY(shared.shareCompletedFile(inTree));
+    QTRY_VERIFY_WITH_TIMEOUT(sharedAt(shared, inTree), 10000);
+
+    thePrefs.setShareIncomingSubdirs(false);
+    QVERIFY(!shared.addFileInSharedLocation(single));
+    QVERIFY(shared.shareCompletedFile(single));
+    QVERIFY(shared.shareCompletedFile(top));
+    QTRY_VERIFY_WITH_TIMEOUT(sharedAt(shared, single) && sharedAt(shared, top), 10000);
+    // a single shared file: it stays after a reload
+    shared.reload();
+    QTRY_VERIFY_WITH_TIMEOUT(sharedAt(shared, single), 10000);
+    thePrefs.setShareIncomingSubdirs(true);
+}
+
 void tst_SharedFileList::reload_doesNotHashAFileTwice()
 {
     ShareEnv env;
@@ -1830,6 +1941,68 @@ void tst_SharedFileList::hashFinished_duplicateContentKeepsTheSharedFile()
     QCOMPARE(shared.getFileByID(hash), first);
     QCOMPARE(knownFiles.findKnownFileByID(hash), first);
     QCOMPARE(first->fileName(), QStringLiteral("first.bin"));   // still alive and readable
+
+    theApp.sharedFileList = nullptr;
+}
+
+// #130: a copy of a shared file was dropped without a trace, so every rescan hashed
+// it again (and stored its AICH set again). Hashed once, until it or the original changes.
+void tst_SharedFileList::rescan_duplicateIsNotHashedAgain()
+{
+    eMule::testing::TempDir tmp;
+    const QString shareDir = tmp.filePath(QStringLiteral("share"));
+    const QByteArray content(3000, 'd');
+    const QString pathA = writeFile(shareDir, QStringLiteral("a.bin"), content);
+    const QString pathB = writeFile(shareDir, QStringLiteral("b.bin"), content);
+    QVERIFY(!pathA.isEmpty() && !pathB.isEmpty());
+
+    thePrefs.setConfigDir(tmp.path());
+    thePrefs.setIncomingDir(tmp.filePath(QStringLiteral("incoming")));
+    thePrefs.setSharedDirs({shareDir});
+
+    KnownFileList knownFiles;
+    SharedFileList shared(&knownFiles);
+    theApp.sharedFileList = &shared;
+    shared.reload();
+    QTRY_COMPARE_WITH_TIMEOUT(shared.getHashingCount(), 0, 10000);
+    QCOMPARE(shared.getCount(), 1);
+
+    // Nothing changed: nothing to hash
+    shared.reload();
+    QCOMPARE(shared.getHashingCount(), 0);
+
+    // After a restart neither: duplicates.dat remembers the copy
+    {
+        const QString store = tmp.filePath(QStringLiteral("duplicates.dat"));
+        SharedFileList first(&knownFiles);
+        first.setDuplicateStorePath(store);
+        theApp.sharedFileList = &first;
+        first.reload();
+        QTRY_COMPARE_WITH_TIMEOUT(first.getHashingCount(), 0, 10000);
+        QCOMPARE(first.getCount(), 1);
+    }   // saved on destruction
+    {
+        SharedFileList second(&knownFiles);
+        second.setDuplicateStorePath(tmp.filePath(QStringLiteral("duplicates.dat")));
+        theApp.sharedFileList = &second;
+        second.reload();
+        QCOMPARE(second.getHashingCount(), 0);
+        QCOMPARE(second.getCount(), 1);
+    }
+    theApp.sharedFileList = &shared;
+
+    // The original leaves: the copy takes its place
+    KnownFile* kept = nullptr;
+    shared.forEachFile([&](KnownFile* f) { kept = f; });
+    QVERIFY(kept);
+    const QString keptPath = kept->filePath();
+    QVERIFY(QFile::remove(keptPath));
+    shared.reload();
+    QTRY_COMPARE_WITH_TIMEOUT(shared.getCount(), 1, 10000);
+    KnownFile* now = nullptr;
+    shared.forEachFile([&](KnownFile* f) { now = f; });
+    QVERIFY(now);
+    QVERIFY(QFileInfo(now->filePath()) != QFileInfo(keptPath));
 
     theApp.sharedFileList = nullptr;
 }

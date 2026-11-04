@@ -4055,11 +4055,9 @@ void UsenetQueue::publishStaged(ItemRuntime& rt, const UsenetPostResult& result)
             continue;
         }
 
-        // addFileInSharedLocation(), not addSingleSharedFile(): the latter is for
-        // a file no shared directory covers, and it refuses the incoming
-        // directory outright because isShareableDirectory() excludes it. Using
-        // the wrong one logs a warning and shares nothing until a full rescan.
-        if (theApp.sharedFileList && !theApp.sharedFileList->addFileInSharedLocation(finalPath)) {
+        // shared location first (incoming itself refuses a single share), else a
+        // single shared file: a job's subfolder of incoming with shareIncomingSubdirs off
+        if (theApp.sharedFileList && !theApp.sharedFileList->shareCompletedFile(finalPath)) {
             logUsenetWarning(QStringLiteral("Usenet: \"%1\" completed but is not in a shared "
                                       "location; it will not be offered to peers")
                            .arg(QFileInfo(finalPath).fileName()));

@@ -100,6 +100,26 @@ builds the package rows from them and sums size, progress, speed and states. The
 folder name: `/` and `\` become `_`. Removing an item with its file removes the package folder
 once it is empty. Actions on a package row act on all its items.
 
+## Extraction and sharing
+
+- Done file not an archive (or extraction off): moves to `<incoming>[/<package>]/`.
+- Archive (`UsenetUnpacker::isArchiveVolume`: rar, partNN.rar, r00, zip, 7z, tar, .001) with
+  `extract` on: waits in `<temp>/hoster-archives/<package or _>/`, never in incoming. Reason
+  `UnpackWaiting` until no item of the same package with the same set key (name without volume
+  suffix) is still on its way; then one set at a time (`Ed3kHosterUnpack`, worker thread):
+  extracted into `.unpack/` beside the archives, moved into `<incoming>[/<package>]/` (archive
+  folders kept, taken names get ` (n)`) under the `.usenetpart` suffix the share scan skips.
+  `Unpacking` (arg %), then `Unpacked` (arg = folder; *Open folder* opens it), `UnpackFailed`
+  (headless set, broken archive) or `UnpackPassword`; *Retry* runs a failed one again.
+- `deleteArchives` on: the set's volumes go after a good unpack; off: they stay in Temp.
+- Extraction switched off: waiting and failed archives move to incoming as they are.
+- An interrupted unpack (`Unpacking` in items.json) runs again at the next start.
+- Sharing: every file that lands in incoming goes through `setPublishedHook` → daemon
+  `addFileInSharedLocation`, else `addSingleSharedFile`. With `shareIncomingSubdirs` (default on,
+  #124) a package subfolder is shared with incoming; off, it is no shared dir: single shared
+  files, sharedfiles.dat as MFC). Ed3kShared serves eD2K's list on ed3k.
+- Kept archives in Temp are not shared, so a hoster root of an archive is not served to ed3k peers.
+
 ## Link checks of a links dialog
 
 `WebLinksDialog` sends `CheckHosterLinks` with every link when it opens, while hosters are `enabled`
@@ -188,6 +208,8 @@ A stream that breaks goes on from where it stood instead of starting over:
 | `publishLinks` | `ed3kHosterPublishLinks` | **on** | §4.1: vouched links get an `ALIAS` record and are handed out; switching on asks first. Off = holding links back; on is the `hoster.md` §4.1 default |
 | `fromPeers` | `ed3kHosterFromPeers` | on | use links peers name |
 | `checkSearchLinks` | `ed3kHosterCheckSearchLinks` | on | a web search row's links dialog checks its links |
+| `extract` | `ed3kHosterExtract` | on | unpack archives into `<incoming>/<package>/`, archives stay in Temp |
+| `deleteArchives` | `ed3kHosterDeleteArchives` | off | delete archives after a good unpack; greyed out while `extract` is off |
 | `checkMaxParallel` | — (YAML only) | 30 | 1-256: those checks at once |
 | `checkMaxPerHost` | — (YAML only) | 5 | 1-64: of them at one hoster |
 | `recheckHours` | — (YAML only) | 72 | 0-8760: a published link is checked again after this; 0 = never |
@@ -308,3 +330,4 @@ go over a loopback socket and stdin is empty, so any console read gets EOF.
   hoster items use them now.
 - The address check of `http-source.md` §5 for the sidecar's own requests (needs a hook in JD's `Browser`).
 - A signed online refresh of `resolver.zip`; an OS keychain for account passwords.
+- Archive passwords: no package password yet; an encrypted set ends as `UnpackPassword`.

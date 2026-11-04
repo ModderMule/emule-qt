@@ -807,7 +807,8 @@ enum class IpcMsgType : int {
     // with the node off or not built too (available / running false).
 
     /// [] -> [ok, {available, running, udpPort, nodeId (hex), contacts, class4, class6
-    ///   (0 unknown, 1 open, 2 cone, 3 symmetric), router, wireSent, wireRecv (bytes),
+    ///   (0 unknown, 1 open, 2 cone, 3 symmetric), natChecking (bits 0 v4, 1 v6: reach
+    ///   test without verdict), router, wireSent, wireRecv (bytes),
     ///   rateUp, rateDown (B/s), limitUpKb, limitDownKb (0 = none),
     ///   stats: {connections, lookups, records, recordBytes, published, queueLen,
     ///           bannedNodes, bannedHosts, sentFile, sentOther, recvFile, recvOther},

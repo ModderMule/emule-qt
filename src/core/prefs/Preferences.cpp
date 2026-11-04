@@ -50,7 +50,8 @@ namespace {
 ///   2 — ipFilterLevel raised off the legacy 100, which filtered nothing
 ///   3 — BitTorrent switched on: builds before it never compiled BT in, so a stored
 ///       `enabled: false` was only the old default
-constexpr uint32 kCurrentPrefsVersion = 3;
+///   4 — incoming shared with its subfolders (torrents, Usenet, hoster packages; #124)
+constexpr uint32 kCurrentPrefsVersion = 4;
 
 /// See Preferences::usenetSubjectPatternsRevision().
 ///
@@ -282,6 +283,7 @@ struct Preferences::Data {
     bool rememberCancelledFiles = true;
     bool autoRenameToMajorityName = false;
     bool watchSharedDirs = true;   // OS file watcher on shared folders
+    bool shareIncomingSubdirs = true;   // incoming + BT download dir shared with subfolders (#124)
     bool seenFileIndex = true;   // remember files seen in search results (seenfiles.db)
 
     // Transfer
@@ -2584,6 +2586,10 @@ bool Preferences::applyEd3kHosterKey(Ed3kHosterPrefs& h, const QString& key, con
         h.fromPeers = val.toBool(h.fromPeers);
     else if (key == QLatin1StringView("ed3kHosterCheckSearchLinks"))
         h.checkSearchLinks = val.toBool(h.checkSearchLinks);
+    else if (key == QLatin1StringView("ed3kHosterExtract"))
+        h.extract = val.toBool(h.extract);
+    else if (key == QLatin1StringView("ed3kHosterDeleteArchives"))
+        h.deleteArchives = val.toBool(h.deleteArchives);
     else if (key == QLatin1StringView("ed3kHosterAccounts")) {
         if (!val.isArray())
             return true;
@@ -3292,6 +3298,10 @@ void Preferences::setAutoRenameToMajorityName(bool val) { set(&Data::autoRenameT
 bool Preferences::watchSharedDirs() const { return get(&Data::watchSharedDirs); }
 
 void Preferences::setWatchSharedDirs(bool val) { set(&Data::watchSharedDirs, val); }
+
+bool Preferences::shareIncomingSubdirs() const { return get(&Data::shareIncomingSubdirs); }
+
+void Preferences::setShareIncomingSubdirs(bool val) { set(&Data::shareIncomingSubdirs, val); }
 bool Preferences::seenFileIndex() const { return get(&Data::seenFileIndex); }
 void Preferences::setSeenFileIndex(bool val) { set(&Data::seenFileIndex, val); }
 
@@ -3684,6 +3694,7 @@ QCborMap Preferences::toIpcMap() const
     prefs.insert(QStringLiteral("rememberCancelledFiles"), rememberCancelledFiles());
     prefs.insert(QStringLiteral("autoRenameToMajorityName"), autoRenameToMajorityName());
     prefs.insert(QStringLiteral("watchSharedDirs"), watchSharedDirs());
+    prefs.insert(QStringLiteral("shareIncomingSubdirs"), shareIncomingSubdirs());
     prefs.insert(QStringLiteral("seenFileIndex"), seenFileIndex());
 
     // Notifications (daemon-side)
@@ -3866,6 +3877,8 @@ QCborMap Preferences::toIpcMap() const
         prefs.insert(QStringLiteral("ed3kHosterPublishLinks"), h.publishLinks);
         prefs.insert(QStringLiteral("ed3kHosterFromPeers"), h.fromPeers);
         prefs.insert(QStringLiteral("ed3kHosterCheckSearchLinks"), h.checkSearchLinks);
+        prefs.insert(QStringLiteral("ed3kHosterExtract"), h.extract);
+        prefs.insert(QStringLiteral("ed3kHosterDeleteArchives"), h.deleteArchives);
         // passwords stay in the daemon (hoster.md §3)
         QCborArray accounts;
         for (const Ed3kHosterAccount& a : h.accounts)
@@ -4050,6 +4063,7 @@ void Preferences::updateFromCbor(const QCborMap& p)
     m_data->rememberCancelledFiles        = p.value(QStringLiteral("rememberCancelledFiles")).toBool();
     m_data->autoRenameToMajorityName      = p.value(QStringLiteral("autoRenameToMajorityName")).toBool(false);
     m_data->watchSharedDirs               = p.value(QStringLiteral("watchSharedDirs")).toBool(true);
+    m_data->shareIncomingSubdirs          = p.value(QStringLiteral("shareIncomingSubdirs")).toBool(true);
     m_data->seenFileIndex                 = p.value(QStringLiteral("seenFileIndex")).toBool(true);
 
     // Notifications
@@ -4723,6 +4737,7 @@ bool Preferences::load(const QString& filePath)
             m_data->rememberCancelledFiles = f["rememberCancelledFiles"].as<bool>(m_data->rememberCancelledFiles);
             m_data->autoRenameToMajorityName = f["autoRenameToMajorityName"].as<bool>(m_data->autoRenameToMajorityName);
             m_data->watchSharedDirs = f["watchSharedDirs"].as<bool>(m_data->watchSharedDirs);
+            m_data->shareIncomingSubdirs = f["shareIncomingSubdirs"].as<bool>(m_data->shareIncomingSubdirs);
             m_data->seenFileIndex = f["seenFileIndex"].as<bool>(m_data->seenFileIndex);
         }
 
@@ -5484,6 +5499,8 @@ bool Preferences::load(const QString& filePath)
                 h.publishLinks = ho["publishLinks"].as<bool>(h.publishLinks);
                 h.fromPeers = ho["fromPeers"].as<bool>(h.fromPeers);
                 h.checkSearchLinks = ho["checkSearchLinks"].as<bool>(h.checkSearchLinks);
+                h.extract = ho["extract"].as<bool>(h.extract);
+                h.deleteArchives = ho["deleteArchives"].as<bool>(h.deleteArchives);
                 h.checkMaxParallel = std::clamp(ho["checkMaxParallel"].as<int>(h.checkMaxParallel), 1, 256);
                 h.checkMaxPerHost = std::clamp(ho["checkMaxPerHost"].as<int>(h.checkMaxPerHost), 1, 64);
                 h.recheckHours = std::clamp(ho["recheckHours"].as<int>(h.recheckHours), 0, 8760);
@@ -5729,6 +5746,10 @@ bool Preferences::load(const QString& filePath)
         // v3: BT is on by default now; nobody could have chosen off before
         if (m_data->startVersion < 3)
             m_data->btEnabled = true;
+
+        // v4: incoming subfolders shared; before, only the folder itself was
+        if (m_data->startVersion < 4)
+            m_data->shareIncomingSubdirs = true;
 
         m_data->startVersion = kCurrentPrefsVersion;
         saveImpl(m_filePath);
@@ -6141,6 +6162,7 @@ bool Preferences::saveImpl(const QString& filePath) const
     out << YAML::Key << "rememberCancelledFiles" << YAML::Value << m_data->rememberCancelledFiles;
     out << YAML::Key << "autoRenameToMajorityName" << YAML::Value << m_data->autoRenameToMajorityName;
     out << YAML::Key << "watchSharedDirs" << YAML::Value << m_data->watchSharedDirs;
+    out << YAML::Key << "shareIncomingSubdirs" << YAML::Value << m_data->shareIncomingSubdirs;
     out << YAML::Key << "seenFileIndex" << YAML::Value << m_data->seenFileIndex;
     out << YAML::EndMap;
 
@@ -6798,6 +6820,8 @@ bool Preferences::saveImpl(const QString& filePath) const
         out << YAML::Key << "publishLinks" << YAML::Value << h.publishLinks;
         out << YAML::Key << "fromPeers" << YAML::Value << h.fromPeers;
         out << YAML::Key << "checkSearchLinks" << YAML::Value << h.checkSearchLinks;
+        out << YAML::Key << "extract" << YAML::Value << h.extract;
+        out << YAML::Key << "deleteArchives" << YAML::Value << h.deleteArchives;
         out << YAML::Key << "checkMaxParallel" << YAML::Value << h.checkMaxParallel;
         out << YAML::Key << "checkMaxPerHost" << YAML::Value << h.checkMaxPerHost;
         out << YAML::Key << "recheckHours" << YAML::Value << h.recheckHours;

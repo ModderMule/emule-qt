@@ -46,7 +46,11 @@ public:
 
     [[nodiscard]] bool recheckIP() const;
     void setRecheckIP();
-    void incRecheckIP();
+    /// @param now overridable for tests
+    void incRecheckIP(time_t now = time(nullptr));
+    /// Not MFC: the recheck got its last FIREWALLED_RES at least `graceSecs` ago, so the
+    /// TCP acks of those nodes had time to come in
+    [[nodiscard]] bool recheckSettled(time_t graceSecs, time_t now = time(nullptr)) const;
 
     // -- Connection -----------------------------------------------------------
 
@@ -143,6 +147,7 @@ private:
     uint32 m_ipLast = 0;
     uint32 m_recheckIp = 0;
     uint32 m_firewallCounter = 0;
+    time_t m_recheckDoneAt = 0;   ///< when m_recheckIp reached KADEMLIAFIREWALLCHECKS
     uint32 m_kademliaUsers = 0;
     uint32 m_kademliaFiles = 0;
     uint8 m_totalFile = 0;

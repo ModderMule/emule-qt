@@ -331,6 +331,8 @@ void CoreSession::initUploadPipeline()
         theApp.sharedFileList = m_sharedFileList.get();
         m_sharedFileList->setHashFailureStorePath(
             QDir(thePrefs.configDir()).filePath(QString::fromLatin1(kHashFailureFileName)));
+        m_sharedFileList->setDuplicateStorePath(
+            QDir(thePrefs.configDir()).filePath(QString::fromLatin1(kDuplicateFileName)));
         m_sharedFileList->setKadPublishStorePath(
             QDir(thePrefs.configDir()).filePath(QString::fromLatin1(kKadPublishFileName)));
 

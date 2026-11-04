@@ -49,6 +49,7 @@ SOURCES += \
     Ed3kPaid.cpp \
     Ed3kPaidSeller.cpp \
     Ed3kHosterJoin.cpp \
+    Ed3kHosterUnpack.cpp \
     Ed3kHttp.cpp \
     Ed3kHide.cpp \
     Ed3kJoinBase.cpp \
@@ -87,6 +88,7 @@ HEADERS += \
     Ed3kPaidSeller.h \
     Ed3kProto.h \
     Ed3kHosterJoin.h \
+    Ed3kHosterUnpack.h \
     Ed3kHttp.h \
     Ed3kHide.h \
     Ed3kJoinBase.h \
