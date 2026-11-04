@@ -81,6 +81,20 @@ int pinnedIndex(qintptr fd)
     if (family == AF_INET
         && ::getsockopt(static_cast<int>(fd), IPPROTO_IP, IP_BOUND_IF, &idx, &len) == 0)
         return static_cast<int>(idx);
+#elif defined(Q_OS_WIN)
+    // Accepted sockets inherit the listener's pin. A connected dual-stack socket refuses
+    // the pin of the family it does not carry (v4 peer: IPv6 10049, v6 peer: IPv4 10022).
+    const SOCKET s = static_cast<SOCKET>(fd);
+    DWORD idx = 0;
+    int len = sizeof(idx);
+    const int family = socketFamily(fd);
+    if (family == AF_INET6
+        && ::getsockopt(s, IPPROTO_IPV6, IPV6_UNICAST_IF, reinterpret_cast<char*>(&idx), &len) == 0)
+        return static_cast<int>(idx);
+    // set in network order, read back in host order; take either
+    if (family == AF_INET
+        && ::getsockopt(s, IPPROTO_IP, IP_UNICAST_IF, reinterpret_cast<char*>(&idx), &len) == 0)
+        return static_cast<int>(idx < 0x10000 ? idx : ntohl(idx));
 #else
     Q_UNUSED(fd);
 #endif
