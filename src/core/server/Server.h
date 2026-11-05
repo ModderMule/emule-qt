@@ -299,8 +299,8 @@ public:
     /// MFC: CServer::SetServerKeyUDP() — Server.cpp:329.
     void setServerKeyUDP(uint32 key);
 
-    /// NAT-T: serverKeyUDP(), or else a key received since @p sessionStartMs (epoch ms)
-    /// while nothing contradicts it. The server derived it from the address our UDP
+    /// NAT-T: a key received since @p sessionStartMs (epoch ms) while nothing contradicts
+    /// it; an older one never counts (serverKeyUDP() when the login time is unknown). The server derived it from the address our UDP
     /// reached it from, and while the TCP session lives that address is unchanged, also
     /// when our public IP became unknown (Kad gone; ed2k-server never reports a LowID's).
     [[nodiscard]] uint32 sessionKeyUDP(qint64 sessionStartMs) const;

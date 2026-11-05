@@ -135,8 +135,8 @@ using Kind = PrefSpec::Kind;
     t << flag("autoRenameToMajorityName", "Rename a download once to the name most of its sources use "
               "(at least 5 sources and 60%; never after a manual rename or for a suspected fake).");
     t << flag("watchSharedDirs", "Pick up files added to shared folders as they appear (OS file watcher).");
-    t << flag("shareIncomingSubdirs", "Share the subfolders of the incoming folders and the BitTorrent "
-              "download folder too (torrents, Usenet jobs, unpacked hoster packages).");
+    t << flag("shareIncomingSubdirs", "Share the subfolders of the incoming folders too (torrents, Usenet "
+              "jobs, unpacked hoster packages). Other shared folders stay flat.");
     t << flag("seenFileIndex", "Keep a local index of files seen in search results.");
     t << flag("useSaveLoadSources", "Save the sources of rare files and reload them at start.");
     t << readOnly(text("incomingDir", 4096, "Directory completed downloads are moved to."));

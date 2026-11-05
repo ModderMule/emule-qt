@@ -9,6 +9,7 @@
 #include <QFileInfo>
 #include <QFont>
 #include <QHostAddress>
+#include <QNetworkInterface>
 #include <QLibraryInfo>
 #include <QLocale>
 #include <QMessageBox>
@@ -115,10 +116,34 @@ QString resolveDaemonPath()
 }
 
 /// The configured core address is another machine: nothing to discover or launch here.
+/// A wildcard (0.0.0.0, ::) or one of this machine's own addresses is local (#120):
+/// taken as remote, the core could not be attached, and GUI exit wrote its stale
+/// preferences.yml over the core's own.
 bool isRemoteCoreAddress(const QString& host)
 {
-    const QHostAddress addr(host);   // "" and "localhost" parse as null
-    return !addr.isNull() && !addr.isLoopback();
+    QHostAddress addr(host);   // "" and "localhost" parse as null
+    if (addr.isNull() || addr.isLoopback() || addr == QHostAddress::AnyIPv4
+        || addr == QHostAddress::AnyIPv6 || addr == QHostAddress::Any)
+        return false;
+    addr.setScopeId({});
+    for (QHostAddress own : QNetworkInterface::allAddresses()) {
+        own.setScopeId({});
+        if (own.isEqual(addr, QHostAddress::TolerantConversion))
+            return false;
+    }
+    return true;
+}
+
+/// Where to dial the core: a wildcard listen address is reached over loopback,
+/// where the core trusts the GUI without a token (and Windows refuses 0.0.0.0).
+QString coreDialHost(const QString& host)
+{
+    const QHostAddress addr(host);
+    if (addr == QHostAddress::AnyIPv6)
+        return QStringLiteral("::1");
+    if (addr == QHostAddress::AnyIPv4 || addr == QHostAddress::Any)
+        return QStringLiteral("127.0.0.1");
+    return host;
 }
 
 /// Nothing listens on the local IPC port, so no core is running. A bind probe, as
@@ -653,10 +678,16 @@ int main(int argc, char* argv[])
                 // "local" mode — assume daemon is already running on localhost
                 eMule::logInfo(QStringLiteral("Local mode — connecting to localhost:%1").arg(port));
             }
+            if (!isRemote)
+                connectHost = coreDialHost(connectHost);
         }
 
-        // Send auth token only when we don't own the daemon process
-        if (isRemote || daemonPath == QStringLiteral("local")) {
+        // Send auth token only when we don't own the daemon process, or when the
+        // core is dialed on one of this machine's own non-loopback addresses: it
+        // trusts loopback only.
+        const QHostAddress dialAddr(connectHost);
+        if (isRemote || daemonPath == QStringLiteral("local")
+            || (!dialAddr.isNull() && !dialAddr.isLoopback())) {
             if (!eMule::thePrefs.ipcTokens().isEmpty())
                 ipcClient.setAuthToken(eMule::thePrefs.ipcTokens().first());
         }
@@ -920,7 +951,7 @@ int main(int argc, char* argv[])
                     ipcClient.setAuthToken(dlg->token());
                     if (dlg->saveToken())
                         eMule::thePrefs.setIpcTokens({dlg->token()});
-                    ipcClient.connectToDaemon(QHostAddress(dlg->address()), dlg->port());
+                    ipcClient.connectToDaemon(QHostAddress(coreDialHost(dlg->address())), dlg->port());
                 });
                 QObject::connect(dlg, &QDialog::rejected, &mainWindow, &eMule::MainWindow::forceQuit);
                 dlg->open();

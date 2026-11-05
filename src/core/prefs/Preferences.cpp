@@ -283,7 +283,7 @@ struct Preferences::Data {
     bool rememberCancelledFiles = true;
     bool autoRenameToMajorityName = false;
     bool watchSharedDirs = true;   // OS file watcher on shared folders
-    bool shareIncomingSubdirs = true;   // incoming + BT download dir shared with subfolders (#124)
+    bool shareIncomingSubdirs = true;   // incoming dirs shared with subfolders (#124, not BT dir #131)
     bool seenFileIndex = true;   // remember files seen in search results (seenfiles.db)
 
     // Transfer

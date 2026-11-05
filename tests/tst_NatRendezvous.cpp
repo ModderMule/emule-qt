@@ -512,16 +512,32 @@ void tst_NatRendezvous::keepalive_tokenSentWhileUdpAddressDiffers()
     Server& s = logInExtension(f);
     s.setNatToken(token.data());
     f.hub->process();
-    // ed2k-server 0.9.87 believes a token 0x9F from any address: no pause
+    // ed2k-server 0.9.87 believes a token 0x9F from any address: no pause, and plain even
+    // with a key (the key is bound to the stat ping's source address)
     auto ka = f.env->udpWith(OP_EDONKEYPROT, OP_SERVER_NATT_KEEPALIVE);
     QCOMPARE(ka.size(), size_t{1});
-    QCOMPARE(ka[0].serverKey, kServerKey);
+    QCOMPARE(ka[0].serverKey, 0u);
+    QCOMPARE(ka[0].to, Endpoint(kServerIP, kServerPort + 4));
     QCOMPARE(ka[0].payload.size(), 32);
     QCOMPARE(QByteArray(ka[0].payload.constData(), 16),
              QByteArray(reinterpret_cast<const char*>(f.env->hash.data()), 16));
     QCOMPARE(ka[0].payload.mid(16), QByteArray(reinterpret_cast<const char*>(token.data()), 16));
     f.advance(60000);
     QCOMPARE(f.env->udpWith(OP_EDONKEYPROT, OP_SERVER_NATT_KEEPALIVE).size(), size_t{2});
+
+    // token arrives after an obfuscated one went out: plain from then on, never skipped
+    HubFixture h;
+    Server& t = logInExtension(h);
+    h.hub->process();
+    ka = h.env->udpWith(OP_EDONKEYPROT, OP_SERVER_NATT_KEEPALIVE);
+    QCOMPARE(ka.size(), size_t{1});
+    QCOMPARE(ka[0].serverKey, kServerKey);
+    t.setNatToken(token.data());
+    h.advance(60000);
+    ka = h.env->udpWith(OP_EDONKEYPROT, OP_SERVER_NATT_KEEPALIVE);
+    QCOMPARE(ka.size(), size_t{2});
+    QCOMPARE(ka[1].serverKey, 0u);
+    QCOMPARE(ka[1].payload.size(), 32);
 
     // no token: 16 bytes, as before
     HubFixture g;
@@ -633,6 +649,16 @@ void tst_NatRendezvous::ext_keepaliveObfuscatedOnceKeyKnown()
     f.advance(60000);
     QCOMPARE(f.env->udpWith(OP_EDONKEYPROT, OP_SERVER_NATT_KEEPALIVE).size(), size_t{2});
     QVERIFY(f.env->keyRefreshes > refreshes);
+
+    // a key from an earlier session (server.met) does not count: plain, fresh key asked for
+    HubFixture e;
+    e.env->sessionStartMs = QDateTime::currentMSecsSinceEpoch() + 60000;
+    logInExtension(e);
+    e.hub->process();
+    ka = e.env->udpWith(OP_EDONKEYPROT, OP_SERVER_NATT_KEEPALIVE);
+    QCOMPARE(ka.size(), size_t{1});
+    QCOMPARE(ka[0].serverKey, 0u);
+    QVERIFY(e.env->keyRefreshes > 0);
 
     // a 0.9.84 server gets it plain even with a key
     HubFixture g;
@@ -1134,7 +1160,8 @@ void tst_NatRendezvous::sessionKeyUDP_rules()
     QCOMPARE(s.sessionKeyUDP(before), kServerKey);
 
     s.setServerKeyUDP(kServerKey);                  // stamped ipA
-    QCOMPARE(s.sessionKeyUDP(after), kServerKey);   // valid the MFC way, any session
+    QCOMPARE(s.sessionKeyUDP(after), 0u);           // valid the MFC way, but an earlier session
+    QCOMPARE(s.sessionKeyUDP(0), kServerKey);       // login time unknown: the MFC rule
     theApp.setPublicIP(0);
     QCOMPARE(s.sessionKeyUDP(before), kServerKey);
     QCOMPARE(s.sessionKeyUDP(after), 0u);

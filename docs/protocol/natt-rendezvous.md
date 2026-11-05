@@ -66,15 +66,20 @@ Agreed in andrey23127/ed2k-server#39. It applies when the server sets `0x100000`
 together. Any other pair gets the plain flow above.
 
 - Keepalive: on such a server, server-key obfuscated to the server's UDP obfuscation port
-  (as `0xA6`) once we hold the key; plain until then. After the first obfuscated one the
+  (as `0xA6`) once we hold a key received in this login session; plain until then (a key
+  from `server.met` or an earlier session never counts: the server may have rotated its
+  seckey, or our UDP left from another address). After the first obfuscated one the
   server ignores plain ones for the session, so we never go back to plain: without a key the
   keepalive is skipped and a new key requested.
 - Session token (0.9.87): each session that may send `0x9F` (`0x100000`, `0x1000`, or a UDP
   port in `0xF9`) gets 16 random bytes in `OP_SERVERIDENT`, tag `ST_NATT_TOKEN` (`0xAC`, hash
   type), new on every login; a `0x100000` session gets that ident at login. We then send
-  `0x9F <user hash 16><token 16>` (plain or obfuscated as above), which the server believes
-  from any address: its source endpoint is what peers get in `0x61`/`0xA7`. A wrong token is
-  ignored; without one nothing changes. So:
+  `0x9F <user hash 16><token 16>`, always plain to TCP + 4 (periodic, with `0x60`, and in
+  bursts), which the server believes from any address, also after obfuscated ones: its
+  source endpoint is what peers get in `0x61`/`0xA7`. Never obfuscated: the server decodes
+  with `IPObfuscate(seckey, source ip)`, and a VPN or carrier NAT with a new exit per flow
+  sends the stat ping and the `0x9F` from different addresses, so none would decode
+  (ed2k-server#40, 2026-11-04). A wrong token is ignored; without one nothing changes. So:
   - carrier NAT with TCP and UDP on different public IPv4s: the periodic `0x9F` goes on. Only
     without a token is it paused while Kad sees our UDP on another IPv4 than the server
     reports for the TCP session (the server would drop each one).

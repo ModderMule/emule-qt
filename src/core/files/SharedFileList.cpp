@@ -597,11 +597,10 @@ SharedFileList::ShareRules SharedFileList::shareRules() const
     if (const QString root = thePrefs.usenetTempDir(); !root.isEmpty())
         rules.usenetTempRoot = pathKey(QDir(root).absolutePath());
 
-    // #124: downloads land in subfolders (torrents, Usenet jobs, hoster packages)
+    // #124: downloads land in subfolders (torrents, Usenet jobs, hoster packages).
+    // Incoming dirs only: a separate BT download dir or a shared dir stays flat (#131)
     if (thePrefs.shareIncomingSubdirs()) {
-        QStringList trees = thePrefs.allIncomingDirs();
-        trees.append(thePrefs.btDownloadDir());
-        for (const QString& dir : trees) {
+        for (const QString& dir : thePrefs.allIncomingDirs()) {
             if (dir.isEmpty())
                 continue;
             const QString clean = QDir::cleanPath(QDir(dir).absolutePath());
@@ -667,6 +666,9 @@ void SharedFileList::dropNeverShared()
     });
     for (KnownFile* file : drop)
         removeFile(file);
+
+    QMutexLocker hashLocker(&m_hashMutex);
+    dropBlockedFromHashQueue();
 }
 
 bool SharedFileList::shouldBeShared(const QString& dirPath, const QString& filePath,
@@ -1250,6 +1252,13 @@ void SharedFileList::hashNextFile()
         Load& l = load[worker];
         while (!queue.empty() && hasRoom(l)) {
             UnknownFileEntry& entry = queue.front();
+            // a retry of a file still being written: no worker time (#122). Per popped
+            // file only, no queue walk here (#67)
+            if (isNeverShared(entry.directory + u'/' + entry.filename)) {
+                skipBlockedRetry(entry.key);
+                queue.pop_front();
+                continue;
+            }
             HashingThread::Job job;
             job.directory = entry.directory;
             job.filename = entry.filename;
@@ -1271,6 +1280,29 @@ void SharedFileList::queueForHash(UnknownFileEntry entry)
 {
     HashingThread* worker = workerFor(entry.volume);
     m_waitingForHash[worker].push_back(std::move(entry));
+}
+
+void SharedFileList::dropBlockedFromHashQueue()
+{
+    if (!m_neverShared && !m_stillWriting)
+        return;
+    for (auto& [worker, queue] : m_waitingForHash) {
+        std::erase_if(queue, [this](const UnknownFileEntry& e) {
+            if (!isNeverShared(e.directory + u'/' + e.filename))
+                return false;
+            skipBlockedRetry(e.key);
+            return true;
+        });
+    }
+}
+
+void SharedFileList::skipBlockedRetry(const QString& key)
+{
+    // still a failure, tried again later: the torrent may be gone by then
+    if (const auto it = m_hashFailures.find(key); it != m_hashFailures.end()) {
+        it->queued = false;
+        it->retryAt = std::time(nullptr) + m_hashRetrySecs.back();
+    }
 }
 
 size_t SharedFileList::waitingForHashCount() const
@@ -1397,6 +1429,15 @@ void SharedFileList::onHashingFinished(KnownFile* file, uint64 generation)
     }
 
     m_hashFailures.remove(pathKey(file->filePath()));
+
+    // Blocked while it hashed (a torrent still writing it, #122): the hash is of
+    // unfinished data, so it is no known file either. Hashed again once released.
+    if (!file->filePath().isEmpty() && isNeverShared(file->filePath())) {
+        delete file;
+        QMutexLocker hashLocker(&m_hashMutex);
+        hashNextFile();
+        return;
+    }
 
     // Add to known files
     if (m_knownFiles) {
@@ -1670,7 +1711,7 @@ QStringList SharedFileList::shareRoots(const ShareRules& rules) const
     };
     for (const QString& tree : rules.treeRoots) {
         rootKey = pathKey(tree);
-        add(tree);   // the BT dir; incoming ones are in already
+        add(tree);   // in already: an incoming dir
         walk(tree);
     }
     return roots;

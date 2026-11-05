@@ -214,8 +214,8 @@ public:
         QSet<QString> incomingDirs;
         QSet<QString> sharedDirs;
         QString usenetTempRoot;
-        /// shareIncomingSubdirs: roots shared with all their subfolders (incoming dirs,
-        /// BT download dir) and the folders below them that are not (temp, config)
+        /// shareIncomingSubdirs: roots shared with all their subfolders (incoming dirs
+        /// only, #131) and the folders below them that are not (temp, config)
         QStringList treeRoots;      ///< as on disk, to walk
         QStringList treeRootKeys;   ///< pathKey of each
         QStringList treeExcluded;   ///< pathKeys
@@ -436,6 +436,11 @@ private:
     void hashNextFile();
     /// Append to the hash queue. m_hashMutex held.
     void queueForHash(UnknownFileEntry entry);
+    /// Takes files isNeverShared names off the hash queue: a torrent blocked after
+    /// the scan queued its files (#122). A retry waits for its next turn. m_hashMutex held.
+    void dropBlockedFromHashQueue();
+    /// A dropped hash-failure retry waits for its next turn. m_hashMutex held.
+    void skipBlockedRetry(const QString& key);
     /// Files waiting for any worker. m_hashMutex held.
     [[nodiscard]] size_t waitingForHashCount() const;
     /// The file a worker reported on is off it. m_hashMutex held.

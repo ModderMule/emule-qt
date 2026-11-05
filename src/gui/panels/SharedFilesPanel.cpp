@@ -105,16 +105,15 @@ constexpr int kRolePath = Qt::UserRole + 1;
 /// Marks the category sub-nodes: 1 a category's incoming folder, 2 its part files.
 constexpr int kRoleCategoryNode = Qt::UserRole + 4;
 
-/// shareIncomingSubdirs (#124): a folder strictly below an incoming dir or the BT
-/// download dir is shared by the core without being on the list (SharedFileList::inShareTree)
+/// shareIncomingSubdirs (#124): a folder strictly below an incoming dir is shared by
+/// the core without being on the list (SharedFileList::inShareTree); not the BT dir (#131)
 bool inIncomingTree(const QString& path)
 {
     if (!thePrefs.shareIncomingSubdirs())
         return false;
     const QString key = SharedDirState::dirKey(path);
-    QStringList roots = thePrefs.allIncomingDirs();
-    roots.append(thePrefs.btDownloadDir());
-    for (const QString& root : std::as_const(roots)) {
+    const QStringList roots = thePrefs.allIncomingDirs();
+    for (const QString& root : roots) {
         const QString rootKey = SharedDirState::dirKey(root);
         if (!SharedDirState::isBelowKey(key, rootKey))
             continue;

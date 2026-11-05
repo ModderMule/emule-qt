@@ -19,7 +19,8 @@
 /// send no 0xA6. No 0x60 from an IPv6 session (0x62 reason 5).
 ///
 /// Session token (ed2k-server 0.9.87, ST_NATT_TOKEN in OP_SERVERIDENT, new per login):
-/// 0x9F = <user hash 16><token 16>, believed from any address. Without one the periodic
+/// 0x9F = <user hash 16><token 16>, believed from any address and always sent plain (the
+/// server key is bound to one source address, the token is not). Without one the periodic
 /// 0x9F is paused while Kad sees our UDP on another IPv4 than the server sees our TCP on
 /// (carrier NAT): the server then only takes 0x9F from the session's address. An IPv6
 /// session with a token sends 0x9F plain to the server's IPv4 and may send 0x60.

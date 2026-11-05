@@ -228,9 +228,13 @@ void Server::setServerKeyUDP(uint32 key)
 
 uint32 Server::sessionKeyUDP(qint64 sessionStartMs) const
 {
-    if (const uint32 key = serverKeyUDP())
-        return key;
-    if (m_serverKeyUDP == 0 || sessionStartMs <= 0 || m_serverKeyUDPAtMs < sessionStartMs)
+    // Login time unknown: the MFC rule.
+    if (sessionStartMs <= 0)
+        return serverKeyUDP();
+    // A key from server.met or an earlier session is not trusted, even stamped with our
+    // IP: the server may have rotated its seckey, or our UDP left from another address
+    // then (ed2k-server#40: obfuscated 0x9F nobody could decode).
+    if (m_serverKeyUDP == 0 || m_serverKeyUDPAtMs < sessionStartMs)
         return 0;
     // hidden only by a known IP other than the one it was stamped with
     const uint32 ip = theApp.publicIP();

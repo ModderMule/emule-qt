@@ -18,6 +18,7 @@ private slots:
     void unfinished_blocksTheWholeContent();
     void done_releasesTheTreeAndKeepsSkippedFilesOut();
     void removed_keepsItsBlocks();
+    void finished_listsCompleteFilesOnce();
 };
 
 namespace {
@@ -105,6 +106,40 @@ void tst_BtShareGuard::removed_keepsItsBlocks()
     const auto c = guard.update(QStringLiteral("t"), std::nullopt, {});
     QVERIFY(c.released.isEmpty());
     QVERIFY2(guard.blocks(QStringLiteral("/in/movie.mkv")), "its partial file stays out");
+}
+
+// #131: finished files are listed for one-by-one sharing, once, and only after a download
+void tst_BtShareGuard::finished_listsCompleteFilesOnce()
+{
+    const auto files = [] {
+        BtFileRow done;
+        done.path = QStringLiteral("Album/01.mp3");
+        done.size = done.done = 100;
+        BtFileRow skipped;
+        skipped.path = QStringLiteral("Album/extras.zip");
+        skipped.size = 100;
+        BtFileRow pad;
+        pad.path = QStringLiteral(".pad/50");
+        pad.size = pad.done = 50;
+        pad.pad = true;
+        return QList<BtFileRow>{done, skipped, pad};
+    };
+    const QString id = QStringLiteral("t");
+    const QString save = QStringLiteral("/bt");
+    const QString album = QStringLiteral("Album");
+
+    BtShareGuard guard;
+    QVERIFY(guard.update(id, row(save, album, 0.5, BtState::Downloading), files).finished.isEmpty());
+    // a move between done and seeding keeps it "downloaded this session"
+    QVERIFY(guard.update(id, row(save, album, 1.0, BtState::Moving), files).finished.isEmpty());
+    const auto c = guard.update(id, row(save, album, 1.0, BtState::Seeding), files);
+    QCOMPARE(c.finished, QStringList{QStringLiteral("/bt/Album/01.mp3")});
+    QVERIFY(guard.update(id, row(save, album, 1.0, BtState::Seeding), files).finished.isEmpty());
+
+    // loaded complete (a restart): nothing listed, an unshared file stays unshared
+    BtShareGuard restart;
+    QVERIFY(restart.update(id, row(save, album, 0.0, BtState::CheckingResume), files).finished.isEmpty());
+    QVERIFY(restart.update(id, row(save, album, 1.0, BtState::Seeding), files).finished.isEmpty());
 }
 
 QTEST_GUILESS_MAIN(tst_BtShareGuard)

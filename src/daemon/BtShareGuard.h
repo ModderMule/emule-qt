@@ -28,6 +28,9 @@ public:
     struct Change {
         QStringList released;    ///< folders to rescan: their files may be shared now
         bool blockedMore = false;  ///< drop shared files that are blocked now
+        /// its complete files, once, when a torrent seen downloading turns done (#131):
+        /// shared one by one outside a shared folder
+        QStringList finished;
     };
 
     /// The torrent as it is now; nullopt = removed (its blocks stay for the session).
@@ -37,6 +40,7 @@ public:
 private:
     struct Entry {
         bool done = false;
+        bool downloading = false;   ///< settled and not done: done next = just finished
         QStringList paths;   ///< as on disk
         QStringList keys;    ///< SharedFileList::pathKey of each
     };

@@ -704,7 +704,8 @@ bool DaemonApp::start()
     btSession = m_btSession.get();
     BtBridge::setSession(m_btSession.get());
     // #124: libtorrent writes under the final names, so an unfinished torrent's files
-    // stay out of the eD2K / ed3k share; a finished one's folder is scanned again
+    // stay out of the eD2K / ed3k share; a finished one's folder is scanned again, and
+    // outside a shared folder (own BT dir, #131) its files are shared one by one
     if (theApp.sharedFileList)
         theApp.sharedFileList->setStillWriting([this](const QString& p) { return m_btShareGuard.blocks(p); });
     {
@@ -719,6 +720,10 @@ bool DaemonApp::start()
                 theApp.sharedFileList->dropNeverShared();
             if (!change.released.isEmpty())
                 theApp.sharedFileList->rescanDirectories(change.released);
+            for (const QString& f : change.finished)
+                if (!theApp.sharedFileList->shouldBeShared(QFileInfo(f).absolutePath(), f, false)
+                    && !theApp.sharedFileList->addSingleSharedFile(f))
+                    logDebug(QStringLiteral("BitTorrent: %1 is not shared").arg(f));
         };
         connect(m_btSession.get(), &bt::BtSession::torrentAdded, this, guard);
         connect(m_btSession.get(), &bt::BtSession::torrentChanged, this, guard);

@@ -94,7 +94,9 @@ private slots:
     void reload_aShiftedDateOnALocalTimeVolumeIsNotAChangedFile();
     void reload_followsDeleteChangeAndRename();
     void incomingTree_sharesSubfoldersButNotOwnOnes();
+    void incomingTree_otherDirsStayFlat();
     void stillWriting_keepsATorrentOutUntilDone();
+    void stillWriting_blockedAfterScanIsNotHashed();
     void completedDownload_sharedInAnIncomingSubfolderEitherWay();
     void reload_doesNotHashAFileTwice();
     void hashFailure_isRetriedThenRememberedUntilTheFileChanges();
@@ -1237,6 +1239,31 @@ void tst_SharedFileList::incomingTree_sharesSubfoldersButNotOwnOnes()
     thePrefs.setTempDirs(oldTemps);
 }
 
+// #131: only incoming shares its subfolders; a separate BT download dir and a shared
+// dir stay flat
+void tst_SharedFileList::incomingTree_otherDirsStayFlat()
+{
+    ShareEnv env;
+    const QString btDir = env.tmp.filePath(QStringLiteral("torrents"));
+    const QString oldBt = thePrefs.btDownloadDir();
+    thePrefs.setBtDownloadDir(btDir);
+    thePrefs.setShareIncomingSubdirs(true);
+    const QString inBt = writeFile(btDir + QStringLiteral("/Torrent"), QStringLiteral("a.bin"), QByteArray(750, 'a'));
+    const QString below = writeFile(env.shareDir + QStringLiteral("/sub"), QStringLiteral("b.bin"), QByteArray(760, 'b'));
+    const QString flat = env.put(QStringLiteral("c.bin"), QByteArray(770, 'c'));
+    const QString deep = writeFile(thePrefs.incomingDir() + QStringLiteral("/Job"), QStringLiteral("d.bin"), QByteArray(780, 'd'));
+
+    KnownFileList knownFiles;
+    SharedFileList shared(&knownFiles);
+    shared.reload();
+    QTRY_VERIFY_WITH_TIMEOUT(sharedAt(shared, flat) && sharedAt(shared, deep), 10000);
+    QVERIFY(!sharedAt(shared, inBt));
+    QVERIFY(!sharedAt(shared, below));
+    QVERIFY(!shared.shouldBeShared(QFileInfo(inBt).absolutePath(), {}, false));
+    QVERIFY(!shared.shouldBeShared(QFileInfo(below).absolutePath(), {}, false));
+    thePrefs.setBtDownloadDir(oldBt);
+}
+
 // #124: a torrent's files are not hashed while BitTorrent writes them; once done the
 // folder is scanned again, and a file written again goes at once
 void tst_SharedFileList::stillWriting_keepsATorrentOutUntilDone()
@@ -1264,6 +1291,40 @@ void tst_SharedFileList::stillWriting_keepsATorrentOutUntilDone()
     shared.dropNeverShared();
     QVERIFY(!sharedAt(shared, file));
     QVERIFY(sharedAt(shared, other));
+    shared.setStillWriting({});
+}
+
+// #122: a torrent blocked after the scan queued its files (resume data loads after
+// the share scan): they leave the hash queue, an in-flight hash is no known file
+void tst_SharedFileList::stillWriting_blockedAfterScanIsNotHashed()
+{
+    ShareEnv env;
+    thePrefs.setShareIncomingSubdirs(true);
+    const QString incoming = thePrefs.incomingDir();
+    QStringList files;
+    for (int i = 0; i < 40; ++i)
+        files << writeFile(incoming + QStringLiteral("/Late Torrent"), QStringLiteral("f%1.bin").arg(i),
+                           QByteArray(1000 + i, char('a' + i % 26)));
+    const QString other = writeFile(incoming, QStringLiteral("other.bin"), QByteArray(990, 'z'));
+
+    KnownFileList knownFiles;
+    SharedFileList shared(&knownFiles);
+    bool writing = false;
+    shared.setStillWriting([&](const QString& p) { return writing && p.contains(QStringLiteral("Late Torrent")); });
+    shared.reload();   // queues all of them
+    writing = true;    // the torrent shows up
+    shared.dropNeverShared();
+
+    QTRY_VERIFY_WITH_TIMEOUT(sharedAt(shared, other), 10000);
+    QTest::qWait(1000);   // a hash already on a worker comes back
+    for (const QString& f : std::as_const(files)) {
+        QVERIFY2(!sharedAt(shared, f), qPrintable(f));
+        QVERIFY2(!knownFiles.findKnownFileByPath(f), qPrintable(f));
+    }
+
+    writing = false;   // done: shared once its folder is scanned again
+    shared.rescanDirectory(QFileInfo(files.first()).absolutePath());
+    QTRY_VERIFY_WITH_TIMEOUT(sharedAt(shared, files.first()) && sharedAt(shared, files.last()), 20000);
     shared.setStillWriting({});
 }
 
