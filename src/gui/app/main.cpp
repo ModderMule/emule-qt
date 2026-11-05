@@ -87,8 +87,13 @@ static void unixSignalHandler(int)
 
 namespace {
 
+/// Binary of the user's running core of another install, whose profile this GUI took
+/// over. Started again from there, so it finds that profile without --config.
+QString s_attachedCoreProgram;
+
 /// Resolve the daemon binary path.
-/// Priority: 1) "local" = assume daemon is running  2) explicit path  3) next to GUI binary.
+/// Priority: 1) "local" = assume daemon is running  2) explicit path
+/// 3) the attached core's own binary  4) next to GUI binary.
 QString resolveDaemonPath()
 {
     QString path = eMule::thePrefs.ipcDaemonPath();
@@ -99,6 +104,9 @@ QString resolveDaemonPath()
 
     if (!path.isEmpty() && QFileInfo::exists(path))
         return path;
+
+    if (!s_attachedCoreProgram.isEmpty() && QFileInfo::exists(s_attachedCoreProgram))
+        return s_attachedCoreProgram;
 
     // Look next to the GUI executable
     const QString appDir = QCoreApplication::applicationDirPath();
@@ -361,26 +369,48 @@ void quitWithoutPrompt()
     QTimer::singleShot(0, qApp, &QCoreApplication::quit);
 }
 
+/// Ask core @p pid to stop gracefully, without IPC. False when it cannot be told.
+bool stopCoreProcess(qint64 pid)
+{
+#ifndef Q_OS_WIN
+    // The core turns SIGTERM into a graceful stop
+    return ::kill(static_cast<pid_t>(pid), SIGTERM) == 0;
+#else
+    // Windows has no SIGTERM: WM_CLOSE to the core's hidden window does the same
+    // (daemon WinShutdownHandler, whose kWindowClass this must match)
+    constexpr wchar_t kCoreWindowClass[] = L"eMuleQtCoreShutdownWindow";
+    HWND window = nullptr;
+    while ((window = ::FindWindowExW(nullptr, window, kCoreWindowClass, nullptr)) != nullptr) {
+        DWORD owner = 0;
+        ::GetWindowThreadProcessId(window, &owner);
+        if (owner == static_cast<DWORD>(pid))
+            return ::PostMessageW(window, WM_CLOSE, 0, 0) != 0;
+    }
+    return false;
+#endif
+}
+
 /// Stop a core we started and cannot reach over IPC: busy enough to miss a
 /// keepalive, it would otherwise outlive the GUI and greet the next one already
 /// connected. The port still being held tells it from a core that is gone.
-void terminateUnreachableDaemon(qint64 pid, bool launchedByUs)
+void terminateUnreachableDaemon(qint64 pid, bool launchedByUs, const QString& configDir)
 {
-    if (pid <= 0)
-        return;
-    // A free port: no core, or ours still loading before it listens (#129).
-    // Only then is the pid known to be a core and not a reused one.
-    if (ipcPortFree(eMule::thePrefs.ipcListenAddress(), eMule::thePrefs.ipcPort())
-        && !(launchedByUs && processAlive(pid)))
-        return;
-#ifndef Q_OS_WIN
-    // The core turns SIGTERM into a graceful stop
-    eMule::logInfo(QStringLiteral("Core not reachable, stopping it by signal (pid %1)").arg(pid));
-    ::kill(static_cast<pid_t>(pid), SIGTERM);
-#else
-    // ToDo: Windows has no signal for this; the core needs a named event to wait on
-    eMule::logWarning(QStringLiteral("Core not reachable at exit, left running (pid %1)").arg(pid));
-#endif
+    // The profile's lock names its core for sure, also one started in a console
+    if (const qint64 holder = eMule::AppConfig::corePidFor(configDir); holder > 0) {
+        pid = holder;
+    } else {
+        if (pid <= 0)
+            return;
+        // A free port: no core, or ours still loading before it listens (#129).
+        // Only then is the pid known to be a core and not a reused one.
+        if (ipcPortFree(eMule::thePrefs.ipcListenAddress(), eMule::thePrefs.ipcPort())
+            && !(launchedByUs && processAlive(pid)))
+            return;
+    }
+    if (stopCoreProcess(pid))
+        eMule::logInfo(QStringLiteral("Core not reachable, asked it to stop (pid %1)").arg(pid));
+    else
+        eMule::logWarning(QStringLiteral("Core not reachable at exit, left running (pid %1)").arg(pid));
 }
 
 /// The donkey at every size we have art for. One file per size rather than
@@ -458,8 +488,20 @@ int main(int argc, char* argv[])
     cli.parse(app);
 
     // Load preferences early so language setting is available for translators
-    if (!cli.configOverride().isEmpty())
+    if (!cli.configOverride().isEmpty()) {
         eMule::AppConfig::setConfigDirOverride(cli.configOverride());
+    } else if (const auto core = eMule::AppConfig::runningUserCore();
+               core && !eMule::AppConfig::sameDir(core->configDir,
+                                                  eMule::AppConfig::defaultConfigDir())) {
+        // The user's core runs from another install (setup vs portable copy): attach
+        // to it and its profile instead of starting a second core
+        eMule::AppConfig::setAttachedConfigDir(core->configDir);
+        s_attachedCoreProgram = core->program;
+        eMule::logInfo(QStringLiteral("Core of another install is running (pid %1), using its "
+                                      "config at %2")
+                           .arg(core->pid)
+                           .arg(QDir::toNativeSeparators(core->configDir)));
+    }
     const QString configDir = eMule::AppConfig::configDir();
     eMule::CrashHandler::install(configDir + QStringLiteral("/crashes"));
 
@@ -504,16 +546,18 @@ int main(int argc, char* argv[])
         }
     }
 
-    // One GUI per install dir and profile when it starts its own core (issue #29).
-    // Another --config, another install, a remote or "local" core, or --new-instance
-    // each get a window of their own.
+    // One GUI per user when it starts its own core (issue #29), whatever dir it was
+    // installed to, as there is one core per user. Another --config, a remote or
+    // "local" core, or --new-instance each get a window of their own.
     std::unique_ptr<eMule::SingleInstance> singleInstance;
     if (!cli.screenshotMode() && !cli.newInstance() && eMule::thePrefs.ipcEnabled()
         && !isRemoteCoreAddress(eMule::thePrefs.ipcListenAddress())) {
         const QString ownedPath = resolveDaemonPath();
         if (!ownedPath.isEmpty() && ownedPath != QStringLiteral("local")) {
+            const bool profile = !cli.configOverride().isEmpty();
             singleInstance = std::make_unique<eMule::SingleInstance>(
-                QCoreApplication::applicationDirPath(), configDir);
+                profile ? QCoreApplication::applicationDirPath() : QString(),
+                profile ? configDir : QString());
             if (!singleInstance->tryBecomePrimary()) {
                 const QStringList args =
                     eMule::SingleInstance::absoluteArgs(cli.positionalArgs());
@@ -552,6 +596,8 @@ int main(int argc, char* argv[])
     auto daemonLost = std::make_shared<bool>(false);
     // Of the core we launched; 0 = none, or not known
     auto daemonPid = std::make_shared<qint64>(0);
+    // The last core still holds its profile while saving on the way out
+    bool previousCoreStopping = false;
     if (eMule::thePrefs.ipcEnabled() && !isRemoteCoreAddress(eMule::thePrefs.ipcListenAddress())) {
         const QString earlyPath = resolveDaemonPath();
         const bool ownsCore = !earlyPath.isEmpty() && earlyPath != QStringLiteral("local");
@@ -560,6 +606,11 @@ int main(int argc, char* argv[])
         // After an update the updater has just started the core: it may not listen yet
         if (ownsCore && !cli.afterUpdate()
             && ipcPortFree(eMule::thePrefs.ipcListenAddress(), eMule::thePrefs.ipcPort())) {
+            // Lock held, port free: the new core waits for it to finish (lockAfterStop)
+            previousCoreStopping = eMule::AppConfig::coreRunningFor(configDir);
+            if (previousCoreStopping)
+                eMule::logInfo(QStringLiteral("The previous core is still shutting down, "
+                                              "the new one waits for it"));
             const bool hold = !cli.screenshotMode() && !eMule::theUiState.firstStartWizardDone();
             *weOwnDaemon = launchDaemon(earlyPath, hold, *daemonPid);
             if (*weOwnDaemon)
@@ -922,6 +973,9 @@ int main(int argc, char* argv[])
         // On first connection failure, try launching the daemon binary (local path only).
         // IpcClient auto-reconnects with exponential backoff regardless.
         if (*weOwnDaemon) {
+            // Past the core's own wait for its predecessor (100 s)
+            if (previousCoreStopping)
+                ipcClient.setStartGraceMs(120'000);
             ipcClient.expectDaemonStart();
         } else if (cli.afterUpdate()) {
             // The updated core loads (or rolls back) meanwhile; only then is one launched
@@ -1227,7 +1281,8 @@ int main(int argc, char* argv[])
                 ipcClient.disconnectFromDaemon();
                 // Attached, but the connection is down: there is nobody to ask
                 if (stopCore)
-                    terminateUnreachableDaemon(*daemonPid, *weOwnDaemon);
+                    terminateUnreachableDaemon(*daemonPid, *weOwnDaemon,
+                                               eMule::AppConfig::configDir());
                 else if (*weOwnDaemon)
                     eMule::logInfo(QStringLiteral("Core detached, left running"));
             }

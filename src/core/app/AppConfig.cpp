@@ -13,8 +13,11 @@
 #include <QDirIterator>
 #include <QFile>
 #include <QFileInfo>
+#include <QJsonDocument>
+#include <QJsonObject>
 #include <QLocale>
 #include <QLockFile>
+#include <QSaveFile>
 #include <QSet>
 #include <QStandardPaths>
 
@@ -68,11 +71,17 @@ int AppConfig::multiUserSharingMode()
 
 namespace {
     QString s_configDirOverride;
+    QString s_attachedConfigDir;
 }
 
 void AppConfig::setConfigDirOverride(const QString& path)
 {
     s_configDirOverride = path;
+}
+
+void AppConfig::setAttachedConfigDir(const QString& path)
+{
+    s_attachedConfigDir = path;
 }
 
 QString AppConfig::configDirOverride()
@@ -127,7 +136,9 @@ QString AppConfig::defaultConfigDir()
 
 QString AppConfig::configDir()
 {
-    const QString dir = s_configDirOverride.isEmpty() ? defaultConfigDir() : s_configDirOverride;
+    const QString dir = !s_configDirOverride.isEmpty() ? s_configDirOverride
+                        : !s_attachedConfigDir.isEmpty() ? s_attachedConfigDir
+                                                         : defaultConfigDir();
     QDir().mkpath(dir);
     return dir;
 }
@@ -145,6 +156,106 @@ bool AppConfig::coreRunningFor(const QString& configDir)
         return true;   // held, or not readable: assume a core
     lock.unlock();
     return false;
+}
+
+qint64 AppConfig::corePidFor(const QString& configDir)
+{
+    QLockFile lock(coreLockPath(configDir));
+    lock.setStaleLockTime(0);
+    if (lock.tryLock(0)) {
+        lock.unlock();
+        return 0;
+    }
+    qint64 pid = 0;
+    if (lock.error() != QLockFile::LockFailedError || !lock.getLockInfo(&pid, nullptr, nullptr))
+        return 0;
+    return pid;
+}
+
+namespace {
+
+QString userCoreDir()
+{
+#ifdef Q_OS_WIN
+    // %LOCALAPPDATA%: per user, and the same for every install dir
+    return QStandardPaths::writableLocation(QStandardPaths::GenericConfigLocation)
+           + QStringLiteral("/eMuleQt");
+#else
+    return QDir::homePath() + QStringLiteral("/eMuleQt");
+#endif
+}
+
+QString userCoreInfoPath()
+{
+    return userCoreDir() + QStringLiteral("/emulecored-user.json");
+}
+
+} // namespace
+
+QString AppConfig::userCoreLockPath()
+{
+    const QString dir = userCoreDir();
+    QDir().mkpath(dir);
+    return dir + QStringLiteral("/emulecored-user.lock");
+}
+
+void AppConfig::writeUserCore(const UserCore& core)
+{
+    QJsonObject obj;
+    obj.insert(QStringLiteral("configDir"), QDir(core.configDir).absolutePath());
+    obj.insert(QStringLiteral("program"), core.program);
+    obj.insert(QStringLiteral("pid"), core.pid);
+    QSaveFile file(userCoreInfoPath());
+    if (!file.open(QIODevice::WriteOnly)
+        || file.write(QJsonDocument(obj).toJson(QJsonDocument::Compact)) < 0 || !file.commit())
+        logWarning(QStringLiteral("Cannot write %1").arg(QDir::toNativeSeparators(userCoreInfoPath())));
+}
+
+AppConfig::UserCore AppConfig::lastUserCore()
+{
+    QFile file(userCoreInfoPath());
+    if (!file.open(QIODevice::ReadOnly))
+        return {};
+    const QJsonObject obj = QJsonDocument::fromJson(file.readAll()).object();
+    UserCore core;
+    core.configDir = obj.value(QStringLiteral("configDir")).toString();
+    core.program = obj.value(QStringLiteral("program")).toString();
+    core.pid = obj.value(QStringLiteral("pid")).toInteger();
+    return core;
+}
+
+std::optional<AppConfig::UserCore> AppConfig::runningUserCore()
+{
+    QLockFile lock(userCoreLockPath());
+    lock.setStaleLockTime(0);
+    if (lock.tryLock(0)) {
+        lock.unlock();
+        return std::nullopt;
+    }
+    if (lock.error() != QLockFile::LockFailedError)
+        return std::nullopt;   // dir not writable: cannot tell, act as before
+    UserCore core = lastUserCore();
+    // The record follows the lock: one of another core means a write that failed
+    qint64 holder = 0;
+    if (core.configDir.isEmpty() || !lock.getLockInfo(&holder, nullptr, nullptr)
+        || holder != core.pid)
+        return std::nullopt;
+    return core;
+}
+
+bool AppConfig::sameDir(const QString& a, const QString& b)
+{
+    const auto canonical = [](const QString& dir) {
+        const QFileInfo info(dir);
+        QString path = info.canonicalFilePath();
+        if (path.isEmpty())
+            path = QDir::cleanPath(info.absoluteFilePath());
+#ifdef Q_OS_WIN
+        path = path.toLower();
+#endif
+        return path;
+    };
+    return !a.isEmpty() && !b.isEmpty() && canonical(a) == canonical(b);
 }
 
 QString AppConfig::coreStartFailurePath(const QString& configDir)

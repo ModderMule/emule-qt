@@ -13,6 +13,8 @@
 #include <QStringList>
 #include <QLatin1StringView>
 
+#include <optional>
+
 namespace eMule {
 
 /// Application version string — single source of truth for daemon, GUI, and web server.
@@ -73,12 +75,43 @@ public:
     /// every consumer, not just the preferences.yml lookup in main().
     [[nodiscard]] static QString configDirOverride();
 
+    /// Config dir of the user's running core, taken over by a GUI of another install
+    /// (the installer's per-user config vs a portable copy). Unlike the --config
+    /// override it moves neither the data root nor the --config passed to a core.
+    static void setAttachedConfigDir(const QString& path);
+
     /// The lock a core holds on @p configDir for its whole run: one core per profile.
     [[nodiscard]] static QString coreLockPath(const QString& configDir);
 
     /// A live core holds the lock of @p configDir. Tells this profile's core from
     /// another profile's on the same IPC port (issue #49). True when unsure.
     [[nodiscard]] static bool coreRunningFor(const QString& configDir);
+
+    /// Pid of the core holding the lock of @p configDir; 0 when none or unknown.
+    [[nodiscard]] static qint64 corePidFor(const QString& configDir);
+
+    /// The user's default core: one per user, whatever dir it was installed to.
+    struct UserCore {
+        QString configDir;   ///< its profile
+        QString program;     ///< its emulecored binary
+        qint64 pid = 0;
+    };
+
+    /// Lock the user's default core holds for its whole run. Per user, not per
+    /// install dir: %LOCALAPPDATA%/eMuleQt on Windows, ~/eMuleQt elsewhere.
+    [[nodiscard]] static QString userCoreLockPath();
+
+    /// Record the default core; written right after it took userCoreLockPath().
+    static void writeUserCore(const UserCore& core);
+
+    /// The last default core recorded, running or not. Empty configDir when none.
+    [[nodiscard]] static UserCore lastUserCore();
+
+    /// The default core, if one runs now.
+    [[nodiscard]] static std::optional<UserCore> runningUserCore();
+
+    /// Same dir however spelled: symlinks, trailing slash, case on Windows.
+    [[nodiscard]] static bool sameDir(const QString& a, const QString& b);
 
     /// Why the core of @p configDir quit on start (lock, IPC port). The core
     /// writes it on the way out and clears it on each start; the GUI shows it.

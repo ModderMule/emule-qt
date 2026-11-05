@@ -536,8 +536,13 @@ void IpcClient::sendShutdown()
     // Flush the socket's write buffer into the OS send buffer synchronously.
     // Without this, disconnectFromDaemon() destroys the socket immediately and
     // the Shutdown frame never reaches the daemon.
-    if (QTcpSocket* sock = m_connection->socket())
+    // flush() writes only what the OS takes at once; at quit no event loop turns
+    // to send the rest, and a core that never hears it keeps running.
+    if (QTcpSocket* sock = m_connection->socket()) {
         sock->flush();
+        if (sock->bytesToWrite() > 0)
+            sock->waitForBytesWritten(2000);
+    }
 
     // Disable auto-reconnect — the daemon is going away intentionally
     disconnectFromDaemon();

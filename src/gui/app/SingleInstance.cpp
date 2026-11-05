@@ -1,6 +1,6 @@
 #include "pch.h"
 /// @file SingleInstance.cpp
-/// @brief One GUI per install dir and profile when the GUI starts its own core.
+/// @brief One GUI per user (default profile) or per install dir and --config profile.
 
 #include "app/SingleInstance.h"
 
@@ -41,9 +41,18 @@ QString canonicalDir(const QString& dir)
 QString makeServerName(const QString& appDir, const QString& configDir)
 {
     QCryptographicHash hash(QCryptographicHash::Sha256);
-    hash.addData(canonicalDir(appDir).toUtf8());
+    // Per user: a Windows pipe name is machine-wide, and a terminal server runs
+    // a session per user
+    hash.addData(canonicalDir(QDir::homePath()).toUtf8());
     hash.addData(QByteArrayView("\n"));
-    hash.addData(canonicalDir(configDir).toUtf8());
+    // Both empty: the user's default instance, the same for every install
+    if (appDir.isEmpty() && configDir.isEmpty()) {
+        hash.addData(QByteArrayView("default"));
+    } else {
+        hash.addData(canonicalDir(appDir).toUtf8());
+        hash.addData(QByteArrayView("\n"));
+        hash.addData(canonicalDir(configDir).toUtf8());
+    }
     // Short: a Unix socket path is limited to ~104 bytes and lives in the temp dir
     return QStringLiteral("emuleqt-gui-")
            + QString::fromLatin1(hash.result().toHex().left(16));

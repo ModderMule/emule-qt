@@ -52,6 +52,13 @@ BOOL WINAPI consoleHandler(DWORD event)
 LRESULT CALLBACK windowProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam)
 {
     switch (msg) {
+    case WM_CLOSE:
+        // The GUI's stop for a core it cannot reach over IPC, and taskkill without /F.
+        // Never DefWindowProc: it would destroy the window, not end the core.
+        logInfo(QStringLiteral("Close requested — shutting down gracefully..."));
+        QMetaObject::invokeMethod(QCoreApplication::instance(), &QCoreApplication::quit,
+                                  Qt::QueuedConnection);
+        return 0;
     case WM_QUERYENDSESSION:
         return TRUE;
     case WM_ENDSESSION:
@@ -81,13 +88,12 @@ void install(std::function<void()> shutdownNow)
     // A daemon started detached by the GUI has no console, and a process without a
     // console is told about logoff and shutdown only through a top-level window.
     // Never shown; Qt's event dispatcher delivers its messages.
-    static const wchar_t kClassName[] = L"eMuleQtCoreShutdownWindow";
     WNDCLASSW wc{};
     wc.lpfnWndProc = windowProc;
     wc.hInstance = GetModuleHandleW(nullptr);
-    wc.lpszClassName = kClassName;
+    wc.lpszClassName = kWindowClass;
     if (RegisterClassW(&wc))
-        s_window = CreateWindowExW(0, kClassName, L"eMule Qt Core", WS_OVERLAPPED,
+        s_window = CreateWindowExW(0, kWindowClass, L"eMule Qt Core", WS_OVERLAPPED,
                                    0, 0, 0, 0, nullptr, nullptr, wc.hInstance, nullptr);
     if (!s_window)
         logWarning(QStringLiteral("No shutdown window: logoff may end the daemon unsaved"));

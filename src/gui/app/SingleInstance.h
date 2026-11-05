@@ -8,9 +8,10 @@
 /// Now it hands its links and .nzb files to the running GUI, which comes to the
 /// front, and exits.
 ///
-/// The key is the executable's dir plus the config dir: another install or another
-/// --config profile is a separate instance on purpose (one core per interface/port).
-/// --new-instance skips the guard altogether.
+/// The default profile has one instance per user, whatever dir it was installed to:
+/// there is one default core per user. A --config profile is keyed on the
+/// executable's dir plus its config dir, a separate instance on purpose (one core
+/// per interface/port). --new-instance skips the guard altogether.
 
 #include <QLockFile>
 #include <QObject>
@@ -29,6 +30,7 @@ class SingleInstance : public QObject {
 public:
     /// @param appDir dir of the GUI executable
     /// @param configDir the profile's config dir
+    /// Both empty: the user's default instance, shared by every install.
     SingleInstance(const QString& appDir, const QString& configDir, QObject* parent = nullptr);
     ~SingleInstance() override;
 

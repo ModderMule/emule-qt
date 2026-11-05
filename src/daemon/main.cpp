@@ -27,9 +27,12 @@
 #include "utils/Log.h"
 
 #include <QCoreApplication>
+#include <QDeadlineTimer>
 #include <QDir>
 #include <QFile>
+#include <QHostAddress>
 #include <QLockFile>
+#include <QTcpServer>
 #include <QProcess>
 #include <QLoggingCategory>
 #include <QSocketNotifier>
@@ -102,6 +105,45 @@ private:
     bool m_done = false;
     std::thread m_thread;   ///< last: starts once the members above exist
 };
+
+/// Nothing listens on the IPC port: a bind probe, as the GUI's.
+bool ipcPortFree(const QString& host, uint16_t port)
+{
+    const QHostAddress addr(host);
+    QTcpServer probe;
+    return probe.listen(addr.isNull() ? QHostAddress(QHostAddress::LocalHost) : addr, port);
+}
+
+/// Take @p lock. A holder that serves no IPC on @p ipcPort is a core still shutting
+/// down: the GUI starts the next one right after asking the last to quit, and that
+/// one may take a while to save. Waited out past its watchdog. 0 = no wait.
+bool lockAfterStop(QLockFile& lock, const QString& ipcHost, uint16_t ipcPort)
+{
+    if (lock.tryLock(2000))
+        return true;
+    // Past ShutdownWatchdog's limit, so a hung core is gone by then
+    const QDeadlineTimer deadline(std::chrono::seconds(100));
+    bool told = false;
+    while (lock.error() == QLockFile::LockFailedError) {
+        qint64 holderPid = 0;
+        const bool known = lock.getLockInfo(&holderPid, nullptr, nullptr);
+        // Our own pid in it: a container's PID 1 again after a restart
+        if (known && holderPid == QCoreApplication::applicationPid()) {
+            lock.removeStaleLockFile();
+            return lock.tryLock(0);
+        }
+        if (ipcPort == 0 || deadline.hasExpired() || !ipcPortFree(ipcHost, ipcPort))
+            return false;
+        if (!told) {
+            eMule::logInfo(QStringLiteral("Waiting for the previous core (pid %1) to finish "
+                                          "shutting down...").arg(holderPid));
+            told = true;
+        }
+        if (lock.tryLock(1000))
+            return true;
+    }
+    return false;
+}
 
 } // namespace
 
@@ -208,19 +250,17 @@ int main(int argc, char* argv[])
         return 1;
     };
 
+    // Determine IPC target, also for the lock wait below
+    QString ipcHost = eMule::thePrefs.ipcListenAddress();
+    if (ipcHost.isEmpty())
+        ipcHost = QStringLiteral("127.0.0.1");
+    uint16_t ipcPort = eMule::thePrefs.ipcPort();
+    if (cli.portOverride() != 0)
+        ipcPort = cli.portOverride();
+
     QLockFile coreLock(eMule::AppConfig::coreLockPath(configDir));
     coreLock.setStaleLockTime(0);   // only a dead holder makes it stale, never age
-    bool locked = coreLock.tryLock(2000);
-    if (!locked && coreLock.error() == QLockFile::LockFailedError) {
-        // Our own pid in it: a container's PID 1 again after a restart
-        qint64 holderPid = 0;
-        if (coreLock.getLockInfo(&holderPid, nullptr, nullptr)
-            && holderPid == QCoreApplication::applicationPid()) {
-            coreLock.removeStaleLockFile();
-            locked = coreLock.tryLock(0);
-        }
-    }
-    if (!locked) {
+    if (!lockAfterStop(coreLock, ipcHost, ipcPort)) {
         // Only LockFailedError means another core; the rest is the dir itself
         const QString lockPath = eMule::AppConfig::coreLockPath(configDir);
         switch (coreLock.error()) {
@@ -242,6 +282,32 @@ int main(int argc, char* argv[])
         }
         return failStart(QStringLiteral("Cannot create the lock file %1 (unknown error).")
                              .arg(QDir::toNativeSeparators(lockPath)));
+    }
+
+    // One default core per user, wherever it was installed: the setup's per-user
+    // config and a portable copy each have a profile lock of their own. A --config
+    // profile stays separate, unless it names the default one.
+    QLockFile userLock(eMule::AppConfig::userCoreLockPath());
+    userLock.setStaleLockTime(0);
+    const eMule::AppConfig::UserCore lastUserCore = eMule::AppConfig::lastUserCore();
+    if (cli.configOverride().isEmpty() || eMule::AppConfig::sameDir(configDir, lastUserCore.configDir)) {
+        // No wait: a holder with our profile was gone once the lock above was ours
+        if (lockAfterStop(userLock, ipcHost, 0)) {
+            eMule::AppConfig::writeUserCore({configDir, QCoreApplication::applicationFilePath(),
+                                             QCoreApplication::applicationPid()});
+        } else if (userLock.error() == QLockFile::LockFailedError) {
+            qint64 holderPid = 0;
+            (void)userLock.getLockInfo(&holderPid, nullptr, nullptr);
+            return failStart(QStringLiteral("Another core (pid %1) is already running for this user "
+                                            "with the config at %2. Close it first, or start this "
+                                            "one with --config <dir>.")
+                                 .arg(holderPid)
+                                 .arg(QDir::toNativeSeparators(lastUserCore.configDir)));
+        } else {
+            eMule::logWarning(QStringLiteral("Cannot create the lock file %1; other installs "
+                                             "may start a core of their own")
+                                  .arg(QDir::toNativeSeparators(userLock.fileName())));
+        }
     }
 
     // Seed bundled config data (webserver assets, template, nodes.dat)
@@ -273,14 +339,6 @@ int main(int argc, char* argv[])
     // After the MFC import, which may have changed the Incoming dir.
     (void)eMule::InstallerCopy::run(eMule::InstallerCopy::stagedDir(), configDir,
                                     eMule::thePrefs.incomingDir());
-
-    // Determine IPC target for log message
-    QString ipcHost = eMule::thePrefs.ipcListenAddress();
-    if (ipcHost.isEmpty())
-        ipcHost = QStringLiteral("127.0.0.1");
-    uint16_t ipcPort = eMule::thePrefs.ipcPort();
-    if (cli.portOverride() != 0)
-        ipcPort = cli.portOverride();
 
     // The web UI answers each session in its own language through this. It
     // translates nothing outside a web request, so logs and IPC stay as they are.
@@ -339,7 +397,9 @@ int main(int argc, char* argv[])
     eMule::WinShutdownHandler::finished();
 
     if (eMule::DaemonApp::restartRequested()) {
-        // The restarted core takes the lock again: same pid, or a new process
+        // The restarted core takes the locks again: same pid, or a new process
+        if (userLock.isLocked())
+            userLock.unlock();
         coreLock.unlock();
         // The first-start hold belongs to the first start only
         QStringList args = QCoreApplication::arguments().mid(1);
