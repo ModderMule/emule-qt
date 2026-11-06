@@ -21,6 +21,8 @@ class QTimer;
 namespace eMule {
 
 class BandwidthCoordinator;
+class ScheduleNetworkBridge;
+class UsenetRetryGrabber;
 class CoreSession;
 class ApiEventFeeder;
 class ApiEventHub;
@@ -276,8 +278,11 @@ private:
     void stopEd3kNode();
     /// eD2K/Usenet/BitTorrent share of the global limits; after both sessions
     std::unique_ptr<BandwidthCoordinator> m_bandwidth;
+    std::unique_ptr<ScheduleNetworkBridge> m_scheduleNetwork;
     std::unique_ptr<indexer::IndexerSearchList> m_indexerSearches;
     std::unique_ptr<indexer::IndexerFeedList> m_indexerFeeds;
+    /// Replacement NZB for a failed indexer job (usenetRetryOtherNzb)
+    std::unique_ptr<UsenetRetryGrabber> m_usenetRetry;
     std::unique_ptr<PowerManager> m_powerManager;
     bool m_autoUpdateOn = false;
     int m_autoUpdateHours = 0;

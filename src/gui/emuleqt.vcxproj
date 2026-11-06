@@ -792,6 +792,7 @@
     <None Include="..\..\resources\icons\UserMessage.ico" />
     <None Include="..\..\resources\icons\Web.ico" />
     <None Include="..\..\resources\icons\Container.ico" />
+    <None Include="..\..\resources\icons\DLC.ico" />
     <None Include="..\..\resources\icons\WebEd2k.ico" />
     <None Include="..\..\resources\icons\Wizard.ico" />
     <None Include="..\..\resources\icons\bold.ico" />

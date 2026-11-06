@@ -127,6 +127,13 @@ public:
     /// False when not hosterReady().
     static bool sendHosterLinks(const QList<QStringList>& files, QWidget* parent,
                                 const QString& package = {});
+    /// Who opens a fetched link container (search rows) — the Hoster tab. Unset without
+    /// EMULE_HAVE_HOSTER_JD; it goes only while hosterReady().
+    using HosterContainerHandler = std::function<void(const QString& name, const QByteArray& data, QWidget* parent)>;
+    static void setHosterContainerHandler(HosterContainerHandler handler);
+    /// Hand @p data (a .dlc/.ccf/.rsdf called @p name) to the Hoster tab. False when not
+    /// hosterReady() or no handler.
+    static bool sendHosterContainer(const QString& name, const QByteArray& data, QWidget* parent);
 
     /// The non-download links in @p text.
     [[nodiscard]] static OtherLinks otherLinksIn(const QString& text);

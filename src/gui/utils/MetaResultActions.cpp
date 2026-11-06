@@ -183,6 +183,49 @@ void MetaResultActions::addTorrents(quint32 searchID, const QList<Row>& rows)
         fetchAndAddTorrent(searchID, row);
 }
 
+void MetaResultActions::openContainers(quint32 searchID, const QList<Row>& rows)
+{
+    if (!Ed2kLinkImporter::hosterReady()) {
+        saveMetaFiles(searchID, rows);
+        return;
+    }
+    for (const Row& row : rows)
+        fetchAndOpenContainer(searchID, row);
+}
+
+void MetaResultActions::saveIndexerFiles(quint32 searchID, const QList<IndexerFile>& rows)
+{
+    if (rows.isEmpty())
+        return;
+    // asked up front: a dialog after the fetch would open from an IPC reply
+    if (rows.size() == 1) {
+        const IndexerFile& row = rows.first();
+        Row probe;
+        probe.name = row.title;
+        probe.kind = row.usenet ? 3 : 1;
+        const QString path = QFileDialog::getSaveFileName(
+            m_parent, saveTitle(probe), QDir(startDir()).filePath(safeName(row.title, probe)), fileFilter(probe));
+        if (path.isEmpty())
+            return;
+        theUiState.setMetaFileSaveDir(QFileInfo(path).absolutePath());
+        fetchAndSaveIndexer(searchID, row, path, false);
+        return;
+    }
+
+    const QString dir = QFileDialog::getExistingDirectory(m_parent, tr("Save Files To"), startDir());
+    if (dir.isEmpty())
+        return;
+    theUiState.setMetaFileSaveDir(dir);
+    for (const IndexerFile& row : rows)
+        fetchAndSaveIndexer(searchID, row, dir, true);
+}
+
+void MetaResultActions::copyIndexerMagnets(quint32 searchID, const QList<IndexerFile>& rows)
+{
+    for (const IndexerFile& row : rows)
+        fetchAndSaveIndexer(searchID, row, {}, true);   // no path: a magnet only
+}
+
 void MetaResultActions::manageAccount(const QString& serverAddr, const QString& serverName)
 {
     if (auto dlg = m_dialogs.value(serverAddr)) {
@@ -265,7 +308,7 @@ void MetaResultActions::sendDownload(quint32 searchID, const Row& row, int categ
         QTimer::singleShot(0, self, [self, searchID, row, category, model, outcome, reason] {
             if (!self)
                 return;
-            if (outcome == gui::NzbAddOutcome::AlreadyDownloaded) {
+            if (gui::isAskableNzbOutcome(outcome)) {
                 const bool again = QMessageBox::question(
                     self->m_parent, tr("Download"), tr("%1\n\nDownload it again?").arg(reason),
                     QMessageBox::Yes | QMessageBox::No) == QMessageBox::Yes;
@@ -411,6 +454,75 @@ void MetaResultActions::fetchAndAddTorrent(quint32 searchID, const Row& row)
         if (!Ed2kLinkImporter::sendTorrentFile(name, content, self->m_parent))
             self->warn(tr("Could not add \"%1\": the torrent is empty.").arg(row.name));
     }, viaMagnet);
+}
+
+void MetaResultActions::fetchAndOpenContainer(quint32 searchID, const Row& row)
+{
+    QPointer<MetaResultActions> self(this);
+    fetchMeta(searchID, row, tr("Could not download \"%1\": %2"), [self, row](const QCborMap& data) {
+        if (!self)
+            return;
+        const QByteArray content = data.value(QStringLiteral("content")).toByteArray();
+        QString name = data.value(QStringLiteral("fileName")).toString();
+        if (name.isEmpty() || name.contains(u'/') || name.contains(u'\\'))
+            name = safeName(row.name, row);
+        // one event-loop turn: switching tabs and any warning stay out of the reply's stack
+        QTimer::singleShot(0, self, [self, row, name, content] {
+            if (self && !Ed2kLinkImporter::sendHosterContainer(name, content, self->m_parent))
+                self->warn(tr("Could not open \"%1\": downloads from hosters are off.").arg(row.name));
+        });
+    });
+}
+
+void MetaResultActions::fetchAndSaveIndexer(quint32 searchID, const IndexerFile& row, const QString& path,
+                                            bool pathIsDir)
+{
+    if (!m_ipc || !m_ipc->isConnected())
+        return;
+    IpcMessage msg(IpcMsgType::InspectIndexerResult);
+    msg.append(static_cast<qint64>(searchID));
+    msg.append(row.resultId);
+    msg.append(true);   // raw: the file, unparsed
+    QPointer<MetaResultActions> self(this);
+    m_ipc->sendRequest(std::move(msg), [self, row, path, pathIsDir](const IpcMessage& resp) {
+        if (!self || !resp.isValid())
+            return;
+        if (!resp.fieldBool(0)) {
+            self->warn(tr("Could not download \"%1\": %2").arg(row.title, resp.fieldString(1)));
+            return;
+        }
+        const QCborMap data = resp.fieldMap(1);
+        const QString kind = data.value(QStringLiteral("kind")).toString();
+        // the indexer had only a magnet: that is the file for another client
+        if (kind == QLatin1String("magnet")) {
+            Row m;
+            m.magnet = data.value(QStringLiteral("magnet")).toString();
+            copyMagnets({m});
+            return;
+        }
+        if (path.isEmpty()) {
+            self->warn(tr("\"%1\" has no magnet link.").arg(row.title));
+            return;
+        }
+        Row probe;
+        probe.name = row.title;
+        probe.kind = kind == QLatin1String("nzb") ? 3 : 1;
+        QString target = pathIsDir ? QDir(path).filePath(safeName(row.title, probe)) : path;
+        // a dialog that guessed .nzb for a torrent (or the reverse): the served kind wins
+        if (!pathIsDir) {
+            const QString want = probe.isNzb() ? QStringLiteral(".nzb") : QStringLiteral(".torrent");
+            const QString other = probe.isNzb() ? QStringLiteral(".torrent") : QStringLiteral(".nzb");
+            if (target.endsWith(other, Qt::CaseInsensitive))
+                target = target.chopped(other.size()) + want;
+        }
+        const QByteArray content = data.value(QStringLiteral("content")).toByteArray();
+        QFile file(target);
+        if (!file.open(QIODevice::WriteOnly) || file.write(content) != content.size()) {
+            self->warn(tr("Could not write %1: %2").arg(QDir::toNativeSeparators(target), file.errorString()));
+            return;
+        }
+        StatusBarNotifier::post(tr("Saved %1").arg(QDir::toNativeSeparators(target)));
+    });
 }
 
 void MetaResultActions::showDetails(quint32 searchID, const Row& row,

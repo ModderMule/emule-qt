@@ -938,8 +938,9 @@ int main(int argc, char* argv[])
                     return;
                 eMule::thePrefs.updateFromCbor(resp.fieldMap(1));
                 // Pushes only report changes, so the starting value comes from here.
+                const QCborMap prefMap = resp.fieldMap(1);
                 ipcClient.setUsenetEnginePaused(
-                    resp.fieldMap(1).value(QStringLiteral("usenetPaused")).toBool());
+                    prefMap.value(QStringLiteral("usenetEnginePaused")).toBool());
                 // logToDiskGui is stored by the daemon (it owns preferences.yml)
                 // but acted on here, so the sink follows the value that just landed.
                 eMule::LogWidget::applyLogFileSettings();

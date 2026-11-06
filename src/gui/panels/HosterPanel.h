@@ -8,7 +8,8 @@
 /// dialog of their own, whichever tab is open. No MFC original: laid out like the Torrents tab.
 /// Items of a package (a search row, a named batch of links, a folder link) are children of
 /// one package row; packages never nest. Link containers (DLC, RSDF, CCF) open here too:
-/// by the Open DLC button, the context menu, a drop or the desktop (their bytes go to the core).
+/// by the Open DLC button, the context menu, a drop, the desktop or a container search row
+/// (their bytes go to the core).
 
 #include <QCborMap>
 #include <QMap>
@@ -56,6 +57,8 @@ public:
     [[nodiscard]] QAction* addLinksAction() const { return m_addAction; }
     /// Sends each link container in @p paths to the core; a dialog asks which links to add.
     void openContainerFiles(const QStringList& paths);
+    /// Sends one container's bytes (@p name: its file name, for the format) to the core.
+    void openContainerData(const QString& name, const QByteArray& data);
     /// A file dialog for link containers, then openContainerFiles().
     void promptOpenContainer();
     /// Opens the container files of a drop (the main window's too). False: none in it.

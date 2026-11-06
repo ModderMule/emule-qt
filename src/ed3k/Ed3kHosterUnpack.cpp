@@ -89,19 +89,29 @@ HosterUnpackResult Ed3kHosterUnpack::run(const HosterUnpackJob& job, const std::
     usenet::UsenetUnpacker unpacker;
     if (progress)
         unpacker.setProgressCallback([&progress](int percent, const QString&) { progress(percent); });
-    auto u = unpacker.unpack(job.archiveDir, job.scratchDir, job.password, job.skip, job.externalTool);
-    for (const QString& pw : job.passwords) {
-        if (u.ok || !u.passwordRequired)
-            break;
-        QDir(job.scratchDir).removeRecursively();
-        QDir().mkpath(job.scratchDir);
-        u = unpacker.unpack(job.archiveDir, job.scratchDir, pw, job.skip, job.externalTool);
-    }
+    // the unpacker tries every password in turn, per set
+    usenet::UsenetUnpacker::Options options;
+    options.passwords = QStringList{job.password} + job.passwords;
+    options.skipFirstVolumes = job.skip;
+    options.externalTool = job.externalTool;
+    options.nestedDepth = job.nestedDepth;
+    const auto u = unpacker.unpackAll(job.archiveDir, job.scratchDir, options);
     if (!u.ok || u.nothingToDo) {
         r.passwordRequired = u.passwordRequired;
         r.error = u.nothingToDo ? QStringLiteral("the first volume is missing") : u.error;
         QDir(job.scratchDir).removeRecursively();
         return r;
+    }
+
+    // inner archives that were opened live in scratch: drop them, or keep them
+    // beside their contents when the user keeps archives
+    const QString scratchRoot = QDir(job.scratchDir).absolutePath() + QLatin1Char('/');
+    QStringList consumedOutside;
+    for (const QString& v : u.consumedArchives) {
+        if (!QFileInfo(v).absoluteFilePath().startsWith(scratchRoot))
+            consumedOutside << v;
+        else if (job.deleteNestedArchives)
+            QFile::remove(v);
     }
 
     // what came out, moved into incoming with its folders; a taken name gets " (n)"
@@ -123,7 +133,7 @@ HosterUnpackResult Ed3kHosterUnpack::run(const HosterUnpackJob& job, const std::
         r.files << to;
     }
     QDir(job.scratchDir).removeRecursively();
-    r.volumes = u.consumedArchives;
+    r.volumes = consumedOutside;
     r.ok = r.error.isEmpty();
     if (progress)
         progress(100);

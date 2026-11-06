@@ -29,6 +29,7 @@ class QStackedWidget;
 class QPushButton;
 class QSlider;
 class QSpinBox;
+class QPlainTextEdit;
 class QDoubleSpinBox;
 class QTreeWidget;
 class QTreeWidgetItem;
@@ -288,6 +289,8 @@ private:
     /// Grey out the MaxMind account inputs unless MaxMind is the selected source.
     void updateGeoIpSourceUi();
     [[nodiscard]] int geoIpSourceSelection() const;
+    /// Archives box: one password per line, blank lines dropped
+    [[nodiscard]] QStringList archivePasswordLines() const;
 
     static QIcon makePadlockIcon();
 
@@ -456,6 +459,8 @@ private:
     QCheckBox* m_autoRenameMajorityCheck = nullptr;
     QCheckBox* m_watchSharedDirsCheck = nullptr;
     QCheckBox* m_seenFileIndexCheck = nullptr;
+    QPlainTextEdit* m_archivePasswordsEdit = nullptr;
+    QCheckBox* m_archiveRecursiveCheck = nullptr;
     QPushButton* m_rehashAllBtn = nullptr;
     QLineEdit* m_videoPlayerCmdEdit = nullptr;
     QLineEdit* m_videoPlayerArgsEdit = nullptr;
@@ -543,6 +548,9 @@ private:
     gui::FileAssociation::FileTypes m_claimedTypes;  // macOS: what the dialog was loaded with
     QCheckBox*    m_usenetCleanupCheck = nullptr;
     QCheckBox*    m_usenetSfvCheck = nullptr;
+    QCheckBox*    m_usenetDeobfuscateCheck = nullptr;
+    QSpinBox*     m_usenetPropagationSpin = nullptr;
+    QComboBox*    m_usenetEpisodeDupesCombo = nullptr;
     QComboBox*    m_usenetUnrepairableCombo = nullptr;
     QComboBox*    m_usenetUnwantedCombo = nullptr;
     QLineEdit*    m_usenetUnwantedEdit = nullptr;
@@ -620,6 +628,7 @@ private:
     QSpinBox* m_indexerPagesSpin = nullptr;
     QSpinBox* m_indexerTimeoutSpin = nullptr;
     QSpinBox* m_indexerCapsRefreshSpin = nullptr;
+    QCheckBox* m_usenetRetryOtherNzbCheck = nullptr;
 
     QList<QCborMap> m_indexers;
     int m_currentIndexer = -1;

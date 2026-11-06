@@ -71,7 +71,7 @@ void sendNzbAdd(IpcClient* ipc, QWidget* parent, const QString& title,
         // that delivered this reply.
         QTimer::singleShot(0, qApp, [safeIpc, safeParent, title, reason, outcome,
                                      build = std::move(build), done = std::move(done)]() mutable {
-            if (outcome != NzbAddOutcome::AlreadyDownloaded) {
+            if (!isAskableNzbOutcome(outcome)) {
                 QMessageBox::warning(safeParent, QObject::tr("Add NZB"), reason);
                 if (done)
                     done(false);
@@ -83,7 +83,9 @@ void sendNzbAdd(IpcClient* ipc, QWidget* parent, const QString& title,
             // daemon gives it the same verdict as a terminal answer.
             const bool again =
                 QMessageBox::question(safeParent, QObject::tr("Add NZB"),
-                                      QObject::tr("%1\n\nDownload it again?").arg(reason),
+                                      outcome == NzbAddOutcome::EpisodeDuplicate
+                                          ? QObject::tr("%1\n\nAdd it anyway?").arg(reason)
+                                          : QObject::tr("%1\n\nDownload it again?").arg(reason),
                                       QMessageBox::Yes | QMessageBox::No) == QMessageBox::Yes;
             if (!again || !safeIpc || !safeIpc->isConnected()) {
                 if (done)

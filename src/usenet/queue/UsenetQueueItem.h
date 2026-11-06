@@ -14,6 +14,7 @@
 /// makes a restart resume rather than refetch.
 
 #include "nzb/NzbInfo.h"
+#include "queue/UsenetHealth.h"
 
 #include <QBitArray>
 #include <QList>
@@ -297,6 +298,9 @@ public:
     /// silently. An optional sidecar key; absent means "never failed here", and
     /// an upgraded daemon therefore re-asks nothing on its first run.
     QString failedLadder;
+
+    /// The indexer row it was grabbed from; see UsenetOrigin. Persisted.
+    UsenetOrigin origin;
 
     /// Index into `Preferences::categories()`, 0 being the implicit "All".
     ///

@@ -24,6 +24,7 @@
 
 #include <QMetaType>
 #include <QObject>
+#include <QHash>
 #include <QString>
 #include <QStringList>
 
@@ -75,6 +76,18 @@ struct UsenetPostJob {
     /// encrypted format goes to ExternalUnpacker, which is what makes a RAR
     /// password mean anything.
     QString password;
+
+    /// The archivePasswords preference, tried after `password`.
+    QStringList extraPasswords;
+
+    /// Levels of archives inside archives to unpack. 0 = off.
+    int nestedDepth = 0;
+
+    /// The item's name: what an obfuscated payload is renamed to.
+    QString jobName;
+
+    /// Rename an obfuscated payload to jobName (no PAR2 names, no archive).
+    bool deobfuscateEnabled = false;
 
     /// The usenetExternalUnpacker preference — an explicit 7-Zip or unrar path,
     /// empty to search. Carried on the job rather than read in the pipeline so
@@ -219,9 +232,10 @@ private:
     void emitStage(const QString& itemId, PostStage stage, int percent, const QString& detail);
 
     /// Copy @p files into destDir under the `.usenetpart` suffix and record the
-    /// rename each one is waiting for.
+    /// rename each one is waiting for. @p renames: source -> published name.
     bool stageForPublish(const QStringList& files, const QString& destDir,
-                         UsenetPostResult& result);
+                         UsenetPostResult& result,
+                         const QHash<QString, QString>& renames = {});
 
     std::atomic<bool> m_stopRequested{false};
 };

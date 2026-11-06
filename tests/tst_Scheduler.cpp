@@ -27,7 +27,68 @@ private slots:
     void activateSchedule_setsPrefs();
     void clearOverrides_restoresStored();
     void check_windowEnd_restoresLimit();
+    void network_pauseFiresOnceAndRestores();
+    void network_noEndTimeIsPersistent();
+    void network_laterWindowTakesOver();
+    void network_removeAllRestores();
+    void network_usenetCategoryOnce();
+    void network_catStopReachesEd3k();
+    void network_capsInOverlay();
+    void load_dropsUnknownActions();
 };
+
+namespace {
+
+/// Records what the scheduler asks of the other networks.
+struct RecordingNetwork : ScheduleNetworkActions {
+    QStringList calls;
+    void usenetPause(bool paused, bool persistent) override
+    {
+        calls << QStringLiteral("usenet %1%2").arg(paused ? "pause" : "resume", persistent ? " saved" : "");
+    }
+    void usenetRestore() override { calls << QStringLiteral("usenet restore"); }
+    void usenetCategory(int category, bool paused) override
+    {
+        calls << QStringLiteral("usenet cat %1 %2").arg(category).arg(paused ? "pause" : "resume");
+    }
+    void btPause(bool paused, bool persistent) override
+    {
+        calls << QStringLiteral("bt %1%2").arg(paused ? "pause" : "resume", persistent ? " saved" : "");
+    }
+    void btRestore() override { calls << QStringLiteral("bt restore"); }
+    void ed3kCategory(int category, bool paused) override
+    {
+        calls << QStringLiteral("ed3k cat %1 %2").arg(category).arg(paused ? "pause" : "resume");
+    }
+};
+
+/// An entry whose window is open now (or, with @p open false, a few hours away).
+std::unique_ptr<ScheduleEntry> windowEntry(const QString& title, bool open = true)
+{
+    const QDateTime now = QDateTime::currentDateTime();
+    auto e = std::make_unique<ScheduleEntry>();
+    e->title = title;
+    e->enabled = true;
+    e->startTime = (open ? now.addSecs(-3600) : now.addSecs(2 * 3600)).toSecsSinceEpoch();
+    e->endTime = (open ? now.addSecs(3600) : now.addSecs(3 * 3600)).toSecsSinceEpoch();
+    return e;
+}
+
+void closeWindow(ScheduleEntry* e)
+{
+    const QDateTime now = QDateTime::currentDateTime();
+    e->startTime = now.addSecs(2 * 3600).toSecsSinceEpoch();
+    e->endTime = now.addSecs(3 * 3600).toSecsSinceEpoch();
+}
+
+void openWindow(ScheduleEntry* e)
+{
+    const QDateTime now = QDateTime::currentDateTime();
+    e->startTime = now.addSecs(-3600).toSecsSinceEpoch();
+    e->endTime = now.addSecs(3600).toSecsSinceEpoch();
+}
+
+} // namespace
 
 void tst_Scheduler::construction_empty()
 {
@@ -325,6 +386,203 @@ void tst_Scheduler::check_windowEnd_restoresLimit()
     QCOMPARE(thePrefs.maxUpload(), uint32(500));
 
     thePrefs.setMaxUpload(origUpload);
+}
+
+// Pause at the window's start only (a manual click sticks), undo at its end
+void tst_Scheduler::network_pauseFiresOnceAndRestores()
+{
+    RecordingNetwork net;
+    Scheduler scheduler;
+    scheduler.setNetworkActions(&net);
+    auto e = windowEntry(QStringLiteral("Night"));
+    e->actions[0] = ScheduleAction::UsenetPause;
+    e->actions[1] = ScheduleAction::BtPause;
+    scheduler.addSchedule(std::move(e));
+
+    scheduler.check(true);
+    QCOMPARE(net.calls, QStringList({QStringLiteral("usenet pause"), QStringLiteral("bt pause")}));
+    scheduler.check(true);
+    QCOMPARE(net.calls.size(), 2);
+
+    net.calls.clear();
+    closeWindow(scheduler.schedule(0));
+    scheduler.check(true);
+    QCOMPARE(net.calls, QStringList({QStringLiteral("usenet restore"), QStringLiteral("bt restore")}));
+    scheduler.check(true);
+    QCOMPARE(net.calls.size(), 2);
+
+    // opens again: fires again
+    net.calls.clear();
+    openWindow(scheduler.schedule(0));
+    scheduler.check(true);
+    QCOMPARE(net.calls, QStringList({QStringLiteral("usenet pause"), QStringLiteral("bt pause")}));
+    scheduler.stop();
+    scheduler.setNetworkActions(nullptr);
+}
+
+// No end time: saved, nothing to undo (MFC makeDefault)
+void tst_Scheduler::network_noEndTimeIsPersistent()
+{
+    RecordingNetwork net;
+    Scheduler scheduler;
+    scheduler.setNetworkActions(&net);
+    auto e = windowEntry(QStringLiteral("From now on"));
+    e->endTime = 0;
+    e->actions[0] = ScheduleAction::UsenetResume;
+    e->actions[1] = ScheduleAction::BtResume;
+    scheduler.addSchedule(std::move(e));
+
+    scheduler.activateWindowStart(0, true);
+    QCOMPARE(net.calls, QStringList({QStringLiteral("usenet resume saved"), QStringLiteral("bt resume saved")}));
+    scheduler.releaseNetworks();
+    QCOMPARE(net.calls.size(), 2);
+    scheduler.setNetworkActions(nullptr);
+}
+
+// A window opening inside another takes over; the older one's end changes nothing
+void tst_Scheduler::network_laterWindowTakesOver()
+{
+    RecordingNetwork net;
+    Scheduler scheduler;
+    scheduler.setNetworkActions(&net);
+    auto a = windowEntry(QStringLiteral("Pause"));
+    a->actions[0] = ScheduleAction::UsenetPause;
+    scheduler.addSchedule(std::move(a));
+    auto b = windowEntry(QStringLiteral("Resume"), false);
+    b->actions[0] = ScheduleAction::UsenetResume;
+    scheduler.addSchedule(std::move(b));
+
+    scheduler.check(true);
+    QCOMPARE(net.calls, QStringList({QStringLiteral("usenet pause")}));
+
+    net.calls.clear();
+    openWindow(scheduler.schedule(1));
+    scheduler.check(true);
+    QCOMPARE(net.calls, QStringList({QStringLiteral("usenet resume")}));
+
+    net.calls.clear();
+    closeWindow(scheduler.schedule(0));
+    scheduler.check(true);
+    QVERIFY(net.calls.isEmpty());
+
+    closeWindow(scheduler.schedule(1));
+    scheduler.check(true);
+    QCOMPARE(net.calls, QStringList({QStringLiteral("usenet restore")}));
+    scheduler.setNetworkActions(nullptr);
+}
+
+// Schedules replaced (SaveSchedules): the runtime pause goes, the next check re-applies
+void tst_Scheduler::network_removeAllRestores()
+{
+    RecordingNetwork net;
+    Scheduler scheduler;
+    scheduler.setNetworkActions(&net);
+    auto e = windowEntry(QStringLiteral("Night"));
+    e->actions[0] = ScheduleAction::BtPause;
+    scheduler.addSchedule(std::move(e));
+    scheduler.check(true);
+    scheduler.removeAll();
+    QCOMPARE(net.calls, QStringList({QStringLiteral("bt pause"), QStringLiteral("bt restore")}));
+    scheduler.setNetworkActions(nullptr);
+}
+
+void tst_Scheduler::network_usenetCategoryOnce()
+{
+    RecordingNetwork net;
+    Scheduler scheduler;
+    scheduler.setNetworkActions(&net);
+    auto e = windowEntry(QStringLiteral("Cats"));
+    e->actions[0] = ScheduleAction::UsenetCatPause;
+    e->values[0] = QStringLiteral("2");
+    e->actions[1] = ScheduleAction::UsenetCatResume;
+    e->values[1] = QStringLiteral("-1");
+    scheduler.addSchedule(std::move(e));
+
+    scheduler.check(true);
+    scheduler.check(true);
+    QCOMPARE(net.calls, QStringList({QStringLiteral("usenet cat 2 pause"), QStringLiteral("usenet cat -1 resume")}));
+    scheduler.stop();
+    QCOMPARE(net.calls.size(), 2);   // nothing to undo
+    scheduler.setNetworkActions(nullptr);
+}
+
+// ed3k follows eD2K's Stop/Resume Category
+void tst_Scheduler::network_catStopReachesEd3k()
+{
+    RecordingNetwork net;
+    Scheduler scheduler;
+    scheduler.setNetworkActions(&net);
+    auto e = std::make_unique<ScheduleEntry>();
+    e->title = QStringLiteral("Cats");
+    e->enabled = true;
+    e->actions[0] = ScheduleAction::CatStop;
+    e->values[0] = QStringLiteral("3");
+    e->actions[1] = ScheduleAction::CatResume;
+    e->values[1] = QStringLiteral("-2");
+    scheduler.addSchedule(std::move(e));
+
+    scheduler.activateSchedule(0);
+    QCOMPARE(net.calls, QStringList({QStringLiteral("ed3k cat 3 pause"), QStringLiteral("ed3k cat -2 resume")}));
+    scheduler.clearOverrides();
+    scheduler.setNetworkActions(nullptr);
+}
+
+void tst_Scheduler::network_capsInOverlay()
+{
+    const uint32 origBtDown = thePrefs.configuredBtMaxDownloadKb();
+    const uint32 origBtUp = thePrefs.configuredBtMaxUploadKb();
+    thePrefs.setBtMaxDownloadKb(1000);
+    thePrefs.setBtMaxUploadKb(0);
+
+    Scheduler scheduler;
+    auto e = windowEntry(QStringLiteral("Caps"));
+    e->actions[0] = ScheduleAction::UsenetDownload;
+    e->values[0] = QStringLiteral("100");
+    e->actions[1] = ScheduleAction::BtDownload;
+    e->values[1] = QStringLiteral("200");
+    e->actions[2] = ScheduleAction::BtUpload;
+    e->values[2] = QStringLiteral("300");
+    scheduler.addSchedule(std::move(e));
+
+    scheduler.check(true);
+    QCOMPARE(thePrefs.scheduledLimits().usenetMaxDownloadKb, std::optional<uint32>(100));
+    QCOMPARE(thePrefs.btMaxDownloadKb(), uint32(200));
+    QCOMPARE(thePrefs.btMaxUploadKb(), uint32(300));
+    QCOMPARE(thePrefs.configuredBtMaxDownloadKb(), uint32(1000));
+    QCOMPARE(thePrefs.toIpcMap().value(QStringLiteral("btMaxDownloadKb")).toInteger(), 1000);
+
+    scheduler.stop();
+    QVERIFY(!thePrefs.scheduledLimits().usenetMaxDownloadKb);
+    QCOMPARE(thePrefs.btMaxDownloadKb(), uint32(1000));
+    QCOMPARE(thePrefs.btMaxUploadKb(), uint32(0));
+
+    thePrefs.setBtMaxDownloadKb(origBtDown);
+    thePrefs.setBtMaxUploadKb(origBtUp);
+}
+
+// A mod's ids (MorphXT 8-16) load as nothing; the known ones close up
+void tst_Scheduler::load_dropsUnknownActions()
+{
+    eMule::testing::TempDir tempDir;
+    {
+        QSettings ini(tempDir.path() + QStringLiteral("/preferences.ini"), QSettings::IniFormat);
+        ini.setValue(QStringLiteral("Scheduler/Count"), 1);
+        ini.setValue(QStringLiteral("Schedule#0/Title"), QStringLiteral("Mod"));
+        ini.setValue(QStringLiteral("Schedule#0/Action0"), 8);
+        ini.setValue(QStringLiteral("Schedule#0/Value0"), QStringLiteral("x"));
+        ini.setValue(QStringLiteral("Schedule#0/Action1"), 32);
+        ini.setValue(QStringLiteral("Schedule#0/Action2"), 1);
+        ini.setValue(QStringLiteral("Schedule#0/Value2"), QStringLiteral("50"));
+        ini.setValue(QStringLiteral("Schedule#0/Action3"), 41);
+    }
+    Scheduler loader;
+    QCOMPARE(loader.loadFromFile(tempDir.path()), 1);
+    const ScheduleEntry* e = loader.schedule(0);
+    QVERIFY(e);
+    QCOMPARE(e->actions[0], ScheduleAction::UsenetPause);
+    QCOMPARE(e->actions[1], ScheduleAction::SetUpload);
+    QCOMPARE(e->values[1], QStringLiteral("50"));
+    QCOMPARE(e->actions[2], ScheduleAction::None);
 }
 
 QTEST_GUILESS_MAIN(tst_Scheduler)

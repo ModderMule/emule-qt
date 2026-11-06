@@ -266,6 +266,8 @@ private slots:
     void anExhaustedLevelParksUnlessAskedToFallThrough();
     void nearingTheAllowanceWarnsOnceBeforeItBites();
     void theSameNzbTwiceIsRefused();
+    void anotherReleaseOfTheSameEpisodeIsRefusedOrPaused();
+    void aFreshPostWaitsForPropagation();
     void addNzbReportsWhyItRefused();
     void anAutomaticAddIsPausedWhenTheUserAsksForIt();
     void aManualReAddOfACompletedReleaseAsksFirst();
@@ -5646,6 +5648,95 @@ void tst_UsenetQueue::keptFilesJoinTheQueuedRelease()
     QCOMPARE(outcome, UsenetAddOutcome::Duplicate);
     QVERIFY(queue.addNzb(nzb, QStringLiteral("whole"), error, {}, &outcome).isEmpty());
     QCOMPARE(outcome, UsenetAddOutcome::Duplicate);
+}
+
+void tst_UsenetQueue::anotherReleaseOfTheSameEpisodeIsRefusedOrPaused()
+{
+    eMule::testing::TempDir tmp;
+    thePrefs.setConfigDir(tmp.path());
+    thePrefs.setTempDirs({tmp.filePath(QStringLiteral("temp"))});
+    thePrefs.setIncomingDir(tmp.filePath(QStringLiteral("incoming")));
+
+    UsenetQueue queue;
+    queue.applyServers({serverConfig(1119, 1)}, 0);
+
+    QString error;
+    UsenetAddOutcome outcome = UsenetAddOutcome::Failed;
+    QVERIFY(!queue.addNzb(makeNzb(QStringLiteral("a.bin"), 2, 1700000000, QStringLiteral("a")),
+                          QStringLiteral("Show.Name.S01E02.720p.WEB-A"), error, {}, &outcome)
+                 .isEmpty());
+
+    // off (the default): a second release is just another NZB
+    const QByteArray other = makeNzb(QStringLiteral("b.bin"), 2, 1700000000, QStringLiteral("b"));
+    thePrefs.setUsenetEpisodeDupes(0);
+    QVERIFY(!queue.addNzb(other, QStringLiteral("Show Name S01E02 1080p HDTV-B"), error, {}, &outcome)
+                 .isEmpty());
+    QCOMPARE(outcome, UsenetAddOutcome::Added);
+
+    // refuse: a question for a person, which force answers
+    thePrefs.setUsenetEpisodeDupes(1);
+    const QByteArray third = makeNzb(QStringLiteral("c.bin"), 2, 1700000000, QStringLiteral("c"));
+    QVERIFY(queue.addNzb(third, QStringLiteral("Show.Name.S01E02.x265-C"), error, {}, &outcome)
+                .isEmpty());
+    QCOMPARE(outcome, UsenetAddOutcome::EpisodeDuplicate);
+    QVERIFY2(error.contains(QStringLiteral("S01E02")), qPrintable(error));
+    QVERIFY(!queue.addNzb(third, QStringLiteral("Show.Name.S01E02.x265-C"), error,
+                          {.force = true}, &outcome).isEmpty());
+
+    // a fix always passes; another episode is no duplicate
+    QVERIFY(!queue.addNzb(makeNzb(QStringLiteral("d.bin"), 2, 1700000000, QStringLiteral("d")),
+                          QStringLiteral("Show.Name.S01E02.PROPER.720p-D"), error, {}, &outcome)
+                 .isEmpty());
+    QVERIFY(!queue.addNzb(makeNzb(QStringLiteral("e.bin"), 2, 1700000000, QStringLiteral("e")),
+                          QStringLiteral("Show.Name.S01E03.720p-E"), error, {}, &outcome)
+                 .isEmpty());
+
+    // pause: added, waiting for the user
+    thePrefs.setUsenetEpisodeDupes(2);
+    const QString paused = queue.addNzb(makeNzb(QStringLiteral("f.bin"), 2, 1700000000,
+                                                QStringLiteral("f")),
+                                        QStringLiteral("Show.Name.S01E03.1080p-F"), error, {}, &outcome);
+    QVERIFY(!paused.isEmpty());
+    QCOMPARE(outcome, UsenetAddOutcome::Added);
+    QCOMPARE(queue.findItem(paused)->status, UsenetItemStatus::Paused);
+    QVERIFY(queue.findItem(paused)->stalledReason.contains(QStringLiteral("S01E03")));
+
+    thePrefs.setUsenetEpisodeDupes(0);
+}
+
+void tst_UsenetQueue::aFreshPostWaitsForPropagation()
+{
+    eMule::testing::TempDir tmp;
+    thePrefs.setConfigDir(tmp.path());
+    thePrefs.setTempDirs({tmp.filePath(QStringLiteral("temp"))});
+    thePrefs.setIncomingDir(tmp.filePath(QStringLiteral("incoming")));
+    thePrefs.setUsenetHealthCheck(0);
+    thePrefs.setUsenetPropagationDelayMinutes(30);
+
+    UsenetQueue queue;
+    queue.applyServers({serverConfig(1119, 1)}, 0);
+
+    QString error;
+    const qint64 now = QDateTime::currentSecsSinceEpoch();
+    const QString fresh = queue.addNzb(makeNzb(QStringLiteral("fresh.bin"), 2, now - 60,
+                                               QStringLiteral("fr")),
+                                       QStringLiteral("fresh"), error);
+    const QString old = queue.addNzb(makeNzb(QStringLiteral("old.bin"), 2, now - 3600,
+                                             QStringLiteral("ol")),
+                                     QStringLiteral("old"), error);
+    QVERIFY(!fresh.isEmpty() && !old.isEmpty());
+    QVERIFY2(queue.findItem(fresh)->stalledReason.contains(QStringLiteral("propagation")),
+             qPrintable(queue.findItem(fresh)->stalledReason));
+    QVERIFY(queue.findItem(fresh)->stalledReason.contains(QStringLiteral("29 min")));
+    QVERIFY(!queue.findItem(old)->stalledReason.contains(QStringLiteral("propagation")));
+
+    // 0 (the default) is today's behaviour: nothing waits
+    thePrefs.setUsenetPropagationDelayMinutes(0);
+    const QString again = queue.addNzb(makeNzb(QStringLiteral("again.bin"), 2, now - 60,
+                                               QStringLiteral("ag")),
+                                       QStringLiteral("again"), error);
+    QVERIFY(!queue.findItem(again)->stalledReason.contains(QStringLiteral("propagation")));
+    thePrefs.setUsenetHealthCheck(1);
 }
 
 #include "tst_UsenetQueue.moc"

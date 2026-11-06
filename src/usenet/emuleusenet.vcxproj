@@ -173,11 +173,13 @@
     <ClCompile Include="post\UsenetPostProcessor.cpp" />
     <ClCompile Include="post\UsenetReleaseChecks.cpp" />
     <ClCompile Include="post\UsenetUnpacker.cpp" />
+    <ClCompile Include="post\UsenetDeobfuscate.cpp" />
     <ClCompile Include="queue\ArticleWriter.cpp" />
     <ClCompile Include="queue\UsenetStateWriter.cpp" />
     <ClCompile Include="queue\ArticleFileCache.cpp" />
     <ClCompile Include="queue\UsenetHealth.cpp" />
     <ClCompile Include="queue\UsenetHistory.cpp" />
+    <ClCompile Include="queue\UsenetReleaseName.cpp" />
     <ClCompile Include="queue\UsenetQueue.cpp" />
     <ClCompile Include="queue\UsenetQueueItem.cpp" />
     <ClCompile Include="queue\UsenetQueueStore.cpp" />
@@ -203,11 +205,13 @@
     <ClInclude Include="post\Par2Verifier.h" />
     <ClInclude Include="post\UsenetReleaseChecks.h" />
     <ClInclude Include="post\UsenetUnpacker.h" />
+    <ClInclude Include="post\UsenetDeobfuscate.h" />
     <ClInclude Include="queue\ArticleWriter.h" />
     <ClInclude Include="queue\UsenetStateWriter.h" />
     <ClInclude Include="queue\ArticleFileCache.h" />
     <ClInclude Include="queue\UsenetHealth.h" />
     <ClInclude Include="queue\UsenetHistory.h" />
+    <ClInclude Include="queue\UsenetReleaseName.h" />
     <ClInclude Include="queue\UsenetQueueItem.h" />
     <ClInclude Include="queue\UsenetQueueStore.h" />
     <ClInclude Include="queue\UsenetRepairEstimate.h" />

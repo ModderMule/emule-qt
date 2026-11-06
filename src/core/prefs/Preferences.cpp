@@ -285,6 +285,8 @@ struct Preferences::Data {
     bool watchSharedDirs = true;   // OS file watcher on shared folders
     bool shareIncomingSubdirs = true;   // incoming dirs shared with subfolders (#124, not BT dir #131)
     bool seenFileIndex = true;   // remember files seen in search results (seenfiles.db)
+    QStringList archivePasswords;        // tried on encrypted archives, all networks
+    bool archiveRecursiveExtract = true; // unpack archives found inside archives
 
     // Transfer
     // eMule 2026 bandwidth: larger buffer reduces disk flush frequency at high download speeds. MFC default: 4194304 (4 MB)
@@ -691,6 +693,10 @@ struct Preferences::Data {
     bool usenetUseProxy = true;
     bool usenetSfvCheck = true;
     int usenetUnrepairableAction = 1;  // 0 keep going, 1 pause, 2 fail
+    bool usenetDeobfuscateNames = true;     // rename obfuscated payload to the job name
+    int usenetPropagationDelayMinutes = 0;  // hold fresh posts, 0 = off
+    bool usenetRetryOtherNzb = false;       // grab another NZB when a job fails
+    int usenetEpisodeDupes = 0;             // 0 off, 1 refuse, 2 add paused
     int usenetUnwantedAction = 1;
     QString usenetUnwantedExtensions{Preferences::kDefaultUsenetUnwantedExtensions};
     QString usenetWatchDir;
@@ -2133,6 +2139,25 @@ void Preferences::setUsenetUnrepairableAction(int val)
     set(&Data::usenetUnrepairableAction, std::clamp(val, 0, 2));
 }
 
+bool Preferences::usenetDeobfuscateNames() const { return get(&Data::usenetDeobfuscateNames); }
+void Preferences::setUsenetDeobfuscateNames(bool val) { set(&Data::usenetDeobfuscateNames, val); }
+
+int Preferences::usenetPropagationDelayMinutes() const
+{
+    return get(&Data::usenetPropagationDelayMinutes);
+}
+
+void Preferences::setUsenetPropagationDelayMinutes(int val)
+{
+    set(&Data::usenetPropagationDelayMinutes, std::clamp(val, 0, kMaxUsenetPropagationDelayMinutes));
+}
+
+bool Preferences::usenetRetryOtherNzb() const { return get(&Data::usenetRetryOtherNzb); }
+void Preferences::setUsenetRetryOtherNzb(bool val) { set(&Data::usenetRetryOtherNzb, val); }
+
+int Preferences::usenetEpisodeDupes() const { return get(&Data::usenetEpisodeDupes); }
+void Preferences::setUsenetEpisodeDupes(int val) { set(&Data::usenetEpisodeDupes, std::clamp(val, 0, 2)); }
+
 int Preferences::usenetUnwantedAction() const
 {
     return get(&Data::usenetUnwantedAction);
@@ -2320,10 +2345,18 @@ void Preferences::setBtListenPort(uint16 val)
 QString Preferences::btDownloadDir() const { return get(&Data::btDownloadDir); }
 void Preferences::setBtDownloadDir(const QString& val) { set(&Data::btDownloadDir, val.trimmed()); }
 
-uint32 Preferences::btMaxDownloadKb() const { return get(&Data::btMaxDownloadKb); }
+uint32 Preferences::btMaxDownloadKb() const
+{
+    return getScheduled(&Data::btMaxDownloadKb, &ScheduledLimits::btMaxDownloadKb);
+}
+uint32 Preferences::configuredBtMaxDownloadKb() const { return get(&Data::btMaxDownloadKb); }
 void Preferences::setBtMaxDownloadKb(uint32 val) { set(&Data::btMaxDownloadKb, val); }
 
-uint32 Preferences::btMaxUploadKb() const { return get(&Data::btMaxUploadKb); }
+uint32 Preferences::btMaxUploadKb() const
+{
+    return getScheduled(&Data::btMaxUploadKb, &ScheduledLimits::btMaxUploadKb);
+}
+uint32 Preferences::configuredBtMaxUploadKb() const { return get(&Data::btMaxUploadKb); }
 void Preferences::setBtMaxUploadKb(uint32 val) { set(&Data::btMaxUploadKb, val); }
 
 bool Preferences::btStopAfterMetadata() const { return get(&Data::btStopAfterMetadata); }
@@ -3305,6 +3338,22 @@ void Preferences::setShareIncomingSubdirs(bool val) { set(&Data::shareIncomingSu
 bool Preferences::seenFileIndex() const { return get(&Data::seenFileIndex); }
 void Preferences::setSeenFileIndex(bool val) { set(&Data::seenFileIndex, val); }
 
+QStringList Preferences::archivePasswords() const { return get(&Data::archivePasswords); }
+
+void Preferences::setArchivePasswords(const QStringList& val)
+{
+    // one per entry, no blanks, no repeats; order kept (tried first to last)
+    QStringList clean;
+    for (const QString& pw : val) {
+        if (!pw.isEmpty() && !clean.contains(pw))
+            clean.append(pw);
+    }
+    set(&Data::archivePasswords, clean);
+}
+
+bool Preferences::archiveRecursiveExtract() const { return get(&Data::archiveRecursiveExtract); }
+void Preferences::setArchiveRecursiveExtract(bool val) { set(&Data::archiveRecursiveExtract, val); }
+
 // ---------------------------------------------------------------------------
 // Getters / setters — Disk space
 // ---------------------------------------------------------------------------
@@ -3696,6 +3745,8 @@ QCborMap Preferences::toIpcMap() const
     prefs.insert(QStringLiteral("watchSharedDirs"), watchSharedDirs());
     prefs.insert(QStringLiteral("shareIncomingSubdirs"), shareIncomingSubdirs());
     prefs.insert(QStringLiteral("seenFileIndex"), seenFileIndex());
+    prefs.insert(QStringLiteral("archivePasswords"), QCborArray::fromStringList(archivePasswords()));
+    prefs.insert(QStringLiteral("archiveRecursiveExtract"), archiveRecursiveExtract());
 
     // Notifications (daemon-side)
     prefs.insert(QStringLiteral("notifyOnLog"), notifyOnLog());
@@ -3773,6 +3824,11 @@ QCborMap Preferences::toIpcMap() const
     prefs.insert(QStringLiteral("usenetSfvCheck"), usenetSfvCheck());
     prefs.insert(QStringLiteral("usenetUnrepairableAction"),
                  static_cast<qint64>(usenetUnrepairableAction()));
+    prefs.insert(QStringLiteral("usenetDeobfuscateNames"), usenetDeobfuscateNames());
+    prefs.insert(QStringLiteral("usenetPropagationDelayMinutes"),
+                 static_cast<qint64>(usenetPropagationDelayMinutes()));
+    prefs.insert(QStringLiteral("usenetRetryOtherNzb"), usenetRetryOtherNzb());
+    prefs.insert(QStringLiteral("usenetEpisodeDupes"), static_cast<qint64>(usenetEpisodeDupes()));
     prefs.insert(QStringLiteral("usenetUnwantedAction"),
                  static_cast<qint64>(usenetUnwantedAction()));
     prefs.insert(QStringLiteral("usenetUnwantedExtensions"), usenetUnwantedExtensions());
@@ -3792,8 +3848,8 @@ QCborMap Preferences::toIpcMap() const
     prefs.insert(QStringLiteral("btEnabled"), btEnabled());
     prefs.insert(QStringLiteral("btListenPort"), static_cast<qint64>(btListenPort()));
     prefs.insert(QStringLiteral("btDownloadDir"), btDownloadDir());
-    prefs.insert(QStringLiteral("btMaxDownloadKb"), static_cast<qint64>(btMaxDownloadKb()));
-    prefs.insert(QStringLiteral("btMaxUploadKb"), static_cast<qint64>(btMaxUploadKb()));
+    prefs.insert(QStringLiteral("btMaxDownloadKb"), static_cast<qint64>(configuredBtMaxDownloadKb()));
+    prefs.insert(QStringLiteral("btMaxUploadKb"), static_cast<qint64>(configuredBtMaxUploadKb()));
     prefs.insert(QStringLiteral("btStopAfterMetadata"), btStopAfterMetadata());
     prefs.insert(QStringLiteral("btDht"), btDht());
     prefs.insert(QStringLiteral("btLsd"), btLsd());
@@ -4065,6 +4121,15 @@ void Preferences::updateFromCbor(const QCborMap& p)
     m_data->watchSharedDirs               = p.value(QStringLiteral("watchSharedDirs")).toBool(true);
     m_data->shareIncomingSubdirs          = p.value(QStringLiteral("shareIncomingSubdirs")).toBool(true);
     m_data->seenFileIndex                 = p.value(QStringLiteral("seenFileIndex")).toBool(true);
+    if (p.contains(QStringLiteral("archivePasswords"))) {
+        m_data->archivePasswords.clear();   // under m_lock: no setter here
+        for (const QCborValue& v : p.value(QStringLiteral("archivePasswords")).toArray()) {
+            const QString pw = v.toString();
+            if (!pw.isEmpty() && !m_data->archivePasswords.contains(pw))
+                m_data->archivePasswords.append(pw);
+        }
+    }
+    m_data->archiveRecursiveExtract       = p.value(QStringLiteral("archiveRecursiveExtract")).toBool(true);
 
     // Notifications
     m_data->notifyOnLog              = p.value(QStringLiteral("notifyOnLog")).toBool();
@@ -4739,6 +4804,16 @@ bool Preferences::load(const QString& filePath)
             m_data->watchSharedDirs = f["watchSharedDirs"].as<bool>(m_data->watchSharedDirs);
             m_data->shareIncomingSubdirs = f["shareIncomingSubdirs"].as<bool>(m_data->shareIncomingSubdirs);
             m_data->seenFileIndex = f["seenFileIndex"].as<bool>(m_data->seenFileIndex);
+            if (const auto pws = f["archivePasswords"]; pws && pws.IsSequence()) {
+                m_data->archivePasswords.clear();
+                for (const auto& item : pws) {
+                    const QString pw = QString::fromStdString(item.as<std::string>(""));
+                    if (!pw.isEmpty() && !m_data->archivePasswords.contains(pw))
+                        m_data->archivePasswords.append(pw);
+                }
+            }
+            m_data->archiveRecursiveExtract =
+                f["archiveRecursiveExtract"].as<bool>(m_data->archiveRecursiveExtract);
         }
 
         // Transfer
@@ -5245,6 +5320,14 @@ bool Preferences::load(const QString& filePath)
             m_data->usenetSfvCheck = un["sfvCheck"].as<bool>(m_data->usenetSfvCheck);
             m_data->usenetUnrepairableAction = std::clamp(
                 un["unrepairableAction"].as<int>(m_data->usenetUnrepairableAction), 0, 2);
+            m_data->usenetDeobfuscateNames =
+                un["deobfuscateNames"].as<bool>(m_data->usenetDeobfuscateNames);
+            m_data->usenetPropagationDelayMinutes = std::clamp(
+                un["propagationDelayMinutes"].as<int>(m_data->usenetPropagationDelayMinutes), 0,
+                kMaxUsenetPropagationDelayMinutes);
+            m_data->usenetRetryOtherNzb = un["retryOtherNzb"].as<bool>(m_data->usenetRetryOtherNzb);
+            m_data->usenetEpisodeDupes = std::clamp(
+                un["episodeDupes"].as<int>(m_data->usenetEpisodeDupes), 0, 2);
             m_data->usenetUnwantedAction = std::clamp(
                 un["unwantedAction"].as<int>(m_data->usenetUnwantedAction), 0, 2);
             m_data->usenetUnwantedExtensions = QString::fromStdString(
@@ -6167,6 +6250,11 @@ bool Preferences::saveImpl(const QString& filePath) const
     out << YAML::Key << "watchSharedDirs" << YAML::Value << m_data->watchSharedDirs;
     out << YAML::Key << "shareIncomingSubdirs" << YAML::Value << m_data->shareIncomingSubdirs;
     out << YAML::Key << "seenFileIndex" << YAML::Value << m_data->seenFileIndex;
+    out << YAML::Key << "archivePasswords" << YAML::Value << YAML::BeginSeq;
+    for (const auto& pw : m_data->archivePasswords)
+        out << pw.toStdString();
+    out << YAML::EndSeq;
+    out << YAML::Key << "archiveRecursiveExtract" << YAML::Value << m_data->archiveRecursiveExtract;
     out << YAML::EndMap;
 
     // Transfer
@@ -6642,6 +6730,11 @@ bool Preferences::saveImpl(const QString& filePath) const
     out << YAML::Key << "useProxy" << YAML::Value << m_data->usenetUseProxy;
     out << YAML::Key << "sfvCheck" << YAML::Value << m_data->usenetSfvCheck;
     out << YAML::Key << "unrepairableAction" << YAML::Value << m_data->usenetUnrepairableAction;
+    out << YAML::Key << "deobfuscateNames" << YAML::Value << m_data->usenetDeobfuscateNames;
+    out << YAML::Key << "propagationDelayMinutes" << YAML::Value
+        << m_data->usenetPropagationDelayMinutes;
+    out << YAML::Key << "retryOtherNzb" << YAML::Value << m_data->usenetRetryOtherNzb;
+    out << YAML::Key << "episodeDupes" << YAML::Value << m_data->usenetEpisodeDupes;
     out << YAML::Key << "unwantedAction" << YAML::Value << m_data->usenetUnwantedAction;
     out << YAML::Key << "unwantedExtensions" << YAML::Value
         << m_data->usenetUnwantedExtensions.toStdString();

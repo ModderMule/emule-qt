@@ -676,6 +676,10 @@ private:
         /// billing day. Runtime only.
         bool quotaParked = false;
 
+        /// Waiting out usenetPropagationDelayMinutes after its newest post.
+        /// Re-derived every tick from the NZB dates and the pref. Runtime only.
+        bool propagationHeld = false;
+
         /// A retry of the articles a previous attempt could not find anywhere.
         ///
         /// It is a transaction because two things have to happen when the last
@@ -899,6 +903,10 @@ private:
     /// own edge and an item that starts waiting afterwards would hear nothing.
     /// True when the text changed.
     bool noteWaitReason(ItemRuntime& rt);
+
+    /// Seconds left of the propagation delay for @p rt; 0 = free to go. Off
+    /// when the pref is 0 or the NZB carries no post dates.
+    [[nodiscard]] static qint64 propagationWaitSecs(const ItemRuntime& rt);
 
     /// The same for the whole queue, after a global wait went up or came down.
     /// Skips a quota-parked item: the allowance's sentence is the item's own and
@@ -1182,6 +1190,10 @@ private:
     /// ⚠️ The sentence must not contain " — ": AddNzbUrlDialog formats a failed
     /// line as "<url> — <reason>" and recovers the URL with section(" — ", 0, 0),
     /// so an em-dash-space inside the reason silently corrupts its retry list.
+    /// Another release of the TV episode @p name names, queued (not failed) or
+    /// downloaded. False for a non-episode name and for PROPER/REPACK.
+    [[nodiscard]] bool findEpisodeDuplicate(const QString& name, QString& why) const;
+
     [[nodiscard]] UsenetAddOutcome findDuplicate(const NzbInfo& nzb,
                                                  const QString& name,
                                                  bool force,

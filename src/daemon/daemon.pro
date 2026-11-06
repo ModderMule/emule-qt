@@ -121,7 +121,9 @@ SOURCES += \
     AutoUpdater.cpp \
     PowerManager.cpp \
     UsenetBridge.cpp \
+    UsenetRetryGrabber.cpp \
     BandwidthCoordinator.cpp \
+    ScheduleNetworkBridge.cpp \
     WinShutdownHandler.cpp
 
 HEADERS += \
@@ -158,7 +160,9 @@ HEADERS += \
     AutoUpdater.h \
     PowerManager.h \
     UsenetBridge.h \
+    UsenetRetryGrabber.h \
     BandwidthCoordinator.h \
+    ScheduleNetworkBridge.h \
     WinShutdownHandler.h
 
 # generated eNode Meta API messages (core.pro)

@@ -333,6 +333,9 @@ public:
         std::optional<uint16> maxConnections;
         std::optional<uint16> maxSourcesPerFile;
         std::optional<uint16> maxConsPerFive;
+        std::optional<uint32> usenetMaxDownloadKb;   // KB/s, 0 = no cap; no stored twin
+        std::optional<uint32> btMaxDownloadKb;
+        std::optional<uint32> btMaxUploadKb;
     };
     [[nodiscard]] ScheduledLimits scheduledLimits() const;
     void setScheduledLimits(const ScheduledLimits& limits);
@@ -638,6 +641,15 @@ public:
     /// Keep a record of the files (and their names) seen in search results.
     [[nodiscard]] bool seenFileIndex() const;
     void setSeenFileIndex(bool val);
+
+    /// Tried in order on an encrypted archive after the download's own password
+    /// (Usenet, hoster). Blanks and repeats are dropped.
+    [[nodiscard]] QStringList archivePasswords() const;
+    void setArchivePasswords(const QStringList& val);
+
+    /// Archives that come out of an archive are unpacked too (a few levels deep).
+    [[nodiscard]] bool archiveRecursiveExtract() const;
+    void setArchiveRecursiveExtract(bool val);
 
     // -- Transfer -------------------------------------------------------------
 
@@ -1225,6 +1237,26 @@ public:
     [[nodiscard]] int usenetUnrepairableAction() const;
     void setUsenetUnrepairableAction(int val);
 
+    /// No PAR2 gave the payload its names and the biggest file looks random:
+    /// rename it (and its same-named siblings) to the job name.
+    [[nodiscard]] bool usenetDeobfuscateNames() const;
+    void setUsenetDeobfuscateNames(bool val);
+
+    /// Minutes a release waits after its newest post before it downloads, so it
+    /// reaches every provider first. 0 = off.
+    static constexpr int kMaxUsenetPropagationDelayMinutes = 1440;
+    [[nodiscard]] int usenetPropagationDelayMinutes() const;
+    void setUsenetPropagationDelayMinutes(int val);
+
+    /// A failed job that came from an indexer grabs another NZB of the same release.
+    [[nodiscard]] bool usenetRetryOtherNzb() const;
+    void setUsenetRetryOtherNzb(bool val);
+
+    /// Same show episode (or air date) already queued or downloaded:
+    /// 0 off, 1 refuse like a duplicate, 2 add paused. PROPER/REPACK pass.
+    [[nodiscard]] int usenetEpisodeDupes() const;
+    void setUsenetEpisodeDupes(int val);
+
     /// A media release carrying a file with one of usenetUnwantedExtensions(),
     /// or a media file whose bytes are no media container.
     [[nodiscard]] int usenetUnwantedAction() const;
@@ -1335,11 +1367,13 @@ public:
     [[nodiscard]] QString btDownloadDir() const;
     void setBtDownloadDir(const QString& val);
 
-    /// KB/s, 0 = unlimited.
+    /// KB/s, 0 = unlimited. Getters include a running schedule; configured*() don't.
     [[nodiscard]] uint32 btMaxDownloadKb() const;
     void setBtMaxDownloadKb(uint32 val);
     [[nodiscard]] uint32 btMaxUploadKb() const;
     void setBtMaxUploadKb(uint32 val);
+    [[nodiscard]] uint32 configuredBtMaxDownloadKb() const;
+    [[nodiscard]] uint32 configuredBtMaxUploadKb() const;
 
     /// New torrents stop once their file list is known, to pick files first. A magnet
     /// fetches its metadata, a .torrent is added stopped.

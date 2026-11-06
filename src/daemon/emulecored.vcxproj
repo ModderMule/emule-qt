@@ -213,7 +213,9 @@
     <ClCompile Include="Ed3kKadBridge.cpp" />
     <ClCompile Include="Ed3kLinksBridge.cpp" />
     <ClCompile Include="UsenetBridge.cpp" />
+    <ClCompile Include="UsenetRetryGrabber.cpp" />
     <ClCompile Include="BandwidthCoordinator.cpp" />
+    <ClCompile Include="ScheduleNetworkBridge.cpp" />
     <ClCompile Include="WinShutdownHandler.cpp" />
   </ItemGroup>
   <ItemGroup>
@@ -228,6 +230,7 @@
     <QtMoc Include="MetaSearchService.h" />
     <QtMoc Include="AutoUpdater.h" />
     <QtMoc Include="PowerManager.h" />
+    <QtMoc Include="UsenetRetryGrabber.h" />
     <ClInclude Include="DaemonApiBackend.h" />
     <ClInclude Include="Ed3kHosterBridge.h" />
     <ClInclude Include="Ed3kKadBridge.h" />
@@ -255,6 +258,7 @@
     <ClInclude Include="Ed3kHideBridge.h" />
     <ClInclude Include="UsenetBridge.h" />
     <ClInclude Include="BandwidthCoordinator.h" />
+    <ClInclude Include="ScheduleNetworkBridge.h" />
   </ItemGroup>
   <ItemGroup>
     <CustomBuild Include="debug\moc_predefs.h.cbt">

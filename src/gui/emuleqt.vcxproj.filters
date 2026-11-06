@@ -1626,6 +1626,9 @@
     <None Include="..\..\resources\icons\Container.ico">
       <Filter>Resource Files</Filter>
     </None>
+    <None Include="..\..\resources\icons\DLC.ico">
+      <Filter>Resource Files</Filter>
+    </None>
     <None Include="..\..\resources\icons\WebEd2k.ico">
       <Filter>Resource Files</Filter>
     </None>

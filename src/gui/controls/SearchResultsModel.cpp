@@ -452,7 +452,7 @@ QVariant SearchResultsModel::data(const QModelIndex& index, int role) const
         else if (r.isWeb())
             network = QStringLiteral(":/icons/Web.ico");
         else if (r.isContainer())
-            network = QStringLiteral(":/icons/Container.ico");
+            network = QStringLiteral(":/icons/DLC.ico");
         else if (r.isEd3k())
             network = QStringLiteral(":/icons/Ed3k.ico");  // ed3k: Mars + donkey (no MFC original)
         else if (r.webOrigin)

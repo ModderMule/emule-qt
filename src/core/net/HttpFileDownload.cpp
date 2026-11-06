@@ -190,6 +190,8 @@ void HttpDownloadJob::onReplyFinished()
     }
 
     r.validators = {reply->rawHeader("ETag"), reply->rawHeader("Last-Modified")};
+    for (const auto& [name, value] : reply->rawHeaderPairs())
+        r.headers.insert(name.toLower(), value);
 
     // Only a conditional request can be answered "not modified"
     if (r.httpStatus == 304 && m_hopConditional) {

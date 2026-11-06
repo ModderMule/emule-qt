@@ -13,6 +13,7 @@
 #include "IpcTlsIdentity.h"
 #include "MetaSearchService.h"
 #include "PowerManager.h"
+#include "ScheduleNetworkBridge.h"
 #include "BandwidthCoordinator.h"
 #include "BtBridge.h"
 #include "Ed3kBridge.h"
@@ -30,6 +31,7 @@
 #include "Ed3kRoomsBridge.h"
 #include "Ed3kNamesBridge.h"
 #include "UsenetBridge.h"
+#include "UsenetRetryGrabber.h"
 
 #include "IpcMessage.h"
 #include "LogRelay.h"
@@ -87,6 +89,7 @@
 #endif
 #endif
 #include "net/ProxySettings.h"
+#include "IndexerClient.h"
 #include "IndexerFeedList.h"
 #include "IndexerSearch.h"
 #include "IndexerSearchList.h"
@@ -770,6 +773,17 @@ bool DaemonApp::start()
     m_bandwidth->setEd3k(m_ed3kSession.get());
 #endif
     m_bandwidth->start();
+
+    // the scheduler's pause / resume of the other networks; the scheduler may come later
+    bt::BtSession* scheduleBt = btSession;
+    ed3k::Ed3kDownloads* scheduleEd3k = nullptr;
+#ifdef EMULE_HAVE_ED3K
+    scheduleEd3k = m_ed3kDownloads.get();
+#endif
+    m_scheduleNetwork = std::make_unique<ScheduleNetworkBridge>(scheduleBt, scheduleEd3k);
+    theApp.scheduleNetworkActions = m_scheduleNetwork.get();
+    if (theApp.scheduler)
+        theApp.scheduler->setNetworkActions(m_scheduleNetwork.get());
 #ifdef EMULE_HAVE_ED3K
     // the graphs' ed3k lines: the coordinator's wire rates (B/s → KB/s), cleared before it goes
     if (theApp.statsHistory)
@@ -797,6 +811,8 @@ bool DaemonApp::start()
     m_indexerFeeds->setPasswordFlagStore(m_indexerSearches->passwordFlags());
     connectIndexerFeedSink();
     m_indexerFeeds->applyPreferences();
+    if (m_usenetSession)
+        m_usenetRetry = std::make_unique<UsenetRetryGrabber>(m_usenetSession.get());
 
     // Prevent standby. MFC ResetStandByIdleTimer's condition, plus Usenet.
     m_powerManager = std::make_unique<PowerManager>([] {
@@ -852,6 +868,14 @@ void DaemonApp::stop()
 
     indexer::theIndexerSearchList = nullptr;
     m_indexerSearches.reset();
+
+    // undo the scheduler's runtime pauses while the sessions still run (BT saves resume data)
+    if (theApp.scheduler) {
+        theApp.scheduler->releaseNetworks();
+        theApp.scheduler->setNetworkActions(nullptr);
+    }
+    theApp.scheduleNetworkActions = nullptr;
+    m_scheduleNetwork.reset();
 
     // before the sessions it throttles
     if (theApp.statsHistory)
@@ -954,6 +978,7 @@ void DaemonApp::stop()
     if (theApp.statsHistory)
         theApp.statsHistory->setUsenetDownRateSource({});
     usenet::theUsenetSession = nullptr;
+    m_usenetRetry.reset();   // holds the session
     if (m_usenetSession)
         m_usenetSession->stop();
     m_usenetSession.reset();
@@ -1511,11 +1536,21 @@ void DaemonApp::connectIndexerFeedSink()
             }
 
             usenet::UsenetAddOutcome outcome = usenet::UsenetAddOutcome::Failed;
+            // a bare RSS link has no account to ask for a replacement
+            usenet::UsenetOrigin origin;
+            if (!request.indexerName.isEmpty()) {
+                origin.indexerName = request.indexerName;
+                origin.guid = request.guid;
+                origin.title = request.title;
+                origin.failureUrl = indexer::IndexerClient::failureUrlFor(request.downloadUrl)
+                                        .toString(QUrl::FullyEncoded);
+            }
             usenet::theUsenetSession->queue()->addNzb(
                 request.payload, request.title, error,
                 {.source = usenet::UsenetAddSource::Automatic,
                  .password = request.password,
-                 .category = request.downloadCategory},
+                 .category = request.downloadCategory,
+                 .origin = origin},
                 &outcome);
             usenet::theUsenetSession->queue()->stats().noteAdd(usenet::UsenetAddOrigin::Feed,
                                                                outcome);
@@ -1525,6 +1560,7 @@ void DaemonApp::connectIndexerFeedSink()
                 return indexer::FeedAddOutcome::Added;
             case usenet::UsenetAddOutcome::Duplicate:
             case usenet::UsenetAddOutcome::AlreadyDownloaded:
+            case usenet::UsenetAddOutcome::EpisodeDuplicate:
                 // Terminal. The feed must stop asking — this is not a failure,
                 // it is the answer. AlreadyDownloaded joins it deliberately: a
                 // person re-downloading something on purpose is a legitimate act

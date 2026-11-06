@@ -22,6 +22,7 @@
 
 #include <QList>
 #include <QString>
+#include <QStringList>
 #include <QtTypes>
 
 namespace eMule::usenet {
@@ -45,6 +46,7 @@ enum class UsenetAddOrigin : quint8 {
     WatchFolder,
     Feed,
     IndexerGrab,
+    Retry,        ///< replacement NZB for a failed job (usenetRetryOtherNzb)
 };
 
 /// Why addNzb() did what it did.
@@ -66,6 +68,25 @@ enum class UsenetAddOutcome : quint8 {
     ///
     /// Appended rather than inserted -- the value travels on the wire now.
     AlreadyDownloaded,
+
+    /// Another release of the same TV episode is queued or was downloaded
+    /// (usenetEpisodeDupes = refuse). Handled like AlreadyDownloaded: terminal
+    /// for an automatic actor, a question force answers for a person.
+    EpisodeDuplicate,
+};
+
+/// Which indexer row an NZB was grabbed from, so a failed job can fetch another
+/// release of the same thing (usenetRetryOtherNzb). Empty for files, URLs and
+/// the watch folder: those have nowhere to ask.
+struct UsenetOrigin {
+    QString indexerName;   ///< IndexerConfig::displayName(); empty = no origin
+    QString guid;
+    QString title;         ///< the indexer's title: what a retry searches for
+    QString failureUrl;    ///< X-DNZB-Failure, when the indexer sent one
+    QStringList triedGuids;   ///< this one and every replacement before it
+    int retries = 0;       ///< replacements so far in this chain
+
+    [[nodiscard]] bool isSet() const { return !indexerName.isEmpty(); }
 };
 
 /// What an add may choose, beside the bytes and the name.
@@ -110,6 +131,9 @@ struct UsenetAddOptions {
     /// ignored, and nothing left means the whole release. Empty = all files.
     /// With the release still arriving, the kept files join that item instead.
     QList<int> keptFiles;
+
+    /// Where an indexer grab came from. Stored on the item.
+    UsenetOrigin origin;
 };
 
 /// How hard to ask before spending anything. Mirrors the integer stored in

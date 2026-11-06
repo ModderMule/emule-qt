@@ -77,6 +77,12 @@ public:
     /// overloads above delegate here rather than repeating any of it.
     void fetchUrl(const QUrl& url, int timeoutMs, FetchCallback done);
 
+    /// The `X-DNZB-Failure` link an indexer sent with the .nzb at @p downloadUrl:
+    /// where to report it failed and get another release. Empty when it sent
+    /// none. Kept process-wide for the last few hundred grabs, so the grab path
+    /// needs no new plumbing.
+    [[nodiscard]] static QUrl failureUrlFor(const QUrl& downloadUrl);
+
     /// GET @p url and parse the answer as a newznab/torznab search response.
     /// @p sourceName tags every row with where it came from, the way an
     /// account's display name does.

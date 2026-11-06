@@ -35,7 +35,14 @@ enum class NzbAddOutcome : int {
     Invalid,
     Failed,
     AlreadyDownloaded,  ///< finished or cancelled before — worth asking about
+    EpisodeDuplicate,   ///< same TV episode, other release — worth asking about
 };
+
+/// The refusals a person may overrule with force.
+[[nodiscard]] inline bool isAskableNzbOutcome(NzbAddOutcome o)
+{
+    return o == NzbAddOutcome::AlreadyDownloaded || o == NzbAddOutcome::EpisodeDuplicate;
+}
 
 /// Send @p build(false); on an "already downloaded" answer ask, and on Yes send
 /// @p build(true).

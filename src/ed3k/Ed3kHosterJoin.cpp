@@ -2,6 +2,8 @@
 
 #include "Ed3kSession.h"
 #include "Ed3kStore.h"
+#include "post/UsenetUnpacker.h"
+#include "prefs/Preferences.h"
 #include "utils/Log.h"
 
 #include <QDateTime>
@@ -2856,6 +2858,12 @@ void Ed3kHosterJoin::queueUnpacks()
             for (const QString& pw : m->item.passwords)
                 if (!job.passwords.contains(pw))
                     job.passwords << pw;
+        // then the user's list from Options > Files (all networks)
+        for (const QString& pw : thePrefs.archivePasswords())
+            if (!job.passwords.contains(pw))
+                job.passwords << pw;
+        job.nestedDepth = thePrefs.archiveRecursiveExtract() ? usenet::UsenetUnpacker::kNestedDepth : 0;
+        job.deleteNestedArchives = m_prefs.deleteArchives;
         if (!m_unpack.start(job))
             return;
         for (Entry* m : members) {

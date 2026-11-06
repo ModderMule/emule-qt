@@ -201,10 +201,12 @@ void UsenetStatistics::noteAdd(UsenetAddOrigin origin, UsenetAddOutcome outcome)
         case UsenetAddOrigin::Url:         ++c->nzbFromUrl; break;
         case UsenetAddOrigin::WatchFolder: ++c->nzbFromWatch; break;
         case UsenetAddOrigin::Feed:        ++c->nzbFromFeed; break;
-        case UsenetAddOrigin::IndexerGrab: ++c->nzbFromIndexer; break;
+        case UsenetAddOrigin::IndexerGrab:
+        case UsenetAddOrigin::Retry:       ++c->nzbFromIndexer; break;
         }
         break;
-    case UsenetAddOutcome::Duplicate:         ++c->nzbDuplicate; break;
+    case UsenetAddOutcome::Duplicate:
+    case UsenetAddOutcome::EpisodeDuplicate:  ++c->nzbDuplicate; break;
     case UsenetAddOutcome::AlreadyDownloaded: ++c->nzbAlreadyDownloaded; break;
     case UsenetAddOutcome::Invalid:           ++c->nzbInvalid; break;
     case UsenetAddOutcome::Failed:            break;

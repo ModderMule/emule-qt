@@ -475,7 +475,8 @@ void IndexerFeedList::deliver(Entry& entry, const IndexerResult& row, const QByt
     const FeedAddOutcome outcome =
         m_sink({.feedName = entry.feed.name, .title = row.title, .payload = payload,
                 .torrent = !row.isUsenet(), .password = row.password,
-                .downloadCategory = entry.feed.downloadCategory},
+                .downloadCategory = entry.feed.downloadCategory,
+                .indexerName = row.indexerName, .guid = row.guid, .downloadUrl = row.downloadUrl},
                addError);
 
     switch (outcome) {

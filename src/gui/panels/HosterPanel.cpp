@@ -190,7 +190,7 @@ HosterPanel::HosterPanel(QWidget* parent)
     auto* addBtn = new QPushButton(menuIcon("ListAdd.ico"), tr("Add Links..."), this);
     addBtn->setToolTip(tr("Links to files at hosters, one per line"));
     bar->addWidget(addBtn);
-    auto* dlcBtn = new QPushButton(menuIcon("Container.ico"), tr("Open DLC..."), this);
+    auto* dlcBtn = new QPushButton(menuIcon("DLC.ico"), tr("Open DLC..."), this);
     dlcBtn->setToolTip(tr("Adds the links of a link container (.dlc, .rsdf, .ccf); you can also drop one here"));
     bar->addWidget(dlcBtn);
     layout->addLayout(bar);
@@ -343,14 +343,28 @@ void HosterPanel::openContainerFiles(const QStringList& paths)
             QMessageBox::warning(this, tr("Open DLC"), tr("Cannot read %1.").arg(QDir::toNativeSeparators(path)));
             continue;
         }
-        IpcMessage req(IpcMsgType::OpenHosterContainer);
-        req.append(QFileInfo(path).fileName());
-        req.append(QCborValue(f.readAll()));
-        m_ipc->sendRequest(std::move(req), [this](const IpcMessage& r) {
-            if (!r.fieldBool(0))
-                QMessageBox::warning(this, tr("Open DLC"), r.fieldMap(1).value(QStringLiteral("error")).toString());
-        });
+        openContainerData(QFileInfo(path).fileName(), f.readAll());
     }
+}
+
+void HosterPanel::openContainerData(const QString& name, const QByteArray& data)
+{
+    if (!m_ipc || !m_ipc->isConnected()) {
+        QMessageBox::warning(this, tr("Open DLC"), tr("Not connected to the eMule core."));
+        return;
+    }
+    if (data.isEmpty() || data.size() > kMaxContainerBytes) {
+        QMessageBox::warning(this, tr("Open DLC"), tr("Cannot read %1.").arg(name));
+        return;
+    }
+    IpcMessage req(IpcMsgType::OpenHosterContainer);
+    req.append(name);
+    req.append(QCborValue(data));
+    QPointer<HosterPanel> self(this);
+    m_ipc->sendRequest(std::move(req), [self](const IpcMessage& r) {
+        if (self && r.isValid() && !r.fieldBool(0))
+            QMessageBox::warning(self, tr("Open DLC"), r.fieldMap(1).value(QStringLiteral("error")).toString());
+    });
 }
 
 void HosterPanel::promptOpenContainer()
@@ -596,7 +610,7 @@ void HosterPanel::showContextMenu(const QPoint& pos)
     QAction* folder = menu.addAction(menuIcon("FolderOpen.ico"), tr("Open folder"));
     menu.addSeparator();
     QAction* add = menu.addAction(menuIcon("ListAdd.ico"), tr("Add Links..."));
-    QAction* dlc = menu.addAction(menuIcon("Container.ico"), tr("Open DLC..."));
+    QAction* dlc = menu.addAction(menuIcon("DLC.ico"), tr("Open DLC..."));
     // straight from the clipboard, no dialog
     const QStringList pasted = clipboardLinks();
     QAction* paste = menu.addAction(menuIcon("eD2kLinkPaste.ico"), tr("Paste links"));

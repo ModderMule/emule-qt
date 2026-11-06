@@ -79,6 +79,10 @@ public:
     /// add. See usenetFoldedReleaseName().
     [[nodiscard]] const UsenetHistoryEntry* findByName(const QString& name) const;
 
+    /// A remembered *download* of the same TV episode, by ReleaseEpisode::key().
+    /// Cancelled entries never count: cancelling a bad release is not having it.
+    [[nodiscard]] const UsenetHistoryEntry* findByEpisodeKey(const QString& key) const;
+
     [[nodiscard]] int count() const;
 
     /// The whole file, through writeSidecarAtomically(). Called on completion and
@@ -103,6 +107,7 @@ private:
     /// folded name -> digest. Keyed rather than positional: eviction erases a
     /// prefix, which would invalidate every index into a list.
     QMultiHash<QString, QString> m_digestsByFoldedName;
+    QMultiHash<QString, QString> m_digestsByEpisode;   ///< episode key -> digest
     bool m_loaded = false;
 };
 

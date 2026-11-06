@@ -51,6 +51,7 @@ Ed2kLinkImporter::TorrentFileHandler s_torrentFileHandler;
 std::function<bool()> s_torrentsReady;
 Ed2kLinkImporter::HosterLinkHandler s_hosterLinkHandler;
 std::function<bool()> s_hosterReady;
+Ed2kLinkImporter::HosterContainerHandler s_hosterContainerHandler;
 Ed2kLinkImporter::Ed3kPassLinkHandler s_ed3kPassLinkHandler;
 Ed2kLinkImporter::Ed3kLinkHandler s_ed3kLinkHandler;
 
@@ -363,6 +364,19 @@ bool Ed2kLinkImporter::sendHosterLinks(const QList<QStringList>& files, QWidget*
     if (!hosterReady() || files.isEmpty())
         return false;
     s_hosterLinkHandler(files, package, parent);
+    return true;
+}
+
+void Ed2kLinkImporter::setHosterContainerHandler(HosterContainerHandler handler)
+{
+    s_hosterContainerHandler = std::move(handler);
+}
+
+bool Ed2kLinkImporter::sendHosterContainer(const QString& name, const QByteArray& data, QWidget* parent)
+{
+    if (!s_hosterContainerHandler || !hosterReady() || data.isEmpty())
+        return false;
+    s_hosterContainerHandler(name, data, parent);
     return true;
 }
 

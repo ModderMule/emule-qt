@@ -450,6 +450,18 @@ void setEnginePaused(bool paused)
         q->setEnginePaused(paused);
 }
 
+void setEnginePausedRuntime(bool paused)
+{
+    if (auto* q = queue(); q && q->isEnginePaused() != paused)
+        q->setEnginePaused(paused);
+}
+
+bool enginePaused()
+{
+    auto* q = queue();
+    return q ? q->isEnginePaused() : thePrefs.usenetPaused();
+}
+
 int applyCategoryAction(int category, UsenetWebCategoryAction action)
 {
     auto* q = queue();

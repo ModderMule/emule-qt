@@ -160,6 +160,7 @@ void UsenetWatchFolder::consume(const QString& path)
 
     case UsenetAddOutcome::Duplicate:
     case UsenetAddOutcome::AlreadyDownloaded:
+    case UsenetAddOutcome::EpisodeDuplicate:
         // The answer, not a failure. Filing it as failed would be a lie, and
         // leaving it would make every scan re-read it. The reason leads, because
         // it already says which kind of "already" this was — the line used to

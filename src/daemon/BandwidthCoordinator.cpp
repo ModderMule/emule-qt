@@ -174,8 +174,10 @@ void BandwidthCoordinator::tick()
     s.ed2kDownKb = ed2kBudgetKb >= 0 ? ed2kBudgetKb : maxDown;
     if (usenetRunning) {
         // its 0 is unlimited, so it always gets the number
-        usenetQueue->setRateLimit(down.usenetCapKb * 1024);
-        s.usenetDownKb = down.usenetCapKb;
+        // a running schedule's cap on top of the share
+        const qint64 capKb = tighter(down.usenetCapKb, thePrefs.scheduledLimits().usenetMaxDownloadKb.value_or(0));
+        usenetQueue->setRateLimit(capKb * 1024);
+        s.usenetDownKb = capKb;
     }
     s.btDownKb = tighter(down.btCapKb, thePrefs.btMaxDownloadKb());
 

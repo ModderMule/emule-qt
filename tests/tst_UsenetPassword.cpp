@@ -145,6 +145,12 @@ private slots:
     void noExternalToolSaysSoRatherThanFailingObscurely();
     void theExternalUnpackerSanitisesMemberNames();
 
+    // -- password list and nested archives ----------------------------------
+    void aPasswordListOpensAnEncryptedZip();
+    void aPasswordListOpensA7zThroughTheTool();
+    void aPasswordListThatAllFailsIsAWrongPassword();
+    void anArchiveInsideAnArchiveIsUnpackedToo();
+
     // -- preview ------------------------------------------------------------
     void anIncomplete7zSetCanNeverBePreviewed();
     void chooseMemberPicksTheBiggestPlayableOne();
@@ -803,6 +809,145 @@ void tst_UsenetPassword::anEncryptedReleaseWithItsPasswordDownloadsAndPublishes(
     queue.stop();
     thePrefs.setUsenetExternalUnpacker(QString());
 }
+
+// ---------------------------------------------------------------------------
+// Password list, nested archives
+// ---------------------------------------------------------------------------
+
+namespace {
+
+QString writePayload(const QTemporaryDir& tmp, const QString& name, const QByteArray& data)
+{
+    const QString path = tmp.filePath(name);
+    QFile f(path);
+    if (f.open(QIODevice::WriteOnly))
+        f.write(data);
+    return path;
+}
+
+} // namespace
+
+void tst_UsenetPassword::aPasswordListOpensAnEncryptedZip()
+{
+    if (sevenZip().isEmpty())
+        QSKIP("7zz/7z not installed; cannot build a genuinely encrypted zip");
+
+    QTemporaryDir tmp;
+    const QString work = tmp.filePath(QStringLiteral("work"));
+    QVERIFY(QDir().mkpath(work));
+    const QByteArray payload = payloadOf(32 * 1024);
+    const QString source = writePayload(tmp, QStringLiteral("movie.mkv"), payload);
+    QCOMPARE(runTool({QStringLiteral("a"), QStringLiteral("-tzip"), QStringLiteral("-mem=AES256"),
+                      QStringLiteral("-psecret123"),
+                      QDir(work).filePath(QStringLiteral("rel.zip")), source}), 0);
+
+    UsenetUnpacker::Options options;
+    options.passwords = {QString(), QStringLiteral("wrong"), QStringLiteral("nope"),
+                         QStringLiteral("secret123")};
+    UsenetUnpacker unpacker;
+    const auto result = unpacker.unpackAll(work, tmp.filePath(QStringLiteral("out")), options);
+    QVERIFY2(result.ok, qPrintable(result.error));
+    QCOMPARE(result.extractedFiles.size(), 1);
+    QFile out(result.extractedFiles.first());
+    QVERIFY(out.open(QIODevice::ReadOnly));
+    QCOMPARE(out.readAll(), payload);
+}
+
+void tst_UsenetPassword::aPasswordListOpensA7zThroughTheTool()
+{
+    if (sevenZip().isEmpty())
+        QSKIP("7zz/7z not installed");
+
+    QTemporaryDir tmp;
+    const QString work = tmp.filePath(QStringLiteral("work"));
+    QVERIFY(QDir().mkpath(work));
+    const QByteArray payload = payloadOf(64 * 1024);
+    const QString source = writePayload(tmp, QStringLiteral("movie.mkv"), payload);
+    QCOMPARE(runTool({QStringLiteral("a"), QStringLiteral("-mhe=on"), QStringLiteral("-psecret123"),
+                      QDir(work).filePath(QStringLiteral("rel.7z")), source}), 0);
+
+    UsenetUnpacker::Options options;
+    options.passwords = {QStringLiteral("first"), QStringLiteral("second"),
+                         QStringLiteral("secret123")};
+    options.externalTool = sevenZip();
+    UsenetUnpacker unpacker;
+    const auto result = unpacker.unpackAll(work, tmp.filePath(QStringLiteral("out")), options);
+    QVERIFY2(result.ok, qPrintable(result.error));
+    QCOMPARE(result.usedPassword, QStringLiteral("secret123"));
+    QCOMPARE(result.extractedFiles.size(), 1);
+    QFile out(result.extractedFiles.first());
+    QVERIFY(out.open(QIODevice::ReadOnly));
+    QCOMPARE(out.readAll(), payload);
+}
+
+void tst_UsenetPassword::aPasswordListThatAllFailsIsAWrongPassword()
+{
+    if (sevenZip().isEmpty())
+        QSKIP("7zz/7z not installed");
+
+    QTemporaryDir tmp;
+    const QString work = tmp.filePath(QStringLiteral("work"));
+    QVERIFY(QDir().mkpath(work));
+    const QString source = writePayload(tmp, QStringLiteral("movie.mkv"), payloadOf(16 * 1024));
+    QCOMPARE(runTool({QStringLiteral("a"), QStringLiteral("-mhe=on"), QStringLiteral("-psecret123"),
+                      QDir(work).filePath(QStringLiteral("rel.7z")), source}), 0);
+
+    UsenetUnpacker::Options options;
+    options.passwords = {QStringLiteral("a"), QStringLiteral("b")};
+    options.externalTool = sevenZip();
+    UsenetUnpacker unpacker;
+    const auto result = unpacker.unpackAll(work, tmp.filePath(QStringLiteral("out")), options);
+    QVERIFY(!result.ok);
+    QVERIFY(result.passwordRequired);
+    QVERIFY(result.wrongPassword);
+    QVERIFY(result.consumedArchives.isEmpty());
+    QVERIFY(result.extractedFiles.isEmpty());
+}
+
+void tst_UsenetPassword::anArchiveInsideAnArchiveIsUnpackedToo()
+{
+    if (sevenZip().isEmpty())
+        QSKIP("7zz/7z not installed; cannot build the archives");
+
+    QTemporaryDir tmp;
+    const QString work = tmp.filePath(QStringLiteral("work"));
+    const QString stage = tmp.filePath(QStringLiteral("stage"));
+    QVERIFY(QDir().mkpath(work));
+    QVERIFY(QDir().mkpath(stage));
+    const QByteArray payload = payloadOf(24 * 1024);
+    const QString source = writePayload(tmp, QStringLiteral("movie.mkv"), payload);
+    // movie.mkv in inner.zip in outer.7z
+    const QString inner = QDir(stage).filePath(QStringLiteral("inner.zip"));
+    QCOMPARE(runTool({QStringLiteral("a"), QStringLiteral("-tzip"), inner, source}), 0);
+    QCOMPARE(runTool({QStringLiteral("a"), QDir(work).filePath(QStringLiteral("outer.7z")), inner}), 0);
+
+    // off: the inner zip is the payload
+    {
+        UsenetUnpacker::Options options;
+        UsenetUnpacker unpacker;
+        const auto result = unpacker.unpackAll(work, tmp.filePath(QStringLiteral("flat")), options);
+        QVERIFY2(result.ok, qPrintable(result.error));
+        QCOMPARE(result.extractedFiles.size(), 1);
+        QVERIFY(result.extractedFiles.first().endsWith(QStringLiteral("inner.zip")));
+        QCOMPARE(result.nestedSets, 0);
+    }
+
+    UsenetUnpacker::Options options;
+    options.nestedDepth = UsenetUnpacker::kNestedDepth;
+    UsenetUnpacker unpacker;
+    const auto result = unpacker.unpackAll(work, tmp.filePath(QStringLiteral("out")), options);
+    QVERIFY2(result.ok, qPrintable(result.error));
+    QCOMPARE(result.nestedSets, 1);
+    QCOMPARE(result.extractedFiles.size(), 1);
+    QVERIFY(result.extractedFiles.first().endsWith(QStringLiteral("movie.mkv")));
+    // the inner zip is spent, like a volume: cleanup deletes it
+    QVERIFY(std::ranges::any_of(result.consumedArchives,
+                                [](const QString& p) { return p.endsWith(QStringLiteral("inner.zip")); }));
+    QFile out(result.extractedFiles.first());
+    QVERIFY(out.open(QIODevice::ReadOnly));
+    QCOMPARE(out.readAll(), payload);
+}
+
 
 QTEST_MAIN(tst_UsenetPassword)
 #include "tst_UsenetPassword.moc"

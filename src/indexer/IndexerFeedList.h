@@ -44,6 +44,7 @@
 #include <QObject>
 #include <QSet>
 #include <QString>
+#include <QUrl>
 
 #include <functional>
 
@@ -84,6 +85,11 @@ struct FeedAddRequest {
     /// An opaque int on the way past: this module still names nothing in
     /// eMule::Usenet, and what the number indexes is the sink's business.
     int downloadCategory = 0;
+
+    /// The row, for a replacement NZB should this one fail.
+    QString indexerName;
+    QString guid;
+    QUrl downloadUrl;
 };
 
 /// What the GUI is shown about a feed. Everything here is a report, not a

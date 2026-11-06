@@ -157,6 +157,14 @@ MainWindow::MainWindow(QWidget* parent)
         [self = QPointer<MainWindow>(this)] {
             return self && self->m_hosterPanel && self->m_hosterPanel->hostersEnabled();
         });
+    // container search rows: the fetched .dlc opens in the Hoster tab
+    Ed2kLinkImporter::setHosterContainerHandler(
+        [self = QPointer<MainWindow>(this)](const QString& name, const QByteArray& data, QWidget*) {
+            if (!self || !self->m_hosterPanel)
+                return;
+            self->switchToTab(TabHoster);
+            self->m_hosterPanel->openContainerData(name, data);
+        });
 #endif
 
     // before the pages, so their lists bind to the skin colours right away

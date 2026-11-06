@@ -123,10 +123,16 @@
     <ClCompile Include="Ed3kHideBridge.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
+    <ClCompile Include="UsenetRetryGrabber.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
     <ClCompile Include="UsenetBridge.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
     <ClCompile Include="BandwidthCoordinator.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="ScheduleNetworkBridge.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
   </ItemGroup>
@@ -159,6 +165,9 @@
       <Filter>Header Files</Filter>
     </QtMoc>
     <QtMoc Include="PowerManager.h">
+      <Filter>Header Files</Filter>
+    </QtMoc>
+    <QtMoc Include="UsenetRetryGrabber.h">
       <Filter>Header Files</Filter>
     </QtMoc>
     <QtMoc Include="MetaSearchService.h">
@@ -237,6 +246,9 @@
       <Filter>Header Files</Filter>
     </ClInclude>
     <ClInclude Include="BandwidthCoordinator.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="ScheduleNetworkBridge.h">
       <Filter>Header Files</Filter>
     </ClInclude>
   </ItemGroup>

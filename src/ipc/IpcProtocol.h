@@ -442,6 +442,8 @@ enum class IpcMsgType : int {
     /// (InspectNzb's map, or BtBridge::inspectTorrent's). Nothing is queued. The
     /// payload stays 3 h in MetaFileCache, so the Download that follows does not
     /// spend a second grab. A row whose `hasFile` is false has only a magnet.
+    /// Optional [raw: bool] (field 2): no parse, the file for another client instead:
+    /// {kind: "torrent" | "nzb", content: bytes, fileName} or {kind: "magnet", magnet}.
     InspectIndexerResult    = 711,
 
     // -- Usenet (720-799) ----------------------------------------------------

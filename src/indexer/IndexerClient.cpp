@@ -203,6 +203,39 @@ void IndexerClient::searchUrl(const QUrl& url, int timeoutMs, const QString& sou
     });
 }
 
+namespace {
+
+/// downloadUrl -> X-DNZB-Failure, oldest dropped first
+struct FailureUrls {
+    QHash<QString, QUrl> byUrl;
+    QStringList order;
+};
+
+FailureUrls& failureUrls()
+{
+    static FailureUrls f;
+    return f;
+}
+
+void rememberFailureUrl(const QUrl& downloadUrl, const QUrl& failure)
+{
+    constexpr qsizetype kMax = 500;
+    FailureUrls& f = failureUrls();
+    const QString key = downloadUrl.toString(QUrl::FullyEncoded);
+    if (!f.byUrl.contains(key))
+        f.order.append(key);
+    f.byUrl.insert(key, failure);
+    while (f.order.size() > kMax)
+        f.byUrl.remove(f.order.takeFirst());
+}
+
+} // namespace
+
+QUrl IndexerClient::failureUrlFor(const QUrl& downloadUrl)
+{
+    return failureUrls().byUrl.value(downloadUrl.toString(QUrl::FullyEncoded));
+}
+
 void IndexerClient::fetch(const IndexerConfig& config, const QUrl& url, FetchCallback done)
 {
     fetchUrl(url, config.timeoutMs, std::move(done));
@@ -222,8 +255,10 @@ void IndexerClient::fetchUrl(const QUrl& url, int timeoutMs, FetchCallback done)
     opts.maxBytes = kMaxResponseBytes;
 
     HttpFileDownload::fetch(this, url, opts,
-                            [done = std::move(done)](const HttpFileDownload::Result& r) {
+                            [url, done = std::move(done)](const HttpFileDownload::Result& r) {
         countIndexer(&IndexerCounters::nzbFetches);
+        if (const QByteArray failure = r.headers.value("x-dnzb-failure"); r.ok && !failure.isEmpty())
+            rememberFailureUrl(url, url.resolved(QUrl(QString::fromUtf8(failure.trimmed()))));
         // Jackett's /dl answers 302 -> magnet: when the tracker has no .torrent
         if (!r.ok && r.refusedRedirect.scheme().compare(QLatin1StringView("magnet"), Qt::CaseInsensitive) == 0) {
             done(true, r.refusedRedirect.toString(QUrl::FullyEncoded).toUtf8(), {});

@@ -25,6 +25,8 @@
 #include <QString>
 #include <QUrl>
 
+#include <optional>
+
 class QTimer;
 
 #include <functional>
@@ -98,6 +100,17 @@ public:
     /// When the search is gone (@p searchId 0: a tab the GUI restored after a
     /// restart) the row comes from the grab cache by @p resultId.
     void grab(quint32 searchId, const QString& resultId, GrabCallback done);
+
+    /// Which account and row a grab() of these ids fetches, for the replacement
+    /// on failure. nullopt when neither the search nor the grab cache has it.
+    struct GrabSource {
+        QString indexerName;
+        QString guid;
+        QString title;
+        QUrl downloadUrl;
+    };
+    [[nodiscard]] std::optional<GrabSource> grabSource(quint32 searchId,
+                                                       const QString& resultId) const;
 
     /// Write the grab cache now if it changed. Called on shutdown.
     void flushGrabCache();

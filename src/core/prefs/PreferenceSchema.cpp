@@ -138,6 +138,8 @@ using Kind = PrefSpec::Kind;
     t << flag("shareIncomingSubdirs", "Share the subfolders of the incoming folders too (torrents, Usenet "
               "jobs, unpacked hoster packages). Other shared folders stay flat.");
     t << flag("seenFileIndex", "Keep a local index of files seen in search results.");
+    t << flag("archiveRecursiveExtract", "Unpack archives found inside an unpacked archive too "
+              "(Usenet and hoster downloads).");
     t << flag("useSaveLoadSources", "Save the sources of rare files and reload them at start.");
     t << readOnly(text("incomingDir", 4096, "Directory completed downloads are moved to."));
 
@@ -182,6 +184,14 @@ using Kind = PrefSpec::Kind;
     t << flag("usenetMetaSelectedFileOnly", "A search result row for one file of an NZB downloads only that file.");
     t << number("usenetDownloadSharePercent", 1, 99, "%", "Share of the download limit Usenet may "
                 "use while eD2K is downloading too.");
+    t << flag("usenetDeobfuscateNames", "Rename an obfuscated release (random file names, no PAR2 "
+              "names) to its job name.");
+    t << number("usenetPropagationDelayMinutes", 0, 1440, "min", "Wait this long after a release "
+                "was posted before downloading it. 0 = off.");
+    t << flag("usenetRetryOtherNzb", "When a job from an indexer fails, grab another NZB of the "
+              "same release.");
+    t << number("usenetEpisodeDupes", 0, 2, "", "Same TV episode already queued or downloaded: "
+                "0 = allow, 1 = refuse, 2 = add paused. PROPER/REPACK releases pass.");
 
     // --- BitTorrent ---
     t << flag("btEnabled", "Enable the BitTorrent engine.");

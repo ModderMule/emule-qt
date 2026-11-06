@@ -90,8 +90,35 @@ public:
         /// the caller decides whether what else is there makes a release.
         QStringList headlessVolumes;
 
+        /// The candidate an external tool accepted. Empty for libarchive (ZIP
+        /// tries every candidate itself and does not say which one worked).
+        QString usedPassword;
+
+        /// Archives found inside extracted output and unpacked in place. Their
+        /// volumes are in consumedArchives, not in extractedFiles.
+        int nestedSets = 0;
+
         QString error;
     };
+
+    /// Everything unpackAll() can be told. unpack() is the one-password form.
+    struct Options {
+        /// Tried in order on an encrypted set: the download's own password
+        /// first, then the user's list. Empty entries are skipped.
+        QStringList passwords;
+        QSet<QString> skipFirstVolumes;
+        QString externalTool;
+
+        /// Levels of archives inside archives to unpack, in place. 0 = off.
+        int nestedDepth = 0;
+
+        /// Files already extracted elsewhere (direct unpack) that the nested
+        /// pass should look into as well.
+        QStringList nestedSeeds;
+    };
+
+    /// Default nesting depth when the archiveRecursiveExtract pref is on.
+    static constexpr int kNestedDepth = 3;
 
     using ProgressFn = std::function<void(int percent, const QString& fileName)>;
 
@@ -127,6 +154,15 @@ public:
                   const QSet<QString>& skipFirstVolumes = {},
                   const QString& externalTool = {});
 
+    /// unpack() with a password list and the nested pass.
+    ///
+    /// An encrypted set tries each password in turn and is reported
+    /// passwordRequired/wrongPassword only once all have failed. With
+    /// nestedDepth > 0, archive sets among the extracted files are unpacked
+    /// next to themselves, up to that many levels. A nested set that fails is
+    /// logged and left as a file; it never fails the job, a veto does.
+    Result unpackAll(const QString& sourceDir, const QString& destDir, const Options& options);
+
     /// Group the archive files in @p dir into sets, one entry per set, each
     /// naming the volume that must be opened.
     [[nodiscard]] static QList<ArchiveSet> findArchiveSets(const QString& dir);
@@ -149,6 +185,16 @@ public:
     [[nodiscard]] static VolumePosition volumePositionOf(const QString& fileName);
 
 private:
+    enum class SetOutcome { Ok, Failed, Vetoed };
+
+    /// Extract one set into @p destDir, appending to @p result.
+    SetOutcome extractSet(const ArchiveSet& set, const QString& destDir,
+                          const QStringList& passwords, const QString& externalTool,
+                          Result& result);
+
+    /// The nested pass over @p seeds (and what comes out of them).
+    void unpackNested(QStringList seeds, const Options& options, Result& result);
+
     /// Unpack one set libarchive refused on encryption, using an external
     /// 7-Zip or unrar. Returns false when the set could not be extracted, with
     /// @p result carrying the reason and the flags that let the GUI offer a
@@ -158,7 +204,7 @@ private:
     /// wrongPassphrase() are what distinguish "no password" from "wrong one",
     /// and re-opening the set to ask again would cost another full scan.
     bool unpackEncrypted(const ArchiveSet& set, const QString& destDir,
-                         const QString& password, const QString& externalTool,
+                         const QStringList& passwords, const QString& externalTool,
                          const ArchiveReader& reader, Result& result);
 
     ProgressFn m_progress;

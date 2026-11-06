@@ -2259,6 +2259,8 @@ void IpcClientHandler::handleGetPreferences(const IpcMessage& msg)
     // Read-only status for the Security page: 0 = specialdlp not loaded
     prefs.insert(QStringLiteral("antiLeecherDlpVersion"),
                  theApp.dlp ? static_cast<qint64>(theApp.dlp->rulesVersion()) : 0);
+    // Read-only: the engine state now, a scheduled pause included (usenetPaused = saved)
+    prefs.insert(QStringLiteral("usenetEnginePaused"), UsenetBridge::enginePaused());
     sendMessage(IpcMessage::makeResult(msg.seqId(), true, QCborValue(prefs)));
 }
 
@@ -2734,7 +2736,7 @@ void IpcClientHandler::handleSaveSchedules(const IpcMessage& msg)
     thePrefs.setSchedulerEnabled(enabled);
 
     if (theApp.scheduler) {
-        theApp.scheduler->clearOverrides();
+        theApp.scheduler->stop();
         theApp.scheduler->removeAll();
 
         const QCborArray schedArr = msg.fieldArray(1);
@@ -2748,10 +2750,15 @@ void IpcClientHandler::handleSaveSchedules(const IpcMessage& msg)
             entry->enabled = m.value(QStringLiteral("enabled")).toBool();
 
             const QCborArray actArr = m.value(QStringLiteral("actions")).toArray();
-            for (qsizetype a = 0; a < actArr.size() && a < 16; ++a) {
+            size_t slot = 0;   // unknown ids dropped; the first None ends the list
+            for (qsizetype a = 0; a < actArr.size() && slot < entry->actions.size(); ++a) {
                 const QCborMap actMap = actArr.at(a).toMap();
-                entry->actions[static_cast<size_t>(a)] = static_cast<ScheduleAction>(actMap.value(QStringLiteral("action")).toInteger());
-                entry->values[static_cast<size_t>(a)] = actMap.value(QStringLiteral("value")).toString();
+                const int id = static_cast<int>(actMap.value(QStringLiteral("action")).toInteger());
+                if (!isKnownScheduleAction(id))
+                    continue;
+                entry->actions[slot] = static_cast<ScheduleAction>(id);
+                entry->values[slot] = actMap.value(QStringLiteral("value")).toString();
+                ++slot;
             }
             theApp.scheduler->addSchedule(std::move(entry));
         }
@@ -4135,6 +4142,14 @@ bool IpcClientHandler::applyPreferenceA(const QString& key, const QCborValue& va
         if (theApp.seenFileIndex)
             theApp.seenFileIndex->setEnabled(val.toBool());   // at once, no restart
     }
+    else if (key == QStringLiteral("archivePasswords")) {
+        QStringList pws;
+        for (const QCborValue& v : val.toArray())
+            pws.append(v.toString());
+        thePrefs.setArchivePasswords(pws);   // read when a job is built
+    }
+    else if (key == QStringLiteral("archiveRecursiveExtract"))
+        thePrefs.setArchiveRecursiveExtract(val.toBool());
     // Notifications
     else if (key == QStringLiteral("notifyOnLog"))
         thePrefs.setNotifyOnLog(val.toBool());
@@ -4262,6 +4277,14 @@ bool IpcClientHandler::applyPreferenceA(const QString& key, const QCborValue& va
         thePrefs.setUsenetSfvCheck(val.toBool());
     else if (key == QStringLiteral("usenetUnrepairableAction"))
         thePrefs.setUsenetUnrepairableAction(int(val.toInteger()));
+    else if (key == QStringLiteral("usenetDeobfuscateNames"))
+        thePrefs.setUsenetDeobfuscateNames(val.toBool());
+    else if (key == QStringLiteral("usenetPropagationDelayMinutes"))
+        thePrefs.setUsenetPropagationDelayMinutes(int(val.toInteger()));
+    else if (key == QStringLiteral("usenetRetryOtherNzb"))
+        thePrefs.setUsenetRetryOtherNzb(val.toBool());
+    else if (key == QStringLiteral("usenetEpisodeDupes"))
+        thePrefs.setUsenetEpisodeDupes(int(val.toInteger()));
     else if (key == QStringLiteral("usenetUnwantedAction"))
         thePrefs.setUsenetUnwantedAction(int(val.toInteger()));
     else if (key == QStringLiteral("usenetUnwantedExtensions"))
@@ -5607,12 +5630,14 @@ void IpcClientHandler::handleGrabIndexerResult(const IpcMessage& msg)
 
     QPointer<IpcClientHandler> self(this);
     const int seqId = msg.seqId();
+    // the row, for a replacement NZB should this one fail
+    const auto source = indexer::theIndexerSearchList->grabSource(searchId, resultId);
 
     indexer::theIndexerSearchList->grab(
         searchId, resultId,
-        [self, seqId, force, choices](bool ok, const QByteArray& payload,
-                                      const QString& name, const QString& password,
-                                      const QString& error) {
+        [self, seqId, force, choices, source](bool ok, const QByteArray& payload,
+                                              const QString& name, const QString& password,
+                                              const QString& error) {
         if (!self)
             return;
 
@@ -5650,10 +5675,18 @@ void IpcClientHandler::handleGrabIndexerResult(const IpcMessage& msg)
         // A grab is a person clicking Download, so the feed's password arrives as
         // a Manual one and outranks the NZB's own metadata: the indexer knows
         // the release, the NZB says whatever its poster wrote.
+        usenet::UsenetOrigin origin;
+        if (source) {
+            origin.indexerName = source->indexerName;
+            origin.guid = source->guid;
+            origin.title = source->title;
+            origin.failureUrl = indexer::IndexerClient::failureUrlFor(source->downloadUrl)
+                                    .toString(QUrl::FullyEncoded);
+        }
         const QString itemId = usenet::theUsenetSession->queue()->addNzb(
             payload, name, addError,
             {.force = force, .password = password, .category = choices.category,
-             .priority = choices.priority, .paused = choices.paused},
+             .priority = choices.priority, .paused = choices.paused, .origin = origin},
             &outcome);
         self->sendAddNzbResult(seqId, itemId, addError, outcome,
                                usenet::UsenetAddOrigin::IndexerGrab);
@@ -5670,18 +5703,35 @@ void IpcClientHandler::handleInspectIndexerResult(const IpcMessage& msg)
 
     const auto searchId = static_cast<quint32>(msg.fieldInt(0));
     const QString resultId = msg.fieldString(1);
+    const bool raw = msg.fieldCount() > 2 && msg.fieldBool(2);
     QPointer<IpcClientHandler> self(this);
     const int seqId = msg.seqId();
 
     indexer::theIndexerSearchList->grab(
         searchId, resultId,
-        [self, seqId](bool ok, const QByteArray& payload, const QString& name, const QString&,
-                      const QString& error) {
+        [self, seqId, raw](bool ok, const QByteArray& payload, const QString& name, const QString&,
+                           const QString& error) {
         if (!self)
             return;
         if (!ok || payload.isEmpty()) {
             self->sendMessage(IpcMessage::makeResult(
                 seqId, false, QCborValue(error.isEmpty() ? tr("The indexer returned no file.") : error)));
+            return;
+        }
+        // Save File... in the search menu: the bytes as served, for another client
+        if (raw) {
+            const bool magnet = isMagnetPayload(payload);
+            const bool torrent = !magnet && isTorrentPayload(payload);
+            QCborMap out{{QStringLiteral("kind"), magnet    ? QStringLiteral("magnet")
+                                                  : torrent ? QStringLiteral("torrent")
+                                                            : QStringLiteral("nzb")}};
+            if (magnet) {
+                out.insert(QStringLiteral("magnet"), QString::fromUtf8(payload).trimmed());
+            } else {
+                out.insert(QStringLiteral("content"), payload);
+                out.insert(QStringLiteral("fileName"), name);
+            }
+            self->sendMessage(IpcMessage::makeResult(seqId, true, out));
             return;
         }
         if (isMagnetPayload(payload)) {
@@ -5854,7 +5904,7 @@ void IpcClientHandler::handleGetUsenetStats(const IpcMessage& msg)
                        : qint64(0));
     current.insert(QStringLiteral("activeConnections"), queue ? queue->activeFetches() : 0);
     current.insert(QStringLiteral("openConnections"), usenet::NntpSocket::openConnectionCount());
-    current.insert(QStringLiteral("paused"), thePrefs.usenetPaused());
+    current.insert(QStringLiteral("paused"), UsenetBridge::enginePaused());
 
     const usenet::UsenetQueueSummary summary =
         queue ? usenet::summarizeQueue(queue->items()) : usenet::UsenetQueueSummary{};

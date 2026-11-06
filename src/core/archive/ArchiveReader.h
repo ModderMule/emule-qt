@@ -83,6 +83,10 @@ public:
     /// ExternalUnpacker — see encryptionBlocked().
     void setPassphrase(const QString& passphrase);
 
+    /// Several candidates; libarchive tries each in turn (ZIP). Replaces
+    /// setPassphrase(). Empty entries are skipped.
+    void setPassphrases(const QStringList& passphrases);
+
     /// True when the archive declared any member's data encrypted.
     ///
     /// Note this can be true for a set that still extracts perfectly: an

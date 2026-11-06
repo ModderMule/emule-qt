@@ -63,6 +63,12 @@
     <ClCompile Include="post\UsenetReleaseChecks.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
+    <ClCompile Include="post\UsenetDeobfuscate.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="queue\UsenetReleaseName.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
     <ClCompile Include="post\UsenetUnpacker.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
@@ -147,6 +153,12 @@
       <Filter>Header Files</Filter>
     </ClInclude>
     <ClInclude Include="post\UsenetReleaseChecks.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="post\UsenetDeobfuscate.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="queue\UsenetReleaseName.h">
       <Filter>Header Files</Filter>
     </ClInclude>
     <ClInclude Include="post\UsenetUnpacker.h">

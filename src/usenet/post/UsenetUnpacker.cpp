@@ -13,6 +13,8 @@
 #include <QHash>
 #include <QRegularExpression>
 
+#include <algorithm>
+
 namespace eMule::usenet {
 
 namespace {
@@ -130,7 +132,24 @@ UsenetUnpacker::Result UsenetUnpacker::unpack(const QString& sourceDir, const QS
                                               const QSet<QString>& skipFirstVolumes,
                                               const QString& externalTool)
 {
+    Options options;
+    if (!password.isEmpty())
+        options.passwords.append(password);
+    options.skipFirstVolumes = skipFirstVolumes;
+    options.externalTool = externalTool;
+    return unpackAll(sourceDir, destDir, options);
+}
+
+UsenetUnpacker::Result UsenetUnpacker::unpackAll(const QString& sourceDir, const QString& destDir,
+                                                 const Options& options)
+{
     Result result;
+
+    QStringList passwords;
+    for (const QString& pw : options.passwords) {
+        if (!pw.isEmpty() && !passwords.contains(pw))
+            passwords.append(pw);
+    }
 
     QList<ArchiveSet> sets;
     for (const ArchiveSet& set : findArchiveSets(sourceDir)) {
@@ -150,6 +169,9 @@ UsenetUnpacker::Result UsenetUnpacker::unpack(const QString& sourceDir, const QS
     if (sets.isEmpty()) {
         result.ok = true;
         result.nothingToDo = true;
+        // direct unpack may still have left archives inside its output
+        if (options.nestedDepth > 0 && !options.nestedSeeds.isEmpty())
+            unpackNested(options.nestedSeeds, options, result);
         return result;
     }
 
@@ -158,7 +180,7 @@ UsenetUnpacker::Result UsenetUnpacker::unpack(const QString& sourceDir, const QS
     int setIndex = 0;
 
     for (const ArchiveSet& set : sets) {
-        if (skipFirstVolumes.contains(set.firstVolume)) {
+        if (options.skipFirstVolumes.contains(set.firstVolume)) {
             ++setIndex;
             continue;   // already extracted while the download ran
         }
@@ -168,96 +190,14 @@ UsenetUnpacker::Result UsenetUnpacker::unpack(const QString& sourceDir, const QS
         }
         ++setIndex;
 
-        ArchiveReader reader;
-        if (!password.isEmpty())
-            reader.setPassphrase(password);
-
-        // The whole list, not just volume one. libarchive reads a set as one
-        // stream over the files the caller hands it and never opens a sibling
-        // volume by name, so opening on volume one stops at its end.
-        const bool opened = reader.open(set.volumes);
-
-        // Encryption is not a corrupt archive, and it must not be reported as
-        // one. libarchive decrypts ZIP and nothing else, so every other
-        // encrypted format arrives here having failed for a reason the user can
-        // actually do something about.
-        //
-        // A header-encrypted set fails at open() with no entries at all; a
-        // data-encrypted one opens, lists, and fails at the first read. Both
-        // land in encryptionBlocked(), which is why this is one branch and not
-        // two.
-        if (!opened && !reader.encryptionBlocked()) {
-            result.error = QObject::tr("Cannot open %1")
-                               .arg(QFileInfo(set.firstVolume).fileName());
+        const SetOutcome outcome = extractSet(set, destDir, passwords, options.externalTool, result);
+        if (outcome == SetOutcome::Vetoed) {
             allOk = false;
-            continue;
+            break;   // nothing after a refused set is extracted either
         }
-
-        if (opened && !reader.encryptionBlocked()) {
-            // Collect the destinations before extracting: the sanitiser decides
-            // them, and asking it again afterwards is how the two lists drift
-            // apart.
-            QStringList produced;
-            QStringList memberNames;
-            for (int i = 0; i < reader.entryCount(); ++i) {
-                if (reader.entryIsDir(i))
-                    continue;
-                memberNames.append(reader.entryName(i));
-                const QString out = ArchiveReader::safeEntryPath(destDir, reader.entryName(i));
-                if (!out.isEmpty())
-                    produced.append(out);
-            }
-
-            // Before a byte is written: a set carrying what the caller refuses is
-            // not extracted, and neither is anything after it.
-            if (m_veto) {
-                const QStringList refused = m_veto(memberNames);
-                if (!refused.isEmpty()) {
-                    result.vetoed += refused;
-                    result.error = QObject::tr("%1 contains unwanted files")
-                                       .arg(QFileInfo(set.firstVolume).fileName());
-                    allOk = false;
-                    break;
-                }
-            }
-
-            if (reader.extractAll(destDir)) {
-                for (const QString& rejected : reader.rejectedEntries()) {
-                    logUsenetWarning(
-                        QStringLiteral("Usenet: skipped unsafe archive member \"%1\" in \"%2\"")
-                            .arg(rejected, QFileInfo(set.firstVolume).fileName()));
-                }
-
-                result.extractedFiles += produced;
-                result.consumedArchives += set.volumes;
-
-                logUsenet(QStringLiteral("Usenet: unpacked \"%1\" (%2 file(s))")
-                            .arg(QFileInfo(set.firstVolume).fileName())
-                            .arg(produced.size()));
-                continue;
-            }
-
-            if (!reader.encryptionBlocked()) {
-                result.error = QObject::tr("Extraction of %1 failed")
-                                   .arg(QFileInfo(set.firstVolume).fileName());
-                allOk = false;
-                continue;
-            }
-            // Fell through: the read got as far as encrypted data. Nothing
-            // libarchive wrote is usable.
-            for (const QString& path : reader.extractedFiles())
-                QFile::remove(path);
-        }
-
-        if (!unpackEncrypted(set, destDir, password, externalTool, reader, result)) {
+        if (outcome == SetOutcome::Failed)
             allOk = false;
-            if (!result.vetoed.isEmpty())
-                break;
-        }
     }
-
-    if (m_progress)
-        m_progress(100, QString());
 
     // A set that was found and produced nothing is a failure, never a success.
     //
@@ -275,6 +215,14 @@ UsenetUnpacker::Result UsenetUnpacker::unpack(const QString& sourceDir, const QS
         allOk = false;
     }
 
+    if (allOk && options.nestedDepth > 0)
+        unpackNested(result.extractedFiles + options.nestedSeeds, options, result);
+    if (!result.vetoed.isEmpty())
+        allOk = false;
+
+    if (m_progress)
+        m_progress(100, QString());
+
     result.ok = allOk;
     return result;
 }
@@ -283,8 +231,157 @@ UsenetUnpacker::Result UsenetUnpacker::unpack(const QString& sourceDir, const QS
 // Private
 // ---------------------------------------------------------------------------
 
+UsenetUnpacker::SetOutcome UsenetUnpacker::extractSet(const ArchiveSet& set, const QString& destDir,
+                                                      const QStringList& passwords,
+                                                      const QString& externalTool, Result& result)
+{
+    ArchiveReader reader;
+    // libarchive tries every candidate itself (ZIP is all it decrypts)
+    reader.setPassphrases(passwords);
+
+    // The whole list, not just volume one. libarchive reads a set as one
+    // stream over the files the caller hands it and never opens a sibling
+    // volume by name, so opening on volume one stops at its end.
+    const bool opened = reader.open(set.volumes);
+
+    // Encryption is not a corrupt archive, and it must not be reported as
+    // one. libarchive decrypts ZIP and nothing else, so every other
+    // encrypted format arrives here having failed for a reason the user can
+    // actually do something about.
+    //
+    // A header-encrypted set fails at open() with no entries at all; a
+    // data-encrypted one opens, lists, and fails at the first read. Both
+    // land in encryptionBlocked(), which is why this is one branch and not
+    // two.
+    if (!opened && !reader.encryptionBlocked()) {
+        result.error = QObject::tr("Cannot open %1").arg(QFileInfo(set.firstVolume).fileName());
+        return SetOutcome::Failed;
+    }
+
+    if (opened && !reader.encryptionBlocked()) {
+        // Collect the destinations before extracting: the sanitiser decides
+        // them, and asking it again afterwards is how the two lists drift
+        // apart.
+        QStringList produced;
+        QStringList memberNames;
+        for (int i = 0; i < reader.entryCount(); ++i) {
+            if (reader.entryIsDir(i))
+                continue;
+            memberNames.append(reader.entryName(i));
+            const QString out = ArchiveReader::safeEntryPath(destDir, reader.entryName(i));
+            if (!out.isEmpty())
+                produced.append(out);
+        }
+
+        // Before a byte is written: a set carrying what the caller refuses is
+        // not extracted, and neither is anything after it.
+        if (m_veto) {
+            const QStringList refused = m_veto(memberNames);
+            if (!refused.isEmpty()) {
+                result.vetoed += refused;
+                result.error = QObject::tr("%1 contains unwanted files")
+                                   .arg(QFileInfo(set.firstVolume).fileName());
+                return SetOutcome::Vetoed;
+            }
+        }
+
+        if (reader.extractAll(destDir)) {
+            for (const QString& rejected : reader.rejectedEntries()) {
+                logUsenetWarning(
+                    QStringLiteral("Usenet: skipped unsafe archive member \"%1\" in \"%2\"")
+                        .arg(rejected, QFileInfo(set.firstVolume).fileName()));
+            }
+
+            result.extractedFiles += produced;
+            result.consumedArchives += set.volumes;
+
+            logUsenet(QStringLiteral("Usenet: unpacked \"%1\" (%2 file(s))")
+                        .arg(QFileInfo(set.firstVolume).fileName())
+                        .arg(produced.size()));
+            return SetOutcome::Ok;
+        }
+
+        if (!reader.encryptionBlocked()) {
+            result.error = QObject::tr("Extraction of %1 failed")
+                               .arg(QFileInfo(set.firstVolume).fileName());
+            return SetOutcome::Failed;
+        }
+        // Fell through: the read got as far as encrypted data. Nothing
+        // libarchive wrote is usable.
+        for (const QString& path : reader.extractedFiles())
+            QFile::remove(path);
+    }
+
+    if (unpackEncrypted(set, destDir, passwords, externalTool, reader, result))
+        return SetOutcome::Ok;
+    return result.vetoed.isEmpty() ? SetOutcome::Failed : SetOutcome::Vetoed;
+}
+
+void UsenetUnpacker::unpackNested(QStringList seeds, const Options& options, Result& result)
+{
+    QStringList passwords;
+    for (const QString& pw : options.passwords) {
+        if (!pw.isEmpty() && !passwords.contains(pw))
+            passwords.append(pw);
+    }
+
+    QSet<QString> done;   // first volumes already tried: an archive holding itself stops here
+    for (int depth = 0; depth < options.nestedDepth && !seeds.isEmpty(); ++depth) {
+        // only sets made entirely of extracted files; never the release's own volumes
+        const QSet<QString> seedSet(seeds.cbegin(), seeds.cend());
+        QSet<QString> dirs;
+        for (const QString& f : std::as_const(seeds)) {
+            if (isArchiveVolume(QFileInfo(f).fileName()))
+                dirs.insert(QFileInfo(f).absolutePath());
+        }
+
+        QStringList next;
+        for (const QString& dir : std::as_const(dirs)) {
+            for (const ArchiveSet& set : findArchiveSets(dir)) {
+                if (set.headless || done.contains(set.firstVolume))
+                    continue;
+                if (!std::ranges::all_of(set.volumes,
+                                         [&](const QString& v) { return seedSet.contains(v); }))
+                    continue;
+                done.insert(set.firstVolume);
+
+                // in place: next to the archive, so subfolders keep their meaning
+                Result inner;
+                const SetOutcome outcome =
+                    extractSet(set, dir, passwords, options.externalTool, inner);
+                if (outcome == SetOutcome::Vetoed) {
+                    result.vetoed += inner.vetoed;
+                    result.error = inner.error;
+                    return;
+                }
+                if (outcome == SetOutcome::Failed || inner.extractedFiles.isEmpty()) {
+                    // stays a plain file of the payload
+                    logUsenetWarning(QStringLiteral("Usenet: nested archive \"%1\" not unpacked: %2")
+                                         .arg(QFileInfo(set.firstVolume).fileName(),
+                                              inner.error.isEmpty()
+                                                  ? QStringLiteral("no files") : inner.error));
+                    continue;
+                }
+
+                for (const QString& v : set.volumes)
+                    result.extractedFiles.removeAll(v);
+                for (const QString& f : std::as_const(inner.extractedFiles)) {
+                    if (!result.extractedFiles.contains(f))
+                        result.extractedFiles.append(f);
+                }
+                result.consumedArchives += set.volumes;
+                if (result.usedPassword.isEmpty())
+                    result.usedPassword = inner.usedPassword;
+                ++result.nestedSets;
+                next += inner.extractedFiles;
+            }
+        }
+        seeds = next;
+    }
+}
+
 bool UsenetUnpacker::unpackEncrypted(const ArchiveSet& set, const QString& destDir,
-                                     const QString& password, const QString& externalTool,
+                                     const QStringList& passwords, const QString& externalTool,
                                      const ArchiveReader& reader, Result& result)
 {
     const QString name = QFileInfo(set.firstVolume).fileName();
@@ -298,7 +395,7 @@ bool UsenetUnpacker::unpackEncrypted(const ArchiveSet& set, const QString& destD
         return false;
     }
 
-    if (password.isEmpty()) {
+    if (passwords.isEmpty()) {
         // Running the tool with no password would only make it ask, and a
         // daemon has nobody to ask. Say what is missing instead.
         result.passwordRequired = true;
@@ -322,7 +419,22 @@ bool UsenetUnpacker::unpackEncrypted(const ArchiveSet& set, const QString& destD
                     .arg(name, format, external.toolName()));
     }
 
-    const auto outcome = external.extract(set.volumes, destDir, password);
+    // Each candidate in turn; only a refused passphrase moves on to the next.
+    // The tool extracts into staging and hands over only on success, so a
+    // wrong try leaves nothing behind.
+    ExternalUnpacker::Result outcome;
+    QString tried;
+    for (const QString& pw : passwords) {
+        outcome = external.extract(set.volumes, destDir, pw);
+        tried = pw;
+        if (outcome.outcome != ExternalUnpacker::Outcome::WrongPassword)
+            break;
+        for (const QString& path : outcome.extractedFiles)
+            QFile::remove(path);
+    }
+    if (passwords.size() > 1 && outcome.ok())
+        logUsenet(QStringLiteral("Usenet: \"%1\" opened with password %2 of %3")
+                      .arg(name).arg(passwords.indexOf(tried) + 1).arg(passwords.size()));
 
     for (const QString& rejected : outcome.rejectedEntries) {
         logUsenetWarning(QStringLiteral("Usenet: skipped unsafe archive member \"%1\" in \"%2\"")
@@ -356,6 +468,7 @@ bool UsenetUnpacker::unpackEncrypted(const ArchiveSet& set, const QString& destD
     if (outcome.ok()) {
         result.extractedFiles += outcome.extractedFiles;
         result.consumedArchives += set.volumes;
+        result.usedPassword = tried;
         logUsenet(QStringLiteral("Usenet: unpacked \"%1\" with %2 (%3 file(s))")
                     .arg(name, external.toolName())
                     .arg(outcome.extractedFiles.size()));
@@ -369,7 +482,10 @@ bool UsenetUnpacker::unpackEncrypted(const ArchiveSet& set, const QString& destD
         || reader.wrongPassphrase()) {
         result.passwordRequired = true;
         result.wrongPassword = true;
-        result.error = QObject::tr("The password for %1 is wrong.").arg(name);
+        result.error = passwords.size() > 1
+                           ? QObject::tr("None of the %1 passwords opens %2.")
+                                 .arg(passwords.size()).arg(name)
+                           : QObject::tr("The password for %1 is wrong.").arg(name);
         return false;
     }
 

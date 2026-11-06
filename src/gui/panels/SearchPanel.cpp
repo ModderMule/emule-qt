@@ -1486,6 +1486,45 @@ void SearchPanel::onResultContextMenu(const QPoint& pos)
             }
         }
 
+        // the file for another client, as on eNode rows: .nzb, .torrent, or a magnet-only row's magnet
+        bool anyNzb = false, anyTorrentFile = false, anyMagnetOnly = false;
+        for (const auto& idx : selection) {
+            const auto src = indexerTab->proxy->mapToSource(idx);
+            if (const auto* row = indexerTab->indexerModel->resultAt(src.row())) {
+                anyNzb |= row->isUsenet;
+                anyTorrentFile |= !row->isUsenet && row->hasFile;
+                anyMagnetOnly |= !row->isUsenet && !row->hasFile;
+            }
+        }
+        const auto saveIndexer = [this](int which) {   // 3 nzb, 1 torrent, 0 magnet-only
+            auto* tab = currentTab();
+            if (!tab || !tab->isIndexer())
+                return;
+            QList<MetaResultActions::IndexerFile> rows;
+            for (const auto& idx : m_resultView->selectionModel()->selectedRows()) {
+                const auto* r = tab->indexerModel->resultAt(tab->proxy->mapToSource(idx).row());
+                if (!r)
+                    continue;
+                const int kind = r->isUsenet ? 3 : r->hasFile ? 1 : 0;
+                if (kind == which)
+                    rows.append({r->id, r->title, r->isUsenet});
+            }
+            if (which == 0)
+                metaActions()->copyIndexerMagnets(tab->searchID, rows);
+            else
+                metaActions()->saveIndexerFiles(tab->searchID, rows);
+        };
+        if (anyNzb)
+            connect(m_contextMenu->addAction(skinIcon(QStringLiteral(":/icons/Usenet.ico")), tr("Save NZB File...")),
+                    &QAction::triggered, this, [saveIndexer] { saveIndexer(3); });
+        if (anyTorrentFile)
+            connect(m_contextMenu->addAction(skinIcon(QStringLiteral(":/icons/Torrent.ico")),
+                                             tr("Save Torrent File...")),
+                    &QAction::triggered, this, [saveIndexer] { saveIndexer(1); });
+        if (anyMagnetOnly)
+            connect(m_contextMenu->addAction(skinIcon(QStringLiteral(":/icons/Torrent.ico")), tr("Copy Magnet Link")),
+                    &QAction::triggered, this, [saveIndexer] { saveIndexer(0); });
+
         // Details: the fetched .torrent/.nzb. Extended controls only, like the eD2K sheet.
         if (thePrefs.showExtControls()) {
             bool hasFile = false;
@@ -1540,9 +1579,6 @@ void SearchPanel::onResultContextMenu(const QPoint& pos)
     int64_t singleSize = 0;
     int peerPreviews = 0;
     QString peerPreviewHash;
-    // where a torrent / web row's Download goes: the Torrents / Hoster tab, when on
-    const bool torrentsOn = Ed2kLinkImporter::torrentsReady();
-    const bool hosterOn = Ed2kLinkImporter::hosterReady();
     for (const auto& idx : selection) {
         if (!tab)
             break;
@@ -1563,13 +1599,11 @@ void SearchPanel::onResultContextMenu(const QPoint& pos)
         anyContainer |= result->isContainer();
         anyMagnet |= !result->isMeta() || !result->magnet.isEmpty();
         // eD2K rows: not already in the transfer list. Usenet rows: the daemon asks.
-        // Container rows always have something to do; torrents and magnets when the
-        // Torrents tab takes them, web rows when the Hoster tab does.
+        // Torrent, web and container rows always: their tab, else the external fallback.
         if ((result->isEd3k() && (!m_downloadModel || !m_downloadModel->findByHash(result->ed3kRoot)))
-            || result->isUsenet() || result->isContainer()
-            || (hosterOn && result->isWeb())
-            || (torrentsOn && result->isMagnetOnly() && !result->magnet.isEmpty())
-            || (torrentsOn && result->isTorrent() && !result->isMagnetOnly())
+            || result->isUsenet() || result->isContainer() || result->isWeb()
+            || (result->isMagnetOnly() && !result->magnet.isEmpty())
+            || (result->isTorrent() && !result->isMagnetOnly())
             || (!result->isMeta() && (!m_downloadModel || !m_downloadModel->findByHash(result->hash))))
             anyDownloadable = true;
         if (singleSel) {
@@ -1613,26 +1647,20 @@ void SearchPanel::onResultContextMenu(const QPoint& pos)
             defaultAction = pausedAction;
     }
 
-    // eNode Usenet rows: the .nzb itself
+    // Every network alike: Download (bold) hands the rows to eMuleQt's own tab, falling
+    // back to the external action while that tab is off; the item per network below
+    // is always the external one (a file to save, a magnet to copy, links to show).
     if (anyUsenet) {
         auto* nzbAction = m_contextMenu->addAction(skinIcon(QStringLiteral(":/icons/Usenet.ico")),
-                                                   tr("Download NZB File..."));
+                                                   tr("Save NZB File..."));
         connect(nzbAction, &QAction::triggered, this, [this] { saveMetaFiles(3); });
     }
-    const bool onlyOne = int(anyEd2k) + int(anyUsenet) + int(anyTorrent) + int(anyMagnetOnly) + int(anyWeb)
-                       + int(anyContainer) == 1;
-    // eNode torrent rows. With BitTorrent on, Download adds them to the Torrents tab
-    // and this saves the .torrent for another client; off or not built, saving is the default.
     if (anyTorrent) {
-        auto* torrentAction = m_contextMenu->addAction(
-            skinIcon(QStringLiteral(":/icons/Torrent.ico")),
-            torrentsOn ? tr("Save Torrent File...") : tr("Download Torrent"));
+        auto* torrentAction = m_contextMenu->addAction(skinIcon(QStringLiteral(":/icons/Torrent.ico")),
+                                                       tr("Save Torrent File..."));
         connect(torrentAction, &QAction::triggered, this, [this] { saveMetaFiles(1); });
-        if (onlyOne && !torrentsOn)
-            defaultAction = torrentAction;
     }
-    // a magnet-only torrent has no .torrent: its magnet is what there is. With
-    // BitTorrent on, Download hands it to the Torrents tab; else copying is the default.
+    // a magnet-only torrent has no .torrent: its magnet is what there is
     if (anyMagnetOnly) {
         auto* copyAction = m_contextMenu->addAction(skinIcon(QStringLiteral(":/icons/Torrent.ico")),
                                                     tr("Copy Magnet Link"));
@@ -1643,11 +1671,8 @@ void SearchPanel::onResultContextMenu(const QPoint& pos)
                     rows.append(metaRow(*r));
             MetaResultActions::copyMagnets(rows);
         });
-        if (onlyOne && !torrentsOn)
-            defaultAction = copyAction;
     }
-    // eNode web rows: the links the page offered. With hoster downloads on,
-    // Download starts them in the Hoster tab; off or not built, showing is the default.
+    // eNode web rows: the links the page offered
     if (anyWeb) {
         auto* linksAction = m_contextMenu->addAction(skinIcon(QStringLiteral(":/icons/Web.ico")),
                                                      tr("Show Links..."));
@@ -1661,16 +1686,12 @@ void SearchPanel::onResultContextMenu(const QPoint& pos)
                     rows.append(metaRow(*r));
             metaActions()->showWebLinks(tab->searchID, rows);
         });
-        if (onlyOne && !hosterOn)
-            defaultAction = linksAction;
     }
     // eNode link containers: the .dlc/.ccf/.rsdf as the page served it
     if (anyContainer) {
-        auto* containerAction = m_contextMenu->addAction(skinIcon(QStringLiteral(":/icons/Container.ico")),
-                                                         tr("Download Container..."));
+        auto* containerAction = m_contextMenu->addAction(skinIcon(QStringLiteral(":/icons/DLC.ico")),
+                                                         tr("Save Container File..."));
         connect(containerAction, &QAction::triggered, this, [this] { saveMetaFiles(6); });
-        if (onlyOne)
-            defaultAction = containerAction;
     }
     setMenuDefaultAction(m_contextMenu, defaultAction);
 
@@ -1930,10 +1951,8 @@ void SearchPanel::showMetaRowDetails(uint32_t searchID, const SearchResultRow& r
                                      : 0;
             self->metaActions()->downloadUsenet(searchID, {chosen}, category, model);
         }
-        else if (Ed2kLinkImporter::torrentsReady())
-            self->metaActions()->addTorrents(searchID, {row});
         else
-            self->metaActions()->saveMetaFiles(searchID, {row});
+            self->metaActions()->addTorrents(searchID, {row});   // BitTorrent off: saved
     });
 }
 
@@ -2133,14 +2152,14 @@ void SearchPanel::downloadResults(const QModelIndexList& proxyRows, int category
     if (category < 0)
         category = m_categoryTabs->count() > 1 ? std::max(m_categoryTabs->currentIndex(), 0) : 0;
 
-    // eNode rows leave here: Usenet goes to the Usenet queue, a torrent to the
-    // Torrents tab (BitTorrent off or not built: its .torrent is saved, a magnet-only
-    // one's magnet copied), a web row's links to the Hoster tab (hosters off or not
-    // built: they are shown), a link container is saved
+    // eNode rows leave here, each to its own tab: Usenet to the Usenet queue, a torrent
+    // to the Torrents tab, a web row's links and a link container to the Hoster tab.
+    // That tab off or not built: the external fallback (.torrent / container saved,
+    // magnet copied, links shown), the same as the menu's own item for it
     QModelIndexList ed2kRows;
     if (!tab->isIndexer() && tab->model) {
         QList<MetaResultActions::Row> usenet;
-        QList<MetaResultActions::Row> metafiles;
+        QList<MetaResultActions::Row> containers;
         QList<MetaResultActions::Row> magnets;
         QList<MetaResultActions::Row> torrents;
         QList<MetaResultActions::Row> web;
@@ -2155,17 +2174,17 @@ void SearchPanel::downloadResults(const QModelIndexList& proxyRows, int category
                 usenet.append(metaRow(*r));
             else if (r->isMagnetOnly())
                 magnets.append(metaRow(*r));
-            else if (r->isTorrent() && Ed2kLinkImporter::torrentsReady())
+            else if (r->isTorrent())
                 torrents.append(metaRow(*r));
             else if (r->isWeb())
                 web.append(metaRow(*r));
-            else
-                metafiles.append(metaRow(*r));
+            else if (r->isContainer())
+                containers.append(metaRow(*r));
         }
         if (!usenet.isEmpty())
             metaActions()->downloadUsenet(tab->searchID, usenet, category, QPointer(tab->model));
-        if (!metafiles.isEmpty())
-            metaActions()->saveMetaFiles(tab->searchID, metafiles);
+        if (!containers.isEmpty())
+            metaActions()->openContainers(tab->searchID, containers);
         if (!magnets.isEmpty())
             metaActions()->handOverMagnets(magnets);
         if (!torrents.isEmpty())

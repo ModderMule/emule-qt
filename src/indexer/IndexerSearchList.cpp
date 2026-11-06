@@ -253,6 +253,22 @@ void IndexerSearchList::grab(quint32 searchId, const QString& resultId, GrabCall
               std::move(done));
 }
 
+std::optional<IndexerSearchList::GrabSource> IndexerSearchList::grabSource(quint32 searchId,
+                                                                         const QString& resultId) const
+{
+    if (const auto it = m_searches.constFind(searchId); it != m_searches.constEnd()) {
+        if (const IndexerResult* r = (*it)->find(resultId))
+            return GrabSource{r->indexerName, r->guid, r->title, r->downloadUrl};
+    }
+    const auto cached = m_grabCache.constFind(resultId);
+    if (cached == m_grabCache.constEnd())
+        return std::nullopt;
+    // ids are "<slug>/<guid>"
+    const qsizetype slash = resultId.indexOf(QLatin1Char('/'));
+    return GrabSource{cached->indexerName, slash >= 0 ? resultId.mid(slash + 1) : resultId,
+                      cached->title, cached->downloadUrl};
+}
+
 void IndexerSearchList::flushGrabCache()
 {
     if (m_grabCacheTimer)

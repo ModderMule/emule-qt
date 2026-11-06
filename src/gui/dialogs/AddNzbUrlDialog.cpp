@@ -96,8 +96,7 @@ void AddNzbUrlDialog::onAccepted()
             return;
         }
         const QString why = reply.fieldString(1);
-        if (static_cast<gui::NzbAddOutcome>(reply.fieldInt(2))
-            == gui::NzbAddOutcome::AlreadyDownloaded)
+        if (gui::isAskableNzbOutcome(static_cast<gui::NzbAddOutcome>(reply.fieldInt(2))))
         {
             // Not a failure: the release has left the queue and wanting it again
             // is legitimate. Held back so the whole paste raises one question.

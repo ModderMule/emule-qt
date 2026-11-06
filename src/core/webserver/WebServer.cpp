@@ -3305,6 +3305,7 @@ namespace {
     if (r.busy)
         code = 429;
     else if (r.outcome == UsenetWebAddOutcome::AlreadyDownloaded
+             || r.outcome == UsenetWebAddOutcome::EpisodeDuplicate
              || r.outcome == UsenetWebAddOutcome::Duplicate)
         code = 409;
     else if (r.outcome == UsenetWebAddOutcome::Failed)

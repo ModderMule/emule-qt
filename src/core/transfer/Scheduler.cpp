@@ -12,7 +12,31 @@
 #include <QDateTime>
 #include <QSettings>
 
+#include <algorithm>
+#include <iterator>
+#include <optional>
+
 namespace eMule {
+
+bool isKnownScheduleAction(int id)
+{
+    return (id >= static_cast<int>(ScheduleAction::SetUpload) && id <= static_cast<int>(ScheduleAction::CatResume))
+           || (id >= static_cast<int>(ScheduleAction::UsenetPause) && id <= static_cast<int>(ScheduleAction::BtUpload));
+}
+
+bool scheduleActionHasValue(ScheduleAction action)
+{
+    switch (action) {
+    case ScheduleAction::None:
+    case ScheduleAction::UsenetPause:
+    case ScheduleAction::UsenetResume:
+    case ScheduleAction::BtPause:
+    case ScheduleAction::BtResume:
+        return false;
+    default:
+        return true;
+    }
+}
 
 // ===========================================================================
 // ScheduleEntry
@@ -45,6 +69,7 @@ int Scheduler::addSchedule(std::unique_ptr<ScheduleEntry> entry)
 
 void Scheduler::updateSchedule(int index, std::unique_ptr<ScheduleEntry> entry)
 {
+    releaseNetworks();
     if (index >= 0 && index < static_cast<int>(m_schedules.size()))
         m_schedules[static_cast<size_t>(index)] = std::move(entry);
 }
@@ -58,12 +83,14 @@ ScheduleEntry* Scheduler::schedule(int index) const
 
 void Scheduler::removeSchedule(int index)
 {
+    releaseNetworks();   // indices shift
     if (index >= 0 && index < static_cast<int>(m_schedules.size()))
         m_schedules.erase(m_schedules.begin() + index);
 }
 
 void Scheduler::removeAll()
 {
+    releaseNetworks();
     m_schedules.clear();
 }
 
@@ -103,11 +130,16 @@ int Scheduler::loadFromFile(const QString& configDir)
         entry->startTime = static_cast<time_t>(ini.value(QStringLiteral("StartTime"), 0).toLongLong());
         entry->endTime = static_cast<time_t>(ini.value(QStringLiteral("EndTime"), 0).toLongLong());
 
+        // Unknown ids (a mod's, e.g. MorphXT 8-16) are dropped and the rest close up:
+        // the first None ends the list.
+        size_t slot = 0;
         for (int a = 0; a < 16; ++a) {
-            entry->actions[static_cast<size_t>(a)] = static_cast<ScheduleAction>(
-                ini.value(QStringLiteral("Action%1").arg(a), 0).toInt());
-            entry->values[static_cast<size_t>(a)] =
-                ini.value(QStringLiteral("Value%1").arg(a)).toString();
+            const int id = ini.value(QStringLiteral("Action%1").arg(a), 0).toInt();
+            if (!isKnownScheduleAction(id))
+                continue;
+            entry->actions[slot] = static_cast<ScheduleAction>(id);
+            entry->values[slot] = ini.value(QStringLiteral("Value%1").arg(a)).toString();
+            ++slot;
         }
 
         ini.endGroup();
@@ -167,7 +199,7 @@ int Scheduler::check(bool forceCheck)
         }
     }
     if (!anyEnabled) {
-        clearOverrides();
+        stop();
         return -1;
     }
 
@@ -180,6 +212,7 @@ int Scheduler::check(bool forceCheck)
     m_lastCheckedMinute = currentMinute;
     Preferences::ScheduledLimits before = thePrefs.scheduledLimits();
     clearOverrides();
+    std::set<int> open;
 
     for (int i = 0; i < count(); ++i) {
         const ScheduleEntry* entry = schedule(i);
@@ -237,9 +270,29 @@ int Scheduler::check(bool forceCheck)
 
         // Activate this schedule
         activateSchedule(i, entry->endTime == 0);
+        open.insert(i);
+    }
+
+    // Window edges: ends first, so a window opening in the same minute wins
+    std::vector<int> ended;
+    std::ranges::set_difference(m_openWindows, open, std::back_inserter(ended));
+    std::erase_if(m_openWindows, [&open](int i) { return !open.contains(i); });
+    for (int i : ended)
+        windowEnded(i);
+    for (int i : open) {
+        if (m_openWindows.insert(i).second)
+            activateWindowStart(i, schedule(i)->endTime == 0);
     }
 
     const Preferences::ScheduledLimits after = thePrefs.scheduledLimits();
+    const auto kb = [](const std::optional<uint32>& v) {
+        return v ? QString::number(*v) : QStringLiteral("default");
+    };
+    if (before.usenetMaxDownloadKb != after.usenetMaxDownloadKb)
+        logInfo(QStringLiteral("Scheduler: Usenet download limit %1").arg(kb(after.usenetMaxDownloadKb)));
+    if (before.btMaxDownloadKb != after.btMaxDownloadKb || before.btMaxUploadKb != after.btMaxUploadKb)
+        logInfo(QStringLiteral("Scheduler: BitTorrent download limit %1, upload limit %2")
+                    .arg(kb(after.btMaxDownloadKb), kb(after.btMaxUploadKb)));
     if (before.maxUpload != after.maxUpload || before.maxDownload != after.maxDownload) {
         logInfo(QStringLiteral("Scheduler: upload limit %1, download limit %2")
                     .arg(after.maxUpload ? QString::number(*after.maxUpload)
@@ -258,6 +311,26 @@ int Scheduler::check(bool forceCheck)
 void Scheduler::clearOverrides()
 {
     thePrefs.setScheduledLimits({});
+}
+
+void Scheduler::releaseNetworks()
+{
+    if (m_network) {
+        if (m_usenetHolder >= 0)
+            m_network->usenetRestore();
+        if (m_btHolder >= 0)
+            m_network->btRestore();
+    }
+    m_usenetHolder = -1;
+    m_btHolder = -1;
+    m_openWindows.clear();
+    m_lastCheckedMinute = 60;   // next check() runs
+}
+
+void Scheduler::stop()
+{
+    clearOverrides();
+    releaseNetworks();
 }
 
 // ===========================================================================
@@ -314,16 +387,136 @@ void Scheduler::activateSchedule(int index, bool makeDefault)
         case ScheduleAction::CatStop:
             if (m_downloadQueue)
                 m_downloadQueue->stopCategory(intVal);   // MFC MP_STOP, incl. -1 / -2
+            if (m_network)
+                m_network->ed3kCategory(intVal, true);
             break;
         case ScheduleAction::CatResume:
             if (m_downloadQueue)
                 m_downloadQueue->setCatStatus(intVal, false);
+            if (m_network)
+                m_network->ed3kCategory(intVal, false);
+            break;
+        case ScheduleAction::UsenetDownload:
+            limits.usenetMaxDownloadKb = static_cast<uint32>(std::max(intVal, 0));
+            break;
+        case ScheduleAction::BtDownload:
+            limits.btMaxDownloadKb = static_cast<uint32>(std::max(intVal, 0));
+            if (makeDefault)
+                thePrefs.setBtMaxDownloadKb(static_cast<uint32>(std::max(intVal, 0)));
+            break;
+        case ScheduleAction::BtUpload:
+            limits.btMaxUploadKb = static_cast<uint32>(std::max(intVal, 0));
+            if (makeDefault)
+                thePrefs.setBtMaxUploadKb(static_cast<uint32>(std::max(intVal, 0)));
             break;
         default:
             break;
         }
     }
     thePrefs.setScheduledLimits(limits);
+}
+
+// ===========================================================================
+// activateWindowStart — once per window: pause / resume, Usenet categories
+// ===========================================================================
+
+void Scheduler::activateWindowStart(int index, bool makeDefault)
+{
+    const ScheduleEntry* entry = schedule(index);
+    if (!entry || !m_network)
+        return;
+
+    applyNetworkActions(index, Network::Usenet, makeDefault);
+    applyNetworkActions(index, Network::Bt, makeDefault);
+
+    for (size_t ai = 0; ai < entry->actions.size(); ++ai) {
+        const ScheduleAction action = entry->actions[ai];
+        if (action == ScheduleAction::None)
+            break;
+        if (action != ScheduleAction::UsenetCatPause && action != ScheduleAction::UsenetCatResume)
+            continue;
+        bool ok = false;
+        const int category = entry->values[ai].toInt(&ok);
+        if (ok)
+            m_network->usenetCategory(category, action == ScheduleAction::UsenetCatPause);
+    }
+}
+
+// ===========================================================================
+// Private
+// ===========================================================================
+
+void Scheduler::windowEnded(int index)
+{
+    for (const Network net : {Network::Usenet, Network::Bt}) {
+        int& holder = net == Network::Usenet ? m_usenetHolder : m_btHolder;
+        if (holder != index)
+            continue;
+        holder = -1;
+        if (m_network) {
+            if (net == Network::Usenet)
+                m_network->usenetRestore();
+            else
+                m_network->btRestore();
+        }
+        // another timed window still open for this network takes over (last one wins)
+        for (auto it = m_openWindows.rbegin(); it != m_openWindows.rend(); ++it) {
+            const ScheduleEntry* e = schedule(*it);
+            if (e && e->endTime != 0 && entryTouches(*it, net)) {
+                applyNetworkActions(*it, net, false);
+                break;
+            }
+        }
+    }
+}
+
+bool Scheduler::entryTouches(int index, Network net) const
+{
+    const ScheduleEntry* entry = schedule(index);
+    if (!entry)
+        return false;
+    const ScheduleAction pause = net == Network::Usenet ? ScheduleAction::UsenetPause : ScheduleAction::BtPause;
+    const ScheduleAction resume = net == Network::Usenet ? ScheduleAction::UsenetResume : ScheduleAction::BtResume;
+    for (const ScheduleAction action : entry->actions) {
+        if (action == ScheduleAction::None)
+            break;
+        if (action == pause || action == resume)
+            return true;
+    }
+    return false;
+}
+
+void Scheduler::applyNetworkActions(int index, Network net, bool makeDefault)
+{
+    const ScheduleEntry* entry = schedule(index);
+    if (!entry || !m_network)
+        return;
+    const ScheduleAction pause = net == Network::Usenet ? ScheduleAction::UsenetPause : ScheduleAction::BtPause;
+    const ScheduleAction resume = net == Network::Usenet ? ScheduleAction::UsenetResume : ScheduleAction::BtResume;
+
+    // the entry's last pause/resume for this network decides
+    std::optional<bool> paused;
+    for (const ScheduleAction action : entry->actions) {
+        if (action == ScheduleAction::None)
+            break;
+        if (action == pause)
+            paused = true;
+        else if (action == resume)
+            paused = false;
+    }
+    if (!paused)
+        return;
+
+    const bool usenet = net == Network::Usenet;
+    logInfo(QStringLiteral("Scheduler: %1 %2 (%3)")
+                .arg(usenet ? QStringLiteral("Usenet") : QStringLiteral("BitTorrent"),
+                     *paused ? QStringLiteral("paused") : QStringLiteral("resumed"), entry->title));
+    if (usenet)
+        m_network->usenetPause(*paused, makeDefault);
+    else
+        m_network->btPause(*paused, makeDefault);
+    // a saved change has nothing to undo
+    (usenet ? m_usenetHolder : m_btHolder) = makeDefault ? -1 : index;
 }
 
 } // namespace eMule

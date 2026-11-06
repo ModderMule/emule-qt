@@ -125,7 +125,7 @@ struct ArchiveReader::Impl {
     QStringList volumes;          ///< every volume, in order; [0] is what messages name
     ArchiveVolumeSource* source = nullptr;   ///< set instead of `volumes` for a live set
     QString filePath;
-    QString passphrase;
+    QStringList passphrases;
     QString formatName;
     QStringList rejected;
     QString lastError;
@@ -335,7 +335,16 @@ bool ArchiveReader::extractEntry(int index, const QString& destPath)
 
 void ArchiveReader::setPassphrase(const QString& passphrase)
 {
-    m_impl->passphrase = passphrase;
+    m_impl->passphrases = passphrase.isEmpty() ? QStringList{} : QStringList{passphrase};
+}
+
+void ArchiveReader::setPassphrases(const QStringList& passphrases)
+{
+    m_impl->passphrases.clear();
+    for (const QString& pw : passphrases) {
+        if (!pw.isEmpty() && !m_impl->passphrases.contains(pw))
+            m_impl->passphrases.append(pw);
+    }
 }
 
 bool ArchiveReader::hasEncryptedEntries() const
@@ -517,8 +526,9 @@ bool ArchiveReader::extractAllFrom(ArchiveVolumeSource& source, const QString& d
 
     // Before the open, or the format reader never sees it. Applies to ZIP and
     // 7z; for RAR libarchive can only flag the entries, never decrypt them.
-    if (!m_impl->passphrase.isEmpty())
-        archive_read_add_passphrase(ar, m_impl->passphrase.toUtf8().constData());
+    // Several are fine: libarchive tries each until one decrypts.
+    for (const QString& pw : m_impl->passphrases)
+        archive_read_add_passphrase(ar, pw.toUtf8().constData());
 
     int result = ARCHIVE_FATAL;
     if (m_impl->source) {

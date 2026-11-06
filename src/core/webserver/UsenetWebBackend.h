@@ -27,6 +27,7 @@ enum class UsenetWebAddOutcome : int {
     Invalid = 2,
     Failed = 3,
     AlreadyDownloaded = 4,
+    EpisodeDuplicate = 5,   ///< same TV episode queued or downloaded; force adds it
 };
 
 struct UsenetWebAddOptions {

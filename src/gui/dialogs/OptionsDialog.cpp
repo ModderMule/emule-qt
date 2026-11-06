@@ -86,6 +86,7 @@
 #include <QSlider>
 #include <QSortFilterProxyModel>
 #include <QDoubleSpinBox>
+#include <QPlainTextEdit>
 #include <QSpinBox>
 #include <QShortcut>
 #include <QStackedWidget>
@@ -337,6 +338,8 @@ OptionsDialog::OptionsDialog(IpcClient* ipc, StatisticsPanel* statsPanel,
     connect(m_autoRenameMajorityCheck, &QCheckBox::toggled, this, &OptionsDialog::markDirty);
     connect(m_watchSharedDirsCheck, &QCheckBox::toggled, this, &OptionsDialog::markDirty);
     connect(m_seenFileIndexCheck, &QCheckBox::toggled, this, &OptionsDialog::markDirty);
+    connect(m_archivePasswordsEdit, &QPlainTextEdit::textChanged, this, &OptionsDialog::markDirty);
+    connect(m_archiveRecursiveCheck, &QCheckBox::toggled, this, &OptionsDialog::markDirty);
     connect(m_videoPlayerCmdEdit, &QLineEdit::textChanged, this, &OptionsDialog::markDirty);
     connect(m_videoPlayerArgsEdit, &QLineEdit::textChanged, this, &OptionsDialog::markDirty);
 
@@ -2260,6 +2263,26 @@ QWidget* OptionsDialog::createFilesPage()
 
     layout->addWidget(miscGroup);
 
+    // === Archives group: every network that unpacks (Usenet, hosters) ===
+    auto* archiveGroup = new QGroupBox(tr("Archives"), page);
+    auto* archiveLayout = new QVBoxLayout(archiveGroup);
+    archiveLayout->addWidget(new QLabel(tr("Passwords to try (one per line)"), archiveGroup));
+    m_archivePasswordsEdit = new QPlainTextEdit(archiveGroup);
+    m_archivePasswordsEdit->setTabChangesFocus(true);
+    m_archivePasswordsEdit->setFixedHeight(m_archivePasswordsEdit->fontMetrics().lineSpacing() * 4 + 12);
+    m_archivePasswordsEdit->setToolTip(
+        tr("Tried in turn on a password-protected archive after the download's own "
+           "password, for Usenet and hoster downloads. The first one that opens it "
+           "is used.\n\nRAR and 7z need 7-Zip or unrar installed; ZIP does not."));
+    archiveLayout->addWidget(m_archivePasswordsEdit);
+    m_archiveRecursiveCheck = new QCheckBox(tr("Unpack archives found inside archives"), archiveGroup);
+    m_archiveRecursiveCheck->setToolTip(
+        tr("A ZIP or RAR that comes out of an archive is unpacked as well, up to "
+           "three levels deep. The inner archive is removed afterwards when "
+           "archives are deleted after unpacking."));
+    archiveLayout->addWidget(m_archiveRecursiveCheck);
+    layout->addWidget(archiveGroup);
+
     // === Video Player group ===
     auto* videoGroup = new QGroupBox(tr("Video Player"), page);
     auto* videoLayout = new QVBoxLayout(videoGroup);
@@ -3895,6 +3918,36 @@ QWidget* OptionsDialog::createUsenetPage()
            "The Details window lets you choose the files either way."));
     addLayout->addWidget(m_usenetSelectedFileOnlyCheck);
 
+    auto* propagationRow = new QHBoxLayout;
+    propagationRow->addWidget(new QLabel(tr("Wait after posting:"), addGroup));
+    m_usenetPropagationSpin = new QSpinBox(addGroup);
+    m_usenetPropagationSpin->setRange(0, Preferences::kMaxUsenetPropagationDelayMinutes);
+    m_usenetPropagationSpin->setSuffix(tr(" min"));
+    m_usenetPropagationSpin->setSpecialValueText(tr("Off"));
+    fitSpecialValue(m_usenetPropagationSpin);
+    m_usenetPropagationSpin->setToolTip(
+        tr("A release posted only minutes ago may not have reached your provider "
+           "yet, so its articles look missing. It waits in the queue until its "
+           "newest post is this old, then downloads."));
+    propagationRow->addWidget(m_usenetPropagationSpin);
+    propagationRow->addStretch();
+    addLayout->addLayout(propagationRow);
+
+    auto* episodeRow = new QHBoxLayout;
+    episodeRow->addWidget(new QLabel(tr("Same TV episode again:"), addGroup));
+    m_usenetEpisodeDupesCombo = new QComboBox(addGroup);
+    m_usenetEpisodeDupesCombo->addItem(tr("Add it"));          // 0
+    m_usenetEpisodeDupesCombo->addItem(tr("Refuse it"));       // 1
+    m_usenetEpisodeDupesCombo->addItem(tr("Add it paused"));   // 2
+    m_usenetEpisodeDupesCombo->setToolTip(
+        tr("Another release of an episode already queued or downloaded (same show "
+           "and S01E02, or the same air date). Feeds and the watch folder skip a "
+           "refused one; when you add it yourself you are asked.\n\n"
+           "PROPER, REPACK and REAL releases always pass."));
+    episodeRow->addWidget(m_usenetEpisodeDupesCombo);
+    episodeRow->addStretch();
+    addLayout->addLayout(episodeRow);
+
     advancedLayout->addWidget(addGroup);
 
     // -- Watch folder -------------------------------------------------------
@@ -3978,6 +4031,14 @@ QWidget* OptionsDialog::createUsenetPage()
            "metadata carries the real ones, and without them the archives cannot "
            "be identified for unpacking either."));
     postLayout->addWidget(m_usenetRenameCheck);
+
+    m_usenetDeobfuscateCheck =
+        new QCheckBox(tr("Rename obfuscated files to the download name"), postGroup);
+    m_usenetDeobfuscateCheck->setToolTip(
+        tr("When neither PAR2 nor the archive gives the files real names, the biggest "
+           "file (and the files named like it) gets the name of the download instead "
+           "of a random string."));
+    postLayout->addWidget(m_usenetDeobfuscateCheck);
 
     m_usenetSfvCheck = new QCheckBox(tr("Verify with SFV when there is no PAR2"), postGroup);
     m_usenetSfvCheck->setToolTip(
@@ -4076,9 +4137,12 @@ QWidget* OptionsDialog::createUsenetPage()
 
     for (QCheckBox* box : {m_usenetPar2Check, m_usenetRenameCheck, m_usenetUnpackCheck,
                            m_usenetDirectUnpackCheck, m_usenetEncryptedPreviewCheck,
-                           m_usenetCleanupCheck, m_usenetSfvCheck}) {
+                           m_usenetCleanupCheck, m_usenetSfvCheck, m_usenetDeobfuscateCheck}) {
         connect(box, &QCheckBox::toggled, this, &OptionsDialog::markDirty);
     }
+    connect(m_usenetPropagationSpin, &QSpinBox::valueChanged, this, &OptionsDialog::markDirty);
+    connect(m_usenetEpisodeDupesCombo, &QComboBox::currentIndexChanged, this,
+            &OptionsDialog::markDirty);
     connect(m_usenetUnpackerEdit, &QLineEdit::textChanged, this, &OptionsDialog::markDirty);
     connect(m_usenetUnrepairableCombo, &QComboBox::currentIndexChanged, this,
             &OptionsDialog::markDirty);
@@ -4746,6 +4810,16 @@ QWidget* OptionsDialog::createIndexersPage()
            "blocks a search — it only means a query field stays greyed out that "
            "the indexer has since started accepting."));
     searchForm->addRow(tr("Refresh capabilities every:"), m_indexerCapsRefreshSpin);
+
+    m_usenetRetryOtherNzbCheck =
+        new QCheckBox(tr("When a Usenet download fails, grab another NZB of it"), searchGroup);
+    m_usenetRetryOtherNzbCheck->setToolTip(
+        tr("For downloads that came from an indexer search or feed. The indexer's own "
+           "replacement is used when it offers one; otherwise the indexers are "
+           "searched for the same episode or title, and the newest result of a "
+           "similar size not tried yet is queued. Up to three tries."));
+    searchForm->addRow(m_usenetRetryOtherNzbCheck);
+    connect(m_usenetRetryOtherNzbCheck, &QCheckBox::toggled, this, &OptionsDialog::markDirty);
 
     mainLayout->addWidget(searchGroup);
     mainLayout->addStretch();
@@ -6639,6 +6713,61 @@ void OptionsDialog::refreshScheduleTable()
     }
 }
 
+namespace {
+
+// Scheduler actions. 1-7 MFC (same ids); 32+ ours, ids as core ScheduleAction.
+enum class SchedValue { Rate, Count, Category, UsenetCategory, None };
+enum class SchedGroup { Ed2k, Usenet, Bt };
+struct SchedActionInfo {
+    int id;
+    const char* name;       // list column
+    const char* menuText;   // in its network's submenu
+    SchedValue value;
+    SchedGroup group;
+};
+constexpr SchedActionInfo kSchedActions[] = {
+    {1, QT_TRANSLATE_NOOP("eMule::OptionsDialog", "Upload Limit"), nullptr, SchedValue::Rate, SchedGroup::Ed2k},
+    {2, QT_TRANSLATE_NOOP("eMule::OptionsDialog", "Download Limit"), nullptr, SchedValue::Rate, SchedGroup::Ed2k},
+    {3, QT_TRANSLATE_NOOP("eMule::OptionsDialog", "Source Limit"), nullptr, SchedValue::Count, SchedGroup::Ed2k},
+    {4, QT_TRANSLATE_NOOP("eMule::OptionsDialog", "Con/5sec Limit"), nullptr, SchedValue::Count, SchedGroup::Ed2k},
+    {5, QT_TRANSLATE_NOOP("eMule::OptionsDialog", "Max Connections"), nullptr, SchedValue::Count, SchedGroup::Ed2k},
+    {6, QT_TRANSLATE_NOOP("eMule::OptionsDialog", "Stop Category"), nullptr, SchedValue::Category, SchedGroup::Ed2k},
+    {7, QT_TRANSLATE_NOOP("eMule::OptionsDialog", "Resume Category"), nullptr, SchedValue::Category, SchedGroup::Ed2k},
+    {32, QT_TRANSLATE_NOOP("eMule::OptionsDialog", "Usenet: Pause"),
+     QT_TRANSLATE_NOOP("eMule::OptionsDialog", "Pause"), SchedValue::None, SchedGroup::Usenet},
+    {33, QT_TRANSLATE_NOOP("eMule::OptionsDialog", "Usenet: Resume"),
+     QT_TRANSLATE_NOOP("eMule::OptionsDialog", "Resume"), SchedValue::None, SchedGroup::Usenet},
+    {34, QT_TRANSLATE_NOOP("eMule::OptionsDialog", "Usenet: Download Limit"),
+     QT_TRANSLATE_NOOP("eMule::OptionsDialog", "Download Limit"), SchedValue::Rate, SchedGroup::Usenet},
+    {35, QT_TRANSLATE_NOOP("eMule::OptionsDialog", "Usenet: Pause Category"),
+     QT_TRANSLATE_NOOP("eMule::OptionsDialog", "Pause Category"), SchedValue::UsenetCategory, SchedGroup::Usenet},
+    {36, QT_TRANSLATE_NOOP("eMule::OptionsDialog", "Usenet: Resume Category"),
+     QT_TRANSLATE_NOOP("eMule::OptionsDialog", "Resume Category"), SchedValue::UsenetCategory, SchedGroup::Usenet},
+    {37, QT_TRANSLATE_NOOP("eMule::OptionsDialog", "BitTorrent: Pause"),
+     QT_TRANSLATE_NOOP("eMule::OptionsDialog", "Pause"), SchedValue::None, SchedGroup::Bt},
+    {38, QT_TRANSLATE_NOOP("eMule::OptionsDialog", "BitTorrent: Resume"),
+     QT_TRANSLATE_NOOP("eMule::OptionsDialog", "Resume"), SchedValue::None, SchedGroup::Bt},
+    {39, QT_TRANSLATE_NOOP("eMule::OptionsDialog", "BitTorrent: Download Limit"),
+     QT_TRANSLATE_NOOP("eMule::OptionsDialog", "Download Limit"), SchedValue::Rate, SchedGroup::Bt},
+    {40, QT_TRANSLATE_NOOP("eMule::OptionsDialog", "BitTorrent: Upload Limit"),
+     QT_TRANSLATE_NOOP("eMule::OptionsDialog", "Upload Limit"), SchedValue::Rate, SchedGroup::Bt},
+};
+
+const SchedActionInfo* schedActionInfo(int id)
+{
+    for (const SchedActionInfo& info : kSchedActions)
+        if (info.id == id)
+            return &info;
+    return nullptr;
+}
+
+QString schedTr(const char* text)
+{
+    return QCoreApplication::translate("eMule::OptionsDialog", text);
+}
+
+} // namespace
+
 void OptionsDialog::populateScheduleDetails(int index)
 {
     m_schedSelectedIndex = index;
@@ -6680,14 +6809,12 @@ void OptionsDialog::populateScheduleDetails(int index)
 
     // Populate actions
     m_schedActionsTable->clear();
-    static const char* actionNames[] = {
-        "None", "Upload Limit", "Download Limit", "Source Limit",
-        "Con/5sec Limit", "Max Connections", "Stop Category", "Resume Category"
-    };
     for (const auto& act : entry.actions) {
-        if (act.type <= 0 || act.type > 7) continue;
+        const SchedActionInfo* info = schedActionInfo(act.type);
+        if (!info)
+            continue;
         auto* item = new QTreeWidgetItem(m_schedActionsTable);
-        item->setText(0, tr(actionNames[act.type]));
+        item->setText(0, schedTr(info->name));
         item->setText(1, act.value);
         item->setData(0, Qt::UserRole, act.type);
     }
@@ -6747,7 +6874,8 @@ void OptionsDialog::scheduleActionsEdited()
 bool OptionsDialog::promptScheduleValue(int action, const QString& label, QString& value)
 {
     // MFC PPgScheduler.cpp:401-410
-    const bool rate = action == 1 || action == 2;   // upload / download limit
+    const SchedActionInfo* info = schedActionInfo(action);
+    const bool rate = info && info->value == SchedValue::Rate;
     const QString prompt = rate
         ? tr("Enter the datarate limit: (%1, KB/s)").arg(label)
         : tr("Please enter the new value: (%1)").arg(label);
@@ -6763,43 +6891,58 @@ void OptionsDialog::showScheduleActionsMenu(const QPoint& pos)
 {
     // MFC CPPgScheduler::OnNmRClickActionlist / OnCommand (PPgScheduler.cpp:340-415)
     constexpr int kMaxActions = 16;          // what a schedule entry holds
-    constexpr int kFirstCategoryAction = 6;  // ACTION_CATSTOP
     QMenu menu;
 
-    // Add submenu with action types
+    // Add submenu: MFC's actions, then one submenu per other network
     auto* addMenu = menu.addMenu(tr("Add"));
     addMenu->setEnabled(m_schedActionsTable->topLevelItemCount() < kMaxActions);
-    static const char* actionNames[] = {
-        nullptr, "Upload Limit", "Download Limit", "Source Limit",
-        "Con/5sec Limit", "Max Connections", "Stop Category", "Resume Category"
-    };
-    for (int i = 1; i <= 7; ++i) {
-        addMenu->addAction(tr(actionNames[i]), this, [this, i]() {
+    addMenu->addSeparator();   // placeholder order: eD2K actions go above it
+    QMenu* usenetMenu = nullptr;
+    QMenu* btMenu = nullptr;
+    QAction* separator = addMenu->actions().constFirst();
+    for (const SchedActionInfo& info : kSchedActions) {
+        QMenu* target = addMenu;
+        if (info.group == SchedGroup::Usenet)
+            target = usenetMenu ? usenetMenu : (usenetMenu = addMenu->addMenu(tr("Usenet")));
+        else if (info.group == SchedGroup::Bt)
+            target = btMenu ? btMenu : (btMenu = addMenu->addMenu(tr("BitTorrent")));
+        const QString text = schedTr(info.menuText ? info.menuText : info.name);
+        auto* act = new QAction(text, target);
+        connect(act, &QAction::triggered, this, [this, &info]() {
             // A category action gets its category from the submenu afterwards.
             QString value;
-            if (i < kFirstCategoryAction && !promptScheduleValue(i, tr(actionNames[i]), value))
+            const bool prompt = info.value == SchedValue::Rate || info.value == SchedValue::Count;
+            if (prompt && !promptScheduleValue(info.id, schedTr(info.name), value))
                 return;
 
             auto* item = new QTreeWidgetItem(m_schedActionsTable);
-            item->setText(0, tr(actionNames[i]));
+            item->setText(0, schedTr(info.name));
             item->setText(1, value);
-            item->setData(0, Qt::UserRole, i);
+            item->setData(0, Qt::UserRole, info.id);
             m_schedActionsTable->setCurrentItem(item);
             scheduleActionsEdited();
         });
+        if (target == addMenu)
+            addMenu->insertAction(separator, act);
+        else
+            target->addAction(act);
     }
 
     auto* current = m_schedActionsTable->currentItem();
-    if (current && current->data(0, Qt::UserRole).toInt() >= kFirstCategoryAction) {
+    const SchedActionInfo* currentInfo = current ? schedActionInfo(current->data(0, Qt::UserRole).toInt()) : nullptr;
+    const bool currentCategory = currentInfo
+        && (currentInfo->value == SchedValue::Category || currentInfo->value == SchedValue::UsenetCategory);
+    if (currentCategory) {
         // -2 "All uncategorized" (only with categories), -1 "All", then each category
-        // by its index; the value column holds that number, as in MFC.
+        // by its index; the value column holds that number, as in MFC. Usenet can't
+        // pick out the uncategorized.
         auto* catMenu = menu.addMenu(tr("Select category"));
         const auto choose = [this, current](int index) {
             current->setText(1, QString::number(index));
             scheduleActionsEdited();
         };
         const int rows = m_feedDownloadCategoryCombo ? m_feedDownloadCategoryCombo->count() : 0;
-        if (rows > 1)
+        if (rows > 1 && currentInfo->value == SchedValue::Category)
             catMenu->addAction(tr("All uncategorized"), this, [choose] { choose(-2); });
         catMenu->addAction(tr("All"), this, [choose] { choose(-1); });
         for (int row = 1; row < rows; ++row) {
@@ -6807,7 +6950,7 @@ void OptionsDialog::showScheduleActionsMenu(const QPoint& pos)
             catMenu->addAction(m_feedDownloadCategoryCombo->itemText(row), this,
                                [choose, index] { choose(index); });
         }
-    } else if (current) {
+    } else if (current && currentInfo && currentInfo->value != SchedValue::None) {
         menu.addAction(tr("Edit Value"), this, [this, current]() {
             QString value = current->text(1);
             if (promptScheduleValue(current->data(0, Qt::UserRole).toInt(), current->text(0), value)) {
@@ -7417,6 +7560,10 @@ void OptionsDialog::saveSettings()
         req.append(m_watchSharedDirsCheck->isChecked());
         req.append(QStringLiteral("seenFileIndex"));
         req.append(m_seenFileIndexCheck->isChecked());
+        req.append(QStringLiteral("archivePasswords"));
+        req.append(QCborArray::fromStringList(archivePasswordLines()));
+        req.append(QStringLiteral("archiveRecursiveExtract"));
+        req.append(m_archiveRecursiveCheck->isChecked());
 
         // Notifications page (daemon-side)
         req.append(QStringLiteral("notifyOnLog"));
@@ -7531,6 +7678,14 @@ void OptionsDialog::saveSettings()
         req.append(m_usenetSfvCheck->isChecked());
         req.append(QStringLiteral("usenetUnrepairableAction"));
         req.append(static_cast<qint64>(m_usenetUnrepairableCombo->currentIndex()));
+        req.append(QStringLiteral("usenetDeobfuscateNames"));
+        req.append(m_usenetDeobfuscateCheck->isChecked());
+        req.append(QStringLiteral("usenetPropagationDelayMinutes"));
+        req.append(static_cast<qint64>(m_usenetPropagationSpin->value()));
+        req.append(QStringLiteral("usenetEpisodeDupes"));
+        req.append(static_cast<qint64>(m_usenetEpisodeDupesCombo->currentIndex()));
+        req.append(QStringLiteral("usenetRetryOtherNzb"));
+        req.append(m_usenetRetryOtherNzbCheck->isChecked());
         req.append(QStringLiteral("usenetUnwantedAction"));
         req.append(static_cast<qint64>(m_usenetUnwantedCombo->currentIndex()));
         req.append(QStringLiteral("usenetUnwantedExtensions"));
@@ -8013,6 +8168,8 @@ void OptionsDialog::saveSettings()
         thePrefs.setAutoRenameToMajorityName(m_autoRenameMajorityCheck->isChecked());
         thePrefs.setWatchSharedDirs(m_watchSharedDirsCheck->isChecked());
         thePrefs.setSeenFileIndex(m_seenFileIndexCheck->isChecked());
+        thePrefs.setArchivePasswords(archivePasswordLines());
+        thePrefs.setArchiveRecursiveExtract(m_archiveRecursiveCheck->isChecked());
 
         // Notifications page (daemon-side) fallback
         thePrefs.setNotifyOnLog(m_notifyLogCheck->isChecked());
@@ -8326,6 +8483,15 @@ void OptionsDialog::fillDaemonSettings(const QCborMap& prefs)
     m_autoRenameMajorityCheck->setChecked(prefs.value(QStringLiteral("autoRenameToMajorityName")).toBool(false));
     m_watchSharedDirsCheck->setChecked(prefs.value(QStringLiteral("watchSharedDirs")).toBool(true));
     m_seenFileIndexCheck->setChecked(prefs.value(QStringLiteral("seenFileIndex")).toBool(true));
+    {
+        QStringList pws;
+        for (const QCborValue& v : prefs.value(QStringLiteral("archivePasswords")).toArray())
+            pws.append(v.toString());
+        const QSignalBlocker block(m_archivePasswordsEdit);
+        m_archivePasswordsEdit->setPlainText(pws.join(QLatin1Char('\n')));
+    }
+    m_archiveRecursiveCheck->setChecked(
+        prefs.value(QStringLiteral("archiveRecursiveExtract")).toBool(true));
 
     // Notifications page (daemon-side)
     m_notifyLogCheck->setChecked(prefs.value(QStringLiteral("notifyOnLog")).toBool());
@@ -8428,6 +8594,14 @@ void OptionsDialog::fillDaemonSettings(const QCborMap& prefs)
     m_usenetSfvCheck->setChecked(prefs.value(QStringLiteral("usenetSfvCheck")).toBool(true));
     m_usenetUnrepairableCombo->setCurrentIndex(
         int(prefs.value(QStringLiteral("usenetUnrepairableAction")).toInteger(1)));
+    m_usenetDeobfuscateCheck->setChecked(
+        prefs.value(QStringLiteral("usenetDeobfuscateNames")).toBool(true));
+    m_usenetPropagationSpin->setValue(
+        int(prefs.value(QStringLiteral("usenetPropagationDelayMinutes")).toInteger(0)));
+    m_usenetEpisodeDupesCombo->setCurrentIndex(
+        int(prefs.value(QStringLiteral("usenetEpisodeDupes")).toInteger(0)));
+    m_usenetRetryOtherNzbCheck->setChecked(
+        prefs.value(QStringLiteral("usenetRetryOtherNzb")).toBool(false));
     m_usenetUnwantedCombo->setCurrentIndex(
         int(prefs.value(QStringLiteral("usenetUnwantedAction")).toInteger(1)));
     // An older daemon sends no key; empty would read as "check off".
@@ -9444,6 +9618,18 @@ void OptionsDialog::updateGeoIpSourceUi()
 int OptionsDialog::geoIpSourceSelection() const
 {
     return m_geoIpSourceCombo ? m_geoIpSourceCombo->currentData().toInt() : 0;
+}
+
+QStringList OptionsDialog::archivePasswordLines() const
+{
+    // not trimmed: a space can be part of a password
+    QStringList out;
+    for (QString line : m_archivePasswordsEdit->toPlainText().split(QLatin1Char('\n'))) {
+        line.remove(QLatin1Char('\r'));
+        if (!line.isEmpty() && !out.contains(line))
+            out.append(line);
+    }
+    return out;
 }
 
 } // namespace eMule

@@ -27,6 +27,8 @@ struct HosterUnpackJob {
     QString password;
     QStringList passwords; ///< tried in turn after password while the set wants one (a container's)
     QString externalTool;  ///< usenetExternalUnpacker; empty = libarchive only
+    int nestedDepth = 0;   ///< archives inside archives, levels; 0 = off
+    bool deleteNestedArchives = true;   ///< an opened inner archive is not published
 };
 
 /// What an unpack came to.

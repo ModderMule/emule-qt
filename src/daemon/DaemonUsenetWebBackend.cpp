@@ -77,7 +77,7 @@ QCborMap DaemonUsenetWebBackend::downloadSplit() const
     UsenetBridge::insertDownloadSplit(out);
     auto* q = UsenetBridge::queue();
     out.insert(QStringLiteral("rate"), q ? q->currentRate() : qint64(0));
-    out.insert(QStringLiteral("paused"), thePrefs.usenetPaused());
+    out.insert(QStringLiteral("paused"), UsenetBridge::enginePaused());
     return out;
 }
 

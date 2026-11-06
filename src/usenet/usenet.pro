@@ -38,6 +38,7 @@ SOURCES += \
     post/UsenetPostProcessor.cpp \
     post/UsenetReleaseChecks.cpp \
     post/UsenetUnpacker.cpp \
+    post/UsenetDeobfuscate.cpp \
     queue/ArticleWriter.cpp \
     queue/UsenetStateWriter.cpp \
     queue/ArticleFileCache.cpp \
@@ -48,6 +49,7 @@ SOURCES += \
     queue/UsenetHealth.cpp \
     queue/UsenetRepairEstimate.cpp \
     queue/UsenetHistory.cpp \
+    queue/UsenetReleaseName.cpp \
     queue/UsenetStatistics.cpp \
     queue/UsenetUsage.cpp \
     queue/UsenetWorker.cpp \
@@ -74,6 +76,7 @@ HEADERS += \
     post/UsenetPostProcessor.h \
     post/UsenetReleaseChecks.h \
     post/UsenetUnpacker.h \
+    post/UsenetDeobfuscate.h \
     queue/ArticleWriter.h \
     queue/UsenetStateWriter.h \
     queue/ArticleFileCache.h \
@@ -84,6 +87,7 @@ HEADERS += \
     queue/UsenetHealth.h \
     queue/UsenetRepairEstimate.h \
     queue/UsenetHistory.h \
+    queue/UsenetReleaseName.h \
     queue/UsenetStatistics.h \
     queue/UsenetUsage.h \
     queue/UsenetWorker.h \

@@ -291,6 +291,10 @@ usenet:
   useProxy: true            # news servers through the Proxy page's proxy
   sfvCheck: true            # verify against an .sfv when PAR2 did not run
   unrepairableAction: 1     # provably unrepairable: 0 keep going, 1 pause, 2 fail
+  deobfuscateNames: true    # random payload names, no PAR2 names: rename to the job name
+  propagationDelayMinutes: 0  # hold a release until its newest post is this old; 0 = off
+  retryOtherNzb: false      # a failed indexer job grabs another NZB of the release
+  episodeDupes: 0           # same TV episode again: 0 allow, 1 refuse, 2 add paused
   unwantedAction: 1         # a media release carrying unwanted files: same values
   unwantedExtensions: "exe, com, scr, pif, lnk, bat, cmd, vbs, vbe, js, jse, wsf, hta, cpl, msi, ps1, jar, reg"
   watchDir: ""              # a folder .nzb files are picked up from; empty = off
@@ -308,6 +312,15 @@ usenet:
       quotaBytes: 500000000000
       quotaResetDay: 17     # billing day; a short month rolls on its last day
       quotaFallThrough: false  # spent -> wait, rather than spend the next level
+```
+
+Two archive settings live under `files:` because hoster downloads unpack
+through the same `UsenetUnpacker` (Options › Files › Archives):
+
+```yaml
+files:
+  archivePasswords: [one, two]    # tried after the download's own password
+  archiveRecursiveExtract: true   # archives inside archives, 3 levels
 ```
 
 Every `quota*` key is written only when an allowance is set, so an unmetered
@@ -1494,6 +1507,21 @@ The watch folder and the feed poller are the two automatic callers, and both
 inherit the split without knowing about it — the guard lives in `addNzb()`, so
 every present and future intake path gets it by construction.
 
+### Same episode, other release
+
+`usenetEpisodeDupes` catches what the digest cannot: `Show.S01E02.720p-A` and
+`Show S01E02 1080p-B` share no articles. `parseReleaseEpisode()`
+(`queue/UsenetReleaseName`) keys a name as folded title + season/episode
+(`S01E02`, `S01E02E03` on the first, `1x02`) or + air date (`2024.03.05`,
+`05.03.2024`); season packs and movies have no key. A PROPER, REPACK, REAL or
+RERIP tag **after** the episode token lets the release through ("Real Time" is
+a title). The check runs after the digest checks: queue items that have not
+failed, then history *downloads* (`findByEpisodeKey`, an index rebuilt from the
+stored names — nothing new on disk). Refuse answers `EpisodeDuplicate`, appended
+to the wire enum and handled like `AlreadyDownloaded` (feeds and the watch
+folder skip it, the GUI and web ask, `force` adds); Pause adds it paused with
+the reason in `stalledReason`.
+
 ⚠️ **A refusal sentence must not contain `" — "`.** `AddNzbUrlDialog` formats a
 failed line as `"<url> — <reason>"` and recovers the URL with
 `section(" — ", 0, 0)`, so an em-dash-space inside the reason silently truncates
@@ -1525,6 +1553,36 @@ default off) makes a file row queue only its file.
   item (`joinKeptFiles()`) and answers `Added` with that item's id. Nothing to
   un-skip, or no `keptFiles` → `Duplicate` as before. Finished →
   `AlreadyDownloaded`, and a forced add is a new item with only those files.
+
+### Waiting for propagation
+
+`usenetPropagationDelayMinutes` (default 0 = off) holds an item until its newest
+`<file date>` is that old, SABnzbd's `propagation_delay`. Nothing is stored: the
+wait is derived each tick from the NZB dates and the pref, so a changed setting
+applies at once and a restart resumes the count. A held item leaves
+`dispatch()`'s order and `dispatchProbes()` (a health check now would call
+not-yet-propagated articles missing), is not "active" for the bandwidth split,
+and says `waiting for propagation, N min left`. An NZB with no dates never waits.
+
+### A failed indexer job tries another NZB
+
+`usenetRetryOtherNzb` (default off). Search grabs and feed grabs carry a
+`UsenetOrigin` (indexer, guid, title, `X-DNZB-Failure` link, tried guids, retry
+count) on the item, persisted under `origin:` in the sidecar. On
+`itemFinished(false)` the daemon's `UsenetRetryGrabber`:
+
+1. fetches the `X-DNZB-Failure` link when the indexer sent one
+   (`IndexerClient::failureUrlFor()`, remembered process-wide per download URL
+   for the last 500 grabs), and adds the answer if it is an NZB;
+2. otherwise searches every enabled Usenet indexer quietly (its own
+   `IndexerClient`, not `IndexerSearchList`, which pushes to the GUI): tvsearch
+   with season/episode when the title parses, else the folded title; keeps rows
+   of the same episode or the same name minus its group, not tried yet, within
+   ½–1½× the size; and grabs the newest, moving on when one is refused.
+
+The replacement is added `force` + Automatic, so neither the history nor the
+episode check stops it, with the origin's tried list and `retries + 1`; at
+`kMaxRetries` = 3 the chain stops. A missing password never triggers it.
 
 ### What survives leaving the queue
 
@@ -1861,7 +1919,8 @@ resolved" ends the *download phase* and hands the item to
 unpack are both disk- and CPU-bound and interleaving two of them is slower than
 running them in sequence.
 
-The pipeline is **rename → verify → repair → unpack → stage**, and it stops at
+The pipeline is **rename → verify → repair → unpack (+ nested) → deobfuscate →
+stage**, and it stops at
 staging: it copies the payload to `<incoming>/<name>.usenetpart`, which no share
 scan will look at, and hands the queue a list of renames. All the slow IO
 therefore happens off the daemon thread, and what is left on it is an atomic
@@ -2088,6 +2147,27 @@ joined member names onto the destination unsanitised, so a `../` member escaped
 it, and `extractEntry()` reopened and re-scanned the whole archive per member,
 which on a solid multi-volume set re-read every volume once per file.
 
+### The password list, and archives inside archives
+
+`UsenetUnpacker::unpackAll()` takes a list: the download's own password first,
+then `archivePasswords`. ZIP gets every candidate at once —
+`archive_read_add_passphrase()` can be called repeatedly and libarchive tries
+each. The external tool is run once per candidate, and only
+`Outcome::WrongPassword` moves on to the next; it extracts into staging and hands
+files over only on success, so a wrong try leaves nothing behind.
+`passwordRequired`/`wrongPassword` are reported only after the whole list failed,
+and `Result::usedPassword` names the one the tool accepted.
+`Ed3kHosterUnpack` used to loop over its own candidates by re-running the whole
+unpack; it now passes its list in.
+
+With `archiveRecursiveExtract`, a second pass looks at what came out (plus what
+direct unpack extracted) for archive sets made **only of extracted files** — the
+release's own volumes are never re-entered — and unpacks each one next to
+itself, up to `kNestedDepth` = 3 levels. An opened inner archive moves from
+`extractedFiles` to `consumedArchives`, so cleanup deletes it like a volume and
+keeping archives publishes it. A nested set that fails is logged and stays a
+plain file; only a veto (unwanted files inside) fails the job.
+
 ### Direct unpack
 
 An archive volume is finished the moment its last article lands, and libarchive
@@ -2153,6 +2233,20 @@ And **a release that failed verification is not published at all**. Phase 3
 shared short files, holes and all, and nothing in the system complained — the
 client quietly advertised corrupt data. `missingSegments > 0` with no usable
 recovery set is now a failure, and the files stay in the work folder.
+
+### Obfuscated names, when nothing restored them
+
+`usenetDeobfuscateNames` (on by default) runs after unpack and before staging,
+and only renames: `deobfuscatedNames()` (`post/UsenetDeobfuscate`) answers a
+source → name map and `stageForPublish()` publishes under it, so the staged
+file's `source` still matches its NZB file. The rules are SABnzbd's: the
+clearly biggest file (alone, or more than 3× the next), a base name that
+carries no words (32 hex digits, 40+ hex and dots, `abc.xyz…`, or no case mix
+and no separators), becomes `<job name>.<ext>`, and its namesakes in the same
+folder keep their tails (`.eng.srt`, `-sample.mkv`). Archive volumes, `.par2`
+and disc structures (`VIDEO_TS`, `BDMV`) are never renamed, and neither is
+anything when the job name itself looks obfuscated. There is no PAR2 gate: a
+name PAR2 restored is a real one, and the heuristic leaves real names alone.
 
 ### A release without PAR2 is checked against its SFV
 

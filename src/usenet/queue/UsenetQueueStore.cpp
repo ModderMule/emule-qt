@@ -277,6 +277,26 @@ bool UsenetQueueStore::save(const UsenetQueueItem& item)
     // which is what keeps the first run after an upgrade quiet.
     if (!item.failedLadder.isEmpty())
         out.field("", "failedLadder", item.failedLadder);
+    // Indexer row it came from, for a replacement on failure. Absent = none.
+    if (item.origin.isSet()) {
+        out.raw("origin:\n");
+        out.field("  ", "indexer", item.origin.indexerName);
+        if (!item.origin.guid.isEmpty())
+            out.field("  ", "guid", item.origin.guid);
+        if (!item.origin.title.isEmpty())
+            out.field("  ", "title", item.origin.title);
+        if (!item.origin.failureUrl.isEmpty())
+            out.field("  ", "failureUrl", item.origin.failureUrl);
+        out.field("  ", "retries", item.origin.retries);
+        if (!item.origin.triedGuids.isEmpty()) {
+            out.raw("  tried:\n");
+            for (const QString& g : item.origin.triedGuids) {
+                out.raw("    - ");
+                out.str(g);
+                out.endLine();
+            }
+        }
+    }
     // Which check stopped it and what it found: a paused item has to be able to
     // say why after a restart, and an overruled check must stay overruled.
     if (item.stopReason != UsenetStopReason::None) {
@@ -489,6 +509,17 @@ bool UsenetQueueStore::load(const QString& path, UsenetQueueItem& out, QString& 
         out.passwordRequired =
             root["passwordRequired"] ? root["passwordRequired"].as<bool>(false) : false;
         out.failedLadder = fromStd(root, "failedLadder");
+        if (const auto origin = root["origin"]; origin && origin.IsMap()) {
+            out.origin.indexerName = fromStd(origin, "indexer");
+            out.origin.guid = fromStd(origin, "guid");
+            out.origin.title = fromStd(origin, "title");
+            out.origin.failureUrl = fromStd(origin, "failureUrl");
+            out.origin.retries = origin["retries"] ? origin["retries"].as<int>(0) : 0;
+            if (const auto tried = origin["tried"]; tried && tried.IsSequence()) {
+                for (const auto& g : tried)
+                    out.origin.triedGuids.append(QString::fromStdString(g.as<std::string>("")));
+            }
+        }
         const int stopReason = root["stopReason"] ? root["stopReason"].as<int>(0) : 0;
         if (stopReason == int(UsenetStopReason::Unrepairable)
             || stopReason == int(UsenetStopReason::Unwanted)) {

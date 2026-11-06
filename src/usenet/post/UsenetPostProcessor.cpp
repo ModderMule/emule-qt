@@ -4,6 +4,7 @@
 #include "post/UsenetPostProcessor.h"
 
 #include "post/Par2NameIndex.h"
+#include "post/UsenetDeobfuscate.h"
 #include "post/UsenetReleaseChecks.h"
 #include "post/UsenetUnpacker.h"
 #include "prefs/Preferences.h"
@@ -605,8 +606,13 @@ void UsenetPostProcessor::process(const UsenetPostJob& job)
             });
         }
 
-        const auto unpacked =
-            unpacker.unpack(job.workDir, unpackDir, job.password, skip, job.externalUnpacker);
+        UsenetUnpacker::Options unpackOptions;
+        unpackOptions.passwords = QStringList{job.password} + job.extraPasswords;
+        unpackOptions.skipFirstVolumes = skip;
+        unpackOptions.externalTool = job.externalUnpacker;
+        unpackOptions.nestedDepth = job.nestedDepth;
+        unpackOptions.nestedSeeds = directPayload;
+        const auto unpacked = unpacker.unpackAll(job.workDir, unpackDir, unpackOptions);
 
         if (!unpacked.vetoed.isEmpty()) {
             // Nothing extracted from this release stays. The volumes do, so a
@@ -651,6 +657,7 @@ void UsenetPostProcessor::process(const UsenetPostJob& job)
             for (const QString& path : unpacked.consumedArchives) {
                 if (!consumed.contains(path))
                     consumed.append(path);
+                payload.removeAll(path);   // a nested archive that was opened
             }
         }
 
@@ -756,10 +763,22 @@ void UsenetPostProcessor::process(const UsenetPostJob& job)
         return;
     }
 
+    // -- deobfuscate ----------------------------------------------------------
+    // After PAR2 and unpack, which give real names when they have them; this
+    // only fires on a payload still named like noise.
+    QHash<QString, QString> renames;
+    if (job.deobfuscateEnabled) {
+        renames = deobfuscatedNames(payload, job.jobName);
+        for (auto it = renames.cbegin(); it != renames.cend(); ++it) {
+            logUsenet(QStringLiteral("Usenet: obfuscated \"%1\" published as \"%2\"")
+                          .arg(QFileInfo(it.key()).fileName(), it.value()));
+        }
+    }
+
     // -- stage --------------------------------------------------------------
     emitStage(job.itemId, PostStage::Staging, 0, QString());
 
-    if (!stageForPublish(payload, job.destDir, result)) {
+    if (!stageForPublish(payload, job.destDir, result, renames)) {
         result.staged.clear();
         result.message = QObject::tr("Could not move the finished files into %1")
                              .arg(job.destDir);
@@ -783,7 +802,8 @@ void UsenetPostProcessor::emitStage(const QString& itemId, PostStage stage, int 
 }
 
 bool UsenetPostProcessor::stageForPublish(const QStringList& files, const QString& destDir,
-                                          UsenetPostResult& result)
+                                          UsenetPostResult& result,
+                                          const QHash<QString, QString>& renames)
 {
     if (destDir.isEmpty()) {
         logUsenetError(QStringLiteral("Usenet: no incoming directory configured"));
@@ -793,7 +813,7 @@ bool UsenetPostProcessor::stageForPublish(const QStringList& files, const QStrin
 
     int index = 0;
     for (const QString& source : files) {
-        const QString name = QFileInfo(source).fileName();
+        const QString name = renames.value(source, QFileInfo(source).fileName());
         const QString finalPath = uniqueDestination(destDir, name);
         const QString stagedPath = finalPath + QString(Preferences::kUsenetPartSuffix);
 

@@ -458,7 +458,50 @@ void TestOptionsDialogSizing::schedulerActionsFollowMfc()
     QVERIFY(!entries.contains(QStringLiteral("Edit Value")));
     QCOMPARE(stop->text(1), QStringLiteral("-1"));
 
+    // Other networks: a submenu each; a pause takes no value
+    QStringList usenet;
+    QStringList bt;
+    dlg.m_schedMenuHook = [&](QMenu* menu) {
+        entries.clear();
+        for (QAction* a : menu->actions()) {
+            entries << a->text();
+            if (a->text() != QStringLiteral("Add"))
+                continue;
+            for (QAction* sub : a->menu()->actions()) {
+                if (sub->text() == QStringLiteral("Usenet"))
+                    for (QAction* u : sub->menu()->actions())
+                        usenet << u->text();
+                if (sub->text() == QStringLiteral("BitTorrent"))
+                    for (QAction* b : sub->menu()->actions()) {
+                        bt << b->text();
+                        if (b->text() == QStringLiteral("Pause"))
+                            b->trigger();
+                    }
+            }
+        }
+    };
+    openMenu();
+    QVERIFY(usenet.contains(QStringLiteral("Pause")) && usenet.contains(QStringLiteral("Download Limit"))
+            && usenet.contains(QStringLiteral("Pause Category")));
+    QVERIFY(bt.contains(QStringLiteral("Resume")) && bt.contains(QStringLiteral("Upload Limit")));
+    QTreeWidgetItem* btPause = table->currentItem();
+    QCOMPARE(btPause->text(0), QStringLiteral("BitTorrent: Pause"));
+    QCOMPARE(btPause->data(0, Qt::UserRole).toInt(), 37);
+    dlg.m_schedMenuHook = [&](QMenu* menu) {
+        entries.clear();
+        for (QAction* a : menu->actions())
+            entries << a->text();
+    };
+    openMenu();
+    QVERIFY(!entries.contains(QStringLiteral("Edit Value")));
+    QVERIFY(!entries.contains(QStringLiteral("Select category")));
+
     // The sixteenth is the last.
+    dlg.m_schedMenuHook = [&](QMenu* menu) {
+        for (QAction* a : menu->actions())
+            if (a->text() == QStringLiteral("Add"))
+                addEnabled = a->menu()->isEnabled();
+    };
     while (table->topLevelItemCount() < 16) {
         auto* filler = new QTreeWidgetItem(table, {QStringLiteral("Source Limit"), QStringLiteral("1")});
         filler->setData(0, Qt::UserRole, 3);

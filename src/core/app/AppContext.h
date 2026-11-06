@@ -37,6 +37,7 @@ class ClientCreditsList;
 class ClientList;
 class ClientUDPSocket;
 class DownloadQueue;
+class ScheduleNetworkActions;
 class FriendList;
 class IPFilter;
 class IP2Country;
@@ -101,6 +102,8 @@ struct AppContext {
     UploadBandwidthThrottler* uploadBandwidthThrottler = nullptr;
     LastCommonRouteFinder* lastCommonRouteFinder = nullptr;
     Scheduler*   scheduler      = nullptr;
+    /// The scheduler's Usenet / BitTorrent / ed3k actions (daemon). Null: those do nothing.
+    ScheduleNetworkActions* scheduleNetworkActions = nullptr;
     PortMapper*  portMapper     = nullptr;
     /// Download writes and part hashing off the main thread. Null: PartFile does
     /// both inline (unit tests).

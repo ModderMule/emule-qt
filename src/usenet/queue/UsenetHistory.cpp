@@ -1,4 +1,5 @@
 #include "queue/UsenetHistory.h"
+#include "queue/UsenetReleaseName.h"
 
 #include "prefs/Preferences.h"
 #include "queue/UsenetHealth.h"
@@ -113,6 +114,7 @@ void UsenetHistory::load()
                        .arg(path, QString::fromUtf8(ex.what())));
         m_byDigest.clear();
         m_digestsByFoldedName.clear();
+        m_digestsByEpisode.clear();
     }
 }
 
@@ -153,6 +155,8 @@ void UsenetHistory::record(const UsenetQueueItem& item, UsenetHistoryState state
     e.state = state;
     m_byDigest.insert(digest, e);
     m_digestsByFoldedName.insert(usenetFoldedReleaseName(e.name), digest);
+    if (const auto ep = parseReleaseEpisode(e.name))
+        m_digestsByEpisode.insert(ep->key(), digest);
 
     evict();
 }
@@ -194,6 +198,19 @@ const UsenetHistoryEntry* UsenetHistory::findByName(const QString& name) const
     return best;
 }
 
+const UsenetHistoryEntry* UsenetHistory::findByEpisodeKey(const QString& key) const
+{
+    if (key.isEmpty())
+        return nullptr;
+    const UsenetHistoryEntry* best = nullptr;
+    for (const QString& digest : m_digestsByEpisode.values(key)) {
+        const UsenetHistoryEntry* e = findByDigest(digest);
+        if (e && e->state == UsenetHistoryState::Downloaded && (!best || e->when > best->when))
+            best = e;
+    }
+    return best;
+}
+
 int UsenetHistory::count() const
 {
     return static_cast<int>(m_byDigest.size());
@@ -231,6 +248,7 @@ bool UsenetHistory::clear()
 {
     m_byDigest.clear();
     m_digestsByFoldedName.clear();
+    m_digestsByEpisode.clear();
     m_loaded = true;
     return save();
 }
@@ -268,8 +286,12 @@ void UsenetHistory::evict()
 void UsenetHistory::reindex()
 {
     m_digestsByFoldedName.clear();
-    for (auto it = m_byDigest.constBegin(); it != m_byDigest.constEnd(); ++it)
+    m_digestsByEpisode.clear();
+    for (auto it = m_byDigest.constBegin(); it != m_byDigest.constEnd(); ++it) {
         m_digestsByFoldedName.insert(usenetFoldedReleaseName(it->name), it.key());
+        if (const auto ep = parseReleaseEpisode(it->name))
+            m_digestsByEpisode.insert(ep->key(), it.key());
+    }
 }
 
 } // namespace eMule::usenet

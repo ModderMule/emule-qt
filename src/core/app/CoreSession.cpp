@@ -513,7 +513,7 @@ void CoreSession::onTimer()
             if (thePrefs.schedulerEnabled())
                 theApp.scheduler->check();
             else
-                theApp.scheduler->clearOverrides();
+                theApp.scheduler->stop();
         }
 
         // Server stat ping — one server per UDPSERVERSTATTIME (5s); each server
@@ -1694,6 +1694,7 @@ void CoreSession::initScheduler()
 
     if (theApp.downloadQueue)
         m_scheduler->setDownloadQueue(theApp.downloadQueue);
+    m_scheduler->setNetworkActions(theApp.scheduleNetworkActions);
 
     int loaded = m_scheduler->loadFromFile(thePrefs.configDir());
     if (loaded > 0)
@@ -1709,7 +1710,8 @@ void CoreSession::shutdownScheduler()
     if (!m_scheduler)
         return;
 
-    m_scheduler->clearOverrides();
+    m_scheduler->stop();
+    m_scheduler->setNetworkActions(nullptr);
     m_scheduler->saveToFile(thePrefs.configDir());
     theApp.scheduler = nullptr;
     m_scheduler.reset();

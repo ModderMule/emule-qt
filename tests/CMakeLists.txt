@@ -694,6 +694,7 @@ emule_add_test(tst_UsenetDirectUnpack FOLDER "Usenet" LIBRARIES eMule::Usenet)
 emule_add_test(tst_UsenetUnpack FOLDER "Usenet" LIBRARIES eMule::Usenet)
 emule_add_test(tst_UsenetReleaseChecks FOLDER "Usenet" LIBRARIES eMule::Usenet)
 emule_add_test(tst_UsenetPassword FOLDER "Usenet" LIBRARIES eMule::Usenet)
+emule_add_test(tst_UsenetReleaseName FOLDER "Usenet" LIBRARIES eMule::Usenet)
 set_tests_properties(tst_UsenetPassword PROPERTIES TIMEOUT 180)
 
 # Phase 4 end to end: par2 fixtures are generated in-process, so this one needs

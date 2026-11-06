@@ -24,6 +24,7 @@
 #include "utils/Types.h"
 
 #include <QByteArray>
+#include <QHash>
 #include <QList>
 #include <QObject>
 #include <QPointer>
@@ -86,6 +87,8 @@ public:
         HttpValidators validators;
         /// A redirect to a non-HTTP scheme (magnet:), refused but reported; !ok.
         QUrl refusedRedirect;
+        /// Headers of the last hop, names lowercased (e.g. "x-dnzb-failure").
+        QHash<QByteArray, QByteArray> headers;
     };
 
     using Callback = std::function<void(const Result&)>;

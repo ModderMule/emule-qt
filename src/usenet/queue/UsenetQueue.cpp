@@ -6,6 +6,7 @@
 #include "post/Par2Verifier.h"
 #include "post/UsenetReleaseChecks.h"
 #include "post/UsenetUnpacker.h"
+#include "queue/UsenetReleaseName.h"
 #include "queue/ArticleWriter.h"
 #include "queue/UsenetQueueStore.h"
 #include "queue/UsenetRepairEstimate.h"
@@ -403,6 +404,21 @@ QString UsenetQueue::addNzb(const QByteArray& data, const QString& name, QString
         return {};
     }
 
+    // Same episode, other release. force is the person's "add anyway".
+    bool episodeDupePaused = false;
+    QString episodeWhy;
+    if (const int mode = thePrefs.usenetEpisodeDupes(); mode != 0 && !options.force
+        && findEpisodeDuplicate(displayName, episodeWhy)) {
+        if (mode == 1) {
+            error = episodeWhy;
+            logUsenet(QStringLiteral("Usenet: not adding \"%1\": %2").arg(displayName, error));
+            report(UsenetAddOutcome::EpisodeDuplicate);
+            return {};
+        }
+        episodeDupePaused = true;
+        logUsenet(QStringLiteral("Usenet: adding \"%1\" paused: %2").arg(displayName, episodeWhy));
+    }
+
     auto item = std::make_unique<UsenetQueueItem>();
     item->id = QUuid::createUuid().toString(QUuid::WithoutBraces);
     item->name = displayName;
@@ -413,12 +429,16 @@ QString UsenetQueue::addNzb(const QByteArray& data, const QString& name, QString
     // construction. quotaParked is the counter-example — as a flag its two call
     // sites had to be remembered separately, and forgetting one costs the user a
     // share of their line indefinitely.
-    item->status = options.paused
+    item->status = options.paused || episodeDupePaused
                            || (options.source == UsenetAddSource::Automatic
                                && thePrefs.usenetAutoAddPaused())
                        ? UsenetItemStatus::Paused
                        : UsenetItemStatus::Queued;
     item->priority = clampUsenetPriority(options.priority);
+    item->origin = options.origin;
+    if (item->origin.isSet() && !item->origin.guid.isEmpty()
+        && !item->origin.triedGuids.contains(item->origin.guid))
+        item->origin.triedGuids.append(item->origin.guid);
     // Same shape as DownloadQueue::addDownload(): a category the caller picked
     // is never overridden, and only 0 -- "nobody chose" -- reaches the matcher.
     // Here rather than at each intake path for the reason directly above.
@@ -432,6 +452,8 @@ QString UsenetQueue::addNzb(const QByteArray& data, const QString& name, QString
     }
     item->articleDigest = nzbArticleDigest(item->nzb);
     item->releaseKey = nzbReleaseKey(item->name, item->nzb.totalEncodedBytes());
+    if (episodeDupePaused)
+        item->stalledReason = episodeWhy;
     item->initFileStates(thePrefs.usenetTempDir());
 
     // Files the caller kept (a meta search file row): every other payload file
@@ -1508,7 +1530,7 @@ bool UsenetQueue::hasActiveDownloads() const
         // A parked item is waiting on a billing day, not on the network.
         // Counting it would reserve a share of the line for an engine that is
         // downloading nothing, for as long as the allowance lasts.
-        if (rt->item->isActive() && !rt->quotaParked)
+        if (rt->item->isActive() && !rt->quotaParked && !rt->propagationHeld)
             return true;
     }
     return false;
@@ -2061,7 +2083,8 @@ void UsenetQueue::dispatch()
         // the answer — otherwise the cursor runs to the end with work still
         // pending and onTick() rebuilds the whole plan four times a second for
         // the rest of the month.
-        if (rt->item->isActive() && !rt->postRunning && !rt->quotaParked)
+        if (rt->item->isActive() && !rt->postRunning && !rt->quotaParked
+            && !rt->propagationHeld)
             order.append(rt.get());
     }
     const qint64 nowMs = QDateTime::currentMSecsSinceEpoch();
@@ -2263,6 +2286,23 @@ void UsenetQueue::onTick()
             unparkQuotaStalls();
         }
         m_usage.flush();
+    }
+
+    // Propagation delay: held items join the order on their own once their
+    // newest post is old enough; the text counts the minutes down meanwhile.
+    for (auto& rt : m_items) {
+        const bool waiting = rt->item->isActive() || rt->item->status == UsenetItemStatus::Checking;
+        const bool held = waiting && propagationWaitSecs(*rt) > 0;
+        if (!held && !rt->propagationHeld)
+            continue;
+        if (held && !rt->propagationHeld) {
+            logUsenet(QStringLiteral("Usenet: \"%1\" waits %2 min for propagation")
+                          .arg(rt->item->name)
+                          .arg((propagationWaitSecs(*rt) + 59) / 60));
+        }
+        rt->propagationHeld = held;
+        if (!rt->quotaParked && noteWaitReason(*rt))
+            emit itemChanged(rt->item->id);
     }
 
     for (auto& rt : m_items) {
@@ -3708,6 +3748,10 @@ void UsenetQueue::beginPostProcessing(ItemRuntime& rt)
     // stranding a finished release.
     job.destDir = thePrefs.incomingDirForCategory(rt.item->category);
     job.password = rt.item->nzb.password;
+    job.extraPasswords = thePrefs.archivePasswords();
+    job.nestedDepth = thePrefs.archiveRecursiveExtract() ? UsenetUnpacker::kNestedDepth : 0;
+    job.jobName = rt.item->name;
+    job.deobfuscateEnabled = thePrefs.usenetDeobfuscateNames();
     job.externalUnpacker = thePrefs.usenetExternalUnpacker();
     job.par2Enabled = m_par2Enabled;
     job.renameEnabled = m_renameEnabled;
@@ -4574,6 +4618,9 @@ void UsenetQueue::dispatchProbes()
                 ItemRuntime* rt = owner.get();
                 if (rt->item->status != UsenetItemStatus::Checking)
                     continue;
+                // not posted long enough ago: a probe now would call it missing
+                if (rt->propagationHeld)
+                    continue;
 
                 while (rt->checkCursor < rt->checkPlan.size()) {
                     const quint64 key = rt->checkPlan.at(rt->checkCursor);
@@ -4987,6 +5034,35 @@ UsenetAddOutcome UsenetQueue::findDuplicate(const NzbInfo& nzb, const QString& n
     }
 
     return UsenetAddOutcome::Added;
+}
+
+bool UsenetQueue::findEpisodeDuplicate(const QString& name, QString& why) const
+{
+    const auto ep = parseReleaseEpisode(name);
+    if (!ep || ep->proper)
+        return false;   // not an episode, or a fix of one: always welcome
+    const QString key = ep->key();
+
+    for (const auto& rt : m_items) {
+        const UsenetQueueItem* item = rt->item.get();
+        if (item->status == UsenetItemStatus::Failed)
+            continue;   // a failed one is exactly what another release replaces
+        const auto other = parseReleaseEpisode(item->name);
+        if (!other || other->key() != key)
+            continue;
+        why = item->status == UsenetItemStatus::Complete
+                  ? tr("Episode %1 was already downloaded as \"%2\".").arg(ep->label(), item->name)
+                  : tr("Episode %1 is already in the Usenet queue as \"%2\".")
+                        .arg(ep->label(), item->name);
+        return true;
+    }
+
+    m_history.load();
+    if (const UsenetHistoryEntry* past = m_history.findByEpisodeKey(key)) {
+        why = tr("Episode %1 was already downloaded as \"%2\".").arg(ep->label(), past->name);
+        return true;
+    }
+    return false;
 }
 
 int UsenetQueue::knownTypeForTitle(const QString& title) const
@@ -5416,6 +5492,8 @@ bool UsenetQueue::noteWaitReason(ItemRuntime& rt)
         text = m_diskStallReason;
     else if (!m_proxyStallReason.isEmpty())
         text = m_proxyStallReason;
+    else if (const qint64 wait = propagationWaitSecs(rt); wait > 0)
+        text = tr("waiting for propagation, %1 min left").arg((wait + 59) / 60);
     else if (checking)
         text = tr("checking availability");
 
@@ -5424,6 +5502,20 @@ bool UsenetQueue::noteWaitReason(ItemRuntime& rt)
 
     rt.item->stalledReason = text;
     return true;
+}
+
+qint64 UsenetQueue::propagationWaitSecs(const ItemRuntime& rt)
+{
+    const int delayMin = thePrefs.usenetPropagationDelayMinutes();
+    if (delayMin <= 0)
+        return 0;
+    qint64 newest = 0;   // seconds since epoch, the NZB's <file date="">
+    for (const NzbFileInfo& f : rt.item->nzb.files)
+        newest = std::max(newest, f.date);
+    if (newest <= 0)
+        return 0;   // no dates: nothing to wait for
+    const qint64 left = newest + qint64(delayMin) * 60 - QDateTime::currentSecsSinceEpoch();
+    return std::max<qint64>(left, 0);
 }
 
 void UsenetQueue::noteWaitReasons()

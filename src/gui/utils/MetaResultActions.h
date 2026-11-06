@@ -3,10 +3,10 @@
 /// @file MetaResultActions.h
 /// @brief Actions on eNode torrent/Usenet/web/container search rows, including the login detour.
 ///
-/// Usenet "Download" queues the NZB daemon-side (DownloadMetaResult); "Download
-/// NZB File", "Download Torrent" and "Download Container" fetch the metafile and
-/// save it here; a web row's links open in WebLinksDialog, and its Download hands
-/// them to the Hoster tab. A torrent's Download fetches the .torrent for the
+/// Usenet "Download" queues the NZB daemon-side (DownloadMetaResult); "Save NZB
+/// File", "Save Torrent File" and "Save Container File" fetch the metafile and
+/// save it here for another client; a web row's links open in WebLinksDialog, and
+/// its Download hands them to the Hoster tab, a container's Download opens it there. A torrent's Download fetches the .torrent for the
 /// Torrents tab, a magnet-only one hands its magnet there; with BitTorrent off or
 /// not built the .torrent is saved and the magnet copied, for another client.
 /// Any fetch may answer
@@ -83,6 +83,22 @@ public:
     /// the fetch fails), else saveMetaFiles.
     void addTorrents(quint32 searchID, const QList<Row>& rows);
 
+    /// Link containers' Download: fetch each and open it in the Hoster tab, its links
+    /// asked about there; saved instead (saveMetaFiles) while hoster downloads are off.
+    void openContainers(quint32 searchID, const QList<Row>& rows);
+
+    /// One indexer row, for saveIndexerFiles.
+    struct IndexerFile {
+        QString resultId;
+        QString title;
+        bool usenet = true;
+    };
+    /// Save the .torrent/.nzb behind indexer rows for another client (InspectIndexerResult
+    /// raw): a file dialog for one, a folder for several. A magnet-only answer is copied.
+    void saveIndexerFiles(quint32 searchID, const QList<IndexerFile>& rows);
+    /// Magnet-only indexer rows: their magnets to the clipboard (one fetch a row, no dialog).
+    void copyIndexerMagnets(quint32 searchID, const QList<IndexerFile>& rows);
+
     /// Details of a torrent (not magnet-only) or Usenet row: the daemon fetches
     /// and parses the file, a MetaResultDetailDialog shows it. Its Download runs
     /// @p onDownload; the daemon still has the file then.
@@ -111,6 +127,8 @@ private:
     void fetchAndShowLinks(quint32 searchID, const Row& row);
     void fetchAndDownloadLinks(quint32 searchID, const Row& row);
     void fetchAndAddTorrent(quint32 searchID, const Row& row);
+    void fetchAndOpenContainer(quint32 searchID, const Row& row);
+    void fetchAndSaveIndexer(quint32 searchID, const IndexerFile& row, const QString& path, bool pathIsDir);
 
     /// Handle an auth failure: open (or reuse) the server's dialog, retry on accept,
     /// @p onCancel on reject. Returns false when @p meta is no auth problem.

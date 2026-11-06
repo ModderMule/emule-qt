@@ -88,5 +88,11 @@ int applyCategoryAction(int category, UsenetWebCategoryAction action);
 /// The engine-wide pause: persist `usenet.paused`, then apply it to the queue.
 void setEnginePaused(bool paused);
 
+/// The engine-wide pause for now only (the scheduler); `usenet.paused` stays.
+void setEnginePausedRuntime(bool paused);
+
+/// Whether the engine is paused now, the scheduler's runtime pause included.
+[[nodiscard]] bool enginePaused();
+
 } // namespace UsenetBridge
 } // namespace eMule
