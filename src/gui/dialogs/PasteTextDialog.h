@@ -44,7 +44,7 @@ public:
         /// Label for an optional password row under the box, empty for none.
         /// Only the NZB dialogs want it — a paste of ED2K links has nothing to
         /// decrypt — so it is a field rather than a second base class.
-        QString passwordLabel;
+        QString passwordLabel{};
 
         /// Show the box read-only, for a dialog that lists what the user already
         /// picked rather than asking them to type it. The accept button then
@@ -55,7 +55,7 @@ public:
         /// the category box: one entry per category in the user's own order,
         /// index 0 first. Empty for no row, which is every dialog but the two
         /// NZB ones — the same call Chrome::passwordLabel makes.
-        QStringList queueCategories;
+        QStringList queueCategories{};
 
         /// With queueCategories: only the category box, without priority and
         /// "Start paused" — an eD2K paste has a category and nothing else to choose.
@@ -63,14 +63,14 @@ public:
 
         /// Label for an optional "save to" folder row, empty for none. The
         /// torrent dialogs want it; empty text there means the daemon's default.
-        QString savePathLabel;
+        QString savePathLabel{};
 
         /// A lone "Start paused" box, for a dialog without the queue row.
         bool pausedOption = false;
 
         /// More check boxes under it, top to bottom (the torrent dialogs' "stop after
         /// metadata" and "I2P only"); empty for none.
-        QStringList optionLabels;
+        QStringList optionLabels{};
     };
 
 protected:

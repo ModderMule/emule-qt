@@ -952,7 +952,7 @@ void tst_ListSorting::activeDownloadsAreBoldWhenEnabled()
                                               source(u"q"_s, u"OnQueue"_s, false),
                                               source(u"a"_s, u"Downloading"_s, true),
                                               source(u"w"_s, u"OnQueue"_s, true)});
-    const auto bold = [&model](const QModelIndex& idx) {
+    const auto bold = [](const QModelIndex& idx) {
         const QVariant v = idx.data(Qt::FontRole);
         return v.isValid() && v.value<QFont>().bold();
     };

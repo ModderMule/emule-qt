@@ -70,6 +70,9 @@
     <ClCompile Include="controls\CategoryTabBar.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
+    <ClCompile Include="controls\StatusFilterBar.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
     <ClCompile Include="controls\FitTextTabBar.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
@@ -679,6 +682,9 @@
       <Filter>Header Files</Filter>
     </QtMoc>
     <QtMoc Include="controls\CategoryTabBar.h">
+      <Filter>Header Files</Filter>
+    </QtMoc>
+    <QtMoc Include="controls\StatusFilterBar.h">
       <Filter>Header Files</Filter>
     </QtMoc>
     <QtMoc Include="controls\DownloadListModel.h">

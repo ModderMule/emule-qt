@@ -89,7 +89,6 @@ private:
     QString m_filePath;
     std::size_t m_bytesWritten = 0;
     std::size_t m_maxFileSize = std::numeric_limits<std::size_t>::max();
-    qint64 m_startTime = 0;
 };
 
 // ---------------------------------------------------------------------------

@@ -4829,8 +4829,8 @@ bool IpcClientHandler::applyPreferenceEd3k(const QString& key, const QCborValue&
         thePrefs.setEd3kSitePort(static_cast<uint16>(std::clamp<qint64>(val.toInteger(), 1, 65535)));
     else if (Ed3kCreditPrefs c = thePrefs.ed3kCredit(); Preferences::applyEd3kCreditKey(c, key, val))
         thePrefs.setEd3kCredit(c);   // credits (credit.md): Ed3kCredit reconfigures
-    else if (Ed3kChainPrefs c = thePrefs.ed3kChain(); Preferences::applyEd3kChainKey(c, key, val))
-        thePrefs.setEd3kChain(c);   // chaintube chain (chaintube.md §4.2): chainConfigure again
+    else if (Ed3kChainPrefs chain = thePrefs.ed3kChain(); Preferences::applyEd3kChainKey(chain, key, val))
+        thePrefs.setEd3kChain(chain);   // chaintube chain (chaintube.md §4.2): chainConfigure again
     else if (Ed3kHosterPrefs h = thePrefs.ed3kHoster(); Preferences::applyEd3kHosterKey(h, key, val))
         thePrefs.setEd3kHoster(h);   // hoster links (hoster.md): the join reconfigures
     else

@@ -354,8 +354,8 @@ private:
         // A column hidden since first bind has no width of its own to come back to
         if (hdr->sectionSize(column) < hdr->minimumSectionSize()) {
             const int fallback = column < static_cast<int>(m_defaultWidths.size())
-                                         && m_defaultWidths[column] > 0
-                                     ? m_defaultWidths[column]
+                                         && m_defaultWidths[static_cast<size_t>(column)] > 0
+                                     ? m_defaultWidths[static_cast<size_t>(column)]
                                      : hdr->defaultSectionSize();
             hdr->resizeSection(column, fallback);
         }

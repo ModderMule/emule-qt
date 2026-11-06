@@ -247,6 +247,8 @@ OptionsDialog::OptionsDialog(IpcClient* ipc, StatisticsPanel* statsPanel,
     connect(m_showCatTabInfosCheck, &QCheckBox::toggled, this, &OptionsDialog::markDirty);
     connect(m_autoRemoveFinishedCheck, &QCheckBox::toggled, this, &OptionsDialog::markDirty);
     connect(m_showTransToolbarCheck, &QCheckBox::toggled, this, &OptionsDialog::markDirty);
+    for (QCheckBox* c : {m_downloadStatusFilterCheck, m_torrentStatusFilterCheck, m_hosterStatusFilterCheck})
+        connect(c, &QCheckBox::toggled, this, &OptionsDialog::markDirty);
     connect(m_showSpeedGraphCheck, &QCheckBox::toggled, this, &OptionsDialog::markDirty);
     connect(m_speedGraphTimeSpin, &QSpinBox::valueChanged, this, &OptionsDialog::markDirty);
     connect(m_storeSearchesCheck, &QCheckBox::toggled, this, &OptionsDialog::markDirty);
@@ -1194,6 +1196,25 @@ QWidget* OptionsDialog::createDisplayPage()
 
     m_showTransToolbarCheck = new QCheckBox(tr("Show additional toolbar on Transfers window"), page);
     layout->addWidget(m_showTransToolbarCheck);
+
+    // A row of state filter buttons above each list
+    auto* statusFilterRow = new QHBoxLayout;
+    statusFilterRow->addWidget(new QLabel(tr("Show status filter row:"), page));
+    m_downloadStatusFilterCheck = new QCheckBox(tr("Downloads"), page);
+    m_downloadStatusFilterCheck->setToolTip(tr("Filter buttons above the download list of the Transfers window"));
+    statusFilterRow->addWidget(m_downloadStatusFilterCheck);
+    m_torrentStatusFilterCheck = new QCheckBox(tr("Torrents"), page);
+    statusFilterRow->addWidget(m_torrentStatusFilterCheck);
+    m_hosterStatusFilterCheck = new QCheckBox(tr("Hoster"), page);
+    statusFilterRow->addWidget(m_hosterStatusFilterCheck);
+#ifndef EMULE_HAVE_BITTORRENT
+    m_torrentStatusFilterCheck->hide();
+#endif
+#ifndef EMULE_HAVE_HOSTER_JD
+    m_hosterStatusFilterCheck->hide();
+#endif
+    statusFilterRow->addStretch();
+    layout->addLayout(statusFilterRow);
 
     m_showSpeedGraphCheck = new QCheckBox(tr("Show speed graph in toolbar"), page);
     layout->addWidget(m_showSpeedGraphCheck);
@@ -7115,6 +7136,9 @@ void OptionsDialog::loadSettings()
     m_showCatTabInfosCheck->setChecked(thePrefs.showCatTabInfos());
     m_autoRemoveFinishedCheck->setChecked(thePrefs.autoRemoveFinishedDownloads());
     m_showTransToolbarCheck->setChecked(thePrefs.showTransToolbar());
+    m_downloadStatusFilterCheck->setChecked(theUiState.showDownloadStatusFilter());
+    m_torrentStatusFilterCheck->setChecked(theUiState.showTorrentStatusFilter());
+    m_hosterStatusFilterCheck->setChecked(theUiState.showHosterStatusFilter());
     m_showSpeedGraphCheck->setChecked(thePrefs.showSpeedGraph());
     m_speedGraphTimeSpin->setValue(static_cast<int>(thePrefs.speedGraphTimeRangeMin()));
     m_storeSearchesCheck->setChecked(thePrefs.storeSearches());
@@ -7324,6 +7348,12 @@ void OptionsDialog::saveSettings()
     thePrefs.setShowCatTabInfos(m_showCatTabInfosCheck->isChecked());
     thePrefs.setAutoRemoveFinishedDownloads(m_autoRemoveFinishedCheck->isChecked());
     thePrefs.setShowTransToolbar(m_showTransToolbarCheck->isChecked());
+    if (m_downloadStatusFilterCheck->isChecked() != theUiState.showDownloadStatusFilter())
+        theUiState.setShowDownloadStatusFilter(m_downloadStatusFilterCheck->isChecked());
+    if (m_torrentStatusFilterCheck->isChecked() != theUiState.showTorrentStatusFilter())
+        theUiState.setShowTorrentStatusFilter(m_torrentStatusFilterCheck->isChecked());
+    if (m_hosterStatusFilterCheck->isChecked() != theUiState.showHosterStatusFilter())
+        theUiState.setShowHosterStatusFilter(m_hosterStatusFilterCheck->isChecked());
     thePrefs.setShowSpeedGraph(m_showSpeedGraphCheck->isChecked());
     thePrefs.setSpeedGraphTimeRangeMin(static_cast<uint32_t>(m_speedGraphTimeSpin->value()));
     thePrefs.setStoreSearches(m_storeSearchesCheck->isChecked());
@@ -9097,7 +9127,7 @@ void OptionsDialog::requestNetworkInterfaces()
         // OS order follows bring-up order and changes per boot (#52): loopback
         // first, then natural sort by label (tun2 before tun10)
         // rawName: OS id an older config may still hold
-        struct Entry { QString label; QString data; bool loopback = false; QString rawName; QString tip; bool noRoute = false; };
+        struct Entry { QString label; QString data; bool loopback = false; QString rawName{}; QString tip{}; bool noRoute = false; };
         std::vector<Entry> bindEntries;
         std::vector<Entry> webEntries;   // one per address, web server binds one
         const QCborArray list = resp.fieldArray(1);
@@ -9142,7 +9172,7 @@ void OptionsDialog::requestNetworkInterfaces()
         QCollator collator;
         collator.setNumericMode(true);
         collator.setCaseSensitivity(Qt::CaseInsensitive);
-        const auto fill = [&collator, this](QComboBox* combo, std::vector<Entry>& entries, const QString& selection) {
+        const auto fill = [&collator](QComboBox* combo, std::vector<Entry>& entries, const QString& selection) {
             std::ranges::sort(entries, [&collator](const Entry& a, const Entry& b) {
                 if (a.loopback != b.loopback)
                     return a.loopback;

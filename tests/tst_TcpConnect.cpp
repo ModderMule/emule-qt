@@ -589,7 +589,6 @@ void tst_TcpConnect::download_askedForAnotherFile()
     m_throttler->endThread();
 
     // -- Process timer -------------------------------------------------------
-    UpDownClient* dlClient = nullptr;  // set after client creation
     QTimer processTimer;
     QObject::connect(&processTimer, &QTimer::timeout, this, [this] {
         m_downloadQueue->process();
@@ -644,7 +643,6 @@ void tst_TcpConnect::download_askedForAnotherFile()
     const uint16 port = m_listenSocket->connectedPort();
     auto* client = new UpDownClient(port, loopbackNBO, 0, 0,
                                     partFileA, true, this);
-    dlClient = client;
     partFileA->addSource(client);
 
     // Register A4AF files on completion — connect BEFORE addDownload so our
@@ -799,9 +797,8 @@ void tst_TcpConnect::download_completesLargeFileNoMultiPacket()
     m_throttler->endThread();
 
     // -- Process timer (same pattern as test 7) --------------------------------
-    UpDownClient* dlClient = nullptr;
     QTimer processTimer;
-    QObject::connect(&processTimer, &QTimer::timeout, this, [this, &dlClient] {
+    QObject::connect(&processTimer, &QTimer::timeout, this, [this] {
         m_downloadQueue->process();
         m_uploadQueue->process();
 
@@ -838,7 +835,6 @@ void tst_TcpConnect::download_completesLargeFileNoMultiPacket()
     const uint16 port = m_listenSocket->connectedPort();
     auto* client = new UpDownClient(port, loopbackNBO, 0, 0,
                                     partFile, true, this);
-    dlClient = client;
 
     // Disable multipacket so sendFileRequest uses individual packets
     client->setTestDisableMultiPacket(true);

@@ -17,6 +17,7 @@
 #include "controls/ClientListModel.h"
 #include "controls/CategoryFilterProxy.h"
 #include "controls/CategoryTabBar.h"
+#include "controls/StatusFilterBar.h"
 #include "controls/DownloadListModel.h"
 #include "controls/DownloadProgressDelegate.h"
 #include "controls/Ed3kDownloadRows.h"
@@ -849,6 +850,7 @@ QWidget* TransferPanel::createDownloadsSection()
 
     connect(m_categoryTabBar, &CategoryTabBar::currentCategoryChanged, this, [this](int cat) {
         static_cast<CategoryFilterProxy*>(m_categoryProxy)->setCategoryFilter(cat);
+        updateStatusFilterCounts();   // counts are per tab
     });
     connect(m_categoryTabBar, &CategoryTabBar::categoriesReloaded, this, [this] {
         m_downloadModel->setCategoryNames(m_categoryTabBar->categoryNames());
@@ -862,6 +864,15 @@ QWidget* TransferPanel::createDownloadsSection()
     headerRow->addWidget(m_categoryTabBar);
     layout->addLayout(headerRow);
 
+    // Status filter row as the Torrents tab's; off by default (Display options)
+    QStringList statusNames;
+    for (int f = 0; f < CategoryFilterProxy::StatusFilterCount; ++f)
+        statusNames << CategoryFilterProxy::statusFilterName(f);
+    m_statusFilterBar = new StatusFilterBar(statusNames, theUiState.downloadStatusFilter(), widget);
+    m_statusFilterBar->setRowOn(theUiState.showDownloadStatusFilter());   // before connect: no proxy yet
+    connect(m_statusFilterBar, &StatusFilterBar::filterChanged, this, &TransferPanel::setStatusFilter);
+    layout->addWidget(m_statusFilterBar);
+
     // --- Download view (mounted while the top switcher is on Downloads) ---
     m_downloadProxy = new DownloadSortProxy(this);
     m_downloadProxy->setSourceModel(m_downloadModel);
@@ -873,6 +884,7 @@ QWidget* TransferPanel::createDownloadsSection()
     auto* catProxy = new CategoryFilterProxy(this);
     catProxy->setSourceModel(m_downloadProxy);
     catProxy->setSortRole(Qt::UserRole);
+    catProxy->setStatusFilter(m_statusFilterBar->activeFilter());
     m_categoryProxy = catProxy;
 
     // Parented on the panel from the start: the top pane may open on a client list,
@@ -1390,6 +1402,7 @@ void TransferPanel::applyDownloadRows()
     std::vector<DownloadRow> all = m_ed2kRows;
     all.insert(all.end(), m_ed3kRows.begin(), m_ed3kRows.end());
     m_downloadModel->setDownloads(std::move(all));
+    updateStatusFilterCounts();
 }
 
 QStringList TransferPanel::takeEd3kHashes(QStringList& hashes) const
@@ -2485,6 +2498,8 @@ void TransferPanel::applyViews(int topId, int clientView, Pane priority)
     // Both belong to the download list and mean nothing while it is off screen.
     const bool showingDownloads = (topId == TopView::Downloads);
     m_categoryTabBar->setVisible(showingDownloads);
+    m_statusFilterBar->setVisible(showingDownloads && theUiState.showDownloadStatusFilter());
+    updateStatusFilterCounts();   // skipped while hidden
     // hidden, as MFC does (TransferWnd.cpp:1408), and only shown when not closed
     m_actionToolbar->setVisible(showingDownloads && theUiState.showDownloadToolbar());
 
@@ -2679,6 +2694,7 @@ void TransferPanel::applyExtColumns()
 
 void TransferPanel::applyDisplayOptions()
 {
+    m_statusFilterBar->setRowOn(theUiState.showDownloadStatusFilter());
     const bool buttons = thePrefs.showTransToolbar();
     m_toolbar1->setButtonsVisible(buttons);
     m_toolbar2->setButtonsVisible(buttons);
@@ -2725,6 +2741,21 @@ void TransferPanel::updateCategoryTabInfo()
         info << QStringLiteral("%1/%2").arg(transferring).arg(proxy->rowsShownIn(cat));
     }
     m_categoryTabBar->setTabInfo(info);
+}
+
+void TransferPanel::updateStatusFilterCounts()
+{
+    if (!m_statusFilterBar->isHidden())
+        m_statusFilterBar->setCounts(static_cast<const CategoryFilterProxy*>(m_categoryProxy)->statusCounts());
+}
+
+void TransferPanel::setStatusFilter(int filter)
+{
+    static_cast<CategoryFilterProxy*>(m_categoryProxy)->setStatusFilter(
+        std::clamp(filter, 0, int(CategoryFilterProxy::StatusFilterCount) - 1));
+    theUiState.setDownloadStatusFilter(m_statusFilterBar->current());
+    updateStatusFilterCounts();
+    updateActionStates();
 }
 
 void TransferPanel::sendCategoryStatus(int index, Ipc::CategoryAction action)

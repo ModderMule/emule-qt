@@ -289,7 +289,7 @@ void tst_FileAssociation::theEd2kSwitchClaimsBothLinkSchemes()
 {
     const auto values = FileAssociation::registryValues(
         QStringLiteral("C:\\Apps\\emuleqt.exe"), {.ed2k = true});
-    for (const QString scheme : {QStringLiteral("ed2k"), QStringLiteral("ed3k")}) {
+    for (const QString& scheme : {QStringLiteral("ed2k"), QStringLiteral("ed3k")}) {
         QVERIFY2(std::ranges::any_of(values, [&](const FileAssociation::RegistryValue& v) {
                      return v.key == scheme && v.name == QStringLiteral("URL Protocol");
                  }),

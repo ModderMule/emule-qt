@@ -230,8 +230,8 @@ void tst_IndexerPrefs::indexersBlockIsWrittenAfterNotifications()
     }
 
     const QString yaml = readAll(m_file);
-    const int notifications = yaml.indexOf(QStringLiteral("\nnotifications:"));
-    const int indexers = yaml.indexOf(QStringLiteral("\nindexers:"));
+    const qsizetype notifications = yaml.indexOf(QStringLiteral("\nnotifications:"));
+    const qsizetype indexers = yaml.indexOf(QStringLiteral("\nindexers:"));
 
     QVERIFY(notifications >= 0);
     QVERIFY(indexers >= 0);
@@ -250,9 +250,9 @@ void tst_IndexerPrefs::wrongKeyLeavesTheApiKeyEmpty()
     // Corrupt the key the blob was encrypted under, as a hand-edit or a merge
     // would. The entry survives; only the secret is lost.
     QString yaml = readAll(m_file);
-    const int keyPos = yaml.indexOf(QStringLiteral("emailEncryptionKey: "));
+    const qsizetype keyPos = yaml.indexOf(QStringLiteral("emailEncryptionKey: "));
     QVERIFY(keyPos >= 0);
-    const int valueStart = keyPos + int(strlen("emailEncryptionKey: "));
+    const qsizetype valueStart = keyPos + qsizetype(strlen("emailEncryptionKey: "));
     yaml.replace(valueStart, 8, QStringLiteral("00000000"));
 
     QFile f(m_file);

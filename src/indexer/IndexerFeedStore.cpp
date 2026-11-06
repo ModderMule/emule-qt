@@ -9,6 +9,7 @@
 
 #include <QDir>
 #include <QFile>
+#include <QTimeZone>
 
 #include <yaml-cpp/yaml.h>
 
@@ -124,7 +125,7 @@ bool IndexerFeedStore::load(const IndexerFeed& feed, FeedState& out)
         state.lastMatched = root["lastMatched"].as<int>(0);
         if (const auto polled = root["lastPolled"]; polled) {
             state.lastPolled =
-                QDateTime::fromSecsSinceEpoch(polled.as<qint64>(0), Qt::UTC);
+                QDateTime::fromSecsSinceEpoch(polled.as<qint64>(0), QTimeZone::UTC);
         }
 
         if (const auto accounts = root["seededAccounts"]; accounts && accounts.IsSequence()) {
@@ -140,7 +141,7 @@ bool IndexerFeedStore::load(const IndexerFeed& feed, FeedState& out)
                 entry.guid = QString::fromStdString(node["guid"].as<std::string>(""));
                 if (entry.guid.isEmpty())
                     continue;
-                entry.at = QDateTime::fromSecsSinceEpoch(node["at"].as<qint64>(0), Qt::UTC);
+                entry.at = QDateTime::fromSecsSinceEpoch(node["at"].as<qint64>(0), QTimeZone::UTC);
                 entry.state = feedSeenStateFromString(
                     QString::fromStdString(node["state"].as<std::string>("")));
                 entry.attempts = node["attempts"].as<int>(0);

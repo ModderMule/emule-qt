@@ -690,8 +690,8 @@ void NntpSocket::handleStatusLine(QByteArrayView raw)
     case State::AuthUserSent:
         if (code == kAuthPasswordRequired) {
             m_state = State::AuthPassSent;
-            const QByteArray line = QByteArrayLiteral("AUTHINFO PASS ") + m_server.pass.toUtf8();
-            sendLine(line);
+            const QByteArray passLine = QByteArrayLiteral("AUTHINFO PASS ") + m_server.pass.toUtf8();
+            sendLine(passLine);
             armResponseTimer();
         } else if (isSuccess(code)) {
             // Some providers authenticate on the user name alone.
@@ -782,6 +782,7 @@ void NntpSocket::handleStatusLine(QByteArrayView raw)
 
     case State::Disconnected:
     case State::Connecting:
+    case State::CommandBody:   // body lines go to handleBodyLine
         break;
     }
 }

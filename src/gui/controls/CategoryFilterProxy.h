@@ -23,6 +23,7 @@
 #include <QString>
 #include <Qt>
 
+#include <array>
 #include <functional>
 
 namespace eMule {
@@ -45,6 +46,17 @@ class CategoryFilterProxy : public QSortFilterProxyModel {
 public:
     using QSortFilterProxyModel::QSortFilterProxyModel;
 
+    /// The Transfers tab's status filter row, on top of the category. Persisted in UiState: append only.
+    enum StatusFilter : int {
+        StatusAll = 0,
+        StatusDownloading,
+        StatusWaiting,
+        StatusPaused,
+        StatusComplete,
+        StatusError,
+        StatusFilterCount
+    };
+
     /// 0 is "All" and accepts everything.
     void setCategoryFilter(int category);
 
@@ -58,6 +70,15 @@ public:
     [[nodiscard]] int rowsShownIn(int category,
                                   const std::function<bool(const CategoryRowFacts&)>& also = {}) const;
 
+    /// Status filter of the filter row; StatusAll shows every row of the category.
+    void setStatusFilter(int filter);
+    [[nodiscard]] int statusFilter() const { return m_status; }
+    /// Rows of the selected category per status filter, for the filter row's counts.
+    [[nodiscard]] std::array<int, StatusFilterCount> statusCounts() const;
+    [[nodiscard]] static bool matchesStatus(const CategoryRowFacts& row, int filter);
+    /// Localized button text, without the count.
+    [[nodiscard]] static QString statusFilterName(int filter);
+
     /// Hands the sort to a sort proxy below, so that proxy's lessThan() decides.
     void sort(int column, Qt::SortOrder order = Qt::AscendingOrder) override;
 
@@ -68,6 +89,7 @@ private:
     [[nodiscard]] CategoryRowFacts factsOf(int sourceRow) const;
 
     int m_category = 0;
+    int m_status = StatusAll;
     QList<DownloadCategory> m_categories;
 };
 

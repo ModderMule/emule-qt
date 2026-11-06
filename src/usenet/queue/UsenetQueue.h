@@ -98,10 +98,11 @@ public:
 
     void push(qint64 bytes, qint64 elapsedMs)
     {
-        m_sumBytes += bytes - m_bytes[m_next];
-        m_sumMs += elapsedMs - m_ms[m_next];
-        m_bytes[m_next] = bytes;
-        m_ms[m_next] = elapsedMs;
+        const auto at = static_cast<size_t>(m_next);
+        m_sumBytes += bytes - m_bytes[at];
+        m_sumMs += elapsedMs - m_ms[at];
+        m_bytes[at] = bytes;
+        m_ms[at] = elapsedMs;
         m_next = (m_next + 1) % kTicks;
     }
 

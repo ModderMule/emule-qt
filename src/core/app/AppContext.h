@@ -145,6 +145,10 @@ struct AppContext {
     /// serverConnect->isConnected() directly instead.
     [[nodiscard]] bool isConnected() const;
 
+    /// isConnected() or ed3k has contacts. Gates Save/Load Sources: saved sources are only
+    /// loaded and dialled once some network is up.
+    [[nodiscard]] bool isConnectedAnyNetwork() const;
+
     /// Returns true when we are firewalled on all connected networks (ed2k + Kad).
     [[nodiscard]] bool isFirewalled() const;
 
@@ -306,6 +310,8 @@ struct AppContext {
     /// The peer of eD2K user hash @p hash waits or holds a slot on ed3k already (§14.4: a
     /// dual peer is served over ed3k only).
     std::function<bool(const uint8* hash)> isEd3kUploadPeer;
+    /// ed3k runs and has Kad contacts. Set by the daemon; null: ed3k counts as offline.
+    std::function<bool()> ed3kConnected;
 
     /// Tier 1: the egress IPv6 a server observed us on (CT_MOD_YOUR_IP in OP_SERVERIDENT).
     /// Callers must only pass this for a session that actually connected over IPv6; the

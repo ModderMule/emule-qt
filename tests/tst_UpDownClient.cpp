@@ -2134,11 +2134,12 @@ void tst_UpDownClient::addReqBlock_partFileServesOnlyFlushedData()
 
     // Gap filled but only in the write buffer: not readable from disk yet.
     const QByteArray data(10240, 'x');
-    partFile->writeToBuffer(data.size(), reinterpret_cast<const uint8*>(data.constData()),
-                            PARTSIZE, PARTSIZE + data.size() - 1, nullptr);
-    QVERIFY(partFile->isComplete(PARTSIZE, PARTSIZE + data.size() - 1));
-    QVERIFY(!partFile->isCompleteBDSafe(PARTSIZE, PARTSIZE + data.size() - 1));
-    client.addReqBlock(blockFor(partFile, PARTSIZE, PARTSIZE + data.size()));
+    const auto len = static_cast<uint64>(data.size());
+    partFile->writeToBuffer(len, reinterpret_cast<const uint8*>(data.constData()),
+                            PARTSIZE, PARTSIZE + len - 1, nullptr);
+    QVERIFY(partFile->isComplete(PARTSIZE, PARTSIZE + len - 1));
+    QVERIFY(!partFile->isCompleteBDSafe(PARTSIZE, PARTSIZE + len - 1));
+    client.addReqBlock(blockFor(partFile, PARTSIZE, PARTSIZE + len));
     QCOMPARE(client.blockRequests().size(), size_t{1});
 
     theApp.sharedFileList = nullptr;

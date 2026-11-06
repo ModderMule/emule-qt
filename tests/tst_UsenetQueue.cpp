@@ -3752,7 +3752,7 @@ struct HoledRelease {
     QString    id;
 };
 
-HoledRelease postHoledRelease(FakeNntpServer& server, UsenetQueue& queue,
+HoledRelease postHoledRelease(FakeNntpServer& server, UsenetQueue& /*queue*/,
                               const QString& fileName)
 {
     HoledRelease out;
@@ -3842,7 +3842,7 @@ void tst_UsenetQueue::aRetryAsksOnlyForTheArticlesThatWereMissing()
     // The provider finally has it.
     server.addArticle(messageIdFor(2), makeArticle(rel.whole, 2, 4,
                                                    QStringLiteral("holed.bin")));
-    const int mark = server.receivedCommands().size();
+    const auto mark = static_cast<int>(server.receivedCommands().size());
 
     QVERIFY2(queue.retryMissingArticles(id), "the retry refused an item it should take");
     QVERIFY2(finished.wait(30000), "the retry never resolved");
@@ -4005,7 +4005,7 @@ void tst_UsenetQueue::resumingAFailedItemWithTheSameAccountsAsksForNothing()
     server.addArticle(messageIdFor(2), makeArticle(rel.whole, 2, 4,
                                                    QStringLiteral("same.bin")));
 
-    const int mark = server.receivedCommands().size();
+    const auto mark = static_cast<int>(server.receivedCommands().size());
     QVERIFY(queue.resumeItem(id));
     QTest::qWait(1000);
     QCOMPARE(bodyCountFor(server, messageIdFor(2), mark), 0);

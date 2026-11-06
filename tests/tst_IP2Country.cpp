@@ -139,14 +139,14 @@ public:
                     ++requests;
                     const QByteArray path = lastRequest.split(' ').value(1);
                     paths.append(path);
-                    const int status = !notFoundPath.isEmpty() && path == notFoundPath
-                                           ? 404 : this->status;
-                    const QByteArray reason = status == 200 ? "OK" : status == 304 ? "Not Modified"
-                                            : status == 302 ? "Found" : "Unauthorized";
-                    const QByteArray payload = status == 200 ? body : QByteArray();
+                    const int code = !notFoundPath.isEmpty() && path == notFoundPath
+                                         ? 404 : this->status;
+                    const QByteArray reason = code == 200 ? "OK" : code == 304 ? "Not Modified"
+                                            : code == 302 ? "Found" : "Unauthorized";
+                    const QByteArray payload = code == 200 ? body : QByteArray();
                     const QByteArray extra = location.isEmpty() ? QByteArray()
                                                                 : "Location: " + location + "\r\n";
-                    s->write("HTTP/1.1 " + QByteArray::number(status) + ' ' + reason + "\r\n"
+                    s->write("HTTP/1.1 " + QByteArray::number(code) + ' ' + reason + "\r\n"
                              + extra +
                              "Content-Type: application/gzip\r\n"
                              "Content-Length: " + QByteArray::number(payload.size()) + "\r\n"

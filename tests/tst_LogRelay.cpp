@@ -144,7 +144,7 @@ void tst_LogRelay::workerThreads_forwardOnOwnerThreadOnly()
 
     // Each line once, in the order the ids were handed out.
     const auto ids = recorder.ids();
-    for (int i = 0; i < static_cast<int>(ids.size()); ++i)
+    for (size_t i = 0; i < ids.size(); ++i)
         QCOMPARE(ids[i], qint64(i + 1));
 }
 

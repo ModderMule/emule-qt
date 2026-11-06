@@ -5,6 +5,7 @@
 
 #include <QDir>
 #include <QFile>
+#include <QTimeZone>
 
 #include <yaml-cpp/yaml.h>
 
@@ -67,7 +68,7 @@ bool IndexerCapsStore::load(const IndexerConfig& config, IndexerCaps& out)
         caps.limitDefault = root["limitDefault"].as<int>(100);
 
         if (const auto probed = root["probedAt"]; probed) {
-            caps.probedAt = QDateTime::fromSecsSinceEpoch(probed.as<qint64>(0), Qt::UTC);
+            caps.probedAt = QDateTime::fromSecsSinceEpoch(probed.as<qint64>(0), QTimeZone::UTC);
         }
 
         if (const auto modes = root["modes"]; modes && modes.IsSequence()) {

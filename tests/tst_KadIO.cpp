@@ -130,7 +130,7 @@ void tst_KadIO::readKadTag_unknownTypeThrows()
     file.writeUInt8(0x01);
     file.seek(0, SEEK_SET);
 
-    QVERIFY_EXCEPTION_THROWN(io::readKadTag(file), FileException);
+    QVERIFY_THROWS_EXCEPTION(FileException, io::readKadTag(file));
 }
 
 void tst_KadIO::readWriteKadTag_bsobRoundTrip()

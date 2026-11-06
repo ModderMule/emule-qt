@@ -534,6 +534,14 @@ void MainWindow::showOptionsDialog(int page)
     m_sharedFilesPanel->applyDisplayOptions();
     m_serverPanel->applyDisplayOptions();
     m_searchPanel->applyDisplayOptions();
+#ifdef EMULE_HAVE_BITTORRENT
+    if (m_torrentPanel)
+        m_torrentPanel->applyDisplayOptions();
+#endif
+#ifdef EMULE_HAVE_HOSTER_JD
+    if (m_hosterPanel)
+        m_hosterPanel->applyDisplayOptions();
+#endif
     m_sharedFilesPanel->refreshSharedDirs();   // Directories page edits the share
     updateWindowTitle();
 

@@ -239,10 +239,10 @@ QString encodeUrlQueryParam(const QString& query)
 
 QString takeBracedPassword(QString& name)
 {
-    const int open = name.indexOf(QLatin1String("{{"));
+    const qsizetype open = name.indexOf(QLatin1String("{{"));
     if (open < 0)
         return {};
-    const int close = name.indexOf(QLatin1String("}}"), open + 2);
+    const qsizetype close = name.indexOf(QLatin1String("}}"), open + 2);
     if (close < 0)
         return {};
 

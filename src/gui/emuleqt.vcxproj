@@ -332,6 +332,7 @@
     <ClCompile Include="controls\SharedPartsDelegate.cpp" />
     <ClCompile Include="panels\StatisticsPanel.cpp" />
     <ClCompile Include="controls\SpeedGraph.cpp" />
+    <ClCompile Include="controls\StatusFilterBar.cpp" />
     <ClCompile Include="controls\StatsGraph.cpp" />
     <ClCompile Include="controls\TrayMeterIcon.cpp" />
     <ClCompile Include="app\TrayMenuManager.cpp" />
@@ -546,6 +547,7 @@
     <QtMoc Include="controls\UploadStatusDelegate.h" />
     <QtMoc Include="panels\StatisticsPanel.h" />
     <QtMoc Include="controls\SpeedGraph.h" />
+    <QtMoc Include="controls\StatusFilterBar.h" />
     <QtMoc Include="controls\StatsGraph.h" />
     <QtMoc Include="app\TrayMenuManager.h" />
     <QtMoc Include="panels\TransferPanel.h" />

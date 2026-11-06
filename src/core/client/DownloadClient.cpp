@@ -752,13 +752,13 @@ void UpDownClient::createBlockRequests(int blockCount)
     if (blockCount <= 0)
         return;
 
-    std::vector<Requested_Block_Struct*> blocks(blockCount, nullptr);
+    std::vector<Requested_Block_Struct*> blocks(static_cast<size_t>(blockCount), nullptr);
     int count = blockCount;
 
     if (m_reqFile->getNextRequestedBlock(this, blocks.data(), count)) {
         for (int i = 0; i < count; ++i) {
             auto* pending = new Pending_Block_Struct;
-            pending->block = blocks[i];
+            pending->block = blocks[static_cast<size_t>(i)];
             pending->queued = 0; // not yet sent, sendBlockRequests will mark as sent
             m_pendingBlocks.push_back(pending);
         }

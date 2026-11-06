@@ -153,7 +153,7 @@ public:
         qint64 retryAt = 0;          ///< after an unknown recheck (not saved)
         /// sites (v4 /24, v6 /48) of downloaders that reported it gone or wrong since its last
         /// check, as the core counts them (not saved)
-        std::vector<std::array<std::uint8_t, 16>> reporters;
+        std::vector<std::array<std::uint8_t, 16>> reporters{};
         qint64 reportCheckAt = 0;    ///< ms since the epoch: the last check the reports started
         bool reportCheck = false;    ///< the running recheck is the reports' (not saved)
     };

@@ -1911,7 +1911,7 @@ int takeRawFrame(QByteArray& pending, RawFrame& out)
     if (pending.size() < 6)
         return 0;
     const auto* raw = reinterpret_cast<const uint8*>(pending.constData());
-    const uint32 declared = raw[1] | (raw[2] << 8) | (raw[3] << 16) | (uint32(raw[4]) << 24);
+    const uint32 declared = uint32(raw[1]) | (uint32(raw[2]) << 8) | (uint32(raw[3]) << 16) | (uint32(raw[4]) << 24);
     if (declared == 0) {
         qWarning() << "raw frame: zero declared size";
         return -1;
@@ -2024,7 +2024,7 @@ uint32 searchResultCount(const QByteArray& payload)
     if (payload.size() < 4)
         return UINT32_MAX;
     const auto* p = reinterpret_cast<const uint8*>(payload.constData());
-    return p[0] | (p[1] << 8) | (p[2] << 16) | (uint32(p[3]) << 24);
+    return uint32(p[0]) | (uint32(p[1]) << 8) | (uint32(p[2]) << 16) | (uint32(p[3]) << 24);
 }
 
 } // namespace

@@ -10,6 +10,8 @@
 #include "utils/SafeFile.h"
 #include "utils/Log.h"
 
+// Legacy RSA_* on purpose: OpenSSL 3's EVP layer rejects 384-bit keys
+#define OPENSSL_SUPPRESS_DEPRECATED
 #include <openssl/bn.h>
 #include <openssl/evp.h>
 #include <openssl/pem.h>

@@ -5,6 +5,7 @@
 /// No daemon: items go in as the IpcClient's push signals, as the core would send them.
 
 #include "app/IpcClient.h"
+#include "app/UiState.h"
 #include "dialogs/HosterPuzzleDialog.h"
 #include "panels/HosterPanel.h"
 #include "utils/StringUtils.h"
@@ -28,6 +29,7 @@
 #include <QTemporaryDir>
 #include <QTest>
 #include <QTimer>
+#include <QToolButton>
 #include <QTreeWidget>
 
 using namespace eMule;
@@ -121,6 +123,61 @@ private slots:
         QCOMPARE(tree->topLevelItemCount(), 2);
         for (int i = 0; i < tree->topLevelItemCount(); ++i)
             QCOMPARE(tree->topLevelItem(i)->childCount(), 0);
+    }
+
+    /// The status filter row hides rows of other states; a package shows while an item does
+    void statusFilterHidesRows()
+    {
+        theUiState.setHosterFilter(0);
+        theUiState.setShowHosterStatusFilter(true);
+        IpcClient ipc;
+        HosterPanel panel;
+        panel.setIpcClient(&ipc);
+        auto* tree = panel.findChild<QTreeWidget*>();
+        QVERIFY(tree);
+        push(ipc, item(1, QStringLiteral("a.rar"), 7, QStringLiteral("Release"), 5));    // downloading
+        push(ipc, item(2, QStringLiteral("b.rar"), 7, QStringLiteral("Release"), 8));    // complete
+        push(ipc, item(3, QStringLiteral("c.mkv"), 0, {}, 7));                           // paused
+        push(ipc, item(4, QStringLiteral("d.mkv"), 0, {}, 12));                          // failed
+
+        const auto button = [&panel](const QString& name) -> QToolButton* {
+            for (auto* b : panel.findChildren<QToolButton*>())
+                if (b->text().startsWith(name + QStringLiteral(" (")))
+                    return b;
+            return nullptr;
+        };
+        QToolButton* complete = button(HosterPanel::tr("Complete"));
+        QVERIFY(complete);
+        QCOMPARE(complete->text(), HosterPanel::tr("Complete") + QStringLiteral(" (1)"));
+        QCOMPARE(button(HosterPanel::tr("All"))->text(), HosterPanel::tr("All") + QStringLiteral(" (4)"));
+
+        const auto visibleNames = [tree] {
+            QStringList out;
+            for (QTreeWidgetItemIterator it(tree); *it; ++it)
+                if (!(*it)->isHidden() && (!(*it)->parent() || !(*it)->parent()->isHidden()))
+                    out << (*it)->text(0);
+            out.sort();
+            return out;
+        };
+        complete->click();
+        QCOMPARE(visibleNames(), (QStringList{QStringLiteral("Release"), QStringLiteral("b.rar")}));
+        QCOMPARE(theUiState.hosterFilter(), 2);
+        button(HosterPanel::tr("Error"))->click();
+        QCOMPARE(visibleNames(), QStringList{QStringLiteral("d.mkv")});
+
+        // a state change moves the row in or out
+        push(ipc, item(3, QStringLiteral("c.mkv"), 0, {}, 12));
+        QCOMPARE(visibleNames(), (QStringList{QStringLiteral("c.mkv"), QStringLiteral("d.mkv")}));
+
+        // the row off in Display options: everything shows, the choice is kept
+        theUiState.setShowHosterStatusFilter(false);
+        panel.applyDisplayOptions();
+        QCOMPARE(visibleNames().size(), 5);
+        QCOMPARE(theUiState.hosterFilter(), 5);
+        theUiState.setShowHosterStatusFilter(true);
+        panel.applyDisplayOptions();
+        QCOMPARE(visibleNames().size(), 2);
+        theUiState.setHosterFilter(0);
     }
 
     /// Esc clears the selection, as on the Transfer list; with none it travels on

@@ -64,6 +64,12 @@ bool AppContext::isConnected() const
     return kadInst && kadInst->isConnected();
 }
 
+bool AppContext::isConnectedAnyNetwork() const
+{
+    // ed2k/Kad first: the ed3k check asks the engine for its stats
+    return isConnected() || (ed3kConnected && ed3kConnected());
+}
+
 bool AppContext::isFirewalled() const
 {
     // MFC: CemuleApp::IsFirewalled() — Emule.cpp:1176

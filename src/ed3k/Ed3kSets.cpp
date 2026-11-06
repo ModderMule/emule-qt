@@ -839,7 +839,7 @@ std::optional<Ed3kSets::Link> Ed3kSets::parseLink(const QString& link)
     const QUrlQuery q(link.mid(kPrefix.size()));
     const auto items = q.queryItems(QUrl::FullyDecoded);
     // §5.4: key, id, dn, path (and s, paid) at most once
-    for (const QString k : {QStringLiteral("key"), QStringLiteral("id"), QStringLiteral("dn"), QStringLiteral("path"),
+    for (const QString& k : {QStringLiteral("key"), QStringLiteral("id"), QStringLiteral("dn"), QStringLiteral("path"),
                             QStringLiteral("s"), QStringLiteral("paid"), QStringLiteral("b3"), QStringLiteral("sz")})
         if (std::ranges::count_if(items, [&](const auto& kv) { return kv.first == k; }) > 1)
             return std::nullopt;
@@ -926,12 +926,12 @@ void Ed3kSets::load()
         s.applied = versionOf(o.value(QStringLiteral("applied")));
         s.pending = versionOf(o.value(QStringLiteral("pending")));
         for (const QJsonValue& r : o.value(QStringLiteral("inner")).toArray())
-            if (const auto root = rootOf(r.toString()))
-                if (QByteArray f = loadManifest(*root); !f.isEmpty())
-                    s.inner[*root] = std::move(f);
+            if (const auto innerRoot = rootOf(r.toString()))
+                if (QByteArray f = loadManifest(*innerRoot); !f.isEmpty())
+                    s.inner[*innerRoot] = std::move(f);
         for (const QJsonValue& r : o.value(QStringLiteral("queued")).toArray())
-            if (const auto root = rootOf(r.toString()))
-                s.queued.push_back(*root);
+            if (const auto queuedRoot = rootOf(r.toString()))
+                s.queued.push_back(*queuedRoot);
         const QJsonObject mounts = o.value(QStringLiteral("mounts")).toObject();
         for (auto it = mounts.begin(); it != mounts.end(); ++it)
             if (const auto r = rootOf(it.value().toString()))

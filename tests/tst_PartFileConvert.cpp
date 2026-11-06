@@ -348,7 +348,7 @@ void tst_PartFileConvert::import_emuleFormatGetsANewNumberAndIsQueued()
     QVERIFY(QFile::exists(src.filePath(met)));
 
     // The same download again
-    const int before = QDir(env.temp.path()).entryList(QDir::Files).size();
+    const auto before = QDir(env.temp.path()).entryList(QDir::Files).size();
     QCOMPARE(env.import(src.path(), met, false), ConvertStatus::AlreadyExists);
     QCOMPARE(QDir(env.temp.path()).entryList(QDir::Files).size(), before);
 }
@@ -392,7 +392,7 @@ void tst_PartFileConvert::import_removesTheSourceOnlyWhenAsked()
         Tag(FT_FILENAME, QStringLiteral("half.bin")).writeNewEd2kTag(mem, UTF8Mode::OptBOM);
         Tag(FT_FILESIZE, uint32{50'000}).writeNewEd2kTag(mem);
         QVERIFY(writeFile(src.filePath(QStringLiteral("010.part.met")), mem.buffer()));
-        const int before = QDir(env.temp.path()).entryList(QDir::Files).size();
+        const auto before = QDir(env.temp.path()).entryList(QDir::Files).size();
         QCOMPARE(env.import(src.path(), QStringLiteral("010.part.met"), false), ConvertStatus::OK);
         PartFile* empty = env.queue.fileByID(other.data());
         QVERIFY(empty != nullptr);

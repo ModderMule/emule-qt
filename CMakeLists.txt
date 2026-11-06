@@ -144,6 +144,7 @@ else()
         GIT_REPOSITORY https://github.com/miniupnp/miniupnp.git
         GIT_TAG        miniupnpc_2_3_0
         SOURCE_SUBDIR  miniupnpc
+        SYSTEM         # its headers trip our -Wpedantic
     )
     set(UPNPC_BUILD_TESTS   OFF CACHE BOOL "" FORCE)
     set(UPNPC_BUILD_SAMPLE  OFF CACHE BOOL "" FORCE)
@@ -217,6 +218,12 @@ else()
     set(ENABLE_EXPAT        OFF CACHE BOOL "" FORCE)
     set(ENABLE_PCRE2POSIX   OFF CACHE BOOL "" FORCE)
     FetchContent_MakeAvailable(libarchive)
+    # third-party noise, not ours to fix
+    foreach(_la_target archive archive_static)
+        if(TARGET ${_la_target} AND NOT MSVC)
+            target_compile_options(${_la_target} PRIVATE -w)
+        endif()
+    endforeach()
     # archive_static sets LIBARCHIVE_STATIC only PRIVATE; consumers on Windows
     # need it too so the headers don't use __declspec(dllimport).
     if(WIN32 AND TARGET archive_static)
@@ -276,6 +283,12 @@ if(EMULE_USENET_RAPIDYENC)
             endforeach()
             target_include_directories(rapidyenc_static
                 INTERFACE "${rapidyenc_SOURCE_DIR}")
+            # third-party noise, not ours to fix
+            foreach(_ry_lib rapidyenc rapidyenc_static)
+                if(TARGET ${_ry_lib} AND NOT MSVC)
+                    target_compile_options(${_ry_lib} PRIVATE -w)
+                endif()
+            endforeach()
         else()
             message(WARNING "rapidyenc target not found - falling back to the scalar decoder")
             set(EMULE_USENET_RAPIDYENC OFF)

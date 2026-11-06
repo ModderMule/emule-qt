@@ -1137,6 +1137,7 @@ if(EMULE_HOSTER_JD)
     emule_add_test(tst_HosterPanel FOLDER "Gui"
         SOURCES tst_HosterPanel.cpp
                 "${CMAKE_SOURCE_DIR}/src/gui/panels/HosterPanel.cpp"
+                "${CMAKE_SOURCE_DIR}/src/gui/controls/StatusFilterBar.cpp"
                 "${CMAKE_SOURCE_DIR}/src/gui/dialogs/HosterPuzzleDialog.cpp"
                 "${CMAKE_SOURCE_DIR}/src/gui/utils/Appearance.cpp"
                 "${CMAKE_SOURCE_DIR}/src/gui/utils/FileTypeIcons.cpp"

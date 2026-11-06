@@ -148,7 +148,7 @@ void AddNzbUrlDialog::onAccepted()
                 QMessageBox::question(
                     self, tr("Add NZB from URL"),
                     tr("You have already downloaded %n of these. Download them again?\n\n%1",
-                       "", alreadyHave->size())
+                       "", static_cast<int>(alreadyHave->size()))
                         .arg(alreadyHaveReasons->join(QLatin1Char('\n'))),
                     QMessageBox::Yes | QMessageBox::No) == QMessageBox::Yes;
             if (!again || !self->m_ipc) {

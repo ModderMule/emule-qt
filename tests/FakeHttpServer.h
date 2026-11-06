@@ -22,7 +22,7 @@ public:
     struct Response {
         int status = 200;
         QByteArray body;
-        QList<std::pair<QByteArray, QByteArray>> headers;
+        QList<std::pair<QByteArray, QByteArray>> headers{};
         bool silent = false;   ///< never answer (for abort / timeout tests)
     };
     using Handler = std::function<Response(const QByteArray& path, const QByteArray& request)>;

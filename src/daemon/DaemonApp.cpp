@@ -259,8 +259,8 @@ bool DaemonApp::start()
     connect(m_coreSession.get(), &CoreSession::portBindFailed,
             m_notifierBridge.get(), &CoreNotifierBridge::onPortBindFailed);
     // Any that failed before this connection existed
-    for (const int port : m_coreSession->failedBindPorts())
-        m_notifierBridge->onPortBindFailed(port);
+    for (const int failedPort : m_coreSession->failedBindPorts())
+        m_notifierBridge->onPortBindFailed(failedPort);
 
     // The bound interface went away, came back or was changed: the session has closed
     // the P2P sockets; the parts it does not own follow here.
@@ -612,6 +612,7 @@ bool DaemonApp::start()
                 Qt::QueuedConnection);
         };
     }
+    theApp.ed3kConnected = [s = m_ed3kSession.get()] { return s->isRunning() && s->contactCount() > 0; };
     // §14.4: a dual peer queued on ed3k gets no 2nd place in the eD2K upload queue
     theApp.isEd3kUploadPeer = [u = m_ed3kUploads.get()](const uint8* hash) {
         ::ed3k::Ed2kHash h{};
@@ -888,6 +889,7 @@ void DaemonApp::stop()
     theApp.ed3kHint = {};
     theApp.partVerdict = {};
     theApp.isEd3kUploadPeer = {};
+    theApp.ed3kConnected = {};
     Ed3kBridge::setEd2kJoin(nullptr);
     if (m_ed2kJoin)
         m_ed2kJoin->stop();
@@ -1158,7 +1160,7 @@ void DaemonApp::connectUsenetPushes()
         // Keyed on the item, so a 10 000-article release cannot suppress pushes
         // for a second NZB queued beside it. PushCoalescer's subKey is 32 bits and
         // the id is a UUID string, so hash it down.
-        const quint32 subKey = qHash(id);
+        const auto subKey = static_cast<quint32>(qHash(id));
         coalescer->post(IpcMsgType::PushUsenetQueueItem, [this, id] {
             IpcMessage msg(IpcMsgType::PushUsenetQueueItem, 0);
             if (auto* session = m_usenetSession.get(); session && session->queue()) {
@@ -1600,7 +1602,7 @@ void DaemonApp::connectIndexerFeedSink()
                 {QStringLiteral("polling"),     status.polling},
             });
             return msg;
-        }, kFeedPushWindowMs, qHash(status.name));
+        }, kFeedPushWindowMs, static_cast<quint32>(qHash(status.name)));
     });
 }
 

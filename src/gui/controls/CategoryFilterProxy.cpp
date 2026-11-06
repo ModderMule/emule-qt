@@ -34,6 +34,63 @@ void CategoryFilterProxy::setCategories(const QList<DownloadCategory>& categorie
 #endif
 }
 
+void CategoryFilterProxy::setStatusFilter(int filter)
+{
+    if (m_status == filter)
+        return;
+#if QT_VERSION >= QT_VERSION_CHECK(6, 10, 0)
+    beginFilterChange();
+    m_status = filter;
+    endFilterChange();
+#else
+    m_status = filter;
+    invalidateFilter();
+#endif
+}
+
+std::array<int, CategoryFilterProxy::StatusFilterCount> CategoryFilterProxy::statusCounts() const
+{
+    std::array<int, StatusFilterCount> counts{};
+    const QAbstractItemModel* src = sourceModel();
+    if (!src)
+        return counts;
+    for (int row = 0; row < src->rowCount(); ++row) {
+        const CategoryRowFacts facts = factsOf(row);
+        if (!categoryShowsRow(m_categories, m_category, facts))
+            continue;
+        for (int f = 0; f < StatusFilterCount; ++f)
+            if (matchesStatus(facts, f))
+                ++counts[std::size_t(f)];
+    }
+    return counts;
+}
+
+bool CategoryFilterProxy::matchesStatus(const CategoryRowFacts& row, int filter)
+{
+    switch (filter) {
+    case StatusAll:         return true;
+    case StatusDownloading: return row.unfinished && row.state == CategoryRowFacts::Transferring;
+    case StatusWaiting:     return row.unfinished && row.state == CategoryRowFacts::Waiting;
+    case StatusPaused:      return row.unfinished && row.state == CategoryRowFacts::Paused;
+    case StatusComplete:    return !row.unfinished;
+    case StatusError:       return row.state == CategoryRowFacts::Erroneous;
+    default:                return false;
+    }
+}
+
+QString CategoryFilterProxy::statusFilterName(int filter)
+{
+    switch (filter) {
+    case StatusAll:         return tr("All");
+    case StatusDownloading: return tr("Downloading");
+    case StatusWaiting:     return tr("Waiting");
+    case StatusPaused:      return tr("Paused");
+    case StatusComplete:    return tr("Complete");
+    case StatusError:       return tr("Error");
+    default:                return {};
+    }
+}
+
 int CategoryFilterProxy::rowsShownIn(int category,
                                      const std::function<bool(const CategoryRowFacts&)>& also) const
 {
@@ -67,7 +124,8 @@ bool CategoryFilterProxy::filterAcceptsRow(int sourceRow, const QModelIndex& sou
         return true;
     if (!sourceModel())
         return true;
-    return categoryShowsRow(m_categories, m_category, factsOf(sourceRow));
+    const CategoryRowFacts facts = factsOf(sourceRow);
+    return categoryShowsRow(m_categories, m_category, facts) && matchesStatus(facts, m_status);
 }
 
 CategoryRowFacts CategoryFilterProxy::factsOf(int sourceRow) const

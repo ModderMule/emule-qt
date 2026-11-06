@@ -37,7 +37,8 @@ QString tst_NzbDrop::makeFile(const QString& name)
 {
     const QString path = m_dir.filePath(name);
     QFile f(path);
-    f.open(QIODevice::WriteOnly);
+    if (!f.open(QIODevice::WriteOnly))
+        return {};
     f.write("x");
     f.close();
     return path;

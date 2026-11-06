@@ -9,6 +9,7 @@
 #include "app/UiState.h"
 #include "controls/AbstractListView.h"
 #include "controls/SortableItems.h"
+#include "controls/StatusFilterBar.h"
 #include "controls/TorrentFilterProxy.h"
 #include "controls/TorrentListModel.h"
 #include "controls/TorrentListsPane.h"
@@ -27,7 +28,6 @@
 
 #include <QAction>
 #include <QApplication>
-#include <QButtonGroup>
 #include <QCheckBox>
 #include <QClipboard>
 #include <QDesktopServices>
@@ -47,7 +47,6 @@
 #include <QPushButton>
 #include <QSplitter>
 #include <QToolBar>
-#include <QToolButton>
 #include <QUrl>
 #include <QVBoxLayout>
 
@@ -233,6 +232,11 @@ bool TorrentPanel::engineRunning() const
     return m_status.value(QStringLiteral("running")).toBool();
 }
 
+void TorrentPanel::applyDisplayOptions()
+{
+    m_filterBar->setRowOn(theUiState.showTorrentStatusFilter());
+}
+
 void TorrentPanel::dragEnterEvent(QDragEnterEvent* event)
 {
     if (!gui::torrentDropFiles(event->mimeData()).isEmpty())
@@ -309,8 +313,7 @@ void TorrentPanel::setupUi()
     m_model = new TorrentListModel(this);
     m_proxy = new TorrentFilterProxy(this);
     m_proxy->setSourceModel(m_model);
-    m_proxy->setFilter(static_cast<TorrentFilterProxy::Filter>(
-        std::clamp(theUiState.torrentFilter(), 0, int(TorrentFilterProxy::FilterCount) - 1)));
+    m_proxy->setFilter(static_cast<TorrentFilterProxy::Filter>(m_filterBar->activeFilter()));
     m_proxy->setSortRole(Qt::UserRole);   // raw values, not "1.40 GB"
     m_proxy->setDynamicSortFilter(true);
 
@@ -650,32 +653,20 @@ DetailWalker TorrentPanel::makeWalker(const QString& id)
 
 QWidget* TorrentPanel::createFilterBar()
 {
-    auto* bar = new QWidget(this);
-    auto* row = new QHBoxLayout(bar);
-    row->setContentsMargins(6, 2, 6, 2);
-    row->setSpacing(2);
-    m_filterGroup = new QButtonGroup(bar);
-    m_filterGroup->setExclusive(true);
-    for (int f = 0; f < TorrentFilterProxy::FilterCount; ++f) {
-        auto* b = new QToolButton(bar);
-        b->setCheckable(true);
-        b->setAutoRaise(true);
-        b->setText(TorrentFilterProxy::filterName(static_cast<TorrentFilterProxy::Filter>(f)));
-        m_filterGroup->addButton(b, f);
-        row->addWidget(b);
-    }
-    row->addStretch(1);
-    if (auto* b = m_filterGroup->button(std::clamp(theUiState.torrentFilter(), 0,
-                                                   int(TorrentFilterProxy::FilterCount) - 1)))
-        b->setChecked(true);
-    connect(m_filterGroup, &QButtonGroup::idClicked, this, &TorrentPanel::setFilter);
-    return bar;
+    QStringList names;
+    for (int f = 0; f < TorrentFilterProxy::FilterCount; ++f)
+        names << TorrentFilterProxy::filterName(static_cast<TorrentFilterProxy::Filter>(f));
+    m_filterBar = new StatusFilterBar(names, theUiState.torrentFilter(), this);
+    m_filterBar->setRowOn(theUiState.showTorrentStatusFilter());   // before connect: no proxy yet
+    connect(m_filterBar, &StatusFilterBar::filterChanged, this, &TorrentPanel::setFilter);
+    return m_filterBar;
 }
 
 void TorrentPanel::setFilter(int filter)
 {
-    m_proxy->setFilter(static_cast<TorrentFilterProxy::Filter>(filter));
-    theUiState.setTorrentFilter(filter);
+    m_proxy->setFilter(static_cast<TorrentFilterProxy::Filter>(
+        std::clamp(filter, 0, int(TorrentFilterProxy::FilterCount) - 1)));
+    theUiState.setTorrentFilter(m_filterBar->current());
     updateSummary();
     onSelectionChanged();
 }
@@ -691,16 +682,7 @@ void TorrentPanel::updateFilterCounts()
             if (TorrentFilterProxy::matches(*r, static_cast<TorrentFilterProxy::Filter>(f)))
                 ++counts[static_cast<std::size_t>(f)];
     }
-    for (int f = 0; f < TorrentFilterProxy::FilterCount; ++f) {
-        auto* b = m_filterGroup->button(f);
-        if (!b)
-            continue;
-        const QString text = QStringLiteral("%1 (%2)")
-                                 .arg(TorrentFilterProxy::filterName(static_cast<TorrentFilterProxy::Filter>(f)))
-                                 .arg(counts[static_cast<std::size_t>(f)]);
-        if (b->text() != text)
-            b->setText(text);
-    }
+    m_filterBar->setCounts(counts);
 }
 
 void TorrentPanel::onSelectionChanged()

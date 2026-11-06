@@ -40,7 +40,7 @@ struct ParsedLink {
     /// Why this one deserves a second look — "already downloaded", "previously
     /// cancelled". Empty for the ordinary case, and set only for links the user
     /// is being asked about rather than told about.
-    QString note;
+    QString note{};
 };
 
 /// Split link text into file links, collecting HTTP Cache configuration links into

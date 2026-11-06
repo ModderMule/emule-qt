@@ -744,7 +744,6 @@ void tst_Address::toIPv6Mapped_null()
 
 void tst_Address::toIPv4_fromMapped()
 {
-    auto mapped = Address::fromString(QStringLiteral("::ffff:10.0.0.1"));
     // fromString normalizes mapped to IPv4, so construct manually
     auto v4orig = Address::fromHostOrder(0x0A000001u);
     auto v6 = v4orig.toIPv6Mapped();

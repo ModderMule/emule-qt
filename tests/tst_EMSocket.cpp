@@ -712,8 +712,8 @@ void tst_EMSocket::nestedPassDoesNotCorruptOuterBuffer()
     for (const auto& rp : clientSocket.receivedPackets) {
         const int idx = rp.opcode - 0x40;
         QVERIFY2(idx >= 0 && idx < kPackets, "packet with an opcode we never sent");
-        QVERIFY2(!seen[idx], "the same packet arrived twice");
-        seen[idx] = true;
+        QVERIFY2(!seen[static_cast<size_t>(idx)], "the same packet arrived twice");
+        seen[static_cast<size_t>(idx)] = true;
         QCOMPARE(rp.data.size(), static_cast<std::size_t>(kPayload));
         QCOMPARE(QByteArray(rp.data.data(), kPayload),
                  QByteArray(kPayload, static_cast<char>('0' + idx)));

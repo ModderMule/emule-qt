@@ -47,7 +47,7 @@ void UsenetSession::start()
     m_running = true;
     applyPreferences();
 
-    const int configured = m_pool->servers().size();
+    const auto configured = m_pool->servers().size();
     logUsenet(QStringLiteral("Usenet: engine started, %1 server(s) configured")
                 .arg(configured));
     if (configured == 0) {

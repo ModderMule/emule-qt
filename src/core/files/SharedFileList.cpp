@@ -1639,7 +1639,7 @@ void SharedFileList::saveDuplicates()
         return;
 
     std::vector<DuplicateRecord> records;
-    records.reserve(m_duplicates.size());
+    records.reserve(static_cast<size_t>(m_duplicates.size()));
     for (const DuplicateFile& dup : m_duplicates)
         records.push_back({dup.path, dup.size, dup.mtime, dup.fileHash});
     std::ranges::sort(records, {}, &DuplicateRecord::path);
@@ -2474,7 +2474,7 @@ void SharedFileList::warmContainerChecks()
     size_t tried = 0;
     size_t stillUnresolved = 0;
     for (auto* file : pending) {
-        file->containerCheck();   // resolves and memoises, or the bytes are not there yet
+        (void)file->containerCheck();   // resolves and memoises, or the bytes are not there yet
         ++tried;
         if (!file->containerCheckResolved()) {
             ++stillUnresolved;

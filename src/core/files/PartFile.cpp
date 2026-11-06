@@ -3083,7 +3083,9 @@ uint32 PartFile::process(uint32 reduceDownload, uint32 counter)
     // -- Save/Load Sources (MorphXT CPartFile::Process, PartFile.cpp:3564-3567) --
     // MorphXT runs this every third of its own ticks; ours arrive at 10 Hz, so once a second
     // is the equivalent cadence. The real gating is SourceSaver's own 10-minute resave timer.
-    if (counter == 3 && thePrefs.useSaveLoadSources())
+    // Held until ed2k, Kad or ed3k is up: its timers stay pre-aged, so the first tick after
+    // connecting loads and dials the saved sources.
+    if (counter == 3 && thePrefs.useSaveLoadSources() && theApp.isConnectedAnyNetwork())
         m_sourceSaver.process(this);
 
     // -- Server TCP source request (MFC PartFile.cpp:2383-2389) --

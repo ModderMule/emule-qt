@@ -1189,7 +1189,7 @@ void tst_KadSearch::publishTags_carryMediaTagsOnlyForAVersionedFile()
     // No version: the media tags are not vouched for and stay home.
     std::vector<Tag> tags = published();
     QVERIFY(find(tags, FT_FILENAME) != nullptr);
-    for (uint8 id : {FT_MEDIA_ARTIST, FT_MEDIA_ALBUM, FT_MEDIA_TITLE, FT_MEDIA_LENGTH,
+    for (uint8 id : std::initializer_list<uint8>{FT_MEDIA_ARTIST, FT_MEDIA_ALBUM, FT_MEDIA_TITLE, FT_MEDIA_LENGTH,
                      FT_MEDIA_BITRATE, FT_MEDIA_CODEC})
         QVERIFY2(find(tags, id) == nullptr, qPrintable(QString::number(id, 16)));
 

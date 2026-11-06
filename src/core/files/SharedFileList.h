@@ -64,10 +64,10 @@ public:
         // the main thread: the worker never touches the PartFile, which stays owned by
         // the download queue and may be deleted while the job is queued. The file hash
         // is how the completion finds its way back to the right object.
-        QByteArray rehashFileHash;
-        QString rehashPartPath;
+        QByteArray rehashFileHash{};
+        QString rehashPartPath{};
         uint64 rehashFileSize = 0;
-        std::vector<std::array<uint8, 16>> rehashPartHashes;
+        std::vector<std::array<uint8, 16>> rehashPartHashes{};
         uint64 rehashToken = 0;   // echoed back so a stale result can be told apart
 
         [[nodiscard]] bool isRehash() const { return !rehashFileHash.isEmpty(); }
@@ -127,7 +127,7 @@ struct UnknownFileEntry {
     QString key;   // SharedFileList::pathKey of the file
     uint64 size = 0;     // as scanned
     time_t mtime = 0;    // as scanned; 0 = not known
-    QString volume;      // which disk it is on; filled when queued
+    QString volume{};    // which disk it is on; filled when queued
 };
 
 // ---------------------------------------------------------------------------

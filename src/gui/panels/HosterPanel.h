@@ -7,7 +7,7 @@
 /// 1100-1109 and the pushes 1150-1154). Image puzzles of the resolver are shown here in a
 /// dialog of their own, whichever tab is open. No MFC original: laid out like the Torrents tab.
 /// Items of a package (a search row, a named batch of links, a folder link) are children of
-/// one package row; packages never nest. Link containers (DLC, RSDF, CCF) open here too:
+/// one package row; packages never nest. A state filter row as the Torrents tab's. Link containers (DLC, RSDF, CCF) open here too:
 /// by the Open DLC button, the context menu, a drop, the desktop or a container search row
 /// (their bytes go to the core).
 
@@ -31,6 +31,7 @@ namespace eMule {
 
 class HosterPuzzleDialog;
 class IpcClient;
+class StatusFilterBar;
 
 namespace Ipc {
 class IpcMessage;
@@ -67,6 +68,8 @@ public:
     /// per folder); the core keeps it with the package, tries it first and extracts again.
     /// Opens by itself when an extraction ends wanting one.
     void promptArchivePassword(qint64 id);
+    /// Re-read the Display options this panel acts on: the status filter row.
+    void applyDisplayOptions();
     /// Hoster downloads on (ed3kHosterEnabled), as the core last reported.
     [[nodiscard]] bool hostersEnabled() const { return m_enabled; }
 
@@ -97,10 +100,20 @@ private:
     /// Opens a complete item's folder.
     void openRow(QTreeWidgetItem* row);
     void copyLinks();
+    /// Shows only the rows of filter @p filter (persisted in UiState).
+    void setFilter(int filter);
+    /// Hides item @p row unless it matches the filter; a hidden row is deselected.
+    void applyFilter(QTreeWidgetItem* row);
+    /// A package row shows while one of its items does.
+    static void syncPackageVisibility(QTreeWidgetItem* row);
+    void updateFilterCounts();
 
     QPointer<IpcClient> m_ipc;
     QTreeWidget* m_tree = nullptr;
     QLabel* m_statusLabel = nullptr;
+    StatusFilterBar* m_filterBar = nullptr;
+    int m_filter = 0;
+    bool m_bulkFill = false;   ///< refresh() fills: counts once at the end
     QAction* m_addAction = nullptr;
     QList<QPointer<HosterPuzzleDialog>> m_puzzleDialogs;   ///< open ones, for "Skip hoster"
     bool m_enabled = false;

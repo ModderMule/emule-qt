@@ -560,7 +560,7 @@ void KnownFile::pruneKadNotes()
                   });
         const int toRemove = static_cast<int>(m_kadNotes.size()) - maxCount;
         for (int i = 0; i < toRemove; ++i)
-            m_kadNotes.erase(its[i]);
+            m_kadNotes.erase(its[static_cast<size_t>(i)]);
     }
 }
 

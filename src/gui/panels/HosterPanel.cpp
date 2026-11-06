@@ -6,6 +6,7 @@
 
 #include "app/IpcClient.h"
 #include "app/UiState.h"
+#include "controls/StatusFilterBar.h"
 #include "dialogs/HosterPuzzleDialog.h"
 #include "utils/ContainerDrop.h"
 #include "utils/FileTypeIcons.h"
@@ -44,6 +45,9 @@
 #include <QUrl>
 #include <QVBoxLayout>
 
+#include <algorithm>
+#include <array>
+
 namespace eMule {
 
 using Ipc::IpcMessage;
@@ -67,6 +71,39 @@ constexpr qint64 kMaxContainerBytes = 4 * 1024 * 1024;
 constexpr int kReasonUnpacked = 32;
 constexpr int kReasonUnpackFailed = 33;
 constexpr int kReasonUnpackPassword = 34;
+
+/// The filter row's buttons. Persisted in UiState: append only.
+enum Filter : int { FilterAll, FilterDownloading, FilterComplete, FilterPaused, FilterActive, FilterError, FilterCount };
+
+QStringList filterNames()
+{
+    return {HosterPanel::tr("All"),    HosterPanel::tr("Downloading"), HosterPanel::tr("Complete"),
+            HosterPanel::tr("Paused"), HosterPanel::tr("Active"),      HosterPanel::tr("Error")};
+}
+
+/// Whether item @p it belongs to filter @p filter; Error matches what Retry would act on.
+bool matchesFilter(const QCborMap& it, int filter)
+{
+    const auto state = it.value(QStringLiteral("state")).toInteger();
+    const auto reason = it.value(QStringLiteral("reason")).toInteger();
+    switch (filter) {
+    case FilterAll:
+        return true;
+    case FilterDownloading:   // resolving, queued, waiting, puzzle too: not done yet
+        return state < kStatePaused;
+    case FilterComplete:
+        return state == kStateComplete;
+    case FilterPaused:
+        return state == kStatePaused;
+    case FilterActive:
+        return it.value(QStringLiteral("speed")).toInteger() > 0;
+    case FilterError:
+        return state > kStateComplete
+            || (state == kStateComplete && (reason == kReasonUnpackFailed || reason == kReasonUnpackPassword));
+    default:
+        return false;
+    }
+}
 
 /// Ed3kHosterJoin::State, worded here: IPC carries no localized text.
 QString stateText(int state)
@@ -194,6 +231,13 @@ HosterPanel::HosterPanel(QWidget* parent)
     dlcBtn->setToolTip(tr("Adds the links of a link container (.dlc, .rsdf, .ccf); you can also drop one here"));
     bar->addWidget(dlcBtn);
     layout->addLayout(bar);
+    m_filterBar = new StatusFilterBar(filterNames(), theUiState.hosterFilter(), this);
+    m_filterBar->layout()->setContentsMargins(0, 0, 0, 0);
+    m_filterBar->setRowOn(theUiState.showHosterStatusFilter());
+    m_filter = m_filterBar->activeFilter();
+    connect(m_filterBar, &StatusFilterBar::filterChanged, this, &HosterPanel::setFilter);
+    layout->addWidget(m_filterBar);
+    updateFilterCounts();
     setAcceptDrops(true);
 
     m_tree = new QTreeWidget(this);
@@ -257,6 +301,11 @@ void HosterPanel::setIpcClient(IpcClient* ipc)
     connect(m_ipc, &IpcClient::ed3kStatusChanged, this, [this](const IpcMessage& msg) { applyStatus(msg.fieldMap(0)); });
     if (m_ipc->isConnected())
         refresh();
+}
+
+void HosterPanel::applyDisplayOptions()
+{
+    m_filterBar->setRowOn(theUiState.showHosterStatusFilter());
 }
 
 void HosterPanel::addLinks(const QStringList& links, const QString& package)
@@ -435,8 +484,11 @@ void HosterPanel::refresh()
         m_rows.clear();
         m_packages.clear();
         m_items.clear();
+        m_bulkFill = true;
         for (const QCborValue& v : res.value(QStringLiteral("items")).toArray())
             upsert(v.toMap());
+        m_bulkFill = false;
+        updateFilterCounts();
         applyStatus(QCborMap{{QStringLiteral("hoster"), res.value(QStringLiteral("status"))}});
     });
 }
@@ -474,10 +526,13 @@ void HosterPanel::upsert(const QCborMap& item)
         m_rows[id] = row;
     }
     fillRow(row, item);
+    applyFilter(row);
     if (oldPackage != 0 && oldPackage != pkg)
         updatePackage(oldPackage);
     if (pkg != 0)
         updatePackage(pkg);
+    if (!m_bulkFill)
+        updateFilterCounts();
     if (askPassword)
         QMetaObject::invokeMethod(this, [this, id] { promptArchivePassword(id); }, Qt::QueuedConnection);
 }
@@ -488,6 +543,7 @@ void HosterPanel::removeRow(qint64 id)
     delete m_rows.take(id);
     if (pkg != 0)
         updatePackage(pkg);
+    updateFilterCounts();
 }
 
 QTreeWidgetItem* HosterPanel::packageRow(qint64 id, const QString& name)
@@ -550,6 +606,7 @@ void HosterPanel::updatePackage(qint64 id)
         status = stateText(kStateDownloading) + QStringLiteral(", ") + status;
     row->setText(ColStatus, status);
     row->setToolTip(ColStatus, status);
+    syncPackageVisibility(row);
 }
 
 void HosterPanel::fillRow(QTreeWidgetItem* row, const QCborMap& it)
@@ -814,8 +871,10 @@ QList<qint64> HosterPanel::selectedIds() const
     };
     for (QTreeWidgetItem* row : m_tree->selectedItems()) {
         take(row);
+        // a package acts on its items the filter shows
         for (int i = 0; i < row->childCount(); ++i)
-            take(row->child(i));
+            if (!row->child(i)->isHidden())
+                take(row->child(i));
     }
     return out;
 }
@@ -966,6 +1025,44 @@ void HosterPanel::onContainer(const QCborMap& c, const QCborArray& links)
             name = QFileInfo(fileName).completeBaseName();
         addLinks(files, name, 0, passwords);
     }
+}
+
+void HosterPanel::setFilter(int filter)
+{
+    m_filter = std::clamp(filter, 0, int(FilterCount) - 1);
+    theUiState.setHosterFilter(m_filterBar->current());
+    for (QTreeWidgetItem* row : std::as_const(m_rows))
+        applyFilter(row);
+    for (QTreeWidgetItem* row : std::as_const(m_packages))
+        syncPackageVisibility(row);
+}
+
+void HosterPanel::applyFilter(QTreeWidgetItem* row)
+{
+    const bool hide = !matchesFilter(m_items.value(row->data(ColName, kItemIdRole).toLongLong()), m_filter);
+    if (hide)
+        row->setSelected(false);
+    row->setHidden(hide);
+}
+
+void HosterPanel::syncPackageVisibility(QTreeWidgetItem* row)
+{
+    bool shown = false;
+    for (int i = 0; i < row->childCount() && !shown; ++i)
+        shown = !row->child(i)->isHidden();
+    if (!shown)
+        row->setSelected(false);
+    row->setHidden(!shown);
+}
+
+void HosterPanel::updateFilterCounts()
+{
+    std::array<int, FilterCount> counts{};
+    for (const QCborMap& it : std::as_const(m_items))
+        for (int f = 0; f < FilterCount; ++f)
+            if (matchesFilter(it, f))
+                ++counts[std::size_t(f)];
+    m_filterBar->setCounts(counts);
 }
 
 } // namespace eMule

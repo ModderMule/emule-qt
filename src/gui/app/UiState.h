@@ -276,6 +276,35 @@ public:
         scheduleSave();
     }
 
+    /// Status filter row above the Transfers downloads, the Torrents and the Hoster list.
+    [[nodiscard]] bool showDownloadStatusFilter() const { return m_showDownloadStatusFilter; }
+    void setShowDownloadStatusFilter(bool on)
+    {
+        m_showDownloadStatusFilter = on;
+        scheduleSave();
+    }
+    [[nodiscard]] bool showTorrentStatusFilter() const { return m_showTorrentStatusFilter; }
+    void setShowTorrentStatusFilter(bool on)
+    {
+        m_showTorrentStatusFilter = on;
+        scheduleSave();
+    }
+    [[nodiscard]] bool showHosterStatusFilter() const { return m_showHosterStatusFilter; }
+    void setShowHosterStatusFilter(bool on)
+    {
+        m_showHosterStatusFilter = on;
+        scheduleSave();
+    }
+    /// Transfers tab: the downloads' status filter (CategoryFilterProxy::StatusFilter).
+    [[nodiscard]] int downloadStatusFilter() const { return m_downloadStatusFilter; }
+    void setDownloadStatusFilter(int filter)
+    {
+        if (m_downloadStatusFilter == filter)
+            return;
+        m_downloadStatusFilter = filter;
+        scheduleSave();
+    }
+
     /// Search Details graph switches to the active Kad search by itself (MFC AutoShowLookups).
     [[nodiscard]] bool kadAutoShowLookups() const { return m_kadAutoShowLookups; }
     void setKadAutoShowLookups(bool on)
@@ -341,6 +370,15 @@ public:
         if (m_torrentFilter == filter)
             return;
         m_torrentFilter = filter;
+        scheduleSave();
+    }
+    /// Hoster tab: the state filter (HosterPanel's Filter).
+    [[nodiscard]] int hosterFilter() const { return m_hosterFilter; }
+    void setHosterFilter(int filter)
+    {
+        if (m_hosterFilter == filter)
+            return;
+        m_hosterFilter = filter;
         scheduleSave();
     }
     [[nodiscard]] int torrentPaneTab() const { return m_torrentPaneTab; }
@@ -454,6 +492,7 @@ private:
     QList<int> m_torrentSplitSizes;
     int m_torrentFilter = 0;
     int m_torrentPaneTab = 0;
+    int m_hosterFilter = 0;
     QList<int> m_statsGraphSplitSizes;
     int  m_windowWidth     = 0;
     int  m_windowHeight    = 0;
@@ -474,6 +513,10 @@ private:
     bool m_lowIdHintDisabled = false;
     bool m_showCountryFlags = true;
     bool m_showTaskbarProgress = true;
+    bool m_showDownloadStatusFilter = false;
+    bool m_showTorrentStatusFilter = true;
+    bool m_showHosterStatusFilter = true;
+    int m_downloadStatusFilter = 0;
     bool m_showDownloadToolbar = true;
     bool m_kadAutoShowLookups = true;
     int  m_colorScheme = 0;

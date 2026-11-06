@@ -31,8 +31,8 @@ struct ResolverLink {
     QString name;
     QString host;
     std::uint64_t size = 0;   ///< 0 = unknown
-    QString package;          ///< a container's package name; empty: none
-    QStringList passwords;    ///< a container's archive passwords
+    QString package{};        ///< a container's package name; empty: none
+    QStringList passwords{};  ///< a container's archive passwords
 };
 
 struct ResolverEvent {

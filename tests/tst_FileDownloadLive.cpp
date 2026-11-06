@@ -500,7 +500,7 @@ void tst_FileDownloadLive::download_completesAndIsShared()
 
     // Periodically re-search for sources via Kad (every 60s).
     QTimer kadResearchTimer;
-    connect(&kadResearchTimer, &QTimer::timeout, this, [this, pf] {
+    connect(&kadResearchTimer, &QTimer::timeout, this, [pf] {
         UInt128 target;
         target.setValueBE(kExpectedHash);
         auto* search = SearchManager::prepareLookup(SearchType::File, true, target);
@@ -517,7 +517,7 @@ void tst_FileDownloadLive::download_completesAndIsShared()
     connect(&progressTimer, &QTimer::timeout, this, [pf, &maxQueueRank, &rankedSources] {
         rankedSources = 0;
         for (auto* client : pf->srcList()) {
-            const int rank = client->remoteQueueRank();
+            const int rank = static_cast<int>(client->remoteQueueRank());
             if (rank > 0) {
                 ++rankedSources;
                 maxQueueRank = std::max(maxQueueRank, rank);
@@ -552,7 +552,7 @@ void tst_FileDownloadLive::download_completesAndIsShared()
 
     // Final scan for queue rankings (timer may not have fired recently)
     for (auto* client : pf->srcList()) {
-        const int rank = client->remoteQueueRank();
+        const int rank = static_cast<int>(client->remoteQueueRank());
         if (rank > 0) {
             ++rankedSources;
             maxQueueRank = std::max(maxQueueRank, rank);
@@ -592,12 +592,12 @@ void tst_FileDownloadLive::download_completesAndIsShared()
         QCOMPARE(static_cast<uint64>(fi.size()), kExpectedSize);
 
         // Clear completed downloads (same as "Clear Completed" context menu action)
-        std::vector<PartFile*> completed;
+        std::vector<PartFile*> done;
         for (auto* f : m_downloadQueue->files()) {
             if (f->status() == PartFileStatus::Complete)
-                completed.push_back(f);
+                done.push_back(f);
         }
-        for (auto* f : completed)
+        for (auto* f : done)
             m_downloadQueue->removeFile(f);
         QCOMPARE(m_downloadQueue->fileCount(), 0);
         return;

@@ -31,7 +31,7 @@ void ensureRapidInit()
 
 /// Reflected CRC-32 (poly 0xEDB88320) — the zip/gzip one, which is what yEnc's
 /// pcrc32 is. Built once at first use.
-const std::array<quint32, 256>& crcTable()
+[[maybe_unused]] const std::array<quint32, 256>& crcTable()
 {
     static const std::array<quint32, 256> table = [] {
         std::array<quint32, 256> t{};
@@ -51,7 +51,7 @@ const std::array<quint32, 256>& crcTable()
 /// "crc32=" would be found inside "pcrc32=".
 QByteArrayView headerValue(QByteArrayView line, const char* key)
 {
-    const QByteArrayView needle(key, qstrlen(key));
+    const QByteArrayView needle(key, static_cast<qsizetype>(qstrlen(key)));
     qsizetype at = line.indexOf(needle);
     while (at > 0 && line[at - 1] != ' ')
         at = line.indexOf(needle, at + 1);

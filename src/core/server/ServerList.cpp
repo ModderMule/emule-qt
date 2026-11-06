@@ -815,7 +815,7 @@ ServerListStats ServerList::stats() const
             maxKnown += srv->maxUsers();
         }
     }
-    s.occupation = maxKnown ? static_cast<float>(usersKnownMax * 100.0 / maxKnown) : 0.0f;
+    s.occupation = maxKnown ? static_cast<float>(static_cast<double>(usersKnownMax) * 100.0 / static_cast<double>(maxKnown)) : 0.0f;
     s.deleted = m_deletedServerCount;
     return s;
 }

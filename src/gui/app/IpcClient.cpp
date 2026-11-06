@@ -488,7 +488,7 @@ int IpcClient::pollingInterval() const
 void IpcClient::holdPushGroup(int group, bool on)
 {
     m_pushGroupsHeld = true;
-    for (int bit = 0; bit < static_cast<int>(m_pushGroupHolds.size()); ++bit) {
+    for (size_t bit = 0; bit < m_pushGroupHolds.size(); ++bit) {
         if (group & (1 << bit))
             m_pushGroupHolds[bit] = std::max(0, m_pushGroupHolds[bit] + (on ? 1 : -1));
     }
@@ -509,7 +509,7 @@ int IpcClient::subscriptionMask() const
     if (!m_pushGroupsHeld)
         return Ipc::PushGroupAll;
     int mask = 0;
-    for (int bit = 0; bit < static_cast<int>(m_pushGroupHolds.size()); ++bit) {
+    for (size_t bit = 0; bit < m_pushGroupHolds.size(); ++bit) {
         if (m_pushGroupHolds[bit] > 0)
             mask |= 1 << bit;
     }

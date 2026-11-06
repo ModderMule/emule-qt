@@ -62,8 +62,6 @@ constexpr int kStateVersion = 2;
     return bits;
 }
 
-[[nodiscard]] std::string toStd(const QString& s) { return s.toStdString(); }
-
 /// Hand-rolled YAML out, read back by yaml-cpp. YAML::Emitter runs a regex per
 /// scalar to choose its quoting, and a sidecar has three scalars per segment:
 /// a 10 000-segment release cost a busy thread every second it downloaded.

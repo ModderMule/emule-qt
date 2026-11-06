@@ -174,9 +174,16 @@ BtTorrentRow BtTorrentView::row(const lt::torrent_status& st)
         // gone from torrent_info at ABI 100 (2.1, no deprecated functions): BtSession fills
         // them from the add parameters then
 #if TORRENT_ABI_VERSION < 4
+#if defined(__GNUC__)
+#pragma GCC diagnostic push
+#pragma GCC diagnostic ignored "-Wdeprecated-declarations"   // 2.1 keeps them, deprecated
+#endif
         r.comment = QString::fromStdString(ti->comment());
         r.creator = QString::fromStdString(ti->creator());
         r.createdAt = static_cast<qint64>(ti->creation_date());
+#if defined(__GNUC__)
+#pragma GCC diagnostic pop
+#endif
 #endif
     }
     r.lastActivity = std::max(unixOf(st.last_download), unixOf(st.last_upload));
@@ -280,6 +287,10 @@ BtTorrentPreview BtTorrentView::preview(const lt::add_torrent_params& atp)
     p.pieces = ti->num_pieces();
     p.isPrivate = ti->priv();
 #if TORRENT_ABI_VERSION < 4
+#if defined(__GNUC__)
+#pragma GCC diagnostic push
+#pragma GCC diagnostic ignored "-Wdeprecated-declarations"   // 2.1 keeps them, deprecated
+#endif
     // older libtorrent leaves them in torrent_info, not the add parameters
     if (p.comment.isEmpty())
         p.comment = QString::fromStdString(ti->comment());
@@ -294,6 +305,9 @@ BtTorrentPreview BtTorrentView::preview(const lt::add_torrent_params& atp)
             t.tier = a.tier;
             p.trackers.append(t);
         }
+#if defined(__GNUC__)
+#pragma GCC diagnostic pop
+#endif
 #endif
     const lt::file_storage& fs = ti->layout();
     for (lt::file_index_t i : fs.file_range()) {

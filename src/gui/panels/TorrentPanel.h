@@ -16,7 +16,6 @@
 #include "ipc/IpcMessage.h"
 
 class QAction;
-class QButtonGroup;
 class QLabel;
 class QMimeData;
 class QPushButton;
@@ -27,6 +26,7 @@ namespace eMule {
 
 class IpcClient;
 class PanelPoller;
+class StatusFilterBar;
 class TorrentDetailsDialog;
 class TorrentFilterProxy;
 class TorrentListModel;
@@ -72,6 +72,9 @@ public:
 
     /// The engine as last reported by GetBtStatus / PushBtStatus.
     [[nodiscard]] bool engineRunning() const;
+
+    /// Re-read the Display options this panel acts on: the status filter row.
+    void applyDisplayOptions();
 
     [[nodiscard]] TorrentListModel* model() const { return m_model; }
     [[nodiscard]] TorrentFilterProxy* filterProxy() const { return m_proxy; }
@@ -122,7 +125,7 @@ private:
     QTreeView* m_view = nullptr;
     TorrentListModel* m_model = nullptr;
     TorrentFilterProxy* m_proxy = nullptr;
-    QButtonGroup* m_filterGroup = nullptr;
+    StatusFilterBar* m_filterBar = nullptr;
     QSplitter* m_splitter = nullptr;
     TorrentListsPane* m_pane = nullptr;
 

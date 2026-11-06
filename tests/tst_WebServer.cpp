@@ -5290,12 +5290,12 @@ void tst_WebServer::mcp_stdioBridgeRoundTrip()
         for (const QByteArray& line : lines)
             bridge.write(line + '\n');
         QByteArray out;
-        QTest::qWaitFor([&] {
+        (void)QTest::qWaitFor([&] {
             out += bridge.readAllStandardOutput();
             return out.count('\n') >= expectReplies;
         }, 10000);
         bridge.closeWriteChannel();
-        QTest::qWaitFor([&] { return bridge.state() == QProcess::NotRunning; }, 5000);
+        (void)QTest::qWaitFor([&] { return bridge.state() == QProcess::NotRunning; }, 5000);
         out += bridge.readAllStandardOutput();
         for (const QByteArray& line : out.split('\n')) {
             if (!line.trimmed().isEmpty())

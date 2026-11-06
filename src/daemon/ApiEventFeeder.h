@@ -31,6 +31,8 @@ public:
     /// A state snapshot: sent only when it differs from the last one.
     void state(const QString& type, const QJsonObject& data);
 
+    using QObject::event;
+
     /// Something that happened once.
     void event(const QString& type, const QJsonObject& data);
 

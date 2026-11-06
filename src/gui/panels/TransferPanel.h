@@ -46,6 +46,7 @@ class DownloadListModel;
 struct SourceRow;
 class IpcClient;
 class PanelPoller;
+class StatusFilterBar;
 class TransferToolbar;
 
 /// Full Transfer tab page matching the MFC eMule Transfer window.
@@ -232,6 +233,9 @@ private:
     void addBootstrapAction(QMenu& menu, const QString& addr, int kadPort, int kadVersion);
     /// "transferring/total" on the category tabs, when that option is on.
     void updateCategoryTabInfo();
+    /// The downloads' status filter row: its counts, and a click.
+    void updateStatusFilterCounts();
+    void setStatusFilter(int filter);
     /// "Disable Known Clients list" / "Disable Queue list" for one client list.
     [[nodiscard]] static bool isListDisabled(int clientView);
     void toggleDownloadExpanded(const QModelIndex& proxyIdx, const QString& hash);
@@ -296,6 +300,7 @@ private:
 
     // Category tab bar — only meaningful while the top pane shows Downloads
     CategoryTabBar* m_categoryTabBar = nullptr;
+    StatusFilterBar* m_statusFilterBar = nullptr;   ///< under the header, Downloads only
 
     // Pane content areas and the view each currently holds
     QVBoxLayout* m_topContent = nullptr;

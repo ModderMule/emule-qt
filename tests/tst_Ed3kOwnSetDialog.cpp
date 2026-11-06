@@ -127,7 +127,7 @@ void tst_Ed3kOwnSetDialog::rowsAndTheirMenu()
 
     if constexpr (!kEd3kSellingShown) {
         // selling hidden for now: no sell actions
-        for (const QString id : {QStringLiteral("01"), QStringLiteral("04")}) {
+        for (const QString& id : {QStringLiteral("01"), QStringLiteral("04")}) {
             QMenu m;
             view.addSetActions(&m, id);
             QVERIFY(!actionNamed(m, Ed3kOwnSetsView::tr("Sell...")));

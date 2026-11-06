@@ -61,11 +61,11 @@ public:
         int    timeoutMs = 30000;
         uint64 maxBytes  = kMaxDownloadBytes;
         /// Sent on every hop.
-        HttpHeaderList headers;
+        HttpHeaderList headers{};
         /// Sent only while a hop stays on the first URL's host (Authorization).
-        HttpHeaderList sameHostHeaders;
+        HttpHeaderList sameHostHeaders{};
         /// Of the copy on disk; empty = unconditional download.
-        HttpValidators validators;
+        HttpValidators validators{};
         /// Errors say "HTTP <status>", never Qt's errorString(), which quotes the URL
         /// (a presigned URL or an API key must not reach a log line).
         bool redactUrls = false;

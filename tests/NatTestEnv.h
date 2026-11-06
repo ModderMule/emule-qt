@@ -251,7 +251,7 @@ struct HubFixture {
         p.serverPort = env->server->port();
         if (withHash) {
             for (int i = 0; i < 16; ++i)
-                p.hash[static_cast<size_t>(i)] = static_cast<uint8>(0x10 + i + id);
+                p.hash[static_cast<size_t>(i)] = static_cast<uint8>(0x10 + static_cast<uint32>(i) + id);
             p.hashKnown = true;
         }
         return p;

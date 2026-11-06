@@ -123,7 +123,8 @@ QPair<bool, QByteArray> searchAndGrab(IndexerSearchList& list, IndexerKind kind)
         done = true;
         out = {ok, body};
     });
-    QTest::qWaitFor([&done] { return done; }, 5000);
+    if (!QTest::qWaitFor([&done] { return done; }, 5000))
+        return {false, {}};
     return out;
 }
 

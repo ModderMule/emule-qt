@@ -178,6 +178,7 @@
   <ItemGroup>
     <ClCompile Include="..\tst_HosterPanel.cpp" />
     <ClCompile Include="..\..\src\gui\panels\HosterPanel.cpp" />
+    <ClCompile Include="..\..\src\gui\controls\StatusFilterBar.cpp" />
     <ClCompile Include="..\..\src\gui\dialogs\HosterPuzzleDialog.cpp" />
     <ClCompile Include="..\..\src\gui\utils\Appearance.cpp" />
     <ClCompile Include="..\..\src\gui\utils\FileTypeIcons.cpp" />
@@ -191,6 +192,9 @@
   </ItemGroup>
   <ItemGroup>
     <QtMoc Include="..\..\src\gui\panels\HosterPanel.h">
+      <QtMocFileName>moc_%(Filename).cpp</QtMocFileName>
+    </QtMoc>
+    <QtMoc Include="..\..\src\gui\controls\StatusFilterBar.h">
       <QtMocFileName>moc_%(Filename).cpp</QtMocFileName>
     </QtMoc>
     <QtMoc Include="..\..\src\gui\dialogs\HosterPuzzleDialog.h">

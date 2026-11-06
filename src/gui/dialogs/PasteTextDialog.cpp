@@ -96,8 +96,8 @@ PasteTextDialog::PasteTextDialog(const Chrome& chrome, QWidget* parent)
         m_paused = new QCheckBox(tr("Start paused"), this);
         layout->addWidget(m_paused);
     }
-    for (const QString& label : chrome.optionLabels) {
-        m_options.append(new QCheckBox(label, this));
+    for (const QString& optionLabel : chrome.optionLabels) {
+        m_options.append(new QCheckBox(optionLabel, this));
         layout->addWidget(m_options.back());
     }
 

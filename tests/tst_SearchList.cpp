@@ -2097,7 +2097,7 @@ void tst_SearchList::saveAndLoadSpamFilter_roundTrip()
     QCOMPARE(static_cast<uint8>(head[0]), static_cast<uint8>(MET_HEADER_I64TAGS));
     const uint32 records = static_cast<uint32>(original.m_knownSpamNames.size()
         + original.m_knownSimilarSpamNames.size() + 1 /*size*/ + 1 /*hash*/
-        + 1 /*server*/ + original.m_knownSpamSourcesIPs.size() + 1 /*ratio*/);
+        + 1 /*server*/ + static_cast<qsizetype>(original.m_knownSpamSourcesIPs.size()) + 1 /*ratio*/);
     QCOMPARE(peekUInt32(reinterpret_cast<const uint8*>(head.constData()) + 1), records);
 
     // Load into new list — twice: a reload replaces, it does not append.

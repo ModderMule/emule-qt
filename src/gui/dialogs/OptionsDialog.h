@@ -340,6 +340,9 @@ private:
     QCheckBox* m_showCatTabInfosCheck = nullptr;
     QCheckBox* m_autoRemoveFinishedCheck = nullptr;
     QCheckBox* m_showTransToolbarCheck = nullptr;
+    QCheckBox* m_downloadStatusFilterCheck = nullptr;   ///< status filter rows: Transfers, Torrents, Hoster
+    QCheckBox* m_torrentStatusFilterCheck = nullptr;
+    QCheckBox* m_hosterStatusFilterCheck = nullptr;
     QCheckBox* m_showSpeedGraphCheck = nullptr;
     QSpinBox*  m_speedGraphTimeSpin = nullptr;
     QCheckBox* m_storeSearchesCheck = nullptr;

@@ -641,13 +641,13 @@ void Ed3kSetsDialog::updateButtons()
     m_download->setEnabled(connected && !s.isEmpty()
                            && (s.value(QStringLiteral("seq")).toInteger(-1) >= 0 || s.value(QStringLiteral("pendingSeq")).toInteger(-1) >= 0));
     const QCborMap paid = paidOf(s);
-    const int paidState = paid.isEmpty() ? -1 : int(paid.value(QStringLiteral("state")).toInteger());
+    [[maybe_unused]] const int paidState = paid.isEmpty() ? -1 : int(paid.value(QStringLiteral("state")).toInteger());
     // a pass is bought with a known offer, and again when it ended or none came
     m_buy->setVisible(kEd3kSellingShown && !paid.isEmpty());
     // m_buy->setEnabled(connected && paid.value(QStringLiteral("hasOffer")).toBool() && paidState != 1 && paidState != 5
     //                   && !(paidState == 2 && paid.value(QStringLiteral("until")).toInteger() > QDateTime::currentSecsSinceEpoch()));
     // m_buy->setText(paidState == 6 ? tr("Use Pass...") : tr("Buy Pass..."));
-    const auto actionText = [this](const QCborMap& p) {
+    const auto actionText = [](const QCborMap& p) {
         const int st = int(p.value(QStringLiteral("state")).toInteger());
         if (st == 6)
             return tr("Use Pass...");

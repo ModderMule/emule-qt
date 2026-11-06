@@ -2145,7 +2145,7 @@ void tst_ServerList::removeFilteredServers_dropsNewlyBlocked()
                                           4661, QStringLiteral("Clean"))) != nullptr);
         QVERIFY(list.addServer(makeServer(blockedIp.toNetworkUint32(), 4662, QStringLiteral("Blocked"))) != nullptr);
         QVERIFY(list.addServer(makeDynServer(QStringLiteral("dyn.example.com"), 4663, QStringLiteral("Dyn"))) != nullptr);
-        list.nextServer();   // advance round-robin so removal has to adjust it
+        (void)list.nextServer();   // advance round-robin so removal has to adjust it
 
         filter.addIPRange(ntohl(blockedIp.toNetworkUint32()), ntohl(blockedIp.toNetworkUint32()),
                           0, "reload test block");

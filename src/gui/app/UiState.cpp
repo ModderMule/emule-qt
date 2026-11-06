@@ -91,6 +91,7 @@ void UiState::load(const QString& configDir)
         m_torrentSplitSizes    = readIntList(root, "torrentSplitSizes");
         m_torrentFilter        = root["torrentFilter"].as<int>(m_torrentFilter);
         m_torrentPaneTab       = root["torrentPaneTab"].as<int>(m_torrentPaneTab);
+        m_hosterFilter         = root["hosterFilter"].as<int>(m_hosterFilter);
 
         m_windowWidth      = root["windowWidth"].as<int>(m_windowWidth);
         m_windowHeight     = root["windowHeight"].as<int>(m_windowHeight);
@@ -128,6 +129,10 @@ void UiState::load(const QString& configDir)
         m_lowIdHintDisabled = root["lowIdHintDisabled"].as<bool>(m_lowIdHintDisabled);
         m_showCountryFlags = root["showCountryFlags"].as<bool>(m_showCountryFlags);
         m_showTaskbarProgress = root["showTaskbarProgress"].as<bool>(m_showTaskbarProgress);
+        m_showDownloadStatusFilter = root["showDownloadStatusFilter"].as<bool>(m_showDownloadStatusFilter);
+        m_showTorrentStatusFilter = root["showTorrentStatusFilter"].as<bool>(m_showTorrentStatusFilter);
+        m_showHosterStatusFilter = root["showHosterStatusFilter"].as<bool>(m_showHosterStatusFilter);
+        m_downloadStatusFilter = root["downloadStatusFilter"].as<int>(m_downloadStatusFilter);
         m_kadAutoShowLookups = root["kadAutoShowLookups"].as<bool>(m_kadAutoShowLookups);
         m_showDownloadToolbar = root["showDownloadToolbar"].as<bool>(m_showDownloadToolbar);
         m_toolbarButtonStyle = root["toolbarButtonStyle"].as<int>(m_toolbarButtonStyle);
@@ -235,6 +240,7 @@ void UiState::save(const QString& configDir)
     writeIntList(out, "torrentSplitSizes",    m_torrentSplitSizes);
     out << YAML::Key << "torrentFilter" << YAML::Value << m_torrentFilter;
     out << YAML::Key << "torrentPaneTab" << YAML::Value << m_torrentPaneTab;
+    out << YAML::Key << "hosterFilter" << YAML::Value << m_hosterFilter;
 
     out << YAML::Key << "windowWidth"      << YAML::Value << m_windowWidth;
     out << YAML::Key << "windowHeight"     << YAML::Value << m_windowHeight;
@@ -258,6 +264,10 @@ void UiState::save(const QString& configDir)
     out << YAML::Key << "lowIdHintDisabled" << YAML::Value << m_lowIdHintDisabled;
     out << YAML::Key << "showCountryFlags" << YAML::Value << m_showCountryFlags;
     out << YAML::Key << "showTaskbarProgress" << YAML::Value << m_showTaskbarProgress;
+    out << YAML::Key << "showDownloadStatusFilter" << YAML::Value << m_showDownloadStatusFilter;
+    out << YAML::Key << "showTorrentStatusFilter" << YAML::Value << m_showTorrentStatusFilter;
+    out << YAML::Key << "showHosterStatusFilter" << YAML::Value << m_showHosterStatusFilter;
+    out << YAML::Key << "downloadStatusFilter" << YAML::Value << m_downloadStatusFilter;
     out << YAML::Key << "kadAutoShowLookups" << YAML::Value << m_kadAutoShowLookups;
     out << YAML::Key << "showDownloadToolbar" << YAML::Value << m_showDownloadToolbar;
     out << YAML::Key << "toolbarButtonStyle" << YAML::Value << m_toolbarButtonStyle;

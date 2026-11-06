@@ -247,8 +247,8 @@ void tst_UsenetPrefs::usenetBlockIsWrittenAfterNotifications()
     QVERIFY(p.saveTo(m_file));
 
     const QString yaml = readAll(m_file);
-    const int notifications = yaml.indexOf(QStringLiteral("\nnotifications:"));
-    const int usenet = yaml.indexOf(QStringLiteral("\nusenet:"));
+    const qsizetype notifications = yaml.indexOf(QStringLiteral("\nnotifications:"));
+    const qsizetype usenet = yaml.indexOf(QStringLiteral("\nusenet:"));
     QVERIFY(notifications >= 0);
     QVERIFY(usenet >= 0);
 
@@ -268,10 +268,10 @@ void tst_UsenetPrefs::wrongKeyLeavesThePasswordEmpty()
 
     // Corrupt the key, as a half-merged config or a copied file would.
     QString yaml = readAll(m_file);
-    const int keyStart = yaml.indexOf(QStringLiteral("emailEncryptionKey: "));
+    const qsizetype keyStart = yaml.indexOf(QStringLiteral("emailEncryptionKey: "));
     QVERIFY(keyStart >= 0);
-    const int valueStart = keyStart + int(qstrlen("emailEncryptionKey: "));
-    const int valueEnd = yaml.indexOf(u'\n', valueStart);
+    const qsizetype valueStart = keyStart + qsizetype(qstrlen("emailEncryptionKey: "));
+    const qsizetype valueEnd = yaml.indexOf(u'\n', valueStart);
     yaml.replace(valueStart, valueEnd - valueStart, QString(64, u'0'));
     {
         QFile f(m_file);

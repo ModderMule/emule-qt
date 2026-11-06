@@ -2029,7 +2029,7 @@ void tst_DownloadQueue::linkSources_dropsBannedV6()
 
 void tst_DownloadQueue::linkSources_respectsMaxSourcesPerFile()
 {
-    const uint32 savedMax = thePrefs.maxSourcesPerFile();
+    const uint16 savedMax = thePrefs.maxSourcesPerFile();
     thePrefs.setMaxSourcesPerFile(2);
 
     DownloadQueue dq;

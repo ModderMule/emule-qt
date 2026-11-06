@@ -24,6 +24,8 @@
 #include <QSortFilterProxyModel>
 #include <QTest>
 
+#include <algorithm>
+
 using namespace eMule;
 
 namespace {
@@ -109,6 +111,7 @@ private slots:
     void aModelThatDoesNotAnswerTheRoleIsHiddenNotShown();
     void viewFilterFollowsMfc();
     void viewFilterModifiersFollowMfc();
+    void statusFilterRowBuckets();
 };
 
 void tst_CategoryFilterProxy::theAllTabShowsEverything()
@@ -343,6 +346,29 @@ void tst_CategoryFilterProxy::viewFilterModifiersFollowMfc()
     QVERIFY(!shown(inCat));
     cats[1].regexp = QStringLiteral("(");   // not an expression: shows nothing
     QVERIFY(!shown(inCat));
+}
+
+void tst_CategoryFilterProxy::statusFilterRowBuckets()
+{
+    // The Transfers tab's status filter row; a finished file is Complete whatever its state
+    using P = CategoryFilterProxy;
+    const auto waiting = fact("a.avi", 1, CategoryRowFacts::Waiting);
+    const auto sending = fact("b.mp3", 1, CategoryRowFacts::Transferring);
+    const auto paused = fact("c.zip", 1, CategoryRowFacts::Paused);
+    const auto broken = fact("d.iso", 0, CategoryRowFacts::Erroneous);
+    const auto done = fact("e.avi", 1, CategoryRowFacts::Paused, /*unfinished*/ false);
+    const QList<CategoryRowFacts> rows{waiting, sending, paused, broken, done};
+    const auto count = [&rows](int f) {
+        return int(std::ranges::count_if(rows, [f](const CategoryRowFacts& r) { return P::matchesStatus(r, f); }));
+    };
+    QCOMPARE(count(P::StatusAll), 5);
+    QVERIFY(P::matchesStatus(sending, P::StatusDownloading) && count(P::StatusDownloading) == 1);
+    QVERIFY(P::matchesStatus(waiting, P::StatusWaiting) && count(P::StatusWaiting) == 1);
+    QVERIFY(P::matchesStatus(paused, P::StatusPaused) && count(P::StatusPaused) == 1);
+    QVERIFY(P::matchesStatus(done, P::StatusComplete) && count(P::StatusComplete) == 1);
+    QVERIFY(P::matchesStatus(broken, P::StatusError) && count(P::StatusError) == 1);
+    for (int f = 0; f < P::StatusFilterCount; ++f)
+        QVERIFY(!P::statusFilterName(f).isEmpty());
 }
 
 QTEST_MAIN(tst_CategoryFilterProxy)
