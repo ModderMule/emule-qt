@@ -14,6 +14,8 @@
 #include "utils/Opcodes.h"
 #include "utils/OtherFunctions.h"
 
+#include <QMessageAuthenticationCode>
+
 #include <cstring>
 
 namespace eMule::natt {
@@ -142,6 +144,16 @@ bool Ed2kServerHolePunchPath::fastTick()
     return more;
 }
 
+QByteArray Ed2kServerHolePunchPath::proofMac(const std::array<uint8, 16>& token, const Hash16& hash, uint32 counter)
+{
+    QByteArray msg(reinterpret_cast<const char*>(hash.data()), 16);
+    uint8 le[4];
+    pokeUInt32(le, counter);
+    msg.append(reinterpret_cast<const char*>(le), 4);
+    const QByteArray key(reinterpret_cast<const char*>(token.data()), static_cast<qsizetype>(token.size()));
+    return QMessageAuthenticationCode::hash(msg, key, QCryptographicHash::Sha256).left(16);
+}
+
 bool Ed2kServerHolePunchPath::sendKeepalive(const Server& server, bool foreignWake)
 {
     m_lastKeepaliveMs = env().now();
@@ -169,12 +181,19 @@ bool Ed2kServerHolePunchPath::sendKeepalive(const Server& server, bool foreignWa
         log(QStringLiteral("0x9F skipped: no server key"));
         return false;
     }
-    // <user hash 16>[<token 16>]
-    auto packet = std::make_unique<Packet>(OP_SERVER_NATT_KEEPALIVE, token ? 32 : 16, OP_EDONKEYPROT);
+    // <user hash 16>[<token 16> | <counter 4><mac 16>]
+    const bool proof = token && server.natProof();
+    const uint32 size = proof ? 36 : token ? 32 : 16;
+    auto packet = std::make_unique<Packet>(OP_SERVER_NATT_KEEPALIVE, size, OP_EDONKEYPROT);
     const Hash16 hash = env().ourHash();
     std::memcpy(packet->pBuffer, hash.data(), 16);
-    if (token)
+    if (proof) {
+        const uint32 counter = ++m_proofCounter;
+        pokeUInt32(packet->pBuffer + 16, counter);
+        std::memcpy(packet->pBuffer + 20, proofMac(server.natToken(), hash, counter).constData(), 16);
+    } else if (token) {
         std::memcpy(packet->pBuffer + 16, server.natToken().data(), 16);
+    }
     if (obfuscate) {
         m_sentObfuscated = true;
         env().sendServerUdp(std::move(packet), Endpoint(address, crypt.port), crypt.key);

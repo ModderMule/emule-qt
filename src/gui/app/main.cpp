@@ -1276,7 +1276,15 @@ int main(int argc, char* argv[])
             const bool stopCore = eMule::CoreAttachment::instance().stopsOnExit();
             if (stopCore && ipcClient.isConnected()) {
                 eMule::logInfo(QStringLiteral("Shutting down daemon (attached)..."));
+                const qint64 corePid = ipcClient.corePid();
                 ipcClient.sendShutdown();
+#ifndef Q_OS_WIN
+                // SIGTERM too: a core whose event loop is stuck never reads the request,
+                // the signal still starts its exit deadline (#129). Only when the profile's
+                // lock names it: a containerised core's pid means nothing here
+                if (corePid > 0 && eMule::AppConfig::corePidFor(eMule::AppConfig::configDir()) == corePid)
+                    stopCoreProcess(corePid);
+#endif
             } else {
                 ipcClient.disconnectFromDaemon();
                 // Attached, but the connection is down: there is nobody to ask

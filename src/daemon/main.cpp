@@ -25,6 +25,7 @@
 #include "utils/BundleEnvironment.h"
 #include "utils/CrashHandler.h"
 #include "utils/Log.h"
+#include "utils/SidecarProcess.h"
 
 #include <QCoreApplication>
 #include <QDeadlineTimer>
@@ -35,26 +36,27 @@
 #include <QTcpServer>
 #include <QProcess>
 #include <QLoggingCategory>
-#include <QSocketNotifier>
 
+#include <atomic>
 #include <chrono>
-#include <condition_variable>
 #include <cstdio>
 #include <cstdlib>
-#include <mutex>
 #include <thread>
 #include <vector>
 
 #ifndef Q_OS_WIN
+#include <cerrno>
 #include <csignal>
 #include <sys/socket.h>
 #include <unistd.h>
 
 static int s_sigFd[2];
+/// A signal came before the event loop ran: quit() would be lost then.
+static std::atomic<bool> s_signalQuit{false};
 
 static void unixSignalHandler(int)
 {
-    // Async-signal-safe: just write a byte to wake the event loop
+    // Async-signal-safe: just write a byte to wake the signal thread
     char a = 1;
     ::write(s_sigFd[1], &a, sizeof(a));
 }
@@ -62,49 +64,39 @@ static void unixSignalHandler(int)
 
 namespace {
 
-/// Ends the process when the teardown hangs. A core stuck in it keeps running
-/// with no GUI and burns CPU until killed by hand (#129).
-class ShutdownWatchdog {
-public:
-    explicit ShutdownWatchdog(std::chrono::seconds limit)
-        : m_thread([this, limit] { watch(limit); })
-    {
-    }
-    ~ShutdownWatchdog()
-    {
-        {
-            const std::scoped_lock lock(m_mutex);
-            m_done = true;
-        }
-        m_cv.notify_one();
-        m_thread.join();
-    }
-    ShutdownWatchdog(const ShutdownWatchdog&) = delete;
-    ShutdownWatchdog& operator=(const ShutdownWatchdog&) = delete;
+/// Quit asked, by a signal or once the event loop ended: past this the process ends anyway.
+/// BT waits 5 s for resume data at most; the rest is quick.
+constexpr std::chrono::seconds kQuitDeadline{90};
 
-private:
-    void watch(std::chrono::seconds limit)
-    {
-        std::unique_lock lock(m_mutex);
-        if (m_cv.wait_for(lock, limit, [this] { return m_done; }))
-            return;
+/// main() has returned: statics may be gone, no more logging.
+std::atomic<bool> s_mainReturned{false};
+
+/// Ends the process kQuitDeadline after the first call, whatever hangs: the teardown, a
+/// stuck event loop, QCoreApplication's wait for the thread pool. A core stuck there kept
+/// running with no GUI, burning CPU, and its i2pd with it (#129). Never disarmed: a clean
+/// exit simply comes first. Owned sidecars (i2pd, java) are ended before.
+void armQuitDeadline()
+{
+    static std::atomic<bool> armed{false};
+    if (armed.exchange(true))
+        return;
+    std::thread([] {
+        std::this_thread::sleep_for(kQuitDeadline);
+        const auto limit = static_cast<long long>(kQuitDeadline.count());
         // Log from a thread of its own: the hung one may hold the log's lock
-        std::thread([limit] {
-            eMule::logError(QStringLiteral("Shutdown hung for %1 s, exiting now").arg(limit.count()));
-        }).detach();
-        std::fprintf(stderr, "emulecored: shutdown hung for %lld s, exiting now\n",
-                     static_cast<long long>(limit.count()));
-        if (m_cv.wait_for(lock, std::chrono::seconds(2), [this] { return m_done; }))
-            return;
+        if (!s_mainReturned.load())
+            std::thread([] {
+                eMule::logError(QStringLiteral("Shutdown hung for %1 s, exiting now")
+                                    .arg(static_cast<long long>(kQuitDeadline.count())));
+            }).detach();
+        std::fprintf(stderr, "emulecored: shutdown hung for %lld s, exiting now\n", limit);
+        eMule::SidecarProcess::signalAll(false);
+        std::this_thread::sleep_for(std::chrono::seconds(2));
+        eMule::SidecarProcess::signalAll(true);
         std::fflush(nullptr);
         std::_Exit(3);
-    }
-
-    std::mutex m_mutex;
-    std::condition_variable m_cv;
-    bool m_done = false;
-    std::thread m_thread;   ///< last: starts once the members above exist
-};
+    }).detach();
+}
 
 /// Nothing listens on the IPC port: a bind probe, as the GUI's.
 bool ipcPortFree(const QString& host, uint16_t port)
@@ -121,7 +113,7 @@ bool lockAfterStop(QLockFile& lock, const QString& ipcHost, uint16_t ipcPort)
 {
     if (lock.tryLock(2000))
         return true;
-    // Past ShutdownWatchdog's limit, so a hung core is gone by then
+    // Past kQuitDeadline, so a hung core is gone by then
     const QDeadlineTimer deadline(std::chrono::seconds(100));
     bool told = false;
     while (lock.error() == QLockFile::LockFailedError) {
@@ -168,15 +160,30 @@ int main(int argc, char* argv[])
     eMule::installLogFileMessageHandler();
 
 #ifndef Q_OS_WIN
-    // Self-pipe trick: convert SIGTERM/SIGINT/SIGHUP into Qt events for graceful shutdown
+    // Self-pipe trick: SIGTERM/SIGINT/SIGHUP become a graceful quit. Read on a thread of
+    // its own, not by the event loop: a stuck loop never saw them, and the deadline must
+    // start even then (#129).
     ::socketpair(AF_UNIX, SOCK_STREAM, 0, s_sigFd);
-    QSocketNotifier sigNotifier(s_sigFd[0], QSocketNotifier::Read);
-    QObject::connect(&sigNotifier, &QSocketNotifier::activated, &app, [&]() {
+    std::thread([fd = s_sigFd[0]] {
         char tmp;
-        ::read(s_sigFd[0], &tmp, sizeof(tmp));
-        eMule::logInfo(QStringLiteral("Signal received — shutting down gracefully..."));
-        QCoreApplication::quit();
-    });
+        for (;;) {
+            const ssize_t n = ::read(fd, &tmp, sizeof(tmp));
+            if (n < 0 && errno == EINTR)
+                continue;
+            if (n <= 0)
+                return;
+            if (s_signalQuit.exchange(true))
+                continue;
+            armQuitDeadline();
+            QCoreApplication* const core = QCoreApplication::instance();
+            if (!core)
+                continue;
+            QMetaObject::invokeMethod(core, [] {
+                eMule::logInfo(QStringLiteral("Signal received — shutting down gracefully..."));
+                QCoreApplication::quit();
+            }, Qt::QueuedConnection);
+        }
+    }).detach();
     std::signal(SIGTERM, unixSignalHandler);
     std::signal(SIGINT,  unixSignalHandler);
     std::signal(SIGHUP,  unixSignalHandler);
@@ -384,14 +391,18 @@ int main(int argc, char* argv[])
         if (stopped)
             return;
         stopped = true;
-        // BT waits 5 s for resume data at most; the rest is quick
-        const ShutdownWatchdog watchdog(std::chrono::seconds(90));
+        armQuitDeadline();
         daemon.stop();
         eMule::thePrefs.save();
     };
     eMule::WinShutdownHandler::install(shutdownNow);
 
+#ifndef Q_OS_WIN
+    // quit() before exec() does nothing
+    const int result = s_signalQuit.load() ? 0 : QCoreApplication::exec();
+#else
     const int result = QCoreApplication::exec();
+#endif
 
     shutdownNow();
     eMule::WinShutdownHandler::finished();
@@ -429,5 +440,6 @@ int main(int argc, char* argv[])
 #endif
     }
 
+    s_mainReturned.store(true);
     return result;
 }

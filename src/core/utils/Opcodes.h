@@ -752,6 +752,7 @@
 #define CT_EMULE_SERVINGBUDDYIPV6   0xA0    // hash16: serving buddy's public IPv6
 #define CT_MOD_MISCOPTIONS          0xAA    // uint32 bitfield (see MODMISC_* below)
 #define ST_IPV6_STATUS              0xAB    // uint8 bitfield (see IPV6ST_* above): server's IPv6 verdict (OP_SERVERIDENT)
+#define ST_NATT_PROOF               0xA9    // u32 = 1: ed2k-server 0.9.88 takes the 36-byte proof 0x9F (OP_SERVERIDENT tag, not the c2c opcode)
 #define ST_NATT_TOKEN               0xAC    // hash16: ed2k-server 0.9.87 per-login 0x9F token (OP_SERVERIDENT tag, not the c2c opcode below)
 // c2c opcode, NOT a tag: 16 raw IPv6 bytes, no tag wrapper. Sent under OP_EDONKEYPROT (0xE3),
 // not OP_EMULEPROT — the compatibility target builds it with Packet(opcode, size), whose protocol

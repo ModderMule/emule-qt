@@ -3,6 +3,7 @@
 /// @file SidecarProcess.h
 /// @brief A helper program the daemon runs and supervises: the hoster resolver (java),
 /// the bundled i2pd. One child at a time; its stdout+stderr come back as lines.
+/// Linux: the child gets SIGTERM when the daemon dies (PR_SET_PDEATHSIG).
 
 #include <QByteArray>
 #include <QElapsedTimer>
@@ -22,7 +23,7 @@ public:
     static constexpr qsizetype kMaxLogBuffer = 64 * 1024;
 
     explicit SidecarProcess(QObject* parent = nullptr);
-    /// Waits up to 2 s for the child, then kills it.
+    /// Waits up to 2 s for the child, then SIGTERM, 1 s later kills it.
     ~SidecarProcess() override;
 
     /// Starts @p program; false when one runs already. Merged channels; on Unix the
@@ -40,6 +41,10 @@ public:
     [[nodiscard]] qint64 uptimeMs() const;
     [[nodiscard]] QString program() const { return m_program; }
 
+    /// Signals every running sidecar of this process (SIGTERM, @p hard = SIGKILL;
+    /// Windows: kill). Any thread: the daemon's quit deadline ends them before it exits.
+    static void signalAll(bool hard);
+
 signals:
     /// One line of output, trimmed, without the newline.
     void lineRead(const QByteArray& line);
@@ -50,12 +55,15 @@ signals:
 private:
     void onRead();
     void onFinished();
+    /// Tracks the child's pid for signalAll(); 0 = none.
+    void setTrackedPid(qint64 pid);
 
     QPointer<QProcess> m_proc;
     QByteArray m_buf;
     QElapsedTimer m_startedAt;
     QString m_program;
     bool m_stopping = false;
+    qint64 m_trackedPid = 0;
 };
 
 } // namespace eMule

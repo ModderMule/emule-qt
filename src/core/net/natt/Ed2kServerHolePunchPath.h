@@ -24,6 +24,10 @@
 /// 0x9F is paused while Kad sees our UDP on another IPv4 than the server sees our TCP on
 /// (carrier NAT): the server then only takes 0x9F from the session's address. An IPv6
 /// session with a token sends 0x9F plain to the server's IPv4 and may send 0x60.
+///
+/// Proof (ed2k-server 0.9.88, ST_NATT_PROOF in OP_SERVERIDENT): the token never goes on UDP,
+/// 0x9F = <user hash 16><counter u32 LE><mac 16>, mac = HMAC-SHA256(token, hash | counter)[0..16].
+/// The counter must rise within a login; a captured 0x9F can't be replayed.
 
 #include "net/natt/NatPath.h"
 
@@ -51,6 +55,9 @@ public:
     bool fastTick() override;
     bool handleServerTcp(uint8 opcode, const QByteArray& payload) override;
 
+    /// 0.9.88 proof mac: first 16 bytes of HMAC-SHA256 keyed with the token over hash | counter LE.
+    [[nodiscard]] static QByteArray proofMac(const std::array<uint8, 16>& token, const Hash16& hash, uint32 counter);
+
 private:
     void sendRequest(Attempt& attempt);
     /// One 0x9F now; false when nothing could be sent. @p foreignWake: obfuscate when we can.
@@ -69,6 +76,7 @@ private:
     uint32 m_sessionID = 0;
     uint64 m_lastKeepaliveMs = 0;
     bool m_sentObfuscated = false;  ///< plain 0x9F are ignored from here on
+    uint32 m_proofCounter = 0;      ///< never reset: only has to rise within a login
     bool m_splitAddress = false;    ///< periodic 0x9F paused, see addressSplit()
 };
 
