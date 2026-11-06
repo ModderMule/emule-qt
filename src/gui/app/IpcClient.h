@@ -556,6 +556,11 @@ private:
     /// Unhook and close m_connection, deleting it one event-loop turn later.
     void dropConnection();
 
+    /// Wait (no event loop) until the core answers request @p seqId or hangs up.
+    /// Closing with unread pushes sends a TCP reset, and the core then drops the
+    /// Shutdown frame it has not read yet. False on timeout.
+    bool awaitShutdownAck(QTcpSocket* sock, int seqId);
+
     /// Answer every pending request with a failure, one event-loop turn later.
     void failPendingRequests();
     /// The core restarts itself: a dropped link is expected, not a lost core.
