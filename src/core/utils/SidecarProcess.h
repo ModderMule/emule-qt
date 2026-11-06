@@ -3,7 +3,7 @@
 /// @file SidecarProcess.h
 /// @brief A helper program the daemon runs and supervises: the hoster resolver (java),
 /// the bundled i2pd. One child at a time; its stdout+stderr come back as lines.
-/// Linux: the child gets SIGTERM when the daemon dies (PR_SET_PDEATHSIG).
+/// Ends with the daemon, also on crash/kill: Linux PR_SET_PDEATHSIG, Windows a kill-on-close job.
 
 #include <QByteArray>
 #include <QElapsedTimer>

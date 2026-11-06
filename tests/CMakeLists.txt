@@ -135,6 +135,7 @@ emule_add_test(tst_DefaultGateway    FOLDER "Net")
 emule_add_test(tst_PortMapWire       FOLDER "PortMap")
 emule_add_test(tst_PortMapper        FOLDER "PortMap")
 emule_add_test(tst_I2pRouter         FOLDER "Net")
+emule_add_test(tst_SidecarProcess    FOLDER "Net")
 emule_add_test(tst_UdpMappingBackend FOLDER "PortMap")
 
 # Module 5: Remaining networking classes
