@@ -70,6 +70,19 @@ void readSearching(QXmlStreamReader& xml, QHash<QString, IndexerSearchMode>& out
 
 } // namespace
 
+QString capsModeFor(QStringView queryMode)
+{
+    if (queryMode == kQueryTvSearch)
+        return kModeTvSearch.toString();
+    if (queryMode == kQueryMovie)
+        return kModeMovieSearch.toString();
+    if (queryMode == kQueryMusic)
+        return kModeAudioSearch.toString();
+    if (queryMode == kQueryBook)
+        return kModeBookSearch.toString();
+    return queryMode.toString();
+}
+
 bool IndexerCaps::supportsMode(QStringView mode) const
 {
     const auto it = modes.constFind(mode.toString());

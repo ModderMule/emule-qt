@@ -331,7 +331,7 @@ private:
     QCheckBox* m_minimizeToTrayCheck = nullptr;
     QCheckBox* m_transferDoubleClickCheck = nullptr;
     QCheckBox* m_showDwlPercentageCheck = nullptr;
-    QCheckBox* m_showPartProgressDetailCheck = nullptr;
+    QComboBox* m_downloadBarModeCombo = nullptr;
     QCheckBox* m_showActiveDownloadsBoldCheck = nullptr;
     QCheckBox* m_showRatesInTitleCheck = nullptr;
     QCheckBox* m_showCatTabInfosCheck = nullptr;

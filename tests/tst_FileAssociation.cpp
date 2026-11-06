@@ -34,6 +34,7 @@ private slots:
     void theMagnetSchemeIsAUrlProtocol();
     void theEd2kSwitchClaimsBothLinkSchemes();
     void aSwitchedOffNetworkClaimsNothing();
+    void dlcClaimsOnlyItsFileType();
     void mimeappsLosesOnlyOurHandlerOfDroppedTypes();
     void mimeappsKeepsOtherHandlersOnTheLine();
     void mimeappsRemovedAssociationsStayAlone();
@@ -314,6 +315,28 @@ void tst_FileAssociation::aSwitchedOffNetworkClaimsNothing()
     QCOMPARE(wanted, (FileAssociation::FileTypes{.nzb = false, .torrent = true, .ed2k = true}));
     // never claims what was not chosen, whatever is on
     QCOMPARE(FileAssociation::FileTypes{}.masked(chosen), FileAssociation::FileTypes{});
+}
+
+void tst_FileAssociation::dlcClaimsOnlyItsFileType()
+{
+    // off by default, like every type
+    QVERIFY(!FileAssociation::FileTypes{}.dlc);
+    const FileAssociation::FileTypes dlc{.dlc = true};
+    const auto files = FileAssociation::desktopFiles(QStringLiteral("/opt/emuleqt"),
+                                                     QStringLiteral("/home/u/.local/share"), dlc);
+    QCOMPARE(files.size(), 2);
+    QVERIFY(contentsOf(files, QStringLiteral("emuleqt.desktop"))
+                .contains(QStringLiteral("MimeType=%1;\n").arg(QLatin1String(FileAssociation::kDlcMimeType))));
+    QVERIFY(contentsOf(files, QStringLiteral("emuleqt-dlc.xml")).contains(QStringLiteral("*.dlc")));
+    QCOMPARE(FileAssociation::xdgMimeTypes(dlc), QStringList{QLatin1String(FileAssociation::kDlcMimeType)});
+
+    const auto values = FileAssociation::registryValues(QStringLiteral("C:\\e.exe"), dlc);
+    QVERIFY(std::ranges::any_of(values, [](const auto& v) { return v.key == QStringLiteral(".dlc") && v.value == QStringLiteral("eMuleQt.dlc"); }));
+    for (const auto& value : values)
+        QVERIFY2(value.key == QStringLiteral(".dlc") || value.key.startsWith(QStringLiteral("eMuleQt.dlc")), qPrintable(value.key));
+    // the network gate: hoster downloads off claims nothing
+    QCOMPARE(dlc.masked({.nzb = true, .torrent = true, .ed2k = true}), FileAssociation::FileTypes{});
+    QVERIFY(FileAssociation::FileTypes::all().dlc);
 }
 
 void tst_FileAssociation::mimeappsLosesOnlyOurHandlerOfDroppedTypes()

@@ -362,6 +362,7 @@ bool ServerSocket::processPacket(const uint8* packet, uint32 size, uint8 opcode)
         bool haveSvrIPv6Tag = false;    // CT_MOD_SVR_IP_V6 seen
         uint16 natPort = 0;             // ST_NAT_PORT (eNode-go PR_NAT)
         std::optional<std::array<uint8, 16>> natToken;   // ST_NATT_TOKEN (ed2k-server 0.9.87)
+        bool natProof = false;                           // ST_NATT_PROOF (0.9.88)
 
         // Parse tags
         try {
@@ -417,6 +418,9 @@ bool ServerSocket::processPacket(const uint8* packet, uint32 size, uint8 opcode)
                     natToken.emplace();
                     std::copy_n(tag.hashValue(), natToken->size(), natToken->begin());
                 }
+                else if (tag.nameId() == ST_NATT_PROOF && tag.isInt()) {
+                    natProof = tag.intValue() == 1;
+                }
                 else if (tag.nameId() == ST_IPV6_STATUS && tag.isInt()) {
                     // The server's verdict on whether the IPv6 we advertised is reachable.
                     const uint8 status = static_cast<uint8>(tag.intValue());
@@ -440,7 +444,9 @@ bool ServerSocket::processPacket(const uint8* packet, uint32 size, uint8 opcode)
             // only when sent: the copy is per connection, so no token of an earlier login
             if (natToken) {
                 m_curServer->setNatToken(natToken->data());
-                logServerVerbose(QStringLiteral("<<< OP_SERVERIDENT: 0x9F session token"));
+                m_curServer->setNatProof(natProof);
+                logServerVerbose(QStringLiteral("<<< OP_SERVERIDENT: 0x9F session token%1")
+                                     .arg(natProof ? QStringLiteral(" (proof)") : QString()));
             }
             // The ident body has a 4-byte IP field, so a dual-stack server always reports
             // its IPv4 there. It never replaces the address we are connected to (MFC

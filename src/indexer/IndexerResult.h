@@ -87,6 +87,13 @@ struct IndexerResult {
     /// Days since posting, or -1 when the indexer gave no date.
     [[nodiscard]] int ageDays() const;
 
+    /// Whether the size is within [minSize, maxSize]; 0 = no bound. An unknown
+    /// size (0) always passes: indexers that omit it would otherwise list nothing.
+    [[nodiscard]] bool sizeWithin(qint64 minSize, qint64 maxSize) const
+    {
+        return size <= 0 || ((minSize <= 0 || size >= minSize) && (maxSize <= 0 || size <= maxSize));
+    }
+
     /// Cross-indexer dedup key. **Heuristic**: the same release carries a
     /// different guid at every indexer, so there is nothing exact to match on
     /// and this falls back to title plus size. It will occasionally merge two

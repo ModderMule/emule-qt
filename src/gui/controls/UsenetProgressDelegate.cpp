@@ -62,6 +62,9 @@ void UsenetProgressDelegate::paint(QPainter* painter, const QStyleOptionViewItem
         const bool flat = useFlatBar();
         BarShader::fillBarRect(*painter, bar, flat ? QColor(0, 150, 0) : QColor(0, 224, 0), flat,
                                barDepth3D());
+    } else if (useSimpleDownloadBar()) {
+        paintSimpleBar(*painter, bar, index.data(kUsenetBarPercentRole).toDouble(),
+                       index.data(kUsenetBarPausedRole).toBool());
     } else {
         const QByteArray codes = index.data(kUsenetBarRole).toByteArray();
         if (codes.isEmpty()) {

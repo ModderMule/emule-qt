@@ -36,6 +36,7 @@
 #include "panels/HosterPanel.h"
 #endif
 #include "panels/UsenetPanel.h"
+#include "utils/ContainerDrop.h"
 
 #include "IpcMessage.h"
 #include "prefs/Preferences.h"
@@ -488,7 +489,7 @@ void MainWindow::showOptionsDialog(int page)
     });
     const bool hadSpeedGraph = (m_speedGraph != nullptr);
     const bool hadDwlPercentage = thePrefs.showDwlPercentage();
-    const bool hadPartDetail = thePrefs.showPartProgressDetail();
+    const int hadBarMode = thePrefs.downloadBarMode();
     const bool hadActiveBold = thePrefs.showActiveDownloadsBold();
     const int hadDepth3D = thePrefs.depth3D();
     const bool hadTorrents = !isTabHidden(TabTorrents);
@@ -505,7 +506,7 @@ void MainWindow::showOptionsDialog(int page)
 
     // Progress bars read the prefs at paint; paused rows get no push to repaint them
     if (thePrefs.showDwlPercentage() != hadDwlPercentage
-        || thePrefs.showPartProgressDetail() != hadPartDetail
+        || thePrefs.downloadBarMode() != hadBarMode
         || thePrefs.showActiveDownloadsBold() != hadActiveBold
         || thePrefs.depth3D() != hadDepth3D)
         update();
@@ -883,6 +884,13 @@ void MainWindow::dragMoveEvent(QDragMoveEvent* event)
 
 void MainWindow::dropEvent(QDropEvent* event)
 {
+#ifdef EMULE_HAVE_HOSTER_JD
+    if (m_hosterPanel && !isTabHidden(TabHoster) && m_hosterPanel->acceptContainerDrop(event->mimeData())) {
+        switchToTab(TabHoster);
+        event->acceptProposedAction();
+        return;
+    }
+#endif
 #ifdef EMULE_HAVE_BITTORRENT
     if (m_torrentPanel && m_torrentPanel->acceptTorrentDrop(event->mimeData())) {
         switchToTab(TabTorrents);
@@ -2187,6 +2195,8 @@ void MainWindow::setupPages()
     // Tab 3: Search
     m_searchPanel = new SearchPanel(this);
     addPage(m_searchPanel);
+    connect(m_searchPanel, &SearchPanel::indexerOptionsRequested, this,
+            [this] { showOptionsDialog(OptionsDialog::PageIndexers); });
 
     // Wire "Search Related Files" from TransferPanel → SearchPanel
     connect(m_transferPanel, &TransferPanel::searchRequested,
@@ -2665,6 +2675,10 @@ bool MainWindow::isOurDrop(const QMimeData* mime)
 {
     if (!gui::nzbDropCandidates(mime).isEmpty())
         return true;
+#ifdef EMULE_HAVE_HOSTER_JD
+    if (!gui::containerDropFiles(mime).isEmpty())
+        return true;
+#endif
 #ifdef EMULE_HAVE_BITTORRENT
     return !gui::torrentDropFiles(mime).isEmpty();
 #else

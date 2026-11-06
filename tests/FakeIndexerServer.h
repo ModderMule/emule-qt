@@ -71,10 +71,17 @@ protected:
             seenQueries.append(url.query());
             seenPaths.append(url.path());
 
-            const auto [status, body] = m_handler(url);
+            auto [status, body] = m_handler(url);
+            // 3xx: the handler's body is the Location
+            QByteArray location;
+            if (status >= 300 && status < 400) {
+                location = QByteArrayLiteral("Location: ") + body + QByteArrayLiteral("\r\n");
+                body.clear();
+            }
             const QByteArray header =
                 QByteArrayLiteral("HTTP/1.0 ") + QByteArray::number(status)
-                + QByteArrayLiteral(" X\r\nContent-Type: application/xml\r\nContent-Length: ")
+                + QByteArrayLiteral(" X\r\n") + location
+                + QByteArrayLiteral("Content-Type: application/xml\r\nContent-Length: ")
                 + QByteArray::number(body.size()) + QByteArrayLiteral("\r\n\r\n");
             socket->write(header);
             socket->write(body);

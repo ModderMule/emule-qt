@@ -390,6 +390,9 @@
     <ClCompile Include="utils\DiskLoadLimiter.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
+    <ClCompile Include="utils\StallWatchdog.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
     <ClCompile Include="utils\FileDate.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
@@ -1110,6 +1113,9 @@
       <Filter>Header Files</Filter>
     </QtMoc>
     <ClInclude Include="utils\DiskLoadLimiter.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="utils\StallWatchdog.h">
       <Filter>Header Files</Filter>
     </ClInclude>
     <ClInclude Include="utils\FileDate.h">

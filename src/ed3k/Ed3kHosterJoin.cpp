@@ -35,6 +35,8 @@ constexpr int kMaxTries = 5;
 constexpr int kTickMs = 1000;
 /// one item per link, at most this many
 constexpr std::size_t kMaxItems = 4096;
+/// a container file sent over IPC; DLCs are a few KiB
+constexpr qsizetype kMaxContainerBytes = 4 * 1024 * 1024;
 /// a read of the resolver's file that failed is tried again after this, at most this often
 constexpr int kReadRetryMs = 200;
 constexpr int kMaxReadFailures = 50;
@@ -308,7 +310,7 @@ QList<quint32> Ed3kHosterJoin::addLinks(const QString& text, const QString& pack
 }
 
 QList<quint32> Ed3kHosterJoin::addMirrored(const QList<QStringList>& files, const QString& package,
-                                           quint32 packageId)
+                                           quint32 packageId, const QStringList& passwords)
 {
     // the package: an existing one by id, else a new one by name; one level only
     QString packageName;
@@ -355,6 +357,7 @@ QList<quint32> Ed3kHosterJoin::addMirrored(const QList<QStringList>& files, cons
         e->item.added = nowMs();
         e->item.packageId = packageId;
         e->item.package = packageName;
+        e->item.passwords = passwords;
         e->key = newKey();
         e->item.file = partPathFor(e->key);
         e->metDirty = true;
@@ -395,6 +398,37 @@ void Ed3kHosterJoin::resume(quint32 id)
         begin(*e);
     save();
     pumpSession();
+}
+
+bool Ed3kHosterJoin::setArchivePassword(quint32 id, const QString& password)
+{
+    Entry* e = find(id);
+    if (!e || password.isEmpty() || e->item.state != State::Complete
+        || (e->item.reason != Reason::UnpackPassword && e->item.reason != Reason::UnpackFailed))
+        return false;
+    const quint32 pkg = e->item.packageId;
+    const QString dir = QFileInfo(e->item.file).absolutePath();
+    bool any = false;
+    for (auto& [oid, op] : m_items) {
+        Item& it = op->item;
+        const bool group = pkg != 0 ? it.packageId == pkg
+                                    : it.packageId == 0 && it.state == State::Complete
+                                          && QFileInfo(it.file).absolutePath() == dir;
+        if (!group)
+            continue;
+        // first: the one the user knows; the container's after it
+        it.passwords.removeAll(password);
+        it.passwords.prepend(password);
+        if (it.state == State::Complete && (it.reason == Reason::UnpackPassword || op.get() == e)) {
+            it.reason = Reason::UnpackWaiting;
+            it.reasonArg.clear();
+        }
+        changed(*op);
+        any = true;
+    }
+    save();
+    queueUnpacks();
+    return any;
 }
 
 void Ed3kHosterJoin::retry(quint32 id)
@@ -504,6 +538,29 @@ void Ed3kHosterJoin::checkAccount(const QString& host, const QString& user, cons
     }
     const auto task = m_resolver->accountCheck(host, ResolverAccount{user, password});
     m_accountChecks[task] = {host, user};
+}
+
+quint64 Ed3kHosterJoin::openContainer(const QByteArray& data, const QString& fileName)
+{
+    if (!m_resolver || !m_prefs.enabled || data.isEmpty() || data.size() > kMaxContainerBytes)
+        return 0;
+    // the plugin goes by the extension; JD reads a file
+    const QString name = safeName(QFileInfo(fileName).fileName(), QStringLiteral("links.dlc"));
+    const quint64 token = m_nextContainer++;
+    const QString dir = QDir(m_tempDirs.isEmpty() ? joinDir(QStringLiteral("hoster")) : m_tempDirs.first())
+                            .filePath(QStringLiteral("ed3k-hoster/containers"));
+    QDir().mkpath(dir);
+    const QString path = QDir(dir).filePath(QStringLiteral("%1-%2").arg(token).arg(name));
+    QFile f(path);
+    if (!f.open(QIODevice::WriteOnly | QIODevice::Truncate) || f.write(data) != data.size()) {
+        logWarning(QStringLiteral("cannot write container %1").arg(path));
+        f.remove();
+        return 0;
+    }
+    f.close();
+    m_containerAsks[m_resolver->openContainer(path)] = {token, path, name};
+    logInfo(QStringLiteral("opening container %1").arg(name));
+    return token;
 }
 
 bool Ed3kHosterJoin::checkLinks(const QStringList& urls)
@@ -1146,6 +1203,24 @@ void Ed3kHosterJoin::onResolverEvent(Ed3kResolver::TaskId task, const ResolverEv
         else
             setState(*e, State::NoResolver, Reason::ResolverNotReady, m_resolver ? m_resolver->unavailableReason() : QString());
         pumpSession();
+        return;
+    }
+    if (const auto it = m_containerAsks.find(task); it != m_containerAsks.end()) {
+        if (!ev.isFinal())
+            return;
+        const ContainerAsk c = it->second;
+        m_containerAsks.erase(it);
+        QFile::remove(c.path);
+        if (ev.kind == K::Links && !ev.links.isEmpty()) {
+            logInfo(QStringLiteral("container %1: %2 link(s)").arg(c.fileName).arg(ev.links.size()));
+            emit containerOpened(c.token, c.fileName, ev.links, {}, {});
+        } else {
+            const QString code = ev.kind == K::Links ? QStringLiteral("invalid")
+                                 : ev.code.isEmpty()  ? QStringLiteral("failed")
+                                                      : ev.code;
+            logWarning(QStringLiteral("container %1: %2 %3").arg(c.fileName, code, ev.text));
+            emit containerOpened(c.token, c.fileName, {}, code, ev.text);
+        }
         return;
     }
     if (const auto it = m_accountChecks.find(task); it != m_accountChecks.end()) {
@@ -2586,6 +2661,8 @@ QJsonObject Ed3kHosterJoin::toJson(const Entry& e) const
                   {QStringLiteral("tried"), QJsonArray::fromStringList(it.tried)}};
     if (it.packageId != 0)
         o.insert(QStringLiteral("pkgName"), it.package);
+    if (!it.passwords.isEmpty())
+        o.insert(QStringLiteral("passwords"), QJsonArray::fromStringList(it.passwords));
     return o;
 }
 
@@ -2610,6 +2687,9 @@ void Ed3kHosterJoin::fromJson(const QJsonObject& o, Entry& e) const
             it.tried << url;
     if (const QString pkg = o.value(QStringLiteral("pkgName")).toString(); !pkg.isEmpty())
         it.package = safeName(pkg, kNoName);
+    for (const QJsonValue& pw : o.value(QStringLiteral("passwords")).toArray())
+        if (const QString t = pw.toString(); !t.isEmpty())
+            it.passwords << t;
     for (const QJsonValue& lv : o.value(QStringLiteral("links")).toArray()) {
         const QJsonObject lo = lv.toObject();
         SharedLink l;
@@ -2771,7 +2851,11 @@ void Ed3kHosterJoin::queueUnpacks()
         job.destDir = destDirOf(e.item);
         job.scratchDir = QDir(dir).filePath(QStringLiteral(".unpack"));
         job.externalTool = thePrefs.usenetExternalUnpacker();
-        // ToDo: archive passwords (a package field, asked when UnpackPassword) into job.password
+        // the package's passwords (typed ones first, then a container's), of every member
+        for (const Entry* m : members)
+            for (const QString& pw : m->item.passwords)
+                if (!job.passwords.contains(pw))
+                    job.passwords << pw;
         if (!m_unpack.start(job))
             return;
         for (Entry* m : members) {

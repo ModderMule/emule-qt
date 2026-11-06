@@ -240,7 +240,7 @@ OptionsDialog::OptionsDialog(IpcClient* ipc, StatisticsPanel* statsPanel,
     connect(m_minimizeToTrayCheck, &QCheckBox::toggled, this, &OptionsDialog::markDirty);
     connect(m_transferDoubleClickCheck, &QCheckBox::toggled, this, &OptionsDialog::markDirty);
     connect(m_showDwlPercentageCheck, &QCheckBox::toggled, this, &OptionsDialog::markDirty);
-    connect(m_showPartProgressDetailCheck, &QCheckBox::toggled, this, &OptionsDialog::markDirty);
+    connect(m_downloadBarModeCombo, &QComboBox::currentIndexChanged, this, &OptionsDialog::markDirty);
     connect(m_showActiveDownloadsBoldCheck, &QCheckBox::toggled, this, &OptionsDialog::markDirty);
     connect(m_showRatesInTitleCheck, &QCheckBox::toggled, this, &OptionsDialog::markDirty);
     connect(m_showCatTabInfosCheck, &QCheckBox::toggled, this, &OptionsDialog::markDirty);
@@ -1151,11 +1151,26 @@ QWidget* OptionsDialog::createDisplayPage()
     m_showDwlPercentageCheck = new QCheckBox(tr("Show percentage of download completion in progressbar"), page);
     layout->addWidget(m_showDwlPercentageCheck);
 
-    m_showPartProgressDetailCheck = new QCheckBox(tr("Show downloaded data of unfinished parts and part boundaries"), page);
-    m_showPartProgressDetailCheck->setToolTip(
-        tr("Colours the data already downloaded in incomplete parts (green while being "
-           "requested, grey otherwise) and marks every part boundary on the progress line."));
-    layout->addWidget(m_showPartProgressDetailCheck);
+    // index = Preferences::downloadBarMode()
+    auto* barModeRow = new QHBoxLayout;
+    barModeRow->addWidget(new QLabel(tr("Download progress bar"), page));
+    m_downloadBarModeCombo = new QComboBox(page);
+    m_downloadBarModeCombo->addItem(tr("Chunks (eMule standard)"));
+    m_downloadBarModeCombo->setItemData(0,
+        tr("Shows which data you have, missing data coloured by how many sources offer it, "
+           "pending requests in yellow, and the completion line on top."), Qt::ToolTipRole);
+    m_downloadBarModeCombo->addItem(tr("Chunks with unfinished parts and part boundaries"));
+    m_downloadBarModeCombo->setItemData(1,
+        tr("As the standard bar, plus the data already downloaded in incomplete parts (green "
+           "while being requested, grey otherwise) and a mark at every part boundary on the "
+           "completion line."), Qt::ToolTipRole);
+    m_downloadBarModeCombo->addItem(tr("Simple progress bar"));
+    m_downloadBarModeCombo->setItemData(2,
+        tr("One plain bar filled up to the completed percentage, without chunk details."),
+        Qt::ToolTipRole);
+    barModeRow->addWidget(m_downloadBarModeCombo);
+    barModeRow->addStretch();
+    layout->addLayout(barModeRow);
 
     // MorphXT "Show downloading files in bold" (PPgMorph); MFC INI only
     m_showActiveDownloadsBoldCheck = new QCheckBox(tr("Show active downloads in bold"), page);
@@ -4912,7 +4927,8 @@ QWidget* OptionsDialog::createFeedsPage()
         tr("Which download category this feed's matches go into. The category "
            "decides the folder they finish in, and it is resolved when a release "
            "completes — so repointing the category moves what is still running "
-           "with it."));
+           "with it.\n\nTorrents from a torznab indexer go to the BitTorrent "
+           "download folder instead."));
     form->addRow(tr("Download category:"), m_feedDownloadCategoryCombo);
 
     m_feedGrabExistingCheck = new QCheckBox(tr("Queue what it already lists"), details);
@@ -6950,7 +6966,7 @@ void OptionsDialog::loadSettings()
     m_minimizeToTrayCheck->setChecked(thePrefs.minimizeToTray());
     m_transferDoubleClickCheck->setChecked(thePrefs.transferDoubleClick());
     m_showDwlPercentageCheck->setChecked(thePrefs.showDwlPercentage());
-    m_showPartProgressDetailCheck->setChecked(thePrefs.showPartProgressDetail());
+    m_downloadBarModeCombo->setCurrentIndex(thePrefs.downloadBarMode());
     m_showActiveDownloadsBoldCheck->setChecked(thePrefs.showActiveDownloadsBold());
     m_showRatesInTitleCheck->setChecked(thePrefs.showRatesInTitle());
     m_showCatTabInfosCheck->setChecked(thePrefs.showCatTabInfos());
@@ -7159,7 +7175,7 @@ void OptionsDialog::saveSettings()
     thePrefs.setMinimizeToTray(m_minimizeToTrayCheck->isChecked());
     thePrefs.setTransferDoubleClick(m_transferDoubleClickCheck->isChecked());
     thePrefs.setShowDwlPercentage(m_showDwlPercentageCheck->isChecked());
-    thePrefs.setShowPartProgressDetail(m_showPartProgressDetailCheck->isChecked());
+    thePrefs.setDownloadBarMode(m_downloadBarModeCombo->currentIndex());
     thePrefs.setShowActiveDownloadsBold(m_showActiveDownloadsBoldCheck->isChecked());
     thePrefs.setShowRatesInTitle(m_showRatesInTitleCheck->isChecked());
     thePrefs.setShowCatTabInfos(m_showCatTabInfosCheck->isChecked());
@@ -7817,8 +7833,8 @@ void OptionsDialog::saveSettings()
         req.append(m_transferDoubleClickCheck->isChecked());
         req.append(QStringLiteral("showDwlPercentage"));
         req.append(m_showDwlPercentageCheck->isChecked());
-        req.append(QStringLiteral("showPartProgressDetail"));
-        req.append(m_showPartProgressDetailCheck->isChecked());
+        req.append(QStringLiteral("downloadBarMode"));
+        req.append(static_cast<qint64>(m_downloadBarModeCombo->currentIndex()));
         req.append(QStringLiteral("showActiveDownloadsBold"));
         req.append(m_showActiveDownloadsBoldCheck->isChecked());
         req.append(QStringLiteral("showRatesInTitle"));
@@ -8136,9 +8152,9 @@ void OptionsDialog::saveSettings()
         const gui::FileAssociation::FileTypes wanted{
             .nzb = m_associateNzbCheck ? m_associateNzbCheck->isChecked() : m_claimedTypes.nzb,
             .torrent = m_associateTorrentCheck ? m_associateTorrentCheck->isChecked() : m_claimedTypes.torrent,
-            .ed2k = m_associateEd2kCheck ? m_associateEd2kCheck->isChecked() : m_claimedTypes.ed2k};
-        if (wanted.nzb != m_claimedTypes.nzb || wanted.torrent != m_claimedTypes.torrent
-            || wanted.ed2k != m_claimedTypes.ed2k) {
+            .ed2k = m_associateEd2kCheck ? m_associateEd2kCheck->isChecked() : m_claimedTypes.ed2k,
+            .dlc = m_ed3kPages->associateDlcCheck() ? m_ed3kPages->associateDlcCheck()->isChecked() : m_claimedTypes.dlc};
+        if (wanted != m_claimedTypes) {
             QString assocError;
             if (!gui::FileAssociation::applyFileTypes(wanted, assocError)) {
                 QMessageBox::warning(this, tr("File types"),
@@ -8152,6 +8168,8 @@ void OptionsDialog::saveSettings()
                             && m_associateNzbCheck->isChecked() != theUiState.associateNzbFiles();
     const bool torrentChanged = m_associateTorrentCheck
                                 && m_associateTorrentCheck->isChecked() != theUiState.associateTorrentFiles();
+    if (QCheckBox* dlc = m_ed3kPages->associateDlcCheck(); dlc && dlc->isChecked() != theUiState.associateDlcFiles())
+        theUiState.setAssociateDlcFiles(dlc->isChecked());
     if (nzbChanged || torrentChanged) {
         if (nzbChanged)
             theUiState.setAssociateNzbFiles(m_associateNzbCheck->isChecked());
@@ -8441,12 +8459,20 @@ void OptionsDialog::fillDaemonSettings(const QCborMap& prefs)
         m_associateTorrentCheck->setChecked(m_claimedTypes.torrent);
     if (m_associateEd2kCheck)
         m_associateEd2kCheck->setChecked(m_claimedTypes.ed2k);
+    if (QCheckBox* dlc = m_ed3kPages->associateDlcCheck()) {
+        const QSignalBlocker block(dlc);
+        dlc->setChecked(m_claimedTypes.dlc);
+    }
     m_addLinksDirectCheck->setEnabled(m_claimedTypes.ed2k || m_claimedTypes.torrent);
 #else
     if (m_associateNzbCheck)
         m_associateNzbCheck->setChecked(theUiState.associateNzbFiles());
     if (m_associateTorrentCheck)
         m_associateTorrentCheck->setChecked(theUiState.associateTorrentFiles());
+    if (QCheckBox* dlc = m_ed3kPages->associateDlcCheck()) {
+        const QSignalBlocker block(dlc);
+        dlc->setChecked(theUiState.associateDlcFiles());
+    }
 #endif
     m_addLinksDirectCheck->setChecked(theUiState.addLinksWithoutConfirm());
     m_usenetHealthMinSpin->setEnabled(m_usenetHealthCombo->currentIndex() > 0);

@@ -217,6 +217,7 @@
     <ClCompile Include="utils\NzbAdd.cpp" />
     <ClCompile Include="utils\MetaResultActions.cpp" />
     <ClCompile Include="utils\NzbDrop.cpp" />
+    <ClCompile Include="utils\ContainerDrop.cpp" />
     <ClCompile Include="utils\TorrentLinks.cpp" />
     <ClCompile Include="utils\TorrentAdd.cpp" Condition="'$(EmuleBitTorrent)'=='true'" />
     <ClCompile Include="controls\TorrentListModel.cpp" Condition="'$(EmuleBitTorrent)'=='true'" />
@@ -393,6 +394,7 @@
     <ClInclude Include="utils\NzbAdd.h" />
     <QtMoc Include="utils\MetaResultActions.h" />
     <ClInclude Include="utils\NzbDrop.h" />
+    <ClInclude Include="utils\ContainerDrop.h" />
     <ClInclude Include="utils\TorrentLinks.h" />
     <ClInclude Include="controls\TorrentFileTree.h" />
     <ClInclude Include="utils\TorrentAdd.h" Condition="'$(EmuleBitTorrent)'=='true'" />

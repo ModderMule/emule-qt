@@ -20,6 +20,7 @@
 #include "protocol/Tag.h"
 #include "server/Server.h"
 #include "server/ServerConnect.h"
+#include "utils/DiskLoadLimiter.h"
 #include "files/PartFile.h"
 #include "files/SharedDirWatcher.h"
 #include "transfer/DownloadQueue.h"
@@ -111,6 +112,7 @@ void HashingThread::runRehash(const Job& job)
 
 void HashingThread::run()
 {
+    DiskLoadLimiter::lowerThisThread();
     while (true) {
         Job job;
 

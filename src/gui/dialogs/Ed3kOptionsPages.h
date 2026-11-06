@@ -70,6 +70,9 @@ public:
     /// Selling paid subscriptions (Ed3kSellPage): acts at once over IPC.
     [[nodiscard]] QWidget* sellingPage() const;
     [[nodiscard]] QWidget* hosterPage() const { return m_hoster; }
+    /// Hoster page "Open .dlc files with eMule Qt": GUI-only (uistate.yml), OptionsDialog
+    /// loads and applies it with the other file types.
+    [[nodiscard]] QCheckBox* associateDlcCheck() const { return m_associateDlcCheck; }
 
     /// From the GetPreferences map (keys ed3k*, nick). Signals stay quiet meanwhile.
     void load(const QCborMap& prefs);
@@ -238,6 +241,7 @@ private:
     QCheckBox* m_hosterCheckLinksCheck = nullptr;
     QCheckBox* m_hosterExtractCheck = nullptr;
     QCheckBox* m_hosterDeleteArchivesCheck = nullptr;   ///< greyed out while extraction is off
+    QCheckBox* m_associateDlcCheck = nullptr;
     QCheckBox* m_publishLinksCheck = nullptr;
     QLabel* m_javaLabel = nullptr;
     QLabel* m_jdVersionLabel = nullptr;   ///< the resolver engine's JD revision

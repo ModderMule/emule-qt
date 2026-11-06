@@ -266,6 +266,12 @@ void tst_Ed3kShared::aRemovedFileIsNotShared()
     QCOMPARE(shared.hashCount(), 1);
 
     shared.onFileRemoved(md4);
+    QVERIFY(!shared.rootOf(md4));
+    // #122: unshared and shared again unchanged (a torrent check): no second hash
+    shared.onFileAdded(src.entries.front());
+    QVERIFY(shared.rootOf(md4));
+    QCOMPARE(shared.hashCount(), 1);
+    shared.onFileRemoved(md4);
     src.entries.clear();
     QVERIFY(!shared.rootOf(md4));
 

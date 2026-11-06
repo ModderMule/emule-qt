@@ -19,8 +19,8 @@ namespace eMule::indexer {
 struct IndexerQuery {
     QString text;
 
-    /// The `t=` mode. Defaults to plain keyword search; the typed modes exist
-    /// for a future "TV" / "Movies" search form and are gated on caps.
+    /// The `t=` value: `search`, or a typed one (kQueryTvSearch, kQueryMovie)
+    /// from the search form. Typed modes' parameters are gated on caps.
     QString mode = kModeSearch.toString();
 
     /// Newznab category ids. Empty means every category.
@@ -35,7 +35,17 @@ struct IndexerQuery {
     QString season;
     QString episode;
     QString imdbId;
+
+    /// Size bounds in bytes, 0 = none. Never sent (newznab has no size
+    /// parameter); IndexerSearch drops rows outside them.
+    qint64 minSize = 0;
+    qint64 maxSize = 0;
 };
+
+/// @p query as asked of an indexer: unchanged, unless @p caps were probed and lack
+/// its typed mode. Then a plain `t=search`, categories kept, season/episode
+/// added to the keywords as "S02E05" (the IMDb id has no keyword form, dropped).
+[[nodiscard]] IndexerQuery queryForIndexer(const IndexerQuery& query, const IndexerCaps& caps);
 
 /// Build a `t=caps` request for @p config.
 [[nodiscard]] QUrl buildIndexerCapsUrl(const IndexerConfig& config);

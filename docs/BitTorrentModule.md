@@ -213,8 +213,8 @@ MCP tools: `torrents_list`, `torrents_get`, `torrents_add_magnet`, `torrents_set
 
 - On in every build (`EMULE_BITTORRENT` defaults to ON; CI, Docker and the scripts pass it
   explicitly). `-DEMULE_BITTORRENT=OFF` builds without it.
-- `find_package(LibtorrentRasterbar 2.1 CONFIG)` first (vcpkg `libtorrent` ≥ 2.1.1, Homebrew),
-  else FetchContent v2.1.1 **static**, ABI 100, without WebTorrent. Headers are system
+- `find_package(LibtorrentRasterbar 2.1 CONFIG)` first (vcpkg `libtorrent` ≥ 2.1.2, Homebrew),
+  else FetchContent v2.1.2 **static**, ABI 100, without WebTorrent. Headers are system
   includes. Link the exported target: it carries `TORRENT_ABI_VERSION`.
 - FetchContent needs Boost ≥ 1.74 headers (a CMake config, or a bare tree under `BOOST_ROOT`
   / the prefix path). Missing → configure stops (`FATAL_ERROR`); it no longer drops to OFF

@@ -66,6 +66,14 @@ QString torrentStateName(TorrentState state)
     return TorrentListModel::tr("Unknown");
 }
 
+QString torrentStatusName(const TorrentRow& row)
+{
+    // MFC: a part file is "Downloading" only while a source transfers, else "Waiting"
+    if (row.state == TorrentState::Downloading && row.rateDown <= 0)
+        return TorrentListModel::tr("Waiting");
+    return torrentStateName(row.state);
+}
+
 bool torrentStateActive(TorrentState state)
 {
     switch (state) {
@@ -525,7 +533,8 @@ QVariant TorrentListModel::sortData(const TorrentRow& r, int column) const
     case ColSize:      return QVariant::fromValue(r.size);
     case ColDone:      return QVariant::fromValue(r.done);
     case ColProgress:  return r.progress;
-    case ColStatus:    return stateRank(r.state);
+    case ColStatus:    // "Waiting" right after "Downloading"
+        return stateRank(r.state) * 2 + (r.state == TorrentState::Downloading && r.rateDown <= 0 ? 1 : 0);
     case ColDownSpeed: return QVariant::fromValue(r.rateDown);
     case ColUpSpeed:   return QVariant::fromValue(r.rateUp);
     case ColSeeds:     return r.seeds;
@@ -622,7 +631,7 @@ QVariant TorrentListModel::fileData(const TorrentRow& r, const TorrentFileRow& f
 
 QString TorrentListModel::statusText(const TorrentRow& r) const
 {
-    const QString name = torrentStateName(r.state);
+    const QString name = torrentStatusName(r);
     if (r.state == TorrentState::Error && !r.error.isEmpty())
         return QStringLiteral("%1 — %2").arg(name, r.error);
     if (r.state == TorrentState::Queued && r.queuePosition >= 0)

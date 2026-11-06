@@ -1445,7 +1445,22 @@ QWidget* Ed3kOptionsPages::buildHoster(QWidget* parent)
     accBtns->addStretch();
     accLayout->addLayout(accBtns);
     layout->addWidget(accGroup);
+
+    // GUI-only: OptionsDialog loads and saves it with the other file types
+    auto* desktopGroup = new QGroupBox(tr("Desktop"), page);
+    auto* desktopLayout = new QVBoxLayout(desktopGroup);
+    m_associateDlcCheck = new QCheckBox(tr("Open .dlc files with eMule Qt"), desktopGroup);
+#ifdef Q_OS_MACOS
+    m_associateDlcCheck->setToolTip(tr("Makes eMule Qt the default app for .dlc link containers: their links "
+                                       "open in the Hoster tab. Off by default, JDownloader usually has them."));
+#else
+    m_associateDlcCheck->setToolTip(tr("Claims .dlc link containers for this copy of eMule Qt: their links open in "
+                                       "the Hoster tab. Off by default, JDownloader usually has them."));
+#endif
+    desktopLayout->addWidget(m_associateDlcCheck);
+    layout->addWidget(desktopGroup);
     layout->addStretch();
+    connect(m_associateDlcCheck, &QCheckBox::toggled, this, edited);
 
     connect(addBtn, &QPushButton::clicked, this, [this] { editAccount(-1); });
     connect(editBtn, &QPushButton::clicked, this, [this] {

@@ -7,7 +7,7 @@
 /// poller ever reached into the queue directly it would stop building.
 ///
 /// The cases that matter most assert *absences*: a first poll that adds nothing,
-/// a duplicate that is not retried, a torznab row that is never fetched. Those
+/// a duplicate that is not retried, a magnet that is never fetched. Those
 /// are the ones that silently pass when the fix is wrong.
 
 #include "FakeIndexerServer.h"
@@ -41,7 +41,9 @@ private slots:
     void addingAnIndexerToAnExistingFeedSeedsItRatherThanGrabbingItsBacklog();
     void aDuplicateRefusalIsTerminalNotARetry();
     void aFailedGrabIsRetriedAndThenGivenUpOn();
-    void aTorznabRowIsNeverGrabbedAsAnNzb();
+    void aTorznabRowIsGrabbedAsATorrent();
+    void aMagnetOnlyRowIsDeliveredWithoutAFetch();
+    void aFailedTorrentFetchFallsBackToTheMagnet();
     void aRejectedRowIsNeverRetried();
     void theSeenSetSurvivesARestart();
     void theSeenSetIsBoundedAndEvictsTheOldest();
@@ -114,6 +116,8 @@ IndexerFeed feedNamed(const QString& name)
 struct SinkLog {
     QStringList titles;
     QList<int> categories;
+    QList<bool> torrents;
+    QList<QByteArray> payloads;
     FeedAddOutcome answer = FeedAddOutcome::Added;
 
     IndexerFeedList::NzbSink install()
@@ -121,6 +125,8 @@ struct SinkLog {
         return [this](const FeedAddRequest& request, QString& error) {
             titles.append(request.title);
             categories.append(request.downloadCategory);
+            torrents.append(request.torrent);
+            payloads.append(request.payload);
             if (answer == FeedAddOutcome::Rejected)
                 error = QStringLiteral("not an NZB");
             return answer;
@@ -416,22 +422,22 @@ void tst_IndexerFeedPoller::aFailedGrabIsRetriedAndThenGivenUpOn()
              uint64(IndexerFeedList::kMaxGrabAttempts));
 }
 
-void tst_IndexerFeedPoller::aTorznabRowIsNeverGrabbedAsAnNzb()
+void tst_IndexerFeedPoller::aTorznabRowIsGrabbedAsATorrent()
 {
     QString host;
     FakeIndexerServer server([&host](const QUrl& url) {
-        if (url.path().startsWith(QStringLiteral("/nzb/")))
-            return qMakePair(200, anNzb());
-        return qMakePair(200, searchFeed({QStringLiteral("torrent-only")}, host,
+        if (url.path().contains(QStringLiteral("/nzb/")))
+            return qMakePair(200, QByteArray("d4:infod4:name1:xee"));
+        return qMakePair(200, searchFeed({QStringLiteral("torrent-row")}, host,
                                          /*torznab*/ true));
     });
     host = server.urlFor(QString());
 
-    IndexerConfig account = accountFor(server, QStringLiteral("Aggregator"));
-    account.kind = IndexerKind::Both;
+    IndexerConfig account = accountFor(server, QStringLiteral("Jackett"));
+    account.kind = IndexerKind::Torznab;
     thePrefs.setIndexers({account});
 
-    IndexerFeed feed = feedNamed(QStringLiteral("Mixed"));
+    IndexerFeed feed = feedNamed(QStringLiteral("Torrents"));
     feed.grabExisting = true;
     thePrefs.setIndexerFeeds({feed});
 
@@ -440,13 +446,76 @@ void tst_IndexerFeedPoller::aTorznabRowIsNeverGrabbedAsAnNzb()
     feeds.setNzbSink(sink.install());
     feeds.applyPreferences();
 
-    pollAndWait(feeds, QStringLiteral("Mixed"));
+    pollAndWait(feeds, QStringLiteral("Torrents"));
 
-    // A magnet has no .nzb behind it. Fetching one and handing the bytes to the
-    // sink produces a rejection that then has to be told apart from a real one.
-    QCOMPARE(sink.titles.size(), 0);
+    // A torznab-only account is polled, and its row leaves marked as a torrent
+    QCOMPARE(sink.titles, QStringList{QStringLiteral("torrent-row")});
+    QCOMPARE(sink.torrents, QList<bool>{true});
+    QVERIFY(sink.payloads.first().startsWith("d4:info"));
+    QCOMPARE(feeds.statusFor(QStringLiteral("Torrents")).lastMatched, 1);
+}
+
+void tst_IndexerFeedPoller::aMagnetOnlyRowIsDeliveredWithoutAFetch()
+{
+    const QByteArray xml = R"(<?xml version="1.0"?><rss version="2.0"
+        xmlns:torznab="http://torznab.com/schemas/2015/feed"><channel>
+        <item><title>magnet-row</title><guid>m1</guid>
+        <torznab:attr name="size" value="1000"/>
+        <torznab:attr name="infohash" value="0123456789abcdef0123456789abcdef01234567"/>
+        </item></channel></rss>)";
+    FakeIndexerServer server([&xml](const QUrl&) { return qMakePair(200, xml); });
+
+    IndexerConfig account = accountFor(server, QStringLiteral("Jackett"));
+    account.kind = IndexerKind::Torznab;
+    thePrefs.setIndexers({account});
+
+    IndexerFeed feed = feedNamed(QStringLiteral("Magnets"));
+    feed.grabExisting = true;
+    thePrefs.setIndexerFeeds({feed});
+
+    SinkLog sink;
+    IndexerFeedList feeds;
+    feeds.setNzbSink(sink.install());
+    feeds.applyPreferences();
+
+    pollAndWait(feeds, QStringLiteral("Magnets"));
+
+    QCOMPARE(sink.torrents, QList<bool>{true});
+    QVERIFY(sink.payloads.first().startsWith(
+        "magnet:?xt=urn:btih:0123456789abcdef0123456789abcdef01234567"));
+    // only the search went out
     for (const QString& path : server.seenPaths)
-        QVERIFY(!path.startsWith(QStringLiteral("/nzb/")));
+        QVERIFY2(path.endsWith(QStringLiteral("api")), qPrintable(path));
+}
+
+void tst_IndexerFeedPoller::aFailedTorrentFetchFallsBackToTheMagnet()
+{
+    QString host;
+    FakeIndexerServer server([&host](const QUrl& url) {
+        if (url.path().contains(QStringLiteral("/nzb/")))
+            return qMakePair(404, QByteArray("gone"));
+        return qMakePair(200, searchFeed({QStringLiteral("dead-link")}, host,
+                                         /*torznab*/ true));
+    });
+    host = server.urlFor(QString());
+
+    IndexerConfig account = accountFor(server, QStringLiteral("Jackett"));
+    account.kind = IndexerKind::Torznab;
+    thePrefs.setIndexers({account});
+
+    IndexerFeed feed = feedNamed(QStringLiteral("Fallback"));
+    feed.grabExisting = true;
+    thePrefs.setIndexerFeeds({feed});
+
+    SinkLog sink;
+    IndexerFeedList feeds;
+    feeds.setNzbSink(sink.install());
+    feeds.applyPreferences();
+
+    pollAndWait(feeds, QStringLiteral("Fallback"));
+
+    QCOMPARE(sink.payloads, QList<QByteArray>{QByteArray("magnet:?xt=urn:btih:abc")});
+    QCOMPARE(sink.torrents, QList<bool>{true});
 }
 
 void tst_IndexerFeedPoller::aRejectedRowIsNeverRetried()

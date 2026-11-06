@@ -51,6 +51,8 @@ private slots:
     // -- capability gating ----------------------------------------------------
     void gating_dropsAParameterTheModeDoesNotAdvertise();
     void gating_sendsEverythingWhenNothingHasBeenProbed();
+    void typedModes_gateOnTheirCapsName();
+    void fallback_foldsSeasonIntoTheKeywords();
 
     // -- redaction ------------------------------------------------------------
     void redact_removesTheKeyFromAUrl();
@@ -268,6 +270,53 @@ void tst_IndexerQuery::redact_coversTheOtherKeyParameterNames()
         QVERIFY2(!redactApiKey(prose).contains(QStringLiteral("SUPERSECRET")),
                  qPrintable(redactApiKey(prose)));
     }
+}
+
+void tst_IndexerQuery::typedModes_gateOnTheirCapsName()
+{
+    // t=tvsearch is advertised as <tv-search>, t=movie as <movie-search>
+    IndexerCaps caps;
+    caps.modes.insert(kModeTvSearch.toString(), IndexerSearchMode{true, {QStringLiteral("season")}});
+    caps.modes.insert(kModeMovieSearch.toString(), IndexerSearchMode{true, {QStringLiteral("imdbid")}});
+
+    IndexerQuery tv;
+    tv.mode = kQueryTvSearch.toString();
+    tv.season = QStringLiteral("3");
+    tv.categories = {5000};
+    const QUrl tvUrl = buildIndexerSearchUrl(makeConfig(), tv, &caps);
+    QCOMPARE(param(tvUrl, "t"), QStringLiteral("tvsearch"));
+    QCOMPARE(param(tvUrl, "season"), QStringLiteral("3"));
+    QCOMPARE(param(tvUrl, "cat"), QStringLiteral("5000"));
+
+    IndexerQuery movie;
+    movie.mode = kQueryMovie.toString();
+    movie.imdbId = QStringLiteral("133093");
+    const QUrl movieUrl = buildIndexerSearchUrl(makeConfig(), movie, &caps);
+    QCOMPARE(param(movieUrl, "t"), QStringLiteral("movie"));
+    QCOMPARE(param(movieUrl, "imdbid"), QStringLiteral("133093"));
+}
+
+void tst_IndexerQuery::fallback_foldsSeasonIntoTheKeywords()
+{
+    IndexerQuery tv;
+    tv.text = QStringLiteral("show");
+    tv.mode = kQueryTvSearch.toString();
+    tv.season = QStringLiteral("2");
+    tv.categories = {5000};
+
+    // nothing probed: asked as is
+    QCOMPARE(queryForIndexer(tv, IndexerCaps{}).mode, kQueryTvSearch.toString());
+
+    IndexerCaps caps;
+    caps.modes.insert(kModeSearch.toString(), IndexerSearchMode{true, {}});
+    const IndexerQuery plain = queryForIndexer(tv, caps);
+    QCOMPARE(plain.mode, kModeSearch.toString());
+    QCOMPARE(plain.text, QStringLiteral("show S02"));
+    QCOMPARE(plain.categories, QList<int>{5000});
+    QVERIFY(plain.season.isEmpty());
+
+    caps.modes.insert(kModeTvSearch.toString(), IndexerSearchMode{true, {}});
+    QCOMPARE(queryForIndexer(tv, caps).mode, kQueryTvSearch.toString());
 }
 
 QTEST_MAIN(tst_IndexerQuery)

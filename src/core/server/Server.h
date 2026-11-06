@@ -333,6 +333,9 @@ public:
     [[nodiscard]] bool hasNatToken() const              { return m_hasNatToken; }
     [[nodiscard]] const std::array<uint8, 16>& natToken() const { return m_natToken; }
     void setNatToken(const uint8* token);
+    /// ed2k-server 0.9.88 ST_NATT_PROOF: 0x9F carries an HMAC proof of the token, not the token.
+    [[nodiscard]] bool natProof() const                 { return m_natProof; }
+    void setNatProof(bool on)                           { m_natProof = on; }
 
     // -- Aux --------------------------------------------------------------
 
@@ -455,6 +458,7 @@ private:
     bool    m_hasServerHash = false;
     std::array<uint8, 16> m_natToken{};   // transient, never saved
     bool    m_hasNatToken = false;
+    bool    m_natProof = false;           // transient, never saved
 
     // eNode Meta API
     QString m_metaApiUrl;

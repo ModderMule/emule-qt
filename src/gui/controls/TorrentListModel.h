@@ -106,6 +106,9 @@ struct TorrentRow {
     [[nodiscard]] bool isComplete() const;
 };
 
+/// Status word of @p row: "Waiting" for a download with no incoming data (MFC part file rule).
+[[nodiscard]] QString torrentStatusName(const TorrentRow& row);
+
 /// Decode one GetTorrents / PushTorrentUpdate row.
 [[nodiscard]] TorrentRow torrentRowFromCbor(const QCborMap& m);
 

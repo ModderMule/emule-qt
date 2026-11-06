@@ -11,6 +11,14 @@
 #include <QTcpSocket>
 
 #include <algorithm>
+#include <chrono>
+#include <thread>
+
+#ifndef Q_OS_WIN
+#include <csignal>
+#include <fcntl.h>
+#include <unistd.h>
+#endif
 
 namespace eMule {
 
@@ -178,6 +186,7 @@ void I2pRouter::launch()
               "# (SAM, ports, services off), which win over this file.\n");
     writeOnce(data.filePath(QStringLiteral("tunnels.conf")), "# no tunnels: libtorrent opens its own over SAM\n");
     data.mkpath(QStringLiteral("tunnels.d"));
+    stopStaleRouter(m_config.dataDir);
     const QString certs = findCertificates(m_binary);
     if (certs.isEmpty())
         logTorrentWarning(QStringLiteral("I2P: no reseed certificates beside %1; a first start may not find the network")
@@ -292,6 +301,41 @@ quint16 I2pRouter::freeLoopbackPort()
     if (!probe.listen(QHostAddress::LocalHost, 0))
         return 0;
     return probe.serverPort();
+}
+
+void I2pRouter::stopStaleRouter(const QString& dataDir)
+{
+#ifdef Q_OS_WIN
+    Q_UNUSED(dataDir);
+#else
+    // i2pd lockf()s its pid file: F_GETLK names the holder
+    const QByteArray path = QFile::encodeName(QDir(dataDir).filePath(QStringLiteral("i2pd.pid")));
+    const int fd = ::open(path.constData(), O_RDWR);
+    if (fd < 0)
+        return;
+    const auto holder = [fd]() -> pid_t {
+        struct flock fl{};
+        fl.l_type = F_WRLCK;
+        fl.l_whence = SEEK_SET;
+        if (::fcntl(fd, F_GETLK, &fl) != 0 || fl.l_type == F_UNLCK)
+            return 0;
+        return fl.l_pid;
+    };
+    pid_t pid = holder();
+    if (pid > 0 && pid != ::getpid()) {
+        logTorrentWarning(QStringLiteral("I2P: a router left by an earlier run still runs (pid %1), stopping it").arg(pid));
+        ::kill(pid, SIGTERM);
+        // i2pd quits on SIGTERM in about a second; killed after 5
+        for (int i = 0; i < 50 && holder() == pid; ++i)
+            std::this_thread::sleep_for(std::chrono::milliseconds(100));
+        if (holder() == pid) {
+            ::kill(pid, SIGKILL);
+            for (int i = 0; i < 20 && holder() == pid; ++i)
+                std::this_thread::sleep_for(std::chrono::milliseconds(100));
+        }
+    }
+    ::close(fd);
+#endif
 }
 
 } // namespace eMule

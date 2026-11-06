@@ -69,6 +69,11 @@ struct SearchRequest {
     QString album;
     QString artist;
     QString tabTitle;        ///< empty → use expression (MFC's strSpecialTitle)
+    // indexer methods only
+    int indexerCategory = 0; ///< newznab top-level id, 0 = any
+    int season = 0;          ///< TV: 0 = none
+    int episode = 0;
+    QString imdbId;          ///< Movies
 };
 
 /// Per-search tab state.
@@ -172,10 +177,16 @@ public:
     /// Called on close, not only from the destructor: a killed GUI never gets there.
     void saveSearches();
 
+signals:
+    /// "Open Indexer Options" in the no-indexer message.
+    void indexerOptionsRequested();
+
 private slots:
     void onStartSearch();
     void onCancelSearch();
     void onResetFilters();
+    void onMethodChanged();
+    void onTypeChanged();
     void onNetworkFilterChanged();
     void onTabChanged(int index);
     void onTabCloseRequested(int index);
@@ -194,14 +205,19 @@ protected:
 
 private:
     [[nodiscard]] SearchRequest requestFromUi() const;
-    /// MFC SetParameters: wipe the form, then fill it from @p req. The method stays.
+    /// MFC SetParameters: wipe the form, then fill it from @p req. The method stays,
+    /// unless one side is an indexer search and the other is not (their type lists differ).
     void applyRequestToUi(const SearchRequest& req);
+    /// Type combo entries: eD2K file types, or newznab categories for an indexer method.
+    void fillTypeCombo(bool indexer);
     void sendSearchRequest(const SearchRequest& req);
 
     /// StartIndexerSearch instead of StartSearch. A separate path because the two
     /// requests carry different payloads: StartSearch's is ED2K-shaped
     /// (fileType, avail, completeSources) and means nothing to an indexer.
     void sendIndexerSearchRequest(const SearchRequest& req);
+    /// No enabled Usenet (or torrent) indexer: explain, offer the Options page.
+    void showNoIndexerMessage(bool torrent);
 
     /// Queue the selected indexer result: the daemon fetches the NZB with its own
     /// API key and hands it to the Usenet queue. The GUI never sees the URL.
@@ -230,7 +246,7 @@ private:
 
     void setupUi();
     QWidget* createSearchBar();
-    void setupResultHeader(bool forIndexer);
+    void setupResultHeader(const SearchTab& tab);
     /// Fetch what changed in a search's result list since the tab's last fetch.
     /// @p whole takes the full list instead: rows may have left or been re-scored.
     void requestSearchResults(uint32_t searchID, bool whole = false);
@@ -388,6 +404,15 @@ private:
     QLineEdit* m_titleEdit = nullptr;
     QLineEdit* m_albumEdit = nullptr;
     QLineEdit* m_artistEdit = nullptr;
+    // indexer methods: TV/movie fields; the type combo lists newznab categories then
+    QSpinBox* m_seasonSpin = nullptr;
+    QSpinBox* m_episodeSpin = nullptr;
+    QLineEdit* m_imdbEdit = nullptr;
+    QList<QWidget*> m_ed2kOnlyFilters;      ///< rows hidden for indexer methods
+    QList<QWidget*> m_indexerOnlyFilters;   ///< rows shown only for them
+    bool m_typeComboIndexer = false;        ///< which list the type combo holds
+    int m_ed2kTypeIndex = 0;                ///< selection kept while the other list shows
+    int m_indexerTypeIndex = 0;
     // view filters, not part of a request: what a server found on other networks
     QCheckBox* m_showUsenetCheck = nullptr;
     QCheckBox* m_showKadCheck = nullptr;

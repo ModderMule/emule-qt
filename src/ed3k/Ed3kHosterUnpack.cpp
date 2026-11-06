@@ -89,7 +89,14 @@ HosterUnpackResult Ed3kHosterUnpack::run(const HosterUnpackJob& job, const std::
     usenet::UsenetUnpacker unpacker;
     if (progress)
         unpacker.setProgressCallback([&progress](int percent, const QString&) { progress(percent); });
-    const auto u = unpacker.unpack(job.archiveDir, job.scratchDir, job.password, job.skip, job.externalTool);
+    auto u = unpacker.unpack(job.archiveDir, job.scratchDir, job.password, job.skip, job.externalTool);
+    for (const QString& pw : job.passwords) {
+        if (u.ok || !u.passwordRequired)
+            break;
+        QDir(job.scratchDir).removeRecursively();
+        QDir().mkpath(job.scratchDir);
+        u = unpacker.unpack(job.archiveDir, job.scratchDir, pw, job.skip, job.externalTool);
+    }
     if (!u.ok || u.nothingToDo) {
         r.passwordRequired = u.passwordRequired;
         r.error = u.nothingToDo ? QStringLiteral("the first volume is missing") : u.error;

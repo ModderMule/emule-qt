@@ -48,6 +48,7 @@ private slots:
     void search_bindsAttrsUnderAnUnexpectedPrefix();
     void search_readsTorznabFields();
     void search_skipsAnItemWithNoDownloadUrl();
+    void search_keepsAMagnetOnlyRow();
     void search_dedupKeyIgnoresCase();
     void search_classifiesThePasswordAttr();
     void passwordFlag_skipsAValueOnMostRows();
@@ -414,6 +415,26 @@ void tst_IndexerParse::search_readsTorznabFields()
     // A row with a torrent payload is not Usenet, whatever the account is
     // configured as — an aggregator answers one query with both kinds.
     QVERIFY(!row.isUsenet());
+}
+
+void tst_IndexerParse::search_keepsAMagnetOnlyRow()
+{
+    // public trackers via Jackett: no .torrent, only a magnet or an infohash
+    const QByteArray xml = R"(<?xml version="1.0"?>
+<rss version="2.0" xmlns:torznab="http://torznab.com/schemas/2015/feed"><channel>
+  <item><title>Magnet.Only</title><guid>m1</guid>
+    <torznab:attr name="magneturl" value="magnet:?xt=urn:btih:aa"/></item>
+  <item><title>Hash Only</title><guid>h1</guid>
+    <torznab:attr name="infohash" value="0123456789abcdef0123456789abcdef01234567"/></item>
+</channel></rss>)";
+
+    const IndexerSearchPage page = parseIndexerSearch(xml, QStringLiteral("T"), QStringLiteral("t"));
+    QCOMPARE(page.results.size(), 2);
+    QCOMPARE(page.results.at(0).downloadUrl.scheme(), QStringLiteral("magnet"));
+    QVERIFY(!page.results.at(0).isUsenet());
+    const QString built = page.results.at(1).downloadUrl.toString();
+    QVERIFY2(built.startsWith(QStringLiteral("magnet:?xt=urn:btih:0123456789abcdef")), qPrintable(built));
+    QVERIFY(built.contains(QStringLiteral("dn=Hash")));
 }
 
 void tst_IndexerParse::search_skipsAnItemWithNoDownloadUrl()

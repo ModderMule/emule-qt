@@ -134,9 +134,11 @@ void DownloadProgressDelegate::paint(QPainter* painter, const QStyleOptionViewIt
                          [flat](uint8_t status) { return sourcePartColor(status, flat); },
                          static_cast<uint64_t>(std::max<int64_t>(fileBar.fileSize, 0)));
         }
+    } else if (useSimpleDownloadBar()) {
+        paintSimpleBar(*painter, barRect, percent, paused);
     } else if (const QVariant barData = index.data(DownloadListModel::BarDataRole); barData.isValid()) {
         paintDownloadBar(*painter, barRect, barData.value<DownloadBarData>(), percent, paused,
-                         thePrefs.showPartProgressDetail());
+                         downloadBarMode() == DownloadBarMode::PartDetail);
     } else if (percent >= 100.0) {
         BarShader::fillBarRect(*painter, barRect, flat ? QColor(0, 150, 0) : QColor(0, 224, 0),
                                flat, barDepth3D());

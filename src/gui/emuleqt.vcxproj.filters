@@ -217,6 +217,9 @@
     <ClCompile Include="utils\NzbDrop.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
+    <ClCompile Include="utils\ContainerDrop.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
     <ClCompile Include="utils\TorrentLinks.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
@@ -634,6 +637,9 @@
       <Filter>Header Files</Filter>
     </QtMoc>
     <ClInclude Include="utils\NzbDrop.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="utils\ContainerDrop.h">
       <Filter>Header Files</Filter>
     </ClInclude>
     <ClInclude Include="utils\TorrentLinks.h">

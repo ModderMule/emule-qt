@@ -1,7 +1,7 @@
 cmake_minimum_required(VERSION 3.25)
 
 project(eMuleQt
-    VERSION 0.7.9
+    VERSION 0.7.11
     DESCRIPTION "eMule P2P file sharing client — Qt 6 port"
     LANGUAGES CXX
 )
@@ -435,7 +435,7 @@ endif()
 # ---------------------------------------------------------------------------
 # libtorrent-rasterbar — BitTorrent engine of src/bt (docs/BitTorrentModule-Research.local.md)
 #
-# An installed one first (vcpkg, Homebrew, distro), else a static build of v2.1.1
+# An installed one first (vcpkg, Homebrew, distro), else a static build of v2.1.2
 # against Boost headers and the OpenSSL found above (same libssl as ngtcp2/Qt).
 # Link the exported target only: it carries TORRENT_ABI_VERSION, which must be the
 # same in the library and in every unit that includes its headers.
@@ -489,7 +489,7 @@ vcpkg, or set BOOST_ROOT) or libtorrent-rasterbar >= 2.1, or pass -DEMULE_BITTOR
             # libtorrent's find_package(Boost) is module mode (FindBoost): hand it the tree
             set(Boost_INCLUDE_DIR "${EMULE_BOOST_INCLUDE_DIR}" CACHE PATH "Boost headers" FORCE)
         endif()
-        message(STATUS "libtorrent-rasterbar: FetchContent v2.1.1 (static, i2p patch)")
+        message(STATUS "libtorrent-rasterbar: FetchContent v2.1.2 (static, i2p patch)")
         # BUILD_SHARED_LIBS is global: off for libtorrent only. A normal variable:
         # it shadows any cache entry (CMP0126) and libtorrent's option() keeps it (CMP0077)
         set(_emule_saved_shared ${BUILD_SHARED_LIBS})
@@ -506,7 +506,7 @@ vcpkg, or set BOOST_ROOT) or libtorrent-rasterbar >= 2.1, or pass -DEMULE_BITTOR
         set(deprecated-functions OFF CACHE BOOL "" FORCE)
         FetchContent_Declare(libtorrent
             GIT_REPOSITORY https://github.com/arvidn/libtorrent.git
-            GIT_TAG        v2.1.1
+            GIT_TAG        v2.1.2
             GIT_SHALLOW    TRUE
             # try_signal is in the library's source list; the other submodules are not needed
             GIT_SUBMODULES deps/try_signal

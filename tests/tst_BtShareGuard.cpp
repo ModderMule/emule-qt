@@ -19,6 +19,7 @@ private slots:
     void done_releasesTheTreeAndKeepsSkippedFilesOut();
     void removed_keepsItsBlocks();
     void finished_listsCompleteFilesOnce();
+    void restart_completedStaysSharedWhileChecked();
 };
 
 namespace {
@@ -140,6 +141,45 @@ void tst_BtShareGuard::finished_listsCompleteFilesOnce()
     BtShareGuard restart;
     QVERIFY(restart.update(id, row(save, album, 0.0, BtState::CheckingResume), files).finished.isEmpty());
     QVERIFY(restart.update(id, row(save, album, 1.0, BtState::Seeding), files).finished.isEmpty());
+}
+
+// #122: a torrent completed before is not blocked while its resume data is checked
+void tst_BtShareGuard::restart_completedStaysSharedWhileChecked()
+{
+    const auto files = [] {
+        BtFileRow done;
+        done.path = QStringLiteral("Album/01.mp3");
+        done.size = done.done = 100;
+        BtFileRow skipped;
+        skipped.path = QStringLiteral("Album/extras.zip");
+        skipped.size = 100;
+        return QList<BtFileRow>{done, skipped};
+    };
+    const QString id = QStringLiteral("t");
+    BtTorrentRow checking = row(QStringLiteral("/bt"), QStringLiteral("Album"), 0.0, BtState::CheckingResume);
+    checking.completedAt = 1'700'000'000;
+
+    BtShareGuard guard;
+    const auto c = guard.update(id, checking, files);
+    QVERIFY(!c.blockedMore);
+    QVERIFY(!guard.blocks(QStringLiteral("/bt/Album/01.mp3")));
+    checking.state = BtState::CheckingFiles;
+    QVERIFY(!guard.update(id, checking, files).blockedMore);
+
+    // settled: only the skipped file goes out, nothing counts as just finished
+    BtTorrentRow seeding = checking;
+    seeding.state = BtState::Seeding;
+    seeding.progress = 1.0;
+    const auto s = guard.update(id, seeding, files);
+    QVERIFY(s.blockedMore);
+    QVERIFY(s.finished.isEmpty());
+    QVERIFY(!guard.blocks(QStringLiteral("/bt/Album/01.mp3")));
+    QVERIFY(guard.blocks(QStringLiteral("/bt/Album/extras.zip")));
+
+    // never completed: blocked from the start, as before
+    BtShareGuard fresh;
+    QVERIFY(fresh.update(id, row(QStringLiteral("/bt"), QStringLiteral("Album"), 0.0, BtState::CheckingResume), files).blockedMore);
+    QVERIFY(fresh.blocks(QStringLiteral("/bt/Album/01.mp3")));
 }
 
 QTEST_GUILESS_MAIN(tst_BtShareGuard)

@@ -37,6 +37,17 @@ inline constexpr QStringView kModeMovieSearch{u"movie-search"};
 inline constexpr QStringView kModeAudioSearch{u"audio-search"};
 inline constexpr QStringView kModeBookSearch{u"book-search"};
 
+/// The `t=` values of the typed modes. Not the caps names above: caps says
+/// `<tv-search>`, the request says `t=tvsearch`.
+inline constexpr QStringView kQueryTvSearch{u"tvsearch"};
+inline constexpr QStringView kQueryMovie{u"movie"};
+inline constexpr QStringView kQueryMusic{u"music"};
+inline constexpr QStringView kQueryBook{u"book"};
+
+/// The caps element for a `t=` value (`tvsearch` → `tv-search`). A caps name
+/// or an unknown value comes back unchanged.
+[[nodiscard]] QString capsModeFor(QStringView queryMode);
+
 struct IndexerCategory {
     int id = 0;
     QString name;

@@ -66,8 +66,9 @@ public:
     void search(const IndexerConfig& config, const IndexerQuery& query,
                 const IndexerCaps* caps, SearchCallback done);
 
-    /// Fetch a result's payload (an .nzb, or a .torrent later). Runs daemon-side
-    /// so the API key embedded in the URL never has to leave the daemon.
+    /// Fetch a result's payload: an .nzb or a .torrent, or the magnet URI as text
+    /// when the URL redirects to one (Jackett). Runs daemon-side so the API key
+    /// embedded in the URL never has to leave the daemon.
     void fetch(const IndexerConfig& config, const QUrl& url, FetchCallback done);
 
     /// The same two calls with no account behind them, for a feed the user

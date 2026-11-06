@@ -3,6 +3,7 @@
 ///        driven through the ed2k-server path (0x60/0x61/0x62, 0x9F).
 
 #include "NatTestEnv.h"
+#include "net/natt/Ed2kServerHolePunchPath.h"
 
 #include "app/AppContext.h"
 #include "utils/OtherFunctions.h"
@@ -102,6 +103,7 @@ private slots:
     void keepalive_0x9F_every60s();
     void keepalive_pausedWhileUdpAddressDiffers();
     void keepalive_tokenSentWhileUdpAddressDiffers();
+    void keepalive_proofReplacesToken();
     void ext_ipv6SessionWithToken_punchesOverIPv4();
     void connected_finishesAttempt();
     void info_repeatAfterConnect_ignored();
@@ -546,6 +548,40 @@ void tst_NatRendezvous::keepalive_tokenSentWhileUdpAddressDiffers()
     ka = g.env->udpWith(OP_EDONKEYPROT, OP_SERVER_NATT_KEEPALIVE);
     QCOMPARE(ka.size(), size_t{1});
     QCOMPARE(ka[0].payload.size(), 16);
+}
+
+void tst_NatRendezvous::keepalive_proofReplacesToken()
+{
+    // andrey's vector (ed2k-server#40, 0.9.88)
+    std::array<uint8, 16> token{};
+    Hash16 hash{};
+    for (uint8 i = 0; i < 16; ++i) {
+        token[i] = i;
+        hash[i] = static_cast<uint8>(0x10 + i);
+    }
+    QCOMPARE(Ed2kServerHolePunchPath::proofMac(token, hash, 1).toHex(),
+             QByteArray("57f631c901f652e692307db3ea25be83"));
+
+    HubFixture f;
+    Server& s = logInExtension(f);
+    s.setNatToken(token.data());
+    s.setNatProof(true);
+    f.hub->process();
+    f.advance(60000);
+    // <hash 16><counter LE 4><mac 16>, plain to TCP + 4, token never on the wire
+    const auto ka = f.env->udpWith(OP_EDONKEYPROT, OP_SERVER_NATT_KEEPALIVE);
+    QCOMPARE(ka.size(), size_t{2});
+    const QByteArray tokenBytes(reinterpret_cast<const char*>(token.data()), 16);
+    for (size_t i = 0; i < ka.size(); ++i) {
+        const QByteArray& p = ka[i].payload;
+        QCOMPARE(p.size(), 36);
+        QCOMPARE(ka[i].serverKey, 0u);
+        QCOMPARE(ka[i].to, Endpoint(kServerIP, kServerPort + 4));
+        QVERIFY(!p.contains(tokenBytes));
+        const uint32 counter = peekUInt32(p.constData() + 16);
+        QCOMPARE(counter, static_cast<uint32>(i + 1));
+        QCOMPARE(p.mid(20), Ed2kServerHolePunchPath::proofMac(token, f.env->hash, counter));
+    }
 }
 
 void tst_NatRendezvous::ext_ipv6SessionWithToken_punchesOverIPv4()

@@ -338,7 +338,9 @@ void Ed3kShared::onFileRemoved(const QByteArray& md4)
     if (!m_started)
         return;
     remove(md4);
-    m_cache.erase(md4);
+    // the hash stays (#122): unshared and shared again (a torrent check, a rescan) it is
+    // reused when path, size and date still match (add()); saveCache drops it once gone
+    // was: m_cache.erase(md4);
     scheduleSave(kOwner);
     pumpSession();
 }

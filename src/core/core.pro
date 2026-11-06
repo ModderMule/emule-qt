@@ -214,6 +214,7 @@ SOURCES += \
     utils/BlockRuns.cpp \
     utils/DebugUtils.cpp \
     utils/DiskLoadLimiter.cpp \
+    utils/StallWatchdog.cpp \
     utils/FileDate.cpp \
     utils/Log.cpp \
     utils/MassRename.cpp \
@@ -403,6 +404,7 @@ HEADERS += \
     utils/BlockRuns.h \
     utils/DebugUtils.h \
     utils/DiskLoadLimiter.h \
+    utils/StallWatchdog.h \
     utils/FileDate.h \
     utils/Exceptions.h \
     utils/Log.h \

@@ -243,6 +243,16 @@ IndexerSearchPage parseIndexerSearch(const QByteArray& xml, const QString& index
             if (row.size <= 0)
                 row.size = enclosureLength;
 
+            // magnet-only torznab row: the magnet (or one built from the infohash) is the download
+            if (row.downloadUrl.isEmpty() && row.magnetUrl.isValid() && !row.magnetUrl.isEmpty())
+                row.downloadUrl = row.magnetUrl;
+            if (row.downloadUrl.isEmpty() && !row.infoHash.isEmpty()) {
+                row.downloadUrl = QUrl(QStringLiteral("magnet:?xt=urn:btih:%1&dn=%2")
+                                           .arg(row.infoHash.trimmed(),
+                                                QString::fromLatin1(QUrl::toPercentEncoding(row.title))));
+                row.magnetUrl = row.downloadUrl;
+            }
+
             if (row.title.isEmpty() || row.downloadUrl.isEmpty())
                 continue;
 

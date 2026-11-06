@@ -404,6 +404,13 @@ void tst_BtLocalSwarm::stopAfterMetadata()
         const auto files = leecher.files(id);
         QCOMPARE(files.size(), 1);
         QCOMPARE(files.first().priority, 4);
+        // untick: read back at once, before libtorrent's disk job applied it (report 21)
+        QVERIFY(leecher.setFilePriorities(id, {0}));
+        QCOMPARE(leecher.files(id).first().priority, 0);
+        QTest::qWait(500);
+        QCOMPARE(leecher.files(id).first().priority, 0);
+        QVERIFY(leecher.setFilePriorities(id, {4}));
+        QCOMPARE(leecher.files(id).first().priority, 4);
         QTest::qWait(1000);
         QCOMPARE(leecher.torrent(id)->haveBytes, 0);
         // nothing wanted while stopped: not a finished download

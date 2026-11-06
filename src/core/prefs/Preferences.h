@@ -2009,9 +2009,10 @@ public:
 
     [[nodiscard]] bool showDwlPercentage() const;
     void setShowDwlPercentage(bool val);
-    /// MorphXT bar detail: downloaded data of unfinished parts in its own colour, part boundary dots.
-    [[nodiscard]] bool showPartProgressDetail() const;
-    void setShowPartProgressDetail(bool val);
+    /// Display > download bar: 0 MFC chunks, 1 + MorphXT part detail
+    /// (unfinished part data, boundary dots), 2 simple linear bar (GUI enum DownloadBarMode).
+    [[nodiscard]] int downloadBarMode() const;
+    void setDownloadBarMode(int val);
     /// Downloads with a transferring source, and those sources (A4AF rows too), in bold.
     [[nodiscard]] bool showActiveDownloadsBold() const;
     void setShowActiveDownloadsBold(bool val);

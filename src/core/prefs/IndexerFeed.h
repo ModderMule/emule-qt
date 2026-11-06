@@ -58,8 +58,8 @@ struct IndexerFeed {
     /// Newznab category ids. Empty means every category.
     QList<int> categories;
 
-    /// Account names to ask. Empty means every enabled account that serves
-    /// Usenet — which is also why adding an account later is a change the
+    /// Account names to ask. Empty means every enabled account, newznab or
+    /// torznab — which is also why adding an account later is a change the
     /// poller has to notice; see IndexerFeedStore's seededAccounts.
     QStringList indexers;
 

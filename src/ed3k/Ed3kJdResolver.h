@@ -94,6 +94,7 @@ public:
     TaskId match(const QString& url) override;
     TaskId check(const QString& url, const std::optional<ResolverAccount>& account) override;
     TaskId expand(const QString& url) override;
+    TaskId openContainer(const QString& path) override;
     TaskId open(const QString& url, const std::optional<ResolverAccount>& account, const QString& dir,
                 std::uint64_t have) override;
     TaskId accountCheck(const QString& host, const ResolverAccount& account) override;

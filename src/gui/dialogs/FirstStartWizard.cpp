@@ -931,7 +931,8 @@ void FirstStartWizard::applyFileTypes()
     const auto boxOr = [](const QCheckBox* box, bool kept) { return box->isEnabled() ? box->isChecked() : kept; };
     const gui::FileAssociation::FileTypes wanted{.nzb = boxOr(m_assocNzbCheck, m_shownTypes.nzb),
                                                  .torrent = boxOr(m_assocTorrentCheck, m_shownTypes.torrent),
-                                                 .ed2k = boxOr(m_assocEd2kCheck, m_shownTypes.ed2k)};
+                                                 .ed2k = boxOr(m_assocEd2kCheck, m_shownTypes.ed2k),
+                                                 .dlc = m_shownTypes.dlc};   // not asked here: kept
 #ifdef Q_OS_MACOS
     // only a change: LaunchServices may ask the user about each one
     if (wanted.nzb == m_claimedTypes.nzb && wanted.torrent == m_claimedTypes.torrent

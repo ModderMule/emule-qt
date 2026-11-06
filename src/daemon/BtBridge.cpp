@@ -503,6 +503,19 @@ QCborMap addTorrentData(const QByteArray& data, bool paused)
                     {QStringLiteral("message"), QStringLiteral("The BitTorrent engine is not running.")}};
 }
 
+QCborMap addMagnetUri(const QString& uri, bool paused)
+{
+#ifdef EMULE_HAVE_BITTORRENT
+    if (s_session && s_session->isRunning())
+        return addResultToCbor(s_session->addMagnet(uri, {}, paused));
+#else
+    Q_UNUSED(uri)
+    Q_UNUSED(paused)
+#endif
+    return QCborMap{{QStringLiteral("outcome"), 3},   // BtAddOutcome::NotRunning
+                    {QStringLiteral("message"), QStringLiteral("The BitTorrent engine is not running.")}};
+}
+
 QCborMap inspectTorrent(const QByteArray& data, QString& error)
 {
 #ifdef EMULE_HAVE_BITTORRENT

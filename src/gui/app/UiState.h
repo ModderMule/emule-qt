@@ -171,6 +171,15 @@ public:
         scheduleSave();
     }
 
+    /// Claim .dlc link containers for the Hoster tab (Windows, Linux). Off by default:
+    /// JDownloader usually owns them.
+    [[nodiscard]] bool associateDlcFiles() const { return m_associateDlcFiles; }
+    void setAssociateDlcFiles(bool on)
+    {
+        m_associateDlcFiles = on;
+        scheduleSave();
+    }
+
     /// Claim ed2k: and ed3k: links (Windows, Linux). Unset in configs from before
     /// it was stored: savedFileTypes() (Ed2kSchemeHandler) derives it then.
     [[nodiscard]] std::optional<bool> associateEd2kLinks() const { return m_associateEd2kLinks; }
@@ -180,7 +189,7 @@ public:
         scheduleSave();
     }
 
-    /// What applyDesktopIntegration() last claimed, bits 1 nzb, 2 torrent, 4 ed2k.
+    /// What applyDesktopIntegration() last claimed, bits 1 nzb, 2 torrent, 4 ed2k, 8 dlc.
     /// Unset = never applied. The desktop is only touched when the wanted set differs (#121).
     [[nodiscard]] std::optional<int> appliedFileTypes() const { return m_appliedFileTypes; }
     void setAppliedFileTypes(int bits)
@@ -453,6 +462,7 @@ private:
     int64_t m_lastVersionCheck = 0;
     bool m_associateNzbFiles = true;
     bool m_associateTorrentFiles = true;
+    bool m_associateDlcFiles = false;
     std::optional<bool> m_associateEd2kLinks;
     std::optional<int> m_appliedFileTypes;
     bool m_launcherInstalled = false;

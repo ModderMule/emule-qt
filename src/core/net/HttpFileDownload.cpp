@@ -179,6 +179,8 @@ void HttpDownloadJob::onReplyFinished()
             r.error = QStringLiteral("too many redirects");
         } else if (!target.isValid() || !isHttpScheme(target) || downgrade) {
             r.error = QStringLiteral("refused redirect (HTTP %1)").arg(r.httpStatus);
+            if (target.isValid() && !isHttpScheme(target))
+                r.refusedRedirect = target;
         } else {
             startHop(target);
             return;

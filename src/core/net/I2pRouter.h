@@ -88,6 +88,9 @@ private:
     void fail(const QString& error);
     /// A free loopback TCP port for SAM (released again before i2pd binds it).
     [[nodiscard]] static quint16 freeLoopbackPort();
+    /// Ends an i2pd still on @p dataDir from an earlier core that died or hung (#129):
+    /// it holds i2pd.pid's lock, so ours would not start. Only ours use that folder.
+    static void stopStaleRouter(const QString& dataDir);
 
     SidecarProcess m_proc;
     Config m_config;

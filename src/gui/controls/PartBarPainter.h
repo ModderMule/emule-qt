@@ -9,6 +9,7 @@
 /// goes through BarShader, so the Display page's flat/round slider applies.
 
 #include "controls/BarShader.h"
+#include "prefs/Preferences.h"
 #include "utils/Opcodes.h"
 
 #include <QByteArray>
@@ -25,6 +26,37 @@ namespace eMule {
 
 /// Height of MFC's completion strip along the top of a file bar (PROGRESS_HEIGHT).
 inline constexpr int kProgressStripHeight = 3;
+
+/// Display > download progress bar (Preferences::downloadBarMode()).
+enum class DownloadBarMode : int {
+    Chunks = 0,     ///< MFC DrawStatusBar
+    PartDetail = 1, ///< + MorphXT unfinished part data and boundary dots
+    Simple = 2,     ///< linear bar only, no chunks
+};
+
+[[nodiscard]] inline DownloadBarMode downloadBarMode()
+{
+    return static_cast<DownloadBarMode>(thePrefs.downloadBarMode());
+}
+
+[[nodiscard]] inline bool useSimpleDownloadBar()
+{
+    return downloadBarMode() == DownloadBarMode::Simple;
+}
+
+/// Simple mode: MFC's completion line at full bar height. Flat draws the grey
+/// track behind it, round shades the empty part like the bar background.
+inline void paintSimpleBar(QPainter& painter, const QRect& rect, double percent, bool paused)
+{
+    const bool flat = useFlatBar();
+    const int filled = std::clamp(int(rect.width() * percent / 100.0 + 0.5), 0, rect.width());
+    const QColor progress = paused ? (flat ? QColor(64, 120, 64) : QColor(116, 176, 116))
+                                   : (flat ? QColor(0, 150, 0) : QColor(0, 224, 0));
+    BarShader::fillBarRect(painter, rect, QColor(224, 224, 224), flat, barDepth3D());
+    if (filled > 0)
+        BarShader::fillBarRect(painter, QRect(rect.left(), rect.top(), filled, rect.height()),
+                               progress, flat, barDepth3D());
+}
 
 /// Fill @p rect with one slice per byte of @p parts, each coloured by
 /// @p colorOf(byte). With @p fileSize a slice is one PARTSIZE of the file (the

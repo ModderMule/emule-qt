@@ -229,7 +229,7 @@ void TorrentDetailsDialog::setRow(const TorrentRow& row)
         m_comment->setPlainText(row.comment);
 
     // Activity
-    m_state->setText(torrentStateName(row.state));
+    m_state->setText(torrentStatusName(row));
     const double haveShare = total > 0 ? double(row.haveBytes) / double(total) : 0.0;
     const double wantedShare = row.size > 0 ? double(row.done) / double(row.size) : 0.0;
     m_progress->setText(row.hasMetadata ? tr("%1 (%2 selected)").arg(percent(haveShare), percent(wantedShare))

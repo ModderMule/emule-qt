@@ -51,6 +51,7 @@ public final class ResolverMain {
         Jd.notJared();
         Jd.init();
         PuzzleSolver.install();
+        HeadlessUserIO.install();
         Out.log("ready, " + Jd.hostPluginCount() + " host and " + Jd.crawlerPluginCount() + " crawler plugins");
         final BufferedReader in = Out.input();
         String line;
@@ -140,6 +141,9 @@ public final class ResolverMain {
             break;
         case "expand":
             start(new ExpandTask(id, str(req.get("url"))));
+            break;
+        case "container":
+            start(new ContainerTask(id, str(req.get("path"))));
             break;
         case "open":
             start(new OpenTask(id, str(req.get("url")), Account.of(req), str(req.get("path")), num(req.get("have"))));

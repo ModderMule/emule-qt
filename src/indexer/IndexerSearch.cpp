@@ -77,7 +77,7 @@ void IndexerSearch::requestPage(int accountIndex)
 {
     AccountState& state = m_accounts[accountIndex];
 
-    IndexerQuery pageQuery = m_query;
+    IndexerQuery pageQuery = queryForIndexer(m_query, state.caps);
     pageQuery.offset = state.offset;
     if (state.caps.limitMax > 0)
         pageQuery.limit = std::min(pageQuery.limit, state.caps.limitMax);
@@ -129,6 +129,12 @@ void IndexerSearch::onPage(int accountIndex, bool ok, const IndexerSearchPage& p
     QList<IndexerResult> fresh;
     fresh.reserve(page.results.size());
     for (const auto& row : page.results) {
+        // a torznab row always has seeders, a magnet or an infohash
+        if (m_torrentsOnly && state.config.kind == IndexerKind::Both && row.isUsenet()
+            && row.seeders < 0 && row.peers < 0)
+            continue;
+        if (!row.sizeWithin(m_query.minSize, m_query.maxSize))
+            continue;
         const QString key = row.dedupKey();
         if (m_seen.contains(key))
             continue;

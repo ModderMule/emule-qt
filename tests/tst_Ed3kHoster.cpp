@@ -33,6 +33,10 @@
 #include <QTcpSocket>
 #include <QTemporaryDir>
 #include <QTest>
+#include <QStandardPaths>
+#include <QProcess>
+
+#include <array>
 #include <QTimer>
 #include <QUrl>
 
@@ -65,6 +69,25 @@ QByteArray content(int size)
     for (int i = 0; i < size; ++i)
         b[i] = char((i * 31 + i / 7) & 0xff);
     return b;
+}
+
+/// One Ed3kHosterJoin::containerOpened().
+struct Opened {
+    quint64 token = 0;
+    QString fileName;
+    QList<ResolverLink> links;
+    QString code;
+    QString text;
+};
+
+/// A slot that keeps the first containerOpened() in @p out.
+auto opened(std::optional<Opened>& out)
+{
+    return [&out](quint64 token, const QString& fileName, const QList<ResolverLink>& links, const QString& code,
+                  const QString& text) {
+        if (!out)
+            out = Opened{token, fileName, links, code, text};
+    };
 }
 
 /// Takes links of fake.example; writes <dir>/data.part in steps, then renames it to data.
@@ -160,6 +183,32 @@ public:
         ResolverEvent e;
         e.kind = ResolverEvent::Kind::Links;
         e.links = {{QStringLiteral("https://fake.example/f/a"), QStringLiteral("a"), QStringLiteral("fake.example"), 1}};
+        later(t, e);
+        return t;
+    }
+    QByteArray containerBytes;   ///< what the last openContainer() file held
+    QString containerPath;
+    /// openContainer(): "limit" in the file fails like the DLC service; else two packages
+    TaskId openContainer(const QString& path) override
+    {
+        const TaskId t = next++;
+        containerPath = path;
+        QFile f(path);
+        containerBytes = f.open(QIODevice::ReadOnly) ? f.readAll() : QByteArray();
+        ResolverEvent e;
+        if (containerBytes == "limit") {
+            e.kind = ResolverEvent::Kind::Failed;
+            e.code = QStringLiteral("limit");
+            e.text = QStringLiteral("Server claims: DLC Limit reached.");
+        } else {
+            e.kind = ResolverEvent::Kind::Links;
+            ResolverLink a{QStringLiteral("https://fake.example/c/1"), QStringLiteral("one.rar"), {}, 0};
+            a.package = QStringLiteral("Pkg A");
+            a.passwords = {QStringLiteral("pw1"), QStringLiteral("pw2")};
+            ResolverLink b{QStringLiteral("https://fake.example/c/2"), {}, {}, 0};
+            b.package = QStringLiteral("Pkg B");
+            e.links = {a, b};
+        }
         later(t, e);
         return t;
     }
@@ -488,6 +537,75 @@ class tst_Ed3kHoster : public QObject {
     Q_OBJECT
 
 private slots:
+    /// a container's bytes go to a scratch file the resolver reads; the links come back, the file goes
+    void container_opensLinksAndDropsScratch()
+    {
+        Rig r;
+        QVERIFY(r.start(true));
+        std::optional<Opened> got;
+        connect(r.join.get(), &Ed3kHosterJoin::containerOpened, this, opened(got));
+        const quint64 token = r.join->openContainer(QByteArray("dlc bytes"), QStringLiteral("../evil/My Set.dlc"));
+        QVERIFY(token != 0);
+        QTRY_VERIFY(got);
+        QCOMPARE(got->token, token);
+        QCOMPARE(got->fileName, QStringLiteral("My Set.dlc"));
+        QCOMPARE(got->links.size(), 2);
+        QCOMPARE(got->links[0].package, QStringLiteral("Pkg A"));
+        QCOMPARE(got->links[0].passwords, (QStringList{QStringLiteral("pw1"), QStringLiteral("pw2")}));
+        QVERIFY(got->code.isEmpty());
+        QCOMPARE(r.resolver.containerBytes, QByteArray("dlc bytes"));
+        // the plugin goes by the extension; no path from the GUI's name gets through
+        QVERIFY(r.resolver.containerPath.endsWith(QStringLiteral("My Set.dlc")));
+        QVERIFY(r.resolver.containerPath.startsWith(r.tmp.filePath(QStringLiteral("temp"))));
+        QVERIFY(!QFileInfo::exists(r.resolver.containerPath));
+    }
+
+    void container_failureCarriesCode()
+    {
+        Rig r;
+        QVERIFY(r.start(true));
+        std::optional<Opened> got;
+        connect(r.join.get(), &Ed3kHosterJoin::containerOpened, this, opened(got));
+        QVERIFY(r.join->openContainer(QByteArray("limit"), QStringLiteral("x.dlc")) != 0);
+        QTRY_VERIFY(got);
+        QVERIFY(got->links.isEmpty());
+        QCOMPARE(got->code, QStringLiteral("limit"));
+        QVERIFY(got->text.contains(QStringLiteral("Limit")));
+    }
+
+    /// hosters off, no bytes or too many: refused at once, nothing follows
+    void container_refused()
+    {
+        Rig r;
+        QVERIFY(r.start(false));
+        QCOMPARE(r.join->openContainer(QByteArray("x"), QStringLiteral("x.dlc")), quint64(0));
+        Rig on;
+        QVERIFY(on.start(true));
+        QCOMPARE(on.join->openContainer({}, QStringLiteral("x.dlc")), quint64(0));
+        QCOMPARE(on.join->openContainer(QByteArray(5 * 1024 * 1024, 'a'), QStringLiteral("x.dlc")), quint64(0));
+    }
+
+    /// a container's archive passwords stay with its items, across a restart
+    void addMirrored_keepsPasswords()
+    {
+        Rig r;
+        QVERIFY(r.start(true));
+        r.resolver.hosts.clear();   // no plugin: the items stay, nothing downloads
+        const QStringList pws{QStringLiteral("pw1"), QStringLiteral("pw2")};
+        const auto ids = r.join->addMirrored({{QStringLiteral("https://nohost.example/f/1")}}, QStringLiteral("Pkg"), 0, pws);
+        QCOMPARE(ids.size(), 1);
+        QCOMPARE(r.join->item(ids[0])->passwords, pws);
+        QCOMPARE(r.join->item(ids[0])->package, QStringLiteral("Pkg"));
+        r.join->stop();
+        r.join = std::make_unique<Ed3kHosterJoin>(r.session, r.tmp.filePath(QStringLiteral("cfg")));
+        r.join->setResolver(&r.resolver);
+        r.join->setConfig(r.prefs, r.tmp.filePath(QStringLiteral("temp")), r.tmp.filePath(QStringLiteral("incoming")));
+        r.join->start();
+        const auto items = r.join->items();
+        QCOMPARE(items.size(), 1);
+        QCOMPARE(items.first().passwords, pws);
+    }
+
     void linksIn_takesHttpLinksOnly()
     {
         const QStringList l = Ed3kHosterJoin::linksIn(QStringLiteral(
@@ -742,6 +860,60 @@ private slots:
         QTRY_COMPARE_WITH_TIMEOUT(r.join->item(ids[0])->reason, Ed3kHosterJoin::Reason::Unpacked, 60000);
         QVERIFY(QFileInfo::exists(QDir(r.tmp.filePath(QStringLiteral("incoming"))).filePath(QStringLiteral("only.txt"))));
         QVERIFY(!QFileInfo::exists(r.join->item(ids[0])->file));
+    }
+
+    /// an encrypted zip: the package's passwords first (a container's); none opens it ->
+    /// UnpackPassword; a typed one goes first in the package and the extraction runs again
+    void extract_passwordFromPackageThenTyped()
+    {
+        const QString zipTool = QStandardPaths::findExecutable(QStringLiteral("zip"));
+        const bool unpacker = std::ranges::any_of(std::array{"7zz", "7z", "unrar", "7za"}, [](const char* n) {
+            return !QStandardPaths::findExecutable(QString::fromLatin1(n)).isEmpty();
+        });
+        if (zipTool.isEmpty() || !unpacker)
+            QSKIP("needs zip and 7-Zip");
+        Rig r;
+        const QString src = r.tmp.filePath(QStringLiteral("enc"));
+        QVERIFY(QDir().mkpath(src));
+        QFile plain(QDir(src).filePath(QStringLiteral("secret.txt")));
+        QVERIFY(plain.open(QIODevice::WriteOnly));
+        plain.write("inside");
+        plain.close();
+        QProcess zip;
+        zip.setWorkingDirectory(src);
+        zip.start(zipTool, {QStringLiteral("-q"), QStringLiteral("-P"), QStringLiteral("right"),
+                            QStringLiteral("enc.zip"), QStringLiteral("secret.txt")});
+        QVERIFY(zip.waitForFinished(30000) && zip.exitCode() == 0);
+        QFile zf(QDir(src).filePath(QStringLiteral("enc.zip")));
+        QVERIFY(zf.open(QIODevice::ReadOnly));
+        r.resolver.data = zf.readAll();
+        r.resolver.fileName = QStringLiteral("enc.zip");
+        QVERIFY(r.start(true));
+        const QString incoming = r.tmp.filePath(QStringLiteral("incoming"));
+
+        // the container's right one among others: no question
+        const auto a = r.join->addMirrored({{QStringLiteral("https://fake.example/e/1")}}, QStringLiteral("A"), 0,
+                                           {QStringLiteral("nope"), QStringLiteral("right")});
+        QTRY_COMPARE_WITH_TIMEOUT(r.join->item(a[0])->reason, Ed3kHosterJoin::Reason::Unpacked, 60000);
+        QVERIFY(QFileInfo::exists(QDir(incoming).filePath(QStringLiteral("A/secret.txt"))));
+        QVERIFY(!r.join->setArchivePassword(a[0], QStringLiteral("right")));   // wants none
+
+        // wrong ones only: it waits for the user
+        const auto b = r.join->addMirrored({{QStringLiteral("https://fake.example/e/2")}}, QStringLiteral("B"), 0,
+                                           {QStringLiteral("nope")});
+        QTRY_COMPARE_WITH_TIMEOUT(r.join->item(b[0])->reason, Ed3kHosterJoin::Reason::UnpackPassword, 60000);
+        QVERIFY(!r.join->setArchivePassword(b[0], QString()));
+        QVERIFY(r.join->setArchivePassword(b[0], QStringLiteral("right")));
+        QCOMPARE(r.join->item(b[0])->passwords, (QStringList{QStringLiteral("right"), QStringLiteral("nope")}));
+        QTRY_COMPARE_WITH_TIMEOUT(r.join->item(b[0])->reason, Ed3kHosterJoin::Reason::Unpacked, 60000);
+        QFile out(QDir(incoming).filePath(QStringLiteral("B/secret.txt")));
+        QVERIFY(out.open(QIODevice::ReadOnly));
+        QCOMPARE(out.readAll(), QByteArray("inside"));
+        // a wrong typed one asks again
+        const auto c = r.join->addMirrored({{QStringLiteral("https://fake.example/e/3")}}, QStringLiteral("C"));
+        QTRY_COMPARE_WITH_TIMEOUT(r.join->item(c[0])->reason, Ed3kHosterJoin::Reason::UnpackPassword, 60000);
+        QVERIFY(r.join->setArchivePassword(c[0], QStringLiteral("guess")));
+        QTRY_COMPARE_WITH_TIMEOUT(r.join->item(c[0])->reason, Ed3kHosterJoin::Reason::UnpackPassword, 60000);
     }
 
     /// extraction off: the archive goes to incoming as it is; a plain file is always shared
@@ -2017,6 +2189,75 @@ private slots:
         QCOMPARE(QFileInfo(item.file).size(), qint64(198658));
         QVERIFY(!item.rootHex.isEmpty());
         QVERIFY(!QFileInfo::exists(oldPuzzle));
+    }
+
+    /// Every link container in data/dlc through the real sidecar (JD's DLC plugin asks
+    /// service.jdownloader.org for each key): links come back, with the package names.
+    /// EMULE_HOSTER_LIVE=1; the service refuses for a while after many files ("limit": skipped).
+    void live_jdResolverOpensContainers()
+    {
+        if (qEnvironmentVariable("EMULE_HOSTER_LIVE") != QLatin1StringView("1"))
+            QSKIP("live: set EMULE_HOSTER_LIVE=1");
+        const QString zip = Ed3kJdResolver::findBundledZip();
+        if (zip.isEmpty())
+            QSKIP("no resolver.zip: run scripts/build-hoster-resolver.sh");
+        const QDir dlcDir(QStringLiteral(EMULE_STRINGIFY(EMULE_PROJECT_DATA_DIR) "/dlc"));
+        const QFileInfoList files = dlcDir.entryInfoList({QStringLiteral("*.dlc"), QStringLiteral("*.rsdf"), QStringLiteral("*.ccf")},
+                                                        QDir::Files, QDir::Name);
+        if (files.isEmpty())
+            QSKIP("no containers in data/dlc");
+        QTemporaryDir tmp;
+        Ed3kJavaRuntime java(tmp.path());
+        java.locate({});
+        QTRY_VERIFY_WITH_TIMEOUT(java.state() != Ed3kJavaRuntime::State::Probing, 60000);
+        if (!java.runtime())
+            QSKIP("no Java 17+ on this machine");
+        Ed3kJdResolver resolver;
+        JdResolverConfig cfg;
+        cfg.java = java.runtime()->java;
+        cfg.dataDir = tmp.filePath(QStringLiteral("resolver"));
+        cfg.zip = zip;
+        resolver.setConfig(cfg);
+        QVERIFY2(resolver.available(), qPrintable(resolver.unavailableReason()));
+
+        Ed3kSession session;
+        QVERIFY(session.start(loopback(tmp.filePath(QStringLiteral("cfg")))));
+        Ed3kHosterJoin join(session, tmp.filePath(QStringLiteral("cfg")));
+        join.setResolver(&resolver);
+        Ed3kHosterPrefs prefs;
+        prefs.enabled = true;
+        join.setConfig(prefs, tmp.filePath(QStringLiteral("temp")), tmp.filePath(QStringLiteral("incoming")));
+        // no join.start(): a container needs only the resolver
+        for (const QFileInfo& fi : files) {
+            QFile f(fi.filePath());
+            QVERIFY(f.open(QIODevice::ReadOnly));
+            std::optional<Opened> got;
+            const auto c = connect(&join, &Ed3kHosterJoin::containerOpened, this, opened(got));
+            QVERIFY(join.openContainer(f.readAll(), fi.fileName()) != 0);
+            QTRY_VERIFY_WITH_TIMEOUT(got, 180000);
+            disconnect(c);
+            if (got->code == QLatin1StringView("limit"))
+                QSKIP(qPrintable(QStringLiteral("DLC service limit at %1").arg(fi.fileName())));
+            QVERIFY2(!got->links.isEmpty(), qPrintable(fi.fileName() + u' ' + got->code + u' ' + got->text));
+            for (const ResolverLink& l : std::as_const(got->links)) {
+                QVERIFY2(l.url.startsWith(QStringLiteral("http")), qPrintable(l.url));
+                qInfo("%s: [%s] %s %s pw=%s", qPrintable(fi.fileName()), qPrintable(l.package), qPrintable(l.name),
+                      qPrintable(l.url), qPrintable(l.passwords.join(u',')));
+            }
+            // the test files made for this (data/dlc/archive-*.dlc): known contents
+            if (fi.fileName() == QLatin1StringView("archive-test-mp3.dlc")) {
+                QCOMPARE(got->links.size(), 1);
+                QCOMPARE(got->links[0].url, QStringLiteral("https://archive.org/download/testmp3testfile/mpthreetest.mp3"));
+                QCOMPARE(got->links[0].name, QStringLiteral("mpthreetest.mp3"));
+                QCOMPARE(got->links[0].package, QStringLiteral("Archive Test MP3"));
+            } else if (fi.fileName() == QLatin1StringView("archive-two-packages.dlc")) {
+                QCOMPARE(got->links.size(), 2);
+                QCOMPARE(got->links[1].package, QStringLiteral("Archive Sample Video"));
+                QStringList pws = got->links[1].passwords;   // JD keeps them in a hash set
+                pws.sort();
+                QCOMPARE(pws, (QStringList{QStringLiteral("emuleqt"), QStringLiteral("second pw")}));
+            }
+        }
     }
 
     /// #88: two sidecars at once from one shared copy; JD writes nothing into it

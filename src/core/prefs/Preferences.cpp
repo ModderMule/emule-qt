@@ -585,7 +585,7 @@ struct Preferences::Data {
     bool minimizeToTray = true;
     bool transferDoubleClick = true;
     bool showDwlPercentage = false;
-    bool showPartProgressDetail = false;
+    int downloadBarMode = 0;                // DownloadBarMode, 0 = MFC
     bool showActiveDownloadsBold = false;   // MFC ShowActiveDownloadsBold, INI only, off; MorphXT on
     bool showRatesInTitle = false;
     bool showCatTabInfos = false;
@@ -3409,9 +3409,9 @@ bool Preferences::showDwlPercentage() const { return get(&Data::showDwlPercentag
 
 void Preferences::setShowDwlPercentage(bool val) { set(&Data::showDwlPercentage, val); }
 
-bool Preferences::showPartProgressDetail() const { return get(&Data::showPartProgressDetail); }
+int Preferences::downloadBarMode() const { return get(&Data::downloadBarMode); }
 
-void Preferences::setShowPartProgressDetail(bool val) { set(&Data::showPartProgressDetail, val); }
+void Preferences::setDownloadBarMode(int val) { set(&Data::downloadBarMode, std::clamp(val, 0, 2)); }
 
 bool Preferences::showActiveDownloadsBold() const { return get(&Data::showActiveDownloadsBold); }
 
@@ -5051,7 +5051,10 @@ bool Preferences::load(const QString& filePath)
             m_data->minimizeToTray = d["minimizeToTray"].as<bool>(m_data->minimizeToTray);
             m_data->transferDoubleClick = d["transferDoubleClick"].as<bool>(m_data->transferDoubleClick);
             m_data->showDwlPercentage = d["showDwlPercentage"].as<bool>(m_data->showDwlPercentage);
-            m_data->showPartProgressDetail = d["showPartProgressDetail"].as<bool>(m_data->showPartProgressDetail);
+            if (auto mode = d["downloadBarMode"])
+                m_data->downloadBarMode = std::clamp(mode.as<int>(m_data->downloadBarMode), 0, 2);
+            else if (d["showPartProgressDetail"].as<bool>(false)) // was: bool before the 3-way mode
+                m_data->downloadBarMode = 1;
             m_data->showActiveDownloadsBold = d["showActiveDownloadsBold"].as<bool>(m_data->showActiveDownloadsBold);
             m_data->showRatesInTitle = d["showRatesInTitle"].as<bool>(m_data->showRatesInTitle);
             m_data->showCatTabInfos = d["showCatTabInfos"].as<bool>(m_data->showCatTabInfos);
@@ -6468,7 +6471,7 @@ bool Preferences::saveImpl(const QString& filePath) const
     out << YAML::Key << "minimizeToTray" << YAML::Value << m_data->minimizeToTray;
     out << YAML::Key << "transferDoubleClick" << YAML::Value << m_data->transferDoubleClick;
     out << YAML::Key << "showDwlPercentage" << YAML::Value << m_data->showDwlPercentage;
-    out << YAML::Key << "showPartProgressDetail" << YAML::Value << m_data->showPartProgressDetail;
+    out << YAML::Key << "downloadBarMode" << YAML::Value << m_data->downloadBarMode;
     out << YAML::Key << "showActiveDownloadsBold" << YAML::Value << m_data->showActiveDownloadsBold;
     out << YAML::Key << "showRatesInTitle" << YAML::Value << m_data->showRatesInTitle;
     out << YAML::Key << "showCatTabInfos" << YAML::Value << m_data->showCatTabInfos;

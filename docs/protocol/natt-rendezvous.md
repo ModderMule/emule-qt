@@ -2,6 +2,7 @@
 
 Status 2026-10-26 (direct UDP path, Kad `nat` tag, LowID source exchange; foreign callback added, `PR_NAT` cross-server sweep retired, ed2k-server#40;
 `0x9F` session token and crypt "require" on the foreign path 2026-11-01, ed2k-server 0.9.87;
+`0x9F` token proof 2026-11-06, ed2k-server 0.9.88;
 QUIC data path since 2026-10-25): implemented in `src/core/net/natt/`. Two LowID peers learn each other's
 public UDP endpoint from an introducer, open their NAT mappings with `OP_HOLEPUNCH`, and swap
 IPv6 addresses over the opened path. With IPv6 on both sides the target then dials the
@@ -86,6 +87,12 @@ together. Any other pair gets the plain flow above.
   - IPv6 session: the token `0x9F` goes plain to the server's IPv4 (TCP + 4; the UDP key
     belongs to an IPv4 session), so we may send `0x60` and get no `0x62` reason 5. Needs the
     server's IPv4 (dual-stack row); without it, or without a token, no `0x60` as before.
+- Proof (0.9.88): the server adds `ST_NATT_PROOF` (`0xA9`, u32 = 1) next to the token. We then
+  send `0x9F <user hash 16><counter u32 LE><mac 16>` (36 bytes) instead of the token form,
+  mac = first 16 bytes of HMAC-SHA256 keyed with the token over `user hash ‖ counter LE`.
+  Same rules as the token form (plain to TCP + 4, from any address), but the token never goes
+  on UDP and a captured `0x9F` can't be replayed: the counter must rise within the login
+  (ours rises for the whole run, never reset). Without the tag we keep the 32-byte token form.
 - Requester: one `0x9F` right before each `0x60`, so the server has our fresh port.
 - Target: the server wakes us with Lugdunum's `0x37`, byte-identical. We punch towards its
   endpoint at once, send `0x9F` at 0, 0.5 and 1 s (100 ms timer) and do not dial yet.

@@ -258,7 +258,7 @@ SearchQueueBackend defaultSearchQueueBackend(SearchList& list)
     backend.validate = [](const SearchParams& params) -> QString {
         // An indexer search has its own entry point; running a server search in its
         // place would be a wrong answer, which is worse than a refusal.
-        if (params.type == SearchType::UsenetIndexer)
+        if (isIndexerSearchType(params.type))
             return QCoreApplication::translate("eMule::IpcClientHandler", "Indexer searches use StartIndexerSearch, not StartSearch.");
         // A typo is reported when the search is asked for, not when it reaches the
         // front of the queue.

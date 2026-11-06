@@ -32,6 +32,12 @@ BtShareGuard::Change BtShareGuard::update(const QString& id, const std::optional
     if (!row)
         return {};
 
+    // #122: loaded at a restart, a torrent completed before is checked first (progress 0).
+    // Blocking it then unshared every seeding file until the check ended, and the re-share
+    // hashed them all again for ed3k. Judged once settled; unfinished ones stay blocked.
+    if (!known && !settled(row->state) && row->state != bt::BtState::Moving && row->completedAt > 0)
+        return {};
+
     Change change;
     Entry next;
     {

@@ -324,12 +324,6 @@ void IndexerFeedList::beginActing(Entry& entry)
     QSet<QString> accountsThisPoll;
 
     for (const auto& row : entry.harvested) {
-        // A torznab row has no .nzb behind it. Dropped before anything else,
-        // because handing a magnet's bytes to the sink produces a rejection that
-        // then has to be told apart from a real one.
-        if (!row.isUsenet())
-            continue;
-
         const QString account = entry.sourceOf.value(row.guid);
         accountsThisPoll.insert(account);
 
@@ -399,6 +393,20 @@ void IndexerFeedList::grabNext(const QString& feedKey)
     }
 
     QPointer<IndexerFeedList> guard(this);
+
+    // magnet-only torznab row: the URI is the payload, nothing to fetch.
+    // Next event-loop turn, so a page of magnets does not recurse.
+    if (row.downloadUrl.scheme().compare(QLatin1StringView("magnet"), Qt::CaseInsensitive) == 0) {
+        QTimer::singleShot(0, this, [guard, feedKey, row] {
+            if (!guard)
+                return;
+            if (Entry* live = guard->entryFor(feedKey))
+                guard->deliver(*live, row, row.downloadUrl.toString(QUrl::FullyEncoded).toUtf8());
+            guard->grabNext(feedKey);
+        });
+        return;
+    }
+
     const auto onFetched = [guard, feedKey, row](bool ok, const QByteArray& body,
                                                  const QString& error) {
         if (!guard)
@@ -407,22 +415,15 @@ void IndexerFeedList::grabNext(const QString& feedKey)
         if (live == nullptr)
             return;
 
-        if (!ok || body.isEmpty()) {
-            FeedSeenEntry record;
-            record.guid = row.guid;
-            record.at = QDateTime::currentDateTimeUtc();
-            record.title = row.title;
-            const FeedSeenEntry* known = live->state.find(row.guid);
-            record.attempts = (known != nullptr ? known->attempts : 0) + 1;
-            // Bounded, and more than one: a single 503 must not lose a release,
-            // and a permanently dead URL must not be retried every poll forever.
-            record.state = record.attempts >= kMaxGrabAttempts ? FeedSeenState::Failed
-                                                               : FeedSeenState::Pending;
-            live->state.recordSeen(record);
-            logWarning(QStringLiteral("Feeds: \"%1\" could not fetch \"%2\": %3")
-                           .arg(live->feed.name, row.title, redactApiKey(error)));
-        } else {
+        if (ok && !body.isEmpty()) {
             guard->deliver(*live, row, body);
+        } else if (!row.isUsenet() && row.magnetUrl.isValid() && !row.magnetUrl.isEmpty()) {
+            // .torrent fetch failed, the magnet still works
+            logDebug(QStringLiteral("Feeds: \"%1\" falls back to the magnet of \"%2\": %3")
+                         .arg(live->feed.name, row.title, redactApiKey(error)));
+            guard->deliver(*live, row, row.magnetUrl.toString(QUrl::FullyEncoded).toUtf8());
+        } else {
+            guard->recordFetchFailure(*live, row, error);
         }
 
         guard->grabNext(feedKey);
@@ -432,6 +433,24 @@ void IndexerFeedList::grabNext(const QString& feedKey)
         m_client->fetch(*account, row.downloadUrl, onFetched);
     else
         m_client->fetchUrl(row.downloadUrl, thePrefs.indexerTimeoutSeconds() * 1000, onFetched);
+}
+
+void IndexerFeedList::recordFetchFailure(Entry& entry, const IndexerResult& row,
+                                         const QString& error)
+{
+    FeedSeenEntry record;
+    record.guid = row.guid;
+    record.at = QDateTime::currentDateTimeUtc();
+    record.title = row.title;
+    const FeedSeenEntry* known = entry.state.find(row.guid);
+    record.attempts = (known != nullptr ? known->attempts : 0) + 1;
+    // Bounded, and more than one: a single 503 must not lose a release,
+    // and a permanently dead URL must not be retried every poll forever.
+    record.state = record.attempts >= kMaxGrabAttempts ? FeedSeenState::Failed
+                                                       : FeedSeenState::Pending;
+    entry.state.recordSeen(record);
+    logWarning(QStringLiteral("Feeds: \"%1\" could not fetch \"%2\": %3")
+                   .arg(entry.feed.name, row.title, redactApiKey(error)));
 }
 
 void IndexerFeedList::deliver(Entry& entry, const IndexerResult& row, const QByteArray& payload)
@@ -454,8 +473,9 @@ void IndexerFeedList::deliver(Entry& entry, const IndexerResult& row, const QByt
 
     QString addError;
     const FeedAddOutcome outcome =
-        m_sink({entry.feed.name, row.title, payload, row.password,
-                entry.feed.downloadCategory},
+        m_sink({.feedName = entry.feed.name, .title = row.title, .payload = payload,
+                .torrent = !row.isUsenet(), .password = row.password,
+                .downloadCategory = entry.feed.downloadCategory},
                addError);
 
     switch (outcome) {
@@ -502,7 +522,8 @@ QList<IndexerConfig> IndexerFeedList::accountsFor(const IndexerFeed& feed) const
 {
     QList<IndexerConfig> out;
     for (const auto& account : m_accounts) {
-        if (!account.enabled || !account.servesUsenet())
+        // Usenet, torznab and Both: torrent rows go to the Torrents tab
+        if (!account.enabled)
             continue;
         if (!feed.indexers.isEmpty()
             && !feed.indexers.contains(account.name, Qt::CaseInsensitive)) {

@@ -396,9 +396,11 @@ enum class IpcMsgType : int {
     /// The cached capabilities, so the search form can grey out what this
     /// indexer does not advertise instead of sending a query it will reject.
     GetIndexerCaps          = 703,
-    /// [query, cat: [int], mode, indexers: [string]] -> [ok, searchId | error]
+    /// [query, cat: [int], mode, indexers: [string], kind: 0 Usenet | 1 torrent]
+    ///   -> [ok, searchId | error, "noIndexer"?]
     /// searchId is 0 with an error when nothing is configured — which is worth
-    /// saying, because an empty result list reads as "nothing matched".
+    /// saying, because an empty result list reads as "nothing matched". Field 2
+    /// "noIndexer": no enabled account serves that kind (GUI offers Options).
     StartIndexerSearch      = 704,
     /// [searchId: int] -> [ok]
     StopIndexerSearch       = 705,
@@ -408,7 +410,7 @@ enum class IpcMsgType : int {
     ///  priority: int, paused: bool] -> [ok, itemIdOrError]
     /// The daemon fetches the .nzb itself and hands it to the Usenet queue. The
     /// download URL carries the API key, so it never travels to the GUI and the
-    /// GUI never issues the request. A .torrent payload (Torznab) goes to the
+    /// GUI never issues the request. A .torrent or magnet (Torznab) goes to the
     /// BitTorrent engine instead: [ok, torrentIdOrError, "torrent"].
     ///
     /// Fields 3-5 are AddNzb's, and absent read the same way: 0 means "nobody
@@ -934,13 +936,16 @@ enum class IpcMsgType : int {
     /// [] -> [ok, {items: [item], status: {...GetEd3kStatus "hoster"...}}]
     GetHosterItems          = 1100,
     /// [text: string (links, one per line), files?: [[url, mirror…]], package?: string,
-    ///  packageId?: int] -> [ok, {ids: [int]}];
+    ///  packageId?: int, passwords?: [string]] -> [ok, {ids: [int]}]; passwords: archive
+    /// passwords for the unpack (a container's);
     /// files given: one item per file, its other links tried when the first fails or is
     /// stuck, text ignored. package: the items form a new package (a folder under incoming);
     /// packageId != 0: they join that package instead. PushHosterItem follows each
     AddHosterLinks          = 1101,
-    /// [id: int, op: "pause"|"resume"|"retry"|"remove"|"delete"] -> [ok]; delete also removes a complete
-    /// file; retry starts over from the first link and asks the puzzles of its hosters again
+    /// [id: int, op: "pause"|"resume"|"retry"|"remove"|"delete"|"password", password?: string] -> [ok];
+    /// delete also removes a complete file; retry starts over from the first link and asks the
+    /// puzzles of its hosters again; password: an archive password for its encrypted set, kept
+    /// with its package and tried first, the extraction runs again (failure: none is wanted)
     HosterAction            = 1102,
     /// [puzzle: int, text: string, skipHoster?: bool] -> [ok]; empty text skips the puzzle;
     /// skipHoster: also every later puzzle of that hoster, until a retry
@@ -960,6 +965,11 @@ enum class IpcMsgType : int {
     /// dialog of a web search row). PushHosterLinkCheck follows each, a fresh result at once.
     /// Failure while hoster downloads, the resolver or ed3kHosterCheckSearchLinks are off
     CheckHosterLinks        = 1108,
+    /// [fileName: string, data: bytes (at most 4 MiB)] -> [ok, {token}]; reads the links of a
+    /// link container (DLC, RSDF, CCF; the extension of fileName picks the plugin). DLC asks
+    /// JD's key service. PushHosterLinks follows with item 0 and its container map. Failure
+    /// while hoster downloads or the resolver are off
+    OpenHosterContainer     = 1109,
 
     // -- ed3k downloads (batch 12): plain ed3k files (search rows, ed3k:file links without bt=),
     // src/daemon/Ed3kDownloadsBridge.cpp. Roots (32 B) as hex. A download: {root, name, size,
@@ -1353,7 +1363,11 @@ enum class IpcMsgType : int {
     /// [item: int (0: none), puzzle: int, image: bytes, host, explain, timeout: s] — show the
     /// image puzzle, answer with AnswerHosterPuzzle
     PushHosterPuzzle       = 1152,
-    /// [item: int, links: [{url, name, host, size}]] — a folder link: ask which to add (AddHosterLinks)
+    /// [item: int, links: [{url, name, host, size, package, passwords}], container?: {token,
+    ///  fileName, code, text}] — a folder link: ask which to add (AddHosterLinks). Item 0 with
+    ///  container: an OpenHosterContainer result; no links: it failed, code says why ("limit":
+    ///  the DLC service refuses for a while, "invalid", "password", "noPlugin", "bad": the
+    ///  resolver is too old, "unavailable", "io", "failed"), text the plugin's words
     PushHosterLinks        = 1153,
     /// [host, user, {valid, premium, expires, trafficLeft, error}]
     PushHosterAccount      = 1154,

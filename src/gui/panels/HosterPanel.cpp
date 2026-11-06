@@ -7,6 +7,7 @@
 #include "app/IpcClient.h"
 #include "app/UiState.h"
 #include "dialogs/HosterPuzzleDialog.h"
+#include "utils/ContainerDrop.h"
 #include "utils/FileTypeIcons.h"
 #include "utils/ListActivation.h"
 #include "utils/MenuUtils.h"
@@ -22,14 +23,20 @@
 #include <QDesktopServices>
 #include <QDialog>
 #include <QDialogButtonBox>
+#include <QDir>
+#include <QDragEnterEvent>
+#include <QFile>
+#include <QFileDialog>
 #include <QFileInfo>
 #include <QHBoxLayout>
 #include <QHeaderView>
+#include <QInputDialog>
 #include <QLabel>
 #include <QLineEdit>
 #include <QListWidget>
 #include <QMenu>
 #include <QMessageBox>
+#include <QMimeData>
 #include <QPlainTextEdit>
 #include <QPushButton>
 #include <QRadioButton>
@@ -54,6 +61,8 @@ constexpr int kPackageIdRole = Qt::UserRole + 2;
 constexpr int kStateDownloading = 5;
 constexpr int kStatePaused = 7;
 constexpr int kStateComplete = 8;
+/// a container sent to the core; DLCs are a few KiB (the core's cap)
+constexpr qint64 kMaxContainerBytes = 4 * 1024 * 1024;
 /// Ed3kHosterJoin::Reason
 constexpr int kReasonUnpacked = 32;
 constexpr int kReasonUnpackFailed = 33;
@@ -133,7 +142,7 @@ QString reasonText(int reason, const QString& arg)
     case 31: return HosterPanel::tr("Extracting %1%").arg(arg);
     case 32: return HosterPanel::tr("Extracted to %1").arg(arg);
     case 33: return HosterPanel::tr("Extraction failed: %1 (Retry tries again)").arg(arg);
-    case 34: return HosterPanel::tr("The archive needs a password");
+    case 34: return HosterPanel::tr("The archive needs a password (Set Password…)");
     default: return {};
     }
 }
@@ -178,9 +187,14 @@ HosterPanel::HosterPanel(QWidget* parent)
     bar->addWidget(title);
     m_statusLabel = new QLabel(this);
     bar->addWidget(m_statusLabel, 1);
-    auto* addBtn = new QPushButton(tr("Add links..."), this);
+    auto* addBtn = new QPushButton(menuIcon("ListAdd.ico"), tr("Add Links..."), this);
+    addBtn->setToolTip(tr("Links to files at hosters, one per line"));
     bar->addWidget(addBtn);
+    auto* dlcBtn = new QPushButton(menuIcon("Container.ico"), tr("Open DLC..."), this);
+    dlcBtn->setToolTip(tr("Adds the links of a link container (.dlc, .rsdf, .ccf); you can also drop one here"));
+    bar->addWidget(dlcBtn);
     layout->addLayout(bar);
+    setAcceptDrops(true);
 
     m_tree = new QTreeWidget(this);
     m_tree->setColumnCount(ColCount);
@@ -202,6 +216,7 @@ HosterPanel::HosterPanel(QWidget* parent)
     m_addAction = new QAction(menuIcon("Hoster.ico"), tr("Add hoster links..."), this);
     connect(m_addAction, &QAction::triggered, this, [this] { promptAddLinks(); });
     connect(addBtn, &QPushButton::clicked, this, [this] { promptAddLinks(); });
+    connect(dlcBtn, &QPushButton::clicked, this, &HosterPanel::promptOpenContainer);
     connect(m_tree, &QTreeWidget::customContextMenuRequested, this, &HosterPanel::showContextMenu);
     connect(m_tree, &QTreeWidget::itemDoubleClicked, this, &HosterPanel::openRow);
 
@@ -252,7 +267,8 @@ void HosterPanel::addLinks(const QStringList& links, const QString& package)
     addLinks(files, package);
 }
 
-void HosterPanel::addLinks(const QList<QStringList>& files, const QString& package, qint64 packageId)
+void HosterPanel::addLinks(const QList<QStringList>& files, const QString& package, qint64 packageId,
+                           const QStringList& passwords)
 {
     if (!m_ipc || files.isEmpty())
         return;
@@ -271,6 +287,7 @@ void HosterPanel::addLinks(const QList<QStringList>& files, const QString& packa
     req.append(list);
     req.append(package.trimmed());
     req.append(packageId);
+    req.append(QCborArray::fromStringList(passwords));
     m_ipc->sendRequest(std::move(req), [this](const IpcMessage& r) {
         if (!r.fieldBool(0))
             QMessageBox::warning(this, tr("Hoster links"), r.fieldMap(1).value(QStringLiteral("error")).toString());
@@ -312,6 +329,86 @@ void HosterPanel::promptAddLinks(const QStringList& prefill)
     addLinks(links, packageEdit->text());
 }
 
+void HosterPanel::openContainerFiles(const QStringList& paths)
+{
+    if (paths.isEmpty())
+        return;
+    if (!m_ipc || !m_ipc->isConnected()) {
+        QMessageBox::warning(this, tr("Open DLC"), tr("Not connected to the eMule core."));
+        return;
+    }
+    for (const QString& path : paths) {
+        QFile f(path);
+        if (f.size() > kMaxContainerBytes || !f.open(QIODevice::ReadOnly)) {
+            QMessageBox::warning(this, tr("Open DLC"), tr("Cannot read %1.").arg(QDir::toNativeSeparators(path)));
+            continue;
+        }
+        IpcMessage req(IpcMsgType::OpenHosterContainer);
+        req.append(QFileInfo(path).fileName());
+        req.append(QCborValue(f.readAll()));
+        m_ipc->sendRequest(std::move(req), [this](const IpcMessage& r) {
+            if (!r.fieldBool(0))
+                QMessageBox::warning(this, tr("Open DLC"), r.fieldMap(1).value(QStringLiteral("error")).toString());
+        });
+    }
+}
+
+void HosterPanel::promptOpenContainer()
+{
+    const QStringList paths = QFileDialog::getOpenFileNames(this, tr("Open DLC"), {},
+                                                            gui::containerFileFilter() + QStringLiteral(";;")
+                                                                + tr("All files (*)"));
+    openContainerFiles(paths);
+}
+
+bool HosterPanel::acceptContainerDrop(const QMimeData* mime)
+{
+    const QStringList files = gui::containerDropFiles(mime);
+    if (files.isEmpty())
+        return false;
+    // after the drop returns: the dialogs must not run inside the drag
+    QMetaObject::invokeMethod(this, [this, files] { openContainerFiles(files); }, Qt::QueuedConnection);
+    return true;
+}
+
+void HosterPanel::promptArchivePassword(qint64 id)
+{
+    const QCborMap it = m_items.value(id);
+    if (it.isEmpty())
+        return;
+    const qint64 pkg = it.value(QStringLiteral("packageId")).toInteger();
+    const QString key = pkg != 0 ? QStringLiteral("p%1").arg(pkg)
+                                 : u'd' + QFileInfo(it.value(QStringLiteral("file")).toString()).absolutePath();
+    if (QInputDialog* open = m_passwordAsks.value(key)) {
+        open->raise();
+        open->activateWindow();
+        return;
+    }
+    const QString name = pkg != 0 ? it.value(QStringLiteral("package")).toString()
+                                  : it.value(QStringLiteral("name")).toString();
+    auto* dlg = new QInputDialog(window());
+    dlg->setAttribute(Qt::WA_DeleteOnClose);
+    // as the Usenet tab's Set Password
+    dlg->setWindowTitle(tr("Set Password"));
+    dlg->setLabelText(tr("Archive password for \"%1\":").arg(name));
+    dlg->setInputMode(QInputDialog::TextInput);
+    dlg->setTextEchoMode(QLineEdit::Password);
+    connect(dlg, &QInputDialog::textValueSelected, this, [this, id](const QString& text) {
+        if (text.trimmed().isEmpty() || !m_ipc)
+            return;
+        IpcMessage req(IpcMsgType::HosterAction);
+        req.append(id);
+        req.append(QStringLiteral("password"));
+        req.append(text);
+        m_ipc->sendRequest(std::move(req), [this](const IpcMessage& r) {
+            if (r.isValid() && !r.fieldBool(0))
+                QMessageBox::warning(this, tr("Set Password"), tr("The download no longer waits for a password."));
+        });
+    });
+    m_passwordAsks.insert(key, dlg);
+    dlg->open();
+}
+
 void HosterPanel::refresh()
 {
     if (!m_ipc)
@@ -336,6 +433,11 @@ void HosterPanel::upsert(const QCborMap& item)
     if (id == 0)
         return;
     const qint64 oldPackage = m_items.value(id).value(QStringLiteral("packageId")).toInteger();
+    // an extraction that just ended wanting a password asks for one (not a refresh's rows)
+    const bool askPassword = m_items.contains(id)
+        && m_items.value(id).value(QStringLiteral("reason")).toInteger() != kReasonUnpackPassword
+        && item.value(QStringLiteral("state")).toInteger() == kStateComplete
+        && item.value(QStringLiteral("reason")).toInteger() == kReasonUnpackPassword;
     m_items[id] = item;
     const qint64 pkg = item.value(QStringLiteral("packageId")).toInteger();
     QTreeWidgetItem* parent = pkg != 0 ? packageRow(pkg, item.value(QStringLiteral("package")).toString())
@@ -362,6 +464,8 @@ void HosterPanel::upsert(const QCborMap& item)
         updatePackage(oldPackage);
     if (pkg != 0)
         updatePackage(pkg);
+    if (askPassword)
+        QMetaObject::invokeMethod(this, [this, id] { promptArchivePassword(id); }, Qt::QueuedConnection);
 }
 
 void HosterPanel::removeRow(qint64 id)
@@ -483,6 +587,7 @@ void HosterPanel::showContextMenu(const QPoint& pos)
     QAction* resume = menu.addAction(menuIcon("Start.ico"), tr("Resume"));
     // from the first link again; skipped puzzles are asked again
     QAction* retry = menu.addAction(menuIcon("Restore.ico"), tr("Retry"));
+    QAction* password = menu.addAction(menuIcon("Security.ico"), tr("Set Password…"));
     menu.addSeparator();
     QAction* remove = menu.addAction(menuIcon("ListRemove.ico"), tr("Remove"));
     QAction* del = menu.addAction(menuIcon("Delete.ico"), tr("Remove and delete file"));
@@ -490,7 +595,8 @@ void HosterPanel::showContextMenu(const QPoint& pos)
     QAction* copy = menu.addAction(menuIcon("Copy.ico"), tr("Copy link"));
     QAction* folder = menu.addAction(menuIcon("FolderOpen.ico"), tr("Open folder"));
     menu.addSeparator();
-    QAction* add = menu.addAction(menuIcon("ListAdd.ico"), tr("Add links..."));
+    QAction* add = menu.addAction(menuIcon("ListAdd.ico"), tr("Add Links..."));
+    QAction* dlc = menu.addAction(menuIcon("Container.ico"), tr("Open DLC..."));
     // straight from the clipboard, no dialog
     const QStringList pasted = clipboardLinks();
     QAction* paste = menu.addAction(menuIcon("eD2kLinkPaste.ico"), tr("Paste links"));
@@ -515,6 +621,18 @@ void HosterPanel::showContextMenu(const QPoint& pos)
         const auto r = it.value(QStringLiteral("reason")).toInteger();
         return s == 4 || s >= 9 || (s == kStateComplete && (r == kReasonUnpackFailed || r == kReasonUnpackPassword));
     }));
+    // an encrypted set, or a failed one (some tools say only "cannot open")
+    qint64 passwordId = 0;
+    for (const qint64 id : ids) {
+        const QCborMap it = m_items.value(id);
+        const auto r = it.value(QStringLiteral("reason")).toInteger();
+        if (it.value(QStringLiteral("state")).toInteger() == kStateComplete
+            && (r == kReasonUnpackPassword || r == kReasonUnpackFailed)) {
+            passwordId = id;
+            break;
+        }
+    }
+    password->setEnabled(passwordId != 0);
     if (ids.size() == 1) {
         const int state = int(m_items.value(ids.first()).value(QStringLiteral("state")).toInteger());
         pause->setEnabled(state != kStateComplete && state != kStatePaused);
@@ -527,6 +645,8 @@ void HosterPanel::showContextMenu(const QPoint& pos)
         act(QStringLiteral("resume"));
     else if (chosen == retry)
         act(QStringLiteral("retry"));
+    else if (chosen == password)
+        promptArchivePassword(passwordId);
     else if (chosen == remove)
         act(QStringLiteral("remove"));
     else if (chosen == del) {
@@ -539,6 +659,8 @@ void HosterPanel::showContextMenu(const QPoint& pos)
         QDesktopServices::openUrl(QUrl::fromLocalFile(folderDir));
     } else if (chosen == add) {
         promptAddLinks();
+    } else if (chosen == dlc) {
+        promptOpenContainer();
     } else if (chosen == paste) {
         addLinks(pasted);
     }
@@ -591,6 +713,10 @@ void HosterPanel::onPuzzle(const IpcMessage& msg)
 void HosterPanel::onLinks(const IpcMessage& msg)
 {
     const QCborArray links = msg.field(1).toArray();
+    if (msg.field(0).toInteger() == 0 && msg.field(2).isMap()) {
+        onContainer(msg.fieldMap(2), links);
+        return;
+    }
     if (links.isEmpty())
         return;
     // the folder becomes a package; inside one already, the user picks (never nested)
@@ -709,6 +835,123 @@ void HosterPanel::copyLinks()
         urls << m_items.value(id).value(QStringLiteral("url")).toString();
     if (!urls.isEmpty())
         QApplication::clipboard()->setText(urls.join(QLatin1Char('\n')));
+}
+
+void HosterPanel::dragEnterEvent(QDragEnterEvent* event)
+{
+    if (!gui::containerDropFiles(event->mimeData()).isEmpty())
+        event->acceptProposedAction();
+}
+
+void HosterPanel::dragMoveEvent(QDragMoveEvent* event)
+{
+    if (!gui::containerDropFiles(event->mimeData()).isEmpty())
+        event->acceptProposedAction();
+}
+
+void HosterPanel::dropEvent(QDropEvent* event)
+{
+    if (acceptContainerDrop(event->mimeData()))
+        event->acceptProposedAction();
+}
+
+void HosterPanel::onContainer(const QCborMap& c, const QCborArray& links)
+{
+    const QString fileName = c.value(QStringLiteral("fileName")).toString();
+    if (links.isEmpty()) {
+        const QString code = c.value(QStringLiteral("code")).toString();
+        const QString text = c.value(QStringLiteral("text")).toString();
+        QString why;
+        if (code == QLatin1StringView("limit"))
+            why = tr("The DLC key service refuses for now: too many containers were opened. Try again in a few minutes.");
+        else if (code == QLatin1StringView("invalid"))
+            why = tr("This is no valid link container, or it holds no links.");
+        else if (code == QLatin1StringView("password"))
+            why = tr("The container is protected by a password.");
+        else if (code == QLatin1StringView("noPlugin"))
+            why = tr("No plugin reads this kind of file.");
+        else if (code == QLatin1StringView("bad"))
+            why = tr("The installed hoster resolver cannot read link containers yet; a newer eMule Qt brings one.");
+        else if (code == QLatin1StringView("unavailable"))
+            why = tr("The hoster resolver is not ready.");
+        else
+            why = tr("The container could not be read.");
+        if (!text.isEmpty() && code != QLatin1StringView("bad"))
+            why += QStringLiteral("\n\n") + text;
+        QMessageBox::warning(window(), tr("Open DLC"), tr("%1: %2").arg(fileName, why));
+        return;
+    }
+
+    // a container may hold several packages: one per name, in the container's order
+    QStringList packages;
+    for (const QCborValue& v : links)
+        if (const QString p = v.toMap().value(QStringLiteral("package")).toString(); !packages.contains(p))
+            packages << p;
+    const bool single = packages.size() == 1;
+
+    QDialog dlg(window());
+    dlg.setWindowTitle(tr("Links of %1").arg(fileName));
+    auto* layout = new QVBoxLayout(&dlg);
+    layout->addWidget(new QLabel(tr("The container holds %n link(s). Add which?", nullptr, int(links.size())), &dlg));
+    auto* list = new QListWidget(&dlg);
+    for (const QCborValue& v : links) {
+        const QCborMap l = v.toMap();
+        const QString url = l.value(QStringLiteral("url")).toString();
+        QString text = l.value(QStringLiteral("name")).toString();
+        if (text.isEmpty())
+            text = url;
+        if (const qint64 size = l.value(QStringLiteral("size")).toInteger(); size > 0)
+            text += QStringLiteral(" (%1)").arg(formatByteSize(size));
+        if (const QString p = l.value(QStringLiteral("package")).toString(); !single && !p.isEmpty())
+            text = QStringLiteral("[%1] %2").arg(p, text);
+        auto* row = new QListWidgetItem(fileTypeIconForName(l.value(QStringLiteral("name")).toString()), text, list);
+        row->setData(Qt::UserRole, url);
+        row->setToolTip(url);
+        row->setCheckState(Qt::Checked);
+    }
+    list->setMinimumSize(520, 240);
+    layout->addWidget(list);
+    QLineEdit* packageEdit = nullptr;
+    if (single) {
+        auto* row = new QHBoxLayout;
+        row->addWidget(new QLabel(tr("Package Name:"), &dlg));
+        packageEdit = new QLineEdit(packages.first().isEmpty() ? QFileInfo(fileName).completeBaseName() : packages.first(), &dlg);
+        packageEdit->setToolTip(tr("The links download under one entry, into a folder of this name"));
+        row->addWidget(packageEdit, 1);
+        layout->addLayout(row);
+    }
+    bool anyPassword = false;
+    for (const QCborValue& v : links)
+        anyPassword = anyPassword || !v.toMap().value(QStringLiteral("passwords")).toArray().isEmpty();
+    if (anyPassword) {
+        auto* note = new QLabel(tr("The container names archive passwords; extraction tries them."), &dlg);
+        note->setWordWrap(true);
+        layout->addWidget(note);
+    }
+    auto* buttons = new QDialogButtonBox(QDialogButtonBox::Ok | QDialogButtonBox::Cancel, &dlg);
+    connect(buttons, &QDialogButtonBox::accepted, &dlg, &QDialog::accept);
+    connect(buttons, &QDialogButtonBox::rejected, &dlg, &QDialog::reject);
+    layout->addWidget(buttons);
+    if (dlg.exec() != QDialog::Accepted)
+        return;
+
+    for (const QString& pkg : std::as_const(packages)) {
+        QList<QStringList> files;
+        QStringList passwords;
+        for (int i = 0; i < list->count(); ++i) {
+            const QCborMap l = links.at(i).toMap();
+            if (list->item(i)->checkState() != Qt::Checked || l.value(QStringLiteral("package")).toString() != pkg)
+                continue;
+            files.append(QStringList{list->item(i)->data(Qt::UserRole).toString()});
+            for (const QCborValue& pw : l.value(QStringLiteral("passwords")).toArray())
+                if (const QString t = pw.toString(); !t.isEmpty() && !passwords.contains(t))
+                    passwords << t;
+        }
+        QString name = packageEdit ? packageEdit->text().trimmed() : pkg;
+        if (name.isEmpty())
+            name = QFileInfo(fileName).completeBaseName();
+        addLinks(files, name, 0, passwords);
+    }
 }
 
 } // namespace eMule

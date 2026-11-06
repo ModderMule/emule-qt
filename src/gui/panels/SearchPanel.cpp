@@ -105,6 +105,32 @@ const QString kSearchHeaderKey = QStringLiteral("searchResults");
 /// widths to the other.
 const QString kIndexerHeaderKey = QStringLiteral("searchResultsIndexer");
 
+/// Torrent (Indexer) tabs: Seeders/Peers shown, Grabs hidden.
+const QString kTorrentIndexerHeaderKey = QStringLiteral("searchResultsTorrentIndexer");
+
+/// newznab top-level categories with a typed search mode
+constexpr int kIndexerCatMovies = 2000;
+constexpr int kIndexerCatTv = 5000;
+
+/// A Torrent (Indexer) tab, as opposed to a Usenet one.
+bool isTorrentIndexerTab(const SearchTab& tab)
+{
+    return tab.isIndexer() && tab.method == static_cast<int>(SearchType::TorrentIndexer);
+}
+
+const QString& headerKeyFor(const SearchTab& tab)
+{
+    if (!tab.isIndexer())
+        return kSearchHeaderKey;
+    return isTorrentIndexerTab(tab) ? kTorrentIndexerHeaderKey : kIndexerHeaderKey;
+}
+
+/// Caption of an indexer search's messages.
+QString indexerSearchTitle(bool torrent)
+{
+    return torrent ? SearchPanel::tr("Torrent search") : SearchPanel::tr("Usenet search");
+}
+
 /// Longest a newly arrived result may wait before it shows up in the list.
 /// Small enough that the list still fills visibly in real time, large enough
 /// that a Kad flood collapses ~1500 full-list refetches into a few dozen.
@@ -179,6 +205,7 @@ void SearchPanel::setIpcClient(IpcClient* client)
     const int lastMethod = theUiState.searchLastMethod(static_cast<int>(SearchType::Kademlia));
     if (const int idx = m_methodCombo->findData(lastMethod); idx >= 0)
         m_methodCombo->setCurrentIndex(idx);
+    onMethodChanged();   // index 0 emits no change
 
     loadSearches();
     refreshKnownTypes();
@@ -417,15 +444,8 @@ QWidget* SearchPanel::createSearchBar()
     typeRow->setSpacing(4);
     typeRow->addWidget(new QLabel(tr("Type:"), container));
     m_typeCombo = new QComboBox(container);
-    m_typeCombo->addItem(skinIcon(QStringLiteral(":/icons/FileTypeAny.ico")),        tr("Any"),        QString{});
-    m_typeCombo->addItem(skinIcon(QStringLiteral(":/icons/FileTypeAudio.ico")),      tr("Audio"),      QStringLiteral("Audio"));
-    m_typeCombo->addItem(skinIcon(QStringLiteral(":/icons/FileTypeVideo.ico")),      tr("Video"),      QStringLiteral("Video"));
-    m_typeCombo->addItem(skinIcon(QStringLiteral(":/icons/FileTypePicture.ico")),    tr("Image"),      QStringLiteral("Image"));
-    m_typeCombo->addItem(skinIcon(QStringLiteral(":/icons/FileTypeDocument.ico")),   tr("Document"),   QStringLiteral("Doc"));
-    m_typeCombo->addItem(skinIcon(QStringLiteral(":/icons/FileTypeProgram.ico")),    tr("Program"),    QStringLiteral("Pro"));
-    m_typeCombo->addItem(skinIcon(QStringLiteral(":/icons/FileTypeArchive.ico")),    tr("Archive"),    QStringLiteral("Arc"));
-    m_typeCombo->addItem(skinIcon(QStringLiteral(":/icons/FileTypeCDImage.ico")),    tr("CD-Image"),   QStringLiteral("Iso"));
-    m_typeCombo->addItem(skinIcon(QStringLiteral(":/icons/emuleCollectionFileType.ico")), tr("Collection"), QStringLiteral("EmuleCollection"));
+    fillTypeCombo(false);
+    connect(m_typeCombo, &QComboBox::currentIndexChanged, this, &SearchPanel::onTypeChanged);
     typeRow->addWidget(m_typeCombo);
     typeRow->addWidget(new QLabel(tr("Method:"), container));
     m_methodCombo = new QComboBox(container);
@@ -438,6 +458,9 @@ QWidget* SearchPanel::createSearchBar()
     // on resolveAutomaticSearchType().
     m_methodCombo->addItem(skinIcon(QStringLiteral(":/icons/UsenetSearch.ico")),
                            tr("Usenet (Indexer)"), 5);  // SearchType::UsenetIndexer
+    // torznab accounts: Jackett, Prowlarr
+    m_methodCombo->addItem(skinIcon(QStringLiteral(":/icons/Torrent.ico")),
+                           tr("Torrent (Indexer)"), 11);  // SearchType::TorrentIndexer
     // Asked of an eD2K server's catalogue (eNode Meta API): the connected server
     // if it has one, else the best known one. Not in "Automatic" either.
     m_methodCombo->addItem(skinIcon(QStringLiteral(":/icons/Usenet.ico")),
@@ -448,6 +471,7 @@ QWidget* SearchPanel::createSearchBar()
                            tr("Web (Server)"), 8);      // SearchType::MetaWeb
     // the ed3k node's keyword search (Protocol.md §10.3); no MFC original. Only while enabled
     setEd3kMethodVisible(thePrefs.ed3kEnabled());
+    connect(m_methodCombo, &QComboBox::currentIndexChanged, this, &SearchPanel::onMethodChanged);
     typeRow->addWidget(m_methodCombo);
     m_resetBtn = new QPushButton(tr("Reset"), container);
     connect(m_resetBtn, &QPushButton::clicked, this, [this] {
@@ -495,6 +519,14 @@ QWidget* SearchPanel::createSearchBar()
     filterLayout->setContentsMargins(0, 0, 0, 0);
     filterLayout->setHorizontalSpacing(4);
     filterLayout->setVerticalSpacing(1);
+    const auto ed2kOnly = [this](auto* widget) {
+        m_ed2kOnlyFilters.append(widget);
+        return widget;
+    };
+    const auto indexerOnly = [this](auto* widget) {
+        m_indexerOnlyFilters.append(widget);
+        return widget;
+    };
 
     filterLayout->addWidget(new QLabel(tr("Min. Size [MB]:"), m_filterWidget), 0, 0);
     m_minSizeSpin = new QSpinBox(m_filterWidget);
@@ -508,54 +540,78 @@ QWidget* SearchPanel::createSearchBar()
     m_maxSizeSpin->setSpecialValueText(QStringLiteral(" "));
     filterLayout->addWidget(m_maxSizeSpin, 1, 1);
 
-    filterLayout->addWidget(new QLabel(tr("Availability:"), m_filterWidget), 2, 0);
+    filterLayout->addWidget(ed2kOnly(new QLabel(tr("Availability:"), m_filterWidget)), 2, 0);
     m_availSpin = new QSpinBox(m_filterWidget);
     m_availSpin->setRange(0, 999);
     m_availSpin->setSpecialValueText(QStringLiteral(" "));
-    filterLayout->addWidget(m_availSpin, 2, 1);
+    filterLayout->addWidget(ed2kOnly(m_availSpin), 2, 1);
 
-    filterLayout->addWidget(new QLabel(tr("Complete Sources:"), m_filterWidget), 3, 0);
+    filterLayout->addWidget(ed2kOnly(new QLabel(tr("Complete Sources:"), m_filterWidget)), 3, 0);
     m_completeSpin = new QSpinBox(m_filterWidget);
     m_completeSpin->setRange(0, 999);
     m_completeSpin->setSpecialValueText(QStringLiteral(" "));
-    filterLayout->addWidget(m_completeSpin, 3, 1);
+    filterLayout->addWidget(ed2kOnly(m_completeSpin), 3, 1);
 
-    filterLayout->addWidget(new QLabel(tr("Extension:"), m_filterWidget), 4, 0);
+    filterLayout->addWidget(ed2kOnly(new QLabel(tr("Extension:"), m_filterWidget)), 4, 0);
     m_extensionEdit = new QLineEdit(m_filterWidget);
     m_extensionEdit->setMaximumWidth(80);
-    filterLayout->addWidget(m_extensionEdit, 4, 1);
+    filterLayout->addWidget(ed2kOnly(m_extensionEdit), 4, 1);
 
-    filterLayout->addWidget(new QLabel(tr("Codec:"), m_filterWidget), 5, 0);
+    filterLayout->addWidget(ed2kOnly(new QLabel(tr("Codec:"), m_filterWidget)), 5, 0);
     m_codecEdit = new QLineEdit(m_filterWidget);
     m_codecEdit->setMaximumWidth(80);
-    filterLayout->addWidget(m_codecEdit, 5, 1);
+    filterLayout->addWidget(ed2kOnly(m_codecEdit), 5, 1);
 
-    filterLayout->addWidget(new QLabel(tr("Min. Bitrate [Kbit/s]:"), m_filterWidget), 6, 0);
+    filterLayout->addWidget(ed2kOnly(new QLabel(tr("Min. Bitrate [Kbit/s]:"), m_filterWidget)), 6, 0);
     m_minBitrateSpin = new QSpinBox(m_filterWidget);
     m_minBitrateSpin->setRange(0, 99999);
     m_minBitrateSpin->setSpecialValueText(QStringLiteral(" "));
-    filterLayout->addWidget(m_minBitrateSpin, 6, 1);
+    filterLayout->addWidget(ed2kOnly(m_minBitrateSpin), 6, 1);
 
-    filterLayout->addWidget(new QLabel(tr("Min. Length [s]:"), m_filterWidget), 7, 0);
+    filterLayout->addWidget(ed2kOnly(new QLabel(tr("Min. Length [s]:"), m_filterWidget)), 7, 0);
     m_minLengthSpin = new QSpinBox(m_filterWidget);
     m_minLengthSpin->setRange(0, 99999);
     m_minLengthSpin->setSpecialValueText(QStringLiteral(" "));
-    filterLayout->addWidget(m_minLengthSpin, 7, 1);
+    filterLayout->addWidget(ed2kOnly(m_minLengthSpin), 7, 1);
 
-    filterLayout->addWidget(new QLabel(tr("Title:"), m_filterWidget), 8, 0);
+    filterLayout->addWidget(ed2kOnly(new QLabel(tr("Title:"), m_filterWidget)), 8, 0);
     m_titleEdit = new QLineEdit(m_filterWidget);
     m_titleEdit->setMaximumWidth(80);
-    filterLayout->addWidget(m_titleEdit, 8, 1);
+    filterLayout->addWidget(ed2kOnly(m_titleEdit), 8, 1);
 
-    filterLayout->addWidget(new QLabel(tr("Album:"), m_filterWidget), 9, 0);
+    filterLayout->addWidget(ed2kOnly(new QLabel(tr("Album:"), m_filterWidget)), 9, 0);
     m_albumEdit = new QLineEdit(m_filterWidget);
     m_albumEdit->setMaximumWidth(80);
-    filterLayout->addWidget(m_albumEdit, 9, 1);
+    filterLayout->addWidget(ed2kOnly(m_albumEdit), 9, 1);
 
-    filterLayout->addWidget(new QLabel(tr("Artist:"), m_filterWidget), 10, 0);
+    filterLayout->addWidget(ed2kOnly(new QLabel(tr("Artist:"), m_filterWidget)), 10, 0);
     m_artistEdit = new QLineEdit(m_filterWidget);
     m_artistEdit->setMaximumWidth(80);
-    filterLayout->addWidget(m_artistEdit, 10, 1);
+    filterLayout->addWidget(ed2kOnly(m_artistEdit), 10, 1);
+
+    // indexer methods: typed TV/movie search (t=tvsearch, t=movie)
+    filterLayout->addWidget(indexerOnly(new QLabel(tr("Season:"), m_filterWidget)), 11, 0);
+    m_seasonSpin = new QSpinBox(m_filterWidget);
+    m_seasonSpin->setRange(0, 999);
+    m_seasonSpin->setSpecialValueText(QStringLiteral(" "));
+    m_seasonSpin->setToolTip(tr("TV only: the season to search for. Indexers without a TV search "
+                                "get it added to the keywords as S01."));
+    filterLayout->addWidget(indexerOnly(m_seasonSpin), 11, 1);
+
+    filterLayout->addWidget(indexerOnly(new QLabel(tr("Episode:"), m_filterWidget)), 12, 0);
+    m_episodeSpin = new QSpinBox(m_filterWidget);
+    m_episodeSpin->setRange(0, 9999);
+    m_episodeSpin->setSpecialValueText(QStringLiteral(" "));
+    m_episodeSpin->setToolTip(tr("TV only: the episode within the season."));
+    filterLayout->addWidget(indexerOnly(m_episodeSpin), 12, 1);
+
+    filterLayout->addWidget(indexerOnly(new QLabel(tr("IMDb ID:"), m_filterWidget)), 13, 0);
+    m_imdbEdit = new QLineEdit(m_filterWidget);
+    m_imdbEdit->setMaximumWidth(80);
+    m_imdbEdit->setPlaceholderText(QStringLiteral("tt0133093"));
+    m_imdbEdit->setToolTip(tr("Movies only: the film's IMDb ID, from its imdb.com address. "
+                              "Finds the film whatever its release is called."));
+    filterLayout->addWidget(indexerOnly(m_imdbEdit), 13, 1);
 
     auto* filterScroll = new QScrollArea(container);
     filterScroll->setWidget(m_filterWidget);
@@ -621,7 +677,10 @@ void SearchPanel::onStartSearch()
     }
 
     const SearchRequest req = requestFromUi();
-    if (req.expression.isEmpty())
+    // an indexer can search a category or an IMDb id alone
+    const bool indexerWithoutText = isIndexerSearchType(static_cast<SearchType>(req.method))
+                                    && (req.indexerCategory > 0 || !req.imdbId.isEmpty());
+    if (req.expression.isEmpty() && !indexerWithoutText)
         return;
 
     // Checked here so the message comes in the GUI's language; the daemon checks too
@@ -634,12 +693,13 @@ void SearchPanel::onStartSearch()
         }
     }
 
-    addToSearchHistory(req.expression);
+    if (!req.expression.isEmpty())
+        addToSearchHistory(req.expression);
 
     // Save last-used method, by type rather than by combo position
     theUiState.setSearchLastMethod(m_methodCombo->currentData().toInt());
 
-    if (req.method == static_cast<int>(SearchType::UsenetIndexer)) {
+    if (isIndexerSearchType(static_cast<SearchType>(req.method))) {
         sendIndexerSearchRequest(req);
         return;
     }
@@ -856,25 +916,63 @@ void SearchPanel::sendIndexerSearchRequest(const SearchRequest& req)
         StatusBarNotifier::post(tr("Not connected to daemon — search cannot be started."), 4000);
         return;
     }
-    if (req.expression.isEmpty())
+    if (req.expression.isEmpty() && req.indexerCategory <= 0 && req.imdbId.isEmpty())
         return;
+
+    // typed mode only when its field is set; the daemon falls back per indexer
+    QString mode;
+    QString tag;   // for the tab title
+    if (req.indexerCategory == kIndexerCatTv && req.season > 0) {
+        mode = QStringLiteral("tvsearch");
+        tag = QStringLiteral("S%1").arg(req.season, 2, 10, QLatin1Char('0'));
+        if (req.episode > 0)
+            tag += QStringLiteral("E%1").arg(req.episode, 2, 10, QLatin1Char('0'));
+    } else if (req.indexerCategory == kIndexerCatMovies && !req.imdbId.isEmpty()) {
+        mode = QStringLiteral("movie");
+        tag = req.imdbId;
+    }
 
     IpcMessage msg(IpcMsgType::StartIndexerSearch);
     msg.append(req.expression);      // field 0 — the keywords
-    msg.append(QCborArray{});        // field 1 — categories; the form has none yet
-    msg.append(QString{});           // field 2 — mode; empty means plain "search"
+    QCborArray categories;
+    if (req.indexerCategory > 0)
+        categories.append(req.indexerCategory);
+    msg.append(categories);          // field 1 — newznab category ids
+    msg.append(mode);                // field 2 — mode; empty means plain "search"
     msg.append(QCborArray{});        // field 3 — indexers; empty means all enabled
+    const bool torrent = req.method == static_cast<int>(SearchType::TorrentIndexer);
+    msg.append(qint64(torrent ? 1 : 0));   // field 4 — kind: 0 Usenet, 1 torrent
+    msg.append(req.season > 0 ? QString::number(req.season) : QString{});     // field 5
+    msg.append(req.episode > 0 ? QString::number(req.episode) : QString{});   // field 6
+    msg.append(req.imdbId);          // field 7
+    msg.append(req.minSize);         // field 8 — bytes, 0 = none
+    msg.append(req.maxSize);         // field 9
 
-    const QString tabTitle = req.tabTitle.isEmpty() ? req.expression : req.tabTitle;
+    QString tabTitle = req.tabTitle;
+    if (tabTitle.isEmpty()) {
+        tabTitle = req.expression;
+        if (!tag.isEmpty())
+            tabTitle = tabTitle.isEmpty() ? tag : tabTitle + u' ' + tag;
+        if (tabTitle.isEmpty())
+            tabTitle = m_typeCombo->findData(req.indexerCategory) >= 0
+                           ? m_typeCombo->itemText(m_typeCombo->findData(req.indexerCategory))
+                           : tr("Search");
+    }
 
-    m_ipc->sendRequest(std::move(msg), [this, req, tabTitle](const IpcMessage& resp) {
+    m_ipc->sendRequest(std::move(msg), [this, req, tabTitle, torrent](const IpcMessage& resp) {
+        if (!resp.isValid())
+            return;
         if (!resp.fieldBool(0)) {
             // "No search indexer is configured" is the common case here, and it
             // has to be said out loud — an empty result list reads as "nothing
             // matched" when the truth is that nothing was asked.
+            if (resp.fieldString(2) == QLatin1String("noIndexer")) {
+                showNoIndexerMessage(torrent);
+                return;
+            }
             const QString error = resp.fieldString(1);
             if (!error.isEmpty())
-                AsyncMessageBox::warning(this, tr("Usenet search"), error);
+                AsyncMessageBox::warning(this, indexerSearchTitle(torrent), error);
             return;
         }
 
@@ -883,11 +981,39 @@ void SearchPanel::sendIndexerSearchRequest(const SearchRequest& req)
         SearchTab tab;
         tab.searchID = searchID;
         tab.title = tabTitle;
-        tab.method = static_cast<int>(SearchType::UsenetIndexer);
+        tab.method = req.method;
         tab.request = req;
         tab.indexerModel = new IndexerResultsModel(this);
         m_tabBar->setCurrentIndex(addResultTab(std::move(tab)));
         m_cancelBtn->setEnabled(true);
+    });
+}
+
+void SearchPanel::showNoIndexerMessage(bool torrent)
+{
+    // next turn, not inside the IPC read (see grabIndexerResult)
+    QPointer<SearchPanel> self(this);
+    QTimer::singleShot(0, qApp, [self, torrent] {
+        if (!self)
+            return;
+        QMessageBox box(QMessageBox::Information, indexerSearchTitle(torrent),
+                        torrent ? tr("No torrent indexer is configured.")
+                                : tr("No Usenet indexer is configured."),
+                        QMessageBox::NoButton, self);
+        box.setInformativeText(
+            torrent ? tr("Torrent (Indexer) searches the torrent sites of a Torznab indexer such as "
+                         "Jackett or Prowlarr. Run one, then add its Torznab feed URL and API key "
+                         "under Options › Indexers with the type \"Torznab\" or \"Both\".")
+                    : tr("Usenet (Indexer) searches a Newznab indexer, usually a paid account at a "
+                         "Usenet indexing site, or an aggregator such as Prowlarr or NZBHydra2. Add "
+                         "its API URL and key under Options › Indexers with the type \"Newznab\" "
+                         "or \"Both\"."));
+        QPushButton* open = box.addButton(tr("Open Indexer Options"), QMessageBox::AcceptRole);
+        box.addButton(QMessageBox::Close);
+        box.setDefaultButton(open);
+        box.exec();
+        if (self && box.clickedButton() == open)
+            emit self->indexerOptionsRequested();
     });
 }
 
@@ -985,7 +1111,9 @@ void SearchPanel::onIndexerFinishedPush(const IpcMessage& msg)
     // being down still leaves two thirds of the results — so it goes to the
     // status bar rather than into a modal the user has to dismiss.
     if (const QString error = msg.fieldString(1); !error.isEmpty())
-        StatusBarNotifier::post(tr("Usenet search: %1").arg(error), 8000);
+        StatusBarNotifier::post(isTorrentIndexerTab(*tab) ? tr("Torrent search: %1").arg(error)
+                                                          : tr("Usenet search: %1").arg(error),
+                                8000);
 
     if (m_tabBar->currentIndex() == int(tab - m_tabs.data())) {
         m_statusLabel->setText(tab->resultCount() == 0
@@ -1039,9 +1167,10 @@ void SearchPanel::grabIndexerResult(uint32_t searchID, const IndexerResultRow& r
     msg.append(qint64(category));
 
     const QString title = result.title;
+    const bool torrent = !result.isUsenet;
     // The model, not the tab index and row: tabs close and results refresh while the
     // reply is out, and a stale index marks some other row — or no model at all.
-    m_ipc->sendRequest(std::move(msg), [this, title, model](const IpcMessage& resp) {
+    m_ipc->sendRequest(std::move(msg), [this, title, model, torrent](const IpcMessage& resp) {
         if (!resp.isValid())
             return;   // connection dropped: nothing was queued, and nothing refused
         if (!resp.fieldBool(0)) {
@@ -1056,9 +1185,9 @@ void SearchPanel::grabIndexerResult(uint32_t searchID, const IndexerResultRow& r
             // reason, as Ed2kLinkImporter's.
             const QString reason = resp.fieldString(1);
             QPointer<SearchPanel> self(this);
-            QTimer::singleShot(0, qApp, [self, title, reason] {
+            QTimer::singleShot(0, qApp, [self, title, reason, torrent] {
                 if (self) {
-                    QMessageBox::warning(self, tr("Usenet search"),
+                    QMessageBox::warning(self, indexerSearchTitle(torrent),
                                          tr("Could not queue \"%1\": %2").arg(title, reason));
                 }
             });
@@ -1111,6 +1240,65 @@ void SearchPanel::onResetFilters()
     m_titleEdit->clear();
     m_albumEdit->clear();
     m_artistEdit->clear();
+    m_seasonSpin->setValue(0);
+    m_episodeSpin->setValue(0);
+    m_imdbEdit->clear();
+}
+
+void SearchPanel::onMethodChanged()
+{
+    const bool indexer = isIndexerSearchType(static_cast<SearchType>(m_methodCombo->currentData().toInt()));
+    if (indexer != m_typeComboIndexer)
+        fillTypeCombo(indexer);
+    for (QWidget* w : std::as_const(m_ed2kOnlyFilters))
+        w->setVisible(!indexer);
+    for (QWidget* w : std::as_const(m_indexerOnlyFilters))
+        w->setVisible(indexer);
+    onTypeChanged();
+}
+
+void SearchPanel::onTypeChanged()
+{
+    if (!m_seasonSpin)
+        return;   // still building the form
+    const int category = m_typeComboIndexer ? m_typeCombo->currentData().toInt() : 0;
+    m_seasonSpin->setEnabled(category == kIndexerCatTv);
+    m_episodeSpin->setEnabled(category == kIndexerCatTv);
+    m_imdbEdit->setEnabled(category == kIndexerCatMovies);
+}
+
+void SearchPanel::fillTypeCombo(bool indexer)
+{
+    const QSignalBlocker blocker(m_typeCombo);
+    if (m_typeCombo->count() > 0)
+        (m_typeComboIndexer ? m_indexerTypeIndex : m_ed2kTypeIndex) = m_typeCombo->currentIndex();
+    m_typeCombo->clear();
+    m_typeComboIndexer = indexer;
+
+    const auto icon = [](const char* name) { return skinIcon(QStringLiteral(":/icons/") + QLatin1String(name)); };
+    if (indexer) {
+        // newznab/torznab top-level categories, the same ids in both trees
+        m_typeCombo->addItem(icon("FileTypeAny.ico"),      tr("Any"),          0);
+        m_typeCombo->addItem(icon("FileTypeVideo.ico"),    tr("Movies"),       kIndexerCatMovies);
+        m_typeCombo->addItem(icon("FileTypeVideo.ico"),    tr("TV"),           kIndexerCatTv);
+        m_typeCombo->addItem(icon("FileTypeAudio.ico"),    tr("Audio"),        3000);
+        m_typeCombo->addItem(icon("FileTypeProgram.ico"),  tr("PC / Software"), 4000);
+        m_typeCombo->addItem(icon("FileTypeDocument.ico"), tr("Books"),        7000);
+        m_typeCombo->addItem(icon("FileTypeCDImage.ico"),  tr("Console"),      1000);
+        m_typeCombo->addItem(icon("FileTypeArchive.ico"),  tr("Other"),        8000);
+    } else {
+        m_typeCombo->addItem(icon("FileTypeAny.ico"),      tr("Any"),        QString{});
+        m_typeCombo->addItem(icon("FileTypeAudio.ico"),    tr("Audio"),      QStringLiteral("Audio"));
+        m_typeCombo->addItem(icon("FileTypeVideo.ico"),    tr("Video"),      QStringLiteral("Video"));
+        m_typeCombo->addItem(icon("FileTypePicture.ico"),  tr("Image"),      QStringLiteral("Image"));
+        m_typeCombo->addItem(icon("FileTypeDocument.ico"), tr("Document"),   QStringLiteral("Doc"));
+        m_typeCombo->addItem(icon("FileTypeProgram.ico"),  tr("Program"),    QStringLiteral("Pro"));
+        m_typeCombo->addItem(icon("FileTypeArchive.ico"),  tr("Archive"),    QStringLiteral("Arc"));
+        m_typeCombo->addItem(icon("FileTypeCDImage.ico"),  tr("CD-Image"),   QStringLiteral("Iso"));
+        m_typeCombo->addItem(icon("emuleCollectionFileType.ico"), tr("Collection"), QStringLiteral("EmuleCollection"));
+    }
+    const int keep = indexer ? m_indexerTypeIndex : m_ed2kTypeIndex;
+    m_typeCombo->setCurrentIndex(keep < m_typeCombo->count() ? keep : 0);
 }
 
 void SearchPanel::onNetworkFilterChanged()
@@ -1155,7 +1343,13 @@ void SearchPanel::onTabDoubleClicked(int index)
         return;
     const SearchTab& tab = m_tabs[static_cast<size_t>(index)];
     // a peer's file list was not a search: MFC leaves the form wiped
-    applyRequestToUi(tab.clientSharedFiles ? SearchRequest{} : tab.request);
+    if (tab.clientSharedFiles) {
+        applyRequestToUi(SearchRequest{});
+        return;
+    }
+    SearchRequest req = tab.request;
+    req.method = tab.method;   // restored tabs keep it on the tab, not the request
+    applyRequestToUi(req);
 }
 
 void SearchPanel::onTabContextMenu(const QPoint& pos)
@@ -2215,9 +2409,8 @@ void SearchPanel::switchToTab(int index)
     m_resultView->setModel(tab.proxy);
     // setModel() clears every section, so the layout has to be pushed back each
     // time. The first call also binds the header, now that the columns exist.
-    setupResultHeader(tab.isIndexer());
-    theUiState.applyHeaderState(m_resultView->header(),
-                                tab.isIndexer() ? kIndexerHeaderKey : kSearchHeaderKey);
+    setupResultHeader(tab);
+    theUiState.applyHeaderState(m_resultView->header(), headerKeyFor(tab));
     // Every tab has its own proxy, so re-guard the selection on the new model.
     theUiState.guardSelectionOnReset(m_resultView);
     connect(m_resultView->selectionModel(), &QItemSelectionModel::selectionChanged,
@@ -2475,6 +2668,14 @@ QJsonObject requestToJson(const SearchRequest& req)
     o[QStringLiteral("title")] = req.title;
     o[QStringLiteral("album")] = req.album;
     o[QStringLiteral("artist")] = req.artist;
+    if (req.indexerCategory > 0)
+        o[QStringLiteral("indexerCategory")] = req.indexerCategory;
+    if (req.season > 0)
+        o[QStringLiteral("season")] = req.season;
+    if (req.episode > 0)
+        o[QStringLiteral("episode")] = req.episode;
+    if (!req.imdbId.isEmpty())
+        o[QStringLiteral("imdbId")] = req.imdbId;
     return o;
 }
 
@@ -2494,6 +2695,10 @@ SearchRequest requestFromJson(const QJsonObject& o)
     req.title = o[QStringLiteral("title")].toString();
     req.album = o[QStringLiteral("album")].toString();
     req.artist = o[QStringLiteral("artist")].toString();
+    req.indexerCategory = o[QStringLiteral("indexerCategory")].toInt();
+    req.season = o[QStringLiteral("season")].toInt();
+    req.episode = o[QStringLiteral("episode")].toInt();
+    req.imdbId = o[QStringLiteral("imdbId")].toString();
     return req;
 }
 
@@ -2635,7 +2840,9 @@ void SearchPanel::loadSearches()
         tab.finished = true;
         tab.request = requestFromJson(searchObj[QStringLiteral("request")].toObject());
         // stored before the request was kept: the title is the expression
-        if (tab.request.expression.isEmpty() && !tab.clientSharedFiles)
+        // not for a category-only indexer search: its title is no keyword
+        if (tab.request.expression.isEmpty() && !tab.clientSharedFiles
+            && tab.request.indexerCategory <= 0 && tab.request.imdbId.isEmpty())
             tab.request.expression = title;
 
         if (searchObj[QStringLiteral("indexer")].toBool()) {
@@ -2940,14 +3147,30 @@ void SearchPanel::refreshUsenetKnownTypes()
 // Results header — bound once, on the first tab that attaches a model
 // ---------------------------------------------------------------------------
 
-void SearchPanel::setupResultHeader(bool forIndexer)
+void SearchPanel::setupResultHeader(const SearchTab& tab)
 {
+    const bool forIndexer = tab.isIndexer();
     m_resultView->setRootIsDecorated(!forIndexer);
 
-    const QString& key = forIndexer ? kIndexerHeaderKey : kSearchHeaderKey;
+    const QString& key = headerKeyFor(tab);
     if (m_boundHeaderKey == key)
         return;
     m_boundHeaderKey = key;
+
+    if (isTorrentIndexerTab(tab)) {
+        // torznab: Seeders/Peers instead of Grabs
+        m_resultView->setDescendingFirst({IndexerResultsModel::ColSeeders, IndexerResultsModel::ColPeers});
+        if (!theUiState.hasHeaderState(kTorrentIndexerHeaderKey)) {
+            auto* header = m_resultView->header();
+            header->moveSection(header->visualIndex(IndexerResultsModel::ColConfidence),
+                                header->visualIndex(IndexerResultsModel::ColSize) + 1);
+        }
+        m_resultView->setDefaultSort(IndexerResultsModel::ColSeeders, Qt::DescendingOrder);
+        m_resultView->bindColumns(kTorrentIndexerHeaderKey, {380, 80, 70, 120, 60, 110, 60, 60, 80, 100},
+                                  {IndexerResultsModel::ColGrabs});
+        m_resultView->setExtColumns({}, thePrefs.showExtControls());
+        return;
+    }
 
     if (forIndexer) {
         // Name, Size, Age, Category, Grabs, Indexer, the two torznab columns hidden
@@ -2998,8 +3221,18 @@ SearchRequest SearchPanel::requestFromUi() const
 {
     SearchRequest req;
     req.expression = m_nameEdit->text().trimmed();
-    req.fileType   = m_typeCombo->currentData().toString();
     req.method     = m_methodCombo->currentData().toInt();
+    if (m_typeComboIndexer) {
+        req.indexerCategory = m_typeCombo->currentData().toInt();
+        if (req.indexerCategory == kIndexerCatTv) {
+            req.season  = m_seasonSpin->value();
+            req.episode = req.season > 0 ? m_episodeSpin->value() : 0;
+        } else if (req.indexerCategory == kIndexerCatMovies) {
+            req.imdbId = m_imdbEdit->text().trimmed();
+        }
+    } else {
+        req.fileType = m_typeCombo->currentData().toString();
+    }
     req.minSize    = m_minSizeSpin->value() > 0
         ? static_cast<qint64>(m_minSizeSpin->value()) * 1024 * 1024 : 0;
     req.maxSize    = m_maxSizeSpin->value() > 0
@@ -3019,9 +3252,21 @@ SearchRequest SearchPanel::requestFromUi() const
 void SearchPanel::applyRequestToUi(const SearchRequest& req)
 {
     constexpr qint64 kMiB = 1024 * 1024;
+    // the two kinds have different type lists: switch the method when they differ
+    if (const bool indexer = isIndexerSearchType(static_cast<SearchType>(req.method));
+        indexer != m_typeComboIndexer) {
+        if (const int idx = m_methodCombo->findData(req.method); idx >= 0)
+            m_methodCombo->setCurrentIndex(idx);
+    }
     onResetFilters();
     m_nameEdit->setText(req.expression);
-    m_typeCombo->setCurrentIndex(std::max(0, m_typeCombo->findData(req.fileType)));
+    if (m_typeComboIndexer)
+        m_typeCombo->setCurrentIndex(std::max(0, m_typeCombo->findData(req.indexerCategory)));
+    else
+        m_typeCombo->setCurrentIndex(std::max(0, m_typeCombo->findData(req.fileType)));
+    m_seasonSpin->setValue(req.season);
+    m_episodeSpin->setValue(req.episode);
+    m_imdbEdit->setText(req.imdbId);
     m_minSizeSpin->setValue(static_cast<int>(req.minSize / kMiB));
     m_maxSizeSpin->setValue(static_cast<int>(req.maxSize / kMiB));
     m_availSpin->setValue(req.avail);
@@ -3202,6 +3447,8 @@ QIcon SearchPanel::tabIcon(const SearchTab& tab)
 {
     if (!thePrefs.useOriginalIcons())
         return {};
+    if (isTorrentIndexerTab(tab))
+        return skinIcon(QStringLiteral(":/icons/Torrent.ico"));
     if (tab.isIndexer())
         return skinIcon(QStringLiteral(":/icons/UsenetSearch.ico"));
     // MFC SearchResultsWnd.cpp:1367 — sriClient ("StatsClients" = User.ico)
