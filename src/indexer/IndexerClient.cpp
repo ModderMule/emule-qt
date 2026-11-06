@@ -224,6 +224,11 @@ void IndexerClient::fetchUrl(const QUrl& url, int timeoutMs, FetchCallback done)
     HttpFileDownload::fetch(this, url, opts,
                             [done = std::move(done)](const HttpFileDownload::Result& r) {
         countIndexer(&IndexerCounters::nzbFetches);
+        // Jackett's /dl answers 302 -> magnet: when the tracker has no .torrent
+        if (!r.ok && r.refusedRedirect.scheme().compare(QLatin1StringView("magnet"), Qt::CaseInsensitive) == 0) {
+            done(true, r.refusedRedirect.toString(QUrl::FullyEncoded).toUtf8(), {});
+            return;
+        }
         if (!r.ok)
             countIndexer(&IndexerCounters::nzbFetchErrors);
         done(r.ok, r.data, redactApiKey(r.error));

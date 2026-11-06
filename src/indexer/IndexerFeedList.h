@@ -54,7 +54,7 @@ namespace eMule::indexer {
 class IndexerClient;
 class PasswordFlagStore;
 
-/// What the sink did with an .nzb.
+/// What the sink did with an .nzb, .torrent or magnet.
 ///
 /// Deliberately not UsenetAddOutcome: naming that type here would be the
 /// dependency this class exists to avoid. DaemonApp maps one onto the other.
@@ -65,11 +65,14 @@ enum class FeedAddOutcome : quint8 {
     Retry,        ///< transient; worth another attempt on a later poll
 };
 
-/// One .nzb, on its way out of the module.
+/// One .nzb, .torrent or magnet URI, on its way out of the module.
 struct FeedAddRequest {
     QString feedName;
     QString title;
     QByteArray payload;
+
+    /// Torznab row: payload is .torrent bytes or a `magnet:` URI, for the Torrents tab.
+    bool torrent = false;
 
     /// The archive passphrase the feed advertised, empty when it advertised
     /// none. An *automatic* add, so the NZB's own metadata still outranks it —
@@ -103,7 +106,7 @@ public:
 
     using NzbSink = std::function<FeedAddOutcome(const FeedAddRequest&, QString& error)>;
 
-    /// Where a matched .nzb goes. Without one the poller still runs and still
+    /// Where a matched .nzb or torrent goes. Without one the poller still runs and still
     /// records what it saw, but never grabs -- which is the right behaviour for
     /// a daemon whose Usenet session failed to start, and is what the tests use.
     void setNzbSink(NzbSink sink);
@@ -192,6 +195,9 @@ private:
 
     /// Hand one fetched payload to the sink and record what came back.
     void deliver(Entry& entry, const IndexerResult& row, const QByteArray& payload);
+
+    /// A failed fetch: Pending until kMaxGrabAttempts, then Failed.
+    void recordFetchFailure(Entry& entry, const IndexerResult& row, const QString& error);
 
     void endPoll(Entry& entry);
     [[nodiscard]] bool isDue(const Entry& entry) const;

@@ -330,6 +330,11 @@ Ed3kResolver::TaskId Ed3kJdResolver::expand(const QString& url)
     return request({{QStringLiteral("op"), QStringLiteral("expand")}, {QStringLiteral("url"), url}}, true);
 }
 
+Ed3kResolver::TaskId Ed3kJdResolver::openContainer(const QString& path)
+{
+    return request({{QStringLiteral("op"), QStringLiteral("container")}, {QStringLiteral("path"), path}}, true);
+}
+
 Ed3kResolver::TaskId Ed3kJdResolver::open(const QString& url, const std::optional<ResolverAccount>& account,
                                           const QString& dir, std::uint64_t have)
 {
@@ -435,9 +440,14 @@ std::optional<std::pair<Ed3kResolver::TaskId, ResolverEvent>> Ed3kJdResolver::pa
         e.image = QByteArray::fromBase64(str("image").toLatin1());
     for (const QJsonValue& v : o.value(QStringLiteral("links")).toArray()) {
         const QJsonObject l = v.toObject();
-        e.links.append({l.value(QStringLiteral("url")).toString(), l.value(QStringLiteral("name")).toString(),
-                        l.value(QStringLiteral("host")).toString(),
-                        static_cast<std::uint64_t>(std::max<qint64>(0, l.value(QStringLiteral("size")).toInteger(0)))});
+        ResolverLink link{l.value(QStringLiteral("url")).toString(), l.value(QStringLiteral("name")).toString(),
+                          l.value(QStringLiteral("host")).toString(),
+                          static_cast<std::uint64_t>(std::max<qint64>(0, l.value(QStringLiteral("size")).toInteger(0)))};
+        link.package = l.value(QStringLiteral("package")).toString();
+        for (const QJsonValue& pw : l.value(QStringLiteral("passwords")).toArray())
+            if (const QString t = pw.toString(); !t.isEmpty())
+                link.passwords << t;
+        e.links.append(link);
     }
     for (const QJsonValue& v : o.value(QStringLiteral("sites")).toArray())
         if (const QString d = v.toString().toLower(); !d.isEmpty())

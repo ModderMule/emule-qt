@@ -84,6 +84,8 @@ public:
         QString error;
         /// ETag / Last-Modified of the response, for the next conditional request.
         HttpValidators validators;
+        /// A redirect to a non-HTTP scheme (magnet:), refused but reported; !ok.
+        QUrl refusedRedirect;
     };
 
     using Callback = std::function<void(const Result&)>;

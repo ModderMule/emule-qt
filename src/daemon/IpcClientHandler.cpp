@@ -5476,22 +5476,41 @@ void IpcClientHandler::handleStartIndexerSearch(const IpcMessage& msg)
         query.categories.append(int(value.toInteger()));
     if (const QString mode = msg.fieldString(2); !mode.isEmpty())
         query.mode = mode;
+    // fields 5-7: season, episode, IMDb id (digits only, "tt" dropped)
+    query.season = msg.fieldString(5).trimmed();
+    query.episode = msg.fieldString(6).trimmed();
+    query.imdbId = msg.fieldString(7).trimmed();
+    query.imdbId.removeIf([](QChar c) { return !c.isDigit(); });
+    // fields 8-9: size bounds in bytes, filtered here (no newznab parameter)
+    query.minSize = std::max<qint64>(0, msg.fieldInt(8));
+    query.maxSize = std::max<qint64>(0, msg.fieldInt(9));
 
     QStringList only;
     for (const auto& value : msg.fieldArray(3))
         only.append(value.toString());
 
-    if (query.text.isEmpty() && query.categories.isEmpty()) {
+    if (query.text.isEmpty() && query.categories.isEmpty() && query.imdbId.isEmpty()) {
         sendMessage(IpcMessage::makeResult(
             msg.seqId(), false, QCborValue(tr("Enter something to search for."))));
         return;
     }
 
-    // Usenet only for now. The BitTorrent half of the row is parsed and stored;
-    // there is simply nothing yet that could act on a torrent result.
+    // field 4: 0 Usenet (newznab), 1 torrents (torznab)
+    const IndexerKind wanted = msg.fieldInt(4) == int(IndexerKind::Torznab) ? IndexerKind::Torznab
+                                                                           : IndexerKind::Newznab;
+    // nothing configured for this network: field 2 tells the GUI to offer the Options page
+    if (!indexer::theIndexerSearchList->hasEnabledAccount(wanted)) {
+        IpcMessage reply = IpcMessage::makeResult(
+            msg.seqId(), false,
+            QCborValue(wanted == IndexerKind::Torznab ? tr("No torrent indexer is configured.")
+                                                      : tr("No Usenet indexer is configured.")));
+        reply.append(QStringLiteral("noIndexer"));
+        sendMessage(std::move(reply));
+        return;
+    }
+
     QString error;
-    const quint32 searchId = indexer::theIndexerSearchList->startSearch(
-        query, IndexerKind::Newznab, only, error);
+    const quint32 searchId = indexer::theIndexerSearchList->startSearch(query, wanted, only, error);
 
     if (searchId == 0) {
         sendMessage(IpcMessage::makeResult(msg.seqId(), false, QCborValue(error)));
@@ -5546,6 +5565,12 @@ bool categoryExists(int category)
 
 /// A .torrent (bencoded dictionary) rather than an .nzb. An aggregator's rows
 /// can be either kind, so the payload decides, not the account.
+/// A magnet URI handed back as text (magnet-only torznab row or a /dl redirect).
+bool isMagnetPayload(const QByteArray& payload)
+{
+    return payload.startsWith("magnet:");
+}
+
 bool isTorrentPayload(const QByteArray& payload)
 {
     qsizetype i = 0;
@@ -5599,8 +5624,10 @@ void IpcClientHandler::handleGrabIndexerResult(const IpcMessage& msg)
         }
 
         // Torznab row: to the Torrents tab
-        if (isTorrentPayload(payload)) {
-            const QCborMap added = BtBridge::addTorrentData(payload, choices.paused);
+        if (isTorrentPayload(payload) || isMagnetPayload(payload)) {
+            const QCborMap added = isMagnetPayload(payload)
+                                       ? BtBridge::addMagnetUri(QString::fromUtf8(payload), choices.paused)
+                                       : BtBridge::addTorrentData(payload, choices.paused);
             const int outcome = int(added.value(QStringLiteral("outcome")).toInteger(4));
             const bool addedOk = outcome == 0 || outcome == 1;   // added, or already there
             IpcMessage reply = IpcMessage::makeResult(
@@ -5655,6 +5682,12 @@ void IpcClientHandler::handleInspectIndexerResult(const IpcMessage& msg)
         if (!ok || payload.isEmpty()) {
             self->sendMessage(IpcMessage::makeResult(
                 seqId, false, QCborValue(error.isEmpty() ? tr("The indexer returned no file.") : error)));
+            return;
+        }
+        if (isMagnetPayload(payload)) {
+            self->sendMessage(IpcMessage::makeResult(
+                seqId, false,
+                QCborValue(tr("This result is a magnet link. Its file list is known once the torrent is added."))));
             return;
         }
         const bool torrent = isTorrentPayload(payload);

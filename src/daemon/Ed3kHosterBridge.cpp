@@ -61,6 +61,23 @@ QCborMap itemToCbor(const ed3k::Ed3kHosterJoin::Item& it)
                     {QStringLiteral("package"), it.package}};
 }
 
+QCborArray linksToCbor(const QList<ed3k::ResolverLink>& links)
+{
+    QCborArray list;
+    for (const auto& l : links) {
+        QCborMap m{{QStringLiteral("url"), l.url},
+                   {QStringLiteral("name"), l.name},
+                   {QStringLiteral("host"), l.host},
+                   {QStringLiteral("size"), qint64(l.size)}};
+        if (!l.package.isEmpty())
+            m.insert(QStringLiteral("package"), l.package);
+        if (!l.passwords.isEmpty())
+            m.insert(QStringLiteral("passwords"), QCborArray::fromStringList(l.passwords));
+        list.append(m);
+    }
+    return list;
+}
+
 /// GetHosterStats: the counters from Statistics, the live part from the items.
 QCborMap hosterStatsToCbor(const ed3k::Ed3kHosterJoin& join)
 {
@@ -189,8 +206,16 @@ bool handleRequest(const IpcMessage& msg, const std::function<void(const IpcMess
         // field 2: a new package of that name; field 3: an existing package to join
         const QString package = msg.fieldString(2);
         const auto packageId = quint32(msg.field(3).toInteger());
+        // field 4: archive passwords (a container's)
+        QStringList passwords;
+        for (const QCborValue& pw : msg.field(4).toArray())
+            if (const QString t = pw.toString(); !t.isEmpty())
+                passwords << t;
+        if (files.isEmpty() && !passwords.isEmpty())
+            for (const QString& url : ed3k::Ed3kHosterJoin::linksIn(msg.fieldString(0)))
+                files.append(QStringList{url});
         const auto added = files.isEmpty() ? s_join->addLinks(msg.fieldString(0), package, packageId)
-                                           : s_join->addMirrored(files, package, packageId);
+                                           : s_join->addMirrored(files, package, packageId, passwords);
         for (const quint32 id : added)
             ids.append(qint64(id));
         reply(IpcMessage::makeResult(seq, true, QCborMap{{QStringLiteral("ids"), ids}}));
@@ -211,7 +236,12 @@ bool handleRequest(const IpcMessage& msg, const std::function<void(const IpcMess
             s_join->retry(id);
         else if (op == QLatin1StringView("remove") || op == QLatin1StringView("delete"))
             s_join->remove(id, op == QLatin1StringView("delete"));
-        else {
+        else if (op == QLatin1StringView("password")) {
+            if (!s_join->setArchivePassword(id, msg.fieldString(2))) {
+                reply(failure(seq, QStringLiteral("no password wanted")));
+                break;
+            }
+        } else {
             reply(failure(seq, QStringLiteral("unknown op")));
             break;
         }
@@ -235,6 +265,20 @@ bool handleRequest(const IpcMessage& msg, const std::function<void(const IpcMess
             break;
         }
         reply(IpcMessage::makeResult(seq, true, QCborValue{}));
+        break;
+    }
+    case IpcMsgType::OpenHosterContainer: {
+        if (!thePrefs.hosterDownloadsOn() || !s_resolver) {
+            reply(failure(seq, QStringLiteral("hoster downloads are off")));
+            break;
+        }
+        const QByteArray data = msg.field(1).toByteArray();
+        const quint64 token = s_join->openContainer(data, msg.fieldString(0));
+        if (token == 0) {
+            reply(failure(seq, data.isEmpty() ? QStringLiteral("empty file") : QStringLiteral("cannot open the container")));
+            break;
+        }
+        reply(IpcMessage::makeResult(seq, true, QCborMap{{QStringLiteral("token"), qint64(token)}}));
         break;
     }
     case IpcMsgType::CheckHosterAccount:
@@ -305,15 +349,21 @@ void connectPushes(ed3k::Ed3kHosterJoin& join, const std::function<void(const Ip
                      });
     QObject::connect(&join, &ed3k::Ed3kHosterJoin::linksExpanded, &join,
                      [broadcast](quint32 id, const QList<ed3k::ResolverLink>& links) {
-                         QCborArray list;
-                         for (const auto& l : links)
-                             list.append(QCborMap{{QStringLiteral("url"), l.url},
-                                                  {QStringLiteral("name"), l.name},
-                                                  {QStringLiteral("host"), l.host},
-                                                  {QStringLiteral("size"), qint64(l.size)}});
                          IpcMessage msg(IpcMsgType::PushHosterLinks, 0);
                          msg.append(qint64(id));
-                         msg.append(list);
+                         msg.append(linksToCbor(links));
+                         broadcast(msg);
+                     });
+    QObject::connect(&join, &ed3k::Ed3kHosterJoin::containerOpened, &join,
+                     [broadcast](quint64 token, const QString& fileName, const QList<ed3k::ResolverLink>& links,
+                                 const QString& code, const QString& text) {
+                         IpcMessage msg(IpcMsgType::PushHosterLinks, 0);
+                         msg.append(qint64(0));
+                         msg.append(linksToCbor(links));
+                         msg.append(QCborMap{{QStringLiteral("token"), qint64(token)},
+                                             {QStringLiteral("fileName"), fileName},
+                                             {QStringLiteral("code"), code},
+                                             {QStringLiteral("text"), text}});
                          broadcast(msg);
                      });
     QObject::connect(&join, &ed3k::Ed3kHosterJoin::accountChecked, &join,

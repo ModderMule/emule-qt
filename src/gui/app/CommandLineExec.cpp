@@ -18,6 +18,7 @@
 #endif
 #include "utils/CommandLine.h"
 #include "utils/Log.h"
+#include "utils/ContainerDrop.h"
 #include "utils/TorrentLinks.h"
 
 #include <QApplication>
@@ -280,7 +281,7 @@ void CommandLineExec::openArguments(const QStringList& args, ExternalLinkHandler
             path = QUrl(path).toLocalFile();
 
         const bool isTorrent = gui::kBitTorrentBuilt && gui::isTorrentFilePath(path);
-        if (!path.endsWith(QStringLiteral(".nzb"), Qt::CaseInsensitive) && !isTorrent)
+        if (!path.endsWith(QStringLiteral(".nzb"), Qt::CaseInsensitive) && !isTorrent && !gui::isContainerFilePath(path))
             continue;
         if (!QFileInfo(path).isFile())
             continue;
@@ -300,7 +301,8 @@ bool CommandLineExec::handleFileTypeRegistration() const
 
     QString error;
     // ed2k/ed3k as stored: they have their own switch (wizard, Options → General)
-    const bool ok = wantRegister ? gui::FileAssociation::applyFileTypes({true, true, savedFileTypes().ed2k}, error)
+    const bool ok = wantRegister ? gui::FileAssociation::applyFileTypes(
+                                     {.nzb = true, .torrent = true, .ed2k = savedFileTypes().ed2k, .dlc = savedFileTypes().dlc}, error)
                                  : gui::FileAssociation::unregisterFileTypes(error);
     if (ok) {
         logInfo(wantRegister ? QStringLiteral("Registered .nzb, .torrent and magnet: with the desktop")

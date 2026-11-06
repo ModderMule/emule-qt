@@ -101,6 +101,7 @@ emule_add_test(tst_AtomicOps        FOLDER "Platform")
 
 # Module 29b: Core utility functions
 emule_add_test(tst_OtherFunctions  FOLDER "Utils")
+emule_add_test(tst_StallWatchdog   FOLDER "Utils")
 emule_add_test(tst_MassRename      FOLDER "Utils")
 # Own comment + rating, one file or a batch (#123, IPC SetFileComment)
 emule_add_test(tst_FileComments    FOLDER "Files")
@@ -1143,6 +1144,7 @@ if(EMULE_HOSTER_JD)
                 "${CMAKE_SOURCE_DIR}/src/gui/app/UiState.cpp"
                 "${CMAKE_SOURCE_DIR}/src/gui/app/IpcClient.cpp"
                 "${CMAKE_SOURCE_DIR}/src/gui/app/KnownCores.cpp"
+                "${CMAKE_SOURCE_DIR}/src/gui/utils/ContainerDrop.cpp"
                 "${CMAKE_SOURCE_DIR}/resources/emuleqt.qrc")
     target_include_directories(tst_HosterPanel PRIVATE
         "${CMAKE_SOURCE_DIR}/src/gui"

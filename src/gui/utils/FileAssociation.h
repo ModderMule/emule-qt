@@ -1,7 +1,7 @@
 #pragma once
 
 /// @file FileAssociation.h
-/// @brief Registering .nzb, .torrent, magnet:, ed3k: and ed2k: with the desktop, on all three platforms.
+/// @brief Registering .nzb, .torrent, .dlc, magnet:, ed3k: and ed2k: with the desktop, on all three platforms.
 ///
 /// The application registers *itself*, because there is nothing else to do it
 /// with: bundle-win.ps1 produces a bare zip and bundle-linux.sh a bare tarball,
@@ -46,13 +46,20 @@ struct FileTypes {
     bool torrent = false;
     /// the ed2k: scheme, and ed3k: with it (wizard, Options → General)
     bool ed2k = false;
+    /// .dlc link containers (the Hoster tab; Options → ed3k → Hoster, default off)
+    bool dlc = false;
 
-    [[nodiscard]] bool any() const { return nzb || torrent || ed2k; }
+    [[nodiscard]] bool any() const { return nzb || torrent || ed2k || dlc; }
     /// Only the types that are in @p allowed too (a network switched off claims nothing, #121)
     [[nodiscard]] FileTypes masked(FileTypes allowed) const
     {
-        return {.nzb = nzb && allowed.nzb, .torrent = torrent && allowed.torrent, .ed2k = ed2k && allowed.ed2k};
+        return {.nzb = nzb && allowed.nzb,
+                .torrent = torrent && allowed.torrent,
+                .ed2k = ed2k && allowed.ed2k,
+                .dlc = dlc && allowed.dlc};
     }
+    /// Every type (the unregister and clean-up passes)
+    [[nodiscard]] static constexpr FileTypes all() { return {.nzb = true, .torrent = true, .ed2k = true, .dlc = true}; }
     bool operator==(const FileTypes&) const = default;
 };
 
@@ -125,6 +132,8 @@ bool unregisterFileTypes(QString& error);
 /// The MIME type. NZB has no IANA registration; this is the de-facto one.
 inline constexpr auto kNzbMimeType = "application/x-nzb";
 inline constexpr auto kTorrentMimeType = "application/x-bittorrent";
+/// No registration either; the name other Linux download managers use for .dlc.
+inline constexpr auto kDlcMimeType = "application/x-dlc";
 
 /// Basename of the .desktop file, the icon, and the Wayland app id / WM class.
 /// They have to agree or the desktop cannot tie the window to its launcher.

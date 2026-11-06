@@ -25,6 +25,7 @@ struct HosterUnpackJob {
     QString destDir;       ///< incoming or incoming/<package>
     QString scratchDir;    ///< emptied first, removed after
     QString password;
+    QStringList passwords; ///< tried in turn after password while the set wants one (a container's)
     QString externalTool;  ///< usenetExternalUnpacker; empty = libarchive only
 };
 

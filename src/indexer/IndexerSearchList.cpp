@@ -97,6 +97,13 @@ void IndexerSearchList::applyPreferences()
     }
 }
 
+bool IndexerSearchList::hasEnabledAccount(IndexerKind wanted) const
+{
+    return std::ranges::any_of(m_accounts, [wanted](const IndexerConfig& a) {
+        return a.enabled && (wanted == IndexerKind::Torznab ? a.servesTorrents() : a.servesUsenet());
+    });
+}
+
 const IndexerCaps* IndexerSearchList::capsFor(const QString& name) const
 {
     const auto it = m_caps.constFind(name.trimmed().toCaseFolded());
@@ -155,6 +162,7 @@ quint32 IndexerSearchList::startSearch(const IndexerQuery& query, IndexerKind wa
 
     const quint32 id = m_nextSearchId++;
     auto* search = new IndexerSearch(id, m_client, effective, chosen, m_maxPages, this);
+    search->setTorrentsOnly(wanted == IndexerKind::Torznab);
 
     connect(search, &IndexerSearch::resultsReady, this, &IndexerSearchList::resultsReady);
     connect(search, &IndexerSearch::resultsReady, this,
@@ -221,7 +229,8 @@ void IndexerSearchList::grab(quint32 searchId, const QString& resultId, GrabCall
                      tr("The indexer \"%1\" is no longer configured.").arg(result->indexerName));
                 return;
             }
-            fetchGrab(*account, resultId, result->downloadUrl, result->title, result->password, std::move(done));
+            fetchGrab(*account, resultId, result->downloadUrl, result->magnetUrl, result->title, result->password,
+                      std::move(done));
             return;
         }
     }
@@ -240,7 +249,8 @@ void IndexerSearchList::grab(quint32 searchId, const QString& resultId, GrabCall
              tr("The indexer \"%1\" is no longer configured.").arg(cached->indexerName));
         return;
     }
-    fetchGrab(*account, resultId, cached->downloadUrl, cached->title, cached->password, std::move(done));
+    fetchGrab(*account, resultId, cached->downloadUrl, cached->magnetUrl, cached->title, cached->password,
+              std::move(done));
 }
 
 void IndexerSearchList::flushGrabCache()
@@ -261,6 +271,7 @@ void IndexerSearchList::flushGrabCache()
             {QStringLiteral("password"), it->password},
             {QStringLiteral("url"),      it->downloadUrl.toString(QUrl::FullyEncoded)},
             {QStringLiteral("savedAt"),  it->savedAt},
+            {QStringLiteral("magnet"),   it->magnetUrl.toString(QUrl::FullyEncoded)},
         });
     }
 
@@ -284,7 +295,7 @@ void IndexerSearchList::rememberGrabs(const QList<IndexerResult>& rows)
     for (const auto& row : rows) {
         if (row.id.isEmpty() || !row.downloadUrl.isValid())
             continue;
-        m_grabCache.insert(row.id, {row.indexerName, row.title, row.password, row.downloadUrl, now});
+        m_grabCache.insert(row.id, {row.indexerName, row.title, row.password, row.downloadUrl, now, row.magnetUrl});
     }
     if (!rows.isEmpty())
         scheduleGrabCacheSave();
@@ -308,7 +319,8 @@ void IndexerSearchList::loadGrabCache()
         m_grabCache.insert(id, {o.value(QStringLiteral("indexer")).toString(),
                                 o.value(QStringLiteral("title")).toString(),
                                 o.value(QStringLiteral("password")).toString(), url,
-                                static_cast<qint64>(o.value(QStringLiteral("savedAt")).toDouble())});
+                                static_cast<qint64>(o.value(QStringLiteral("savedAt")).toDouble()),
+                                QUrl(o.value(QStringLiteral("magnet")).toString())});
     }
     const auto before = m_grabCache.size();
     pruneGrabCache();
@@ -362,7 +374,8 @@ const IndexerConfig* IndexerSearchList::accountNamed(const QString& displayName)
 }
 
 void IndexerSearchList::fetchGrab(const IndexerConfig& account, const QString& resultId, const QUrl& url,
-                                  const QString& name, const QString& password, GrabCallback done)
+                                  const QUrl& magnet, const QString& name, const QString& password,
+                                  GrabCallback done)
 {
     // Details fetched it lately: a Download spends no second grab
     const QString key = MetaFileCache::indexerKey(resultId);
@@ -373,15 +386,27 @@ void IndexerSearchList::fetchGrab(const IndexerConfig& account, const QString& r
         });
         return;
     }
+    // magnet-only row: the URI itself is the payload, no grab spent
     if (url.scheme().compare(QLatin1StringView("magnet"), Qt::CaseInsensitive) == 0) {
-        done(false, {}, name, password, tr("The indexer offers only a magnet link for this result."));
+        QTimer::singleShot(0, this, [uri = url.toString(QUrl::FullyEncoded).toUtf8(), name, password,
+                                     done = std::move(done)] { done(true, uri, name, password, {}); });
         return;
     }
+    const bool hasMagnet = magnet.scheme().compare(QLatin1StringView("magnet"), Qt::CaseInsensitive) == 0;
     m_client->fetch(account, url,
-                    [key, name, password, done = std::move(done)](bool ok, const QByteArray& body,
-                                                                  const QString& error) {
-        if (ok && !body.isEmpty())
+                    [key, name, password, hasMagnet, magnetUri = magnet.toString(QUrl::FullyEncoded).toUtf8(),
+                     done = std::move(done)](bool ok, const QByteArray& body, const QString& error) {
+        if (ok && !body.isEmpty()) {
             MetaFileCache::instance().insert(key, body);
+            done(true, body, name, password, {});
+            return;
+        }
+        // tracker down or .torrent gone: the magnet still works
+        if (hasMagnet) {
+            logDebug(QStringLiteral("Indexers: .torrent fetch failed (%1), using the magnet").arg(error));
+            done(true, magnetUri, name, password, {});
+            return;
+        }
         done(ok, body, name, password, error);
     });
 }

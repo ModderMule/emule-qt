@@ -1477,13 +1477,33 @@ void DaemonApp::connectIndexerFeedSink()
     if (!m_indexerFeeds)
         return;
 
-    // The one place the two modules meet. eMule::Indexer must not depend on
-    // eMule::Usenet — a future BitTorrent module reuses the same client — so the
-    // feed poller hands out an .nzb and this maps the queue's answer back onto
-    // its own vocabulary. handleGrabIndexerResult performs the same join, and
+    // The one place the modules meet. eMule::Indexer must not depend on
+    // eMule::Usenet or BitTorrent, so the feed poller hands out an .nzb,
+    // .torrent or magnet and this maps the engine's answer back onto its own
+    // vocabulary. handleGrabIndexerResult performs the same join, and
     // for the same reason.
     m_indexerFeeds->setNzbSink(
         [](const indexer::FeedAddRequest& request, QString& error) {
+            if (request.torrent) {
+                // Torznab row: .torrent or magnet to the Torrents tab
+                const QCborMap added = request.payload.startsWith("magnet:")
+                    ? BtBridge::addMagnetUri(QString::fromUtf8(request.payload), false)
+                    : BtBridge::addTorrentData(request.payload, false);
+                error = added.value(QStringLiteral("message")).toString();
+                // BtAddOutcome values (IPC): 0 added, 1 duplicate, 2 invalid, 3 not running, 4 failed
+                switch (added.value(QStringLiteral("outcome")).toInteger(4)) {
+                case 0:
+                    return indexer::FeedAddOutcome::Added;
+                case 1:
+                    return indexer::FeedAddOutcome::AlreadyHave;
+                case 2:
+                    return indexer::FeedAddOutcome::Rejected;
+                default:   // engine off or failed: keep the release
+                    break;
+                }
+                return indexer::FeedAddOutcome::Retry;
+            }
+
             if (!usenet::theUsenetSession || !usenet::theUsenetSession->queue()) {
                 error = QObject::tr("The Usenet engine is not running.");
                 // Retry, not Rejected: the release is fine, the daemon is not.

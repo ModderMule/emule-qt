@@ -45,6 +45,12 @@ private slots:
     void stopEndsTheSearchAndKeepsWhatArrived();
     void grabCache_grabsARowAfterARestart();
     void grab_secondFetchServedFromMetaFileCache();
+    void grab_redirectToMagnetReturnsTheMagnet();
+    void grab_magnetOnlyRowNeedsNoFetch();
+    void torrentSearch_skipsUsenetRowsOfABothAccount();
+    void hasEnabledAccount_followsKindAndEnabled();
+    void tvSearch_fallsBackToKeywordsWithoutTheMode();
+    void sizeBounds_dropRowsOutsideButKeepUnknownSize();
 };
 
 namespace {
@@ -78,6 +84,47 @@ QByteArray feedWithNzb(const QString& base)
                R"(<enclosure url="%1/get/Release.nzb" length="1"/>)"
                R"(<newznab:attr name="size" value="1000"/></item></channel></rss>)")
         .arg(base).toUtf8();
+}
+
+/// Torznab items: @p items is {title, enclosure path or "", magnet or ""}.
+QByteArray torznabFeed(const QString& base, const QList<QStringList>& items)
+{
+    QByteArray out =
+        R"(<?xml version="1.0"?><rss version="2.0"
+             xmlns:torznab="http://torznab.com/schemas/2015/feed"><channel>)"
+        R"(<torznab:response offset="0" total="1"/>)";
+    for (const QStringList& it : items) {
+        out += QStringLiteral("<item><title>%1</title><guid>%1</guid>").arg(it.at(0)).toUtf8();
+        if (!it.at(1).isEmpty())
+            out += QStringLiteral(R"(<enclosure url="%1%2" length="1"/>)").arg(base, it.at(1)).toUtf8();
+        if (!it.at(2).isEmpty())
+            out += QStringLiteral(R"(<torznab:attr name="magneturl" value="%1"/>)")
+                       .arg(it.at(2).toHtmlEscaped()).toUtf8();
+        out += R"(<torznab:attr name="size" value="1000"/></item>)";
+    }
+    out += "</channel></rss>";
+    return out;
+}
+
+/// Run one search on @p list and grab its first row; returns {ok, payload}.
+QPair<bool, QByteArray> searchAndGrab(IndexerSearchList& list, IndexerKind kind)
+{
+    QSignalSpy finished(&list, &IndexerSearchList::searchFinished);
+    IndexerQuery query;
+    query.text = QStringLiteral("x");
+    QString error;
+    const quint32 id = list.startSearch(query, kind, {}, error);
+    if (id == 0 || !finished.wait(5000) || list.search(id)->results().isEmpty())
+        return {false, {}};
+    bool done = false;
+    QPair<bool, QByteArray> out;
+    list.grab(id, list.search(id)->results().first().id,
+              [&](bool ok, const QByteArray& body, const QString&, const QString&, const QString&) {
+        done = true;
+        out = {ok, body};
+    });
+    QTest::qWaitFor([&done] { return done; }, 5000);
+    return out;
 }
 
 IndexerConfig configFor(const FakeIndexerServer& server, const QString& name)
@@ -411,6 +458,226 @@ void tst_IndexerSearch::grab_secondFetchServedFromMetaFileCache()
     MetaFileCache::instance().clear();
     thePrefs.setIndexers({});
     thePrefs.setConfigDir(savedConfigDir);
+}
+
+void tst_IndexerSearch::grab_redirectToMagnetReturnsTheMagnet()
+{
+    // Jackett's /dl answers 302 -> magnet: when the tracker has no .torrent
+    MetaFileCache::instance().clear();
+    QTemporaryDir dir;
+    QVERIFY(dir.isValid());
+    const QString savedConfigDir = thePrefs.configDir();
+    thePrefs.setConfigDir(dir.path());
+
+    const QByteArray magnet("magnet:?xt=urn:btih:0123456789abcdef0123456789abcdef01234567&dn=Rel");
+    QString base;
+    FakeIndexerServer server([&base, &magnet](const QUrl& url) {
+        if (url.path().contains(QStringLiteral("/dl/")))
+            return qMakePair(302, magnet);
+        return qMakePair(200, torznabFeed(base, {{QStringLiteral("Rel"), QStringLiteral("/dl/1"), {}}}));
+    });
+    base = server.baseUrl();
+    IndexerConfig config = configFor(server, QStringLiteral("Jackett"));
+    config.kind = IndexerKind::Torznab;
+    thePrefs.setIndexers({config});
+    thePrefs.setIndexerMaxPages(1);
+
+    IndexerSearchList list;
+    const auto [ok, payload] = searchAndGrab(list, IndexerKind::Torznab);
+    QVERIFY(ok);
+    QCOMPARE(payload, magnet);
+
+    MetaFileCache::instance().clear();
+    thePrefs.setIndexers({});
+    thePrefs.setConfigDir(savedConfigDir);
+}
+
+void tst_IndexerSearch::grab_magnetOnlyRowNeedsNoFetch()
+{
+    QTemporaryDir dir;
+    QVERIFY(dir.isValid());
+    const QString savedConfigDir = thePrefs.configDir();
+    thePrefs.setConfigDir(dir.path());
+
+    const QString magnet = QStringLiteral("magnet:?xt=urn:btih:0123456789abcdef0123456789abcdef01234567");
+    QString base;
+    FakeIndexerServer server([&base, &magnet](const QUrl&) {
+        return qMakePair(200, torznabFeed(base, {{QStringLiteral("Rel"), {}, magnet}}));
+    });
+    base = server.baseUrl();
+    IndexerConfig config = configFor(server, QStringLiteral("Tracker"));
+    config.kind = IndexerKind::Torznab;
+    thePrefs.setIndexers({config});
+    thePrefs.setIndexerMaxPages(1);
+
+    IndexerSearchList list;
+    const auto [ok, payload] = searchAndGrab(list, IndexerKind::Torznab);
+    QVERIFY(ok);
+    QCOMPARE(QString::fromUtf8(payload), magnet);
+    // caps and search only, no grab request
+    for (const QString& path : server.seenPaths)
+        QVERIFY2(path.endsWith(QStringLiteral("api")), qPrintable(path));
+
+    thePrefs.setIndexers({});
+    thePrefs.setConfigDir(savedConfigDir);
+}
+
+void tst_IndexerSearch::torrentSearch_skipsUsenetRowsOfABothAccount()
+{
+    QTemporaryDir dir;
+    QVERIFY(dir.isValid());
+    const QString savedConfigDir = thePrefs.configDir();
+    thePrefs.setConfigDir(dir.path());
+
+    QString base;
+    FakeIndexerServer server([&base](const QUrl&) {
+        return qMakePair(200, torznabFeed(base, {{QStringLiteral("Nzb.Row"), QStringLiteral("/a.nzb"), {}},
+                                                 {QStringLiteral("Tor.Row"), {},
+                                                  QStringLiteral("magnet:?xt=urn:btih:00")}}));
+    });
+    base = server.baseUrl();
+    IndexerConfig config = configFor(server, QStringLiteral("Prowlarr"));
+    config.kind = IndexerKind::Both;
+    thePrefs.setIndexers({config});
+    thePrefs.setIndexerMaxPages(1);
+
+    IndexerSearchList list;
+    QSignalSpy finished(&list, &IndexerSearchList::searchFinished);
+    IndexerQuery query;
+    query.text = QStringLiteral("x");
+    QString error;
+    const quint32 id = list.startSearch(query, IndexerKind::Torznab, {}, error);
+    QVERIFY2(id != 0, qPrintable(error));
+    QVERIFY(finished.wait(5000));
+    QCOMPARE(list.search(id)->results().size(), 1);
+    QCOMPARE(list.search(id)->results().first().title, QStringLiteral("Tor.Row"));
+
+    thePrefs.setIndexers({});
+    thePrefs.setConfigDir(savedConfigDir);
+}
+
+void tst_IndexerSearch::hasEnabledAccount_followsKindAndEnabled()
+{
+    QTemporaryDir dir;
+    QVERIFY(dir.isValid());
+    const QString savedConfigDir = thePrefs.configDir();
+    thePrefs.setConfigDir(dir.path());
+
+    IndexerConfig usenet;
+    usenet.name = QStringLiteral("U");
+    usenet.url = QStringLiteral("http://127.0.0.1:1/");
+    IndexerConfig torrent = usenet;
+    torrent.name = QStringLiteral("T");
+    torrent.kind = IndexerKind::Torznab;
+    torrent.enabled = false;
+
+    thePrefs.setIndexers({usenet, torrent});
+    {
+        IndexerSearchList list;
+        QVERIFY(list.hasEnabledAccount(IndexerKind::Newznab));
+        QVERIFY(!list.hasEnabledAccount(IndexerKind::Torznab));   // disabled
+    }
+    torrent.enabled = true;
+    thePrefs.setIndexers({torrent});
+    {
+        IndexerSearchList list;
+        QVERIFY(!list.hasEnabledAccount(IndexerKind::Newznab));
+        QVERIFY(list.hasEnabledAccount(IndexerKind::Torznab));
+    }
+
+    thePrefs.setIndexers({});
+    thePrefs.setConfigDir(savedConfigDir);
+}
+
+void tst_IndexerSearch::tvSearch_fallsBackToKeywordsWithoutTheMode()
+{
+    // two indexers: one with tv-search in its caps, one without
+    QList<QUrl> withMode, withoutMode;
+    FakeIndexerServer a([&withMode](const QUrl& url) {
+        withMode.append(url);
+        return qMakePair(200, feed({QStringLiteral("A")}, 0, 1));
+    });
+    FakeIndexerServer b([&withoutMode](const QUrl& url) {
+        withoutMode.append(url);
+        return qMakePair(200, feed({QStringLiteral("B")}, 0, 1));
+    });
+    const IndexerConfig ca = configFor(a, QStringLiteral("A"));
+    const IndexerConfig cb = configFor(b, QStringLiteral("B"));
+
+    IndexerCaps tv;
+    tv.modes.insert(kModeSearch.toString(), IndexerSearchMode{true, {}});
+    tv.modes.insert(kModeTvSearch.toString(), IndexerSearchMode{true, {QStringLiteral("q"),
+                    QStringLiteral("season"), QStringLiteral("ep")}});
+    IndexerCaps plain;
+    plain.modes.insert(kModeSearch.toString(), IndexerSearchMode{true, {}});
+    plain.modes.insert(kModeTvSearch.toString(), IndexerSearchMode{false, {}});
+
+    IndexerClient client;
+    IndexerQuery query;
+    query.text = QStringLiteral("show");
+    query.mode = kQueryTvSearch.toString();
+    query.categories = {5000};
+    query.season = QStringLiteral("2");
+    query.episode = QStringLiteral("5");
+
+    IndexerSearch search(1, &client, query, {ca, cb}, 1);
+    QSignalSpy finished(&search, &IndexerSearch::finished);
+    search.start({{ca.key(), tv}, {cb.key(), plain}});
+    QVERIFY(finished.wait(5000));
+    QCOMPARE(search.results().size(), 2);
+
+    QCOMPARE(withMode.size(), 1);
+    const QUrlQuery qa(withMode.first());
+    QCOMPARE(qa.queryItemValue(QStringLiteral("t")), QStringLiteral("tvsearch"));
+    QCOMPARE(qa.queryItemValue(QStringLiteral("q")), QStringLiteral("show"));
+    QCOMPARE(qa.queryItemValue(QStringLiteral("season")), QStringLiteral("2"));
+    QCOMPARE(qa.queryItemValue(QStringLiteral("ep")), QStringLiteral("5"));
+
+    QCOMPARE(withoutMode.size(), 1);
+    const QUrlQuery qb(withoutMode.first());
+    QCOMPARE(qb.queryItemValue(QStringLiteral("t")), QStringLiteral("search"));
+    QCOMPARE(qb.queryItemValue(QStringLiteral("q"), QUrl::FullyDecoded), QStringLiteral("show S02E05"));
+    QCOMPARE(qb.queryItemValue(QStringLiteral("cat")), QStringLiteral("5000"));
+    QVERIFY(!qb.hasQueryItem(QStringLiteral("season")));
+}
+
+void tst_IndexerSearch::sizeBounds_dropRowsOutsideButKeepUnknownSize()
+{
+    // sizes 500, 1500, 3000 and one with none; bounds 1000..2000
+    FakeIndexerServer server([](const QUrl&) {
+        QByteArray out = R"(<?xml version="1.0"?><rss version="2.0"
+             xmlns:newznab="http://www.newznab.com/DTD/2010/feeds/attributes/"><channel>)";
+        const QList<QPair<QString, int>> rows{{QStringLiteral("Small"), 500},
+                                              {QStringLiteral("Fits"), 1500},
+                                              {QStringLiteral("Big"), 3000},
+                                              {QStringLiteral("Unknown"), 0}};
+        for (const auto& [title, size] : rows) {
+            out += QStringLiteral(R"(<item><title>%1</title><guid>%1</guid>)"
+                                  R"(<link>http://x.example/%1.nzb</link>)").arg(title).toUtf8();
+            if (size > 0)
+                out += QStringLiteral(R"(<newznab:attr name="size" value="%1"/>)").arg(size).toUtf8();
+            out += "</item>";
+        }
+        out += "</channel></rss>";
+        return qMakePair(200, out);
+    });
+
+    IndexerClient client;
+    IndexerQuery query;
+    query.text = QStringLiteral("x");
+    query.minSize = 1000;
+    query.maxSize = 2000;
+
+    IndexerSearch search(1, &client, query, {configFor(server, QStringLiteral("One"))}, 3);
+    QSignalSpy finished(&search, &IndexerSearch::finished);
+    search.start({});
+    QVERIFY(finished.wait(5000));
+
+    QStringList titles;
+    for (const auto& row : search.results())
+        titles.append(row.title);
+    titles.sort();
+    QCOMPARE(titles, (QStringList{QStringLiteral("Fits"), QStringLiteral("Unknown")}));
 }
 
 QTEST_MAIN(tst_IndexerSearch)

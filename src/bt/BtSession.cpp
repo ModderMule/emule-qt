@@ -261,6 +261,28 @@ struct BtSession::Impl {
     QSet<QString> stopAtMeta;
     /// stopped at metadata, not resumed since: nothing wanted, so a finish is not a download
     QSet<QString> metaStopped;
+    /// File priorities sent, not yet applied: libtorrent 2.x updates them only when the
+    /// disk job returns (file_prio_alert), a poll in between read the old ones (report 21)
+    struct PendingPriorities {
+        std::vector<lt::download_priority_t> priorities;
+        int outstanding = 0;
+        QElapsedTimer since;
+    };
+    std::map<QString, PendingPriorities> pendingPriorities;
+    void prioritizeFiles(const lt::torrent_handle& h, const QString& id, std::vector<lt::download_priority_t> prio)
+    {
+        h.prioritize_files(prio);
+        PendingPriorities& p = pendingPriorities[id];
+        p.priorities = std::move(prio);
+        ++p.outstanding;
+        p.since.start();
+    }
+    void filePrioritiesApplied(const QString& id)
+    {
+        auto it = pendingPriorities.find(id);
+        if (it != pendingPriorities.end() && --it->second.outstanding <= 0)
+            pendingPriorities.erase(it);
+    }
     [[nodiscard]] QString stopsPath() const { return QDir(settings.stateDir).filePath(kStopsFile); }
     void loadStops()
     {
@@ -618,6 +640,7 @@ bool BtSession::remove(const QString& id, bool deleteFiles)
     d->rows.erase(id);
     d->limitOverride.remove(id);
     d->metaStopped.remove(id);
+    d->pendingPriorities.erase(id);
     if (d->links.erase(id) > 0)
         d->saveLinks();
     if (d->stopAtMeta.remove(id))
@@ -684,7 +707,7 @@ bool BtSession::setFilePriorities(const QString& id, const QList<int>& prioritie
     prio.reserve(static_cast<std::size_t>(priorities.size()));
     for (int p : priorities)
         prio.emplace_back(static_cast<std::uint8_t>(std::clamp(p, 0, 7)));
-    h.prioritize_files(prio);
+    d->prioritizeFiles(h, id, std::move(prio));
     return true;
 }
 
@@ -801,7 +824,22 @@ std::optional<BtTorrentRow> BtSession::torrent(const QString& id) const
 QList<BtFileRow> BtSession::files(const QString& id) const
 {
     const auto h = d->handle(id);
-    return h.is_valid() ? BtTorrentView::files(h) : QList<BtFileRow>{};
+    if (!h.is_valid())
+        return {};
+    QList<BtFileRow> out = BtTorrentView::files(h);
+    // report what was asked for until libtorrent has applied it
+    if (auto it = d->pendingPriorities.find(id); it != d->pendingPriorities.end()) {
+        constexpr qint64 kPendingCapMs = 10'000;   // no alert (unchanged / failed): trust libtorrent again
+        if (it->second.since.elapsed() > kPendingCapMs) {
+            d->pendingPriorities.erase(it);
+        } else {
+            const auto& prio = it->second.priorities;
+            for (BtFileRow& f : out)
+                if (f.index >= 0 && f.index < static_cast<int>(prio.size()))
+                    f.priority = static_cast<int>(static_cast<std::uint8_t>(prio[static_cast<std::size_t>(f.index)]));
+        }
+    }
+    return out;
 }
 
 QList<BtPeerRow> BtSession::peers(const QString& id) const
@@ -1055,7 +1093,13 @@ void BtSession::drainAlerts()
             for (const auto& bucket : ds->routing_table)
                 nodes += bucket.num_nodes;
             d->dhtNodes = nodes;
+        } else if (auto* fp = lt::alert_cast<lt::file_prio_alert>(a)) {
+            d->filePrioritiesApplied(BtTorrentView::idOf(fp->handle.info_hashes()));
+            if (fp->error)
+                logWarning(QStringLiteral("BitTorrent: %1").arg(message(a)));
         } else if (lt::alert_cast<lt::torrent_error_alert>(a) || lt::alert_cast<lt::file_error_alert>(a)) {
+            if (auto* fe = lt::alert_cast<lt::file_error_alert>(a))
+                d->pendingPriorities.erase(BtTorrentView::idOf(fe->handle.info_hashes()));
             // performance alerts: Torrent tab only (forwardAlert), they repeat each second
             logWarning(QStringLiteral("BitTorrent: %1").arg(message(a)));
         } else if (lt::alert_cast<lt::tracker_error_alert>(a) || lt::alert_cast<lt::hash_failed_alert>(a)) {
@@ -1144,8 +1188,8 @@ void BtSession::Impl::stopAtMetadata(const lt::torrent_handle& h, const QString&
     h.pause();
     const auto ti = h.torrent_file();
     if (ti)
-        h.prioritize_files(std::vector<lt::download_priority_t>(static_cast<std::size_t>(ti->num_files()),
-                                                                lt::default_priority));
+        prioritizeFiles(h, id, std::vector<lt::download_priority_t>(static_cast<std::size_t>(ti->num_files()),
+                                                                    lt::default_priority));
     metaStopped.insert(id);
     logInfo(QStringLiteral("BitTorrent: %1 stopped after its metadata: untick the files to skip, then resume")
                 .arg(ti ? QString::fromStdString(ti->name()) : id));

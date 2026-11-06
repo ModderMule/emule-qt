@@ -142,14 +142,24 @@ gui::FileAssociation::FileTypes savedFileTypes()
 #else
     const bool legacyEd2k = isEd2kSchemeRegistered();
 #endif
-    return {.nzb = nzb, .torrent = torrent, .ed2k = theUiState.associateEd2kLinks().value_or(legacyEd2k)};
+    return {.nzb = nzb,
+            .torrent = torrent,
+            .ed2k = theUiState.associateEd2kLinks().value_or(legacyEd2k),
+            .dlc = theUiState.associateDlcFiles()};
 }
 
 gui::FileAssociation::FileTypes enabledNetworkTypes()
 {
     return {.nzb = thePrefs.usenetEnabled(),
             .torrent = thePrefs.btEnabled(),
-            .ed2k = thePrefs.networkED2K() || thePrefs.kadEnabled() || thePrefs.ed3kEnabled()};
+            .ed2k = thePrefs.networkED2K() || thePrefs.kadEnabled() || thePrefs.ed3kEnabled(),
+            // the Hoster tab opens them: ed3k and hoster downloads on, a build with the resolver
+#if defined(EMULE_HAVE_ED3K) && defined(EMULE_HAVE_HOSTER_JD)
+            .dlc = thePrefs.hosterDownloadsOn()
+#else
+            .dlc = false
+#endif
+    };
 }
 
 gui::FileAssociation::FileTypes wantedFileTypes()
@@ -178,7 +188,7 @@ void applyDesktopIntegration(bool createLauncher)
 
 gui::FileAssociation::FileTypes fromBits(int bits)
 {
-    return {.nzb = (bits & 1) != 0, .torrent = (bits & 2) != 0, .ed2k = (bits & 4) != 0};
+    return {.nzb = (bits & 1) != 0, .torrent = (bits & 2) != 0, .ed2k = (bits & 4) != 0, .dlc = (bits & 8) != 0};
 }
 
 bool applyFileTypesNow(bool setDefault)
@@ -202,7 +212,7 @@ namespace {
 
 int toBits(gui::FileAssociation::FileTypes t)
 {
-    return (t.nzb ? 1 : 0) | (t.torrent ? 2 : 0) | (t.ed2k ? 4 : 0);
+    return (t.nzb ? 1 : 0) | (t.torrent ? 2 : 0) | (t.ed2k ? 4 : 0) | (t.dlc ? 8 : 0);
 }
 
 } // namespace

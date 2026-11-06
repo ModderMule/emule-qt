@@ -164,6 +164,7 @@ SOURCES += \
     dialogs/PasteTextDialog.cpp \
     dialogs/SimpleCleanupDialog.cpp \
     utils/TorrentLinks.cpp \
+    utils/ContainerDrop.cpp \
     dialogs/WebLinksDialog.cpp \
     dialogs/PeerPreviewDialog.cpp \
     dialogs/SearchDetailDialog.cpp \
@@ -284,6 +285,7 @@ HEADERS += \
     dialogs/RenameFileDialog.h \
     dialogs/SimpleCleanupDialog.h \
     utils/TorrentLinks.h \
+    utils/ContainerDrop.h \
     dialogs/WebLinksDialog.h \
     dialogs/PeerPreviewDialog.h \
     dialogs/SearchDetailDialog.h \

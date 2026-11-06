@@ -18,7 +18,7 @@ void registerEd2kUrlScheme();
 [[nodiscard]] gui::FileAssociation::FileTypes savedFileTypes();
 
 /// The types whose network is switched on: Usenet → nzb, BitTorrent → torrent,
-/// eD2K/Kad/ed3k → ed2k links. A switched-off network claims nothing (#121).
+/// eD2K/Kad/ed3k → ed2k links, hoster downloads → dlc. A switched-off network claims nothing (#121).
 [[nodiscard]] gui::FileAssociation::FileTypes enabledNetworkTypes();
 
 /// savedFileTypes() of the enabled networks only: what gets claimed.

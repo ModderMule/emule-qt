@@ -16,10 +16,16 @@
 #include <QCborMap>
 #include <QDialog>
 #include <QDir>
+#include <QDragEnterEvent>
+#include <QInputDialog>
 #include <QKeyEvent>
+#include <QLineEdit>
 #include <QListWidget>
+#include <QMessageBox>
+#include <QMimeData>
 #include <QPushButton>
 #include <QRadioButton>
+#include <QTemporaryDir>
 #include <QTest>
 #include <QTimer>
 #include <QTreeWidget>
@@ -179,6 +185,161 @@ private slots:
         top.append(QCborArray{QCborMap{{QStringLiteral("url"), QStringLiteral("https://a.test/y")}}});
         emit ipc.hosterLinksExpanded(top);
         QCOMPARE(radios, 0);
+    }
+
+    /// the bar: Add Links (the text box) and Open DLC, beside the engine's version
+    void barHasAddLinksAndOpenDlc()
+    {
+        HosterPanel panel;
+        QStringList texts;
+        for (auto* b : panel.findChildren<QPushButton*>())
+            texts << b->text();
+        QVERIFY2(texts.contains(HosterPanel::tr("Add Links...")), qPrintable(texts.join(u'|')));
+        QVERIFY2(texts.contains(HosterPanel::tr("Open DLC...")), qPrintable(texts.join(u'|')));
+    }
+
+    /// a container's links: several packages listed with their names, one package editable
+    void containerLinksAsk()
+    {
+        IpcClient ipc;
+        HosterPanel panel;
+        panel.setIpcClient(&ipc);
+        const auto link = [](const QString& url, const QString& name, const QString& pkg) {
+            return QCborMap{{QStringLiteral("url"), url}, {QStringLiteral("name"), name}, {QStringLiteral("package"), pkg},
+                            {QStringLiteral("passwords"), QCborArray{QStringLiteral("pw")}}};
+        };
+        int rows = -1;
+        QStringList texts;
+        QString packageName = QStringLiteral("<none>");
+        QString title;
+        const auto inspect = [&] {
+            auto* dlg = qobject_cast<QDialog*>(QApplication::activeModalWidget());
+            if (!dlg)
+                return;
+            title = dlg->windowTitle();
+            auto* list = dlg->findChild<QListWidget*>();
+            rows = list ? list->count() : -1;
+            texts.clear();
+            for (int i = 0; list && i < list->count(); ++i)
+                texts << list->item(i)->text();
+            if (auto* edit = dlg->findChild<QLineEdit*>())
+                packageName = edit->text();
+            dlg->reject();
+        };
+        const auto send = [&ipc](const QCborArray& links) {
+            IpcMessage msg(IpcMsgType::PushHosterLinks, 0);
+            msg.append(qint64(0));
+            msg.append(links);
+            msg.append(QCborMap{{QStringLiteral("token"), qint64(1)}, {QStringLiteral("fileName"), QStringLiteral("set.dlc")}});
+            emit ipc.hosterLinksExpanded(msg);
+        };
+
+        QTimer::singleShot(50, inspect);
+        send({link(QStringLiteral("https://a.test/1"), QStringLiteral("one.rar"), QStringLiteral("Pkg A")),
+              link(QStringLiteral("https://a.test/2"), QStringLiteral("two.rar"), QStringLiteral("Pkg B"))});
+        QCOMPARE(rows, 2);
+        QCOMPARE(title, HosterPanel::tr("Links of %1").arg(QStringLiteral("set.dlc")));
+        QVERIFY2(texts.first().startsWith(QStringLiteral("[Pkg A] one.rar")), qPrintable(texts.first()));
+        QCOMPARE(packageName, QStringLiteral("<none>"));   // several packages: their own names
+
+        QTimer::singleShot(50, inspect);
+        send({link(QStringLiteral("https://a.test/1"), QStringLiteral("one.rar"), QStringLiteral("Pkg A"))});
+        QCOMPARE(rows, 1);
+        QCOMPARE(texts.first(), QStringLiteral("one.rar"));
+        QCOMPARE(packageName, QStringLiteral("Pkg A"));
+
+        // no package in the container: the file's name
+        packageName.clear();
+        QTimer::singleShot(50, inspect);
+        send({QCborMap{{QStringLiteral("url"), QStringLiteral("https://a.test/3")}}});
+        QCOMPARE(packageName, QStringLiteral("set"));
+    }
+
+    /// no links: a box saying why, worded by code
+    void containerFailureWarns()
+    {
+        IpcClient ipc;
+        HosterPanel panel;
+        panel.setIpcClient(&ipc);
+        QString text;
+        QTimer::singleShot(50, [&] {
+            if (auto* box = qobject_cast<QMessageBox*>(QApplication::activeModalWidget())) {
+                text = box->text();
+                box->reject();
+            }
+        });
+        IpcMessage msg(IpcMsgType::PushHosterLinks, 0);
+        msg.append(qint64(0));
+        msg.append(QCborArray{});
+        msg.append(QCborMap{{QStringLiteral("fileName"), QStringLiteral("x.dlc")}, {QStringLiteral("code"), QStringLiteral("limit")},
+                            {QStringLiteral("text"), QStringLiteral("Server claims: DLC Limit reached.")}});
+        emit ipc.hosterLinksExpanded(msg);
+        QVERIFY2(text.startsWith(QStringLiteral("x.dlc: ")), qPrintable(text));
+        QVERIFY2(text.contains(QStringLiteral("too many")), qPrintable(text));
+    }
+
+    /// a .dlc dragged over the list: the list takes no drops, the panel does (Torrents and
+    /// Usenet take .torrent and .nzb the same way); other files are not taken
+    void dropOnListReachesPanel()
+    {
+        HosterPanel panel;
+        panel.resize(600, 300);
+        panel.show();
+        QVERIFY(QTest::qWaitForWindowExposed(&panel));
+        auto* tree = panel.findChild<QTreeWidget*>();
+        QVERIFY(tree);
+        QTemporaryDir tmp;
+        const QString dlc = tmp.filePath(QStringLiteral("set.DLC"));
+        const QString txt = tmp.filePath(QStringLiteral("notes.txt"));
+        for (const QString& p : {dlc, txt}) {
+            QFile f(p);
+            QVERIFY(f.open(QIODevice::WriteOnly));
+            f.write("x");
+        }
+        const auto accepted = [&](const QString& path) {
+            QMimeData mime;
+            mime.setUrls({QUrl::fromLocalFile(path)});
+            QDragEnterEvent ev(tree->viewport()->rect().center(), Qt::CopyAction, &mime, Qt::LeftButton, Qt::NoModifier);
+            QApplication::sendEvent(tree->viewport(), &ev);
+            return ev.isAccepted();
+        };
+        QVERIFY(accepted(dlc));
+        QVERIFY(!accepted(txt));
+    }
+
+    /// an extraction that ends wanting a password asks once per package; rows loaded wanting
+    /// one do not (the menu's Set Password covers them)
+    void passwordAskedOnceWhenExtractionWantsOne()
+    {
+        IpcClient ipc;
+        HosterPanel panel;
+        panel.setIpcClient(&ipc);
+        const auto with = [](qint64 id, int reason) {
+            QCborMap it = item(id, QStringLiteral("p%1.rar").arg(id), 7, QStringLiteral("Pack"), 8);   // Complete
+            it.insert(QStringLiteral("reason"), reason);
+            return it;
+        };
+        const auto dialogs = [] {
+            QList<QInputDialog*> open;
+            for (QWidget* w : QApplication::topLevelWidgets())
+                if (auto* d = qobject_cast<QInputDialog*>(w); d && d->isVisible())
+                    open << d;
+            return open;
+        };
+        push(ipc, with(1, 34));   // first seen wanting one
+        push(ipc, with(2, 31));
+        push(ipc, with(3, 31));
+        QCoreApplication::processEvents();
+        QVERIFY(dialogs().isEmpty());
+        push(ipc, with(2, 34));
+        push(ipc, with(3, 34));   // same package: the open dialog stays the only one
+        QTRY_COMPARE(dialogs().size(), 1);
+        QCoreApplication::processEvents();
+        QCOMPARE(dialogs().size(), 1);
+        QVERIFY(dialogs().first()->labelText().contains(QStringLiteral("Pack")));
+        QCOMPARE(dialogs().first()->textEchoMode(), QLineEdit::Password);
+        dialogs().first()->reject();
+        QTRY_VERIFY(dialogs().isEmpty());
     }
 
     // the box's own reject ran before the button's slot: "Skip hoster" arrived as a plain skip

@@ -379,7 +379,7 @@ void BugReportDialog::onBrowseCrashDump()
     const QString startDir = CrashHandler::crashDir();
     const QString file = QFileDialog::getOpenFileName(
         this, tr("Select Crash Dump"), startDir,
-        tr("Dump Files (*.dmp *.crash *.txt);;All Files (*)"));
+        tr("Dump Files (*.dmp *.crash *.stall *.txt);;All Files (*)"));
     if (!file.isEmpty())
         m_crashDumpEdit->setText(file);
 }
@@ -398,7 +398,8 @@ void BugReportDialog::prefillCrashDump()
     if (!crashDir.exists())
         return;
 
-    const QStringList filters{QStringLiteral("*.crash"), QStringLiteral("*.dmp")};
+    // .stall: the core's main-thread stack when its event loop stopped (StallWatchdog)
+    const QStringList filters{QStringLiteral("*.crash"), QStringLiteral("*.dmp"), QStringLiteral("*.stall")};
     QFileInfoList entries = crashDir.entryInfoList(filters, QDir::Files, QDir::Time);
     if (!entries.isEmpty())
         m_crashDumpEdit->setText(entries.first().absoluteFilePath());

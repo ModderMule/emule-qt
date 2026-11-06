@@ -2,6 +2,9 @@
 #include <QFileInfo>
 #ifdef EMULE_HAVE_BITTORRENT
 #include "panels/TorrentPanel.h"
+#ifdef EMULE_HAVE_HOSTER_JD
+#include "panels/HosterPanel.h"
+#endif
 #endif
 #include "panels/UsenetPanel.h"
 #include "panels/IrcPanel.h"
@@ -21,6 +24,7 @@
 #include "utils/Ed2kLinkImporter.h"
 #include "utils/Log.h"
 #include "utils/StatusBarNotifier.h"
+#include "utils/ContainerDrop.h"
 #include "utils/TorrentLinks.h"
 
 #include <QDesktopServices>
@@ -153,7 +157,7 @@ bool ExternalLinkHandler::eventFilter(QObject* watched, QEvent* event)
         // this code path has been bitten by that before.
         const QString path = static_cast<QFileOpenEvent*>(event)->file();
         if ((path.endsWith(QStringLiteral(".nzb"), Qt::CaseInsensitive) || Ed3kLinkActions::isNodeListPath(path)
-             || (gui::kBitTorrentBuilt && gui::isTorrentFilePath(path)))
+             || (gui::kBitTorrentBuilt && gui::isTorrentFilePath(path)) || gui::isContainerFilePath(path))
             && QFileInfo(path).isFile()) {
             // Off the Apple Event's call stack, then through the same queue a link
             // uses. Acting here directly dropped the file when this arrived during
@@ -351,6 +355,23 @@ void ExternalLinkHandler::openNow(const QString& link)
 
 void ExternalLinkHandler::openFileNow(const QString& path)
 {
+    // a link container (.dlc): the Hoster tab
+    if (gui::isContainerFilePath(path)) {
+#ifdef EMULE_HAVE_HOSTER_JD
+        HosterPanel* hoster = m_mainWindow ? m_mainWindow->hosterPanel() : nullptr;
+        if (!hoster || !thePrefs.hosterDownloadsOn()) {
+            logError(QStringLiteral("Hoster downloads are off, cannot open %1").arg(path));
+            return;
+        }
+        if (thePrefs.bringToFrontOnLinkClick())
+            m_mainWindow->restoreWindow();
+        m_mainWindow->switchToTab(MainWindow::TabHoster);
+        hoster->openContainerFiles({path});
+#else
+        logError(QStringLiteral("Built without the hoster resolver, cannot open %1").arg(path));
+#endif
+        return;
+    }
     // bootstrap.md §3 "By hand": a node list file opened
     if (Ed3kLinkActions::isNodeListPath(path)) {
         if (m_mainWindow && thePrefs.bringToFrontOnLinkClick())

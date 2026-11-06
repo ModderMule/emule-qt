@@ -67,7 +67,8 @@ public:
     /// hands anything else to the desktop's browser.
     void open(const QString& link);
 
-    /// Queue @p path, a .nzb (Usenet panel), .torrent (Torrents panel) or .ed3knod (ed3k node
+    /// Queue @p path, a .nzb (Usenet panel), .torrent (Torrents panel), .dlc/.rsdf/.ccf (Hoster
+    /// panel) or .ed3knod (ed3k node
     /// list opened by hand, bootstrap.md §3; batch 15) file —
     /// waiting for the daemon the same way a link does, and unconditionally, since
     /// there is no version of adding either that does not go through it.

@@ -289,7 +289,7 @@ protected:
     // queued there. Narrow on purpose — nzbDropCandidates() accepts only .nzb
     // files and http(s) .nzb links, so a future ed2k or collection drop is still
     // free to be handled separately rather than swallowed here. A .torrent
-    // drop goes to the Torrents tab the same way.
+    // drop goes to the Torrents tab the same way, a .dlc/.rsdf/.ccf to the Hoster tab.
     void dragEnterEvent(QDragEnterEvent* event) override;
     void dragMoveEvent(QDragMoveEvent* event) override;
     void dropEvent(QDropEvent* event) override;

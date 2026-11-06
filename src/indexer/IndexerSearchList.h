@@ -55,6 +55,10 @@ public:
 
     [[nodiscard]] QList<IndexerConfig> accounts() const { return m_accounts; }
 
+    /// Whether an enabled account answers @p wanted searches (Newznab = Usenet,
+    /// Torznab = torrents).
+    [[nodiscard]] bool hasEnabledAccount(IndexerKind wanted) const;
+
     /// Cached capabilities for @p name, or null when nothing has been probed.
     [[nodiscard]] const IndexerCaps* capsFor(const QString& name) const;
 
@@ -111,6 +115,7 @@ private:
         QString password;
         QUrl downloadUrl;
         qint64 savedAt = 0;   ///< Unix seconds
+        QUrl magnetUrl;       ///< torznab: used when the .torrent fetch fails
     };
 
     void rememberGrabs(const QList<IndexerResult>& rows);
@@ -120,7 +125,8 @@ private:
     [[nodiscard]] static QString grabCachePath();
     [[nodiscard]] const IndexerConfig* accountNamed(const QString& displayName) const;
     void fetchGrab(const IndexerConfig& account, const QString& resultId, const QUrl& url,
-                   const QString& name, const QString& password, GrabCallback done);
+                   const QUrl& magnet, const QString& name, const QString& password,
+                   GrabCallback done);
 
     IndexerClient* m_client = nullptr;
     PasswordFlagStore* m_passwordFlags = nullptr;

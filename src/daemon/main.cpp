@@ -26,6 +26,7 @@
 #include "utils/CrashHandler.h"
 #include "utils/Log.h"
 #include "utils/SidecarProcess.h"
+#include "utils/StallWatchdog.h"
 
 #include <QCoreApplication>
 #include <QDeadlineTimer>
@@ -41,6 +42,7 @@
 #include <chrono>
 #include <cstdio>
 #include <cstdlib>
+#include <optional>
 #include <thread>
 #include <vector>
 
@@ -373,6 +375,11 @@ int main(int argc, char* argv[])
                        .arg(ipcHost)
                        .arg(ipcPort));
 
+    // A stuck event loop leaves its stack in crashes/ (report 20). After start():
+    // loading the share may take long before the loop runs at all
+    std::optional<eMule::StallWatchdog> stallWatchdog;
+    stallWatchdog.emplace(eMule::CrashHandler::crashDir());
+
     // Second half of the MFC import: unfinished downloads of the old temp dirs.
     // Copied, not moved -- the old install keeps its part files.
     if (const QStringList oldTemps = eMule::LegacyConfigImport::takePendingTempDirs(configDir);
@@ -387,10 +394,11 @@ int main(int argc, char* argv[])
     // Once, whoever gets there first: the event loop ending, or Windows ending the
     // session from inside it.
     bool stopped = false;
-    const auto shutdownNow = [&daemon, &stopped] {
+    const auto shutdownNow = [&daemon, &stopped, &stallWatchdog] {
         if (stopped)
             return;
         stopped = true;
+        stallWatchdog.reset();   // the teardown runs outside the loop
         armQuitDeadline();
         daemon.stop();
         eMule::thePrefs.save();

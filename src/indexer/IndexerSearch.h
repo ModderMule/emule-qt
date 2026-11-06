@@ -55,6 +55,10 @@ public:
     /// one.
     void stop();
 
+    /// Torrent search: rows of a Usenet+torrent account (Prowlarr) that carry no
+    /// torrent attribute are dropped.
+    void setTorrentsOnly(bool on) { m_torrentsOnly = on; }
+
 signals:
     void resultsReady(quint32 searchId, const QList<eMule::indexer::IndexerResult>& rows);
     void progress(quint32 searchId, int done, int total);
@@ -84,6 +88,7 @@ private:
     IndexerQuery m_query;
     QList<AccountState> m_accounts;
     int m_maxPages = 3;
+    bool m_torrentsOnly = false;
 
     QList<IndexerResult> m_results;
 

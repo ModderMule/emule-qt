@@ -130,6 +130,7 @@ public:
         int mirrorNo = 0;            ///< which of the file's links url is (0: the first)
         quint32 packageId = 0;       ///< 0: no package; else the group it was added in
         QString package;             ///< the package's name; its folder under incoming
+        QStringList passwords;       ///< archive passwords (a container's), tried by the unpack
     };
 
     /// What a link check found. Values are sent over IPC: append only.
@@ -196,12 +197,21 @@ public:
     /// when that one fails or is stuck. An entry with any link already an item is skipped.
     /// @p package not empty: the items form a new package of that name (never nested).
     /// @p packageId an existing package: they join it instead (wins over @p package).
+    /// @p passwords: archive passwords for the unpack (a container's)
     QList<quint32> addMirrored(const QList<QStringList>& files, const QString& package = {},
-                               quint32 packageId = 0);
+                               quint32 packageId = 0, const QStringList& passwords = {});
+    /// Reads the links of a container file (DLC, RSDF, CCF; @p data its bytes, @p fileName for
+    /// the plugin and the GUI). containerOpened() follows with the token returned; 0: refused
+    /// (no resolver, hosters off or too big), nothing follows.
+    quint64 openContainer(const QByteArray& data, const QString& fileName);
     void pause(quint32 id);
     void resume(quint32 id);
     /// Starts @p id over from its first link; puzzles of its hosters are asked again.
     void retry(quint32 id);
+    /// An archive password the user typed for @p id's encrypted set: kept with its package
+    /// (each of its items; without a package, the sets waiting for one in its folder), tried
+    /// before the others, and the extraction runs again. False: @p id waits for no password.
+    bool setArchivePassword(quint32 id, const QString& password);
     /// Removes the item; its unfinished file always, a complete one only with @p deleteFile.
     void remove(quint32 id, bool deleteFile);
     /// Empty @p text skips; @p skipHoster also skips every later puzzle of that hoster until
@@ -235,6 +245,9 @@ signals:
     /// The link of @p id names a folder: these are its links (the GUI asks which to add).
     void linksExpanded(quint32 id, const QList<eMule::ed3k::ResolverLink>& links);
     void accountChecked(const QString& host, const QString& user, const eMule::ed3k::ResolverEvent& result);
+    /// An openContainer() result: its links, or empty with the resolver's @p code and @p text.
+    void containerOpened(quint64 token, const QString& fileName, const QList<eMule::ed3k::ResolverLink>& links,
+                         const QString& code, const QString& text);
     /// A checkLinks() result.
     void linkChecked(const QString& url, const eMule::ed3k::Ed3kHosterJoin::LinkCheck& check);
 
@@ -450,6 +463,14 @@ private:
     std::map<QString, AccountStatus> m_accountStatus;
     /// sites tasks → account host; domain → its hoster's main domain (siteOf())
     std::map<Ed3kResolver::TaskId, QString> m_siteQueries;
+    /// openContainer() tasks → token, scratch file, the file's name
+    struct ContainerAsk {
+        quint64 token = 0;
+        QString path;
+        QString fileName;
+    };
+    std::map<Ed3kResolver::TaskId, ContainerAsk> m_containerAsks;
+    quint64 m_nextContainer = 1;
     QHash<QString, QString> m_siteOf;
     /// ALIAS searches (§4 lookup) → item
     std::map<std::uint32_t, quint32> m_searches;

@@ -47,16 +47,8 @@ bool feedAccepts(const IndexerFeed& feed, const CompiledFeedFilter& filter,
     if (filter.hasAccept() && !filter.accept.match(row.title).hasMatch())
         return false;
 
-    // size == 0 means the indexer did not report one, not that the release is
-    // empty -- a row is dropped at parse time only for a missing title or URL.
-    // Applying a bound to it would silently empty every feed on an indexer that
-    // omits the attribute.
-    if (row.size > 0) {
-        if (feed.minSize > 0 && row.size < feed.minSize)
-            return false;
-        if (feed.maxSize > 0 && row.size > feed.maxSize)
-            return false;
-    }
+    if (!row.sizeWithin(feed.minSize, feed.maxSize))
+        return false;
 
     // Same for the date: ageDays() returns -1 when the indexer gave none.
     if (feed.maxAgeDays > 0) {

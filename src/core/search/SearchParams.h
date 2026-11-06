@@ -49,7 +49,16 @@ enum class SearchType : uint8 {
     /// ed3k live channels (live.md §1.2): the ed3k keyword search filtered to channel files
     /// (`.ed3klive`), on the same path as Ed3k; a row is watched, not downloaded.
     Ed3kLive    = 10,
+    /// Keyword search against the configured torznab indexers (Jackett, Prowlarr):
+    /// UsenetIndexer's path, torrent rows only.
+    TorrentIndexer = 11,
 };
+
+/// A search the configured newznab/torznab indexers answer (StartIndexerSearch).
+[[nodiscard]] constexpr bool isIndexerSearchType(SearchType type)
+{
+    return type == SearchType::UsenetIndexer || type == SearchType::TorrentIndexer;
+}
 
 /// A search the daemon's ed3k node answers (Ed3kSearch through MetaSearchService).
 [[nodiscard]] constexpr bool isEd3kSearchType(SearchType type)

@@ -65,6 +65,20 @@
 			<key>LSHandlerRank</key>
 			<string>Alternate</string>
 		</dict>
+		<dict>
+			<!-- Link container (JDownloader's DLC): the Hoster tab. Claimed only when
+			     Options → ed3k → Hoster asks for it (default off). -->
+			<key>CFBundleTypeName</key>
+			<string>DLC Link Container</string>
+			<key>CFBundleTypeExtensions</key>
+			<array>
+				<string>dlc</string>
+			</array>
+			<key>CFBundleTypeRole</key>
+			<string>Viewer</string>
+			<key>LSHandlerRank</key>
+			<string>Alternate</string>
+		</dict>
 	</array>
 	<key>CFBundleURLTypes</key>
 	<array>

@@ -139,6 +139,8 @@ data/config/GeoLite2-Country.mmdb
 dev/
 docs/avatars
 data/nzb
+data/dlc
+data/torrent
 .mcp.json
 
 # Nested repos, not needed by CI yet

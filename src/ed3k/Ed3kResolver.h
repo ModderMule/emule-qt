@@ -31,6 +31,8 @@ struct ResolverLink {
     QString name;
     QString host;
     std::uint64_t size = 0;   ///< 0 = unknown
+    QString package;          ///< a container's package name; empty: none
+    QStringList passwords;    ///< a container's archive passwords
 };
 
 struct ResolverEvent {
@@ -39,14 +41,16 @@ struct ResolverEvent {
         Sites,        ///< sites: host (empty: no hoster plugin), sites
         Found,        ///< check: name, size, hash
         Folder,       ///< check: the link names count links; ask expand
-        Links,        ///< expand: links
+        Links,        ///< expand, openContainer: links
         Progress,     ///< open: bytes on disk from the front of path; total if known
         Wait,         ///< a timer or a quota: seconds; open goes on by itself while reason is "timer"
         Puzzle,       ///< an image puzzle: puzzle id, image, host, explain, timeoutS
         Done,         ///< open: the whole file is at path (size, name, hash)
         Gone,         ///< the hoster says the file was removed
         NeedsUser,    ///< text: "puzzle" or "login"
-        Failed,       ///< code: "io", "defect", "failed", "noPlugin", "folder", "unavailable"; text
+        Failed,       ///< code: "io", "defect", "failed", "noPlugin", "folder", "unavailable"; openContainer
+                      ///< also "limit" (the DLC service refuses for a while), "invalid", "password",
+                      ///< "bad" (a resolver without containers); text
         Cancelled,
         Account,      ///< accountCheck: valid, premium, expires, trafficLeft
         Status,       ///< open: what the plugin does, text: "link", "hoster", "hosterAccount", "puzzle", "connect", "transfer"
@@ -105,6 +109,9 @@ public:
     virtual TaskId match(const QString& url) = 0;
     virtual TaskId check(const QString& url, const std::optional<ResolverAccount>& account) = 0;
     virtual TaskId expand(const QString& url) = 0;
+    /// The links of a container file (DLC, RSDF, CCF) at @p path, as written; DLC asks JD's
+    /// key service (network). Links or Failed follows.
+    virtual TaskId openContainer(const QString& path) = 0;
     /// The file into @p dir (empty, one per task). @p have: bytes already at the front of its
     /// part file, written by the caller; 0 = from the start.
     virtual TaskId open(const QString& url, const std::optional<ResolverAccount>& account, const QString& dir,

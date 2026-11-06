@@ -64,6 +64,9 @@ void insertRates(QCborMap& stats);
 /// Outcome 3 (not running) without an engine.
 [[nodiscard]] QCborMap addTorrentData(const QByteArray& data, bool paused);
 
+/// Adds a magnet URI to the download dir: AddMagnet's {outcome, id, message}.
+[[nodiscard]] QCborMap addMagnetUri(const QString& uri, bool paused);
+
 /// A .torrent read without adding it: {id, name, infoHashV1, infoHashV2, totalSize,
 /// pieceLength, pieceCount, private, comment, creator, creationDate,
 /// files: [{index, path, size, pad}], trackers: [{url, tier}], webSeeds: [url]}.

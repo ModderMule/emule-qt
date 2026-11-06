@@ -1,5 +1,5 @@
 /// @file FileAssociation.cpp
-/// @brief Registering .nzb, .torrent, magnet:, ed3k: and ed2k: with the desktop — implementation.
+/// @brief Registering .nzb, .torrent, .dlc, magnet:, ed3k: and ed2k: with the desktop — implementation.
 
 #include "utils/FileAssociation.h"
 
@@ -29,9 +29,11 @@ namespace {
 
 constexpr auto kProgId = "eMuleQt.nzb";
 constexpr auto kTorrentProgId = "eMuleQt.torrent";
+constexpr auto kDlcProgId = "eMuleQt.dlc";
 constexpr auto kDesktopFileName = "emuleqt.desktop";
 constexpr auto kMimeFileName = "emuleqt-nzb.xml";
 constexpr auto kTorrentMimeFileName = "emuleqt-torrent.xml";
+constexpr auto kDlcMimeFileName = "emuleqt-dlc.xml";
 
 /// What the desktop should start. The Linux tarball runs foo.bin through a foo
 /// script that sets LD_LIBRARY_PATH; the bare .bin finds no libraries (#111).
@@ -84,6 +86,8 @@ QStringList xdgMimeTypes(FileTypes types)
     // ed3k goes with ed2k; each switch on its own (#111)
     if (types.ed2k)
         out << QStringLiteral("x-scheme-handler/ed2k") << QStringLiteral("x-scheme-handler/ed3k");
+    if (types.dlc)
+        out << QLatin1String(kDlcMimeType);
     return out;
 }
 
@@ -160,6 +164,18 @@ QList<DesktopFile> desktopFiles(const QString& exePath, const QString& dataHome,
                           "  </mime-type>\n"
                           "</mime-info>\n")
                           .arg(QLatin1String(kTorrentMimeType))});
+    }
+    if (types.dlc) {
+        files.append({QDir(dataHome).filePath(QStringLiteral("mime/packages/%1").arg(kDlcMimeFileName)),
+                      QStringLiteral(
+                          "<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n"
+                          "<mime-info xmlns=\"http://www.freedesktop.org/standards/shared-mime-info\">\n"
+                          "  <mime-type type=\"%1\">\n"
+                          "    <comment>DLC link container</comment>\n"
+                          "    <glob pattern=\"*.dlc\"/>\n"
+                          "  </mime-type>\n"
+                          "</mime-info>\n")
+                          .arg(QLatin1String(kDlcMimeType))});
     }
     return files;
 }
@@ -311,6 +327,8 @@ QList<RegistryValue> registryValues(const QString& exePath, FileTypes types)
         urlScheme(QStringLiteral("ed2k"), QStringLiteral("URL:eD2K Protocol"));
         urlScheme(QStringLiteral("ed3k"), QStringLiteral("URL:eD3K Protocol"));
     }
+    if (types.dlc)
+        fileType(QStringLiteral(".dlc"), QLatin1String(kDlcProgId), QStringLiteral("DLC Link Container"));
     return out;
 }
 
@@ -358,6 +376,8 @@ QList<Target> targetsOf(FileTypes types)
         out.append({true, QStringLiteral("ed2k")});
         out.append({true, QStringLiteral("ed3k")});
     }
+    if (types.dlc)
+        out.append({false, QStringLiteral("dlc")});
     return out;
 }
 
@@ -452,7 +472,8 @@ FileTypes claimedTypes()
         return {};
     return {.nzb = ownsAll({.nzb = true}, ownId),
             .torrent = ownsAll({.torrent = true}, ownId),
-            .ed2k = ownsAll({.ed2k = true}, ownId)};
+            .ed2k = ownsAll({.ed2k = true}, ownId),
+            .dlc = ownsAll({.dlc = true}, ownId)};
 }
 
 bool applyFileTypes(FileTypes types, QString& error, bool /*setDefault*/)
@@ -465,7 +486,7 @@ bool applyFileTypes(FileTypes types, QString& error, bool /*setDefault*/)
 
     const QList<Target> wantedTargets = targetsOf(types);
     QStringList failed;
-    for (const Target& t : targetsOf({true, true, true})) {
+    for (const Target& t : targetsOf(FileTypes::all())) {
         const bool wanted = std::ranges::any_of(wantedTargets, [&](const Target& w) {
             return w.scheme == t.scheme && w.name == t.name;
         });
@@ -578,6 +599,8 @@ bool applyFileTypes(FileTypes types, QString& error, bool /*setDefault*/)
         dropScheme(classes, QStringLiteral("ed2k"));
         dropScheme(classes, QStringLiteral("ed3k"));
     }
+    if (!types.dlc)
+        dropFileType(classes, QStringLiteral(".dlc"), QLatin1String(kDlcProgId));
     for (const auto& value : registryValues(exePath(), types)) {
         // Pick the leaf first, and keep the join in a QString: with
         // QT_USE_QSTRINGBUILDER a ternary over the two concatenations has two
@@ -677,7 +700,7 @@ bool applyFileTypes(FileTypes types, QString& error, bool setDefault)
     installDesktopIcons();
 
     // the mime definitions of every type, so those switched off can be removed
-    const QList<DesktopFile> all = desktopFiles(exePath(), dataHome, {true, true, true});
+    const QList<DesktopFile> all = desktopFiles(exePath(), dataHome, FileTypes::all());
     const QList<DesktopFile> wanted = desktopFiles(exePath(), dataHome, types);
     for (const auto& entry : all)
         if (std::none_of(wanted.begin(), wanted.end(), [&](const DesktopFile& w) { return w.path == entry.path; }))
@@ -696,7 +719,7 @@ bool applyFileTypes(FileTypes types, QString& error, bool setDefault)
         file.write(entry.contents.toUtf8());
     }
 
-    QStringList dropped = xdgMimeTypes({true, true, true});
+    QStringList dropped = xdgMimeTypes(FileTypes::all());
     for (const QString& type : xdgMimeTypes(types))
         dropped.removeAll(type);
     dropMimeDefaults(dataHome, dropped);
@@ -715,9 +738,9 @@ bool unregisterFileTypes(QString& error)
     if (dataHome.isEmpty())
         return false;
 
-    for (const auto& entry : desktopFiles(exePath(), dataHome, {true, true, true}))
+    for (const auto& entry : desktopFiles(exePath(), dataHome, FileTypes::all()))
         QFile::remove(entry.path);
-    dropMimeDefaults(dataHome, xdgMimeTypes({true, true, true}));
+    dropMimeDefaults(dataHome, xdgMimeTypes(FileTypes::all()));
 
     refreshDatabases(dataHome);
     return true;

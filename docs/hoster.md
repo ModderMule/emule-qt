@@ -100,6 +100,27 @@ builds the package rows from them and sums size, progress, speed and states. The
 folder name: `/` and `\` become `_`. Removing an item with its file removes the package folder
 once it is empty. Actions on a package row act on all its items.
 
+## Link containers (DLC, RSDF, CCF)
+
+A container file holds hoster links, often with package names and archive passwords. Ways in:
+the Hoster tab's *Open DLC...* button and context menu entry, a drop on the Hoster tab or anywhere
+on the main window, the desktop (Finder, double click, command line argument) once *Open .dlc files
+with eMule Qt* is on (Options › ed3k › Hoster; `uistate.yml` `associateDlcFiles`, default off,
+claimed only while hoster downloads are on; `FileTypes::dlc`, bit 8 of `appliedFileTypes`).
+
+- GUI → `OpenHosterContainer` (1109) `[fileName, data]`, at most 4 MiB: the bytes travel, so a
+  remote GUI works. The daemon writes `<temp>/ed3k-hoster/containers/<token>-<name>` and asks the
+  sidecar's `container` op; the file is deleted after. Needs no ed3k node, only the resolver.
+- The sidecar calls JD's container plugin (`org.jdownloader.container.D` for DLC). DLC asks
+  `service.jdownloader.org/dlcrypt/service.php` for the key (`srcType=dlc&destType=jdtc6`, as JD
+  does; one request per file). The service refuses for a few minutes after many files: code `limit`.
+- Result → `PushHosterLinks [0, links, {token, fileName, code, text}]`. The GUI lists the links;
+  one package: an editable *Package Name* (the container's, else the file name); several: each
+  added as its own package. Passwords go with the items (`AddHosterLinks` field 4, `Item::passwords`,
+  `.met`/`items.json` key `passwords`) and the unpack tries them after the empty one.
+- Test files: `data/dlc/archive-*.dlc` (gitignored), made with JD's own `srcType=plain` call
+  around archive.org links; `live_jdResolverOpensContainers` opens every file there.
+
 ## Extraction and sharing
 
 - Done file not an archive (or extraction off): moves to `<incoming>[/<package>]/`.
@@ -111,6 +132,12 @@ once it is empty. Actions on a package row act on all its items.
   folders kept, taken names get ` (n)`) under the `.usenetpart` suffix the share scan skips.
   `Unpacking` (arg %), then `Unpacked` (arg = folder; *Open folder* opens it), `UnpackFailed`
   (headless set, broken archive) or `UnpackPassword`; *Retry* runs a failed one again.
+- Passwords: the empty one, then the package's (`Item::passwords` of the set's items, typed ones
+  first, then a container's). None opens it → `UnpackPassword`; the GUI asks at once (*Set
+  Password…*, one dialog per package, else per folder; rows loaded that way are not asked, the
+  menu covers them). `HosterAction [id, "password", pw]` → `setArchivePassword`: prepended to
+  every item of the package (no package: complete items in the same folder), those waiting go
+  back to `UnpackWaiting`. A wrong one ends as `UnpackPassword` again and asks again.
 - `deleteArchives` on: the set's volumes go after a good unpack; off: they stay in Temp.
 - Extraction switched off: waiting and failed archives move to incoming as they are.
 - An interrupted unpack (`Unpacking` in items.json) runs again at the next start.
@@ -295,7 +322,8 @@ not `emule.ed3k`: the GUI's **Hoster** log tab after Torrent, shown while `hoste
 
 - `tst_Ed3kHoster`: the join on a real engine with a fake resolver (mirrors, link checks `probe_*`,
   order `rank_*`); the JD resolver's event parser; the Java probe and Adoptium parsing.
-- Live, opt-in: `EMULE_HOSTER_LIVE=1` downloads a small archive.org file through the real sidecar;
+- Live, opt-in: `EMULE_HOSTER_LIVE=1` downloads a small archive.org file through the real sidecar
+  and opens every container in `data/dlc`;
   `EMULE_HOSTER_LIVE_JAVA=1` fetches Temurin into a temp folder.
 
 ## Status column
@@ -330,4 +358,3 @@ go over a loopback socket and stdin is empty, so any console read gets EOF.
   hoster items use them now.
 - The address check of `http-source.md` §5 for the sidecar's own requests (needs a hook in JD's `Browser`).
 - A signed online refresh of `resolver.zip`; an OS keychain for account passwords.
-- Archive passwords: no package password yet; an encrypted set ends as `UnpackPassword`.

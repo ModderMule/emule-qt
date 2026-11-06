@@ -62,6 +62,30 @@ QUrl buildIndexerCapsUrl(const IndexerConfig& config)
     return url;
 }
 
+IndexerQuery queryForIndexer(const IndexerQuery& query, const IndexerCaps& caps)
+{
+    if (query.mode.isEmpty() || query.mode == kModeSearch || caps.isEmpty()
+        || caps.supportsMode(capsModeFor(query.mode))) {
+        return query;
+    }
+
+    IndexerQuery plain = query;
+    plain.mode = kModeSearch.toString();
+    QString tag;
+    bool ok = false;
+    if (const int season = query.season.toInt(&ok); ok && season > 0) {
+        tag = QStringLiteral("S%1").arg(season, 2, 10, QLatin1Char('0'));
+        if (const int ep = query.episode.toInt(&ok); ok && ep > 0)
+            tag += QStringLiteral("E%1").arg(ep, 2, 10, QLatin1Char('0'));
+    }
+    if (!tag.isEmpty())
+        plain.text = plain.text.isEmpty() ? tag : plain.text + u' ' + tag;
+    plain.season.clear();
+    plain.episode.clear();
+    plain.imdbId.clear();
+    return plain;
+}
+
 QUrl buildIndexerSearchUrl(const IndexerConfig& config, const IndexerQuery& query,
                            const IndexerCaps* caps)
 {
@@ -70,7 +94,8 @@ QUrl buildIndexerSearchUrl(const IndexerConfig& config, const IndexerQuery& quer
         return {};
 
     const QString mode = query.mode.isEmpty() ? kModeSearch.toString() : query.mode;
-    const QStringView modeView(mode);
+    const QString capsMode = capsModeFor(mode);   // caps keys differ from t= values
+    const QStringView modeView(capsMode);
 
     QUrlQuery out = baseQuery(url);
     out.removeAllQueryItems(QStringLiteral("t"));
