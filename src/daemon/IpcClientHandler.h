@@ -337,6 +337,7 @@ private:
 
     // Preference application helpers (split to avoid MSVC C1061 nesting limit)
     static bool applyPreferenceA(const QString& key, const QCborValue& val);
+    static bool applyPreferenceNotify(const QString& key, const QCborValue& val);
     static bool applyPreferenceB(const QString& key, const QCborValue& val);
     static bool applyPreferenceC(const QString& key, const QCborValue& val);
     static bool applyPreferenceBt(const QString& key, const QCborValue& val);

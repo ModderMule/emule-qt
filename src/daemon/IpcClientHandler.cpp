@@ -4150,8 +4150,15 @@ bool IpcClientHandler::applyPreferenceA(const QString& key, const QCborValue& va
     }
     else if (key == QStringLiteral("archiveRecursiveExtract"))
         thePrefs.setArchiveRecursiveExtract(val.toBool());
+    else
+        return applyPreferenceNotify(key, val);   // split: MSVC C1061 nesting limit
+    return true;
+}
+
+bool IpcClientHandler::applyPreferenceNotify(const QString& key, const QCborValue& val)
+{
     // Notifications
-    else if (key == QStringLiteral("notifyOnLog"))
+    if (key == QStringLiteral("notifyOnLog"))
         thePrefs.setNotifyOnLog(val.toBool());
     else if (key == QStringLiteral("notifyOnChat"))
         thePrefs.setNotifyOnChat(val.toBool());
