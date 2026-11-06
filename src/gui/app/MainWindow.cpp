@@ -488,7 +488,7 @@ void MainWindow::showOptionsDialog(int page)
     });
     const bool hadSpeedGraph = (m_speedGraph != nullptr);
     const bool hadDwlPercentage = thePrefs.showDwlPercentage();
-    const bool hadPartDetail = thePrefs.showPartProgressDetail();
+    const int hadBarMode = thePrefs.downloadBarMode();
     const bool hadActiveBold = thePrefs.showActiveDownloadsBold();
     const int hadDepth3D = thePrefs.depth3D();
     const bool hadTorrents = !isTabHidden(TabTorrents);
@@ -505,7 +505,7 @@ void MainWindow::showOptionsDialog(int page)
 
     // Progress bars read the prefs at paint; paused rows get no push to repaint them
     if (thePrefs.showDwlPercentage() != hadDwlPercentage
-        || thePrefs.showPartProgressDetail() != hadPartDetail
+        || thePrefs.downloadBarMode() != hadBarMode
         || thePrefs.showActiveDownloadsBold() != hadActiveBold
         || thePrefs.depth3D() != hadDepth3D)
         update();

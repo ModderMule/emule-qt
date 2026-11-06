@@ -58,6 +58,9 @@ void TorrentProgressDelegate::paint(QPainter* painter, const QStyleOptionViewIte
         const bool flat = useFlatBar();
         BarShader::fillBarRect(*painter, bar, flat ? QColor(0, 150, 0) : QColor(0, 224, 0), flat,
                                barDepth3D());
+    } else if (useSimpleDownloadBar()) {
+        paintSimpleBar(*painter, bar, index.data(kTorrentBarPercentRole).toDouble(),
+                       index.data(kTorrentBarPausedRole).toBool());
     } else {
         const QByteArray map = index.data(kTorrentBarRole).toByteArray();
         const bool paused = index.data(kTorrentBarPausedRole).toBool();
