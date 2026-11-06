@@ -6,9 +6,11 @@
 #include "files/SharedDirWatcher.h"
 
 #include <QDir>
+#include <QElapsedTimer>
 #include <QFile>
 #include <QSignalSpy>
 #include <QTest>
+#include <QThread>
 
 using namespace eMule;
 
@@ -24,6 +26,7 @@ private slots:
     void aPollOverflowMayResetTheRoots();
     void aNetworkRootIsPolledEvenWhenWatched();
     void aMoveReportsBothDirectories();
+    void aSlowOsWatchDoesNotBlockTheCaller();
 };
 
 namespace {
@@ -48,6 +51,7 @@ void tst_SharedDirWatcher::aBurstOfChangesIsOneReport()
     // OS hands the events over late and in clumps.
     watcher.setTimings(1500, 20000, 60000);
     watcher.setRoots({dir});
+    QTRY_VERIFY(!watcher.watchesPending());
     QVERIFY(watcher.polledRoots().isEmpty());
     QSignalSpy changed(&watcher, &SharedDirWatcher::directoryChanged);
 
@@ -70,6 +74,7 @@ void tst_SharedDirWatcher::aBusyDirectoryIsReportedAnyway()
     SharedDirWatcher watcher;
     watcher.setTimings(400, 800, 60000);   // never quiet for 400 ms below
     watcher.setRoots({dir});
+    QTRY_VERIFY(!watcher.watchesPending());
     QSignalSpy changed(&watcher, &SharedDirWatcher::directoryChanged);
 
     for (int i = 0; i < 200 && changed.isEmpty(); ++i) {
@@ -91,6 +96,7 @@ void tst_SharedDirWatcher::otherDirectoriesAreNotReported()
     watcher.setTimings(100, 1000, 60000);
     watcher.setRoots({dir, other});
     watcher.setRoots({dir});   // dropped again
+    QTRY_VERIFY(!watcher.watchesPending());
     QCOMPARE(watcher.roots(), QStringList{dir});
     QSignalSpy changed(&watcher, &SharedDirWatcher::directoryChanged);
 
@@ -107,13 +113,14 @@ void tst_SharedDirWatcher::aMissingRootIsPolledAndThenWatched()
     SharedDirWatcher watcher;
     watcher.setTimings(100, 1000, 150);
     watcher.setRoots({dir});
+    QTRY_VERIFY(!watcher.watchesPending());
     QCOMPARE(watcher.polledRoots(), QStringList{dir});
     QSignalSpy changed(&watcher, &SharedDirWatcher::directoryChanged);
 
     QDir().mkpath(dir);
     touch(dir, QStringLiteral("f"));
     QTRY_VERIFY_WITH_TIMEOUT(!changed.isEmpty(), 5000);
-    QVERIFY2(watcher.polledRoots().isEmpty(), "watched once it exists");
+    QTRY_VERIFY2(watcher.polledRoots().isEmpty(), "watched once it exists");
 
     changed.clear();
     QTest::qWait(300);
@@ -133,6 +140,7 @@ void tst_SharedDirWatcher::tooManyDirectoriesAtOnceIsAnOverflow()
     SharedDirWatcher watcher;
     watcher.setTimings(2000, 10000, 60000);
     watcher.setRoots(dirs);
+    QTRY_VERIFY(!watcher.watchesPending());
     QSignalSpy changed(&watcher, &SharedDirWatcher::directoryChanged);
     QSignalSpy overflow(&watcher, &SharedDirWatcher::overflow);
 
@@ -155,6 +163,7 @@ void tst_SharedDirWatcher::aPollOverflowMayResetTheRoots()
     SharedDirWatcher watcher;
     watcher.setTimings(100, 1000, 50);
     watcher.setRoots(dirs);
+    QTRY_VERIFY(!watcher.watchesPending());
     QCOMPARE(watcher.polledRoots().size(), dirs.size());
     int overflows = 0;
     connect(&watcher, &SharedDirWatcher::overflow, &watcher, [&] {
@@ -164,7 +173,8 @@ void tst_SharedDirWatcher::aPollOverflowMayResetTheRoots()
     });
 
     QTRY_VERIFY_WITH_TIMEOUT(overflows >= 2, 5000);
-    QCOMPARE(watcher.polledRoots().size(), dirs.size());
+    // the reset roots are asked for again; polled once the worker answers
+    QTRY_COMPARE(watcher.polledRoots().size(), dirs.size());
 }
 
 // A watch on a network share is accepted and then tells little; such a root is
@@ -181,6 +191,7 @@ void tst_SharedDirWatcher::aNetworkRootIsPolledEvenWhenWatched()
     watcher.setRemoteCheck([&](const QString& dir) { return dir == remote; });
     watcher.setTimings(50, 500, 100);
     watcher.setRoots({local, remote});
+    QTRY_VERIFY(!watcher.watchesPending());
     QCOMPARE(watcher.polledRoots(), QStringList{remote});
     QSignalSpy changed(&watcher, &SharedDirWatcher::directoryChanged);
 
@@ -205,6 +216,7 @@ void tst_SharedDirWatcher::aMoveReportsBothDirectories()
     SharedDirWatcher watcher;
     watcher.setTimings(300, 20000, 60000);
     watcher.setRoots({from, to});
+    QTRY_VERIFY(!watcher.watchesPending());
     QSignalSpy batches(&watcher, &SharedDirWatcher::directoriesChanged);
     QSignalSpy single(&watcher, &SharedDirWatcher::directoryChanged);
 
@@ -221,6 +233,33 @@ void tst_SharedDirWatcher::aMoveReportsBothDirectories()
     // Per-directory signal too. The OS may report a directory a second time after
     // the first settle, so at least once each.
     QVERIFY(single.count() >= 2);
+}
+
+// macOS fseventsd took 19-38 s to accept a watch at startup and froze the core:
+// setRoots() returns at once, and a late watch reports the root once (changes made
+// meanwhile were not seen).
+void tst_SharedDirWatcher::aSlowOsWatchDoesNotBlockTheCaller()
+{
+    eMule::testing::TempDir tmp;
+    const QString dir = tmp.filePath(QStringLiteral("share"));
+    QDir().mkpath(dir);
+
+    SharedDirWatcher watcher;
+    watcher.setTimings(50, 500, 60000);
+    watcher.setBeforeAddHook([](const QString&) { QThread::msleep(1500); });
+    QSignalSpy changed(&watcher, &SharedDirWatcher::directoryChanged);
+
+    QElapsedTimer timer;
+    timer.start();
+    watcher.setRoots({dir});
+    QVERIFY2(timer.elapsed() < 500, "setRoots() waited for the OS");
+    QVERIFY(watcher.watchesPending());
+    QVERIFY2(watcher.polledRoots().isEmpty(), "not polled while the worker is busy");
+
+    QTRY_VERIFY_WITH_TIMEOUT(!watcher.watchesPending(), 10000);
+    QVERIFY(watcher.polledRoots().isEmpty());
+    QTRY_COMPARE_WITH_TIMEOUT(changed.count(), 1, 5000);
+    QCOMPARE(changed.first().first().toString(), dir);
 }
 
 QTEST_GUILESS_MAIN(tst_SharedDirWatcher)

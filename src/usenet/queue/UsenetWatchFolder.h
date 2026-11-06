@@ -20,6 +20,8 @@
 ///   - **The watcher alone is not enough, twice over.** FSEvents coalesces, and
 ///     no event ever fires for the files that were already there when the daemon
 ///     started. Hence a periodic rescan and a scan at start.
+///   - **Adding the watch can hang.** On macOS it waits for fseventsd (19-38 s
+///     seen), so it goes through SharedDirWatcher, which does it off-thread.
 ///   - **A duplicate is a success.** The queue refusing a release it already has
 ///     is the answer, not a failure, so the file goes to `_processed/`. Filing
 ///     it as failed would be a lie, and leaving it in place would make the
@@ -34,8 +36,11 @@
 #include <QObject>
 #include <QString>
 
-class QFileSystemWatcher;
 class QTimer;
+
+namespace eMule {
+class SharedDirWatcher;
+}
 
 namespace eMule::usenet {
 
@@ -88,7 +93,7 @@ private:
 
     UsenetQueue* m_queue = nullptr;
     QString m_dir;
-    QFileSystemWatcher* m_watcher = nullptr;
+    eMule::SharedDirWatcher* m_watcher = nullptr;
     QTimer* m_rescan = nullptr;
 
     /// Keyed by absolute path.

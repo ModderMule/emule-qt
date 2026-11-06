@@ -6,13 +6,13 @@
 
 #include "queue/UsenetQueue.h"
 
+#include "files/SharedDirWatcher.h"
 #include "prefs/Preferences.h"
 #include "utils/Log.h"
 
 #include <QDir>
 #include <QFile>
 #include <QFileInfo>
-#include <QFileSystemWatcher>
 #include <QTimer>
 
 namespace eMule::usenet {
@@ -75,9 +75,12 @@ void UsenetWatchFolder::applyPreferences()
         return;
     }
 
-    m_watcher = new QFileSystemWatcher(this);
-    m_watcher->addPath(m_dir);
-    connect(m_watcher, &QFileSystemWatcher::directoryChanged, this, &UsenetWatchFolder::scan);
+    // adds the watch off-thread; scan() does its own settle, so report fast
+    m_watcher = new SharedDirWatcher(this);
+    m_watcher->setTimings(200, 1000, kRescanMs);
+    connect(m_watcher, &SharedDirWatcher::directoryChanged, this, &UsenetWatchFolder::scan);
+    connect(m_watcher, &SharedDirWatcher::overflow, this, &UsenetWatchFolder::scan);
+    m_watcher->setRoots({m_dir});
     m_rescan->start();
 
     logUsenet(QStringLiteral("Usenet: watching %1 for .nzb files").arg(m_dir));

@@ -10,6 +10,7 @@
 #include <QFileSystemWatcher>
 #include <QSet>
 #include <QStorageInfo>
+#include <QThread>
 
 #ifdef Q_OS_WIN
 #include <windows.h>
@@ -17,12 +18,24 @@
 
 namespace eMule {
 
+namespace {
+// How long the destructor waits for a worker stuck in an OS call before leaving it.
+constexpr unsigned long kStopWaitMs = 2000;
+} // namespace
+
 SharedDirWatcher::SharedDirWatcher(QObject* parent)
     : QObject(parent)
-    , m_watcher(new QFileSystemWatcher(this))
+    , m_thread(new QThread)
+    , m_worker(new SharedDirWatchWorker)
 {
-    connect(m_watcher, &QFileSystemWatcher::directoryChanged,
-            this, &SharedDirWatcher::onDirectoryEvent);
+    m_thread->setObjectName(QStringLiteral("SharedDirWatcher"));
+    m_worker->moveToThread(m_thread);
+    connect(m_thread, &QThread::finished, m_worker, &QObject::deleteLater);
+    connect(m_worker, &SharedDirWatchWorker::directoryChanged,
+            this, [this](const QString& dir) { onDirectoryEvent(dir); });
+    connect(m_worker, &SharedDirWatchWorker::watched, this, &SharedDirWatcher::onWatched);
+    connect(m_worker, &SharedDirWatchWorker::rewatched, this, &SharedDirWatcher::onRewatched);
+    m_thread->start(QThread::LowPriority);
 
     m_flushTimer.setInterval(250);
     connect(&m_flushTimer, &QTimer::timeout, this, &SharedDirWatcher::flush);
@@ -31,51 +44,66 @@ SharedDirWatcher::SharedDirWatcher(QObject* parent)
     connect(&m_pollTimer, &QTimer::timeout, this, &SharedDirWatcher::poll);
 }
 
+SharedDirWatcher::~SharedDirWatcher()
+{
+    disconnect(m_worker, nullptr, this, nullptr);
+    // the thread deletes itself once done, so a stuck OS call does not hold up the owner
+    connect(m_thread, &QThread::finished, m_thread, &QObject::deleteLater);
+    m_thread->quit();
+    if (!m_thread->wait(kStopWaitMs))
+        logWarning(QStringLiteral("Shared directory watcher still busy in the OS, left to finish"));
+}
+
 void SharedDirWatcher::setRoots(const QStringList& dirs)
 {
     QHash<QString, Root> next;
     for (const QString& dir : dirs) {
         if (dir.isEmpty() || next.contains(dir))
             continue;
-        if (const auto it = m_roots.constFind(dir); it != m_roots.constEnd() && it->watched) {
+        if (const auto it = m_roots.constFind(dir); it != m_roots.constEnd()) {
             next.insert(dir, *it);
             continue;
         }
         Root root;
-        // false for a missing directory too; the poll picks it up when it appears
-        root.watched = m_watcher->addPath(dir);
-        root.remote = m_isRemote ? m_isRemote(dir) : isOnNetworkShare(dir);
-        if (!root.watched)
-            logDebug(QStringLiteral("Shared directory is polled, not watched: %1").arg(dir));
-        else if (root.remote)
-            logDebug(QStringLiteral("Shared directory on a network share is polled too: %1").arg(dir));
+        requestWatch(dir, root, true);
         next.insert(dir, root);
     }
+    sendWatches(true);
 
     for (auto it = m_roots.constBegin(); it != m_roots.constEnd(); ++it) {
         if (!next.contains(it.key())) {
-            if (it->watched)
-                m_watcher->removePath(it.key());
+            if (it->watched || it->pending)
+                QMetaObject::invokeMethod(m_worker, [w = m_worker, dir = it.key()] { w->unwatch(dir); });
             m_pending.remove(it.key());
         }
     }
     m_roots = std::move(next);
-
-    const bool anyPolled = std::ranges::any_of(
-        m_roots, [](const Root& r) { return !r.watched || r.remote; });
-    if (anyPolled && !m_pollTimer.isActive())
-        m_pollTimer.start();
-    else if (!anyPolled)
-        m_pollTimer.stop();
+    updatePollTimer();
 }
 
 QStringList SharedDirWatcher::polledRoots() const
 {
     QStringList out;
     for (auto it = m_roots.constBegin(); it != m_roots.constEnd(); ++it)
-        if (!it->watched || it->remote)
+        if (isPolled(*it))
             out.append(it.key());
     return out;
+}
+
+bool SharedDirWatcher::watchesPending() const
+{
+    return std::ranges::any_of(m_roots, [](const Root& r) { return r.pending; });
+}
+
+void SharedDirWatcher::setRemoteCheck(std::function<bool(const QString&)> check)
+{
+    // queued like the watches, so it is in place before the next one runs
+    QMetaObject::invokeMethod(m_worker, [w = m_worker, check = std::move(check)] { w->isRemote = check; });
+}
+
+void SharedDirWatcher::setBeforeAddHook(std::function<void(const QString&)> hook)
+{
+    QMetaObject::invokeMethod(m_worker, [w = m_worker, hook = std::move(hook)] { w->beforeAdd = hook; });
 }
 
 void SharedDirWatcher::setTimings(int settleMs, int maxHoldMs, int pollMs)
@@ -84,6 +112,69 @@ void SharedDirWatcher::setTimings(int settleMs, int maxHoldMs, int pollMs)
     m_maxHoldMs = maxHoldMs;
     m_flushTimer.setInterval(std::clamp(settleMs / 4, 10, 250));
     m_pollTimer.setInterval(pollMs);
+}
+
+bool SharedDirWatcher::isOnNetworkShare(const QString& dir)
+{
+#ifdef Q_OS_WIN
+    if (dir.startsWith(QLatin1String("//")) || dir.startsWith(QLatin1String("\\\\")))
+        return true;
+    const QString root = QStorageInfo(dir).rootPath();
+    return !root.isEmpty()
+        && GetDriveTypeW(reinterpret_cast<LPCWSTR>(QDir::toNativeSeparators(root).utf16()))
+               == DRIVE_REMOTE;
+#else
+    static const QSet<QByteArray> kNetworkTypes{
+        "nfs", "nfs4", "smbfs", "cifs", "smb2", "smb3", "afpfs", "webdav", "davfs",
+        "fuse.sshfs", "sshfs", "9p", "ncpfs", "ceph", "glusterfs", "fuse.glusterfs"};
+    return kNetworkTypes.contains(QStorageInfo(dir).fileSystemType().toLower());
+#endif
+}
+
+// ---------------------------------------------------------------------------
+// SharedDirWatchWorker (worker thread)
+// ---------------------------------------------------------------------------
+
+SharedDirWatchWorker::SharedDirWatchWorker(QObject* parent)
+    : QObject(parent)
+    , m_watcher(new QFileSystemWatcher(this))   // moves with us to the worker thread
+{
+    connect(m_watcher, &QFileSystemWatcher::directoryChanged,
+            this, &SharedDirWatchWorker::directoryChanged);
+}
+
+void SharedDirWatchWorker::watch(const QList<Request>& requests, bool checkRemote)
+{
+    const QStringList have = m_watcher->directories();
+    QStringList add;
+    for (const Request& r : requests)
+        if (!have.contains(r.dir) && !add.contains(r.dir))
+            add.append(r.dir);
+    for (const QString& dir : add)
+        if (beforeAdd)
+            beforeAdd(dir);
+    // a missing directory fails too; the poll picks it up when it appears
+    const QStringList failed = add.isEmpty() ? QStringList{} : m_watcher->addPaths(add);
+    for (const Request& r : requests) {
+        const bool remote = checkRemote
+            && (isRemote ? isRemote(r.dir) : SharedDirWatcher::isOnNetworkShare(r.dir));
+        emit watched(r.dir, !failed.contains(r.dir), remote, r.id);
+    }
+}
+
+void SharedDirWatchWorker::unwatch(const QString& dir)
+{
+    if (m_watcher->directories().contains(dir))
+        m_watcher->removePath(dir);
+}
+
+void SharedDirWatchWorker::rewatchIfLost(const QString& dir, quint64 request)
+{
+    if (m_watcher->directories().contains(dir))
+        return;
+    if (beforeAdd)
+        beforeAdd(dir);
+    emit rewatched(dir, m_watcher->addPath(dir), request);
 }
 
 // ---------------------------------------------------------------------------
@@ -130,9 +221,11 @@ void SharedDirWatcher::flush()
 
     for (const QString& dir : due) {
         // a directory that was deleted and made again has lost its watch
-        if (auto it = m_roots.find(dir); it != m_roots.end() && it->watched
-            && !m_watcher->directories().contains(dir))
-            it->watched = m_watcher->addPath(dir);
+        if (const auto it = m_roots.constFind(dir);
+            it != m_roots.constEnd() && it->watched && !it->pending)
+            QMetaObject::invokeMethod(m_worker, [w = m_worker, dir, req = it->request] {
+                w->rewatchIfLost(dir, req);
+            });
         emit directoryChanged(dir);
     }
     if (!due.isEmpty())
@@ -145,13 +238,14 @@ void SharedDirWatcher::poll()
     // m_roots under a live iterator (#117).
     QStringList due;
     for (auto it = m_roots.begin(); it != m_roots.end(); ++it) {
-        if (it->watched && !it->remote)
+        if (!isPolled(*it))
             continue;
         // try the watch again: the directory may exist now, or the volume be back
-        if (!it->watched && m_watcher->addPath(it.key()))
-            it->watched = true;
+        if (!it->watched)
+            requestWatch(it.key(), *it, false);
         due.append(it.key());
     }
+    sendWatches(false);
     // Reported every time: the directory's own date does not move when a file
     // is rewritten in place, and the rescan this leads to only stats.
     for (const QString& dir : due)
@@ -159,21 +253,67 @@ void SharedDirWatcher::poll()
             break;   // overflow: the full rescan covers the rest
 }
 
-bool SharedDirWatcher::isOnNetworkShare(const QString& dir)
+void SharedDirWatcher::requestWatch(const QString& dir, Root& root, bool catchUp)
 {
-#ifdef Q_OS_WIN
-    if (dir.startsWith(QLatin1String("//")) || dir.startsWith(QLatin1String("\\\\")))
-        return true;
-    const QString root = QStorageInfo(dir).rootPath();
-    return !root.isEmpty()
-        && GetDriveTypeW(reinterpret_cast<LPCWSTR>(QDir::toNativeSeparators(root).utf16()))
-               == DRIVE_REMOTE;
-#else
-    static const QSet<QByteArray> kNetworkTypes{
-        "nfs", "nfs4", "smbfs", "cifs", "smb2", "smb3", "afpfs", "webdav", "davfs",
-        "fuse.sshfs", "sshfs", "9p", "ncpfs", "ceph", "glusterfs", "fuse.glusterfs"};
-    return kNetworkTypes.contains(QStorageInfo(dir).fileSystemType().toLower());
-#endif
+    root.pending = true;
+    root.catchUp = catchUp;
+    root.request = m_nextRequest++;
+    root.askedMs = QDateTime::currentMSecsSinceEpoch();
+    m_toWatch.append({dir, root.request});
+}
+
+void SharedDirWatcher::sendWatches(bool checkRemote)
+{
+    if (m_toWatch.isEmpty())
+        return;
+    QMetaObject::invokeMethod(m_worker, [w = m_worker, batch = std::exchange(m_toWatch, {}), checkRemote] {
+        w->watch(batch, checkRemote);
+    });
+}
+
+void SharedDirWatcher::onWatched(const QString& dir, bool ok, bool remote, quint64 request)
+{
+    const auto it = m_roots.find(dir);
+    if (it == m_roots.end() || it->request != request)
+        return;   // dropped or asked again since
+    const bool first = it->catchUp;
+    const qint64 tookMs = QDateTime::currentMSecsSinceEpoch() - it->askedMs;
+    it->pending = false;
+    it->catchUp = false;
+    it->watched = ok;
+    if (first)
+        it->remote = remote;
+
+    if (first) {
+        if (!ok)
+            logDebug(QStringLiteral("Shared directory is polled, not watched: %1").arg(dir));
+        else if (it->remote)
+            logDebug(QStringLiteral("Shared directory on a network share is polled too: %1").arg(dir));
+    }
+    if (tookMs > kSlowWatchMs)
+        logDebug(QStringLiteral("Watching shared directory took %1 ms: %2").arg(tookMs).arg(dir));
+    updatePollTimer();
+    // changes made while the OS was busy setting up the watch were not seen
+    if (first && ok && tookMs > kSlowWatchMs)
+        onDirectoryEvent(dir);
+}
+
+void SharedDirWatcher::onRewatched(const QString& dir, bool ok, quint64 request)
+{
+    const auto it = m_roots.find(dir);
+    if (it == m_roots.end() || it->request != request || it->pending)
+        return;
+    it->watched = ok;
+    updatePollTimer();
+}
+
+void SharedDirWatcher::updatePollTimer()
+{
+    const bool anyPolled = std::ranges::any_of(m_roots, &SharedDirWatcher::isPolled);
+    if (anyPolled && !m_pollTimer.isActive())
+        m_pollTimer.start();
+    else if (!anyPolled)
+        m_pollTimer.stop();
 }
 
 } // namespace eMule

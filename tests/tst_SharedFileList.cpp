@@ -1857,6 +1857,7 @@ void tst_SharedFileList::watching_picksUpACopiedInFileWithoutAReload()
     QVERIFY(shared.watcher());
     shared.watcher()->setTimings(100, 1000, 200);
     QCOMPARE(shared.watcher()->roots().size(), 2);   // incoming + share
+    QTRY_VERIFY(!shared.watcher()->watchesPending());   // watches set up off-thread
 
     const QString path = env.put(QStringLiteral("dropped in.bin"), QByteArray(1234, 'd'));
     QTRY_COMPARE_WITH_TIMEOUT(shared.getCount(), 1, 15000);
