@@ -42,6 +42,10 @@ public:
     /// read long before kMinBusyNs, and one limiter per file never paused at all (#46).
     [[nodiscard]] static DiskLoadLimiter& thisThread();
 
+    /// Below-normal CPU and disk priority for the calling thread, as MFC hashes
+    /// (CAddFileThread, THREAD_PRIORITY_BELOW_NORMAL). Not undone: hashing threads only.
+    static void lowerThisThread();
+
     void beginRead();
     void endRead();
 

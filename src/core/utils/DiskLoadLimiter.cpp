@@ -11,6 +11,14 @@
 
 #include <algorithm>
 
+#if defined(Q_OS_LINUX)
+#include <sys/resource.h>
+#include <sys/syscall.h>
+#include <unistd.h>
+#elif defined(Q_OS_MACOS)
+#include <sys/resource.h>
+#endif
+
 namespace eMule {
 
 namespace {
@@ -51,6 +59,28 @@ DiskLoadLimiter& DiskLoadLimiter::thisThread()
 {
     thread_local DiskLoadLimiter limiter;
     return limiter;
+}
+
+void DiskLoadLimiter::lowerThisThread()
+{
+    const QCoreApplication* app = QCoreApplication::instance();
+    if (app && QThread::currentThread() == app->thread())
+        return;
+#if defined(Q_OS_LINUX)
+    // Qt priorities do nothing under SCHED_OTHER: nice and I/O class are per thread here
+    const auto tid = static_cast<id_t>(::syscall(SYS_gettid));
+    (void)::setpriority(PRIO_PROCESS, tid, 10);
+#ifdef SYS_ioprio_set
+    constexpr int kWhoProcess = 1;          // IOPRIO_WHO_PROCESS
+    constexpr int kBestEffortLowest = (2 << 13) | 7;   // IOPRIO_CLASS_BE, level 7
+    (void)::syscall(SYS_ioprio_set, kWhoProcess, static_cast<int>(tid), kBestEffortLowest);
+#endif
+#else
+    QThread::currentThread()->setPriority(QThread::LowPriority);
+#if defined(Q_OS_MACOS)
+    (void)::setiopolicy_np(IOPOL_TYPE_DISK, IOPOL_SCOPE_THREAD, IOPOL_UTILITY);
+#endif
+#endif
 }
 
 void DiskLoadLimiter::beginRead()

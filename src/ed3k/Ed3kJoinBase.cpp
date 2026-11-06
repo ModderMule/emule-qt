@@ -6,8 +6,10 @@
 #include "Ed3kSession.h"
 #include "Ed3kStore.h"
 
+#include "utils/DiskLoadLimiter.h"
 #include "utils/Log.h"
 
+#include <QCoreApplication>
 #include <QDateTime>
 #include <QDir>
 #include <QFile>
@@ -39,6 +41,18 @@ const QString kKeptIndex = QStringLiteral("kept.tsv");
 /// ALIAS records to publish again: u32-LE length + Alias, as publishAlias takes them
 const QString kKeptRecords = QStringLiteral("records.bin");
 
+/// Own threads for hashing: they run at lowered priority, which is never undone (#136).
+QThreadPool* hashPool()
+{
+    static QThreadPool* pool = [] {
+        // the app's child: waited for at exit, as the global pool was
+        auto* p = new QThreadPool(QCoreApplication::instance());
+        p->setMaxThreadCount(2);
+        return p;
+    }();
+    return pool;
+}
+
 /// Hashes a file on a worker; nullopt when unreadable or cancelled.
 std::optional<std::pair<ffi::Hashed, ffi::Bytes>> hashFile(const QString& path, const std::atomic<bool>& cancel)
 {
@@ -47,10 +61,15 @@ std::optional<std::pair<ffi::Hashed, ffi::Bytes>> hashFile(const QString& path, 
         return std::nullopt;
     ffi::Hasher h;
     QByteArray chunk;
+    // #136: under the eD2K hashing disk limit too; it read at full speed beside it
+    DiskLoadLimiter& diskLoad = DiskLoadLimiter::thisThread();
     while (!f.atEnd()) {
         if (cancel.load())
             return std::nullopt;
-        chunk = f.read(kHashChunk);
+        {
+            const DiskLoadLimiter::Read timed(diskLoad);
+            chunk = f.read(kHashChunk);
+        }
         if (chunk.isEmpty() && f.error() != QFileDevice::NoError)
             return std::nullopt;
         if (!h.update({reinterpret_cast<const std::byte*>(chunk.constData()), std::size_t(chunk.size())}))
@@ -611,7 +630,8 @@ void Ed3kJoinBase::hashInBackground(const QString& path, std::function<void(std:
 {
     QPointer<Ed3kJoinBase> self(this);
     const auto cancel = m_cancel;
-    QThreadPool::globalInstance()->start([self, cancel, path, done = std::move(done)]() mutable {
+    hashPool()->start([self, cancel, path, done = std::move(done)]() mutable {
+        DiskLoadLimiter::lowerThisThread();
         auto hashed = hashFile(path, *cancel);
         if (cancel->load())
             return;
