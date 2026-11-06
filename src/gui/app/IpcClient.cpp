@@ -543,6 +543,8 @@ void IpcClient::sendShutdown()
         sock->flush();
         if (sock->bytesToWrite() > 0)
             sock->waitForBytesWritten(2000);
+        if (!awaitShutdownAck(sock, msg.seqId()))
+            logWarning(QStringLiteral("Core did not confirm the shutdown request"));
     }
 
     // Disable auto-reconnect — the daemon is going away intentionally
@@ -1645,6 +1647,33 @@ void IpcClient::resetConnection()
         m_socket->deleteLater();
         m_socket = nullptr;
     }
+}
+
+bool IpcClient::awaitShutdownAck(QTcpSocket* sock, int seqId)
+{
+    constexpr int kAckTimeoutMs = 3000;
+    // Read here, not through IpcConnection: its handlers must not run during quit
+    disconnect(sock, nullptr, m_connection.get(), nullptr);
+
+    QByteArray buffer;
+    const QDeadlineTimer deadline(kAckTimeoutMs);
+    while (sock->state() == QAbstractSocket::ConnectedState) {
+        if (sock->bytesAvailable() <= 0
+            && !sock->waitForReadyRead(static_cast<int>(deadline.remainingTime())))
+            break;
+        buffer.append(sock->readAll());
+        while (auto frame = Ipc::tryDecodeFrame(buffer)) {
+            buffer.remove(0, frame->bytesConsumed);
+            const IpcMessage reply(std::move(frame->message));
+            if (reply.seqId() == seqId
+                && (reply.type() == IpcMsgType::Result || reply.type() == IpcMsgType::Error))
+                return true;
+        }
+        if (deadline.hasExpired())
+            return false;
+    }
+    // Hung up: it read the request and is on its way down
+    return sock->state() != QAbstractSocket::ConnectedState;
 }
 
 void IpcClient::dropConnection()

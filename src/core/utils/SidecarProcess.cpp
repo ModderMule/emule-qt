@@ -1,5 +1,7 @@
 #include "utils/SidecarProcess.h"
 
+#include "utils/Log.h"
+
 #include <QTimer>
 
 #include <array>
@@ -34,6 +36,40 @@ void signalPid(qint64 pid, bool hard)
     ::kill(static_cast<pid_t>(pid), hard ? SIGKILL : SIGTERM);
 #endif
 }
+
+#ifdef Q_OS_WIN
+/// Job that kills its members when its last handle closes: when the daemon exits,
+/// crashes or is killed (Windows counterpart of PR_SET_PDEATHSIG). Never closed.
+HANDLE sidecarJob()
+{
+    static const HANDLE job = [] {
+        HANDLE h = ::CreateJobObjectW(nullptr, nullptr);
+        if (!h)
+            return HANDLE{};
+        JOBOBJECT_EXTENDED_LIMIT_INFORMATION info{};
+        info.BasicLimitInformation.LimitFlags = JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE;
+        if (!::SetInformationJobObject(h, JobObjectExtendedLimitInformation, &info, sizeof info)) {
+            ::CloseHandle(h);
+            return HANDLE{};
+        }
+        return h;
+    }();
+    return job;
+}
+
+/// Puts @p pid in sidecarJob(). Children it starts later join too.
+void joinSidecarJob(qint64 pid)
+{
+    HANDLE job = sidecarJob();
+    HANDLE h = job ? ::OpenProcess(PROCESS_SET_QUOTA | PROCESS_TERMINATE, FALSE, static_cast<DWORD>(pid))
+                   : nullptr;
+    if (!h || !::AssignProcessToJobObject(job, h))
+        logWarning(QStringLiteral("Sidecar %1 not bound to the core's lifetime (error %2)")
+                       .arg(pid).arg(::GetLastError()));
+    if (h)
+        ::CloseHandle(h);
+}
+#endif
 
 } // namespace
 
@@ -108,6 +144,10 @@ bool SidecarProcess::start(const QString& program, const QStringList& args, cons
         emit failedToStart();
     });
     connect(p, &QProcess::started, this, [this, p] {
+#ifdef Q_OS_WIN
+        // ToDo: start suspended to close the window before the job holds it
+        joinSidecarJob(p->processId());
+#endif
         if (p == m_proc)
             setTrackedPid(p->processId());
     });

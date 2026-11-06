@@ -363,6 +363,9 @@ bool writeHeld(const QString& dir, const QString& key, const QString& url, const
     if (!part.open(QIODevice::WriteOnly) || part.write(data.left(blocks * 256 * 1024)) < 0)
         return false;
     part.close();
+    // append, not QJsonArray{QJsonArray{..}}: MSVC takes that as a copy, giving [0,n]
+    QJsonArray have;
+    have.append(QJsonArray{0, blocks});
     const QJsonObject o{{QStringLiteral("format"), QStringLiteral("ed3k-hoster-met")},
                         {QStringLiteral("v"), 1},
                         {QStringLiteral("url"), url},
@@ -373,7 +376,7 @@ bool writeHeld(const QString& dir, const QString& key, const QString& url, const
                         {QStringLiteral("state"), int(paused ? Ed3kHosterJoin::State::Paused : Ed3kHosterJoin::State::Downloading)},
                         {QStringLiteral("mirrors"), QJsonArray{QString(url + QStringLiteral("-mirror"))}},
                         {QStringLiteral("pkgName"), QStringLiteral("Pack")},
-                        {QStringLiteral("have"), QJsonArray{QJsonArray{0, blocks}}}};
+                        {QStringLiteral("have"), have}};
     QFile met(part.fileName() + QStringLiteral(".met"));
     return met.open(QIODevice::WriteOnly) && met.write(QJsonDocument(o).toJson()) > 0;
 }
