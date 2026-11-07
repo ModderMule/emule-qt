@@ -4168,6 +4168,8 @@ bool IpcClientHandler::applyPreferenceNotify(const QString& key, const QCborValu
         thePrefs.setNotifyOnDownloadAdded(val.toBool());
     else if (key == QStringLiteral("notifyOnDownloadFinished"))
         thePrefs.setNotifyOnDownloadFinished(val.toBool());
+    else if (key == QStringLiteral("notifyOpenFinishedOnClick"))
+        thePrefs.setNotifyOpenFinishedOnClick(val.toBool());
     else if (key == QStringLiteral("notifyOnNewVersion"))
         thePrefs.setNotifyOnNewVersion(val.toBool());
     else if (key == QStringLiteral("notifyOnUrgent"))
@@ -4745,6 +4747,8 @@ bool IpcClientHandler::applyPreferenceBt(const QString& key, const QCborValue& v
         thePrefs.setBtMaxUploadKb(static_cast<uint32>(std::max<qint64>(0, val.toInteger())));
     else if (key == QStringLiteral("btStopAfterMetadata"))
         thePrefs.setBtStopAfterMetadata(val.toBool());
+    else if (key == QStringLiteral("btMetaSelectedFileOnly"))
+        thePrefs.setBtMetaSelectedFileOnly(val.toBool());
     else if (key == QStringLiteral("btDht"))
         thePrefs.setBtDht(val.toBool());
     else if (key == QStringLiteral("btLsd"))
@@ -5647,6 +5651,11 @@ void IpcClientHandler::handleGrabIndexerResult(const IpcMessage& msg)
         return;
     }
 
+    // field 6: the files checked in the Details window; empty = all
+    QList<int> kept;
+    for (const QCborValue& v : msg.field(6).toArray())
+        kept.append(int(v.toInteger(-1)));
+
     QPointer<IpcClientHandler> self(this);
     const int seqId = msg.seqId();
     // the row, for a replacement NZB should this one fail
@@ -5654,7 +5663,7 @@ void IpcClientHandler::handleGrabIndexerResult(const IpcMessage& msg)
 
     indexer::theIndexerSearchList->grab(
         searchId, resultId,
-        [self, seqId, force, choices, source](bool ok, const QByteArray& payload,
+        [self, seqId, force, choices, source, kept](bool ok, const QByteArray& payload,
                                               const QString& name, const QString& password,
                                               const QString& error) {
         if (!self)
@@ -5671,7 +5680,7 @@ void IpcClientHandler::handleGrabIndexerResult(const IpcMessage& msg)
         if (isTorrentPayload(payload) || isMagnetPayload(payload)) {
             const QCborMap added = isMagnetPayload(payload)
                                        ? BtBridge::addMagnetUri(QString::fromUtf8(payload), choices.paused)
-                                       : BtBridge::addTorrentData(payload, choices.paused);
+                                       : BtBridge::addTorrentData(payload, choices.paused, kept);
             const int outcome = int(added.value(QStringLiteral("outcome")).toInteger(4));
             const bool addedOk = outcome == 0 || outcome == 1;   // added, or already there
             IpcMessage reply = IpcMessage::makeResult(
@@ -5705,7 +5714,8 @@ void IpcClientHandler::handleGrabIndexerResult(const IpcMessage& msg)
         const QString itemId = usenet::theUsenetSession->queue()->addNzb(
             payload, name, addError,
             {.force = force, .password = password, .category = choices.category,
-             .priority = choices.priority, .paused = choices.paused, .origin = origin},
+             .priority = choices.priority, .paused = choices.paused, .keptFiles = kept,
+             .origin = origin},
             &outcome);
         self->sendAddNzbResult(seqId, itemId, addError, outcome,
                                usenet::UsenetAddOrigin::IndexerGrab);

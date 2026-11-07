@@ -6,6 +6,7 @@
 #include "dialogs/MetaResultDetailDialog.h"
 
 #include "controls/AbstractListView.h"
+#include "controls/FileCheckButtons.h"
 #include "controls/SortableItems.h"
 #include "controls/TorrentFileTree.h"
 #include "controls/UsenetFileCheckList.h"
@@ -80,19 +81,28 @@ MetaResultDetailDialog::MetaResultDetailDialog(const RowInfo& row, QWidget* pare
                              QStringLiteral("metaDetailTorrentFiles"), {440, 90})
                   : makeTree(m_tabs, {tr("Name"), tr("Size"), tr("Articles"), tr("Type")},
                              QStringLiteral("metaDetailNzbFiles"), {360, 80, 110, 50});
-    if (row.chooseFiles && !row.torrent) {
+    if (row.chooseFiles) {
         // the Files tab: hint + Select All / None / Invert above the tree
         auto* page = new QWidget(m_tabs);
         auto* pageLayout = new QVBoxLayout(page);
         pageLayout->setContentsMargins(0, 0, 0, 0);
-        auto* hint = new QLabel(tr("Unchecked files are not downloaded. The volumes of one archive "
-                                   "are checked together, and PAR2 files are fetched only when a "
-                                   "repair needs them."),
+        auto* hint = new QLabel(row.torrent
+                                    ? tr("Unchecked files are not downloaded. You can change this "
+                                         "later in the Torrents tab.")
+                                    : tr("Unchecked files are not downloaded. The volumes of one archive "
+                                         "are checked together, and PAR2 files are fetched only when a "
+                                         "repair needs them."),
                                 page);
         hint->setWordWrap(true);
         pageLayout->addWidget(hint);
-        m_checks = new UsenetFileCheckList(m_files, NzbName);
-        pageLayout->addWidget(m_checks->createButtonRow(page));
+        if (row.torrent) {
+            pageLayout->addWidget(FileCheckButtons::create(page, [this](FileCheckButtons::Bulk mode) {
+                FileCheckButtons::applyToLeaves(m_files, TorrentName, mode);
+            }));
+        } else {
+            m_checks = new UsenetFileCheckList(m_files, NzbName);
+            pageLayout->addWidget(m_checks->createButtonRow(page));
+        }
         m_files->setParent(page);
         pageLayout->addWidget(m_files, 1);
         m_tabs->addTab(page, tr("Files"));
@@ -129,10 +139,11 @@ void MetaResultDetailDialog::setDetails(const QCborMap& details)
     }
 
     buildGeneral(inspection, torrent);
+    const int rowFileIndex = int(details.value(QStringLiteral("rowFileIndex")).toInteger(-1));
     if (torrent)
-        buildTorrentFiles(inspection);
+        buildTorrentFiles(inspection, rowFileIndex);
     else
-        buildNzbFiles(inspection, int(details.value(QStringLiteral("rowFileIndex")).toInteger(-1)));
+        buildNzbFiles(inspection, rowFileIndex);
     m_tabs->setTabVisible(TabTrackers, torrent);
     if (torrent)
         buildTrackers(inspection);
@@ -157,15 +168,22 @@ void MetaResultDetailDialog::setError(const QString& error)
 void MetaResultDetailDialog::onDownload()
 {
     QList<int> unchecked;
+    QList<int> kept;
+    bool none = false;
     if (m_checks) {
         unchecked = m_checks->uncheckedIndices();
+        kept = m_checks->keptIndices();
         // the daemon would refuse it; keep the choice open instead
-        if (!unchecked.isEmpty() && !m_checks->anyUnlockedChecked()) {
-            QMessageBox::warning(this, windowTitle(), tr("Keep at least one file of \"%1\".").arg(m_row.name));
-            return;
-        }
+        none = !unchecked.isEmpty() && !m_checks->anyUnlockedChecked();
+    } else if (m_row.chooseFiles && m_row.torrent) {
+        kept = TorrentFileTree::checkedFiles(m_files, TorrentName);
+        none = !TorrentFileTree::anyChecked(m_files, TorrentName);
     }
-    emit downloadRequested(unchecked);
+    if (none) {
+        QMessageBox::warning(this, windowTitle(), tr("Keep at least one file of \"%1\".").arg(m_row.name));
+        return;
+    }
+    emit downloadRequested(unchecked, kept);
     close();
 }
 
@@ -247,10 +265,14 @@ void MetaResultDetailDialog::addRowFacts(QFormLayout* form) const
         addDetailRow(form, tr("Age"), tr("%n day(s)", nullptr, m_row.ageDays));
 }
 
-void MetaResultDetailDialog::buildTorrentFiles(const QCborMap& inspection)
+void MetaResultDetailDialog::buildTorrentFiles(const QCborMap& inspection, int rowFileIndex)
 {
-    const int count = TorrentFileTree::fill(m_files, inspection.value(QStringLiteral("files")).toArray(),
-                                            TorrentName, TorrentSize);
+    const QCborArray files = inspection.value(QStringLiteral("files")).toArray();
+    // a file row: only its own file starts checked
+    const QList<int> checked = m_row.selectedFileOnly && rowFileIndex >= 0 ? QList<int>{rowFileIndex} : QList<int>{};
+    const int count = m_row.chooseFiles
+                          ? TorrentFileTree::fillCheckable(m_files, files, TorrentName, TorrentSize, checked)
+                          : TorrentFileTree::fill(m_files, files, TorrentName, TorrentSize);
     m_tabs->setTabText(TabFiles, tr("Files (%1)").arg(count));
 }
 

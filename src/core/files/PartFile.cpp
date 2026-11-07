@@ -1466,6 +1466,7 @@ QByteArray PartFile::verifyPartData(
     }
 
     DiskLoadLimiter& diskLoad = DiskLoadLimiter::thisThread();
+    diskLoad.setFile(partPath);
     for (uint32 part = 0; part < partCount; ++part) {
         const uint64 start = static_cast<uint64>(part) * PARTSIZE;
         if (start >= fileSize || (!singlePart && part >= partHashes.size()))

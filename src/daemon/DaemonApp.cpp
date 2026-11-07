@@ -86,6 +86,7 @@
 #include "Ed3kJavaRuntime.h"
 #include "Ed3kStore.h"
 #include "Ed3kJdResolver.h"
+#include "Ed3kResolverUpdater.h"
 #endif
 #endif
 #include "net/ProxySettings.h"
@@ -102,6 +103,7 @@
 #include "client/UpDownClient.h"
 #include "files/PartFile.h"
 #include "files/SharedFileList.h"
+#include "utils/BackgroundFileWriter.h"
 #include "utils/OtherFunctions.h"
 #include "utils/Log.h"
 
@@ -675,6 +677,17 @@ bool DaemonApp::start()
             QDir(QFileInfo(thePrefs.configDir()).absolutePath()).filePath(QStringLiteral("runtime/jre")));
         resolver = m_jdResolver.get();
         java = m_javaRuntime.get();
+        m_resolverUpdater = std::make_unique<ed3k::Ed3kResolverUpdater>(
+            QDir(thePrefs.configDir()).filePath(QStringLiteral("ed3k/resolver/update")));
+        // a new zip: the resolver swaps it in once its sidecar is idle
+        connect(m_resolverUpdater.get(), &ed3k::Ed3kResolverUpdater::zipReady, this, [this] { applyHosterConfig(); });
+        // bundles ship no zip: the first one when a hoster link wants it, not at start
+        connect(m_jdResolver.get(), &ed3k::Ed3kJdResolver::pluginsNeeded, this, [this] {
+            if (m_resolverUpdater->fetchFirst())
+                m_jdResolver->setFetching(true);
+        });
+        connect(m_resolverUpdater.get(), &ed3k::Ed3kResolverUpdater::checked, this,
+                [this] { m_jdResolver->setFetching(false); });
         connect(m_jdResolver.get(), &ed3k::Ed3kResolver::stateChanged, this, pushStatus);
         connect(m_javaRuntime.get(), &ed3k::Ed3kJavaRuntime::stateChanged, this, [this, pushStatus] {
             const auto h = thePrefs.ed3kHoster();
@@ -960,6 +973,7 @@ void DaemonApp::stop()
     }
     m_hosterJoin.reset();
 #ifdef EMULE_HAVE_HOSTER_JD
+    m_resolverUpdater.reset();
     m_jdResolver.reset();
     m_javaRuntime.reset();
 #endif
@@ -1026,6 +1040,8 @@ void DaemonApp::stop()
         m_coreSession->stop();
     m_coreSession.reset();
 
+    // resume data and ed3k joins written in the background land before exit
+    BackgroundFileWriter::instance().flush();
     m_running = false;
     logInfo(QStringLiteral("Daemon stopped."));
 
@@ -1463,8 +1479,12 @@ void DaemonApp::applyHosterConfig()
                                  : QString();
         proxy = QStringLiteral("%1://%2%3:%4").arg(scheme, auth, p.host).arg(p.port);
         m_javaRuntime->setProxy(toNetworkProxy(p));
+        if (m_resolverUpdater)
+            m_resolverUpdater->setProxy(toNetworkProxy(p));
     } else {
         m_javaRuntime->setProxy(QNetworkProxy(QNetworkProxy::DefaultProxy));
+        if (m_resolverUpdater)
+            m_resolverUpdater->setProxy(QNetworkProxy(QNetworkProxy::DefaultProxy));
     }
     ed3k::JdResolverConfig cfg;
     if (const auto rt = m_javaRuntime->runtime())
@@ -1473,8 +1493,18 @@ void DaemonApp::applyHosterConfig()
     if (!h.sharedPluginDir.isEmpty())   // relative: to the config folder
         cfg.sharedDir = QDir::cleanPath(QDir(thePrefs.configDir()).absoluteFilePath(h.sharedPluginDir));
     cfg.zip = ed3k::Ed3kJdResolver::findBundledZip();
+    if (m_resolverUpdater) {
+        // a fetched zip when newer than the bundled one and of our api
+        m_resolverUpdater->setBundledZip(cfg.zip);
+        cfg.zip = m_resolverUpdater->zipToUse();
+        m_resolverUpdater->setSchedule(on && h.autoUpdate, h.autoUpdateHours);
+    }
     cfg.proxy = proxy;
     cfg.askPuzzles = h.askPuzzles;
+    if (h.solversEnabled)
+        for (const Ed3kHosterAccount& a : h.solvers)
+            if (!a.password.isEmpty())
+                cfg.solvers.append({a.host, a.user, a.password});
     cfg.enabled = on;
     m_jdResolver->setConfig(cfg);
 #endif

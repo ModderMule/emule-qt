@@ -340,6 +340,7 @@ static QString ipcMsgTypeName(Ipc::IpcMsgType type)
     case T::GetHosterStats:       return QStringLiteral("GetHosterStats");
     case T::CheckHosterLinks:     return QStringLiteral("CheckHosterLinks");
     case T::OpenHosterContainer:  return QStringLiteral("OpenHosterContainer");
+    case T::AddClickNLoad:        return QStringLiteral("AddClickNLoad");
     case T::PushHosterItem:       return QStringLiteral("PushHosterItem");
     case T::PushHosterItemRemoved: return QStringLiteral("PushHosterItemRemoved");
     case T::PushHosterPuzzle:     return QStringLiteral("PushHosterPuzzle");

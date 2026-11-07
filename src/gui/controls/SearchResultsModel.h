@@ -116,6 +116,12 @@ struct SearchResultRow {
     {
         return isUsenet() && hash.size() == 32 ? hash.mid(12).toUpper() : QString();
     }
+    /// Torrent or Usenet row: meta-hash bytes 6..15, the same for every row of one
+    /// release, its whole-set row and its file rows. Empty otherwise.
+    [[nodiscard]] QString metaReleaseKey() const
+    {
+        return (isUsenet() || isTorrent()) && hash.size() == 32 ? hash.mid(12).toUpper() : QString();
+    }
     /// Usenet row standing for the whole NZB (file index 0xFFFF), not one file in it.
     [[nodiscard]] bool isUsenetWholeSet() const
     {

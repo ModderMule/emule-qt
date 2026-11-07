@@ -44,11 +44,19 @@ using Seed = std::array<std::uint8_t, 32>;
 /// a new key). Never logs it.
 bool replaceSecret(const QString& dir, const QString& name, const Seed& secret, QString* error = nullptr);
 
-/// The bytes of @p path; empty when missing or unreadable.
+/// The bytes of @p path; empty when missing or unreadable. A writeBlobLater still on its
+/// way is read back.
 [[nodiscard]] QByteArray readBlob(const QString& path);
 
 /// Writes @p data to @p path atomically (QSaveFile), owner-only permissions.
 bool writeBlob(const QString& path, std::span<const std::byte> data);
+/// writeBlob on the background writer (report 23: the sync stalled the core); newest data
+/// per path wins. Before removing such a file: forgetBlobWrites.
+void writeBlobLater(const QString& path, std::span<const std::byte> data);
+/// Drops writeBlobLater data still queued for @p path (or every path under it, a folder).
+void forgetBlobWrites(const QString& path);
+/// Waits until every writeBlobLater is on disk (a stop).
+void flushBlobWrites();
 
 /// Overwrites @p buf with zeros in a way the compiler keeps.
 void wipe(std::span<std::uint8_t> buf);

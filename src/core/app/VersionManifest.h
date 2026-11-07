@@ -23,6 +23,13 @@ struct VersionDownload {
     [[nodiscard]] bool isInstallable() const;
 };
 
+/// "hosterResolver": resolver.zip of the last release or a plugin refresh in between.
+struct HosterResolverRelease {
+    VersionDownload file;
+    int jdRevision = 0;   ///< JDownloader SVN revision; 0 = not given
+    int api = 0;          ///< sidecar protocol (ResolverMain.PROTOCOL); 0 = not given, never auto-installed
+};
+
 /// Everything emuleqt-version.json advertises.
 ///
 /// Fields the document omits stay empty; @ref error is the only thing that makes the
@@ -36,6 +43,7 @@ struct VersionManifestInfo {
     QStringList changelog; ///< "changelog": one bullet per entry, empty = none
     QString downloadUrl;   ///< this platform's usable "downloads" URL, empty otherwise
     QHash<QString, VersionDownload> downloads; ///< every entry, keyed "mac-arm64", ...
+    HosterResolverRelease hosterResolver;      ///< empty file.url: none
     QString error;         ///< why the document could not be used; empty on success
 
     [[nodiscard]] bool isValid() const { return error.isEmpty(); }

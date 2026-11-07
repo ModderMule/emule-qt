@@ -65,9 +65,12 @@ public:
     /// Adds a .torrent file. `savePath` empty = the download dir. @p i2pOnly: an I2P
     /// torrent; nullopt = the settings' default (BtAddSource::applyI2p). @p stopAfterMetadata:
     /// stop once the file list is known; nullopt = the settings' default.
+    /// @p wantedFiles: file indices to download, the rest skipped; empty = all. Already
+    /// in the list: those files are switched on there (Duplicate all the same).
     BtAddResult addTorrentFile(const QByteArray& data, const QString& savePath = {}, bool paused = false,
                                std::optional<bool> i2pOnly = std::nullopt,
-                               std::optional<bool> stopAfterMetadata = std::nullopt);
+                               std::optional<bool> stopAfterMetadata = std::nullopt,
+                               const QList<int>& wantedFiles = {});
     /// Reads a .torrent without adding it; works with the engine stopped.
     /// Error: an English reason.
     [[nodiscard]] static std::expected<BtTorrentPreview, QString> inspectTorrentFile(const QByteArray& data);

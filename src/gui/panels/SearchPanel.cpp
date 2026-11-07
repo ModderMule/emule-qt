@@ -1151,7 +1151,8 @@ void SearchPanel::sendIndexerGrab(int proxyRow, bool force, int category)
 }
 
 void SearchPanel::grabIndexerResult(uint32_t searchID, const IndexerResultRow& result,
-                                    QPointer<IndexerResultsModel> model, bool force, int category)
+                                    QPointer<IndexerResultsModel> model, bool force, int category,
+                                    const QList<int>& keptFiles)
 {
     if (!m_ipc || !m_ipc->isConnected())
         return;
@@ -1165,6 +1166,15 @@ void SearchPanel::grabIndexerResult(uint32_t searchID, const IndexerResultRow& r
     // Download To picked one; plain Download sends 0, which the daemon reads as
     // "nobody chose" and auto-categorises.
     msg.append(qint64(category));
+    if (!keptFiles.isEmpty()) {
+        // fields 4-5 at their defaults to reach field 6
+        msg.append(qint64(0));   // priority
+        msg.append(false);       // paused
+        QCborArray kept;
+        for (const int f : keptFiles)
+            kept.append(f);
+        msg.append(QCborValue(kept));
+    }
 
     const QString title = result.title;
     const bool torrent = !result.isUsenet;
@@ -1570,6 +1580,7 @@ void SearchPanel::onResultContextMenu(const QPoint& pos)
     bool anyTorrent = false;    ///< with a .torrent to fetch
     bool anyMagnetOnly = false;
     bool anyWeb = false;
+    bool allWeb = !selection.isEmpty();
     bool anyContainer = false;
     bool anyMagnet = false;
     bool singleMeta = false;
@@ -1596,6 +1607,7 @@ void SearchPanel::onResultContextMenu(const QPoint& pos)
         anyTorrent |= result->isTorrent() && !result->isMagnetOnly();
         anyMagnetOnly |= result->isMagnetOnly();
         anyWeb |= result->isWeb();
+        allWeb &= result->isWeb();
         anyContainer |= result->isContainer();
         anyMagnet |= !result->isMeta() || !result->magnet.isEmpty();
         // eD2K rows: not already in the transfer list. Usenet rows: the daemon asks.
@@ -1672,21 +1684,6 @@ void SearchPanel::onResultContextMenu(const QPoint& pos)
             MetaResultActions::copyMagnets(rows);
         });
     }
-    // eNode web rows: the links the page offered
-    if (anyWeb) {
-        auto* linksAction = m_contextMenu->addAction(skinIcon(QStringLiteral(":/icons/Web.ico")),
-                                                     tr("Show Links..."));
-        connect(linksAction, &QAction::triggered, this, [this] {
-            auto* tab = currentTab();
-            if (!tab)
-                return;
-            QList<MetaResultActions::Row> rows;
-            for (const auto& idx : m_resultView->selectionModel()->selectedRows())
-                if (const auto* r = refAt(idx).row; r && r->isWeb())
-                    rows.append(metaRow(*r));
-            metaActions()->showWebLinks(tab->searchID, rows);
-        });
-    }
     // eNode link containers: the .dlc/.ccf/.rsdf as the page served it
     if (anyContainer) {
         auto* containerAction = m_contextMenu->addAction(skinIcon(QStringLiteral(":/icons/DLC.ico")),
@@ -1697,15 +1694,26 @@ void SearchPanel::onResultContextMenu(const QPoint& pos)
 
     // Details... — extended controls only, exactly as MFC gates it, because the
     // sheet's Metadata page is itself an extended-controls feature. Torrent and
-    // Usenet rows show their fetched file, web rows their links; a magnet-only
-    // torrent or a link container has nothing to show.
-    if (thePrefs.showExtControls()) {
+    // Usenet rows show their fetched file, web rows their links (also without
+    // extended controls: the only way to them, one window per selected row); a
+    // magnet-only torrent or a link container has nothing to show.
+    if (thePrefs.showExtControls() || anyWeb) {
         auto* detailsAction = m_contextMenu->addAction(menuIcon("FileInfo.ico"), tr("Details..."));
-        detailsAction->setEnabled(singleSel && tab && singleHasDetails);
+        detailsAction->setEnabled(tab && ((singleSel && singleHasDetails) || allWeb));
         connect(detailsAction, &QAction::triggered, this, [this] {
+            auto* tab = currentTab();
             const auto rows = m_resultView->selectionModel()->selectedRows();
-            if (rows.size() == 1)
+            if (!tab || rows.isEmpty())
+                return;
+            if (rows.size() == 1) {
                 showResultDetails(rows.first());
+                return;
+            }
+            QList<MetaResultActions::Row> web;
+            for (const auto& idx : rows)
+                if (const auto* r = refAt(idx).row; r && r->isWeb())
+                    web.append(metaRow(*r));
+            metaActions()->showWebLinks(tab->searchID, web);
         });
     }
 
@@ -1898,20 +1906,20 @@ void SearchPanel::showResultDetails(const QModelIndex& index)
         return;
 
     // Same extended-controls gate as the "Details..." entry: the sheet opens on its
-    // Metadata page, which is itself an extended-controls feature.
-    if (!thePrefs.showExtControls())
-        return;
+    // Metadata page, which is itself an extended-controls feature. Web rows open
+    // their links window, the only way to them.
+    const bool ext = thePrefs.showExtControls();
 
     // An indexer row has no SearchFile: its Details is the fetched file
     if (tab->isIndexer()) {
         const auto src = tab->proxy->mapToSource(tab->proxy->index(index.row(), 0));
-        if (const auto* row = tab->indexerModel->resultAt(src.row()); row && row->hasFile)
+        if (const auto* row = tab->indexerModel->resultAt(src.row()); ext && row && row->hasFile)
             showIndexerRowDetails(tab->searchID, *row, QPointer(tab->indexerModel));
         return;
     }
 
     const auto* result = refAt(index).row;
-    if (!result || !hasDetails(*result))
+    if (!result || !hasDetails(*result) || (!ext && !result->isWeb()))
         return;
     if (result->isMeta()) {
         showMetaRowDetails(tab->searchID, *result, QPointer(tab->model));
@@ -1935,10 +1943,13 @@ void SearchPanel::showMetaRowDetails(uint32_t searchID, const SearchResultRow& r
     info.size = result.fileSize;
     info.source = result.metaIndexer;
     info.ageDays = result.metaAgeDays > 0 ? int(result.metaAgeDays) : -1;
-    info.chooseFiles = result.isUsenet();
-    info.selectedFileOnly = thePrefs.usenetMetaSelectedFileOnly();
+    info.chooseFiles = result.isUsenet() || result.isTorrent();
+    // a file row: only that file starts checked, as the option of its network says
+    info.selectedFileOnly = result.isTorrent() ? thePrefs.btMetaSelectedFileOnly()
+                                               : thePrefs.usenetMetaSelectedFileOnly();
     QPointer<SearchPanel> self(this);
-    metaActions()->showDetails(searchID, row, info, [self, searchID, row, model](const QList<int>& unchecked) {
+    metaActions()->showDetails(searchID, row, info, [self, searchID, row, model](const QList<int>& unchecked,
+                                                                                const QList<int>& kept) {
         if (!self)
             return;
         // the daemon still has the file: no second fetch
@@ -1951,8 +1962,11 @@ void SearchPanel::showMetaRowDetails(uint32_t searchID, const SearchResultRow& r
                                      : 0;
             self->metaActions()->downloadUsenet(searchID, {chosen}, category, model);
         }
-        else
-            self->metaActions()->addTorrents(searchID, {row});   // BitTorrent off: saved
+        else {
+            MetaResultActions::Row chosen = row;
+            chosen.keptFiles = kept;   // the check boxes decide, not the row
+            self->metaActions()->addTorrents(searchID, {chosen});   // BitTorrent off: saved
+        }
     });
 }
 
@@ -1968,10 +1982,12 @@ void SearchPanel::showIndexerRowDetails(uint32_t searchID, const IndexerResultRo
     info.peers = result.peers;
     info.ageDays = result.ageDays;
     info.category = result.category;
+    info.chooseFiles = true;
     QPointer<SearchPanel> self(this);
-    metaActions()->showIndexerDetails(searchID, result.id, info, [self, searchID, result, model](const QList<int>&) {
+    metaActions()->showIndexerDetails(searchID, result.id, info, [self, searchID, result, model](const QList<int>&,
+                                                                                                 const QList<int>& kept) {
         if (self)
-            self->grabIndexerResult(searchID, result, model, false);
+            self->grabIndexerResult(searchID, result, model, false, 0, kept);
     });
 }
 

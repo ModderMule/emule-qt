@@ -21,9 +21,12 @@
 
 #include <QCborArray>
 #include <QCborMap>
+#include <QElapsedTimer>
 #include <QMap>
+#include <QMutex>
 #include <QSet>
 #include <QStorageInfo>
+#include <QThreadPool>
 
 #include <algorithm>
 #include <ctime>
@@ -32,6 +35,8 @@
 namespace eMule {
 
 namespace {
+
+std::optional<qint64> cachedFreeTempSpace(const QStringList& tempDirs);
 
 /// Format a client version word the way the statistics tree labels it.
 QString formatClientVersion(uint32 ver)
@@ -530,17 +535,9 @@ StatsSnapshot collectStatsSnapshot()
         out.totalDownLeft = totalSize - totalDone;
     }
 
-    // Free space, each temp volume once (MFC GetFreeTempSpace(-1))
-    {
-        QSet<QByteArray> seen;
-        for (const QString& dir : thePrefs.tempDirs()) {
-            const QStorageInfo storage(dir);
-            if (!storage.isValid() || seen.contains(storage.device()))
-                continue;
-            seen.insert(storage.device());
-            out.freeTempSpace = out.freeTempSpace.value_or(0) + storage.bytesAvailable();
-        }
-    }
+    // Free space, each temp volume once (MFC GetFreeTempSpace(-1)). Measured on a worker:
+    // a sleeping or network temp disk held the core 8 s per GetStats (report 24).
+    out.freeTempSpace = cachedFreeTempSpace(thePrefs.tempDirs());
 
     // Connections
     if (const auto* ls = theApp.listenSocket) {
@@ -898,5 +895,51 @@ QCborMap toCborMap(const StatsSnapshot& s)
 
     return m;
 }
+
+// ---------------------------------------------------------------------------
+// Private
+// ---------------------------------------------------------------------------
+
+namespace {
+
+/// Last measured free temp space; a refresh runs on the thread pool when it is older
+/// than 5 s. The first call after start has nothing yet, which the snapshot allows.
+std::optional<qint64> cachedFreeTempSpace(const QStringList& tempDirs)
+{
+    struct Cache {
+        QMutex mutex;
+        std::optional<qint64> value;
+        QStringList dirs;
+        QElapsedTimer age;
+        bool running = false;
+    };
+    static constexpr qint64 kRefreshMs = 5000;
+    static Cache cache;
+
+    QMutexLocker lock(&cache.mutex);
+    const bool stale = !cache.age.isValid() || cache.age.elapsed() > kRefreshMs || cache.dirs != tempDirs;
+    if (stale && !cache.running) {
+        cache.running = true;
+        QThreadPool::globalInstance()->start([tempDirs] {
+            std::optional<qint64> free;
+            QSet<QByteArray> seen;
+            for (const QString& dir : tempDirs) {
+                const QStorageInfo storage(dir);
+                if (!storage.isValid() || seen.contains(storage.device()))
+                    continue;
+                seen.insert(storage.device());
+                free = free.value_or(0) + storage.bytesAvailable();
+            }
+            QMutexLocker done(&cache.mutex);
+            cache.value = free;
+            cache.dirs = tempDirs;
+            cache.age.start();
+            cache.running = false;
+        });
+    }
+    return cache.value;
+}
+
+} // namespace
 
 } // namespace eMule

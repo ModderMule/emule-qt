@@ -471,7 +471,7 @@ void TestEd2kLinkImporter::searchRowTorrentFilesGoToTheTorrentHandler()
     QString seenName;
     QByteArray seenData;
     Ed2kLinkImporter::setTorrentFileHandler(
-        [&](const QString& name, const QByteArray& bytes, QWidget*) {
+        [&](const QString& name, const QByteArray& bytes, const QList<int>&, QWidget*) {
             seenName = name;
             seenData = bytes;
         });

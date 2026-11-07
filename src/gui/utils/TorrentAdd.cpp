@@ -8,6 +8,7 @@
 #include "utils/StatusBarNotifier.h"
 
 #include <QApplication>
+#include <QCborArray>
 #include <QCborMap>
 #include <QMessageBox>
 #include <QPointer>
@@ -77,13 +78,24 @@ BtAddReply decodeTorrentAddReply(const Ipc::IpcMessage& resp)
 }
 
 Ipc::IpcMessage torrentFileRequest(const QByteArray& data, const QString& savePath, bool paused,
-                                   std::optional<bool> i2pOnly, std::optional<bool> stopAfterMetadata)
+                                   std::optional<bool> i2pOnly, std::optional<bool> stopAfterMetadata,
+                                   const QList<int>& wantedFiles)
 {
     Ipc::IpcMessage msg(Ipc::IpcMsgType::AddTorrentFile);
     msg.append(QCborValue(data));
     msg.append(savePath);
     msg.append(paused);
-    appendChoices(msg, i2pOnly, stopAfterMetadata);
+    if (wantedFiles.isEmpty()) {
+        appendChoices(msg, i2pOnly, stopAfterMetadata);
+        return msg;
+    }
+    // positional: fields 3 and 4 as null (the daemon's default) to reach field 5
+    msg.append(i2pOnly ? QCborValue(*i2pOnly) : QCborValue(QCborValue::Null));
+    msg.append(stopAfterMetadata ? QCborValue(*stopAfterMetadata) : QCborValue(QCborValue::Null));
+    QCborArray wanted;
+    for (const int f : wantedFiles)
+        wanted.append(f);
+    msg.append(QCborValue(wanted));
     return msg;
 }
 

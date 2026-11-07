@@ -14,10 +14,11 @@ Downloads from links at file hosters, verified under ed3k roots. Spec:
 | `Ed3kHosterJoin` | `src/ed3k/` | the host side: items, §4 lookup, answers to `LinkResolve`, feeds the resolver's part file in, writes verified blocks, moves the file to incoming |
 | `Ed3kResolver` | `src/ed3k/Ed3kResolver.h` | the interface: match, check, open, expand, accountCheck, sites, puzzles |
 | `Ed3kJdResolver` | `src/ed3k/` | the JDownloader sidecar: JSON lines over a loopback socket (token via stdin, then stdin closed); installs `resolver.zip` |
+| `Ed3kResolverUpdater` | `src/ed3k/` | newer `resolver.zip` from the update manifest (`hosterResolver`), see "Plugin updates" |
 | `Ed3kJavaRuntime` | `src/ed3k/` | finds Java 17+, else downloads Temurin 21 into `Config/ed3k/java/jre` (an older `<eMuleQt>/runtime/jre` is moved there) |
 | sidecar driver | `tools/hoster-resolver/` | Java, GPL v3+: JD's plugins unmodified, `SingleDownloadController` subclass, puzzle solver |
 | IPC | `src/daemon/Ed3kHosterBridge.*` | requests 1100-1108 (1107 GetHosterStats, Statistics branch; 1108 CheckHosterLinks), pushes 1150-1154 and 1159 (PushHosterLinkCheck), `hoster` map in `GetEd3kStatus` |
-| GUI | `panels/HosterPanel`, `dialogs/HosterPuzzleDialog`, Options › ed3k › Hoster | list, add links (dialog, or Paste links from the clipboard), image puzzles, settings, accounts; web search rows' Download (`MetaResultActions`, `WebLinksDialog`) adds one item per file with its mirrors, only while `enabled` (else Show Links); the links dialog checks its links (Status column); its Download says "Download (all)" / "Download (n)" for the selection, and a context menu has Download and Deselect All |
+| GUI | `panels/HosterPanel`, `dialogs/HosterPuzzleDialog`, Options › ed3k › Hoster | list, add links (dialog, or Paste links from the clipboard), image puzzles, settings, accounts; web search rows' Download (`MetaResultActions`, `WebLinksDialog`) adds one item per file with its mirrors, only while `enabled` (else the links window, as Details... opens it); the links dialog checks its links (Status column; with the ed3k node off the resolver checks them itself, `pumpDirectChecks`); check boxes pick what its Download takes ("Download (all)" / "Download (n)"), and a context menu has Download, Check Selected and Uncheck Selected |
 
 ## Flow of a pasted link
 
@@ -34,7 +35,11 @@ Downloads from links at file hosters, verified under ed3k roots. Spec:
 5. The core asks the resolver (`LinkResolve`); the sidecar writes `<temp>/ed3k-hoster/<id>/jd-<link>/data.part`;
    the join reads it as it grows and hands it in with `linkData`, in order, then `linkEnd`.
    That folder is scratch of one run (removed at start).
-6. Complete: the file moves to the incoming folder; eMule's shared files take it from there.
+6. Rootless and the hoster told a checksum (md5, sha1, sha224-512, crc32, crc32c): the core's file
+   is hashed in the background first (*HashChecking*); the link's vouch waits for it. A mismatch,
+   or JD's own check failing (error code `hash`), drops the bytes: *Failed* / `HashMismatch`, next
+   mirror, never published.
+7. Complete: the file moves to the incoming folder; eMule's shared files take it from there.
 
 ## Files
 
@@ -120,6 +125,36 @@ claimed only while hoster downloads are on; `FileTypes::dlc`, bit 8 of `appliedF
   `.met`/`items.json` key `passwords`) and the unpack tries them after the empty one.
 - Test files: `data/dlc/archive-*.dlc` (gitignored), made with JD's own `srcType=plain` call
   around archive.org links; `live_jdResolverOpensContainers` opens every file there.
+
+## Click'n'Load
+
+Link sites and browser add-ons hand links to JDownloader at `http://127.0.0.1:9666` (Click'n'Load 2,
+JD `org/jdownloader/api/cnl2`). The **GUI** answers there, so the browser and the port are on the
+same machine even when the core runs elsewhere. Switch: Options › ed3k › Hoster › Desktop *Accept
+links from web pages (Click'n'Load)*, `uistate.yml` `clickNLoad`, **default on**. It listens only
+while hoster downloads are on (core status), on `127.0.0.1` and `::1`. A port in use (JDownloader
+runs) is logged once and tried again every minute.
+
+- `ClickNLoadServer` (src/gui/app): `/jdcheck.js` (`jdownloader=true;`, what pages look for),
+  `/jdcheckjson`, `/crossdomain.xml`, `/flash` (`JDownloader`), `/flash/add` (`urls`),
+  `/flash/addcrypted2` (`crypted` + `jk` or `k`), `/flash/addcrypted` (DLC as base64). Fields
+  `passwords`/`passwords[]`, `package` (JD's ` - site.tld` cleanup), `source` (else Referer/Origin).
+  CORS `*` and the Private Network Access preflight, like JD. Answer `success` / `failed <why>`
+  after the core answered. Bodies over 6 MiB, chunked bodies and other paths are refused.
+- GUI → `AddClickNLoad` (1139) `[urls, crypted, jk, k, package, passwords, source]`; a DLC post goes
+  as `OpenHosterContainer` `clicknload.dlc`. 1139 is inside the filter lists' block, so
+  `Ed3kBridge` asks the hoster bridge before the filter one.
+- Core: `Ed3kHosterJoin::openClickNLoad()`. The encrypted part becomes JD's
+  `https://dummycnl.jdownloader.org/#<hex of {crypted, jk, k, source}>` and goes through the
+  sidecar's `expand` op: JD's `DummyCNL` crawler runs `jk` in Rhino for the AES-128-CBC key (key =
+  IV) and decrypts; LinkCrawler resolves the links. No sidecar change. Plain links skip the sidecar.
+  At most 4 posts read at once (any page can post); the post's package and passwords go on each link.
+- Result → `PushHosterLinks [0, links, {token, cnl: true, source, code, text}]`. Only the GUI that
+  sent the post (its token) shows the container dialog (*Links of <site>*: pick links, *Package
+  Name*); the main window comes forward on the Hoster tab. Nothing is added without that dialog, so
+  a page can only ask. Failure: code `invalid` (nothing decrypted or no plugin takes the links).
+- Tests: `tst_ClickNLoadServer` (endpoints on real sockets), `tst_Ed3kHoster` `clickNLoad_*`,
+  live `live_jdResolverClickNLoad` (an archive.org link encrypted with a known key, via `jk` and `k`).
 
 ## Extraction and sharing
 
@@ -241,8 +276,30 @@ A stream that breaks goes on from where it stood instead of starting over:
 | `checkMaxPerHost` | — (YAML only) | 5 | 1-64: of them at one hoster |
 | `recheckHours` | — (YAML only) | 72 | 0-8760: a published link is checked again after this; 0 = never |
 | `reportRecheckHours` | — (YAML only) | 6 | 0-8760: 3 dead-link reports check a published link at once, at most this often; 0 = reports never check |
+| `autoUpdate` | `ed3kHosterAutoUpdate` | on | fetch newer resolver plugins (see "Plugin updates"); Options › ed3k › Hoster, Java runtime group |
+| `autoUpdateHours` | — (YAML only) | 24 | 1-8760: manifest check interval |
 | `sharedPluginDir` | — (YAML only) | empty | resolver plugins unpacked once for several instances (see "Shared plugins" below); relative = to the config folder; empty = per instance |
 | `accounts` | `ed3kHosterAccounts` | empty | `{host, user, passwordEncrypted}`; IPC never carries a password out |
+| `solversEnabled` | `ed3kHosterSolversEnabled` | on | puzzles go to the solver services below first |
+| `solvers` | `ed3kHosterSolvers` | empty | captcha solver services, `{host, user, passwordEncrypted}`; user empty for key-only ones (key = password). Same password rule as `accounts` |
+
+## Captcha solvers
+
+Options › ed3k › Hoster has two tabs, like Usenet: *General* and *Captcha solvers*. The solver tab
+lists JD's paid solver plugins (`PluginForCaptchaSolver*`): 2Captcha, Anti-Captcha, CapMonster Cloud,
+AZcaptcha, Captchas.io, 9kw (API key only), DeathByCaptcha and ImageTyperz (user + password, or the
+password alone as API token), EndCaptcha and CheapCaptcha (user + password).
+
+- The daemon puts the enabled accounts with a password into `JdResolverConfig::solvers`. The resolver
+  sends them as `solverAccounts` after every sidecar start (the sidecar clears JD's saved ones; it also
+  stops when idle) and at once when they change while it runs. Its answer stays in
+  `Ed3kResolver::solverStates()` and goes to the GUI in the ed3k status (`hoster.solvers[{host, valid,
+  balance, currency, code}]`, no passwords).
+- JD hands a puzzle to its valid solver accounts before the user's puzzle window
+  (`UseAvailableCaptchaSolverAccounts`).
+- *Check* reuses `CheckHosterAccount`: `accountCheck` on a solver host answers `balance`/`currency` too,
+  shown as *Credit: 9.84 USD* / *No credit (…)*. A key-only row is checked with the user `apikey`.
+- Live tests: `tst_HosterSolvers` (`EMULE_HOSTER_LIVE=1`, keys `EMULE_CAPTCHA_*` in `.env`).
 
 ## Java
 
@@ -270,7 +327,7 @@ Output: `build/hoster-resolver/resolver.zip` (about 33 MB). Layout of `resolver/
 | `Core.jar` | JD core, AppWork, the driver, translations/json defaults (~9.7k classes, 13 MB) |
 | `jd/plugins/{hoster,decrypter}/` | plugins, loose: JD's scanners list the folder beside the jar holding `jd.SecondLevelLaunch` (2.3k files, 20 MB) |
 | `libs/` | 15 jars a headless JD loads (15 MB) |
-| `revision.txt`, `LICENSE` | JD SVN revision, GPL |
+| `revision.txt`, `api.txt`, `LICENSE` | JD SVN revision, sidecar protocol (`ResolverMain.PROTOCOL`, from the source by the build script), GPL |
 
 Classpath: `Core.jar`, the `resolver/` dir (for the loose plugins), `libs/*`. Left out of `libs/`
 besides JD's GUI/desktop jars: `cling-*` + `seamless-http/xml` (UPnP reconnect, MyJD direct
@@ -301,12 +358,57 @@ downloads are on and `hosterVerboseLog` is set (Options › Extended › Verbose
 connect and auth, each request (`-> op task host`, never url path, account or proxy credentials)
 and each event (`<- task id ev: fields`, progress once in 10 s per task). Off: dropped.
 
+### Plugin updates
+
+Hosters change their pages weekly; a zip frozen at release time rots. `Ed3kResolverUpdater`
+(daemon, on while `autoUpdate` and hoster downloads are on).
+
+**No zip at all** (release bundles ship none now): nothing is fetched at start. The first hoster
+link that finds no plugins (`Ed3kHosterJoin::begin` → `Ed3kResolver::wantPlugins` →
+`Ed3kJdResolver::pluginsNeeded`) makes the daemon call `Ed3kResolverUpdater::fetchFirst()`, also
+with `autoUpdate` off. The link waits as "no resolver" with "Downloading resolver plugins"; the zip
+is unpacked on a worker thread, then waiting links start (`retryNotReady`). A failed try is
+repeated by the next link after 10 min at the earliest. Scheduled checks only run once a zip is there.
+
+Scheduled checks:
+
+- Every `autoUpdateHours` (default 24; hourly tick, 6 h back-off after a failure) it reads
+  `hosterResolver` of `emuleqt-version.json`: `{url, sha256, size, jdRevision, api}`.
+- Taken only when `api` = `Ed3kJdResolver::kProtocol` (no `api`: never), `jdRevision` is newer than
+  the bundled zip's and the last fetched one's, the URL is https and the size ≤ 256 MB.
+- Fetched to `Config/ed3k/resolver/update/resolver-r<rev>.zip` (`HttpStreamDownload`: size + SHA-256,
+  through the user's proxy), then the zip's own `api.txt`, `revision.txt` and layout must match, else
+  it is deleted. `update.json` keeps the last check and the fetched zip. One older zip is kept (the
+  resolver may still run from it), others are removed.
+- The daemon uses the fetched zip while it is newer than the bundled one; an app update that
+  ships a newer zip deletes the fetched one. After a `PROTOCOL` bump the old fetched zip is ignored.
+- **Hand-over**: a new zip never cuts work. While the sidecar runs (an open download, check or
+  puzzle) the zip waits (`pendingZip`, shown as "update rN waits until hoster downloads are idle"
+  under the JD version). The sidecar stops after 5 min without tasks (or ends otherwise); then the
+  zip is unpacked on a worker thread. Tasks asked meanwhile are held and sent once it is in
+  (reason while unpacking: "Updating resolver plugins"). A JD download keeps the old plugins to its end.
+- Trust: the same as the core auto-update, HTTPS from emule-qt.org and the manifest's SHA-256; no
+  separate signature yet (ToDo).
+
+Publishing a refresh between releases: `scripts/publish-resolver.sh` (svn update, build, upload as
+`/pub/resolver-r<rev>.zip`, rewrite only `hosterResolver` of the live manifest; refuses a revision
+not newer than the live one without `--force`; `--dry-run` prints the entry). `/pub/resolver.zip` is
+never overwritten: release tags carry its SHA-256. A release's manifest job writes its own zip's
+entry again (`update-manifest.sh` reads `api.txt`). After a `PROTOCOL` bump, publish refreshes only
+once a release with the new protocol is out: the manifest has one entry, older clients skip it.
+
 ### Release builds
 
 - CI has no JD sources: `scripts/publish-release.sh` runs `build-hoster-resolver.sh`, rsyncs the zip to
   `https://emule-qt.org/pub/resolver.zip` and puts `Hoster-Resolver-SHA256:` in the tag message, next
-  to the GeoLite2 line. `release.yml`'s geoip job checks it and hands `resolver-zip` to every platform
-  and Docker. A tag without the line ships no resolver (warning only).
+  to the GeoLite2 line. `release.yml`'s geoip job checks it; only the manifest job uses it now.
+  The platform bundles and Docker ship no zip (`resolver: false`, the old line kept as a comment;
+  33 MB smaller): the core fetches it on the first hoster link ("Plugin updates").
+  `publish-release.sh` has `BUNDLE_RESOLVER=0`: no resolver build before the tag, no
+  `Hoster-Resolver-SHA256:` line (CI: a notice; the manifest job keeps `hosterResolver`). Its last
+  step, after the tag push, is `publish-resolver.sh` with build (svn update, compile, upload,
+  manifest entry); `--no-build` is passed on. `--skip-resolver`: no resolver step at all.
+  Bundling again: `BUNDLE_RESOLVER=1` plus the commented `resolver:` lines in `release.yml`.
 - ed3k in CI: the workflows check out the private `ModderMule/packmule` at the commit in
   `scripts/packmule.ref` into `libs/packmule` (still gitignored), with the `PACKMULE_TOKEN` secret
   (fine-grained PAT, Contents: read). No secret (forks, `windows-3rd.yml`): no checkout, ed3k off.
@@ -352,9 +454,10 @@ go over a loopback socket and stdin is empty, so any console read gets EOF.
 
 ## Open (ToDo in code)
 
-- reCAPTCHA, hCaptcha, Turnstile need a browser: such links end as *Needs you*.
+- reCAPTCHA, hCaptcha, Turnstile need a browser: without a captcha solver account such links end
+  as *Needs you*. A real download through a solver service is not tested yet (it costs per puzzle).
 - Resume of a rootless item after a pause or a restart (the core's hash state is not saved).
 - Peers' links for plain ed3k downloads (`Ed3kDownloads`) and the links of Kad answers; only
   hoster items use them now.
 - The address check of `http-source.md` §5 for the sidecar's own requests (needs a hook in JD's `Browser`).
-- A signed online refresh of `resolver.zip`; an OS keychain for account passwords.
+- A signature on `resolver.zip` refreshes beyond HTTPS + the manifest's SHA-256; an OS keychain for account passwords.

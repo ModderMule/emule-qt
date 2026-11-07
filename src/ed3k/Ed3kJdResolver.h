@@ -11,6 +11,9 @@
 /// - The plugins come as resolver.zip (scripts/build-hoster-resolver.sh), shipped with the
 ///   application and unpacked into <dataDir>/plugins when it changed. JD never writes there
 ///   (its state goes to <dataDir>/jd), so instances can share one unpacked copy: sharedDir.
+/// - A new zip (Ed3kResolverUpdater) waits while the sidecar runs, so a running download or
+///   check is never cut; it goes in once the sidecar ends (idle stop). It is unpacked on a
+///   worker thread; tasks asked meanwhile are held and sent after.
 /// - It gets its data folder and a scratch folder per task, nothing else: no key, no shared
 ///   folder, no IPC token (note §8). Its stdout+stderr are JD's log: only the driver's own lines
 ///   ("resolver: ...") are logged, as debug.
@@ -28,9 +31,11 @@
 #include <QTimer>
 
 #include <map>
+#include <vector>
 
 class QTcpServer;
 class QTcpSocket;
+class QThread;
 class QJsonObject;
 
 namespace eMule::ed3k {
@@ -44,6 +49,8 @@ struct JdResolverConfig {
     QString zip;           ///< resolver.zip to install from; empty: use what is installed
     QString proxy;         ///< for every request; empty = direct
     bool askPuzzles = true;
+    /// captcha solver accounts; sent after every start (the sidecar forgets them when it ends)
+    QList<SolverAccount> solvers;
     /// hoster downloads on: plugins unpacked, sidecar may start. Off: nothing is created and
     /// the unpacked plugins are removed (derived from zip; unpacked again when switched on)
     bool enabled = true;
@@ -68,6 +75,13 @@ public:
 
     /// resolver.zip next to the application (macOS Resources, share/emuleqt, a build tree).
     [[nodiscard]] static QString findBundledZip();
+    /// What resolver/revision.txt and resolver/api.txt of a zip say; 0: missing
+    struct ZipInfo {
+        int revision = 0;     ///< JD SVN revision
+        int api = 0;          ///< the sidecar protocol it speaks (kProtocol)
+        bool layout = false;  ///< Core.jar and jd/plugins/hoster there
+    };
+    [[nodiscard]] static ZipInfo readZipInfo(const QString& zip);
     /// Unpacks @p zip into @p dataDir/plugins when it differs from what is there. False:
     /// failed (@p error).
     static bool install(const QString& zip, const QString& dataDir, QString* error);
@@ -90,6 +104,17 @@ public:
         return m_revision.isEmpty() ? QString() : QStringLiteral("r") + m_revision;
     }
     [[nodiscard]] bool running() const;
+    /// A new zip waits for the sidecar to end; empty: none
+    [[nodiscard]] QString pendingZip() const { return m_pendingZip; }
+    /// "r<rev>" of pendingZip(); empty: none or unknown
+    [[nodiscard]] QString pendingVersion() const override { return m_pendingVersion; }
+    /// A new zip is being unpacked (worker thread)
+    [[nodiscard]] bool installing() const { return m_installThread != nullptr; }
+    [[nodiscard]] QList<SolverAccountState> solverStates() const override { return m_solverStates; }
+    /// No zip and nothing unpacked: emits pluginsNeeded() (once while fetching)
+    void wantPlugins() override;
+    /// The first zip is being downloaded (Ed3kResolverUpdater): the reason the GUI shows
+    void setFetching(bool on);
 
     TaskId match(const QString& url) override;
     TaskId check(const QString& url, const std::optional<ResolverAccount>& account) override;
@@ -99,6 +124,8 @@ public:
                 std::uint64_t have) override;
     TaskId accountCheck(const QString& host, const ResolverAccount& account) override;
     TaskId sites(const QString& host) override;
+    TaskId setSolverAccounts(const QList<SolverAccount>& accounts) override;
+    TaskId solveTest(const QString& solver, const QString& type, const QByteArray& image = {}) override;
     void answerPuzzle(std::uint64_t puzzle, const QString& text) override;
     void cancel(TaskId task) override;
     void setAskPuzzles(bool on) override;
@@ -107,13 +134,31 @@ public:
     /// Parses one event line of the sidecar (tests). nullopt: not an event of a task.
     [[nodiscard]] static std::optional<std::pair<TaskId, ResolverEvent>> parseEvent(const QByteArray& line);
 
+signals:
+    /// A link wants plugins and there are none: fetch the first zip
+    void pluginsNeeded();
+
 private:
     /// Sends @p req with a new id; starts the sidecar first.
     TaskId request(QJsonObject req, bool task);
     void send(const QJsonObject& req);
+    struct InstallResult {
+        QString root;
+        QString error;
+        QString revision;
+    };
+    /// Unpacks the plugins per @p c (enabled, with dataDir); any thread
+    static InstallResult installFor(const JdResolverConfig& c);
     /// Unpacks the plugins per m_config; sets m_root and m_installError
     void installPlugins();
+    /// installPlugins() on a worker thread: a new zip swapped in at run time
+    void installAsync();
+    void onInstalled(const InstallResult& r);
+    /// Sends the tasks held while installing, or fails them when the resolver can't start
+    void releaseHeld();
     bool ensureStarted();
+    /// m_config.solvers to the running sidecar
+    void sendSolvers();
     void stop();
     /// Closes socket and server; queued requests are dropped
     void closeChannel();
@@ -151,6 +196,14 @@ private:
     std::map<TaskId, qint64> m_progressLogged;   ///< task: last progress line (ms of the sidecar's uptime)
     QTimer m_idle;
     bool m_stopping = false;
+    TaskId m_solverTask = 0;   ///< the solverAccounts sendSolvers() sent last
+    QString m_pendingZip;      ///< waits for the sidecar to end
+    QString m_pendingVersion;
+    QPointer<QThread> m_installThread;
+    bool m_reinstall = false;  ///< config changed while installing: install again after
+    bool m_fetching = false;   ///< setFetching()
+    std::vector<std::pair<TaskId, QJsonObject>> m_held;   ///< tasks asked while installing
+    QList<SolverAccountState> m_solverStates;
 };
 
 } // namespace eMule::ed3k

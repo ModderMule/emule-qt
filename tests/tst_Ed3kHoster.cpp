@@ -13,9 +13,12 @@
 #ifdef EMULE_HAVE_HOSTER_JD
 #include "Ed3kJavaRuntime.h"
 #include "Ed3kJdResolver.h"
+#include "Ed3kResolverUpdater.h"
+#include "FakeHttpServer.h"
 #include "archive/ArchiveReader.h"
 #endif
 
+#include <QCryptographicHash>
 #include <QDir>
 #include <QDateTime>
 #include <QDirIterator>
@@ -44,6 +47,10 @@
 
 #ifdef EMULE_HAVE_HOSTER_JD
 #include <archive.h>
+#ifndef Q_OS_WIN
+#include <csignal>
+#include <sys/types.h>
+#endif
 #include <archive_entry.h>
 #endif
 
@@ -98,6 +105,8 @@ public:
     bool gone = false;
     QSet<QString> goneUrls;      ///< check() says Gone for these
     QSet<QString> quotaUrls;     ///< open() says a quota wait of an hour for these
+    QHash<QString, std::pair<QString, QString>> hashes;   ///< check() tells this checksum (type, hex)
+    QSet<QString> hashFailUrls;  ///< open() fails like JD's own checksum check (code "hash")
     QStringList opened;          ///< urls open() was asked for
     int opens = 0;
     int checks = 0;
@@ -165,6 +174,8 @@ public:
         e.kind = gone || goneUrls.contains(url) ? ResolverEvent::Kind::Gone : ResolverEvent::Kind::Found;
         e.name = fileName;
         e.size = std::uint64_t(data.size());
+        if (const auto hs = hashes.find(url); hs != hashes.end())
+            std::tie(e.hashType, e.hash) = *hs;
         const QString h = QUrl(url).host();
         maxRunningChecks[h] = std::max(maxRunningChecks.value(h), ++runningChecks[h]);
         int all = 0;
@@ -177,12 +188,16 @@ public:
         });
         return t;
     }
-    TaskId expand(const QString&) override
+    QStringList expanded;   ///< expand() urls, in order
+    TaskId expand(const QString& url) override
     {
         const TaskId t = next++;
+        expanded << url;
         ResolverEvent e;
         e.kind = ResolverEvent::Kind::Links;
-        e.links = {{QStringLiteral("https://fake.example/f/a"), QStringLiteral("a"), QStringLiteral("fake.example"), 1}};
+        // a DummyCNL link with "bad" in it: nothing decrypts, as with a wrong key
+        if (!url.contains(QStringLiteral("dummycnl")) || !QString::fromLatin1(QByteArray::fromHex(url.section(u'#', 1).toLatin1())).contains(QStringLiteral("bad")))
+            e.links = {{QStringLiteral("https://fake.example/f/a"), QStringLiteral("a"), QStringLiteral("fake.example"), 1}};
         later(t, e);
         return t;
     }
@@ -227,6 +242,14 @@ public:
             pz.timeoutS = 300;
             puzzles[pz.puzzle] = t;
             later(t, pz);
+            return t;
+        }
+        if (hashFailUrls.contains(url)) {
+            ResolverEvent f;
+            f.kind = ResolverEvent::Kind::Failed;
+            f.code = QStringLiteral("hash");
+            f.text = QStringLiteral("md5");
+            later(t, f);
             return t;
         }
         if (quotaUrls.contains(url)) {
@@ -280,6 +303,22 @@ public:
         e.text = text.isEmpty() ? QStringLiteral("skipped") : QStringLiteral("wrong");
         later(it->second, e);
         puzzles.erase(it);
+    }
+    TaskId setSolverAccounts(const QList<SolverAccount>&) override
+    {
+        const TaskId t = next++;
+        ResolverEvent e;
+        e.kind = ResolverEvent::Kind::Solvers;
+        later(t, e);
+        return t;
+    }
+    TaskId solveTest(const QString&, const QString&, const QByteArray&) override
+    {
+        const TaskId t = next++;
+        ResolverEvent e;
+        e.code = QStringLiteral("noSolver");
+        later(t, e);
+        return t;
     }
     void cancel(TaskId) override {}
     void setAskPuzzles(bool) override {}
@@ -479,12 +518,22 @@ bool writeZip(const QString& path, const QList<QPair<QString, QByteArray>>& memb
 }
 
 /// A resolver.zip of the shipped layout, with stand-in contents
-bool writeResolverZip(const QString& path)
+bool writeResolverZip(const QString& path, const QByteArray& revision = "53779", const QByteArray& api = {})
 {
-    return writeZip(path, {{QStringLiteral("resolver/Core.jar"), "PK"},
-                           {QStringLiteral("resolver/jd/plugins/hoster/ArchiveOrg.class"), "cafe"},
-                           {QStringLiteral("resolver/libs/js.jar"), "PK"},
-                           {QStringLiteral("resolver/revision.txt"), "53779"}});
+    QList<QPair<QString, QByteArray>> members{{QStringLiteral("resolver/Core.jar"), "PK"},
+                                              {QStringLiteral("resolver/jd/plugins/hoster/ArchiveOrg.class"), "cafe"},
+                                              {QStringLiteral("resolver/libs/js.jar"), "PK"},
+                                              {QStringLiteral("resolver/revision.txt"), revision}};
+    if (!api.isEmpty())
+        members.append({QStringLiteral("resolver/api.txt"), api});
+    return writeZip(path, members);
+}
+
+QByteArray fileSha256(const QString& path)
+{
+    QFile f(path);
+    QCryptographicHash h(QCryptographicHash::Sha256);
+    return f.open(QIODevice::ReadOnly) && h.addData(&f) ? h.result().toHex() : QByteArray();
 }
 #endif
 
@@ -576,6 +625,106 @@ private slots:
         QVERIFY(got->text.contains(QStringLiteral("Limit")));
     }
 
+    /// Click'n'Load: the encrypted list goes to JD's DummyCNL as its JSON in hex; its links
+    /// come back after the plain ones, with the post's package and passwords
+    void clickNLoad_decryptsThroughDummyCnl()
+    {
+        Rig r;
+        QVERIFY(r.start(true));
+        std::optional<Opened> got;
+        connect(r.join.get(), &Ed3kHosterJoin::clickNLoadOpened, this, opened(got));
+        Ed3kHosterJoin::ClickNLoad post;
+        post.urls = QStringLiteral("https://fake.example/f/plain\r\nnot a link");
+        post.crypted = QStringLiteral("AAAA");
+        post.jk = QStringLiteral("function f(){ return '31323334353637383930313233343536';}");
+        post.package = QStringLiteral("Set");
+        post.passwords = {QStringLiteral("pw"), QStringLiteral("pw"), QStringLiteral(" ")};
+        post.source = QStringLiteral("https://links.example/folder/1");
+        const quint64 token = r.join->openClickNLoad(post);
+        QVERIFY(token != 0);
+        QTRY_VERIFY(got);
+        QCOMPARE(got->token, token);
+        QCOMPARE(got->fileName, post.source);
+        QVERIFY(got->code.isEmpty());
+        QCOMPARE(got->links.size(), 2);
+        QCOMPARE(got->links[0].url, QStringLiteral("https://fake.example/f/plain"));
+        QCOMPARE(got->links[1].url, QStringLiteral("https://fake.example/f/a"));
+        for (const ResolverLink& l : std::as_const(got->links)) {
+            QCOMPARE(l.package, QStringLiteral("Set"));
+            QCOMPARE(l.passwords, QStringList{QStringLiteral("pw")});
+        }
+        QCOMPARE(r.resolver.expanded.size(), 1);
+        const QString url = r.resolver.expanded.first();
+        QVERIFY(url.startsWith(QStringLiteral("https://dummycnl.jdownloader.org/#")));
+        const QJsonObject o = QJsonDocument::fromJson(QByteArray::fromHex(url.section(u'#', 1).toLatin1())).object();
+        QCOMPARE(o.value(QStringLiteral("crypted")).toString(), post.crypted);
+        QCOMPARE(o.value(QStringLiteral("jk")).toString(), post.jk);
+        QCOMPARE(o.value(QStringLiteral("source")).toString(), post.source);
+        QVERIFY(!o.contains(QStringLiteral("k")));
+        // no item yet: the user picks in the GUI
+        QVERIFY(r.join->items().isEmpty());
+    }
+
+    /// plain links only: no resolver task, the answer still after the token
+    void clickNLoad_plainLinksOnly()
+    {
+        Rig r;
+        QVERIFY(r.start(true));
+        std::optional<Opened> got;
+        connect(r.join.get(), &Ed3kHosterJoin::clickNLoadOpened, this, opened(got));
+        Ed3kHosterJoin::ClickNLoad post;
+        post.urls = QStringLiteral("https://fake.example/f/1 https://fake.example/f/2");
+        QVERIFY(r.join->openClickNLoad(post) != 0);
+        QVERIFY(!got);
+        QTRY_VERIFY(got);
+        QCOMPARE(got->links.size(), 2);
+        QVERIFY(r.resolver.expanded.isEmpty());
+    }
+
+    /// a wrong key decrypts nothing: "invalid", unless plain links came along
+    void clickNLoad_nothingDecrypted()
+    {
+        Rig r;
+        QVERIFY(r.start(true));
+        std::optional<Opened> got;
+        connect(r.join.get(), &Ed3kHosterJoin::clickNLoadOpened, this, opened(got));
+        Ed3kHosterJoin::ClickNLoad post;
+        post.crypted = QStringLiteral("bad");
+        post.k = QStringLiteral("00");
+        QVERIFY(r.join->openClickNLoad(post) != 0);
+        QTRY_VERIFY(got);
+        QVERIFY(got->links.isEmpty());
+        QCOMPARE(got->code, QStringLiteral("invalid"));
+        got.reset();
+        post.urls = QStringLiteral("https://fake.example/f/9");
+        QVERIFY(r.join->openClickNLoad(post) != 0);
+        QTRY_VERIFY(got);
+        QCOMPARE(got->links.size(), 1);
+        QVERIFY(got->code.isEmpty());
+    }
+
+    /// hosters off, nothing in it, or a page posting over and over: refused at once
+    void clickNLoad_refused()
+    {
+        Rig off;
+        QVERIFY(off.start(false));
+        Ed3kHosterJoin::ClickNLoad post;
+        post.urls = QStringLiteral("https://fake.example/f/1");
+        QCOMPARE(off.join->openClickNLoad(post), quint64(0));
+        Rig r;
+        QVERIFY(r.start(true));
+        QCOMPARE(r.join->openClickNLoad({}), quint64(0));
+        Ed3kHosterJoin::ClickNLoad noKey;
+        noKey.crypted = QStringLiteral("AAAA");
+        QCOMPARE(r.join->openClickNLoad(noKey), quint64(0));
+        Ed3kHosterJoin::ClickNLoad enc;
+        enc.crypted = QStringLiteral("AAAA");
+        enc.k = QStringLiteral("00");
+        for (int i = 0; i < 4; ++i)
+            QVERIFY(r.join->openClickNLoad(enc) != 0);
+        QCOMPARE(r.join->openClickNLoad(enc), quint64(0));
+    }
+
     /// hosters off, no bytes or too many: refused at once, nothing follows
     void container_refused()
     {
@@ -638,6 +787,110 @@ private slots:
         QTRY_VERIFY(QDir(r.tmp.filePath(QStringLiteral("temp"))).entryList({QStringLiteral("*.hoster.part*")}, QDir::Files).isEmpty());
         // the same link again is not a second item
         QVERIFY(r.join->addLinks(QStringLiteral("https://fake.example/f/1")).isEmpty());
+    }
+
+    /// the digests the hoster checksum check computes ("123456789" check values)
+    void fileDigest_knownTypes()
+    {
+        QTemporaryDir tmp;
+        const QString p = tmp.filePath(QStringLiteral("v"));
+        QFile f(p);
+        QVERIFY(f.open(QIODevice::WriteOnly));
+        f.write("123456789");
+        f.close();
+        QCOMPARE(Ed3kHosterJoin::fileDigest(p, QStringLiteral("crc32")), QStringLiteral("cbf43926"));
+        QCOMPARE(Ed3kHosterJoin::fileDigest(p, QStringLiteral("crc32c")), QStringLiteral("e3069283"));
+        QCOMPARE(Ed3kHosterJoin::fileDigest(p, QStringLiteral("md5")), QStringLiteral("25f9e794323b453885f5181f1b624d0b"));
+        QCOMPARE(Ed3kHosterJoin::fileDigest(p, QStringLiteral("sha1")), QStringLiteral("f7c3bc1d808e04732adf679965ccc34ca7ae3441"));
+        QVERIFY(Ed3kHosterJoin::fileDigest(p, QStringLiteral("whirlpool")).isEmpty());
+        QVERIFY(Ed3kHosterJoin::fileDigest(tmp.filePath(QStringLiteral("none")), QStringLiteral("md5")).isEmpty());
+    }
+
+    /// the hoster's checksum matches the whole file: complete and vouched as before
+    void hash_matchCompletes()
+    {
+        Rig r;
+        const QString u = QStringLiteral("https://fake.example/h/ok");
+        r.resolver.hashes[u] = {QStringLiteral("sha256"),
+                                QString::fromLatin1(QCryptographicHash::hash(r.resolver.data, QCryptographicHash::Sha256).toHex().toUpper())};
+        QVERIFY(r.start(true));
+        const quint32 id = r.completeOne(u);
+        QVERIFY(id);
+        QCOMPARE(r.join->item(id)->reason, Ed3kHosterJoin::Reason::None);
+        QCOMPARE(r.join->sharedLinks(id).size(), 1);
+    }
+
+    /// a CRC32 told without its leading zeros still matches
+    void hash_crcWithoutLeadingZeros()
+    {
+        Rig r;
+        const QString u = QStringLiteral("https://fake.example/h/crc");
+        QTemporaryDir tmp;
+        QFile f(tmp.filePath(QStringLiteral("d")));
+        QVERIFY(f.open(QIODevice::WriteOnly));
+        f.write(r.resolver.data);
+        f.close();
+        QString crc = Ed3kHosterJoin::fileDigest(f.fileName(), QStringLiteral("crc32"));
+        // force a leading zero case: told as the number, not 8 digits
+        crc = QString::number(crc.toUInt(nullptr, 16), 16);
+        r.resolver.hashes[u] = {QStringLiteral("crc32"), crc};
+        QVERIFY(r.start(true));
+        QVERIFY(r.completeOne(u));
+    }
+
+    /// the file is not what the hoster's checksum says: dropped, not vouched, the next mirror
+    void hash_mismatchTakesNextMirror()
+    {
+        Rig r;
+        const QString m1 = QStringLiteral("https://fake.example/h/bad");
+        const QString m2 = QStringLiteral("https://fake.example/h/good");
+        r.resolver.hashes[m1] = {QStringLiteral("md5"), QStringLiteral("00000000000000000000000000000000")};
+        QVERIFY(r.start(true));
+        const auto ids = r.join->addMirrored({{m1, m2}});
+        QCOMPARE(ids.size(), 1);
+        QTRY_COMPARE_WITH_TIMEOUT(r.state(ids[0]), Ed3kHosterJoin::State::Complete, 60000);
+        QCOMPARE(r.join->item(ids[0])->url, m2);
+        QTRY_VERIFY(!r.join->sharedLinks(ids[0]).isEmpty());
+        const auto links = r.join->sharedLinks(ids[0]);
+        QCOMPARE(links.size(), 1);
+        QCOMPARE(links[0].url, m2);
+        QFile f(r.join->item(ids[0])->file);
+        QVERIFY(f.open(QIODevice::ReadOnly));
+        QCOMPARE(f.readAll(), r.resolver.data);
+    }
+
+    /// no mirror left: Failed with HashMismatch, the bytes gone, nothing in incoming
+    void hash_mismatchFails()
+    {
+        Rig r;
+        const QString u = QStringLiteral("https://fake.example/h/bad1");
+        r.resolver.hashes[u] = {QStringLiteral("sha1"), QStringLiteral("0000000000000000000000000000000000000000")};
+        QVERIFY(r.start(true));
+        const auto ids = r.join->addLinks(u);
+        QCOMPARE(ids.size(), 1);
+        QTRY_COMPARE_WITH_TIMEOUT(r.state(ids[0]), Ed3kHosterJoin::State::Failed, 60000);
+        const auto item = *r.join->item(ids[0]);
+        QCOMPARE(item.reason, Ed3kHosterJoin::Reason::HashMismatch);
+        QCOMPARE(item.reasonArg, QStringLiteral("sha1"));
+        QCOMPARE(item.done, std::uint64_t{0});
+        QVERIFY(item.rootHex.isEmpty());
+        QVERIFY(!QFile::exists(item.file));
+        QVERIFY(r.join->sharedLinks(ids[0]).isEmpty());
+        QVERIFY(QDir(r.tmp.filePath(QStringLiteral("incoming"))).entryList(QDir::Files).isEmpty());
+    }
+
+    /// JD's own checksum check failed (code "hash"): the same as a mismatch here
+    void hash_resolverCheckFails()
+    {
+        Rig r;
+        const QString u = QStringLiteral("https://fake.example/h/jd");
+        r.resolver.hashFailUrls = {u};
+        QVERIFY(r.start(true));
+        const auto ids = r.join->addLinks(u);
+        QCOMPARE(ids.size(), 1);
+        QTRY_COMPARE_WITH_TIMEOUT(r.state(ids[0]), Ed3kHosterJoin::State::Failed, 60000);
+        QCOMPARE(r.join->item(ids[0])->reason, Ed3kHosterJoin::Reason::HashMismatch);
+        QCOMPARE(r.resolver.opens, 1);
     }
 
     /// the ed3k network never finds a peer: no ALIAS lookup, straight to the hoster (#88)
@@ -1315,6 +1568,29 @@ private slots:
         QTRY_COMPARE_WITH_TIMEOUT(spy.status(u), Ed3kHosterJoin::LinkStatus::Offline, 10000);
     }
 
+    /// ed3k node off (not connected): the resolver checks the links itself
+    void probe_noNode_resolverChecks()
+    {
+        QTemporaryDir tmp;
+        Ed3kSession session;   // never started: no engine
+        FakeResolver resolver;
+        const QString online = QStringLiteral("https://fake.example/p/10");
+        const QString gone = QStringLiteral("https://fake.example/p/11");
+        resolver.goneUrls = {gone};
+        Ed3kHosterJoin join(session, tmp.filePath(QStringLiteral("cfg")));
+        join.setResolver(&resolver);
+        Ed3kHosterPrefs prefs;
+        prefs.enabled = true;
+        join.setConfig(prefs, tmp.filePath(QStringLiteral("temp")), tmp.filePath(QStringLiteral("incoming")));
+        CheckSpy spy(join);
+        QVERIFY(join.checkLinks({online, gone}));
+        QTRY_COMPARE_WITH_TIMEOUT(spy.status(online), Ed3kHosterJoin::LinkStatus::Online, 10000);
+        QTRY_COMPARE_WITH_TIMEOUT(spy.status(gone), Ed3kHosterJoin::LinkStatus::Offline, 10000);
+        QCOMPARE(spy.last[online].name, QStringLiteral("movie.bin"));
+        QCOMPARE(resolver.checks, 2);
+        QCOMPARE(resolver.opens, 0);
+    }
+
     void probe_unknownHoster_unknown()
     {
         Rig r;
@@ -1655,6 +1931,24 @@ private slots:
         QCOMPARE(e->second.kind, K::Status);
         QCOMPARE(e->second.text, QStringLiteral("puzzle"));
         QVERIFY(!e->second.isFinal());
+        // captcha solver accounts and a test solve
+        e = Ed3kJdResolver::parseEvent(
+            R"({"id":6,"ev":"solvers","accounts":[{"host":"2captcha.com","valid":true,"balance":1.25,"currency":"USD"},)"
+            R"({"host":"x.example","valid":false,"code":"noPlugin"}]})");
+        QCOMPARE(e->second.kind, K::Solvers);
+        QVERIFY(e->second.isFinal());
+        QCOMPARE(e->second.solvers.size(), 2);
+        QCOMPARE(e->second.solvers[0].host, QStringLiteral("2captcha.com"));
+        QVERIFY(e->second.solvers[0].valid);
+        QCOMPARE(e->second.solvers[0].balance, 1.25);
+        QCOMPARE(e->second.solvers[0].currency, QStringLiteral("USD"));
+        QVERIFY(!e->second.solvers[1].valid);
+        QCOMPARE(e->second.solvers[1].code, QStringLiteral("noPlugin"));
+        e = Ed3kJdResolver::parseEvent(R"({"id":8,"ev":"solved","text":"KoYy2j","solver":"9kw.eu","expected":"KoYy2j"})");
+        QCOMPARE(e->second.kind, K::Solved);
+        QCOMPARE(e->second.text, QStringLiteral("KoYy2j"));
+        QCOMPARE(e->second.host, QStringLiteral("9kw.eu"));
+        QCOMPARE(e->second.name, QStringLiteral("KoYy2j"));
         QVERIFY(!Ed3kJdResolver::parseEvent(R"({"id":1,"ev":"ok"})"));
         QVERIFY(!Ed3kJdResolver::parseEvent("not json"));
     }
@@ -1951,6 +2245,274 @@ private slots:
 
     /// #88: the built resolver.zip packs JD's core; only plugins are loose files and the
     /// jars a headless resolver never loads stay out. Skips without a built zip.
+    /// revision.txt, api.txt and the layout read from a zip; an old zip has no api
+    void resolverZip_info()
+    {
+        QTemporaryDir tmp;
+        const QString zip = tmp.filePath(QStringLiteral("resolver.zip"));
+        QVERIFY(writeResolverZip(zip, "53800", "2"));
+        auto info = Ed3kJdResolver::readZipInfo(zip);
+        QCOMPARE(info.revision, 53800);
+        QCOMPARE(info.api, 2);
+        QVERIFY(info.layout);
+        QVERIFY(writeResolverZip(zip));
+        info = Ed3kJdResolver::readZipInfo(zip);
+        QCOMPARE(info.revision, 53779);
+        QCOMPARE(info.api, 0);
+        QVERIFY(writeZip(zip, {{QStringLiteral("resolver/revision.txt"), "1"}}));
+        QVERIFY(!Ed3kJdResolver::readZipInfo(zip).layout);
+        QCOMPARE(Ed3kJdResolver::readZipInfo(tmp.filePath(QStringLiteral("none.zip"))).revision, 0);
+    }
+
+    /// only our api, only newer, only https (http on loopback for tests), with a hash
+    void resolverUpdater_wanted()
+    {
+        HosterResolverRelease r;
+        r.file = {QStringLiteral("https://emule-qt.org/pub/resolver.zip"), QString(64, u'a'), 1000};
+        r.jdRevision = 53800;
+        r.api = Ed3kJdResolver::kProtocol;
+        QVERIFY(Ed3kResolverUpdater::wanted(r, 53779));
+        QVERIFY(!Ed3kResolverUpdater::wanted(r, 53800));
+        auto other = r;
+        other.api = Ed3kJdResolver::kProtocol + 1;
+        QString why;
+        QVERIFY(!Ed3kResolverUpdater::wanted(other, 0, &why));
+        QVERIFY2(why.contains(QStringLiteral("api")), qPrintable(why));
+        other.api = 0;   // an old manifest: never
+        QVERIFY(!Ed3kResolverUpdater::wanted(other, 0));
+        other = r;
+        other.file.url = QStringLiteral("http://emule-qt.org/pub/resolver.zip");
+        QVERIFY(!Ed3kResolverUpdater::wanted(other, 0));
+        other.file.url = QStringLiteral("http://127.0.0.1:1/resolver.zip");
+        QVERIFY(Ed3kResolverUpdater::wanted(other, 0));
+        other = r;
+        other.file.sha256.clear();
+        QVERIFY(!Ed3kResolverUpdater::wanted(other, 0));
+    }
+
+    /// manifest → zip fetched and checked → zipToUse() picks it over an older bundled one;
+    /// a later bundled zip that caught up removes it
+    void resolverUpdater_fetchesNewerZip()
+    {
+        QTemporaryDir tmp;
+        const QString bundled = tmp.filePath(QStringLiteral("bundled.zip"));
+        QVERIFY(writeResolverZip(bundled, "53779", "2"));
+        const QString served = tmp.filePath(QStringLiteral("served.zip"));
+        QVERIFY(writeResolverZip(served, "53800", QByteArray::number(Ed3kJdResolver::kProtocol)));
+        QFile f(served);
+        QVERIFY(f.open(QIODevice::ReadOnly));
+        const QByteArray zipBytes = f.readAll();
+        f.close();
+
+        FakeHttpServer http;
+        QVERIFY(http.isListening());
+        int api = Ed3kJdResolver::kProtocol;
+        http.handler = [&](const QByteArray& path, const QByteArray&) -> FakeHttpServer::Response {
+            if (path == "/resolver.zip")
+                return {200, zipBytes};
+            const QJsonObject res{{QStringLiteral("url"), http.url(QStringLiteral("/resolver.zip")).toString()},
+                                  {QStringLiteral("sha256"), QString::fromLatin1(fileSha256(served))},
+                                  {QStringLiteral("size"), zipBytes.size()},
+                                  {QStringLiteral("jdRevision"), 53800},
+                                  {QStringLiteral("api"), api}};
+            return {200, QJsonDocument(QJsonObject{{QStringLiteral("latest"), QStringLiteral("9.9.9")},
+                                                   {QStringLiteral("hosterResolver"), res}})
+                             .toJson()};
+        };
+        const QString dir = tmp.filePath(QStringLiteral("update"));
+        {
+            Ed3kResolverUpdater u(dir);
+            u.setManifestUrl(http.url(QStringLiteral("/emuleqt-version.json")));
+            u.setBundledZip(bundled);
+            QCOMPARE(u.zipToUse(), bundled);
+            // another api: checked, nothing fetched
+            api = Ed3kJdResolver::kProtocol + 1;
+            QSignalSpy checked(&u, &Ed3kResolverUpdater::checked);
+            u.setSchedule(true, 24);
+            QTRY_COMPARE_WITH_TIMEOUT(checked.size(), 1, 10000);
+            QVERIFY(checked.first().at(0).toBool());
+            QCOMPARE(u.zipToUse(), bundled);
+            QVERIFY(u.lastChecked().isValid());
+
+            api = Ed3kJdResolver::kProtocol;
+            QSignalSpy ready(&u, &Ed3kResolverUpdater::zipReady);
+            u.checkNow();
+            QTRY_COMPARE_WITH_TIMEOUT(ready.size(), 1, 10000);
+            QCOMPARE(u.fetchedRevision(), 53800);
+            QCOMPARE(u.zipToUse(), QDir(dir).filePath(QStringLiteral("resolver-r53800.zip")));
+            QCOMPARE(fileSha256(u.zipToUse()), fileSha256(served));
+
+            // the interval holds the next scheduled check back
+            const int requests = http.requestCount();
+            u.checkSchedule();
+            QTest::qWait(200);
+            QCOMPARE(http.requestCount(), requests);
+        }
+        {
+            // a restart remembers it
+            Ed3kResolverUpdater u(dir);
+            u.setBundledZip(bundled);
+            QCOMPARE(u.fetchedRevision(), 53800);
+            QCOMPARE(u.zipToUse(), QDir(dir).filePath(QStringLiteral("resolver-r53800.zip")));
+            // an application update ships a newer zip: the fetched one goes
+            const QString newer = tmp.filePath(QStringLiteral("newer.zip"));
+            QVERIFY(writeResolverZip(newer, "53900", "2"));
+            u.setBundledZip(newer);
+            QCOMPARE(u.zipToUse(), newer);
+            QVERIFY(!QFileInfo::exists(QDir(dir).filePath(QStringLiteral("resolver-r53800.zip"))));
+        }
+    }
+
+    /// no zip shipped: nothing at start, fetched once a hoster link wants plugins
+    void resolverUpdater_noZipWaitsForLink()
+    {
+        QTemporaryDir tmp;
+        const QString served = tmp.filePath(QStringLiteral("served.zip"));
+        QVERIFY(writeResolverZip(served, "53800", QByteArray::number(Ed3kJdResolver::kProtocol)));
+        QFile f(served);
+        QVERIFY(f.open(QIODevice::ReadOnly));
+        const QByteArray zipBytes = f.readAll();
+        f.close();
+        FakeHttpServer http;
+        QVERIFY(http.isListening());
+        http.handler = [&](const QByteArray& path, const QByteArray&) -> FakeHttpServer::Response {
+            if (path == "/resolver.zip")
+                return {200, zipBytes};
+            const QJsonObject res{{QStringLiteral("url"), http.url(QStringLiteral("/resolver.zip")).toString()},
+                                  {QStringLiteral("sha256"), QString::fromLatin1(fileSha256(served))},
+                                  {QStringLiteral("size"), zipBytes.size()},
+                                  {QStringLiteral("jdRevision"), 53800},
+                                  {QStringLiteral("api"), Ed3kJdResolver::kProtocol}};
+            return {200, QJsonDocument(QJsonObject{{QStringLiteral("latest"), QStringLiteral("9.9.9")},
+                                                   {QStringLiteral("hosterResolver"), res}})
+                             .toJson()};
+        };
+        Ed3kResolverUpdater u(tmp.filePath(QStringLiteral("update")));
+        u.setManifestUrl(http.url(QStringLiteral("/emuleqt-version.json")));
+        u.setBundledZip({});
+        u.setSchedule(true, 24);
+        QTest::qWait(200);
+        QCOMPARE(http.requestCount(), 0);   // not at start
+
+        QSignalSpy ready(&u, &Ed3kResolverUpdater::zipReady);
+        QVERIFY(u.fetchFirst());
+        QVERIFY(u.fetchFirst());   // running: still fetching
+        QTRY_COMPARE_WITH_TIMEOUT(ready.size(), 1, 10000);
+        QCOMPARE(u.fetchedRevision(), 53800);
+        QVERIFY(!u.fetchFirst());   // there now
+
+        // the resolver asks once, and says why it waits
+        JdResolverConfig cfg;
+        cfg.enabled = true;
+        cfg.java = tmp.filePath(QStringLiteral("no-java"));
+        cfg.dataDir = tmp.filePath(QStringLiteral("resolver"));
+        Ed3kJdResolver r;
+        r.setConfig(cfg);
+        QSignalSpy needed(&r, &Ed3kJdResolver::pluginsNeeded);
+        r.wantPlugins();
+        QCOMPARE(needed.size(), 1);
+        r.setFetching(true);
+        r.wantPlugins();
+        QCOMPARE(needed.size(), 1);
+        QCOMPARE(r.unavailableReason(), QStringLiteral("Downloading resolver plugins"));
+        r.setFetching(false);
+        cfg.zip = u.zipToUse();
+        r.setConfig(cfg);
+        QTRY_VERIFY_WITH_TIMEOUT(!r.installing(), 10000);
+        QVERIFY(!r.pluginRoot().isEmpty());
+        r.wantPlugins();
+        QCOMPARE(needed.size(), 1);   // plugins there
+    }
+
+    /// a zip whose content is not what the manifest says is dropped
+    void resolverUpdater_rejectsWrongZip()
+    {
+        QTemporaryDir tmp;
+        const QString served = tmp.filePath(QStringLiteral("served.zip"));
+        QVERIFY(writeResolverZip(served, "53800", "99"));   // api inside differs
+        QFile f(served);
+        QVERIFY(f.open(QIODevice::ReadOnly));
+        const QByteArray zipBytes = f.readAll();
+        FakeHttpServer http;
+        http.handler = [&](const QByteArray& path, const QByteArray&) -> FakeHttpServer::Response {
+            if (path == "/resolver.zip")
+                return {200, zipBytes};
+            const QJsonObject res{{QStringLiteral("url"), http.url(QStringLiteral("/resolver.zip")).toString()},
+                                  {QStringLiteral("sha256"), QString::fromLatin1(fileSha256(served))},
+                                  {QStringLiteral("size"), zipBytes.size()},
+                                  {QStringLiteral("jdRevision"), 53800},
+                                  {QStringLiteral("api"), Ed3kJdResolver::kProtocol}};
+            return {200, QJsonDocument(QJsonObject{{QStringLiteral("latest"), QStringLiteral("9.9.9")},
+                                                   {QStringLiteral("hosterResolver"), res}})
+                             .toJson()};
+        };
+        const QString dir = tmp.filePath(QStringLiteral("update"));
+        Ed3kResolverUpdater u(dir);
+        u.setManifestUrl(http.url(QStringLiteral("/m.json")));
+        QSignalSpy checked(&u, &Ed3kResolverUpdater::checked);
+        QVERIFY(u.fetchFirst());   // no zip: only on demand
+        QTRY_COMPARE_WITH_TIMEOUT(checked.size(), 1, 10000);
+        QVERIFY(!checked.first().at(0).toBool());
+        QVERIFY(u.zipToUse().isEmpty());
+        QVERIFY(!u.fetchFirst());   // retried after kFirstRetrySecs only
+        QVERIFY(QDir(dir).entryList({QStringLiteral("*.zip")}, QDir::Files).isEmpty());
+    }
+
+    /// a new zip waits while the sidecar runs; once it ends, the new plugins are unpacked
+    void jdResolver_newZipWaitsForIdle()
+    {
+#ifdef Q_OS_WIN
+        QSKIP("fake java is a shell script");
+#else
+        QTemporaryDir tmp;
+        const QString oldZip = tmp.filePath(QStringLiteral("old.zip"));
+        const QString newZip = tmp.filePath(QStringLiteral("new.zip"));
+        QVERIFY(writeResolverZip(oldZip, "53779", "2"));
+        QVERIFY(writeResolverZip(newZip, "53800", "2"));
+        const QString java = tmp.filePath(QStringLiteral("java"));
+        {
+            QFile f(java);
+            QVERIFY(f.open(QIODevice::WriteOnly));
+            f.write("#!/bin/sh\necho $$ > pid\nexec sleep 30\n");
+            f.close();
+            QVERIFY(f.setPermissions(f.permissions() | QFileDevice::ExeOwner));
+        }
+        Ed3kJdResolver r;
+        JdResolverConfig cfg;
+        cfg.dataDir = tmp.filePath(QStringLiteral("resolver"));
+        cfg.zip = oldZip;
+        cfg.java = java;
+        r.setConfig(cfg);
+        QCOMPARE(r.engineVersion(), QStringLiteral("r53779"));
+        QSignalSpy events(&r, &Ed3kResolver::taskEvent);
+        const auto first = r.match(QStringLiteral("https://x.example/f"));
+        QVERIFY(r.running());
+
+        cfg.zip = newZip;
+        r.setConfig(cfg);
+        QVERIFY(r.running());   // not cut
+        QCOMPARE(r.pendingZip(), newZip);
+        QCOMPARE(r.pendingVersion(), QStringLiteral("r53800"));
+        QCOMPARE(r.engineVersion(), QStringLiteral("r53779"));
+        QCOMPARE(r.config().zip, oldZip);
+
+        // the sidecar ends (killed here; the idle stop takes the same path)
+        const QString pidFile = QDir(cfg.dataDir).filePath(QStringLiteral("pid"));
+        QTRY_VERIFY_WITH_TIMEOUT(QFileInfo(pidFile).size() > 0, 10000);
+        QFile pf(pidFile);
+        QVERIFY(pf.open(QIODevice::ReadOnly));
+        QVERIFY(::kill(pid_t(pf.readAll().trimmed().toInt()), SIGTERM) == 0);
+        QTRY_VERIFY_WITH_TIMEOUT(!r.running(), 10000);
+        QTRY_VERIFY_WITH_TIMEOUT(!events.isEmpty(), 10000);   // the open task failed, not lost
+        QCOMPARE(events.first().at(0).value<Ed3kResolver::TaskId>(), first);
+        QTRY_VERIFY_WITH_TIMEOUT(!r.installing(), 10000);
+        QVERIFY(r.pendingZip().isEmpty());
+        QCOMPARE(r.config().zip, newZip);
+        QCOMPARE(r.engineVersion(), QStringLiteral("r53800"));
+        QVERIFY2(r.unavailableReason().isEmpty(), qPrintable(r.unavailableReason()));
+#endif
+    }
+
     void bundledZip_layout()
     {
         const QString zip = Ed3kJdResolver::findBundledZip();
@@ -2260,6 +2822,58 @@ private slots:
                 pws.sort();
                 QCOMPARE(pws, (QStringList{QStringLiteral("emuleqt"), QStringLiteral("second pw")}));
             }
+        }
+    }
+
+    /// Click'n'Load through the real sidecar: JD's DummyCNL runs jk in Rhino for the key and
+    /// decrypts an archive.org link (AES-128-CBC, key = IV = "1234567890123456"). EMULE_HOSTER_LIVE=1.
+    void live_jdResolverClickNLoad()
+    {
+        if (qEnvironmentVariable("EMULE_HOSTER_LIVE") != QLatin1StringView("1"))
+            QSKIP("live: set EMULE_HOSTER_LIVE=1");
+        const QString zip = Ed3kJdResolver::findBundledZip();
+        if (zip.isEmpty())
+            QSKIP("no resolver.zip: run scripts/build-hoster-resolver.sh");
+        QTemporaryDir tmp;
+        Ed3kJavaRuntime java(tmp.path());
+        java.locate({});
+        QTRY_VERIFY_WITH_TIMEOUT(java.state() != Ed3kJavaRuntime::State::Probing, 60000);
+        if (!java.runtime())
+            QSKIP("no Java 17+ on this machine");
+        Ed3kJdResolver resolver;
+        JdResolverConfig cfg;
+        cfg.java = java.runtime()->java;
+        cfg.dataDir = tmp.filePath(QStringLiteral("resolver"));
+        cfg.zip = zip;
+        resolver.setConfig(cfg);
+        QVERIFY2(resolver.available(), qPrintable(resolver.unavailableReason()));
+        Ed3kSession session;
+        QVERIFY(session.start(loopback(tmp.filePath(QStringLiteral("cfg")))));
+        Ed3kHosterJoin join(session, tmp.filePath(QStringLiteral("cfg")));
+        join.setResolver(&resolver);
+        Ed3kHosterPrefs prefs;
+        prefs.enabled = true;
+        join.setConfig(prefs, tmp.filePath(QStringLiteral("temp")), tmp.filePath(QStringLiteral("incoming")));
+        const QString crypted = QStringLiteral("LqIguTAYsa6MSCA2694wFP+1AkY5NCqrJT+rwTSim5sbuiEKlUIpoKaS79CYxwl7na46P0CyJW0ygblIUgUBoQ==");
+        const QString want = QStringLiteral("https://archive.org/download/testmp3testfile/mpthreetest.mp3");
+        // jk (a JavaScript function), then k (the key as hex)
+        for (const bool viaJk : {true, false}) {
+            Ed3kHosterJoin::ClickNLoad post;
+            post.crypted = crypted;
+            if (viaJk)
+                post.jk = QStringLiteral("function f(){ return '31323334353637383930313233343536';}");
+            else
+                post.k = QStringLiteral("31323334353637383930313233343536");
+            post.package = QStringLiteral("CNL Test");
+            std::optional<Opened> got;
+            const auto c = connect(&join, &Ed3kHosterJoin::clickNLoadOpened, this, opened(got));
+            QVERIFY(join.openClickNLoad(post) != 0);
+            QTRY_VERIFY_WITH_TIMEOUT(got, 180000);
+            disconnect(c);
+            QVERIFY2(got->code.isEmpty(), qPrintable(got->code + u' ' + got->text));
+            QCOMPARE(got->links.size(), 1);
+            QCOMPARE(got->links[0].url, want);
+            QCOMPARE(got->links[0].package, QStringLiteral("CNL Test"));
         }
     }
 

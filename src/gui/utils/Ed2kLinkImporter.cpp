@@ -380,11 +380,12 @@ bool Ed2kLinkImporter::sendHosterContainer(const QString& name, const QByteArray
     return true;
 }
 
-bool Ed2kLinkImporter::sendTorrentFile(const QString& name, const QByteArray& data, QWidget* parent)
+bool Ed2kLinkImporter::sendTorrentFile(const QString& name, const QByteArray& data, QWidget* parent,
+                                       const QList<int>& wantedFiles)
 {
     if (!s_torrentFileHandler || data.isEmpty())
         return false;
-    s_torrentFileHandler(name, data, parent);
+    s_torrentFileHandler(name, data, wantedFiles, parent);
     return true;
 }
 

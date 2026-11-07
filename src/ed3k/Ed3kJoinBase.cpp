@@ -10,6 +10,7 @@
 #include "utils/Log.h"
 
 #include <QCoreApplication>
+#include <QDataStream>
 #include <QDateTime>
 #include <QDir>
 #include <QFile>
@@ -40,6 +41,9 @@ constexpr int kSetCandidates = 8;
 const QString kKeptIndex = QStringLiteral("kept.tsv");
 /// ALIAS records to publish again: u32-LE length + Alias, as publishAlias takes them
 const QString kKeptRecords = QStringLiteral("records.bin");
+/// a kept member's block hashes with the size and mtime they were read at: a restart
+/// shares it without reading it again (report 23: every seeding torrent read at each start)
+constexpr quint32 kKeptHashesMagic = 0x454B4831;   // "EKH1"
 
 /// Own threads for hashing: they run at lowered priority, which is never undone (#136).
 QThreadPool* hashPool()
@@ -63,6 +67,7 @@ std::optional<std::pair<ffi::Hashed, ffi::Bytes>> hashFile(const QString& path, 
     QByteArray chunk;
     // #136: under the eD2K hashing disk limit too; it read at full speed beside it
     DiskLoadLimiter& diskLoad = DiskLoadLimiter::thisThread();
+    diskLoad.setFile(path);   // one budget with eD2K's hashing of the same disk
     while (!f.atEnd()) {
         if (cancel.load())
             return std::nullopt;
@@ -87,6 +92,43 @@ QString blobFile(const ffi::Root& root)
 {
     return QString::fromLatin1(QByteArray(reinterpret_cast<const char*>(root.bytes.data()), qsizetype(root.bytes.size())).toHex())
            + QStringLiteral(".blob");
+}
+
+QString keptHashesFile(int member)
+{
+    return QStringLiteral("m%1.hashes").arg(member);
+}
+
+QByteArray keptHashesBlob(std::uint64_t size, qint64 mtimeMs, const ffi::Root& root, const ffi::Bytes& hashes)
+{
+    QByteArray out;
+    QDataStream s(&out, QIODevice::WriteOnly);
+    s.setVersion(QDataStream::Qt_6_0);
+    s << kKeptHashesMagic << quint64(size) << qint64(mtimeMs)
+      << QByteArray(reinterpret_cast<const char*>(root.bytes.data()), qsizetype(root.bytes.size()))
+      << QByteArray(reinterpret_cast<const char*>(hashes.data()), qsizetype(hashes.size()));
+    return out;
+}
+
+/// The hashes in @p blob when they are of @p root and the file is still @p size, @p mtimeMs.
+std::optional<ffi::Bytes> keptHashesOf(const QByteArray& blob, std::uint64_t size, qint64 mtimeMs, const ffi::Root& root)
+{
+    if (blob.isEmpty())
+        return std::nullopt;
+    QDataStream s(blob);
+    s.setVersion(QDataStream::Qt_6_0);
+    quint32 magic = 0;
+    quint64 keptSize = 0;
+    qint64 keptMtime = 0;
+    QByteArray keptRoot;
+    QByteArray hashes;
+    s >> magic >> keptSize >> keptMtime >> keptRoot >> hashes;
+    if (s.status() != QDataStream::Ok || magic != kKeptHashesMagic || keptSize != size || keptMtime != mtimeMs
+        || hashes.isEmpty() || keptRoot.size() != qsizetype(root.bytes.size())
+        || std::memcmp(keptRoot.constData(), root.bytes.data(), root.bytes.size()) != 0)
+        return std::nullopt;
+    const auto* b = reinterpret_cast<const std::byte*>(hashes.constData());
+    return ffi::Bytes(b, b + hashes.size());
 }
 
 std::optional<ffi::Root> rootOfHex(const QString& hex)
@@ -856,6 +898,7 @@ void Ed3kJoinBase::shareKept()
         const QString owner = QUrl::fromPercentEncoding(sub.toLatin1());
         if (!keepsOwner(owner)) {
             logDebug([&]() -> QString { return QStringLiteral("%1 is gone: what was kept of it is dropped").arg(owner); });
+            forgetBlobWrites(dir.filePath(sub));
             QDir(dir.filePath(sub)).removeRecursively();
             continue;
         }
@@ -883,6 +926,7 @@ void Ed3kJoinBase::shareKept()
 
 void Ed3kJoinBase::dropKept(const QString& owner)
 {
+    forgetBlobWrites(keptDir(owner));
     QDir(keptDir(owner)).removeRecursively();
 }
 
@@ -1497,7 +1541,27 @@ void Ed3kJoinBase::shareKeptMember(const QString& owner, int member, const ffi::
             keptMemberDone(owner);
         return;
     }
-    hashInBackground(path, [this, owner, member, root, size, name, tries, path](std::optional<FileHash> hashed) {
+    const QString cache = QDir(keptDir(owner)).filePath(keptHashesFile(member));
+    const QFileInfo before(path);
+    const qint64 mtimeMs = before.lastModified().toMSecsSinceEpoch();
+    if (before.isFile() && std::uint64_t(before.size()) == size) {
+        if (auto hashes = keptHashesOf(readBlob(cache), size, mtimeMs, root)) {
+            logDebug([&]() -> QString { return QStringLiteral("kept member %1 of %2 unchanged: not hashed again").arg(member).arg(owner); });
+            shareKeptHashed(owner, member, root, size, name, tries, path, FileHash{root, size, std::move(*hashes)});
+            if (tries == 0)
+                keptMemberDone(owner);
+            return;
+        }
+    }
+    hashInBackground(path, [this, owner, member, root, size, name, tries, path, cache, mtimeMs](std::optional<FileHash> hashed) {
+        if (hashed && hashed->root == root && hashed->size == size) {
+            // the file as it was read: changed meanwhile, the next start hashes it again
+            const QFileInfo after(path);
+            if (after.lastModified().toMSecsSinceEpoch() == mtimeMs && std::uint64_t(after.size()) == size) {
+                const QByteArray blob = keptHashesBlob(size, mtimeMs, root, hashed->hashes);
+                writeBlobLater(cache, spanOf(blob));
+            }
+        }
         shareKeptHashed(owner, member, root, size, name, tries, path, hashed);
         // a first try decides, shared or not; a later one shares, the records are out already
         if (tries == 0)
@@ -1524,6 +1588,9 @@ void Ed3kJoinBase::shareKeptHashed(const QString& owner, int member, const ffi::
             Kept kept = readKept(owner);
             std::erase_if(kept.members, [&](const Kept::Member& m) { return m.member == member; });
             writeKept(owner, kept);
+            const QString cache = QDir(keptDir(owner)).filePath(keptHashesFile(member));
+            forgetBlobWrites(cache);
+            QFile::remove(cache);
             return;
         }
         const QByteArray n = name.toUtf8();

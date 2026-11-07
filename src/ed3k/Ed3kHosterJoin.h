@@ -105,6 +105,8 @@ public:
         Unpacked,            ///< Complete: its set was extracted; arg: the folder in incoming
         UnpackFailed,        ///< Complete: its set could not be extracted (archives stay in Temp); arg: why
         UnpackPassword,      ///< Complete: its set is encrypted and no password opens it
+        HashChecking,        ///< rootless file whole: checked against the hoster's checksum; arg: its type
+        HashMismatch,        ///< the file is not what the hoster's checksum says, dropped; arg: its type
     };
 
     /// One download from a hoster link, as the GUI shows it.
@@ -204,6 +206,23 @@ public:
     /// the plugin and the GUI). containerOpened() follows with the token returned; 0: refused
     /// (no resolver, hosters off or too big), nothing follows.
     quint64 openContainer(const QByteArray& data, const QString& fileName);
+    /// A Click'n'Load post (hoster.md "Click'n'Load"): a link site or browser add-on sent
+    /// links to port 9666 of the GUI's machine, the GUI hands them on.
+    struct ClickNLoad {
+        QString urls;            ///< plain links, one per line (flash/add)
+        QString crypted;         ///< base64 AES-128-CBC of the links (flash/addcrypted2)
+        QString jk;              ///< JavaScript function f() returning the key as hex
+        QString k;               ///< the key as hex, instead of jk
+        QString package;
+        QString source;          ///< the page that posted
+        QStringList passwords;   ///< archive passwords
+    };
+    /// Reads the links of @p post; the encrypted part through JD's DummyCNL crawler.
+    /// clickNLoadOpened() follows with the token returned; 0: refused (hosters off, no
+    /// resolver, nothing in it, too many open), nothing follows.
+    quint64 openClickNLoad(const ClickNLoad& post);
+    /// The link JD's DummyCNL crawler decrypts @p post's encrypted part from; empty: none.
+    [[nodiscard]] static QString dummyCnlUrl(const ClickNLoad& post);
     void pause(quint32 id);
     void resume(quint32 id);
     /// Starts @p id over from its first link; puzzles of its hosters are asked again.
@@ -235,6 +254,11 @@ public:
     [[nodiscard]] QList<SharedLink> sharedLinks(quint32 id) const;
     /// http(s) links in @p text, one per line or separated by spaces (tests).
     [[nodiscard]] static QStringList linksIn(const QString& text);
+    /// Lowercase hex digest of @p path for a hoster checksum type ("md5", "sha1", "sha224",
+    /// "sha256", "sha384", "sha512", "crc32", "crc32c"); empty: unknown type or unreadable.
+    [[nodiscard]] static QString fileDigest(const QString& path, const QString& type);
+    /// Whether @p type is one fileDigest() computes.
+    [[nodiscard]] static bool digestKnown(const QString& type);
 
 signals:
     void itemChanged(quint32 id);
@@ -248,6 +272,10 @@ signals:
     /// An openContainer() result: its links, or empty with the resolver's @p code and @p text.
     void containerOpened(quint64 token, const QString& fileName, const QList<eMule::ed3k::ResolverLink>& links,
                          const QString& code, const QString& text);
+    /// An openClickNLoad() result: its links (package and passwords of the post), or empty
+    /// with the resolver's @p code and @p text.
+    void clickNLoadOpened(quint64 token, const QString& source, const QList<eMule::ed3k::ResolverLink>& links,
+                          const QString& code, const QString& text);
     /// A checkLinks() result.
     void linkChecked(const QString& url, const eMule::ed3k::Ed3kHosterJoin::LinkCheck& check);
 
@@ -300,6 +328,11 @@ private:
         bool adopted = false;        ///< an item took the link while it ran
         quint32 item = 0;            ///< a recheck of this complete item's shared link
     };
+    /// A checkLinks() check asked of the resolver itself while the ed3k node is off.
+    struct DirectCheck {
+        QString url;
+        QString host;
+    };
     /// Waits for a free check slot (checkMaxParallel, checkMaxPerHost) or for the core (busy).
     struct QueuedProbe {
         QString url;
@@ -317,6 +350,10 @@ private:
         qint64 at = 0;
     };
     void pumpProbes();
+    /// pumpProbes() without the ed3k node: the resolver checks the queued links itself.
+    void pumpDirectChecks();
+    /// A direct check's answer (or its timeout, @p ev null): its result goes out.
+    void directCheckDone(Ed3kResolver::TaskId task, const ResolverEvent* ev);
     void probeDone(std::uint64_t link, LinkStatus status, const QString& name = {}, std::uint64_t size = 0);
     /// Stores @p c for @p url; a final one goes out with linkChecked().
     void setCheck(const QString& url, const LinkCheck& c);
@@ -403,6 +440,14 @@ private:
     bool writeAt(Entry& e, std::uint64_t offset, std::span<const std::byte> data);
     void checkComplete(Entry& e);
     void finish(Entry& e);
+    /// Rootless file whole: hashed off the main thread against the hoster's checksum, then
+    /// finish(); false: no checksum to check, finish() now.
+    bool checkHash(Entry& e);
+    void hashChecked(quint32 id, std::uint64_t link, const QString& digest);
+    /// §4.1: @p link of @p e vouched for under @p root: kept to publish with the file.
+    void vouch(Entry& e, std::uint64_t link, const ::ed3k::Root& root);
+    /// The bytes of a rootless @p e are bad (checksum): dropped, Failed (a mirror follows).
+    void dropBadFile(Entry& e, const QString& type);
     /// @p dir/@p name, or "name (n).ext" when taken
     [[nodiscard]] static QString freePath(const QString& dir, const QString& name);
     /// incoming, or incoming/<package>
@@ -454,6 +499,7 @@ private:
     std::map<Ed3kResolver::TaskId, QString> m_probeMatches;
     QList<QueuedProbe> m_probeQueue;
     std::map<std::uint64_t, Probe> m_probes;
+    std::map<Ed3kResolver::TaskId, DirectCheck> m_directChecks;
     /// items whose ALIAS waits for the root to be shared (publishAlias State) → since
     std::map<quint32, qint64> m_aliasPending;
     /// rootless links downloaded whole → item, for their Vouched (the link is let go first)
@@ -470,6 +516,15 @@ private:
         QString fileName;
     };
     std::map<Ed3kResolver::TaskId, ContainerAsk> m_containerAsks;
+    /// openClickNLoad() expands → token, the post's source and its plain links
+    struct CnlAsk {
+        quint64 token = 0;
+        QString source;
+        QString package;
+        QStringList passwords;
+        QList<ResolverLink> plain;
+    };
+    std::map<Ed3kResolver::TaskId, CnlAsk> m_cnlAsks;
     quint64 m_nextContainer = 1;
     QHash<QString, QString> m_siteOf;
     /// ALIAS searches (§4 lookup) → item

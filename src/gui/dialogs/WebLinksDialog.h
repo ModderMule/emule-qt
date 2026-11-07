@@ -10,8 +10,10 @@
 /// ed3kHosterCheckSearchLinks, the daemon checks each link as its download would
 /// (CheckHosterLinks): Status (a colored dot) and Account (a gold star for premium) show it;
 /// Download never waits for that.
-/// Download reads "Download (n)" for n selected links, "Download (all)" for none of several;
-/// the list's context menu has Download and Deselect All.
+/// A check box per link picks what Download, Copy Links and Open in Browser take, with
+/// Select All / None / Invert above, as a torrent's or an NZB's Files tab. Download reads
+/// "Download (n)" for n of several checked, "Download (all)" for all of them; the list's
+/// context menu has Download and Check / Uncheck Selected.
 
 #include "IpcMessage.h"
 
@@ -50,14 +52,16 @@ public:
 private:
     /// Whether any listed link is on a Tor hidden service.
     [[nodiscard]] bool hasOnionLink() const;
-    /// The selected links, or every link when none is selected.
+    /// The checked rows, in list order.
+    [[nodiscard]] QList<QTreeWidgetItem*> checkedItems() const;
+    /// The checked links.
     [[nodiscard]] QStringList chosenUrls() const;
-    /// The selected links, or every link, by file.
+    /// The checked links, by file.
     [[nodiscard]] QList<QStringList> chosenDownloadFiles() const;
     void downloadLinks();
-    /// "Download (n)" with n selected, "Download (all)" with none of several, else "Download".
+    /// "Download (n)" with n of several checked, "Download (all)" with all, else "Download".
     void updateDownloadLabel();
-    /// Download (the selection, else all) and Deselect All.
+    /// Download (the checked links) and Check / Uncheck Selected.
     void showContextMenu(const QPoint& pos);
     /// Asks the daemon to check every link; the Status column stays hidden when it cannot.
     void startChecks();

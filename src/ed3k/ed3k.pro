@@ -108,6 +108,6 @@ HEADERS += \
 # Hoster resolver: on by default, as CMake EMULE_HOSTER_JD. `qmake CONFIG+=no_emule_hoster_jd` turns it off
 !no_emule_hoster_jd {
     DEFINES += EMULE_HAVE_HOSTER_JD=1
-    SOURCES += Ed3kJavaRuntime.cpp Ed3kJdResolver.cpp
-    HEADERS += Ed3kJavaRuntime.h Ed3kJdResolver.h
+    SOURCES += Ed3kJavaRuntime.cpp Ed3kJdResolver.cpp Ed3kResolverUpdater.cpp
+    HEADERS += Ed3kJavaRuntime.h Ed3kJdResolver.h Ed3kResolverUpdater.h
 }

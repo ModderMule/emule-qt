@@ -179,7 +179,23 @@ void MetaResultActions::addTorrents(quint32 searchID, const QList<Row>& rows)
         saveMetaFiles(searchID, rows);
         return;
     }
-    for (const Row& row : rows)
+    // one add per torrent: a second one would only be a duplicate
+    QList<Row> requests;
+    QHash<QString, qsizetype> byTorrent;
+    for (const Row& row : rows) {
+        SearchResultRow probe;
+        probe.hash = row.hash;
+        probe.metaKind = row.kind;
+        const QString key = probe.metaReleaseKey();
+        if (key.isEmpty() || row.keptFiles || !byTorrent.contains(key)) {
+            if (!key.isEmpty() && !row.keptFiles)
+                byTorrent.insert(key, requests.size());
+            requests.append(row);
+            continue;
+        }
+        requests[byTorrent.value(key)].siblingHashes.append(row.hash);
+    }
+    for (const Row& row : std::as_const(requests))
         fetchAndAddTorrent(searchID, row);
 }
 
@@ -334,6 +350,8 @@ void MetaResultActions::fetchMeta(quint32 searchID, const Row& row, const QStrin
     msg.append(row.hash);
     msg.append(row.ref);
     msg.append(inspect);
+    if (!row.siblingHashes.isEmpty())
+        msg.append(QCborValue(QCborArray::fromStringList(row.siblingHashes)));
 
     QPointer<MetaResultActions> self(this);
     m_ipc->sendRequest(std::move(msg), [self, searchID, row, failText, onData, onFail, inspect,
@@ -451,7 +469,15 @@ void MetaResultActions::fetchAndAddTorrent(quint32 searchID, const Row& row)
         QString name = data.value(QStringLiteral("fileName")).toString();
         if (name.isEmpty() || name.contains(u'/') || name.contains(u'\\'))
             name = safeName(row.name, row);
-        if (!Ed2kLinkImporter::sendTorrentFile(name, content, self->m_parent))
+        // the Details window's choice, else the file rows' own files (absent = whole torrent)
+        QList<int> wanted;
+        if (row.keptFiles) {
+            wanted = *row.keptFiles;
+        } else {
+            for (const QCborValue& v : data.value(QStringLiteral("rowFiles")).toArray())
+                wanted.append(int(v.toInteger(-1)));
+        }
+        if (!Ed2kLinkImporter::sendTorrentFile(name, content, self->m_parent, wanted))
             self->warn(tr("Could not add \"%1\": the torrent is empty.").arg(row.name));
     }, viaMagnet);
 }

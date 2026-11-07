@@ -49,11 +49,12 @@ struct BtAddReply {
 [[nodiscard]] QString btAddOutcomeText(BtAddOutcome outcome, const QString& title,
                                        const QString& detail = {});
 
-/// AddTorrentFile [data, savePath, paused, i2pOnly?, stopAfterMetadata?]. A nullopt
-/// choice: the daemon's default.
+/// AddTorrentFile [data, savePath, paused, i2pOnly?, stopAfterMetadata?, wantedFiles?]. A nullopt
+/// choice: the daemon's default. @p wantedFiles: file indices to download; empty = all.
 [[nodiscard]] Ipc::IpcMessage torrentFileRequest(const QByteArray& data, const QString& savePath,
                                                  bool paused, std::optional<bool> i2pOnly = std::nullopt,
-                                                 std::optional<bool> stopAfterMetadata = std::nullopt);
+                                                 std::optional<bool> stopAfterMetadata = std::nullopt,
+                                                 const QList<int>& wantedFiles = {});
 
 /// AddMagnet [uri, savePath, paused, i2pOnly?, stopAfterMetadata?].
 [[nodiscard]] Ipc::IpcMessage magnetRequest(const QString& uri, const QString& savePath,

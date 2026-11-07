@@ -136,6 +136,8 @@ QCborMap resultToCbor(const ed3k::ResolverEvent& r)
                     {QStringLiteral("premium"), r.premium},
                     {QStringLiteral("expires"), r.expires},
                     {QStringLiteral("trafficLeft"), r.trafficLeft},
+                    {QStringLiteral("balance"), r.balance},   // a solver service: its credit; -1 none
+                    {QStringLiteral("currency"), r.currency},
                     {QStringLiteral("error"), ok ? QString() : (r.code.isEmpty() ? QStringLiteral("failed") : r.code)}};
 }
 #endif
@@ -161,7 +163,8 @@ void setHoster(ed3k::Ed3kHosterJoin* join, ed3k::Ed3kResolver* resolver, ed3k::E
 bool isHosterRequest(IpcMsgType type)
 {
     const int t = static_cast<int>(type);
-    return t >= 1100 && t <= 1109;
+    // 1139: AddClickNLoad, after the block was full
+    return (t >= 1100 && t <= 1109) || type == IpcMsgType::AddClickNLoad;
 }
 
 bool carriesSecret(IpcMsgType type)
@@ -281,6 +284,28 @@ bool handleRequest(const IpcMessage& msg, const std::function<void(const IpcMess
         reply(IpcMessage::makeResult(seq, true, QCborMap{{QStringLiteral("token"), qint64(token)}}));
         break;
     }
+    case IpcMsgType::AddClickNLoad: {
+        if (!thePrefs.hosterDownloadsOn() || !s_resolver) {
+            reply(failure(seq, QStringLiteral("hoster downloads are off")));
+            break;
+        }
+        ed3k::Ed3kHosterJoin::ClickNLoad post;
+        post.urls = msg.fieldString(0);
+        post.crypted = msg.fieldString(1);
+        post.jk = msg.fieldString(2);
+        post.k = msg.fieldString(3);
+        post.package = msg.fieldString(4);
+        for (const QCborValue& pw : msg.field(5).toArray())
+            post.passwords << pw.toString();
+        post.source = msg.fieldString(6);
+        const quint64 token = s_join->openClickNLoad(post);
+        if (token == 0) {
+            reply(failure(seq, QStringLiteral("no links, or too many Click'n'Load posts at once")));
+            break;
+        }
+        reply(IpcMessage::makeResult(seq, true, QCborMap{{QStringLiteral("token"), qint64(token)}}));
+        break;
+    }
     case IpcMsgType::CheckHosterAccount:
         s_join->checkAccount(msg.fieldString(0).trimmed().toLower(), msg.fieldString(1), msg.fieldString(2));
         reply(IpcMessage::makeResult(seq, true, QCborValue{}));
@@ -366,6 +391,19 @@ void connectPushes(ed3k::Ed3kHosterJoin& join, const std::function<void(const Ip
                                              {QStringLiteral("text"), text}});
                          broadcast(msg);
                      });
+    QObject::connect(&join, &ed3k::Ed3kHosterJoin::clickNLoadOpened, &join,
+                     [broadcast](quint64 token, const QString& source, const QList<ed3k::ResolverLink>& links,
+                                 const QString& code, const QString& text) {
+                         IpcMessage msg(IpcMsgType::PushHosterLinks, 0);
+                         msg.append(qint64(0));
+                         msg.append(linksToCbor(links));
+                         msg.append(QCborMap{{QStringLiteral("token"), qint64(token)},
+                                             {QStringLiteral("cnl"), true},
+                                             {QStringLiteral("source"), source},
+                                             {QStringLiteral("code"), code},
+                                             {QStringLiteral("text"), text}});
+                         broadcast(msg);
+                     });
     QObject::connect(&join, &ed3k::Ed3kHosterJoin::accountChecked, &join,
                      [broadcast](const QString& host, const QString& user, const ed3k::ResolverEvent& r) {
                          IpcMessage msg(IpcMsgType::PushHosterAccount, 0);
@@ -406,7 +444,19 @@ QCborMap statusToCbor()
         out.insert(QStringLiteral("resolver"), QCborMap{{QStringLiteral("available"), s_resolver->available()},
                                                         {QStringLiteral("reason"), s_resolver->unavailableReason()},
                                                         {QStringLiteral("description"), s_resolver->description()},
-                                                        {QStringLiteral("version"), s_resolver->engineVersion()}});
+                                                        {QStringLiteral("version"), s_resolver->engineVersion()},
+                                                        {QStringLiteral("pending"), s_resolver->pendingVersion()}});
+    if (s_resolver) {
+        // captcha solvers: what the resolver found when it last got them (no passwords)
+        QCborArray solvers;
+        for (const ed3k::SolverAccountState& st : s_resolver->solverStates())
+            solvers.append(QCborMap{{QStringLiteral("host"), st.host},
+                                    {QStringLiteral("valid"), st.valid},
+                                    {QStringLiteral("balance"), st.balance},
+                                    {QStringLiteral("currency"), st.currency},
+                                    {QStringLiteral("code"), st.code}});
+        out.insert(QStringLiteral("solvers"), solvers);
+    }
 #ifdef EMULE_HAVE_HOSTER_JD
     if (s_java) {
         QCborMap j{{QStringLiteral("state"), int(s_java->state())},

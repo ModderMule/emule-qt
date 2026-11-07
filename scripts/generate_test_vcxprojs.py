@@ -343,6 +343,7 @@ TEST_EXTRAS: dict[str, TestExtras] = {
     "tst_Ed3kShared": ED3K_EXTRAS,
     # hoster links: the join with a fake resolver, the JD resolver's and Java lookup's parts
     "tst_Ed3kHoster": ED3K_EXTRAS,
+    "tst_HosterSolvers": ED3K_EXTRAS,
     # prefs → node: extensions, IPv6 source, filter state, LAN discovery, node list asks
     "tst_Ed3kPlumbing": ED3K_EXTRAS,
     # the daemon side: Ed3kBridge + BandwidthCoordinator
@@ -541,7 +542,11 @@ TEST_EXTRAS: dict[str, TestExtras] = {
                                            "src/gui/app/UiState.cpp",
                                            "src/gui/app/IpcClient.cpp",
                                            "src/gui/app/KnownCores.cpp",
+                                           "src/gui/app/ClickNLoadServer.cpp",
                                            "resources/emuleqt.qrc")),
+    # Click'n'Load 2 server on the GUI's port 9666
+    "tst_ClickNLoadServer": TestExtras(includes=GUI_INCLUDES, widgets=True,
+                                       sources=("src/gui/app/ClickNLoadServer.cpp",)),
     # a torrent/Usenet search result's Details, off hand-built inspection maps
     "tst_MetaResultDetailDialog": TestExtras(includes=GUI_INCLUDES, widgets=True, sources=(
         "src/gui/dialogs/MetaResultDetailDialog.cpp",

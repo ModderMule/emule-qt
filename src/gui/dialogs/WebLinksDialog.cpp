@@ -5,6 +5,7 @@
 #include "dialogs/WebLinksDialog.h"
 
 #include "app/IpcClient.h"
+#include "controls/FileCheckButtons.h"
 #include "app/UiState.h"
 #include "prefs/Preferences.h"
 #include "utils/Clipboard.h"
@@ -130,6 +131,13 @@ WebLinksDialog::WebLinksDialog(const QString& rowName, const QCborMap& links, co
         layout->addWidget(note);
     }
 
+    // as a torrent's or an NZB's Files tab: boxes pick what Download takes
+    auto* hint = new QLabel(tr("Unchecked links are not downloaded. Links with the same file number "
+                               "are mirrors: the next one is tried when one fails."),
+                            this);
+    hint->setWordWrap(true);
+    layout->addWidget(hint);
+
     m_list = new QTreeWidget(this);
     m_list->setRootIsDecorated(false);
     m_list->setSelectionMode(QAbstractItemView::ExtendedSelection);
@@ -144,6 +152,8 @@ WebLinksDialog::WebLinksDialog(const QString& rowName, const QCborMap& links, co
         item->setText(ColHoster, l.value(QStringLiteral("hoster")).toString());
         item->setText(ColLink, l.value(QStringLiteral("url")).toString());
         item->setData(ColFile, Qt::UserRole, l.value(QStringLiteral("file")).toInteger());
+        item->setFlags(item->flags() | Qt::ItemIsUserCheckable);
+        item->setCheckState(ColFile, Qt::Checked);
         item->setTextAlignment(ColFile, Qt::AlignRight | Qt::AlignVCenter);
         item->setTextAlignment(ColSize, Qt::AlignRight | Qt::AlignVCenter);
     }
@@ -151,6 +161,9 @@ WebLinksDialog::WebLinksDialog(const QString& rowName, const QCborMap& links, co
     m_list->setColumnHidden(ColAccount, true);
     for (int c = ColFile; c < ColLink; ++c)
         m_list->resizeColumnToContents(c);
+    layout->addWidget(FileCheckButtons::create(this, [this](FileCheckButtons::Bulk mode) {
+        FileCheckButtons::applyToLeaves(m_list, ColFile, mode);
+    }));
     layout->addWidget(m_list, 1);
 
     if (hasOnionLink()) {
@@ -173,7 +186,6 @@ WebLinksDialog::WebLinksDialog(const QString& rowName, const QCborMap& links, co
         m_downloadBtn->setIcon(skinIcon(QStringLiteral(":/icons/Download.ico")));
         m_downloadBtn->setDefault(true);
         connect(m_downloadBtn, &QPushButton::clicked, this, &WebLinksDialog::downloadLinks);
-        connect(m_list, &QTreeWidget::itemSelectionChanged, this, &WebLinksDialog::updateDownloadLabel);
         updateDownloadLabel();
     }
     auto* copyBtn = buttons->addButton(tr("Copy Links"), QDialogButtonBox::ActionRole);
@@ -184,6 +196,14 @@ WebLinksDialog::WebLinksDialog(const QString& rowName, const QCborMap& links, co
     connect(copyBtn, &QPushButton::clicked, this, &WebLinksDialog::copyLinks);
     connect(m_openBtn, &QPushButton::clicked, this, &WebLinksDialog::openLinks);
     connect(saveBtn, &QPushButton::clicked, this, &WebLinksDialog::saveList);
+    connect(m_list, &QTreeWidget::itemChanged, this, [this, copyBtn](QTreeWidgetItem*, int column) {
+        if (column != ColFile)
+            return;
+        updateDownloadLabel();
+        const bool any = !checkedItems().isEmpty();
+        copyBtn->setEnabled(any);
+        m_openBtn->setEnabled(any);
+    });
     connect(buttons, &QDialogButtonBox::rejected, this, &QDialog::reject);
     layout->addWidget(buttons);
 
@@ -218,30 +238,28 @@ bool WebLinksDialog::hasOnionLink() const
     return false;
 }
 
+QList<QTreeWidgetItem*> WebLinksDialog::checkedItems() const
+{
+    QList<QTreeWidgetItem*> items;
+    for (int i = 0; i < m_list->topLevelItemCount(); ++i)
+        if (QTreeWidgetItem* item = m_list->topLevelItem(i); item->checkState(ColFile) == Qt::Checked)
+            items << item;
+    return items;
+}
+
 QStringList WebLinksDialog::chosenUrls() const
 {
     QStringList urls;
-    const auto selected = m_list->selectedItems();
-    if (selected.isEmpty()) {
-        for (int i = 0; i < m_list->topLevelItemCount(); ++i)
-            urls << m_list->topLevelItem(i)->text(ColLink);
-    } else {
-        for (const QTreeWidgetItem* item : selected)
-            urls << item->text(ColLink);
-    }
+    for (const QTreeWidgetItem* item : checkedItems())
+        urls << item->text(ColLink);
     return urls;
 }
 
 QList<QStringList> WebLinksDialog::chosenDownloadFiles() const
 {
-    QList<QTreeWidgetItem*> items = m_list->selectedItems();
-    if (items.isEmpty())
-        for (int i = 0; i < m_list->topLevelItemCount(); ++i)
-            items << m_list->topLevelItem(i);
-    else   // list order, not click order: mirrors are tried in the page's order
-        std::ranges::sort(items, {}, [this](QTreeWidgetItem* it) { return m_list->indexOfTopLevelItem(it); });
+    // list order: mirrors are tried in the page's order
     QCborArray links;
-    for (const QTreeWidgetItem* item : items)
+    for (const QTreeWidgetItem* item : checkedItems())
         links.append(QCborMap{{QStringLiteral("url"), item->text(ColLink)},
                               {QStringLiteral("file"), item->data(ColFile, Qt::UserRole).toLongLong()}});
     return mirrorsByFile(links);
@@ -267,13 +285,15 @@ void WebLinksDialog::updateDownloadLabel()
 {
     if (!m_downloadBtn)
         return;
-    const auto n = m_list->selectedItems().size();
-    if (n > 0)
+    const auto n = checkedItems().size();
+    const auto total = m_list->topLevelItemCount();
+    if (n > 0 && n < total)
         m_downloadBtn->setText(tr("Download (%1)").arg(n));
-    else if (m_list->topLevelItemCount() > 1)
+    else if (n > 0 && total > 1)
         m_downloadBtn->setText(tr("Download (all)"));
     else
         m_downloadBtn->setText(tr("Download"));
+    m_downloadBtn->setEnabled(n > 0);
 }
 
 void WebLinksDialog::showContextMenu(const QPoint& pos)
@@ -283,16 +303,22 @@ void WebLinksDialog::showContextMenu(const QPoint& pos)
         m_list->clearSelection();
         at->setSelected(true);
     }
+    const QList<QTreeWidgetItem*> selected = m_list->selectedItems();
+    const auto setChecked = [selected](bool on) {
+        for (QTreeWidgetItem* item : selected)
+            item->setCheckState(ColFile, on ? Qt::Checked : Qt::Unchecked);
+    };
     QMenu menu(this);
     if (m_downloadBtn) {
         // as the search results' menu: Download is the bold default
         auto* download = menu.addAction(menuIcon("Download.ico"), tr("Download"), this, &WebLinksDialog::downloadLinks);
-        download->setEnabled(m_list->topLevelItemCount() > 0);
+        download->setEnabled(!checkedItems().isEmpty());
         if (download->isEnabled())
             menu.setDefaultAction(download);
+        menu.addSeparator();
     }
-    auto* deselect = menu.addAction(menuIcon("Cancel.ico"), tr("Deselect All"), m_list, &QTreeWidget::clearSelection);
-    deselect->setEnabled(!m_list->selectedItems().isEmpty());
+    menu.addAction(tr("Check Selected"), this, [setChecked] { setChecked(true); })->setEnabled(!selected.isEmpty());
+    menu.addAction(tr("Uncheck Selected"), this, [setChecked] { setChecked(false); })->setEnabled(!selected.isEmpty());
     menu.exec(m_list->viewport()->mapToGlobal(pos));
 }
 

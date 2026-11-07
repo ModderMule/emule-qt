@@ -114,6 +114,7 @@ private slots:
     void peersTrackersAndOptions();
     void ipFilterBlocksPeer();
     void stopAfterMetadata();
+    void addWithWantedFiles();
 
 private:
     void runJoin(bool spoil, bool deferred);
@@ -431,6 +432,54 @@ void tst_BtLocalSwarm::stopAfterMetadata()
     QCOMPARE(readDownloaded(again, id), m_payload);
     again.stop();
     seeder.stop();
+}
+
+void tst_BtLocalSwarm::addWithWantedFiles()
+{
+    // a three-file torrent; a search row's file: only it, the others skipped
+    const QString root = m_dir.filePath(QStringLiteral("multi"));
+    const QString folder = root + QStringLiteral("/set");
+    QVERIFY(QDir().mkpath(folder));
+    for (const char* name : {"a.bin", "b.bin", "c.bin"}) {
+        QFile f(folder + u'/' + QLatin1StringView(name));
+        QVERIFY(f.open(QIODevice::WriteOnly));
+        QVERIFY(f.write(m_payload.left(64 * 1024)) > 0);
+    }
+    const Torrent torrent = makeTorrent(folder, root, lt::create_torrent::v1_only);
+    const auto ti = lt::load_torrent_buffer(
+                        lt::span<char const>(torrent.bytes.constData(), static_cast<std::ptrdiff_t>(torrent.bytes.size())))
+                        .ti;
+    const auto indexOf = [&ti](const char* name) {
+        for (const lt::file_index_t i : ti->files().file_range())
+            if (ti->files().file_path(i).ends_with(name))
+                return static_cast<int>(i);
+        return -1;
+    };
+    QVERIFY(indexOf("b.bin") >= 0 && indexOf("c.bin") >= 0);
+
+    BtSession session;
+    session.start(settingsIn(m_dir, QStringLiteral("wanted")));
+    const BtAddResult added =
+        session.addTorrentFile(torrent.bytes, {}, true, std::nullopt, std::nullopt, {indexOf("b.bin")});
+    QCOMPARE(added.outcome, BtAddOutcome::Added);
+    const auto priorityOf = [&session, &added](const QString& tail) {
+        for (const auto& f : session.files(added.id))
+            if (f.path.endsWith(tail))
+                return f.priority;
+        return -1;
+    };
+    QCOMPARE(priorityOf(QStringLiteral("a.bin")), 0);
+    QCOMPARE(priorityOf(QStringLiteral("b.bin")), 4);
+    QCOMPARE(priorityOf(QStringLiteral("c.bin")), 0);
+
+    // another file row of the same torrent: switched on in the listed one
+    const BtAddResult again = session.addTorrentFile(torrent.bytes, {}, true, std::nullopt, std::nullopt, {indexOf("c.bin")});
+    QCOMPARE(again.outcome, BtAddOutcome::Duplicate);
+    QCOMPARE(again.id, added.id);
+    QCOMPARE(priorityOf(QStringLiteral("a.bin")), 0);
+    QCOMPARE(priorityOf(QStringLiteral("b.bin")), 4);
+    QCOMPARE(priorityOf(QStringLiteral("c.bin")), 4);
+    session.stop();
 }
 
 void tst_BtLocalSwarm::startSeeder(BtSession& seeder, const Torrent& torrent, quint16& port)

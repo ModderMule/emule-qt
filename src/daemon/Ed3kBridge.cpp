@@ -192,6 +192,9 @@ bool handleRequest(const IpcMessage& msg, const std::function<void(const IpcMess
     // other links (batch 15): 1032, 1049, 1137 (first: 1137 is inside the filter lists' block)
     if (Ed3kLinksBridge::handleRequest(msg, reply))
         return true;
+    // hoster links: 1100-1109, and 1139 (AddClickNLoad) inside the filter lists' block, so first
+    if (Ed3kHosterBridge::handleRequest(msg, reply))
+        return true;
     // Kad window: 1200-1205 (1205 in IpcClientHandler, it re-applies the config)
     if (Ed3kKadBridge::handleRequest(msg, reply))
         return true;
@@ -220,9 +223,6 @@ bool handleRequest(const IpcMessage& msg, const std::function<void(const IpcMess
     // paid subscriptions: 1035-1038 (batch 13); was here, now before the credits (1028-1029)
     // if (Ed3kPaidBridge::handleRequest(msg, reply))
     //     return true;
-    // hoster links: 1100-1109
-    if (Ed3kHosterBridge::handleRequest(msg, reply))
-        return true;
     // rooms: 1120-1129
     if (Ed3kRoomsBridge::handleRequest(msg, reply))
         return true;

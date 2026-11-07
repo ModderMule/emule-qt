@@ -11,6 +11,7 @@
 #include "app/SkinColors.h"
 #include "app/TrayMenuManager.h"
 #include "app/VersionChecker.h"
+#include "app/ClickNLoadServer.h"
 #include "app/UiState.h"
 #include "controls/LogWidget.h"
 #include "controls/SpeedGraph.h"
@@ -133,11 +134,12 @@ MainWindow::MainWindow(QWidget* parent)
         });
     // .torrent files fetched for search rows, likewise
     Ed2kLinkImporter::setTorrentFileHandler(
-        [self = QPointer<MainWindow>(this)](const QString& name, const QByteArray& data, QWidget*) {
+        [self = QPointer<MainWindow>(this)](const QString& name, const QByteArray& data,
+                                            const QList<int>& wantedFiles, QWidget*) {
             if (!self || !self->m_torrentPanel)
                 return;
             self->switchToTab(TabTorrents);
-            self->m_torrentPanel->addTorrentData(name, data);
+            self->m_torrentPanel->addTorrentData(name, data, wantedFiles);
         });
     // search rows hand torrents over only while the engine runs
     Ed2kLinkImporter::setTorrentsReady([self = QPointer<MainWindow>(this)] {
@@ -211,6 +213,12 @@ MainWindow::MainWindow(QWidget* parent)
         m_trayIcon->show();
         connect(m_trayIcon, &QSystemTrayIcon::activated,
                 this, &MainWindow::onTrayIconClicked);
+        connect(m_trayIcon, &QSystemTrayIcon::messageClicked, this, [this]() {
+            if (m_notificationClick)
+                m_notificationClick();
+            else
+                restoreWindow();
+        });
 
         m_trayMenu = new TrayMenuManager(this);
         connect(m_trayMenu, &QMenu::aboutToShow, this, [this]() {
@@ -554,6 +562,7 @@ void MainWindow::showOptionsDialog(int page)
 #ifdef EMULE_HAVE_HOSTER_JD
     if (m_hosterPanel)
         m_hosterPanel->applyDisplayOptions();
+    updateClickNLoad();
 #endif
     m_sharedFilesPanel->refreshSharedDirs();   // Directories page edits the share
     updateWindowTitle();
@@ -886,8 +895,16 @@ void MainWindow::showNotification(const QString& title, const QString& message)
 }
 
 void MainWindow::showNotification(const QString& title, const QString& message,
+                                  std::function<void()> onClick)
+{
+    showNotification(title, message);
+    m_notificationClick = std::move(onClick);
+}
+
+void MainWindow::showNotification(const QString& title, const QString& message,
                                   const QString& soundFile)
 {
+    m_notificationClick = nullptr;
     // System tray popup
     if (m_trayIcon && QSystemTrayIcon::supportsMessages())
         m_trayIcon->showMessage(title, message, QSystemTrayIcon::Information, 5000);
@@ -1109,6 +1126,12 @@ void MainWindow::restoreWindow()
     show();
     raise();
     activateWindow();
+}
+
+void MainWindow::updateClickNLoad()
+{
+    if (m_clickNLoad)
+        m_clickNLoad->setEnabled(theUiState.clickNLoad() && m_hosterPanel && m_hosterPanel->hostersEnabled());
 }
 
 void MainWindow::changeEvent(QEvent* event)
@@ -2312,6 +2335,22 @@ void MainWindow::setupPages()
     addPage(m_hosterPanel);
     connect(m_hosterPanel->addLinksAction(), &QAction::triggered, this,
             [this] { switchToTab(TabHoster); });
+    // Click'n'Load: pages post links to this machine; the core may run on another one
+    m_clickNLoad = new ClickNLoadServer(
+        [panel = QPointer<HosterPanel>(m_hosterPanel)](const ClickNLoadServer::Post& post,
+                                                       const ClickNLoadServer::Done& done) {
+            if (!panel) {
+                done(false, {});
+                return;
+            }
+            panel->addClickNLoad(post, done);
+        },
+        this);
+    connect(m_hosterPanel, &HosterPanel::hostersEnabledChanged, this, &MainWindow::updateClickNLoad);
+    connect(m_hosterPanel, &HosterPanel::clickNLoadArrived, this, [this] {
+        restoreWindow();
+        switchToTab(TabHoster);
+    });
 #endif
 }
 

@@ -124,6 +124,9 @@
     <ClCompile Include="dialogs\MetaResultDetailDialog.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
+    <ClCompile Include="controls\FileCheckButtons.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
     <ClCompile Include="controls\TorrentFileTree.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
@@ -439,6 +442,9 @@
     <ClCompile Include="app\VersionChecker.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
+    <ClCompile Include="app\ClickNLoadServer.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
     <ClCompile Include="app\main.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
@@ -655,6 +661,9 @@
       <Filter>Header Files</Filter>
     </ClInclude>
     <ClInclude Include="utils\TorrentLinks.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="controls\FileCheckButtons.h">
       <Filter>Header Files</Filter>
     </ClInclude>
     <ClInclude Include="controls\TorrentFileTree.h">
@@ -973,6 +982,9 @@
       <Filter>Header Files</Filter>
     </QtMoc>
     <QtMoc Include="app\VersionChecker.h">
+      <Filter>Header Files</Filter>
+    </QtMoc>
+    <QtMoc Include="app\ClickNLoadServer.h">
       <Filter>Header Files</Filter>
     </QtMoc>
     <QtMoc Include="dialogs\BugReportDialog.h">

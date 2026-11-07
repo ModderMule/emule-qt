@@ -214,6 +214,7 @@ SOURCES += \
     upnp/UPnPManager.cpp \
     utils/BlockRuns.cpp \
     utils/DebugUtils.cpp \
+    utils/BackgroundFileWriter.cpp \
     utils/DiskLoadLimiter.cpp \
     utils/StallWatchdog.cpp \
     utils/FileDate.cpp \
@@ -406,6 +407,7 @@ HEADERS += \
     utils/CorroborationTally.h \
     utils/BlockRuns.h \
     utils/DebugUtils.h \
+    utils/BackgroundFileWriter.h \
     utils/DiskLoadLimiter.h \
     utils/StallWatchdog.h \
     utils/FileDate.h \

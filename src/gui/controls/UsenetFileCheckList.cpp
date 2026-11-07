@@ -4,11 +4,12 @@
 
 #include "controls/UsenetFileCheckList.h"
 
+#include "controls/FileCheckButtons.h"
+
 #include "app/IpcClient.h"
 #include "utils/StatusBarNotifier.h"
 
 #include <QCborArray>
-#include <QHBoxLayout>
 #include <QPointer>
 #include <QPushButton>
 #include <QScopedValueRollback>
@@ -39,21 +40,10 @@ UsenetFileCheckList::UsenetFileCheckList(QTreeWidget* tree, int column)
 
 QWidget* UsenetFileCheckList::createButtonRow(QWidget* parent)
 {
-    auto* row = new QWidget(parent);
-    auto* layout = new QHBoxLayout(row);
-    layout->setContentsMargins(0, 0, 0, 0);
-
-    const auto add = [this, row, layout](const QString& text, Bulk mode) {
-        auto* button = new QPushButton(text, row);
-        connect(button, &QPushButton::clicked, this, [this, mode] { applyBulk(mode); });
+    QWidget* row = FileCheckButtons::create(parent, [this](FileCheckButtons::Bulk mode) { applyBulk(mode); },
+                                            &m_buttons);
+    for (QPushButton* button : std::as_const(m_buttons))
         button->setEnabled(m_editable);
-        layout->addWidget(button);
-        m_buttons.append(button);
-    };
-    add(tr("Select All"), Bulk::All);
-    add(tr("Select None"), Bulk::None);
-    add(tr("Invert Selection"), Bulk::Invert);
-    layout->addStretch(1);
     return row;
 }
 
@@ -92,6 +82,21 @@ QList<int> UsenetFileCheckList::uncheckedIndices(QTreeWidgetItem* parent) const
             out.append(item->data(m_column, kIndexRole).toInt());
     }
     return out;
+}
+
+QList<int> UsenetFileCheckList::keptIndices(QTreeWidgetItem* parent) const
+{
+    QList<int> out;
+    bool all = true;
+    for (QTreeWidgetItem* item : fileRows(parent)) {
+        if (item->data(m_column, kLockedRole).toBool())
+            continue;
+        if (item->checkState(m_column) == Qt::Checked)
+            out.append(item->data(m_column, kIndexRole).toInt());
+        else
+            all = false;
+    }
+    return all ? QList<int>{} : out;
 }
 
 bool UsenetFileCheckList::anyUnlockedChecked(QTreeWidgetItem* parent) const
@@ -170,7 +175,7 @@ void UsenetFileCheckList::onItemChanged(QTreeWidgetItem* item, int column)
     emit skipChanged(changed, !checked);
 }
 
-void UsenetFileCheckList::applyBulk(Bulk mode)
+void UsenetFileCheckList::applyBulk(FileCheckButtons::Bulk mode)
 {
     if (!m_editable)
         return;
@@ -184,9 +189,9 @@ void UsenetFileCheckList::applyBulk(Bulk mode)
                 if (item->data(m_column, kLockedRole).toBool())
                     continue;
                 const bool checked = item->checkState(m_column) == Qt::Checked;
-                const bool want = mode == Bulk::All    ? true
-                                  : mode == Bulk::None ? false
-                                                       : !checked;
+                const bool want = mode == FileCheckButtons::Bulk::All    ? true
+                                  : mode == FileCheckButtons::Bulk::None ? false
+                                                                         : !checked;
                 if (want == checked)
                     continue;
                 setChecked(item, want);

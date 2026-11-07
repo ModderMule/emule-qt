@@ -131,7 +131,12 @@ struct Ed3kHosterPrefs {
     int recheckHours = 72;         ///< YAML only: a published link is checked again after this; 0: never
     int reportRecheckHours = 6;    ///< YAML only: 3 peers' dead-link reports check it at once, at most this often; 0: never
     QString sharedPluginDir;       ///< YAML only: resolver plugins unpacked once for several instances; empty: per instance
+    bool autoUpdate = true;        ///< ed3kHosterAutoUpdate: fetch newer resolver.zip from the update manifest
+    int autoUpdateHours = 24;      ///< YAML only: manifest check interval
     QList<Ed3kHosterAccount> accounts; ///< ed3kHosterAccounts
+    bool solversEnabled = true;    ///< ed3kHosterSolversEnabled: puzzles go to the solver services below first
+    /// ed3kHosterSolvers: captcha solver services (2captcha.com, ...); user empty for key-only ones
+    QList<Ed3kHosterAccount> solvers;
     bool operator==(const Ed3kHosterPrefs&) const = default;
 };
 
@@ -1224,7 +1229,7 @@ public:
     void setUsenetAutoAddPaused(bool val);
 
     /// A meta search file row (one file of an NZB) queues only that file, plus
-    /// its archive set; the rest of the NZB is skipped. Off: the whole NZB.
+    /// its archive set; the rest of the NZB is skipped. Off: the whole NZB. Default on.
     [[nodiscard]] bool usenetMetaSelectedFileOnly() const;
     void setUsenetMetaSelectedFileOnly(bool val);
 
@@ -1397,6 +1402,11 @@ public:
     /// fetches its metadata, a .torrent is added stopped.
     [[nodiscard]] bool btStopAfterMetadata() const;
     void setBtStopAfterMetadata(bool val);
+
+    /// A meta search file row (one file of a torrent) downloads only that file; the
+    /// others start skipped. Off: the whole torrent. Default on.
+    [[nodiscard]] bool btMetaSelectedFileOnly() const;
+    void setBtMetaSelectedFileOnly(bool val);
 
     [[nodiscard]] bool btDht() const;
     void setBtDht(bool val);
@@ -2191,6 +2201,9 @@ public:
     void setNotifyOnDownloadAdded(bool val);
     [[nodiscard]] bool notifyOnDownloadFinished() const;
     void setNotifyOnDownloadFinished(bool val);
+    /// Click on a "Download finished" pop-up opens the file (local core only)
+    [[nodiscard]] bool notifyOpenFinishedOnClick() const;
+    void setNotifyOpenFinishedOnClick(bool val);
     [[nodiscard]] bool notifyOnNewVersion() const;
     void setNotifyOnNewVersion(bool val);
     [[nodiscard]] bool notifyOnUrgent() const;

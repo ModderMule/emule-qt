@@ -98,14 +98,17 @@ public:
     static bool sendTorrentLinks(const QStringList& magnets, QWidget* parent);
 
     /// Who takes a fetched .torrent (search rows) — the Torrents tab. Unset without BitTorrent.
-    using TorrentFileHandler = std::function<void(const QString& name, const QByteArray& data, QWidget* parent)>;
+    /// @p wantedFiles: the file indices to download; empty = all.
+    using TorrentFileHandler = std::function<void(const QString& name, const QByteArray& data,
+                                                  const QList<int>& wantedFiles, QWidget* parent)>;
     static void setTorrentFileHandler(TorrentFileHandler handler);
     /// Whether the Torrents tab takes torrents now (search rows): both handlers set
     /// and the engine running.
     static void setTorrentsReady(std::function<bool()> ready);
     [[nodiscard]] static bool torrentsReady();
     /// Hand @p data (a .torrent called @p name) over. False when unset.
-    static bool sendTorrentFile(const QString& name, const QByteArray& data, QWidget* parent);
+    static bool sendTorrentFile(const QString& name, const QByteArray& data, QWidget* parent,
+                                const QList<int>& wantedFiles = {});
 
     /// Who takes hoster links of a web search row — the Hoster tab: one list of mirrors a
     /// file, and the package they go under (empty: none). Unset without EMULE_HAVE_HOSTER_JD;

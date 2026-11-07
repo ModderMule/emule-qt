@@ -8,10 +8,11 @@ import jd.controlling.accountchecker.AccountCheckerThread;
 import jd.plugins.AccountInfo;
 import jd.plugins.PluginForHost;
 
+import org.jdownloader.plugins.controller.LazyPlugin;
 import org.jdownloader.plugins.controller.PluginClassLoader;
 import org.jdownloader.plugins.controller.host.LazyHostPlugin;
 
-/** accountCheck: is a login valid, premium, until when, how much traffic. */
+/** accountCheck: is a login valid, premium, until when, how much traffic; a solver service's credit. */
 final class AccountTask extends Task {
     private final String host;
     private final Account account;
@@ -56,6 +57,12 @@ final class AccountTask extends Task {
             }
             if (ai != null && !ai.isUnlimitedTraffic() && ai.getTrafficLeft() >= 0) {
                 m.put("trafficLeft", ai.getTrafficLeft());
+            }
+            if (ai != null && lazy.hasFeature(LazyPlugin.FEATURE.CAPTCHA_SOLVER)) {
+                m.put("balance", ai.getAccountBalance());
+                if (ai.getCurrency() != null) {
+                    m.put("currency", ai.getCurrency().getCurrencyCode());
+                }
             }
         } catch (final jd.plugins.PluginException e) {
             m.put("valid", false);

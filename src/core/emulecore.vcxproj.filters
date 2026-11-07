@@ -390,6 +390,9 @@
     <ClCompile Include="files\PartFileWriteThread.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
+    <ClCompile Include="utils\BackgroundFileWriter.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
     <ClCompile Include="utils\DiskLoadLimiter.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
@@ -1121,6 +1124,9 @@
     <QtMoc Include="files\PartFileWriteThread.h">
       <Filter>Header Files</Filter>
     </QtMoc>
+    <ClInclude Include="utils\BackgroundFileWriter.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
     <ClInclude Include="utils\DiskLoadLimiter.h">
       <Filter>Header Files</Filter>
     </ClInclude>

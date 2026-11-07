@@ -2,10 +2,12 @@
 
 #include "Ed3kSession.h"
 #include "Ed3kStore.h"
+#include "decode/YencDecoder.h"
 #include "post/UsenetUnpacker.h"
 #include "prefs/Preferences.h"
 #include "utils/Log.h"
 
+#include <QCryptographicHash>
 #include <QDateTime>
 #include <QDir>
 #include <QFile>
@@ -21,8 +23,10 @@
 #include <QUrl>
 
 #include <algorithm>
+#include <array>
 #include <tuple>
 #include <cstring>
+#include <utility>
 
 namespace eMule::ed3k {
 
@@ -39,6 +43,9 @@ constexpr int kTickMs = 1000;
 constexpr std::size_t kMaxItems = 4096;
 /// a container file sent over IPC; DLCs are a few KiB
 constexpr qsizetype kMaxContainerBytes = 4 * 1024 * 1024;
+/// Click'n'Load posts read at once; any web page can post, so a few only
+constexpr std::size_t kMaxCnlAsks = 4;
+constexpr qsizetype kMaxCnlBytes = 1024 * 1024;
 /// a read of the resolver's file that failed is tried again after this, at most this often
 constexpr int kReadRetryMs = 200;
 constexpr int kMaxReadFailures = 50;
@@ -135,6 +142,11 @@ struct Ed3kHosterJoin::Entry {
     bool expandAfterCheck = false;
     QString key;                         ///< unfinished: <key>.hoster.part(.met) in Temp
     bool metDirty = false;               ///< the .met is to be written
+    QString hashType;                    ///< the hoster's checksum of the link (check or open), if any
+    QString hash;
+    bool hashing = false;                ///< checkHash() runs
+    /// LinkVouched while hashing: applied once the checksum matched
+    std::optional<std::pair<std::uint64_t, ffi::Root>> heldVouch;
 };
 
 Ed3kHosterJoin::Ed3kHosterJoin(Ed3kSession& session, const QString& configDir, QObject* parent)
@@ -301,6 +313,60 @@ QStringList Ed3kHosterJoin::linksIn(const QString& text)
             out << url;
     }
     return out;
+}
+
+bool Ed3kHosterJoin::digestKnown(const QString& type)
+{
+    static const QStringList known{QStringLiteral("md5"),    QStringLiteral("sha1"),   QStringLiteral("sha224"),
+                                   QStringLiteral("sha256"), QStringLiteral("sha384"), QStringLiteral("sha512"),
+                                   QStringLiteral("crc32"),  QStringLiteral("crc32c")};
+    return known.contains(type);
+}
+
+QString Ed3kHosterJoin::fileDigest(const QString& path, const QString& type)
+{
+    if (!digestKnown(type))
+        return {};
+    QFile f(path);
+    if (!f.open(QIODevice::ReadOnly))
+        return {};
+    constexpr qint64 kChunk = 1024 * 1024;
+    const auto crcHex = [](quint32 v) { return QStringLiteral("%1").arg(v, 8, 16, QLatin1Char('0')); };
+    if (type == u"crc32") {
+        quint32 crc = 0;
+        while (!f.atEnd())
+            crc = usenet::yencCrc32(crc, f.read(kChunk));
+        return f.error() == QFile::NoError ? crcHex(crc) : QString();
+    }
+    if (type == u"crc32c") {
+        // Castagnoli, reflected poly 0x82F63B78
+        static const auto table = [] {
+            std::array<quint32, 256> t{};
+            for (quint32 i = 0; i < 256; ++i) {
+                quint32 c = i;
+                for (int k = 0; k < 8; ++k)
+                    c = (c & 1) ? (c >> 1) ^ 0x82F63B78u : c >> 1;
+                t[i] = c;
+            }
+            return t;
+        }();
+        quint32 crc = 0xFFFFFFFFu;
+        while (!f.atEnd())
+            for (const char ch : f.read(kChunk))
+                crc = table[(crc ^ quint8(ch)) & 0xFF] ^ (crc >> 8);
+        return f.error() == QFile::NoError ? crcHex(crc ^ 0xFFFFFFFFu) : QString();
+    }
+    using A = QCryptographicHash::Algorithm;
+    const A algo = type == u"md5"      ? A::Md5
+                   : type == u"sha1"   ? A::Sha1
+                   : type == u"sha224" ? A::Sha224
+                   : type == u"sha256" ? A::Sha256
+                   : type == u"sha384" ? A::Sha384
+                                       : A::Sha512;
+    QCryptographicHash h(algo);
+    if (!h.addData(&f))
+        return {};
+    return QString::fromLatin1(h.result().toHex());
 }
 
 QList<quint32> Ed3kHosterJoin::addLinks(const QString& text, const QString& package, quint32 packageId)
@@ -538,7 +604,8 @@ void Ed3kHosterJoin::checkAccount(const QString& host, const QString& user, cons
         emit accountChecked(host, user, r);
         return;
     }
-    const auto task = m_resolver->accountCheck(host, ResolverAccount{user, password});
+    // key-only solver services: the user is free text, the key goes as password
+    const auto task = m_resolver->accountCheck(host, ResolverAccount{user.isEmpty() ? QStringLiteral("apikey") : user, password});
     m_accountChecks[task] = {host, user};
 }
 
@@ -565,10 +632,65 @@ quint64 Ed3kHosterJoin::openContainer(const QByteArray& data, const QString& fil
     return token;
 }
 
+quint64 Ed3kHosterJoin::openClickNLoad(const ClickNLoad& post)
+{
+    if (!m_resolver || !m_prefs.enabled || m_cnlAsks.size() >= kMaxCnlAsks)
+        return 0;
+    if (post.urls.size() + post.crypted.size() + post.jk.size() > kMaxCnlBytes)
+        return 0;
+    CnlAsk ask;
+    ask.source = post.source.left(1024);
+    ask.package = post.package.trimmed().left(255);
+    for (const QString& pw : post.passwords)
+        if (const QString t = pw.trimmed(); !t.isEmpty() && !ask.passwords.contains(t))
+            ask.passwords << t;
+    for (const QString& url : linksIn(post.urls)) {
+        ResolverLink l{url, {}, {}, 0};
+        l.package = ask.package;
+        l.passwords = ask.passwords;
+        ask.plain.append(l);
+    }
+    const QString dummy = dummyCnlUrl(post);
+    if (dummy.isEmpty() && ask.plain.isEmpty())
+        return 0;
+    ask.token = m_nextContainer++;
+    logInfo(QStringLiteral("Click'n'Load from %1: %2 link(s)%3")
+                .arg(ask.source.isEmpty() ? QStringLiteral("?") : ask.source)
+                .arg(ask.plain.size())
+                .arg(dummy.isEmpty() ? QString() : QStringLiteral(" and an encrypted list")));
+    const quint64 token = ask.token;
+    if (dummy.isEmpty()) {
+        // nothing to decrypt: the answer still comes after the caller has the token
+        QMetaObject::invokeMethod(this, [this, ask] {
+            emit clickNLoadOpened(ask.token, ask.source, ask.plain, {}, {});
+        }, Qt::QueuedConnection);
+        return token;
+    }
+    m_cnlAsks[m_resolver->expand(dummy)] = std::move(ask);
+    return token;
+}
+
+QString Ed3kHosterJoin::dummyCnlUrl(const ClickNLoad& post)
+{
+    if (post.crypted.trimmed().isEmpty() || (post.jk.trimmed().isEmpty() && post.k.trimmed().isEmpty()))
+        return {};
+    // what JD's ExternInterfaceImpl.createDummyCNL builds; DummyCNL runs jk in Rhino
+    QJsonObject o{{QStringLiteral("crypted"), post.crypted.trimmed()}};
+    if (!post.jk.trimmed().isEmpty())
+        o.insert(QStringLiteral("jk"), post.jk);
+    if (!post.k.trimmed().isEmpty())
+        o.insert(QStringLiteral("k"), post.k.trimmed());
+    if (!post.source.isEmpty())
+        o.insert(QStringLiteral("source"), post.source);
+    return QStringLiteral("https://dummycnl.jdownloader.org/#")
+           + QString::fromLatin1(QJsonDocument(o).toJson(QJsonDocument::Compact).toHex());
+}
+
 bool Ed3kHosterJoin::checkLinks(const QStringList& urls)
 {
-    // §3: no hoster is asked anything without the user's switch
-    if (!m_started || !m_prefs.enabled || !m_resolver || !m_resolver->available() || !m_session.engine())
+    // §3: no hoster is asked anything without the user's switch; the ed3k node may be off
+    // (not connected): the resolver then checks on its own (pumpDirectChecks)
+    if (!m_prefs.enabled || !m_resolver || !m_resolver->available())
         return false;
     refreshAccounts();
     const qint64 now = nowMs();
@@ -871,6 +993,8 @@ void Ed3kHosterJoin::begin(Entry& e)
     const bool keep = e.root && !e.have.empty() && QFileInfo(e.item.file).isFile();
     release(e, true);
     e.peerTried.clear();
+    e.hashType.clear();
+    e.hash.clear();
     if (!keep) {
         e.have.clear();
         e.item.done = 0;
@@ -883,6 +1007,7 @@ void Ed3kHosterJoin::begin(Entry& e)
         return;
     }
     if (!m_resolver->available()) {
+        m_resolver->wantPlugins();   // none shipped: fetched on the first link
         setState(e, State::NoResolver, Reason::ResolverNotReady, m_resolver->unavailableReason());
         return;
     }
@@ -1146,6 +1271,11 @@ void Ed3kHosterJoin::onResolve(const ev::LinkResolve& r)
 void Ed3kHosterJoin::onResolverEvent(Ed3kResolver::TaskId task, const ResolverEvent& ev)
 {
     using K = ResolverEvent::Kind;
+    if (ev.kind == K::Puzzle && m_directChecks.contains(task)) {
+        // a links dialog's check never asks the user: skipped, it ends as unknown
+        m_resolver->answerPuzzle(ev.puzzle, {});
+        return;
+    }
     if (ev.kind == K::Puzzle) {
         quint32 id = 0;
         if (const auto it = m_asks.find(task); it != m_asks.end()) {
@@ -1181,6 +1311,11 @@ void Ed3kHosterJoin::onResolverEvent(Ed3kResolver::TaskId task, const ResolverEv
             learnSites(ev.sites);
         else if (ev.kind == K::Sites || ev.code != QLatin1String("unavailable"))
             m_siteOf.insert(host, host);   // no hoster plugin (or an old resolver): not asked again
+        return;
+    }
+    if (m_directChecks.contains(task)) {
+        if (ev.isFinal())
+            directCheckDone(task, &ev);
         return;
     }
     if (const auto it = m_probeMatches.find(task); it != m_probeMatches.end()) {
@@ -1225,6 +1360,34 @@ void Ed3kHosterJoin::onResolverEvent(Ed3kResolver::TaskId task, const ResolverEv
         }
         return;
     }
+    if (const auto it = m_cnlAsks.find(task); it != m_cnlAsks.end()) {
+        if (!ev.isFinal())
+            return;
+        const CnlAsk a = std::move(it->second);
+        m_cnlAsks.erase(it);
+        QList<ResolverLink> links = a.plain;
+        if (ev.kind == K::Links) {
+            for (ResolverLink l : ev.links) {
+                if (l.package.isEmpty())
+                    l.package = a.package;
+                if (l.passwords.isEmpty())
+                    l.passwords = a.passwords;
+                links.append(l);
+            }
+        }
+        if (ev.kind == K::Links && !ev.links.isEmpty()) {
+            logInfo(QStringLiteral("Click'n'Load: %1 link(s) decrypted").arg(ev.links.size()));
+            emit clickNLoadOpened(a.token, a.source, links, {}, {});
+            return;
+        }
+        // nothing decrypted: a wrong key, or links no plugin takes
+        const QString code = ev.kind == K::Links || ev.kind == K::Gone ? QStringLiteral("invalid")
+                             : ev.code.isEmpty()                         ? QStringLiteral("failed")
+                                                                         : ev.code;
+        logWarning(QStringLiteral("Click'n'Load: %1 %2").arg(code, ev.text));
+        emit clickNLoadOpened(a.token, a.source, links, links.isEmpty() ? code : QString(), ev.text);
+        return;
+    }
     if (const auto it = m_accountChecks.find(task); it != m_accountChecks.end()) {
         const auto [host, user] = it->second;
         m_accountChecks.erase(it);
@@ -1262,6 +1425,10 @@ void Ed3kHosterJoin::onResolverEvent(Ed3kResolver::TaskId task, const ResolverEv
                 e->item.name = safeName(ev.name, kNoName);
             if (ev.size && !e->item.verified)
                 e->item.size = ev.size;
+            if (!ev.hash.isEmpty() && a.link == e->link) {
+                e->hashType = ev.hashType;
+                e->hash = ev.hash;
+            }
             changed(*e);
         }
         answer(a.link, ED3K_RESOLVER_CHECKED, ev.name, ev.size ? std::optional<std::uint64_t>(ev.size) : std::nullopt);
@@ -1352,6 +1519,11 @@ void Ed3kHosterJoin::onResolverEvent(Ed3kResolver::TaskId task, const ResolverEv
     case K::Done:
         a.done = true;
         a.onDisk = ev.size;
+        // the plugin may learn the checksum only while downloading
+        if (e && !ev.hash.isEmpty() && a.link == e->link) {
+            e->hashType = ev.hashType;
+            e->hash = ev.hash;
+        }
         if (!ev.path.isEmpty())
             a.path = ev.path;
         if (!opened(a, ev)) {
@@ -1389,7 +1561,11 @@ void Ed3kHosterJoin::onResolverEvent(Ed3kResolver::TaskId task, const ResolverEv
         break;
     case K::Failed:
         fail(ev.code == QLatin1StringView("noPlugin") ? ED3K_RESOLVER_NO_RESOLVER : ED3K_RESOLVER_FAILED);
-        if (e && ev.code != QLatin1StringView("noPlugin"))
+        // the resolver's own checksum check failed: a rootless file's bytes are bad (a rooted
+        // one's blocks were verified under the root, only the stream is retried)
+        if (e && ev.code == QLatin1StringView("hash") && !e->root)
+            dropBadFile(*e, ev.text);
+        else if (e && ev.code != QLatin1StringView("noPlugin"))
             retryLater(*e, 60, Reason::ResolverError, ev.text.isEmpty() ? ev.code : ev.text);
         final();
         break;
@@ -1611,7 +1787,8 @@ void Ed3kHosterJoin::onLinkRootless(std::uint64_t link, const ffi::Root& root, s
     logInfo(QStringLiteral("%1: downloaded whole, root %2").arg(e->item.host, e->item.rootHex.left(16)));
     // its Vouched follows once finish() let go of the link
     m_rootlessDone[link] = e->item.id;
-    finish(*e);
+    if (!checkHash(*e))
+        finish(*e);
 }
 
 void Ed3kHosterJoin::onLinkEnded(std::uint64_t link, std::uint32_t code, std::uint64_t bytes)
@@ -1635,7 +1812,8 @@ void Ed3kHosterJoin::onLinkEnded(std::uint64_t link, std::uint32_t code, std::ui
         pumpSession();
         return;
     }
-    if (!e || e->item.state == State::Complete)
+    // complete, or whole and its checksum checked (checkHash)
+    if (!e || e->item.state == State::Complete || e->hashing)
         return;
     logDebug([&]() -> QString { return QStringLiteral("%1: link ended, code %2, %3 bytes").arg(e->item.host).arg(code).arg(bytes); });
     switch (code) {
@@ -1714,6 +1892,17 @@ void Ed3kHosterJoin::onLinkVouched(std::uint64_t link, const ffi::Root& root)
         e = byRoot(root);
     if (!e)
         return;
+    // nothing vouched before the hoster's checksum matched
+    if (e->hashing) {
+        e->heldVouch = std::pair{link, root};
+        return;
+    }
+    vouch(*e, link, root);
+}
+
+void Ed3kHosterJoin::vouch(Entry& ent, std::uint64_t link, const ffi::Root& root)
+{
+    Entry* e = &ent;
     // §4.1: the own link, or a peer's blocks from it verified under the root (§4 publisher)
     const auto peer = m_peerLinks.find(link);
     const QString url = peer != m_peerLinks.end() ? peer->second.url : e->item.url;
@@ -1875,6 +2064,71 @@ void Ed3kHosterJoin::finish(Entry& e)
         published({to});
 }
 
+bool Ed3kHosterJoin::checkHash(Entry& e)
+{
+    if (e.hash.isEmpty() || !digestKnown(e.hashType))
+        return false;
+    e.hashing = true;
+    setState(e, State::Downloading, Reason::HashChecking, e.hashType);
+    QPointer<Ed3kHosterJoin> self(this);
+    const quint32 id = e.item.id;
+    const std::uint64_t link = e.link;
+    QThreadPool::globalInstance()->start([self, id, link, path = e.item.file, type = e.hashType] {
+        const QString digest = fileDigest(path, type);
+        QMetaObject::invokeMethod(
+            self.data(), [self, id, link, digest] {
+                if (self)
+                    self->hashChecked(id, link, digest);
+            },
+            Qt::QueuedConnection);
+    });
+    return true;
+}
+
+void Ed3kHosterJoin::hashChecked(quint32 id, std::uint64_t link, const QString& digest)
+{
+    Entry* e = find(id);
+    // paused, removed or restarted meanwhile: that run's check is void
+    if (!e || !e->hashing || e->link != link)
+        return;
+    e->hashing = false;
+    const auto held = std::exchange(e->heldVouch, std::nullopt);
+    // CRCs are told with or without leading zeros
+    const auto norm = [this, e](QString h) {
+        h = h.trimmed().toLower();
+        if (e->hashType.startsWith(u"crc"))
+            h = h.rightJustified(8, QLatin1Char('0'));
+        return h;
+    };
+    if (digest.isEmpty()) {
+        // unreadable here: the move to incoming tells why
+        logWarning(QStringLiteral("%1: cannot read %2 to check its %3").arg(e->item.host, e->item.name, e->hashType));
+    } else if (norm(digest) != norm(e->hash)) {
+        dropBadFile(*e, e->hashType);
+        return;
+    } else {
+        logInfo(QStringLiteral("%1: %2 matches the hoster's %3").arg(e->item.host, e->item.name, e->hashType));
+    }
+    finish(*e);
+    if (held && e->item.state == State::Complete)
+        vouch(*e, held->first, held->second);
+}
+
+void Ed3kHosterJoin::dropBadFile(Entry& e, const QString& type)
+{
+    logWarning(QStringLiteral("%1: %2 does not match the hoster's %3, dropped").arg(e.item.host, e.item.name, type));
+    std::erase_if(m_rootlessDone, [&e](const auto& d) { return d.second == e.item.id; });
+    release(e, false);
+    e.root.reset();
+    e.have.clear();
+    e.item.rootHex.clear();
+    e.item.verified = false;
+    e.item.done = 0;
+    // a mirror follows (mirrorDue); Retry starts the link over
+    setState(e, State::Failed, Reason::HashMismatch, type);
+    touch(e);
+}
+
 void Ed3kHosterJoin::release(Entry& e, bool keepFile)
 {
     auto* eng = m_session.engine();
@@ -1907,6 +2161,8 @@ void Ed3kHosterJoin::release(Entry& e, bool keepFile)
     std::erase_if(m_matches, [&e](const auto& m) { return m.second == e.item.id; });
     std::erase_if(m_peerLinks, [&e](const auto& m) { return m.second.item == e.item.id; });
     e.peerLink = 0;
+    e.hashing = false;
+    e.heldVouch.reset();
     if (e.root)
         stopDownload(*e.root);
     if (const auto p = m_probes.find(e.link); e.link && p != m_probes.end()) {
@@ -2002,8 +2258,12 @@ void Ed3kHosterJoin::onTick()
 void Ed3kHosterJoin::pumpProbes()
 {
     auto* eng = m_session.engine();
-    if (!eng || m_probeQueue.isEmpty())
+    if (m_probeQueue.isEmpty())
         return;
+    if (!eng) {
+        pumpDirectChecks();
+        return;
+    }
     const int maxAll = std::max(1, m_prefs.checkMaxParallel);
     const int maxHost = std::max(1, m_prefs.checkMaxPerHost);
     int running = 0;
@@ -2013,6 +2273,10 @@ void Ed3kHosterJoin::pumpProbes()
             ++running;
             ++perHost[siteOf(p.host)];
         }
+    for (const auto& [task, d] : m_directChecks) {
+        ++running;
+        ++perHost[siteOf(d.host)];
+    }
     for (auto it = m_probeQueue.begin(); it != m_probeQueue.end() && running < maxAll;) {
         const QueuedProbe q = *it;
         const QString site = siteOf(q.host);
@@ -2073,6 +2337,64 @@ void Ed3kHosterJoin::probeDone(std::uint64_t link, LinkStatus status, const QStr
     // an item took it while it ran: the link is the item's from now on
     if (p->second.adopted)
         m_probes.erase(p);
+}
+
+void Ed3kHosterJoin::pumpDirectChecks()
+{
+    if (!m_resolver || !m_resolver->available())
+        return;
+    const int maxAll = std::max(1, m_prefs.checkMaxParallel);
+    const int maxHost = std::max(1, m_prefs.checkMaxPerHost);
+    int running = int(m_directChecks.size());
+    QHash<QString, int> perHost;
+    for (const auto& [task, d] : m_directChecks)
+        ++perHost[siteOf(d.host)];
+    for (auto it = m_probeQueue.begin(); it != m_probeQueue.end() && running < maxAll;) {
+        const QueuedProbe q = *it;
+        const QString site = siteOf(q.host);
+        if (perHost.value(site) >= maxHost) {
+            ++it;
+            continue;
+        }
+        it = m_probeQueue.erase(it);
+        // an item took the link meanwhile: it says (a recheck asks the hoster all the same)
+        if (const auto c = q.item ? std::nullopt : itemCheck(q.url)) {
+            setCheck(q.url, *c);
+            continue;
+        }
+        const Ed3kResolver::TaskId task = m_resolver->check(q.url, accountFor(q.host));
+        m_directChecks[task] = DirectCheck{q.url, q.host};
+        ++running;
+        ++perHost[site];
+        // no tick runs without the node: each check times out on its own
+        QTimer::singleShot(kProbeTimeoutMs, this, [this, task] {
+            if (m_directChecks.contains(task))
+                directCheckDone(task, nullptr);
+        });
+    }
+}
+
+void Ed3kHosterJoin::directCheckDone(Ed3kResolver::TaskId task, const ResolverEvent* ev)
+{
+    const auto it = m_directChecks.find(task);
+    if (it == m_directChecks.end())
+        return;
+    const DirectCheck d = it->second;
+    m_directChecks.erase(it);
+    using K = ResolverEvent::Kind;
+    LinkCheck c{LinkStatus::Unknown, d.host, {}, 0, nowMs()};
+    if (!ev) {
+        if (m_resolver)
+            m_resolver->cancel(task);
+    } else if (ev->kind == K::Found || ev->kind == K::Folder) {
+        c.status = LinkStatus::Online;
+        c.name = ev->name;
+        c.size = ev->size;
+    } else if (ev->kind == K::Gone) {
+        c.status = LinkStatus::Offline;
+    }
+    setCheck(d.url, c);
+    pumpProbes();
 }
 
 void Ed3kHosterJoin::setCheck(const QString& url, const LinkCheck& c)
@@ -2769,6 +3091,10 @@ void Ed3kHosterJoin::retryNotReady()
     const bool ready = m_resolver && m_resolver->available();
     const bool flipped = ready && !m_resolverReady;
     m_resolverReady = ready;
+    if (m_started && !ready && m_resolver)   // e.g. "Downloading resolver plugins" -> failed
+        for (auto& [id, e] : m_items)
+            if (e->item.state == State::NoResolver && e->item.reason == Reason::ResolverNotReady)
+                setState(*e, State::NoResolver, Reason::ResolverNotReady, m_resolver->unavailableReason());
     if (!m_started || !flipped)
         return;
     bool any = false;

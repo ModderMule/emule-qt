@@ -7,6 +7,7 @@
 #include "app/AppContext.h"
 #include "stats/NetworkCounters.h"
 #include "stats/Statistics.h"
+#include "utils/BackgroundFileWriter.h"
 #include "utils/Log.h"
 
 #include <libtorrent/alert_types.hpp>
@@ -106,6 +107,13 @@ bool writeAtomic(const QString& path, const std::vector<char>& data)
         return false;
     }
     return f.commit();
+}
+
+/// Off the main thread: a commit syncs, seconds on a busy disk (report 23)
+void writeLater(const QString& path, const std::vector<char>& data)
+{
+    BackgroundFileWriter::instance().write(path, QByteArray(data.data(), qsizetype(data.size())),
+                                           &BackgroundFileWriter::saveFile);
 }
 
 /// The file name of a torrent's resume data: its hash, no ':'.
@@ -340,7 +348,9 @@ struct BtSession::Impl {
     void saveSeedLimits() const;
     BtAddResult add(BtSession& q, lt::add_torrent_params atp, const QString& savePath, bool paused,
                     std::optional<bool> i2pOnly, std::optional<bool> stopAfterMetadata,
-                    const QString& link = {});
+                    const QString& link = {}, const QList<int>& wanted = {});
+    /// switch @p wanted files of a listed torrent on, the others as they are
+    void wantFiles(const lt::torrent_handle& h, const QString& id, const QList<int>& wanted);
     void enforceSeedLimits(const lt::torrent_status& st, const BtTorrentRow& row);
     /// settings as a pack, with the setRateLimits() caps over the configured ones
     [[nodiscard]] lt::settings_pack pack(const BtSettings& s) const;
@@ -485,6 +495,8 @@ void BtSession::stop()
         return;
     d->timer->stop();
     d->ses->pause();
+    // what alerts queued lands first: the writes below must not be overtaken
+    BackgroundFileWriter::instance().flush();
     for (const auto& [id, h] : d->handles)
         if (h.is_valid() && h.need_save_resume_data())
             d->saveResume(h);
@@ -615,14 +627,14 @@ BtDemand BtSession::demand()
 }
 
 BtAddResult BtSession::addTorrentFile(const QByteArray& data, const QString& savePath, bool paused, std::optional<bool> i2pOnly,
-                                      std::optional<bool> stopAfterMetadata)
+                                      std::optional<bool> stopAfterMetadata, const QList<int>& wantedFiles)
 {
     if (!d->ses)
         return {BtAddOutcome::NotRunning, {}, QStringLiteral("BitTorrent is off")};
     auto atp = BtAddSource::fromTorrentFile(data);
     if (!atp)
         return {BtAddOutcome::Invalid, {}, atp.error()};
-    return d->add(*this, std::move(*atp), savePath, paused, i2pOnly, stopAfterMetadata);
+    return d->add(*this, std::move(*atp), savePath, paused, i2pOnly, stopAfterMetadata, {}, wantedFiles);
 }
 
 std::expected<BtTorrentPreview, QString> BtSession::inspectTorrentFile(const QByteArray& data)
@@ -665,6 +677,7 @@ bool BtSession::remove(const QString& id, bool deleteFiles)
     d->joins.erase(id);
     if (d->seedLimits.erase(id) > 0)
         d->saveSeedLimits();
+    BackgroundFileWriter::instance().discard(d->resumePath(id));
     QFile::remove(d->resumePath(id));
     emit torrentRemoved(id);
     return true;
@@ -1054,8 +1067,8 @@ void BtSession::drainAlerts()
             d->outstandingResume = std::max(0, d->outstandingResume - 1);
             const QString id = BtTorrentView::idOf(rd->params.info_hashes);
             d->noteMeta(id, rd->params);
-            if (d->handles.contains(id) && !writeAtomic(d->resumePath(id), lt::write_resume_data_buf(rd->params)))
-                logWarning(QStringLiteral("BitTorrent: could not write resume data of %1").arg(id));
+            if (d->handles.contains(id))
+                writeLater(d->resumePath(id), lt::write_resume_data_buf(rd->params));
         } else if (lt::alert_cast<lt::save_resume_data_failed_alert>(a)) {
             d->outstandingResume = std::max(0, d->outstandingResume - 1);
         } else if (auto* tf = lt::alert_cast<lt::torrent_finished_alert>(a)) {
@@ -1158,11 +1171,31 @@ void BtSession::tick()
 }
 
 BtAddResult BtSession::Impl::add(BtSession& q, lt::add_torrent_params atp, const QString& savePath, bool paused,
-                                 std::optional<bool> i2pOnly, std::optional<bool> stopAfterMetadata, const QString& link)
+                                 std::optional<bool> i2pOnly, std::optional<bool> stopAfterMetadata, const QString& link,
+                                 const QList<int>& wanted)
 {
     const lt::info_hash_t hashes = atp.ti ? atp.ti->info_hashes() : atp.info_hashes;
-    if (auto found = ses->find_torrent(hashes.get_best()); found.is_valid())
-        return {BtAddOutcome::Duplicate, BtTorrentView::idOf(found.info_hashes()), QStringLiteral("already in the list")};
+    if (auto found = ses->find_torrent(hashes.get_best()); found.is_valid()) {
+        const QString id = BtTorrentView::idOf(found.info_hashes());
+        // another file of a torrent already here: switch it on there
+        if (!wanted.isEmpty())
+            wantFiles(found, id, wanted);
+        return {BtAddOutcome::Duplicate, id, QStringLiteral("already in the list")};
+    }
+    // only the picked files: the rest start skipped
+    if (atp.ti && !wanted.isEmpty()) {
+        const int files = atp.ti->num_files();
+        std::vector<lt::download_priority_t> prio(static_cast<std::size_t>(files), lt::dont_download);
+        bool any = false;
+        for (const int f : wanted) {
+            if (f >= 0 && f < files && !atp.ti->files().pad_file_at(lt::file_index_t{f})) {
+                prio[static_cast<std::size_t>(f)] = lt::default_priority;
+                any = true;
+            }
+        }
+        if (any)
+            atp.file_priorities = std::move(prio);
+    }
     atp.save_path = (savePath.isEmpty() ? settings.downloadDir : savePath).toStdString();
     if (paused) {
         atp.flags |= lt::torrent_flags::paused;
@@ -1204,6 +1237,31 @@ BtAddResult BtSession::Impl::add(BtSession& q, lt::add_torrent_params atp, const
         ++c->torrentsAdded;
     emit q.torrentAdded(id);
     return {BtAddOutcome::Added, id, {}};
+}
+
+void BtSession::Impl::wantFiles(const lt::torrent_handle& h, const QString& id, const QList<int>& wanted)
+{
+    const auto ti = h.torrent_file();
+    if (!ti)
+        return;
+    const int files = ti->num_files();
+    // a change still on its way counts, not the state libtorrent reports before it
+    const auto pending = pendingPriorities.find(id);
+    std::vector<lt::download_priority_t> prio =
+        pending != pendingPriorities.end() ? pending->second.priorities : h.get_file_priorities();
+    prio.resize(static_cast<std::size_t>(files), lt::default_priority);
+    bool changed = false;
+    for (const int f : wanted) {
+        if (f < 0 || f >= files || ti->files().pad_file_at(lt::file_index_t{f}))
+            continue;
+        auto& p = prio[static_cast<std::size_t>(f)];
+        if (p == lt::dont_download) {
+            p = lt::default_priority;
+            changed = true;
+        }
+    }
+    if (changed)
+        prioritizeFiles(h, id, std::move(prio));
 }
 
 void BtSession::Impl::stopAtMetadata(const lt::torrent_handle& h, const QString& id)

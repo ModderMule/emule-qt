@@ -202,6 +202,7 @@ using Kind = PrefSpec::Kind;
     t << number("btMaxDownloadKb", 0, kMaxU32, "KiB/s", "BitTorrent download limit. 0 = unlimited.");
     t << number("btMaxUploadKb", 0, kMaxU32, "KiB/s", "BitTorrent upload limit. 0 = unlimited.");
     t << flag("btStopAfterMetadata", "Stop new torrents once their file list is known, to pick files first.");
+    t << flag("btMetaSelectedFileOnly", "A search result row for one file of a torrent downloads only that file.");
     t << flag("btDht", "Find BitTorrent peers through the DHT.");
     t << flag("btLsd", "Find BitTorrent peers on the local network (local service discovery).");
     t << flag("btPex", "Exchange BitTorrent peers with connected peers (PEX).");
@@ -289,12 +290,14 @@ using Kind = PrefSpec::Kind;
     t << advanced(text("ed3kChainForwarder", 42, "Address of the forwarder of requests a site sends (0x + 40 hex "
                                                  "digits). Empty = none."));
     // hoster links (hoster.md): downloads on by default, vouched links published by default (§4.1).
-    // ed3kHosterAccounts is a list of {host, user, password}: not in the schema, never sent with a password
+    // ed3kHosterAccounts and ed3kHosterSolvers are lists of {host, user, password}: not in the schema,
+    // never sent with a password
     t << flag("ed3kHosterEnabled", "Allow downloads from file hosters: the resolver may open hoster pages, wait out "
                                    "their timers, show their puzzles and use the accounts given (hoster.md §3).");
     t << advanced(text("ed3kHosterJava", 1024, "Path of the java program the hoster resolver runs on. Empty = find one."));
     t << advanced(flag("ed3kHosterAutoJava", "Download a Java runtime into the eMuleQt folder when none is found."));
     t << number("ed3kHosterMaxStreams", 1, 16, "", "Hoster downloads at once (one per hoster and account in any case).");
+    t << flag("ed3kHosterSolversEnabled", "Send hoster puzzles to the captcha solver services given first.");
     t << flag("ed3kHosterPuzzles", "Show image puzzles of hosters; off = skip links that ask for one.");
     t << flag("ed3kHosterPublishLinks", "Publish hoster links: once a link is vouched for, its ALIAS record is published, "
                                         "it goes with the source record and to downloaders (hoster.md §4.1). This can expose "
@@ -303,6 +306,7 @@ using Kind = PrefSpec::Kind;
     t << flag("ed3kHosterExtract", "Unpack finished hoster archives into incoming/<package>/ and share the files. "
                                    "The archives stay in Temp.");
     t << flag("ed3kHosterDeleteArchives", "Delete hoster archives after a good unpack (only with ed3kHosterExtract).");
+    t << flag("ed3kHosterAutoUpdate", "Fetch newer hoster resolver plugins (resolver.zip) from the update manifest; swapped in while the resolver is idle.");
 
     // --- Logging ---
     t << flag("verbose", "Write verbose (debug) log lines.");

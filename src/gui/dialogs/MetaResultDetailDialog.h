@@ -45,10 +45,10 @@ public:
         int peers = -1;
         int ageDays = -1;
         QString category;
-        /// NZB: check boxes pick the files Download queues (eNode rows, not indexer grabs).
+        /// Check boxes pick the files Download fetches (NZB and torrent rows alike).
         bool chooseFiles = false;
-        /// With chooseFiles: pre-check only the file the row stands for
-        /// (usenetMetaSelectedFileOnly), when the daemon names one (rowFileIndex).
+        /// With chooseFiles: pre-check only the file the row stands for, when the
+        /// daemon names one (rowFileIndex). NZB: usenetMetaSelectedFileOnly; torrent: btMetaSelectedFileOnly.
         bool selectedFileOnly = false;
     };
 
@@ -69,11 +69,12 @@ public:
 signals:
     /// Download pressed: the panel adds the row as its own Download would.
     /// @p unchecked: NZB file indices left out (chooseFiles), else empty.
-    void downloadRequested(const QList<int>& unchecked);
+    /// @p kept: the checked files (NZB without PAR2, or torrent); empty = all.
+    void downloadRequested(const QList<int>& unchecked, const QList<int>& kept);
 
 private:
     void buildGeneral(const QCborMap& inspection, bool torrent);
-    void buildTorrentFiles(const QCborMap& inspection);
+    void buildTorrentFiles(const QCborMap& inspection, int rowFileIndex);
     void buildNzbFiles(const QCborMap& inspection, int rowFileIndex);
     void buildTrackers(const QCborMap& inspection);
     void addRowFacts(QFormLayout* form) const;

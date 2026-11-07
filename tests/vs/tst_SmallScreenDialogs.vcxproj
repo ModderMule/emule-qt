@@ -245,6 +245,7 @@
     <ClCompile Include="..\..\src\gui\app\UiState.cpp" />
     <ClCompile Include="..\..\src\gui\app\IpcClient.cpp" />
     <ClCompile Include="..\..\src\gui\app\KnownCores.cpp" />
+    <ClCompile Include="..\..\src\gui\controls\FileCheckButtons.cpp" />
     <QtRcc Include="..\..\resources\emuleqt.qrc" />
   </ItemGroup>
   <ItemGroup>

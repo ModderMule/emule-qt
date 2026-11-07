@@ -4,10 +4,12 @@
 #include "Ed3kStore.h"
 #include "Ed3kFfi.h"
 #include "Ed3kKeyFile.h"
+#include "utils/BackgroundFileWriter.h"
 
 #include <QDir>
 #include <QFile>
 #include <QFileDevice>
+#include <QFileInfo>
 #include <QSaveFile>
 
 #include <openssl/crypto.h>
@@ -201,6 +203,8 @@ bool replaceSecret(const QString& dir, const QString& name, const Seed& secret, 
 
 QByteArray readBlob(const QString& path)
 {
+    if (auto queued = BackgroundFileWriter::instance().pending(path))
+        return *std::move(queued);
     QFile f(path);
     if (!f.open(QIODevice::ReadOnly))
         return {};
@@ -226,6 +230,28 @@ bool writeBlob(const QString& path, std::span<const std::byte> data)
         return false;
 #endif
     return true;
+}
+
+void writeBlobLater(const QString& path, std::span<const std::byte> data)
+{
+    BackgroundFileWriter::instance().write(
+        path, QByteArray(reinterpret_cast<const char*>(data.data()), qsizetype(data.size())),
+        [](const QString& p, const QByteArray& bytes) {
+            QDir().mkpath(QFileInfo(p).absolutePath());
+            return writeBlob(p, std::as_bytes(std::span{bytes.constData(), std::size_t(bytes.size())}));
+        });
+}
+
+void forgetBlobWrites(const QString& path)
+{
+    auto& writer = BackgroundFileWriter::instance();
+    writer.discard(path);
+    writer.discardUnder(path);
+}
+
+void flushBlobWrites()
+{
+    BackgroundFileWriter::instance().flush();
 }
 
 void wipe(std::span<std::uint8_t> buf)

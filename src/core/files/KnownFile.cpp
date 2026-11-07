@@ -1257,6 +1257,7 @@ bool KnownFile::createFromFile(const QString& directory, const QString& filename
     time_t openedDate = 0;
     {
         // Open and stat are disk time too, most of it for a small file
+        DiskLoadLimiter::thisThread().setFile(directory);   // the volume's budget, with ed3k's hashing
         const DiskLoadLimiter::Read timed(DiskLoadLimiter::thisThread());
         if (!file.open(QIODevice::ReadOnly)) {
             logError(QStringLiteral("KnownFile::createFromFile: cannot open '%1'").arg(fullPath));

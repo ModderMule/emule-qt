@@ -287,7 +287,7 @@ usenet:
   healthCheck: 1            # 0 off, 1 sample one article per file, 2 every article
   healthMinPercent: 95      # below this a release is queued *paused*, never failed
   autoAddPaused: false      # queue automatic adds paused, so a feed proposes
-  selectedFileOnly: false   # an NZB search result's file row queues only that file
+  selectedFileOnly: true    # an NZB search result's file row queues only that file
   useProxy: true            # news servers through the Proxy page's proxy
   sfvCheck: true            # verify against an .sfv when PAR2 did not run
   unrepairableAction: 1     # provably unrepairable: 0 keep going, 1 pause, 2 fail
@@ -1531,7 +1531,7 @@ its retry list. `aRefusalSentenceCarriesNoEmDash` is the guard.
 
 eNode meta search lists an NZB as a whole-set row (meta hash file index `0xFFFF`)
 plus one row per `<file>`. `usenetMetaSelectedFileOnly` (YAML `selectedFileOnly`,
-default off) makes a file row queue only its file.
+default on, prefs v6 turns it on once) makes a file row queue only its file.
 
 - **`UsenetAddOptions::keptFiles`**: every non-PAR2 file outside the kept files'
   archive sets is skipped (`widenToArchiveSets()`, the same set key as

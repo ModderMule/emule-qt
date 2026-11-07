@@ -44,10 +44,14 @@ public:
         int kind = 0;   ///< enodemeta::Kind
         QCborMap ref;   ///< SearchResultRow::metaRef(), for a row whose search is gone
         QString magnet;
-        /// NZB: hashes of the other picked rows of the same NZB (DownloadMetaResult field 7)
+        /// Hashes of the other picked rows of the same NZB (DownloadMetaResult field 7)
+        /// or torrent (FetchMetaFile field 4)
         QStringList siblingHashes;
         /// NZB: files unchecked in the Details window; nullopt = not chosen there
         std::optional<QList<int>> unchecked;
+        /// Torrent: files checked in the Details window (empty = all); nullopt = not
+        /// chosen there, then a file row downloads only its own file
+        std::optional<QList<int>> keptFiles;
 
         [[nodiscard]] bool isNzb() const { return kind == 3; }
         [[nodiscard]] bool isContainer() const { return kind == 6; }
@@ -60,8 +64,8 @@ public:
     void downloadUsenet(quint32 searchID, const QList<Row>& rows, int category,
                         QPointer<SearchResultsModel> model);
 
-    /// Download pressed in a Details window; @p unchecked as downloadRequested() gives it.
-    using DetailsDownload = std::function<void(const QList<int>& unchecked)>;
+    /// Download pressed in a Details window; @p unchecked and @p kept as downloadRequested() gives them.
+    using DetailsDownload = std::function<void(const QList<int>& unchecked, const QList<int>& kept)>;
 
     /// Save the .torrent/.nzb/.dlc behind @p rows: a file dialog for one, a folder for several.
     void saveMetaFiles(quint32 searchID, const QList<Row>& rows);
@@ -80,7 +84,8 @@ public:
     void handOverMagnets(const QList<Row>& rows);
 
     /// Torrents with a .torrent: fetch each for the Torrents tab (its magnet when
-    /// the fetch fails), else saveMetaFiles.
+    /// the fetch fails), else saveMetaFiles. One fetch per torrent: picked file rows
+    /// of it download just those files, a whole-torrent row all of them.
     void addTorrents(quint32 searchID, const QList<Row>& rows);
 
     /// Link containers' Download: fetch each and open it in the Hoster tab, its links

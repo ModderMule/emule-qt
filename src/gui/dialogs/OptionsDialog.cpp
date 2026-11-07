@@ -354,6 +354,7 @@ OptionsDialog::OptionsDialog(IpcClient* ipc, StatisticsPanel* statsPanel,
     connect(m_notifyChatMsgCheck, &QCheckBox::toggled, this, &OptionsDialog::markDirty);
     connect(m_notifyDownloadAddedCheck, &QCheckBox::toggled, this, &OptionsDialog::markDirty);
     connect(m_notifyDownloadFinishedCheck, &QCheckBox::toggled, this, &OptionsDialog::markDirty);
+    connect(m_notifyOpenFinishedCheck, &QCheckBox::toggled, this, &OptionsDialog::markDirty);
     connect(m_notifyNewVersionCheck, &QCheckBox::toggled, this, &OptionsDialog::markDirty);
     connect(m_notifyUrgentCheck, &QCheckBox::toggled, this, &OptionsDialog::markDirty);
     connect(m_emailEnabledCheck, &QCheckBox::toggled, this, &OptionsDialog::markDirty);
@@ -845,7 +846,7 @@ void OptionsDialog::setupPages()
     addPage(PageEd3k,           m_ed3kPages->generalPage());
     addPage(PageEd3kConnection, m_ed3kPages->connectionPage());
     addPage(PageEd3kCredits,    m_ed3kPages->creditsPage());   // not in the sidebar (hasPage)
-    addPage(PageEd3kHoster,     m_ed3kPages->hosterPage());
+    addPage(PageEd3kHoster,     m_ed3kPages->hosterPage(), PageScroll::Self);   // tabs scroll
     addPage(PageEd3kNames,      m_ed3kPages->namesPage());
     addPage(PageEd3kFilters,    m_ed3kPages->filtersPage());
     addPage(PageEd3kAutoCredits, m_ed3kPages->autoCreditsPage());
@@ -2453,6 +2454,16 @@ QWidget* OptionsDialog::createNotificationsPage()
     m_notifyDownloadFinishedCheck = new QCheckBox(tr("Download finished (*)"), whenGroup);
     whenLayout->addWidget(m_notifyDownloadFinishedCheck);
 
+    // Indented: not in MFC, which always opened the file on a click (issue #149)
+    auto* openFinishedLayout = new QVBoxLayout;
+    openFinishedLayout->setContentsMargins(30, 0, 0, 0);
+    m_notifyOpenFinishedCheck = new QCheckBox(tr("Open the file when the pop-up is clicked"), whenGroup);
+    m_notifyOpenFinishedCheck->setToolTip(
+        tr("Only when the core runs on this computer. Otherwise a click shows the Transfers window."));
+    m_notifyOpenFinishedCheck->setEnabled(false);
+    openFinishedLayout->addWidget(m_notifyOpenFinishedCheck);
+    whenLayout->addLayout(openFinishedLayout);
+
     // MFC says "New eMule version detected"; this fires on a new version of *this*
     // app (VersionChecker's newVersionAvailable), so the name has to match it.
     m_notifyNewVersionCheck = new QCheckBox(tr("New eMule Qt version detected"), whenGroup);
@@ -2462,6 +2473,9 @@ QWidget* OptionsDialog::createNotificationsPage()
     whenLayout->addWidget(m_notifyUrgentCheck);
 
     layout->addWidget(whenGroup);
+
+    connect(m_notifyDownloadFinishedCheck, &QCheckBox::toggled,
+            m_notifyOpenFinishedCheck, &QCheckBox::setEnabled);
 
     // Wire Chat started → Chat message received enable
     connect(m_notifyChatCheck, &QCheckBox::toggled, this, [this](bool on) {
@@ -5833,6 +5847,15 @@ QWidget* OptionsDialog::createBitTorrentPage()
            "a .torrent file is added stopped. Untick the files to skip in the Files list, "
            "then resume. The add dialogs can change it for each torrent."));
     addLayout->addWidget(m_btStopAfterMetadataCheck);
+    m_btSelectedFileOnlyCheck =
+        new QCheckBox(tr("Download only the selected file of a torrent search result"), addGroup);
+    m_btSelectedFileOnlyCheck->setToolTip(
+        tr("Search results list a torrent once as a whole and once per file in it.\n\n"
+           "With this on, downloading one file's row fetches only that file and skips "
+           "the others. Picking another file of the same torrent later switches it on "
+           "in the listed torrent.\n\n"
+           "The Details window lets you choose the files either way."));
+    addLayout->addWidget(m_btSelectedFileOnlyCheck);
     mainLayout->addWidget(addGroup);
 
     // -- Queue --------------------------------------------------------------
@@ -5907,6 +5930,7 @@ QWidget* OptionsDialog::createBitTorrentPage()
     connect(m_btSeedRatioSpin, &QDoubleSpinBox::valueChanged, this, &OptionsDialog::markDirty);
     connect(m_btDownloadDirEdit, &QLineEdit::textEdited, this, &OptionsDialog::markDirty);
     connect(m_btStopAfterMetadataCheck, &QCheckBox::toggled, this, &OptionsDialog::markDirty);
+    connect(m_btSelectedFileOnlyCheck, &QCheckBox::toggled, this, &OptionsDialog::markDirty);
     connect(m_btDownloadDirBrowse, &QPushButton::clicked, this, [this] {
         const QString dir = QFileDialog::getExistingDirectory(
             this, tr("BitTorrent download folder"), m_btDownloadDirEdit->text());
@@ -7639,6 +7663,8 @@ void OptionsDialog::saveSettings()
         req.append(m_notifyDownloadAddedCheck->isChecked());
         req.append(QStringLiteral("notifyOnDownloadFinished"));
         req.append(m_notifyDownloadFinishedCheck->isChecked());
+        req.append(QStringLiteral("notifyOpenFinishedOnClick"));
+        req.append(m_notifyOpenFinishedCheck->isChecked());
         req.append(QStringLiteral("notifyOnNewVersion"));
         req.append(m_notifyNewVersionCheck->isChecked());
         req.append(QStringLiteral("notifyOnUrgent"));
@@ -7785,6 +7811,8 @@ void OptionsDialog::saveSettings()
         req.append(m_btDownloadDirEdit->text().trimmed());
         req.append(QStringLiteral("btStopAfterMetadata"));
         req.append(m_btStopAfterMetadataCheck->isChecked());
+        req.append(QStringLiteral("btMetaSelectedFileOnly"));
+        req.append(m_btSelectedFileOnlyCheck->isChecked());
         req.append(QStringLiteral("btMaxDownloadKb"));
         req.append(static_cast<qint64>(m_btMaxDownSpin->value()));
         req.append(QStringLiteral("btMaxUploadKb"));
@@ -8248,6 +8276,7 @@ void OptionsDialog::saveSettings()
         thePrefs.setNotifyOnChatMsg(m_notifyChatMsgCheck->isChecked());
         thePrefs.setNotifyOnDownloadAdded(m_notifyDownloadAddedCheck->isChecked());
         thePrefs.setNotifyOnDownloadFinished(m_notifyDownloadFinishedCheck->isChecked());
+        thePrefs.setNotifyOpenFinishedOnClick(m_notifyOpenFinishedCheck->isChecked());
         thePrefs.setNotifyOnNewVersion(m_notifyNewVersionCheck->isChecked());
         thePrefs.setNotifyOnUrgent(m_notifyUrgentCheck->isChecked());
         thePrefs.setNotifyEmailEnabled(m_emailEnabledCheck->isChecked());
@@ -8377,6 +8406,8 @@ void OptionsDialog::saveSettings()
     // GUI-only, so it never travels over SetPreferences: the daemon owns
     // preferences.yml and knows nothing about the desktop it is not running on,
     // and it is this executable's path that gets registered.
+    if (QCheckBox* cnl = m_ed3kPages->clickNLoadCheck(); cnl && cnl->isChecked() != theUiState.clickNLoad())
+        theUiState.setClickNLoad(cnl->isChecked());
 #ifdef Q_OS_MACOS
     // macOS: the system keeps the choice, so only a change from what was shown is applied
     {
@@ -8574,6 +8605,8 @@ void OptionsDialog::fillDaemonSettings(const QCborMap& prefs)
     m_notifyChatMsgCheck->setEnabled(m_notifyChatCheck->isChecked());
     m_notifyDownloadAddedCheck->setChecked(prefs.value(QStringLiteral("notifyOnDownloadAdded")).toBool());
     m_notifyDownloadFinishedCheck->setChecked(prefs.value(QStringLiteral("notifyOnDownloadFinished")).toBool());
+    m_notifyOpenFinishedCheck->setChecked(prefs.value(QStringLiteral("notifyOpenFinishedOnClick")).toBool());
+    m_notifyOpenFinishedCheck->setEnabled(m_notifyDownloadFinishedCheck->isChecked());
     m_notifyNewVersionCheck->setChecked(prefs.value(QStringLiteral("notifyOnNewVersion")).toBool());
     m_notifyUrgentCheck->setChecked(prefs.value(QStringLiteral("notifyOnUrgent")).toBool());
     m_emailEnabledCheck->setChecked(prefs.value(QStringLiteral("notifyEmailEnabled")).toBool());
@@ -8694,7 +8727,7 @@ void OptionsDialog::fillDaemonSettings(const QCborMap& prefs)
     }
     if (m_usenetSelectedFileOnlyCheck) {
         m_usenetSelectedFileOnlyCheck->setChecked(
-            prefs.value(QStringLiteral("usenetMetaSelectedFileOnly")).toBool(false));
+            prefs.value(QStringLiteral("usenetMetaSelectedFileOnly")).toBool(true));
     }
     if (m_usenetWatchDirEdit)
         m_usenetWatchDirEdit->setText(prefs.value(QStringLiteral("usenetWatchDir")).toString());
@@ -8723,6 +8756,10 @@ void OptionsDialog::fillDaemonSettings(const QCborMap& prefs)
     }
 #endif
     m_addLinksDirectCheck->setChecked(theUiState.addLinksWithoutConfirm());
+    if (QCheckBox* cnl = m_ed3kPages->clickNLoadCheck()) {
+        const QSignalBlocker block(cnl);
+        cnl->setChecked(theUiState.clickNLoad());
+    }
     m_usenetHealthMinSpin->setEnabled(m_usenetHealthCombo->currentIndex() > 0);
     m_usenetCleanupCheck->setEnabled(m_usenetUnpackCheck->isChecked());
     m_usenetDirectUnpackCheck->setEnabled(m_usenetUnpackCheck->isChecked());
@@ -8746,6 +8783,7 @@ void OptionsDialog::fillDaemonSettings(const QCborMap& prefs)
                                    .toInteger(Preferences::kDefaultBtListenPort)));
     m_btDownloadDirEdit->setText(prefs.value(QStringLiteral("btDownloadDir")).toString());
     m_btStopAfterMetadataCheck->setChecked(prefs.value(QStringLiteral("btStopAfterMetadata")).toBool(false));
+    m_btSelectedFileOnlyCheck->setChecked(prefs.value(QStringLiteral("btMetaSelectedFileOnly")).toBool(true));
     m_btMaxDownSpin->setValue(int(prefs.value(QStringLiteral("btMaxDownloadKb")).toInteger(0)));
     m_btMaxUpSpin->setValue(int(prefs.value(QStringLiteral("btMaxUploadKb")).toInteger(0)));
     m_btDhtCheck->setChecked(prefs.value(QStringLiteral("btDht")).toBool(true));

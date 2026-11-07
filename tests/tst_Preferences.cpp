@@ -421,7 +421,7 @@ private slots:
             Preferences loaded;
             QVERIFY(loaded.load(file));
             QCOMPARE(loaded.btEnabled(), version < 3);
-            QCOMPARE(loaded.startVersion(), 5u);
+            QCOMPARE(loaded.startVersion(), 6u);
         }
     }
 
@@ -440,7 +440,7 @@ private slots:
             Preferences loaded;
             QVERIFY(loaded.load(file));
             QCOMPARE(loaded.shareIncomingSubdirs(), version < 4);
-            QCOMPARE(loaded.startVersion(), 5u);
+            QCOMPARE(loaded.startVersion(), 6u);
         }
         Preferences fresh;
         QVERIFY(fresh.shareIncomingSubdirs());
@@ -476,7 +476,7 @@ private slots:
             QVERIFY(loaded.load(file));
             QCOMPARE(loaded.nick(), version < 5 ? Preferences::defaultNick()
                                                 : QStringLiteral("https://emule-project.net"));
-            QCOMPARE(loaded.startVersion(), 5u);
+            QCOMPARE(loaded.startVersion(), 6u);
         }
     }
 
@@ -644,6 +644,8 @@ private slots:
         QVERIFY(none.publishLinks);
         QVERIFY(none.accounts.isEmpty());
         QVERIFY(none.sharedPluginDir.isEmpty());   // per instance
+        QVERIFY(none.autoUpdate);                   // plugin updates on, daily
+        QCOMPARE(none.autoUpdateHours, 24);
 
         TempDir tmp;
         const auto file = tmp.filePath(QStringLiteral("hoster.yaml"));
@@ -656,6 +658,8 @@ private slots:
         h.publishLinks = false;
         h.fromPeers = false;
         h.sharedPluginDir = QStringLiteral("/srv/emuleqt/resolver");
+        h.autoUpdate = false;
+        h.autoUpdateHours = 6;
         h.accounts = {{QStringLiteral("rapidgator.net"), QStringLiteral("me"), QStringLiteral("s3cret")}};
         {
             Preferences prefs;
@@ -682,10 +686,62 @@ private slots:
         QCOMPARE(k.maxStreams, uint32{16});
         QVERIFY(!Preferences::applyEd3kHosterKey(k, QStringLiteral("ed3kLan"), QCborValue(true)));
 
+        QVERIFY(Preferences::applyEd3kHosterKey(k, QStringLiteral("ed3kHosterAutoUpdate"), QCborValue(true)));
+        QVERIFY(k.autoUpdate);
+        QVERIFY(!ipc.contains(QStringLiteral("ed3kHosterAutoUpdateHours")));   // YAML only
+
         Preferences mirror;
         mirror.updateFromCbor(ipc);
         QCOMPARE(mirror.ed3kHoster().accounts.at(0).user, QStringLiteral("me"));
         QVERIFY(mirror.ed3kHoster().accounts.at(0).password.isEmpty());
+    }
+
+    void ed3kHoster_solversRoundTrip()
+    {
+        // captcha solver services: on with no accounts; key-only ones have no user
+        QVERIFY(Preferences().ed3kHoster().solversEnabled);
+        QVERIFY(Preferences().ed3kHoster().solvers.isEmpty());
+
+        TempDir tmp;
+        const auto file = tmp.filePath(QStringLiteral("solvers.yaml"));
+        Ed3kHosterPrefs h;
+        h.solversEnabled = false;
+        h.solvers = {{QStringLiteral("2captcha.com"), {}, QStringLiteral("k3y-only")},
+                     {QStringLiteral("deathbycaptcha.com"), QStringLiteral("me"), QStringLiteral("dbc-pass")}};
+        {
+            Preferences prefs;
+            prefs.setEd3kHoster(h);
+            QVERIFY(prefs.saveTo(file));
+        }
+        QFile raw(file);
+        QVERIFY(raw.open(QIODevice::ReadOnly));
+        const QByteArray text = raw.readAll();
+        QVERIFY(!text.contains("k3y-only"));
+        QVERIFY(!text.contains("dbc-pass"));
+        Preferences loaded;
+        QVERIFY(loaded.load(file));
+        QVERIFY(loaded.ed3kHoster() == h);
+
+        // IPC: no keys; a row without one keeps the stored key, an empty user is fine
+        const QCborMap ipc = loaded.toIpcMap();
+        QCOMPARE(ipc.value(QStringLiteral("ed3kHosterSolversEnabled")).toBool(true), false);
+        const QCborArray rows = ipc.value(QStringLiteral("ed3kHosterSolvers")).toArray();
+        QCOMPARE(rows.size(), 2);
+        QVERIFY(!rows.at(0).toMap().contains(QStringLiteral("password")));
+        Ed3kHosterPrefs k = h;
+        QVERIFY(Preferences::applyEd3kHosterKey(k, QStringLiteral("ed3kHosterSolvers"), rows));
+        QCOMPARE(k.solvers.at(0).password, QStringLiteral("k3y-only"));
+        QCOMPARE(k.solvers.at(1).password, QStringLiteral("dbc-pass"));
+        // a new key typed in the GUI replaces it
+        QCborArray typed = rows;
+        QCborMap first = typed.at(0).toMap();
+        first.insert(QStringLiteral("password"), QStringLiteral("new-key"));
+        typed[0] = first;
+        QVERIFY(Preferences::applyEd3kHosterKey(k, QStringLiteral("ed3kHosterSolvers"), typed));
+        QCOMPARE(k.solvers.at(0).password, QStringLiteral("new-key"));
+        QVERIFY(k.accounts.isEmpty());   // the hoster accounts are another list
+        QVERIFY(Preferences::applyEd3kHosterKey(k, QStringLiteral("ed3kHosterSolversEnabled"), QCborValue(true)));
+        QVERIFY(k.solversEnabled);
     }
 
     void bittorrent_clamps()

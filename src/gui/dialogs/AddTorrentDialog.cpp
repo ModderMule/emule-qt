@@ -66,7 +66,7 @@ AddTorrentDialog::AddTorrentDialog(IpcClient* ipc, Mode mode, const QStringList&
     setOption(kI2pOption, i2pOn && thePrefs.btI2pOnlyNew(), i2pOn,
               i2pOn ? tr("Peers only over I2P: they see an I2P address, never your IP. No DHT; "
                          "the I2P trackers are added.")
-                    : tr("Turn on I2P in Options > BitTorrent > Connection first."));
+                    : tr("Turn on I2P in Options > BitTorrent > I2P first."));
 
     if (m_mode == Mode::Files) {
         m_paths = items;

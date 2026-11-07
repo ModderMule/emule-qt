@@ -65,7 +65,7 @@
         <translation>Вы ранее отменили приём файла &quot;%1&quot;.</translation>
     </message>
     <message numerus="yes">
-        <location line="+247"/>
+        <location line="+248"/>
         <source>%n further HTTP Cache link(s) ignored — apply one at a time.</source>
         <translation>
             <numerusform>Ещё %n ссылка HTTP Cache проигнорирована — применяйте по одной.</numerusform>
@@ -183,6 +183,24 @@
         <translation>Список узлов не использован.
 
 %1</translation>
+    </message>
+</context>
+<context>
+    <name>FileCheckButtons</name>
+    <message>
+        <location filename="../src/gui/controls/FileCheckButtons.cpp" line="+28"/>
+        <source>Select All</source>
+        <translation>Выбрать все</translation>
+    </message>
+    <message>
+        <location line="+1"/>
+        <source>Select None</source>
+        <translation>Снять выделение</translation>
+    </message>
+    <message>
+        <location line="+1"/>
+        <source>Invert Selection</source>
+        <translation>Инвертировать выделение</translation>
     </message>
 </context>
 <context>
@@ -343,7 +361,7 @@ HTTP Cache будет включён, а этот ключ сохранён дл
 <context>
     <name>Notifier</name>
     <message>
-        <location filename="../src/gui/utils/NotifierText.h" line="+30"/>
+        <location filename="../src/gui/utils/NotifierText.h" line="+34"/>
         <source>Downloaded:</source>
         <translation>Принято:</translation>
     </message>
@@ -362,8 +380,27 @@ HTTP Cache будет включён, а этот ключ сохранён дл
         <source>You have insufficient disk space to download &quot;%1&quot;!</source>
         <translation>Недостаточно места на диске для приёма &quot;%1&quot;!</translation>
     </message>
+    <message numerus="yes">
+        <location line="+6"/>
+        <source>... and %n more</source>
+        <translation>
+            <numerusform>... и ещё %n</numerusform>
+            <numerusform>... и ещё %n</numerusform>
+            <numerusform>... и ещё %n</numerusform>
+        </translation>
+    </message>
     <message>
         <location line="+2"/>
+        <source>Downloads Added</source>
+        <translation>Загрузки добавлены</translation>
+    </message>
+    <message>
+        <location line="+1"/>
+        <source>Download Added</source>
+        <translation>Загрузка добавлена</translation>
+    </message>
+    <message>
+        <location line="+4"/>
         <source>Port not available</source>
         <translation>Порт недоступен</translation>
     </message>
@@ -687,7 +724,7 @@ Enable Web Interface or REST API under Options → Web Interface.</source>
 <context>
     <name>QObject</name>
     <message>
-        <location filename="../src/gui/app/main.cpp" line="+581"/>
+        <location filename="../src/gui/app/main.cpp" line="+583"/>
         <source>eMule Qt</source>
         <translation>eMule Qt</translation>
     </message>
@@ -721,17 +758,15 @@ Trust the new certificate?</source>
 Доверять новому сертификату?</translation>
     </message>
     <message>
-        <location line="+384"/>
         <source>Download Added</source>
-        <translation>Приём добавлен</translation>
+        <translation type="vanished">Приём добавлен</translation>
     </message>
     <message>
-        <location line="+1"/>
         <source>A new download has been added.</source>
-        <translation>Добавлен новый файл на приём.</translation>
+        <translation type="vanished">Добавлен новый файл на приём.</translation>
     </message>
     <message>
-        <location line="+11"/>
+        <location line="+390"/>
         <source>Message from %1</source>
         <translation>Сообщение от %1</translation>
     </message>
@@ -871,7 +906,7 @@ Trust the new certificate?</source>
         <translation>Нормальный</translation>
     </message>
     <message>
-        <location filename="../src/gui/dialogs/OptionsDialog.cpp" line="+3595"/>
+        <location filename="../src/gui/dialogs/OptionsDialog.cpp" line="+3609"/>
         <source>Test</source>
         <translation>Проверить</translation>
     </message>
@@ -901,7 +936,7 @@ Trust the new certificate?</source>
         <translation>Служебный трафик Kad (пакетов): 0 байт (0)</translation>
     </message>
     <message>
-        <location filename="../src/gui/utils/Ed2kLinkImporter.cpp" line="-450"/>
+        <location filename="../src/gui/utils/Ed2kLinkImporter.cpp" line="-451"/>
         <location line="+20"/>
         <source>eD2K Link</source>
         <translation>eD2K ссылка</translation>
@@ -955,7 +990,7 @@ Trust the new certificate?</source>
     </message>
     <message>
         <location filename="../src/gui/utils/NzbAdd.cpp" line="+25"/>
-        <location filename="../src/gui/utils/TorrentAdd.cpp" line="+51"/>
+        <location filename="../src/gui/utils/TorrentAdd.cpp" line="+52"/>
         <source>Could not add &quot;%1&quot;.</source>
         <translation>Не удалось добавить &quot;%1&quot;.</translation>
     </message>
@@ -1062,7 +1097,7 @@ Has comments</source>
 %2</translation>
     </message>
     <message>
-        <location line="+77"/>
+        <location line="+88"/>
         <source>Add Torrent</source>
         <translation>Добавить торрент</translation>
     </message>
@@ -1655,8 +1690,12 @@ There is already a friend with same IP address and port available.</source>
     </message>
     <message>
         <location line="+2"/>
+        <source>Turn on I2P in Options &gt; BitTorrent &gt; I2P first.</source>
+        <translation>Сначала включите I2P в Настройки &gt; BitTorrent &gt; I2P.</translation>
+    </message>
+    <message>
         <source>Turn on I2P in Options &gt; BitTorrent &gt; Connection first.</source>
-        <translation>Сначала включите I2P в Настройки &gt; BitTorrent &gt; Соединение.</translation>
+        <translation type="vanished">Сначала включите I2P в Настройки &gt; BitTorrent &gt; Соединение.</translation>
     </message>
     <message>
         <location line="+16"/>
@@ -5274,7 +5313,7 @@ Its names are then resolved after the lists you already follow.</source>
         <translation type="vanished">Узел ed3k использует ник со страницы «Общие»: %1</translation>
     </message>
     <message>
-        <location filename="../src/gui/dialogs/Ed3kOptionsPages.cpp" line="+371"/>
+        <location filename="../src/gui/dialogs/Ed3kOptionsPages.cpp" line="+420"/>
         <location line="+11"/>
         <location line="+559"/>
         <location line="+11"/>
@@ -5430,12 +5469,13 @@ Its names are then resolved after the lists you already follow.</source>
         <translation>Chain ID:</translation>
     </message>
     <message>
-        <location line="-497"/>
+        <location line="+912"/>
+        <location line="+219"/>
         <source>Not valid</source>
         <translation>Недействительно</translation>
     </message>
     <message>
-        <location line="+2"/>
+        <location line="+5"/>
         <source>Premium until %1</source>
         <translation>Премиум до %1</translation>
     </message>
@@ -5491,7 +5531,7 @@ Its names are then resolved after the lists you already follow.</source>
         <translation type="vanished">Пересыльщик:</translation>
     </message>
     <message>
-        <location line="+252"/>
+        <location line="-1379"/>
         <source>Share Usenet posts over ed3k too</source>
         <translation>Также раздавать публикации Usenet через ed3k</translation>
     </message>
@@ -5583,12 +5623,12 @@ Its names are then resolved after the lists you already follow.</source>
     <message>
         <location line="+5"/>
         <location line="+10"/>
-        <location line="+1023"/>
+        <location line="+1170"/>
         <source> credits/MiB</source>
         <translation> кредитов/MiB</translation>
     </message>
     <message>
-        <location line="-1032"/>
+        <location line="-1179"/>
         <source>Never pay (receipts only)</source>
         <translation>Никогда не платить (только квитанции)</translation>
     </message>
@@ -5744,12 +5784,12 @@ Its names are then resolved after the lists you already follow.</source>
     <message>
         <location line="+1"/>
         <location line="+6"/>
-        <location line="+606"/>
+        <location line="+794"/>
         <source>Remove</source>
         <translation>Удалить</translation>
     </message>
     <message>
-        <location line="-602"/>
+        <location line="-790"/>
         <source>Followed name lists (the first one wins)</source>
         <translation>Подписанные списки имён (побеждает первый)</translation>
     </message>
@@ -5836,12 +5876,12 @@ Its names are then resolved after the lists you already follow.</source>
     </message>
     <message>
         <location line="+0"/>
-        <location line="+861"/>
+        <location line="+1008"/>
         <source>not read yet</source>
         <translation>ещё не прочитано</translation>
     </message>
     <message>
-        <location line="-859"/>
+        <location line="-1006"/>
         <source>The account is overdrawn: a new credit key is the way on.</source>
         <translation>Счёт в минусе: выход — новый кредитный ключ.</translation>
     </message>
@@ -6081,7 +6121,17 @@ Export?</source>
         <translation>нет ответа от ядра</translation>
     </message>
     <message>
-        <location line="+90"/>
+        <location line="+95"/>
+        <source>General</source>
+        <translation>Основные</translation>
+    </message>
+    <message>
+        <location line="+1"/>
+        <source>Captcha solvers</source>
+        <translation>Решатели капчи</translation>
+    </message>
+    <message>
+        <location line="+9"/>
         <source>Lets the resolver open hoster pages, wait out their timers, show their puzzles and use the accounts below. On by default; needs the ed3k node.</source>
         <translation>Позволяет резолверу открывать страницы хостингов, выжидать их таймеры, показывать их капчи и использовать учётные записи ниже. По умолчанию включено; нужен узел ed3k.</translation>
     </message>
@@ -6126,7 +6176,17 @@ Export?</source>
         <translation>Резолвер запускает плагины хостеров JDownloader в отдельной программе на Java.</translation>
     </message>
     <message>
-        <location line="+72"/>
+        <location line="+6"/>
+        <source>Update hoster plugins automatically</source>
+        <translation>Автоматически обновлять плагины хостингов</translation>
+    </message>
+    <message>
+        <location line="+1"/>
+        <source>Fetches newer JDownloader plugins from emule-qt.org, checked by their SHA-256. They are swapped in while no hoster download runs.</source>
+        <translation>Загружает более новые плагины JDownloader с emule-qt.org с проверкой SHA-256. Они подменяются, когда не идёт ни одна загрузка с хостингов.</translation>
+    </message>
+    <message>
+        <location line="+59"/>
         <source>Desktop</source>
         <translation>Рабочий стол</translation>
     </message>
@@ -6146,17 +6206,103 @@ Export?</source>
         <translation>Связывает контейнеры ссылок .dlc с этой копией eMule Qt: их ссылки открываются на вкладке «Хостер». По умолчанию выключено, обычно их открывает JDownloader.</translation>
     </message>
     <message>
-        <location line="+76"/>
+        <location line="+4"/>
+        <source>Accept links from web pages (Click&apos;n&apos;Load)</source>
+        <translation>Принимать ссылки с веб-страниц (Click&apos;n&apos;Load)</translation>
+    </message>
+    <message>
+        <location line="+1"/>
+        <source>Link sites and browser add-ons send links to port 9666 of this computer, as they would to JDownloader. eMule Qt shows them and asks which to add. Not while JDownloader runs: it has the port.</source>
+        <translation>Сайты со ссылками и дополнения браузера отправляют ссылки на порт 9666 этого компьютера, как в JDownloader. eMule Qt показывает их и спрашивает, какие добавить. Не работает, пока запущен JDownloader: он занимает порт.</translation>
+    </message>
+    <message>
+        <location line="+64"/>
         <source>JDownloader: not installed</source>
         <translation>JDownloader: не установлен</translation>
     </message>
     <message>
-        <location line="+1"/>
+        <location line="+0"/>
         <source>JDownloader version: %1</source>
         <translation>Версия JDownloader: %1</translation>
     </message>
     <message>
-        <location line="+171"/>
+        <location line="+2"/>
+        <source>(update %1 waits until hoster downloads are idle)</source>
+        <translation>(обновление %1 ждёт, пока не завершатся загрузки с хостингов)</translation>
+    </message>
+    <message>
+        <location line="+39"/>
+        <location line="+219"/>
+        <source>Not reachable</source>
+        <translation>Недоступен</translation>
+    </message>
+    <message>
+        <location line="-138"/>
+        <source>Solve puzzles with these services</source>
+        <translation>Решать головоломки этими сервисами</translation>
+    </message>
+    <message>
+        <location line="+2"/>
+        <source>A hoster&apos;s image puzzle goes to these paid services first; the puzzle window only comes when none of them answers.</source>
+        <translation>Картинка-головоломка хостера сначала уходит в эти платные сервисы; окно головоломки появляется, только если ни один не ответил.</translation>
+    </message>
+    <message>
+        <location line="+3"/>
+        <source>Captcha solver services solve the puzzles of hosters for a small fee each. An account needs credit at the service. Logins stay on this computer: never sent to another node, never logged.</source>
+        <translation>Сервисы решения капчи решают головоломки хостеров за небольшую плату за каждую. На счёте в сервисе нужен баланс. Данные входа остаются на этом компьютере: никогда не передаются другому узлу и не записываются в журнал.</translation>
+    </message>
+    <message>
+        <location line="+4"/>
+        <source>Service</source>
+        <translation>Сервис</translation>
+    </message>
+    <message>
+        <location line="+15"/>
+        <source>Add captcha solver</source>
+        <translation>Добавить решатель капчи</translation>
+    </message>
+    <message>
+        <location line="+0"/>
+        <source>Edit captcha solver</source>
+        <translation>Изменить решатель капчи</translation>
+    </message>
+    <message>
+        <location line="+19"/>
+        <source>Service:</source>
+        <translation>Сервис:</translation>
+    </message>
+    <message>
+        <location line="+14"/>
+        <source>empty: the password is an API token</source>
+        <translation>пусто: пароль — это API-токен</translation>
+    </message>
+    <message>
+        <location line="+1"/>
+        <source>API key:</source>
+        <translation>Ключ API:</translation>
+    </message>
+    <message>
+        <location line="+42"/>
+        <source>%1 at %2</source>
+        <translation>%1 на %2</translation>
+    </message>
+    <message>
+        <location line="+1"/>
+        <source>Check captcha solver</source>
+        <translation>Проверить решатель капчи</translation>
+    </message>
+    <message>
+        <location line="+2"/>
+        <source>API key of %1:</source>
+        <translation>API-ключ %1:</translation>
+    </message>
+    <message>
+        <location line="+1"/>
+        <source>Password of %1:</source>
+        <translation>Пароль %1:</translation>
+    </message>
+    <message>
+        <location line="+91"/>
         <source>Autostart highspeed download</source>
         <translation>Автозапуск скоростной загрузки</translation>
     </message>
@@ -6196,11 +6342,26 @@ Export?</source>
         <translation>ed3k выключен: это не действует.</translation>
     </message>
     <message>
+        <location line="+22"/>
+        <source>Valid</source>
+        <translation>Действителен</translation>
+    </message>
+    <message>
+        <location line="+2"/>
+        <source>Credit: %1</source>
+        <translation>Баланс: %1</translation>
+    </message>
+    <message>
+        <location line="+0"/>
+        <source>No credit (%1)</source>
+        <translation>Нет баланса (%1)</translation>
+    </message>
+    <message>
         <source>Needs ed3k credits in use with ledger endpoints.</source>
         <translation type="vanished">Нужны используемые кредиты ed3k с конечными точками реестра.</translation>
     </message>
     <message>
-        <location line="+9"/>
+        <location line="-15"/>
         <source>The account is overdrawn: nothing is bid.</source>
         <translation>Счёт в минусе: ставки не делаются.</translation>
     </message>
@@ -6215,7 +6376,7 @@ Export?</source>
         <translation>Скоростная загрузка не работает. Баланс: %1</translation>
     </message>
     <message>
-        <location line="-513"/>
+        <location line="-660"/>
         <source>ed3k</source>
         <translation>ed3k</translation>
     </message>
@@ -6315,7 +6476,7 @@ Export?</source>
         <translation>%1.%2 кредитов</translation>
     </message>
     <message>
-        <location line="+13"/>
+        <location line="+28"/>
         <source>Downloads from file hosters</source>
         <translation>Загрузки с файлообменников</translation>
     </message>
@@ -6362,7 +6523,7 @@ Export?</source>
         <translation type="vanished">Резолвер запускает плагины хостеров JDownloader в собственной программе Java. eMuleQt ищет Java 17 или новее и может загрузить её в свою папку.</translation>
     </message>
     <message>
-        <location line="+10"/>
+        <location line="+14"/>
         <source>Find automatically</source>
         <translation>Найти автоматически</translation>
     </message>
@@ -6408,17 +6569,17 @@ Export?</source>
     </message>
     <message>
         <location line="+2"/>
-        <location line="+163"/>
+        <location line="+173"/>
         <source>Publish hoster links</source>
         <translation>Публиковать ссылки файлообменников</translation>
     </message>
     <message>
-        <location line="-161"/>
+        <location line="-171"/>
         <source>A downloaded file is shared either way. Published, its link is found in ed3k and handed to other nodes: a link is often all that protects a file at a hoster.</source>
         <translation>Загруженный файл раздаётся в любом случае. При публикации его ссылку можно найти в ed3k, и она передаётся другим узлам: часто только ссылка защищает файл на файлообменнике.</translation>
     </message>
     <message>
-        <location line="+157"/>
+        <location line="+167"/>
         <source>&lt;p&gt;Sharing hoster links means: once a file from a link is downloaded and verified, its link is published in ed3k and handed to other nodes that download the same file.&lt;/p&gt;&lt;p&gt;A link is often all that keeps a file at a hoster private. Whoever knows the link can find the file in ed3k, and anyone can find the link of a file you share.&lt;/p&gt;&lt;p&gt;Publish hoster links?&lt;/p&gt;</source>
         <translation>&lt;p&gt;Публикация ссылок хостеров означает: как только файл по ссылке загружен и проверен, его ссылка публикуется в ed3k и передаётся другим узлам, загружающим тот же файл.&lt;/p&gt;&lt;p&gt;Часто ссылка — единственное, что делает файл на хостере закрытым. Кто знает ссылку, может найти файл в ed3k, и любой может найти ссылку на файл, который вы раздаёте.&lt;/p&gt;&lt;p&gt;Публиковать ссылки файлообменников?&lt;/p&gt;</translation>
     </message>
@@ -6431,7 +6592,7 @@ Export?</source>
         <translation type="vanished">Загруженный файл раздаётся в любом случае. Если ссылка не публикуется, она не передаётся другим узлам: часто ссылка — единственное, что защищает файл на хостере.</translation>
     </message>
     <message>
-        <location line="-152"/>
+        <location line="-162"/>
         <source>Accounts</source>
         <translation>Учётные записи</translation>
     </message>
@@ -6447,16 +6608,18 @@ Export?</source>
     </message>
     <message>
         <location line="+0"/>
+        <location line="+211"/>
         <source>User</source>
         <translation>Пользователь</translation>
     </message>
     <message>
-        <location line="+0"/>
+        <location line="-211"/>
+        <location line="+211"/>
         <source>Status</source>
         <translation>Статус</translation>
     </message>
     <message>
-        <location line="+3"/>
+        <location line="-39"/>
         <source>Add...</source>
         <translation>Добавить...</translation>
     </message>
@@ -6471,7 +6634,7 @@ Export?</source>
         <translation>Проверить</translation>
     </message>
     <message>
-        <location line="+71"/>
+        <location line="-116"/>
         <source>This build has no hoster resolver: hoster links are stored and passed on, but not downloaded.</source>
         <translation>В этой сборке нет резолвера хостеров: ссылки хостеров сохраняются и передаются дальше, но не загружаются.</translation>
     </message>
@@ -6491,7 +6654,7 @@ Export?</source>
         <translation>Резолвер не готов: %1</translation>
     </message>
     <message>
-        <location line="+10"/>
+        <location line="+13"/>
         <source>Looking for Java...</source>
         <translation>Поиск Java...</translation>
     </message>
@@ -6526,7 +6689,7 @@ Export?</source>
         <translation>Java ищется, когда загрузки с хостеров разрешены.</translation>
     </message>
     <message>
-        <location line="+14"/>
+        <location line="+39"/>
         <source>Allow downloads from file hosters and apply first.</source>
         <translation>Сначала разрешите загрузки с файлообменников и примените.</translation>
     </message>
@@ -6543,7 +6706,7 @@ Export?</source>
         <translation type="vanished">Публиковать ссылки хостеров</translation>
     </message>
     <message>
-        <location line="+32"/>
+        <location line="+89"/>
         <source>Add hoster account</source>
         <translation>Добавить учётную запись хостера</translation>
     </message>
@@ -6553,37 +6716,37 @@ Export?</source>
         <translation>Изменить учётную запись хостера</translation>
     </message>
     <message>
-        <location line="+7"/>
+        <location line="+8"/>
         <source>unchanged</source>
         <translation>без изменений</translation>
     </message>
     <message>
-        <location line="+1"/>
+        <location line="+12"/>
         <source>Hoster:</source>
         <translation>Хостер:</translation>
     </message>
     <message>
-        <location line="+1"/>
+        <location line="+3"/>
         <source>User:</source>
         <translation>Пользователь:</translation>
     </message>
     <message>
-        <location line="+1"/>
+        <location line="-14"/>
+        <location line="+23"/>
         <source>Password:</source>
         <translation>Пароль:</translation>
     </message>
     <message>
-        <location line="+38"/>
+        <location line="+43"/>
         <source>Check hoster account</source>
         <translation>Проверить учётную запись хостера</translation>
     </message>
     <message>
-        <location line="+1"/>
         <source>Password of %1 at %2:</source>
-        <translation>Пароль %1 на %2:</translation>
+        <translation type="vanished">Пароль %1 на %2:</translation>
     </message>
     <message>
-        <location line="+12"/>
+        <location line="+15"/>
         <source>Checking...</source>
         <translation>Проверка...</translation>
     </message>
@@ -9866,7 +10029,7 @@ Its files go to the incoming folder, below a folder of the set&apos;s own; new v
 <context>
     <name>eMule::HosterPanel</name>
     <message>
-        <location filename="../src/gui/panels/HosterPanel.cpp" line="+113"/>
+        <location filename="../src/gui/panels/HosterPanel.cpp" line="+114"/>
         <source>Finding a resolver</source>
         <translation>Поиск резолвера</translation>
     </message>
@@ -10142,12 +10305,23 @@ Its files go to the incoming folder, below a folder of the set&apos;s own; new v
         <translation type="vanished">Архиву нужен пароль</translation>
     </message>
     <message>
-        <location line="+39"/>
+        <location line="+41"/>
         <source>Hoster downloads</source>
         <translation>Загрузки с хостеров</translation>
     </message>
     <message>
-        <location line="+738"/>
+        <location line="+782"/>
+        <location line="+2"/>
+        <source>Click&apos;n&apos;Load</source>
+        <translation>Click&apos;n&apos;Load</translation>
+    </message>
+    <message>
+        <location line="+5"/>
+        <source>The page sent no links that can be downloaded, or they could not be decrypted.</source>
+        <translation>Страница не прислала ссылок, которые можно скачать, или их не удалось расшифровать.</translation>
+    </message>
+    <message>
+        <location line="+11"/>
         <source>The DLC key service refuses for now: too many containers were opened. Try again in a few minutes.</source>
         <translation>Сервис ключей DLC пока отказывает: открыто слишком много контейнеров. Повторите через несколько минут.</translation>
     </message>
@@ -10172,7 +10346,8 @@ Its files go to the incoming folder, below a folder of the set&apos;s own; new v
         <translation>Установленный резолвер хостеров пока не умеет читать контейнеры ссылок; он есть в более новой версии eMule Qt.</translation>
     </message>
     <message>
-        <location line="+2"/>
+        <location line="-20"/>
+        <location line="+22"/>
         <source>The hoster resolver is not ready.</source>
         <translation>Резолвер хостеров не готов.</translation>
     </message>
@@ -10182,17 +10357,27 @@ Its files go to the incoming folder, below a folder of the set&apos;s own; new v
         <translation>Не удалось прочитать контейнер.</translation>
     </message>
     <message>
-        <location line="+3"/>
+        <location line="-20"/>
+        <location line="+23"/>
         <source>%1: %2</source>
         <translation>%1: %2</translation>
     </message>
     <message>
-        <location line="+12"/>
+        <location line="+14"/>
         <source>Links of %1</source>
         <translation>Ссылки из %1</translation>
     </message>
     <message numerus="yes">
         <location line="+2"/>
+        <source>%1 sent %n link(s) (Click&apos;n&apos;Load). Add which?</source>
+        <translation>
+            <numerusform>%1 прислал %n ссылку (Click&apos;n&apos;Load). Какую добавить?</numerusform>
+            <numerusform>%1 прислал %n ссылки (Click&apos;n&apos;Load). Какие добавить?</numerusform>
+            <numerusform>%1 прислал %n ссылок (Click&apos;n&apos;Load). Какие добавить?</numerusform>
+        </translation>
+    </message>
+    <message numerus="yes">
+        <location line="+1"/>
         <source>The container holds %n link(s). Add which?</source>
         <translation>
             <numerusform>Контейнер содержит %n ссылку. Какие добавить?</numerusform>
@@ -10201,7 +10386,12 @@ Its files go to the incoming folder, below a folder of the set&apos;s own; new v
         </translation>
     </message>
     <message>
-        <location line="+32"/>
+        <location line="+34"/>
+        <source>The page names archive passwords; extraction tries them.</source>
+        <translation>Страница указывает пароли архивов; распаковка их попробует.</translation>
+    </message>
+    <message>
+        <location line="+1"/>
         <source>The container names archive passwords; extraction tries them.</source>
         <translation>Контейнер содержит пароли к архивам; распаковка их попробует.</translation>
     </message>
@@ -10210,12 +10400,12 @@ Its files go to the incoming folder, below a folder of the set&apos;s own; new v
         <translation type="vanished">Добавить ссылки...</translation>
     </message>
     <message>
-        <location line="-338"/>
+        <location line="-370"/>
         <source>Retry</source>
         <translation>Повторить</translation>
     </message>
     <message>
-        <location line="+198"/>
+        <location line="+201"/>
         <source>JDownloader %1</source>
         <translation>JDownloader %1</translation>
     </message>
@@ -10224,7 +10414,7 @@ Its files go to the incoming folder, below a folder of the set&apos;s own; new v
         <translation type="vanished">Параметры...</translation>
     </message>
     <message>
-        <location line="-634"/>
+        <location line="-673"/>
         <source>File Name</source>
         <translation>Имя файла</translation>
     </message>
@@ -10290,23 +10480,23 @@ Its files go to the incoming folder, below a folder of the set&apos;s own; new v
     </message>
     <message>
         <location line="+6"/>
-        <location line="+652"/>
+        <location line="+718"/>
         <source>Package Name:</source>
         <translation>Имя пакета:</translation>
     </message>
     <message>
-        <location line="-650"/>
+        <location line="-716"/>
         <source>optional</source>
         <translation>необязательно</translation>
     </message>
     <message>
         <location line="+1"/>
-        <location line="+651"/>
+        <location line="+718"/>
         <source>The links download under one entry, into a folder of this name</source>
         <translation>Ссылки загружаются одной записью в папку с этим именем</translation>
     </message>
     <message>
-        <location line="-636"/>
+        <location line="-703"/>
         <location line="+11"/>
         <location line="+16"/>
         <source>Not connected to the eMule core.</source>
@@ -10318,19 +10508,19 @@ Its files go to the incoming folder, below a folder of the set&apos;s own; new v
         <location line="+10"/>
         <location line="+4"/>
         <location line="+9"/>
-        <location line="+6"/>
-        <location line="+552"/>
+        <location line="+42"/>
+        <location line="+547"/>
         <source>Open DLC</source>
         <translation>Открыть DLC</translation>
     </message>
     <message>
-        <location line="-581"/>
+        <location line="-612"/>
         <location line="+14"/>
         <source>Cannot read %1.</source>
         <translation>Не удаётся прочитать %1.</translation>
     </message>
     <message>
-        <location line="+17"/>
+        <location line="+53"/>
         <source>All files (*)</source>
         <translation>Все файлы (*)</translation>
     </message>
@@ -10409,40 +10599,50 @@ Its files go to the incoming folder, below a folder of the set&apos;s own; new v
         <translation>Продолжить</translation>
     </message>
     <message>
-        <location line="-406"/>
-        <location line="+411"/>
+        <location line="-442"/>
+        <location line="+447"/>
         <source>Remove</source>
         <translation>Удалить</translation>
     </message>
     <message>
-        <location line="-502"/>
+        <location line="-540"/>
         <source>The archive needs a password (Set Password…)</source>
         <translation>Архиву нужен пароль (Задать пароль…)</translation>
     </message>
     <message>
+        <location line="+1"/>
+        <source>Checking the file against the hoster&apos;s %1</source>
+        <translation>Проверка файла по контрольной сумме %1 хостера</translation>
+    </message>
+    <message>
+        <location line="+1"/>
+        <source>The file does not match the hoster&apos;s %1, dropped (Retry downloads it again)</source>
+        <translation>Файл не совпадает с контрольной суммой %1 хостера, удалён (Повторить загрузит его заново)</translation>
+    </message>
+    <message>
         <location line="+45"/>
-        <location line="+463"/>
+        <location line="+499"/>
         <source>Add Links...</source>
         <translation>Добавить ссылки...</translation>
     </message>
     <message>
-        <location line="-462"/>
+        <location line="-498"/>
         <source>Links to files at hosters, one per line</source>
         <translation>Ссылки на файлы на хостерах, по одной в строке</translation>
     </message>
     <message>
         <location line="+2"/>
-        <location line="+461"/>
+        <location line="+497"/>
         <source>Open DLC...</source>
         <translation>Открыть DLC...</translation>
     </message>
     <message>
-        <location line="-460"/>
+        <location line="-496"/>
         <source>Adds the links of a link container (.dlc, .rsdf, .ccf); you can also drop one here</source>
         <translation>Добавляет ссылки из контейнера ссылок (.dlc, .rsdf, .ccf); его можно также перетащить сюда</translation>
     </message>
     <message>
-        <location line="+451"/>
+        <location line="+487"/>
         <source>Set Password…</source>
         <translation>Задать пароль…</translation>
     </message>
@@ -10503,7 +10703,7 @@ Its files go to the incoming folder, below a folder of the set&apos;s own; new v
         <translation>Папка</translation>
     </message>
     <message>
-        <location line="+11"/>
+        <location line="+14"/>
         <source>Downloads from hosters are off (Options, ed3k, Hoster).</source>
         <translation>Загрузки с хостеров отключены (Параметры, ed3k, Хостер).</translation>
     </message>
@@ -10923,7 +11123,7 @@ Its files go to the incoming folder, below a folder of the set&apos;s own; new v
 <context>
     <name>eMule::IpcClient</name>
     <message>
-        <location filename="../src/gui/app/IpcClient.cpp" line="+1159"/>
+        <location filename="../src/gui/app/IpcClient.cpp" line="+1160"/>
         <source>The core&apos;s certificate changed</source>
         <translation>Сертификат ядра изменился</translation>
     </message>
@@ -12008,13 +12208,13 @@ Other members see your nick and posts; your node takes part in passing the room&
 <context>
     <name>eMule::MainWindow</name>
     <message>
-        <location filename="../src/gui/app/MainWindow.cpp" line="+114"/>
-        <location line="+738"/>
+        <location filename="../src/gui/app/MainWindow.cpp" line="+115"/>
+        <location line="+746"/>
         <source>eMule Qt v%1</source>
         <translation>eMule Qt v%1</translation>
     </message>
     <message>
-        <location line="-607"/>
+        <location line="-608"/>
         <source>Quit eMule Qt</source>
         <translation>Выйти из eMule Qt</translation>
     </message>
@@ -12051,12 +12251,12 @@ You are running %2. Open the eMule Qt website?</source>
     <message>
         <location line="+15"/>
         <location line="+7"/>
-        <location line="+1027"/>
+        <location line="+1042"/>
         <source>Version Check</source>
         <translation>Проверка версии</translation>
     </message>
     <message>
-        <location line="-1033"/>
+        <location line="-1048"/>
         <source>You are running the latest version of eMule Qt (v%1).</source>
         <translation>У вас последняя версия eMule Qt (v%1).</translation>
     </message>
@@ -12089,7 +12289,7 @@ Enable at least one under Options → Connection to connect.</source>
         <translation>eMule версии %1 готов</translation>
     </message>
     <message>
-        <location line="+90"/>
+        <location line="+91"/>
         <source>eD2K: Connected (LowID)</source>
         <translation>eD2K: Соединён (Низкий ID)</translation>
     </message>
@@ -12115,12 +12315,12 @@ Enable at least one under Options → Connection to connect.</source>
     </message>
     <message>
         <location line="+4"/>
-        <location line="+1543"/>
+        <location line="+1557"/>
         <source>eD2K: Disconnected</source>
         <translation>eD2K: Отсоединён</translation>
     </message>
     <message>
-        <location line="-1534"/>
+        <location line="-1548"/>
         <source>eD2K Server: %1  (%2 Users)</source>
         <translation>eD2K сервер: %1  (%2 пользователей)</translation>
     </message>
@@ -12161,12 +12361,12 @@ Enable at least one under Options → Connection to connect.</source>
     </message>
     <message>
         <location line="+4"/>
-        <location line="+1463"/>
+        <location line="+1477"/>
         <source>Kad: Disconnected</source>
         <translation>Kad: Отсоединён</translation>
     </message>
     <message>
-        <location line="-1422"/>
+        <location line="-1436"/>
         <source>ed3k: Connected</source>
         <translation>ed3k: Соединён</translation>
     </message>
@@ -12278,7 +12478,7 @@ Up: %3 | Down: %4</source>
 Отдача: %3 | Приём: %4</translation>
     </message>
     <message>
-        <location line="+88"/>
+        <location line="+96"/>
         <source>Are you sure you want to exit eMule?
 
 The core is attached: it stops with the GUI, and so do all downloads and uploads.</source>
@@ -12370,7 +12570,7 @@ The core is detached: it keeps running with all downloads and uploads. Open eMul
         <translation>Запись журнала</translation>
     </message>
     <message>
-        <location line="+142"/>
+        <location line="+148"/>
         <source>eMule Log</source>
         <translation>Журнал eMule</translation>
     </message>
@@ -12636,7 +12836,7 @@ Enable it under Options → Web Interface, then try again.</source>
         <translation>Двойной щелчок — информация о сети</translation>
     </message>
     <message>
-        <location line="+712"/>
+        <location line="+728"/>
         <source>New message — double-click to read</source>
         <translation>Новое сообщение — двойной щелчок для чтения</translation>
     </message>
@@ -13463,12 +13663,12 @@ You get fewer sources and slower downloads, and two Low ID clients can rarely ex
     </message>
     <message>
         <location line="+53"/>
-        <location line="+85"/>
+        <location line="+101"/>
         <source>Save Files To</source>
         <translation>Сохранить файлы в</translation>
     </message>
     <message numerus="yes">
-        <location line="-52"/>
+        <location line="-68"/>
         <source>Copied %n magnet link(s) to the clipboard.</source>
         <translation>
             <numerusform>Скопирована %n magnet-ссылка в буфер обмена.</numerusform>
@@ -13477,7 +13677,7 @@ You get fewer sources and slower downloads, and two Low ID clients can rarely ex
         </translation>
     </message>
     <message>
-        <location line="+109"/>
+        <location line="+125"/>
         <source>Queued &quot;%1&quot; for Usenet download.</source>
         <translation>«%1» поставлен в очередь загрузки Usenet.</translation>
     </message>
@@ -13501,27 +13701,27 @@ Download it again?</source>
         <translation>Не удалось поставить в очередь «%1»: %2</translation>
     </message>
     <message>
-        <location line="+41"/>
+        <location line="+43"/>
         <location line="+87"/>
-        <location line="+15"/>
+        <location line="+23"/>
         <location line="+29"/>
         <source>Could not download &quot;%1&quot;: %2</source>
         <translation>Не удалось загрузить «%1»: %2</translation>
     </message>
     <message>
-        <location line="-111"/>
-        <location line="+141"/>
+        <location line="-119"/>
+        <location line="+149"/>
         <source>Could not write %1: %2</source>
         <translation>Не удалось записать %1: %2</translation>
     </message>
     <message>
-        <location line="-138"/>
-        <location line="+141"/>
+        <location line="-146"/>
+        <location line="+149"/>
         <source>Saved %1</source>
         <translation>Сохранено: %1</translation>
     </message>
     <message>
-        <location line="-134"/>
+        <location line="-142"/>
         <location line="+24"/>
         <source>Could not fetch the links of &quot;%1&quot;: %2</source>
         <translation>Не удалось получить ссылки «%1»: %2</translation>
@@ -13555,7 +13755,7 @@ Download it again?</source>
         <translation>Не удалось добавить ссылки из «%1»: загрузки с хостеров отключены.</translation>
     </message>
     <message>
-        <location line="+22"/>
+        <location line="+30"/>
         <source>Could not add &quot;%1&quot;: the torrent is empty.</source>
         <translation>Не удалось добавить «%1»: торрент пуст.</translation>
     </message>
@@ -13583,7 +13783,7 @@ Download it again?</source>
 <context>
     <name>eMule::MetaResultDetailDialog</name>
     <message>
-        <location filename="../src/gui/dialogs/MetaResultDetailDialog.cpp" line="+65"/>
+        <location filename="../src/gui/dialogs/MetaResultDetailDialog.cpp" line="+66"/>
         <source>Details: %1</source>
         <translation>Подробности: %1</translation>
     </message>
@@ -13605,43 +13805,48 @@ Download it again?</source>
     <message>
         <location line="+2"/>
         <location line="+2"/>
-        <location line="+106"/>
+        <location line="+123"/>
         <source>Name</source>
         <translation>Имя</translation>
     </message>
     <message>
-        <location line="-108"/>
+        <location line="-125"/>
         <location line="+2"/>
-        <location line="+110"/>
+        <location line="+127"/>
         <source>Size</source>
         <translation>Размер</translation>
     </message>
     <message>
-        <location line="-110"/>
-        <location line="+143"/>
+        <location line="-127"/>
+        <location line="+160"/>
         <source>Articles</source>
         <translation>Статьи</translation>
     </message>
     <message>
-        <location line="-143"/>
-        <location line="+107"/>
+        <location line="-160"/>
+        <location line="+124"/>
         <source>Type</source>
         <translation>Тип</translation>
     </message>
     <message>
-        <location line="-100"/>
+        <location line="-116"/>
+        <source>Unchecked files are not downloaded. You can change this later in the Torrents tab.</source>
+        <translation>Неотмеченные файлы не загружаются. Это можно изменить позже на вкладке «Торренты».</translation>
+    </message>
+    <message>
+        <location line="+2"/>
         <source>Unchecked files are not downloaded. The volumes of one archive are checked together, and PAR2 files are fetched only when a repair needs them.</source>
         <translation>Неотмеченные файлы не загружаются. Тома одного архива отмечаются вместе, а файлы PAR2 загружаются, только если нужно восстановление.</translation>
     </message>
     <message>
-        <location line="+10"/>
+        <location line="+16"/>
         <location line="+2"/>
-        <location line="+95"/>
+        <location line="+103"/>
         <source>Files</source>
         <translation>Файлы</translation>
     </message>
     <message>
-        <location line="-93"/>
+        <location line="-101"/>
         <source>URL</source>
         <translation>URL</translation>
     </message>
@@ -13661,17 +13866,17 @@ Download it again?</source>
         <translation>Скачать</translation>
     </message>
     <message>
-        <location line="+37"/>
+        <location line="+38"/>
         <source>The file could not be read.</source>
         <translation>Не удалось прочитать файл.</translation>
     </message>
     <message>
-        <location line="+17"/>
+        <location line="+25"/>
         <source>Keep at least one file of &quot;%1&quot;.</source>
         <translation>Оставьте хотя бы один файл из «%1».</translation>
     </message>
     <message>
-        <location line="+24"/>
+        <location line="+23"/>
         <source>Torrent</source>
         <translation>Торрент</translation>
     </message>
@@ -13790,7 +13995,7 @@ Download it again?</source>
         </translation>
     </message>
     <message>
-        <location line="+7"/>
+        <location line="+11"/>
         <location line="+52"/>
         <source>Files (%1)</source>
         <translation>Файлы (%1)</translation>
@@ -14379,36 +14584,36 @@ Download it again?</source>
 <context>
     <name>eMule::OptionsDialog</name>
     <message>
-        <location filename="../src/gui/dialogs/OptionsDialog.cpp" line="-3473"/>
+        <location filename="../src/gui/dialogs/OptionsDialog.cpp" line="-3487"/>
         <source>Options</source>
         <translation>Настройки</translation>
     </message>
     <message>
         <location line="+61"/>
-        <location line="+2382"/>
+        <location line="+2396"/>
         <source>OK</source>
         <translation>OK</translation>
     </message>
     <message>
-        <location line="-2381"/>
-        <location line="+2382"/>
+        <location line="-2395"/>
+        <location line="+2396"/>
         <source>Cancel</source>
         <translation>Отмена</translation>
     </message>
     <message>
-        <location line="-2381"/>
-        <location line="+6499"/>
+        <location line="-2395"/>
+        <location line="+6523"/>
         <source>Apply</source>
         <translation>Применить</translation>
     </message>
     <message>
-        <location line="-6498"/>
+        <location line="-6522"/>
         <source>Help</source>
         <translation>Помощь</translation>
     </message>
     <message>
-        <location line="+283"/>
-        <location line="+2366"/>
+        <location line="+284"/>
+        <location line="+2379"/>
         <location line="+59"/>
         <location line="+6"/>
         <location line="+4"/>
@@ -14420,7 +14625,7 @@ Download it again?</source>
         <translation>IP фильтр</translation>
     </message>
     <message>
-        <location line="-2481"/>
+        <location line="-2494"/>
         <source>IP filter reloaded: %1 entries.</source>
         <translation>IP фильтр перезагружен: %1 записей.</translation>
     </message>
@@ -14447,31 +14652,31 @@ Download it again?</source>
     <message>
         <location line="-64"/>
         <location line="+65"/>
-        <location line="+6180"/>
+        <location line="+6203"/>
         <source>Usenet</source>
         <translation>Usenet</translation>
     </message>
     <message>
-        <location line="-6240"/>
+        <location line="-6263"/>
         <location line="+62"/>
-        <location line="+6180"/>
-        <location line="+2695"/>
+        <location line="+6203"/>
+        <location line="+2709"/>
         <source>BitTorrent</source>
         <translation>BitTorrent</translation>
     </message>
     <message>
-        <location line="-8755"/>
+        <location line="-8792"/>
         <source>User Name</source>
         <translation>Имя клиента</translation>
     </message>
     <message>
         <location line="+8"/>
-        <location line="+6425"/>
+        <location line="+6448"/>
         <source>Language</source>
         <translation>Язык</translation>
     </message>
     <message>
-        <location line="-6422"/>
+        <location line="-6445"/>
         <source>System Default</source>
         <translation>Системный</translation>
     </message>
@@ -14479,13 +14684,13 @@ Download it again?</source>
         <location line="+14"/>
         <location line="+924"/>
         <location line="+384"/>
-        <location line="+495"/>
+        <location line="+508"/>
         <location line="+299"/>
         <source>Miscellaneous</source>
         <translation>Разное</translation>
     </message>
     <message>
-        <location line="-2099"/>
+        <location line="-2112"/>
         <source>Bring to front on link click</source>
         <translation>Выводить на передний план при щелчке по ссылке</translation>
     </message>
@@ -14582,25 +14787,25 @@ Download it again?</source>
     <message>
         <location line="+8"/>
         <location line="+40"/>
-        <location line="+6302"/>
+        <location line="+6325"/>
         <source>Core</source>
         <translation>Ядро</translation>
     </message>
     <message>
-        <location line="-6315"/>
+        <location line="-6338"/>
         <source>Address:</source>
         <translation>Адрес:</translation>
     </message>
     <message>
         <location line="+4"/>
-        <location line="+1484"/>
+        <location line="+1497"/>
         <location line="+775"/>
         <location line="+427"/>
         <source>Port:</source>
         <translation>Порт:</translation>
     </message>
     <message>
-        <location line="-2683"/>
+        <location line="-2696"/>
         <source>authentication token</source>
         <translation>токен аутентификации</translation>
     </message>
@@ -14772,12 +14977,12 @@ Are you sure you want to continue?</source>
         <translation>Обновить сейчас</translation>
     </message>
     <message>
-        <location line="+8410"/>
+        <location line="+8447"/>
         <source>A database ships with each release. An optional free &lt;a href=&quot;https://www.maxmind.com/en/geolite2/signup&quot;&gt;MaxMind GeoLite2&lt;/a&gt; account keeps it current in between. This product includes GeoLite2 data created by MaxMind.</source>
         <translation>База данных поставляется с каждым выпуском. Необязательная бесплатная учётная запись &lt;a href=&quot;https://www.maxmind.com/en/geolite2/signup&quot;&gt;MaxMind GeoLite2&lt;/a&gt; поддерживает её актуальность между выпусками. Этот продукт включает данные GeoLite2, созданные MaxMind.</translation>
     </message>
     <message>
-        <location line="-8390"/>
+        <location line="-8427"/>
         <source>Save CPU &amp;&amp; Memory Usage</source>
         <translation>Экономить CPU &amp;&amp; память</translation>
     </message>
@@ -14854,19 +15059,19 @@ Are you sure you want to continue?</source>
     </message>
     <message>
         <location line="+2"/>
-        <location line="+1923"/>
+        <location line="+1936"/>
         <location line="+133"/>
         <location line="+296"/>
         <location line="+1073"/>
         <location line="+162"/>
-        <location line="+1348"/>
+        <location line="+1358"/>
         <location line="+304"/>
         <location line="+31"/>
         <source>Enabled</source>
         <translation>Включено</translation>
     </message>
     <message>
-        <location line="-5268"/>
+        <location line="-5291"/>
         <source>Reset</source>
         <translation>Сбросить</translation>
     </message>
@@ -14883,13 +15088,13 @@ Are you sure you want to continue?</source>
     <message>
         <location line="+3"/>
         <location line="+6"/>
-        <location line="+4638"/>
+        <location line="+4661"/>
         <location line="+354"/>
         <source> KB/s</source>
         <translation> KB/s</translation>
     </message>
     <message>
-        <location line="-4995"/>
+        <location line="-5018"/>
         <source>Upload</source>
         <translation>Отдача</translation>
     </message>
@@ -14920,18 +15125,18 @@ Are you sure you want to continue?</source>
     </message>
     <message>
         <location line="+28"/>
-        <location line="+4469"/>
+        <location line="+4492"/>
         <source>Client Port</source>
         <translation>Порт клиента</translation>
     </message>
     <message>
-        <location line="-4466"/>
-        <location line="+8148"/>
+        <location line="-4489"/>
+        <location line="+8185"/>
         <source>TCP</source>
         <translation>TCP</translation>
     </message>
     <message>
-        <location line="-8142"/>
+        <location line="-8179"/>
         <source>UDP</source>
         <translation>UDP</translation>
     </message>
@@ -14941,12 +15146,12 @@ Are you sure you want to continue?</source>
     </message>
     <message>
         <location line="+6"/>
-        <location line="+4469"/>
+        <location line="+4492"/>
         <source>Test Ports</source>
         <translation>Проверить порты</translation>
     </message>
     <message>
-        <location line="-4460"/>
+        <location line="-4483"/>
         <source>Use UPnP to Setup Ports</source>
         <translation>Настроить порты через UPnP</translation>
     </message>
@@ -14962,23 +15167,23 @@ Are you sure you want to continue?</source>
     </message>
     <message>
         <location line="+4"/>
-        <location line="+1787"/>
-        <location line="+5909"/>
+        <location line="+1800"/>
+        <location line="+5933"/>
         <source>Any</source>
         <translation>Любой</translation>
     </message>
     <message>
-        <location line="-7694"/>
+        <location line="-7731"/>
         <source>Use only this network interface, for example a VPN tunnel. Pick one from the list, or type an IP address or a subnet such as 10.64.0.0/10 (the interface holding an address in it). Connections through a proxy are not bound.</source>
         <translation>Использовать только этот сетевой интерфейс, например VPN-туннель. Выберите из списка или введите IP-адрес либо подсеть, например 10.64.0.0/10 (интерфейс с адресом из неё). Соединения через прокси не привязываются.</translation>
     </message>
     <message>
-        <location line="+7591"/>
+        <location line="+7628"/>
         <source>While the selected interface is not available, all P2P, Usenet and update connections stay closed.</source>
         <translation>Пока выбранный интерфейс недоступен, все P2P-, Usenet- и update-соединения остаются закрытыми.</translation>
     </message>
     <message>
-        <location line="-7577"/>
+        <location line="-7614"/>
         <source>Max. Sources/File</source>
         <translation>Макс. источников/файл</translation>
     </message>
@@ -14989,12 +15194,12 @@ Are you sure you want to continue?</source>
     </message>
     <message>
         <location line="+6"/>
-        <location line="+4495"/>
+        <location line="+4518"/>
         <source>Connection Limits</source>
         <translation>Ограничения соединений</translation>
     </message>
     <message>
-        <location line="-4493"/>
+        <location line="-4516"/>
         <source>Max. connections</source>
         <translation>Макс. соединений</translation>
     </message>
@@ -15056,12 +15261,12 @@ Are you sure you want to continue?</source>
     <message>
         <location line="-921"/>
         <location line="+1011"/>
-        <location line="+1579"/>
+        <location line="+1592"/>
         <source>General</source>
         <translation>Основные</translation>
     </message>
     <message>
-        <location line="-1576"/>
+        <location line="-1589"/>
         <source>Enable proxy</source>
         <translation>Включить прокси</translation>
     </message>
@@ -15126,26 +15331,26 @@ Every Usenet connection then passes through the proxy, so its speed caps the dow
     </message>
     <message>
         <location line="+9"/>
-        <location line="+802"/>
+        <location line="+815"/>
         <source>Authentication</source>
         <translation>Аутентификация</translation>
     </message>
     <message>
-        <location line="-799"/>
+        <location line="-812"/>
         <source>Enable authentication</source>
         <translation>Включить аутентификацию</translation>
     </message>
     <message>
         <location line="+7"/>
-        <location line="+1961"/>
+        <location line="+1974"/>
         <location line="+1076"/>
         <location line="+162"/>
         <source>Name:</source>
         <translation>Имя:</translation>
     </message>
     <message>
-        <location line="-3195"/>
-        <location line="+803"/>
+        <location line="-3208"/>
+        <location line="+816"/>
         <location line="+838"/>
         <location line="+19"/>
         <location line="+325"/>
@@ -15153,7 +15358,7 @@ Every Usenet connection then passes through the proxy, so its speed caps the dow
         <translation>Пароль:</translation>
     </message>
     <message>
-        <location line="-1951"/>
+        <location line="-1964"/>
         <source>Update</source>
         <translation>Обновить</translation>
     </message>
@@ -15338,12 +15543,12 @@ Every Usenet connection then passes through the proxy, so its speed caps the dow
     </message>
     <message>
         <location line="+3"/>
-        <location line="+633"/>
+        <location line="+646"/>
         <source>Edit...</source>
         <translation>Изменить...</translation>
     </message>
     <message>
-        <location line="-622"/>
+        <location line="-635"/>
         <source>Try to transfer full chunks to all uploads</source>
         <translation>Пытаться отдавать полными частями</translation>
     </message>
@@ -15483,7 +15688,7 @@ Every Usenet connection then passes through the proxy, so its speed caps the dow
         <translation>Загрузка завершена (*)</translation>
     </message>
     <message>
-        <location line="+5"/>
+        <location line="+15"/>
         <source>New eMule Qt version detected</source>
         <translation>Обнаружена новая версия eMule Qt</translation>
     </message>
@@ -15493,7 +15698,7 @@ Every Usenet connection then passes through the proxy, so its speed caps the dow
         <translation>Срочно: нет места на диске, потеряно соединение с сервером (*)</translation>
     </message>
     <message>
-        <location line="+12"/>
+        <location line="+15"/>
         <source>(*) Email Notifications</source>
         <translation>(*) E-Mail уведомления</translation>
     </message>
@@ -15523,15 +15728,15 @@ Every Usenet connection then passes through the proxy, so its speed caps the dow
         <translation>Настройки сервера SMTP</translation>
     </message>
     <message>
-        <location line="-1831"/>
+        <location line="-1844"/>
         <location line="+23"/>
         <location line="+7"/>
-        <location line="+1804"/>
+        <location line="+1817"/>
         <source>Connection</source>
         <translation>Соединение</translation>
     </message>
     <message>
-        <location line="-1805"/>
+        <location line="-1818"/>
         <location line="+58"/>
         <source>ed3k</source>
         <translation>ed3k</translation>
@@ -15715,7 +15920,7 @@ Every Usenet connection then passes through the proxy, so its speed caps the dow
         <translation>Фон графика скорости на панели инструментов.</translation>
     </message>
     <message>
-        <location line="+1205"/>
+        <location line="+1218"/>
         <source>Server:</source>
         <translation>Сервер:</translation>
     </message>
@@ -15833,13 +16038,13 @@ Every Usenet connection then passes through the proxy, so its speed caps the dow
         <translation>Включить UTF-8</translation>
     </message>
     <message>
-        <location line="-1946"/>
-        <location line="+1977"/>
+        <location line="-1959"/>
+        <location line="+1990"/>
         <source>Server</source>
         <translation>Сервер</translation>
     </message>
     <message>
-        <location line="-1979"/>
+        <location line="-1992"/>
         <source>Display</source>
         <translation>Отображение</translation>
     </message>
@@ -15894,7 +16099,7 @@ Every Usenet connection then passes through the proxy, so its speed caps the dow
         <translation>Если лимит отдачи не достигается, потому что клиенты принимают слишком мало, открывать дополнительные слоты, до двойного обычного числа.</translation>
     </message>
     <message>
-        <location line="+1225"/>
+        <location line="+1238"/>
         <source>Nick</source>
         <translation>Ник</translation>
     </message>
@@ -16522,24 +16727,24 @@ Every Usenet connection then passes through the proxy, so its speed caps the dow
         <location line="+19"/>
         <location line="+1076"/>
         <location line="+164"/>
-        <location line="+2011"/>
-        <location line="+2457"/>
+        <location line="+2021"/>
+        <location line="+2471"/>
         <source>Add</source>
         <translation>Добавить</translation>
     </message>
     <message>
-        <location line="-8335"/>
-        <location line="+2628"/>
+        <location line="-8372"/>
+        <location line="+2641"/>
         <location line="+1076"/>
         <location line="+164"/>
-        <location line="+1670"/>
+        <location line="+1680"/>
         <location line="+406"/>
-        <location line="+2397"/>
+        <location line="+2411"/>
         <source>Remove</source>
         <translation>Удалить</translation>
     </message>
     <message>
-        <location line="-5692"/>
+        <location line="-5716"/>
         <source>Display name (optional)</source>
         <translation>Отображаемое имя (необязательно)</translation>
     </message>
@@ -16612,12 +16817,12 @@ Every Usenet connection then passes through the proxy, so its speed caps the dow
         <translation> дн.</translation>
     </message>
     <message>
-        <location line="+987"/>
+        <location line="+997"/>
         <source>Bandwidth</source>
         <translation>Пропускная способность</translation>
     </message>
     <message>
-        <location line="-4820"/>
+        <location line="-4843"/>
         <source>Downloads that are receiving data, and the sources sending it, are drawn in bold. A source listed under another file (A4AF) is bold too while it transfers. The connected server and the selected category tab are bold as well.</source>
         <translation>Загрузки, получающие данные, и источники, которые их отправляют, выделяются жирным. Источник под другим файлом (A4AF) тоже выделяется жирным во время передачи. Подключённый сервер и выбранная вкладка категории также выделяются жирным.</translation>
     </message>
@@ -16631,18 +16836,18 @@ Every Usenet connection then passes through the proxy, so its speed caps the dow
     </message>
     <message>
         <location line="+294"/>
-        <location line="+4473"/>
+        <location line="+4496"/>
         <source>Open Router</source>
         <translation>Открыть роутер</translation>
     </message>
     <message>
-        <location line="-4472"/>
-        <location line="+4473"/>
+        <location line="-4495"/>
+        <location line="+4496"/>
         <source>Opens the web page of this computer&apos;s router, where ports are forwarded</source>
         <translation>Открывает веб-страницу роутера этого компьютера, где настраивается проброс портов</translation>
     </message>
     <message>
-        <location line="-4462"/>
+        <location line="-4485"/>
         <source>Randomize ports at startup, range</source>
         <translation>Случайные порты при запуске, диапазон</translation>
     </message>
@@ -16739,7 +16944,17 @@ RAR and 7z need 7-Zip or unrar installed; ZIP does not.</source>
         <translation>ZIP или RAR, извлечённый из архива, тоже распаковывается — до трёх уровней вложенности. Внутренний архив затем удаляется, если архивы удаляются после распаковки.</translation>
     </message>
     <message>
-        <location line="+579"/>
+        <location line="+143"/>
+        <source>Open the file when the pop-up is clicked</source>
+        <translation>Открывать файл по щелчку на уведомлении</translation>
+    </message>
+    <message>
+        <location line="+2"/>
+        <source>Only when the core runs on this computer. Otherwise a click shows the Transfers window.</source>
+        <translation>Только если ядро работает на этом компьютере. Иначе щелчок открывает окно «Передачи».</translation>
+    </message>
+    <message>
+        <location line="+447"/>
         <source>the core did not answer</source>
         <translation>ядро не ответило</translation>
     </message>
@@ -16844,14 +17059,14 @@ RAR and 7z need 7-Zip or unrar installed; ZIP does not.</source>
     </message>
     <message>
         <location line="+1"/>
-        <location line="+2037"/>
+        <location line="+2046"/>
         <location line="+9"/>
-        <location line="+170"/>
+        <location line="+171"/>
         <source>No limit</source>
         <translation>Без ограничений</translation>
     </message>
     <message>
-        <location line="-2213"/>
+        <location line="-2223"/>
         <source>Decimal GB, because that is what an invoice says — the 1024-based GB used elsewhere in eMule would put a 1000 GB plan 7% over.
 
 Set it slightly under your plan. The figure is measured here, so it reads a few percent below your provider&apos;s, and articles already in flight when the limit is reached still finish.</source>
@@ -16907,12 +17122,12 @@ Set it slightly under your plan. The figure is measured here, so it reads a few 
     <message>
         <location line="+3"/>
         <location line="+970"/>
-        <location line="+1653"/>
+        <location line="+1663"/>
         <source> s</source>
         <translation> с</translation>
     </message>
     <message>
-        <location line="-2622"/>
+        <location line="-2632"/>
         <source>Never back off</source>
         <translation>Никогда не откладывать</translation>
     </message>
@@ -16923,19 +17138,19 @@ Set it slightly under your plan. The figure is measured here, so it reads a few 
     </message>
     <message>
         <location line="+8"/>
-        <location line="+2150"/>
+        <location line="+2160"/>
         <source>Share of the download limit:</source>
         <translation>Доля ограничения приёма:</translation>
     </message>
     <message>
-        <location line="-2147"/>
+        <location line="-2157"/>
         <location line="+42"/>
-        <location line="+2097"/>
+        <location line="+2107"/>
         <source> %</source>
         <translation> %</translation>
     </message>
     <message>
-        <location line="-2137"/>
+        <location line="-2147"/>
         <source>How much of the global download limit Usenet may take while eD2K is also downloading. Whichever engine is idle lends its whole share to the other, so this only applies when both are busy.</source>
         <translation>Какую часть общего ограничения приёма может занимать Usenet, пока eD2K тоже загружает. Простаивающий движок отдаёт всю свою долю другому, поэтому это действует, только когда заняты оба.</translation>
     </message>
@@ -17106,12 +17321,12 @@ It cannot be inside your temp, incoming or configuration folders: the daemon wri
     </message>
     <message>
         <location line="-1806"/>
-        <location line="+1860"/>
+        <location line="+1869"/>
         <source>Desktop</source>
         <translation>Рабочий стол</translation>
     </message>
     <message>
-        <location line="-1856"/>
+        <location line="-1865"/>
         <source>Open .nzb files with eMule Qt</source>
         <translation>Открывать файлы .nzb с помощью eMule Qt</translation>
     </message>
@@ -17395,8 +17610,8 @@ Enter what your provider&apos;s control panel says, or 0 to start again.</source
         <translation>Индексаторы отвечают на поиск по ключевым словам и возвращают NZB. Они не связаны с вашими news-серверами: в Usenet провайдер, с которого вы загружаете, и сервис, в котором ищете, — разные компании.</translation>
     </message>
     <message>
-        <location line="-4037"/>
-        <location line="+4044"/>
+        <location line="-4050"/>
+        <location line="+4057"/>
         <location line="+395"/>
         <location line="+541"/>
         <source>Indexers</source>
@@ -17528,8 +17743,8 @@ Every page is an API call against the allowance your account has, so this is a s
         <translation>Лента — это поиск, который выполняется сам и ставит найденное в очередь. Первая проверка ничего не добавляет — она лишь запоминает то, что индексатор уже содержит, иначе новая лента загрузила бы всё, что ещё есть на сервере.</translation>
     </message>
     <message>
-        <location line="-4199"/>
-        <location line="+4207"/>
+        <location line="-4212"/>
+        <location line="+4220"/>
         <location line="+325"/>
         <location line="+277"/>
         <source>Feeds</source>
@@ -17836,7 +18051,25 @@ Adding one later does not fetch its back catalogue: a new indexer gets its own f
         <translation>Magnet-ссылка получает список файлов и останавливается до загрузки файлов; файл .torrent добавляется остановленным. Снимите в списке файлов отметки с ненужных файлов, затем возобновите. В окнах добавления это можно изменить для каждого торрента.</translation>
     </message>
     <message>
-        <location line="+165"/>
+        <location line="+5"/>
+        <source>Download only the selected file of a torrent search result</source>
+        <translation>Скачивать только выбранный файл из результата поиска торрента</translation>
+    </message>
+    <message>
+        <location line="+2"/>
+        <source>Search results list a torrent once as a whole and once per file in it.
+
+With this on, downloading one file&apos;s row fetches only that file and skips the others. Picking another file of the same torrent later switches it on in the listed torrent.
+
+The Details window lets you choose the files either way.</source>
+        <translation>В результатах поиска торрент показан один раз целиком и по одному разу для каждого файла в нём.
+
+Если включено, загрузка строки файла скачивает только этот файл и пропускает остальные. Если позже выбрать другой файл того же торрента, он включится в торренте из списка.
+
+В окне «Подробности» файлы можно выбрать в любом случае.</translation>
+    </message>
+    <message>
+        <location line="+168"/>
         <source>Announce to all trackers and tiers</source>
         <translation>Анонсировать на все трекеры и уровни</translation>
     </message>
@@ -17876,7 +18109,7 @@ Adding one later does not fetch its back catalogue: a new indexer gets its own f
         <translation>Отладочный вывод узла ed3k. Вкладка видна, пока ed3k включён.</translation>
     </message>
     <message>
-        <location line="+2805"/>
+        <location line="+2819"/>
         <source>This interface has no default route (split-tunnel VPN?): servers and peers outside its subnets are unreachable. Route all traffic through it, or choose another interface.</source>
         <translation>У этого интерфейса нет маршрута по умолчанию (VPN с раздельным туннелем?): серверы и пиры вне его подсетей недоступны. Направьте через него весь трафик или выберите другой интерфейс.</translation>
     </message>
@@ -17959,7 +18192,7 @@ Adding one later does not fetch its back catalogue: a new indexer gets its own f
         <translation type="vanished">Используется для TCP и UDP. Должен отличаться от портов eD2K.</translation>
     </message>
     <message>
-        <location line="-3694"/>
+        <location line="-3708"/>
         <source>Listen port (TCP/UDP):</source>
         <translation>Порт (TCP/UDP):</translation>
     </message>
@@ -17999,7 +18232,7 @@ Adding one later does not fetch its back catalogue: a new indexer gets its own f
         <translation type="vanished">Отдача:</translation>
     </message>
     <message>
-        <location line="-151"/>
+        <location line="-152"/>
         <source>Active downloads:</source>
         <translation>Активные загрузки:</translation>
     </message>
@@ -18024,8 +18257,8 @@ Adding one later does not fetch its back catalogue: a new indexer gets its own f
         <translation>Остановить при соотношении:</translation>
     </message>
     <message>
-        <location line="-1903"/>
-        <location line="+1907"/>
+        <location line="-1912"/>
+        <location line="+1916"/>
         <source> min</source>
         <translation> мин</translation>
     </message>
@@ -18035,7 +18268,7 @@ Adding one later does not fetch its back catalogue: a new indexer gets its own f
         <translation>Остановить после раздачи в течение:</translation>
     </message>
     <message>
-        <location line="-54"/>
+        <location line="-63"/>
         <source>Download folder</source>
         <translation>Папка загрузки</translation>
     </message>
@@ -18062,7 +18295,7 @@ Adding one later does not fetch its back catalogue: a new indexer gets its own f
         <translation type="vanished">Закрепить файлы .torrent и ссылки magnet: и ed3k: за этой копией eMule Qt. Настройка действует только для вас и не требует прав администратора; она применяется заново при каждом запуске, поэтому другая программа, перехватившая ассоциацию, её не сохранит.</translation>
     </message>
     <message>
-        <location line="+91"/>
+        <location line="+101"/>
         <source>BitTorrent download folder</source>
         <translation>Папка загрузки BitTorrent</translation>
     </message>
@@ -18102,12 +18335,12 @@ Adding one later does not fetch its back catalogue: a new indexer gets its own f
         <translation>Загрузки всегда проверяются и записываются в журнал. Общие файлы проверяются заново при каждом запуске.</translation>
     </message>
     <message>
-        <location line="+2028"/>
+        <location line="+2035"/>
         <source>Could not update the file associations: %1</source>
         <translation>Не удалось обновить связи файлов: %1</translation>
     </message>
     <message>
-        <location line="+1200"/>
+        <location line="+1207"/>
         <source>UDP is disabled in the config file (udpPort: 0)</source>
         <translation>UDP отключён в файле конфигурации (udpPort: 0)</translation>
     </message>
@@ -18141,8 +18374,8 @@ Look up the &quot;default gateway&quot; in this computer&apos;s network settings
         <translation type="vanished">Открыть страницу роутера</translation>
     </message>
     <message>
-        <location line="-8902"/>
-        <location line="+8832"/>
+        <location line="-8939"/>
+        <location line="+8869"/>
         <location line="+52"/>
         <source>Directories</source>
         <translation>Папки</translation>
@@ -18213,12 +18446,12 @@ Create it?</source>
 %1</translation>
     </message>
     <message>
-        <location line="-3430"/>
+        <location line="-3444"/>
         <source>Disabled</source>
         <translation>Отключено</translation>
     </message>
     <message>
-        <location line="-4288"/>
+        <location line="-4311"/>
         <source>Lets two Low ID clients find each other&apos;s address through a server that supports it or a Kad buddy, then connect over IPv6 or QUIC</source>
         <translation>Позволяет двум клиентам с Low ID узнать адреса друг друга через поддерживающий это сервер или Kad-бадди и затем соединиться по IPv6 или QUIC</translation>
     </message>
@@ -18233,7 +18466,7 @@ Create it?</source>
         <translation>Обращается и к серверу источника, которого нет в вашем списке серверов. Сначала он один раз пингуется и не добавляется в список</translation>
     </message>
     <message>
-        <location line="+1454"/>
+        <location line="+1467"/>
         <source>Address the web server listens on. Any: every interface, reachable from other hosts. 127.0.0.1: this computer only. Pick one from the list or type an IP address.</source>
         <translation>Адрес, на котором слушает web-сервер. Любой: все интерфейсы, доступно с других хостов. 127.0.0.1: только этот компьютер. Выберите из списка или введите IP-адрес.</translation>
     </message>
@@ -18252,7 +18485,7 @@ Torrents from a torznab indexer go to the BitTorrent download folder instead.</s
         <translation>Запускает движок BitTorrent в ядре. Если выключено, движок останавливается: торренты не загружаются и не раздаются, порт BitTorrent закрыт. Торренты остаются в списке и продолжат работу после включения.</translation>
     </message>
     <message>
-        <location line="+28"/>
+        <location line="+37"/>
         <source>Queue</source>
         <translation>Очередь</translation>
     </message>
@@ -18272,7 +18505,7 @@ Torrents from a torznab indexer go to the BitTorrent download folder instead.</s
         <translation>Связать файлы .torrent и ссылки magnet: с этой копией eMule Qt. Настройка действует только для вас и не требует прав администратора; она применяется заново при каждом запуске, так что другая программа, перехватившая связь, её не сохранит.</translation>
     </message>
     <message>
-        <location line="+50"/>
+        <location line="+51"/>
         <source>Used for both TCP and UDP. Must differ from the eD2K ports, the web server port and the core port.</source>
         <translation>Используется для TCP и UDP. Должен отличаться от портов eD2K, порта веб-сервера и порта ядра.</translation>
     </message>
@@ -19028,8 +19261,8 @@ Torrents from a torznab indexer go to the BitTorrent download folder instead.</s
         <translation>Страница настроек «%1» ещё не реализована.</translation>
     </message>
     <message>
-        <location line="-6403"/>
-        <location line="+6600"/>
+        <location line="-6426"/>
+        <location line="+6623"/>
         <source>Proxy</source>
         <translation>Прокси</translation>
     </message>
@@ -19085,8 +19318,8 @@ News server connections switch over immediately.</source>
         <translation>Смена размера шрифта вступит в силу после перезапуска приложения.</translation>
     </message>
     <message>
-        <location line="-6727"/>
-        <location line="+7140"/>
+        <location line="-6750"/>
+        <location line="+7167"/>
         <source>Web Interface</source>
         <translation>Web интерфейс</translation>
     </message>
@@ -19096,7 +19329,7 @@ News server connections switch over immediately.</source>
         <translation>«%1» не является IP-адресом. Адрес прослушивания не изменён.</translation>
     </message>
     <message>
-        <location line="+546"/>
+        <location line="+549"/>
         <source>File types</source>
         <translation>Типы файлов</translation>
     </message>
@@ -19105,7 +19338,7 @@ News server connections switch over immediately.</source>
         <translation type="vanished">Не удалось обновить связь с файлами .nzb: %1</translation>
     </message>
     <message>
-        <location line="+236"/>
+        <location line="+238"/>
         <source>specialdlp loaded, DLP v%1</source>
         <translation>specialdlp загружен, DLP v%1</translation>
     </message>
@@ -19115,7 +19348,7 @@ News server connections switch over immediately.</source>
         <translation>Библиотека specialdlp не найдена, проверки неактивны</translation>
     </message>
     <message>
-        <location line="+533"/>
+        <location line="+538"/>
         <source>Port forwarding: %1</source>
         <translation>Проброс портов: %1</translation>
     </message>
@@ -19515,14 +19748,14 @@ The keyword(s) used in a Kad search expression must have a minimum length of 3 c
     </message>
     <message>
         <location line="+103"/>
-        <location line="+1228"/>
+        <location line="+1238"/>
         <location line="+21"/>
-        <location line="+598"/>
+        <location line="+606"/>
         <source>Download</source>
         <translation>Скачать</translation>
     </message>
     <message>
-        <location line="-1827"/>
+        <location line="-1845"/>
         <source>Close All Searches</source>
         <translation>Закрыть все поиски</translation>
     </message>
@@ -19542,7 +19775,7 @@ The keyword(s) used in a Kad search expression must have a minimum length of 3 c
         <translation>Тип:</translation>
     </message>
     <message>
-        <location line="+836"/>
+        <location line="+846"/>
         <location line="+9"/>
         <source>Any</source>
         <translation>Любой</translation>
@@ -19589,7 +19822,7 @@ The keyword(s) used in a Kad search expression must have a minimum length of 3 c
         <translation>Коллекция</translation>
     </message>
     <message>
-        <location line="-848"/>
+        <location line="-858"/>
         <source>Method:</source>
         <translation>Метод:</translation>
     </message>
@@ -19879,7 +20112,7 @@ The keyword(s) used in a Kad search expression must have a minimum length of 3 c
         <translation>Поиск в Usenet: %1</translation>
     </message>
     <message>
-        <location line="+76"/>
+        <location line="+86"/>
         <source>Could not queue &quot;%1&quot;: %2</source>
         <translation>Не удалось поставить в очередь «%1»: %2</translation>
     </message>
@@ -19974,7 +20207,7 @@ The keyword(s) used in a Kad search expression must have a minimum length of 3 c
         <translation>Детали...</translation>
     </message>
     <message>
-        <location line="-703"/>
+        <location line="-713"/>
         <source>No torrent indexer is configured.</source>
         <translation>Индексатор торрентов не настроен.</translation>
     </message>
@@ -20004,7 +20237,7 @@ The keyword(s) used in a Kad search expression must have a minimum length of 3 c
         <translation>Поиск торрентов: %1</translation>
     </message>
     <message>
-        <location line="+168"/>
+        <location line="+178"/>
         <source>Movies</source>
         <translation>Фильмы</translation>
     </message>
@@ -20094,13 +20327,13 @@ The keyword(s) used in a Kad search expression must have a minimum length of 3 c
     <message>
         <location line="+13"/>
         <location line="+7"/>
-        <location line="+1074"/>
+        <location line="+1082"/>
         <location line="+43"/>
         <source>Preview</source>
         <translation>Предпросмотр</translation>
     </message>
     <message>
-        <location line="-1111"/>
+        <location line="-1119"/>
         <source>Find...</source>
         <translation>Найти...</translation>
     </message>
@@ -20115,7 +20348,7 @@ The keyword(s) used in a Kad search expression must have a minimum length of 3 c
         <translation>Веб-сервисы</translation>
     </message>
     <message>
-        <location line="+360"/>
+        <location line="+368"/>
         <source>You have already downloaded the following file(s). Download them again?
 
 %1</source>
@@ -25381,14 +25614,14 @@ Clicking &apos;Restore Stats&apos; again will reload your current statistics.</s
         <location line="+14"/>
         <location line="+6"/>
         <location line="+12"/>
-        <location line="+13"/>
+        <location line="+14"/>
         <source>Add Torrent</source>
         <translation>Добавить торрент</translation>
     </message>
     <message>
-        <location line="-31"/>
+        <location line="-32"/>
         <location line="+18"/>
-        <location line="+13"/>
+        <location line="+14"/>
         <location line="+15"/>
         <location line="+11"/>
         <location line="+671"/>
@@ -25396,12 +25629,12 @@ Clicking &apos;Restore Stats&apos; again will reload your current statistics.</s
         <translation>Нет соединения с ядром eMule.</translation>
     </message>
     <message>
-        <location line="-721"/>
+        <location line="-722"/>
         <source>Cannot read %1.</source>
         <translation>Не удаётся прочитать %1.</translation>
     </message>
     <message>
-        <location line="+39"/>
+        <location line="+40"/>
         <source>Add Magnet Links</source>
         <translation>Добавить magnet-ссылки</translation>
     </message>
@@ -26431,22 +26664,19 @@ The sources then see this node&apos;s address; queue places are lost.</source>
 <context>
     <name>eMule::UsenetFileCheckList</name>
     <message>
-        <location filename="../src/gui/controls/UsenetFileCheckList.cpp" line="+53"/>
         <source>Select All</source>
-        <translation>Выбрать все</translation>
+        <translation type="vanished">Выбрать все</translation>
     </message>
     <message>
-        <location line="+1"/>
         <source>Select None</source>
-        <translation>Снять выделение</translation>
+        <translation type="vanished">Снять выделение</translation>
     </message>
     <message>
-        <location line="+1"/>
         <source>Invert Selection</source>
-        <translation>Инвертировать выделение</translation>
+        <translation type="vanished">Инвертировать выделение</translation>
     </message>
     <message>
-        <location line="+73"/>
+        <location filename="../src/gui/controls/UsenetFileCheckList.cpp" line="+133"/>
         <source>Could not change which files download.</source>
         <translation>Не удалось изменить набор загружаемых файлов.</translation>
     </message>
@@ -26882,7 +27112,7 @@ A password is set for this release.</source>
 <context>
     <name>eMule::WebLinksDialog</name>
     <message>
-        <location filename="../src/gui/dialogs/WebLinksDialog.cpp" line="+123"/>
+        <location filename="../src/gui/dialogs/WebLinksDialog.cpp" line="+124"/>
         <source>Links: %1</source>
         <translation>Ссылки: %1</translation>
     </message>
@@ -26892,7 +27122,12 @@ A password is set for this release.</source>
         <translation>Согласно странице, эти файлы защищены паролем.</translation>
     </message>
     <message>
-        <location line="+8"/>
+        <location line="+6"/>
+        <source>Unchecked links are not downloaded. Links with the same file number are mirrors: the next one is tried when one fails.</source>
+        <translation>Неотмеченные ссылки не загружаются. Ссылки с одинаковым номером файла — зеркала: если одна не сработает, пробуется следующая.</translation>
+    </message>
+    <message>
+        <location line="+9"/>
         <source>File</source>
         <translation>Файл</translation>
     </message>
@@ -26923,24 +27158,24 @@ A password is set for this release.</source>
     </message>
     <message>
         <location line="+0"/>
-        <location line="+213"/>
+        <location line="+231"/>
         <source>Account</source>
         <translation>Учётная запись</translation>
     </message>
     <message>
-        <location line="-192"/>
+        <location line="-205"/>
         <source>Links to .onion addresses are Tor hidden services. Copy them into Tor Browser: other browsers cannot open them.</source>
         <translation>Ссылки на адреса .onion — это скрытые сервисы Tor. Скопируйте их в Tor Browser: другие браузеры не могут их открыть.</translation>
     </message>
     <message>
         <location line="+15"/>
-        <location line="+104"/>
-        <location line="+13"/>
+        <location line="+110"/>
+        <location line="+19"/>
         <source>Download</source>
         <translation>Скачать</translation>
     </message>
     <message>
-        <location line="-110"/>
+        <location line="-123"/>
         <source>Copy Links</source>
         <translation>Копировать ссылки</translation>
     </message>
@@ -26955,7 +27190,7 @@ A password is set for this release.</source>
         <translation>Сохранить список...</translation>
     </message>
     <message>
-        <location line="+75"/>
+        <location line="+81"/>
         <source>Could not add the links of &quot;%1&quot;: downloads from hosters are off.</source>
         <translation>Не удалось добавить ссылки из «%1»: загрузки с хостеров отключены.</translation>
     </message>
@@ -26969,7 +27204,7 @@ A password is set for this release.</source>
         </translation>
     </message>
     <message>
-        <location line="+11"/>
+        <location line="+12"/>
         <source>Download (%1)</source>
         <translation>Загрузить (%1)</translation>
     </message>
@@ -26979,12 +27214,21 @@ A password is set for this release.</source>
         <translation>Загрузить (все)</translation>
     </message>
     <message>
-        <location line="+20"/>
-        <source>Deselect All</source>
-        <translation>Снять выделение</translation>
+        <location line="+27"/>
+        <source>Check Selected</source>
+        <translation>Отметить выделенные</translation>
     </message>
     <message>
-        <location line="+46"/>
+        <location line="+1"/>
+        <source>Uncheck Selected</source>
+        <translation>Снять отметку с выделенных</translation>
+    </message>
+    <message>
+        <source>Deselect All</source>
+        <translation type="vanished">Снять выделение</translation>
+    </message>
+    <message>
+        <location line="+45"/>
         <source>Checking...</source>
         <translation>Проверка...</translation>
     </message>

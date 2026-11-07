@@ -12,17 +12,21 @@
 #include <QCoreApplication>
 #include <QString>
 
+#include <algorithm>
+
 namespace eMule {
 
 struct NotifierText {
     /// Which Notifications option the pop-up belongs to: "Urgent" when true,
-    /// "Download finished" otherwise.
+    /// "Download finished" or "Download added" (by kind) otherwise.
     bool urgent = true;
     QString title;
     QString text;
 };
 
-[[nodiscard]] inline NotifierText notifierEventText(Ipc::NotifierEvent kind, const QString& arg)
+/// @p total: DownloadAdded only, how many were added (arg lists the first few)
+[[nodiscard]] inline NotifierText notifierEventText(Ipc::NotifierEvent kind, const QString& arg,
+                                                   qint64 total = 0)
 {
     // translate() spelled out each time: lupdate reads the context from the call.
     switch (kind) {
@@ -33,6 +37,17 @@ struct NotifierText {
     case Ipc::NotifierEvent::OutOfDiskSpace:      // IDS_ERR_OUTOFSPACE
         return {true, QCoreApplication::translate("Notifier", "Out of disk space"),
                 QCoreApplication::translate("Notifier", "You have insufficient disk space to download \"%1\"!").arg(arg)};
+    case Ipc::NotifierEvent::DownloadAdded: {     // IDS_NEWDOWNLOAD, one name per line
+        const qsizetype listed = arg.count(u'\n') + 1;
+        const qint64 count = std::max<qint64>(total, listed);
+        QString text = arg;
+        if (count > listed)
+            text += u'\n' + QCoreApplication::translate("Notifier", "... and %n more", nullptr,
+                                                        static_cast<int>(count - listed));
+        return {false, count > 1 ? QCoreApplication::translate("Notifier", "Downloads Added")
+                                 : QCoreApplication::translate("Notifier", "Download Added"),
+                text};
+    }
     case Ipc::NotifierEvent::PortBindFailed:      // IDS_MAIN_SOCKETERROR
         return {true, QCoreApplication::translate("Notifier", "Port not available"),
                 QCoreApplication::translate("Notifier", "Fatal Error: Unable to create socket on port %1").arg(arg)};

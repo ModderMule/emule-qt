@@ -11,6 +11,8 @@
 /// Rows are either top-level (the details dialog) or children of one row per
 /// .nzb (the chooser); a bulk action and a set toggle stay within one parent.
 
+#include "controls/FileCheckButtons.h"
+
 #include <QList>
 #include <QObject>
 #include <QString>
@@ -45,6 +47,10 @@ public:
     /// Unchecked file indices among @p parent's children, or the top-level rows.
     [[nodiscard]] QList<int> uncheckedIndices(QTreeWidgetItem* parent = nullptr) const;
 
+    /// Checked unlocked file indices under @p parent; empty when every unlocked
+    /// row is checked (= all). For GrabIndexerResult's keptFiles.
+    [[nodiscard]] QList<int> keptIndices(QTreeWidgetItem* parent = nullptr) const;
+
     /// Whether an unlocked row under @p parent is still checked — what keeps a
     /// release from being queued with nothing to download.
     [[nodiscard]] bool anyUnlockedChecked(QTreeWidgetItem* parent = nullptr) const;
@@ -59,10 +65,8 @@ signals:
     void skipChanged(const QList<int>& fileIndices, bool skipped);
 
 private:
-    enum class Bulk { All, None, Invert };
-
     void onItemChanged(QTreeWidgetItem* item, int column);
-    void applyBulk(Bulk mode);
+    void applyBulk(FileCheckButtons::Bulk mode);
 
     /// Bound rows under @p parent, or at the top level.
     [[nodiscard]] QList<QTreeWidgetItem*> fileRows(QTreeWidgetItem* parent) const;

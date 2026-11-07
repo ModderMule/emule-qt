@@ -70,7 +70,7 @@ public:
 
 private slots:
     // DownloadQueue signals
-    void onDownloadAdded();
+    void onDownloadAdded(eMule::PartFile* file);
     void onDownloadRemoved();
     void onDownloadCompleted(eMule::PartFile* file);
 
@@ -139,12 +139,20 @@ private:
     void connectClientSharedFilesSignal(eMule::UpDownClient* client);
     void sendEmailNotification(const QString& subject, const QString& body);
     /// Tell every GUI, and mail it when the matching option asks for that.
-    void raiseNotifierEvent(Ipc::NotifierEvent kind, const QString& text);
+    void raiseNotifierEvent(Ipc::NotifierEvent kind, const QString& text,
+                            const QCborValue& extra = {});
+    /// One "Download added" pop-up for the names gathered since the first one
+    void flushAddedNames();
     void watchDiskSpace(PartFile* file);
 
     IpcServer* m_ipcServer;
     /// Bind failures nobody was connected to see; the first client gets them.
     QList<Ipc::IpcMessage> m_heldEvents;
+    /// Names of downloads added inside the current batch window (capped), and
+    /// how many were added in all
+    QStringList m_addedNames;
+    qint64 m_addedCount = 0;
+    QTimer m_addedNamesTimer;
     SmtpClient* m_smtp = nullptr;
 
     /// Caps how often each push type is broadcast. Several core signals fire once

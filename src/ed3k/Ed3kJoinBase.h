@@ -314,7 +314,8 @@ protected:
                      const std::vector<ffi::Bytes>& aliases);
     /// Shares again what was kept of the owners still there (keepsOwner); drops the rest.
     /// The kept records are published again once each member had its first hash.
-    /// Members are hashed again first; one unreadable is tried again after kRehashMs.
+    /// Members are hashed again first, unless the block hashes saved at the last hash still
+    /// fit (size, mtime, root); one unreadable is tried again after kRehashMs.
     void shareKept();
     /// Forgets what is kept of @p owner (removed).
     void dropKept(const QString& owner);

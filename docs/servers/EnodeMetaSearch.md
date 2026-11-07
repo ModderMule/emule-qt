@@ -218,12 +218,22 @@ crawler daemons behind the server are never asked by the client.
 | Usenet | Download: the daemon fetches the NZB and queues it in eMuleQt's Usenet downloader | **Download NZB File...** |
 | Torrent | **Download Torrent**: save the `.torrent`, until BitTorrent downloads exist | **Copy Magnet Links** (the server's magnet) |
 | Magnet-only torrent | **Copy Magnet Link**: the magnet to the clipboard | **Copy Magnet Links** |
-| Web | **Show Links...**: `WebLinksDialog` lists file, name, size, hoster and link, with **Copy Links**, **Open in Browser** and **Save List...** | |
+| Web | **Details...** (also without extended controls; one window per selected web row): `WebLinksDialog` lists file, name, size, hoster and link, with **Copy Links**, **Open in Browser** and **Save List...** | |
 | Container | **Download Container...**: save the `.dlc`/`.ccf`/`.rsdf` | |
 
 - Meta rows get no eD2K link, no Details/Comments, no Search Related and no Web
   Services, because all of these key on the eD2K hash.
 - Usenet, web and container rows have no magnet, so the magnet entry skips them.
+- **Which files download.** A torrent, NZB or indexer row's Details and a web row's
+  links all have a check box per file (or link), with Select All / Select None /
+  Invert Selection above (`FileCheckButtons`). Download takes only the checked ones.
+- **A file row downloads that file only** (default on). Torrent: `btMetaSelectedFileOnly`
+  (YAML `bittorrent.selectedFileOnly`), NZB: `usenetMetaSelectedFileOnly`. `FetchMetaFile` answers
+  `rowFiles`: the torrent file indices of the row and its picked siblings (field 4).
+  The GUI sends them as `AddTorrentFile` field 5 (`wantedFiles`), and the others start
+  skipped. Any whole-torrent row among them means all files. If the torrent is already
+  listed, the files are switched on there. In Details, a file row starts with just its
+  own file checked. Off: the whole torrent, with every file checked in Details.
 - The bold default goes to the row type's own entry when the selection holds one
   type only.
 - A web row's links come from the daemon: it fetches, verifies and parses the

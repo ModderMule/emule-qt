@@ -69,11 +69,19 @@ foreach ($s in $src, (Join-Path $JdDir 'AppWorkUtils\src'), (Join-Path $JdDir 'J
         Copy-Item $_.FullName $dst -Force
     }
 }
+# JD's captcha test images (solveTest)
+$tester = Join-Path $classes 'org\jdownloader\captcha\v2\tester'
+New-Item -ItemType Directory -Force -Path $tester | Out-Null
+Copy-Item (Join-Path $src 'org\jdownloader\captcha\v2\tester\*') $tester -Include *.png, *.jpg -Force
 # plugins loose next to Core.jar, the rest packed
 Move-Item (Join-Path $classes 'jd\plugins\hoster'), (Join-Path $classes 'jd\plugins\decrypter') (Join-Path $res 'jd\plugins')
 & $jarTool --create --file (Join-Path $res 'Core.jar') -C $classes .
 if ($LASTEXITCODE -ne 0) { throw 'build-hoster-resolver: jar failed' }
 Set-Content -Encoding ASCII (Join-Path $res 'revision.txt') $rev
+# api.txt: the daemon<->sidecar protocol; the update manifest's "api", clients skip a zip of another
+$apiMatch = Select-String -Path (Join-Path $root 'tools\hoster-resolver\src\org\emuleqt\resolver\ResolverMain.java') -Pattern 'static final int PROTOCOL = (\d+);'
+if (-not $apiMatch) { throw 'build-hoster-resolver: no PROTOCOL in ResolverMain.java' }
+Set-Content -Encoding ASCII (Join-Path $res 'api.txt') $apiMatch.Matches[0].Groups[1].Value
 Copy-Item (Join-Path $root 'tools\hoster-resolver\LICENSE') (Join-Path $res 'LICENSE') -Force
 # tar.exe (bsdtar, Windows 10+): forward slashes in the zip, which Compress-Archive of PowerShell 5 does not write
 Push-Location $OutDir

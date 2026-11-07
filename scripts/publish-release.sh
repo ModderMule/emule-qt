@@ -26,7 +26,10 @@ set -euo pipefail
 # scripts/build-hoster-resolver.sh from the JDownloader sources (JD_DIR in .env or
 # the environment, default /Volumes/MySSD/Coding/Java), rsynced to /pub/ and its
 # SHA-256 put in the tag. Every JD SVN tree found there is svn-updated first.
-# CI has no JD sources.
+# CI has no JD sources. The release bundles ship none for now (release.yml: resolver: false,
+# BUNDLE_RESOLVER=0 below): the core fetches it via the manifest's "hosterResolver" entry
+# once a hoster link wants it. The last step here, scripts/publish-resolver.sh (with build:
+# svn update + compile), publishes it as resolver-r<rev>.zip right after the tag push.
 #
 # The ed3k core (libs/packmule, the private ModderMule/packmule) is pinned for CI
 # in scripts/packmule.ref: its HEAD must be pushed, and is written there and
@@ -52,7 +55,7 @@ set -euo pipefail
 # SHA256SUMS.txt attached -- and then publishes the update manifest.
 # Nothing needs to be started by hand.
 #
-# Usage: scripts/publish-release.sh [--publish-only] [--no-build]
+# Usage: scripts/publish-release.sh [--publish-only] [--no-build] [--skip-resolver]
 #
 #   --publish-only   Skip the whole git side (no bump, no commit, no tag, no push)
 #                    and do what CI's manifest job does, for the version already in
@@ -61,17 +64,21 @@ set -euo pipefail
 #                    GeoLite2/resolver files on /pub/ (checked against the tag) and
 #                    upload it. The fallback when the CI secrets are missing or the
 #                    job failed.
-#   --no-build       Skip the JD svn update and the resolver compile; hash and upload
-#                    the resolver.zip left in build/hoster-resolver by the last build.
+#   --no-build       Skip the JD svn update and the resolver compile; publish the
+#                    resolver.zip left in build/hoster-resolver by the last build.
+#   --skip-resolver  Leave the resolver alone: no build, no upload, no publish-resolver.sh
+#                    (the manifest keeps its entry).
 
 # --- arguments --------------------------------------------------------------
 PUBLISH_ONLY=0
 NO_BUILD=0
+SKIP_RESOLVER=0
 for arg in "$@"; do
   case "$arg" in
     --publish-only) PUBLISH_ONLY=1 ;;
-    --no-build)     NO_BUILD=1 ;;
-    *) echo "usage: $0 [--publish-only] [--no-build]" >&2; exit 1 ;;
+    --no-build)      NO_BUILD=1 ;;
+    --skip-resolver) SKIP_RESOLVER=1 ;;
+    *) echo "usage: $0 [--publish-only] [--no-build] [--skip-resolver]" >&2; exit 1 ;;
   esac
 done
 
@@ -206,15 +213,21 @@ for p in JDownloader AppWorkUtils JDBrowser MyJDownloaderClient; do
   [[ -d "$JD_SRC/$p/.svn" ]] && JD_REPOS+=("$JD_SRC/$p")
 done
 RESOLVER_ZIP="$ROOT/build/hoster-resolver/resolver.zip"
-if [[ "$PUBLISH_ONLY" -eq 0 && "$NO_BUILD" -eq 1 && ! -f "$RESOLVER_ZIP" ]]; then
+# 1: build the resolver before the tag, upload it as /pub/resolver.zip and put its SHA in the
+# tag, for bundles (set together with release.yml's commented "resolver:" lines). 0: bundles
+# ship none; publish-resolver.sh builds and publishes it as the last step.
+BUNDLE_RESOLVER=0
+DO_RESOLVER=0
+[[ "$PUBLISH_ONLY" -eq 0 && "$SKIP_RESOLVER" -eq 0 ]] && DO_RESOLVER=1
+if [[ "$DO_RESOLVER" -eq 1 && "$NO_BUILD" -eq 1 && ! -f "$RESOLVER_ZIP" ]]; then
   echo "error: --no-build needs an existing ${RESOLVER_ZIP} (run scripts/build-hoster-resolver.sh)" >&2
   exit 1
 fi
-if [[ "$PUBLISH_ONLY" -eq 0 && "$NO_BUILD" -eq 0 && ( ${#JD_REPOS[@]} -eq 0 || ! -d "$JD_SRC/JDownloader/src" ) ]]; then
+if [[ "$DO_RESOLVER" -eq 1 && "$NO_BUILD" -eq 0 && ( ${#JD_REPOS[@]} -eq 0 || ! -d "$JD_SRC/JDownloader/src" ) ]]; then
   echo "error: JDownloader sources not found at ${JD_SRC} (set JD_DIR in .env)" >&2
   exit 1
 fi
-if [[ "$PUBLISH_ONLY" -eq 0 && "$NO_BUILD" -eq 0 ]] && ! command -v svn >/dev/null 2>&1; then
+if [[ "$DO_RESOLVER" -eq 1 && "$NO_BUILD" -eq 0 ]] && ! command -v svn >/dev/null 2>&1; then
   echo "error: svn not installed (needed to update the JD sources)" >&2
   echo "  brew install subversion" >&2
   exit 1
@@ -333,7 +346,11 @@ else
     echo "  commit   : (none -- tagging existing HEAD at version ${CURRENT})"
   fi
   echo "  geoip    : scripts/fetch-geoip.sh -> rsync to ${PUBLISH_REMOTE_PATH}"
-  if [[ "$NO_BUILD" -eq 1 ]]; then
+  if [[ "$SKIP_RESOLVER" -eq 1 ]]; then
+    echo "  resolver : (skipped -- --skip-resolver; the manifest keeps its entry)"
+  elif [[ "$BUNDLE_RESOLVER" -eq 0 ]]; then
+    echo "  resolver : (after the push, see 'hoster')"
+  elif [[ "$NO_BUILD" -eq 1 ]]; then
     echo "  resolver : existing ${RESOLVER_ZIP#"$ROOT"/} ($(date -r "$RESOLVER_ZIP" '+%Y-%m-%d %H:%M'), --no-build) -> rsync to ${PUBLISH_REMOTE_PATH}"
   else
     echo "  jd svn   : svn update ${JD_REPOS[*]##*/}"
@@ -349,6 +366,13 @@ if [[ "$PUBLISH_ONLY" -eq 1 ]]; then
   echo "  publish  : rsync -> ${PUBLISH_SSH_USER}@${PUBLISH_SSH_HOST}:${PUBLISH_REMOTE_PATH}"
 else
   echo "  manifest : (by CI after the build -- release.yml job 'manifest')"
+  if [[ "$DO_RESOLVER" -eq 1 ]]; then
+    if [[ "$NO_BUILD" -eq 1 || "$BUNDLE_RESOLVER" -eq 1 ]]; then
+      echo "  hoster   : scripts/publish-resolver.sh --no-build (existing zip -> manifest hosterResolver)"
+    else
+      echo "  hoster   : scripts/publish-resolver.sh (jd svn update ${JD_REPOS[*]##*/}, build, upload, manifest hosterResolver)"
+    fi
+  fi
 fi
 echo
 read -r -p "Proceed? [y/N]: " CONFIRM
@@ -392,7 +416,7 @@ fi
 # --- hoster resolver ----------------------------------------------------------
 # Built here because CI has no JD sources; same upload-then-tag order as GeoLite2.
 RESOLVER_SHA=""
-if [[ "$PUBLISH_ONLY" -eq 0 && "$NO_BUILD" -eq 0 ]]; then
+if [[ "$DO_RESOLVER" -eq 1 && "$BUNDLE_RESOLVER" -eq 1 && "$NO_BUILD" -eq 0 ]]; then
   for repo in "${JD_REPOS[@]}"; do
     echo "svn update ${repo} ..."
     svn update --non-interactive --accept postpone "$repo" || abort_before_tag "svn update failed for ${repo}"
@@ -406,7 +430,7 @@ if [[ "$PUBLISH_ONLY" -eq 0 && "$NO_BUILD" -eq 0 ]]; then
   scripts/build-hoster-resolver.sh "$JD_SRC" "$ROOT/build/hoster-resolver" \
     || abort_before_tag "hoster resolver build failed"
 fi
-if [[ "$PUBLISH_ONLY" -eq 0 ]]; then
+if [[ "$DO_RESOLVER" -eq 1 && "$BUNDLE_RESOLVER" -eq 1 ]]; then
   RESOLVER_SHA="$(shasum -a 256 "$RESOLVER_ZIP" | awk '{print $1}')"
   [[ "$RESOLVER_SHA" =~ ^[0-9a-f]{64}$ ]] || abort_before_tag "could not hash ${RESOLVER_ZIP}"
 
@@ -427,9 +451,9 @@ if [[ "$PUBLISH_ONLY" -eq 0 ]]; then
   fi
   # release.yml's geoip job reads these lines to verify the hosted files
   # the tag push only re-dispatches release.yml onto main, to keep build caches warm
-  git tag -a "${TAG}" -m "Release ${TAG}" \
-    -m "GeoLite2-Country-SHA256: ${GEOIP_SHA}
-Hoster-Resolver-SHA256: ${RESOLVER_SHA}"
+  SHA_LINES="GeoLite2-Country-SHA256: ${GEOIP_SHA}"
+  [[ -n "$RESOLVER_SHA" ]] && SHA_LINES+=$'\n'"Hoster-Resolver-SHA256: ${RESOLVER_SHA}"
+  git tag -a "${TAG}" -m "Release ${TAG}" -m "$SHA_LINES"
   git push "${REMOTE}" "${BRANCH}"
   git push "${REMOTE}" "${TAG}"
 
@@ -448,6 +472,16 @@ if [[ "$PUBLISH_ONLY" -eq 0 ]]; then
   echo "It publishes the release (with assets) at ${RELEASE_URL} and then the"
   echo "update manifest. Without the PUBLISH_SSH_* repo secrets that last job only"
   echo "warns -- run: scripts/publish-release.sh --publish-only"
+
+  # last step: bundles ship no resolver.zip, so build it and name it in the manifest now
+  # (built already when bundled); the release is out either way, so a failure only warns
+  if [[ "$DO_RESOLVER" -eq 1 ]]; then
+    RES_ARGS=()
+    [[ "$NO_BUILD" -eq 1 || "$BUNDLE_RESOLVER" -eq 1 ]] && RES_ARGS+=(--no-build)
+    echo
+    scripts/publish-resolver.sh ${RES_ARGS[@]+"${RES_ARGS[@]}"} \
+      || echo "warning: resolver not published -- run: scripts/publish-resolver.sh ${RES_ARGS[*]-}" >&2
+  fi
   exit 0
 fi
 

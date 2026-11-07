@@ -27,6 +27,7 @@
 #include <QFileInfo>
 #include <QEventLoop>
 #include <QPixmap>
+#include <QTabWidget>
 #include <QTimer>
 
 namespace eMule {
@@ -197,7 +198,8 @@ void CommandLineExec::setupScreenshotTimer(QApplication& app, MainWindow& mainWi
     if (m_screenshotMode) {
         const QString path = m_screenshotPath;
         const int optPage = m_optionsPage;
-        QTimer::singleShot(m_screenshotDelay, &app, [&mainWindow, path, &app, optPage]() {
+        const int optTab = m_subtab;
+        QTimer::singleShot(m_screenshotDelay, &app, [&mainWindow, path, &app, optPage, optTab]() {
             QPixmap pixmap;
             if (optPage >= 0) {
                 // The live client, not nullptr: the dialog's daemon-owned lists
@@ -207,6 +209,11 @@ void CommandLineExec::setupScreenshotTimer(QApplication& app, MainWindow& mainWi
                                   &mainWindow);
                 dlg.selectPage(optPage);
                 dlg.show();
+                // --subtab: a tab of a tabbed page (Usenet, Hoster); only its tabs are visible
+                if (optTab >= 0)
+                    for (QTabWidget* tabs : dlg.findChildren<QTabWidget*>())
+                        if (tabs->isVisible() && optTab < tabs->count())
+                            tabs->setCurrentIndex(optTab);
 
                 // Let the daemon answer before grabbing. The dialog's
                 // daemon-owned lists (news servers, indexers) load over IPC and

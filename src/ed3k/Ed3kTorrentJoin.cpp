@@ -151,6 +151,7 @@ void Ed3kTorrentJoin::stop()
         return;
     for (const auto& [id, j] : m_joins)
         saveJoin(id);
+    flushBlobWrites();   // on disk once stopped
     // the set searches end in closeAll()
     for (auto& [id, j] : m_joins) {
         m_bt.detachJoin(id);
@@ -589,8 +590,10 @@ void Ed3kTorrentJoin::dropJoin(const QString& id, bool keepBlob)
         m_joins.erase(it);
     }
     dropDirty(id);
-    if (!keepBlob)
+    if (!keepBlob) {
+        forgetBlobWrites(joinPath(id));
         QFile::remove(joinPath(id));
+    }
 }
 
 void Ed3kTorrentJoin::onPieceHashed(const QString& id, int piece, const QByteArray& data, std::function<void(bool)> done)
@@ -1002,9 +1005,8 @@ void Ed3kTorrentJoin::saveJoin(const QString& id)
         logWarning(QStringLiteral("join of %1 not saved (error %2)").arg(id, errorName(blob.error())));
         return;
     }
-    QDir().mkpath(torrentDir());
-    if (!writeBlob(joinPath(id), *blob))
-        logWarning(QStringLiteral("cannot write %1").arg(joinPath(id)));
+    // was: writeBlob on this thread; its sync stalled the core for seconds (report 23)
+    writeBlobLater(joinPath(id), *blob);
 }
 
 bool Ed3kTorrentJoin::piecesHad(const Join& j, std::uint64_t begin, std::uint64_t end) const

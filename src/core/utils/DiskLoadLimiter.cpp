@@ -7,9 +7,13 @@
 
 #include <QCoreApplication>
 #include <QElapsedTimer>
+#include <QFile>
+#include <QStorageInfo>
 #include <QThread>
 
 #include <algorithm>
+#include <map>
+#include <mutex>
 
 #if defined(Q_OS_LINUX)
 #include <sys/resource.h>
@@ -17,6 +21,9 @@
 #include <unistd.h>
 #elif defined(Q_OS_MACOS)
 #include <sys/resource.h>
+#endif
+#ifndef Q_OS_WIN
+#include <sys/stat.h>
 #endif
 
 namespace eMule {
@@ -34,6 +41,23 @@ qint64 monotonicNs()
 }
 
 } // namespace
+
+struct DiskLoadLimiter::Ledger {
+    std::mutex mutex;
+    qint64 freeAtNs = 0;   ///< the volume's share is used up to here
+
+    /// @p busyNs of reading just ended at @p nowNs: the idle time to wait for.
+    qint64 reserve(qint64 nowNs, qint64 busyNs, int percent)
+    {
+        const qint64 p = std::max(percent, 1);
+        const qint64 span = busyNs * 100 / p;
+        std::lock_guard lock(mutex);
+        const qint64 start = std::max(freeAtNs, nowNs - busyNs);
+        // never further ahead than one pause: a stop request is not kept waiting
+        freeAtNs = std::min(start + span, nowNs + kMaxPauseNs);
+        return std::max<qint64>(0, freeAtNs - nowNs);
+    }
+};
 
 DiskLoadLimiter::DiskLoadLimiter()
     : DiskLoadLimiter(Hooks{})
@@ -83,6 +107,20 @@ void DiskLoadLimiter::lowerThisThread()
 #endif
 }
 
+void DiskLoadLimiter::setFile(const QString& path)
+{
+    if (m_active)
+        setVolume(volumeKey(path));
+}
+
+void DiskLoadLimiter::setVolume(const QString& key)
+{
+    if (key == m_volume && (m_ledger || key.isEmpty()))
+        return;
+    m_volume = key;
+    m_ledger = key.isEmpty() ? nullptr : ledgerFor(key);
+}
+
 void DiskLoadLimiter::beginRead()
 {
     if (m_active)
@@ -97,8 +135,13 @@ void DiskLoadLimiter::endRead()
     if (m_busyNs < kMinBusyNs)
         return;
 
-    const qint64 pause = pauseNs(m_busyNs, m_hooks.percent());
+    const int percent = m_hooks.percent();
+    const qint64 busy = m_busyNs;
     m_busyNs = 0;
+    if (percent >= 100)
+        return;
+    // shared: what other threads read from the same volume is waited for too
+    const qint64 pause = m_ledger ? m_ledger->reserve(m_hooks.nowNs(), busy, percent) : pauseNs(busy, percent);
     if (pause >= 1'000'000)
         m_hooks.sleepMs(pause / 1'000'000);
 }
@@ -109,6 +152,33 @@ qint64 DiskLoadLimiter::pauseNs(qint64 busyNs, int percent)
         return 0;
     const qint64 p = std::max(percent, 1);
     return std::min(busyNs * (100 - p) / p, kMaxPauseNs);
+}
+
+// ---------------------------------------------------------------------------
+// private
+// ---------------------------------------------------------------------------
+
+std::shared_ptr<DiskLoadLimiter::Ledger> DiskLoadLimiter::ledgerFor(const QString& key)
+{
+    static std::mutex mutex;
+    static std::map<QString, std::shared_ptr<Ledger>> ledgers;   // a few volumes: kept
+    std::lock_guard lock(mutex);
+    auto& ledger = ledgers[key];
+    if (!ledger)
+        ledger = std::make_shared<Ledger>();
+    return ledger;
+}
+
+QString DiskLoadLimiter::volumeKey(const QString& path)
+{
+#ifndef Q_OS_WIN
+    // the device: cheap, and right for bind mounts and nested mount points
+    struct stat st {};
+    if (::stat(QFile::encodeName(path).constData(), &st) == 0)
+        return QStringLiteral("dev:%1").arg(quint64(st.st_dev));
+#endif
+    const QStorageInfo info(path);
+    return info.isValid() ? info.rootPath().toLower() : QString();
 }
 
 } // namespace eMule

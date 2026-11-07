@@ -115,6 +115,7 @@ void UiState::load(const QString& configDir)
         m_associateNzbFiles = root["associateNzbFiles"].as<bool>(m_associateNzbFiles);
         m_associateTorrentFiles = root["associateTorrentFiles"].as<bool>(m_associateTorrentFiles);
         m_associateDlcFiles = root["associateDlcFiles"].as<bool>(m_associateDlcFiles);
+        m_clickNLoad = root["clickNLoad"].as<bool>(m_clickNLoad);
         if (const auto ed2k = root["associateEd2kLinks"]; ed2k && ed2k.IsScalar())
             m_associateEd2kLinks = ed2k.as<bool>();
         if (const auto applied = root["appliedFileTypes"]; applied && applied.IsScalar())
@@ -260,6 +261,7 @@ void UiState::save(const QString& configDir)
     out << YAML::Key << "associateNzbFiles" << YAML::Value << m_associateNzbFiles;
     out << YAML::Key << "associateTorrentFiles" << YAML::Value << m_associateTorrentFiles;
     out << YAML::Key << "associateDlcFiles" << YAML::Value << m_associateDlcFiles;
+    out << YAML::Key << "clickNLoad" << YAML::Value << m_clickNLoad;
     if (m_associateEd2kLinks)
         out << YAML::Key << "associateEd2kLinks" << YAML::Value << *m_associateEd2kLinks;
     if (m_appliedFileTypes)

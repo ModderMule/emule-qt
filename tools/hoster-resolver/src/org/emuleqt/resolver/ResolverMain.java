@@ -51,6 +51,8 @@ public final class ResolverMain {
         Jd.notJared();
         Jd.init();
         PuzzleSolver.install();
+        // solver accounts JD saved last run: the daemon sends the current ones
+        SolverAccountsTask.clear();
         HeadlessUserIO.install();
         Out.log("ready, " + Jd.hostPluginCount() + " host and " + Jd.crawlerPluginCount() + " crawler plugins");
         final BufferedReader in = Out.input();
@@ -86,6 +88,7 @@ public final class ResolverMain {
         return o == null ? null : o.toString();
     }
 
+    @SuppressWarnings("unchecked")
     private static void dispatch(final Map<String, Object> req) {
         final long id = num(req.get("id"));
         final String op = str(req.get("op"));
@@ -150,6 +153,21 @@ public final class ResolverMain {
             break;
         case "accountCheck":
             start(new AccountTask(id, str(req.get("host")), Account.of(req)));
+            break;
+        case "solverAccounts": {
+            final List<Map<String, Object>> accs = new ArrayList<Map<String, Object>>();
+            if (req.get("accounts") instanceof List) {
+                for (final Object o : (List<?>) req.get("accounts")) {
+                    if (o instanceof Map) {
+                        accs.add((Map<String, Object>) o);
+                    }
+                }
+            }
+            start(new SolverAccountsTask(id, accs));
+            break;
+        }
+        case "solveTest":
+            start(new SolveTestTask(id, str(req.get("solver")), str(req.get("type")), str(req.get("image"))));
             break;
         case "answer":
             PuzzleSolver.answer(num(req.get("puzzle")), str(req.get("text")));

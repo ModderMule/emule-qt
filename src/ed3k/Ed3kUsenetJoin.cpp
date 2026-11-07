@@ -155,6 +155,7 @@ void Ed3kUsenetJoin::stop()
         return;
     for (const auto& [id, post] : m_posts)
         savePost(id);
+    flushBlobWrites();   // on disk once stopped
 
     // files held unsealed for ed3k or a hash: sealed now
     QList<std::pair<QString, int>> held;
@@ -627,8 +628,10 @@ void Ed3kUsenetJoin::dropPost(const QString& itemId, bool keepBlob)
         m_posts.erase(it);
     }
     dropDirty(itemId);
-    if (!keepBlob)
+    if (!keepBlob) {
+        forgetBlobWrites(joinPath(itemId));
         QFile::remove(joinPath(itemId));
+    }
 }
 
 void Ed3kUsenetJoin::serveReads(const QString& itemId, std::vector<ffi::TorrentRead> reads)
@@ -1282,9 +1285,8 @@ void Ed3kUsenetJoin::savePost(const QString& itemId)
         logEd3kWarning(QStringLiteral("ed3k usenet: join of %1 not saved (error %2)").arg(itemId, errorName(blob.error())));
         return;
     }
-    QDir().mkpath(usenetDir());
-    if (!writeBlob(joinPath(itemId), *blob))
-        logEd3kWarning(QStringLiteral("ed3k usenet: cannot write %1").arg(joinPath(itemId)));
+    // off this thread (report 23)
+    writeBlobLater(joinPath(itemId), *blob);
 }
 
 void Ed3kUsenetJoin::releaseReadHolds(const QString& itemId)

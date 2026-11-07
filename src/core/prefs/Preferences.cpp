@@ -52,7 +52,7 @@ namespace {
 ///       `enabled: false` was only the old default
 ///   4 — incoming shared with its subfolders (torrents, Usenet, hoster packages; #124)
 ///   5 — MFC default nick (emule-project.net URL) replaced by ours
-constexpr uint32 kCurrentPrefsVersion = 5;
+constexpr uint32 kCurrentPrefsVersion = 6;
 
 /// See Preferences::usenetSubjectPatternsRevision().
 ///
@@ -648,6 +648,7 @@ struct Preferences::Data {
     bool notifyOnChatMsg = false;
     bool notifyOnDownloadAdded = false;
     bool notifyOnDownloadFinished = false;
+    bool notifyOpenFinishedOnClick = false;
     bool notifyOnNewVersion = false;
     bool notifyOnUrgent = false;
     bool notifyEmailEnabled = false;
@@ -695,7 +696,7 @@ struct Preferences::Data {
     int usenetHealthCheck = 1;         // 0 off, 1 sample, 2 full
     int usenetHealthMinPercent = 95;
     bool usenetAutoAddPaused = false;
-    bool usenetMetaSelectedFileOnly = false;
+    bool usenetMetaSelectedFileOnly = true;
     bool usenetPaused = false;
     bool usenetUseProxy = true;
     bool usenetSfvCheck = true;
@@ -722,6 +723,7 @@ struct Preferences::Data {
     uint16 btListenPort = Preferences::kDefaultBtListenPort;
     QString btDownloadDir;             // empty = incomingDir
     bool btStopAfterMetadata = false;  // new torrents stop once their file list is known
+    bool btMetaSelectedFileOnly = true; // search file row of a torrent = that file only
     uint32 btMaxDownloadKb = 0;        // 0 = unlimited
     uint32 btMaxUploadKb = 0;
     bool btDht = true;
@@ -2393,6 +2395,8 @@ void Preferences::setBtMaxUploadKb(uint32 val) { set(&Data::btMaxUploadKb, val);
 
 bool Preferences::btStopAfterMetadata() const { return get(&Data::btStopAfterMetadata); }
 void Preferences::setBtStopAfterMetadata(bool val) { set(&Data::btStopAfterMetadata, val); }
+bool Preferences::btMetaSelectedFileOnly() const { return get(&Data::btMetaSelectedFileOnly); }
+void Preferences::setBtMetaSelectedFileOnly(bool val) { set(&Data::btMetaSelectedFileOnly, val); }
 bool Preferences::btDht() const { return get(&Data::btDht); }
 void Preferences::setBtDht(bool val) { set(&Data::btDht, val); }
 
@@ -2635,6 +2639,41 @@ Ed3kHosterPrefs Preferences::ed3kHoster() const { return get(&Data::ed3kHoster);
 bool Preferences::hosterDownloadsOn() const { return ed3kEnabled() && ed3kHoster().enabled; }
 void Preferences::setEd3kHoster(const Ed3kHosterPrefs& val) { set(&Data::ed3kHoster, val); }
 
+namespace {
+
+/// {host, user, password?} rows; a row without password keeps the one in @p old
+QList<Ed3kHosterAccount> hosterAccountsFromCbor(const QCborArray& rows, const QList<Ed3kHosterAccount>& old,
+                                                bool needUser)
+{
+    QList<Ed3kHosterAccount> list;
+    for (const QCborValue& v : rows) {
+        const QCborMap m = v.toMap();
+        Ed3kHosterAccount a{m.value(QStringLiteral("host")).toString().trimmed().toLower(),
+                            m.value(QStringLiteral("user")).toString().trimmed(), {}};
+        if (a.host.isEmpty() || (needUser && a.user.isEmpty()))
+            continue;
+        if (m.contains(QStringLiteral("password")))
+            a.password = m.value(QStringLiteral("password")).toString();
+        else if (auto o = std::ranges::find_if(old, [&a](const Ed3kHosterAccount& x) {
+                     return x.host == a.host && x.user == a.user;
+                 }); o != old.end())
+            a.password = o->password;
+        list.append(a);
+    }
+    return list;
+}
+
+/// host and user only: passwords stay in the daemon (hoster.md §3)
+QCborArray hosterAccountsToCbor(const QList<Ed3kHosterAccount>& list)
+{
+    QCborArray out;
+    for (const Ed3kHosterAccount& a : list)
+        out.append(QCborMap{{QStringLiteral("host"), a.host}, {QStringLiteral("user"), a.user}});
+    return out;
+}
+
+} // namespace
+
 bool Preferences::applyEd3kHosterKey(Ed3kHosterPrefs& h, const QString& key, const QCborValue& val)
 {
     if (key == QLatin1StringView("ed3kHosterEnabled"))
@@ -2657,25 +2696,16 @@ bool Preferences::applyEd3kHosterKey(Ed3kHosterPrefs& h, const QString& key, con
         h.extract = val.toBool(h.extract);
     else if (key == QLatin1StringView("ed3kHosterDeleteArchives"))
         h.deleteArchives = val.toBool(h.deleteArchives);
+    else if (key == QLatin1StringView("ed3kHosterSolversEnabled"))
+        h.solversEnabled = val.toBool(h.solversEnabled);
+    else if (key == QLatin1StringView("ed3kHosterAutoUpdate"))
+        h.autoUpdate = val.toBool(h.autoUpdate);
     else if (key == QLatin1StringView("ed3kHosterAccounts")) {
-        if (!val.isArray())
-            return true;
-        QList<Ed3kHosterAccount> list;
-        for (const QCborValue& v : val.toArray()) {
-            const QCborMap m = v.toMap();
-            Ed3kHosterAccount a{m.value(QStringLiteral("host")).toString().trimmed().toLower(),
-                                m.value(QStringLiteral("user")).toString(), {}};
-            if (a.host.isEmpty() || a.user.isEmpty())
-                continue;
-            if (m.contains(QStringLiteral("password")))
-                a.password = m.value(QStringLiteral("password")).toString();
-            else if (auto old = std::ranges::find_if(h.accounts, [&a](const Ed3kHosterAccount& o) {
-                         return o.host == a.host && o.user == a.user;
-                     }); old != h.accounts.end())
-                a.password = old->password;
-            list.append(a);
-        }
-        h.accounts = list;
+        if (val.isArray())
+            h.accounts = hosterAccountsFromCbor(val.toArray(), h.accounts, true);
+    } else if (key == QLatin1StringView("ed3kHosterSolvers")) {
+        if (val.isArray())
+            h.solvers = hosterAccountsFromCbor(val.toArray(), h.solvers, false);
     } else
         return false;
     return true;
@@ -3668,6 +3698,10 @@ bool Preferences::notifyOnDownloadFinished() const { return get(&Data::notifyOnD
 
 void Preferences::setNotifyOnDownloadFinished(bool val) { set(&Data::notifyOnDownloadFinished, val); }
 
+bool Preferences::notifyOpenFinishedOnClick() const { return get(&Data::notifyOpenFinishedOnClick); }
+
+void Preferences::setNotifyOpenFinishedOnClick(bool val) { set(&Data::notifyOpenFinishedOnClick, val); }
+
 bool Preferences::notifyOnNewVersion() const { return get(&Data::notifyOnNewVersion); }
 
 void Preferences::setNotifyOnNewVersion(bool val) { set(&Data::notifyOnNewVersion, val); }
@@ -3795,6 +3829,7 @@ QCborMap Preferences::toIpcMap() const
     prefs.insert(QStringLiteral("notifyOnChatMsg"), notifyOnChatMsg());
     prefs.insert(QStringLiteral("notifyOnDownloadAdded"), notifyOnDownloadAdded());
     prefs.insert(QStringLiteral("notifyOnDownloadFinished"), notifyOnDownloadFinished());
+    prefs.insert(QStringLiteral("notifyOpenFinishedOnClick"), notifyOpenFinishedOnClick());
     prefs.insert(QStringLiteral("notifyOnNewVersion"), notifyOnNewVersion());
     prefs.insert(QStringLiteral("notifyOnUrgent"), notifyOnUrgent());
     prefs.insert(QStringLiteral("notifyEmailEnabled"), notifyEmailEnabled());
@@ -3892,6 +3927,7 @@ QCborMap Preferences::toIpcMap() const
     prefs.insert(QStringLiteral("btMaxDownloadKb"), static_cast<qint64>(configuredBtMaxDownloadKb()));
     prefs.insert(QStringLiteral("btMaxUploadKb"), static_cast<qint64>(configuredBtMaxUploadKb()));
     prefs.insert(QStringLiteral("btStopAfterMetadata"), btStopAfterMetadata());
+    prefs.insert(QStringLiteral("btMetaSelectedFileOnly"), btMetaSelectedFileOnly());
     prefs.insert(QStringLiteral("btDht"), btDht());
     prefs.insert(QStringLiteral("btLsd"), btLsd());
     prefs.insert(QStringLiteral("btPex"), btPex());
@@ -3977,11 +4013,10 @@ QCborMap Preferences::toIpcMap() const
         prefs.insert(QStringLiteral("ed3kHosterCheckSearchLinks"), h.checkSearchLinks);
         prefs.insert(QStringLiteral("ed3kHosterExtract"), h.extract);
         prefs.insert(QStringLiteral("ed3kHosterDeleteArchives"), h.deleteArchives);
-        // passwords stay in the daemon (hoster.md §3)
-        QCborArray accounts;
-        for (const Ed3kHosterAccount& a : h.accounts)
-            accounts.append(QCborMap{{QStringLiteral("host"), a.host}, {QStringLiteral("user"), a.user}});
-        prefs.insert(QStringLiteral("ed3kHosterAccounts"), accounts);
+        prefs.insert(QStringLiteral("ed3kHosterAutoUpdate"), h.autoUpdate);
+        prefs.insert(QStringLiteral("ed3kHosterAccounts"), hosterAccountsToCbor(h.accounts));
+        prefs.insert(QStringLiteral("ed3kHosterSolversEnabled"), h.solversEnabled);
+        prefs.insert(QStringLiteral("ed3kHosterSolvers"), hosterAccountsToCbor(h.solvers));
     }
 
     // Statistics
@@ -4182,6 +4217,7 @@ void Preferences::updateFromCbor(const QCborMap& p)
     m_data->notifyOnChatMsg          = p.value(QStringLiteral("notifyOnChatMsg")).toBool();
     m_data->notifyOnDownloadAdded    = p.value(QStringLiteral("notifyOnDownloadAdded")).toBool();
     m_data->notifyOnDownloadFinished = p.value(QStringLiteral("notifyOnDownloadFinished")).toBool();
+    m_data->notifyOpenFinishedOnClick = p.value(QStringLiteral("notifyOpenFinishedOnClick")).toBool();
     m_data->notifyOnNewVersion       = p.value(QStringLiteral("notifyOnNewVersion")).toBool();
     m_data->notifyOnUrgent           = p.value(QStringLiteral("notifyOnUrgent")).toBool();
     m_data->notifyEmailEnabled       = p.value(QStringLiteral("notifyEmailEnabled")).toBool();
@@ -4233,7 +4269,7 @@ void Preferences::updateFromCbor(const QCborMap& p)
     m_data->usenetRetryIntervalSeconds =
         int(p.value(QStringLiteral("usenetRetryIntervalSeconds")).toInteger(60));
     m_data->usenetMetaSelectedFileOnly =
-        p.value(QStringLiteral("usenetMetaSelectedFileOnly")).toBool(false);
+        p.value(QStringLiteral("usenetMetaSelectedFileOnly")).toBool(true);
 
     // BitTorrent. Defaults for a key an older daemon does not send.
     {
@@ -4248,6 +4284,8 @@ void Preferences::updateFromCbor(const QCborMap& p)
         m_data->btMaxDownloadKb = static_cast<uint32>(num("btMaxDownloadKb", 0, 0, kMaxU32));
         m_data->btMaxUploadKb   = static_cast<uint32>(num("btMaxUploadKb", 0, 0, kMaxU32));
         m_data->btStopAfterMetadata = p.value(QStringLiteral("btStopAfterMetadata")).toBool(false);
+        m_data->btMetaSelectedFileOnly =
+            p.value(QStringLiteral("btMetaSelectedFileOnly")).toBool(true);
         m_data->btDht = p.value(QStringLiteral("btDht")).toBool(true);
         m_data->btLsd = p.value(QStringLiteral("btLsd")).toBool(true);
         m_data->btPex = p.value(QStringLiteral("btPex")).toBool(true);
@@ -5234,6 +5272,7 @@ bool Preferences::load(const QString& filePath)
             m_data->notifyOnChatMsg = n["onChatMsg"].as<bool>(m_data->notifyOnChatMsg);
             m_data->notifyOnDownloadAdded = n["onDownloadAdded"].as<bool>(m_data->notifyOnDownloadAdded);
             m_data->notifyOnDownloadFinished = n["onDownloadFinished"].as<bool>(m_data->notifyOnDownloadFinished);
+            m_data->notifyOpenFinishedOnClick = n["openFinishedOnClick"].as<bool>(m_data->notifyOpenFinishedOnClick);
             m_data->notifyOnNewVersion = n["onNewVersion"].as<bool>(m_data->notifyOnNewVersion);
             m_data->notifyOnUrgent = n["onUrgent"].as<bool>(m_data->notifyOnUrgent);
             m_data->notifyEmailEnabled = n["emailEnabled"].as<bool>(m_data->notifyEmailEnabled);
@@ -5521,6 +5560,8 @@ bool Preferences::load(const QString& filePath)
             m_data->btMaxUploadKb = static_cast<uint32>(std::max<long long>(
                 0, bt["maxUploadKb"].as<long long>(m_data->btMaxUploadKb)));
             m_data->btStopAfterMetadata = bt["stopAfterMetadata"].as<bool>(m_data->btStopAfterMetadata);
+            m_data->btMetaSelectedFileOnly =
+                bt["selectedFileOnly"].as<bool>(m_data->btMetaSelectedFileOnly);
             m_data->btDht = bt["dht"].as<bool>(m_data->btDht);
             m_data->btLsd = bt["lsd"].as<bool>(m_data->btLsd);
             m_data->btPex = bt["pex"].as<bool>(m_data->btPex);
@@ -5649,18 +5690,26 @@ bool Preferences::load(const QString& filePath)
                 h.recheckHours = std::clamp(ho["recheckHours"].as<int>(h.recheckHours), 0, 8760);
                 h.reportRecheckHours = std::clamp(ho["reportRecheckHours"].as<int>(h.reportRecheckHours), 0, 8760);
                 h.sharedPluginDir = QString::fromStdString(ho["sharedPluginDir"].as<std::string>(h.sharedPluginDir.toStdString())).trimmed();
-                h.accounts.clear();
-                if (auto acc = ho["accounts"]; acc && acc.IsSequence()) {
-                    for (const auto& a : acc) {
-                        Ed3kHosterAccount entry{QString::fromStdString(a["host"].as<std::string>("")).trimmed().toLower(),
-                                                QString::fromStdString(a["user"].as<std::string>("")), {}};
-                        if (a["passwordEncrypted"] && !m_data->notifyEmailEncKey.isEmpty())
-                            entry.password = aesDecryptFromBase64(
-                                QString::fromStdString(a["passwordEncrypted"].as<std::string>("")), m_data->notifyEmailEncKey);
-                        if (!entry.host.isEmpty() && !entry.user.isEmpty())
-                            h.accounts.append(entry);
+                h.autoUpdate = ho["autoUpdate"].as<bool>(h.autoUpdate);
+                h.autoUpdateHours = std::clamp(ho["autoUpdateHours"].as<int>(h.autoUpdateHours), 1, 8760);
+                const auto readAccounts = [&](const char* name, bool needUser) {
+                    QList<Ed3kHosterAccount> list;
+                    if (auto acc = ho[name]; acc && acc.IsSequence()) {
+                        for (const auto& a : acc) {
+                            Ed3kHosterAccount entry{QString::fromStdString(a["host"].as<std::string>("")).trimmed().toLower(),
+                                                    QString::fromStdString(a["user"].as<std::string>("")), {}};
+                            if (a["passwordEncrypted"] && !m_data->notifyEmailEncKey.isEmpty())
+                                entry.password = aesDecryptFromBase64(
+                                    QString::fromStdString(a["passwordEncrypted"].as<std::string>("")), m_data->notifyEmailEncKey);
+                            if (!entry.host.isEmpty() && (!needUser || !entry.user.isEmpty()))
+                                list.append(entry);
+                        }
                     }
-                }
+                    return list;
+                };
+                h.accounts = readAccounts("accounts", true);
+                h.solversEnabled = ho["solversEnabled"].as<bool>(h.solversEnabled);
+                h.solvers = readAccounts("solvers", false);
             }
         }
 
@@ -5897,6 +5946,10 @@ bool Preferences::load(const QString& filePath)
         // v5: MFC default nick (copied over from an MFC install) becomes ours
         if (m_data->startVersion < 5 && isMfcDefaultNick(m_data->nick))
             m_data->nick = defaultNick();
+
+        // v6: an NZB search file row downloads that file only; the old default was off
+        if (m_data->startVersion < 6)
+            m_data->usenetMetaSelectedFileOnly = true;
 
         m_data->startVersion = kCurrentPrefsVersion;
         saveImpl(m_filePath);
@@ -6671,6 +6724,7 @@ bool Preferences::saveImpl(const QString& filePath) const
     out << YAML::Key << "onChatMsg" << YAML::Value << m_data->notifyOnChatMsg;
     out << YAML::Key << "onDownloadAdded" << YAML::Value << m_data->notifyOnDownloadAdded;
     out << YAML::Key << "onDownloadFinished" << YAML::Value << m_data->notifyOnDownloadFinished;
+    out << YAML::Key << "openFinishedOnClick" << YAML::Value << m_data->notifyOpenFinishedOnClick;
     out << YAML::Key << "onNewVersion" << YAML::Value << m_data->notifyOnNewVersion;
     out << YAML::Key << "onUrgent" << YAML::Value << m_data->notifyOnUrgent;
     out << YAML::Key << "emailEnabled" << YAML::Value << m_data->notifyEmailEnabled;
@@ -6710,10 +6764,9 @@ bool Preferences::saveImpl(const QString& filePath) const
                                                  [](const IndexerFeed& feed) {
                                                      return !feed.url.isEmpty();
                                                  });
-    const bool haveHosterPassword = std::ranges::any_of(m_data->ed3kHoster.accounts,
-                                                        [](const Ed3kHosterAccount& a) {
-                                                            return !a.password.isEmpty();
-                                                        });
+    const auto hasPassword = [](const Ed3kHosterAccount& a) { return !a.password.isEmpty(); };
+    const bool haveHosterPassword = std::ranges::any_of(m_data->ed3kHoster.accounts, hasPassword)
+                                    || std::ranges::any_of(m_data->ed3kHoster.solvers, hasPassword);
     // ed3k:cache links carry an upload key (http-source.md §4.1)
     const bool haveEd3kCacheLink = !m_data->ed3kCacheServers.isEmpty();
     if (encKey.isEmpty() && (!m_data->notifyEmailSmtpPassword.isEmpty() || haveCacheKey
@@ -6882,6 +6935,7 @@ bool Preferences::saveImpl(const QString& filePath) const
     out << YAML::Key << "maxDownloadKb" << YAML::Value << m_data->btMaxDownloadKb;
     out << YAML::Key << "maxUploadKb" << YAML::Value << m_data->btMaxUploadKb;
     out << YAML::Key << "stopAfterMetadata" << YAML::Value << m_data->btStopAfterMetadata;
+    out << YAML::Key << "selectedFileOnly" << YAML::Value << m_data->btMetaSelectedFileOnly;
     out << YAML::Key << "dht" << YAML::Value << m_data->btDht;
     out << YAML::Key << "lsd" << YAML::Value << m_data->btLsd;
     out << YAML::Key << "pex" << YAML::Value << m_data->btPex;
@@ -6989,18 +7043,25 @@ bool Preferences::saveImpl(const QString& filePath) const
         out << YAML::Key << "recheckHours" << YAML::Value << h.recheckHours;
         out << YAML::Key << "reportRecheckHours" << YAML::Value << h.reportRecheckHours;
         out << YAML::Key << "sharedPluginDir" << YAML::Value << h.sharedPluginDir.toStdString();
-        out << YAML::Key << "accounts" << YAML::Value << YAML::BeginSeq;
-        for (const Ed3kHosterAccount& a : h.accounts) {
-            out << YAML::BeginMap;
-            out << YAML::Key << "host" << YAML::Value << a.host.toStdString();
-            out << YAML::Key << "user" << YAML::Value << a.user.toStdString();
-            // no key: the password is dropped rather than written in clear
-            if (!a.password.isEmpty() && !encKey.isEmpty())
-                out << YAML::Key << "passwordEncrypted" << YAML::Value
-                    << aesEncryptToBase64(a.password, encKey).toStdString();
-            out << YAML::EndMap;
-        }
-        out << YAML::EndSeq;
+        out << YAML::Key << "autoUpdate" << YAML::Value << h.autoUpdate;
+        out << YAML::Key << "autoUpdateHours" << YAML::Value << h.autoUpdateHours;
+        const auto writeAccounts = [&](const char* name, const QList<Ed3kHosterAccount>& list) {
+            out << YAML::Key << name << YAML::Value << YAML::BeginSeq;
+            for (const Ed3kHosterAccount& a : list) {
+                out << YAML::BeginMap;
+                out << YAML::Key << "host" << YAML::Value << a.host.toStdString();
+                out << YAML::Key << "user" << YAML::Value << a.user.toStdString();
+                // no key: the password is dropped rather than written in clear
+                if (!a.password.isEmpty() && !encKey.isEmpty())
+                    out << YAML::Key << "passwordEncrypted" << YAML::Value
+                        << aesEncryptToBase64(a.password, encKey).toStdString();
+                out << YAML::EndMap;
+            }
+            out << YAML::EndSeq;
+        };
+        writeAccounts("accounts", h.accounts);
+        out << YAML::Key << "solversEnabled" << YAML::Value << h.solversEnabled;
+        writeAccounts("solvers", h.solvers);
         out << YAML::EndMap;
     }
     out << YAML::EndMap;

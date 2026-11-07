@@ -167,6 +167,12 @@ final class OpenTask extends Task {
             return;
         }
         if (d.failure != null) {
+            // JD's own check of the hoster's checksum failed: the bytes are bad, not the link
+            final jd.plugins.download.HashResult hr = d.getHashResult();
+            if (hr != null && !hr.match() && hr.getHashInfo() != null && hr.getHashInfo().isTrustworthy()) {
+                Out.error(id, "hash", hr.getHashInfo().getType().name().toLowerCase(java.util.Locale.ROOT));
+                return;
+            }
             Out.send(Jd.failure(id, d.failure));
             return;
         }

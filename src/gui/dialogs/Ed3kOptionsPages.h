@@ -18,6 +18,8 @@
 /// - Hoster (hoster.md): downloads from hosters are off by default; switching them on shows
 ///   what it means (§3, §8, §9). Vouched links are published by default (§4.1). Accounts are sent
 ///   with their password only when it was typed here; the daemon never sends one back.
+///   Two tabs: General and Captcha solvers (JD's paid solver plugins, same password rule). Tabs:
+///   General and Captcha solvers (JD's paid solver plugins, same password rule).
 /// - Selling (Ed3kSellPage, subscription.md): paid subscriptions sold, passes issued; acts at
 ///   once over IPC (1033, 1034, 1040, 1041), not on OK.
 
@@ -37,6 +39,7 @@ class QPlainTextEdit;
 class QPushButton;
 class QSpinBox;
 class QTreeWidget;
+class QVBoxLayout;
 class QWidget;
 
 namespace eMule {
@@ -73,6 +76,8 @@ public:
     /// Hoster page "Open .dlc files with eMule Qt": GUI-only (uistate.yml), OptionsDialog
     /// loads and applies it with the other file types.
     [[nodiscard]] QCheckBox* associateDlcCheck() const { return m_associateDlcCheck; }
+    /// GUI-only, like associateDlcCheck(): OptionsDialog loads and saves it
+    [[nodiscard]] QCheckBox* clickNLoadCheck() const { return m_clickNLoadCheck; }
 
     /// From the GetPreferences map (keys ed3k*, nick). Signals stay quiet meanwhile.
     void load(const QCborMap& prefs);
@@ -129,6 +134,8 @@ private:
     [[nodiscard]] bool keyActionsAllowed() const;
     [[nodiscard]] static QString notesText();
     [[nodiscard]] static QString creditsText(qint64 micro);
+    /// A solver service's balance as an account status; @p balance -1: none given.
+    [[nodiscard]] static QString creditText(double balance, const QString& currency);
     /// m_chainSingleNote shown for the endpoints typed.
     void updateChainNote();
     /// The "hoster" map of the ed3k status: Java runtime and resolver.
@@ -139,9 +146,17 @@ private:
     void updateHosterNodeHint();
     /// Holding links back switched off: what sharing a link means (hoster.md §8); false: kept on.
     [[nodiscard]] bool confirmShareLinks();
-    void editAccount(int row);
-    void checkAccount();
-    void fillAccounts();
+    struct AccountList;
+    /// The tree and Add/Edit/Remove/Check of @p list, into @p layout.
+    void buildAccountList(AccountList& list, const QStringList& columns, QVBoxLayout* layout, QWidget* parent);
+    /// The "Captcha solvers" tab of the Hoster page.
+    void buildSolvers(QVBoxLayout* layout, QWidget* parent);
+    /// Adds (@p row -1) or edits a login of @p list.
+    void editAccount(AccountList& list, int row);
+    void checkAccount(AccountList& list);
+    void fillAccounts(AccountList& list);
+    /// PushHosterAccount: the status of the rows it names.
+    void applyAccountCheck(const QString& host, const QString& user, const QCborMap& result);
     [[nodiscard]] Ed3kHosterPrefs hosterPrefs() const;
     QWidget* buildAutoCredits(QWidget* parent);
     /// m_autoNoteLabel and the group's enabled state: ed3k on, credits in use, running.
@@ -242,17 +257,26 @@ private:
     QCheckBox* m_hosterExtractCheck = nullptr;
     QCheckBox* m_hosterDeleteArchivesCheck = nullptr;   ///< greyed out while extraction is off
     QCheckBox* m_associateDlcCheck = nullptr;
+    QCheckBox* m_clickNLoadCheck = nullptr;
     QCheckBox* m_publishLinksCheck = nullptr;
     QLabel* m_javaLabel = nullptr;
     QLabel* m_jdVersionLabel = nullptr;   ///< the resolver engine's JD revision
+    QCheckBox* m_resolverAutoUpdateCheck = nullptr;
     QLineEdit* m_javaEdit = nullptr;
     QCheckBox* m_autoJavaCheck = nullptr;
     QPushButton* m_javaDownloadBtn = nullptr;
     QPushButton* m_javaLocateBtn = nullptr;
     int m_javaState = 0;          ///< Ed3kJavaRuntime::State from the status
     bool m_hosterOnInCore = false; ///< the saved switch, as the core runs it
-    QTreeWidget* m_accountsTree = nullptr;
-    QList<HosterAccountRow> m_accounts;
+    /// a login list: hoster accounts or captcha solver services
+    struct AccountList {
+        QTreeWidget* tree = nullptr;
+        QList<HosterAccountRow> rows;
+        bool solvers = false;   ///< solver services: user optional, credit as status
+    };
+    AccountList m_hosterAccounts;
+    AccountList m_solverAccounts{.solvers = true};
+    QGroupBox* m_solversGroup = nullptr;   ///< checkable: ed3kHosterSolversEnabled
 };
 
 } // namespace eMule

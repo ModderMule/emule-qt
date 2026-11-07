@@ -11,9 +11,12 @@
 /// by the Open DLC button, the context menu, a drop, the desktop or a container search row
 /// (their bytes go to the core).
 
+#include "app/ClickNLoadServer.h"
+
 #include <QCborMap>
 #include <QMap>
 #include <QPointer>
+#include <QSet>
 #include <QWidget>
 
 class QAction;
@@ -72,6 +75,15 @@ public:
     void applyDisplayOptions();
     /// Hoster downloads on (ed3kHosterEnabled), as the core last reported.
     [[nodiscard]] bool hostersEnabled() const { return m_enabled; }
+    /// A Click'n'Load post of a page (ClickNLoadServer) to the core; @p done answers the page.
+    /// The links come back to this GUI only, which asks which to add.
+    void addClickNLoad(const ClickNLoadServer::Post& post, const ClickNLoadServer::Done& done);
+
+signals:
+    /// hostersEnabled() changed
+    void hostersEnabledChanged(bool on);
+    /// The links of a Click'n'Load post are here: the window comes forward for the dialog.
+    void clickNLoadArrived();
 
 protected:
     void dragEnterEvent(QDragEnterEvent* event) override;
@@ -121,6 +133,7 @@ private:
     QMap<qint64, QTreeWidgetItem*> m_packages;   ///< package id -> its row
     QMap<qint64, QCborMap> m_items;
     QMap<QString, QPointer<QInputDialog>> m_passwordAsks;   ///< open password dialogs by group
+    QSet<qint64> m_cnlTokens;   ///< Click'n'Load posts of this GUI the core reads
 };
 
 } // namespace eMule

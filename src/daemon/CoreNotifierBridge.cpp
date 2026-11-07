@@ -48,6 +48,10 @@ constexpr std::size_t kMaxServerMessageBacklog = 200;
 /// 500 ms local poll (IpcClient::LocalPollingMs) so a push still beats the poll to
 /// the data, while a per-item signal storm collapses into a handful of sends.
 constexpr int kPushWindowMs = 250;
+/// Downloads added within this window share one pop-up (a collection adds many)
+constexpr int kAddedNamesWindowMs = 1000;
+/// Names listed in that pop-up; the rest are only counted
+constexpr qsizetype kAddedNamesMax = 10;
 
 /// Shared-file rows go out in batches: this often, at most this many at a time. A
 /// scan that adds thousands of files becomes a few pushes a second, each row sent once.
@@ -104,6 +108,10 @@ CoreNotifierBridge::CoreNotifierBridge(IpcServer* ipcServer, QObject* parent)
         });
     });
     m_sharedRatesTimer.start();
+
+    m_addedNamesTimer.setSingleShot(true);
+    m_addedNamesTimer.setInterval(kAddedNamesWindowMs);
+    connect(&m_addedNamesTimer, &QTimer::timeout, this, &CoreNotifierBridge::flushAddedNames);
 }
 
 CoreNotifierBridge::~CoreNotifierBridge() = default;
@@ -261,11 +269,31 @@ void CoreNotifierBridge::connectAll()
 // Push event handlers
 // ---------------------------------------------------------------------------
 
-void CoreNotifierBridge::onDownloadAdded()
+void CoreNotifierBridge::onDownloadAdded(PartFile* file)
 {
     m_pushes->post(IpcMsgType::PushDownloadAdded,
                    [] { return IpcMessage(IpcMsgType::PushDownloadAdded, 0); },
                    kPushWindowMs);
+
+    // Pop-up with the name (MFC DownloadQueue.cpp:317). Not in the push above: that
+    // one is a coalesced state hint and may be dropped for a slow client.
+    if (!file || !m_ipcServer || m_ipcServer->clientCount() == 0)
+        return;
+    ++m_addedCount;
+    if (m_addedNames.size() < kAddedNamesMax)
+        m_addedNames.append(file->fileName());
+    if (!m_addedNamesTimer.isActive())
+        m_addedNamesTimer.start();
+}
+
+void CoreNotifierBridge::flushAddedNames()
+{
+    if (m_addedNames.isEmpty())
+        return;
+    raiseNotifierEvent(Ipc::NotifierEvent::DownloadAdded, m_addedNames.join(u'\n'),
+                       QCborValue(m_addedCount));
+    m_addedNames.clear();
+    m_addedCount = 0;
 }
 
 void CoreNotifierBridge::onDownloadRemoved()
@@ -285,8 +313,10 @@ void CoreNotifierBridge::onDownloadCompleted(PartFile* file)
     // Pop-up and mail (MFC PartFile.cpp:3021). Deliberately outside the coalescer:
     // a suppressed state push costs the GUI nothing, but a suppressed event would
     // lose a completion the user asked to be told about.
+    // Full path too: a local GUI opens the file when the pop-up is clicked
     raiseNotifierEvent(Ipc::NotifierEvent::DownloadFinished,
-                       file ? file->fileName() : QStringLiteral("Unknown"));
+                       file ? file->fileName() : QStringLiteral("Unknown"),
+                       file ? QCborValue(file->filePath()) : QCborValue());
 }
 
 void CoreNotifierBridge::watchDiskSpace(PartFile* file)
@@ -301,11 +331,14 @@ void CoreNotifierBridge::onPortBindFailed(int port)
     raiseNotifierEvent(Ipc::NotifierEvent::PortBindFailed, QString::number(port));
 }
 
-void CoreNotifierBridge::raiseNotifierEvent(Ipc::NotifierEvent kind, const QString& text)
+void CoreNotifierBridge::raiseNotifierEvent(Ipc::NotifierEvent kind, const QString& text,
+                                            const QCborValue& extra)
 {
     IpcMessage msg(IpcMsgType::PushNotifierEvent, 0);
     msg.append(static_cast<qint64>(kind));
     msg.append(text);
+    if (!extra.isUndefined() && !extra.isNull())
+        msg.append(extra);
     if (m_ipcServer) {
         // A port that did not open is still closed when the GUI arrives; the other
         // events are news of the moment and are not kept.
@@ -319,6 +352,8 @@ void CoreNotifierBridge::raiseNotifierEvent(Ipc::NotifierEvent kind, const QStri
     QString body;
     bool wanted = thePrefs.notifyOnUrgent();
     switch (kind) {
+    case Ipc::NotifierEvent::DownloadAdded:
+        return;   // pop-up only, no mail (MFC SendNotificationMail)
     case Ipc::NotifierEvent::DownloadFinished:
         wanted = thePrefs.notifyOnDownloadFinished();
         subject = QStringLiteral("eMule: Download finished");

@@ -271,6 +271,7 @@
     <ClCompile Include="dialogs\MetadataPage.cpp" />
     <ClCompile Include="dialogs\SearchDetailDialog.cpp" />
     <ClCompile Include="dialogs\MetaResultDetailDialog.cpp" />
+    <ClCompile Include="controls\FileCheckButtons.cpp" />
     <ClCompile Include="controls\TorrentFileTree.cpp" />
     <ClCompile Include="dialogs\FirstStartWizard.cpp" />
     <ClCompile Include="controls\FriendListModel.cpp" />
@@ -344,6 +345,7 @@
     <ClCompile Include="controls\UploadStatusDelegate.cpp" />
     <ClCompile Include="app\UiState.cpp" />
     <ClCompile Include="app\VersionChecker.cpp" />
+    <ClCompile Include="app\ClickNLoadServer.cpp" />
     <ClCompile Include="app\SkinEngine.cpp" />
     <ClCompile Include="app\SkinColors.cpp" />
     <ClCompile Include="app\SkinIcons.cpp" />
@@ -400,6 +402,7 @@
     <ClInclude Include="utils\NzbDrop.h" />
     <ClInclude Include="utils\ContainerDrop.h" />
     <ClInclude Include="utils\TorrentLinks.h" />
+    <ClInclude Include="controls\FileCheckButtons.h" />
     <ClInclude Include="controls\TorrentFileTree.h" />
     <ClInclude Include="utils\TorrentAdd.h" Condition="'$(EmuleBitTorrent)'=='true'" />
     <ClInclude Include="utils\PriorityText.h" />
@@ -561,6 +564,7 @@
     <ClInclude Include="app\UiState.h" />
     <QtMoc Include="app\SkinColors.h" />
     <QtMoc Include="app\VersionChecker.h" />
+    <QtMoc Include="app\ClickNLoadServer.h" />
   </ItemGroup>
   <ItemGroup>
     <CustomBuild Include="debug\moc_predefs.h.cbt">

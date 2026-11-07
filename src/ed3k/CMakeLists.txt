@@ -10,7 +10,7 @@
 file(GLOB_RECURSE ED3K_SOURCES CONFIGURE_DEPENDS "*.cpp" "*.h")
 # EMULE_HOSTER_JD off: no JDownloader resolver and no Java runtime lookup
 if(NOT EMULE_HOSTER_JD)
-    list(FILTER ED3K_SOURCES EXCLUDE REGEX "/(Ed3kJdResolver|Ed3kJavaRuntime)\\.(cpp|h)$")
+    list(FILTER ED3K_SOURCES EXCLUDE REGEX "/(Ed3kJdResolver|Ed3kJavaRuntime|Ed3kResolverUpdater)\\.(cpp|h)$")
 endif()
 
 add_library(emuleed3k STATIC ${ED3K_SOURCES})

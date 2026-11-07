@@ -25,6 +25,7 @@
 #include <QMouseEvent>
 #include <QSystemTrayIcon>
 
+#include <functional>
 #include <memory>
 
 class QAction;
@@ -52,6 +53,7 @@ class IrcPanel;
 class SpeedGraph;
 class TrayMenuManager;
 class VersionChecker;
+class ClickNLoadServer;
 class KadPanel;
 class MessagesPanel;
 class SearchPanel;
@@ -224,6 +226,8 @@ public:
     /// Bring the window back from the tray or the taskbar in the state it was left
     /// in (normal, maximized, fullscreen), raised and active.
     void restoreWindow();
+    /// Click'n'Load listens while its switch (Options) and hoster downloads are on.
+    void updateClickNLoad();
 
     /// Update the Users/Files label in the footer with Kad network estimates.
     void setNetworkStats(quint32 users, quint32 files);
@@ -240,6 +244,10 @@ public:
     /// The same with the sound given instead of read from the preferences; an
     /// empty @p soundFile is silent.
     void showNotification(const QString& title, const QString& message, const QString& soundFile);
+    /// The same with what a click on the pop-up does; empty restores the window
+    /// (MFC OnTaskbarNotifierClicked).
+    void showNotification(const QString& title, const QString& message,
+                          std::function<void()> onClick);
 
     /// Update MiniMule popup stats (called from rate polling timer).
     void updateMiniMule(int completedCount, qint64 freeBytes);
@@ -413,6 +421,7 @@ private:
     UsenetPanel* m_usenetPanel = nullptr;
     TorrentPanel* m_torrentPanel = nullptr;
     HosterPanel* m_hosterPanel = nullptr;
+    ClickNLoadServer* m_clickNLoad = nullptr;   ///< port 9666 while UiState::clickNLoad and hosters are on
 
     // Status bar labels
     QLabel* m_statusMsg = nullptr;
@@ -449,6 +458,7 @@ private:
     QElapsedTimer m_restoreRequested; ///< restoreWindow() call; stale "minimized" may still arrive
     QSoundEffect* m_notifySound = nullptr;
     QStringList m_lastNotification;   ///< title, text, sound — what was last asked for
+    std::function<void()> m_notificationClick;   ///< click on the last pop-up; empty = restore
     QElapsedTimer m_lastLogNotify;    ///< when notifyLogEntry() last showed one
     QPointer<QMessageBox> m_coreProblemBox;
 

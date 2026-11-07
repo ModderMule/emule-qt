@@ -61,8 +61,8 @@ void insertRates(QCborMap& stats);
 [[nodiscard]] QCborMap statsToCbor();
 
 /// Adds .torrent bytes to the download dir: AddTorrentFile's {outcome, id, message}.
-/// Outcome 3 (not running) without an engine.
-[[nodiscard]] QCborMap addTorrentData(const QByteArray& data, bool paused);
+/// Outcome 3 (not running) without an engine. @p wantedFiles: as AddTorrentFile field 5.
+[[nodiscard]] QCborMap addTorrentData(const QByteArray& data, bool paused, const QList<int>& wantedFiles = {});
 
 /// Adds a magnet URI to the download dir: AddMagnet's {outcome, id, message}.
 [[nodiscard]] QCborMap addMagnetUri(const QString& uri, bool paused);

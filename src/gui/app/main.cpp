@@ -6,7 +6,9 @@
 #include <QDialog>
 #include <QDir>
 #include <QFile>
+#include <QDesktopServices>
 #include <QFileInfo>
+#include <QUrl>
 #include <QFont>
 #include <QHostAddress>
 #include <QNetworkInterface>
@@ -1166,14 +1168,8 @@ int main(int argc, char* argv[])
                 static_cast<quint32>(info.value(QStringLiteral("files")).toInteger()));
         });
 
-        // Wire notification push events to system tray popups
-        QObject::connect(&ipcClient, &eMule::IpcClient::downloadAdded,
-                         &mainWindow, [&mainWindow](const eMule::Ipc::IpcMessage&) {
-            if (eMule::thePrefs.notifyOnDownloadAdded())
-                mainWindow.showNotification(
-                    QObject::tr("Download Added"),
-                    QObject::tr("A new download has been added."));
-        });
+        // Wire notification push events to system tray popups. "Download added" comes
+        // as a PushNotifierEvent with the names (below), not with PushDownloadAdded.
         // The chat panel knows whether the message opened a session and whether it is
         // being read; a session that is closed counts as new again (MFC
         // ChatSelector.cpp:227-248).
@@ -1187,12 +1183,36 @@ int main(int argc, char* argv[])
                                         QStringLiteral("'%1'").arg(text));
         });
         QObject::connect(&ipcClient, &eMule::IpcClient::notifierEvent,
-                         &mainWindow, [&mainWindow](const eMule::Ipc::IpcMessage& msg) {
+                         &mainWindow, [&mainWindow, &ipcClient](const eMule::Ipc::IpcMessage& msg) {
+            using eMule::Ipc::NotifierEvent;
+            const auto kind = static_cast<NotifierEvent>(msg.fieldInt(0));
+            const bool added = kind == NotifierEvent::DownloadAdded;
             const eMule::NotifierText note = eMule::notifierEventText(
-                static_cast<eMule::Ipc::NotifierEvent>(msg.fieldInt(0)), msg.fieldString(1));
-            if (note.urgent ? eMule::thePrefs.notifyOnUrgent()
-                            : eMule::thePrefs.notifyOnDownloadFinished())
-                mainWindow.showNotification(note.title, note.text);
+                kind, msg.fieldString(1), added ? msg.fieldInt(2) : 0);
+            const bool wanted = added ? eMule::thePrefs.notifyOnDownloadAdded()
+                              : note.urgent ? eMule::thePrefs.notifyOnUrgent()
+                                            : eMule::thePrefs.notifyOnDownloadFinished();
+            if (!wanted)
+                return;
+
+            // Click: open the finished file when asked to and the core shares our
+            // disk (MFC shell-opens it); downloads otherwise show the Transfers window.
+            std::function<void()> onClick;
+            if (added || kind == NotifierEvent::DownloadFinished) {
+                QString path;
+                if (kind == NotifierEvent::DownloadFinished
+                    && eMule::thePrefs.notifyOpenFinishedOnClick()
+                    && ipcClient.isLocalConnection())
+                    path = msg.fieldString(2);
+                onClick = [&mainWindow, path]() {
+                    if (!path.isEmpty() && QFileInfo::exists(path)
+                        && QDesktopServices::openUrl(QUrl::fromLocalFile(path)))
+                        return;
+                    mainWindow.restoreWindow();
+                    mainWindow.switchToTab(eMule::MainWindow::TabTransfers);
+                };
+            }
+            mainWindow.showNotification(note.title, note.text, std::move(onClick));
         });
         QObject::connect(&ipcClient, &eMule::IpcClient::logMessageReceived,
                          &mainWindow, [&mainWindow](const eMule::Ipc::IpcMessage& msg) {

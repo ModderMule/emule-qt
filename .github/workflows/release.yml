@@ -129,6 +129,8 @@ jobs:
   # The hoster resolver (resolver.zip, JDownloader plugins) takes the same path:
   # publish-release.sh builds it with scripts/build-hoster-resolver.sh, since CI
   # has no JD sources. Optional: tags before it carry no SHA line and ship none.
+  # The platform bundles leave it out for now (resolver: false below); only the
+  # manifest job uses it, for the "hosterResolver" entry the core fetches.
   geoip:
     name: Fetch GeoLite2-Country + hoster resolver
     needs: guard
@@ -162,7 +164,8 @@ jobs:
           rsha="$(git for-each-ref --format='%(contents)' "refs/tags/${TAG}" \
                   | sed -n 's/^Hoster-Resolver-SHA256: *\([0-9a-f]\{64\}\) *$/\1/p' | head -n1)"
           if [ -z "$rsha" ]; then
-            echo "::warning::Tag ${TAG} has no 'Hoster-Resolver-SHA256:' line -- this release ships without the hoster resolver"
+            # normal now: publish-release.sh publishes the resolver after the tag (publish-resolver.sh)
+            echo "::notice::Tag ${TAG} has no 'Hoster-Resolver-SHA256:' line -- the manifest keeps its hosterResolver entry"
           fi
           echo "resolver_sha256=${rsha}" >> "$GITHUB_OUTPUT"
 
@@ -224,7 +227,9 @@ jobs:
     secrets: inherit
     with:
       geoip: true
-      resolver: ${{ needs.geoip.outputs.resolver == 'true' }}
+      # bundles ship no resolver.zip (smaller): the core fetches it via the manifest
+      # resolver: ${{ needs.geoip.outputs.resolver == 'true' }}
+      resolver: false
       ref: ${{ needs.guard.outputs.tag }}
 
   macos:
@@ -237,7 +242,9 @@ jobs:
     secrets: inherit
     with:
       geoip: true
-      resolver: ${{ needs.geoip.outputs.resolver == 'true' }}
+      # bundles ship no resolver.zip (smaller): the core fetches it via the manifest
+      # resolver: ${{ needs.geoip.outputs.resolver == 'true' }}
+      resolver: false
       ref: ${{ needs.guard.outputs.tag }}
 
   # Temporary, see macos-intel.yml
@@ -251,7 +258,9 @@ jobs:
     secrets: inherit
     with:
       geoip: true
-      resolver: ${{ needs.geoip.outputs.resolver == 'true' }}
+      # bundles ship no resolver.zip (smaller): the core fetches it via the manifest
+      # resolver: ${{ needs.geoip.outputs.resolver == 'true' }}
+      resolver: false
       ref: ${{ needs.guard.outputs.tag }}
 
   windows:
@@ -264,7 +273,9 @@ jobs:
     secrets: inherit
     with:
       geoip: true
-      resolver: ${{ needs.geoip.outputs.resolver == 'true' }}
+      # bundles ship no resolver.zip (smaller): the core fetches it via the manifest
+      # resolver: ${{ needs.geoip.outputs.resolver == 'true' }}
+      resolver: false
       ref: ${{ needs.guard.outputs.tag }}
 
   # Not in release's needs: a GHCR hiccup must not hold back the GitHub Release
@@ -279,7 +290,9 @@ jobs:
     secrets: inherit
     with:
       geoip: true
-      resolver: ${{ needs.geoip.outputs.resolver == 'true' }}
+      # bundles ship no resolver.zip (smaller): the core fetches it via the manifest
+      # resolver: ${{ needs.geoip.outputs.resolver == 'true' }}
+      resolver: false
       ref: ${{ needs.guard.outputs.tag }}
       version: ${{ needs.guard.outputs.version }}
 

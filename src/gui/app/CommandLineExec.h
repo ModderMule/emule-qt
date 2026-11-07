@@ -93,7 +93,7 @@ private:
     QCommandLineOption m_subtabOption{
         QStringLiteral("subtab"),
         QStringLiteral("Sub-tab index within the active panel. Kad: 0/1 eD2K Contacts/Search Details, "
-                       "2/3 ed3k Contacts/Search Details."),
+                       "2/3 ed3k Contacts/Search Details. With --options: the tab of a tabbed page."),
         QStringLiteral("index")};
 
     QCommandLineOption m_subtabTopOption{

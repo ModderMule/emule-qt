@@ -483,6 +483,7 @@ private:
     QCheckBox* m_notifyChatMsgCheck = nullptr;
     QCheckBox* m_notifyDownloadAddedCheck = nullptr;
     QCheckBox* m_notifyDownloadFinishedCheck = nullptr;
+    QCheckBox* m_notifyOpenFinishedCheck = nullptr;
     QCheckBox* m_notifyNewVersionCheck = nullptr;
     QCheckBox* m_notifyUrgentCheck = nullptr;
     QCheckBox* m_emailEnabledCheck = nullptr;
@@ -590,6 +591,7 @@ private:
     QSpinBox*       m_btPortSpin = nullptr;
     QLineEdit*      m_btDownloadDirEdit = nullptr;
     QCheckBox*      m_btStopAfterMetadataCheck = nullptr;
+    QCheckBox*      m_btSelectedFileOnlyCheck = nullptr;
     QPushButton*    m_btDownloadDirBrowse = nullptr;
     QSpinBox*       m_btMaxDownSpin = nullptr;
     QSpinBox*       m_btMaxUpSpin = nullptr;

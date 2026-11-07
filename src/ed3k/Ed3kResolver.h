@@ -25,6 +25,25 @@ struct ResolverAccount {
     QString password;
 };
 
+/// A captcha solver service login (2captcha.com, anti-captcha.com, ...). Key-only services
+/// take the key as password. Printed as "[redacted]".
+struct SolverAccount {
+    QString host;
+    QString user;
+    QString password;
+    bool operator==(const SolverAccount&) const = default;
+};
+
+/// What setSolverAccounts() found for one account.
+struct SolverAccountState {
+    QString host;       ///< the solver's main domain; as given when no plugin took it
+    bool valid = false;
+    double balance = 0;
+    QString currency;   ///< ISO 4217; empty: unknown
+    QString code;       ///< not valid: "noPlugin", "login", "io", "failed"
+    QString text;
+};
+
 /// One link an expand found.
 struct ResolverLink {
     QString url;
@@ -54,6 +73,8 @@ struct ResolverEvent {
         Cancelled,
         Account,      ///< accountCheck: valid, premium, expires, trafficLeft
         Status,       ///< open: what the plugin does, text: "link", "hoster", "hosterAccount", "puzzle", "connect", "transfer"
+        Solvers,      ///< setSolverAccounts: solvers
+        Solved,       ///< solveTest: text, host (the solver), name (the expected text, if known)
     };
     Kind kind = Kind::Failed;
     QString host;
@@ -80,6 +101,9 @@ struct ResolverEvent {
     bool premium = false;
     qint64 expires = 0;           ///< unix seconds; 0 = unknown
     qint64 trafficLeft = -1;      ///< bytes; -1 = unlimited or unknown
+    double balance = -1;          ///< accountCheck of a solver service: its credit; -1 = none given
+    QString currency;             ///< of balance, ISO 4217; empty: unknown
+    QList<SolverAccountState> solvers;
 
     /// The last event of a task.
     [[nodiscard]] bool isFinal() const
@@ -104,6 +128,12 @@ public:
     [[nodiscard]] virtual QString description() const = 0;
     /// The plugin engine's version, e.g. "r53779", known without a start; empty: none installed
     [[nodiscard]] virtual QString engineVersion() const { return {}; }
+    /// A newer engine version fetched and waiting to be swapped in; empty: none
+    [[nodiscard]] virtual QString pendingVersion() const { return {}; }
+    /// A link waits for plugins that are not there: fetch them (none shipped). Default: nothing
+    virtual void wantPlugins() {}
+    /// What the last solverAccounts found per account; empty: none sent yet.
+    [[nodiscard]] virtual QList<SolverAccountState> solverStates() const { return {}; }
 
     /// Which plugin takes @p url, without network access.
     virtual TaskId match(const QString& url) = 0;
@@ -119,6 +149,13 @@ public:
     virtual TaskId accountCheck(const QString& host, const ResolverAccount& account) = 0;
     /// The hoster plugin for a domain or one of its aliases, and all its domains. No network.
     virtual TaskId sites(const QString& host) = 0;
+    /// Replaces the captcha solver accounts; each is checked, valid ones solve puzzles before
+    /// the user is asked. Solvers follows. Empty: none.
+    virtual TaskId setSolverAccounts(const QList<SolverAccount>& accounts) = 0;
+    /// One test puzzle of @p type ("IMAGE", "RECAPTCHA_V2", ...; JD's CAPTCHA_TYPE) through the
+    /// solver of domain @p solver (empty: any). IMAGE uses a built-in image unless @p image.
+    /// Solved or Failed ("noSolver", "unsolved") follows. Costs the solver's price.
+    virtual TaskId solveTest(const QString& solver, const QString& type, const QByteArray& image = {}) = 0;
     /// The user's text for a puzzle; empty = skip it.
     virtual void answerPuzzle(std::uint64_t puzzle, const QString& text) = 0;
     virtual void cancel(TaskId task) = 0;

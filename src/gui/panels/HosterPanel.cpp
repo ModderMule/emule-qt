@@ -3,6 +3,7 @@
 
 #include "pch.h"
 #include "panels/HosterPanel.h"
+#include "utils/Log.h"
 
 #include "app/IpcClient.h"
 #include "app/UiState.h"
@@ -181,6 +182,8 @@ QString reasonText(int reason, const QString& arg)
     case 32: return HosterPanel::tr("Extracted to %1").arg(arg);
     case 33: return HosterPanel::tr("Extraction failed: %1 (Retry tries again)").arg(arg);
     case 34: return HosterPanel::tr("The archive needs a password (Set Password…)");
+    case 35: return HosterPanel::tr("Checking the file against the hoster's %1").arg(arg.toUpper());
+    case 36: return HosterPanel::tr("The file does not match the hoster's %1, dropped (Retry downloads it again)").arg(arg.toUpper());
     default: return {};
     }
 }
@@ -415,6 +418,42 @@ void HosterPanel::openContainerData(const QString& name, const QByteArray& data)
         if (self && r.isValid() && !r.fieldBool(0))
             QMessageBox::warning(self, tr("Open DLC"), r.fieldMap(1).value(QStringLiteral("error")).toString());
     });
+}
+
+void HosterPanel::addClickNLoad(const ClickNLoadServer::Post& post, const ClickNLoadServer::Done& done)
+{
+    if (!m_ipc || !m_ipc->isConnected()) {
+        done(false, QStringLiteral("not connected to the eMule core"));
+        return;
+    }
+    QPointer<HosterPanel> self(this);
+    const auto answered = [self, done](const IpcMessage& r) {
+        if (!r.isValid() || r.type() == IpcMsgType::Error || !r.fieldBool(0)) {
+            // a refusal is a result with {error}; a request the core does not know, an Error
+            done(false, r.type() == IpcMsgType::Error ? r.fieldString(1)
+                                                      : r.fieldMap(1).value(QStringLiteral("error")).toString());
+            return;
+        }
+        if (self)
+            self->m_cnlTokens.insert(r.fieldMap(1).value(QStringLiteral("token")).toInteger());
+        done(true, {});
+    };
+    if (post.kind == ClickNLoadServer::Post::Kind::Dlc) {
+        IpcMessage req(IpcMsgType::OpenHosterContainer);
+        req.append(QStringLiteral("clicknload.dlc"));
+        req.append(QCborValue(post.crypted.toLatin1()));
+        m_ipc->sendRequest(std::move(req), answered);
+        return;
+    }
+    IpcMessage req(IpcMsgType::AddClickNLoad);
+    req.append(post.urls);
+    req.append(post.crypted);
+    req.append(post.jk);
+    req.append(post.k);
+    req.append(post.package);
+    req.append(QCborArray::fromStringList(post.passwords));
+    req.append(post.source);
+    m_ipc->sendRequest(std::move(req), answered);
 }
 
 void HosterPanel::promptOpenContainer()
@@ -868,7 +907,10 @@ void HosterPanel::applyStatus(const QCborMap& st)
     const QCborMap h = st.value(QStringLiteral("hoster")).toMap();
     if (h.isEmpty())
         return;
-    m_enabled = h.value(QStringLiteral("enabled")).toBool();
+    if (const bool on = h.value(QStringLiteral("enabled")).toBool(); on != m_enabled) {
+        m_enabled = on;
+        emit hostersEnabledChanged(on);
+    }
     QString text;
     if (!m_enabled)
         text = tr("Downloads from hosters are off (Options, ed3k, Hoster).");
@@ -950,7 +992,30 @@ void HosterPanel::dropEvent(QDropEvent* event)
 
 void HosterPanel::onContainer(const QCborMap& c, const QCborArray& links)
 {
-    const QString fileName = c.value(QStringLiteral("fileName")).toString();
+    // Click'n'Load: only the GUI the page posted to asks (pushes reach every GUI)
+    const bool cnl = c.value(QStringLiteral("cnl")).toBool();
+    const bool ours = m_cnlTokens.remove(c.value(QStringLiteral("token")).toInteger());
+    if (cnl && !ours)
+        return;
+    if (ours)
+        emit clickNLoadArrived();
+    QString fileName = c.value(QStringLiteral("fileName")).toString();
+    if (cnl) {
+        const QString source = c.value(QStringLiteral("source")).toString();
+        const QString host = QUrl(source).host();
+        fileName = !host.isEmpty() ? host : !source.isEmpty() ? source.left(80) : tr("Click'n'Load");
+    }
+    const QString title = cnl ? tr("Click'n'Load") : tr("Open DLC");
+    if (cnl && links.isEmpty()) {
+        const QString code = c.value(QStringLiteral("code")).toString();
+        QString why = code == QLatin1StringView("unavailable")
+                          ? tr("The hoster resolver is not ready.")
+                          : tr("The page sent no links that can be downloaded, or they could not be decrypted.");
+        if (const QString text = c.value(QStringLiteral("text")).toString(); !text.isEmpty())
+            why += QStringLiteral("\n\n") + text;
+        QMessageBox::warning(window(), title, tr("%1: %2").arg(fileName, why));
+        return;
+    }
     if (links.isEmpty()) {
         const QString code = c.value(QStringLiteral("code")).toString();
         const QString text = c.value(QStringLiteral("text")).toString();
@@ -971,7 +1036,7 @@ void HosterPanel::onContainer(const QCborMap& c, const QCborArray& links)
             why = tr("The container could not be read.");
         if (!text.isEmpty() && code != QLatin1StringView("bad"))
             why += QStringLiteral("\n\n") + text;
-        QMessageBox::warning(window(), tr("Open DLC"), tr("%1: %2").arg(fileName, why));
+        QMessageBox::warning(window(), title, tr("%1: %2").arg(fileName, why));
         return;
     }
 
@@ -982,10 +1047,14 @@ void HosterPanel::onContainer(const QCborMap& c, const QCborArray& links)
             packages << p;
     const bool single = packages.size() == 1;
 
+    if (cnl)
+        logInfo(QStringLiteral("Click'n'Load: %1 link(s) from %2, asking which to add").arg(links.size()).arg(fileName));
     QDialog dlg(window());
     dlg.setWindowTitle(tr("Links of %1").arg(fileName));
     auto* layout = new QVBoxLayout(&dlg);
-    layout->addWidget(new QLabel(tr("The container holds %n link(s). Add which?", nullptr, int(links.size())), &dlg));
+    layout->addWidget(new QLabel(cnl ? tr("%1 sent %n link(s) (Click'n'Load). Add which?", nullptr, int(links.size())).arg(fileName)
+                                     : tr("The container holds %n link(s). Add which?", nullptr, int(links.size())),
+                                 &dlg));
     auto* list = new QListWidget(&dlg);
     for (const QCborValue& v : links) {
         const QCborMap l = v.toMap();
@@ -1008,7 +1077,8 @@ void HosterPanel::onContainer(const QCborMap& c, const QCborArray& links)
     if (single) {
         auto* row = new QHBoxLayout;
         row->addWidget(new QLabel(tr("Package Name:"), &dlg));
-        packageEdit = new QLineEdit(packages.first().isEmpty() ? QFileInfo(fileName).completeBaseName() : packages.first(), &dlg);
+        const QString fallback = cnl ? fileName : QFileInfo(fileName).completeBaseName();
+        packageEdit = new QLineEdit(packages.first().isEmpty() ? fallback : packages.first(), &dlg);
         packageEdit->setToolTip(tr("The links download under one entry, into a folder of this name"));
         row->addWidget(packageEdit, 1);
         layout->addLayout(row);
@@ -1017,7 +1087,9 @@ void HosterPanel::onContainer(const QCborMap& c, const QCborArray& links)
     for (const QCborValue& v : links)
         anyPassword = anyPassword || !v.toMap().value(QStringLiteral("passwords")).toArray().isEmpty();
     if (anyPassword) {
-        auto* note = new QLabel(tr("The container names archive passwords; extraction tries them."), &dlg);
+        auto* note = new QLabel(cnl ? tr("The page names archive passwords; extraction tries them.")
+                                    : tr("The container names archive passwords; extraction tries them."),
+                                &dlg);
         note->setWordWrap(true);
         layout->addWidget(note);
     }
@@ -1042,7 +1114,7 @@ void HosterPanel::onContainer(const QCborMap& c, const QCborArray& links)
         }
         QString name = packageEdit ? packageEdit->text().trimmed() : pkg;
         if (name.isEmpty())
-            name = QFileInfo(fileName).completeBaseName();
+            name = cnl ? fileName : QFileInfo(fileName).completeBaseName();
         addLinks(files, name, 0, passwords);
     }
 }

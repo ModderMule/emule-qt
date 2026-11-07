@@ -6,7 +6,7 @@
 #
 # Defaults: $JD_DIR (environment, else the project .env) or /Volumes/MySSD/Coding/Java,
 # and build/hoster-resolver.
-# Output:   <out>/resolver/{Core.jar, jd/plugins/{hoster,decrypter}/, libs/, revision.txt, LICENSE}
+# Output:   <out>/resolver/{Core.jar, jd/plugins/{hoster,decrypter}/, libs/, revision.txt, api.txt, LICENSE}
 #           and <out>/resolver.zip, which the bundle scripts ship and emulecored unpacks
 #           into its config dir.
 # Plugins stay loose .class files: JD's plugin scanner lists the directory next to the jar
@@ -79,6 +79,10 @@ for s in "$SRC" "$JD/AppWorkUtils/src" "$JD/JDBrowser/src"; do
         -exec sh -c 'mkdir -p "$0/$(dirname "$1")" && cp "$1" "$0/$1"' "$WORK/classes" {} \;)
 done
 
+# JD's captcha test images (solveTest)
+T=org/jdownloader/captcha/v2/tester
+mkdir -p "$WORK/classes/$T" && cp "$SRC/$T"/*.png "$SRC/$T"/*.jpg "$WORK/classes/$T/"
+
 # plugins loose next to Core.jar, the rest packed
 mv "$WORK/classes/jd/plugins/hoster" "$WORK/classes/jd/plugins/decrypter" "$RES/jd/plugins/"
 "$JDK/bin/jar" --create --file "$RES/Core.jar" -C "$WORK/classes" .
@@ -98,6 +102,10 @@ while read -r j; do
 done < "$WORK/jars.txt"
 
 echo "$REV" > "$RES/revision.txt"
+# api.txt: the daemon<->sidecar protocol; the update manifest's "api", clients skip a zip of another
+API="$(sed -n 's/.*static final int PROTOCOL = \([0-9][0-9]*\);.*/\1/p' "$ROOT/tools/hoster-resolver/src/org/emuleqt/resolver/ResolverMain.java")"
+[[ "$API" =~ ^[0-9]+$ ]] || { echo "build-hoster-resolver: no PROTOCOL in ResolverMain.java" >&2; exit 1; }
+echo "$API" > "$RES/api.txt"
 cp "$ROOT/tools/hoster-resolver/LICENSE" "$RES/LICENSE"
 (cd "$OUT" && rm -f resolver.zip && zip -qr -X resolver.zip resolver)
 echo "== $(unzip -l "$RES/Core.jar" | grep -c '\.class$') core + $(find "$RES/jd" -name '*.class' | wc -l | tr -d ' ') plugin classes, $(ls "$RES/libs" | wc -l | tr -d ' ') jars, $(du -sh "$OUT/resolver.zip" | cut -f1) zip -> $OUT/resolver.zip"

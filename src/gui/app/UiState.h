@@ -180,6 +180,14 @@ public:
         scheduleSave();
     }
 
+    /// Click'n'Load: take links that pages post to 127.0.0.1:9666 into the Hoster tab
+    [[nodiscard]] bool clickNLoad() const { return m_clickNLoad; }
+    void setClickNLoad(bool on)
+    {
+        m_clickNLoad = on;
+        scheduleSave();
+    }
+
     /// Claim ed2k: and ed3k: links (Windows, Linux). Unset in configs from before
     /// it was stored: savedFileTypes() (Ed2kSchemeHandler) derives it then.
     [[nodiscard]] std::optional<bool> associateEd2kLinks() const { return m_associateEd2kLinks; }
@@ -511,6 +519,7 @@ private:
     bool m_associateNzbFiles = true;
     bool m_associateTorrentFiles = true;
     bool m_associateDlcFiles = false;
+    bool m_clickNLoad = true;
     std::optional<bool> m_associateEd2kLinks;
     std::optional<int> m_appliedFileTypes;
     bool m_launcherInstalled = false;

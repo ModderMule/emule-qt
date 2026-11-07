@@ -149,13 +149,14 @@ void TorrentPanel::addTorrentFiles(const QStringList& paths)
     }
 }
 
-void TorrentPanel::addTorrentData(const QString& name, const QByteArray& data)
+void TorrentPanel::addTorrentData(const QString& name, const QByteArray& data, const QList<int>& wantedFiles)
 {
     if (!m_ipc || !m_ipc->isConnected()) {
         QMessageBox::warning(this, tr("Add Torrent"), tr("Not connected to the eMule core."));
         return;
     }
-    gui::sendTorrentAdd(m_ipc, this, name, gui::torrentFileRequest(data, {}, false),
+    gui::sendTorrentAdd(m_ipc, this, name,
+                        gui::torrentFileRequest(data, {}, false, std::nullopt, std::nullopt, wantedFiles),
                         [this](bool added) {
                             if (added)
                                 m_poller->refreshNow();

@@ -3,6 +3,7 @@
 ///        No daemon: the dialog is fed what FetchMetaFile / InspectIndexerResult return.
 
 #include "dialogs/MetaResultDetailDialog.h"
+#include "controls/TorrentFileTree.h"
 
 #include "controls/UsenetFileCheckList.h"
 
@@ -20,6 +21,7 @@
 #include <QTabWidget>
 #include <QTest>
 #include <QTreeWidget>
+#include <QTreeWidgetItemIterator>
 
 using namespace eMule;
 
@@ -36,6 +38,9 @@ private slots:
     void nzbChecksRowFileSetOnly();
     void nzbDownloadSendsUnchecked();
     void nzbNoneCheckedBlocks();
+    void torrentChecksAllByDefault();
+    void torrentFileRowChecksOnlyItsFile();
+    void torrentSelectNoneThenFolderCheck();
 };
 
 namespace {
@@ -267,6 +272,73 @@ void tst_MetaResultDetailDialog::nzbNoneCheckedBlocks()
     });
     dlg.downloadButton()->click();
     QCOMPARE(spy.count(), 0);
+}
+
+namespace {
+
+/// The file rows of a torrent tree, by file index.
+QHash<int, QTreeWidgetItem*> torrentFileRows(QTreeWidget* tree)
+{
+    QHash<int, QTreeWidgetItem*> out;
+    for (QTreeWidgetItemIterator it(tree); *it; ++it)
+        if (const int index = (*it)->data(0, TorrentFileTree::kFileIndexRole).toInt(); index >= 0)
+            out.insert(index, *it);
+    return out;
+}
+
+} // namespace
+
+void tst_MetaResultDetailDialog::torrentChecksAllByDefault()
+{
+    MetaResultDetailDialog dlg({.name = QStringLiteral("demo"), .torrent = true, .chooseFiles = true});
+    dlg.setDetails(torrentDetails());
+    const auto rows = torrentFileRows(dlg.filesTree());
+    QCOMPARE(rows.size(), 2);   // the pad file is not listed
+    for (QTreeWidgetItem* item : rows)
+        QCOMPARE(item->checkState(MetaResultDetailDialog::TorrentName), Qt::Checked);
+
+    // all checked: kept is empty, the whole torrent
+    QSignalSpy spy(&dlg, &MetaResultDetailDialog::downloadRequested);
+    dlg.downloadButton()->click();
+    QCOMPARE(spy.count(), 1);
+    QVERIFY(spy.at(0).at(1).value<QList<int>>().isEmpty());
+}
+
+void tst_MetaResultDetailDialog::torrentFileRowChecksOnlyItsFile()
+{
+    MetaResultDetailDialog dlg({.name = QStringLiteral("demo"), .torrent = true, .chooseFiles = true,
+                                .selectedFileOnly = true});
+    QCborMap details = torrentDetails();
+    details.insert(QStringLiteral("rowFileIndex"), 2);   // demo/b.bin
+    dlg.setDetails(details);
+    const auto rows = torrentFileRows(dlg.filesTree());
+    QCOMPARE(rows.value(0)->checkState(MetaResultDetailDialog::TorrentName), Qt::Unchecked);
+    QCOMPARE(rows.value(2)->checkState(MetaResultDetailDialog::TorrentName), Qt::Checked);
+
+    QSignalSpy spy(&dlg, &MetaResultDetailDialog::downloadRequested);
+    dlg.downloadButton()->click();
+    QCOMPARE(spy.count(), 1);
+    QCOMPARE(spy.at(0).at(1).value<QList<int>>(), (QList<int>{2}));
+}
+
+void tst_MetaResultDetailDialog::torrentSelectNoneThenFolderCheck()
+{
+    MetaResultDetailDialog dlg({.name = QStringLiteral("demo"), .torrent = true, .chooseFiles = true});
+    dlg.setDetails(torrentDetails());
+    QPushButton* none = nullptr;
+    for (auto* b : dlg.findChildren<QPushButton*>())
+        if (b->text() == QCoreApplication::translate("FileCheckButtons", "Select None"))
+            none = b;
+    QVERIFY(none);
+    none->click();
+    QTreeWidget* tree = dlg.filesTree();
+    QVERIFY(!TorrentFileTree::anyChecked(tree, MetaResultDetailDialog::TorrentName));
+
+    // checking the folder "demo/dir" checks its file a.txt (index 0) only
+    QTreeWidgetItem* dir = torrentFileRows(tree).value(0)->parent();
+    QVERIFY(dir);
+    dir->setCheckState(MetaResultDetailDialog::TorrentName, Qt::Checked);
+    QCOMPARE(TorrentFileTree::checkedFiles(tree, MetaResultDetailDialog::TorrentName), (QList<int>{0}));
 }
 
 QTEST_MAIN(tst_MetaResultDetailDialog)

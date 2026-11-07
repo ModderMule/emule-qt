@@ -498,11 +498,15 @@ void tst_MetaSearchGui::webLinksDialog_listsAndCopies()
 
     auto* copy = visibleChild<QPushButton>(&dlg, [](QPushButton* b) { return b->text() == WebLinksDialog::tr("Copy Links"); });
     QVERIFY(copy);
-    copy->click();   // nothing selected: all of them
-    QCOMPARE(QApplication::clipboard()->text(), QStringLiteral("https://a.test/f/1\nhttps://b.test/f/1"));
-    list->topLevelItem(1)->setSelected(true);
+    QCOMPARE(list->topLevelItem(0)->checkState(0), Qt::Checked);   // all checked to start
     copy->click();
+    QCOMPARE(QApplication::clipboard()->text(), QStringLiteral("https://a.test/f/1\nhttps://b.test/f/1"));
+    list->topLevelItem(0)->setCheckState(0, Qt::Unchecked);
+    copy->click();   // the checked links only
     QCOMPARE(QApplication::clipboard()->text(), QStringLiteral("https://b.test/f/1"));
+    list->topLevelItem(1)->setCheckState(0, Qt::Unchecked);
+    QVERIFY(!copy->isEnabled());   // nothing checked
+    list->topLevelItem(1)->setCheckState(0, Qt::Checked);
     shoot(&dlg, QStringLiteral("web-links.png"));
 }
 
@@ -565,38 +569,55 @@ void tst_MetaSearchGui::webLinksDialog_downloadLabelAndMenu()
     QCOMPARE(b->text(), WebLinksDialog::tr("Download (all)"));
     auto* list = dlg.findChild<QTreeWidget*>();
     QVERIFY(list);
-    list->topLevelItem(0)->setSelected(true);
-    list->topLevelItem(2)->setSelected(true);
+    list->topLevelItem(1)->setCheckState(0, Qt::Unchecked);
     QCOMPARE(b->text(), WebLinksDialog::tr("Download (%1)").arg(2));
 
-    // the menu: Download (bold, an icon) and Deselect All
+    // the menu: Download (bold, an icon), then Check / Uncheck Selected
     QStringList texts;
-    bool icons = true;
     QString bold;
+    bool downloadIcon = false;
     QTimer::singleShot(50, [&] {
         auto* menu = qobject_cast<QMenu*>(QApplication::activePopupWidget());
         if (!menu)
             return;
         for (QAction* a : menu->actions()) {
+            if (a->isSeparator())
+                continue;
             texts << a->text();
-            icons = icons && !a->icon().isNull();
+            if (a->text() == WebLinksDialog::tr("Download"))
+                downloadIcon = !a->icon().isNull();
         }
         if (menu->defaultAction())
             bold = menu->defaultAction()->text();
-        // Deselect All
+        // Uncheck Selected: the right-clicked row 0
         menu->actions().last()->trigger();
         menu->close();
     });
     const QRect r = list->visualItemRect(list->topLevelItem(0));
     QMetaObject::invokeMethod(list, "customContextMenuRequested", Q_ARG(QPoint, r.center()));
-    QCOMPARE(texts, (QStringList{WebLinksDialog::tr("Download"), WebLinksDialog::tr("Deselect All")}));
-    QVERIFY(icons);
+    QCOMPARE(texts, (QStringList{WebLinksDialog::tr("Download"), WebLinksDialog::tr("Check Selected"),
+                                 WebLinksDialog::tr("Uncheck Selected")}));
+    QVERIFY(downloadIcon);
     QCOMPARE(bold, WebLinksDialog::tr("Download"));
-    QVERIFY(list->selectedItems().isEmpty());
-    QCOMPARE(b->text(), WebLinksDialog::tr("Download (all)"));
+    QCOMPARE(list->topLevelItem(0)->checkState(0), Qt::Unchecked);
+    QCOMPARE(b->text(), WebLinksDialog::tr("Download (%1)").arg(1));
 
-    // Download takes the selection: file 2 only
-    list->topLevelItem(2)->setSelected(true);
+    // Select All checks every link again
+    auto* all = visibleChild<QPushButton>(&dlg, [](QPushButton* p) {
+        return p->text() == QCoreApplication::translate("FileCheckButtons", "Select All");
+    });
+    QVERIFY(all);
+    all->click();
+    QCOMPARE(b->text(), WebLinksDialog::tr("Download (all)"));
+    auto* none = visibleChild<QPushButton>(&dlg, [](QPushButton* p) {
+        return p->text() == QCoreApplication::translate("FileCheckButtons", "Select None");
+    });
+    QVERIFY(none);
+    none->click();
+    QVERIFY(!b->isEnabled());
+
+    // Download takes the checked links: file 2 only
+    list->topLevelItem(2)->setCheckState(0, Qt::Checked);
     b->click();
     QCOMPARE(sent, (QList<QStringList>{{QStringLiteral("https://a.test/2")}}));
     QCOMPARE(sentPackage, QStringLiteral("row"));   // the row's name is the package, even for one file

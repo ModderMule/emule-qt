@@ -14,11 +14,14 @@
 #include "dialogs/PortChangeNotice.h"
 #include "dialogs/PortTest.h"
 #include "dialogs/RouterPage.h"
+#include "controls/ContentScrollArea.h"
+#include "utils/DialogSizing.h"
 #include "prefs/Preferences.h"
 #include "IpcMessage.h"
 
 #include <QCborArray>
 #include <QCheckBox>
+#include <QComboBox>
 #include <QDateTime>
 #include <QDialog>
 #include <QDialogButtonBox>
@@ -42,6 +45,7 @@
 #include <QRegularExpressionValidator>
 #include <QSignalBlocker>
 #include <QSpinBox>
+#include <QTabWidget>
 #include <QTreeWidget>
 #include <QUrl>
 #include <QVBoxLayout>
@@ -141,6 +145,49 @@ double uint256Value(const QString& hex)
     return v;
 }
 
+/// What a captcha solver service asks for besides the password / key.
+enum class SolverUser { None, Optional, Required };
+
+/// JDownloader's solver plugins (jd/plugins/hoster/PluginForCaptchaSolver*).
+struct SolverService {
+    const char* host;
+    const char* name;
+    SolverUser user;
+};
+
+constexpr SolverService kSolverServices[] = {
+    {"2captcha.com", "2Captcha", SolverUser::None},
+    {"anti-captcha.com", "Anti-Captcha", SolverUser::None},
+    {"capmonster.cloud", "CapMonster Cloud", SolverUser::None},
+    {"azcaptcha.com", "AZcaptcha", SolverUser::None},
+    {"captchas.io", "Captchas.io", SolverUser::None},
+    {"9kw.eu", "9kw", SolverUser::None},
+    {"deathbycaptcha.com", "DeathByCaptcha", SolverUser::Optional},   // user + password, or an API token
+    {"imagetyperz.com", "ImageTyperz", SolverUser::Optional},
+    {"endcaptcha.com", "EndCaptcha", SolverUser::Required},
+    {"cheapcaptcha.com", "CheapCaptcha", SolverUser::Required},
+};
+
+const SolverService* solverService(const QString& host)
+{
+    for (const SolverService& sv : kSolverServices)
+        if (host == QLatin1StringView(sv.host))
+            return &sv;
+    return nullptr;
+}
+
+SolverUser solverUser(const QString& host)
+{
+    const SolverService* sv = solverService(host);
+    return sv ? sv->user : SolverUser::Optional;
+}
+
+QString solverName(const QString& host)
+{
+    const SolverService* sv = solverService(host);
+    return sv ? QString::fromLatin1(sv->name) : host;
+}
+
 } // namespace
 
 Ed3kOptionsPages::Ed3kOptionsPages(IpcClient* ipc, QWidget* parent)
@@ -158,21 +205,7 @@ Ed3kOptionsPages::Ed3kOptionsPages(IpcClient* ipc, QWidget* parent)
     m_hoster = buildHoster(parent);
     if (m_ipc) {
         connect(m_ipc, &IpcClient::hosterAccountChecked, this, [this](const IpcMessage& msg) {
-            const QString host = msg.fieldString(0);
-            const QString user = msg.fieldString(1);
-            const QCborMap r = msg.fieldMap(2);
-            for (HosterAccountRow& a : m_accounts) {
-                if (a.host != host || a.user != user)
-                    continue;
-                if (!r.value(QStringLiteral("valid")).toBool())
-                    a.status = tr("Not valid");
-                else if (const qint64 exp = r.value(QStringLiteral("expires")).toInteger(); exp > 0)
-                    a.status = (r.value(QStringLiteral("premium")).toBool() ? tr("Premium until %1") : tr("Free until %1"))
-                                   .arg(QLocale().toString(QDateTime::fromSecsSinceEpoch(exp).date(), QLocale::ShortFormat));
-                else
-                    a.status = r.value(QStringLiteral("premium")).toBool() ? tr("Premium") : tr("Free");
-            }
-            fillAccounts();
+            applyAccountCheck(msg.fieldString(0), msg.fieldString(1), msg.fieldMap(2));
         });
         connect(m_ipc, &IpcClient::ed3kStatusChanged, this,
                 [this](const IpcMessage& msg) { applyStatus(msg.fieldMap(0)); });
@@ -260,10 +293,16 @@ void Ed3kOptionsPages::load(const QCborMap& p)
     m_publishLinksCheck->setChecked(h.publishLinks);
     m_javaEdit->setText(h.java);
     m_autoJavaCheck->setChecked(h.autoJava);
-    m_accounts.clear();
+    m_resolverAutoUpdateCheck->setChecked(h.autoUpdate);
+    m_hosterAccounts.rows.clear();
     for (const Ed3kHosterAccount& a : h.accounts)
-        m_accounts.append({a.host, a.user, {}, false, {}});
-    fillAccounts();
+        m_hosterAccounts.rows.append({a.host, a.user, {}, false, {}});
+    fillAccounts(m_hosterAccounts);
+    m_solversGroup->setChecked(h.solversEnabled);
+    m_solverAccounts.rows.clear();
+    for (const Ed3kHosterAccount& a : h.solvers)
+        m_solverAccounts.rows.append({a.host, a.user, {}, false, {}});
+    fillAccounts(m_solverAccounts);
     m_loading = false;
 }
 
@@ -321,15 +360,21 @@ void Ed3kOptionsPages::appendTo(IpcMessage& req) const
     put("ed3kHosterCheckSearchLinks", h.checkSearchLinks);
     put("ed3kHosterExtract", h.extract);
     put("ed3kHosterDeleteArchives", h.deleteArchives);
+    put("ed3kHosterAutoUpdate", h.autoUpdate);
     // a password only when typed here: the daemon keeps the stored one otherwise
-    QCborArray accounts;
-    for (const HosterAccountRow& a : m_accounts) {
-        QCborMap m{{QStringLiteral("host"), a.host}, {QStringLiteral("user"), a.user}};
-        if (a.passwordSet)
-            m.insert(QStringLiteral("password"), a.password);
-        accounts.append(m);
-    }
-    put("ed3kHosterAccounts", accounts);
+    const auto rows = [](const AccountList& list) {
+        QCborArray out;
+        for (const HosterAccountRow& a : list.rows) {
+            QCborMap m{{QStringLiteral("host"), a.host}, {QStringLiteral("user"), a.user}};
+            if (a.passwordSet)
+                m.insert(QStringLiteral("password"), a.password);
+            out.append(m);
+        }
+        return out;
+    };
+    put("ed3kHosterAccounts", rows(m_hosterAccounts));
+    put("ed3kHosterSolversEnabled", h.solversEnabled);
+    put("ed3kHosterSolvers", rows(m_solverAccounts));
 }
 
 void Ed3kOptionsPages::saveLocal() const
@@ -353,11 +398,15 @@ void Ed3kOptionsPages::saveLocal() const
     Ed3kHosterPrefs h = hosterPrefs();
     // without a daemon the stored passwords are here: keep those not typed again
     const Ed3kHosterPrefs old = thePrefs.ed3kHoster();
-    for (Ed3kHosterAccount& a : h.accounts)
-        if (a.password.isEmpty())
-            for (const Ed3kHosterAccount& o : old.accounts)
-                if (o.host == a.host && o.user == a.user)
-                    a.password = o.password;
+    const auto keep = [](QList<Ed3kHosterAccount>& list, const QList<Ed3kHosterAccount>& before) {
+        for (Ed3kHosterAccount& a : list)
+            if (a.password.isEmpty())
+                for (const Ed3kHosterAccount& o : before)
+                    if (o.host == a.host && o.user == a.user)
+                        a.password = o.password;
+    };
+    keep(h.accounts, old.accounts);
+    keep(h.solvers, old.solvers);
     thePrefs.setEd3kHoster(h);
 }
 
@@ -1329,8 +1378,23 @@ QString Ed3kOptionsPages::creditsText(qint64 micro)
 QWidget* Ed3kOptionsPages::buildHoster(QWidget* parent)
 {
     auto* page = new QWidget(parent);
-    auto* layout = new QVBoxLayout(page);
-    layout->setContentsMargins(4, 4, 4, 4);
+    auto* pageLayout = new QVBoxLayout(page);
+    pageLayout->setContentsMargins(4, 4, 4, 4);
+    // tabs like the Usenet page: each scrolls on its own (OptionsDialog: PageScroll::Self)
+    auto* tabs = new QTabWidget(page);
+    pageLayout->addWidget(tabs, 1);
+    const auto addTab = [tabs](const QString& title) {
+        auto* body = new QWidget;
+        auto* tabLayout = new QVBoxLayout(body);
+        tabLayout->setContentsMargins(4, 4, 4, 4);
+        DialogSizing::enableHeightForWidth(body);
+        auto* area = new ContentScrollArea(tabs);
+        area->setWidget(body);
+        tabs->addTab(area, title);
+        return tabLayout;
+    };
+    auto* layout = addTab(tr("General"));
+    auto* solversLayout = addTab(tr("Captcha solvers"));
     const auto edited = [this] {
         if (!m_loading)
             emit changed();
@@ -1381,6 +1445,10 @@ QWidget* Ed3kOptionsPages::buildHoster(QWidget* parent)
     javaLayout->addWidget(m_javaLabel);
     m_jdVersionLabel = noteLabel(QString(), javaGroup);
     javaLayout->addWidget(m_jdVersionLabel);
+    m_resolverAutoUpdateCheck = new QCheckBox(tr("Update hoster plugins automatically"), javaGroup);
+    m_resolverAutoUpdateCheck->setToolTip(tr("Fetches newer JDownloader plugins from emule-qt.org, checked by their "
+                                             "SHA-256. They are swapped in while no hoster download runs."));
+    javaLayout->addWidget(m_resolverAutoUpdateCheck);
     auto* pathRow = new QHBoxLayout;
     m_javaEdit = new QLineEdit(javaGroup);
     m_javaEdit->setPlaceholderText(tr("Find automatically"));
@@ -1433,17 +1501,7 @@ QWidget* Ed3kOptionsPages::buildHoster(QWidget* parent)
     accLayout->addWidget(noteLabel(tr("Logins at hosters. They stay on this computer: never sent to another node, "
                                       "never logged."),
                                    accGroup));
-    m_accountsTree = makeTree({tr("Hoster"), tr("User"), tr("Status")}, accGroup);
-    accLayout->addWidget(m_accountsTree);
-    auto* accBtns = new QHBoxLayout;
-    auto* addBtn = new QPushButton(tr("Add..."), accGroup);
-    auto* editBtn = new QPushButton(tr("Edit..."), accGroup);
-    auto* removeBtn = new QPushButton(tr("Remove"), accGroup);
-    auto* checkBtn = new QPushButton(tr("Check"), accGroup);
-    for (QPushButton* b : {addBtn, editBtn, removeBtn, checkBtn})
-        accBtns->addWidget(b);
-    accBtns->addStretch();
-    accLayout->addLayout(accBtns);
+    buildAccountList(m_hosterAccounts, {tr("Hoster"), tr("User"), tr("Status")}, accLayout, accGroup);
     layout->addWidget(accGroup);
 
     // GUI-only: OptionsDialog loads and saves it with the other file types
@@ -1458,26 +1516,17 @@ QWidget* Ed3kOptionsPages::buildHoster(QWidget* parent)
                                        "the Hoster tab. Off by default, JDownloader usually has them."));
 #endif
     desktopLayout->addWidget(m_associateDlcCheck);
+    m_clickNLoadCheck = new QCheckBox(tr("Accept links from web pages (Click'n'Load)"), desktopGroup);
+    m_clickNLoadCheck->setToolTip(tr("Link sites and browser add-ons send links to port 9666 of this computer, as "
+                                     "they would to JDownloader. eMule Qt shows them and asks which to add. "
+                                     "Not while JDownloader runs: it has the port."));
+    desktopLayout->addWidget(m_clickNLoadCheck);
     layout->addWidget(desktopGroup);
     layout->addStretch();
     connect(m_associateDlcCheck, &QCheckBox::toggled, this, edited);
+    connect(m_clickNLoadCheck, &QCheckBox::toggled, this, edited);
 
-    connect(addBtn, &QPushButton::clicked, this, [this] { editAccount(-1); });
-    connect(editBtn, &QPushButton::clicked, this, [this] {
-        if (auto* it = m_accountsTree->currentItem())
-            editAccount(m_accountsTree->indexOfTopLevelItem(it));
-    });
-    connect(m_accountsTree, &QTreeWidget::itemDoubleClicked, this,
-            [this](QTreeWidgetItem* it) { editAccount(m_accountsTree->indexOfTopLevelItem(it)); });
-    connect(removeBtn, &QPushButton::clicked, this, [this] {
-        const int row = m_accountsTree->currentItem() ? m_accountsTree->indexOfTopLevelItem(m_accountsTree->currentItem()) : -1;
-        if (row < 0 || row >= m_accounts.size())
-            return;
-        m_accounts.removeAt(row);
-        fillAccounts();
-        emit changed();
-    });
-    connect(checkBtn, &QPushButton::clicked, this, &Ed3kOptionsPages::checkAccount);
+    buildSolvers(solversLayout, page);
 
     connect(m_hosterEnabledCheck, &QCheckBox::toggled, this, [this] {
         if (m_loading)
@@ -1500,7 +1549,7 @@ QWidget* Ed3kOptionsPages::buildHoster(QWidget* parent)
         emit changed();
     });
     for (QCheckBox* box : {m_hosterPuzzlesCheck, m_hosterPeersCheck, m_hosterCheckLinksCheck, m_autoJavaCheck,
-                           m_hosterExtractCheck, m_hosterDeleteArchivesCheck})
+                           m_hosterExtractCheck, m_hosterDeleteArchivesCheck, m_resolverAutoUpdateCheck})
         connect(box, &QCheckBox::toggled, this, edited);
     connect(m_hosterExtractCheck, &QCheckBox::toggled, m_hosterDeleteArchivesCheck, &QWidget::setEnabled);
     connect(m_hosterStreamsSpin, &QSpinBox::valueChanged, this, edited);
@@ -1510,6 +1559,7 @@ QWidget* Ed3kOptionsPages::buildHoster(QWidget* parent)
     dlGroup->setEnabled(false);
     javaGroup->setVisible(false);
     accGroup->setVisible(false);
+    tabs->setTabVisible(1, false);
     m_resolverLabel->setText(tr("This build has no hoster resolver: hoster links are stored and passed on, "
                                 "but not downloaded."));
 #endif
@@ -1530,8 +1580,11 @@ void Ed3kOptionsPages::applyHosterStatus(const QCborMap& h)
     else
         m_resolverLabel->setText(tr("The resolver is not ready: %1").arg(reason));
     const QString version = r.value(QStringLiteral("version")).toString();
-    m_jdVersionLabel->setText(version.isEmpty() ? tr("JDownloader: not installed")
-                                                : tr("JDownloader version: %1").arg(version));
+    const QString pending = r.value(QStringLiteral("pending")).toString();
+    QString versionText = version.isEmpty() ? tr("JDownloader: not installed") : tr("JDownloader version: %1").arg(version);
+    if (!pending.isEmpty())
+        versionText += u' ' + tr("(update %1 waits until hoster downloads are idle)").arg(pending);
+    m_jdVersionLabel->setText(versionText);
 
     const QCborMap j = h.value(QStringLiteral("java")).toMap();
     // Ed3kJavaRuntime::State: Unknown, Probing, Ready, Missing, Downloading, Unpacking, Failed
@@ -1554,6 +1607,31 @@ void Ed3kOptionsPages::applyHosterStatus(const QCborMap& h)
     m_javaState = state;
     m_hosterOnInCore = h.value(QStringLiteral("enabled")).toBool();
     updateJavaButtons();
+
+    // what the resolver found when it got the solvers; a row checked here keeps its own
+    QList<bool> taken(m_solverAccounts.rows.size(), false);
+    bool any = false;
+    for (const QCborValue& v : h.value(QStringLiteral("solvers")).toArray()) {
+        const QCborMap st = v.toMap();
+        const QString host = st.value(QStringLiteral("host")).toString();
+        for (qsizetype i = 0; i < m_solverAccounts.rows.size(); ++i) {
+            HosterAccountRow& a = m_solverAccounts.rows[i];
+            if (taken[i] || a.host != host)
+                continue;
+            taken[i] = true;
+            if (a.status.isEmpty()) {
+                any = true;
+                a.status = !st.value(QStringLiteral("valid")).toBool()
+                               ? (st.value(QStringLiteral("code")).toString() == QLatin1StringView("io") ? tr("Not reachable")
+                                                                                                        : tr("Not valid"))
+                               : creditText(st.value(QStringLiteral("balance")).toDouble(-1),
+                                            st.value(QStringLiteral("currency")).toString());
+            }
+            break;
+        }
+    }
+    if (any)
+        fillAccounts(m_solverAccounts);
 }
 
 void Ed3kOptionsPages::updateJavaButtons()
@@ -1589,33 +1667,116 @@ bool Ed3kOptionsPages::confirmShareLinks()
            == QMessageBox::Yes;
 }
 
-void Ed3kOptionsPages::editAccount(int row)
+void Ed3kOptionsPages::buildAccountList(AccountList& list, const QStringList& columns, QVBoxLayout* layout,
+                                        QWidget* parent)
 {
-    const bool add = row < 0 || row >= m_accounts.size();
-    HosterAccountRow a = add ? HosterAccountRow{} : m_accounts.at(row);
+    list.tree = makeTree(columns, parent);
+    layout->addWidget(list.tree);
+    auto* btns = new QHBoxLayout;
+    auto* addBtn = new QPushButton(tr("Add..."), parent);
+    auto* editBtn = new QPushButton(tr("Edit..."), parent);
+    auto* removeBtn = new QPushButton(tr("Remove"), parent);
+    auto* checkBtn = new QPushButton(tr("Check"), parent);
+    for (QPushButton* b : {addBtn, editBtn, removeBtn, checkBtn})
+        btns->addWidget(b);
+    btns->addStretch();
+    layout->addLayout(btns);
+    AccountList* l = &list;
+    const auto current = [l] { return l->tree->currentItem() ? l->tree->indexOfTopLevelItem(l->tree->currentItem()) : -1; };
+    connect(addBtn, &QPushButton::clicked, this, [this, l] { editAccount(*l, -1); });
+    connect(editBtn, &QPushButton::clicked, this, [this, l, current] {
+        if (const int row = current(); row >= 0)
+            editAccount(*l, row);
+    });
+    connect(list.tree, &QTreeWidget::itemDoubleClicked, this,
+            [this, l](QTreeWidgetItem* it) { editAccount(*l, l->tree->indexOfTopLevelItem(it)); });
+    connect(removeBtn, &QPushButton::clicked, this, [this, l, current] {
+        const int row = current();
+        if (row < 0 || row >= l->rows.size())
+            return;
+        l->rows.removeAt(row);
+        fillAccounts(*l);
+        emit changed();
+    });
+    connect(checkBtn, &QPushButton::clicked, this, [this, l] { checkAccount(*l); });
+}
+
+void Ed3kOptionsPages::buildSolvers(QVBoxLayout* layout, QWidget* parent)
+{
+    m_solversGroup = new QGroupBox(tr("Solve puzzles with these services"), parent);
+    m_solversGroup->setCheckable(true);
+    m_solversGroup->setToolTip(tr("A hoster's image puzzle goes to these paid services first; the puzzle window "
+                                  "only comes when none of them answers."));
+    auto* groupLayout = new QVBoxLayout(m_solversGroup);
+    groupLayout->addWidget(noteLabel(tr("Captcha solver services solve the puzzles of hosters for a small fee each. "
+                                        "An account needs credit at the service. Logins stay on this computer: "
+                                        "never sent to another node, never logged."),
+                                     m_solversGroup));
+    buildAccountList(m_solverAccounts, {tr("Service"), tr("User"), tr("Status")}, groupLayout, m_solversGroup);
+    layout->addWidget(m_solversGroup);
+    layout->addStretch();
+    connect(m_solversGroup, &QGroupBox::toggled, this, [this] {
+        if (!m_loading)
+            emit changed();
+    });
+}
+
+void Ed3kOptionsPages::editAccount(AccountList& list, int row)
+{
+    const bool add = row < 0 || row >= list.rows.size();
+    HosterAccountRow a = add ? HosterAccountRow{} : list.rows.at(row);
     QDialog dlg(m_parent);
-    dlg.setWindowTitle(add ? tr("Add hoster account") : tr("Edit hoster account"));
+    if (list.solvers)
+        dlg.setWindowTitle(add ? tr("Add captcha solver") : tr("Edit captcha solver"));
+    else
+        dlg.setWindowTitle(add ? tr("Add hoster account") : tr("Edit hoster account"));
     auto* form = new QFormLayout(&dlg);
     auto* hostEdit = new QLineEdit(a.host, &dlg);
     hostEdit->setPlaceholderText(QStringLiteral("rapidgator.net"));
+    auto* serviceCombo = new QComboBox(&dlg);
     auto* userEdit = new QLineEdit(a.user, &dlg);
     auto* passEdit = new QLineEdit(&dlg);
     passEdit->setEchoMode(QLineEdit::Password);
     passEdit->setPlaceholderText(add ? QString() : tr("unchanged"));
-    form->addRow(tr("Hoster:"), hostEdit);
+    auto* passLabel = new QLabel(tr("Password:"), &dlg);
+    if (list.solvers) {
+        for (const SolverService& sv : kSolverServices)
+            serviceCombo->addItem(QString::fromLatin1(sv.name), QString::fromLatin1(sv.host));
+        if (!a.host.isEmpty() && serviceCombo->findData(a.host) < 0)
+            serviceCombo->addItem(a.host, a.host);   // a service this version does not list
+        if (!a.host.isEmpty())
+            serviceCombo->setCurrentIndex(serviceCombo->findData(a.host));
+        form->addRow(tr("Service:"), serviceCombo);
+        hostEdit->hide();
+    } else {
+        form->addRow(tr("Hoster:"), hostEdit);
+        serviceCombo->hide();
+    }
     form->addRow(tr("User:"), userEdit);
-    form->addRow(tr("Password:"), passEdit);
+    form->addRow(passLabel, passEdit);
+    // key-only services: no user, the key is the password
+    const auto updateFields = [&] {
+        if (!list.solvers)
+            return;
+        const SolverUser u = solverUser(serviceCombo->currentData().toString());
+        userEdit->setEnabled(u != SolverUser::None);
+        userEdit->setPlaceholderText(u == SolverUser::Optional ? tr("empty: the password is an API token") : QString());
+        passLabel->setText(u == SolverUser::None ? tr("API key:") : tr("Password:"));
+    };
+    connect(serviceCombo, &QComboBox::currentIndexChanged, &dlg, updateFields);
+    updateFields();
     auto* buttons = new QDialogButtonBox(QDialogButtonBox::Ok | QDialogButtonBox::Cancel, &dlg);
     connect(buttons, &QDialogButtonBox::accepted, &dlg, &QDialog::accept);
     connect(buttons, &QDialogButtonBox::rejected, &dlg, &QDialog::reject);
     form->addRow(buttons);
     if (dlg.exec() != QDialog::Accepted)
         return;
-    QString host = hostEdit->text().trimmed().toLower();
+    QString host = list.solvers ? serviceCombo->currentData().toString() : hostEdit->text().trimmed().toLower();
     if (host.startsWith(QLatin1StringView("www.")))
         host = host.mid(4);
-    const QString user = userEdit->text().trimmed();
-    if (host.isEmpty() || user.isEmpty())
+    const QString user = userEdit->isEnabled() ? userEdit->text().trimmed() : QString();
+    const bool needUser = !list.solvers || solverUser(host) == SolverUser::Required;
+    if (host.isEmpty() || (needUser && user.isEmpty()) || (list.solvers && add && passEdit->text().isEmpty()))
         return;
     const bool renamed = host != a.host || user != a.user;
     a.host = host;
@@ -1626,25 +1787,28 @@ void Ed3kOptionsPages::editAccount(int row)
     }
     a.status.clear();
     if (add)
-        m_accounts.append(a);
+        list.rows.append(a);
     else
-        m_accounts[row] = a;
-    fillAccounts();
+        list.rows[row] = a;
+    fillAccounts(list);
     emit changed();
 }
 
-void Ed3kOptionsPages::checkAccount()
+void Ed3kOptionsPages::checkAccount(AccountList& list)
 {
-    const int row = m_accountsTree->currentItem() ? m_accountsTree->indexOfTopLevelItem(m_accountsTree->currentItem()) : -1;
-    if (row < 0 || row >= m_accounts.size() || !m_ipc)
+    const int row = list.tree->currentItem() ? list.tree->indexOfTopLevelItem(list.tree->currentItem()) : -1;
+    if (row < 0 || row >= list.rows.size() || !m_ipc)
         return;
-    HosterAccountRow& a = m_accounts[row];
+    HosterAccountRow& a = list.rows[row];
     if (!a.passwordSet) {
         // the stored password stays in the core: type it to check
         bool ok = false;
-        const QString pass = QInputDialog::getText(m_parent, tr("Check hoster account"),
-                                                   tr("Password of %1 at %2:").arg(a.user, a.host), QLineEdit::Password,
-                                                   {}, &ok);
+        const QString who = a.user.isEmpty() ? a.host : tr("%1 at %2").arg(a.user, a.host);
+        const QString pass = QInputDialog::getText(m_parent, list.solvers ? tr("Check captcha solver") : tr("Check hoster account"),
+                                                   (list.solvers && solverUser(a.host) == SolverUser::None)
+                                                       ? tr("API key of %1:").arg(who)
+                                                       : tr("Password of %1:").arg(who),
+                                                   QLineEdit::Password, {}, &ok);
         if (!ok)
             return;
         a.password = pass;
@@ -1656,14 +1820,41 @@ void Ed3kOptionsPages::checkAccount()
     req.append(a.password);
     m_ipc->sendRequest(std::move(req));
     a.status = tr("Checking...");
-    fillAccounts();
+    fillAccounts(list);
 }
 
-void Ed3kOptionsPages::fillAccounts()
+void Ed3kOptionsPages::fillAccounts(AccountList& list)
 {
-    m_accountsTree->clear();
-    for (const HosterAccountRow& a : m_accounts)
-        m_accountsTree->addTopLevelItem(new QTreeWidgetItem({a.host, a.user, a.status}));
+    list.tree->clear();
+    for (const HosterAccountRow& a : list.rows) {
+        const QString host = list.solvers ? solverName(a.host) : a.host;
+        list.tree->addTopLevelItem(new QTreeWidgetItem({host, a.user, a.status}));
+    }
+}
+
+void Ed3kOptionsPages::applyAccountCheck(const QString& host, const QString& user, const QCborMap& r)
+{
+    for (AccountList* list : {&m_hosterAccounts, &m_solverAccounts}) {
+        bool hit = false;
+        for (HosterAccountRow& a : list->rows) {
+            if (a.host != host || a.user != user)
+                continue;
+            hit = true;
+            if (!r.value(QStringLiteral("valid")).toBool())
+                a.status = r.value(QStringLiteral("error")).toString() == QLatin1StringView("io") ? tr("Not reachable")
+                                                                                                  : tr("Not valid");
+            else if (list->solvers)
+                a.status = creditText(r.value(QStringLiteral("balance")).toDouble(-1),
+                                      r.value(QStringLiteral("currency")).toString());
+            else if (const qint64 exp = r.value(QStringLiteral("expires")).toInteger(); exp > 0)
+                a.status = (r.value(QStringLiteral("premium")).toBool() ? tr("Premium until %1") : tr("Free until %1"))
+                               .arg(QLocale().toString(QDateTime::fromSecsSinceEpoch(exp).date(), QLocale::ShortFormat));
+            else
+                a.status = r.value(QStringLiteral("premium")).toBool() ? tr("Premium") : tr("Free");
+        }
+        if (hit)
+            fillAccounts(*list);
+    }
 }
 
 Ed3kHosterPrefs Ed3kOptionsPages::hosterPrefs() const
@@ -1673,6 +1864,7 @@ Ed3kHosterPrefs Ed3kOptionsPages::hosterPrefs() const
     h.enabled = m_hosterEnabledCheck->isChecked();
     h.java = m_javaEdit->text().trimmed();
     h.autoJava = m_autoJavaCheck->isChecked();
+    h.autoUpdate = m_resolverAutoUpdateCheck->isChecked();
     h.maxStreams = uint32(m_hosterStreamsSpin->value());
     h.askPuzzles = m_hosterPuzzlesCheck->isChecked();
     h.publishLinks = m_publishLinksCheck->isChecked();
@@ -1680,8 +1872,12 @@ Ed3kHosterPrefs Ed3kOptionsPages::hosterPrefs() const
     h.checkSearchLinks = m_hosterCheckLinksCheck->isChecked();
     h.extract = m_hosterExtractCheck->isChecked();
     h.deleteArchives = m_hosterDeleteArchivesCheck->isChecked();
-    for (const HosterAccountRow& a : m_accounts)
+    for (const HosterAccountRow& a : m_hosterAccounts.rows)
         h.accounts.append({a.host, a.user, a.passwordSet ? a.password : QString()});
+    h.solversEnabled = m_solversGroup->isChecked();
+    h.solvers.clear();
+    for (const HosterAccountRow& a : m_solverAccounts.rows)
+        h.solvers.append({a.host, a.user, a.passwordSet ? a.password : QString()});
     return h;
 }
 
@@ -1765,6 +1961,14 @@ void Ed3kOptionsPages::updateAutoCredits()
     m_autoNoteLabel->setText(c.value(QStringLiteral("autoActive")).toBool()
                                  ? tr("Highspeed download is running. Balance: %1").arg(bal)
                                  : tr("Highspeed download is not running. Balance: %1").arg(bal));
+}
+
+QString Ed3kOptionsPages::creditText(double balance, const QString& currency)
+{
+    if (balance < 0)
+        return tr("Valid");
+    const QString money = QString(QLocale().toString(balance, 'f', balance < 1 ? 4 : 2) + u' ' + currency).trimmed();
+    return balance > 0 ? tr("Credit: %1").arg(money) : tr("No credit (%1)").arg(money);
 }
 
 } // namespace eMule

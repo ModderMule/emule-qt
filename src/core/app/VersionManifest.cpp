@@ -108,6 +108,15 @@ VersionManifestInfo parse(const QByteArray& json)
         info.downloads.insert(it.key(), d);
     }
 
+    const QJsonObject res = obj.value(QStringLiteral("hosterResolver")).toObject();
+    if (!res.isEmpty()) {
+        info.hosterResolver.file.url = res.value(QStringLiteral("url")).toString();
+        info.hosterResolver.file.sha256 = res.value(QStringLiteral("sha256")).toString().toLower();
+        info.hosterResolver.file.size = res.value(QStringLiteral("size")).toInteger(0);
+        info.hosterResolver.jdRevision = int(res.value(QStringLiteral("jdRevision")).toInteger(0));
+        info.hosterResolver.api = int(res.value(QStringLiteral("api")).toInteger(0));
+    }
+
     const QString key = platformKey();
     if (const VersionDownload d = info.downloadFor(key); !key.isEmpty() && d.isUsable())
         info.downloadUrl = QUrl(d.url, QUrl::StrictMode).toString();

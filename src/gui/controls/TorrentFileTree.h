@@ -8,6 +8,7 @@
 /// [{index, path ('/' separated), size, pad}]. Pad files are skipped.
 
 #include <QHash>
+#include <QList>
 #include <QString>
 #include <Qt>
 
@@ -31,5 +32,16 @@ QTreeWidgetItem* folderItem(QTreeWidget* tree, const QString& path,
 /// Read-only fill: name and size of each file, folder sizes summed. Clears the
 /// tree first. @return the number of files shown.
 int fill(QTreeWidget* tree, const QCborArray& files, int nameColumn, int sizeColumn);
+
+/// As fill(), with a check box per file in @p nameColumn (column 0); folders follow
+/// their files. @p checked: the file indices to check; empty = all.
+int fillCheckable(QTreeWidget* tree, const QCborArray& files, int nameColumn, int sizeColumn,
+                  const QList<int>& checked = {});
+
+/// Checked file indices of a fillCheckable() tree; empty when every file is checked.
+[[nodiscard]] QList<int> checkedFiles(QTreeWidget* tree, int column);
+
+/// Whether a fillCheckable() tree has any file checked.
+[[nodiscard]] bool anyChecked(QTreeWidget* tree, int column);
 
 } // namespace eMule::TorrentFileTree

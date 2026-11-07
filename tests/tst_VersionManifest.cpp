@@ -42,6 +42,7 @@ private slots:
     void missingEntryIsEmpty();
     void notesDefaultEmpty();
     void parsesDescriptionAndChangelog();
+    void parsesHosterResolver();
 };
 
 void TestVersionManifest::parsesEveryEntry()
@@ -96,6 +97,23 @@ void TestVersionManifest::parsesDescriptionAndChangelog()
     QCOMPARE(info.description, QStringLiteral("Bug fix release."));
     // empty and non-string entries dropped, rest trimmed
     QCOMPARE(info.changelog, (QStringList{QStringLiteral("Faster search"), QStringLiteral("Fix <b>crash</b>")}));
+}
+
+void TestVersionManifest::parsesHosterResolver()
+{
+    // written by scripts/update-manifest.sh; no api in an older manifest
+    auto info = VersionManifest::parse(
+        "{\"latest\": \"0.8.1\", \"hosterResolver\": {\"url\": \"https://emule-qt.org/pub/resolver.zip\","
+        " \"sha256\": \"EEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEE\", \"size\": 4000,"
+        " \"jdRevision\": 53800, \"api\": 2}}");
+    QVERIFY(info.isValid());
+    QVERIFY(info.hosterResolver.file.isInstallable());
+    QCOMPARE(info.hosterResolver.file.sha256, QString(64, QLatin1Char('e')));
+    QCOMPARE(info.hosterResolver.jdRevision, 53800);
+    QCOMPARE(info.hosterResolver.api, 2);
+    info = VersionManifest::parse(kManifest);
+    QVERIFY(info.hosterResolver.file.url.isEmpty());
+    QCOMPARE(info.hosterResolver.api, 0);
 }
 
 QTEST_GUILESS_MAIN(TestVersionManifest)

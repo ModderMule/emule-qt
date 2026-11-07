@@ -116,6 +116,8 @@ void tst_Ed3kBridge::offWritesNoEd3kState()
     QVERIFY(refused(IpcMsgType::SetEd3kPassReports, {false}));
     QVERIFY(refused(IpcMsgType::FollowEd3kSet, {QStringLiteral("ed3k:set?x"), 0}));
     QVERIFY(refused(IpcMsgType::AddHosterLinks, {QStringLiteral("https://fake.example/f/1")}));
+    // a Click'n'Load post reaches the hoster bridge (1139, outside its first block)
+    QVERIFY(refused(IpcMsgType::AddClickNLoad, {QStringLiteral("https://fake.example/f/1")}));
     QVERIFY(refused(IpcMsgType::DownloadJavaRuntime, {}));
     // reads answer
     QVERIFY(!refused(IpcMsgType::GetEd3kDownloads, {}));

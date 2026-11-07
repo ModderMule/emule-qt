@@ -8,6 +8,7 @@
 # macOS: lo0 has only 127.0.0.1, aliases are added with ifconfig (gone after reboot).
 # Linux: 127.0.0.0/8 is local already; addresses are only added if that route is missing.
 # Needs sudo for up/down.
+# macOS: if Bonjour then reports "name in use" and adds -2: sudo scutil --set LocalHostName <name>
 set -euo pipefail
 
 cmd=${1:-status}

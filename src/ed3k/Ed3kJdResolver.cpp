@@ -20,6 +20,8 @@
 #include <QRandomGenerator>
 #include <QTcpServer>
 #include <QTcpSocket>
+#include <QTemporaryDir>
+#include <QThread>
 #include <QUrl>
 
 namespace eMule::ed3k {
@@ -106,10 +108,11 @@ void pruneShared(const QString& sharedDir, const QString& keep, int days)
     }
 }
 
+/// path too: a fetched zip of the same size and time is still another one
 QString zipStamp(const QString& zip)
 {
     const QFileInfo fi(zip);
-    return QStringLiteral("%1 %2").arg(fi.size()).arg(fi.lastModified().toMSecsSinceEpoch());
+    return QStringLiteral("%1 %2 %3").arg(fi.size()).arg(fi.lastModified().toMSecsSinceEpoch()).arg(fi.absoluteFilePath());
 }
 
 QJsonObject accountJson(const std::optional<ResolverAccount>& a)
@@ -140,6 +143,11 @@ Ed3kJdResolver::Ed3kJdResolver(QObject* parent)
 
 Ed3kJdResolver::~Ed3kJdResolver()
 {
+    // an unpack in flight finishes: a half-moved plugins folder would break the next start
+    if (m_installThread) {
+        m_installThread->disconnect(this);
+        m_installThread->wait();
+    }
     m_stopping = true;
     closeChannel();
     // m_sidecar waits for java, then kills it
@@ -148,14 +156,41 @@ Ed3kJdResolver::~Ed3kJdResolver()
 
 void Ed3kJdResolver::setConfig(const JdResolverConfig& config)
 {
-    const bool restart = config.enabled != m_config.enabled || config.java != m_config.java || config.zip != m_config.zip
-                         || config.dataDir != m_config.dataDir || config.sharedDir != m_config.sharedDir;
-    const bool proxy = config.proxy != m_config.proxy;
-    const bool puzzles = config.askPuzzles != m_config.askPuzzles;
-    m_config = config;
+    JdResolverConfig next = config;
+    const bool sameBase = next.enabled == m_config.enabled && next.java == m_config.java
+                          && next.dataDir == m_config.dataDir && next.sharedDir == m_config.sharedDir;
+    // a new zip alone waits while the sidecar works (a download, a check): swapped in when it ends
+    const bool swap = sameBase && next.zip != m_config.zip && !m_root.isEmpty();
+    if (swap && running()) {
+        if (m_pendingZip != next.zip) {
+            m_pendingZip = next.zip;
+            const int rev = readZipInfo(next.zip).revision;
+            m_pendingVersion = rev > 0 ? QStringLiteral("r%1").arg(rev) : QString();
+            logHoster(QStringLiteral("hoster: new resolver plugins %1 wait until the resolver is idle")
+                          .arg(m_pendingVersion.isEmpty() ? next.zip : m_pendingVersion));
+            emit stateChanged();
+        }
+        next.zip = m_config.zip;
+    } else if (!m_pendingZip.isEmpty()) {
+        m_pendingZip.clear();
+        m_pendingVersion.clear();
+    }
+    const bool restart = next.enabled != m_config.enabled || next.java != m_config.java || next.zip != m_config.zip
+                         || next.dataDir != m_config.dataDir || next.sharedDir != m_config.sharedDir;
+    const bool proxy = next.proxy != m_config.proxy;
+    const bool puzzles = next.askPuzzles != m_config.askPuzzles;
+    const bool solvers = next.solvers != m_config.solvers;
+    m_config = next;
+    if (solvers)
+        m_solverStates.clear();
     if (restart) {
         stop();
-        installPlugins();
+        if (installing())
+            m_reinstall = true;   // after the running unpack, with this config
+        else if (swap || m_fetching)   // the first fetched zip: links wait, unpack off the GUI thread
+            installAsync();
+        else
+            installPlugins();
         emit stateChanged();
         return;
     }
@@ -163,6 +198,9 @@ void Ed3kJdResolver::setConfig(const JdResolverConfig& config)
         setProxy(m_config.proxy);
     if (puzzles)
         setAskPuzzles(m_config.askPuzzles);
+    // not running: sent with the next start
+    if (solvers && running())
+        sendSolvers();
 }
 
 QString Ed3kJdResolver::findBundledZip()
@@ -172,6 +210,38 @@ QString Ed3kJdResolver::findBundledZip()
                            {QStringLiteral("resolver.zip"), QStringLiteral("../Resources/resolver.zip"),
                             QStringLiteral("../share/emuleqt/resolver.zip"), QStringLiteral("resolver/resolver.zip")},
                            QStringLiteral("hoster-resolver/resolver.zip"));
+}
+
+Ed3kJdResolver::ZipInfo Ed3kJdResolver::readZipInfo(const QString& zip)
+{
+    ZipInfo info;
+    ArchiveReader reader;
+    if (zip.isEmpty() || !reader.open(zip))
+        return info;
+    QTemporaryDir tmp;
+    const auto number = [&](int index) {
+        const QString to = tmp.filePath(QStringLiteral("v.txt"));
+        QFile::remove(to);
+        if (!tmp.isValid() || !reader.extractEntry(index, to))
+            return 0;
+        QFile f(to);
+        return f.open(QIODevice::ReadOnly) ? QString::fromUtf8(f.readLine(64)).trimmed().toInt() : 0;
+    };
+    bool core = false;
+    bool hoster = false;
+    for (int i = 0; i < reader.entryCount(); ++i) {
+        const QString name = reader.entryName(i);
+        if (name == QLatin1StringView("resolver/revision.txt"))
+            info.revision = number(i);
+        else if (name == QLatin1StringView("resolver/api.txt"))
+            info.api = number(i);
+        else if (name == QLatin1StringView("resolver/Core.jar"))
+            core = true;
+        else if (name.startsWith(QLatin1StringView("resolver/jd/plugins/hoster/")))
+            hoster = true;
+    }
+    info.layout = core && hoster;
+    return info;
 }
 
 bool Ed3kJdResolver::install(const QString& zip, const QString& dataDir, QString* error)
@@ -298,6 +368,10 @@ QString Ed3kJdResolver::unavailableReason() const
 {
     if (!m_config.enabled)
         return tr("Hoster downloads are off");
+    if (installing())
+        return tr("Updating resolver plugins");
+    if (m_fetching)
+        return tr("Downloading resolver plugins");
     if (m_config.java.isEmpty())
         return tr("No Java runtime");
     if (!m_installError.isEmpty())
@@ -305,6 +379,19 @@ QString Ed3kJdResolver::unavailableReason() const
     if (m_config.dataDir.isEmpty() || m_root.isEmpty() || !layoutOk(m_root))
         return tr("Resolver plugins missing");
     return {};
+}
+
+void Ed3kJdResolver::wantPlugins()
+{
+    if (m_config.enabled && m_config.zip.isEmpty() && (m_root.isEmpty() || !layoutOk(m_root)) && !m_fetching
+        && !installing())
+        emit pluginsNeeded();
+}
+
+void Ed3kJdResolver::setFetching(bool on)
+{
+    if (std::exchange(m_fetching, on) != on)
+        emit stateChanged();
 }
 
 bool Ed3kJdResolver::running() const
@@ -360,6 +447,26 @@ Ed3kResolver::TaskId Ed3kJdResolver::sites(const QString& host)
     return request({{QStringLiteral("op"), QStringLiteral("sites")}, {QStringLiteral("host"), host}}, true);
 }
 
+Ed3kResolver::TaskId Ed3kJdResolver::setSolverAccounts(const QList<SolverAccount>& accounts)
+{
+    QJsonArray list;
+    for (const SolverAccount& a : accounts)
+        list.append(QJsonObject{{QStringLiteral("host"), a.host},
+                                {QStringLiteral("user"), a.user},
+                                {QStringLiteral("password"), a.password}});
+    return request({{QStringLiteral("op"), QStringLiteral("solverAccounts")}, {QStringLiteral("accounts"), list}}, true);
+}
+
+Ed3kResolver::TaskId Ed3kJdResolver::solveTest(const QString& solver, const QString& type, const QByteArray& image)
+{
+    QJsonObject r{{QStringLiteral("op"), QStringLiteral("solveTest")},
+                  {QStringLiteral("solver"), solver},
+                  {QStringLiteral("type"), type}};
+    if (!image.isEmpty())
+        r.insert(QStringLiteral("image"), QString::fromLatin1(image.toBase64()));
+    return request(r, true);
+}
+
 void Ed3kJdResolver::answerPuzzle(std::uint64_t puzzle, const QString& text)
 {
     if (running())
@@ -370,6 +477,13 @@ void Ed3kJdResolver::answerPuzzle(std::uint64_t puzzle, const QString& text)
 
 void Ed3kJdResolver::cancel(TaskId task)
 {
+    if (std::erase_if(m_held, [task](const auto& h) { return h.first == task; }) > 0) {
+        ResolverEvent e;
+        e.kind = ResolverEvent::Kind::Failed;
+        e.code = QStringLiteral("cancelled");
+        QMetaObject::invokeMethod(this, [this, task, e] { emit taskEvent(task, e); }, Qt::QueuedConnection);
+        return;
+    }
     if (!m_pending.contains(task))
         return;
     if (running())
@@ -408,7 +522,8 @@ std::optional<std::pair<Ed3kResolver::TaskId, ResolverEvent>> Ed3kJdResolver::pa
         {QStringLiteral("gone"), K::Gone},           {QStringLiteral("needsUser"), K::NeedsUser},
         {QStringLiteral("error"), K::Failed},        {QStringLiteral("cancelled"), K::Cancelled},
         {QStringLiteral("account"), K::Account},    {QStringLiteral("sites"), K::Sites},
-        {QStringLiteral("status"), K::Status}};
+        {QStringLiteral("status"), K::Status},       {QStringLiteral("solvers"), K::Solvers},
+        {QStringLiteral("solved"), K::Solved}};
     const auto k = kinds.find(ev);
     if (k == kinds.end())
         return std::nullopt;
@@ -456,12 +571,29 @@ std::optional<std::pair<Ed3kResolver::TaskId, ResolverEvent>> Ed3kJdResolver::pa
     e.premium = o.value(QStringLiteral("premium")).toBool();
     e.expires = o.value(QStringLiteral("expires")).toInteger(0);
     e.trafficLeft = o.contains(QStringLiteral("trafficLeft")) ? o.value(QStringLiteral("trafficLeft")).toInteger(-1) : -1;
+    e.balance = o.value(QStringLiteral("balance")).toDouble(-1);
+    e.currency = str("currency");
+    if (e.kind == K::Solved) {
+        e.host = str("solver");
+        e.name = str("expected");
+    }
+    for (const QJsonValue& v : o.value(QStringLiteral("accounts")).toArray()) {
+        const QJsonObject a = v.toObject();
+        e.solvers.append({a.value(QStringLiteral("host")).toString(), a.value(QStringLiteral("valid")).toBool(),
+                          a.value(QStringLiteral("balance")).toDouble(), a.value(QStringLiteral("currency")).toString(),
+                          a.value(QStringLiteral("code")).toString(), a.value(QStringLiteral("text")).toString()});
+    }
     return std::pair{id, e};
 }
 
 Ed3kResolver::TaskId Ed3kJdResolver::request(QJsonObject req, bool task)
 {
     const TaskId id = m_nextId++;
+    // new plugins being unpacked: a few seconds, the task goes out after
+    if (task && installing()) {
+        m_held.emplace_back(id, req);
+        return id;
+    }
     if (task && !ensureStarted()) {
         // answered on the next turn, like a sidecar would
         ResolverEvent e;
@@ -494,6 +626,25 @@ void Ed3kJdResolver::send(const QJsonObject& req)
         m_sendQueue += line;
 }
 
+Ed3kJdResolver::InstallResult Ed3kJdResolver::installFor(const JdResolverConfig& c)
+{
+    InstallResult r;
+    if (c.sharedDir.isEmpty()) {
+        if (!c.zip.isEmpty() && !install(c.zip, c.dataDir, &r.error))
+            logHosterWarning(QStringLiteral("hoster: resolver plugins not installed: %1").arg(r.error));
+        r.root = instanceRoot(c.dataDir);
+    } else {
+        // a per-instance copy of before is not needed any more
+        removePlugins(c.dataDir);
+        if (c.zip.isEmpty())
+            r.root = newestShared(c.sharedDir);
+        else if (r.root = installShared(c.zip, c.sharedDir, &r.error); r.root.isEmpty())
+            logHosterWarning(QStringLiteral("hoster: shared resolver plugins not installed: %1").arg(r.error));
+    }
+    r.revision = readRevision(r.root);
+    return r;
+}
+
 void Ed3kJdResolver::installPlugins()
 {
     m_installError.clear();
@@ -507,26 +658,74 @@ void Ed3kJdResolver::installPlugins()
     }
     if (m_config.dataDir.isEmpty())
         return;
-    if (m_config.sharedDir.isEmpty()) {
-        if (!m_config.zip.isEmpty() && !install(m_config.zip, m_config.dataDir, &m_installError))
-            logHosterWarning(QStringLiteral("hoster: resolver plugins not installed: %1").arg(m_installError));
-        m_root = instanceRoot(m_config.dataDir);
-        m_revision = readRevision(m_root);
+    const InstallResult r = installFor(m_config);
+    m_root = r.root;
+    m_installError = r.error;
+    m_revision = r.revision;
+}
+
+void Ed3kJdResolver::installAsync()
+{
+    if (!m_config.enabled || m_config.dataDir.isEmpty()) {
+        installPlugins();
         return;
     }
-    // a per-instance copy of before is not needed any more
-    removePlugins(m_config.dataDir);
-    if (m_config.zip.isEmpty())
-        m_root = newestShared(m_config.sharedDir);
-    else if (m_root = installShared(m_config.zip, m_config.sharedDir, &m_installError); m_root.isEmpty())
-        logHosterWarning(QStringLiteral("hoster: shared resolver plugins not installed: %1").arg(m_installError));
-    m_revision = readRevision(m_root);
+    m_installError.clear();
+    const JdResolverConfig cfg = m_config;
+    auto result = std::make_shared<InstallResult>();
+    QThread* t = QThread::create([cfg, result] { *result = installFor(cfg); });
+    m_installThread = t;
+    connect(t, &QThread::finished, this, [this, t, result] {
+        t->deleteLater();
+        m_installThread = nullptr;
+        onInstalled(*result);
+    });
+    logHosterDebug([&]() -> QString { return QStringLiteral("hoster: unpacking resolver plugins from %1").arg(cfg.zip); });
+    t->start(QThread::LowPriority);
+}
+
+void Ed3kJdResolver::onInstalled(const InstallResult& r)
+{
+    if (std::exchange(m_reinstall, false)) {
+        // the config changed meanwhile: what it says now
+        installPlugins();
+    } else {
+        m_root = r.root;
+        m_installError = r.error;
+        m_revision = r.revision;
+        if (r.error.isEmpty())
+            logHoster(QStringLiteral("hoster: resolver plugins updated to %1")
+                          .arg(m_revision.isEmpty() ? QStringLiteral("?") : QStringLiteral("r") + m_revision));
+    }
+    m_description.clear();
+    releaseHeld();
+    emit stateChanged();
+}
+
+void Ed3kJdResolver::releaseHeld()
+{
+    for (auto& [id, req] : std::exchange(m_held, {})) {
+        if (!ensureStarted()) {
+            ResolverEvent e;
+            e.kind = ResolverEvent::Kind::Failed;
+            e.code = QStringLiteral("unavailable");
+            e.text = unavailableReason();
+            QMetaObject::invokeMethod(this, [this, id, e] { emit taskEvent(id, e); }, Qt::QueuedConnection);
+            continue;
+        }
+        req.insert(QStringLiteral("id"), static_cast<qint64>(id));
+        m_pending[id] = true;
+        m_idle.stop();
+        send(req);
+    }
 }
 
 bool Ed3kJdResolver::ensureStarted()
 {
     if (running())
         return true;
+    if (installing())
+        return false;
     // a shared version pruned while this instance idled: unpack it again
     if (m_config.enabled && !m_config.sharedDir.isEmpty() && !layoutOk(m_root))
         installPlugins();
@@ -565,7 +764,25 @@ bool Ed3kJdResolver::ensureStarted()
         request({{QStringLiteral("op"), QStringLiteral("setProxy")}, {QStringLiteral("url"), m_config.proxy}}, false);
     if (!m_config.askPuzzles)
         request({{QStringLiteral("op"), QStringLiteral("setPuzzles")}, {QStringLiteral("mode"), QStringLiteral("never")}}, false);
+    if (!m_config.solvers.isEmpty())
+        sendSolvers();
     return true;
+}
+
+void Ed3kJdResolver::sendSolvers()
+{
+    QJsonArray list;
+    for (const SolverAccount& a : m_config.solvers)
+        list.append(QJsonObject{{QStringLiteral("host"), a.host},
+                                {QStringLiteral("user"), a.user},
+                                {QStringLiteral("password"), a.password}});
+    // a task: its answer carries the balances
+    m_solverTask = m_nextId++;
+    m_pending[m_solverTask] = true;
+    m_idle.stop();
+    send({{QStringLiteral("op"), QStringLiteral("solverAccounts")},
+          {QStringLiteral("id"), static_cast<qint64>(m_solverTask)},
+          {QStringLiteral("accounts"), list}});
 }
 
 void Ed3kJdResolver::stop()
@@ -598,6 +815,13 @@ void Ed3kJdResolver::onFinished(int exitCode, bool crashed, bool stopped)
     if (!expected)
         logHosterWarning(QStringLiteral("hoster: resolver ended"));
     failPending(QStringLiteral("io"));
+    // idle now: new plugins that waited go in
+    if (!m_pendingZip.isEmpty()) {
+        JdResolverConfig c = m_config;
+        c.zip = m_pendingZip;
+        setConfig(c);   // emits stateChanged
+        return;
+    }
     emit stateChanged();
 }
 
@@ -664,6 +888,10 @@ void Ed3kJdResolver::handleLine(const QByteArray& line)
         return;
     }
     logEvent(id, o.value(QStringLiteral("ev")).toString(), ev);
+    if (id == m_solverTask && ev.isFinal()) {
+        m_solverStates = ev.solvers;
+        m_solverTask = 0;
+    }
     if (ev.isFinal()) {
         m_progressLogged.erase(id);
         m_pending.erase(id);
@@ -801,6 +1029,16 @@ QString Ed3kJdResolver::describeRequest(const QJsonObject& req)
         out += u' ' + host;
     if (req.contains(QStringLiteral("account")))
         out += QStringLiteral(" with account");
+    if (const QJsonArray accs = req.value(QStringLiteral("accounts")).toArray(); !accs.isEmpty()) {
+        QStringList hosts;
+        for (const QJsonValue& v : accs)
+            hosts << v.toObject().value(QStringLiteral("host")).toString();
+        out += u' ' + hosts.join(u',');
+    }
+    if (const QString solver = req.value(QStringLiteral("solver")).toString(); !solver.isEmpty())
+        out += u' ' + solver;
+    if (const QString type = req.value(QStringLiteral("type")).toString(); !type.isEmpty())
+        out += u' ' + type;
     if (const qint64 have = req.value(QStringLiteral("have")).toInteger(0); have > 0)
         out += QStringLiteral(", resume at %1 B").arg(have);
     if (const QString mode = req.value(QStringLiteral("mode")).toString(); !mode.isEmpty())
@@ -865,6 +1103,17 @@ void Ed3kJdResolver::logEvent(TaskId id, const QString& ev, const ResolverEvent&
         d = QStringLiteral("valid %1, premium %2%3%4").arg(e.valid ? QStringLiteral("yes") : QStringLiteral("no"), e.premium ? QStringLiteral("yes") : QStringLiteral("no"))
                 .arg(e.expires ? QStringLiteral(", expires ") + QDateTime::fromSecsSinceEpoch(e.expires).toString(Qt::ISODate) : QString())
                 .arg(e.trafficLeft >= 0 ? QStringLiteral(", %1 B traffic left").arg(e.trafficLeft) : QString());
+        break;
+    case K::Solvers: {
+        QStringList parts;
+        for (const SolverAccountState& a : e.solvers)
+            parts << (a.valid ? QStringLiteral("%1 %2 %3").arg(a.host).arg(a.balance).arg(a.currency).trimmed()
+                              : QStringLiteral("%1 %2").arg(a.host, a.code));
+        d = parts.join(QStringLiteral(", "));
+        break;
+    }
+    case K::Solved:
+        d = QStringLiteral("by %1").arg(e.host);   // the answer stays out
         break;
     case K::Gone:
     case K::Cancelled:

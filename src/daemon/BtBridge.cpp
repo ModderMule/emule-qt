@@ -83,6 +83,15 @@ std::optional<bool> i2pOnlyOf(const IpcMessage& msg) { return optionalBool(msg, 
 /// Field 4: stop once the file list is known.
 std::optional<bool> stopAfterMetadataOf(const IpcMessage& msg) { return optionalBool(msg, 4); }
 
+/// AddTorrentFile field 5: file indices to download; absent or empty = all.
+QList<int> wantedFilesOf(const IpcMessage& msg)
+{
+    QList<int> out;
+    for (const QCborValue& v : msg.field(5).toArray())
+        out.append(int(v.toInteger(-1)));
+    return out;
+}
+
 QCborMap toCbor(const bt::BtTorrentRow& r)
 {
     return QCborMap{
@@ -347,7 +356,7 @@ bool handleRequest(const IpcMessage& msg, const std::function<void(const IpcMess
     case IpcMsgType::AddTorrentFile: {
         const QByteArray data = msg.field(0).toByteArray();
         const auto added = s_session->addTorrentFile(data, msg.fieldString(1), msg.fieldBool(2), i2pOnlyOf(msg),
-                                                     stopAfterMetadataOf(msg));
+                                                     stopAfterMetadataOf(msg), wantedFilesOf(msg));
         reply(IpcMessage::makeResult(seq, true, addResultToCbor(added)));
         break;
     }
@@ -559,14 +568,15 @@ QCborMap statusToCbor()
     return out;
 }
 
-QCborMap addTorrentData(const QByteArray& data, bool paused)
+QCborMap addTorrentData(const QByteArray& data, bool paused, const QList<int>& wantedFiles)
 {
 #ifdef EMULE_HAVE_BITTORRENT
     if (s_session && s_session->isRunning())
-        return addResultToCbor(s_session->addTorrentFile(data, {}, paused));
+        return addResultToCbor(s_session->addTorrentFile(data, {}, paused, std::nullopt, std::nullopt, wantedFiles));
 #else
     Q_UNUSED(data)
     Q_UNUSED(paused)
+    Q_UNUSED(wantedFiles)
 #endif
     return QCborMap{{QStringLiteral("outcome"), 3},   // BtAddOutcome::NotRunning
                     {QStringLiteral("message"), QStringLiteral("The BitTorrent engine is not running.")}};

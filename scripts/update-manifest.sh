@@ -144,10 +144,15 @@ resolver='null'
 if [[ -n "$RESOLVER" ]]; then
   [[ -f "$RESOLVER" ]] || die "--resolver file not found: ${RESOLVER}"
   rev="$(unzip -p "$RESOLVER" resolver/revision.txt 2>/dev/null | tr -d '[:space:]' || true)"
+  # api: the sidecar protocol (ResolverMain.PROTOCOL); clients auto-update only to their own
+  api="$(unzip -p "$RESOLVER" resolver/api.txt 2>/dev/null | tr -d '[:space:]' || true)"
   resolver="$(jq -nc --arg s "$(sha256_of "$RESOLVER")" --argjson z "$(size_of "$RESOLVER")" --arg r "$rev" \
+    --arg a "$api" \
     '{url: "https://emule-qt.org/pub/resolver.zip", sha256: $s, size: $z}
-     + (if ($r | test("^[0-9]+$")) then {jdRevision: ($r | tonumber)} else {} end)')"
+     + (if ($r | test("^[0-9]+$")) then {jdRevision: ($r | tonumber)} else {} end)
+     + (if ($a | test("^[0-9]+$")) then {api: ($a | tonumber)} else {} end)')"
   [[ "$rev" =~ ^[0-9]+$ ]] || echo "warning: resolver.zip has no numeric revision.txt -- jdRevision omitted" >&2
+  [[ "$api" =~ ^[0-9]+$ ]] || echo "warning: resolver.zip has no api.txt -- api omitted, clients won't auto-update to it" >&2
 fi
 
 # --- GeoLite2 -----------------------------------------------------------------

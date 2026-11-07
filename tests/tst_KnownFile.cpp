@@ -14,6 +14,8 @@
 #include "prefs/Preferences.h"
 #include "protocol/Tag.h"
 #include "utils/DiskLoadLimiter.h"
+
+#include <QDateTime>
 #include "utils/SafeFile.h"
 
 #include <QBuffer>
@@ -225,6 +227,7 @@ private slots:
     void createHashFromFile_basic();
     void diskLoadLimiter_pausesInProportionToReadTime();
     void diskLoadLimiter_neverPausesTheMainThread();
+    void diskLoadLimiter_sharesOneBudgetPerVolume();
 };
 
 // ---------------------------------------------------------------------------
@@ -1668,6 +1671,53 @@ void tst_KnownFile::diskLoadLimiter_neverPausesTheMainThread()
         now += 500'000'000;
     }
     QCOMPARE(sleeps, 0);
+}
+
+// Report 23: eD2K and ed3k hashing on one disk, each thread at 80 % of it. Limiters of
+// one volume reserve their share of one timeline.
+void tst_KnownFile::diskLoadLimiter_sharesOneBudgetPerVolume()
+{
+    qint64 now = 0;
+    DiskLoadLimiter::Hooks hooks;
+    hooks.nowNs = [&now] { return now; };
+    hooks.percent = [] { return 80; };
+    hooks.allowMainThread = true;
+    qint64 sleptA = 0;
+    qint64 sleptB = 0;
+    qint64 sleptC = 0;
+    auto hooksA = hooks;
+    hooksA.sleepMs = [&sleptA](qint64 ms) { sleptA += ms; };
+    auto hooksB = hooks;
+    hooksB.sleepMs = [&sleptB](qint64 ms) { sleptB += ms; };
+    auto hooksC = hooks;
+    hooksC.sleepMs = [&sleptC](qint64 ms) { sleptC += ms; };
+    DiskLoadLimiter a(hooksA);
+    DiskLoadLimiter b(hooksB);
+    DiskLoadLimiter c(hooksC);
+    const QString volume = QStringLiteral("test:%1").arg(QDateTime::currentMSecsSinceEpoch());
+    a.setVolume(volume);
+    b.setVolume(volume);
+    c.setVolume(volume + QStringLiteral("-other"));
+
+    // both read 20 ms at once: 40 ms of reading takes 50 ms with the idle time
+    a.beginRead();
+    b.beginRead();
+    c.beginRead();
+    now += 20'000'000;
+    a.endRead();
+    b.endRead();
+    c.endRead();
+    QCOMPARE(sleptA, qint64{5});
+    QCOMPARE(sleptB, qint64{30});
+    // another volume has its own budget
+    QCOMPARE(sleptC, qint64{5});
+
+    // a long pause is cut at kMaxPauseNs, and the timeline with it
+    now += 30'000'000;
+    a.beginRead();
+    now += 10'000'000'000;
+    a.endRead();
+    QCOMPARE(sleptA, qint64{5} + DiskLoadLimiter::kMaxPauseNs / 1'000'000);
 }
 
 #include "tst_KnownFile.moc"

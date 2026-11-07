@@ -96,6 +96,7 @@ SOURCES += \
     app/MiniMuleWidget.cpp \
     app/UiState.cpp \
     app/VersionChecker.cpp \
+    app/ClickNLoadServer.cpp \
     controls/AccordionSidebar.cpp \
     controls/ClientListModel.cpp \
     controls/ContactsGraph.cpp \
@@ -169,6 +170,7 @@ SOURCES += \
     dialogs/PeerPreviewDialog.cpp \
     dialogs/SearchDetailDialog.cpp \
     dialogs/MetaResultDetailDialog.cpp \
+    controls/FileCheckButtons.cpp \
     controls/TorrentFileTree.cpp \
     dialogs/UsenetArchiveEntryDialog.cpp \
     dialogs/UsenetDetailsDialog.cpp \
@@ -207,6 +209,7 @@ HEADERS += \
     app/PendingOpenQueue.h \
     app/UiState.h \
     app/VersionChecker.h \
+    app/ClickNLoadServer.h \
     controls/AccordionSidebar.h \
     controls/AbstractListView.h \
     controls/SortableItems.h \
@@ -290,6 +293,7 @@ HEADERS += \
     dialogs/PeerPreviewDialog.h \
     dialogs/SearchDetailDialog.h \
     dialogs/MetaResultDetailDialog.h \
+    controls/FileCheckButtons.h \
     controls/TorrentFileTree.h \
     dialogs/UsenetArchiveEntryDialog.h \
     dialogs/UsenetDetailsDialog.h \

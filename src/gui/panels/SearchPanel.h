@@ -225,8 +225,10 @@ private:
     /// column, asked, and said yes.
     void sendIndexerGrab(int proxyRow, bool force, int category = 0);
     /// The grab itself, by row: also the Download of an indexer row's Details.
+    /// @p keptFiles: the files checked there (GrabIndexerResult field 6); empty = all.
     void grabIndexerResult(uint32_t searchID, const IndexerResultRow& result,
-                           QPointer<IndexerResultsModel> model, bool force, int category = 0);
+                           QPointer<IndexerResultsModel> model, bool force, int category = 0,
+                           const QList<int>& keptFiles = {});
 
     /// Category titles, index 0 first, for the Download To submenu. Refreshed
     /// from the daemon rather than kept in sync by hand, on the same

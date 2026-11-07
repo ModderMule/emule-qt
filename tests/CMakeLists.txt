@@ -644,6 +644,11 @@ if(EMULE_ED3K)
     # hoster links: the hoster join with a fake resolver on loopback, the JD resolver's parts
     emule_add_test(tst_Ed3kHoster FOLDER "Ed3k" LIBRARIES eMule::Ed3k)
     set_tests_properties(tst_Ed3kHoster PROPERTIES TIMEOUT 240)
+    # JD's captcha solver plugins via the resolver: accounts + a test image (EMULE_HOSTER_LIVE=1, .env keys)
+    if(EMULE_HOSTER_JD)
+        emule_add_test(tst_HosterSolvers FOLDER "Ed3k" LIBRARIES eMule::Ed3k)
+        set_tests_properties(tst_HosterSolvers PROPERTIES LABELS "live" TIMEOUT 1800)
+    endif()
     # eMule shared files over ed3k: a fake share list, two nodes on loopback
     emule_add_test(tst_Ed3kShared FOLDER "Ed3k" LIBRARIES eMule::Ed3k)
     set_tests_properties(tst_Ed3kShared PROPERTIES TIMEOUT 180)
@@ -880,6 +885,7 @@ emule_add_test(tst_UsenetDetailsDialog FOLDER "Gui"
             "${CMAKE_SOURCE_DIR}/src/gui/dialogs/RememberedSizeDialog.cpp"
             "${CMAKE_SOURCE_DIR}/src/gui/controls/UsenetQueueModel.cpp"
             "${CMAKE_SOURCE_DIR}/src/gui/controls/UsenetFileCheckList.cpp"
+            "${CMAKE_SOURCE_DIR}/src/gui/controls/FileCheckButtons.cpp"
             "${CMAKE_SOURCE_DIR}/src/gui/controls/UsenetProgressDelegate.cpp"
             "${CMAKE_SOURCE_DIR}/src/gui/controls/BarShader.cpp"
             # The model marks a password-protected release with menuIcon().
@@ -1090,6 +1096,7 @@ emule_add_test(tst_MetaResultDetailDialog FOLDER "Gui"
             "${CMAKE_SOURCE_DIR}/src/gui/dialogs/MetaResultDetailDialog.cpp"
             "${CMAKE_SOURCE_DIR}/src/gui/controls/TorrentFileTree.cpp"
             "${CMAKE_SOURCE_DIR}/src/gui/controls/UsenetFileCheckList.cpp"
+            "${CMAKE_SOURCE_DIR}/src/gui/controls/FileCheckButtons.cpp"
             "${CMAKE_SOURCE_DIR}/src/gui/dialogs/DetailDialog.cpp"
             "${CMAKE_SOURCE_DIR}/src/gui/dialogs/RememberedSizeDialog.cpp"
             # DetailDialog opens client sheets and reports IPC failures
@@ -1117,6 +1124,7 @@ emule_add_test(tst_MetaSearchGui FOLDER "Gui"
             "${CMAKE_SOURCE_DIR}/src/gui/app/SkinColors.cpp"
             "${CMAKE_SOURCE_DIR}/src/gui/utils/Appearance.cpp"
             "${CMAKE_SOURCE_DIR}/src/gui/dialogs/WebLinksDialog.cpp"
+            "${CMAKE_SOURCE_DIR}/src/gui/controls/FileCheckButtons.cpp"
             "${CMAKE_SOURCE_DIR}/src/gui/dialogs/RememberedSizeDialog.cpp"
             "${CMAKE_SOURCE_DIR}/src/gui/utils/Ed2kLinkImporter.cpp"
             "${CMAKE_SOURCE_DIR}/src/gui/utils/TorrentLinks.cpp"
@@ -1160,6 +1168,7 @@ if(EMULE_HOSTER_JD)
                 "${CMAKE_SOURCE_DIR}/src/gui/app/IpcClient.cpp"
                 "${CMAKE_SOURCE_DIR}/src/gui/app/KnownCores.cpp"
                 "${CMAKE_SOURCE_DIR}/src/gui/utils/ContainerDrop.cpp"
+                "${CMAKE_SOURCE_DIR}/src/gui/app/ClickNLoadServer.cpp"
                 "${CMAKE_SOURCE_DIR}/resources/emuleqt.qrc")
     target_include_directories(tst_HosterPanel PRIVATE
         "${CMAKE_SOURCE_DIR}/src/gui"
@@ -1501,6 +1510,7 @@ emule_add_test(tst_SmallScreenDialogs FOLDER "Gui"
             "${CMAKE_SOURCE_DIR}/src/gui/controls/BarShader.cpp"
             "${CMAKE_SOURCE_DIR}/src/gui/controls/ContentScrollArea.cpp"
             "${CMAKE_SOURCE_DIR}/src/gui/controls/UsenetFileCheckList.cpp"
+            "${CMAKE_SOURCE_DIR}/src/gui/controls/FileCheckButtons.cpp"
             "${CMAKE_SOURCE_DIR}/src/gui/controls/UsenetProgressDelegate.cpp"
             "${CMAKE_SOURCE_DIR}/src/gui/controls/UsenetQueueModel.cpp"
             "${CMAKE_SOURCE_DIR}/src/gui/utils/Appearance.cpp"
@@ -1591,6 +1601,16 @@ target_include_directories(tst_LogTextView PRIVATE
     "${CMAKE_SOURCE_DIR}/src/gui"
     "${CMAKE_CURRENT_SOURCE_DIR}/stubs")
 target_link_libraries(tst_LogTextView PRIVATE Qt6::Widgets)
+
+# Click'n'Load 2 on port 9666 of the GUI (hoster.md): real loopback sockets on a free
+# port, a handler in place of the Hoster tab.
+emule_add_test(tst_ClickNLoadServer FOLDER "Gui"
+    SOURCES tst_ClickNLoadServer.cpp
+            "${CMAKE_SOURCE_DIR}/src/gui/app/ClickNLoadServer.cpp")
+target_include_directories(tst_ClickNLoadServer PRIVATE
+    "${CMAKE_SOURCE_DIR}/src/gui"
+    "${CMAKE_CURRENT_SOURCE_DIR}/stubs")
+target_link_libraries(tst_ClickNLoadServer PRIVATE eMule::Core Qt6::Network Qt6::Widgets)
 
 # Version manifest parsing. VersionChecker's statics are pure, so no reply is needed.
 # src/gui comes first on the include path, so VersionChecker.cpp picks up the real

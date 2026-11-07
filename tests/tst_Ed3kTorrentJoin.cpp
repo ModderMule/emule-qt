@@ -13,6 +13,7 @@
 
 #include <libtorrent/create_torrent.hpp>
 
+#include <QDateTime>
 #include <QDir>
 #include <QFile>
 #include <QSemaphore>
@@ -226,6 +227,35 @@ void tst_Ed3kTorrentJoin::completeTorrentGivesItsSet()
     QCOMPARE(republished.at(0).at(0).toString(), added.id);
     QCOMPARE(republished.at(0).at(1).toInt(), 2);
     again.stop();
+
+    // report 23: the block hashes of that hash are kept with size and mtime, so the next
+    // start shares the members at once, without reading them again
+    Ed3kTorrentJoin third(node, leecher, dir);
+    third.setSearchEnabled(false);
+    third.start();
+    QVERIFY(third.sharesRoot(hashOf(m_a).root));
+    QVERIFY(third.sharesRoot(hashOf(m_b).root));
+    third.stop();
+
+    // a member changed on disk (same size, new mtime): hashed again, and it no longer fits
+    const auto layout = leecher.layout(added.id);
+    QVERIFY(layout.has_value());
+    QString pathA;
+    for (const auto& f : layout->files)
+        if (!f.pad && pathA.isEmpty())
+            pathA = f.path;
+    {
+        QFile f(pathA);
+        QVERIFY(f.open(QIODevice::ReadWrite));
+        QVERIFY(f.setFileTime(QDateTime::currentDateTimeUtc().addSecs(60), QFileDevice::FileModificationTime));
+    }
+    Ed3kTorrentJoin fourth(node, leecher, dir);
+    fourth.setSearchEnabled(false);
+    fourth.start();
+    QVERIFY(!fourth.sharesRoot(hashOf(m_a).root));   // its hash runs first
+    QVERIFY(fourth.sharesRoot(hashOf(m_b).root));
+    QTRY_VERIFY_WITH_TIMEOUT(fourth.sharesRoot(hashOf(m_a).root), 10000);
+    fourth.stop();
 
     join.stop();
     leecher.stop();

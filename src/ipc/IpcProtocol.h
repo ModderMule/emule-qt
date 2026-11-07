@@ -24,10 +24,11 @@ namespace eMule::Ipc {
 /// What a PushNotifierEvent reports (MFC ShowNotifier's TBN_* cases that the core
 /// raises). The text field carries the one variable part.
 enum class NotifierEvent : int {
-    DownloadFinished = 0,   ///< text: file name (MFC PartFile.cpp:3021)
+    DownloadFinished = 0,   ///< text: file name, field 2: full path (MFC PartFile.cpp:3021)
     ConnectionLost   = 1,   ///< text: server name; not sent for a manual disconnect
     OutOfDiskSpace   = 2,   ///< text: file name (MFC PartFile.cpp:4292)
     PortBindFailed   = 3,   ///< text: port number (MFC emuleDlg.cpp:718-730)
+    DownloadAdded    = 4,   ///< text: file names, '\n' separated, batched ~1 s (MFC DownloadQueue.cpp:317)
 };
 
 enum class IpcMsgType : int {
@@ -416,6 +417,8 @@ enum class IpcMsgType : int {
     /// Fields 3-5 are AddNzb's, and absent read the same way: 0 means "nobody
     /// chose a category", so a grab with no opinion still gets
     /// auto-categorisation.
+    /// Optional field 6 keptFiles: [int], the files checked in the Details
+    /// window (NZB file or torrent file indices); absent/empty = all.
     GrabIndexerResult       = 707,
 
     /// [] -> [[{name, kind, enabled, query, categories, indexers, url, hasUrl,
@@ -708,8 +711,11 @@ enum class IpcMsgType : int {
     //   {status: MetaStatus, serverName, serverAddr: "addr:port", authMode,
     //    registrationUrl, accountUrl, msgCode, pendingSteps: [{title, kind, url}]}
 
-    /// [searchID, hash, (row), (inspect: bool)] -> [true, {content: bytes,
-    /// fileName, kind, (inspection | inspectError)}] or [false, error, meta].
+    /// [searchID, hash, (row), (inspect: bool), (siblings: [hash])] -> [true, {content: bytes,
+    /// fileName, kind, (inspection | inspectError), (rowFileIndex), (rowFiles)}] or [false, error, meta].
+    /// Torrent rows: rowFiles = the torrent file indices this row and its siblings
+    /// (other picked rows of the same torrent) stand for; absent when one is the
+    /// whole torrent or btMetaSelectedFileOnly is off. rowFileIndex: the row's own file, -1 whole set (NZB with inspect too).
     /// For saving the .torrent/.nzb in the GUI; capped below MaxPayloadSize.
     /// `inspect` adds the parsed file for the row's Details: InspectNzb's map for
     /// an NZB, BtBridge::inspectTorrent's for a torrent. The daemon keeps fetched
@@ -756,9 +762,11 @@ enum class IpcMsgType : int {
     ///         activeSeconds, haveBytes, totalSize, availability}]
     GetTorrents             = 800,
     /// [data: bytes, savePath: string (empty = BT download dir), paused: bool,
-    ///  i2pOnly: bool?, stopAfterMetadata: bool?] -> {outcome, id, message};
+    ///  i2pOnly: bool?, stopAfterMetadata: bool?, wantedFiles: [int]?] -> {outcome, id, message};
     /// outcome is BtAddOutcome (0 added, 1 duplicate, 2 invalid, 3 not running,
     /// 4 failed). An optional field absent or null = the core's default.
+    /// wantedFiles: file indices to download, the rest skipped; absent/empty = all.
+    /// On a duplicate those files are switched on in the listed torrent.
     AddTorrentFile          = 801,
     /// [uri: string, savePath: string, paused: bool, i2pOnly: bool?,
     ///  stopAfterMetadata: bool?] -> {outcome, id, message}
@@ -984,6 +992,12 @@ enum class IpcMsgType : int {
     /// JD's key service. PushHosterLinks follows with item 0 and its container map. Failure
     /// while hoster downloads or the resolver are off
     OpenHosterContainer     = 1109,
+    /// [urls: string (links, one per line), crypted: string, jk: string, k: string, package: string,
+    ///  passwords: [string], source: string] -> [ok, {token}]; a Click'n'Load post the GUI took
+    /// on its port 9666 (hoster.md "Click'n'Load"). crypted + jk or k: JD's DummyCNL decrypts it.
+    /// PushHosterLinks follows with item 0 and {token, cnl: true, source, code, text}. Failure
+    /// while hoster downloads or the resolver are off, or with nothing to add
+    AddClickNLoad           = 1139,
 
     // -- ed3k downloads (batch 12): plain ed3k files (search rows, ed3k:file links without bt=),
     // src/daemon/Ed3kDownloadsBridge.cpp. Roots (32 B) as hex. A download: {root, name, size,
@@ -1218,7 +1232,7 @@ enum class IpcMsgType : int {
     PushDownloadUpdate   = 410,
     PushDownloadAdded    = 411,
     PushDownloadRemoved  = 412,
-    /// [kind: NotifierEvent, text] — something the Notifications page offers a pop-up
+    /// [kind: NotifierEvent, text, (path)] — something the Notifications page offers a pop-up
     /// for. Never coalesced: each one is an event, not a state.
     PushNotifierEvent    = 413,
     PushServerState      = 420,

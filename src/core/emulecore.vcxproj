@@ -299,6 +299,7 @@
     <ClCompile Include="files\PartFileSizeLookup.cpp" />
     <ClCompile Include="files\PartFileWriteThread.cpp" />
     <ClCompile Include="files\SourceIndex.cpp" />
+    <ClCompile Include="utils\BackgroundFileWriter.cpp" />
     <ClCompile Include="utils\DiskLoadLimiter.cpp" />
     <ClCompile Include="utils\StallWatchdog.cpp" />
     <ClCompile Include="utils\FileDate.cpp" />
@@ -584,6 +585,7 @@
     <QtMoc Include="files\PartFileConvert.h" />
     <QtMoc Include="files\PartFileSizeLookup.h" />
     <QtMoc Include="files\PartFileWriteThread.h" />
+    <ClInclude Include="utils\BackgroundFileWriter.h" />
     <ClInclude Include="utils\DiskLoadLimiter.h" />
     <ClInclude Include="utils\StallWatchdog.h" />
     <ClInclude Include="utils\FileDate.h" />

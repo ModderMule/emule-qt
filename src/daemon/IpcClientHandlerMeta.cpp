@@ -87,6 +87,31 @@ std::optional<int> resolveNzbFile(const usenet::NzbInfo& nzb, const MetaRow& r)
     return hit;
 }
 
+/// The torrent file a file row stands for, from BtBridge::inspectTorrent's `files`:
+/// path first, then the index. nullopt: whole torrent, a pad file, or no match.
+std::optional<int> resolveTorrentFile(const QCborArray& files, const MetaRow& r)
+{
+    if (r.isWholeSet())
+        return std::nullopt;
+    const auto real = [](const QCborMap& f) { return !f.value(QStringLiteral("pad")).toBool(); };
+    if (!r.filePath.isEmpty()) {
+        const QString want = QString(r.filePath).replace(u'\\', u'/');
+        for (const QCborValue& v : files) {
+            const QCborMap f = v.toMap();
+            const QString path = f.value(QStringLiteral("path")).toString();
+            // with or without the torrent's own folder in front
+            if (real(f) && (path == want || path.endsWith(u'/' + want) || want.endsWith(u'/' + path)))
+                return int(f.value(QStringLiteral("index")).toInteger());
+        }
+    }
+    for (const QCborValue& v : files) {
+        const QCborMap f = v.toMap();
+        if (f.value(QStringLiteral("index")).toInteger(-1) == qint64(r.fileIndex))
+            return real(f) ? std::optional(int(r.fileIndex)) : std::nullopt;
+    }
+    return std::nullopt;
+}
+
 /// "Release.Name" + the kind's extension, safe as a file name. A container is
 /// named by the format its content type says (enodemeta amendment 27).
 QString suggestedFileName(const MetaRow& r, const QString& contentType)
@@ -228,9 +253,13 @@ void IpcClientHandler::handleFetchMetaFile(const IpcMessage& msg)
     const int seqId = msg.seqId();
     // field 3: also parse it, for the search row's Details
     const bool inspect = msg.fieldBool(3);
+    // field 4: the other picked rows of the same torrent, for rowFiles
+    std::vector<MetaRow> siblings;
+    for (const QCborValue& v : msg.field(4).toArray())
+        siblings.push_back(siblingRow(v.toString(), static_cast<uint32>(msg.fieldInt(0))));
 
     MetaSearchService::instance().fetch(*row->target, row->hash16, row->catalogId, kMaxIpcMetafile,
-              [self, seqId, inspect, r = *row](MetaStatus status, const QString& error, const QCborMap& meta,
+              [self, seqId, inspect, r = *row, siblings](MetaStatus status, const QString& error, const QCborMap& meta,
                                        const enodemeta::pb::MetaFile& file) {
         if (!self)
             return;
@@ -247,12 +276,32 @@ void IpcClientHandler::handleFetchMetaFile(const IpcMessage& msg)
         // verified already, so it parses; the GUI never reads a uri-list itself
         if (r.kind == enodemeta::Kind::Web)
             reply.insert(QStringLiteral("links"), webLinksMap(file.content()));
+        const bool torrent = r.kind == enodemeta::Kind::BtV1 || r.kind == enodemeta::Kind::BtV2;
+        QString torrentError;
+        const QCborMap torrentInfo = torrent ? BtBridge::inspectTorrent(file.content(), torrentError) : QCborMap{};
+        if (torrent && !torrentInfo.isEmpty()) {
+            // with btMetaSelectedFileOnly a file row downloads its own file only; any
+            // whole-torrent row = everything
+            const QCborArray files = torrentInfo.value(QStringLiteral("files")).toArray();
+            const auto own = resolveTorrentFile(files, r);
+            reply.insert(QStringLiteral("rowFileIndex"), own.value_or(-1));
+            QCborArray rowFiles;
+            bool whole = !own;
+            if (own)
+                rowFiles.append(*own);
+            for (const MetaRow& sib : siblings) {
+                const auto f = resolveTorrentFile(files, sib);
+                whole = whole || !f;
+                if (f)
+                    rowFiles.append(*f);
+            }
+            if (!whole && thePrefs.btMetaSelectedFileOnly())
+                reply.insert(QStringLiteral("rowFiles"), rowFiles);
+        }
         if (inspect) {
-            QString inspectError;
-            QCborMap inspection;
-            if (r.kind == enodemeta::Kind::BtV1 || r.kind == enodemeta::Kind::BtV2)
-                inspection = BtBridge::inspectTorrent(file.content(), inspectError);
-            else if (r.kind == enodemeta::Kind::Nzb)
+            QString inspectError = torrentError;
+            QCborMap inspection = torrentInfo;   // a torrent is parsed above
+            if (r.kind == enodemeta::Kind::Nzb)
                 inspection = UsenetBridge::inspectNzb(file.content(), {}, inspectError);
             if (r.kind == enodemeta::Kind::Nzb) {
                 // which file opened the Details window; -1 whole set or unknown
